@@ -127,6 +127,10 @@ import { handleSprintCycleRoutes } from "./sprint-cycles.ts";
 import { handleSpaceJournalRoutes } from "./space-journal.ts";
 import { handleNotificationRoutes } from "./notifications.ts";
 import { handleTaskSubscriptionRoutes } from "./task-subscriptions.ts";
+import {
+  handlePublicRoadmap,
+  isPublicRoadmapPath,
+} from "./public-roadmap.ts";
 // Календарь на сегодня для панели главной (issue #218): доступ к Google — общий модуль
 // (его же зовёт meeting-current), отбор событий дня и границы суток — чистая логика под тестами.
 import { accessToken, listEvents } from "../_shared/google-calendar.ts";
@@ -518,6 +522,15 @@ async function sprintInWorkspace(
 Deno.serve(async (req: Request) => {
   const origin = req.headers.get("Origin") ?? "";
 
+  // Публичная дорожная карта доски для хаба проектов (issue #562) — БЕЗ авторизации и раньше
+  // общего OPTIONS: у неё свой CORS (`*`, только GET), приватный MINIAPP_ORIGIN ей не подходит.
+  // Что уходит наружу — строго белый список модуля public-roadmap.ts.
+  const publicPath = new URL(req.url).pathname.split("/swarm-api").pop() ||
+    "/";
+  if (isPublicRoadmapPath(publicPath)) {
+    return handlePublicRoadmap(supabase, req, publicPath);
+  }
+
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 204, headers: corsHeaders(origin) });
   }
@@ -601,8 +614,8 @@ Deno.serve(async (req: Request) => {
 
   // Заморозка на время раскатки: изменения не принимаем, чтение оставляем (пустой экран
   // пугает сильнее честной плашки). Владелец проходит всегда — он катит и проверяет.
-  // 503 + Retry-After: рекордер и боты на этой паре сами уходят в повтор, поэтому запись не
-  // теряется, а откладывается до конца работ.
+  // 503 + Retry-After: веб показывает заглушку и сохранить не даёт. Рекордер сюда пишет только
+  // live-пометки, и их гейт пропускает — повтора у рекордера нет (см. maintenanceVerdict).
   // Тот же статус, но для узнанного человека: владельцу заглушка сообщает, что он проходит,
   // — иначе он не сможет ни проверить раскатку, ни снять режим через продукт.
   if (req.method === "GET" && routePath === "/maintenance") {
@@ -621,6 +634,7 @@ Deno.serve(async (req: Request) => {
     now: new Date(),
     method: req.method,
     isOwner: telegram_id === ADMIN_USER_ID,
+    path: routePath,
   });
   if (freeze.frozen) {
     return json(maintenancePayload(freeze.state), 503, origin, {

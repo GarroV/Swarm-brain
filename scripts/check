@@ -243,6 +243,13 @@ if [[ "$scope" == "all" || "$scope" == "server" ]]; then
     # Проверено порчей: с mapfile список молча оставался пустым, и прогон выходил ЗЕЛЁНЫМ.
     touched_list="$(
       { base="$(grep -v '^#' .scriba-build-base 2>/dev/null | tr -d '[:space:]')"
+        # Влитый в стройку `main` — не код стройки: считаем от последнего влитого коммита
+        # `main`, если он новее базы. Иначе после слияния main в «затронутые» попадает чужой
+        # легаси-код и валит формат (29.09.2026: восемь файлов из main, в CI main зелёный).
+        merged_main="$(git merge-base origin/main HEAD 2>/dev/null || true)"
+        if [ -n "$base" ] && [ -n "$merged_main" ] && git merge-base --is-ancestor "$base" "$merged_main" 2>/dev/null; then
+          base="$merged_main"
+        fi
         if [ -n "$base" ] && git cat-file -e "$base^{commit}" 2>/dev/null; then
           git diff --name-only --diff-filter=ACMR "$base"...HEAD -- 'supabase/functions/*.ts'
         elif [ -n "$base" ]; then

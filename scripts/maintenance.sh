@@ -5,8 +5,9 @@
 # ЗАПРЕЩАЕТ править данные. Плашка — для обычной ночной раскатки, заморозка — для переезда,
 # где правка во время работ либо потеряется, либо ляжет поверх мигрирующей схемы.
 #
-#   ./scripts/maintenance.sh freeze [МИНУТ]   — заморозить (по умолчанию 30)
-#   ./scripts/maintenance.sh unfreeze         — снять немедленно
+#   ./scripts/maintenance.sh freeze [МИНУТ]   — заморозить на МИНУТ (по умолчанию 30);
+#                                               LEAD_MIN=15 — начать через 15 мин, до того плашка
+#   ./scripts/maintenance.sh unfreeze         — снять немедленно (или отменить плановую)
 #   ./scripts/maintenance.sh status           — что сейчас
 #
 # ⚠️ Это ПРАВКА ПРОД-ДАННЫХ и остановка работы команды — по правилу раскатки только по явному
@@ -45,30 +46,46 @@ q() {
 case "${1:-status}" in
   freeze)
     MIN=${2:-30}
+    LEAD=${LEAD_MIN:-0}
     if ! [[ "$MIN" =~ ^[0-9]+$ ]] || [ "$MIN" -lt 1 ] || [ "$MIN" -gt "$MAX_MIN" ]; then
       red "Минуты: целое от 1 до $MAX_MIN. Дольше — это уже не работы, а простой: продлите повторно."
       exit 2
     fi
-    # Тексты двуязычные с первой версии: продукт говорит по-английски и по-русски.
-    MSG_EN=${MSG_EN:-"Swarm is being updated. Your data is safe — please come back in a few minutes."}
-    MSG_RU=${MSG_RU:-"Идёт обновление Swarm. Данные на месте — зайдите, пожалуйста, через несколько минут."}
-    q "
-      insert into app_settings (key, value, updated_at)
-      values ('$KEY', jsonb_build_object(
-        'until',      to_jsonb((now() + interval '$MIN minutes')::timestamptz),
-        'started_at', to_jsonb(now()::timestamptz),
-        'message_en', to_jsonb('$MSG_EN'::text),
-        'message_ru', to_jsonb('$MSG_RU'::text)
-      ), now())
-      on conflict (key) do update set value = excluded.value, updated_at = now();
-    " >/dev/null
-    green "Заморожено на $MIN мин. Изменения не принимаются, чтение работает, владелец проходит."
-    echo "Снять раньше срока: ./scripts/maintenance.sh unfreeze"
+    if ! [[ "$LEAD" =~ ^[0-9]+$ ]] || [ "$LEAD" -gt 1440 ]; then
+      red "Начало: через 0..1440 минут, а не «${LEAD}»."
+      exit 2
+    fi
+    # Всё — одной SQL-функцией (миграция 20260928200000, issue #609): плашка-предупреждение до
+    # начала, заморозка с начала, уведомление в колокольчик всем рабочим воркспейсам. Одна
+    # транзакция: заморозки без предупреждения или предупреждения без заморозки не бывает.
+    # Повтор — та же заморозка: уведомления обновляются на месте, дублей нет.
+    # Свой текст — только как SQL-строка с удвоенными кавычками (не длиннее 300 — режет функция).
+    sql_text() { local q="'" t="${1:0:300}"; printf '%s%s%s' "$q" "${t//$q/$q$q}" "$q"; }
+    OUT=$(q "select public.maintenance_announce($LEAD, $MIN, $(sql_text "${MSG_EN:-}"), $(sql_text "${MSG_RU:-}")) as res;") || {
+      red "Если выше «function public.maintenance_announce does not exist» — миграция 20260928200000 не накатана."
+      exit 1
+    }
+    echo "$OUT" | python3 -c "
+import json, re, sys
+m = re.search(r'\{.*\}', sys.stdin.read(), re.S)
+res = (json.loads(m.group(0)).get('rows') or [{}])[0].get('res', {}) if m else {}
+res = json.loads(res) if isinstance(res, str) else (res or {})
+print(f\"Начало {res.get('starts_at')}, конец {res.get('until')}, уведомлено людей: {res.get('notified')}\")
+"
+    if [ "$LEAD" -gt 0 ]; then
+      green "Объявлено: плашка сейчас, заморозка через $LEAD мин на $MIN мин. Снимется сама по сроку."
+    else
+      green "Заморожено на $MIN мин. Изменения не принимаются, чтение работает, владелец проходит."
+    fi
+    echo "Снять раньше срока (или отменить плановую): ./scripts/maintenance.sh unfreeze"
     ;;
 
   unfreeze)
-    q "delete from app_settings where key = '$KEY';" >/dev/null
-    green "Заморозка снята."
+    q "select public.maintenance_cancel();" >/dev/null || {
+      red "Если выше «function public.maintenance_cancel does not exist» — миграция 20260928200000 не накатана."
+      exit 1
+    }
+    green "Заморозка снята (плановая — отменена). Уведомления в колокольчике помечены «отменено»."
     ;;
 
   status)
@@ -81,9 +98,16 @@ rows = json.loads(m.group(0)).get('rows') if m else None
 if not rows:
     print('Заморозки нет.')
 else:
-    until = rows[0]['value'].get('until')
-    left = (datetime.fromisoformat(until) - datetime.now(timezone.utc)).total_seconds()
-    print(f'Заморожено до {until}' if left > 0 else f'Срок истёк ({until}) — режим уже не действует, запись снять можно.')
+    v = rows[0]['value']
+    until, starts = v.get('until'), v.get('starts_at')
+    now = datetime.now(timezone.utc)
+    left = (datetime.fromisoformat(until) - now).total_seconds()
+    if left <= 0:
+        print(f'Срок истёк ({until}) — режим уже не действует, запись снять можно.')
+    elif starts and datetime.fromisoformat(starts) > now:
+        print(f'Запланировано: заморозка с {starts} до {until}, сейчас висит плашка-предупреждение.')
+    else:
+        print(f'Заморожено до {until}')
 "
     ;;
 

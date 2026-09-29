@@ -5,6 +5,7 @@ import { RoyIcon } from "./icons";
 import { cn } from "@/lib/utils";
 import { fetchNotifications, markNotificationsRead, fetchTask, type SwarmNotification } from "@/lib/api";
 import { publishNotice } from "@/lib/deployNotice";
+import { freezeWindow } from "@/lib/maintenance";
 
 // Колокольчик уведомлений: бейдж непрочитанных + поповер-лента, клик по строке открывает
 // задачу. Поведение и оформление поповера — как у ProfileMenu (клик-вне, Esc, тот же попап),
@@ -111,6 +112,7 @@ export function NotificationsBell({ className }: { className?: string }) {
   };
 
   const badge = unread > BADGE_MAX ? `${BADGE_MAX}+` : String(unread);
+  const locale = dt("ru-RU", "en-GB");
 
   return (
     <div className={cn("relative", className)}>
@@ -177,7 +179,9 @@ export function NotificationsBell({ className }: { className?: string }) {
                     <span className="min-w-0 flex-1">
                       <span className="flex items-baseline justify-between gap-2">
                         <span className="truncate font-semibold text-ink" style={{ fontSize: 13 }}>
-                          {n.task_title || dt("Задача", "Task")}
+                          {n.type === "maintenance"
+                            ? dt("Технические работы", "Scheduled maintenance")
+                            : (n.task_title || dt("Задача", "Task"))}
                         </span>
                         <span className="shrink-0 text-ink-mute" style={{ fontSize: 11 }}>
                           {fmtWhen(n.created_at, dt)}
@@ -186,9 +190,15 @@ export function NotificationsBell({ className }: { className?: string }) {
                       {/* Две строки максимум: лента остаётся сканируемой, полный текст — в задаче.
                           line-clamp именно на этом span, а не на вложенном: вложенный становится
                           -webkit-box и уносит текст на строку ниже имени автора. */}
-                      <span className="mt-0.5 line-clamp-2 text-ink-soft" style={{ fontSize: 12.5 }}>
+                      {/* У работ — три строки: время + свой текст в две не влезают на мобилке. */}
+                      <span
+                        className={cn("mt-0.5 text-ink-soft", n.type === "maintenance" ? "line-clamp-3" : "line-clamp-2")}
+                        style={{ fontSize: 12.5 }}
+                      >
                         {/* У пинга нет автора и текста: событие системное, и «— : » выглядело бы поломкой. */}
-                        {n.type === "task_reminder" ? (
+                        {n.type === "maintenance" ? (
+                          <MaintenanceLine n={n} dt={dt} locale={locale} />
+                        ) : n.type === "task_reminder" ? (
                           <span className="inline-flex items-center gap-1 font-semibold text-accent-ink">
                             <RoyIcon name="bell" size={11} />
                             {dt("Напоминание, которое ты поставил", "The reminder you set")}
@@ -219,7 +229,13 @@ export function NotificationsBell({ className }: { className?: string }) {
         aria-expanded={open}
         className="relative flex size-10 items-center justify-center rounded-[8px] border border-line bg-surface shadow-[0_4px_14px_-8px_rgba(27,32,40,.25)] transition-colors hover:bg-surface-2 active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
       >
-        <RoyIcon name="bell" size={20} className="text-ink-soft" />
+        {/* Покачивание при непрочитанном (issue #609): раз в ~9 с, короткое — привлекает взгляд,
+            но не дёргает постоянно. «Уменьшить движение» гасит его целиком (globals.css). */}
+        <RoyIcon
+          name="bell"
+          size={20}
+          className={cn("text-ink-soft", unread > 0 && "roy-bell-nudge")}
+        />
         {unread > 0 && (
           <span
             className="absolute -right-1 -top-1 flex min-w-[17px] items-center justify-center rounded-full bg-primary px-1 font-bold text-primary-foreground"
@@ -230,5 +246,40 @@ export function NotificationsBell({ className }: { className?: string }) {
         )}
       </button>
     </div>
+  );
+}
+
+// Строка «плановые работы»: когда, на сколько и свой текст. Время — местное, у смотрящего.
+function MaintenanceLine({
+  n,
+  dt,
+  locale,
+}: {
+  n: SwarmNotification;
+  dt: (ru: string, en: string) => string;
+  locale: string;
+}) {
+  const w = freezeWindow(n.payload, locale);
+  const text = dt(n.payload?.message_ru ?? "", n.payload?.message_en ?? "");
+  const when = !w
+    ? ""
+    : w.phase === "cancelled"
+    ? dt("Отменено", "Cancelled")
+    : dt(
+      `${w.start}–${w.end}, ${w.minutes} мин${w.phase === "running" ? " · идут сейчас" : w.phase === "over" ? " · завершены" : ""}`,
+      `${w.start}–${w.end}, ${w.minutes} min${w.phase === "running" ? " · in progress" : w.phase === "over" ? " · done" : ""}`,
+    );
+  return (
+    <>
+      <span className="inline-flex items-center gap-1 font-semibold text-accent-ink">
+        <RoyIcon name="warn" size={11} />
+        {when || dt("Время уточняется", "Time to be confirmed")}
+      </span>
+      {" "}
+      {text || dt(
+        "Изменения на время работ не принимаются — чтение работает.",
+        "Changes are paused during the work — reading still works.",
+      )}
+    </>
   );
 }

@@ -82,6 +82,7 @@ export function formatTaskLine(t: {
   parent_title?: string | null;
   /** Родитель: сколько подзадач закрыто из всех, что видны спрашивающему. */
   subtasks?: { done: number; total: number } | null;
+  hidden_from_hub?: boolean | null;
 }): string {
   const who = t.assignees?.join(", ") || "—";
   const id = t.id ? ` (id: ${t.id})` : "";
@@ -92,7 +93,10 @@ export function formatTaskLine(t: {
     ? `\n  ↳ подзадача задачи ${t.parent_title ? `«${t.parent_title}» (id: ${t.parent_id})` : t.parent_id}`
     : "";
   const kids = t.subtasks?.total ? `\n  Подзадачи: ${t.subtasks.done} из ${t.subtasks.total} закрыто` : "";
-  return `• [${t.status}] ${t.title}${id}${pending}\n  Исполнитель: ${who}${due}${country}${parent}${kids}`;
+  // Флаг печатается только включённым: в выдаче он редок, и строка «не скрыта» у каждой задачи
+  // была бы шумом. Без пометки агент не узнал бы, почему задачи нет на хабе (issue #562).
+  const hidden = t.hidden_from_hub === true ? " 🙈 скрыта с хаба" : "";
+  return `• [${t.status}] ${t.title}${id}${pending}${hidden}\n  Исполнитель: ${who}${due}${country}${parent}${kids}`;
 }
 
 /**

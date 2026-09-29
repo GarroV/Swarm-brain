@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import { cn } from "@/lib/utils";
 import type { Project, Task, User } from "@/types";
 import { fetchConfig, fetchProjects, fetchUsers, type TaskLabel } from "@/lib/api";
@@ -11,7 +11,10 @@ import { useDt } from "@/components/roy/nav";
 import { TaskModal } from "@/components/TaskModal";
 import { LabelEditor } from "@/components/tasks/LabelEditor";
 import { useReminderTasks } from "@/components/tasks/useReminderTasks";
-import { NARROW_HIDDEN, TASK_GRID, TaskTableRow } from "./TaskTableRow";
+import { TASK_GRID_MIN_W, TaskTableRow } from "./TaskTableRow";
+import { TaskTableHead } from "./TaskTableHead";
+import { useColumnLayout } from "./useColumnLayout";
+import { gridMinWidth, gridTemplate, isDefaultLayout } from "@/lib/taskColumns";
 import { TasksToolbar, type ToolbarState } from "./TasksToolbar";
 import { TaskCalendar, WhatsNextBlock } from "./TaskCalendar";
 import { whatsNext } from "@/lib/taskCalendar";
@@ -35,6 +38,8 @@ export function TasksTable() {
   const [users, setUsers] = useState<User[]>([]);
   const [markets, setMarkets] = useState<string[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
+  const cols = useColumnLayout(r.me?.telegram_id);
+  const layout = cols.layout;
 
   useEffect(() => {
     fetchUsers().then(setUsers).catch(() => {});
@@ -107,6 +112,8 @@ export function TasksTable() {
     onEditLabel: (l) => setLabelEditor(l),
     calView: calView && !!r.me?.is_admin,
     setCalView,
+    columnsCustom: !isDefaultLayout(layout),
+    onResetColumns: cols.resetAll,
   };
   // Под коротким списком — что дальше по сроку и что недавно закрыто (в охвате линзы).
   const next = useMemo(
@@ -121,21 +128,26 @@ export function TasksTable() {
         <TaskCalendar tasks={list} range={r.range} now={r.now} users={users} onOpen={setModalTask} />
       ) : (
       <div className="min-h-0 flex-1 overflow-auto">
-        <div className="min-w-[640px] min-[1100px]:min-w-[960px]">
-          <div
-            role="row"
-            // Шапка по стенду (.th): капс, разрядка, серая подложка — визуальный шаг В2.
-            className={cn("sticky top-0 z-10 grid border-b border-line bg-surface-2 font-semibold uppercase text-ink-soft", TASK_GRID)}
-            style={{ fontSize: 10.5, letterSpacing: "0.07em", height: 32, alignItems: "center" }}
-          >
-            <span className="px-3">{dt("Задача", "Task")}</span>
-            <span className="px-2">{dt("Срок", "Due")}</span>
-            <span />
-            <span className="px-2">{dt("Рынок", "Market")}</span>
-            <span className={cn("px-2", NARROW_HIDDEN)}>{dt("Проект", "Project")}</span>
-            <span className="px-2">{dt("Исполнитель", "Assignee")}</span>
-            <span className={cn("px-2", NARROW_HIDDEN)}>{dt("Списки", "Lists")}</span>
-          </div>
+        <div
+          data-task-table
+          className={TASK_GRID_MIN_W}
+          // Ширины тянутся мышью за границу в шапке и помнятся на человека (useColumnWidths).
+          // Ширины и порядок колонок меняет сам человек в шапке и они помнятся на него
+          // (useColumnLayout); сетку под них считает lib/taskColumns.ts.
+          style={{
+            "--g-wide": gridTemplate(layout, false),
+            "--g-narrow": gridTemplate(layout, true),
+            "--w-wide": `${gridMinWidth(layout, false)}px`,
+            "--w-narrow": `${gridMinWidth(layout, true)}px`,
+          } as CSSProperties}
+        >
+          <TaskTableHead
+            layout={layout}
+            onResize={(col, px) => cols.setWidth(col, px)}
+            onCommit={cols.commit}
+            onResetWidth={cols.resetWidth}
+            onMove={cols.move}
+          />
 
           {r.loading && [0, 1, 2, 3].map((i) => <div key={i} className="roy-shim mx-3 my-1.5" style={{ height: 30, borderRadius: 6 }} />)}
 
@@ -185,6 +197,7 @@ export function TasksTable() {
                     depth={depth}
                     progress={progress.get(t.id)}
                     task={t}
+                    order={layout.order}
                     now={r.now}
                     users={users}
                     markets={markets}
