@@ -1,5 +1,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { createTask, getTask, listTasks, updateTask, deleteTask } from "../../_shared/tasks/db.ts";
+import { createTask, getTask, listTasks, listTasksWithTotal, updateTask, deleteTask } from "../../_shared/tasks/db.ts";
+import { projectLabel, truncationNote, visibleProjectNameById } from "./task-list.ts";
+
 import { recurrencePatchFor, resolveRecurrence } from "../../_shared/tasks/recurrence.ts";
 import { commentDeleteDenial, validateCommentContent } from "../../_shared/tasks/comments.ts";
 import { canViewTask, taskAccessError } from "../../_shared/tasks/access.ts";
@@ -449,6 +451,9 @@ export async function toolDeleteTask(args: { id: string; requesting_user_id: num
   }
 }
 
+/** Потолок строк get_tasks: выдача печатается агенту текстом, дампить всю доску незачем. */
+const GET_TASKS_LIMIT = 30;
+
 export async function toolGetTasks(args: {
   assignee?: string;
   country?: string;
@@ -456,6 +461,7 @@ export async function toolGetTasks(args: {
   period?: string;
   label?: string;
   project?: string;
+  no_project?: boolean;
   requesting_user_id: number;
 }): Promise<string> {
   const groupId = await resolveGroupId(args.requesting_user_id);
@@ -467,36 +473,46 @@ export async function toolGetTasks(args: {
   // молча отданная полная доска неотличима от «в проекте столько задач», и агент докладывает
   // содержимое чужого проекта как содержимое запрошенного. Строки тянем один раз — из них же
   // берётся подсказка с доступными именами.
+  if (args.project && args.no_project) {
+    return "Ошибка: project и no_project взаимоисключающие — выбери одно.";
+  }
+  // Строки проектов нужны всегда: из них и резолв имени, и подпись проекта в каждой строке
+  // выдачи (issue #626).
+  const projectRows = await fetchProjectRows(groupId);
   let projectMatch: { id: string; ambiguous: boolean } | null = null;
   if (args.project) {
-    const rows = await fetchProjectRows(groupId);
-    projectMatch = pickProjectByName(rows, args.project, args.requesting_user_id);
+    projectMatch = pickProjectByName(projectRows, args.project, args.requesting_user_id);
     if (!projectMatch) {
-      return projectNotFoundMessage(args.project, visibleProjectNames(rows, args.requesting_user_id));
+      return projectNotFoundMessage(args.project, visibleProjectNames(projectRows, args.requesting_user_id));
     }
   }
 
-  const tasks = await listTasks({
+  const { tasks, total } = await listTasksWithTotal({
     status: args.status,
     country: args.country,
     period: args.period,
     assigneeText: args.assignee,
     labelIds: labelIds.length ? labelIds : undefined,
     projectId: projectMatch?.id,
+    noProject: args.no_project === true,
     viewerId: args.requesting_user_id,
-    limit: 30,
+    limit: GET_TASKS_LIMIT,
   }, groupId);
 
   if (!tasks.length) return "Задач не найдено.";
 
+  const projectNames = visibleProjectNameById(projectRows, args.requesting_user_id);
   const { titleById, progress } = await subtaskContext(tasks, args.requesting_user_id);
-  return tasks.map((t) =>
+  const lines = tasks.map((t) =>
     formatTaskLine({
       ...t,
       parent_title: t.parent_id ? titleById.get(t.parent_id) ?? null : null,
       subtasks: progress.get(t.id) ?? null,
+      project_label: projectLabel(t.project_id, projectNames),
     })
-  ).join("\n\n");
+  );
+  const note = truncationNote(tasks.length, total, GET_TASKS_LIMIT);
+  return (note ? [note, ...lines] : lines).join("\n\n");
 }
 
 // Дерево досок воркспейса (issue #198): без него агент не знал имён проектов и подпроектов и
