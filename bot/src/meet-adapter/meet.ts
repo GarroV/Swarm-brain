@@ -49,7 +49,9 @@ export interface MeetAdapterDependencies {
   readonly browser: Browser;
   readonly log?: (message: string) => void;
   readonly pollIntervalMs?: number;
-  /** Сколько ждать, пока лобби дорисует кнопку входа; по умолчанию 20 с. */
+  /**
+  Сколько ждать, пока лобби дорисует кнопку входа; по умолчанию 20 с.
+  */
   readonly lobbyReadyTimeoutMs?: number;
   /**
    * Вызывается на свежем контексте до открытия вкладки. Смоук вешает сюда подмену
@@ -171,7 +173,8 @@ export class MeetAdapter implements PlatformAdapter {
   async #waitForLobby(): Promise<void> {
     const deadline = Date.now() + (this.#deps.lobbyReadyTimeoutMs ?? LOBBY_READY_TIMEOUT_MS);
     for (;;) {
-      if ((await this.#findVisible([...JOIN_CTA_SELECTORS, ...NAME_INPUT_SELECTORS])) !== null) return;
+      if ((await this.#findVisible([...JOIN_CTA_SELECTORS, ...NAME_INPUT_SELECTORS])) !== null)
+        return;
       const verdict = classifyAdmission(await this.#snapshot(), { isSignedIn: this.#isSignedIn });
       if (verdict.state !== "waiting") return;
       if (Date.now() >= deadline) {
