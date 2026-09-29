@@ -7,17 +7,17 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 import { createPortal } from "react-dom";
 import { RoyIcon } from "@/components/roy/icons";
 import { countryName, countryFlag, countryCode } from "@/lib/countries";
-import { propertyRowCls, PropertyLabel, PropertyValue, PropertyChevron } from "@/components/ui/PropertyRow";
+import { propertyPillCls } from "@/components/ui/PropertyPill";
 
 type Props = {
   value: string;                 // id выбранной страны ("" = Global)
   codes: string[];               // коды стран для сетки (рынки воркспейса)
   onChange: (id: string) => void;
   // Триггер: "chip" — чип с текущей страной (форма); "icon" — компактная иконка-глобус
-  // (плотная строка задачи); "row" — тихая строка свойства в карточке задачи.
+  // (плотная строка задачи); "pill" — чип свойства в карточке задачи.
   // Тело поповера (сетка флагов) одинаково во всех случаях.
-  variant?: "chip" | "icon" | "row";
-  /** Подпись строки в виде "row" (по умолчанию «Страна»). */
+  variant?: "chip" | "icon" | "pill";
+  /** Название свойства в виде "pill" — подсказка и подпись для скринридера (по умолчанию «Страна»). */
   label?: string;
 };
 
@@ -80,29 +80,25 @@ export function CountryPopover({ value, codes, onChange, variant = "chip", label
         >
           {value ? <span style={{ fontSize: 15 }}>{countryFlag(value)}</span> : <RoyIcon name="globe" size={15} strokeWidth={1.9} />}
         </button>
-      ) : variant === "row" ? (
-        // Строка свойства (карточка задачи): подпись слева, страна значением справа.
+      ) : variant === "pill" ? (
+        // Чип свойства (карточка задачи): флаг и страна; без страны — «Global» (задача на всех).
         <button
           ref={btnRef}
           type="button"
           aria-haspopup="menu"
           aria-expanded={open}
+          title={`${label}: ${value ? countryName(value) : "Global"}`}
           onPointerDown={(e) => e.stopPropagation()}
           onClick={toggle}
-          className={propertyRowCls}
+          className={propertyPillCls(true)}
         >
-          <PropertyLabel icon="globe">{label}</PropertyLabel>
-          <PropertyValue>
-            {value ? (
-              <span className="inline-flex items-center gap-1.5">
-                <span style={{ fontSize: 14 }}>{countryFlag(value)}</span>
-                <span className="truncate">{countryName(value)}</span>
-              </span>
-            ) : (
-              "Global"
-            )}
-          </PropertyValue>
-          <PropertyChevron />
+          {value ? (
+            <span className="shrink-0" style={{ fontSize: 13 }}>{countryFlag(value)}</span>
+          ) : (
+            <RoyIcon name="globe" size={14} strokeWidth={1.9} className="shrink-0 text-ink-mute" />
+          )}
+          <span className="sr-only">{label}: </span>
+          <span className="min-w-0 max-w-[200px] truncate" style={{ fontSize: 12.5 }}>{value ? countryName(value) : "Global"}</span>
         </button>
       ) : (
         // Чип-триггер (форма): текущая страна одной строкой; клик открывает сетку.
