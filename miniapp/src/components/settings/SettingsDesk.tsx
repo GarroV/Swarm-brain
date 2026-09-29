@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
-import { fetchMe } from "@/lib/api";
+import { fetchIntegrations, fetchMe } from "@/lib/api";
 import { countryCode } from "@/lib/countries";
 import { getInitData } from "@/lib/telegram";
 import type { Me } from "@/types";
@@ -12,6 +12,7 @@ import {
 import { ConnectorsSection } from "@/components/profile/ConnectorsSection";
 import { TelegramPanel } from "@/components/profile/TelegramPanel";
 import { BackdropSection } from "@/components/profile/BackdropSection";
+import { AutojoinToggle } from "@/components/profile/AutojoinToggle";
 import { useDt } from "@/components/roy/nav";
 import { useIsDesktop } from "@/components/roy/useIsDesktop";
 
@@ -72,9 +73,10 @@ function SettingsDesk() {
                   <Action on={panel === "digest"} onClick={() => toggle("digest")}>{dt("Настроить", "Set up")}</Action>
                 </Tile>
               </div>
+              {!me.is_demo && <BotTile />}
               <Tile title={dt("Интеграции", "Integrations")} className="col-span-3">
                 <ConnectorsSection me={me} dense panels={{
-                  calendar: <GoogleCalendarSection isDemo={!!me.is_demo} />, recorder: <RecorderSection />, telegram: <TelegramPanel me={me} />,
+                  calendar: <GoogleCalendarSection isDemo={!!me.is_demo} withAutojoin={false} />, recorder: <RecorderSection />, telegram: <TelegramPanel me={me} />,
                   granola: <GranolaSection />, claude: <ClaudeDesktopSection />,
                 }} />
               </Tile>
@@ -118,6 +120,33 @@ function ProfileTile({ me, open, onToggle }: { me: Me; open: Panel | null; onTog
           </Line>
         )}
       </div>
+    </Tile>
+  );
+}
+
+// «Бот встреч» — своей плиткой, а не внутри панели календаря (владелец 30.09.2026: «сделай плитку
+// отдельно»): под карточкой календаря переключатель никто не находил. Бот ходит по календарю,
+// поэтому без подключённого Google-календаря плитка говорит, что его нужно подключить.
+function BotTile() {
+  const dt = useDt();
+  const [hasCalendar, setHasCalendar] = useState<boolean | null>(null);
+  useEffect(() => {
+    let alive = true;
+    fetchIntegrations()
+      .then((list) => { if (alive) setHasCalendar(list.some((i) => i.service === "google_calendar")); })
+      .catch((e) => { console.error("[SettingsDesk] integrations", e); if (alive) setHasCalendar(false); });
+    return () => { alive = false; };
+  }, []);
+  return (
+    <Tile title={dt("Бот встреч", "Meeting bot")} className="col-span-3">
+      {hasCalendar === null && <Hint>{dt("Загрузка…", "Loading…")}</Hint>}
+      {hasCalendar === false && (
+        <Hint>{dt(
+          "Бот приходит на встречи из Google-календаря — подключите календарь в «Интеграциях» ниже.",
+          "The bot joins meetings from Google Calendar — connect the calendar under Integrations below.",
+        )}</Hint>
+      )}
+      {hasCalendar && <AutojoinToggle bare />}
     </Tile>
   );
 }

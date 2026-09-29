@@ -1,0 +1,42 @@
+# Боевой бот встреч scriba на MUSPELHEIM — только оркестратор; функции и база — прод Swarm.
+# Управляется с Мака: scripts/scriba-prod.sh rollout | up | status | logs | down.
+# Руками этот файл не запускают: переменные (${...}) пишет stand.ps1 в state/prod.env.
+#
+# Контейнеры встреч поднимает оркестратор сам: имена scriba-prod-meeting-<run>, том
+# scriba-prod-recordings, сеть и прокси выхода — по метке scriba.project=scriba-prod.
+# Портов наружу нет: оркестратор только ходит в прод и в Docker.
+name: scriba-prod
+
+services:
+  orchestrator:
+    image: ${SCRIBA_IMAGE}
+    restart: unless-stopped
+    # Образ встречи, но без entrypoint'а экрана и звука: службе нужны только node и dockerode.
+    entrypoint: ["node", "/app/src/orchestrator/orchestrator-main.ts"]
+    user: root
+    environment:
+      SCRIBA_SWARM_URL: ${SCRIBA_SWARM_URL}
+      SCRIBA_BOT_TOKEN: ${SCRIBA_BOT_TOKEN}
+      SCRIBA_IMAGE: ${SCRIBA_IMAGE}
+      SCRIBA_PROJECT: scriba-prod
+      SCRIBA_BOT_VERSION: ${SCRIBA_BOT_VERSION}
+      # Путь поводка одинаков у службы и у демона Docker: оркестратор пишет файл сам и тот же
+      # путь монтирует в контейнеры встреч (демон Docker Desktop видит диск C: по этому адресу).
+      SCRIBA_LEASE_HOST_DIR: ${PROD_LEASE_DAEMON_DIR}
+      # Вход бота в Google (T175) живёт у окна входа (scripts/scriba-login.sh).
+      SCRIBA_GOOGLE_STATE_FILE: /run/scriba-account-src/google-state.json
+      SCRIBA_ACCOUNT_COPIES_DIR: ${PROD_ACCOUNT_COPIES_DAEMON_DIR}
+    volumes:
+      - type: bind
+        source: /var/run/docker.sock
+        target: /var/run/docker.sock
+      - type: bind
+        source: ${PROD_STATE_DIR}/lease
+        target: ${PROD_LEASE_DAEMON_DIR}
+      - type: bind
+        source: ${PROD_ACCOUNT_DIR}
+        target: /run/scriba-account-src
+        read_only: true
+      - type: bind
+        source: ${PROD_STATE_DIR}/account-copies
+        target: ${PROD_ACCOUNT_COPIES_DAEMON_DIR}

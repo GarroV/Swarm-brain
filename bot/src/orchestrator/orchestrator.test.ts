@@ -223,7 +223,9 @@ describe("оркестратор", () => {
 
   afterEach(async () => {
     orchestrator.close();
-    await rm(leaseDirectory, { recursive: true, force: true });
+    // close() гасит таймер, но уже начатая запись поводка ещё может положить временный файл,
+    // пока каталог сносится: без повтора уборка изредка падает на ENOTEMPTY.
+    await rm(leaseDirectory, { recursive: true, force: true, maxRetries: 5, retryDelay: 20 });
   });
 
   const MEET = "https://meet.google.com/abc-defg-hij";

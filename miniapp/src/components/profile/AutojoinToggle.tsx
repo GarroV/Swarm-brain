@@ -8,8 +8,9 @@ import { useDt } from "@/components/roy/nav";
  * Автозапуск бота по календарю (D021): рядом с подключением календаря, по умолчанию выключен.
  * Включённый — бот scriba сам приходит на встречи Meet из календаря человека. Выключение действует
  * со следующего опроса службы (до минуты) и гасит уже заведённые, но не забранные задания.
+ * bare — без верхней черты: переключатель стоит своей плиткой (SettingsDesk), а не под календарём.
  */
-export function AutojoinToggle() {
+export function AutojoinToggle({ bare = false }: { bare?: boolean } = {}) {
   const dt = useDt();
   const [enabled, setEnabled] = useState<boolean | null>(null);
   const [busy, setBusy] = useState(false);
@@ -41,7 +42,7 @@ export function AutojoinToggle() {
   const label = dt("Бот сам приходит на мои встречи", "The bot joins my meetings on its own");
 
   return (
-    <div className="space-y-1 border-t border-line pt-3">
+    <div className={bare ? "space-y-1" : "space-y-1 border-t border-line pt-3"}>
       <div className="flex items-center justify-between gap-3">
         <span id="autojoin-label" className="text-sm text-ink">{label}</span>
         {enabled === null

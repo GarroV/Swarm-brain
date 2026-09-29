@@ -20,8 +20,8 @@ import {
 } from "@/lib/api";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
-import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectSeparator, SelectTrigger } from "@/components/ui/select";
-import { PropertyPill, PropertyPillBody, propertyPillSelectCls } from "@/components/ui/PropertyPill";
+import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select";
+import { PILL_GROUP_CLS, pillSegmentCls, pillSegmentSelectCls, PropertyPillBody, propertyPillSelectCls } from "@/components/ui/PropertyPill";
 import { useConfirm } from "@/components/ui/confirm";
 import { RoyIcon, type RoyIconName } from "@/components/roy/icons";
 import { TaskComments } from "@/components/tasks/TaskComments";
@@ -325,8 +325,15 @@ export function TaskModal({ task: taskProp, open, onClose, onSaved, prefill, mee
       ? (() => { const o = recurOptions.find((x) => x.freq === recurFreq); return o ? dt(o.ru, o.en) : "—"; })()
       : "—";
 
-  // Подпись чипа проекта; null — проект не выбран (пунктирный чип).
-  const projectLabel = !selProject || selProject === NONE ? null : (projects.find((p) => p.id === selProject)?.name ?? null);
+  // Пилюля «проект › подпроект»: из одного выбранного id (задача живёт либо в проекте, либо в
+  // подпроекте) достаём оба уровня. Имена — по ПОЛНОМУ списку: задача может лежать в чужом
+  // проекте, которого нет среди своих пунктов выбора (buildProjectOptions).
+  const selRow = !selProject || selProject === NONE ? null : (projects.find((p) => p.id === selProject) ?? null);
+  const topProjectId = selRow ? (selRow.parent_id ?? selRow.id) : null;
+  const subProjectId = selRow?.parent_id ? selRow.id : null;
+  const topProjectName = topProjectId ? (projects.find((p) => p.id === topProjectId)?.name ?? null) : null;
+  const subProjectName = subProjectId ? (selRow?.name ?? null) : null;
+  const subsOfTop = topProjectId ? projectOptions.subs.filter((o) => o.parentId === topProjectId) : [];
 
   // Текущий снапшот формы (для сравнения с сохранённым) — те же ключи, что в useEffect open.
   const formSnapshot = () =>
@@ -569,7 +576,7 @@ export function TaskModal({ task: taskProp, open, onClose, onSaved, prefill, mee
               <div className="flex flex-wrap items-center gap-1.5">
                 {/* Статус — сегмент из трёх, текущий подсвечен и подписан (макет 28.09.2026). */}
                 {isEdit && (
-                  <span role="group" aria-label={dt("Статус", "Status")} className="inline-flex items-center gap-0.5 rounded-full border border-line-2 bg-surface p-0.5">
+                  <span role="group" aria-label={dt("Статус", "Status")} className={PILL_GROUP_CLS}>
                     {STATUSES.map((s) => {
                       const on = s.id === status;
                       return (
@@ -580,7 +587,7 @@ export function TaskModal({ task: taskProp, open, onClose, onSaved, prefill, mee
                           aria-label={dt(s.label, s.en)}
                           aria-pressed={on}
                           title={dt(s.label, s.en)}
-                          className={`inline-flex min-h-9 items-center justify-center gap-1.5 rounded-full px-2.5 font-semibold transition-colors active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] sm:min-h-[24px] ${on ? "bg-accent-soft text-accent-ink" : "text-ink-mute hover:bg-surface-2 hover:text-ink"}`}
+                          className={pillSegmentCls(on)}
                           style={{ fontSize: 12.5 }}
                         >
                           {s.icon === "circle" ? (
@@ -595,71 +602,86 @@ export function TaskModal({ task: taskProp, open, onClose, onSaved, prefill, mee
                   </span>
                 )}
 
-                <DatePicker
-                  variant="pill"
-                  value={dueDate}
-                  // Сняли срок — цикличность гаснет вместе с ним: без срока считать следующее
-                  // вхождение не от чего, а тихо оставленная частота молча перестала бы работать.
-                  onChange={(iso) => { setDueDate(iso); if (!iso) setRecurFreq(null); }}
-                  ariaLabel={dt("Срок", "Due date")}
-                  clearLabel={dt("Убрать срок", "Clear due date")}
-                />
-
-                <DatePicker
-                  variant="pill"
-                  value={remindDate}
-                  onChange={(iso) => { setRemindDate(iso); setRemindedAt(null); }}
-                  icon="bell"
-                  ariaLabel={dt("Пинг", "Ping")}
-                  clearLabel={dt("Убрать пинг", "Clear ping")}
-                />
-
-                {/* Цикличность. Подписи вариантов считаются от срока («По средам», «26-го числа»)
-                    — день недели и число отдельно не хранятся, это и есть срок задачи. Без срока
-                    чип выключен и в подсказке говорит почему. Варианты — чипами под рядом. */}
-                <PropertyPill
-                  icon="repeat"
-                  label={dt("Повтор", "Repeat")}
-                  value={recurFreq ? recurValueLabel : null}
-                  disabled={!recurOptions}
-                  expanded={recurOpen}
-                  title={!recurOptions ? `${dt("Повтор", "Repeat")}: ${recurValueLabel}` : undefined}
-                  onClick={() => setRecurOpen((o) => !o)}
-                />
-
-                <Select value={selProject ?? NONE} onValueChange={(v) => setSelProject(v === NONE ? null : v)}>
-                  <SelectTrigger
-                    id="modal-project"
-                    title={dt("Проект", "Project")}
-                    className={propertyPillSelectCls(!!projectLabel)}
+                {/* Срок · пинг · повтор — одна пилюля по логике статуса (владелец 29.09.2026):
+                    пустой сегмент — бледный значок, заданный — заливка и значение, пилюля растёт
+                    ровно на то, что задано. Повтор считается от срока (день недели/число берутся из
+                    него), поэтому без срока сегмент выключен и в подсказке говорит почему; варианты
+                    частоты — чипами под рядом. */}
+                <span role="group" aria-label={dt("Сроки", "Dates")} className={PILL_GROUP_CLS}>
+                  <DatePicker
+                    variant="segment"
+                    value={dueDate}
+                    // Сняли срок — цикличность гаснет вместе с ним: без срока считать следующее
+                    // вхождение не от чего, а тихо оставленная частота молча перестала бы работать.
+                    onChange={(iso) => { setDueDate(iso); if (!iso) { setRecurFreq(null); setRecurOpen(false); } }}
+                    ariaLabel={dt("Срок", "Due date")}
+                    clearLabel={dt("Убрать срок", "Clear due date")}
+                  />
+                  <DatePicker
+                    variant="segment"
+                    value={remindDate}
+                    onChange={(iso) => { setRemindDate(iso); setRemindedAt(null); }}
+                    icon="bell"
+                    ariaLabel={dt("Пинг", "Ping")}
+                    clearLabel={dt("Убрать пинг", "Clear ping")}
+                  />
+                  <button
+                    type="button"
+                    disabled={!recurOptions}
+                    aria-expanded={recurOpen}
+                    aria-label={`${dt("Повтор", "Repeat")}: ${recurFreq ? recurValueLabel : recurOptions ? dt("не повторять", "never") : recurValueLabel}`}
+                    title={`${dt("Повтор", "Repeat")}: ${recurFreq ? recurValueLabel : recurOptions ? dt("не повторять", "never") : recurValueLabel}`}
+                    onClick={() => setRecurOpen((o) => !o)}
+                    className={pillSegmentCls(!!recurFreq)}
                   >
-                    {/* Подпись считаем САМИ (base-ui Value в этой версии рисует сырое значение/UUID). */}
-                    <PropertyPillBody icon="board" label={dt("Проект", "Project")} value={projectLabel} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value={NONE}>—</SelectItem>
-                    {projectOptions.tops.length > 0 && (
-                      <SelectGroup>
-                        <SelectLabel>{dt("Проекты", "Projects")}</SelectLabel>
-                        {projectOptions.tops.map((o) => (
+                    <RoyIcon name="repeat" size={14} strokeWidth={2} />
+                    {recurFreq && <span className="whitespace-nowrap" style={{ fontSize: 12.5 }}>{recurValueLabel}</span>}
+                  </button>
+                </span>
+
+                {/* Проект › подпроект — сегментная пилюля (владелец 29.09.2026: «чтобы это
+                    отображалось и при нажатии можно было перекинуть задачу из проекта в проект или из
+                    подпроекта в подпроект»). Первый сегмент — проект: смена переносит задачу в корень
+                    другого проекта. Второй — подпроект ЭТОГО проекта; виден, когда их есть из чего
+                    выбрать или задача уже в подпроекте. */}
+                <span role="group" aria-label={dt("Проект", "Project")} className={PILL_GROUP_CLS}>
+                  <Select value={topProjectId ?? NONE} onValueChange={(v) => setSelProject(!v || v === NONE ? null : v)}>
+                    <SelectTrigger
+                      id="modal-project"
+                      title={topProjectName ? `${dt("Проект", "Project")}: ${topProjectName}` : dt("Проект", "Project")}
+                      aria-label={topProjectName ? `${dt("Проект", "Project")}: ${topProjectName}` : dt("Проект", "Project")}
+                      className={pillSegmentSelectCls(!!topProjectName)}
+                    >
+                      {/* Подпись считаем САМИ (base-ui Value в этой версии рисует сырое значение/UUID). */}
+                      <RoyIcon name="board" size={14} strokeWidth={2} />
+                      {topProjectName && <span className="truncate" style={{ fontSize: 12.5 }}>{topProjectName}</span>}
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={NONE}>{dt("Без проекта", "No project")}</SelectItem>
+                      {projectOptions.tops.map((o) => (
+                        <SelectItem key={o.id} value={o.id}>{o.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {topProjectId && (subsOfTop.length > 0 || subProjectId) && (
+                    <Select value={subProjectId ?? NONE} onValueChange={(v) => setSelProject(!v || v === NONE ? topProjectId : v)}>
+                      <SelectTrigger
+                        title={subProjectName ? `${dt("Подпроект", "Subproject")}: ${subProjectName}` : dt("Подпроект", "Subproject")}
+                        aria-label={subProjectName ? `${dt("Подпроект", "Subproject")}: ${subProjectName}` : dt("Подпроект", "Subproject")}
+                        className={pillSegmentSelectCls(!!subProjectName)}
+                      >
+                        <RoyIcon name="cright" size={13} strokeWidth={2} />
+                        {subProjectName && <span className="truncate" style={{ fontSize: 12.5 }}>{subProjectName}</span>}
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value={NONE}>{dt("Без подпроекта", "No subproject")}</SelectItem>
+                        {subsOfTop.map((o) => (
                           <SelectItem key={o.id} value={o.id}>{o.name}</SelectItem>
                         ))}
-                      </SelectGroup>
-                    )}
-                    {projectOptions.tops.length > 0 && projectOptions.subs.length > 0 && <SelectSeparator />}
-                    {projectOptions.subs.length > 0 && (
-                      <SelectGroup>
-                        <SelectLabel>{dt("Подпроекты", "Subprojects")}</SelectLabel>
-                        {projectOptions.subs.map((o) => (
-                          <SelectItem key={o.id} value={o.id}>
-                            {/* Группа в подписи обязательна: «Маркетинг» на проде существует дважды. */}
-                            <span className="text-ink-mute">{o.parentName} › </span>{o.name}
-                          </SelectItem>
-                        ))}
-                      </SelectGroup>
-                    )}
-                  </SelectContent>
-                </Select>
+                      </SelectContent>
+                    </Select>
+                  )}
+                </span>
 
                 {/* Выбор страны — контекстное меню: чип-триггер + портал-поповер с сеткой флагов. */}
                 <CountryPopover
