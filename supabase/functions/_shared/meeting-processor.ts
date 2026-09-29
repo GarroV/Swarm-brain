@@ -679,7 +679,9 @@ export async function loadMeetingTextForModel(
   const transcriptText = segments.map((s) => `${s.speaker ?? ""}: ${s.text}`).join("\n").slice(0, 100000);
   if (!transcriptText.trim()) return null;
   const ownerName = await resolveOwnerName(supabase, micOwnerId(row?.claim_owner ?? null, row?.recorders ?? null));
-  return `Встреча: ${row?.title ?? "без названия"}\n\n${speakerLegend(ownerName, labelsOf(segments))}\n${transcriptText}`;
+  return `Встреча: ${row?.title ?? "без названия"}\n\n${
+    speakerLegend(ownerName, labelsOf(segments))
+  }\n${transcriptText}`;
 }
 
 // Та же сводка, но БЕЗ записи в базу — «сухой прогон». Отделено от resummarizeFromTranscript,
