@@ -20,6 +20,9 @@ export type ProjectOption = {
   name: string;
   /** null у верхнего проекта; имя группы у подпроекта (различает одноимённые «Маркетинг»). */
   parentName: string | null;
+  /** id группы у подпроекта (null у верхнего): второй сегмент пилюли «проект › подпроект»
+   *  показывает только подпроекты выбранного проекта. */
+  parentId: string | null;
 };
 
 export type ProjectPickerOptions = { tops: ProjectOption[]; subs: ProjectOption[] };
@@ -46,6 +49,7 @@ export function buildProjectOptions(
     id: p.id,
     name: p.name,
     parentName: p.parent_id ? (byId.get(p.parent_id)?.name ?? "…") : null,
+    parentId: p.parent_id ?? null,
   });
 
   return {

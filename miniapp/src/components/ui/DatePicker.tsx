@@ -5,7 +5,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { RoyIcon, type RoyIconName } from "@/components/roy/icons";
-import { propertyPillCls, PropertyPillBody } from "@/components/ui/PropertyPill";
+import { pillSegmentCls, propertyPillCls, PropertyPillBody } from "@/components/ui/PropertyPill";
 import { MONTHS, WEEKDAYS, parseISO, toISO, fmtFull, fmtShort, addMonths, buildGrid } from "@/lib/calendar";
 
 // Подпись даты в триггере: «12 августа 2026» (общий формат — lib/calendar).
@@ -22,7 +22,7 @@ type Props = {
    *  «compact» — только иконка, для быстрых действий в строке задачи;
    *  «pill» — чип свойства «значок · дата» (карточка задачи); без даты — пунктир с названием.
    */
-  variant?: "field" | "compact" | "pill";
+  variant?: "field" | "compact" | "pill" | "segment";
   /** Иконка триггера: «cal» — срок (по умолчанию), «bell» — пинг (напоминание). */
   icon?: RoyIconName;
   /** Название свойства: подпись для скринридера, а в виде «pill» — ещё и подпись пустого чипа. */
@@ -36,6 +36,8 @@ const POPOVER_W = 264, POPOVER_H = 340;
 export function DatePicker({ value, onChange, className = "", placeholder = "Выбрать дату", variant = "field", icon = "cal", ariaLabel = "Срок", clearLabel = "Убрать срок" }: Props) {
   const isCompact = variant === "compact";
   const isPill = variant === "pill";
+  // Сегмент сегментной пилюли (PILL_GROUP_CLS): пусто — один значок, задано — значок и дата.
+  const isSegment = variant === "segment";
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
   const btnRef = useRef<HTMLButtonElement>(null);
@@ -94,16 +96,21 @@ export function DatePicker({ value, onChange, className = "", placeholder = "В�
         type="button"
         aria-haspopup="dialog"
         aria-expanded={open}
-        aria-label={variant === "compact" ? ariaLabel : undefined}
-        title={isPill ? (label ? `${ariaLabel}: ${label}` : ariaLabel) : undefined}
+        aria-label={isCompact ? ariaLabel : isSegment ? (label ? `${ariaLabel}: ${label}` : ariaLabel) : undefined}
+        title={isPill || isSegment ? (label ? `${ariaLabel}: ${label}` : ariaLabel) : undefined}
         // stopPropagation — чтобы клик не «всплыл» как тап по строке задачи (открытие карточки)
         // и не съелся как старт свайпа (SwipeRow на мобайле). См. чекбокс TaskRow.
         onPointerDown={(e) => e.stopPropagation()}
         onClick={(e) => { e.stopPropagation(); setOpen((o) => !o); }}
-        className={isCompact ? className : isPill ? `${propertyPillCls(!!pillLabel)} ${className}` : `${className} flex items-center gap-2 text-left`}
+        className={isCompact ? className : isSegment ? `${pillSegmentCls(!!pillLabel)} ${className}` : isPill ? `${propertyPillCls(!!pillLabel)} ${className}` : `${className} flex items-center gap-2 text-left`}
         style={isCompact ? { color: value ? "var(--accent-ink)" : "var(--ink-soft)" } : undefined}
       >
-        {isPill ? (
+        {isSegment ? (
+          <>
+            <RoyIcon name={icon} size={14} strokeWidth={2} />
+            {pillLabel && <span className="whitespace-nowrap" style={{ fontSize: 12.5 }}>{pillLabel}</span>}
+          </>
+        ) : isPill ? (
           <PropertyPillBody icon={icon} label={ariaLabel} value={pillLabel} />
         ) : (
           <>
