@@ -70,3 +70,13 @@ Deno.test("expiring тоже требует внимания в сводке", (
   const list = buildConnectors(input({ recorder: { active: true, expiresAt: inDays(3) } }));
   assertEquals(connectorsSummary(list).attention, 1);
 });
+
+Deno.test("бот: автозапуск включён → connected, выключен → off", () => {
+  assertEquals(stateOf(input({ botAutojoin: true }), "bot"), "connected");
+  assertEquals(stateOf(input({ botAutojoin: false }), "bot"), "off");
+});
+
+// В демо бот не ходит: карточки нет вовсе, а не «выключен».
+Deno.test("бот: автозапуск не передан (демо) → карточки нет", () => {
+  assertEquals(buildConnectors(input()).some((c) => c.id === "bot"), false);
+});

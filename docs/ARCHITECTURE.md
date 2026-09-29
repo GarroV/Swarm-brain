@@ -1620,7 +1620,7 @@ _Приглашение бота на созвон — `/meeting-invites` (D017,
 
 `invite` = `{ id, join_url, platform: meet|kontur|zoom, status: pending|taken|used|expired, created_at, expires_at, meeting_id }`.
 
-_Автозапуск бота по календарю — `/scriba/autojoin` (D021); код `swarm-api/autojoin.ts`. Флаг — `allowed_users.scriba_autojoin` самого человека (личность из авторизации, тело задаёт только `enabled`); веб — переключатель в панели Google-календаря профиля (`components/profile/AutojoinToggle.tsx`), виден при подключённом календаре и не в демо:_
+_Автозапуск бота по календарю — `/scriba/autojoin` (D021); код `swarm-api/autojoin.ts`. Флаг — `allowed_users.scriba_autojoin` самого человека (личность из авторизации, тело задаёт только `enabled`); веб — карточка «Бот встреч» в интеграциях настроек (`ConnectorsSection` → панель с `components/profile/AutojoinToggle.tsx`; без календаря — подсказка его подключить; в демо карточки нет):_
 
 | Метод | Путь | Что делает |
 |-------|------|-----------|

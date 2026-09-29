@@ -5,12 +5,13 @@ import { Toggle } from "@/components/ui/Toggle";
 import { useDt } from "@/components/roy/nav";
 
 /**
- * Автозапуск бота по календарю (D021): рядом с подключением календаря, по умолчанию выключен.
+ * Автозапуск бота по календарю (D021): панель карточки «Бот встреч» в интеграциях, по умолчанию
+ * выключен (карточкой, а не внутри календаря — владелец 30.09.2026: там переключатель не находили).
  * Включённый — бот scriba сам приходит на встречи Meet из календаря человека. Выключение действует
  * со следующего опроса службы (до минуты) и гасит уже заведённые, но не забранные задания.
- * bare — без верхней черты: переключатель стоит своей плиткой (SettingsDesk), а не под календарём.
+ * bare — без верхней черты (своя панель карточки «Бот встреч»); onChange — сохранённое значение наружу.
  */
-export function AutojoinToggle({ bare = false }: { bare?: boolean } = {}) {
+export function AutojoinToggle({ bare = false, onChange }: { bare?: boolean; onChange?: (on: boolean) => void } = {}) {
   const dt = useDt();
   const [enabled, setEnabled] = useState<boolean | null>(null);
   const [busy, setBusy] = useState(false);
@@ -30,7 +31,9 @@ export function AutojoinToggle({ bare = false }: { bare?: boolean } = {}) {
     setBusy(true);
     setError(null);
     try {
-      setEnabled(await setAutojoin(!enabled));
+      const saved = await setAutojoin(!enabled);
+      setEnabled(saved);
+      onChange?.(saved);
     } catch (e) {
       const body = e instanceof ApiError ? (e.body as { error?: string; error_ru?: string } | null) : null;
       setError(dt(body?.error_ru ?? "Не удалось сохранить, повторите", body?.error ?? "Could not save, try again"));
