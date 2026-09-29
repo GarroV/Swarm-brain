@@ -21,6 +21,23 @@ export const propertyPillCls = (filled: boolean) =>
     ? "border-line-2 bg-surface text-ink hover:bg-surface-2"
     : "border-dashed border-line-2 bg-transparent text-ink-mute hover:bg-surface-2 hover:text-ink-soft"}`;
 
+// Сегментная пилюля — одна рамка, внутри кнопки-сегменты (статус; срок · пинг · повтор).
+// Пустой сегмент — только бледный значок, заданный — заливка и значение рядом со значком:
+// пилюля «расширяется» ровно на то, что задано (владелец 29.09.2026: «чтобы новые секции
+// как бы расширяли пилюлю»). Высота как у чипа: 40px на телефоне, 30px с `sm`.
+export const PILL_GROUP_CLS =
+  "inline-flex max-w-full items-center gap-0.5 rounded-full border border-line-2 bg-surface p-0.5";
+
+export const pillSegmentCls = (on: boolean) =>
+  `inline-flex min-h-9 min-w-9 items-center justify-center gap-1.5 rounded-full px-2.5 font-semibold transition-colors active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] disabled:cursor-not-allowed disabled:opacity-45 disabled:active:scale-100 sm:min-h-[24px] sm:min-w-0 ${on
+    ? "bg-accent-soft text-accent-ink"
+    : "text-ink-mute enabled:hover:bg-surface-2 enabled:hover:text-ink"}`;
+
+// Сегмент-триггер кастомного Select внутри сегментной пилюли: гасим рамку, высоту, шеврон и
+// тёмную подсветку базы SelectTrigger — вид тот же, что у кнопок-сегментов.
+export const pillSegmentSelectCls = (on: boolean) =>
+  `${pillSegmentCls(on)} w-auto max-w-[220px] border-0 py-0 text-sm shadow-none data-[size=default]:h-auto ${on ? "dark:bg-accent-soft dark:hover:bg-accent-soft" : "dark:bg-transparent dark:hover:bg-surface-2"} [&>*:last-child]:hidden`;
+
 // Для триггера кастомного Select: гасим его собственные фон/высоту/шеврон (база SelectTrigger
 // ставит `dark:bg-input/30` и фиксированную высоту — в тёмной теме чип стоял бы подсвеченным).
 export const propertyPillSelectCls = (filled: boolean) =>
@@ -35,34 +52,5 @@ export function PropertyPillBody({ icon, label, value }: { icon: RoyIconName; la
       {value != null && <span className="sr-only">{label}: </span>}
       <span className="min-w-0 max-w-[200px] truncate" style={{ fontSize: 12.5 }}>{value ?? label}</span>
     </>
-  );
-}
-
-type PropertyPillProps = {
-  icon: RoyIconName;
-  /** Название свойства — подсказка и подпись для скринридера. */
-  label: string;
-  /** Значение; пустое (null) — чип рисуется пунктиром с названием свойства. */
-  value: ReactNode | null;
-  disabled?: boolean;
-  onClick?: () => void;
-  expanded?: boolean;
-  title?: string;
-};
-
-/** Готовый чип для свойств, у которых нет своего триггера-компонента. */
-export function PropertyPill({ icon, label, value, disabled = false, onClick, expanded, title }: PropertyPillProps) {
-  const filled = value != null;
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={disabled}
-      aria-expanded={expanded}
-      title={title ?? label}
-      className={propertyPillCls(filled)}
-    >
-      <PropertyPillBody icon={icon} label={label} value={value} />
-    </button>
   );
 }
