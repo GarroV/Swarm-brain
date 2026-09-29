@@ -658,14 +658,13 @@ export async function resummarizeFromTranscript(
   return tezisi;
 }
 
-// Та же сводка, но БЕЗ записи в базу — «сухой прогон». Отделено от resummarizeFromTranscript,
-// чтобы промпт можно было проверить на реальной встрече, не затирая ни авто-тезисы, ни правки
-// человека (у половины встреч стоит notes_edited_at — там перезапись уничтожила бы его работу).
-export async function buildTezisyFromTranscript(
+// Текст встречи для модели из сохранённого транскрипта: название, легенда говорящих и реплики.
+// Общий для тезисов и точечного вопроса по встрече (`meeting-ask.ts`) — модель видит одно и то же.
+// null — транскрипта нет или он пуст.
+export async function loadMeetingTextForModel(
   supabase: SupabaseClient,
   meetingId: string,
-  note = "",
-): Promise<string> {
+): Promise<string | null> {
   const { data } = await supabase.from("meetings").select("id, title, transcript, recorders, claim_owner").eq(
     "id",
     meetingId,
@@ -678,17 +677,27 @@ export async function buildTezisyFromTranscript(
   } | null;
   const segments = row?.transcript?.segments ?? [];
   const transcriptText = segments.map((s) => `${s.speaker ?? ""}: ${s.text}`).join("\n").slice(0, 100000);
-  if (!transcriptText.trim()) return NO_TEZISY_NOTE;
+  if (!transcriptText.trim()) return null;
   const ownerName = await resolveOwnerName(supabase, micOwnerId(row?.claim_owner ?? null, row?.recorders ?? null));
+  return `Встреча: ${row?.title ?? "без названия"}\n\n${speakerLegend(ownerName, labelsOf(segments))}\n${transcriptText}`;
+}
+
+// Та же сводка, но БЕЗ записи в базу — «сухой прогон». Отделено от resummarizeFromTranscript,
+// чтобы промпт можно было проверить на реальной встрече, не затирая ни авто-тезисы, ни правки
+// человека (у половины встреч стоит notes_edited_at — там перезапись уничтожила бы его работу).
+export async function buildTezisyFromTranscript(
+  supabase: SupabaseClient,
+  meetingId: string,
+  note = "",
+): Promise<string> {
+  const meetingText = await loadMeetingTextForModel(supabase, meetingId);
+  if (meetingText === null) return NO_TEZISY_NOTE;
   // Пожелание пользователя к этой переработке (из кнопки «Переработать»: короче/подробнее/акцент/…) —
   // добавляем в конец user-сообщения как приоритетную инструкцию поверх общего промпта.
   // Текст встречи — в маркерах как недоверенные данные, пожелание — после них (issue #458).
   const raw = (await chatComplete(
     TEZIS_SYSTEM,
-    buildTezisyUserMessage(
-      `Встреча: ${row?.title ?? "без названия"}\n\n${speakerLegend(ownerName, labelsOf(segments))}\n${transcriptText}`,
-      note,
-    ),
+    buildTezisyUserMessage(meetingText, note),
     { temperature: 0.3 },
   )).trim();
   // Пустой ответ модели — не затираем существующие тезисы пустой строкой и не метим done;
