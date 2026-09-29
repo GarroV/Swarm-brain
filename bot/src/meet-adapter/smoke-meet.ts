@@ -276,6 +276,14 @@ async function sceneInCall(browser: Browser): Promise<void> {
   equals(browser.contexts().length, 0, "вкладка и контекст освобождены");
 }
 
+async function sceneSpeakerClasses(browser: Browser): Promise<void> {
+  console.log("\n──── в звонке, вёрстка без data-audio-level: говорящий по классам индикатора (D034)");
+  const scene = await openScene(browser, "in-call-speaking-classes.html");
+  equals(await scene.adapter.waitAdmitted(2500), "admitted", "впустили");
+  equals(await scene.adapter.activeSpeaker(), "Василий Гарро", "имя говорящего по классу индикатора");
+  await scene.adapter.leave();
+}
+
 async function sceneAlone(browser: Browser): Promise<void> {
   console.log("\n──── один в звонке: сторож дожидается порога и выходит");
   const scene = await openScene(browser, "in-call-alone.html");
@@ -384,6 +392,7 @@ async function main(): Promise<void> {
     await sceneDoor(browser, "unavailable.html", "unavailable");
     await sceneDoor(browser, "captcha.html", "captcha");
     await sceneInCall(browser);
+    await sceneSpeakerClasses(browser);
     await sceneAlone(browser);
     await sceneNoSignal(browser);
     await sceneAccount(browser);
