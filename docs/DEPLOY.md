@@ -196,6 +196,26 @@ make unfreeze          # снять раньше срока; по сроку р�
 
 ---
 
+## Боевой бот scriba (с 29.09.2026)
+
+Бот — это оркестратор на MUSPELHEIM (compose-проект `scriba-prod`, папка `C:\projects\scriba-prod`),
+который ходит в прод-функции своим токеном и поднимает контейнер на каждую встречу. Мёрж в `main`
+его не обновляет: код бота едет пересборкой на сервере.
+
+| Команда (с Мака) | Что делает |
+|---|---|
+| `SCRIBA_WORKSPACE=<id> ACTIVITY_CHECKED=1 SCRIBA_PRS="<номера>" scripts/scriba-prod.sh rollout` | Вся раскатка: PR → `main`, функции (`deploy-functions.yml`), клон `main` на сервере, токен бота, оркестратор. Только в окно 23:00–06:59 (`FORCE=1` — осознанный обход) |
+| `scripts/scriba-prod.sh up` | Обновить бота до `origin/main` и перезапустить (раскатка кода бота) |
+| `scripts/scriba-prod.sh status` / `logs` / `down` | Состояние, журнал, погасить (токен и вход бота остаются) |
+
+- **Токен бота не покидает сервер:** `stand.ps1 token-hash` рождает его в `state\bot.token` (права
+  только владельцу машины и SYSTEM) и отдаёт наружу sha256. Хеш пишет в `service_agents` кнопка
+  `scriba-agent-token.yml`; повторный запуск с новым хешем — ротация, старый токен гаснет сразу.
+- **`ACTIVITY_CHECKED=1` — подпись человека,** что в проде никто не пишет и ничего не
+  обрабатывается: из CI это не проверить (решение 2026-08-28). Без неё rollout не делает ничего.
+- **Вход аккаунта** берётся у окна входа (`C:\projects\scriba-login\state\account`,
+  `scripts/scriba-login.sh`); без него rollout отказывает — гостем в боевые встречи бот не идёт.
+
 ## Команды (`make help`)
 - `make smoke-staging` / `make smoke-prod` — смоук edge-функций (`scripts/smoke.sh`, один и тот же набор проверок для любого контура).
 - `make staging-sync-functions` — tar `supabase/functions` → scp на MUSPELHEIM → распаковка в `volumes/functions/` → рестарт `supabase-edge-functions`.
