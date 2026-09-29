@@ -224,9 +224,12 @@ export function collectMeetSnapshot(css: SnapshotCss): MeetSnapshot {
   }
 
   // ЖИВАЯ капча — видимый iframe размером с задачу. Невидимый reCAPTCHA грузится на каждом
-  // обычном входе, и считать его капчей значит объявить капчу на любой встрече.
+  // обычном входе, и считать его капчей значит объявить капчу на любой встрече. Под аккаунтом
+  // Meet показывает его значком 256×60 (`size=invisible` в адресе) — видимым и крупнее порога:
+  // живой вход 29.09.2026 бот бросил с «captcha», стоя у двери перед «Ask to join».
   const isCaptchaChallenge = [...document.querySelectorAll('iframe[src*="recaptcha"]')].some(
     (frame) => {
+      if ((frame.getAttribute("src") ?? "").includes("size=invisible")) return false;
       if (!isVisible(frame)) return false;
       const rect = frame.getBoundingClientRect();
       return rect.width >= CAPTCHA_MIN_WIDTH && rect.height >= CAPTCHA_MIN_HEIGHT;
