@@ -7,12 +7,14 @@
  * функции, проверенные тестами.
  *
  * Правила выбора селекторов, а не просто список:
- *  - только семантика: `role`, `aria-label`, data-атрибуты Meet (`data-participant-id`,
- *    `data-self-name`, `data-audio-level`). Обфусцированные классы Meet (`Oaajhc`, `HX2H7`
- *    и родня) не используются вовсе: они меняются с релизом молча, и построенное на них
- *    определение говорящего у Vexa (Apache-2.0) уже давало «вся встреча — один человек».
- *    Единственный класс в списке — стандартный маркер `notranslate` (его смысл задаёт
- *    Google Translate, а не тема оформления), и он стоит последним.
+ *  - семантика прежде всего: `role`, `aria-label`, data-атрибуты Meet (`data-participant-id`,
+ *    `data-self-name`, `data-audio-level`). Обфусцированные классы Meet меняются с релизом
+ *    молча (у Vexa, Apache-2.0, построенное на них давало «вся встреча — один человек»),
+ *    поэтому они — только там, где семантики нет. Исключение одно, решение D034: сигнал
+ *    говорящего. `data-audio-level` Meet больше не отдаёт (живой звонок 29.09.2026), и
+ *    индикатор звука на плитке читается по классам (`SPEAKER_*` ниже). Незнакомый набор
+ *    классов — «сигнала нет», а не речь и не тишина: имя наугад не подставится.
+ *    Ещё один класс — стандартный маркер `notranslate` (его смысл задаёт Google Translate).
  *  - локаль запиннена (`?hl=en` + `--lang=en-US`), поэтому английские тексты — не удача,
  *    а конструкция; структурные селекторы всё равно идут первыми.
  *  - «не нашли» — это `null`, а не догадка: имя не выдумывается никогда.
@@ -40,6 +42,7 @@ interface DomElement {
   querySelectorAll(selector: string): Iterable<DomElement>;
   getBoundingClientRect(): DomRect;
   readonly textContent: string | null;
+  readonly classList: { contains(token: string): boolean };
 }
 declare const document: {
   readonly body: { readonly innerText: string } | null;
@@ -196,15 +199,28 @@ export function collectMeetSnapshot(css: SnapshotCss): MeetSnapshot {
     return translated?.textContent ?? null;
   };
 
+  // Индикатор звука на плитке и его классы (D034, замер на живом звонке 29.09.2026).
+  const SPEAKER_INDICATOR_SELECTOR = ".IisKdb";
+  const SPEAKER_SILENT_CLASS = "gjg47c";
+  const SPEAKER_TALKING_CLASSES = ["Oaajhc", "HX2H7", "wEsLMd", "OgVli"];
+
   // eslint-disable-next-line unicorn/consistent-function-scoping -- функция едет в браузер
   const audioLevelOfTile = (tile: DomElement): number | null => {
     const holder = tile.matches("[data-audio-level]")
       ? tile
       : tile.querySelector("[data-audio-level]");
     const raw = holder?.getAttribute("data-audio-level");
-    if (raw == null) return null;
-    const level = Number(raw);
-    return Number.isFinite(level) ? level : null;
+    if (raw != null) {
+      const level = Number(raw);
+      return Number.isFinite(level) ? level : null;
+    }
+    // Индикатор звука плитки (D034): класс молчания или один из классов уровня речи. Иной
+    // набор — вёрстка сменилась, сигнала нет.
+    const indicator = tile.querySelector(SPEAKER_INDICATOR_SELECTOR);
+    if (indicator === null) return null;
+    if (SPEAKER_TALKING_CLASSES.some((name) => indicator.classList.contains(name))) return 1;
+    if (indicator.classList.contains(SPEAKER_SILENT_CLASS)) return 0;
+    return null;
   };
 
   const tiles = [...document.querySelectorAll("[data-participant-id]")].map((tile, index) => ({
