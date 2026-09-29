@@ -515,7 +515,8 @@ export function AccountSection() {
 
 // ── Google Calendar section ────────────────────────────────────────────────────
 
-export function GoogleCalendarSection({ isDemo }: { isDemo: boolean }) {
+/** withAutojoin=false — переключатель автозапуска живёт своей плиткой (десктоп, SettingsDesk). */
+export function GoogleCalendarSection({ isDemo, withAutojoin = true }: { isDemo: boolean; withAutojoin?: boolean }) {
   const confirm = useConfirm();
   const [connected, setConnected] = useState<boolean | null>(null);
   useEffect(() => {
@@ -549,7 +550,7 @@ export function GoogleCalendarSection({ isDemo }: { isDemo: boolean }) {
         <Button onClick={connect}>Подключить Google-календарь</Button>
       )}
       {/* Автозапуск бота (D021) — только при подключённом календаре: бот ходит по нему. В демо нет. */}
-      {connected && !isDemo && <AutojoinToggle />}
+      {connected && !isDemo && withAutojoin && <AutojoinToggle />}
     </div>
   );
 }
