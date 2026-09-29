@@ -175,6 +175,16 @@ async function sceneSignedIn(browser: Browser, storageStatePath: string): Promis
   equals(browser.contexts().length, 0, "контекст закрыт после leave");
 }
 
+async function sceneSignedInSlow(browser: Browser, storageStatePath: string): Promise<void> {
+  console.log("\n──── под аккаунтом, лобби дорисовывает «Ask to join» через 2,5 с — бот дожидается и стучится");
+  const scene = await openScene(browser, "lobby-signed-in-slow.html", { storageStatePath });
+  check(
+    scene.log.some((line) => line.includes("клик: войти")),
+    "в дверь постучались, хотя кнопка появилась позже загрузки",
+  );
+  await scene.adapter.leave();
+}
+
 async function sceneSignedOut(
   browser: Browser,
   what: string,
@@ -201,6 +211,7 @@ async function sceneAccount(browser: Browser): Promise<void> {
   const signIn = await fakeSignIn();
   try {
     await sceneSignedIn(browser, signIn.file);
+    await sceneSignedInSlow(browser, signIn.file);
     const signedIn = { storageStatePath: signIn.file };
     await sceneSignedOut(
       browser,

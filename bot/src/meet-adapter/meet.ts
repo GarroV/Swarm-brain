@@ -38,12 +38,19 @@ const MEET_BROWSER_LANG = "en-US";
 const DEFAULT_POLL_INTERVAL_MS = 1000;
 const NAVIGATION_TIMEOUT_MS = 60_000;
 const CONTROL_TIMEOUT_MS = 5000;
+// Сколько ждать, пока лобби дорисует кнопку входа. `domcontentloaded` наступает раньше: под
+// аккаунтом «Ask to join» появляется через 3–6 с (живой вход 29.09.2026), и бот, искавший её
+// сразу, не стучался вовсе, а потом стоял у двери, в которую никто не звал хоста.
+const LOBBY_READY_TIMEOUT_MS = 20_000;
+const LOBBY_READY_POLL_MS = 500;
 const TYPE_DELAY_MS = 60;
 
 export interface MeetAdapterDependencies {
   readonly browser: Browser;
   readonly log?: (message: string) => void;
   readonly pollIntervalMs?: number;
+  /** Сколько ждать, пока лобби дорисует кнопку входа; по умолчанию 20 с. */
+  readonly lobbyReadyTimeoutMs?: number;
   /**
    * Вызывается на свежем контексте до открытия вкладки. Смоук вешает сюда подмену
    * ответов `meet.google.com` страницами-двойниками — прод-путь при этом не меняется.
@@ -157,6 +164,24 @@ export class MeetAdapter implements PlatformAdapter {
     await nameInput.pressSequentially(displayName, { delay: TYPE_DELAY_MS });
   }
 
+  /**
+   * Ждёт, пока лобби готово к входу: видна кнопка входа или поле имени гостя. Раньше выходит, если
+   * страница уже сказала своё (отказ, капча, встречи нет, вход слетел) — это решит waitAdmitted.
+   */
+  async #waitForLobby(): Promise<void> {
+    const deadline = Date.now() + (this.#deps.lobbyReadyTimeoutMs ?? LOBBY_READY_TIMEOUT_MS);
+    for (;;) {
+      if ((await this.#findVisible([...JOIN_CTA_SELECTORS, ...NAME_INPUT_SELECTORS])) !== null) return;
+      const verdict = classifyAdmission(await this.#snapshot(), { isSignedIn: this.#isSignedIn });
+      if (verdict.state !== "waiting") return;
+      if (Date.now() >= deadline) {
+        this.#log(`лобби не дорисовалось за отведённое время: ${verdict.reason}`);
+        return;
+      }
+      await this.#requirePage().waitForTimeout(LOBBY_READY_POLL_MS);
+    }
+  }
+
   get #isSignedIn(): boolean {
     return this.#deps.storageStatePath !== undefined;
   }
@@ -184,6 +209,7 @@ export class MeetAdapter implements PlatformAdapter {
     );
 
     await this.#wakeUi();
+    await this.#waitForLobby();
     // Диалог «камеры и микрофона нет»: без него Meet не пускает дальше на машине без устройств.
     await this.#clickFirst(NO_DEVICE_CONTINUE_SELECTORS, "продолжить без устройств");
 

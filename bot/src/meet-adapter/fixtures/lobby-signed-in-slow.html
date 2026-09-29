@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Meet - signed-in lobby</title>
+    <style>
+      body {
+        margin: 0;
+        font-family: sans-serif;
+        background: #ffffff;
+      }
+      main {
+        padding: 24px;
+      }
+      button {
+        font-size: 14px;
+        padding: 8px 16px;
+      }
+      .controls {
+        display: flex;
+        gap: 8px;
+        margin: 16px 0;
+      }
+    </style>
+  </head>
+  <body>
+    <!-- Лобби под аккаунтом, кнопка входа появляется через 2,5 с после загрузки (живой вход 29.09.2026). -->
+    <main>
+      <h1>Ready to join?</h1>
+      <p>Scriba Notetaker</p>
+      <p>bot-account@example.com</p>
+      <a href="#">Switch account</a>
+      <div class="controls">
+        <button aria-label="Turn off microphone"><span>Mic</span></button>
+        <button aria-label="Turn off camera"><span>Camera</span></button>
+      </div>
+    </main>
+    <script>
+      // Кнопка входа дорисовывается позже загрузки документа, как на живом Meet под аккаунтом.
+      setTimeout(() => {
+        const button = document.createElement("button");
+        button.setAttribute("aria-label", "Ask to join");
+        button.innerHTML = "<span>Ask to join</span>";
+        document.querySelector("main").append(button);
+      }, 2500);
+    </script>
+    <!-- Значок невидимого reCAPTCHA, как на живом лобби под аккаунтом (29.09.2026): видим,
+         256×60, но это не задача для человека — капчей считаться не должен. -->
+    <iframe
+      src="https://www.google.com/recaptcha/enterprise/anchor?ar=1&amp;hl=en&amp;size=invisible"
+      width="256"
+      height="60"
+      title="reCAPTCHA"
+    ></iframe>
+  </body>
+</html>
