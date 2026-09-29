@@ -13,6 +13,7 @@
 | Тайминги двери и число сигналов | `door` в обоих профилях | нет |
 | Максимальная длина встречи, срок пропуска | `maxMeetingMinutes` в обоих, `uploadTailMinutes` на сервере | нет |
 | Удар heartbeat и порог сторожа тишины | `heartbeatMs` (бот), `silentMinutes` (сервер) | нет |
+| Подсказка-глоссарий Whisper для записей бота | `whisperGlossaryHint` (сервер) | нет |
 | Окно автозапуска | `autojoin.leadMs/lateMs` в `_shared/bot-profile.ts` | нет |
 | Тексты уведомлений бота | `_shared/bot-notice-texts.ts` (`{bot}`, `{door_wait}`), тексты пропусков — `_shared/calendar-missed.ts` | нет |
 | Лимит одновременных встреч | `SCRIBA_MAX_MEETINGS` в `bot/` | нет |

@@ -1031,6 +1031,7 @@ orchestrator](furca/blocks/orchestrator.md).
 | Дверь: ждать, повтор, сигналов | `door.waitMs/repeatMs/maxNotices` | `door.waitSeconds/repeatSeconds/maxAttempts` → `{door_wait}` | `_shared/notices.ts` (потолки базы, текст двери) |
 | Потолок длины встречи | `maxMeetingMinutes` | `maxMeetingMinutes` + `uploadTailMinutes` | `_shared/agent-grant.ts` (`GRANT_TTL_MS`) |
 | Удар heartbeat / порог тишины | `heartbeatMs` | `silentMinutes` | `swarm-bot/lib/recording-watchdog.ts`, `ghost-sweep.ts` |
+| Подсказка-глоссарий Whisper для записей бота (#620) | — | `whisperGlossaryHint` (выкл.) + `useGlossaryHint(source)` | `_shared/meeting-processor.ts` (`transcribeAudio`); рекордер — всегда с подсказкой |
 | Одиночество, шаг опроса | `aloneMs`, `pollMs` | — | — |
 | Окно автозапуска, колонка согласия | — | `autojoin.leadMs/lateMs/consentColumn` | `_shared/calendar-dispatch.ts`, `meeting-claim/index.ts` |
 
