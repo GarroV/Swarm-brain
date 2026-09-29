@@ -212,3 +212,12 @@ Deno.test("formatTaskLine: скрытая с хаба задача помече�
   const plain = formatTaskLine({ status: "open", title: "T", confirmed: true, hidden_from_hub: false });
   assert(!plain.includes("скрыта с хаба"), plain);
 });
+
+Deno.test("formatTaskLine: пинг виден, отправленный помечен (issue #622)", () => {
+  const waiting = formatTaskLine({ status: "open", title: "T", due_date: "2027-03-01", remind_date: "2026-12-01" });
+  assertStringIncludes(waiting, "дедлайн: 2027-03-01 | пинг: 2026-12-01");
+  assert(!waiting.includes("отправлен"), waiting);
+  const sent = formatTaskLine({ status: "open", title: "T", remind_date: "2026-12-01", reminded_at: "2026-12-01T08:00:00Z" });
+  assertStringIncludes(sent, "пинг: 2026-12-01 (отправлен)");
+  assert(!formatTaskLine({ status: "open", title: "T" }).includes("пинг"), "без пинга — ни слова");
+});

@@ -6,6 +6,7 @@ import { recurrencePatchFor, resolveRecurrence } from "../../_shared/tasks/recur
 import { commentDeleteDenial, validateCommentContent } from "../../_shared/tasks/comments.ts";
 import { canViewTask, taskAccessError } from "../../_shared/tasks/access.ts";
 import { subtaskLinkError } from "../../_shared/tasks/subtasks.ts";
+import { pingPatch } from "./ping.ts";
 import type { Task } from "../../_shared/tasks/types.ts";
 import { pickProjectByName, type ProjectNameRow } from "../../_shared/tasks/project-access.ts";
 import { listProjects } from "../../_shared/tasks/projects.ts";
@@ -194,6 +195,7 @@ export async function toolAddTask(args: {
   labels?: string[];
   project_name?: string;
   recur_freq?: string | null;
+  remind_date?: string;
   status?: string;
   confirmed?: boolean;
   parent_task_id?: string;
@@ -256,6 +258,12 @@ export async function toolAddTask(args: {
   const recur = resolveRecurrence(args.recur_freq, dueDate);
   if (!recur.ok) return `Ошибка: ${recur.error}`;
 
+  // Пинг (#622): отдельно от срока — «дедлайн 1 марта, напомнить 1 декабря».
+  const ping = args.remind_date !== undefined
+    ? pingPatch(args.remind_date, args.requesting_user_id ?? null)
+    : null;
+  if (ping && !ping.ok) return `Ошибка: ${ping.error}`;
+
   try {
     const task = await createTask({
       title: args.title,
@@ -291,6 +299,8 @@ export async function toolAddTask(args: {
       project_linked: parent ? !!project_id : undefined,
       recur_freq: recur.recur_freq,
       recur_anchor_dom: recur.recur_anchor_dom,
+      remind_date: ping?.ok ? ping.fields.remind_date : null,
+      remind_set_by: ping?.ok ? ping.fields.remind_set_by : null,
     }, groupId ?? undefined);
     // Уведомление «подтверди в боте» — только у задач, которые правда ждут вычитки. У задачи,
     // сразу попавшей на доску, подтверждать нечего, и гнать человека в бота незачем.
@@ -316,6 +326,7 @@ export async function toolUpdateTask(args: {
   labels?: string[];
   project_name?: string;
   recur_freq?: string | null;
+  remind_date?: string | null;
   parent_task_id?: string;
   hidden_from_hub?: boolean;
   requesting_user_id: number;
@@ -363,6 +374,13 @@ export async function toolUpdateTask(args: {
   if (args.description !== undefined) fields.description = args.description;
   if (args.country !== undefined) fields.country = args.country;
   if ("due_date" in args) fields.due_date = args.due_date ?? null;
+  // Пинг (#622), null — снять. Как в swarm-api: перенос взводит заново, ставящий — получатель,
+  // если у задачи нет исполнителя.
+  if ("remind_date" in args) {
+    const ping = pingPatch(args.remind_date, args.requesting_user_id);
+    if (!ping.ok) return `Ошибка: ${ping.error}`;
+    Object.assign(fields, ping.fields);
+  }
   if (args.status !== undefined) fields.status = args.status;
   if (args.task_role !== undefined) fields.task_role = args.task_role;
   // Скрыть задачу с публичной дорожной карты хаба (issue #562). Только настоящий boolean:
@@ -710,6 +728,7 @@ export const TASK_TOOL_DEFINITIONS = [
         labels: { type: "array", items: { type: "string" }, description: "Имена личных смарт-меток (папок). Задача с метками становится личной." },
         project_name: { type: "string", description: "Имя проекта или подпроекта доски (Проекты/SprintBoard) — без него задача на доску не попадёт, только в общий список. При неточном совпадении берётся ближайшее по имени; при отсутствии — предупреждение в ответе, задача всё равно создаётся." },
         recur_freq: { type: ["string", "null"], enum: ["daily", "weekly", "monthly", null], description: "Цикличность: задача не закрывается, а переносится на следующее вхождение (daily — каждый день, weekly — тот же день недели, monthly — то же число месяца). ТРЕБУЕТ due_date: день недели и число берутся из срока. null — снять цикличность." },
+        remind_date: { type: "string", description: "Пинг — день напоминания YYYY-MM-DD, отдельно от дедлайна («срок 1 марта, напомнить 1 декабря»). Бот пришлёт напоминание исполнителям в этот день, один раз." },
         status: { type: "string", enum: ["backlog", "open", "in_progress", "done", "cancelled"], description: "Колонка доски, куда положить задачу. По умолчанию open («Открыто»); backlog — колонка «Бэклог»." },
         parent_task_id: { type: "string", description: "id родительской задачи — создать ПОДЗАДАЧУ. Вложенность одна: родитель — задача верхнего уровня. Подзадача берёт проект, срок (если не задан) и приватность родителя" },
         confirmed: { type: "boolean", description: "По умолчанию true — задача сразу на доске. false кладёт её в очередь «На проверке», которая видна ТОЛЬКО в Telegram-боте (в вебе такой задачи не видно вообще) — используй только если человек прямо попросил очередь." },
@@ -738,6 +757,7 @@ export const TASK_TOOL_DEFINITIONS = [
         },
         project_name: { type: "string", description: "Имя проекта или подпроекта доски. Пустая строка — снять проект (задача уйдёт с доски в общий список)." },
         recur_freq: { type: ["string", "null"], enum: ["daily", "weekly", "monthly", null], description: "Цикличность: задача не закрывается, а переносится на следующее вхождение (daily — каждый день, weekly — тот же день недели, monthly — то же число месяца). ТРЕБУЕТ due_date: день недели и число берутся из срока. null — снять цикличность." },
+        remind_date: { type: ["string", "null"], description: "Пинг — день напоминания YYYY-MM-DD, отдельно от дедлайна. Перенос даты взводит пинг заново, даже если старый уже сработал. null — снять пинг." },
         parent_task_id: { type: "string", description: "Сделать подзадачей задачи с этим id (того же проекта, верхнего уровня). Пустая строка — отвязать от родителя" },
         hidden_from_hub: { type: "boolean", description: "true — не показывать задачу в публичной дорожной карте хаба проектов (даже если доска опубликована); false — вернуть." },
         requesting_user_id: { type: "number", description: "Твой Telegram user ID — обязателен для проверки доступа" },
