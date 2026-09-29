@@ -1,9 +1,37 @@
+// ВСЕХ функциях); перевод на голые спецификаторы из import-map из ветки непроверяем. См. _shared/agent-auth.ts.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { verifyAgentToken, AgentAuthError, type AgentIdentity } from "../_shared/agent-auth.ts";
+import { occupyPatch, refreshPatch } from "./claim-patch.ts";
+import {
+  claimAction,
+  decideHeld,
+  type DeferReason,
+  deferReasonOf,
+  heldGuards,
+  type HeldRow,
+  heldSeconds,
+  readClaimSeconds,
+} from "./arbiter.ts";
+import { withGuards } from "./guard-query.ts";
+import { CHALLENGER_ROLE } from "../meeting-ingest/challenge.ts";
+import { boundClaimSeconds, type MeetingClock } from "./claim-clock.ts";
+import { AgentAuthError, type AgentIdentity, resolveActingIdentity } from "../_shared/agent-auth.ts";
 import { defaultMeetingTitle, displayNameOf } from "../_shared/meeting-title.ts";
-import { sameMeetingByRoster, scopeRoomKey, ROSTER_TOLERANCE_MIN } from "../_shared/meeting-roster.ts";
+import { ROSTER_TOLERANCE_MIN, sameMeetingByRoster, scopeRoomKey } from "../_shared/meeting-roster.ts";
+import { accessToken, listEvents } from "../_shared/google-calendar.ts";
+import {
+  type AgentScope,
+  AgentScopeError,
+  type CalendarSource,
+  mayJoinExisting,
+  resolveAgentScope,
+} from "./agent-scope.ts";
+import { attachInvite, consumeInvite, inviteSource, releaseInvite } from "./invites.ts";
 import { CLAIM_LEASE_TTL_SEC } from "../_shared/meeting-lease.ts";
+import { updateRecorders } from "../_shared/recorders-write.ts";
+import { PUBLISHED_STATUS } from "../_shared/meeting-frozen.ts";
+import { bindGrantMeeting, GrantScopeError } from "../_shared/agent-grant.ts";
 import { coOwnersFromAttendees, mergeAttendees } from "../_shared/meeting-owners.ts";
+import { BOT_PROFILE } from "../_shared/bot-profile.ts";
 
 // meeting-claim — шаг ДО транскрибации (см. transcribator/10-REVISED-DESIGN.md §4, §7.1).
 // Записывают все участники; перед запуском Whisper каждый делает claim по ключу встречи.
@@ -21,37 +49,47 @@ const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY")!;
 
+// Отказ агенту без действующего приглашения — тот же текст, что в agent-scope.ts.
+const NO_INVITE = "service agent: a manual meeting needs a valid invite — the person pastes the call link in Swarm";
+
 // На сколько выдаётся право транскрибации. Истёк и транскрипта нет → claim перехватит другой.
-// Значение и продление живут в _shared/meeting-lease.ts: лиз выдаётся здесь, а ПРОДЛЕВАЮТ его
-// ingest и процессор, пока обработка жива (issue #285) — иначе через 30 минут право забирала
-// любая, в том числе более короткая, запись.
+// Удар бота по своей встрече продлевает его тем же сроком (_shared/meeting-lease.ts).
 const LEASE_TTL_SEC = CLAIM_LEASE_TTL_SEC;
 
-// Перехват права более полной записью. Оба порога должны выполниться разом — чтобы почти
-// одинаковые записи (штатный случай: все стопнули в пределах минуты) не гоняли перетранскрибацию
-// туда-сюда, но провал вроде «3 минуты против 2.5 часов» закрывался гарантированно.
-const TAKEOVER_MIN_RATIO = 1.5;      // новая запись длиннее текущей минимум в полтора раза
-const TAKEOVER_MIN_EXTRA_SEC = 300;  // …и минимум на 5 минут в абсолюте
+// Перехват права более полной записью и поправка «бот ещё пишет» (D020) — arbiter.ts.
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
+// Календарь человека для сверки служебного агента с составом встречи (agent-scope.ts, D016).
+const calendarSource: CalendarSource = {
+  autojoin: async (telegramId) => {
+    const column = BOT_PROFILE.autojoin.consentColumn;
+    const { data, error } = await supabase.from("allowed_users").select(column)
+      .eq("telegram_id", telegramId).maybeSingle();
+    // Не прочитали согласие — не считаем, что оно есть.
+    if (error) console.error(`meeting-claim: согласие ${telegramId} не прочитано: ${error.message}`);
+    return (data as Record<string, unknown> | null)?.[column] === true;
+  },
+  refreshToken: async (telegramId) => {
+    const { data } = await supabase.from("user_integrations").select("api_key")
+      .eq("telegram_id", telegramId).eq("service", "google_calendar")
+      .maybeSingle();
+    return (data as { api_key?: string } | null)?.api_key ?? null;
+  },
+  accessToken,
+  listEvents,
+};
+
 type IdentityKind = "calendar" | "room" | "manual";
 type ClaimDecision = "transcribe" | "defer";
-// Почему запись не пошла в обработку. Нужна КЛИЕНТУ, а не только логам (issue #274): раньше
-// рекордер знал лишь «defer» и печатал один текст на все случаи — «если твоя запись полнее,
-// дошли её», — то есть просил человека принять решение, которое сервер уже принял сам и
-// данных для которого у человека нет.
-//   published — встречу правил человек или её уже опубликовали: перехват невозможен НИКОГДА;
-//   shorter   — наша запись КОРОЧЕ записи держателя;
-//   similar   — наша не короче, но разница не дотянула до порогов TAKEOVER_* (типовой случай:
-//               все остановили запись в пределах минуты). Отделено от shorter, потому что
-//               человеку нельзя показывать «взяли 36 минут вместо твоих 38» без объяснения —
-//               это выглядит как ошибка арбитража, хотя это защита от перетранскрибации;
-//   race      — держатель сменился, пока мы считали: повтор имеет смысл;
-//   unknown   — длительность неизвестна (старая сборка рекордера или пустая у держателя).
-type DeferReason = "published" | "shorter" | "similar" | "race" | "unknown";
-interface UserNote { ts: number; text: string }
-interface Attendee { name?: string; email?: string }
+interface UserNote {
+  ts: number;
+  text: string;
+}
+interface Attendee {
+  name?: string;
+  email?: string;
+}
 
 interface ClaimBody {
   identity_kind: IdentityKind;
@@ -68,6 +106,10 @@ interface ClaimBody {
   // Длительность записи претендента (сек). Основа арбитража: более полная запись перехватывает
   // право у более короткой. Отсутствует у старых сборок рекордера → перехват не запрашивается.
   recorded_seconds?: number;
+  // Ручная встреча служебного агента (D017): приглашение человека и ссылка, на которую бот пришёл.
+  // Людям не нужны и ими не читаются.
+  invite_id?: string;
+  join_url?: string;
 }
 
 function json(payload: unknown, status = 200): Response {
@@ -84,18 +126,29 @@ function fail(message: string, status = 400): Response {
 async function getEmbedding(text: string): Promise<number[]> {
   const res = await fetch("https://api.openai.com/v1/embeddings", {
     method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${OPENAI_API_KEY}` },
-    body: JSON.stringify({ model: "text-embedding-3-small", input: text.slice(0, 8000) }),
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${OPENAI_API_KEY}`,
+    },
+    body: JSON.stringify({
+      model: "text-embedding-3-small",
+      input: text.slice(0, 8000),
+    }),
   });
   const data = await res.json();
   if (!res.ok) {
-    throw new Error((data as { error?: { message?: string } }).error?.message ?? "OpenAI error");
+    throw new Error(
+      (data as { error?: { message?: string } }).error?.message ??
+        "OpenAI error",
+    );
   }
   return (data as { data: Array<{ embedding: number[] }> }).data[0].embedding;
 }
 
 function validate(raw: unknown): ClaimBody {
-  if (typeof raw !== "object" || raw === null) throw new Error("body must be an object");
+  if (typeof raw !== "object" || raw === null) {
+    throw new Error("body must be an object");
+  }
   const b = raw as Record<string, unknown>;
 
   const kind = b.identity_kind;
@@ -108,10 +161,14 @@ function validate(raw: unknown): ClaimBody {
 
   let notes: UserNote[] | undefined;
   if (b.user_notes !== undefined) {
-    if (!Array.isArray(b.user_notes)) throw new Error("user_notes must be an array");
+    if (!Array.isArray(b.user_notes)) {
+      throw new Error("user_notes must be an array");
+    }
     notes = b.user_notes.map((n) => {
       const o = n as Record<string, unknown>;
-      if (typeof o.text !== "string") throw new Error("user_notes[].text must be a string");
+      if (typeof o.text !== "string") {
+        throw new Error("user_notes[].text must be a string");
+      }
       return { ts: typeof o.ts === "number" ? o.ts : 0, text: o.text };
     });
   }
@@ -128,8 +185,9 @@ function validate(raw: unknown): ClaimBody {
     user_notes: notes,
     agent_version: typeof b.agent_version === "string" ? b.agent_version : undefined,
     mic_start_offset: typeof micOffset === "number" && Number.isFinite(micOffset) ? micOffset : undefined,
-    recorded_seconds:
-      typeof recSec === "number" && Number.isFinite(recSec) && recSec > 0 ? recSec : undefined,
+    recorded_seconds: readClaimSeconds(recSec),
+    invite_id: typeof b.invite_id === "string" ? b.invite_id : undefined,
+    join_url: typeof b.join_url === "string" ? b.join_url : undefined,
   };
 }
 
@@ -140,13 +198,22 @@ function formatTs(sec: number): string {
   return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 }
 
-// role=superseded — запись, у которой право транскрибации отобрала более полная (см. арбитраж).
-type RecorderRole = ClaimDecision | "superseded";
-interface RecorderEntry { telegram_id: number; claimed_at: string; role: RecorderRole; recorded_seconds?: number }
+// role=superseded — запись, у которой право транскрибации отобрала более полная (см. арбитраж);
+// role=challenger — заявка другого человека ждёт сверки по измеренной выгрузке (T160,
+// meeting-ingest/challenge.ts): ingest примет аудио только от свежего претендента.
+type RecorderRole = ClaimDecision | "superseded" | typeof CHALLENGER_ROLE;
+interface RecorderEntry {
+  telegram_id: number;
+  claimed_at: string;
+  role: RecorderRole;
+  recorded_seconds?: number;
+  /** Сдвиг mic претендента: при переходе права его выставит ingest (в строку встречи он не пишется). */
+  mic_start_offset?: number;
+}
 
-// Регистрируем записавшего в meetings.recorders. Read-modify-write: при низкой
-// одновременности достаточно; гонка двух одновременных claim'ов теоретически может
-// потерять одну запись в массиве — приемлемо для MVP (важна сама встреча, не точный список).
+// Регистрируем записавшего в meetings.recorders — условной записью по прочитанному списку с
+// повтором (_shared/recorders-write.ts): роль challenger в списке даёт право выгрузки, и
+// одновременный claim или сверка претендента в meeting-ingest не должны её стирать.
 // Повторный claim того же человека ОБНОВЛЯЕТ его строку (роль могла смениться defer→transcribe),
 // а при перехвате прежний владелец переводится в superseded — иначе в массиве осталось бы два
 // «transcribe» и по нему нельзя было бы понять, чьё аудио реально в базе.
@@ -157,40 +224,61 @@ async function registerRecorder(
   nowIso: string,
   recordedSeconds: number | undefined,
   supersedeOwner?: number | null,
+  micStartOffset?: number,
   incomingAttendees?: Attendee[],
 ): Promise<void> {
-  const { data } = await supabase.from("meetings").select("recorders, attendees, group_id").eq("id", meetingId).single();
-  const row = data as { recorders?: RecorderEntry[]; attendees?: Attendee[] | null; group_id?: string | null } | null;
-  const recorders = row?.recorders ?? [];
-  const next: RecorderEntry[] = recorders.map((r) =>
-    supersedeOwner != null && r.telegram_id === supersedeOwner && r.role === "transcribe"
-      ? { ...r, role: "superseded" as RecorderRole }
-      : r
-  );
   const mine: RecorderEntry = {
     telegram_id: telegramId,
     claimed_at: nowIso,
     role,
     ...(recordedSeconds !== undefined ? { recorded_seconds: recordedSeconds } : {}),
+    ...(role === CHALLENGER_ROLE && micStartOffset !== undefined ? { mic_start_offset: micStartOffset } : {}),
   };
-  const at = next.findIndex((r) => r.telegram_id === telegramId);
-  if (at >= 0) next[at] = { ...next[at], ...mine };
-  else next.push(mine);
-  // Участники второго записавшего раньше терялись: attendees писались только при INSERT.
-  // Совладельцы — участники встречи с аккаунтом SWARM в том же воркспейсе (решение владельца
-  // 2026-09-25, _shared/meeting-owners.ts). Пересчитываем на каждом claim.
-  const attendees = mergeAttendees(row?.attendees, incomingAttendees);
-  const coOwners = await coOwnersOf(row?.group_id ?? null, attendees, next.map((r) => r.telegram_id));
-  await supabase.from("meetings").update({
-    recorders: next,
+  const ok = await updateRecorders(supabase, meetingId, (current) => {
+    const recorders = current as RecorderEntry[];
+    const next: RecorderEntry[] = recorders.map((r) =>
+      supersedeOwner != null && r.telegram_id === supersedeOwner &&
+        r.role === "transcribe"
+        ? { ...r, role: "superseded" as RecorderRole }
+        : r
+    );
+    const at = next.findIndex((r) => r.telegram_id === telegramId);
+    if (at >= 0) next[at] = { ...next[at], ...mine };
+    else next.push(mine);
+    return next;
+  }, { updated_at: nowIso });
+  if (!ok) console.error(`meeting-claim: recorders ${meetingId} — ${telegramId} не вписан (список менялся)`);
+  await refreshAttendees(meetingId, incomingAttendees, nowIso);
+}
+
+// Участники второго записавшего раньше терялись: attendees писались только при INSERT.
+// Совладельцы — участники встречи с аккаунтом SWARM в том же воркспейсе (решение владельца
+// 2026-09-25, _shared/meeting-owners.ts). Пересчитываем на каждом claim — после записи recorders,
+// чтобы записавшие (они владельцы и так) в совладельцы не попадали.
+async function refreshAttendees(meetingId: string, incoming: Attendee[] | undefined, nowIso: string): Promise<void> {
+  const { data, error } = await supabase.from("meetings").select("recorders, attendees, group_id").eq("id", meetingId)
+    .maybeSingle();
+  if (error || !data) {
+    console.error(`meeting-claim: участники ${meetingId} не прочитаны: ${error?.message ?? "строки нет"}`);
+    return;
+  }
+  const row = data as { recorders?: RecorderEntry[] | null; attendees?: Attendee[] | null; group_id?: string | null };
+  const attendees = mergeAttendees(row.attendees, incoming);
+  const coOwners = await coOwnersOf(row.group_id ?? null, attendees, (row.recorders ?? []).map((r) => r.telegram_id));
+  const { error: werr } = await supabase.from("meetings").update({
     attendees,
     ...(coOwners ? { co_owners: coOwners } : {}),
     updated_at: nowIso,
   }).eq("id", meetingId);
+  if (werr) console.error(`meeting-claim: участники ${meetingId} не записаны: ${werr.message}`);
 }
 
 // null — не смогли прочитать участников воркспейса: оставляем прежних совладельцев, а не обнуляем.
-async function coOwnersOf(groupId: string | null, attendees: Attendee[], recorderIds: number[]): Promise<number[] | null> {
+async function coOwnersOf(
+  groupId: string | null,
+  attendees: Attendee[],
+  recorderIds: number[],
+): Promise<number[] | null> {
   if (!groupId) return [];
   if (!attendees.some((a) => a?.email)) return [];
   const { data, error } = await supabase.from("allowed_users").select("telegram_id, email").eq("group_id", groupId);
@@ -198,47 +286,32 @@ async function coOwnersOf(groupId: string | null, attendees: Attendee[], recorde
     console.error("meeting-claim: участники воркспейса не прочитаны, совладельцы не пересчитаны", error.message);
     return null;
   }
-  return coOwnersFromAttendees(attendees, (data ?? []) as Array<{ telegram_id: number | null; email: string | null }>, recorderIds);
-}
-
-// Длительность записи, которая СЕЙЧАС лежит за встречей (сек). Для строк, заведённых старым
-// клиентом, recorded_seconds пуст — оцениваем по последнему таймстампу сохранённого транскрипта.
-// Это позволяет перехватить право у записи старой сборки, не дожидаясь обновления всей команды.
-function heldSeconds(row: { recorded_seconds?: number | null; transcript?: { segments?: Array<{ end?: number }> } | null }): number {
-  if (typeof row.recorded_seconds === "number" && Number.isFinite(row.recorded_seconds)) {
-    return row.recorded_seconds;
-  }
-  const segs = row.transcript?.segments ?? [];
-  let max = 0;
-  for (const s of segs) {
-    const e = typeof s?.end === "number" && Number.isFinite(s.end) ? s.end : 0;
-    if (e > max) max = e;
-  }
-  return max;
-}
-
-// Заметно ли претендент полнее того, что уже есть. Оба порога разом — см. константы.
-function isSubstantiallyLonger(candidate: number, held: number): boolean {
-  return candidate >= held * TAKEOVER_MIN_RATIO && candidate >= held + TAKEOVER_MIN_EXTRA_SEC;
+  return coOwnersFromAttendees(
+    attendees,
+    (data ?? []) as Array<{ telegram_id: number | null; email: string | null }>,
+    recorderIds,
+  );
 }
 
 // E-mail участника по telegram_id — нужен, чтобы понять «а этот человек есть в списке участников
 // той встречи?». Единственный доступный серверу признак для записи из комнаты: у неё нет ни
 // названия, ни attendees, но сам записавший в календарном списке другой стороны присутствует.
-async function emailOfUser(telegramId: number | null | undefined): Promise<string | null> {
+async function emailOfUser(
+  telegramId: number | null | undefined,
+): Promise<string | null> {
   if (telegramId == null) return null;
-  const { data } = await supabase.from("allowed_users").select("email").eq("telegram_id", telegramId).maybeSingle();
+  const { data } = await supabase.from("allowed_users").select("email").eq(
+    "telegram_id",
+    telegramId,
+  ).maybeSingle();
   return ((data as { email?: string | null } | null)?.email ?? null);
 }
 
-type ExistingMeetingRow = {
-  id: string;
-  claim_owner: number | null;
-  recorded_seconds: number | null;
-  transcript: { segments?: Array<{ end?: number }> } | null;
-  notes_edited_at: string | null;
-  status: string | null;
-};
+type ExistingMeetingRow = HeldRow & { id: string };
+
+// Колонки строки встречи для арбитража: и найденной по составу, и по конфликту ключа.
+const EXISTING_COLUMNS =
+  "id, identity_key, started_at, attendees, claim_owner, recorded_seconds, transcript, notes_edited_at, status, created_at, lease_expires_at, agent_last_recording";
 
 type RosterCandidate = ExistingMeetingRow & {
   identity_key: string | null;
@@ -261,6 +334,7 @@ async function findMeetingByRoster(
   body: ClaimBody,
   myEmail: string | null,
   scopedKey: string,
+  mayJoin: (row: RosterCandidate) => boolean,
 ): Promise<{ row: RosterCandidate; reason: string } | null> {
   if (!body.started_at) return null;
   const startMs = new Date(body.started_at).getTime();
@@ -270,7 +344,7 @@ async function findMeetingByRoster(
 
   const { data } = await supabase
     .from("meetings")
-    .select("id, identity_key, started_at, attendees, claim_owner, recorded_seconds, transcript, notes_edited_at, status, created_at")
+    .select(EXISTING_COLUMNS)
     .eq("group_id", groupId)
     .gte("started_at", from)
     .lte("started_at", to)
@@ -279,8 +353,15 @@ async function findMeetingByRoster(
   const candidates = ((data ?? []) as RosterCandidate[]).filter((c) => c.identity_key !== scopedKey);
   if (candidates.length === 0) return null;
 
-  const incoming = { startedAt: body.started_at ?? null, attendees: body.attendees ?? [], ownerEmail: myEmail };
+  const incoming = {
+    startedAt: body.started_at ?? null,
+    attendees: body.attendees ?? [],
+    ownerEmail: myEmail,
+  };
   for (const c of candidates) {
+    // Служебный агент не склеивается со встречей, в составе которой нет его человека: иначе
+    // подставленный в тело состав открывал бы ему чужую встречу (D016).
+    if (!mayJoin(c)) continue;
     const candEmail = await emailOfUser(c.claim_owner);
     const verdict = sameMeetingByRoster(incoming, {
       startedAt: c.started_at,
@@ -299,80 +380,179 @@ async function findMeetingByRoster(
  * действовал бы только на одном из двух путей — ровно так и разъехались claim и публикация).
  */
 async function resolveExisting(
-  row: ExistingMeetingRow,
-  body: ClaimBody,
+  row: ExistingMeetingRow & MeetingClock,
+  claimBody: ClaimBody,
   identity: AgentIdentity,
   nowIso: string,
   leaseIso: string,
-): Promise<{
-  decision: ClaimDecision;
-  supersededOwner: number | null;
-  heldBy: number | null;
-  deferReason: DeferReason | null;
-  heldSeconds: number | null;
-}> {
-  let heldBy = row.claim_owner;
+): Promise<
+  {
+    decision: ClaimDecision;
+    /** Роль в recorders, если она не совпадает с решением (претендент отвечает клиенту transcribe). */
+    recorderRole?: RecorderRole;
+    supersededOwner: number | null;
+    heldBy: number | null;
+    /** Секунды заявки после потолка встречи — их и пишет вызывающий в recorders. */
+    recordedSeconds: number | undefined;
+    /** Почему defer (issue #274) — клиент говорит человеку, что произошло; null при transcribe. */
+    deferReason: DeferReason | null;
+    /** Секунды записи держателя — для текста отказа; null, если не сравнивали. */
+    heldSeconds: number | null;
+  }
+> {
+  const heldBy = row.claim_owner;
+  // Заявка на существующую встречу — не больше, чем встреча могла идти по часам сервера
+  // (claim-clock.ts). Дальше идут только урезанные секунды: в арбитраж, в строку, в recorders.
+  const recordedSeconds = boundClaimSeconds(row, claimBody.recorded_seconds, nowIso);
+  if (recordedSeconds !== claimBody.recorded_seconds) {
+    console.log(
+      `meeting-claim: заявка ${row.id} — секунды ${Math.round(claimBody.recorded_seconds ?? 0)}→${
+        Math.round(recordedSeconds ?? 0)
+      } по времени встречи`,
+    );
+  }
+  const body: ClaimBody = { ...claimBody, recorded_seconds: recordedSeconds };
 
-  // (1) Свободна (никто не держит / лиз истёк и транскрипта нет) — занимаем.
+  // (1) Свободна (никто не держит / лиз истёк, транскрипта нет и запись держателя не
+  // обрабатывается) — занимаем. Идущая обработка — версия держателя: её сравнивает ingest.
   const { data: claimed } = await supabase
     .from("meetings")
-    .update({
-      claim_owner: identity.telegramId,
-      lease_expires_at: leaseIso,
-      updated_at: nowIso,
-      mic_start_offset: body.mic_start_offset ?? null,
-      recorded_seconds: body.recorded_seconds ?? null,
-    })
+    .update(occupyPatch({
+      ownerId: identity.telegramId,
+      leaseIso,
+      nowIso,
+      micStartOffset: body.mic_start_offset ?? null,
+      recordedSeconds: body.recorded_seconds ?? null,
+    }))
     .eq("id", row.id)
     .is("transcript", null)
     .or(`claim_owner.is.null,lease_expires_at.lt.${nowIso}`)
+    .or("summary_status.is.null,summary_status.neq.processing")
+    .is("notes_edited_at", null)
+    .neq("status", PUBLISHED_STATUS)
     .select("id")
     .maybeSingle();
-  if (claimed) return { decision: "transcribe", supersededOwner: null, heldBy: identity.telegramId, deferReason: null, heldSeconds: null };
-
-  // (2) Занята. Перехватываем, только если НАША запись заметно полнее — и не трогаем то, что
-  // правил человек или уже опубликовали команде.
-  const candidate = body.recorded_seconds ?? 0;
-  const held = heldSeconds(row);
-  const protectedRow = row.notes_edited_at !== null || row.status === "in_base";
-  if (!(candidate > 0 && !protectedRow && isSubstantiallyLonger(candidate, held))) {
-    // Причину называем клиенту: «уже опубликовано» и «твоя короче» — разные новости для человека,
-    // и в первом случае досылать запись бессмысленно в принципе (issue #274).
-    const reason: DeferReason = protectedRow
-      ? "published"
-      : candidate <= 0 || held <= 0
-      ? "unknown"
-      : candidate >= held
-      ? "similar"
-      : "shorter";
-    return { decision: "defer", supersededOwner: null, heldBy, deferReason: reason, heldSeconds: held };
+  if (claimed) {
+    return {
+      decision: "transcribe",
+      supersededOwner: null,
+      heldBy: identity.telegramId,
+      recordedSeconds,
+      deferReason: null,
+      heldSeconds: null,
+    };
   }
 
-  // Сбрасываем ТОЛЬКО маркеры обработки: transcript/draft_notes_md остаются до прихода нового аудио.
-  const { data: took } = await supabase
-    .from("meetings")
-    .update({
-      claim_owner: identity.telegramId,
-      lease_expires_at: leaseIso,
-      updated_at: nowIso,
-      mic_start_offset: body.mic_start_offset ?? null,
-      recorded_seconds: candidate,
-      summary_status: null,
-      process_state: null,
-      processing_lease: null,
-      last_progress_at: null,
-    })
-    .eq("id", row.id)
-    .eq("claim_owner", row.claim_owner)   // никто не перехватил, пока мы считали
+  // (2) Занята. Кто получает право — arbiter.ts: правило полноты и поправка «бот ещё пишет» (D020).
+  const candidate = body.recorded_seconds ?? 0;
+  const held = heldSeconds(row);
+  const verdict = decideHeld(row, candidate, identity.telegramId, nowIso);
+  if (verdict === "defer") {
+    return {
+      decision: "defer",
+      supersededOwner: null,
+      heldBy,
+      recordedSeconds,
+      deferReason: deferReasonOf(row, candidate, nowIso),
+      heldSeconds: held,
+    };
+  }
+
+  if (verdict === "reserve") {
+    await keepReserve(row.id, body, identity.telegramId);
+    console.log(
+      `meeting-claim: запасная запись ${row.id} — ${
+        Math.round(candidate)
+      }с у ${identity.telegramId}, бот того же человека ещё пишет (${Math.round(held)}с)`,
+    );
+    return {
+      decision: "transcribe",
+      supersededOwner: null,
+      heldBy: identity.telegramId,
+      recordedSeconds,
+      deferReason: null,
+      heldSeconds: held,
+    };
+  }
+
+  // Другой человек с заметно более полной заявкой — претендент, не перехват (T160, arbiter.ts
+  // claimAction): строка встречи не трогается, клиент выгружает аудио, и право решит длина, которую
+  // meeting-ingest измерит сам. Держатель, его лиз и маркеры обработки остаются как были.
+  if (claimAction(verdict) === "challenge") {
+    console.log(
+      `meeting-claim: претендент ${row.id} — заявлено ${Math.round(candidate)}с у ${identity.telegramId} против ${
+        Math.round(held)
+      }с у ${row.claim_owner}; право решит измеренная выгрузка`,
+    );
+    return {
+      decision: "transcribe",
+      recorderRole: CHALLENGER_ROLE,
+      supersededOwner: null,
+      heldBy,
+      recordedSeconds,
+      deferReason: null,
+      heldSeconds: held,
+    };
+  }
+
+  // refresh — тот же человек, бот не пишет: маркеры обработки не сбрасываются (claim-patch.ts).
+  const { data: took } = await withGuards(
+    supabase.from("meetings").update(refreshPatch({
+      ownerId: identity.telegramId,
+      leaseIso,
+      nowIso,
+      micStartOffset: body.mic_start_offset ?? null,
+      recordedSeconds: candidate,
+    })).eq("id", row.id),
+    heldGuards(row, nowIso),
+  )
     .select("id")
     .maybeSingle();
-  if (!took) return { decision: "defer", supersededOwner: null, heldBy, deferReason: "race", heldSeconds: held };
+  if (!took) {
+    return {
+      decision: "defer",
+      supersededOwner: null,
+      heldBy,
+      recordedSeconds,
+      deferReason: "race",
+      heldSeconds: held,
+    };
+  }
 
-  heldBy = identity.telegramId;
   console.log(
-    `meeting-claim: перехват ${row.id} — ${Math.round(candidate)}с у ${identity.telegramId} против ${Math.round(held)}с у ${row.claim_owner}`,
+    `meeting-claim: обновление права ${row.id} — ${Math.round(candidate)}с у ${identity.telegramId} против ${
+      Math.round(held)
+    }с`,
   );
-  return { decision: "transcribe", supersededOwner: row.claim_owner, heldBy, deferReason: null, heldSeconds: held };
+  return {
+    decision: "transcribe",
+    supersededOwner: null,
+    heldBy: identity.telegramId,
+    recordedSeconds,
+    deferReason: null,
+    heldSeconds: held,
+  };
+}
+
+/**
+ * Запасная запись (D020): строку встречи не перехватываем — лиз, маркеры обработки и пульс бота
+ * остаются как есть. Пишутся только два факта этой записи, и оба — под условием, что встреча всё
+ * ещё за тем же человеком: сдвиг mic-дорожки (обработка её аудио сведёт реплики по нему; у бота
+ * mic-дорожки нет) и секунды — только в большую сторону: recorded_seconds встречи = самая полная
+ * из записей её владельца.
+ */
+async function keepReserve(meetingId: string, body: ClaimBody, ownerId: number): Promise<void> {
+  if (body.mic_start_offset !== undefined) {
+    const { error } = await supabase.from("meetings").update({ mic_start_offset: body.mic_start_offset })
+      .eq("id", meetingId).eq("claim_owner", ownerId);
+    if (error) console.error(`meeting-claim: запасная ${meetingId} — mic_start_offset: ${error.message}`);
+  }
+  const seconds = body.recorded_seconds;
+  if (seconds === undefined) return;
+  const { error } = await supabase.from("meetings").update({ recorded_seconds: seconds })
+    .eq("id", meetingId).eq("claim_owner", ownerId)
+    .or(`recorded_seconds.is.null,recorded_seconds.lt.${seconds}`);
+  if (error) console.error(`meeting-claim: запасная ${meetingId} — recorded_seconds: ${error.message}`);
 }
 
 // Личные пометки участника → приватная entry (is_private, owner_id) с metadata.meeting_id.
@@ -421,14 +601,24 @@ async function savePersonalNotes(
 // Как назвать человека в дефолтном заголовке записи (#184): профиль важнее username —
 // «Вадим Гарро» понятнее, чем «garro». Обе таблицы читаем разом, это один лишний round-trip
 // только для записей без своего названия.
-async function displayNameOfUser(telegramId: number | null | undefined): Promise<string | null> {
+async function displayNameOfUser(
+  telegramId: number | null | undefined,
+): Promise<string | null> {
   if (telegramId == null) return null;
   const [{ data: user }, { data: prof }] = await Promise.all([
-    supabase.from("allowed_users").select("username").eq("telegram_id", telegramId).maybeSingle(),
-    supabase.from("user_profiles").select("first_name, last_name").eq("telegram_id", telegramId).maybeSingle(),
+    supabase.from("allowed_users").select("username").eq(
+      "telegram_id",
+      telegramId,
+    ).maybeSingle(),
+    supabase.from("user_profiles").select("first_name, last_name").eq(
+      "telegram_id",
+      telegramId,
+    ).maybeSingle(),
   ]);
   return displayNameOf({
-    ...((prof as { first_name?: string | null; last_name?: string | null } | null) ?? {}),
+    ...((prof as
+      | { first_name?: string | null; last_name?: string | null }
+      | null) ?? {}),
     username: (user as { username?: string | null } | null)?.username ?? null,
   });
 }
@@ -438,7 +628,7 @@ Deno.serve(async (req: Request) => {
 
   let identity: AgentIdentity;
   try {
-    identity = await verifyAgentToken(supabase, req);
+    identity = await resolveActingIdentity(supabase, req);
   } catch (e) {
     if (e instanceof AgentAuthError) return fail(e.message, e.status);
     throw e;
@@ -454,6 +644,30 @@ Deno.serve(async (req: Request) => {
     return fail(e instanceof Error ? e.message : "invalid body");
   }
 
+  // Служебный агент: тип встречи — по форме ключа, календарная — из календаря названного
+  // человека, состав — то, что сервер знает сам, а не то, что прислал агент (D016, agent-scope.ts).
+  let scope: AgentScope | null;
+  try {
+    scope = await resolveAgentScope(
+      calendarSource,
+      identity,
+      body,
+      inviteSource(supabase),
+    );
+  } catch (e) {
+    if (e instanceof AgentScopeError) return fail(e.message, e.status);
+    throw e;
+  }
+  if (scope) {
+    body = {
+      ...body,
+      attendees: scope.attendees.map((a) => ({
+        name: a.name ?? undefined,
+        email: a.email ?? undefined,
+      })),
+    };
+  }
+
   const nowMs = Date.now();
   const nowIso = new Date(nowMs).toISOString();
   const leaseIso = new Date(nowMs + LEASE_TTL_SEC * 1000).toISOString();
@@ -463,7 +677,10 @@ Deno.serve(async (req: Request) => {
   // (#184, решение владельца 2026-08-28). Имя знает сервер — у клиента на диске только токен;
   // человек потом правит заголовок вручную (PATCH /agent-meetings/:id).
   const claimTitle = (body.title ?? "").trim() ||
-    defaultMeetingTitle(await displayNameOfUser(identity.telegramId), body.started_at);
+    defaultMeetingTitle(
+      await displayNameOfUser(identity.telegramId),
+      body.started_at,
+    );
 
   const baseRow = {
     source: "desktop-agent",
@@ -484,19 +701,42 @@ Deno.serve(async (req: Request) => {
   // Кого перехватили (для recorders) и кто держит право, если нам отказали (для сообщения юзеру).
   let supersededOwner: number | null = null;
   let heldBy: number | null = null;
+  // Секунды, с которыми заявка прошла арбитраж: у существующей встречи — урезанные её временем.
+  let claimedSeconds = body.recorded_seconds;
+  // Роль в recorders, если она не совпадает с решением: претендент (T160) отвечает transcribe.
+  let recorderRole: RecorderRole | undefined;
   let deferReason: DeferReason | null = null;
-  let heldSeconds: number | null = null;
+  let holderSeconds: number | null = null;
 
   if (body.identity_kind === "manual") {
     // Telegram/кнопка — без дедупа, всегда новая встреча, всегда транскрибируем сами.
+    // Служебный агент — только по приглашению (D017): гасим его ДО создания встречи, одним
+    // условным UPDATE, — из двух одновременных заявок по одному приглашению проходит одна.
+    const inviteId = scope?.inviteId;
+    if (identity.kind === "bot" && !inviteId) return fail(NO_INVITE, 403);
+    const who = { telegramId: identity.telegramId, groupId: identity.groupId };
+    if (inviteId && !(await consumeInvite(supabase, inviteId, who, nowIso))) {
+      console.warn(
+        `meeting-claim: приглашение ${inviteId} уже использовано или истекло к моменту гашения`,
+      );
+      return fail(NO_INVITE, 403);
+    }
     const { data, error } = await supabase
       .from("meetings")
-      .insert({ ...baseRow, claim_owner: identity.telegramId, lease_expires_at: leaseIso })
+      .insert({
+        ...baseRow,
+        claim_owner: identity.telegramId,
+        lease_expires_at: leaseIso,
+      })
       .select("id")
       .single();
-    if (error || !data) return fail(`create failed: ${error?.message ?? "unknown"}`, 500);
+    if (error || !data) {
+      if (inviteId) await releaseInvite(supabase, inviteId);
+      return fail(`create failed: ${error?.message ?? "unknown"}`, 500);
+    }
     meetingId = (data as { id: string }).id;
     decision = "transcribe";
+    if (inviteId) await attachInvite(supabase, inviteId, meetingId);
   } else {
     // calendar/room. Три пути, по возрастанию сложности:
     //   1) точный ключ — уникальный индекс meetings_identity_key_uq детерминированно разрешает гонку;
@@ -507,26 +747,56 @@ Deno.serve(async (req: Request) => {
     // Комнатный ключ сужаем до дня: у регулярной встречи ссылка одна на всю серию, а индекс
     // глобальный — без дневного суффикса второй созвон в той же комнате получал defer и не
     // записывался вовсе (issue #181). Сужает СЕРВЕР: у команды стоят разные сборки рекордера.
-    const scopedKey = scopeRoomKey(body.identity_kind, body.identity_key, body.started_at ?? null);
+    const scopedKey = scopeRoomKey(
+      body.identity_kind,
+      body.identity_key,
+      body.started_at ?? null,
+    );
     const myEmail = await emailOfUser(identity.telegramId);
+    const mayJoin = (
+      row: {
+        identity_key: string | null;
+        claim_owner: number | null;
+        attendees: Attendee[] | null;
+      },
+    ) => mayJoinExisting(identity, myEmail, row, scope);
 
     // (2) до вставки: вдруг эта встреча уже открыта под другим ключом.
-    const joined = await findMeetingByRoster(identity.groupId, body, myEmail, scopedKey);
+    const joined = await findMeetingByRoster(
+      identity.groupId,
+      body,
+      myEmail,
+      scopedKey,
+      mayJoin,
+    );
     if (joined) {
       meetingId = joined.row.id;
-      const res = await resolveExisting(joined.row, body, identity, nowIso, leaseIso);
+      const res = await resolveExisting(
+        joined.row,
+        body,
+        identity,
+        nowIso,
+        leaseIso,
+      );
       decision = res.decision;
+      recorderRole = res.recorderRole;
       supersededOwner = res.supersededOwner;
       heldBy = res.heldBy;
+      claimedSeconds = res.recordedSeconds;
       deferReason = res.deferReason;
-      heldSeconds = res.heldSeconds;
+      holderSeconds = res.heldSeconds;
       console.log(
         `meeting-claim: склейка по составу ${meetingId} (${joined.reason}) — ключ ${scopedKey} присоединён к ${joined.row.identity_key}, решение ${decision}`,
       );
     } else {
       const { data: created, error: insErr } = await supabase
         .from("meetings")
-        .insert({ ...baseRow, identity_key: scopedKey, claim_owner: identity.telegramId, lease_expires_at: leaseIso })
+        .insert({
+          ...baseRow,
+          identity_key: scopedKey,
+          claim_owner: identity.telegramId,
+          lease_expires_at: leaseIso,
+        })
         .select("id")
         .maybeSingle();
 
@@ -537,34 +807,70 @@ Deno.serve(async (req: Request) => {
         // Ищем ещё раз и, если нашлась строка, созданная РАНЬШЕ нашей, отдаём ей право, а свою
         // пустую (только что созданную, без транскрипта) убираем — иначе в базе останется дубль,
         // который потом придётся склеивать на публикации.
-        const rival = await findMeetingByRoster(identity.groupId, body, myEmail, scopedKey);
+        const rival = await findMeetingByRoster(
+          identity.groupId,
+          body,
+          myEmail,
+          scopedKey,
+          mayJoin,
+        );
         if (rival && rival.row.id !== meetingId) {
-          await supabase.from("meetings").delete().eq("id", meetingId).is("transcript", null);
+          await supabase.from("meetings").delete().eq("id", meetingId).is(
+            "transcript",
+            null,
+          );
           meetingId = rival.row.id;
-          const res = await resolveExisting(rival.row, body, identity, nowIso, leaseIso);
+          const res = await resolveExisting(
+            rival.row,
+            body,
+            identity,
+            nowIso,
+            leaseIso,
+          );
           decision = res.decision;
+          recorderRole = res.recorderRole;
           supersededOwner = res.supersededOwner;
           heldBy = res.heldBy;
+          claimedSeconds = res.recordedSeconds;
           deferReason = res.deferReason;
-          heldSeconds = res.heldSeconds;
-          console.log(`meeting-claim: гонка склейки — свою строку убрал, присоединился к ${meetingId} (${rival.reason}), решение ${decision}`);
+          holderSeconds = res.heldSeconds;
+          console.log(
+            `meeting-claim: гонка склейки — свою строку убрал, присоединился к ${meetingId} (${rival.reason}), решение ${decision}`,
+          );
         }
       } else if (insErr && insErr.code === "23505") {
         // Встреча с этим ключом уже есть → решаем по тому же правилу, что и при склейке.
         const { data: existing } = await supabase
           .from("meetings")
-          .select("id, claim_owner, recorded_seconds, transcript, notes_edited_at, status")
+          .select(EXISTING_COLUMNS)
           .eq("identity_key", scopedKey)
           .single();
         if (!existing) return fail("claim conflict but meeting not found", 409);
-        const row = existing as ExistingMeetingRow;
+        const row = existing as RosterCandidate;
+        if (!mayJoin(row)) {
+          console.warn(
+            `meeting-claim: служебный агент за ${identity.telegramId} — встреча ${row.id} вне состава`,
+          );
+          return fail(
+            "service agent: the person is not a participant of this meeting",
+            403,
+          );
+        }
         meetingId = row.id;
-        const res = await resolveExisting(row, body, identity, nowIso, leaseIso);
+        const res = await resolveExisting(
+          row,
+          body,
+          identity,
+          nowIso,
+          leaseIso,
+        );
         decision = res.decision;
+        recorderRole = res.recorderRole;
         supersededOwner = res.supersededOwner;
         heldBy = res.heldBy;
+        claimedSeconds = res.recordedSeconds;
         deferReason = res.deferReason;
-        heldSeconds = res.heldSeconds;
+        holderSeconds = res.heldSeconds;
       } else {
         return fail(`create failed: ${insErr?.message ?? "unknown"}`, 500);
       }
@@ -575,24 +881,50 @@ Deno.serve(async (req: Request) => {
   // неотличимы, и мёртвая ветка арбитража могла месяцами не срабатывать незамеченной
   // (docs/decisions/2026-08-28-fullness-over-recency.md, мера №3).
   console.log(
-    `meeting-claim: ${decision} ${meetingId} kind=${body.identity_kind} sec=${Math.round(body.recorded_seconds ?? 0)} by=${identity.telegramId} heldBy=${heldBy ?? "—"}`,
+    `meeting-claim: ${decision} ${meetingId} kind=${body.identity_kind} sec=${
+      Math.round(claimedSeconds ?? 0)
+    } by=${identity.telegramId} heldBy=${heldBy ?? "—"}`,
   );
 
-  await registerRecorder(meetingId, identity.telegramId, decision, nowIso, body.recorded_seconds, supersededOwner, body.attendees);
+  await registerRecorder(
+    meetingId,
+    identity.telegramId,
+    recorderRole ?? decision,
+    nowIso,
+    claimedSeconds,
+    supersededOwner,
+    body.mic_start_offset,
+    body.attendees,
+  );
+
+  // Пропуск бота открывает дальше только эту встречу (T165): heartbeat, выгрузка, статус и
+  // уведомления по нему сверяются с meeting_agent_grants.meeting_id.
+  try {
+    await bindGrantMeeting(supabase, identity, meetingId);
+  } catch (e) {
+    if (e instanceof GrantScopeError) return fail(e.message, e.status);
+    console.error(`meeting-claim: пропуск не привязан к ${meetingId}: ${e instanceof Error ? e.message : String(e)}`);
+    return fail("grant bind failed", 500);
+  }
 
   // Личные пометки — best-effort: их сбой не должен валить координацию транскрибации.
   if (body.user_notes && body.user_notes.length > 0) {
     try {
       await savePersonalNotes(meetingId, identity, body.user_notes, body.title);
     } catch (e) {
-      console.error(`meeting-claim: failed to save personal notes for ${meetingId}:`, e);
+      console.error(
+        `meeting-claim: failed to save personal notes for ${meetingId}:`,
+        e,
+      );
     }
   }
 
   // При отказе называем, кто держит право: клиент показывает это пользователю вместо молчания
   // («эту встречу пишет @аня — твоя запись в базу не пойдёт»), см. #24/#25.
   let heldByName: string | null = null;
-  if (decision === "defer" && heldBy !== null && heldBy !== identity.telegramId) {
+  if (
+    decision === "defer" && heldBy !== null && heldBy !== identity.telegramId
+  ) {
     const { data: holder } = await supabase
       .from("allowed_users")
       .select("username")
@@ -609,7 +941,7 @@ Deno.serve(async (req: Request) => {
     held_by_name: heldByName,
     // Длительность записи держателя и причина отказа — чтобы клиент сказал человеку, ЧТО
     // произошло, вместо просьбы сравнить свою запись с невидимой чужой (issue #274).
-    held_seconds: decision === "defer" ? heldSeconds : null,
+    held_seconds: decision === "defer" ? holderSeconds : null,
     defer_reason: decision === "defer" ? deferReason : null,
   });
 });

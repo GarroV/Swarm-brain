@@ -74,7 +74,7 @@ function SettingsDesk() {
               </div>
               <Tile title={dt("Интеграции", "Integrations")} className="col-span-3">
                 <ConnectorsSection me={me} dense panels={{
-                  calendar: <GoogleCalendarSection />, recorder: <RecorderSection />, telegram: <TelegramPanel me={me} />,
+                  calendar: <GoogleCalendarSection isDemo={!!me.is_demo} />, recorder: <RecorderSection />, telegram: <TelegramPanel me={me} />,
                   granola: <GranolaSection />, claude: <ClaudeDesktopSection />,
                 }} />
               </Tile>

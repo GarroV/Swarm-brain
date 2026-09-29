@@ -1,43 +1,50 @@
 #!/usr/bin/env bash
-# Единая команда проверок доски инициатив. Её же зовут приёмка блока, pre-push и CI —
-# иначе три набора расходятся и «у меня зелено» перестаёт что-либо значить.
+# Единая команда прогона. Её зовут приёмка блока, хук pre-push и CI — одна точка входа,
+# иначе «на моей машине зелено» перестаёт что-либо значить.
 #
-# Роли (admissio): формат, линт, типы, тесты с порогом покрытия, мёртвый код, границы.
-# Формат/линт/мёртвый код/границы — только на файлах фичи (scripts/feature-paths.txt):
-# остальной репозиторий писался до этих гейтов, включать их там значит чинить чужое.
-# Пропуск считается падением: невыполненная проверка ничего не проверила.
-set -o pipefail
+# В репозитории две стройки FURCA со своими наборами проверок, и обе живут здесь:
+#   · scriba — бот на Node/TypeScript (bot/) и серверные функции на Deno (supabase/functions/);
+#   · доска инициатив — шесть ролей (admissio) по файлам фичи из scripts/feature-paths.txt,
+#     типы функций и веба, тесты функций и веба с порогом scripts/coverage-floor.txt.
+# Где инструмента нет — сказано вслух, а не пропущено молча.
+#
+# Отсутствие инструмента — КРАСНЫЙ, а не пропуск: проверка, которой нет, не должна
+# выглядеть выполненной.
+#
+#   scripts/check              — всё (доска инициатив + сервер + бот)
+#   scripts/check bot          — только бот
+#   scripts/check server       — только серверные функции scriba
+#   scripts/check initiatives  — только гейт доски инициатив (машинный отчёт reports/check.json)
+set -uo pipefail
+
 cd "$(dirname "$0")/.."
+scope="${1:-all}"
+case "$scope" in all|bot|server|initiatives) ;; *)
+  echo "scripts/check: неизвестная область «$scope» (all|bot|server|initiatives)" >&2; exit 2 ;;
+esac
 mkdir -p reports
 
-# Доступы локального контура — тестам, которые ходят в настоящую базу. Подставляет их одна
-# обёртка на весь проект (её же зовёт CI): два места, делающих это по-своему, — две правды о
-# том, с чем прогонялись проверки. Контур не поднят — переменных не будет, и тесты базы упадут
-# с внятной причиной; это правильнее «пропущено», которое выглядит как проверенное.
-if [ -z "${SWARM_DB_ENV:-}" ]; then
+# Доступы локального контура — тестам, которые ходят в настоящую базу (тесты функций
+# гоняют и сервер scriba, и доска инициатив). Подставляет их одна обёртка на весь проект
+# (её же зовёт CI): два места, делающих это по-своему, — две правды о том, с чем
+# прогонялись проверки. Контур не поднят — переменных не будет, и тесты базы упадут с
+# внятной причиной; это правильнее «пропущено», которое выглядит как проверенное.
+# Боту база не нужна — его прогон обёртку не зовёт.
+if [ "$scope" != bot ] && [ -z "${SWARM_DB_ENV:-}" ]; then
   export SWARM_DB_ENV=1
   exec ./scripts/with-local-db "$0" "$@"
 fi
-REPORT=reports/check.json
-FAILED=0
-ROWS=()
 
-row() { # роль статус выполнено пропущено подробность
-  ROWS+=("{\"role\":\"$1\",\"status\":\"$2\",\"executed\":$3,\"skipped\":$4,\"detail\":\"$5\"}")
-  printf '%-16s %-8s %s\n' "$1" "$2" "$5"
-  [ "$2" = fail ] && FAILED=1
-  return 0
-}
+# Ошибка в самом скрипте (нет команды, необъявленная переменная, промах путём) —
+# это КРАСНЫЙ, а не пропуск. Проверено порчей 17.09.2026: mapfile отсутствовал в
+# bash 3.2, список файлов молча остался пустым, и прогон отчитался ЗЕЛЁНЫМ.
+self_error=0
+trap 'self_error=1' ERR
 
-# Полный вывод роли — в файл рядом с отчётом. Строка отчёта показывает хвост в две строки, и
-# этого хватает, пока проверка зелёная; когда она падает, причина оказывается ВЫШЕ хвоста и
-# теряется. Так и вышло: гейт в CI сказал «линт fail: Found 1 problem» и ни слова о том, где
-# и что, — а локально та же команда была зелёной (другая версия рантайма). Файлы забирает
-# CI как артефакт, поэтому причина доезжает до человека, а не остаётся в чужом раннере.
-keep() { # роль <<< вывод
-  printf '%s\n' "$2" > "reports/$1.txt"
-}
+failed=()
+skipped=()
 
+# ──── доска инициатив ────────────────────────────────────────────────────────
 # Конфиг репозитория — ЯВНО, всюду. Без `--config` deno ищет его сам, вверх от файла, и для
 # всего под `miniapp/` находит `miniapp/package.json` — то есть НЕ наш deno.json. Правила из
 # него в этот момент не действуют: выключенный на весь репозиторий `no-sloppy-imports`
@@ -46,98 +53,284 @@ keep() { # роль <<< вывод
 # красный гейт на пустом месте.
 CFG=(--config deno.json)
 
-# Файлы фичи, которые уже существуют. Пока стройка не началась, список пуст — это
-# сообщается вслух и отдельной строкой в отчёте, а не выглядит как пройденная проверка.
-# bash 3.2 в macOS не знает mapfile — читаем циклом, иначе гейт не запускается у владельца
-EXISTING=()
-while IFS= read -r p; do
-  case "$p" in ''|\#*) continue ;; esac
-  [ -e "$p" ] && EXISTING+=("$p")
-done < scripts/feature-paths.txt
-N=${#EXISTING[@]}
+initiatives_gate() {
+  REPORT=reports/check.json
+  FAILED=0
+  ROWS=()
 
-if [ "$N" -eq 0 ]; then
-  row "формат" "empty" 0 0 "файлов фичи ещё нет"
-  row "линт" "empty" 0 0 "файлов фичи ещё нет"
-  row "мёртвый-код" "empty" 0 0 "файлов фичи ещё нет"
-  row "границы" "empty" 0 0 "файлов фичи ещё нет"
-else
-  out=$(deno fmt "${CFG[@]}" --check "${EXISTING[@]}" 2>&1); st=$?; keep формат "$out"
-  row "формат" "$([ $st -eq 0 ] && echo pass || echo fail)" "$N" 0 "$(echo "$out" | tail -1 | tr -d '"' | tr '\n' ' ')"
+  row() { # роль статус выполнено пропущено подробность
+    ROWS+=("{\"role\":\"$1\",\"status\":\"$2\",\"executed\":$3,\"skipped\":$4,\"detail\":\"$5\"}")
+    printf '%-16s %-8s %s\n' "$1" "$2" "$5"
+    [ "$2" = fail ] && FAILED=1
+    return 0
+  }
 
-  out=$(deno lint "${CFG[@]}" "${EXISTING[@]}" 2>&1); st=$?; keep линт "$out"
-  row "линт" "$([ $st -eq 0 ] && echo pass || echo fail)" "$N" 0 "$(echo "$out" | tail -2 | tr -d '"' | tr '\n' ' ')"
+  # Полный вывод роли — в файл рядом с отчётом. Строка отчёта показывает хвост в две строки, и
+  # этого хватает, пока проверка зелёная; когда она падает, причина оказывается ВЫШЕ хвоста и
+  # теряется. Так и вышло: гейт в CI сказал «линт fail: Found 1 problem» и ни слова о том, где
+  # и что, — а локально та же команда была зелёной (другая версия рантайма). Файлы забирает
+  # CI как артефакт, поэтому причина доезжает до человека, а не остаётся в чужом раннере.
+  keep() { # роль <<< вывод
+    printf '%s\n' "$2" > "reports/$1.txt"
+  }
 
-  out=$(deno run -A scripts/check-graph.ts 2>&1); st=$?; keep граф "$out"
-  row "мёртвый-код" "$([ $st -eq 0 ] && echo pass || echo fail)" "$N" 0 "$(echo "$out" | grep -i 'мёртв' | tr -d '"' | tr '\n' ' ')"
-  row "границы" "$([ $st -eq 0 ] && echo pass || echo fail)" "$N" 0 "$(echo "$out" | grep -i 'границ' | tr -d '"' | tr '\n' ' ')"
-fi
+  # Конфиг репозитория — ЯВНО, всюду. Без `--config` deno ищет его сам, вверх от файла, и для
+  # всего под `miniapp/` находит `miniapp/package.json` — то есть НЕ наш deno.json. Правила из
+  # него в этот момент не действуют: выключенный на весь репозиторий `no-sloppy-imports`
+  # воскресает и валит линт на `./format` — том самом расширении-без-расширения, которое
+  # обязателен писать веб. Локально это выглядит как «правило не выключается», в CI — как
+  # красный гейт на пустом месте.
+  CFG=(--config deno.json)
 
-# Типы: edge-функции (точки входа явно — без них deno check проверяет не всё) и веб.
-ENTRIES=()
-while IFS= read -r e; do ENTRIES+=("$e"); done < <(find supabase/functions -mindepth 2 -maxdepth 2 -name index.ts)
-out=$(deno check "${CFG[@]}" "${ENTRIES[@]}" 2>&1); st=$?; keep типы-функции "$out"
-row "типы-функции" "$([ $st -eq 0 ] && echo pass || echo fail)" "${#ENTRIES[@]}" 0 "$(echo "$out" | tail -1 | tr -d '"' | tr '\n' ' ')"
+  # Файлы фичи, которые уже существуют. Пока стройка не началась, список пуст — это
+  # сообщается вслух и отдельной строкой в отчёте, а не выглядит как пройденная проверка.
+  # bash 3.2 в macOS не знает mapfile — читаем циклом, иначе гейт не запускается у владельца
+  EXISTING=()
+  while IFS= read -r p; do
+    case "$p" in ''|\#*) continue ;; esac
+    [ -e "$p" ] && EXISTING+=("$p")
+  done < scripts/feature-paths.txt
+  N=${#EXISTING[@]}
 
-# Без miniapp/node_modules `npx --no-install` молча берёт ГЛОБАЛЬНЫЙ tsc: типы зависимостей
-# не резолвятся, и проверка печатает ошибки в исходниках — то есть винит код, которого никто
-# не трогал. Так гейт однажды указал на ConnectorsSection.tsx в чистом worktree, хотя в CI
-# (там `npm ci`) тот же коммит проходит начисто (issue #493). «Не смог проверить» обязано
-# звучать иначе, чем «нашёл поломку»: сбою, который выглядит результатом проверки, верят.
-if [ ! -d miniapp/node_modules ]; then
-  out="в miniapp/ нет node_modules — зависимости не установлены, тип-чек не запускался. Выполни: npm ci --prefix miniapp"
-  keep типы-веб "$out"
-  row "типы-веб" "fail" 0 0 "$out"
-else
-  out=$(cd miniapp && npx --no-install tsc --noEmit 2>&1); st=$?; keep типы-веб "$out"
-  row "типы-веб" "$([ $st -eq 0 ] && echo pass || echo fail)" 1 0 "$(echo "$out" | tail -1 | tr -d '"' | tr '\n' ' ')"
-fi
+  if [ "$N" -eq 0 ]; then
+    row "формат" "empty" 0 0 "файлов фичи ещё нет"
+    row "линт" "empty" 0 0 "файлов фичи ещё нет"
+    row "мёртвый-код" "empty" 0 0 "файлов фичи ещё нет"
+    row "границы" "empty" 0 0 "файлов фичи ещё нет"
+  else
+    out=$(deno fmt "${CFG[@]}" --check "${EXISTING[@]}" 2>&1); st=$?; keep формат "$out"
+    row "формат" "$([ $st -eq 0 ] && echo pass || echo fail)" "$N" 0 "$(echo "$out" | tail -1 | tr -d '"' | tr '\n' ' ')"
 
-# Тесты: машинный отчёт JUnit + покрытие. Пропущенный тест — падение (см. ниже).
-# Два прогона, как их гоняет сам проект: функции с проверкой типов, веб без неё
-# (`--no-check`). Это не наша уступка: тесты веба сегодня не проходят type-check, потому
-# что ссылаются на несуществующий параметр — issue #383. Когда он закрыт, флаг убирается
-# и оба прогона становятся одинаковыми.
-rm -rf reports/cov
-deno test -A --coverage=reports/cov --reporter=junit supabase/ \
-  > reports/tests-functions.junit.xml 2> reports/tests.log; st1=$?
-deno test -A --no-check --coverage=reports/cov --reporter=junit \
-  miniapp/sw.test.ts miniapp/src/lib/ > reports/tests-web.junit.xml 2>> reports/tests.log; st2=$?
+    out=$(deno lint "${CFG[@]}" "${EXISTING[@]}" 2>&1); st=$?; keep линт "$out"
+    row "линт" "$([ $st -eq 0 ] && echo pass || echo fail)" "$N" 0 "$(echo "$out" | tail -2 | tr -d '"' | tr '\n' ' ')"
 
-count() { # файл атрибут — сумма по всем testsuite
-  grep -o "$2=\"[0-9]*\"" "$1" 2>/dev/null | tr -dc '0-9\n' | awk '{s+=$1} END {print s+0}'
+    out=$(deno run -A scripts/check-graph.ts 2>&1); st=$?; keep граф "$out"
+    row "мёртвый-код" "$([ $st -eq 0 ] && echo pass || echo fail)" "$N" 0 "$(echo "$out" | grep -i 'мёртв' | tr -d '"' | tr '\n' ' ')"
+    row "границы" "$([ $st -eq 0 ] && echo pass || echo fail)" "$N" 0 "$(echo "$out" | grep -i 'границ' | tr -d '"' | tr '\n' ' ')"
+  fi
+
+  # Типы: edge-функции (точки входа явно — без них deno check проверяет не всё) и веб.
+  ENTRIES=()
+  while IFS= read -r e; do ENTRIES+=("$e"); done < <(find supabase/functions -mindepth 2 -maxdepth 2 -name index.ts)
+  out=$(deno check "${CFG[@]}" "${ENTRIES[@]}" 2>&1); st=$?; keep типы-функции "$out"
+  row "типы-функции" "$([ $st -eq 0 ] && echo pass || echo fail)" "${#ENTRIES[@]}" 0 "$(echo "$out" | tail -1 | tr -d '"' | tr '\n' ' ')"
+
+  # Без miniapp/node_modules `npx --no-install` молча берёт ГЛОБАЛЬНЫЙ tsc: типы зависимостей
+  # не резолвятся, и проверка печатает ошибки в исходниках — то есть винит код, которого никто
+  # не трогал. Так гейт однажды указал на ConnectorsSection.tsx в чистом worktree, хотя в CI
+  # (там `npm ci`) тот же коммит проходит начисто (issue #493). «Не смог проверить» обязано
+  # звучать иначе, чем «нашёл поломку»: сбою, который выглядит результатом проверки, верят.
+  if [ ! -d miniapp/node_modules ]; then
+    out="в miniapp/ нет node_modules — зависимости не установлены, тип-чек не запускался. Выполни: npm ci --prefix miniapp"
+    keep типы-веб "$out"
+    row "типы-веб" "fail" 0 0 "$out"
+  else
+    out=$(cd miniapp && npx --no-install tsc --noEmit 2>&1); st=$?; keep типы-веб "$out"
+    row "типы-веб" "$([ $st -eq 0 ] && echo pass || echo fail)" 1 0 "$(echo "$out" | tail -1 | tr -d '"' | tr '\n' ' ')"
+  fi
+
+  # Тесты: машинный отчёт JUnit + покрытие. Пропущенный тест — падение (см. ниже).
+  # Два прогона, как их гоняет сам проект: функции с проверкой типов, веб без неё
+  # (`--no-check`). Это не наша уступка: тесты веба сегодня не проходят type-check, потому
+  # что ссылаются на несуществующий параметр — issue #383. Когда он закрыт, флаг убирается
+  # и оба прогона становятся одинаковыми.
+  rm -rf reports/cov
+  deno test -A --coverage=reports/cov --reporter=junit supabase/ \
+    > reports/tests-functions.junit.xml 2> reports/tests.log; st1=$?
+  deno test -A --no-check --coverage=reports/cov --reporter=junit \
+    miniapp/sw.test.ts miniapp/src/lib/ > reports/tests-web.junit.xml 2>> reports/tests.log; st2=$?
+
+  count() { # файл атрибут — сумма по всем testsuite
+    grep -o "$2=\"[0-9]*\"" "$1" 2>/dev/null | tr -dc '0-9\n' | awk '{s+=$1} END {print s+0}'
+  }
+  EXEC=$(( $(count reports/tests-functions.junit.xml tests) + $(count reports/tests-web.junit.xml tests) ))
+  SKIP=$(( $(count reports/tests-functions.junit.xml skipped) + $(count reports/tests-web.junit.xml skipped) ))
+  STATUS=pass
+  [ "$st1" -ne 0 ] || [ "$st2" -ne 0 ] && STATUS=fail
+  [ "$SKIP" -gt 0 ] && STATUS=fail   # пропуск ничего не проверил — гейт обязан сказать вслух
+  [ "$EXEC" -eq 0 ] && STATUS=fail   # ноль зарегистрированных проверок ≠ зелено
+  row "тесты" "$STATUS" "$EXEC" "$SKIP" "выполнено $EXEC, пропущено $SKIP"
+
+  if [ -d reports/cov ]; then
+    deno coverage --lcov --output=reports/cov.lcov reports/cov > /dev/null 2>&1
+    out=$(scripts/gate-coverage.sh "$(cat scripts/coverage-floor.txt)" reports/cov.lcov 2>&1); st=$?
+    row "покрытие" "$([ $st -eq 0 ] && echo pass || echo fail)" 1 0 "$(echo "$out" | tail -1 | tr -d '"')"
+  else
+    row "покрытие" "fail" 0 1 "нет данных покрытия"
+  fi
+
+  printf '{"generated":"%s","failed":%s,"roles":[%s]}\n' \
+    "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$FAILED" "$(IFS=,; echo "${ROWS[*]}")" > "$REPORT"
+  echo "отчёт: $REPORT"
+
+  # Падение печатаем целиком прямо здесь. Артефакт с отчётами есть, но за ним надо идти и
+  # распаковывать, а человек смотрит в лог — и если в логе только «Found 1 problem», проверка
+  # сообщила о падении и не сообщила о причине.
+  if [ "$FAILED" -ne 0 ]; then
+    echo
+    echo "── Что именно упало ───────────────────────────────────────────────"
+    for f in reports/*.txt; do
+      [ -s "$f" ] || continue
+      echo "· $f"
+      sed 's/^/    /' "$f"
+    done
+    sed -n '1,40p' reports/tests.log 2>/dev/null | sed 's/^/    /'
+  fi
+  return "$FAILED"
 }
-EXEC=$(( $(count reports/tests-functions.junit.xml tests) + $(count reports/tests-web.junit.xml tests) ))
-SKIP=$(( $(count reports/tests-functions.junit.xml skipped) + $(count reports/tests-web.junit.xml skipped) ))
-STATUS=pass
-[ "$st1" -ne 0 ] || [ "$st2" -ne 0 ] && STATUS=fail
-[ "$SKIP" -gt 0 ] && STATUS=fail   # пропуск ничего не проверил — гейт обязан сказать вслух
-[ "$EXEC" -eq 0 ] && STATUS=fail   # ноль зарегистрированных проверок ≠ зелено
-row "тесты" "$STATUS" "$EXEC" "$SKIP" "выполнено $EXEC, пропущено $SKIP"
 
-if [ -d reports/cov ]; then
-  deno coverage --lcov --output=reports/cov.lcov reports/cov > /dev/null 2>&1
-  out=$(sh scripts/gate-coverage.sh "$(cat scripts/coverage-floor.txt)" reports/cov.lcov 2>&1); st=$?
-  row "покрытие" "$([ $st -eq 0 ] && echo pass || echo fail)" 1 0 "$(echo "$out" | tail -1 | tr -d '"')"
-else
-  row "покрытие" "fail" 0 1 "нет данных покрытия"
+run() { # run <имя> <команда...>
+  local name="$1"; shift
+  printf '\n──── %s\n' "$name"
+  if "$@"; then
+    printf '✔ %s\n' "$name"
+  else
+    printf '✘ %s\n' "$name"
+    failed+=("$name")
+  fi
+}
+
+need() { # need <инструмент> <имя проверки>
+  if command -v "$1" >/dev/null 2>&1; then return 0; fi
+  printf '\n✘ %s: инструмента «%s» нет в PATH — проверка НЕ выполнялась\n' "$2" "$1"
+  failed+=("$2 (нет инструмента $1)")
+  return 1
+}
+if [[ "$scope" == "all" || "$scope" == "initiatives" ]]; then
+  printf '\n──── доска инициатив (reports/check.json)\n'
+  # Отдельным подпроцессом и без ловушки ERR: гейт доски сам разбирает коды возврата
+  # (`out=$(...); st=$?`), и провалившаяся проверка внутри него — это результат, а не
+  # ошибка скрипта. Итог гейта — его код возврата.
+  if ( trap - ERR; set +u; initiatives_gate ); then
+    printf '✔ доска инициатив\n'
+  else
+    printf '✘ доска инициатив\n'
+    failed+=("доска инициатив (подробности выше и в reports/check.json)")
+  fi
 fi
 
-printf '{"generated":"%s","failed":%s,"roles":[%s]}\n' \
-  "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$FAILED" "$(IFS=,; echo "${ROWS[*]}")" > "$REPORT"
-echo "отчёт: $REPORT"
-
-# Падение печатаем целиком прямо здесь. Артефакт с отчётами есть, но за ним надо идти и
-# распаковывать, а человек смотрит в лог — и если в логе только «Found 1 problem», проверка
-# сообщила о падении и не сообщила о причине.
-if [ "$FAILED" -ne 0 ]; then
-  echo
-  echo "── Что именно упало ───────────────────────────────────────────────"
-  for f in reports/*.txt; do
-    [ -s "$f" ] || continue
-    echo "· $f"
-    sed 's/^/    /' "$f"
-  done
-  sed -n '1,40p' reports/tests.log 2>/dev/null | sed 's/^/    /'
+if [[ "$scope" == "all" || "$scope" == "bot" ]]; then
+  if [[ -d bot/node_modules ]]; then
+    run "бот · формат"           npm --prefix bot run format:check
+    run "бот · линт с типами"    npm --prefix bot run lint
+    run "бот · автофикс не трогает данные тестов" npm --prefix bot run lint:autofix-guard
+    run "бот · типы"             npm --prefix bot run typecheck
+    if find bot/src -name '*.test.ts' -print -quit | grep -q .; then
+      run "бот · тесты"          npm --prefix bot run test
+      run "бот · порог покрытия" scripts/gate-coverage.sh bot/coverage/lcov.info bot
+    else
+      printf '\n○ бот · тесты: файлов *.test.ts в bot/src пока нет\n'
+      skipped+=("бот · тесты и покрытие (нет ни одного файла *.test.ts)")
+    fi
+    run "бот · мёртвый код"      npm --prefix bot run deadcode
+    run "бот · границы модулей"  npm --prefix bot run boundaries
+  else
+    printf '\n✘ бот: bot/node_modules нет — окружение не поднято, проверки НЕ выполнялись\n'
+    printf '  поднять: npm ci --prefix bot\n'
+    failed+=("бот (окружение не поднято)")
+  fi
 fi
-exit "$FAILED"
+
+if [[ "$scope" == "all" || "$scope" == "server" ]]; then
+  if need deno "сервер"; then
+    # Формат и линт сервера смотрят ТОЛЬКО файлы, которые трогает стройка.
+    # Замер 17.09.2026: в существующем коде Swarm 172 файла из 188 не по формату
+    # и 133 замечания линта. Переформатировать репозиторий целиком значит затоптать
+    # параллельные ветки и сделать дифы блоков нечитаемыми — то есть убить ровно ту
+    # пользу, ради которой роль «формат» и заведена. Легаси остаётся как есть;
+    # новый и правленый код обязан быть по канону. Решение D013.
+    # Портируемо, без mapfile: на macOS системный bash — 3.2, а mapfile появился в 4.0.
+    # Проверено порчей: с mapfile список молча оставался пустым, и прогон выходил ЗЕЛЁНЫМ.
+    touched_list="$(
+      { base="$(grep -v '^#' .scriba-build-base 2>/dev/null | tr -d '[:space:]')"
+        # Влитый в стройку `main` — не код стройки: считаем от последнего влитого коммита
+        # `main`, если он новее базы. Иначе после слияния main в «затронутые» попадает чужой
+        # легаси-код и валит формат (29.09.2026: восемь файлов из main, в CI main зелёный).
+        merged_main="$(git merge-base origin/main HEAD 2>/dev/null || true)"
+        if [ -n "$base" ] && [ -n "$merged_main" ] && git merge-base --is-ancestor "$base" "$merged_main" 2>/dev/null; then
+          base="$merged_main"
+        fi
+        if [ -n "$base" ] && git cat-file -e "$base^{commit}" 2>/dev/null; then
+          git diff --name-only --diff-filter=ACMR "$base"...HEAD -- 'supabase/functions/*.ts'
+        elif [ -n "$base" ]; then
+          echo "БАЗА НЕ НАЙДЕНА: $base" >&2
+        fi
+        git diff --name-only --diff-filter=ACMR -- 'supabase/functions/*.ts'
+        git diff --name-only --diff-filter=ACMR --cached -- 'supabase/functions/*.ts'
+        # Новые файлы ещё не в индексе, а блоки создают именно их. Без этой строки
+        # прогон честно зеленел на файле, которого не видел. Проверено порчей 17.09.2026.
+        git ls-files --others --exclude-standard -- 'supabase/functions/*.ts'
+      } 2>/dev/null | sort -u
+    )"
+    touched=()
+    while IFS= read -r f; do
+      [ -n "$f" ] && [ -f "$f" ] && touched+=("$f")
+    done <<< "$touched_list"
+
+    if [ "${#touched[@]}" -gt 0 ]; then
+      printf '\nфайлов сервера, затронутых стройкой: %d\n' "${#touched[@]}"
+      run "сервер · формат"  deno fmt --check "${touched[@]}"
+      run "сервер · линт"    deno lint "${touched[@]}"
+    else
+      printf '\n○ сервер · формат и линт: стройка пока не трогала ни одного файла supabase/functions\n'
+      skipped+=("сервер · формат и линт (стройка не трогала файлов сервера)")
+    fi
+    # Типы — по ВСЕМ функциям, а не только по изменённым: правка в _shared/ ломает
+    # потребителей, которых её автор не открывал, и видно это только полным проходом.
+    run "сервер · типы"    bash -c '
+      status=0
+      while IFS= read -r f; do
+        deno check --quiet "$f" || status=1
+      done < <(find supabase/functions -maxdepth 2 -name index.ts)
+      exit $status'
+    if compgen -G "supabase/functions/**/*.test.ts" >/dev/null 2>&1 \
+       || find supabase/functions -name '*.test.ts' -print -quit | grep -q .; then
+      # Каталог покрытия — ВНУТРИ копии, а не в /tmp. Общий путь в /tmp — это гонка:
+      # блоки идут параллельно в разных копиях, каждый чистит и пишет один и тот же
+      # каталог, и отчёт достаётся тому, кто закончил последним. Поймано 17.09.2026 на
+      # приёмке первого блока: покрытие «выросло» до 99.77%, потому что в отчёте осталось
+      # 6 файлов вместо 188 — прогон был зелёным и означал не то, что показывал.
+      # set -e обязателен: без него код возврата bash -c берётся от ПОСЛЕДНЕЙ команды
+      # (deno coverage), а падение deno test теряется. Поймано 23.09.2026 порчей на
+      # приёмке блока ingest-speakers: два теста красные, роль «сервер · тесты» ✔,
+      # итог «ЗЕЛЁНЫЙ», код возврата 0.
+      run "сервер · тесты" bash -c '
+        set -e
+        rm -rf .coverage-server
+        deno test --allow-all --coverage=.coverage-server --junit-path=reports/check-server.xml supabase/functions
+        deno coverage .coverage-server --lcov --output=reports/lcov-server.info \
+          --exclude="test\.(js|mjs|ts|jsx|tsx)$" \
+          --exclude="_shared/meeting-processor\.ts$" --exclude="meeting-ingest/index\.ts$"'
+      run "сервер · порог покрытия" scripts/gate-coverage.sh reports/lcov-server.info server
+      # Порог относительный и считается по ЗАГРУЖЕННЫМ файлам: смоук meeting-ingest/index.test.ts
+      # впервые тянет в базу обработчик и meeting-processor (679 строк, почти все — транскрибация
+      # и запись, которые смоук сознательно не трогает), и процент падал с 88.50 до 78.08, хотя
+      # ни одна прежде измеренная строка не потеряла покрытия (без этих двух файлов — 89.04).
+      printf '\n○ сервер · покрытие: meeting-ingest/index.ts и _shared/meeting-processor.ts вне базы порога\n'
+      skipped+=("сервер · покрытие без meeting-ingest/index.ts и _shared/meeting-processor.ts (их грузит только смоук порядка проверок; в базу порога не входили никогда — иначе относительный порог падает от добавления теста)")
+    else
+      printf '\n○ сервер · тесты: файлов *.test.ts в supabase/functions пока нет\n'
+      skipped+=("сервер · тесты (нет ни одного файла *.test.ts)")
+    fi
+    printf '\n○ бот · браузерный код (meet-adapter/dom.ts, meet.ts): проверяется смоуком в контейнере вручную\n'
+    skipped+=("бот · браузерный код meet-adapter (исключён из покрытия; держит смоук smoke-meet.ts, запускается руками в контейнере)")
+    printf '\n○ сервер · мёртвый код и границы модулей: готового инструмента под Deno нет\n'
+    skipped+=("сервер · мёртвый код и границы (нет инструмента под Deno — осознанный пробел, docs/furca/plan.md)")
+  fi
+fi
+
+printf '\n════ итог\n'
+if [[ ${#skipped[@]} -gt 0 ]]; then
+  printf 'пропущено с объявленной причиной:\n'
+  printf '  ○ %s\n' "${skipped[@]}"
+fi
+if [[ $self_error -ne 0 ]]; then
+  printf 'КРАСНЫЙ: сам прогон дал ошибку (см. вывод выше) — результат недействителен.\n'
+  exit 1
+fi
+if [[ ${#failed[@]} -gt 0 ]]; then
+  printf 'КРАСНЫЙ, не сошлось:\n'
+  printf '  ✘ %s\n' "${failed[@]}"
+  exit 1
+fi
+printf 'ЗЕЛЁНЫЙ\n'

@@ -1,0 +1,900 @@
+/**
+ * Смоук оркестратора: НАСТОЯЩИЙ Docker, настоящий образ, настоящие Chromium и ffmpeg в
+ * контейнере; сервер — двойник `fake-swarm`, звонок — страница-двойник Meet.
+ *
+ * Что проверяет (мерило блока): контейнер поднимается на встречу, заходит, пишет звук,
+ * отдаёт запись в meeting-ingest и гасится; смерть контейнера видна (код выхода, нотиса,
+ * heartbeat замолкает на `recording: true`); после падения оркестратора (настоящий SIGKILL
+ * процесса) сирот не остаётся, а новый оркестратор подхватывает живые контейнеры.
+ * Ручной запуск по приглашению (D017) — сценарии invite, kontur, race — гоняет НАСТОЯЩУЮ
+ * службу `orchestrator-main.ts` дочерним процессом: приглашение забрано → контейнер → заявка
+ * по приглашению → запись; Контур — громкий отказ; две службы не берут одно приглашение дважды.
+ *
+ * Живой вход в настоящую встречу Google сюда не входит — это T004 (нужен аккаунт и человек).
+ *
+ * Запуск с хоста, образ собран заранее:
+ *   docker build -f bot/container/Dockerfile -t scriba-orchestrator:dev bot/
+ *   SCRIBA_SMOKE_STATE=<каталог> node bot/src/orchestrator/smoke-orchestrator.ts
+ *
+ * Переменные:
+ *   SCRIBA_SMOKE_STATE    — каталог под поводки (обязателен: только свой, не общий tmp);
+ *   SCRIBA_SMOKE_PROJECT  — имя стенда, по умолчанию scriba-orchestrator;
+ *   SCRIBA_SMOKE_IMAGE    — образ, по умолчанию scriba-orchestrator:dev;
+ *   SCRIBA_SMOKE_PORT     — порт двойника сервера, по умолчанию 4361;
+ *   SCRIBA_SMOKE_ONLY     — через запятую: какие сценарии гнать (по умолчанию все);
+ *   SCRIBA_SMOKE_LISTEN   — адрес, на котором двойник сервера ждёт контейнеры (по умолчанию
+ *                           127.0.0.1; смоук, запущенный сам в контейнере, — 0.0.0.0).
+ */
+import { spawn } from "node:child_process";
+import { mkdir, readdir, rm, writeFile } from "node:fs/promises";
+import path from "node:path";
+import { createInterface } from "node:readline";
+import { fileURLToPath } from "node:url";
+
+import Docker from "dockerode";
+
+import { startFakeSwarm } from "../swarm-client/testing/fake-swarm.ts";
+import { ACCOUNT_STATE_TARGET, FileAccountCopies } from "./account.ts";
+import { DockerodeEngine } from "./docker-engine.ts";
+import { DockerMeetingEgress } from "./egress.ts";
+import { NoticeClient } from "./notice-client.ts";
+import { JournaledNotifier } from "./notices.ts";
+import { type ContainerId, LABEL, Orchestrator } from "./orchestrator.ts";
+import { type NoticeProxy, startNoticeProxy } from "./smoke-notices.ts";
+
+const ENGINE = new DockerodeEngine();
+const PROJECT = process.env.SCRIBA_SMOKE_PROJECT ?? "scriba-orchestrator";
+const IMAGE = process.env.SCRIBA_SMOKE_IMAGE ?? "scriba-orchestrator:dev";
+const PORT = Number(process.env.SCRIBA_SMOKE_PORT ?? "4361");
+const STATE = process.env.SCRIBA_SMOKE_STATE ?? "";
+const LISTEN_HOST = process.env.SCRIBA_SMOKE_LISTEN ?? "127.0.0.1";
+const TOKEN = "smoke-bot-token";
+const PERSON = 744_230_399;
+const MEET = "https://meet.google.com/abc-defg-hij";
+const SWARM_URL = `http://host.docker.internal:${String(PORT)}`;
+const HERE = path.dirname(fileURLToPath(import.meta.url));
+
+const SHORT_PAGE = "/app/src/orchestrator/fixtures/meeting.html";
+const LONG_PAGE = "/app/src/orchestrator/fixtures/meeting-long.html";
+const DOOR_PAGE = "/app/src/meet-adapter/fixtures/waiting.html";
+const GUEST_LOBBY_PAGE = "/app/src/meet-adapter/fixtures/lobby.html";
+
+const BASE_ENV: Record<string, string> = {
+  SCRIBA_ALONE_MS: "6000",
+  SCRIBA_POLL_MS: "1000",
+  SCRIBA_SEGMENT_SECONDS: "3",
+  SCRIBA_HEARTBEAT_MS: "3000",
+  SCRIBA_DOOR_WAIT_MS: "4000",
+  SCRIBA_DOOR_REPEAT_MS: "4000",
+};
+
+const failures: string[] = [];
+
+function check(isPassed: boolean, what: string, detail = ""): void {
+  const line = detail === "" ? what : `${what} — ${detail}`;
+  if (isPassed) {
+    console.log(`  ✔ ${line}`);
+  } else {
+    failures.push(line);
+    console.log(`  ✘ ${line}`);
+  }
+}
+
+function seconds(ms: number): string {
+  return String(Math.round(ms / 1000));
+}
+
+async function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
+async function within<T>(ms: number, what: string, task: Promise<T>): Promise<T> {
+  let timer: NodeJS.Timeout | undefined;
+  const timeout = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(() => {
+      reject(new Error(`${what}: не уложились в ${String(ms / 1000)} с`));
+    }, ms);
+  });
+  try {
+    return await Promise.race([task, timeout]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function until(ms: number, what: string, isDone: () => Promise<boolean>): Promise<number> {
+  const started = Date.now();
+  while (Date.now() - started < ms) {
+    if (await isDone()) return Date.now() - started;
+    await sleep(1000);
+  }
+  throw new Error(`${what}: не дождались за ${String(ms / 1000)} с`);
+}
+
+function orchestratorFor(
+  leaseName: string,
+  page: string,
+  isVerbose = true,
+  account?: FileAccountCopies,
+): Orchestrator {
+  return new Orchestrator({
+    ...(account !== undefined && { account }),
+    engine: ENGINE,
+    egress: new DockerMeetingEgress({
+      engine: ENGINE,
+      project: PROJECT,
+      image: IMAGE,
+      swarmUrl: SWARM_URL,
+      log: (line) => {
+        console.log(`    [egress] ${line}`);
+      },
+    }),
+    project: PROJECT,
+    image: IMAGE,
+    leaseDirectory: path.join(STATE, leaseName),
+    swarmUrl: SWARM_URL,
+    token: TOKEN,
+    version: 1,
+    notifierFor: (onBehalfOf) =>
+      new JournaledNotifier(
+        new NoticeClient({ baseUrl: `http://127.0.0.1:${String(PORT)}`, token: TOKEN, onBehalfOf }),
+        (line) => {
+          console.log(`    [notice] ${line}`);
+        },
+      ),
+    log: isVerbose
+      ? (line): void => {
+          console.log(`    [orchestrator] ${line.split("\n", 1)[0] ?? ""}`);
+        }
+      : (): void => {
+          // тихий режим
+        },
+    extraEnv: { ...BASE_ENV, SCRIBA_SMOKE_MEET_PAGE: page },
+  });
+}
+
+async function hasContainer(id: string): Promise<boolean> {
+  const ids = await ourContainers();
+  return ids.includes(id);
+}
+
+async function isStandEmpty(): Promise<boolean> {
+  const ids = await ourContainers();
+  return ids.length === 0;
+}
+
+async function ourContainers(): Promise<string[]> {
+  const docker = new Docker();
+  const found = await docker.listContainers({
+    all: true,
+    filters: { label: [`${LABEL.project}=${PROJECT}`] },
+  });
+  return found.map((info) => info.Id);
+}
+
+async function waitMeetingId(orchestrator: Orchestrator, id: ContainerId): Promise<string> {
+  const current = (): string | null =>
+    orchestrator.list().find((item) => item.id === id)?.meetingId ?? null;
+  await until(90_000, "meeting_id в журнале контейнера", async () => {
+    await sleep(0);
+    return current() !== null;
+  });
+  return current() ?? "";
+}
+
+type Swarm = Awaited<ReturnType<typeof startFakeSwarm>>;
+
+/**
+ * Двойник сервера целиком: `fake-swarm` за прокси, который сам отвечает на `/meeting-notice`.
+ */
+type Fake = Swarm & { readonly noticeProxy: NoticeProxy };
+
+function noticesOf(fake: Fake, kind: string, meetingId?: string): Record<string, unknown>[] {
+  return fake.noticeProxy.notices
+    .filter(
+      (notice) =>
+        notice.onBehalfOf === String(PERSON) &&
+        notice.body.kind === kind &&
+        (meetingId === undefined || notice.body.meeting_id === meetingId),
+    )
+    .map((notice) => notice.body);
+}
+
+interface Beat {
+  readonly recording: boolean;
+}
+
+function heartbeatsFor(fake: Fake, meetingKey: string | null): Beat[] {
+  return fake
+    .requestsTo("/meeting-heartbeat")
+    .map((request) => request.body as Record<string, unknown> | null)
+    .filter(
+      (body) =>
+        meetingKey === null || body?.meeting_key === meetingKey || body?.meeting_key === undefined,
+    )
+    .map((body) => ({ recording: body?.recording === true }));
+}
+
+async function sceneFullMeeting(fake: Fake): Promise<void> {
+  console.log("\n──── встреча целиком: поднялся → зашёл → записал → отдал → погас");
+  const orchestrator = orchestratorFor("lease-main", SHORT_PAGE);
+  await orchestrator.init();
+  const before = fake.ingested.length;
+  const beatsBefore = fake.requestsTo("/meeting-heartbeat").length;
+  try {
+    const id = await orchestrator.startForMeeting(MEET, "meet", PERSON);
+    const exit = await within(180_000, "конец встречи", orchestrator.whenExited(id));
+    check(exit?.kind === "finished", "контейнер вышел штатно", JSON.stringify(exit));
+    check(exit?.kind === "finished" && exit.outcome === "recorded", "исход — recorded");
+
+    const record = fake.ingested.at(-1);
+    check(fake.ingested.length === before + 1, "meeting-ingest принял запись");
+    check(
+      (record?.sys.length ?? 0) >= 2,
+      "запись пришла частями",
+      `частей ${String(record?.sys.length ?? 0)}`,
+    );
+    const offsets = record?.sys.map((part) => part.offset) ?? [];
+    check(
+      offsets.every((offset, index) => index === 0 || offset > (offsets[index - 1] ?? 0)),
+      "сдвиги частей растут",
+      offsets.join(","),
+    );
+    const names = new Set(record?.speakers?.map((span) => span.name));
+    check(names.has("Василий Гарро"), "таймлайн говорящих дошёл", [...names].join(","));
+
+    const beats = fake.requestsTo("/meeting-heartbeat").slice(beatsBefore);
+    const flags = beats.map(
+      (request) => (request.body as Record<string, unknown> | null)?.recording,
+    );
+    check(flags.includes(true), "heartbeat шёл с recording:true во время записи");
+    check(
+      flags.at(-1) === false,
+      "последний heartbeat — recording:false (штатный конец)",
+      flags.join(","),
+    );
+
+    await until(30_000, "контейнер убран", isStandEmpty);
+    check(true, "после встречи контейнеров стенда не осталось");
+  } finally {
+    orchestrator.close();
+  }
+}
+
+async function sceneTwoAtOnce(fake: Fake): Promise<void> {
+  console.log("\n──── два контейнера одновременно не мешают друг другу");
+  const orchestrator = orchestratorFor("lease-main", SHORT_PAGE);
+  await orchestrator.init();
+  const before = fake.ingested.length;
+  try {
+    const first = await orchestrator.startForMeeting(MEET, "meet", PERSON);
+    const second = await orchestrator.startForMeeting(MEET, "meet", PERSON);
+    check(orchestrator.list().length === 2, "оба под присмотром");
+    const exits = await within(
+      240_000,
+      "конец обеих встреч",
+      Promise.all([orchestrator.whenExited(first), orchestrator.whenExited(second)]),
+    );
+    check(
+      exits.every((exit) => exit?.kind === "finished"),
+      "оба вышли штатно",
+      JSON.stringify(exits),
+    );
+    const records = fake.ingested.slice(before);
+    const ids = new Set(records.map((record) => record.meeting_id));
+    check(
+      records.length === 2 && ids.size === 2,
+      "две записи в две разные встречи",
+      [...ids].join(","),
+    );
+    check(
+      records.every((record) => record.sys.length > 0),
+      "у каждой есть звук",
+    );
+  } finally {
+    orchestrator.close();
+  }
+}
+
+async function sceneDeath(fake: Fake): Promise<void> {
+  console.log(
+    "\n──── контейнер умер посреди встречи: смерть видна, heartbeat замолкает на recording:true",
+  );
+  const orchestrator = orchestratorFor("lease-main", LONG_PAGE);
+  await orchestrator.init();
+  try {
+    const id = await orchestrator.startForMeeting(MEET, "meet", PERSON);
+    const meetingId = await waitMeetingId(orchestrator, id);
+    const meetingKey = meetingId.replace(/^m-/u, "");
+    // Даём записи пойти и heartbeat'у — отбить хотя бы раз.
+    await until(60_000, "heartbeat с recording:true", async () => {
+      await sleep(0);
+      return heartbeatsFor(fake, meetingKey).some((beat) => beat.recording);
+    });
+    const beatsAtKill = fake.requestsTo("/meeting-heartbeat").length;
+    await new Docker().getContainer(id).kill();
+    const exit = await within(30_000, "смерть замечена", orchestrator.whenExited(id));
+    check(exit?.kind === "died", "оркестратор увидел смерть", JSON.stringify(exit));
+    check(exit?.kind === "died" && exit.exitCode === 137, "код выхода 137 (SIGKILL)");
+    check(
+      exit?.kind === "died" && exit.meetingId === meetingId,
+      "смерть привязана к meeting_id",
+      meetingId,
+    );
+    await until(15_000, "нотиса container_died", async () => {
+      await sleep(0);
+      return noticesOf(fake, "container_died", meetingId).length > 0;
+    });
+    check(
+      noticesOf(fake, "container_died", meetingId).length === 1,
+      "человеку ушла нотиса container_died с meeting_id, от его имени",
+      JSON.stringify(noticesOf(fake, "container_died", meetingId)),
+    );
+
+    await sleep(8000);
+    const after = fake.requestsTo("/meeting-heartbeat").slice(beatsAtKill);
+    check(
+      after.length === 0,
+      "после смерти heartbeat замолчал",
+      `пришло ещё ${String(after.length)}`,
+    );
+    const last = heartbeatsFor(fake, meetingKey).at(-1);
+    check(
+      last?.recording === true,
+      "последний heartbeat остался recording:true — сигнал «запись оборвалась»",
+    );
+    await until(30_000, "контейнер убран", isStandEmpty);
+    check(true, "умерший контейнер убран");
+  } finally {
+    orchestrator.close();
+  }
+}
+
+async function sceneStop(fake: Fake): Promise<void> {
+  console.log("\n──── stop(): контейнер гасится по просьбе и отдаёт записанное");
+  const orchestrator = orchestratorFor("lease-main", LONG_PAGE);
+  await orchestrator.init();
+  const before = fake.ingested.length;
+  try {
+    const id = await orchestrator.startForMeeting(MEET, "meet", PERSON);
+    await waitMeetingId(orchestrator, id);
+    await sleep(10_000);
+    await within(180_000, "stop", orchestrator.stop(id));
+    const exit = orchestrator.exitOf(id);
+    check(exit?.kind === "finished", "вышел штатно после SIGTERM", JSON.stringify(exit));
+    check(fake.ingested.length === before + 1, "записанное до остановки ушло в meeting-ingest");
+  } finally {
+    orchestrator.close();
+  }
+}
+
+async function sceneDoor(fake: Fake): Promise<void> {
+  console.log("\n──── не впустили: две нотисы двери, выход, записи нет");
+  const orchestrator = orchestratorFor("lease-main", DOOR_PAGE);
+  await orchestrator.init();
+  const before = fake.ingested.length;
+  try {
+    const id = await orchestrator.startForMeeting(MEET, "meet", PERSON);
+    const exit = await within(120_000, "уход от двери", orchestrator.whenExited(id));
+    check(
+      exit?.kind === "finished" && exit.outcome === "door_timeout",
+      "исход door_timeout",
+      JSON.stringify(exit),
+    );
+    check(fake.ingested.length === before, "ничего не отправлено");
+    const door = noticesOf(fake, "door_waiting");
+    const doorMeeting = door[0]?.meeting_id;
+    check(
+      door.length === 2 &&
+        typeof doorMeeting === "string" &&
+        door.every((body) => body.meeting_id === doorMeeting),
+      "две нотисы door_waiting с meeting_id (claim раньше захода), вторая вернула should_leave",
+      JSON.stringify(door),
+    );
+    check(
+      door.every((body) => !("attempt" in body)),
+      "в теле нотисы нет attempt — номер считает сервер",
+    );
+  } finally {
+    orchestrator.close();
+  }
+}
+
+/**
+ * Вход аккаунта бота (T175) на настоящем Docker: копия едет в контейнер одним файлом только на
+ * чтение, контейнер идёт под аккаунтом, а слетевший вход (двойник Meet отдаёт лобби гостя) — это
+ * нотиса account_signin_required, а не стук в дверь гостем. Копия убирается с выходом.
+ */
+async function sceneAccount(fake: Fake): Promise<void> {
+  console.log("\n──── вход аккаунта бота: копия на чтение, слетевший вход — громко, копия убрана");
+  const accountDirectory = path.join(STATE, "account");
+  const copiesDirectory = path.join(STATE, "account-copies");
+  const stateFile = path.join(accountDirectory, "google-state.json");
+  await mkdir(accountDirectory, { recursive: true });
+  const cookie = { name: "SMOKE", value: "not-a-session", domain: ".google.com", path: "/" };
+  const signIn = {
+    cookies: [{ ...cookie, expires: -1, httpOnly: true, secure: true, sameSite: "Lax" }],
+    origins: [],
+  };
+  await writeFile(stateFile, JSON.stringify(signIn), { mode: 0o600 });
+  const account = new FileAccountCopies({ stateFile, copiesDirectory });
+  const orchestrator = orchestratorFor("lease-main", GUEST_LOBBY_PAGE, true, account);
+  await orchestrator.init();
+  try {
+    const id = await orchestrator.startForMeeting(MEET, "meet", PERSON);
+    const info = await new Docker().getContainer(id).inspect();
+    const mount = info.Mounts.find((item) => item.Destination === ACCOUNT_STATE_TARGET);
+    check(
+      mount !== undefined && !mount.RW && mount.Source.endsWith(".json"),
+      "копия входа смонтирована одним файлом только на чтение",
+      JSON.stringify(mount),
+    );
+    check(
+      info.Mounts.every((item) => !item.Source.endsWith("/account")),
+      "каталог состояния с самим входом в контейнер не смонтирован",
+    );
+    check(
+      info.Config.Env.includes(`SCRIBA_GOOGLE_STATE=${ACCOUNT_STATE_TARGET}`),
+      "контейнер знает, где лежит вход",
+    );
+    const exit = await within(120_000, "уход от двери", orchestrator.whenExited(id));
+    check(
+      exit?.kind === "finished" && exit.outcome === "account_signin_required",
+      "исход account_signin_required",
+      JSON.stringify(exit),
+    );
+    check(
+      noticesOf(fake, "account_signin_required").length === 1,
+      "человеку ушла одна нотиса account_signin_required",
+    );
+    check(noticesOf(fake, "door_waiting").length === 0, "гостем в дверь не стучались");
+    const leftCopies = await readdir(copiesDirectory);
+    check(leftCopies.length === 0, "копия входа убрана после выхода", leftCopies.join(", "));
+  } finally {
+    orchestrator.close();
+    await rm(accountDirectory, { recursive: true, force: true });
+    await rm(copiesDirectory, { recursive: true, force: true });
+  }
+}
+
+/**
+ * Дочерний процесс: оркестратор, которого родитель убьёт SIGKILL'ом.
+ */
+async function child(): Promise<void> {
+  const orchestrator = orchestratorFor(
+    process.env.SCRIBA_SMOKE_CHILD_LEASE ?? "lease-child",
+    LONG_PAGE,
+    false,
+  );
+  await orchestrator.init();
+  const id = await orchestrator.startForMeeting(MEET, "meet", PERSON);
+  console.log(`CHILD_CONTAINER ${id}`);
+  // Живём, пока не убьют: поводок двигается таймером.
+  await new Promise<never>(() => {
+    // промис без исхода: процесс держит таймер поводка до SIGKILL
+  });
+}
+
+async function spawnChild(leaseName: string): Promise<{ id: string; kill: () => void }> {
+  const script = fileURLToPath(import.meta.url);
+  const proc = spawn(process.execPath, [...process.execArgv, script, "child"], {
+    env: { ...process.env, SCRIBA_SMOKE_CHILD_LEASE: leaseName },
+    stdio: ["ignore", "pipe", "inherit"],
+  });
+  const reader = createInterface({ input: proc.stdout });
+  const id = await within(
+    60_000,
+    "дочерний оркестратор поднял контейнер",
+    new Promise<string>((resolve) => {
+      reader.on("line", (line) => {
+        if (line.startsWith("CHILD_CONTAINER ")) resolve(line.slice("CHILD_CONTAINER ".length));
+      });
+    }),
+  );
+  return {
+    id,
+    kill: (): void => {
+      proc.kill("SIGKILL");
+    },
+  };
+}
+
+async function sceneOrphans(fake: Fake): Promise<void> {
+  console.log(
+    "\n──── оркестратор убит SIGKILL: контейнер-сирота сам заканчивает встречу и исчезает",
+  );
+  const before = fake.ingested.length;
+  const spawned = await spawnChild("lease-orphan");
+  await sleep(15_000);
+  spawned.kill();
+  const killedAt = Date.now();
+  console.log(
+    `    оркестратор (pid дочернего процесса) убит; жду, пока контейнер ${spawned.id.slice(0, 12)} уйдёт сам`,
+  );
+  const gone = await until(300_000, "сирота ушёл", async () => !(await hasContainer(spawned.id)));
+  check(
+    true,
+    "сирот не осталось",
+    `контейнер ушёл через ${seconds(Date.now() - killedAt)} с после смерти оркестратора (ждали ${seconds(gone)} с)`,
+  );
+  check(fake.ingested.length === before + 1, "записанное сиротой отдано, а не брошено");
+}
+
+async function sceneAdopt(fake: Fake): Promise<void> {
+  console.log("\n──── оркестратор убит и поднят снова: живой контейнер подхвачен и управляем");
+  const before = fake.ingested.length;
+  const spawned = await spawnChild("lease-adopt");
+  await sleep(10_000);
+  spawned.kill();
+  await sleep(5000);
+  const successor = orchestratorFor("lease-adopt", LONG_PAGE);
+  try {
+    await successor.init();
+    check(
+      successor.list().some((item) => item.id === spawned.id),
+      "новый оркестратор подхватил живой контейнер",
+    );
+    await sleep(100_000);
+    check(
+      await hasContainer(spawned.id),
+      "подхваченный не счёл себя сиротой за 100 с (поводок снова двигается)",
+    );
+    await within(180_000, "stop подхваченного", successor.stop(spawned.id));
+    check(successor.exitOf(spawned.id)?.kind === "finished", "подхваченный погашен штатно");
+    check(fake.ingested.length === before + 1, "его запись ушла");
+  } finally {
+    successor.close();
+  }
+}
+
+async function ourLabels(): Promise<string[]> {
+  const docker = new Docker();
+  const found = await docker.listContainers({
+    all: true,
+    filters: { label: [`${LABEL.project}=${PROJECT}`] },
+  });
+  return found.flatMap((info) =>
+    Object.entries(info.Labels).map(([key, value]) => `${key}=${value}`),
+  );
+}
+
+// ──── ручной запуск по приглашению (D017): настоящая служба orchestrator-main.ts дочерним процессом
+
+interface Service {
+  readonly lines: string[];
+  stop(): Promise<void>;
+}
+
+/**
+ * Поднять настоящую службу (`orchestrator-main.ts`) дочерним процессом: так смоук проверяет
+ * и разбор окружения, и провода, а не только классы.
+ */
+async function spawnService(leaseName: string, page: string): Promise<Service> {
+  const lines: string[] = [];
+  const service = spawn(process.execPath, [path.join(HERE, "orchestrator-main.ts")], {
+    env: {
+      ...process.env,
+      SCRIBA_SWARM_URL: `http://127.0.0.1:${String(PORT)}`,
+      SCRIBA_CONTAINER_SWARM_URL: SWARM_URL,
+      SCRIBA_BOT_TOKEN: TOKEN,
+      SCRIBA_IMAGE: IMAGE,
+      SCRIBA_PROJECT: PROJECT,
+      SCRIBA_LEASE_HOST_DIR: path.join(STATE, leaseName),
+      SCRIBA_BOT_VERSION: "1",
+      SCRIBA_INVITE_POLL_MS: "1000",
+      SCRIBA_CONTAINER_ENV: JSON.stringify({ ...BASE_ENV, SCRIBA_SMOKE_MEET_PAGE: page }),
+    },
+    stdio: ["ignore", "pipe", "inherit"],
+  });
+  createInterface({ input: service.stdout }).on("line", (line) => {
+    lines.push(line);
+    console.log(`    [${leaseName}] ${line.replace(/^\[orchestrator \S+\] /u, "")}`);
+  });
+  await until(30_000, `служба ${leaseName} запущена`, async () => {
+    await sleep(0);
+    return lines.some((line) => line.includes("служба запущена"));
+  });
+  const exited = new Promise<void>((resolve) => {
+    service.once("exit", () => {
+      resolve();
+    });
+  });
+  return {
+    lines,
+    stop: async (): Promise<void> => {
+      service.kill("SIGTERM");
+      await within(30_000, `служба ${leaseName} остановлена`, exited);
+    },
+  };
+}
+
+function inviteClaims(fake: Fake, inviteId: string): number {
+  return fake
+    .requestsTo("/meeting-claim")
+    .filter(
+      (request) =>
+        request.status === 200 &&
+        (request.body as Record<string, unknown> | null)?.invite_id === inviteId,
+    ).length;
+}
+
+async function sceneInvite(fake: Fake): Promise<void> {
+  console.log("\n──── приглашение из веба: забрано → контейнер → заявка по приглашению → запись");
+  const service = await spawnService("lease-svc-a", SHORT_PAGE);
+  const before = fake.ingested.length;
+  try {
+    const invite = fake.addInvite({ joinUrl: MEET });
+    await until(20_000, "приглашение забрано", async () => {
+      await sleep(0);
+      return fake.inviteState(invite.id).taken || fake.inviteState(invite.id).used;
+    });
+    check(true, "служба забрала приглашение");
+    await until(60_000, "контейнер поднят", async () => !(await isStandEmpty()));
+    const labels = await ourLabels();
+    check(labels.includes(`${LABEL.invite}=${invite.id}`), "у контейнера метка приглашения");
+    await until(120_000, "заявка по приглашению", async () => {
+      await sleep(0);
+      return fake.inviteState(invite.id).used;
+    });
+    check(inviteClaims(fake, invite.id) === 1, "бот заявил встречу по приглашению один раз");
+    const claim = fake
+      .requestsTo("/meeting-claim")
+      .find((request) => (request.body as Record<string, unknown> | null)?.invite_id === invite.id);
+    check(
+      claim?.onBehalfOf === String(PERSON),
+      "заявка от имени позвавшего",
+      claim?.onBehalfOf ?? "",
+    );
+    await until(180_000, "запись сдана", async () => {
+      await sleep(0);
+      return fake.ingested.length > before;
+    });
+    check(true, "meeting-ingest принял запись");
+    await until(60_000, "контейнер убран", isStandEmpty);
+    check(true, "после встречи контейнеров стенда не осталось");
+  } finally {
+    await service.stop();
+  }
+}
+
+async function sceneKontur(fake: Fake): Promise<void> {
+  console.log("\n──── приглашение на Контур.Толк: контейнер не поднят, человеку громкий отказ");
+  const service = await spawnService("lease-svc-a", SHORT_PAGE);
+  try {
+    const invite = fake.addInvite({ joinUrl: "https://ktalk.ru/room/abc", platform: "kontur" });
+    await until(20_000, "отказ ушёл", async () => {
+      await sleep(0);
+      return noticesOf(fake, "join_failed").length > 0;
+    });
+    const [notice] = noticesOf(fake, "join_failed");
+    check(
+      typeof notice?.detail === "string" && notice.detail.includes("Kontur.Talk"),
+      "join_failed с причиной на английском",
+      String(notice?.detail),
+    );
+    check(
+      typeof notice?.detail === "string" && notice.detail.includes("Контур.Толк"),
+      "и на русском",
+    );
+    check(fake.inviteState(invite.id).used, "приглашение погашено заявкой отказа");
+    await sleep(5000);
+    check(await isStandEmpty(), "контейнер на Контур не поднимался");
+  } finally {
+    await service.stop();
+  }
+}
+
+async function sceneRace(fake: Fake): Promise<void> {
+  console.log("\n──── две службы на одних приглашениях: каждое берётся ровно одной");
+  const left = await spawnService("lease-svc-a", SHORT_PAGE);
+  const right = await spawnService("lease-svc-b", SHORT_PAGE);
+  const before = fake.ingested.length;
+  try {
+    const invites = [1, 2, 3].map(() => fake.addInvite({ joinUrl: MEET }));
+    await until(180_000, "все три заявлены", async () => {
+      await sleep(0);
+      return invites.every((invite) => fake.inviteState(invite.id).used);
+    });
+    for (const invite of invites) {
+      const starts = [...left.lines, ...right.lines].filter((line) =>
+        line.includes(`приглашение ${invite.id} (от`),
+      ).length;
+      check(
+        starts === 1,
+        `${invite.id}: поднят ровно один контейнер`,
+        `запусков ${String(starts)}`,
+      );
+      check(inviteClaims(fake, invite.id) === 1, `${invite.id}: одна заявка`);
+    }
+    const byLeft = left.lines.filter((line) => line.includes("→ контейнер")).length;
+    const byRight = right.lines.filter((line) => line.includes("→ контейнер")).length;
+    console.log(`    разделили: ${String(byLeft)} + ${String(byRight)}`);
+    await until(240_000, "три записи сданы", async () => {
+      await sleep(0);
+      return fake.ingested.length >= before + 3;
+    });
+    check(fake.ingested.length === before + 3, "сдано ровно три записи");
+    await until(60_000, "контейнеры убраны", isStandEmpty);
+    check(true, "контейнеров стенда не осталось");
+  } finally {
+    await left.stop();
+    await right.stop();
+  }
+}
+
+/**
+ * Выполнить команду внутри контейнера встречи и вернуть код и вывод.
+ */
+async function execIn(id: string, command: string[]): Promise<{ code: number; out: string }> {
+  const docker = new Docker();
+  const exec = await docker.getContainer(id).exec({
+    Cmd: command,
+    AttachStdout: true,
+    AttachStderr: true,
+  });
+  const stream = await exec.start({});
+  const chunks: Buffer[] = [];
+  await new Promise<void>((resolve, reject) => {
+    stream.on("data", (chunk: Buffer) => {
+      chunks.push(chunk);
+    });
+    stream.on("end", resolve);
+    stream.on("error", reject);
+  });
+  const info = await exec.inspect();
+  // Заголовки кадров мультиплекса (8 байт) выкидываются грубо: нам нужны только слова.
+  return { code: info.ExitCode ?? -1, out: Buffer.concat(chunks).toString("utf8") };
+}
+
+// Адреса — 1.1.1.1: достижим из обычной сети Docker (проверено), поэтому отказ здесь значит
+// «нет маршрута», а не «адрес умер». Ждём именно ENETUNREACH, а не любой сбой.
+const PROBE = `
+const net = require("node:net");
+const dgram = require("node:dgram");
+const dns = require("node:dns/promises");
+const t = (ms) => AbortSignal.timeout(ms);
+const tryIt = async (name, fn) => { try { console.log(name, "OK", await fn()); } catch (e) { console.log(name, "FAIL", e.cause?.code ?? e.code ?? e.message); } };
+(async () => {
+  await tryIt("fetch-example", async () => (await fetch("https://example.com/", { signal: t(10000) })).status);
+  await tryIt("fetch-meet", async () => (await fetch("https://meet.google.com/", { signal: t(15000), redirect: "manual" })).status);
+  await tryIt("tcp-direct", () => new Promise((ok, no) => { const s = net.connect(443, "1.1.1.1"); s.setTimeout(5000, () => no(new Error("timeout"))); s.on("connect", () => { s.destroy(); ok("connected"); }); s.on("error", no); }));
+  await tryIt("dns-example", async () => (await dns.lookup("example.com")).address);
+  await tryIt("udp-direct", () => new Promise((ok, no) => { const u = dgram.createSocket("udp4"); u.send(Buffer.from("x"), 53, "1.1.1.1", (e) => { u.close(); e ? no(e) : ok("sent"); }); }));
+})();
+`;
+
+async function sceneEgress(fake: Fake): Promise<void> {
+  console.log("\n──── выход наружу: только Google/Meet и свой Swarm (T178)");
+  const orchestrator = orchestratorFor("lease-main", LONG_PAGE);
+  await orchestrator.init();
+  const before = fake.ingested.length;
+  try {
+    const id = await orchestrator.startForMeeting(MEET, "meet", PERSON);
+    await waitMeetingId(orchestrator, id);
+    check(true, "заявка встречи дошла до Swarm через прокси");
+    const probe = await execIn(id, ["node", "-e", PROBE]);
+    console.log(
+      `    [probe] ${probe.out
+        .replaceAll(/[^\p{L}\p{N}\s:._-]/gu, "")
+        .trim()
+        .replaceAll("\n", "\n    [probe] ")}`,
+    );
+    check(probe.out.includes("fetch-example FAIL"), "посторонний адрес через прокси — отказ");
+    check(probe.out.includes("fetch-meet OK"), "Meet через прокси — открывается");
+    check(probe.out.includes("tcp-direct FAIL ENETUNREACH"), "TCP мимо прокси — нет маршрута");
+    check(probe.out.includes("dns-example FAIL"), "внешние имена мимо прокси не резолвятся");
+    check(probe.out.includes("udp-direct FAIL ENETUNREACH"), "UDP мимо прокси — нет маршрута");
+    const chromium = await execIn(id, [
+      "sh",
+      "-c",
+      // Число процессов Chromium с прокси — последней строкой «procs=N»: вывод exec идёт с
+      // заголовками кадров, и цифры из них не должны сойти за ответ.
+      "echo procs=$(ps -eo args | grep -- '--proxy-server=http://egress:3128' | grep -vc grep)",
+    ]);
+    check(
+      Number(/procs=(\d+)/u.exec(chromium.out)?.[1] ?? "0") > 0,
+      "Chromium запущен с прокси стенда",
+      chromium.out.trim(),
+    );
+
+    const docker = new Docker();
+    const [proxy] = await docker.listContainers({
+      filters: { label: [`scriba.egress-of=${PROJECT}`] },
+    });
+    const logs =
+      proxy === undefined
+        ? Buffer.from("")
+        : await docker.getContainer(proxy.Id).logs({ stdout: true, stderr: true });
+    const proxyLog = logs.toString("utf8");
+    check(
+      proxyLog.includes("egress deny example.com:443"),
+      "прокси записал отказ посторонним адресам",
+    );
+    check(proxyLog.includes("egress allow meet.google.com:443"), "прокси записал выход в Meet");
+
+    await within(180_000, "stop", orchestrator.stop(id));
+    check(fake.ingested.length === before + 1, "запись ушла в meeting-ingest через прокси");
+    const networks = await docker.listNetworks({
+      filters: { label: [`scriba.egress-of=${PROJECT}`] },
+    });
+    check(
+      networks.length === 0,
+      "сеть встречи убрана после конца",
+      networks.map((n) => n.Name).join(","),
+    );
+  } finally {
+    orchestrator.close();
+  }
+}
+
+const SCENES: Record<string, (fake: Fake) => Promise<void>> = {
+  egress: sceneEgress,
+  full: sceneFullMeeting,
+  two: sceneTwoAtOnce,
+  death: sceneDeath,
+  stop: sceneStop,
+  door: sceneDoor,
+  orphans: sceneOrphans,
+  adopt: sceneAdopt,
+  invite: sceneInvite,
+  kontur: sceneKontur,
+  race: sceneRace,
+  account: sceneAccount,
+};
+
+async function suite(): Promise<number> {
+  if (STATE === "") {
+    console.error("SCRIBA_SMOKE_STATE не задан: поводкам нужен свой каталог");
+    return 2;
+  }
+  const leftovers = await ourContainers();
+  if (leftovers.length > 0) {
+    console.error(
+      `на стенде ${PROJECT} уже есть контейнеры (${String(leftovers.length)}) — сначала убрать`,
+    );
+    return 2;
+  }
+  const selected = process.env.SCRIBA_SMOKE_ONLY ?? "";
+  const only = selected === "" ? Object.keys(SCENES) : selected.split(",");
+  const swarm = await startFakeSwarm({ token: TOKEN, onBehalfOf: PERSON, port: PORT + 1 });
+  const noticeProxy = await startNoticeProxy(PORT, PORT + 1, LISTEN_HOST);
+  const fake: Fake = Object.assign(swarm, { noticeProxy });
+  try {
+    for (const name of only) {
+      const scene = SCENES[name];
+      if (scene === undefined) {
+        failures.push(`сценарий «${name}» не существует`);
+        continue;
+      }
+      try {
+        await scene(fake);
+      } catch (error) {
+        check(
+          false,
+          `сценарий ${name} сорвался`,
+          error instanceof Error ? error.message : String(error),
+        );
+      }
+    }
+  } finally {
+    await noticeProxy.close();
+    await swarm.close();
+  }
+  console.log(
+    failures.length === 0
+      ? `\nИТОГ: зелёный — сценарии ${only.join(", ")}`
+      : `\nИТОГ: КРАСНЫЙ — ${String(failures.length)} провал(ов):\n  ${failures.join("\n  ")}`,
+  );
+  return failures.length === 0 ? 0 : 1;
+}
+
+if (process.argv[2] === "child") {
+  await child();
+} else {
+  process.exitCode = await suite();
+  // Таймеры dockerode-потоков не должны держать процесс смоука.
+  // eslint-disable-next-line unicorn/no-process-exit -- смоук — CLI
+  process.exit();
+}

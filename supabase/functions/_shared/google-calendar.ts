@@ -15,6 +15,23 @@ const CLIENT_SECRET = Deno.env.get("GOOGLE_CLIENT_SECRET") ?? "";
 // правда нужно переподключиться) vs что угодно другое (429 рейт-лимит, 5xx, обрыв сети — временная
 // запинка). До фикса обе трактовались одинаково как «токен мёртв» → рекордер спамил «переподключи
 // календарь» на каждый чих Google, хотя реального разрыва не было.
+/**
+ * Срок одного запроса к Google. Без него повисший ответ держит вызывающего до потолка среды, а обход
+ * автозапуска (meeting-calendar/sweep.ts) ждёт всех людей воркспейса разом — один завис, встали все.
+ * Истёкший срок и обрыв сети — временная запинка (как 5xx), а не мёртвый токен.
+ */
+export const GOOGLE_TIMEOUT_MS = 8_000;
+
+/** fetch со сроком; сбой сети и истёкший срок — null (вызывающий трактует как «Google не ответил»). */
+async function fetchBounded(url: string, init: RequestInit, timeoutMs: number, what: string): Promise<Response | null> {
+  try {
+    return await fetch(url, { ...init, signal: AbortSignal.timeout(timeoutMs) });
+  } catch (e) {
+    console.error(`google-calendar ${what}: запрос не прошёл (${e instanceof Error ? e.name : "error"})`);
+    return null;
+  }
+}
+
 export type TokenResult = { ok: true; token: string } | { ok: false; deadGrant: boolean };
 
 // invalid_grant/invalid_client — единственные коды, которые Google документирует как «этот
@@ -27,21 +44,29 @@ export function isDeadGrantError(status: number, body: string): boolean {
 
 /** refresh_token → access_token. Любую осечку логируем (не сам токен, только код и текст ошибки Google) —
  *  раньше отказ был молчаливым, и постфактум нельзя было понять, что случилось. */
-export async function accessToken(refresh: string): Promise<TokenResult> {
-  const res = await fetch("https://oauth2.googleapis.com/token", {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({
-      client_id: CLIENT_ID,
-      client_secret: CLIENT_SECRET,
-      refresh_token: refresh,
-      grant_type: "refresh_token",
-    }),
-  });
+export async function accessToken(refresh: string, timeoutMs = GOOGLE_TIMEOUT_MS): Promise<TokenResult> {
+  const res = await fetchBounded(
+    "https://oauth2.googleapis.com/token",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        client_id: CLIENT_ID,
+        client_secret: CLIENT_SECRET,
+        refresh_token: refresh,
+        grant_type: "refresh_token",
+      }),
+    },
+    timeoutMs,
+    "accessToken",
+  );
+  if (res === null) return { ok: false, deadGrant: false };
   if (!res.ok) {
     const body = await res.text().catch(() => "");
     const deadGrant = isDeadGrantError(res.status, body);
-    console.error(`google-calendar accessToken: status=${res.status} deadGrant=${deadGrant} body=${body.slice(0, 300)}`);
+    console.error(
+      `google-calendar accessToken: status=${res.status} deadGrant=${deadGrant} body=${body.slice(0, 300)}`,
+    );
     return { ok: false, deadGrant };
   }
   const data = await res.json();
@@ -54,17 +79,33 @@ export async function accessToken(refresh: string): Promise<TokenResult> {
 }
 
 /** События основного календаря в окне. `null` — Google ответил ошибкой (её отличаем от «пусто»). */
-export async function listEvents(token: string, timeMin: string, timeMax: string, maxResults = 25): Promise<GEvent[] | null> {
+export async function listEvents(
+  token: string,
+  timeMin: string,
+  timeMax: string,
+  maxResults = 25,
+  timeoutMs = GOOGLE_TIMEOUT_MS,
+): Promise<GEvent[] | null> {
   const q = new URLSearchParams({
-    singleEvents: "true",          // повторяющиеся раскрываются в экземпляры, иначе слот без даты
+    singleEvents: "true", // повторяющиеся раскрываются в экземпляры, иначе слот без даты
     orderBy: "startTime",
     timeMin,
     timeMax,
     maxResults: String(maxResults),
   });
-  const res = await fetch(`https://www.googleapis.com/calendar/v3/calendars/primary/events?${q}`, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  if (!res.ok) return null;
-  return ((await res.json()).items ?? []) as GEvent[];
+  const res = await fetchBounded(
+    `https://www.googleapis.com/calendar/v3/calendars/primary/events?${q}`,
+    {
+      headers: { Authorization: `Bearer ${token}` },
+    },
+    timeoutMs,
+    "listEvents",
+  );
+  if (res === null || !res.ok) return null;
+  try {
+    return ((await res.json()).items ?? []) as GEvent[];
+  } catch {
+    // Тело оборвалось или истёк срок посреди чтения — та же запинка Google, а не «событий нет».
+    return null;
+  }
 }

@@ -26,6 +26,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useConfirm } from "@/components/ui/confirm";
+import { AutojoinToggle } from "@/components/profile/AutojoinToggle";
 import { RoyIcon, type RoyIconName } from "@/components/roy/icons";
 
 // ── Profile section ───────────────────────────────────────────────────────────
@@ -514,7 +515,7 @@ export function AccountSection() {
 
 // ── Google Calendar section ────────────────────────────────────────────────────
 
-export function GoogleCalendarSection() {
+export function GoogleCalendarSection({ isDemo }: { isDemo: boolean }) {
   const confirm = useConfirm();
   const [connected, setConnected] = useState<boolean | null>(null);
   useEffect(() => {
@@ -547,6 +548,8 @@ export function GoogleCalendarSection() {
       ) : (
         <Button onClick={connect}>Подключить Google-календарь</Button>
       )}
+      {/* Автозапуск бота (D021) — только при подключённом календаре: бот ходит по нему. В демо нет. */}
+      {connected && !isDemo && <AutojoinToggle />}
     </div>
   );
 }
@@ -778,7 +781,7 @@ export function SettingsScreen() {
             <ConnectorsSection
               me={me}
               panels={{
-                calendar: <GoogleCalendarSection />,
+                calendar: <GoogleCalendarSection isDemo={!!me.is_demo} />,
                 recorder: <RecorderSection />,
                 telegram: <TelegramPanel me={me} />,
                 granola: <GranolaSection />,
