@@ -907,44 +907,40 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         syncWidget()
     }
 
-    // Плавающий виджет следует за состоянием. Пропуск бота (D025) — в той же капсуле: строкой
-    // под предложением записать, а без предложения — отдельной капсулой вместо пустоты. Во время
-    // своей записи капсула — узкая пилюля без текста, пропуск говорит только меню: встреча и так
-    // пишется, а после записи капсула пропуска вернётся, если он ещё открыт.
+    // Плавающий виджет следует за состоянием. Бот в капсуле (D031) — только кнопка «Позвать бота»
+    // в капсуле того созвона, куда его можно позвать; текста о боте нет, отдельной капсулы пропуска
+    // нет — без предложения записать пропуск говорит только меню. Во время своей записи капсула —
+    // узкая пилюля без текста: встреча и так пишется.
     private func syncWidget() {
         if configError != nil { widget.hide(); return }
-        let miss = missed.capsule
         switch state {
         case .recording:
             // Развёрнут блокнот → показываем его (пилюлю прячем); свёрнуто → вертикальная пилюля рекордера.
             if notesExpanded { widget.hide() }
             else { widget.showRecording(startedAt: recordStartedAt ?? Date()) }
-        case .sending:
-            // Спиннер-капсулу НЕ показываем (она читалась как «зависла» и была лишним виджетом):
-            // обработка идёт в фоне, «отправлено — тезисы придут в Telegram» приходит уведомлением.
-            if let miss { widget.showMissed(miss) } else { widget.hide() }
         case .idle:
             if pendingMeetings.count > 1 {
-                // Пересекающиеся созвоны (D027): выбор в той же капсуле, строка пропуска — под ним.
-                widget.showChoice(pendingMeetings.map { RecorderWidget.Choice(key: $0.key, notice: notice(for: $0)) },
-                                  missed: miss)
+                // Пересекающиеся созвоны (D027): выбор в той же капсуле, у строки — своя кнопка бота.
+                widget.showChoice(pendingMeetings.map {
+                    RecorderWidget.Choice(key: $0.key, notice: notice(for: $0),
+                                          missed: missed.capsule(forCall: $0.joinURL?.absoluteString))
+                })
             } else if let m = pendingMeeting {
-                widget.showPending(notice: notice(for: m), canJoin: m.joinURL != nil, missed: miss)
+                widget.showPending(notice: notice(for: m), canJoin: m.joinURL != nil,
+                                   missed: missed.capsule(forCall: m.joinURL?.absoluteString))
             } else if callActive {
                 // Звонок без календаря: слота нет, а «подключиться» некуда — человек уже в нём.
                 // Подзаголовок пустой: «Идёт звонок» + «идёт» — дубль, а не информация.
                 widget.showPending(notice: MeetingNotice(title: "Идёт звонок", subtitle: ""),
-                                   canJoin: false, missed: miss)
-            } else if let miss {
-                widget.showMissed(miss)
+                                   canJoin: false, missed: missed.capsule(forCall: nil))
             } else {
-                widget.hide()   // никакого «кружка»: пилюля только на детект встречи/звонка/пропуск
+                widget.hide()   // никакого «кружка»: пилюля только на детект встречи/звонка
             }
-        case .error, .tokenExpired,
+        case .sending, .error, .tokenExpired,
              .noScreenRecording, .noSystemAudio, .noMic, .offline:
-            // Сбой записи бота не отменяет: пропуск говорится, звать его можно (у своего токена
-            // отказ придёт в капсулу текстом).
-            if let miss { widget.showMissed(miss) } else { widget.hide() }
+            // Спиннер-капсулу «отправляется» НЕ показываем (читалась как «зависла»); сбой записи
+            // говорит меню. Пропуск бота здесь — тоже только меню (D031).
+            widget.hide()
         }
     }
 

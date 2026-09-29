@@ -9,12 +9,13 @@ import UserNotifications
 // MissedMeetingsWatcher, НАШУ капсулу и значок в меню-баре — запись, heartbeat и апдейтер спят.
 //   --selftest-missed                  опрашивать и показывать 180 секунд
 //   --selftest-missed --keep N         держать N секунд
-//   --selftest-missed --with-meeting   пропуск на капсуле идущей встречи («Записать»/«Подключиться»
-//                                      + строка «Бота нет»), а не отдельной капсулой
+//   --selftest-missed --with-meeting   капсула идущей встречи («Подключиться»/«Записать» + кнопка
+//                                      «Позвать бота»); ссылка созвона — SWARM_SELFTEST_JOIN_URL, а без
+//                                      неё — ссылка первого пропуска. Без флага капсулы нет (D031)
 //   --selftest-missed --invite-first   через 5 с после первого пропуска с кнопкой позвать бота тем же
 //                                      вызовом, что и кнопка (если нажать руками нечем)
 // Кнопку капсулы жмут снаружи через System Events (AX): у кнопок есть идентификаторы
-// missed.invite / missed.inviteInline / banner.close. Запускать из собранного .app со СВОИМ
+// missed.invite / banner.close, у текста отказа — missed.failure. Запускать из собранного .app со СВОИМ
 // bundle id — иначе капсула и уведомления смешаются с рабочим bumblebee.
 // Каждое изменение печатается строкой `missed:` в stdout — по ним и сверяется прогон.
 final class MissedSelfTest: NSObject {
@@ -25,6 +26,7 @@ final class MissedSelfTest: NSObject {
     private let withMeeting: Bool
     private var invitedOnce = false
     private var meetingDismissed = false
+    private var probe: SelfTestProbe?
 
     init(config: SwarmConfig, inviteFirst: Bool, withMeeting: Bool) {
         self.inviteFirst = inviteFirst
@@ -56,6 +58,8 @@ final class MissedSelfTest: NSObject {
         if Bundle.main.bundleIdentifier == nil {
             print("missed: ⚠️ запущено не из бандла — проверка системных уведомлений пропущена")
         }
+        probe = SelfTestProbe(widget: widget, tag: "missed")
+        probe?.start()
         watcher.start()
         watcher.pollNow()
         changed()
@@ -98,25 +102,25 @@ final class MissedSelfTest: NSObject {
         }
     }
 
-    // То же правило, что у AppDelegate.syncWidget в покое: встреча есть — строка в её капсуле,
-    // встречи нет — отдельная капсула пропуска, говорить нечего — капсулы нет.
+    // То же правило, что у AppDelegate.syncWidget в покое (D031): встреча есть — кнопка в её
+    // капсуле, если бот пропущен именно на её созвон; встречи нет — капсулы нет, пропуск в меню.
     private func syncCapsule() {
-        let miss = watcher.capsule
-        if withMeeting, !meetingDismissed {
-            widget.showPending(notice: MeetingNotice(title: "Weekly BD sync", subtitle: "11:00–11:30 · идёт"),
-                               canJoin: true, missed: miss)
-        } else if let miss {
-            widget.showMissed(miss)
-        } else {
+        guard withMeeting, !meetingDismissed else {
             widget.hide()
-        }
-        guard let c = widget.shownMissed else {
-            print("missed: капсула — \(withMeeting && !meetingDismissed ? "встреча без строки пропуска" : "скрыта")")
+            print("missed: капсула — скрыта (предложения записать нет, пропуск только в меню)")
             return
         }
+        let call = ProcessInfo.processInfo.environment["SWARM_SELFTEST_JOIN_URL"]
+            ?? watcher.open.first(where: \.canInvite)?.joinURL
+        widget.showPending(notice: MeetingNotice(title: "Weekly BD sync", subtitle: "11:00–11:30 · идёт"),
+                           canJoin: true, missed: watcher.capsule(forCall: call))
         let frame = widget.currentFrame.map { "\(Int($0.width))×\(Int($0.height))" } ?? "-"
-        print("missed: капсула [\(c.missId)] \(frame) «\(withMeeting && !meetingDismissed ? c.shortLine : c.line)» — \(c.detail)"
-              + (c.canInvite ? " · кнопка «\(c.buttonTitle)»\(c.busy ? " (неактивна)" : "")" : " · без кнопки"))
+        guard let c = widget.shownMissed else {
+            print("missed: капсула \(frame) — встреча \(call ?? "-") без кнопки бота")
+            return
+        }
+        print("missed: капсула \(frame) — встреча \(call ?? "-") · кнопка «\(c.buttonTitle)» [\(c.missId)]"
+              + (c.busy ? " (неактивна)" : "") + (c.failure.map { " · отказ «\($0)»" } ?? ""))
     }
 }
 

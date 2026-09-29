@@ -6,10 +6,12 @@ import RecorderKit
 // не дошёл на встречу, и одной кнопкой «Позвать бота» зовёт его. Главный путь записи — бот; эта
 // поверхность нужна, чтобы отказ автозапуска не прошёл молча.
 //
-// Поверхности две (D025, продолжение решения 2026-09-07 «одна поверхность — капсула»):
-//   • НАША капсула — «Бота нет на встрече» + «Позвать бота»; штатного баннера macOS у пропуска
-//     нет. Что именно рисовать, отдаёт `capsule`, куда — решает AppDelegate.syncWidget: отдельной
-//     капсулой или строкой в капсуле встречи, во время записи — нигде (встреча и так пишется);
+// Поверхности две (D025, D031):
+//   • НАША капсула — только кнопка «Позвать бота» в капсуле созвона, на который бота можно
+//     позвать; текста о боте в капсуле нет (человек на звонке и так видит, есть ли бот), штатного
+//     баннера macOS тоже. Отдельной капсулы пропуска нет: нет предложения записать — пропуск
+//     говорит только меню. Кнопку для созвона отдаёт `capsule(forCall:)`, куда её ставить —
+//     решает AppDelegate.syncWidget; во время записи — нигде (встреча и так пишется);
 //   • пункт меню — пропуски все, в том числе закрытые ✕ в капсуле, и отказ приглашения строкой.
 //
 // Опрос раз в минуту: `GET /meeting-missed` в Google не ходит (T164, D023), читает снимок и задания
@@ -21,8 +23,6 @@ import RecorderKit
 final class MissedMeetingsWatcher: NSObject {
     static let pollSeconds: TimeInterval = 60
     static let autojoinOffPollSeconds: TimeInterval = 600
-    /// Сколько капсула держит «Бот позван» после удачного приглашения.
-    static let confirmationSeconds: TimeInterval = 5
 
     private let lang = RecorderLanguage.current
     private let configProvider: () -> SwarmConfig?
@@ -34,8 +34,6 @@ final class MissedMeetingsWatcher: NSObject {
     private var inviting: Set<String> = []
     /// Отказ последнего приглашения по пропуску — капсула и меню говорят его, пока пропуск открыт.
     private var failures: [String: String] = [:]
-    /// «Бот позван» — капсула держит его несколько секунд, затем гаснет сама.
-    private var confirmation: MissedCapsule?
 
     /// Календарь сегодня не сверен — пропуски видны не все (сервер: `checked=false`).
     private(set) var notChecked = false
@@ -50,22 +48,18 @@ final class MissedMeetingsWatcher: NSObject {
 
     var open: [MissedMeeting] { tracker.open }
 
-    /// Что сказать в капсуле: «Бот позван» сразу после приглашения, иначе первый открытый пропуск,
-    /// не закрытый ✕. nil — капсуле о пропусках говорить нечего.
-    var capsule: MissedCapsule? {
-        if let confirmation { return confirmation }
-        guard let miss = tracker.capsuleMiss else { return nil }
+    /// Кнопка «Позвать бота» для капсулы созвона с этой ссылкой (nil — звонок без календаря).
+    /// nil — кнопки нет: бот на этот созвон не пропущен, звать нельзя или человек закрыл ✕.
+    /// По успеху пропуск гаснет сразу (`invitedBot`), и кнопка исчезает — подтверждения текстом нет.
+    func capsule(forCall joinURL: String?) -> MissedCapsule? {
+        guard let miss = tracker.capsuleMiss(forCall: joinURL) else { return nil }
         return MissedCapsule.compose(miss, failure: failures[miss.id], busy: inviting.contains(miss.id), lang: lang)
     }
 
     /// ✕ в капсуле: пропуск уходит из капсулы, в меню остаётся.
     func dismissInCapsule(_ id: String) {
-        if confirmation?.missId == id {
-            confirmation = nil
-        } else {
-            tracker = tracker.dismissing(id)
-            NSLog("SwarmRecorder: пропуск \(id) закрыт в капсуле (в меню остаётся)")
-        }
+        tracker = tracker.dismissing(id)
+        NSLog("SwarmRecorder: пропуск \(id) закрыт в капсуле (в меню остаётся)")
         onChange()
     }
 
@@ -139,7 +133,6 @@ final class MissedMeetingsWatcher: NSObject {
         inviting.insert(missId)
         onChange()                                                 // кнопка капсулы → «Зову…»
         defer { inviting.remove(missId) }
-        let title = tracker.open.first { $0.id == missId }?.title
         do {
             let (status, body) = try await SwarmClient(config: cfg).inviteBot(missId: missId)
             guard status == 200 || status == 201 else {
@@ -148,7 +141,6 @@ final class MissedMeetingsWatcher: NSObject {
                 return false
             }
             failures[missId] = nil
-            confirm(missId, title: title)
             let (next, update) = tracker.invitedBot(missId)
             apply(update, next: next)
             NSLog("SwarmRecorder: позвал бота по пропуску \(missId)")
@@ -168,19 +160,6 @@ final class MissedMeetingsWatcher: NSObject {
                                 dismissed: tracker.dismissed.subtracting([missId]))
         inviting.remove(missId)
         onChange()
-    }
-
-    private func confirm(_ missId: String, title: String?) {
-        let id = "invited-\(missId)"
-        let done = MissedTexts.invitedTitle.text(lang)
-        confirmation = MissedCapsule(missId: id, line: done, shortLine: done,
-                                     detail: MissedTexts.invitedBody(title, lang), canInvite: false,
-                                     busy: false, buttonTitle: "", failed: false)
-        DispatchQueue.main.asyncAfter(deadline: .now() + Self.confirmationSeconds) { [weak self] in
-            guard let self, self.confirmation?.missId == id else { return }
-            self.confirmation = nil
-            self.onChange()
-        }
     }
 
     @objc func inviteMenuTapped(_ sender: NSMenuItem) {

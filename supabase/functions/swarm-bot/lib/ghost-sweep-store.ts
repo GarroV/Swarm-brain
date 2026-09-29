@@ -1,6 +1,6 @@
 // Реализация GhostStore на supabase-js (service_role). Решений здесь нет — только запросы;
 // «призрак или бот ещё пишет» решает ghost-sweep.ts. Держит этот файл живой смоук
-// scripts/scriba-watchdog-smoke.ts против настоящего Postgres, а не юнит-тест с подделкой.
+// смоук сторожей в scripts/ (…-watchdog-smoke.ts) против настоящего Postgres, а не юнит-тест с подделкой.
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import type { GhostCandidate, GhostStore } from "./ghost-sweep.ts";
 

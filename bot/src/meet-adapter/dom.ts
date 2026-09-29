@@ -204,7 +204,6 @@ export function collectMeetSnapshot(css: SnapshotCss): MeetSnapshot {
   const SPEAKER_SILENT_CLASS = "gjg47c";
   const SPEAKER_TALKING_CLASSES = ["Oaajhc", "HX2H7", "wEsLMd", "OgVli"];
 
-  // eslint-disable-next-line unicorn/consistent-function-scoping -- функция едет в браузер
   const audioLevelOfTile = (tile: DomElement): number | null => {
     const holder = tile.matches("[data-audio-level]")
       ? tile

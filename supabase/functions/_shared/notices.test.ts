@@ -29,7 +29,7 @@ import {
   scheduleAfter,
   STALE_SENDING_SECONDS,
 } from "./notices.ts";
-import { NO_TITLE, NOTICE_TEXTS } from "./notice-texts.ts";
+import { NO_TITLE, NOTICE_TEXTS } from "./bot-notice-texts.ts";
 
 const MEETING_ID = "5f0c6b1e-8a2d-4c3f-9b7e-1d2a3c4b5e6f";
 const KEY = "abc123@google.com:2026-09-23";

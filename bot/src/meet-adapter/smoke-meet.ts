@@ -176,7 +176,9 @@ async function sceneSignedIn(browser: Browser, storageStatePath: string): Promis
 }
 
 async function sceneSignedInSlow(browser: Browser, storageStatePath: string): Promise<void> {
-  console.log("\n──── под аккаунтом, лобби дорисовывает «Ask to join» через 2,5 с — бот дожидается и стучится");
+  console.log(
+    "\n──── под аккаунтом, лобби дорисовывает «Ask to join» через 2,5 с — бот дожидается и стучится",
+  );
   const scene = await openScene(browser, "lobby-signed-in-slow.html", { storageStatePath });
   check(
     scene.log.some((line) => line.includes("клик: войти")),
@@ -277,10 +279,16 @@ async function sceneInCall(browser: Browser): Promise<void> {
 }
 
 async function sceneSpeakerClasses(browser: Browser): Promise<void> {
-  console.log("\n──── в звонке, вёрстка без data-audio-level: говорящий по классам индикатора (D034)");
+  console.log(
+    "\n──── в звонке, вёрстка без data-audio-level: говорящий по классам индикатора (D034)",
+  );
   const scene = await openScene(browser, "in-call-speaking-classes.html");
   equals(await scene.adapter.waitAdmitted(2500), "admitted", "впустили");
-  equals(await scene.adapter.activeSpeaker(), "Василий Гарро", "имя говорящего по классу индикатора");
+  equals(
+    await scene.adapter.activeSpeaker(),
+    "Василий Гарро",
+    "имя говорящего по классу индикатора",
+  );
   await scene.adapter.leave();
 }
 

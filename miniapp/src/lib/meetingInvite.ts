@@ -26,6 +26,7 @@ export type InviteErrorCode =
   | "unsupported_platform"
   | "demo_not_allowed"
   | "too_many_invites"
+  | "already_invited"
   | "not_found";
 
 const STATUSES: readonly InviteStatus[] = ["pending", "taken", "used", "expired"];
@@ -35,6 +36,7 @@ const ERROR_CODES: readonly InviteErrorCode[] = [
   "unsupported_platform",
   "demo_not_allowed",
   "too_many_invites",
+  "already_invited",
   "not_found",
 ];
 
@@ -118,6 +120,11 @@ export function inviteErrorText(code: InviteErrorCode | null, dt: Dt): string {
       return dt(
         "У вас уже 3 приглашения ждут бота — дождитесь его или повторите через несколько минут",
         "You already have 3 invites waiting — wait for the bot or try again in a few minutes",
+      );
+    case "already_invited":
+      return dt(
+        "Бота в этот звонок уже позвал коллега — он придёт один на всех",
+        "A colleague has already invited the bot to this call — one bot comes for everyone",
       );
     case "not_found":
       return dt("Приглашение не найдено", "Invite not found");

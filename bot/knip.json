@@ -5,6 +5,7 @@
     "src/**/*.test.ts",
     "src/container/verify-environment.ts",
     "src/container/smoke-audio.ts",
+    "src/container/egress-proxy-main.ts",
     "src/meet-adapter/smoke-meet.ts",
     "src/orchestrator/container-main.ts",
     "src/orchestrator/login-export.ts",

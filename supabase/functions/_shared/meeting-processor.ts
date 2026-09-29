@@ -24,6 +24,7 @@ import {
 import { langCode, type LangVotePart, partsNeedingRetranscribe, resolveMeetingLang } from "./meeting-lang.ts";
 import { buildTezisyUserMessage, TEZISY_PROMPT } from "./tezisy-prompt.ts";
 import { glossaryWhisperHint } from "./glossary.ts";
+import { useGlossaryHint } from "./bot-profile.ts";
 import { extractChatContent } from "./openai-chat.ts";
 import { buildSegments, type Segment, speakerLegend, type SpeakerSpan } from "./speakers.ts";
 import { arbitrateFullness, transcriptVolume } from "./meeting-fullness.ts";
@@ -161,6 +162,7 @@ async function transcribeAudio(
   audio: Blob,
   filename: string,
   languageHint?: string,
+  withGlossary = true,
 ): Promise<{ segments: Segment[]; language?: string; viaFallback: boolean }> {
   const form = new FormData();
   form.append("file", audio, filename);
@@ -168,7 +170,8 @@ async function transcribeAudio(
   form.append("response_format", "verbose_json");
   // Хинт написания имён собственных (Wolt/Београд/Нови Сад…) — снижает мишеринг Whisper.
   // best-effort: `prompt` в Whisper только смещает распознавание, не гарантирует.
-  form.append("prompt", glossaryWhisperHint());
+  // Запись бота идёт без подсказки: профиль бота, #620 (`useGlossaryHint`).
+  if (withGlossary) form.append("prompt", glossaryWhisperHint());
   // languageHint (ISO-639-1) — пин языка встречи для дорожки, чей автодетект ненадёжен (тихий/
   // молчащий микрофон Whisper иначе детектит как английский и генерит галлюцинации-«аутро»).
   // ВАЖНО: на hosted OpenAI API `language` — это ТОЛЬКО хинт распознавания, он НИКОГДА не переводит
@@ -225,9 +228,14 @@ function toVoteParts(parts: Part[]): LangVotePart[] {
 // Транскрибирует часть (скачивает из Storage, зовёт Whisper с опциональным пином) и складывает
 // результат в part: per-part offset (старт части в таймлайне дорожки) прибавляем сразу; глобальный
 // mic-сдвиг применяется на этапе summarize. Используется и в основном цикле, и при ре-транскрибации.
-async function transcribePartInto(supabase: SupabaseClient, p: Part, hint?: string): Promise<void> {
+async function transcribePartInto(
+  supabase: SupabaseClient,
+  p: Part,
+  hint: string | undefined,
+  source: string | undefined,
+): Promise<void> {
   const blob = await downloadPart(supabase, p.path);
-  const { segments: segs, language, viaFallback } = await transcribeAudio(blob, p.name, hint);
+  const { segments: segs, language, viaFallback } = await transcribeAudio(blob, p.name, hint, useGlossaryHint(source));
   p.segments = segs.map((s) => ({ start: s.start + p.offset, end: s.end + p.offset, text: s.text }));
   if (language) p.lang = language;
   p.viaFallback = viaFallback;
@@ -529,7 +537,7 @@ async function summarizeAndFinish(supabase: SupabaseClient, m: MeetingRow, state
     const idxs = partsNeedingRetranscribe(toVoteParts(state.parts), resolved);
     for (const i of idxs) {
       try {
-        await transcribePartInto(supabase, state.parts[i], pin);
+        await transcribePartInto(supabase, state.parts[i], pin, state.source);
       } catch (e) {
         console.error(`meeting-processor: ре-транскрибация части ${state.parts[i].path} упала:`, e);
       }
@@ -747,7 +755,7 @@ export async function runMeetingStep(
           try {
             // Микрофон пинуем на язык встречи; систему — как есть (автодетект).
             const hint = p.track === "mic" ? micHint : undefined;
-            await transcribePartInto(supabase, p, hint);
+            await transcribePartInto(supabase, p, hint, state.source);
           } catch (e) {
             p.attempts = (p.attempts ?? 0) + 1;
             console.error(`meeting-processor: part ${p.path} attempt ${p.attempts} failed:`, e);

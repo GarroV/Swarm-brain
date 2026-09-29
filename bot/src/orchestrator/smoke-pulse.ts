@@ -42,8 +42,10 @@ import Docker from "dockerode";
 
 import { startFakeSwarm } from "../swarm-client/testing/fake-swarm.ts";
 import { DockerodeEngine } from "./docker-engine.ts";
+import { DockerMeetingEgress } from "./egress.ts";
 import { type ContainerExit, type ContainerId, LABEL, Orchestrator } from "./orchestrator.ts";
 
+const ENGINE = new DockerodeEngine();
 const BASE = Number(process.env.SMOKE_PORT_BASE ?? "4440");
 const PORT = {
   hb: BASE + 4,
@@ -400,7 +402,16 @@ async function exitWithin(
 
 function orchestratorFor(page: string): Orchestrator {
   return new Orchestrator({
-    engine: new DockerodeEngine(),
+    engine: ENGINE,
+    egress: new DockerMeetingEgress({
+      engine: ENGINE,
+      project: PROJECT,
+      image: IMAGE,
+      swarmUrl: `http://host.docker.internal:${String(PORT.proxy)}`,
+      log: (line) => {
+        console.log(`    [egress] ${line}`);
+      },
+    }),
     project: PROJECT,
     image: IMAGE,
     leaseDirectory: path.join(STATE, "lease-pulse"),

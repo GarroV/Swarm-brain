@@ -18,6 +18,7 @@ import RecorderKit
 final class PickSelfTest: NSObject {
     private let client: SwarmClient
     private let watcher: MissedMeetingsWatcher
+    private var probe: SelfTestProbe?
     private let widget = RecorderWidget()
     private let openLinks: Bool
     private var offers: [MeetingIdentity.Info] = []
@@ -50,6 +51,8 @@ final class PickSelfTest: NSObject {
     }
 
     func start() {
+        probe = SelfTestProbe(widget: widget, tag: "pick")
+        probe?.start()
         watcher.start()
         watcher.pollNow()
         poll()
@@ -106,9 +109,8 @@ final class PickSelfTest: NSObject {
         sync()
     }
 
-    // То же правило, что у AppDelegate.syncWidget в покое.
+    // То же правило, что у AppDelegate.syncWidget в покое (D031).
     private func sync() {
-        let miss = watcher.capsule
         if recording != nil {
             widget.showRecording(startedAt: Date())
             print("pick: капсула — запись «\(recording?.title ?? "-")»")
@@ -119,21 +121,24 @@ final class PickSelfTest: NSObject {
             MeetingNotice.compose(title: m.title, start: m.startISO.flatMap { iso.date(from: $0) },
                                   end: m.endISO.flatMap { iso.date(from: $0) }, now: Date())
         }
+        func bot(_ m: MeetingIdentity.Info) -> MissedCapsule? { watcher.capsule(forCall: m.joinURL?.absoluteString) }
         if offers.count > 1 {
-            widget.showChoice(offers.map { RecorderWidget.Choice(key: $0.key, notice: notice($0)) }, missed: miss)
+            widget.showChoice(offers.map { RecorderWidget.Choice(key: $0.key, notice: notice($0), missed: bot($0)) })
         } else if let m = offers.first {
-            widget.showPending(notice: notice(m), canJoin: m.joinURL != nil, missed: miss)
-        } else if let miss {
-            widget.showMissed(miss)
+            widget.showPending(notice: notice(m), canJoin: m.joinURL != nil, missed: bot(m))
         } else {
             widget.hide()
-            print("pick: капсула — скрыта")
+            print("pick: капсула — скрыта (пропуски: \(watcher.open.map(\.id)) — только в меню)")
             return
         }
         let frame = widget.currentFrame.map { "\(Int($0.width))×\(Int($0.height))" } ?? "-"
-        let what = offers.count > 1 ? "выбор \(widget.shownChoiceKeys)" : offers.isEmpty ? "только пропуск" : "одна встреча \(offers[0].key)"
-        let missLine = widget.shownMissed.map { " · пропуск [\($0.missId)] «\($0.shortLine)»" } ?? ""
-        print("pick: капсула \(frame) — \(what)\(missLine)")
+        let what = offers.count > 1 ? "выбор \(widget.shownChoiceKeys)" : "одна встреча \(offers[0].key)"
+        func line(_ c: MissedCapsule?) -> String {
+            guard let c else { return "—" }
+            return "«\(c.buttonTitle)» [\(c.missId)]\(c.busy ? " (неактивна)" : "")\(c.failure.map { " отказ «\($0)»" } ?? "")"
+        }
+        let bots = offers.count > 1 ? widget.shownChoiceMissed.map(line).joined(separator: " | ") : line(widget.shownMissed)
+        print("pick: капсула \(frame) — \(what) · бот: \(bots)")
     }
 }
 

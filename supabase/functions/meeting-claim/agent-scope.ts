@@ -46,7 +46,7 @@ export class AgentScopeError extends Error {
 
 /** Откуда брать календарь человека. Вынесено, чтобы границы проверялись без живого Google. */
 export interface CalendarSource {
-  /** Включил ли человек автозапуск (allowed_users.scriba_autojoin, D021) — прямо сейчас. */
+  /** Включил ли человек автозапуск (allowed_users, колонка — BOT_PROFILE.autojoin.consentColumn, D021) — прямо сейчас. */
   autojoin(telegramId: number): Promise<boolean>;
   refreshToken(telegramId: number): Promise<string | null>;
   accessToken(refresh: string): Promise<TokenResult>;
