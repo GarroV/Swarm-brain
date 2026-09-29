@@ -7,7 +7,8 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { createPortal } from "react-dom";
 import { RoyIcon } from "@/components/roy/icons";
 import { cn } from "@/lib/utils";
-import { MONTHS, WEEKDAYS, parseISO, toISO, addMonths, buildGrid } from "@/lib/calendar";
+import { monthName, weekdays, parseISO, toISO, addMonths, buildGrid } from "@/lib/calendar";
+import { useLang } from "@/components/roy/nav";
 import { RANGE_PRESETS, presetRange, customRange, rangeLabel, type DateRange } from "@/lib/dateRange";
 
 type Props = {
@@ -21,6 +22,8 @@ type Props = {
 const POPOVER_W = 272, POPOVER_H = 400;
 
 export function RangePicker({ value, onChange, variant = "rail" }: Props) {
+  const lang = useLang();
+  const tx = (ru: string, en: string) => (lang === "en" ? en : ru);
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
   // Первый клик по сетке: «якорь» диапазона. Пока он стоит, hover рисует превью будущего периода.
@@ -67,7 +70,7 @@ export function RangePicker({ value, onChange, variant = "rail" }: Props) {
   const grid = useMemo(() => buildGrid(view), [view]);
   const todayISO = toISO(new Date());
   const active = value != null;
-  const label = rangeLabel(value);
+  const label = rangeLabel(value, lang);
 
   // Что подсвечено в сетке: пока идёт выбор — превью «якорь → курсор», иначе выбранный период.
   const shown: DateRange | null = anchor ? customRange(anchor, hover ?? anchor) : value;
@@ -86,7 +89,7 @@ export function RangePicker({ value, onChange, variant = "rail" }: Props) {
         type="button"
         aria-haspopup="dialog"
         aria-expanded={open}
-        aria-label="Период"
+        aria-label={tx("Период", "Period")}
         onClick={() => setOpen((o) => !o)}
         className={cn(
           variant === "toolbar"
@@ -112,7 +115,7 @@ export function RangePicker({ value, onChange, variant = "rail" }: Props) {
           <span
             role="button"
             tabIndex={0}
-            aria-label="Сбросить период"
+            aria-label={tx("Сбросить период", "Clear period")}
             onClick={(e) => { e.stopPropagation(); onChange(null); }}
             onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.stopPropagation(); onChange(null); } }}
             className="shrink-0 rounded p-0.5 text-accent-ink/70 hover:text-accent-ink"
@@ -126,7 +129,8 @@ export function RangePicker({ value, onChange, variant = "rail" }: Props) {
         <div ref={popRef} style={{ position: "fixed", left: pos.left, top: pos.top, width: POPOVER_W }}
           className="z-[100] rounded-xl border border-line bg-card shadow-xl p-2.5 dark:backdrop-blur-lg">
           <div className="mb-2 grid grid-cols-2 gap-1.5">
-            {RANGE_PRESETS.map(({ id, label: l }) => {
+            {RANGE_PRESETS.map(({ id, label: ru, en: eng }) => {
+              const l = tx(ru, eng);
               const on = value?.preset === id;
               return (
                 <button key={id} type="button"
@@ -142,14 +146,14 @@ export function RangePicker({ value, onChange, variant = "rail" }: Props) {
 
           <div className="mb-1 flex items-center justify-between px-1">
             <button type="button" onClick={() => setView(addMonths(view, -1))}
-              className="rounded-md p-1.5 text-ink-soft hover:bg-surface-2" aria-label="Предыдущий месяц"><RoyIcon name="cleft" size={14} /></button>
-            <span className="text-sm font-semibold text-ink">{MONTHS[view.getMonth()]} {view.getFullYear()}</span>
+              className="rounded-md p-1.5 text-ink-soft hover:bg-surface-2" aria-label={tx("Предыдущий месяц", "Previous month")}><RoyIcon name="cleft" size={14} /></button>
+            <span className="text-sm font-semibold text-ink">{monthName(view.getMonth(), lang)} {view.getFullYear()}</span>
             <button type="button" onClick={() => setView(addMonths(view, 1))}
-              className="rounded-md p-1.5 text-ink-soft hover:bg-surface-2" aria-label="Следующий месяц"><RoyIcon name="cright" size={14} /></button>
+              className="rounded-md p-1.5 text-ink-soft hover:bg-surface-2" aria-label={tx("Следующий месяц", "Next month")}><RoyIcon name="cright" size={14} /></button>
           </div>
 
           <div className="mb-1 grid grid-cols-7">
-            {WEEKDAYS.map((w) => <span key={w} className="py-0.5 text-center text-[10px] font-semibold text-ink-soft/70">{w}</span>)}
+            {weekdays(lang).map((w) => <span key={w} className="py-0.5 text-center text-[10px] font-semibold text-ink-soft/70">{w}</span>)}
           </div>
 
           <div className="grid grid-cols-7 gap-y-0.5" onMouseLeave={() => setHover(anchor)}>

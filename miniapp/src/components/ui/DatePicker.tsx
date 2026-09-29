@@ -6,10 +6,8 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { createPortal } from "react-dom";
 import { RoyIcon, type RoyIconName } from "@/components/roy/icons";
 import { pillSegmentCls, propertyPillCls, PropertyPillBody } from "@/components/ui/PropertyPill";
-import { MONTHS, WEEKDAYS, parseISO, toISO, fmtFull, fmtShort, addMonths, buildGrid } from "@/lib/calendar";
-
-// Подпись даты в триггере: «12 августа 2026» (общий формат — lib/calendar).
-const fmtTrigger = fmtFull;
+import { monthName, weekdays, parseISO, toISO, fmtFull, fmtShort, addMonths, buildGrid } from "@/lib/calendar";
+import { useLang } from "@/components/roy/nav";
 
 type Props = {
   value: string;                     // ISO "YYYY-MM-DD" или ""
@@ -33,7 +31,15 @@ type Props = {
 
 const POPOVER_W = 264, POPOVER_H = 340;
 
-export function DatePicker({ value, onChange, className = "", placeholder = "Выбрать дату", variant = "field", icon = "cal", ariaLabel = "Срок", clearLabel = "Убрать срок" }: Props) {
+export function DatePicker({ value, onChange, className = "", placeholder, variant = "field", icon = "cal", ariaLabel, clearLabel }: Props) {
+  // Подписи — на языке интерфейса (демо — английский, issue #625). Свои подписи вызывающего
+  // (TaskModal передаёт их через dt) важнее умолчаний.
+  const lang = useLang();
+  const en = lang === "en";
+  const tx = (ru: string, eng: string) => (en ? eng : ru);
+  placeholder ??= tx("Выбрать дату", "Pick a date");
+  ariaLabel ??= tx("Срок", "Due date");
+  clearLabel ??= tx("Убрать срок", "Clear due date");
   const isCompact = variant === "compact";
   const isPill = variant === "pill";
   // Сегмент сегментной пилюли (PILL_GROUP_CLS): пусто — один значок, задано — значок и дата.
@@ -78,12 +84,13 @@ export function DatePicker({ value, onChange, className = "", placeholder = "В�
 
   const grid = useMemo(() => buildGrid(view), [view]);
   const todayISO = toISO(new Date());
-  const label = fmtTrigger(value);
+  // Подпись даты в триггере: «12 августа 2026» / «12 August 2026» (общий формат — lib/calendar).
+  const label = fmtFull(value, lang);
   // В чипе — коротко («28 сен»), год — только если не текущий; полная дата — в подсказке.
   const pillLabel = (() => {
     const d = parseISO(value);
     if (!d) return null;
-    return d.getFullYear() === new Date().getFullYear() ? fmtShort(value) : `${fmtShort(value)} ${d.getFullYear()}`;
+    return d.getFullYear() === new Date().getFullYear() ? fmtShort(value, lang) : `${fmtShort(value, lang)} ${d.getFullYear()}`;
   })();
 
   const pick = (d: Date) => { onChange(toISO(d)); setOpen(false); };
@@ -124,7 +131,7 @@ export function DatePicker({ value, onChange, className = "", placeholder = "В�
         <div ref={popRef} style={{ position: "fixed", left: pos.left, top: pos.top, width: POPOVER_W }}
           className="z-[100] rounded-xl border border-line bg-card shadow-xl p-2.5 dark:backdrop-blur-lg">
           <div className="flex gap-1.5 mb-2">
-            {([["Сегодня", 0], ["Завтра", 1], ["+неделя", 7]] as const).map(([l, n]) => (
+            {([[tx("Сегодня", "Today"), 0], [tx("Завтра", "Tomorrow"), 1], [tx("+неделя", "+week"), 7]] as const).map(([l, n]) => (
               <button key={l} type="button" onClick={() => preset(n)}
                 className="flex-1 rounded-lg bg-surface-2 border border-line text-[11px] font-semibold py-1 text-ink-soft hover:text-ink hover:bg-surface">{l}</button>
             ))}
@@ -132,14 +139,14 @@ export function DatePicker({ value, onChange, className = "", placeholder = "В�
 
           <div className="flex items-center justify-between px-1 mb-1">
             <button type="button" onClick={() => setView(addMonths(view, -1))}
-              className="p-1.5 rounded-md hover:bg-surface-2 text-ink-soft" aria-label="Предыдущий месяц"><RoyIcon name="cleft" size={14} /></button>
-            <span className="text-sm font-semibold text-ink">{MONTHS[view.getMonth()]} {view.getFullYear()}</span>
+              className="p-1.5 rounded-md hover:bg-surface-2 text-ink-soft" aria-label={tx("Предыдущий месяц", "Previous month")}><RoyIcon name="cleft" size={14} /></button>
+            <span className="text-sm font-semibold text-ink">{monthName(view.getMonth(), lang)} {view.getFullYear()}</span>
             <button type="button" onClick={() => setView(addMonths(view, 1))}
-              className="p-1.5 rounded-md hover:bg-surface-2 text-ink-soft" aria-label="Следующий месяц"><RoyIcon name="cright" size={14} /></button>
+              className="p-1.5 rounded-md hover:bg-surface-2 text-ink-soft" aria-label={tx("Следующий месяц", "Next month")}><RoyIcon name="cright" size={14} /></button>
           </div>
 
           <div className="grid grid-cols-7 mb-1">
-            {WEEKDAYS.map((w) => <span key={w} className="text-center text-[10px] font-semibold text-ink-soft/70 py-0.5">{w}</span>)}
+            {weekdays(lang).map((w) => <span key={w} className="text-center text-[10px] font-semibold text-ink-soft/70 py-0.5">{w}</span>)}
           </div>
 
           <div className="grid grid-cols-7 gap-0.5">
