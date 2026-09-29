@@ -8,6 +8,7 @@ import { RoyIcon } from "../icons";
 import { deriveEntryTitle, entryImporterName } from "../entry";
 import { hasDraftNotes } from "@/lib/agentMeeting";
 import {
+  askMeeting,
   fetchMeetings,
   fetchMeeting,
   fetchAgentMeetings,
@@ -237,7 +238,10 @@ function MeetingsFilters({
 }
 
 import { TasksFromMeeting } from "../TasksFromMeeting";
-import { MarkdownTextarea } from "../MarkdownTextarea";
+import { TezisyEditor } from "../tezisy/TezisyEditor";
+import { TezisyReader } from "../tezisy/TezisyReader";
+import type { AskApply } from "../tezisy/AskPopover";
+import { applyAskAnswerToText } from "@/lib/tezisyLines";
 import { useConfirm } from "@/components/ui/confirm";
 
 // ── Типы объединённого списка ────────────────────────────────────────────────
@@ -789,6 +793,14 @@ function AgentMeetingDetail({
     finally { setSaving(false); }
   };
 
+  // Точечный вопрос по выделенному в тезисах (решение владельца 2026-09-30): ответ из режима
+  // чтения открывает правку уже со вставленным ответом — сохраняет человек.
+  const askDraft = (fragment: string, question: string) => askMeeting("draft", m.id, fragment, question);
+  const applyFromReading = (answer: string, mode: AskApply, fragment: string) => {
+    setNotesDraft(applyAskAnswerToText(m.draft_notes_md ?? "", fragment, answer, mode));
+    setEditingNotes(true);
+  };
+
   const saveNotes = async () => {
     if (saving) return;
     setSaving(true);
@@ -999,18 +1011,13 @@ function AgentMeetingDetail({
             </div>
             {editingNotes ? (
               <div className="mt-1">
-                <MarkdownTextarea value={notesDraft} onChange={setNotesDraft} disabled={saving} autoFocus />
-                <div className="mt-2 flex gap-2">
-                  <button type="button" onClick={saveNotes} disabled={saving} className="flex-1 rounded-[8px] bg-primary py-2.5 font-semibold text-primary-foreground disabled:opacity-60" style={{ fontSize: 14 }}>
-                    {saving ? "Сохраняем…" : "Сохранить тезисы"}
-                  </button>
-                  <button type="button" onClick={() => setEditingNotes(false)} disabled={saving} className="rounded-[8px] border border-line-2 px-4 py-2.5 font-semibold text-ink-soft disabled:opacity-60" style={{ fontSize: 14 }}>
-                    Отмена
-                  </button>
-                </div>
+                <TezisyEditor value={notesDraft} onChange={setNotesDraft} onSave={saveNotes} busy={saving}
+                  onCancel={() => setEditingNotes(false)} label={dt("Тезисы встречи", "Meeting summary")}
+                  ask={hasTranscript ? askDraft : undefined} />
               </div>
             ) : (
-              <TezisyBlocks text={m.draft_notes_md} copyMeta={{ title: m.title, date: m.started_at }} />
+              <TezisyReader text={m.draft_notes_md} copyMeta={{ title: m.title, date: m.started_at }}
+                ask={hasTranscript ? askDraft : undefined} onApply={applyFromReading} />
             )}
           </div>
         ) : m.summary_status === "done" || m.summary_status === "failed" ? (
