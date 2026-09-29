@@ -9,7 +9,7 @@
 /** Сколько дней до истечения токена считаются «скоро протухнет». */
 const EXPIRING_DAYS = 14;
 
-export type ConnectorId = "calendar" | "recorder" | "telegram" | "granola" | "claude";
+export type ConnectorId = "calendar" | "recorder" | "bot" | "telegram" | "granola" | "claude";
 
 /**
  * `expired` намеренно отделён от `off`: протухший токен требует ПЕРЕподключения, а не первого
@@ -33,12 +33,18 @@ export type ConnectorsInput = {
   recorder: TokenStatus;
   mcp: TokenStatus;
   telegramLinked: boolean;
+  /**
+   * Автозапуск бота встреч (scriba_autojoin): включён → connected, выключен → off. Не передан
+   * (демо) — карточки бота нет вовсе: в демо бот не ходит.
+   */
+  botAutojoin?: boolean;
   now: Date;
 };
 
 // Базовый порядок = важность сервиса для работы продукта: без календаря рекордер слеп,
 // без рекордера нет встреч, без Telegram не доходят уведомления.
-const BASE_ORDER: ConnectorId[] = ["calendar", "recorder", "telegram", "granola", "claude"];
+// Бот встреч — сразу за рекордером: это второй способ записать встречу.
+const BASE_ORDER: ConnectorId[] = ["calendar", "recorder", "bot", "telegram", "granola", "claude"];
 
 // Внимание — вперёд: сломанное, затем скоро сломающееся, затем неподключённое, затем рабочее.
 const STATE_ORDER: Record<ConnectorState, number> = { expired: 0, expiring: 1, off: 2, connected: 3 };
@@ -58,12 +64,14 @@ export function buildConnectors(input: ConnectorsInput): Connector[] {
   const byId: Record<ConnectorId, Connector> = {
     calendar: { id: "calendar", state: has("google_calendar") ? "connected" : "off", expiresAt: null },
     recorder: { id: "recorder", state: tokenState(input.recorder, input.now), expiresAt: input.recorder.expiresAt },
+    bot: { id: "bot", state: input.botAutojoin ? "connected" : "off", expiresAt: null },
     telegram: { id: "telegram", state: input.telegramLinked ? "connected" : "off", expiresAt: null },
     granola: { id: "granola", state: has("granola") ? "connected" : "off", expiresAt: null },
     claude: { id: "claude", state: tokenState(input.mcp, input.now), expiresAt: input.mcp.expiresAt },
   };
 
-  return BASE_ORDER.map((id) => byId[id]).sort(
+  const shown = input.botAutojoin === undefined ? BASE_ORDER.filter((id) => id !== "bot") : BASE_ORDER;
+  return shown.map((id) => byId[id]).sort(
     (a, b) =>
       STATE_ORDER[a.state] - STATE_ORDER[b.state] ||
       BASE_ORDER.indexOf(a.id) - BASE_ORDER.indexOf(b.id),

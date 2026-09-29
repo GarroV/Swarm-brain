@@ -6,6 +6,7 @@ import type { Connector, ConnectorId, ConnectorState } from "@/lib/connectors";
 const ICON: Record<ConnectorId, RoyIconName> = {
   calendar: "cal",
   recorder: "mic",
+  bot: "meet",
   telegram: "tg",
   granola: "note",
   claude: "spark",
@@ -15,6 +16,7 @@ const ICON: Record<ConnectorId, RoyIconName> = {
 const TITLE: Record<ConnectorId, string> = {
   calendar: "Календарь",
   recorder: "bumblebee",
+  bot: "Бот встреч",
   telegram: "Telegram",
   granola: "Granola",
   claude: "Claude Desktop",
@@ -49,12 +51,15 @@ export function ConnectorTile({ c, open, onToggle, dense = false }: { c: Connect
 
   // «Не привязан» вместо «не подключён» — Telegram не подключают, к нему привязывают личность.
   const status =
-    c.state === "connected" ? dt("Подключён", "Connected")
+    // Бота не подключают, а включают: у него переключатель автозапуска, а не вход.
+    c.id === "bot" ? (c.state === "connected" ? dt("Включён", "On") : dt("Выключен", "Off"))
+    : c.state === "connected" ? dt("Подключён", "Connected")
     : c.state === "expired" ? dt("Токен истёк", "Token expired")
     : c.state === "expiring" ? dt(`Токен до ${shortDate(c.expiresAt)}`, `Token until ${shortDate(c.expiresAt)}`)
     : c.id === "telegram" ? dt("Не привязан", "Not linked")
     : dt("Не подключён", "Not connected");
 
+  const name = c.id === "bot" ? dt("Бот встреч", "Meeting bot") : TITLE[c.id];
   const iconTone = c.state === "expired" ? "text-accent-ink" : "text-ink-soft";
   const statusTone = c.state === "expired" ? "text-accent-ink" : "text-ink-mute";
   const frame = `w-full rounded-[10px] border text-left transition-colors hover:border-line-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-line ${SKIN[c.state]} ${open ? "border-accent-line" : ""}`;
@@ -64,7 +69,7 @@ export function ConnectorTile({ c, open, onToggle, dense = false }: { c: Connect
       <button type="button" onClick={onToggle} aria-expanded={open} className={`flex items-center gap-2 px-2.5 py-2 ${frame}`}>
         <RoyIcon name={ICON[c.id]} size={15} className={`shrink-0 ${iconTone}`} />
         <span className="flex min-w-0 flex-1 flex-col">
-          <span className="truncate text-ink" style={{ fontSize: 12.5, fontWeight: 500 }}>{TITLE[c.id]}</span>
+          <span className="truncate text-ink" style={{ fontSize: 12.5, fontWeight: 500 }}>{name}</span>
           <span className={`truncate ${statusTone}`} style={{ fontSize: 10.5 }}>{status}</span>
         </span>
         <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${DOT[c.state]}`} aria-hidden />
@@ -83,7 +88,7 @@ export function ConnectorTile({ c, open, onToggle, dense = false }: { c: Connect
         <RoyIcon name={ICON[c.id]} className={iconTone} />
         <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${DOT[c.state]}`} aria-hidden />
       </span>
-      <span className="text-ink" style={{ fontSize: 13, fontWeight: 500 }}>{TITLE[c.id]}</span>
+      <span className="text-ink" style={{ fontSize: 13, fontWeight: 500 }}>{name}</span>
       <span className={statusTone} style={{ fontSize: 11 }}>
         {status}
       </span>
