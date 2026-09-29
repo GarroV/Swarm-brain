@@ -10,7 +10,7 @@
 > миграции и рискованное — ночью.** Пуш в `main` тоже раскатка: Cloudflare Pages собирает веб
 > с `main` сам. Что накопилось — `make deploy-plan`, раскатать — `make deploy` (вне окна откажет,
 > `FORCE=1` — осознанный обход). Канон: [decisions/2026-08-24-deploy-window.md](decisions/2026-08-24-deploy-window.md).
-> Правка только в `bot/**` (бот `scriba`) веб не задевает — как и `recorder/**`; раскатка самого бота — пересборка контейнера на MUSPELHEIM, а не мёрж. Канон границы: [decisions/2026-09-17-scriba-stays-in-monorepo.md](decisions/2026-09-17-scriba-stays-in-monorepo.md).
+> Правка только в `bot/**` (бот `scriba`) веб не задевает — как и `recorder/**`; раскатка самого бота — пересборка контейнера на MUSPELHEIM, а не мёрж. Канон границы: [decisions/2026-09-17-scriba-stays-in-monorepo.md](decisions/2026-09-17-scriba-stays-in-monorepo.md). Раскатка и управление боевым ботом — `scripts/scriba-prod.sh`, [DEPLOY.md §Боевой бот scriba](DEPLOY.md#боевой-бот-scriba-с-29092026).
 
 ```bash
 make deploy-plan   # что готово, но НЕ раскатано (функции, веб, миграции, рекордер)
