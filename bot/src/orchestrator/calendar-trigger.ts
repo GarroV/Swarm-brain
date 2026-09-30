@@ -14,12 +14,12 @@
  * отдаёт его один раз, а цикл вдобавок помнит запущенное до конца встречи.
  */
 import type { CalendarJob, CalendarSkip, CalendarSweep } from "./calendar-client.ts";
+import { isSupportedPlatform } from "./config.ts";
 import { describeError } from "./describe-error.ts";
 import { refusalDetail, type Refusal } from "./invite-trigger.ts";
 import { PollLoop } from "./poll-loop.ts";
 
 const DEFAULT_INTERVAL_MS = 60_000;
-const SUPPORTED_PLATFORM = "meet";
 /**
  * Сколько не повторять в журнале один и тот же пропуск. Встреча выпадает из окна сама минут через
  * десять; пропуск уровня человека (календарь не подключён) повторяется раз в час — чтобы его было
@@ -32,7 +32,7 @@ const SKIP_MEMORY_MS = 60 * 60_000;
  */
 const SKIP_MEANING: Readonly<Record<string, string>> = {
   no_conference_link: "в событии нет ссылки на звонок",
-  unsupported_platform: "звонок не в Google Meet — бот туда не умеет",
+  unsupported_platform: "звонок не в Google Meet и не в Контур.Толке — бот туда не умеет",
   unrecognized_link: "ссылку на Meet не удалось разобрать",
   declined: "человек отклонил приглашение",
   not_accepted: "человек не ответил «да» на приглашение",
@@ -133,7 +133,7 @@ export class CalendarTrigger {
     }
     this.started.set(job.id, Date.parse(job.ends_at));
 
-    if (job.platform !== SUPPORTED_PLATFORM) {
+    if (!isSupportedPlatform(job.platform)) {
       await this.refuse(job, { kind: "platform", platform: job.platform });
       return;
     }

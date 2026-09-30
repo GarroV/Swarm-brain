@@ -3007,15 +3007,21 @@ function readInvite(body: unknown): MeetingInvite {
 
 export async function createMeetingInvite(joinUrl: string): Promise<MeetingInvite> {
   if (DEV_MODE) {
-    // Как сервер: бот ходит только в Meet, остальные площадки отбиваются сразу.
-    if (/(^|\.)(ktalk\.ru|kontur\.ru|zoom\.us)(\/|$)/i.test(joinUrl.trim().replace(/^https?:\/\//, ""))) {
-      throw new ApiError(400, "The bot joins Google Meet calls only", { code: "unsupported_platform" });
+    const bare = joinUrl.trim().replace(/^https?:\/\//, "");
+    // Как сервер: бот ходит в Meet и Контур.Толк (T111), Zoom отбивается сразу.
+    if (/(^|\.)zoom\.us(\/|$)/i.test(bare)) {
+      throw new ApiError(400, "The bot joins Google Meet and Kontur.Talk calls — Zoom is not supported yet", {
+        code: "unsupported_platform",
+      });
     }
     const same = mockInvites.find((x) => x.join_url === joinUrl.trim());
     if (same) return same;
     const now = Date.now();
+    const platform: MeetingInvite["platform"] = /(^|\.)(ktalk\.ru|kontur\.[a-z.]+)(\/|$)/i.test(bare)
+      ? "kontur"
+      : "meet";
     const invite: MeetingInvite = {
-      id: crypto.randomUUID(), join_url: joinUrl.trim(), platform: "meet", status: "pending",
+      id: crypto.randomUUID(), join_url: joinUrl.trim(), platform, status: "pending",
       created_at: new Date(now).toISOString(), expires_at: new Date(now + 15 * 60_000).toISOString(), meeting_id: null,
     };
     mockInvites = [invite, ...mockInvites];

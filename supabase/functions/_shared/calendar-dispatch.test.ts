@@ -86,17 +86,29 @@ Deno.test("ГРОМКО: нет ссылки на звонок — пропус�
   assertEquals(typeof skipped[0].ends_at, "string");
 });
 
-Deno.test("ГРОМКО: не Meet (Zoom, Контур, неизвестная ссылка) — пропуск unsupported_platform с площадкой", () => {
+Deno.test("ГРОМКО: не Meet и не Контур (Zoom, неизвестная ссылка) — пропуск unsupported_platform с площадкой", () => {
   const zoom = event({ id: "z", iCalUID: "z", hangoutLink: undefined, location: "https://us02web.zoom.us/j/123" });
-  const kontur = event({ id: "k", iCalUID: "k", hangoutLink: undefined, location: "https://ktalk.ru/room42" });
   const other = event({ id: "o", iCalUID: "o", hangoutLink: undefined, location: "https://example.com/x" });
-  const { jobs, skipped } = plan([zoom, kontur, other]);
+  const { jobs, skipped } = plan([zoom, other]);
   assertEquals(jobs, []);
   assertEquals(skipped.map((s) => [s.reason, s.platform]), [
     ["unsupported_platform", "zoom"],
-    ["unsupported_platform", "kontur"],
     ["unsupported_platform", null],
   ]);
+});
+
+Deno.test("встреча Контур.Толка — задание, площадка kontur: адаптер у бота есть (T111)", () => {
+  const kontur = event({
+    id: "k",
+    iCalUID: "k",
+    hangoutLink: undefined,
+    location: "https://ktalk.ru/room42",
+  });
+  const { jobs, skipped } = plan([kontur]);
+  assertEquals(skipped, []);
+  assertEquals(jobs.length, 1);
+  assertEquals(jobs[0].platform, "kontur");
+  assertEquals(jobs[0].join_url, "https://ktalk.ru/room42");
 });
 
 Deno.test("ссылка Meet без комнаты — пропуск unrecognized_link, а не бот в никуда", () => {

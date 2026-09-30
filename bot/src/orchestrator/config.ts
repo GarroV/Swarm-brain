@@ -103,6 +103,10 @@ function positiveInteger(environment: Environment, name: string): number | null 
 /**
  * Площадка из строки. Незнакомая — отказ с перечнем тех, что бот умеет.
  */
+export function isSupportedPlatform(raw: string): raw is SupportedPlatform {
+  return (SUPPORTED_PLATFORMS as readonly string[]).includes(raw);
+}
+
 export function parsePlatform(raw: string): SupportedPlatform {
   const known = SUPPORTED_PLATFORMS.find((platform) => platform === raw);
   if (known === undefined) {
@@ -172,20 +176,29 @@ function readCalendar(
   return { calendarKey, startsAt };
 }
 
+/**
+ * Имя бота в звонке. В Толк бот входит гостем и имя вводит сам — то же, под которым люди видят
+ * его в Meet (там имя берётся из профиля аккаунта Google). В Meet гостем — прежнее имя профиля.
+ */
+function defaultDisplayName(platform: SupportedPlatform): string {
+  return platform === "kontur" ? BOT_PROFILE.guestName : BOT_PROFILE.name;
+}
+
 export function readMeetingConfig(environment: Environment): MeetingConfig {
+  const platform = parsePlatform(required(environment, MEETING_ENV.platform));
   const onBehalfOf = positiveInteger(environment, MEETING_ENV.onBehalfOf);
   if (onBehalfOf === null) throw new Error(`${MEETING_ENV.onBehalfOf} не задан`);
   const invite = readInvite(environment);
 
   return {
     joinUrl: required(environment, MEETING_ENV.joinUrl),
-    platform: parsePlatform(required(environment, MEETING_ENV.platform)),
+    platform,
     onBehalfOf,
     swarmUrl: required(environment, MEETING_ENV.swarmUrl),
     token: required(environment, MEETING_ENV.token),
     runId: required(environment, MEETING_ENV.runId),
     version: positiveInteger(environment, MEETING_ENV.version) ?? 0,
-    displayName: text(environment, MEETING_ENV.displayName) ?? BOT_PROFILE.name,
+    displayName: text(environment, MEETING_ENV.displayName) ?? defaultDisplayName(platform),
     leaseDir: text(environment, MEETING_ENV.leaseDir) ?? "/lease",
     maxMeetingMs:
       (positiveInteger(environment, MEETING_ENV.maxMinutes) ?? BOT_PROFILE.maxMeetingMinutes) *

@@ -128,12 +128,40 @@ describe("readMeetingConfig — событие календаря (T100)", () =>
   });
 });
 
+describe("имя бота в звонке", () => {
+  it("в Толк гостем — имя, под которым бота видят в Meet (профиль Google «scriba (запись)»)", () => {
+    const config = readMeetingConfig({
+      ...BASE,
+      [MEETING_ENV.platform]: "kontur",
+      [MEETING_ENV.joinUrl]: "https://dodobrands.ktalk.ru/abc",
+    });
+    expect(config.displayName).toBe("scriba (запись)");
+  });
+
+  it("в Meet — прежнее имя профиля", () => {
+    expect(readMeetingConfig(BASE).displayName).toBe("scriba");
+  });
+
+  it("SCRIBA_DISPLAY_NAME перебивает оба", () => {
+    const config = readMeetingConfig({
+      ...BASE,
+      [MEETING_ENV.platform]: "kontur",
+      [MEETING_ENV.displayName]: "бот-смоук",
+    });
+    expect(config.displayName).toBe("бот-смоук");
+  });
+});
+
 describe("parsePlatform", () => {
   it("meet — есть адаптер", () => {
     expect(parsePlatform("meet")).toBe("meet");
   });
 
-  it.each(["zoom", "kontur", ""])("«%s» — отказ до подъёма контейнера", (raw) => {
+  it("kontur — есть адаптер (T111)", () => {
+    expect(parsePlatform("kontur")).toBe("kontur");
+  });
+
+  it.each(["zoom", "teams", ""])("«%s» — отказ до подъёма контейнера", (raw) => {
     expect(() => parsePlatform(raw)).toThrow(/не поддерживается/u);
   });
 });

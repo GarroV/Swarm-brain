@@ -8,9 +8,21 @@ import { signJWT } from "../../_lib/jwt";
 // эта сессия форсится в group_id='demo', не админ, не минтит токены. Здесь — только выдача
 // сессии по секрету. Секрет (DEMO_ACCESS_KEY) — высокоэнтропийный, в env CF Pages.
 const DEMO_USER_ID = 900000001;
+const SESSION_MAX_AGE = 7 * 86400;
 
 type Env = { WEB_JWT_SECRET: string; DEMO_ACCESS_KEY: string };
 type Ctx = { request: Request; env: Env };
+
+// Демо встраивается в <iframe> витрины garrov.github.io. Там кука обязана быть
+// Partitioned (CHIPS): она ложится в отдельную «коробку» под сайтом витрины и
+// (1) не затирает настоящую сессию человека на swarm-brain.pages.dev — без этого одно
+// открытие витрины подменяло рабочий вход на демо (30.09.2026, у владельца);
+// (2) работает и там, где сторонние куки запрещены — без неё iframe выпадал на /login,
+// и вход оттуда вёл в прод. Открытое вкладкой демо — явное «войти в демо»: обычная кука.
+export function demoSessionCookie(jwt: string, fetchDest: string | null): string {
+  const base = `roj_session=${jwt}; HttpOnly; Secure; SameSite=None; Path=/; Max-Age=${SESSION_MAX_AGE}`;
+  return fetchDest === "iframe" ? `${base}; Partitioned` : base;
+}
 
 export async function onRequestGet(ctx: Ctx): Promise<Response> {
   const { request, env } = ctx;
@@ -25,16 +37,13 @@ export async function onRequestGet(ctx: Ctx): Promise<Response> {
   }
 
   const jwt = await signJWT({ telegram_id: DEMO_USER_ID }, env.WEB_JWT_SECRET);
-  const maxAge = 7 * 86400;
   return new Response(null, {
     status: 302,
     headers: {
       Location: "/",
-      // SameSite=None (не Lax): демо встраивается в <iframe> портфолио garrov.github.io —
-      // кросс-сайт контексту нужна None;Secure, иначе браузер не шлёт сессию и демо
-      // выпадает на /login. Безопасно: demo-сессия изолирована в swarm-api (isDemo →
-      // group_id='demo', не админ, токены не минтит). Реальный логин (telegram.ts) остаётся Lax.
-      "Set-Cookie": `roj_session=${jwt}; HttpOnly; Secure; SameSite=None; Path=/; Max-Age=${maxAge}`,
+      // SameSite=None: кросс-сайт iframe иначе не получит сессию. Безопасно: demo-сессия
+      // изолирована в swarm-api. Реальный логин (telegram.ts) остаётся Lax.
+      "Set-Cookie": demoSessionCookie(jwt, request.headers.get("Sec-Fetch-Dest")),
     },
   });
 }

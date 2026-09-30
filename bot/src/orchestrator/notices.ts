@@ -14,6 +14,7 @@ type MeetingNoticeKind =
   | "door_blocked"
   | "meeting_unavailable"
   | "account_signin_required"
+  | "guest_access_closed"
   | "captcha"
   | "no_audio"
   | "recording_lost"
