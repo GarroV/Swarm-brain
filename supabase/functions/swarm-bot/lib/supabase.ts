@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import type { MeetingViewer } from "../../_shared/entries/meeting-rights.ts";
 
 export const ADMIN_USER_ID = 744230399;
 
@@ -17,4 +18,20 @@ export async function isAdminUser(telegramId: number): Promise<boolean> {
     .eq("telegram_id", telegramId)
     .maybeSingle();
   return (data as { is_admin?: boolean } | null)?.is_admin === true;
+}
+
+// Кто действует над встречей: админ ли он и его e-mail (для причастности к встрече).
+// Тот же признак админа, что в isAdminUser и swarm-api; строки нет — ни прав админа, ни e-mail.
+export async function loadMeetingViewer(viewerId: number): Promise<MeetingViewer> {
+  const { data } = await supabase
+    .from("allowed_users")
+    .select("is_admin, email")
+    .eq("telegram_id", viewerId)
+    .maybeSingle();
+  const row = data as { is_admin?: boolean; email?: string | null } | null;
+  return {
+    id: viewerId,
+    email: row?.email ?? null,
+    isAdmin: viewerId === ADMIN_USER_ID || row?.is_admin === true,
+  };
 }

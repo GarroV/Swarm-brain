@@ -6,6 +6,7 @@ import {
   ENTRY_COLUMNS,
   EntryAccessError,
   getEntrySecure,
+  getMeetingSecure,
 } from "./entries-guard.ts";
 
 // ── Mock chainable query builder ───────────────────────────────────────────────
@@ -219,4 +220,79 @@ Deno.test("buildReviewQueueQuery — без email фильтруем тольк�
   const cond = String(calls.find((c) => c.method === "or")?.args[0] ?? "");
   assertEquals(cond.includes("owner_id.eq.111"), true);
   assertEquals(cond.includes("attendees"), false);
+});
+
+// ── getMeetingSecure — права на правку и удаление встречи ─────────────────────
+// Полная матрица ролей — в _shared/entries/meeting-rights.test.ts; здесь — что гард
+// эндпоинта переводит её в правильные HTTP-коды и не пропускает постороннего.
+
+const meeting = {
+  ...baseEntry,
+  metadata: { attendees: [{ email: "participant@example.com" }] },
+};
+const meetingOpts = { groupId: "cee" };
+
+Deno.test("getMeetingSecure — посторонний не правит общую встречу (403)", async () => {
+  const { client } = makeSupabase(meeting);
+  const err = await assertRejects(
+    () => getMeetingSecure(client, "e1", { ...meetingOpts, telegramId: 999, email: "x@example.com", action: "edit" }),
+    EntryAccessError,
+  );
+  assertEquals(err.status, 403);
+});
+
+Deno.test("getMeetingSecure — посторонний не удаляет общую встречу (403)", async () => {
+  const { client } = makeSupabase(meeting);
+  const err = await assertRejects(
+    () => getMeetingSecure(client, "e1", { ...meetingOpts, telegramId: 999, action: "delete" }),
+    EntryAccessError,
+  );
+  assertEquals(err.status, 403);
+});
+
+Deno.test("getMeetingSecure — участник правит, но не удаляет", async () => {
+  const { client } = makeSupabase(meeting);
+  const opts = { ...meetingOpts, telegramId: 222, email: "Participant@example.com" };
+  const row = await getMeetingSecure(client, "e1", { ...opts, action: "edit" });
+  assertEquals(row.id, "e1");
+  const err = await assertRejects(
+    () => getMeetingSecure(client, "e1", { ...opts, action: "delete" }),
+    EntryAccessError,
+  );
+  assertEquals(err.status, 403);
+});
+
+Deno.test("getMeetingSecure — админ удаляет общую встречу", async () => {
+  const { client } = makeSupabase(meeting);
+  const row = await getMeetingSecure(client, "e1", {
+    ...meetingOpts,
+    telegramId: 333,
+    isAdmin: true,
+    action: "delete",
+  });
+  assertEquals(row.id, "e1");
+});
+
+Deno.test("getMeetingSecure — чужая личная встреча для админа 404, а не 403", async () => {
+  const { client } = makeSupabase({ ...meeting, is_private: true });
+  const err = await assertRejects(
+    () => getMeetingSecure(client, "e1", { ...meetingOpts, telegramId: 333, isAdmin: true, action: "delete" }),
+    EntryAccessError,
+  );
+  assertEquals(err.status, 404);
+});
+
+Deno.test("getMeetingSecure — чужой воркспейс 404", async () => {
+  const { client } = makeSupabase({ ...meeting, group_id: "other" });
+  const err = await assertRejects(
+    () => getMeetingSecure(client, "e1", { ...meetingOpts, telegramId: 111, action: "edit" }),
+    EntryAccessError,
+  );
+  assertEquals(err.status, 404);
+});
+
+Deno.test("getMeetingSecure — владелец удаляет свою встречу", async () => {
+  const { client } = makeSupabase(meeting);
+  const row = await getMeetingSecure(client, "e1", { ...meetingOpts, telegramId: 111, action: "delete" });
+  assertEquals(row.id, "e1");
 });

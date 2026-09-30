@@ -1,8 +1,13 @@
-import { entryAccessError, type EntryAccessRow } from "../../_shared/entries/access.ts";
-import { supabase } from "../lib/supabase.ts";
+import {
+  canActOnMeeting,
+  meetingAccessError,
+  type MeetingAction,
+  type MeetingRightsRow,
+} from "../../_shared/entries/meeting-rights.ts";
+import { loadMeetingViewer, supabase } from "../lib/supabase.ts";
 import { getReadAiToken, readAiGet, READ_AI_API, READ_AI_AUTH_URL } from "../lib/readai.ts";
 import { sendMessage, sendInlineMessage, editInlineMessage } from "../lib/telegram.ts";
-import { setSession, getSession, clearSession, saveEntry } from "../lib/storage.ts";
+import { setSession, getSession, clearSession, saveEntry, visibilityFilter } from "../lib/storage.ts";
 import { chatComplete, getEmbedding } from "../lib/openai.ts";
 import { getWorkspaceMarkets } from "../lib/workspace.ts";
 import { COUNTRY_NAMES } from "../../_shared/countries.ts";
@@ -29,16 +34,22 @@ async function loadEntryForAction(
   groupId: string,
   viewerId: number,
   columns: string,
-  opts?: { mutate?: boolean },
+  opts?: { action?: MeetingAction },
 ): Promise<ActionEntry | null> {
+  const action = opts?.action ?? "view";
+  // metadata нужна всегда: по ней (metadata.attendees) считается причастность к встрече.
+  const select = [...new Set(
+    [...columns.split(","), "metadata", "is_private", "owner_id", "group_id"]
+      .map((c) => c.trim()).filter(Boolean),
+  )].join(", ");
   const { data } = await supabase
     .from("entries")
-    .select(`${columns}, is_private, owner_id, group_id`)
+    .select(select)
     .eq("id", entryId)
     .maybeSingle();
-  const denied = entryAccessError(
-    entryId, data as EntryAccessRow | null, viewerId, groupId,
-    { requireOwner: opts?.mutate === true },
+  const viewer = action === "view" ? { id: viewerId } : await loadMeetingViewer(viewerId);
+  const denied = meetingAccessError(
+    entryId, data as MeetingRightsRow | null, viewer, groupId, action,
   );
   return denied ? null : (data as ActionEntry | null);
 }
@@ -209,9 +220,14 @@ export async function handleMeetingCallbacks(
   if (data.startsWith("md_")) {
     const entryId = data.replace("md_", "");
 
-    const entry = await loadEntryForAction(entryId, groupId, userId, "metadata");
-    const title = (entry?.metadata?.title as string) ?? "Встреча";
-    const meetingId = entry?.metadata?.meeting_id as string | null ?? null;
+    // Удаляют владелец и админ; личную — только владелец. Нет права — ничего не трогаем.
+    const entry = await loadEntryForAction(entryId, groupId, userId, "metadata", { action: "delete" });
+    if (!entry) {
+      await sendMessage(chatId, "Не удалено: встреча не найдена или удалить её могут только автор и администратор.");
+      return true;
+    }
+    const title = (entry.metadata?.title as string) ?? "Встреча";
+    const meetingId = entry.metadata?.meeting_id as string | null ?? null;
 
     if (meetingId) {
       const { data: taskIds } = await supabase.from("tasks").select("id").eq("meeting_id", meetingId);
@@ -232,6 +248,8 @@ export async function handleMeetingCallbacks(
       const { data: meetings } = await supabase
         .from("entries").select("id, metadata, created_at, source, entry_type")
         .eq("group_id", groupId)
+        // Личные встречи в списке — только свои (правило видимости записей).
+        .or(visibilityFilter(userId))
         .or("source.in.(read_ai,voice,desktop-agent),entry_type.in.(transcript,meeting)")
         .order("created_at", { ascending: false }).limit(15);
       if (!meetings?.length) {
@@ -448,7 +466,7 @@ export async function handleMeetingCallbacks(
     const sep = rest.indexOf("_"); // entryId = UUID (без '_'), далее код рынка / "General"
     const entryId = rest.slice(0, sep);
     const code = rest.slice(sep + 1);
-    const entry = await loadEntryForAction(entryId, groupId, userId, "countries");
+    const entry = await loadEntryForAction(entryId, groupId, userId, "countries", { action: "edit" });
     if (!entry) { await sendMessage(chatId, "Встреча не найдена."); return true; }
     const set = new Set<string>(((entry.countries as string[] | null) ?? []));
     if (set.has(code)) set.delete(code); else set.add(code); // toggle; General — обычный элемент набора
@@ -459,7 +477,7 @@ export async function handleMeetingCallbacks(
   }
   if (data.startsWith("mctry_done_")) {
     const entryId = data.slice("mctry_done_".length);
-    const entry = await loadEntryForAction(entryId, groupId, userId, "countries, summary, content");
+    const entry = await loadEntryForAction(entryId, groupId, userId, "countries, summary, content", { action: "edit" });
     if (!entry) { await sendMessage(chatId, "Встреча не найдена."); return true; }
     // Канон рынков (issue #169): 1 рынок → тег, 0 или ≥2 → ["General"] схлопыванием.
     // Схлопываем на «Готово», а не на каждый тап: во время мультивыбора выбор копится в
@@ -500,7 +518,7 @@ export async function handleMeetingCallbacks(
   if (data.startsWith("mc_")) {
     // Confirm meeting — жёсткий блок без рынков, затем publish + auto-extract tasks
     const entryId = data.replace("mc_", "");
-    const entry = await loadEntryForAction(entryId, groupId, userId, "metadata, content, countries");
+    const entry = await loadEntryForAction(entryId, groupId, userId, "metadata, content, countries", { action: "edit" });
     if (!entry) { await sendMessage(chatId, "Встреча не найдена."); return true; }
     const countries = ((entry.countries as string[] | null) ?? []);
     if (countries.length === 0) {
@@ -554,7 +572,7 @@ export async function handleMeetingSessionInput(
     await clearSession(chatId);
     const entryId = action.replace("meeting_title_", "");
     const newTitle = text.trim();
-    const entry = await loadEntryForAction(entryId, groupId, userId, "metadata");
+    const entry = await loadEntryForAction(entryId, groupId, userId, "metadata", { action: "edit" });
     if (!entry) { await sendMessage(chatId, "Встреча не найдена."); }
     else {
       await supabase.from("entries").update({ metadata: { ...(entry.metadata as Record<string, unknown>), title: newTitle } }).eq("id", entryId).eq("group_id", groupId);
@@ -578,7 +596,7 @@ export async function handleMeetingSessionInput(
     const dateVal = /^\d{4}-\d{2}-\d{2}$/.test(parsed.trim()) ? parsed.trim() : null;
     if (!dateVal) { await sendMessage(chatId, "Не удалось распознать дату. Попробуй ещё раз."); }
     else {
-      const entry = await loadEntryForAction(entryId, groupId, userId, "metadata");
+      const entry = await loadEntryForAction(entryId, groupId, userId, "metadata", { action: "edit" });
       if (!entry) { await sendMessage(chatId, "Встреча не найдена."); }
       else {
         await supabase.from("entries").update({ metadata: { ...(entry.metadata as Record<string, unknown>), entry_date: dateVal } }).eq("id", entryId).eq("group_id", groupId);
@@ -597,7 +615,7 @@ export async function handleMeetingSessionInput(
     await clearSession(chatId);
     const entryId = action.replace("meeting_edit_summary_", "");
 
-    const entry = await loadEntryForAction(entryId, groupId, userId, "content, summary, metadata");
+    const entry = await loadEntryForAction(entryId, groupId, userId, "content, summary, metadata", { action: "edit" });
     if (!entry) { await sendMessage(chatId, "Встреча не найдена."); return true; }
 
     await sendMessage(chatId, "Обновляю...");
@@ -642,7 +660,7 @@ export async function handleMeetingSessionInput(
     await clearSession(chatId);
     const entryId = action.replace("meeting_rename_", "");
     const newTitle = text.trim();
-    const entry = await loadEntryForAction(entryId, groupId, userId, "metadata");
+    const entry = await loadEntryForAction(entryId, groupId, userId, "metadata", { action: "edit" });
     if (!entry) { await sendMessage(chatId, "Встреча не найдена."); }
     else {
       await supabase.from("entries").update({ metadata: { ...(entry.metadata as Record<string, unknown>), title: newTitle } }).eq("id", entryId).eq("group_id", groupId);
@@ -654,11 +672,16 @@ export async function handleMeetingSessionInput(
     await clearSession(chatId);
     const meetingId = action.replace("meeting_tag_", "");
     const rawTags = text.split(",").map((t) => t.trim()).filter(Boolean);
-    const { data: entries } = await supabase
-      .from("entries").select("id, metadata")
+    const { data: found } = await supabase
+      .from("entries").select("id, metadata, is_private, owner_id, group_id")
       .eq("group_id", groupId)
       .or(`metadata->>meeting_id.eq.${meetingId},id.eq.${meetingId}`);
-    if (!entries?.length) { await sendMessage(chatId, "Встреча не найдена."); }
+    // Теги — правка встречи: только те записи, которые нажавшему можно править.
+    const viewer = found?.length ? await loadMeetingViewer(userId) : null;
+    const entries = (found ?? []).filter((e) =>
+      viewer && canActOnMeeting(e as MeetingRightsRow, viewer, "edit")
+    );
+    if (!entries.length) { await sendMessage(chatId, "Встреча не найдена или править её нельзя."); }
     else {
       for (const entry of entries as Array<{ id: string; metadata: Record<string, unknown> }>) {
         const existing = (entry.metadata?.tags as string[] | undefined) ?? [];
