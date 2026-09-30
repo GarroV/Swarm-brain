@@ -675,7 +675,7 @@ Deno.serve(async (req: Request) => {
     });
   }
 
-  // Admin routes (gated to telegram_id === 744230399)
+  // Admin routes: гейт isAdmin, объём — воркспейс админа (суперадмину — все), см. admin-scope.ts
   const adminResp = await handleAdminRoutes(
     supabase,
     req,
@@ -684,6 +684,7 @@ Deno.serve(async (req: Request) => {
     isAdmin,
     origin,
     resolveNames,
+    groupId,
   );
   if (adminResp) return adminResp;
 
