@@ -43,13 +43,13 @@ Deno.test("код ошибки читается из тела, незнаком�
   assertEquals(parseInviteErrorCode({ error: "no code" }), null);
 });
 
-Deno.test("отказ площадки (Контур.Толк, Zoom) показывается своим текстом, а не общим «не удалось»", () => {
+Deno.test("отказ площадки (Zoom) показывается своим текстом, а не общим «не удалось»", () => {
   const body = { error: "x", error_ru: "y", code: "unsupported_platform" };
   assertEquals(parseInviteErrorCode(body), "unsupported_platform");
   const en = inviteErrorText(parseInviteErrorCode(body), (_ru, en) => en);
   const ru = inviteErrorText(parseInviteErrorCode(body), (ru) => ru);
-  assertEquals(en, "The bot joins Google Meet calls only — Kontur.Talk and Zoom are not supported yet");
-  assertEquals(ru, "Бот пока ходит только в Google Meet — Контур.Толк и Zoom не поддерживаются");
+  assertEquals(en, "The bot joins Google Meet and Kontur.Talk calls — Zoom is not supported yet");
+  assertEquals(ru, "Бот ходит в Google Meet и Контур.Толк — Zoom пока не поддерживается");
 });
 
 Deno.test("опрос идёт, пока бот не записывает и срок не вышел", () => {

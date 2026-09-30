@@ -26,12 +26,12 @@ Deno.test("ссылки трёх площадок принимаются, пло
   assertEquals(parseInviteLink("https://us02web.zoom.us/j/123456789?pwd=abc")?.platform, "zoom");
 });
 
-Deno.test("БЛОКИРУЮЩИЙ: бот входит только в Meet — Контур.Толк и Zoom отбиваются при приглашении", () => {
+Deno.test("БЛОКИРУЮЩИЙ: бот входит в Meet и Контур.Толк — Zoom отбивается при приглашении", () => {
   assertEquals(botJoinsPlatform("meet"), true);
-  assertEquals(botJoinsPlatform("kontur"), false);
+  assertEquals(botJoinsPlatform("kontur"), true);
   assertEquals(botJoinsPlatform("zoom"), false);
   // Площадку добавляют вместе с адаптером бота, а не заодно: список — одна строка.
-  assertEquals([...BOT_PLATFORMS], ["meet"]);
+  assertEquals([...BOT_PLATFORMS], ["meet", "kontur"]);
 });
 
 Deno.test("ссылка приводится к виду без фрагмента и пробелов; запрос (пароль Zoom) сохраняется", () => {

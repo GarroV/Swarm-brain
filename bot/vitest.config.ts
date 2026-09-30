@@ -26,13 +26,17 @@ export default defineConfig({
         // а юнит-мера здесь мерила бы наличие браузера, а не логику.
         "src/meet-adapter/dom.ts",
         "src/meet-adapter/meet.ts",
+        // Те же основания у адаптера Контур.Толка (T111): его гоняет `smoke-kontur.ts`.
+        "src/kontur-adapter/smoke-kontur.ts",
+        "src/kontur-adapter/dom.ts",
+        "src/kontur-adapter/kontur.ts",
         // Процессы вокруг уже проверенных правил блока orchestrator: точка входа контейнера
         // (Chromium, ffmpeg, сигналы), процесс ffmpeg и перевод вызовов в dockerode. Правила
         // (исходы встречи, смерть, сироты, разбор частей) живут в соседних файлах и покрыты
         // тестами; эти три проверяет живой смоук против настоящего Docker.
         "src/orchestrator/container-main.ts",
         // Точка входа службы: разбор окружения и сигналы вокруг проверенных правил
-        // (invite-trigger, invite-service). Её гоняет живой смоук — сценарии invite, kontur, race.
+        // (invite-trigger, invite-service). Её гоняет живой смоук — сценарии invite, platform, race.
         "src/orchestrator/orchestrator-main.ts",
         "src/orchestrator/recorder.ts",
         // Выгрузка входа аккаунта бота (T175): Chromium с профилем окна входа. Правило «есть ли

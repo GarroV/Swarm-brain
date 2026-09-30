@@ -8,7 +8,7 @@
 //        201 { invite: InviteView }         — заведено
 //        200 { invite: InviteView }         — та же ссылка уже ждёт бота: отдаём её же, не дубль
 //        409 already_invited                — в эту комнату бота уже позвал коллега: бот один на звонок
-//        400 invalid_link · 400 unsupported_platform (Контур.Толк, Zoom — бот ходит только в Meet)
+//        400 invalid_link · 400 unsupported_platform (Zoom — бот ходит в Google Meet и Контур.Толк, Zoom пока нет)
 //        · 403 demo_not_allowed · 429 too_many_invites
 //   GET  /meeting-invites/:id  200 { invite: InviteView } — только своё; чужое и несуществующее — 404
 //
@@ -39,8 +39,8 @@ const ERRORS = {
   },
   unsupported_platform: {
     status: 400,
-    en: "The bot joins Google Meet calls only — Kontur.Talk and Zoom are not supported yet",
-    ru: "Бот пока ходит только в Google Meet — Контур.Толк и Zoom не поддерживаются",
+    en: "The bot joins Google Meet and Kontur.Talk calls — Zoom is not supported yet",
+    ru: "Бот ходит в Google Meet и Контур.Толк — Zoom пока не поддерживается",
   },
   demo_not_allowed: {
     status: 403,

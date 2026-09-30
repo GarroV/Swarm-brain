@@ -144,6 +144,15 @@ function InviteForm({ s, autoFocus = false }: { s: InviteState; autoFocus?: bool
           {s.error}
         </p>
       )}
+      {/* Толк, комната закрыта для гостей (D040, T111): бот перезагружает страницу и ждёт до
+          BOT_PROFILE.guestRoom.waitMinutes (сейчас 10) — число здесь держим в согласии вручную,
+          сервер и бот сверяет контрактный тест supabase/functions/_shared/bot-profile.test.ts. */}
+      <p className="mt-1.5 text-ink-mute" style={{ fontSize: 11.5, lineHeight: 1.4 }}>
+        {dt(
+          "Толк: откройте комнату для внешних участников — бот зайдёт гостем, ждёт до 10 минут.",
+          "Kontur.Talk: open the room to external participants — the bot joins as a guest and waits up to 10 minutes.",
+        )}
+      </p>
       {inv && (
         <div role="status" className="mt-2 flex items-center gap-2" style={{ fontSize: 12 }}>
           <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${inv.status === "expired" ? "bg-line-2" : inv.status === "used" ? "bg-status-done" : "bg-status-prog"}`} aria-hidden />
@@ -169,8 +178,8 @@ function InviteForm({ s, autoFocus = false }: { s: InviteState; autoFocus?: bool
 }
 
 const HINT: [string, string] = [
-  "Ссылка на Google Meet — бот постучится и запишет встречу.",
-  "A Google Meet link — the bot will knock and record the meeting.",
+  "Ссылка на Google Meet или Контур.Толк — бот постучится и запишет встречу.",
+  "A Google Meet or Kontur.Talk link — the bot will knock and record the meeting.",
 ];
 
 /** Десктоп: кнопка в панели «Встреч» и небольшое окно под ней, прижатое к правому краю. */
