@@ -1,5 +1,5 @@
-// Права на правку записи там, где запись может оказаться и встречей, и заметкой
-// (ИИ-инструмент бота `update_entry`).
+// Права на правку и удаление записи там, где запись может оказаться и встречей, и заметкой
+// (ИИ-инструмент бота `update_entry`, управление записями из чата `handlers/manage.ts`).
 //
 //   встреча → права встречи (`./meeting-rights.ts`, действие edit; смена видимости — права
 //             удаления: владелец и админ);
@@ -28,12 +28,18 @@ export function isMeetingEntry(entry: EditableEntryRow): boolean {
   return MEETING_TYPES.has(entry.entry_type ?? "") || MEETING_SOURCES.has(entry.source ?? "");
 }
 
-/** Текст отказа или `null`, если править можно. */
-export function entryEditError(
+/**
+ * Текст отказа или `null`, если действие разрешено.
+ *
+ * Встреча — права встречи (`edit`/`delete`); остальное — только автор, как у `/entries/:id`.
+ * `changesPrivacy` (только для правки) — смена видимости встречи, право удаления.
+ */
+export function entryActionError(
   id: string,
   entry: EditableEntryRow | null,
   viewer: MeetingViewer,
   viewerGroupId: string | null | undefined,
+  action: "edit" | "delete",
   opts?: { changesPrivacy?: boolean },
 ): string | null {
   const notFound = `Запись ${id} не найдена.`;
@@ -44,10 +50,21 @@ export function entryEditError(
   if (!isMeetingEntry(entry)) {
     return entryAccessError(id, entry, viewer.id, viewerGroupId, { requireOwner: true });
   }
-  const denied = meetingAccessError(id, entry, viewer, viewerGroupId, "edit");
+  const denied = meetingAccessError(id, entry, viewer, viewerGroupId, action);
   if (denied) return denied;
-  if (opts?.changesPrivacy && !canChangeMeetingPrivacy(entry, viewer)) {
+  if (action === "edit" && opts?.changesPrivacy && !canChangeMeetingPrivacy(entry, viewer)) {
     return "Запрещено: переносить встречу между личным и общим могут только её автор и администратор.";
   }
   return null;
+}
+
+/** Текст отказа или `null`, если править можно (см. entryActionError). */
+export function entryEditError(
+  id: string,
+  entry: EditableEntryRow | null,
+  viewer: MeetingViewer,
+  viewerGroupId: string | null | undefined,
+  opts?: { changesPrivacy?: boolean },
+): string | null {
+  return entryActionError(id, entry, viewer, viewerGroupId, "edit", opts);
 }
