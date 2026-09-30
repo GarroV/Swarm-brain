@@ -1,5 +1,9 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { canAccessDraftMeeting, type DraftMeetingRow, draftMeetingsOwnScopedFilter } from "../_shared/meeting-access.ts";
+import {
+  canAccessDraftMeeting,
+  type DraftMeetingRow,
+  draftMeetingsOwnScopedFilter,
+} from "../_shared/meeting-access.ts";
 import { publishDraftMeeting } from "../_shared/meeting-publish.ts";
 import { ADMIN_USER_ID, matchAssignee, resolveGroupId } from "./tasks/tools.ts";
 import { entryAccessError, type EntryAccessRow } from "../_shared/entries/access.ts";
@@ -43,7 +47,10 @@ async function loadOwnDraft(
   const { data } = await supabase.from("meetings").select("*").eq("id", meetingId).maybeSingle();
   const meeting = data as Record<string, unknown> | null;
   // Один текст отказа на «нет такого» и «не твой»: иначе перебором id подтверждается чужой черновик.
-  if (!meeting || !groupId || !canAccessDraftMeeting(meeting as DraftMeetingRow, callerId, callerId === ADMIN_USER_ID, groupId)) {
+  if (
+    !meeting || !groupId ||
+    !canAccessDraftMeeting(meeting as DraftMeetingRow, callerId, callerId === ADMIN_USER_ID, groupId)
+  ) {
     return { ok: false, msg: NOT_FOUND };
   }
   return { ok: true, meeting, groupId };
@@ -204,7 +211,11 @@ export const MEETING_REVIEW_TOOL_DEFINITIONS = [
       type: "object",
       properties: {
         meeting_id: MEETING_ID,
-        base: { type: "string", enum: ["team", "personal"], description: "team — база команды (по умолчанию), personal — личная" },
+        base: {
+          type: "string",
+          enum: ["team", "personal"],
+          description: "team — база команды (по умолчанию), personal — личная",
+        },
         countries: {
           type: "array",
           items: { type: "string" },
