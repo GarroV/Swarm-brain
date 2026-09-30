@@ -2,11 +2,7 @@
 // не ведёт второго бота) и сигнал «бот не пришёл» (meeting-missed, молчит). Разойдись они — и
 // сигнал гаснет там, где бот на деле не едет: мёртвое приглашение утром глушило пропуск вечером.
 import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import {
-  coveredRooms,
-  inviteCoversRoom,
-  type ManualInviteRow,
-} from "./manual-rooms.ts";
+import { coveredRooms, inviteCoversRoom, type ManualInviteRow } from "./manual-rooms.ts";
 
 const NOW = Date.parse("2026-09-28T17:00:00.000Z");
 const LINK = "https://meet.google.com/abc-defg-hij";

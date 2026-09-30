@@ -7,10 +7,7 @@
 // Ядро — весь рабочий код supabase/functions, кроме модулей бота (список ниже). В ядре:
 //   1. нет литерала `scriba` (ни в коде, ни в комментариях) — имя живёт в профиле бота;
 //   2. из модулей бота импортируются только профиль и его тексты (плюс явные точки монтирования).
-import {
-  assert,
-  assertEquals,
-} from "https://deno.land/std@0.224.0/assert/mod.ts";
+import { assert, assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
 
 const ROOT = decodeURIComponent(new URL("../", import.meta.url).pathname);
 
@@ -98,9 +95,7 @@ export function violations(path: string, src: string): string[] {
   for (const target of relativeImports(path, src)) {
     if (isBotModule(target) && !allowed.includes(target)) {
       found.push(
-        `${path} импортирует модуль бота ${target} — ядру доступны только ${
-          allowed.join(", ")
-        }`,
+        `${path} импортирует модуль бота ${target} — ядру доступны только ${allowed.join(", ")}`,
       );
     }
   }

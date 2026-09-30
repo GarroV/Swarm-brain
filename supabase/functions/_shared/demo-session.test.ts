@@ -1,10 +1,7 @@
 // Демо — это ЛИЧНОСТЬ (демо-пользователь секретной ссылки), а не слаг воркспейса: проект запрещает
 // решать что-либо по конкретному group_id (CLAUDE.md, §Идентификаторы). Слаг меняется или
 // строка демо-человека лежит в другой группе — и отказ «из демо нельзя» молча перестаёт работать.
-import {
-  assert,
-  assertEquals,
-} from "https://deno.land/std@0.224.0/assert/mod.ts";
+import { assert, assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import { DEMO_GROUP_ID, DEMO_USER_ID, isDemoSession } from "./demo-session.ts";
 
 Deno.test("isDemoSession: демо-пользователь — демо, в какой бы группе ни лежала его строка", () => {

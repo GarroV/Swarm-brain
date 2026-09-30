@@ -8,10 +8,7 @@
 // Тест структурный: он смотрит, какой функцией каждый эндпоинт проверяет вход. Такую правку
 // («давай везде одинаково») легко внести из лучших побуждений, и ни один поведенческий тест
 // её не поймает — поведение для человека не изменится.
-import {
-  assert,
-  assertEquals,
-} from "https://deno.land/std@0.224.0/assert/mod.ts";
+import { assert, assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
 
 const ROOT = decodeURIComponent(new URL("../", import.meta.url).pathname);
 
