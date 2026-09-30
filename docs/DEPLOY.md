@@ -235,7 +235,7 @@ make unfreeze          # снять раньше срока; по сроку р�
   `docker run --rm --security-opt seccomp=/srv/scriba/repo/bot/src/container/seccomp-chromium.json
   --security-opt no-new-privileges:true --shm-size=1g scriba-prod:<rev> node
   /app/src/kontur-adapter/smoke-kontur.ts`. Хост, которого не хватило живой встрече (медиасерверы Толка
-  не проверены), — строка `egress deny <host:port>` в `docker logs scriba-prod-egress`; добавка —
+  `*.ktalk.host` уже в правиле), — строка `egress deny <host:port>` в `docker logs scriba-prod-egress`; добавка —
   `/srv/scriba/state/egress-extra` (одна строка `host:port,host:port`), затем `scriba-prod.sh up`.
 - **Откат на MUSPELHEIM:** там всё осталось (`C:\projects\scriba-prod`; `stand.ps1` — в тамошнем клоне, в `main` его больше нет: клон не обновлять), бот
   погашен. Вернуть: там `token-hash` → кнопка токена → `up`; на VPS — `scriba-prod.sh down`.

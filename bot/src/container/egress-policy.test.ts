@@ -35,6 +35,11 @@ describe("куда контейнеру встречи можно выйти", (
     expect(isAllowed("x.talk.kontur.ru:443")).toBe(false);
     expect(isAllowed("metrika.kontur.ru:443")).toBe(false);
     expect(isAllowed("sentry.kontur.host:443")).toBe(false);
+    expect(isAllowed("sd2-talk-stun4.ktalk.host:443")).toBe(true);
+    expect(isAllowed("bst-talk-stun2.ktalk.host:443")).toBe(true);
+    expect(isAllowed("sd2-talk-stun4.ktalk.host:3478")).toBe(false);
+    expect(isAllowed("evilktalk.host:443")).toBe(false);
+    expect(isAllowed("ktalk.host.evil.com:443")).toBe(false);
   });
 
   it("пускает ровно свой Swarm: хост и порт из адреса", () => {
