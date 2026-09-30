@@ -24,6 +24,6 @@
     // раннера нет, тесты чистой логики гоняются здесь же). Флаг -A обязателен: часть тестов
     // установщика Claude Desktop пишет во временный каталог и запускает подпроцесс, и под
     // урезанными правами (--allow-read / --allow-net) они падают правами, а не по сути.
-    "test": "deno test -A supabase/ miniapp/sw.test.ts miniapp/src/lib/"
+    "test": "deno test -A supabase/ files/ miniapp/sw.test.ts miniapp/src/lib/"
   }
 }

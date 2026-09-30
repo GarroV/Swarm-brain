@@ -135,7 +135,7 @@ initiatives_gate() {
   # что ссылаются на несуществующий параметр — issue #383. Когда он закрыт, флаг убирается
   # и оба прогона становятся одинаковыми.
   rm -rf reports/cov
-  deno test -A --coverage=reports/cov --reporter=junit supabase/ \
+  deno test -A --coverage=reports/cov --reporter=junit supabase/ files/ \
     > reports/tests-functions.junit.xml 2> reports/tests.log; st1=$?
   deno test -A --no-check --coverage=reports/cov --reporter=junit \
     miniapp/sw.test.ts miniapp/src/lib/ > reports/tests-web.junit.xml 2>> reports/tests.log; st2=$?

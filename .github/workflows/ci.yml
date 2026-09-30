@@ -66,7 +66,7 @@ jobs:
       - name: Локальный контур Supabase
         run: ./scripts/ci-supabase-up
       - name: deno test
-        run: ./scripts/with-local-db deno test -A supabase/functions/
+        run: ./scripts/with-local-db deno test -A supabase/functions/ files/
 
   miniapp:
     name: Mini App (Next.js) — сборка + типы

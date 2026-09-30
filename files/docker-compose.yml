@@ -1,0 +1,27 @@
+# swarm-files на MUSPELHEIM: compose-проект `swarm-files`, поднимает scripts/swarm-files.sh up.
+# Порт слушает только localhost — наружу сервис выходит через Tailscale Funnel под путём
+# /swarm-files (порт 10000), своего публичного порта у него нет.
+services:
+  swarm-files:
+    build:
+      context: ..
+      dockerfile: files/Dockerfile
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${FILES_PORT:-8031}:8031"
+    env_file:
+      - ${FILES_ENV_FILE:?FILES_ENV_FILE — путь к state\files.env}
+    environment:
+      FILES_DATA_DIR: /data
+    volumes:
+      - ${FILES_DATA:?FILES_DATA — папка с файлами на диске сервера}:/data
+    healthcheck:
+      test: [
+        "CMD",
+        "deno",
+        "eval",
+        "const r = await fetch('http://127.0.0.1:8031/health'); Deno.exit(r.ok ? 0 : 1)",
+      ]
+      interval: 60s
+      timeout: 5s
+      retries: 3
