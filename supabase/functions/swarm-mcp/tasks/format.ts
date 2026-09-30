@@ -75,6 +75,9 @@ export function formatTaskLine(t: {
   title: string;
   assignees?: string[] | null;
   due_date?: string | null;
+  /** Пинг (#622): день напоминания; reminded_at заполнен — пинг уже отправлен и сгорел. */
+  remind_date?: string | null;
+  reminded_at?: string | null;
   country?: string | null;
   confirmed?: boolean;
   /** Подзадача (#478): родитель — названием, если он в той же выдаче, иначе id. */
@@ -90,6 +93,8 @@ export function formatTaskLine(t: {
   const project = t.project_label ? ` | проект: ${t.project_label}` : "";
   const id = t.id ? ` (id: ${t.id})` : "";
   const due = t.due_date ? ` | дедлайн: ${t.due_date}` : "";
+  // Без пометки «отправлен» агент принял бы сгоревший пинг за ещё ждущий.
+  const ping = t.remind_date ? ` | пинг: ${t.remind_date}${t.reminded_at ? " (отправлен)" : ""}` : "";
   const country = t.country ? ` | ${t.country}` : "";
   const pending = t.confirmed === false ? " ⏳ на проверке (в вебе не видна)" : "";
   const parent = t.parent_id
@@ -99,7 +104,7 @@ export function formatTaskLine(t: {
   // Флаг печатается только включённым: в выдаче он редок, и строка «не скрыта» у каждой задачи
   // была бы шумом. Без пометки агент не узнал бы, почему задачи нет на хабе (issue #562).
   const hidden = t.hidden_from_hub === true ? " 🙈 скрыта с хаба" : "";
-  return `• [${t.status}] ${t.title}${id}${pending}${hidden}\n  Исполнитель: ${who}${due}${country}${project}${parent}${kids}`;
+  return `• [${t.status}] ${t.title}${id}${pending}${hidden}\n  Исполнитель: ${who}${due}${ping}${country}${project}${parent}${kids}`;
 }
 
 /**
