@@ -44,3 +44,13 @@ Deno.test("get_recent_meetings в боте: воркспейс и фильтр �
   const src = await Deno.readTextFile(`${HERE}knowledge.ts`);
   assertEquals(recentMeetingsProblems(src), []);
 });
+
+// ── export_entry: запись ищется гардом выгрузки, а не своим запросом рядом ────
+Deno.test("export_entry в боте берёт запись через loadEntryForExport", async () => {
+  const src = await Deno.readTextFile(`${HERE}knowledge.ts`);
+  const start = src.indexOf('if (tc.function.name === "export_entry")');
+  if (start < 0) throw new Error("обработка export_entry не найдена — детектор устарел");
+  const body = src.slice(start, src.indexOf("} else {\n          result = await executeTool", start));
+  assertEquals(body.includes("loadEntryForExport("), true, "выгрузка без гарда");
+  assertEquals(/\.from\("entries"\)/.test(body), false, "выгрузка читает entries своим запросом");
+});

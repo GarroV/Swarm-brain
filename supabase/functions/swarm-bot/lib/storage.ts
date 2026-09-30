@@ -7,9 +7,7 @@ import { applyGeneralSentinel, specificCountries } from "../../_shared/meta-extr
 import { normalizeExtractedEventDate, todayIso } from "../../_shared/llm-date.ts";
 
 
-export function visibilityFilter(userId: number): string {
-  return `is_private.eq.false,and(is_private.eq.true,owner_id.eq.${userId})`;
-}
+export { visibilityFilter } from "./visibility.ts";
 
 // ── Entry index ───────────────────────────────────────────────────────────────
 
