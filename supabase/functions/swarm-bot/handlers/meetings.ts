@@ -3,12 +3,11 @@ import {
   meetingAccessError,
   type MeetingAction,
   type MeetingRightsRow,
-  type MeetingViewer,
 } from "../../_shared/entries/meeting-rights.ts";
-import { ADMIN_USER_ID, supabase } from "../lib/supabase.ts";
+import { loadMeetingViewer, supabase } from "../lib/supabase.ts";
 import { getReadAiToken, readAiGet, READ_AI_API, READ_AI_AUTH_URL } from "../lib/readai.ts";
 import { sendMessage, sendInlineMessage, editInlineMessage } from "../lib/telegram.ts";
-import { setSession, getSession, clearSession, saveEntry } from "../lib/storage.ts";
+import { setSession, getSession, clearSession, saveEntry, visibilityFilter } from "../lib/storage.ts";
 import { chatComplete, getEmbedding } from "../lib/openai.ts";
 import { getWorkspaceMarkets } from "../lib/workspace.ts";
 import { COUNTRY_NAMES } from "../../_shared/countries.ts";
@@ -53,22 +52,6 @@ async function loadEntryForAction(
     entryId, data as MeetingRightsRow | null, viewer, groupId, action,
   );
   return denied ? null : (data as ActionEntry | null);
-}
-
-// Кто действует над встречей: админ ли он и его e-mail (для причастности к встрече).
-// Тот же признак админа, что в isAdminUser и swarm-api; строки нет — ни прав админа, ни e-mail.
-async function loadMeetingViewer(viewerId: number): Promise<MeetingViewer> {
-  const { data } = await supabase
-    .from("allowed_users")
-    .select("is_admin, email")
-    .eq("telegram_id", viewerId)
-    .maybeSingle();
-  const row = data as { is_admin?: boolean; email?: string | null } | null;
-  return {
-    id: viewerId,
-    email: row?.email ?? null,
-    isAdmin: viewerId === ADMIN_USER_ID || row?.is_admin === true,
-  };
 }
 
 export async function handleConnect(chatId: number): Promise<void> {
@@ -265,6 +248,8 @@ export async function handleMeetingCallbacks(
       const { data: meetings } = await supabase
         .from("entries").select("id, metadata, created_at, source, entry_type")
         .eq("group_id", groupId)
+        // Личные встречи в списке — только свои (правило видимости записей).
+        .or(visibilityFilter(userId))
         .or("source.in.(read_ai,voice,desktop-agent),entry_type.in.(transcript,meeting)")
         .order("created_at", { ascending: false }).limit(15);
       if (!meetings?.length) {

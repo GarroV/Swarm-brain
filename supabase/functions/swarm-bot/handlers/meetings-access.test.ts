@@ -126,3 +126,14 @@ Deno.test("детектор ловит именно ту форму, из-за �
   ].join("\n");
   assertEquals(rawSelectsById(было), [3]);
 });
+
+// ── Список сохранённых встреч (rai_saved) ─────────────────────────────────────
+// Список идёт по воркспейсу, и личные встречи в нём — только свои.
+Deno.test("список сохранённых встреч фильтрует личные по владельцу", async () => {
+  const src = await Deno.readTextFile(`${HERE}meetings.ts`);
+  const start = src.indexOf('if (sub === "saved")');
+  if (start < 0) throw new Error("ветка rai_saved не найдена — детектор устарел");
+  const query = src.slice(start, src.indexOf(".limit(", start));
+  assertEquals(/\.eq\("group_id", groupId\)/.test(query), true, "список не ограничен воркспейсом");
+  assertEquals(/\.or\(visibilityFilter\(userId\)\)/.test(query), true, "список показывает чужие личные встречи");
+});

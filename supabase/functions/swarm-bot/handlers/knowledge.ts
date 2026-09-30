@@ -1,4 +1,5 @@
-import { supabase } from "../lib/supabase.ts";
+import { loadMeetingViewer, supabase } from "../lib/supabase.ts";
+import { entryEditError, type EditableEntryRow } from "../../_shared/entries/entry-edit.ts";
 import { getEmbedding, chatComplete } from "../lib/openai.ts";
 import { saveEntry, visibilityFilter, generateSummary, getSession, setSession, clearSession } from "../lib/storage.ts";
 import { sendMessage } from "../lib/telegram.ts";
@@ -626,27 +627,28 @@ export async function executeTool(name: string, args: Record<string, unknown>, u
       case "update_entry": {
         const id = String(args.id ?? "");
         if (!id) return "Укажи id записи.";
-        const { data: existing } = await supabase.from("entries").select("metadata, countries, entry_date, is_private, owner_id").eq("id", id).maybeSingle();
-        if (!existing) return `Запись ${id} не найдена.`;
+        const { data: existing } = await supabase.from("entries")
+          .select("metadata, countries, entry_date, is_private, owner_id, group_id, entry_type, source")
+          .eq("id", id).eq("group_id", groupId).maybeSingle();
+        // Воркспейс + права: встреча — по правам встречи, остальное — только автор
+        // (_shared/entries/entry-edit.ts). Смена видимости — отдельное право.
+        const changesPrivacy = typeof args.is_private === "boolean" && args.is_private !== existing?.is_private;
+        const denied = entryEditError(
+          id, existing as EditableEntryRow | null, await loadMeetingViewer(userId), groupId, { changesPrivacy },
+        );
+        if (denied) return denied;
         const updates: Record<string, unknown> = {};
         if (args.entry_date) updates.entry_date = String(args.entry_date);
-        if (args.title) updates.metadata = { ...(existing.metadata ?? {}), title: String(args.title) };
+        if (args.title) updates.metadata = { ...(existing!.metadata ?? {}), title: String(args.title) };
         if (args.countries) updates.countries = args.countries;
         if (typeof args.is_private === "boolean") {
-          if (args.is_private) {
-            if (!userId) return "Ошибка: не удалось определить пользователя.";
-            updates.is_private = true;
-            updates.owner_id = userId;
-          } else {
-            if (existing.is_private && existing.owner_id && existing.owner_id !== userId) {
-              return "Нельзя перенести чужую личную запись в общую базу.";
-            }
-            updates.is_private = false;
-            updates.owner_id = null;
-          }
+          if (!userId) return "Ошибка: не удалось определить пользователя.";
+          // is_private — видимость, owner_id — авторство: владельца не обнуляем и не меняем.
+          updates.is_private = args.is_private;
+          updates.owner_id = existing!.owner_id ?? userId;
         }
         if (!Object.keys(updates).length) return "Нечего обновлять — передай хотя бы одно поле.";
-        const { error } = await supabase.from("entries").update(updates).eq("id", id);
+        const { error } = await supabase.from("entries").update(updates).eq("id", id).eq("group_id", groupId);
         if (error) return `Ошибка обновления: ${error.message}`;
         if (typeof args.is_private === "boolean") {
           return args.is_private ? "✅ Запись перенесена в личное хранилище." : "✅ Запись перенесена в общую базу знаний.";
