@@ -104,6 +104,10 @@ export class KonturAdapter implements PlatformAdapter {
   Комната так и не открылась для гостей — причина для журнала; `null` — открылась.
   */
   #closedReason: string | null = null;
+  /**
+  Последний шаг входа (представиться / присоединиться) и когда он сделан — чтобы не повторять.
+  */
+  #lastStep: { readonly stage: StageVerdict["stage"]; readonly atMs: number } | null = null;
   #aloneSignalReported = false;
   #speakerSignalReported = false;
 
@@ -231,20 +235,6 @@ export class KonturAdapter implements PlatformAdapter {
     return null;
   }
 
-  /**
-  Ждать следующего экрана входа: любой этап, кроме `from` и «не опознано», или таймаут.
-  */
-  async #waitStageChange(from: StageVerdict["stage"]): Promise<StageVerdict> {
-    const deadline = Date.now() + (this.#deps.stepReadyTimeoutMs ?? STEP_READY_TIMEOUT_MS);
-    let { verdict } = await this.#stage();
-    while (!this.#isStopped && Date.now() < deadline) {
-      if (verdict.stage !== from && verdict.stage !== "unknown") return verdict;
-      await this.#pause(this.#poll);
-      ({ verdict } = await this.#stage());
-    }
-    return verdict;
-  }
-
   async #introduce(displayName: string): Promise<void> {
     const input = await this.#findVisible(NAME_INPUT_SELECTORS);
     if (input === null) {
@@ -255,14 +245,43 @@ export class KonturAdapter implements PlatformAdapter {
     await input.fill("");
     await input.pressSequentially(displayName, { delay: TYPE_DELAY_MS });
     if (!(await this.#clickFirst(CONTINUE_SELECTORS, "продолжить"))) {
-      this.#log("кнопка «Продолжить» не найдена — вердикт вынесет waitAdmitted");
+      this.#log("кнопка «Продолжить» не найдена — попробуем на следующем круге");
     }
+  }
+
+  /**
+   * Сделать шаг входа, который просит текущий экран: форма имени — представиться, экран
+   * устройств — проверить немоту и нажать «Присоединиться». Зовётся и из `join`, и на каждом
+   * круге `waitAdmitted`: комната открывается перезагрузкой, первая загрузка бывает медленной,
+   * и экран входа может показаться уже после того, как `join` вернулся. Тот же шаг повторяется
+   * не чаще раза в `stepReadyTimeoutMs`, чтобы не перебивать имя на каждом опросе.
+   * Возвращает нарушение немоты — тогда в звонок не входим; иначе `null`.
+   */
+  async #advance(verdict: StageVerdict, snapshot: KonturSnapshot): Promise<string | null> {
+    if (verdict.stage !== "name_form" && verdict.stage !== "devices") return null;
+    const now = Date.now();
+    const retryMs = this.#deps.stepReadyTimeoutMs ?? STEP_READY_TIMEOUT_MS;
+    const last = this.#lastStep;
+    if (last !== null && last.stage === verdict.stage && now - last.atMs < retryMs) return null;
+    this.#lastStep = { stage: verdict.stage, atMs: now };
+
+    if (verdict.stage === "name_form") {
+      await this.#introduce(this.#displayName ?? "");
+      return null;
+    }
+    const violation = mutedViolation(snapshot);
+    if (violation !== null) return violation;
+    if (!(await this.#clickFirst(JOIN_SELECTORS, "присоединиться"))) {
+      this.#log("кнопка «Присоединиться» не найдена — попробуем на следующем круге");
+    }
+    return null;
   }
 
   async join(url: string, displayName: string): Promise<void> {
     const target = checkKonturUrl(url);
     this.#displayName = displayName;
     this.#closedReason = null;
+    this.#lastStep = null;
 
     const context = await this.#deps.browser.newContext({
       locale: KONTUR_BROWSER_LANG,
@@ -280,25 +299,11 @@ export class KonturAdapter implements PlatformAdapter {
     await page.goto(target, { waitUntil: "domcontentloaded", timeout: NAVIGATION_TIMEOUT_MS });
     this.#log(`открыта комната ${target} гостем под именем «${displayName}»`);
 
-    let verdict = await this.#waitGuestRoom();
+    const verdict = await this.#waitGuestRoom();
     if (verdict === null) return;
-
-    if (verdict.stage === "name_form") {
-      await this.#introduce(displayName);
-      verdict = await this.#waitStageChange("name_form");
-    }
-
-    if (verdict.stage !== "devices") {
-      this.#log(`экрана устройств нет (${verdict.reason}) — вердикт вынесет waitAdmitted`);
-      return;
-    }
-
-    const violation = mutedViolation(await this.#snapshot());
+    const violation = await this.#advance(verdict, await this.#snapshot());
     if (violation !== null) {
       throw new Error(`${violation} — в звонок не входим`);
-    }
-    if (!(await this.#clickFirst(JOIN_SELECTORS, "присоединиться"))) {
-      this.#log("кнопка «Присоединиться» не найдена — вердикт вынесет waitAdmitted");
     }
   }
 
@@ -321,6 +326,11 @@ export class KonturAdapter implements PlatformAdapter {
         }
         this.#log(`дверь: admitted — ${verdict.reason}`);
         return "admitted";
+      }
+      const violation = await this.#advance(verdict, snapshot);
+      if (violation !== null) {
+        this.#log(`дверь: mic_live — ${violation}; в звонок не входим`);
+        return "mic_live";
       }
       if (verdict.stage === "closed") {
         this.#closedReason = verdict.reason;
