@@ -28,3 +28,19 @@ Deno.test("update_entry в боте: воркспейс и права до за�
   const src = await Deno.readTextFile(`${HERE}knowledge.ts`);
   assertEquals(updateEntryProblems(src), []);
 });
+
+// ── get_recent_meetings: список встреч — свой воркспейс, личные только свои ────
+function recentMeetingsProblems(src: string): string[] {
+  const start = src.indexOf('case "get_recent_meetings": {');
+  if (start < 0) throw new Error("инструмент get_recent_meetings не найден — детектор устарел");
+  const query = src.slice(start, src.indexOf("await q;", start));
+  const problems: string[] = [];
+  if (!/\.eq\("group_id", groupId\)/.test(query)) problems.push("список без воркспейса");
+  if (!/\.or\(visibilityFilter\(userId\)\)/.test(query)) problems.push("список без фильтра личных");
+  return problems;
+}
+
+Deno.test("get_recent_meetings в боте: воркспейс и фильтр личных", async () => {
+  const src = await Deno.readTextFile(`${HERE}knowledge.ts`);
+  assertEquals(recentMeetingsProblems(src), []);
+});

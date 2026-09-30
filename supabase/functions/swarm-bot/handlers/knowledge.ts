@@ -574,6 +574,9 @@ export async function executeTool(name: string, args: Record<string, unknown>, u
         const limit = Math.min(Number(args.limit ?? 10), 20);
         let q = supabase.from("entries")
           .select("id, metadata, entry_date, created_at, source, content, summary, entry_type")
+          // Свой воркспейс; личные встречи — только свои.
+          .eq("group_id", groupId)
+          .or(visibilityFilter(userId))
           .order("created_at", { ascending: false })
           .limit(limit);
         if (source) {
