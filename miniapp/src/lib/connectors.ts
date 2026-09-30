@@ -41,10 +41,9 @@ export type ConnectorsInput = {
   now: Date;
 };
 
-// Базовый порядок = важность сервиса для работы продукта: без календаря рекордер слеп,
-// без рекордера нет встреч, без Telegram не доходят уведомления.
-// Бот встреч — сразу за рекордером: это второй способ записать встречу.
-const BASE_ORDER: ConnectorId[] = ["calendar", "recorder", "bot", "telegram", "granola", "claude"];
+// Порядок задал владелец 30.09.2026: верхний ряд — чем записывать и чем пополнять базу,
+// нижний — с чем Swarm связан. На десктопе это ровно два ряда по три.
+const BASE_ORDER: ConnectorId[] = ["granola", "recorder", "bot", "calendar", "telegram", "claude"];
 
 
 function tokenState({ active, expiresAt }: TokenStatus, now: Date): ConnectorState {

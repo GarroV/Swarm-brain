@@ -9,12 +9,82 @@ import { ConnectorTile } from "./ConnectorTile";
 import { AutojoinToggle } from "./AutojoinToggle";
 
 const TITLE: Record<ConnectorId, [string, string]> = {
-  calendar: ["Google-календарь", "Google Calendar"],
+  calendar: ["Google Календарь", "Google Calendar"],
   recorder: ["bumblebee — запись встреч (Mac)", "bumblebee — meeting recorder (Mac)"],
-  bot: ["Бот встреч", "Meeting bot"],
+  bot: ["scriba", "scriba"],
   telegram: ["Telegram", "Telegram"],
   granola: ["Granola", "Granola"],
   claude: ["Claude Desktop", "Claude Desktop"],
+};
+
+// Правая колонка десктопа: что это и зачем — человеческим языком, для того, кто видит интеграцию
+// впервые (владелец 30.09.2026: «информационный блок справа должен быть полезным и объясняющим»).
+// Абзацы — массивом: каждый отвечает на один вопрос (что это → что будет → что важно знать).
+const ABOUT: Record<ConnectorId, [string[], string[]]> = {
+  bot: [
+    [
+      "scriba — наш бот для Google Meet. Он сам заходит на ваши встречи и записывает их, вам ничего не нужно запускать.",
+      "Включите его — и он будет приходить на каждую встречу Meet из вашего календаря, на которую вы согласились. После встречи во «Встречах» появятся стенограмма и тезисы.",
+      "Участники видят scriba в списке как отдельного гостя, в том числе внешние. Выключить можно в любой момент — подействует в течение минуты.",
+    ],
+    [
+      "scriba is our Google Meet bot. It joins your meetings on its own and records them — nothing to launch.",
+      "Turn it on and it will join every Meet meeting from your calendar that you accepted. After the meeting, the transcript and notes appear in Meetings.",
+      "Participants see scriba as a separate guest, external ones included. You can turn it off any time — it takes effect within a minute.",
+    ],
+  ],
+  recorder: [
+    [
+      "bumblebee — программа для вашего Mac, которая записывает звонки: Zoom, Google Meet, Контур и другие.",
+      "Когда начинается встреча, она предлагает записать её, а после звонка сама отправляет запись в Swarm — во «Встречах» появятся стенограмма и тезисы.",
+      "Подходит для встреч, куда бота звать неудобно, и для звонков не в Meet.",
+    ],
+    [
+      "bumblebee is a Mac app that records your calls: Zoom, Google Meet and others.",
+      "When a meeting starts it offers to record it, and after the call it sends the recording to Swarm — the transcript and notes appear in Meetings.",
+      "Good for meetings where a bot would be awkward, and for calls outside Meet.",
+    ],
+  ],
+  granola: [
+    [
+      "Granola — приложение для заметок на встречах.",
+      "Подключите его, и ваши заметки из Granola будут сами попадать в базу Swarm: их можно найти поиском и спросить о них.",
+    ],
+    [
+      "Granola is a note-taking app for meetings.",
+      "Connect it and your Granola notes will land in the Swarm base on their own — searchable and ready for questions.",
+    ],
+  ],
+  calendar: [
+    [
+      "Swarm видит ваши встречи из Google Календаря: название, время и участников. Только читает — ничего в календаре не меняет.",
+      "По календарю scriba знает, куда прийти, bumblebee — какую встречу он записывает, а у тезисов появляется правильное название и список участников.",
+    ],
+    [
+      "Swarm sees your Google Calendar meetings: title, time and attendees. Read-only — it never changes your calendar.",
+      "The calendar tells scriba where to go and bumblebee which meeting it records, and gives the notes the right title and attendee list.",
+    ],
+  ],
+  telegram: [
+    [
+      "Бот Swarm в Telegram. Через него быстро добавить информацию в базу и быстро спросить о чём-то — не открывая сайт.",
+      "Сюда же приходят уведомления: например, если запись встречи не получилась.",
+    ],
+    [
+      "The Swarm bot in Telegram: quickly add something to the base or ask a question without opening the site.",
+      "Notifications arrive here too — for example, when a meeting recording failed.",
+    ],
+  ],
+  claude: [
+    [
+      "Подключите базу Swarm к Claude Desktop — и спрашивайте Claude о встречах, задачах и заметках команды прямо в чате.",
+      "Claude видит только то, что видите вы в Swarm: чужие личные записи ему недоступны.",
+    ],
+    [
+      "Connect the Swarm base to Claude Desktop and ask Claude about the team's meetings, tasks and notes right in the chat.",
+      "Claude sees only what you see in Swarm: other people's private records stay private.",
+    ],
+  ],
 };
 
 /**
@@ -22,16 +92,6 @@ const TITLE: Record<ConnectorId, [string, string]> = {
  * сервиса жил внутри своей свёрнутой секции, и увидеть картину целиком было нельзя.
  * `fetchIntegrations` попутно перестал дублироваться — Granola и календарь брали его по разу каждый.
  */
-// Что даёт интеграция — одной строкой над её настройками в правой колонке десктопа.
-const HINT: Record<ConnectorId, [string, string]> = {
-  calendar: ["Встречи получают название и участников; бот и bumblebee знают, куда идти.", "Meetings get a title and attendees; the bot and bumblebee know where to go."],
-  recorder: ["Записывает встречи на вашем Mac.", "Records meetings on your Mac."],
-  bot: ["Сам приходит на ваши встречи Google Meet и записывает их.", "Joins your Google Meet meetings on its own and records them."],
-  telegram: ["Уведомления и быстрый вопрос к базе.", "Notifications and a quick question to the base."],
-  granola: ["Заметки Granola попадают в базу.", "Granola notes land in the base."],
-  claude: ["База Swarm прямо в Claude Desktop.", "The Swarm base right inside Claude Desktop."],
-};
-
 // Панель бота секция рисует сама: переключатель меняет статус карточки, а состояние живёт здесь.
 type PanelId = Exclude<ConnectorId, "bot">;
 
@@ -75,6 +135,8 @@ export function ConnectorsSection({ me, panels, dense = false }: { me: Me; panel
   const panelOf = (id: ConnectorId) =>
     id === "bot" ? <BotPanel hasCalendar={hasCalendar} onChange={setBotAutojoin} /> : panels[id];
   const toggle = (id: ConnectorId) => setOpen(open === id ? null : id);
+  // Справа всегда что-то выбрано: по умолчанию scriba, в демо (где его нет) — первая плитка.
+  const selected: ConnectorId = open ?? (list.some((c) => c.id === "bot") ? "bot" : list[0].id);
 
   const counter = (
     <span className="text-ink-mute" style={{ fontSize: 11 }}>
@@ -93,32 +155,16 @@ export function ConnectorsSection({ me, panels, dense = false }: { me: Me; panel
           <div className="flex justify-end">{counter}</div>
           <div className="grid grid-cols-3 gap-2">
             {list.map((c) => (
-              <ConnectorTile key={c.id} c={c} open={open === c.id} onToggle={() => toggle(c.id)} />
+              <ConnectorTile key={c.id} c={c} open={selected === c.id} onToggle={() => setOpen(c.id)} />
             ))}
           </div>
         </div>
-        <aside aria-live="polite"
-          className={`rounded-[10px] border px-3.5 py-3 ${open ? "border-accent-line bg-surface" : "border-dashed border-line bg-surface-2"}`}>
-          {open ? (
-            <>
-              <div className="mb-1 flex items-start justify-between gap-2">
-                <p className="text-ink" style={{ fontSize: 13.5, fontWeight: 600 }}>{dt(...TITLE[open])}</p>
-                <button type="button" onClick={() => setOpen(null)} className="shrink-0 text-ink-mute hover:text-ink" style={{ fontSize: 12 }}>
-                  {dt("Закрыть", "Close")}
-                </button>
-              </div>
-              <p className="mb-3 text-ink-soft" style={{ fontSize: 12 }}>{dt(...HINT[open])}</p>
-              {panelOf(open)}
-            </>
-          ) : (
-            <div className="flex h-full flex-col justify-center gap-1.5 text-center">
-              <p className="text-ink" style={{ fontSize: 13, fontWeight: 500 }}>{dt("Настройки интеграции", "Integration settings")}</p>
-              <p className="text-ink-soft" style={{ fontSize: 12 }}>
-                {dt("Выберите плитку слева — здесь появится, что она даёт и как её настроить.",
-                  "Pick a tile on the left — what it does and how to set it up appears here.")}
-              </p>
-            </div>
-          )}
+        <aside aria-live="polite" className="rounded-[10px] border border-accent-line bg-surface px-4 py-3.5">
+          <p className="mb-2 text-ink" style={{ fontSize: 15, fontWeight: 600 }}>{dt(...TITLE[selected])}</p>
+          <div className="mb-3.5 flex flex-col gap-2 text-ink-soft" style={{ fontSize: 12.5, lineHeight: 1.5 }}>
+            {ABOUT[selected][dt("ru", "en") === "ru" ? 0 : 1].map((para) => <p key={para}>{para}</p>)}
+          </div>
+          <div className="border-t border-line pt-3">{panelOf(selected)}</div>
         </aside>
       </section>
     );
@@ -154,8 +200,8 @@ function BotPanel({ hasCalendar, onChange }: { hasCalendar: boolean; onChange: (
     return (
       <p className="text-ink-soft" style={{ fontSize: 12.5 }}>
         {dt(
-          "Бот приходит на встречи из Google-календаря — сначала подключите «Календарь».",
-          "The bot joins meetings from Google Calendar — connect Calendar first.",
+          "scriba узнаёт о встречах из Google Календаря — сначала подключите его в плитке «Google Календарь».",
+          "scriba learns about meetings from Google Calendar — connect it first in the Google Calendar tile.",
         )}
       </p>
     );

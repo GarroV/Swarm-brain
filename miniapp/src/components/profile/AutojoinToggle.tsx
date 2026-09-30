@@ -9,7 +9,8 @@ import { useDt } from "@/components/roy/nav";
  * выключен (карточкой, а не внутри календаря — владелец 30.09.2026: там переключатель не находили).
  * Включённый — бот scriba сам приходит на встречи Meet из календаря человека. Выключение действует
  * со следующего опроса службы (до минуты) и гасит уже заведённые, но не забранные задания.
- * bare — без верхней черты (своя панель карточки «Бот встреч»); onChange — сохранённое значение наружу.
+ * bare — в правой колонке интеграций: без черты и без пояснения (объяснение уже над переключателем);
+ * onChange — сохранённое значение наружу.
  */
 export function AutojoinToggle({ bare = false, onChange }: { bare?: boolean; onChange?: (on: boolean) => void } = {}) {
   const dt = useDt();
@@ -52,12 +53,12 @@ export function AutojoinToggle({ bare = false, onChange }: { bare?: boolean; onC
           ? <span className="text-xs text-muted-foreground">{loadFailed ? dt("Не удалось узнать настройку", "Could not load the setting") : dt("Загрузка…", "Loading…")}</span>
           : <Toggle on={enabled} onChange={flip} ariaLabel={label} className={busy ? "opacity-60" : undefined} />}
       </div>
-      <p className="text-xs text-muted-foreground">
+      {!bare && <p className="text-xs text-muted-foreground">
         {dt(
           "Бот scriba заходит на встречи Google Meet из твоего календаря и пишет их. Его видят все участники, в том числе внешние. Выключение действует в течение минуты.",
           "The scriba bot joins Google Meet meetings from your calendar and records them. Every participant sees it, external ones included. Turning it off takes effect within a minute.",
         )}
-      </p>
+      </p>}
       {error && <p className="text-xs text-destructive" role="alert">{error}</p>}
     </div>
   );
