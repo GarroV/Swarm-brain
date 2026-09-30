@@ -1,4 +1,5 @@
 import { loadMeetingViewer, supabase } from "../lib/supabase.ts";
+import { loadEntryForExport } from "../lib/export-entry.ts";
 import { entryEditError, type EditableEntryRow } from "../../_shared/entries/entry-edit.ts";
 import { getEmbedding, chatComplete } from "../lib/openai.ts";
 import { saveEntry, visibilityFilter, generateSummary, getSession, setSession, clearSession } from "../lib/storage.ts";
@@ -868,16 +869,13 @@ export async function handleAsk(chatId: number, question: string, userId: number
         if (tc.function.name === "export_entry") {
           const tcArgs = JSON.parse(tc.function.arguments) as Record<string, unknown>;
           const entryId = String(tcArgs.entry_id ?? "").replace(/^id:/, "");
-          const { data: entry } = await supabase
-            .from("entries")
-            .select("content, summary, metadata, source, created_at, group_id")
-            .eq("id", entryId)
-            .eq("group_id", groupId)
-            .maybeSingle();
-          if (!entry) {
+          // Свой воркспейс, личные — только свои; текст — из этой записи и её частей.
+          const found = await loadEntryForExport(supabase, entryId, { groupId, userId });
+          if (!found) {
             result = "Запись не найдена.";
           } else {
-            const meta = entry.metadata as Record<string, unknown> | null ?? {};
+            const { entry, fullContent } = found;
+            const meta = entry.metadata ?? {};
             const rawFileUrl = (meta.file_url ?? meta.drive_link) as string | undefined;
             const ourFileUrl = rawFileUrl ? normalizeFileLink(rawFileUrl, { baseUrl: WEB_BASE_URL }) : null;
             const fileUrl = ourFileUrl ?? (rawFileUrl?.startsWith("http") ? rawFileUrl : undefined);
@@ -889,22 +887,6 @@ export async function handleAsk(chatId: number, question: string, userId: number
               exportDriveLink = { url: fileUrl, title: rawTitle, external: !ourFileUrl };
               result = "Ссылка на оригинальный файл готова.";
             } else {
-              // Use summary if it's longer (complete tezises); otherwise reassemble chunks via group_id
-              let fullContent = entry.summary && (entry.summary as string).length > ((entry.content as string) ?? "").length
-                ? entry.summary as string
-                : entry.content as string;
-              if (entry.group_id && !entry.summary) {
-                const { data: chunks } = await supabase
-                  .from("entries")
-                  .select("content, metadata")
-                  .eq("group_id", entry.group_id)
-                  .order("created_at", { ascending: true });
-                if (chunks?.length) {
-                  fullContent = (chunks as Array<{ content: string; metadata: Record<string, unknown> }>)
-                    .sort((a, b) => ((a.metadata?.chunk as number) ?? 0) - ((b.metadata?.chunk as number) ?? 0))
-                    .map(c => c.content).join("\n");
-                }
-              }
               const safeTitle = rawTitle.replace(/[^\wа-яёА-ЯЁ\s-]/g, "").trim().replace(/\s+/g, "_");
               const dateStr = new Date(entry.created_at as string).toISOString().slice(0, 10);
               exportFile = { content: fullContent, filename: `${safeTitle}_${dateStr}.txt` };

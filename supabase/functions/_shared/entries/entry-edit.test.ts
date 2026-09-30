@@ -2,7 +2,7 @@
 // (ИИ-инструмент бота `update_entry`). Встреча — по правам встречи (meeting-rights.ts),
 // остальное — только автор, как у /entries/:id.
 import { assertEquals, assertNotEquals } from "jsr:@std/assert@1";
-import { entryEditError, isMeetingEntry } from "./entry-edit.ts";
+import { entryActionError, entryEditError, isMeetingEntry } from "./entry-edit.ts";
 
 const OWNER = 111;
 const PARTICIPANT = 222;
@@ -72,4 +72,34 @@ Deno.test("чужой воркспейс — «не найдена» и для �
 Deno.test("неизвестный воркспейс зрителя не пропускает", () => {
   assertNotEquals(entryEditError("x", note, owner, ""), null);
   assertNotEquals(entryEditError("x", meeting, owner, undefined), null);
+});
+
+// ── Удаление ─────────────────────────────────────────────────────────────────
+Deno.test("удаление заметки — только автор, админу тоже нельзя", () => {
+  assertEquals(entryActionError("n", note, owner, "cee", "delete"), null);
+  assertNotEquals(entryActionError("n", note, admin, "cee", "delete"), null);
+  assertNotEquals(entryActionError("n", note, outsider, "cee", "delete"), null);
+});
+
+Deno.test("удаление встречи — автор и админ; участник и посторонний — нет", () => {
+  assertEquals(entryActionError("m", meeting, owner, "cee", "delete"), null);
+  assertEquals(entryActionError("m", meeting, admin, "cee", "delete"), null);
+  assertNotEquals(entryActionError("m", meeting, participant, "cee", "delete"), null);
+  assertNotEquals(entryActionError("m", meeting, outsider, "cee", "delete"), null);
+});
+
+Deno.test("удаление личной встречи — только автор; админу «не найдена»", () => {
+  assertEquals(entryActionError("m", privateMeeting, owner, "cee", "delete"), null);
+  assertEquals(
+    entryActionError("m", privateMeeting, admin, "cee", "delete"),
+    entryActionError("m", null, admin, "cee", "delete"),
+  );
+});
+
+Deno.test("правка через entryActionError совпадает с entryEditError", () => {
+  for (const v of [owner, participant, admin, outsider]) {
+    for (const e of [note, meeting, privateMeeting]) {
+      assertEquals(entryActionError("x", e, v, "cee", "edit"), entryEditError("x", e, v, "cee"));
+    }
+  }
 });

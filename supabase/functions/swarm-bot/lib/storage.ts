@@ -1,4 +1,5 @@
-import { supabase, ADMIN_USER_ID } from "./supabase.ts";
+import { supabase, ADMIN_USER_ID, loadMeetingViewer } from "./supabase.ts";
+import { entryActionError } from "../../_shared/entries/entry-edit.ts";
 import { uploadPrivateFile, registerStorageFile, safeStorageName, PRIVATE_BUCKET } from "../../_shared/storage-files.ts";
 import { absoluteFileUrl } from "../../_shared/storage-links.ts";
 import { getEmbedding, chatComplete } from "./openai.ts";
@@ -7,9 +8,7 @@ import { applyGeneralSentinel, specificCountries } from "../../_shared/meta-extr
 import { normalizeExtractedEventDate, todayIso } from "../../_shared/llm-date.ts";
 
 
-export function visibilityFilter(userId: number): string {
-  return `is_private.eq.false,and(is_private.eq.true,owner_id.eq.${userId})`;
-}
+export { visibilityFilter } from "./visibility.ts";
 
 // ── Entry index ───────────────────────────────────────────────────────────────
 
@@ -233,11 +232,20 @@ export type ManageableEntry = {
 };
 
 /**
- * Загружает запись для правки/удаления с проверкой доступа:
- * воркспейс-изоляция (group_id) + приватность (общие — любой в воркспейсе,
- * приватные — только владелец). Бросает EntryAccessError.
+ * Загружает запись для показа, правки или удаления с проверкой доступа. Бросает EntryAccessError.
+ *
+ *   view   — воркспейс + видимость (общие — любой в воркспейсе, личные — только владелец);
+ *   edit   — права правки: встреча — владелец, участники, админ; остальное — только автор;
+ *   delete — права удаления: встреча — владелец и админ; остальное — только автор.
+ *
+ * Правило — `_shared/entries/entry-edit.ts` (entryActionError); здесь только вызов.
  */
-export async function getManageableEntry(id: string, userId: number, groupId: string): Promise<ManageableEntry> {
+export async function getManageableEntry(
+  id: string,
+  userId: number,
+  groupId: string,
+  action: "view" | "edit" | "delete" = "view",
+): Promise<ManageableEntry> {
   const { data } = await supabase.from("entries")
     .select("id, group_id, is_private, owner_id, content, summary, source, entry_type, entry_date, metadata, created_at")
     .eq("id", id).maybeSingle();
@@ -245,6 +253,10 @@ export async function getManageableEntry(id: string, userId: number, groupId: st
   const e = data as ManageableEntry;
   if (e.group_id !== groupId) throw new EntryAccessError("forbidden");
   if (e.is_private && e.owner_id !== userId) throw new EntryAccessError("forbidden");
+  if (action !== "view") {
+    const denied = entryActionError(id, e, await loadMeetingViewer(userId), groupId, action);
+    if (denied) throw new EntryAccessError("forbidden");
+  }
   return e;
 }
 

@@ -111,7 +111,8 @@ function cardText(e: ManageableEntry): string {
 async function showCard(chatId: number, userId: number, groupId: string, id: string, cmd: EntryCommand, newValue?: string): Promise<void> {
   let e: ManageableEntry;
   try {
-    e = await getManageableEntry(id, userId, groupId);
+    // Карточку показываем, только если действие разрешено — отказ сразу, а не после «Да».
+    e = await getManageableEntry(id, userId, groupId, cmd === "delete" ? "delete" : "edit");
   } catch (err) {
     await sendMessage(chatId, accessErrorText(err));
     await clearSession(chatId);
@@ -131,7 +132,7 @@ async function showCard(chatId: number, userId: number, groupId: string, id: str
 
 function accessErrorText(err: unknown): string {
   if (err instanceof EntryAccessError) {
-    return err.kind === "not_found" ? "Запись не найдена (возможно, уже удалена)." : "Нет доступа к этой записи.";
+    return err.kind === "not_found" ? "Запись не найдена (возможно, уже удалена)." : "Нет прав на это действие с записью.";
   }
   return `Ошибка: ${err instanceof Error ? err.message : String(err)}`;
 }
@@ -186,7 +187,7 @@ async function readState(chatId: number): Promise<ManageState | null> {
 }
 
 async function doDelete(chatId: number, userId: number, groupId: string, id: string): Promise<void> {
-  await getManageableEntry(id, userId, groupId); // гейт доступа
+  await getManageableEntry(id, userId, groupId, "delete"); // гейт: права удаления, отказ бросает
   const { error } = await supabase.from("entries").delete().eq("id", id).eq("group_id", groupId);
   if (error) throw new Error(error.message);
   await clearSession(chatId);
@@ -194,7 +195,7 @@ async function doDelete(chatId: number, userId: number, groupId: string, id: str
 }
 
 async function doReplace(chatId: number, userId: number, groupId: string, id: string, raw: string): Promise<void> {
-  const entry = await getManageableEntry(id, userId, groupId); // гейт доступа
+  const entry = await getManageableEntry(id, userId, groupId, "edit"); // гейт: права правки, отказ бросает
   const url = extractUrl(raw);
   const oldUrl = typeof entry.metadata?.url === "string" ? (entry.metadata.url as string) : undefined;
 
