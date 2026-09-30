@@ -45,8 +45,8 @@ function shortDate(iso: string | null): string {
   return Number.isNaN(d.getTime()) ? "" : `${String(d.getDate()).padStart(2, "0")}.${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
 
-/** `dense` — строка «пиктограмма · имя/статус · точка» для бенто настроек десктопа; без него — прежняя плитка (мобайл). */
-export function ConnectorTile({ c, open, onToggle, dense = false }: { c: Connector; open: boolean; onToggle: () => void; dense?: boolean }) {
+/** Плитка интеграции: пиктограмма и точка состояния, имя, статус. Выбранная — с акцентной подложкой. */
+export function ConnectorTile({ c, open, onToggle }: { c: Connector; open: boolean; onToggle: () => void }) {
   const dt = useDt();
 
   // «Не привязан» вместо «не подключён» — Telegram не подключают, к нему привязывают личность.
@@ -62,20 +62,7 @@ export function ConnectorTile({ c, open, onToggle, dense = false }: { c: Connect
   const name = c.id === "bot" ? dt("Бот встреч", "Meeting bot") : TITLE[c.id];
   const iconTone = c.state === "expired" ? "text-accent-ink" : "text-ink-soft";
   const statusTone = c.state === "expired" ? "text-accent-ink" : "text-ink-mute";
-  const frame = `w-full rounded-[10px] border text-left transition-colors hover:border-line-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-line ${SKIN[c.state]} ${open ? "border-accent-line" : ""}`;
-
-  if (dense) {
-    return (
-      <button type="button" onClick={onToggle} aria-expanded={open} className={`flex items-center gap-2 px-2.5 py-2 ${frame}`}>
-        <RoyIcon name={ICON[c.id]} size={15} className={`shrink-0 ${iconTone}`} />
-        <span className="flex min-w-0 flex-1 flex-col">
-          <span className="truncate text-ink" style={{ fontSize: 12.5, fontWeight: 500 }}>{name}</span>
-          <span className={`truncate ${statusTone}`} style={{ fontSize: 10.5 }}>{status}</span>
-        </span>
-        <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${DOT[c.state]}`} aria-hidden />
-      </button>
-    );
-  }
+  const frame = `w-full rounded-[10px] border text-left transition-colors hover:border-line-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-line ${open ? "border-primary bg-accent-soft" : SKIN[c.state]}`;
 
   return (
     <button
