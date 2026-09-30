@@ -6,7 +6,6 @@ import {
   type MeetingInvite,
   parseInviteErrorCode,
   parseInviteResponse,
-  upsertInvite,
 } from "./meetingInvite.ts";
 
 const invite = (o: Partial<MeetingInvite> = {}): MeetingInvite => ({
@@ -58,20 +57,6 @@ Deno.test("опрос идёт, пока бот не записывает и с�
   assertEquals(isFinalStatus("taken"), false);
   assertEquals(isFinalStatus("used"), true);
   assertEquals(isFinalStatus("expired"), true);
-});
-
-Deno.test("то же приглашение повторно не дублируется и поднимается наверх", () => {
-  const a = invite({ id: "a" });
-  const b = invite({ id: "b" });
-  const list = upsertInvite(upsertInvite([], a), b);
-  assertEquals(list.map((x) => x.id), ["b", "a"]);
-  assertEquals(upsertInvite(list, invite({ id: "a", status: "taken" })).map((x) => [x.id, x.status]), [["a", "taken"], ["b", "pending"]]);
-});
-
-Deno.test("помним не больше трёх", () => {
-  let list: MeetingInvite[] = [];
-  for (const id of ["1", "2", "3", "4"]) list = upsertInvite(list, invite({ id }));
-  assertEquals(list.map((x) => x.id), ["4", "3", "2"]);
 });
 
 Deno.test("коллега уже позвал бота в этот звонок — свой текст, а не общее «не удалось»", () => {

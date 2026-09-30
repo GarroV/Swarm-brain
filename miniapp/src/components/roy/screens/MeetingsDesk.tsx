@@ -9,7 +9,7 @@ import { useDt, useRoyNav } from "../nav";
 import { RoyIcon } from "../icons";
 import { deriveEntryTitle } from "../entry";
 import { sourceLabel } from "./RoyMeetingsScreen";
-import { InviteBotCard } from "../InviteBotCard";
+import { InviteBotButton } from "../InviteBotCard";
 import {
   applyMeetingsFilter, EMPTY_FILTERS, isConfirmed, isFilterActive, loadSavedFilters, meetingDay, periodBounds,
   personOf, saveFilters, type MeetingsFilterState, type PeriodId,
@@ -132,13 +132,12 @@ export function MeetingsDesk() {
         <span className="ml-auto whitespace-nowrap text-ink-mute" style={{ fontSize: 12.5 }}>
           {dt("Показано", "Shown")} <b className="text-ink">{count}</b> {dt("из", "of")} {total}
         </span>
+        {/* Позвать бота по ссылке (D017) — кнопкой с маленьким окном справа, а не карточкой над
+            таблицей (владелец 30.09.2026: «окно сделать маленьким и аккуратным, где-то сбоку»). */}
+        <InviteBotButton />
       </div>
 
       <div className="min-h-0 flex-1 overflow-auto p-4">
-        {/* Позвать бота по ссылке (D017) — над таблицей: это действие с встречами, а не сводка. */}
-        <div className="pb-3">
-          <InviteBotCard />
-        </div>
         {loading && [0, 1, 2, 3].map((i) => <div key={i} className="roy-shim mb-1.5" style={{ height: 34, borderRadius: 8 }} />)}
         {!loading && failed && (
           <div className="rounded-[10px] border border-line bg-surface px-4 py-5 text-center text-ink-soft" style={{ fontSize: 13 }}>
