@@ -10,7 +10,7 @@
 // поэтому бот и MCP не задеты.
 import { assertEquals } from "jsr:@std/assert@1";
 
-const HERE = new URL(".", import.meta.url).pathname;
+const HERE = decodeURIComponent(new URL(".", import.meta.url).pathname);
 
 /** Списочные GET-роуты, которые обязаны отдавать счётчик. */
 const LIST_ROUTES = ["/tasks", "/entries", "/meetings", "/agent-meetings"];

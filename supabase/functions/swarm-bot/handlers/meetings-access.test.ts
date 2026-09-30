@@ -13,7 +13,7 @@
 // `loadEntryForAction`, который зовёт общий гард `_shared/entries/access.ts`.
 import { assertEquals } from "jsr:@std/assert@1";
 
-const HERE = new URL(".", import.meta.url).pathname;
+const HERE = decodeURIComponent(new URL(".", import.meta.url).pathname);
 
 /** Строки, где встреча читается напрямую по id, минуя загрузчик с проверкой. */
 function rawSelectsById(src: string): number[] {
@@ -23,11 +23,19 @@ function rawSelectsById(src: string): number[] {
   let sawSelect = false;
   lines.forEach((line, i) => {
     const froms = [...line.matchAll(/\.from\(\s*["'`]([a-z_]+)["'`]/g)];
-    if (froms.length) { current = froms[froms.length - 1][1]; sawSelect = false; }
+    if (froms.length) {
+      current = froms[froms.length - 1][1];
+      sawSelect = false;
+    }
     if (current === "entries" && /\.select\(/.test(line)) sawSelect = true;
     // Чтение конкретной записи по id — ровно тот случай, который обязан идти через гард.
-    if (current === "entries" && sawSelect && /\.eq\(\s*["'`]id["'`]/.test(line)) hits.push(i + 1);
-    if (/;\s*$/.test(line)) { current = null; sawSelect = false; }
+    if (
+      current === "entries" && sawSelect && /\.eq\(\s*["'`]id["'`]/.test(line)
+    ) hits.push(i + 1);
+    if (/;\s*$/.test(line)) {
+      current = null;
+      sawSelect = false;
+    }
   });
   return hits;
 }
@@ -37,7 +45,9 @@ Deno.test("встречу в боте нельзя прочитать по id м
   // Единственное разрешённое место — сам загрузчик: он и делает проверку.
   const loaderStart = src.indexOf("async function loadEntryForAction");
   const loaderEnd = src.indexOf("\n}", loaderStart);
-  const outside = src.slice(0, loaderStart) + "\n".repeat(src.slice(loaderStart, loaderEnd).split("\n").length) + src.slice(loaderEnd);
+  const outside = src.slice(0, loaderStart) +
+    "\n".repeat(src.slice(loaderStart, loaderEnd).split("\n").length) +
+    src.slice(loaderEnd);
 
   const hits = rawSelectsById(outside);
   assertEquals(

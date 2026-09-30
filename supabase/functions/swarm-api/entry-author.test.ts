@@ -15,7 +15,7 @@
 // закреплено тестом, а не комментарием.
 import { assertEquals } from "jsr:@std/assert@1";
 
-const HERE = new URL(".", import.meta.url).pathname;
+const HERE = decodeURIComponent(new URL(".", import.meta.url).pathname);
 
 /** Строки вида `owner_id: <что-то условное>` внутри вставки в entries. */
 function conditionalOwnerOnEntries(src: string): number[] {

@@ -22,7 +22,7 @@ const FILES = [
   "task-subscriptions.ts",
   "stats.ts",
 ];
-const HERE = new URL(".", import.meta.url).pathname;
+const HERE = decodeURIComponent(new URL(".", import.meta.url).pathname);
 
 /** Строки со `.select("*")`, где текущая таблица цепочки — `table`. */
 function starSelectsOn(src: string, table: string): number[] {

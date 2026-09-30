@@ -118,12 +118,20 @@ const OWN_E = ev(`own-e-${RUN}`, {
 const NOTYES = ev(`notyes-${RUN}`, {
   hangoutLink: "https://meet.google.com/smk-noys-abc",
   organizer: { self: false },
-  attendees: [{ email: "a@smoke.test", self: true, responseStatus: "needsAction" }],
+  attendees: [{
+    email: "a@smoke.test",
+    self: true,
+    responseStatus: "needsAction",
+  }],
 });
 const MAYBE = ev(`maybe-${RUN}`, {
   hangoutLink: "https://meet.google.com/smk-mayb-abc",
   organizer: { self: false },
-  attendees: [{ email: "a@smoke.test", self: true, responseStatus: "tentative" }],
+  attendees: [{
+    email: "a@smoke.test",
+    self: true,
+    responseStatus: "tentative",
+  }],
 });
 const MANUAL_ROOM = "https://meet.google.com/smk-manl-abc";
 const MANUAL = ev(`manual-${RUN}`, { hangoutLink: MANUAL_ROOM });
@@ -253,7 +261,7 @@ function spawnFunction(path: string, port: number): Deno.ChildProcess {
       "run",
       "--allow-all",
       `--preload=${PRELOAD}`,
-      new URL(path, import.meta.url).pathname,
+      decodeURIComponent(new URL(path, import.meta.url).pathname),
     ],
     env: {
       DENO_SERVE_ADDRESS: `tcp:127.0.0.1:${port}`,
@@ -373,8 +381,12 @@ async function call(
   });
   const body = await res.json().catch(() => ({})) as Json;
   if (port === PORT_CALENDAR) {
-    for (const j of (body.jobs ?? []) as Array<Job & { grant_token?: string }>) {
-      if (j.grant_token) issued.set(`${j.invited_by}|${j.calendar_key}`, j.grant_token);
+    for (
+      const j of (body.jobs ?? []) as Array<Job & { grant_token?: string }>
+    ) {
+      if (j.grant_token) {
+        issued.set(`${j.invited_by}|${j.calendar_key}`, j.grant_token);
+      }
     }
   }
   return { status: res.status, body };

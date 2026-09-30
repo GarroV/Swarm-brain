@@ -6,15 +6,15 @@
 // принимать статус, а разъехавшийся CHECK начнёт отбивать вставки на проде.
 import { assertEquals } from "jsr:@std/assert@1";
 import {
-  shouldCascadeClose,
   completionPatch,
   hidesClosedByDefault,
   isTaskStatus,
+  shouldCascadeClose,
   TASK_STATUSES,
   taskStatusError,
 } from "./statuses.ts";
 
-const ROOT = new URL("../../", import.meta.url).pathname;
+const ROOT = decodeURIComponent(new URL("../../", import.meta.url).pathname);
 
 Deno.test("известные статусы принимаются, чужие — нет", () => {
   for (const s of TASK_STATUSES) assertEquals(isTaskStatus(s), true, s);

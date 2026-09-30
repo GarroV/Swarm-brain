@@ -15,7 +15,7 @@
 // предложения показываются человеку, в базу едет выбранное.
 import { assertEquals } from "jsr:@std/assert@1";
 
-const ROOT = new URL("../../", import.meta.url).pathname;
+const ROOT = decodeURIComponent(new URL("../../", import.meta.url).pathname);
 
 /** Комментарии срезаем: в них имена убранных функций стоят намеренно, как память о причине.
  *  Проверяем КОД — иначе тест падает на собственных объяснениях (так и случилось). */
