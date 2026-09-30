@@ -14,9 +14,21 @@
  * нельзя: человеку уходят разные уведомления и разные советы (T173).
  * `signin_required` — бот идёт под своим аккаунтом Google, а Google вместо встречи просит
  * войти или подтвердить вход (T175): до двери он не дошёл, чинит это человек, а не хост.
+ * `guest_access_closed` — Контур.Толк: комната закрыта для гостей и не открылась за окно ожидания
+ * (D040); тот же экран Толк показывает и на несуществующую комнату.
+ * `mic_live` — бот оказался в звонке с включённым микрофоном или камерой и вышел: он обязан
+ * входить немым (Толк, 30.09.2026 — живой микрофон контейнера пищит в звонок).
  */
 export type AdmissionOutcome =
-  "admitted" | "denied" | "blocked" | "unavailable" | "signin_required" | "timeout" | "captcha";
+  | "admitted"
+  | "denied"
+  | "blocked"
+  | "unavailable"
+  | "signin_required"
+  | "guest_access_closed"
+  | "mic_live"
+  | "timeout"
+  | "captcha";
 
 export interface PlatformAdapter {
   join(url: string, displayName: string): Promise<void>;

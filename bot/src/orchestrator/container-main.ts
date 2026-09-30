@@ -13,11 +13,12 @@
  */
 import path from "node:path";
 
-import { chromium } from "playwright";
+import { type Browser, type BrowserContext, chromium } from "playwright";
 
 import { readSettings } from "../container/environment.ts";
 import { probeAudioEnvironment } from "../container/probe.ts";
 import { segmentSeconds } from "../container/segments.ts";
+import { KonturAdapter, konturLaunchOptions } from "../kontur-adapter/kontur.ts";
 import { MeetAdapter, meetLaunchOptions } from "../meet-adapter/meet.ts";
 import { SwarmClient } from "../swarm-client/client.ts";
 import { UploadQueue } from "../swarm-client/queue.ts";
@@ -26,6 +27,7 @@ import { SpeakerTimelineCollector } from "../swarm-client/speakers.ts";
 import { claimFor } from "./claim-request.ts";
 import { type MeetingConfig, readMeetingConfig } from "./config.ts";
 import { LeaseTracker, readLease } from "./lease.ts";
+import { BOT_PROFILE } from "./profile.ts";
 import { inBackground } from "./background.ts";
 import { NoticeClient } from "./notice-client.ts";
 import { JournaledNotifier } from "./notices.ts";
@@ -120,6 +122,54 @@ function audioRecorder(
   };
 }
 
+/**
+ * Только для смоука: страница-двойник вместо настоящей площадки. Подменяется хост ссылки на
+ * встречу — у Meet это meet.google.com, у Толка пространство `<имя>.ktalk.ru`.
+ */
+function smokeRoute(config: MeetingConfig): ((context: BrowserContext) => Promise<void>) | null {
+  const page = config.smokeMeetPage;
+  if (page === null) return null;
+  const origin = new URL(config.joinUrl).origin;
+  return async (context): Promise<void> => {
+    log(`СМОУК: ${origin} подменён страницей ${page}`);
+    await context.route(`${origin}/**`, async (route) =>
+      route.fulfill({ path: page, contentType: "text/html; charset=utf-8" }),
+    );
+  };
+}
+
+/**
+Адаптер площадки встречи: у каждой площадки свой, контракт у всех один.
+*/
+function adapterFor(
+  config: MeetingConfig,
+  browser: Browser,
+  stop: AbortSignal,
+): MeetAdapter | KonturAdapter {
+  const prepareContext = smokeRoute(config);
+  if (config.platform === "kontur") {
+    log("вход в Контур.Толк — гостем, без микрофона и камеры");
+    return new KonturAdapter({
+      browser,
+      guestRoom: BOT_PROFILE.guestRoom,
+      stop,
+      log: (line) => {
+        log(`kontur: ${line}`);
+      },
+      ...(prepareContext !== null && { prepareContext }),
+    });
+  }
+  if (config.accountStatePath !== null) log("вход в Meet — под аккаунтом бота");
+  return new MeetAdapter({
+    browser,
+    ...(config.accountStatePath !== null && { storageStatePath: config.accountStatePath }),
+    log: (line) => {
+      log(`meet: ${line}`);
+    },
+    ...(prepareContext !== null && { prepareContext }),
+  });
+}
+
 async function main(): Promise<number> {
   const config = readMeetingConfig(process.env);
   const settings = readSettings(process.env);
@@ -195,26 +245,11 @@ async function main(): Promise<number> {
     }),
   });
 
-  const browser = await chromium.launch(meetLaunchOptions());
-  if (config.accountStatePath !== null) log("вход в Meet — под аккаунтом бота");
-  const adapter = new MeetAdapter({
-    browser,
-    ...(config.accountStatePath !== null && { storageStatePath: config.accountStatePath }),
-    log: (line) => {
-      log(`meet: ${line}`);
-    },
-    ...(config.smokeMeetPage !== null && {
-      prepareContext: async (context): Promise<void> => {
-        const page = config.smokeMeetPage ?? "";
-        log(`СМОУК: meet.google.com подменён страницей ${page}`);
-        await context.route("https://meet.google.com/**", async (route) =>
-          route.fulfill({ path: page, contentType: "text/html; charset=utf-8" }),
-        );
-      },
-    }),
-  });
-
   const stop = stopSignals(config);
+  const browser = await chromium.launch(
+    config.platform === "kontur" ? konturLaunchOptions() : meetLaunchOptions(),
+  );
+  const adapter = adapterFor(config, browser, stop.signal);
   try {
     const outcome = await runMeeting({
       joinUrl: config.joinUrl,

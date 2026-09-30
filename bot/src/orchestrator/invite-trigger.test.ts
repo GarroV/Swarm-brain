@@ -88,15 +88,26 @@ describe("InviteTrigger.pollOnce", () => {
     expect(h.lines.join("\n")).toMatch(/inv-1.*c-inv-1/u);
   });
 
+  it("приглашение в Контур.Толк — бот поднят, отказа нет (T111)", async () => {
+    const h = harness();
+    h.batches.push(
+      batch(invite({ platform: "kontur", join_url: "https://dodobrands.ktalk.ru/abc" })),
+    );
+
+    await h.trigger.pollOnce();
+
+    expect(h.refused).toEqual([]);
+    expect(h.started.map((taken) => taken.platform)).toEqual(["kontur"]);
+  });
+
   it.each([
-    ["kontur", /Kontur\.Talk/u, /Контур\.Толк/u],
     ["zoom", /Zoom/u, /Zoom/u],
     ["teams", /«teams»/u, /«teams»/u],
   ])(
     "площадка %s — контейнер не поднят, человеку громкий отказ на EN и RU",
     async (platform, en, ru) => {
       const h = harness();
-      h.batches.push(batch(invite({ platform, join_url: "https://ktalk.ru/room/abc" })));
+      h.batches.push(batch(invite({ platform, join_url: "https://zoom.us/j/123" })));
 
       await h.trigger.pollOnce();
 
@@ -105,7 +116,8 @@ describe("InviteTrigger.pollOnce", () => {
       const detail = h.refused[0]?.detail ?? "";
       expect(detail).toMatch(en);
       expect(detail).toMatch(ru);
-      expect(detail).toMatch(/Google Meet/u);
+      expect(detail).toMatch(/Google Meet и Контур\.Толк/u);
+      expect(detail).toMatch(/Google Meet and Kontur\.Talk/u);
       expect(h.lines.join("\n")).toMatch(/ОТКАЗ.*inv-1/u);
     },
   );
@@ -124,7 +136,7 @@ describe("InviteTrigger.pollOnce", () => {
   it("отказ не доставлен — громко в журнал, следующее приглашение всё равно обработано", async () => {
     const h = harness();
     h.failRefuse = new Error("meeting-notice 500");
-    h.batches.push(batch(invite({ id: "k", platform: "kontur" }), invite({ id: "m" })));
+    h.batches.push(batch(invite({ id: "k", platform: "zoom" }), invite({ id: "m" })));
 
     await h.trigger.pollOnce();
 
@@ -184,7 +196,7 @@ describe("refusalDetail", () => {
   });
 
   it("текст площадки влезает в предел", () => {
-    const detail = refusalDetail({ kind: "platform", platform: "kontur" });
+    const detail = refusalDetail({ kind: "platform", platform: "zoom" });
 
     expect(detail.length).toBeLessThanOrEqual(MAX_REFUSAL_DETAIL_CHARS);
   });

@@ -441,12 +441,25 @@ describe("дверь", () => {
     { door: "captcha", outcome: "captcha", what: "капча" },
     // Вход аккаунта бота слетел (T175): чинить вход бота, а не доступ к встрече.
     { door: "signin_required", outcome: "account_signin_required", what: "Google просит вход" },
+    // Толк: комната так и не открылась для гостей (D040) — совет «откройте комнату», а не «впустите».
+    { door: "guest_access_closed", outcome: "guest_access_closed", what: "комната Толка закрыта" },
   ] as const)("$what → нотиса $outcome, выход", async ({ door, outcome }) => {
     const world = build({ door: [door] });
 
     expect(await runMeeting(world.options)).toBe(outcome);
     expect(kinds(world)).toEqual([outcome]);
     expect(world.calls).toContain("leave");
+  });
+
+  it("в звонке у бота живой микрофон → join_failed с причиной, выход, записи нет", async () => {
+    const world = build({ door: ["mic_live"] });
+
+    expect(await runMeeting(world.options)).toBe("join_failed");
+    expect(world.notices).toHaveLength(1);
+    expect(world.notices[0]).toMatchObject({ kind: "join_failed", meetingId: "m-1" });
+    expect(JSON.stringify(world.notices[0])).toMatch(/microphone or camera was on/u);
+    expect(world.calls).toContain("leave");
+    expect(world.calls).not.toContain("record:start");
   });
 
   it("остановили у двери → уходим без записи и без нотисы о двери", async () => {
