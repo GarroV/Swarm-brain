@@ -2,7 +2,7 @@
 -- Байты лежат на MUSPELHEIM (сервис swarm-files), здесь — только реестр: что за файл, к какой
 -- задаче, кто прикрепил. Доступ проверяет swarm-api по правилу задачи (canViewTask).
 --
--- status: 'pending' — ссылка на загрузку выдана, файл ещё не подтверждён; 'ready' — сервис
+-- status: 'uploading' — ссылка на загрузку выдана, файл ещё не подтверждён; 'ready' — сервис
 -- подтвердил, что байты на месте и размер совпал. Список показывает только ready.
 -- Удаление — архивацией (archived_at), как везде в продукте.
 
@@ -15,7 +15,7 @@ create table if not exists public.task_files (
   mime          text not null,
   storage_key   uuid not null unique,
   uploaded_by   bigint not null,
-  status        text not null default 'pending' check (status in ('pending', 'ready')),
+  status        text not null default 'uploading' check (status in ('uploading', 'ready')),
   created_at    timestamptz not null default now(),
   archived_at   timestamptz
 );

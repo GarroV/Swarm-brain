@@ -2,13 +2,7 @@ import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { json } from "./http.ts";
 import { canMutateTask, canViewTask } from "../_shared/tasks/access.ts";
 import { importSigningKey, signFileToken } from "../_shared/files-token.ts";
-import {
-  canRemoveTaskFile,
-  checkNewFile,
-  isInline,
-  type NewFileError,
-  taskFileLimits,
-} from "../_shared/task-files.ts";
+import { canRemoveTaskFile, checkNewFile, isInline, type NewFileError, taskFileLimits } from "../_shared/task-files.ts";
 
 // Роуты файлов к задаче (решение владельца 2026-09-30, docs/decisions/2026-09-30-task-files-on-muspelheim.md):
 //   GET    /tasks/:id/files                 — список + лимиты (веб показывает их под кнопкой)
@@ -49,11 +43,10 @@ type FileRow = {
   mime: string;
   storage_key: string;
   uploaded_by: number;
-  status: "pending" | "ready";
+  status: "uploading" | "ready";
   created_at: string;
 };
-const FILE_COLS =
-  "id, name, size_bytes, mime, storage_key, uploaded_by, status, created_at";
+const FILE_COLS = "id, name, size_bytes, mime, storage_key, uploaded_by, status, created_at";
 
 let signingKey: Promise<CryptoKey> | null = null;
 
@@ -259,8 +252,7 @@ export async function handleTaskFileRoutes(
     ) {
       return json(
         {
-          error:
-            "Убрать файл может тот, кто его прикрепил, или владелец задачи",
+          error: "Убрать файл может тот, кто его прикрепил, или владелец задачи",
         },
         403,
         origin,

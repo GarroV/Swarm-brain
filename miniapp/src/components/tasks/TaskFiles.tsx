@@ -268,7 +268,8 @@ export function TaskFiles({ taskId, taskOwnerId }: { taskId: string; taskOwnerId
           <RoyIcon name="upload" size={15} strokeWidth={1.8} className="shrink-0" />
           <span>
             <span className="hidden lg:inline">{dt("Перетащите файлы сюда или ", "Drop files here or ")}</span>
-            <span className="font-medium text-primary">{dt("выберите", "choose")}</span>
+            <span className="hidden font-medium text-primary lg:inline">{dt("выберите", "choose")}</span>
+            <span className="font-medium text-primary lg:hidden">{dt("Выбрать файлы", "Choose files")}</span>
             <span className="text-ink-mute"> · {limitText}</span>
           </span>
         </button>

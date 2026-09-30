@@ -35,7 +35,8 @@ function b64url(bytes: Uint8Array): string {
 }
 
 function fromB64url(s: string): Uint8Array<ArrayBuffer> {
-  const pad = s.replace(/-/g, "+").replace(/_/g, "/") + "===".slice((s.length + 3) % 4);
+  const pad = s.replace(/-/g, "+").replace(/_/g, "/") +
+    "===".slice((s.length + 3) % 4);
   const bin = atob(pad);
   return Uint8Array.from(bin, (c) => c.charCodeAt(0));
 }
@@ -46,21 +47,41 @@ function fromB64(s: string): Uint8Array<ArrayBuffer> {
 
 /** Закрытый ключ из секрета `FILES_SIGNING_KEY` (PKCS8, base64). */
 export function importSigningKey(pkcs8B64: string): Promise<CryptoKey> {
-  return crypto.subtle.importKey("pkcs8", fromB64(pkcs8B64), { name: "Ed25519" }, false, ["sign"]);
+  return crypto.subtle.importKey(
+    "pkcs8",
+    fromB64(pkcs8B64),
+    { name: "Ed25519" },
+    false,
+    ["sign"],
+  );
 }
 
 /** Открытый ключ из `FILES_PUBLIC_KEY` на сервере (raw, 32 байта, base64). */
 export function importVerifyKey(rawB64: string): Promise<CryptoKey> {
-  return crypto.subtle.importKey("raw", fromB64(rawB64), { name: "Ed25519" }, false, ["verify"]);
+  return crypto.subtle.importKey(
+    "raw",
+    fromB64(rawB64),
+    { name: "Ed25519" },
+    false,
+    ["verify"],
+  );
 }
 
-export async function signFileToken(key: CryptoKey, claims: FileClaims): Promise<string> {
+export async function signFileToken(
+  key: CryptoKey,
+  claims: FileClaims,
+): Promise<string> {
   const body = b64url(enc.encode(JSON.stringify(claims)));
-  const sig = new Uint8Array(await crypto.subtle.sign("Ed25519", key, enc.encode(body)));
+  const sig = new Uint8Array(
+    await crypto.subtle.sign("Ed25519", key, enc.encode(body)),
+  );
   return `${body}.${b64url(sig)}`;
 }
 
-export type VerifyResult = { ok: true; claims: FileClaims } | { ok: false; reason: string };
+export type VerifyResult = { ok: true; claims: FileClaims } | {
+  ok: false;
+  reason: string;
+};
 
 /**
  * Проверить ссылку для операции `op` над объектом `k`. Любая неясность — отказ: битый формат,
@@ -74,10 +95,17 @@ export async function verifyFileToken(
   nowSec = Math.floor(Date.now() / 1000),
 ): Promise<VerifyResult> {
   const parts = token.split(".");
-  if (parts.length !== 2 || !parts[0] || !parts[1]) return { ok: false, reason: "malformed" };
+  if (parts.length !== 2 || !parts[0] || !parts[1]) {
+    return { ok: false, reason: "malformed" };
+  }
   let sigOk = false;
   try {
-    sigOk = await crypto.subtle.verify("Ed25519", key, fromB64url(parts[1]), enc.encode(parts[0]));
+    sigOk = await crypto.subtle.verify(
+      "Ed25519",
+      key,
+      fromB64url(parts[1]),
+      enc.encode(parts[0]),
+    );
   } catch {
     return { ok: false, reason: "malformed" };
   }
@@ -88,9 +116,13 @@ export async function verifyFileToken(
   } catch {
     return { ok: false, reason: "malformed" };
   }
-  if (typeof claims.exp !== "number" || claims.exp < nowSec) return { ok: false, reason: "expired" };
+  if (typeof claims.exp !== "number" || claims.exp < nowSec) {
+    return { ok: false, reason: "expired" };
+  }
   if (claims.op !== op) return { ok: false, reason: "wrong op" };
-  if (claims.k !== k || !FILE_KEY_RE.test(k)) return { ok: false, reason: "wrong object" };
+  if (claims.k !== k || !FILE_KEY_RE.test(k)) {
+    return { ok: false, reason: "wrong object" };
+  }
   if (op === "put" && !(typeof claims.max === "number" && claims.max > 0)) {
     return { ok: false, reason: "no size limit" };
   }

@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # swarm-files — хранилище файлов к задачам на MUSPELHEIM (files/README.md). Управление с Мака.
 #
-#   scripts/swarm-files.sh up       — клон origin/main на сервере, сборка и запуск, Funnel-путь
+#   scripts/swarm-files.sh up       — клон origin/main на сервере, сборка и запуск (только localhost)
+#   scripts/swarm-files.sh publish  — открыть наружу: путь /swarm-files на Funnel-порту 10000
+#                                      (соседние пути порта не трогаются). Решение владельца.
 #   scripts/swarm-files.sh status   — контейнер, health снаружи, место на диске
 #   scripts/swarm-files.sh logs | down
 #   FILES_PUBLIC_KEY=<base64> scripts/swarm-files.sh key — записать открытый ключ в state\files.env
@@ -40,17 +42,20 @@ case "${1:-}" in
     remote "if not exist ${REPO}\\.git git clone -q ${REPO_URL} ${REPO}"
     remote "git -C ${REPO} fetch -q origin ${BRANCH} && git -C ${REPO} checkout -q -B ${BRANCH} origin/${BRANCH} && git -C ${REPO} log --oneline -1"
     compose "up -d --build"
-    # Путь добавляется к уже открытому порту 10000, соседние пути (например /qr) не трогаются.
-    remote "tailscale funnel --bg --https=${FUNNEL_PORT} --set-path ${FUNNEL_PATH} http://127.0.0.1:8031" >/dev/null
     sleep 3
     "$0" status
+    ;;
+  publish)
+    # Путь добавляется к уже открытому порту 10000, соседние пути (например /qr) не трогаются.
+    remote "tailscale funnel --bg --https=${FUNNEL_PORT} --set-path ${FUNNEL_PATH} http://127.0.0.1:8031" >/dev/null
+    remote "tailscale funnel status"
     ;;
   status)
     compose "ps"
     printf 'снаружи: '; curl -s -m 10 -o /dev/null -w '%{http_code}\n' "${PUBLIC_URL}/health" || echo "не отвечает"
-    remote "powershell -NoProfile -Command \"'{0:N1} ГБ свободно, файлов: {1}' -f ((Get-PSDrive C).Free/1GB), (Get-ChildItem ${DATA} -File -ErrorAction SilentlyContinue | Measure).Count\""
+    remote "powershell -NoProfile -Command \"'{0:N1} GB free, files: {1}' -f ((Get-PSDrive C).Free/1GB), (Get-ChildItem ${DATA} -File -ErrorAction SilentlyContinue | Measure).Count\""
     ;;
   logs) compose "logs --tail 100" ;;
   down) compose "down" ;;
-  *) sed -n '2,11p' "$0"; exit 2 ;;
+  *) sed -n '2,13p' "$0"; exit 2 ;;
 esac

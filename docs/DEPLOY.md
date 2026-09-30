@@ -216,6 +216,19 @@ make unfreeze          # снять раньше срока; по сроку р�
 - **Вход аккаунта** берётся у окна входа (`C:\projects\scriba-login\state\account`,
   `scripts/scriba-login.sh`); без него rollout отказывает — гостем в боевые встречи бот не идёт.
 
+## Хранилище файлов к задачам swarm-files (с 30.09.2026)
+
+Сервис на MUSPELHEIM (compose-проект `swarm-files`, папка `C:\projects\swarm-files`), байты
+файлов к задачам. Мёрж в `main` его не обновляет: код едет `scripts/swarm-files.sh up`.
+Порядок первой раскатки, ключи и ротация — [files/README.md](../files/README.md).
+
+| Команда (с Мака) | Что делает |
+|---|---|
+| `FILES_PUBLIC_KEY=<…> scripts/swarm-files.sh key` | Открытый ключ подписи → `state\files.env` на сервере |
+| `scripts/swarm-files.sh up` | Клон `origin/main`, сборка, запуск (порт только на localhost) |
+| `scripts/swarm-files.sh publish` | Путь `/swarm-files` на Funnel-порту 10000 — вход снаружи |
+| `scripts/swarm-files.sh status` / `logs` / `down` | Состояние и место на диске, журнал, погасить |
+
 ## Команды (`make help`)
 - `make smoke-staging` / `make smoke-prod` — смоук edge-функций (`scripts/smoke.sh`, один и тот же набор проверок для любого контура).
 - `make staging-sync-functions` — tar `supabase/functions` → scp на MUSPELHEIM → распаковка в `volumes/functions/` → рестарт `supabase-edge-functions`.

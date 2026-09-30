@@ -88,9 +88,7 @@ export function cleanFileName(raw: string): string {
     .trim();
   if (s.length <= NAME_MAX) return s;
   const ext = fileExt(s);
-  return ext
-    ? `${s.slice(0, NAME_MAX - ext.length - 1)}.${ext}`
-    : s.slice(0, NAME_MAX);
+  return ext ? `${s.slice(0, NAME_MAX - ext.length - 1)}.${ext}` : s.slice(0, NAME_MAX);
 }
 
 export type NewFileInput = { name: string; size: number; mime: string };
@@ -109,9 +107,7 @@ export function checkNewFile(
   if (!(ACCEPT_EXT as readonly string[]).includes(ext)) {
     return { error: "type" };
   }
-  const size = typeof b.size === "number" && Number.isInteger(b.size)
-    ? b.size
-    : -1;
+  const size = typeof b.size === "number" && Number.isInteger(b.size) ? b.size : -1;
   if (size <= 0) return { error: "empty" };
   if (size > limits.maxBytes) return { error: "too_big" };
   if (existing >= limits.maxFiles) return { error: "too_many" };
@@ -127,9 +123,7 @@ export function isInline(name: string): boolean {
 /** Content-Disposition с именем в UTF-8 (RFC 6266) и ASCII-запасом для старых клиентов. */
 export function contentDisposition(name: string, inline: boolean): string {
   const ascii = name.replace(/[^\x20-\x7e]/g, "_").replace(/["\\]/g, "_");
-  return `${
-    inline ? "inline" : "attachment"
-  }; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(name)}`;
+  return `${inline ? "inline" : "attachment"}; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(name)}`;
 }
 
 export type FileRemoveCtx = { uploadedBy: number; taskOwnerId: number | null };
