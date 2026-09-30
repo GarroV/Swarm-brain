@@ -3153,7 +3153,10 @@ export async function disconnectGranola(): Promise<void> {
 
 export async function googleConnectUrl(): Promise<string> {
   if (DEV_MODE) return "#";
-  return (await apiFetch<{ url: string }>("/google/connect-url")).url;
+  // Сервер отдаёт путь на нашем же адресе (поток живёт на CF Pages рядом с сессией) — делаем
+  // абсолютным, чтобы его одинаково открывали window.open и Telegram openLink.
+  const { url } = await apiFetch<{ url: string }>("/google/connect-url");
+  return new URL(url, window.location.origin).toString();
 }
 export async function disconnectGoogle(): Promise<void> {
   if (DEV_MODE) {
