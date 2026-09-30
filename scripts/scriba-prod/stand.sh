@@ -55,8 +55,12 @@ prod_up() {
     die "входа бота нет ($ACCOUNT_DIR/google-state.json): гостем в боевые встречи не идём"
   protect "$STATE"
   mkdir -p "$STATE/lease" "$STATE/account-copies"
-  local token rev version image
+  local token rev version image egress_extra=""
   token=$(read_token)
+  # Добавка к списку выхода встреч наружу (T178): одна строка «host:port,host:port» в
+  # $STATE/egress-extra. Нужна, когда живой встрече не хватило хоста (медиасерверы Толка, T111):
+  # его имя стоит в строке «egress deny» журнала прокси scriba-prod-egress.
+  [ -f "$STATE/egress-extra" ] && egress_extra=$(tr -d '[:space:]' < "$STATE/egress-extra")
   rev=$(git -C "$REPO" rev-parse --short HEAD)
   version=$(git -C "$REPO" rev-list --count HEAD)
   image="scriba-prod:$rev"
@@ -70,6 +74,7 @@ SCRIBA_SWARM_URL=$SWARM_URL
 SCRIBA_BOT_TOKEN=$token
 SCRIBA_BOT_VERSION=$version
 SCRIBA_MAX_MEETINGS=$MAX_MEETINGS
+SCRIBA_EGRESS_EXTRA=$egress_extra
 PROD_STATE_DIR=$STATE
 PROD_ACCOUNT_DIR=$ACCOUNT_DIR
 PROD_LEASE_DAEMON_DIR=$STATE/lease

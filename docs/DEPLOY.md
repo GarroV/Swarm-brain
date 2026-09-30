@@ -228,6 +228,15 @@ make unfreeze          # снять раньше срока; по сроку р�
   образе на VPS прошёл полностью, включая живой meet.google.com (30.09). Голый `docker run` без этих
   `--security-opt` падает с «No usable sandbox» — проверять только с теми же опциями, что в
   `orchestrator/docker-engine.ts`.
+- **Контур.Толк (T111):** бот ходит в Толк гостем; вход Google для этого не нужен. Раскатка — **сервер
+  раньше бота**: новый вид нотисы `guest_access_closed` и площадка `kontur` в `BOT_PROFILE.platforms`
+  живут в функциях (`meeting-notice`, `swarm-api`, `meeting-invite`, `meeting-calendar`, `meeting-missed`);
+  старый сервер ответил бы новому боту 400 на незнакомый вид. Смоук адаптера в боевом образе:
+  `docker run --rm --security-opt seccomp=/srv/scriba/repo/bot/src/container/seccomp-chromium.json
+  --security-opt no-new-privileges:true --shm-size=1g scriba-prod:<rev> node
+  /app/src/kontur-adapter/smoke-kontur.ts`. Хост, которого не хватило живой встрече (медиасерверы Толка
+  не проверены), — строка `egress deny <host:port>` в `docker logs scriba-prod-egress`; добавка —
+  `/srv/scriba/state/egress-extra` (одна строка `host:port,host:port`), затем `scriba-prod.sh up`.
 - **Откат на MUSPELHEIM:** там всё осталось (`C:\projects\scriba-prod`; `stand.ps1` — в тамошнем клоне, в `main` его больше нет: клон не обновлять), бот
   погашен. Вернуть: там `token-hash` → кнопка токена → `up`; на VPS — `scriba-prod.sh down`.
 
