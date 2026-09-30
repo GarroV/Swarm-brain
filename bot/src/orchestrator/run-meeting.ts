@@ -137,6 +137,7 @@ export type MeetingOutcome =
   | "door_blocked"
   | "meeting_unavailable"
   | "account_signin_required"
+  | "guest_access_closed"
   | "door_timeout"
   | "captcha"
   | "stopped_at_door"
@@ -244,6 +245,14 @@ async function waitDoor(
   return "stopped";
 }
 
+/**
+Деталь нотисы, когда бот оказался в звонке не немым и вышел.
+*/
+const MIC_LIVE_DETAIL =
+  "microphone or camera was on after joining — scriba left at once so as not to make noise " +
+  "in the call / после входа у бота оказались включены микрофон или камера — бот сразу вышел, " +
+  "чтобы не шуметь в звонок";
+
 type DoorResult = "admitted" | Exclude<MeetingOutcome, "recorded">;
 
 async function passDoor(context: RunContext): Promise<DoorResult> {
@@ -280,6 +289,15 @@ async function passDoor(context: RunContext): Promise<DoorResult> {
     case "signin_required": {
       await sendNotice(context, { kind: "account_signin_required", meetingId });
       return "account_signin_required";
+    }
+    case "guest_access_closed": {
+      await sendNotice(context, { kind: "guest_access_closed", meetingId });
+      return "guest_access_closed";
+    }
+    case "mic_live": {
+      // Отдельного вида нотисы нет: человеку важно одно — бот не записал, и почему.
+      await sendNotice(context, { kind: "join_failed", meetingId, detail: MIC_LIVE_DETAIL });
+      return "join_failed";
     }
     case "captcha": {
       await sendNotice(context, { kind: "captcha", meetingId });

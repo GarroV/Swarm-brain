@@ -144,6 +144,13 @@ Deno.test("позвать руками можно только туда, куд�
   assertEquals(canInvite(noLink), false);
 });
 
+Deno.test("БЛОКИРУЮЩИЙ (T111): Контур.Толк тоже приглашается руками — площадка бота, а не только Meet", () => {
+  const kontur = { ...notArrivedMiss(job(), { botSeen: false, noticeSent: false })!, platform: "kontur" };
+  assertEquals(canInvite(kontur), true, "у бота есть адаптер Контур.Толка — руками звать можно");
+  const zoom = { ...notArrivedMiss(job(), { botSeen: false, noticeSent: false })!, platform: "zoom" };
+  assertEquals(canInvite(zoom), false, "у бота нет адаптера Zoom — руками звать некуда");
+});
+
 Deno.test("у каждой причины текст на обоих языках, название встречи в нём, пустого нет", () => {
   for (const reason of MISS_REASONS) {
     const m = { ...notArrivedMiss(job(), { botSeen: false, noticeSent: false })!, reason };

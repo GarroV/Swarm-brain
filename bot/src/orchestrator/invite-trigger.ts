@@ -15,6 +15,7 @@
  */
 import type { MeetingInvite } from "../swarm-client/contract.ts";
 import type { TakenInvites } from "../swarm-client/invites.ts";
+import { isSupportedPlatform } from "./config.ts";
 import { describeError } from "./describe-error.ts";
 import { PollLoop } from "./poll-loop.ts";
 
@@ -23,10 +24,8 @@ import { PollLoop } from "./poll-loop.ts";
  */
 export const MAX_REFUSAL_DETAIL_CHARS = 300;
 const DEFAULT_INTERVAL_MS = 5000;
-const SUPPORTED_PLATFORM = "meet";
 
 const PLATFORM_NAMES: Readonly<Record<string, { en: string; ru: string }>> = {
-  kontur: { en: "Kontur.Talk", ru: "Контур.Толк" },
   zoom: { en: "Zoom", ru: "Zoom" },
 };
 
@@ -45,8 +44,8 @@ export function refusalDetail(refusal: Refusal): string {
       ru: `«${refusal.platform}»`,
     };
     return (
-      `${name.en} calls aren't supported yet — scriba only joins Google Meet for now. ` +
-      `/ Звонки ${name.ru} бот пока не умеет — scriba заходит только в Google Meet.`
+      `${name.en} calls aren't supported yet — scriba joins only Google Meet and Kontur.Talk for now. ` +
+      `/ Звонки ${name.ru} бот пока не умеет — scriba заходит только в Google Meet и Контур.Толк.`
     );
   }
   const en = "scriba could not start for this call: ";
@@ -126,7 +125,7 @@ export class InviteTrigger {
     }
     this.remembered.set(invite.id, Date.parse(invite.expires_at));
 
-    if (invite.platform !== SUPPORTED_PLATFORM) {
+    if (!isSupportedPlatform(invite.platform)) {
       await this.refuse(invite, { kind: "platform", platform: invite.platform });
       return;
     }

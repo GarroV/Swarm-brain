@@ -4,7 +4,7 @@
 //
 // Контракт — docs/ARCHITECTURE.md «Приглашение бота (D017)»:
 //   POST /meeting-invites {join_url} → 201/200 { invite } · 400 invalid_link
-//                                     · 400 unsupported_platform (Контур.Толк, Zoom — бот ходит только в Meet)
+//                                     · 400 unsupported_platform (Zoom — бот ходит в Google Meet и Контур.Толк, T111)
 //                                     · 403 demo_not_allowed · 429 too_many_invites
 //   GET  /meeting-invites/:id        → 200 { invite } · 404 not_found
 
@@ -111,8 +111,8 @@ export function inviteErrorText(code: InviteErrorCode | null, dt: Dt): string {
       return dt("Вставьте ссылку на звонок Google Meet", "Paste a link to a Google Meet call");
     case "unsupported_platform":
       return dt(
-        "Бот пока ходит только в Google Meet — Контур.Толк и Zoom не поддерживаются",
-        "The bot joins Google Meet calls only — Kontur.Talk and Zoom are not supported yet",
+        "Бот ходит в Google Meet и Контур.Толк — Zoom пока не поддерживается",
+        "The bot joins Google Meet and Kontur.Talk calls — Zoom is not supported yet",
       );
     case "demo_not_allowed":
       return dt("В демо бота позвать нельзя", "The bot cannot be invited from the demo");
