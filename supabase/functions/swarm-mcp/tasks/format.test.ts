@@ -9,7 +9,10 @@ import {
 } from "./format.ts";
 
 const row = (p: Partial<ProjectTreeRow> & { id: string; name: string }): ProjectTreeRow => ({
-  parent_id: null, task_count: 0, backlog_count: 0, ...p,
+  parent_id: null,
+  task_count: 0,
+  backlog_count: 0,
+  ...p,
 });
 
 // ── get_projects: дерево досок (issue #198) ───────────────────────────────────
@@ -94,8 +97,12 @@ Deno.test("formatTaskLine: подтверждённая задача без по
 
 Deno.test("formatTaskLine: исполнитель, срок и рынок на месте (формат не сломан)", () => {
   const line = formatTaskLine({
-    status: "in_progress", title: "Название", assignees: ["Вася"],
-    due_date: "2026-09-10", country: "Bulgaria", confirmed: true,
+    status: "in_progress",
+    title: "Название",
+    assignees: ["Вася"],
+    due_date: "2026-09-10",
+    country: "Bulgaria",
+    confirmed: true,
   });
   assertStringIncludes(line, "[in_progress]");
   assertStringIncludes(line, "Название");
@@ -217,7 +224,12 @@ Deno.test("formatTaskLine: пинг виден, отправленный пом�
   const waiting = formatTaskLine({ status: "open", title: "T", due_date: "2027-03-01", remind_date: "2026-12-01" });
   assertStringIncludes(waiting, "дедлайн: 2027-03-01 | пинг: 2026-12-01");
   assert(!waiting.includes("отправлен"), waiting);
-  const sent = formatTaskLine({ status: "open", title: "T", remind_date: "2026-12-01", reminded_at: "2026-12-01T08:00:00Z" });
+  const sent = formatTaskLine({
+    status: "open",
+    title: "T",
+    remind_date: "2026-12-01",
+    reminded_at: "2026-12-01T08:00:00Z",
+  });
   assertStringIncludes(sent, "пинг: 2026-12-01 (отправлен)");
   assert(!formatTaskLine({ status: "open", title: "T" }).includes("пинг"), "без пинга — ни слова");
 });

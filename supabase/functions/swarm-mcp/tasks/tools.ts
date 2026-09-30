@@ -1,5 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { createTask, getTask, listTasks, listTasksWithTotal, updateTask, deleteTask } from "../../_shared/tasks/db.ts";
+import { createTask, deleteTask, getTask, listTasksWithTotal, updateTask } from "../../_shared/tasks/db.ts";
 import { projectLabel, truncationNote, visibleProjectNameById } from "./task-list.ts";
 
 import { recurrencePatchFor, resolveRecurrence } from "../../_shared/tasks/recurrence.ts";
@@ -23,7 +23,6 @@ import {
 // Оверсайт руководителя по ЗАДАЧАМ — осознанное решение владельца, см. docs/decisions/2026-08-21-admin-visibility.md.
 // На проекты и записи он НЕ распространяется.
 export const ADMIN_USER_ID = 744230399;
-
 
 const TELEGRAM_BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN");
 
@@ -65,12 +64,19 @@ async function resolveLabelIds(ownerId: number, names: string[], createMissing: 
     const name = raw.trim();
     if (!name) continue;
     const hit = byName.get(name.toLowerCase());
-    if (hit) { ids.push(hit); continue; }
+    if (hit) {
+      ids.push(hit);
+      continue;
+    }
     if (!createMissing) continue;
     const { data } = await supabase
       .from("task_labels").insert({ owner_id: ownerId, group_id: groupId, name, icon: "tag" })
       .select("id").single();
-    if (data) { const id = (data as { id: string }).id; byName.set(name.toLowerCase(), id); ids.push(id); }
+    if (data) {
+      const id = (data as { id: string }).id;
+      byName.set(name.toLowerCase(), id);
+      ids.push(id);
+    }
   }
   return ids;
 }
@@ -95,7 +101,9 @@ export async function matchAssignee(name: string): Promise<{ telegram_id: number
   ((aus ?? []) as Array<{ telegram_id: number; username?: string | null }>).forEach((u) => {
     if (u.username) uname.set(u.telegram_id, u.username);
   });
-  const data = (profs as Array<{ telegram_id: number; first_name?: string; last_name?: string; email?: string; name_aliases?: string[] }>)
+  const data = (profs as Array<
+    { telegram_id: number; first_name?: string; last_name?: string; email?: string; name_aliases?: string[] }
+  >)
     .map((p) => ({ ...p, username: uname.get(p.telegram_id) }));
   const lower = name.toLowerCase();
   const match = (data as Array<{
@@ -105,7 +113,7 @@ export async function matchAssignee(name: string): Promise<{ telegram_id: number
     username?: string;
     email?: string;
     name_aliases?: string[];
-  }>).find(p => {
+  }>).find((p) => {
     const fullName = [p.first_name, p.last_name].filter(Boolean).join(" ").toLowerCase();
     const uname = (p.username ?? "").toLowerCase();
     const email = (p.email ?? "").toLowerCase();
@@ -114,13 +122,14 @@ export async function matchAssignee(name: string): Promise<{ telegram_id: number
       fullName.includes(lower) || lower.includes(fullName) ||
       uname.includes(lower) ||
       (email.length > 0 && email.includes(lower)) ||
-      aliases.some(a => a.includes(lower) || lower.includes(a))
+      aliases.some((a) => a.includes(lower) || lower.includes(a))
     );
   });
   if (!match) return null;
   return {
     telegram_id: match.telegram_id,
-    display_name: [match.first_name, match.last_name].filter(Boolean).join(" ") || match.username || String(match.telegram_id),
+    display_name: [match.first_name, match.last_name].filter(Boolean).join(" ") || match.username ||
+      String(match.telegram_id),
   };
 }
 
@@ -225,7 +234,10 @@ export async function toolAddTask(args: {
     const match = await matchProject(groupId, args.project_name, args.requesting_user_id);
     if (match) {
       project_id = match.id;
-      if (match.ambiguous) matchWarning += ` ⚠️ несколько проектов с похожим именем «${args.project_name}» — взят первый попавшийся, проверь на доске`;
+      if (match.ambiguous) {
+        matchWarning +=
+          ` ⚠️ несколько проектов с похожим именем «${args.project_name}» — взят первый попавшийся, проверь на доске`;
+      }
     } else {
       matchWarning += ` ⚠️ проект «${args.project_name}» не найден — задача создана без проекта`;
     }
@@ -259,9 +271,7 @@ export async function toolAddTask(args: {
   if (!recur.ok) return `Ошибка: ${recur.error}`;
 
   // Пинг (#622): отдельно от срока — «дедлайн 1 марта, напомнить 1 декабря».
-  const ping = args.remind_date !== undefined
-    ? pingPatch(args.remind_date, args.requesting_user_id ?? null)
-    : null;
+  const ping = args.remind_date !== undefined ? pingPatch(args.remind_date, args.requesting_user_id ?? null) : null;
   if (ping && !ping.ok) return `Ошибка: ${ping.error}`;
 
   try {
@@ -336,8 +346,11 @@ export async function toolUpdateTask(args: {
   // Воркспейс + приватность одним гардом (issue #45): раньше проверялся только воркспейс, и
   // вызов без `labels` правил ЧУЖУЮ личную задачу. Отказ неотличим от «не найдена».
   const denied = taskAccessError(
-    args.id, task, args.requesting_user_id,
-    args.requesting_user_id === ADMIN_USER_ID, groupId ?? null,
+    args.id,
+    task,
+    args.requesting_user_id,
+    args.requesting_user_id === ADMIN_USER_ID,
+    groupId ?? null,
   );
   if (denied) return denied;
   // Сужение для компилятора: гард уже вернул «не найдена» и при task=null, и при groupId=null
@@ -355,7 +368,10 @@ export async function toolUpdateTask(args: {
       const match = await matchProject(groupId, args.project_name, args.requesting_user_id);
       if (match) {
         fields.project_id = match.id;
-        if (match.ambiguous) matchWarning += ` ⚠️ несколько проектов с похожим именем «${args.project_name}» — взят первый попавшийся, проверь на доске`;
+        if (match.ambiguous) {
+          matchWarning +=
+            ` ⚠️ несколько проектов с похожим именем «${args.project_name}» — взят первый попавшийся, проверь на доске`;
+        }
       } else {
         matchWarning += ` ⚠️ проект «${args.project_name}» не найден — project_id не менялся`;
       }
@@ -456,11 +472,14 @@ export async function toolDeleteTask(args: { id: string; requesting_user_id: num
   const groupId = await resolveGroupId(args.requesting_user_id);
   // Приватность не проверялась ВОВСЕ — участник воркспейса удалял чужую личную задачу (issue #45).
   const denied = taskAccessError(
-    args.id, task, args.requesting_user_id,
-    args.requesting_user_id === ADMIN_USER_ID, groupId ?? null,
+    args.id,
+    task,
+    args.requesting_user_id,
+    args.requesting_user_id === ADMIN_USER_ID,
+    groupId ?? null,
   );
   if (denied) return denied;
-  if (!task) return `Задача ${args.id} не найдена.`;   // сужение: гард уже отсёк null
+  if (!task) return `Задача ${args.id} не найдена.`; // сужение: гард уже отсёк null
   try {
     await deleteTask(args.id, args.requesting_user_id);
     return `✅ Задача «${task.title}» удалена.`;
@@ -546,7 +565,10 @@ export async function toolGetProjects(args: { requesting_user_id: number }): Pro
 
 // ── Комментарии к задачам (апдейты) ────────────────────────────────────────────
 
-async function commentTaskGuard(taskId: string, requestingUserId: number): Promise<{ ok: true } | { ok: false; msg: string }> {
+async function commentTaskGuard(
+  taskId: string,
+  requestingUserId: number,
+): Promise<{ ok: true } | { ok: false; msg: string }> {
   const task = await getTask(taskId);
   const groupId = await resolveGroupId(requestingUserId);
   // Приватную задачу видит только владелец — в MCP админ-байпас НЕ применяем (чистка в вебе),
@@ -568,10 +590,15 @@ export async function toolGetTaskComments(args: { task_id: string; requesting_us
     console.error("task_comments list failed:", error);
     return "Ошибка: не удалось загрузить комментарии.";
   }
-  const rows = (data ?? []) as Array<{ id: string; content: string; added_by_telegram_id: number | null; created_at: string }>;
+  const rows = (data ?? []) as Array<
+    { id: string; content: string; added_by_telegram_id: number | null; created_at: string }
+  >;
   if (!rows.length) return "Комментариев пока нет.";
   const ids = [...new Set(rows.map((r) => r.added_by_telegram_id).filter((x): x is number => !!x))];
-  const { data: profs } = await supabase.from("user_profiles").select("telegram_id, first_name, last_name").in("telegram_id", ids.length ? ids : [0]);
+  const { data: profs } = await supabase.from("user_profiles").select("telegram_id, first_name, last_name").in(
+    "telegram_id",
+    ids.length ? ids : [0],
+  );
   const nameById = new Map<number, string>();
   for (const p of (profs ?? []) as Array<{ telegram_id: number; first_name?: string; last_name?: string }>) {
     nameById.set(p.telegram_id, [p.first_name, p.last_name].filter(Boolean).join(" ") || String(p.telegram_id));
@@ -584,13 +611,19 @@ export async function toolGetTaskComments(args: { task_id: string; requesting_us
   }).join("\n\n");
 }
 
-export async function toolAddTaskComment(args: { task_id: string; content: string; requesting_user_id: number }): Promise<string> {
+export async function toolAddTaskComment(
+  args: { task_id: string; content: string; requesting_user_id: number },
+): Promise<string> {
   const guard = await commentTaskGuard(args.task_id, args.requesting_user_id);
   if (!guard.ok) return guard.msg;
   const v = validateCommentContent(args.content);
   if (!v.ok) return `Ошибка: ${v.error}`;
   const { error } = await supabase
-    .from("task_comments").insert({ task_id: args.task_id, content: v.value, added_by_telegram_id: args.requesting_user_id });
+    .from("task_comments").insert({
+      task_id: args.task_id,
+      content: v.value,
+      added_by_telegram_id: args.requesting_user_id,
+    });
   if (error) return `Ошибка: ${error.message}`;
   return "✅ Комментарий добавлен.";
 }
@@ -623,7 +656,7 @@ export async function toolDeleteTaskComment(
 
 // Свежие комментарии одним запросом (issue #276). Сценарий — утренний дайджест по задачам
 // команды: раньше он требовал N вызовов get_task_comments, по одному на изменившуюся задачу.
-const RECENT_DEFAULT_WINDOW_H = 24;   // since не задан — сутки назад: дайджест ежедневный
+const RECENT_DEFAULT_WINDOW_H = 24; // since не задан — сутки назад: дайджест ежедневный
 const RECENT_DEFAULT_LIMIT = 50;
 const RECENT_MAX_LIMIT = 200;
 // Читаем с запасом к лимиту выдачи: приватные задачи отсеиваются УЖЕ В КОДЕ (RLS не механизм
@@ -663,7 +696,9 @@ export async function toolGetRecentComments(
     console.error("task_comments recent failed:", error);
     return "Ошибка: не удалось загрузить комментарии.";
   }
-  const raw = (data ?? []) as Array<{ task_id: string; content: string; added_by_telegram_id: number | null; created_at: string }>;
+  const raw = (data ?? []) as Array<
+    { task_id: string; content: string; added_by_telegram_id: number | null; created_at: string }
+  >;
   if (!raw.length) return formatRecentComments([], { sinceISO });
 
   // Видимость считаем тем же каноническим правилом, что и поштучное чтение (canViewTask +
@@ -673,7 +708,11 @@ export async function toolGetRecentComments(
     .from("tasks").select("id, title, group_id, is_private, owner_id")
     .in("id", [...new Set(raw.map((r) => r.task_id))]);
   const titleById = new Map<string, string>();
-  for (const t of (taskRows ?? []) as Array<{ id: string; title: string; group_id: string | null; is_private: boolean; owner_id: number | null }>) {
+  for (
+    const t of (taskRows ?? []) as Array<
+      { id: string; title: string; group_id: string | null; is_private: boolean; owner_id: number | null }
+    >
+  ) {
     if (t.group_id !== groupId) continue;
     if (!canViewTask(t, args.requesting_user_id, isAdmin)) continue;
     titleById.set(t.id, t.title);
@@ -709,7 +748,8 @@ export async function toolGetRecentComments(
 export const TASK_TOOL_DEFINITIONS = [
   {
     name: "add_task",
-    description: "Создать новую задачу. По умолчанию задача сразу попадает на доску и видна в вебе. Для доски укажи project_name (имя из get_projects), иначе задача уйдёт только в общий список.",
+    description:
+      "Создать новую задачу. По умолчанию задача сразу попадает на доску и видна в вебе. Для доски укажи project_name (имя из get_projects), иначе задача уйдёт только в общий список.",
     inputSchema: {
       type: "object",
       properties: {
@@ -717,28 +757,63 @@ export const TASK_TOOL_DEFINITIONS = [
         description: { type: "string", description: "Описание или детали (опционально)" },
         assignee_name: { type: "string", description: "Имя, фамилия или ник исполнителя (опционально)" },
         country: { type: "string", description: "Рынок/страна (опционально)" },
-        due_date: { type: "string", description: "Дедлайн в формате YYYY-MM-DD (опционально). Год — от текущей даты, не из головы" },
+        due_date: {
+          type: "string",
+          description: "Дедлайн в формате YYYY-MM-DD (опционально). Год — от текущей даты, не из головы",
+        },
         source: { type: "string", enum: ["transcript", "claude", "manual"], description: "Источник задачи" },
         context_id: { type: "string", description: "ID записи в базе знаний (опционально)" },
         task_role: {
           type: "string",
           enum: ["marketing", "bd", "rnd"],
-          description: "Роль исполнителя: marketing — маркетинг, rnd — продукт/разработка, bd — всё остальное (операционка, бизнес)",
+          description:
+            "Роль исполнителя: marketing — маркетинг, rnd — продукт/разработка, bd — всё остальное (операционка, бизнес)",
         },
-        labels: { type: "array", items: { type: "string" }, description: "Имена личных смарт-меток (папок). Задача с метками становится личной." },
-        project_name: { type: "string", description: "Имя проекта или подпроекта доски (Проекты/SprintBoard) — без него задача на доску не попадёт, только в общий список. При неточном совпадении берётся ближайшее по имени; при отсутствии — предупреждение в ответе, задача всё равно создаётся." },
-        recur_freq: { type: ["string", "null"], enum: ["daily", "weekly", "monthly", null], description: "Цикличность: задача не закрывается, а переносится на следующее вхождение (daily — каждый день, weekly — тот же день недели, monthly — то же число месяца). ТРЕБУЕТ due_date: день недели и число берутся из срока. null — снять цикличность." },
-        remind_date: { type: "string", description: "Пинг — день напоминания YYYY-MM-DD, отдельно от дедлайна («срок 1 марта, напомнить 1 декабря»). Бот пришлёт напоминание исполнителям в этот день, один раз." },
-        status: { type: "string", enum: ["backlog", "open", "in_progress", "done", "cancelled"], description: "Колонка доски, куда положить задачу. По умолчанию open («Открыто»); backlog — колонка «Бэклог»." },
-        parent_task_id: { type: "string", description: "id родительской задачи — создать ПОДЗАДАЧУ. Вложенность одна: родитель — задача верхнего уровня. Подзадача берёт проект, срок (если не задан) и приватность родителя" },
-        confirmed: { type: "boolean", description: "По умолчанию true — задача сразу на доске. false кладёт её в очередь «На проверке», которая видна ТОЛЬКО в Telegram-боте (в вебе такой задачи не видно вообще) — используй только если человек прямо попросил очередь." },
+        labels: {
+          type: "array",
+          items: { type: "string" },
+          description: "Имена личных смарт-меток (папок). Задача с метками становится личной.",
+        },
+        project_name: {
+          type: "string",
+          description:
+            "Имя проекта или подпроекта доски (Проекты/SprintBoard) — без него задача на доску не попадёт, только в общий список. При неточном совпадении берётся ближайшее по имени; при отсутствии — предупреждение в ответе, задача всё равно создаётся.",
+        },
+        recur_freq: {
+          type: ["string", "null"],
+          enum: ["daily", "weekly", "monthly", null],
+          description:
+            "Цикличность: задача не закрывается, а переносится на следующее вхождение (daily — каждый день, weekly — тот же день недели, monthly — то же число месяца). ТРЕБУЕТ due_date: день недели и число берутся из срока. null — снять цикличность.",
+        },
+        remind_date: {
+          type: "string",
+          description:
+            "Пинг — день напоминания YYYY-MM-DD, отдельно от дедлайна («срок 1 марта, напомнить 1 декабря»). Бот пришлёт напоминание исполнителям в этот день, один раз.",
+        },
+        status: {
+          type: "string",
+          enum: ["backlog", "open", "in_progress", "done", "cancelled"],
+          description:
+            "Колонка доски, куда положить задачу. По умолчанию open («Открыто»); backlog — колонка «Бэклог».",
+        },
+        parent_task_id: {
+          type: "string",
+          description:
+            "id родительской задачи — создать ПОДЗАДАЧУ. Вложенность одна: родитель — задача верхнего уровня. Подзадача берёт проект, срок (если не задан) и приватность родителя",
+        },
+        confirmed: {
+          type: "boolean",
+          description:
+            "По умолчанию true — задача сразу на доске. false кладёт её в очередь «На проверке», которая видна ТОЛЬКО в Telegram-боте (в вебе такой задачи не видно вообще) — используй только если человек прямо попросил очередь.",
+        },
       },
       required: ["title", "source"],
     },
   },
   {
     name: "update_task",
-    description: "Обновить задачу по ID. Передай только поля которые нужно изменить. due_date: null — убрать дедлайн. ⚠️ У РЕГУЛЯРНОЙ задачи (recur_freq заполнен) status: done задачу НЕ закрывает: срок переносится на следующее вхождение, статус снова open.",
+    description:
+      "Обновить задачу по ID. Передай только поля которые нужно изменить. due_date: null — убрать дедлайн. ⚠️ У РЕГУЛЯРНОЙ задачи (recur_freq заполнен) status: done задачу НЕ закрывает: срок переносится на следующее вхождение, статус снова open.",
     inputSchema: {
       type: "object",
       properties: {
@@ -748,18 +823,48 @@ export const TASK_TOOL_DEFINITIONS = [
         assignee_name: { type: "string", description: "Новый исполнитель. Пустая строка — убрать исполнителя." },
         country: { type: "string" },
         due_date: { type: ["string", "null"], description: "YYYY-MM-DD или null чтобы убрать" },
-        status: { type: "string", enum: ["backlog", "open", "in_progress", "done", "cancelled"], description: "Колонка доски. backlog — «Бэклог» (issue #200)." },
-        labels: { type: "array", items: { type: "string" }, description: "Имена личных смарт-меток. Работает только на твоих личных задачах." },
+        status: {
+          type: "string",
+          enum: ["backlog", "open", "in_progress", "done", "cancelled"],
+          description: "Колонка доски. backlog — «Бэклог» (issue #200).",
+        },
+        labels: {
+          type: "array",
+          items: { type: "string" },
+          description: "Имена личных смарт-меток. Работает только на твоих личных задачах.",
+        },
         task_role: {
           type: "string",
           enum: ["marketing", "bd", "rnd"],
-          description: "Роль исполнителя: marketing — маркетинг, rnd — продукт/разработка, bd — всё остальное (операционка, бизнес)",
+          description:
+            "Роль исполнителя: marketing — маркетинг, rnd — продукт/разработка, bd — всё остальное (операционка, бизнес)",
         },
-        project_name: { type: "string", description: "Имя проекта или подпроекта доски. Пустая строка — снять проект (задача уйдёт с доски в общий список)." },
-        recur_freq: { type: ["string", "null"], enum: ["daily", "weekly", "monthly", null], description: "Цикличность: задача не закрывается, а переносится на следующее вхождение (daily — каждый день, weekly — тот же день недели, monthly — то же число месяца). ТРЕБУЕТ due_date: день недели и число берутся из срока. null — снять цикличность." },
-        remind_date: { type: ["string", "null"], description: "Пинг — день напоминания YYYY-MM-DD, отдельно от дедлайна. Перенос даты взводит пинг заново, даже если старый уже сработал. null — снять пинг." },
-        parent_task_id: { type: "string", description: "Сделать подзадачей задачи с этим id (того же проекта, верхнего уровня). Пустая строка — отвязать от родителя" },
-        hidden_from_hub: { type: "boolean", description: "true — не показывать задачу в публичной дорожной карте хаба проектов (даже если доска опубликована); false — вернуть." },
+        project_name: {
+          type: "string",
+          description:
+            "Имя проекта или подпроекта доски. Пустая строка — снять проект (задача уйдёт с доски в общий список).",
+        },
+        recur_freq: {
+          type: ["string", "null"],
+          enum: ["daily", "weekly", "monthly", null],
+          description:
+            "Цикличность: задача не закрывается, а переносится на следующее вхождение (daily — каждый день, weekly — тот же день недели, monthly — то же число месяца). ТРЕБУЕТ due_date: день недели и число берутся из срока. null — снять цикличность.",
+        },
+        remind_date: {
+          type: ["string", "null"],
+          description:
+            "Пинг — день напоминания YYYY-MM-DD, отдельно от дедлайна. Перенос даты взводит пинг заново, даже если старый уже сработал. null — снять пинг.",
+        },
+        parent_task_id: {
+          type: "string",
+          description:
+            "Сделать подзадачей задачи с этим id (того же проекта, верхнего уровня). Пустая строка — отвязать от родителя",
+        },
+        hidden_from_hub: {
+          type: "boolean",
+          description:
+            "true — не показывать задачу в публичной дорожной карте хаба проектов (даже если доска опубликована); false — вернуть.",
+        },
         requesting_user_id: { type: "number", description: "Твой Telegram user ID — обязателен для проверки доступа" },
       },
       required: ["id", "requesting_user_id"],
@@ -782,11 +887,15 @@ export const TASK_TOOL_DEFINITIONS = [
 export const PROJECT_TOOL_DEFINITIONS = [
   {
     name: "get_projects",
-    description: "Показать доски воркспейса деревом: проекты, их подпроекты, id и счётчики задач. Вызывай ПЕРЕД add_task/get_tasks с project_name — имена проектов угадать нельзя.",
+    description:
+      "Показать доски воркспейса деревом: проекты, их подпроекты, id и счётчики задач. Вызывай ПЕРЕД add_task/get_tasks с project_name — имена проектов угадать нельзя.",
     inputSchema: {
       type: "object",
       properties: {
-        requesting_user_id: { type: "number", description: "Твой Telegram user ID — обязателен для фильтрации по воркспейсу и приватности" },
+        requesting_user_id: {
+          type: "number",
+          description: "Твой Telegram user ID — обязателен для фильтрации по воркспейсу и приватности",
+        },
       },
       required: ["requesting_user_id"],
     },
@@ -808,24 +917,40 @@ export const LABEL_TOOL_DEFINITIONS = [
 export const COMMENT_TOOL_DEFINITIONS = [
   {
     name: "get_recent_comments",
-    description: "Свежие комментарии-апдейты по ВСЕМ доступным тебе задачам одним запросом — для дайджеста «что нового». Сгруппированы по задаче, у каждой печатается id.",
+    description:
+      "Свежие комментарии-апдейты по ВСЕМ доступным тебе задачам одним запросом — для дайджеста «что нового». Сгруппированы по задаче, у каждой печатается id.",
     inputSchema: {
       type: "object",
       properties: {
-        since: { type: "string", description: "С какого момента брать комментарии: ISO-дата (2026-09-09) или момент (2026-09-09T07:00:00Z). По умолчанию — последние 24 часа. Неразобранное значение = отказ, а не тихий дефолт" },
-        limit: { type: "number", description: "Сколько комментариев показать: по умолчанию 50, максимум 200. Если свежих больше — выдача честно скажет, что обрезана" },
-        requesting_user_id: { type: "number", description: "Твой Telegram user ID — обязателен для фильтрации по воркспейсу и приватности" },
+        since: {
+          type: "string",
+          description:
+            "С какого момента брать комментарии: ISO-дата (2026-09-09) или момент (2026-09-09T07:00:00Z). По умолчанию — последние 24 часа. Неразобранное значение = отказ, а не тихий дефолт",
+        },
+        limit: {
+          type: "number",
+          description:
+            "Сколько комментариев показать: по умолчанию 50, максимум 200. Если свежих больше — выдача честно скажет, что обрезана",
+        },
+        requesting_user_id: {
+          type: "number",
+          description: "Твой Telegram user ID — обязателен для фильтрации по воркспейсу и приватности",
+        },
       },
       required: ["requesting_user_id"],
     },
   },
   {
     name: "get_task_comments",
-    description: "Показать комментарии-апдейты к задаче по её ID (если задача доступна тебе). ID берётся из выдачи get_tasks — он печатается в строке задачи.",
+    description:
+      "Показать комментарии-апдейты к задаче по её ID (если задача доступна тебе). ID берётся из выдачи get_tasks — он печатается в строке задачи.",
     inputSchema: {
       type: "object",
       properties: {
-        task_id: { type: "string", description: "ID задачи — полный uuid из строки задачи в get_tasks (сокращённый префикс не резолвится)" },
+        task_id: {
+          type: "string",
+          description: "ID задачи — полный uuid из строки задачи в get_tasks (сокращённый префикс не резолвится)",
+        },
         requesting_user_id: { type: "number", description: "Твой Telegram user ID — обязателен для проверки доступа" },
       },
       required: ["task_id", "requesting_user_id"],
@@ -837,7 +962,10 @@ export const COMMENT_TOOL_DEFINITIONS = [
     inputSchema: {
       type: "object",
       properties: {
-        task_id: { type: "string", description: "ID задачи — полный uuid из строки задачи в get_tasks (сокращённый префикс не резолвится)" },
+        task_id: {
+          type: "string",
+          description: "ID задачи — полный uuid из строки задачи в get_tasks (сокращённый префикс не резолвится)",
+        },
         content: { type: "string", description: "Текст комментария" },
         requesting_user_id: { type: "number", description: "Твой Telegram user ID — обязателен" },
       },
@@ -846,7 +974,8 @@ export const COMMENT_TOOL_DEFINITIONS = [
   },
   {
     name: "delete_task_comment",
-    description: "Удалить СВОЙ комментарий к задаче. Чужой удалить нельзя. Правки текста нет: чтобы исправить опечатку, удали комментарий и добавь заново. id комментария печатается в get_task_comments.",
+    description:
+      "Удалить СВОЙ комментарий к задаче. Чужой удалить нельзя. Правки текста нет: чтобы исправить опечатку, удали комментарий и добавь заново. id комментария печатается в get_task_comments.",
     inputSchema: {
       type: "object",
       properties: {
