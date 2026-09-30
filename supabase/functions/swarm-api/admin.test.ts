@@ -40,8 +40,7 @@ function makeSupabase(
   builder.maybeSingle = () => Promise.resolve(terminal);
   builder.single = () => Promise.resolve(terminal);
   // await напрямую на цепочке (например `await supabase.from(...).upsert(...)`)
-  builder.then = (res: (v: unknown) => unknown) =>
-    Promise.resolve(terminal).then(res);
+  builder.then = (res: (v: unknown) => unknown) => Promise.resolve(terminal).then(res);
   const client = {
     from: (...args: unknown[]) => {
       calls.push({ method: "from", args });
@@ -183,7 +182,9 @@ Deno.test("PATCH реального юзера по telegram_id — прежни
     noNames,
   );
   assertEquals(res!.status, 200);
+  // сначала — строка цели в allowed_users (границы объёма админа, admin-scope.ts)
   assertEquals(calls.filter((c) => c.method === "from").map((c) => c.args[0]), [
+    "allowed_users",
     "user_profiles",
     "allowed_users",
     "user_profiles",
