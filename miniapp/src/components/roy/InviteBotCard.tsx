@@ -178,8 +178,17 @@ export function InviteBotCard() {
       <SectionLabel className="!mb-1.5">{dt("Позвать бота на созвон", "Invite the bot to a call")}</SectionLabel>
       <p className="mx-1 mb-2.5 text-ink-soft" style={{ fontSize: 12.5, lineHeight: 1.4 }}>
         {dt(
-          "Вставьте ссылку на Google Meet — бот постучится и запишет встречу.",
-          "Paste a Google Meet link — the bot will knock and record the meeting.",
+          "Вставьте ссылку на Google Meet или Контур.Толк — бот постучится и запишет встречу.",
+          "Paste a Google Meet or Kontur.Talk link — the bot will join and record the meeting.",
+        )}
+      </p>
+      {/* Толк, комната закрыта для гостей (D040, T111): бот перезагружает страницу и ждёт до
+          BOT_PROFILE.guestRoom.waitMinutes (сейчас 10) — число здесь держим в согласии вручную,
+          сервер и бот сверяет контрактный тест supabase/functions/_shared/bot-profile.test.ts. */}
+      <p className="mx-1 mb-2.5 text-ink-mute" style={{ fontSize: 11.5, lineHeight: 1.4 }}>
+        {dt(
+          "Для Контур.Толка откройте комнату для внешних участников: бот заходит гостем и ждёт до 10 минут.",
+          "For Kontur.Talk, open the room to external participants: the bot joins as a guest and waits up to 10 minutes.",
         )}
       </p>
       {/* noValidate: мусор в поле должен дойти до сервера и вернуться нашим текстом, а не

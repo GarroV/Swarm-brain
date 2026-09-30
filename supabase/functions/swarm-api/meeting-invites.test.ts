@@ -26,8 +26,6 @@ function post(joinUrl: unknown): Request {
 
 for (
   const [name, url] of [
-    ["Контур.Толк", "https://team.ktalk.ru/room42"],
-    ["Контур.Толк (talk.kontur.ru)", "https://talk.kontur.ru/room42"],
     ["Zoom", "https://us02web.zoom.us/j/123456789?pwd=abc"],
   ] as const
 ) {
@@ -121,6 +119,19 @@ Deno.test("ссылка на Meet — 201, приглашение заводит
   assertEquals((await res!.json()).invite.status, "pending");
   const ins = db.inserted[0] as Record<string, unknown>;
   assertEquals([ins.invited_by, ins.group_id, ins.platform], [1, "ws1", "meet"]);
+});
+
+Deno.test("ссылка на Контур.Толк (T111) — 201, приглашение заводится тем же путём, что Meet", async () => {
+  const db = fakeDb([]);
+  const res = await handleMeetingInviteRoutes(
+    { ...ctx(), supabase: db.client },
+    post("https://team.ktalk.ru/room42"),
+    "/meeting-invites",
+  );
+  assertEquals(res?.status, 201);
+  assertEquals((await res!.json()).invite.status, "pending");
+  const ins = db.inserted[0] as Record<string, unknown>;
+  assertEquals([ins.invited_by, ins.group_id, ins.platform], [1, "ws1", "kontur"]);
 });
 
 Deno.test("та же комната ещё ждёт бота — 200 то же приглашение, второе не заводится", async () => {
