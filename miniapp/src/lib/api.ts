@@ -2908,6 +2908,23 @@ let mockAgentMeetings: AgentMeeting[] = [
     entry_id: null,
     created_at: "2026-06-12T14:47:00+03:00",
   },
+  {
+    // Встреча с одним владельцем — вид с выбором «Команда / Личное».
+    id: "am-2",
+    title: "1-1 по данным качества",
+    source: "desktop-agent",
+    identity_kind: "calendar",
+    started_at: "2026-06-13T11:00:00+03:00",
+    ended_at: "2026-06-13T11:30:00+03:00",
+    status: "awaiting_review",
+    summary_status: "done",
+    draft_notes_md: "### Рейтинги\n- Собираем оценки из карт в сводный дашборд",
+    transcript: { language: "ru", model: "whisper-large-v3-turbo", segments: [{ start: 0, end: 5, text: "Начнём с рейтингов." }] },
+    recorders: [{ telegram_id: 744230399, claimed_at: "2026-06-13T11:30:10+03:00", role: "transcribe" }],
+    co_owners: [],
+    entry_id: null,
+    created_at: "2026-06-13T11:30:00+03:00",
+  },
 ];
 
 // all=true — админский оверрайд: показать все pending черновики воркспейса, а не только

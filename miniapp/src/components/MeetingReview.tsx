@@ -2,7 +2,7 @@
 import { useState, useEffect, useCallback, useContext } from "react";
 import { askMeeting, fetchAgentMeeting, fetchAgentMeetingNotes, patchAgentMeetingDraft, renameAgentMeeting, publishAgentMeeting, resummarizeAgentMeeting, deleteAgentMeeting } from "@/lib/api";
 import type { AgentMeeting, MeetingLiveNote } from "@/types";
-import { DetailPanelContext, NavHeader, SectionLabel, Segmented } from "@/components/roy/ui";
+import { DetailPanelContext, NavHeader, SectionLabel } from "@/components/roy/ui";
 import { RoyIcon } from "@/components/roy/icons";
 import { ActionChip } from "@/components/roy/screens/MeetingDetail";
 import { TezisyEditor } from "@/components/roy/tezisy/TezisyEditor";
@@ -313,7 +313,27 @@ export function MeetingReview({ id, onClose, onChanged }: Props) {
         )}
 
         {!published && !editing && !editingTitle && (
-          <div className="mb-4 flex flex-wrap gap-2">
+          // Публикация и правка — одним рядом над текстом (решение владельца 2026-09-30): куда
+          // сохранить — пилюлей, рядом «Сохранить»; раньше это была отдельная плашка внизу.
+          <div className="mb-4 flex flex-wrap items-center gap-2">
+            {notesReady && (
+              <>
+                {sharedOwners ? (
+                  <span className="inline-flex items-center rounded-full border border-line-2 px-3 font-medium text-ink-soft" style={{ fontSize: 13, minHeight: 40 }}
+                    title={dt("На встрече были другие участники SWARM, поэтому она уходит в базу команды.", "Other SWARM members attended, so it goes to the team base.")}>
+                    {dt("Общая · в команду", "Shared · team")}
+                  </span>
+                ) : (
+                  <BasePill value={base} onChange={setBase} />
+                )}
+                <button type="button" onClick={handlePublish} disabled={publishing}
+                  className="inline-flex items-center gap-1.5 rounded-full bg-primary px-4 font-semibold text-primary-foreground transition-transform active:scale-[0.96] disabled:opacity-60"
+                  style={{ fontSize: 13, minHeight: 40 }}>
+                  <RoyIcon name="check" size={15} strokeWidth={2.2} />
+                  {publishing ? dt("Сохраняем…", "Saving…") : dt("Сохранить", "Save")}
+                </button>
+              </>
+            )}
             {canRename && <ActionChip icon="pencil" label={dt("Название", "Title")} onClick={() => { setTitleDraft(meeting.title ?? ""); setEditingTitle(true); }} />}
             {notesReady && <ActionChip icon="pencil" label={dt("Тезисы", "Summary")} onClick={() => { setEditing(true); setView("tez"); }} />}
             {canDeleteDraft(meeting, me?.telegram_id) && !deleting && <ActionChip icon="trash" danger label={dt("Удалить", "Delete")} onClick={handleDelete} />}
@@ -348,31 +368,35 @@ export function MeetingReview({ id, onClose, onChanged }: Props) {
         )}
       </div>
 
-      {!published && notesReady && !editing && !editingTitle && (
-        <div className="shrink-0 border-t border-line bg-background px-5 pt-3 dark:bg-[var(--surface)]" style={{ paddingBottom: "max(16px, env(safe-area-inset-bottom))" }}>
-          {sharedOwners ? (
-            <p className="mb-2.5 text-xs text-ink-soft">
-              {dt("Встреча общая: на ней были другие участники SWARM, поэтому она уходит в базу команды.", "A shared meeting: other SWARM members attended, so it goes to the team base.")}
-            </p>
-          ) : (
-            <div className="mb-2.5">
-              <Segmented
-                items={[{ id: "workspace", label: dt("В команду", "Team") }, { id: "personal", label: dt("В личное", "Personal") }]}
-                value={base}
-                onChange={(v) => setBase(v as "workspace" | "personal")}
-              />
-            </div>
-          )}
-          <button onClick={handlePublish} disabled={publishing} className="w-full rounded-[8px] bg-primary py-3.5 font-semibold text-primary-foreground transition-transform active:scale-[0.99] disabled:opacity-60" style={{ fontSize: 15 }}>
-            {publishing ? dt("Публикуем…", "Publishing…") : effectiveBase === "workspace" ? dt("Сохранить в базу команды", "Save to the team base") : dt("Сохранить в личное", "Save to personal")}
-          </button>
-        </div>
-      )}
       {published && (
         <div className="shrink-0 border-t border-line px-5 py-3">
           <p className="text-center text-xs text-ink-soft">{dt("Уже в базе. Правки — через раздел «База».", "Already in the base. Edit it in the Base section.")}</p>
         </div>
       )}
+    </div>
+  );
+}
+
+// Куда сохранить черновик: пилюля из двух половин. Segmented из ui.tsx — прямоугольный и на всю
+// ширину, а здесь переключатель стоит в ряду с кнопками и должен быть компактным.
+function BasePill({ value, onChange }: { value: "workspace" | "personal"; onChange: (v: "workspace" | "personal") => void }) {
+  const dt = useDt();
+  const items = [
+    { id: "workspace", label: dt("Команда", "Team") },
+    { id: "personal", label: dt("Личное", "Personal") },
+  ] as const;
+  return (
+    <div role="radiogroup" aria-label={dt("Куда сохранить", "Save to")} className="inline-flex rounded-full border border-line-2 bg-surface p-0.5">
+      {items.map((it) => {
+        const on = it.id === value;
+        return (
+          <button key={it.id} type="button" role="radio" aria-checked={on} onClick={() => onChange(it.id)}
+            className={`rounded-full px-3 transition-colors ${on ? "bg-surface-2 font-semibold text-ink shadow-sm" : "font-medium text-ink-soft hover:text-ink"}`}
+            style={{ fontSize: 13, minHeight: 36 }}>
+            {it.label}
+          </button>
+        );
+      })}
     </div>
   );
 }
