@@ -62,12 +62,14 @@ function firstMatch(text: string, phrases: readonly string[]): string | null {
  * Этап входа по снимку. Порядок проверок: звонок по структуре (область плиток) — первым, потому
  * что в звонке текст страницы может содержать что угодно (чат, имена); затем закрытая комната —
  * раньше формы, потому что экран закрытой комнаты тоже предлагает «войти».
+ * Плитки без кнопки «Присоединиться»: экран устройств Толка тоже рисует область плиток (тех, кто
+ * уже в звонке), и бот, приняв его за звонок, «записывал» тишину, не войдя (прод 30.09.2026).
  */
 export function classifyKonturStage(snapshot: KonturSnapshot): StageVerdict {
   const text = normalizeKonturText(snapshot.text);
   const title = normalizeKonturText(snapshot.title);
 
-  if (snapshot.hasParticipantsArea || snapshot.tiles.length > 0) {
+  if ((snapshot.hasParticipantsArea || snapshot.tiles.length > 0) && !snapshot.hasJoinButton) {
     return { stage: "in_call", reason: "в звонке: видна область плиток участников" };
   }
 

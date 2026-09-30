@@ -96,6 +96,10 @@
               '<button aria-label="Выключить микрофон">🎤</button>'
             : "") +
           "<p>Участники встречи: Анна</p>" +
+          // Как в живом Толке: на экране устройств уже видна область плиток тех, кто в звонке.
+          '<conference-participants-area class="conference-participants-area">' +
+          tile("Анна", false) +
+          "</conference-participants-area>" +
           '<button id="join">Присоединиться</button>';
         document.getElementById("join").addEventListener("click", () => setTimeout(call, 300));
       }
