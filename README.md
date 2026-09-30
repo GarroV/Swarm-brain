@@ -223,7 +223,7 @@ recorder/                       # bumblebee — macOS меню-бар рекор
 | `update_entry` | Обновить content/summary/title/date/file |
 | `upload_file` | Загрузить файл в Storage (base64, до ~4MB) |
 | `get_storage_stats` | Статистика базы |
-| `get_tasks` | Задачи с фильтрами: assignee, country, status, period |
+| `get_tasks` | Задачи с фильтрами: assignee, country, status, period, label, project, no_project (задачи вне проектов); в строке — id и проект, при усечении «показаны N из M» |
 | `add_task` / `update_task` / `delete_task` | CRUD задач |
 | `get_meetings` | Последние встречи из Read.ai |
 | `whoami` | Кто вызывающий по токену: имя, внутренний ID, воркспейс |

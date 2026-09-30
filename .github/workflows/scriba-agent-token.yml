@@ -1,0 +1,70 @@
+# Токен бота встреч scriba на проде (руками).
+#
+# Запись в прод идёт только через Actions, не через MCP и не через SQL в руках человека.
+# Сам токен сюда не попадает никогда: его рождают на машине бота, там же и хранят, а сюда
+# приносят только sha256-hex (по нему сервер узнаёт бота, обратно токен из него не получить).
+# Повторный запуск с новым хешем = ротация: старый токен гаснет в тот же момент.
+name: Токен бота scriba (руками)
+
+on:
+  workflow_dispatch:
+    inputs:
+      token_hash:
+        description: "sha256-hex токена бота (64 символа), не сам токен"
+        type: string
+        required: true
+      workspace:
+        description: "Воркспейс, который бот обслуживает (id из workspaces)"
+        type: string
+        required: true
+      active:
+        description: "Бот включён (false — выключить без удаления строки)"
+        type: boolean
+        default: true
+
+concurrency:
+  group: deploy-window          # общая с раскаткой: две операции над продом разом не нужны
+  cancel-in-progress: false
+
+jobs:
+  token:
+    name: Записать хеш токена
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Проверить ввод
+        env:
+          TOKEN_HASH: ${{ inputs.token_hash }}
+          WORKSPACE: ${{ inputs.workspace }}
+        run: |
+          # Строгие шаблоны — они же защищают SQL ниже от подстановки.
+          [[ "$TOKEN_HASH" =~ ^[0-9a-f]{64}$ ]] || { echo "отказ: token_hash не sha256-hex (64 символа 0-9a-f)" >&2; exit 1; }
+          [[ "$WORKSPACE" =~ ^[a-z0-9_-]{1,64}$ ]] || { echo "отказ: workspace не похож на id воркспейса" >&2; exit 1; }
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.118.0
+      - name: Записать
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          TOKEN_HASH: ${{ inputs.token_hash }}
+          WORKSPACE: ${{ inputs.workspace }}
+          ACTIVE: ${{ inputs.active }}
+        run: |
+          supabase link --project-ref vbqglndbxkpmreccpqmr
+          cat > /tmp/agent.sql <<SQL
+          do \$\$
+          begin
+            if not exists (select 1 from public.workspaces where id = '$WORKSPACE') then
+              raise exception 'воркспейса % нет', '$WORKSPACE';
+            end if;
+          end \$\$;
+          insert into public.service_agents (id, name, group_id, token_hash, is_active)
+          values ('scriba', 'scriba', '$WORKSPACE', '$TOKEN_HASH', $ACTIVE)
+          on conflict (id) do update
+            set group_id = excluded.group_id,
+                token_hash = excluded.token_hash,
+                is_active = excluded.is_active;
+          select id, group_id, is_active, left(token_hash, 8) as hash_prefix
+            from public.service_agents where id = 'scriba';
+          SQL
+          supabase db query --linked -f /tmp/agent.sql

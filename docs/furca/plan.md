@@ -1,179 +1,239 @@
-<!-- plan.md — HOW we build: stack, architecture, decomposition into blocks. Filled in during the spec and plan phase from the research report and the brainstorm; block agents read this file as the source of the contracts between blocks. -->
+# Технический план — `scriba`
 
-# Technical plan
+2026-09-17 · **Статус: ждёт утверждения владельцем на гейте**
 
-<!-- Project name, date of agreement. -->
+## Стек с обоснованием
 
-**Доска инициатив в «Спринтах» Swarm Brain**, 18.09.2026.
-
-## Stack with rationale
-
-<!-- Every technology choice comes with a "why", not just a name. Example: "PostgreSQL — relational data with a clear schema; the alternative (a document database) was considered and rejected — there are more relationships here than documents". -->
-
-Стек не выбирается: фича встраивается в работающий продукт и берёт его стек целиком.
-
-| Что | Чем | Почему именно так |
+| Что | Выбор | Почему именно так |
 |---|---|---|
-| Данные | Supabase Postgres 17 | продукт уже там; спринты #267 живут в `sprint_cycles`/`sprint_items`, механику не переписываем |
-| Приёмка спринта | plpgsql-функция, вызов через `rpc` | запрос PostgREST — одна транзакция, блокировка строки держится до конца; нынешний `acceptCycle` делает шаги отдельными запросами и допускает половинчатую приёмку — ровно баг Plane [#9599](https://github.com/makeplane/plane/issues/9599) |
-| Упоминание удалённой задачи | триггер `before delete on tasks` | задачи удаляет не только API: бот удаляет напрямую при работе со встречей. Код такой путь пропустит, триггер — нет. Проверено на локальной базе: `BEFORE DELETE` успевает до обнуления ссылки внешним ключом |
-| Счётчик переносов | поле `carry_count` | рекурсивный обход `carried_from` считался бы на каждой отрисовке строки |
-| Сервер | Deno Edge Functions, `supabase-js@2` | как весь Swarm; новые роуты — отдельными модулями, `swarm-api/index.ts` уже 2443 строки при пределе 800 (#265) |
-| Веб | Next.js 16.2.6, React 19.2.4, Base UI, Tailwind 4 | как весь веб Swarm; свои выпадающие списки — через общий `ui/select`, нативные владелец отверг |
-| Даты | строки `YYYY-MM-DD` + `Intl` с зоной Europe/Belgrade | `new Date('YYYY-MM-DD')` — полночь UTC, в паре с локальным форматированием даёт сдвиг дня; Temporal в Safari стабильно недоступен (D005) |
+| Язык бота | **TypeScript, Node 24 LTS** | сердце бота — Playwright, он живёт в экосистеме Node. Node 20 мёртв (EOL 30.04.2026 по официальному расписанию), поэтому 24. Перенос кода `bumblebee` отвергнут осознанно: переносимо 818 строк из 5451 (15%), переписать дешевле, чем тащить Swift-toolchain в Linux-контейнер |
+| Браузер | **Playwright 1.63.0**, образ `mcr.microsoft.com/playwright:v1.63.0-noble` | официальный образ с Chromium 153. **Xvfb и PulseAudio в нём нет** — проверено по сырому Dockerfile, ставим сами |
+| Экран | **Xvfb**, Chromium в **headed**-режиме | сходящаяся практика всех найденных ботов: headless чаще ломает звук и чаще палится детектом |
+| Звук | **PulseAudio null-sink → ffmpeg → m4a/AAC** | совпадает с форматом, который `meeting-ingest` уже принимает. Рецепт взят у `screenappai/meeting-bot`: `XDG_RUNTIME_DIR`, `--exit-idle-time=-1`, поллинг готовности, обязательный `set-default-sink`, самопроверка monitor-source |
+| Нарезка | **ffmpeg `segment` по времени** | у muxer'а `segment` **нет** опции нарезки по размеру в байтах — режем по `segment_time`, пересчитанному из битрейта AAC под лимит 25 МБ. `reset_timestamps` включаем руками, по умолчанию он выключен |
+| Контейнеры | **dockerode** из Node | прецедент того же паттерна — `github/dependabot-action`. Оркестратор живёт **внутри WSL2** рядом с Docker: не пересекать границу Windows/WSL2 — меньше мест, где всё встанет незаметно |
+| Сервер | **TypeScript/Deno**, существующий | продукт работает, его стек и есть ответ. Правки — только добавлением полей |
 
-## Architecture
+**Чего сознательно не берём:** Vexa/Attendee/Recall.ai как продукт (ни один не умеет Контур.Толк);
+дорожки на каждого участника (решение D008); правку SDP ради экономии видео (трюк мёртв с Chromium
+M138, у нас 153 — вместо него штатная настройка Meet «Audio only»).
 
-<!-- The top-level picture: which parts the system consists of and how they interact (in prose or as a diagram). Detailed enough to decide where the boundaries between blocks run. -->
+**Лицензионная граница.** Из Vexa (Apache-2.0) код заимствуем с атрибуцией. Из Attendee
+(Elastic License 2.0) — **не заимствуем**, только приёмы: репозиторий публичный и без файла лицензии.
 
-Слои те же, что у продукта: база → чистая логика → роуты → экраны.
+## Архитектура
 
-- **База** держит правила, которые нельзя доверить коду: один живой спринт на пространство (частичный
-  уникальный индекс), атомарная приёмка (функция), упоминание удалённой задачи (триггер).
-- **Чистая логика** (`_shared/tasks/`, `miniapp/src/lib/`) считает: кто уезжает и почему, итоги спринта,
-  прогресс инициатив, семь таблиц аналитики, выгрузку. Здесь ошибка молчит — это ядро, тесты вперёд.
-- **Роуты** `swarm-api` проверяют права, воркспейс и приватность, вызывают функцию приёмки и отдают данные.
-  Прямых запросов к задачам мимо проверок нет: RLS без политик, замок только в коде.
-- **Экраны** — вкладка «Спринты»: пространства, спринт (список и канбан), сверка, все инициативы,
-  аналитика, журнал. Канбан #267 сохраняется как один из видов.
+```
+┌─ MUSPELHEIM (WSL2) ──────────────────────────────────────┐
+│  orchestrator (Node, долгоживущий)                       │
+│     └─ поднимает и гасит контейнеры, шлёт heartbeat      │
+│                                                           │
+│  ┌─ контейнер на ОДНУ встречу (эфемерный) ─────────────┐ │
+│  │  Xvfb :99 · PulseAudio null-sink · Chromium · ffmpeg │ │
+│  │  supervisor (Node): meet-adapter + swarm-client      │ │
+│  └──────────────────────────────────────────────────────┘ │
+└───────────────────────────────────────────────────────────┘
+              │ HTTPS, Bearer-токен бота
+              ▼
+   Supabase Edge Functions (существующие, расширяются)
+   meeting-current · -claim · -ingest · -heartbeat · -status
+              │
+              ▼
+   существующий конвейер: транскрибация → тезисы → очередь вычитки
+```
 
-Сквозное правило: задача в спринте остаётся обычной задачей. Ни спринт, ни пространство не заводят
-параллельной сущности задачи — только строку состава со снимком.
+**Одна встреча = один контейнер.** Изоляция обязательна: PulseAudio-sink и дисплей — глобальные
+ресурсы, два бота в одном контейнере запишут друг друга.
 
-## Blocks and dependency graph
+**Граница хрупкости.** Всё, что знает о вёрстке площадки, живёт только в адаптере. Остальной код
+работает с интерфейсом `join(url, displayName)` / `waitAdmitted()` / `activeSpeaker()` / `isAlone()` /
+`leave()` и о площадках не знает.
 
-<!-- Every block is a logical unit of the product with its own spec (docs/furca/blocks/<name>.md), its own contract and its own working tree. The graph below says which block waits for another's contract to be ready (a real dependency, not merely "related").
+## Блоки и граф зависимостей
 
-A product with an interface must have a `visual` block: the shared visual system (grid, typography, colours, components, states) built from the screen reference in docs/furca/design/. It comes before the blocks that draw screens — otherwise every block invents its own button, and reconciling them afterwards costs more than agreeing up front. It is declared here, not added later: on a live project the block appeared only after the owner said he could not even test the product. -->
+| Блок | Где | Что делает |
+|---|---|---|
+| `identity` | сервер | токен бота, подмена личности на входе, правки трёх эндпоинтов |
+| `ingest-speakers` | сервер | приём таймлайна говорящих, сведение с сегментами |
+| `conference-link` | сервер | площадка по хосту, `description` как источник, явная причина отказа |
+| `container` | бот | образ, Xvfb, PulseAudio, ffmpeg, самопроверка звука |
+| `meet-adapter` | бот | вход в Meet, дверь, активный говорящий, выход |
+| `swarm-client` | бот | клиент пяти эндпоинтов, очередь выгрузки с ретраями |
+| `orchestrator` | бот | жизненный цикл контейнеров, heartbeat |
+| `notices` | сервер | уведомления владельцу встречи |
 
 ```mermaid
 graph TD
-  %% one node per block, an arrow means "depends on". Example: block_web --> block_api
+  identity --> ingest_speakers
+  identity --> notices
+  container --> meet_adapter
+  identity --> swarm_client
+  ingest_speakers --> swarm_client
+  meet_adapter --> swarm_client
+  conference_link --> orchestrator
+  swarm_client --> orchestrator
+  container --> orchestrator
 ```
 
-```mermaid
-graph TD
-  db[db — схема, триггер, функция приёмки, права]
-  core[core — чистая логика: перенос, итоги, ссылки, аналитика]
-  api[api — роуты swarm-api]
-  visual[visual — визуальный язык доски]
-  web[web — экраны вкладки «Спринты»]
-  demo[demo — сид демо-пространства]
+Стрелка означает «зависит от контракта». `identity` — корень: без него ни один серверный вызов бота
+не проходит, поэтому он строится первым.
 
-  db --> core
-  api --> db
-  api --> core
-  web --> api
-  web --> visual
-  web --> core
-  demo --> db
-```
+## Контракты между блоками
 
-`db --> core`: тест функции приёмки сверяет её результат с `planCarry` — логика переноса описана один раз
-в TypeScript, SQL обязан ей совпадать.
-
-## Contracts between blocks
-
-<!-- For every pair of dependent blocks — exactly what one provides to the other: precise function signatures, endpoints, message formats, data schema. That is what allows blocks to be built in parallel without waiting for each other.
-
-Every contract has an executable check on BOTH sides: the consumer verifies that it calls what was declared, the provider that it returns what was declared. Both live in their own blocks and turn red separately. Why: blocks are built in parallel by agents that cannot see each other, and otherwise a divergence surfaces at merge time — that is, for whoever did not introduce it. This is the very case contract testing was invented for (consumer-driven contracts); we do not bring in the broker machinery — both sides of the contract live in one repository. Basis: docs/research/2026-08-28-testing-industry.md. -->
-
-**core → api, db, web** (`supabase/functions/_shared/tasks/`, чистые функции):
+### `identity` → всем, кто ходит на сервер
 
 ```ts
-// sprint-carry.ts
-export type CarryKind = "stay" | "manual" | "auto" | "mention";
-export function planCarry(items: readonly SprintItemView[]): { id: string; kind: CarryKind }[];
+// _shared/agent-auth.ts
+export type TokenKind = "recorder" | "recorder_prev" | "mcp" | "bot";
+export interface AgentIdentity { telegramId: number; groupId: string | null; kind: TokenKind }
 
-// sprint-stats.ts (расширяется)
-export function computeSprintStats(items: readonly SprintItemView[]): SprintStats;
-//   + ключи carried_manual, carried_auto, check_ok, check_risk, check_problem, removed, cancelled
-//   отменённая не входит ни в planDone, ни в знаменатель planPercent (D010)
-
-// sprint-cycles.ts
-export function nextCycleDates(prev: { start_date: string; end_date: string; name: string }):
-  { start_date: string; end_date: string; check_date: string; name: string };
-
-// links.ts
-export function parseLinks(input: unknown): { title: string | null; url: string }[]; // бросает на негодном
+// Подмена личности ОДИН раз на входе: после неё весь существующий код не знает, что пришёл бот.
+export async function resolveActingIdentity(
+  supabase: SupabaseClient, req: Request, onBehalfOf?: number,
+): Promise<AgentIdentity>;
 ```
 
-**db → api** (SQL):
+Правила, проверяемые тестами с обеих сторон:
+- `kind: "bot"` **обязан** передать `on_behalf_of`, иначе прав нет ни на что;
+- `kind: "recorder"` передать `on_behalf_of` **не может** — 403;
+- указанный человек обязан существовать, быть активным и быть в том же воркспейсе, что встреча;
+- на выходе `telegramId` — **человек**, не бот: `claim_owner` и `owner_id` остаются человеческими.
 
-```sql
-accept_sprint_cycle(p_cycle_id uuid, p_stats jsonb, p_next jsonb) returns jsonb
--- {next_cycle_id uuid, carried int, mentions int}; отказ — RAISE EXCEPTION (код P0001)
--- 23505 — параллельная приёмка или второй живой спринт
+### `ingest-speakers` → `swarm-client`
+
+```jsonc
+// поле speakers формы meeting-ingest: необязательное, времена в секундах от начала записи
+[{ "start": 0.0, "end": 12.4, "name": "Василий Гарро" }]
 ```
-плюс поля §5 спеки, частичный уникальный индекс `uniq_sprint_cycles_live_per_tab`, триггер
-`before delete on tasks`, гранты только `service_role`.
 
-**api → web** (HTTP, `swarm-api`): `GET /sprint-cycles?tab_id=` · `POST /sprint-cycles` ·
-`POST /sprint-cycles/:id/start` · `POST /sprint-cycles/:id/accept` · `DELETE /sprint-cycles/:id` (админ) ·
-`GET|POST|DELETE /sprint-cycles/:id/items` · `PATCH /sprint-cycles/:id/items/:taskId` (сверка и перенос) ·
-`GET /spaces/:tabId/journal?days=` · поля `links` у задач и `owner_telegram_id`/`start_date`/`end_date`
-у проектов.
+- нет поля → поведение ровно нынешнее (`sys` → «собеседник»), **мягкая деградация**;
+- имя подставляется в `Segment.speaker` по перекрытию интервалов;
+- перекрытия и дыры разрешены: не нашли имя на сегмент — оставляем прежнюю метку.
 
-**visual → web**: строка задачи, плашка исполнителя с цветом, метки (перенос, сверка, «не отмечено»,
-«×N», «просрочено», «удалена»), полоска прогресса, баннер, шкала ритуала, таблица аналитики, переключатель
-вида — компонентами, а не копиями разметки в каждом экране.
+### `conference-link` → `orchestrator`
 
-**Проверка контракта с обеих сторон:** у `core` — тесты чистых функций; у `db` — тест функции приёмки на
-локальной базе, сверяющий её результат с `planCarry`; у `api` — тесты гвардов (чужой воркспейс → 400,
-второй живой спринт → 409, действия на принятом → 409, удаление не-админом → 403); у `web` — типы ответов
-из общего `types.ts` и прогон экранов.
+```ts
+// ответ meeting-current, дополнительно к существующему join_url
+{ join_url: string | null, platform: "meet" | "kontur" | "zoom" | null, reason?: "no_conference_link" }
+```
 
-## Quality gates
+### `container` → `meet-adapter`
 
-<!-- How this project is checked by machine — one row per role. Six roles are mandatory: formatting, type-aware linting, type checking, tests with a coverage threshold, dead code, module boundaries. Tool sets per stack, and situational checks with their conditions for switching on, live in the admissio skill. -->
+Готовое окружение: `DISPLAY=:99`, PulseAudio с null-sink и **проверенным** monitor-source, ffmpeg в
+`PATH`, Chromium запускается с `ignoreDefaultArgs: ['--mute-audio']`.
 
-| Role | Command | Tool |
-| --- | --- | --- |
+### `meet-adapter` → `swarm-client`
 
-| Формат | `deno fmt --check <файлы фичи>` | deno (встроено) |
-| Линт с типами | `deno lint <файлы фичи>` | deno (встроено) |
-| Проверка типов | `deno check <точки входа функций>` + `tsc --noEmit` в `miniapp/` | deno, TypeScript 5 |
-| Тесты с порогом покрытия | `deno test --coverage` (два прогона: функции с типами, веб с `--no-check` — #383) + `scripts/gate-coverage.sh` | deno + свой гейт по lcov |
-| Мёртвый код | `deno run -A scripts/check-graph.ts` | свой разбор импортов |
-| Границы модулей | он же | свой разбор импортов |
+```ts
+export interface PlatformAdapter {
+  join(url: string, displayName: string): Promise<void>;
+  waitAdmitted(timeoutMs: number): Promise<"admitted" | "denied" | "blocked" | "unavailable" | "timeout" | "captcha">;
+  activeSpeaker(): Promise<string | null>;
+  isAlone(): Promise<boolean>;
+  leave(): Promise<void>;
+}
+```
 
-Формат, линт, мёртвый код и границы действуют **на файлах фичи** (`scripts/feature-paths.txt`): замер
-18.09.2026 показал 24 неотформатированных файла из 26 и 15 замечаний линта в существующем коде —
-включать роли на весь репозиторий значит получить красный гейт на чужом коде и отключить правило.
-Готового инструмента границ под Deno нет: `dependency-cruiser` молча пропускает URL-импорты и даёт ложное
-«нарушений нет», поэтому разбор свой.
+## Проверки качества
 
-**Единая команда прогона:** `scripts/check` (она же `make check`).
+Шесть обязательных ролей. Стека два, поэтому по две строки на роль.
 
-**Машинный отчёт прогона:** `reports/check.json` — по строке на роль (`role`, `status`, `executed`,
-`skipped`, `detail`), плюс JUnit XML обоих тестовых прогонов в `reports/tests-*.junit.xml`. Приёмка читает
-отчёт, а не код возврата: пропущенная проверка и пустое покрытие считаются падением.
+| Роль | Команда | Чем |
+|---|---|---|
+| Формат | `prettier --check bot/` · `deno fmt --check supabase/` | Prettier с дефолтами · встроено в Deno |
+| Линт с типами | `eslint bot/` · `deno lint supabase/` | ESLint 10 flat config, `typescript-eslint` `strictTypeChecked` + `stylisticTypeChecked`, `sonarjs`, `unicorn`, `depend` · встроено |
+| Типы | `tsc --noEmit -p bot/` · `deno check` изменённых функций | строгий tsconfig, `noUncheckedIndexedAccess` включить **до** появления кода |
+| Тесты и порог | `vitest run --coverage` · `deno test --coverage=cov` + `scripts/gate-coverage.sh` | у `deno coverage` **нет** флага порога — считаем по lcov (`LF`/`LH`), пустой отчёт = красный |
+| Мёртвый код | `knip` (бот) | для Deno готового аналога нет — роль закрыта только на стороне бота, это осознанный пробел |
+| Границы модулей | `depcruise bot/` | правило выводится из графа выше: блок импортирует только то, от чего зависит; обратное направление запрещено |
 
-**Порча:** `make porcha` (`scripts/porcha`) — ломает каждый модуль ядра и требует, чтобы тесты упали;
-отдельно краснеет, если подстановка не применилась.
+**Карантин свежих версий:** `min-release-age=7` в `bot/.npmrc` — ставится с первой установкой
+зависимостей, вместе с установкой из лока в CI, иначе обходится сам собой.
 
-<!-- Module boundaries are derived mechanically from the block graph above: a block imports only what it depends on in the graph; the reverse direction is forbidden. This is the only check that catches a violation invisible inside a single working copy and surfacing only at merge time. -->
+**Единая команда прогона:** `scripts/check` — исполняемый файл в репозитории. Её зовут приёмка блока,
+хук `pre-push` и CI: одна точка входа, иначе «на моей машине зелено» перестаёт что-либо значить.
 
-**Single run command:** <path to an executable, for example `scripts/check`>
+**Машинный отчёт прогона:** JUnit XML в `reports/check.xml`. Приёмка читает **его**, а не код
+возврата: код одинаков и при двухстах выполненных проверках, и при нуле зарегистрированных.
 
-<!-- One entry point that runs the whole canonical set and writes the machine-readable report. Block acceptance calls it, the pre-push hook calls it, and CI calls it — all three the same one, otherwise they drift apart and "it's green on my machine" stops meaning anything. It is declared here machine-readably, not described in prose in the README. -->
+**Хук:** `.githooks/pre-push` зовёт `scripts/check`; включается `git config core.hooksPath .githooks`.
+Хук **обязан падать, когда инструмента нет**, а не пропускать проверку молча. В репозитории уже есть
+`.githooks/pre-commit` с `deno check` — он остаётся, `pre-push` добавляется рядом.
 
-**Machine-readable run report:** <format and the path the runner writes it to>
+### Что поставлено фактически (17.09.2026, T002)
 
-<!-- The report acceptance reads instead of the exit code: how many checks ran, how many were skipped and why. Every common runner can emit JUnit XML; a native JSON format works too. The format is declared here rather than hard-wired into the core: runners differ between projects. Not declared — acceptance has nothing to read, and the gate falls back to the exit code, which does not distinguish two hundred green checks from zero registered ones. -->
+| Роль | Бот | Сервер |
+|---|---|---|
+| Формат | `prettier --check .` | `deno fmt --check` **по затронутым файлам** (D013) |
+| Линт с типами | ESLint 10 flat, `typescript-eslint` strict+stylistic typeChecked, `sonarjs`, `unicorn` | `deno lint` по затронутым файлам |
+| Типы | `tsc --noEmit`, `noUncheckedIndexedAccess` и `exactOptionalPropertyTypes` включены до кода | `deno check` по **всем** функциям |
+| Тесты и порог | `vitest run --coverage` → JUnit в `reports/check.xml` | `deno test --coverage` |
+| Порог покрытия | `scripts/gate-coverage.sh` — **относительный**: ниже прошлой приёмки = красный | то же; база сервера 85.21% (2701/3170 строк) |
+| Мёртвый код | `knip` | инструмента под Deno нет — пробел объявлен в отчёте прогона, а не замолчан |
+| Границы модулей | `depcruise`, правила выведены из графа блоков бота | то же — пробел объявлен |
 
-## Risks
+**Дополнено после первой сдачи блока (17.09.2026).** Блок `conference-link` в отчёте назвал
+четыре дефекта гейта, все подтвердились и все закрыты:
 
-<!-- Risk → mitigation. What can go wrong when integrating blocks, in the choice of stack, during deployment — and what to do if it happens. -->
+1. **Машинного отчёта у сервера не было вовсе** — JUnit писал только `vitest`, а тестов бота ещё
+   нет, так что приёмка серверного блока читала пустоту. Добавлен `deno test --junit-path`,
+   отчёт в `reports/check-server.xml`; на основной копии — 632 выполненные проверки, 0 падений.
+2. **Базу покрытия поднимал сам блок** — строка одна на всех, а блоки идут параллельно: каждый
+   готовил конфликт при слиянии и поднимал порог соседям, которые под него не работали. Теперь
+   база поднимается только флагом `--promote`, и зовёт его приёмка, а не блок.
+3. **`deno lint` краснел на https-импортах** (`no-import-prefix`), хотя они канон репозитория:
+   edge-функции деплоятся без карты импортов. Блок гасил их точечными `deno-lint-ignore` —
+   следующий повторил бы. Правило снято один раз в `supabase/functions/deno.json`.
+4. **`deno fmt` переформатировал тронутый легаси целиком** — умолчательная ширина 80 против
+   фактических 162 символов в 95-м процентиле существующего кода. Ширина задана 120 в том же
+   конфиге, иначе правка на три строки приходит диффом на триста.
+
+**Каждая роль проверена порчей 17.09.2026** — испорченный вход, красный прогон, возврат копией. Порча
+вскрыла два молчаливых сбоя в самом гейте: `mapfile` отсутствует в bash 3.2 на macOS (список файлов
+оставался пуст, прогон выходил ЗЕЛЁНЫМ) и `git diff` не показывает новые файлы, а блоки создают именно
+их. Оба закрыты, и в `scripts/check` добавлена ловушка: ошибка самого скрипта — красный, а не пропуск.
+
+**Автофикс линта не трогает данные тестов** (28.09.2026, issue #460). `eslint --fix` правит
+значения, а не только форму: `unicorn/prefer-https` молча переписал "http://…" в тесте отказа от
+ссылки без TLS, и проверка стала тавтологией. В `bot/eslint.config.js` файлы `src/**/*.test.ts`
+идут через процессор без `supportsAutofix` — замечания остаются и валят линт, но `--fix` их не
+применяет. Шаг `scripts/check` «бот · автофикс не трогает данные тестов»
+(`npm --prefix bot run lint:autofix-guard`) дописывает к настоящему тесту пробу с "http://" и
+краснеет, если автофикс её переписал бы или если проба не сработала вовсе. Порча: без процессора
+и с выключенным правилом — красный с внятной причиной.
+
+**Лимиты уведомлений проверяются живой базой в CI** (28.09.2026, issue #546). Потолки решает
+функция Postgres `meeting_notice_reserve` под блокировкой по получателю, и в `scripts/check` базы
+нет. Workflow `.github/workflows/scriba-notices-smoke.yml` поднимает в раннере `supabase start`
+(все миграции, только база + REST + auth ради ключа) и гоняет `scripts/scriba-notices-smoke.ts`;
+запускается на правки миграций, `meeting-notice`, `_shared` и самого смоука. Порча: снятая
+`pg_advisory_xact_lock` в копии миграции — смоук красный дважды подряд («суточный потолок пробит
+параллельными вызовами…»), после возврата — зелёный, 37 сценариев.
+
+**Две записи одной встречи проверяются живым контуром в CI** (28.09.2026). Правило «вторая запись
+заменяет стенограмму, только если полнее» держат настоящие `meeting-claim` / `meeting-ingest` /
+`meeting-process` поверх базы и Storage, а юнит-тесты `_shared/` видят только место вызова арбитра.
+Workflow `.github/workflows/scriba-same-owner-smoke.yml` поднимает `supabase start` (база + REST +
+auth + Storage; edge-runtime не нужен — функции смоук запускает сам процессами Deno, OpenAI и
+Telegram подменены) и гоняет `scripts/scriba-same-owner-smoke.ts`; запускается на правки миграций,
+трёх функций, `_shared` и самого смоука. Порча «заменять стенограмму всегда» (`if (false && …)` у
+вызова `keepCurrentTranscript`) — смоук красный: «D (бот в обработке, рекордер полнее): … состав
+={"bot":6}»; после возврата — зелёный, 17 ожиданий.
+
+**Карантин версий** (`bot/.npmrc`, `min-release-age=7`) проверен тем же способом: с заведомо большим
+порогом npm отбивает установку с `ENOVERSIONS`.
+
+**Длительность прогона:** тёплый полный `scripts/check` — около 6 секунд, поэтому гонять его после
+каждой правки дёшево. Холодный прогон в свежей копии дороже на установку зависимостей (`npm ci --prefix bot`).
+
+## Риски
 
 | Риск | Что делаем |
 |---|---|
-| Половинчатая приёмка: снимок зафиксирован, хвосты не переехали (баг Plane #9599) | вся приёмка — одна plpgsql-транзакция с блокировкой строки; тест на локальной базе сверяет результат с `planCarry`; повторный вызов отбивается |
-| Старый веб в ночь раскатки между функциями и вебом | `tab_id` необязателен, `GET /sprint-cycles` без параметра отдаёт всё как раньше; порядок раскатки миграция → функции → веб |
-| Триггер удаления ошибётся и заблокирует удаление задачи | трогает только незамороженные строки состава этой задачи; тест на удаление через API и прямым `delete`; при отказе удаление задачи недоступно — проверяем до раскатки |
-| Снятие «только админ» открывает создание спринтов демо-пользователю | демо изолировано барьером `isDemo` в воркспейсе `demo`; тест гварда |
-| Перенос задваивает хвосты при гонке | уникальность `(cycle_id, task_id)` + `23505` ловится по коду ошибки, не по тексту |
-| Supabase 30.10.2026 снимает автогранты на новые объекты | миграция прописывает `GRANT` явно (D006) |
-| Правка `miniapp/` уедет на прод раньше времени: пуш в `main` пересобирает веб | работа только в ветке, вливание — ночным окном по «да» владельца |
-| Файлы состояния FURCA столкнутся с двумя другими проектами в репозитории | в `main` они не вливаются до GarroV/furca#140 (D004) |
-| Внутренние данные утекут в публичный репозиторий | артефакт и выгрузки живут в `workbench/private`; в git — ни строки (уже нарушалось 18.09.2026) |
+| 🔴 **Звук пишется как тишина** (`--mute-audio` по умолчанию) | `ignoreDefaultArgs`, самопроверка monitor-source при старте, **смоук, который падает на тишине**. Это единственный риск, который не виден в логах вообще |
+| 🔴 **Google блокирует бота** | не ставить `--ignore-certificate-errors`, движения мыши синтетические, вход под аккаунтом при повторных блокировках. Домашний IP MUSPELHEIM здесь преимущество: банят прежде всего датацентровые |
+| 🟡 **Вёрстка Meet меняется** | селекторы по `aria-label`/`role`, пиннинг локали (`?hl=en` + `--lang=en-US`), вся вёрстка — только в адаптере |
+| 🟡 **Регресс у `bumblebee`** | все правки эндпоинтов — добавлением полей; регрессный прогон рекордера в DoD каждого серверного блока |
+| 🟡 **MUSPELHEIM лёг** | приемлемо, пока бот работает параллельно с `bumblebee`: не записал бот — записал человек. Как только бот станет единственным источником, переезд обязателен |
+| 🟡 **Запас памяти площадки** | замер 17.09: свободно ~9.3 ГиБ против 13.5 в спеке. Боту нужно ~2.4 ГБ в пике. Площадка общая — следить при росте чужих проектов |
+| 🟢 **Двойная оплата OpenAI** | принято владельцем (D006) на время проверки |

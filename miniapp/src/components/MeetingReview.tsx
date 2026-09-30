@@ -1,11 +1,14 @@
 "use client";
 import { useState, useEffect, useCallback, useContext } from "react";
-import { fetchAgentMeeting, fetchAgentMeetingNotes, patchAgentMeetingDraft, renameAgentMeeting, publishAgentMeeting, resummarizeAgentMeeting, deleteAgentMeeting } from "@/lib/api";
+import { askMeeting, fetchAgentMeeting, fetchAgentMeetingNotes, patchAgentMeetingDraft, renameAgentMeeting, publishAgentMeeting, resummarizeAgentMeeting, deleteAgentMeeting } from "@/lib/api";
 import type { AgentMeeting, MeetingLiveNote } from "@/types";
-import { DetailPanelContext, NavHeader, SectionLabel, TezisyBlocks, Segmented } from "@/components/roy/ui";
+import { DetailPanelContext, NavHeader, SectionLabel, Segmented } from "@/components/roy/ui";
 import { RoyIcon } from "@/components/roy/icons";
 import { ActionChip } from "@/components/roy/screens/MeetingDetail";
-import { PanelEditor } from "@/components/roy/PanelEditor";
+import { TezisyEditor } from "@/components/roy/tezisy/TezisyEditor";
+import { TezisyReader } from "@/components/roy/tezisy/TezisyReader";
+import type { AskApply } from "@/components/roy/tezisy/AskPopover";
+import { applyAskAnswerToText } from "@/lib/tezisyLines";
 import { useDt, useRoyNav } from "@/components/roy/nav";
 import { useConfirm } from "@/components/ui/confirm";
 import { hasSeveralOwners, canDeleteDraft } from "@/lib/draftOwners";
@@ -118,6 +121,14 @@ export function MeetingReview({ id, onClose, onChanged }: Props) {
     } finally { setSaving(false); }
   };
 
+  // Точечный вопрос по выделенному в тезисах: ответ из режима чтения открывает правку уже со
+  // вставленным ответом — сохраняет человек, как любую правку.
+  const askDraft = (fragment: string, question: string) => askMeeting("draft", id, fragment, question);
+  const applyFromReading = (answer: string, mode: AskApply, fragment: string) => {
+    setDraft(applyAskAnswerToText(meeting?.draft_notes_md ?? "", fragment, answer, mode));
+    setEditing(true);
+  };
+
   const handlePublish = async () => {
     setPublishing(true);
     try {
@@ -194,9 +205,9 @@ export function MeetingReview({ id, onClose, onChanged }: Props) {
 
   const tezBlock = notesReady ? (
     editing ? (
-      <PanelEditor value={draft} onChange={setDraft} onSave={handleSave} busy={saving}
+      <TezisyEditor value={draft} onChange={setDraft} onSave={handleSave} busy={saving}
         onCancel={() => { setDraft(meeting.draft_notes_md ?? ""); setEditing(false); }}
-        label={dt("Тезисы встречи", "Meeting summary")} />
+        label={dt("Тезисы встречи", "Meeting summary")} ask={hasTranscript && !published ? askDraft : undefined} />
     ) : (
       <div className="mb-4 px-4 py-3.5" style={{ background: "var(--accent-soft)", border: "1px solid var(--accent-line)", borderRadius: 10 }}>
         <div className="mb-1.5 flex items-center justify-between gap-2">
@@ -210,7 +221,8 @@ export function MeetingReview({ id, onClose, onChanged }: Props) {
             </button>
           )}
         </div>
-        <TezisyBlocks text={meeting.draft_notes_md ?? ""} copyMeta={{ title: meeting.title, date: meeting.started_at }} />
+        <TezisyReader text={meeting.draft_notes_md ?? ""} copyMeta={{ title: meeting.title, date: meeting.started_at }}
+          ask={hasTranscript && !published ? askDraft : undefined} onApply={applyFromReading} />
       </div>
     )
   ) : summaryTerminal ? (

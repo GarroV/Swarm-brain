@@ -47,14 +47,18 @@ Deno.test("telegram: привязан → connected", () => {
   assertEquals(stateOf(input({ telegramLinked: true }), "telegram"), "connected");
 });
 
-Deno.test("сортировка: требующие внимания идут первыми, подключённые — последними", () => {
-  const list = buildConnectors(input({
+// Плитка не прыгает при смене состояния: порядок один и тот же, что бы ни было подключено.
+Deno.test("порядок постоянный: состояние не переставляет плитки", () => {
+  const order = (i: ConnectorsInput) => buildConnectors(i).map((c) => c.id);
+  const fresh = order(input({ botAutojoin: false }));
+  const mixed = order(input({
     services: ["google_calendar", "granola"],
     recorder: { active: true, expiresAt: inDays(-1) },
     mcp: { active: true, expiresAt: null },
-    telegramLinked: false,
+    botAutojoin: true,
   }));
-  assertEquals(list.map((c) => c.id), ["recorder", "telegram", "calendar", "granola", "claude"]);
+  assertEquals(fresh, ["calendar", "recorder", "bot", "telegram", "granola", "claude"]);
+  assertEquals(mixed, fresh);
 });
 
 Deno.test("сводка считает подключённые и требующие внимания", () => {
@@ -69,4 +73,14 @@ Deno.test("сводка считает подключённые и требую�
 Deno.test("expiring тоже требует внимания в сводке", () => {
   const list = buildConnectors(input({ recorder: { active: true, expiresAt: inDays(3) } }));
   assertEquals(connectorsSummary(list).attention, 1);
+});
+
+Deno.test("бот: автозапуск включён → connected, выключен → off", () => {
+  assertEquals(stateOf(input({ botAutojoin: true }), "bot"), "connected");
+  assertEquals(stateOf(input({ botAutojoin: false }), "bot"), "off");
+});
+
+// В демо бот не ходит: карточки нет вовсе, а не «выключен».
+Deno.test("бот: автозапуск не передан (демо) → карточки нет", () => {
+  assertEquals(buildConnectors(input()).some((c) => c.id === "bot"), false);
 });

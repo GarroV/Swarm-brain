@@ -1,0 +1,213 @@
+/**
+ * Окружение процесса встречи: имена переменных в одном месте и проверка на входе.
+ *
+ * Оркестратор кладёт их в контейнер при создании; процесс встречи читает здесь. Пустая
+ * или кривая обязательная переменная — отказ на старте с именем переменной, а не встреча,
+ * которая «пошла» и молча записала в никуда. Список совпадает с `bot/container/.env.example`.
+ */
+import type { CalendarReference, InviteReference } from "./claim-request.ts";
+import { BOT_PROFILE } from "./profile.ts";
+import type { MeetingTiming } from "./run-meeting.ts";
+
+export const MEETING_ENV = {
+  joinUrl: "SCRIBA_JOIN_URL",
+  platform: "SCRIBA_PLATFORM",
+  onBehalfOf: "SCRIBA_ON_BEHALF_OF",
+  swarmUrl: "SCRIBA_SWARM_URL",
+  token: "SCRIBA_BOT_TOKEN",
+  runId: "SCRIBA_RUN_ID",
+  version: "SCRIBA_BOT_VERSION",
+  displayName: "SCRIBA_DISPLAY_NAME",
+  leaseDir: "SCRIBA_LEASE_DIR",
+  maxMinutes: "SCRIBA_MAX_MEETING_MINUTES",
+  segmentSeconds: "SCRIBA_SEGMENT_SECONDS",
+  doorWaitMs: "SCRIBA_DOOR_WAIT_MS",
+  doorRepeatMs: "SCRIBA_DOOR_REPEAT_MS",
+  aloneMs: "SCRIBA_ALONE_MS",
+  heartbeatMs: "SCRIBA_HEARTBEAT_MS",
+  pollMs: "SCRIBA_POLL_MS",
+  smokeMeetPage: "SCRIBA_SMOKE_MEET_PAGE",
+  inviteId: "SCRIBA_INVITE_ID",
+  inviteJoinUrl: "SCRIBA_INVITE_JOIN_URL",
+  calendarKey: "SCRIBA_CALENDAR_KEY",
+  calendarStartsAt: "SCRIBA_CALENDAR_STARTS_AT",
+  accountState: "SCRIBA_GOOGLE_STATE",
+} as const;
+
+/**
+ * Площадки, для которых у бота есть адаптер (профиль бота). Остальные отвергаются до подъёма
+ * контейнера.
+ */
+const SUPPORTED_PLATFORMS = BOT_PROFILE.platforms;
+export type SupportedPlatform = (typeof SUPPORTED_PLATFORMS)[number];
+
+export interface MeetingConfig {
+  readonly joinUrl: string;
+  readonly platform: SupportedPlatform;
+  readonly onBehalfOf: number;
+  readonly swarmUrl: string;
+  readonly token: string;
+  readonly runId: string;
+  readonly version: number;
+  readonly displayName: string;
+  readonly leaseDir: string;
+  readonly maxMeetingMs: number;
+  /**
+   * Длина части; `null` — считать из битрейта под лимит meeting-ingest.
+   */
+  readonly segmentSeconds: number | null;
+  readonly timing: Partial<MeetingTiming>;
+  /**
+   * Только для смоука: страница-двойник вместо meet.google.com.
+   */
+  readonly smokeMeetPage: string | null;
+  /**
+   * Копия входа аккаунта бота (T175) внутри контейнера; `null` — бот идёт гостем.
+   */
+  readonly accountStatePath: string | null;
+  /**
+   * Приглашение из веба (D017), по которому бот заявляет ручную встречу; `null` — запуск без
+   * приглашения (сервер такую ручную заявку агента отвергнет).
+   */
+  readonly invite: InviteReference | null;
+  /**
+   * Событие календаря (T100), по которому бот заявляет календарную встречу; с приглашением
+   * не сочетается — у встречи одно основание.
+   */
+  readonly calendar: CalendarReference | null;
+}
+
+type Environment = Readonly<Record<string, string | undefined>>;
+
+function text(environment: Environment, name: string): string | null {
+  const value = environment[name]?.trim() ?? "";
+  return value === "" ? null : value;
+}
+
+function required(environment: Environment, name: string): string {
+  const value = text(environment, name);
+  if (value === null) throw new Error(`${name} не задан`);
+  return value;
+}
+
+function positiveInteger(environment: Environment, name: string): number | null {
+  const raw = text(environment, name);
+  if (raw === null) return null;
+  const value = Number(raw);
+  if (!Number.isSafeInteger(value) || value <= 0) {
+    throw new Error(`${name} должен быть целым положительным числом, получено «${raw}»`);
+  }
+  return value;
+}
+
+/**
+ * Площадка из строки. Незнакомая — отказ с перечнем тех, что бот умеет.
+ */
+export function isSupportedPlatform(raw: string): raw is SupportedPlatform {
+  return (SUPPORTED_PLATFORMS as readonly string[]).includes(raw);
+}
+
+export function parsePlatform(raw: string): SupportedPlatform {
+  const known = SUPPORTED_PLATFORMS.find((platform) => platform === raw);
+  if (known === undefined) {
+    throw new Error(
+      `площадка «${raw}» не поддерживается: адаптер есть только для ${SUPPORTED_PLATFORMS.join(", ")}`,
+    );
+  }
+  return known;
+}
+
+function readTiming(environment: Environment): Partial<MeetingTiming> {
+  const entries: [keyof MeetingTiming, string][] = [
+    ["doorWaitMs", MEETING_ENV.doorWaitMs],
+    ["doorRepeatMs", MEETING_ENV.doorRepeatMs],
+    ["aloneMs", MEETING_ENV.aloneMs],
+    ["heartbeatMs", MEETING_ENV.heartbeatMs],
+    ["pollMs", MEETING_ENV.pollMs],
+  ];
+  const timing: Partial<Record<keyof MeetingTiming, number>> = {};
+  for (const [key, name] of entries) {
+    const value = positiveInteger(environment, name);
+    if (value !== null) timing[key] = value;
+  }
+  return timing;
+}
+
+/**
+ * Приглашение — оба поля или ни одного: половина приглашения сервером всё равно отвергается,
+ * и лучше узнать об этом на старте контейнера, чем после захода в звонок.
+ */
+function readInvite(environment: Environment): InviteReference | null {
+  const id = text(environment, MEETING_ENV.inviteId);
+  const joinUrl = text(environment, MEETING_ENV.inviteJoinUrl);
+  if (id === null && joinUrl === null) return null;
+  if (id === null || joinUrl === null) {
+    throw new Error(
+      `${MEETING_ENV.inviteId} и ${MEETING_ENV.inviteJoinUrl} задаются только вместе`,
+    );
+  }
+  return { id, joinUrl };
+}
+
+/**
+ * Событие календаря — ключ и начало вместе, и не вместе с приглашением: заявка по двум основаниям
+ * сразу означала бы, что оркестратор перепутал встречи.
+ */
+function readCalendar(
+  environment: Environment,
+  invite: InviteReference | null,
+): CalendarReference | null {
+  const calendarKey = text(environment, MEETING_ENV.calendarKey);
+  const startsAt = text(environment, MEETING_ENV.calendarStartsAt);
+  if (calendarKey === null && startsAt === null) return null;
+  if (calendarKey === null || startsAt === null) {
+    throw new Error(
+      `${MEETING_ENV.calendarKey} и ${MEETING_ENV.calendarStartsAt} задаются только вместе`,
+    );
+  }
+  if (Number.isNaN(Date.parse(startsAt))) {
+    throw new TypeError(`${MEETING_ENV.calendarStartsAt} не время: «${startsAt}»`);
+  }
+  if (invite !== null) {
+    throw new Error(
+      `у встречи одно основание: ${MEETING_ENV.calendarKey} не сочетается с ${MEETING_ENV.inviteId}`,
+    );
+  }
+  return { calendarKey, startsAt };
+}
+
+/**
+ * Имя бота в звонке. В Толк бот входит гостем и имя вводит сам — то же, под которым люди видят
+ * его в Meet (там имя берётся из профиля аккаунта Google). В Meet гостем — прежнее имя профиля.
+ */
+function defaultDisplayName(platform: SupportedPlatform): string {
+  return platform === "kontur" ? BOT_PROFILE.guestName : BOT_PROFILE.name;
+}
+
+export function readMeetingConfig(environment: Environment): MeetingConfig {
+  const platform = parsePlatform(required(environment, MEETING_ENV.platform));
+  const onBehalfOf = positiveInteger(environment, MEETING_ENV.onBehalfOf);
+  if (onBehalfOf === null) throw new Error(`${MEETING_ENV.onBehalfOf} не задан`);
+  const invite = readInvite(environment);
+
+  return {
+    joinUrl: required(environment, MEETING_ENV.joinUrl),
+    platform,
+    onBehalfOf,
+    swarmUrl: required(environment, MEETING_ENV.swarmUrl),
+    token: required(environment, MEETING_ENV.token),
+    runId: required(environment, MEETING_ENV.runId),
+    version: positiveInteger(environment, MEETING_ENV.version) ?? 0,
+    displayName: text(environment, MEETING_ENV.displayName) ?? defaultDisplayName(platform),
+    leaseDir: text(environment, MEETING_ENV.leaseDir) ?? "/lease",
+    maxMeetingMs:
+      (positiveInteger(environment, MEETING_ENV.maxMinutes) ?? BOT_PROFILE.maxMeetingMinutes) *
+      60_000,
+    segmentSeconds: positiveInteger(environment, MEETING_ENV.segmentSeconds),
+    timing: readTiming(environment),
+    smokeMeetPage: text(environment, MEETING_ENV.smokeMeetPage),
+    accountStatePath: text(environment, MEETING_ENV.accountState),
+    invite,
+    calendar: readCalendar(environment, invite),
+  };
+}

@@ -1,0 +1,66 @@
+name: Scriba — лимиты уведомлений
+
+# Потолки Telegram-уведомлений бота scriba (6 на встречу, 30 в сутки на человека, 6 в сутки без
+# встречи, повтор у двери ровно один) решает функция базы `meeting_notice_reserve` под
+# транзакционной блокировкой по получателю. Юнит-тест её не видит: счёт и гонки живут в Postgres.
+# Этот прогон поднимает НАСТОЯЩИЙ локальный Postgres + PostgREST (`supabase start`, все миграции)
+# и гоняет смоук `scripts/scriba-notices-smoke.ts`. Без него снятая блокировка или сбитый счёт
+# проходили CI зелёной (issue #546). Прод здесь не участвует: база живёт только в раннере.
+#
+# Запускается только когда тронуто то, от чего зависят лимиты, — так прогон не жжёт очередь на
+# каждой правке веба.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - supabase/migrations/**
+      - supabase/config.toml
+      - supabase/functions/meeting-notice/**
+      - supabase/functions/_shared/**
+      - scripts/scriba-notices-smoke.ts
+      - .github/workflows/scriba-notices-smoke.yml
+  pull_request:
+    paths:
+      - supabase/migrations/**
+      - supabase/config.toml
+      - supabase/functions/meeting-notice/**
+      - supabase/functions/_shared/**
+      - scripts/scriba-notices-smoke.ts
+      - .github/workflows/scriba-notices-smoke.yml
+  workflow_dispatch:
+
+concurrency:
+  group: scriba-notices-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    name: Смоук лимитов уведомлений (живой Postgres)
+    runs-on: ubuntu-latest
+    # Норма — 2-3 минуты (скачивание образов + миграции + смоук). Потолок — от зависания.
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: supabase/setup-cli@v1
+        with:
+          # Та же версия, на которой смоук проверен порчей локально.
+          version: 2.118.0
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      # Смоуку нужны база и REST над ней; auth (gotrue) оставлен, потому что без него
+      # `supabase status` не отдаёт SERVICE_ROLE_KEY. Остальное — лишние минуты скачивания.
+      - name: Поднять локальную базу со всеми миграциями
+        run: >
+          supabase start
+          -x realtime,storage-api,imgproxy,mailpit,postgres-meta,studio,edge-runtime,logflare,vector,supavisor
+      - name: Смоук лимитов уведомлений
+        run: |
+          eval "$(supabase status -o env | grep -E '^(API_URL|SERVICE_ROLE_KEY)=')"
+          if [ -z "${API_URL:-}" ] || [ -z "${SERVICE_ROLE_KEY:-}" ]; then
+            echo "✘ supabase status не отдал API_URL / SERVICE_ROLE_KEY — смоук не выполнялся"
+            exit 1
+          fi
+          SMOKE_SUPABASE_URL="$API_URL" SMOKE_SERVICE_KEY="$SERVICE_ROLE_KEY" \
+            deno run --allow-all scripts/scriba-notices-smoke.ts

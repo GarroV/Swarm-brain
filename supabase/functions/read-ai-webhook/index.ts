@@ -1,9 +1,8 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { normalizeCountries, COUNTRY_PROMPT_RULE } from "../_shared/countries.ts";
+import { COUNTRY_PROMPT_RULE, normalizeCountries } from "../_shared/countries.ts";
 import { applyGeneralSentinel } from "../_shared/meta-extract.ts";
-import { TEZISY_PROMPT } from "../_shared/tezisy-prompt.ts";
+import { buildTezisyUserMessage, TEZISY_PROMPT } from "../_shared/tezisy-prompt.ts";
 import { findDuplicateMeeting, type MeetingAttendee } from "../_shared/meeting-dedup.ts";
-import { normalizeExtractedDueDate, todayIso } from "../_shared/llm-date.ts";
 import { resolveWebhookGroupId } from "./workspace.ts";
 
 const TELEGRAM_BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN")!;
@@ -21,23 +20,30 @@ async function verifySignature(req: Request, body: string): Promise<boolean> {
   // сойтись — иначе отказ. Когда фича выключена (дефолт), путь всё равно ничего не пишет
   // (kill-switch ниже возвращает 200), поэтому пропускаем, чтобы Read.ai считал доставку успешной.
   const enabled = Deno.env.get("READ_AI_ENABLED") === "true";
-  if (!WEBHOOK_SECRET) return !enabled;          // включено без секрета → отказ (раньше: всегда пускал)
+  if (!WEBHOOK_SECRET) return !enabled; // включено без секрета → отказ (раньше: всегда пускал)
   const signature = req.headers.get("x-readai-signature") ?? req.headers.get("x-hub-signature-256") ?? "";
-  if (!signature) return !enabled;               // включено без подписи → отказ
-  const keyData = Uint8Array.from(atob(WEBHOOK_SECRET), c => c.charCodeAt(0));
+  if (!signature) return !enabled; // включено без подписи → отказ
+  const keyData = Uint8Array.from(atob(WEBHOOK_SECRET), (c) => c.charCodeAt(0));
   const key = await crypto.subtle.importKey("raw", keyData, { name: "HMAC", hash: "SHA-256" }, false, ["verify"]);
-  const sigBytes = Uint8Array.from(atob(signature.replace(/^sha256=/, "")), c => c.charCodeAt(0));
+  const sigBytes = Uint8Array.from(atob(signature.replace(/^sha256=/, "")), (c) => c.charCodeAt(0));
   return crypto.subtle.verify("HMAC", key, sigBytes, new TextEncoder().encode(body));
 }
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
-
-async function sendTelegramInline(text: string, keyboard: Array<Array<{ text: string; callback_data: string }>>): Promise<void> {
+async function sendTelegramInline(
+  text: string,
+  keyboard: Array<Array<{ text: string; callback_data: string }>>,
+): Promise<void> {
   await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ chat_id: ADMIN_CHAT_ID, text, parse_mode: "HTML", reply_markup: { inline_keyboard: keyboard } }),
+    body: JSON.stringify({
+      chat_id: ADMIN_CHAT_ID,
+      text,
+      parse_mode: "HTML",
+      reply_markup: { inline_keyboard: keyboard },
+    }),
   });
 }
 
@@ -83,14 +89,15 @@ async function extractCountries(text: string): Promise<string[]> {
         COUNTRY_PROMPT_RULE +
         '\nКороткие официальные английские названия без "Republic of". Если стран нет — {"countries":[]}.',
       text.slice(0, 4000),
-      true
+      true,
     );
     const parsed = JSON.parse(raw.replace(/```json\n?|\n?```/g, "").trim());
     // General-сентинел как в granola/desktop-agent: нет рынка/широкий охват → 'General'.
     return applyGeneralSentinel(normalizeCountries(Array.isArray(parsed.countries) ? parsed.countries : []));
-  } catch { return []; }
+  } catch {
+    return [];
+  }
 }
-
 
 Deno.serve(async (req: Request) => {
   if (req.method !== "POST") return new Response("OK", { status: 200 });
@@ -123,33 +130,39 @@ Deno.serve(async (req: Request) => {
     const startTime = payload.start_time as string | undefined;
     const endTime = payload.end_time as string | undefined;
     const duration = payload.duration as number | undefined ??
-      (startTime && endTime ? Math.round((new Date(endTime).getTime() - new Date(startTime).getTime()) / 60000) * 60 : undefined);
+      (startTime && endTime
+        ? Math.round((new Date(endTime).getTime() - new Date(startTime).getTime()) / 60000) * 60
+        : undefined);
 
     // Convert Read.ai transcript (array of speaker blocks) to readable text
     const toStr = (v: unknown): string => {
       if (!v) return "";
       if (typeof v === "string") return v;
-      if (Array.isArray(v)) return v.map((item) => {
-        if (typeof item === "string") return item;
-        if (typeof item === "object" && item !== null) {
-          const o = item as Record<string, unknown>;
-          const speaker = (o.speaker ?? o.name ?? o.speaker_name ?? "") as string;
-          // words can be array of {text} objects or plain string
-          const wordsRaw = o.words ?? o.text ?? o.content ?? "";
-          const text = Array.isArray(wordsRaw)
-            ? (wordsRaw as Array<{ text?: string; word?: string }>).map(w => w.text ?? w.word ?? "").join(" ")
-            : String(wordsRaw);
-          return speaker ? `${speaker}: ${text}` : text;
-        }
-        return String(item);
-      }).filter(Boolean).join("\n");
+      if (Array.isArray(v)) {
+        return v.map((item) => {
+          if (typeof item === "string") return item;
+          if (typeof item === "object" && item !== null) {
+            const o = item as Record<string, unknown>;
+            const speaker = (o.speaker ?? o.name ?? o.speaker_name ?? "") as string;
+            // words can be array of {text} objects or plain string
+            const wordsRaw = o.words ?? o.text ?? o.content ?? "";
+            const text = Array.isArray(wordsRaw)
+              ? (wordsRaw as Array<{ text?: string; word?: string }>).map((w) => w.text ?? w.word ?? "").join(" ")
+              : String(wordsRaw);
+            return speaker ? `${speaker}: ${text}` : text;
+          }
+          return String(item);
+        }).filter(Boolean).join("\n");
+      }
       if (typeof v === "object") return JSON.stringify(v);
       return String(v);
     };
 
     // transcript is top-level in payload per Read.ai docs
     const transcript = toStr(payload.transcript ?? "");
-    const chapters = (payload.chapter_summaries ?? payload.chapters ?? payload.topics ?? []) as Array<Record<string, unknown>>;
+    const chapters = (payload.chapter_summaries ?? payload.chapters ?? payload.topics ?? []) as Array<
+      Record<string, unknown>
+    >;
     const actionItems = (payload.action_items ?? payload.tasks ?? []) as Array<Record<string, unknown>>;
     const participants = (payload.participants ?? []) as Array<Record<string, unknown>>;
     const summary = toStr(payload.summary ?? payload.overview ?? "");
@@ -161,12 +174,14 @@ Deno.serve(async (req: Request) => {
       parts.push(`Темы:\n${chapters.map((c) => `• ${c.title ?? c.topic ?? c.name ?? ""}`).join("\n")}`);
     }
     if (actionItems.length) {
-      parts.push(`Задачи:\n${actionItems.map((a) => {
-        const text = toStr(a.text ?? a.description ?? a.title ?? "");
-        const owner = toStr(a.owner ?? a.assignee ?? "");
-        const due = toStr(a.due_date ?? a.deadline ?? "");
-        return `• ${text}${owner ? ` (${owner})` : ""}${due ? ` — до ${due}` : ""}`;
-      }).join("\n")}`);
+      parts.push(`Задачи:\n${
+        actionItems.map((a) => {
+          const text = toStr(a.text ?? a.description ?? a.title ?? "");
+          const owner = toStr(a.owner ?? a.assignee ?? "");
+          const due = toStr(a.due_date ?? a.deadline ?? "");
+          return `• ${text}${owner ? ` (${owner})` : ""}${due ? ` — до ${due}` : ""}`;
+        }).join("\n")
+      }`);
     }
     if (transcript) parts.push(`Стенограмма:\n${transcript.slice(0, 8000)}`);
     const fullContent = parts.join("\n\n");
@@ -175,9 +190,11 @@ Deno.serve(async (req: Request) => {
     // поэтому их e-mail'ы ищутся в allowed_users. Никого не нашли → берём READAI_DEFAULT_GROUP_ID,
     // если он выставлен; нет ни того, ни другого → ОТКАЗ, а не «положим в дефолтный»: уехавшая
     // не туда встреча не падает и никем не замечается, а лежит в чужой команде со стенограммой.
-    const participantEmails = [...new Set(
-      participants.map((p) => String(p.email ?? "").trim().toLowerCase()).filter(Boolean),
-    )];
+    const participantEmails = [
+      ...new Set(
+        participants.map((p) => String(p.email ?? "").trim().toLowerCase()).filter(Boolean),
+      ),
+    ];
     const memberRows = participantEmails.length
       ? (await supabase.from("allowed_users").select("group_id").in("email", participantEmails)).data
       : [];
@@ -189,7 +206,8 @@ Deno.serve(async (req: Request) => {
       console.error("read-ai reject: воркспейс не определён", meetingId, "—", resolved.reason);
       await sendTelegram(`⚠️ Read.ai: встреча «${title}» НЕ сохранена — ${resolved.reason}`);
       return new Response(JSON.stringify({ ok: false, error: "workspace_unresolved", reason: resolved.reason }), {
-        status: 422, headers: { "Content-Type": "application/json" },
+        status: 422,
+        headers: { "Content-Type": "application/json" },
       });
     }
     const groupId = resolved.groupId;
@@ -216,7 +234,8 @@ Deno.serve(async (req: Request) => {
     if (meetingDup) {
       console.log("read-ai skip duplicate meeting", meetingId, "→", meetingDup.id, `(${meetingDup.source})`);
       return new Response(JSON.stringify({ ok: true, duplicate: true, id: meetingDup.id }), {
-        status: 200, headers: { "Content-Type": "application/json" },
+        status: 200,
+        headers: { "Content-Type": "application/json" },
       });
     }
 
@@ -230,7 +249,7 @@ Deno.serve(async (req: Request) => {
     // веб, ни рекордер, — то есть создавало задачи, невидимые всем. Задачи из встречи делает
     // человек кнопкой «Сгенерировать задачи» в вебе.
     const [tezises, embedding, countries] = await Promise.all([
-      chatComplete(TEZISY_PROMPT, tezisSource),
+      chatComplete(TEZISY_PROMPT, buildTezisyUserMessage(tezisSource)),
       getEmbedding(fullContent),
       extractCountries(fullContent),
     ]);
@@ -279,7 +298,6 @@ Deno.serve(async (req: Request) => {
       ],
       [{ text: "🗑 Удалить", callback_data: `md_${entryId}` }],
     ]);
-
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     await sendTelegram(`⚠️ Ошибка обработки встречи: ${msg}`);

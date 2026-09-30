@@ -103,6 +103,10 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Гейт сервера scriba считает затронутые файлы от коммита из .scriba-build-base;
+          # в мелком клоне его нет, и формат/линт остались бы без файлов.
+          fetch-depth: 0
       - uses: denoland/setup-deno@v2
         with:
           deno-version: v2.x
@@ -119,8 +123,13 @@ jobs:
           version: 2.118.0
       - name: Локальный контур Supabase
         run: ./scripts/ci-supabase-up
-      - name: Гейт
-        run: ./scripts/check
+      # Области явно: `scripts/check` без аргумента гоняет ещё и бота, а бот проверяется
+      # своим workflow (`bot.yml`, там же `npm ci --prefix bot`). Здесь node_modules бота
+      # нет, и полный прогон честно покраснел бы на «окружение не поднято».
+      - name: Гейт доски инициатив
+        run: ./scripts/check initiatives
+      - name: Гейт сервера scriba
+        run: ./scripts/check server
       # Порча отвечает на вопрос, на который гейт не отвечает: проверяют ли эти проверки хоть
       # что-нибудь. Ломаем ядро и базу нарочно и убеждаемся, что тесты краснеют.
       - name: Порча

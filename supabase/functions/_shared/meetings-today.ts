@@ -7,6 +7,7 @@
 // Здесь только ЧИСТАЯ логика отбора и раскладки: сам поход в Google живёт в вызывающем
 // (swarm-api), скоринг «какая идёт прямо сейчас» — в meeting-current/select.ts (там он про
 // одну встречу для рекордера, а тут нужен весь день).
+import { calendarKeyOf } from "./calendar-key.ts";
 import type { GEvent } from "../meeting-current/select.ts";
 
 /**
@@ -70,7 +71,7 @@ export function todayMeetings(
   const t = now.getTime();
   // Присутствие протухло (или его нет) — дальше сравнивать ключи незачем.
   const live = presence?.meetingKey && presence.lastSeen &&
-    t - Date.parse(presence.lastSeen) <= PRESENCE_TTL_MS
+      t - Date.parse(presence.lastSeen) <= PRESENCE_TTL_MS
     ? presence
     : null;
   return events
@@ -85,7 +86,7 @@ export function todayMeetings(
       const id = e.iCalUID ?? e.id;
       // Ключ несёт и дату: у повторяющейся встречи uid один на всю серию, и сравнение по
       // одному uid зажгло бы ON AIR на вчерашнем экземпляре.
-      const mine = live?.meetingKey === `${id}:${starts.slice(0, 10)}`;
+      const mine = live?.meetingKey === calendarKeyOf(e);
       return {
         id,
         title: e.summary?.trim() || null,

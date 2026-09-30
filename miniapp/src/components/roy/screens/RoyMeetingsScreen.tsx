@@ -9,6 +9,7 @@ import { useIsDesktop } from "../useIsDesktop";
 import { deriveEntryTitle, entryImporterName } from "../entry";
 import { fetchMeetings, deleteMeeting } from "@/lib/api";
 import { AgentReviewQueue } from "@/components/AgentReviewQueue";
+import { InviteBotCard } from "../InviteBotCard";
 import { MeetingsDesk } from "./MeetingsDesk";
 import { useConfirm } from "@/components/ui/confirm";
 import type { Entry } from "@/types";
@@ -155,6 +156,9 @@ export function RoyMeetingsScreen() {
       {/* Очередь вычитки — ПОД заголовком экрана, а не над ним: блок «На вычитке» висел выше
           h1 и читался как отдельный экран без названия. */}
       <AgentReviewQueue onOpen={openReview} />
+      <div className="px-5 pt-3">
+        <InviteBotCard />
+      </div>
       <div className="px-5 pb-3 pt-3">{segmented}</div>
       <div className="space-y-2.5 px-5 pb-28">
         {skeleton}

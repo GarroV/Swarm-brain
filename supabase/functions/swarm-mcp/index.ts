@@ -180,7 +180,7 @@ const TOOLS = [
   },
   {
     name: "get_tasks",
-    description: "Получить задачи команды с фильтрами по исполнителю, стране или статусу. В каждой строке печатается id задачи — им вызываются get_task_comments, add_task_comment и update_task.",
+    description: "Получить задачи команды с фильтрами по исполнителю, стране, статусу или проекту (в том числе «без проекта»). Не больше 30 строк: если подошло больше, первой строкой печатается «показаны N из M». В каждой строке — id задачи (им вызываются get_task_comments, add_task_comment и update_task) и проект.",
     inputSchema: {
       type: "object",
       properties: {
@@ -189,7 +189,8 @@ const TOOLS = [
         status: { type: "string", enum: ["backlog", "open", "in_progress", "done", "cancelled"] },
         period: { type: "string", enum: ["week"], description: "Задачи на этой неделе" },
         label: { type: "string", description: "Имя личной смарт-метки для фильтра" },
-        project: { type: "string", description: "Имя проекта или подпроекта доски — фильтр по нему. Не найден — отказ со списком доступных проектов (задачи НЕ показываются). Точные имена — get_projects." },
+        project: { type: "string", description: "Имя проекта или подпроекта доски — фильтр по нему. Не найден — отказ со списком доступных проектов (задачи НЕ показываются). Точные имена — get_projects. Подпроекты сюда не входят: у каждого свой фильтр." },
+        no_project: { type: "boolean", description: "true — только задачи вне проектов (висят в общем списке, не на доске). Нельзя вместе с project." },
         requesting_user_id: { type: "number", description: "Твой Telegram user ID — обязателен для фильтрации по воркспейсу" },
       },
       required: ["requesting_user_id"],
@@ -1103,7 +1104,7 @@ Deno.serve(async (req: Request) => {
       } else if (name === "search_knowledge") {
         result = await toolSearchKnowledge(args as { query: string; limit?: number; requesting_user_id?: number });
       } else if (name === "get_tasks") {
-        result = await toolGetTasksMcp(args as { assignee?: string; country?: string; status?: string; period?: string; label?: string; project?: string; requesting_user_id: number });
+        result = await toolGetTasksMcp(args as { assignee?: string; country?: string; status?: string; period?: string; label?: string; project?: string; no_project?: boolean; requesting_user_id: number });
       } else if (name === "add_task") {
         result = await toolAddTask(args as { title: string; description?: string; assignee_name?: string; country?: string; due_date?: string; task_role?: string; source: string; context_id?: string; labels?: string[]; project_name?: string; status?: string; confirmed?: boolean; parent_task_id?: string; requesting_user_id?: number });
       } else if (name === "update_task") {
