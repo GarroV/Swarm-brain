@@ -26,3 +26,5 @@ supabase/functions/swarm-api/public-roadmap.ts|supabase/functions/swarm-api/publ
 # Границы админки: объём воркспейса и аккаунт суперадмина. Ошибка в правиле не падает —
 # она молча расширяет объём админа за пределы его воркспейса.
 supabase/functions/swarm-api/admin-scope.ts|supabase/functions/swarm-api/admin-scope.test.ts
+supabase/functions/_shared/users/admin-scope.ts|supabase/functions/swarm-api/admin-scope.test.ts
+supabase/functions/swarm-bot/handlers/superadmin-scope.ts|supabase/functions/swarm-bot/handlers/superadmin-scope.test.ts

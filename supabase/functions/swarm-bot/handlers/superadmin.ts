@@ -1,8 +1,18 @@
-import { supabase, ADMIN_USER_ID, isAdminUser } from "../lib/supabase.ts";
-import { sendMessage, sendInlineMessage, editInlineMessage } from "../lib/telegram.ts";
-import { setSession, clearSession } from "../lib/storage.ts";
-import { listWorkspaces, createWorkspace, assignUserToWorkspace } from "../lib/workspace.ts";
+import { ADMIN_USER_ID, supabase } from "../lib/supabase.ts";
+import { editInlineMessage, sendInlineMessage, sendMessage } from "../lib/telegram.ts";
+import { clearSession, setSession } from "../lib/storage.ts";
+import { assignUserToWorkspace, createWorkspace, listWorkspaces } from "../lib/workspace.ts";
 import type { TgCallbackQuery } from "../lib/types.ts";
+import type { AdminActor, MemberRow } from "../../_shared/users/admin-scope.ts";
+import {
+  actionTarget,
+  type BotAdminAction,
+  botAdminAllowed,
+  NO_ACCESS_TEXT,
+  parseSaCallback,
+  parseSaSession,
+  visibleWorkspaces,
+} from "./superadmin-scope.ts";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -29,17 +39,55 @@ function parseTgIdWsId(rest: string): { tgId: number; wsId: string } {
   return { tgId: Number(rest.slice(0, idx)), wsId: rest.slice(idx + 1) };
 }
 
+// ── Границы (правила — superadmin-scope.ts, общий канон _shared/users/admin-scope.ts) ──
+
+/** Админ и его воркспейс; null — не админ. Тот же признак, что isAdminUser (ADMIN_USER_ID ЛИБО is_admin). */
+async function loadAdminActor(userId: number): Promise<AdminActor | null> {
+  const { data } = await supabase
+    .from("allowed_users")
+    .select("is_admin, group_id")
+    .eq("telegram_id", userId)
+    .maybeSingle();
+  const row = data as { is_admin?: boolean; group_id?: string | null } | null;
+  if (userId !== ADMIN_USER_ID && row?.is_admin !== true) return null;
+  return { telegramId: userId, groupId: row?.group_id ?? "" };
+}
+
+/** Строка allowed_users, которую адресует действие (null — такой нет или действие без цели). */
+async function loadTarget(act: BotAdminAction): Promise<MemberRow | null> {
+  const t = actionTarget(act);
+  if (!t) return null;
+  const q = supabase.from("allowed_users").select("telegram_id, group_id");
+  const { data, error } = "telegramId" in t
+    ? await q.eq("telegram_id", t.telegramId).limit(1).maybeSingle()
+    : await q.ilike("username", t.username).limit(1).maybeSingle();
+  if (error) throw new Error(error.message);
+  return (data as MemberRow | null) ?? null;
+}
+
+/** Действие в объёме админа? Отказ — сообщение и true (колбэк обработан). */
+async function gate(chatId: number, actor: AdminActor, act: BotAdminAction): Promise<boolean> {
+  if (botAdminAllowed(actor, act, await loadTarget(act))) return true;
+  await sendMessage(chatId, NO_ACCESS_TEXT);
+  return false;
+}
+
+/** Главное меню: «Создать спейс» — только суперадмину. */
+function mainMenu(actor: AdminActor): Array<Array<{ text: string; callback_data: string }>> {
+  const row = [{ text: "📋 Спейсы", callback_data: "sa_spaces" }];
+  if (actor.telegramId === ADMIN_USER_ID) row.push({ text: "➕ Создать спейс", callback_data: "sa_create" });
+  return [row];
+}
+
 // ── Main entry point ──────────────────────────────────────────────────────────
 
 export async function handleSuperadmin(chatId: number, userId: number): Promise<void> {
-  if (!(await isAdminUser(userId))) {
+  const actor = await loadAdminActor(userId);
+  if (!actor) {
     await sendMessage(chatId, "Недостаточно прав.");
     return;
   }
-  await sendInlineMessage(chatId, "🔧 <b>Суперадмин панель</b>", [[
-    { text: "📋 Спейсы", callback_data: "sa_spaces" },
-    { text: "➕ Создать спейс", callback_data: "sa_create" },
-  ]]);
+  await sendInlineMessage(chatId, "🔧 <b>Суперадмин панель</b>", mainMenu(actor));
 }
 
 // ── Callback handler ──────────────────────────────────────────────────────────
@@ -51,21 +99,22 @@ export async function handleSuperadminCallbacks(
 ): Promise<boolean> {
   const data = cb.data ?? "";
   if (!data.startsWith("sa_")) return false;
-  if (!(await isAdminUser(userId))) return false;
+  const actor = await loadAdminActor(userId);
+  if (!actor) return false;
 
   try {
+    // Единая точка проверки: каждое действие — в объёме админа ДО любой записи.
+    if (!(await gate(chatId, actor, parseSaCallback(data)))) return true;
+
     // sa_main — re-show main menu
     if (data === "sa_main") {
-      await editInlineMessage(chatId, cb.message.message_id, "🔧 <b>Суперадмин панель</b>", [[
-        { text: "📋 Спейсы", callback_data: "sa_spaces" },
-        { text: "➕ Создать спейс", callback_data: "sa_create" },
-      ]]);
+      await editInlineMessage(chatId, cb.message.message_id, "🔧 <b>Суперадмин панель</b>", mainMenu(actor));
       return true;
     }
 
     // sa_spaces — list all workspaces
     if (data === "sa_spaces") {
-      const workspaces = await listWorkspaces();
+      const workspaces = visibleWorkspaces(actor, await listWorkspaces());
       if (!workspaces.length) {
         await editInlineMessage(chatId, cb.message.message_id, "📋 Нет ни одного спейса.", [[
           { text: "➕ Создать спейс", callback_data: "sa_create" },
@@ -108,8 +157,7 @@ export async function handleSuperadminCallbacks(
         .from("allowed_users")
         .select("*", { count: "exact", head: true })
         .eq("group_id", wsId);
-      const msg =
-        `📦 <b>${ws.name}</b>\nID: ${wsId}\nПользователей: ${count ?? 0}`;
+      const msg = `📦 <b>${ws.name}</b>\nID: ${wsId}\nПользователей: ${count ?? 0}`;
       await editInlineMessage(chatId, cb.message.message_id, msg, [
         [
           { text: "👥 Пользователи", callback_data: `sa_su_${wsId}` },
@@ -164,14 +212,15 @@ export async function handleSuperadminCallbacks(
         return true;
       }
 
-      const userRows = (users as Array<{ telegram_id: number | null; username: string | null; is_admin: boolean | null }>).map(
-        (u) => {
-          const name = displayName(u.telegram_id, u.username, profileList);
-          const label = u.is_admin ? `${name} 👑` : name;
-          const tgId = u.telegram_id ?? 0;
-          return [{ text: label, callback_data: `sa_u_${tgId}_${wsId}` }];
-        },
-      );
+      const userRows =
+        (users as Array<{ telegram_id: number | null; username: string | null; is_admin: boolean | null }>).map(
+          (u) => {
+            const name = displayName(u.telegram_id, u.username, profileList);
+            const label = u.is_admin ? `${name} 👑` : name;
+            const tgId = u.telegram_id ?? 0;
+            return [{ text: label, callback_data: `sa_u_${tgId}_${wsId}` }];
+          },
+        );
       userRows.push([
         { text: "➕ Добавить", callback_data: `sa_add_${wsId}` },
         { text: "🔙 К спейсу", callback_data: `sa_sp_${wsId}` },
@@ -198,10 +247,21 @@ export async function handleSuperadminCallbacks(
         .eq("telegram_id", tgId)
         .maybeSingle();
 
-      const profileList = profile ? [profile as { telegram_id: number; first_name?: string; last_name?: string; username?: string }] : [];
-      const uRow = userRow as { telegram_id: number | null; username: string | null; is_admin: boolean | null; group_id: string | null } | null;
+      const profileList = profile
+        ? [profile as { telegram_id: number; first_name?: string; last_name?: string; username?: string }]
+        : [];
+      const uRow = userRow as {
+        telegram_id: number | null;
+        username: string | null;
+        is_admin: boolean | null;
+        group_id: string | null;
+      } | null;
 
-      const name = displayName(tgId, uRow?.username ?? (profile as { username?: string } | null)?.username ?? null, profileList);
+      const name = displayName(
+        tgId,
+        uRow?.username ?? (profile as { username?: string } | null)?.username ?? null,
+        profileList,
+      );
       const usernameStr = uRow?.username ?? (profile as { username?: string } | null)?.username ?? null;
       const workspaces = await listWorkspaces();
       const ws = workspaces.find((w) => w.id === wsId);
@@ -214,9 +274,10 @@ export async function handleSuperadminCallbacks(
       msg += `\nСпейс: ${wsName}`;
       msg += `\nРоль: ${roleLabel}`;
 
-      const keyboard: Array<Array<{ text: string; callback_data: string }>> = [
-        [{ text: "🔄 Сменить спейс", callback_data: `sa_mv_${tgId}_${wsId}` }],
-      ];
+      // Перенос между спейсами — только суперадмину.
+      const keyboard: Array<Array<{ text: string; callback_data: string }>> = actor.telegramId === ADMIN_USER_ID
+        ? [[{ text: "🔄 Сменить спейс", callback_data: `sa_mv_${tgId}_${wsId}` }]]
+        : [];
       if (tgId !== ADMIN_USER_ID) {
         keyboard.push([{ text: "🚫 Удалить", callback_data: `sa_blk_${tgId}_${wsId}` }]);
       }
@@ -283,7 +344,8 @@ export async function handleSuperadminCallbacks(
       const { error } = await supabase
         .from("allowed_users")
         .delete()
-        .eq("telegram_id", tgId);
+        .eq("telegram_id", tgId)
+        .eq("group_id", wsId);
       if (error) {
         await sendMessage(chatId, `Ошибка: ${error.message}`);
         return true;
@@ -332,11 +394,13 @@ export async function handleSuperadminSession(
   userId: number,
 ): Promise<boolean> {
   if (!action.startsWith("sa_")) return false;
-  if (!(await isAdminUser(userId))) return false;
+  const actor = await loadAdminActor(userId);
+  if (!actor) return false;
 
   await clearSession(chatId);
 
   try {
+    if (!(await gate(chatId, actor, parseSaSession(action, text)))) return true;
     // sa_adduser_<wsId>
     if (action.startsWith("sa_adduser_")) {
       const wsId = action.slice("sa_adduser_".length);
