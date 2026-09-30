@@ -2922,6 +2922,24 @@ export async function resummarizeMeetingEntry(id: string): Promise<Entry> {
   return apiFetch<Entry>(`/meetings/${id}/resummarize`, { method: "POST" });
 }
 
+// Точечный вопрос по встрече: ответ по транскрипту пунктами «- …», в базу ничего не пишет
+// (swarm-api/meeting-ask.ts). kind "draft" — черновик на вычитке (meetings.id), "entry" —
+// опубликованная встреча (entries.id).
+export async function askMeeting(
+  kind: "draft" | "entry",
+  id: string,
+  fragment: string,
+  question: string,
+): Promise<string> {
+  if (DEV_MODE) return `- Демо-ответ по фрагменту «${fragment.slice(0, 40)}»: ${question || "что здесь обсуждали"}`;
+  const path = kind === "draft" ? `/agent-meetings/${id}/ask` : `/meetings/${id}/ask`;
+  const r = await apiFetch<{ answer: string }>(path, {
+    method: "POST",
+    body: JSON.stringify({ fragment, question }),
+  });
+  return r.answer;
+}
+
 export async function deleteAgentMeeting(id: string): Promise<void> {
   if (DEV_MODE) {
     mockAgentMeetings = mockAgentMeetings.filter((x) => x.id !== id);

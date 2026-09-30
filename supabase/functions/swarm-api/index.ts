@@ -123,6 +123,7 @@ import { handleAutojoinRoutes, makeAutojoinStore } from "./autojoin.ts";
 import { handleTaskLabelRoutes } from "./task-labels.ts";
 import { handleTaskCommentRoutes } from "./task-comments.ts";
 import { handleStatsRoutes } from "./stats.ts";
+import { handleMeetingAskRoutes } from "./meeting-ask.ts";
 import { handleSprintCycleRoutes } from "./sprint-cycles.ts";
 import { handleSpaceJournalRoutes } from "./space-journal.ts";
 import { handleNotificationRoutes } from "./notifications.ts";
@@ -873,6 +874,18 @@ Deno.serve(async (req: Request) => {
     resolveNames,
   );
   if (statsResp) return statsResp;
+
+  // Точечный вопрос по встрече (/agent-meetings/:id/ask, /meetings/:id/ask) — ответ по транскрипту.
+  const askResp = await handleMeetingAskRoutes(
+    supabase,
+    req,
+    routePath,
+    telegram_id,
+    groupId,
+    isAdmin,
+    origin,
+  );
+  if (askResp) return askResp;
 
   // Подписка на уведомления о комментариях к задаче (/tasks/:id/subscription) — issue #82.
   const subResp = await handleTaskSubscriptionRoutes(

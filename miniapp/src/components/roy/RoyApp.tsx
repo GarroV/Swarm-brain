@@ -521,7 +521,7 @@ function DetailPanel({ route, depth, section, onClose }: { route: RoyRoute; dept
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape" || e.defaultPrevented) return;
       if (document.querySelector("[role=dialog], [role=alertdialog], [role=menu]")) return;
-      // Идёт правка текста (PanelEditor) — Esc отменяет её, а не закрывает панель.
+      // Идёт правка текста (TezisyEditor и поля с data-panel-edit) — Esc отменяет её, а не закрывает панель.
       if (document.activeElement?.closest("[data-panel-edit]")) return;
       onClose();
     };
