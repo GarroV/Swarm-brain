@@ -30,6 +30,7 @@ import {
   STALE_SENDING_SECONDS,
 } from "./notices.ts";
 import { NO_TITLE, NOTICE_TEXTS } from "./bot-notice-texts.ts";
+import { BOT_PROFILE } from "./bot-profile.ts";
 
 const MEETING_ID = "5f0c6b1e-8a2d-4c3f-9b7e-1d2a3c4b5e6f";
 const KEY = "abc123@google.com:2026-09-23";
@@ -166,6 +167,28 @@ Deno.test("текст страницы ошибки не говорит, что 
     );
     assert(/account|аккаунт/i.test(blocked), `${lang}: не сказано про аккаунт бота — ${blocked}`);
     assert(/link|ссылк/i.test(unavailable), `${lang}: не сказано проверить ссылку — ${unavailable}`);
+  }
+});
+
+Deno.test("Контур.Толк: комната закрыта для гостей — свой вид, привязан к встрече", () => {
+  const parsed = notice({ kind: "guest_access_closed" });
+  assertEquals(parsed.kind, "guest_access_closed");
+  assertEquals(parsed.scope.type, "meeting");
+});
+
+Deno.test("БЛОКИРУЮЩИЙ: текст «комната закрыта для гостей» называет причину и время ожидания из профиля, а не хоста", () => {
+  for (const lang of NOTICE_LANGS) {
+    const text = renderNotice(notice({ kind: "guest_access_closed", lang }), null, 1);
+    assert(!/declined|отклонил/i.test(text), `${lang}: никто не отклонял — ${text}`);
+    assert(
+      /external participants|guest|внешних участников|гост/i.test(text),
+      `${lang}: не сказано про гостевой доступ — ${text}`,
+    );
+    // Время ожидания — из профиля, а не захардкожено: тест ловит рассинхрон текста с числом.
+    assert(
+      text.includes(String(BOT_PROFILE.guestRoom.waitMinutes)),
+      `${lang}: время ожидания не подставилось из профиля (${BOT_PROFILE.guestRoom.waitMinutes} мин) — ${text}`,
+    );
   }
 });
 

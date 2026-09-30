@@ -27,11 +27,11 @@ import {
   validLimits,
   validMaxMeetings,
 } from "../container/isolation.ts";
-import { pinMeetLocale } from "../meet-adapter/url.ts";
 import { EGRESS_PROXY_ENV } from "../container/browser.ts";
 import { ACCOUNT_STATE_TARGET, type AccountCopies } from "./account.ts";
 import { isCalendarBasis, type MeetingBasis } from "./claim-request.ts";
-import { MEETING_ENV, parsePlatform } from "./config.ts";
+import { MEETING_ENV, type SupportedPlatform, parsePlatform } from "./config.ts";
+import { joinUrlFor } from "./join-url.ts";
 import type { ContainerEngine, ContainerSpec, EngineContainer } from "./engine.ts";
 import { LEASE_WRITE_INTERVAL_MS, writeLease } from "./lease.ts";
 import { inBackground } from "./background.ts";
@@ -42,6 +42,14 @@ import type { MeetingEgress, MeetingNetwork } from "./egress.ts";
 
 // eslint-disable-next-line sonarjs/redundant-type-aliases -- имя из контракта блока (docs/furca/blocks/orchestrator.md)
 export type ContainerId = string;
+
+/**
+Куда и на какой площадке идёт контейнер встречи: ссылка уже проверена адаптером площадки.
+*/
+interface MeetingTarget {
+  readonly joinUrl: string;
+  readonly platform: SupportedPlatform;
+}
 
 export const LABEL = {
   project: "scriba.project",
@@ -283,7 +291,7 @@ export class Orchestrator {
   }
 
   private environment(
-    joinUrl: string,
+    target: MeetingTarget,
     onBehalfOf: number,
     runId: string,
     basis: MeetingBasis | null,
@@ -291,8 +299,8 @@ export class Orchestrator {
     network: MeetingNetwork,
   ): string[] {
     const own: Record<string, string> = {
-      [MEETING_ENV.joinUrl]: joinUrl,
-      [MEETING_ENV.platform]: "meet",
+      [MEETING_ENV.joinUrl]: target.joinUrl,
+      [MEETING_ENV.platform]: target.platform,
       [MEETING_ENV.onBehalfOf]: String(onBehalfOf),
       [MEETING_ENV.swarmUrl]: this.options.swarmUrl,
       // Пропуск встречи вместо общего токена агента (T165): контейнер действует только в
@@ -310,7 +318,7 @@ export class Orchestrator {
   }
 
   private spec(
-    joinUrl: string,
+    target: MeetingTarget,
     onBehalfOf: number,
     runId: string,
     basis: MeetingBasis | null,
@@ -321,12 +329,12 @@ export class Orchestrator {
       name: `${this.options.project}-meeting-${runId}`,
       image: this.options.image,
       command: CONTAINER_COMMAND,
-      env: this.environment(joinUrl, onBehalfOf, runId, basis, account, network),
+      env: this.environment(target, onBehalfOf, runId, basis, account, network),
       labels: {
         [LABEL.project]: this.options.project,
         [LABEL.run]: runId,
         [LABEL.onBehalfOf]: String(onBehalfOf),
-        [LABEL.platform]: "meet",
+        [LABEL.platform]: target.platform,
         ...basisLabel(basis),
       },
       volume: { name: this.volumeFor(onBehalfOf), target: RECORDINGS_PATH },
@@ -505,19 +513,22 @@ export class Orchestrator {
     onBehalfOf: number,
     basis: MeetingBasis | null = null,
   ): Promise<ContainerId> {
-    parsePlatform(platform);
-    const pinned = pinMeetLocale(joinUrl);
+    const known = parsePlatform(platform);
+    const target: MeetingTarget = { joinUrl: joinUrlFor(known, joinUrl), platform: known };
     const person = validOnBehalfOf(onBehalfOf);
     const runId = (this.options.newRunId ?? randomUUID)();
 
     this.reserveSlot();
     try {
-      const account = (await this.options.account?.prepare(runId)) ?? null;
+      // Вход аккаунта Google нужен только Meet: в Толк бот идёт гостем (D040), и живая сессия
+      // Google в контейнере чужой площадки была бы лишь тем, что можно унести.
+      const account =
+        known === "meet" ? ((await this.options.account?.prepare(runId)) ?? null) : null;
       try {
         const network = await this.options.egress.prepare(runId);
         try {
           return await this.launch(
-            this.spec(pinned, person, runId, basis, account, network),
+            this.spec(target, person, runId, basis, account, network),
             runId,
             person,
             basis?.grantToken ?? this.options.token,

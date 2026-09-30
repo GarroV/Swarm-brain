@@ -8,7 +8,7 @@
 // _shared/calendar-snapshot.ts: так пропуск виден, даже когда оркестратор лежит и не опрашивает ничего).
 //
 // Что считается пропуском. Правило одно: человек включил автозапуск и ЖДЁТ бота на этой встрече.
-//   пропуск: unsupported_platform (встреча не в Meet), unrecognized_link (ссылку в событии не разобрали),
+//   пропуск: unsupported_platform (встреча не в Google Meet и не в Контур.Толке), unrecognized_link (ссылку в событии не разобрали),
 //            calendar_not_connected / calendar_token_dead (бот не видит НИ ОДНОЙ встречи человека),
 //            not_picked_up (встреча началась, а задания нет или его никто не забрал — служба
 //            автозапуска не отозвалась), not_arrived (забрал, но в звонке не появился и сам ничего не
@@ -22,6 +22,7 @@
 import type { DispatchJob, DispatchSkip } from "./calendar-dispatch.ts";
 import { NO_TITLE } from "./bot-notice-texts.ts";
 import { BOT_PROFILE } from "./bot-profile.ts";
+import { BOT_PLATFORMS } from "./meeting-invite.ts";
 
 /** Имя бота в текстах о пропусках — из профиля. */
 const BOT = BOT_PROFILE.name;
@@ -193,9 +194,15 @@ export function pickupMiss(
   return fromJob(job, person, "not_picked_up");
 }
 
-/** Можно ли по пропуску позвать бота руками одним действием (приглашение D017). */
+/**
+ * Можно ли по пропуску позвать бота руками одним действием (приглашение D017). Площадка —
+ * та же проверка, что при вставке ссылки в вебе (`botJoinsPlatform`): пропуски с не-invitable
+ * причиной сюда и так не доходят, а платформу невозможной для бота площадки этот пропуск
+ * не несёт — задание заводится только на площадках из `BOT_PLATFORMS` (`calendar-dispatch.ts`).
+ */
 export function canInvite(miss: MissRecord): boolean {
-  return INVITABLE.has(miss.reason) && miss.join_url !== null && miss.platform === "meet";
+  return INVITABLE.has(miss.reason) && miss.join_url !== null &&
+    miss.platform !== null && (BOT_PLATFORMS as readonly string[]).includes(miss.platform);
 }
 
 type Lang = "en" | "ru";
@@ -211,10 +218,10 @@ export function missMessage(miss: MissRecord): Record<Lang, string> {
       return {
         en: `"${t.en}" is on ${
           p ?? "another service"
-        }, and ${BOT} only joins Google Meet — it won't come to this meeting.`,
+        }, and ${BOT} only joins Google Meet and Kontur.Talk — it won't come to this meeting.`,
         ru: `«${t.ru}» идёт в ${
           p ?? "другом сервисе"
-        }, а ${BOT} ходит только в Google Meet — на эту встречу он не придёт.`,
+        }, а ${BOT} ходит только в Google Meet и Контур.Толк — на эту встречу он не придёт.`,
       };
     }
     case "unrecognized_link":

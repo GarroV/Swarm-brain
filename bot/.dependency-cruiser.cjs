@@ -5,8 +5,9 @@
  * не видят — нарушение границы иначе всплывает только при слиянии, у того, кто его не вносил.
  *
  * Внутри бота граф такой:
- *   container    --> meet-adapter, orchestrator
- *   meet-adapter --> swarm-client, orchestrator
+ *   container    --> meet-adapter, kontur-adapter, orchestrator
+ *   meet-adapter --> swarm-client, orchestrator, kontur-adapter
+ *   kontur-adapter --> orchestrator
  *   swarm-client --> orchestrator
  * Стрелки meet-adapter --> orchestrator в графе plan.md нет, но без неё оркестратор не может
  * выбрать адаптер по площадке (контракт conference-link → orchestrator: «по ней выбирается
@@ -17,8 +18,11 @@
 const BLOCKS = {
   container: [],
   "meet-adapter": ["container"],
+  // Адаптер Контур.Толка (T111) держит тот же контракт площадки, что Meet: тип исхода двери
+  // живёт в meet-adapter/types.ts, и второй копии контракта быть не должно.
+  "kontur-adapter": ["container", "meet-adapter"],
   "swarm-client": ["meet-adapter"],
-  orchestrator: ["container", "meet-adapter", "swarm-client"],
+  orchestrator: ["container", "meet-adapter", "kontur-adapter", "swarm-client"],
 };
 
 const boundaryRules = Object.entries(BLOCKS).map(([block, allowed]) => ({

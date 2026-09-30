@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
-# Боевой бот встреч scriba: раскатка и управление с Мака. Сервер — MUSPELHEIM, прод — Swarm.
+# Боевой бот встреч scriba: раскатка и управление с Мака. Сервер — VPS Contabo (с 30.09.2026, D039;
+# до этого — MUSPELHEIM), прод — Swarm.
 #
 #   scripts/scriba-prod.sh rollout   — вся раскатка по порядку (ниже), нужен SCRIBA_WORKSPACE
-#   scripts/scriba-prod.sh up        — обновить клон на MUSPELHEIM до origin/main и поднять бота
+#   scripts/scriba-prod.sh up        — обновить клон на VPS до origin/main и поднять бота
 #   scripts/scriba-prod.sh status | logs | down
 #
 # rollout — только в ночное окно 23:00–06:59 по Белграду (FORCE=1 — осознанный обход) и только
@@ -11,16 +12,16 @@
 #   2. функции — deploy-functions.yml с main. Проверку «кто в проде» CI сделать не может: её
 #      делает человек заранее и подтверждает ACTIVITY_CHECKED=1 (никто не пишет, ничего не
 #      обрабатывается). Без подтверждения rollout останавливается до раскатки функций;
-#   3. клон main на MUSPELHEIM, токен бота рождается там же — сюда приходит только хеш;
+#   3. клон main на VPS, токен бота рождается там же — сюда приходит только хеш;
 #   4. хеш уходит в прод кнопкой scriba-agent-token.yml (воркспейс — SCRIBA_WORKSPACE);
 #   5. оркестратор поднимается и показывает журнал.
 set -euo pipefail
 
-HOST="${SCRIBA_PROD_SSH:-muspelheim}"
+HOST="${SCRIBA_PROD_SSH:-contabo}"
 REPO_URL='https://github.com/GarroV/Swarm-brain.git'
-ROOT='C:\projects\scriba-prod'
-REPO="${ROOT}\\repo"
-PS="pwsh -NoProfile -File ${ROOT}\\repo\\scripts\\scriba-prod\\stand.ps1"
+ROOT=/srv/scriba
+REPO="${ROOT}/repo"
+PS="bash ${REPO}/scripts/scriba-prod/stand.sh"
 
 remote() { ssh "$HOST" "$@"; }
 say() { printf '[scriba-prod %s] %s\n' "$(date +%H:%M:%S)" "$*"; }
@@ -34,7 +35,7 @@ in_window() {
 
 # Клон main на сервере: первый раз — clone, дальше — жёстко к origin/main.
 sync_code() {
-  remote "if not exist ${REPO}\\.git git clone -q ${REPO_URL} ${REPO}"
+  remote "[ -d ${REPO}/.git ] || git clone -q ${REPO_URL} ${REPO}"
   remote "git -C ${REPO} fetch -q origin main && git -C ${REPO} checkout -q -B main origin/main && git -C ${REPO} log --oneline -1"
 }
 
@@ -96,8 +97,8 @@ case "${1:-status}" in
     [ "${ACTIVITY_CHECKED:-}" = "1" ] ||
       die "проверь, что в проде никто не пишет и ничего не обрабатывается, и повтори с ACTIVITY_CHECKED=1"
     command -v gh >/dev/null || die "нужен gh"
-    remote "if exist C:\\projects\\scriba-login\\state\\account\\google-state.json (echo ok) else (echo none)" | grep -q ok ||
-      die "на MUSPELHEIM нет входа бота (scripts/scriba-login.sh login): гостем в боевые встречи не идём"
+    remote "[ -s ${ROOT}/account/google-state.json ] && echo ok || echo none" | grep -q ok ||
+      die "на VPS нет входа бота (${ROOT}/account/google-state.json): гостем в боевые встречи не идём"
     merge_prs
     deploy_functions
     sync_code

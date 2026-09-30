@@ -7,17 +7,19 @@
 // в notices.test.ts.
 //
 // Подстановки: {title} (название встречи), {bot} (имя бота из профиля), {door_wait} (сколько
-// секунд бот ждёт у двери, из профиля) — имя и тайминг в текст не вписываются, иначе разъедутся
+// секунд бот ждёт у двери, из профиля), {guest_wait} (сколько минут бот ждёт открытия комнаты
+// Контур.Толка для гостей, из профиля) — имя и тайминги в текст не вписываются, иначе разъедутся
 // с профилем молча. Техническая причина (`detail`) добавляется отдельной строкой в renderNotice.
 // Разметка — HTML (parse_mode: "HTML"): допустимы <b>, <i>, <code>.
 import { BOT_PROFILE } from "./bot-profile.ts";
 import type { NoticeKind, NoticeLang } from "./notices.ts";
 
-/** Подставить в шаблон имя бота и тайминг двери из профиля. {title} остаётся рендеру. */
+/** Подставить в шаблон имя бота и тайминги двери/гостевой комнаты из профиля. {title} остаётся рендеру. */
 export function fillBotTemplate(template: string): string {
   return template
     .replaceAll("{bot}", BOT_PROFILE.name)
-    .replaceAll("{door_wait}", String(BOT_PROFILE.door.waitSeconds));
+    .replaceAll("{door_wait}", String(BOT_PROFILE.door.waitSeconds))
+    .replaceAll("{guest_wait}", String(BOT_PROFILE.guestRoom.waitMinutes));
 }
 
 /** Ключ текста. Отличается от kind только у двери: у неё первое сообщение и последнее — разные. */
@@ -54,6 +56,15 @@ export const NOTICE_TEXTS: Record<NoticeTextKey, Record<NoticeLang, string>> = {
       "<b>{title}</b>: Google Meet didn't let {bot} in: it showed \"You can't join this video call\" before the waiting room, so nobody even saw a request to join. Usually this means the meeting only admits people with an account from your organization, and {bot} joins as a guest without one. To record this meeting, set Host controls → Meeting access to <b>Open</b> and invite {bot} again; otherwise it will be able to join once it has its own account. If access is already Open, check the meeting link. The meeting will not be recorded.",
     ru:
       "«<b>{title}</b>»: Google Meet не пустил {bot}: ещё до комнаты ожидания он показал «You can't join this video call», так что заявку на вход никто даже не увидел. Обычно это значит, что встреча пускает только людей с аккаунтом вашей организации, а {bot} заходит гостем без аккаунта. Чтобы записать встречу, в настройках организатора поставьте доступ к встрече <b>«Открытый»</b> (Meeting access → Open) и позовите {bot} снова; иначе бот сможет заходить, когда у него появится свой аккаунт. Если доступ уже открытый — проверьте ссылку на встречу. Запись вестись не будет.",
+  },
+  // Контур.Толк, комната закрыта для внешних участников (D040): бот заходит гостем, без
+  // аккаунта Контура, поэтому если комната не открыта для гостей — его не пускает. Бот
+  // перезагружает страницу и ждёт guest_wait минут, потом уходит.
+  guest_access_closed: {
+    en:
+      "<b>{title}</b>: {bot} couldn't get into the Kontur.Talk room: it's closed to external participants (guests). {bot} waited {guest_wait} minutes for it to open and left. To record, turn on access for external participants in the room settings and invite {bot} again. If access is already on, check the link — Kontur.Talk shows the same page for a room that doesn't exist. The meeting will not be recorded.",
+    ru:
+      "«<b>{title}</b>»: {bot} не смог зайти в комнату Контур.Толка: она закрыта для внешних участников (гостей). {bot} прождал {guest_wait} минут, пока её откроют, и ушёл. Чтобы записать встречу, включите доступ для внешних участников в настройках комнаты и позовите {bot} снова. Если доступ уже включён — проверьте ссылку: Контур.Толк показывает ту же страницу и для несуществующей комнаты. Запись вестись не будет.",
   },
   // Страница прямо говорит, что встречи нет: неверный код или встреча уже закончилась.
   meeting_unavailable: {
