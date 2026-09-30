@@ -195,7 +195,15 @@ export function denyCaptureDevices(): void {
     await Promise.resolve();
     throw new DOMException("scriba joins muted: capture is disabled", "NotAllowedError");
   };
+  // Свойство — геттер с немым сеттером, а не `writable: false`: Толк при входе сам присваивает
+  // `mediaDevices.getUserMedia` (обёртка), и в строгом режиме запись в read-only бросает TypeError —
+  // скрипт Толка падал, страница перезагружалась на форму имени, и бот ходил по кругу (прод
+  // 30.09.2026). Запись теперь проглатывается, а читается всегда отказ.
   for (const name of ["getUserMedia", "getDisplayMedia"]) {
-    Object.defineProperty(devices, name, { value: deny, configurable: false, writable: false });
+    Object.defineProperty(devices, name, {
+      get: () => deny,
+      set: (): void => undefined,
+      configurable: false,
+    });
   }
 }
