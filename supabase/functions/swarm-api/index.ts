@@ -4,7 +4,7 @@
 // роутера живёт в модулях рядом (task-labels.ts, meeting-invites.ts …), они по канону.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { verifyInitData } from "./auth.ts";
-import { signJWT, verifyJWT } from "../_shared/jwt.ts";
+import { isSessionRevoked, type SessionClaims, verifyJWT } from "../_shared/jwt.ts";
 import {
   buildRecorderSetupOneLiner,
   buildRecorderUpdateOneLiner,
@@ -28,7 +28,9 @@ import {
   ENTRY_LIST_COLUMNS,
   EntryAccessError,
   getEntrySecure,
+  getMeetingSecure,
 } from "./entries-guard.ts";
+import { canChangeMeetingPrivacy } from "../_shared/entries/meeting-rights.ts";
 import { toAgentListRow, toListRow } from "./meetings-payload.ts";
 import { TASK_LIST_COLUMNS } from "./task-columns.ts";
 import { resolveDigestScope } from "./digest-scope.ts";
@@ -561,6 +563,8 @@ Deno.serve(async (req: Request) => {
   const authHeader = req.headers.get("Authorization") ?? "";
   let telegram_id: number;
   let language_code = "en";
+  // Веб-сессия (Bearer). Сверяется с отзывом ниже, когда загружена строка allowed_users.
+  let webSession: SessionClaims | null = null;
 
   if (authHeader.startsWith("tma ")) {
     const verified = await verifyInitData(
@@ -579,6 +583,7 @@ Deno.serve(async (req: Request) => {
     );
     if (!verified) return apiErr(401, "Unauthorized", origin);
     telegram_id = verified.telegram_id;
+    webSession = verified;
   } else {
     return apiErr(401, "Unauthorized", origin);
   }
@@ -586,12 +591,22 @@ Deno.serve(async (req: Request) => {
   // ── Resolve workspace ────────────────────────────────────────────────────
   const { data: userRow } = await supabase
     .from("allowed_users")
-    .select("group_id, is_admin, email")
+    .select("group_id, is_admin, email, sessions_revoked_at")
     .eq("telegram_id", telegram_id)
     .maybeSingle();
 
   if (!userRow) {
     return apiErr(401, "User not in allowed list", origin);
+  }
+  // «Выйти везде»: сессия, выданная до отметки отзыва, недействительна (см. POST /auth/revoke-sessions).
+  if (
+    webSession &&
+    isSessionRevoked(
+      webSession,
+      (userRow as { sessions_revoked_at?: string | null }).sessions_revoked_at,
+    )
+  ) {
+    return apiErr(401, "Unauthorized", origin);
   }
   // Demo-сессия (секретная ссылка, telegram_id === DEMO_USER_ID): жёсткая изоляция.
   // Группа форсится в 'demo' (НЕ из БД), админ-права запрещены. Барьер «нет дыр в рабочие»:
@@ -620,6 +635,22 @@ Deno.serve(async (req: Request) => {
   // live-пометки, и их гейт пропускает — повтора у рекордера нет (см. maintenanceVerdict).
   // Тот же статус, но для узнанного человека: владельцу заглушка сообщает, что он проходит,
   // — иначе он не сможет ни проверить раскатку, ни снять режим через продукт.
+  // ── POST /auth/revoke-sessions — выход на всех устройствах (зовёт CF /api/auth/logout) ──
+  // Стоит до заморозки раскатки: выйти должно получаться всегда. Демо-сессию общую для всех
+  // зрителей витрины не отзываем — иначе один «Exit demo» выкидывал бы остальных.
+  if (req.method === "POST" && routePath === "/auth/revoke-sessions") {
+    if (!webSession) return apiErr(400, "Web session required", origin);
+    if (isDemo) return new Response(null, { status: 204, headers: corsHeaders(origin) });
+    const { error } = await supabase.from("allowed_users")
+      .update({ sessions_revoked_at: new Date().toISOString() })
+      .eq("telegram_id", telegram_id);
+    if (error) {
+      console.error("revoke-sessions: не записал отметку отзыва", telegram_id, error.message);
+      return apiErr(500, "Could not sign out everywhere", origin);
+    }
+    return new Response(null, { status: 204, headers: corsHeaders(origin) });
+  }
+
   if (req.method === "GET" && routePath === "/maintenance") {
     const st = await readMaintenance(supabase);
     return json(
@@ -644,7 +675,7 @@ Deno.serve(async (req: Request) => {
     });
   }
 
-  // Admin routes (gated to telegram_id === 744230399)
+  // Admin routes: гейт isAdmin, объём — воркспейс админа (суперадмину — все), см. admin-scope.ts
   const adminResp = await handleAdminRoutes(
     supabase,
     req,
@@ -653,6 +684,7 @@ Deno.serve(async (req: Request) => {
     isAdmin,
     origin,
     resolveNames,
+    groupId,
   );
   if (adminResp) return adminResp;
 
@@ -2359,9 +2391,13 @@ Deno.serve(async (req: Request) => {
   );
   if (meetingResummarizeMatch && req.method === "POST") {
     return withEntries(origin, async () => {
-      const entry = await getEntrySecure(supabase, meetingResummarizeMatch[1], {
+      // Пересборка тезисов переписывает текст встречи — это правка (права встречи).
+      const entry = await getMeetingSecure(supabase, meetingResummarizeMatch[1], {
         groupId,
         telegramId: telegram_id,
+        email: userEmail,
+        isAdmin,
+        action: "edit",
       });
       const meetingRowId = (entry.metadata as { meeting_id?: string } | null)
         ?.meeting_id;
@@ -2505,9 +2541,14 @@ Deno.serve(async (req: Request) => {
         return json(entry, 200, origin);
       }
       if (req.method === "PATCH") {
-        const entry = await getEntrySecure(supabase, meetingId, {
+        // Правят владелец, участники и админ; личную — только владелец
+        // (_shared/entries/meeting-rights.ts).
+        const entry = await getMeetingSecure(supabase, meetingId, {
           groupId,
           telegramId: telegram_id,
+          email: userEmail,
+          isAdmin,
+          action: "edit",
         });
         let body: Record<string, unknown>;
         try {
@@ -2552,6 +2593,18 @@ Deno.serve(async (req: Request) => {
           fields.metadata = meta;
         }
         // Смена приватности встречи-записи: владелец задаётся/снимается вместе с флагом (как у задач).
+        // Менять видимость — права удаления (владелец/админ): личная встреча скрыта от команды.
+        if (
+          typeof body.is_private === "boolean" &&
+          body.is_private !== entry.is_private &&
+          !canChangeMeetingPrivacy(entry, {
+            id: telegram_id,
+            email: userEmail,
+            isAdmin,
+          })
+        ) {
+          return apiErr(403, "Forbidden", origin);
+        }
         if (typeof body.is_private === "boolean") {
           fields.is_private = body.is_private;
           // Владелец остаётся и у общей встречи: is_private отвечает за ВИДИМОСТЬ, owner_id —
@@ -2571,9 +2624,13 @@ Deno.serve(async (req: Request) => {
         return json(data, 200, origin);
       }
       if (req.method === "DELETE") {
-        await getEntrySecure(supabase, meetingId, {
+        // Удаляют владелец и админ; личную — только владелец.
+        await getMeetingSecure(supabase, meetingId, {
           groupId,
           telegramId: telegram_id,
+          email: userEmail,
+          isAdmin,
+          action: "delete",
         });
         await supabase.from("entries").delete().eq("id", meetingId);
         return new Response(null, {
@@ -2997,20 +3054,12 @@ Deno.serve(async (req: Request) => {
     return json(data ?? [], 200, origin);
   }
 
-  // ── GET /google/connect-url — OAuth-ссылка для подключения Google-календаря ──────
+  // ── GET /google/connect-url — ссылка для подключения Google-календаря ──────────────
+  // Поток живёт на CF Pages (/api/auth/google/start?flow=calendar) рядом с веб-сессией:
+  // start и callback сами сверяют сессию браузера. Путь относительный — веб открывает его
+  // на своём же адресе.
   if (req.method === "GET" && routePath === "/google/connect-url") {
-    if (!WEB_JWT_SECRET) return apiErr(500, "Web auth not configured", origin);
-    const state = await signJWT({ telegram_id }, WEB_JWT_SECRET, 600);
-    const base = Deno.env.get("SUPABASE_URL")!;
-    return json(
-      {
-        url: `${base}/functions/v1/google-oauth/start?state=${
-          encodeURIComponent(state)
-        }`,
-      },
-      200,
-      origin,
-    );
+    return json({ url: "/api/auth/google/start?flow=calendar" }, 200, origin);
   }
 
   // ── DELETE /integrations/google — отключить Google-календарь ─────────────────────

@@ -97,7 +97,6 @@ supabase secrets set MINIAPP_ORIGIN=<URL_минипрложения_или_*>
 | `MINIAPP_ORIGIN` | URL веб-интерфейса (для CORS). Используй `*` для начала | рекомендуется |
 | `INITDATA_MAX_AGE` | Срок жизни initData Telegram в секундах (по умолчанию 86400) | опционально |
 | `BOT_NAME` | Имя бота в подписи фидбека (по умолчанию `bot`) | опционально |
-| `MCP_AUTH_REQUIRED` | `true` — строгая авторизация в swarm-mcp (по умолчанию soft) | опционально |
 
 `SUPABASE_URL` и `SUPABASE_SERVICE_ROLE_KEY` Edge Functions получают автоматически — вручную устанавливать не нужно.
 
@@ -110,8 +109,8 @@ supabase secrets set WEB_BASE_URL=<URL_веб-фронтенда_или_Mini_App
 
 | Secret | Описание | Обязателен |
 |--------|----------|-----------|
-| `WEB_JWT_SECRET` | Секрет подписи веб-сессий (Login Widget, Bearer-токены swarm-api, OAuth-state Google). Без него веб-логин и `/google/connect-url` отдают 500 | нужен для веб-логина и Google-connect |
-| `WEB_BASE_URL` | Базовый URL веб-фронтенда — используется в ссылках на встречи (`meeting-ingest`) и редиректах после Google OAuth | нужен для веб-ссылок и Google OAuth |
+| `WEB_JWT_SECRET` | Секрет подписи веб-сессий (Bearer-токены swarm-api) и вызовов от CF Pages (`google-oauth/link`, `auth-resolve`). Тот же ключ стоит в CF Pages — там он подписывает сессии и OAuth-state. Без него веб-логин отдаёт 500 | нужен для веб-логина и Google-connect |
+| `WEB_BASE_URL` | Базовый URL веб-фронтенда — используется в ссылках на встречи (`meeting-ingest`, `meeting-process`) | нужен для веб-ссылок |
 
 ### 7.3 Google Drive (опционально — только если включён аплоад файлов в Drive)
 
@@ -123,7 +122,7 @@ supabase secrets set GOOGLE_PRIVATE_KEY="<private-key-с-\n>"
 supabase secrets set GOOGLE_DRIVE_FOLDER_ID=<id-корневой-папки>
 ```
 
-OAuth-флоу подключения личного Google-аккаунта (`google-oauth`, `meeting-current`) дополнительно требует:
+Google-календарь (`meeting-current` освежает токены; сам OAuth-поток идёт на CF Pages, и там должен стоять **тот же** OAuth-клиент) дополнительно требует:
 
 ```bash
 supabase secrets set GOOGLE_CLIENT_ID=<oauth-client-id>
@@ -161,7 +160,7 @@ supabase functions deploy swarm-mcp        --no-verify-jwt
 supabase functions deploy swarm-setup      --no-verify-jwt
 supabase functions deploy read-ai-webhook  --no-verify-jwt
 supabase functions deploy read-ai-auth     --no-verify-jwt   # только если используешь Read.ai
-supabase functions deploy google-oauth     --no-verify-jwt   # только если используешь Google OAuth
+supabase functions deploy google-oauth     --no-verify-jwt   # только если используешь Google OAuth (ручка /link для привязки календаря)
 supabase functions deploy meeting-ingest   --no-verify-jwt   # только если используешь встречи (Read.ai/Granola → встречи)
 supabase functions deploy meeting-current  --no-verify-jwt   # только если используешь встречи
 supabase functions deploy meeting-claim    --no-verify-jwt   # только если используешь встречи

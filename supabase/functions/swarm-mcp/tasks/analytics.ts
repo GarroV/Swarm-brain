@@ -9,7 +9,7 @@
 // промах в проверке здесь сразу означает утечку чужих личных задач.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { listTasks, getTask } from "../../_shared/tasks/db.ts";
+import { getTask, listTasks } from "../../_shared/tasks/db.ts";
 import { canViewTask, taskAccessError } from "../../_shared/tasks/access.ts";
 import { computeFlowTimes, computeTaskStats, periodStartISO, type StatsTask } from "../../_shared/tasks/analytics.ts";
 import { ADMIN_USER_ID, fetchProjectRows, resolveGroupId } from "./tools.ts";
@@ -90,12 +90,16 @@ export async function toolGetTaskStats(args: {
   let sinceISO: string;
   if (args.since) {
     const t = Date.parse(args.since);
-    if (Number.isNaN(t)) return `Ошибка: since «${args.since}» не разобрать — нужна дата ISO (2026-09-01). Статистика НЕ посчитана.`;
+    if (Number.isNaN(t)) {
+      return `Ошибка: since «${args.since}» не разобрать — нужна дата ISO (2026-09-01). Статистика НЕ посчитана.`;
+    }
     sinceISO = new Date(t).toISOString();
   } else {
     const period = args.period ?? DEFAULT_PERIOD;
     const start = periodStartISO(period);
-    if (!start) return `Ошибка: period «${period}» неизвестен — допустимы day, week, month, quarter, year (или since с датой). Статистика НЕ посчитана.`;
+    if (!start) {
+      return `Ошибка: period «${period}» неизвестен — допустимы day, week, month, quarter, year (или since с датой). Статистика НЕ посчитана.`;
+    }
     sinceISO = start;
   }
 
@@ -135,7 +139,9 @@ export async function toolGetTaskStats(args: {
       .select("task_id, new_value, new_status, created_at")
       .in("task_id", ids)
       .or("field.eq.status,field.is.null");
-    const rows = ((transitions ?? []) as Array<{ task_id: string; new_value: string | null; new_status: string | null; created_at: string }>)
+    const rows = ((transitions ?? []) as Array<
+      { task_id: string; new_value: string | null; new_status: string | null; created_at: string }
+    >)
       .map((r) => ({ task_id: r.task_id, new_value: r.new_value ?? r.new_status, created_at: r.created_at }));
     flow = computeFlowTimes(rows, tasks as StatsTask[]);
   }
@@ -156,15 +162,21 @@ export async function toolGetTaskStats(args: {
 export async function toolGetTaskHistory(args: { task_id: string; requesting_user_id: number }): Promise<string> {
   const task = await getTask(args.task_id);
   const groupId = await resolveGroupId(args.requesting_user_id);
+  if (!groupId) return `Задача ${args.task_id} не найдена.`;
   const denied = taskAccessError(
-    args.task_id, task, args.requesting_user_id,
-    args.requesting_user_id === ADMIN_USER_ID, groupId ?? null,
+    args.task_id,
+    task,
+    args.requesting_user_id,
+    args.requesting_user_id === ADMIN_USER_ID,
+    groupId ?? null,
   );
   if (denied) return denied;
 
   const { data, error } = await supabase
     .from("task_history")
-    .select("task_id, field, old_value, new_value, old_status, new_status, changed_by, changed_by_telegram_id, created_at")
+    .select(
+      "task_id, field, old_value, new_value, old_status, new_status, changed_by, changed_by_telegram_id, created_at",
+    )
     .eq("task_id", args.task_id)
     .order("created_at", { ascending: true });
   if (error) {
@@ -189,7 +201,9 @@ export async function toolGetRecentTaskChanges(
     sinceISO = periodStartISO(DEFAULT_PERIOD)!;
   } else {
     const t = Date.parse(args.since);
-    if (Number.isNaN(t)) return `Ошибка: since «${args.since}» не разобрать — нужна дата ISO (2026-09-09 или 2026-09-09T07:00:00Z). Изменения НЕ показаны.`;
+    if (Number.isNaN(t)) {
+      return `Ошибка: since «${args.since}» не разобрать — нужна дата ISO (2026-09-09 или 2026-09-09T07:00:00Z). Изменения НЕ показаны.`;
+    }
     sinceISO = new Date(t).toISOString();
   }
 
@@ -198,7 +212,9 @@ export async function toolGetRecentTaskChanges(
 
   const { data, error } = await supabase
     .from("task_history")
-    .select("task_id, field, old_value, new_value, old_status, new_status, changed_by, changed_by_telegram_id, created_at")
+    .select(
+      "task_id, field, old_value, new_value, old_status, new_status, changed_by, changed_by_telegram_id, created_at",
+    )
     .gte("created_at", sinceISO)
     .order("created_at", { ascending: false })
     .limit(readCap);
@@ -215,7 +231,11 @@ export async function toolGetRecentTaskChanges(
     .from("tasks").select("id, title, group_id, is_private, owner_id")
     .in("id", [...new Set(raw.map((r) => r.task_id))]);
   const titleById = new Map<string, string>();
-  for (const t of (taskRows ?? []) as Array<{ id: string; title: string; group_id: string | null; is_private: boolean; owner_id: number | null }>) {
+  for (
+    const t of (taskRows ?? []) as Array<
+      { id: string; title: string; group_id: string | null; is_private: boolean; owner_id: number | null }
+    >
+  ) {
     if (t.group_id !== groupId) continue;
     if (!canViewTask(t, args.requesting_user_id, isAdmin)) continue;
     titleById.set(t.id, t.title);
@@ -240,23 +260,36 @@ export async function toolGetRecentTaskChanges(
 export const ANALYTICS_TOOL_DEFINITIONS = [
   {
     name: "get_task_stats",
-    description: "Статистика по задачам за период: создано/закрыто (с раскладкой по дням или месяцам), время от постановки до закрытия, время ожидания начала работы и время в работе по журналу, дисциплина сроков, кто сколько закрыл, что просрочено. Фильтры по исполнителю, проекту, рынку.",
+    description:
+      "Статистика по задачам за период: создано/закрыто (с раскладкой по дням или месяцам), время от постановки до закрытия, время ожидания начала работы и время в работе по журналу, дисциплина сроков, кто сколько закрыл, что просрочено. Фильтры по исполнителю, проекту, рынку.",
     inputSchema: {
       type: "object",
       properties: {
-        period: { type: "string", enum: ["day", "week", "month", "quarter", "year"], description: "Окно статистики, по умолчанию week" },
-        since: { type: "string", description: "Точная дата начала (ISO, 2026-09-01) — важнее period. Неразобранное значение = отказ, а не тихий дефолт" },
+        period: {
+          type: "string",
+          enum: ["day", "week", "month", "quarter", "year"],
+          description: "Окно статистики, по умолчанию week",
+        },
+        since: {
+          type: "string",
+          description:
+            "Точная дата начала (ISO, 2026-09-01) — важнее period. Неразобранное значение = отказ, а не тихий дефолт",
+        },
         assignee: { type: "string", description: "Имя исполнителя — считать только его задачи" },
         project: { type: "string", description: "Имя проекта или подпроекта (точные имена — get_projects)" },
         country: { type: "string", description: "Страна или рынок" },
-        requesting_user_id: { type: "number", description: "Твой Telegram user ID — обязателен для фильтрации по воркспейсу и приватности" },
+        requesting_user_id: {
+          type: "number",
+          description: "Твой Telegram user ID — обязателен для фильтрации по воркспейсу и приватности",
+        },
       },
       required: ["requesting_user_id"],
     },
   },
   {
     name: "get_task_history",
-    description: "История одной задачи: что, когда и кем менялось — статус, срок, исполнитель, проект, спринт, приоритет. ID задачи печатает get_tasks.",
+    description:
+      "История одной задачи: что, когда и кем менялось — статус, срок, исполнитель, проект, спринт, приоритет. ID задачи печатает get_tasks.",
     inputSchema: {
       type: "object",
       properties: {
@@ -268,13 +301,24 @@ export const ANALYTICS_TOOL_DEFINITIONS = [
   },
   {
     name: "get_recent_task_changes",
-    description: "Все изменения по доступным задачам за период одной выдачей — «где, когда, куда передвинули». Сгруппировано по задаче, у каждой печатается id.",
+    description:
+      "Все изменения по доступным задачам за период одной выдачей — «где, когда, куда передвинули». Сгруппировано по задаче, у каждой печатается id.",
     inputSchema: {
       type: "object",
       properties: {
-        since: { type: "string", description: "С какого момента (ISO). По умолчанию — неделя. Неразобранное значение = отказ" },
-        limit: { type: "number", description: "Сколько изменений показать: по умолчанию 100, максимум 400. Если больше — выдача честно скажет, что обрезана" },
-        requesting_user_id: { type: "number", description: "Твой Telegram user ID — обязателен для фильтрации по воркспейсу и приватности" },
+        since: {
+          type: "string",
+          description: "С какого момента (ISO). По умолчанию — неделя. Неразобранное значение = отказ",
+        },
+        limit: {
+          type: "number",
+          description:
+            "Сколько изменений показать: по умолчанию 100, максимум 400. Если больше — выдача честно скажет, что обрезана",
+        },
+        requesting_user_id: {
+          type: "number",
+          description: "Твой Telegram user ID — обязателен для фильтрации по воркспейсу и приватности",
+        },
       },
       required: ["requesting_user_id"],
     },

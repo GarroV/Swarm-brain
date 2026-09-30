@@ -25,7 +25,6 @@ import {
   parseSaveCommand,
 } from "./lib/intent.ts";
 import { ALL_MEETING_SOURCES, ENTRY_MEETING_SOURCES, sourceLabel } from "../_shared/sources.ts";
-import { timingSafeEq } from "../_shared/timing-safe.ts";
 import { buildClaudeProjectPrompt } from "../_shared/claude-project-prompt.ts";
 import { handleEntryCommand, handleManageCallbacks, handleManageSessionInput } from "./handlers/manage.ts";
 import {
@@ -69,6 +68,7 @@ import {
   revokeRecorderToken,
 } from "./lib/mcp-setup.ts";
 import type { TgCallbackQuery, TgMessage } from "./lib/types.ts";
+import { classifyRequest, isOwnPrivateChat } from "./lib/webhook-auth.ts";
 
 const TELEGRAM_BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN")!;
 const CRON_SECRET = Deno.env.get("CRON_SECRET") ?? "";
@@ -105,8 +105,21 @@ function bgRun(promise: Promise<void>, chatId: number): void {
   if (typeof EdgeRuntime !== "undefined") EdgeRuntime.waitUntil(safe);
 }
 
+// Токен даёт полный доступ к аккаунту, поэтому выдаётся только в личный чат владельца:
+// не в группу, где его прочтут все, и не в чужой чат.
+async function ensureOwnPrivateChat(chatId: number, userId: number): Promise<boolean> {
+  if (isOwnPrivateChat(chatId, userId)) return true;
+  await sendMessage(
+    chatId,
+    "🔒 Токены выдаю только в личном чате со мной — напиши мне напрямую.\n" +
+      "<i>I only send tokens in a private chat — message me directly.</i>",
+  );
+  return false;
+}
+
 // Минтит и показывает новый MCP-токен (общий путь для /mytoken и подтверждённого перевыпуска).
 async function sendMyToken(chatId: number, userId: number): Promise<void> {
+  if (!(await ensureOwnPrivateChat(chatId, userId))) return;
   const minted = await mintMcpToken(userId);
   if (!minted) {
     await sendMessage(chatId, "❌ Не удалось сгенерировать токен. Обратись к администратору.");
@@ -127,6 +140,7 @@ async function sendMyToken(chatId: number, userId: number): Promise<void> {
 // и подтверждённого переподключения setup_reissue). Перевыпуск УБИВАЕТ старый токен — поэтому
 // /setup зовёт это молча только при ПЕРВОМ подключении (когда активного токена ещё нет).
 async function sendSetupOneLiner(chatId: number, userId: number): Promise<void> {
+  if (!(await ensureOwnPrivateChat(chatId, userId))) return;
   const minted = await mintMcpToken(userId);
   if (!minted) {
     await sendMessage(chatId, "❌ Не удалось подготовить подключение. Попробуй позже или напиши администратору.");
@@ -149,6 +163,7 @@ async function sendSetupOneLiner(chatId: number, userId: number): Promise<void> 
 // /recordertoken и подтверждённого перевыпуска rtk_reissue). Мгновенный сетап как у /setup:
 // одна команда в Терминале — поставит и настроит рекордер сам.
 async function sendRecorderToken(chatId: number, userId: number): Promise<void> {
+  if (!(await ensureOwnPrivateChat(chatId, userId))) return;
   const minted = await mintRecorderToken(userId);
   if (!minted) {
     await sendMessage(chatId, "❌ Не удалось сгенерировать токен bumblebee. Обратись к администратору.");
@@ -282,15 +297,15 @@ async function checkRecorderHealth(): Promise<void> {
 Deno.serve(async (req: Request) => {
   if (req.method !== "POST") return new Response("OK", { status: 200 });
 
-  // Подлинность источника апдейтов. Проверяем ДО req.json(): подделанное тело не должно
-  // доходить до разбора — иначе чужой POST тратит OpenAI и отдаёт команды от имени админа.
-  // Cron-триггеры ходят со своим X-Cron-Secret и проверяются ниже, их сюда не пускаем.
-  if (TELEGRAM_WEBHOOK_ENFORCE && !req.headers.get("X-Cron-Secret")) {
-    const provided = req.headers.get("X-Telegram-Bot-Api-Secret-Token") ?? "";
-    if (!TELEGRAM_WEBHOOK_SECRET || !timingSafeEq(provided, TELEGRAM_WEBHOOK_SECRET)) {
-      return new Response("Unauthorized", { status: 401 });
-    }
-  }
+  // Подлинность источника. Проверяем ДО req.json(): подделанное тело не должно доходить до
+  // разбора — иначе чужой POST тратит OpenAI и отдаёт команды от имени админа. Источник
+  // определяется по значению секрета, а не по наличию заголовка (lib/webhook-auth.ts).
+  const source = classifyRequest(req.headers, {
+    cronSecret: CRON_SECRET,
+    webhookSecret: TELEGRAM_WEBHOOK_SECRET,
+    enforce: TELEGRAM_WEBHOOK_ENFORCE,
+  });
+  if (source === "deny") return new Response("Unauthorized", { status: 401 });
 
   let body: Record<string, unknown>;
   try {
@@ -306,7 +321,7 @@ Deno.serve(async (req: Request) => {
     body.readai_token_refresh === true || body.granola_poll === true || body.meetings_watchdog === true ||
     body.webhook_info === true || body.set_webhook === true
   ) {
-    if (!CRON_SECRET || req.headers.get("X-Cron-Secret") !== CRON_SECRET) {
+    if (source !== "cron") {
       return new Response("Forbidden", { status: 403 });
     }
   }
