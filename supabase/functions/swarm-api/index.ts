@@ -122,6 +122,7 @@ import { DEMO_GROUP_ID, isDemoSession } from "../_shared/demo-session.ts";
 import { handleAutojoinRoutes, makeAutojoinStore } from "./autojoin.ts";
 import { handleTaskLabelRoutes } from "./task-labels.ts";
 import { handleTaskCommentRoutes } from "./task-comments.ts";
+import { handleTaskFileRoutes } from "./task-files.ts";
 import { handleStatsRoutes } from "./stats.ts";
 import { handleMeetingAskRoutes } from "./meeting-ask.ts";
 import { handleSprintCycleRoutes } from "./sprint-cycles.ts";
@@ -861,6 +862,20 @@ Deno.serve(async (req: Request) => {
     resolveNames,
   );
   if (commentResp) return commentResp;
+
+  // Файлы к задачам (/tasks/:id/files…) — доступ по видимости задачи, байты на MUSPELHEIM.
+  const fileResp = await handleTaskFileRoutes(
+    supabase,
+    req,
+    routePath,
+    telegram_id,
+    groupId,
+    isAdmin,
+    isDemo,
+    origin,
+    resolveNames,
+  );
+  if (fileResp) return fileResp;
 
   // Статистика по людям (/stats/people) — только числа; «на вычитке» — только админу.
   const statsResp = await handleStatsRoutes(

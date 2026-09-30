@@ -25,6 +25,7 @@ import { PILL_GROUP_CLS, pillSegmentCls, pillSegmentSelectCls, PropertyPillBody,
 import { useConfirm } from "@/components/ui/confirm";
 import { RoyIcon, type RoyIconName } from "@/components/roy/icons";
 import { TaskComments } from "@/components/tasks/TaskComments";
+import { TaskFiles } from "@/components/tasks/TaskFiles";
 import { TaskSubtasks } from "@/components/tasks/TaskSubtasks";
 import { COUNTRY_NAMES, countryCode } from "@/lib/countries";
 import { CountryPopover } from "@/components/tasks/CountryPopover";
@@ -841,6 +842,12 @@ export function TaskModal({ task: taskProp, open, onClose, onSaved, prefill, mee
           {isEdit && task && !isPartial && (
             <div data-card-block="subtasks" className="mt-3.5 border-t border-line pt-3">
               <TaskSubtasks task={task} onChanged={onSaved} />
+            </div>
+          )}
+
+          {isEdit && task && (
+            <div data-card-block="files" className="mt-3.5 border-t border-line pt-3">
+              <TaskFiles taskId={task.id} taskOwnerId={task.owner_id ?? null} />
             </div>
           )}
 
