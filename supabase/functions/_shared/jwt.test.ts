@@ -1,5 +1,14 @@
 import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import { signJWT, verifyJWT, shouldRefreshSession, SESSION_TTL_SEC, SESSION_REFRESH_AFTER_SEC } from "./jwt.ts";
+import {
+  authTimeForRefresh,
+  isSessionRevoked,
+  LEGACY_MIN_REMAINING_SEC,
+  SESSION_REFRESH_AFTER_SEC,
+  SESSION_TTL_SEC,
+  shouldRefreshSession,
+  signJWT,
+  verifyJWT,
+} from "./jwt.ts";
 
 const SECRET = "test-secret-0123456789";
 
@@ -67,4 +76,71 @@ Deno.test("shouldRefreshSession: старая 7-дневная сессия пе
 Deno.test("shouldRefreshSession: срок сессии — 30 дней", () => {
   assertEquals(SESSION_TTL_SEC, 30 * 86400);
   assertEquals(SESSION_REFRESH_AFTER_SEC, 86400);
+});
+
+// ── Назначение токена и отзыв сессий ───────────────────────────────────────────
+// Подписываем произвольное тело тем же ключом — так выглядит любой не-сессионный токен.
+async function signRaw(body: Record<string, unknown>, secret = SECRET): Promise<string> {
+  const e = new TextEncoder();
+  const b64 = (u: Uint8Array) =>
+    btoa(String.fromCharCode(...u)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  const data = `${b64(e.encode(JSON.stringify({ alg: "HS256", typ: "JWT" })))}.${b64(e.encode(JSON.stringify(body)))}`;
+  const key = await crypto.subtle.importKey("raw", e.encode(secret), { name: "HMAC", hash: "SHA-256" }, false, [
+    "sign",
+  ]);
+  return `${data}.${b64(new Uint8Array(await crypto.subtle.sign("HMAC", key, e.encode(data))))}`;
+}
+const nowSec = () => Math.floor(Date.now() / 1000);
+
+Deno.test("signJWT ставит метку сессии и момент входа", async () => {
+  const v = await verifyJWT(await signJWT({ telegram_id: 5 }, SECRET), SECRET);
+  assertEquals(v?.legacy, false);
+  assertEquals(typeof v?.authTime, "number");
+});
+
+Deno.test("verifyJWT: токен с чужим назначением сессией не считается", async () => {
+  const t = await signRaw({ telegram_id: 5, pur: "oauth_state", auth_time: nowSec(), exp: nowSec() + 3600 });
+  assertEquals(await verifyJWT(t, SECRET), null);
+});
+
+Deno.test("verifyJWT: сессия нового формата без момента входа отклоняется", async () => {
+  const t = await signRaw({ telegram_id: 5, pur: "session", exp: nowSec() + 3600 });
+  assertEquals(await verifyJWT(t, SECRET), null);
+});
+
+Deno.test("verifyJWT: короткий токен старого формата отклоняется", async () => {
+  const t = await signRaw({ telegram_id: 5, exp: nowSec() + LEGACY_MIN_REMAINING_SEC - 5 });
+  assertEquals(await verifyJWT(t, SECRET), null);
+});
+
+Deno.test("verifyJWT: долгая сессия старого формата принимается как legacy", async () => {
+  const t = await signRaw({ telegram_id: 5, exp: nowSec() + 7 * 86400 });
+  const v = await verifyJWT(t, SECRET);
+  assertEquals(v?.telegram_id, 5);
+  assertEquals(v?.legacy, true);
+  assertEquals(v?.authTime, null);
+});
+
+Deno.test("authTimeForRefresh: продление не сдвигает момент входа", async () => {
+  const t = await signJWT({ telegram_id: 5, auth_time: 1_700_000_000 }, SECRET);
+  const v = (await verifyJWT(t, SECRET))!;
+  assertEquals(authTimeForRefresh(v), 1_700_000_000);
+  const legacy = { telegram_id: 5, exp: nowSec() + 7 * 86400, authTime: null, legacy: true };
+  assertEquals(authTimeForRefresh(legacy) <= nowSec() + 7 * 86400 - SESSION_TTL_SEC, true);
+});
+
+Deno.test("isSessionRevoked: вход раньше отзыва — отозвана, позже — жива", () => {
+  const revokedAt = new Date(1_750_000_000_000).toISOString();
+  assertEquals(isSessionRevoked({ authTime: 1_749_999_000 }, revokedAt), true);
+  assertEquals(isSessionRevoked({ authTime: 1_750_000_100 }, revokedAt), false);
+});
+
+Deno.test("isSessionRevoked: без отзыва жива; старый формат после отзыва — отозван", () => {
+  assertEquals(isSessionRevoked({ authTime: 1 }, null), false);
+  assertEquals(isSessionRevoked({ authTime: null }, null), false);
+  assertEquals(isSessionRevoked({ authTime: null }, "2026-10-01T00:00:00Z"), true);
+});
+
+Deno.test("isSessionRevoked: нечитаемая отметка отзыва — считаем отозванной", () => {
+  assertEquals(isSessionRevoked({ authTime: 9_999_999_999 }, "not-a-date"), true);
 });

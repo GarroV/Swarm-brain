@@ -1,5 +1,6 @@
 // HS256 JWT для веб-сессий — копия supabase/functions/_shared/jwt.ts для Cloudflare Pages.
-// ВАЖНО: при правке синхронизировать обе копии.
+// ВАЖНО: при правке синхронизировать обе копии (эквивалентность держит
+// miniapp/src/lib/sessionJwtMirror.test.ts).
 
 const enc = new TextEncoder();
 
@@ -18,8 +19,10 @@ function b64urlDecode(s: string): Uint8Array<ArrayBuffer> {
   return buf;
 }
 
-async function hmacKey(secret: string): Promise<CryptoKey> {
-  return crypto.subtle.importKey("raw", enc.encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign", "verify"]);
+function hmacKey(secret: string): Promise<CryptoKey> {
+  return crypto.subtle.importKey(
+    "raw", enc.encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign", "verify"],
+  );
 }
 
 // ── Срок веб-сессии ────────────────────────────────────────────────────────────
@@ -47,16 +50,47 @@ export function shouldRefreshSession(
   return nowSec - (exp - ttl) > after;
 }
 
-export async function signJWT(payload: { telegram_id: number }, secret: string, expSeconds = SESSION_TTL_SEC): Promise<string> {
+// ── Назначение токена ─────────────────────────────────────────────────────────
+// Ключ WEB_JWT_SECRET общий для нескольких подписей, поэтому сессия несёт явную метку
+// назначения (`pur`), и проверка сессии принимает только её. Любой другой токен, даже с
+// верной подписью, сессией не считается.
+export const SESSION_PURPOSE = "session";
+
+// Токены старого формата (без `pur`) выпускались до 2026-09-30. Сессиями среди них были
+// только долгие (7 и 30 дней); короткие сессиями не были. Поэтому старый формат принимаем,
+// лишь пока до конца его срока больше этого запаса, а продление (прокси CF Pages) сразу
+// переиздаёт его в новом формате — через 30 дней старых токенов не останется вовсе.
+export const LEGACY_MIN_REMAINING_SEC = 600;
+
+export type SessionClaims = {
+  telegram_id: number;
+  exp: number;
+  // Момент входа (секунды). Продление его НЕ сдвигает — по нему работает «выйти везде».
+  // У старого формата его нет: null.
+  authTime: number | null;
+  legacy: boolean;
+};
+
+export async function signJWT(
+  payload: { telegram_id: number; auth_time?: number },
+  secret: string,
+  expSeconds = SESSION_TTL_SEC,
+): Promise<string> {
   const header = { alg: "HS256", typ: "JWT" };
-  const body = { telegram_id: payload.telegram_id, exp: Math.floor(Date.now() / 1000) + expSeconds };
+  const now = Math.floor(Date.now() / 1000);
+  const body = {
+    telegram_id: payload.telegram_id,
+    pur: SESSION_PURPOSE,
+    auth_time: payload.auth_time ?? now,
+    exp: now + expSeconds,
+  };
   const data = `${b64urlEncode(enc.encode(JSON.stringify(header)))}.${b64urlEncode(enc.encode(JSON.stringify(body)))}`;
   const key = await hmacKey(secret);
   const sig = new Uint8Array(await crypto.subtle.sign("HMAC", key, enc.encode(data)));
   return `${data}.${b64urlEncode(sig)}`;
 }
 
-export async function verifyJWT(token: string, secret: string): Promise<{ telegram_id: number; exp: number } | null> {
+export async function verifyJWT(token: string, secret: string): Promise<SessionClaims | null> {
   const parts = token.split(".");
   if (parts.length !== 3) return null;
   const [h, p, s] = parts;
@@ -68,15 +102,43 @@ export async function verifyJWT(token: string, secret: string): Promise<{ telegr
     return null;
   }
   if (!valid) return null;
-  let payload: { telegram_id?: number; exp?: number };
+  let payload: { telegram_id?: number; exp?: number; pur?: unknown; auth_time?: unknown };
   try {
     payload = JSON.parse(new TextDecoder().decode(b64urlDecode(p)));
   } catch {
     return null;
   }
-  if (!payload.exp || payload.exp < Date.now() / 1000) return null;
+  const nowSec = Date.now() / 1000;
+  if (typeof payload.exp !== "number" || payload.exp < nowSec) return null;
   if (typeof payload.telegram_id !== "number") return null;
-  return { telegram_id: payload.telegram_id, exp: payload.exp };
+  const legacy = payload.pur === undefined;
+  if (legacy) {
+    if (payload.exp - nowSec <= LEGACY_MIN_REMAINING_SEC) return null;
+  } else if (payload.pur !== SESSION_PURPOSE) {
+    return null;
+  }
+  const authTime = !legacy && typeof payload.auth_time === "number" ? payload.auth_time : null;
+  if (!legacy && authTime === null) return null;
+  return { telegram_id: payload.telegram_id, exp: payload.exp, authTime, legacy };
+}
+
+// Момент входа для переиздания при продлении: у нового формата — как был, у старого —
+// самая ранняя возможная оценка (exp − полный срок), она не позже настоящего входа.
+export function authTimeForRefresh(claims: SessionClaims, ttl = SESSION_TTL_SEC): number {
+  return claims.authTime ?? Math.min(claims.exp - ttl, Math.floor(Date.now() / 1000));
+}
+
+// Отозвана ли сессия: вход был раньше момента «выйти везде» (allowed_users.sessions_revoked_at).
+// Непонятная отметка отзыва трактуется как отзыв — ошибаемся в сторону «войти заново».
+export function isSessionRevoked(
+  claims: Pick<SessionClaims, "authTime">,
+  revokedAt: string | null | undefined,
+): boolean {
+  if (!revokedAt) return false;
+  const revokedMs = Date.parse(revokedAt);
+  if (Number.isNaN(revokedMs)) return true;
+  if (claims.authTime === null) return true;
+  return claims.authTime * 1000 < revokedMs;
 }
 
 // Проверка подписи Telegram Login Widget. ВНИМАНИЕ: secret = SHA256(bot_token)
