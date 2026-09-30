@@ -147,6 +147,19 @@ async function sceneOpen(browser: Browser): Promise<void> {
   await scene.adapter.leave();
 }
 
+async function sceneSlowForm(browser: Browser): Promise<void> {
+  console.log("\n──── форма имени появилась, когда join уже вернулся (прод 30.09.2026)");
+  const scene = newScene(browser, LONG_ROOM);
+  await scene.adapter.join(`${ROOM}?scene=slow`, GUEST_NAME);
+  equals(
+    await scene.adapter.waitAdmitted(10_000),
+    "admitted",
+    "представился и вошёл из waitAdmitted",
+  );
+  check(hasLogLine(scene, "клик: присоединиться"), "«Присоединиться» нажата");
+  await scene.adapter.leave();
+}
+
 async function sceneMicBeforeJoin(browser: Browser): Promise<void> {
   console.log("\n──── на экране устройств микрофон включён → в звонок не входим");
   const scene = newScene(browser, LONG_ROOM);
@@ -198,6 +211,7 @@ try {
   await sceneClosed(browser);
   await sceneOpens(browser);
   await sceneOpen(browser);
+  await sceneSlowForm(browser);
   await sceneMicBeforeJoin(browser);
   await sceneMicInCall(browser);
   await sceneAlone(browser);
