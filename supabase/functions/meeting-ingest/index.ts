@@ -1,7 +1,15 @@
+// ВСЕХ функциях); перевод на голые спецификаторы из import-map из ветки непроверяем. См. _shared/agent-auth.ts.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { verifyAgentToken, AgentAuthError } from "../_shared/agent-auth.ts";
-import { runMeetingStep, uploadPartsAndBuildState, type InMemoryPart } from "../_shared/meeting-processor.ts";
+import { AgentAuthError, resolveActingIdentity } from "../_shared/agent-auth.ts";
+import { assertGrantMeeting, GrantScopeError } from "../_shared/agent-grant.ts";
+import { type InMemoryPart, runMeetingStep, uploadPartsAndBuildState } from "../_shared/meeting-processor.ts";
+import { promoteQueued, readQueued, writeQueued } from "../_shared/meeting-queue.ts";
+import { decideUpload, uploadSource } from "./second-recording.ts";
+import { freshChallenge, holderSecondsCorrection, mayCorrectHolderSeconds } from "./challenge.ts";
+import { lowerHolderSeconds, measureUpload, type Rival, settleChallengeUpload } from "./challenge-io.ts";
 import { claimLeaseUntil } from "../_shared/meeting-lease.ts";
+import { isFrozen } from "../_shared/meeting-frozen.ts";
+import { parseSpeakerTimeline, type SpeakerSpan, SpeakerTimelineError } from "../_shared/speakers.ts";
 
 // meeting-ingest — приём АУДИО от claimer (см. transcribator/10-REVISED-DESIGN.md §4, §7.2).
 // Облачная схема: рекордер пишет звук → грузит сюда; сервер транскрибирует (OpenAI Whisper)
@@ -23,14 +31,23 @@ const OPENAI_AUDIO_MAX_BYTES = 25 * 1024 * 1024;
 const INLINE_BUDGET_MS = 90_000;
 
 // Supabase-инъектируемый глобал для фоновой работы после ответа.
-declare const EdgeRuntime: { waitUntil: (p: Promise<unknown>) => void } | undefined;
+declare const EdgeRuntime:
+  | { waitUntil: (p: Promise<unknown>) => void }
+  | undefined;
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
-interface RecorderEntry { telegram_id: number; claimed_at: string; role: string }
+interface RecorderEntry {
+  telegram_id: number;
+  claimed_at: string;
+  role: string;
+}
 
 function json(payload: unknown, status = 200): Response {
-  return new Response(JSON.stringify(payload), { status, headers: { "Content-Type": "application/json" } });
+  return new Response(JSON.stringify(payload), {
+    status,
+    headers: { "Content-Type": "application/json" },
+  });
 }
 function fail(message: string, status = 400): Response {
   return json({ ok: false, error: message }, status);
@@ -53,7 +70,11 @@ async function buildTrackParts(
   fallbackName: string,
   legacyMinSize: number,
 ): Promise<InMemoryPart[]> {
-  const toPart = async (file: File, name: string, offset: number): Promise<InMemoryPart> => {
+  const toPart = async (
+    file: File,
+    name: string,
+    offset: number,
+  ): Promise<InMemoryPart> => {
     const buf = await file.arrayBuffer();
     return {
       blob: new Blob([buf], { type: file.type || "audio/m4a" }),
@@ -70,20 +91,34 @@ async function buildTrackParts(
     } catch {
       throw new PartError(`${manifestField}: invalid JSON manifest`);
     }
-    if (!Array.isArray(manifest)) throw new PartError(`${manifestField}: manifest must be an array`);
+    if (!Array.isArray(manifest)) {
+      throw new PartError(`${manifestField}: manifest must be an array`);
+    }
     const parts: InMemoryPart[] = [];
     const seen = new Set<string>();
-    for (const item of manifest as Array<{ name?: unknown; offset?: unknown }>) {
+    for (
+      const item of manifest as Array<{ name?: unknown; offset?: unknown }>
+    ) {
       const name = typeof item?.name === "string" ? item.name : "";
       const offset = Number(item?.offset);
       if (!name) throw new PartError(`${manifestField}: part name required`);
-      if (seen.has(name)) throw new PartError(`${manifestField}: duplicate part name "${name}"`);
+      if (seen.has(name)) {
+        throw new PartError(`${manifestField}: duplicate part name "${name}"`);
+      }
       seen.add(name);
-      if (!Number.isFinite(offset) || offset < 0) throw new PartError(`${manifestField}: bad offset for "${name}"`);
+      if (!Number.isFinite(offset) || offset < 0) {
+        throw new PartError(`${manifestField}: bad offset for "${name}"`);
+      }
       const file = formData.get(name);
-      if (!(file instanceof File)) throw new PartError(`${manifestField}: file "${name}" missing`);
-      if (file.size === 0) throw new PartError(`${manifestField}: file "${name}" empty`);
-      if (file.size > OPENAI_AUDIO_MAX_BYTES) throw new PartError(`part "${name}" too large (>25MB)`, 413);
+      if (!(file instanceof File)) {
+        throw new PartError(`${manifestField}: file "${name}" missing`);
+      }
+      if (file.size === 0) {
+        throw new PartError(`${manifestField}: file "${name}" empty`);
+      }
+      if (file.size > OPENAI_AUDIO_MAX_BYTES) {
+        throw new PartError(`part "${name}" too large (>25MB)`, 413);
+      }
       parts.push(await toPart(file, `${name}.m4a`, offset));
     }
     return parts;
@@ -92,56 +127,19 @@ async function buildTrackParts(
   // Легаси: один файл, offset 0. Пустой/мелкий (mic без доступа) → дорожки нет.
   const legacy = formData.get(legacyField);
   if (!(legacy instanceof File) || legacy.size <= legacyMinSize) return [];
-  if (legacy.size > OPENAI_AUDIO_MAX_BYTES) throw new PartError(`${legacyField} too large (>25MB)`, 413);
+  if (legacy.size > OPENAI_AUDIO_MAX_BYTES) {
+    throw new PartError(`${legacyField} too large (>25MB)`, 413);
+  }
   return [await toPart(legacy, fallbackName, 0)];
 }
 
-Deno.serve(async (req: Request) => {
-  if (req.method !== "POST") return new Response("OK", { status: 200 });
+interface TrackParts {
+  systemParts: InMemoryPart[];
+  micParts: InMemoryPart[];
+}
 
-  let identity;
-  try {
-    identity = await verifyAgentToken(supabase, req);
-  } catch (e) {
-    if (e instanceof AgentAuthError) return fail(e.message, e.status);
-    throw e;
-  }
-
-  let formData: FormData;
-  try {
-    formData = await req.formData();
-  } catch {
-    return fail("expected multipart/form-data with meeting_id + audio");
-  }
-  const meetingId = formData.get("meeting_id");
-  if (typeof meetingId !== "string" || meetingId.length === 0) return fail("meeting_id required");
-
-  const { data: meeting } = await supabase
-    .from("meetings")
-    .select("id, claim_owner, notes_edited_at, summary_status")
-    .eq("id", meetingId)
-    .maybeSingle();
-
-  if (!meeting) return fail("meeting not found", 404);
-  const m = meeting as { id: string; claim_owner: number | null; notes_edited_at: string | null; summary_status: string | null };
-
-  // Аудио льёт только держатель права транскрибации (claim_owner).
-  if (m.claim_owner !== identity.telegramId) return fail("not the transcription owner for this meeting", 403);
-
-  const webUrl = WEB_BASE_URL ? `${WEB_BASE_URL}/?meeting=${meetingId}` : "";
-
-  // Защита правок человека: черновик уже правили → не перетранскрибируем и не перегенерим.
-  if (m.notes_edited_at) {
-    return json({ ok: true, meeting_id: meetingId, web_url: webUrl, summary_status: "skipped_human_edit" });
-  }
-
-  // Идемпотентность: повторный upload (потерянный 202 → ретрай клиента) не должен запускать
-  // вторую обработку. 'failed'/null — можно (пере)обработать, 'processing'/'done' — нет.
-  if (m.summary_status === "processing" || m.summary_status === "done") {
-    return json({ ok: true, meeting_id: meetingId, web_url: webUrl, summary_status: "already_processed" });
-  }
-
-  // Собираем части дорожек (файлы уже в памяти после req.formData()).
+// Части обеих дорожек (файлы уже в памяти после req.formData()) или готовый ответ об ошибке.
+async function readParts(formData: FormData): Promise<TrackParts | Response> {
   let systemParts: InMemoryPart[];
   let micParts: InMemoryPart[];
   try {
@@ -157,14 +155,195 @@ Deno.serve(async (req: Request) => {
   if (systemParts.length === 0 && micParts.length === 0) {
     return fail("audio required (sys_parts/mic_parts manifest or legacy audio field)");
   }
+  return { systemParts, micParts };
+}
+
+// Inline-проход после ответа: короткую встречу добивает сразу; длинную подхватит cron meeting-process.
+function runInline(id: string): Promise<void> {
+  const job = runMeetingStep(supabase, id, INLINE_BUDGET_MS).then(() => {}).catch((e) => {
+    console.error(`meeting-ingest: inline step failed for ${id} (cron подхватит):`, e);
+  });
+  if (typeof EdgeRuntime !== "undefined" && EdgeRuntime) {
+    EdgeRuntime.waitUntil(job);
+    return Promise.resolve();
+  }
+  return job;
+}
+
+Deno.serve(async (req: Request) => {
+  if (req.method !== "POST") return new Response("OK", { status: 200 });
+
+  let identity;
+  try {
+    identity = await resolveActingIdentity(supabase, req);
+  } catch (e) {
+    if (e instanceof AgentAuthError) return fail(e.message, e.status);
+    throw e;
+  }
+
+  let formData: FormData;
+  try {
+    formData = await req.formData();
+  } catch {
+    return fail("expected multipart/form-data with meeting_id + audio");
+  }
+  const meetingId = formData.get("meeting_id");
+  if (typeof meetingId !== "string" || meetingId.length === 0) {
+    return fail("meeting_id required");
+  }
+  // Бот выгружает только во встречу своего пропуска (T165) — до чтения строки встречи.
+  try {
+    assertGrantMeeting(identity, meetingId);
+  } catch (e) {
+    if (e instanceof GrantScopeError) return fail(e.message, e.status);
+    throw e;
+  }
+
+  const { data: meeting } = await supabase
+    .from("meetings")
+    // Источники и первый сегмент — без тяжёлых jsonb целиком: только чтобы решить судьбу второй
+    // записи той же встречи (second-recording.ts).
+    .select(
+      "id, claim_owner, notes_edited_at, status, summary_status, sources:process_state->sources, first_segment:transcript->segments->0, recorded_seconds, agent_last_seen_at, recorders",
+    )
+    .eq("id", meetingId)
+    .maybeSingle();
+
+  if (!meeting) return fail("meeting not found", 404);
+  let m = meeting as {
+    id: string;
+    claim_owner: number | null;
+    notes_edited_at: string | null;
+    status: string | null;
+    summary_status: string | null;
+    sources: unknown;
+    first_segment: unknown;
+    recorded_seconds: number | null;
+    agent_last_seen_at: string | null;
+    recorders: unknown;
+  };
+
+  // Аудио льёт держатель права транскрибации (claim_owner) — или свежий претендент (T160): заявку
+  // другого человека claim не перехватывает, право решит длина этой выгрузки (challenge.ts).
+  const uploader = identity.telegramId;
+  const challenge = m.claim_owner === uploader ? null : freshChallenge(m.recorders, uploader, new Date().toISOString());
+  if (m.claim_owner !== identity.telegramId && !challenge) {
+    return fail("not the transcription owner for this meeting", 403);
+  }
+
+  // Таймлайн говорящих — НЕОБЯЗАТЕЛЬНОЕ поле (его шлёт бот встреч, рекордер bumblebee о нём не
+  // знает). Разбор идёт ПОСЛЕ проверки владения встречей: иначе держатель токена агента платил бы
+  // разбором за произвольный и даже несуществующий meeting_id. И всё ещё ДО любых записей — мусор
+  // обязан отбиваться внятной ошибкой, а не оседать в process_state и всплывать именем-абракадаброй
+  // в стенограмме.
+  let speakers: SpeakerSpan[];
+  try {
+    speakers = parseSpeakerTimeline(formData.get("speakers"));
+  } catch (e) {
+    if (e instanceof SpeakerTimelineError) return fail(e.message);
+    throw e;
+  }
+
+  const webUrl = WEB_BASE_URL ? `${WEB_BASE_URL}/?meeting=${meetingId}` : "";
+
+  // Правленное человеком или опубликованное команде не трогает никто (_shared/meeting-frozen.ts):
+  // ни держатель, ни претендент. 200 — клиенту выгружать больше нечего.
+  if (isFrozen(m)) {
+    return json({
+      ok: true,
+      meeting_id: meetingId,
+      web_url: webUrl,
+      summary_status: m.notes_edited_at ? "skipped_human_edit" : "skipped_published",
+    });
+  }
+
+  // Претендент: сперва измерить выгрузку и решить право (до идемпотентности — она смотрит на
+  // строку, какой она станет после перехвата). Отказ — 409, строка встречи не тронута. Если у
+  // держателя уже есть своя версия, право не переходит сейчас: запись идёт на сравнение (`rival`).
+  let parts: TrackParts | null = null;
+  let rival: Rival | undefined;
+  if (challenge) {
+    const read = await readParts(formData);
+    if (read instanceof Response) return read;
+    parts = read;
+    const settled = await settleChallengeUpload(
+      supabase,
+      m.id,
+      uploader,
+      challenge.micStartOffset,
+      [...read.systemParts, ...read.micParts],
+      new Date().toISOString(),
+    );
+    if (!settled.ok) return fail(settled.error, settled.status);
+    rival = settled.rival;
+    // Перехват сбросил маркеры обработки тем же UPDATE (claim-patch.ts takeoverPatch).
+    if (!rival) {
+      m = { ...m, claim_owner: uploader, ...(settled.reset ? { summary_status: null, sources: null } : {}) };
+    }
+  }
+
+  // Идемпотентность: повторный upload (потерянный 202 → ретрай клиента) не должен запускать
+  // вторую обработку. Но выгрузка ДРУГОГО источника той же встречи — не повтор, а вторая запись
+  // (бот и рекордер одного человека, T156): она ждёт очереди или сравнивается с готовой.
+  const source = uploadSource(identity);
+  const listed = Array.isArray(m.sources) ? m.sources.filter((s): s is string => typeof s === "string") : null;
+  // Запись претендента — другой человек по построению: «старая форма без источников» не делает её
+  // повтором чужой выгрузки.
+  const sources = rival && listed === null ? [] : listed;
+  const decision = decideUpload({
+    summaryStatus: m.summary_status,
+    sources,
+    hasTranscript: m.first_segment !== null && m.first_segment !== undefined,
+    incoming: source,
+  });
+  const queued = decision === "queue" ? await readQueued(supabase, m.id, source) : null;
+  if (decision === "already_processed" || queued !== null) {
+    return json({
+      ok: true,
+      meeting_id: meetingId,
+      web_url: webUrl,
+      summary_status: "already_processed",
+    });
+  }
+
+  const read = parts ?? await readParts(formData);
+  if (read instanceof Response) return read;
+  const { systemParts, micParts } = read;
+
+  // Первая выгрузка держателя меряется: заявленные секунды больше измеренного — встреча получает
+  // измеренные (challenge.ts holderSecondsCorrection), иначе завышенная заявка первого заявителя
+  // закрывала бы встречу от перехвата более полной записью.
+  if (!challenge && m.recorded_seconds !== null && mayCorrectHolderSeconds(m, uploader, sources)) {
+    const measured = await measureUpload([...systemParts, ...micParts]);
+    const lowered = holderSecondsCorrection(m, uploader, sources, measured);
+    if (lowered !== null) await lowerHolderSeconds(supabase, m.id, uploader, m.recorded_seconds, lowered);
+  }
 
   // Кладём части в Storage и пишем манифест в process_state. Метим 'processing' ДО фоновой работы.
   let state;
   try {
-    state = await uploadPartsAndBuildState(supabase, m.id, systemParts, micParts);
+    state = await uploadPartsAndBuildState(supabase, m.id, systemParts, micParts, speakers, {
+      gen: crypto.randomUUID(),
+      source,
+      sources: [...new Set([...(sources ?? []), source])],
+      owner: identity.telegramId,
+      ...(rival ? { rival } : {}),
+      ...(decision === "challenge" ? { challenge: { priorStatus: m.summary_status } } : {}),
+    });
+    if (decision === "queue") await writeQueued(supabase, m.id, state);
   } catch (e) {
     console.error(`meeting-ingest: storage upload failed for ${m.id}:`, e);
     return fail("failed to store audio", 500);
+  }
+  if (decision === "queue") {
+    // Первая запись ещё обрабатывается. Перечитываем статус ПОСЛЕ записи в очередь: если она уже
+    // закончила, продвигаем сами (воркер проверил очередь до того, как мы в неё встали).
+    console.log(`meeting-ingest: ${m.id} — вторая запись (${source}) ждёт, пока обработается первая`);
+    if (await promoteQueued(supabase, m.id)) await runInline(m.id);
+    return json({ ok: true, meeting_id: meetingId, web_url: webUrl, summary_status: "processing" }, 202);
+  }
+  if (decision === "challenge") {
+    console.log(`meeting-ingest: ${m.id} — вторая запись (${source}), сравним с текущей стенограммой`);
   }
   const nowIso = new Date().toISOString();
   // Лиз права транскрибации продлеваем вместе с приёмом аудио (issue #285). Аудио уже здесь и
@@ -183,15 +362,12 @@ Deno.serve(async (req: Request) => {
     })
     .eq("id", m.id);
 
-  // Inline-проход после ответа: короткую встречу добивает сразу; длинную подхватит cron meeting-process.
-  const job = runMeetingStep(supabase, m.id, INLINE_BUDGET_MS).catch((e) => {
-    console.error(`meeting-ingest: inline step failed for ${m.id} (cron подхватит):`, e);
-  });
-  if (typeof EdgeRuntime !== "undefined" && EdgeRuntime) {
-    EdgeRuntime.waitUntil(job);
-  } else {
-    await job;
-  }
+  await runInline(m.id);
 
-  return json({ ok: true, meeting_id: meetingId, web_url: webUrl, summary_status: "processing" }, 202);
+  return json({
+    ok: true,
+    meeting_id: meetingId,
+    web_url: webUrl,
+    summary_status: "processing",
+  }, 202);
 });

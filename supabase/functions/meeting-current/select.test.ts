@@ -1,7 +1,7 @@
 // Тесты выбора события календаря среди перекрывающихся (Фаза A).
 // Запуск: deno test supabase/functions/meeting-current/select.test.ts
 import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import { eventScore, type GEvent, pickCurrentEvent } from "./select.ts";
+import { currentEvents, eventScore, type GEvent, pickCurrentEvent } from "./select.ts";
 
 const NOW = Date.parse("2026-07-30T10:35:00Z");
 
@@ -46,7 +46,13 @@ Deno.test("accepted перевешивает tentative при перекрыти
 
 Deno.test("отменённое событие выкидывается", () => {
   const items = [
-    ev({ id: "cancelled", start: "2026-07-30T10:00:00Z", end: "2026-07-30T11:00:00Z", self: "accepted", status: "cancelled" }),
+    ev({
+      id: "cancelled",
+      start: "2026-07-30T10:00:00Z",
+      end: "2026-07-30T11:00:00Z",
+      self: "accepted",
+      status: "cancelled",
+    }),
     ev({ id: "real", start: "2026-07-30T10:30:00Z", end: "2026-07-30T11:00:00Z", self: "needsAction" }),
   ];
   assertEquals(pick(items), "real");
@@ -54,7 +60,13 @@ Deno.test("отменённое событие выкидывается", () => 
 
 Deno.test("свободен/OOO (transparent) выкидывается", () => {
   const items = [
-    ev({ id: "ooo", start: "2026-07-30T10:00:00Z", end: "2026-07-30T11:00:00Z", self: "accepted", transparency: "transparent" }),
+    ev({
+      id: "ooo",
+      start: "2026-07-30T10:00:00Z",
+      end: "2026-07-30T11:00:00Z",
+      self: "accepted",
+      transparency: "transparent",
+    }),
     ev({ id: "busy", start: "2026-07-30T10:30:00Z", end: "2026-07-30T11:00:00Z", self: "needsAction" }),
   ];
   assertEquals(pick(items), "busy");
@@ -71,7 +83,13 @@ Deno.test("all-day событие не кандидат", () => {
 Deno.test("роль организатора — тай-брейк при равном RSVP", () => {
   const items = [
     ev({ id: "guest", start: "2026-07-30T10:00:00Z", end: "2026-07-30T11:00:00Z", self: "needsAction" }),
-    ev({ id: "mine", start: "2026-07-30T10:00:00Z", end: "2026-07-30T11:00:00Z", self: "needsAction", organizer: true }),
+    ev({
+      id: "mine",
+      start: "2026-07-30T10:00:00Z",
+      end: "2026-07-30T11:00:00Z",
+      self: "needsAction",
+      organizer: true,
+    }),
   ];
   assertEquals(pick(items), "mine");
 });
@@ -104,6 +122,32 @@ Deno.test("пустой список → null", () => {
 });
 
 Deno.test("eventScore: accepted+организатор = 5, declined = -3", () => {
-  assertEquals(eventScore(ev({ id: "a", start: "2026-07-30T10:00:00Z", end: "2026-07-30T11:00:00Z", self: "accepted", organizer: true })), 5);
-  assertEquals(eventScore(ev({ id: "b", start: "2026-07-30T10:00:00Z", end: "2026-07-30T11:00:00Z", self: "declined" })), -3);
+  assertEquals(
+    eventScore(
+      ev({ id: "a", start: "2026-07-30T10:00:00Z", end: "2026-07-30T11:00:00Z", self: "accepted", organizer: true }),
+    ),
+    5,
+  );
+  assertEquals(
+    eventScore(ev({ id: "b", start: "2026-07-30T10:00:00Z", end: "2026-07-30T11:00:00Z", self: "declined" })),
+    -3,
+  );
+});
+
+Deno.test("currentEvents: все идущие списком, лучший первым (D027)", () => {
+  const items = [
+    ev({ id: "allhands", start: "2026-07-30T10:00:00Z", end: "2026-07-30T11:00:00Z", self: "declined" }),
+    ev({ id: "oneonone", start: "2026-07-30T10:30:00Z", end: "2026-07-30T11:00:00Z", self: "accepted" }),
+    ev({ id: "later", start: "2026-07-30T10:38:00Z", end: "2026-07-30T11:00:00Z", self: "accepted" }),
+  ];
+  assertEquals(currentEvents(items, NOW).map((e) => e.id), ["oneonone", "allhands"]);
+});
+
+Deno.test("currentEvents: отсев до деления — идущее отсеянное не прячет предстоящее", () => {
+  const items = [
+    ev({ id: "slot", start: "2026-07-30T10:00:00Z", end: "2026-07-30T11:00:00Z", self: "accepted" }),
+    ev({ id: "b", start: "2026-07-30T10:39:00Z", end: "2026-07-30T11:00:00Z" }),
+    ev({ id: "a", start: "2026-07-30T10:37:00Z", end: "2026-07-30T11:00:00Z" }),
+  ];
+  assertEquals(currentEvents(items, NOW, (e) => e.id !== "slot").map((e) => e.id), ["a", "b"]);
 });

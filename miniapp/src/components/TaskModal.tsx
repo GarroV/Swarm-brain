@@ -20,8 +20,8 @@ import {
 } from "@/lib/api";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
-import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectSeparator, SelectTrigger } from "@/components/ui/select";
-import { PropertyRow, PropertyLabel, PropertyValue, propertySelectCls } from "@/components/ui/PropertyRow";
+import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select";
+import { PILL_GROUP_CLS, pillSegmentCls, pillSegmentSelectCls, PropertyPillBody, propertyPillSelectCls } from "@/components/ui/PropertyPill";
 import { useConfirm } from "@/components/ui/confirm";
 import { RoyIcon, type RoyIconName } from "@/components/roy/icons";
 import { TaskComments } from "@/components/tasks/TaskComments";
@@ -46,10 +46,10 @@ const TASK_ROLES = [
 
 // Статусы пиктограммами: открыто — пустой круг, в работе — часы, готово — галочка.
 // Иконка "circle" рисуется CSS-бордером (в наборе RoyIcon кружка нет).
-const STATUSES: { id: string; label: string; icon: RoyIconName | "circle" }[] = [
-  { id: "open", label: "Открыто", icon: "circle" },
-  { id: "in_progress", label: "В работе", icon: "clock" },
-  { id: "done", label: "Готово", icon: "check" },
+const STATUSES: { id: string; label: string; en: string; icon: RoyIconName | "circle" }[] = [
+  { id: "open", label: "Открыто", en: "Open", icon: "circle" },
+  { id: "in_progress", label: "В работе", en: "In progress", icon: "clock" },
+  { id: "done", label: "Готово", en: "Done", icon: "check" },
 ];
 const normStatus = (s?: string | null) => (s === "progress" ? "in_progress" : (s ?? "open"));
 
@@ -325,6 +325,16 @@ export function TaskModal({ task: taskProp, open, onClose, onSaved, prefill, mee
       ? (() => { const o = recurOptions.find((x) => x.freq === recurFreq); return o ? dt(o.ru, o.en) : "—"; })()
       : "—";
 
+  // Пилюля «проект › подпроект»: из одного выбранного id (задача живёт либо в проекте, либо в
+  // подпроекте) достаём оба уровня. Имена — по ПОЛНОМУ списку: задача может лежать в чужом
+  // проекте, которого нет среди своих пунктов выбора (buildProjectOptions).
+  const selRow = !selProject || selProject === NONE ? null : (projects.find((p) => p.id === selProject) ?? null);
+  const topProjectId = selRow ? (selRow.parent_id ?? selRow.id) : null;
+  const subProjectId = selRow?.parent_id ? selRow.id : null;
+  const topProjectName = topProjectId ? (projects.find((p) => p.id === topProjectId)?.name ?? null) : null;
+  const subProjectName = subProjectId ? (selRow?.name ?? null) : null;
+  const subsOfTop = topProjectId ? projectOptions.subs.filter((o) => o.parentId === topProjectId) : [];
+
   // Текущий снапшот формы (для сравнения с сохранённым) — те же ключи, что в useEffect open.
   const formSnapshot = () =>
     JSON.stringify({ title, description, status, dueDate, remindDate, recurFreq, country, taskRole, assigneeId, selProject, labelIds, links });
@@ -465,7 +475,7 @@ export function TaskModal({ task: taskProp, open, onClose, onSaved, prefill, mee
       <DialogContent
         showCloseButton={false}
         overlayClassName={drawer ? "bg-[rgba(10,13,17,.12)]" : undefined}
-        className={cn("gap-0 rounded-[14px] border border-line bg-[var(--popover)] p-0 sm:max-w-5xl", drawer && DRAWER_CLS)}
+        className={cn("gap-0 rounded-[14px] border border-line bg-[var(--popover)] p-0 sm:max-w-2xl", drawer && DRAWER_CLS)}
       >
         {/* Шапка: заголовок + индикатор автосейва (edit) + удалить (edit) + закрыть */}
         <div className="flex items-center justify-between gap-3 border-b border-line px-[18px] py-2.5">
@@ -507,7 +517,7 @@ export function TaskModal({ task: taskProp, open, onClose, onSaved, prefill, mee
           </div>
         </div>
 
-        {/* Поля — две колонки: слева название + большое поле редактуры, справа настройки */}
+        {/* Поля — одна колонка: название, чипы настроек, списки, ссылки, описание (макет 28.09.2026). */}
         <div className={cn("overflow-y-auto px-[18px] py-3.5", drawer ? "min-h-0 flex-1" : "max-h-[80vh]")}>
           {/* Отказ догрузки — ГРОМКИЙ. Раньше это был один тост и навсегда мёртвая форма:
               человек правил задачу, ничего не сохранялось, и никто ему об этом не говорил. */}
@@ -544,139 +554,179 @@ export function TaskModal({ task: taskProp, open, onClose, onSaved, prefill, mee
             aria-busy={isPartial && !hydrateFailed}
             className={`m-0 min-w-0 border-0 p-0 ${isPartial ? "opacity-60" : ""}`}
           >
-          <div className={cn("grid items-start gap-x-5 gap-y-3", !drawer && "sm:grid-cols-[1.4fr_1fr]")}>
-            {/* Левая колонка: название + редактура */}
-            <div className="flex flex-col gap-2.5">
-              <div>
-                <label htmlFor="modal-title" className={labelCls} style={{ fontSize: 12 }}>Название *</label>
-                <input
-                  id="modal-title"
-                  className={fieldCls}
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                  placeholder="Название задачи"
-                />
-              </div>
-              {/* Ссылки — НАД описанием (решение владельца 18.09.2026): их ищут глазами
-                  первыми, а описание бывает на экран длиной. У недогруженной задачи поле
-                  показываем только для чтения — отправлять её ссылки всё равно нельзя. */}
-              <TaskLinksField links={links} onChange={setLinks} disabled={isPartial} />
-
-              <div className="flex flex-col">
-                <label htmlFor="modal-desc" className={labelCls} style={{ fontSize: 12 }}>Описание</label>
-                {descEditing ? (
-                  <textarea
-                    id="modal-desc"
-                    autoFocus={isEdit}
-                    className={`${fieldCls} resize-y`}
-                    value={description}
-                    onChange={(e) => setDescription(e.target.value)}
-                    onBlur={() => { if (description.trim()) setDescEditing(false); }}
-                    placeholder="Подробности, контекст, что именно сделать…"
-                    style={{ height: descHeight ?? 160, minHeight: 100, lineHeight: 1.55 }}
-                  />
-                ) : (
-                  <div
-                    id="modal-desc"
-                    role="button"
-                    tabIndex={0}
-                    ref={descReadRef}
-                    onClick={startDescEdit}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" || e.key === " ") {
-                        e.preventDefault();
-                        startDescEdit();
-                      }
-                    }}
-                    className={`${fieldCls} max-h-[320px] cursor-text overflow-y-auto whitespace-pre-wrap`}
-                    style={{ minHeight: 100, lineHeight: 1.55 }}
-                  >
-                    {linkify(description)}
-                  </div>
-                )}
-              </div>
+          {/* Порядок карточки — по макету владельца 28.09.2026: название → все настройки чипами
+              прямо под ним → Списки → Ссылки → Описание → Подзадачи → Комментарии. Одна колонка
+              и в панели справа, и в окне на телефоне. Логика выбора у каждого свойства прежняя
+              (те же DatePicker, CountryPopover, Select) — поменялась только оболочка-кнопка. */}
+          <div className="flex flex-col gap-3.5">
+            <div data-card-block="title">
+              <label htmlFor="modal-title" className="sr-only">{dt("Название", "Title")}</label>
+              <input
+                id="modal-title"
+                className={`${fieldCls} font-semibold`}
+                style={{ fontSize: 16 }}
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                placeholder={dt("Название задачи", "Task title")}
+                aria-required
+              />
             </div>
 
-            {/* Правая колонка: сводка свойств. Тихие строки «иконка · подпись · значение»
-                вместо десяти боксов с подписями сверху — владелец 2026-08-28: «очень все крупно,
-                хочется минимализма в интерфейсе задач». Механика строки — ui/PropertyRow.tsx. */}
-            <div className="flex flex-col gap-0.5">
-              {/* Статус — единственный акцент колонки: меняется чаще всего и должен ловиться
-                  взглядом сразу. Внешний бокс-контейнер убран, выбранный держится янтарной
-                  пилюлей. 40px оставляем на всех ширинах: это главная кнопка карточки. */}
-              {isEdit && (
-                <div className="mb-1.5 flex gap-1">
-                  {STATUSES.map((s) => {
-                    const on = s.id === status;
-                    return (
-                      <button
-                        key={s.id}
-                        type="button"
-                        onClick={() => setStatus(s.id)}
-                        aria-label={s.label}
-                        aria-pressed={on}
-                        title={s.label}
-                        className={`flex flex-1 items-center justify-center gap-1.5 rounded-[7px] font-semibold transition-colors active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] ${on ? "bg-accent-soft text-accent-ink" : "text-ink-soft hover:bg-surface-2 hover:text-ink"}`}
-                        style={{ fontSize: 12.5, minHeight: 40 }}
+            <div data-card-block="props" className="flex flex-col gap-1.5">
+              <div className="flex flex-wrap items-center gap-1.5">
+                {/* Статус — сегмент из трёх, текущий подсвечен и подписан (макет 28.09.2026). */}
+                {isEdit && (
+                  <span role="group" aria-label={dt("Статус", "Status")} className={PILL_GROUP_CLS}>
+                    {STATUSES.map((s) => {
+                      const on = s.id === status;
+                      return (
+                        <button
+                          key={s.id}
+                          type="button"
+                          onClick={() => setStatus(s.id)}
+                          aria-label={dt(s.label, s.en)}
+                          aria-pressed={on}
+                          title={dt(s.label, s.en)}
+                          className={pillSegmentCls(on)}
+                          style={{ fontSize: 12.5 }}
+                        >
+                          {s.icon === "circle" ? (
+                            <span className="rounded-full border-2 border-current" style={{ width: 12, height: 12 }} />
+                          ) : (
+                            <RoyIcon name={s.icon} size={14} strokeWidth={2} />
+                          )}
+                          {on && <span>{dt(s.label, s.en)}</span>}
+                        </button>
+                      );
+                    })}
+                  </span>
+                )}
+
+                {/* Срок · пинг · повтор — одна пилюля по логике статуса (владелец 29.09.2026):
+                    пустой сегмент — бледный значок, заданный — заливка и значение, пилюля растёт
+                    ровно на то, что задано. Повтор считается от срока (день недели/число берутся из
+                    него), поэтому без срока сегмент выключен и в подсказке говорит почему; варианты
+                    частоты — чипами под рядом. */}
+                <span role="group" aria-label={dt("Сроки", "Dates")} className={PILL_GROUP_CLS}>
+                  <DatePicker
+                    variant="segment"
+                    value={dueDate}
+                    // Сняли срок — цикличность гаснет вместе с ним: без срока считать следующее
+                    // вхождение не от чего, а тихо оставленная частота молча перестала бы работать.
+                    onChange={(iso) => { setDueDate(iso); if (!iso) { setRecurFreq(null); setRecurOpen(false); } }}
+                    ariaLabel={dt("Срок", "Due date")}
+                    clearLabel={dt("Убрать срок", "Clear due date")}
+                  />
+                  <DatePicker
+                    variant="segment"
+                    value={remindDate}
+                    onChange={(iso) => { setRemindDate(iso); setRemindedAt(null); }}
+                    icon="bell"
+                    ariaLabel={dt("Пинг", "Ping")}
+                    clearLabel={dt("Убрать пинг", "Clear ping")}
+                  />
+                  <button
+                    type="button"
+                    disabled={!recurOptions}
+                    aria-expanded={recurOpen}
+                    aria-label={`${dt("Повтор", "Repeat")}: ${recurFreq ? recurValueLabel : recurOptions ? dt("не повторять", "never") : recurValueLabel}`}
+                    title={`${dt("Повтор", "Repeat")}: ${recurFreq ? recurValueLabel : recurOptions ? dt("не повторять", "never") : recurValueLabel}`}
+                    onClick={() => setRecurOpen((o) => !o)}
+                    className={pillSegmentCls(!!recurFreq)}
+                  >
+                    <RoyIcon name="repeat" size={14} strokeWidth={2} />
+                    {recurFreq && <span className="whitespace-nowrap" style={{ fontSize: 12.5 }}>{recurValueLabel}</span>}
+                  </button>
+                </span>
+
+                {/* Проект › подпроект — сегментная пилюля (владелец 29.09.2026: «чтобы это
+                    отображалось и при нажатии можно было перекинуть задачу из проекта в проект или из
+                    подпроекта в подпроект»). Первый сегмент — проект: смена переносит задачу в корень
+                    другого проекта. Второй — подпроект ЭТОГО проекта; виден, когда их есть из чего
+                    выбрать или задача уже в подпроекте. */}
+                <span role="group" aria-label={dt("Проект", "Project")} className={PILL_GROUP_CLS}>
+                  <Select value={topProjectId ?? NONE} onValueChange={(v) => setSelProject(!v || v === NONE ? null : v)}>
+                    <SelectTrigger
+                      id="modal-project"
+                      title={topProjectName ? `${dt("Проект", "Project")}: ${topProjectName}` : dt("Проект", "Project")}
+                      aria-label={topProjectName ? `${dt("Проект", "Project")}: ${topProjectName}` : dt("Проект", "Project")}
+                      className={pillSegmentSelectCls(!!topProjectName)}
+                    >
+                      {/* Подпись считаем САМИ (base-ui Value в этой версии рисует сырое значение/UUID). */}
+                      <RoyIcon name="board" size={14} strokeWidth={2} />
+                      {topProjectName && <span className="truncate" style={{ fontSize: 12.5 }}>{topProjectName}</span>}
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={NONE}>{dt("Без проекта", "No project")}</SelectItem>
+                      {projectOptions.tops.map((o) => (
+                        <SelectItem key={o.id} value={o.id}>{o.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {topProjectId && (subsOfTop.length > 0 || subProjectId) && (
+                    <Select value={subProjectId ?? NONE} onValueChange={(v) => setSelProject(!v || v === NONE ? topProjectId : v)}>
+                      <SelectTrigger
+                        title={subProjectName ? `${dt("Подпроект", "Subproject")}: ${subProjectName}` : dt("Подпроект", "Subproject")}
+                        aria-label={subProjectName ? `${dt("Подпроект", "Subproject")}: ${subProjectName}` : dt("Подпроект", "Subproject")}
+                        className={pillSegmentSelectCls(!!subProjectName)}
                       >
-                        {s.icon === "circle" ? (
-                          <span className="rounded-full border-2 border-current" style={{ width: 13, height: 13 }} />
-                        ) : (
-                          <RoyIcon name={s.icon} size={15} strokeWidth={2} />
-                        )}
-                        {on && <span>{s.label}</span>}
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
+                        <RoyIcon name="cright" size={13} strokeWidth={2} />
+                        {subProjectName && <span className="truncate" style={{ fontSize: 12.5 }}>{subProjectName}</span>}
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value={NONE}>{dt("Без подпроекта", "No subproject")}</SelectItem>
+                        {subsOfTop.map((o) => (
+                          <SelectItem key={o.id} value={o.id}>{o.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                </span>
 
-              <DatePicker
-                variant="row"
-                value={dueDate}
-                // Сняли срок — цикличность гаснет вместе с ним: без срока считать следующее
-                // вхождение не от чего, а тихо оставленная частота молча перестала бы работать.
-                onChange={(iso) => { setDueDate(iso); if (!iso) setRecurFreq(null); }}
-                ariaLabel={dt("Срок", "Due date")}
-                placeholder="—"
-              />
+                {/* Выбор страны — контекстное меню: чип-триггер + портал-поповер с сеткой флагов. */}
+                <CountryPopover
+                  value={selectedCountryId}
+                  codes={countryCodes}
+                  onChange={setCountry}
+                  variant="pill"
+                  label={dt("Страна", "Country")}
+                />
 
-              <DatePicker
-                variant="row"
-                value={remindDate}
-                onChange={(iso) => { setRemindDate(iso); setRemindedAt(null); }}
-                icon="bell"
-                ariaLabel={dt("Пинг", "Ping")}
-                placeholder="—"
-                clearLabel={dt("Убрать пинг", "Clear ping")}
-              />
-              {/* Подсказка молчит, пока пинга нет: постоянная строка под полем занимала вертикаль
-                  ни за чем. «Уже напомнили» показываем всегда — она объясняет, почему дата стоит,
-                  а звонка больше не будет. */}
+                {/* «Общие» = без конкретного исполнителя → командная задача (вкладка «Команда»).
+                    Пунктир: конкретный человек не назначен. */}
+                <Select value={assigneeId} onValueChange={(v) => setAssigneeId(v ?? NONE)}>
+                  <SelectTrigger
+                    id="modal-assignee"
+                    title={dt("Исполнитель", "Assignee")}
+                    className={propertyPillSelectCls(assigneeId !== NONE)}
+                  >
+                    <PropertyPillBody
+                      icon="team"
+                      label={dt("Исполнитель", "Assignee")}
+                      value={assigneeId === NONE ? dt("Общие", "Unassigned") : (assigneeOptions.find((o) => o.id === assigneeId)?.name ?? `#${assigneeId}`)}
+                    />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={NONE}>{dt("Общие (вся команда)", "Unassigned (whole team)")}</SelectItem>
+                    {assigneeOptions.map((o) => (
+                      <SelectItem key={o.id} value={o.id}>{o.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Подсказка молчит, пока пинга нет. «Уже напомнили» показываем всегда — она
+                  объясняет, почему дата стоит, а звонка больше не будет. */}
               {remindDate && (
-                <p className="px-2 pb-1 text-right text-ink-mute" style={{ fontSize: 11 }}>
+                <p className="text-ink-mute" style={{ fontSize: 11 }}>
                   {remindedAt
-                    ? dt("Уже напомнили — выбери новый день, чтобы напомнить снова", "Already sent — pick a new day to be reminded again")
-                    : dt("Напомним в этот день, один раз", "One reminder on this day")}
+                    ? dt("Пинг: уже напомнили — выбери новый день, чтобы напомнить снова", "Ping: already sent — pick a new day to be reminded again")
+                    : dt("Пинг: напомним в этот день, один раз", "Ping: one reminder on this day")}
                 </p>
               )}
 
-              {/* Цикличность. Подписи вариантов считаются от срока («По средам», «26-го числа»)
-                  — день недели и число отдельно не хранятся, это и есть срок задачи.
-                  Нативного чекбокса тут больше нет: в тёмной теме браузер рисовал его системным
-                  белым квадратом, чужим всему остальному. Теперь это обычная строка свойства,
-                  а выбор частоты (включая «не повторять») живёт в чипах под ней. */}
-              <PropertyRow
-                icon="repeat"
-                label={dt("Повторять", "Repeat")}
-                value={recurValueLabel}
-                muted={!recurFreq}
-                disabled={!recurOptions}
-                expanded={recurOpen}
-                onClick={() => setRecurOpen((o) => !o)}
-              />
               {recurOpen && recurOptions && (
-                <div className="px-2 pb-1">
+                <div>
                   <div className="flex flex-wrap gap-1.5">
                     {[{ freq: null as string | null, ru: "Не повторять", en: "Never" }, ...recurOptions].map((o) => {
                       const on = o.freq === recurFreq;
@@ -685,8 +735,6 @@ export function TaskModal({ task: taskProp, open, onClose, onSaved, prefill, mee
                           key={o.freq ?? "none"}
                           type="button"
                           onClick={() => setRecurFreq(o.freq)}
-                          // Тот же чип, что в «Списках» — сплошной primary кричал громче статуса,
-                          // хотя «не повторять» это отсутствие настройки, а не главное в карточке.
                           className={`inline-flex items-center rounded-full border px-2.5 py-1 font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] ${on ? "border-primary bg-accent-soft text-accent-ink" : "border-line-2 bg-surface text-ink-soft hover:bg-surface-2"}`}
                           style={{ fontSize: 11.5 }}
                         >
@@ -705,104 +753,85 @@ export function TaskModal({ task: taskProp, open, onClose, onSaved, prefill, mee
                   )}
                 </div>
               )}
+            </div>
 
-              <Select value={selProject ?? NONE} onValueChange={(v) => setSelProject(v === NONE ? null : v)}>
-                <SelectTrigger id="modal-project" aria-label={dt("Проект", "Project")} className={propertySelectCls}>
-                  <PropertyLabel icon="board">{dt("Проект", "Project")}</PropertyLabel>
-                  {/* Подпись считаем САМИ (base-ui Value в этой версии рисует сырое значение/UUID). */}
-                  <PropertyValue muted={!selProject || selProject === NONE}>
-                    {!selProject || selProject === NONE ? "—" : (projects.find((p) => p.id === selProject)?.name ?? "—")}
-                  </PropertyValue>
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={NONE}>—</SelectItem>
-                  {projectOptions.tops.length > 0 && (
-                    <SelectGroup>
-                      <SelectLabel>{dt("Проекты", "Projects")}</SelectLabel>
-                      {projectOptions.tops.map((o) => (
-                        <SelectItem key={o.id} value={o.id}>{o.name}</SelectItem>
-                      ))}
-                    </SelectGroup>
-                  )}
-                  {projectOptions.tops.length > 0 && projectOptions.subs.length > 0 && <SelectSeparator />}
-                  {projectOptions.subs.length > 0 && (
-                    <SelectGroup>
-                      <SelectLabel>{dt("Подпроекты", "Subprojects")}</SelectLabel>
-                      {projectOptions.subs.map((o) => (
-                        <SelectItem key={o.id} value={o.id}>
-                          {/* Группа в подписи обязательна: «Маркетинг» на проде существует дважды. */}
-                          <span className="text-ink-mute">{o.parentName} › </span>{o.name}
-                        </SelectItem>
-                      ))}
-                    </SelectGroup>
-                  )}
-                </SelectContent>
-              </Select>
-
-              {/* Выбор страны — контекстное меню: строка-триггер + портал-поповер с сеткой флагов. */}
-              <CountryPopover
-                value={selectedCountryId}
-                codes={countryCodes}
-                onChange={setCountry}
-                variant="row"
-                label={dt("Страна", "Country")}
-              />
-
-              {/* «Общие» = без конкретного исполнителя → командная задача (вкладка «Команда»). */}
-              <Select value={assigneeId} onValueChange={(v) => setAssigneeId(v ?? NONE)}>
-                <SelectTrigger id="modal-assignee" aria-label={dt("Исполнитель", "Assignee")} className={propertySelectCls}>
-                  <PropertyLabel icon="team">{dt("Исполнитель", "Assignee")}</PropertyLabel>
-                  <PropertyValue muted={assigneeId === NONE}>
-                    {assigneeId === NONE ? dt("Общие", "Unassigned") : (assigneeOptions.find((o) => o.id === assigneeId)?.name ?? `#${assigneeId}`)}
-                  </PropertyValue>
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={NONE}>{dt("Общие (вся команда)", "Unassigned (whole team)")}</SelectItem>
-                  {assigneeOptions.map((o) => (
-                    <SelectItem key={o.id} value={o.id}>{o.name}</SelectItem>
+            {SHOW_TASK_ROLE && (
+              <div>
+                <label htmlFor="modal-role" className={labelCls} style={{ fontSize: 12 }}>Роль</label>
+                <select id="modal-role" className={fieldCls} value={taskRole} onChange={(e) => setTaskRole(e.target.value)}>
+                  <option value={NONE}>— Нет —</option>
+                  {TASK_ROLES.map((r) => (
+                    <option key={r.value} value={r.value}>{r.label}</option>
                   ))}
-                </SelectContent>
-              </Select>
+                </select>
+              </div>
+            )}
 
-              {SHOW_TASK_ROLE && (
-                <div className="px-2 pt-1">
-                  <label htmlFor="modal-role" className={labelCls} style={{ fontSize: 12 }}>Роль</label>
-                  <select id="modal-role" className={fieldCls} value={taskRole} onChange={(e) => setTaskRole(e.target.value)}>
-                    <option value={NONE}>— Нет —</option>
-                    {TASK_ROLES.map((r) => (
-                      <option key={r.value} value={r.value}>{r.label}</option>
-                    ))}
-                  </select>
+            {/* Персональные списки-метки — многозначное свойство, поэтому своим блоком чипов. */}
+            {labels.length > 0 && (
+              <div data-card-block="lists">
+                <span className={labelCls} style={{ fontSize: 12 }}>{dt("Списки", "Lists")}</span>
+                <div className="flex flex-wrap gap-1.5">
+                  {labels.map((l) => {
+                    const on = labelIds.includes(l.id);
+                    return (
+                      <button
+                        key={l.id}
+                        type="button"
+                        aria-pressed={on}
+                        onClick={() => setLabelIds((prev) => (prev.includes(l.id) ? prev.filter((x) => x !== l.id) : [...prev, l.id]))}
+                        className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] ${on ? "border-primary bg-accent-soft text-accent-ink" : "border-line-2 bg-surface text-ink-soft hover:bg-surface-2"}`}
+                        style={{ fontSize: 12 }}
+                      >
+                        <RoyIcon name={((l.icon as RoyIconName) || "tag")} size={13} strokeWidth={1.9} />
+                        {l.name}
+                      </button>
+                    );
+                  })}
                 </div>
-              )}
+                {labelIds.length > 0 && !task?.is_private && (
+                  <p className="mt-1.5 text-ink-mute" style={{ fontSize: 11.5 }}>
+                    {dt("Список личный — задача станет видна только тебе.", "Lists are personal — the task will be visible only to you.")}
+                  </p>
+                )}
+              </div>
+            )}
 
-              {/* Персональные списки-метки. Единственное многозначное свойство — строкой его не
-                  выразить, поэтому остаётся чипами, но уезжает под линию, ниже сводки. */}
-              {labels.length > 0 && (
-                <div className="mt-1.5 border-t border-line pt-2.5">
-                  <span className="mb-1.5 block px-2 text-ink-mute" style={{ fontSize: 11 }}>{dt("Списки", "Lists")}</span>
-                  <div className="flex flex-wrap gap-1.5 px-2">
-                    {labels.map((l) => {
-                      const on = labelIds.includes(l.id);
-                      return (
-                        <button
-                          key={l.id}
-                          type="button"
-                          onClick={() => setLabelIds((prev) => (prev.includes(l.id) ? prev.filter((x) => x !== l.id) : [...prev, l.id]))}
-                          className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] ${on ? "border-primary bg-accent-soft text-accent-ink" : "border-line-2 bg-surface text-ink-soft hover:bg-surface-2"}`}
-                          style={{ fontSize: 12 }}
-                        >
-                          <RoyIcon name={((l.icon as RoyIconName) || "tag")} size={13} strokeWidth={1.9} />
-                          {l.name}
-                        </button>
-                      );
-                    })}
-                  </div>
-                  {labelIds.length > 0 && !task?.is_private && (
-                    <p className="mt-1.5 px-2 text-ink-mute" style={{ fontSize: 11.5 }}>
-                      Список личный — задача станет видна только тебе.
-                    </p>
-                  )}
+            {/* У недогруженной задачи поле ссылок только для чтения — отправлять их всё равно нельзя. */}
+            <div data-card-block="links">
+              <TaskLinksField links={links} onChange={setLinks} disabled={isPartial} />
+            </div>
+
+            <div data-card-block="description" className="flex flex-col">
+              <label htmlFor="modal-desc" className={labelCls} style={{ fontSize: 12 }}>{dt("Описание", "Description")}</label>
+              {descEditing ? (
+                <textarea
+                  id="modal-desc"
+                  autoFocus={isEdit}
+                  className={`${fieldCls} resize-y`}
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  onBlur={() => { if (description.trim()) setDescEditing(false); }}
+                  placeholder={dt("Подробности, контекст, что именно сделать…", "Details, context, what exactly to do…")}
+                  style={{ height: descHeight ?? 160, minHeight: 100, lineHeight: 1.55 }}
+                />
+              ) : (
+                <div
+                  id="modal-desc"
+                  role="button"
+                  tabIndex={0}
+                  ref={descReadRef}
+                  onClick={startDescEdit}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      startDescEdit();
+                    }
+                  }}
+                  className={`${fieldCls} max-h-[320px] cursor-text overflow-y-auto whitespace-pre-wrap`}
+                  style={{ minHeight: 100, lineHeight: 1.55 }}
+                >
+                  {linkify(description)}
                 </div>
               )}
             </div>
@@ -810,13 +839,13 @@ export function TaskModal({ task: taskProp, open, onClose, onSaved, prefill, mee
           </fieldset>
 
           {isEdit && task && !isPartial && (
-            <div className="mt-1 border-t border-line pt-3">
+            <div data-card-block="subtasks" className="mt-3.5 border-t border-line pt-3">
               <TaskSubtasks task={task} onChanged={onSaved} />
             </div>
           )}
 
           {isEdit && task && (
-            <div className="mt-1 border-t border-line pt-3">
+            <div data-card-block="comments" className="mt-3.5 border-t border-line pt-3">
               <TaskComments taskId={task.id} />
               <TaskOrigin task={task} />
             </div>

@@ -1,14 +1,17 @@
 "use client";
 import { useCallback, useContext, useEffect, useState } from "react";
 import { useDt, useRoyNav } from "../nav";
-import { DetailPanelContext, NavHeader, Market, SectionLabel, TezisyBlocks, Segmented, StorageBadge } from "../ui";
+import { DetailPanelContext, NavHeader, Market, SectionLabel, Segmented, StorageBadge } from "../ui";
 import { DashTaskRow } from "../dash/shared";
 import { RoyIcon, type RoyIconName } from "../icons";
 import { deriveEntryTitle } from "../entry";
 import { sourceLabel } from "./RoyMeetingsScreen";
 import { TasksFromMeeting } from "../TasksFromMeeting";
-import { PanelEditor } from "../PanelEditor";
-import { fetchMeeting, patchMeeting, deleteMeeting, fetchTasks, resummarizeMeetingEntry, fetchConfig } from "@/lib/api";
+import { TezisyEditor } from "../tezisy/TezisyEditor";
+import { TezisyReader } from "../tezisy/TezisyReader";
+import type { AskApply } from "../tezisy/AskPopover";
+import { applyAskAnswerToText } from "@/lib/tezisyLines";
+import { askMeeting, fetchMeeting, patchMeeting, deleteMeeting, fetchTasks, resummarizeMeetingEntry, fetchConfig } from "@/lib/api";
 import { countryCode } from "@/lib/countries";
 import type { Entry, Task } from "@/types";
 
@@ -38,7 +41,7 @@ export function ActionChip({ icon, label, onClick, danger }: { icon: RoyIconName
 }
 
 export function MeetingDetail({ id }: { id: string }) {
-  const { pop, toast, tasksVersion } = useRoyNav();
+  const { me, pop, toast, tasksVersion } = useRoyNav();
   const panel = useContext(DetailPanelContext);
   const dt = useDt();
   const [view, setView] = useState<"tez" | "tasks" | "tr">("tez");
@@ -122,6 +125,17 @@ export function MeetingDetail({ id }: { id: string }) {
     }
     setBusy(false);
   };
+  // Точечный вопрос по тезисам. Ответ пересказывает транскрипт, поэтому только тем, кто встречу
+  // записывал (сервер проверяет записавших и совладельцев; здесь — владелец записи, чтобы не
+  // показывать кнопку, которая откажет).
+  const askEntry = e && e.metadata?.meeting_id && me && e.owner_id === me.telegram_id
+    ? (fragment: string, question: string) => askMeeting("entry", id, fragment, question)
+    : undefined;
+  const applyFromReading = (answer: string, mode: AskApply, fragment: string) => {
+    setDraft(applyAskAnswerToText(e?.summary ?? "", fragment, answer, mode));
+    setEditing(true);
+    setView("tez");
+  };
   const startSummaryEdit = () => { setDraft(e?.summary ?? ""); setEditing(true); setView("tez"); };
   const saveSummary = async () => {
     setBusy(true);
@@ -187,8 +201,8 @@ export function MeetingDetail({ id }: { id: string }) {
   const tezBlock = e && (
     <>
             {editing ? (
-              <PanelEditor value={draft} onChange={setDraft} onSave={saveSummary} onCancel={() => setEditing(false)}
-                busy={busy} label={dt("Тезисы встречи", "Meeting summary")} />
+              <TezisyEditor value={draft} onChange={setDraft} onSave={saveSummary} onCancel={() => setEditing(false)}
+                busy={busy} label={dt("Тезисы встречи", "Meeting summary")} ask={askEntry} />
             ) : e.summary ? (
               <div className="mb-4 px-4 py-3.5" style={{ background: "var(--accent-soft)", border: "1px solid var(--accent-line)", borderRadius: 10 }}>
                 <div className="mb-1.5 flex items-center justify-between gap-2">
@@ -208,7 +222,8 @@ export function MeetingDetail({ id }: { id: string }) {
                     </button>
                   )}
                 </div>
-                <TezisyBlocks text={e.summary} copyMeta={{ title: deriveEntryTitle(e), date: e.entry_date || e.created_at }} />
+                <TezisyReader text={e.summary} copyMeta={{ title: deriveEntryTitle(e), date: e.entry_date || e.created_at }}
+                  ask={askEntry} onApply={applyFromReading} />
               </div>
             ) : null}
 

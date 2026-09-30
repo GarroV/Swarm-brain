@@ -17,6 +17,8 @@ export type DeployNotice = {
   /** Нештатный текст-переопределение; обычно пусто — подпись строится из отсчёта. */
   ru?: string | null;
   en?: string | null;
+  /** freeze — плашка перед заморозкой (issue #609): `at` = начало работ, `until` = их конец. */
+  kind?: "freeze";
 };
 
 export type NoticeView = {

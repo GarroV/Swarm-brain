@@ -29,8 +29,10 @@ import type {
 import { createRequestCache, REQUEST_CACHE_TTL_MS } from "./request-cache";
 import { normalizeProposedTasks, type ProposedTask } from "./proposedTasks";
 import type { DeployNotice } from "@/lib/deployNotice";
+import { type MeetingInvite, parseInviteResponse } from "./meetingInvite";
 import {
   type Maintenance,
+  type MaintenanceNotice,
   parseMaintenanceResponse,
   publishMaintenance,
 } from "@/lib/maintenance";
@@ -122,6 +124,8 @@ class ApiError extends Error {
   constructor(
     public status: number,
     message: string,
+    /** Тело ответа с ошибкой — там, где сервер отдаёт машинный код (`{error, code}`). */
+    public body: unknown = null,
   ) {
     super(message);
     this.name = "ApiError";
@@ -565,7 +569,7 @@ async function apiFetchRaw<T>(path: string, options?: RequestInit): Promise<T> {
     const frozen = parseMaintenanceResponse(body);
     if (frozen) publishMaintenance(frozen);
   }
-  if (!res.ok) throw new ApiError(res.status, body.error ?? res.statusText);
+  if (!res.ok) throw new ApiError(res.status, body.error ?? res.statusText, body);
   return body as T;
 }
 
@@ -611,7 +615,7 @@ async function apiFetchNoContentTypeRaw<T>(
   });
   if (res.status === 204) return undefined as T;
   const body = await res.json().catch(() => ({ error: res.statusText }));
-  if (!res.ok) throw new ApiError(res.status, body.error ?? res.statusText);
+  if (!res.ok) throw new ApiError(res.status, body.error ?? res.statusText, body);
   return body as T;
 }
 
@@ -1052,6 +1056,15 @@ let MOCK_LABELS: TaskLabel[] = [
     icon: "task",
     color: null,
     sort_order: 0,
+    count: 0,
+  },
+  // Второй список — чтобы в моках было видно ячейку «Айти · +1» в таблице задач.
+  {
+    id: "l-routine",
+    name: "Регулярка",
+    icon: "repeat",
+    color: null,
+    sort_order: 1,
     count: 0,
   },
 ];
@@ -2284,7 +2297,8 @@ export type TaskComment = {
 // поле `type` заведено под назначения/смены статуса (беклог), UI на него уже смотрит.
 export type SwarmNotification = {
   id: string;
-  type: "task_comment" | "task_reminder";
+  /** maintenance — плановые работы (заморозка, issue #609): без задачи, содержимое в payload. */
+  type: "task_comment" | "task_reminder" | "maintenance";
   task_id: string | null;
   task_title: string;
   comment_id: string | null;
@@ -2293,6 +2307,7 @@ export type SwarmNotification = {
   actor_name: string;
   read_at: string | null;
   created_at: string;
+  payload?: MaintenanceNotice;
 };
 
 export type NotificationsResponse = {
@@ -2307,6 +2322,25 @@ export async function fetchNotifications(
 ): Promise<NotificationsResponse> {
   if (DEV_MODE) {
     const items: SwarmNotification[] = [
+      {
+        // DEV_MODE: плановые работы через 8 минут — та же заморозка, что объявляет плашка ниже.
+        id: "n-freeze",
+        type: "maintenance",
+        task_id: null,
+        task_title: "",
+        comment_id: null,
+        content: "",
+        actor_telegram_id: null,
+        actor_name: "—",
+        read_at: null,
+        created_at: new Date(Date.now() - 60 * 1000).toISOString(),
+        payload: {
+          starts_at: new Date(Date.now() + 8 * 60 * 1000).toISOString(),
+          until: new Date(Date.now() + 38 * 60 * 1000).toISOString(),
+          message_ru: "Переезжаем на новый вид. Допишите начатое — изменения на время работ не принимаются.",
+          message_en: "Moving to the new look. Finish what you are editing — changes are paused during the work.",
+        },
+      },
       {
         id: "n1",
         type: "task_comment",
@@ -2345,10 +2379,22 @@ export async function fetchNotifications(
       },
     ];
     // DEV_MODE: объявление о раскатке через 8 минут — иначе плашку не посмотреть локально.
-    const notice: DeployNotice = {
-      at: new Date(Date.now() + 8 * 60 * 1000).toISOString(),
-      until: new Date(Date.now() + 40 * 60 * 1000).toISOString(),
-    };
+    // localStorage `dev-notice=deploy` — обычная плашка раскатки; по умолчанию — плашка перед
+    // заморозкой. Не параметром адреса: роутер оболочки снимает query при входе.
+    let deployOnly = false;
+    try { deployOnly = window.localStorage.getItem("dev-notice") === "deploy"; } catch { /* нет хранилища — показываем заморозку */ }
+    const notice: DeployNotice = deployOnly
+      ? {
+        at: new Date(Date.now() + 8 * 60 * 1000).toISOString(),
+        until: new Date(Date.now() + 40 * 60 * 1000).toISOString(),
+      }
+      : {
+        kind: "freeze",
+        at: new Date(Date.now() + 8 * 60 * 1000).toISOString(),
+        until: new Date(Date.now() + 38 * 60 * 1000).toISOString(),
+        ru: "Переезжаем на новый вид.",
+        en: "Moving to the new look.",
+      };
     return { items, unread: items.filter((i) => !i.read_at).length, notice };
   }
   return apiFetch<NotificationsResponse>(`/notifications?limit=${limit}`);
@@ -2468,7 +2514,7 @@ export async function apiFetchList<T>(
     headers: { "Content-Type": "application/json", ...authHeaders() },
   });
   const body = await res.json().catch(() => ({ error: res.statusText }));
-  if (!res.ok) throw new ApiError(res.status, body.error ?? res.statusText);
+  if (!res.ok) throw new ApiError(res.status, body.error ?? res.statusText, body);
   const raw = res.headers.get("X-Total-Count");
   const total = raw != null && /^\d+$/.test(raw) ? Number(raw) : null;
   return { rows: (body ?? []) as T[], total };
@@ -2876,6 +2922,24 @@ export async function resummarizeMeetingEntry(id: string): Promise<Entry> {
   return apiFetch<Entry>(`/meetings/${id}/resummarize`, { method: "POST" });
 }
 
+// Точечный вопрос по встрече: ответ по транскрипту пунктами «- …», в базу ничего не пишет
+// (swarm-api/meeting-ask.ts). kind "draft" — черновик на вычитке (meetings.id), "entry" —
+// опубликованная встреча (entries.id).
+export async function askMeeting(
+  kind: "draft" | "entry",
+  id: string,
+  fragment: string,
+  question: string,
+): Promise<string> {
+  if (DEV_MODE) return `- Демо-ответ по фрагменту «${fragment.slice(0, 40)}»: ${question || "что здесь обсуждали"}`;
+  const path = kind === "draft" ? `/agent-meetings/${id}/ask` : `/meetings/${id}/ask`;
+  const r = await apiFetch<{ answer: string }>(path, {
+    method: "POST",
+    body: JSON.stringify({ fragment, question }),
+  });
+  return r.answer;
+}
+
 export async function deleteAgentMeeting(id: string): Promise<void> {
   if (DEV_MODE) {
     mockAgentMeetings = mockAgentMeetings.filter((x) => x.id !== id);
@@ -2929,6 +2993,52 @@ export async function publishAgentMeeting(
   });
 }
 
+// ── Приглашение бота на созвон (D017) ────────────────────────────────────────
+// Контракт и разбор ответа — lib/meetingInvite.ts. Ошибки приходят как ApiError с телом
+// `{error, error_ru, code}`: экран показывает текст по коду (parseInviteErrorCode).
+
+let mockInvites: MeetingInvite[] = [];
+
+function readInvite(body: unknown): MeetingInvite {
+  const invite = parseInviteResponse(body);
+  if (!invite) throw new ApiError(502, "Unexpected invite response");
+  return invite;
+}
+
+export async function createMeetingInvite(joinUrl: string): Promise<MeetingInvite> {
+  if (DEV_MODE) {
+    const bare = joinUrl.trim().replace(/^https?:\/\//, "");
+    // Как сервер: бот ходит в Meet и Контур.Толк (T111), Zoom отбивается сразу.
+    if (/(^|\.)zoom\.us(\/|$)/i.test(bare)) {
+      throw new ApiError(400, "The bot joins Google Meet and Kontur.Talk calls — Zoom is not supported yet", {
+        code: "unsupported_platform",
+      });
+    }
+    const same = mockInvites.find((x) => x.join_url === joinUrl.trim());
+    if (same) return same;
+    const now = Date.now();
+    const platform: MeetingInvite["platform"] = /(^|\.)(ktalk\.ru|kontur\.[a-z.]+)(\/|$)/i.test(bare)
+      ? "kontur"
+      : "meet";
+    const invite: MeetingInvite = {
+      id: crypto.randomUUID(), join_url: joinUrl.trim(), platform, status: "pending",
+      created_at: new Date(now).toISOString(), expires_at: new Date(now + 15 * 60_000).toISOString(), meeting_id: null,
+    };
+    mockInvites = [invite, ...mockInvites];
+    return invite;
+  }
+  return readInvite(await apiFetch<unknown>("/meeting-invites", { method: "POST", body: JSON.stringify({ join_url: joinUrl }) }));
+}
+
+export async function fetchMeetingInvite(id: string): Promise<MeetingInvite> {
+  if (DEV_MODE) {
+    const found = mockInvites.find((x) => x.id === id);
+    if (!found) throw new ApiError(404, "Invite not found", { code: "not_found" });
+    return found;
+  }
+  return readInvite(await apiFetch<unknown>(`/meeting-invites/${encodeURIComponent(id)}`));
+}
+
 // ── Integrations / Granola ────────────────────────────────────────────────────
 
 export async function fetchIntegrations(): Promise<Integration[]> {
@@ -2974,6 +3084,27 @@ export async function disconnectGoogle(): Promise<void> {
     return;
   }
   return apiFetch<void>("/integrations/google", { method: "DELETE" });
+}
+
+// Автозапуск бота по календарю (D021): бот scriba сам приходит на встречи Meet — только если
+// человек включил. По умолчанию выключено; выключение гасит и уже заведённые задания (сервер).
+let mockAutojoin = false;
+
+export async function fetchAutojoin(): Promise<boolean> {
+  if (DEV_MODE) return mockAutojoin;
+  return (await apiFetch<{ enabled: boolean }>("/scriba/autojoin")).enabled;
+}
+
+export async function setAutojoin(enabled: boolean): Promise<boolean> {
+  if (DEV_MODE) {
+    mockAutojoin = enabled;
+    return enabled;
+  }
+  const res = await apiFetch<{ enabled: boolean }>("/scriba/autojoin", {
+    method: "PUT",
+    body: JSON.stringify({ enabled }),
+  });
+  return res.enabled;
 }
 
 export async function fetchGranolaUnprocessed(

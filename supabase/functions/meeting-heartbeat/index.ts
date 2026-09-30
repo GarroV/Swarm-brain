@@ -1,3 +1,4 @@
+// ВСЕХ функциях); перевод на голые спецификаторы из import-map из ветки непроверяем. См. _shared/agent-auth.ts.
 // Heartbeat рекордера. Рекордер раз в ~15 мин (maintenanceTick) шлёт «я жив» + статус записи +
 // версию. Пишет allowed_users.recorder_last_{seen,recording,version}. Watchdog checkRecorderHealth
 // (swarm-bot) читает эти поля для двух сигналов: «оборванная запись» и «токен истекает».
@@ -11,43 +12,119 @@
 // Пока звонок идёт, рекордер шлёт keep-alive чаще (2 мин) — панель считает присутствие живым
 // пять минут, дальше гасит.
 //
-// Auth: verifyAgentToken принимает recorder_token_hash ИЛИ claude_mcp_token_hash (см. _shared/agent-auth).
+// Auth: resolveActingIdentity принимает recorder_token_hash ИЛИ claude_mcp_token_hash человека
+// (см. _shared/agent-auth), а также токен служебного агента с заголовком X-On-Behalf-Of.
+// Heartbeat агента при этом НЕ ложится в строку человека: иначе watchdog решил бы, что у человека
+// работает рекордер, и погасил бы настоящий сигнал. С D018 удар агента несёт meeting_id и пишется
+// в строку встречи (meetings.agent_last_*) — только встречи его воркспейса, где claim_owner —
+// человек из X-On-Behalf-Of; чужая встреча → 403. Плюс строка агента (service_agents.last_seen_at,
+// last_version) — «бот вообще жив, такая-то сборка». Куда и с какими условиями — write.ts.
+// Удар бота по своей встрече ещё продлевает лиз права транскрибации и пишет recorded_seconds —
+// так арбитраж meeting-claim видит запись бота честно (T155, write.ts). Лиз — только при
+// recording:true, секунды — только вверх и не быстрее прошедшего времени с запасом (T157, write.ts).
 // Деплой: supabase functions deploy meeting-heartbeat --no-verify-jwt (рекордер хитит с Bearer-токеном).
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { verifyAgentToken, AgentAuthError } from "../_shared/agent-auth.ts";
+import { AgentAuthError, resolveActingIdentity } from "../_shared/agent-auth.ts";
+import {
+  buildHeartbeatWrites,
+  freshnessFilter,
+  type HeartbeatBody,
+  HeartbeatRejected,
+  type HeartbeatWrite,
+  NOT_CLAIM_OWNER,
+  type RecordedPrior,
+  runHeartbeat,
+  type WriteStore,
+} from "./write.ts";
 
-const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+const supabase = createClient(
+  Deno.env.get("SUPABASE_URL")!,
+  Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+);
+
+// Таблицы в Postgres через PostgREST. Условие свежести — `col is null or col < value` той же UPDATE.
+const store: WriteStore = {
+  async update(write) {
+    let query = supabase.from(write.table).update(write.patch);
+    for (const [column, value] of Object.entries(write.match)) {
+      query = query.eq(column, value);
+    }
+    const filter = freshnessFilter(write);
+    if (filter) query = query.or(filter);
+    // Отдать назад только ключ: строка встречи несёт транскрипт, тащить его ради счёта незачем.
+    const { data, error } = await query.select(Object.keys(write.match)[0]);
+    if (error) throw new Error(`update ${write.table}: ${error.message}`);
+    return (data ?? []).length;
+  },
+  async read(write) {
+    let query = supabase.from(write.table).select("recorded_seconds, agent_last_seen_at, lease_expires_at");
+    for (const [column, value] of Object.entries(write.match)) {
+      query = query.eq(column, value);
+    }
+    const { data, error } = await query.maybeSingle();
+    if (error) throw new Error(`select ${write.table}: ${error.message}`);
+    return data as RecordedPrior | null;
+  },
+  async count(write) {
+    let query = supabase.from(write.table).select(Object.keys(write.match)[0]);
+    for (const [column, value] of Object.entries(write.match)) {
+      query = query.eq(column, value);
+    }
+    const { data, error } = await query;
+    if (error) throw new Error(`select ${write.table}: ${error.message}`);
+    return (data ?? []).length;
+  },
+};
 
 function json(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { "Content-Type": "application/json" },
+  });
 }
 
 Deno.serve(async (req: Request) => {
   let identity;
   try {
-    identity = await verifyAgentToken(supabase, req);
+    identity = await resolveActingIdentity(supabase, req);
   } catch (e) {
-    if (e instanceof AgentAuthError) return json({ error: e.message }, 401);
+    if (e instanceof AgentAuthError) {
+      return json({ error: e.message }, e.status);
+    }
     throw e;
   }
 
-  let body: { recording?: unknown; version?: unknown; on_call?: unknown; meeting_key?: unknown };
-  try { body = await req.json(); } catch { body = {}; }
-  const recording = body.recording === true;
-  const version = typeof body.version === "number" ? body.version : null;
-  const onCall = body.on_call === true;
-  const rawKey = typeof body.meeting_key === "string" ? body.meeting_key.trim() : "";
-  // Ключ держим только пока человек в звонке (или мы пишем). Иначе он завис бы после
-  // созвона и панель показывала бы ON AIR на давно закончившейся встрече.
-  const meetingKey = (onCall || recording) && rawKey ? rawKey : null;
+  let body: HeartbeatBody;
+  try {
+    body = await req.json();
+  } catch {
+    body = {};
+  }
 
-  const { error } = await supabase.from("allowed_users").update({
-    recorder_last_seen: new Date().toISOString(),
-    recorder_last_recording: recording,
-    recorder_last_version: version,
-    recorder_last_on_call: onCall,
-    recorder_last_meeting_key: meetingKey,
-  }).eq("telegram_id", identity.telegramId);
-  if (error) return json({ error: "update failed" }, 500);
+  const nowIso = new Date().toISOString();
+  let writes: HeartbeatWrite[];
+  try {
+    writes = buildHeartbeatWrites(identity, body, nowIso);
+  } catch (e) {
+    if (e instanceof HeartbeatRejected) {
+      return json({ error: e.message }, e.status);
+    }
+    throw e;
+  }
+  let outcome;
+  try {
+    outcome = await runHeartbeat(writes, store, nowIso);
+  } catch (e) {
+    console.error(`meeting-heartbeat: ${e instanceof Error ? e.message : String(e)}`);
+    return json({ error: "update failed" }, 500);
+  }
+  // Не отличаем «встречи нет» от «встреча чужая»: ответ не должен подтверждать чужие id.
+  // code — для бота: по своей встрече такой отказ значит «право ушло другой записи» (D019).
+  if (outcome === "missed") {
+    return json({ error: "meeting is not yours", code: NOT_CLAIM_OWNER }, 403);
+  }
+  // Опоздавший удар: встречу уже освежил более поздний. Дальше ничего не пишется — строку агента
+  // тот, более поздний, тоже освежил.
+  if (outcome === "stale") return json({ ok: true, stale: true });
   return json({ ok: true });
 });

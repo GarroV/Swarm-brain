@@ -1,3 +1,7 @@
+// deno-fmt-ignore-file
+// Легаси-файл вне канона формата (решение D013): гейт `scripts/check` проверяет формат затронутого
+// файла ЦЕЛИКОМ, а переформатирование этого — ~700 строк дифа поверх параллельных веток. Новый код
+// роутера живёт в модулях рядом (task-labels.ts, meeting-invites.ts …), они по канону.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { verifyInitData } from "./auth.ts";
 import { signJWT, verifyJWT } from "../_shared/jwt.ts";
@@ -32,7 +36,6 @@ import {
   createTask,
   deleteTask,
   getTask,
-  listTasks,
   listTasksWithTotal,
   updateTask,
 } from "../_shared/tasks/db.ts";
@@ -114,13 +117,21 @@ import {
 } from "../_shared/meeting-access.ts";
 import { handleAdminRoutes } from "./admin.ts";
 import { apiErr, corsHeaders, json, parseListLimit } from "./http.ts";
+import { handleMeetingInviteRoutes } from "./meeting-invites.ts";
+import { DEMO_GROUP_ID, isDemoSession } from "../_shared/demo-session.ts";
+import { handleAutojoinRoutes, makeAutojoinStore } from "./autojoin.ts";
 import { handleTaskLabelRoutes } from "./task-labels.ts";
 import { handleTaskCommentRoutes } from "./task-comments.ts";
 import { handleStatsRoutes } from "./stats.ts";
+import { handleMeetingAskRoutes } from "./meeting-ask.ts";
 import { handleSprintCycleRoutes } from "./sprint-cycles.ts";
 import { handleSpaceJournalRoutes } from "./space-journal.ts";
 import { handleNotificationRoutes } from "./notifications.ts";
 import { handleTaskSubscriptionRoutes } from "./task-subscriptions.ts";
+import {
+  handlePublicRoadmap,
+  isPublicRoadmapPath,
+} from "./public-roadmap.ts";
 // Календарь на сегодня для панели главной (issue #218): доступ к Google — общий модуль
 // (его же зовёт meeting-current), отбор событий дня и границы суток — чистая логика под тестами.
 import { accessToken, listEvents } from "../_shared/google-calendar.ts";
@@ -169,8 +180,8 @@ const BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN")!;
 const MAX_AGE = parseInt(Deno.env.get("INITDATA_MAX_AGE") ?? "86400", 10);
 const ADMIN_USER_ID = 744230399; // см. lib/supabase.ts swarm-bot — единый суперадмин
 // Demo-сессия для показа заказчику (секретная ссылка → JWT с этим telegram_id). Жёстко
-// изолирована в воркспейс 'demo': не админ, не видит рабочие данные, не минтит токены.
-const DEMO_USER_ID = 900000001;
+// изолирована в синтетический воркспейс: не админ, не видит рабочие данные, не минтит токены.
+// Правило «это демо» — одно на все функции: _shared/demo-session.ts.
 const WEB_JWT_SECRET = Deno.env.get("WEB_JWT_SECRET"); // подпись веб-сессий (Login Widget, B+)
 
 const supabase = createClient(
@@ -512,6 +523,15 @@ async function sprintInWorkspace(
 Deno.serve(async (req: Request) => {
   const origin = req.headers.get("Origin") ?? "";
 
+  // Публичная дорожная карта доски для хаба проектов (issue #562) — БЕЗ авторизации и раньше
+  // общего OPTIONS: у неё свой CORS (`*`, только GET), приватный MINIAPP_ORIGIN ей не подходит.
+  // Что уходит наружу — строго белый список модуля public-roadmap.ts.
+  const publicPath = new URL(req.url).pathname.split("/swarm-api").pop() ||
+    "/";
+  if (isPublicRoadmapPath(publicPath)) {
+    return handlePublicRoadmap(supabase, req, publicPath);
+  }
+
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 204, headers: corsHeaders(origin) });
   }
@@ -575,10 +595,8 @@ Deno.serve(async (req: Request) => {
   // Demo-сессия (секретная ссылка, telegram_id === DEMO_USER_ID): жёсткая изоляция.
   // Группа форсится в 'demo' (НЕ из БД), админ-права запрещены. Барьер «нет дыр в рабочие»:
   // все data-запросы фильтруются по этому group_id, admin-роуты недоступны (isAdmin=false).
-  const isDemo = telegram_id === DEMO_USER_ID;
-  const groupId = isDemo
-    ? "demo"
-    : (userRow as { group_id: string | null }).group_id;
+  const isDemo = isDemoSession(telegram_id);
+  const groupId = isDemo ? DEMO_GROUP_ID : (userRow as { group_id: string | null }).group_id;
   if (!groupId) {
     return apiErr(403, "No workspace assigned", origin);
   }
@@ -597,8 +615,8 @@ Deno.serve(async (req: Request) => {
 
   // Заморозка на время раскатки: изменения не принимаем, чтение оставляем (пустой экран
   // пугает сильнее честной плашки). Владелец проходит всегда — он катит и проверяет.
-  // 503 + Retry-After: рекордер и боты на этой паре сами уходят в повтор, поэтому запись не
-  // теряется, а откладывается до конца работ.
+  // 503 + Retry-After: веб показывает заглушку и сохранить не даёт. Рекордер сюда пишет только
+  // live-пометки, и их гейт пропускает — повтора у рекордера нет (см. maintenanceVerdict).
   // Тот же статус, но для узнанного человека: владельцу заглушка сообщает, что он проходит,
   // — иначе он не сможет ни проверить раскатку, ни снять режим через продукт.
   if (req.method === "GET" && routePath === "/maintenance") {
@@ -617,6 +635,7 @@ Deno.serve(async (req: Request) => {
     now: new Date(),
     method: req.method,
     isOwner: telegram_id === ADMIN_USER_ID,
+    path: routePath,
   });
   if (freeze.frozen) {
     return json(maintenancePayload(freeze.state), 503, origin, {
@@ -804,6 +823,22 @@ Deno.serve(async (req: Request) => {
   }
 
   // Персональные смарт-метки задач (/task-labels*) — доступ строго свой (owner_id).
+  // Приглашение бота на созвон (D017): человек вставляет ссылку — бот постучится.
+  const inviteResp = await handleMeetingInviteRoutes(
+    { supabase, telegramId: telegram_id, groupId, isDemo, origin },
+    req,
+    routePath,
+  );
+  if (inviteResp) return inviteResp;
+
+  // Автозапуск бота по календарю (D021): человек включает и выключает его себе, рядом с календарём.
+  const autojoinResp = await handleAutojoinRoutes(
+    { store: makeAutojoinStore(supabase), telegramId: telegram_id, isDemo, origin },
+    req,
+    routePath,
+  );
+  if (autojoinResp) return autojoinResp;
+
   const labelResp = await handleTaskLabelRoutes(
     supabase,
     req,
@@ -839,6 +874,18 @@ Deno.serve(async (req: Request) => {
     resolveNames,
   );
   if (statsResp) return statsResp;
+
+  // Точечный вопрос по встрече (/agent-meetings/:id/ask, /meetings/:id/ask) — ответ по транскрипту.
+  const askResp = await handleMeetingAskRoutes(
+    supabase,
+    req,
+    routePath,
+    telegram_id,
+    groupId,
+    isAdmin,
+    origin,
+  );
+  if (askResp) return askResp;
 
   // Подписка на уведомления о комментариях к задаче (/tasks/:id/subscription) — issue #82.
   const subResp = await handleTaskSubscriptionRoutes(

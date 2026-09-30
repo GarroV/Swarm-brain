@@ -394,7 +394,7 @@ export function RoyApp({ me }: { me: Me | null }) {
           <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
             <div
               className={cn(
-                "relative mx-auto flex min-h-0 w-full flex-1 flex-col overflow-hidden lg:ml-0 min-[1497px]:border-r min-[1497px]:border-line",
+                "roy-pane relative mx-auto flex min-h-0 w-full flex-1 flex-col overflow-hidden lg:ml-0 min-[1497px]:border-r min-[1497px]:border-line",
                 // Десктоп — единая оптимальная ширина (во всю ширину получалось «дерьмо»: строки/текст
                 // растягивались на весь монитор), прижатая к рейке: свободное место уходит вправо, а не
                 // пустой полосой между рейкой и полем (владелец 2026-09-25). Когда справа есть свободное место
@@ -521,7 +521,7 @@ function DetailPanel({ route, depth, section, onClose }: { route: RoyRoute; dept
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape" || e.defaultPrevented) return;
       if (document.querySelector("[role=dialog], [role=alertdialog], [role=menu]")) return;
-      // Идёт правка текста (PanelEditor) — Esc отменяет её, а не закрывает панель.
+      // Идёт правка текста (TezisyEditor и поля с data-panel-edit) — Esc отменяет её, а не закрывает панель.
       if (document.activeElement?.closest("[data-panel-edit]")) return;
       onClose();
     };

@@ -1,5 +1,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { createTask, getTask, listTasks, updateTask, deleteTask } from "../../_shared/tasks/db.ts";
+import { createTask, getTask, listTasks, listTasksWithTotal, updateTask, deleteTask } from "../../_shared/tasks/db.ts";
+import { projectLabel, truncationNote, visibleProjectNameById } from "./task-list.ts";
+
 import { recurrencePatchFor, resolveRecurrence } from "../../_shared/tasks/recurrence.ts";
 import { commentDeleteDenial, validateCommentContent } from "../../_shared/tasks/comments.ts";
 import { canViewTask, taskAccessError } from "../../_shared/tasks/access.ts";
@@ -315,6 +317,7 @@ export async function toolUpdateTask(args: {
   project_name?: string;
   recur_freq?: string | null;
   parent_task_id?: string;
+  hidden_from_hub?: boolean;
   requesting_user_id: number;
 }): Promise<string> {
   const task = await getTask(args.id);
@@ -362,6 +365,14 @@ export async function toolUpdateTask(args: {
   if ("due_date" in args) fields.due_date = args.due_date ?? null;
   if (args.status !== undefined) fields.status = args.status;
   if (args.task_role !== undefined) fields.task_role = args.task_role;
+  // Скрыть задачу с публичной дорожной карты хаба (issue #562). Только настоящий boolean:
+  // строка «false» — истина в JS, и задача молча осталась бы на хабе (или ушла с него).
+  if (args.hidden_from_hub !== undefined) {
+    if (typeof args.hidden_from_hub !== "boolean") {
+      return "Ошибка: hidden_from_hub — true или false.";
+    }
+    fields.hidden_from_hub = args.hidden_from_hub;
+  }
 
   // Цикличность (null — снять). Считаем от ИТОГОВОГО срока: его могли поменять этим же вызовом.
   // Якорь числа месяца хелпер трогает только когда изменился срок или частота — иначе правка
@@ -440,6 +451,9 @@ export async function toolDeleteTask(args: { id: string; requesting_user_id: num
   }
 }
 
+/** Потолок строк get_tasks: выдача печатается агенту текстом, дампить всю доску незачем. */
+const GET_TASKS_LIMIT = 30;
+
 export async function toolGetTasks(args: {
   assignee?: string;
   country?: string;
@@ -447,6 +461,7 @@ export async function toolGetTasks(args: {
   period?: string;
   label?: string;
   project?: string;
+  no_project?: boolean;
   requesting_user_id: number;
 }): Promise<string> {
   const groupId = await resolveGroupId(args.requesting_user_id);
@@ -458,36 +473,46 @@ export async function toolGetTasks(args: {
   // молча отданная полная доска неотличима от «в проекте столько задач», и агент докладывает
   // содержимое чужого проекта как содержимое запрошенного. Строки тянем один раз — из них же
   // берётся подсказка с доступными именами.
+  if (args.project && args.no_project) {
+    return "Ошибка: project и no_project взаимоисключающие — выбери одно.";
+  }
+  // Строки проектов нужны всегда: из них и резолв имени, и подпись проекта в каждой строке
+  // выдачи (issue #626).
+  const projectRows = await fetchProjectRows(groupId);
   let projectMatch: { id: string; ambiguous: boolean } | null = null;
   if (args.project) {
-    const rows = await fetchProjectRows(groupId);
-    projectMatch = pickProjectByName(rows, args.project, args.requesting_user_id);
+    projectMatch = pickProjectByName(projectRows, args.project, args.requesting_user_id);
     if (!projectMatch) {
-      return projectNotFoundMessage(args.project, visibleProjectNames(rows, args.requesting_user_id));
+      return projectNotFoundMessage(args.project, visibleProjectNames(projectRows, args.requesting_user_id));
     }
   }
 
-  const tasks = await listTasks({
+  const { tasks, total } = await listTasksWithTotal({
     status: args.status,
     country: args.country,
     period: args.period,
     assigneeText: args.assignee,
     labelIds: labelIds.length ? labelIds : undefined,
     projectId: projectMatch?.id,
+    noProject: args.no_project === true,
     viewerId: args.requesting_user_id,
-    limit: 30,
+    limit: GET_TASKS_LIMIT,
   }, groupId);
 
   if (!tasks.length) return "Задач не найдено.";
 
+  const projectNames = visibleProjectNameById(projectRows, args.requesting_user_id);
   const { titleById, progress } = await subtaskContext(tasks, args.requesting_user_id);
-  return tasks.map((t) =>
+  const lines = tasks.map((t) =>
     formatTaskLine({
       ...t,
       parent_title: t.parent_id ? titleById.get(t.parent_id) ?? null : null,
       subtasks: progress.get(t.id) ?? null,
+      project_label: projectLabel(t.project_id, projectNames),
     })
-  ).join("\n\n");
+  );
+  const note = truncationNote(tasks.length, total, GET_TASKS_LIMIT);
+  return (note ? [note, ...lines] : lines).join("\n\n");
 }
 
 // Дерево досок воркспейса (issue #198): без него агент не знал имён проектов и подпроектов и
@@ -714,6 +739,7 @@ export const TASK_TOOL_DEFINITIONS = [
         project_name: { type: "string", description: "Имя проекта или подпроекта доски. Пустая строка — снять проект (задача уйдёт с доски в общий список)." },
         recur_freq: { type: ["string", "null"], enum: ["daily", "weekly", "monthly", null], description: "Цикличность: задача не закрывается, а переносится на следующее вхождение (daily — каждый день, weekly — тот же день недели, monthly — то же число месяца). ТРЕБУЕТ due_date: день недели и число берутся из срока. null — снять цикличность." },
         parent_task_id: { type: "string", description: "Сделать подзадачей задачи с этим id (того же проекта, верхнего уровня). Пустая строка — отвязать от родителя" },
+        hidden_from_hub: { type: "boolean", description: "true — не показывать задачу в публичной дорожной карте хаба проектов (даже если доска опубликована); false — вернуть." },
         requesting_user_id: { type: "number", description: "Твой Telegram user ID — обязателен для проверки доступа" },
       },
       required: ["id", "requesting_user_id"],

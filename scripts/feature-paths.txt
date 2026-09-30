@@ -32,3 +32,6 @@ miniapp/src/lib/projectOrder.ts
 miniapp/src/lib/projectOrder.test.ts
 miniapp/src/components/tasks/projectDnd.ts
 supabase/functions/_shared/demo-reset.db.test.ts
+supabase/functions/swarm-api/public-roadmap.ts
+supabase/functions/swarm-api/public-roadmap.test.ts
+supabase/functions/swarm-api/public-roadmap.db.test.ts

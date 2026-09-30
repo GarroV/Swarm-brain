@@ -1,5 +1,5 @@
 "use client";
-import type { MouseEvent } from "react";
+import { Fragment, type MouseEvent, type ReactNode } from "react";
 import { cn, displayName } from "@/lib/utils";
 import type { Task, User } from "@/types";
 import type { TaskLabel } from "@/lib/api";
@@ -11,23 +11,28 @@ import { COUNTRY_NAMES, countryName } from "@/lib/countries";
 import type { UpdateTaskInput } from "@/lib/api";
 import { Menu, type MenuItem } from "./Menu";
 import type { SubtaskProgress } from "@/lib/subtasks";
+import type { MovableColumn } from "@/lib/taskColumns";
 
-// Строка таблицы задач нового вида (стенд: screens-tasks.js → taskRow). Порядок колонок —
-// по тому, чем в строке ПОЛЬЗУЮТСЯ (владелец 22.09.2026): срок и быстрые действия у названия,
-// дальше рынок, потом проект, исполнитель и списки — их читают глазами.
+// Строка таблицы задач нового вида (стенд: screens-tasks.js → taskRow). Порядок колонок по
+// умолчанию — по тому, чем в строке ПОЛЬЗУЮТСЯ (владелец 22.09.2026): срок и быстрые действия у
+// названия, дальше рынок, потом проект, исполнитель и списки. С 28.09.2026 человек переставляет
+// колонки и тянет их ширину сам (lib/taskColumns.ts), «Задача» всегда первая.
 
-// Колонки таблицы задач. Уже 1100px (узкая десктопная раскладка) «Проект» и «Списки» прячутся —
-// как на стенде, где набор колонок зависит от ширины: иначе на окне 720–1100px строка шире
-// экрана. Классы статичные, чтобы Tailwind их увидел; ячейки этих колонок — с NARROW_HIDDEN.
-export const TASK_GRID =
-  "grid-cols-[minmax(200px,1fr)_88px_168px_64px_minmax(110px,24%)] min-[1100px]:grid-cols-[minmax(260px,1fr)_88px_168px_64px_minmax(110px,18%)_minmax(110px,15%)_minmax(90px,14%)]";
+// Уже 1100px (узкая десктопная раскладка) «Проект» и «Списки» прячутся — иначе на окне
+// 720–1100px строка шире экрана. Сами шаблоны сетки считает lib/taskColumns.ts под текущий
+// порядок и ширины и кладёт в CSS-переменные контейнера таблицы; классы статичные, чтобы
+// Tailwind их увидел.
+export const TASK_GRID = "grid-cols-[var(--g-narrow)] min-[1100px]:grid-cols-[var(--g-wide)]";
+export const TASK_GRID_MIN_W = "min-w-[var(--w-narrow)] min-[1100px]:min-w-[var(--w-wide)]";
 export const NARROW_HIDDEN = "max-[1099px]:hidden";
 
 const fmtDue = (iso: string, en: boolean) =>
   new Date(iso).toLocaleDateString(en ? "en-GB" : "ru-RU", { day: "numeric", month: "short" }).replace(".", "");
 
-export function TaskTableRow({ task, now, users, markets, labels, projectName, onOpen, onToggle, onPatch, onChanged, depth = 0, progress }: {
+export function TaskTableRow({ task, order, now, users, markets, labels, projectName, onOpen, onToggle, onPatch, onChanged, depth = 0, progress }: {
   task: Task;
+  // Порядок колонок после «Задачи» — тот же, что в шапке (TaskTableHead).
+  order: readonly MovableColumn[];
   now: Date;
   users: User[];
   markets: string[];
@@ -51,8 +56,9 @@ export function TaskTableRow({ task, now, users, markets, labels, projectName, o
     : "";
   const labelNames = (task.label_ids ?? [])
     .map((id) => labels.find((l) => l.id === id)?.name)
-    .filter(Boolean)
-    .join(", ");
+    .filter((n): n is string => !!n);
+  // В ячейке — первый список и «· +N» за остальные (макет 28.09.2026), полный перечень — в подсказке.
+  const labelsShort = labelNames.length > 1 ? `${labelNames[0]} · +${labelNames.length - 1}` : (labelNames[0] ?? "");
   const stop = (e: MouseEvent) => e.stopPropagation();
   const commit = (fields: UpdateTaskInput, patch: Partial<Task>) => saveTaskPatch(task.id, fields, patch, onPatch, onChanged);
 
@@ -80,6 +86,54 @@ export function TaskTableRow({ task, now, users, markets, labels, projectName, o
     onPick: () => { const { fields, patch } = toggleLabelPatch(task, l.id); commit(fields, patch); },
   }));
 
+  // Ячейки по колонкам: строка рисует их в порядке шапки (человек переставляет колонки сам).
+  const cells: Record<MovableColumn, ReactNode> = {
+    due: (
+      <div data-col="due" className={cn("px-2 font-mono", late ? "font-semibold text-pri-high" : "text-ink-soft")} style={{ fontSize: 12 }}>
+        {task.due_date ? fmtDue(task.due_date, dt("ru", "en") === "en") : <span className="text-ink-mute">—</span>}
+      </div>
+    ),
+    // Быстрые действия — тихими иконками без рамок, как на стенде (визуальный шаг В3). Правило
+    // бьёт только по кнопкам-триггерам: всплывающие окна пикеров рисуются порталом вне строки,
+    // а в карточке задачи те же пикеры остаются в рамках. Колонка переезжает целиком.
+    actions: (
+      <div
+        data-col="actions"
+        onClick={stop}
+        className="flex items-center gap-0.5 px-1 text-ink-mute opacity-70 transition-opacity group-hover:opacity-100 [&_button]:border-transparent [&_button]:bg-transparent [&_button]:text-ink-mute [&_button:hover]:bg-surface-2 [&_button:hover]:text-ink [&_svg]:text-current"
+      >
+        <TaskQuickActions task={task} users={users} markets={markets} labels={labels} onPatch={onPatch} onChanged={onChanged} />
+      </div>
+    ),
+    market: (
+      <CellPick col="market" title={task.country ? `${dt("Рынок", "Market")}: ${countryName(task.country)}` : dt("Рынок не указан", "No market")} items={marketItems}>
+        <span className="font-mono text-ink-soft" style={{ fontSize: 12 }}>{task.country ?? <span className="text-ink-mute">—</span>}</span>
+      </CellPick>
+    ),
+    project: (
+      <div data-col="project" title={projectName ?? undefined} className={cn("min-w-0 truncate px-2 text-ink-soft", NARROW_HIDDEN)}>{projectName ?? <span className="text-ink-mute">—</span>}</div>
+    ),
+    assignee: (
+      <CellPick col="assignee" title={whoName ? `${dt("Исполнитель", "Assignee")}: ${whoName}` : dt("Исполнитель не назначен", "Unassigned")} items={whoItems}>
+        <span className="truncate text-ink-soft">{whoName || <span className="text-ink-mute">—</span>}</span>
+      </CellPick>
+    ),
+    lists: (
+      <div data-col="lists" className={cn("min-w-0", NARROW_HIDDEN)}>
+        {labels.length > 0 ? (
+          <CellPick
+            title={labelNames.length
+              ? labelNames.join(", ")
+              : dt("Списки — личные: задача станет личной", "Lists are personal: the task becomes private")}
+            items={labelItems}
+          >
+            <span className="truncate text-ink-mute" style={{ fontSize: 12.5 }}>{labelsShort || "—"}</span>
+          </CellPick>
+        ) : <div className="min-w-0 truncate px-2 text-ink-mute" style={{ fontSize: 12.5 }}>—</div>}
+      </div>
+    ),
+  };
+
   return (
     <div
       role="row"
@@ -89,7 +143,7 @@ export function TaskTableRow({ task, now, users, markets, labels, projectName, o
       className={cn("group grid cursor-pointer items-center border-b border-line bg-surface transition-colors hover:bg-surface-2 focus-visible:bg-surface-2 focus-visible:outline-none", TASK_GRID)}
       style={{ minHeight: 34, fontSize: 13 }}
     >
-      <div className="flex min-w-0 items-center gap-2.5 px-3" style={depth ? { paddingLeft: 38 } : undefined}>
+      <div className="flex min-w-0 items-center gap-2.5 px-3 py-1" style={depth ? { paddingLeft: 38 } : undefined}>
         <button
           type="button"
           onClick={(e) => { stop(e); onToggle(); }}
@@ -114,7 +168,14 @@ export function TaskTableRow({ task, now, users, markets, labels, projectName, o
             </>
           )}
         </button>
-        <span className={cn("min-w-0 truncate", done ? "text-ink-mute line-through" : "text-ink")}>{task.title}</span>
+        {/* Название — до двух строк, дальше многоточие; целиком — в подсказке (макет 28.09.2026). */}
+        <span
+          title={task.title}
+          className={cn("line-clamp-2 min-w-0 break-words", done ? "text-ink-mute line-through" : "text-ink")}
+          style={{ lineHeight: 1.35 }}
+        >
+          {task.title}
+        </span>
         {progress && (
           <span
             title={dt("Подзадачи: закрыто из всех", "Subtasks: done of total")}
@@ -130,40 +191,15 @@ export function TaskTableRow({ task, now, users, markets, labels, projectName, o
           </span>
         )}
       </div>
-      <div className={cn("px-2 font-mono", late ? "font-semibold text-pri-high" : "text-ink-soft")} style={{ fontSize: 12 }}>
-        {task.due_date ? fmtDue(task.due_date, dt("ru", "en") === "en") : <span className="text-ink-mute">—</span>}
-      </div>
-      {/* Быстрые действия — тихими иконками без рамок, как на стенде (визуальный шаг В3). Правило
-          бьёт только по кнопкам-триггерам: всплывающие окна пикеров рисуются порталом вне строки,
-          а в карточке задачи те же пикеры остаются в рамках. */}
-      <div
-        onClick={stop}
-        className="flex items-center gap-0.5 px-1 text-ink-mute opacity-70 transition-opacity group-hover:opacity-100 [&_button]:border-transparent [&_button]:bg-transparent [&_button]:text-ink-mute [&_button:hover]:bg-surface-2 [&_button:hover]:text-ink [&_svg]:text-current"
-      >
-        <TaskQuickActions task={task} users={users} markets={markets} labels={labels} onPatch={onPatch} onChanged={onChanged} />
-      </div>
-      <CellPick title={task.country ? `${dt("Рынок", "Market")}: ${countryName(task.country)}` : dt("Рынок не указан", "No market")} items={marketItems}>
-        <span className="font-mono text-ink-soft" style={{ fontSize: 12 }}>{task.country ?? <span className="text-ink-mute">—</span>}</span>
-      </CellPick>
-      <div className={cn("min-w-0 truncate px-2 text-ink-soft", NARROW_HIDDEN)}>{projectName ?? <span className="text-ink-mute">—</span>}</div>
-      <CellPick title={whoName ? `${dt("Исполнитель", "Assignee")}: ${whoName}` : dt("Исполнитель не назначен", "Unassigned")} items={whoItems}>
-        <span className="truncate text-ink-soft">{whoName || <span className="text-ink-mute">—</span>}</span>
-      </CellPick>
-      <div className={cn("min-w-0", NARROW_HIDDEN)}>
-        {labels.length > 0 ? (
-          <CellPick title={dt("Списки — личные: задача станет личной", "Lists are personal: the task becomes private")} items={labelItems}>
-            <span className="truncate text-ink-mute" style={{ fontSize: 12.5 }}>{labelNames || "—"}</span>
-          </CellPick>
-        ) : <div className="min-w-0 truncate px-2 text-ink-mute" style={{ fontSize: 12.5 }}>—</div>}
-      </div>
+      {order.map((c) => <Fragment key={c}>{cells[c]}</Fragment>)}
     </div>
   );
 }
 
 // Ячейка с выбором: вся ячейка — кнопка, клик не открывает карточку строки.
-function CellPick({ title, items, children }: { title: string; items: MenuItem[]; children: React.ReactNode }) {
+function CellPick({ col, title, items, children }: { col?: MovableColumn; title: string; items: MenuItem[]; children: ReactNode }) {
   return (
-    <div className="min-w-0 px-1" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
+    <div data-col={col} className="min-w-0 px-1" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
       <Menu label={null} items={items} title={title} trigger={({ open, toggle }) => (
         <button type="button" title={title} aria-haspopup="menu" aria-expanded={open} onClick={toggle}
           className={cn(

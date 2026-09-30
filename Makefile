@@ -88,7 +88,7 @@ notice-off:
 
 # Заморозка: в отличие от notice — не предупреждение, а отказ принимать изменения.
 freeze:
-	@./scripts/maintenance.sh freeze $(or $(MIN),30)
+	@LEAD_MIN=$(or $(LEAD),0) ./scripts/maintenance.sh freeze $(or $(MIN),30)
 
 unfreeze:
 	@./scripts/maintenance.sh unfreeze

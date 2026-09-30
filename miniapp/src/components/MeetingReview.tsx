@@ -1,13 +1,17 @@
 "use client";
 import { useState, useEffect, useCallback, useContext } from "react";
-import { fetchAgentMeeting, fetchAgentMeetingNotes, patchAgentMeetingDraft, renameAgentMeeting, publishAgentMeeting, resummarizeAgentMeeting } from "@/lib/api";
+import { askMeeting, fetchAgentMeeting, fetchAgentMeetingNotes, patchAgentMeetingDraft, renameAgentMeeting, publishAgentMeeting, resummarizeAgentMeeting, deleteAgentMeeting } from "@/lib/api";
 import type { AgentMeeting, MeetingLiveNote } from "@/types";
-import { DetailPanelContext, NavHeader, SectionLabel, TezisyBlocks, Segmented } from "@/components/roy/ui";
+import { DetailPanelContext, NavHeader, SectionLabel, Segmented } from "@/components/roy/ui";
 import { RoyIcon } from "@/components/roy/icons";
 import { ActionChip } from "@/components/roy/screens/MeetingDetail";
-import { PanelEditor } from "@/components/roy/PanelEditor";
-import { useDt } from "@/components/roy/nav";
-import { hasSeveralOwners } from "@/lib/draftOwners";
+import { TezisyEditor } from "@/components/roy/tezisy/TezisyEditor";
+import { TezisyReader } from "@/components/roy/tezisy/TezisyReader";
+import type { AskApply } from "@/components/roy/tezisy/AskPopover";
+import { applyAskAnswerToText } from "@/lib/tezisyLines";
+import { useDt, useRoyNav } from "@/components/roy/nav";
+import { useConfirm } from "@/components/ui/confirm";
+import { hasSeveralOwners, canDeleteDraft } from "@/lib/draftOwners";
 
 type Props = { id: string; onClose: () => void; onChanged?: () => void };
 
@@ -49,6 +53,9 @@ function fmtDay(iso: string | null): string {
 export function MeetingReview({ id, onClose, onChanged }: Props) {
   const dt = useDt();
   const panel = useContext(DetailPanelContext);
+  const { toast, me } = useRoyNav();
+  const confirm = useConfirm();
+  const [deleting, setDeleting] = useState(false);
   const [meeting, setMeeting] = useState<AgentMeeting | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -114,6 +121,14 @@ export function MeetingReview({ id, onClose, onChanged }: Props) {
     } finally { setSaving(false); }
   };
 
+  // Точечный вопрос по выделенному в тезисах: ответ из режима чтения открывает правку уже со
+  // вставленным ответом — сохраняет человек, как любую правку.
+  const askDraft = (fragment: string, question: string) => askMeeting("draft", id, fragment, question);
+  const applyFromReading = (answer: string, mode: AskApply, fragment: string) => {
+    setDraft(applyAskAnswerToText(meeting?.draft_notes_md ?? "", fragment, answer, mode));
+    setEditing(true);
+  };
+
   const handlePublish = async () => {
     setPublishing(true);
     try {
@@ -122,6 +137,28 @@ export function MeetingReview({ id, onClose, onChanged }: Props) {
       onChanged?.();
       onClose();
     } finally { setPublishing(false); }
+  };
+
+  // Удалить черновик с вычитки. Право — только у записавшего (как в админке встреч): у
+  // совладельца черновика кнопки нет, сервер отбивает и сам.
+  const handleDelete = async () => {
+    if (!meeting) return;
+    const ok = await confirm({
+      title: dt(`Удалить черновик «${meeting.title ?? ""}»?`, `Delete the draft “${meeting.title ?? ""}”?`),
+      description: dt("Расшифровка и тезисы будут удалены без возможности восстановления.", "The transcript and summary will be deleted for good."),
+      confirmText: dt("Удалить", "Delete"),
+      cancelText: dt("Отмена", "Cancel"),
+    });
+    if (!ok) return;
+    setDeleting(true);
+    try {
+      await deleteAgentMeeting(id);
+      toast(dt("Черновик удалён", "Draft deleted"));
+      onChanged?.();
+      onClose();
+    } catch {
+      toast(dt("Не удалось удалить", "Could not delete"));
+    } finally { setDeleting(false); }
   };
 
   const saveTitle = async () => {
@@ -168,9 +205,9 @@ export function MeetingReview({ id, onClose, onChanged }: Props) {
 
   const tezBlock = notesReady ? (
     editing ? (
-      <PanelEditor value={draft} onChange={setDraft} onSave={handleSave} busy={saving}
+      <TezisyEditor value={draft} onChange={setDraft} onSave={handleSave} busy={saving}
         onCancel={() => { setDraft(meeting.draft_notes_md ?? ""); setEditing(false); }}
-        label={dt("Тезисы встречи", "Meeting summary")} />
+        label={dt("Тезисы встречи", "Meeting summary")} ask={hasTranscript && !published ? askDraft : undefined} />
     ) : (
       <div className="mb-4 px-4 py-3.5" style={{ background: "var(--accent-soft)", border: "1px solid var(--accent-line)", borderRadius: 10 }}>
         <div className="mb-1.5 flex items-center justify-between gap-2">
@@ -184,7 +221,8 @@ export function MeetingReview({ id, onClose, onChanged }: Props) {
             </button>
           )}
         </div>
-        <TezisyBlocks text={meeting.draft_notes_md ?? ""} copyMeta={{ title: meeting.title, date: meeting.started_at }} />
+        <TezisyReader text={meeting.draft_notes_md ?? ""} copyMeta={{ title: meeting.title, date: meeting.started_at }}
+          ask={hasTranscript && !published ? askDraft : undefined} onApply={applyFromReading} />
       </div>
     )
   ) : summaryTerminal ? (
@@ -278,6 +316,7 @@ export function MeetingReview({ id, onClose, onChanged }: Props) {
           <div className="mb-4 flex flex-wrap gap-2">
             {canRename && <ActionChip icon="pencil" label={dt("Название", "Title")} onClick={() => { setTitleDraft(meeting.title ?? ""); setEditingTitle(true); }} />}
             {notesReady && <ActionChip icon="pencil" label={dt("Тезисы", "Summary")} onClick={() => { setEditing(true); setView("tez"); }} />}
+            {canDeleteDraft(meeting, me?.telegram_id) && !deleting && <ActionChip icon="trash" danger label={dt("Удалить", "Delete")} onClick={handleDelete} />}
           </div>
         )}
 

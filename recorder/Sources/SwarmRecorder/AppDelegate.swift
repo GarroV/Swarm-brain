@@ -16,6 +16,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     private var config: SwarmConfig?
     private var configError: String?
+    // Пропуски бота (T162, D022, D025): «бот не пришёл на встречу» + «Позвать бота» — в капсуле и в меню.
+    private lazy var missed = MissedMeetingsWatcher(
+        config: { [weak self] in self?.configError == nil ? self?.config : nil },
+        onChange: { [weak self] in self?.rebuildMenu() })
     // Типизированные сбои вместо общего .error(String): каждый даёт точный текст «куда идти»
     // в System Settings + кнопку «Повторить». .error(String) остаётся только для по-настоящему
     // непредвиденного (не классифицировали) — чтобы не прятать причину.
@@ -75,8 +79,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     // Ложное срабатывание безопасно — pendingSend сохранён, «Повторить» пере-отправит без потерь.
     private let sendWatchdogSeconds: Double = 150
 
-    // Календарное предложение.
-    private var pendingMeeting: MeetingIdentity.Info?
+    // Календарное предложение: созвоны, которые капсула предлагает сейчас (D026 — только со ссылкой,
+    // D027 — пересекающиеся все, лучший первым). Больше одного → капсула даёт выбор.
+    private var pendingMeetings: [MeetingIdentity.Info] = []
+    /// Лучший из предложенных — там, где действие одно (меню, «Записать» единственной встречи).
+    private var pendingMeeting: MeetingIdentity.Info? { pendingMeetings.first }
     // Ключ встречи → докуда НЕ предлагать её снова. Раньше был Set без срока → однажды записанная
     // (даже 5-сек тест) встреча подавлялась НАВСЕГДА до перезапуска рекордера: тот же созвон потом
     // не предлагался и терял календарное название. Теперь у подавления есть срок (см. isMeetingDismissed).
@@ -196,7 +203,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         widget.onStop = { [weak self] in self?.stopTapped() }
         widget.onRecord = { [weak self] in self?.widgetRecord() }
         widget.onJoin = { [weak self] in self?.widgetJoin() }
+        widget.onJoinChoice = { [weak self] key in self?.joinChosen(key) }
+        widget.onRecordChoice = { [weak self] key in self?.recordChosen(key) }
         widget.onDismiss = { [weak self] in self?.widgetDismiss() }
+        widget.onInviteBot = { [weak self] id in
+            guard let self else { return }
+            Task { @MainActor in await self.missed.invite(id) }
+        }
+        widget.onMissedDismiss = { [weak self] id in self?.missed.dismissInCapsule(id) }
         widget.onProcessingDismiss = { [weak self] in self?.dismissProcessing() }
         widget.onToggleNotes = { [weak self] in self?.expandNotes() }   // клик по марке на пилюле → блокнот
         // Сигналы из UploadQueue (постятся из актора, ловим на .main): принято в обработку / готово.
@@ -224,6 +238,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         setupNotifications()
         setupPowerNotifications()
         startWatching()
+        missed.start()
 
         // Дозагрузка на старте: если в прошлый раз приложение закрыли/упало с висящими записями
         // в pending/, заливаем их сейчас (meetingId переиспользуется, claim не повторяем).
@@ -392,6 +407,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // приложению об этом никто не сообщает. Пробуждение единственный момент, когда дёшево
         // переспросить систему, чтобы подсказка в меню не врала (issue #155).
         refreshNotificationAuthorization()
+        missed.pollNow()   // таймер во сне стоял — пропуск мог появиться, пока крышка была закрыта
     }
 
     private func startWatching() {
@@ -548,25 +564,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             } else if lookup != nil {
                 await MainActor.run { self.googleReconnectWarned = false }   // связь ок → снова разрешаем предупредить
             }
-            let meeting = lookup?.meeting ?? nil
+            let meetings = lookup?.meetings ?? []
             // Реальный созвон, а не просто занятый микрофон: фильтруем системные демоны
             // (CoreSpeech), иначе «звонок» виден всегда и сыпались бы ложные предложения записи.
             let micOn = CallDetector.realCallActive()
             DispatchQueue.main.async { [weak self] in
-                self?.logTick(meeting: meeting, lookupOK: lookup != nil, micOn: micOn)
-                if let m = meeting { self?.lastCalendar = (m, Date()) }
-                self?.handleDetection(meeting: meeting, micActive: micOn)
+                self?.logTick(meetings: meetings, lookupOK: lookup != nil, micOn: micOn)
+                // Для ручного старта — первая из идущих (сервер отдаёт только созвоны, D026); при
+                // пересечении (D027) выбор делается в капсуле, а «Записать» из меню берёт первую.
+                if let m = meetings.first { self?.lastCalendar = (m, Date()) }
+                self?.handleDetection(meetings: meetings, micActive: micOn)
                 // Присутствие обновляем ОТДЕЛЬНО от handleDetection: тот выходит по
                 // `guard case .idle`, а панели нужен сигнал и во время записи.
-                self?.pulsePresence(onCall: micOn, calendarKey: meeting?.key)
+                self?.pulsePresence(onCall: micOn, calendarKey: meetings.first?.key)
             }
         }
     }
 
     // Строка журнала на каждый тик: по последней видно, когда процесс перестал жить, а по полям —
     // почему не появилось предложение записать (нет встречи / скрыта / микрофон свободен).
-    private func logTick(meeting: MeetingIdentity.Info?, lookupOK: Bool, micOn: Bool) {
-        let cal = meeting.map { "\($0.key)\(isMeetingDismissed($0.key) ? " (скрыта)" : "")" } ?? (lookupOK ? "нет" : "запрос не прошёл")
+    private func logTick(meetings: [MeetingIdentity.Info], lookupOK: Bool, micOn: Bool) {
+        let cal = meetings.isEmpty
+            ? (lookupOK ? "нет" : "запрос не прошёл")
+            : meetings.map { "\($0.key)\(isMeetingDismissed($0.key) ? " (скрыта)" : "")" }.joined(separator: ",")
         let offer = pendingMeeting != nil ? "встреча" : (callActive ? "звонок" : "нет")
         Diagnostics.shared.log("TICK state=\(state) mic=\(micOn ? "занят" : "свободен") cal=\(cal) предложение=\(offer) rss=\(Diagnostics.residentMB())MB")
         Diagnostics.shared.touchAlive()
@@ -581,21 +601,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         return false
     }
 
-    private func handleDetection(meeting: MeetingIdentity.Info?, micActive: Bool) {
+    private func handleDetection(meetings: [MeetingIdentity.Info], micActive: Bool) {
         let wasActive = micWasActive
         micWasActive = micActive
         guard case .idle = state else { return }
 
-        // Календарь — приоритет (богаче: название, участники, упреждение).
-        if let m = meeting, !isMeetingDismissed(m.key) {
+        // Календарь — приоритет (богаче: название, участники, упреждение). Только созвоны (D026),
+        // все пересекающиеся (D027), без закрытых человеком.
+        let offers = MeetingChoice.offers(meetings, key: \.key, hasLink: { $0.joinURL != nil },
+                                          isDismissed: { self.isMeetingDismissed($0) })
+        if !offers.isEmpty {
             callActive = false
-            if pendingMeeting?.key != m.key {
-                pendingMeeting = m
+            if !MeetingChoice.sameOffer(pendingMeetings, offers, key: \.key) {
+                pendingMeetings = offers
                 rebuildMenu()   // syncWidget покажет капсулу — единственная поверхность предложения
             }
             return
         }
-        if pendingMeeting != nil { pendingMeeting = nil; rebuildMenu() }
+        if !pendingMeetings.isEmpty { pendingMeetings = []; rebuildMenu() }
 
         // Нет события календаря → запасной детект звонка по микрофону.
         if micActive && !wasActive {
@@ -626,7 +649,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         completionHandler([.banner, .sound])
     }
 
-    // Клик по уведомлению НИЧЕГО не запускает. Раньше здесь стоял `acceptPrompt()` на
+    // Клик по уведомлению НИЧЕГО не запускает. Кнопок у уведомлений приложения нет: «Позвать бота»
+    // живёт в капсуле (D025), предложение записать — тоже (2026-09-07). Раньше здесь стоял `acceptPrompt()` на
     // `UNNotificationDefaultActionIdentifier` — то есть запись начиналась от клика по ЛЮБОМУ
     // уведомлению приложения, включая «нужен новый токен» и «звонок завершён, сохраняю».
     // Предложение записать теперь живёт только в капсуле, и решение принимается там.
@@ -659,6 +683,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         if let e = configError { return "⚠️ \(e)" }
         switch state {
         case .idle:
+            if pendingMeetings.count > 1 { return "Встречи в одно время: \(pendingMeetings.count)" }
             if let m = pendingMeeting { return "Встреча \(meetingWhen(m)): «\(m.title ?? "")»" }
             if callActive { return "Идёт звонок" }
             if queuedCount > 0 { return "bumblebee готов · \(queuedCount) в очереди" }
@@ -759,6 +784,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         let menu = NSMenu()
         menu.addItem(NSMenuItem(title: statusText(), action: nil, keyEquivalent: ""))
         menu.addItem(.separator())
+        // Бот не пришёл на встречу — первым, под статусом: звать его имеет смысл, пока встреча идёт.
+        let missedItems = configError == nil ? missed.menuItems() : []
+        if !missedItems.isEmpty {
+            missedItems.forEach(menu.addItem)
+            menu.addItem(.separator())
+        }
 
         // 401: токен протух — показываем явный путь «Получить новый токен» (ведёт в бот к
         // /recordertoken) + обычную вставку из буфера. Запись недоступна, пока токен невалиден.
@@ -801,7 +832,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             case .sending:
                 break
             default:
-                if pendingMeeting != nil {
+                if pendingMeetings.count > 1 {
+                    // Выбор (D027): по пункту на созвон, запись ляжет к выбранной встрече.
+                    for m in pendingMeetings {
+                        let item = NSMenuItem(title: "🔴 Записать «\(m.title ?? "встреча без названия")»",
+                                              action: #selector(recordChosenMenuTapped(_:)), keyEquivalent: "")
+                        item.representedObject = m.key
+                        menu.addItem(item)
+                    }
+                    menu.addItem(NSMenuItem(title: "Не записывать", action: #selector(dismissMeetingTapped), keyEquivalent: ""))
+                } else if pendingMeeting != nil {
                     menu.addItem(NSMenuItem(title: "🔴 Записать встречу", action: #selector(recordMeetingTapped), keyEquivalent: "r"))
                     menu.addItem(NSMenuItem(title: "Не записывать", action: #selector(dismissMeetingTapped), keyEquivalent: ""))
                 } else if callActive {
@@ -859,14 +899,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
         menu.addItem(.separator())
         menu.addItem(NSMenuItem(title: "Выйти", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
-        for item in menu.items where item.action != nil && item.action != #selector(NSApplication.terminate(_:)) {
+        // Пункты со своей целью (пропуски бота — у MissedMeetingsWatcher) не перехватываем.
+        for item in menu.items where item.action != nil && item.target == nil && item.action != #selector(NSApplication.terminate(_:)) {
             item.target = self
         }
         statusItem.menu = menu
         syncWidget()
     }
 
-    // Плавающий виджет следует за состоянием.
+    // Плавающий виджет следует за состоянием. Бот в капсуле (D031) — только кнопка «Позвать бота»
+    // в капсуле того созвона, куда его можно позвать; текста о боте нет, отдельной капсулы пропуска
+    // нет — без предложения записать пропуск говорит только меню. Во время своей записи капсула —
+    // узкая пилюля без текста: встреча и так пишется.
     private func syncWidget() {
         if configError != nil { widget.hide(); return }
         switch state {
@@ -874,23 +918,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             // Развёрнут блокнот → показываем его (пилюлю прячем); свёрнуто → вертикальная пилюля рекордера.
             if notesExpanded { widget.hide() }
             else { widget.showRecording(startedAt: recordStartedAt ?? Date()) }
-        case .sending:
-            // Спиннер-капсулу НЕ показываем (она читалась как «зависла» и была лишним виджетом):
-            // обработка идёт в фоне, «отправлено — тезисы придут в Telegram» приходит уведомлением.
-            widget.hide()
         case .idle:
-            if let m = pendingMeeting {
-                widget.showPending(notice: notice(for: m), canJoin: m.joinURL != nil)
+            if pendingMeetings.count > 1 {
+                // Пересекающиеся созвоны (D027): выбор в той же капсуле, у строки — своя кнопка бота.
+                widget.showChoice(pendingMeetings.map {
+                    RecorderWidget.Choice(key: $0.key, notice: notice(for: $0),
+                                          missed: missed.capsule(forCall: $0.joinURL?.absoluteString))
+                })
+            } else if let m = pendingMeeting {
+                widget.showPending(notice: notice(for: m), canJoin: m.joinURL != nil,
+                                   missed: missed.capsule(forCall: m.joinURL?.absoluteString))
             } else if callActive {
                 // Звонок без календаря: слота нет, а «подключиться» некуда — человек уже в нём.
                 // Подзаголовок пустой: «Идёт звонок» + «идёт» — дубль, а не информация.
                 widget.showPending(notice: MeetingNotice(title: "Идёт звонок", subtitle: ""),
-                                   canJoin: false)
+                                   canJoin: false, missed: missed.capsule(forCall: nil))
             } else {
                 widget.hide()   // никакого «кружка»: пилюля только на детект встречи/звонка
             }
-        case .error, .tokenExpired,
+        case .sending, .error, .tokenExpired,
              .noScreenRecording, .noSystemAudio, .noMic, .offline:
+            // Спиннер-капсулу «отправляется» НЕ показываем (читалась как «зависла»); сбой записи
+            // говорит меню. Пропуск бота здесь — тоже только меню (D031).
             widget.hide()
         }
     }
@@ -1130,6 +1179,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             state = .idle
             rebuildMenu()
             info("Токен сохранён ✅", "smcp_…\(clip.suffix(4))")
+            missed.pollNow()
             // Свежий токен → пробуем дозалить всё, что копилось при протухшем (включая 401-висяки).
             if let cfg = config {
                 Task { await UploadQueue.shared.drain(config: cfg); await refreshQueueBadge() }
@@ -1169,10 +1219,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         widgetRecord()
     }
 
+    // Выбор из пересекающихся созвонов (D027): «Подключиться» открывает ИМЕННО этот созвон, запись
+    // ложится к этой встрече. Ищем по ключу (MeetingChoice.chosen): встречи уже нет среди
+    // предложений — ничего не открываем и не пишем, соседнюю не подставляем.
+    private func joinChosen(_ key: String) {
+        guard let m = MeetingChoice.chosen(pendingMeetings, key: \.key, key) else { return }
+        if let url = m.joinURL { NSWorkspace.shared.open(url) }
+        recordChosen(key)
+    }
+
+    private func recordChosen(_ key: String) {
+        guard let m = MeetingChoice.chosen(pendingMeetings, key: \.key, key) else { return }
+        pendingMeetings = []
+        beginRecording(identity: m)
+    }
+
+    @objc private func recordChosenMenuTapped(_ sender: NSMenuItem) {
+        if let key = sender.representedObject as? String { recordChosen(key) }
+    }
+
     private func acceptPrompt() {
         Diagnostics.shared.log("USER принял предложение записать")
         if let m = pendingMeeting {
-            pendingMeeting = nil
+            pendingMeetings = []
             beginRecording(identity: m)
         } else {
             callActive = false
@@ -1181,12 +1250,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 
     @objc private func dismissMeetingTapped() {
-        if let m = pendingMeeting {
-            // «Не записывать»: подавляем до конца события (если известен) + буфер, иначе на несколько часов.
+        // «Не записывать» (✕ капсулы): закрывает всё, что она предлагала, — при выборе все созвоны.
+        // Подавляем до конца события (если известен) + буфер, иначе на несколько часов.
+        for m in pendingMeetings {
             let end = m.endISO.flatMap { ISO8601DateFormatter().date(from: $0) }?.addingTimeInterval(30 * 60)
             dismissedUntil[m.key] = end ?? Date().addingTimeInterval(dismissMeetingSeconds)
         }
-        pendingMeeting = nil
+        pendingMeetings = []
         rebuildMenu()
     }
     @objc private func dismissCallTapped() {
@@ -1211,7 +1281,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             Permissions.openScreenRecordingSettings()
             return
         }
-        pendingMeeting = nil
+        pendingMeetings = []
         callActive = false
         let startedAt = Date()
         let base = UUID().uuidString

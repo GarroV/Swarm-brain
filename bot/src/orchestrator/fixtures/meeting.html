@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Meet - scriba orchestrator smoke (short)</title>
+  </head>
+  <body>
+    <!--
+      Двойник звонка Meet для смоука оркестратора: бот сразу «в звонке», двое участников,
+      один говорит, в звуковой выход идёт тон 440 Гц (запись не должна быть тишиной).
+      Через 12 с гости уходят и тон смолкает: бот остаётся один и обязан выйти сам.
+      Разметка плиток и панели — та же, что у фикстур meet-adapter (in-call-speaking.html).
+    -->
+    <section class="tiles" id="tiles">
+      <div class="tile" data-participant-id="p-self" data-self-name="scriba">
+        <span class="name">scriba</span>
+      </div>
+      <div class="tile guest" data-participant-id="p-vasiliy" data-audio-level="0.8">
+        <span class="notranslate">Василий Гарро</span>
+      </div>
+      <div
+        class="tile guest"
+        data-participant-id="p-anna"
+        aria-label="Анна"
+        data-audio-level="0"
+      ></div>
+    </section>
+
+    <div role="list" class="panel" id="panel">
+      <div role="listitem">scriba</div>
+      <div role="listitem" class="guest">Василий Гарро</div>
+      <div role="listitem" class="guest">Анна</div>
+    </div>
+
+    <div class="toolbar">
+      <button aria-label="Leave call"><span>Leave call</span></button>
+      <button aria-label="Present now"><span>Present now</span></button>
+      <button aria-label="People"><span>People</span></button>
+    </div>
+
+    <script>
+      (function () {
+        var context = new AudioContext();
+        var oscillator = context.createOscillator();
+        var gain = context.createGain();
+        oscillator.frequency.value = 440;
+        gain.gain.value = 0.25;
+        oscillator.connect(gain).connect(context.destination);
+        oscillator.start();
+        context.resume();
+
+        var guestsLeaveAfterMs = 12000;
+        if (guestsLeaveAfterMs > 0) {
+          setTimeout(function () {
+            document.querySelectorAll(".guest").forEach(function (node) {
+              node.remove();
+            });
+            oscillator.stop();
+          }, guestsLeaveAfterMs);
+        }
+      })();
+    </script>
+  </body>
+</html>

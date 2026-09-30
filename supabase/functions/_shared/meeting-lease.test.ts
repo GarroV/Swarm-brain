@@ -6,6 +6,10 @@ Deno.test("claimLeaseUntil: отсчитывает TTL от переданног
   assertEquals(claimLeaseUntil(from), "2026-09-09T10:30:00.000Z");
 });
 
+Deno.test("claimLeaseUntil: ISO-строка даёт тот же момент, что Date", () => {
+  assertEquals(claimLeaseUntil("2026-09-09T10:00:00.000Z"), "2026-09-09T10:30:00.000Z");
+});
+
 Deno.test("claimLeaseUntil: без аргумента лиз всегда в БУДУЩЕМ — иначе встреча свободна сразу", () => {
   assert(Date.parse(claimLeaseUntil()) > Date.now());
 });

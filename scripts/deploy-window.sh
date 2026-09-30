@@ -74,7 +74,7 @@ print("\n".join(missing))
 changed_functions() {
   local base=$1 direct shared_files consumers
   direct=$(git diff --name-only "$base"..HEAD -- supabase/functions/ \
-    | awk -F/ '$3 != "" && $3 != "_shared" {print $3}' | sort -u | grep -v '^_' || true)
+    | awk -F/ 'NF >= 4 && $3 != "_shared" {print $3}' | sort -u | grep -v '^_' || true)
   shared_files=$(git diff --name-only "$base"..HEAD -- supabase/functions/_shared/ \
     | grep -v '\.test\.ts$' || true)
   consumers=""
@@ -82,7 +82,7 @@ changed_functions() {
     for f in $shared_files; do
       local bn; bn=$(basename "$f")
       consumers+=$(grep -rl -- "$bn" supabase/functions --include='*.ts' 2>/dev/null \
-        | awk -F/ '$3 != "" && $3 != "_shared" {print $3}' || true)
+        | awk -F/ 'NF >= 4 && $3 != "_shared" {print $3}' || true)
       consumers+=$'\n'
     done
   fi

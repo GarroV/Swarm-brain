@@ -9,6 +9,7 @@ import {
 import { buildRecurPatch, type RecurRow, todayInTz } from "./recurrence.ts";
 import { defaultDueDate } from "./due.ts";
 import { historyRowsFor, isJournaled, type TaskSnapshot } from "./history.ts";
+import { ASSIGNEE_SCAN_LIMIT, narrowByAssignee } from "./assignee-filter.ts";
 
 const supabase = createClient(
   Deno.env.get("SUPABASE_URL")!,
@@ -97,6 +98,8 @@ export async function listTasksWithTotal(filters: {
   tags?: string[]; // ANY-совпадение (overlaps)
   labelIds?: string[]; // ANY-совпадение (overlaps по label_ids)
   projectId?: string;
+  /** Только задачи вне проектов (`project_id IS NULL`), issue #626. */
+  noProject?: boolean;
   startDateFrom?: string;
   startDateTo?: string;
   dueDateFrom?: string;
@@ -132,6 +135,7 @@ export async function listTasksWithTotal(filters: {
   }
   if (filters.sprintId) q = q.eq("sprint_id", filters.sprintId);
   if (filters.projectId) q = q.eq("project_id", filters.projectId);
+  if (filters.noProject) q = q.is("project_id", null);
   if (filters.tags && filters.tags.length > 0) {
     q = q.overlaps("tags", filters.tags);
   }
@@ -161,28 +165,28 @@ export async function listTasksWithTotal(filters: {
 
   if (groupId) q = q.eq("group_id", groupId);
 
-  const { data, count } = await q.limit(filters.limit ?? 200);
+  const limit = filters.limit ?? 200;
+  // Исполнитель фильтруется в JS (assignee-filter.ts), поэтому при нём база отдаёт широкий
+  // срез, а лимит выдачи применяется уже после фильтра (issue #626).
+  const { data, count } = await q.limit(
+    filters.assigneeText ? Math.max(limit, ASSIGNEE_SCAN_LIMIT) : limit,
+  );
   // Двойное приведение: при динамическом select(string) supabase-js не может вывести форму
   // строки и типизирует результат как GenericStringError[]. Форму гарантирует TASK_LIST_COLUMNS
   // (под тестом) и тип Task, где выброшенные проекцией поля помечены опциональными.
-  let tasks = (data ?? []) as unknown as Task[];
+  const tasks = (data ?? []) as unknown as Task[];
 
   // total = сколько строк подходит под фильтры БЕЗ лимита. Нужен, чтобы ответ мог честно
-  // сказать «показаны N из M»: сейчас усечение молчит, а лимит режет КОНЕЦ сортировки
-  // (due_date ASC nulls last), то есть задачи без срока (issue #111/#112).
-  // assigneeText фильтруется уже в JS, ниже, поэтому при нём счётчик из базы соврал бы —
-  // отдаём null вместо неверного числа.
-  let total: number | null = typeof count === "number" ? count : null;
-
+  // сказать «показаны N из M»: лимит режет КОНЕЦ сортировки (due_date ASC nulls last), то есть
+  // задачи без срока (issue #111/#112).
   if (filters.assigneeText) {
-    const lower = filters.assigneeText.toLowerCase();
-    tasks = tasks.filter((t) =>
-      t.assignees?.some((a) => a.toLowerCase().includes(lower))
-    );
-    total = null;
+    // Срез базы сам упёрся в потолок — число подошедших тогда неизвестно, врать им нельзя.
+    const scanCapped = typeof count === "number" && count > tasks.length;
+    const narrowed = narrowByAssignee(tasks, filters.assigneeText, limit);
+    return { tasks: narrowed.tasks, total: scanCapped ? null : narrowed.total };
   }
 
-  return { tasks, total };
+  return { tasks, total: typeof count === "number" ? count : null };
 }
 
 /** Обёртка для вызывающих, которым нужен только список (бот, MCP). */

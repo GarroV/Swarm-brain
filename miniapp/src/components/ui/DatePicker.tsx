@@ -5,8 +5,8 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { RoyIcon, type RoyIconName } from "@/components/roy/icons";
-import { propertyRowCls, PropertyLabel, PropertyValue, PropertyChevron } from "@/components/ui/PropertyRow";
-import { MONTHS, WEEKDAYS, parseISO, toISO, fmtFull, addMonths, buildGrid } from "@/lib/calendar";
+import { pillSegmentCls, propertyPillCls, PropertyPillBody } from "@/components/ui/PropertyPill";
+import { MONTHS, WEEKDAYS, parseISO, toISO, fmtFull, fmtShort, addMonths, buildGrid } from "@/lib/calendar";
 
 // Подпись даты в триггере: «12 августа 2026» (общий формат — lib/calendar).
 const fmtTrigger = fmtFull;
@@ -20,12 +20,12 @@ type Props = {
    * Вид триггера:
    *  «field» — поле с рамкой (форма создания задачи);
    *  «compact» — только иконка, для быстрых действий в строке задачи;
-   *  «row» — тихая строка свойства «иконка · подпись · значение» (карточка задачи).
+   *  «pill» — чип свойства «значок · дата» (карточка задачи); без даты — пунктир с названием.
    */
-  variant?: "field" | "compact" | "row";
+  variant?: "field" | "compact" | "pill" | "segment";
   /** Иконка триггера: «cal» — срок (по умолчанию), «bell» — пинг (напоминание). */
   icon?: RoyIconName;
-  /** Название свойства: подпись для скринридера, а в виде «row» — ещё и видимая подпись строки. */
+  /** Название свойства: подпись для скринридера, а в виде «pill» — ещё и подпись пустого чипа. */
   ariaLabel?: string;
   /** Подпись «убрать» в поповере (по умолчанию «Убрать срок»). */
   clearLabel?: string;
@@ -35,7 +35,9 @@ const POPOVER_W = 264, POPOVER_H = 340;
 
 export function DatePicker({ value, onChange, className = "", placeholder = "Выбрать дату", variant = "field", icon = "cal", ariaLabel = "Срок", clearLabel = "Убрать срок" }: Props) {
   const isCompact = variant === "compact";
-  const isRow = variant === "row";
+  const isPill = variant === "pill";
+  // Сегмент сегментной пилюли (PILL_GROUP_CLS): пусто — один значок, задано — значок и дата.
+  const isSegment = variant === "segment";
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
   const btnRef = useRef<HTMLButtonElement>(null);
@@ -77,6 +79,12 @@ export function DatePicker({ value, onChange, className = "", placeholder = "В�
   const grid = useMemo(() => buildGrid(view), [view]);
   const todayISO = toISO(new Date());
   const label = fmtTrigger(value);
+  // В чипе — коротко («28 сен»), год — только если не текущий; полная дата — в подсказке.
+  const pillLabel = (() => {
+    const d = parseISO(value);
+    if (!d) return null;
+    return d.getFullYear() === new Date().getFullYear() ? fmtShort(value) : `${fmtShort(value)} ${d.getFullYear()}`;
+  })();
 
   const pick = (d: Date) => { onChange(toISO(d)); setOpen(false); };
   const preset = (days: number) => { const d = new Date(); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() + days); pick(d); };
@@ -88,20 +96,22 @@ export function DatePicker({ value, onChange, className = "", placeholder = "В�
         type="button"
         aria-haspopup="dialog"
         aria-expanded={open}
-        aria-label={variant === "field" ? undefined : ariaLabel}
+        aria-label={isCompact ? ariaLabel : isSegment ? (label ? `${ariaLabel}: ${label}` : ariaLabel) : undefined}
+        title={isPill || isSegment ? (label ? `${ariaLabel}: ${label}` : ariaLabel) : undefined}
         // stopPropagation — чтобы клик не «всплыл» как тап по строке задачи (открытие карточки)
         // и не съелся как старт свайпа (SwipeRow на мобайле). См. чекбокс TaskRow.
         onPointerDown={(e) => e.stopPropagation()}
         onClick={(e) => { e.stopPropagation(); setOpen((o) => !o); }}
-        className={isCompact ? className : isRow ? `${propertyRowCls} ${className}` : `${className} flex items-center gap-2 text-left`}
+        className={isCompact ? className : isSegment ? `${pillSegmentCls(!!pillLabel)} ${className}` : isPill ? `${propertyPillCls(!!pillLabel)} ${className}` : `${className} flex items-center gap-2 text-left`}
         style={isCompact ? { color: value ? "var(--accent-ink)" : "var(--ink-soft)" } : undefined}
       >
-        {isRow ? (
+        {isSegment ? (
           <>
-            <PropertyLabel icon={icon}>{ariaLabel}</PropertyLabel>
-            <PropertyValue muted={!label}>{label ?? placeholder}</PropertyValue>
-            <PropertyChevron />
+            <RoyIcon name={icon} size={14} strokeWidth={2} />
+            {pillLabel && <span className="whitespace-nowrap" style={{ fontSize: 12.5 }}>{pillLabel}</span>}
           </>
+        ) : isPill ? (
+          <PropertyPillBody icon={icon} label={ariaLabel} value={pillLabel} />
         ) : (
           <>
             <RoyIcon name={icon} size={15} strokeWidth={isCompact ? 1.9 : undefined} />
