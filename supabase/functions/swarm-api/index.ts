@@ -28,7 +28,9 @@ import {
   ENTRY_LIST_COLUMNS,
   EntryAccessError,
   getEntrySecure,
+  getMeetingSecure,
 } from "./entries-guard.ts";
+import { canChangeMeetingPrivacy } from "../_shared/entries/meeting-rights.ts";
 import { toAgentListRow, toListRow } from "./meetings-payload.ts";
 import { TASK_LIST_COLUMNS } from "./task-columns.ts";
 import { resolveDigestScope } from "./digest-scope.ts";
@@ -2359,9 +2361,13 @@ Deno.serve(async (req: Request) => {
   );
   if (meetingResummarizeMatch && req.method === "POST") {
     return withEntries(origin, async () => {
-      const entry = await getEntrySecure(supabase, meetingResummarizeMatch[1], {
+      // Пересборка тезисов переписывает текст встречи — это правка (права встречи).
+      const entry = await getMeetingSecure(supabase, meetingResummarizeMatch[1], {
         groupId,
         telegramId: telegram_id,
+        email: userEmail,
+        isAdmin,
+        action: "edit",
       });
       const meetingRowId = (entry.metadata as { meeting_id?: string } | null)
         ?.meeting_id;
@@ -2505,9 +2511,14 @@ Deno.serve(async (req: Request) => {
         return json(entry, 200, origin);
       }
       if (req.method === "PATCH") {
-        const entry = await getEntrySecure(supabase, meetingId, {
+        // Правят владелец, участники и админ; личную — только владелец
+        // (_shared/entries/meeting-rights.ts).
+        const entry = await getMeetingSecure(supabase, meetingId, {
           groupId,
           telegramId: telegram_id,
+          email: userEmail,
+          isAdmin,
+          action: "edit",
         });
         let body: Record<string, unknown>;
         try {
@@ -2552,6 +2563,18 @@ Deno.serve(async (req: Request) => {
           fields.metadata = meta;
         }
         // Смена приватности встречи-записи: владелец задаётся/снимается вместе с флагом (как у задач).
+        // Менять видимость — права удаления (владелец/админ): личная встреча скрыта от команды.
+        if (
+          typeof body.is_private === "boolean" &&
+          body.is_private !== entry.is_private &&
+          !canChangeMeetingPrivacy(entry, {
+            id: telegram_id,
+            email: userEmail,
+            isAdmin,
+          })
+        ) {
+          return apiErr(403, "Forbidden", origin);
+        }
         if (typeof body.is_private === "boolean") {
           fields.is_private = body.is_private;
           // Владелец остаётся и у общей встречи: is_private отвечает за ВИДИМОСТЬ, owner_id —
@@ -2571,9 +2594,13 @@ Deno.serve(async (req: Request) => {
         return json(data, 200, origin);
       }
       if (req.method === "DELETE") {
-        await getEntrySecure(supabase, meetingId, {
+        // Удаляют владелец и админ; личную — только владелец.
+        await getMeetingSecure(supabase, meetingId, {
           groupId,
           telegramId: telegram_id,
+          email: userEmail,
+          isAdmin,
+          action: "delete",
         });
         await supabase.from("entries").delete().eq("id", meetingId);
         return new Response(null, {

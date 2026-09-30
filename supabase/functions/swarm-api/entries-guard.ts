@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { canActOnMeeting, type MeetingAction } from "../_shared/entries/meeting-rights.ts";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -101,6 +102,42 @@ export async function getEntrySecure(
 }
 
 /**
+ * Встреча-запись для действия над ней — с правами встречи, а не записи.
+ *
+ * Правило — `_shared/entries/meeting-rights.ts` (решение владельца 30.09.2026): общую встречу
+ * правят владелец, участники (по e-mail из `metadata.attendees`) и админ, удаляют — владелец
+ * и админ; личную — только владелец, без обхода для админа.
+ *
+ * Коды — как у getEntrySecure: 404, если встречи нет, она в чужом воркспейсе или невидима
+ * (неотличимо); 403, если видна, но действие не разрешено.
+ */
+export async function getMeetingSecure(
+  supabase: SupabaseClient,
+  id: string,
+  {
+    groupId,
+    telegramId,
+    email,
+    isAdmin = false,
+    action,
+  }: {
+    groupId: string;
+    telegramId: number;
+    email?: string | null;
+    isAdmin?: boolean;
+    action: MeetingAction;
+  },
+): Promise<EntryRow> {
+  // Видимость и воркспейс — общим гардом (он же даёт неотличимый 404).
+  const entry = await getEntrySecure(supabase, id, { groupId, telegramId });
+  const viewer = { id: telegramId, email, isAdmin };
+  if (!canActOnMeeting(entry, viewer, action)) {
+    throw new EntryAccessError(403, "Forbidden");
+  }
+  return entry;
+}
+
+/**
  * Start a list query against entries with both security filters pre-applied.
  *
  * ALWAYS use this instead of supabase.from("entries").select(...) directly
@@ -162,9 +199,7 @@ export function buildReviewQueueQuery(
   // сам e-mail пропускаем через простую валидацию — в фильтр не должно попасть ничего, кроме
   // адреса (запятая или скобка сломали бы разбор всего условия .or()).
   const safeEmail = /^[^\s,()"']+@[^\s,()"']+$/.test(clean) ? clean : "";
-  const cond = safeEmail
-    ? `${mine},metadata->attendees.cs.[{"email":"${safeEmail}"}]`
-    : mine;
+  const cond = safeEmail ? `${mine},metadata->attendees.cs.[{"email":"${safeEmail}"}]` : mine;
   return supabase
     .from("entries")
     .select(select)
