@@ -92,6 +92,10 @@ export function TaskFiles({ taskId, taskOwnerId }: { taskId: string; taskOwnerId
         patchUpload(key, {
           error: offline
             ? dt("Хранилище файлов сейчас недоступно", "File storage is unreachable right now")
+            : e instanceof ApiError && e.status === 403
+            ? dt("В демо файлы не загружаются", "File uploads are disabled in the demo")
+            : e instanceof ApiError && e.status === 429
+            ? dt("Слишком много незавершённых загрузок за сутки — попробуйте позже", "Too many unfinished uploads today — try again later")
             : e instanceof ApiError && e.message && e.status === 400
             ? e.message
             : dt("Не загрузилось — попробуйте ещё раз", "Upload failed — try again"),

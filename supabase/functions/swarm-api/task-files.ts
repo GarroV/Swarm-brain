@@ -2,7 +2,17 @@ import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { json } from "./http.ts";
 import { canMutateTask, canViewTask } from "../_shared/tasks/access.ts";
 import { importSigningKey, signFileToken } from "../_shared/files-token.ts";
-import { canRemoveTaskFile, checkNewFile, isInline, type NewFileError, taskFileLimits } from "../_shared/task-files.ts";
+import {
+  canRemoveTaskFile,
+  checkNewFile,
+  isInline,
+  MAX_PENDING_PER_DAY,
+  type NewFileError,
+  pendingQuotaExceeded,
+  taskFileLimits,
+  UPLOAD_TTL_SEC,
+  uploadSlotsSince,
+} from "../_shared/task-files.ts";
 
 // Роуты файлов к задаче (решение владельца 2026-09-30, docs/decisions/2026-09-30-task-files-on-muspelheim.md):
 //   GET    /tasks/:id/files                 — список + лимиты (веб показывает их под кнопкой)
@@ -13,7 +23,6 @@ import { canRemoveTaskFile, checkNewFile, isInline, type NewFileError, taskFileL
 // Доступ к файлу = доступ к задаче (`canViewTask`); 404 и на чужое, и на отсутствующее.
 // Байты идут браузер ↔ MUSPELHEIM напрямую, мимо функции: функция только подписывает ссылку.
 
-const UPLOAD_TTL_SEC = 15 * 60;
 const DOWNLOAD_TTL_SEC = 10 * 60;
 const HEAD_TIMEOUT_MS = 8000;
 
@@ -78,6 +87,7 @@ export async function handleTaskFileRoutes(
   telegramId: number,
   groupId: string,
   isAdmin: boolean,
+  isDemo: boolean,
   origin: string,
   resolveNames: (ids: number[]) => Promise<Map<number, string>>,
 ): Promise<Response | null> {
@@ -130,11 +140,40 @@ export async function handleTaskFileRoutes(
     if (!store) {
       return json({ error: "Хранилище файлов не настроено" }, 503, origin);
     }
+    // Демо открыто без логина: загрузка оттуда — это чужие байты на диске домашнего сервера.
+    if (isDemo) {
+      return json(
+        { error: "В демо файлы не загружаются", code: "demo_not_allowed", limits },
+        403,
+        origin,
+      );
+    }
+    const since = uploadSlotsSince(Date.now());
+    const { count: pendingToday } = await supabase.from("task_files").select("id", {
+      count: "exact",
+      head: true,
+    })
+      .eq("uploaded_by", telegramId).eq("status", "uploading")
+      .gt("created_at", new Date(Date.now() - 24 * 3600 * 1000).toISOString());
+    if (pendingQuotaExceeded(pendingToday ?? 0)) {
+      return json(
+        {
+          error: `Больше ${MAX_PENDING_PER_DAY} незавершённых загрузок за сутки — попробуйте позже`,
+          code: "too_many_pending",
+          limits,
+        },
+        429,
+        origin,
+      );
+    }
+    // Место занимают готовые файлы и загрузки с живой ссылкой — иначе цикл «завести без
+    // подтверждения» обходил лимит файлов задачи.
     const { count } = await supabase.from("task_files").select("id", {
       count: "exact",
       head: true,
     })
-      .eq("task_id", task.id).eq("status", "ready").is("archived_at", null);
+      .eq("task_id", task.id).is("archived_at", null)
+      .or(`status.eq.ready,and(status.eq.uploading,created_at.gt.${since})`);
     const input = checkNewFile(
       await req.json().catch(() => null),
       limits,

@@ -6,6 +6,14 @@
 export const DEFAULT_MAX_MB = 50;
 export const DEFAULT_MAX_COUNT = 10;
 export const NAME_MAX = 200;
+/** Срок подписанной ссылки на загрузку. Пока он не вышел, заведённый файл занимает место в лимите. */
+export const UPLOAD_TTL_SEC = 15 * 60;
+/**
+ * Сколько незавершённых загрузок один человек может начать за сутки. Незавершённая загрузка
+ * оставляет объект на диске MUSPELHEIM, а уборки брошенных пока нет (#669): без потолка цикл
+ * «завести → залить меньше заявленного» заполнял бы общий диск сервера.
+ */
+export const MAX_PENDING_PER_DAY = 20;
 
 export type TaskFileLimits = {
   maxBytes: number;
@@ -94,7 +102,10 @@ export function cleanFileName(raw: string): string {
 export type NewFileInput = { name: string; size: number; mime: string };
 export type NewFileError = "name" | "type" | "empty" | "too_big" | "too_many";
 
-/** Проверка запроса на загрузку. `existing` — сколько живых файлов у задачи уже есть. */
+/**
+ * Проверка запроса на загрузку. `existing` — сколько места у задачи уже занято: готовые файлы
+ * плюс загрузки, чья ссылка ещё не истекла (`uploadSlotsSince`).
+ */
 export function checkNewFile(
   body: unknown,
   limits: TaskFileLimits,
@@ -113,6 +124,16 @@ export function checkNewFile(
   if (existing >= limits.maxFiles) return { error: "too_many" };
   // Тип выводим из расширения сами: браузерному не верим, он уходит в Content-Type ответа.
   return { name, size, mime: MIME[ext] ?? "application/octet-stream" };
+}
+
+/** С какого момента незавершённая загрузка ещё считается живой: её ссылка не истекла. */
+export function uploadSlotsSince(nowMs: number): string {
+  return new Date(nowMs - UPLOAD_TTL_SEC * 1000).toISOString();
+}
+
+/** Превышен ли суточный потолок незавершённых загрузок одного человека. */
+export function pendingQuotaExceeded(pendingToday: number, max = MAX_PENDING_PER_DAY): boolean {
+  return pendingToday >= max;
 }
 
 /** Открывать в браузере или только скачивать. */

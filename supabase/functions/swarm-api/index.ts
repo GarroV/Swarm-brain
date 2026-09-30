@@ -871,6 +871,7 @@ Deno.serve(async (req: Request) => {
     telegram_id,
     groupId,
     isAdmin,
+    isDemo,
     origin,
     resolveNames,
   );

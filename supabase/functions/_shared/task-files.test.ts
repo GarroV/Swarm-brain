@@ -5,7 +5,11 @@ import {
   cleanFileName,
   contentDisposition,
   isInline,
+  MAX_PENDING_PER_DAY,
+  pendingQuotaExceeded,
   taskFileLimits,
+  UPLOAD_TTL_SEC,
+  uploadSlotsSince,
 } from "./task-files.ts";
 
 const MB = 1024 * 1024;
@@ -106,4 +110,18 @@ Deno.test("task-files: убрать файл — прикрепивший, вл�
     canRemoveTaskFile({ uploadedBy: 1, taskOwnerId: null }, 3, false),
     false,
   );
+});
+
+Deno.test("task-files: незавершённая загрузка со свежей ссылкой занимает место в лимите файлов", () => {
+  // 9 готовых + 1 загрузка, чья ссылка ещё жива, = 10: одиннадцатый не заводится (иначе цикл
+  // POST без PUT-подтверждения кладёт на диск сколько угодно объектов по 50 МБ).
+  assertEquals(checkNewFile({ name: "a.pdf", size: 5 }, limits, 9 + 1), { error: "too_many" });
+  const now = Date.parse("2026-09-30T12:00:00Z");
+  assertEquals(uploadSlotsSince(now), new Date(now - UPLOAD_TTL_SEC * 1000).toISOString());
+});
+
+Deno.test("task-files: у человека не больше MAX_PENDING_PER_DAY незавершённых загрузок за сутки", () => {
+  assertEquals(pendingQuotaExceeded(MAX_PENDING_PER_DAY - 1), false);
+  assertEquals(pendingQuotaExceeded(MAX_PENDING_PER_DAY), true);
+  assertEquals(pendingQuotaExceeded(0), false);
 });
