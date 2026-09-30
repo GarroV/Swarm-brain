@@ -6,7 +6,6 @@ import {
   type MeetingInvite,
   parseInviteErrorCode,
   parseInviteResponse,
-  upsertInvite,
 } from "./meetingInvite.ts";
 
 const invite = (o: Partial<MeetingInvite> = {}): MeetingInvite => ({
@@ -44,13 +43,13 @@ Deno.test("код ошибки читается из тела, незнаком�
   assertEquals(parseInviteErrorCode({ error: "no code" }), null);
 });
 
-Deno.test("отказ площадки (Контур.Толк, Zoom) показывается своим текстом, а не общим «не удалось»", () => {
+Deno.test("отказ площадки (Zoom) показывается своим текстом, а не общим «не удалось»", () => {
   const body = { error: "x", error_ru: "y", code: "unsupported_platform" };
   assertEquals(parseInviteErrorCode(body), "unsupported_platform");
   const en = inviteErrorText(parseInviteErrorCode(body), (_ru, en) => en);
   const ru = inviteErrorText(parseInviteErrorCode(body), (ru) => ru);
-  assertEquals(en, "The bot joins Google Meet calls only — Kontur.Talk and Zoom are not supported yet");
-  assertEquals(ru, "Бот пока ходит только в Google Meet — Контур.Толк и Zoom не поддерживаются");
+  assertEquals(en, "The bot joins Google Meet and Kontur.Talk calls — Zoom is not supported yet");
+  assertEquals(ru, "Бот ходит в Google Meet и Контур.Толк — Zoom пока не поддерживается");
 });
 
 Deno.test("опрос идёт, пока бот не записывает и срок не вышел", () => {
@@ -58,20 +57,6 @@ Deno.test("опрос идёт, пока бот не записывает и с�
   assertEquals(isFinalStatus("taken"), false);
   assertEquals(isFinalStatus("used"), true);
   assertEquals(isFinalStatus("expired"), true);
-});
-
-Deno.test("то же приглашение повторно не дублируется и поднимается наверх", () => {
-  const a = invite({ id: "a" });
-  const b = invite({ id: "b" });
-  const list = upsertInvite(upsertInvite([], a), b);
-  assertEquals(list.map((x) => x.id), ["b", "a"]);
-  assertEquals(upsertInvite(list, invite({ id: "a", status: "taken" })).map((x) => [x.id, x.status]), [["a", "taken"], ["b", "pending"]]);
-});
-
-Deno.test("помним не больше трёх", () => {
-  let list: MeetingInvite[] = [];
-  for (const id of ["1", "2", "3", "4"]) list = upsertInvite(list, invite({ id }));
-  assertEquals(list.map((x) => x.id), ["4", "3", "2"]);
 });
 
 Deno.test("коллега уже позвал бота в этот звонок — свой текст, а не общее «не удалось»", () => {

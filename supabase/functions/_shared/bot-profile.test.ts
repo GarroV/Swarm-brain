@@ -37,3 +37,11 @@ Deno.test("БЛОКИРУЮЩИЙ: сторож тишины переживае�
     `порог тишины ${SERVER.silentMinutes} мин против удара раз в ${BOT.heartbeatMs} мс: ложный алерт`,
   );
 });
+
+Deno.test("БЛОКИРУЮЩИЙ: комната Контур.Толка для гостей — сервер пишет человеку то же время, что бот ждёт", () => {
+  assertEquals(
+    SERVER.guestRoom.waitMinutes * 60_000,
+    BOT.guestRoom.waitMs,
+    `guestRoom: сервер обещает ${SERVER.guestRoom.waitMinutes} мин ожидания, а бот ждёт ${BOT.guestRoom.waitMs} мс — текст человеку соврёт о времени`,
+  );
+});

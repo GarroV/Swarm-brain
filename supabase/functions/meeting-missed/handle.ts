@@ -73,8 +73,8 @@ const ERRORS = {
   not_found: { status: 404, en: "Missed meeting not found", ru: "Пропуск не найден" },
   cannot_invite: {
     status: 409,
-    en: "The bot can't be invited to this meeting — it only joins Google Meet by a valid link",
-    ru: "На эту встречу бота не позвать — он ходит только в Google Meet по рабочей ссылке",
+    en: "The bot can't be invited to this meeting — it only joins Google Meet or Kontur.Talk by a valid link",
+    ru: "На эту встречу бота не позвать — он ходит только в Google Meet и Контур.Толк по рабочей ссылке",
   },
   meeting_over: { status: 409, en: "This meeting is already over", ru: "Эта встреча уже закончилась" },
   autojoin_off: {

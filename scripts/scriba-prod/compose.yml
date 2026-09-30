@@ -20,6 +20,10 @@ services:
       SCRIBA_IMAGE: ${SCRIBA_IMAGE}
       SCRIBA_PROJECT: scriba-prod
       SCRIBA_BOT_VERSION: ${SCRIBA_BOT_VERSION}
+      SCRIBA_MAX_MEETINGS: ${SCRIBA_MAX_MEETINGS:-4}
+      # Добавка к списку выхода встреч наружу — точные host:port через запятую (stand.sh берёт её
+      # из $STATE/egress-extra). Пусто — только список egress-policy.ts.
+      SCRIBA_EGRESS_EXTRA: ${SCRIBA_EGRESS_EXTRA:-}
       # Путь поводка одинаков у службы и у демона Docker: оркестратор пишет файл сам и тот же
       # путь монтирует в контейнеры встреч (демон Docker Desktop видит диск C: по этому адресу).
       SCRIBA_LEASE_HOST_DIR: ${PROD_LEASE_DAEMON_DIR}

@@ -196,11 +196,13 @@ make unfreeze          # снять раньше срока; по сроку р�
 
 ---
 
-## Боевой бот scriba (с 29.09.2026)
+## Боевой бот scriba (с 29.09.2026; на VPS Contabo — с 30.09.2026)
 
-Бот — это оркестратор на MUSPELHEIM (compose-проект `scriba-prod`, папка `C:\projects\scriba-prod`),
+Бот — это оркестратор на VPS Contabo (`ssh contabo`; compose-проект `scriba-prod`, папка `/srv/scriba`),
 который ходит в прод-функции своим токеном и поднимает контейнер на каждую встречу. Мёрж в `main`
-его не обновляет: код бота едет пересборкой на сервере.
+его не обновляет: код бота едет пересборкой на сервере. С MUSPELHEIM переехал 30.09.2026 (D039):
+ноутбук ушёл в гибернацию по критическому заряду, и бот встал молча (GarroV/muspelheim-infra#32).
+Пока ботом никто не пользуется, всё, что касается бота, раскатывается без ночного окна (D039).
 
 | Команда (с Мака) | Что делает |
 |---|---|
@@ -208,13 +210,35 @@ make unfreeze          # снять раньше срока; по сроку р�
 | `scripts/scriba-prod.sh up` | Обновить бота до `origin/main` и перезапустить (раскатка кода бота) |
 | `scripts/scriba-prod.sh status` / `logs` / `down` | Состояние, журнал, погасить (токен и вход бота остаются) |
 
-- **Токен бота не покидает сервер:** `stand.ps1 token-hash` рождает его в `state\bot.token` (права
-  только владельцу машины и SYSTEM) и отдаёт наружу sha256. Хеш пишет в `service_agents` кнопка
-  `scriba-agent-token.yml`; повторный запуск с новым хешем — ротация, старый токен гаснет сразу.
+- **Папки на VPS** (`/srv/scriba`, доступ только у `garva`): `repo` — клон `main`; `state` — токен
+  (`bot.token`), `prod.env`, аренды и копии входа на встречи; `account/google-state.json` — вход
+  Google-аккаунта бота. Портов нет: бот сам ходит в Swarm. Серверная половина — `scripts/scriba-prod/stand.sh`.
+- **Не больше трёх встреч сразу** (`SCRIBA_MAX_MEETINGS=3` в `stand.sh`): встреча берёт до 2 ГБ и 2 ядер,
+  а VPS общий с другими продуктами (6 ядер, 12 ГБ).
+- **Токен бота не покидает сервер:** `stand.sh token-hash` рождает его в `state/bot.token` (права 600)
+  и отдаёт наружу sha256. Хеш пишет в `service_agents` кнопка `scriba-agent-token.yml`; повторный запуск
+  с новым хешем — ротация, старый токен гаснет сразу (так 30.09 погас токен MUSPELHEIM — 401).
 - **`ACTIVITY_CHECKED=1` — подпись человека,** что в проде никто не пишет и ничего не
   обрабатывается: из CI это не проверить (решение 2026-08-28). Без неё rollout не делает ничего.
-- **Вход аккаунта** берётся у окна входа (`C:\projects\scriba-login\state\account`,
-  `scripts/scriba-login.sh`); без него rollout отказывает — гостем в боевые встречи бот не идёт.
+- **Вход аккаунта** — `/srv/scriba/account/google-state.json`; без него `up` и rollout отказывают —
+  гостем в боевые встречи бот не идёт. 30.09 файл перенесён с MUSPELHEIM как есть (сверка sha256).
+  Новый вход — окно входа `scripts/scriba-login.sh` (живёт на MUSPELHEIM), затем файл скопировать на VPS.
+- **Песочница Chromium на Ubuntu 24.04 работает** в боевой конфигурации контейнера встречи (профиль
+  seccomp бота, `no-new-privileges`, права по умолчанию): смоук `meet-adapter/smoke-meet.ts` в боевом
+  образе на VPS прошёл полностью, включая живой meet.google.com (30.09). Голый `docker run` без этих
+  `--security-opt` падает с «No usable sandbox» — проверять только с теми же опциями, что в
+  `orchestrator/docker-engine.ts`.
+- **Контур.Толк (T111):** бот ходит в Толк гостем; вход Google для этого не нужен. Раскатка — **сервер
+  раньше бота**: новый вид нотисы `guest_access_closed` и площадка `kontur` в `BOT_PROFILE.platforms`
+  живут в функциях (`meeting-notice`, `swarm-api`, `meeting-invite`, `meeting-calendar`, `meeting-missed`);
+  старый сервер ответил бы новому боту 400 на незнакомый вид. Смоук адаптера в боевом образе:
+  `docker run --rm --security-opt seccomp=/srv/scriba/repo/bot/src/container/seccomp-chromium.json
+  --security-opt no-new-privileges:true --shm-size=1g scriba-prod:<rev> node
+  /app/src/kontur-adapter/smoke-kontur.ts`. Хост, которого не хватило живой встрече (медиасерверы Толка
+  не проверены), — строка `egress deny <host:port>` в `docker logs scriba-prod-egress`; добавка —
+  `/srv/scriba/state/egress-extra` (одна строка `host:port,host:port`), затем `scriba-prod.sh up`.
+- **Откат на MUSPELHEIM:** там всё осталось (`C:\projects\scriba-prod`; `stand.ps1` — в тамошнем клоне, в `main` его больше нет: клон не обновлять), бот
+  погашен. Вернуть: там `token-hash` → кнопка токена → `up`; на VPS — `scriba-prod.sh down`.
 
 ## Команды (`make help`)
 - `make smoke-staging` / `make smoke-prod` — смоук edge-функций (`scripts/smoke.sh`, один и тот же набор проверок для любого контура).

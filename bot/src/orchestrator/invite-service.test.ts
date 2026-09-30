@@ -78,9 +78,9 @@ describe("inviteTriggerFor", () => {
     expect(w.server.inviteState(invite.id)).toEqual({ taken: true, used: false });
   });
 
-  it("приглашение на Контур — заявка по приглашению и join_failed позвавшему", async () => {
+  it("приглашение в Zoom — заявка по приглашению и join_failed позвавшему", async () => {
     const w = await wire();
-    const invite = w.server.addInvite({ joinUrl: "https://ktalk.ru/room/abc", platform: "kontur" });
+    const invite = w.server.addInvite({ joinUrl: "https://zoom.us/j/123", platform: "zoom" });
 
     await w.poll();
 
@@ -93,7 +93,7 @@ describe("inviteTriggerFor", () => {
     expect(claim?.body).toMatchObject({
       identity_kind: "manual",
       invite_id: invite.id,
-      join_url: "https://ktalk.ru/room/abc",
+      join_url: "https://zoom.us/j/123",
       agent_version: "scriba-3",
     });
     expect(w.server.inviteState(invite.id).used).toBe(true);
@@ -120,8 +120,8 @@ describe("inviteTriggerFor", () => {
   it("чужой человек в приглашении — отказ сервера на заявке виден в журнале", async () => {
     const w = await wire();
     w.server.addInvite({
-      joinUrl: "https://ktalk.ru/room/abc",
-      platform: "kontur",
+      joinUrl: "https://zoom.us/j/123",
+      platform: "zoom",
       invitedBy: PERSON + 1,
     });
 
