@@ -40,8 +40,6 @@ const ERROR_CODES: readonly InviteErrorCode[] = [
   "not_found",
 ];
 
-/** Сколько приглашений экран помнит между заходами (сервер держит не больше 3 живых). */
-export const REMEMBERED_INVITES = 3;
 /** Как часто переспрашивать статус, пока бот не пришёл. */
 export const INVITE_POLL_MS = 5000;
 
@@ -83,11 +81,6 @@ export function parseInviteErrorCode(body: unknown): InviteErrorCode | null {
 /** Статус больше не изменится: переспрашивать сервер незачем. */
 export function isFinalStatus(status: InviteStatus): boolean {
   return status === "used" || status === "expired";
-}
-
-/** Свежее приглашение наверх, тот же id не дублируется, помним не больше `REMEMBERED_INVITES`. */
-export function upsertInvite(list: readonly MeetingInvite[], invite: MeetingInvite): MeetingInvite[] {
-  return [invite, ...list.filter((x) => x.id !== invite.id)].slice(0, REMEMBERED_INVITES);
 }
 
 type Dt = (ru: string, en: string) => string;

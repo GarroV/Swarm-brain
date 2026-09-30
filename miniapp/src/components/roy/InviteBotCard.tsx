@@ -1,157 +1,90 @@
 "use client";
 // «Вставь ссылку на созвон — бот постучится» (решение D017, как кнопка Read.ai).
-// Человек вставляет ссылку → POST /meeting-invites → видит статус своего приглашения, пока
-// бот не начал писать или срок не вышел. Разбор ответа и тексты — lib/meetingInvite.ts.
+// Человек вставляет ссылку → POST /meeting-invites → видит статус ТЕКУЩЕГО приглашения, пока бот
+// не начал писать или срок не вышел. Разбор ответа и тексты — lib/meetingInvite.ts.
 //
-// Список своих приглашений сервер не отдаёт (только GET по id), поэтому экран помнит id в
-// localStorage этой вкладки-браузера: ушёл на другой раздел и вернулся — статус на месте.
-// Это удобство, а не источник истины: пустое хранилище значит лишь «не показываем старые».
+// Истории приглашений нет (владелец 30.09.2026: «зачем история приглашений?»): человеку нужен
+// ответ «бот идёт или нет» про ссылку, которую он только что вставил, а не журнал прошлых.
+// Id живого приглашения экран помнит в localStorage вкладки — ушёл в другой раздел и вернулся,
+// статус на месте. Окончательное (записал / истекло) показываем, пока экран открыт, и забываем.
+//
+// Десктоп — кнопка в панели «Встреч» с небольшим окном под ней (`InviteBotButton`), мобайл —
+// компактная карточка (`InviteBotCard`). Состояние у обоих одно — `useMeetingInvite`.
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { useDt, useRoyNav } from "./nav";
 import { RoyCard, SectionLabel } from "./ui";
 import { RoyIcon } from "./icons";
+import { ToolbarButton } from "@/components/tasks/table/Menu";
 import { ApiError, createMeetingInvite, fetchMeetingInvite } from "@/lib/api";
 import {
   INVITE_POLL_MS,
-  type InviteStatus,
   type MeetingInvite,
   inviteErrorText,
-  invitePlatformLabel,
   inviteStatusLabel,
   isFinalStatus,
   parseInviteErrorCode,
-  upsertInvite,
 } from "@/lib/meetingInvite";
 
-const STORAGE_KEY = "swarm.meetingInvites";
+const STORAGE_KEY = "swarm.meetingInvite";
 
-function loadIds(): string[] {
+function loadId(): string | null {
   try {
-    const raw = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "[]");
-    return Array.isArray(raw) ? raw.filter((x): x is string => typeof x === "string") : [];
+    const raw = localStorage.getItem(STORAGE_KEY);
+    return raw && raw.length > 0 ? raw : null;
   } catch {
-    return [];
+    return null;
   }
 }
 
-function saveIds(ids: string[]): void {
+function saveId(id: string | null): void {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(ids));
+    if (id) localStorage.setItem(STORAGE_KEY, id);
+    else localStorage.removeItem(STORAGE_KEY);
   } catch {
     // Хранилище закрыто (приватное окно) — просто не помним между заходами.
   }
 }
 
-const STATUS_STYLE: Record<InviteStatus, { background: string; color: string; border?: string }> = {
-  pending: { background: "var(--surface-2)", color: "var(--ink-soft)" },
-  taken: { background: "var(--accent-soft)", color: "var(--accent-ink)" },
-  used: { background: "var(--meet-soft)", color: "var(--meet-ink)" },
-  // Окончательный отказ не должен выглядеть как живое ожидание: без заливки, пунктирная рамка.
-  expired: { background: "transparent", color: "var(--ink-mute)", border: "1px dashed var(--line-2)" },
-};
-
-function linkText(url: string): string {
-  return url.replace(/^https?:\/\//, "");
-}
-
-/** 404 — приглашения больше нет (или оно не наше): из списка убираем. */
+/** 404 — приглашения больше нет (или оно не наше): забываем. */
 const isGone = (e: unknown) => e instanceof ApiError && e.status === 404;
 
-function InviteRow({ invite, onOpenMeeting, onDismiss }: { invite: MeetingInvite; onOpenMeeting: (id: string) => void; onDismiss: () => void }) {
-  const dt = useDt();
-  const final = isFinalStatus(invite.status);
-  return (
-    // flex-wrap: на 320 px кнопка «Открыть встречу» уходит под статус, а не наезжает на него.
-    <li className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5 rounded-[12px] border border-line px-3 py-2">
-      <div className="min-w-0 flex-[1_1_170px]">
-        <div className="truncate text-ink" style={{ fontSize: 13 }} title={invite.join_url}>
-          <span className="font-semibold">{invitePlatformLabel(invite.platform)}</span>
-          <span className="text-ink-mute"> · {linkText(invite.join_url)}</span>
-        </div>
-        <span
-          role="status"
-          className="mt-1 inline-flex items-center whitespace-nowrap font-semibold"
-          style={{ fontSize: 11, borderRadius: 7, padding: "1px 7px", ...STATUS_STYLE[invite.status] }}
-        >
-          {inviteStatusLabel(invite.status, dt)}
-        </span>
-      </div>
-      {invite.status === "used" && invite.meeting_id && (
-        <button
-          type="button"
-          onClick={() => onOpenMeeting(invite.meeting_id as string)}
-          className="shrink-0 rounded-[10px] border border-line-2 px-2.5 py-1.5 font-semibold text-accent-ink transition-colors hover:bg-surface-2"
-          style={{ fontSize: 12 }}
-        >
-          {dt("Открыть встречу", "Open meeting")}
-        </button>
-      )}
-      {final && (
-        <button
-          type="button"
-          aria-label={dt("Убрать из списка", "Remove from the list")}
-          onClick={onDismiss}
-          className="flex shrink-0 items-center justify-center rounded-[10px] text-ink-mute transition-colors hover:bg-surface-2"
-          style={{ width: 32, height: 32 }}
-        >
-          <RoyIcon name="x" size={16} />
-        </button>
-      )}
-    </li>
-  );
-}
+type InviteState = ReturnType<typeof useMeetingInvite>;
 
-export function InviteBotCard() {
-  const { push } = useRoyNav();
+function useMeetingInvite() {
   const dt = useDt();
   const [url, setUrl] = useState("");
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [invites, setInvites] = useState<MeetingInvite[]>([]);
-  const invitesRef = useRef(invites);
-  invitesRef.current = invites;
+  const [invite, setInvite] = useState<MeetingInvite | null>(null);
 
-  const remember = useCallback((next: MeetingInvite[]) => {
-    setInvites(next);
-    saveIds(next.map((x) => x.id));
+  const keep = useCallback((next: MeetingInvite | null) => {
+    setInvite(next);
+    // Помним только живое: окончательное после перезагрузки не нужно никому.
+    saveId(next && !isFinalStatus(next.status) ? next.id : null);
   }, []);
 
-  // Перечитать статусы тех, что ещё могут измениться. Пропавшие (404) — выбрасываем.
-  const refresh = useCallback(async (list: MeetingInvite[] | string[]) => {
-    const current = invitesRef.current;
-    const results = await Promise.all(
-      list.map(async (item) => {
-        const id = typeof item === "string" ? item : item.id;
-        try {
-          return await fetchMeetingInvite(id);
-        } catch (e) {
-          if (isGone(e)) return null;
-          // Сеть моргнула — оставляем прежний статус, спросим на следующем круге.
-          return current.find((x) => x.id === id) ?? null;
-        }
-      }),
-    );
-    const fresh = results.filter((x): x is MeetingInvite => x !== null);
-    const byId = new Map(fresh.map((x) => [x.id, x]));
-    const asked = new Set(list.map((item) => (typeof item === "string" ? item : item.id)));
-    const merged = [
-      ...invitesRef.current.filter((x) => !asked.has(x.id) || byId.has(x.id)).map((x) => byId.get(x.id) ?? x),
-      ...fresh.filter((x) => !invitesRef.current.some((y) => y.id === x.id)),
-    ];
-    remember(merged);
-  }, [remember]);
+  const refresh = useCallback(async (id: string, silentGone: boolean) => {
+    try {
+      const fresh = await fetchMeetingInvite(id);
+      // Открыли экран, а приглашение уже закончилось раньше — старое не показываем.
+      keep(silentGone && isFinalStatus(fresh.status) ? null : fresh);
+    } catch (e) {
+      if (isGone(e)) keep(null);
+      // Сеть моргнула — оставляем прежний статус, спросим на следующем круге.
+    }
+  }, [keep]);
 
   useEffect(() => {
-    const ids = loadIds();
-    if (ids.length > 0) void refresh(ids);
+    const id = loadId();
+    if (id) void refresh(id, true);
   }, [refresh]);
 
-  const live = invites.filter((x) => !isFinalStatus(x.status));
+  const liveId = invite && !isFinalStatus(invite.status) ? invite.id : null;
   useEffect(() => {
-    if (live.length === 0) return;
-    const timer = setInterval(() => void refresh(invitesRef.current.filter((x) => !isFinalStatus(x.status))), INVITE_POLL_MS);
+    if (!liveId) return;
+    const timer = setInterval(() => void refresh(liveId, false), INVITE_POLL_MS);
     return () => clearInterval(timer);
-  }, [live.length, refresh]);
+  }, [liveId, refresh]);
 
   const submit = async (ev: FormEvent) => {
     ev.preventDefault();
@@ -160,8 +93,7 @@ export function InviteBotCard() {
     setSending(true);
     setError(null);
     try {
-      const invite = await createMeetingInvite(link);
-      remember(upsertInvite(invitesRef.current, invite));
+      keep(await createMeetingInvite(link));
       setUrl("");
     } catch (e) {
       setError(inviteErrorText(e instanceof ApiError ? parseInviteErrorCode(e.body) : null, dt));
@@ -170,64 +102,133 @@ export function InviteBotCard() {
     }
   };
 
-  const dismiss = (id: string) => remember(invitesRef.current.filter((x) => x.id !== id));
-  const openMeeting = (id: string) => push({ view: "meetingReview", params: { id } });
+  const changeUrl = (v: string) => { setUrl(v); if (error) setError(null); };
+  return { url, changeUrl, sending, error, invite, isLive: liveId !== null, submit, clear: () => keep(null) };
+}
 
+/** Поле, кнопка, ошибка и одна строка статуса текущего приглашения. */
+function InviteForm({ s, autoFocus = false }: { s: InviteState; autoFocus?: boolean }) {
+  const dt = useDt();
+  const { push } = useRoyNav();
+  const inv = s.invite;
   return (
-    <RoyCard className="px-3.5 py-3">
-      <SectionLabel className="!mb-1.5">{dt("Позвать бота на созвон", "Invite the bot to a call")}</SectionLabel>
-      <p className="mx-1 mb-2.5 text-ink-soft" style={{ fontSize: 12.5, lineHeight: 1.4 }}>
-        {dt(
-          "Вставьте ссылку на Google Meet или Контур.Толк — бот постучится и запишет встречу.",
-          "Paste a Google Meet or Kontur.Talk link — the bot will join and record the meeting.",
-        )}
-      </p>
-      {/* Толк, комната закрыта для гостей (D040, T111): бот перезагружает страницу и ждёт до
-          BOT_PROFILE.guestRoom.waitMinutes (сейчас 10) — число здесь держим в согласии вручную,
-          сервер и бот сверяет контрактный тест supabase/functions/_shared/bot-profile.test.ts. */}
-      <p className="mx-1 mb-2.5 text-ink-mute" style={{ fontSize: 11.5, lineHeight: 1.4 }}>
-        {dt(
-          "Для Контур.Толка откройте комнату для внешних участников: бот заходит гостем и ждёт до 10 минут.",
-          "For Kontur.Talk, open the room to external participants: the bot joins as a guest and waits up to 10 minutes.",
-        )}
-      </p>
+    <>
       {/* noValidate: мусор в поле должен дойти до сервера и вернуться нашим текстом, а не
           браузерной подсказкой на одном языке. */}
-      <form onSubmit={submit} noValidate className="flex flex-wrap gap-2">
+      <form onSubmit={s.submit} noValidate className="flex gap-1.5">
         <input
           type="url"
           inputMode="url"
           autoComplete="off"
-          value={url}
-          onChange={(e) => { setUrl(e.target.value); if (error) setError(null); }}
-          placeholder="https://meet.google.com/abc-defg-hij"
+          autoFocus={autoFocus}
+          value={s.url}
+          onChange={(e) => s.changeUrl(e.target.value)}
+          placeholder="https://meet.google.com/…"
           aria-label={dt("Ссылка на созвон", "Call link")}
-          aria-invalid={error ? true : undefined}
-          aria-describedby={error ? "invite-bot-error" : undefined}
-          className="min-w-0 flex-[1_1_200px] rounded-[12px] border border-line-2 bg-surface px-3 py-2 text-ink outline-none focus:border-primary aria-invalid:border-destructive"
-          style={{ fontSize: 14 }}
+          aria-invalid={s.error ? true : undefined}
+          aria-describedby={s.error ? "invite-bot-error" : undefined}
+          className="min-w-0 flex-1 rounded-[7px] border border-line-2 bg-surface px-2.5 py-1.5 text-ink outline-none focus:border-primary aria-invalid:border-destructive"
+          style={{ fontSize: 13 }}
         />
         <button
           type="submit"
-          disabled={!url.trim() || sending}
-          className="shrink-0 grow rounded-[12px] bg-primary px-4 py-2 font-semibold text-primary-foreground transition-opacity disabled:opacity-50 sm:grow-0"
-          style={{ fontSize: 14 }}
+          disabled={!s.url.trim() || s.sending}
+          className="shrink-0 rounded-[7px] bg-primary px-3 py-1.5 font-semibold text-primary-foreground transition-opacity disabled:opacity-50"
+          style={{ fontSize: 12.5 }}
         >
-          {sending ? dt("Зовём…", "Inviting…") : dt("Позвать бота", "Invite the bot")}
+          {s.sending ? dt("Зовём…", "Inviting…") : dt("Позвать", "Invite")}
         </button>
       </form>
-      {error && (
-        <p id="invite-bot-error" role="alert" className="mx-1 mt-2" style={{ fontSize: 12.5, color: "var(--pri-high)" }}>
-          {error}
+      {s.error && (
+        <p id="invite-bot-error" role="alert" className="mt-1.5" style={{ fontSize: 12, color: "var(--pri-high)" }}>
+          {s.error}
         </p>
       )}
-      {invites.length > 0 && (
-        <ul className="mt-3 space-y-1.5" aria-label={dt("Мои приглашения", "My invites")}>
-          {invites.map((inv) => (
-            <InviteRow key={inv.id} invite={inv} onOpenMeeting={openMeeting} onDismiss={() => dismiss(inv.id)} />
-          ))}
-        </ul>
+      {/* Толк, комната закрыта для гостей (D040, T111): бот перезагружает страницу и ждёт до
+          BOT_PROFILE.guestRoom.waitMinutes (сейчас 10) — число здесь держим в согласии вручную,
+          сервер и бот сверяет контрактный тест supabase/functions/_shared/bot-profile.test.ts. */}
+      <p className="mt-1.5 text-ink-mute" style={{ fontSize: 11.5, lineHeight: 1.4 }}>
+        {dt(
+          "Толк: откройте комнату для внешних участников — бот зайдёт гостем, ждёт до 10 минут.",
+          "Kontur.Talk: open the room to external participants — the bot joins as a guest and waits up to 10 minutes.",
+        )}
+      </p>
+      {inv && (
+        <div role="status" className="mt-2 flex items-center gap-2" style={{ fontSize: 12 }}>
+          <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${inv.status === "expired" ? "bg-line-2" : inv.status === "used" ? "bg-status-done" : "bg-status-prog"}`} aria-hidden />
+          <span className={`min-w-0 flex-1 truncate ${inv.status === "expired" ? "text-ink-mute" : "text-ink-soft"}`}>
+            {inviteStatusLabel(inv.status, dt)}
+          </span>
+          {inv.status === "used" && inv.meeting_id && (
+            <button type="button" onClick={() => push({ view: "meetingReview", params: { id: inv.meeting_id as string } })}
+              className="shrink-0 font-semibold text-accent-ink hover:underline">
+              {dt("Открыть", "Open")}
+            </button>
+          )}
+          {isFinalStatus(inv.status) && (
+            <button type="button" aria-label={dt("Скрыть", "Hide")} onClick={s.clear}
+              className="shrink-0 text-ink-mute hover:text-ink">
+              <RoyIcon name="x" size={13} />
+            </button>
+          )}
+        </div>
       )}
+    </>
+  );
+}
+
+const HINT: [string, string] = [
+  "Ссылка на Google Meet или Контур.Толк — бот постучится и запишет встречу.",
+  "A Google Meet or Kontur.Talk link — the bot will knock and record the meeting.",
+];
+
+/** Десктоп: кнопка в панели «Встреч» и небольшое окно под ней, прижатое к правому краю. */
+export function InviteBotButton() {
+  const dt = useDt();
+  const s = useMeetingInvite();
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLSpanElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => { if (!ref.current?.contains(e.target as Node)) setOpen(false); };
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false); };
+    document.addEventListener("mousedown", onDown);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  // Пока бот идёт, кнопка сама говорит об этом — открывать окно ради статуса не нужно.
+  const label = s.isLive && s.invite ? inviteStatusLabel(s.invite.status, dt) : dt("Позвать бота", "Invite the bot");
+  return (
+    <span ref={ref} className="relative">
+      <ToolbarButton on={s.isLive} popup={{ open }} onClick={() => setOpen((v) => !v)}>
+        <RoyIcon name="meet" size={13} />
+        {label}
+      </ToolbarButton>
+      {open && (
+        <div role="dialog" aria-label={dt("Позвать бота на созвон", "Invite the bot to a call")}
+          className="absolute right-0 top-full z-50 mt-1 w-[320px] rounded-[10px] border border-line bg-[var(--popover)] p-3 shadow-[0_14px_36px_-12px_rgba(0,0,0,.35)]">
+          <p className="mb-2 text-ink-soft" style={{ fontSize: 12, lineHeight: 1.4 }}>{dt(...HINT)}</p>
+          <InviteForm s={s} autoFocus />
+        </div>
+      )}
+    </span>
+  );
+}
+
+/** Мобайл: компактная карточка на экране «Встречи». */
+export function InviteBotCard() {
+  const dt = useDt();
+  const s = useMeetingInvite();
+  return (
+    <RoyCard className="px-3 py-2.5">
+      <SectionLabel className="!mb-1">{dt("Позвать бота на созвон", "Invite the bot to a call")}</SectionLabel>
+      <p className="mx-1 mb-2 text-ink-soft" style={{ fontSize: 12, lineHeight: 1.4 }}>{dt(...HINT)}</p>
+      <InviteForm s={s} />
     </RoyCard>
   );
 }
