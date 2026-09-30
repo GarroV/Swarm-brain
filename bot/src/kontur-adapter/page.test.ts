@@ -68,6 +68,18 @@ describe("classifyKonturStage", () => {
     expect(verdict.stage).toBe("in_call");
   });
 
+  it("плитки на экране устройств — ещё не звонок, пока видна «Присоединиться»", () => {
+    const verdict = classifyKonturStage(
+      snapshot({
+        title: "Подключение к встрече — Толк",
+        hasParticipantsArea: true,
+        tiles: [{ name: "Анна", speaking: false }],
+        hasJoinButton: true,
+      }),
+    );
+    expect(verdict.stage).toBe("devices");
+  });
+
   it("заголовок звонка без плиток — ещё не впустили", () => {
     expect(classifyKonturStage(snapshot({ title: "Встреча — Толк" })).stage).toBe("unknown");
   });
