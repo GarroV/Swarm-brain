@@ -34,6 +34,13 @@
       window.__forbidden = 0;
       window.__left = false;
       const app = document.getElementById("app");
+      // Как Толк: при старте приложение само присваивает mediaDevices.getUserMedia (обёртка) в
+      // строгом режиме. Запрет «только чтение» здесь бросает TypeError — и страница не рисуется.
+      (function wrapCapture() {
+        "use strict";
+        const devices = navigator.mediaDevices;
+        if (devices) devices.getUserMedia = devices.getUserMedia;
+      })();
 
       function forbidden(text, aria) {
         const button = document.createElement("button");

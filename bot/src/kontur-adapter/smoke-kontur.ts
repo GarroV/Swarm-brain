@@ -163,13 +163,20 @@ async function sceneSlowForm(browser: Browser): Promise<void> {
 async function sceneMicBeforeJoin(browser: Browser): Promise<void> {
   console.log("\n──── на экране устройств микрофон включён → в звонок не входим");
   const scene = newScene(browser, LONG_ROOM);
+  // Отказ выносит тот, кто первым увидел экран устройств: join (бросает) или круг двери (mic_live).
   let message = "";
+  let door = "";
   try {
     await scene.adapter.join(`${ROOM}?scene=mic`, GUEST_NAME);
+    door = await scene.adapter.waitAdmitted(4000);
   } catch (error) {
     message = error instanceof Error ? error.message : String(error);
   }
-  check(message.includes("микрофон и камера"), "join отказал с причиной", message);
+  check(
+    message.includes("микрофон и камера") || door === "mic_live",
+    "отказ с причиной",
+    message || door,
+  );
   check(!hasLogLine(scene, "клик: присоединиться"), "«Присоединиться» не нажата");
   await scene.adapter.leave();
 }
