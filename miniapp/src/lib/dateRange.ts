@@ -4,7 +4,7 @@
 //
 // Границы ВКЛЮЧИТЕЛЬНЫЕ, обе — локальные календарные дни в ISO «YYYY-MM-DD».
 
-import { toISO, fmtShort, MONTHS_SHORT, parseISO } from "@/lib/calendar";
+import { toISO, fmtShort, monthShort, parseISO, type Lang } from "@/lib/calendar";
 
 export type RangePreset = "week" | "month" | "prev_week" | "prev_month" | "custom";
 
@@ -14,11 +14,11 @@ export type DateRange = {
   to: string;   // ISO, включительно
 };
 
-export const RANGE_PRESETS: Array<{ id: Exclude<RangePreset, "custom">; label: string }> = [
-  { id: "week", label: "Эта неделя" },
-  { id: "month", label: "Этот месяц" },
-  { id: "prev_week", label: "Прошлая неделя" },
-  { id: "prev_month", label: "Прошлый месяц" },
+export const RANGE_PRESETS: Array<{ id: Exclude<RangePreset, "custom">; label: string; en: string }> = [
+  { id: "week", label: "Эта неделя", en: "This week" },
+  { id: "month", label: "Этот месяц", en: "This month" },
+  { id: "prev_week", label: "Прошлая неделя", en: "Last week" },
+  { id: "prev_month", label: "Прошлый месяц", en: "Last month" },
 ];
 
 // Понедельник недели, в которую попадает d (неделя с понедельника — как в календарной сетке).
@@ -92,17 +92,19 @@ export function inRange(day: string | null, range: DateRange | null): boolean {
 }
 
 // Подпись для триггера в рельсе: у пресета — его имя, у произвольного — «12–25 авг» / «28 авг — 3 сен».
-export function rangeLabel(range: DateRange | null): string {
-  if (!range) return "Весь срок";
+export function rangeLabel(range: DateRange | null, lang: Lang = "ru"): string {
+  const en = lang === "en";
+  if (!range) return en ? "Any time" : "Весь срок";
   const preset = RANGE_PRESETS.find((p) => p.id === range.preset);
-  if (preset) return preset.label;
+  if (preset) return en ? preset.en : preset.label;
   const from = parseISO(range.from), to = parseISO(range.to);
-  if (!from || !to) return "Период";
-  if (range.from === range.to) return fmtShort(range.from) ?? "Период";
+  const period = en ? "Period" : "Период";
+  if (!from || !to) return period;
+  if (range.from === range.to) return fmtShort(range.from, lang) ?? period;
   if (from.getMonth() === to.getMonth() && from.getFullYear() === to.getFullYear()) {
-    return `${from.getDate()}–${to.getDate()} ${MONTHS_SHORT[to.getMonth()]}`;
+    return `${from.getDate()}–${to.getDate()} ${monthShort(to.getMonth(), lang)}`;
   }
-  return `${fmtShort(range.from)} — ${fmtShort(range.to)}`;
+  return `${fmtShort(range.from, lang)} — ${fmtShort(range.to, lang)}`;
 }
 
 // Завтрашний день локальной датой YYYY-MM-DD — значение поля «Срок» по умолчанию в форме
