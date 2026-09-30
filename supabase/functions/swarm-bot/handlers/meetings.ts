@@ -5,9 +5,9 @@ import {
   type MeetingRightsRow,
 } from "../../_shared/entries/meeting-rights.ts";
 import { loadMeetingViewer, supabase } from "../lib/supabase.ts";
-import { getReadAiToken, readAiGet, READ_AI_API, READ_AI_AUTH_URL } from "../lib/readai.ts";
-import { sendMessage, sendInlineMessage, editInlineMessage } from "../lib/telegram.ts";
-import { setSession, getSession, clearSession, saveEntry, visibilityFilter } from "../lib/storage.ts";
+import { getReadAiToken, READ_AI_AUTH_URL, readAiGet } from "../lib/readai.ts";
+import { editInlineMessage, sendInlineMessage, sendMessage } from "../lib/telegram.ts";
+import { clearSession, getSession, saveEntry, setSession, visibilityFilter } from "../lib/storage.ts";
 import { chatComplete, getEmbedding } from "../lib/openai.ts";
 import { getWorkspaceMarkets } from "../lib/workspace.ts";
 import { COUNTRY_NAMES } from "../../_shared/countries.ts";
@@ -38,10 +38,12 @@ async function loadEntryForAction(
 ): Promise<ActionEntry | null> {
   const action = opts?.action ?? "view";
   // metadata нужна всегда: по ней (metadata.attendees) считается причастность к встрече.
-  const select = [...new Set(
-    [...columns.split(","), "metadata", "is_private", "owner_id", "group_id"]
-      .map((c) => c.trim()).filter(Boolean),
-  )].join(", ");
+  const select = [
+    ...new Set(
+      [...columns.split(","), "metadata", "is_private", "owner_id", "group_id"]
+        .map((c) => c.trim()).filter(Boolean),
+    ),
+  ].join(", ");
   const { data } = await supabase
     .from("entries")
     .select(select)
@@ -49,7 +51,11 @@ async function loadEntryForAction(
     .maybeSingle();
   const viewer = action === "view" ? { id: viewerId } : await loadMeetingViewer(viewerId);
   const denied = meetingAccessError(
-    entryId, data as MeetingRightsRow | null, viewer, groupId, action,
+    entryId,
+    data as MeetingRightsRow | null,
+    viewer,
+    groupId,
+    action,
   );
   return denied ? null : (data as ActionEntry | null);
 }
@@ -67,7 +73,7 @@ export async function handleConnect(chatId: number): Promise<void> {
   });
 }
 
-export async function handleMeetings(chatId: number, hoursBack = 24, groupId = ""): Promise<void> {
+export async function handleMeetings(chatId: number, hoursBack = 24, _groupId = ""): Promise<void> {
   const token = await getReadAiToken();
   if (!token) {
     await sendMessage(chatId, "Read.ai не подключён. Используй /connect для авторизации.");
@@ -77,7 +83,10 @@ export async function handleMeetings(chatId: number, hoursBack = 24, groupId = "
   await sendMessage(chatId, "Загружаю список встреч...");
 
   const startTime = new Date(Date.now() - hoursBack * 3_600_000).toISOString();
-  const data = await readAiGet(`/meetings?page_size=15&start_time=${encodeURIComponent(startTime)}`) as Record<string, unknown>;
+  const data = await readAiGet(`/meetings?page_size=15&start_time=${encodeURIComponent(startTime)}`) as Record<
+    string,
+    unknown
+  >;
   const meetings = (data.meetings ?? data.results ?? data.data ?? []) as Array<Record<string, unknown>>;
 
   if (!meetings.length) {
@@ -88,7 +97,12 @@ export async function handleMeetings(chatId: number, hoursBack = 24, groupId = "
   const keyboard = meetings.map((m) => {
     const ts = (m.created_at ?? m.date ?? m.start_time ?? "") as string;
     const date = ts ? new Date(ts) : new Date();
-    const dateStr = date.toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+    const dateStr = date.toLocaleString("ru-RU", {
+      day: "2-digit",
+      month: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
     const duration = m.duration ? ` · ${Math.round((m.duration as number) / 60)} мин` : "";
     const title = (m.title as string | undefined) ?? "Без названия";
     return [{ text: `${title} · ${dateStr}${duration}`, callback_data: `meeting_${m.id}` }];
@@ -97,11 +111,11 @@ export async function handleMeetings(chatId: number, hoursBack = 24, groupId = "
   await sendInlineMessage(
     chatId,
     `<b>Встречи за последние ${hoursBack} часов:</b>\n\nВыбери встречи для добавления в базу знаний:`,
-    keyboard
+    keyboard,
   );
 }
 
-export async function handleMeetingCallback(chatId: number, username: string, meetingId: string): Promise<void> {
+export async function handleMeetingCallback(chatId: number, _username: string, meetingId: string): Promise<void> {
   await sendMessage(chatId, "Обрабатываю встречу...");
 
   const meeting = await readAiGet(`/meetings/${meetingId}`) as Record<string, unknown>;
@@ -131,10 +145,10 @@ export async function handleMeetingCallback(chatId: number, username: string, me
 
   const gptResult = await chatComplete(
     "Ты помощник для обработки встреч. На основе данных встречи сформируй структурированный итог:\n" +
-    "1. 🔑 Ключевые тезисы (3-7 пунктов)\n" +
-    "2. ✅ Задачи с ответственными и дедлайнами (если есть)\n" +
-    "Отвечай на русском языке. Будь конкретным.",
-    contentParts
+      "1. 🔑 Ключевые тезисы (3-7 пунктов)\n" +
+      "2. ✅ Задачи с ответственными и дедлайнами (если есть)\n" +
+      "Отвечай на русском языке. Будь конкретным.",
+    contentParts,
   );
 
   await setSession(chatId, `meeting_pending_${meetingId}`, JSON.stringify({ content: contentParts, title }));
@@ -158,10 +172,14 @@ function marketFlag(code: string): string {
     ? String.fromCodePoint(...[...code.toUpperCase()].map((c) => 0x1F1E6 + c.charCodeAt(0) - 65))
     : "🌐";
 }
-async function renderMarketPicker(entryId: string, groupId: string, viewerId: number): Promise<{ text: string; keyboard: PickerRow[] } | null> {
+async function renderMarketPicker(
+  entryId: string,
+  groupId: string,
+  viewerId: number,
+): Promise<{ text: string; keyboard: PickerRow[] } | null> {
   const entry = await loadEntryForAction(entryId, groupId, viewerId, "countries");
   if (!entry) return null;
-  const selected = new Set<string>(((entry.countries as string[] | null) ?? []));
+  const selected = new Set<string>((entry.countries as string[] | null) ?? []);
   const markets = await getWorkspaceMarkets(groupId);
   const codes = [...(markets ?? Object.keys(COUNTRY_NAMES))];
   for (const c of selected) if (c !== "General" && !codes.includes(c)) codes.push(c); // легаси-коды не терять
@@ -170,12 +188,14 @@ async function renderMarketPicker(entryId: string, groupId: string, viewerId: nu
   // Компактно: 4 кнопки в ряд, флаг+ISO-код; выбранное — ✅ вместо флага. General → 🌐 Общее.
   const rows: PickerRow[] = [];
   for (let i = 0; i < items.length; i += 4) {
-    rows.push(items.slice(i, i + 4).map((code) => ({
-      text: code === "General"
-        ? `${selected.has(code) ? "✅" : "🌐"} Общее`
-        : `${selected.has(code) ? "✅" : marketFlag(code)} ${code}`,
-      callback_data: `mctog_${entryId}_${code}`,
-    })));
+    rows.push(
+      items.slice(i, i + 4).map((code) => ({
+        text: code === "General"
+          ? `${selected.has(code) ? "✅" : "🌐"} Общее`
+          : `${selected.has(code) ? "✅" : marketFlag(code)} ${code}`,
+        callback_data: `mctog_${entryId}_${code}`,
+      })),
+    );
   }
   rows.push([{ text: "✅ Готово", callback_data: `mctry_done_${entryId}` }]);
 
@@ -201,7 +221,16 @@ export async function handleMeetingCallbacks(
     }
     const { content, title } = JSON.parse(session.context ?? "{}") as { content: string; title: string };
     await clearSession(chatId);
-    await saveEntry(content, username, "read_ai", { meeting_id: meetingId, title }, undefined, groupId, isPrivate, isPrivate ? userId : undefined);
+    await saveEntry(
+      content,
+      username,
+      "read_ai",
+      { meeting_id: meetingId, title },
+      undefined,
+      groupId,
+      isPrivate,
+      isPrivate ? userId : undefined,
+    );
     const label = isPrivate ? "🔒 Встреча сохранена в личное хранилище" : "💾 Встреча сохранена в базу знаний";
     await sendMessage(chatId, `${label}: <b>${title}</b>`);
     return true;
@@ -258,9 +287,17 @@ export async function handleMeetingCallbacks(
         await sendMessage(chatId, `<b>📋 Встречи из Read.ai:</b>`);
         for (const m of meetings as Array<{ id: string; metadata: Record<string, unknown>; created_at: string }>) {
           const title = (m.metadata?.title as string) ?? "Встреча";
-          const date = new Date(m.created_at).toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
+          const date = new Date(m.created_at).toLocaleString("ru-RU", {
+            day: "2-digit",
+            month: "2-digit",
+            year: "numeric",
+            hour: "2-digit",
+            minute: "2-digit",
+          });
           const duration = m.metadata?.duration ? ` · ${Math.round((m.metadata.duration as number) / 60)} мин` : "";
-          const tags = (m.metadata?.tags as string[] | undefined)?.length ? `\n🏷 ${(m.metadata.tags as string[]).join(", ")}` : "";
+          const tags = (m.metadata?.tags as string[] | undefined)?.length
+            ? `\n🏷 ${(m.metadata.tags as string[]).join(", ")}`
+            : "";
           const meetingId = (m.metadata?.meeting_id as string | undefined) ?? m.id;
           const row1 = [{ text: "🔍 Подробнее", callback_data: `mr_${m.id}` }];
           const row2 = [
@@ -280,14 +317,20 @@ export async function handleMeetingCallbacks(
   if (data.startsWith("mr_")) {
     const entryId = data.replace("mr_", "");
     const entry = await loadEntryForAction(entryId, groupId, userId, "content, summary, metadata, created_at, source");
-    if (!entry) { await sendMessage(chatId, "Встреча не найдена."); return true; }
+    if (!entry) {
+      await sendMessage(chatId, "Встреча не найдена.");
+      return true;
+    }
 
     const title = (entry.metadata?.title as string) ?? "Встреча";
     const meetingId = entry.metadata?.meeting_id as string | undefined;
-    const tags = (entry.metadata?.tags as string[] | undefined);
-    const confirmed = entry.metadata?.confirmed;
+    const tags = entry.metadata?.tags as string[] | undefined;
     const entryDate = (entry.metadata?.entry_date as string) ?? (entry.created_at as string).split("T")[0];
-    const dateStr = new Date(`${entryDate}T12:00:00`).toLocaleDateString("ru-RU", { day: "2-digit", month: "long", year: "numeric" });
+    const dateStr = new Date(`${entryDate}T12:00:00`).toLocaleDateString("ru-RU", {
+      day: "2-digit",
+      month: "long",
+      year: "numeric",
+    });
     const src = entry.source === "granola" ? "📓 Granola" : "📹 Read.ai";
 
     const escHtml = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -297,14 +340,18 @@ export async function handleMeetingCallbacks(
 
     let tasksText = "";
     if (meetingId) {
-      const { data: tasks } = await supabase.from("tasks").select("title, assignees, due_date, status").eq("meeting_id", meetingId).limit(8);
+      const { data: tasks } = await supabase.from("tasks").select("title, assignees, due_date, status").eq(
+        "meeting_id",
+        meetingId,
+      ).limit(8);
       if (tasks?.length) {
-        tasksText = "\n\n<b>✅ Задачи:</b>\n" + tasks.map((t: { title: string; assignees: string[]; due_date: string | null; status: string }) => {
-          const who = t.assignees?.join(", ");
-          const due = t.due_date ? ` · до ${t.due_date}` : "";
-          const done = t.status === "done" ? " ✓" : "";
-          return `• ${t.title}${who ? ` (${who})` : ""}${due}${done}`;
-        }).join("\n");
+        tasksText = "\n\n<b>✅ Задачи:</b>\n" +
+          tasks.map((t: { title: string; assignees: string[]; due_date: string | null; status: string }) => {
+            const who = t.assignees?.join(", ");
+            const due = t.due_date ? ` · до ${t.due_date}` : "";
+            const done = t.status === "done" ? " ✓" : "";
+            return `• ${t.title}${who ? ` (${who})` : ""}${due}${done}`;
+          }).join("\n");
       }
     }
 
@@ -336,10 +383,13 @@ export async function handleMeetingCallbacks(
   if (data.startsWith("mtr_")) {
     const entryId = data.replace("mtr_", "");
     const entry = await loadEntryForAction(entryId, groupId, userId, "content, metadata, created_at");
-    if (!entry) { await sendMessage(chatId, "Встреча не найдена."); return true; }
+    if (!entry) {
+      await sendMessage(chatId, "Встреча не найдена.");
+      return true;
+    }
 
-    const transcript = (entry.content as string ?? "").split("Стенограмма:")[1]?.trim()
-      ?? (entry.content as string ?? "").trim();
+    const transcript = (entry.content as string ?? "").split("Стенограмма:")[1]?.trim() ??
+      (entry.content as string ?? "").trim();
 
     if (!transcript) {
       await sendMessage(chatId, "Транскрипт недоступен.");
@@ -366,7 +416,7 @@ export async function handleMeetingCallbacks(
     await sendMessage(
       chatId,
       `Напиши инструкцию: что изменить в тезисах.${current}\n\n` +
-      "<i>Например: «убери раздел Финансы», «сделай тезисы короче», «добавь задачу на Васю»</i>"
+        "<i>Например: «убери раздел Финансы», «сделай тезисы короче», «добавь задачу на Васю»</i>",
     );
     return true;
   }
@@ -391,7 +441,10 @@ export async function handleMeetingCallbacks(
       .eq("group_id", groupId)
       .or(`metadata->>meeting_id.eq.${meetingId},id.eq.${meetingId}`).limit(1);
     if (meErr) console.error("[massign] entry", meErr.message);
-    if (!meetingEntries?.length) { await sendMessage(chatId, "Встреча не найдена."); return true; }
+    if (!meetingEntries?.length) {
+      await sendMessage(chatId, "Встреча не найдена.");
+      return true;
+    }
     // Приглашённые, но не вошедшие — строки без telegram_id: кнопку на них не строим.
     const { data: allowedUsers, error: auErr } = await supabase.from("allowed_users")
       .select("telegram_id, username").eq("group_id", groupId).not("telegram_id", "is", null);
@@ -403,11 +456,15 @@ export async function handleMeetingCallbacks(
     if (profErr) console.error("[massign] profiles", profErr.message);
     type Profile = { telegram_id: number; first_name?: string; last_name?: string };
     const profileMap: Record<number, Profile> = Object.fromEntries(
-      (profiles ?? []).map((p: Profile) => [p.telegram_id, p])
+      (profiles ?? []).map((p: Profile) => [p.telegram_id, p]),
     );
     const seen = new Set<number>();
     const buttons = ((allowedUsers ?? []) as Array<{ telegram_id: number; username: string | null }>)
-      .filter((u) => { if (seen.has(u.telegram_id)) return false; seen.add(u.telegram_id); return true; })
+      .filter((u) => {
+        if (seen.has(u.telegram_id)) return false;
+        seen.add(u.telegram_id);
+        return true;
+      })
       .map((u) => {
         const p = profileMap[u.telegram_id];
         const full = p ? [p.first_name, p.last_name].filter(Boolean).join(" ") : "";
@@ -423,9 +480,18 @@ export async function handleMeetingCallbacks(
     const meetingId = rest.slice(0, sep);
     const targetTgId = Number(rest.slice(sep + 1));
     // Старая кнопка «mau_…_null» давала NaN, и в assignees уезжало «ID NaN».
-    if (sep < 0 || !Number.isSafeInteger(targetTgId)) { await sendMessage(chatId, "Участник не найден."); return true; }
-    const { data: prof } = await supabase.from("user_profiles").select("first_name, last_name").eq("telegram_id", targetTgId).maybeSingle();
-    const { data: au } = await supabase.from("allowed_users").select("username").eq("telegram_id", targetTgId).eq("group_id", groupId).maybeSingle();
+    if (sep < 0 || !Number.isSafeInteger(targetTgId)) {
+      await sendMessage(chatId, "Участник не найден.");
+      return true;
+    }
+    const { data: prof } = await supabase.from("user_profiles").select("first_name, last_name").eq(
+      "telegram_id",
+      targetTgId,
+    ).maybeSingle();
+    const { data: au } = await supabase.from("allowed_users").select("username").eq("telegram_id", targetTgId).eq(
+      "group_id",
+      groupId,
+    ).maybeSingle();
     const full = prof ? [prof.first_name, prof.last_name].filter(Boolean).join(" ") : "";
     const assigneeName = full || (au?.username ? `@${au.username}` : `ID ${targetTgId}`);
     const { data: meetingTasks } = await supabase.from("tasks").select("id, assignees").eq("meeting_id", meetingId);
@@ -446,14 +512,18 @@ export async function handleMeetingCallbacks(
     // Export meeting as file from admin panel
     const entryId = data.replace("mexp_", "");
     const entry = await loadEntryForAction(entryId, groupId, userId, "content, metadata, created_at");
-    if (!entry) { await sendMessage(chatId, "Встреча не найдена."); }
+    if (!entry) await sendMessage(chatId, "Встреча не найдена.");
     else {
       const rawTitle = ((entry.metadata as Record<string, unknown>)?.title as string | undefined) ?? "meeting";
       const safeTitle = rawTitle.replace(/[^\wа-яёА-ЯЁ\s-]/g, "").trim().replace(/\s+/g, "_");
       const dateStr = new Date(entry.created_at as string).toISOString().slice(0, 10);
       const form = new FormData();
       form.append("chat_id", String(chatId));
-      form.append("document", new Blob([entry.content as string], { type: "text/plain; charset=utf-8" }), `${safeTitle}_${dateStr}.txt`);
+      form.append(
+        "document",
+        new Blob([entry.content as string], { type: "text/plain; charset=utf-8" }),
+        `${safeTitle}_${dateStr}.txt`,
+      );
       await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendDocument`, { method: "POST", body: form });
     }
     return true;
@@ -467,9 +537,13 @@ export async function handleMeetingCallbacks(
     const entryId = rest.slice(0, sep);
     const code = rest.slice(sep + 1);
     const entry = await loadEntryForAction(entryId, groupId, userId, "countries", { action: "edit" });
-    if (!entry) { await sendMessage(chatId, "Встреча не найдена."); return true; }
-    const set = new Set<string>(((entry.countries as string[] | null) ?? []));
-    if (set.has(code)) set.delete(code); else set.add(code); // toggle; General — обычный элемент набора
+    if (!entry) {
+      await sendMessage(chatId, "Встреча не найдена.");
+      return true;
+    }
+    const set = new Set<string>((entry.countries as string[] | null) ?? []);
+    if (set.has(code)) set.delete(code);
+    else set.add(code); // toggle; General — обычный элемент набора
     await supabase.from("entries").update({ countries: [...set] }).eq("id", entryId).eq("group_id", groupId);
     const picker = await renderMarketPicker(entryId, groupId, userId);
     if (picker) await editInlineMessage(chatId, cb.message.message_id, picker.text, picker.keyboard);
@@ -478,13 +552,16 @@ export async function handleMeetingCallbacks(
   if (data.startsWith("mctry_done_")) {
     const entryId = data.slice("mctry_done_".length);
     const entry = await loadEntryForAction(entryId, groupId, userId, "countries, summary, content", { action: "edit" });
-    if (!entry) { await sendMessage(chatId, "Встреча не найдена."); return true; }
+    if (!entry) {
+      await sendMessage(chatId, "Встреча не найдена.");
+      return true;
+    }
     // Канон рынков (issue #169): 1 рынок → тег, 0 или ≥2 → ["General"] схлопыванием.
     // Схлопываем на «Готово», а не на каждый тап: во время мультивыбора выбор копится в
     // entries.countries, и схлоп на тапе визуально сбрасывал бы уже выбранный рынок.
     // Раньше здесь порога не было вовсе — набор уезжал в базу как есть (пять рынков — пожалуйста),
     // и запись всплывала в дайджесте каждого из них.
-    const picked = ((entry.countries as string[] | null) ?? []);
+    const picked = (entry.countries as string[] | null) ?? [];
     const countries = marketTagsFromInput(picked);
     const collapsed = picked.filter((c) => c !== "General").length >= 2;
     if (countries.join(",") !== picked.join(",")) {
@@ -497,7 +574,9 @@ export async function handleMeetingCallbacks(
         const emb = await getEmbedding(buildEmbeddingInput(base, countries));
         await supabase.from("entries").update({ embedding: emb }).eq("id", entryId).eq("group_id", groupId);
       }
-    } catch (e) { console.error("[mctry_done] embedding recompute failed:", e); }
+    } catch (e) {
+      console.error("[mctry_done] embedding recompute failed:", e);
+    }
     const names = countries.filter((c) => c !== "General").map((c) => COUNTRY_NAMES[c] ?? c);
     if (countries.includes("General")) names.push("Общее");
     const kb: PickerRow[] = [];
@@ -505,27 +584,42 @@ export async function handleMeetingCallbacks(
     kb.push([{ text: "🌍 Изменить рынки", callback_data: `mctry_${entryId}` }]);
     // Схлопнули — говорим почему, иначе выбор «RS + BG» молча превращается в «Общее».
     const collapsedNote = collapsed ? "\n<i>2+ рынка = Общее (кросс-маркет)</i>" : "";
-    await editInlineMessage(chatId, cb.message.message_id, `🌍 Рынки встречи: <b>${names.length ? names.join(", ") : "не заданы"}</b>${collapsedNote}`, kb);
+    await editInlineMessage(
+      chatId,
+      cb.message.message_id,
+      `🌍 Рынки встречи: <b>${names.length ? names.join(", ") : "не заданы"}</b>${collapsedNote}`,
+      kb,
+    );
     return true;
   }
   if (data.startsWith("mctry_")) {
     const entryId = data.slice("mctry_".length);
     const picker = await renderMarketPicker(entryId, groupId, userId);
-    if (!picker) { await sendMessage(chatId, "Встреча не найдена."); return true; }
+    if (!picker) {
+      await sendMessage(chatId, "Встреча не найдена.");
+      return true;
+    }
     await sendInlineMessage(chatId, picker.text, picker.keyboard);
     return true;
   }
   if (data.startsWith("mc_")) {
     // Confirm meeting — жёсткий блок без рынков, затем publish + auto-extract tasks
     const entryId = data.replace("mc_", "");
-    const entry = await loadEntryForAction(entryId, groupId, userId, "metadata, content, countries", { action: "edit" });
-    if (!entry) { await sendMessage(chatId, "Встреча не найдена."); return true; }
-    const countries = ((entry.countries as string[] | null) ?? []);
+    const entry = await loadEntryForAction(entryId, groupId, userId, "metadata, content, countries", {
+      action: "edit",
+    });
+    if (!entry) {
+      await sendMessage(chatId, "Встреча не найдена.");
+      return true;
+    }
+    const countries = (entry.countries as string[] | null) ?? [];
     if (countries.length === 0) {
       // Жёсткий блок: встреча не уходит в базу без привязки к рынку (или явного «Общее»).
-      await sendInlineMessage(chatId,
+      await sendInlineMessage(
+        chatId,
         "⚠️ <b>Нельзя подтвердить встречу без рынков.</b>\n\nУкажи хотя бы один рынок (или «🌐 Общее», если встреча не про конкретный рынок), затем подтверди снова.",
-        [[{ text: "🌍 Проставить рынки", callback_data: `mctry_${entryId}` }]]);
+        [[{ text: "🌍 Проставить рынки", callback_data: `mctry_${entryId}` }]],
+      );
       return true;
     }
     // Publish: pending → workspace-visible. Снимаем приватность, но НЕ владельца: is_private
@@ -533,7 +627,11 @@ export async function handleMeetingCallbacks(
     // быть ничьих»). Здесь стояло owner_id: null — тот же источник «ничьих» записей, что был в
     // swarm-api; там поправлено 2026-08-22, а этот путь (согласование из бота) пропустили.
     const publisherId = (entry as { owner_id?: number | null }).owner_id ?? userId;
-    await supabase.from("entries").update({ metadata: { ...(entry.metadata as Record<string, unknown>), confirmed: true }, is_private: false, owner_id: publisherId }).eq("id", entryId).eq("group_id", groupId);
+    await supabase.from("entries").update({
+      metadata: { ...(entry.metadata as Record<string, unknown>), confirmed: true },
+      is_private: false,
+      owner_id: publisherId,
+    }).eq("id", entryId).eq("group_id", groupId);
     const title = ((entry.metadata as Record<string, unknown>)?.title as string) ?? "Встреча";
     await sendMessage(chatId, `✅ Встреча сохранена: <b>${title}</b>`);
     // Авто-извлечение задач из встречи УБРАНО 05.09.2026 (решение владельца: «раз бот —
@@ -573,9 +671,11 @@ export async function handleMeetingSessionInput(
     const entryId = action.replace("meeting_title_", "");
     const newTitle = text.trim();
     const entry = await loadEntryForAction(entryId, groupId, userId, "metadata", { action: "edit" });
-    if (!entry) { await sendMessage(chatId, "Встреча не найдена."); }
+    if (!entry) await sendMessage(chatId, "Встреча не найдена.");
     else {
-      await supabase.from("entries").update({ metadata: { ...(entry.metadata as Record<string, unknown>), title: newTitle } }).eq("id", entryId).eq("group_id", groupId);
+      await supabase.from("entries").update({
+        metadata: { ...(entry.metadata as Record<string, unknown>), title: newTitle },
+      }).eq("id", entryId).eq("group_id", groupId);
       await sendMessage(chatId, `✅ Название: <b>${newTitle}</b>`, {
         inline_keyboard: [[
           { text: "✅ Сохранить", callback_data: `mc_${entryId}` },
@@ -591,16 +691,22 @@ export async function handleMeetingSessionInput(
     const today = new Date().toISOString().split("T")[0];
     const parsed = await chatComplete(
       `Сегодня ${today}. Преобразуй дату из текста пользователя в формат ГГГГ-ММ-ДД. Верни ТОЛЬКО дату в этом формате, без пояснений. Если не можешь распознать — верни "null".`,
-      text.trim()
+      text.trim(),
     );
     const dateVal = /^\d{4}-\d{2}-\d{2}$/.test(parsed.trim()) ? parsed.trim() : null;
-    if (!dateVal) { await sendMessage(chatId, "Не удалось распознать дату. Попробуй ещё раз."); }
+    if (!dateVal) await sendMessage(chatId, "Не удалось распознать дату. Попробуй ещё раз.");
     else {
       const entry = await loadEntryForAction(entryId, groupId, userId, "metadata", { action: "edit" });
-      if (!entry) { await sendMessage(chatId, "Встреча не найдена."); }
+      if (!entry) await sendMessage(chatId, "Встреча не найдена.");
       else {
-        await supabase.from("entries").update({ metadata: { ...(entry.metadata as Record<string, unknown>), entry_date: dateVal } }).eq("id", entryId).eq("group_id", groupId);
-        const dateFmt = new Date(`${dateVal}T12:00:00`).toLocaleDateString("ru-RU", { day: "numeric", month: "long", year: "numeric" });
+        await supabase.from("entries").update({
+          metadata: { ...(entry.metadata as Record<string, unknown>), entry_date: dateVal },
+        }).eq("id", entryId).eq("group_id", groupId);
+        const dateFmt = new Date(`${dateVal}T12:00:00`).toLocaleDateString("ru-RU", {
+          day: "numeric",
+          month: "long",
+          year: "numeric",
+        });
         await sendMessage(chatId, `📅 Дата: <b>${dateFmt}</b>`, {
           inline_keyboard: [[
             { text: "✅ Сохранить", callback_data: `mc_${entryId}` },
@@ -616,26 +722,32 @@ export async function handleMeetingSessionInput(
     const entryId = action.replace("meeting_edit_summary_", "");
 
     const entry = await loadEntryForAction(entryId, groupId, userId, "content, summary, metadata", { action: "edit" });
-    if (!entry) { await sendMessage(chatId, "Встреча не найдена."); return true; }
+    if (!entry) {
+      await sendMessage(chatId, "Встреча не найдена.");
+      return true;
+    }
 
     await sendMessage(chatId, "Обновляю...");
 
     const currentTitle = (entry.metadata as Record<string, unknown>)?.title as string ?? "";
     const raw = await chatComplete(
       "Ты помощник команды. Измени тезисы и/или название встречи согласно инструкции пользователя.\n" +
-      "Не домысливай — только то что есть в исходном тексте или в текущих данных.\n" +
-      "Верни ТОЛЬКО JSON без markdown: {\"title\": \"новое название или null если не менять\", \"summary\": \"новые тезисы\"}\n" +
-      "Тезисы — в формате: ### Тема\n- тезис\n- тезис\n\n" +
-      `Инструкция: ${text.trim()}\n\n` +
-      `Текущее название: ${currentTitle}\n` +
-      `Текущие тезисы:\n${(entry.summary as string) ?? ""}`,
-      (entry.content as string ?? "").slice(0, 6000)
+        "Не домысливай — только то что есть в исходном тексте или в текущих данных.\n" +
+        'Верни ТОЛЬКО JSON без markdown: {"title": "новое название или null если не менять", "summary": "новые тезисы"}\n' +
+        "Тезисы — в формате: ### Тема\n- тезис\n- тезис\n\n" +
+        `Инструкция: ${text.trim()}\n\n` +
+        `Текущее название: ${currentTitle}\n` +
+        `Текущие тезисы:\n${(entry.summary as string) ?? ""}`,
+      (entry.content as string ?? "").slice(0, 6000),
     );
 
     let newTitle: string | null = null;
     let newSummary = (entry.summary as string) ?? "";
     try {
-      const parsed = JSON.parse(raw.replace(/```json\n?|\n?```/g, "").trim()) as { title?: string | null; summary?: string };
+      const parsed = JSON.parse(raw.replace(/```json\n?|\n?```/g, "").trim()) as {
+        title?: string | null;
+        summary?: string;
+      };
       if (parsed.title) newTitle = parsed.title;
       if (parsed.summary) newSummary = parsed.summary;
     } catch {
@@ -647,9 +759,11 @@ export async function handleMeetingSessionInput(
       updates.metadata = { ...(entry.metadata as Record<string, unknown>), title: newTitle };
     }
     const { error } = await supabase.from("entries").update(updates).eq("id", entryId).eq("group_id", groupId);
-    if (error) { await sendMessage(chatId, `Ошибка: ${error.message}`); return true; }
+    if (error) {
+      await sendMessage(chatId, `Ошибка: ${error.message}`);
+      return true;
+    }
 
-    const displayTitle = newTitle ?? currentTitle;
     const titleLine = newTitle ? `✅ Название: <b>${newTitle}</b>\n\n` : "";
     await sendMessage(chatId, `${titleLine}✅ Тезисы обновлены.\n\n${newSummary.slice(0, 1400)}`, {
       inline_keyboard: [[{ text: "✅ Подтвердить встречу", callback_data: `mc_${entryId}` }]],
@@ -661,9 +775,11 @@ export async function handleMeetingSessionInput(
     const entryId = action.replace("meeting_rename_", "");
     const newTitle = text.trim();
     const entry = await loadEntryForAction(entryId, groupId, userId, "metadata", { action: "edit" });
-    if (!entry) { await sendMessage(chatId, "Встреча не найдена."); }
+    if (!entry) await sendMessage(chatId, "Встреча не найдена.");
     else {
-      await supabase.from("entries").update({ metadata: { ...(entry.metadata as Record<string, unknown>), title: newTitle } }).eq("id", entryId).eq("group_id", groupId);
+      await supabase.from("entries").update({
+        metadata: { ...(entry.metadata as Record<string, unknown>), title: newTitle },
+      }).eq("id", entryId).eq("group_id", groupId);
       await sendMessage(chatId, `✅ Встреча переименована: <b>${newTitle}</b>`);
     }
     return true;
@@ -678,15 +794,16 @@ export async function handleMeetingSessionInput(
       .or(`metadata->>meeting_id.eq.${meetingId},id.eq.${meetingId}`);
     // Теги — правка встречи: только те записи, которые нажавшему можно править.
     const viewer = found?.length ? await loadMeetingViewer(userId) : null;
-    const entries = (found ?? []).filter((e) =>
-      viewer && canActOnMeeting(e as MeetingRightsRow, viewer, "edit")
-    );
-    if (!entries.length) { await sendMessage(chatId, "Встреча не найдена или править её нельзя."); }
+    const entries = (found ?? []).filter((e) => viewer && canActOnMeeting(e as MeetingRightsRow, viewer, "edit"));
+    if (!entries.length) await sendMessage(chatId, "Встреча не найдена или править её нельзя.");
     else {
       for (const entry of entries as Array<{ id: string; metadata: Record<string, unknown> }>) {
         const existing = (entry.metadata?.tags as string[] | undefined) ?? [];
         const merged = [...new Set([...existing, ...rawTags])];
-        await supabase.from("entries").update({ metadata: { ...entry.metadata, tags: merged } }).eq("id", entry.id).eq("group_id", groupId);
+        await supabase.from("entries").update({ metadata: { ...entry.metadata, tags: merged } }).eq("id", entry.id).eq(
+          "group_id",
+          groupId,
+        );
       }
       await sendMessage(chatId, `🏷 Теги сохранены: <b>${rawTags.join(", ")}</b>`);
     }
