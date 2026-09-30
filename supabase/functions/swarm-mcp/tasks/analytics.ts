@@ -156,6 +156,7 @@ export async function toolGetTaskStats(args: {
 export async function toolGetTaskHistory(args: { task_id: string; requesting_user_id: number }): Promise<string> {
   const task = await getTask(args.task_id);
   const groupId = await resolveGroupId(args.requesting_user_id);
+  if (!groupId) return `Задача ${args.task_id} не найдена.`;
   const denied = taskAccessError(
     args.task_id, task, args.requesting_user_id,
     args.requesting_user_id === ADMIN_USER_ID, groupId ?? null,

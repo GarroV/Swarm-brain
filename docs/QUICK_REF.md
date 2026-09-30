@@ -243,6 +243,7 @@ claude mcp add supabase-swarm -- npx -y @supabase/mcp-server-supabase@0.12.0 \
 | Concern | Файлы | Детали |
 |---|---|---|
 | MCP-инструменты (Claude Desktop) | `swarm-mcp/index.ts`, `swarm-mcp/tasks/tools.ts`, форматирование ответов `swarm-mcp/tasks/format.ts` (+`.test.ts`) | §swarm-mcp |
+| 🧭 **Доступ к MCP-инструментам** — `tools/call` только с валидным `smcp_`-токеном; личность и воркспейс — из токена, поля личности в аргументах перетираются; без воркспейса — отказ (кроме `whoami`) | `swarm-mcp/auth.ts` (+`auth.test.ts`): `authorizeToolCall`, `withCallerIdentity`, `resolveCallerScope`; в `index.ts` — `callerScope` | §MCP-аутентификация в [ARCHITECTURE](ARCHITECTURE.md) |
 | 🧭 **Спринты из MCP** (#480): 14 инструментов — пространства, спринты, состав, старт, сверка, перенос, приёмка | `swarm-mcp/tasks/{sprints.ts,sprints-format.ts}` поверх `_shared/tasks/sprint-*.ts`; только `kind='space'` | §swarm-mcp в [ARCHITECTURE](ARCHITECTURE.md), [SETUP_CLAUDE_DESKTOP](SETUP_CLAUDE_DESKTOP.md) |
 | 🧭 **Статистика по задачам** (запрос руководства): агрегаты за период, история одной задачи, все изменения за период | `_shared/tasks/analytics.ts` (расчёты), `swarm-mcp/tasks/{analytics.ts,analytics-format.ts}` (инструменты `get_task_stats`/`get_task_history`/`get_recent_task_changes`) | спека [2026-09-09-task-analytics-design](superpowers/specs/2026-09-09-task-analytics-design.md) · [#286](https://github.com/GarroV/Swarm-brain/issues/286) |
 | 🧭 **Журнал изменений задач** (кто/когда/с чего на что передвинул) — пишется из единственной точки `updateTask`; решение о строках — `_shared/tasks/history.ts`; данные только с даты раскатки #286. ⚠️ `changed_by` — `text NOT NULL`: автора кладёт `actorName()` (имя → telegram_id строкой → `system`), `null` там означал бы, что журнал молча не пишется совсем (issue #287, починено и раскатано 09.09.2026) | `_shared/tasks/{db.ts,history.ts}`, миграция `20260909220000_task_history_field_journal` | спека [2026-09-09-task-analytics-design](superpowers/specs/2026-09-09-task-analytics-design.md) · §Таблицы БД в [ARCHITECTURE.md](ARCHITECTURE.md) |
@@ -251,7 +252,7 @@ claude mcp add supabase-swarm -- npx -y @supabase/mcp-server-supabase@0.12.0 \
 | Подключение Claude — оба пути (Desktop + веб-коннектор claude.ai) | `swarm-bot/index.ts` (`/connect_claude`, `/setup`, `/mytoken`), `_shared/mcp-token.ts` | §MCP-аутентификация |
 | Промт-инструкции для проекта Claude Desktop (поле Instructions) | единый источник `_shared/claude-project-prompt.ts` → бот `/claude` + swarm-api `GET /mcp/instructions` (кнопка в вебе `SettingsScreen.tsx` `ClaudeDesktopSection`) | §swarm-api |
 | 🧭 Фон веба («Настройки фона»: галактика / без фона / точки / сияние / своя картинка) | список и кэш `miniapp/src/lib/backdrop.ts`, своя картинка — `lib/backdropImage.ts` (форматы, HEIC) + `lib/backdropStore.ts` (IndexedDB) (зеркало `UI_BACKDROPS` в `swarm-api/index.ts`), слой `roy/BackdropLayer.tsx`, выбор `profile/BackdropSection.tsx` (пункт «Настройки фона» в «Настройках»), хранение `user_profiles.ui_backdrop` через `GET/PATCH /me` | [MINIAPP_ARCHITECTURE](MINIAPP_ARCHITECTURE.md) §Задник |
-| 🔍 «Токен протух» / `Invalid token` (диагностика) | токен **бессрочный** → это рассинхрон клиента, НЕ истечение. `_shared/mcp-token.ts`, `swarm-mcp/index.ts` (token check ~843), БД `allowed_users.claude_mcp_token_hash`. Проверка: `has_token=true, expires_at=null` → чинить клиента (`/mytoken`) | §MCP-аутентификация |
+| 🔍 «Токен протух» / `Invalid token` (диагностика) | токен **бессрочный** → это рассинхрон клиента, НЕ истечение. `_shared/mcp-token.ts`, `swarm-mcp/index.ts` (разбор токена перед `initialize`) + `swarm-mcp/auth.ts`, БД `allowed_users.claude_mcp_token_hash`. Проверка: `has_token=true, expires_at=null` → чинить клиента (`/mytoken`) | §MCP-аутентификация |
 | Установка рекордера (`/recordertoken`) — **ПРЕДсобранный .app, без Xcode/CLT** (issue #19): скачать release-asset → снять карантин → per-machine cert (штатные openssl/security) → codesign → /Applications | `swarm-recorder-setup/script.ts`, сборка в CI `recorder/build-app-ci.sh` + `.github/workflows/recorder-release.yml`, `swarm-bot/lib/mcp-setup.ts` | recorder/README.md |
 
 ### Инвентари (канон — в ARCHITECTURE, не дублировать)
@@ -306,7 +307,7 @@ claude mcp add supabase-swarm -- npx -y @supabase/mcp-server-supabase@0.12.0 \
 | `SUPABASE_SERVICE_ROLE_KEY` | да |
 | `OPENAI_API_KEY` | да |
 | `BOT_NAME` | нет (дефолт `"bot"`) |
-| `MCP_AUTH_REQUIRED` | нет; `true` = жёсткий режим MCP-токена |
+| `MCP_AUTH_REQUIRED` | устарела с 2026-09-30 — `swarm-mcp` без токена отказывает всегда (`auth.ts`) |
 
 ---
 

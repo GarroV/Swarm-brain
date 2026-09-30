@@ -16,6 +16,7 @@ import { isFeedbackStatus } from "../_shared/feedback-categories.ts";
 import { normalizeExtractedEventDate, todayIso } from "../_shared/llm-date.ts";
 import { entryAccessError, type EntryAccessRow } from "../_shared/entries/access.ts";
 import { withTokenIdentity } from "./identity.ts";
+import { authorizeToolCall, resolveCallerScope, withCallerIdentity, NO_WORKSPACE_MESSAGE } from "./auth.ts";
 import {
   MEETING_REVIEW_TOOL_DEFINITIONS,
   toolExtractTasksFromMeeting,
@@ -49,6 +50,10 @@ async function getUserGroupId(telegramId: number): Promise<string | null> {
     .maybeSingle();
   return (data as { group_id: string | null } | null)?.group_id ?? null;
 }
+
+// Личность + воркспейс вызывающего внутри инструмента. null → инструмент отказывает: выборки
+// «по всем воркспейсам» из MCP не бывает (второй рубеж после authorizeToolCall в tools/call).
+const callerScope = (userId: number | null | undefined) => resolveCallerScope(userId, getUserGroupId);
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -369,15 +374,15 @@ const TOOLS = [
 // ── Tool implementations ──────────────────────────────────────────────────────
 
 async function toolSearchKnowledge(args: { query: string; limit?: number; requesting_user_id?: number }): Promise<string> {
+  const scope = await callerScope(args.requesting_user_id);
+  if (!scope) return NO_WORKSPACE_MESSAGE;
   const embedding = await getEmbedding(args.query);
-  let groupId: string | null = null;
-  if (args.requesting_user_id) groupId = await getUserGroupId(args.requesting_user_id);
 
   let data;
   try {
     data = await matchEntries(supabase, embedding, {
-      groupId,
-      requestingUserId: args.requesting_user_id ?? null,
+      groupId: scope.groupId,
+      requestingUserId: scope.userId,
       limit: Math.min(args.limit ?? 5, 20),
       queryText: args.query,
       country: detectQueryCountry(args.query),
@@ -396,20 +401,19 @@ async function toolSearchKnowledge(args: { query: string; limit?: number; reques
 }
 
 async function toolGetMeetings(args: { limit?: number; requesting_user_id?: number }): Promise<string> {
-  let groupId: string | null = null;
-  if (args.requesting_user_id) groupId = await getUserGroupId(args.requesting_user_id);
+  const scope = await callerScope(args.requesting_user_id);
+  if (!scope) return NO_WORKSPACE_MESSAGE;
 
-  let query = supabase
+  const query = supabase
     .from("entries")
     .select("content, metadata, created_at")
     .in("source", ALL_MEETING_SOURCES)
     // Приватность: чужие личные встречи невидимы. Только публичные ИЛИ свои приватные
-    // (owner_id = requesting_user_id). Без requesting_user_id — только публичные.
-    // Без admin-байпаса: приватное видит ТОЛЬКО владелец.
-    .or(args.requesting_user_id ? visibilityFilter(args.requesting_user_id) : "is_private.eq.false")
+    // (owner_id = вызывающий). Без admin-байпаса: приватное видит ТОЛЬКО владелец.
+    .or(visibilityFilter(scope.userId))
+    .eq("group_id", scope.groupId)
     .order("created_at", { ascending: false })
     .limit(args.limit ?? 10);
-  if (groupId) query = query.eq("group_id", groupId);
   const { data, error } = await query;
 
   if (error) return `Ошибка: ${error.message}`;
@@ -449,15 +453,13 @@ async function toolWhoami(args: { requesting_user_id?: number }): Promise<string
 }
 
 async function toolGetUsers(args: { market?: string; requesting_user_id?: number }): Promise<string> {
-  let groupId: string | null = null;
-  if (args.requesting_user_id) groupId = await getUserGroupId(args.requesting_user_id);
+  const scope = await callerScope(args.requesting_user_id);
+  if (!scope) return NO_WORKSPACE_MESSAGE;
 
-  let query = supabase
+  const { data: rows, error } = await supabase
     .from("allowed_users")
-    .select("telegram_id, username");
-  if (groupId) query = query.eq("group_id", groupId);
-
-  const { data: rows, error } = await query;
+    .select("telegram_id, username")
+    .eq("group_id", scope.groupId);
   if (error) return `Ошибка: ${error.message}`;
   // Приглашённые, но ещё не вошедшие — строки без telegram_id. Их не показываем, а один null
   // в `.in(...)` ронял запрос профилей целиком (прод, 25.09).
@@ -540,20 +542,20 @@ async function toolResolveFeedback(
 }
 
 async function toolGetEntry(args: { id: string; requesting_user_id?: number }): Promise<string> {
-  let groupId: string | null = null;
-  if (args.requesting_user_id) groupId = await getUserGroupId(args.requesting_user_id);
+  const scope = await callerScope(args.requesting_user_id);
+  if (!scope) return NO_WORKSPACE_MESSAGE;
 
-  let query = supabase
+  const { data, error } = await supabase
     .from("entries")
     .select("content, source, created_at, is_private, owner_id")
-    .eq("id", args.id);
-  if (groupId) query = query.eq("group_id", groupId);
-  const { data, error } = await query.maybeSingle();
+    .eq("id", args.id)
+    .eq("group_id", scope.groupId)
+    .maybeSingle();
   if (error) return `Ошибка: ${error.message}`;
   if (!data) return "Запись не найдена.";
 
   const row = data as { content: string; source: string; created_at: string; is_private: boolean; owner_id: number | null };
-  if (row.is_private && row.owner_id !== (args.requesting_user_id ?? null)) {
+  if (row.is_private && row.owner_id !== scope.userId) {
     return "Запись не найдена.";
   }
 
@@ -579,15 +581,13 @@ async function toolAddKnowledge(args: { content?: string; summary: string; sourc
   // Chunk grouping UUID (not the workspace group_id)
   const chunkGroupId = chunks.length > 1 ? crypto.randomUUID() : null;
 
-  // Личность вызывающего: в strict-режиме requesting_user_id уже перетёрт verified-токеном выше,
-  // в soft — берётся из аргументов на доверии (принятый риск). Владельца ЛИЧНОЙ записи выводим
-  // именно из вызывающего, а НЕ из произвольного owner_telegram_id — иначе в strict-режиме можно
-  // было бы подсунуть чужой owner_id (мисатрибуция в пределах воркспейса). Личность из токена, не из payload.
-  const callerTelegramId = args.requesting_user_id ?? args.owner_telegram_id ?? null;
+  // Личность вызывающего — только из токена (tools/call перетирает поля личности в аргументах).
+  // Владелец ЛИЧНОЙ записи = вызывающий; воркспейс записи = воркспейс вызывающего.
+  const scope = await callerScope(args.requesting_user_id);
+  if (!scope) return NO_WORKSPACE_MESSAGE;
   const isPrivate = args.is_private === true;
-  const ownerId = isPrivate ? callerTelegramId : null;
-  if (isPrivate && !ownerId) return "Ошибка: для личного хранилища не удалось определить владельца (requesting_user_id).";
-  const workspaceGroupId = callerTelegramId ? await getUserGroupId(callerTelegramId) : null;
+  const ownerId = isPrivate ? scope.userId : null;
+  const workspaceGroupId = scope.groupId;
   const [summaryEmbedding, entryMeta] = await Promise.all([
     getEmbedding(args.summary.slice(0, 8000)),
     extractEntryMeta(args.summary),
@@ -648,6 +648,8 @@ async function toolUploadFile(args: {
   source?: string;
   requesting_user_id?: number;
 }): Promise<string> {
+  const scope = await callerScope(args.requesting_user_id);
+  if (!scope) return NO_WORKSPACE_MESSAGE;
   const source = args.source ?? "file";
   const mimeType = args.mime_type ?? mimeFromExtension(args.file_name);
 
@@ -663,8 +665,7 @@ async function toolUploadFile(args: {
     extractEntryMeta(args.summary),
   ]);
 
-  let workspaceGroupId: string | null = null;
-  if (args.requesting_user_id) workspaceGroupId = await getUserGroupId(args.requesting_user_id);
+  const workspaceGroupId = scope.groupId;
 
   const { data: created, error } = await supabase.from("entries").insert({
     content: args.summary,
@@ -705,18 +706,18 @@ async function toolUploadFile(args: {
 }
 
 async function toolGetStorageStats(args: { requesting_user_id?: number } = {}): Promise<string> {
-  let groupId: string | null = null;
-  if (args.requesting_user_id) groupId = await getUserGroupId(args.requesting_user_id);
+  const scope = await callerScope(args.requesting_user_id);
+  if (!scope) return NO_WORKSPACE_MESSAGE;
 
-  let query = supabase
+  const query = supabase
     .from("entries")
     .select("entry_type, source, created_at, metadata")
     // Статистика считает только видимые записи: чужие приватные не попадают в счётчики
     // (та же приватность, что в list_entries/get_meetings).
-    .or(args.requesting_user_id ? visibilityFilter(args.requesting_user_id) : "is_private.eq.false")
+    .or(visibilityFilter(scope.userId))
+    .eq("group_id", scope.groupId)
     .order("created_at", { ascending: false })
     .limit(2000);
-  if (groupId) query = query.eq("group_id", groupId);
   const { data, error } = await query;
 
   if (error) return `Ошибка: ${error.message}`;
@@ -755,16 +756,16 @@ async function toolGetStorageStats(args: { requesting_user_id?: number } = {}): 
 }
 
 async function toolListEntries(args: { source?: string; entry_type?: string; date_from?: string; date_to?: string; limit?: number; has_file?: boolean; has_no_countries?: boolean; requesting_user_id?: number }): Promise<string> {
-  let groupId: string | null = null;
-  if (args.requesting_user_id) groupId = await getUserGroupId(args.requesting_user_id);
+  const scope = await callerScope(args.requesting_user_id);
+  if (!scope) return NO_WORKSPACE_MESSAGE;
 
   let query = supabase
     .from("entries")
     .select("id, source, entry_type, entry_date, created_at, summary, countries, metadata")
-    .or(args.requesting_user_id ? visibilityFilter(args.requesting_user_id) : "is_private.eq.false")
+    .or(visibilityFilter(scope.userId))
+    .eq("group_id", scope.groupId)
     .order("created_at", { ascending: false })
     .limit(Math.min(args.limit ?? 20, 100));
-  if (groupId) query = query.eq("group_id", groupId);
 
   if (args.source) query = query.eq("source", args.source);
   if (args.entry_type) query = query.eq("entry_type", args.entry_type);
@@ -802,9 +803,10 @@ async function toolDeleteEntry(args: { id: string; requesting_user_id?: number }
   // Гард вместо ручной проверки (issue #60). Прежняя строка начиналась с
   // `if (args.requesting_user_id && …)`: без личности проверка ПРОПУСКАЛАСЬ целиком —
   // fail-open. Сейчас нет личности → нет права, и воркспейс проверяется тоже.
+  const delScope = await callerScope(args.requesting_user_id);
+  if (!delScope) return NO_WORKSPACE_MESSAGE;
   const deniedDel = entryAccessError(
-    args.id, entry as EntryAccessRow | null, args.requesting_user_id ?? null,
-    args.requesting_user_id ? await getUserGroupId(args.requesting_user_id) : undefined, { requireOwner: true },
+    args.id, entry as EntryAccessRow | null, delScope.userId, delScope.groupId, { requireOwner: true },
   );
   if (deniedDel) return deniedDel;
   if (!entry) return `Запись ${args.id} не найдена.`;   // сужение: гард уже отсёк null
@@ -835,9 +837,10 @@ async function toolUpdateEntry(args: { id: string; content?: string; summary?: s
 
   // Проверки не было ВООБЩЕ: правка шла по одному id, поэтому любой человек с валидным
   // MCP-токеном мог переписать содержимое чужой личной записи из другого воркспейса (issue #60).
+  const scopeUpd = await callerScope(args.requesting_user_id);
+  if (!scopeUpd) return NO_WORKSPACE_MESSAGE;
   const deniedUpd = entryAccessError(
-    args.id, existing as EntryAccessRow | null, args.requesting_user_id ?? null,
-    args.requesting_user_id ? await getUserGroupId(args.requesting_user_id) : undefined,
+    args.id, existing as EntryAccessRow | null, scopeUpd.userId, scopeUpd.groupId,
     { requireOwner: true },
   );
   if (deniedUpd) return deniedUpd;
@@ -931,9 +934,10 @@ async function toolReindexEntry(args: { id: string; summary?: string; requesting
 
   // Переиндексация переписывает summary, страны, тип и дату — это правка записи, а не чтение,
   // и проверки здесь тоже не было (issue #60).
+  const scopeRx = await callerScope(args.requesting_user_id);
+  if (!scopeRx) return NO_WORKSPACE_MESSAGE;
   const deniedRx = entryAccessError(
-    args.id, entry as EntryAccessRow | null, args.requesting_user_id ?? null,
-    args.requesting_user_id ? await getUserGroupId(args.requesting_user_id) : undefined,
+    args.id, entry as EntryAccessRow | null, scopeRx.userId, scopeRx.groupId,
     { requireOwner: true },
   );
   if (deniedRx) return deniedRx;
@@ -1028,8 +1032,8 @@ Deno.serve(async (req: Request) => {
   // весь хендшейк (-32001 на initialize) — и коннектор молча «отваливается» целиком
   // (подтверждено репродукцией официальным MCP SDK: connect() падает на -32001).
   // Контроль доступа применяем точечно к tools/call — единственному методу, трогающему данные.
-  // Soft mode (default): нет заголовка → tools/call работает как аноним (args.requesting_user_id).
-  // Strict mode (MCP_AUTH_REQUIRED=true): tools/call без валидного токена → reject.
+  // Режимов нет: tools/call без валидного токена — отказ всегда; личность и воркспейс — только
+  // из токена (правило и его тесты — auth.ts / auth.test.ts).
   let verifiedTelegramId: number | null = null;
   let tokenError: string | null = null; // заполняется, если Bearer передан, но не прошёл
   const authHeader = req.headers.get("Authorization") ?? "";
@@ -1079,20 +1083,19 @@ Deno.serve(async (req: Request) => {
 
   if (method === "tools/call") {
     // ── Точка контроля доступа (перенесена сюда с хендшейка) ──────────────────
-    // Переданный, но неверный/протухший токен → внятная ошибка, а не молчаливый отвал коннектора.
-    if (tokenError) return err(id, -32001, tokenError);
-    // Strict-режим: без валидного токена вызовы инструментов запрещены.
-    if (verifiedTelegramId === null && Deno.env.get("MCP_AUTH_REQUIRED") === "true") {
-      return err(id, -32001, "Unauthorized — run /mytoken in the bot and add the token to the connector");
-    }
-
+    // Неверный/протухший токен → внятная ошибка, а не молчаливый отвал коннектора.
+    // Нет токена или нет воркспейса → отказ (fail-closed, см. auth.ts).
     const name = (params?.name as string) ?? "";
-    const args = (params?.arguments ?? {}) as Record<string, unknown>;
+    const auth = authorizeToolCall({
+      toolName: name,
+      verifiedTelegramId,
+      tokenError,
+      groupId: verifiedTelegramId !== null ? await getUserGroupId(verifiedTelegramId) : null,
+    });
+    if (!auth.ok) return err(id, auth.code, auth.message);
 
-    // Verified token identity wins over any requesting_user_id from args
-    if (verifiedTelegramId !== null) {
-      args.requesting_user_id = verifiedTelegramId;
-    }
+    // Поля личности в аргументах всегда перетираются значением из токена.
+    const args = withCallerIdentity((params?.arguments ?? {}) as Record<string, unknown>, auth.telegramId);
 
     try {
       let result = "";

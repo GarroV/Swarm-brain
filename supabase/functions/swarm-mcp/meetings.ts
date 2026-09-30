@@ -135,6 +135,7 @@ async function meetingText(
   const callerId = args.requesting_user_id;
   if (!callerId) return { ok: false, msg: "Ошибка: личность не определена (нужен токен коннектора)." };
   const groupId = await resolveGroupId(callerId);
+  if (!groupId) return { ok: false, msg: `Запись ${args.entry_id} не найдена.` };
   const { data } = await supabase.from("entries")
     .select("id, summary, content, is_private, owner_id, group_id").eq("id", args.entry_id).maybeSingle();
   const row = data as (EntryAccessRow & { summary: string | null; content: string | null }) | null;
