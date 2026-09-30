@@ -225,7 +225,10 @@ export async function toolAddTask(args: {
     }
   }
 
+  // Без воркспейса задачу не создаём: задача «ничья по воркспейсу» не видна никому, кроме
+  // таких же пользователей без воркспейса.
   const groupId = args.requesting_user_id ? await resolveGroupId(args.requesting_user_id) : null;
+  if (!groupId || !args.requesting_user_id) return "Ошибка: пользователь не найден в системе.";
 
   // Проект/подпроект доски (issue #28): без него задача создаётся, но на доску (SprintBoard)
   // не попадёт — доска показывает только задачи с project_id.
@@ -247,7 +250,6 @@ export async function toolAddTask(args: {
   // (TaskSubtasks.tsx). Личный родитель с общей подзадачей выставил бы кусок личного на доску.
   let parent: Task | null = null;
   if (args.parent_task_id) {
-    if (!groupId || !args.requesting_user_id) return "Ошибка: пользователь не найден в системе.";
     const loaded = await loadParent(args.parent_task_id, args.requesting_user_id, groupId);
     if (typeof loaded === "string") return loaded;
     const err = subtaskLinkError(loaded, null, { groupId, childHasKids: false });
@@ -311,7 +313,7 @@ export async function toolAddTask(args: {
       recur_anchor_dom: recur.recur_anchor_dom,
       remind_date: ping?.ok ? ping.fields.remind_date : null,
       remind_set_by: ping?.ok ? ping.fields.remind_set_by : null,
-    }, groupId ?? undefined);
+    }, groupId);
     // Уведомление «подтверди в боте» — только у задач, которые правда ждут вычитки. У задачи,
     // сразу попавшей на доску, подтверждать нечего, и гнать человека в бота незачем.
     const confirmed = args.confirmed ?? true;
@@ -343,6 +345,7 @@ export async function toolUpdateTask(args: {
 }): Promise<string> {
   const task = await getTask(args.id);
   const groupId = await resolveGroupId(args.requesting_user_id);
+  if (!groupId) return `Задача ${args.id} не найдена.`;
   // Воркспейс + приватность одним гардом (issue #45): раньше проверялся только воркспейс, и
   // вызов без `labels` правил ЧУЖУЮ личную задачу. Отказ неотличим от «не найдена».
   const denied = taskAccessError(
@@ -470,6 +473,7 @@ export async function toolUpdateTask(args: {
 export async function toolDeleteTask(args: { id: string; requesting_user_id: number }): Promise<string> {
   const task = await getTask(args.id);
   const groupId = await resolveGroupId(args.requesting_user_id);
+  if (!groupId) return `Задача ${args.id} не найдена.`;
   // Приватность не проверялась ВОВСЕ — участник воркспейса удалял чужую личную задачу (issue #45).
   const denied = taskAccessError(
     args.id,
@@ -571,6 +575,7 @@ async function commentTaskGuard(
 ): Promise<{ ok: true } | { ok: false; msg: string }> {
   const task = await getTask(taskId);
   const groupId = await resolveGroupId(requestingUserId);
+  if (!groupId) return { ok: false, msg: `Задача ${taskId} не найдена.` };
   // Приватную задачу видит только владелец — в MCP админ-байпас НЕ применяем (чистка в вебе),
   // поэтому isAdmin=false намеренно. Тексты отказов сведены к одному «не найдена» (issue #45):
   // раньше «задача приватная» и «не в твоём воркспейсе» отличались от «не найдена», и перебором

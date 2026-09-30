@@ -97,7 +97,6 @@ supabase secrets set MINIAPP_ORIGIN=<URL_минипрложения_или_*>
 | `MINIAPP_ORIGIN` | URL веб-интерфейса (для CORS). Используй `*` для начала | рекомендуется |
 | `INITDATA_MAX_AGE` | Срок жизни initData Telegram в секундах (по умолчанию 86400) | опционально |
 | `BOT_NAME` | Имя бота в подписи фидбека (по умолчанию `bot`) | опционально |
-| `MCP_AUTH_REQUIRED` | `true` — строгая авторизация в swarm-mcp (по умолчанию soft) | опционально |
 
 `SUPABASE_URL` и `SUPABASE_SERVICE_ROLE_KEY` Edge Functions получают автоматически — вручную устанавливать не нужно.
 
