@@ -57,7 +57,7 @@ Deno.test("порядок постоянный: состояние не пере
     mcp: { active: true, expiresAt: null },
     botAutojoin: true,
   }));
-  assertEquals(fresh, ["calendar", "recorder", "bot", "telegram", "granola", "claude"]);
+  assertEquals(fresh, ["granola", "recorder", "bot", "calendar", "telegram", "claude"]);
   assertEquals(mixed, fresh);
 });
 
