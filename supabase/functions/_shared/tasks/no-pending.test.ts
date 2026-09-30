@@ -15,7 +15,7 @@
 // предложения показываются человеку, в базу едет выбранное.
 import { assertEquals } from "jsr:@std/assert@1";
 
-const ROOT = new URL("../../", import.meta.url).pathname;
+const ROOT = decodeURIComponent(new URL("../../", import.meta.url).pathname);
 
 /** Комментарии срезаем: в них имена убранных функций стоят намеренно, как память о причине.
  *  Проверяем КОД — иначе тест падает на собственных объяснениях (так и случилось). */
@@ -57,9 +57,7 @@ Deno.test("никто не создаёт задачу в статусе pending
 
 Deno.test("бот не извлекает задачи из встречи сам", async () => {
   const src = await sources();
-  const есть = src.filter((f) =>
-    /analyzeAndCreateTasks|extractAndSaveTasks/.test(f.text)
-  ).map((f) => f.path);
+  const есть = src.filter((f) => /analyzeAndCreateTasks|extractAndSaveTasks/.test(f.text)).map((f) => f.path);
   assertEquals(
     есть,
     [],
@@ -69,10 +67,8 @@ Deno.test("бот не извлекает задачи из встречи са�
 });
 
 Deno.test("детектор ловит ту самую форму", () => {
-  const было =
-    'await supabase.from("tasks").insert({ title, status: "pending", group_id: "cee" });';
+  const было = 'await supabase.from("tasks").insert({ title, status: "pending", group_id: "cee" });';
   assertEquals(/status:\s*["'`]pending["'`]/.test(было), true);
-  const стало =
-    'await supabase.from("tasks").insert({ title, status: "open", confirmed: true });';
+  const стало = 'await supabase.from("tasks").insert({ title, status: "open", confirmed: true });';
   assertEquals(/status:\s*["'`]pending["'`]/.test(стало), false);
 });

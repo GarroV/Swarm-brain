@@ -19,18 +19,26 @@ Deno.test("DEMO_GROUP_ID — синтетическая группа демо-с
 
 /** Рабочий код всех функций: демо решается одной функцией, а не сравнением group_id со слагом. */
 Deno.test("никто не решает «это демо» сравнением group_id со строкой", async () => {
-  const root = new URL("../", import.meta.url).pathname;
+  const root = decodeURIComponent(new URL("../", import.meta.url).pathname);
   const offenders: string[] = [];
   const bySlug = /\b(group_?id|groupId)\s*[!=]==?\s*["'`]demo["'`]/i;
   for await (const dir of Deno.readDir(root)) {
     if (!dir.isDirectory) continue;
     for await (const f of Deno.readDir(`${root}${dir.name}`)) {
-      if (!f.isFile || !f.name.endsWith(".ts") || f.name.endsWith(".test.ts")) continue;
+      if (!f.isFile || !f.name.endsWith(".ts") || f.name.endsWith(".test.ts")) {
+        continue;
+      }
       const text = await Deno.readTextFile(`${root}${dir.name}/${f.name}`);
       text.split("\n").forEach((line, i) => {
-        if (bySlug.test(line)) offenders.push(`${dir.name}/${f.name}:${i + 1}: ${line.trim()}`);
+        if (bySlug.test(line)) {
+          offenders.push(`${dir.name}/${f.name}:${i + 1}: ${line.trim()}`);
+        }
       });
     }
   }
-  assertEquals(offenders, [], "демо решайте isDemoSession(telegramId) из _shared/demo-session.ts");
+  assertEquals(
+    offenders,
+    [],
+    "демо решайте isDemoSession(telegramId) из _shared/demo-session.ts",
+  );
 });

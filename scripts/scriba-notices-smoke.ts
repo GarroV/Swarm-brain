@@ -792,9 +792,10 @@ async function main(): Promise<void> {
     Deno.exit(1);
   }
   const tg = startTelegram();
-  const fnPath =
+  const fnPath = decodeURIComponent(
     new URL("../supabase/functions/meeting-notice/index.ts", import.meta.url)
-      .pathname;
+      .pathname,
+  );
   const child = new Deno.Command("deno", {
     args: ["run", "--allow-all", fnPath],
     env: {

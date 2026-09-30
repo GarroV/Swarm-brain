@@ -15,7 +15,7 @@
 // закреплено тестом, а не комментарием.
 import { assertEquals } from "jsr:@std/assert@1";
 
-const HERE = new URL(".", import.meta.url).pathname;
+const HERE = decodeURIComponent(new URL(".", import.meta.url).pathname);
 
 /** Строки вида `owner_id: <что-то условное>` внутри вставки в entries. */
 function conditionalOwnerOnEntries(src: string): number[] {
@@ -41,9 +41,7 @@ Deno.test("у записи всегда есть автор: owner_id в entries
   assertEquals(
     hits,
     [],
-    `owner_id у entries записан условно или как null в строках: ${
-      hits.join(", ")
-    }. ` +
+    `owner_id у entries записан условно или как null в строках: ${hits.join(", ")}. ` +
       "Автор записи — тот, кто её завёл; для видимости общей записи owner_id не нужен, " +
       "но без него автор теряет право править и удалять собственную запись.",
   );

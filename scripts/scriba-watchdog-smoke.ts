@@ -180,10 +180,18 @@ async function rest(
   return text === "" ? null : JSON.parse(text);
 }
 
-async function storage(method: string, path: string, body?: unknown): Promise<Response> {
+async function storage(
+  method: string,
+  path: string,
+  body?: unknown,
+): Promise<Response> {
   return await fetch(`${SUPABASE_URL}/storage/v1/${path}`, {
     method,
-    headers: { apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}`, "Content-Type": "application/json" },
+    headers: {
+      apikey: SERVICE_KEY,
+      Authorization: `Bearer ${SERVICE_KEY}`,
+      "Content-Type": "application/json",
+    },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
 }
@@ -191,16 +199,26 @@ async function storage(method: string, path: string, body?: unknown): Promise<Re
 /** Части, которые meeting-ingest положил в Storage по встрече (вложенность — до одного уровня). */
 async function storedParts(meetingId: string): Promise<string[]> {
   const list = async (prefix: string) => {
-    const res = await storage("POST", `object/list/${BUCKET}`, { prefix, limit: 1000 });
-    return res.ok ? await res.json() as Array<{ name: string; id: string | null }> : [];
+    const res = await storage("POST", `object/list/${BUCKET}`, {
+      prefix,
+      limit: 1000,
+    });
+    return res.ok
+      ? await res.json() as Array<{ name: string; id: string | null }>
+      : [];
   };
   const rows = await list(meetingId);
   const nested = await Promise.all(
     rows.filter((r) => r.id === null).map(async (dir) =>
-      (await list(`${meetingId}/${dir.name}`)).map((f) => `${meetingId}/${dir.name}/${f.name}`)
+      (await list(`${meetingId}/${dir.name}`)).map((f) =>
+        `${meetingId}/${dir.name}/${f.name}`
+      )
     ),
   );
-  return [...rows.filter((r) => r.id !== null).map((r) => `${meetingId}/${r.name}`), ...nested.flat()];
+  return [
+    ...rows.filter((r) => r.id !== null).map((r) => `${meetingId}/${r.name}`),
+    ...nested.flat(),
+  ];
 }
 
 // ── Поддельный Telegram ─────────────────────────────────────────────────────────
@@ -216,12 +234,24 @@ function startTelegram(): Deno.HttpServer {
     // Обработка встречи после выгрузки перехватчика: поддельный Whisper и тезисы.
     if (path === "/v1/audio/transcriptions") {
       await req.body?.cancel();
-      const segments = [{ start: 0, end: 9, text: "smoke takeover", no_speech_prob: 0.01, avg_logprob: -0.2 }];
-      return Response.json({ text: "smoke takeover", language: "english", segments });
+      const segments = [{
+        start: 0,
+        end: 9,
+        text: "smoke takeover",
+        no_speech_prob: 0.01,
+        avg_logprob: -0.2,
+      }];
+      return Response.json({
+        text: "smoke takeover",
+        language: "english",
+        segments,
+      });
     }
     if (path === "/v1/chat/completions") {
       await req.body?.cancel();
-      return Response.json({ choices: [{ message: { content: "- smoke" }, finish_reason: "stop" }] });
+      return Response.json({
+        choices: [{ message: { content: "- smoke" }, finish_reason: "stop" }],
+      });
     }
     const body = await req.json().catch(() => ({}));
     if (path.endsWith("/sendMessage")) {
@@ -258,7 +288,7 @@ function spawnFunction(
       "run",
       "--allow-all",
       ...extra,
-      new URL(path, import.meta.url).pathname,
+      decodeURIComponent(new URL(path, import.meta.url).pathname),
     ],
     env: {
       DENO_SERVE_ADDRESS: `tcp:127.0.0.1:${port}`,
@@ -290,7 +320,11 @@ async function waitPort(port: number, ms: number): Promise<boolean> {
 // ── Засев и уборка ──────────────────────────────────────────────────────────────
 
 async function seed(): Promise<void> {
-  const bucket = await storage("POST", "bucket", { id: BUCKET, name: BUCKET, public: false });
+  const bucket = await storage("POST", "bucket", {
+    id: BUCKET,
+    name: BUCKET,
+    public: false,
+  });
   await bucket.body?.cancel(); // уже есть — 409, это нормально
   await rest("POST", "workspaces", [
     { id: WS, name: "Smoke watchdog" },
@@ -393,9 +427,12 @@ async function seed(): Promise<void> {
 
 async function cleanup(): Promise<string[]> {
   const problems: string[] = [];
-  const parts = (await Promise.all(meetingIdsToClean().map(storedParts))).flat();
+  const parts = (await Promise.all(meetingIdsToClean().map(storedParts)))
+    .flat();
   if (parts.length > 0) {
-    const res = await storage("DELETE", `object/${BUCKET}`, { prefixes: parts });
+    const res = await storage("DELETE", `object/${BUCKET}`, {
+      prefixes: parts,
+    });
     if (!res.ok) problems.push(`storage: ${res.status} ${await res.text()}`);
     else await res.body?.cancel();
   }
@@ -524,7 +561,10 @@ async function uploadAs(
 
 /** Роль TAKER в recorders встречи. */
 async function takerRole(id: string): Promise<string | undefined> {
-  const rows = await rest("GET", `meetings?id=eq.${id}&select=recorders`) as Array<{
+  const rows = await rest(
+    "GET",
+    `meetings?id=eq.${id}&select=recorders`,
+  ) as Array<{
     recorders: Array<{ telegram_id: number; role: string }> | null;
   }>;
   return (rows[0]?.recorders ?? []).find((r) => r.telegram_id === TAKER)?.role;
@@ -595,7 +635,8 @@ async function arbitration(): Promise<void> {
   expect(
     "T160: заявка заметно полнее — претендент (transcribe клиенту), право и лиз бота не тронуты",
     claimed.status === 200 && claimed.decision === "transcribe" &&
-      afterClaim?.claim_owner === OWNER_ARB && afterClaim?.recorded_seconds === 2400 &&
+      afterClaim?.claim_owner === OWNER_ARB &&
+      afterClaim?.recorded_seconds === 2400 &&
       (await takerRole(ARB.long.id)) === "challenger",
     JSON.stringify({ claimed, afterClaim }),
   );
@@ -605,7 +646,8 @@ async function arbitration(): Promise<void> {
   expect(
     "длина по содержимому: файл на 2 с с заголовком на 62 минуты — 409, право у бота",
     headerOnly.status === 409 && afterHeaderOnly?.claim_owner === OWNER_ARB &&
-      afterHeaderOnly?.recorded_seconds === 2400 && (await takerRole(ARB.long.id)) === "defer",
+      afterHeaderOnly?.recorded_seconds === 2400 &&
+      (await takerRole(ARB.long.id)) === "defer",
     JSON.stringify({ headerOnly, afterHeaderOnly }),
   );
   const reclaimed = await claimAs(ARB.long.key, 3720);
@@ -620,7 +662,8 @@ async function arbitration(): Promise<void> {
   expect(
     "T160: заявлено 62 минуты, выгружено 10 — 409, право у бота, претендент стал defer",
     short10.status === 409 && afterShortUpload?.claim_owner === OWNER_ARB &&
-      afterShortUpload?.recorded_seconds === 2400 && (await takerRole(ARB.long.id)) === "defer",
+      afterShortUpload?.recorded_seconds === 2400 &&
+      (await takerRole(ARB.long.id)) === "defer",
     JSON.stringify({ short10, afterShortUpload }),
   );
   expect(
@@ -632,9 +675,12 @@ async function arbitration(): Promise<void> {
   const afterFull = await arbRow(ARB.long.id);
   expect(
     "бот закончил запись — выгрузка заметно полнее перехватывает (202, секунды измеренные, флаг бота погашен)",
-    full.status === 200 && full.decision === "transcribe" && fullUpload.status === 202 &&
-      afterFull?.claim_owner === TAKER && afterFull?.recorded_seconds === 3720 &&
-      afterFull?.agent_last_recording === false && (await takerRole(ARB.long.id)) === "transcribe",
+    full.status === 200 && full.decision === "transcribe" &&
+      fullUpload.status === 202 &&
+      afterFull?.claim_owner === TAKER &&
+      afterFull?.recorded_seconds === 3720 &&
+      afterFull?.agent_last_recording === false &&
+      (await takerRole(ARB.long.id)) === "transcribe",
     JSON.stringify({ full, fullUpload, afterFull }),
   );
 
@@ -670,7 +716,9 @@ async function arbitration(): Promise<void> {
     recorders: Array<{ telegram_id: number; recorded_seconds?: number }> | null;
   }>;
   const capRow = capRows[0];
-  const takerEntry = (capRow?.recorders ?? []).find((r) => r.telegram_id === TAKER);
+  const takerEntry = (capRow?.recorders ?? []).find((r) =>
+    r.telegram_id === TAKER
+  );
   expect(
     "заявка сверх времени встречи урезана и чужую запись не перехватывает (defer, секунды держателя целы)",
     capped.status === 200 && capped.decision === "defer" &&
@@ -682,7 +730,10 @@ async function arbitration(): Promise<void> {
     "в recorders легли урезанные секунды заявки: не больше времени встречи с запасом",
     // Потолок — от started_at до момента заявки (×1.1 + 5 мин); «сейчас» позже заявки, поэтому
     // граница по нему не тесней настоящей, а время самого прогона до этой точки её не ломает.
-    capSec > 0 && capSec <= ((Date.now() - Date.parse(capRow?.started_at ?? "")) / 1000) * 1.1 + 300,
+    capSec > 0 &&
+      capSec <=
+        ((Date.now() - Date.parse(capRow?.started_at ?? "")) / 1000) * 1.1 +
+          300,
     JSON.stringify(takerEntry),
   );
 
@@ -691,17 +742,32 @@ async function arbitration(): Promise<void> {
   // до измеренного.
   const fresh = await fetch(`http://127.0.0.1:${PORT_CLAIM}/`, {
     method: "POST",
-    headers: { Authorization: `Bearer ${TAKER_TOKEN}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ identity_kind: "manual", identity_key: `manual:smoke-fresh-${RUN}`, recorded_seconds: 86_000 }),
+    headers: {
+      Authorization: `Bearer ${TAKER_TOKEN}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      identity_kind: "manual",
+      identity_key: `manual:smoke-fresh-${RUN}`,
+      recorded_seconds: 86_000,
+    }),
   });
-  const freshBody = await fresh.json().catch(() => ({})) as { decision?: string; meeting_id?: string };
-  if (typeof freshBody.meeting_id === "string") createdMeetingIds.push(freshBody.meeting_id);
+  const freshBody = await fresh.json().catch(() => ({})) as {
+    decision?: string;
+    meeting_id?: string;
+  };
+  if (typeof freshBody.meeting_id === "string") {
+    createdMeetingIds.push(freshBody.meeting_id);
+  }
   const freshId = freshBody.meeting_id ?? "";
-  const freshUpload = freshBody.decision === "transcribe" ? await uploadAs(freshId, 600) : null;
+  const freshUpload = freshBody.decision === "transcribe"
+    ? await uploadAs(freshId, 600)
+    : null;
   const afterFresh = await arbRow(freshId);
   expect(
     "T160: новая встреча с сутками в заявке — первая выгрузка держателя опускает секунды до измеренных",
-    fresh.status === 200 && freshBody.decision === "transcribe" && freshUpload?.status === 202 &&
+    fresh.status === 200 && freshBody.decision === "transcribe" &&
+      freshUpload?.status === 202 &&
       afterFresh?.claim_owner === TAKER && afterFresh?.recorded_seconds === 600,
     JSON.stringify({ freshBody, freshUpload, afterFresh }),
   );
@@ -845,7 +911,8 @@ async function scenario(): Promise<void> {
   expect(
     "meeting-claim: у непишущего бота рекордер TAKER — претендент (transcribe, та же встреча)",
     claim.status === 200 && claim.body.decision === "transcribe" &&
-      claim.body.meeting_id === TAKEN.id && (await claimOwner(TAKEN.id)) === TAKEN.owner,
+      claim.body.meeting_id === TAKEN.id &&
+      (await claimOwner(TAKEN.id)) === TAKEN.owner,
     JSON.stringify(claim),
   );
   const upload = await uploadAs(TAKEN.id, 3600);
@@ -939,7 +1006,10 @@ async function scenario(): Promise<void> {
   expect("живой bumblebee → тишина", to(HUMAN_ALIVE).length === 0);
   expect(
     "перехваченная встреча: новому claim_owner нет ложного алерта «scriba перестал отвечать»",
-    !to(TAKER).some((m) => m.text.includes("scriba stopped responding") || m.text.includes("scriba перестал отвечать")),
+    !to(TAKER).some((m) =>
+      m.text.includes("scriba stopped responding") ||
+      m.text.includes("scriba перестал отвечать")
+    ),
     JSON.stringify(to(TAKER)),
   );
   expect(
