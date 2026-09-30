@@ -3,6 +3,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { fetchAutojoin, fetchIntegrations, fetchMcpSetup, fetchRecorderSetup } from "@/lib/api";
 import { buildConnectors, connectorsSummary, type ConnectorId, type ConnectorsInput } from "@/lib/connectors";
 import { SectionLabel } from "@/components/roy/ui";
+import { SidePanel } from "@/components/roy/SidePanel";
 import { useDt } from "@/components/roy/nav";
 import type { Me } from "@/types";
 import { ConnectorTile } from "./ConnectorTile";
@@ -61,6 +62,7 @@ export function ConnectorsSection({ me, panels, dense = false }: { me: Me; panel
   const hasCalendar = input.services.includes("google_calendar");
   const setBotAutojoin = (on: boolean) => setInput((cur) => (cur ? { ...cur, botAutojoin: on } : cur));
   const { connected, total, attention } = connectorsSummary(list);
+  const body = (id: ConnectorId) => (id === "bot" ? <BotPanel hasCalendar={hasCalendar} onChange={setBotAutojoin} /> : panels[id]);
 
   return (
     <section className="space-y-2">
@@ -79,10 +81,14 @@ export function ConnectorsSection({ me, panels, dense = false }: { me: Me; panel
         ))}
       </div>
 
-      {open && (
+      {/* Бенто десктопа (dense) — пояснение в панели справа (#639); мобильный экран — под сеткой. */}
+      {open && dense && (
+        <SidePanel title={dt(...TITLE[open])} onClose={() => setOpen(null)}>{body(open)}</SidePanel>
+      )}
+      {open && !dense && (
         <div className="rounded-[10px] border border-accent-line bg-surface px-3 py-3">
           <p className="mb-2 text-ink" style={{ fontSize: 13, fontWeight: 500 }}>{dt(...TITLE[open])}</p>
-          {open === "bot" ? <BotPanel hasCalendar={hasCalendar} onChange={setBotAutojoin} /> : panels[open]}
+          {body(open)}
         </div>
       )}
     </section>
