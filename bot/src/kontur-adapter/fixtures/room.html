@@ -1,0 +1,141 @@
+<!doctype html>
+<!--
+  Двойник комнаты Контур.Толка для smoke-kontur.ts. Тексты и подписи — со страниц живой комнаты
+  владельца и закрытой комнаты (разведка 30.09.2026, боевой образ на VPS). Сцена — ?scene=:
+    closed       — комната закрыта для гостей всегда;
+    opens        — закрыта первые две загрузки, потом открыта (человек открыл комнату);
+    open         — открыта сразу: форма имени → экран устройств → звонок, говорит Анна;
+    mic          — на экране устройств микрофон и камера включены (нарушение немоты);
+    mic-in-call  — в звонке видна «Выключить микрофон» (нарушение немоты после входа);
+    alone        — в звонке только бот;
+    slow         — форма имени появляется через 5 с: дольше, чем адаптер ждёт экран входа в join.
+  Нажатие «Войти» / «Авторизация» считается в window.__forbidden: бот не должен их трогать.
+-->
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <title>Подключение к встрече — Толк</title>
+    <style>
+      button,
+      input {
+        display: inline-block;
+        min-width: 60px;
+        min-height: 24px;
+        margin: 4px;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script>
+      const scene = new URLSearchParams(location.search).get("scene") || "open";
+      const loads = Number(sessionStorage.getItem("loads") || "0") + 1;
+      sessionStorage.setItem("loads", String(loads));
+      window.__forbidden = 0;
+      window.__left = false;
+      const app = document.getElementById("app");
+      // Как Толк: при старте приложение само присваивает mediaDevices.getUserMedia (обёртка) в
+      // строгом режиме. Запрет «только чтение» здесь бросает TypeError — и страница не рисуется.
+      (function wrapCapture() {
+        "use strict";
+        const devices = navigator.mediaDevices;
+        if (devices) devices.getUserMedia = devices.getUserMedia;
+      })();
+
+      function forbidden(text, aria) {
+        const button = document.createElement("button");
+        button.textContent = text;
+        if (aria) button.setAttribute("aria-label", aria);
+        button.addEventListener("click", () => {
+          window.__forbidden += 1;
+          document.title = "FORBIDDEN";
+        });
+        app.append(button);
+      }
+
+      function closed() {
+        app.innerHTML =
+          "<conference-unauthorized-message><h2>Подключение к встрече</h2>" +
+          "<p>Доступ для внешних участников отключен</p>" +
+          "<p>Попросите тех, кто отправил вам ссылку, включить доступ для внешних участников</p>" +
+          "<p>Или войдите, если вы являетесь пользователем пространства</p>" +
+          "</conference-unauthorized-message>";
+        forbidden("Войти");
+      }
+
+      function nameForm() {
+        app.innerHTML =
+          "<h2>Подключение к встрече</h2><p>Представьтесь, чтобы участники могли вас узнать</p>" +
+          '<input class="tl-input__input" placeholder="Например, Сергей Иванов" />' +
+          '<label><input type="checkbox" /> Запомнить имя</label>' +
+          '<button id="continue">Продолжить</button>';
+        forbidden("Авторизация", "Войти как сотрудник организации");
+        document.getElementById("continue").addEventListener("click", () => {
+          const name = app.querySelector("input[placeholder]").value.trim();
+          if (name === "") return;
+          window.__name = name;
+          setTimeout(devices, 300);
+        });
+      }
+
+      // Как настоящий Толк: кнопки «Выключить…» появляются, только если устройства удалось взять.
+      async function captureWorks() {
+        try {
+          await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
+          return true;
+        } catch {
+          return false;
+        }
+      }
+
+      async function devices() {
+        const live = scene === "mic" || (await captureWorks());
+        app.innerHTML =
+          (live
+            ? '<button aria-label="Выключить камеру">📷</button>' +
+              '<button aria-label="Выключить микрофон">🎤</button>'
+            : "") +
+          "<p>Участники встречи: Анна</p>" +
+          '<button id="join">Присоединиться</button>';
+        document.getElementById("join").addEventListener("click", () => setTimeout(call, 300));
+      }
+
+      function tile(name, speaking) {
+        const classes = speaking
+          ? "conference-participant active-speaker dominant"
+          : "conference-participant";
+        return (
+          '<conference-participant class="' +
+          classes +
+          '">' +
+          '<div class="participant-info-content">' +
+          name +
+          "</div></conference-participant>"
+        );
+      }
+
+      function call() {
+        document.title = "Встреча — Толк";
+        const tiles = [tile(window.__name + " (Вы)", false)];
+        if (scene !== "alone") tiles.push(tile("Анна", true));
+        app.innerHTML =
+          '<conference-participants-area class="conference-participants-area">' +
+          tiles.join("") +
+          "</conference-participants-area>" +
+          (scene === "mic-in-call" ? '<button aria-label="Выключить микрофон">🎤</button>' : "") +
+          '<button aria-label="Участники">' +
+          String(tiles.length) +
+          "</button>" +
+          '<button aria-label="Чат">💬</button>' +
+          '<button aria-label="Покинуть встречу" id="leave">⏏</button>';
+        document.getElementById("leave").addEventListener("click", () => {
+          window.__left = true;
+        });
+      }
+
+      if (scene === "closed" || (scene === "opens" && loads <= 2)) closed();
+      else if (scene === "slow") setTimeout(nameForm, 5000);
+      else nameForm();
+    </script>
+  </body>
+</html>
