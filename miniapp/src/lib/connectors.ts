@@ -46,8 +46,6 @@ export type ConnectorsInput = {
 // Бот встреч — сразу за рекордером: это второй способ записать встречу.
 const BASE_ORDER: ConnectorId[] = ["calendar", "recorder", "bot", "telegram", "granola", "claude"];
 
-// Внимание — вперёд: сломанное, затем скоро сломающееся, затем неподключённое, затем рабочее.
-const STATE_ORDER: Record<ConnectorState, number> = { expired: 0, expiring: 1, off: 2, connected: 3 };
 
 function tokenState({ active, expiresAt }: TokenStatus, now: Date): ConnectorState {
   if (!active) return "off";
@@ -71,11 +69,9 @@ export function buildConnectors(input: ConnectorsInput): Connector[] {
   };
 
   const shown = input.botAutojoin === undefined ? BASE_ORDER.filter((id) => id !== "bot") : BASE_ORDER;
-  return shown.map((id) => byId[id]).sort(
-    (a, b) =>
-      STATE_ORDER[a.state] - STATE_ORDER[b.state] ||
-      BASE_ORDER.indexOf(a.id) - BASE_ORDER.indexOf(b.id),
-  );
+  // Порядок постоянный: плитка не прыгает, когда меняется её состояние (владелец 30.09.2026:
+  // «почему карточки перемешиваются когда включаешь бота?»). Внимание несут подложка и точка.
+  return shown.map((id) => byId[id]);
 }
 
 export type ConnectorsSummary = { connected: number; total: number; attention: number };
