@@ -341,9 +341,7 @@ Deno.test("чужая приватная задача видна строкой,
       insert into projects (group_id, name) values (${WS}, 'Инициатива') returning id`;
     const task = await db.queryObject<{ id: string }>`
       insert into tasks (title, status, group_id, project_id, is_private, owner_id, created_by)
-      values ('Личное дело', 'open', ${WS}, ${
-      project.rows[0].id
-    }, true, ${SOMEONE_ELSE}, 'test')
+      values ('Личное дело', 'open', ${WS}, ${project.rows[0].id}, true, ${SOMEONE_ELSE}, 'test')
       returning id`;
     const cycle = await db.queryObject<{ id: string }>`
       insert into sprint_cycles (group_id, tab_id, name, start_date, end_date, status)
@@ -356,9 +354,8 @@ Deno.test("чужая приватная задача видна строкой,
       insert into sprint_items (cycle_id, task_id, in_plan)
       values (${cycle.rows[0].id}, ${task.rows[0].id}, true)`;
 
-    const mine =
-      await (await call("GET", `/sprint-cycles/${cycle.rows[0].id}`))!
-        .json();
+    const mine = await (await call("GET", `/sprint-cycles/${cycle.rows[0].id}`))!
+      .json();
     assertEquals(
       mine.items.length,
       1,
@@ -373,17 +370,15 @@ Deno.test("чужая приватная задача видна строкой,
       "по id чужую приватную задачу не открыть",
     );
 
-    const owner =
-      await (await call("GET", `/sprint-cycles/${cycle.rows[0].id}`, {
-        as: SOMEONE_ELSE,
-      }))!.json();
+    const owner = await (await call("GET", `/sprint-cycles/${cycle.rows[0].id}`, {
+      as: SOMEONE_ELSE,
+    }))!.json();
     assertEquals(owner.items[0].hidden, false, "владелец видит свою задачу");
     assertEquals(owner.items[0].title, "Личное дело");
 
-    const admin =
-      await (await call("GET", `/sprint-cycles/${cycle.rows[0].id}`, {
-        admin: true,
-      }))!.json();
+    const admin = await (await call("GET", `/sprint-cycles/${cycle.rows[0].id}`, {
+      admin: true,
+    }))!.json();
     assertEquals(
       admin.items[0].hidden,
       true,
@@ -432,9 +427,7 @@ Deno.test("отметка сверки сохраняется, а на прин�
     );
 
     await db
-      .queryArray`update sprint_cycles set status = 'accepted' where id = ${
-      cycle.rows[0].id
-    }`;
+      .queryArray`update sprint_cycles set status = 'accepted' where id = ${cycle.rows[0].id}`;
     assertEquals(
       (await call("PATCH", path, { body: { check_status: "ok" } }))?.status,
       409,
@@ -467,9 +460,8 @@ Deno.test("снятая пометка «к переносу» уносит с �
     assertEquals(on.to_carry, true);
     assertEquals(on.carry_reason, "не успеваем по смежникам");
 
-    const off =
-      await (await call("PATCH", path, { body: { to_carry: false } }))!
-        .json();
+    const off = await (await call("PATCH", path, { body: { to_carry: false } }))!
+      .json();
     assertEquals(off.to_carry, false);
     assertEquals(
       off.carry_reason,

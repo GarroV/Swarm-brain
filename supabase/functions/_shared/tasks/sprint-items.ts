@@ -19,8 +19,7 @@ const supabase = createClient(
   Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
 );
 
-const TASK_FIELDS =
-  "id, title, status, assignees, project_id, completed_at, due_date, is_private, owner_id, links";
+const TASK_FIELDS = "id, title, status, assignees, project_id, completed_at, due_date, is_private, owner_id, links";
 
 /** Отметка сверки: как идут дела у задачи в середине спринта. */
 export const CHECK_STATUSES = ["ok", "risk", "problem"] as const;
@@ -118,9 +117,7 @@ export async function listItems(
   const items = (rows ?? []) as Record<string, unknown>[];
   if (items.length === 0) return [];
 
-  const liveIds = items.filter((r) => !r.frozen_at && r.task_id).map((r) =>
-    r.task_id as string
-  );
+  const liveIds = items.filter((r) => !r.frozen_at && r.task_id).map((r) => r.task_id as string);
   const live = new Map<string, Record<string, unknown>>();
   if (liveIds.length > 0) {
     const { data: tasks } = await supabase.from("tasks").select(TASK_FIELDS).in(
@@ -156,14 +153,8 @@ export async function listItems(
       in_plan: !!r.in_plan,
       added_at: r.added_at as string,
       title,
-      status: frozen
-        ? (r.frozen_status as string)
-        : ((t?.status as string) ?? "cancelled"),
-      assignees: hidden
-        ? []
-        : frozen
-        ? ((r.frozen_assignees as string[]) ?? [])
-        : ((t?.assignees as string[]) ?? []),
+      status: frozen ? (r.frozen_status as string) : ((t?.status as string) ?? "cancelled"),
+      assignees: hidden ? [] : frozen ? ((r.frozen_assignees as string[]) ?? []) : ((t?.assignees as string[]) ?? []),
       project_id: hidden ? null : projectId,
       project: removed
         ? null
@@ -191,12 +182,8 @@ export async function listItems(
       carried_manual: (r.carried_manual as boolean | null) ?? null,
       removed,
       removed_at: (r.removed_at as string | null) ?? null,
-      comment_count: hidden || frozen || removed
-        ? 0
-        : comments.get(r.task_id as string) ?? 0,
-      link_count: hidden || frozen || removed
-        ? 0
-        : ((t?.links as unknown[] | null) ?? []).length,
+      comment_count: hidden || frozen || removed ? 0 : comments.get(r.task_id as string) ?? 0,
+      link_count: hidden || frozen || removed ? 0 : ((t?.links as unknown[] | null) ?? []).length,
       hidden,
     };
   });
@@ -280,9 +267,7 @@ export async function addItems(
   // Задача из бэклога, взятая в спринт, становится открытой: в спринтовом канбане колонки
   // «Бэклог» нет — её роль играет пул слева, и такая задача не попала бы ни в одну колонку.
   // Поведение из #267, перенесено вместе с функцией; без него задача исчезает с доски.
-  const fromBacklog = fresh.filter((t) => t.status === "backlog").map((t) =>
-    t.id
-  );
+  const fromBacklog = fresh.filter((t) => t.status === "backlog").map((t) => t.id);
   if (fromBacklog.length > 0) {
     await supabase.from("tasks")
       .update({ status: "open", updated_at: new Date().toISOString() })

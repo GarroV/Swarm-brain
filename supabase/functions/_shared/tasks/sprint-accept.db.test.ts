@@ -245,9 +245,7 @@ Deno.test("два живых спринта в одном пространств
   try {
     const { tabId } = await seed(db);
     await startCycle(db, tabId);
-    const err = await assertRejects(() =>
-      startCycle(db, tabId, "Спринт 1-бис")
-    );
+    const err = await assertRejects(() => startCycle(db, tabId, "Спринт 1-бис"));
     assert(
       String((err as { fields?: { code?: string } }).fields?.code ?? err) ===
         "23505",

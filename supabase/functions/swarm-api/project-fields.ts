@@ -143,9 +143,7 @@ export function parseProjectFields(
     fields.links = parsed.links;
   }
 
-  const start = "start_date" in fields
-    ? fields.start_date
-    : current.start_date ?? null;
+  const start = "start_date" in fields ? fields.start_date : current.start_date ?? null;
   const end = "end_date" in fields ? fields.end_date : current.end_date ?? null;
   if (start && end && start > end) {
     return {

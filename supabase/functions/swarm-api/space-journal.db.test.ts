@@ -83,9 +83,7 @@ async function seed(db: Client) {
     values (gen_random_uuid(), ${WS}, 'Доска', current_date, current_date + 30, 'active', 'board_tab')
     returning id`;
   const project = await db.queryObject<{ id: string }>`
-    insert into projects (group_id, name, sprint_id) values (${WS}, 'Инициатива', ${
-    boardTab.rows[0].id
-  }) returning id`;
+    insert into projects (group_id, name, sprint_id) values (${WS}, 'Инициатива', ${boardTab.rows[0].id}) returning id`;
   // Принятый спринт: не занимает место «одного незакрытого на пространство», и тесты могут
   // заводить свой живой.
   const cycle = await db.queryObject<{ id: string }>`
@@ -161,9 +159,7 @@ Deno.test("чужая приватная задача не попадает в �
       "журнал не должен становиться обходным путём к чужой приватной задаче",
     );
     assertEquals(
-      events.some((e) =>
-        e.text.includes("комментарий") && e.task_title === "Личное дело"
-      ),
+      events.some((e) => e.text.includes("комментарий") && e.task_title === "Личное дело"),
       false,
       "комментарий к чужой приватной задаче тоже не показывается",
     );
@@ -202,9 +198,7 @@ Deno.test("период фильтрует: старое событие в «з�
     await intoSprint(db, cycleId, task.rows[0].id);
     await db.queryArray`
       insert into task_history (task_id, field, old_value, new_value, changed_by, group_id, created_at)
-      values (${
-      task.rows[0].id
-    }, 'status', 'open', 'done', 'tester', ${WS}, now() - interval '5 days')`;
+      values (${task.rows[0].id}, 'status', 'open', 'done', 'tester', ${WS}, now() - interval '5 days')`;
 
     const week = await (await journal(tabId, "7")).json() as {
       events: Event[];
@@ -243,9 +237,7 @@ Deno.test("задачи пространства — состав его спр�
     const { events } = await (await journal(tabId)).json() as {
       events: Event[];
     };
-    const changed = events.filter((e) => e.kind === "task_change").map((e) =>
-      e.task_title
-    );
+    const changed = events.filter((e) => e.kind === "task_change").map((e) => e.task_title);
     assertEquals(changed, ["В спринте"]);
   } finally {
     await db.end();

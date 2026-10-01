@@ -93,9 +93,7 @@ async function visibleTasks(
   let q = supabase.from("tasks")
     .select("id, title")
     .eq("group_id", groupId).in("id", taskIds);
-  q = viewerId === null
-    ? q.eq("is_private", false)
-    : q.or(`is_private.eq.false,owner_id.eq.${viewerId}`);
+  q = viewerId === null ? q.eq("is_private", false) : q.or(`is_private.eq.false,owner_id.eq.${viewerId}`);
 
   const { data: tasks, error: tasksErr } = await q.limit(2000);
   if (tasksErr) console.error("[space-journal] tasks", tasksErr.message);
@@ -189,9 +187,7 @@ export async function handleSpaceJournalRoutes(
         at: c.created_at,
         kind: "comment",
         // Новые комментарии пишут автора в added_by_telegram_id, added_by — старые строки.
-        actor: c.added_by_telegram_id !== null
-          ? String(c.added_by_telegram_id)
-          : c.added_by,
+        actor: c.added_by_telegram_id !== null ? String(c.added_by_telegram_id) : c.added_by,
         task_id: c.task_id,
         task_title: titles.get(c.task_id) ?? null,
         text: c.content,
@@ -235,9 +231,7 @@ export async function handleSpaceJournalRoutes(
         actor: c.accepted_by,
         task_id: null,
         task_title: null,
-        text: percent === undefined
-          ? `Спринт принят: ${c.name}`
-          : `Спринт принят: ${c.name} — выполнено ${percent}%`,
+        text: percent === undefined ? `Спринт принят: ${c.name}` : `Спринт принят: ${c.name} — выполнено ${percent}%`,
       });
     }
   }
@@ -302,9 +296,7 @@ export async function handleSpaceJournalRoutes(
           actor: it.carry_by,
           task_id: it.task_id,
           task_title: title ?? null,
-          text: it.carry_reason
-            ? `К переносу: ${it.carry_reason}`
-            : "К переносу",
+          text: it.carry_reason ? `К переносу: ${it.carry_reason}` : "К переносу",
         });
       }
       if (it.removed_at && (!from || it.removed_at >= from)) {

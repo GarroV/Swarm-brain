@@ -111,13 +111,9 @@ async function seed(db: Client) {
                          is_private, confirmed, archived_at, description, assignees, country, tags)
       values (${title}, ${project}, ${WS}, ${status}, ${extra.due ?? null},
               ${
-      extra.completedDaysAgo === undefined
-        ? null
-        : new Date(Date.now() - extra.completedDaysAgo * 86_400_000)
+      extra.completedDaysAgo === undefined ? null : new Date(Date.now() - extra.completedDaysAgo * 86_400_000)
     },
-              ${extra.hidden ?? false}, ${extra.isPrivate ?? false}, ${
-      extra.confirmed ?? true
-    },
+              ${extra.hidden ?? false}, ${extra.isPrivate ?? false}, ${extra.confirmed ?? true},
               ${extra.archived ? new Date() : null},
               ${SECRETS.description}, ${[
       SECRETS.assignee,
