@@ -38,6 +38,17 @@ jobs:
       - name: Тронуто ли защищённое без разрешения
         run: ./scripts/check-protected-paths.sh origin/${{ github.base_ref }}
 
+  deploy-scripts:
+    name: Скрипты раскатки — гейт миграций + порча
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      # Фикстуры и подставной ответ API — сеть и секреты не нужны. Порча обязательна: она
+      # доказывает, что прогон краснеет, когда гейт пропускает код вперёд схемы (issues #444, #557).
+      - name: Гейт миграций ночной раскатки
+        run: ./scripts/test-migrations-gate.sh porcha
+
   edge:
     name: Edge Functions (Deno) — типы + тесты
     runs-on: ubuntu-latest
