@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { apiErr, json } from "./http.ts";
-import { EntryAccessError, getEntrySecure } from "./entries-guard.ts";
+import { EntryAccessError, type EntryRow, getEntrySecure } from "./entries-guard.ts";
+import { canViewEntry, type EntryAccessRow } from "../_shared/entries/access.ts";
 import { canAccessDraftMeeting, type DraftMeetingRow } from "../_shared/meeting-access.ts";
 import { answerMeetingQuestion, MeetingAskError, parseMeetingAskBody } from "../_shared/meeting-ask.ts";
 
@@ -10,10 +11,12 @@ import { answerMeetingQuestion, MeetingAskError, parseMeetingAskBody } from "../
 //                                  metadata.meeting_id)
 // Тело { fragment, question? } → { answer } — пункты «- …». В базу не пишет ничего.
 //
-// Доступ одинаковый в обоих случаях: спрашивать может только тот, кто записывал встречу, или
-// совладелец — правило черновика (`canAccessDraftMeeting`). Ответ пересказывает транскрипт, а у
-// опубликованной встречи коллеги видят только тезисы: иначе вопрос стал бы обходным путём к
-// чужой сырой записи. Возвращает null, если путь не про вопрос.
+// Доступ: спрашивать может тот, кто записывал встречу, или совладелец — правило черновика
+// (`canAccessDraftMeeting`). Ответ пересказывает транскрипт, а у опубликованной ОБЩЕЙ встречи
+// коллеги видят только тезисы: иначе вопрос стал бы обходным путём к чужой сырой записи.
+// Исключение — ЛИЧНАЯ встреча, которую смотрящий видит (встреча 1-1 на двоих, #641, решение
+// владельца 01.10.2026: «другой учатсинк тоже»): кто её видит, тот и участник разговора.
+// Решение — `canAskAboutMeeting`. Возвращает null, если путь не про вопрос.
 
 const AGENT_ASK = /^\/agent-meetings\/([^/]+)\/ask$/;
 const ENTRY_ASK = /^\/meetings\/([^/]+)\/ask$/;
@@ -24,7 +27,8 @@ export async function handleMeetingAskRoutes(
   routePath: string,
   telegramId: number,
   groupId: string,
-  isAdmin: boolean,
+  // Оверсайта у вопроса нет — как у черновика (canAccessDraftMeeting): параметр не влияет.
+  _isAdmin: boolean,
   origin: string,
 ): Promise<Response | null> {
   if (req.method !== "POST") return null;
@@ -42,8 +46,14 @@ export async function handleMeetingAskRoutes(
   if ("error" in input) return apiErr(400, input.error, origin);
 
   let meetingId: string | null;
+  let entry: EntryRow | null = null;
   try {
-    meetingId = agentMatch ? agentMatch[1] : await meetingIdOfEntry(supabase, entryMatch![1], telegramId, groupId);
+    if (agentMatch) {
+      meetingId = agentMatch[1];
+    } else {
+      entry = await getEntrySecure(supabase, entryMatch![1], { groupId, telegramId });
+      meetingId = (entry.metadata as { meeting_id?: string } | null)?.meeting_id ?? null;
+    }
   } catch (e) {
     if (e instanceof EntryAccessError) return apiErr(e.status, e.message, origin);
     throw e;
@@ -52,7 +62,7 @@ export async function handleMeetingAskRoutes(
 
   const { data: row } = await supabase.from("meetings").select("group_id, recorders, co_owners")
     .eq("id", meetingId).maybeSingle();
-  if (!canAccessDraftMeeting(row as DraftMeetingRow | null, telegramId, isAdmin, groupId)) {
+  if (!canAskAboutMeeting(entry, row as DraftMeetingRow | null, telegramId, groupId)) {
     return apiErr(404, "Not found", origin);
   }
 
@@ -66,13 +76,23 @@ export async function handleMeetingAskRoutes(
   }
 }
 
-/** meetings.id опубликованной встречи; бросает EntryAccessError, если запись не видна. */
-async function meetingIdOfEntry(
-  supabase: SupabaseClient,
-  entryId: string,
-  telegramId: number,
-  groupId: string,
-): Promise<string | null> {
-  const entry = await getEntrySecure(supabase, entryId, { groupId, telegramId });
-  return (entry.metadata as { meeting_id?: string } | null)?.meeting_id ?? null;
+/**
+ * Можно ли спросить по встрече. `entry` — опубликованная запись (null для черновика), `meeting` —
+ * строка meetings с владельцами черновика.
+ *
+ * Владельцы черновика спрашивают всегда. Кроме них — тот, кому видна ЛИЧНАЯ запись этой встречи
+ * (тем же правилом `canViewEntry`, что и сама видимость): у личной записи круг видящих и есть
+ * круг участников — владелец и второй участник встречи 1-1. По общей записи остальные не
+ * спрашивают: они видят тезисы, но не сырую запись.
+ */
+export function canAskAboutMeeting(
+  entry: EntryAccessRow | null,
+  meeting: DraftMeetingRow | null,
+  viewerId: number,
+  viewerGroupId: string,
+): boolean {
+  if (!meeting) return false;
+  if (canAccessDraftMeeting(meeting, viewerId, false, viewerGroupId)) return true;
+  if (!entry || meeting.group_id !== viewerGroupId) return false;
+  return entry.is_private && canViewEntry(entry, viewerId);
 }

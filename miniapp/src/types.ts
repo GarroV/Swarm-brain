@@ -300,6 +300,8 @@ export type Entry = {
   group_id: string | null;
   is_private: boolean;
   owner_id: number | null;
+  // С кем разделена личная запись — второй участник встречи 1-1 (#641). У общей пусто.
+  shared_with?: number[] | null;
   created_at: string;
   // true — сервер НЕ создал запись, а привязал черновик к уже существующей встрече
   // (кросс-источниковый дедуп, issue #170). Значит запись в базе общая, и интерфейс обязан

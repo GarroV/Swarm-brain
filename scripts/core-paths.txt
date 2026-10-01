@@ -35,3 +35,4 @@ supabase/functions/swarm-bot/handlers/superadmin-scope.ts|supabase/functions/swa
 supabase/functions/_shared/entries/access.ts|supabase/functions/_shared/entries/access.test.ts
 supabase/functions/_shared/entries/meeting-rights.ts|supabase/functions/_shared/entries/meeting-rights.test.ts
 supabase/functions/_shared/meeting-access.ts|supabase/functions/_shared/meeting-access.test.ts
+supabase/functions/swarm-api/meeting-ask.ts|supabase/functions/swarm-api/meeting-ask-access.test.ts
