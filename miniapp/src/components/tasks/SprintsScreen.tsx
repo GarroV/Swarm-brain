@@ -64,6 +64,7 @@ import {
 import { SpaceSwitcher } from "@/components/tasks/sprints/SpaceSwitcher";
 import { SprintBar } from "@/components/tasks/sprints/SprintBar";
 import { SprintPulse } from "@/components/tasks/sprints/SprintPulse";
+import { useDragGroups } from "@/components/tasks/sprints/useDragGroups";
 import { NotificationsBell } from "@/components/roy/NotificationsBell";
 import { HeaderNotice } from "@/components/roy/DeployNoticeBar";
 import {
@@ -227,7 +228,9 @@ export function SprintsScreen() {
       const [c, t, p, sp, u] = await Promise.all([
         fetchSprintCycles(),
         fetchTasks(),
-        fetchProjects(),
+        // С группами спринта: без них доска не назовёт группу и сложит её задачи
+        // в «Без направления» (lib/initiatives → buildBoard).
+        fetchProjects({ sprintGroups: true }),
         fetchSprints("space"),
         fetchUsers(),
       ]);
@@ -346,6 +349,16 @@ export function SprintsScreen() {
   // на встрече идут по человеку, в работе — по инициативе.
   const peopleBoard = useMemo(() => buildPeopleBoard(items), [items]);
   const byPeople = grouping === "people";
+  // Группы спринта перетаскиванием (решение 01.10.2026): бросок, окно названия, кнопки группы.
+  const sprintGroups = useDragGroups({
+    projects,
+    tasks,
+    space,
+    reload: async () => {
+      await Promise.all([load(), reloadDetail(detail?.id ?? null)]);
+    },
+    onError: setErr,
+  });
   // «Не отмечено» показываем с дня сверки (D013): до него молчание — норма, а не сигнал.
   // Само правило — в lib/initiatives (под тестами): в двух экранах «с какого дня» разъедется.
   const unchecked = checksDue(detail?.check_date ?? null);
@@ -671,7 +684,7 @@ export function SprintsScreen() {
   ) {
     try {
       await updateProject(id, patch);
-      setProjects(await fetchProjects());
+      setProjects(await fetchProjects({ sprintGroups: true }));
       setErr(null);
     } catch (e) {
       setErr(
@@ -1002,6 +1015,9 @@ export function SprintsScreen() {
                             item.task_id ? tasks.find((t) => t.id === item.task_id)?.parent_id ?? null : null}
                           users={users}
                           tasks={tasks}
+                          // Принятый спринт — слепок, а при группировке по людям группа — человек,
+                          // а не проект: перетаскивать в «человека» нечего.
+                          grouping={accepted || byPeople ? undefined : sprintGroups.grouping}
                           onOpenTask={(id) => {
                             const live = tasks.find((t) => t.id === id);
                             if (live) setEditing(live);
@@ -1135,6 +1151,7 @@ export function SprintsScreen() {
           reloadDetail(selectedId);
         }}
       />
+      {sprintGroups.dialogs}
     </div>
   );
 }

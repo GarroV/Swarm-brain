@@ -46,3 +46,7 @@ supabase/functions/meeting-ingest/accept-upload.ts|supabase/functions/meeting-in
 # Повтор «готово» по регулярной задаче (issue #577): ошибка в правиле не падает — она молча
 # перекатывает срок второй раз, и вхождение графика пропадает.
 supabase/functions/_shared/tasks/recur-close.ts|supabase/functions/_shared/tasks/recur-close.test.ts
+# Группы спринта: правило видимости. Ошибка не падает — временная группа молча всплывает
+# на доске «Проекты» у всей команды (docs/decisions/2026-10-01-sprint-dnd-groups.md).
+supabase/functions/_shared/tasks/sprint-groups.ts|supabase/functions/_shared/tasks/sprint-groups.test.ts
+miniapp/src/lib/sprintGrouping.ts|miniapp/src/lib/sprintGrouping.test.ts

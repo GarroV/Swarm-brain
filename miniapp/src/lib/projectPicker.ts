@@ -43,7 +43,10 @@ export function buildProjectOptions(
   // «не к чему привязать задачу», а замок тут всё равно не здесь, а на сервере.
   const isMine = (p: Project): boolean => viewerId === null || p.created_by === viewerId;
 
-  const visible = projects.filter(isMine);
+  // Группа спринта (sprint_group) живёт только в спринте: в селектор она не идёт, пока её не
+  // пробросили «В проекты». Карточка всё равно грузит её — чтобы пилюля назвала текущую группу
+  // задачи по полному списку, а не показала пустоту.
+  const visible = projects.filter((p) => isMine(p) && !p.sprint_group);
 
   const toOption = (p: Project): ProjectOption => ({
     id: p.id,

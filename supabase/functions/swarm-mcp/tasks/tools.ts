@@ -563,7 +563,11 @@ export async function toolGetTasks(args: {
 export async function toolGetProjects(args: { requesting_user_id: number }): Promise<string> {
   const groupId = await resolveGroupId(args.requesting_user_id);
   if (!groupId) return "Ошибка: пользователь не найден в системе.";
-  const projects = await listProjects(groupId, { viewerId: args.requesting_user_id });
+  // Группы спринта агенту видны (с пометкой в формате): в них лежат задачи спринта.
+  const projects = await listProjects(groupId, {
+    viewerId: args.requesting_user_id,
+    withSprintGroups: true,
+  });
   return formatProjectTree(projects);
 }
 

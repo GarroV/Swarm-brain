@@ -10,10 +10,15 @@ export type ProjectTreeRow = {
   parent_id: string | null;
   task_count: number;
   backlog_count: number;
+  sprint_group?: boolean;
 };
 
+// Группа спринта — тоже проект, но на доске «Проекты» её нет: без пометки агент искал бы её
+// там и докладывал, что её не существует.
 const line = (r: ProjectTreeRow, indent: string) =>
-  `${indent}• ${r.name} (id: ${r.id}) — задач: ${r.task_count}, в бэклоге: ${r.backlog_count}`;
+  `${indent}• ${r.name}${
+    r.sprint_group ? " (группа спринта)" : ""
+  } (id: ${r.id}) — задач: ${r.task_count}, в бэклоге: ${r.backlog_count}`;
 
 /**
  * Дерево досок воркспейса: проект → его подпроекты (issue #198). Порядок верхнего уровня —
