@@ -181,7 +181,29 @@ export type DedupIncoming = {
    * или подтвердить существование чужой личной.
    */
   viewerId?: number | null;
+  /**
+   * Видимость, в которую публикуется входящая (issue #579). Задана → кандидат обязан быть той же
+   * видимости: публикация «в личную» не прикрепляется к командной записи и не переписывает её,
+   * командная — к личной. Не задана (вебхук, импорт) — прежнее поведение.
+   */
+  publishPrivate?: boolean;
 };
+
+/**
+ * Кандидат той же видимости, что публикация? Личная — только личная запись самого публикующего
+ * (владелец или соавтор), командная — только командная. Без `publishPrivate` — любой видимый.
+ */
+export function matchesPublishVisibility(
+  c: { is_private: boolean | null; owner_id: number | null; shared_with: number[] | null },
+  publishPrivate: boolean | undefined,
+  viewerId: number | null | undefined,
+): boolean {
+  if (publishPrivate === undefined) return true;
+  const candPrivate = c.is_private ?? false;
+  if (!publishPrivate) return !candPrivate;
+  if (!candPrivate || viewerId == null) return false;
+  return c.owner_id === viewerId || (c.shared_with ?? []).includes(viewerId);
+}
 
 export type DedupMatch = {
   id: string;
@@ -248,7 +270,7 @@ export async function findDuplicateMeeting(
       canViewEntry(
         { is_private: c.is_private ?? false, owner_id: c.owner_id, shared_with: c.shared_with },
         inc.viewerId,
-      ),
+      ) && matchesPublishVisibility(c, inc.publishPrivate, inc.viewerId),
   );
 
   // Время кандидатов из meetings.started_at. Без этого запроса время записей РЕКОРДЕРА неизвестно:

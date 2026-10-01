@@ -147,6 +147,8 @@ export async function publishDraftMeeting(
     // сам записавший есть в attendees календарной записи той же встречи.
     viewerEmail: opts.viewerEmail,
     viewerId: opts.telegramId,
+    // Только записи той же видимости (#579): личная публикация не трогает командную запись.
+    publishPrivate: opts.isPrivate,
   });
   // Фильтр приватности теперь ВНУТРИ findDuplicateMeeting (issue #45) — чужое личное сюда
   // не доходит; прежняя ручная проверка на этой строке была единственной из четырёх.
