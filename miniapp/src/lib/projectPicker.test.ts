@@ -101,3 +101,14 @@ Deno.test("личность зрителя ещё не известна — по
   const { tops, subs } = buildProjectOptions(ALL, { viewerId: null, selectedId: null });
   assertEquals(tops.length + subs.length, ALL.length);
 });
+
+Deno.test("группа спринта в селектор не попадает — пока её не пробросили «В проекты»", () => {
+  const withGroups = [
+    ...ALL,
+    proj({ id: "g", name: "Связка", parent_id: "vibe", sprint_group: true }),
+    proj({ id: "t", name: "Без проекта", sprint_group: true }),
+  ];
+  const { tops, subs } = buildProjectOptions(withGroups, { viewerId: ME });
+  assertEquals(tops.map((o) => o.id), ["imf", "vibe"]);
+  assertEquals(subs.map((o) => o.id), ["karpov", "pl"]);
+});

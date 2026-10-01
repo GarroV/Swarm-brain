@@ -30,9 +30,9 @@ const ROUTE_RE = /^\/public\/roadmap(?:\/([^/]*))?\/?$/;
 
 // Узкие проекции. Каждая колонка здесь — осознанное решение; закрытые (description, assignees,
 // assignee_telegram_ids, country, tags, label_ids, id задачи, owner_id…) не читаются вовсе.
-// Служебные (group_id, archived_at, is_private, confirmed, hidden_from_hub) нужны фильтрам и
+// Служебные (group_id, archived_at, is_private, sprint_group, confirmed, hidden_from_hub) нужны фильтрам и
 // наружу не уходят — это гарантирует сборка ответа, а не select.
-export const BOARD_COLUMNS = "id, name, group_id, public_roadmap, is_private, archived_at";
+export const BOARD_COLUMNS = "id, name, group_id, public_roadmap, is_private, archived_at, sprint_group";
 export const PROJECT_COLUMNS = "id, name, position, created_at";
 export const TASK_COLUMNS =
   "title, status, due_date, completed_at, project_id, hidden_from_hub, is_private, archived_at, confirmed";
@@ -270,6 +270,7 @@ type BoardRow = {
   public_roadmap: boolean;
   is_private: boolean;
   archived_at: string | null;
+  sprint_group: boolean;
 };
 
 async function loadBoard(
@@ -284,6 +285,8 @@ async function loadBoard(
     // Флаг публикации не снимает приватность: личную доску видит только её автор, и наружу
     // она не уходит, даже если флаг кто-то поставил (в приложении обхода приватности нет).
     .eq("is_private", false)
+    // Группа спринта — временная запись спринта, на хаб она не выходит, пока её не пробросили.
+    .eq("sprint_group", false)
     .is("archived_at", null)
     .maybeSingle();
   if (error) throw new Error(`board: ${error.message}`);
@@ -291,7 +294,7 @@ async function loadBoard(
   // Повтор фильтров запроса: 404 обязан случиться, даже если условие в запросе потеряют.
   if (
     !row || row.public_roadmap !== true || row.is_private !== false ||
-    row.archived_at
+    row.archived_at || row.sprint_group !== false
   ) return null;
   return row;
 }
@@ -307,6 +310,7 @@ async function loadSubprojects(
     .eq("parent_id", board.id)
     .eq("group_id", board.group_id)
     .eq("is_private", false)
+    .eq("sprint_group", false)
     .is("archived_at", null);
   if (error) throw new Error(`subprojects: ${error.message}`);
   return (data ?? []) as RoadmapProjectRow[];
