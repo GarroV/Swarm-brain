@@ -5,6 +5,7 @@ import { projectLabel, truncationNote, visibleProjectNameById } from "./task-lis
 import { recurrencePatchFor, resolveRecurrence } from "../../_shared/tasks/recurrence.ts";
 import { commentDeleteDenial, validateCommentContent } from "../../_shared/tasks/comments.ts";
 import { afterTaskComment } from "../../_shared/tasks/comment-fanout.ts";
+import { personLabel, resolvePersonNames } from "../../_shared/users/display-name.ts";
 import { canViewTask, taskAccessError } from "../../_shared/tasks/access.ts";
 import { subtaskLinkError } from "../../_shared/tasks/subtasks.ts";
 import { pingPatch } from "./ping.ts";
@@ -130,8 +131,8 @@ export async function matchAssignee(name: string): Promise<{ telegram_id: number
   if (!match) return null;
   return {
     telegram_id: match.telegram_id,
-    display_name: [match.first_name, match.last_name].filter(Boolean).join(" ") || match.username ||
-      String(match.telegram_id),
+    // username без «@», как было; дальше — e-mail, а не номер (#537).
+    display_name: personLabel(match, match.telegram_id, { usernamePrefix: "" }),
   };
 }
 
@@ -606,16 +607,10 @@ export async function toolGetTaskComments(args: { task_id: string; requesting_us
   >;
   if (!rows.length) return "Комментариев пока нет.";
   const ids = [...new Set(rows.map((r) => r.added_by_telegram_id).filter((x): x is number => !!x))];
-  const { data: profs } = await supabase.from("user_profiles").select("telegram_id, first_name, last_name").in(
-    "telegram_id",
-    ids.length ? ids : [0],
-  );
-  const nameById = new Map<number, string>();
-  for (const p of (profs ?? []) as Array<{ telegram_id: number; first_name?: string; last_name?: string }>) {
-    nameById.set(p.telegram_id, [p.first_name, p.last_name].filter(Boolean).join(" ") || String(p.telegram_id));
-  }
+  // Имя → @username → e-mail (#537): агент не должен называть автора номером.
+  const nameById = await resolvePersonNames(supabase, ids);
   return rows.map((r) => {
-    const who = r.added_by_telegram_id ? (nameById.get(r.added_by_telegram_id) ?? String(r.added_by_telegram_id)) : "—";
+    const who = r.added_by_telegram_id ? (nameById.get(r.added_by_telegram_id) ?? `#${r.added_by_telegram_id}`) : "—";
     const when = r.created_at.slice(0, 10);
     // id печатается: без него delete_task_comment нечем вызвать (issue #515).
     return `• [${when}] ${who} (id: ${r.id}): ${r.content}`;
@@ -650,12 +645,9 @@ export async function toolAddTaskComment(
   return "✅ Комментарий добавлен.";
 }
 
-// Имя автора для пуша «💬 <имя> — комментарий к задаче»: профиль, иначе id (как в вебе).
+// Имя автора для пуша «💬 <имя> — комментарий к задаче»: тот же резолв, что в вебе (#537).
 async function actorDisplayName(telegramId: number): Promise<string> {
-  const { data } = await supabase.from("user_profiles").select("first_name, last_name")
-    .eq("telegram_id", telegramId).maybeSingle();
-  const p = data as { first_name?: string | null; last_name?: string | null } | null;
-  return [p?.first_name, p?.last_name].filter(Boolean).join(" ") || String(telegramId);
+  return (await resolvePersonNames(supabase, [telegramId])).get(telegramId) ?? `#${telegramId}`;
 }
 
 // Удалить свой комментарий (issue #515). Правки текста нет сознательно: у комментария нет
@@ -758,18 +750,12 @@ export async function toolGetRecentComments(
   if (!page.length) return formatRecentComments([], { sinceISO });
 
   const authorIds = [...new Set(page.map((r) => r.added_by_telegram_id).filter((x): x is number => !!x))];
-  const { data: profs } = await supabase
-    .from("user_profiles").select("telegram_id, first_name, last_name")
-    .in("telegram_id", authorIds.length ? authorIds : [0]);
-  const nameById = new Map<number, string>();
-  for (const pr of (profs ?? []) as Array<{ telegram_id: number; first_name?: string; last_name?: string }>) {
-    nameById.set(pr.telegram_id, [pr.first_name, pr.last_name].filter(Boolean).join(" ") || String(pr.telegram_id));
-  }
+  const nameById = await resolvePersonNames(supabase, authorIds);
 
   const rows: RecentCommentRow[] = page.map((r) => ({
     task_id: r.task_id,
     task_title: titleById.get(r.task_id) ?? r.task_id,
-    author: r.added_by_telegram_id ? (nameById.get(r.added_by_telegram_id) ?? String(r.added_by_telegram_id)) : "—",
+    author: r.added_by_telegram_id ? (nameById.get(r.added_by_telegram_id) ?? `#${r.added_by_telegram_id}`) : "—",
     created_at: r.created_at,
     content: r.content,
   }));

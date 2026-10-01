@@ -23,6 +23,11 @@ Deno.test("без имени автор не теряется — остаётс
   assertEquals(grouped.map(([a]) => a), ["#777"]);
 });
 
+Deno.test("голый номер вместо имени (и отрицательный) — тоже #id, а не «-30»", () => {
+  const grouped = groupNotesByAuthor([note("1", 10, -30, "-30"), note("2", 20, 5, "5")]);
+  assertEquals(grouped.map(([a]) => a), ["#-30", "#5"]);
+});
+
 Deno.test("пустой список — пустая группировка", () => {
   assertEquals(groupNotesByAuthor([]), []);
 });
