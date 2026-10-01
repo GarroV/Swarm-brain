@@ -20,6 +20,11 @@ export interface SprintItemView {
   to_carry?: boolean;
   /** Задача удалена: строка осталась упоминанием и в счёт не идёт. */
   removed_at?: string | null;
+  /**
+   * Задачу сняли из ИДУЩЕГО спринта (#576). Плановая остаётся в знаменателе невыполненной —
+   * план зафиксирован на старте, и снятие не должно улучшать отчёт; сверх плана — не в счёт.
+   */
+  withdrawn_at?: string | null;
 }
 
 export interface PersonRow {
@@ -54,6 +59,11 @@ export interface SprintStats {
   cancelled: number;
   /** Упоминания удалённых задач: в составе видны, в счёте не участвуют. */
   removed: number;
+  /**
+   * Плановые, снятые из идущего спринта (#576): входят в `plan` невыполненными. Отдельная
+   * цифра — чтобы было видно, откуда взялся «недобор».
+   */
+  withdrawn: number;
   check_ok: number;
   check_risk: number;
   check_problem: number;
@@ -69,15 +79,23 @@ export function computeSprintStats(
   // Упоминание удалённой задачи не считается нигде: самой задачи больше нет, а её строка
   // осталась только чтобы история спринта не рвалась.
   const removed = items.filter((i) => i.removed_at != null);
-  const live = items.filter((i) => i.removed_at == null);
+  const present = items.filter((i) => i.removed_at == null);
+
+  // Снятая из идущего спринта плановая задача — невыполненная часть плана, что бы с ней ни
+  // случилось потом (#576): иначе «убрать отстающее» поднимало процент. Снятая сверх плана в
+  // плане и не была — её вынимают целиком. В сверке, переносе и днях закрытия снятые не
+  // участвуют: из спринта они ушли.
+  const withdrawn = present.filter((i) => i.withdrawn_at != null && i.in_plan);
+  const live = present.filter((i) => i.withdrawn_at == null);
 
   // Отменённая — не сделанная и не невыполненная: её вынимают из счёта целиком.
   const counted = live.filter((i) => i.status !== "cancelled");
 
-  const plan = counted.filter((i) => i.in_plan);
+  const plan = [...counted.filter((i) => i.in_plan), ...withdrawn];
   const extra = counted.filter((i) => !i.in_plan);
-  const done = (list: readonly SprintItemView[]) =>
-    list.filter((i) => isClosedStatus(i.status)).length;
+  const isDone = (i: SprintItemView) =>
+    i.withdrawn_at == null && isClosedStatus(i.status);
+  const done = (list: readonly SprintItemView[]) => list.filter(isDone).length;
 
   const planDone = done(plan);
 
@@ -86,13 +104,14 @@ export function computeSprintStats(
   const days = new Map<string, number>();
   let unassigned = 0;
 
-  for (const it of counted) {
-    const closed = isClosedStatus(it.status);
+  for (const it of [...counted, ...withdrawn]) {
+    const closed = isDone(it);
 
     // Задача на двоих попадает в строку каждого — разговор о загрузке ведётся по людям.
     // В общий итог спринта она при этом входит один раз: сумма строк по людям НЕ равна плану.
     if (it.assignees.length === 0) {
-      unassigned += 1;
+      // «Без исполнителя» — сигнал о живой работе; у снятой задачи его нет.
+      if (it.withdrawn_at == null) unassigned += 1;
     } else {
       for (const name of it.assignees) {
         const row = people.get(name) ?? { name, plan: 0, done: 0 };
@@ -144,6 +163,7 @@ export function computeSprintStats(
     carried_auto: carriedAuto,
     cancelled: live.filter((i) => i.status === "cancelled").length,
     removed: removed.length,
+    withdrawn: withdrawn.length,
     check_ok: checks("ok"),
     check_risk: checks("risk"),
     check_problem: checks("problem"),

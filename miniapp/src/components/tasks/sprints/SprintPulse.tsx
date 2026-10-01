@@ -84,10 +84,16 @@ export function SprintPulse({ kpi, showUnchecked, extra }: {
     <Mark key="e" label={dt("сверх плана", "extra")} value={extra} />,
     <Mark key="x" label={dt("отменено", "cancelled")} value={kpi.cancelled} />,
     <Mark key="d" label={dt("удалённых", "deleted")} value={kpi.removed} />,
+    <Mark
+      key="w"
+      label={dt("снято из плана", "withdrawn from plan")}
+      value={kpi.withdrawn}
+    />,
   ];
   const anyMark =
     kpi.checkProblem + kpi.checkRisk + (showUnchecked ? kpi.unchecked : 0) +
-        kpi.unassigned + kpi.toCarry + extra + kpi.cancelled + kpi.removed > 0;
+        kpi.unassigned + kpi.toCarry + extra + kpi.cancelled + kpi.removed +
+        kpi.withdrawn > 0;
 
   return (
     <div className="shrink-0 border-b border-line bg-surface-2 px-4 py-2.5 lg:px-5">
