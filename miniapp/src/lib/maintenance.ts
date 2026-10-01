@@ -127,3 +127,20 @@ export function freezeWindow(
     : "over";
   return { start: clock(s), end: clock(u), minutes: Math.round((u - s) / 60_000), phase };
 }
+
+// ── Стандартный текст о плановых работах — ОДИН шаблон на веб ─────────────────────────────────
+// Владелец 01.10.2026: «ну что за "работы"? ну сделай повежливее… сделай шаблон. у нас по сути
+// уведомление почти не будет меняться, только время». Его берут плашка (DeployNoticeBar) и
+// колокольчик (NotificationsBell), когда кнопка не задала свой текст (`text_ru`/`text_en` в
+// notice.yml его перекрывают). Время — из данных заморозки, в часовом поясе смотрящего.
+// Сервер стандартного текста о плановых работах не хранит: в плашку и колокольчик он кладёт
+// только свой текст, а заглушка во время самой заморозки («Идёт обновление Swarm…») — другой
+// текст, он живёт в миграции maintenance_announce.
+
+/** Текст объявления о плановых работах: `{ru, en}`, время — «ЧЧ:ММ» из `freezeWindow`. */
+export function freezeNoticeText(w: Pick<FreezeWindow, "start" | "end">): { ru: string; en: string } {
+  return {
+    ru: `Запланированы технические работы с ${w.start} до ${w.end}. Просим ограничить работу во избежание потери информации.`,
+    en: `Scheduled maintenance from ${w.start} to ${w.end}. Please limit your work to avoid losing information.`,
+  };
+}

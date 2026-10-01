@@ -2326,9 +2326,13 @@ export async function fetchNotifications(
   limit = 30,
 ): Promise<NotificationsResponse> {
   if (DEV_MODE) {
+    // Вид плашки и уведомления о работах — из localStorage `dev-notice` (варианты — ниже, у плашки).
+    let devNotice = "freeze";
+    try { devNotice = window.localStorage.getItem("dev-notice") ?? "freeze"; } catch { /* нет хранилища — показываем заморозку */ }
     const items: SwarmNotification[] = [
       {
         // DEV_MODE: плановые работы через 8 минут — та же заморозка, что объявляет плашка ниже.
+        // Свой текст — только при `freeze`; иначе колокольчик показывает шаблон владельца.
         id: "n-freeze",
         type: "maintenance",
         task_id: null,
@@ -2342,8 +2346,12 @@ export async function fetchNotifications(
         payload: {
           starts_at: new Date(Date.now() + 8 * 60 * 1000).toISOString(),
           until: new Date(Date.now() + 38 * 60 * 1000).toISOString(),
-          message_ru: "Переезжаем на новый вид. Допишите начатое — изменения на время работ не принимаются.",
-          message_en: "Moving to the new look. Finish what you are editing — changes are paused during the work.",
+          ...(devNotice === "freeze"
+            ? {
+              message_ru: "Переезжаем на новый вид. Допишите начатое — изменения на время работ не принимаются.",
+              message_en: "Moving to the new look. Finish what you are editing — changes are paused during the work.",
+            }
+            : {}),
         },
       },
       {
@@ -2384,21 +2392,21 @@ export async function fetchNotifications(
       },
     ];
     // DEV_MODE: объявление о раскатке через 8 минут — иначе плашку не посмотреть локально.
-    // localStorage `dev-notice=deploy` — обычная плашка раскатки; по умолчанию — плашка перед
-    // заморозкой. Не параметром адреса: роутер оболочки снимает query при входе.
-    let deployOnly = false;
-    try { deployOnly = window.localStorage.getItem("dev-notice") === "deploy"; } catch { /* нет хранилища — показываем заморозку */ }
-    const notice: DeployNotice = deployOnly
-      ? {
-        at: new Date(Date.now() + 8 * 60 * 1000).toISOString(),
-        until: new Date(Date.now() + 40 * 60 * 1000).toISOString(),
-      }
+    // localStorage `dev-notice` выбирает вид плашки (по умолчанию — заморозка со своим текстом):
+    //   deploy / deploy-now — раскатка через 8 мин / идёт; freeze-plain — заморозка без своего
+    //   текста (только время работ); freeze-now — идущая заморозка; none — плашки нет.
+    // Не параметром адреса: роутер оболочки снимает query при входе.
+    const inMin = (m: number) => new Date(Date.now() + m * 60 * 1000).toISOString();
+    const isNow = devNotice.endsWith("-now");
+    const notice: DeployNotice | null = devNotice === "none"
+      ? null
+      : devNotice.startsWith("deploy")
+      ? { at: inMin(isNow ? -1 : 8), until: inMin(40) }
       : {
         kind: "freeze",
-        at: new Date(Date.now() + 8 * 60 * 1000).toISOString(),
-        until: new Date(Date.now() + 38 * 60 * 1000).toISOString(),
-        ru: "Переезжаем на новый вид.",
-        en: "Moving to the new look.",
+        at: inMin(isNow ? -5 : 8),
+        until: inMin(38),
+        ...(devNotice === "freeze" ? { ru: "Переезжаем на новый вид.", en: "Moving to the new look." } : {}),
       };
     return { items, unread: items.filter((i) => !i.read_at).length, notice };
   }

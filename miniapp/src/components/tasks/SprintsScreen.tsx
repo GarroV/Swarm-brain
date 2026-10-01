@@ -65,6 +65,7 @@ import { SpaceSwitcher } from "@/components/tasks/sprints/SpaceSwitcher";
 import { SprintBar } from "@/components/tasks/sprints/SprintBar";
 import { SprintPulse } from "@/components/tasks/sprints/SprintPulse";
 import { NotificationsBell } from "@/components/roy/NotificationsBell";
+import { HeaderNotice } from "@/components/roy/DeployNoticeBar";
 import {
   GroupingToggle,
   useSprintGrouping,
@@ -781,6 +782,7 @@ export function SprintsScreen() {
           value={view}
           onChange={(v) => setView(v === "list" ? lastBoard : v)}
         />
+        <HeaderNotice className="self-center" />
         {isDesktop && <NotificationsBell className="ml-auto self-center" />}
       </div>
 

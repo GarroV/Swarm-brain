@@ -10,8 +10,7 @@ const item = (over: Partial<CarryInput> & { id: string }): CarryInput => ({
   ...over,
 });
 
-const kindOf = (rows: readonly { id: string; kind: CarryKind }[], id: string) =>
-  rows.find((r) => r.id === id)?.kind;
+const kindOf = (rows: readonly { id: string; kind: CarryKind }[], id: string) => rows.find((r) => r.id === id)?.kind;
 
 Deno.test("закрытая задача остаётся в спринте", () => {
   const plan = planCarry([item({ id: "a", status: "done" })]);
