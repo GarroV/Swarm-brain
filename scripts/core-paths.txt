@@ -30,3 +30,7 @@ miniapp/functions/_lib/oauth-state.ts|miniapp/src/lib/oauthState.test.ts
 supabase/functions/swarm-api/admin-scope.ts|supabase/functions/swarm-api/admin-scope.test.ts
 supabase/functions/_shared/users/admin-scope.ts|supabase/functions/swarm-api/admin-scope.test.ts
 supabase/functions/swarm-bot/handlers/superadmin-scope.ts|supabase/functions/swarm-bot/handlers/superadmin-scope.test.ts
+# Лиз обработки встречи и приём выгрузки (issue #578): ошибка не падает — встреча молча
+# обрабатывается дважды, и люди получают двойные тезисы и уведомления.
+supabase/functions/_shared/meeting-processing-lease.ts|supabase/functions/_shared/meeting-processing-lease.test.ts
+supabase/functions/meeting-ingest/accept-upload.ts|supabase/functions/meeting-ingest/accept-upload.test.ts
