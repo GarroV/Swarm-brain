@@ -41,7 +41,7 @@ const MAIN: RailItem[] = [
 ];
 
 const FOOT: RailItem[] = [
-  { id: "settings", label: ["Настройки", "Settings"], icon: "dots" },
+  { id: "settings", label: ["Настройки", "Settings"], icon: "sliders" },
   { id: "admin", label: ["Админ", "Admin"], icon: "lock" },
 ];
 
@@ -128,8 +128,7 @@ export function RoyRail({
       </div>
       <div className="flex flex-col gap-0.5 border-t border-line px-2 py-2">
         <ThemeSwitch />
-        {foot.map(renderItem)}
-        <FeedbackItem />
+        <FootTools items={foot} active={active} onSelect={onSelect} />
       </div>
       <div className="flex items-center gap-2 border-t border-line px-3 py-2.5 max-[1099px]:justify-center max-[1099px]:px-0"
         title={displayName(me?.name) || undefined}>
@@ -195,22 +194,42 @@ function RailSearch() {
   );
 }
 
-// Фидбек на десктопе — пункт низа рейки, а не плавающая кнопка: в узкой раскладке (720–1100px)
-// кнопка в углу закрывала кнопки строк («Вернуться» у встречи, найдено краулером на 800px).
-function FeedbackItem() {
+// Настройки, админка и фидбек — строкой пиктограмм под темой, тем же квадратом 28px, что и
+// кнопки темы (просьба владельца 01.10.2026: «сделай кнопки админки, настроек и фидбека
+// пиктограммами»). Подписи — в title и aria-label. В узкой рейке строка встаёт столбцом
+// кнопок во всю ширину, как остальные пункты. Фидбек здесь, а не плавающей кнопкой: в узкой
+// раскладке (720–1100px) кнопка в углу закрывала кнопки строк (найдено краулером на 800px).
+const FOOT_TOOL =
+  "grid size-[28px] place-items-center rounded-[7px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] max-[1099px]:h-[34px] max-[1099px]:w-full max-[1099px]:rounded-[8px]";
+const FOOT_IDLE = "text-ink-mute hover:bg-surface hover:text-ink";
+
+function FootTools({ items, active, onSelect }: {
+  items: RailItem[];
+  active: RailId | null;
+  onSelect: (id: RailId) => void;
+}) {
   const dt = useDt();
-  const [open, setOpen] = useState(false);
-  const label = dt("Фидбек", "Feedback");
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
+  const feedback = dt("Фидбек", "Feedback");
   return (
-    <>
-      <button type="button" onClick={() => setOpen(true)} title={label}
-        className="flex h-[34px] w-full items-center gap-2.5 rounded-[8px] px-2.5 text-left text-ink-soft transition-colors hover:bg-surface hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] max-[1099px]:justify-center max-[1099px]:px-0"
-        style={{ fontSize: 13.5 }}>
-        <RoyIcon name="feedback" size={16} strokeWidth={1.7} />
-        <span className="min-w-0 flex-1 truncate max-[1099px]:hidden">{label}</span>
+    <div className="flex items-center justify-end gap-1 px-1 max-[1099px]:flex-col max-[1099px]:gap-0.5 max-[1099px]:px-0">
+      {items.map((item) => {
+        const on = active === item.id;
+        const label = dt(item.label[0], item.label[1]);
+        return (
+          <button key={item.id} type="button" onClick={() => onSelect(item.id)}
+            aria-current={on ? "page" : undefined} title={label} aria-label={label}
+            className={cn(FOOT_TOOL, on ? "bg-accent-soft text-accent-ink" : FOOT_IDLE)}>
+            <RoyIcon name={item.icon} size={15} strokeWidth={1.7} />
+          </button>
+        );
+      })}
+      <button type="button" onClick={() => setFeedbackOpen(true)} title={feedback} aria-label={feedback}
+        className={cn(FOOT_TOOL, FOOT_IDLE)}>
+        <RoyIcon name="feedback" size={15} strokeWidth={1.7} />
       </button>
-      <FeedbackDialog open={open} onOpenChange={setOpen} />
-    </>
+      <FeedbackDialog open={feedbackOpen} onOpenChange={setFeedbackOpen} />
+    </div>
   );
 }
 

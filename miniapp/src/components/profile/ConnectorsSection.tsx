@@ -23,13 +23,15 @@ const TITLE: Record<ConnectorId, [string, string]> = {
 const ABOUT: Record<ConnectorId, [string[], string[]]> = {
   bot: [
     [
-      "scriba — наш бот для Google Meet. Он сам заходит на ваши встречи и записывает их, вам ничего не нужно запускать.",
-      "Включите его — и он будет приходить на каждую встречу Meet из вашего календаря, на которую вы согласились. После встречи во «Встречах» появятся стенограмма и тезисы.",
+      "scriba — наш бот для встреч в Google Meet и Контур.Толке. Он сам заходит на ваши встречи и записывает их, вам ничего не нужно запускать.",
+      "Включите его — и он будет приходить на каждую встречу Meet или Толка из вашего календаря, на которую вы согласились. После встречи во «Встречах» появятся стенограмма и тезисы.",
+      "В Толке встреча должна быть публичной: scriba входит по ссылке как гость, а в закрытую комнату гостя не пустят.",
       "Участники видят scriba в списке как отдельного гостя, в том числе внешние. Выключить можно в любой момент — подействует в течение минуты.",
     ],
     [
-      "scriba is our Google Meet bot. It joins your meetings on its own and records them — nothing to launch.",
-      "Turn it on and it will join every Meet meeting from your calendar that you accepted. After the meeting, the transcript and notes appear in Meetings.",
+      "scriba is our meeting bot for Google Meet and Kontur.Talk. It joins your meetings on its own and records them — nothing to launch.",
+      "Turn it on and it will join every Meet or Talk meeting from your calendar that you accepted. After the meeting, the transcript and notes appear in Meetings.",
+      "In Kontur.Talk the meeting must be public: scriba joins by link as a guest, and a private room won't let guests in.",
       "Participants see scriba as a separate guest, external ones included. You can turn it off any time — it takes effect within a minute.",
     ],
   ],
