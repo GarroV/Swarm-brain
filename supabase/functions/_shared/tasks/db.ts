@@ -219,6 +219,16 @@ type UpdateOpts = { actor?: string; actorTelegramId?: number };
  */
 class TaskUpdateConflict extends Error {}
 
+/**
+ * Ошибка, текст которой предназначен человеку (конфликт правки, задача не найдена).
+ * swarm-api отдаёт её клиенту со своим статусом, а не общим «Something went wrong» (#584).
+ */
+export class TaskUserError extends Error {
+  constructor(message: string, readonly status: 404 | 409) {
+    super(message);
+  }
+}
+
 /** Сколько раз пересчитываем патч, если строку изменили одновременно с нами. */
 const MAX_CONFLICT_RETRIES = 3;
 
@@ -241,8 +251,9 @@ export async function updateTask(
     } catch (e) {
       if (!(e instanceof TaskUpdateConflict)) throw e;
       if (attempt >= MAX_CONFLICT_RETRIES) {
-        throw new Error(
+        throw new TaskUserError(
           "Задачу одновременно изменил кто-то ещё — обнови и попробуй снова",
+          409,
         );
       }
     }
@@ -306,7 +317,7 @@ async function updateTaskOnce(
   const touchesJournaled = Object.keys(fields).some(isJournaled);
   if (touchesJournaled) {
     row = await loadSnapshot(id);
-    if (!row) throw new Error("Задача не найдена");
+    if (!row) throw new TaskUserError("Задача не найдена", 404);
 
     // Закрытие РЕГУЛЯРНОЙ задачи — не закрытие, а перекат на следующее вхождение графика.
     if (fields.status === "done") {
@@ -400,7 +411,7 @@ async function updateTaskOnce(
   });
   if (error) {
     if (error.code === "PT409") throw new TaskUpdateConflict(error.message);
-    if (error.code === "PT404") throw new Error("Задача не найдена");
+    if (error.code === "PT404") throw new TaskUserError("Задача не найдена", 404);
     throw new Error(`Задача не сохранена: ${error.message}`);
   }
 

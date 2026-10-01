@@ -66,3 +66,6 @@ supabase/functions/_shared/meta-extract.ts|supabase/functions/_shared/meta-extra
 # который её не видит, или автор шлёт уведомление сам себе.
 supabase/functions/_shared/tasks/notify.ts|supabase/functions/_shared/tasks/notify.test.ts
 supabase/functions/_shared/tasks/comment-fanout.ts|supabase/functions/_shared/tasks/comment-fanout.test.ts
+# Граница ошибок swarm-api: правило «клиенту — общий текст, подробность — в лог». Ошибка здесь
+# не падает — она молча отдаёт человеку текст базы или пишет в лог значения строки.
+supabase/functions/swarm-api/client-error.ts|supabase/functions/swarm-api/client-error.test.ts

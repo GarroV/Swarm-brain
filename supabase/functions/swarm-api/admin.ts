@@ -16,6 +16,7 @@ import {
 } from "./admin-scope.ts";
 import { onlyLiveEntries } from "../_shared/entries/live.ts";
 import { externalFetch, VIA_TELEGRAM } from "../_shared/external-fetch.ts";
+import { errorDetail, INTERNAL_ERROR_MESSAGE } from "./client-error.ts";
 
 const ADMIN_TELEGRAM_ID = SUPERADMIN_TELEGRAM_ID;
 
@@ -34,6 +35,13 @@ function json(data: unknown, status: number, origin: string): Response {
 
 function apiErr(status: number, msg: string, origin: string) {
   return json({ error: msg }, status, origin);
+}
+
+// Неожиданная ошибка (база и т.п.): подробность — в лог, клиенту — общий текст (issue #584).
+// Свой, а не serverError из client-error.ts: у админки собственные заголовки ответа (json выше).
+function serverFail(origin: string, where: string, err: unknown): Response {
+  console.error(`[swarm-api] admin: ${where}: ${errorDetail(err)}`);
+  return apiErr(500, INTERNAL_ERROR_MESSAGE, origin);
 }
 
 export async function handleAdminRoutes(
@@ -131,7 +139,7 @@ export async function handleAdminRoutes(
       return apiErr(409, `Воркспейс «${id}» уже существует`, origin);
     }
     const { error } = await supabase.from("workspaces").insert({ id, name });
-    if (error) return apiErr(500, error.message, origin);
+    if (error) return serverFail(origin, "workspace create", error);
     return json(
       { id, name, allowed_markets: null, user_count: 0 },
       201,
@@ -270,7 +278,7 @@ export async function handleAdminRoutes(
       try {
         existing = await findAddTarget(supabase, body);
       } catch (e) {
-        return apiErr(500, e instanceof Error ? e.message : "lookup failed", origin);
+        return serverFail(origin, "member lookup", e);
       }
       if (existing) {
         if (!canChangeAccountKeys(actor, existing)) return apiErr(403, "Forbidden", origin);
@@ -316,11 +324,7 @@ export async function handleAdminRoutes(
         }
         return json({ ok: true, pending: r.pending }, 200, origin);
       } catch (e) {
-        return apiErr(
-          500,
-          e instanceof Error ? e.message : "add failed",
-          origin,
-        );
+        return serverFail(origin, "member add", e);
       }
     }
   }
@@ -343,12 +347,12 @@ export async function handleAdminRoutes(
       const { error } = await supabase.from("allowed_users").delete()
         .eq("telegram_id", ref.telegramId)
         .eq("group_id", wsId);
-      if (error) return apiErr(500, error.message, origin);
+      if (error) return serverFail(origin, "member remove", error);
     } else {
       const q = supabase.from("allowed_users").delete().is("telegram_id", null)
         .eq("group_id", wsId);
       const { error } = ref.kind === "email" ? await q.eq("email", ref.email) : await q.eq("username", ref.username);
-      if (error) return apiErr(500, error.message, origin);
+      if (error) return serverFail(origin, "invite remove", error);
     }
     return new Response(null, {
       status: 204,
@@ -441,7 +445,7 @@ export async function handleAdminRoutes(
             origin,
           );
         }
-        return apiErr(500, error.message, origin);
+        return serverFail(origin, "invite email update", error);
       }
       if (!data) return apiErr(404, "Приглашение не найдено", origin);
       const oldEmail = ref.kind === "email" ? ref.email : null;
@@ -462,7 +466,7 @@ export async function handleAdminRoutes(
     // Цель — строка allowed_users: без неё правка профиля всё равно упала бы на внешнем ключе.
     const { data: targetRow, error: tErr } = await supabase.from("allowed_users")
       .select("telegram_id, group_id, email").eq("telegram_id", targetId).maybeSingle();
-    if (tErr) return apiErr(500, tErr.message, origin);
+    if (tErr) return serverFail(origin, "member read", tErr);
     const target = targetRow as MemberRow | null;
     if (!target || !canManageMember(actor, target)) return apiErr(404, "User not found", origin);
     if ("email" in body && !canChangeAccountKeys(actor, target)) {
@@ -484,7 +488,7 @@ export async function handleAdminRoutes(
     const { error } = await supabase.from("user_profiles").upsert(fields, {
       onConflict: "telegram_id",
     });
-    if (error) return apiErr(500, error.message, origin);
+    if (error) return serverFail(origin, "profile update", error);
     // Синк email в allowed_users.email — КАНОНИЧНЫЙ ключ веб-входа (Google); user_profiles.email — зеркало.
     if ("email" in body) {
       const email = normalizeEmail(body.email);
@@ -499,7 +503,7 @@ export async function handleAdminRoutes(
             origin,
           );
         }
-        return apiErr(500, auErr.message, origin);
+        return serverFail(origin, "member email update", auErr);
       }
       const oldEmail = normalizeEmail(target.email);
       if (isForeignEmailChange(actor, targetId, oldEmail, email)) {
