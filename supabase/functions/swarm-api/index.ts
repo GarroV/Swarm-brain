@@ -740,7 +740,14 @@ async function routeRequest(req: Request): Promise<Response> {
   // POST /recorder/token — минт/перевыпуск токена рекордера → { oneLiner, expiresAt }.
   // Токен ОТДЕЛЬНЫЙ от Claude-Desktop MCP-токена; доступно всем участникам (не только админ).
   if (req.method === "POST" && routePath === "/recorder/token") {
-    if (isDemo) return apiErr(403, "Демо: выпуск токенов недоступен", origin);
+    if (isDemo) {
+      // Демо целиком на английском (#605): основной текст EN, русский — в error_ru, как у соседних отказов.
+      return json(
+        { error: "Tokens cannot be issued in the demo", error_ru: "В демо токены не выпускаются", code: "demo_not_allowed" },
+        403,
+        origin,
+      );
+    }
     const minted = await mintRecorderToken(supabase, telegram_id);
     if (!minted) {
       return apiErr(500, "Не удалось создать токен рекордера", origin);
@@ -774,7 +781,14 @@ async function routeRequest(req: Request): Promise<Response> {
   // POST /mcp/token — минт/перевыпуск MCP-токена → { oneLiner } (команда установки Claude Desktop).
   // Токен бессрочный; доступно всем участникам.
   if (req.method === "POST" && routePath === "/mcp/token") {
-    if (isDemo) return apiErr(403, "Демо: выпуск токенов недоступен", origin);
+    if (isDemo) {
+      // Демо целиком на английском (#605): основной текст EN, русский — в error_ru, как у соседних отказов.
+      return json(
+        { error: "Tokens cannot be issued in the demo", error_ru: "В демо токены не выпускаются", code: "demo_not_allowed" },
+        403,
+        origin,
+      );
+    }
     const minted = await mintMcpToken(supabase, telegram_id);
     if (!minted) return apiErr(500, "Не удалось создать токен", origin);
     return json({ oneLiner: buildSetupOneLiner(minted.token) }, 200, origin);
