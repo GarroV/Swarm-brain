@@ -167,6 +167,7 @@ async function main(environment: Environment): Promise<void> {
     version,
     startForMeeting: async (joinUrl, platform, onBehalfOf, invite) =>
       orchestrator.startForMeeting(joinUrl, platform, onBehalfOf, invite),
+    whenExited: async (id) => orchestrator.whenExited(id),
     notifierFor,
     log,
     intervalMs,

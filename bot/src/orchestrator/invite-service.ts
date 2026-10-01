@@ -9,7 +9,7 @@ import { SwarmClient } from "../swarm-client/client.ts";
 import type { ClaimRequest, ClaimResponse, MeetingInvite } from "../swarm-client/contract.ts";
 import { InviteClient } from "../swarm-client/invites.ts";
 import { type InviteReference, manualClaim } from "./claim-request.ts";
-import { InviteTrigger } from "./invite-trigger.ts";
+import { InviteTrigger, type InviteTriggerOptions } from "./invite-trigger.ts";
 import type { Notifier } from "./notices.ts";
 
 interface RefusalDependencies {
@@ -60,6 +60,10 @@ export interface InviteServiceOptions {
     invite: InviteReference,
   ) => Promise<string>;
   readonly notifierFor: (onBehalfOf: number, token: string) => Notifier;
+  /**
+  Чем кончился контейнер (`Orchestrator.whenExited`) — для отказа при смерти до заявки (#654).
+  */
+  readonly whenExited?: InviteTriggerOptions["whenExited"];
   readonly log: (line: string) => void;
   readonly intervalMs?: number;
   readonly fetch?: typeof globalThis.fetch;
@@ -73,6 +77,7 @@ export function inviteTriggerFor(options: InviteServiceOptions): InviteTrigger {
   });
   return new InviteTrigger({
     take: async () => invites.take(),
+    ...(options.whenExited !== undefined && { whenExited: options.whenExited }),
     start: async (invite) =>
       options.startForMeeting(invite.join_url, invite.platform, invite.invited_by, {
         id: invite.id,

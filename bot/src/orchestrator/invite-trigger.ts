@@ -31,7 +31,15 @@ const PLATFORM_NAMES: Readonly<Record<string, { en: string; ru: string }>> = {
 
 export type Refusal =
   | { readonly kind: "platform"; readonly platform: string }
-  | { readonly kind: "start_failed"; readonly reason: string };
+  | { readonly kind: "start_failed"; readonly reason: string }
+  | { readonly kind: "died_before_claim"; readonly exitCode: number | null };
+
+/**
+ * Чем кончился контейнер встречи — в объёме, который нужен триггеру (`Orchestrator.whenExited`).
+ */
+export type InviteContainerExit =
+  | { readonly kind: "finished" }
+  | { readonly kind: "died"; readonly meetingId: string | null; readonly exitCode: number | null };
 
 /**
  * Причина отказа для человека: сначала английский (язык продукта по умолчанию), затем русский.
@@ -46,6 +54,12 @@ export function refusalDetail(refusal: Refusal): string {
     return (
       `${name.en} calls aren't supported yet — scriba joins only Google Meet and Kontur.Talk for now. ` +
       `/ Звонки ${name.ru} бот пока не умеет — scriba заходит только в Google Meet и Контур.Толк.`
+    );
+  }
+  if (refusal.kind === "died_before_claim") {
+    return (
+      `scriba crashed before joining the call (exit ${String(refusal.exitCode)}) — invite it again. ` +
+      `/ scriba упал, не успев войти в звонок (код ${String(refusal.exitCode)}), — позовите его ещё раз.`
     );
   }
   const en = "scriba could not start for this call: ";
@@ -69,6 +83,12 @@ export interface InviteTriggerOptions {
    * Сказать позвавшему, что бот не придёт (`refuseInvite`).
    */
   readonly refuse: (invite: MeetingInvite, detail: string) => Promise<void>;
+  /**
+   * Чем кончился контейнер (`Orchestrator.whenExited`). Нужен, чтобы смерть до заявки не была
+   * молчаливой (#654): встречи ещё нет, привязать нотису оркестратору не к чему, а приглашение
+   * висит живым до срока. Тогда отказ идёт тем же путём, что и «не поднялся».
+   */
+  readonly whenExited?: (containerId: string) => Promise<InviteContainerExit | undefined>;
   readonly log: (line: string) => void;
   readonly intervalMs?: number;
   readonly now?: () => number;
@@ -79,6 +99,8 @@ export class InviteTrigger {
    * id запущенного приглашения → срок приглашения (мс): дольше помнить незачем.
    */
   private readonly remembered = new Map<string, number>();
+
+  private readonly watching = new Set<Promise<void>>();
 
   private readonly loop: PollLoop;
 
@@ -134,9 +156,36 @@ export class InviteTrigger {
       this.options.log(
         `приглашение ${invite.id} (от ${String(invite.invited_by)}) → контейнер ${id}`,
       );
+      // Ждём в фоне: встреча длится часами, а цикл опроса стоять не должен.
+      const watched = this.watchEarlyDeath(invite, id);
+      this.watching.add(watched);
+      void watched.finally(() => this.watching.delete(watched));
     } catch (error) {
       await this.refuse(invite, { kind: "start_failed", reason: describeError(error) });
     }
+  }
+
+  /**
+  Контейнер умер, не заявив встречу, — отказ человеку, приглашение тратится на заявку.
+  */
+  private async watchEarlyDeath(invite: MeetingInvite, containerId: string): Promise<void> {
+    if (this.options.whenExited === undefined) return;
+    let exit: InviteContainerExit | undefined;
+    try {
+      exit = await this.options.whenExited(containerId);
+    } catch (error) {
+      this.options.log(`выход контейнера ${containerId} не узнать: ${describeError(error)}`);
+      return;
+    }
+    if (exit?.kind !== "died" || exit.meetingId !== null) return;
+    await this.refuse(invite, { kind: "died_before_claim", exitCode: exit.exitCode });
+  }
+
+  /**
+  Фоновые ожидания выхода — для тестов и аккуратной остановки.
+  */
+  async settled(): Promise<void> {
+    await Promise.all(this.watching);
   }
 
   get rememberedCount(): number {
