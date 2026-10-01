@@ -146,7 +146,12 @@ export async function handleTaskFileRoutes(
     // Демо открыто без логина: загрузка оттуда — это чужие байты на диске домашнего сервера.
     if (isDemo) {
       return json(
-        { error: "В демо файлы не загружаются", code: "demo_not_allowed", limits },
+        {
+          error: "Files cannot be uploaded in the demo",
+          error_ru: "В демо файлы не загружаются",
+          code: "demo_not_allowed",
+          limits,
+        },
         403,
         origin,
       );
