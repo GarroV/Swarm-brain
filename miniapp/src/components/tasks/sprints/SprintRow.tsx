@@ -61,7 +61,12 @@ export type RowHandlers = {
 };
 
 /** Подзадачи строки (#478): шеврон разворота и «X/Y». */
-export type RowKids = { done: number; total: number; open: boolean; onToggle: () => void };
+export type RowKids = {
+  done: number;
+  total: number;
+  open: boolean;
+  onToggle: () => void;
+};
 
 /**
  * Отметка сверки текстовым чипом. «Не отмечено» — только с дня сверки (D013): до него
@@ -107,17 +112,19 @@ function CheckChip({ status, note, unchecked }: {
 
 /** Строка задачи. Клик открывает карточку — но только у живой: у упоминания и у чужой
  *  приватной открывать нечего, и «кнопка, которая ничего не делает» хуже её отсутствия. */
-export function SprintRow({ item, unchecked, showExtra, h, depth = 0, kids, parent }: {
-  item: SprintCycleItem;
-  depth?: 0 | 1;
-  kids?: RowKids;
-  /** Родитель вне этой группы — подпись «из «…»», кликом открывает родителя. */
-  parent?: { id: string; title: string };
-  unchecked: boolean;
-  /** Спринт начат: взятое после старта помечаем «сверх плана». */
-  showExtra: boolean;
-  h: RowHandlers;
-}) {
+export function SprintRow(
+  { item, unchecked, showExtra, h, depth = 0, kids, parent }: {
+    item: SprintCycleItem;
+    depth?: 0 | 1;
+    kids?: RowKids;
+    /** Родитель вне этой группы — подпись «из «…»», кликом открывает родителя. */
+    parent?: { id: string; title: string };
+    unchecked: boolean;
+    /** Спринт начат: взятое после старта помечаем «сверх плана». */
+    showExtra: boolean;
+    h: RowHandlers;
+  },
+) {
   const dt = useDt();
   const closed = CLOSED.has(item.status);
   const needsNote = item.check_status === "risk" ||
@@ -233,7 +240,10 @@ export function SprintRow({ item, unchecked, showExtra, h, depth = 0, kids, pare
               </button>
             )
             : (
-              <span className="min-w-0 max-w-[40%] shrink truncate text-ink-mute" style={{ fontSize: 11.5 }}>
+              <span
+                className="min-w-0 max-w-[40%] shrink truncate text-ink-mute"
+                style={{ fontSize: 11.5 }}
+              >
                 ↳ {dt("из", "of")} «{parent.title}»
               </span>
             )
@@ -437,19 +447,32 @@ export function SubtaskLiteRow({ task, inSprint, onOpen }: {
       )}
       style={{ gridTemplateColumns: SPRINT_COLS, minHeight: 34, fontSize: 13 }}
     >
-      <div className="flex min-w-0 items-center gap-2 px-3" style={{ paddingLeft: 34 }}>
+      <div
+        className="flex min-w-0 items-center gap-2 px-3"
+        style={{ paddingLeft: 34 }}
+      >
         <span
-          className={cn("size-[6px] shrink-0 rounded-full", STATUS_TONE[task.status] ?? "bg-status-open")}
+          className={cn(
+            "size-[6px] shrink-0 rounded-full",
+            STATUS_TONE[task.status] ?? "bg-status-open",
+          )}
           title={task.status}
         />
-        <span className={cn("min-w-0 truncate", closed ? "text-ink-mute line-through" : "text-ink-soft")}>
+        <span
+          className={cn(
+            "min-w-0 truncate",
+            closed ? "text-ink-mute line-through" : "text-ink-soft",
+          )}
+        >
           {task.title}
         </span>
         <span
           className="shrink-0 rounded-full border border-dashed border-line px-1.5 py-0.5 text-ink-mute"
           style={{ fontSize: 10.5 }}
         >
-          {inSprint ? dt("в спринте", "in sprint") : dt("не в спринте", "not in sprint")}
+          {inSprint
+            ? dt("в спринте", "in sprint")
+            : dt("не в спринте", "not in sprint")}
         </span>
       </div>
       <div className="px-2 font-mono text-ink-mute" style={{ fontSize: 12 }}>

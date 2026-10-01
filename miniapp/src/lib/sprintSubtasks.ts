@@ -45,7 +45,9 @@ export function sprintRows<I>(
   }
   const children = new Map<string, Task[]>();
   for (const t of o.tasks) {
-    if (t.parent_id) children.set(t.parent_id, [...(children.get(t.parent_id) ?? []), t]);
+    if (t.parent_id) {
+      children.set(t.parent_id, [...(children.get(t.parent_id) ?? []), t]);
+    }
   }
   const byId = new Map(o.tasks.map((t) => [t.id, t]));
   const underParent = (i: I) => {
@@ -59,7 +61,11 @@ export function sprintRows<I>(
     const id = o.idOf(item);
     const kidTasks = (id && children.get(id)) || [];
     // Строки группы с этим родителем, которых нет среди видимых задач (например, приватная чужая).
-    const extraKids = id ? groupItems.filter((g) => o.parentOf(g) === id && !kidTasks.some((k) => k.id === o.idOf(g))) : [];
+    const extraKids = id
+      ? groupItems.filter((g) =>
+        o.parentOf(g) === id && !kidTasks.some((k) => k.id === o.idOf(g))
+      )
+      : [];
     const total = kidTasks.length + extraKids.length;
     const p = o.parentOf(item);
     const parentTask = p && !inGroup.has(p) ? byId.get(p) : undefined;
@@ -67,14 +73,22 @@ export function sprintRows<I>(
       kind: "item",
       item,
       depth: 0,
-      ...(id && total > 0 ? { kids: { taskId: id, done: kidTasks.filter(isDone).length, total } } : {}),
-      ...(parentTask ? { parent: { id: parentTask.id, title: parentTask.title } } : {}),
+      ...(id && total > 0
+        ? { kids: { taskId: id, done: kidTasks.filter(isDone).length, total } }
+        : {}),
+      ...(parentTask
+        ? { parent: { id: parentTask.id, title: parentTask.title } }
+        : {}),
     });
     if (!id || total === 0 || !o.isOpen(id)) continue;
     for (const k of kidTasks) {
       const row = inGroup.get(k.id);
       if (row) rows.push({ kind: "item", item: row, depth: 1 });
-      else rows.push({ kind: "task", task: k, inSprint: o.sprintTaskIds.has(k.id) });
+      else {rows.push({
+          kind: "task",
+          task: k,
+          inSprint: o.sprintTaskIds.has(k.id),
+        });}
     }
     for (const g of extraKids) rows.push({ kind: "item", item: g, depth: 1 });
   }

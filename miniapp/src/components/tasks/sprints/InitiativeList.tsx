@@ -8,7 +8,12 @@ import { isBareDirection } from "@/lib/initiatives";
 import { RoyIcon } from "@/components/roy/icons";
 import { useDt } from "@/components/roy/nav";
 import { fmtDay } from "./format";
-import { type RowHandlers, SPRINT_COLS, SprintRow, SubtaskLiteRow } from "./SprintRow";
+import {
+  type RowHandlers,
+  SPRINT_COLS,
+  SprintRow,
+  SubtaskLiteRow,
+} from "./SprintRow";
 
 /** Развёрнутые задачи с подзадачами — удобство одного зрителя, поэтому localStorage. */
 const OPEN_KEY = "swarm.sprint.openSubtasks";
@@ -259,12 +264,18 @@ export function InitiativeList({
   }, []);
   const sprintTaskIds = useMemo(() => {
     const ids = new Set<string>();
-    const add = (items: SprintCycleItem[]) => items.forEach((i) => i.task_id && ids.add(i.task_id));
+    const add = (items: SprintCycleItem[]) =>
+      items.forEach((i) => i.task_id && ids.add(i.task_id));
     board.forEach((d) => d.initiatives.forEach((ini) => add(ini.items)));
     return ids;
   }, [board]);
   const sub: SubCtx = useMemo(
-    () => ({ tasks, sprintTaskIds, isOpen: (id: string) => openKids.has(id), toggle: toggleKids }),
+    () => ({
+      tasks,
+      sprintTaskIds,
+      isOpen: (id: string) => openKids.has(id),
+      toggle: toggleKids,
+    }),
     [tasks, sprintTaskIds, openKids, toggleKids],
   );
 
