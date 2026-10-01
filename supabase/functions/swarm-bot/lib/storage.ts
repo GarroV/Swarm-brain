@@ -63,35 +63,6 @@ async function buildEntryIndex(content: string, existingSummary?: string): Promi
   }
 }
 
-// extractEntryMeta kept for backward-compat (granola.ts still imports it).
-export async function extractEntryMeta(
-  text: string,
-): Promise<{ countries: string[]; entry_type: string; entry_date: string | null }> {
-  const idx = await buildEntryIndex(text, "placeholder"); // hasSummary=true → skip summary gen
-  // buildEntryIndex with placeholder still extracts countries/type/date
-  // Re-run without placeholder to get real meta-only result
-  try {
-    const raw = await chatComplete(
-      `Сегодня ${todayIso()}.\n` +
-        "Проанализируй текст и верни JSON (только JSON, без markdown):\n" +
-        '{"countries":["Spain","Bulgaria"],"entry_type":"meeting|note","entry_date":"YYYY-MM-DD или null"}\n\n' +
-        COUNTRY_PROMPT_RULE + "\n" +
-        ENTRY_TYPE_PROMPT_RULE + "\n" +
-        "entry_date — дата события из текста, null если нет. Год считай от сегодняшней даты, НИКОГДА не из головы.",
-      text.slice(0, 4000),
-      { temperature: 0, json: true },
-    );
-    const parsed = JSON.parse(raw.replace(/```json\n?|\n?```/g, "").trim());
-    return {
-      countries: normalizeCountries(Array.isArray(parsed.countries) ? parsed.countries : []),
-      entry_type: parsed.entry_type === "meeting" ? "meeting" : "note", // только два типа
-      entry_date: normalizeExtractedEventDate(parsed.entry_date),
-    };
-  } catch {
-    return { countries: idx.countries, entry_type: idx.entry_type, entry_date: idx.entry_date };
-  }
-}
-
 // Char-trigram Jaccard similarity — детект near-identical контента (повторная отправка
 // с мелкой правкой). 1.0 = идентично; для разного текста быстро падает.
 function trigramSimilarity(a: string, b: string): number {

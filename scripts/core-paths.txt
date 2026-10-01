@@ -50,3 +50,7 @@ supabase/functions/_shared/tasks/recur-close.ts|supabase/functions/_shared/tasks
 # на доске «Проекты» у всей команды (docs/decisions/2026-10-01-sprint-dnd-groups.md).
 supabase/functions/_shared/tasks/sprint-groups.ts|supabase/functions/_shared/tasks/sprint-groups.test.ts
 miniapp/src/lib/sprintGrouping.ts|miniapp/src/lib/sprintGrouping.test.ts
+# Дата события записи от модели: выдуманный год не падает, он молча ставит встречу в 2023
+# и человек читает её как факт (issue #582). Окна дат и общий извлекатель меты.
+supabase/functions/_shared/llm-date.ts|supabase/functions/_shared/llm-date.test.ts
+supabase/functions/_shared/meta-extract.ts|supabase/functions/_shared/meta-extract.test.ts
