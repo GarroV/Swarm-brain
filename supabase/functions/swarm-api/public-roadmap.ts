@@ -25,6 +25,7 @@ const PUBLIC_CACHE = "public, max-age=300";
 // 404 кэшируем короче: доску могут опубликовать, и хаб не должен ждать пять минут.
 const NOT_FOUND_CACHE = "public, max-age=60";
 
+// deno-fmt-ignore -- файл форматируют два гейта с разной шириной строки (доска инициатив и «сервер · формат»)
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const ROUTE_RE = /^\/public\/roadmap(?:\/([^/]*))?\/?$/;
@@ -33,6 +34,7 @@ const ROUTE_RE = /^\/public\/roadmap(?:\/([^/]*))?\/?$/;
 // assignee_telegram_ids, country, tags, label_ids, id задачи, owner_id…) не читаются вовсе.
 // Служебные (group_id, archived_at, is_private, sprint_group, confirmed, hidden_from_hub) нужны фильтрам и
 // наружу не уходят — это гарантирует сборка ответа, а не select.
+// deno-fmt-ignore -- файл форматируют два гейта с разной шириной строки (доска инициатив и «сервер · формат»)
 export const BOARD_COLUMNS =
   "id, name, group_id, public_roadmap, is_private, archived_at, sprint_group";
 export const PROJECT_COLUMNS = "id, name, position, created_at";
@@ -139,6 +141,7 @@ function byDateAsc(a: string | null, b: string | null): number {
 export function compareItems(a: RoadmapItem, b: RoadmapItem): number {
   const rank = STATE_RANK[a.state] - STATE_RANK[b.state];
   if (rank !== 0) return rank;
+  // deno-fmt-ignore -- файл форматируют два гейта с разной шириной строки (доска инициатив и «сервер · формат»)
   const byDate = a.state === "shipped"
     ? byDateAsc(b.shipped_at, a.shipped_at)
     : byDateAsc(a.due, b.due);
