@@ -1,16 +1,9 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import type { Project, ProjectInput } from "./types.ts";
 import { type ProjectRef, validateParent } from "./project-nesting.ts";
-import {
-  canViewProject,
-  parentLookup,
-  type ProjectAccessRow,
-} from "./project-access.ts";
-import {
-  projectEventRow,
-  type ProjectHistoryRow,
-  projectHistoryRowsFor,
-} from "./project-history.ts";
+import { canViewProject, parentLookup, type ProjectAccessRow } from "./project-access.ts";
+import { projectEventRow, type ProjectHistoryRow, projectHistoryRowsFor } from "./project-history.ts";
+import { onlyLive } from "./live.ts";
 
 const supabase = createClient(
   Deno.env.get("SUPABASE_URL")!,
@@ -77,8 +70,10 @@ export async function listProjects(
   // задачи админ видит, чужие проекты нет). Иначе цифра на карточке противоречит доске под ней:
   // проверено на проде 2026-08-25 — у руководителя подпроект «Дмитрий Карпов» показывал 0 задач,
   // а доска внутри рисовала 11. Безопасный дефолт без viewerId — как в listTasks: только публичные.
-  let tasksQuery = supabase
-    .from("tasks").select("project_id, project_linked")
+  let tasksQuery = onlyLive(
+    supabase
+      .from("tasks").select("project_id, project_linked"),
+  )
     .eq("group_id", groupId)
     .in("project_id", list.map((p) => p.id));
   if (!opts.isAdmin) {

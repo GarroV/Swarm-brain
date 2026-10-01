@@ -12,8 +12,9 @@
 //
 // Деплой: supabase functions deploy meeting-context --no-verify-jwt (хитит рекордер с Bearer smcp_).
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { verifyAgentToken, AgentAuthError } from "../_shared/agent-auth.ts";
-import { contextCountry, tezisyPreview, PREVIEW_LIMITS } from "../_shared/meeting-context.ts";
+import { AgentAuthError, verifyAgentToken } from "../_shared/agent-auth.ts";
+import { contextCountry, PREVIEW_LIMITS, tezisyPreview } from "../_shared/meeting-context.ts";
+import { onlyLive } from "../_shared/tasks/live.ts";
 
 const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
 
@@ -88,7 +89,13 @@ Deno.serve(async (req: Request) => {
   const { data: rows, error } = await q;
   if (error) return json({ error: "lookup_failed", detail: error.message }, 500);
   const entry = (rows ?? [])[0] as
-    | { id: string; content: string | null; metadata: Record<string, unknown> | null; entry_date: string | null; created_at: string }
+    | {
+      id: string;
+      content: string | null;
+      metadata: Record<string, unknown> | null;
+      entry_date: string | null;
+      created_at: string;
+    }
     | undefined;
   if (!entry) return json({ country, meeting: null, tasks: [], reason: "no_previous_meeting" });
 
@@ -97,9 +104,11 @@ Deno.serve(async (req: Request) => {
   // Задачи СТОРОНЫ (страны) текущего созвона — независимо от того, какая запись нашлась
   // для тезисов: «задачи и тезисы никак и не должны соприкасаться, это разные вещи»
   // (владелец 03.09.2026). Поэтому здесь нет ни meeting_id, ни ссылки на entry выше.
-  let tq = supabase
-    .from("tasks")
-    .select("id, title, due_date, assignees, status")
+  let tq = onlyLive(
+    supabase
+      .from("tasks")
+      .select("id, title, due_date, assignees, status"),
+  )
     .eq("country", country)
     .not("status", "in", `(${HIDDEN_TASK_STATUSES.join(",")})`)
     .eq("confirmed", true)

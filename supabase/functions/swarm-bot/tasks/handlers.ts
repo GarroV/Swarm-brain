@@ -1,18 +1,25 @@
-import { supabase, ADMIN_USER_ID } from "../lib/supabase.ts";
+import { ADMIN_USER_ID, supabase } from "../lib/supabase.ts";
 import { chatComplete } from "../lib/openai.ts";
-import { sendMessage, sendInlineMessage, editInlineMessage } from "../lib/telegram.ts";
-import { setSession, clearSession } from "../lib/storage.ts";
-import { dbGetTask, dbListTasks, dbCreateTask, dbUpdateTask, dbDeleteTask, dbListAllOpen, dbListToday } from "./db.ts";
-import { getProfilesForPrompt, buildProfileMap, buildDisplayNameMap, getAllUniqueMarkets, findUserByMention } from "./matcher.ts";
-import { sendTaskCard, STATUS_LABEL, formatTaskLine } from "./formatter.ts";
+import { editInlineMessage, sendInlineMessage, sendMessage } from "../lib/telegram.ts";
+import { clearSession, setSession } from "../lib/storage.ts";
+import { dbCreateTask, dbDeleteTask, dbGetTask, dbListAllOpen, dbListTasks, dbListToday, dbUpdateTask } from "./db.ts";
+import {
+  buildDisplayNameMap,
+  buildProfileMap,
+  findUserByMention,
+  getAllUniqueMarkets,
+  getProfilesForPrompt,
+} from "./matcher.ts";
+import { formatTaskLine, sendTaskCard, STATUS_LABEL } from "./formatter.ts";
 import { normalizeExtractedDueDate, todayIso } from "../../_shared/llm-date.ts";
 import type { Task } from "./types.ts";
 import type { TgCallbackQuery } from "../lib/types.ts";
+import { onlyLive } from "../../_shared/tasks/live.ts";
 
 const TELEGRAM_BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN")!;
 
 async function broadcastTaskAssigned(task: Task, groupId: string): Promise<void> {
-  let recipientIds: number[] = [...(task.assignee_telegram_ids ?? [])];
+  const recipientIds: number[] = [...(task.assignee_telegram_ids ?? [])];
 
   if ((task.tags ?? []).includes("#all")) {
     const { data } = await supabase
@@ -20,7 +27,7 @@ async function broadcastTaskAssigned(task: Task, groupId: string): Promise<void>
       .select("telegram_id")
       .eq("group_id", groupId)
       .not("telegram_id", "is", null);
-    const all = ((data ?? []) as Array<{ telegram_id: number }>).map(u => u.telegram_id);
+    const all = ((data ?? []) as Array<{ telegram_id: number }>).map((u) => u.telegram_id);
     const seen = new Set(recipientIds);
     for (const id of all) if (!seen.has(id)) recipientIds.push(id);
   }
@@ -33,7 +40,7 @@ async function broadcastTaskAssigned(task: Task, groupId: string): Promise<void>
   const country = task.country ? ` · ${task.country}` : "";
   const text = `📋 Тебе назначена задача: <b>${task.title}</b>${country}${due}`;
 
-  await Promise.all(recipientIds.map(id =>
+  await Promise.all(recipientIds.map((id) =>
     fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -93,7 +100,7 @@ export async function handleQuickCreateTask(
 
 // ── /tasks command ────────────────────────────────────────────────────────────
 
-export async function handleTasks(chatId: number, userId: number, filter: string, groupId: string): Promise<void> {
+export async function handleTasks(chatId: number, _userId: number, filter: string, groupId: string): Promise<void> {
   const sub = filter.trim().toLowerCase();
 
   if (!sub) {
@@ -113,12 +120,18 @@ export async function handleTasks(chatId: number, userId: number, filter: string
 
   if (sub === "все" || sub === "all") {
     const tasks = await dbListAllOpen(groupId);
-    if (!tasks.length) { await sendMessage(chatId, "Открытых задач нет."); return; }
+    if (!tasks.length) {
+      await sendMessage(chatId, "Открытых задач нет.");
+      return;
+    }
 
     const groups: Map<string, Task[]> = new Map();
     const noAssignee: Task[] = [];
     for (const t of tasks) {
-      if (!t.assignees?.length) { noAssignee.push(t); continue; }
+      if (!t.assignees?.length) {
+        noAssignee.push(t);
+        continue;
+      }
       const key = t.assignees[0];
       if (!groups.has(key)) groups.set(key, []);
       groups.get(key)!.push(t);
@@ -139,7 +152,10 @@ export async function handleTasks(chatId: number, userId: number, filter: string
 
   // Search by person name
   const tasks = await dbListTasks({ assignee: filter.trim(), limit: 200, groupId });
-  if (!tasks.length) { await sendMessage(chatId, `Задач для <b>${filter.trim()}</b> не найдено.`); return; }
+  if (!tasks.length) {
+    await sendMessage(chatId, `Задач для <b>${filter.trim()}</b> не найдено.`);
+    return;
+  }
   await sendMessage(chatId, `<b>👤 ${filter.trim()}: ${tasks.length} задач</b>`);
   for (const t of tasks.slice(0, 15)) await sendTaskCard(chatId, t);
 }
@@ -167,7 +183,7 @@ export async function smartTaskSearch(chatId: number, question: string): Promise
 
   const raw = await chatComplete(
     `Из вопроса извлеки фильтр. Верни JSON: {"person":"Имя или null","country":"Страна или null","period":"week/null"}\nТолько JSON.`,
-    question
+    question,
   );
 
   let person: string | null = null;
@@ -180,10 +196,15 @@ export async function smartTaskSearch(chatId: number, question: string): Promise
     period = p.period && p.period !== "null" ? p.period : null;
   } catch { /* ignore */ }
 
-  const tasks = await dbListTasks({ assignee: person ?? undefined, country: country ?? undefined, period: period ?? undefined, limit: 10 });
+  const tasks = await dbListTasks({
+    assignee: person ?? undefined,
+    country: country ?? undefined,
+    period: period ?? undefined,
+    limit: 10,
+  });
   if (!tasks.length) return false;
 
-  const lines = tasks.map(t => {
+  const lines = tasks.map((t) => {
     const who = t.assignees?.join(", ") || "—";
     const due = t.due_date ? ` · до ${t.due_date}` : "";
     const c = t.country ? ` · ${t.country}` : "";
@@ -214,9 +235,9 @@ const STATUS_LABEL_FULL: Record<string, string> = {
 
 const SOURCE_LABEL_BOT: Record<string, string> = {
   transcript: "🎤 Transcript",
-  claude:     "🤖 Claude",
-  manual:     "✍️ Вручную",
-  mini_app:   "📱 Mini App",
+  claude: "🤖 Claude",
+  manual: "✍️ Вручную",
+  mini_app: "📱 Mini App",
 };
 
 function truncateTitle(title: string): string {
@@ -254,15 +275,14 @@ function buildTaskDetailMessage(task: Task): { text: string; keyboard: unknown[]
   const who = task.assignees?.length ? task.assignees.join(", ") : "—";
   const due = task.due_date
     ? (() => {
-        const d = new Date(task.due_date + "T12:00:00");
-        return d.toLocaleDateString("ru-RU", { day: "2-digit", month: "2-digit", year: "numeric" });
-      })()
+      const d = new Date(task.due_date + "T12:00:00");
+      return d.toLocaleDateString("ru-RU", { day: "2-digit", month: "2-digit", year: "numeric" });
+    })()
     : "—";
   const statusLabel = STATUS_LABEL_FULL[task.status] ?? task.status;
 
   const srcLabel = SOURCE_LABEL_BOT[task.source] ?? task.source ?? "—";
-  const text =
-    `📌 <b>${task.title}</b>\n\n` +
+  const text = `📌 <b>${task.title}</b>\n\n` +
     `👤 ${who}\n` +
     `📅 Дедлайн: ${due}\n` +
     `🏷 Статус: ${statusLabel}\n` +
@@ -322,20 +342,16 @@ export async function handleTaskCallbacks(
       .select("first_name, last_name")
       .eq("telegram_id", userId)
       .maybeSingle();
-    const displayName = profile
-      ? [profile.first_name, profile.last_name].filter(Boolean).join(" ")
-      : null;
+    const displayName = profile ? [profile.first_name, profile.last_name].filter(Boolean).join(" ") : null;
 
     const [byId, byName] = await Promise.all([
       dbListTasks({ telegramId: userId, groupId, limit: 50 }),
-      displayName
-        ? dbListTasks({ assignee: displayName, groupId, limit: 50 })
-        : Promise.resolve([]),
+      displayName ? dbListTasks({ assignee: displayName, groupId, limit: 50 }) : Promise.resolve([]),
     ]);
     const seen = new Set<string>();
-    const merged = [...byId, ...byName].filter(t => !seen.has(t.id) && seen.add(t.id));
+    const merged = [...byId, ...byName].filter((t) => !seen.has(t.id) && seen.add(t.id));
     // confirmed:false — незавершённый /addtask (между «Задача?» и вводом дедлайна), не показываем
-    const active = merged.filter(t => t.confirmed && !["done", "cancelled", "draft"].includes(t.status));
+    const active = merged.filter((t) => t.confirmed && !["done", "cancelled", "draft"].includes(t.status));
 
     if (!active.length) {
       await editInlineMessage(
@@ -347,7 +363,7 @@ export async function handleTaskCallbacks(
       return true;
     }
 
-    const taskButtons = active.map(t => [{
+    const taskButtons = active.map((t) => [{
       text: `${STATUS_EMOJI[t.status] ?? "🔵"} ${truncateTitle(t.title)}${formatDueSuffix(t.due_date)}`,
       callback_data: `tk_t_${t.id}`,
     }]);
@@ -365,7 +381,7 @@ export async function handleTaskCallbacks(
   // tk_all — "Для меня": team tasks (#all / no assignee) + tasks assigned to me
   if (data === "tk_all") {
     const all = await dbListAllOpen(groupId);
-    const tasks = all.filter(t =>
+    const tasks = all.filter((t) =>
       !t.assignees?.length ||
       (t.tags ?? []).includes("#all") ||
       (t.assignee_telegram_ids ?? []).includes(userId)
@@ -373,14 +389,15 @@ export async function handleTaskCallbacks(
 
     if (!tasks.length) {
       await editInlineMessage(
-        chatId, cb.message.message_id,
+        chatId,
+        cb.message.message_id,
         "📋 Задач для тебя нет.",
         [[{ text: "🔙 Назад", callback_data: "tk_menu" }]],
       );
       return true;
     }
 
-    const buttons: Array<Array<{ text: string; callback_data: string }>> = tasks.map(t => [{
+    const buttons: Array<Array<{ text: string; callback_data: string }>> = tasks.map((t) => [{
       text: `${STATUS_EMOJI[t.status] ?? "🔵"} ${truncateTitle(t.title)}${formatDueSuffix(t.due_date)}`,
       callback_data: `tk_t_${t.id}`,
     }]);
@@ -395,7 +412,8 @@ export async function handleTaskCallbacks(
 
     if (!tasks.length) {
       await editInlineMessage(
-        chatId, cb.message.message_id,
+        chatId,
+        cb.message.message_id,
         "👥 Открытых задач нет.",
         [[{ text: "🔙 Назад", callback_data: "tk_menu" }]],
       );
@@ -406,7 +424,10 @@ export async function handleTaskCallbacks(
     const groups: Map<string, Task[]> = new Map();
     const noAssignee: Task[] = [];
     for (const t of limited) {
-      if (!t.assignees?.length) { noAssignee.push(t); continue; }
+      if (!t.assignees?.length) {
+        noAssignee.push(t);
+        continue;
+      }
       const key = t.assignees[0];
       if (!groups.has(key)) groups.set(key, []);
       groups.get(key)!.push(t);
@@ -449,20 +470,20 @@ export async function handleTaskCallbacks(
   // подтверждать в Telegram нечего. Задачи из встречи делает человек в вебе кнопкой
   // «Сгенерировать задачи», и в базу они едут сразу активными.
 
-
   // tk_today — tasks due today or overdue, assigned to me or #all
   if (data === "tk_today") {
     const tasks = await dbListToday(userId, groupId);
     if (!tasks.length) {
       await editInlineMessage(
-        chatId, cb.message.message_id,
+        chatId,
+        cb.message.message_id,
         "📅 Задач на сегодня нет. Отдыхай 🎉",
         [[{ text: "🔙 Назад", callback_data: "tk_menu" }]],
       );
       return true;
     }
     const today = new Date().toISOString().split("T")[0];
-    const buttons = tasks.map(t => {
+    const buttons = tasks.map((t) => {
       const overdue = t.due_date && t.due_date < today;
       const icon = overdue ? "🔴" : "🟡";
       const dueSuffix = overdue ? ` · просрочена (${t.due_date!.slice(5)})` : ` · сегодня`;
@@ -478,7 +499,10 @@ export async function handleTaskCallbacks(
     const taskId = data.replace("tk_t_", "");
     const task = await dbGetTask(taskId);
     if (!task) {
-      await editInlineMessage(chatId, cb.message.message_id, "Задача не найдена.", [[{ text: "🔙 Назад", callback_data: "tk_mine" }]]);
+      await editInlineMessage(chatId, cb.message.message_id, "Задача не найдена.", [[{
+        text: "🔙 Назад",
+        callback_data: "tk_mine",
+      }]]);
       return true;
     }
     const { text, keyboard } = buildTaskDetailMessage(task);
@@ -495,7 +519,10 @@ export async function handleTaskCallbacks(
     await dbUpdateTask(taskId, { status: newStatus });
     const task = await dbGetTask(taskId);
     if (!task) {
-      await editInlineMessage(chatId, cb.message.message_id, "Задача не найдена.", [[{ text: "🔙 Назад", callback_data: "tk_mine" }]]);
+      await editInlineMessage(chatId, cb.message.message_id, "Задача не найдена.", [[{
+        text: "🔙 Назад",
+        callback_data: "tk_mine",
+      }]]);
       return true;
     }
     const { text, keyboard } = buildTaskDetailMessage(task);
@@ -571,7 +598,10 @@ export async function handleTaskCallbacks(
   if (data.startsWith("tc_")) {
     const taskId = data.replace("tc_", "");
     const task = await dbGetTask(taskId);
-    if (!task) { await sendMessage(chatId, "Задача не найдена."); return true; }
+    if (!task) {
+      await sendMessage(chatId, "Задача не найдена.");
+      return true;
+    }
     await dbUpdateTask(taskId, { confirmed: true, status: "open" });
     await sendMessage(chatId, `✅ Подтверждено: <b>${task.title}</b>`);
     const confirmedTask = { ...task, confirmed: true, status: "open" };
@@ -623,8 +653,8 @@ export async function handleTaskCallbacks(
     const taskId = data.replace("tctag_", "");
     const COUNTRIES = ["Serbia", "Bulgaria", "Croatia", "Hungary", "Moldova", "Romania"];
     const ROLES = ["#all", "#marketing", "#rnd", "#bd"];
-    const countryButtons = COUNTRIES.map(c => [{ text: `🌍 ${c}`, callback_data: `tctagc_${taskId}:${c}` }]);
-    const roleButtons = ROLES.map(r => [{ text: r, callback_data: `tctagr_${taskId}:${r}` }]);
+    const countryButtons = COUNTRIES.map((c) => [{ text: `🌍 ${c}`, callback_data: `tctagc_${taskId}:${c}` }]);
+    const roleButtons = ROLES.map((r) => [{ text: r, callback_data: `tctagr_${taskId}:${r}` }]);
     countryButtons.push([{ text: "❌ Без страны", callback_data: `tctagc_${taskId}:none` }]);
     await sendInlineMessage(chatId, "Страна:", countryButtons);
     await sendInlineMessage(chatId, "Теги (можно несколько):", roleButtons);
@@ -649,9 +679,12 @@ export async function handleTaskCallbacks(
     const taskId = rest.slice(0, sep);
     const tag = rest.slice(sep + 1);
     const task = await dbGetTask(taskId);
-    if (!task) { await sendMessage(chatId, "Задача не найдена."); return true; }
+    if (!task) {
+      await sendMessage(chatId, "Задача не найдена.");
+      return true;
+    }
     const current = task.tags ?? [];
-    const updated = current.includes(tag) ? current.filter(t => t !== tag) : [...current, tag];
+    const updated = current.includes(tag) ? current.filter((t) => t !== tag) : [...current, tag];
     await dbUpdateTask(taskId, { tags: updated });
     await sendMessage(chatId, `🏷 Теги: <b>${updated.join(", ") || "нет"}</b>`);
     return true;
@@ -680,8 +713,8 @@ export async function handleTaskCallbacks(
       seen.add(u.telegram_id);
       return true;
     });
-    const nameMap = await buildDisplayNameMap(allUsers.map(u => u.telegram_id));
-    const buttons = allUsers.map(u => [{
+    const nameMap = await buildDisplayNameMap(allUsers.map((u) => u.telegram_id));
+    const buttons = allUsers.map((u) => [{
       text: nameMap[u.telegram_id] || (u.username ? `@${u.username}` : `ID ${u.telegram_id}`),
       callback_data: `tas_${taskId}_${u.telegram_id}`,
     }]);
@@ -709,7 +742,10 @@ export async function handleTaskCallbacks(
     const taskId = parts[1];
     const newStatus = parts.slice(2).join("_");
     const task = await dbGetTask(taskId);
-    if (!task) { await sendMessage(chatId, "Задача не найдена."); return true; }
+    if (!task) {
+      await sendMessage(chatId, "Задача не найдена.");
+      return true;
+    }
     const recur = await dbUpdateTask(taskId, { status: newStatus }, { actor: username, actorTelegramId: userId });
     // Историю здесь БОЛЬШЕ НЕ ПИШЕМ: с issue #286 её пишет updateTask из единственной точки —
     // и для переката, и для обычной смены статуса. Прежняя вставка давала бы вторую строку на
@@ -718,7 +754,9 @@ export async function handleTaskCallbacks(
     await sendMessage(
       chatId,
       recur
-        ? `🔁 <b>${task.title}</b> — цикл закрыт, следующий срок ${new Date(recur.recurred.to + "T12:00:00").toLocaleDateString("ru-RU", { day: "numeric", month: "long" })}`
+        ? `🔁 <b>${task.title}</b> — цикл закрыт, следующий срок ${
+          new Date(recur.recurred.to + "T12:00:00").toLocaleDateString("ru-RU", { day: "numeric", month: "long" })
+        }`
         : `${STATUS_LABEL[newStatus] ?? newStatus} <b>${task.title}</b>`,
     );
     return true;
@@ -735,11 +773,15 @@ export async function handleTaskCallbacks(
 
 // ── Task list menu callbacks ──────────────────────────────────────────────────
 
-async function handleTaskListCallback(chatId: number, userId: number, _username: string, type: string): Promise<void> {
+async function handleTaskListCallback(chatId: number, _userId: number, _username: string, type: string): Promise<void> {
   if (type === "done") {
-    const { data } = await supabase.from("tasks").select("*").eq("status", "done").eq("is_private", false).order("updated_at", { ascending: false }).limit(15);
+    const { data } = await onlyLive(supabase.from("tasks").select("*")).eq("status", "done").eq("is_private", false)
+      .order("updated_at", { ascending: false }).limit(15);
     const tasks = (data ?? []) as Task[];
-    if (!tasks.length) { await sendMessage(chatId, "Выполненных задач нет."); return; }
+    if (!tasks.length) {
+      await sendMessage(chatId, "Выполненных задач нет.");
+      return;
+    }
     await sendMessage(chatId, `<b>✅ Выполненные: ${tasks.length}</b>`);
     for (const t of tasks) await sendTaskCard(chatId, t);
   } else if (type === "export") {
@@ -748,13 +790,16 @@ async function handleTaskListCallback(chatId: number, userId: number, _username:
 }
 
 async function handleTasksExport(chatId: number): Promise<void> {
-  const { data } = await supabase.from("tasks").select("*")
+  const { data } = await onlyLive(supabase.from("tasks").select("*"))
     .not("status", "in", '("draft")')
-    .eq("is_private", false)  // экспорт — командные задачи, без личных (Рой)
+    .eq("is_private", false) // экспорт — командные задачи, без личных (Рой)
     .order("due_date", { ascending: true })
     .limit(500);
   const tasks = (data ?? []) as Task[];
-  if (!tasks.length) { await sendMessage(chatId, "Задач для экспорта нет."); return; }
+  if (!tasks.length) {
+    await sendMessage(chatId, "Задач для экспорта нет.");
+    return;
+  }
 
   const lines = ["Задача\tИсполнители\tРынок\tДедлайн\tСтатус\tИсточник\tСоздана"];
   for (const t of tasks) {
@@ -772,7 +817,11 @@ async function handleTasksExport(chatId: number): Promise<void> {
   const csv = lines.join("\n");
   const form = new FormData();
   form.append("chat_id", String(chatId));
-  form.append("document", new Blob([csv], { type: "text/plain" }), `tasks_${new Date().toISOString().slice(0, 10)}.tsv`);
+  form.append(
+    "document",
+    new Blob([csv], { type: "text/plain" }),
+    `tasks_${new Date().toISOString().slice(0, 10)}.tsv`,
+  );
   form.append("caption", `Экспорт задач · ${tasks.length} шт.`);
   await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendDocument`, { method: "POST", body: form });
 }
@@ -853,7 +902,7 @@ export async function handleTaskSessionInput(
     const today = todayIso();
     const parsed = await chatComplete(
       `Сегодня ${today}. Преобразуй дату из текста пользователя в формат ГГГГ-ММ-ДД. Только дату, без пояснений. Если не распознал — верни "null".`,
-      text.trim()
+      text.trim(),
     );
     const due = normalizeExtractedDueDate(parsed.trim(), today);
     if (!due) {
@@ -882,7 +931,7 @@ export async function handleTaskSessionInput(
     const today = new Date().toISOString().split("T")[0];
     const parsed = await chatComplete(
       `Сегодня ${today}. Преобразуй дату в формат ГГГГ-ММ-ДД. Только дату. Если не распознал — "null".`,
-      text.trim()
+      text.trim(),
     );
     const due = /^\d{4}-\d{2}-\d{2}$/.test(parsed.trim()) ? parsed.trim() : null;
     if (!due) {
@@ -891,7 +940,11 @@ export async function handleTaskSessionInput(
       return true;
     }
     await dbUpdateTask(taskId, { due_date: due });
-    const dueFmt = new Date(due + "T12:00:00").toLocaleDateString("ru-RU", { day: "numeric", month: "long", year: "numeric" });
+    const dueFmt = new Date(due + "T12:00:00").toLocaleDateString("ru-RU", {
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+    });
     await sendMessage(chatId, `📅 Дедлайн: <b>${dueFmt}</b>`);
     return true;
   }

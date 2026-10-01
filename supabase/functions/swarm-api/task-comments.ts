@@ -1,12 +1,10 @@
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { json } from "./http.ts";
-import {
-  commentDeleteDenial,
-  validateCommentContent,
-} from "../_shared/tasks/comments.ts";
+import { commentDeleteDenial, validateCommentContent } from "../_shared/tasks/comments.ts";
 import { canViewTask } from "../_shared/tasks/access.ts";
 import { notifyTaskComment } from "./notifications.ts";
 import { ensureCommentSubscription } from "./task-subscriptions.ts";
+import { onlyLive } from "../_shared/tasks/live.ts";
 
 // Роуты /tasks/:id/comments — комментарии-апдейты к задаче.
 // Доступ: задача того же воркспейса (group_id) + приватную видит только владелец/админ.
@@ -37,11 +35,13 @@ async function loadTask(
   supabase: SupabaseClient,
   taskId: string,
 ): Promise<TaskRow | null> {
-  const { data } = await supabase
-    .from("tasks")
-    .select(
-      "id, group_id, is_private, owner_id, title, assignee_telegram_ids, created_by_telegram_id",
-    )
+  const { data } = await onlyLive(
+    supabase
+      .from("tasks")
+      .select(
+        "id, group_id, is_private, owner_id, title, assignee_telegram_ids, created_by_telegram_id",
+      ),
+  )
     .eq("id", taskId).maybeSingle();
   return (data as TaskRow | null) ?? null;
 }

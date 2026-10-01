@@ -1,11 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import type { Task, TaskInput } from "./types.ts";
-import {
-  completionPatch,
-  hidesClosedByDefault,
-  isClosedStatus,
-  shouldCascadeClose,
-} from "./statuses.ts";
+import { completionPatch, hidesClosedByDefault, isClosedStatus, shouldCascadeClose } from "./statuses.ts";
 import { buildRecurPatch, type RecurRow, todayInTz } from "./recurrence.ts";
 import { defaultDueDate } from "./due.ts";
 import { historyRowsFor, isJournaled, type TaskSnapshot } from "./history.ts";
@@ -31,9 +26,7 @@ export async function createTask(
     // одного правила в разных клиентах у нас уже расходились (линза задач, #440).
     due_date: input.due_date ?? defaultDueDate(),
     remind_date: input.remind_date ?? null,
-    remind_set_by: input.remind_date
-      ? (input.remind_set_by ?? input.created_by_telegram_id ?? null)
-      : null,
+    remind_set_by: input.remind_date ? (input.remind_set_by ?? input.created_by_telegram_id ?? null) : null,
     tags: input.tags ?? [],
     country: input.country ?? null,
     task_role: input.task_role ?? null,
@@ -41,9 +34,7 @@ export async function createTask(
     source: input.source ?? "manual",
     status: input.status ?? "open",
     // Задача может родиться уже закрытой (импорт, MCP) — тогда дата закрытия ставится сразу.
-    completed_at: isClosedStatus(input.status)
-      ? new Date().toISOString()
-      : null,
+    completed_at: isClosedStatus(input.status) ? new Date().toISOString() : null,
     meeting_id: input.meeting_id ?? null,
     group_id: groupId ?? input.group_id ?? null,
     confirmed: input.confirmed ?? false,
@@ -158,8 +149,7 @@ export async function listTasksWithTotal(filters: {
 
   if (filters.period === "week") {
     const today = new Date().toISOString().split("T")[0];
-    const end =
-      new Date(Date.now() + 7 * 86_400_000).toISOString().split("T")[0];
+    const end = new Date(Date.now() + 7 * 86_400_000).toISOString().split("T")[0];
     q = q.gte("due_date", today).lte("due_date", end);
   }
 
@@ -236,6 +226,7 @@ export async function updateTask(
   // невосстановимо потерянная история.
   const touchesJournaled = Object.keys(fields).some(isJournaled);
   if (touchesJournaled) {
+    // archive-ok: снимок перед записью для журнала: правится строка по id, какая бы она ни была
     const { data } = await supabase.from("tasks")
       .select("*")
       .eq("id", id)
@@ -255,21 +246,13 @@ export async function updateTask(
         // задачу одним запросом (MCP умеет), и считать надо от нового графика, а не от прежнего.
         const effective: RecurRow = {
           status: (fields.status as string) ?? row.status,
-          recur_freq: fields.recur_freq !== undefined
-            ? fields.recur_freq ?? null
-            : row.recur_freq,
+          recur_freq: fields.recur_freq !== undefined ? fields.recur_freq ?? null : row.recur_freq,
           recur_anchor_dom: fields.recur_anchor_dom !== undefined
             ? fields.recur_anchor_dom ?? null
             : row.recur_anchor_dom,
-          due_date: fields.due_date !== undefined
-            ? fields.due_date ?? null
-            : row.due_date,
-          start_date: fields.start_date !== undefined
-            ? fields.start_date ?? null
-            : row.start_date,
-          remind_date: fields.remind_date !== undefined
-            ? fields.remind_date ?? null
-            : row.remind_date,
+          due_date: fields.due_date !== undefined ? fields.due_date ?? null : row.due_date,
+          start_date: fields.start_date !== undefined ? fields.start_date ?? null : row.start_date,
+          remind_date: fields.remind_date !== undefined ? fields.remind_date ?? null : row.remind_date,
         };
         const recurPatch = buildRecurPatch(effective, todayInTz());
         if (recurPatch) {
@@ -307,8 +290,7 @@ export async function updateTask(
       changed_by: opts.actor ?? "recurring",
       old_status: fields.status ?? null,
       new_status: "open",
-      note:
-        `цикл закрыт, следующий срок ${result.recurred.to} (было ${result.recurred.from})`,
+      note: `цикл закрыт, следующий срок ${result.recurred.to} (было ${result.recurred.from})`,
     });
   } else {
     // Журнал изменений: статус, срок, исполнитель, проект, спринт, приоритет — по строке на

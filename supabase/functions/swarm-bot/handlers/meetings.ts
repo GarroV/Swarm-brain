@@ -13,6 +13,7 @@ import { getWorkspaceMarkets } from "../lib/workspace.ts";
 import { COUNTRY_NAMES } from "../../_shared/countries.ts";
 import { buildEmbeddingInput, marketTagsFromInput } from "../../_shared/meta-extract.ts";
 import type { TgCallbackQuery } from "../lib/types.ts";
+import { onlyLive } from "../../_shared/tasks/live.ts";
 
 const TELEGRAM_BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN")!;
 
@@ -259,6 +260,7 @@ export async function handleMeetingCallbacks(
     const meetingId = entry.metadata?.meeting_id as string | null ?? null;
 
     if (meetingId) {
+      // archive-ok: удаление встречи: ищем задачи для уборки, архив тоже (физическое удаление здесь — отдельный дефект)
       const { data: taskIds } = await supabase.from("tasks").select("id").eq("meeting_id", meetingId);
       if (taskIds?.length) {
         const ids = taskIds.map((t: { id: string }) => t.id);
@@ -340,7 +342,7 @@ export async function handleMeetingCallbacks(
 
     let tasksText = "";
     if (meetingId) {
-      const { data: tasks } = await supabase.from("tasks").select("title, assignees, due_date, status").eq(
+      const { data: tasks } = await onlyLive(supabase.from("tasks").select("title, assignees, due_date, status")).eq(
         "meeting_id",
         meetingId,
       ).limit(8);
@@ -494,7 +496,10 @@ export async function handleMeetingCallbacks(
     ).maybeSingle();
     const full = prof ? [prof.first_name, prof.last_name].filter(Boolean).join(" ") : "";
     const assigneeName = full || (au?.username ? `@${au.username}` : `ID ${targetTgId}`);
-    const { data: meetingTasks } = await supabase.from("tasks").select("id, assignees").eq("meeting_id", meetingId);
+    const { data: meetingTasks } = await onlyLive(supabase.from("tasks").select("id, assignees")).eq(
+      "meeting_id",
+      meetingId,
+    );
     for (const t of (meetingTasks ?? []) as Array<{ id: string; assignees: string[] }>) {
       const existing = t.assignees ?? [];
       if (!existing.includes(assigneeName)) {

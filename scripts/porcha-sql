@@ -25,7 +25,21 @@ if ! psql "$DB_URL" -Atc 'select 1' >/dev/null 2>&1; then
   exit 1
 fi
 
-restore() { psql "$DB_URL" -q -v ON_ERROR_STOP=1 -f "$MIG" >/dev/null; }
+# Миграции, которые порча накатывает повторно, — все из списка (они идемпотентны по договору
+# этого файла). Порча и восстановление МИГРАЦИИ перекатывают и её более поздних соседей: иначе
+# повторный накат старой миграции вернул бы старое тело функции, которую переопределила
+# поздняя (приёмку спринта переопределяет миграция #575), — стенд остался бы со старым кодом,
+# а порча «краснела» бы от подмены, а не от поломки.
+LISTED=$( { echo "$MIGRATION"; grep -v '^#' scripts/porcha-sql.txt | awk -F'|' 'NF>=4 && $4!="" {print $4}'; } | sort -u)
+replay_after() {
+  local base; base=$(basename "$1")
+  for later in $LISTED; do
+    [[ "$(basename "$later")" > "$base" ]] || continue
+    psql "$DB_URL" -q -v ON_ERROR_STOP=1 -f "$later" >/dev/null || return 1
+  done
+}
+
+restore() { psql "$DB_URL" -q -v ON_ERROR_STOP=1 -f "$MIG" >/dev/null && replay_after "$MIG"; }
 
 while IFS='|' read -r FROM TO TEST MIG; do
   case "$FROM" in ''|\#*) continue ;; esac
@@ -43,7 +57,7 @@ while IFS='|' read -r FROM TO TEST MIG; do
     rm -f "$TMP"; FAILED=1; continue
   fi
 
-  if ! psql "$DB_URL" -q -v ON_ERROR_STOP=1 -f "$TMP" >/dev/null 2>&1; then
+  if ! { psql "$DB_URL" -q -v ON_ERROR_STOP=1 -f "$TMP" >/dev/null 2>&1 && replay_after "$MIG"; }; then
     # Сломанная миграция, которая не накатывается, проверку не проводит: база осталась целой,
     # и зелёный тест ничего бы не значил.
     echo "порча-sql  ОТКАЗ    сломанная миграция не накатилась: $FROM"

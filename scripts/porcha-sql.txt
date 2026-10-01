@@ -3,12 +3,12 @@
 #
 # Каждая строка отвечает на вопрос «если убрать это условие, тест покраснеет?». Если нет —
 # условие держится ни на чём, и в базе оно осталось только потому, что его никто не проверял.
-and t.is_private = false|and true|supabase/functions/_shared/tasks/sprint-accept.db.test.ts
+and t.is_private = false|and true|supabase/functions/_shared/tasks/sprint-accept.db.test.ts|supabase/migrations/20261001180000_archived_tasks_leave_sprints.sql
 # Условия «на всякий случай» сюда не попадают: их порча краснеть не заставит, потому что они
 # ничего не держат. Такое условие не вносится в список, а убирается из SQL — 18.09.2026 так
 # ушло `si.removed_at is null` из приёмки: упоминание отсекает соединение по внешнему ключу.
-si.carry_count + 1|si.carry_count|supabase/functions/_shared/tasks/sprint-accept.db.test.ts
-v_cycle.status <> 'active'|v_cycle.status = 'нет такого статуса'|supabase/functions/_shared/tasks/sprint-accept.db.test.ts
+si.carry_count + 1|si.carry_count|supabase/functions/_shared/tasks/sprint-accept.db.test.ts|supabase/migrations/20261001180000_archived_tasks_leave_sprints.sql
+v_cycle.status <> 'active'|v_cycle.status = 'нет такого статуса'|supabase/functions/_shared/tasks/sprint-accept.db.test.ts|supabase/migrations/20261001180000_archived_tasks_leave_sprints.sql
 before delete on public.tasks|before insert on public.tasks|supabase/functions/_shared/tasks/sprint-accept.db.test.ts
 and frozen_at is null|and true|supabase/functions/_shared/tasks/sprint-accept.db.test.ts
 # Сброс демо (issue #580). Четвёртое поле — миграция сброса. Порча, РАСШИРЯЮЩАЯ удаление за
@@ -34,3 +34,10 @@ delete from public.user_profiles      where telegram_id = any (c_users);|delete 
                       then null else public.notifications.read_at end,|                      then public.notifications.read_at else public.notifications.read_at end,|supabase/functions/_shared/maintenance-announce.db.test.ts|supabase/migrations/20260928200000_maintenance_announce.sql
 and value ->> 'kind' = 'freeze'|and true|supabase/functions/_shared/maintenance-announce.db.test.ts|supabase/migrations/20260928200000_maintenance_announce.sql
 revoke all on function public.maintenance_announce(integer, integer, text, text) from public, anon, authenticated;|grant execute on function public.maintenance_announce(integer, integer, text, text) to anon;|supabase/functions/_shared/maintenance-announce.db.test.ts|supabase/migrations/20260928200000_maintenance_announce.sql
+# Архивная задача уходит из спринтов и пингов (issue #575). Миграция переопределяет приёмку,
+# поэтому порча старой миграции доски перекатывает и эту следом (replay в scripts/porcha-sql).
+       and t.archived_at is null|       and true|supabase/functions/_shared/tasks/archive-sprint.db.test.ts|supabase/migrations/20261001180000_archived_tasks_leave_sprints.sql
+after update of archived_at on public.tasks|after insert on public.tasks|supabase/functions/_shared/tasks/archive-sprint.db.test.ts|supabase/migrations/20261001180000_archived_tasks_leave_sprints.sql
+elsif old.archived_at is not null and new.archived_at is null then|elsif false then|supabase/functions/_shared/tasks/archive-sprint.db.test.ts|supabase/migrations/20261001180000_archived_tasks_leave_sprints.sql
+and frozen_at is null  -- принятый спринт не трогаем|and true|supabase/functions/_shared/tasks/archive-sprint.db.test.ts|supabase/migrations/20261001180000_archived_tasks_leave_sprints.sql
+new.ping_delivered_to := '{}';|null;|supabase/functions/_shared/tasks/archive-sprint.db.test.ts|supabase/migrations/20261001180000_archived_tasks_leave_sprints.sql

@@ -4,10 +4,13 @@ import {
   formatPings,
   groupByRecipient,
   isPingDue,
+  PING_RETRY_DAYS,
   pingRecipients,
-  todayIn,
   type PingRow,
+  settlePing,
+  todayIn,
 } from "./task-pings.ts";
+import { addDays } from "../../_shared/tasks/due.ts";
 
 const row = (over: Partial<PingRow> = {}): PingRow => ({
   id: "t1",
@@ -104,4 +107,43 @@ Deno.test("formatPings: без адреса веба кнопок нет, спи
   const { text, keyboard } = formatPings([row(), row({ id: "t2", title: "Вторая" })], "");
   assertEquals(keyboard.length, 0);
   assertEquals(text.includes("Вторая"), true);
+});
+
+// ── #575: архивная задача и частичный сбой отправки ───────────────────────────────────────
+
+Deno.test("isPingDue: архивная задача не пингует — её нет нигде в интерфейсе", () => {
+  assertEquals(isPingDue(row({ archived_at: "2026-08-25T10:00:00Z" }), "2026-08-26"), false);
+});
+
+Deno.test("groupByRecipient: тому, кому пинг уже дошёл, второй раз не шлём", () => {
+  const groups = groupByRecipient([row({ assignee_telegram_ids: [111, 333], ping_delivered_to: [111] })]);
+  assertEquals([...groups.keys()], [333]);
+});
+
+Deno.test("settlePing: все получатели получили — пинг гасится", () => {
+  const r = row({ assignee_telegram_ids: [111, 333] });
+  assertEquals(settlePing(r, [111, 333], "2026-08-26"), { done: true, delivered: [111, 333], gaveUp: false });
+});
+
+Deno.test("settlePing: одному не дошло — пинг НЕ гасится, дошедшие запоминаются", () => {
+  const r = row({ assignee_telegram_ids: [111, 333] });
+  assertEquals(settlePing(r, [111], "2026-08-26"), { done: false, delivered: [111], gaveUp: false });
+});
+
+Deno.test("settlePing: дошедшие на прошлом тике складываются с сегодняшними", () => {
+  const r = row({ assignee_telegram_ids: [111, 333], ping_delivered_to: [111] });
+  assertEquals(settlePing(r, [333], "2026-08-26"), { done: true, delivered: [111, 333], gaveUp: false });
+});
+
+Deno.test("settlePing: недоставку пытаемся отдать не вечно — после окна повторов гасим", () => {
+  const r = row({ assignee_telegram_ids: [111, 333], remind_date: "2026-08-20" });
+  const out = settlePing(r, [111], addDays("2026-08-20", PING_RETRY_DAYS));
+  assertEquals(out, { done: true, delivered: [111], gaveUp: true });
+  // А на день раньше — ещё пробуем.
+  assertEquals(settlePing(r, [111], addDays("2026-08-20", PING_RETRY_DAYS - 1)).done, false);
+});
+
+Deno.test("settlePing: получателей нет вовсе — гасим сразу (иначе задача висит в выборке вечно)", () => {
+  const r = row({ assignee_telegram_ids: [], remind_set_by: null, created_by_telegram_id: null });
+  assertEquals(settlePing(r, [], "2026-08-26").done, true);
 });
