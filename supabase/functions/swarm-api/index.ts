@@ -40,6 +40,7 @@ import {
   getTask,
   listTasksWithTotal,
   updateTask,
+  TaskUserError,
 } from "../_shared/tasks/db.ts";
 import {
   recurrencePatchFor,
@@ -1245,6 +1246,7 @@ async function routeRequest(req: Request): Promise<Response> {
         const task = await createTask(input, groupId);
         return json(task, 201, origin);
       } catch (e) {
+        if (e instanceof TaskUserError) return apiErr(e.status, e.message, origin);
         return serverError(origin, "tasks create", e);
       }
     }
@@ -1551,6 +1553,7 @@ async function routeRequest(req: Request): Promise<Response> {
         const updated = await getTask(taskId);
         return json(updated, 200, origin);
       } catch (e) {
+        if (e instanceof TaskUserError) return apiErr(e.status, e.message, origin);
         return serverError(origin, "tasks update", e);
       }
     }
@@ -1574,6 +1577,7 @@ async function routeRequest(req: Request): Promise<Response> {
           headers: corsHeaders(origin),
         });
       } catch (e) {
+        if (e instanceof TaskUserError) return apiErr(e.status, e.message, origin);
         return serverError(origin, "tasks delete", e);
       }
     }
