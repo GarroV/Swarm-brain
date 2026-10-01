@@ -390,8 +390,9 @@ export async function dissolveSprintGroup(
   const plan = dissolvePlan(project);
   if (!plan.ok) return null;
 
-  const { data: tasks, error } = await supabase.from("tasks")
-    .select("id, parent_id").eq("group_id", groupId).eq("project_id", id);
+  const { data: tasks, error } = await onlyLive(
+    supabase.from("tasks").select("id, parent_id").eq("group_id", groupId).eq("project_id", id),
+  );
   if (error) throw new Error(error.message);
   const rows = (tasks ?? []) as Array<{ id: string; parent_id: string | null }>;
   const ids = rows.map((t) => t.id);
