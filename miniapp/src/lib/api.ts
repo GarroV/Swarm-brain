@@ -1131,14 +1131,6 @@ export async function deleteTaskLabel(id: string): Promise<void> {
   await apiFetch<void>(`/task-labels/${id}`, { method: "DELETE" });
 }
 
-export async function extractTasks(text: string): Promise<Task[]> {
-  if (DEV_MODE) return [];
-  return apiFetch<Task[]>("/tasks/extract", {
-    method: "POST",
-    body: JSON.stringify({ text }),
-  });
-}
-
 // Preview-извлечение: вернуть предложенные задачи БЕЗ создания (для ревью на экране встреч).
 // Ответ модели прогоняется через normalizeProposedTasks — вторым слоем поверх промпта:
 // GPT регулярно пишет СТРОКУ "null" вместо JSON null, и она доезжала до карточки чипом
