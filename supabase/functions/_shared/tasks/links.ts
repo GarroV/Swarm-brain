@@ -24,9 +24,7 @@ function checkUrl(raw: string, at: number): string {
     parsed = new URL(url);
   } catch {
     throw new Error(
-      `Ссылка ${at}: ${
-        JSON.stringify(raw)
-      } — не адрес. Нужен полный адрес, начинающийся с http:// или https://`,
+      `Ссылка ${at}: ${JSON.stringify(raw)} — не адрес. Нужен полный адрес, начинающийся с http:// или https://`,
     );
   }
   if (
@@ -35,9 +33,7 @@ function checkUrl(raw: string, at: number): string {
     )
   ) {
     throw new Error(
-      `Ссылка ${at}: принимаются только адреса http:// и https://, а пришло ${
-        JSON.stringify(raw)
-      }`,
+      `Ссылка ${at}: принимаются только адреса http:// и https://, а пришло ${JSON.stringify(raw)}`,
     );
   }
   return url;

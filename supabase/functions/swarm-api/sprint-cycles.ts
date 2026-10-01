@@ -18,10 +18,7 @@ import {
   removeItem,
   updateItem,
 } from "../_shared/tasks/sprint-items.ts";
-import {
-  AcceptConflictError,
-  acceptCycle,
-} from "../_shared/tasks/sprint-accept.ts";
+import { AcceptConflictError, acceptCycle } from "../_shared/tasks/sprint-accept.ts";
 
 // Роуты /sprint-cycles — спринты (issue #267, доска инициатив #383-серия). Отдельным модулем,
 // а не в index.ts: тот уже 2400+ строк при нашем пределе 800 (issue #265).
@@ -87,9 +84,7 @@ export async function handleSprintCycleRoutes(
             start_date: body.start_date as string,
             end_date: body.end_date as string,
             tab_id: typeof body.tab_id === "string" ? body.tab_id : null,
-            check_date: typeof body.check_date === "string"
-              ? body.check_date
-              : null,
+            check_date: typeof body.check_date === "string" ? body.check_date : null,
           },
           groupId,
           actor,
@@ -209,9 +204,7 @@ export async function handleSprintCycleRoutes(
   if (tasksMatch && req.method === "POST") {
     const body = await readBody(req);
     if (!body) return apiErr(400, "Invalid JSON", origin);
-    const taskIds = Array.isArray(body.task_ids)
-      ? (body.task_ids as string[])
-      : [];
+    const taskIds = Array.isArray(body.task_ids) ? (body.task_ids as string[]) : [];
     const cycle = await getCycle(tasksMatch[1], groupId);
     if (!cycle) return apiErr(404, "Not found", origin);
     if (cycle.status === "accepted") {
@@ -250,9 +243,7 @@ export async function handleSprintCycleRoutes(
         patch.check_status = v as ItemPatch["check_status"];
       }
       if ("check_note" in body) {
-        patch.check_note = typeof body.check_note === "string"
-          ? body.check_note
-          : null;
+        patch.check_note = typeof body.check_note === "string" ? body.check_note : null;
       }
       if ("to_carry" in body) {
         if (typeof body.to_carry !== "boolean") {
@@ -261,9 +252,7 @@ export async function handleSprintCycleRoutes(
         patch.to_carry = body.to_carry;
       }
       if ("carry_reason" in body) {
-        patch.carry_reason = typeof body.carry_reason === "string"
-          ? body.carry_reason
-          : null;
+        patch.carry_reason = typeof body.carry_reason === "string" ? body.carry_reason : null;
       }
       if (Object.keys(patch).length === 0) {
         return apiErr(400, "Нечего менять", origin);

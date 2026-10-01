@@ -22,9 +22,7 @@ function parse(
   const m = DATE_RE.exec(date);
   if (!m) {
     throw new Error(
-      `${field}: негодная дата ${
-        JSON.stringify(date)
-      }, нужен формат ГГГГ-ММ-ДД`,
+      `${field}: негодная дата ${JSON.stringify(date)}, нужен формат ГГГГ-ММ-ДД`,
     );
   }
   const [y, mo, d] = [Number(m[1]), Number(m[2]), Number(m[3])];
@@ -47,9 +45,7 @@ const pad = (n: number) => String(n).padStart(2, "0");
 export function addDays(date: string, days: number): string {
   const { y, m, d } = parse(date, "дата");
   const t = new Date(Date.UTC(y, m - 1, d + days));
-  return `${t.getUTCFullYear()}-${pad(t.getUTCMonth() + 1)}-${
-    pad(t.getUTCDate())
-  }`;
+  return `${t.getUTCFullYear()}-${pad(t.getUTCMonth() + 1)}-${pad(t.getUTCDate())}`;
 }
 
 /** «дд.мм» для имени спринта — так его читают в баннере и в выгрузке. */

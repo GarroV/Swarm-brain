@@ -34,8 +34,7 @@ const task = (
   ...p,
 });
 
-const daysAgo = (n: number) =>
-  new Date(NOW.getTime() - n * 86_400_000).toISOString();
+const daysAgo = (n: number) => new Date(NOW.getTime() - n * 86_400_000).toISOString();
 
 // ── Маппинг статусов ────────────────────────────────────────────────────────────
 

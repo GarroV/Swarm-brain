@@ -15,13 +15,26 @@
 #   scripts/check bot          — только бот
 #   scripts/check server       — только серверные функции scriba
 #   scripts/check initiatives  — только гейт доски инициатив (машинный отчёт reports/check.json)
+#   scripts/check fast         — всё, кроме тестов и порогов покрытия: формат, линт, типы, мёртвый
+#                                код, границы. Его зовёт хук pre-push (см. ниже, FAST).
+#
+# Почему у хука свой режим (решение 01.10.2026, issues #595, #693). Тесты базы (`*.db.test.ts`)
+# локально ходят в ОБЩИЙ стенд на MUSPELHEIM, и параллельные сессии ломали друг другу прогоны:
+# фикстуры одной ветки чистили чужие строки, порча возвращала на стенд свою редакцию функции,
+# схема стенда отставала от миграций. Пре-пуш краснел не по коду, и пушили с --no-verify — то
+# есть без всех проверок сразу. Источник истины по тестам и порче — CI: там на каждый прогон
+# поднимается чистая база (scripts/ci-supabase-up). Локально тесты базы — явной командой
+# `make test-db`, тесты целиком — `scripts/check` без аргумента.
 set -uo pipefail
 
 cd "$(dirname "$0")/.."
 scope="${1:-all}"
-case "$scope" in all|bot|server|initiatives) ;; *)
-  echo "scripts/check: неизвестная область «$scope» (all|bot|server|initiatives)" >&2; exit 2 ;;
+case "$scope" in all|bot|server|initiatives|fast) ;; *)
+  echo "scripts/check: неизвестная область «$scope» (all|bot|server|initiatives|fast)" >&2; exit 2 ;;
 esac
+# FAST=1 — без тестов и покрытия; области те же, что у all. Пропуск объявляется вслух, в итоге.
+FAST=0
+if [ "$scope" = fast ]; then FAST=1; scope=all; fi
 mkdir -p reports
 
 # Доступы локального контура — тестам, которые ходят в настоящую базу (тесты функций
@@ -30,7 +43,7 @@ mkdir -p reports
 # прогонялись проверки. Контур не поднят — переменных не будет, и тесты базы упадут с
 # внятной причиной; это правильнее «пропущено», которое выглядит как проверенное.
 # Боту база не нужна — его прогон обёртку не зовёт.
-if [ "$scope" != bot ] && [ -z "${SWARM_DB_ENV:-}" ]; then
+if [ "$scope" != bot ] && [ "$FAST" -eq 0 ] && [ -z "${SWARM_DB_ENV:-}" ]; then
   export SWARM_DB_ENV=1
   exec ./scripts/with-local-db "$0" "$@"
 fi
@@ -45,14 +58,6 @@ failed=()
 skipped=()
 
 # ──── доска инициатив ────────────────────────────────────────────────────────
-# Конфиг репозитория — ЯВНО, всюду. Без `--config` deno ищет его сам, вверх от файла, и для
-# всего под `miniapp/` находит `miniapp/package.json` — то есть НЕ наш deno.json. Правила из
-# него в этот момент не действуют: выключенный на весь репозиторий `no-sloppy-imports`
-# воскресает и валит линт на `./format` — том самом расширении-без-расширения, которое
-# обязателен писать веб. Локально это выглядит как «правило не выключается», в CI — как
-# красный гейт на пустом месте.
-CFG=(--config deno.json)
-
 initiatives_gate() {
   REPORT=reports/check.json
   FAILED=0
@@ -80,7 +85,14 @@ initiatives_gate() {
   # воскресает и валит линт на `./format` — том самом расширении-без-расширения, которое
   # обязателен писать веб. Локально это выглядит как «правило не выключается», в CI — как
   # красный гейт на пустом месте.
+  #
+  # Конфиг — свой у каждой области, и один на область: серверные файлы (`supabase/functions/`)
+  # форматируются и линтуются по `supabase/functions/deno.json` (ширина строки 120) — ровно так
+  # же, как их проверяет «сервер · формат» ниже. До 01.10.2026 гейт доски звал для них корневой
+  # конфиг (умолчательные 80), и один и тот же файл проходил одну проверку и валил другую — обе
+  # удовлетворить было нельзя (issue #689). Остальное — по корневому `deno.json`.
   CFG=(--config deno.json)
+  SERVER_CFG=(--config supabase/functions/deno.json)
 
   # Файлы фичи, которые уже существуют. Пока стройка не началась, список пуст — это
   # сообщается вслух и отдельной строкой в отчёте, а не выглядит как пройденная проверка.
@@ -91,6 +103,21 @@ initiatives_gate() {
     [ -e "$p" ] && EXISTING+=("$p")
   done < scripts/feature-paths.txt
   N=${#EXISTING[@]}
+  SERVER_FILES=()
+  OTHER_FILES=()
+  for p in ${EXISTING[@]+"${EXISTING[@]}"}; do
+    case "$p" in
+      supabase/functions/*) SERVER_FILES+=("$p") ;;
+      *) OTHER_FILES+=("$p") ;;
+    esac
+  done
+  # deno_by_area <fmt --check|lint> — одна команда по двум областям, каждая со своим конфигом.
+  deno_by_area() {
+    local st=0
+    if [ "${#SERVER_FILES[@]}" -gt 0 ]; then deno "$@" "${SERVER_CFG[@]}" "${SERVER_FILES[@]}" 2>&1 || st=1; fi
+    if [ "${#OTHER_FILES[@]}" -gt 0 ]; then deno "$@" "${CFG[@]}" "${OTHER_FILES[@]}" 2>&1 || st=1; fi
+    return $st
+  }
 
   if [ "$N" -eq 0 ]; then
     row "формат" "empty" 0 0 "файлов фичи ещё нет"
@@ -98,10 +125,10 @@ initiatives_gate() {
     row "мёртвый-код" "empty" 0 0 "файлов фичи ещё нет"
     row "границы" "empty" 0 0 "файлов фичи ещё нет"
   else
-    out=$(deno fmt "${CFG[@]}" --check "${EXISTING[@]}" 2>&1); st=$?; keep формат "$out"
+    out=$(deno_by_area fmt --check); st=$?; keep формат "$out"
     row "формат" "$([ $st -eq 0 ] && echo pass || echo fail)" "$N" 0 "$(echo "$out" | tail -1 | tr -d '"' | tr '\n' ' ')"
 
-    out=$(deno lint "${CFG[@]}" "${EXISTING[@]}" 2>&1); st=$?; keep линт "$out"
+    out=$(deno_by_area lint); st=$?; keep линт "$out"
     row "линт" "$([ $st -eq 0 ] && echo pass || echo fail)" "$N" 0 "$(echo "$out" | tail -2 | tr -d '"' | tr '\n' ' ')"
 
     out=$(deno run -A scripts/check-graph.ts 2>&1); st=$?; keep граф "$out"
@@ -134,6 +161,10 @@ initiatives_gate() {
   # (`--no-check`). Это не наша уступка: тесты веба сегодня не проходят type-check, потому
   # что ссылаются на несуществующий параметр — issue #383. Когда он закрыт, флаг убирается
   # и оба прогона становятся одинаковыми.
+  if [ "$FAST" -eq 1 ]; then
+    row "тесты" "skip" 0 0 "в режиме fast не гоняются — CI на чистой базе; локально make test-db"
+    row "покрытие" "skip" 0 0 "без тестов не считается"
+  else
   rm -rf reports/cov
   deno test -A --coverage=reports/cov --reporter=junit supabase/ files/ \
     > reports/tests-functions.junit.xml 2> reports/tests.log; st1=$?
@@ -158,6 +189,7 @@ initiatives_gate() {
   else
     row "покрытие" "fail" 0 1 "нет данных покрытия"
   fi
+  fi # FAST
 
   printf '{"generated":"%s","failed":%s,"roles":[%s]}\n' \
     "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$FAILED" "$(IFS=,; echo "${ROWS[*]}")" > "$REPORT"
@@ -215,7 +247,9 @@ if [[ "$scope" == "all" || "$scope" == "bot" ]]; then
     run "бот · линт с типами"    npm --prefix bot run lint
     run "бот · автофикс не трогает данные тестов" npm --prefix bot run lint:autofix-guard
     run "бот · типы"             npm --prefix bot run typecheck
-    if find bot/src -name '*.test.ts' -print -quit | grep -q .; then
+    if [ "$FAST" -eq 1 ]; then
+      skipped+=("бот · тесты и покрытие (режим fast: гоняются в CI, bot.yml)")
+    elif find bot/src -name '*.test.ts' -print -quit | grep -q .; then
       run "бот · тесты"          npm --prefix bot run test
       run "бот · порог покрытия" scripts/gate-coverage.sh bot/coverage/lcov.info bot
     else
@@ -265,18 +299,14 @@ if [[ "$scope" == "all" || "$scope" == "server" ]]; then
     touched=()
     while IFS= read -r f; do
       [ -n "$f" ] && [ -f "$f" ] || continue
-      # Файл доски инициатив (scripts/feature-paths.txt) форматом и линтом уже проверяет гейт
-      # доски — с корневым deno.json (ширина 80). Здесь действует supabase/functions/deno.json
-      # (ширина 120), и два канона на один файл несовместимы: любая правка такого файла
-      # краснела бы тут при зелёной доске или наоборот (issue #690).
-      grep -qxF -- "$f" scripts/feature-paths.txt && continue
       touched+=("$f")
     done <<< "$touched_list"
 
     if [ "${#touched[@]}" -gt 0 ]; then
       printf '\nфайлов сервера, затронутых стройкой: %d\n' "${#touched[@]}"
-      run "сервер · формат"  deno fmt --check "${touched[@]}"
-      run "сервер · линт"    deno lint "${touched[@]}"
+      # Конфиг явно: тот же `supabase/functions/deno.json`, что у гейта доски выше (#689).
+      run "сервер · формат"  deno fmt --check --config supabase/functions/deno.json "${touched[@]}"
+      run "сервер · линт"    deno lint --config supabase/functions/deno.json "${touched[@]}"
     else
       printf '\n○ сервер · формат и линт: стройка пока не трогала ни одного файла supabase/functions\n'
       skipped+=("сервер · формат и линт (стройка не трогала файлов сервера)")
@@ -289,7 +319,9 @@ if [[ "$scope" == "all" || "$scope" == "server" ]]; then
         deno check --quiet "$f" || status=1
       done < <(find supabase/functions -maxdepth 2 -name index.ts)
       exit $status'
-    if compgen -G "supabase/functions/**/*.test.ts" >/dev/null 2>&1 \
+    if [ "$FAST" -eq 1 ]; then
+      skipped+=("сервер · тесты и покрытие (режим fast: гоняются в CI на чистой базе; локально make test-db)")
+    elif compgen -G "supabase/functions/**/*.test.ts" >/dev/null 2>&1 \
        || find supabase/functions -name '*.test.ts' -print -quit | grep -q .; then
       # Каталог покрытия — ВНУТРИ копии, а не в /tmp. Общий путь в /tmp — это гонка:
       # блоки идут параллельно в разных копиях, каждый чистит и пишет один и тот же

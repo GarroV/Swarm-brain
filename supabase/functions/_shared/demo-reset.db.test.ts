@@ -69,23 +69,18 @@ const DEMO_SCOPE: Record<string, string> = {
   workspaces: `id = '${DEMO}'`,
   allowed_users:
     `(group_id = '${DEMO}' or telegram_id between 900000001 and 900000099) and telegram_id not in (${FEEDBACK_DEMO_USER}, ${EXTRA_DEMO_USER})`,
-  user_profiles:
-    `telegram_id between 900000001 and 900000099 and telegram_id <> ${FEEDBACK_DEMO_USER}`,
+  user_profiles: `telegram_id between 900000001 and 900000099 and telegram_id <> ${FEEDBACK_DEMO_USER}`,
   tasks: `group_id = '${DEMO}'`,
-  task_comments:
-    `task_id in (select id from public.tasks where group_id = '${DEMO}')`,
-  task_history:
-    `group_id = '${DEMO}' or task_id in (select id from public.tasks where group_id = '${DEMO}')`,
+  task_comments: `task_id in (select id from public.tasks where group_id = '${DEMO}')`,
+  task_history: `group_id = '${DEMO}' or task_id in (select id from public.tasks where group_id = '${DEMO}')`,
   task_subscriptions: `telegram_id between 900000001 and 900000099`,
   task_labels: `group_id = '${DEMO}'`,
-  notifications:
-    `group_id = '${DEMO}' or recipient_telegram_id between 900000001 and 900000099`,
+  notifications: `group_id = '${DEMO}' or recipient_telegram_id between 900000001 and 900000099`,
   projects: `group_id = '${DEMO}'`,
   project_history: `group_id = '${DEMO}'`,
   sprints: `group_id = '${DEMO}'`,
   sprint_cycles: `group_id = '${DEMO}'`,
-  sprint_items:
-    `cycle_id in (select id from public.sprint_cycles where group_id = '${DEMO}')`,
+  sprint_items: `cycle_id in (select id from public.sprint_cycles where group_id = '${DEMO}')`,
   entries: `group_id = '${DEMO}'`,
   meetings: `group_id = '${DEMO}'`,
   meeting_live_notes: `group_id = '${DEMO}'`,
@@ -101,8 +96,7 @@ const OTHER_SCOPE: Record<string, string> = {
   allowed_users: `telegram_id = ${OTHER_USER}`,
   user_profiles: `telegram_id = ${OTHER_USER}`,
   tasks: `group_id = '${OTHER}'`,
-  task_comments:
-    `task_id in (select id from public.tasks where group_id = '${OTHER}')`,
+  task_comments: `task_id in (select id from public.tasks where group_id = '${OTHER}')`,
   task_history: `group_id = '${OTHER}'`,
   task_subscriptions: `telegram_id = ${OTHER_USER}`,
   task_labels: `group_id = '${OTHER}'`,
@@ -111,8 +105,7 @@ const OTHER_SCOPE: Record<string, string> = {
   project_history: `group_id = '${OTHER}'`,
   sprints: `group_id = '${OTHER}'`,
   sprint_cycles: `group_id = '${OTHER}'`,
-  sprint_items:
-    `cycle_id in (select id from public.sprint_cycles where group_id = '${OTHER}')`,
+  sprint_items: `cycle_id in (select id from public.sprint_cycles where group_id = '${OTHER}')`,
   entries: `group_id = '${OTHER}'`,
   meetings: `group_id = '${OTHER}'`,
   meeting_live_notes: `group_id = '${OTHER}'`,
@@ -191,14 +184,10 @@ async function seedOther(db: Client) {
     values (${OTHER}, 'Вкладка', current_date, current_date + 30, 'active', 'space') returning id`;
   const project = await db.queryObject<{ id: string }>`
     insert into projects (group_id, name, goal, sprint_id)
-    values (${OTHER}, 'Рабочий проект', 'настоящая цель', ${
-    tab.rows[0].id
-  }) returning id`;
+    values (${OTHER}, 'Рабочий проект', 'настоящая цель', ${tab.rows[0].id}) returning id`;
   const task = await db.queryObject<{ id: string }>`
     insert into tasks (title, status, group_id, project_id, created_by)
-    values ('Рабочая задача', 'open', ${OTHER}, ${
-    project.rows[0].id
-  }, 'test') returning id`;
+    values ('Рабочая задача', 'open', ${OTHER}, ${project.rows[0].id}, 'test') returning id`;
   const taskId = task.rows[0].id;
   const cycle = await db.queryObject<{ id: string }>`
     insert into sprint_cycles (group_id, tab_id, name, start_date, end_date, check_date, status)
@@ -230,9 +219,7 @@ async function seedOther(db: Client) {
     insert into meetings (identity_kind, identity_key, title, group_id, claim_owner)
     values ('manual', 't-demo-reset-other', 'Рабочая встреча', ${OTHER}, ${OTHER_USER}) returning id`;
   await db.queryArray`
-    insert into meeting_live_notes (meeting_id, group_id, text) values (${
-    meeting.rows[0].id
-  }, ${OTHER}, 'заметка')`;
+    insert into meeting_live_notes (meeting_id, group_id, text) values (${meeting.rows[0].id}, ${OTHER}, 'заметка')`;
   await db
     .queryArray`insert into feedback (telegram_id, text) values (${OTHER_USER}, 'рабочий фидбек')`;
   await db.queryArray`
@@ -271,9 +258,7 @@ async function breakDemo(db: Client) {
     t.rows[0].id
   }, 'hi', ${guest}) returning id`;
   await db
-    .queryArray`insert into task_history (task_id, changed_by, group_id) values (${
-    t.rows[0].id
-  }, 'demo', ${DEMO})`;
+    .queryArray`insert into task_history (task_id, changed_by, group_id) values (${t.rows[0].id}, 'demo', ${DEMO})`;
   await db
     .queryArray`insert into task_subscriptions (task_id, telegram_id) values ('d0000000-0000-4000-8000-000000000201', ${guest})`;
   await db.queryArray`
@@ -302,9 +287,7 @@ async function breakDemo(db: Client) {
   await db
     .queryArray`insert into user_integrations (telegram_id, service, api_key) values (${guest}, 'granola', 'visitor-key')`;
   await db
-    .queryArray`insert into feedback (telegram_id, text) values (${guest}, ${
-    DEMO_FEEDBACK[0]
-  })`;
+    .queryArray`insert into feedback (telegram_id, text) values (${guest}, ${DEMO_FEEDBACK[0]})`;
   await db
     .queryArray`insert into recorder_diagnostics (telegram_id, kind) values (${guest}, 'test')`;
   await db
@@ -325,9 +308,7 @@ async function breakDemo(db: Client) {
     insert into user_profiles (telegram_id, first_name) values (${FEEDBACK_DEMO_USER}, 'Feedback')
     on conflict (telegram_id) do nothing`;
   await db
-    .queryArray`insert into feedback (telegram_id, text) values (${FEEDBACK_DEMO_USER}, ${
-    DEMO_FEEDBACK[1]
-  })`;
+    .queryArray`insert into feedback (telegram_id, text) values (${FEEDBACK_DEMO_USER}, ${DEMO_FEEDBACK[1]})`;
 }
 
 async function cleanDemoFeedback(db: Client) {

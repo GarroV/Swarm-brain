@@ -15,6 +15,12 @@ STAGING_PGPW := $(shell cat $(HOME)/.swarm/staging_pgpw 2>/dev/null)
 check: ## Единый прогон проверок доски инициатив (формат, линт, типы, тесты, покрытие, мёртвый код, границы)
 	@./scripts/check
 
+# Тесты базы — явной командой, для тех, кто правит SQL: в pre-push их нет (решение 01.10.2026,
+# #595/#693). Общий стенд на MUSPELHEIM один на все сессии — параллельный прогон соседа может
+# окрасить твой; источник истины — CI. Обёртка печатает, на какой базе идут тесты.
+test-db: ## Тесты базы (*.db.test.ts) — на контуре, который выберет scripts/with-local-db
+	@./scripts/with-local-db sh -c 'deno test -A $$(find supabase/functions files -name "*.db.test.ts" | sort)'
+
 porcha: ## Порча: ломаем ядро нарочно и убеждаемся, что тесты краснеют (код + база)
 	@./scripts/with-local-db ./scripts/porcha
 	@./scripts/with-local-db ./scripts/porcha-sql
