@@ -3,8 +3,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   type DraggedTask,
   type DropTarget,
-  hoverMode,
   type HoverMode,
+  hoverMode,
   LONG_PRESS_MS,
   SUBTASK_HOLD_MS,
 } from "@/lib/sprintGrouping";
@@ -140,7 +140,9 @@ export function useRowDrag(opts: {
     if (!v) return;
     const el = scroller.current;
     const top = el ? el.getBoundingClientRect().top : 0;
-    const bottom = el ? el.getBoundingClientRect().bottom : globalThis.innerHeight;
+    const bottom = el
+      ? el.getBoundingClientRect().bottom
+      : globalThis.innerHeight;
     const dy = v.y < top + EDGE
       ? -EDGE_SPEED
       : v.y > bottom - EDGE
@@ -184,7 +186,8 @@ export function useRowDrag(opts: {
       };
       globalThis.addEventListener("click", swallow, { capture: true });
       setTimeout(
-        () => globalThis.removeEventListener("click", swallow, { capture: true }),
+        () =>
+          globalThis.removeEventListener("click", swallow, { capture: true }),
         0,
       );
     }
@@ -221,7 +224,10 @@ export function useRowDrag(opts: {
     const move = (e: PointerEvent) => {
       const gesture = g.current;
       if (!gesture || e.pointerId !== gesture.pointerId) return;
-      const dist = Math.hypot(e.clientX - gesture.startX, e.clientY - gesture.startY);
+      const dist = Math.hypot(
+        e.clientX - gesture.startX,
+        e.clientY - gesture.startY,
+      );
       if (!gesture.started) {
         if (gesture.touch) {
           if (dist > TOUCH_SLOP) finish(false); // это прокрутка
@@ -279,7 +285,10 @@ export function useRowDrag(opts: {
       document.addEventListener("contextmenu", blockMenu);
       if (touch) {
         const { clientX, clientY } = e;
-        g.current.timer = setTimeout(() => begin(clientX, clientY), LONG_PRESS_MS);
+        g.current.timer = setTimeout(
+          () => begin(clientX, clientY),
+          LONG_PRESS_MS,
+        );
       }
     },
   }), [begin, blockMenu, blockTouch]);

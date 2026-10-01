@@ -34,7 +34,12 @@ export type GroupingProps = {
 };
 
 type Naming =
-  | { kind: "create"; dragged: RowInfo; targetTaskId: string; parentId: string | null }
+  | {
+    kind: "create";
+    dragged: RowInfo;
+    targetTaskId: string;
+    parentId: string | null;
+  }
   | { kind: "rename"; group: Project };
 
 export function useDragGroups(
@@ -50,7 +55,9 @@ export function useDragGroups(
   const dt = useDt();
   const [busy, setBusy] = useState(false);
   const [naming, setNaming] = useState<Naming | null>(null);
-  const [picking, setPicking] = useState<{ row: RowInfo; rows: RowInfo[] } | null>(null);
+  const [picking, setPicking] = useState<
+    { row: RowInfo; rows: RowInfo[] } | null
+  >(null);
 
   const run = useCallback(async (fn: () => Promise<unknown>) => {
     setBusy(true);
@@ -73,16 +80,19 @@ export function useDragGroups(
 
   // Подзадачи едут за родителем: подзадача живёт в проекте родителя (#478), и группа, забравшая
   // родителя без детей, разорвала бы это правило молча.
-  const moveWithKids = useCallback(async (row: RowInfo, projectId: string | null) => {
-    // Подзадачу, унесённую в другой проект, отвязываем: в чужом проекте её родителя нет.
-    await updateTask(row.taskId, {
-      project_id: projectId,
-      ...(row.parentId ? { parent_id: null } : {}),
-    });
-    for (const kid of tasks.filter((t) => t.parent_id === row.taskId)) {
-      await updateTask(kid.id, { project_id: projectId });
-    }
-  }, [tasks]);
+  const moveWithKids = useCallback(
+    async (row: RowInfo, projectId: string | null) => {
+      // Подзадачу, унесённую в другой проект, отвязываем: в чужом проекте её родителя нет.
+      await updateTask(row.taskId, {
+        project_id: projectId,
+        ...(row.parentId ? { parent_id: null } : {}),
+      });
+      for (const kid of tasks.filter((t) => t.parent_id === row.taskId)) {
+        await updateTask(kid.id, { project_id: projectId });
+      }
+    },
+    [tasks],
+  );
 
   const onDrop = useCallback(
     (dragged: RowInfo, target: DropTarget, mode: HoverMode) => {
@@ -115,7 +125,9 @@ export function useDragGroups(
   const submitName = async (name: string) => {
     if (!naming) return;
     if (naming.kind === "rename") {
-      if (await run(() => updateProject(naming.group.id, { name }))) setNaming(null);
+      if (await run(() => updateProject(naming.group.id, { name }))) {
+        setNaming(null);
+      }
       return;
     }
     const { dragged, targetTaskId, parentId } = naming;
@@ -149,7 +161,8 @@ export function useDragGroups(
     onDrop,
     onMenu: (row, rows) => setPicking({ row, rows }),
     onRename: (group) => setNaming({ kind: "rename", group }),
-    onPromote: (group) => void run(() => updateProject(group.id, { sprint_group: false })),
+    onPromote: (group) =>
+      void run(() => updateProject(group.id, { sprint_group: false })),
     onDissolve: (group) => void run(() => dissolveSprintGroup(group.id)),
   };
 

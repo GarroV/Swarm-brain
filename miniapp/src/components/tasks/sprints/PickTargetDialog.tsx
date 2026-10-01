@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Dialog as DialogPrimitive } from "@base-ui/react/dialog";
 import { cn } from "@/lib/utils";
 import { type HoverMode, subtaskBlock } from "@/lib/sprintGrouping";
@@ -23,8 +23,14 @@ export function PickTargetDialog(
 ) {
   const dt = useDt();
   const [mode, setMode] = useState<HoverMode>("group");
+  // Выбрали цель — следом может открыться окно названия группы. Возврат фокуса на «⋯» после
+  // закрытия этого окна уводил его из поля названия (замерено: печать шла мимо поля).
+  const picked = useRef(false);
   useEffect(() => {
-    if (open) setMode("group");
+    if (open) {
+      setMode("group");
+      picked.current = false;
+    }
   }, [open]);
   if (!row) return null;
 
@@ -43,6 +49,7 @@ export function PickTargetDialog(
         <DialogPrimitive.Backdrop className="fixed inset-0 z-[100] bg-black/45 supports-backdrop-filter:backdrop-blur-[2px]" />
         <DialogPrimitive.Popup
           aria-labelledby="pick-target-title"
+          finalFocus={() => !picked.current}
           className="fixed top-1/2 left-1/2 z-[100] flex max-h-[80vh] w-[calc(100%-2rem)] max-w-[440px] -translate-x-1/2 -translate-y-1/2 flex-col rounded-[14px] border border-line bg-[var(--popover)] p-5 text-popover-foreground shadow-[0_28px_70px_-20px_rgba(0,0,0,.55)] outline-none dark:backdrop-blur-xl"
         >
           <DialogPrimitive.Title
@@ -81,13 +88,18 @@ export function PickTargetDialog(
                 projectId: r.projectId,
                 isSubtask: r.isSubtask,
               };
-              const block = mode === "subtask" ? subtaskBlock(row, target) : null;
+              const block = mode === "subtask"
+                ? subtaskBlock(row, target)
+                : null;
               return (
                 <li key={r.taskId}>
                   <button
                     type="button"
                     disabled={block !== null}
-                    onClick={() => onPick(target, mode)}
+                    onClick={() => {
+                      picked.current = true;
+                      onPick(target, mode);
+                    }}
                     className="w-full rounded-[8px] border border-line px-3 py-2 text-left text-[13px] text-ink hover:bg-surface-2 disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     <span className="block truncate">{r.title}</span>

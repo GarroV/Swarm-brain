@@ -74,7 +74,7 @@ export type RowDnd = {
     /** Эту строку тащат. */
     | { kind: "source" }
     /** Над строкой, бросок соберёт группу. */
-    | { kind: "group" }
+    | { kind: "group"; join: string | null }
     /** Подержали над строкой: бросок сделает тащимую подзадачей (или объяснит, почему нет). */
     | { kind: "subtask"; title: string; block: SubtaskBlock | null };
   /** Запасной путь без жеста: окно «Сгруппировать с… / Сделать подзадачей…». */
@@ -200,7 +200,9 @@ export function SprintRow(
           className="pointer-events-none absolute right-2 top-1/2 z-[1] -translate-y-1/2 rounded-[6px] bg-primary px-2 py-0.5 font-semibold text-primary-foreground shadow"
           style={{ fontSize: 11.5 }}
         >
-          {dt("Сгруппировать", "Group")}
+          {drag.join === null
+            ? dt("Сгруппировать", "Group")
+            : dt(`В группу «${drag.join}»`, `Into group “${drag.join}”`)}
           <span className="ml-1.5 font-normal opacity-80">
             · {dt("задержите — станет подзадачей", "hold to make it a subtask")}
           </span>
@@ -440,8 +442,14 @@ export function SprintRow(
               "Сгруппировать с… / Сделать подзадачей…",
               "Group with… / Make a subtask of…",
             )}
-            aria-label={dt("Сгруппировать или сделать подзадачей", "Group or make a subtask")}
-            className={cn(quiet, "border-line bg-surface text-ink-soft hover:text-ink")}
+            aria-label={dt(
+              "Сгруппировать или сделать подзадачей",
+              "Group or make a subtask",
+            )}
+            className={cn(
+              quiet,
+              "border-line bg-surface text-ink-soft hover:text-ink",
+            )}
           >
             ⋯
           </button>
@@ -502,12 +510,10 @@ export function SprintRow(
               )}
               style={{ fontSize: 11.5 }}
             >
-              {drag.block
-                ? blockText(dt, drag.block, item.title)
-                : dt(
-                  `Станет подзадачей «${item.title}»`,
-                  `Becomes a subtask of “${item.title}”`,
-                )}
+              {drag.block ? blockText(dt, drag.block, item.title) : dt(
+                `Станет подзадачей «${item.title}»`,
+                `Becomes a subtask of “${item.title}”`,
+              )}
             </span>
           </div>
         </div>

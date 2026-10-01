@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Dialog as DialogPrimitive } from "@base-ui/react/dialog";
 import { Button } from "@/components/ui/button";
 import { useDt } from "@/components/roy/nav";
@@ -22,6 +22,7 @@ export function GroupNameDialog(
 ) {
   const dt = useDt();
   const [name, setName] = useState(initial);
+  const inputRef = useRef<HTMLInputElement>(null);
   // Каждое открытие — с чистого (или текущего) имени: черновик прошлой группы сюда не попадает.
   useEffect(() => {
     if (open) setName(initial);
@@ -43,6 +44,7 @@ export function GroupNameDialog(
         <DialogPrimitive.Backdrop className="fixed inset-0 z-[100] bg-black/45 supports-backdrop-filter:backdrop-blur-[2px]" />
         <DialogPrimitive.Popup
           aria-labelledby="group-name-title"
+          initialFocus={inputRef}
           className="fixed top-1/2 left-1/2 z-[100] w-[calc(100%-2rem)] max-w-[400px] -translate-x-1/2 -translate-y-1/2 rounded-[14px] border border-line bg-[var(--popover)] p-5 text-popover-foreground shadow-[0_28px_70px_-20px_rgba(0,0,0,.55)] outline-none dark:backdrop-blur-xl"
         >
           <DialogPrimitive.Title
@@ -62,8 +64,11 @@ export function GroupNameDialog(
             </DialogPrimitive.Description>
           )}
           <input
+            ref={inputRef}
             autoFocus
             value={name}
+            // Переименование: старое имя выделено — новое печатается поверх, без стирания.
+            onFocus={(e) => e.currentTarget.select()}
             onChange={(e) => setName(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === "Enter") {
@@ -72,7 +77,10 @@ export function GroupNameDialog(
               }
             }}
             maxLength={120}
-            placeholder={dt("Например, Запуск Эстонии", "For example, Estonia launch")}
+            placeholder={dt(
+              "Например, Запуск Эстонии",
+              "For example, Estonia launch",
+            )}
             aria-label={dt("Название группы", "Group name")}
             className="mt-4 w-full rounded-[8px] border border-line bg-surface px-3 py-2 text-[14px] text-ink outline-none focus:border-accent-line"
           />

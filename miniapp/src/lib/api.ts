@@ -1003,6 +1003,16 @@ export async function updateTask(
       task.timeline_position = fields.timeline_position ?? null;
     }
     if (fields.project_id !== undefined) {
+      // Журнал переходов между проектами: по нему «Распустить» возвращает задачу, откуда пришла
+      // (как task_history на сервере).
+      if ((fields.project_id ?? null) !== task.project_id) {
+        mockProjectMoves.push({
+          task_id: id,
+          old_value: task.project_id,
+          new_value: fields.project_id ?? null,
+          created_at: new Date(Date.now() + mockProjectMoves.length).toISOString(),
+        });
+      }
       task.project_id = fields.project_id ?? null;
     }
     if (fields.parent_id !== undefined) {
@@ -2301,6 +2311,35 @@ export async function updateProject(
   });
 }
 
+type MockProjectMove = {
+  task_id: string;
+  old_value: string | null;
+  new_value: string | null;
+  created_at: string;
+};
+const mockProjectMoves: MockProjectMove[] = [];
+
+/** Мок-зеркало `dissolveTargets` (_shared/tasks/sprint-groups.ts, там же тесты): куда вернуть
+ *  задачи распускаемой группы. Только для DEV_MODE — сервер считает своим кодом. */
+function dissolveTargets(a: {
+  groupId: string;
+  fallback: string | null;
+  tasks: Array<{ id: string; parent_id: string | null }>;
+  moves: MockProjectMove[];
+  liveProjectIds: Set<string>;
+}): Map<string, string | null> {
+  const own = new Map<string, string | null>();
+  for (const t of a.tasks) {
+    const last = a.moves.filter((m) => m.task_id === t.id && m.new_value === a.groupId).at(-1);
+    const from = last ? last.old_value : a.fallback;
+    own.set(t.id, from === null || a.liveProjectIds.has(from) ? from : a.fallback);
+  }
+  return new Map(a.tasks.map((t) => [
+    t.id,
+    t.parent_id !== null && own.has(t.parent_id) ? own.get(t.parent_id)! : own.get(t.id)!,
+  ]));
+}
+
 // «Распустить» группу спринта: задачи уходят в родительский проект (или без проекта), сама
 // группа архивируется. Обычный проект сервер так не распускает (404).
 export async function dissolveSprintGroup(
@@ -2309,13 +2348,18 @@ export async function dissolveSprintGroup(
   if (DEV_MODE) {
     const g = mockProjects.find((p) => p.id === id);
     if (!g?.sprint_group) throw new Error("Not found");
-    const to = g.parent_id ?? null;
-    let moved = 0;
-    mockTasks = mockTasks.map((t) => {
-      if (t.project_id !== id) return t;
-      moved++;
-      return { ...t, project_id: to };
+    const inGroup = mockTasks.filter((t) => t.project_id === id);
+    const targets = dissolveTargets({
+      groupId: id,
+      fallback: g.parent_id ?? null,
+      tasks: inGroup.map((t) => ({ id: t.id, parent_id: t.parent_id ?? null })),
+      moves: mockProjectMoves,
+      liveProjectIds: new Set(mockProjects.filter((p) => p.id !== id).map((p) => p.id)),
     });
+    const moved = inGroup.length;
+    mockTasks = mockTasks.map((t) =>
+      targets.has(t.id) ? { ...t, project_id: targets.get(t.id)! } : t
+    );
     mockProjects = mockProjects.filter((p) => p.id !== id);
     return { moved };
   }
