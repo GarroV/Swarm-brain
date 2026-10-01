@@ -13,6 +13,7 @@
 import { canViewTask } from "../../_shared/tasks/access.ts";
 import { TASK_TZ, todayInTz } from "../../_shared/tasks/recurrence.ts";
 import { addDays } from "../../_shared/tasks/due.ts";
+import { isClosedStatus } from "../../_shared/tasks/statuses.ts";
 
 // Часовой пояс и календарный «сегодня» — канон в _shared/tasks/recurrence.ts (одна копия
 // на весь модуль задач: перекат регулярных и пинги обязаны считать один и тот же день).
@@ -46,17 +47,13 @@ export interface InlineUrlButton {
 // (`todayIn`) остались на месте, а формула жила в одном файле.
 export const todayIn = todayInTz;
 
-function isDone(status: string): boolean {
-  return status === "done";
-}
-
 /**
  * Пора ли слать пинг. Прошедшая дата тоже считается наступившей: крон мог простоять
  * (деплой, сбой), и пропущенный пинг лучше отдать с опозданием, чем потерять молча.
  * Факт отправки (`reminded_at`) отсекается запросом в БД — здесь только дата и статус.
  */
 export function isPingDue(row: PingRow, today: string): boolean {
-  if (!row.remind_date || isDone(row.status) || row.archived_at) return false;
+  if (!row.remind_date || isClosedStatus(row.status) || row.archived_at) return false;
   return row.remind_date <= today;
 }
 

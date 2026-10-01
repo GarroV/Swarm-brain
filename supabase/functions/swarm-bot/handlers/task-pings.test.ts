@@ -47,8 +47,9 @@ Deno.test("isPingDue: без даты пинга — нет", () => {
   assertEquals(isPingDue(row({ remind_date: null }), "2026-08-26"), false);
 });
 
-Deno.test("isPingDue: закрытая задача не пингует (оба написания статуса)", () => {
+Deno.test("isPingDue: закрытая задача не пингует (оба закрытых статуса)", () => {
   assertEquals(isPingDue(row({ status: "done" }), "2026-08-26"), false);
+  assertEquals(isPingDue(row({ status: "cancelled" }), "2026-08-26"), false);
 });
 
 Deno.test("pingRecipients: пинг идёт исполнителям", () => {
