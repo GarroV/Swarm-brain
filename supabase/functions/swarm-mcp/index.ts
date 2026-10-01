@@ -51,7 +51,12 @@ const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY")!;
 
 import { absoluteFileUrl, removeStorageObject } from "../_shared/storage-links.ts";
-import { PRIVATE_BUCKET, registerStorageFile, safeStorageName, uploadPrivateFile } from "../_shared/storage-files.ts";
+import {
+  discardOwnUpload,
+  registerStorageFile,
+  type UploadedFile,
+  uploadNewPrivateFile,
+} from "../_shared/storage-files.ts";
 
 // Адрес веба: ссылку на файл отдаём абсолютной — получатель ответа (Claude Desktop)
 // не наша страница, относительный путь там некликабелен.
@@ -182,27 +187,22 @@ async function uploadToStorage(
   fileContentBase64: string,
   fileName: string,
   mimeType: string,
-): Promise<{ path: string; fileSizeBytes: number }> {
+  groupId: string,
+): Promise<{ path: string; file: UploadedFile; fileSizeBytes: number }> {
   const bytes = Uint8Array.from(atob(fileContentBase64), (c) => c.charCodeAt(0));
-  const now = new Date();
-  const yyyy = now.getFullYear();
-  const mm = String(now.getMonth() + 1).padStart(2, "0");
-  const uuid = crypto.randomUUID();
-  // Транслит вместо голой замены: имя «отчёт.pdf» превращалось в «______.pdf» — путь,
-  // по которому невозможно понять, что за файл.
-  const safeName = safeStorageName(fileName);
-  const path = `uploads/${yyyy}/${mm}/${uuid}-${safeName}`;
-
-  const { error } = await uploadPrivateFile(supabase, {
-    path,
+  // Ключ — в воркспейсе владельца, с uuid, без перезаписи (buildUploadKey). Транслит вместо
+  // голой замены: имя «отчёт.pdf» превращалось в «______.pdf».
+  const { file, error } = await uploadNewPrivateFile(supabase, {
+    folder: "uploads",
+    scope: groupId,
+    fileName,
     body: bytes,
     contentType: mimeType,
-    upsert: false,
   });
-  if (error) throw new Error(`Storage upload failed: ${error}`);
+  if (error || !file) throw new Error(`Storage upload failed: ${error ?? "unknown"}`);
 
   // Публичной ссылки больше нет: наружу отдаётся /api/file/<path>, а в metadata — путь.
-  return { path, fileSizeBytes: bytes.length };
+  return { path: file.path, file, fileSizeBytes: bytes.length };
 }
 
 // ── Tool definitions ──────────────────────────────────────────────────────────
@@ -801,9 +801,9 @@ async function toolUploadFile(args: {
   const source = args.source ?? "file";
   const mimeType = args.mime_type ?? mimeFromExtension(args.file_name);
 
-  let uploadResult: { path: string; fileSizeBytes: number };
+  let uploadResult: { path: string; file: UploadedFile; fileSizeBytes: number };
   try {
-    uploadResult = await uploadToStorage(args.file_content_base64, args.file_name, mimeType);
+    uploadResult = await uploadToStorage(args.file_content_base64, args.file_name, mimeType, scope.groupId);
   } catch (e) {
     return `Ошибка загрузки файла: ${e instanceof Error ? e.message : String(e)}`;
   }
@@ -834,7 +834,7 @@ async function toolUploadFile(args: {
   }).select("id").single();
 
   if (error) {
-    await supabase.storage.from(PRIVATE_BUCKET).remove([uploadResult.path]);
+    await discardOwnUpload(supabase, uploadResult.file);
     return `Ошибка создания записи: ${error.message}`;
   }
 
@@ -845,7 +845,7 @@ async function toolUploadFile(args: {
     owner: { kind: "entry", entryId: (created as { id: string }).id },
   });
   if (regNew.error) {
-    await supabase.storage.from(PRIVATE_BUCKET).remove([uploadResult.path]);
+    await discardOwnUpload(supabase, uploadResult.file);
     await supabase.from("entries").delete().eq("id", (created as { id: string }).id);
     return `Ошибка регистрации файла: ${regNew.error}`;
   }
@@ -987,7 +987,9 @@ async function toolDeleteEntry(args: { id: string; requesting_user_id?: number }
   if (!entry) return `Запись ${args.id} не найдена.`; // сужение: гард уже отсёк null
 
   const fileUrl = (entry.metadata as Record<string, unknown> | null)?.file_url as string | undefined;
-  const removal = fileUrl ? await removeStorageObject(supabase, fileUrl) : { status: "no-file" as const };
+  const removal = fileUrl
+    ? await removeStorageObject(supabase, fileUrl, { kind: "entry", entryId: args.id })
+    : { status: "no-file" as const };
   // Файл не удалился — запись оставляем и говорим об этом. Раньше ошибка глушилась,
   // а ответ всё равно утверждал «вместе с файлом из Storage»: файл оставался доступен
   // по прежней ссылке, и никто об этом не узнавал.
@@ -1041,7 +1043,7 @@ async function toolUpdateEntry(
     const oldFileUrl = oldMeta.file_url as string | undefined;
 
     if (oldFileUrl) {
-      const oldRemoval = await removeStorageObject(supabase, oldFileUrl);
+      const oldRemoval = await removeStorageObject(supabase, oldFileUrl, { kind: "entry", entryId: args.id });
       // Прежний объект остался — не заливаем новый поверх: иначе старый файл живёт в
       // хранилище без ссылки на него, невидимый и неудаляемый.
       if (oldRemoval.status === "failed") {
@@ -1050,9 +1052,14 @@ async function toolUpdateEntry(
     }
 
     const mimeType = mimeFromExtension(args.file_name);
-    let uploadResult: { path: string; fileSizeBytes: number };
+    let uploadResult: { path: string; file: UploadedFile; fileSizeBytes: number };
     try {
-      uploadResult = await uploadToStorage(args.file_content_base64, args.file_name, mimeType);
+      uploadResult = await uploadToStorage(
+        args.file_content_base64,
+        args.file_name,
+        mimeType,
+        scopeUpd.groupId,
+      );
     } catch (e) {
       return `Ошибка загрузки файла: ${e instanceof Error ? e.message : String(e)}`;
     }

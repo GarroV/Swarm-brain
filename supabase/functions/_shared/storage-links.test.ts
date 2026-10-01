@@ -1,12 +1,12 @@
 import { assertEquals } from "jsr:@std/assert@1";
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import {
-  storagePathFromLink,
-  webFileUrl,
   absoluteFileUrl,
   normalizeFileLink,
-  withNormalizedFileLink,
   removeStorageObject,
+  storagePathFromLink,
+  webFileUrl,
+  withNormalizedFileLink,
 } from "./storage-links.ts";
 
 const PUBLIC_DRIVE =
@@ -31,8 +31,7 @@ Deno.test("storagePathFromLink: signed URL → путь без query", () => {
 });
 
 Deno.test("storagePathFromLink: percent-encoded имя декодируется", () => {
-  const url =
-    "https://x.supabase.co/storage/v1/object/public/swarm_drive/uploads/a%20b%2Bc.pdf";
+  const url = "https://x.supabase.co/storage/v1/object/public/swarm_drive/uploads/a%20b%2Bc.pdf";
   assertEquals(storagePathFromLink(url), "uploads/a b+c.pdf");
 });
 
@@ -191,9 +190,15 @@ function makeStorage(opts: { registry?: unknown; removeError?: string } = {}) {
   const tableBuilder: Record<string, unknown> = {};
   let pendingDelete = false;
   tableBuilder.select = () => tableBuilder;
-  tableBuilder.delete = () => { pendingDelete = true; return tableBuilder; };
+  tableBuilder.delete = () => {
+    pendingDelete = true;
+    return tableBuilder;
+  };
   tableBuilder.eq = (_col: string, val: string) => {
-    if (pendingDelete) { calls.registryDeleted.push(val); pendingDelete = false; }
+    if (pendingDelete) {
+      calls.registryDeleted.push(val);
+      pendingDelete = false;
+    }
     return tableBuilder;
   };
   tableBuilder.maybeSingle = () => Promise.resolve({ data: opts.registry ?? null });
@@ -254,4 +259,41 @@ Deno.test("removeStorageObject: percent-encoded имя удаляется дек
     "https://x.supabase.co/storage/v1/object/public/swarm_drive/uploads/a%20b.pdf",
   );
   assertEquals(calls.removed[0].paths, ["uploads/a b.pdf"]);
+});
+
+// ── removeStorageObject: удаляем только объект этой записи ────────────────────
+
+Deno.test("removeStorageObject: объект реестра принадлежит другой записи → not-owned, ничего не удаляем", async () => {
+  const { client, calls } = makeStorage({
+    registry: { bucket: "swarm_private", owner_kind: "entry", entry_id: "other-entry" },
+  });
+  const res = await removeStorageObject(client, "uploads/x.pdf", { kind: "entry", entryId: "my-entry" });
+  assertEquals(res.status, "not-owned");
+  assertEquals(calls.removed.length, 0);
+  assertEquals(calls.registryDeleted, []);
+});
+
+Deno.test("removeStorageObject: объект своей записи удаляется", async () => {
+  const { client, calls } = makeStorage({
+    registry: { bucket: "swarm_private", owner_kind: "entry", entry_id: "my-entry" },
+  });
+  const res = await removeStorageObject(client, "uploads/x.pdf", { kind: "entry", entryId: "my-entry" });
+  assertEquals(res.status, "removed");
+  assertEquals(calls.removed[0].paths, ["uploads/x.pdf"]);
+});
+
+Deno.test("removeStorageObject: скрин фидбека не удаляется как вложение записи", async () => {
+  const { client, calls } = makeStorage({
+    registry: { bucket: "swarm_private", owner_kind: "feedback", entry_id: null },
+  });
+  const res = await removeStorageObject(client, "feedback/x.png", { kind: "entry", entryId: "my-entry" });
+  assertEquals(res.status, "not-owned");
+  assertEquals(calls.removed.length, 0);
+});
+
+Deno.test("removeStorageObject: старый файл без строки реестра — удаляется как раньше", async () => {
+  const { client, calls } = makeStorage({ registry: null });
+  const res = await removeStorageObject(client, PUBLIC_DRIVE, { kind: "entry", entryId: "my-entry" });
+  assertEquals(res.status, "removed");
+  assertEquals(calls.removed[0].bucket, "swarm_drive");
 });
