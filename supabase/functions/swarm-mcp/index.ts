@@ -28,7 +28,12 @@ import {
   ENTRY_TYPE_PROMPT_RULE,
   normalizeCountries,
 } from "../_shared/countries.ts";
-import { applyGeneralSentinel, marketTagsFromInput, specificCountries } from "../_shared/meta-extract.ts";
+import {
+  applyGeneralSentinel,
+  extractEntryMeta,
+  marketTagsFromInput,
+  specificCountries,
+} from "../_shared/meta-extract.ts";
 import { matchEntries } from "../_shared/search.ts";
 import { detectQuerySince } from "../_shared/query-time.ts";
 import { ALL_MEETING_SOURCES } from "../_shared/sources.ts";
@@ -129,32 +134,6 @@ async function chatComplete(
   });
   const data = await res.json() as { choices: Array<{ message: { content: string } }> };
   return data.choices[0].message.content;
-}
-
-async function extractEntryMeta(
-  text: string,
-): Promise<{ countries: string[]; entry_type: string; entry_date: string | null }> {
-  try {
-    const raw = await chatComplete(
-      `Сегодня ${todayIso()}.\n` +
-        "Проанализируй текст и верни JSON (только JSON):\n" +
-        '{"countries":["Spain","Bulgaria"],"entry_type":"meeting|note","entry_date":"YYYY-MM-DD или null"}\n' +
-        COUNTRY_PROMPT_RULE + "\n" +
-        ENTRY_TYPE_PROMPT_RULE + "\n" +
-        "entry_date — дата события из текста, null если нет. Год считай от сегодняшней даты, НИКОГДА не из головы.",
-      text.slice(0, 2000),
-      { temperature: 0, json: true },
-    );
-    const parsed = JSON.parse(raw.replace(/```json\n?|\n?```/g, "").trim());
-    return {
-      countries: normalizeCountries(Array.isArray(parsed.countries) ? parsed.countries : []),
-      entry_type: parsed.entry_type === "meeting" ? "meeting" : "note",
-      // Слой 2 против выдуманного моделью года (см. _shared/llm-date.ts).
-      entry_date: normalizeExtractedEventDate(parsed.entry_date),
-    };
-  } catch {
-    return { countries: [], entry_type: "note", entry_date: null };
-  }
 }
 
 // Правило видимости — одно на все поверхности (_shared/entries/access.ts): общие, свои и
@@ -742,7 +721,7 @@ async function toolAddKnowledge(
   const workspaceGroupId = scope.groupId;
   const [summaryEmbedding, entryMeta] = await Promise.all([
     getEmbedding(args.summary.slice(0, 8000)),
-    extractEntryMeta(args.summary),
+    extractEntryMeta(args.summary, OPENAI_API_KEY),
   ]);
 
   // First chunk: summary + metadata + embedding
@@ -816,7 +795,7 @@ async function toolUploadFile(args: {
 
   const [embedding, entryMeta] = await Promise.all([
     getEmbedding(args.summary.slice(0, 8000)),
-    extractEntryMeta(args.summary),
+    extractEntryMeta(args.summary, OPENAI_API_KEY),
   ]);
 
   const workspaceGroupId = scope.groupId;

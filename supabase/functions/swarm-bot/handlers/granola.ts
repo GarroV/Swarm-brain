@@ -1,8 +1,8 @@
 import { supabase } from "../lib/supabase.ts";
 import { chatComplete, getEmbedding } from "../lib/openai.ts";
 import { sendInlineMessage, sendMessage } from "../lib/telegram.ts";
-import { clearSession, extractEntryMeta, getSession, setSession } from "../lib/storage.ts";
-import { applyGeneralSentinel, specificCountries } from "../../_shared/meta-extract.ts";
+import { clearSession, getSession, setSession } from "../lib/storage.ts";
+import { applyGeneralSentinel, extractEntryMeta, specificCountries } from "../../_shared/meta-extract.ts";
 import { getUserGroupId } from "../lib/workspace.ts";
 import { buildTezisyUserMessage, TEZISY_PROMPT } from "../../_shared/tezisy-prompt.ts";
 import { findDuplicateMeeting, type MeetingAttendee, parseMeetingContent } from "../../_shared/meeting-dedup.ts";
@@ -212,7 +212,7 @@ async function prepareGranolaEntry(
     cached
       ? Promise.resolve(cached.tezises)
       : chatComplete(GRANOLA_TEZISY_PROMPT, buildTezisyUserMessage(content.slice(0, 12000))),
-    extractEntryMeta(content.slice(0, 4000)),
+    extractEntryMeta(content, Deno.env.get("OPENAI_API_KEY")!),
   ]);
 
   // Extract entry_date from content (content always has it in "Дата: ..." line)

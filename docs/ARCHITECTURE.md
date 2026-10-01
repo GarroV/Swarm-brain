@@ -144,8 +144,13 @@
    подходящего года → `null`: лучше без срока, чем с выдуманным.
 
 **Точки применения:** `swarm-api` `gptExtractTasks`; `swarm-bot/tasks/handlers.ts`
-`analyzeAndCreateTasks`; `read-ai-webhook`; `swarm-bot/lib/storage.ts`
-(`buildEntryIndex`, `extractEntryMeta`); `swarm-mcp` (`extractEntryMeta` + `reindex_entry`).
+`analyzeAndCreateTasks`; `read-ai-webhook`; `swarm-bot/lib/storage.ts` (`buildEntryIndex`);
+`swarm-mcp` `reindex_entry`; **`_shared/meta-extract.ts` `extractEntryMeta`** — единственная
+реализация извлечения стран/типа/даты (issue #582: до 01.10.2026 жила в трёх копиях, и копия в
+`_shared`, через которую пишет `swarm-api`, оба слоя пропускала). Её зовут `swarm-api` (заметка
+`POST /entries`, Granola-импорт из веба, подсказка рынка), `_shared/meeting-publish.ts`,
+`swarm-bot/handlers/granola.ts`, `swarm-mcp` (`add_knowledge`, `upload_file`). Модуль в ядре
+(`scripts/core-paths.txt`) вместе с `llm-date.ts`.
 
 ⚠️ Дату, которую человек выбрал в календаре (веб-датапикер, ручной ввод в боте — там промпт
 разбора уже получал `Сегодня …`), нормализатор **не трогает**: прошедший срок там осознанный
