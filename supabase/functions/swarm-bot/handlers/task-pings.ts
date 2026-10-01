@@ -13,6 +13,8 @@
 import { canViewTask } from "../../_shared/tasks/access.ts";
 import { TASK_TZ, todayInTz } from "../../_shared/tasks/recurrence.ts";
 import { addDays } from "../../_shared/tasks/due.ts";
+import { isClosedStatus } from "../../_shared/tasks/statuses.ts";
+import { isDemoAccount } from "../../_shared/demo-session.ts";
 
 // Часовой пояс и календарный «сегодня» — канон в _shared/tasks/recurrence.ts (одна копия
 // на весь модуль задач: перекат регулярных и пинги обязаны считать один и тот же день).
@@ -46,17 +48,13 @@ export interface InlineUrlButton {
 // (`todayIn`) остались на месте, а формула жила в одном файле.
 export const todayIn = todayInTz;
 
-function isDone(status: string): boolean {
-  return status === "done";
-}
-
 /**
  * Пора ли слать пинг. Прошедшая дата тоже считается наступившей: крон мог простоять
  * (деплой, сбой), и пропущенный пинг лучше отдать с опозданием, чем потерять молча.
  * Факт отправки (`reminded_at`) отсекается запросом в БД — здесь только дата и статус.
  */
 export function isPingDue(row: PingRow, today: string): boolean {
-  if (!row.remind_date || isDone(row.status) || row.archived_at) return false;
+  if (!row.remind_date || isClosedStatus(row.status) || row.archived_at) return false;
   return row.remind_date <= today;
 }
 
@@ -78,11 +76,13 @@ export function pingRecipients(row: PingRow): number[] {
     if (!canViewTask(row, id, false)) continue;
     out.push(id);
   }
+  // Демо-аккаунтам писать некуда (#675). Фильтр после схлопывания приватной: владелец-демо тоже
+  // не получатель, и задача демо гасится крону как «некому отправить».
   // Приватную задачу видит только владелец. Если исполнитель ей не владеет (задачу закрыли
   // после назначения), круг схлопывается в ноль — и пинг ушёл бы в никуда, а задача осталась
   // бы в выборке крона навсегда. Владелец — последний рубеж: он эту задачу точно видит.
   if (!out.length && row.is_private && row.owner_id) out.push(row.owner_id);
-  return out;
+  return out.filter((id) => !isDemoAccount(id));
 }
 
 // Задача с несколькими исполнителями попадает каждому: пинг персональный, «кто-то другой

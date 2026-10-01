@@ -84,3 +84,9 @@ Deno.test("formatReminder: без webBaseUrl — без кнопок, назва
   assertEquals(keyboard.length, 0);
   assertEquals(text.includes("Оклады BG"), true);
 });
+
+Deno.test("selectDueReminders: демо-аккаунт не получает напоминание (#675)", () => {
+  const now = new Date("2026-07-25T09:00:00Z");
+  const due = selectDueReminders([row({ created_at: "2026-07-20T09:00:00Z", owner_id: 900000004 })], now);
+  assertEquals(due.length, 0);
+});
