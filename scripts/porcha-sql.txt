@@ -59,3 +59,5 @@ after update of archived_at on public.tasks|after insert on public.tasks|supabas
 elsif old.archived_at is not null and new.archived_at is null then|elsif false then|supabase/functions/_shared/tasks/archive-sprint.db.test.ts|supabase/migrations/20261001180000_archived_tasks_leave_sprints.sql
 and frozen_at is null  -- принятый спринт не трогаем|and true|supabase/functions/_shared/tasks/archive-sprint.db.test.ts|supabase/migrations/20261001180000_archived_tasks_leave_sprints.sql
 new.ping_delivered_to := '{}';|null;|supabase/functions/_shared/tasks/archive-sprint.db.test.ts|supabase/migrations/20261001180000_archived_tasks_leave_sprints.sql
+# Замок таблиц public (#671): таблица без RLS обязана ронять тест — порча дописывает её в миграцию.
+revoke all on public.meeting_notices from anon, authenticated;|revoke all on public.meeting_notices from anon, authenticated; create table public.porcha_no_rls (id int);|supabase/functions/_shared/public-tables-locked.db.test.ts|supabase/migrations/20261002110000_scriba_tables_revoke_anon.sql
