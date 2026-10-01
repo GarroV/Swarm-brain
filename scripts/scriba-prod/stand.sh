@@ -99,7 +99,10 @@ show_status() {
 prod_down() {
   [ -f "$ENV_FILE" ] && dc down >/dev/null
   docker ps -aq --filter "label=scriba.project=$PROJECT" | xargs -r docker rm -f >/dev/null
-  say 'оркестратор и встречи погашены; токен и вход бота не тронуты'
+  # Прокси выхода поднимает оркестратор, и метка у него своя — scriba.egress-of, а не
+  # scriba.project (bot/src/orchestrator/egress.ts). Без этой строки он переживает down (#634).
+  docker ps -aq --filter "label=scriba.egress-of=$PROJECT" | xargs -r docker rm -f >/dev/null
+  say 'оркестратор, встречи и прокси выхода погашены; токен и вход бота не тронуты'
 }
 
 case "${1:-status}" in
