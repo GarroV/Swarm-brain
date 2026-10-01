@@ -127,8 +127,9 @@ export function MeetingDetail({ id }: { id: string }) {
   };
   // Точечный вопрос по тезисам. Ответ пересказывает транскрипт, поэтому только тем, кто встречу
   // записывал (сервер проверяет записавших и совладельцев; здесь — владелец записи, чтобы не
-  // показывать кнопку, которая откажет).
-  const askEntry = e && e.metadata?.meeting_id && me && e.owner_id === me.telegram_id
+  // показывать кнопку, которая откажет). Встреча 1-1 на двоих — и второй участник (#641).
+  const askEntry = e && e.metadata?.meeting_id && me &&
+      (e.owner_id === me.telegram_id || (e.is_private && (e.shared_with ?? []).includes(me.telegram_id)))
     ? (fragment: string, question: string) => askMeeting("entry", id, fragment, question)
     : undefined;
   const applyFromReading = (answer: string, mode: AskApply, fragment: string) => {

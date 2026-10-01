@@ -1,5 +1,6 @@
 import { ADMIN_USER_ID, loadMeetingViewer, supabase } from "./supabase.ts";
 import { entryActionError } from "../../_shared/entries/entry-edit.ts";
+import { canViewEntry } from "../../_shared/entries/access.ts";
 import {
   PRIVATE_BUCKET,
   registerStorageFile,
@@ -247,6 +248,8 @@ export type ManageableEntry = {
   group_id: string | null;
   is_private: boolean;
   owner_id: number | null;
+  /** С кем разделена личная запись (встреча 1-1, #641). */
+  shared_with: number[] | null;
   content: string;
   summary: string | null;
   source: string | null;
@@ -259,7 +262,8 @@ export type ManageableEntry = {
 /**
  * Загружает запись для показа, правки или удаления с проверкой доступа. Бросает EntryAccessError.
  *
- *   view   — воркспейс + видимость (общие — любой в воркспейсе, личные — только владелец);
+ *   view   — воркспейс + видимость (общие — любой в воркспейсе, личные — владелец и те, с кем
+ *            запись разделена, #641);
  *   edit   — права правки: встреча — владелец, участники, админ; остальное — только автор;
  *   delete — права удаления: встреча — владелец и админ; остальное — только автор.
  *
@@ -273,13 +277,13 @@ export async function getManageableEntry(
 ): Promise<ManageableEntry> {
   const { data } = await supabase.from("entries")
     .select(
-      "id, group_id, is_private, owner_id, content, summary, source, entry_type, entry_date, metadata, created_at",
+      "id, group_id, is_private, owner_id, shared_with, content, summary, source, entry_type, entry_date, metadata, created_at",
     )
     .eq("id", id).maybeSingle();
   if (!data) throw new EntryAccessError("not_found");
   const e = data as ManageableEntry;
   if (e.group_id !== groupId) throw new EntryAccessError("forbidden");
-  if (e.is_private && e.owner_id !== userId) throw new EntryAccessError("forbidden");
+  if (!canViewEntry(e, userId)) throw new EntryAccessError("forbidden");
   if (action !== "view") {
     const denied = entryActionError(id, e, await loadMeetingViewer(userId), groupId, action);
     if (denied) throw new EntryAccessError("forbidden");

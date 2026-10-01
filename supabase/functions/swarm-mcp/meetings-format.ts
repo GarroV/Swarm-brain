@@ -18,9 +18,7 @@ export function formatReviewQueue(rows: QueueRow[], total: number | null): strin
   });
   const head = `Черновиков на вычитке: ${total ?? rows.length}`;
   // Выдача обрезана — говорим прямо, иначе агент решит, что разобрал всё.
-  const tail = total != null && total > rows.length
-    ? `\n\n⚠️ Показаны ${rows.length} из ${total}, самые свежие.`
-    : "";
+  const tail = total != null && total > rows.length ? `\n\n⚠️ Показаны ${rows.length} из ${total}, самые свежие.` : "";
   return `${head}\n\n${lines.join("\n\n")}${tail}`;
 }
 
@@ -57,7 +55,12 @@ export function formatPublishOutcome(entry: Record<string, unknown>, status: num
       : `✅ Встреча уже была в базе, там осталась прежняя версия (она полнее). Черновик привязан к ней. Запись: ${id}`;
   }
   if (status === 200) return `✅ Черновик уже был опубликован. Запись: ${id}`;
-  const where = entry.is_private === true ? "в личную базу" : "в базу команды";
+  const sharedWith = Array.isArray(entry.shared_with) ? entry.shared_with : [];
+  const where = entry.is_private !== true
+    ? "в базу команды"
+    : sharedWith.length > 0
+    ? "в личную базу — встреча 1-1, видна тебе и второму участнику"
+    : "в личную базу";
   return `✅ Опубликовано ${where}. Запись: ${id}`;
 }
 

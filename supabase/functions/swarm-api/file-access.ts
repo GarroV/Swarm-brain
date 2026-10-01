@@ -9,6 +9,7 @@
 // getFileSecure (ниже) — обёртка, читающая реестр и применяющая это решение.
 
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { canViewEntry } from "../_shared/entries/access.ts";
 
 export type StorageOwnerKind = "entry" | "feedback";
 
@@ -21,6 +22,8 @@ export type StorageFileRow = {
   // Владелец записи (entries.owner_id) — для приватности вложения.
   owner_user_id: number | null;
   is_private: boolean;
+  /** С кем разделена личная запись-владелец (встреча 1-1, #641). Из реестра не берётся. */
+  shared_with?: number[] | null;
 };
 
 export type FileRequester = {
@@ -59,8 +62,10 @@ export function decideFileAccess(
   // Вложение записи — те же два слоя, что у самой записи (entries-guard):
   //   Layer 1 — воркспейс-изоляция: кросс-воркспейс доступа нет, даже к публичному файлу.
   if (row.group_id !== req.groupId) return DENY;
-  //   Layer 2 — приватность БЕЗ admin-байпаса: личное вложение видит только владелец.
-  if (row.is_private && row.owner_user_id !== req.telegramId) return DENY;
+  //   Layer 2 — приватность БЕЗ admin-байпаса: личное вложение видят владелец записи и те, с
+  //   кем она разделена (1-1, #641) — то же правило, что у самой записи.
+  const entry = { is_private: row.is_private, owner_id: row.owner_user_id, shared_with: row.shared_with };
+  if (!canViewEntry(entry, req.telegramId)) return DENY;
 
   return { allowed: true };
 }
@@ -83,7 +88,6 @@ type RegistryRow = {
  *   2. entry-файл: свежие права берём из entries (group_id/owner_id/is_private), НЕ из реестра.
  *   3. feedback-файл: admin-only, поля записи не нужны.
  *   4. decideFileAccess — единое решение; deny → FileAccessError(404).
- *
  */
 export async function getFileSecure(
   supabase: SupabaseClient,
@@ -103,17 +107,23 @@ export async function getFileSecure(
     // Свежие права — из записи-владельца, НЕ из реестра (нет дрейфа приватности).
     const { data: entry } = await supabase
       .from("entries")
-      .select("group_id,owner_id,is_private")
+      .select("group_id,owner_id,is_private,shared_with")
       .eq("id", registry.entry_id)
       .maybeSingle();
     if (!entry) throw new FileAccessError(404, "Not found");
-    const e = entry as { group_id: string | null; owner_id: number | null; is_private: boolean };
+    const e = entry as {
+      group_id: string | null;
+      owner_id: number | null;
+      is_private: boolean;
+      shared_with: number[] | null;
+    };
     row = {
       path: registry.path,
       owner_kind: "entry",
       group_id: e.group_id,
       owner_user_id: e.owner_id,
       is_private: e.is_private,
+      shared_with: e.shared_with,
     };
   } else {
     // feedback: admin-only, поля записи не участвуют в решении.

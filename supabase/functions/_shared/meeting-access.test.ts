@@ -4,6 +4,7 @@ import {
   canDeleteDraftMeeting,
   draftMeetingsOwnScopedFilter,
   hasCoOwners,
+  oneOnOnePartner,
 } from "./meeting-access.ts";
 
 // Черновик на вычитке — это сырая запись чужого разговора: полный транскрипт, ещё не вычитанный
@@ -79,4 +80,77 @@ Deno.test("несколько владельцев: совладельцы ил�
   assertEquals(hasCoOwners(coOwned), true);
   assertEquals(hasCoOwners({ recorders: [{ telegram_id: 1 }, { telegram_id: 2 }] }), true);
   assertEquals(hasCoOwners({ recorders: [{ telegram_id: 1 }, { telegram_id: 1 }], co_owners: [] }), false);
+});
+
+// ── Встреча 1-1: личная публикация для обоих (#641, решение владельца 30.09.2026) ──────────
+// «если встреча проходила только с двумя живыми участниками (боты не в счет) - то появляется
+// выбор сохранения в личные пространства двух участников».
+// Люди = владельцы черновика (записавшие ∪ совладельцы) плюс люди из календаря без SWARM.
+// Отрицательный id — НЕ мусор: это веб-пользователь без Telegram (вход по e-mail), живой человек.
+
+const A = 224830225;
+const B = -37;
+
+Deno.test("1-1: двое владельцев, двое в календаре — партнёр найден", () => {
+  const m = {
+    recorders: [{ telegram_id: A }],
+    co_owners: [B],
+    attendees: [{ email: "a@x.io" }, { email: "b@x.io" }],
+  };
+  assertEquals(oneOnOnePartner(m, A), B);
+  assertEquals(oneOnOnePartner(m, B), A);
+});
+
+Deno.test("1-1: веб-пользователь с отрицательным id считается человеком", () => {
+  // Регресс-страж: «-38 игнорировать» превратило бы встречу трёх человек в 1-1.
+  const m = { recorders: [{ telegram_id: A }], co_owners: [-38, 744230399] };
+  assertEquals(oneOnOnePartner(m, A), null);
+});
+
+Deno.test("1-1: третий человек в календаре без SWARM — это уже не 1-1", () => {
+  const m = {
+    recorders: [{ telegram_id: A }],
+    co_owners: [B],
+    attendees: [{ email: "a@x.io" }, { email: "b@x.io" }, { email: "c@x.io" }],
+  };
+  assertEquals(oneOnOnePartner(m, A), null);
+});
+
+Deno.test("1-1: переговорка и дубль адреса в календаре людьми не считаются", () => {
+  const m = {
+    recorders: [{ telegram_id: A }],
+    co_owners: [B],
+    attendees: [
+      { email: "a@x.io" },
+      { email: "B@x.io" },
+      { email: "b@x.io " },
+      { email: "room-3@resource.calendar.google.com" },
+      { email: "hall@x.io", resource: true },
+    ],
+  };
+  assertEquals(oneOnOnePartner(m, A), B);
+});
+
+Deno.test("1-1: двое записавших одну встречу без совладельцев — тоже 1-1", () => {
+  const m = { recorders: [{ telegram_id: A }, { telegram_id: B }], co_owners: [] };
+  assertEquals(oneOnOnePartner(m, A), B);
+});
+
+Deno.test("1-1: один владелец — партнёра нет (это просто своя встреча)", () => {
+  assertEquals(oneOnOnePartner({ recorders: [{ telegram_id: A }] }, A), null);
+});
+
+Deno.test("1-1: посторонний не получает партнёра, даже если встреча 1-1", () => {
+  const m = { recorders: [{ telegram_id: A }], co_owners: [B] };
+  assertEquals(oneOnOnePartner(m, 999), null);
+});
+
+Deno.test("1-1: трое владельцев — нет", () => {
+  const m = { recorders: [{ telegram_id: A }], co_owners: [B, 555] };
+  assertEquals(oneOnOnePartner(m, A), null);
+});
+
+Deno.test("1-1: id приходят строками (bigint из базы) — считаются как числа", () => {
+  const m = { recorders: [{ telegram_id: A }], co_owners: [String(B)] as unknown as number[] };
+  assertEquals(oneOnOnePartner(m, A), B);
 });

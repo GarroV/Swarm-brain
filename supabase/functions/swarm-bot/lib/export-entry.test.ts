@@ -33,7 +33,7 @@ const has = (chain: Call[], method: string, ...args: unknown[]) =>
   chain.some((c) => c.method === method && JSON.stringify(c.args) === JSON.stringify(args));
 
 const VIEWER = 111;
-const vis = `is_private.eq.false,and(is_private.eq.true,owner_id.eq.${VIEWER})`;
+const vis = `is_private.eq.false,owner_id.eq.${VIEWER},shared_with.cs.{${VIEWER}}`;
 
 Deno.test("поиск записи: свой воркспейс и фильтр личных", async () => {
   const { client, calls } = makeSupabase(null, []);

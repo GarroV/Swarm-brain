@@ -586,23 +586,31 @@ export async function executeTool(
             query_embedding: `[${emb.join(",")}]`,
             match_threshold: 0.1,
             match_count: 8,
+            requesting_user_id: userId || null,
           });
-          entries = (vecData ?? []) as KbEntry[];
+          // match_entries воркспейс не фильтрует — только свой.
+          entries = ((vecData ?? []) as Array<KbEntry & { group_id?: string | null }>)
+            .filter((e) => e.group_id === groupId);
         } catch { /* fall through */ }
 
-        // Fallback: fuzzy array match via RPC
+        // Fallback: нечёткое совпадение тега страны — RPC сам держит воркспейс и видимость
+        // (общие, свои и разделённые со мной).
         if (!entries.length) {
-          const { data: fuzzy } = await supabase.rpc("search_entries_by_country", { country_query: country }).then(
-            (r) => r,
-            () => ({ data: null }),
-          );
+          const { data: fuzzy } = await supabase.rpc("search_entries_by_country", {
+            country_query: country,
+            p_group_id: groupId,
+            requesting_user_id: userId || null,
+          }).then((r) => r, () => ({ data: null }));
           entries = (fuzzy ?? []) as KbEntry[];
         }
 
-        // Fallback: exact contains
+        // Fallback: точное совпадение тега страны — свой воркспейс и видимые записи.
         if (!entries.length) {
           const { data: exact } = await supabase.from("entries").select("id, content, summary, source")
-            .contains("countries", [country]).order("created_at", { ascending: false }).limit(5);
+            .contains("countries", [country])
+            .eq("group_id", groupId)
+            .or(visibilityFilter(userId || 0))
+            .order("created_at", { ascending: false }).limit(5);
           entries = (exact ?? []) as KbEntry[];
         }
 
@@ -616,7 +624,8 @@ export async function executeTool(
       }
 
       case "get_countries_list": {
-        const { data } = await supabase.from("entries").select("countries").not("countries", "eq", "{}");
+        const { data } = await supabase.from("entries").select("countries").not("countries", "eq", "{}")
+          .eq("group_id", groupId).or(visibilityFilter(userId || 0));
         const count: Record<string, number> = {};
         for (const r of (data ?? []) as Array<{ countries: string[] }>) {
           for (const c of (r.countries ?? [])) count[c] = (count[c] ?? 0) + 1; // r is typed above
@@ -628,6 +637,7 @@ export async function executeTool(
       case "get_digest": {
         const { data } = await supabase.from("entries")
           .select("entry_type, source, summary, countries, entry_date, created_at")
+          .eq("group_id", groupId).or(visibilityFilter(userId || 0))
           .order("created_at", { ascending: false }).limit(30);
         if (!data?.length) return "База знаний пустая.";
         type DRow = {
@@ -657,7 +667,9 @@ export async function executeTool(
       case "get_entries_by_country": {
         const { data } = await supabase.from("entries")
           .select("countries, source, summary, entry_date, created_at")
-          .not("countries", "eq", "{}").order("created_at", { ascending: false }).limit(100);
+          .not("countries", "eq", "{}")
+          .eq("group_id", groupId).or(visibilityFilter(userId || 0))
+          .order("created_at", { ascending: false }).limit(100);
         if (!data?.length) return "Нет записей с указанием стран.";
         type GRow = { countries: string[]; source: string; summary?: string; entry_date?: string; created_at: string };
         const byCountry: Record<string, GRow> = {};
@@ -838,8 +850,9 @@ export async function executeTool(
         const { data, error } = await supabase
           .from("entries")
           .select("id, summary, source, created_at")
+          // Личное хранилище = свои личные записи и встречи 1-1, разделённые со мной (#641).
           .eq("is_private", true)
-          .eq("owner_id", userId)
+          .or(visibilityFilter(userId))
           .order("created_at", { ascending: false })
           .limit(limit);
         if (error) return `Ошибка: ${error.message}`;

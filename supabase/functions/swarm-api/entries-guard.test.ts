@@ -182,7 +182,7 @@ Deno.test("buildEntriesQuery — applies group isolation + visibility filter", (
   const or = calls.find((c) => c.method === "or");
   assertEquals(
     or?.args[0],
-    "is_private.eq.false,and(is_private.eq.true,owner_id.eq.111)",
+    "is_private.eq.false,owner_id.eq.111,shared_with.cs.{111}",
   );
 });
 
@@ -295,4 +295,47 @@ Deno.test("getMeetingSecure — владелец удаляет свою вст�
   const { client } = makeSupabase(meeting);
   const row = await getMeetingSecure(client, "e1", { ...meetingOpts, telegramId: 111, action: "delete" });
   assertEquals(row.id, "e1");
+});
+
+// ── Встреча 1-1 на двоих (#641): одна личная запись, второй участник — в shared_with ─────────
+const oneOnOneEntry = { ...baseEntry, is_private: true, owner_id: 111, shared_with: [-37], metadata: {} };
+
+Deno.test("getEntrySecure: запись на двоих видит второй участник", async () => {
+  const { client } = makeSupabase(oneOnOneEntry);
+  const got = await getEntrySecure(client, "e1", { groupId: "cee", telegramId: -37 });
+  assertEquals(got.id, "e1");
+});
+
+Deno.test("getEntrySecure: третий участник воркспейса получает 404, неотличимо от «нет такой»", async () => {
+  const { client } = makeSupabase(oneOnOneEntry);
+  const err = await assertRejects(
+    () => getEntrySecure(client, "e1", { groupId: "cee", telegramId: 222 }),
+    EntryAccessError,
+  );
+  assertEquals(err.status, 404);
+});
+
+Deno.test("getEntrySecure: второй участник не мутирует как владелец (403)", async () => {
+  const { client } = makeSupabase(oneOnOneEntry);
+  const err = await assertRejects(
+    () => getEntrySecure(client, "e1", { groupId: "cee", telegramId: -37, requireOwner: true }),
+    EntryAccessError,
+  );
+  assertEquals(err.status, 403);
+});
+
+Deno.test("getMeetingSecure: второй участник правит встречу 1-1, но не удаляет", async () => {
+  const { client } = makeSupabase(oneOnOneEntry);
+  const ok = await getMeetingSecure(client, "e1", { groupId: "cee", telegramId: -37, action: "edit" });
+  assertEquals(ok.id, "e1");
+  const { client: c2 } = makeSupabase(oneOnOneEntry);
+  const err = await assertRejects(
+    () => getMeetingSecure(c2, "e1", { groupId: "cee", telegramId: -37, action: "delete" }),
+    EntryAccessError,
+  );
+  assertEquals(err.status, 403);
+});
+
+Deno.test("ENTRY_COLUMNS выбирает shared_with — без неё второй участник получил бы отказ", () => {
+  assertEquals(cols().includes("shared_with"), true);
 });

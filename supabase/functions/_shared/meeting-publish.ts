@@ -8,7 +8,7 @@ import {
 } from "./meta-extract.ts";
 import { findDuplicateMeeting, type MeetingAttendee } from "./meeting-dedup.ts";
 import { arbitrateFullness, type TranscriptLike } from "./meeting-fullness.ts";
-import { type DraftMeetingRow, hasCoOwners } from "./meeting-access.ts";
+import { type DraftMeetingRow, hasCoOwners, oneOnOnePartner } from "./meeting-access.ts";
 
 // Публикация черновика встречи (таблица meetings) в базу знаний (entries). Одна реализация
 // для веба (swarm-api POST /agent-meetings/:id/publish) и MCP (publish_draft_meeting, issue #513):
@@ -36,6 +36,30 @@ export type PublishDraftResult =
   | { ok: true; status: 200 | 201; entry: Record<string, unknown> }
   | { ok: false; status: 400 | 409 | 500; message: string };
 
+export type PublishVisibility =
+  | { ok: true; isPrivate: boolean; sharedWith: number[] }
+  | { ok: false };
+
+/**
+ * Кому будет видна публикуемая запись. Решает СЕРВЕР по составу встречи; клиент присылает
+ * только «в команду» или «в личное».
+ *
+ * Встречу нескольких владельцев в личное не публикуем: остальные потеряли бы к ней доступ
+ * (решение владельца 2026-09-25, PR #508). Исключение — 1-1 (#641, решение 30.09.2026):
+ * ровно два человека, оба в SWARM. Тогда запись одна, владелец — опубликовавший, второй
+ * участник — в `shared_with`, и видят её только они двое.
+ */
+export function resolvePublishVisibility(
+  meeting: DraftMeetingRow,
+  viewerId: number,
+  wantsPrivate: boolean,
+): PublishVisibility {
+  if (!wantsPrivate) return { ok: true, isPrivate: false, sharedWith: [] };
+  if (!hasCoOwners(meeting)) return { ok: true, isPrivate: true, sharedWith: [] };
+  const partner = oneOnOnePartner(meeting, viewerId);
+  return partner === null ? { ok: false } : { ok: true, isPrivate: true, sharedWith: [partner] };
+}
+
 export async function publishDraftMeeting(
   supabase: SupabaseClient,
   meeting: Record<string, unknown>,
@@ -47,19 +71,21 @@ export async function publishDraftMeeting(
   // в запрос уходит настоящий список колонок.
   const cols = opts.entryColumns as "*";
 
-  // Встреча нескольких владельцев в личную базу не уходит: остальные потеряли бы к ней доступ
-  // (решение владельца 2026-09-25, PR #508). Проверка здесь, а не у вызывающего, — чтобы она
-  // действовала и для веба, и для MCP.
-  if (
-    opts.isPrivate && meeting.status !== "in_base" &&
-    hasCoOwners(meeting as DraftMeetingRow)
-  ) {
+  // Кому видна запись — здесь, а не у вызывающего, чтобы правило действовало и для веба, и
+  // для MCP (см. resolvePublishVisibility).
+  const visibility = resolvePublishVisibility(
+    meeting as DraftMeetingRow,
+    opts.telegramId,
+    opts.isPrivate,
+  );
+  if (!visibility.ok && meeting.status !== "in_base") {
     return {
       ok: false,
       status: 409,
       message: "This meeting has several owners — publish it to the team base",
     };
   }
+  const sharedWith = visibility.ok ? visibility.sharedWith : [];
   // идемпотентность: уже опубликовано → вернуть существующую запись
   if (meeting.status === "in_base" && meeting.entry_id) {
     const { data: existing } = await supabase.from("entries").select(
@@ -155,9 +181,8 @@ export async function publishDraftMeeting(
       {
         transcript: (pubMeeting as { transcript?: TranscriptLike } | null)
           ?.transcript ?? null,
-        notesEditedAt:
-          (pubMeeting as { notes_edited_at?: string | null } | null)
-            ?.notes_edited_at ?? null,
+        notesEditedAt: (pubMeeting as { notes_edited_at?: string | null } | null)
+          ?.notes_edited_at ?? null,
       },
     );
 
@@ -165,15 +190,13 @@ export async function publishDraftMeeting(
       // Заменяем СОДЕРЖИМОЕ записи, id сохраняется: ссылки, задачи и привязки не рвутся.
       // Прежние тезисы не пропадают — они остаются в draft_notes_md своей строки meetings,
       // а факт замены пишем в metadata (кто, когда, чем именно оказалась полнее).
-      const prevMeta =
-        ((dup as unknown as { metadata?: Record<string, unknown> })
-          .metadata ?? {}) as Record<string, unknown>;
+      const prevMeta = ((dup as unknown as { metadata?: Record<string, unknown> })
+        .metadata ?? {}) as Record<string, unknown>;
       const { data: prevEntry } = await supabase.from("entries").select(
         "metadata",
       ).eq("id", dup.id).single();
-      const baseMeta =
-        ((prevEntry as { metadata?: Record<string, unknown> } | null)
-          ?.metadata ?? prevMeta) as Record<string, unknown>;
+      const baseMeta = ((prevEntry as { metadata?: Record<string, unknown> } | null)
+        ?.metadata ?? prevMeta) as Record<string, unknown>;
       const newEmbedding = await embed(
         buildEmbeddingInput(draft, countries),
         OPENAI_KEY,
@@ -245,6 +268,8 @@ export async function publishDraftMeeting(
       entry_date: entryDate,
       group_id: opts.groupId,
       is_private: opts.isPrivate,
+      // Встреча 1-1 «в личное» — одна запись на двоих: второй участник видит и правит её.
+      shared_with: sharedWith,
       // Автор = тот, кто записал встречу и завёл её в систему. Раньше здесь стояло
       // `opts.isPrivate ? opts.telegramId : null`: у общей записи автор стирался, потому что
       // owner_id тащит две роли сразу — авторство и ключ приватности, а для видимости

@@ -22,10 +22,56 @@ export type DraftMeetingRow = {
   group_id?: string | null;
   recorders?: Array<{ telegram_id: number }> | null;
   co_owners?: number[] | null;
+  /** Участники из календаря (`meetings.attendees`) — нужны, чтобы отличить 1-1 от встречи втроём. */
+  attendees?: Array<{ email?: string | null; resource?: boolean | null }> | null;
+};
+
+// bigint из базы может прийти строкой — приводим к числу. Ноль и нечисла выбрасываем;
+// отрицательный id — НЕ мусор: это веб-пользователь без Telegram (вход по e-mail).
+const toId = (v: unknown): number | null => {
+  const n = typeof v === "string" ? Number(v) : v;
+  return typeof n === "number" && Number.isInteger(n) && n !== 0 ? n : null;
 };
 
 const recorderIds = (m: DraftMeetingRow): number[] =>
   (m.recorders ?? []).map((r) => r?.telegram_id).filter((id): id is number => typeof id === "number");
+
+/** Все владельцы черновика: записавшие ∪ совладельцы, без повторов. */
+function ownerIds(m: DraftMeetingRow): number[] {
+  const ids = [...(m.recorders ?? []).map((r) => toId(r?.telegram_id)), ...(m.co_owners ?? []).map(toId)];
+  return [...new Set(ids.filter((id): id is number => id !== null))];
+}
+
+// Переговорка в календаре Google — ресурс, а не человек.
+const isRoom = (a: { email?: string | null; resource?: boolean | null }): boolean =>
+  a.resource === true || /@resource\.calendar\.google\.com$/i.test((a.email ?? "").trim());
+
+/** Сколько разных людей в календарной записи встречи (по e-mail, без переговорок). */
+function calendarHumans(m: DraftMeetingRow): number {
+  const emails = (m.attendees ?? [])
+    .filter((a) => a != null && !isRoom(a))
+    .map((a) => (a.email ?? "").trim().toLowerCase())
+    .filter(Boolean);
+  return new Set(emails).size;
+}
+
+/**
+ * Встреча 1-1 (#641, решение владельца 30.09.2026): ровно два человека — оба в SWARM. Тогда её
+ * можно опубликовать «в личное» ОДНОЙ записью на двоих. Возвращает id второго участника для
+ * `viewerId` или `null`, если встреча не 1-1 или смотрящий не из этой пары.
+ *
+ * Людей считаем по двум источникам, и оба должны сойтись на «двое»:
+ *  - владельцы черновика (записавшие ∪ совладельцы) — ровно двое, смотрящий среди них;
+ *  - календарь: людей в нём не больше двух. Третий участник без SWARM в владельцы не попадает,
+ *    но встреча с ним уже не 1-1, и прятать её от команды «на двоих» нельзя.
+ * Без календаря (запись комнаты) решают одни владельцы.
+ */
+export function oneOnOnePartner(meeting: DraftMeetingRow, viewerId: number): number | null {
+  const owners = ownerIds(meeting);
+  if (owners.length !== 2 || !owners.includes(viewerId)) return null;
+  if (calendarHumans(meeting) > 2) return null;
+  return owners.find((id) => id !== viewerId) ?? null;
+}
 
 /**
  * Может ли `viewerId` открыть черновик. `isAdmin` принимается, чтобы вызывающему не приходилось

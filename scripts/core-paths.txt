@@ -30,3 +30,9 @@ miniapp/functions/_lib/oauth-state.ts|miniapp/src/lib/oauthState.test.ts
 supabase/functions/swarm-api/admin-scope.ts|supabase/functions/swarm-api/admin-scope.test.ts
 supabase/functions/_shared/users/admin-scope.ts|supabase/functions/swarm-api/admin-scope.test.ts
 supabase/functions/swarm-bot/handlers/superadmin-scope.ts|supabase/functions/swarm-bot/handlers/superadmin-scope.test.ts
+# Видимость записей и встреча 1-1 на двоих (#641): ошибка здесь не падает — она молча
+# показывает личную встречу третьему или прячет её от второго участника.
+supabase/functions/_shared/entries/access.ts|supabase/functions/_shared/entries/access.test.ts
+supabase/functions/_shared/entries/meeting-rights.ts|supabase/functions/_shared/entries/meeting-rights.test.ts
+supabase/functions/_shared/meeting-access.ts|supabase/functions/_shared/meeting-access.test.ts
+supabase/functions/swarm-api/meeting-ask-access.ts|supabase/functions/swarm-api/meeting-ask-access.test.ts

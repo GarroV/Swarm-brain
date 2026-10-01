@@ -1136,7 +1136,9 @@ function ActionsPanel({
   const [savingCountries, setSavingCountries] = useState(false);
   const isAgent = item.kind === "agent";
   // Черновик нескольких владельцев (решение 2026-09-25): только в общую базу, удаляет записавший.
-  const sharedOwners = isAgent && hasSeveralOwners(item.data);
+  // Исключение — встреча 1-1 (#641): «Личное» сохранит одну запись, видную обоим.
+  const oneOnOne = isAgent ? item.data.one_on_one ?? null : null;
+  const sharedOwners = isAgent && hasSeveralOwners(item.data) && !oneOnOne;
   const canReject = !isAgent || canDeleteDraft(item.data, me?.telegram_id);
   // Встреча уже согласована и лежит в базе (режим «Все встречи»). Решение по ней принято —
   // выбор хранилища и «Согласовать» бессмысленны (владелец 2026-08-21: «почему на уже
@@ -1299,6 +1301,13 @@ function ActionsPanel({
               value={storage}
               onChange={(id) => setStorage(id as Storage)}
             />
+          )}
+          {oneOnOne && storage === "personal" && (
+            <p className="text-ink-soft" style={{ fontSize: 12.5 }}>
+              {oneOnOne.partner_name
+                ? dt(`Видно только вам и ${oneOnOne.partner_name}`, `Visible only to you and ${oneOnOne.partner_name}`)
+                : dt("Видно только вам и второму участнику", "Visible only to you and the other participant")}
+            </p>
           )}
 
           {/* Кнопка «Согласовать / Опубликовать» */}
