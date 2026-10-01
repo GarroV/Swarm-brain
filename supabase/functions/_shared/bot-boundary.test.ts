@@ -23,6 +23,8 @@ const BOT_MODULES = [
   "_shared/calendar-missed.ts",
   "_shared/calendar-miss-store.ts",
   "_shared/calendar-snapshot.ts",
+  // Живая проверка календаря у переключателя (решение 01.10.2026).
+  "_shared/autojoin-calendar.ts",
   "swarm-api/autojoin.ts",
   "meeting-calendar/",
   "meeting-calendar-snapshot/",

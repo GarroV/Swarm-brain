@@ -123,7 +123,7 @@ import { handleAdminRoutes } from "./admin.ts";
 import { apiErr, corsHeaders, json, parseListLimit } from "./http.ts";
 import { handleMeetingInviteRoutes } from "./meeting-invites.ts";
 import { DEMO_GROUP_ID, isDemoSession } from "../_shared/demo-session.ts";
-import { handleAutojoinRoutes, makeAutojoinStore } from "./autojoin.ts";
+import { handleAutojoinRoutes, makeAutojoinStore, makeCalendarCheck } from "./autojoin.ts";
 import { handleTaskLabelRoutes } from "./task-labels.ts";
 import { handleTaskCommentRoutes } from "./task-comments.ts";
 import { handleTaskFileRoutes } from "./task-files.ts";
@@ -886,7 +886,13 @@ Deno.serve(async (req: Request) => {
 
   // Автозапуск бота по календарю (D021): человек включает и выключает его себе, рядом с календарём.
   const autojoinResp = await handleAutojoinRoutes(
-    { store: makeAutojoinStore(supabase), telegramId: telegram_id, isDemo, origin },
+    {
+      store: makeAutojoinStore(supabase),
+      telegramId: telegram_id,
+      isDemo,
+      origin,
+      checkCalendar: makeCalendarCheck(supabase, telegram_id),
+    },
     req,
     routePath,
   );

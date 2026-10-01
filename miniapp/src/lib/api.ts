@@ -3209,21 +3209,73 @@ export async function disconnectGoogle(): Promise<void> {
 // человек включил. По умолчанию выключено; выключение гасит и уже заведённые задания (сервер).
 let mockAutojoin = false;
 
-export async function fetchAutojoin(): Promise<boolean> {
-  if (DEV_MODE) return mockAutojoin;
-  return (await apiFetch<{ enabled: boolean }>("/scriba/autojoin")).enabled;
+/**
+ * Живая проверка календаря у переключателя бота (решение 01.10.2026): есть ли доступ и встречи, на
+ * которые бот пойдёт. Сервер отдаёт её только при включённом автозапуске. Форма —
+ * _shared/autojoin-calendar.ts (AutojoinCalendarCheck).
+ */
+export type AutojoinCalendarStatus = "not_connected" | "no_access" | "unavailable" | "no_meetings" | "ok";
+export interface AutojoinCalendarCheck {
+  status: AutojoinCalendarStatus;
+  meetings: number;
+  events: number;
+  next: { title: string | null; starts_at: string; platform: string } | null;
+}
+export interface AutojoinState {
+  enabled: boolean;
+  calendar?: AutojoinCalendarCheck;
 }
 
-export async function setAutojoin(enabled: boolean): Promise<boolean> {
+// Моки: статус календаря задаётся параметром адреса ?mock_calendar=<статус> или ключом localStorage
+// `mock_calendar` (адрес теряется при переходах) — чтобы снять каждое состояние плашки без живого Google.
+function mockAutojoinCalendar(): AutojoinCalendarCheck {
+  let forced: string | null = null;
+  if (typeof window !== "undefined") {
+    forced = new URLSearchParams(window.location.search).get("mock_calendar");
+    try {
+      forced ??= window.localStorage.getItem("mock_calendar");
+    } catch {
+      // Хранилище недоступно (приватное окно) — остаётся статус по умолчанию.
+    }
+  }
+  const status = (["not_connected", "no_access", "unavailable", "no_meetings", "ok"] as const)
+    .find((s) => s === forced) ?? "ok";
+  if (status !== "ok") return { status, meetings: 0, events: status === "no_meetings" ? 3 : 0, next: null };
+  const start = new Date(Date.now() + 90 * 60_000);
+  start.setMinutes(0, 0, 0);
+  return { status, meetings: 4, events: 6, next: { title: "Weekly sync", starts_at: start.toISOString(), platform: "meet" } };
+}
+
+function mockAutojoinState(): AutojoinState {
+  return mockAutojoin ? { enabled: true, calendar: mockAutojoinCalendar() } : { enabled: false };
+}
+
+export async function fetchAutojoinState(): Promise<AutojoinState> {
+  if (DEV_MODE) return mockAutojoinState();
+  return apiFetch<AutojoinState>("/scriba/autojoin");
+}
+
+export async function fetchAutojoin(): Promise<boolean> {
+  return (await fetchAutojoinState()).enabled;
+}
+
+export async function setAutojoin(enabled: boolean): Promise<AutojoinState> {
   if (DEV_MODE) {
     mockAutojoin = enabled;
-    return enabled;
+    return mockAutojoinState();
   }
-  const res = await apiFetch<{ enabled: boolean }>("/scriba/autojoin", {
+  return apiFetch<AutojoinState>("/scriba/autojoin", {
     method: "PUT",
     body: JSON.stringify({ enabled }),
   });
-  return res.enabled;
+}
+
+/** Подключить Google-календарь: внутри Telegram — его окном, в браузере — новой вкладкой. */
+export async function openGoogleConnect(): Promise<void> {
+  const url = await googleConnectUrl();
+  const tg = (window as unknown as { Telegram?: { WebApp?: { openLink?: (u: string) => void } } }).Telegram?.WebApp;
+  if (tg?.openLink) tg.openLink(url);
+  else window.open(url, "_blank");
 }
 
 export async function fetchGranolaUnprocessed(
