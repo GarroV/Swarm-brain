@@ -206,8 +206,6 @@ export function RoyApp({ me }: { me: Me | null }) {
         ? "task"
         : valid === "book"
         ? "more"
-        : valid === "sprints"
-        ? "projects"
         : valid;
       setTabState(initial);
       // Восстанавливаем и push-стек (открытую деталь), чтобы рефреш не сбрасывал на корень таба.
@@ -445,7 +443,7 @@ export function RoyApp({ me }: { me: Me | null }) {
                     {tab === "more" && <MoreScreen root />}
                   </div>
                   <RoyTabBar
-                    active={tab}
+                    active={tab === "sprints" ? "more" : tab}
                     onChange={(id) => setTab(id as RoyTab)}
                     className="lg:hidden"
                     badges={{ cal: reviewCount }}
@@ -651,9 +649,13 @@ function Wrapped(
 // Здесь живёт всё, что не заслужило таба: профиль, база, команда, настройки, админка, карта.
 // Именно это закрывает главный блокер навигации — раньше вход был только из шапки «Поиска».
 function MoreScreen({ root = false }: { root?: boolean }) {
-  const { me, push, pop } = useRoyNav();
+  const { me, push, pop, setTab } = useRoyNav();
   const dt = useDt();
   const [feedback, setFeedback] = useState(false);
+  // «Спринты» — вкладка, а не роут стека: в нижнем баре места нет, поэтому дорога с телефона
+  // живёт здесь, а бар подсвечивает «Ещё», пока открыт спринт (issue #682).
+  const rowClass =
+    "flex w-full items-center justify-between rounded-[10px] border border-line bg-surface px-4 py-3.5 text-left font-semibold text-ink transition-transform active:scale-[0.98]";
   const rows: { label: string; route: RoyRoute }[] = [
     { label: dt("База", "Knowledge base"), route: { view: "base" } },
     { label: dt("Команда", "Team"), route: { view: "team" } },
@@ -688,6 +690,9 @@ function MoreScreen({ root = false }: { root?: boolean }) {
         </div>
       )}
       <div className="min-h-0 flex-1 space-y-2.5 overflow-y-auto px-4 py-3">
+        <button type="button" onClick={() => setTab("sprints")} className={rowClass} style={{ fontSize: 15 }}>
+          {dt("Спринты", "Sprints")}
+        </button>
         {rows.map((r) => (
           <button
             key={r.label}
