@@ -11,6 +11,7 @@ import { matchEntries } from "../../_shared/search.ts";
 
 import { normalizeFileLink } from "../../_shared/storage-links.ts";
 import { onlyLiveEntries } from "../../_shared/entries/live.ts";
+import { externalFetch, VIA_OPENAI_CHAT, VIA_TELEGRAM_UPLOAD } from "../../_shared/external-fetch.ts";
 
 // Ссылка на файл в сообщении бота ведёт в веб: там сессия человека и проверка доступа.
 const WEB_BASE_URL = Deno.env.get("WEB_BASE_URL") ?? "https://swarm-brain.pages.dev";
@@ -1015,7 +1016,7 @@ export async function handleAsk(chatId: number, question: string, userId: number
   let exportDriveLink: { url: string; title: string; external: boolean } | null = null;
 
   for (let round = 0; round < 6; round++) {
-    const res = await fetch("https://api.openai.com/v1/chat/completions", {
+    const res = await externalFetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${OPENAI_API_KEY}` },
       body: JSON.stringify({
@@ -1025,7 +1026,7 @@ export async function handleAsk(chatId: number, question: string, userId: number
         tool_choice: round === 0 ? "required" : "auto",
         max_tokens: 3500,
       }),
-    });
+    }, VIA_OPENAI_CHAT);
 
     if (!res.ok) {
       finalAnswer = "Ошибка при обращении к AI. Попробуй ещё раз.";
@@ -1116,7 +1117,10 @@ export async function handleAsk(chatId: number, question: string, userId: number
     if (finalAnswer && finalAnswer !== "В базе знаний нет информации по этому вопросу.") {
       form.append("caption", finalAnswer.slice(0, 1024));
     }
-    await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendDocument`, { method: "POST", body: form });
+    await externalFetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendDocument`, {
+      method: "POST",
+      body: form,
+    }, VIA_TELEGRAM_UPLOAD);
     return;
   }
 

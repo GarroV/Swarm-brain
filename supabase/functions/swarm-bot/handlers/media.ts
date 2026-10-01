@@ -10,6 +10,13 @@ import {
 } from "../../_shared/whisper-hallucinations.ts";
 // @ts-ignore - esm.sh module
 import * as XLSX from "https://esm.sh/xlsx@0.18.5";
+import {
+  externalFetch,
+  VIA_OPENAI_CHAT,
+  VIA_OPENAI_LONG,
+  VIA_TELEGRAM_FILE,
+  VIA_USER_LINK,
+} from "../../_shared/external-fetch.ts";
 
 // Файл залит, но текста из него не достали (не разобрался формат / пусто). Запись всё равно
 // создаём: она ВЛАДЕЛЕЦ файла. Без неё объект остаётся в хранилище ничей, реестра нет, и
@@ -37,7 +44,7 @@ const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY")!;
 
 async function transcribeAudio(fileId: string): Promise<string> {
   const tgUrl = await getTelegramFileUrl(fileId);
-  const audioRes = await fetch(tgUrl);
+  const audioRes = await externalFetch(tgUrl, {}, VIA_TELEGRAM_FILE);
   const audioBuffer = await audioRes.arrayBuffer();
 
   const form = new FormData();
@@ -47,11 +54,11 @@ async function transcribeAudio(fileId: string): Promise<string> {
   // (тишина в голосовом так же даёт ютуб-«титры», которые иначе ушли бы в базу как есть).
   form.append("response_format", "verbose_json");
 
-  const res = await fetch("https://api.openai.com/v1/audio/transcriptions", {
+  const res = await externalFetch("https://api.openai.com/v1/audio/transcriptions", {
     method: "POST",
     headers: { Authorization: `Bearer ${OPENAI_API_KEY}` },
     body: form,
-  });
+  }, VIA_OPENAI_LONG);
   const data = await res.json();
   if (!res.ok) throw new Error(data.error?.message ?? "Whisper error");
   const segments = (data.segments ?? []) as Array<{ text: string; no_speech_prob?: number; avg_logprob?: number }>;
@@ -69,7 +76,7 @@ async function transcribeAudio(fileId: string): Promise<string> {
 
 async function describeImage(fileId: string): Promise<string> {
   const tgUrl = await getTelegramFileUrl(fileId);
-  const res = await fetch("https://api.openai.com/v1/chat/completions", {
+  const res = await externalFetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${OPENAI_API_KEY}` },
     body: JSON.stringify({
@@ -87,7 +94,7 @@ async function describeImage(fileId: string): Promise<string> {
       }],
       max_tokens: 1000,
     }),
-  });
+  }, VIA_OPENAI_CHAT);
   const data = await res.json();
   if (!res.ok) throw new Error(data.error?.message ?? "Vision error");
   return data.choices[0].message.content;
@@ -293,10 +300,10 @@ async function fetchUrlContent(url: string): Promise<string> {
   // Manual redirect loop: validate every hop so a public→internal redirect
   // cannot bypass the guard above.
   for (let hop = 0; hop <= MAX_REDIRECT_HOPS; hop++) {
-    res = await fetch(current.toString(), {
+    res = await externalFetch(current.toString(), {
       headers: { "User-Agent": "Mozilla/5.0 (compatible; SwarmBot/1.0)" },
       redirect: "manual",
-    });
+    }, VIA_USER_LINK);
 
     if (res.status >= 300 && res.status < 400) {
       const location = res.headers.get("location");
@@ -398,7 +405,7 @@ export async function handleDocument(
   if (isTextFile(mime, name)) {
     await sendMessage(chatId, `Читаю файл <b>${name}</b>...`);
     const tgUrl = await getTelegramFileUrl(doc.file_id);
-    const res = await fetch(tgUrl);
+    const res = await externalFetch(tgUrl, {}, VIA_TELEGRAM_FILE);
     const buffer = await res.arrayBuffer();
     const text = new TextDecoder("utf-8").decode(buffer);
     if (!text.trim()) {
@@ -445,7 +452,7 @@ export async function handleDocument(
   if (isSpreadsheet(mime, name)) {
     await sendMessage(chatId, `Обрабатываю таблицу <b>${name}</b>...`);
     const tgUrl = await getTelegramFileUrl(doc.file_id);
-    const res = await fetch(tgUrl);
+    const res = await externalFetch(tgUrl, {}, VIA_TELEGRAM_FILE);
     const buffer = await res.arrayBuffer();
     const stored = await uploadToStorage(
       name,
@@ -511,7 +518,7 @@ export async function handleDocument(
   if (mime === "application/pdf" || getFileExt(name) === ".pdf") {
     await sendMessage(chatId, `Обрабатываю PDF <b>${name}</b>...`);
     const tgUrl = await getTelegramFileUrl(doc.file_id);
-    const pdfRes = await fetch(tgUrl);
+    const pdfRes = await externalFetch(tgUrl, {}, VIA_TELEGRAM_FILE);
     const pdfBuffer = await pdfRes.arrayBuffer();
     const stored = await uploadToStorage(name, pdfBuffer, "application/pdf", "pdfs", groupId);
 

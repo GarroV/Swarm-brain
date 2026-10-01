@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { externalFetch, VIA_GRANOLA, VIA_TELEGRAM } from "../_shared/external-fetch.ts";
 
 const TELEGRAM_BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN")!;
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
@@ -28,7 +29,7 @@ async function sendTelegram(
   text: string,
   keyboard: Array<Array<{ text: string; callback_data: string }>>,
 ): Promise<void> {
-  await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+  await externalFetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -37,13 +38,14 @@ async function sendTelegram(
       parse_mode: "HTML",
       reply_markup: { inline_keyboard: keyboard },
     }),
-  });
+  }, VIA_TELEGRAM);
 }
 
 async function fetchNotesSince(apiKey: string, createdAfter: string): Promise<GranolaNote[]> {
-  const res = await fetch(
+  const res = await externalFetch(
     `${GRANOLA_API}/notes?created_after=${encodeURIComponent(createdAfter)}&limit=20`,
     { headers: { Authorization: `Bearer ${apiKey}` } },
+    VIA_GRANOLA,
   );
   if (!res.ok) return [];
   const data = await res.json() as { notes: GranolaNote[] };

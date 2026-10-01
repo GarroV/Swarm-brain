@@ -128,6 +128,8 @@ import { handleTaskCommentRoutes } from "./task-comments.ts";
 import { handleTaskFileRoutes } from "./task-files.ts";
 import { handleStatsRoutes } from "./stats.ts";
 import { handleMeetingAskRoutes } from "./meeting-ask.ts";
+import { makeFeedbackPingDeps, sendFeedbackPing } from "../_shared/feedback-ping.ts";
+import { externalFetch, VIA_GRANOLA, VIA_OPENAI_CHAT, VIA_OPENAI_EMBEDDING } from "../_shared/external-fetch.ts";
 import { handleSprintCycleRoutes } from "./sprint-cycles.ts";
 import { handleSpaceJournalRoutes } from "./space-journal.ts";
 import { handleNotificationRoutes } from "./notifications.ts";
@@ -2114,7 +2116,7 @@ Deno.serve(async (req: Request) => {
     ]);
 
     const summaryRes = body.content.length >= 80
-      ? await fetch("https://api.openai.com/v1/chat/completions", {
+      ? await externalFetch("https://api.openai.com/v1/chat/completions", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -2133,7 +2135,7 @@ Deno.serve(async (req: Request) => {
           ],
           max_tokens: 500,
         }),
-      })
+      }, VIA_OPENAI_CHAT)
       : null;
     const summary = summaryRes?.ok
       ? (await summaryRes.json()).choices[0].message.content
@@ -2162,7 +2164,7 @@ Deno.serve(async (req: Request) => {
     const q = url.searchParams.get("q");
     if (!q?.trim()) return apiErr(400, "q required", origin);
     const OPENAI_KEY = Deno.env.get("OPENAI_API_KEY")!;
-    const embRes = await fetch("https://api.openai.com/v1/embeddings", {
+    const embRes = await externalFetch("https://api.openai.com/v1/embeddings", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -2172,7 +2174,7 @@ Deno.serve(async (req: Request) => {
         model: "text-embedding-3-small",
         input: q.slice(0, 8000),
       }),
-    });
+    }, VIA_OPENAI_EMBEDDING);
     if (!embRes.ok) return apiErr(500, "Embedding failed", origin);
     const embedding: number[] = (await embRes.json()).data[0].embedding;
     try {
@@ -2206,7 +2208,7 @@ Deno.serve(async (req: Request) => {
     if (!q) return apiErr(400, "q required", origin);
     const OPENAI_KEY = Deno.env.get("OPENAI_API_KEY")!;
     // 1) эмбеддинг запроса
-    const embRes = await fetch("https://api.openai.com/v1/embeddings", {
+    const embRes = await externalFetch("https://api.openai.com/v1/embeddings", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -2216,7 +2218,7 @@ Deno.serve(async (req: Request) => {
         model: "text-embedding-3-small",
         input: q.slice(0, 8000),
       }),
-    });
+    }, VIA_OPENAI_EMBEDDING);
     if (!embRes.ok) return apiErr(500, "Embedding failed", origin);
     const embedding: number[] = (await embRes.json()).data[0].embedding;
     // 2) retrieve (воркспейс-изоляция и приватность — внутри matchEntries/RPC)
@@ -2271,7 +2273,7 @@ Deno.serve(async (req: Request) => {
         s.date ? ", " + s.date : ""
       }) ${s.title} — ${s.snippet}`
     ).join("\n");
-    const askRes = await fetch("https://api.openai.com/v1/chat/completions", {
+    const askRes = await externalFetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -2296,7 +2298,7 @@ Deno.serve(async (req: Request) => {
         ],
         max_tokens: 700,
       }),
-    });
+    }, VIA_OPENAI_CHAT);
     if (!askRes.ok) {
       // деградация: вернуть источники без AI-ответа, экран покажет список
       return json(
@@ -2465,7 +2467,7 @@ Deno.serve(async (req: Request) => {
       const OPENAI_KEY = Deno.env.get("OPENAI_API_KEY")!;
       let embedding: number[] | null = null;
       try {
-        const r = await fetch("https://api.openai.com/v1/embeddings", {
+        const r = await externalFetch("https://api.openai.com/v1/embeddings", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -2475,7 +2477,7 @@ Deno.serve(async (req: Request) => {
             model: "text-embedding-3-small",
             input: tezisi.slice(0, 8000),
           }),
-        });
+        }, VIA_OPENAI_EMBEDDING);
         if (r.ok) embedding = (await r.json()).data[0].embedding;
       } catch { /* эмбеддинг не критичен — текст обновим в любом случае */ }
       const upd: Record<string, unknown> = { summary: tezisi, content: tezisi };
@@ -3150,7 +3152,7 @@ Deno.serve(async (req: Request) => {
     const days = daysMap[period] ?? 7;
     const since = new Date(Date.now() - days * 86400000).toISOString();
 
-    const granolaRes = await fetch(
+    const granolaRes = await externalFetch(
       `https://public-api.granola.ai/v1/notes?created_after=${
         encodeURIComponent(since)
       }&limit=50`,
@@ -3160,7 +3162,7 @@ Deno.serve(async (req: Request) => {
             (integration as { api_key: string }).api_key
           }`,
         },
-      },
+      }, VIA_GRANOLA,
     );
     if (!granolaRes.ok) return apiErr(502, "Granola API error", origin);
     const { notes } = await granolaRes.json() as {
@@ -3198,7 +3200,7 @@ Deno.serve(async (req: Request) => {
       .maybeSingle();
     if (!integration) return apiErr(404, "Granola not connected", origin);
 
-    const noteRes = await fetch(
+    const noteRes = await externalFetch(
       `https://public-api.granola.ai/v1/notes/${noteId}?include=transcript`,
       {
         headers: {
@@ -3206,7 +3208,7 @@ Deno.serve(async (req: Request) => {
             (integration as { api_key: string }).api_key
           }`,
         },
-      },
+      }, VIA_GRANOLA,
     );
     if (!noteRes.ok) return apiErr(404, "Note not found", origin);
     const note = await noteRes.json() as Record<string, unknown>;
@@ -3215,7 +3217,7 @@ Deno.serve(async (req: Request) => {
     const content = [note.title, note.content ?? note.transcript ?? ""].filter(
       Boolean,
     ).join("\n\n");
-    const summaryRes = await fetch(
+    const summaryRes = await externalFetch(
       "https://api.openai.com/v1/chat/completions",
       {
         method: "POST",
@@ -3236,7 +3238,7 @@ Deno.serve(async (req: Request) => {
           ],
           max_tokens: 500,
         }),
-      },
+      }, VIA_OPENAI_CHAT,
     );
     if (!summaryRes.ok) return apiErr(500, "GPT error", origin);
     const summary = (await summaryRes.json()).choices[0].message.content;
@@ -3264,7 +3266,7 @@ Deno.serve(async (req: Request) => {
     }
     const isPrivate = body.visibility === "private";
 
-    const noteRes = await fetch(
+    const noteRes = await externalFetch(
       `https://public-api.granola.ai/v1/notes/${noteId}?include=transcript`,
       {
         headers: {
@@ -3272,7 +3274,7 @@ Deno.serve(async (req: Request) => {
             (integration as { api_key: string }).api_key
           }`,
         },
-      },
+      }, VIA_GRANOLA,
     );
     if (!noteRes.ok) return apiErr(404, "Note not found", origin);
     const note = await noteRes.json() as Record<string, unknown>;
@@ -3319,7 +3321,7 @@ Deno.serve(async (req: Request) => {
     const countries = applyGeneralSentinel(meta.countries);
     const [embedding, summaryRes] = await Promise.all([
       embed(buildEmbeddingInput(content, countries), OPENAI_KEY),
-      fetch("https://api.openai.com/v1/chat/completions", {
+      externalFetch("https://api.openai.com/v1/chat/completions", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -3338,7 +3340,7 @@ Deno.serve(async (req: Request) => {
           ],
           max_tokens: 500,
         }),
-      }),
+      }, VIA_OPENAI_CHAT),
     ]);
     const summary = summaryRes.ok
       ? (await summaryRes.json()).choices[0].message.content
@@ -3511,19 +3513,11 @@ Deno.serve(async (req: Request) => {
       const caption = `<b>[Веб]</b> 🐛 ${
         feedbackCategoryLabel(category)
       } · @${username} · ${date}\n\n${text}`;
-      const method = screenshotUrl ? "sendPhoto" : "sendMessage";
-      const payload = screenshotUrl
-        ? {
-          chat_id: channelId,
-          photo: screenshotUrl,
-          caption,
-          parse_mode: "HTML",
-        }
-        : { chat_id: channelId, text: caption, parse_mode: "HTML" };
-      await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/${method}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
+      // Скрин — путь в приватном бакете: модуль отдаёт его Telegram подписанной ссылкой и проверяет ответ.
+      await sendFeedbackPing(makeFeedbackPingDeps(supabase, BOT_TOKEN), {
+        chatId: channelId,
+        text: caption,
+        screenshotPath: screenshotUrl,
       });
     }
     return new Response(null, { status: 204, headers: corsHeaders(origin) });
@@ -3683,7 +3677,7 @@ Deno.serve(async (req: Request) => {
       userName ? `Имя: ${userName}` : "",
     ].filter(Boolean).join(" | ");
     const OPENAI_KEY = Deno.env.get("OPENAI_API_KEY")!;
-    const gptRes = await fetch("https://api.openai.com/v1/chat/completions", {
+    const gptRes = await externalFetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -3702,7 +3696,7 @@ Deno.serve(async (req: Request) => {
         ],
         max_tokens: 2600,
       }),
-    });
+    }, VIA_OPENAI_CHAT);
     if (!gptRes.ok) return apiErr(500, "GPT error", origin);
     const text = (await gptRes.json()).choices[0].message.content;
     return json({ text, sources }, 200, origin);

@@ -2,6 +2,7 @@
 // Включение: READ_AI_AUTH_ENABLED=true (по умолчанию функция отвечает 403 на всё).
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { handleReadAiAuth, type ReadAiAuthStore } from "./handler.ts";
+import { externalFetch, VIA_READ_AI } from "../_shared/external-fetch.ts";
 
 const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
 const REDIRECT_URI = `${Deno.env.get("SUPABASE_URL")}/functions/v1/read-ai-auth`;
@@ -39,7 +40,9 @@ Deno.serve(async (req: Request) => {
       redirectUri: REDIRECT_URI,
       now: () => Date.now(),
       store,
-      fetch,
+      // Read.ai — внешний сервис: срок и лог сбоя через общий externalFetch.
+      fetch: ((url: string | URL, init?: RequestInit) =>
+        externalFetch(String(url), init ?? {}, VIA_READ_AI)) as typeof fetch,
     });
   } catch (e) {
     console.error("read-ai-auth:", e instanceof Error ? e.message : e);

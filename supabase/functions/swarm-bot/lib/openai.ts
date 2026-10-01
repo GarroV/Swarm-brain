@@ -1,16 +1,17 @@
 // Ретрай переехал в lib/retry.ts — тот же алгоритм (3 попытки, 500 мс × 2^i),
 // но общий с дневным сводом и покрытый тестами.
 import { withRetry } from "./retry.ts";
+import { externalFetch, VIA_OPENAI_CHAT, VIA_OPENAI_EMBEDDING } from "../../_shared/external-fetch.ts";
 
 const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY")!;
 
-export async function getEmbedding(text: string): Promise<number[]> {
+export function getEmbedding(text: string): Promise<number[]> {
   return withRetry(async () => {
-    const res = await fetch("https://api.openai.com/v1/embeddings", {
+    const res = await externalFetch("https://api.openai.com/v1/embeddings", {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${OPENAI_API_KEY}` },
       body: JSON.stringify({ model: "text-embedding-3-small", input: text.slice(0, 8000) }),
-    });
+    }, VIA_OPENAI_EMBEDDING);
     const data = await res.json();
     if (!res.ok) throw new Error(data.error?.message ?? "OpenAI embeddings error");
     return data.data[0].embedding;
@@ -21,7 +22,7 @@ export async function getEmbedding(text: string): Promise<number[]> {
 // дефолтной 1.0 галлюцинирует, напр. подставляет знакомую страну незнакомому городу).
 // opts.json — response_format json_object (промпт обязан содержать слово JSON). НЕ включать
 // для summary/тезисов (там markdown, не JSON).
-export async function chatComplete(
+export function chatComplete(
   system: string,
   user: string,
   opts: { temperature?: number; json?: boolean } = {},
@@ -34,11 +35,11 @@ export async function chatComplete(
     };
     if (opts.temperature !== undefined) body.temperature = opts.temperature;
     if (opts.json) body.response_format = { type: "json_object" };
-    const res = await fetch("https://api.openai.com/v1/chat/completions", {
+    const res = await externalFetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${OPENAI_API_KEY}` },
       body: JSON.stringify(body),
-    });
+    }, VIA_OPENAI_CHAT);
     const data = await res.json();
     if (!res.ok) throw new Error(data.error?.message ?? "OpenAI error");
     return data.choices[0].message.content;

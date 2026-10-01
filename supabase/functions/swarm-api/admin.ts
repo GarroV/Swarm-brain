@@ -15,6 +15,7 @@ import {
   SUPERADMIN_TELEGRAM_ID,
 } from "./admin-scope.ts";
 import { onlyLiveEntries } from "../_shared/entries/live.ts";
+import { externalFetch, VIA_TELEGRAM } from "../_shared/external-fetch.ts";
 
 const ADMIN_TELEGRAM_ID = SUPERADMIN_TELEGRAM_ID;
 
@@ -169,7 +170,7 @@ export async function handleAdminRoutes(
     let sent = 0, failed = 0;
     for (const id of ids) {
       try {
-        const r = await fetch(
+        const r = await externalFetch(
           `https://api.telegram.org/bot${botToken}/sendMessage`,
           {
             method: "POST",
@@ -180,6 +181,7 @@ export async function handleAdminRoutes(
               disable_web_page_preview: true,
             }),
           },
+          VIA_TELEGRAM,
         );
         if (r.ok) sent++;
         else failed++;

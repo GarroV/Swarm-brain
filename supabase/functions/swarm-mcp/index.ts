@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { externalFetch, VIA_OPENAI_CHAT, VIA_OPENAI_EMBEDDING } from "../_shared/external-fetch.ts";
 import {
   COMMENT_TOOL_DEFINITIONS,
   LABEL_TOOL_DEFINITIONS,
@@ -106,11 +107,11 @@ function textContent(text: string) {
 }
 
 async function getEmbedding(text: string): Promise<number[]> {
-  const res = await fetch("https://api.openai.com/v1/embeddings", {
+  const res = await externalFetch("https://api.openai.com/v1/embeddings", {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${OPENAI_API_KEY}` },
     body: JSON.stringify({ model: "text-embedding-3-small", input: text.slice(0, 8000) }),
-  });
+  }, VIA_OPENAI_EMBEDDING);
   const data = await res.json() as { data: Array<{ embedding: number[] }> };
   return data.data[0].embedding;
 }
@@ -127,11 +128,11 @@ async function chatComplete(
   };
   if (opts.temperature !== undefined) body.temperature = opts.temperature;
   if (opts.json) body.response_format = { type: "json_object" };
-  const res = await fetch("https://api.openai.com/v1/chat/completions", {
+  const res = await externalFetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${OPENAI_API_KEY}` },
     body: JSON.stringify(body),
-  });
+  }, VIA_OPENAI_CHAT);
   const data = await res.json() as { choices: Array<{ message: { content: string } }> };
   return data.choices[0].message.content;
 }

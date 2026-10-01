@@ -16,6 +16,7 @@ import type { TgCallbackQuery } from "../lib/types.ts";
 import { onlyLive } from "../../_shared/tasks/live.ts";
 import { onlyLiveEntries } from "../../_shared/entries/live.ts";
 import { archiveEntry } from "../../_shared/entries/archive.ts";
+import { externalFetch, VIA_TELEGRAM, VIA_TELEGRAM_UPLOAD } from "../../_shared/external-fetch.ts";
 
 const TELEGRAM_BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN")!;
 
@@ -66,7 +67,7 @@ async function loadEntryForAction(
 }
 
 export async function handleConnect(chatId: number): Promise<void> {
-  await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+  await externalFetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -75,7 +76,7 @@ export async function handleConnect(chatId: number): Promise<void> {
       parse_mode: "HTML",
       reply_markup: { inline_keyboard: [[{ text: "🔗 Подключить Read.ai", url: READ_AI_AUTH_URL }]] },
     }),
-  });
+  }, VIA_TELEGRAM);
 }
 
 export async function handleMeetings(chatId: number, hoursBack = 24, _groupId = ""): Promise<void> {
@@ -410,7 +411,10 @@ export async function handleMeetingCallbacks(
     form.append("chat_id", String(chatId));
     form.append("document", new Blob([transcript], { type: "text/plain; charset=utf-8" }), filename);
     form.append("caption", `📄 Транскрипт: ${title}`);
-    await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendDocument`, { method: "POST", body: form });
+    await externalFetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendDocument`, {
+      method: "POST",
+      body: form,
+    }, VIA_TELEGRAM_UPLOAD);
     return true;
   }
   if (data.startsWith("medit_")) {
@@ -534,7 +538,10 @@ export async function handleMeetingCallbacks(
         new Blob([entry.content as string], { type: "text/plain; charset=utf-8" }),
         `${safeTitle}_${dateStr}.txt`,
       );
-      await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendDocument`, { method: "POST", body: form });
+      await externalFetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendDocument`, {
+        method: "POST",
+        body: form,
+      }, VIA_TELEGRAM_UPLOAD);
     }
     return true;
   }

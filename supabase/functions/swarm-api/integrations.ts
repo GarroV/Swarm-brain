@@ -13,6 +13,7 @@
 //            403 demo_not_allowed
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeaders, json } from "./http.ts";
+import { externalFetch, VIA_GRANOLA } from "../_shared/external-fetch.ts";
 
 export const GOOGLE_CONNECT_PATH = "/google/connect-url";
 export const GRANOLA_PATH = "/integrations/granola";
@@ -48,9 +49,9 @@ export function makeIntegrationsDeps(
 ): Pick<IntegrationsContext, "validateGranolaKey" | "saveGranolaKey"> {
   return {
     async validateGranolaKey(key) {
-      const res = await fetch("https://public-api.granola.ai/v1/notes?limit=1", {
+      const res = await externalFetch("https://public-api.granola.ai/v1/notes?limit=1", {
         headers: { Authorization: `Bearer ${key}` },
-      });
+      }, VIA_GRANOLA);
       return res.ok;
     },
     async saveGranolaKey(telegramId, key) {

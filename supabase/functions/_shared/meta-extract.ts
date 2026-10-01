@@ -9,6 +9,7 @@
 
 import { COUNTRY_PROMPT_RULE, ENTRY_TYPE_PROMPT_RULE, normalizeCountries } from "./countries.ts";
 import { normalizeExtractedEventDate, todayIso } from "./llm-date.ts";
+import { externalFetch, VIA_OPENAI_CHAT, VIA_OPENAI_EMBEDDING } from "./external-fetch.ts";
 
 const OPENAI = "https://api.openai.com/v1";
 
@@ -90,7 +91,7 @@ export async function extractEntryMeta(
   today: string = todayIso(),
 ): Promise<EntryMeta> {
   try {
-    const res = await fetch(`${OPENAI}/chat/completions`, {
+    const res = await externalFetch(`${OPENAI}/chat/completions`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${openaiKey}` },
       body: JSON.stringify({
@@ -103,7 +104,7 @@ export async function extractEntryMeta(
         ],
         max_tokens: 200,
       }),
-    });
+    }, VIA_OPENAI_CHAT);
     if (!res.ok) {
       console.error("extractEntryMeta: OpenAI ответил", res.status);
       return emptyMeta();
@@ -118,11 +119,11 @@ export async function extractEntryMeta(
 // Эмбеддинг text-embedding-3-small. null при ошибке (вызывающий сам решает).
 export async function embed(text: string, openaiKey: string): Promise<number[] | null> {
   try {
-    const res = await fetch(`${OPENAI}/embeddings`, {
+    const res = await externalFetch(`${OPENAI}/embeddings`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${openaiKey}` },
       body: JSON.stringify({ model: "text-embedding-3-small", input: text.slice(0, 8000) }),
-    });
+    }, VIA_OPENAI_EMBEDDING);
     if (!res.ok) return null;
     return (await res.json()).data[0].embedding;
   } catch {

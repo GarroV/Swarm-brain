@@ -6,6 +6,7 @@ import {
   type SubscriptionState,
   type TaskSubscriber,
 } from "./notify.ts";
+import { externalFetch, VIA_TELEGRAM } from "../external-fetch.ts";
 
 // Что происходит ПОСЛЕ сохранения комментария к задаче: автор подписывается на задачу, а
 // причастные и подписчики получают уведомление (колокольчик + пуш в бота).
@@ -37,7 +38,7 @@ function truncate(s: string, max: number): string {
 async function sendTelegram(chatId: number, text: string): Promise<void> {
   const token = Deno.env.get("TELEGRAM_BOT_TOKEN");
   if (!token) return;
-  await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+  await externalFetch(`https://api.telegram.org/bot${token}/sendMessage`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -46,7 +47,7 @@ async function sendTelegram(chatId: number, text: string): Promise<void> {
       parse_mode: "HTML",
       disable_web_page_preview: true,
     }),
-  });
+  }, VIA_TELEGRAM);
 }
 
 /**

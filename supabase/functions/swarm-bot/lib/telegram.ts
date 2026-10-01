@@ -1,3 +1,4 @@
+import { externalFetch, VIA_TELEGRAM } from "../../_shared/external-fetch.ts";
 const TELEGRAM_BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN")!;
 
 // Username бота (без @) — нужен гейту групповых чатов для детекта явного обращения.
@@ -7,7 +8,7 @@ let cachedBotUsername: string | null = null;
 export async function getBotUsername(): Promise<string | null> {
   if (cachedBotUsername) return cachedBotUsername;
   try {
-    const res = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/getMe`);
+    const res = await externalFetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/getMe`, {}, VIA_TELEGRAM);
     const json = await res.json() as { result?: { username?: string } };
     cachedBotUsername = json.result?.username ?? null;
   } catch {
@@ -17,27 +18,27 @@ export async function getBotUsername(): Promise<string | null> {
 }
 
 export async function answerCallback(callbackId: string): Promise<void> {
-  await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/answerCallbackQuery`, {
+  await externalFetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/answerCallbackQuery`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ callback_query_id: callbackId }),
-  });
+  }, VIA_TELEGRAM);
 }
 
 export async function editMessageKeyboard(chatId: number, messageId: number, keyboard: unknown[][]): Promise<void> {
-  await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/editMessageReplyMarkup`, {
+  await externalFetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/editMessageReplyMarkup`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ chat_id: chatId, message_id: messageId, reply_markup: { inline_keyboard: keyboard } }),
-  });
+  }, VIA_TELEGRAM);
 }
 
 export async function sendInlineMessage(chatId: number, text: string, keyboard: unknown[][]): Promise<void> {
-  const res = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+  const res = await externalFetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ chat_id: chatId, text, parse_mode: "HTML", reply_markup: { inline_keyboard: keyboard } }),
-  });
+  }, VIA_TELEGRAM);
   if (!res.ok) {
     const err = await res.json().catch(() => ({})) as { description?: string };
     throw new Error(`Telegram API: ${err.description ?? res.status}`);
@@ -48,9 +49,9 @@ export async function editInlineMessage(
   chatId: number,
   messageId: number,
   text: string,
-  keyboard: unknown[][]
+  keyboard: unknown[][],
 ): Promise<void> {
-  await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/editMessageText`, {
+  await externalFetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/editMessageText`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -60,7 +61,7 @@ export async function editInlineMessage(
       parse_mode: "HTML",
       reply_markup: { inline_keyboard: keyboard },
     }),
-  });
+  }, VIA_TELEGRAM);
   // "message is not modified" errors (400) are silently ignored
 }
 
@@ -77,26 +78,28 @@ export function buildKeyboard() {
 export async function sendMessage(
   chatId: number,
   text: string,
-  reply_markup?: object
+  reply_markup?: object,
 ): Promise<void> {
-  await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+  await externalFetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ chat_id: chatId, text, parse_mode: "HTML", reply_markup }),
-  });
+  }, VIA_TELEGRAM);
 }
 
 export async function deleteMessage(chatId: number | string, messageId: number): Promise<void> {
-  await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/deleteMessage`, {
+  await externalFetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/deleteMessage`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ chat_id: chatId, message_id: messageId }),
-  });
+  }, VIA_TELEGRAM);
 }
 
 export async function getTelegramFileUrl(fileId: string): Promise<string> {
-  const res = await fetch(
-    `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/getFile?file_id=${fileId}`
+  const res = await externalFetch(
+    `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/getFile?file_id=${fileId}`,
+    {},
+    VIA_TELEGRAM,
   );
   const data = await res.json();
   if (!data.ok) throw new Error("Не удалось получить файл от Telegram");
