@@ -9,12 +9,19 @@
 // Личность — из авторизации веба (её уже проверил index.ts); тело задаёт только `enabled`, поэтому
 // включить бота коллеге нельзя. Демо не включает бота никому.
 //
-//   GET /scriba/autojoin                     200 { enabled: boolean }
-//   PUT /scriba/autojoin { enabled: bool }   200 { enabled: boolean }
+//   GET /scriba/autojoin                     200 { enabled: boolean, calendar?: AutojoinCalendarCheck }
+//   PUT /scriba/autojoin { enabled: bool }   200 { enabled: boolean, calendar?: AutojoinCalendarCheck }
+//
+// `calendar` — живая проверка календаря (решение 01.10.2026, _shared/autojoin-calendar.ts): есть ли
+// доступ и встречи, на которые бот пойдёт. Отдаётся только при включённом автозапуске — выключенному
+// бот не нужен, ходить в Google за него незачем. Флаг сохраняется и без календаря: человек может
+// подключить его потом, а ответ скажет, что подключить.
 //   Ошибка = { error: <EN>, error_ru: <RU>, code } · 400 invalid_body · 403 demo_not_allowed ·
 //            404 not_found (строки человека нет) · 405 method_not_allowed · 500 сбой базы
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { json } from "./http.ts";
+import { type AutojoinCalendarCheck, checkAutojoinCalendar } from "../_shared/autojoin-calendar.ts";
+import { accessToken, listEventsResult } from "../_shared/google-calendar.ts";
 
 export const AUTOJOIN_PATH = "/scriba/autojoin";
 
@@ -49,6 +56,8 @@ export interface AutojoinStore {
 
 export interface AutojoinContext {
   store: AutojoinStore;
+  /** Проверка СВОЕГО календаря (личность — ctx.telegramId, её задаёт авторизация). */
+  checkCalendar: () => Promise<AutojoinCalendarCheck>;
   telegramId: number;
   isDemo: boolean;
   origin: string;
@@ -72,6 +81,21 @@ export function makeAutojoinStore(supabase: SupabaseClient): AutojoinStore {
   };
 }
 
+/** Проверка своего календаря тем же путём, что обход автозапуска (meeting-calendar): токен → Google. */
+export function makeCalendarCheck(supabase: SupabaseClient, telegramId: number): () => Promise<AutojoinCalendarCheck> {
+  return () =>
+    checkAutojoinCalendar({
+      async refreshToken() {
+        const { data, error } = await supabase.from("user_integrations").select("api_key")
+          .eq("telegram_id", telegramId).eq("service", "google_calendar").maybeSingle();
+        if (error) throw new Error(`user_integrations: ${error.message}`);
+        return (data as { api_key?: string } | null)?.api_key ?? null;
+      },
+      accessToken: (refresh) => accessToken(refresh),
+      listEvents: (token, min, max, n) => listEventsResult(token, min, max, n),
+    }, Date.now());
+}
+
 async function readEnabled(req: Request): Promise<boolean | null> {
   try {
     const body = await req.json() as { enabled?: unknown } | null;
@@ -81,18 +105,37 @@ async function readEnabled(req: Request): Promise<boolean | null> {
   }
 }
 
+/** Ответ с проверкой календаря. Не «всё хорошо» — громко в журнал: бот к этому человеку не придёт. */
+async function withCalendar(
+  ctx: AutojoinContext,
+  enabled: boolean,
+): Promise<{ enabled: boolean; calendar?: AutojoinCalendarCheck }> {
+  if (!enabled) return { enabled };
+  // Сбой проверки не отменяет сохранённый флаг: ответ «не сохранилось» здесь был бы ложью.
+  const calendar = await ctx.checkCalendar().catch((e): AutojoinCalendarCheck => {
+    console.error(
+      `[scriba/autojoin] ${ctx.telegramId}: проверка календаря упала: ${e instanceof Error ? e.message : e}`,
+    );
+    return { status: "unavailable", meetings: 0, events: 0, next: null };
+  });
+  if (calendar.status !== "ok") {
+    console.warn(`[scriba/autojoin] ${ctx.telegramId}: автозапуск включён, календарь — ${calendar.status}`);
+  }
+  return { enabled, calendar };
+}
+
 async function route(ctx: AutojoinContext, req: Request): Promise<Response> {
   if (req.method === "GET") {
     const enabled = await ctx.store.read(ctx.telegramId);
     if (enabled === null) return autojoinErr("not_found", ctx.origin);
-    return json({ enabled }, 200, ctx.origin);
+    return json(await withCalendar(ctx, enabled), 200, ctx.origin);
   }
   if (req.method === "PUT") {
     const enabled = await readEnabled(req);
     if (enabled === null) return autojoinErr("invalid_body", ctx.origin);
     if (!(await ctx.store.write(ctx.telegramId, enabled))) return autojoinErr("not_found", ctx.origin);
     console.log(`[scriba/autojoin] ${ctx.telegramId} → ${enabled ? "включил" : "выключил"}`);
-    return json({ enabled }, 200, ctx.origin);
+    return json(await withCalendar(ctx, enabled), 200, ctx.origin);
   }
   return autojoinErr("method_not_allowed", ctx.origin);
 }

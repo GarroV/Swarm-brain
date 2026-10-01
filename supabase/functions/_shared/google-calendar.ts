@@ -78,6 +78,12 @@ export async function accessToken(refresh: string, timeoutMs = GOOGLE_TIMEOUT_MS
   return { ok: true, token };
 }
 
+/**
+ * События с причиной отказа. `status` — код ответа Google (401/403 — доступа нет: токен не тот или нет
+ * права на календарь; прочее — запинка), `null` — Google не ответил или тело оборвалось.
+ */
+export type EventsResult = { ok: true; events: GEvent[] } | { ok: false; status: number | null };
+
 /** События основного календаря в окне. `null` — Google ответил ошибкой (её отличаем от «пусто»). */
 export async function listEvents(
   token: string,
@@ -86,6 +92,18 @@ export async function listEvents(
   maxResults = 25,
   timeoutMs = GOOGLE_TIMEOUT_MS,
 ): Promise<GEvent[] | null> {
+  const r = await listEventsResult(token, timeMin, timeMax, maxResults, timeoutMs);
+  return r.ok ? r.events : null;
+}
+
+/** То же, что listEvents, но отказ несёт код ответа: проверке календаря нужно отличить «нет доступа» от сбоя. */
+export async function listEventsResult(
+  token: string,
+  timeMin: string,
+  timeMax: string,
+  maxResults = 25,
+  timeoutMs = GOOGLE_TIMEOUT_MS,
+): Promise<EventsResult> {
   const q = new URLSearchParams({
     singleEvents: "true", // повторяющиеся раскрываются в экземпляры, иначе слот без даты
     orderBy: "startTime",
@@ -101,11 +119,16 @@ export async function listEvents(
     timeoutMs,
     "listEvents",
   );
-  if (res === null || !res.ok) return null;
+  if (res === null) return { ok: false, status: null };
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    console.error(`google-calendar listEvents: status=${res.status} body=${body.slice(0, 300)}`);
+    return { ok: false, status: res.status };
+  }
   try {
-    return ((await res.json()).items ?? []) as GEvent[];
+    return { ok: true, events: ((await res.json()).items ?? []) as GEvent[] };
   } catch {
     // Тело оборвалось или истёк срок посреди чтения — та же запинка Google, а не «событий нет».
-    return null;
+    return { ok: false, status: null };
   }
 }

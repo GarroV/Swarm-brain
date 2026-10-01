@@ -1707,12 +1707,12 @@ _Приглашение бота на созвон — `/meeting-invites` (D017,
 
 `invite` = `{ id, join_url, platform: meet|kontur|zoom, status: pending|taken|used|expired, created_at, expires_at, meeting_id }`.
 
-_Автозапуск бота по календарю — `/scriba/autojoin` (D021); код `swarm-api/autojoin.ts`. Флаг — `allowed_users.scriba_autojoin` самого человека (личность из авторизации, тело задаёт только `enabled`); веб — карточка «Бот встреч» в интеграциях настроек (`ConnectorsSection` → панель с `components/profile/AutojoinToggle.tsx`; без календаря — подсказка его подключить; в демо карточки нет):_
+_Автозапуск бота по календарю — `/scriba/autojoin` (D021); код `swarm-api/autojoin.ts`. Флаг — `allowed_users.scriba_autojoin` самого человека (личность из авторизации, тело задаёт только `enabled`); веб — карточка «Бот встреч» в интеграциях настроек (`ConnectorsSection` → панель с `components/profile/AutojoinToggle.tsx`; переключатель виден всегда, у выключенного без календаря — подсказка с кнопкой «Подключить календарь»; в демо карточки нет). **Живая проверка календаря** (решение 01.10.2026, [decisions/2026-10-01-autojoin-calendar-check.md](decisions/2026-10-01-autojoin-calendar-check.md)): включённому сервер тем же путём, что обход `meeting-calendar`, меняет токен и читает события на 7 дней вперёд, отбирая встречи общим правилом `joinVerdict` (`_shared/calendar-dispatch.ts`); код — `_shared/autojoin-calendar.ts`, тексты плашки — `miniapp/src/lib/autojoinNotice.ts`:_
 
 | Метод | Путь | Что делает |
 |-------|------|-----------|
-| `GET` | `/scriba/autojoin` | `{ enabled }` — свой флаг |
-| `PUT` | `/scriba/autojoin` | `{ enabled: bool }` → `{ enabled }`. Выключение гасит незабранные задания на ближайшем опросе `meeting-calendar` (до минуты). Ошибки `{ error (EN), error_ru, code }`: 400 `invalid_body` · 403 `demo_not_allowed` · 404 `not_found` · 405 · 500 `store_failed` |
+| `GET` | `/scriba/autojoin` | `{ enabled, calendar? }` — свой флаг; `calendar` только у включённого: `{ status, meetings, events, next: { title, starts_at, platform } \| null }`. `status`: `not_connected` (токена нет) · `no_access` (invalid_grant или Google 401/403 на события) · `unavailable` (Google не ответил / 5xx — без призыва переподключаться, урок #302) · `no_meetings` (доступ есть, за неделю нет встреч, на которые бот пойдёт) · `ok`. Не-`ok` — `console.warn` в журнал |
+| `PUT` | `/scriba/autojoin` | `{ enabled: bool }` → `{ enabled, calendar? }` (проверка — как у GET; флаг сохраняется и без календаря, сбой проверки — `unavailable`, а не 500). Выключение гасит незабранные задания на ближайшем опросе `meeting-calendar` (до минуты). Ошибки `{ error (EN), error_ru, code }`: 400 `invalid_body` · 403 `demo_not_allowed` · 404 `not_found` · 405 · 500 `store_failed` |
 
 _Интеграции (per-user):_
 
