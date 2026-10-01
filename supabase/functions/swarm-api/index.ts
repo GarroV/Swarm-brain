@@ -91,10 +91,10 @@ import {
   withNormalizedFileLink,
 } from "../_shared/storage-links.ts";
 import {
-  PRIVATE_BUCKET,
+  discardOwnUpload,
+  FEEDBACK_SCOPE,
   registerStorageFile,
-  safeStorageName,
-  uploadPrivateFile,
+  uploadNewPrivateFile,
 } from "../_shared/storage-files.ts";
 import { detectQuerySince } from "../_shared/query-time.ts";
 import { resummarizeFromTranscript } from "../_shared/meeting-processor.ts";
@@ -1999,7 +1999,10 @@ Deno.serve(async (req: Request) => {
           | string
           | undefined;
         if (fileUrl) {
-          const removal = await removeStorageObject(supabase, fileUrl);
+          const removal = await removeStorageObject(supabase, fileUrl, {
+            kind: "entry",
+            entryId: entry.id,
+          });
           // Объект не удалён — запись НЕ трогаем: иначе файл остался бы в хранилище без
           // владельца, то есть навсегда и по прежней ссылке.
           if (removal.status === "failed") {
@@ -2029,21 +2032,22 @@ Deno.serve(async (req: Request) => {
     const isPrivate = form.get("is_private") === "true";
 
     const arrayBuffer = await file.arrayBuffer();
-    const date = new Date().toISOString().slice(0, 10);
-    // Кириллицу Storage в ключе НЕ принимает («Invalid key») — прежняя маска её сохраняла,
-    // и файл с русским именем не загружался вовсе. Настоящее имя живёт в metadata.filename.
-    const safeName = safeStorageName(file.name);
-    const path = `uploads/${date}_${safeName}`;
 
     // Приватный бакет: публичной ссылки на файл команды больше не существует. В metadata
     // кладём ПУТЬ — ссылку строит отдача (withNormalizedFileLink → /api/file/<path>).
-    const { error: uploadError } = await uploadPrivateFile(supabase, {
-      path,
+    // Ключ — в воркспейсе владельца, с uuid, без перезаписи (buildUploadKey). Кириллицу в ключе
+    // Storage не принимает — имя транслитерируется, настоящее живёт в metadata.filename.
+    const { file: stored, error: uploadError } = await uploadNewPrivateFile(supabase, {
+      folder: "uploads",
+      scope: groupId,
+      fileName: file.name,
       body: arrayBuffer,
       contentType: file.type,
-      upsert: true,
     });
-    if (uploadError) return apiErr(500, uploadError, origin);
+    if (uploadError || !stored) {
+      return apiErr(500, uploadError ?? "upload failed", origin);
+    }
+    const path = stored.path;
 
     const { data: profile } = await supabase.from("user_profiles")
       .select("first_name").eq("telegram_id", telegram_id).maybeSingle();
@@ -2066,8 +2070,8 @@ Deno.serve(async (req: Request) => {
         owner_id: telegram_id,
       }).select().single();
     if (insertError) {
-      // Запись не создалась — объект без владельца не оставляем.
-      await supabase.storage.from(PRIVATE_BUCKET).remove([path]);
+      // Запись не создалась — объект без владельца не оставляем (только свой, этого запроса).
+      await discardOwnUpload(supabase, stored);
       return apiErr(500, insertError.message, origin);
     }
 
@@ -2079,7 +2083,7 @@ Deno.serve(async (req: Request) => {
       owner: { kind: "entry", entryId: (entry as { id: string }).id },
     });
     if (reg.error) {
-      await supabase.storage.from(PRIVATE_BUCKET).remove([path]);
+      await discardOwnUpload(supabase, stored);
       await supabase.from("entries").delete().eq(
         "id",
         (entry as { id: string }).id,
@@ -3466,19 +3470,16 @@ Deno.serve(async (req: Request) => {
     let screenshotUrl: string | null = null;
     if (screenshotFile) {
       const buf = await screenshotFile.arrayBuffer();
-      const date = new Date().toISOString().slice(0, 10);
-      const safeName = safeStorageName(screenshotFile.name || "screenshot.png");
-      const path = `feedback/${date}_${
-        crypto.randomUUID().slice(0, 8)
-      }_${safeName}`;
-      const { error: upErr } = await uploadPrivateFile(supabase, {
-        path,
+      const { file: shot, error: upErr } = await uploadNewPrivateFile(supabase, {
+        folder: "feedback",
+        scope: FEEDBACK_SCOPE,
+        fileName: screenshotFile.name || "screenshot.png",
         body: buf,
         contentType: screenshotFile.type || "image/png",
-        upsert: true,
       });
       // Скрин — admin-only, поэтому и он в приватном бакете, а в feedback кладём ПУТЬ.
-      if (!upErr) {
+      if (shot) {
+        const path = shot.path;
         const regFb = await registerStorageFile(supabase, {
           path,
           owner: { kind: "feedback" },
@@ -3487,7 +3488,7 @@ Deno.serve(async (req: Request) => {
           // Незарегистрированный скрин недоступен никому — лучше фидбек без картинки,
           // чем ссылка, которая всегда отдаёт 404.
           console.error(`[feedback] реестр скрина не записан: ${regFb.error}`);
-          await supabase.storage.from(PRIVATE_BUCKET).remove([path]);
+          await discardOwnUpload(supabase, shot);
         } else {
           screenshotUrl = path;
         }

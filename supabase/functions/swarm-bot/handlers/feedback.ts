@@ -1,12 +1,16 @@
 import { supabase } from "../lib/supabase.ts";
 import { removeStorageObject } from "../../_shared/storage-links.ts";
-import { sendMessage, sendInlineMessage, getTelegramFileUrl } from "../lib/telegram.ts";
-import { uploadToStorage, setSession, clearSession, getSession, registerFeedbackFile, discardOrphanFile } from "../lib/storage.ts";
+import { FEEDBACK_SCOPE } from "../../_shared/storage-files.ts";
+import { getTelegramFileUrl, sendInlineMessage, sendMessage } from "../lib/telegram.ts";
 import {
-  FEEDBACK_CATEGORIES,
-  feedbackCategoryLabel,
-  isFeedbackCategory,
-} from "../../_shared/feedback-categories.ts";
+  clearSession,
+  discardOrphanFile,
+  getSession,
+  registerFeedbackFile,
+  setSession,
+  uploadToStorage,
+} from "../lib/storage.ts";
+import { FEEDBACK_CATEGORIES, feedbackCategoryLabel, isFeedbackCategory } from "../../_shared/feedback-categories.ts";
 import type { TgCallbackQuery } from "../lib/types.ts";
 
 const TELEGRAM_BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN")!;
@@ -72,11 +76,11 @@ async function screenshotToStorage(photoFileId: string): Promise<string | undefi
     const res = await fetch(tgUrl);
     if (!res.ok) return undefined;
     const buffer = await res.arrayBuffer();
-    const { path } = await uploadToStorage("feedback.jpg", buffer, "image/jpeg", "feedback");
-    if (!path) return undefined;
+    const { path, file } = await uploadToStorage("feedback.jpg", buffer, "image/jpeg", "feedback", FEEDBACK_SCOPE);
+    if (!path || !file) return undefined;
     // Незарегистрированный скрин не отдаст ни один эндпоинт — такой файл только занимает место.
     if (await registerFeedbackFile(path)) {
-      await discardOrphanFile(path);
+      await discardOrphanFile(file);
       return undefined;
     }
     return path;
@@ -108,10 +112,12 @@ async function saveFeedback(
   if (!channelId) return;
 
   const date = new Date().toLocaleString("ru-RU", {
-    day: "2-digit", month: "long", hour: "2-digit", minute: "2-digit",
+    day: "2-digit",
+    month: "long",
+    hour: "2-digit",
+    minute: "2-digit",
   });
-  const channelText =
-    `<b>[${BOT_NAME}]</b> 🐛 ${feedbackCategoryLabel(category)} · @${username} · ${date}\n\n${text}`;
+  const channelText = `<b>[${BOT_NAME}]</b> 🐛 ${feedbackCategoryLabel(category)} · @${username} · ${date}\n\n${text}`;
   await postToChannel(channelId, channelText, screenshotUrl);
 }
 
@@ -221,7 +227,7 @@ export async function cleanupOldFeedback(): Promise<number> {
   const stuck: string[] = [];
   for (const f of rows) {
     if (!f.screenshot_url) continue;
-    const res = await removeStorageObject(supabase, f.screenshot_url);
+    const res = await removeStorageObject(supabase, f.screenshot_url, { kind: "feedback" });
     if (res.status === "failed") {
       stuck.push(f.id);
       console.error(`[feedback cleanup] файл не удалён (${f.id}): ${res.error}`);

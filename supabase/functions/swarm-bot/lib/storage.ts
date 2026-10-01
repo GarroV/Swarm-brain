@@ -2,10 +2,10 @@ import { ADMIN_USER_ID, loadMeetingViewer, supabase } from "./supabase.ts";
 import { entryActionError } from "../../_shared/entries/entry-edit.ts";
 import { canViewEntry } from "../../_shared/entries/access.ts";
 import {
-  PRIVATE_BUCKET,
+  discardOwnUpload,
   registerStorageFile,
-  safeStorageName,
-  uploadPrivateFile,
+  type UploadedFile,
+  uploadNewPrivateFile,
 } from "../../_shared/storage-files.ts";
 import { absoluteFileUrl } from "../../_shared/storage-links.ts";
 import { chatComplete, getEmbedding } from "./openai.ts";
@@ -396,30 +396,29 @@ const WEB_BASE_URL = Deno.env.get("WEB_BASE_URL") ?? "https://swarm-brain.pages.
 
 /**
  * Кладёт файл в приватный бакет и возвращает ПУТЬ (публичной ссылки больше не существует).
+ * Ключ — в области владельца (воркспейс или FEEDBACK_SCOPE), с uuid, без перезаписи.
  * Регистрация в реестре — отдельным шагом (registerUploadedFile): владелец известен только
- * после создания записи.
+ * после создания записи. `file` нужен для отката (discardOrphanFile) — только своего объекта.
  */
 export async function uploadToStorage(
   fileName: string,
   buffer: ArrayBuffer,
   mimeType: string,
   folder: string,
-): Promise<{ path: string | null; error: string | null }> {
+  scope: string,
+): Promise<{ path: string | null; file: UploadedFile | null; error: string | null }> {
   try {
-    const date = new Date().toISOString().slice(0, 10);
-    const safeName = safeStorageName(fileName);
-    const path = `${folder}/${date}_${crypto.randomUUID().slice(0, 8)}_${safeName}`;
-
-    const { file, error } = await uploadPrivateFile(supabase, {
-      path,
+    const { file, error } = await uploadNewPrivateFile(supabase, {
+      folder,
+      scope,
+      fileName,
       body: buffer,
       contentType: mimeType,
-      upsert: true,
     });
-    if (error || !file) return { path: null, error: error ?? "upload failed" };
-    return { path: file.path, error: null };
+    if (error || !file) return { path: null, file: null, error: error ?? "upload failed" };
+    return { path: file.path, file, error: null };
   } catch (e) {
-    return { path: null, error: e instanceof Error ? e.message : String(e) };
+    return { path: null, file: null, error: e instanceof Error ? e.message : String(e) };
   }
 }
 
@@ -442,10 +441,10 @@ export async function registerFeedbackFile(path: string): Promise<string | null>
   return error;
 }
 
-/** Убирает объект, которому не досталось владельца (запись не создалась). */
-export async function discardOrphanFile(path: string): Promise<void> {
-  const { error } = await supabase.storage.from(PRIVATE_BUCKET).remove([path]);
-  if (error) console.error(`[storage] осиротевший файл не убран (${path}): ${error.message}`);
+/** Убирает объект, которому не досталось владельца (запись не создалась) — только свой, этого запроса. */
+export async function discardOrphanFile(file: UploadedFile): Promise<void> {
+  const { error } = await discardOwnUpload(supabase, file);
+  if (error) console.error(`[storage] осиротевший файл не убран (${file.path}): ${error}`);
 }
 
 export async function autoSyncProfile(
