@@ -8,6 +8,7 @@ import { ConfirmProvider } from "@/components/ui/confirm";
 import { BackdropLayer } from "@/components/roy/BackdropLayer";
 import { BACKDROP_SCRIPT } from "@/lib/backdrop";
 import { MaintenanceGate } from "@/components/MaintenanceGate";
+import { ConnectionBanner } from "@/components/ConnectionBanner";
 
 // Golos Text — весь UI, заголовки И метаданные (эталонная кириллица). IBM Plex Mono — цифры
 // и технические метки (сроки, счётчики, таймстампы): так набирает стенд редизайна
@@ -50,6 +51,7 @@ export default function RootLayout({
         {/* Заглушка работ — ВЫШЕ провайдеров: её должен увидеть и тот, у кого протухла
             сессия, иначе вместо «идут работы» он получит экран входа. */}
         <MaintenanceGate />
+        <ConnectionBanner />
         <TelegramProvider>
           <ConfirmProvider>
             <SingleTabGate>{children}</SingleTabGate>
