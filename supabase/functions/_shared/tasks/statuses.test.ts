@@ -4,6 +4,7 @@
 // по необходимости — в TypeScript-константе, в CHECK-ограничении базы и в JSON-схемах MCP,
 // где enum обязан быть литералом. Дубли расходятся молча: разъехавшийся enum просто перестанет
 // принимать статус, а разъехавшийся CHECK начнёт отбивать вставки на проде.
+import { fromFileUrl } from "https://deno.land/std@0.224.0/path/mod.ts";
 import { assertEquals } from "jsr:@std/assert@1";
 import {
   completionPatch,
@@ -14,7 +15,7 @@ import {
   taskStatusError,
 } from "./statuses.ts";
 
-const ROOT = decodeURIComponent(new URL("../../", import.meta.url).pathname);
+const ROOT = fromFileUrl(new URL("../../", import.meta.url));
 
 Deno.test("известные статусы принимаются, чужие — нет", () => {
   for (const s of TASK_STATUSES) assertEquals(isTaskStatus(s), true, s);

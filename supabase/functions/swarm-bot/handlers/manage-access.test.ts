@@ -1,9 +1,10 @@
 // Детектор: управление записью из чата (удалить/заменить) идёт через права действия, и отказ
 // прерывает действие. Сами права — _shared/entries/entry-edit.ts (покрыты его тестом);
 // обработчик без базы не поднять, поэтому связка держится по исходнику.
+import { fromFileUrl } from "https://deno.land/std@0.224.0/path/mod.ts";
 import { assertEquals } from "jsr:@std/assert@1";
 
-const HERE = decodeURIComponent(new URL(".", import.meta.url).pathname);
+const HERE = fromFileUrl(new URL(".", import.meta.url));
 
 function fnBody(src: string, name: string): string {
   const start = src.indexOf(`async function ${name}(`);

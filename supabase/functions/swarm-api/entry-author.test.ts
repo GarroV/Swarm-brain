@@ -13,9 +13,10 @@
 // Для видимости ОБЩЕЙ записи он не нужен (фильтр `is_private=false OR owner_id=…` проходит по
 // первой половине), и следующий читатель снова решит, что писать его незачем. Поэтому правило
 // закреплено тестом, а не комментарием.
+import { fromFileUrl } from "https://deno.land/std@0.224.0/path/mod.ts";
 import { assertEquals } from "jsr:@std/assert@1";
 
-const HERE = decodeURIComponent(new URL(".", import.meta.url).pathname);
+const HERE = fromFileUrl(new URL(".", import.meta.url));
 
 /** Строки вида `owner_id: <что-то условное>` внутри вставки в entries. */
 function conditionalOwnerOnEntries(src: string): number[] {

@@ -24,6 +24,7 @@
 // сообщение или если окружения нет (непроверенное не выдаётся за проверенное).
 
 // Порты можно сдвинуть окружением — стенду другой копии репозитория достаётся свой диапазон.
+import { fromFileUrl } from "@std/path";
 import { seedCalendarGrant, seedInviteGrant } from "./scriba-smoke-grants.ts";
 const PORT_FN = Number(Deno.env.get("SMOKE_PORT_FN") ?? 4340);
 const PORT_TG = Number(Deno.env.get("SMOKE_PORT_TG") ?? 4342);
@@ -792,9 +793,8 @@ async function main(): Promise<void> {
     Deno.exit(1);
   }
   const tg = startTelegram();
-  const fnPath = decodeURIComponent(
-    new URL("../supabase/functions/meeting-notice/index.ts", import.meta.url)
-      .pathname,
+  const fnPath = fromFileUrl(
+    new URL("../supabase/functions/meeting-notice/index.ts", import.meta.url),
   );
   const child = new Deno.Command("deno", {
     args: ["run", "--allow-all", fnPath],
