@@ -15,9 +15,9 @@ import { useConfirm } from "@/components/ui/confirm";
 import type { Entry } from "@/types";
 
 const SEGS = [
-  { id: "all", label: "Все" },
-  { id: "pending", label: "Ожидают" },
-  { id: "confirmed", label: "Подтверждены" },
+  { id: "all", label: "Все", en: "All" },
+  { id: "pending", label: "Ожидают", en: "Pending" },
+  { id: "confirmed", label: "Подтверждены", en: "Confirmed" },
 ];
 
 export function sourceLabel(s: string): string {
@@ -140,9 +140,9 @@ export function RoyMeetingsScreen() {
   };
   const openReview = (id: string) => push({ view: "meetingReview", params: { id } });
 
-  const segmented = <Segmented items={SEGS} value={seg} onChange={setSeg} />;
+  const segmented = <Segmented items={SEGS.map((x) => ({ id: x.id, label: dt(x.label, x.en) }))} value={seg} onChange={setSeg} />;
   const skeleton = meetings == null && [0, 1, 2].map((i) => <div key={i} className="roy-shim" style={{ height: 72, borderRadius: 10 }} />);
-  const emptyFeed = meetings && items.length === 0 && <div className="py-10 text-center text-sm text-ink-soft">Встреч нет</div>;
+  const emptyFeed = meetings && items.length === 0 && <div className="py-10 text-center text-sm text-ink-soft">{dt("Встреч нет", "No meetings")}</div>;
   const feedCards = (mobile: boolean) =>
     items.map((e) => <MeetingCard key={e.id} e={e} mobile={mobile} onOpen={() => open(e.id)} onRemove={() => remove(e)} />);
 
