@@ -8,6 +8,7 @@ import { RoyIcon, type RoyIconName } from "./icons";
 import { useDt } from "./nav";
 import { buildTezisyCopyText, type TezisyCopyMeta } from "@/lib/tezisyCopy";
 import { NotificationsBell } from "./NotificationsBell";
+import { HeaderNotice } from "./DeployNoticeBar";
 import { useIsDesktop } from "./useIsDesktop";
 
 // Примитивы дизайн-системы из design_handoff_roy (mobile-proto-ui.jsx), портированные
@@ -658,6 +659,8 @@ export function NavHeader({ onBack, title, right, bell = true }: { onBack: () =>
       <div className="flex-1 text-center font-semibold truncate" style={{ fontSize: 16, opacity: title ? 1 : 0 }}>
         {title}
       </div>
+      {/* Плашка — спутник колокольчика: шапка без него (встроенный экран) её тоже не несёт. */}
+      {bell && <HeaderNotice flex="shrink" />}
       <div className="flex items-center justify-end gap-1.5" style={{ minWidth: 64 }}>
         {right}
         {bell && <NotificationsBell />}

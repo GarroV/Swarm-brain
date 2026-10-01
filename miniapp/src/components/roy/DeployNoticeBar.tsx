@@ -1,5 +1,17 @@
 "use client";
-// Плашка «скоро обновление» — пилюля по центру сверху, своей тонкой строкой над контентом.
+// Плашка «скоро обновление» — пилюля с отсчётом до раскатки или заморозки.
+//
+// Где стоит (владелец 01.10.2026: «интерфейс сверху и справа как обрезанный… видимо плашка
+// сдвигает»):
+//   • десктоп (≥720px) — В ШАПКЕ ЭКРАНА, в пустом месте между заголовком и колокольчиком
+//     (`HeaderNotice`). Раскладку не сдвигает: рейка и поле стоят от верха окна, своей полосы над
+//     ними нет. Не `fixed` поверх: у шапок разный состав (у «Главной» поиск справа, у «Спринтов»
+//     вкладки слева), и плавающая пилюля по центру накрыла бы поиск «Главной». В шапке она
+//     занимает только свободное место; длинный текст на узком окне переносится, и шапка
+//     становится на строку выше — это внутри шапки, а не пустая полоса над всем экраном;
+//   • мобайл — своей тонкой строкой над контентом (`DeployNoticeBar`), как раньше: плавающая
+//     пилюля накрывала заголовок экрана на 390px. Эта же строка — запасной вариант десктопа, если
+//     на экране нет шапки с местом под плашку (счётчик `headerSlots` ниже).
 //
 // Зачем: пуш в `main` пересобирает веб, после чего service worker сам перезагружает открытые
 // страницы (`controllerchange` в ServiceWorkerRegister). Без предупреждения человек, который
@@ -13,9 +25,10 @@
 // Оформление — только токены системы: янтарная пара accent-soft/accent-ink (та же, что у чипа
 // пинга) для предупреждения и filled primary в момент раскатки. Красный (`--destructive`)
 // намеренно НЕ используется: он у нас означает просрочку и ошибку, а обновление — не ошибка.
-import { useEffect, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import { RoyIcon } from "@/components/roy/icons";
 import { useDt, useRoyNav } from "@/components/roy/nav";
+import { useIsDesktop } from "@/components/roy/useIsDesktop";
 import { fetchNotifications } from "@/lib/api";
 import {
   lastNotice,
@@ -24,12 +37,59 @@ import {
   subscribeNotice,
   type DeployNotice,
 } from "@/lib/deployNotice";
-import { freezeWindow } from "@/lib/maintenance";
+import { freezeNoticeText, freezeWindow } from "@/lib/maintenance";
 
 // Отсчёт в минутах — раз в 20 с достаточно, чтобы цифра не отставала заметно. Запросов не шлём.
 const TICK_MS = 20_000;
 
+// ── Сколько шапок с местом под плашку сейчас смонтировано (десктоп) ─────────────────────
+// Шапка регистрирует свой `HeaderNotice`; пока есть хоть одна, строка над раскладкой на десктопе
+// не рисуется. Спрятанная вкладка (KeptTab держит «Главную» смонтированной) тоже считается — это
+// безопасно: рядом с ней всегда видна шапка текущего раздела со своим слотом.
+let headerSlots = 0;
+const slotListeners = new Set<() => void>();
+function addHeaderSlot(): () => void {
+  headerSlots++;
+  slotListeners.forEach((l) => l());
+  return () => {
+    headerSlots--;
+    slotListeners.forEach((l) => l());
+  };
+}
+function subscribeSlots(l: () => void): () => void {
+  slotListeners.add(l);
+  return () => { slotListeners.delete(l); };
+}
+
+/** Строка над раскладкой: мобайл всегда, десктоп — только если на экране нет шапки со слотом. */
 export function DeployNoticeBar() {
+  const isDesktop = useIsDesktop();
+  const slots = useSyncExternalStore(subscribeSlots, () => headerSlots, () => 0);
+  const pill = useNoticePill();
+  if (!pill || (isDesktop && slots > 0)) return null;
+  // Обёртка — только вокруг живой пилюли: пустая строка с отступом сдвигала бы раскладку на 8px.
+  return <div className="flex shrink-0 justify-center px-3 pt-2">{pill}</div>;
+}
+
+/**
+ * Слот плашки в шапке экрана (десктоп): гибкий промежуток между заголовком и правыми кнопками,
+ * пилюля по его центру. На мобайле не рисуется — там плашка своей строкой сверху.
+ */
+export function HeaderNotice({ className = "", flex = "flex-1" }: { className?: string; flex?: string }) {
+  const isDesktop = useIsDesktop();
+  useEffect(() => (isDesktop ? addHeaderSlot() : undefined), [isDesktop]);
+  const pill = useNoticePill();
+  if (!isDesktop || !pill) return null;
+  // flex — как слот делит шапку с соседями: обычно забирает всё свободное (flex-1); в шапке с
+  // «Назад» (NavHeader) середину держит заголовок, и плашка встаёт по своей ширине; на «Главной»
+  // она делит место с поиском пропорционально ширине (см. RoyDashboard).
+  return (
+    <div className={`flex min-w-0 justify-center ${flex} ${className}`}>{pill}</div>
+  );
+}
+
+/** Пилюля плашки или null, если объявления нет (или смотрит демо). */
+function useNoticePill() {
   const dt = useDt();
   const { me } = useRoyNav();
   const [notice, setNotice] = useState<DeployNotice | null>(lastNotice);
@@ -59,38 +119,32 @@ export function DeployNoticeBar() {
 
   const soon = view.phase === "soon";
   const custom = dt(notice?.ru ?? "", notice?.en ?? "");
-  // Перед заморозкой (issue #609) подпись — КОГДА и НА СКОЛЬКО, всегда, даже рядом со своим
-  // текстом: «переезжаем» без времени не даёт человеку решить, успеет ли он дописать.
   const win = notice?.kind === "freeze"
     ? freezeWindow({ starts_at: notice.at, until: notice.until }, dt("ru-RU", "en-GB"), now)
     : null;
-  const freezeLine = win
-    ? (soon
-      ? dt(
-        `Работы в ${win.start}–${win.end} (через ${view.minutes} мин): изменения на это время не принимаются`,
-        `Maintenance ${win.start}–${win.end} (in ${view.minutes} min): changes are paused meanwhile`,
-      )
-      : dt(`Идут работы до ${win.end}`, `Maintenance until ${win.end}`))
+  // Перед заморозкой — ОДНА фраза (владелец 01.10.2026 о «тексте · хвосте»: «по сути дубль
+  // жеж»): свой текст кнопки, а без него — шаблон владельца из lib/maintenance (тот же у
+  // колокольчика), время работ в шаблоне уже есть. Рядом — только короткий отсчёт «через N мин».
+  const freezeHead = win
+    ? (custom || (soon
+      ? dt(freezeNoticeText(win).ru, freezeNoticeText(win).en)
+      : dt(`Идут технические работы до ${win.end}`, `Maintenance in progress until ${win.end}`)))
     : null;
-  const head = custom
-    || freezeLine
+  const head = freezeHead
+    || custom
     || (soon
       ? dt(`Обновление через ${view.minutes} мин`, `Update in ${view.minutes} min`)
       : dt("Идёт обновление", "Updating now"));
   const sub = win
-    ? (custom ? freezeLine : null)
+    ? (soon ? dt(`через ${view.minutes} мин`, `in ${view.minutes} min`) : null)
     : (custom ? null : dt("страница перезагрузится сама", "the page will reload itself"));
 
   // Крестика нет (решение владельца 2026-09-25: «нельзя убрать уведомление, должно висеть и
   // напоминать»): плашка висит, пока не снимут кнопкой или не выйдет срок `until`. Свой текст
   // длинный — переносится на вторую строку, а не обрезается многоточием.
-  // В ПОТОКЕ, а не `fixed`: плавающая пилюля накрывала заголовок экрана на мобилке (проверено
-  // на 390px — «Задачи» читались из-под неё). Своя тонкая строка сдвигает контент один раз,
-  // ровно как полоса Demo mode рядом, и ничего не закрывает.
   return (
-    <div className="flex shrink-0 justify-center px-3 pt-2">
-      <div
-        role="status"
+    <div
+      role="status"
         aria-live="polite"
         className={`flex max-w-full items-center gap-2 rounded-full border px-3.5 py-1.5 font-semibold shadow-[0_4px_14px_rgba(27,32,40,0.10)] ${
           soon
@@ -103,8 +157,8 @@ export function DeployNoticeBar() {
       >
         <RoyIcon name={win ? "warn" : "clock"} size={13} strokeWidth={2.1} />
         {win ? (
-          // Перед заморозкой — одним абзацем: свой текст и время работ читаются подряд, а не
-          // двумя узкими колонками (на 390px так и выходило). Время не прячем и на мобилке.
+          // Перед заморозкой — одним абзацем: фраза и отсчёт читаются подряд, а не двумя узкими
+          // колонками (на 390px так и выходило). Отсчёт не прячем и на мобилке.
           <span className="min-w-0">
             {head}
             {sub && <span className={`font-normal ${soon ? "text-accent-ink/75" : "text-primary-foreground/80"}`}> · {sub}</span>}
@@ -120,6 +174,5 @@ export function DeployNoticeBar() {
           </>
         )}
       </div>
-    </div>
   );
 }

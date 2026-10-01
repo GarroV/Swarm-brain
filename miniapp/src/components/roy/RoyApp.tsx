@@ -44,7 +44,7 @@ import { AdminRoute } from "@/components/admin/AdminDesk";
 import { MeetAdminScreen } from "./screens/MeetAdminScreen";
 import { type RailId, RoyRail } from "./RoyRail";
 import { NotificationsBell } from "./NotificationsBell";
-import { DeployNoticeBar } from "./DeployNoticeBar";
+import { DeployNoticeBar, HeaderNotice } from "./DeployNoticeBar";
 import { AnswerModal } from "./AnswerModal";
 
 // Каркас «Рой»: корневые разделы + push-стек.
@@ -357,7 +357,8 @@ export function RoyApp({ me }: { me: Me | null }) {
   return (
     <RoyNavContext.Provider value={nav}>
       <div className="roy-shell flex flex-col h-[100dvh] bg-background text-foreground">
-        {/* Плашка «скоро обновление» — плавающая, поверх всех экранов, layout не сдвигает. */}
+        {/* Плашка «скоро обновление»: на десктопе — в шапке экрана (HeaderNotice), здесь только
+            мобайл и десктопные экраны без такой шапки. См. шапку DeployNoticeBar.tsx. */}
         <DeployNoticeBar />
         {me?.is_demo && (
           <div
@@ -417,6 +418,7 @@ export function RoyApp({ me }: { me: Me | null }) {
                       <h1 className="font-semibold text-ink" style={{ fontSize: 16, letterSpacing: "-0.01em" }}>
                         {sectionTitle ? shellDt(sectionTitle[0], sectionTitle[1]) : null}
                       </h1>
+                      <HeaderNotice className="px-4" />
                       <NotificationsBell />
                     </div>
                   )}
@@ -647,6 +649,7 @@ function Wrapped(
       {isDesktop ? (
         <div className="relative z-30 flex shrink-0 items-center justify-between border-b border-line px-5 py-2">
           <h1 className="font-semibold text-ink" style={{ fontSize: 16, letterSpacing: "-0.01em" }}>{title}</h1>
+          <HeaderNotice className="px-4" />
           <NotificationsBell />
         </div>
       ) : (
