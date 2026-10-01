@@ -86,10 +86,7 @@ import {
 import { pickSuggestedMarkets } from "../_shared/market-suggest.ts";
 import { type MatchedEntry, matchEntries } from "../_shared/search.ts";
 import { FileAccessError, getFileSecure } from "./file-access.ts";
-import {
-  removeStorageObject,
-  withNormalizedFileLink,
-} from "../_shared/storage-links.ts";
+import { withNormalizedFileLink } from "../_shared/storage-links.ts";
 import {
   discardOwnUpload,
   FEEDBACK_SCOPE,
@@ -156,6 +153,8 @@ import {
   readMaintenance,
 } from "../_shared/maintenance.ts";
 import { onlyLive } from "../_shared/tasks/live.ts";
+import { onlyLiveEntries } from "../_shared/entries/live.ts";
+import { archiveEntry } from "../_shared/entries/archive.ts";
 
 // Сколько задач отдаём вебу за раз. Дефолт движка (_shared/tasks/db.ts) — 200, и для БОТА он
 // верен: тот печатает список сообщением в чат, дампить туда базу нельзя. Для веба он смертелен —
@@ -1978,7 +1977,7 @@ Deno.serve(async (req: Request) => {
         if ("content" in body) fields.content = body.content;
         if ("summary" in body) fields.summary = body.summary;
         await supabase.from("entries").update(fields).eq("id", entry.id);
-        const { data } = await supabase.from("entries").select(ENTRY_COLUMNS)
+        const { data } = await onlyLiveEntries(supabase.from("entries").select(ENTRY_COLUMNS))
           .eq("id", entry.id).single();
         return json(
           withNormalizedFileLink(
@@ -1994,21 +1993,10 @@ Deno.serve(async (req: Request) => {
           telegramId: telegram_id,
           requireOwner: true,
         });
-        const fileUrl = (entry.metadata as Record<string, unknown>)?.file_url as
-          | string
-          | undefined;
-        if (fileUrl) {
-          const removal = await removeStorageObject(supabase, fileUrl, {
-            kind: "entry",
-            entryId: entry.id,
-          });
-          // Объект не удалён — запись НЕ трогаем: иначе файл остался бы в хранилище без
-          // владельца, то есть навсегда и по прежней ссылке.
-          if (removal.status === "failed") {
-            return apiErr(500, `File delete failed: ${removal.error}`, origin);
-          }
-        }
-        await supabase.from("entries").delete().eq("id", entry.id);
+        // Запись не стирается, а уходит в архив вместе с задачами встречи (#569). Файл в Storage
+        // остаётся: отдача файла (file-access.ts) проверяет живую запись, ссылка больше не открывается.
+        const archived = await archiveEntry(supabase, entry, telegram_id);
+        if (archived.error) return apiErr(500, archived.error, origin);
         return new Response(null, {
           status: 204,
           headers: corsHeaders(origin),
@@ -2083,6 +2071,7 @@ Deno.serve(async (req: Request) => {
     });
     if (reg.error) {
       await discardOwnUpload(supabase, stored);
+      // archive-ok: откат только что вставленной записи — её никто не видел, архивировать нечего
       await supabase.from("entries").delete().eq(
         "id",
         (entry as { id: string }).id,
@@ -2492,7 +2481,7 @@ Deno.serve(async (req: Request) => {
       const upd: Record<string, unknown> = { summary: tezisi, content: tezisi };
       if (embedding) upd.embedding = embedding;
       await supabase.from("entries").update(upd).eq("id", entry.id);
-      const { data } = await supabase.from("entries").select(ENTRY_COLUMNS).eq(
+      const { data } = await onlyLiveEntries(supabase.from("entries").select(ENTRY_COLUMNS)).eq(
         "id",
         entry.id,
       ).single();
@@ -2541,8 +2530,8 @@ Deno.serve(async (req: Request) => {
           .select("id, meeting_id, offset_sec, text, author_id, created_at")
           .in("meeting_id", idList)
           .order("offset_sec", { ascending: true }),
-        supabase.from("entries")
-          .select("id, content, created_at, metadata")
+        onlyLiveEntries(supabase.from("entries")
+          .select("id, content, created_at, metadata"))
           .eq("group_id", groupId)
           .eq("owner_id", telegram_id)
           .eq("metadata->>kind", "personal_notes")
@@ -2682,20 +2671,22 @@ Deno.serve(async (req: Request) => {
           fields.countries = marketTagsFromInput(body.countries as string[]);
         }
         await supabase.from("entries").update(fields).eq("id", entry.id);
-        const { data } = await supabase.from("entries").select(ENTRY_COLUMNS)
+        const { data } = await onlyLiveEntries(supabase.from("entries").select(ENTRY_COLUMNS))
           .eq("id", entry.id).single();
         return json(data, 200, origin);
       }
       if (req.method === "DELETE") {
         // Удаляют владелец и админ; личную — только владелец.
-        await getMeetingSecure(supabase, meetingId, {
+        const meeting = await getMeetingSecure(supabase, meetingId, {
           groupId,
           telegramId: telegram_id,
           email: userEmail,
           isAdmin,
           action: "delete",
         });
-        await supabase.from("entries").delete().eq("id", meetingId);
+        // Встреча и её задачи уходят в архив, а не стираются (#569).
+        const archived = await archiveEntry(supabase, meeting, telegram_id);
+        if (archived.error) return apiErr(500, archived.error, origin);
         return new Response(null, {
           status: 204,
           headers: corsHeaders(origin),
@@ -3178,6 +3169,7 @@ Deno.serve(async (req: Request) => {
 
     const skipped: string[] =
       (integration as { skipped_note_ids: string[] }).skipped_note_ids ?? [];
+    // archive-ok: архивная заметка Granola уже была импортирована — без неё удалённое вернулось бы «новым»
     const { data: imported } = await supabase.from("entries")
       .select("metadata").eq("group_id", groupId).eq(
         "added_by",
@@ -3608,10 +3600,10 @@ Deno.serve(async (req: Request) => {
     }
 
     // Персональный дайджест — СТРОГО по странам пользователя (entries.countries ∩ markets).
-    let q = supabase.from("entries")
+    let q = onlyLiveEntries(supabase.from("entries")
       .select(
         "id, summary, content, source, created_at, countries, metadata, entry_type",
-      )
+      ))
       .gte("created_at", since)
       .eq("group_id", groupId)
       .not("source", "eq", "digest")

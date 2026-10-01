@@ -15,7 +15,7 @@ function makeSupabase(single: unknown, list: unknown[]) {
       const chain: Call[] = [{ method: "from", args }];
       calls.push(chain);
       const b: Record<string, unknown> = {};
-      for (const m of ["select", "eq", "or", "order", "limit"]) {
+      for (const m of ["select", "eq", "is", "or", "order", "limit"]) {
         b[m] = (...a: unknown[]) => {
           chain.push({ method: m, args: a });
           return b;

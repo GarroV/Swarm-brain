@@ -10,6 +10,7 @@ import { detectQueryCountry, normalizeCountry } from "../../_shared/countries.ts
 import { matchEntries } from "../../_shared/search.ts";
 
 import { normalizeFileLink } from "../../_shared/storage-links.ts";
+import { onlyLiveEntries } from "../../_shared/entries/live.ts";
 
 // Ссылка на файл в сообщении бота ведёт в веб: там сессия человека и проверка доступа.
 const WEB_BASE_URL = Deno.env.get("WEB_BASE_URL") ?? "https://swarm-brain.pages.dev";
@@ -313,7 +314,7 @@ export async function executeTool(
         // e.g. "муравьев" → also search "муравь" to match "муравьи", "муравьям" etc.
         const searchTerms = [...new Set(words.flatMap((w) => w.length > 5 ? [w, w.slice(0, 5)] : [w]))];
         const kwPromise = searchTerms.length
-          ? supabase.from("entries").select("id, content, summary, source, metadata")
+          ? onlyLiveEntries(supabase.from("entries").select("id, content, summary, source, metadata"))
             .or(searchTerms.map((w) => `source.ilike.%${w}%,content.ilike.%${w}%,summary.ilike.%${w}%`).join(","))
             .eq("group_id", groupId)
             .or(visibilityFilter(userId || 0))
@@ -322,7 +323,7 @@ export async function executeTool(
 
         // Also search entries that have file_url in metadata matching the query
         const filePromise = words.length
-          ? supabase.from("entries").select("id, content, summary, source, metadata")
+          ? onlyLiveEntries(supabase.from("entries").select("id, content, summary, source, metadata"))
             .or(words.map((w) => `metadata->>file_name.ilike.%${w}%`).join(","))
             .not("metadata->>file_url", "is", null)
             .eq("group_id", groupId)
@@ -382,7 +383,7 @@ export async function executeTool(
             .catch(() => [] as KbEntry[]),
 
           searchTerms.length
-            ? supabase.from("entries").select("id, content, summary, source, metadata")
+            ? onlyLiveEntries(supabase.from("entries").select("id, content, summary, source, metadata"))
               .eq("source", "note")
               .or(searchTerms.map((w) => `content.ilike.%${w}%,summary.ilike.%${w}%`).join(","))
               .eq("group_id", groupId)
@@ -426,7 +427,7 @@ export async function executeTool(
             .catch(() => [] as KbEntry[]),
 
           searchTerms.length
-            ? supabase.from("entries").select("id, content, summary, source, metadata")
+            ? onlyLiveEntries(supabase.from("entries").select("id, content, summary, source, metadata"))
               .eq("source", "link")
               .or(searchTerms.map((w) => `content.ilike.%${w}%,summary.ilike.%${w}%`).join(","))
               .eq("group_id", groupId)
@@ -492,8 +493,10 @@ export async function executeTool(
 
           isGeneral
             // General: all recent entries regardless of country tagging
-            ? supabase.from("entries")
-              .select("id, content, summary, source, entry_date, created_at, metadata")
+            ? onlyLiveEntries(
+              supabase.from("entries")
+                .select("id, content, summary, source, entry_date, created_at, metadata"),
+            )
               .gte("created_at", since)
               .eq("group_id", groupId)
               .or(visibilityFilter(userId || 0))
@@ -503,8 +506,10 @@ export async function executeTool(
               .then((r) => (r.data ?? []) as REntry[], () => [] as REntry[])
             : isoCode
             // Known country: filter by countries array (entries explicitly tagged with this country)
-            ? supabase.from("entries")
-              .select("id, content, summary, source, entry_date, created_at, metadata")
+            ? onlyLiveEntries(
+              supabase.from("entries")
+                .select("id, content, summary, source, entry_date, created_at, metadata"),
+            )
               .gte("created_at", since)
               .contains("countries", [isoCode])
               .eq("group_id", groupId)
@@ -513,8 +518,10 @@ export async function executeTool(
               .limit(20)
               .then((r) => (r.data ?? []) as REntry[], () => [] as REntry[])
             // Unknown country: fall back to ILIKE text search
-            : supabase.from("entries")
-              .select("id, content, summary, source, entry_date, created_at, metadata")
+            : onlyLiveEntries(
+              supabase.from("entries")
+                .select("id, content, summary, source, entry_date, created_at, metadata"),
+            )
               .gte("created_at", since)
               // спецсимволы PostgREST (,()* и т.п.) в значении сломали бы .or() → чистим терм
               .or((() => {
@@ -534,8 +541,10 @@ export async function executeTool(
         // This prevents tangential CEE/general meetings from appearing in country-specific news.
         let vecEntries: REntry[] = [];
         if (vecIds.length) {
-          let vecQ = supabase.from("entries")
-            .select("id, content, summary, source, entry_date, created_at, metadata")
+          let vecQ = onlyLiveEntries(
+            supabase.from("entries")
+              .select("id, content, summary, source, entry_date, created_at, metadata"),
+          )
             .eq("group_id", groupId)
             .or(visibilityFilter(userId || 0))
             .in("id", vecIds);
@@ -606,7 +615,7 @@ export async function executeTool(
 
         // Fallback: точное совпадение тега страны — свой воркспейс и видимые записи.
         if (!entries.length) {
-          const { data: exact } = await supabase.from("entries").select("id, content, summary, source")
+          const { data: exact } = await onlyLiveEntries(supabase.from("entries").select("id, content, summary, source"))
             .contains("countries", [country])
             .eq("group_id", groupId)
             .or(visibilityFilter(userId || 0))
@@ -624,7 +633,11 @@ export async function executeTool(
       }
 
       case "get_countries_list": {
-        const { data } = await supabase.from("entries").select("countries").not("countries", "eq", "{}")
+        const { data } = await onlyLiveEntries(supabase.from("entries").select("countries")).not(
+          "countries",
+          "eq",
+          "{}",
+        )
           .eq("group_id", groupId).or(visibilityFilter(userId || 0));
         const count: Record<string, number> = {};
         for (const r of (data ?? []) as Array<{ countries: string[] }>) {
@@ -635,8 +648,10 @@ export async function executeTool(
       }
 
       case "get_digest": {
-        const { data } = await supabase.from("entries")
-          .select("entry_type, source, summary, countries, entry_date, created_at")
+        const { data } = await onlyLiveEntries(
+          supabase.from("entries")
+            .select("entry_type, source, summary, countries, entry_date, created_at"),
+        )
           .eq("group_id", groupId).or(visibilityFilter(userId || 0))
           .order("created_at", { ascending: false }).limit(30);
         if (!data?.length) return "База знаний пустая.";
@@ -665,8 +680,10 @@ export async function executeTool(
       }
 
       case "get_entries_by_country": {
-        const { data } = await supabase.from("entries")
-          .select("countries, source, summary, entry_date, created_at")
+        const { data } = await onlyLiveEntries(
+          supabase.from("entries")
+            .select("countries, source, summary, entry_date, created_at"),
+        )
           .not("countries", "eq", "{}")
           .eq("group_id", groupId).or(visibilityFilter(userId || 0))
           .order("created_at", { ascending: false }).limit(100);
@@ -685,8 +702,10 @@ export async function executeTool(
       case "get_recent_meetings": {
         const source = String(args.source ?? "").trim();
         const limit = Math.min(Number(args.limit ?? 10), 20);
-        let q = supabase.from("entries")
-          .select("id, metadata, entry_date, created_at, source, content, summary, entry_type")
+        let q = onlyLiveEntries(
+          supabase.from("entries")
+            .select("id, metadata, entry_date, created_at, source, content, summary, entry_type"),
+        )
           // Свой воркспейс; личные встречи — только свои.
           .eq("group_id", groupId)
           .or(visibilityFilter(userId))
@@ -722,9 +741,11 @@ export async function executeTool(
 
       case "list_meetings_by_country": {
         const country = String(args.country ?? "").toLowerCase();
-        const { data } = await supabase
-          .from("entries")
-          .select("id, metadata, entry_date, created_at, countries, summary, content")
+        const { data } = await onlyLiveEntries(
+          supabase
+            .from("entries")
+            .select("id, metadata, entry_date, created_at, countries, summary, content"),
+        )
           .or("entry_type.in.(transcript,meeting),source.in.(read_ai,granola,voice)")
           .eq("group_id", groupId)
           .order("entry_date", { ascending: false, nullsFirst: false })
@@ -763,8 +784,10 @@ export async function executeTool(
       case "update_entry": {
         const id = String(args.id ?? "");
         if (!id) return "Укажи id записи.";
-        const { data: existing } = await supabase.from("entries")
-          .select("metadata, countries, entry_date, is_private, owner_id, group_id, entry_type, source")
+        const { data: existing } = await onlyLiveEntries(
+          supabase.from("entries")
+            .select("metadata, countries, entry_date, is_private, owner_id, group_id, entry_type, source"),
+        )
           .eq("id", id).eq("group_id", groupId).maybeSingle();
         // Воркспейс + права: встреча — по правам встречи, остальное — только автор
         // (_shared/entries/entry-edit.ts). Смена видимости — отдельное право.
@@ -801,9 +824,11 @@ export async function executeTool(
 
       case "list_recent": {
         const limit = Math.min(Math.max(Number(args.limit ?? 5), 1), 15);
-        const { data, error } = await supabase
-          .from("entries")
-          .select("id, summary, content, source, added_by, created_at, metadata")
+        const { data, error } = await onlyLiveEntries(
+          supabase
+            .from("entries")
+            .select("id, summary, content, source, added_by, created_at, metadata"),
+        )
           .eq("group_id", groupId)
           .or(visibilityFilter(userId || 0))
           .order("created_at", { ascending: false })
@@ -847,9 +872,11 @@ export async function executeTool(
       case "list_personal": {
         if (!userId) return "Ошибка: не удалось определить пользователя.";
         const limit = Math.min(Number(args.limit ?? 10), 20);
-        const { data, error } = await supabase
-          .from("entries")
-          .select("id, summary, source, created_at")
+        const { data, error } = await onlyLiveEntries(
+          supabase
+            .from("entries")
+            .select("id, summary, source, created_at"),
+        )
           // Личное хранилище = свои личные записи и встречи 1-1, разделённые со мной (#641).
           .eq("is_private", true)
           .or(visibilityFilter(userId))

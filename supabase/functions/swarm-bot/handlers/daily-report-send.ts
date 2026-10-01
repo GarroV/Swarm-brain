@@ -2,6 +2,7 @@ import { draftMeetingsOwnScopedFilter } from "../../_shared/meeting-access.ts";
 import { buildDailyReport, type EntryRow, yesterdayWindow } from "./daily-report.ts";
 import { ADMIN_USER_ID, supabase } from "../lib/supabase.ts";
 import { sendMessage } from "../lib/telegram.ts";
+import { onlyLiveEntries } from "../../_shared/entries/live.ts";
 
 // Грязный слой свода: два запроса к базе и отправка. Вся логика «что делать, когда запрос
 // не прошёл» живёт в buildDailyReport (чистая, тестируемая) — здесь только сами запросы.
@@ -12,9 +13,11 @@ export async function sendDailyReport(): Promise<void> {
 
   // Добавлено в базу за вчера: опубликованные entries (metadata/content — для списка названий).
   const loadEntries = async (): Promise<EntryRow[]> => {
-    const { data, error } = await supabase
-      .from("entries")
-      .select("entry_type, source, group_id, metadata, content")
+    const { data, error } = await onlyLiveEntries(
+      supabase
+        .from("entries")
+        .select("entry_type, source, group_id, metadata, content"),
+    )
       .gte("created_at", sinceISO)
       .lt("created_at", untilISO)
       .neq("source", "digest")

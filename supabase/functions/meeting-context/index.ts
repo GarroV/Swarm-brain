@@ -16,6 +16,7 @@ import { AgentAuthError, verifyAgentToken } from "../_shared/agent-auth.ts";
 import { contextCountry, PREVIEW_LIMITS, tezisyPreview } from "../_shared/meeting-context.ts";
 import { entryVisibilityOr } from "../_shared/entries/access.ts";
 import { onlyLive } from "../_shared/tasks/live.ts";
+import { onlyLiveEntries } from "../_shared/entries/live.ts";
 
 const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
 
@@ -75,9 +76,11 @@ Deno.serve(async (req: Request) => {
   // Последняя ОПУБЛИКОВАННАЯ встреча этой страны, видимая смотрящему.
   // Приватная запись видна только владельцу и тем, с кем разделена (issue #15, #641) — иначе
   // рекордер покажет коллеге чужое.
-  let q = supabase
-    .from("entries")
-    .select("id, content, metadata, entry_date, created_at, is_private, owner_id")
+  let q = onlyLiveEntries(
+    supabase
+      .from("entries")
+      .select("id, content, metadata, entry_date, created_at, is_private, owner_id"),
+  )
     .eq("entry_type", "meeting")
     .contains("countries", [country])
     .eq("metadata->>confirmed", "true")

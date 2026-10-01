@@ -14,6 +14,7 @@ import {
   normalizeEmail,
   SUPERADMIN_TELEGRAM_ID,
 } from "./admin-scope.ts";
+import { onlyLiveEntries } from "../_shared/entries/live.ts";
 
 const ADMIN_TELEGRAM_ID = SUPERADMIN_TELEGRAM_ID;
 
@@ -552,7 +553,7 @@ export async function reviewCountsByMember(
   groupId: string,
 ): Promise<Map<number, number>> {
   const [entRes, mtgRes] = await Promise.all([
-    supabase.from("entries").select("owner_id, metadata")
+    onlyLiveEntries(supabase.from("entries").select("owner_id, metadata"))
       .eq("group_id", groupId).eq("entry_type", "meeting")
       .or("metadata->>confirmed.is.null,metadata->>confirmed.eq.false"),
     supabase.from("meetings").select("recorders, co_owners")

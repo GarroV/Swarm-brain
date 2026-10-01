@@ -19,6 +19,8 @@ import {
 import { sendInlineMessage, sendMessage } from "../lib/telegram.ts";
 import { type EntryCommand, extractUrl } from "../lib/intent.ts";
 import type { TgCallbackQuery } from "../lib/types.ts";
+import { onlyLiveEntries } from "../../_shared/entries/live.ts";
+import { archiveEntry } from "../../_shared/entries/archive.ts";
 
 const MAX_RESULTS = 5;
 
@@ -78,8 +80,10 @@ async function searchCandidates(query: string, userId: number, groupId: string):
   //    значимых слов запроса (минимум 2) ИЛИ все слова есть в заголовке. Ранжируем по числу совпадений.
   const words = [...new Set(query.toLowerCase().split(/[\s,.!?]+/).filter((w) => w.length > 2))].slice(0, 6);
   if (words.length) {
-    const { data } = await supabase.from("entries")
-      .select("id, content, summary, metadata, entry_date, created_at")
+    const { data } = await onlyLiveEntries(
+      supabase.from("entries")
+        .select("id, content, summary, metadata, entry_date, created_at"),
+    )
       .or(words.map((w) => `content.ilike.%${w}%,summary.ilike.%${w}%`).join(","))
       .eq("group_id", groupId).or(visibilityFilter(userId)).limit(40);
     const need = Math.max(2, Math.ceil(words.length / 2));
@@ -212,9 +216,10 @@ async function readState(chatId: number): Promise<ManageState | null> {
 }
 
 async function doDelete(chatId: number, userId: number, groupId: string, id: string): Promise<void> {
-  await getManageableEntry(id, userId, groupId, "delete"); // гейт: права удаления, отказ бросает
-  const { error } = await supabase.from("entries").delete().eq("id", id).eq("group_id", groupId);
-  if (error) throw new Error(error.message);
+  const entry = await getManageableEntry(id, userId, groupId, "delete"); // гейт: права удаления, отказ бросает
+  // Запись не стирается, а уходит в архив вместе с задачами встречи (#569).
+  const { error } = await archiveEntry(supabase, entry, userId);
+  if (error) throw new Error(error);
   await clearSession(chatId);
   await sendMessage(chatId, "✅ Запись удалена.");
 }

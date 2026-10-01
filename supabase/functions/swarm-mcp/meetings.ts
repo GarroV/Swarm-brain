@@ -17,6 +17,7 @@ import {
   type ProposedTask,
   type QueueRow,
 } from "./meetings-format.ts";
+import { onlyLiveEntries } from "../_shared/entries/live.ts";
 
 // Вычитка черновиков встреч из MCP (issue #513): очередь, черновик, правка, публикация.
 // Живая очередь — таблица meetings (черновики рекордера), а не entries.confirmed=false:
@@ -143,8 +144,10 @@ async function meetingText(
   if (!callerId) return { ok: false, msg: "Ошибка: личность не определена (нужен токен коннектора)." };
   const groupId = await resolveGroupId(callerId);
   if (!groupId) return { ok: false, msg: `Запись ${args.entry_id} не найдена.` };
-  const { data } = await supabase.from("entries")
-    .select("id, summary, content, is_private, owner_id, shared_with, group_id").eq("id", args.entry_id).maybeSingle();
+  const { data } = await onlyLiveEntries(
+    supabase.from("entries")
+      .select("id, summary, content, is_private, owner_id, shared_with, group_id"),
+  ).eq("id", args.entry_id).maybeSingle();
   const row = data as (EntryAccessRow & { summary: string | null; content: string | null }) | null;
   const denied = entryAccessError(args.entry_id, row, callerId, groupId ?? null);
   if (denied) return { ok: false, msg: denied };
