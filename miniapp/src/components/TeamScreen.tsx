@@ -6,6 +6,7 @@ import { Avatar } from "@/components/roy/ui";
 import { initials } from "@/components/roy/dash/shared";
 import { useIsDesktop } from "@/components/roy/useIsDesktop";
 import { TeamDesk } from "@/components/team/TeamDesk";
+import { isRawId } from "@/lib/displayFormat";
 
 const ROLE_LABELS: Record<string, string> = {
   marketing: "Marketing",
@@ -43,7 +44,7 @@ function TeamList() {
               <Avatar size={38}>{initials(u.name)}</Avatar>
               <div className="min-w-0 flex-1">
                 <p className="truncate font-semibold text-ink" style={{ fontSize: 13.5 }}>
-                  {/^\d+$/.test(u.name) ? `#${u.name}` : u.name}
+                  {isRawId(u.name) ? `#${u.name}` : u.name}
                 </p>
                 {u.username && <p className="font-mono text-ink-mute" style={{ fontSize: 11 }}>@{u.username}</p>}
               </div>

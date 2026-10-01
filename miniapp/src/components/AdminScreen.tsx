@@ -131,7 +131,7 @@ function WorkspaceUsers({ wsId, allWorkspaces, desk = false }: { wsId: string; a
   const handleAdd = async () => {
     const raw = addInput.trim();
     if (!raw) return;
-    const ref = /^\d+$/.test(raw) ? { telegramId: Number(raw) }
+    const ref = /^-?\d+$/.test(raw) ? { telegramId: Number(raw) }
       : /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(raw) ? { email: raw.toLowerCase() }
       : { username: raw.replace(/^@/, "") };
     setAdding(true); setErr(null);

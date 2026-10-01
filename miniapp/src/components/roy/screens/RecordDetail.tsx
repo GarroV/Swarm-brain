@@ -7,14 +7,10 @@ import { RoyIcon } from "../icons";
 import { entryTagKey, deriveEntryTitle, isSearchIndexSummary, entryImporterName } from "../entry";
 import { fetchEntry, createTask } from "@/lib/api";
 import type { Entry } from "@/types";
+import { formatDate } from "@/lib/displayFormat";
 
 function fmtDate(iso: string | null): string {
-  if (!iso) return "";
-  try {
-    return new Date(iso).toLocaleDateString("ru-RU", { day: "numeric", month: "short", year: "numeric" });
-  } catch {
-    return "";
-  }
+  return formatDate(iso, { day: "numeric", month: "short", year: "numeric" }) ?? "";
 }
 
 // Человекочитаемый источник записи (обязательная пометка провенанса).

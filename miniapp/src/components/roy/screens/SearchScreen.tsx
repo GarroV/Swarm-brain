@@ -9,6 +9,7 @@ import { fetchTasks, fetchMeetings } from "@/lib/api";
 import { deriveEntryTitle } from "../entry";
 import { fmtDate, norm } from "../dash/shared";
 import type { Task, Entry } from "@/types";
+import { isRawId } from "@/lib/displayFormat";
 
 const RECENT_KEY = "roy_recent_searches";
 
@@ -30,7 +31,7 @@ export function saveRecent(q: string) {
 }
 
 function initials(name: string | undefined | null): string {
-  if (!name || /^\d+$/.test(name.trim())) return "Я";
+  if (!name || isRawId(name)) return "Я";
   return name.trim().split(/\s+/).slice(0, 2).map((p) => p[0]?.toUpperCase() ?? "").join("") || "Я";
 }
 

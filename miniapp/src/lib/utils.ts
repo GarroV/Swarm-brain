@@ -1,5 +1,6 @@
 import { clsx, type ClassValue } from "clsx"
 import { twMerge } from "tailwind-merge"
+import { isRawId } from "./displayFormat";
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
@@ -9,5 +10,5 @@ export function cn(...inputs: ClassValue[]) {
 // показываем «#id» вместо голого числа. Иначе — имя как есть.
 export function displayName(raw: string | null | undefined): string {
   if (!raw) return "—";
-  return /^\d+$/.test(raw.trim()) ? `#${raw.trim()}` : raw;
+  return isRawId(raw) ? `#${raw.trim()}` : raw;
 }

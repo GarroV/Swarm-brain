@@ -14,14 +14,10 @@ import { applyAskAnswerToText } from "@/lib/tezisyLines";
 import { askMeeting, fetchMeeting, patchMeeting, deleteMeeting, fetchTasks, resummarizeMeetingEntry, fetchConfig } from "@/lib/api";
 import { countryCode } from "@/lib/countries";
 import type { Entry, Task } from "@/types";
+import { formatDate } from "@/lib/displayFormat";
 
 function fmtDate(iso: string | null): string {
-  if (!iso) return "";
-  try {
-    return new Date(iso).toLocaleDateString("ru-RU", { day: "numeric", month: "long" });
-  } catch {
-    return "";
-  }
+  return formatDate(iso, { day: "numeric", month: "long" }) ?? "";
 }
 
 // Видимая кнопка-действие (иконка + подпись). Раньше действия были спрятаны в меню «...».

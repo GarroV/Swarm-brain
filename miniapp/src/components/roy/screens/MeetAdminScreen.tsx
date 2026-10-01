@@ -33,6 +33,7 @@ import {
   applyMeetingsFilter, isFilterActive, isConfirmed, personOf,
   EMPTY_FILTERS, loadSavedFilters, saveFilters, type MeetingsFilterState, type PeriodId,
 } from "./meetingsFilter";
+import { formatDate } from "@/lib/displayFormat";
 
 // Статистика по «Все встречи»: сортированный подсчёт (по убыванию).
 function tally(keys: string[]): [string, number][] {
@@ -268,12 +269,7 @@ function itemDate(it: MeetItem): string | null {
 }
 
 function fmtDate(iso: string | null): string | null {
-  if (!iso) return null;
-  try {
-    return new Date(iso).toLocaleDateString("ru-RU", { day: "numeric", month: "short" });
-  } catch {
-    return null;
-  }
+  return formatDate(iso, { day: "numeric", month: "short" });
 }
 
 function itemSource(it: MeetItem): string {

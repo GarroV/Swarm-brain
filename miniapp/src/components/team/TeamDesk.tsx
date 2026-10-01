@@ -8,6 +8,7 @@ import { ToolbarButton } from "@/components/tasks/table/Menu";
 import { Avatar } from "@/components/roy/ui";
 import { initials } from "@/components/roy/dash/shared";
 import { useDt, useRoyNav } from "@/components/roy/nav";
+import { isRawId } from "@/lib/displayFormat";
 
 // «Команда» десктопа по стенду (docs/redesign/stand/js/screens-system.js → screenTeam): таблица
 // Участник · Роль · Рынок · Telegram · Открыто · Просрочено. Счёт задач — по тем задачам, что
@@ -93,7 +94,7 @@ export function TeamDesk() {
                   style={{ gridTemplateColumns: COLS, minHeight: 36 }}>
                   <div className="flex min-w-0 items-center gap-2.5 px-3">
                     <Avatar size={22}>{initials(u.name)}</Avatar>
-                    <span className="truncate font-medium text-ink">{/^\d+$/.test(u.name) ? `#${u.name}` : u.name}</span>
+                    <span className="truncate font-medium text-ink">{isRawId(u.name) ? `#${u.name}` : u.name}</span>
                   </div>
                   <div className="truncate px-2 text-ink-soft">{role ? dt(role[0], role[1]) : <span className="text-ink-mute">—</span>}</div>
                   <div className="flex gap-1 px-2">

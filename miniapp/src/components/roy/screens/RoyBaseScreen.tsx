@@ -8,6 +8,7 @@ import { fetchEntriesWithTotal } from "@/lib/api";
 import type { Entry } from "@/types";
 import { useIsDesktop } from "../useIsDesktop";
 import { BaseDesk } from "./BaseDesk";
+import { formatDate } from "@/lib/displayFormat";
 
 // Встреч здесь нет (GET /entries отдаёт только entry_type='note'; встречи — свой таб).
 // Фильтры — по ФАСЕТУ заметки: заметки / ссылки / файлы.
@@ -19,12 +20,7 @@ const FILTERS = [
 ];
 
 function fmtDate(iso: string | null): string | null {
-  if (!iso) return null;
-  try {
-    return new Date(iso).toLocaleDateString("ru-RU", { day: "numeric", month: "short" });
-  } catch {
-    return null;
-  }
+  return formatDate(iso, { day: "numeric", month: "short" });
 }
 
 export function RoyBaseScreen({ onBack }: { onBack?: () => void }) {
