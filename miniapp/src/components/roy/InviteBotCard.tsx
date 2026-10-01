@@ -133,7 +133,7 @@ function InviteForm({ s, autoFocus = false }: { s: InviteState; autoFocus?: bool
         <button
           type="submit"
           disabled={!s.url.trim() || s.sending}
-          className="shrink-0 rounded-[7px] bg-primary px-3 py-1.5 font-semibold text-primary-foreground transition-opacity disabled:opacity-50"
+          className="shrink-0 rounded-full bg-primary px-3 py-1.5 font-semibold text-primary-foreground transition-opacity disabled:opacity-50"
           style={{ fontSize: 12.5 }}
         >
           {s.sending ? dt("Зовём…", "Inviting…") : dt("Позвать", "Invite")}

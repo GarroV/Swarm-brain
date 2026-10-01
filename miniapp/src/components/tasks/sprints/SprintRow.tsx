@@ -233,7 +233,7 @@ export function SprintRow({ item, unchecked, showExtra, h, depth = 0 }: {
                 "Как идут дела: по плану → риск → проблема",
                 "How it is going: on track → at risk → problem",
               )}
-              className="max-w-full rounded-[6px] transition-opacity hover:opacity-80"
+              className="max-w-full rounded-full transition-opacity hover:opacity-80"
             >
               <CheckChip
                 status={item.check_status}

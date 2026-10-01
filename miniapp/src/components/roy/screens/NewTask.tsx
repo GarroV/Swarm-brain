@@ -149,7 +149,7 @@ export function NewTask({ id }: { id?: string }) {
             </div>
           </Field>
         )}
-        <button type="button" onClick={() => setIsPrivate((v) => !v)} className="flex w-full items-center justify-between rounded-[10px] border border-line bg-surface px-4 py-3.5">
+        <button type="button" onClick={() => setIsPrivate((v) => !v)} className="flex w-full items-center justify-between rounded-full border border-line bg-surface px-4 py-3.5">
           <span className="font-medium text-ink" style={{ fontSize: 14.5 }}>
             Личная задача
           </span>
@@ -159,7 +159,7 @@ export function NewTask({ id }: { id?: string }) {
         </button>
       </div>
       <div className="shrink-0 border-t border-line bg-background dark:bg-[var(--surface)] px-5 pt-3" style={{ paddingBottom: "max(16px, env(safe-area-inset-bottom))" }}>
-        <button type="button" onClick={submit} disabled={saving} className="w-full rounded-[8px] bg-primary py-3.5 font-semibold text-primary-foreground transition-transform active:scale-[0.99] disabled:opacity-60" style={{ fontSize: 15 }}>
+        <button type="button" onClick={submit} disabled={saving} className="w-full rounded-full bg-primary py-3.5 font-semibold text-primary-foreground transition-transform active:scale-[0.99] disabled:opacity-60" style={{ fontSize: 15 }}>
           {editing ? "Сохранить" : "Создать задачу"}
         </button>
       </div>

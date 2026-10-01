@@ -475,7 +475,7 @@ function ContentEditor({
               type="button"
               disabled={saving}
               onClick={save}
-              className="inline-flex items-center gap-1.5 rounded-[8px] border-0 font-semibold transition-opacity disabled:opacity-50"
+              className="inline-flex items-center gap-1.5 rounded-full border-0 font-semibold transition-opacity disabled:opacity-50"
               style={{ padding: "8px 14px", fontSize: 13, background: "var(--accent-ink)", color: "var(--card)" }}
             >
               <RoyIcon name="check" size={14} strokeWidth={2.1} />
@@ -485,7 +485,7 @@ function ContentEditor({
               type="button"
               disabled={saving}
               onClick={cancel}
-              className="rounded-[8px] border border-line bg-surface font-semibold text-ink-soft transition-opacity disabled:opacity-50"
+              className="rounded-full border border-line bg-surface font-semibold text-ink-soft transition-opacity disabled:opacity-50"
               style={{ padding: "7px 14px", fontSize: 13 }}
             >
               Отмена
@@ -569,11 +569,11 @@ function DetailPanel({
                 style={{ fontSize: 24, letterSpacing: "-0.02em" }}
               />
               <button type="button" onClick={saveTitle} disabled={savingTitle} aria-label="Сохранить название"
-                className="inline-flex shrink-0 items-center justify-center rounded-[10px] p-2.5 text-ink transition-opacity hover:opacity-70 disabled:opacity-50">
+                className="inline-flex shrink-0 items-center justify-center rounded-full p-2.5 text-ink transition-opacity hover:opacity-70 disabled:opacity-50">
                 <RoyIcon name="check" size={18} strokeWidth={2} />
               </button>
               <button type="button" onClick={() => setEditingTitle(false)} disabled={savingTitle} aria-label="Отмена"
-                className="inline-flex shrink-0 items-center justify-center rounded-[10px] p-2.5 text-ink-mute transition-opacity hover:opacity-70 disabled:opacity-50">
+                className="inline-flex shrink-0 items-center justify-center rounded-full p-2.5 text-ink-mute transition-opacity hover:opacity-70 disabled:opacity-50">
                 <RoyIcon name="x" size={18} strokeWidth={2} />
               </button>
             </div>
@@ -583,7 +583,7 @@ function DetailPanel({
                 {title}
               </h2>
               <button type="button" onClick={() => { setTitleDraft(title); setEditingTitle(true); }} aria-label="Изменить название"
-                className="mt-1 inline-flex shrink-0 items-center justify-center rounded-[10px] p-2 text-ink-mute transition-colors hover:bg-accent-soft hover:text-ink active:scale-[0.94]">
+                className="mt-1 inline-flex shrink-0 items-center justify-center rounded-full p-2 text-ink-mute transition-colors hover:bg-accent-soft hover:text-ink active:scale-[0.94]">
                 <RoyIcon name="pencil" size={18} strokeWidth={1.9} />
               </button>
             </div>
@@ -874,7 +874,7 @@ function AgentMeetingDetail({
         onClick={() => setReprocMenu((v) => !v)}
         disabled={reprocessing || !hasTranscript}
         title="Переобработать тезисы (можно уточнить, что изменить)"
-        className="inline-flex items-center gap-1.5 rounded-[10px] border border-line bg-surface font-semibold text-ink-soft transition-[transform,border-color] duration-150 hover:scale-[1.03] hover:border-line-2 active:scale-[0.97] disabled:opacity-50"
+        className="inline-flex items-center gap-1.5 rounded-full border border-line bg-surface font-semibold text-ink-soft transition-[transform,border-color] duration-150 hover:scale-[1.03] hover:border-line-2 active:scale-[0.97] disabled:opacity-50"
         style={{ padding: "5px 11px", fontSize: 12 }}
       >
         <RoyIcon name="spark" size={13} strokeWidth={1.9} /> {reprocessing ? "Обрабатываю…" : "Переобработать"}
@@ -915,10 +915,10 @@ function AgentMeetingDetail({
               className="min-w-0 flex-1 rounded-[10px] border border-line-2 bg-surface px-3 py-1.5 font-bold text-ink outline-none focus:border-primary disabled:opacity-50"
               style={{ fontSize: 24, letterSpacing: "-0.02em" }}
             />
-            <button type="button" onClick={saveTitle} disabled={saving} aria-label="Сохранить название" className="inline-flex items-center justify-center rounded-[9px] bg-primary text-primary-foreground disabled:opacity-50" style={{ width: 32, height: 32 }}>
+            <button type="button" onClick={saveTitle} disabled={saving} aria-label="Сохранить название" className="inline-flex items-center justify-center rounded-full bg-primary text-primary-foreground disabled:opacity-50" style={{ width: 32, height: 32 }}>
               <RoyIcon name="check" size={16} strokeWidth={2.2} />
             </button>
-            <button type="button" onClick={() => setEditingTitle(false)} disabled={saving} aria-label="Отмена" className="inline-flex items-center justify-center rounded-[9px] border border-line bg-surface text-ink-soft disabled:opacity-50" style={{ width: 32, height: 32 }}>
+            <button type="button" onClick={() => setEditingTitle(false)} disabled={saving} aria-label="Отмена" className="inline-flex items-center justify-center rounded-full border border-line bg-surface text-ink-soft disabled:opacity-50" style={{ width: 32, height: 32 }}>
               <RoyIcon name="x" size={15} strokeWidth={2} />
             </button>
           </div>
@@ -931,7 +931,7 @@ function AgentMeetingDetail({
               type="button"
               onClick={() => { setTitleDraft(m.title ?? ""); setEditingTitle(true); }}
               aria-label="Изменить название"
-              className="mt-1 inline-flex shrink-0 items-center justify-center rounded-[9px] text-ink-mute transition-colors hover:bg-surface-2 hover:text-ink"
+              className="mt-1 inline-flex shrink-0 items-center justify-center rounded-full text-ink-mute transition-colors hover:bg-surface-2 hover:text-ink"
               style={{ width: 30, height: 30 }}
             >
               <RoyIcon name="pencil" size={15} strokeWidth={1.9} />
@@ -1001,7 +1001,7 @@ function AgentMeetingDetail({
                   <button
                     type="button"
                     onClick={() => { setNotesDraft(m.draft_notes_md ?? ""); setEditingNotes(true); }}
-                    className="inline-flex items-center gap-1.5 rounded-[10px] border border-line bg-surface font-semibold text-ink-soft transition-[transform,border-color] duration-150 hover:scale-[1.03] hover:border-line-2 active:scale-[0.97]"
+                    className="inline-flex items-center gap-1.5 rounded-full border border-line bg-surface font-semibold text-ink-soft transition-[transform,border-color] duration-150 hover:scale-[1.03] hover:border-line-2 active:scale-[0.97]"
                     style={{ padding: "5px 11px", fontSize: 12 }}
                   >
                     <RoyIcon name="pencil" size={13} strokeWidth={1.9} /> Править
@@ -1076,7 +1076,7 @@ function AgentMeetingDetail({
               <button
                 type="button"
                 onClick={copyTranscript}
-                className="inline-flex items-center gap-1.5 rounded-[10px] border border-line bg-surface font-semibold text-ink-soft transition-[transform,border-color] duration-150 hover:scale-[1.03] hover:border-line-2 active:scale-[0.97]"
+                className="inline-flex items-center gap-1.5 rounded-full border border-line bg-surface font-semibold text-ink-soft transition-[transform,border-color] duration-150 hover:scale-[1.03] hover:border-line-2 active:scale-[0.97]"
                 style={{ padding: "5px 11px", fontSize: 12 }}
               >
                 {copied && <RoyIcon name="check" size={13} strokeWidth={2.2} />}
@@ -1306,7 +1306,7 @@ function ActionsPanel({
             type="button"
             disabled={confirmState !== "idle"}
             onClick={handleConfirm}
-            className="flex w-full items-center justify-center gap-2 rounded-[8px] border-0 font-semibold transition-[transform,opacity,filter] duration-150 hover:scale-[1.02] hover:brightness-105 active:scale-[0.98] disabled:opacity-50"
+            className="flex w-full items-center justify-center gap-2 rounded-full border-0 font-semibold transition-[transform,opacity,filter] duration-150 hover:scale-[1.02] hover:brightness-105 active:scale-[0.98] disabled:opacity-50"
             style={{
               padding: "10px 14px",
               fontSize: 14,
@@ -1325,7 +1325,7 @@ function ActionsPanel({
         type="button"
         disabled={rejectState !== "idle"}
         onClick={handleReject}
-        className="flex w-full items-center justify-center gap-2 rounded-[8px] border border-line bg-surface font-semibold transition-[transform,background,border-color] duration-150 hover:scale-[1.02] hover:border-[var(--pri-high)] active:scale-[0.98] disabled:opacity-50"
+        className="flex w-full items-center justify-center gap-2 rounded-full border border-line bg-surface font-semibold transition-[transform,background,border-color] duration-150 hover:scale-[1.02] hover:border-[var(--pri-high)] active:scale-[0.98] disabled:opacity-50"
         style={{
           padding: "9px 14px",
           fontSize: 14,
@@ -1342,7 +1342,7 @@ function ActionsPanel({
           type="button"
           disabled={reclassState !== "idle"}
           onClick={handleReclassify}
-          className="flex w-full items-center justify-center gap-1.5 rounded-[8px] border border-line bg-surface font-semibold text-ink-soft transition-[transform,background,border-color] duration-150 hover:scale-[1.02] hover:border-line-2 hover:bg-surface-2 active:scale-[0.98] disabled:opacity-50"
+          className="flex w-full items-center justify-center gap-1.5 rounded-full border border-line bg-surface font-semibold text-ink-soft transition-[transform,background,border-color] duration-150 hover:scale-[1.02] hover:border-line-2 hover:bg-surface-2 active:scale-[0.98] disabled:opacity-50"
           style={{ padding: "9px 14px", fontSize: 13.5 }}
         >
           <RoyIcon name="note" size={15} strokeWidth={1.9} />

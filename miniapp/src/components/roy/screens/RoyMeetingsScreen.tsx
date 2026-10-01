@@ -41,7 +41,7 @@ function ActionIcon({ name, label, color, onClick }: { name: RoyIconName; label:
       type="button"
       aria-label={label}
       onClick={(ev) => { ev.stopPropagation(); onClick(); }}
-      className="flex items-center justify-center rounded-[7px] border border-line-2 bg-surface transition-colors hover:bg-surface-2 active:scale-[0.92]"
+      className="flex items-center justify-center rounded-full border border-line-2 bg-surface transition-colors hover:bg-surface-2 active:scale-[0.92]"
       style={{ width: 30, height: 30, color }}
     >
       <RoyIcon name={name} size={15} strokeWidth={1.9} />

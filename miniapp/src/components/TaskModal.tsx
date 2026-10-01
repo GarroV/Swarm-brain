@@ -502,7 +502,7 @@ export function TaskModal({ task: taskProp, open, onClose, onSaved, prefill, mee
                 aria-label="Удалить задачу"
                 title="Удалить задачу"
                 // Тач-цель 40x40: на телефоне кнопка была 29x29 при норме 44 — и это удаление.
-                className="flex size-10 items-center justify-center rounded-[7px] text-ink-soft transition-colors hover:bg-surface-2 hover:text-[var(--pri-high)] active:scale-[0.95] disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+                className="flex size-10 items-center justify-center rounded-full text-ink-soft transition-colors hover:bg-surface-2 hover:text-[var(--pri-high)] active:scale-[0.95] disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
               >
                 <RoyIcon name="trash" size={17} />
               </button>
@@ -511,7 +511,7 @@ export function TaskModal({ task: taskProp, open, onClose, onSaved, prefill, mee
               type="button"
               onClick={handleClose}
               aria-label="Закрыть"
-              className="flex size-10 items-center justify-center rounded-[7px] text-ink-soft transition-colors hover:bg-surface-2 hover:text-ink active:scale-[0.95] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+              className="flex size-10 items-center justify-center rounded-full text-ink-soft transition-colors hover:bg-surface-2 hover:text-ink active:scale-[0.95] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
             >
               <RoyIcon name="x" size={18} />
             </button>
@@ -540,7 +540,7 @@ export function TaskModal({ task: taskProp, open, onClose, onSaved, prefill, mee
               <button
                 type="button"
                 onClick={() => setHydrateAttempt((n) => n + 1)}
-                className="shrink-0 rounded-[7px] border border-line-2 bg-surface px-3 font-medium text-ink transition-colors hover:bg-surface-2 active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+                className="shrink-0 rounded-full border border-line-2 bg-surface px-3 font-medium text-ink transition-colors hover:bg-surface-2 active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
                 style={{ fontSize: 12.5, minHeight: 30 }}
               >
                 {dt("Повторить", "Retry")}
@@ -868,7 +868,7 @@ export function TaskModal({ task: taskProp, open, onClose, onSaved, prefill, mee
               type="button"
               onClick={onClose}
               disabled={creating}
-              className="h-[30px] rounded-[7px] border border-line-2 bg-surface px-3 font-medium text-ink-soft transition-colors hover:bg-surface-2 hover:text-ink active:scale-[0.97] disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+              className="h-[30px] rounded-full border border-line-2 bg-surface px-3 font-medium text-ink-soft transition-colors hover:bg-surface-2 hover:text-ink active:scale-[0.97] disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
               style={{ fontSize: 12.5 }}
             >
               Отмена
@@ -877,7 +877,7 @@ export function TaskModal({ task: taskProp, open, onClose, onSaved, prefill, mee
               type="button"
               onClick={handleCreate}
               disabled={creating}
-              className="h-[30px] rounded-[7px] bg-primary px-3.5 font-semibold text-primary-foreground transition-[transform,background-color] hover:bg-primary/90 active:scale-[0.97] disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+              className="h-[30px] rounded-full bg-primary px-3.5 font-semibold text-primary-foreground transition-[transform,background-color] hover:bg-primary/90 active:scale-[0.97] disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
               style={{ fontSize: 12.5 }}
             >
               {creating ? "Создание…" : "Создать"}

@@ -83,7 +83,7 @@ export function TaskCalendar({ tasks, range, now, users, onOpen }: {
       <div className="flex shrink-0 flex-wrap items-baseline gap-x-2 border-b border-line px-4 py-2 text-ink" style={{ fontSize: 13 }}>
         {drill && (
           <button type="button" onClick={() => setDrill(null)}
-            className="mr-1 inline-flex h-[26px] items-center rounded-[7px] border border-line-2 bg-surface px-2 font-medium text-ink transition-colors hover:bg-surface-2"
+            className="mr-1 inline-flex h-[26px] items-center rounded-full border border-line-2 bg-surface px-2 font-medium text-ink transition-colors hover:bg-surface-2"
             style={{ fontSize: 12 }}>
             ← {dt("К сетке", "Back to grid")}
           </button>

@@ -100,7 +100,7 @@ export function AgentReviewQueue({ onOpen }: Props) {
                   type="button"
                   aria-label="Изменить"
                   onClick={() => onOpen(m.id)}
-                  className="flex h-10 w-10 items-center justify-center rounded-[10px] border border-line-2 bg-surface transition-colors hover:bg-surface-2 active:scale-[0.92]"
+                  className="flex h-10 w-10 items-center justify-center rounded-full border border-line-2 bg-surface transition-colors hover:bg-surface-2 active:scale-[0.92]"
                   style={{ color: "var(--accent-ink)" }}
                 >
                   <RoyIcon name="pencil" size={15} strokeWidth={1.9} />
@@ -109,7 +109,7 @@ export function AgentReviewQueue({ onOpen }: Props) {
                   type="button"
                   aria-label="Удалить"
                   onClick={() => remove(m)}
-                  className="flex h-10 w-10 items-center justify-center rounded-[10px] border border-line-2 bg-surface transition-colors hover:bg-surface-2 active:scale-[0.92]"
+                  className="flex h-10 w-10 items-center justify-center rounded-full border border-line-2 bg-surface transition-colors hover:bg-surface-2 active:scale-[0.92]"
                   style={{ color: "var(--pri-high)" }}
                 >
                   <RoyIcon name="trash" size={15} strokeWidth={1.9} />

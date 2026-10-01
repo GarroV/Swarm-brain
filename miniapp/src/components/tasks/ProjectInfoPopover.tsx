@@ -159,11 +159,11 @@ export function ProjectInfoPopover({ project, stats, subprojectCount, onSave }: 
               {err && <p className="text-xs text-destructive">{err}</p>}
               <div className="flex justify-end gap-2 pt-1">
                 <button type="button" onClick={() => setDraft(null)} disabled={saving}
-                  className="rounded-lg px-3 py-1 text-xs text-ink-soft hover:bg-surface-2">
+                  className="rounded-full px-3 py-1 text-xs text-ink-soft hover:bg-surface-2">
                   {dt("Отмена", "Cancel")}
                 </button>
                 <button type="button" onClick={save} disabled={saving}
-                  className="rounded-lg bg-primary px-3 py-1 text-xs font-semibold text-primary-foreground disabled:opacity-50">
+                  className="rounded-full bg-primary px-3 py-1 text-xs font-semibold text-primary-foreground disabled:opacity-50">
                   {saving ? dt("Сохраняю…", "Saving…") : dt("Сохранить", "Save")}
                 </button>
               </div>

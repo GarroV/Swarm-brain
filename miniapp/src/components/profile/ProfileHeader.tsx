@@ -39,7 +39,7 @@ export function ProfileHeader({ me, open, onToggle }: { me: Me; open: boolean; o
         onClick={onToggle}
         aria-expanded={open}
         aria-label={dt("Редактировать профиль", "Edit profile")}
-        className="shrink-0 rounded-[10px] p-1.5 text-ink-soft transition-colors hover:bg-surface-2 hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-line"
+        className="shrink-0 rounded-full p-1.5 text-ink-soft transition-colors hover:bg-surface-2 hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-line"
       >
         <RoyIcon name="pencil" />
       </button>

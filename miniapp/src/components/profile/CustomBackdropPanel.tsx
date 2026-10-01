@@ -115,7 +115,7 @@ export function CustomBackdropPanel({ rec, onSaved, onDeleted }: {
           type="button"
           disabled={busy}
           onClick={() => input.current?.click()}
-          className="inline-flex h-[30px] items-center gap-1.5 rounded-[7px] bg-primary px-3 font-semibold text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-60"
+          className="inline-flex h-[30px] items-center gap-1.5 rounded-full bg-primary px-3 font-semibold text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-60"
           style={{ fontSize: 12.5 }}
         >
           <RoyIcon name="plus" size={14} strokeWidth={2.2} />
@@ -125,7 +125,7 @@ export function CustomBackdropPanel({ rec, onSaved, onDeleted }: {
           <button
             type="button"
             onClick={() => void remove()}
-            className="inline-flex h-[30px] items-center gap-1.5 rounded-[7px] border border-line-2 bg-surface px-3 font-medium text-ink-soft transition-colors hover:bg-surface-2 hover:text-[var(--pri-high)]"
+            className="inline-flex h-[30px] items-center gap-1.5 rounded-full border border-line-2 bg-surface px-3 font-medium text-ink-soft transition-colors hover:bg-surface-2 hover:text-[var(--pri-high)]"
             style={{ fontSize: 12.5 }}
           >
             <RoyIcon name="trash" size={14} />

@@ -159,7 +159,7 @@ function Action({ on, onClick, children }: { on: boolean; onClick: () => void; c
   return (
     <button type="button" aria-expanded={on} onClick={onClick}
       className={cn(
-        "inline-flex h-[26px] shrink-0 items-center self-start rounded-[7px] border px-2.5 font-medium transition-colors",
+        "inline-flex h-[26px] shrink-0 items-center self-start rounded-full border px-2.5 font-medium transition-colors",
         on ? "border-primary bg-accent-soft text-primary" : "border-line-2 bg-surface text-ink hover:bg-surface-2",
       )}
       style={{ fontSize: 12 }}>

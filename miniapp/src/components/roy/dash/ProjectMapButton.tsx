@@ -51,7 +51,7 @@ export function ProjectMapButton() {
               type="button"
               onClick={() => setOpen(false)}
               aria-label={dt("Закрыть карту", "Close map")}
-              className="flex items-center justify-center rounded-[10px] border border-line-2 bg-surface px-2.5 py-1.5 text-ink-soft transition-colors hover:bg-surface-2 hover:text-ink active:scale-[0.95] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+              className="flex items-center justify-center rounded-full border border-line-2 bg-surface px-2.5 py-1.5 text-ink-soft transition-colors hover:bg-surface-2 hover:text-ink active:scale-[0.95] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
             >
               <RoyIcon name="x" size={18} />
               <span className="ml-1.5 font-semibold" style={{ fontSize: 13 }}>{dt("Закрыть", "Close")}</span>
