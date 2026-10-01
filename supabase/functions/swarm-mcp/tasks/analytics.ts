@@ -10,6 +10,7 @@
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { getTask, listTasks } from "../../_shared/tasks/db.ts";
+import { resolvePersonNames } from "../../_shared/users/display-name.ts";
 import { canViewTask, taskAccessError } from "../../_shared/tasks/access.ts";
 import { computeFlowTimes, computeTaskStats, periodStartISO, type StatsTask } from "../../_shared/tasks/analytics.ts";
 import { ADMIN_USER_ID, fetchProjectRows, resolveGroupId } from "./tools.ts";
@@ -37,16 +38,9 @@ const CHANGES_READ_MULTIPLIER = 4;
 const CHANGES_READ_CAP = 2000;
 const DEFAULT_PERIOD = "week";
 
-/** Имена авторов изменений по telegram_id (fallback — legacy-текст changed_by). */
-async function resolveAuthors(ids: number[]): Promise<Map<number, string>> {
-  const out = new Map<number, string>();
-  if (!ids.length) return out;
-  const { data } = await supabase
-    .from("user_profiles").select("telegram_id, first_name, last_name").in("telegram_id", ids);
-  for (const p of (data ?? []) as Array<{ telegram_id: number; first_name?: string; last_name?: string }>) {
-    out.set(p.telegram_id, [p.first_name, p.last_name].filter(Boolean).join(" ") || String(p.telegram_id));
-  }
-  return out;
+/** Имена авторов изменений по telegram_id — общим резолвом (имя → @username → e-mail, #537). */
+function resolveAuthors(ids: number[]): Promise<Map<number, string>> {
+  return resolvePersonNames(supabase, ids);
 }
 
 type RawJournalRow = {
@@ -61,15 +55,19 @@ type RawJournalRow = {
   created_at: string;
 };
 
+// Нет имени в профилях — legacy-подпись changed_by (если это не тот же номер), затем «#id».
+function journalAuthor(r: RawJournalRow, id: number, names: Map<number, string>): string {
+  const legacy = r.changed_by?.trim();
+  return names.get(id) ?? (legacy && !/^-?\d+$/.test(legacy) ? legacy : `#${id}`);
+}
+
 /** Строка журнала → читаемая. Старые строки без `field` — это всегда смена статуса. */
 function toJournalRow(r: RawJournalRow, names: Map<number, string>): JournalRow {
   return {
     field: r.field ?? "status",
     old_value: r.old_value ?? r.old_status,
     new_value: r.new_value ?? r.new_status,
-    author: r.changed_by_telegram_id
-      ? (names.get(r.changed_by_telegram_id) ?? String(r.changed_by_telegram_id))
-      : (r.changed_by ?? "—"),
+    author: r.changed_by_telegram_id ? journalAuthor(r, r.changed_by_telegram_id, names) : (r.changed_by ?? "—"),
     created_at: r.created_at,
   };
 }

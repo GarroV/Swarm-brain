@@ -4,6 +4,7 @@ import { clearSession, setSession } from "../lib/storage.ts";
 import { assignUserToWorkspace, createWorkspace, listWorkspaces } from "../lib/workspace.ts";
 import type { TgCallbackQuery } from "../lib/types.ts";
 import type { AdminActor, MemberRow } from "../../_shared/users/admin-scope.ts";
+import { personName } from "../../_shared/users/display-name.ts";
 import {
   actionTarget,
   type BotAdminAction,
@@ -16,19 +17,16 @@ import {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
+// Имя → @username → e-mail (вошедшие через Google и приглашённые по почте, #537) → ID.
 function displayName(
   telegramId: number | null,
   username: string | null,
   profiles: Array<{ telegram_id: number; first_name?: string; last_name?: string; username?: string }>,
+  email: string | null = null,
 ): string {
-  if (telegramId !== null) {
-    const p = profiles.find((pr) => pr.telegram_id === telegramId);
-    if (p) {
-      const full = [p.first_name, p.last_name].filter(Boolean).join(" ");
-      if (full) return full;
-    }
-  }
-  if (username) return `@${username}`;
+  const p = telegramId !== null ? profiles.find((pr) => pr.telegram_id === telegramId) : undefined;
+  const name = personName({ first_name: p?.first_name, last_name: p?.last_name, username, email });
+  if (name) return name;
   return telegramId !== null ? `ID:${telegramId}` : "Неизвестный";
 }
 
@@ -178,7 +176,7 @@ export async function handleSuperadminCallbacks(
 
       const { data: users } = await supabase
         .from("allowed_users")
-        .select("telegram_id, username, is_admin")
+        .select("telegram_id, username, email, is_admin")
         .eq("group_id", wsId);
 
       const telegramIds = (users ?? [])
@@ -212,15 +210,20 @@ export async function handleSuperadminCallbacks(
         return true;
       }
 
-      const userRows =
-        (users as Array<{ telegram_id: number | null; username: string | null; is_admin: boolean | null }>).map(
-          (u) => {
-            const name = displayName(u.telegram_id, u.username, profileList);
-            const label = u.is_admin ? `${name} 👑` : name;
-            const tgId = u.telegram_id ?? 0;
-            return [{ text: label, callback_data: `sa_u_${tgId}_${wsId}` }];
-          },
-        );
+      const userRows = (users as Array<
+        { telegram_id: number | null; username: string | null; email: string | null; is_admin: boolean | null }
+      >).map(
+        (u) => {
+          const name = displayName(u.telegram_id, u.username, profileList, u.email);
+          // Приглашён, но ещё не входил: telegram_id нет, карточку по id не открыть — раньше
+          // кнопка вела в карточку «ID: 0» (#537). Нажатие просто обновляет список.
+          if (u.telegram_id === null) {
+            return [{ text: `⏳ ${name} — приглашён`, callback_data: `sa_su_${wsId}` }];
+          }
+          const label = u.is_admin ? `${name} 👑` : name;
+          return [{ text: label, callback_data: `sa_u_${u.telegram_id}_${wsId}` }];
+        },
+      );
       userRows.push([
         { text: "➕ Добавить", callback_data: `sa_add_${wsId}` },
         { text: "🔙 К спейсу", callback_data: `sa_sp_${wsId}` },
@@ -234,10 +237,17 @@ export async function handleSuperadminCallbacks(
     if (data.startsWith("sa_u_")) {
       const rest = data.slice("sa_u_".length);
       const { tgId, wsId } = parseTgIdWsId(rest);
+      // Старые кнопки приглашённых вели сюда с id 0 — карточки у такого человека нет (#537).
+      if (!Number.isFinite(tgId) || tgId === 0) {
+        await editInlineMessage(chatId, cb.message.message_id, "Человек приглашён, но ещё не входил.", [
+          [{ text: "🔙 К пользователям", callback_data: `sa_su_${wsId}` }],
+        ]);
+        return true;
+      }
 
       const { data: userRow } = await supabase
         .from("allowed_users")
-        .select("telegram_id, username, is_admin, group_id")
+        .select("telegram_id, username, email, is_admin, group_id")
         .eq("telegram_id", tgId)
         .maybeSingle();
 
@@ -253,6 +263,7 @@ export async function handleSuperadminCallbacks(
       const uRow = userRow as {
         telegram_id: number | null;
         username: string | null;
+        email: string | null;
         is_admin: boolean | null;
         group_id: string | null;
       } | null;
@@ -261,6 +272,7 @@ export async function handleSuperadminCallbacks(
         tgId,
         uRow?.username ?? (profile as { username?: string } | null)?.username ?? null,
         profileList,
+        uRow?.email ?? null,
       );
       const usernameStr = uRow?.username ?? (profile as { username?: string } | null)?.username ?? null;
       const workspaces = await listWorkspaces();

@@ -75,10 +75,15 @@ export async function handleTaskSubscriptionRoutes(
   if (!m) return null;
   const taskId = m[1];
 
-  const { data } = await onlyLive(supabase.from("tasks").select(TASK_FIELDS)).eq(
+  const { data, error } = await onlyLive(supabase.from("tasks").select(TASK_FIELDS)).eq(
     "id",
     taskId,
   ).maybeSingle();
+  // Сбой чтения — не «задача не найдена» (#537): иначе тумблер молча врёт про подписку.
+  if (error) {
+    console.error(`[swarm-api] task subscription read: ${error.message}`);
+    return json({ error: "Something went wrong. Please try again later." }, 500, origin);
+  }
   const task = (data as SubTaskRow | null) ?? null;
   // 404 и на отсутствие, и на чужой воркспейс/приватность — не палим существование.
   if (

@@ -157,6 +157,7 @@ import {
 import { onlyLive } from "../_shared/tasks/live.ts";
 import { onlyLiveEntries } from "../_shared/entries/live.ts";
 import { archiveEntry } from "../_shared/entries/archive.ts";
+import { personName, resolvePersonNames } from "../_shared/users/display-name.ts";
 
 // Сколько задач отдаём вебу за раз. Дефолт движка (_shared/tasks/db.ts) — 200, и для БОТА он
 // верен: тот печатает список сообщением в чат, дампить туда базу нельзя. Для веба он смертелен —
@@ -217,63 +218,11 @@ async function withEntries(
   }
 }
 
-// Resolve telegram_id → { telegram_id, name } via user_profiles
-// Имена пользователей по telegram_id. ВАЖНО: имя (first/last) — в user_profiles, а
-// username — в allowed_users (НЕ в user_profiles). Раньше код селектил username прямо из
-// user_profiles → PostgREST падал на несуществующей колонке → data=null → имена не
-// резолвились (в UI «#744230399»). Берём first+last, фолбэк на @username, затем «#id».
-export async function resolveNames(
-  ids: number[],
-): Promise<Map<number, string>> {
-  const out = new Map<number, string>();
-  // Один null в `.in(...)` превращает весь запрос в ошибку — и без имён остаются все.
-  ids = ids.filter((id) => typeof id === "number" && Number.isFinite(id));
-  if (ids.length === 0) return out;
-  const [{ data: profs, error: profErr }, { data: aus, error: auErr }] =
-    await Promise.all([
-      supabase.from("user_profiles").select(
-        "telegram_id, first_name, last_name",
-      )
-        .in("telegram_id", ids),
-      supabase.from("allowed_users").select("telegram_id, username").in(
-        "telegram_id",
-        ids,
-      ),
-    ]);
-  if (profErr || auErr) {
-    console.error("[resolveNames]", profErr?.message ?? auErr?.message);
-  }
-  const uname = new Map<number, string>();
-  (aus ?? []).forEach(
-    (u: { telegram_id: number; username?: string | null }) => {
-      if (u.username) uname.set(u.telegram_id, u.username);
-    },
-  );
-  const nameFor = (
-    id: number,
-    first?: string | null,
-    last?: string | null,
-  ): string => {
-    const full = [first, last].filter(Boolean).join(" ");
-    return full || (uname.get(id) ? `@${uname.get(id)}` : "");
-  };
-  (profs ?? []).forEach(
-    (
-      p: {
-        telegram_id: number;
-        first_name?: string | null;
-        last_name?: string | null;
-      },
-    ) => {
-      const name = nameFor(p.telegram_id, p.first_name, p.last_name);
-      if (name) out.set(p.telegram_id, name);
-    },
-  );
-  // id, у которых нет user_profiles, но есть @username
-  ids.forEach((id) => {
-    if (!out.has(id) && uname.get(id)) out.set(id, `@${uname.get(id)}`);
-  });
-  return out;
+// Имена пользователей по telegram_id: «Имя Фамилия» → @username → e-mail (вошедшие через Google,
+// #537). Правило и запросы — в _shared/users/display-name.ts (общие с swarm-mcp). Кого назвать
+// нечем, в карте нет. Обёртка оставлена, т.к. её ждут зависимости модулей (deps.resolveNames).
+export function resolveNames(ids: number[]): Promise<Map<number, string>> {
+  return resolvePersonNames(supabase, ids);
 }
 
 // Прикрепляет к встрече(ам) человекочитаемые имена записавших: recorders[].telegram_id →
@@ -328,7 +277,7 @@ async function withImporterNames<
       ?.added_by_telegram_id;
     const fromMeta = typeof raw === "number"
       ? raw
-      : (typeof raw === "string" && /^\d+$/.test(raw) ? Number(raw) : null);
+      : (typeof raw === "string" && /^-?\d+$/.test(raw) ? Number(raw) : null);
     const own = typeof r.owner_id === "number" ? r.owner_id : null;
     // Фолбэк — кто записал/импортировал (из meetings.recorders), если в самой записи атрибуции нет.
     const fb = (fallbackById && r.id) ? (fallbackById.get(r.id) ?? null) : null;
@@ -717,7 +666,7 @@ Deno.serve(async (req: Request) => {
       supabase.from("user_profiles").select(
         "first_name, last_name, role, markets, ui_backdrop",
       ).eq("telegram_id", telegram_id).maybeSingle(),
-      supabase.from("allowed_users").select("username").eq(
+      supabase.from("allowed_users").select("username, email").eq(
         "telegram_id",
         telegram_id,
       ).maybeSingle(),
@@ -729,11 +678,13 @@ Deno.serve(async (req: Request) => {
       markets?: string[];
       ui_backdrop?: string | null;
     } | null;
-    const username = (allowedUser as { username?: string } | null)?.username ??
-      null;
-    const name =
-      (p ? [p.first_name, p.last_name].filter(Boolean).join(" ") : null) ||
-      username || String(telegram_id);
+    const au = allowedUser as { username?: string | null; email?: string | null } | null;
+    const username = au?.username ?? null;
+    // Вошедший через Google без имени — e-mail, а не номер (#537). username — без «@», как было.
+    const name = personName(
+      { first_name: p?.first_name, last_name: p?.last_name, username, email: au?.email },
+      { usernamePrefix: "" },
+    ) ?? String(telegram_id);
     return json(
       {
         telegram_id,
@@ -830,17 +781,15 @@ Deno.serve(async (req: Request) => {
   if (req.method === "GET" && routePath === "/users") {
     const { data: users } = await supabase
       .from("allowed_users")
-      .select("telegram_id, username")
+      .select("telegram_id, username, email")
       .eq("group_id", groupId);
 
     if (!users?.length) return json([], 200, origin);
 
+    type MemberRow = { telegram_id: number; username: string | null; email: string | null };
     // filter out entries with null telegram_id (users added by username before joining bot)
-    const validUsers =
-      (users as Array<{ telegram_id: number | null; username: string | null }>)
-        .filter((u) => u.telegram_id != null) as Array<
-          { telegram_id: number; username: string | null }
-        >;
+    const validUsers = (users as Array<Omit<MemberRow, "telegram_id"> & { telegram_id: number | null }>)
+      .filter((u) => u.telegram_id != null) as MemberRow[];
     if (!validUsers.length) return json([], 200, origin);
 
     const ids = validUsers.map((u) => u.telegram_id);
@@ -863,12 +812,13 @@ Deno.serve(async (req: Request) => {
 
     const result = validUsers.map((u) => {
       const p = profileMap[u.telegram_id];
-      const fullName = p
-        ? [p.first_name, p.last_name].filter(Boolean).join(" ")
-        : null;
       return {
         telegram_id: u.telegram_id,
-        name: fullName || u.username || String(u.telegram_id),
+        // Нет имени и username (вход через Google) — e-mail, а не номер (#537).
+        name: personName(
+          { first_name: p?.first_name, last_name: p?.last_name, username: u.username, email: u.email },
+          { usernamePrefix: "" },
+        ) ?? String(u.telegram_id),
         username: u.username ?? null,
         role: p?.role ?? null,
         markets: p?.markets ?? [],
@@ -2422,7 +2372,7 @@ Deno.serve(async (req: Request) => {
         const raw = m.recorders?.[0]?.telegram_id;
         const tg = typeof raw === "number"
           ? raw
-          : (typeof raw === "string" && /^\d+$/.test(raw) ? Number(raw) : null);
+          : (typeof raw === "string" && /^-?\d+$/.test(raw) ? Number(raw) : null);
         if (m.entry_id && tg !== null) recMap.set(m.entry_id, tg);
       }
     }

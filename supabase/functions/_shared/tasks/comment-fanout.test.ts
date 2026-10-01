@@ -17,7 +17,9 @@ const MUTED_ASSIGNEE = 70;
 
 type Row = Record<string, unknown>;
 
-function makeDb(subs: Row[], admins: number[]) {
+// failAdminLookups — сколько первых запросов к allowed_users отвечают ошибкой (issue #537).
+function makeDb(subs: Row[], admins: number[], failAdminLookups = 0) {
+  let adminLookupFailures = failAdminLookups;
   const tables: Record<string, Row[]> = {
     task_subscriptions: [...subs],
     allowed_users: [...subs.map((s) => s.telegram_id), ACTOR].map((id) => ({
@@ -32,8 +34,14 @@ function makeDb(subs: Row[], admins: number[]) {
       select: () => q,
       eq: (c: string, v: unknown) => (filters.push((r) => r[c] === v), q),
       in: (c: string, v: unknown[]) => (filters.push((r) => v.includes(r[c])), q),
-      then: (ok: (x: unknown) => unknown) =>
-        Promise.resolve({ data: tables[table].filter((r) => filters.every((f) => f(r))), error: null }).then(ok),
+      then: (ok: (x: unknown) => unknown) => {
+        if (table === "allowed_users" && adminLookupFailures > 0) {
+          adminLookupFailures--;
+          return Promise.resolve({ data: null, error: { message: "boom" } }).then(ok);
+        }
+        return Promise.resolve({ data: tables[table].filter((r) => filters.every((f) => f(r))), error: null })
+          .then(ok);
+      },
       insert: (rows: Row[]) => {
         tables[table].push(...rows);
         return Promise.resolve({ error: null });
@@ -127,4 +135,28 @@ Deno.test("автор подписывается участием, ранее о
   const state = (id: number) => tables.task_subscriptions.find((r) => r.telegram_id === id)?.state;
   assertEquals(state(ACTOR), "subscribed");
   assertEquals(state(MUTED_ASSIGNEE), "muted");
+});
+
+Deno.test("разовая ошибка запроса админов не лишает админа уведомления о приватной задаче", async () => {
+  const { client, tables } = makeDb(SUBS, [ADMIN_SUB], 1);
+  await withPushSpy(async () => {
+    await afterTaskComment(client, input(true));
+  });
+  assertEquals(tables.notifications.map((n) => n.recipient_telegram_id), [OWNER, ADMIN_SUB]);
+});
+
+Deno.test("стойкая ошибка запроса админов — громко в лог, оверсайт не выдаётся вслепую", async () => {
+  const { client, tables } = makeDb(SUBS, [ADMIN_SUB], 99);
+  const logged: unknown[][] = [];
+  const realError = console.error;
+  console.error = (...args: unknown[]) => void logged.push(args);
+  try {
+    await withPushSpy(async () => {
+      await afterTaskComment(client, input(true));
+    });
+  } finally {
+    console.error = realError;
+  }
+  assertEquals(tables.notifications.map((n) => n.recipient_telegram_id), [OWNER]);
+  assertEquals(logged.some((a) => String(a[0]).includes("is_admin lookup failed")), true);
 });
