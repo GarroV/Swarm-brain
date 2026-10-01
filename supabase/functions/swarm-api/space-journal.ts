@@ -90,6 +90,7 @@ async function visibleTasks(
   ];
   if (taskIds.length === 0) return titles;
 
+  // archive-ok: журнал пространства подписывает события, в том числе об архивной задаче
   let q = supabase.from("tasks")
     .select("id, title")
     .eq("group_id", groupId).in("id", taskIds);

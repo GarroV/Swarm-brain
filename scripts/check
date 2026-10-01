@@ -264,7 +264,13 @@ if [[ "$scope" == "all" || "$scope" == "server" ]]; then
     )"
     touched=()
     while IFS= read -r f; do
-      [ -n "$f" ] && [ -f "$f" ] && touched+=("$f")
+      [ -n "$f" ] && [ -f "$f" ] || continue
+      # Файл доски инициатив (scripts/feature-paths.txt) форматом и линтом уже проверяет гейт
+      # доски — с корневым deno.json (ширина 80). Здесь действует supabase/functions/deno.json
+      # (ширина 120), и два канона на один файл несовместимы: любая правка такого файла
+      # краснела бы тут при зелёной доске или наоборот (issue #690).
+      grep -qxF -- "$f" scripts/feature-paths.txt && continue
+      touched+=("$f")
     done <<< "$touched_list"
 
     if [ "${#touched[@]}" -gt 0 ]; then

@@ -1,22 +1,29 @@
-import { supabase, ADMIN_USER_ID, isAdminUser } from "../lib/supabase.ts";
-import { sendMessage, sendInlineMessage, editInlineMessage, buildKeyboard } from "../lib/telegram.ts";
-import { setSession, clearSession } from "../lib/storage.ts";
+import { ADMIN_USER_ID, isAdminUser, supabase } from "../lib/supabase.ts";
+import { buildKeyboard, editInlineMessage, sendInlineMessage, sendMessage } from "../lib/telegram.ts";
+import { clearSession, setSession } from "../lib/storage.ts";
 import type { Task, TgCallbackQuery } from "../lib/types.ts";
 import { sendTaskCard } from "../tasks/index.ts";
 import { generateNameAliases } from "../lib/name-aliases.ts";
 import { assignUserToWorkspace } from "../lib/workspace.ts";
+import { onlyLive } from "../../_shared/tasks/live.ts";
 
 const TELEGRAM_BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN")!;
 
 export const PROFILE_FIELDS: Record<string, string> = {
   first_name: "Имя",
-  last_name:  "Фамилия",
-  role:       "Роль",
-  markets:    "Рынки (через запятую)",
-  email:      "Email",
+  last_name: "Фамилия",
+  role: "Роль",
+  markets: "Рынки (через запятую)",
+  email: "Email",
 };
 
-export async function handleUsers(chatId: number, adminId: number, argText: string, groupId: string, messageId?: number): Promise<void> {
+export async function handleUsers(
+  chatId: number,
+  _adminId: number,
+  argText: string,
+  groupId: string,
+  messageId?: number,
+): Promise<void> {
   const parts = argText.trim().split(/\s+/);
   const sub = parts[0]?.toLowerCase();
   const targetArg = parts[1];
@@ -27,20 +34,27 @@ export async function handleUsers(chatId: number, adminId: number, argText: stri
       .select("telegram_id, username")
       .eq("group_id", groupId)
       .order("created_at");
-    if (error) { await sendMessage(chatId, `Ошибка: ${error.message}`); return; }
+    if (error) {
+      await sendMessage(chatId, `Ошибка: ${error.message}`);
+      return;
+    }
 
     // Строка без telegram_id — приглашение, по которому человек ещё не вошёл: ни кнопки
     // «pu_null», ни «ID null». Показываем их отдельно, по @username.
     type Row = { telegram_id: number | null; username: string | null };
     const rows = (data ?? []) as Row[];
-    const allUsers = rows.filter((u): u is { telegram_id: number; username: string | null } => typeof u.telegram_id === "number");
+    const allUsers = rows.filter((u): u is { telegram_id: number; username: string | null } =>
+      typeof u.telegram_id === "number"
+    );
     const pending = rows.filter((u) => u.telegram_id === null && u.username);
     const ids = allUsers.map((u) => u.telegram_id);
     const { data: profiles, error: profErr } = ids.length
       ? await supabase.from("user_profiles").select("*").in("telegram_id", ids)
       : { data: [], error: null };
     if (profErr) console.error("[/users list] profiles", profErr.message);
-    const profileMap = Object.fromEntries((profiles ?? []).map((p: { telegram_id: number; first_name?: string; last_name?: string }) => [p.telegram_id, p]));
+    const profileMap = Object.fromEntries(
+      (profiles ?? []).map((p: { telegram_id: number; first_name?: string; last_name?: string }) => [p.telegram_id, p]),
+    );
 
     const lines = allUsers.map((u) => {
       const p = profileMap[u.telegram_id];
@@ -60,40 +74,82 @@ export async function handleUsers(chatId: number, adminId: number, argText: stri
     userButtons.push([{ text: "➕ Добавить пользователя", callback_data: "ua_add" }]);
 
     messageId
-      ? await editInlineMessage(chatId, messageId, `<b>Пользователи (${allUsers.length}):</b>\n\n${lines.join("\n")}`, userButtons)
-      : await sendInlineMessage(chatId, `<b>Пользователи (${allUsers.length}):</b>\n\n${lines.join("\n")}`, userButtons);
+      ? await editInlineMessage(
+        chatId,
+        messageId,
+        `<b>Пользователи (${allUsers.length}):</b>\n\n${lines.join("\n")}`,
+        userButtons,
+      )
+      : await sendInlineMessage(
+        chatId,
+        `<b>Пользователи (${allUsers.length}):</b>\n\n${lines.join("\n")}`,
+        userButtons,
+      );
     return;
   }
 
   if (sub === "add") {
-    if (!targetArg) { await sendMessage(chatId, "Использование: /users add [telegram_id или @username]"); return; }
+    if (!targetArg) {
+      await sendMessage(chatId, "Использование: /users add [telegram_id или @username]");
+      return;
+    }
     // Единый путь для бота и веба — _shared/users/membership.ts (по id: move/insert; по @username:
     // регистронезависимый find-or-insert ожидающей строки). added_by = ADMIN_USER_ID (как в superadmin/web).
     const numeric = /^\d+$/.test(targetArg);
     const result = await assignUserToWorkspace(numeric ? Number(targetArg) : null, numeric ? null : targetArg, groupId);
     if (result !== "ok") {
-      await sendMessage(chatId, result === "workspace_not_found" ? "Спейс не найден." : "Использование: /users add [telegram_id или @username]");
+      await sendMessage(
+        chatId,
+        result === "workspace_not_found" ? "Спейс не найден." : "Использование: /users add [telegram_id или @username]",
+      );
       return;
     }
-    await sendMessage(chatId, numeric
-      ? `Пользователь ${targetArg} добавлен.`
-      : `@${targetArg.replace(/^@/, "")} добавлен. ID подтянется автоматически, когда напишет боту.`);
+    await sendMessage(
+      chatId,
+      numeric
+        ? `Пользователь ${targetArg} добавлен.`
+        : `@${targetArg.replace(/^@/, "")} добавлен. ID подтянется автоматически, когда напишет боту.`,
+    );
     return;
   }
 
   if (sub === "remove") {
-    if (!targetArg) { await sendMessage(chatId, "Использование: /users remove [telegram_id или @username]"); return; }
+    if (!targetArg) {
+      await sendMessage(chatId, "Использование: /users remove [telegram_id или @username]");
+      return;
+    }
     if (targetArg.startsWith("@")) {
       const uname = targetArg.slice(1);
-      const { error, count } = await supabase.from("allowed_users").delete({ count: "exact" }).eq("username", uname).is("telegram_id", null);
-      if (error) { await sendMessage(chatId, `Ошибка: ${error.message}`); return; }
+      const { error, count } = await supabase.from("allowed_users").delete({ count: "exact" }).eq("username", uname).is(
+        "telegram_id",
+        null,
+      );
+      if (error) {
+        await sendMessage(chatId, `Ошибка: ${error.message}`);
+        return;
+      }
       await sendMessage(chatId, count === 0 ? `@${uname} не найден (без ID).` : `@${uname} удалён (${count} записей).`);
     } else {
-      if (isNaN(Number(targetArg))) { await sendMessage(chatId, "Использование: /users remove [telegram_id или @username]"); return; }
-      if (Number(targetArg) === ADMIN_USER_ID) { await sendMessage(chatId, "Нельзя удалить администратора."); return; }
-      const { error, count } = await supabase.from("allowed_users").delete({ count: "exact" }).eq("telegram_id", Number(targetArg));
-      if (error) { await sendMessage(chatId, `Ошибка: ${error.message}`); return; }
-      await sendMessage(chatId, count === 0 ? `Пользователь ${targetArg} не найден.` : `Пользователь ${targetArg} удалён.`);
+      if (isNaN(Number(targetArg))) {
+        await sendMessage(chatId, "Использование: /users remove [telegram_id или @username]");
+        return;
+      }
+      if (Number(targetArg) === ADMIN_USER_ID) {
+        await sendMessage(chatId, "Нельзя удалить администратора.");
+        return;
+      }
+      const { error, count } = await supabase.from("allowed_users").delete({ count: "exact" }).eq(
+        "telegram_id",
+        Number(targetArg),
+      );
+      if (error) {
+        await sendMessage(chatId, `Ошибка: ${error.message}`);
+        return;
+      }
+      await sendMessage(
+        chatId,
+        count === 0 ? `Пользователь ${targetArg} не найден.` : `Пользователь ${targetArg} удалён.`,
+      );
     }
     return;
   }
@@ -103,7 +159,10 @@ export async function handleUsers(chatId: number, adminId: number, argText: stri
     return;
   }
 
-  await sendMessage(chatId, "Подкоманды: /users list · /users add [id/@username] · /users remove [id] · /users profile [id]");
+  await sendMessage(
+    chatId,
+    "Подкоманды: /users list · /users add [id/@username] · /users remove [id] · /users profile [id]",
+  );
 }
 
 export async function startOnboarding(chatId: number): Promise<void> {
@@ -113,7 +172,8 @@ export async function startOnboarding(chatId: number): Promise<void> {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       chat_id: chatId,
-      text: "Давай познакомимся! Заполним твой профиль — это займёт минуту.\n\n<b>Шаг 1/4.</b> Какая у тебя роль в команде?\n\n<i>Например: Девелопер, Маркетинг, BD, Операции</i>",
+      text:
+        "Давай познакомимся! Заполним твой профиль — это займёт минуту.\n\n<b>Шаг 1/4.</b> Какая у тебя роль в команде?\n\n<i>Например: Девелопер, Маркетинг, BD, Операции</i>",
       parse_mode: "HTML",
       reply_markup: { inline_keyboard: [[{ text: "Пропустить →", callback_data: "onboard_skip_role" }]] },
     }),
@@ -123,7 +183,10 @@ export async function startOnboarding(chatId: number): Promise<void> {
 export async function showProfile(chatId: number, targetId: number, messageId?: number): Promise<void> {
   const { data: user } = await supabase
     .from("allowed_users").select("telegram_id, username").eq("telegram_id", targetId).maybeSingle();
-  if (!user) { await sendMessage(chatId, "Пользователь не найден."); return; }
+  if (!user) {
+    await sendMessage(chatId, "Пользователь не найден.");
+    return;
+  }
 
   const { data: profile } = await supabase
     .from("user_profiles").select("*").eq("telegram_id", targetId).maybeSingle();
@@ -140,7 +203,10 @@ export async function showProfile(chatId: number, targetId: number, messageId?: 
   ].filter(Boolean).join("\n");
 
   const keyboard = [
-    [{ text: "✏️ Редактировать", callback_data: `pe_menu_${targetId}` }, { text: "📋 Задачи", callback_data: `ptasks_${targetId}` }],
+    [{ text: "✏️ Редактировать", callback_data: `pe_menu_${targetId}` }, {
+      text: "📋 Задачи",
+      callback_data: `ptasks_${targetId}`,
+    }],
     ...(targetId !== ADMIN_USER_ID ? [[{ text: "🗑 Удалить", callback_data: `udel_${targetId}` }]] : []),
     [{ text: "← Список", callback_data: "ua_list" }],
   ];
@@ -159,14 +225,19 @@ export async function handleProfileTasks(chatId: number, targetId: number): Prom
   const fullName = [profile?.first_name, profile?.last_name].filter(Boolean).join(" ");
   const searchName = fullName || user?.username || String(targetId);
 
-  const { data: allTasks, error } = await supabase
-    .from("tasks")
-    .select("*")
+  const { data: allTasks, error } = await onlyLive(
+    supabase
+      .from("tasks")
+      .select("*"),
+  )
     .not("status", "in", '("done","cancelled")')
-    .eq("is_private", false)  // личные задачи (Рой) не показываем в командном списке по юзеру
+    .eq("is_private", false) // личные задачи (Рой) не показываем в командном списке по юзеру
     .order("due_date", { ascending: true });
 
-  if (error) { await sendMessage(chatId, `Ошибка: ${error.message}`); return; }
+  if (error) {
+    await sendMessage(chatId, `Ошибка: ${error.message}`);
+    return;
+  }
 
   const nameLower = searchName.toLowerCase();
   const tasks = (allTasks ?? [])
@@ -244,7 +315,7 @@ export async function handleProfileEdit(
   chatId: number,
   targetId: number,
   field: string,
-  value: string
+  value: string,
 ): Promise<void> {
   const label = PROFILE_FIELDS[field] ?? field;
   const updateData: Record<string, unknown> = {
@@ -279,7 +350,10 @@ export async function handleProfileEdit(
   }
 
   await sendInlineMessage(chatId, `✅ <b>${label}</b> сохранено.`, [
-    [{ text: "✏️ Ещё поля", callback_data: `pe_menu_${targetId}` }, { text: "← Профиль", callback_data: `pu_${targetId}` }],
+    [{ text: "✏️ Ещё поля", callback_data: `pe_menu_${targetId}` }, {
+      text: "← Профиль",
+      callback_data: `pu_${targetId}`,
+    }],
   ]);
 }
 
@@ -297,12 +371,18 @@ export async function handleUserCallbacks(
     return true;
   }
   if (data === "ua_add") {
-    await sendMessage(chatId, "Для добавления пользователя отправь команду:\n\n<code>/users add @username</code>\n\nили\n\n<code>/users add 123456789</code>");
+    await sendMessage(
+      chatId,
+      "Для добавления пользователя отправь команду:\n\n<code>/users add @username</code>\n\nили\n\n<code>/users add 123456789</code>",
+    );
     return true;
   }
   if (data.startsWith("udel_")) {
     const targetId = Number(data.replace("udel_", ""));
-    const { data: profile } = await supabase.from("user_profiles").select("first_name, last_name").eq("telegram_id", targetId).maybeSingle();
+    const { data: profile } = await supabase.from("user_profiles").select("first_name, last_name").eq(
+      "telegram_id",
+      targetId,
+    ).maybeSingle();
     const name = [profile?.first_name, profile?.last_name].filter(Boolean).join(" ") || `ID ${targetId}`;
     await editInlineMessage(chatId, msgId, `Удалить <b>${name}</b> из базы?\n\nПользователь потеряет доступ к боту.`, [[
       { text: "✅ Да, удалить", callback_data: `udelc_${targetId}` },
@@ -312,7 +392,10 @@ export async function handleUserCallbacks(
   }
   if (data.startsWith("udelc_")) {
     const targetId = Number(data.replace("udelc_", ""));
-    const { data: profile } = await supabase.from("user_profiles").select("first_name, last_name").eq("telegram_id", targetId).maybeSingle();
+    const { data: profile } = await supabase.from("user_profiles").select("first_name, last_name").eq(
+      "telegram_id",
+      targetId,
+    ).maybeSingle();
     const name = [profile?.first_name, profile?.last_name].filter(Boolean).join(" ") || `ID ${targetId}`;
     await supabase.from("allowed_users").delete().eq("telegram_id", targetId);
     await sendMessage(chatId, `✅ ${name} удалён.`);
@@ -336,7 +419,8 @@ export async function handleUserCallbacks(
     const targetId = Number(parts[1]);
     const field = parts.slice(2).join("_");
     const label = PROFILE_FIELDS[field] ?? field;
-    const { data: currentProfile } = await supabase.from("user_profiles").select(field).eq("telegram_id", targetId).maybeSingle();
+    const { data: currentProfile } = await supabase.from("user_profiles").select(field).eq("telegram_id", targetId)
+      .maybeSingle();
     const currentValue = (currentProfile as Record<string, unknown> | null)?.[field];
     const currentStr = Array.isArray(currentValue)
       ? (currentValue as string[]).join(", ")
@@ -352,7 +436,11 @@ export async function handleUserCallbacks(
   }
   if (data.startsWith("onboard_skip_")) {
     const step = data.replace("onboard_skip_", "");
-    const nextStep: Record<string, string> = { role: "onboard_markets", markets: "onboard_email", email: "onboard_phone" };
+    const nextStep: Record<string, string> = {
+      role: "onboard_markets",
+      markets: "onboard_email",
+      email: "onboard_phone",
+    };
     const nextMsg: Record<string, string> = {
       role: "<b>Шаг 2/4.</b> За какие рынки/страны отвечаешь?\n\n<i>Перечисли через запятую: Словения, Болгария</i>",
       markets: "<b>Шаг 3/4.</b> Рабочий email?",
@@ -365,8 +453,16 @@ export async function handleUserCallbacks(
     } else {
       await setSession(chatId, nextStep[step]);
       await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ chat_id: chatId, text: nextMsg[step], parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "Пропустить →", callback_data: `onboard_skip_${nextSkip[step]}` }]] } }),
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          chat_id: chatId,
+          text: nextMsg[step],
+          parse_mode: "HTML",
+          reply_markup: {
+            inline_keyboard: [[{ text: "Пропустить →", callback_data: `onboard_skip_${nextSkip[step]}` }]],
+          },
+        }),
       });
     }
     return true;
@@ -379,42 +475,76 @@ export async function handleUserSessionInput(
   chatId: number,
   userId: number,
   action: string,
-  text: string
+  text: string,
 ): Promise<boolean> {
   if (action === "onboard_role") {
     await clearSession(chatId);
-    await supabase.from("user_profiles").upsert({ telegram_id: userId, role: text.trim(), updated_at: new Date().toISOString() }, { onConflict: "telegram_id" });
+    await supabase.from("user_profiles").upsert({
+      telegram_id: userId,
+      role: text.trim(),
+      updated_at: new Date().toISOString(),
+    }, { onConflict: "telegram_id" });
     await setSession(chatId, "onboard_markets");
     await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ chat_id: chatId, text: "✅ Роль сохранена!\n\n<b>Шаг 2/4.</b> За какие рынки/страны отвечаешь?\n\n<i>Перечисли через запятую: Словения, Болгария, Румыния</i>", parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "Пропустить →", callback_data: "onboard_skip_markets" }]] } }),
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        chat_id: chatId,
+        text:
+          "✅ Роль сохранена!\n\n<b>Шаг 2/4.</b> За какие рынки/страны отвечаешь?\n\n<i>Перечисли через запятую: Словения, Болгария, Румыния</i>",
+        parse_mode: "HTML",
+        reply_markup: { inline_keyboard: [[{ text: "Пропустить →", callback_data: "onboard_skip_markets" }]] },
+      }),
     });
     return true;
   }
   if (action === "onboard_markets") {
     await clearSession(chatId);
-    const markets = text.split(",").map(s => s.trim()).filter(Boolean);
-    await supabase.from("user_profiles").upsert({ telegram_id: userId, markets, updated_at: new Date().toISOString() }, { onConflict: "telegram_id" });
+    const markets = text.split(",").map((s) => s.trim()).filter(Boolean);
+    await supabase.from("user_profiles").upsert(
+      { telegram_id: userId, markets, updated_at: new Date().toISOString() },
+      { onConflict: "telegram_id" },
+    );
     await setSession(chatId, "onboard_email");
     await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ chat_id: chatId, text: "✅ Рынки сохранены!\n\n<b>Шаг 3/4.</b> Рабочий email?", parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "Пропустить →", callback_data: "onboard_skip_email" }]] } }),
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        chat_id: chatId,
+        text: "✅ Рынки сохранены!\n\n<b>Шаг 3/4.</b> Рабочий email?",
+        parse_mode: "HTML",
+        reply_markup: { inline_keyboard: [[{ text: "Пропустить →", callback_data: "onboard_skip_email" }]] },
+      }),
     });
     return true;
   }
   if (action === "onboard_email") {
     await clearSession(chatId);
-    await supabase.from("user_profiles").upsert({ telegram_id: userId, email: text.trim(), updated_at: new Date().toISOString() }, { onConflict: "telegram_id" });
+    await supabase.from("user_profiles").upsert({
+      telegram_id: userId,
+      email: text.trim(),
+      updated_at: new Date().toISOString(),
+    }, { onConflict: "telegram_id" });
     await setSession(chatId, "onboard_phone");
     await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ chat_id: chatId, text: "✅ Email сохранён!\n\n<b>Шаг 4/4.</b> Номер телефона? (необязательно)", parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "Пропустить →", callback_data: "onboard_skip_phone" }]] } }),
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        chat_id: chatId,
+        text: "✅ Email сохранён!\n\n<b>Шаг 4/4.</b> Номер телефона? (необязательно)",
+        parse_mode: "HTML",
+        reply_markup: { inline_keyboard: [[{ text: "Пропустить →", callback_data: "onboard_skip_phone" }]] },
+      }),
     });
     return true;
   }
   if (action === "onboard_phone") {
     await clearSession(chatId);
-    await supabase.from("user_profiles").upsert({ telegram_id: userId, phone: text.trim(), updated_at: new Date().toISOString() }, { onConflict: "telegram_id" });
+    await supabase.from("user_profiles").upsert({
+      telegram_id: userId,
+      phone: text.trim(),
+      updated_at: new Date().toISOString(),
+    }, { onConflict: "telegram_id" });
     await sendMessage(chatId, "✅ Готово! Профиль заполнен.", buildKeyboard());
     await showProfile(chatId, userId);
     return true;

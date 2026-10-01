@@ -13,6 +13,7 @@
 // импортируют по адресу; короткие имена оставлены тестам, которые не раскатываются.
 // deno-lint-ignore-file no-import-prefix
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { onlyLive } from "./live.ts";
 
 const supabase = createClient(
   Deno.env.get("SUPABASE_URL")!,
@@ -154,7 +155,9 @@ async function loadAllItems(
   );
   const live = new Map<string, Record<string, unknown>>();
   if (liveIds.length > 0) {
-    const { data: tasks } = await supabase.from("tasks").select(TASK_FIELDS).in(
+    const { data: tasks } = await onlyLive(
+      supabase.from("tasks").select(TASK_FIELDS),
+    ).in(
       "id",
       liveIds,
     );
@@ -284,8 +287,10 @@ export async function addItems(
     .maybeSingle();
   if (!cycle || (cycle as { status: string }).status === "accepted") return 0;
 
-  const { data: tasks } = await supabase.from("tasks")
-    .select("id, status")
+  const { data: tasks } = await onlyLive(
+    supabase.from("tasks")
+      .select("id, status"),
+  )
     .in("id", taskIds).eq("group_id", groupId).eq("is_private", false);
   const allowed = (tasks ?? []) as { id: string; status: string }[];
   if (allowed.length === 0) return 0;

@@ -3,18 +3,20 @@
 #
 # Каждая строка отвечает на вопрос «если убрать это условие, тест покраснеет?». Если нет —
 # условие держится ни на чём, и в базе оно осталось только потому, что его никто не проверял.
-# Сначала — строки старой миграции: их восстановление накатывает 20260918120000 целиком, вместе со
-# старой функцией приёмки. Строки новой (#576) идут после — их восстановление возвращает живую редакцию.
+# Приёмку спринта (accept_sprint_cycle) переопределяют две миграции: 20261001140000 (#576, снятые
+# не едут) и 20261001180000 (#575, архивные не едут). Живая редакция — последняя, 180000, и она несёт
+# оба условия, поэтому строки приёмки ломают её. Порча старой миграции доски перекатывает поздних
+# соседей следом (replay в scripts/porcha-sql) — порядок строк здесь не важен.
 before delete on public.tasks|before insert on public.tasks|supabase/functions/_shared/tasks/sprint-accept.db.test.ts
 and frozen_at is null|and true|supabase/functions/_shared/tasks/sprint-accept.db.test.ts
-and t.is_private = false|and true|supabase/functions/_shared/tasks/sprint-accept.db.test.ts|supabase/migrations/20261001140000_sprint_items_withdrawn.sql
+and t.is_private = false|and true|supabase/functions/_shared/tasks/sprint-accept.db.test.ts|supabase/migrations/20261001180000_archived_tasks_leave_sprints.sql
 # Условия «на всякий случай» сюда не попадают: их порча краснеть не заставит, потому что они
 # ничего не держат. Такое условие не вносится в список, а убирается из SQL — 18.09.2026 так
 # ушло `si.removed_at is null` из приёмки: упоминание отсекает соединение по внешнему ключу.
-si.carry_count + 1|si.carry_count|supabase/functions/_shared/tasks/sprint-accept.db.test.ts|supabase/migrations/20261001140000_sprint_items_withdrawn.sql
-v_cycle.status <> 'active'|v_cycle.status = 'нет такого статуса'|supabase/functions/_shared/tasks/sprint-accept.db.test.ts|supabase/migrations/20261001140000_sprint_items_withdrawn.sql
-# #576: снятая из идущего спринта задача не переносится — функция приёмки живёт в новой миграции.
-and si.withdrawn_at is null|and true|supabase/functions/swarm-api/sprint-routes.db.test.ts|supabase/migrations/20261001140000_sprint_items_withdrawn.sql
+si.carry_count + 1|si.carry_count|supabase/functions/_shared/tasks/sprint-accept.db.test.ts|supabase/migrations/20261001180000_archived_tasks_leave_sprints.sql
+v_cycle.status <> 'active'|v_cycle.status = 'нет такого статуса'|supabase/functions/_shared/tasks/sprint-accept.db.test.ts|supabase/migrations/20261001180000_archived_tasks_leave_sprints.sql
+# #576: снятая из идущего спринта задача не переносится — условие живёт в итоговой редакции приёмки.
+and si.withdrawn_at is null|and true|supabase/functions/swarm-api/sprint-routes.db.test.ts|supabase/migrations/20261001180000_archived_tasks_leave_sprints.sql
 # Сброс демо (issue #580). Четвёртое поле — миграция сброса. Порча, РАСШИРЯЮЩАЯ удаление за
 # пределы демо, здесь только точечная — на строку тестового пользователя 800000901: тестовый
 # контур общий, и порча «удалить без условия» стёрла бы чужие данные на самом стенде.
@@ -50,3 +52,10 @@ revoke all on function public.search_entries_by_country(text, text, bigint) from
 if (to_jsonb(v_row) -> v_key) is distinct from (p_expect -> v_key) then|if false then|supabase/functions/_shared/tasks/task-update.db.test.ts|supabase/migrations/20261001130000_task_apply_update.sql
    for update;|   ;|supabase/functions/_shared/tasks/task-update.db.test.ts|supabase/migrations/20261001130000_task_apply_update.sql
 revoke all on function public.task_apply_update(uuid, jsonb, jsonb, jsonb) from public, anon, authenticated;|grant execute on function public.task_apply_update(uuid, jsonb, jsonb, jsonb) to anon;|supabase/functions/_shared/tasks/task-update.db.test.ts|supabase/migrations/20261001130000_task_apply_update.sql
+# Архивная задача уходит из спринтов и пингов (issue #575). Миграция переопределяет приёмку,
+# поэтому порча старой миграции доски перекатывает и эту следом (replay в scripts/porcha-sql).
+       and t.archived_at is null|       and true|supabase/functions/_shared/tasks/archive-sprint.db.test.ts|supabase/migrations/20261001180000_archived_tasks_leave_sprints.sql
+after update of archived_at on public.tasks|after insert on public.tasks|supabase/functions/_shared/tasks/archive-sprint.db.test.ts|supabase/migrations/20261001180000_archived_tasks_leave_sprints.sql
+elsif old.archived_at is not null and new.archived_at is null then|elsif false then|supabase/functions/_shared/tasks/archive-sprint.db.test.ts|supabase/migrations/20261001180000_archived_tasks_leave_sprints.sql
+and frozen_at is null  -- принятый спринт не трогаем|and true|supabase/functions/_shared/tasks/archive-sprint.db.test.ts|supabase/migrations/20261001180000_archived_tasks_leave_sprints.sql
+new.ping_delivered_to := '{}';|null;|supabase/functions/_shared/tasks/archive-sprint.db.test.ts|supabase/migrations/20261001180000_archived_tasks_leave_sprints.sql

@@ -227,6 +227,7 @@ export async function toolGetRecentTaskChanges(
 
   // Видимость: журнал сам по себе не знает приватности — спрашиваем задачи.
   const isAdmin = args.requesting_user_id === ADMIN_USER_ID;
+  // archive-ok: журнал изменений: у архивной задачи тоже есть история, и «кто её убрал» — ровно то, что в нём ищут
   const { data: taskRows } = await supabase
     .from("tasks").select("id, title, group_id, is_private, owner_id")
     .in("id", [...new Set(raw.map((r) => r.task_id))]);

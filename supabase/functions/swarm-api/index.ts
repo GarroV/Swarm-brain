@@ -153,6 +153,7 @@ import {
   maintenanceVerdict,
   readMaintenance,
 } from "../_shared/maintenance.ts";
+import { onlyLive } from "../_shared/tasks/live.ts";
 
 // Сколько задач отдаём вебу за раз. Дефолт движка (_shared/tasks/db.ts) — 200, и для БОТА он
 // верен: тот печатает список сообщением в чат, дампить туда базу нельзя. Для веба он смертелен —
@@ -1161,9 +1162,9 @@ Deno.serve(async (req: Request) => {
       // parent_id при создании (подзадача): родитель того же воркспейса. Если задан — форсим project_linked.
       const parentId = (body.parent_id as string | null) ?? null;
       if (parentId) {
-        const { data: par } = await supabase.from("tasks").select(
+        const { data: par } = await onlyLive(supabase.from("tasks").select(
           "id, project_id, group_id",
-        ).eq("id", parentId).maybeSingle();
+        )).eq("id", parentId).maybeSingle();
         if (!par || par.group_id !== groupId) {
           return apiErr(400, "parent_id не найден в этом воркспейсе", origin);
         }
@@ -1415,13 +1416,14 @@ Deno.serve(async (req: Request) => {
               origin,
             );
           }
-          const { data: par } = await supabase.from("tasks").select(
+          const { data: par } = await onlyLive(supabase.from("tasks").select(
             "id, group_id",
-          ).eq("id", rawParent).maybeSingle();
+          )).eq("id", rawParent).maybeSingle();
           if (!par || par.group_id !== groupId) {
             return apiErr(400, "parent_id не найден в этом воркспейсе", origin);
           }
           // цикл: rawParent не должен быть потомком текущей задачи (идём вверх по parent_id)
+          // archive-ok: обход дерева на цикл: архивная задача остаётся звеном parent_id, пропуск дал бы ложное «цикла нет»
           const sibQ = supabase.from("tasks").select("id, parent_id").eq(
             "group_id",
             groupId,
@@ -1508,6 +1510,7 @@ Deno.serve(async (req: Request) => {
         // Каскад: если задача ушла из дерева (project_linked=false) — её поддерево тоже в бэклог
         // (иначе висели бы подзадачи с родителем-в-бэклоге, нарушая инвариант дерева).
         if (fields.project_linked === false) {
+          // archive-ok: каскад в бэклог идёт по всему поддереву, архив не мешает
           const sibQ = supabase.from("tasks").select("id, parent_id").eq(
             "group_id",
             groupId,

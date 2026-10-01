@@ -12,6 +12,7 @@
 
 import { canViewTask } from "../../_shared/tasks/access.ts";
 import { TASK_TZ, todayInTz } from "../../_shared/tasks/recurrence.ts";
+import { addDays } from "../../_shared/tasks/due.ts";
 
 // Часовой пояс и календарный «сегодня» — канон в _shared/tasks/recurrence.ts (одна копия
 // на весь модуль задач: перекат регулярных и пинги обязаны считать один и тот же день).
@@ -22,14 +23,18 @@ const MONTHS_SHORT = ["янв", "фев", "мар", "апр", "мая", "июн"
 export interface PingRow {
   id: string;
   title: string;
-  remind_date: string | null;  // YYYY-MM-DD — день, когда напомнить
-  due_date: string | null;     // YYYY-MM-DD — срок, показываем в напоминании
+  remind_date: string | null; // YYYY-MM-DD — день, когда напомнить
+  due_date: string | null; // YYYY-MM-DD — срок, показываем в напоминании
   status: string;
   is_private: boolean;
   assignee_telegram_ids: number[] | null;
   created_by_telegram_id: number | null;
   remind_set_by: number | null; // кто поставил пинг (может быть не создатель задачи)
   owner_id: number | null;
+  /** Кому пинг уже дошёл на прошлых тиках (#575): повторно им не шлём. */
+  ping_delivered_to?: number[] | null;
+  /** Задача в архиве (#575) — пинг не шлём, хотя крон её и так отсекает запросом. */
+  archived_at?: string | null;
 }
 
 export interface InlineUrlButton {
@@ -51,7 +56,7 @@ function isDone(status: string): boolean {
  * Факт отправки (`reminded_at`) отсекается запросом в БД — здесь только дата и статус.
  */
 export function isPingDue(row: PingRow, today: string): boolean {
-  if (!row.remind_date || isDone(row.status)) return false;
+  if (!row.remind_date || isDone(row.status) || row.archived_at) return false;
   return row.remind_date <= today;
 }
 
@@ -85,13 +90,45 @@ export function pingRecipients(row: PingRow): number[] {
 export function groupByRecipient(rows: PingRow[]): Map<number, PingRow[]> {
   const map = new Map<number, PingRow[]>();
   for (const row of rows) {
+    const already = new Set(row.ping_delivered_to ?? []);
     for (const rid of pingRecipients(row)) {
+      if (already.has(rid)) continue;
       const bucket = map.get(rid);
       if (bucket) bucket.push(row);
       else map.set(rid, [row]);
     }
   }
   return map;
+}
+
+/**
+ * Сколько дней после дня пинга пробуем достучаться до тех, кому он не дошёл. Крон почасовой,
+ * поэтому это ~48 попыток: хватает пережить сбой Telegram, но заблокированный бот не держит
+ * задачу в выборке вечно.
+ */
+export const PING_RETRY_DAYS = 2;
+
+export interface PingSettlement {
+  /** Гасить пинг (`reminded_at`): дошёл до всех или окно повторов вышло. */
+  done: boolean;
+  /** Кому пинг дошёл за всё время — пишется в `ping_delivered_to`. */
+  delivered: number[];
+  /** Гасим, хотя кому-то так и не дошло. */
+  gaveUp: boolean;
+}
+
+/**
+ * Итог тика для одной задачи (#575). Раньше задача гасилась, как только пинг дошёл хотя бы
+ * одному получателю, и второй исполнитель, до которого отправка не дошла, не получал его
+ * никогда. Теперь гасим, только когда дошло всем; дошедшим повторно не шлём.
+ */
+export function settlePing(row: PingRow, deliveredNow: number[], today: string): PingSettlement {
+  const delivered = [...new Set([...(row.ping_delivered_to ?? []), ...deliveredNow])];
+  const got = new Set(delivered);
+  const all = pingRecipients(row).every((id) => got.has(id));
+  if (all) return { done: true, delivered, gaveUp: false };
+  const gaveUp = !!row.remind_date && addDays(row.remind_date, PING_RETRY_DAYS) <= today;
+  return { done: gaveUp, delivered, gaveUp };
 }
 
 function ruShortDate(iso: string): string {
@@ -114,8 +151,7 @@ function escapeHtml(s: string): string {
 // уводим из Telegram туда, где задачу можно закрыть или передвинуть).
 export function formatPings(rows: PingRow[], webBaseUrl: string): { text: string; keyboard: InlineUrlButton[][] } {
   const n = rows.length;
-  const line = (r: PingRow) =>
-    `• ${escapeHtml(r.title)}${r.due_date ? ` · срок ${ruShortDate(r.due_date)}` : ""}`;
+  const line = (r: PingRow) => `• ${escapeHtml(r.title)}${r.due_date ? ` · срок ${ruShortDate(r.due_date)}` : ""}`;
 
   if (n === 1) {
     const r = rows[0];

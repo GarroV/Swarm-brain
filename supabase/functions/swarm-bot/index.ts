@@ -70,6 +70,7 @@ import {
 import type { TgCallbackQuery, TgMessage } from "./lib/types.ts";
 import { classifyRequest, isOwnPrivateChat } from "./lib/webhook-auth.ts";
 import { processingFrozen } from "../_shared/processing-freeze.ts";
+import { onlyLive } from "../_shared/tasks/live.ts";
 
 const TELEGRAM_BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN")!;
 const CRON_SECRET = Deno.env.get("CRON_SECRET") ?? "";
@@ -935,9 +936,15 @@ Deno.serve(async (req: Request) => {
           "source",
           ALL_MEETING_SOURCES,
         ).order("created_at", { ascending: false }).limit(1).maybeSingle(),
-        supabase.from("tasks").select("*", { count: "exact", head: true }).eq("group_id", groupId).eq("status", "open")
+        onlyLive(supabase.from("tasks").select("*", { count: "exact", head: true })).eq("group_id", groupId).eq(
+          "status",
+          "open",
+        )
           .eq("is_private", false),
-        supabase.from("tasks").select("*", { count: "exact", head: true }).eq("group_id", groupId).eq("status", "open")
+        onlyLive(supabase.from("tasks").select("*", { count: "exact", head: true })).eq("group_id", groupId).eq(
+          "status",
+          "open",
+        )
           .eq("is_private", false).lt("due_date", new Date().toISOString().split("T")[0]),
       ]);
 

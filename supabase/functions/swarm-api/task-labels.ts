@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { json } from "./http.ts";
+import { onlyLive } from "../_shared/tasks/live.ts";
 
 // Роуты /task-labels и /task-labels/:id — персональные смарт-метки задач.
 // Доступ строго свой: все запросы фильтруются owner_id = telegramId (RLS не работает,
@@ -31,9 +32,11 @@ export async function handleTaskLabelRoutes(
       .order("created_at", { ascending: true });
     const rows = (labels ?? []) as LabelRow[];
     // Счётчики: тянем label_ids моих личных задач и считаем на месте.
-    const { data: tasks } = await supabase
-      .from("tasks")
-      .select("label_ids")
+    const { data: tasks } = await onlyLive(
+      supabase
+        .from("tasks")
+        .select("label_ids"),
+    )
       .eq("owner_id", telegramId)
       .eq("is_private", true);
     const counts = new Map<string, number>();
@@ -111,6 +114,7 @@ export async function handleTaskLabelRoutes(
 
   // DELETE /task-labels/:id — сначала вычистить id из моих задач, потом удалить метку
   if (req.method === "DELETE") {
+    // archive-ok: удаление метки вычищает её из ВСЕХ задач владельца, архив тоже — иначе вернувшаяся задача несла бы метку-призрак
     const { data: tasksWith } = await supabase
       .from("tasks").select("id,label_ids").eq("owner_id", telegramId).contains(
         "label_ids",
