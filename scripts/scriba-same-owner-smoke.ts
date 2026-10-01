@@ -168,7 +168,7 @@ function spawnFunction(path: string, port: number): Deno.ChildProcess {
       "run",
       "--allow-all",
       `--preload=${PRELOAD}`,
-      new URL(path, import.meta.url).pathname,
+      decodeURIComponent(new URL(path, import.meta.url).pathname),
     ],
     env: {
       DENO_SERVE_ADDRESS: `tcp:127.0.0.1:${port}`,

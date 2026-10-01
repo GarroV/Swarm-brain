@@ -120,7 +120,7 @@ function spawnFunction(path: string, port: number): Deno.ChildProcess {
       "run",
       "--allow-all",
       `--preload=${PRELOAD}`,
-      new URL(path, import.meta.url).pathname,
+      decodeURIComponent(new URL(path, import.meta.url).pathname),
     ],
     env: {
       DENO_SERVE_ADDRESS: `tcp:127.0.0.1:${port}`,
@@ -304,7 +304,9 @@ async function scenario(): Promise<void> {
   );
   expect(
     "к заданию выдан пропуск бота на эту встречу (grant_token sgr_)",
-    (body.jobs ?? []).every((j) => String(j.grant_token ?? "").startsWith("sgr_")),
+    (body.jobs ?? []).every((j) =>
+      String(j.grant_token ?? "").startsWith("sgr_")
+    ),
     body,
   );
 

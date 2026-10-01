@@ -6,6 +6,7 @@ import { RoyIcon } from "../icons";
 import { entryTagKey, deriveEntryTitle } from "../entry";
 import { fetchTask, updateTask, deleteTask, fetchMeeting } from "@/lib/api";
 import { TaskComments } from "@/components/tasks/TaskComments";
+import { TaskFiles } from "@/components/tasks/TaskFiles";
 import { displayName } from "@/lib/utils";
 import type { Task, Entry } from "@/types";
 
@@ -197,6 +198,7 @@ export function TaskDetail({ id }: { id: string }) {
                 </button>
               </div>
             )}
+            <div className="mt-5"><TaskFiles taskId={id} taskOwnerId={t.owner_id ?? null} /></div>
             <TaskComments taskId={id} />
           </>
         )}

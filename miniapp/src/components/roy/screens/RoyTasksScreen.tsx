@@ -1,5 +1,5 @@
 "use client";
-import { useDt, useRoyNav } from "../nav";
+import { useDt, useLang, useRoyNav } from "../nav";
 import { RoyHeader, FAB } from "../ui";
 import { HeaderActions } from "../HeaderActions";
 import { RoyIcon, type RoyIconName } from "../icons";
@@ -17,6 +17,7 @@ import { StatusFilters } from "@/components/tasks/StatusFilters";
 export function RoyTasksScreen() {
   const { push, toast, openTask } = useRoyNav();
   const dt = useDt();
+  const lang = useLang();
   const r = useReminderTasks();
   const activeDef = SMART_LISTS.find((s) => s.id === r.activeList)!;
   // «По рынкам»/«Все сотрудники» — независимые тумблеры (не линза), см. RemindersTasks.tsx (десктоп).
@@ -75,7 +76,7 @@ export function RoyTasksScreen() {
       </div>
 
       <div className="px-5 pb-2 text-ink-mute" style={{ fontSize: 12.5 }}>
-        {activeDef.label} · {total}{r.range ? ` · ${rangeLabel(r.range)}` : ""}
+        {activeDef.label} · {total}{r.range ? ` · ${rangeLabel(r.range, lang)}` : ""}
       </div>
 
       <div className="space-y-2.5 px-5 pb-28">

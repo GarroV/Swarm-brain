@@ -16,6 +16,32 @@ describe("куда контейнеру встречи можно выйти", (
     expect(isAllowed("signaler-pa.clients6.google.com:443")).toBe(true);
   });
 
+  it("пускает Контур.Толк на 443: пространство, WebSocket, вторая форма хоста (T111)", () => {
+    expect(isAllowed("dodobrands.ktalk.ru:443")).toBe(true);
+    expect(isAllowed("ktalk.ru:443")).toBe(true);
+    expect(isAllowed("talk.kontur.ru:443")).toBe(true);
+    expect(decideEgress("dodobrands.ktalk.ru:443", policy)).toMatchObject({
+      allowed: true,
+      rule: "веб Контур.Толка",
+    });
+  });
+
+  it("Толк — только 443, похожие хосты и службы Контура мимо Толка закрыты", () => {
+    expect(isAllowed("dodobrands.ktalk.ru:80")).toBe(false);
+    expect(isAllowed("dodobrands.ktalk.ru:3478")).toBe(false);
+    expect(isAllowed("evilktalk.ru:443")).toBe(false);
+    expect(isAllowed("ktalk.ru.evil.com:443")).toBe(false);
+    expect(isAllowed("talk.kontur.ru.evil.com:443")).toBe(false);
+    expect(isAllowed("x.talk.kontur.ru:443")).toBe(false);
+    expect(isAllowed("metrika.kontur.ru:443")).toBe(false);
+    expect(isAllowed("sentry.kontur.host:443")).toBe(false);
+    expect(isAllowed("sd2-talk-stun4.ktalk.host:443")).toBe(true);
+    expect(isAllowed("bst-talk-stun2.ktalk.host:443")).toBe(true);
+    expect(isAllowed("sd2-talk-stun4.ktalk.host:3478")).toBe(false);
+    expect(isAllowed("evilktalk.host:443")).toBe(false);
+    expect(isAllowed("ktalk.host.evil.com:443")).toBe(false);
+  });
+
   it("пускает ровно свой Swarm: хост и порт из адреса", () => {
     expect(isAllowed("abc.supabase.co:443")).toBe(true);
     expect(isAllowed("abc.supabase.co:80")).toBe(false);

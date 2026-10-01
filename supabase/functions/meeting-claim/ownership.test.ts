@@ -8,7 +8,7 @@
 // на месте, которое допишут через полгода.
 import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
 
-const here = new URL(".", import.meta.url).pathname;
+const here = decodeURIComponent(new URL(".", import.meta.url).pathname);
 const claim = await Deno.readTextFile(`${here}index.ts`);
 const ingest = await Deno.readTextFile(`${here}../meeting-ingest/index.ts`);
 

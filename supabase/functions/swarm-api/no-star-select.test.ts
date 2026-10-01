@@ -22,7 +22,7 @@ const FILES = [
   "task-subscriptions.ts",
   "stats.ts",
 ];
-const HERE = new URL(".", import.meta.url).pathname;
+const HERE = decodeURIComponent(new URL(".", import.meta.url).pathname);
 
 /** Строки со `.select("*")`, где текущая таблица цепочки — `table`. */
 function starSelectsOn(src: string, table: string): number[] {
@@ -57,9 +57,7 @@ Deno.test('в swarm-api нет select("*") по таблице entries', async (
   assertEquals(
     offenders,
     [],
-    `select("*") по entries запрещён (issue #102) — используйте ENTRY_COLUMNS:\n${
-      offenders.join("\n")
-    }`,
+    `select("*") по entries запрещён (issue #102) — используйте ENTRY_COLUMNS:\n${offenders.join("\n")}`,
   );
 });
 
@@ -74,7 +72,6 @@ Deno.test("детектор ловит разорванную цепочку —
 });
 
 Deno.test("детектор не срабатывает на другие таблицы", () => {
-  const sample =
-    'const { data } = await supabase.from("workspaces").select("*").eq("id", w).single();';
+  const sample = 'const { data } = await supabase.from("workspaces").select("*").eq("id", w).single();';
   assertEquals(starSelectsOn(sample, "entries"), []);
 });

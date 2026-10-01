@@ -41,13 +41,10 @@ export type ConnectorsInput = {
   now: Date;
 };
 
-// Базовый порядок = важность сервиса для работы продукта: без календаря рекордер слеп,
-// без рекордера нет встреч, без Telegram не доходят уведомления.
-// Бот встреч — сразу за рекордером: это второй способ записать встречу.
-const BASE_ORDER: ConnectorId[] = ["calendar", "recorder", "bot", "telegram", "granola", "claude"];
+// Порядок задал владелец 30.09.2026: верхний ряд — чем записывать и чем пополнять базу,
+// нижний — с чем Swarm связан. На десктопе это ровно два ряда по три.
+const BASE_ORDER: ConnectorId[] = ["granola", "recorder", "bot", "calendar", "telegram", "claude"];
 
-// Внимание — вперёд: сломанное, затем скоро сломающееся, затем неподключённое, затем рабочее.
-const STATE_ORDER: Record<ConnectorState, number> = { expired: 0, expiring: 1, off: 2, connected: 3 };
 
 function tokenState({ active, expiresAt }: TokenStatus, now: Date): ConnectorState {
   if (!active) return "off";
@@ -71,11 +68,9 @@ export function buildConnectors(input: ConnectorsInput): Connector[] {
   };
 
   const shown = input.botAutojoin === undefined ? BASE_ORDER.filter((id) => id !== "bot") : BASE_ORDER;
-  return shown.map((id) => byId[id]).sort(
-    (a, b) =>
-      STATE_ORDER[a.state] - STATE_ORDER[b.state] ||
-      BASE_ORDER.indexOf(a.id) - BASE_ORDER.indexOf(b.id),
-  );
+  // Порядок постоянный: плитка не прыгает, когда меняется её состояние (владелец 30.09.2026:
+  // «почему карточки перемешиваются когда включаешь бота?»). Внимание несут подложка и точка.
+  return shown.map((id) => byId[id]);
 }
 
 export type ConnectorsSummary = { connected: number; total: number; attention: number };

@@ -1,0 +1,105 @@
+// Права на правку записи из инструментов, где запись может быть и встречей, и заметкой
+// (ИИ-инструмент бота `update_entry`). Встреча — по правам встречи (meeting-rights.ts),
+// остальное — только автор, как у /entries/:id.
+import { assertEquals, assertNotEquals } from "jsr:@std/assert@1";
+import { entryActionError, entryEditError, isMeetingEntry } from "./entry-edit.ts";
+
+const OWNER = 111;
+const PARTICIPANT = 222;
+const ADMIN = 333;
+const OUTSIDER = 444;
+
+const attendees = [{ email: "participant@example.com" }];
+const note = {
+  is_private: false,
+  owner_id: OWNER,
+  group_id: "cee",
+  entry_type: "note",
+  source: "telegram",
+  metadata: {},
+};
+const meeting = { ...note, entry_type: "meeting", source: "desktop-agent", metadata: { attendees } };
+const privateMeeting = { ...meeting, is_private: true };
+
+const owner = { id: OWNER };
+const participant = { id: PARTICIPANT, email: "participant@example.com" };
+const admin = { id: ADMIN, isAdmin: true };
+const outsider = { id: OUTSIDER, email: "outsider@example.com" };
+
+Deno.test("встреча распознаётся по типу или источнику, заметка — нет", () => {
+  assertEquals(isMeetingEntry(meeting), true);
+  assertEquals(isMeetingEntry({ ...note, entry_type: "transcript" }), true);
+  assertEquals(isMeetingEntry({ ...note, source: "read_ai" }), true);
+  assertEquals(isMeetingEntry({ ...note, source: "voice" }), true);
+  assertEquals(isMeetingEntry(note), false);
+});
+
+Deno.test("заметка: правит только автор — ни участник, ни админ, ни посторонний", () => {
+  assertEquals(entryEditError("n", note, owner, "cee"), null);
+  assertNotEquals(entryEditError("n", note, admin, "cee"), null);
+  assertNotEquals(entryEditError("n", note, outsider, "cee"), null);
+});
+
+Deno.test("встреча: правят автор, участник, админ; посторонний — нет", () => {
+  assertEquals(entryEditError("m", meeting, owner, "cee"), null);
+  assertEquals(entryEditError("m", meeting, participant, "cee"), null);
+  assertEquals(entryEditError("m", meeting, admin, "cee"), null);
+  assertNotEquals(entryEditError("m", meeting, outsider, "cee"), null);
+});
+
+Deno.test("смена видимости встречи — права удаления: участнику нельзя, автору и админу можно", () => {
+  const opts = { changesPrivacy: true };
+  assertNotEquals(entryEditError("m", meeting, participant, "cee", opts), null);
+  assertEquals(entryEditError("m", meeting, owner, "cee", opts), null);
+  assertEquals(entryEditError("m", meeting, admin, "cee", opts), null);
+});
+
+Deno.test("личная встреча: только автор, админ получает «не найдена»", () => {
+  assertEquals(entryEditError("m", privateMeeting, owner, "cee"), null);
+  assertEquals(
+    entryEditError("m", privateMeeting, admin, "cee"),
+    entryEditError("m", null, admin, "cee"),
+  );
+});
+
+Deno.test("чужой воркспейс — «не найдена» и для автора, и для встречи, и для заметки", () => {
+  for (const e of [note, meeting]) {
+    const other = { ...e, group_id: "other" };
+    assertEquals(entryEditError("x", other, owner, "cee"), entryEditError("x", null, owner, "cee"));
+  }
+});
+
+Deno.test("неизвестный воркспейс зрителя не пропускает", () => {
+  assertNotEquals(entryEditError("x", note, owner, ""), null);
+  assertNotEquals(entryEditError("x", meeting, owner, undefined), null);
+});
+
+// ── Удаление ─────────────────────────────────────────────────────────────────
+Deno.test("удаление заметки — только автор, админу тоже нельзя", () => {
+  assertEquals(entryActionError("n", note, owner, "cee", "delete"), null);
+  assertNotEquals(entryActionError("n", note, admin, "cee", "delete"), null);
+  assertNotEquals(entryActionError("n", note, outsider, "cee", "delete"), null);
+});
+
+Deno.test("удаление встречи — автор и админ; участник и посторонний — нет", () => {
+  assertEquals(entryActionError("m", meeting, owner, "cee", "delete"), null);
+  assertEquals(entryActionError("m", meeting, admin, "cee", "delete"), null);
+  assertNotEquals(entryActionError("m", meeting, participant, "cee", "delete"), null);
+  assertNotEquals(entryActionError("m", meeting, outsider, "cee", "delete"), null);
+});
+
+Deno.test("удаление личной встречи — только автор; админу «не найдена»", () => {
+  assertEquals(entryActionError("m", privateMeeting, owner, "cee", "delete"), null);
+  assertEquals(
+    entryActionError("m", privateMeeting, admin, "cee", "delete"),
+    entryActionError("m", null, admin, "cee", "delete"),
+  );
+});
+
+Deno.test("правка через entryActionError совпадает с entryEditError", () => {
+  for (const v of [owner, participant, admin, outsider]) {
+    for (const e of [note, meeting, privateMeeting]) {
+      assertEquals(entryActionError("x", e, v, "cee", "edit"), entryEditError("x", e, v, "cee"));
+    }
+  }
+});

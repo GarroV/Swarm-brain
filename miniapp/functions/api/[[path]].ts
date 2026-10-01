@@ -7,7 +7,7 @@
 // переиздаётся с новым сроком, поэтому человек, который пользуется сервисом, не вылетает
 // никогда. Это единственная точка, через которую ходит весь фронт, — другого места, где
 // можно поймать «пользователь ещё жив», у нас нет.
-import { verifyJWT, signJWT, shouldRefreshSession, SESSION_TTL_SEC } from "../_lib/jwt";
+import { authTimeForRefresh, verifyJWT, signJWT, shouldRefreshSession, SESSION_TTL_SEC } from "../_lib/jwt";
 import { swarmApiUrl } from "../_lib/api-url";
 
 type Env = { SWARM_API_URL?: string; WEB_JWT_SECRET?: string };
@@ -68,8 +68,11 @@ async function renewSessionCookie(
   try {
     const claims = await verifyJWT(token, secret);
     if (!claims) return null; // истёкшая/битая подпись — пусть человек войдёт заново
-    if (!shouldRefreshSession(claims.exp, Math.floor(Date.now() / 1000))) return null;
-    const fresh = await signJWT({ telegram_id: claims.telegram_id }, secret);
+    // Старый формат переиздаём сразу — так он переезжает на новый при первом же запросе.
+    if (!claims.legacy && !shouldRefreshSession(claims.exp, Math.floor(Date.now() / 1000))) return null;
+    // Момент входа переносим как был: продление не должно «омолаживать» сессию относительно
+    // «выйти везде» (swarm-api сверяет его с allowed_users.sessions_revoked_at).
+    const fresh = await signJWT({ telegram_id: claims.telegram_id, auth_time: authTimeForRefresh(claims) }, secret);
     return `roj_session=${fresh}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=${SESSION_TTL_SEC}`;
   } catch {
     // Продление — удобство, а не авторизация: сбой крипты не должен ронять запрос к API.

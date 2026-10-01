@@ -631,7 +631,9 @@ async function summarizeAndFinish(supabase: SupabaseClient, m: MeetingRow, state
 
   const webUrl = WEB_BASE_URL ? `${WEB_BASE_URL}/?meeting=${m.id}` : "";
   const titleStr = finalTitle ? `: <b>${finalTitle}</b>` : "";
-  const text = `📝 Тезисы встречи готовы к вычитке${titleStr}\nВозьмёт любой из участников.`;
+  // Только факт «обработана и готова» (владелец 30.09.2026): приписка «Возьмёт любой из участников»
+  // смысла для получателя не несла.
+  const text = `📝 Встреча обработана и готова${titleStr}`;
   const keyboard: InlineButton[][] | undefined = webUrl ? [[{ text: "Открыть", url: webUrl }]] : undefined;
   for (const r of m.recorders ?? []) {
     if (r && typeof r.telegram_id === "number") await sendTelegram(r.telegram_id, text, keyboard).catch(() => {});

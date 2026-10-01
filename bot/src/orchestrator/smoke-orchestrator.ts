@@ -6,7 +6,7 @@
  * отдаёт запись в meeting-ingest и гасится; смерть контейнера видна (код выхода, нотиса,
  * heartbeat замолкает на `recording: true`); после падения оркестратора (настоящий SIGKILL
  * процесса) сирот не остаётся, а новый оркестратор подхватывает живые контейнеры.
- * Ручной запуск по приглашению (D017) — сценарии invite, kontur, race — гоняет НАСТОЯЩУЮ
+ * Ручной запуск по приглашению (D017) — сценарии invite, platform, race — гоняет НАСТОЯЩУЮ
  * службу `orchestrator-main.ts` дочерним процессом: приглашение забрано → контейнер → заявка
  * по приглашению → запись; Контур — громкий отказ; две службы не берут одно приглашение дважды.
  *
@@ -659,28 +659,30 @@ async function sceneInvite(fake: Fake): Promise<void> {
   }
 }
 
-async function sceneKontur(fake: Fake): Promise<void> {
-  console.log("\n──── приглашение на Контур.Толк: контейнер не поднят, человеку громкий отказ");
+async function scenePlatform(fake: Fake): Promise<void> {
+  console.log(
+    "\n──── приглашение в Zoom (адаптера нет): контейнер не поднят, человеку громкий отказ",
+  );
   const service = await spawnService("lease-svc-a", SHORT_PAGE);
   try {
-    const invite = fake.addInvite({ joinUrl: "https://ktalk.ru/room/abc", platform: "kontur" });
+    const invite = fake.addInvite({ joinUrl: "https://zoom.us/j/123", platform: "zoom" });
     await until(20_000, "отказ ушёл", async () => {
       await sleep(0);
       return noticesOf(fake, "join_failed").length > 0;
     });
     const [notice] = noticesOf(fake, "join_failed");
     check(
-      typeof notice?.detail === "string" && notice.detail.includes("Kontur.Talk"),
+      typeof notice?.detail === "string" && notice.detail.includes("Zoom calls aren't supported"),
       "join_failed с причиной на английском",
       String(notice?.detail),
     );
     check(
-      typeof notice?.detail === "string" && notice.detail.includes("Контур.Толк"),
+      typeof notice?.detail === "string" && notice.detail.includes("Звонки Zoom бот пока не умеет"),
       "и на русском",
     );
     check(fake.inviteState(invite.id).used, "приглашение погашено заявкой отказа");
     await sleep(5000);
-    check(await isStandEmpty(), "контейнер на Контур не поднимался");
+    check(await isStandEmpty(), "контейнер на Zoom не поднимался");
   } finally {
     await service.stop();
   }
@@ -839,7 +841,7 @@ const SCENES: Record<string, (fake: Fake) => Promise<void>> = {
   orphans: sceneOrphans,
   adopt: sceneAdopt,
   invite: sceneInvite,
-  kontur: sceneKontur,
+  platform: scenePlatform,
   race: sceneRace,
   account: sceneAccount,
 };

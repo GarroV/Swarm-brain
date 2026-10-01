@@ -1,0 +1,57 @@
+# Ключ подписи ссылок на файлы к задачам (руками). files/README.md.
+#
+# Пара Ed25519 рождается здесь же. Закрытый ключ уходит прямо в секреты функций
+# (FILES_SIGNING_KEY) и больше нигде не появляется — ни в журнале, ни на диске. Открытый ключ
+# печатается в сводке прогона: он не секрет, его кладут на MUSPELHEIM
+# (`FILES_PUBLIC_KEY=… scripts/swarm-files.sh key`). Повторный запуск = ротация: старые ссылки
+# гаснут, как только сервер получит новый открытый ключ. Это запись в прод — по «да» владельца.
+name: Ключ файлов задач (руками)
+
+on:
+  workflow_dispatch:
+    inputs:
+      base_url:
+        description: "Публичный адрес сервиса swarm-files (FILES_BASE_URL)"
+        type: string
+        default: "https://muspelheim.tail48dfee.ts.net:10000/swarm-files"
+
+concurrency:
+  group: deploy-window
+  cancel-in-progress: false
+
+jobs:
+  key:
+    name: Выпустить ключ и записать в секреты
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Проверить ввод
+        env:
+          BASE_URL: ${{ inputs.base_url }}
+        run: |
+          [[ "$BASE_URL" =~ ^https://[A-Za-z0-9.-]+(:[0-9]+)?(/[A-Za-z0-9_-]+)*$ ]] || { echo "отказ: base_url не https-адрес" >&2; exit 1; }
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.118.0
+      - name: Выпустить пару и записать закрытый ключ
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          BASE_URL: ${{ inputs.base_url }}
+        run: |
+          set -euo pipefail
+          umask 077
+          openssl genpkey -algorithm ed25519 -out "$RUNNER_TEMP/k.pem"
+          PRIV=$(openssl pkey -in "$RUNNER_TEMP/k.pem" -outform DER | base64 -w0)
+          PUB=$(openssl pkey -in "$RUNNER_TEMP/k.pem" -pubout -outform DER | tail -c 32 | base64 -w0)
+          rm -f "$RUNNER_TEMP/k.pem"
+          echo "::add-mask::$PRIV"
+          supabase secrets set --project-ref vbqglndbxkpmreccpqmr \
+            "FILES_SIGNING_KEY=$PRIV" "FILES_BASE_URL=$BASE_URL" >/dev/null
+          {
+            echo "### Открытый ключ для MUSPELHEIM"
+            echo
+            echo '```'
+            echo "FILES_PUBLIC_KEY=$PUB scripts/swarm-files.sh key"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "открытый ключ: $PUB"

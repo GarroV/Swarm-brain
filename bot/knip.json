@@ -7,6 +7,7 @@
     "src/container/smoke-audio.ts",
     "src/container/egress-proxy-main.ts",
     "src/meet-adapter/smoke-meet.ts",
+    "src/kontur-adapter/smoke-kontur.ts",
     "src/orchestrator/container-main.ts",
     "src/orchestrator/login-export.ts",
     "src/orchestrator/orchestrator-main.ts",

@@ -67,3 +67,10 @@ export function useDt(): (ru: string, en: string) => string {
   // функция на каждом рендере зацикливала загрузку «Спринтов» (сотни запросов в секунду).
   return useCallback((ru: string, en: string) => (demo ? en : ru), [demo]);
 }
+
+/** Язык интерфейса для форматтеров дат (`lib/calendar`): то же правило, что у `useDt`.
+ *  Вне RoyApp (нет контекста) — RU, как и у `useDt`. */
+export function useLang(): "ru" | "en" {
+  const ctx = useContext(RoyNavContext);
+  return ctx?.me?.is_demo ? "en" : "ru";
+}

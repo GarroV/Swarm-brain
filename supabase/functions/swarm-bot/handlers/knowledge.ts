@@ -1,10 +1,12 @@
-import { supabase } from "../lib/supabase.ts";
-import { getEmbedding, chatComplete } from "../lib/openai.ts";
-import { saveEntry, visibilityFilter, generateSummary, getSession, setSession, clearSession } from "../lib/storage.ts";
+import { loadMeetingViewer, supabase } from "../lib/supabase.ts";
+import { loadEntryForExport } from "../lib/export-entry.ts";
+import { type EditableEntryRow, entryEditError } from "../../_shared/entries/entry-edit.ts";
+import { chatComplete, getEmbedding } from "../lib/openai.ts";
+import { getSession, saveEntry, setSession, visibilityFilter } from "../lib/storage.ts";
 import { sendMessage } from "../lib/telegram.ts";
 import type { KbEntry } from "../lib/types.ts";
-import { TASK_KEYWORDS, smartTaskSearch } from "../tasks/index.ts";
-import { normalizeCountry, detectQueryCountry } from "../../_shared/countries.ts";
+import { smartTaskSearch, TASK_KEYWORDS } from "../tasks/index.ts";
+import { detectQueryCountry, normalizeCountry } from "../../_shared/countries.ts";
 import { matchEntries } from "../../_shared/search.ts";
 
 import { normalizeFileLink } from "../../_shared/storage-links.ts";
@@ -20,11 +22,15 @@ export const KNOWLEDGE_TOOLS = [
     type: "function" as const,
     function: {
       name: "search_knowledge",
-      description: "Semantic search of the knowledge base. Use for any question about stored content. Include Russian and English terms in query.",
+      description:
+        "Semantic search of the knowledge base. Use for any question about stored content. Include Russian and English terms in query.",
       parameters: {
         type: "object",
         properties: {
-          query: { type: "string", description: "Search query — include both Russian and English variants of key terms" },
+          query: {
+            type: "string",
+            description: "Search query — include both Russian and English variants of key terms",
+          },
         },
         required: ["query"],
       },
@@ -34,12 +40,21 @@ export const KNOWLEDGE_TOOLS = [
     type: "function" as const,
     function: {
       name: "get_recent_by_country",
-      description: "Get recent knowledge base entries for a specific country as a news digest. Use for: 'последние новости по X', 'что нового по X', 'что происходит в X', 'дайджест по X', 'обнови по X', 'последняя встреча по X', 'что было на встрече в X', 'что последнее по X'. For general team-wide entries not tied to a specific country use country='General'. Default period: 7 days.",
+      description:
+        "Get recent knowledge base entries for a specific country as a news digest. Use for: 'последние новости по X', 'что нового по X', 'что происходит в X', 'дайджест по X', 'обнови по X', 'последняя встреча по X', 'что было на встрече в X', 'что последнее по X'. For general team-wide entries not tied to a specific country use country='General'. Default period: 7 days.",
       parameters: {
         type: "object",
         properties: {
-          country: { type: "string", description: "Country name in Russian or English: Хорватия/Croatia, Болгария/Bulgaria, Сербия/Serbia, Словения/Slovenia, etc. Use 'General' for team-wide entries." },
-          days: { type: "number", description: "How many days back to look, default 7. Parse from user message: 'за месяц'=30, 'за две недели'=14, 'за квартал'=90" },
+          country: {
+            type: "string",
+            description:
+              "Country name in Russian or English: Хорватия/Croatia, Болгария/Bulgaria, Сербия/Serbia, Словения/Slovenia, etc. Use 'General' for team-wide entries.",
+          },
+          days: {
+            type: "number",
+            description:
+              "How many days back to look, default 7. Parse from user message: 'за месяц'=30, 'за две недели'=14, 'за квартал'=90",
+          },
         },
         required: ["country"],
       },
@@ -49,7 +64,8 @@ export const KNOWLEDGE_TOOLS = [
     type: "function" as const,
     function: {
       name: "find_note",
-      description: "Search for a saved short reference note: password, login, phone number, address, API key, access code, any quick fact. Use when user asks: 'какой пароль от X', 'логин от X', 'номер X', 'адрес X', 'ключ от X', 'доступ к X', 'что такое X' (short fact). Returns the note content directly.",
+      description:
+        "Search for a saved short reference note: password, login, phone number, address, API key, access code, any quick fact. Use when user asks: 'какой пароль от X', 'логин от X', 'номер X', 'адрес X', 'ключ от X', 'доступ к X', 'что такое X' (short fact). Returns the note content directly.",
       parameters: {
         type: "object",
         properties: {
@@ -63,7 +79,8 @@ export const KNOWLEDGE_TOOLS = [
     type: "function" as const,
     function: {
       name: "find_link",
-      description: "Search for a saved link, dashboard, report, document URL or external resource. Use FIRST when user asks: 'дай ссылку', 'дай дашборд', 'дай отчёт', 'где отчёт', 'ссылка на X', 'линк на X', 'дашборд по X', 'отчёт по X', 'где взять X', 'пришли ссылку'. Returns URL directly. Do NOT use search_knowledge for these requests.",
+      description:
+        "Search for a saved link, dashboard, report, document URL or external resource. Use FIRST when user asks: 'дай ссылку', 'дай дашборд', 'дай отчёт', 'где отчёт', 'ссылка на X', 'линк на X', 'дашборд по X', 'отчёт по X', 'где взять X', 'пришли ссылку'. Returns URL directly. Do NOT use search_knowledge for these requests.",
       parameters: {
         type: "object",
         properties: {
@@ -77,7 +94,8 @@ export const KNOWLEDGE_TOOLS = [
     type: "function" as const,
     function: {
       name: "export_entry",
-      description: "Export the full raw content of an entry as a downloadable file. Use when user asks to 'скинь файлом', 'выгрузи', 'скачать транскрипцию', 'export', 'пришли исходник', 'полный текст', 'дословно'. Also call this when search results contain [Полный текст: export_entry(id=...)]. First use search_knowledge to find the entry id, then call export_entry with that id.",
+      description:
+        "Export the full raw content of an entry as a downloadable file. Use when user asks to 'скинь файлом', 'выгрузи', 'скачать транскрипцию', 'export', 'пришли исходник', 'полный текст', 'дословно'. Also call this when search results contain [Полный текст: export_entry(id=...)]. First use search_knowledge to find the entry id, then call export_entry with that id.",
       parameters: {
         type: "object",
         properties: {
@@ -91,7 +109,8 @@ export const KNOWLEDGE_TOOLS = [
     type: "function" as const,
     function: {
       name: "list_recent",
-      description: "List the most RECENTLY ADDED entries by save time (created_at), newest first. Use for recency questions: 'что только что сохранил', 'что последнее сохранили/добавили', 'что недавно добавили в базу', 'покажи последние записи', 'что нового в базе' (by save time, not by topic). NEVER use search_knowledge for these — it ranks by meaning, not by recency, and will return an old unrelated entry.",
+      description:
+        "List the most RECENTLY ADDED entries by save time (created_at), newest first. Use for recency questions: 'что только что сохранил', 'что последнее сохранили/добавили', 'что недавно добавили в базу', 'покажи последние записи', 'что нового в базе' (by save time, not by topic). NEVER use search_knowledge for these — it ranks by meaning, not by recency, and will return an old unrelated entry.",
       parameters: {
         type: "object",
         properties: {
@@ -105,7 +124,8 @@ export const KNOWLEDGE_TOOLS = [
     type: "function" as const,
     function: {
       name: "save_private",
-      description: "Save text to the user's PRIVATE personal storage. Use ONLY when user explicitly says 'личное', 'только для меня', 'не шерить', 'приватно', 'в личное хранилище'. Private entries are invisible to other team members.",
+      description:
+        "Save text to the user's PRIVATE personal storage. Use ONLY when user explicitly says 'личное', 'только для меня', 'не шерить', 'приватно', 'в личное хранилище'. Private entries are invisible to other team members.",
       parameters: {
         type: "object",
         properties: {
@@ -119,11 +139,16 @@ export const KNOWLEDGE_TOOLS = [
     type: "function" as const,
     function: {
       name: "list_meetings_by_country",
-      description: "Get list of all meetings for a country, sorted by date descending. Use when user asks 'какие встречи были по X', 'список встреч по X', 'покажи встречи по X', 'какие митинги были в X'. Returns each meeting as: date, title, short summary (1 line), id.",
+      description:
+        "Get list of all meetings for a country, sorted by date descending. Use when user asks 'какие встречи были по X', 'список встреч по X', 'покажи встречи по X', 'какие митинги были в X'. Returns each meeting as: date, title, short summary (1 line), id.",
       parameters: {
         type: "object",
         properties: {
-          country: { type: "string", description: "Country in English or Russian: Serbia/Сербия, Croatia/Хорватия, Bulgaria/Болгария, etc. Empty string = all countries." },
+          country: {
+            type: "string",
+            description:
+              "Country in English or Russian: Serbia/Сербия, Croatia/Хорватия, Bulgaria/Болгария, etc. Empty string = all countries.",
+          },
         },
         required: ["country"],
       },
@@ -133,7 +158,8 @@ export const KNOWLEDGE_TOOLS = [
     type: "function" as const,
     function: {
       name: "list_personal",
-      description: "List ONLY the user's own private entries. Use when user asks 'что в моём личном хранилище', 'мои личные записи', 'что я сохранял лично', 'моё личное', 'покажи личное'. Returns ONLY private entries — never public team knowledge.",
+      description:
+        "List ONLY the user's own private entries. Use when user asks 'что в моём личном хранилище', 'мои личные записи', 'что я сохранял лично', 'моё личное', 'покажи личное'. Returns ONLY private entries — never public team knowledge.",
       parameters: {
         type: "object",
         properties: {
@@ -151,11 +177,16 @@ export const KNOWLEDGE_TOOLS_DISABLED = [
     type: "function" as const,
     function: {
       name: "search_by_country",
-      description: "Find knowledge base entries for a specific country or market. Use when a specific country is mentioned.",
+      description:
+        "Find knowledge base entries for a specific country or market. Use when a specific country is mentioned.",
       parameters: {
         type: "object",
         properties: {
-          country: { type: "string", description: "Country name in English: Serbia, Bulgaria, Croatia, Montenegro, Moldova, Hungary, Romania, Estonia, Slovenia, Cyprus, Belarus, Russia, Spain, etc." },
+          country: {
+            type: "string",
+            description:
+              "Country name in English: Serbia, Bulgaria, Croatia, Montenegro, Moldova, Hungary, Romania, Estonia, Slovenia, Cyprus, Belarus, Russia, Spain, etc.",
+          },
           wants_full_text: { type: "boolean", description: "true = return raw text; false = return summaries" },
         },
         required: ["country"],
@@ -166,7 +197,8 @@ export const KNOWLEDGE_TOOLS_DISABLED = [
     type: "function" as const,
     function: {
       name: "get_countries_list",
-      description: "Get list of all countries/markets in the knowledge base with entry counts. Use for 'which countries', 'what markets', 'по каким странам есть данные'.",
+      description:
+        "Get list of all countries/markets in the knowledge base with entry counts. Use for 'which countries', 'what markets', 'по каким странам есть данные'.",
       parameters: { type: "object", properties: {} },
     },
   },
@@ -174,7 +206,8 @@ export const KNOWLEDGE_TOOLS_DISABLED = [
     type: "function" as const,
     function: {
       name: "get_digest",
-      description: "Get overview of the most recent knowledge base entries grouped by type. Use for 'что нового', 'общий обзор', 'что есть в базе', 'а еще что'.",
+      description:
+        "Get overview of the most recent knowledge base entries grouped by type. Use for 'что нового', 'общий обзор', 'что есть в базе', 'а еще что'.",
       parameters: { type: "object", properties: {} },
     },
   },
@@ -182,7 +215,8 @@ export const KNOWLEDGE_TOOLS_DISABLED = [
     type: "function" as const,
     function: {
       name: "get_entries_by_country",
-      description: "Get the latest entry for each country as a country-by-country news feed. Use for 'новости по странам', 'последнее по рынкам', 'дай данные по всем странам'.",
+      description:
+        "Get the latest entry for each country as a country-by-country news feed. Use for 'новости по странам', 'последнее по рынкам', 'дай данные по всем странам'.",
       parameters: { type: "object", properties: {} },
     },
   },
@@ -190,7 +224,8 @@ export const KNOWLEDGE_TOOLS_DISABLED = [
     type: "function" as const,
     function: {
       name: "get_recent_meetings",
-      description: "Get recent meetings sorted by date. Use for: 'что последнее', 'последние встречи', 'что приходило от рид аи', 'последнее от read.ai', 'новые встречи'. Can filter by source (read_ai, voice, telegram) or leave empty for all.",
+      description:
+        "Get recent meetings sorted by date. Use for: 'что последнее', 'последние встречи', 'что приходило от рид аи', 'последнее от read.ai', 'новые встречи'. Can filter by source (read_ai, voice, telegram) or leave empty for all.",
       parameters: {
         type: "object",
         properties: {
@@ -205,11 +240,15 @@ export const KNOWLEDGE_TOOLS_DISABLED = [
     type: "function" as const,
     function: {
       name: "list_meetings_by_country",
-      description: "Get compact list of meetings (title + date + id) for a country. Use when user asks 'какие встречи были', 'список встреч', 'покажи встречи по X' — do NOT return summaries, just names and dates.",
+      description:
+        "Get compact list of meetings (title + date + id) for a country. Use when user asks 'какие встречи были', 'список встреч', 'покажи встречи по X' — do NOT return summaries, just names and dates.",
       parameters: {
         type: "object",
         properties: {
-          country: { type: "string", description: "Country in English: Serbia, Croatia, Bulgaria, etc. Empty string = all countries." },
+          country: {
+            type: "string",
+            description: "Country in English: Serbia, Croatia, Bulgaria, etc. Empty string = all countries.",
+          },
         },
         required: ["country"],
       },
@@ -219,15 +258,24 @@ export const KNOWLEDGE_TOOLS_DISABLED = [
     type: "function" as const,
     function: {
       name: "update_entry",
-      description: "Update metadata of a knowledge base entry. Use when user asks to fix/change a date, title, year, tags, or visibility of a specific entry. Also use when user wants to move entry between personal and shared storage ('перенеси в общую', 'сделай публичным', 'убери в личное'). First search to find the entry id, then call this to update it.",
+      description:
+        "Update metadata of a knowledge base entry. Use when user asks to fix/change a date, title, year, tags, or visibility of a specific entry. Also use when user wants to move entry between personal and shared storage ('перенеси в общую', 'сделай публичным', 'убери в личное'). First search to find the entry id, then call this to update it.",
       parameters: {
         type: "object",
         properties: {
           id: { type: "string", description: "Entry id from search results" },
           entry_date: { type: "string", description: "New date in YYYY-MM-DD format, e.g. 2026-04-29" },
           title: { type: "string", description: "New title for the entry (stored in metadata.title)" },
-          countries: { type: "array", items: { type: "string" }, description: "New countries list e.g. ['Serbia', 'Montenegro']" },
-          is_private: { type: "boolean", description: "true = move to personal storage (only owner sees it), false = move to shared team knowledge base" },
+          countries: {
+            type: "array",
+            items: { type: "string" },
+            description: "New countries list e.g. ['Serbia', 'Montenegro']",
+          },
+          is_private: {
+            type: "boolean",
+            description:
+              "true = move to personal storage (only owner sees it), false = move to shared team knowledge base",
+          },
         },
         required: ["id"],
       },
@@ -237,50 +285,59 @@ export const KNOWLEDGE_TOOLS_DISABLED = [
 /* === END DISABLED === */
 void KNOWLEDGE_TOOLS_DISABLED;
 
-export async function executeTool(name: string, args: Record<string, unknown>, userId = 0, groupId = ""): Promise<string> {
+export async function executeTool(
+  name: string,
+  args: Record<string, unknown>,
+  userId = 0,
+  groupId = "",
+): Promise<string> {
   try {
     switch (name) {
-
       case "search_knowledge": {
         const query = String(args.query ?? "");
 
         const embPromise: Promise<KbEntry[]> = getEmbedding(query)
-          .then(emb => matchEntries(supabase, emb, {
-            groupId,
-            requestingUserId: userId || null,
-            limit: 8,
-            queryText: query,
-            country: detectQueryCountry(query),
-          }))
+          .then((emb) =>
+            matchEntries(supabase, emb, {
+              groupId,
+              requestingUserId: userId || null,
+              limit: 8,
+              queryText: query,
+              country: detectQueryCountry(query),
+            })
+          )
           .catch(() => [] as KbEntry[]);
 
-        const words = query.toLowerCase().split(/[\s,.!?()*:%_\\"]+/).filter(w => w.length > 2).slice(0, 6);
+        const words = query.toLowerCase().split(/[\s,.!?()*:%_\\"]+/).filter((w) => w.length > 2).slice(0, 6);
         // For Russian morphology: also search by word stem (first 5 chars) to match different declensions
         // e.g. "муравьев" → also search "муравь" to match "муравьи", "муравьям" etc.
-        const searchTerms = [...new Set(words.flatMap(w => w.length > 5 ? [w, w.slice(0, 5)] : [w]))];
+        const searchTerms = [...new Set(words.flatMap((w) => w.length > 5 ? [w, w.slice(0, 5)] : [w]))];
         const kwPromise = searchTerms.length
           ? supabase.from("entries").select("id, content, summary, source, metadata")
-              .or(searchTerms.map(w => `source.ilike.%${w}%,content.ilike.%${w}%,summary.ilike.%${w}%`).join(","))
-              .eq("group_id", groupId)
-              .or(visibilityFilter(userId || 0))
-              .limit(5).then(r => (r.data ?? []) as KbEntry[], () => [] as KbEntry[])
+            .or(searchTerms.map((w) => `source.ilike.%${w}%,content.ilike.%${w}%,summary.ilike.%${w}%`).join(","))
+            .eq("group_id", groupId)
+            .or(visibilityFilter(userId || 0))
+            .limit(5).then((r) => (r.data ?? []) as KbEntry[], () => [] as KbEntry[])
           : Promise.resolve([] as KbEntry[]);
 
         // Also search entries that have file_url in metadata matching the query
         const filePromise = words.length
           ? supabase.from("entries").select("id, content, summary, source, metadata")
-              .or(words.map(w => `metadata->>file_name.ilike.%${w}%`).join(","))
-              .not("metadata->>file_url", "is", null)
-              .eq("group_id", groupId)
-              .or(visibilityFilter(userId || 0))
-              .limit(3).then(r => (r.data ?? []) as KbEntry[], () => [] as KbEntry[])
+            .or(words.map((w) => `metadata->>file_name.ilike.%${w}%`).join(","))
+            .not("metadata->>file_url", "is", null)
+            .eq("group_id", groupId)
+            .or(visibilityFilter(userId || 0))
+            .limit(3).then((r) => (r.data ?? []) as KbEntry[], () => [] as KbEntry[])
           : Promise.resolve([] as KbEntry[]);
 
         const [vec, kw, files] = await Promise.all([embPromise, kwPromise, filePromise]);
         const seen = new Set<string>();
         const combined: KbEntry[] = [];
         for (const e of [...files, ...vec, ...kw]) {
-          if (e?.id && !seen.has(e.id)) { seen.add(e.id); combined.push(e); }
+          if (e?.id && !seen.has(e.id)) {
+            seen.add(e.id);
+            combined.push(e);
+          }
         }
         if (!combined.length) return "Ничего не найдено по запросу.";
         return combined.slice(0, 5).map((e: KbEntry) => {
@@ -288,17 +345,15 @@ export async function executeTool(name: string, args: Record<string, unknown>, u
           // В metadata теперь ПУТЬ объекта, а у старых записей — публичный URL. Прежняя
           // проверка startsWith("http") молча выбросила бы все новые файлы из выдачи.
           const fileUrl = rawUrl && !rawUrl.startsWith("sandbox:")
-            ? (normalizeFileLink(rawUrl, { baseUrl: WEB_BASE_URL })
-              ?? (rawUrl.startsWith("http") ? rawUrl : undefined))
+            ? (normalizeFileLink(rawUrl, { baseUrl: WEB_BASE_URL }) ??
+              (rawUrl.startsWith("http") ? rawUrl : undefined))
             : undefined;
           if (fileUrl) {
             const fileName = (e.metadata?.file_name as string | undefined) ?? e.source ?? "файл";
             return `[id:${e.id}] ${e.source ?? ""}: ${fileName}\n[Скачать оригинал: ${fileUrl}]`;
           }
           // Prefer summary (full tezises as saved by Claude Desktop) over content (chunked raw)
-          const displayText = (e.summary && e.summary.length > (e.content ?? "").length
-            ? e.summary
-            : e.content) ?? "";
+          const displayText = (e.summary && e.summary.length > (e.content ?? "").length ? e.summary : e.content) ?? "";
           const isShort = displayText.length <= 4000;
           const text = isShort
             ? displayText
@@ -309,30 +364,40 @@ export async function executeTool(name: string, args: Record<string, unknown>, u
 
       case "find_note": {
         const query = String(args.query ?? "");
-        const words = query.toLowerCase().split(/[\s,.!?()*:%_\\"]+/).filter(w => w.length > 2);
-        const searchTerms = [...new Set(words.flatMap(w => w.length > 5 ? [w, w.slice(0, 5)] : [w]))];
+        const words = query.toLowerCase().split(/[\s,.!?()*:%_\\"]+/).filter((w) => w.length > 2);
+        const searchTerms = [...new Set(words.flatMap((w) => w.length > 5 ? [w, w.slice(0, 5)] : [w]))];
 
         const [vecNotes, kwNotes] = await Promise.all([
           getEmbedding(query)
-            .then(emb => matchEntries(supabase, emb, {
-              groupId, requestingUserId: userId || null, limit: 10, source: "note", queryText: query, country: detectQueryCountry(query),
-            }) as Promise<KbEntry[]>)
+            .then((emb) =>
+              matchEntries(supabase, emb, {
+                groupId,
+                requestingUserId: userId || null,
+                limit: 10,
+                source: "note",
+                queryText: query,
+                country: detectQueryCountry(query),
+              }) as Promise<KbEntry[]>
+            )
             .catch(() => [] as KbEntry[]),
 
           searchTerms.length
             ? supabase.from("entries").select("id, content, summary, source, metadata")
-                .eq("source", "note")
-                .or(searchTerms.map(w => `content.ilike.%${w}%,summary.ilike.%${w}%`).join(","))
-                .eq("group_id", groupId)
-                .or(visibilityFilter(userId || 0))
-                .limit(5).then(r => (r.data ?? []) as KbEntry[], () => [] as KbEntry[])
+              .eq("source", "note")
+              .or(searchTerms.map((w) => `content.ilike.%${w}%,summary.ilike.%${w}%`).join(","))
+              .eq("group_id", groupId)
+              .or(visibilityFilter(userId || 0))
+              .limit(5).then((r) => (r.data ?? []) as KbEntry[], () => [] as KbEntry[])
             : Promise.resolve([] as KbEntry[]),
         ]);
 
         const seen = new Set<string>();
         const notes: KbEntry[] = [];
         for (const e of [...kwNotes, ...vecNotes]) {
-          if (e?.id && !seen.has(e.id)) { seen.add(e.id); notes.push(e); }
+          if (e?.id && !seen.has(e.id)) {
+            seen.add(e.id);
+            notes.push(e);
+          }
         }
         if (!notes.length) return "Заметок по этой теме не найдено. Попробуй search_knowledge для поиска по всей базе.";
 
@@ -343,30 +408,40 @@ export async function executeTool(name: string, args: Record<string, unknown>, u
 
       case "find_link": {
         const query = String(args.query ?? "");
-        const words = query.toLowerCase().split(/[\s,.!?()*:%_\\"]+/).filter(w => w.length > 2);
-        const searchTerms = [...new Set(words.flatMap(w => w.length > 5 ? [w, w.slice(0, 5)] : [w]))];
+        const words = query.toLowerCase().split(/[\s,.!?()*:%_\\"]+/).filter((w) => w.length > 2);
+        const searchTerms = [...new Set(words.flatMap((w) => w.length > 5 ? [w, w.slice(0, 5)] : [w]))];
 
         const [vecLinks, kwLinks] = await Promise.all([
           getEmbedding(query)
-            .then(emb => matchEntries(supabase, emb, {
-              groupId, requestingUserId: userId || null, limit: 10, source: "link", queryText: query, country: detectQueryCountry(query),
-            }) as Promise<KbEntry[]>)
+            .then((emb) =>
+              matchEntries(supabase, emb, {
+                groupId,
+                requestingUserId: userId || null,
+                limit: 10,
+                source: "link",
+                queryText: query,
+                country: detectQueryCountry(query),
+              }) as Promise<KbEntry[]>
+            )
             .catch(() => [] as KbEntry[]),
 
           searchTerms.length
             ? supabase.from("entries").select("id, content, summary, source, metadata")
-                .eq("source", "link")
-                .or(searchTerms.map(w => `content.ilike.%${w}%,summary.ilike.%${w}%`).join(","))
-                .eq("group_id", groupId)
-                .or(visibilityFilter(userId || 0))
-                .limit(5).then(r => (r.data ?? []) as KbEntry[], () => [] as KbEntry[])
+              .eq("source", "link")
+              .or(searchTerms.map((w) => `content.ilike.%${w}%,summary.ilike.%${w}%`).join(","))
+              .eq("group_id", groupId)
+              .or(visibilityFilter(userId || 0))
+              .limit(5).then((r) => (r.data ?? []) as KbEntry[], () => [] as KbEntry[])
             : Promise.resolve([] as KbEntry[]),
         ]);
 
         const seen = new Set<string>();
         const links: KbEntry[] = [];
         for (const e of [...kwLinks, ...vecLinks]) {
-          if (e?.id && !seen.has(e.id)) { seen.add(e.id); links.push(e); }
+          if (e?.id && !seen.has(e.id)) {
+            seen.add(e.id);
+            links.push(e);
+          }
         }
         if (!links.length) return "Ссылок по этой теме не найдено. Попробуй search_knowledge для поиска по всей базе.";
 
@@ -391,7 +466,14 @@ export async function executeTool(name: string, args: Record<string, unknown>, u
         // Falls back to ILIKE if country is unknown (not in our registry).
         const isoCode = isGeneral ? null : normalizeCountry(country);
 
-        type REntry = { id: string; metadata?: Record<string, unknown> | null; entry_date?: string | null; created_at: string; summary?: string | null; content?: string | null };
+        type REntry = {
+          id: string;
+          metadata?: Record<string, unknown> | null;
+          entry_date?: string | null;
+          created_at: string;
+          summary?: string | null;
+          content?: string | null;
+        };
 
         // For "General": return all recent entries (no country filter).
         // For specific country: primary filter by countries array (ISO code) — these are
@@ -399,51 +481,54 @@ export async function executeTool(name: string, args: Record<string, unknown>, u
         const [vecResults, recentDirect] = await Promise.all([
           isGeneral
             ? Promise.resolve([] as Array<{ id: string }>)
-            : getEmbedding(`${country} встреча новости`).then(emb =>
-                supabase.rpc("match_entries", {
-                  query_embedding: `[${emb.join(",")}]`,
-                  match_threshold: 0.1,
-                  match_count: 50,
-                  requesting_user_id: userId || null,
-                }).then(r => (r.data ?? []) as Array<{ id: string }>)
-              ).catch(() => [] as Array<{ id: string }>),
+            : getEmbedding(`${country} встреча новости`).then((emb) =>
+              supabase.rpc("match_entries", {
+                query_embedding: `[${emb.join(",")}]`,
+                match_threshold: 0.1,
+                match_count: 50,
+                requesting_user_id: userId || null,
+              }).then((r) => (r.data ?? []) as Array<{ id: string }>)
+            ).catch(() => [] as Array<{ id: string }>),
 
           isGeneral
             // General: all recent entries regardless of country tagging
             ? supabase.from("entries")
-                .select("id, content, summary, source, entry_date, created_at, metadata")
-                .gte("created_at", since)
-                .eq("group_id", groupId)
-                .or(visibilityFilter(userId || 0))
-                .not("source", "eq", "digest")
-                .order("created_at", { ascending: false })
-                .limit(20)
-                .then(r => (r.data ?? []) as REntry[], () => [] as REntry[])
+              .select("id, content, summary, source, entry_date, created_at, metadata")
+              .gte("created_at", since)
+              .eq("group_id", groupId)
+              .or(visibilityFilter(userId || 0))
+              .not("source", "eq", "digest")
+              .order("created_at", { ascending: false })
+              .limit(20)
+              .then((r) => (r.data ?? []) as REntry[], () => [] as REntry[])
             : isoCode
             // Known country: filter by countries array (entries explicitly tagged with this country)
             ? supabase.from("entries")
-                .select("id, content, summary, source, entry_date, created_at, metadata")
-                .gte("created_at", since)
-                .contains("countries", [isoCode])
-                .eq("group_id", groupId)
-                .or(visibilityFilter(userId || 0))
-                .order("created_at", { ascending: false })
-                .limit(20)
-                .then(r => (r.data ?? []) as REntry[], () => [] as REntry[])
+              .select("id, content, summary, source, entry_date, created_at, metadata")
+              .gte("created_at", since)
+              .contains("countries", [isoCode])
+              .eq("group_id", groupId)
+              .or(visibilityFilter(userId || 0))
+              .order("created_at", { ascending: false })
+              .limit(20)
+              .then((r) => (r.data ?? []) as REntry[], () => [] as REntry[])
             // Unknown country: fall back to ILIKE text search
             : supabase.from("entries")
-                .select("id, content, summary, source, entry_date, created_at, metadata")
-                .gte("created_at", since)
-                // спецсимволы PostgREST (,()* и т.п.) в значении сломали бы .or() → чистим терм
-                .or((() => { const c = country.replace(/[%_,()*:\\"]+/g, " ").trim(); return `metadata->>title.ilike.%${c}%,content.ilike.%${c}%,summary.ilike.%${c}%`; })())
-                .eq("group_id", groupId)
-                .or(visibilityFilter(userId || 0))
-                .order("created_at", { ascending: false })
-                .limit(20)
-                .then(r => (r.data ?? []) as REntry[], () => [] as REntry[]),
+              .select("id, content, summary, source, entry_date, created_at, metadata")
+              .gte("created_at", since)
+              // спецсимволы PostgREST (,()* и т.п.) в значении сломали бы .or() → чистим терм
+              .or((() => {
+                const c = country.replace(/[%_,()*:\\"]+/g, " ").trim();
+                return `metadata->>title.ilike.%${c}%,content.ilike.%${c}%,summary.ilike.%${c}%`;
+              })())
+              .eq("group_id", groupId)
+              .or(visibilityFilter(userId || 0))
+              .order("created_at", { ascending: false })
+              .limit(20)
+              .then((r) => (r.data ?? []) as REntry[], () => [] as REntry[]),
         ]);
 
-        const vecIds = vecResults.map(r => r.id);
+        const vecIds = vecResults.map((r) => r.id);
 
         // Fetch full data for vector results, filtering by countries array when possible.
         // This prevents tangential CEE/general meetings from appearing in country-specific news.
@@ -455,14 +540,17 @@ export async function executeTool(name: string, args: Record<string, unknown>, u
             .or(visibilityFilter(userId || 0))
             .in("id", vecIds);
           if (isoCode) vecQ = vecQ.contains("countries", [isoCode]);
-          vecEntries = await vecQ.then(r => (r.data ?? []) as REntry[], () => [] as REntry[]);
+          vecEntries = await vecQ.then((r) => (r.data ?? []) as REntry[], () => [] as REntry[]);
         }
 
         // Merge: direct recent entries first, then vector results — deduplicate by id
         const seen = new Set<string>();
         const merged: REntry[] = [];
         for (const e of [...recentDirect, ...vecEntries]) {
-          if (e?.id && !seen.has(e.id)) { seen.add(e.id); merged.push(e); }
+          if (e?.id && !seen.has(e.id)) {
+            seen.add(e.id);
+            merged.push(e);
+          }
         }
 
         if (!merged.length) return `Записей по "${country}" не найдено.`;
@@ -474,11 +562,11 @@ export async function executeTool(name: string, args: Record<string, unknown>, u
           return db.localeCompare(da);
         });
 
-        const recent = merged.filter(e => e.created_at >= since);
+        const recent = merged.filter((e) => e.created_at >= since);
         const results = recent.length ? recent : merged.slice(0, 5);
         const prefix = !recent.length ? `Свежих записей за ${days} дней нет. Последние найденные:\n\n` : "";
 
-        return prefix + results.slice(0, 8).map(e => {
+        return prefix + results.slice(0, 8).map((e) => {
           const title = (e.metadata?.title as string) ?? e.content?.split("\n")[0].slice(0, 60) ?? "Запись";
           const date = e.entry_date ?? e.created_at.slice(0, 10);
           const displayText = (e.summary && e.summary.length > (e.content ?? "").length ? e.summary : e.content) ?? "";
@@ -504,7 +592,10 @@ export async function executeTool(name: string, args: Record<string, unknown>, u
 
         // Fallback: fuzzy array match via RPC
         if (!entries.length) {
-          const { data: fuzzy } = await supabase.rpc("search_entries_by_country", { country_query: country }).then(r => r, () => ({ data: null }));
+          const { data: fuzzy } = await supabase.rpc("search_entries_by_country", { country_query: country }).then(
+            (r) => r,
+            () => ({ data: null }),
+          );
           entries = (fuzzy ?? []) as KbEntry[];
         }
 
@@ -528,7 +619,7 @@ export async function executeTool(name: string, args: Record<string, unknown>, u
         const { data } = await supabase.from("entries").select("countries").not("countries", "eq", "{}");
         const count: Record<string, number> = {};
         for (const r of (data ?? []) as Array<{ countries: string[] }>) {
-          for (const c of (r.countries ?? [])) { count[c] = (count[c] ?? 0) + 1; } // r is typed above
+          for (const c of (r.countries ?? [])) count[c] = (count[c] ?? 0) + 1; // r is typed above
         }
         if (!Object.keys(count).length) return "В базе нет записей с указанием страны.";
         return Object.entries(count).sort((a, b) => b[1] - a[1]).map(([c, n]) => `${c}: ${n} записей`).join("\n");
@@ -539,11 +630,22 @@ export async function executeTool(name: string, args: Record<string, unknown>, u
           .select("entry_type, source, summary, countries, entry_date, created_at")
           .order("created_at", { ascending: false }).limit(30);
         if (!data?.length) return "База знаний пустая.";
-        type DRow = { entry_type?: string; source: string; summary?: string; countries?: string[]; entry_date?: string; created_at: string };
+        type DRow = {
+          entry_type?: string;
+          source: string;
+          summary?: string;
+          countries?: string[];
+          entry_date?: string;
+          created_at: string;
+        };
         const byType: Record<string, DRow[]> = {};
-        for (const r of data as DRow[]) { const t = r.entry_type ?? "note"; byType[t] = byType[t] ?? []; byType[t].push(r); }
+        for (const r of data as DRow[]) {
+          const t = r.entry_type ?? "note";
+          byType[t] = byType[t] ?? [];
+          byType[t].push(r);
+        }
         return Object.entries(byType).map(([type, items]) => {
-          const lines = items.slice(0, 3).map(r => {
+          const lines = items.slice(0, 3).map((r) => {
             const date = r.entry_date ?? r.created_at.slice(0, 10);
             const ctrs = r.countries?.length ? ` [${r.countries.join(", ")}]` : "";
             return `• ${date}${ctrs}: ${(r.summary ?? r.source ?? "").slice(0, 120)}`;
@@ -560,7 +662,7 @@ export async function executeTool(name: string, args: Record<string, unknown>, u
         type GRow = { countries: string[]; source: string; summary?: string; entry_date?: string; created_at: string };
         const byCountry: Record<string, GRow> = {};
         for (const r of data as GRow[]) {
-          for (const c of (r.countries ?? [])) { if (!byCountry[c]) byCountry[c] = r; }
+          for (const c of (r.countries ?? [])) if (!byCountry[c]) byCountry[c] = r;
         }
         return Object.entries(byCountry).sort((a, b) => a[0].localeCompare(b[0])).map(([c, r]) => {
           const date = r.entry_date ?? r.created_at.slice(0, 10);
@@ -573,6 +675,9 @@ export async function executeTool(name: string, args: Record<string, unknown>, u
         const limit = Math.min(Number(args.limit ?? 10), 20);
         let q = supabase.from("entries")
           .select("id, metadata, entry_date, created_at, source, content, summary, entry_type")
+          // Свой воркспейс; личные встречи — только свои.
+          .eq("group_id", groupId)
+          .or(visibilityFilter(userId))
           .order("created_at", { ascending: false })
           .limit(limit);
         if (source) {
@@ -585,7 +690,16 @@ export async function executeTool(name: string, args: Record<string, unknown>, u
         }
         const { data } = await q;
         if (!data?.length) return "Записей не найдено.";
-        type RRow = { id: string; metadata?: Record<string, unknown>; entry_date?: string; created_at: string; source?: string; entry_type?: string; content?: string; summary?: string };
+        type RRow = {
+          id: string;
+          metadata?: Record<string, unknown>;
+          entry_date?: string;
+          created_at: string;
+          source?: string;
+          entry_type?: string;
+          content?: string;
+          summary?: string;
+        };
         return (data as RRow[]).map((e, i) => {
           const title = String(e.metadata?.title ?? e.content?.split("\n")[0].slice(0, 70) ?? "Запись");
           const date = e.entry_date ?? e.created_at?.slice(0, 10) ?? "?";
@@ -605,20 +719,31 @@ export async function executeTool(name: string, args: Record<string, unknown>, u
           .order("created_at", { ascending: false })
           .limit(100);
         if (!data?.length) return "Встреч не найдено.";
-        type MRow = { id: string; metadata?: Record<string, unknown>; entry_date?: string; created_at: string; countries?: string[]; summary?: string | null; content?: string };
+        type MRow = {
+          id: string;
+          metadata?: Record<string, unknown>;
+          entry_date?: string;
+          created_at: string;
+          countries?: string[];
+          summary?: string | null;
+          content?: string;
+        };
         const filtered = country
-          ? (data as MRow[]).filter(e =>
-              (e.countries ?? []).some((c: string) => c.toLowerCase().includes(country) || country.includes(c.toLowerCase())) ||
-              (e.content ?? "").toLowerCase().includes(country) ||
-              (e.summary ?? "").toLowerCase().includes(country) ||
-              String(e.metadata?.title ?? "").toLowerCase().includes(country)
-            )
+          ? (data as MRow[]).filter((e) =>
+            (e.countries ?? []).some((c: string) =>
+              c.toLowerCase().includes(country) || country.includes(c.toLowerCase())
+            ) ||
+            (e.content ?? "").toLowerCase().includes(country) ||
+            (e.summary ?? "").toLowerCase().includes(country) ||
+            String(e.metadata?.title ?? "").toLowerCase().includes(country)
+          )
           : (data as MRow[]);
         if (!filtered.length) return `Встреч по "${country}" не найдено.`;
         return filtered.slice(0, 20).map((e, i) => {
           const title = String(e.metadata?.title ?? e.content?.split("\n")[0].slice(0, 70) ?? "Встреча");
           const date = e.entry_date ?? e.created_at?.slice(0, 10) ?? "?";
-          const preview = (e.summary ?? e.content ?? "").split("\n").find(l => l.trim().length > 20)?.slice(0, 100) ?? "";
+          const preview = (e.summary ?? e.content ?? "").split("\n").find((l) => l.trim().length > 20)?.slice(0, 100) ??
+            "";
           return `${i + 1}. [${date}] ${title} — id:${e.id}${preview ? `\n   ${preview}` : ""}`;
         }).join("\n\n");
       }
@@ -626,30 +751,37 @@ export async function executeTool(name: string, args: Record<string, unknown>, u
       case "update_entry": {
         const id = String(args.id ?? "");
         if (!id) return "Укажи id записи.";
-        const { data: existing } = await supabase.from("entries").select("metadata, countries, entry_date, is_private, owner_id").eq("id", id).maybeSingle();
-        if (!existing) return `Запись ${id} не найдена.`;
+        const { data: existing } = await supabase.from("entries")
+          .select("metadata, countries, entry_date, is_private, owner_id, group_id, entry_type, source")
+          .eq("id", id).eq("group_id", groupId).maybeSingle();
+        // Воркспейс + права: встреча — по правам встречи, остальное — только автор
+        // (_shared/entries/entry-edit.ts). Смена видимости — отдельное право.
+        const changesPrivacy = typeof args.is_private === "boolean" && args.is_private !== existing?.is_private;
+        const denied = entryEditError(
+          id,
+          existing as EditableEntryRow | null,
+          await loadMeetingViewer(userId),
+          groupId,
+          { changesPrivacy },
+        );
+        if (denied) return denied;
         const updates: Record<string, unknown> = {};
         if (args.entry_date) updates.entry_date = String(args.entry_date);
-        if (args.title) updates.metadata = { ...(existing.metadata ?? {}), title: String(args.title) };
+        if (args.title) updates.metadata = { ...(existing!.metadata ?? {}), title: String(args.title) };
         if (args.countries) updates.countries = args.countries;
         if (typeof args.is_private === "boolean") {
-          if (args.is_private) {
-            if (!userId) return "Ошибка: не удалось определить пользователя.";
-            updates.is_private = true;
-            updates.owner_id = userId;
-          } else {
-            if (existing.is_private && existing.owner_id && existing.owner_id !== userId) {
-              return "Нельзя перенести чужую личную запись в общую базу.";
-            }
-            updates.is_private = false;
-            updates.owner_id = null;
-          }
+          if (!userId) return "Ошибка: не удалось определить пользователя.";
+          // is_private — видимость, owner_id — авторство: владельца не обнуляем и не меняем.
+          updates.is_private = args.is_private;
+          updates.owner_id = existing!.owner_id ?? userId;
         }
         if (!Object.keys(updates).length) return "Нечего обновлять — передай хотя бы одно поле.";
-        const { error } = await supabase.from("entries").update(updates).eq("id", id);
+        const { error } = await supabase.from("entries").update(updates).eq("id", id).eq("group_id", groupId);
         if (error) return `Ошибка обновления: ${error.message}`;
         if (typeof args.is_private === "boolean") {
-          return args.is_private ? "✅ Запись перенесена в личное хранилище." : "✅ Запись перенесена в общую базу знаний.";
+          return args.is_private
+            ? "✅ Запись перенесена в личное хранилище."
+            : "✅ Запись перенесена в общую базу знаний.";
         }
         const changed = Object.keys(updates).join(", ");
         return `✅ Запись обновлена (${changed}).`;
@@ -666,13 +798,27 @@ export async function executeTool(name: string, args: Record<string, unknown>, u
           .limit(limit);
         if (error) return `Ошибка: ${error.message}`;
         if (!data?.length) return "В базе знаний пока нет записей.";
-        return (data as Array<{ id: string; summary: string | null; content: string | null; source: string | null; created_at: string; metadata: Record<string, unknown> | null }>)
+        return (data as Array<
+          {
+            id: string;
+            summary: string | null;
+            content: string | null;
+            source: string | null;
+            created_at: string;
+            metadata: Record<string, unknown> | null;
+          }
+        >)
           .map((e, i) => {
-            const when = new Date(e.created_at).toLocaleString("ru-RU", { day: "2-digit", month: "long", hour: "2-digit", minute: "2-digit" });
-            const title = (e.metadata?.title as string | undefined)
-              ?? e.summary?.split("\n").find(l => l.trim().length > 3)?.slice(0, 80)
-              ?? e.content?.split("\n").find(l => l.trim().length > 3)?.slice(0, 80)
-              ?? e.source ?? "запись";
+            const when = new Date(e.created_at).toLocaleString("ru-RU", {
+              day: "2-digit",
+              month: "long",
+              hour: "2-digit",
+              minute: "2-digit",
+            });
+            const title = (e.metadata?.title as string | undefined) ??
+              e.summary?.split("\n").find((l) => l.trim().length > 3)?.slice(0, 80) ??
+              e.content?.split("\n").find((l) => l.trim().length > 3)?.slice(0, 80) ??
+              e.source ?? "запись";
             const preview = (e.summary ?? e.content ?? "").slice(0, 400);
             return `${i + 1}. [id:${e.id}] ${title} (${when})\n${preview}`;
           }).join("\n\n---\n\n");
@@ -706,7 +852,8 @@ export async function executeTool(name: string, args: Record<string, unknown>, u
           }).join("\n");
       }
 
-      default: return "Неизвестный инструмент.";
+      default:
+        return "Неизвестный инструмент.";
     }
   } catch (err) {
     return `Ошибка: ${err instanceof Error ? err.message : "unknown"}`;
@@ -727,31 +874,31 @@ export async function handleAdd(chatId: number, username: string, text: string, 
     try {
       summary = await chatComplete(
         "Ты помогаешь индексировать короткую справочную запись для поиска в командной базе знаний. " +
-        "Напиши поисковый индекс: как это можно назвать (3-5 синонимов/вариантов), к какой теме относится, для чего используется. " +
-        "Одна строка на русском, без форматирования, без вводных слов.",
-        text.trim()
+          "Напиши поисковый индекс: как это можно назвать (3-5 синонимов/вариантов), к какой теме относится, для чего используется. " +
+          "Одна строка на русском, без форматирования, без вводных слов.",
+        text.trim(),
       );
     } catch { /* summary stays undefined, raw text will be embedded */ }
 
     // Синоним-индекс уходит в searchText (только для эмбеддинга/поиска), не в видимый summary.
-    const noteDup = (await saveEntry(text, username, "note", {}, undefined, groupId, false, undefined, summary)).duplicate;
+    const noteDup =
+      (await saveEntry(text, username, "note", {}, undefined, groupId, false, undefined, summary)).duplicate;
     await sendMessage(chatId, noteDup ? "📌 Уже сохранено недавно — дубликат не добавил." : "📌 Заметка сохранена.");
     return;
   }
 
   const { summary, duplicate, merged } = await saveEntry(text, username, "telegram", {}, undefined, groupId);
-  await sendMessage(chatId, duplicate
-    ? "✅ Уже сохранено недавно — дубликат не добавил."
-    : merged
-    ? (summary
-        ? `📎 Дописал к предыдущей записи.\n\n<b>Тезисы:</b>\n${summary}`
-        : "📎 Дописал к предыдущей записи.")
-    : summary
-    ? `✅ Сохранено.\n\n<b>Тезисы:</b>\n${summary}`
-    : "✅ Запись добавлена в базу знаний.");
+  await sendMessage(
+    chatId,
+    duplicate
+      ? "✅ Уже сохранено недавно — дубликат не добавил."
+      : merged
+      ? (summary ? `📎 Дописал к предыдущей записи.\n\n<b>Тезисы:</b>\n${summary}` : "📎 Дописал к предыдущей записи.")
+      : summary
+      ? `✅ Сохранено.\n\n<b>Тезисы:</b>\n${summary}`
+      : "✅ Запись добавлена в базу знаний.",
+  );
 }
-
-
 
 export async function handleAsk(chatId: number, question: string, userId: number, groupId: string): Promise<void> {
   if (!question.trim()) {
@@ -840,7 +987,10 @@ export async function handleAsk(chatId: number, question: string, userId: number
       }),
     });
 
-    if (!res.ok) { finalAnswer = "Ошибка при обращении к AI. Попробуй ещё раз."; break; }
+    if (!res.ok) {
+      finalAnswer = "Ошибка при обращении к AI. Попробуй ещё раз.";
+      break;
+    }
 
     const data = await res.json() as {
       choices: Array<{ finish_reason: string; message: Record<string, unknown> }>;
@@ -848,7 +998,9 @@ export async function handleAsk(chatId: number, question: string, userId: number
 
     const choice = data.choices[0];
     const msg = choice.message;
-    const toolCalls = msg.tool_calls as Array<{ id: string; function: { name: string; arguments: string } }> | undefined;
+    const toolCalls = msg.tool_calls as
+      | Array<{ id: string; function: { name: string; arguments: string } }>
+      | undefined;
 
     if (choice.finish_reason === "stop" || !toolCalls?.length) {
       finalAnswer = String(msg.content ?? "В базе знаний нет информации по этому вопросу.");
@@ -863,43 +1015,24 @@ export async function handleAsk(chatId: number, question: string, userId: number
         if (tc.function.name === "export_entry") {
           const tcArgs = JSON.parse(tc.function.arguments) as Record<string, unknown>;
           const entryId = String(tcArgs.entry_id ?? "").replace(/^id:/, "");
-          const { data: entry } = await supabase
-            .from("entries")
-            .select("content, summary, metadata, source, created_at, group_id")
-            .eq("id", entryId)
-            .eq("group_id", groupId)
-            .maybeSingle();
-          if (!entry) {
+          // Свой воркспейс, личные — только свои; текст — из этой записи и её частей.
+          const found = await loadEntryForExport(supabase, entryId, { groupId, userId });
+          if (!found) {
             result = "Запись не найдена.";
           } else {
-            const meta = entry.metadata as Record<string, unknown> | null ?? {};
+            const { entry, fullContent } = found;
+            const meta = entry.metadata ?? {};
             const rawFileUrl = (meta.file_url ?? meta.drive_link) as string | undefined;
             const ourFileUrl = rawFileUrl ? normalizeFileLink(rawFileUrl, { baseUrl: WEB_BASE_URL }) : null;
             const fileUrl = ourFileUrl ?? (rawFileUrl?.startsWith("http") ? rawFileUrl : undefined);
-            const rawTitle = (meta.title as string | undefined)
-              ?? (meta.file_name as string | undefined)
-              ?? (entry.source as string | undefined)
-              ?? "entry";
+            const rawTitle = (meta.title as string | undefined) ??
+              (meta.file_name as string | undefined) ??
+              (entry.source as string | undefined) ??
+              "entry";
             if (fileUrl) {
               exportDriveLink = { url: fileUrl, title: rawTitle, external: !ourFileUrl };
               result = "Ссылка на оригинальный файл готова.";
             } else {
-              // Use summary if it's longer (complete tezises); otherwise reassemble chunks via group_id
-              let fullContent = entry.summary && (entry.summary as string).length > ((entry.content as string) ?? "").length
-                ? entry.summary as string
-                : entry.content as string;
-              if (entry.group_id && !entry.summary) {
-                const { data: chunks } = await supabase
-                  .from("entries")
-                  .select("content, metadata")
-                  .eq("group_id", entry.group_id)
-                  .order("created_at", { ascending: true });
-                if (chunks?.length) {
-                  fullContent = (chunks as Array<{ content: string; metadata: Record<string, unknown> }>)
-                    .sort((a, b) => ((a.metadata?.chunk as number) ?? 0) - ((b.metadata?.chunk as number) ?? 0))
-                    .map(c => c.content).join("\n");
-                }
-              }
               const safeTitle = rawTitle.replace(/[^\wа-яёА-ЯЁ\s-]/g, "").trim().replace(/\s+/g, "_");
               const dateStr = new Date(entry.created_at as string).toISOString().slice(0, 10);
               exportFile = { content: fullContent, filename: `${safeTitle}_${dateStr}.txt` };
@@ -907,9 +1040,16 @@ export async function handleAsk(chatId: number, question: string, userId: number
             }
           }
         } else {
-          result = await executeTool(tc.function.name, JSON.parse(tc.function.arguments) as Record<string, unknown>, userId, groupId);
+          result = await executeTool(
+            tc.function.name,
+            JSON.parse(tc.function.arguments) as Record<string, unknown>,
+            userId,
+            groupId,
+          );
         }
-      } catch { result = "Ошибка выполнения инструмента."; }
+      } catch {
+        result = "Ошибка выполнения инструмента.";
+      }
       console.log(`[tool] ${tc.function.name} ${tc.function.arguments.slice(0, 100)} → "${result.slice(0, 120)}"`);
       messages.push({ role: "tool", tool_call_id: tc.id, content: result });
     }
@@ -922,7 +1062,10 @@ export async function handleAsk(chatId: number, question: string, userId: number
     const linkLabel = exportDriveLink.external
       ? "Открыть оригинальный файл на Google Drive"
       : "Открыть оригинальный файл";
-    await sendMessage(chatId, `${caption}📎 <b>${exportDriveLink.title}</b>\n<a href="${exportDriveLink.url}">${linkLabel}</a>`);
+    await sendMessage(
+      chatId,
+      `${caption}📎 <b>${exportDriveLink.title}</b>\n<a href="${exportDriveLink.url}">${linkLabel}</a>`,
+    );
     return;
   }
 

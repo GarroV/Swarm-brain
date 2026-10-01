@@ -7,17 +7,17 @@ import { getEmbedding } from "../lib/openai.ts";
 import { matchEntries } from "../../_shared/search.ts";
 import { detectQueryCountry } from "../../_shared/countries.ts";
 import {
+  clearSession,
   EntryAccessError,
   getManageableEntry,
+  getSession,
+  type ManageableEntry,
+  setSession,
   updateEntryContent,
   visibilityFilter,
-  setSession,
-  getSession,
-  clearSession,
-  type ManageableEntry,
 } from "../lib/storage.ts";
-import { sendMessage, sendInlineMessage } from "../lib/telegram.ts";
-import { extractUrl, type EntryCommand } from "../lib/intent.ts";
+import { sendInlineMessage, sendMessage } from "../lib/telegram.ts";
+import { type EntryCommand, extractUrl } from "../lib/intent.ts";
 import type { TgCallbackQuery } from "../lib/types.ts";
 
 const MAX_RESULTS = 5;
@@ -28,7 +28,11 @@ function escapeHtml(s: string): string {
 
 type Candidate = { id: string; title: string; date: string; preview: string };
 
-function titleOf(metadata: Record<string, unknown> | null | undefined, summary?: string | null, content?: string | null): string {
+function titleOf(
+  metadata: Record<string, unknown> | null | undefined,
+  summary?: string | null,
+  content?: string | null,
+): string {
   const fromMeta = metadata?.title;
   if (typeof fromMeta === "string" && fromMeta.trim()) return fromMeta.trim().slice(0, 120);
   const line = (summary ?? content ?? "").split("\n").find((l) => l.trim());
@@ -58,7 +62,11 @@ async function searchCandidates(query: string, userId: number, groupId: string):
   const emb = await getEmbedding(query).catch(() => null);
   if (emb) {
     const vec = await matchEntries(supabase, emb, {
-      groupId, requestingUserId: userId, limit: MAX_RESULTS * 3, queryText: query, country: detectQueryCountry(query),
+      groupId,
+      requestingUserId: userId,
+      limit: MAX_RESULTS * 3,
+      queryText: query,
+      country: detectQueryCountry(query),
     }).catch(() => []);
     for (const e of vec) {
       const title = titleOf(e.metadata, e.summary, e.content);
@@ -108,10 +116,18 @@ function cardText(e: ManageableEntry): string {
     (preview ? `\n<i>${escapeHtml(preview)}</i>` : "");
 }
 
-async function showCard(chatId: number, userId: number, groupId: string, id: string, cmd: EntryCommand, newValue?: string): Promise<void> {
+async function showCard(
+  chatId: number,
+  userId: number,
+  groupId: string,
+  id: string,
+  cmd: EntryCommand,
+  newValue?: string,
+): Promise<void> {
   let e: ManageableEntry;
   try {
-    e = await getManageableEntry(id, userId, groupId);
+    // Карточку показываем, только если действие разрешено — отказ сразу, а не после «Да».
+    e = await getManageableEntry(id, userId, groupId, cmd === "delete" ? "delete" : "edit");
   } catch (err) {
     await sendMessage(chatId, accessErrorText(err));
     await clearSession(chatId);
@@ -120,8 +136,8 @@ async function showCard(chatId: number, userId: number, groupId: string, id: str
   const actionBtn = cmd === "delete"
     ? { text: "🗑 Да, удалить", callback_data: `kbdo_${id}` }
     : newValue
-      ? { text: "✏️ Заменить", callback_data: `kbdo_${id}` }
-      : { text: "✏️ Ввести новое значение", callback_data: `kbask_${id}` };
+    ? { text: "✏️ Заменить", callback_data: `kbdo_${id}` }
+    : { text: "✏️ Ввести новое значение", callback_data: `kbask_${id}` };
   const tail = cmd === "replace" && newValue ? `\n\nНовое значение:\n<code>${escapeHtml(newValue)}</code>` : "";
   await sendInlineMessage(chatId, cardText(e) + tail, [
     [actionBtn],
@@ -131,19 +147,29 @@ async function showCard(chatId: number, userId: number, groupId: string, id: str
 
 function accessErrorText(err: unknown): string {
   if (err instanceof EntryAccessError) {
-    return err.kind === "not_found" ? "Запись не найдена (возможно, уже удалена)." : "Нет доступа к этой записи.";
+    return err.kind === "not_found"
+      ? "Запись не найдена (возможно, уже удалена)."
+      : "Нет прав на это действие с записью.";
   }
   return `Ошибка: ${err instanceof Error ? err.message : String(err)}`;
 }
 
 /** Точка входа из роутинга сообщений: команда удаления/замены записи. */
 export async function handleEntryCommand(
-  chatId: number, userId: number, query: string, cmd: EntryCommand, groupId: string, newValue?: string,
+  chatId: number,
+  userId: number,
+  query: string,
+  cmd: EntryCommand,
+  groupId: string,
+  newValue?: string,
 ): Promise<void> {
   if (!query.trim()) {
-    await sendMessage(chatId, cmd === "delete"
-      ? "Что удалить? Уточни тему, например: «удали запись про форму»."
-      : "Что заменить? Уточни тему, например: «замени запись про форму на …».");
+    await sendMessage(
+      chatId,
+      cmd === "delete"
+        ? "Что удалить? Уточни тему, например: «удали запись про форму»."
+        : "Что заменить? Уточни тему, например: «замени запись про форму на …».",
+    );
     return;
   }
 
@@ -186,7 +212,7 @@ async function readState(chatId: number): Promise<ManageState | null> {
 }
 
 async function doDelete(chatId: number, userId: number, groupId: string, id: string): Promise<void> {
-  await getManageableEntry(id, userId, groupId); // гейт доступа
+  await getManageableEntry(id, userId, groupId, "delete"); // гейт: права удаления, отказ бросает
   const { error } = await supabase.from("entries").delete().eq("id", id).eq("group_id", groupId);
   if (error) throw new Error(error.message);
   await clearSession(chatId);
@@ -194,7 +220,7 @@ async function doDelete(chatId: number, userId: number, groupId: string, id: str
 }
 
 async function doReplace(chatId: number, userId: number, groupId: string, id: string, raw: string): Promise<void> {
-  const entry = await getManageableEntry(id, userId, groupId); // гейт доступа
+  const entry = await getManageableEntry(id, userId, groupId, "edit"); // гейт: права правки, отказ бросает
   const url = extractUrl(raw);
   const oldUrl = typeof entry.metadata?.url === "string" ? (entry.metadata.url as string) : undefined;
 
@@ -220,7 +246,11 @@ async function doReplace(chatId: number, userId: number, groupId: string, id: st
 
 /** Обработка kb*-коллбеков. Возвращает true, если коллбек обработан. */
 export async function handleManageCallbacks(
-  cb: TgCallbackQuery, chatId: number, userId: number, _username: string, groupId: string,
+  cb: TgCallbackQuery,
+  chatId: number,
+  userId: number,
+  _username: string,
+  groupId: string,
 ): Promise<boolean> {
   const data = cb.data ?? "";
   if (!data.startsWith("kb")) return false;
@@ -234,7 +264,10 @@ export async function handleManageCallbacks(
   if (data.startsWith("kbpick_")) {
     const id = data.slice("kbpick_".length);
     const state = await readState(chatId);
-    if (!state) { await sendMessage(chatId, "Сессия истекла, повтори команду."); return true; }
+    if (!state) {
+      await sendMessage(chatId, "Сессия истекла, повтори команду.");
+      return true;
+    }
     await showCard(chatId, userId, groupId, id, state.cmd, state.newValue ?? undefined);
     return true;
   }
@@ -249,7 +282,10 @@ export async function handleManageCallbacks(
   if (data.startsWith("kbdo_")) {
     const id = data.slice("kbdo_".length);
     const state = await readState(chatId);
-    if (!state) { await sendMessage(chatId, "Сессия истекла, повтори команду."); return true; }
+    if (!state) {
+      await sendMessage(chatId, "Сессия истекла, повтори команду.");
+      return true;
+    }
     try {
       if (state.cmd === "delete") {
         await doDelete(chatId, userId, groupId, id);
@@ -271,10 +307,19 @@ export async function handleManageCallbacks(
 
 /** Ввод нового значения для замены (сессия manage_replace). true, если обработано. */
 export async function handleManageSessionInput(
-  chatId: number, userId: number, action: string, text: string, context: string | undefined, groupId: string,
+  chatId: number,
+  userId: number,
+  action: string,
+  text: string,
+  context: string | undefined,
+  groupId: string,
 ): Promise<boolean> {
   if (action !== "manage_replace") return false;
-  if (!context) { await sendMessage(chatId, "Сессия истекла, повтори команду."); await clearSession(chatId); return true; }
+  if (!context) {
+    await sendMessage(chatId, "Сессия истекла, повтори команду.");
+    await clearSession(chatId);
+    return true;
+  }
   try {
     await doReplace(chatId, userId, groupId, context, text);
   } catch (err) {

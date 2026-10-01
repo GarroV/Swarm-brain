@@ -10,7 +10,7 @@
 // её не поймает — поведение для человека не изменится.
 import { assert, assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
 
-const ROOT = new URL("../", import.meta.url).pathname;
+const ROOT = decodeURIComponent(new URL("../", import.meta.url).pathname);
 
 /** Эндпоинты, куда ходит бот за человека: шесть штук, все через resolveActingIdentity. */
 const BOT_DOORS = [
@@ -28,7 +28,12 @@ const BOT_DOORS = [
  * бота за любого; meeting-context отдаёт рекордеру контекст его встречи; recorder-diag принимает
  * журнал рекордера с машины человека (из main, #468).
  */
-const HUMAN_ONLY = ["meeting-webtoken", "meeting-missed", "meeting-context", "recorder-diag"];
+const HUMAN_ONLY = [
+  "meeting-webtoken",
+  "meeting-missed",
+  "meeting-context",
+  "recorder-diag",
+];
 
 /**
  * Весь рабочий код функции, а не только index.ts: вход может жить в соседнем модуле
@@ -38,7 +43,10 @@ const HUMAN_ONLY = ["meeting-webtoken", "meeting-missed", "meeting-context", "re
 async function source(fn: string): Promise<string> {
   const parts: string[] = [];
   for await (const entry of Deno.readDir(`${ROOT}${fn}`)) {
-    if (!entry.isFile || !entry.name.endsWith(".ts") || entry.name.endsWith(".test.ts")) continue;
+    if (
+      !entry.isFile || !entry.name.endsWith(".ts") ||
+      entry.name.endsWith(".test.ts")
+    ) continue;
     parts.push(await Deno.readTextFile(`${ROOT}${fn}/${entry.name}`));
   }
   return parts.join("\n");
@@ -81,9 +89,13 @@ const AGENT_SELF = ["meeting-invite", "meeting-calendar"];
 for (const fn of AGENT_SELF) {
   Deno.test(`БЛОКИРУЮЩИЙ: ${fn} — дверь resolveServiceAgent, не человеческая и не подмены`, async () => {
     const src = await source(fn);
-    assert(src.includes("resolveServiceAgent("), `${fn} не зовёт resolveServiceAgent`);
+    assert(
+      src.includes("resolveServiceAgent("),
+      `${fn} не зовёт resolveServiceAgent`,
+    );
     assertEquals(
-      src.includes("resolveActingIdentity(") || src.includes("verifyAgentToken("),
+      src.includes("resolveActingIdentity(") ||
+        src.includes("verifyAgentToken("),
       false,
       `${fn} пускает по двери человека: приглашения воркспейса увидел бы личный токен любого сотрудника`,
     );
@@ -96,14 +108,28 @@ for (const fn of AGENT_SELF) {
  * дверь подмены (агент действует за любого человека) проходит при зелёных тестах.
  */
 Deno.test("БЛОКИРУЮЩИЙ: каждый эндпоинт с дверью агента прибит ровно к одному списку", async () => {
-  const doors = ["resolveActingIdentity(", "verifyAgentToken(", "resolveServiceAgent("];
+  const doors = [
+    "resolveActingIdentity(",
+    "verifyAgentToken(",
+    "resolveServiceAgent(",
+  ];
   const listed = [...BOT_DOORS, ...HUMAN_ONLY, ...AGENT_SELF];
   const unlisted: string[] = [];
   for await (const dir of Deno.readDir(ROOT)) {
     if (!dir.isDirectory || dir.name.startsWith("_")) continue;
     const src = await source(dir.name);
-    if (doors.some((d) => src.includes(d)) && !listed.includes(dir.name)) unlisted.push(dir.name);
+    if (doors.some((d) => src.includes(d)) && !listed.includes(dir.name)) {
+      unlisted.push(dir.name);
+    }
   }
-  assertEquals(unlisted.sort(), [], "впишите эндпоинт в BOT_DOORS, HUMAN_ONLY или AGENT_SELF");
-  assertEquals(new Set(listed).size, listed.length, "эндпоинт стоит в двух списках сразу");
+  assertEquals(
+    unlisted.sort(),
+    [],
+    "впишите эндпоинт в BOT_DOORS, HUMAN_ONLY или AGENT_SELF",
+  );
+  assertEquals(
+    new Set(listed).size,
+    listed.length,
+    "эндпоинт стоит в двух списках сразу",
+  );
 });

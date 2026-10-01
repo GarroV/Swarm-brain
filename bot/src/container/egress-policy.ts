@@ -13,6 +13,16 @@
  * поддерживает, качество видео хуже, звук для записи — в норме. Веб Meet и вход — домены Google
  * на 443. Свой Swarm — ровно host:port из адреса.
  *
+ * Контур.Толк (T111, D040; разведка 30.09.2026 — боевой образ открыл несуществующую комнату
+ * `dodobrands.ktalk.ru/<случайный код>` и записал хосты всех запросов): страница, скрипты, шрифты,
+ * API и WebSocket — всё на хосте самого пространства `<имя>.ktalk.ru:443`. Поэтому открыт суффикс
+ * `ktalk.ru` и хосты `talk.kontur.<зона>` (вторая форма ссылок Толка), только на 443. Аналитика и
+ * сборщик ошибок Контура (`metrika.kontur.ru`, `sentry.kontur.host`) закрыты: странице они не
+ * нужны, а данные из браузера бота уносят. Медиасерверы Толка — `*.ktalk.host:443` (TURN по TLS,
+ * имена вида `sd2-talk-stun4.ktalk.host`): найдены живым звонком 30.09.2026, пока их не было в
+ * списке, бот стоял в звонке и писал тишину. UDP из сети встречи наружу нет, поэтому звук идёт
+ * только так. `kontur.host` (сборщик ошибок) — другой домен и остаётся закрыт.
+ *
  * Домены Google открыты суффиксом, но хосты, куда чужая страница может сама записать данные
  * и прочитать их снаружи (Apps Script, Документы, Диск, Сайты, облачное хранилище и т.п.),
  * закрыты явно: это те места, куда сессию можно было бы вынести, не покидая Google.
@@ -96,6 +106,24 @@ const DENIED_SUFFIXES = [
 
 const MEDIA_HOST_SUFFIX = "turns.goog";
 
+/**
+Пространства Контур.Толка: `<имя>.ktalk.ru`.
+*/
+const KONTUR_SUFFIX = "ktalk.ru";
+/**
+Медиасерверы Толка (TURN по TLS): `<имя>.ktalk.host`.
+*/
+const KONTUR_MEDIA_SUFFIX = "ktalk.host";
+const KONTUR_TALK_LABELS = 3;
+
+/**
+Вторая форма хоста Толка: ровно `talk.kontur.<зона>`, метки сверяются поштучно.
+*/
+function isKonturTalkHost(host: string): boolean {
+  const labels = host.split(".");
+  return labels.length === KONTUR_TALK_LABELS && labels[0] === "talk" && labels[1] === "kontur";
+}
+
 const MAX_PORT = 65_535;
 const IPV4_OCTETS = 4;
 const OCTET_MAX = 255;
@@ -175,6 +203,16 @@ function decideHost(host: string, port: number): RuleVerdict {
     return isMediaPort(port)
       ? { allowed: true, rule: "медиа Meet (TURN)" }
       : { allowed: false, reason: "порт не медиа" };
+  }
+  if (isUnderSuffix(host, KONTUR_MEDIA_SUFFIX)) {
+    return port === WEB_PORT
+      ? { allowed: true, rule: "медиа Контур.Толка (TURN)" }
+      : { allowed: false, reason: "у медиа Контур.Толка только 443" };
+  }
+  if (isUnderSuffix(host, KONTUR_SUFFIX) || isKonturTalkHost(host)) {
+    return port === WEB_PORT
+      ? { allowed: true, rule: "веб Контур.Толка" }
+      : { allowed: false, reason: "у веба Контур.Толка только 443" };
   }
   if (DENIED_SUFFIXES.some((suffix) => isUnderSuffix(host, suffix))) {
     return { allowed: false, reason: "хост Google, куда страница может записать данные" };

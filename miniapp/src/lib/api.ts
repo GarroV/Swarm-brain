@@ -1,4 +1,5 @@
 import { getInitData } from "./telegram";
+import type { TaskFile, TaskFileLimits } from "./taskFiles";
 import type { BackdropId } from "./backdrop";
 import type {
   AdminUser,
@@ -2455,6 +2456,85 @@ export async function deleteTaskComment(
   });
 }
 
+// ── Файлы к задаче (#638) ─────────────────────────────────────────────────────
+// Список и ссылки — через swarm-api (он проверяет доступ к задаче), байты — напрямую в хранилище
+// на MUSPELHEIM по подписанной ссылке. Загрузка — через XHR: у fetch нет прогресса отправки.
+export type TaskFilesList = { files: TaskFile[]; limits: TaskFileLimits; available: boolean };
+
+const DEV_FILE_LIMITS: TaskFileLimits = {
+  maxBytes: 50 * 1024 * 1024,
+  maxFiles: 10,
+  accept: ["pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "odt", "ods", "odp", "rtf", "txt", "csv", "md", "png", "jpg", "jpeg", "gif", "webp", "heic", "zip"],
+};
+const devTaskFiles = new Map<string, TaskFile[]>();
+
+export async function fetchTaskFiles(taskId: string): Promise<TaskFilesList> {
+  if (DEV_MODE) {
+    if (!devTaskFiles.has(taskId)) {
+      devTaskFiles.set(taskId, [{
+        id: "f1", name: "Договор_Сербия.pdf", size: 2_516_582, mime: "application/pdf", inline: true,
+        uploaded_by: 123456, uploaded_by_name: "Dev User", created_at: new Date(Date.now() - 86_400_000 * 3).toISOString(),
+      }]);
+    }
+    return { files: [...(devTaskFiles.get(taskId) ?? [])], limits: DEV_FILE_LIMITS, available: true };
+  }
+  return apiFetch<TaskFilesList>(`/tasks/${taskId}/files`);
+}
+
+export class UploadAbortedError extends Error {}
+
+/** Завести файл, залить байты с прогрессом (0..1), подтвердить. `signal` — отмена человеком. */
+export async function uploadTaskFile(
+  taskId: string,
+  file: File,
+  onProgress: (share: number) => void,
+  signal: AbortSignal,
+): Promise<TaskFile> {
+  if (DEV_MODE) {
+    for (let i = 1; i <= 20; i++) {
+      await new Promise((r) => setTimeout(r, 90));
+      if (signal.aborted) throw new UploadAbortedError();
+      onProgress(i / 20);
+    }
+    const f: TaskFile = {
+      id: `f${Date.now()}`, name: file.name, size: file.size, mime: file.type, inline: /\.(pdf|png|jpe?g|gif|webp)$/i.test(file.name),
+      uploaded_by: 123456, uploaded_by_name: "Dev User", created_at: new Date().toISOString(),
+    };
+    devTaskFiles.set(taskId, [...(devTaskFiles.get(taskId) ?? []), f]);
+    return f;
+  }
+  const created = await apiFetch<{ file: TaskFile; upload_url: string }>(`/tasks/${taskId}/files`, {
+    method: "POST",
+    body: JSON.stringify({ name: file.name, size: file.size }),
+  });
+  await new Promise<void>((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("PUT", created.upload_url);
+    xhr.upload.onprogress = (e) => { if (e.lengthComputable) onProgress(e.loaded / e.total); };
+    xhr.onload = () => (xhr.status === 201 ? resolve() : reject(new ApiError(xhr.status, "upload failed")));
+    xhr.onerror = () => reject(new ApiError(0, "storage unreachable"));
+    xhr.onabort = () => reject(new UploadAbortedError());
+    signal.addEventListener("abort", () => xhr.abort(), { once: true });
+    xhr.send(file);
+  });
+  const done = await apiFetch<{ file: TaskFile }>(`/tasks/${taskId}/files/${created.file.id}/complete`, { method: "POST" });
+  return done.file;
+}
+
+export async function taskFileUrl(taskId: string, fileId: string): Promise<string> {
+  if (DEV_MODE) return "about:blank";
+  const r = await apiFetch<{ url: string }>(`/tasks/${taskId}/files/${fileId}/url`);
+  return r.url;
+}
+
+export async function removeTaskFile(taskId: string, fileId: string): Promise<void> {
+  if (DEV_MODE) {
+    devTaskFiles.set(taskId, (devTaskFiles.get(taskId) ?? []).filter((f) => f.id !== fileId));
+    return;
+  }
+  await apiFetch<{ ok: true }>(`/tasks/${taskId}/files/${fileId}`, { method: "DELETE" });
+}
+
 // ── Подписка на уведомления о комментариях к задаче (issue #82) ───────────────
 // `state` — явная строка (`subscribed`/`muted`) или null, если человек ничего не выбирал;
 // `notified` — придут ли уведомления сейчас (это и показывает тумблер).
@@ -2828,6 +2908,23 @@ let mockAgentMeetings: AgentMeeting[] = [
     entry_id: null,
     created_at: "2026-06-12T14:47:00+03:00",
   },
+  {
+    // Встреча с одним владельцем — вид с выбором «Команда / Личное».
+    id: "am-2",
+    title: "1-1 по данным качества",
+    source: "desktop-agent",
+    identity_kind: "calendar",
+    started_at: "2026-06-13T11:00:00+03:00",
+    ended_at: "2026-06-13T11:30:00+03:00",
+    status: "awaiting_review",
+    summary_status: "done",
+    draft_notes_md: "### Рейтинги\n- Собираем оценки из карт в сводный дашборд",
+    transcript: { language: "ru", model: "whisper-large-v3-turbo", segments: [{ start: 0, end: 5, text: "Начнём с рейтингов." }] },
+    recorders: [{ telegram_id: 744230399, claimed_at: "2026-06-13T11:30:10+03:00", role: "transcribe" }],
+    co_owners: [],
+    entry_id: null,
+    created_at: "2026-06-13T11:30:00+03:00",
+  },
 ];
 
 // all=true — админский оверрайд: показать все pending черновики воркспейса, а не только
@@ -3007,15 +3104,21 @@ function readInvite(body: unknown): MeetingInvite {
 
 export async function createMeetingInvite(joinUrl: string): Promise<MeetingInvite> {
   if (DEV_MODE) {
-    // Как сервер: бот ходит только в Meet, остальные площадки отбиваются сразу.
-    if (/(^|\.)(ktalk\.ru|kontur\.ru|zoom\.us)(\/|$)/i.test(joinUrl.trim().replace(/^https?:\/\//, ""))) {
-      throw new ApiError(400, "The bot joins Google Meet calls only", { code: "unsupported_platform" });
+    const bare = joinUrl.trim().replace(/^https?:\/\//, "");
+    // Как сервер: бот ходит в Meet и Контур.Толк (T111), Zoom отбивается сразу.
+    if (/(^|\.)zoom\.us(\/|$)/i.test(bare)) {
+      throw new ApiError(400, "The bot joins Google Meet and Kontur.Talk calls — Zoom is not supported yet", {
+        code: "unsupported_platform",
+      });
     }
     const same = mockInvites.find((x) => x.join_url === joinUrl.trim());
     if (same) return same;
     const now = Date.now();
+    const platform: MeetingInvite["platform"] = /(^|\.)(ktalk\.ru|kontur\.[a-z.]+)(\/|$)/i.test(bare)
+      ? "kontur"
+      : "meet";
     const invite: MeetingInvite = {
-      id: crypto.randomUUID(), join_url: joinUrl.trim(), platform: "meet", status: "pending",
+      id: crypto.randomUUID(), join_url: joinUrl.trim(), platform, status: "pending",
       created_at: new Date(now).toISOString(), expires_at: new Date(now + 15 * 60_000).toISOString(), meeting_id: null,
     };
     mockInvites = [invite, ...mockInvites];
@@ -3067,7 +3170,10 @@ export async function disconnectGranola(): Promise<void> {
 
 export async function googleConnectUrl(): Promise<string> {
   if (DEV_MODE) return "#";
-  return (await apiFetch<{ url: string }>("/google/connect-url")).url;
+  // Сервер отдаёт путь на нашем же адресе (поток живёт на CF Pages рядом с сессией) — делаем
+  // абсолютным, чтобы его одинаково открывали window.open и Telegram openLink.
+  const { url } = await apiFetch<{ url: string }>("/google/connect-url");
+  return new URL(url, window.location.origin).toString();
 }
 export async function disconnectGoogle(): Promise<void> {
   if (DEV_MODE) {

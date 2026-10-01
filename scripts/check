@@ -135,7 +135,7 @@ initiatives_gate() {
   # что ссылаются на несуществующий параметр — issue #383. Когда он закрыт, флаг убирается
   # и оба прогона становятся одинаковыми.
   rm -rf reports/cov
-  deno test -A --coverage=reports/cov --reporter=junit supabase/ \
+  deno test -A --coverage=reports/cov --reporter=junit supabase/ files/ \
     > reports/tests-functions.junit.xml 2> reports/tests.log; st1=$?
   deno test -A --no-check --coverage=reports/cov --reporter=junit \
     miniapp/sw.test.ts miniapp/src/lib/ > reports/tests-web.junit.xml 2>> reports/tests.log; st2=$?
@@ -312,8 +312,8 @@ if [[ "$scope" == "all" || "$scope" == "server" ]]; then
       printf '\n○ сервер · тесты: файлов *.test.ts в supabase/functions пока нет\n'
       skipped+=("сервер · тесты (нет ни одного файла *.test.ts)")
     fi
-    printf '\n○ бот · браузерный код (meet-adapter/dom.ts, meet.ts): проверяется смоуком в контейнере вручную\n'
-    skipped+=("бот · браузерный код meet-adapter (исключён из покрытия; держит смоук smoke-meet.ts, запускается руками в контейнере)")
+    printf '\n○ бот · браузерный код (meet-adapter/dom.ts, meet.ts; kontur-adapter/dom.ts, kontur.ts): проверяется смоуком в контейнере вручную\n'
+    skipped+=("бот · браузерный код meet-adapter и kontur-adapter (исключён из покрытия; держат смоуки smoke-meet.ts и smoke-kontur.ts, запускаются руками в контейнере)")
     printf '\n○ сервер · мёртвый код и границы модулей: готового инструмента под Deno нет\n'
     skipped+=("сервер · мёртвый код и границы (нет инструмента под Deno — осознанный пробел, docs/furca/plan.md)")
   fi

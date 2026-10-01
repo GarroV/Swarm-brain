@@ -23,3 +23,10 @@ miniapp/src/lib/taskLinks.ts|miniapp/src/lib/taskLinks.test.ts
 # правильным, и человек читает это как «карточки сами прыгают», а не как поломку.
 miniapp/src/lib/projectOrder.ts|miniapp/src/lib/projectOrder.test.ts
 supabase/functions/swarm-api/public-roadmap.ts|supabase/functions/swarm-api/public-roadmap.test.ts
+supabase/functions/_shared/jwt.ts|supabase/functions/_shared/jwt.test.ts
+miniapp/functions/_lib/oauth-state.ts|miniapp/src/lib/oauthState.test.ts
+# Границы админки: объём воркспейса и аккаунт суперадмина. Ошибка в правиле не падает —
+# она молча расширяет объём админа за пределы его воркспейса.
+supabase/functions/swarm-api/admin-scope.ts|supabase/functions/swarm-api/admin-scope.test.ts
+supabase/functions/_shared/users/admin-scope.ts|supabase/functions/swarm-api/admin-scope.test.ts
+supabase/functions/swarm-bot/handlers/superadmin-scope.ts|supabase/functions/swarm-bot/handlers/superadmin-scope.test.ts

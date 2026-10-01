@@ -1,5 +1,6 @@
 "use client";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   acceptSprintCycle,
   addTasksToSprintCycle,
@@ -1061,7 +1062,10 @@ export function SprintsScreen() {
       {/* Шторка бэклога. Поверх экрана, а не колонкой: набор состава — редкое действие, и
           отдавать ему половину ширины каждый день незачем (#407). Подложка закрывает по клику
           вне, Esc — клавишей. */}
-      {poolOpen && (
+      {/* В body порталом: внутри экрана `fixed` привязывается к предку со скроллом/трансформом,
+          шторка вырастает выше окна, и список задач в ней не прокручивается (замечание
+          владельца 28.09.2026). */}
+      {poolOpen && typeof document !== "undefined" && createPortal(
         <div className="fixed inset-0 z-40 flex justify-end">
           <button
             type="button"
@@ -1091,7 +1095,8 @@ export function SprintsScreen() {
               onAdd={addToSprint}
             />
           </aside>
-        </div>
+        </div>,
+        document.body,
       )}
 
       <AcceptDialog

@@ -109,16 +109,26 @@ describe("CalendarTrigger.pollOnce", () => {
     expect(h.lines.join("\n")).toMatch(/job-1.*повторно/u);
   });
 
-  it("не Meet — refuse с текстом площадки, контейнер не поднят", async () => {
+  it("площадка без адаптера — refuse с текстом площадки, контейнер не поднят", async () => {
     const h = harness();
-    h.batches.push(sweep({ jobs: [job({ platform: "kontur" })] }));
+    h.batches.push(sweep({ jobs: [job({ platform: "zoom" })] }));
 
     await h.trigger.pollOnce();
 
     expect(h.started).toEqual([]);
     expect(h.refused).toHaveLength(1);
-    expect(h.refused[0]?.detail).toMatch(/Kontur\.Talk/u);
-    expect(h.refused[0]?.detail).toMatch(/Google Meet/u);
+    expect(h.refused[0]?.detail).toMatch(/Zoom/u);
+    expect(h.refused[0]?.detail).toMatch(/Google Meet and Kontur\.Talk/u);
+  });
+
+  it("Контур.Толк — контейнер поднимается, как для Meet (T111)", async () => {
+    const h = harness();
+    h.batches.push(sweep({ jobs: [job({ platform: "kontur" })] }));
+
+    await h.trigger.pollOnce();
+
+    expect(h.refused).toEqual([]);
+    expect(h.started).toHaveLength(1);
   });
 
   it("start бросил — refuse со start_failed", async () => {
@@ -137,7 +147,7 @@ describe("CalendarTrigger.pollOnce", () => {
     h.failRefuse = new Error("meeting-notice 500");
     h.batches.push(
       sweep({
-        jobs: [job({ id: "k", calendar_key: "evt-k", platform: "kontur" }), job({ id: "m" })],
+        jobs: [job({ id: "k", calendar_key: "evt-k", platform: "zoom" }), job({ id: "m" })],
       }),
     );
 

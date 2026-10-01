@@ -47,14 +47,18 @@ Deno.test("telegram: привязан → connected", () => {
   assertEquals(stateOf(input({ telegramLinked: true }), "telegram"), "connected");
 });
 
-Deno.test("сортировка: требующие внимания идут первыми, подключённые — последними", () => {
-  const list = buildConnectors(input({
+// Плитка не прыгает при смене состояния: порядок один и тот же, что бы ни было подключено.
+Deno.test("порядок постоянный: состояние не переставляет плитки", () => {
+  const order = (i: ConnectorsInput) => buildConnectors(i).map((c) => c.id);
+  const fresh = order(input({ botAutojoin: false }));
+  const mixed = order(input({
     services: ["google_calendar", "granola"],
     recorder: { active: true, expiresAt: inDays(-1) },
     mcp: { active: true, expiresAt: null },
-    telegramLinked: false,
+    botAutojoin: true,
   }));
-  assertEquals(list.map((c) => c.id), ["recorder", "telegram", "calendar", "granola", "claude"]);
+  assertEquals(fresh, ["granola", "recorder", "bot", "calendar", "telegram", "claude"]);
+  assertEquals(mixed, fresh);
 });
 
 Deno.test("сводка считает подключённые и требующие внимания", () => {

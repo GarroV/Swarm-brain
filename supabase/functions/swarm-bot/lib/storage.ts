@@ -1,15 +1,18 @@
-import { supabase, ADMIN_USER_ID } from "./supabase.ts";
-import { uploadPrivateFile, registerStorageFile, safeStorageName, PRIVATE_BUCKET } from "../../_shared/storage-files.ts";
+import { ADMIN_USER_ID, loadMeetingViewer, supabase } from "./supabase.ts";
+import { entryActionError } from "../../_shared/entries/entry-edit.ts";
+import {
+  PRIVATE_BUCKET,
+  registerStorageFile,
+  safeStorageName,
+  uploadPrivateFile,
+} from "../../_shared/storage-files.ts";
 import { absoluteFileUrl } from "../../_shared/storage-links.ts";
-import { getEmbedding, chatComplete } from "./openai.ts";
-import { normalizeCountries, COUNTRY_PROMPT_RULE, ENTRY_TYPE_PROMPT_RULE } from "../../_shared/countries.ts";
+import { chatComplete, getEmbedding } from "./openai.ts";
+import { COUNTRY_PROMPT_RULE, ENTRY_TYPE_PROMPT_RULE, normalizeCountries } from "../../_shared/countries.ts";
 import { applyGeneralSentinel, specificCountries } from "../../_shared/meta-extract.ts";
 import { normalizeExtractedEventDate, todayIso } from "../../_shared/llm-date.ts";
 
-
-export function visibilityFilter(userId: number): string {
-  return `is_private.eq.false,and(is_private.eq.true,owner_id.eq.${userId})`;
-}
+export { visibilityFilter } from "./visibility.ts";
 
 // ── Entry index ───────────────────────────────────────────────────────────────
 
@@ -32,8 +35,7 @@ async function buildEntryIndex(content: string, existingSummary?: string): Promi
     ? ""
     : "summary — 3-5 тезисов маркированным списком на русском: конкретные факты, имена, цифры, решения. Без общих фраз.\n";
   const today = todayIso();
-  const system =
-    `Сегодня ${today}.\n` +
+  const system = `Сегодня ${today}.\n` +
     "Проанализируй текст и верни JSON (только JSON, без markdown):\n" + schema + "\n\n" +
     summaryRule +
     COUNTRY_PROMPT_RULE + "\n" +
@@ -45,7 +47,11 @@ async function buildEntryIndex(content: string, existingSummary?: string): Promi
     const parsed = JSON.parse(raw.replace(/```json\n?|\n?```/g, "").trim());
     return {
       summary: hasSummary ? existingSummary! : (typeof parsed.summary === "string" ? parsed.summary : null),
-      countries: normalizeCountries(Array.isArray(parsed.countries) ? (parsed.countries as unknown[]).filter((c): c is string => typeof c === "string") : []),
+      countries: normalizeCountries(
+        Array.isArray(parsed.countries)
+          ? (parsed.countries as unknown[]).filter((c): c is string => typeof c === "string")
+          : [],
+      ),
       entry_type: parsed.entry_type === "meeting" ? "meeting" : "note", // только два типа
       // Слой 2 против выдуманного моделью года (см. _shared/llm-date.ts).
       entry_date: normalizeExtractedEventDate(parsed.entry_date, today),
@@ -57,20 +63,22 @@ async function buildEntryIndex(content: string, existingSummary?: string): Promi
 }
 
 // extractEntryMeta kept for backward-compat (granola.ts still imports it).
-export async function extractEntryMeta(text: string): Promise<{ countries: string[]; entry_type: string; entry_date: string | null }> {
+export async function extractEntryMeta(
+  text: string,
+): Promise<{ countries: string[]; entry_type: string; entry_date: string | null }> {
   const idx = await buildEntryIndex(text, "placeholder"); // hasSummary=true → skip summary gen
   // buildEntryIndex with placeholder still extracts countries/type/date
   // Re-run without placeholder to get real meta-only result
   try {
     const raw = await chatComplete(
       `Сегодня ${todayIso()}.\n` +
-      "Проанализируй текст и верни JSON (только JSON, без markdown):\n" +
-      '{"countries":["Spain","Bulgaria"],"entry_type":"meeting|note","entry_date":"YYYY-MM-DD или null"}\n\n' +
-      COUNTRY_PROMPT_RULE + "\n" +
-      ENTRY_TYPE_PROMPT_RULE + "\n" +
-      "entry_date — дата события из текста, null если нет. Год считай от сегодняшней даты, НИКОГДА не из головы.",
+        "Проанализируй текст и верни JSON (только JSON, без markdown):\n" +
+        '{"countries":["Spain","Bulgaria"],"entry_type":"meeting|note","entry_date":"YYYY-MM-DD или null"}\n\n' +
+        COUNTRY_PROMPT_RULE + "\n" +
+        ENTRY_TYPE_PROMPT_RULE + "\n" +
+        "entry_date — дата события из текста, null если нет. Год считай от сегодняшней даты, НИКОГДА не из головы.",
       text.slice(0, 4000),
-      { temperature: 0, json: true }
+      { temperature: 0, json: true },
     );
     const parsed = JSON.parse(raw.replace(/```json\n?|\n?```/g, "").trim());
     return {
@@ -78,7 +86,9 @@ export async function extractEntryMeta(text: string): Promise<{ countries: strin
       entry_type: parsed.entry_type === "meeting" ? "meeting" : "note", // только два типа
       entry_date: normalizeExtractedEventDate(parsed.entry_date),
     };
-  } catch { return { countries: idx.countries, entry_type: idx.entry_type, entry_date: idx.entry_date }; }
+  } catch {
+    return { countries: idx.countries, entry_type: idx.entry_type, entry_date: idx.entry_date };
+  }
 }
 
 // Char-trigram Jaccard similarity — детект near-identical контента (повторная отправка
@@ -129,7 +139,9 @@ export async function saveEntry(
       .limit(40);
     cq = isPrivate ? cq.eq("is_private", true).eq("owner_id", ownerId!) : cq.eq("is_private", false);
     const { data: recent } = await cq;
-    const cands = (recent ?? []) as Array<{ id: string; content: string; summary: string | null; added_by: string; source: string; created_at: string }>;
+    const cands = (recent ?? []) as Array<
+      { id: string; content: string; summary: string | null; added_by: string; source: string; created_at: string }
+    >;
 
     // 1) NEAR-IDENTICAL дедуп: точный (по нормализации) ИЛИ ≥95% похожий (триграмы, только
     //    для существенного текста >100 симв) за неделю → не плодим дубль. Повторная
@@ -146,17 +158,29 @@ export async function saveEntry(
     //    (summary/embedding/страны по объединённому тексту). Не near-dup (см. п.1 выше).
     if (source === "telegram") {
       const minuteAgo = Date.now() - 60_000;
-      const frag = cands.find((c) => c.source === "telegram" && c.added_by === addedBy && Date.parse(c.created_at) >= minuteAgo);
+      const frag = cands.find((c) =>
+        c.source === "telegram" && c.added_by === addedBy && Date.parse(c.created_at) >= minuteAgo
+      );
       if (frag) {
         const merged = `${frag.content}\n\n${content}`;
         const midx = await buildEntryIndex(merged);
         const msp = specificCountries(midx.countries);
         const mc = applyGeneralSentinel(midx.countries);
-        const memb = await getEmbedding([midx.summary ?? merged, msp.length ? `Страны: ${msp.join(", ")}` : "", midx.keywords ? `Ключевые слова: ${midx.keywords}` : ""].filter(Boolean).join("\n").slice(0, 8000));
+        const memb = await getEmbedding(
+          [
+            midx.summary ?? merged,
+            msp.length ? `Страны: ${msp.join(", ")}` : "",
+            midx.keywords ? `Ключевые слова: ${midx.keywords}` : "",
+          ].filter(Boolean).join("\n").slice(0, 8000),
+        );
         await supabase.from("entries").update({
-          content: merged, summary: midx.summary, embedding: memb,
+          content: merged,
+          summary: midx.summary,
+          embedding: memb,
           // source=telegram → всегда note (см. ниже): текст в бота не идёт в ревью встреч.
-          countries: mc, entry_type: "note", entry_date: midx.entry_date,
+          countries: mc,
+          entry_type: "note",
+          entry_date: midx.entry_date,
         }).eq("id", frag.id);
         return { id: frag.id, summary: midx.summary, merged: true };
       }
@@ -233,18 +257,33 @@ export type ManageableEntry = {
 };
 
 /**
- * Загружает запись для правки/удаления с проверкой доступа:
- * воркспейс-изоляция (group_id) + приватность (общие — любой в воркспейсе,
- * приватные — только владелец). Бросает EntryAccessError.
+ * Загружает запись для показа, правки или удаления с проверкой доступа. Бросает EntryAccessError.
+ *
+ *   view   — воркспейс + видимость (общие — любой в воркспейсе, личные — только владелец);
+ *   edit   — права правки: встреча — владелец, участники, админ; остальное — только автор;
+ *   delete — права удаления: встреча — владелец и админ; остальное — только автор.
+ *
+ * Правило — `_shared/entries/entry-edit.ts` (entryActionError); здесь только вызов.
  */
-export async function getManageableEntry(id: string, userId: number, groupId: string): Promise<ManageableEntry> {
+export async function getManageableEntry(
+  id: string,
+  userId: number,
+  groupId: string,
+  action: "view" | "edit" | "delete" = "view",
+): Promise<ManageableEntry> {
   const { data } = await supabase.from("entries")
-    .select("id, group_id, is_private, owner_id, content, summary, source, entry_type, entry_date, metadata, created_at")
+    .select(
+      "id, group_id, is_private, owner_id, content, summary, source, entry_type, entry_date, metadata, created_at",
+    )
     .eq("id", id).maybeSingle();
   if (!data) throw new EntryAccessError("not_found");
   const e = data as ManageableEntry;
   if (e.group_id !== groupId) throw new EntryAccessError("forbidden");
   if (e.is_private && e.owner_id !== userId) throw new EntryAccessError("forbidden");
+  if (action !== "view") {
+    const denied = entryActionError(id, e, await loadMeetingViewer(userId), groupId, action);
+    if (denied) throw new EntryAccessError("forbidden");
+  }
   return e;
 }
 
@@ -306,7 +345,7 @@ export async function getSession(chatId: number): Promise<{ action: string; cont
 export async function setSession(chatId: number, action: string, context?: string): Promise<void> {
   const { error } = await supabase.from("sessions").upsert(
     { chat_id: chatId, action, context: context ?? null, updated_at: new Date().toISOString() },
-    { onConflict: "chat_id" }
+    { onConflict: "chat_id" },
   );
   if (error) console.error("[setSession] error:", JSON.stringify(error));
 }
@@ -340,11 +379,12 @@ export async function generateSummary(text: string): Promise<string | null> {
   try {
     return await chatComplete(
       "Сделай краткие тезисы из текста. Только конкретные факты: имена, цифры, решения, даты. Без общих фраз. 3–7 пунктов. Маркированный список на русском.",
-      text.slice(0, 6000)
+      text.slice(0, 6000),
     );
-  } catch { return null; }
+  } catch {
+    return null;
+  }
 }
-
 
 // Адрес веба: ссылка в сообщении Telegram ведёт в браузер, где у человека есть сессия и
 // где проверяется доступ. Signed URL здесь не годится — сообщение живёт дольше подписи.
@@ -367,7 +407,10 @@ export async function uploadToStorage(
     const path = `${folder}/${date}_${crypto.randomUUID().slice(0, 8)}_${safeName}`;
 
     const { file, error } = await uploadPrivateFile(supabase, {
-      path, body: buffer, contentType: mimeType, upsert: true,
+      path,
+      body: buffer,
+      contentType: mimeType,
+      upsert: true,
     });
     if (error || !file) return { path: null, error: error ?? "upload failed" };
     return { path: file.path, error: null };
@@ -401,7 +444,12 @@ export async function discardOrphanFile(path: string): Promise<void> {
   if (error) console.error(`[storage] осиротевший файл не убран (${path}): ${error.message}`);
 }
 
-export async function autoSyncProfile(userId: number, firstName?: string, lastName?: string, username?: string): Promise<void> {
+export async function autoSyncProfile(
+  userId: number,
+  firstName?: string,
+  lastName?: string,
+  username?: string,
+): Promise<void> {
   const update: Record<string, unknown> = { telegram_id: userId, updated_at: new Date().toISOString() };
   if (firstName) update.first_name = firstName;
   if (lastName !== undefined) update.last_name = lastName;

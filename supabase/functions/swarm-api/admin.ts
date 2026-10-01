@@ -1,9 +1,23 @@
 import { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { normalizeCountries } from "../_shared/countries.ts";
-import { addUserToWorkspace } from "../_shared/users/membership.ts";
+import { addUserToWorkspace, normalizeUsername } from "../_shared/users/membership.ts";
 import { parseUserRef } from "../_shared/users/user-ref.ts";
+import {
+  type AdminActor,
+  announceEmailChange,
+  canChangeAccountKeys,
+  canManageMember,
+  canManageWorkspace,
+  isForeignEmailChange,
+  isSuperadmin,
+  type MemberRow,
+  normalizeEmail,
+  SUPERADMIN_TELEGRAM_ID,
+} from "./admin-scope.ts";
 
-const ADMIN_TELEGRAM_ID = 744230399;
+const ADMIN_TELEGRAM_ID = SUPERADMIN_TELEGRAM_ID;
+
+export type AdminDeps = { announce?: typeof announceEmailChange };
 
 function json(data: unknown, status: number, origin: string): Response {
   return new Response(JSON.stringify(data), {
@@ -11,8 +25,7 @@ function json(data: unknown, status: number, origin: string): Response {
     headers: {
       "Content-Type": "application/json",
       "Access-Control-Allow-Origin": origin,
-      "Access-Control-Allow-Headers":
-        "authorization, x-client-info, apikey, content-type",
+      "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
     },
   });
 }
@@ -29,24 +42,29 @@ export async function handleAdminRoutes(
   isAdmin: boolean,
   origin: string,
   resolveNames: (ids: number[]) => Promise<Map<number, string>>,
+  // Воркспейс админа (group_id из index.ts). Не передан → объём пустой: не-суперадмину
+  // недоступен ни один воркспейс (закрыто по умолчанию).
+  adminGroupId = "",
+  deps: AdminDeps = {},
 ): Promise<Response | null> {
   if (!routePath.startsWith("/admin")) return null;
 
   // Гейт по единому признаку админа (ADMIN_USER_ID ЛИБО флаг is_admin) — вычислен в index.ts.
-  // ADMIN_TELEGRAM_ID ниже остаётся для «нельзя удалить суперадмина-разработчика» и added_by.
   if (!isAdmin) {
     return apiErr(403, "Forbidden", origin);
   }
+  // Объём: суперадмин — все воркспейсы, админ — только свой (правила — admin-scope.ts).
+  const actor: AdminActor = { telegramId, groupId: adminGroupId };
+  const isSuper = isSuperadmin(actor);
+  const announce = deps.announce ?? announceEmailChange;
+  const actorName = async () => (await resolveNames([telegramId])).get(telegramId) ?? `#${telegramId}`;
 
   // GET /admin/review-counts — СВОДКА «сколько встреч на вычитке у каждого участника».
   // Только агрегат (имя + число), БЕЗ доступа к чужому контенту — для пригляда админа.
   // Считаем по воркспейсу админа: непубликованные entry (Granola/Read.ai, confirmed null/false)
   // по владельцу + черновики рекордера (awaiting_review) по каждому записавшему.
   if (req.method === "GET" && routePath === "/admin/review-counts") {
-    const { data: adminRow } = await supabase
-      .from("allowed_users").select("group_id").eq("telegram_id", telegramId)
-      .maybeSingle();
-    const groupId = (adminRow as { group_id?: string } | null)?.group_id;
+    const groupId = actor.groupId;
     if (!groupId) return json([], 200, origin);
 
     const counts = await reviewCountsByMember(supabase, groupId);
@@ -66,14 +84,13 @@ export async function handleAdminRoutes(
   }
 
   // GET /admin/workspaces
+  // Админу — только свой воркспейс (веб показывает список из одного, перенос в чужой пропадает).
   if (req.method === "GET" && routePath === "/admin/workspaces") {
-    const { data: workspaces } = await supabase
-      .from("workspaces")
-      .select("id, name, allowed_markets");
+    const wsQ = supabase.from("workspaces").select("id, name, allowed_markets");
+    const { data: workspaces } = isSuper ? await wsQ : await wsQ.eq("id", actor.groupId);
 
-    const { data: userCounts } = await supabase
-      .from("allowed_users")
-      .select("group_id");
+    const cntQ = supabase.from("allowed_users").select("group_id");
+    const { data: userCounts } = isSuper ? await cntQ : await cntQ.eq("group_id", actor.groupId);
 
     const countMap: Record<string, number> = {};
     for (const row of (userCounts ?? []) as Array<{ group_id: string }>) {
@@ -90,7 +107,9 @@ export async function handleAdminRoutes(
   }
 
   // POST /admin/workspaces — создать воркспейс (id = slug, как в боте sa_create)
+  // Новый воркспейс — вне объёма любого админа, кроме суперадмина (как sa_create в боте).
   if (req.method === "POST" && routePath === "/admin/workspaces") {
+    if (!isSuper) return apiErr(403, "Forbidden", origin);
     let body: Record<string, unknown>;
     try {
       body = await req.json();
@@ -131,17 +150,17 @@ export async function handleAdminRoutes(
     const botToken = Deno.env.get("TELEGRAM_BOT_TOKEN");
     if (!botToken) return apiErr(500, "Bot token не настроен", origin);
 
-    const { data: users } = await supabase
+    // Суперадмин — всем пользователям системы, админ — своей команде.
+    const usersQ = supabase
       .from("allowed_users").select("telegram_id").not(
         "telegram_id",
         "is",
         null,
       );
+    const { data: users } = isSuper ? await usersQ : await usersQ.eq("group_id", actor.groupId);
     const ids = [
       ...new Set(
-        (users ?? []).map((u: Record<string, unknown>) =>
-          u.telegram_id as number
-        ),
+        (users ?? []).map((u: Record<string, unknown>) => u.telegram_id as number),
       ),
     ]
       .filter((id) => id !== ADMIN_TELEGRAM_ID);
@@ -174,6 +193,7 @@ export async function handleAdminRoutes(
   const wsUsersMatch = routePath.match(/^\/admin\/workspaces\/([^/]+)\/users$/);
   if (wsUsersMatch) {
     const wsId = wsUsersMatch[1];
+    if (!canManageWorkspace(actor, wsId)) return apiErr(404, "Workspace not found", origin);
 
     if (req.method === "GET") {
       const { data: users } = await supabase
@@ -203,12 +223,8 @@ export async function handleAdminRoutes(
       const result = (users ?? [])
         .map((u: Record<string, unknown>) => {
           const tid = u.telegram_id as number | null;
-          const p = tid != null
-            ? (profileMap[tid] as Record<string, unknown> | undefined)
-            : undefined;
-          const fullName = p
-            ? [p.first_name, p.last_name].filter(Boolean).join(" ")
-            : null;
+          const p = tid != null ? (profileMap[tid] as Record<string, unknown> | undefined) : undefined;
+          const fullName = p ? [p.first_name, p.last_name].filter(Boolean).join(" ") : null;
           const pending = tid == null;
           return {
             id: u.id,
@@ -244,6 +260,22 @@ export async function handleAdminRoutes(
         return apiErr(400, "Invalid JSON", origin);
       }
 
+      // Кого затронет добавление: существующую строку канон ПЕРЕМЕЩАЕТ (и может сменить почту),
+      // поэтому до записи — те же границы, что у правки: не из чужого воркспейса и не суперадмина.
+      const newEmail = normalizeEmail(body.email);
+      let existing: MemberRow | null;
+      try {
+        existing = await findAddTarget(supabase, body);
+      } catch (e) {
+        return apiErr(500, e instanceof Error ? e.message : "lookup failed", origin);
+      }
+      if (existing) {
+        if (!canChangeAccountKeys(actor, existing)) return apiErr(403, "Forbidden", origin);
+        if (!canManageMember(actor, existing)) {
+          return apiErr(403, "This user belongs to another workspace", origin);
+        }
+      }
+
       // Единый канон добавления (тот же, что у бота) — _shared/users/membership.ts.
       try {
         const r = await addUserToWorkspace(supabase, {
@@ -266,6 +298,19 @@ export async function handleAdminRoutes(
             origin,
           );
         }
+        const oldEmail = normalizeEmail(existing?.email);
+        if (
+          existing && newEmail && isForeignEmailChange(actor, existing.telegram_id, oldEmail, newEmail)
+        ) {
+          await announce({
+            actor,
+            targetTelegramId: existing.telegram_id,
+            targetGroupId: wsId,
+            oldEmail,
+            newEmail,
+            actorName: await actorName(),
+          });
+        }
         return json({ ok: true, pending: r.pending }, 200, origin);
       } catch (e) {
         return apiErr(
@@ -283,6 +328,7 @@ export async function handleAdminRoutes(
   );
   if (wsUserMatch && req.method === "DELETE") {
     const [, wsId, userId] = wsUserMatch;
+    if (!canManageWorkspace(actor, wsId)) return apiErr(404, "Workspace not found", origin);
     // Чем адресована строка (telegram_id / email / username) — единое правило parseUserRef.
     // Ожидающие приглашения (telegram_id=NULL) удаляются по email или username.
     const ref = parseUserRef(decodeURIComponent(userId));
@@ -298,9 +344,7 @@ export async function handleAdminRoutes(
     } else {
       const q = supabase.from("allowed_users").delete().is("telegram_id", null)
         .eq("group_id", wsId);
-      const { error } = ref.kind === "email"
-        ? await q.eq("email", ref.email)
-        : await q.eq("username", ref.username);
+      const { error } = ref.kind === "email" ? await q.eq("email", ref.email) : await q.eq("username", ref.username);
       if (error) return apiErr(500, error.message, origin);
     }
     return new Response(null, {
@@ -313,6 +357,7 @@ export async function handleAdminRoutes(
   const wsPatchMatch = routePath.match(/^\/admin\/workspaces\/([^/]+)$/);
   if (wsPatchMatch && req.method === "PATCH") {
     const wsId = wsPatchMatch[1];
+    if (!canManageWorkspace(actor, wsId)) return apiErr(404, "Workspace not found", origin);
     let body: Record<string, unknown>;
     try {
       body = await req.json();
@@ -375,16 +420,16 @@ export async function handleAdminRoutes(
       if (!("email" in body)) {
         return apiErr(400, "Нечего сохранять: ожидается email", origin);
       }
-      const email = body.email == null || body.email === ""
-        ? null
-        : String(body.email).trim().toLowerCase();
-      const q = supabase.from("allowed_users").update({ email }).is(
+      const email = normalizeEmail(body.email);
+      const q0 = supabase.from("allowed_users").update({ email }).is(
         "telegram_id",
         null,
       );
+      // Админ адресует приглашения только своего воркспейса; чужое → «не найдено».
+      const q = isSuper ? q0 : q0.eq("group_id", actor.groupId);
       const { data, error } = ref.kind === "email"
-        ? await q.eq("email", ref.email).select("id").maybeSingle()
-        : await q.eq("username", ref.username).select("id").maybeSingle();
+        ? await q.eq("email", ref.email).select("id, group_id").maybeSingle()
+        : await q.eq("username", ref.username).select("id, group_id").maybeSingle();
       if (error) {
         if ((error as { code?: string }).code === "23505") {
           return apiErr(
@@ -396,9 +441,30 @@ export async function handleAdminRoutes(
         return apiErr(500, error.message, origin);
       }
       if (!data) return apiErr(404, "Приглашение не найдено", origin);
+      const oldEmail = ref.kind === "email" ? ref.email : null;
+      if (isForeignEmailChange(actor, null, oldEmail, email)) {
+        await announce({
+          actor,
+          targetTelegramId: null,
+          targetGroupId: (data as { group_id?: string | null }).group_id ?? null,
+          oldEmail,
+          newEmail: email,
+          actorName: await actorName(),
+        });
+      }
       return json({ ok: true, pending: true, email }, 200, origin);
     }
     const targetId = ref.telegramId;
+
+    // Цель — строка allowed_users: без неё правка профиля всё равно упала бы на внешнем ключе.
+    const { data: targetRow, error: tErr } = await supabase.from("allowed_users")
+      .select("telegram_id, group_id, email").eq("telegram_id", targetId).maybeSingle();
+    if (tErr) return apiErr(500, tErr.message, origin);
+    const target = targetRow as MemberRow | null;
+    if (!target || !canManageMember(actor, target)) return apiErr(404, "User not found", origin);
+    if ("email" in body && !canChangeAccountKeys(actor, target)) {
+      return apiErr(403, "Forbidden", origin);
+    }
 
     const fields: Record<string, unknown> = {
       telegram_id: targetId,
@@ -418,9 +484,7 @@ export async function handleAdminRoutes(
     if (error) return apiErr(500, error.message, origin);
     // Синк email в allowed_users.email — КАНОНИЧНЫЙ ключ веб-входа (Google); user_profiles.email — зеркало.
     if ("email" in body) {
-      const email = body.email == null || body.email === ""
-        ? null
-        : String(body.email).trim().toLowerCase();
+      const email = normalizeEmail(body.email);
       const { error: auErr } = await supabase.from("allowed_users").update({
         email,
       }).eq("telegram_id", targetId);
@@ -434,6 +498,17 @@ export async function handleAdminRoutes(
         }
         return apiErr(500, auErr.message, origin);
       }
+      const oldEmail = normalizeEmail(target.email);
+      if (isForeignEmailChange(actor, targetId, oldEmail, email)) {
+        await announce({
+          actor,
+          targetTelegramId: targetId,
+          targetGroupId: target.group_id,
+          oldEmail,
+          newEmail: email,
+          actorName: await actorName(),
+        });
+      }
     }
     const { data } = await supabase.from("user_profiles").select("*").eq(
       "telegram_id",
@@ -443,6 +518,28 @@ export async function handleAdminRoutes(
   }
 
   return apiErr(404, "Admin route not found", origin);
+}
+
+/**
+ * Существующая строка, которую затронет POST /admin/workspaces/:id/users, — тем же ключом,
+ * которым её найдёт канон addUserToWorkspace: telegram_id, иначе email (email-only), иначе username.
+ */
+async function findAddTarget(
+  supabase: SupabaseClient,
+  body: Record<string, unknown>,
+): Promise<MemberRow | null> {
+  const cols = "telegram_id, group_id, email";
+  const tid = body.telegram_id as number | undefined;
+  const username = body.username ? normalizeUsername(String(body.username)) : "";
+  const email = normalizeEmail(body.email);
+  let q;
+  if (tid != null) q = supabase.from("allowed_users").select(cols).eq("telegram_id", tid);
+  else if (!username && email) q = supabase.from("allowed_users").select(cols).eq("email", email);
+  else if (username) q = supabase.from("allowed_users").select(cols).ilike("username", username);
+  else return null;
+  const { data, error } = await q.limit(1).maybeSingle();
+  if (error) throw new Error(error.message);
+  return (data as MemberRow | null) ?? null;
 }
 
 /**
