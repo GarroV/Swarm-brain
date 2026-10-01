@@ -2,7 +2,13 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import type { Project, ProjectInput } from "./types.ts";
 import { type ProjectRef, validateParent } from "./project-nesting.ts";
 import { canViewProject, parentLookup, type ProjectAccessRow } from "./project-access.ts";
-import { dissolvePlan, parentForSprintGroup, withoutSprintGroups } from "./sprint-groups.ts";
+import {
+  dissolvePlan,
+  dissolveTargets,
+  parentForSprintGroup,
+  type ProjectMove,
+  withoutSprintGroups,
+} from "./sprint-groups.ts";
 import { updateTask } from "./db.ts";
 import { projectEventRow, type ProjectHistoryRow, projectHistoryRowsFor } from "./project-history.ts";
 
@@ -361,8 +367,8 @@ export async function projectInWorkspace(
 }
 
 /**
- * Распустить группу спринта: задачи уходят туда, где группа висела (в родительский проект или
- * без проекта), сама группа архивируется — не удаляется (правило архивации, issue #427).
+ * Распустить группу спринта: задачи возвращаются, откуда пришли (по журналу задачи; нет записи
+ * или прежний проект убран — туда, где висела группа), сама группа архивируется — не удаляется (правило архивации, issue #427).
  * Только для `sprint_group`: обычный проект этой кнопкой не разбирается (sprint-groups.ts).
  *
  * Задачи переносятся через `updateTask` по одной: у каждой свой журнал (issue #286), а групп
@@ -382,11 +388,33 @@ export async function dissolveSprintGroup(
   if (!plan.ok) return null;
 
   const { data: tasks, error } = await supabase.from("tasks")
-    .select("id").eq("group_id", groupId).eq("project_id", id);
+    .select("id, parent_id").eq("group_id", groupId).eq("project_id", id);
   if (error) throw new Error(error.message);
-  const ids = ((tasks ?? []) as Array<{ id: string }>).map((t) => t.id);
+  const rows = (tasks ?? []) as Array<{ id: string; parent_id: string | null }>;
+  const ids = rows.map((t) => t.id);
+  // Откуда задачи пришли — из журнала (#286); живые проекты — чтобы не вернуть задачу в архив.
+  const [movesRes, liveRes] = await Promise.all([
+    ids.length
+      ? supabase.from("task_history")
+        .select("task_id, old_value, new_value, created_at")
+        .eq("field", "project").eq("new_value", id).in("task_id", ids)
+      : Promise.resolve({ data: [], error: null }),
+    supabase.from("projects").select("id")
+      .eq("group_id", groupId).is("archived_at", null).neq("id", id),
+  ]);
+  if (movesRes.error) throw new Error(movesRes.error.message);
+  if (liveRes.error) throw new Error(liveRes.error.message);
+  const targets = dissolveTargets({
+    groupId: id,
+    fallback: plan.moveTasksTo,
+    tasks: rows,
+    moves: (movesRes.data ?? []) as ProjectMove[],
+    liveProjectIds: new Set(((liveRes.data ?? []) as Array<{ id: string }>).map((p) => p.id)),
+  });
   for (const taskId of ids) {
-    await updateTask(taskId, { project_id: plan.moveTasksTo }, {
+    // Не `??`: null — законный ответ «вернуть без проекта», а не «ответа нет».
+    const to = targets.has(taskId) ? targets.get(taskId)! : plan.moveTasksTo;
+    await updateTask(taskId, { project_id: to }, {
       actorTelegramId: opts.viewerId,
     });
   }

@@ -1,4 +1,4 @@
-// Группы спринта на НАСТОЯЩЕЙ базе (решение 01.10.2026, docs/decisions/2026-10-01-sprint-drag-grouping.md).
+// Группы спринта на НАСТОЯЩЕЙ базе (решение 01.10.2026, docs/decisions/2026-10-01-sprint-dnd-groups.md).
 //
 // Чистое правило видимости проверяет sprint-groups.test.ts. Здесь — то, что видно только на базе:
 // выборка доски действительно не отдаёт группу, «В проекты» её возвращает, чужой воркспейс до
@@ -19,7 +19,10 @@ Deno.env.set(
     "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImV4cCI6MTk4MzgxMjk5Nn0.EGIM96RAZx35lJzdJsyH-qQwv8Hdp7fsn3W0YpN81IU",
 );
 
-const { createProject, dissolveSprintGroup, listProjects, updateProject } = await import("./projects.ts");
+const { createProject, deleteProject, dissolveSprintGroup, listProjects, updateProject } = await import(
+  "./projects.ts"
+);
+const { updateTask } = await import("./db.ts");
 
 const WS = "t_sgroups";
 const OTHER = "t_sgroups_other";
@@ -186,6 +189,46 @@ Deno.test("распустить: задачи уходят в родителя, 
       select archived_at from projects where id in (${group.id}, ${loose.id})`;
     assertEquals(groups.rows.length, 2);
     assert(groups.rows.every((r) => r.archived_at !== null));
+  } finally {
+    await db.end();
+  }
+});
+
+Deno.test("распустить: задача возвращается, откуда пришла в группу (по журналу), а не в родителя", async () => {
+  const db = await connect();
+  try {
+    await seed(db);
+    const parent = await createProject({ name: "Направление" }, WS, ACTOR);
+    const other = await createProject({ name: "Другой проект" }, WS, ACTOR);
+    const gone = await createProject({ name: "Уйдёт в архив" }, WS, ACTOR);
+    const group = await createProject(
+      { name: "Связка", parent_id: parent.id, sprint_group: true },
+      WS,
+      ACTOR,
+    );
+    const fromOther = await addTask(db, "из другого", other.id);
+    const fromNone = await addTask(db, "без проекта", null);
+    const fromGone = await addTask(db, "из архивного", gone.id);
+    const kid = await addTask(db, "подзадача из другого", other.id);
+    await db.queryArray`update tasks set parent_id = ${fromOther} where id = ${kid}`;
+    // Переход в группу — тем же путём, что и бросок в интерфейсе: через updateTask, с журналом.
+    for (const t of [fromOther, fromNone, fromGone, kid]) {
+      await updateTask(t, { project_id: group.id }, { actorTelegramId: ACTOR });
+    }
+    const born = await addTask(db, "заведена в группе", group.id); // журнала нет
+    // Подзадача, которую потом увели в архивный проект, всё равно едет за родителем.
+    await deleteProject(gone.id, WS, { viewerId: ACTOR });
+
+    assertEquals(await dissolveSprintGroup(group.id, WS, { viewerId: ACTOR }), { moved: 5 });
+
+    const rows = await db.queryObject<{ id: string; project_id: string | null }>`
+      select id, project_id from tasks where group_id = ${WS}`;
+    const at = new Map(rows.rows.map((r) => [r.id, r.project_id]));
+    assertEquals(at.get(fromOther), other.id);
+    assertEquals(at.get(fromNone), null);
+    assertEquals(at.get(fromGone), parent.id); // прежний проект в архиве — туда, где висела группа
+    assertEquals(at.get(born), parent.id); // журнала нет — туда же
+    assertEquals(at.get(kid), other.id); // за родителем
   } finally {
     await db.end();
   }

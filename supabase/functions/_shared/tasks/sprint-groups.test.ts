@@ -1,5 +1,11 @@
 import { assertEquals } from "@std/assert";
-import { dissolvePlan, parentForSprintGroup, withoutSprintGroups } from "./sprint-groups.ts";
+import {
+  dissolvePlan,
+  dissolveTargets,
+  parentForSprintGroup,
+  type ProjectMove,
+  withoutSprintGroups,
+} from "./sprint-groups.ts";
 
 // Группа спринта — запись в projects, которая не должна всплывать ни на доске «Проекты», ни в
 // селекторе карточки, ни в хабе, пока её не пробросили. Ошибка здесь не падает: чужая (или
@@ -61,4 +67,63 @@ Deno.test("dissolvePlan: группа спринта распускается в
 Deno.test("dissolvePlan: обычный проект так не распускается", () => {
   assertEquals(dissolvePlan(P).ok, false);
   assertEquals(dissolvePlan(S).ok, false);
+});
+
+// «Распустить» — «задачи возвращаются, куда были». Ошибка здесь тоже молчит: задача оказывается
+// в соседнем проекте, и никто не замечает, откуда она туда переехала.
+const move = (task_id: string, old_value: string | null, new_value: string | null, at: string): ProjectMove => ({
+  task_id,
+  old_value,
+  new_value,
+  created_at: `2026-10-01T10:00:${at}Z`,
+});
+
+Deno.test("dissolveTargets: задача возвращается в проект, из которого пришла", () => {
+  const out = dissolveTargets({
+    groupId: "g",
+    fallback: "p",
+    tasks: [{ id: "a", parent_id: null }, { id: "b", parent_id: null }],
+    moves: [move("a", "x", "g", "01"), move("b", null, "g", "02")],
+    liveProjectIds: new Set(["p", "x"]),
+  });
+  assertEquals(out.get("a"), "x");
+  assertEquals(out.get("b"), null);
+});
+
+Deno.test("dissolveTargets: важен последний переход в группу, а не первый", () => {
+  const out = dissolveTargets({
+    groupId: "g",
+    fallback: "p",
+    tasks: [{ id: "a", parent_id: null }],
+    moves: [move("a", "x", "g", "01"), move("a", "g", "y", "02"), move("a", "y", "g", "03")],
+    liveProjectIds: new Set(["p", "x", "y"]),
+  });
+  assertEquals(out.get("a"), "y");
+});
+
+Deno.test("dissolveTargets: без журнала или в архивный проект — туда, где висела группа", () => {
+  const out = dissolveTargets({
+    groupId: "g",
+    fallback: "p",
+    tasks: [{ id: "a", parent_id: null }, { id: "b", parent_id: null }],
+    moves: [move("b", "dead", "g", "01"), move("a", "x", "other", "02")],
+    liveProjectIds: new Set(["p", "x"]),
+  });
+  assertEquals(out.get("a"), "p");
+  assertEquals(out.get("b"), "p");
+});
+
+Deno.test("dissolveTargets: подзадача едет за родителем, если он распускается с ней", () => {
+  const out = dissolveTargets({
+    groupId: "g",
+    fallback: null,
+    tasks: [{ id: "parent", parent_id: null }, { id: "kid", parent_id: "parent" }, {
+      id: "lone",
+      parent_id: "elsewhere",
+    }],
+    moves: [move("parent", "x", "g", "01"), move("kid", "y", "g", "02"), move("lone", "y", "g", "03")],
+    liveProjectIds: new Set(["x", "y"]),
+  });
+  assertEquals(out.get("kid"), "x");
+  assertEquals(out.get("lone"), "y");
 });

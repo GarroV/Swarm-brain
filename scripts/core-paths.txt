@@ -31,6 +31,6 @@ supabase/functions/swarm-api/admin-scope.ts|supabase/functions/swarm-api/admin-s
 supabase/functions/_shared/users/admin-scope.ts|supabase/functions/swarm-api/admin-scope.test.ts
 supabase/functions/swarm-bot/handlers/superadmin-scope.ts|supabase/functions/swarm-bot/handlers/superadmin-scope.test.ts
 # Группы спринта: правило видимости. Ошибка не падает — временная группа молча всплывает
-# на доске «Проекты» у всей команды (docs/decisions/2026-10-01-sprint-drag-grouping.md).
+# на доске «Проекты» у всей команды (docs/decisions/2026-10-01-sprint-dnd-groups.md).
 supabase/functions/_shared/tasks/sprint-groups.ts|supabase/functions/_shared/tasks/sprint-groups.test.ts
 miniapp/src/lib/sprintGrouping.ts|miniapp/src/lib/sprintGrouping.test.ts
