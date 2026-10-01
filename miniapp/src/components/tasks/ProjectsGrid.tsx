@@ -55,8 +55,8 @@ export function ProjectsGrid() {
               className="w-full rounded-lg border border-line bg-surface px-2 py-1.5 text-sm text-ink outline-none focus:border-[var(--accent-ink)]"
             />
             <div className="flex gap-2">
-              <button onClick={() => void submit()} className="rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-white">{dt("Создать", "Create")}</button>
-              <button onClick={() => setAdding(false)} className="rounded-lg border border-line px-3 py-1.5 text-xs text-ink-soft">{dt("Отмена", "Cancel")}</button>
+              <button onClick={() => void submit()} className="rounded-full bg-primary px-3 py-1.5 text-xs font-semibold text-white">{dt("Создать", "Create")}</button>
+              <button onClick={() => setAdding(false)} className="rounded-full border border-line px-3 py-1.5 text-xs text-ink-soft">{dt("Отмена", "Cancel")}</button>
             </div>
           </div>
         ) : (
