@@ -12,6 +12,7 @@ import { chatComplete, getEmbedding } from "./openai.ts";
 import { COUNTRY_PROMPT_RULE, ENTRY_TYPE_PROMPT_RULE, normalizeCountries } from "../../_shared/countries.ts";
 import { applyGeneralSentinel, specificCountries } from "../../_shared/meta-extract.ts";
 import { normalizeExtractedEventDate, todayIso } from "../../_shared/llm-date.ts";
+import { onlyLiveEntries } from "../../_shared/entries/live.ts";
 
 export { visibilityFilter } from "./visibility.ts";
 
@@ -132,8 +133,10 @@ export async function saveEntry(
     const norm = (s: string) => s.replace(/\s+/g, " ").trim().toLowerCase();
     const target = norm(content);
     const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
-    let cq = supabase.from("entries")
-      .select("id, content, summary, added_by, source, created_at")
+    let cq = onlyLiveEntries(
+      supabase.from("entries")
+        .select("id, content, summary, added_by, source, created_at"),
+    )
       .eq("group_id", groupId)
       .gte("created_at", weekAgo)
       .order("created_at", { ascending: false })
@@ -275,10 +278,12 @@ export async function getManageableEntry(
   groupId: string,
   action: "view" | "edit" | "delete" = "view",
 ): Promise<ManageableEntry> {
-  const { data } = await supabase.from("entries")
-    .select(
-      "id, group_id, is_private, owner_id, shared_with, content, summary, source, entry_type, entry_date, metadata, created_at",
-    )
+  const { data } = await onlyLiveEntries(
+    supabase.from("entries")
+      .select(
+        "id, group_id, is_private, owner_id, shared_with, content, summary, source, entry_type, entry_date, metadata, created_at",
+      ),
+  )
     .eq("id", id).maybeSingle();
   if (!data) throw new EntryAccessError("not_found");
   const e = data as ManageableEntry;

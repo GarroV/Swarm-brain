@@ -19,7 +19,7 @@ function makeSupabase(singleData: unknown): {
 } {
   const calls: Call[] = [];
   const builder: Record<string, unknown> = {};
-  for (const m of ["select", "eq", "or", "order", "limit"]) {
+  for (const m of ["select", "eq", "is", "or", "order", "limit"]) {
     builder[m] = (...args: unknown[]) => {
       calls.push({ method: m, args });
       return builder;
@@ -184,6 +184,25 @@ Deno.test("buildEntriesQuery — applies group isolation + visibility filter", (
     or?.args[0],
     "is_private.eq.false,owner_id.eq.111,shared_with.cs.{111}",
   );
+});
+
+// ── Архив (#569): архивная запись не видна ни одним хелпером ───────────────────
+
+Deno.test("все хелперы записей отсекают архив: is(archived_at, null)", async () => {
+  const archived = (calls: Call[]) =>
+    calls.some((c) => c.method === "is" && c.args[0] === "archived_at" && c.args[1] === null);
+
+  const list = makeSupabase(null);
+  buildEntriesQuery(list.client, "id", { groupId: "cee", telegramId: 111 });
+  assertEquals(archived(list.calls), true, "buildEntriesQuery тащит архив в списки");
+
+  const queue = makeSupabase(null);
+  buildReviewQueueQuery(queue.client, "id", { groupId: "cee", telegramId: 111, email: "a@b.c" });
+  assertEquals(archived(queue.calls), true, "buildReviewQueueQuery тащит архив в вычитку");
+
+  const one = makeSupabase(baseEntry);
+  await getEntrySecure(one.client, "e1", { groupId: "cee", telegramId: 111 });
+  assertEquals(archived(one.calls), true, "getEntrySecure отдаёт архивную запись по id");
 });
 
 // ── Очередь вычитки: несогласованную встречу видят только причастные ──────────

@@ -23,7 +23,11 @@ type GranolaNote = {
   attendees?: Array<{ name?: string; email?: string }>;
 };
 
-async function sendTelegram(chatId: number, text: string, keyboard: Array<Array<{ text: string; callback_data: string }>>): Promise<void> {
+async function sendTelegram(
+  chatId: number,
+  text: string,
+  keyboard: Array<Array<{ text: string; callback_data: string }>>,
+): Promise<void> {
   await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -39,7 +43,7 @@ async function sendTelegram(chatId: number, text: string, keyboard: Array<Array<
 async function fetchNotesSince(apiKey: string, createdAfter: string): Promise<GranolaNote[]> {
   const res = await fetch(
     `${GRANOLA_API}/notes?created_after=${encodeURIComponent(createdAfter)}&limit=20`,
-    { headers: { Authorization: `Bearer ${apiKey}` } }
+    { headers: { Authorization: `Bearer ${apiKey}` } },
   );
   if (!res.ok) return [];
   const data = await res.json() as { notes: GranolaNote[] };
@@ -47,6 +51,7 @@ async function fetchNotesSince(apiKey: string, createdAfter: string): Promise<Gr
 }
 
 async function getSavedNoteIds(telegramId: number): Promise<Set<string>> {
+  // archive-ok: архивная заметка Granola уже была импортирована — без неё поллер вернул бы удалённое
   const { data } = await supabase
     .from("entries")
     .select("metadata")
@@ -55,13 +60,13 @@ async function getSavedNoteIds(telegramId: number): Promise<Set<string>> {
   return new Set(
     (data ?? [])
       .map((e: { metadata: Record<string, unknown> }) => e.metadata?.granola_note_id as string)
-      .filter(Boolean)
+      .filter(Boolean),
   );
 }
 
 async function pollUser(integration: Integration): Promise<number> {
-  const since = integration.last_polled_at
-    ?? new Date(Date.now() - 2 * 3_600_000).toISOString();
+  const since = integration.last_polled_at ??
+    new Date(Date.now() - 2 * 3_600_000).toISOString();
 
   const allNotes = await fetchNotesSince(integration.api_key, since);
   if (!allNotes.length) return 0;
@@ -74,8 +79,11 @@ async function pollUser(integration: Integration): Promise<number> {
     const title = note.title || "Встреча";
     const ts = note.calendar_event?.scheduled_start_time ?? note.created_at;
     const date = new Date(ts).toLocaleString("ru-RU", {
-      day: "2-digit", month: "2-digit", year: "numeric",
-      hour: "2-digit", minute: "2-digit",
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
     });
     const attendeeNames = (note.attendees ?? [])
       .map((a) => a.name || a.email || "").filter(Boolean).slice(0, 4).join(", ");

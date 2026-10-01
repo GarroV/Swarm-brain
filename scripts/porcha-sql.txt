@@ -59,3 +59,5 @@ after update of archived_at on public.tasks|after insert on public.tasks|supabas
 elsif old.archived_at is not null and new.archived_at is null then|elsif false then|supabase/functions/_shared/tasks/archive-sprint.db.test.ts|supabase/migrations/20261001180000_archived_tasks_leave_sprints.sql
 and frozen_at is null  -- принятый спринт не трогаем|and true|supabase/functions/_shared/tasks/archive-sprint.db.test.ts|supabase/migrations/20261001180000_archived_tasks_leave_sprints.sql
 new.ping_delivered_to := '{}';|null;|supabase/functions/_shared/tasks/archive-sprint.db.test.ts|supabase/migrations/20261001180000_archived_tasks_leave_sprints.sql
+# Архив встреч (#569): архивная запись не попадает в поиск — ни в одну из четырёх функций.
+    and e.archived_at is null|    and true|supabase/functions/_shared/entries/archive.db.test.ts|supabase/migrations/20261002100000_entries_archive.sql

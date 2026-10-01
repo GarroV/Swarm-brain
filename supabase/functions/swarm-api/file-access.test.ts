@@ -75,7 +75,7 @@ Deno.test("feedback screenshot is denied to a non-admin", () => {
 function makeSupabase(rows: { storage_files?: unknown; entries?: unknown }): SupabaseClient {
   let current: unknown = null;
   const builder: Record<string, unknown> = {};
-  for (const m of ["select", "eq"]) builder[m] = () => builder;
+  for (const m of ["select", "eq", "is"]) builder[m] = () => builder;
   builder.maybeSingle = () => Promise.resolve({ data: current });
   return {
     from: (table: string) => {

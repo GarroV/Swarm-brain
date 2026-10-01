@@ -27,6 +27,7 @@
 
 import { type SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { canViewEntry } from "./entries/access.ts";
+import { onlyLiveEntries } from "./entries/live.ts";
 
 const TOLERANCE_MIN = 5;
 // Окно для сигнала «публикующий есть в участниках кандидата»: шире базового (рекордер стартует
@@ -231,9 +232,11 @@ export async function findDuplicateMeeting(
   const incMin = toMinutes(inc.startedAt);
   const incKey = inc.identityKey || null;
 
-  const { data, error } = await supabase
-    .from("entries")
-    .select("id, content, source, is_private, owner_id, shared_with, metadata")
+  const { data, error } = await onlyLiveEntries(
+    supabase
+      .from("entries")
+      .select("id, content, source, is_private, owner_id, shared_with, metadata"),
+  )
     .eq("entry_type", "meeting")
     .eq("group_id", inc.groupId)
     .eq("entry_date", inc.entryDate)

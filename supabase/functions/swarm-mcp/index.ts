@@ -52,6 +52,8 @@ const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY")!;
 
 import { absoluteFileUrl, removeStorageObject } from "../_shared/storage-links.ts";
 import { PRIVATE_BUCKET, registerStorageFile, safeStorageName, uploadPrivateFile } from "../_shared/storage-files.ts";
+import { onlyLiveEntries } from "../_shared/entries/live.ts";
+import { archiveEntry } from "../_shared/entries/archive.ts";
 
 // Адрес веба: ссылку на файл отдаём абсолютной — получатель ответа (Claude Desktop)
 // не наша страница, относительный путь там некликабелен.
@@ -406,7 +408,7 @@ const TOOLS = [
   {
     name: "delete_entry",
     description:
-      "Удалить запись из базы знаний по ID. Если к записи прикреплён файл в Storage — файл тоже удаляется. Можно удалить только свою запись (owner_id = requesting_user_id).",
+      "Удалить запись из базы знаний по ID. Запись уходит в архив вместе с задачами встречи и пропадает из поиска и списков; прикреплённый файл по ссылке больше не открывается. Можно удалить только свою запись (owner_id = requesting_user_id).",
     inputSchema: {
       type: "object",
       properties: {
@@ -527,9 +529,11 @@ async function toolGetMeetings(args: { limit?: number; requesting_user_id?: numb
   const scope = await callerScope(args.requesting_user_id);
   if (!scope) return NO_WORKSPACE_MESSAGE;
 
-  const query = supabase
-    .from("entries")
-    .select("content, metadata, created_at")
+  const query = onlyLiveEntries(
+    supabase
+      .from("entries")
+      .select("content, metadata, created_at"),
+  )
     .in("source", ALL_MEETING_SOURCES)
     // Приватность: чужие личные встречи невидимы. Только публичные ИЛИ свои приватные
     // (owner_id = вызывающий). Без admin-байпаса: приватное видит ТОЛЬКО владелец.
@@ -675,9 +679,11 @@ async function toolGetEntry(args: { id: string; requesting_user_id?: number }): 
   const scope = await callerScope(args.requesting_user_id);
   if (!scope) return NO_WORKSPACE_MESSAGE;
 
-  const { data, error } = await supabase
-    .from("entries")
-    .select("content, source, created_at, is_private, owner_id, shared_with")
+  const { data, error } = await onlyLiveEntries(
+    supabase
+      .from("entries")
+      .select("content, source, created_at, is_private, owner_id, shared_with"),
+  )
     .eq("id", args.id)
     .eq("group_id", scope.groupId)
     .maybeSingle();
@@ -846,6 +852,7 @@ async function toolUploadFile(args: {
   });
   if (regNew.error) {
     await supabase.storage.from(PRIVATE_BUCKET).remove([uploadResult.path]);
+    // archive-ok: откат только что вставленной записи — её никто не видел, архивировать нечего
     await supabase.from("entries").delete().eq("id", (created as { id: string }).id);
     return `Ошибка регистрации файла: ${regNew.error}`;
   }
@@ -858,9 +865,11 @@ async function toolGetStorageStats(args: { requesting_user_id?: number } = {}): 
   const scope = await callerScope(args.requesting_user_id);
   if (!scope) return NO_WORKSPACE_MESSAGE;
 
-  const query = supabase
-    .from("entries")
-    .select("entry_type, source, created_at, metadata")
+  const query = onlyLiveEntries(
+    supabase
+      .from("entries")
+      .select("entry_type, source, created_at, metadata"),
+  )
     // Статистика считает только видимые записи: чужие приватные не попадают в счётчики
     // (та же приватность, что в list_entries/get_meetings).
     .or(visibilityFilter(scope.userId))
@@ -919,9 +928,11 @@ async function toolListEntries(
   const scope = await callerScope(args.requesting_user_id);
   if (!scope) return NO_WORKSPACE_MESSAGE;
 
-  let query = supabase
-    .from("entries")
-    .select("id, source, entry_type, entry_date, created_at, summary, countries, metadata")
+  let query = onlyLiveEntries(
+    supabase
+      .from("entries")
+      .select("id, source, entry_type, entry_date, created_at, summary, countries, metadata"),
+  )
     .or(visibilityFilter(scope.userId))
     .eq("group_id", scope.groupId)
     .order("created_at", { ascending: false })
@@ -963,9 +974,11 @@ async function toolListEntries(
 }
 
 async function toolDeleteEntry(args: { id: string; requesting_user_id?: number }): Promise<string> {
-  const { data: entry, error: fetchErr } = await supabase
-    .from("entries")
-    .select("metadata, source, owner_id, is_private, group_id, shared_with")
+  const { data: entry, error: fetchErr } = await onlyLiveEntries(
+    supabase
+      .from("entries")
+      .select("metadata, source, owner_id, is_private, group_id, shared_with"),
+  )
     .eq("id", args.id)
     .maybeSingle();
 
@@ -986,19 +999,12 @@ async function toolDeleteEntry(args: { id: string; requesting_user_id?: number }
   if (deniedDel) return deniedDel;
   if (!entry) return `Запись ${args.id} не найдена.`; // сужение: гард уже отсёк null
 
-  const fileUrl = (entry.metadata as Record<string, unknown> | null)?.file_url as string | undefined;
-  const removal = fileUrl ? await removeStorageObject(supabase, fileUrl) : { status: "no-file" as const };
-  // Файл не удалился — запись оставляем и говорим об этом. Раньше ошибка глушилась,
-  // а ответ всё равно утверждал «вместе с файлом из Storage»: файл оставался доступен
-  // по прежней ссылке, и никто об этом не узнавал.
-  if (removal.status === "failed") {
-    return `Запись НЕ удалена: файл не удалось убрать из Storage (${removal.error}). Записи без файла не оставляем — иначе файл останется доступен по прежней ссылке.`;
-  }
+  // Запись не стирается, а уходит в архив вместе с задачами встречи (#569, #687). Файл в Storage
+  // остаётся: отдача файла проверяет живую запись, поэтому по прежней ссылке он недоступен.
+  const archived = await archiveEntry(supabase, { id: args.id, metadata: entry.metadata }, delScope.userId);
+  if (archived.error) return `Ошибка удаления: ${archived.error}`;
 
-  const { error: delErr } = await supabase.from("entries").delete().eq("id", args.id);
-  if (delErr) return `Ошибка удаления: ${delErr.message}`;
-
-  return `✅ Запись удалена${removal.status === "removed" ? " вместе с файлом из Storage" : ""}.`;
+  return `✅ Запись удалена${archived.archivedTasks ? ` (задач встречи убрано: ${archived.archivedTasks})` : ""}.`;
 }
 
 async function toolUpdateEntry(
@@ -1014,9 +1020,11 @@ async function toolUpdateEntry(
     requesting_user_id?: number;
   },
 ): Promise<string> {
-  const { data: existing, error: fetchErr } = await supabase
-    .from("entries")
-    .select("metadata, is_private, owner_id, group_id, shared_with")
+  const { data: existing, error: fetchErr } = await onlyLiveEntries(
+    supabase
+      .from("entries")
+      .select("metadata, is_private, owner_id, group_id, shared_with"),
+  )
     .eq("id", args.id)
     .maybeSingle();
 
@@ -1115,9 +1123,11 @@ async function toolUpdateEntry(
 }
 
 async function toolReindexEntry(args: { id: string; summary?: string; requesting_user_id?: number }): Promise<string> {
-  const { data: entry, error } = await supabase
-    .from("entries")
-    .select("id, content, summary, source, is_private, owner_id, group_id, shared_with")
+  const { data: entry, error } = await onlyLiveEntries(
+    supabase
+      .from("entries")
+      .select("id, content, summary, source, is_private, owner_id, group_id, shared_with"),
+  )
     .eq("id", args.id)
     .maybeSingle();
 

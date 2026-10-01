@@ -10,6 +10,7 @@
 
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { canViewEntry } from "../_shared/entries/access.ts";
+import { onlyLiveEntries } from "../_shared/entries/live.ts";
 
 export type StorageOwnerKind = "entry" | "feedback";
 
@@ -105,9 +106,11 @@ export async function getFileSecure(
   let row: StorageFileRow;
   if (registry.owner_kind === "entry") {
     // Свежие права — из записи-владельца, НЕ из реестра (нет дрейфа приватности).
-    const { data: entry } = await supabase
-      .from("entries")
-      .select("group_id,owner_id,is_private,shared_with")
+    const { data: entry } = await onlyLiveEntries(
+      supabase
+        .from("entries")
+        .select("group_id,owner_id,is_private,shared_with"),
+    )
       .eq("id", registry.entry_id)
       .maybeSingle();
     if (!entry) throw new FileAccessError(404, "Not found");

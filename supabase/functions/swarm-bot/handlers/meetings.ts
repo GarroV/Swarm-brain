@@ -14,6 +14,8 @@ import { COUNTRY_NAMES } from "../../_shared/countries.ts";
 import { buildEmbeddingInput, marketTagsFromInput } from "../../_shared/meta-extract.ts";
 import type { TgCallbackQuery } from "../lib/types.ts";
 import { onlyLive } from "../../_shared/tasks/live.ts";
+import { onlyLiveEntries } from "../../_shared/entries/live.ts";
+import { archiveEntry } from "../../_shared/entries/archive.ts";
 
 const TELEGRAM_BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN")!;
 
@@ -45,9 +47,11 @@ async function loadEntryForAction(
         .map((c) => c.trim()).filter(Boolean),
     ),
   ].join(", ");
-  const { data } = await supabase
-    .from("entries")
-    .select(select)
+  const { data } = await onlyLiveEntries(
+    supabase
+      .from("entries")
+      .select(select),
+  )
     .eq("id", entryId)
     .maybeSingle();
   const viewer = action === "view" ? { id: viewerId } : await loadMeetingViewer(viewerId);
@@ -257,18 +261,15 @@ export async function handleMeetingCallbacks(
       return true;
     }
     const title = (entry.metadata?.title as string) ?? "Встреча";
-    const meetingId = entry.metadata?.meeting_id as string | null ?? null;
 
-    if (meetingId) {
-      // archive-ok: удаление встречи: ищем задачи для уборки, архив тоже (физическое удаление здесь — отдельный дефект)
-      const { data: taskIds } = await supabase.from("tasks").select("id").eq("meeting_id", meetingId);
-      if (taskIds?.length) {
-        const ids = taskIds.map((t: { id: string }) => t.id);
-        await supabase.from("task_history").delete().in("task_id", ids);
-        await supabase.from("tasks").delete().eq("meeting_id", meetingId);
-      }
+    // Встреча и её задачи уходят в архив, а не стираются (#569): прежде здесь задачи и их журнал
+    // удалялись физически (#687), и след «кто убрал» терялся.
+    const archived = await archiveEntry(supabase, { id: entryId, metadata: entry.metadata }, userId);
+    if (archived.error) {
+      console.error("[md_] archive", archived.error);
+      await sendMessage(chatId, "Не удалено: не получилось убрать встречу, попробуй ещё раз.");
+      return true;
     }
-    await supabase.from("entries").delete().eq("id", entryId).eq("group_id", groupId);
 
     await sendMessage(chatId, `🗑 Удалено: <b>${title}</b> и все связанные задачи.`);
     return true;
@@ -276,8 +277,10 @@ export async function handleMeetingCallbacks(
   if (data.startsWith("rai_")) {
     const sub = data.replace("rai_", "");
     if (sub === "saved") {
-      const { data: meetings } = await supabase
-        .from("entries").select("id, metadata, created_at, source, entry_type")
+      const { data: meetings } = await onlyLiveEntries(
+        supabase
+          .from("entries").select("id, metadata, created_at, source, entry_type"),
+      )
         .eq("group_id", groupId)
         // Личные встречи в списке — свои и разделённые со мной (правило видимости записей).
         .or(visibilityFilter(userId))
@@ -438,8 +441,10 @@ export async function handleMeetingCallbacks(
     const meetingId = data.replace("massign_", "");
     // Встреча — из воркспейса нажавшего (как в meeting_tag_), и участников предлагаем только
     // оттуда: раньше список шёл по всем воркспейсам сразу.
-    const { data: meetingEntries, error: meErr } = await supabase
-      .from("entries").select("id")
+    const { data: meetingEntries, error: meErr } = await onlyLiveEntries(
+      supabase
+        .from("entries").select("id"),
+    )
       .eq("group_id", groupId)
       .or(`metadata->>meeting_id.eq.${meetingId},id.eq.${meetingId}`).limit(1);
     if (meErr) console.error("[massign] entry", meErr.message);
@@ -793,8 +798,10 @@ export async function handleMeetingSessionInput(
     await clearSession(chatId);
     const meetingId = action.replace("meeting_tag_", "");
     const rawTags = text.split(",").map((t) => t.trim()).filter(Boolean);
-    const { data: found } = await supabase
-      .from("entries").select("id, metadata, is_private, owner_id, shared_with, group_id")
+    const { data: found } = await onlyLiveEntries(
+      supabase
+        .from("entries").select("id, metadata, is_private, owner_id, shared_with, group_id"),
+    )
       .eq("group_id", groupId)
       .or(`metadata->>meeting_id.eq.${meetingId},id.eq.${meetingId}`);
     // Теги — правка встречи: только те записи, которые нажавшему можно править.

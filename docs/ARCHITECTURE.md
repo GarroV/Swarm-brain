@@ -210,7 +210,7 @@ supabase/functions/swarm-bot/
 | Таблица | Назначение | Ключевые поля |
 |---------|-----------|---------------|
 | `workspaces` | Воркспейсы (тенанты) | `id` (TEXT PK — **постоянный опаковый слаг**, отвязан от `name`: переименование меняет только `name`, `id` НЕ трогается; в проде `id=cee`, `name="IMF BD"`. `id` = FK `group_id` во всех таблицах → смена слага = FK-миграция. Не хардкодить `group_id` в коде, юзеру показывать `name`. См. CLAUDE.md § Идентификаторы), `name` TEXT, `allowed_markets text[]` (NULL = глобальный список), `created_at` |
-| `entries` | База знаний — все записи | `id`, `content`, `summary`, `embedding`, `source` (канал: `telegram`\|`granola`\|`read_ai`\|`desktop-agent`\|`link`\|`note`\|`voice`\|`file`\|…), `added_by`, `metadata` (jsonb), `countries` (включает `"General"` для общекомандных/многострановых записей), `entry_type` **CHECK `meeting`\|`note`** — два типа: встреча (транскрипт/тезисы созвона) и заметка (всё остальное). Ссылка/файл — это **фасеты заметки** через `metadata` (`url` / `file_name`+`file_type`), НЕ отдельные типы. Граница встреча↔заметка — по `entry_type`, не по source. `entry_date`, `is_private`, `owner_id`, `shared_with` (`bigint[]`, по умолчанию `{}`: с кем ещё разделена ЛИЧНАЯ запись — второй участник встречи 1-1, #641; видит и правит, не удаляет; миграция `20261001120000`), `group_id` (FK → `workspaces.id`). Старый тип до миграции — в `metadata.legacy_entry_type` |
+| `entries` | База знаний — все записи | `id`, `content`, `summary`, `embedding`, `source` (канал: `telegram`\|`granola`\|`read_ai`\|`desktop-agent`\|`link`\|`note`\|`voice`\|`file`\|…), `added_by`, `metadata` (jsonb), `countries` (включает `"General"` для общекомандных/многострановых записей), `entry_type` **CHECK `meeting`\|`note`** — два типа: встреча (транскрипт/тезисы созвона) и заметка (всё остальное). Ссылка/файл — это **фасеты заметки** через `metadata` (`url` / `file_name`+`file_type`), НЕ отдельные типы. Граница встреча↔заметка — по `entry_type`, не по source. `entry_date`, `is_private`, `owner_id`, `shared_with` (`bigint[]`, по умолчанию `{}`: с кем ещё разделена ЛИЧНАЯ запись — второй участник встречи 1-1, #641; видит и правит, не удаляет; миграция `20261001120000`), `group_id` (FK → `workspaces.id`), `archived_at`/`archived_by` (архив вместо удаления, #569, миграция `20261002100000` — см. §Архивация вместо удаления). Старый тип до миграции — в `metadata.legacy_entry_type` |
 | `tasks` | Задачи команды + личные (Рой) | `id`, `title`, `assignees`, `due_date`, `status` (`text not null default 'open'`, **CHECK** `open`\|`in_progress`\|`done`\|`cancelled`\|`backlog` — миграция `20260905190000_tasks_status_check`, issue #208; канон набора — `_shared/tasks/statuses.ts`. До 05.09.2026 колонка была свободной, статус `pending` тихо прятал 32 задачи полтора месяца — эта строка доки отставала от миграции, пока не поймалась на #294), `tags`, `meeting_id`, `created_by`, `created_by_telegram_id`, `priority` (NULL\|`high`\|`med`\|`low`, **CHECK** `priority is null or priority in ('high','med','low')`, миграция `20260615000000`), `task_role` (NULL\|`marketing`\|`bd`\|`rnd`, **CHECK**, миграция `20260528120000`), `group_id` (FK → `workspaces.id`); модуль Рой: `is_private`, `owner_id` (FK → `allowed_users`), `start_date`, `timeline_position`, `sprint_id` (FK → `sprints`), `recur_freq` (NULL\|`daily`\|`weekly`\|`monthly` — цикличность, **CHECK**, миграция `20260827120000`; NULL = обычная задача), `recur_anchor_dom` (`smallint`, **CHECK** 1–31 — исходное число месяца для `monthly`, чтобы после зажатия коротким месяцем вернуться к нему: 31 янв → 28 фев → **31** мар), `label_ids uuid[]` (персональные смарт-метки — членство в личных списках; только на личных задачах владельца; миграция `20260716120000`, GIN-индекс), `project_id` (FK → `projects.id`, **ON DELETE SET NULL**; с 21.09.2026 этот каскад практически не срабатывает — проект не удаляется, а архивируется, и связь задачи с ним сохраняется), `project_linked` (boolean, `not null default false` — Project Space: `true` = в дереве проекта, `false` = в бэклоге; требует непустого `project_id`, миграция `20260801120000`), `parent_id` (FK → `tasks.id`, **ON DELETE SET NULL** — родитель-задача для подзадачи; NULL = ребёнок корня-проекта или бэклог; цикл-защита + каскад отвязки поддерева в `swarm-api`; **с 24.09.2026 — подзадачи** (#478): уровни проект → инициатива → задача → подзадача, вложенность один уровень (правило UI, `miniapp/src/lib/subtasks.ts`); **закрытие родителя закрывает открытые подзадачи** — каскад в `updateTask` (`_shared/tasks/db.ts`), решение `shouldCascadeClose` в `_shared/tasks/statuses.ts` под тестом: только переход открытая → закрытая, перекат регулярной задачи не каскадит, уведомлений нет — решение владельца, [decisions/2026-09-24-freeze-stages-subtasks.md] в ветке `feat/stand-visual`), `tree_x`/`tree_y` (double precision, nullable — ручная позиция узла в дереве react-flow; NULL = сид d3). `parent_id`+`tree_*` — миграция `20260806120000`. **Пинг** (ручное напоминание, миграция `20260826090000`): `remind_date` (date — день напоминания, независим от `due_date`), `reminded_at` (timestamptz — момент отправки; NOT NULL = пинг сгорел, повторно не шлётся), `remind_set_by` (bigint — кто поставил: получатель у общей задачи без исполнителя). Частичный индекс `idx_tasks_pending_ping` держит выборку крона маленькой (`remind_date is not null and reminded_at is null`). `ping_delivered_to` (`bigint[] not null default '{}'`, миграция `20261001180000`, issue #575) — кому пинг уже дошёл: пинг гасится (`reminded_at`), только когда дошёл ВСЕМ получателям, дошедшим повторно не шлётся; недоставку крон пробует `PING_RETRY_DAYS` = 2 дня от дня пинга, потом гасит с предупреждением в лог (правило — `settlePing` в `swarm-bot/handlers/task-pings.ts` под тестами). Перевзвод пинга (новая `remind_date` или `reminded_at = null`) очищает список триггером `trg_tasks_ping_rearm` — одним местом для веба и MCP. **Дата закрытия** (`completed_at timestamptz`, миграция `20260908120000`, issue #267): момент перехода в `done`/`cancelled`, NULL у открытых; ставится в ЕДИНСТВЕННОЙ точке записи статуса — `updateTask` (`_shared/tasks/db.ts`), значение считает чистая функция `completionPatch` (`_shared/tasks/statuses.ts`): правка уже закрытой задачи дату не двигает, перекат регулярной задачи закрытием не считается. ⚠️ У задач, закрытых ДО 08.09.2026, значение получено бэкфиллом из `updated_at` — это прокси, а не факт. До появления колонки экраны считали день закрытия по `updated_at`, которого нет в списочной проекции, и «Сегодня + Готово» показывал созданные сегодня (issue #268). ⚠️ `created_by_name` — **НЕ колонка**: вычисляется в слое `swarm-api` (`GET /tasks`) из `created_by_telegram_id` через `creatorMap`. `links` (jsonb `not null default '[]'`, CHECK `tasks_links_is_array` — список `{title, url}`; схему проверяет `parseLinks` в коде: только `http(s)`, не больше 20, без повторов; старое поле `url` не трогаем — его пишут встречи и бот). **Архив:** `archived_at`/`archived_by` — мягкое удаление, см. «Архивация вместо удаления» ниже |
 | `sprints` | ⚠️ **ДВЕ сущности в одной таблице**, различаются колонкой `kind` (миграция `20260921093000`, issue #423): `board_tab` — **пространство доски «Проекты»** (по людям; владеет проектами через `projects.sprint_id`, решение 2026-08-09), `space` — **пространство раздела «Спринты»** (на него ссылается `sprint_cycles.tab_id`). Смешение стоило дорого: заведённое для спринтов пространство стало первой вкладкой доски и 19–21.09.2026 весь раздел «Проекты» выглядел пустым у команды. Сами спринты — в `sprint_cycles` ниже. Переименование в `board_tabs` отложено владельцем 08.09.2026 («не горит») | `id`, `group_id` (FK → `workspaces.id`), `name`, `start_date`, `end_date`, `status` (`planned`\|`active`\|`completed`), **`kind`** (`text not null default 'board_tab'`, CHECK `board_tab`\|`space`), CHECK `start_date<=end_date`. **Архив:** `archived_at`/`archived_by` — мягкое удаление, см. «Архивация вместо удаления» ниже |
 | `sprint_cycles` | **Спринты** — период планирования с приёмкой и снимком (issue #267, миграция `20260908130000`) | `id`, `group_id`, `name`, `start_date`, `end_date`, `status` (**CHECK** `draft`\|`active`\|`accepted`), `created_by`, `started_at`, `accepted_at`, `accepted_by`, `summary`, `stats` (jsonb — итоги, посчитанные ОДИН РАЗ на приёмке, не пересчитываются), CHECK `start_date<=end_date`. **Доска инициатив** (миграция `20260918120000`): `tab_id` (FK → `sprints.id`, **ON DELETE SET NULL** — пространство спринта; NULL показывается как «Без вкладки»), `check_date` (день сверки, по умолчанию старт + 6). Частичный уникальный индекс `uniq_sprint_cycles_live_per_tab` — **один незакрытый спринт на пространство** (`status in (draft, active) and tab_id is not null and archived_at is null` — последнее условие с 21.09.2026, иначе архивный черновик навсегда занимает место); на NULL не распространяется. **Хаб проектов:** `hidden_from_hub` (boolean `not null default false`, миграция `20260929090000`, issue #562) — задача не показывается в публичной дорожной карте, даже если доска опубликована; ставится через MCP `update_task` (переключателя в вебе пока нет), см. «Публичная дорожная карта». **Архив:** `archived_at`/`archived_by` — мягкое удаление, см. «Архивация вместо удаления» ниже |
@@ -278,7 +278,8 @@ supabase/functions/swarm-bot/
 
 **Ничего не удаляется физически** — «Удалить» помечает строку архивной (решение владельца 21.09.2026,
 issue #427, миграция `20260921140000_soft_delete_archive`). Колонки `archived_at` (момент) и
-`archived_by` (telegram id того, кто убрал) есть у `tasks`, `projects`, `sprints`, `sprint_cycles`.
+`archived_by` (telegram id того, кто убрал) есть у `tasks`, `projects`, `sprints`, `sprint_cycles`, а с
+01.10.2026 и у `entries` — встреч и записей (#569, миграция `20261002100000_entries_archive`).
 
 **Для человека ничего не изменилось:** объект исчезает из списков, из поиска, из счётчиков — везде,
 где раньше исчезал удалённый. Отдельного раздела «Архив» в интерфейсе пока нет; вернуть объект —
@@ -296,6 +297,7 @@ issue #427, миграция `20260921140000_soft_delete_archive`). Колонк
 | Пространство | обнулялись `projects.sprint_id` и `tasks.sprint_id` у всего содержимого | связь цела, пространство возвращается вместе с составом |
 | Задача | `task_history` стирался первым делом | журнал цел — он и нужен для ответа «кто убрал задачу» |
 | Спринт | каскадом уходил состав `sprint_items` | состав и снимки приёмки на месте; принятый спринт по-прежнему не убирается вовсе |
+| Встреча / запись (`entries`) | строка стиралась; бот стирал и задачи встречи вместе с `task_history` (#687); файл удалялся из Storage, строка реестра `storage_files` уходила каскадом | запись в архиве, задачи встречи архивируются тем же `archivePatch`, что и обычное удаление задачи (журнал цел); файл и строка реестра остаются, но отдача файла (`getFileSecure`) читает только живую запись — ссылка отвечает 404 |
 
 **Читающие выборки фильтруют `archived_at is null`** — `listProjects`/`getProject`/`projectInWorkspace`,
 `getTask`/`listTasksWithTotal`, `listSprints`, `listCycles`/`getCycle`/`tabInGroup`. Добавляешь новую
@@ -329,6 +331,27 @@ issue #427, миграция `20260921140000_soft_delete_archive`). Колонк
 ⚠️ **Частичный уникальный индекс `uniq_sprint_cycles_live_per_tab` считает только живые спринты**
 (`... and archived_at is null`): иначе архивный черновик навсегда занимает место в пространстве, и
 человек упирается в «уже есть незакрытый спринт», не видя его нигде.
+
+**Встречи и записи — `entries`** (решение владельца 28.09.2026, issue #569: «давай заведем такую же
+систему как для задач что встречи при удалении не удаляются и архивируются»). Удаление идёт одним путём —
+`archiveEntry(supabase, entry, archivedBy)` в `_shared/entries/archive.ts`: ставит `archived_at`/`archived_by`
+у записи и архивирует живые задачи встречи по обоим ключам `tasks.meeting_id` — id записи (так пишет веб)
+и `metadata.meeting_id` исходной встречи (так пишут бот и рекордер). Права проверяет вызывающий. Зовут его
+`DELETE /entries/:id` и `DELETE /meetings/:id` (swarm-api), MCP `delete_entry`, бот — `md_<entryId>` и
+удаление записи из чата (`handlers/manage.ts`). Физический `delete` записи остался только как откат
+только что вставленной строки (неудачная регистрация файла, проигранная гонка публикации).
+**Живая запись определена в одном месте** — `onlyLiveEntries(...)` в `_shared/entries/live.ts`; хелперы
+`swarm-api/entries-guard.ts` (`getEntrySecure`, `buildEntriesQuery`, `buildReviewQueueQuery`) применяют его
+сами. **Сторож** — `_shared/entries/live.guard.test.ts`: каждая `.from("entries")` в функциях, которая
+читает без обёртки или фильтра `archived_at`, и каждый физический `.delete()` записи без пометки
+`// archive-ok: <почему>` валят прогон. Осознанные исключения: дедуп импорта Granola (архивная заметка уже
+импортирована — иначе удалённое вернулось бы «новым»), мониторинг поступления Read.ai в боте, возврат уже
+привязанной к встрече записи в `_shared/meeting-publish.ts`, откаты вставки. **SQL-поиск** исключает архив
+той же миграцией: `match_entries`, обе перегрузки `match_entries_hybrid` (в каждой условие стоит в обеих
+ветках) и `search_entries_by_country`. Проверка — `_shared/entries/archive.db.test.ts` (настоящая база:
+архивная встреча не находится ни одной функцией поиска, запись остаётся строкой, задачи — в архиве, гард
+отдаёт 404, список воркспейса её не показывает) и порча `scripts/porcha-sql.txt` на условии в поиске.
+Скрипты разовой уборки `scripts/storage-migrate.ts`, `scripts/retag-entries.ts` архив намеренно не фильтруют.
 
 Проверки — `supabase/functions/_shared/tasks/archive.db.test.ts` (настоящая база, 4 сценария:
 поддерево проекта, пространство не теряет проекты, история переживает задачу, место в пространстве
@@ -652,7 +675,7 @@ claimer → meeting-ingest: грузит АУДИО (части ≤15мин → 
 | `mtr_<entryId>` | Скачать транскрипт |
 | `mtag_<meetingId>` | **🏷 Темы** — свободный текст → `metadata.tags` (НЕ типизированные страны; рынки — через `mctry_`) |
 | `massign_<meetingId>` | Назначить участников |
-| `md_<entryId>` | Удалить встречу |
+| `md_<entryId>` | Удалить встречу — архивация вместе с задачами (`archiveEntry`, #569/#687) |
 | `met_<entryId>` | Редактировать название (из confirmation flow) |
 | `med_<entryId>` | Редактировать дату (из confirmation flow) |
 | `rai_saved` | Список сохранённых встреч (read_ai/voice/desktop-agent + meeting/transcript) |
@@ -1528,6 +1551,8 @@ supabase/functions/swarm-api/
 | `getMeetingSecure(supabase, id, { groupId, telegramId, email, isAdmin, action })` | PATCH/DELETE `/meetings/:id`, `POST /meetings/:id/resummarize` | 1)–2) как `getEntrySecure` (404), 3) права встречи `edit`/`delete` по `_shared/entries/meeting-rights.ts` (403) |
 | `buildEntriesQuery(supabase, select, { groupId, telegramId })` | GET /entries, GET /search | Возвращает query с workspace + visibility фильтрами уже встроены |
 
+Все три хелпера (и `buildReviewQueueQuery`) отсекают архив через `onlyLiveEntries` (#569): архивная запись — 404 и нет в списках.
+
 Обернуть handler в `withEntries(origin, async () => { ... })` — перехватывает `EntryAccessError` → 404/403.
 
 **Запрещено:** `supabase.from("entries").select(...)` напрямую в endpoint'ах — только через хелперы.
@@ -1640,7 +1665,7 @@ _Записи базы знаний (entries — только через `entrie
 | `GET` | `/entries` | Список заметок (`entry_type=note`, без `source=digest`). Фильтры: `source`, `type`, `date_from/to`; ≤50, по `created_at desc`. Воркспейс+приватность через `buildEntriesQuery` |
 | `GET` | `/entries/:id` | Одна запись (`getEntrySecure`). Приватная чужая / несуществующая → 404 |
 | `PATCH` | `/entries/:id` | Правка `content`/`summary` — **только владелец** (`requireOwner`) |
-| `DELETE` | `/entries/:id` | Удалить запись + прикреплённый файл из Storage (бакет берётся из реестра `storage_files`) — только владелец; 204. Объект не удалился → запись НЕ удаляется и отдаётся 500: иначе файл остаётся в хранилище без владельца |
+| `DELETE` | `/entries/:id` | Удалить запись — архивация (`archiveEntry`, #569) вместе с задачами встречи — только владелец; 204. Файл в Storage остаётся, но `/file/*` его больше не отдаёт (запись не живая) |
 | `POST` | `/entries` | Создать заметку из текста: эмбеддинг + классификация стран/типа (GPT-4o-mini, `COUNTRY_PROMPT_RULE`/`ENTRY_TYPE_PROMPT_RULE`) + тезисы (если ≥80 симв); `source=note`, привязка `group_id`/`owner_id`; 201 |
 | `POST` | `/entries/upload` | Multipart-загрузка файла в **приватный** бакет (`swarm_private/uploads/`) + запись (`source=file`) + строка реестра `storage_files`. В `metadata.file_url` кладётся **путь объекта**, наружу отдаётся `/api/file/<path>`; `is_private` опц.; 201. Сбой регистрации → откат (объект и запись удаляются) |
 | `GET` | `/file/*` | **Авторизованная раздача приватного файла.** Путь — всё после `/file/`. Доступ по реестру (`getFileSecure`: владелец через `storage_files` → свежие права из `entries`), затем 302 на signed URL (TTL 60 с). Отказ всегда 404 — существование чужого приватного файла не раскрывается. Для бота не годится (Telegram качает сам, без сессии) |
@@ -1710,7 +1735,7 @@ _Встречи — `/meetings` (подтверждённые записи-вс�
 | `GET` | `/meetings/:id` | Одна встреча-запись (`getEntrySecure`) |
 | `GET` | `/meetings/:id/notes` | **Заметки ВСЕХ участников встречи** → `{ versions, live[], personal[] }`. Одну встречу пишут несколько человек, у каждого своя строка `meetings` со своими пометками; собираем по связи `meetings.entry_id` + `metadata.meeting_id`, ничего не перенося. `live` — командные пометки «на полях» (`meeting_live_notes`) со всех версий, с `author_name` (резолв в `user_profiles`); `personal` — ТОЛЬКО свои личные (`entries`, `kind=personal_notes`, они приватны по дизайну claim, о чужих не сообщаем). До 2026-08-28 пометки после публикации не показывались вообще — их грузил только экран черновика (решение владельца: «заметки сохраняем все, с разбивкой по пользователям») |
 | `PATCH` | `/meetings/:id` | Правка: `confirmed` (в `metadata`), `summary`, `content`, `entry_type` (реклассификация «встреча → заметка», уводит из очереди), `is_private` (+`owner_id` как у задач), `countries`. Правят владелец, участники и админ (`getMeetingSecure`, `edit`); `is_private` меняют только владелец и админ; иначе 403 |
-| `DELETE` | `/meetings/:id` | Удалить встречу-запись (204). Только владелец и админ (`getMeetingSecure`, `delete`), личную — только владелец; иначе 403 |
+| `DELETE` | `/meetings/:id` | Удалить встречу-запись — архивация вместе с задачами встречи (`archiveEntry`, #569), 204. Только владелец и админ (`getMeetingSecure`, `delete`), личную — только владелец; иначе 403 |
 | `POST` | `/meetings/:id/resummarize` | Права — как у `PATCH` (`edit`). Пересобрать тезисы ОПУБЛИКОВАННОЙ встречи текущим промптом из транскрипта связанной `meetings`-строки (`metadata.meeting_id`) → обновляет `summary`+`content`+`embedding` (`resummarizeFromTranscript`) |
 | `POST` | `/meetings/:id/ask` | Точечный вопрос по ОПУБЛИКОВАННОЙ встрече: `{ fragment, question? }` → `{ answer }` — пункты «- …» по транскрипту связанной `meetings`-строки; в базу не пишет. Спрашивать может только записавший или совладелец (`canAccessDraftMeeting`): коллеги видят тезисы, но не транскрипт. Код `swarm-api/meeting-ask.ts`, промпт `_shared/meeting-ask.ts` |
 
@@ -1866,7 +1891,7 @@ supabase/functions/swarm-mcp/
 | `list_entries` | Список записей с фильтрами |
 | `update_entry` | Обновить запись (контент, тезисы, файл) |
 | `reindex_entry` | Перечитать запись и пересчитать страны + embedding через GPT (для записей с пустыми/неверными странами или устаревшим embedding) |
-| `delete_entry` | Удалить запись |
+| `delete_entry` | Удалить запись — архивация вместе с задачами встречи (`archiveEntry`, #569) |
 | `upload_file` | Загрузить файл в Storage + добавить запись |
 | `get_meetings` | Список встреч |
 | `get_storage_stats` | Статистика хранилища |

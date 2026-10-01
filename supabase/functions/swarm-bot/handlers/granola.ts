@@ -94,6 +94,7 @@ function buildNoteContent(note: Record<string, unknown>): string {
 
 async function getProcessedIds(telegramId: number): Promise<Set<string>> {
   const [savedRes, pendingRes, integrationRes] = await Promise.all([
+    // archive-ok: архивная заметка Granola уже была импортирована — без неё удалённое вернулось бы «новым»
     // Опубликованные (legacy pending + опубликованные) в entries — по granola_note_id.
     supabase.from("entries").select("metadata").eq("source", "granola")
       .eq("metadata->>added_by_telegram_id", String(telegramId)),
@@ -381,6 +382,7 @@ export async function pollGranolaForUser(chatId: number, telegramId: number): Pr
   const notes = await fetchNotesSince(integration.api_key, since);
   if (!notes.length) return 0;
 
+  // archive-ok: архивная заметка Granola уже была импортирована — без неё удалённое вернулось бы «новым»
   const [savedRes] = await Promise.all([
     supabase.from("entries").select("metadata").eq("source", "granola")
       .eq("metadata->>added_by_telegram_id", String(telegramId)),

@@ -6,6 +6,7 @@ import { defaultDueDate } from "./due.ts";
 import { historyRowsFor, isJournaled, type TaskSnapshot } from "./history.ts";
 import { duplicateRecurClose, recurCloseNote } from "./recur-close.ts";
 import { ASSIGNEE_SCAN_LIMIT, narrowByAssignee } from "./assignee-filter.ts";
+import { archivePatch } from "./live.ts";
 
 const supabase = createClient(
   Deno.env.get("SUPABASE_URL")!,
@@ -435,9 +436,6 @@ export async function deleteTask(
   archivedBy?: number,
 ): Promise<void> {
   await supabase.from("tasks")
-    .update({
-      archived_at: new Date().toISOString(),
-      archived_by: archivedBy ?? null,
-    })
+    .update(archivePatch(archivedBy))
     .eq("id", id).is("archived_at", null);
 }
