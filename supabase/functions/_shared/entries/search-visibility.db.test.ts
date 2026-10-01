@@ -16,23 +16,32 @@ const PARTNER = -900222; // веб-пользователь без Telegram: о�
 const THIRD = 900333;
 const TOKEN = "zxqvshared641";
 
+const WS = "test-641";
+
+// owner_id ссылается на allowed_users, поэтому владелец заводится настоящей строкой (в своём
+// тестовом воркспейсе) и убирается вместе с записью. shared_with внешнего ключа не имеет.
 async function withSharedEntry(fn: (db: Client, id: string) => Promise<void>): Promise<void> {
   const db = new Client(DB_URL);
   await db.connect();
   try {
+    await db.queryArray`delete from entries where group_id = ${WS}`;
+    await db.queryArray`delete from allowed_users where telegram_id = ${OWNER}`;
+    await db.queryArray`delete from workspaces where id = ${WS}`;
+    await db.queryArray`insert into workspaces (id, name) values (${WS}, ${WS})`;
+    await db.queryArray`
+      insert into allowed_users (telegram_id, username, added_by, group_id)
+      values (${OWNER}, ${"u" + OWNER}, 0, ${WS})`;
     const ins = await db.queryObject<{ id: string }>`
       insert into entries (content, summary, entry_type, source, added_by, is_private, owner_id,
-                           shared_with, embedding, metadata)
+                           shared_with, embedding, metadata, group_id)
       values (${"Встреча " + TOKEN}, ${TOKEN}, 'meeting', 'test', 'test', true, ${OWNER},
-              ${[PARTNER]}::bigint[], '[1,0,0]'::vector, '{"confirmed": true}'::jsonb)
+              ${[PARTNER]}::bigint[], '[1,0,0]'::vector, '{"confirmed": true}'::jsonb, ${WS})
       returning id`;
-    const id = ins.rows[0].id;
-    try {
-      await fn(db, id);
-    } finally {
-      await db.queryArray`delete from entries where id = ${id}`;
-    }
+    await fn(db, ins.rows[0].id);
   } finally {
+    await db.queryArray`delete from entries where group_id = ${WS}`;
+    await db.queryArray`delete from allowed_users where telegram_id = ${OWNER}`;
+    await db.queryArray`delete from workspaces where id = ${WS}`;
     await db.end();
   }
 }
