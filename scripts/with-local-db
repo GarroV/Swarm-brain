@@ -44,8 +44,21 @@ remote_env() {
   printf '%s\n' "$out"
 }
 
-ENV_OUT=$(status_env) || ENV_OUT=$(remote_env) || ENV_OUT=""
-if [ -z "$ENV_OUT" ]; then
+# Где идут тесты — говорится вслух, одной строкой (issue #668): общий стенд и свой контур
+# выглядят для тестов одинаково (127.0.0.1:54322), а значат разное.
+listener() { # кто слушает :54322 на этой машине — процесс и его аргументы
+  local pid
+  pid=$(lsof -nP -t -iTCP:54322 -sTCP:LISTEN 2>/dev/null | head -1)
+  [ -n "$pid" ] && ps -o command= -p "$pid" 2>/dev/null | cut -c1-120
+}
+if ENV_OUT=$(status_env); then
+  echo "with-local-db: тесты базы — контур Supabase на этой машине" >&2
+elif ENV_OUT=$(remote_env); then
+  echo "with-local-db: тесты базы — ОБЩИЙ стенд $REMOTE_HOST ($REMOTE_DIR) через 127.0.0.1:54322" \
+    "[слушает: $(listener)]. Стенд один на все сессии: параллельный прогон соседа может окрасить" \
+    "твои тесты, источник истины — CI" >&2
+else
+  ENV_OUT=""
   echo "with-local-db: контура нет ни на этой машине, ни на $REMOTE_HOST — тесты базы упадут" >&2
 fi
 

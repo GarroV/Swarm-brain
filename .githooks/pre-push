@@ -88,5 +88,10 @@ if [[ ! -x "$root/scripts/check" ]]; then
   exit 1
 fi
 
-echo "pre-push: scripts/check"
-exec "$root/scripts/check"
+# Режим fast — формат, линт, типы, мёртвый код, границы; без тестов и порчи (решение
+# 01.10.2026, issues #595, #693). Тесты базы локально ходят в общий стенд на MUSPELHEIM, и
+# параллельные сессии валили друг другу пре-пуш не по коду — пушили с --no-verify, то есть
+# мимо и сторожа выше. Тесты и порча — в CI на чистой базе на каждый прогон; локально —
+# `make test-db` и `scripts/check` без аргумента.
+echo "pre-push: scripts/check fast (тесты и порча — в CI)"
+exec "$root/scripts/check" fast
