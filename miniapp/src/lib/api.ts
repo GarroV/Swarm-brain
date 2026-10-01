@@ -2474,8 +2474,10 @@ const devTaskFiles = new Map<string, TaskFile[]>();
 
 export async function fetchTaskFiles(taskId: string): Promise<TaskFilesList> {
   if (DEV_MODE) {
+    // Файл-образец — только у задачи «1»: у остальных моков файлов нет, иначе пустую
+    // карточку (без ссылок, файлов и подзадач) в DEV_MODE не открыть вовсе.
     if (!devTaskFiles.has(taskId)) {
-      devTaskFiles.set(taskId, [{
+      devTaskFiles.set(taskId, taskId !== "1" ? [] : [{
         id: "f1", name: "Договор_Сербия.pdf", size: 2_516_582, mime: "application/pdf", inline: true,
         uploaded_by: 123456, uploaded_by_name: "Dev User", created_at: new Date(Date.now() - 86_400_000 * 3).toISOString(),
       }]);

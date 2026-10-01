@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect, useMemo, useRef } from "react";
 import type { Task, TaskLink, User, Project } from "@/types";
-import { TaskLinksField } from "@/components/tasks/TaskLinksField";
+import { useCardSections } from "@/components/tasks/useCardSections";
 import { displayName } from "@/lib/utils";
 import { DatePicker } from "@/components/ui/DatePicker";
 import {
@@ -25,8 +25,6 @@ import { PILL_GROUP_CLS, pillSegmentCls, pillSegmentSelectCls, PropertyPillBody,
 import { useConfirm } from "@/components/ui/confirm";
 import { RoyIcon, type RoyIconName } from "@/components/roy/icons";
 import { TaskComments } from "@/components/tasks/TaskComments";
-import { TaskFiles } from "@/components/tasks/TaskFiles";
-import { TaskSubtasks } from "@/components/tasks/TaskSubtasks";
 import { COUNTRY_NAMES, countryCode } from "@/lib/countries";
 import { CountryPopover } from "@/components/tasks/CountryPopover";
 import { linkify } from "@/lib/linkify";
@@ -487,13 +485,28 @@ export function TaskModal({ task: taskOpened, open, onClose, onSaved, prefill, m
           : "";
   const saveHintDanger = titleMissing || saveState === "error" || hydrateFailed;
 
+  // Ссылки, подзадачи и файлы: пустые — пиктограммами в одной строке, непустые — разделами
+  // (решение владельца 01.10.2026, docs/decisions/2026-10-01-task-card-compact-sections.md).
+  const sections = useCardSections({
+    task: task ?? null,
+    isEdit,
+    isPartial,
+    links,
+    setLinks,
+    onSaved,
+    onOpenTask: openRelated,
+  });
+
   return (
     <Dialog open={open} onOpenChange={(o) => !o && handleClose()}>
       <DialogContent
         showCloseButton={false}
         overlayClassName={drawer ? "bg-[rgba(10,13,17,.12)]" : undefined}
         className={cn("gap-0 rounded-[14px] border border-line bg-[var(--popover)] p-0 sm:max-w-2xl", drawer && DRAWER_CLS)}
+        {...sections.dropProps}
       >
+        {sections.fileInput}
+        {sections.dropOverlay}
         {/* Шапка: заголовок + индикатор автосейва (edit) + удалить (edit) + закрыть */}
         <div className="flex items-center justify-between gap-3 border-b border-line px-[18px] py-2.5">
           <div className="flex min-w-0 items-baseline gap-2.5">
@@ -814,10 +827,11 @@ export function TaskModal({ task: taskOpened, open, onClose, onSaved, prefill, m
               </div>
             )}
 
-            {/* У недогруженной задачи поле ссылок только для чтения — отправлять их всё равно нельзя. */}
-            <div data-card-block="links">
-              <TaskLinksField links={links} onChange={setLinks} disabled={isPartial} />
-            </div>
+            {/* Строка пиктограмм пустых разделов — на месте прежнего поля ссылок, над описанием:
+                так она всегда на первом экране, даже под длинным описанием, а заполненные
+                «Ссылки» встают ровно туда, где была пиктограмма. */}
+            {links.length > 0 && <div data-card-block="links">{sections.linksSection}</div>}
+            {sections.bar}
 
             <div data-card-block="description" className="flex flex-col">
               <label htmlFor="modal-desc" className={labelCls} style={{ fontSize: 12 }}>{dt("Описание", "Description")}</label>
@@ -855,15 +869,15 @@ export function TaskModal({ task: taskOpened, open, onClose, onSaved, prefill, m
           </div>
           </fieldset>
 
-          {isEdit && task && !isPartial && (
+          {sections.subtasksSection && (
             <div data-card-block="subtasks" className="mt-3.5 border-t border-line pt-3">
-              <TaskSubtasks task={task} onChanged={onSaved} onOpenTask={openRelated} />
+              {sections.subtasksSection}
             </div>
           )}
 
-          {isEdit && task && (
+          {sections.filesSection && (
             <div data-card-block="files" className="mt-3.5 border-t border-line pt-3">
-              <TaskFiles taskId={task.id} taskOwnerId={task.owner_id ?? null} />
+              {sections.filesSection}
             </div>
           )}
 
