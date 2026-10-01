@@ -60,3 +60,8 @@ supabase/functions/_shared/meeting-publish-visibility.ts|supabase/functions/_sha
 # и человек читает её как факт (issue #582). Окна дат и общий извлекатель меты.
 supabase/functions/_shared/llm-date.ts|supabase/functions/_shared/llm-date.test.ts
 supabase/functions/_shared/meta-extract.ts|supabase/functions/_shared/meta-extract.test.ts
+# Уведомления о комментарии к задаче: правило получателей и рассылка, общие для веба и MCP
+# (issue #521). Ошибка молчит — заголовок и текст чужой приватной задачи уходят в бот человеку,
+# который её не видит, или автор шлёт уведомление сам себе.
+supabase/functions/_shared/tasks/notify.ts|supabase/functions/_shared/tasks/notify.test.ts
+supabase/functions/_shared/tasks/comment-fanout.ts|supabase/functions/_shared/tasks/comment-fanout.test.ts

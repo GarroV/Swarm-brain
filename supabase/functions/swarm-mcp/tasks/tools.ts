@@ -4,6 +4,7 @@ import { projectLabel, truncationNote, visibleProjectNameById } from "./task-lis
 
 import { recurrencePatchFor, resolveRecurrence } from "../../_shared/tasks/recurrence.ts";
 import { commentDeleteDenial, validateCommentContent } from "../../_shared/tasks/comments.ts";
+import { afterTaskComment } from "../../_shared/tasks/comment-fanout.ts";
 import { canViewTask, taskAccessError } from "../../_shared/tasks/access.ts";
 import { subtaskLinkError } from "../../_shared/tasks/subtasks.ts";
 import { pingPatch } from "./ping.ts";
@@ -576,7 +577,7 @@ export async function toolGetProjects(args: { requesting_user_id: number }): Pro
 async function commentTaskGuard(
   taskId: string,
   requestingUserId: number,
-): Promise<{ ok: true } | { ok: false; msg: string }> {
+): Promise<{ ok: true; task: Task } | { ok: false; msg: string }> {
   const task = await getTask(taskId);
   const groupId = await resolveGroupId(requestingUserId);
   if (!groupId) return { ok: false, msg: `Задача ${taskId} не найдена.` };
@@ -585,8 +586,8 @@ async function commentTaskGuard(
   // раньше «задача приватная» и «не в твоём воркспейсе» отличались от «не найдена», и перебором
   // id подтверждалось само существование чужой личной задачи.
   const denied = taskAccessError(taskId, task, requestingUserId, requestingUserId === ADMIN_USER_ID, groupId ?? null);
-  if (denied) return { ok: false, msg: denied };
-  return { ok: true };
+  if (denied || !task) return { ok: false, msg: denied ?? `Задача ${taskId} не найдена.` };
+  return { ok: true, task };
 }
 
 export async function toolGetTaskComments(args: { task_id: string; requesting_user_id: number }): Promise<string> {
@@ -627,14 +628,33 @@ export async function toolAddTaskComment(
   if (!guard.ok) return guard.msg;
   const v = validateCommentContent(args.content);
   if (!v.ok) return `Ошибка: ${v.error}`;
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from("task_comments").insert({
       task_id: args.task_id,
       content: v.value,
       added_by_telegram_id: args.requesting_user_id,
-    });
+    }).select("id").single();
   if (error) return `Ошибка: ${error.message}`;
+  // То же, что делает веб после комментария (issue #521): автор подписывается на задачу,
+  // причастные и подписчики получают уведомление. Круг получателей и проверка видимости —
+  // общие (`commentRecipients`), автор себе не шлёт. Сбой рассылки комментарий не роняет.
+  const task = guard.task;
+  await afterTaskComment(supabase, {
+    task: { ...task, group_id: task.group_id ?? null },
+    commentId: (data as { id: string }).id,
+    content: v.value,
+    actorTelegramId: args.requesting_user_id,
+    actorName: await actorDisplayName(args.requesting_user_id),
+  });
   return "✅ Комментарий добавлен.";
+}
+
+// Имя автора для пуша «💬 <имя> — комментарий к задаче»: профиль, иначе id (как в вебе).
+async function actorDisplayName(telegramId: number): Promise<string> {
+  const { data } = await supabase.from("user_profiles").select("first_name, last_name")
+    .eq("telegram_id", telegramId).maybeSingle();
+  const p = data as { first_name?: string | null; last_name?: string | null } | null;
+  return [p?.first_name, p?.last_name].filter(Boolean).join(" ") || String(telegramId);
 }
 
 // Удалить свой комментарий (issue #515). Правки текста нет сознательно: у комментария нет
@@ -968,7 +988,8 @@ export const COMMENT_TOOL_DEFINITIONS = [
   },
   {
     name: "add_task_comment",
-    description: "Добавить комментарий-апдейт к задаче по её ID от твоего лица.",
+    description:
+      "Добавить комментарий-апдейт к задаче по её ID от твоего лица. Исполнители, создатель, владелец и подписчики задачи получат уведомление (колокольчик и пуш в бота), а ты будешь подписан на дальнейшие комментарии.",
     inputSchema: {
       type: "object",
       properties: {
