@@ -1,7 +1,7 @@
 // Дедуп публикации и видимость (#579): личная публикация не прикрепляется к командной записи
 // и не переписывает её, командная — к личной.
 import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import { matchesPublishVisibility } from "./meeting-dedup.ts";
+import { matchesPublishVisibility } from "./meeting-publish-visibility.ts";
 
 const team = { is_private: false, owner_id: 111, shared_with: null };
 const mine = { is_private: true, owner_id: 111, shared_with: null };

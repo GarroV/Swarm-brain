@@ -52,4 +52,4 @@ supabase/functions/_shared/tasks/sprint-groups.ts|supabase/functions/_shared/tas
 miniapp/src/lib/sprintGrouping.ts|miniapp/src/lib/sprintGrouping.test.ts
 # Дедуп публикации и видимость (#579): ошибка не падает — личная публикация молча переписывает
 # командную запись или прикрепляется к ней.
-supabase/functions/_shared/meeting-dedup.ts|supabase/functions/_shared/meeting-dedup-visibility.test.ts
+supabase/functions/_shared/meeting-publish-visibility.ts|supabase/functions/_shared/meeting-dedup-visibility.test.ts
