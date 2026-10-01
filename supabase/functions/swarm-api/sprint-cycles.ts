@@ -1,4 +1,5 @@
 import { apiErr, corsHeaders, json } from "./http.ts";
+import { serverError } from "./client-error.ts";
 import {
   createCycle,
   deleteCycle,
@@ -97,7 +98,7 @@ export async function handleSprintCycleRoutes(
         if (e instanceof LiveCycleExistsError) {
           return apiErr(409, e.message, origin);
         }
-        return apiErr(500, e instanceof Error ? e.message : String(e), origin);
+        return serverError(origin, "sprint cycle create", e);
       }
     }
     return null;
@@ -196,7 +197,7 @@ export async function handleSprintCycleRoutes(
       if (e instanceof AcceptConflictError) {
         return apiErr(409, e.message, origin);
       }
-      return apiErr(500, e instanceof Error ? e.message : String(e), origin);
+      return serverError(origin, "sprint cycle accept", e);
     }
   }
 
@@ -266,7 +267,7 @@ export async function handleSprintCycleRoutes(
         if (e instanceof ItemLockedError) {
           return apiErr(409, e.message, origin);
         }
-        return apiErr(500, e instanceof Error ? e.message : String(e), origin);
+        return serverError(origin, "sprint item update", e);
       }
     }
 

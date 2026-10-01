@@ -24,6 +24,7 @@ import {
   parseInviteLink,
 } from "../_shared/meeting-invite.ts";
 import { json } from "./http.ts";
+import { serverError } from "./client-error.ts";
 
 /** Сколько живых приглашений держит один человек: больше — это уже рассылка бота по ссылкам. */
 export const MAX_ACTIVE_INVITES = 3;
@@ -113,7 +114,7 @@ async function createInvite(ctx: InviteContext, req: Request): Promise<Response>
     .eq("group_id", ctx.groupId)
     .is("used_at", null)
     .gt("expires_at", nowIso);
-  if (listErr) return json({ error: `invite lookup failed: ${listErr.message}` }, 500, ctx.origin);
+  if (listErr) return serverError(ctx.origin, "meeting invites list", listErr);
   const rows = (active ?? []) as InviteRow[];
 
   const same = rows.find((r) => parseInviteLink(r.join_url)?.room === link.room);
@@ -136,7 +137,7 @@ async function createInvite(ctx: InviteContext, req: Request): Promise<Response>
     })
     .select(COLUMNS)
     .single();
-  if (error || !data) return json({ error: `invite create failed: ${error?.message ?? "unknown"}` }, 500, ctx.origin);
+  if (error || !data) return serverError(ctx.origin, "meeting invite create", error ?? "no row returned");
   console.log(`swarm-api: приглашение ${(data as InviteRow).id} от ${ctx.telegramId} (${link.platform})`);
   return json({ invite: view(data as InviteRow, nowMs) }, 201, ctx.origin);
 }
@@ -150,7 +151,7 @@ async function readInvite(ctx: InviteContext, id: string): Promise<Response> {
     .eq("invited_by", ctx.telegramId)
     .eq("group_id", ctx.groupId)
     .maybeSingle();
-  if (error) return json({ error: `invite lookup failed: ${error.message}` }, 500, ctx.origin);
+  if (error) return serverError(ctx.origin, "meeting invite lookup", error);
   if (!data) return inviteErr("not_found", ctx.origin);
   return json({ invite: view(data as InviteRow, Date.now()) }, 200, ctx.origin);
 }

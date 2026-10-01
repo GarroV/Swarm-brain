@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { json } from "./http.ts";
+import { serverError } from "./client-error.ts";
 import { onlyLive } from "../_shared/tasks/live.ts";
 
 // Роуты /task-labels и /task-labels/:id — персональные смарт-метки задач.
@@ -74,7 +75,7 @@ export async function handleTaskLabelRoutes(
       })
       .select("id,name,icon,color,sort_order")
       .single();
-    if (error) return json({ error: error.message }, 500, origin);
+    if (error) return serverError(origin, "task labels list", error);
     return json({ ...(data as LabelRow), count: 0 }, 201, origin);
   }
 
@@ -108,7 +109,7 @@ export async function handleTaskLabelRoutes(
         telegramId,
       )
       .select("id,name,icon,color,sort_order").single();
-    if (error) return json({ error: error.message }, 500, origin);
+    if (error) return serverError(origin, "task label create", error);
     return json(data, 200, origin);
   }
 

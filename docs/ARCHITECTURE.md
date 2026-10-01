@@ -1603,6 +1603,7 @@ supabase/functions/swarm-api/
 ├── admin.ts        # /admin/* роуты (админы: telegram_id 744230399 или is_admin)
 ├── admin-scope.ts  # Границы админки: объём воркспейса, аккаунт суперадмина, уведомление о смене почты
 ├── entries-guard.ts  # Обязательный слой безопасности для всех endpoints с entries + ENTRY_COLUMNS
+├── client-error.ts # Граница ошибок: withErrorBoundary (обёртка Deno.serve) + serverError — клиенту общий текст, подробность в лог (#584)
 ├── public-roadmap.ts # GET /public/roadmap/:id — публичная дорожная карта для хаба проектов (без авторизации, белый список)
 ├── meetings-payload.ts # Форма СПИСОЧНОГО ответа GET /meetings (toListRow; режет SQL — issue #490)
 ├── meeting-invites.ts  # /meeting-invites — приглашение бота на созвон (D017)
@@ -1631,6 +1632,14 @@ supabase/functions/swarm-api/
 Обернуть handler в `withEntries(origin, async () => { ... })` — перехватывает `EntryAccessError` → 404/403.
 
 **Запрещено:** `supabase.from("entries").select(...)` напрямую в endpoint'ах — только через хелперы.
+
+**Обработка ошибок — `client-error.ts`** (issue #584). Одна граница на весь API:
+
+- `Deno.serve` обёрнут в `withErrorBoundary(req, routeRequest)`: не пойманное в маршруте исключение — **500 с общим текстом** `INTERNAL_ERROR_MESSAGE` («Something went wrong. Please try again later.») и CORS-заголовками, а не обрыв соединения.
+- Ожидаемый сбой базы/хранилища/внешнего сервиса в маршруте — `serverError(origin, "<метка места>", err)`: то же — клиенту общий текст, подробность в лог. В `admin.ts` — свой `serverFail` с той же логикой (у админки свои заголовки ответа).
+- В лог пишется `[swarm-api] <метка или METHOD /путь>: <code=… message=… hint=…>`. **Не пишутся:** тело запроса, заголовки (токен), поле `details` PostgREST (у нарушения уникальности там значения строки), сегменты пути с адресом почты (`:email`).
+- Осмысленные отказы с нашим текстом (400/403/404/409, `EntryAccessError` через `withEntries`, свои классы ошибок вроде `LiveCycleExistsError`) идут через `apiErr` как прежде.
+- **Правило: текст 5xx-ответа — только строковый литерал.** Держит детектор `swarm-api/no-raw-error.test.ts`: сканирует все модули и валится на `apiErr(5xx, <выражение>)` / `json({ error: <выражение> }, 5xx)`. Известное исключение — `POST /sprints` в `index.ts` (защищённый раздел, правится отдельно). Модуль в `scripts/core-paths.txt` (порча).
 
 Оба случая недоступности (entry не существует / entry приватная чужая) возвращают 404 — утечка информации о существовании чужой записи недопустима.
 

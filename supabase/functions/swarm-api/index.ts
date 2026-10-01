@@ -119,6 +119,7 @@ import {
 } from "../_shared/meeting-access.ts";
 import { handleAdminRoutes } from "./admin.ts";
 import { apiErr, corsHeaders, json, parseListLimit, routePathOf } from "./http.ts";
+import { errorDetail, INTERNAL_ERROR_MESSAGE, serverError, withErrorBoundary } from "./client-error.ts";
 import { handleMeetingInviteRoutes } from "./meeting-invites.ts";
 import { DEMO_GROUP_ID, isDemoSession } from "../_shared/demo-session.ts";
 import { handleIntegrationConnectRoutes, makeIntegrationsDeps } from "./integrations.ts";
@@ -453,10 +454,8 @@ async function streamExtractTasks(
           send({ type: "done", count });
         }
       } catch (e) {
-        send({
-          type: "error",
-          message: e instanceof Error ? e.message : "stream failed",
-        });
+        console.error(`[swarm-api] tasks extract stream: ${errorDetail(e)}`);
+        send({ type: "error", message: INTERNAL_ERROR_MESSAGE });
       } finally {
         reader.cancel().catch(() => {});
         controller.close();
@@ -547,7 +546,10 @@ async function sprintInWorkspace(
 
 // ── Main handler ──────────────────────────────────────────────────────────────
 
-Deno.serve(async (req: Request) => {
+// Граница ошибок (issue #584): не пойманное в маршруте — 500 с общим текстом, подробность в лог.
+Deno.serve((req: Request) => withErrorBoundary(req, routeRequest));
+
+async function routeRequest(req: Request): Promise<Response> {
   const origin = req.headers.get("Origin") ?? "";
 
   // Публичная дорожная карта доски для хаба проектов (issue #562) — БЕЗ авторизации и раньше
@@ -1243,7 +1245,7 @@ Deno.serve(async (req: Request) => {
         const task = await createTask(input, groupId);
         return json(task, 201, origin);
       } catch (e) {
-        return apiErr(500, e instanceof Error ? e.message : String(e), origin);
+        return serverError(origin, "tasks create", e);
       }
     }
   }
@@ -1549,7 +1551,7 @@ Deno.serve(async (req: Request) => {
         const updated = await getTask(taskId);
         return json(updated, 200, origin);
       } catch (e) {
-        return apiErr(500, e instanceof Error ? e.message : String(e), origin);
+        return serverError(origin, "tasks update", e);
       }
     }
 
@@ -1572,7 +1574,7 @@ Deno.serve(async (req: Request) => {
           headers: corsHeaders(origin),
         });
       } catch (e) {
-        return apiErr(500, e instanceof Error ? e.message : String(e), origin);
+        return serverError(origin, "tasks delete", e);
       }
     }
   }
@@ -1930,7 +1932,7 @@ Deno.serve(async (req: Request) => {
     if (dateFrom) q = q.gte("entry_date", dateFrom);
     if (dateTo) q = q.lte("entry_date", dateTo);
     const { data, error, count } = await q;
-    if (error) return apiErr(500, error.message, origin);
+    if (error) return serverError(origin, "entries list", error);
     // Сколько записей подходит под фильтры БЕЗ лимита (issue #112). Заголовком, а не конвертом:
     // ответ остаётся голым массивом, поэтому бот и MCP не задеты. Замер на проде 05.09.2026:
     // 92 заметки видно, отдавалось 50 — 42 записи не существовало для человека, и экран об этом
@@ -1998,7 +2000,7 @@ Deno.serve(async (req: Request) => {
         // Запись не стирается, а уходит в архив вместе с задачами встречи (#569). Файл в Storage
         // остаётся: отдача файла (file-access.ts) проверяет живую запись, ссылка больше не открывается.
         const archived = await archiveEntry(supabase, entry, telegram_id);
-        if (archived.error) return apiErr(500, archived.error, origin);
+        if (archived.error) return serverError(origin, "entries archive", archived.error);
         return new Response(null, {
           status: 204,
           headers: corsHeaders(origin),
@@ -2034,7 +2036,7 @@ Deno.serve(async (req: Request) => {
       contentType: file.type,
     });
     if (uploadError || !stored) {
-      return apiErr(500, uploadError ?? "upload failed", origin);
+      return serverError(origin, "entries upload", uploadError ?? "upload failed");
     }
     const path = stored.path;
 
@@ -2061,7 +2063,7 @@ Deno.serve(async (req: Request) => {
     if (insertError) {
       // Запись не создалась — объект без владельца не оставляем (только свой, этого запроса).
       await discardOwnUpload(supabase, stored);
-      return apiErr(500, insertError.message, origin);
+      return serverError(origin, "entries upload insert", insertError);
     }
 
     // Реестр — обязательная часть загрузки: без строки файл зальётся и будет недоступен
@@ -2078,7 +2080,7 @@ Deno.serve(async (req: Request) => {
         "id",
         (entry as { id: string }).id,
       );
-      return apiErr(500, `File registration failed: ${reg.error}`, origin);
+      return serverError(origin, "entries upload register", reg.error);
     }
 
     return json(
@@ -2155,7 +2157,7 @@ Deno.serve(async (req: Request) => {
       is_private: isPrivate,
       owner_id: telegram_id,
     }).select().single();
-    if (error) return apiErr(500, error.message, origin);
+    if (error) return serverError(origin, "entries create", error);
     return json(entry, 201, origin);
   }
 
@@ -2188,11 +2190,7 @@ Deno.serve(async (req: Request) => {
       });
       return json(results, 200, origin);
     } catch (e) {
-      return apiErr(
-        500,
-        e instanceof Error ? e.message : "Search failed",
-        origin,
-      );
+      return serverError(origin, "search", e);
     }
   }
 
@@ -2233,11 +2231,7 @@ Deno.serve(async (req: Request) => {
         since: detectQuerySince(q),
       });
     } catch (e) {
-      return apiErr(
-        500,
-        e instanceof Error ? e.message : "Search failed",
-        origin,
-      );
+      return serverError(origin, "ask", e);
     }
     const sources = matched.map((e, i) => ({
       n: i + 1,
@@ -2400,7 +2394,7 @@ Deno.serve(async (req: Request) => {
       q = q.or("metadata->>confirmed.is.null,metadata->>confirmed.eq.false");
     }
     const { data, error, count } = await q;
-    if (error) return apiErr(500, error.message, origin);
+    if (error) return serverError(origin, "meetings list", error);
     const rows = (data ?? []) as unknown as Array<
       { id: string; owner_id?: number | null; metadata?: unknown }
     >;
@@ -2688,7 +2682,7 @@ Deno.serve(async (req: Request) => {
         });
         // Встреча и её задачи уходят в архив, а не стираются (#569).
         const archived = await archiveEntry(supabase, meeting, telegram_id);
-        if (archived.error) return apiErr(500, archived.error, origin);
+        if (archived.error) return serverError(origin, "meetings archive", archived.error);
         return new Response(null, {
           status: 204,
           headers: corsHeaders(origin),
@@ -2724,7 +2718,7 @@ Deno.serve(async (req: Request) => {
     // Свои = записывал ИЛИ совладелец: участник встречи с аккаунтом SWARM (решение 2026-09-25).
     q = q.or(draftMeetingsOwnScopedFilter(telegram_id));
     const { data, error, count } = await q;
-    if (error) return apiErr(500, error.message, origin);
+    if (error) return serverError(origin, "agent-meetings list", error);
     // has_draft_notes вместо draft_notes_md: список рисует название/дату/статус, а текст
     // тезисов ехал в 10-секундном поллинге (154 кБ за опрос ≈ 55 МБ/час на вкладку, issue #108).
     // С 25.09.2026 текст не выбирается ВООБЩЕ (issue #491) — раньше он читался и выбрасывался
@@ -2868,7 +2862,7 @@ Deno.serve(async (req: Request) => {
         .select("id, offset_sec, text, author_id, created_at")
         .eq("meeting_id", mId)
         .order("offset_sec", { ascending: true });
-      if (error) return apiErr(500, error.message, origin);
+      if (error) return serverError(origin, "agent-notes list", error);
       return json(data ?? [], 200, origin);
     }
     if (agentNotesMatch && req.method === "POST") {
@@ -2892,7 +2886,7 @@ Deno.serve(async (req: Request) => {
         })
         .select("id, offset_sec, text, author_id, created_at")
         .single();
-      if (error) return apiErr(500, error.message, origin);
+      if (error) return serverError(origin, "agent-notes create", error);
       return json(data, 201, origin);
     }
 
@@ -3732,4 +3726,4 @@ Deno.serve(async (req: Request) => {
   }
 
   return apiErr(404, "Not found", origin);
-});
+}
