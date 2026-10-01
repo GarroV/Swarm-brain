@@ -50,3 +50,8 @@ supabase/functions/_shared/tasks/recur-close.ts|supabase/functions/_shared/tasks
 # на доске «Проекты» у всей команды (docs/decisions/2026-10-01-sprint-dnd-groups.md).
 supabase/functions/_shared/tasks/sprint-groups.ts|supabase/functions/_shared/tasks/sprint-groups.test.ts
 miniapp/src/lib/sprintGrouping.ts|miniapp/src/lib/sprintGrouping.test.ts
+# Уведомления о комментарии к задаче: правило получателей и рассылка, общие для веба и MCP
+# (issue #521). Ошибка молчит — заголовок и текст чужой приватной задачи уходят в бот человеку,
+# который её не видит, или автор шлёт уведомление сам себе.
+supabase/functions/_shared/tasks/notify.ts|supabase/functions/_shared/tasks/notify.test.ts
+supabase/functions/_shared/tasks/comment-fanout.ts|supabase/functions/_shared/tasks/comment-fanout.test.ts

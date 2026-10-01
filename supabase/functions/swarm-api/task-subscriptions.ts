@@ -1,12 +1,7 @@
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { json } from "./http.ts";
 import { canViewTask } from "../_shared/tasks/access.ts";
-import {
-  isCommentRecipient,
-  type NotifiableTask,
-  type SubscriptionState,
-  type TaskSubscriber,
-} from "../_shared/tasks/notify.ts";
+import { isCommentRecipient, type NotifiableTask, type SubscriptionState } from "../_shared/tasks/notify.ts";
 import { onlyLive } from "../_shared/tasks/live.ts";
 
 // Подписка на уведомления о комментариях к задаче (issue #82).
@@ -17,86 +12,14 @@ import { onlyLive } from "../_shared/tasks/live.ts";
 //
 // Таблица `task_subscriptions` хранит ИСКЛЮЧЕНИЯ, а не весь круг: нет строки = поведение по
 // умолчанию (причастные получают, остальные нет). Само правило — в `_shared/tasks/notify.ts`,
-// здесь только загрузка и роуты: рукописных копий правила доступа к задачам в репозитории
+// загрузка подписчиков и подписка участием — в `_shared/tasks/comment-fanout.ts` (их зовёт и MCP,
+// issue #521), здесь только роуты: рукописных копий правила доступа к задачам в репозитории
 // нет намеренно (issue #45 — их было шесть, и они разошлись).
 
 type SubTaskRow = NotifiableTask & { id: string; group_id: string | null };
 
 // Select локальный (свой набор полей), а ПРАВИЛО доступа общее — `canViewTask`.
 const TASK_FIELDS = "id, group_id, is_private, owner_id, assignee_telegram_ids, created_by_telegram_id";
-
-/**
- * Подписчики задачи с признаком админа каждого.
- *
- * Админство берём из `allowed_users.is_admin` — на проде флаг стоит и у суперадмина
- * (744230399), поэтому второй критерий (хардкод id) здесь не нужен и третья копия
- * константы в репозитории не появляется. Если флаг у суперадмина когда-нибудь снимут,
- * он потеряет подписочный оверсайт — заметно будет как «не приходят уведомления».
- */
-export async function loadSubscribers(
-  supabase: SupabaseClient,
-  taskId: string,
-): Promise<TaskSubscriber[]> {
-  const { data, error } = await supabase
-    .from("task_subscriptions")
-    .select("telegram_id, state, reason")
-    .eq("task_id", taskId);
-  if (error) {
-    console.error("task_subscriptions load failed:", error);
-    return []; // мягко: без подписок круг получателей = поведение по умолчанию
-  }
-  const rows = (data ?? []) as Array<
-    {
-      telegram_id: number;
-      state: SubscriptionState;
-      reason: "comment" | "manual";
-    }
-  >;
-  if (rows.length === 0) return [];
-
-  const { data: users } = await supabase
-    .from("allowed_users")
-    .select("telegram_id, is_admin")
-    .in("telegram_id", rows.map((r) => r.telegram_id));
-  const admins = new Set(
-    ((users ?? []) as Array<{ telegram_id: number; is_admin: boolean | null }>)
-      .filter((u) => u.is_admin === true).map((u) => u.telegram_id),
-  );
-
-  return rows.map((r) => ({
-    telegram_id: r.telegram_id,
-    state: r.state,
-    is_admin: admins.has(r.telegram_id),
-    reason: r.reason,
-  }));
-}
-
-/**
- * Участие подписывает: написал комментарий — попал в подписчики.
- *
- * ignoreDuplicates → ON CONFLICT DO NOTHING: если человек ранее ОТПИСАЛСЯ, новый комментарий
- * его НЕ переподписывает. Иначе кнопка «не уведомлять» держалась бы до первой же реплики
- * (решение владельца: отказ уважаем).
- */
-export async function ensureCommentSubscription(
-  supabase: SupabaseClient,
-  taskId: string,
-  telegramId: number,
-): Promise<void> {
-  const { error } = await supabase
-    .from("task_subscriptions")
-    .upsert(
-      {
-        task_id: taskId,
-        telegram_id: telegramId,
-        state: "subscribed",
-        reason: "comment",
-      },
-      { onConflict: "task_id,telegram_id", ignoreDuplicates: true },
-    );
-  // Best-effort: подписка не должна ронять уже сохранённый комментарий.
-  if (error) console.error("task_subscriptions upsert failed:", error);
-}
 
 type SubscriptionView = {
   /** null — явной строки нет, действует поведение по умолчанию */
