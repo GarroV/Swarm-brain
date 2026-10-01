@@ -69,6 +69,7 @@ import {
 } from "./lib/mcp-setup.ts";
 import type { TgCallbackQuery, TgMessage } from "./lib/types.ts";
 import { classifyRequest, isOwnPrivateChat } from "./lib/webhook-auth.ts";
+import { processingFrozen } from "../_shared/processing-freeze.ts";
 
 const TELEGRAM_BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN")!;
 const CRON_SECRET = Deno.env.get("CRON_SECRET") ?? "";
@@ -207,8 +208,11 @@ async function sweepStuckMeetings(staleMinutes = 15): Promise<number> {
     updated_at: string | null;
   };
 
-  // (1) Зависшие в processing — по застою heartbeat.
-  const { data: rows } = await supabase
+  // (1) Зависшие в processing — по застою heartbeat. Во время заморозки обработка стоит намеренно
+  // (_shared/processing-freeze.ts): застой — не поломка, класс (1) пропускаем. Ждущим встречам
+  // meeting-process и так ставит отметку «жива, ждёт» — это второй замок на тот же случай.
+  const frozen = await processingFrozen(supabase);
+  const { data: rows } = frozen ? { data: [] } : await supabase
     .from("meetings")
     .select("id, title, recorders, last_progress_at, updated_at")
     .eq("summary_status", "processing");
@@ -397,7 +401,9 @@ Deno.serve(async (req: Request) => {
   }
 
   if (body.granola_poll === true) {
-    const count = await ingestNewGranolaNotesAllUsers();
+    // Заметки Granola лежат у Granola — во время заморозки их не забираем, следующий час
+    // заберёт всё, что накопилось (решение владельца 01.10.2026, _shared/processing-freeze.ts).
+    const count = (await processingFrozen(supabase)) ? 0 : await ingestNewGranolaNotesAllUsers();
     await sweepStuckMeetings();
     await checkRecorderHealth();
     return new Response(`OK: ${count} new granola meetings`, { status: 200 });

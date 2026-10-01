@@ -30,3 +30,6 @@ miniapp/functions/_lib/oauth-state.ts|miniapp/src/lib/oauthState.test.ts
 supabase/functions/swarm-api/admin-scope.ts|supabase/functions/swarm-api/admin-scope.test.ts
 supabase/functions/_shared/users/admin-scope.ts|supabase/functions/swarm-api/admin-scope.test.ts
 supabase/functions/swarm-bot/handlers/superadmin-scope.ts|supabase/functions/swarm-bot/handlers/superadmin-scope.test.ts
+# Заморозка и обработка встреч: пропущенная проверка не падает — она тихо пишет в меняющуюся
+# схему во время работ или отдаёт ждущую встречу сторожу застоя в 'failed'.
+supabase/functions/_shared/processing-freeze.ts|supabase/functions/_shared/processing-freeze.test.ts
