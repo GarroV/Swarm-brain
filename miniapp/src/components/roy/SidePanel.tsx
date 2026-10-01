@@ -47,7 +47,7 @@ export function SidePanel({ title, onClose, children }: { title: string; onClose
       <div className="flex shrink-0 items-center justify-between gap-3 border-b border-line px-5 py-3.5">
         <h2 className="font-semibold text-ink" style={{ fontSize: 15 }}>{title}</h2>
         <button type="button" onClick={onClose} title="Esc"
-          className="rounded-[8px] border border-line px-2.5 py-1 font-medium text-ink-soft transition-colors hover:bg-surface-2 hover:text-ink"
+          className="rounded-full border border-line px-2.5 py-1 font-medium text-ink-soft transition-colors hover:bg-surface-2 hover:text-ink"
           style={{ fontSize: 12 }}>
           {dt("Закрыть", "Close")}
         </button>
