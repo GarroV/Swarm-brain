@@ -102,6 +102,7 @@ import {
   type MeetingAttendee,
 } from "../_shared/meeting-dedup.ts";
 import { publishDraftMeeting } from "../_shared/meeting-publish.ts";
+import { entryVisibilityOr } from "../_shared/entries/access.ts";
 import { canMutateTask, canViewTask } from "../_shared/tasks/access.ts";
 import { todayIso } from "../_shared/llm-date.ts";
 import {
@@ -116,6 +117,7 @@ import {
   canDeleteDraftMeeting,
   type DraftMeetingRow,
   draftMeetingsOwnScopedFilter,
+  oneOnOnePartner,
 } from "../_shared/meeting-access.ts";
 import { handleAdminRoutes } from "./admin.ts";
 import { apiErr, corsHeaders, json, parseListLimit } from "./http.ts";
@@ -287,6 +289,24 @@ async function withRecorderNames<T extends { recorders?: unknown }>(
       ...new Set(idsOf(r).map((id) => names.get(id) ?? `#${id}`)),
     ],
   }));
+}
+
+// Встреча 1-1 (#641): у черновика ровно двое владельцев-людей — тогда экран вычитки предлагает
+// «Личное» и называет второго («Видно только вам и …»). Не 1-1 или уже в базе → one_on_one=null.
+// Решение при публикации сервер принимает заново (resolvePublishVisibility) — это только подсказка.
+async function withOneOnOne<T extends Record<string, unknown>>(
+  rows: T[],
+  viewerId: number,
+): Promise<Array<T & { one_on_one: { partner_id: number; partner_name: string | null } | null }>> {
+  const partners = rows.map((r) =>
+    r.status === "in_base" ? null : oneOnOnePartner(r as unknown as DraftMeetingRow, viewerId)
+  );
+  const ids = [...new Set(partners.filter((p): p is number => p !== null))];
+  const names = ids.length ? await resolveNames(ids) : new Map<number, string>();
+  return rows.map((r, i) => {
+    const p = partners[i];
+    return { ...r, one_on_one: p === null ? null : { partner_id: p, partner_name: names.get(p) ?? null } };
+  });
 }
 
 // Имя импортёра встречи-записи (Granola/Read.ai): кто из команды вкинул её. Источник —
@@ -2651,7 +2671,7 @@ Deno.serve(async (req: Request) => {
     const status = url.searchParams.get("status") ?? "awaiting_review";
     let q = supabase.from("meetings")
       .select(
-        "id, title, source, identity_kind, started_at, ended_at, status, has_draft_notes, recorders, co_owners, entry_id, created_at",
+        "id, title, source, identity_kind, started_at, ended_at, status, has_draft_notes, recorders, co_owners, attendees, entry_id, created_at",
         { count: "exact" },
       )
       .eq("group_id", groupId)
@@ -2679,7 +2699,7 @@ Deno.serve(async (req: Request) => {
     );
     // Сколько черновиков подходит под фильтр БЕЗ лимита 50 (issue #112).
     return json(
-      enrichedList.map(toAgentListRow),
+      await withOneOnOne(enrichedList.map(toAgentListRow), telegram_id),
       200,
       origin,
       count != null ? { "X-Total-Count": String(count) } : undefined,
@@ -2872,9 +2892,10 @@ Deno.serve(async (req: Request) => {
           };
         }
       }
+      const [withPair] = await withOneOnOne([enriched as Record<string, unknown>], telegram_id);
       return json(
         {
-          ...(enriched as Record<string, unknown>),
+          ...withPair,
           in_base_duplicate: inBaseDuplicate,
         },
         200,
@@ -3579,9 +3600,7 @@ Deno.serve(async (req: Request) => {
       .gte("created_at", since)
       .eq("group_id", groupId)
       .not("source", "eq", "digest")
-      .or(
-        `is_private.eq.false,and(is_private.eq.true,owner_id.eq.${telegram_id})`,
-      )
+      .or(entryVisibilityOr(telegram_id))
       .order("created_at", { ascending: false })
       .limit(80);
     // Охват: по умолчанию строго по своим рынкам (markets) — для всех, включая админа. Админ может

@@ -12,7 +12,7 @@ import { checkRecordingWatchdog } from "./lib/recording-watchdog.ts";
 import { makeWatchdogStore } from "./lib/recording-watchdog-store.ts";
 import { sweepGhostMeetings } from "./lib/ghost-sweep.ts";
 import { makeGhostStore } from "./lib/ghost-sweep-store.ts";
-import { autoSyncProfile, clearSession, getSession } from "./lib/storage.ts";
+import { autoSyncProfile, clearSession, getSession, visibilityFilter } from "./lib/storage.ts";
 import { checkAllowedWithGroup } from "./lib/workspace.ts";
 import { getReadAiToken } from "./lib/readai.ts";
 import { handleAdd, handleAsk } from "./handlers/knowledge.ts";
@@ -695,8 +695,8 @@ Deno.serve(async (req: Request) => {
         .eq("group_id", groupId)
         .in("source", ENTRY_MEETING_SOURCES)
         .or("metadata->>confirmed.is.null,metadata->>confirmed.eq.false")
-        // Видимость: только свои + не-приватные (чужие приватные встречи не показываем).
-        .or(`is_private.eq.false,owner_id.eq.${userId}`)
+        // Видимость: общие, свои и разделённые со мной (чужие личные встречи не показываем).
+        .or(visibilityFilter(userId))
         .order("created_at", { ascending: false })
         .limit(20);
       if (!meetings?.length) {

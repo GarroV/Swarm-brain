@@ -34,3 +34,7 @@ delete from public.user_profiles      where telegram_id = any (c_users);|delete 
                       then null else public.notifications.read_at end,|                      then public.notifications.read_at else public.notifications.read_at end,|supabase/functions/_shared/maintenance-announce.db.test.ts|supabase/migrations/20260928200000_maintenance_announce.sql
 and value ->> 'kind' = 'freeze'|and true|supabase/functions/_shared/maintenance-announce.db.test.ts|supabase/migrations/20260928200000_maintenance_announce.sql
 revoke all on function public.maintenance_announce(integer, integer, text, text) from public, anon, authenticated;|grant execute on function public.maintenance_announce(integer, integer, text, text) to anon;|supabase/functions/_shared/maintenance-announce.db.test.ts|supabase/migrations/20260928200000_maintenance_announce.sql
+# Запись на двоих, встреча 1-1 (#641): правило видимости в SQL-поиске. Убрать «разделённую со
+# мной» — второй участник перестаёт находить встречу; заменить на true — её находит третий.
+ or requesting_user_id = any(e.shared_with)||supabase/functions/_shared/entries/search-visibility.db.test.ts|supabase/migrations/20261001120000_entries_shared_with.sql
+requesting_user_id = any(e.shared_with)|true|supabase/functions/_shared/entries/search-visibility.db.test.ts|supabase/migrations/20261001120000_entries_shared_with.sql

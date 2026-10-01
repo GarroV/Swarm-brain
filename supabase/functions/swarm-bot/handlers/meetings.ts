@@ -40,7 +40,7 @@ async function loadEntryForAction(
   // metadata нужна всегда: по ней (metadata.attendees) считается причастность к встрече.
   const select = [
     ...new Set(
-      [...columns.split(","), "metadata", "is_private", "owner_id", "group_id"]
+      [...columns.split(","), "metadata", "is_private", "owner_id", "shared_with", "group_id"]
         .map((c) => c.trim()).filter(Boolean),
     ),
   ].join(", ");
@@ -277,7 +277,7 @@ export async function handleMeetingCallbacks(
       const { data: meetings } = await supabase
         .from("entries").select("id, metadata, created_at, source, entry_type")
         .eq("group_id", groupId)
-        // Личные встречи в списке — только свои (правило видимости записей).
+        // Личные встречи в списке — свои и разделённые со мной (правило видимости записей).
         .or(visibilityFilter(userId))
         .or("source.in.(read_ai,voice,desktop-agent),entry_type.in.(transcript,meeting)")
         .order("created_at", { ascending: false }).limit(15);
@@ -789,7 +789,7 @@ export async function handleMeetingSessionInput(
     const meetingId = action.replace("meeting_tag_", "");
     const rawTags = text.split(",").map((t) => t.trim()).filter(Boolean);
     const { data: found } = await supabase
-      .from("entries").select("id, metadata, is_private, owner_id, group_id")
+      .from("entries").select("id, metadata, is_private, owner_id, shared_with, group_id")
       .eq("group_id", groupId)
       .or(`metadata->>meeting_id.eq.${meetingId},id.eq.${meetingId}`);
     // Теги — правка встречи: только те записи, которые нажавшему можно править.

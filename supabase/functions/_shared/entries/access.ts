@@ -19,12 +19,37 @@ export type EntryAccessRow = {
   is_private: boolean;
   owner_id: number | null;
   group_id?: string | null;
+  /**
+   * С кем ещё разделена ЛИЧНАЯ запись (#641): встреча 1-1, опубликованная «в личное», — одна
+   * запись на двоих. Владелец — опубликовавший, второй участник — здесь. У общей записи пусто.
+   * Вызывающий обязан выбрать колонку: без неё второй участник получит отказ (fail-closed).
+   */
+  shared_with?: Array<number | string> | null;
 };
 
-/** Личную запись видит только её автор. Общую — любой в воркспейсе. */
+/** Есть ли зритель среди тех, с кем разделена личная запись. */
+function isSharedWith(entry: EntryAccessRow, viewerId: number): boolean {
+  // bigint[] может прийти строками — сравниваем как числа.
+  return (entry.shared_with ?? []).some((id) => Number(id) === viewerId);
+}
+
+/** Личную запись видит её автор и те, с кем она разделена. Общую — любой в воркспейсе. */
 export function canViewEntry(entry: EntryAccessRow, viewerId: number | null | undefined): boolean {
   if (!entry.is_private) return true;
-  return viewerId != null && entry.owner_id === viewerId;
+  if (viewerId == null) return false;
+  return entry.owner_id === viewerId || isSharedWith(entry, viewerId);
+}
+
+/**
+ * То же правило видимости для запроса PostgREST (`.or(...)`): общие, свои и разделённые со
+ * мной. Единственная строка фильтра на все поверхности — бот, MCP, swarm-api, контекст встречи.
+ *
+ * В строку попадает только целое число: всё прочее (NaN, строка) даёт фильтр «только общие».
+ */
+export function entryVisibilityOr(viewerId: number): string {
+  const id = typeof viewerId === "number" && Number.isFinite(viewerId) ? Math.trunc(viewerId) : null;
+  if (id === null) return "is_private.eq.false";
+  return `is_private.eq.false,owner_id.eq.${id},shared_with.cs.{${id}}`;
 }
 
 /**

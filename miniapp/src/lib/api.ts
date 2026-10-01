@@ -2925,6 +2925,25 @@ let mockAgentMeetings: AgentMeeting[] = [
     entry_id: null,
     created_at: "2026-06-13T11:30:00+03:00",
   },
+  {
+    // Встреча 1-1 двух людей из SWARM (#641) — «Личное» доступно, запись увидят только двое.
+    id: "am-3",
+    title: "Vasiliy x Aleksandra 1-1",
+    source: "desktop-agent",
+    identity_kind: "calendar",
+    started_at: "2026-06-14T15:00:00+03:00",
+    ended_at: "2026-06-14T15:50:00+03:00",
+    status: "awaiting_review",
+    summary_status: "done",
+    draft_notes_md: "### Планы\n- Сверили приоритеты на квартал",
+    transcript: { language: "ru", model: "whisper-large-v3-turbo", segments: [{ start: 0, end: 5, text: "Давай по планам." }] },
+    attendees: [{ name: "Vasiliy", email: "v@example.com" }, { name: "Aleksandra", email: "a@example.com" }],
+    recorders: [{ telegram_id: 744230399, claimed_at: "2026-06-14T15:50:10+03:00", role: "transcribe" }],
+    co_owners: [224830225],
+    one_on_one: { partner_id: 224830225, partner_name: "Aleksandra" },
+    entry_id: null,
+    created_at: "2026-06-14T15:50:00+03:00",
+  },
 ];
 
 // all=true — админский оверрайд: показать все pending черновики воркспейса, а не только

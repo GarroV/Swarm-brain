@@ -133,7 +133,9 @@ export function MeetingReview({ id, onClose, onChanged }: Props) {
     setPublishing(true);
     try {
       // Черновик нескольких владельцев — только в общую базу (сервер иначе ответит 409).
-      await publishAgentMeeting(id, meeting && hasSeveralOwners(meeting) ? "workspace" : base);
+      // Исключение — встреча 1-1: «Личное» сохранит одну запись на двоих (#641).
+      const teamOnly = !!meeting && hasSeveralOwners(meeting) && !meeting.one_on_one;
+      await publishAgentMeeting(id, teamOnly ? "workspace" : base);
       onChanged?.();
       onClose();
     } finally { setPublishing(false); }
@@ -190,8 +192,9 @@ export function MeetingReview({ id, onClose, onChanged }: Props) {
   }
 
   const published = meeting.status === "in_base";
-  const sharedOwners = hasSeveralOwners(meeting);
-  const effectiveBase = sharedOwners ? "workspace" : base;
+  // Встреча 1-1 (#641): двое владельцев, но «Личное» доступно — запись увидят только они двое.
+  const oneOnOne = meeting.one_on_one ?? null;
+  const teamOnly = hasSeveralOwners(meeting) && !oneOnOne;
   const recorders = meeting.recorders ?? [];
   const segments = meeting.transcript?.segments ?? [];
   const hasTranscript = segments.length > 0;
@@ -318,13 +321,20 @@ export function MeetingReview({ id, onClose, onChanged }: Props) {
           <div className="mb-4 flex flex-wrap items-center gap-2">
             {notesReady && (
               <>
-                {sharedOwners ? (
+                {teamOnly ? (
                   <span className="inline-flex items-center rounded-full border border-line-2 px-3 font-medium text-ink-soft" style={{ fontSize: 13, minHeight: 40 }}
                     title={dt("На встрече были другие участники SWARM, поэтому она уходит в базу команды.", "Other SWARM members attended, so it goes to the team base.")}>
                     {dt("Общая · в команду", "Shared · team")}
                   </span>
                 ) : (
                   <BasePill value={base} onChange={setBase} />
+                )}
+                {oneOnOne && base === "personal" && (
+                  <span className="text-ink-soft" style={{ fontSize: 12 }}>
+                    {oneOnOne.partner_name
+                      ? dt(`Видно только вам и ${oneOnOne.partner_name}`, `Visible only to you and ${oneOnOne.partner_name}`)
+                      : dt("Видно только вам и второму участнику", "Visible only to you and the other participant")}
+                  </span>
                 )}
                 <button type="button" onClick={handlePublish} disabled={publishing}
                   className="inline-flex items-center gap-1.5 rounded-full bg-primary px-4 font-semibold text-primary-foreground transition-transform active:scale-[0.96] disabled:opacity-60"

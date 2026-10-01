@@ -8,6 +8,11 @@
 //   |---------|------------------|---------------------------------|--------------------|
 //   | общая   | весь воркспейс   | владелец, участник, админ       | владелец, админ    |
 //   | личная  | только владелец  | только владелец                 | только владелец    |
+//   | 1-1     | владелец + второй| владелец и второй участник      | только владелец    |
+//
+// «1-1» — личная встреча, разделённая со вторым участником (`shared_with`, #641): одна запись
+// на двоих. Второй участник такой же участник разговора и правит её, но удалить запись и
+// сменить её видимость может только владелец (опубликовавший).
 //
 // Участник = его e-mail есть в `metadata.attendees` встречи — та же причастность, что у
 // очереди вычитки (`buildReviewQueueQuery` в swarm-api/entries-guard.ts). Нет e-mail у
@@ -62,8 +67,9 @@ export function canActOnMeeting(
 ): boolean {
   if (!canViewEntry(entry, viewer.id)) return false;
   if (action === "view") return true;
-  // Личная: всё только владельцу — ни админу, ни участникам.
-  if (entry.is_private) return isOwner(entry, viewer);
+  // Личная: всё владельцу. Тот, с кем она разделена (1-1), — смотрит и правит, не удаляет.
+  // Ни админу, ни участникам по календарю — ничего: их отсеял canViewEntry выше.
+  if (entry.is_private) return isOwner(entry, viewer) || action === "edit";
   if (isOwner(entry, viewer) || viewer.isAdmin === true) return true;
   if (action === "edit") return isMeetingParticipant(entry, viewer.email);
   return false;

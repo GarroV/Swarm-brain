@@ -383,6 +383,10 @@ export type AgentMeeting = {
   // GET /agent-meetings/:id. Нужно, чтобы человек видел это ДО публикации: встреча общая,
   // и в базу пойдёт самая полная версия (решение владельца 2026-08-28).
   in_base_duplicate?: { id: string; title: string; source: string } | null;
+  // Встреча 1-1 (#641): ровно двое, оба в SWARM — тогда «Личное» сохраняет ОДНУ запись, видную
+  // обоим. Приходит в ДЕТАЛИ GET /agent-meetings/:id; партнёр — второй участник для смотрящего.
+  // При публикации сервер решает заново и клиенту не верит.
+  one_on_one?: { partner_id: number; partner_name: string | null } | null;
   // Когда человек правил тезисы черновика руками (meetings.notes_edited_at). Автоматика такой
   // текст не перезаписывает — ни его версией чужой, ни чужой его.
   notes_edited_at?: string | null;
