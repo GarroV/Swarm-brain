@@ -148,3 +148,8 @@ Deno.test("settlePing: получателей нет вовсе — гасим �
   const r = row({ assignee_telegram_ids: [], remind_set_by: null, created_by_telegram_id: null });
   assertEquals(settlePing(r, [], "2026-08-26").done, true);
 });
+
+Deno.test("pingRecipients: демо-аккаунтам пинг не шлётся, живым — да (#675)", () => {
+  assertEquals(pingRecipients(row({ assignee_telegram_ids: [900000001, 111, 900000004] })), [111]);
+  assertEquals(pingRecipients(row({ assignee_telegram_ids: [900000004] })), []);
+});
