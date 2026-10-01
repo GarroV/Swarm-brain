@@ -28,6 +28,7 @@
 import { type SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { canViewEntry } from "./entries/access.ts";
 import { onlyLiveEntries } from "./entries/live.ts";
+import { matchesPublishVisibility } from "./meeting-publish-visibility.ts";
 
 const TOLERANCE_MIN = 5;
 // Окно для сигнала «публикующий есть в участниках кандидата»: шире базового (рекордер стартует
@@ -182,6 +183,12 @@ export type DedupIncoming = {
    * или подтвердить существование чужой личной.
    */
   viewerId?: number | null;
+  /**
+   * Видимость, в которую публикуется входящая (issue #579). Задана → кандидат обязан быть той же
+   * видимости: публикация «в личную» не прикрепляется к командной записи и не переписывает её,
+   * командная — к личной. Не задана (вебхук, импорт) — прежнее поведение.
+   */
+  publishPrivate?: boolean;
 };
 
 export type DedupMatch = {
@@ -251,7 +258,7 @@ export async function findDuplicateMeeting(
       canViewEntry(
         { is_private: c.is_private ?? false, owner_id: c.owner_id, shared_with: c.shared_with },
         inc.viewerId,
-      ),
+      ) && matchesPublishVisibility(c, inc.publishPrivate, inc.viewerId),
   );
 
   // Время кандидатов из meetings.started_at. Без этого запроса время записей РЕКОРДЕРА неизвестно:

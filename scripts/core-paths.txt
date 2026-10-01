@@ -53,3 +53,6 @@ miniapp/src/lib/sprintGrouping.ts|miniapp/src/lib/sprintGrouping.test.ts
 # Подключение интеграций: демо-сессия общая для всех посетителей, и привязка одного досталась бы
 # следующим (issue #573). Ошибка в отказе молчит — кнопка «работает», а ключ ложится в общий аккаунт.
 supabase/functions/swarm-api/integrations.ts|supabase/functions/swarm-api/integrations.test.ts
+# Дедуп публикации и видимость (#579): ошибка не падает — личная публикация молча переписывает
+# командную запись или прикрепляется к ней.
+supabase/functions/_shared/meeting-publish-visibility.ts|supabase/functions/_shared/meeting-dedup-visibility.test.ts
