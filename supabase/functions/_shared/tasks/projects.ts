@@ -1,16 +1,10 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import type { Project, ProjectInput } from "./types.ts";
 import { type ProjectRef, validateParent } from "./project-nesting.ts";
-import {
-  canViewProject,
-  parentLookup,
-  type ProjectAccessRow,
-} from "./project-access.ts";
-import {
-  projectEventRow,
-  type ProjectHistoryRow,
-  projectHistoryRowsFor,
-} from "./project-history.ts";
+import { canViewProject, parentLookup, type ProjectAccessRow } from "./project-access.ts";
+import { dissolvePlan, parentForSprintGroup, withoutSprintGroups } from "./sprint-groups.ts";
+import { updateTask } from "./db.ts";
+import { projectEventRow, type ProjectHistoryRow, projectHistoryRowsFor } from "./project-history.ts";
 
 const supabase = createClient(
   Deno.env.get("SUPABASE_URL")!,
@@ -43,7 +37,15 @@ export type ProjectWithCounts = Project & {
 // отфильтрует), но продолжает утекать числом в task_count/backlog_count карточки проекта.
 export async function listProjects(
   groupId: string,
-  opts: { viewerId?: number; isAdmin?: boolean } = {},
+  opts: {
+    viewerId?: number;
+    isAdmin?: boolean;
+    /**
+     * Включить группы спринта (`sprint_group`). Нужно только экрану спринта и MCP: по умолчанию
+     * их нет нигде — доска «Проекты», селекторы и хаб не должны видеть временных групп.
+     */
+    withSprintGroups?: boolean;
+  } = {},
 ): Promise<ProjectWithCounts[]> {
   // В отличие от listTasks (predicate is_private/owner_id пушится в сам SQL-запрос + .limit(200)),
   // тут тянем ВСЕ строки воркспейса и фильтруем приватность в JS ниже — осознанный трейдофф:
@@ -69,7 +71,10 @@ export async function listProjects(
   // группа и он схлопнется в fail-closed. created_by=null (легаси/системная строка) не прячем
   // ни от кого. Админского обхода нет намеренно (решение 2026-08-21).
   const index = parentLookup(list);
-  list = list.filter((p) => canViewProject(p, opts.viewerId, index));
+  // Группы спринта отсекаются по ПОЛНОМУ списку: ребёнку группы нужен родитель, чтобы понять,
+  // что он тоже спрятан (sprint-groups.ts).
+  const shown = opts.withSprintGroups ? list : withoutSprintGroups(list);
+  list = shown.filter((p) => canViewProject(p, opts.viewerId, index));
   if (list.length === 0) return [];
 
   // Считаем задачи по проектам одним запросом (без N+1), с ТОЙ ЖЕ visibility-фильтрацией,
@@ -138,14 +143,18 @@ export async function createProject(
   const parentId = input.parent_id ?? null;
   if (parentId !== null) {
     const { data: refs } = await supabase
-      .from("projects").select("id, parent_id").eq("group_id", groupId)
+      .from("projects").select("id, parent_id, sprint_group").eq(
+        "group_id",
+        groupId,
+      )
       .is("archived_at", null);
-    const v = validateParent({
-      projectId: null,
-      parentId,
-      all: (refs ?? []) as ProjectRef[],
-    });
+    const all = (refs ?? []) as Array<ProjectRef & { sprint_group: boolean }>;
+    const v = validateParent({ projectId: null, parentId, all });
     if (!v.ok) throw new Error(v.error);
+    // Под группу спринта ничего не вешаем — ни новую группу, ни обычный подпроект: ребёнок
+    // спрятался бы вместе с ней, а после «проброса» висел бы на доске без смысла.
+    const groupErr = parentForSprintGroup(parentId, all);
+    if (groupErr) throw new Error(groupErr);
   }
   const position = input.position ?? await nextPosition(groupId, parentId);
   const { data, error } = await supabase.from("projects").insert({
@@ -161,6 +170,7 @@ export async function createProject(
     owner_telegram_id: input.owner_telegram_id ?? null,
     start_date: input.start_date ?? null,
     end_date: input.end_date ?? null,
+    sprint_group: input.sprint_group ?? false,
   }).select().single();
   if (error) throw new Error(error.message);
   const project = data as Project;
@@ -185,16 +195,27 @@ export async function updateProject(
   groupId: string,
   opts: { viewerId?: number } = {},
 ): Promise<Project | null> {
+  // Признак группы спринта только снимается («В проекты»): поставить его существующему проекту
+  // значило бы молча убрать проект с доски у всей команды.
+  if (fields.sprint_group === true) {
+    throw new Error("sprint_group можно только снять");
+  }
   if ("parent_id" in fields) {
     const { data: refs } = await supabase
-      .from("projects").select("id, parent_id").eq("group_id", groupId)
+      .from("projects").select("id, parent_id, sprint_group").eq(
+        "group_id",
+        groupId,
+      )
       .is("archived_at", null);
+    const all = (refs ?? []) as Array<ProjectRef & { sprint_group: boolean }>;
     const v = validateParent({
       projectId: id,
       parentId: fields.parent_id ?? null,
-      all: (refs ?? []) as ProjectRef[],
+      all,
     });
     if (!v.ok) throw new Error(v.error);
+    const groupErr = parentForSprintGroup(fields.parent_id ?? null, all);
+    if (groupErr) throw new Error(groupErr);
   }
   if (!(await canMutateProject(id, groupId, opts))) return null;
   // Снимок ДО правки — иначе журналу не с чем сравнивать, и в него пошли бы строки
@@ -337,4 +358,41 @@ export async function projectInWorkspace(
     .is("archived_at", null)
     .maybeSingle();
   return !!data;
+}
+
+/**
+ * Распустить группу спринта: задачи уходят туда, где группа висела (в родительский проект или
+ * без проекта), сама группа архивируется — не удаляется (правило архивации, issue #427).
+ * Только для `sprint_group`: обычный проект этой кнопкой не разбирается (sprint-groups.ts).
+ *
+ * Задачи переносятся через `updateTask` по одной: у каждой свой журнал (issue #286), а групп
+ * спринта — единицы задач. Отбор задач — по воркспейсу И проекту: id группы уже проверен на
+ * воркспейс, но выборка задач не должна полагаться на это молча.
+ * Возвращает число перенесённых задач или null (не найдена / нет права / не группа спринта).
+ */
+export async function dissolveSprintGroup(
+  id: string,
+  groupId: string,
+  opts: { viewerId?: number } = {},
+): Promise<{ moved: number } | null> {
+  if (!(await canMutateProject(id, groupId, opts))) return null;
+  const project = await getProject(id, groupId);
+  if (!project) return null;
+  const plan = dissolvePlan(project);
+  if (!plan.ok) return null;
+
+  const { data: tasks, error } = await supabase.from("tasks")
+    .select("id").eq("group_id", groupId).eq("project_id", id);
+  if (error) throw new Error(error.message);
+  const ids = ((tasks ?? []) as Array<{ id: string }>).map((t) => t.id);
+  for (const taskId of ids) {
+    await updateTask(taskId, { project_id: plan.moveTasksTo }, {
+      actorTelegramId: opts.viewerId,
+    });
+  }
+  // Архив — после переноса: наоборот задачи на миг указывали бы на архивную группу и
+  // при сбое посередине остались бы в «Без направления» вместо родительского проекта.
+  const archived = await deleteProject(id, groupId, opts);
+  if (!archived) return null;
+  return { moved: ids.length };
 }

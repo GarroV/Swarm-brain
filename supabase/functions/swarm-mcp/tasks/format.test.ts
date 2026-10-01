@@ -233,3 +233,19 @@ Deno.test("formatTaskLine: пинг виден, отправленный пом�
   assertStringIncludes(sent, "пинг: 2026-12-01 (отправлен)");
   assert(!formatTaskLine({ status: "open", title: "T" }).includes("пинг"), "без пинга — ни слова");
 });
+
+Deno.test("formatProjectTree: группа спринта помечена — на доске «Проекты» её нет", () => {
+  const out = formatProjectTree([
+    { id: "p", name: "Проект", parent_id: null, task_count: 1, backlog_count: 0 },
+    {
+      id: "g",
+      name: "Связка",
+      parent_id: "p",
+      task_count: 2,
+      backlog_count: 0,
+      sprint_group: true,
+    },
+  ]);
+  assertEquals(out.includes("Связка (группа спринта)"), true);
+  assertEquals(out.includes("Проект (группа спринта)"), false);
+});

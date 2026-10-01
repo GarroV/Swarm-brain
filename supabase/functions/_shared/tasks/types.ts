@@ -154,6 +154,12 @@ export type Project = {
   goal: string | null;
   description: string | null;
   links: ProjectLink[];
+  /**
+   * Группа спринта (01.10.2026): собрана перетаскиванием задачи на задачу прямо в списке
+   * спринта. Живёт только там — доска «Проекты», селекторы и хаб её не видят, пока её не
+   * «пробросили в проекты» (флаг → false). Правило видимости — `_shared/tasks/sprint-groups.ts`.
+   */
+  sprint_group: boolean;
 };
 
 /** Ссылка на артефакт проекта. url — только http(s), проверяет swarm-api/project-fields.ts. */
@@ -175,4 +181,6 @@ export type ProjectInput = {
   goal?: string | null;
   description?: string | null;
   links?: ProjectLink[];
+  /** Группа спринта: создаётся только при создании; снять можно («В проекты»), поставить — нет. */
+  sprint_group?: boolean;
 };

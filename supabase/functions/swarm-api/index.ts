@@ -63,6 +63,7 @@ import {
   canMutateProject,
   createProject,
   deleteProject,
+  dissolveSprintGroup,
   getProject,
   listProjects,
   projectInWorkspace,
@@ -1671,8 +1672,15 @@ Deno.serve(async (req: Request) => {
   // ── Projects (Project Space) ────────────────────────────────────────────────
   if (routePath === "/projects") {
     if (req.method === "GET") {
+      // Группы спринта (sprint_group) по умолчанию не отдаются: их видит только экран спринта,
+      // который просит их явно. Забытый потребитель так не покажет временную группу на доске.
+      const withSprintGroups = url.searchParams.get("sprint_groups") === "1";
       return json(
-        await listProjects(groupId, { viewerId: telegram_id, isAdmin }),
+        await listProjects(groupId, {
+          viewerId: telegram_id,
+          isAdmin,
+          withSprintGroups,
+        }),
         200,
         origin,
       );
@@ -1704,6 +1712,7 @@ Deno.serve(async (req: Request) => {
         is_private: typeof body.is_private === "boolean"
           ? body.is_private
           : false,
+        sprint_group: body.sprint_group === true,
       };
       try {
         return json(
@@ -1749,6 +1758,20 @@ Deno.serve(async (req: Request) => {
     return json(data ?? [], 200, origin);
   }
 
+  // «Распустить» группу спринта: задачи — в родительский проект (или без проекта), группа — в
+  // архив. 404 и на чужой воркспейс, и на обычный проект: распускается только группа спринта.
+  const dissolveMatch = routePath.match(/^\/projects\/([^/]+)\/dissolve$/);
+  if (dissolveMatch) {
+    if (req.method !== "POST") {
+      return apiErr(405, "Method not allowed", origin);
+    }
+    const result = await dissolveSprintGroup(dissolveMatch[1], groupId, {
+      viewerId: telegram_id,
+    });
+    if (!result) return apiErr(404, "Not found", origin);
+    return json(result, 200, origin);
+  }
+
   const projectMatch = routePath.match(/^\/projects\/([^/]+)$/);
   if (projectMatch) {
     const projectId = projectMatch[1];
@@ -1774,6 +1797,13 @@ Deno.serve(async (req: Request) => {
       }
       if (typeof body.is_private === "boolean") {
         fields.is_private = body.is_private;
+      }
+      // «В проекты»: признак группы спринта только снимается (updateProject откажет на true).
+      if ("sprint_group" in body) {
+        if (body.sprint_group !== false) {
+          return apiErr(400, "sprint_group можно только снять", origin);
+        }
+        fields.sprint_group = false;
       }
       if ("sprint_id" in body) {
         const sid = (body.sprint_id as string | null) ?? null;
