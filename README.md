@@ -121,7 +121,7 @@ supabase/
 │   ├── meeting-process/        # Рекордер: cron durable-обработки (транскрибация по кускам + тезисы)
 │   ├── meeting-heartbeat/      # Рекордер: heartbeat-мониторинг (watchdog checkRecorderHealth в swarm-bot)
 │   ├── granola-poller/         # LEGACY: standalone-поллер, выведен из крона. Поллинг Granola — внутри swarm-bot (ingestNewGranolaNotesAllUsers)
-│   ├── read-ai-auth/           # OAuth2 авторизации Read.ai (отключается)
+│   ├── read-ai-auth/           # OAuth2 Read.ai (выключена, READ_AI_AUTH_ENABLED off → 403)
 │   ├── read-ai-webhook/        # Вебхук Read.ai (отключается, READ_AI_ENABLED off)
 │   └── _shared/                # общий код: sources (реестр источников), mcp-token, recorder-token, meeting-processor, meeting-dedup, tasks, search, countries
 └── migrations/                 # ВСЯ схема: 00000000_initial_schema.sql + инкрементальные. Старт с нуля — supabase db reset (или db push)

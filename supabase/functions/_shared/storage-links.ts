@@ -25,8 +25,7 @@ export const API_FILE_PREFIX = "/api/file/";
 
 // Путь объекта внутри бакета в URL самого Supabase Storage: /storage/v1/object/<вид>/<бакет>/<путь>.
 // Вид: public (старые публичные), sign (подписанные), authenticated (через ключ).
-const STORAGE_OBJECT_RE =
-  /\/storage\/v1\/object\/(?:public|sign|authenticated)\/[^/]+\/(.+)$/;
+const STORAGE_OBJECT_RE = /\/storage\/v1\/object\/(?:public|sign|authenticated)\/[^/]+\/(.+)$/;
 
 function safeDecode(value: string): string {
   try {
@@ -136,11 +135,27 @@ export function withNormalizedFileLink<T extends Record<string, unknown>>(
 }
 
 export type RemoveResult = {
-  status: "removed" | "no-file" | "failed";
+  status: "removed" | "no-file" | "failed" | "not-owned";
   path?: string;
   bucket?: string;
   error?: string;
 };
+
+/** Чей объект ожидает удалить вызывающий: вложение конкретной записи или скрин фидбека. */
+export type RemovalOwner = { kind: "entry"; entryId: string } | { kind: "feedback" };
+
+type RegistryRow = { bucket?: string; owner_kind?: string; entry_id?: string | null };
+
+/**
+ * Разрешено ли удалить объект по строке реестра. Нет ожидания или нет строки (файл старше
+ * реестра) — как раньше. Строка есть, но принадлежит другому владельцу — нельзя: один путь
+ * мог оказаться у двух записей, и удаление одной не должно уносить файл другой.
+ */
+export function removalAllowed(reg: RegistryRow | null, expected?: RemovalOwner): boolean {
+  if (!expected || !reg || !reg.owner_kind) return true;
+  if (reg.owner_kind !== expected.kind) return false;
+  return expected.kind !== "entry" || reg.entry_id === expected.entryId;
+}
 
 /**
  * Удаляет объект записи из хранилища и снимает его строку реестра.
@@ -153,20 +168,26 @@ export type RemoveResult = {
  * Ошибку НЕ проглатывает: вызывающий обязан решить, что сказать. Строку реестра снимаем
  * только после фактического удаления объекта — иначе файл остаётся в хранилище без
  * владельца, то есть навсегда и без следов.
+ *
+ * `expected` — чей это файл по мнению вызывающего; строка реестра другого владельца → not-owned,
+ * объект и строка реестра остаются.
  */
 export async function removeStorageObject(
   supabase: SupabaseClient,
   link: unknown,
+  expected?: RemovalOwner,
 ): Promise<RemoveResult> {
   const path = storagePathFromLink(link);
   if (!path) return { status: "no-file" };
 
-  const { data: reg } = await supabase
+  const { data } = await supabase
     .from("storage_files")
-    .select("bucket")
+    .select("bucket, owner_kind, entry_id")
     .eq("path", path)
     .maybeSingle();
-  const bucket = (reg as { bucket?: string } | null)?.bucket ?? LEGACY_PUBLIC_BUCKET;
+  const reg = data as RegistryRow | null;
+  const bucket = reg?.bucket ?? LEGACY_PUBLIC_BUCKET;
+  if (!removalAllowed(reg, expected)) return { status: "not-owned", path, bucket };
 
   const { error } = await supabase.storage.from(bucket).remove([path]);
   if (error) return { status: "failed", error: error.message, path, bucket };

@@ -6,6 +6,8 @@
 // напоминание; дальше каждые 24 ч, пока не вычитают. Только в рабочие часы по Белграду (будни
 // 9–19), чтобы не пинговать ночью/в выходные. Кнопка ведёт в веб (уводим из Telegram в веб).
 
+import { isDemoAccount } from "../../_shared/demo-session.ts";
+
 export const REMINDER_TZ = "Europe/Belgrade";
 export const STALE_HOURS = 48; // сколько встреча висит до ПЕРВОГО напоминания
 export const REPEAT_HOURS = 24; // как часто напоминать дальше
@@ -47,6 +49,7 @@ export function selectDueReminders(rows: ReminderRow[], now: Date): ReminderRow[
   const repeatBefore = now.getTime() - REPEAT_HOURS * 3_600_000;
   return rows.filter((r) => {
     if (r.owner_id == null) return false;
+    if (isDemoAccount(r.owner_id)) return false; // демо-аккаунту писать некуда (#675)
     if (new Date(r.created_at).getTime() > staleBefore) return false; // ещё свежая (< 48ч)
     if (r.last_review_reminded_at == null) return true; // ни разу не напоминали
     return new Date(r.last_review_reminded_at).getTime() <= repeatBefore; // прошли сутки с прошлого

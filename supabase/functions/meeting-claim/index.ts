@@ -32,6 +32,7 @@ import { PUBLISHED_STATUS } from "../_shared/meeting-frozen.ts";
 import { bindGrantMeeting, GrantScopeError } from "../_shared/agent-grant.ts";
 import { coOwnersFromAttendees, mergeAttendees } from "../_shared/meeting-owners.ts";
 import { BOT_PROFILE } from "../_shared/bot-profile.ts";
+import { onlyLiveEntries } from "../_shared/entries/live.ts";
 
 // meeting-claim — шаг ДО транскрибации (см. transcribator/10-REVISED-DESIGN.md §4, §7.1).
 // Записывают все участники; перед запуском Whisper каждый делает claim по ключу встречи.
@@ -568,9 +569,11 @@ async function savePersonalNotes(
   const embedding = await getEmbedding(flat);
   const nowIso = new Date().toISOString();
 
-  const { data: existing } = await supabase
-    .from("entries")
-    .select("id")
+  const { data: existing } = await onlyLiveEntries(
+    supabase
+      .from("entries")
+      .select("id"),
+  )
     .eq("owner_id", identity.telegramId)
     .eq("metadata->>meeting_id", meetingId)
     .eq("metadata->>kind", "personal_notes")

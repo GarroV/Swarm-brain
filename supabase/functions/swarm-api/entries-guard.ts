@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { canActOnMeeting, type MeetingAction } from "../_shared/entries/meeting-rights.ts";
 import { canMutateEntry, canViewEntry, entryVisibilityOr } from "../_shared/entries/access.ts";
+import { onlyLiveEntries } from "../_shared/entries/live.ts";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -77,9 +78,11 @@ export async function getEntrySecure(
     requireOwner = false,
   }: { groupId: string; telegramId: number; requireOwner?: boolean },
 ): Promise<EntryRow> {
-  const { data } = await supabase
-    .from("entries")
-    .select(ENTRY_COLUMNS)
+  const { data } = await onlyLiveEntries(
+    supabase
+      .from("entries")
+      .select(ENTRY_COLUMNS),
+  )
     .eq("id", id)
     .maybeSingle();
 
@@ -143,8 +146,9 @@ export async function getMeetingSecure(
 /**
  * Start a list query against entries with both security filters pre-applied.
  *
- * ALWAYS use this instead of supabase.from("entries").select(...) directly
- * in list endpoints — it bakes in workspace isolation + visibility filter.
+ * ALWAYS use this instead of a direct select on the entries table
+ * in list endpoints — it bakes in workspace isolation + visibility filter
+ * + the archive filter (archived entries are invisible everywhere, #569).
  *
  * Usage:
  *   const { data } = await buildEntriesQuery(supabase, "id, content, summary", { groupId, telegramId })
@@ -159,9 +163,11 @@ export function buildEntriesQuery(
   // Считает ТОТ ЖЕ запрос, без второго round-trip: PostgREST возвращает число рядом с данными.
   opts?: { count?: "exact" },
 ) {
-  return supabase
-    .from("entries")
-    .select(select, opts?.count ? { count: opts.count } : undefined)
+  return onlyLiveEntries(
+    supabase
+      .from("entries")
+      .select(select, opts?.count ? { count: opts.count } : undefined),
+  )
     .eq("group_id", groupId)
     .or(entryVisibilityOr(telegramId));
 }
@@ -201,9 +207,11 @@ export function buildReviewQueueQuery(
   // адреса (запятая или скобка сломали бы разбор всего условия .or()).
   const safeEmail = /^[^\s,()"']+@[^\s,()"']+$/.test(clean) ? clean : "";
   const cond = safeEmail ? `${mine},metadata->attendees.cs.[{"email":"${safeEmail}"}]` : mine;
-  return supabase
-    .from("entries")
-    .select(select)
+  return onlyLiveEntries(
+    supabase
+      .from("entries")
+      .select(select),
+  )
     .eq("group_id", groupId)
     .or(cond);
 }

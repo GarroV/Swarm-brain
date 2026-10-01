@@ -15,7 +15,9 @@ function manageProblems(manage: string, storage: string): string[] {
   const problems: string[] = [];
   const del = fnBody(manage, "doDelete");
   const delGuard = del.search(/getManageableEntry\([^)]*"delete"\)/);
-  const delWrite = del.indexOf(".delete()");
+  // Удаление записи — архивация (#569), физического delete нет.
+  const delWrite = del.indexOf("archiveEntry(");
+  if (delWrite < 0 || del.includes(".delete()")) problems.push("удаление записи не через архивацию");
   if (delGuard < 0 || delGuard > delWrite) problems.push("удаление без права delete до записи");
 
   const rep = fnBody(manage, "doReplace");

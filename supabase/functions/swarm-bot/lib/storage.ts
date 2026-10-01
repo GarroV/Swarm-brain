@@ -2,16 +2,17 @@ import { ADMIN_USER_ID, loadMeetingViewer, supabase } from "./supabase.ts";
 import { entryActionError } from "../../_shared/entries/entry-edit.ts";
 import { canViewEntry } from "../../_shared/entries/access.ts";
 import {
-  PRIVATE_BUCKET,
+  discardOwnUpload,
   registerStorageFile,
-  safeStorageName,
-  uploadPrivateFile,
+  type UploadedFile,
+  uploadNewPrivateFile,
 } from "../../_shared/storage-files.ts";
 import { absoluteFileUrl } from "../../_shared/storage-links.ts";
 import { chatComplete, getEmbedding } from "./openai.ts";
 import { COUNTRY_PROMPT_RULE, ENTRY_TYPE_PROMPT_RULE, normalizeCountries } from "../../_shared/countries.ts";
 import { applyGeneralSentinel, specificCountries } from "../../_shared/meta-extract.ts";
 import { normalizeExtractedEventDate, todayIso } from "../../_shared/llm-date.ts";
+import { onlyLiveEntries } from "../../_shared/entries/live.ts";
 
 export { visibilityFilter } from "./visibility.ts";
 
@@ -63,35 +64,6 @@ async function buildEntryIndex(content: string, existingSummary?: string): Promi
   }
 }
 
-// extractEntryMeta kept for backward-compat (granola.ts still imports it).
-export async function extractEntryMeta(
-  text: string,
-): Promise<{ countries: string[]; entry_type: string; entry_date: string | null }> {
-  const idx = await buildEntryIndex(text, "placeholder"); // hasSummary=true → skip summary gen
-  // buildEntryIndex with placeholder still extracts countries/type/date
-  // Re-run without placeholder to get real meta-only result
-  try {
-    const raw = await chatComplete(
-      `Сегодня ${todayIso()}.\n` +
-        "Проанализируй текст и верни JSON (только JSON, без markdown):\n" +
-        '{"countries":["Spain","Bulgaria"],"entry_type":"meeting|note","entry_date":"YYYY-MM-DD или null"}\n\n' +
-        COUNTRY_PROMPT_RULE + "\n" +
-        ENTRY_TYPE_PROMPT_RULE + "\n" +
-        "entry_date — дата события из текста, null если нет. Год считай от сегодняшней даты, НИКОГДА не из головы.",
-      text.slice(0, 4000),
-      { temperature: 0, json: true },
-    );
-    const parsed = JSON.parse(raw.replace(/```json\n?|\n?```/g, "").trim());
-    return {
-      countries: normalizeCountries(Array.isArray(parsed.countries) ? parsed.countries : []),
-      entry_type: parsed.entry_type === "meeting" ? "meeting" : "note", // только два типа
-      entry_date: normalizeExtractedEventDate(parsed.entry_date),
-    };
-  } catch {
-    return { countries: idx.countries, entry_type: idx.entry_type, entry_date: idx.entry_date };
-  }
-}
-
 // Char-trigram Jaccard similarity — детект near-identical контента (повторная отправка
 // с мелкой правкой). 1.0 = идентично; для разного текста быстро падает.
 function trigramSimilarity(a: string, b: string): number {
@@ -132,8 +104,10 @@ export async function saveEntry(
     const norm = (s: string) => s.replace(/\s+/g, " ").trim().toLowerCase();
     const target = norm(content);
     const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
-    let cq = supabase.from("entries")
-      .select("id, content, summary, added_by, source, created_at")
+    let cq = onlyLiveEntries(
+      supabase.from("entries")
+        .select("id, content, summary, added_by, source, created_at"),
+    )
       .eq("group_id", groupId)
       .gte("created_at", weekAgo)
       .order("created_at", { ascending: false })
@@ -275,10 +249,12 @@ export async function getManageableEntry(
   groupId: string,
   action: "view" | "edit" | "delete" = "view",
 ): Promise<ManageableEntry> {
-  const { data } = await supabase.from("entries")
-    .select(
-      "id, group_id, is_private, owner_id, shared_with, content, summary, source, entry_type, entry_date, metadata, created_at",
-    )
+  const { data } = await onlyLiveEntries(
+    supabase.from("entries")
+      .select(
+        "id, group_id, is_private, owner_id, shared_with, content, summary, source, entry_type, entry_date, metadata, created_at",
+      ),
+  )
     .eq("id", id).maybeSingle();
   if (!data) throw new EntryAccessError("not_found");
   const e = data as ManageableEntry;
@@ -396,30 +372,29 @@ const WEB_BASE_URL = Deno.env.get("WEB_BASE_URL") ?? "https://swarm-brain.pages.
 
 /**
  * Кладёт файл в приватный бакет и возвращает ПУТЬ (публичной ссылки больше не существует).
+ * Ключ — в области владельца (воркспейс или FEEDBACK_SCOPE), с uuid, без перезаписи.
  * Регистрация в реестре — отдельным шагом (registerUploadedFile): владелец известен только
- * после создания записи.
+ * после создания записи. `file` нужен для отката (discardOrphanFile) — только своего объекта.
  */
 export async function uploadToStorage(
   fileName: string,
   buffer: ArrayBuffer,
   mimeType: string,
   folder: string,
-): Promise<{ path: string | null; error: string | null }> {
+  scope: string,
+): Promise<{ path: string | null; file: UploadedFile | null; error: string | null }> {
   try {
-    const date = new Date().toISOString().slice(0, 10);
-    const safeName = safeStorageName(fileName);
-    const path = `${folder}/${date}_${crypto.randomUUID().slice(0, 8)}_${safeName}`;
-
-    const { file, error } = await uploadPrivateFile(supabase, {
-      path,
+    const { file, error } = await uploadNewPrivateFile(supabase, {
+      folder,
+      scope,
+      fileName,
       body: buffer,
       contentType: mimeType,
-      upsert: true,
     });
-    if (error || !file) return { path: null, error: error ?? "upload failed" };
-    return { path: file.path, error: null };
+    if (error || !file) return { path: null, file: null, error: error ?? "upload failed" };
+    return { path: file.path, file, error: null };
   } catch (e) {
-    return { path: null, error: e instanceof Error ? e.message : String(e) };
+    return { path: null, file: null, error: e instanceof Error ? e.message : String(e) };
   }
 }
 
@@ -442,10 +417,10 @@ export async function registerFeedbackFile(path: string): Promise<string | null>
   return error;
 }
 
-/** Убирает объект, которому не досталось владельца (запись не создалась). */
-export async function discardOrphanFile(path: string): Promise<void> {
-  const { error } = await supabase.storage.from(PRIVATE_BUCKET).remove([path]);
-  if (error) console.error(`[storage] осиротевший файл не убран (${path}): ${error.message}`);
+/** Убирает объект, которому не досталось владельца (запись не создалась) — только свой, этого запроса. */
+export async function discardOrphanFile(file: UploadedFile): Promise<void> {
+  const { error } = await discardOwnUpload(supabase, file);
+  if (error) console.error(`[storage] осиротевший файл не убран (${file.path}): ${error}`);
 }
 
 export async function autoSyncProfile(

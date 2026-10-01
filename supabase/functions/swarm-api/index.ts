@@ -86,15 +86,12 @@ import {
 import { pickSuggestedMarkets } from "../_shared/market-suggest.ts";
 import { type MatchedEntry, matchEntries } from "../_shared/search.ts";
 import { FileAccessError, getFileSecure } from "./file-access.ts";
+import { withNormalizedFileLink } from "../_shared/storage-links.ts";
 import {
-  removeStorageObject,
-  withNormalizedFileLink,
-} from "../_shared/storage-links.ts";
-import {
-  PRIVATE_BUCKET,
+  discardOwnUpload,
+  FEEDBACK_SCOPE,
   registerStorageFile,
-  safeStorageName,
-  uploadPrivateFile,
+  uploadNewPrivateFile,
 } from "../_shared/storage-files.ts";
 import { detectQuerySince } from "../_shared/query-time.ts";
 import { resummarizeFromTranscript } from "../_shared/meeting-processor.ts";
@@ -121,9 +118,10 @@ import {
   oneOnOnePartner,
 } from "../_shared/meeting-access.ts";
 import { handleAdminRoutes } from "./admin.ts";
-import { apiErr, corsHeaders, json, parseListLimit } from "./http.ts";
+import { apiErr, corsHeaders, json, parseListLimit, routePathOf } from "./http.ts";
 import { handleMeetingInviteRoutes } from "./meeting-invites.ts";
 import { DEMO_GROUP_ID, isDemoSession } from "../_shared/demo-session.ts";
+import { handleIntegrationConnectRoutes, makeIntegrationsDeps } from "./integrations.ts";
 import { handleAutojoinRoutes, makeAutojoinStore, makeCalendarCheck } from "./autojoin.ts";
 import { handleTaskLabelRoutes } from "./task-labels.ts";
 import { handleTaskCommentRoutes } from "./task-comments.ts";
@@ -155,6 +153,8 @@ import {
   readMaintenance,
 } from "../_shared/maintenance.ts";
 import { onlyLive } from "../_shared/tasks/live.ts";
+import { onlyLiveEntries } from "../_shared/entries/live.ts";
+import { archiveEntry } from "../_shared/entries/archive.ts";
 
 // Сколько задач отдаём вебу за раз. Дефолт движка (_shared/tasks/db.ts) — 200, и для БОТА он
 // верен: тот печатает список сообщением в чат, дампить туда базу нельзя. Для веба он смертелен —
@@ -551,8 +551,7 @@ Deno.serve(async (req: Request) => {
   // Публичная дорожная карта доски для хаба проектов (issue #562) — БЕЗ авторизации и раньше
   // общего OPTIONS: у неё свой CORS (`*`, только GET), приватный MINIAPP_ORIGIN ей не подходит.
   // Что уходит наружу — строго белый список модуля public-roadmap.ts.
-  const publicPath = new URL(req.url).pathname.split("/swarm-api").pop() ||
-    "/";
+  const publicPath = routePathOf(new URL(req.url).pathname);
   if (isPublicRoadmapPath(publicPath)) {
     return handlePublicRoadmap(supabase, req, publicPath);
   }
@@ -648,8 +647,8 @@ Deno.serve(async (req: Request) => {
 
   // ── Routing ──────────────────────────────────────────────────────────────
   const url = new URL(req.url);
-  // Strip /functions/v1/swarm-api prefix to get the route path
-  const routePath = url.pathname.split("/swarm-api").pop() || "/";
+  // Снимаем префикс функции (/functions/v1/swarm-api) — один, известный (#592).
+  const routePath = routePathOf(url.pathname);
 
   // Заморозка на время раскатки: изменения не принимаем, чтение оставляем (пустой экран
   // пугает сильнее честной плашки). Владелец проходит всегда — он катит и проверяет.
@@ -1978,7 +1977,7 @@ Deno.serve(async (req: Request) => {
         if ("content" in body) fields.content = body.content;
         if ("summary" in body) fields.summary = body.summary;
         await supabase.from("entries").update(fields).eq("id", entry.id);
-        const { data } = await supabase.from("entries").select(ENTRY_COLUMNS)
+        const { data } = await onlyLiveEntries(supabase.from("entries").select(ENTRY_COLUMNS))
           .eq("id", entry.id).single();
         return json(
           withNormalizedFileLink(
@@ -1994,18 +1993,10 @@ Deno.serve(async (req: Request) => {
           telegramId: telegram_id,
           requireOwner: true,
         });
-        const fileUrl = (entry.metadata as Record<string, unknown>)?.file_url as
-          | string
-          | undefined;
-        if (fileUrl) {
-          const removal = await removeStorageObject(supabase, fileUrl);
-          // Объект не удалён — запись НЕ трогаем: иначе файл остался бы в хранилище без
-          // владельца, то есть навсегда и по прежней ссылке.
-          if (removal.status === "failed") {
-            return apiErr(500, `File delete failed: ${removal.error}`, origin);
-          }
-        }
-        await supabase.from("entries").delete().eq("id", entry.id);
+        // Запись не стирается, а уходит в архив вместе с задачами встречи (#569). Файл в Storage
+        // остаётся: отдача файла (file-access.ts) проверяет живую запись, ссылка больше не открывается.
+        const archived = await archiveEntry(supabase, entry, telegram_id);
+        if (archived.error) return apiErr(500, archived.error, origin);
         return new Response(null, {
           status: 204,
           headers: corsHeaders(origin),
@@ -2028,21 +2019,22 @@ Deno.serve(async (req: Request) => {
     const isPrivate = form.get("is_private") === "true";
 
     const arrayBuffer = await file.arrayBuffer();
-    const date = new Date().toISOString().slice(0, 10);
-    // Кириллицу Storage в ключе НЕ принимает («Invalid key») — прежняя маска её сохраняла,
-    // и файл с русским именем не загружался вовсе. Настоящее имя живёт в metadata.filename.
-    const safeName = safeStorageName(file.name);
-    const path = `uploads/${date}_${safeName}`;
 
     // Приватный бакет: публичной ссылки на файл команды больше не существует. В metadata
     // кладём ПУТЬ — ссылку строит отдача (withNormalizedFileLink → /api/file/<path>).
-    const { error: uploadError } = await uploadPrivateFile(supabase, {
-      path,
+    // Ключ — в воркспейсе владельца, с uuid, без перезаписи (buildUploadKey). Кириллицу в ключе
+    // Storage не принимает — имя транслитерируется, настоящее живёт в metadata.filename.
+    const { file: stored, error: uploadError } = await uploadNewPrivateFile(supabase, {
+      folder: "uploads",
+      scope: groupId,
+      fileName: file.name,
       body: arrayBuffer,
       contentType: file.type,
-      upsert: true,
     });
-    if (uploadError) return apiErr(500, uploadError, origin);
+    if (uploadError || !stored) {
+      return apiErr(500, uploadError ?? "upload failed", origin);
+    }
+    const path = stored.path;
 
     const { data: profile } = await supabase.from("user_profiles")
       .select("first_name").eq("telegram_id", telegram_id).maybeSingle();
@@ -2065,8 +2057,8 @@ Deno.serve(async (req: Request) => {
         owner_id: telegram_id,
       }).select().single();
     if (insertError) {
-      // Запись не создалась — объект без владельца не оставляем.
-      await supabase.storage.from(PRIVATE_BUCKET).remove([path]);
+      // Запись не создалась — объект без владельца не оставляем (только свой, этого запроса).
+      await discardOwnUpload(supabase, stored);
       return apiErr(500, insertError.message, origin);
     }
 
@@ -2078,7 +2070,8 @@ Deno.serve(async (req: Request) => {
       owner: { kind: "entry", entryId: (entry as { id: string }).id },
     });
     if (reg.error) {
-      await supabase.storage.from(PRIVATE_BUCKET).remove([path]);
+      await discardOwnUpload(supabase, stored);
+      // archive-ok: откат только что вставленной записи — её никто не видел, архивировать нечего
       await supabase.from("entries").delete().eq(
         "id",
         (entry as { id: string }).id,
@@ -2488,7 +2481,7 @@ Deno.serve(async (req: Request) => {
       const upd: Record<string, unknown> = { summary: tezisi, content: tezisi };
       if (embedding) upd.embedding = embedding;
       await supabase.from("entries").update(upd).eq("id", entry.id);
-      const { data } = await supabase.from("entries").select(ENTRY_COLUMNS).eq(
+      const { data } = await onlyLiveEntries(supabase.from("entries").select(ENTRY_COLUMNS)).eq(
         "id",
         entry.id,
       ).single();
@@ -2537,8 +2530,8 @@ Deno.serve(async (req: Request) => {
           .select("id, meeting_id, offset_sec, text, author_id, created_at")
           .in("meeting_id", idList)
           .order("offset_sec", { ascending: true }),
-        supabase.from("entries")
-          .select("id, content, created_at, metadata")
+        onlyLiveEntries(supabase.from("entries")
+          .select("id, content, created_at, metadata"))
           .eq("group_id", groupId)
           .eq("owner_id", telegram_id)
           .eq("metadata->>kind", "personal_notes")
@@ -2678,20 +2671,22 @@ Deno.serve(async (req: Request) => {
           fields.countries = marketTagsFromInput(body.countries as string[]);
         }
         await supabase.from("entries").update(fields).eq("id", entry.id);
-        const { data } = await supabase.from("entries").select(ENTRY_COLUMNS)
+        const { data } = await onlyLiveEntries(supabase.from("entries").select(ENTRY_COLUMNS))
           .eq("id", entry.id).single();
         return json(data, 200, origin);
       }
       if (req.method === "DELETE") {
         // Удаляют владелец и админ; личную — только владелец.
-        await getMeetingSecure(supabase, meetingId, {
+        const meeting = await getMeetingSecure(supabase, meetingId, {
           groupId,
           telegramId: telegram_id,
           email: userEmail,
           isAdmin,
           action: "delete",
         });
-        await supabase.from("entries").delete().eq("id", meetingId);
+        // Встреча и её задачи уходят в архив, а не стираются (#569).
+        const archived = await archiveEntry(supabase, meeting, telegram_id);
+        if (archived.error) return apiErr(500, archived.error, origin);
         return new Response(null, {
           status: 204,
           headers: corsHeaders(origin),
@@ -3114,14 +3109,6 @@ Deno.serve(async (req: Request) => {
     return json(data ?? [], 200, origin);
   }
 
-  // ── GET /google/connect-url — ссылка для подключения Google-календаря ──────────────
-  // Поток живёт на CF Pages (/api/auth/google/start?flow=calendar) рядом с веб-сессией:
-  // start и callback сами сверяют сессию браузера. Путь относительный — веб открывает его
-  // на своём же адресе.
-  if (req.method === "GET" && routePath === "/google/connect-url") {
-    return json({ url: "/api/auth/google/start?flow=calendar" }, 200, origin);
-  }
-
   // ── DELETE /integrations/google — отключить Google-календарь ─────────────────────
   if (req.method === "DELETE" && routePath === "/integrations/google") {
     await supabase.from("user_integrations").delete().eq(
@@ -3131,35 +3118,14 @@ Deno.serve(async (req: Request) => {
     return new Response(null, { status: 204, headers: corsHeaders(origin) });
   }
 
-  // ── POST /integrations/granola ────────────────────────────────────────────────
-  if (req.method === "POST" && routePath === "/integrations/granola") {
-    let body: Record<string, unknown>;
-    try {
-      body = await req.json();
-    } catch {
-      return apiErr(400, "Invalid JSON", origin);
-    }
-    if (!body.api_key || typeof body.api_key !== "string") {
-      return apiErr(400, "api_key required", origin);
-    }
-    const validRes = await fetch(
-      "https://public-api.granola.ai/v1/notes?limit=1",
-      {
-        headers: { Authorization: `Bearer ${body.api_key}` },
-      },
-    );
-    if (!validRes.ok) return apiErr(400, "Invalid Granola API key", origin);
-    await supabase.from("user_integrations").upsert(
-      {
-        telegram_id,
-        service: "granola",
-        api_key: body.api_key,
-        skipped_note_ids: [],
-      },
-      { onConflict: "telegram_id,service" },
-    );
-    return new Response(null, { status: 204, headers: corsHeaders(origin) });
-  }
+  // ── GET /google/connect-url · POST /integrations/granola — подключение (integrations.ts) ──
+  // Демо интеграции не подключает: сессия общая для всех посетителей витрины (issue #573).
+  const connectResp = await handleIntegrationConnectRoutes(
+    { telegramId: telegram_id, isDemo, origin, ...makeIntegrationsDeps(supabase) },
+    req,
+    routePath,
+  );
+  if (connectResp) return connectResp;
 
   // ── DELETE /integrations/granola ──────────────────────────────────────────────
   if (req.method === "DELETE" && routePath === "/integrations/granola") {
@@ -3203,6 +3169,7 @@ Deno.serve(async (req: Request) => {
 
     const skipped: string[] =
       (integration as { skipped_note_ids: string[] }).skipped_note_ids ?? [];
+    // archive-ok: архивная заметка Granola уже была импортирована — без неё удалённое вернулось бы «новым»
     const { data: imported } = await supabase.from("entries")
       .select("metadata").eq("group_id", groupId).eq(
         "added_by",
@@ -3494,19 +3461,16 @@ Deno.serve(async (req: Request) => {
     let screenshotUrl: string | null = null;
     if (screenshotFile) {
       const buf = await screenshotFile.arrayBuffer();
-      const date = new Date().toISOString().slice(0, 10);
-      const safeName = safeStorageName(screenshotFile.name || "screenshot.png");
-      const path = `feedback/${date}_${
-        crypto.randomUUID().slice(0, 8)
-      }_${safeName}`;
-      const { error: upErr } = await uploadPrivateFile(supabase, {
-        path,
+      const { file: shot, error: upErr } = await uploadNewPrivateFile(supabase, {
+        folder: "feedback",
+        scope: FEEDBACK_SCOPE,
+        fileName: screenshotFile.name || "screenshot.png",
         body: buf,
         contentType: screenshotFile.type || "image/png",
-        upsert: true,
       });
       // Скрин — admin-only, поэтому и он в приватном бакете, а в feedback кладём ПУТЬ.
-      if (!upErr) {
+      if (shot) {
+        const path = shot.path;
         const regFb = await registerStorageFile(supabase, {
           path,
           owner: { kind: "feedback" },
@@ -3515,7 +3479,7 @@ Deno.serve(async (req: Request) => {
           // Незарегистрированный скрин недоступен никому — лучше фидбек без картинки,
           // чем ссылка, которая всегда отдаёт 404.
           console.error(`[feedback] реестр скрина не записан: ${regFb.error}`);
-          await supabase.storage.from(PRIVATE_BUCKET).remove([path]);
+          await discardOwnUpload(supabase, shot);
         } else {
           screenshotUrl = path;
         }
@@ -3530,15 +3494,19 @@ Deno.serve(async (req: Request) => {
         username,
         text,
         category,
-        source: "web",
+        // Отзыв из демо остаётся владельцу («фидбек нужен конечно», 28.09.2026), но помечен
+        // источником `demo`, чтобы не путался с отзывами команды (issue #603).
+        source: isDemo ? "demo" : "web",
         screenshot_url: screenshotUrl,
       })
       .select("id").single();
 
-    const { data: channelRow } = await supabase.from("app_settings")
+    // Канал команды демо не пингует: посетитель витрины — не сотрудник, а его отзыв и так
+    // лежит в ленте с пометкой `demo` (issue #603).
+    const { data: channelRow } = isDemo ? { data: null } : await supabase.from("app_settings")
       .select("value").eq("key", "feedback_channel_id").maybeSingle();
     const channelId = (channelRow as { value?: string } | null)?.value;
-    if (channelId && feedbackRow) {
+    if (channelId && feedbackRow && !isDemo) {
       const date = new Date().toLocaleDateString("ru-RU");
       const caption = `<b>[Веб]</b> 🐛 ${
         feedbackCategoryLabel(category)
@@ -3632,10 +3600,10 @@ Deno.serve(async (req: Request) => {
     }
 
     // Персональный дайджест — СТРОГО по странам пользователя (entries.countries ∩ markets).
-    let q = supabase.from("entries")
+    let q = onlyLiveEntries(supabase.from("entries")
       .select(
         "id, summary, content, source, created_at, countries, metadata, entry_type",
-      )
+      ))
       .gte("created_at", since)
       .eq("group_id", groupId)
       .not("source", "eq", "digest")
@@ -3762,27 +3730,11 @@ Deno.serve(async (req: Request) => {
     // Та же форма {title,description,assignee,due_date,country}; при сбое GPT отдаёт [] (мягко, не 500).
     const extracted = await gptExtractTasks(body.text);
 
-    // Preview-режим: вернуть предложенные задачи БЕЗ создания (ревью на экране встреч —
-    // пользователь правит/удаляет/добавляет к себе). save !== false → старое поведение (создать).
-    if (body.save === false) {
-      return json(extracted.slice(0, 10).filter((t) => t.title), 200, origin);
-    }
-
-    const created = [];
-    for (const item of extracted.slice(0, 10)) {
-      if (!item.title) continue;
-      const task = await createTask({
-        title: item.title,
-        description: item.description ?? null,
-        country: item.country ?? null,
-        due_date: item.due_date ?? null,
-        source: "mini_app",
-        confirmed: true,
-        created_by_telegram_id: telegram_id ?? null,
-      }, groupId);
-      created.push(task);
-    }
-    return json(created, 201, origin);
+    // Только предложение, без записи в базу: в базу попадает лишь то, что человек выбрал на
+    // экране (решение 05.09.2026, issue #581). Прежний режим «создать до 10 задач сразу» снят —
+    // его никто не звал, а по умолчанию он писал в базу непроверенное GPT. Флаг `save` больше не
+    // читается: старый клиент с save:false получает тот же ответ.
+    return json(extracted.slice(0, 10).filter((t) => t.title), 200, origin);
   }
 
   return apiErr(404, "Not found", origin);

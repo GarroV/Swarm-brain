@@ -8,6 +8,7 @@ import { useReminderTasks } from "./useReminderTasks";
 import { LabelEditor } from "./LabelEditor";
 import { SMART_LISTS, isOnlyDone } from "@/lib/smartLists";
 import { rangeLabel } from "@/lib/dateRange";
+import { useLang } from "@/components/roy/nav";
 import { fetchUsers, fetchConfig, type TaskLabel } from "@/lib/api";
 import type { Task, User } from "@/types";
 import { TaskModal } from "@/components/TaskModal";
@@ -29,6 +30,7 @@ const SHOW_INLINE_QUICK_ADD = false;
 
 // Десктопный Reminders-вид «Список»: рельс смарт-списков слева + спокойный чек-лист справа.
 export function RemindersTasks() {
+  const lang = useLang();
   const r = useReminderTasks();
   const confirm = useConfirm();
   const [modalTask, setModalTask] = useState<Task | "new" | null>(null);
@@ -151,7 +153,7 @@ export function RemindersTasks() {
                 className="inline-flex shrink-0 items-center gap-1 rounded-full bg-accent-soft px-2 py-0.5 font-semibold text-accent-ink transition-colors hover:bg-accent-soft/70"
                 style={{ fontSize: 11.5 }}
               >
-                {rangeLabel(r.range)}
+                {rangeLabel(r.range, lang)}
                 <RoyIcon name="x" size={10} strokeWidth={2.2} />
               </button>
             )}

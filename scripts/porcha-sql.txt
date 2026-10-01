@@ -40,14 +40,16 @@ delete from public.user_profiles      where telegram_id = any (c_users);|delete 
                       then null else public.notifications.read_at end,|                      then public.notifications.read_at else public.notifications.read_at end,|supabase/functions/_shared/maintenance-announce.db.test.ts|supabase/migrations/20260928200000_maintenance_announce.sql
 and value ->> 'kind' = 'freeze'|and true|supabase/functions/_shared/maintenance-announce.db.test.ts|supabase/migrations/20260928200000_maintenance_announce.sql
 revoke all on function public.maintenance_announce(integer, integer, text, text) from public, anon, authenticated;|grant execute on function public.maintenance_announce(integer, integer, text, text) to anon;|supabase/functions/_shared/maintenance-announce.db.test.ts|supabase/migrations/20260928200000_maintenance_announce.sql
+# Функции поиска переопределяет 20261002100000 (#569, архив) с теми же условиями видимости — живая
+# редакция последняя, поэтому строки #641 ломают её (старую перекрыл бы повторный накат 100000).
 # Запись на двоих, встреча 1-1 (#641): правило видимости в SQL-поиске. Убрать «разделённую со
 # мной» — второй участник перестаёт находить встречу; заменить на true — её находит третий.
- or requesting_user_id = any(e.shared_with)||supabase/functions/_shared/entries/search-visibility.db.test.ts|supabase/migrations/20261001120000_entries_shared_with.sql
-requesting_user_id = any(e.shared_with)|true|supabase/functions/_shared/entries/search-visibility.db.test.ts|supabase/migrations/20261001120000_entries_shared_with.sql
+ or requesting_user_id = any(e.shared_with)||supabase/functions/_shared/entries/search-visibility.db.test.ts|supabase/migrations/20261002100000_entries_archive.sql
+requesting_user_id = any(e.shared_with)|true|supabase/functions/_shared/entries/search-visibility.db.test.ts|supabase/migrations/20261002100000_entries_archive.sql
 # Нечёткий поиск по стране (решение владельца 01.10.2026): воркспейс обязателен и вызов только
 # у service_role. Убрать воркспейс — запись чужого воркспейса находится; выдать anon — видно в правах.
-  where e.group_id = p_group_id|  where true|supabase/functions/_shared/entries/country-search.db.test.ts|supabase/migrations/20261001120000_entries_shared_with.sql
-revoke all on function public.search_entries_by_country(text, text, bigint) from public, anon, authenticated;|grant execute on function public.search_entries_by_country(text, text, bigint) to anon;|supabase/functions/_shared/entries/country-search.db.test.ts|supabase/migrations/20261001120000_entries_shared_with.sql
+  where e.group_id = p_group_id|  where true|supabase/functions/_shared/entries/country-search.db.test.ts|supabase/migrations/20261002100000_entries_archive.sql
+revoke all on function public.search_entries_by_country(text, text, bigint) from public, anon, authenticated;|grant execute on function public.search_entries_by_country(text, text, bigint) to anon;|supabase/functions/_shared/entries/country-search.db.test.ts|supabase/migrations/20261002100000_entries_archive.sql
 # Обновление задачи одной транзакцией (issue #577): ожидание снимка, блокировка, права на вызов.
 if (to_jsonb(v_row) -> v_key) is distinct from (p_expect -> v_key) then|if false then|supabase/functions/_shared/tasks/task-update.db.test.ts|supabase/migrations/20261001130000_task_apply_update.sql
    for update;|   ;|supabase/functions/_shared/tasks/task-update.db.test.ts|supabase/migrations/20261001130000_task_apply_update.sql
@@ -59,3 +61,7 @@ after update of archived_at on public.tasks|after insert on public.tasks|supabas
 elsif old.archived_at is not null and new.archived_at is null then|elsif false then|supabase/functions/_shared/tasks/archive-sprint.db.test.ts|supabase/migrations/20261001180000_archived_tasks_leave_sprints.sql
 and frozen_at is null  -- принятый спринт не трогаем|and true|supabase/functions/_shared/tasks/archive-sprint.db.test.ts|supabase/migrations/20261001180000_archived_tasks_leave_sprints.sql
 new.ping_delivered_to := '{}';|null;|supabase/functions/_shared/tasks/archive-sprint.db.test.ts|supabase/migrations/20261001180000_archived_tasks_leave_sprints.sql
+# Замок таблиц public (#671): таблица без RLS обязана ронять тест — порча дописывает её в миграцию.
+revoke all on public.meeting_notices from anon, authenticated;|revoke all on public.meeting_notices from anon, authenticated; create table public.porcha_no_rls (id int);|supabase/functions/_shared/public-tables-locked.db.test.ts|supabase/migrations/20261002110000_scriba_tables_revoke_anon.sql
+# Архив встреч (#569): архивная запись не попадает в поиск — ни в одну из четырёх функций.
+    and e.archived_at is null|    and true|supabase/functions/_shared/entries/archive.db.test.ts|supabase/migrations/20261002100000_entries_archive.sql

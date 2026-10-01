@@ -3,6 +3,7 @@ import { chatComplete } from "../lib/openai.ts";
 import { sendMessage } from "../lib/telegram.ts";
 import { saveEntry } from "../lib/storage.ts";
 import { getUserGroupId } from "../lib/workspace.ts";
+import { onlyLiveEntries } from "../../_shared/entries/live.ts";
 
 export async function generatePersonalDigest(
   chatId: number,
@@ -25,8 +26,10 @@ export async function generatePersonalDigest(
 
   await sendMessage(chatId, `⏳ Генерирую твой дайджест за ${periodLabel}...`);
 
-  const { data: entries } = await supabase.from("entries")
-    .select("summary, content, source, created_at")
+  const { data: entries } = await onlyLiveEntries(
+    supabase.from("entries")
+      .select("summary, content, source, created_at"),
+  )
     .gte("created_at", since)
     .eq("group_id", groupId)
     .not("source", "eq", "digest")
@@ -40,17 +43,19 @@ export async function generatePersonalDigest(
 
   // Get all known markets to detect general (non-country-specific) entries
   const { data: allProfiles } = await supabase.from("user_profiles").select("markets");
-  const allMarkets = [...new Set(
-    (allProfiles ?? []).flatMap((p: { markets?: string[] }) => p.markets ?? [])
-  )].filter((m): m is string => typeof m === "string").map(m => m.toLowerCase());
+  const allMarkets = [
+    ...new Set(
+      (allProfiles ?? []).flatMap((p: { markets?: string[] }) => p.markets ?? []),
+    ),
+  ].filter((m): m is string => typeof m === "string").map((m) => m.toLowerCase());
 
-  const userKeywords = [...markets, role, userName].filter(Boolean).map(k => k.toLowerCase());
+  const userKeywords = [...markets, role, userName].filter(Boolean).map((k) => k.toLowerCase());
 
   type EntryRow = { summary: string | null; content: string; source: string; created_at: string };
-  const relevant = (entries as EntryRow[]).filter(e => {
+  const relevant = (entries as EntryRow[]).filter((e) => {
     const lower = (e.summary ?? e.content).toLowerCase();
-    const mentionsUserContext = userKeywords.some(k => lower.includes(k));
-    const mentionsAnyMarket = allMarkets.some(m => lower.includes(m));
+    const mentionsUserContext = userKeywords.some((k) => lower.includes(k));
+    const mentionsAnyMarket = allMarkets.some((m) => lower.includes(m));
     // Include if: relevant to user personally OR general (doesn't mention any specific market)
     return mentionsUserContext || !mentionsAnyMarket;
   });
@@ -74,19 +79,26 @@ export async function generatePersonalDigest(
 
   const digest = await chatComplete(
     `Ты аналитик команды. Составь персональный дайджест за ${periodLabel} для сотрудника.\n` +
-    `Профиль сотрудника: ${contextLine}\n\n` +
-    `Включай только то, что касается его рынков, роли или упоминает его напрямую.\n\n` +
-    `Структура:\n` +
-    `🌍 По рынкам — ключевые события (только его рынки)\n` +
-    `✅ Что сделано / решено\n` +
-    `🔥 Проблемы и блокеры\n` +
-    `📋 На следующий период\n\n` +
-    `Будь конкретным. Отвечай на русском.`,
+      `Профиль сотрудника: ${contextLine}\n\n` +
+      `Включай только то, что касается его рынков, роли или упоминает его напрямую.\n\n` +
+      `Структура:\n` +
+      `🌍 По рынкам — ключевые события (только его рынки)\n` +
+      `✅ Что сделано / решено\n` +
+      `🔥 Проблемы и блокеры\n` +
+      `📋 На следующий период\n\n` +
+      `Будь конкретным. Отвечай на русском.`,
     entriesText.slice(0, 8000),
   );
 
   const digestContent = `Дайджест за ${periodLabel} · ${userName || `ID ${userId}`}\n\n${digest}`;
-  await saveEntry(digestContent, "system", "digest", { period: periodLabel, days_back: daysBack, user_id: userId }, undefined, groupId);
+  await saveEntry(
+    digestContent,
+    "system",
+    "digest",
+    { period: periodLabel, days_back: daysBack, user_id: userId },
+    undefined,
+    groupId,
+  );
 
   let remaining = `<b>📊 Твой дайджест ${periodLabel}</b>\n\n${digest}`;
   while (remaining.length > 0) {
