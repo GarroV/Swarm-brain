@@ -629,7 +629,7 @@ Deno.serve(async (req: Request) => {
         await handleAsk(chatId, text, userId, groupId);
       } else if (action && await handleMeetingSessionInput(chatId, action, text, groupId, userId)) {
         // meeting session handled
-      } else if (action && await handleUserSessionInput(chatId, userId, action, text)) {
+      } else if (action && await handleUserSessionInput(chatId, userId, action, text, groupId)) {
         // user session handled
       } else if (
         action && await handleTaskSessionInput(chatId, userId, action, text, session?.context ?? undefined, groupId)
