@@ -30,3 +30,6 @@ miniapp/functions/_lib/oauth-state.ts|miniapp/src/lib/oauthState.test.ts
 supabase/functions/swarm-api/admin-scope.ts|supabase/functions/swarm-api/admin-scope.test.ts
 supabase/functions/_shared/users/admin-scope.ts|supabase/functions/swarm-api/admin-scope.test.ts
 supabase/functions/swarm-bot/handlers/superadmin-scope.ts|supabase/functions/swarm-bot/handlers/superadmin-scope.test.ts
+# Повтор «готово» по регулярной задаче (issue #577): ошибка в правиле не падает — она молча
+# перекатывает срок второй раз, и вхождение графика пропадает.
+supabase/functions/_shared/tasks/recur-close.ts|supabase/functions/_shared/tasks/recur-close.test.ts
