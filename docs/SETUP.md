@@ -148,6 +148,7 @@ supabase secrets set READ_AI_WEBHOOK_SECRET=<webhook-secret>
 |--------|----------|-----------|
 | `READ_AI_CLIENT_ID` | Client ID Read.ai для OAuth-подключения (`read-ai-auth`) | опционально (только Read.ai) |
 | `READ_AI_WEBHOOK_SECRET` | Секрет проверки вебхуков Read.ai (`read-ai-webhook`) | опционально (только Read.ai) |
+| `READ_AI_AUTH_ENABLED` | `true` включает `read-ai-auth` (по умолчанию выключена, 403). Включать только на время подключения | опционально (только Read.ai) |
 
 ---
 
