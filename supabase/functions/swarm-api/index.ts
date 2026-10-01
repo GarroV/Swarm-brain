@@ -3739,27 +3739,11 @@ Deno.serve(async (req: Request) => {
     // Та же форма {title,description,assignee,due_date,country}; при сбое GPT отдаёт [] (мягко, не 500).
     const extracted = await gptExtractTasks(body.text);
 
-    // Preview-режим: вернуть предложенные задачи БЕЗ создания (ревью на экране встреч —
-    // пользователь правит/удаляет/добавляет к себе). save !== false → старое поведение (создать).
-    if (body.save === false) {
-      return json(extracted.slice(0, 10).filter((t) => t.title), 200, origin);
-    }
-
-    const created = [];
-    for (const item of extracted.slice(0, 10)) {
-      if (!item.title) continue;
-      const task = await createTask({
-        title: item.title,
-        description: item.description ?? null,
-        country: item.country ?? null,
-        due_date: item.due_date ?? null,
-        source: "mini_app",
-        confirmed: true,
-        created_by_telegram_id: telegram_id ?? null,
-      }, groupId);
-      created.push(task);
-    }
-    return json(created, 201, origin);
+    // Только предложение, без записи в базу: в базу попадает лишь то, что человек выбрал на
+    // экране (решение 05.09.2026, issue #581). Прежний режим «создать до 10 задач сразу» снят —
+    // его никто не звал, а по умолчанию он писал в базу непроверенное GPT. Флаг `save` больше не
+    // читается: старый клиент с save:false получает тот же ответ.
+    return json(extracted.slice(0, 10).filter((t) => t.title), 200, origin);
   }
 
   return apiErr(404, "Not found", origin);
