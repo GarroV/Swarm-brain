@@ -35,7 +35,8 @@ in_window() {
 
 # Клон main на сервере: первый раз — clone, дальше — жёстко к origin/main.
 sync_code() {
-  remote "[ -d ${REPO}/.git ] || git clone -q ${REPO_URL} ${REPO}"
+  # -c core.autocrlf=false: скрипты едут в образ, CRLF ломает shebang (#653); LF держит и bot/.gitattributes.
+  remote "[ -d ${REPO}/.git ] || git clone -q -c core.autocrlf=false ${REPO_URL} ${REPO}"
   remote "git -C ${REPO} fetch -q origin main && git -C ${REPO} checkout -q -B main origin/main && git -C ${REPO} log --oneline -1"
 }
 

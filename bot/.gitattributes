@@ -1,0 +1,4 @@
+# Скрипты уезжают в образ контейнера встречи: CRLF ломает shebang (`bash\r: No such file`),
+# если клон сделан на машине с core.autocrlf=true (issue #653). Держим LF независимо от машины.
+*.sh text eol=lf
+container/** text eol=lf
