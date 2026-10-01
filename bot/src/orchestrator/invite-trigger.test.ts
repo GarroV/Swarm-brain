@@ -8,7 +8,12 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { MeetingInvite } from "../swarm-client/contract.ts";
 import type { TakenInvites } from "../swarm-client/invites.ts";
-import { InviteTrigger, MAX_REFUSAL_DETAIL_CHARS, refusalDetail } from "./invite-trigger.ts";
+import {
+  type InviteContainerExit,
+  InviteTrigger,
+  MAX_REFUSAL_DETAIL_CHARS,
+  refusalDetail,
+} from "./invite-trigger.ts";
 
 const PERSON = 744_230_399;
 
@@ -33,9 +38,14 @@ interface Harness {
   failStart: Error | null;
   failRefuse: Error | null;
   failTake: Error | null;
+  /**
+   * Чем кончится контейнер; undefined — выход ещё неизвестен.
+   */
+  exit: InviteContainerExit | undefined;
+  failExit: Error | null;
 }
 
-function harness(intervalMs = 1000): Harness {
+function harness(intervalMs = 1000, shouldWatchExit = true): Harness {
   const state: Omit<Harness, "trigger"> = {
     started: [],
     refused: [],
@@ -44,6 +54,8 @@ function harness(intervalMs = 1000): Harness {
     failStart: null,
     failRefuse: null,
     failTake: null,
+    exit: undefined,
+    failExit: null,
   };
   const trigger = new InviteTrigger({
     take: () => {
@@ -60,6 +72,10 @@ function harness(intervalMs = 1000): Harness {
       state.refused.push({ invite: taken, detail });
       return Promise.resolve();
     },
+    ...(shouldWatchExit && {
+      whenExited: () =>
+        state.failExit === null ? Promise.resolve(state.exit) : Promise.reject(state.failExit),
+    }),
     log: (line) => {
       state.lines.push(line);
     },
@@ -131,6 +147,59 @@ describe("InviteTrigger.pollOnce", () => {
 
     expect(h.refused).toHaveLength(1);
     expect(h.refused[0]?.detail).toContain("no such image");
+  });
+
+  it("контейнер умер до заявки — человеку отказ, а не тишина (#654)", async () => {
+    const h = harness();
+    h.exit = { kind: "died", meetingId: null, exitCode: 137 };
+    h.batches.push(batch(invite()));
+
+    await h.trigger.pollOnce();
+    await h.trigger.settled();
+
+    expect(h.refused).toHaveLength(1);
+    expect(h.refused[0]?.detail).toMatch(/crashed before joining.*137/u);
+    expect(h.refused[0]?.detail).toMatch(/позовите его ещё раз/u);
+  });
+
+  it.each([
+    [
+      "умер после заявки — нотису шлёт оркестратор",
+      { kind: "died", meetingId: "m-1", exitCode: 1 },
+    ],
+    ["встреча закончилась штатно", { kind: "finished" }],
+  ] as const)("%s — второго отказа нет", async (_name, exit) => {
+    const h = harness();
+    h.exit = exit;
+    h.batches.push(batch(invite()));
+
+    await h.trigger.pollOnce();
+    await h.trigger.settled();
+
+    expect(h.refused).toEqual([]);
+  });
+
+  it("выход контейнера не узнать — журнал, отказа нет", async () => {
+    const h = harness();
+    h.failExit = new Error("docker gone");
+    h.batches.push(batch(invite()));
+
+    await h.trigger.pollOnce();
+    await h.trigger.settled();
+
+    expect(h.refused).toEqual([]);
+    expect(h.lines.join("\n")).toMatch(/выход контейнера c-inv-1 не узнать: .*docker gone/u);
+  });
+
+  it("ожидание выхода не подключено — бот поднят, следить не за чем", async () => {
+    const h = harness(1000, false);
+    h.batches.push(batch(invite()));
+
+    await h.trigger.pollOnce();
+    await h.trigger.settled();
+
+    expect(h.started).toHaveLength(1);
+    expect(h.refused).toEqual([]);
   });
 
   it("отказ не доставлен — громко в журнал, следующее приглашение всё равно обработано", async () => {
