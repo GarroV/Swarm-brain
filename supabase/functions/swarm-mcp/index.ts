@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { externalFetch, VIA_OPENAI_CHAT, VIA_OPENAI_EMBEDDING } from "../_shared/external-fetch.ts";
 import {
   COMMENT_TOOL_DEFINITIONS,
   LABEL_TOOL_DEFINITIONS,
@@ -52,7 +53,6 @@ const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY")!;
 
 import { absoluteFileUrl, removeStorageObject } from "../_shared/storage-links.ts";
 import { PRIVATE_BUCKET, registerStorageFile, safeStorageName, uploadPrivateFile } from "../_shared/storage-files.ts";
-import { externalFetch, VIA_OPENAI_CHAT, VIA_OPENAI_EMBEDDING } from "../_shared/external-fetch.ts";
 
 // Адрес веба: ссылку на файл отдаём абсолютной — получатель ответа (Claude Desktop)
 // не наша страница, относительный путь там некликабелен.

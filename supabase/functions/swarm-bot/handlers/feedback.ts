@@ -1,4 +1,6 @@
 import { supabase } from "../lib/supabase.ts";
+import { externalFetch, VIA_TELEGRAM_FILE } from "../../_shared/external-fetch.ts";
+import { makeFeedbackPingDeps, sendFeedbackPing } from "../../_shared/feedback-ping.ts";
 import { removeStorageObject } from "../../_shared/storage-links.ts";
 import { getTelegramFileUrl, sendInlineMessage, sendMessage } from "../lib/telegram.ts";
 import {
@@ -11,8 +13,6 @@ import {
 } from "../lib/storage.ts";
 import { FEEDBACK_CATEGORIES, feedbackCategoryLabel, isFeedbackCategory } from "../../_shared/feedback-categories.ts";
 import type { TgCallbackQuery } from "../lib/types.ts";
-import { externalFetch, VIA_TELEGRAM_FILE } from "../../_shared/external-fetch.ts";
-import { makeFeedbackPingDeps, sendFeedbackPing } from "../../_shared/feedback-ping.ts";
 
 const TELEGRAM_BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN")!;
 const BOT_NAME = Deno.env.get("BOT_NAME") ?? "bot";

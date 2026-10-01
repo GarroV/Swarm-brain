@@ -380,12 +380,12 @@ function isSpreadsheet(mime: string, name: string): boolean {
 }
 
 function parseSpreadsheet(buffer: ArrayBuffer): string {
-  // @ts-ignore: XLSX грузится из CDN без типов
+  // @ts-ignore: у esm-сборки xlsx нет типов
   const wb = XLSX.read(new Uint8Array(buffer), { type: "array", sheetStubs: true });
   const parts: string[] = [];
-  // @ts-ignore: XLSX грузится из CDN без типов
+  // @ts-ignore: у esm-сборки xlsx нет типов
   for (const sheetName of wb.SheetNames) {
-    // @ts-ignore: XLSX грузится из CDN без типов
+    // @ts-ignore: у esm-сборки xlsx нет типов
     const csv: string = XLSX.utils.sheet_to_csv(wb.Sheets[sheetName], { blankrows: false });
     const trimmed = csv.trim();
     if (trimmed) parts.push(`=== Лист: ${sheetName} ===\n${trimmed}`);
