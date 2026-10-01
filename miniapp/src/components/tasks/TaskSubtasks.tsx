@@ -14,7 +14,12 @@ import { useDt } from "@/components/roy/nav";
 // своих подзадач нет, поэтому у неё блок показывает только родителя.
 // API уже держит parent_id (создание, привязка, защита от цикла — swarm-api/index.ts).
 
-export function TaskSubtasks({ task, onChanged }: { task: Task; onChanged?: () => void }) {
+// onOpenTask — переход к связанной задаче (родителю или подзадаче) в той же карточке.
+export function TaskSubtasks({ task, onChanged, onOpenTask }: {
+  task: Task;
+  onChanged?: () => void;
+  onOpenTask?: (t: Task) => void;
+}) {
   const dt = useDt();
   const [all, setAll] = useState<Task[] | null>(null);
   const [draft, setDraft] = useState("");
@@ -65,7 +70,18 @@ export function TaskSubtasks({ task, onChanged }: { task: Task; onChanged?: () =
       <div className="flex items-center gap-2 text-ink-soft" style={{ fontSize: 13 }}>
         <RoyIcon name="arrow" size={13} className="shrink-0 -scale-x-100" />
         <span className="min-w-0 truncate">
-          {dt("Подзадача задачи", "Subtask of")} «{parent?.title ?? "…"}»
+          {dt("Подзадача задачи", "Subtask of")}{" "}
+          {parent && onOpenTask ? (
+            <button
+              type="button"
+              onClick={() => onOpenTask(parent)}
+              className="font-medium text-accent-ink underline-offset-2 hover:underline focus-visible:underline focus-visible:outline-none"
+            >
+              «{parent.title}»
+            </button>
+          ) : (
+            <>«{parent?.title ?? "…"}»</>
+          )}
         </span>
         <button
           type="button"
@@ -108,7 +124,20 @@ export function TaskSubtasks({ task, onChanged }: { task: Task; onChanged?: () =
             >
               {done && <RoyIcon name="check" size={10} strokeWidth={2.6} />}
             </button>
-            <span className={cn("min-w-0 flex-1 truncate", done ? "text-ink-mute line-through" : "text-ink")}>{k.title}</span>
+            {onOpenTask ? (
+              <button
+                type="button"
+                onClick={() => onOpenTask(k)}
+                className={cn(
+                  "min-w-0 flex-1 truncate text-left underline-offset-2 hover:underline focus-visible:underline focus-visible:outline-none",
+                  done ? "text-ink-mute line-through" : "text-ink hover:text-accent-ink",
+                )}
+              >
+                {k.title}
+              </button>
+            ) : (
+              <span className={cn("min-w-0 flex-1 truncate", done ? "text-ink-mute line-through" : "text-ink")}>{k.title}</span>
+            )}
             <button
               type="button"
               disabled={busy}

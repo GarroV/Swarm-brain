@@ -112,7 +112,13 @@ function TaskOrigin({ task }: { task: Task }) {
   );
 }
 
-export function TaskModal({ task: taskProp, open, onClose, onSaved, prefill, meetingId, projectId }: TaskModalProps) {
+export function TaskModal({ task: taskOpened, open, onClose, onSaved, prefill, meetingId, projectId }: TaskModalProps) {
+  // Переход по связи родитель ↔ подзадача внутри той же карточки (владелец 01.10.2026: «вижу
+  // подзадачу, но нельзя перейти. хотя интуитивно хочется кликнуть»). Карточка остаётся открытой,
+  // в ней просто другая задача; закрыли или открыли другую снаружи — переход забывается.
+  const [navTask, setNavTask] = useState<Task | null>(null);
+  useEffect(() => { setNavTask(null); }, [open, taskOpened?.id]);
+  const taskProp = navTask ?? taskOpened;
   // На десктопе карточка задачи — ВСЕГДА панель справа на всю высоту (docs/redesign/stand
   // detail.js), колонки формы в ней идут одна под другой. Решает само окно, а не вызывающий экран:
   // пока это был флаг, его передавали три точки входа из десяти, и спринты, доска, таймлайн и
@@ -389,8 +395,9 @@ export function TaskModal({ task: taskProp, open, onClose, onSaved, prefill, mee
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, isEdit, isPartial, title, description, status, dueDate, remindDate, recurFreq, country, taskRole, assigneeId, selProject, labelIds, links]);
 
-  // Закрытие: досрочно сохраняем pending-изменения (пока debounce не успел сработать).
-  const handleClose = () => {
+  // Досрочно сохраняем pending-изменения (пока debounce не успел сработать) — перед закрытием
+  // и перед переходом к связанной задаче.
+  const flushPending = () => {
     if (isEdit && task && !isPartial && title.trim()) {
       const snap = formSnapshot();
       if (snap !== savedSnapRef.current) {
@@ -401,6 +408,15 @@ export function TaskModal({ task: taskProp, open, onClose, onSaved, prefill, mee
         }
       }
     }
+  };
+  const openRelated = (t: Task) => {
+    flushPending();
+    setNavTask(t);
+  };
+
+  // Закрытие: досрочно сохраняем pending-изменения (пока debounce не успел сработать).
+  const handleClose = () => {
+    flushPending();
     onClose();
   };
 
@@ -841,7 +857,7 @@ export function TaskModal({ task: taskProp, open, onClose, onSaved, prefill, mee
 
           {isEdit && task && !isPartial && (
             <div data-card-block="subtasks" className="mt-3.5 border-t border-line pt-3">
-              <TaskSubtasks task={task} onChanged={onSaved} />
+              <TaskSubtasks task={task} onChanged={onSaved} onOpenTask={openRelated} />
             </div>
           )}
 
