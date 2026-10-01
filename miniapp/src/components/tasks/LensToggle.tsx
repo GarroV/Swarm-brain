@@ -30,7 +30,7 @@ export function LensToggle({
   const dt = useDt();
   return (
     <div className="flex flex-wrap items-center gap-1.5">
-      <div className={cn("inline-flex shrink-0 gap-[3px] rounded-[10px] border border-line bg-surface-2 p-[3px] transition-opacity", allStaff && "pointer-events-none opacity-40")}>
+      <div className={cn("inline-flex shrink-0 gap-[3px] rounded-full border border-line bg-surface-2 p-[3px] transition-opacity", allStaff && "pointer-events-none opacity-40")}>
         {SCOPE_ITEMS.map((it) => {
           const on = it.id === lens;
           return (
@@ -40,7 +40,7 @@ export function LensToggle({
               onClick={() => onChangeLens(it.id)}
               disabled={allStaff}
               className={cn(
-                "whitespace-nowrap rounded-[7px] px-3 py-1 font-semibold transition-colors",
+                "whitespace-nowrap rounded-full px-3 py-1 font-semibold transition-colors",
                 on ? "bg-surface text-ink shadow-[0_1px_4px_rgba(27,32,40,.08)]" : "text-ink-soft",
               )}
               style={{ fontSize: 12.5 }}
@@ -63,7 +63,7 @@ function ToggleChip({ on, onClick, label }: { on: boolean; onClick: () => void; 
       onClick={onClick}
       aria-pressed={on}
       className={cn(
-        "shrink-0 whitespace-nowrap rounded-[10px] border px-3 py-[7px] font-semibold transition-colors",
+        "shrink-0 whitespace-nowrap rounded-full border px-3 py-[7px] font-semibold transition-colors",
         on ? "border-accent-ink bg-accent-soft text-accent-ink" : "border-line bg-surface-2 text-ink-soft hover:bg-surface",
       )}
       style={{ fontSize: 12.5 }}

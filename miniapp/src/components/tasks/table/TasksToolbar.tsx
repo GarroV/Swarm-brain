@@ -105,7 +105,7 @@ export function TasksToolbar({ r, s }: { r: ReturnType<typeof useReminderTasks>;
     <div className="flex shrink-0 flex-wrap items-center gap-1.5 border-b border-line bg-surface-2 px-4 py-2">
       <span
         // Линзы — сегмент по .seg стенда: общая рамка, выбранная ячейка залита акцентом.
-        className={cn("inline-flex overflow-hidden rounded-[8px] border border-line-2 bg-surface", lensOff && "opacity-50")}
+        className={cn("inline-flex overflow-hidden rounded-full border border-line-2 bg-surface", lensOff && "opacity-50")}
         title={lensOff ? dt("Выбран сотрудник — показана вся его работа", "A person is selected — showing all their work") : undefined}
       >
         {LENSES.map(([id, ru, en]) => (
@@ -169,7 +169,7 @@ export function TasksToolbar({ r, s }: { r: ReturnType<typeof useReminderTasks>;
         {/* Фильтр свёрнут в пиктограмму, пока пуст и не в фокусе: так панель влезает в одну
             строку на 1300px. Клик по пиктограмме (это label) ставит фокус и раскрывает поле. */}
         <label title={dt("Фильтр по названию", "Filter by title")}
-          className="group flex h-[30px] items-center gap-1.5 rounded-[7px] border border-line-2 bg-surface px-[7px] text-ink-mute hover:border-ink-mute/40 focus-within:border-primary">
+          className="group flex h-[30px] items-center gap-1.5 rounded-full border border-line-2 bg-surface px-[9px] text-ink-mute hover:border-ink-mute/40 focus-within:border-primary">
           <RoyIcon name="search" size={14} />
           <input
             value={r.query}
@@ -200,7 +200,7 @@ export function TasksToolbar({ r, s }: { r: ReturnType<typeof useReminderTasks>;
         <button
           type="button"
           onClick={s.onNew}
-          className="inline-flex h-[30px] items-center gap-1 rounded-[7px] bg-primary px-3 font-semibold text-primary-foreground transition-colors hover:bg-primary/90 active:scale-[0.97]"
+          className="inline-flex h-[30px] items-center gap-1 rounded-full bg-primary px-3 font-semibold text-primary-foreground transition-colors hover:bg-primary/90 active:scale-[0.97]"
           style={{ fontSize: 12.5 }}
         >
           <RoyIcon name="plus" size={13} strokeWidth={2.4} />

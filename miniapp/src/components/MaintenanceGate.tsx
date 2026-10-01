@@ -115,7 +115,7 @@ export function MaintenanceGate() {
         <button
           type="button"
           onClick={() => location.reload()}
-          className="rounded-lg border border-border px-4 py-2 text-sm text-foreground transition-colors hover:bg-card"
+          className="rounded-full border border-border px-4 py-2 text-sm text-foreground transition-colors hover:bg-card"
         >
           Refresh · Обновить
         </button>

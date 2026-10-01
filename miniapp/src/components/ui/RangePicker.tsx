@@ -94,7 +94,7 @@ export function RangePicker({ value, onChange, variant = "rail" }: Props) {
         className={cn(
           variant === "toolbar"
             ? cn(
-              "inline-flex h-[30px] shrink-0 items-center gap-1.5 whitespace-nowrap rounded-[7px] border px-3 font-medium transition-colors",
+              "inline-flex h-[30px] shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border px-3 font-medium transition-colors",
               active ? "border-primary bg-accent-soft font-semibold text-accent-ink" : "border-line-2 bg-surface text-ink-soft hover:bg-surface-2 hover:text-ink",
             )
             : variant === "chip"
@@ -136,7 +136,7 @@ export function RangePicker({ value, onChange, variant = "rail" }: Props) {
                 <button key={id} type="button"
                   onClick={() => { onChange(presetRange(id)); setOpen(false); }}
                   className={cn(
-                    "rounded-lg border py-1 text-[11px] font-semibold transition-colors",
+                    "rounded-full border py-1 text-[11px] font-semibold transition-colors",
                     on ? "border-primary bg-primary text-primary-foreground"
                        : "border-line bg-surface-2 text-ink-soft hover:bg-surface hover:text-ink",
                   )}>{l}</button>
@@ -146,10 +146,10 @@ export function RangePicker({ value, onChange, variant = "rail" }: Props) {
 
           <div className="mb-1 flex items-center justify-between px-1">
             <button type="button" onClick={() => setView(addMonths(view, -1))}
-              className="rounded-md p-1.5 text-ink-soft hover:bg-surface-2" aria-label={tx("Предыдущий месяц", "Previous month")}><RoyIcon name="cleft" size={14} /></button>
+              className="rounded-full p-1.5 text-ink-soft hover:bg-surface-2" aria-label={tx("Предыдущий месяц", "Previous month")}><RoyIcon name="cleft" size={14} /></button>
             <span className="text-sm font-semibold text-ink">{monthName(view.getMonth(), lang)} {view.getFullYear()}</span>
             <button type="button" onClick={() => setView(addMonths(view, 1))}
-              className="rounded-md p-1.5 text-ink-soft hover:bg-surface-2" aria-label={tx("Следующий месяц", "Next month")}><RoyIcon name="cright" size={14} /></button>
+              className="rounded-full p-1.5 text-ink-soft hover:bg-surface-2" aria-label={tx("Следующий месяц", "Next month")}><RoyIcon name="cright" size={14} /></button>
           </div>
 
           <div className="mb-1 grid grid-cols-7">
@@ -185,7 +185,7 @@ export function RangePicker({ value, onChange, variant = "rail" }: Props) {
             )}
             {!anchor && value && (
               <button type="button" onClick={() => { onChange(null); setOpen(false); }}
-                className="flex-1 rounded-lg border border-line py-1.5 text-[12px] text-ink-soft transition-colors hover:border-destructive/40 hover:text-destructive">Сбросить период</button>
+                className="flex-1 rounded-full border border-line py-1.5 text-[12px] text-ink-soft transition-colors hover:border-destructive/40 hover:text-destructive">Сбросить период</button>
             )}
             {!anchor && !value && (
               <span className="flex-1 px-1 text-[11px] text-ink-soft">Или выберите период в календаре</span>

@@ -31,7 +31,7 @@ export function AskChip({ anchor, onOpen }: { anchor: AskAnchor; onOpen: () => v
   const dt = useDt();
   return createPortal(
     <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={onOpen}
-      className="fixed z-[60] inline-flex items-center gap-1.5 rounded-[9px] border border-accent-line bg-card font-semibold text-accent-ink shadow-lg transition-transform active:scale-[0.97]"
+      className="fixed z-[60] inline-flex items-center gap-1.5 rounded-full border border-accent-line bg-card font-semibold text-accent-ink shadow-lg transition-transform active:scale-[0.97]"
       style={{ ...place(anchor, 120), padding: "5px 10px", fontSize: 12 }}>
       <RoyIcon name="spark" size={13} strokeWidth={1.9} /> {dt("Спросить", "Ask")}
     </button>,
@@ -81,7 +81,7 @@ export function AskPopover({ anchor, fragment, ask, onApply, onClose }: {
     }
   };
 
-  const btn = "rounded-[8px] px-3 py-2 font-semibold transition-transform active:scale-[0.98]";
+  const btn = "rounded-full px-3 py-2 font-semibold transition-transform active:scale-[0.98]";
   return createPortal(
     <div ref={boxRef} role="dialog" aria-label={dt("Вопрос по встрече", "Ask about the meeting")}
       className="fixed z-[60] flex flex-col gap-2.5 rounded-[10px] border border-line bg-card p-3 shadow-lg dark:backdrop-blur-lg"
@@ -91,7 +91,7 @@ export function AskPopover({ anchor, fragment, ask, onApply, onClose }: {
           {fragment}
         </p>
         <button type="button" onClick={onClose} aria-label={dt("Закрыть", "Close")} title="Esc"
-          className="-mr-1 -mt-1 shrink-0 rounded-md p-1 text-ink-mute transition-colors hover:bg-surface-2 hover:text-ink">
+          className="-mr-1 -mt-1 shrink-0 rounded-full p-1 text-ink-mute transition-colors hover:bg-surface-2 hover:text-ink">
           <RoyIcon name="x" size={14} strokeWidth={2} />
         </button>
       </div>

@@ -204,7 +204,7 @@ export function SpaceSwitcher(
       aria-label={title}
       disabled={busy}
       onClick={onClick}
-      className="h-[28px] shrink-0 rounded-[7px] border border-line bg-surface px-2 text-ink-soft transition-colors hover:bg-surface-2 disabled:opacity-40"
+      className="h-[28px] shrink-0 rounded-full border border-line bg-surface px-2 text-ink-soft transition-colors hover:bg-surface-2 disabled:opacity-40"
       style={{ fontSize: 12.5 }}
     >
       {glyph}

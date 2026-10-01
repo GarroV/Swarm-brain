@@ -144,7 +144,7 @@ export function TaskLinksField(
             type="button"
             onClick={submit}
             title={dt("Добавить ссылку", "Add link")}
-            className="shrink-0 rounded-lg border border-line bg-surface p-1.5 text-ink-soft hover:bg-surface-2"
+            className="shrink-0 rounded-full border border-line bg-surface p-1.5 text-ink-soft hover:bg-surface-2"
           >
             <RoyIcon name="plus" size={12} strokeWidth={2} />
           </button>

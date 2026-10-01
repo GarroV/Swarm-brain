@@ -296,7 +296,7 @@ export function Chip({ children, active, onClick, leading }: { children: ReactNo
 type SegItem = { id: string; label: string; count?: number };
 export function Segmented({ items, value, onChange }: { items: SegItem[]; value: string; onChange: (id: string) => void }) {
   return (
-    <div className="flex overflow-hidden rounded-[8px] border border-line-2 bg-surface">
+    <div className="flex overflow-hidden rounded-full border border-line-2 bg-surface">
       {items.map((it) => {
         const on = it.id === value;
         return (
@@ -502,7 +502,7 @@ function TezisyCopyRow({ text, meta }: { text: string; meta: TezisyCopyMeta }) {
         type="button"
         onClick={copy}
         title={dt("Скопировать тезисы с пометкой об AI", "Copy the theses with the AI notice")}
-        className="flex shrink-0 items-center gap-1 rounded-[8px] border border-line px-2 font-medium text-ink-soft transition-colors hover:bg-surface-2 active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+        className="flex shrink-0 items-center gap-1 rounded-full border border-line px-2 font-medium text-ink-soft transition-colors hover:bg-surface-2 active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
         style={{ fontSize: 11, minHeight: 24 }}
       >
         {copied && <RoyIcon name="check" size={12} strokeWidth={2.1} className="shrink-0" />}
@@ -600,7 +600,7 @@ export function FAB({ onClick, className, "aria-label": ariaLabel = "Созда�
       // верхнего края и съедал по ним тап и свайп (аудит мобилки 2026-08-24). Отступ снизу
       // считается от таб-бара (69px) плюс безопасная зона.
       className={cn(
-        "fixed z-20 flex items-center justify-center rounded-[14px] bg-primary text-primary-foreground border-0 shadow-[0_10px_24px_-6px_rgba(31,78,156,.45)]",
+        "fixed z-20 flex items-center justify-center rounded-full bg-primary text-primary-foreground border-0 shadow-[0_10px_24px_-6px_rgba(31,78,156,.45)]",
         TAP,
         className,
       )}
@@ -623,7 +623,7 @@ function PanelHeader({ panel, onBack, title, right }: { panel: DetailPanelCtx; o
     <div className="relative z-30 flex shrink-0 items-center gap-2 border-b border-line bg-background px-4 dark:bg-[var(--surface)]" style={{ minHeight: 44 }}>
       {panel.canBack && (
         <button type="button" onClick={onBack} aria-label={dt("Назад", "Back")}
-          className="inline-flex size-7 items-center justify-center rounded-[7px] text-ink-soft transition-colors hover:bg-surface-2 hover:text-ink">
+          className="inline-flex size-7 items-center justify-center rounded-full text-ink-soft transition-colors hover:bg-surface-2 hover:text-ink">
           <RoyIcon name="cleft" size={16} strokeWidth={2.2} />
         </button>
       )}
@@ -632,7 +632,7 @@ function PanelHeader({ panel, onBack, title, right }: { panel: DetailPanelCtx; o
       </div>
       {right}
       <button type="button" onClick={panel.onClose} aria-label={dt("Закрыть карточку", "Close the card")}
-        className="inline-flex size-7 items-center justify-center rounded-[7px] border border-line-2 text-ink-soft transition-colors hover:bg-surface-2 hover:text-ink">
+        className="inline-flex size-7 items-center justify-center rounded-full border border-line-2 text-ink-soft transition-colors hover:bg-surface-2 hover:text-ink">
         <RoyIcon name="x" size={14} strokeWidth={2.2} />
       </button>
     </div>

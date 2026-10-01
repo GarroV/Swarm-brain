@@ -255,7 +255,7 @@ export function TimelineView() {
                       onPointerMove={onPointerMove}
                       onPointerUp={onPointerUp}
                       onPointerCancel={onPointerCancel}
-                      className="size-[18px] rotate-45 rounded-[5px] shadow-md ring-2 ring-surface touch-pan-y cursor-grab active:cursor-grabbing transition-transform hover:scale-110"
+                      className="size-[18px] rotate-45 rounded-full shadow-md ring-2 ring-surface touch-pan-y cursor-grab active:cursor-grabbing transition-transform hover:scale-110"
                       style={{ background: bg }}
                       title={t.title}
                       aria-label={t.title}

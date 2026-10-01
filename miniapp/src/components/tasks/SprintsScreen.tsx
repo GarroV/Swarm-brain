@@ -886,7 +886,7 @@ export function SprintsScreen() {
             type="button"
             onClick={submitCycle}
             disabled={busy}
-            className="h-[28px] rounded-[7px] bg-primary px-3 font-semibold text-primary-foreground disabled:opacity-50"
+            className="h-[28px] rounded-full bg-primary px-3 font-semibold text-primary-foreground disabled:opacity-50"
             style={{ fontSize: 12.5 }}
           >
             {busy ? dt("Создание…", "Creating…") : dt("Создать", "Create")}
@@ -1082,7 +1082,7 @@ export function SprintsScreen() {
                 type="button"
                 onClick={() => setPoolOpen(false)}
                 title={dt("Закрыть", "Close")}
-                className="ml-auto rounded-lg p-1.5 text-ink-soft hover:bg-surface-2 hover:text-ink"
+                className="ml-auto rounded-full p-1.5 text-ink-soft hover:bg-surface-2 hover:text-ink"
               >
                 <RoyIcon name="x" size={14} />
               </button>

@@ -196,7 +196,7 @@ function DashBody({ loading, failed, errorText, retryText, onRetry, empty, empty
             <button
               type="button"
               onClick={onRetry}
-              className="rounded-[10px] px-3 py-1.5 font-semibold text-ink-mute transition-colors hover:bg-surface-2 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+              className="rounded-full px-3 py-1.5 font-semibold text-ink-mute transition-colors hover:bg-surface-2 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
               style={{ fontSize: 12.5 }}
             >
               {retryText ?? "Повторить"}

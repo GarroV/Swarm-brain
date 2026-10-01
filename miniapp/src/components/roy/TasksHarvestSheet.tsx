@@ -146,7 +146,7 @@ export function TasksHarvestSheet({ open, onClose, anchorRect, tasks, users, meI
                 aria-label={dt("Закрыть разбор", "Close review")}
                 onClick={onClose}
                 disabled={busy}
-                className="inline-flex shrink-0 items-center justify-center rounded-[8px] border border-line bg-surface text-ink-mute transition-[opacity,border-color] duration-150 hover:border-line-2 hover:opacity-70 disabled:opacity-40"
+                className="inline-flex shrink-0 items-center justify-center rounded-full border border-line bg-surface text-ink-mute transition-[opacity,border-color] duration-150 hover:border-line-2 hover:opacity-70 disabled:opacity-40"
                 style={{ width: 40, height: 40 }}
               >
                 <RoyIcon name="x" size={16} strokeWidth={1.9} />
@@ -184,7 +184,7 @@ export function TasksHarvestSheet({ open, onClose, anchorRect, tasks, users, meI
                   type="button"
                   onClick={() => actions.toggleAll(!allSelected)}
                   disabled={busy || streaming}
-                  className="rounded-[8px] border border-line bg-surface font-semibold text-ink-soft transition-[transform,border-color] duration-150 hover:scale-[1.03] hover:border-line-2 active:scale-[0.97] disabled:opacity-50"
+                  className="rounded-full border border-line bg-surface font-semibold text-ink-soft transition-[transform,border-color] duration-150 hover:scale-[1.03] hover:border-line-2 active:scale-[0.97] disabled:opacity-50"
                   style={{ padding: "6px 12px", fontSize: 12, minHeight: 40 }}
                 >
                   {allSelected ? dt("Снять все", "Clear all") : dt("Выбрать все", "Select all")}
@@ -194,7 +194,7 @@ export function TasksHarvestSheet({ open, onClose, anchorRect, tasks, users, meI
                 type="button"
                 onClick={actions.addOwn}
                 disabled={busy}
-                className="inline-flex items-center gap-1.5 rounded-[8px] border border-line bg-surface font-semibold text-ink-soft transition-[transform,border-color] duration-150 hover:scale-[1.03] hover:border-line-2 active:scale-[0.97] disabled:opacity-50"
+                className="inline-flex items-center gap-1.5 rounded-full border border-line bg-surface font-semibold text-ink-soft transition-[transform,border-color] duration-150 hover:scale-[1.03] hover:border-line-2 active:scale-[0.97] disabled:opacity-50"
                 style={{ padding: "6px 12px", fontSize: 12, minHeight: 40 }}
               >
                 <RoyIcon name="plus" size={13} strokeWidth={2.1} />
@@ -204,7 +204,7 @@ export function TasksHarvestSheet({ open, onClose, anchorRect, tasks, users, meI
                 type="button"
                 onClick={actions.commit}
                 disabled={busy || streaming || selected.length === 0}
-                className="ml-auto inline-flex items-center justify-center gap-2 rounded-[8px] font-semibold transition-[transform,opacity,filter,background] duration-150 enabled:hover:scale-[1.02] enabled:hover:brightness-105 active:scale-[0.98] disabled:opacity-60"
+                className="ml-auto inline-flex items-center justify-center gap-2 rounded-full font-semibold transition-[transform,opacity,filter,background] duration-150 enabled:hover:scale-[1.02] enabled:hover:brightness-105 active:scale-[0.98] disabled:opacity-60"
                 // Пока ничего не выбрано, кнопка НЕ выглядит главной: акцентная заливка на
                 // неработающей кнопке читается как «нажми», и человек тыкает в пустоту.
                 style={(selected.length === 0 || streaming) && !busy
@@ -350,7 +350,7 @@ function HarvestRow({ task, users, meId, busy, editing, onStartEdit, onStopEdit,
             aria-label={dt("Открыть в редакторе задачи", "Open in task editor")}
             onClick={() => actions.edit(task)}
             disabled={busy}
-            className="inline-flex items-center justify-center rounded-[9px] border border-line bg-surface text-ink-mute transition-[opacity,border-color] hover:border-line-2 hover:opacity-70 disabled:opacity-40"
+            className="inline-flex items-center justify-center rounded-full border border-line bg-surface text-ink-mute transition-[opacity,border-color] hover:border-line-2 hover:opacity-70 disabled:opacity-40"
             style={{ width: 36, height: 36 }}
           >
             <RoyIcon name="pencil" size={13} strokeWidth={1.9} />
@@ -360,7 +360,7 @@ function HarvestRow({ task, users, meId, busy, editing, onStartEdit, onStopEdit,
             aria-label={dt("Убрать предложенную задачу", "Discard suggestion")}
             onClick={() => actions.remove(task._key)}
             disabled={busy}
-            className="inline-flex items-center justify-center rounded-[9px] border border-line bg-surface text-ink-mute transition-[opacity,border-color] hover:border-line-2 hover:opacity-70 disabled:opacity-40"
+            className="inline-flex items-center justify-center rounded-full border border-line bg-surface text-ink-mute transition-[opacity,border-color] hover:border-line-2 hover:opacity-70 disabled:opacity-40"
             style={{ width: 36, height: 36 }}
           >
             <RoyIcon name="x" size={13} strokeWidth={1.9} />

@@ -66,7 +66,7 @@ export function PersonalTasks({ data, className }: { data: DashboardData; classN
           <button
             type="button"
             onClick={() => openTasks("mine", "all")}
-            className="mt-2 block w-full rounded-[10px] py-2 text-center font-medium text-ink-mute transition-colors hover:bg-surface-2"
+            className="mt-2 block w-full rounded-full py-2 text-center font-medium text-ink-mute transition-colors hover:bg-surface-2"
             style={{ fontSize: 12 }}
           >
             {dt("+ ещё", "+ more")} {moreCount}

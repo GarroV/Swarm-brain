@@ -245,7 +245,7 @@ function ThemeSwitch() {
           <button key={t} type="button" role="radio" aria-checked={theme === t}
             title={dt(...THEME_LABEL[t])} aria-label={dt(...THEME_LABEL[t])} onClick={() => pick(t)}
             className={cn(
-              "grid size-[28px] place-items-center rounded-[7px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]",
+              "grid size-[28px] place-items-center rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]",
               theme === t ? "bg-accent-soft text-accent-ink" : "text-ink-mute hover:bg-surface hover:text-ink",
             )}>
             <RoyIcon name={THEME_ICON[t]} size={15} strokeWidth={1.7} />
@@ -255,7 +255,7 @@ function ThemeSwitch() {
       <button type="button" onClick={() => pick(next)}
         title={`${dt("Тема", "Theme")}: ${dt(...THEME_LABEL[theme])}`}
         aria-label={`${dt("Тема", "Theme")}: ${dt(...THEME_LABEL[theme])}`}
-        className="hidden h-[34px] w-full items-center justify-center rounded-[8px] text-ink-soft hover:bg-surface hover:text-ink max-[1099px]:flex focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]">
+        className="hidden h-[34px] w-full items-center justify-center rounded-full text-ink-soft hover:bg-surface hover:text-ink max-[1099px]:flex focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]">
         <RoyIcon name={THEME_ICON[theme]} size={16} strokeWidth={1.7} />
       </button>
     </>

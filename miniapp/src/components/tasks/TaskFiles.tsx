@@ -195,7 +195,7 @@ export function TaskFiles({ taskId, taskOwnerId }: { taskId: string; taskOwnerId
             disabled={full}
             onClick={() => inputRef.current?.click()}
             title={full ? reasonText("too_many") : limitText}
-            className="ml-auto inline-flex items-center gap-1 rounded-[7px] px-2 py-1 font-medium text-primary transition-colors hover:bg-surface-2 disabled:cursor-not-allowed disabled:text-ink-mute"
+            className="ml-auto inline-flex items-center gap-1 rounded-full px-2 py-1 font-medium text-primary transition-colors hover:bg-surface-2 disabled:cursor-not-allowed disabled:text-ink-mute"
             style={{ fontSize: 12.5 }}
           >
             <RoyIcon name="clip" size={14} strokeWidth={1.8} />
@@ -263,7 +263,7 @@ export function TaskFiles({ taskId, taskOwnerId }: { taskId: string; taskOwnerId
           disabled={full}
           onClick={() => inputRef.current?.click()}
           className={cn(
-            "mt-2 flex w-full items-center justify-center gap-2 rounded-[10px] border border-dashed border-line-2 px-3 text-ink-mute transition-colors",
+            "mt-2 flex w-full items-center justify-center gap-2 rounded-full border border-dashed border-line-2 px-3 text-ink-mute transition-colors",
             "hover:border-primary/50 hover:text-ink-soft disabled:cursor-not-allowed disabled:hover:border-line-2 disabled:hover:text-ink-mute",
             count > 0 ? "py-2" : "py-4",
           )}
@@ -358,7 +358,7 @@ function UploadRow({ u, en, onCancel }: { u: Uploading; en: boolean; onCancel: (
 function IconBtn({ icon, label, onClick }: { icon: RoyIconName; label: string; onClick: () => void }) {
   return (
     <button type="button" onClick={onClick} aria-label={label} title={label}
-      className="rounded-[7px] p-1.5 text-ink-mute transition-colors hover:bg-surface hover:text-ink">
+      className="rounded-full p-1.5 text-ink-mute transition-colors hover:bg-surface hover:text-ink">
       <RoyIcon name={icon} size={15} strokeWidth={1.8} />
     </button>
   );
