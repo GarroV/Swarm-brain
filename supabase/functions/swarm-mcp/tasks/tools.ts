@@ -19,6 +19,7 @@ import {
   projectNotFoundMessage,
   type RecentCommentRow,
 } from "./format.ts";
+import { externalFetch, VIA_TELEGRAM } from "../../_shared/external-fetch.ts";
 
 // Оверсайт руководителя по ЗАДАЧАМ — осознанное решение владельца, см. docs/decisions/2026-08-21-admin-visibility.md.
 // На проекты и записи он НЕ распространяется.
@@ -29,11 +30,11 @@ const TELEGRAM_BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN");
 async function notifyCreator(telegramId: number, taskTitle: string): Promise<void> {
   if (!TELEGRAM_BOT_TOKEN) return;
   const text = `📋 Новая задача на проверке: <b>${taskTitle}</b>\n\nОткрой /tasks → ⏳ На проверке чтобы подтвердить.`;
-  await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+  await externalFetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ chat_id: telegramId, text, parse_mode: "HTML" }),
-  });
+  }, VIA_TELEGRAM);
 }
 
 const supabase = createClient(

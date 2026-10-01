@@ -1,5 +1,6 @@
-import { supabase, ADMIN_USER_ID } from "./supabase.ts";
+import { ADMIN_USER_ID, supabase } from "./supabase.ts";
 import { sendMessage } from "./telegram.ts";
+import { externalFetch, VIA_READ_AI } from "../../_shared/external-fetch.ts";
 
 const READ_AI_TOKEN_URL = "https://authn.read.ai/oauth2/token";
 export const READ_AI_API = "https://api.read.ai/v1";
@@ -11,7 +12,7 @@ export async function getReadAiToken(): Promise<string | null> {
 
   if (new Date(data.expires_at) > new Date(Date.now() + 60_000)) return data.access_token;
 
-  const res = await fetch(READ_AI_TOKEN_URL, {
+  const res = await externalFetch(READ_AI_TOKEN_URL, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
@@ -19,10 +20,13 @@ export async function getReadAiToken(): Promise<string | null> {
       refresh_token: data.refresh_token,
       client_id: data.client_id,
     }),
-  });
+  }, VIA_READ_AI);
   const tokenData = await res.json();
   if (!res.ok) {
-    await sendMessage(ADMIN_USER_ID, `⚠️ <b>Read.ai отключился</b> — токен истёк и не обновился.\n\nНажми /connect чтобы переподключить.`);
+    await sendMessage(
+      ADMIN_USER_ID,
+      `⚠️ <b>Read.ai отключился</b> — токен истёк и не обновился.\n\nНажми /connect чтобы переподключить.`,
+    );
     return null;
   }
 
@@ -40,9 +44,9 @@ export async function getReadAiToken(): Promise<string | null> {
 export async function readAiGet(path: string): Promise<unknown> {
   const token = await getReadAiToken();
   if (!token) throw new Error("Read.ai не подключён. Используй /connect");
-  const res = await fetch(`${READ_AI_API}${path}`, {
+  const res = await externalFetch(`${READ_AI_API}${path}`, {
     headers: { Authorization: `Bearer ${token}` },
-  });
+  }, VIA_READ_AI);
   const data = await res.json();
   if (!res.ok) throw new Error((data as { message?: string }).message ?? "Read.ai API error");
   return data;

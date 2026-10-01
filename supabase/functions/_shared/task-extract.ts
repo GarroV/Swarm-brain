@@ -1,4 +1,5 @@
 import { normalizeExtractedDueDate, todayIso } from "./llm-date.ts";
+import { externalFetch, VIA_OPENAI_LONG } from "./external-fetch.ts";
 
 // Вынесено из swarm-api/index.ts без изменений (issue #514): тем же экстрактором теперь
 // пользуется MCP (extract_tasks_from_meeting), а копий промпта в проекте и так хватает.
@@ -66,14 +67,14 @@ export function callExtractor(
   today: string,
   stream: boolean,
 ): Promise<Response> {
-  return fetch("https://api.openai.com/v1/chat/completions", {
+  return externalFetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${Deno.env.get("OPENAI_API_KEY")!}`,
     },
     body: extractRequestBody(text, today, stream),
-  });
+  }, VIA_OPENAI_LONG);
 }
 
 // Слой 2 поверх промпта: выдуманный моделью год и строковые «пустоты» чиним здесь — промпт

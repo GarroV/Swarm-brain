@@ -32,6 +32,7 @@ import { PUBLISHED_STATUS } from "../_shared/meeting-frozen.ts";
 import { bindGrantMeeting, GrantScopeError } from "../_shared/agent-grant.ts";
 import { coOwnersFromAttendees, mergeAttendees } from "../_shared/meeting-owners.ts";
 import { BOT_PROFILE } from "../_shared/bot-profile.ts";
+import { externalFetch, VIA_OPENAI_EMBEDDING } from "../_shared/external-fetch.ts";
 
 // meeting-claim — шаг ДО транскрибации (см. transcribator/10-REVISED-DESIGN.md §4, §7.1).
 // Записывают все участники; перед запуском Whisper каждый делает claim по ключу встречи.
@@ -124,7 +125,7 @@ function fail(message: string, status = 400): Response {
 }
 
 async function getEmbedding(text: string): Promise<number[]> {
-  const res = await fetch("https://api.openai.com/v1/embeddings", {
+  const res = await externalFetch("https://api.openai.com/v1/embeddings", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -134,7 +135,7 @@ async function getEmbedding(text: string): Promise<number[]> {
       model: "text-embedding-3-small",
       input: text.slice(0, 8000),
     }),
-  });
+  }, VIA_OPENAI_EMBEDDING);
   const data = await res.json();
   if (!res.ok) {
     throw new Error(

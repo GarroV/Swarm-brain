@@ -7,7 +7,8 @@
 // saveEntry) поверх собственных openai.ts-обёрток — не трогаем, чтобы не задеть множество
 // бот-флоу; но новые/починенные пути зовут ЭТОТ модуль.
 
-import { normalizeCountries, COUNTRY_PROMPT_RULE, ENTRY_TYPE_PROMPT_RULE } from "./countries.ts";
+import { COUNTRY_PROMPT_RULE, ENTRY_TYPE_PROMPT_RULE, normalizeCountries } from "./countries.ts";
+import { externalFetch, VIA_OPENAI_CHAT, VIA_OPENAI_EMBEDDING } from "./external-fetch.ts";
 
 const OPENAI = "https://api.openai.com/v1";
 
@@ -58,7 +59,7 @@ export function buildEmbeddingInput(baseText: string, countries: readonly string
 // Фейл-безопасно: при любой ошибке — пустые страны/note/null (вызывающий решает про General).
 export async function extractEntryMeta(content: string, openaiKey: string): Promise<EntryMeta> {
   try {
-    const res = await fetch(`${OPENAI}/chat/completions`, {
+    const res = await externalFetch(`${OPENAI}/chat/completions`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${openaiKey}` },
       body: JSON.stringify({
@@ -70,13 +71,14 @@ export async function extractEntryMeta(content: string, openaiKey: string): Prom
             role: "system",
             content:
               'Проанализируй текст и верни JSON (только JSON, без markdown): {"countries":["Spain","Bulgaria"],"entry_type":"meeting|note","entry_date":null}\n' +
-              COUNTRY_PROMPT_RULE + "\n" + ENTRY_TYPE_PROMPT_RULE + "\nentry_date — дата события из текста, null если нет.",
+              COUNTRY_PROMPT_RULE + "\n" + ENTRY_TYPE_PROMPT_RULE +
+              "\nentry_date — дата события из текста, null если нет.",
           },
           { role: "user", content: content.slice(0, 4000) },
         ],
         max_tokens: 200,
       }),
-    });
+    }, VIA_OPENAI_CHAT);
     if (!res.ok) return { countries: [], entry_type: "note", entry_date: null };
     const parsed = JSON.parse((await res.json()).choices[0].message.content);
     return {
@@ -92,11 +94,11 @@ export async function extractEntryMeta(content: string, openaiKey: string): Prom
 // Эмбеддинг text-embedding-3-small. null при ошибке (вызывающий сам решает).
 export async function embed(text: string, openaiKey: string): Promise<number[] | null> {
   try {
-    const res = await fetch(`${OPENAI}/embeddings`, {
+    const res = await externalFetch(`${OPENAI}/embeddings`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${openaiKey}` },
       body: JSON.stringify({ model: "text-embedding-3-small", input: text.slice(0, 8000) }),
-    });
+    }, VIA_OPENAI_EMBEDDING);
     if (!res.ok) return null;
     return (await res.json()).data[0].embedding;
   } catch {

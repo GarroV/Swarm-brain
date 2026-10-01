@@ -1,8 +1,7 @@
-import { saveEntry, generateSummary, uploadToStorage, fileLink, registerUploadedFile } from "../lib/storage.ts"; // generateSummary used for multi-chunk docs only
-import { sendMessage, getTelegramFileUrl } from "../lib/telegram.ts";
+import { fileLink, generateSummary, registerUploadedFile, saveEntry, uploadToStorage } from "../lib/storage.ts"; // generateSummary used for multi-chunk docs only
+import { getTelegramFileUrl, sendMessage } from "../lib/telegram.ts";
 import { TgMessage } from "../lib/types.ts";
 import {
-
   dropConsecutiveRuns,
   isRepeatedFiller,
   isSingleTokenSpam,
@@ -11,7 +10,13 @@ import {
 } from "../../_shared/whisper-hallucinations.ts";
 // @ts-ignore - esm.sh module
 import * as XLSX from "https://esm.sh/xlsx@0.18.5";
-
+import {
+  externalFetch,
+  VIA_OPENAI_CHAT,
+  VIA_OPENAI_LONG,
+  VIA_TELEGRAM_FILE,
+  VIA_USER_LINK,
+} from "../../_shared/external-fetch.ts";
 
 // Файл залит, но текста из него не достали (не разобрался формат / пусто). Запись всё равно
 // создаём: она ВЛАДЕЛЕЦ файла. Без неё объект остаётся в хранилище ничей, реестра нет, и
@@ -24,8 +29,12 @@ async function keepFileOnly(
   path: string,
 ): Promise<string> {
   const saved = await saveEntry(
-    `Файл: ${name}`, username, "document",
-    { file_name: name, mime, file_url: path }, undefined, groupId,
+    `Файл: ${name}`,
+    username,
+    "document",
+    { file_name: name, mime, file_url: path },
+    undefined,
+    groupId,
   );
   await registerUploadedFile(path, saved.id);
   return fileLink(path);
@@ -35,7 +44,7 @@ const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY")!;
 
 async function transcribeAudio(fileId: string): Promise<string> {
   const tgUrl = await getTelegramFileUrl(fileId);
-  const audioRes = await fetch(tgUrl);
+  const audioRes = await externalFetch(tgUrl, {}, VIA_TELEGRAM_FILE);
   const audioBuffer = await audioRes.arrayBuffer();
 
   const form = new FormData();
@@ -45,11 +54,11 @@ async function transcribeAudio(fileId: string): Promise<string> {
   // (тишина в голосовом так же даёт ютуб-«титры», которые иначе ушли бы в базу как есть).
   form.append("response_format", "verbose_json");
 
-  const res = await fetch("https://api.openai.com/v1/audio/transcriptions", {
+  const res = await externalFetch("https://api.openai.com/v1/audio/transcriptions", {
     method: "POST",
     headers: { Authorization: `Bearer ${OPENAI_API_KEY}` },
     body: form,
-  });
+  }, VIA_OPENAI_LONG);
   const data = await res.json();
   if (!res.ok) throw new Error(data.error?.message ?? "Whisper error");
   const segments = (data.segments ?? []) as Array<{ text: string; no_speech_prob?: number; avg_logprob?: number }>;
@@ -67,7 +76,7 @@ async function transcribeAudio(fileId: string): Promise<string> {
 
 async function describeImage(fileId: string): Promise<string> {
   const tgUrl = await getTelegramFileUrl(fileId);
-  const res = await fetch("https://api.openai.com/v1/chat/completions", {
+  const res = await externalFetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${OPENAI_API_KEY}` },
     body: JSON.stringify({
@@ -75,13 +84,17 @@ async function describeImage(fileId: string): Promise<string> {
       messages: [{
         role: "user",
         content: [
-          { type: "text", text: "Опиши подробно содержимое этого изображения на русском языке. Если есть текст — выпиши его полностью." },
+          {
+            type: "text",
+            text:
+              "Опиши подробно содержимое этого изображения на русском языке. Если есть текст — выпиши его полностью.",
+          },
           { type: "image_url", image_url: { url: tgUrl } },
         ],
       }],
       max_tokens: 1000,
     }),
-  });
+  }, VIA_OPENAI_CHAT);
   const data = await res.json();
   if (!res.ok) throw new Error(data.error?.message ?? "Vision error");
   return data.choices[0].message.content;
@@ -205,7 +218,9 @@ export function isBlockedIp(ip: string): boolean {
     // IPv4-mapped ::ffff:a.b.c.d (incl. WHATWG hex form ::ffff:HHHH:HHHH) → apply v4 rules.
     if (top5Zero && h5 === 0xffff) return isBlockedIpv4(embeddedV4(h6, h7));
     // NAT64 64:ff9b::/96 → embedded IPv4.
-    if (h0 === 0x0064 && h1 === 0xff9b && h2 === 0 && h3 === 0 && h4 === 0 && h5 === 0) return isBlockedIpv4(embeddedV4(h6, h7));
+    if (h0 === 0x0064 && h1 === 0xff9b && h2 === 0 && h3 === 0 && h4 === 0 && h5 === 0) {
+      return isBlockedIpv4(embeddedV4(h6, h7));
+    }
     // Loopback ::1 and unspecified :: (before the v4-compat catch below).
     if (top5Zero && h5 === 0 && h6 === 0 && (h7 === 0 || h7 === 1)) return true;
     // IPv4-compatible (deprecated) ::a.b.c.d → embedded IPv4.
@@ -285,10 +300,10 @@ async function fetchUrlContent(url: string): Promise<string> {
   // Manual redirect loop: validate every hop so a public→internal redirect
   // cannot bypass the guard above.
   for (let hop = 0; hop <= MAX_REDIRECT_HOPS; hop++) {
-    res = await fetch(current.toString(), {
+    res = await externalFetch(current.toString(), {
       headers: { "User-Agent": "Mozilla/5.0 (compatible; SwarmBot/1.0)" },
       redirect: "manual",
-    });
+    }, VIA_USER_LINK);
 
     if (res.status >= 300 && res.status < 400) {
       const location = res.headers.get("location");
@@ -321,7 +336,25 @@ async function fetchUrlContent(url: string): Promise<string> {
     .slice(0, 15000);
 }
 
-const TEXT_EXTENSIONS = new Set([".txt", ".md", ".csv", ".log", ".json", ".xml", ".yaml", ".yml", ".toml", ".ini", ".env", ".ts", ".js", ".py", ".html", ".htm", ".css"]);
+const TEXT_EXTENSIONS = new Set([
+  ".txt",
+  ".md",
+  ".csv",
+  ".log",
+  ".json",
+  ".xml",
+  ".yaml",
+  ".yml",
+  ".toml",
+  ".ini",
+  ".env",
+  ".ts",
+  ".js",
+  ".py",
+  ".html",
+  ".htm",
+  ".css",
+]);
 
 function getFileExt(name: string): string {
   const idx = name.lastIndexOf(".");
@@ -347,12 +380,12 @@ function isSpreadsheet(mime: string, name: string): boolean {
 }
 
 function parseSpreadsheet(buffer: ArrayBuffer): string {
-  // @ts-ignore
+  // @ts-ignore: XLSX грузится из CDN без типов
   const wb = XLSX.read(new Uint8Array(buffer), { type: "array", sheetStubs: true });
   const parts: string[] = [];
-  // @ts-ignore
+  // @ts-ignore: XLSX грузится из CDN без типов
   for (const sheetName of wb.SheetNames) {
-    // @ts-ignore
+    // @ts-ignore: XLSX грузится из CDN без типов
     const csv: string = XLSX.utils.sheet_to_csv(wb.Sheets[sheetName], { blankrows: false });
     const trimmed = csv.trim();
     if (trimmed) parts.push(`=== Лист: ${sheetName} ===\n${trimmed}`);
@@ -360,17 +393,25 @@ function parseSpreadsheet(buffer: ArrayBuffer): string {
   return parts.join("\n\n");
 }
 
-export async function handleDocument(chatId: number, username: string, doc: NonNullable<TgMessage["document"]>, groupId: string): Promise<void> {
+export async function handleDocument(
+  chatId: number,
+  username: string,
+  doc: NonNullable<TgMessage["document"]>,
+  groupId: string,
+): Promise<void> {
   const mime = doc.mime_type ?? "";
   const name = doc.file_name ?? "файл";
 
   if (isTextFile(mime, name)) {
     await sendMessage(chatId, `Читаю файл <b>${name}</b>...`);
     const tgUrl = await getTelegramFileUrl(doc.file_id);
-    const res = await fetch(tgUrl);
+    const res = await externalFetch(tgUrl, {}, VIA_TELEGRAM_FILE);
     const buffer = await res.arrayBuffer();
     const text = new TextDecoder("utf-8").decode(buffer);
-    if (!text.trim()) { await sendMessage(chatId, "Файл пустой."); return; }
+    if (!text.trim()) {
+      await sendMessage(chatId, "Файл пустой.");
+      return;
+    }
 
     const [stored, summary] = await Promise.all([
       uploadToStorage(name, buffer, mime || "text/plain", "documents"),
@@ -382,8 +423,17 @@ export async function handleDocument(chatId: number, username: string, doc: NonN
     for (let p = 0; p < text.length; p += CHUNK - OVL) chunks.push(text.slice(p, p + CHUNK));
     let ownerEntryId: string | null = null;
     for (let i = 0; i < chunks.length; i++) {
-      const saved = await saveEntry(chunks[i], username, "document",
-        { file_name: name, mime: mime || "text/plain", chunk: i + 1, total_chunks: chunks.length, file_url: stored.path },
+      const saved = await saveEntry(
+        chunks[i],
+        username,
+        "document",
+        {
+          file_name: name,
+          mime: mime || "text/plain",
+          chunk: i + 1,
+          total_chunks: chunks.length,
+          file_url: stored.path,
+        },
         i === 0 ? (summary ?? undefined) : undefined,
         groupId,
       );
@@ -391,7 +441,9 @@ export async function handleDocument(chatId: number, username: string, doc: NonN
     }
     // Файл один на все чанки — владельцем реестра делаем первый (права у чанков одинаковые).
     if (stored.path && ownerEntryId) await registerUploadedFile(stored.path, ownerEntryId);
-    const fileMsg = stored.path ? `\n📎 <a href="${fileLink(stored.path)}">Скачать файл</a>` : (stored.error ? `\n⚠️ Storage: ${stored.error}` : "");
+    const fileMsg = stored.path
+      ? `\n📎 <a href="${fileLink(stored.path)}">Скачать файл</a>`
+      : (stored.error ? `\n⚠️ Storage: ${stored.error}` : "");
     const summaryMsg = summary ? `\n\n<b>Тезисы:</b>\n${summary}` : "";
     await sendMessage(chatId, `✅ Файл <b>${name}</b> сохранён (${text.length} символов).${summaryMsg}${fileMsg}`);
     return;
@@ -400,26 +452,29 @@ export async function handleDocument(chatId: number, username: string, doc: NonN
   if (isSpreadsheet(mime, name)) {
     await sendMessage(chatId, `Обрабатываю таблицу <b>${name}</b>...`);
     const tgUrl = await getTelegramFileUrl(doc.file_id);
-    const res = await fetch(tgUrl);
+    const res = await externalFetch(tgUrl, {}, VIA_TELEGRAM_FILE);
     const buffer = await res.arrayBuffer();
-    const stored = await uploadToStorage(name, buffer, mime || "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "spreadsheets");
+    const stored = await uploadToStorage(
+      name,
+      buffer,
+      mime || "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      "spreadsheets",
+    );
 
     let extracted: string;
     try {
       extracted = parseSpreadsheet(buffer);
     } catch {
-      const link = stored.path
-        ? await keepFileOnly(name, username, groupId, mime || "spreadsheet", stored.path)
-        : null;
-      const fileMsg = link ? ` <a href="${link}">Скачать файл</a>.` : (stored.error ? ` ⚠️ Storage: ${stored.error}` : "");
+      const link = stored.path ? await keepFileOnly(name, username, groupId, mime || "spreadsheet", stored.path) : null;
+      const fileMsg = link
+        ? ` <a href="${link}">Скачать файл</a>.`
+        : (stored.error ? ` ⚠️ Storage: ${stored.error}` : "");
       await sendMessage(chatId, `Не удалось прочитать таблицу.${fileMsg}`);
       return;
     }
 
     if (!extracted.trim()) {
-      const link = stored.path
-        ? await keepFileOnly(name, username, groupId, mime || "spreadsheet", stored.path)
-        : null;
+      const link = stored.path ? await keepFileOnly(name, username, groupId, mime || "spreadsheet", stored.path) : null;
       const fileMsg = link ? ` <a href="${link}">Скачать файл</a>.` : "";
       await sendMessage(chatId, `Таблица пустая или все листы без данных.${fileMsg}`);
       return;
@@ -431,24 +486,38 @@ export async function handleDocument(chatId: number, username: string, doc: NonN
     for (let p = 0; p < extracted.length; p += CHUNK - OVL) chunks.push(extracted.slice(p, p + CHUNK));
     let sheetOwnerId: string | null = null;
     for (let i = 0; i < chunks.length; i++) {
-      const saved = await saveEntry(chunks[i], username, "document",
-        { file_name: name, mime: mime || "spreadsheet", chunk: i + 1, total_chunks: chunks.length, file_url: stored.path },
+      const saved = await saveEntry(
+        chunks[i],
+        username,
+        "document",
+        {
+          file_name: name,
+          mime: mime || "spreadsheet",
+          chunk: i + 1,
+          total_chunks: chunks.length,
+          file_url: stored.path,
+        },
         i === 0 ? (summary ?? undefined) : undefined,
         groupId,
       );
       if (i === 0) sheetOwnerId = saved.id;
     }
     if (stored.path && sheetOwnerId) await registerUploadedFile(stored.path, sheetOwnerId);
-    const fileMsg = stored.path ? `\n📎 <a href="${fileLink(stored.path)}">Скачать файл</a>` : (stored.error ? `\n⚠️ Storage: ${stored.error}` : "");
+    const fileMsg = stored.path
+      ? `\n📎 <a href="${fileLink(stored.path)}">Скачать файл</a>`
+      : (stored.error ? `\n⚠️ Storage: ${stored.error}` : "");
     const summaryMsg = summary ? `\n\n<b>Тезисы:</b>\n${summary}` : "";
-    await sendMessage(chatId, `✅ Таблица <b>${name}</b> сохранена (${extracted.length} символов).${summaryMsg}${fileMsg}`);
+    await sendMessage(
+      chatId,
+      `✅ Таблица <b>${name}</b> сохранена (${extracted.length} символов).${summaryMsg}${fileMsg}`,
+    );
     return;
   }
 
   if (mime === "application/pdf" || getFileExt(name) === ".pdf") {
     await sendMessage(chatId, `Обрабатываю PDF <b>${name}</b>...`);
     const tgUrl = await getTelegramFileUrl(doc.file_id);
-    const pdfRes = await fetch(tgUrl);
+    const pdfRes = await externalFetch(tgUrl, {}, VIA_TELEGRAM_FILE);
     const pdfBuffer = await pdfRes.arrayBuffer();
     const stored = await uploadToStorage(name, pdfBuffer, "application/pdf", "pdfs");
 
@@ -457,56 +526,107 @@ export async function handleDocument(chatId: number, username: string, doc: NonN
       return;
     }
 
-    const savedPdf = await saveEntry(`PDF файл: ${name}`, username, "pdf", { file_name: name, file_url: stored.path }, undefined, groupId);
+    const savedPdf = await saveEntry(
+      `PDF файл: ${name}`,
+      username,
+      "pdf",
+      { file_name: name, file_url: stored.path },
+      undefined,
+      groupId,
+    );
     await registerUploadedFile(stored.path, savedPdf.id);
-    await sendMessage(chatId, `✅ PDF <b>${name}</b> сохранён.\n📎 <a href="${fileLink(stored.path)}">Скачать файл</a>`);
+    await sendMessage(
+      chatId,
+      `✅ PDF <b>${name}</b> сохранён.\n📎 <a href="${fileLink(stored.path)}">Скачать файл</a>`,
+    );
     return;
   }
 
-  await sendMessage(chatId, `Формат <code>${mime || name}</code> пока не поддерживается.\n\nПоддерживаемые форматы: TXT, MD, CSV, JSON, XLSX, PDF.`);
+  await sendMessage(
+    chatId,
+    `Формат <code>${
+      mime || name
+    }</code> пока не поддерживается.\n\nПоддерживаемые форматы: TXT, MD, CSV, JSON, XLSX, PDF.`,
+  );
 }
 
-export async function handlePhoto(chatId: number, username: string, photos: NonNullable<TgMessage["photo"]>, groupId: string): Promise<void> {
+export async function handlePhoto(
+  chatId: number,
+  username: string,
+  photos: NonNullable<TgMessage["photo"]>,
+  groupId: string,
+): Promise<void> {
   await sendMessage(chatId, "Анализирую изображение...");
   const largest = photos.reduce((a, b) => ((b.file_size ?? 0) > (a.file_size ?? 0) ? b : a));
   const description = await describeImage(largest.file_id);
   await saveEntry(description, username, "image", undefined, undefined, groupId);
-  await sendMessage(chatId, `Изображение обработано и сохранено:\n\n<i>${description.slice(0, 500)}${description.length > 500 ? "..." : ""}</i>`);
+  await sendMessage(
+    chatId,
+    `Изображение обработано и сохранено:\n\n<i>${description.slice(0, 500)}${
+      description.length > 500 ? "..." : ""
+    }</i>`,
+  );
 }
 
-export async function handleUrl(chatId: number, username: string, url: string, rawText: string, analyze: boolean, groupId: string): Promise<void> {
+export async function handleUrl(
+  chatId: number,
+  username: string,
+  url: string,
+  rawText: string,
+  analyze: boolean,
+  groupId: string,
+): Promise<void> {
   if (analyze) {
     await sendMessage(chatId, `Загружаю страницу...`);
     try {
       const content = await fetchUrlContent(url);
-      if (!content || content.length < 50) { await sendMessage(chatId, "Не удалось извлечь текст со страницы."); return; }
+      if (!content || content.length < 50) {
+        await sendMessage(chatId, "Не удалось извлечь текст со страницы.");
+        return;
+      }
       await saveEntry(content, username, "url", { url }, undefined, groupId);
       await sendMessage(chatId, `Страница сохранена (${content.length} символов):\n<code>${url}</code>`);
     } catch (err) {
       await sendMessage(chatId, `Не удалось загрузить страницу: ${err instanceof Error ? err.message : String(err)}`);
     }
   } else {
-    const description = rawText.replace(url, "").replace(/^(добавь в базу[:\s]*|сохрани[:\s]*|добавь[:\s]*)/i, "").trim();
+    const description = rawText.replace(url, "").replace(/^(добавь в базу[:\s]*|сохрани[:\s]*|добавь[:\s]*)/i, "")
+      .trim();
     const title = description || url;
     const content = description ? `${description}\n\nСсылка: ${url}` : url;
 
     // Реальные тезисы и keywords (синонимы для поиска) сгенерит buildEntryIndex из content.
     // Отдельный «синоним-индекс» не делаем: он дублировал keywords и лез в видимый summary.
     await saveEntry(content, username, "link", { url, title }, undefined, groupId);
-    await sendMessage(chatId, `🔗 Ссылка сохранена.\n<code>${url}</code>${description ? `\n\n<i>${description}</i>` : ""}`);
+    await sendMessage(
+      chatId,
+      `🔗 Ссылка сохранена.\n<code>${url}</code>${description ? `\n\n<i>${description}</i>` : ""}`,
+    );
   }
 }
 
-export async function handleVoice(chatId: number, username: string, fileId: string, duration: number, groupId: string): Promise<void> {
+export async function handleVoice(
+  chatId: number,
+  username: string,
+  fileId: string,
+  duration: number,
+  groupId: string,
+): Promise<void> {
   await sendMessage(chatId, `Транскрибирую голосовое (${duration} сек)...`);
   const transcript = await transcribeAudio(fileId);
   // Пусто = речь не распозналась (тишина/шум; галлюцинации-«титры» вычищены) — не сохраняем мусор.
   if (!transcript.trim()) {
-    await sendMessage(chatId, "🔇 Не удалось распознать речь — запись не сохранена. Попробуй записать заново, ближе к микрофону.");
+    await sendMessage(
+      chatId,
+      "🔇 Не удалось распознать речь — запись не сохранена. Попробуй записать заново, ближе к микрофону.",
+    );
     return;
   }
   const { summary } = await saveEntry(transcript, username, "voice", {}, undefined, groupId);
-  await sendMessage(chatId, summary
-    ? `✅ Сохранено.\n\n<b>Тезисы:</b>\n${summary}`
-    : `✅ Транскрипция сохранена:\n\n<i>${transcript.slice(0, 500)}</i>`);
+  await sendMessage(
+    chatId,
+    summary
+      ? `✅ Сохранено.\n\n<b>Тезисы:</b>\n${summary}`
+      : `✅ Транскрипция сохранена:\n\n<i>${transcript.slice(0, 500)}</i>`,
+  );
 }

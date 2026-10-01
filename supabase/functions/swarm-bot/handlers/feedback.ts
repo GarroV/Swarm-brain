@@ -1,13 +1,18 @@
 import { supabase } from "../lib/supabase.ts";
 import { removeStorageObject } from "../../_shared/storage-links.ts";
-import { sendMessage, sendInlineMessage, getTelegramFileUrl } from "../lib/telegram.ts";
-import { uploadToStorage, setSession, clearSession, getSession, registerFeedbackFile, discardOrphanFile } from "../lib/storage.ts";
+import { getTelegramFileUrl, sendInlineMessage, sendMessage } from "../lib/telegram.ts";
 import {
-  FEEDBACK_CATEGORIES,
-  feedbackCategoryLabel,
-  isFeedbackCategory,
-} from "../../_shared/feedback-categories.ts";
+  clearSession,
+  discardOrphanFile,
+  getSession,
+  registerFeedbackFile,
+  setSession,
+  uploadToStorage,
+} from "../lib/storage.ts";
+import { FEEDBACK_CATEGORIES, feedbackCategoryLabel, isFeedbackCategory } from "../../_shared/feedback-categories.ts";
 import type { TgCallbackQuery } from "../lib/types.ts";
+import { externalFetch, VIA_TELEGRAM_FILE } from "../../_shared/external-fetch.ts";
+import { makeFeedbackPingDeps, sendFeedbackPing } from "../../_shared/feedback-ping.ts";
 
 const TELEGRAM_BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN")!;
 const BOT_NAME = Deno.env.get("BOT_NAME") ?? "bot";
@@ -35,41 +40,27 @@ function categoryKeyboard(): Array<Array<{ text: string; callback_data: string }
   return rows;
 }
 
-/** Пост в фидбек-канал — только пинг, БЕЗ inline-кнопок. Скрин отдаём durable-ссылкой. */
+/** Пост в фидбек-канал — только пинг, БЕЗ inline-кнопок. Скрин — короткоживущей подписанной ссылкой. */
 async function postToChannel(
   channelId: string,
   text: string,
   screenshotUrl?: string,
 ): Promise<void> {
-  const method = screenshotUrl ? "sendPhoto" : "sendMessage";
-  const payload = screenshotUrl
-    ? { chat_id: channelId, photo: screenshotUrl, caption: text, parse_mode: "HTML" }
-    : { chat_id: channelId, text, parse_mode: "HTML" };
-
-  const res = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/${method}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
+  // screenshotUrl — путь в приватном бакете; модуль отдаёт его Telegram подписанной ссылкой,
+  // проверяет ответ и сам переносит id канала, если группа стала супергруппой.
+  const res = await sendFeedbackPing(makeFeedbackPingDeps(supabase, TELEGRAM_BOT_TOKEN), {
+    chatId: channelId,
+    text,
+    screenshotPath: screenshotUrl,
   });
-
-  if (!res.ok) {
-    const json = await res.json().catch(() => null);
-    // Telegram migrated group → supergroup: update stored chat_id and retry
-    if (json?.parameters?.migrate_to_chat_id) {
-      const newId = String(json.parameters.migrate_to_chat_id);
-      await supabase.from("app_settings").update({ value: newId }).eq("key", "feedback_channel_id");
-      await postToChannel(newId, text, screenshotUrl);
-      return;
-    }
-    throw new Error(`${method} failed ${res.status}: ${JSON.stringify(json)}`);
-  }
+  if (!res.ok) throw new Error(`feedback ping failed: ${res.error}`);
 }
 
 /** Скачать фото из Telegram и переложить в приватный бакет → путь (показ только админу). */
 async function screenshotToStorage(photoFileId: string): Promise<string | undefined> {
   try {
     const tgUrl = await getTelegramFileUrl(photoFileId);
-    const res = await fetch(tgUrl);
+    const res = await externalFetch(tgUrl, {}, VIA_TELEGRAM_FILE);
     if (!res.ok) return undefined;
     const buffer = await res.arrayBuffer();
     const { path } = await uploadToStorage("feedback.jpg", buffer, "image/jpeg", "feedback");
@@ -108,10 +99,12 @@ async function saveFeedback(
   if (!channelId) return;
 
   const date = new Date().toLocaleString("ru-RU", {
-    day: "2-digit", month: "long", hour: "2-digit", minute: "2-digit",
+    day: "2-digit",
+    month: "long",
+    hour: "2-digit",
+    minute: "2-digit",
   });
-  const channelText =
-    `<b>[${BOT_NAME}]</b> 🐛 ${feedbackCategoryLabel(category)} · @${username} · ${date}\n\n${text}`;
+  const channelText = `<b>[${BOT_NAME}]</b> 🐛 ${feedbackCategoryLabel(category)} · @${username} · ${date}\n\n${text}`;
   await postToChannel(channelId, channelText, screenshotUrl);
 }
 

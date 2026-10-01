@@ -71,6 +71,7 @@ import type { TgCallbackQuery, TgMessage } from "./lib/types.ts";
 import { classifyRequest, isOwnPrivateChat } from "./lib/webhook-auth.ts";
 import { processingFrozen } from "../_shared/processing-freeze.ts";
 import { onlyLive } from "../_shared/tasks/live.ts";
+import { externalFetch, VIA_GRANOLA, VIA_TELEGRAM } from "../_shared/external-fetch.ts";
 
 const TELEGRAM_BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN")!;
 const CRON_SECRET = Deno.env.get("CRON_SECRET") ?? "";
@@ -337,14 +338,18 @@ Deno.serve(async (req: Request) => {
   // который лежит в секретах Edge Functions и наружу не отдаётся. Поэтому спрашиваем изнутри.
   // Токен в ответ НЕ попадает: Telegram возвращает только url/ошибки/счётчик очереди.
   if (body.webhook_info === true) {
-    const res = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/getWebhookInfo`);
+    const res = await externalFetch(
+      `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/getWebhookInfo`,
+      {},
+      VIA_TELEGRAM,
+    );
     return new Response(await res.text(), { status: 200, headers: { "Content-Type": "application/json" } });
   }
   // Переустановка вебхука на саму эту функцию. URL берём из окружения, а НЕ из тела запроса —
   // иначе триггер стал бы способом увести все сообщения команды на чужой адрес.
   if (body.set_webhook === true) {
     const target = `${Deno.env.get("SUPABASE_URL")}/functions/v1/swarm-bot`;
-    const res = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/setWebhook`, {
+    const res = await externalFetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/setWebhook`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -353,7 +358,7 @@ Deno.serve(async (req: Request) => {
         // Пустой secret_token Telegram трактует как «снять секрет» — поэтому только когда задан.
         ...(TELEGRAM_WEBHOOK_SECRET ? { secret_token: TELEGRAM_WEBHOOK_SECRET } : {}),
       }),
-    });
+    }, VIA_TELEGRAM);
     const json = await res.json();
     return new Response(JSON.stringify({ target, telegram: json }), {
       status: 200,
@@ -367,11 +372,11 @@ Deno.serve(async (req: Request) => {
     // VISIBLE_BOT_COMMANDS у констант вверху файла (там же полный текст решения и список
     // скрытых-но-живых команд). Раньше он был захардкожен здесь ВТОРОЙ раз и разъехался со
     // списком в /start ниже — /start молча возвращал в меню все 14 команд.
-    const res = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/setMyCommands`, {
+    const res = await externalFetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/setMyCommands`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ commands: VISIBLE_BOT_COMMANDS }),
-    });
+    }, VIA_TELEGRAM);
     const json = await res.json();
     return new Response(JSON.stringify(json), { status: 200 });
   }
@@ -676,11 +681,11 @@ Deno.serve(async (req: Request) => {
       // что и в setup_commands выше. До 2026-09-09 здесь был отдельный захардкоженный список из
       // 14 команд — он молча возвращал в меню всё, что setup_commands деликатно прятал, на
       // каждый /start любого пользователя.
-      await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/setMyCommands`, {
+      await externalFetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/setMyCommands`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ commands: VISIBLE_BOT_COMMANDS }),
-      });
+      }, VIA_TELEGRAM);
     } else if (command === "/help" || text === "ℹ️ Помощь") {
       // Справка с inline-кнопкой «⚙️ Настроить систему» (→ мастер настройки, callback guide_open).
       await sendInlineMessage(chatId, getHelpText(), helpKeyboard());
@@ -766,9 +771,9 @@ Deno.serve(async (req: Request) => {
         await sendMessage(chatId, `Неизвестный сервис: <code>${service}</code>. Доступно: granola`);
       } else {
         await sendMessage(chatId, "Проверяю ключ...");
-        const testRes = await fetch("https://public-api.granola.ai/v1/notes?limit=1", {
+        const testRes = await externalFetch("https://public-api.granola.ai/v1/notes?limit=1", {
           headers: { Authorization: `Bearer ${apiKey}` },
-        });
+        }, VIA_GRANOLA);
         if (!testRes.ok) {
           await sendMessage(chatId, "❌ Ключ не подошёл. Проверь правильность и попробуй снова.");
         } else {

@@ -1,12 +1,9 @@
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { json } from "./http.ts";
 import { canViewTask } from "../_shared/tasks/access.ts";
-import {
-  commentRecipients,
-  isInvolvedInTask,
-  type NotifiableTask,
-} from "../_shared/tasks/notify.ts";
+import { commentRecipients, isInvolvedInTask, type NotifiableTask } from "../_shared/tasks/notify.ts";
 import { loadSubscribers } from "./task-subscriptions.ts";
+import { externalFetch, VIA_TELEGRAM } from "../_shared/external-fetch.ts";
 
 // Лента уведомлений (колокольчик) + рассылка события «к твоей задаче написали комментарий».
 // Роуты: GET /notifications, POST /notifications/read.
@@ -34,8 +31,7 @@ type NotificationRow = {
   task_comments: { content: string } | null;
 };
 
-const SELECT_WITH_REFS =
-  "id, type, task_id, comment_id, actor_telegram_id, read_at, created_at, payload, " +
+const SELECT_WITH_REFS = "id, type, task_id, comment_id, actor_telegram_id, read_at, created_at, payload, " +
   "tasks(title, is_private, owner_id), task_comments(content)";
 
 function escapeHtml(s: string): string {
@@ -48,7 +44,7 @@ function truncate(s: string, max: number): string {
 
 async function sendTelegram(chatId: number, text: string): Promise<void> {
   if (!TELEGRAM_BOT_TOKEN) return;
-  await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+  await externalFetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -57,7 +53,7 @@ async function sendTelegram(chatId: number, text: string): Promise<void> {
       parse_mode: "HTML",
       disable_web_page_preview: true,
     }),
-  });
+  }, VIA_TELEGRAM);
 }
 
 // ── Рассылка ─────────────────────────────────────────────────────────────────
@@ -75,8 +71,7 @@ export type CommentNotificationInput = {
 // а повторить POST пользователь не может — получился бы дубль в ленте задачи).
 export async function notifyTaskComment(
   supabase: SupabaseClient,
-  { task, commentId, content, actorTelegramId, actorName }:
-    CommentNotificationInput,
+  { task, commentId, content, actorTelegramId, actorName }: CommentNotificationInput,
 ): Promise<void> {
   // Подписки — исключения из круга по умолчанию: добавляют непричастных (обычно админа,
   // который ведёт людей и не может обходить карточки руками) и убирают отписавшихся.
@@ -99,10 +94,7 @@ export async function notifyTaskComment(
   const link = MINIAPP_ORIGIN && MINIAPP_ORIGIN !== "*"
     ? `\n\n<a href="${MINIAPP_ORIGIN}/?task=${task.id}">Открыть задачу</a>`
     : "";
-  const text =
-    `💬 <b>${escapeHtml(actorName)}</b> — комментарий к задаче «${
-      escapeHtml(task.title)
-    }»\n\n` +
+  const text = `💬 <b>${escapeHtml(actorName)}</b> — комментарий к задаче «${escapeHtml(task.title)}»\n\n` +
     escapeHtml(truncate(content, PUSH_PREVIEW_MAX)) + link;
 
   // Пришло ПО ПОДПИСКЕ, а не потому что задача твоя → объясняем, откуда взялось, и куда идти
@@ -110,18 +102,13 @@ export async function notifyTaskComment(
   // понимает почему (решение владельца: подписывать с пометкой).
   const subscribedOnly = new Set(
     subscribers
-      .filter((sub) =>
-        sub.state === "subscribed" && !isInvolvedInTask(task, sub.telegram_id)
-      )
+      .filter((sub) => sub.state === "subscribed" && !isInvolvedInTask(task, sub.telegram_id))
       .map((sub) => sub.telegram_id),
   );
-  const hint =
-    "\n\n<i>Вы получаете это, потому что комментировали задачу. Отписаться — тумблером в её карточке.</i>";
+  const hint = "\n\n<i>Вы получаете это, потому что комментировали задачу. Отписаться — тумблером в её карточке.</i>";
 
   const results = await Promise.allSettled(
-    recipients.map((rid) =>
-      sendTelegram(rid, subscribedOnly.has(rid) ? text + hint : text)
-    ),
+    recipients.map((rid) => sendTelegram(rid, subscribedOnly.has(rid) ? text + hint : text)),
   );
   for (const r of results) {
     // Отписался от бота / заблокировал — норма, не ошибка приложения: в колокольчике уведомление уже лежит.
@@ -211,9 +198,7 @@ export async function handleNotificationRoutes(
   // GET /notifications?limit=30 — лента (новые сверху) + счётчик непрочитанных.
   if (routePath === "/notifications" && req.method === "GET") {
     const raw = parseInt(new URL(req.url).searchParams.get("limit") ?? "", 10);
-    const limit = Number.isFinite(raw)
-      ? Math.min(Math.max(raw, 1), MAX_LIMIT)
-      : DEFAULT_LIMIT;
+    const limit = Number.isFinite(raw) ? Math.min(Math.max(raw, 1), MAX_LIMIT) : DEFAULT_LIMIT;
 
     const { data, error } = await supabase
       .from("notifications")
@@ -250,9 +235,7 @@ export async function handleNotificationRoutes(
       comment_id: r.comment_id,
       content: r.task_comments?.content ?? "",
       actor_telegram_id: r.actor_telegram_id,
-      actor_name: r.actor_telegram_id
-        ? (names.get(r.actor_telegram_id) ?? String(r.actor_telegram_id))
-        : "—",
+      actor_name: r.actor_telegram_id ? (names.get(r.actor_telegram_id) ?? String(r.actor_telegram_id)) : "—",
       read_at: r.read_at,
       created_at: r.created_at,
       ...(isSystemNotification(r.type) ? { payload: r.payload ?? {} } : {}),
@@ -273,9 +256,7 @@ export async function handleNotificationRoutes(
   // POST /notifications/read { ids?: string[] } — без ids помечает прочитанным всё.
   if (routePath === "/notifications/read" && req.method === "POST") {
     const body = await req.json().catch(() => ({})) as { ids?: unknown };
-    const ids = Array.isArray(body.ids)
-      ? body.ids.filter((x): x is string => typeof x === "string")
-      : null;
+    const ids = Array.isArray(body.ids) ? body.ids.filter((x): x is string => typeof x === "string") : null;
     if (ids && ids.length === 0) return json({ ok: true }, 200, origin);
 
     // Фильтр по recipient_telegram_id — чужие уведомления пометить нельзя даже по точному id.

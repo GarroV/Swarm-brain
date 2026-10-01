@@ -6,6 +6,7 @@
 // событий гарантированно разъехалась бы с первой — ровно тот случай, про который в
 // documentation.md написано «дубли = главный источник дрифта».
 import type { GEvent } from "../meeting-current/select.ts";
+import { externalFetch } from "./external-fetch.ts";
 
 const CLIENT_ID = Deno.env.get("GOOGLE_CLIENT_ID") ?? "";
 const CLIENT_SECRET = Deno.env.get("GOOGLE_CLIENT_SECRET") ?? "";
@@ -22,10 +23,12 @@ const CLIENT_SECRET = Deno.env.get("GOOGLE_CLIENT_SECRET") ?? "";
  */
 export const GOOGLE_TIMEOUT_MS = 8_000;
 
-/** fetch со сроком; сбой сети и истёкший срок — null (вызывающий трактует как «Google не ответил»). */
+/** fetch со сроком; сбой сети и истёкший срок — null (вызывающий трактует как «Google не ответил»).
+ *  Одна попытка: два вызова подряд обязаны уложиться в ожидание оркестратора (см. тест), повтор
+ *  этот бюджет бы съел. */
 async function fetchBounded(url: string, init: RequestInit, timeoutMs: number, what: string): Promise<Response | null> {
   try {
-    return await fetch(url, { ...init, signal: AbortSignal.timeout(timeoutMs) });
+    return await externalFetch(url, init, { service: "google-calendar", timeoutMs, attempts: 1 });
   } catch (e) {
     console.error(`google-calendar ${what}: запрос не прошёл (${e instanceof Error ? e.name : "error"})`);
     return null;

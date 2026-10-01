@@ -15,6 +15,7 @@ import { normalizeExtractedDueDate, todayIso } from "../../_shared/llm-date.ts";
 import type { Task } from "./types.ts";
 import type { TgCallbackQuery } from "../lib/types.ts";
 import { onlyLive } from "../../_shared/tasks/live.ts";
+import { externalFetch, VIA_TELEGRAM, VIA_TELEGRAM_UPLOAD } from "../../_shared/external-fetch.ts";
 
 const TELEGRAM_BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN")!;
 
@@ -40,13 +41,15 @@ async function broadcastTaskAssigned(task: Task, groupId: string): Promise<void>
   const country = task.country ? ` · ${task.country}` : "";
   const text = `📋 Тебе назначена задача: <b>${task.title}</b>${country}${due}`;
 
-  await Promise.all(recipientIds.map((id) =>
-    fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ chat_id: id, text, parse_mode: "HTML" }),
-    })
-  ));
+  await Promise.all(
+    recipientIds.map((id) =>
+      externalFetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ chat_id: id, text, parse_mode: "HTML" }),
+      }, VIA_TELEGRAM)
+    ),
+  );
 }
 
 export const TASK_KEYWORDS = /задач|таск|task|сделать|выполнить|поручен|назначен|дедлайн|deadline|кто должен/i;
@@ -823,7 +826,11 @@ async function handleTasksExport(chatId: number): Promise<void> {
     `tasks_${new Date().toISOString().slice(0, 10)}.tsv`,
   );
   form.append("caption", `Экспорт задач · ${tasks.length} шт.`);
-  await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendDocument`, { method: "POST", body: form });
+  await externalFetch(
+    `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendDocument`,
+    { method: "POST", body: form },
+    VIA_TELEGRAM_UPLOAD,
+  );
 }
 
 // ── Session text input handlers ───────────────────────────────────────────────

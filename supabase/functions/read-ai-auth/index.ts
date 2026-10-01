@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { externalFetch, VIA_READ_AI } from "../_shared/external-fetch.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -28,7 +29,7 @@ function htmlPage(title: string, message: string, color = "#22c55e"): Response {
     `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Swarm Brain</title></head>
 <body style="font-family:system-ui;text-align:center;padding:60px;color:#1a1a1a">
 <h2 style="color:${color}">${title}</h2><p>${message}</p></body></html>`,
-    { headers: { "Content-Type": "text/html" } }
+    { headers: { "Content-Type": "text/html" } },
   );
 }
 
@@ -54,7 +55,7 @@ Deno.serve(async (req: Request) => {
     }
 
     if (!clientId) {
-      const regRes = await fetch(CLIENT_REG_URL, {
+      const regRes = await externalFetch(CLIENT_REG_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -64,15 +65,15 @@ Deno.serve(async (req: Request) => {
           response_types: ["code"],
           token_endpoint_auth_method: "none",
         }),
-      });
+      }, VIA_READ_AI);
       const regData = await regRes.json();
       if (!regRes.ok) {
         return htmlPage(
           "❌ Ошибка регистрации",
           `Read.ai не поддерживает автоматическую регистрацию.<br><br>` +
-          `Добавь переменную <b>READ_AI_CLIENT_ID</b> в Supabase Secrets.<br><br>` +
-          `<small style="color:#888">${JSON.stringify(regData)}</small>`,
-          "#ef4444"
+            `Добавь переменную <b>READ_AI_CLIENT_ID</b> в Supabase Secrets.<br><br>` +
+            `<small style="color:#888">${JSON.stringify(regData)}</small>`,
+          "#ef4444",
         );
       }
       clientId = regData.client_id as string;
@@ -109,7 +110,7 @@ Deno.serve(async (req: Request) => {
       return htmlPage("❌ Ошибка", "Неверный или просроченный state. Попробуй /connect снова.", "#ef4444");
     }
 
-    const tokenRes = await fetch(TOKEN_URL, {
+    const tokenRes = await externalFetch(TOKEN_URL, {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams({
@@ -119,7 +120,7 @@ Deno.serve(async (req: Request) => {
         client_id: stateRow.client_id,
         code_verifier: stateRow.code_verifier,
       }),
-    });
+    }, VIA_READ_AI);
 
     const tokenData = await tokenRes.json();
     if (!tokenRes.ok) {
@@ -140,7 +141,7 @@ Deno.serve(async (req: Request) => {
 
     return htmlPage(
       "✅ Read.ai подключён!",
-      "Можешь закрыть эту страницу и вернуться в Telegram.<br><br><small style='color:#888'>Бот теперь может забирать транскрипции встреч.</small>"
+      "Можешь закрыть эту страницу и вернуться в Telegram.<br><br><small style='color:#888'>Бот теперь может забирать транскрипции встреч.</small>",
     );
   }
 

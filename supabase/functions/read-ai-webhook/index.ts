@@ -4,6 +4,7 @@ import { applyGeneralSentinel } from "../_shared/meta-extract.ts";
 import { buildTezisyUserMessage, TEZISY_PROMPT } from "../_shared/tezisy-prompt.ts";
 import { findDuplicateMeeting, type MeetingAttendee } from "../_shared/meeting-dedup.ts";
 import { resolveWebhookGroupId } from "./workspace.ts";
+import { externalFetch, VIA_OPENAI_CHAT, VIA_OPENAI_EMBEDDING, VIA_TELEGRAM } from "../_shared/external-fetch.ts";
 
 const TELEGRAM_BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN")!;
 const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY")!;
@@ -35,7 +36,7 @@ async function sendTelegramInline(
   text: string,
   keyboard: Array<Array<{ text: string; callback_data: string }>>,
 ): Promise<void> {
-  await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+  await externalFetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -44,30 +45,30 @@ async function sendTelegramInline(
       parse_mode: "HTML",
       reply_markup: { inline_keyboard: keyboard },
     }),
-  });
+  }, VIA_TELEGRAM);
 }
 
 async function sendTelegram(text: string): Promise<void> {
-  await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+  await externalFetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ chat_id: ADMIN_CHAT_ID, text, parse_mode: "HTML" }),
-  });
+  }, VIA_TELEGRAM);
 }
 
 async function getEmbedding(text: string): Promise<number[]> {
-  const res = await fetch("https://api.openai.com/v1/embeddings", {
+  const res = await externalFetch("https://api.openai.com/v1/embeddings", {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${OPENAI_API_KEY}` },
     body: JSON.stringify({ model: "text-embedding-3-small", input: text.slice(0, 8000) }),
-  });
+  }, VIA_OPENAI_EMBEDDING);
   const data = await res.json();
   if (!res.ok) throw new Error((data as { error?: { message?: string } }).error?.message ?? "OpenAI error");
   return (data as { data: Array<{ embedding: number[] }> }).data[0].embedding;
 }
 
 async function chatComplete(system: string, user: string, json = false): Promise<string> {
-  const res = await fetch("https://api.openai.com/v1/chat/completions", {
+  const res = await externalFetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${OPENAI_API_KEY}` },
     body: JSON.stringify({
@@ -76,7 +77,7 @@ async function chatComplete(system: string, user: string, json = false): Promise
       max_tokens: 2000,
       ...(json ? { response_format: { type: "json_object" } } : {}),
     }),
-  });
+  }, VIA_OPENAI_CHAT);
   const data = await res.json();
   if (!res.ok) throw new Error((data as { error?: { message?: string } }).error?.message ?? "OpenAI error");
   return (data as { choices: Array<{ message: { content: string } }> }).choices[0].message.content;

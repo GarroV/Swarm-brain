@@ -19,6 +19,7 @@ import {
   type MemberRow,
   SUPERADMIN_TELEGRAM_ID,
 } from "../_shared/users/admin-scope.ts";
+import { externalFetch, VIA_TELEGRAM } from "../_shared/external-fetch.ts";
 
 export { canChangeAccountKeys, canManageMember, canManageWorkspace, isSuperadmin, SUPERADMIN_TELEGRAM_ID };
 export type { AdminActor, MemberRow };
@@ -113,7 +114,7 @@ export async function announceEmailChange(
 async function sendTelegramText(chatId: number, text: string): Promise<boolean> {
   const token = Deno.env.get("TELEGRAM_BOT_TOKEN");
   if (!token) return false;
-  const r = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+  const r = await externalFetch(`https://api.telegram.org/bot${token}/sendMessage`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -121,7 +122,7 @@ async function sendTelegramText(chatId: number, text: string): Promise<boolean> 
       text,
       disable_web_page_preview: true,
     }),
-  });
+  }, VIA_TELEGRAM);
   if (!r.ok) console.error("[admin] telegram sendMessage:", r.status);
   return r.ok;
 }

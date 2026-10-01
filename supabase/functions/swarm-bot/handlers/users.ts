@@ -6,6 +6,7 @@ import { sendTaskCard } from "../tasks/index.ts";
 import { generateNameAliases } from "../lib/name-aliases.ts";
 import { assignUserToWorkspace } from "../lib/workspace.ts";
 import { onlyLive } from "../../_shared/tasks/live.ts";
+import { externalFetch, VIA_TELEGRAM } from "../../_shared/external-fetch.ts";
 
 const TELEGRAM_BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN")!;
 
@@ -167,7 +168,7 @@ export async function handleUsers(
 
 export async function startOnboarding(chatId: number): Promise<void> {
   await setSession(chatId, "onboard_role");
-  await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+  await externalFetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -177,7 +178,7 @@ export async function startOnboarding(chatId: number): Promise<void> {
       parse_mode: "HTML",
       reply_markup: { inline_keyboard: [[{ text: "Пропустить →", callback_data: "onboard_skip_role" }]] },
     }),
-  });
+  }, VIA_TELEGRAM);
 }
 
 export async function showProfile(chatId: number, targetId: number, messageId?: number): Promise<void> {
@@ -452,7 +453,7 @@ export async function handleUserCallbacks(
       await sendMessage(chatId, "Профиль можно дополнить позже через 👥 Пользователи.", buildKeyboard());
     } else {
       await setSession(chatId, nextStep[step]);
-      await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+      await externalFetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -463,7 +464,7 @@ export async function handleUserCallbacks(
             inline_keyboard: [[{ text: "Пропустить →", callback_data: `onboard_skip_${nextSkip[step]}` }]],
           },
         }),
-      });
+      }, VIA_TELEGRAM);
     }
     return true;
   }
@@ -485,7 +486,7 @@ export async function handleUserSessionInput(
       updated_at: new Date().toISOString(),
     }, { onConflict: "telegram_id" });
     await setSession(chatId, "onboard_markets");
-    await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+    await externalFetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -495,7 +496,7 @@ export async function handleUserSessionInput(
         parse_mode: "HTML",
         reply_markup: { inline_keyboard: [[{ text: "Пропустить →", callback_data: "onboard_skip_markets" }]] },
       }),
-    });
+    }, VIA_TELEGRAM);
     return true;
   }
   if (action === "onboard_markets") {
@@ -506,7 +507,7 @@ export async function handleUserSessionInput(
       { onConflict: "telegram_id" },
     );
     await setSession(chatId, "onboard_email");
-    await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+    await externalFetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -515,7 +516,7 @@ export async function handleUserSessionInput(
         parse_mode: "HTML",
         reply_markup: { inline_keyboard: [[{ text: "Пропустить →", callback_data: "onboard_skip_email" }]] },
       }),
-    });
+    }, VIA_TELEGRAM);
     return true;
   }
   if (action === "onboard_email") {
@@ -526,7 +527,7 @@ export async function handleUserSessionInput(
       updated_at: new Date().toISOString(),
     }, { onConflict: "telegram_id" });
     await setSession(chatId, "onboard_phone");
-    await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+    await externalFetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -535,7 +536,7 @@ export async function handleUserSessionInput(
         parse_mode: "HTML",
         reply_markup: { inline_keyboard: [[{ text: "Пропустить →", callback_data: "onboard_skip_phone" }]] },
       }),
-    });
+    }, VIA_TELEGRAM);
     return true;
   }
   if (action === "onboard_phone") {

@@ -7,6 +7,7 @@ import { getUserGroupId } from "../lib/workspace.ts";
 import { buildTezisyUserMessage, TEZISY_PROMPT } from "../../_shared/tezisy-prompt.ts";
 import { findDuplicateMeeting, type MeetingAttendee, parseMeetingContent } from "../../_shared/meeting-dedup.ts";
 import type { TgCallbackQuery } from "../lib/types.ts";
+import { externalFetch, VIA_GRANOLA } from "../../_shared/external-fetch.ts";
 
 const GRANOLA_API = "https://public-api.granola.ai/v1";
 const WEB_URL = "https://swarm-brain.pages.dev";
@@ -34,17 +35,18 @@ async function getUserApiKey(telegramId: number): Promise<string | null> {
 }
 
 async function fetchGranolaNote(apiKey: string, noteId: string): Promise<Record<string, unknown> | null> {
-  const res = await fetch(`${GRANOLA_API}/notes/${noteId}?include=transcript`, {
+  const res = await externalFetch(`${GRANOLA_API}/notes/${noteId}?include=transcript`, {
     headers: { Authorization: `Bearer ${apiKey}` },
-  });
+  }, VIA_GRANOLA);
   if (!res.ok) return null;
   return await res.json() as Record<string, unknown>;
 }
 
 async function fetchNotesSince(apiKey: string, createdAfter: string): Promise<GranolaNote[]> {
-  const res = await fetch(
+  const res = await externalFetch(
     `${GRANOLA_API}/notes?created_after=${encodeURIComponent(createdAfter)}&limit=50`,
     { headers: { Authorization: `Bearer ${apiKey}` } },
+    VIA_GRANOLA,
   );
   if (!res.ok) return [];
   const data = await res.json() as { notes: GranolaNote[] };

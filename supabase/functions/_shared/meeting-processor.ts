@@ -35,6 +35,7 @@ import { isFrozen, unfrozen } from "./meeting-frozen.ts";
 import { type RivalClaim, rivalOwnershipPatch, settleRival } from "./meeting-rival.ts";
 import { claimLeaseUntil } from "./meeting-lease.ts";
 import { isLeaseLost, LEASE_STALE_MS, ProcessingLease, rethrowIfLeaseLost } from "./meeting-processing-lease.ts";
+import { externalFetch, VIA_TELEGRAM } from "./external-fetch.ts";
 
 export type { Segment, SpeakerSpan };
 
@@ -147,27 +148,12 @@ interface MeetingRow {
   process_state: ProcessState | null;
 }
 
-const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
-
 // ── OpenAI / Telegram ─────────────────────────────────────────────────────────
 // Каждая попытка — со своим потолком времени; `signal` (лиз потерян) прерывает и ожидание, и паузу.
-async function openaiFetch(url: string, init: RequestInit, signal?: AbortSignal, attempts = 4): Promise<Response> {
-  const attempt = () => {
-    const timeout = AbortSignal.timeout(MODEL_CALL_TIMEOUT_MS);
-    signal?.throwIfAborted();
-    return fetch(url, { ...init, signal: signal ? AbortSignal.any([signal, timeout]) : timeout });
-  };
-  let res = await attempt();
-  for (let i = 1; i < attempts; i++) {
-    const retryable = res.status === 429 || (res.status >= 500 && res.status < 600);
-    if (res.ok || !retryable) return res;
-    const retryAfter = Number(res.headers.get("retry-after"));
-    const delayMs = Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter * 1000 : Math.pow(2, i - 1) * 1000;
-    await res.body?.cancel();
-    await sleep(delayMs);
-    res = await attempt();
-  }
-  return res;
+// Повтор 429/5xx объявлен явно (`attempts`): для Whisper и тезисов повторный POST безопасен —
+// он ничего не меняет у нас, только стоит денег. Механика — общий externalFetch.
+function openaiFetch(url: string, init: RequestInit, signal?: AbortSignal, attempts = 4): Promise<Response> {
+  return externalFetch(url, init, { service: "openai", timeoutMs: MODEL_CALL_TIMEOUT_MS, signal, attempts });
 }
 
 async function transcribeAudio(
@@ -325,7 +311,7 @@ export async function chatComplete(system: string, user: string, opts: ChatOpts 
 }
 
 async function sendTelegram(chatId: number, text: string, keyboard?: InlineButton[][]): Promise<void> {
-  await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+  await externalFetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -334,7 +320,7 @@ async function sendTelegram(chatId: number, text: string, keyboard?: InlineButto
       parse_mode: "HTML",
       ...(keyboard ? { reply_markup: { inline_keyboard: keyboard } } : {}),
     }),
-  });
+  }, VIA_TELEGRAM);
 }
 
 async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
