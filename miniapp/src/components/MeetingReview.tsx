@@ -3,8 +3,7 @@ import { useState, useEffect, useCallback, useContext } from "react";
 import { askMeeting, fetchAgentMeeting, fetchAgentMeetingNotes, patchAgentMeetingDraft, renameAgentMeeting, publishAgentMeeting, resummarizeAgentMeeting, deleteAgentMeeting } from "@/lib/api";
 import type { AgentMeeting, MeetingLiveNote } from "@/types";
 import { DetailPanelContext, NavHeader, SectionLabel } from "@/components/roy/ui";
-import { RoyIcon } from "@/components/roy/icons";
-import { ActionChip } from "@/components/roy/screens/MeetingDetail";
+import { RoyIcon, type RoyIconName } from "@/components/roy/icons";
 import { TezisyEditor } from "@/components/roy/tezisy/TezisyEditor";
 import { TezisyReader } from "@/components/roy/tezisy/TezisyReader";
 import type { AskApply } from "@/components/roy/tezisy/AskPopover";
@@ -21,8 +20,10 @@ type Props = { id: string; onClose: () => void; onChanged?: () => void };
 // Тезисы · Пометки · Транскрипт (решение владельца 2026-09-25: «сделай также окно что и по
 // стандарту»). Транскрипт — только пока встреча не в базе.
 
+// Все кнопки экрана — одна форма: круглые, высота 40px (решение владельца 01.10.2026: «почему у
+// нас везде все круглое, а тут квадраты? … давай приводить к одному стилю везде»).
 const btnOutline =
-  "rounded-[8px] border border-line bg-surface px-4 py-2 font-semibold text-ink-soft transition-colors hover:bg-surface-2 active:scale-[0.98] disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]";
+  "inline-flex min-h-[40px] items-center justify-center rounded-full border border-line bg-surface px-4 font-semibold text-ink-soft transition-colors hover:bg-surface-2 active:scale-[0.98] disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]";
 
 function fmtTs(sec: number): string {
   const t = Math.max(0, Math.floor(sec));
@@ -218,7 +219,7 @@ export function MeetingReview({ id, onClose, onChanged }: Props) {
           {!published && hasTranscript && (
             <button type="button" onClick={reprocess} disabled={reprocessing}
               title={dt("Пересобрать тезисы из транскрипта", "Rebuild the summary from the transcript")}
-              className="inline-flex items-center gap-1.5 rounded-[9px] border border-accent-line bg-card/60 font-semibold text-accent-ink transition-transform active:scale-[0.97] disabled:opacity-50"
+              className="inline-flex items-center gap-1.5 rounded-full border border-accent-line bg-card/60 font-semibold text-accent-ink transition-transform active:scale-[0.97] disabled:opacity-50"
               style={{ padding: "3px 9px", fontSize: 11 }}>
               <RoyIcon name="spark" size={12} strokeWidth={1.9} /> {reprocessing ? dt("Обрабатываю…", "Processing…") : dt("Переобработать", "Reprocess")}
             </button>
@@ -302,11 +303,14 @@ export function MeetingReview({ id, onClose, onChanged }: Props) {
             <input value={titleDraft} onChange={(e) => setTitleDraft(e.target.value)} autoFocus data-panel-edit
               onKeyDown={(e) => { if (e.key === "Enter") saveTitle(); if (e.key === "Escape") setEditingTitle(false); }}
               placeholder={dt("Название встречи", "Meeting title")}
-              className="w-full rounded-[8px] border border-line-2 bg-surface px-3.5 py-2.5 font-bold text-ink outline-none focus:border-primary"
+              className="w-full rounded-full border border-line-2 bg-surface px-4 py-2.5 font-bold text-ink outline-none focus:border-primary"
               style={{ fontSize: 20, letterSpacing: "-0.01em" }} />
             <div className="mt-2 flex gap-2">
-              <button type="button" onClick={saveTitle} disabled={savingTitle} className="flex-1 rounded-[8px] bg-primary py-2.5 font-semibold text-primary-foreground disabled:opacity-60" style={{ fontSize: 14 }}>{dt("Сохранить", "Save")}</button>
-              <button type="button" onClick={() => setEditingTitle(false)} className="rounded-[8px] border border-line-2 px-4 py-2.5 font-semibold text-ink-soft" style={{ fontSize: 14 }}>{dt("Отмена", "Cancel")}</button>
+              <button type="button" onClick={saveTitle} disabled={savingTitle} className="inline-flex min-h-[40px] flex-1 items-center justify-center gap-1.5 rounded-full bg-primary px-4 font-semibold text-primary-foreground transition-transform active:scale-[0.96] disabled:opacity-60" style={{ fontSize: 14 }} aria-busy={savingTitle}>
+                {savingTitle && <Spinner />}
+                {savingTitle ? dt("Сохраняю…", "Saving…") : dt("Сохранить", "Save")}
+              </button>
+              <button type="button" onClick={() => setEditingTitle(false)} className="inline-flex min-h-[40px] items-center justify-center rounded-full border border-line-2 px-4 font-semibold text-ink-soft transition-transform active:scale-[0.96]" style={{ fontSize: 14 }}>{dt("Отмена", "Cancel")}</button>
             </div>
           </div>
         ) : (
@@ -322,8 +326,10 @@ export function MeetingReview({ id, onClose, onChanged }: Props) {
             {notesReady && (
               <>
                 {teamOnly ? (
-                  <span className="inline-flex items-center rounded-full border border-line-2 px-3 font-medium text-ink-soft" style={{ fontSize: 13, minHeight: 40 }}
+                  // Не кнопка: выбора нет — это факт о встрече, поэтому без рамки и мелким текстом.
+                  <span className="inline-flex items-center gap-1.5 text-ink-soft" style={{ fontSize: 12.5 }}
                     title={dt("На встрече были другие участники SWARM, поэтому она уходит в базу команды.", "Other SWARM members attended, so it goes to the team base.")}>
+                    <RoyIcon name="team" size={14} strokeWidth={1.9} />
                     {dt("Общая · в команду", "Shared · team")}
                   </span>
                 ) : (
@@ -336,17 +342,17 @@ export function MeetingReview({ id, onClose, onChanged }: Props) {
                       : dt("Видно только вам и второму участнику", "Visible only to you and the other participant")}
                   </span>
                 )}
-                <button type="button" onClick={handlePublish} disabled={publishing}
+                <button type="button" onClick={handlePublish} disabled={publishing} aria-busy={publishing}
                   className="inline-flex items-center gap-1.5 rounded-full bg-primary px-4 font-semibold text-primary-foreground transition-transform active:scale-[0.96] disabled:opacity-60"
                   style={{ fontSize: 13, minHeight: 40 }}>
-                  <RoyIcon name="check" size={15} strokeWidth={2.2} />
-                  {publishing ? dt("Сохраняем…", "Saving…") : dt("Сохранить", "Save")}
+                  {publishing ? <Spinner /> : <RoyIcon name="check" size={15} strokeWidth={2.2} />}
+                  {publishing ? dt("Сохраняю…", "Saving…") : dt("Сохранить", "Save")}
                 </button>
               </>
             )}
-            {canRename && <ActionChip icon="pencil" label={dt("Название", "Title")} onClick={() => { setTitleDraft(meeting.title ?? ""); setEditingTitle(true); }} />}
-            {notesReady && <ActionChip icon="pencil" label={dt("Тезисы", "Summary")} onClick={() => { setEditing(true); setView("tez"); }} />}
-            {canDeleteDraft(meeting, me?.telegram_id) && !deleting && <ActionChip icon="trash" danger label={dt("Удалить", "Delete")} onClick={handleDelete} />}
+            {canRename && <Chip icon="pencil" label={dt("Название", "Title")} onClick={() => { setTitleDraft(meeting.title ?? ""); setEditingTitle(true); }} />}
+            {notesReady && <Chip icon="pencil" label={dt("Тезисы", "Summary")} onClick={() => { setEditing(true); setView("tez"); }} />}
+            {canDeleteDraft(meeting, me?.telegram_id) && !deleting && <Chip icon="trash" danger label={dt("Удалить", "Delete")} onClick={handleDelete} />}
           </div>
         )}
 
@@ -401,7 +407,8 @@ function BasePill({ value, onChange }: { value: "workspace" | "personal"; onChan
         const on = it.id === value;
         return (
           <button key={it.id} type="button" role="radio" aria-checked={on} onClick={() => onChange(it.id)}
-            className={`rounded-full px-3 transition-colors ${on ? "bg-surface-2 font-semibold text-ink shadow-sm" : "font-medium text-ink-soft hover:text-ink"}`}
+            // Выбранное читается сразу: заливка основным цветом, невыбранное — прозрачное.
+            className={`rounded-full px-3.5 transition-colors ${on ? "bg-primary font-semibold text-primary-foreground shadow-sm" : "bg-transparent font-medium text-ink-soft hover:text-ink"}`}
             style={{ fontSize: 13, minHeight: 36 }}>
             {it.label}
           </button>
@@ -409,4 +416,20 @@ function BasePill({ value, onChange }: { value: "workspace" | "personal"; onChan
       })}
     </div>
   );
+}
+
+// Кнопка-чип верхнего ряда — та же форма, что «Сохранить»: круглая, 40px.
+function Chip({ icon, label, onClick, danger }: { icon: RoyIconName; label: string; onClick: () => void; danger?: boolean }) {
+  return (
+    <button type="button" onClick={onClick}
+      className="inline-flex items-center gap-1.5 rounded-full border px-4 font-semibold transition-transform active:scale-[0.96]"
+      style={{ fontSize: 13, minHeight: 40, borderColor: "var(--line-2)", color: danger ? "var(--pri-high)" : "var(--accent-ink)" }}>
+      <RoyIcon name={icon} size={15} strokeWidth={1.9} />
+      {label}
+    </button>
+  );
+}
+
+function Spinner() {
+  return <span aria-hidden className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" />;
 }
