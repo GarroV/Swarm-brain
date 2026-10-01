@@ -121,7 +121,7 @@ import {
   oneOnOnePartner,
 } from "../_shared/meeting-access.ts";
 import { handleAdminRoutes } from "./admin.ts";
-import { apiErr, corsHeaders, json, parseListLimit } from "./http.ts";
+import { apiErr, corsHeaders, json, parseListLimit, routePathOf } from "./http.ts";
 import { handleMeetingInviteRoutes } from "./meeting-invites.ts";
 import { DEMO_GROUP_ID, isDemoSession } from "../_shared/demo-session.ts";
 import { handleAutojoinRoutes, makeAutojoinStore, makeCalendarCheck } from "./autojoin.ts";
@@ -551,8 +551,7 @@ Deno.serve(async (req: Request) => {
   // Публичная дорожная карта доски для хаба проектов (issue #562) — БЕЗ авторизации и раньше
   // общего OPTIONS: у неё свой CORS (`*`, только GET), приватный MINIAPP_ORIGIN ей не подходит.
   // Что уходит наружу — строго белый список модуля public-roadmap.ts.
-  const publicPath = new URL(req.url).pathname.split("/swarm-api").pop() ||
-    "/";
+  const publicPath = routePathOf(new URL(req.url).pathname);
   if (isPublicRoadmapPath(publicPath)) {
     return handlePublicRoadmap(supabase, req, publicPath);
   }
@@ -648,8 +647,8 @@ Deno.serve(async (req: Request) => {
 
   // ── Routing ──────────────────────────────────────────────────────────────
   const url = new URL(req.url);
-  // Strip /functions/v1/swarm-api prefix to get the route path
-  const routePath = url.pathname.split("/swarm-api").pop() || "/";
+  // Снимаем префикс функции (/functions/v1/swarm-api) — один, известный (#592).
+  const routePath = routePathOf(url.pathname);
 
   // Заморозка на время раскатки: изменения не принимаем, чтение оставляем (пустой экран
   // пугает сильнее честной плашки). Владелец проходит всегда — он катит и проверяет.

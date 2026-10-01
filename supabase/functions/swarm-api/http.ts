@@ -4,11 +4,7 @@
 const MINIAPP_ORIGIN = Deno.env.get("MINIAPP_ORIGIN") ?? "*";
 
 export function corsHeaders(origin: string): Record<string, string> {
-  const allowOrigin = MINIAPP_ORIGIN === "*"
-    ? "*"
-    : origin === MINIAPP_ORIGIN
-    ? origin
-    : MINIAPP_ORIGIN;
+  const allowOrigin = MINIAPP_ORIGIN === "*" ? "*" : origin === MINIAPP_ORIGIN ? origin : MINIAPP_ORIGIN;
   return {
     "Access-Control-Allow-Origin": allowOrigin,
     "Access-Control-Allow-Methods": "GET, POST, PATCH, DELETE, OPTIONS",
@@ -65,4 +61,22 @@ export function parseListLimit(
   const raw = param ? parseInt(param, 10) : NaN;
   const wanted = Number.isFinite(raw) && raw > 0 ? raw : def;
   return Math.min(wanted, max);
+}
+
+const FUNCTION_PREFIX = "/swarm-api";
+
+/**
+ * Путь маршрута внутри функции: снимается ОДИН известный префикс `/swarm-api` (первое вхождение
+ * на границе сегмента — с `/functions/v1` перед ним или без). Прежний `split("/swarm-api").pop()`
+ * брал хвост после ПОСЛЕДНЕГО вхождения, и путь с этой подстрокой внутри (`/entries/x/swarm-api`)
+ * молча уходил не в тот маршрут (issue #592). Префикса нет — путь как есть.
+ */
+export function routePathOf(pathname: string): string {
+  let at = pathname.indexOf(FUNCTION_PREFIX);
+  while (at >= 0) {
+    const next = pathname.charAt(at + FUNCTION_PREFIX.length);
+    if (next === "" || next === "/") return pathname.slice(at + FUNCTION_PREFIX.length) || "/";
+    at = pathname.indexOf(FUNCTION_PREFIX, at + 1);
+  }
+  return pathname || "/";
 }
