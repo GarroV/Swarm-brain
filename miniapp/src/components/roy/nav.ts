@@ -68,6 +68,13 @@ export function useDt(): (ru: string, en: string) => string {
   return useCallback((ru: string, en: string) => (demo ? en : ru), [demo]);
 }
 
+/** Это демо-сессия? Демо подключать интеграции не может (сервер отказывает, issue #573) —
+ *  экраны по этому флагу прячут кнопки подключения и объясняют почему. */
+export function useIsDemo(): boolean {
+  const ctx = useContext(RoyNavContext);
+  return !!ctx?.me?.is_demo;
+}
+
 /** Язык интерфейса для форматтеров дат (`lib/calendar`): то же правило, что у `useDt`.
  *  Вне RoyApp (нет контекста) — RU, как и у `useDt`. */
 export function useLang(): "ru" | "en" {

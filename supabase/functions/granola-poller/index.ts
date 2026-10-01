@@ -53,6 +53,7 @@ async function fetchNotesSince(apiKey: string, createdAfter: string): Promise<Gr
 }
 
 async function getSavedNoteIds(telegramId: number): Promise<Set<string>> {
+  // archive-ok: архивная заметка Granola уже была импортирована — без неё поллер вернул бы удалённое
   const { data } = await supabase
     .from("entries")
     .select("metadata")

@@ -23,3 +23,11 @@ interface Filterable<T> {
 export function onlyLive<T extends Filterable<T>>(query: T): T {
   return query.is(ARCHIVED_COLUMN, null);
 }
+
+/**
+ * Патч архивации задачи — один на все пути (удаление задачи, архивация её встречи #569).
+ * `archivedBy` — кто убрал; без личности (крон, откат) — null.
+ */
+export function archivePatch(archivedBy?: number | null): { archived_at: string; archived_by: number | null } {
+  return { archived_at: new Date().toISOString(), archived_by: archivedBy ?? null };
+}

@@ -1,5 +1,6 @@
 import { newNonce, nonceCookie, readCookie, signState } from "../../../_lib/oauth-state";
 import { verifyJWT } from "../../../_lib/jwt";
+import { DEMO_USER_ID } from "../demo";
 
 // CF Pages Function: GET /api/auth/google/start?next=… → редирект на consent Google.
 // Живёт на домене pages.dev (как /api/auth/telegram), чтобы кука встала на нужный домен.
@@ -33,6 +34,13 @@ export async function onRequestGet(ctx: Ctx): Promise<Response> {
     const claims = session ? await verifyJWT(session, env.WEB_JWT_SECRET) : null;
     if (!claims) {
       return new Response("Sign in to Swarm first. / Сначала войдите в Swarm.", { status: 401 });
+    }
+    // Демо-сессия общая для всех посетителей витрины: календарь одного увидели бы следующие
+    // (issue #573). Тот же отказ стоит в swarm-api и в google-oauth/link.
+    if (claims.telegram_id === DEMO_USER_ID) {
+      return new Response("Integrations cannot be connected in the demo. / В демо интеграции не подключаются.", {
+        status: 403,
+      });
     }
     tid = claims.telegram_id;
   }

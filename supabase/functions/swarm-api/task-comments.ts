@@ -2,8 +2,7 @@ import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { json } from "./http.ts";
 import { commentDeleteDenial, validateCommentContent } from "../_shared/tasks/comments.ts";
 import { canViewTask } from "../_shared/tasks/access.ts";
-import { notifyTaskComment } from "./notifications.ts";
-import { ensureCommentSubscription } from "./task-subscriptions.ts";
+import { afterTaskComment } from "../_shared/tasks/comment-fanout.ts";
 import { onlyLive } from "../_shared/tasks/live.ts";
 
 // Роуты /tasks/:id/comments — комментарии-апдейты к задаче.
@@ -21,7 +20,7 @@ type TaskRow = {
   group_id: string | null;
   is_private: boolean;
   owner_id: number | null;
-  // Ниже — только для рассылки уведомлений (кому и с каким заголовком), см. notifications.ts.
+  // Ниже — только для рассылки уведомлений (кому и с каким заголовком), см. _shared/tasks/comment-fanout.ts.
   title: string;
   assignee_telegram_ids: number[] | null;
   created_by_telegram_id: number | null;
@@ -121,12 +120,11 @@ export async function handleTaskCommentRoutes(
     const names = await resolveNames([telegramId]);
     const actorName = names.get(telegramId) ?? String(telegramId);
     // Участие подписывает: дальше по этой задаче автор получает уведомления, даже если она
-    // не его (issue #82). Ранее отписавшегося комментарий НЕ переподписывает.
-    await ensureCommentSubscription(supabase, taskId, telegramId);
-    // Уведомляем причастных к задаче. Ждём завершения (Edge-функция может быть убита
-    // сразу после ответа, и отложенный промис не досчитается), но сбой внутри не роняет
-    // ответ: notifyTaskComment ловит свои ошибки сам.
-    await notifyTaskComment(supabase, {
+    // не его (issue #82). Ранее отписавшегося комментарий НЕ переподписывает. Затем уведомляем
+    // причастных и подписчиков. Ждём завершения (Edge-функция может быть убита сразу после
+    // ответа, и отложенный промис не досчитается), но сбой внутри не роняет ответ: модуль
+    // ловит свои ошибки сам. Тот же вызов делает MCP `add_task_comment` (issue #521).
+    await afterTaskComment(supabase, {
       task,
       commentId: row.id,
       content: row.content,

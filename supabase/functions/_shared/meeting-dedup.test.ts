@@ -1,12 +1,6 @@
 // Тесты дедупа встреч. Запуск: deno test supabase/functions/_shared/meeting-dedup.test.ts
 import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import {
-  attendeeNames,
-  findDuplicateMeeting,
-  normName,
-  parseMeetingContent,
-  toMinutes,
-} from "./meeting-dedup.ts";
+import { attendeeNames, findDuplicateMeeting, normName, parseMeetingContent, toMinutes } from "./meeting-dedup.ts";
 
 // Мок Supabase: .from().select().eq().eq().eq().limit() → { data }.
 // Возвращаемые строки задаём заранее; query-цепочка их игнорирует (фильтрацию делает сам хелпер
@@ -17,6 +11,7 @@ function mockSupabase(rows: any[], meetings: any[] = []) {
   const entriesChain = {
     select: () => entriesChain,
     eq: () => entriesChain,
+    is: () => entriesChain,
     limit: () => Promise.resolve({ data: rows, error: null }),
   };
   // Второй запрос — время кандидатов из meetings (у записей рекордера в content нет строки
@@ -80,8 +75,12 @@ Deno.test("ЛОЖНЫЙ дубль (реальный кейс): 1-1 vs боль�
   // «Maria / Aleksandra» 08:00 (2 чел.) vs «CVM IMF» 08:15 (14 чел.), общий — только Aleksandra.
   const rows = [{
     id: "cvm",
-    content: "Встреча: CVM IMF / May Review\nДата: 19.06.2026, 08:15\nУчастники: Aleksandra Mironova, Farukh Davurov, Pavel Vasko, Ekaterina Bochkareva, S Kuznetsov, Indira Ravilova, D Gorbunova, A Krasavtsev, Anna Leonova, A Nuralieva, Sergey Artemov, Vasiliy Garro, S Andreev, Ilya Kholodnov",
-    source: "granola", is_private: false, owner_id: null, metadata: { title: "CVM IMF / May Review" },
+    content:
+      "Встреча: CVM IMF / May Review\nДата: 19.06.2026, 08:15\nУчастники: Aleksandra Mironova, Farukh Davurov, Pavel Vasko, Ekaterina Bochkareva, S Kuznetsov, Indira Ravilova, D Gorbunova, A Krasavtsev, Anna Leonova, A Nuralieva, Sergey Artemov, Vasiliy Garro, S Andreev, Ilya Kholodnov",
+    source: "granola",
+    is_private: false,
+    owner_id: null,
+    metadata: { title: "CVM IMF / May Review" },
   }];
   const dup = await findDuplicateMeeting(mockSupabase(rows), {
     groupId: "cee",
@@ -94,11 +93,17 @@ Deno.test("ЛОЖНЫЙ дубль (реальный кейс): 1-1 vs боль�
 
 Deno.test("частичное пересечение состава (<половины) на том же времени → НЕ дубль", async () => {
   const rows = [{
-    id: "big", content: "Встреча: A\nДата: 19.06.2026, 09:00\nУчастники: A, B, X, Y, Z",
-    source: "granola", is_private: false, owner_id: null, metadata: { title: "A" },
+    id: "big",
+    content: "Встреча: A\nДата: 19.06.2026, 09:00\nУчастники: A, B, X, Y, Z",
+    source: "granola",
+    is_private: false,
+    owner_id: null,
+    metadata: { title: "A" },
   }];
   const dup = await findDuplicateMeeting(mockSupabase(rows), {
-    groupId: "cee", entryDate: "2026-06-19", startedAt: "2026-06-19T09:00:00Z",
+    groupId: "cee",
+    entryDate: "2026-06-19",
+    startedAt: "2026-06-19T09:00:00Z",
     attendees: [{ name: "A" }, { name: "B" }, { name: "C" }, { name: "D" }, { name: "E" }], // overlap=2, small=5 → нужно ≥3
   });
   assertEquals(dup, null);
@@ -123,17 +128,37 @@ Deno.test("«1-1» в тот же день, но другое время → Н�
 });
 
 Deno.test("нет участников у входящей → НЕ дедупим", async () => {
-  const rows = [{ id: "x", content: "Дата: 19.06.2026, 09:00\nУчастники: А", source: "granola", is_private: false, owner_id: null, metadata: {} }];
+  const rows = [{
+    id: "x",
+    content: "Дата: 19.06.2026, 09:00\nУчастники: А",
+    source: "granola",
+    is_private: false,
+    owner_id: null,
+    metadata: {},
+  }];
   const dup = await findDuplicateMeeting(mockSupabase(rows), {
-    groupId: "cee", entryDate: "2026-06-19", startedAt: "2026-06-19T09:00:00Z", attendees: [],
+    groupId: "cee",
+    entryDate: "2026-06-19",
+    startedAt: "2026-06-19T09:00:00Z",
+    attendees: [],
   });
   assertEquals(dup, null);
 });
 
 Deno.test("нет даты у входящей → НЕ дедупим", async () => {
-  const rows = [{ id: "x", content: "Дата: 19.06.2026, 09:00\nУчастники: Анна", source: "granola", is_private: false, owner_id: null, metadata: {} }];
+  const rows = [{
+    id: "x",
+    content: "Дата: 19.06.2026, 09:00\nУчастники: Анна",
+    source: "granola",
+    is_private: false,
+    owner_id: null,
+    metadata: {},
+  }];
   const dup = await findDuplicateMeeting(mockSupabase(rows), {
-    groupId: "cee", entryDate: null, startedAt: "09:00", attendees: [{ name: "Анна" }],
+    groupId: "cee",
+    entryDate: null,
+    startedAt: "09:00",
+    attendees: [{ name: "Анна" }],
   });
   assertEquals(dup, null);
 });
@@ -147,12 +172,18 @@ Deno.test("время неизвестно у кандидата: overlap=1 → 
     metadata: { title: "Без времени", attendees: [{ name: "Анна" }, { name: "Борис" }] },
   }];
   const one = await findDuplicateMeeting(mockSupabase(rows), {
-    groupId: "cee", entryDate: "2026-06-19", startedAt: "2026-06-19T09:00:00Z", attendees: [{ name: "Анна" }],
+    groupId: "cee",
+    entryDate: "2026-06-19",
+    startedAt: "2026-06-19T09:00:00Z",
+    attendees: [{ name: "Анна" }],
   });
   assertEquals(one, null); // overlap=1, время кандидата неизвестно → недостаточно
 
   const two = await findDuplicateMeeting(mockSupabase(rows), {
-    groupId: "cee", entryDate: "2026-06-19", startedAt: "2026-06-19T09:00:00Z", attendees: [{ name: "Анна" }, { name: "Борис" }],
+    groupId: "cee",
+    entryDate: "2026-06-19",
+    startedAt: "2026-06-19T09:00:00Z",
+    attendees: [{ name: "Анна" }, { name: "Борис" }],
   });
   assertEquals(two?.id, "no-time"); // overlap=2 → дубль
 });
@@ -160,16 +191,22 @@ Deno.test("время неизвестно у кандидата: overlap=1 → 
 Deno.test("identity_key: разные ключи того же дня + идентичный состав → НЕ дубль (кейс IMF BD 23.07)", async () => {
   // Кандидат — запись рекордера без "Дата:" в content (время не парсится), но с identity_key в metadata.
   const rows = [{
-    id: "imf-regular", source: "desktop-agent", is_private: false, owner_id: null,
+    id: "imf-regular",
+    source: "desktop-agent",
+    is_private: false,
+    owner_id: null,
     content: "### Комитеты по согласованию помещений\n- пункт",
     metadata: {
-      title: "IMF BD регулярная", identity_key: "eventA@google.com:2026-07-23",
+      title: "IMF BD регулярная",
+      identity_key: "eventA@google.com:2026-07-23",
       attendees: [{ name: "Vasiliy Garro" }, { name: "Anna Leonova" }, { name: "Sergey Artemov" }],
     },
   }];
   // Входящая — ДРУГОЕ событие того же дня с тем же составом (регулярный командный созвон).
   const dup = await findDuplicateMeeting(mockSupabase(rows), {
-    groupId: "cee", entryDate: "2026-07-23", startedAt: "2026-07-23T11:30:00Z",
+    groupId: "cee",
+    entryDate: "2026-07-23",
+    startedAt: "2026-07-23T11:30:00Z",
     identityKey: "eventB@google.com:2026-07-23",
     attendees: [{ name: "Vasiliy Garro" }, { name: "Anna Leonova" }, { name: "Sergey Artemov" }],
   });
@@ -178,12 +215,21 @@ Deno.test("identity_key: разные ключи того же дня + иден
 
 Deno.test("identity_key: тот же ключ → дубль (одна встреча, два рекордера)", async () => {
   const rows = [{
-    id: "same", source: "desktop-agent", is_private: false, owner_id: null,
+    id: "same",
+    source: "desktop-agent",
+    is_private: false,
+    owner_id: null,
     content: "### Тема\n- пункт",
-    metadata: { title: "Встреча", identity_key: "eventA@google.com:2026-07-23", attendees: [{ name: "Vasiliy Garro" }] },
+    metadata: {
+      title: "Встреча",
+      identity_key: "eventA@google.com:2026-07-23",
+      attendees: [{ name: "Vasiliy Garro" }],
+    },
   }];
   const dup = await findDuplicateMeeting(mockSupabase(rows), {
-    groupId: "cee", entryDate: "2026-07-23", startedAt: "2026-07-23T08:00:00Z",
+    groupId: "cee",
+    entryDate: "2026-07-23",
+    startedAt: "2026-07-23T08:00:00Z",
     identityKey: "eventA@google.com:2026-07-23",
     attendees: [{ name: "Vasiliy Garro" }, { name: "Someone Else" }], // состав чуть иной — неважно
   });
@@ -193,12 +239,17 @@ Deno.test("identity_key: тот же ключ → дубль (одна встр�
 Deno.test("identity_key только у входящей, кандидат без ключа → эвристика (кросс-источник recorder→granola)", async () => {
   // Granola-запись: время в content, identity_key отсутствует → гейт пропускается, работает эвристика.
   const rows = [{
-    id: "granola", source: "granola", is_private: false, owner_id: null,
+    id: "granola",
+    source: "granola",
+    is_private: false,
+    owner_id: null,
     content: "Дата: 23.07.2026, 08:02\nУчастники: Анна, Борис",
     metadata: { title: "Granola" },
   }];
   const dup = await findDuplicateMeeting(mockSupabase(rows), {
-    groupId: "cee", entryDate: "2026-07-23", startedAt: "2026-07-23T08:00:00Z",
+    groupId: "cee",
+    entryDate: "2026-07-23",
+    startedAt: "2026-07-23T08:00:00Z",
     identityKey: "eventA@google.com:2026-07-23", // есть у входящей, нет у кандидата
     attendees: [{ name: "Анна" }, { name: "Борис" }],
   });
@@ -212,11 +263,17 @@ Deno.test("identity_key только у входящей, кандидат бе�
 // выбрасывалась как «дубль» того, чего вызывающий не имеет права видеть.
 
 const PRIVATE_ROW = [{
-  id: "priv", content: "Дата: 19.06.2026, 09:00\nУчастники: Анна, Борис", source: "granola",
-  is_private: true, owner_id: 999, metadata: { title: "Личная" },
+  id: "priv",
+  content: "Дата: 19.06.2026, 09:00\nУчастники: Анна, Борис",
+  source: "granola",
+  is_private: true,
+  owner_id: 999,
+  metadata: { title: "Личная" },
 }];
 const SAME_MEETING = {
-  groupId: "cee", entryDate: "2026-06-19", startedAt: "2026-06-19T09:00:00Z",
+  groupId: "cee",
+  entryDate: "2026-06-19",
+  startedAt: "2026-06-19T09:00:00Z",
   attendees: [{ name: "Анна" }, { name: "Борис" }],
 };
 
@@ -238,8 +295,12 @@ Deno.test("без viewerId (системный вызов) приватные к
 
 Deno.test("командная встреча остаётся дублем для любого — фильтр не сломал дедуп", async () => {
   const rows = [{
-    id: "team", content: "Дата: 19.06.2026, 09:00\nУчастники: Анна, Борис", source: "granola",
-    is_private: false, owner_id: null, metadata: { title: "Общая" },
+    id: "team",
+    content: "Дата: 19.06.2026, 09:00\nУчастники: Анна, Борис",
+    source: "granola",
+    is_private: false,
+    owner_id: null,
+    metadata: { title: "Общая" },
   }];
   assertEquals((await findDuplicateMeeting(mockSupabase(rows), { ...SAME_MEETING, viewerId: 111 }))?.id, "team");
   assertEquals((await findDuplicateMeeting(mockSupabase(rows), SAME_MEETING))?.id, "team");
@@ -253,26 +314,47 @@ Deno.test("командная встреча остаётся дублем дл�
 
 Deno.test("ключи из разных пространств не гейтят: recorder(calendar) ↔ granola по заголовку → дубль", async () => {
   const rows = [{
-    id: "rec", source: "desktop-agent", is_private: false, owner_id: null,
+    id: "rec",
+    source: "desktop-agent",
+    is_private: false,
+    owner_id: null,
     content: "### Спринт\n- пункт",
-    metadata: { title: "IT+BD", identity_key: "ffvs9kgg@google.com:2026-08-26", meeting_id: "11111111-1111-4111-8111-111111111111", attendees: [{ email: "a@x.io" }] },
+    metadata: {
+      title: "IT+BD",
+      identity_key: "ffvs9kgg@google.com:2026-08-26",
+      meeting_id: "11111111-1111-4111-8111-111111111111",
+      attendees: [{ email: "a@x.io" }],
+    },
   }];
-  const dup = await findDuplicateMeeting(mockSupabase(rows, [{ id: "11111111-1111-4111-8111-111111111111", started_at: "2026-08-26T12:00:00Z" }]), {
-    groupId: "cee", entryDate: "2026-08-26", startedAt: "2026-08-26T12:01:41Z",
-    identityKey: "granola:not_RulfChcZ3QCUEF", title: "IT+BD", attendees: [],
-  });
+  const dup = await findDuplicateMeeting(
+    mockSupabase(rows, [{ id: "11111111-1111-4111-8111-111111111111", started_at: "2026-08-26T12:00:00Z" }]),
+    {
+      groupId: "cee",
+      entryDate: "2026-08-26",
+      startedAt: "2026-08-26T12:01:41Z",
+      identityKey: "granola:not_RulfChcZ3QCUEF",
+      title: "IT+BD",
+      attendees: [],
+    },
+  );
   assertEquals(dup?.id, "rec");
 });
 
 Deno.test("granola↔granola: у каждого участника свой note_id — гейт не должен их разводить", async () => {
   const rows = [{
-    id: "g1", source: "granola", is_private: false, owner_id: null,
+    id: "g1",
+    source: "granola",
+    is_private: false,
+    owner_id: null,
     content: "Дата: 26.08.2026, 12:01\nУчастники: Анна, Борис",
     metadata: { title: "CEE biweekly sync", identity_key: "granola:not_AAA" },
   }];
   const dup = await findDuplicateMeeting(mockSupabase(rows), {
-    groupId: "cee", entryDate: "2026-08-26", startedAt: "2026-08-26T12:01:00Z",
-    identityKey: "granola:not_BBB", title: "CEE biweekly sync",
+    groupId: "cee",
+    entryDate: "2026-08-26",
+    startedAt: "2026-08-26T12:01:00Z",
+    identityKey: "granola:not_BBB",
+    title: "CEE biweekly sync",
     attendees: [{ name: "Анна" }, { name: "Борис" }],
   });
   assertEquals(dup?.id, "g1");
@@ -280,16 +362,23 @@ Deno.test("granola↔granola: у каждого участника свой note
 
 Deno.test("два РАЗНЫХ календарных события того же дня с тем же составом → НЕ дубль (регрессия IMF BD 23.07)", async () => {
   const rows = [{
-    id: "imf-regular", source: "desktop-agent", is_private: false, owner_id: null,
+    id: "imf-regular",
+    source: "desktop-agent",
+    is_private: false,
+    owner_id: null,
     content: "### Комитеты\n- пункт",
     metadata: {
-      title: "IMF BD регулярная", identity_key: "eventA@google.com:2026-07-23",
+      title: "IMF BD регулярная",
+      identity_key: "eventA@google.com:2026-07-23",
       attendees: [{ name: "Vasiliy Garro" }, { name: "Anna Leonova" }, { name: "Sergey Artemov" }],
     },
   }];
   const dup = await findDuplicateMeeting(mockSupabase(rows), {
-    groupId: "cee", entryDate: "2026-07-23", startedAt: "2026-07-23T11:30:00Z",
-    identityKey: "eventB@google.com:2026-07-23", title: "IMF BD другая",
+    groupId: "cee",
+    entryDate: "2026-07-23",
+    startedAt: "2026-07-23T11:30:00Z",
+    identityKey: "eventB@google.com:2026-07-23",
+    title: "IMF BD другая",
     attendees: [{ name: "Vasiliy Garro" }, { name: "Anna Leonova" }, { name: "Sergey Artemov" }],
   });
   assertEquals(dup, null);
@@ -301,46 +390,79 @@ Deno.test("два РАЗНЫХ календарных события того ж
 
 Deno.test("идентичный заголовок ловит дубль даже при разрыве 25 минут (Granola подключилась позже)", async () => {
   const rows = [{
-    id: "cal", source: "desktop-agent", is_private: false, owner_id: null,
+    id: "cal",
+    source: "desktop-agent",
+    is_private: false,
+    owner_id: null,
     content: "### Тема\n- пункт",
-    metadata: { title: "Настоящий рабочий мит", identity_key: "0jb48c5c@google.com:2026-07-21", meeting_id: "22222222-2222-4222-8222-222222222222" },
+    metadata: {
+      title: "Настоящий рабочий мит",
+      identity_key: "0jb48c5c@google.com:2026-07-21",
+      meeting_id: "22222222-2222-4222-8222-222222222222",
+    },
   }];
-  const dup = await findDuplicateMeeting(mockSupabase(rows, [{ id: "22222222-2222-4222-8222-222222222222", started_at: "2026-07-21T13:00:00Z" }]), {
-    groupId: "cee", entryDate: "2026-07-21", startedAt: "2026-07-21T13:25:12Z",
-    identityKey: "granola:not_1OGqJMeGr7XXoW", title: "настоящий рабочий  мит!", attendees: [],
-  });
+  const dup = await findDuplicateMeeting(
+    mockSupabase(rows, [{ id: "22222222-2222-4222-8222-222222222222", started_at: "2026-07-21T13:00:00Z" }]),
+    {
+      groupId: "cee",
+      entryDate: "2026-07-21",
+      startedAt: "2026-07-21T13:25:12Z",
+      identityKey: "granola:not_1OGqJMeGr7XXoW",
+      title: "настоящий рабочий  мит!",
+      attendees: [],
+    },
+  );
   assertEquals(dup?.id, "cal");
 });
 
 Deno.test("похожие, но РАЗНЫЕ заголовки не склеиваются (Dodo Pizza Bulgaria ≠ Dodo Pizza Hungary)", async () => {
   const rows = [{
-    id: "bg", source: "desktop-agent", is_private: false, owner_id: null,
+    id: "bg",
+    source: "desktop-agent",
+    is_private: false,
+    owner_id: null,
     content: "### Тема\n- пункт",
     metadata: { title: "Dodo Pizza Bulgaria", identity_key: "evt@google.com:2026-07-23" },
   }];
   const dup = await findDuplicateMeeting(mockSupabase(rows), {
-    groupId: "cee", entryDate: "2026-07-23", startedAt: "2026-07-23T13:00:07Z",
-    identityKey: "granola:not_X", title: "Dodo Pizza Hungary // Marketing", attendees: [],
+    groupId: "cee",
+    entryDate: "2026-07-23",
+    startedAt: "2026-07-23T13:00:07Z",
+    identityKey: "granola:not_X",
+    title: "Dodo Pizza Hungary // Marketing",
+    attendees: [],
   });
   assertEquals(dup, null);
 });
 
 Deno.test("дефолтный/короткий заголовок сигналом не считается («Встреча», «1-1»)", async () => {
   const generic = (title: string) => [{
-    id: "cand", source: "desktop-agent", is_private: false, owner_id: null,
-    content: "### Тема\n- пункт", metadata: { title, identity_key: "evt@google.com:2026-08-26" },
+    id: "cand",
+    source: "desktop-agent",
+    is_private: false,
+    owner_id: null,
+    content: "### Тема\n- пункт",
+    metadata: { title, identity_key: "evt@google.com:2026-08-26" },
   }];
   assertEquals(
     await findDuplicateMeeting(mockSupabase(generic("Встреча")), {
-      groupId: "cee", entryDate: "2026-08-26", startedAt: "2026-08-26T12:00:00Z",
-      identityKey: "kontur:room1", title: "Встреча", attendees: [],
+      groupId: "cee",
+      entryDate: "2026-08-26",
+      startedAt: "2026-08-26T12:00:00Z",
+      identityKey: "kontur:room1",
+      title: "Встреча",
+      attendees: [],
     }),
     null,
   );
   assertEquals(
     await findDuplicateMeeting(mockSupabase(generic("1-1")), {
-      groupId: "cee", entryDate: "2026-08-26", startedAt: "2026-08-26T12:00:00Z",
-      identityKey: "granola:not_Y", title: "1-1", attendees: [],
+      groupId: "cee",
+      entryDate: "2026-08-26",
+      startedAt: "2026-08-26T12:00:00Z",
+      identityKey: "granola:not_Y",
+      title: "1-1",
+      attendees: [],
     }),
     null,
   );
@@ -353,17 +475,26 @@ Deno.test("дефолтный/короткий заголовок сигнало
 
 Deno.test("запись из комнаты без названия: публикующий ∈ участники кандидата + близкое время → дубль", async () => {
   const rows = [{
-    id: "cal", source: "desktop-agent", is_private: false, owner_id: null,
+    id: "cal",
+    source: "desktop-agent",
+    is_private: false,
+    owner_id: null,
     content: "### Спринт\n- пункт",
     metadata: {
-      title: "IT+BD", identity_key: "ffvs9kgg@google.com:2026-08-26", meeting_id: "33333333-3333-4333-8333-333333333333",
+      title: "IT+BD",
+      identity_key: "ffvs9kgg@google.com:2026-08-26",
+      meeting_id: "33333333-3333-4333-8333-333333333333",
       attendees: [{ email: "V.Garro@dodobrands.io" }, { email: "i.ravilova@dodobrands.io", name: "Indira" }],
     },
   }];
   const meetings = [{ id: "33333333-3333-4333-8333-333333333333", started_at: "2026-08-26T12:00:00Z" }];
   const dup = await findDuplicateMeeting(mockSupabase(rows, meetings), {
-    groupId: "cee", entryDate: "2026-08-26", startedAt: "2026-08-26T12:01:36Z",
-    identityKey: "kontur:c6957f9e-8e7f-45", title: "Встреча", attendees: [],
+    groupId: "cee",
+    entryDate: "2026-08-26",
+    startedAt: "2026-08-26T12:01:36Z",
+    identityKey: "kontur:c6957f9e-8e7f-45",
+    title: "Встреча",
+    attendees: [],
     viewerEmail: "I.Ravilova@dodobrands.io", // регистр не важен
   });
   assertEquals(dup?.id, "cal");
@@ -371,17 +502,26 @@ Deno.test("запись из комнаты без названия: публи�
 
 Deno.test("публикующего НЕТ в участниках кандидата → не дубль", async () => {
   const rows = [{
-    id: "cal", source: "desktop-agent", is_private: false, owner_id: null,
+    id: "cal",
+    source: "desktop-agent",
+    is_private: false,
+    owner_id: null,
     content: "### Спринт\n- пункт",
     metadata: {
-      title: "IT+BD", identity_key: "ffvs9kgg@google.com:2026-08-26", meeting_id: "44444444-4444-4444-8444-444444444444",
+      title: "IT+BD",
+      identity_key: "ffvs9kgg@google.com:2026-08-26",
+      meeting_id: "44444444-4444-4444-8444-444444444444",
       attendees: [{ email: "v.garro@dodobrands.io" }],
     },
   }];
   const meetings = [{ id: "44444444-4444-4444-8444-444444444444", started_at: "2026-08-26T12:00:00Z" }];
   const dup = await findDuplicateMeeting(mockSupabase(rows, meetings), {
-    groupId: "cee", entryDate: "2026-08-26", startedAt: "2026-08-26T12:01:36Z",
-    identityKey: "kontur:c6957f9e-8e7f-45", title: "Встреча", attendees: [],
+    groupId: "cee",
+    entryDate: "2026-08-26",
+    startedAt: "2026-08-26T12:01:36Z",
+    identityKey: "kontur:c6957f9e-8e7f-45",
+    title: "Встреча",
+    attendees: [],
     viewerEmail: "someone.else@dodobrands.io",
   });
   assertEquals(dup, null);
@@ -389,17 +529,26 @@ Deno.test("публикующего НЕТ в участниках кандид�
 
 Deno.test("сигнал по участнику требует близкого времени: другая встреча того же человека в тот же день → НЕ дубль", async () => {
   const rows = [{
-    id: "other", source: "desktop-agent", is_private: false, owner_id: null,
+    id: "other",
+    source: "desktop-agent",
+    is_private: false,
+    owner_id: null,
     content: "### Другая встреча\n- пункт",
     metadata: {
-      title: "P&L Черногория", identity_key: "6ds0j49m@google.com:2026-08-26", meeting_id: "55555555-5555-4555-8555-555555555555",
+      title: "P&L Черногория",
+      identity_key: "6ds0j49m@google.com:2026-08-26",
+      meeting_id: "55555555-5555-4555-8555-555555555555",
       attendees: [{ email: "i.ravilova@dodobrands.io" }],
     },
   }];
   const meetings = [{ id: "55555555-5555-4555-8555-555555555555", started_at: "2026-08-26T08:00:00Z" }];
   const dup = await findDuplicateMeeting(mockSupabase(rows, meetings), {
-    groupId: "cee", entryDate: "2026-08-26", startedAt: "2026-08-26T12:01:36Z",
-    identityKey: "kontur:c6957f9e-8e7f-45", title: "Встреча", attendees: [],
+    groupId: "cee",
+    entryDate: "2026-08-26",
+    startedAt: "2026-08-26T12:01:36Z",
+    identityKey: "kontur:c6957f9e-8e7f-45",
+    title: "Встреча",
+    attendees: [],
     viewerEmail: "i.ravilova@dodobrands.io",
   });
   assertEquals(dup, null); // 4 часа разницы — человек просто есть в инвайте другой встречи

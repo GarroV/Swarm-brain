@@ -1,22 +1,14 @@
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { json } from "./http.ts";
 import { canViewTask } from "../_shared/tasks/access.ts";
-import { commentRecipients, isInvolvedInTask, type NotifiableTask } from "../_shared/tasks/notify.ts";
-import { loadSubscribers } from "./task-subscriptions.ts";
-import { externalFetch, VIA_TELEGRAM } from "../_shared/external-fetch.ts";
 
-// Лента уведомлений (колокольчик) + рассылка события «к твоей задаче написали комментарий».
+// Лента уведомлений (колокольчик). Рассылку события «к твоей задаче написали комментарий» делает
+// `_shared/tasks/comment-fanout.ts` — одна реализация для веба и MCP (issue #521).
 // Роуты: GET /notifications, POST /notifications/read.
 // Возвращает null, если путь не про уведомления (index.ts идёт дальше).
 
-const TELEGRAM_BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN");
-// Ссылка «открыть задачу» в пуше. Deep-link ?task=<id> разбирается в miniapp (lib/telegram.ts).
-const MINIAPP_ORIGIN = Deno.env.get("MINIAPP_ORIGIN") ?? "";
-
 const DEFAULT_LIMIT = 30;
 const MAX_LIMIT = 100;
-// Превью комментария в пуше: длинный апдейт не должен разворачиваться в простыню в чате.
-const PUSH_PREVIEW_MAX = 300;
 
 type NotificationRow = {
   id: string;
@@ -33,90 +25,6 @@ type NotificationRow = {
 
 const SELECT_WITH_REFS = "id, type, task_id, comment_id, actor_telegram_id, read_at, created_at, payload, " +
   "tasks(title, is_private, owner_id), task_comments(content)";
-
-function escapeHtml(s: string): string {
-  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-}
-
-function truncate(s: string, max: number): string {
-  return s.length <= max ? s : `${s.slice(0, max - 1)}…`;
-}
-
-async function sendTelegram(chatId: number, text: string): Promise<void> {
-  if (!TELEGRAM_BOT_TOKEN) return;
-  await externalFetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      chat_id: chatId,
-      text,
-      parse_mode: "HTML",
-      disable_web_page_preview: true,
-    }),
-  }, VIA_TELEGRAM);
-}
-
-// ── Рассылка ─────────────────────────────────────────────────────────────────
-
-export type CommentNotificationInput = {
-  task: NotifiableTask & { id: string; title: string; group_id: string | null };
-  commentId: string;
-  content: string;
-  actorTelegramId: number;
-  actorName: string;
-};
-
-// Fan-out по причастным к задаче И подписавшимся (issue #82) + пуш в бота. Best-effort: и вставка, и пуш только
-// логируются при сбое — уведомление не должно ронять сам комментарий (он уже сохранён,
-// а повторить POST пользователь не может — получился бы дубль в ленте задачи).
-export async function notifyTaskComment(
-  supabase: SupabaseClient,
-  { task, commentId, content, actorTelegramId, actorName }: CommentNotificationInput,
-): Promise<void> {
-  // Подписки — исключения из круга по умолчанию: добавляют непричастных (обычно админа,
-  // который ведёт людей и не может обходить карточки руками) и убирают отписавшихся.
-  const subscribers = await loadSubscribers(supabase, task.id);
-  const recipients = commentRecipients(task, actorTelegramId, subscribers);
-  if (recipients.length === 0) return;
-
-  const { error } = await supabase.from("notifications").insert(
-    recipients.map((rid) => ({
-      recipient_telegram_id: rid,
-      group_id: task.group_id,
-      type: "task_comment",
-      task_id: task.id,
-      comment_id: commentId,
-      actor_telegram_id: actorTelegramId,
-    })),
-  );
-  if (error) console.error("notifications insert failed:", error);
-
-  const link = MINIAPP_ORIGIN && MINIAPP_ORIGIN !== "*"
-    ? `\n\n<a href="${MINIAPP_ORIGIN}/?task=${task.id}">Открыть задачу</a>`
-    : "";
-  const text = `💬 <b>${escapeHtml(actorName)}</b> — комментарий к задаче «${escapeHtml(task.title)}»\n\n` +
-    escapeHtml(truncate(content, PUSH_PREVIEW_MAX)) + link;
-
-  // Пришло ПО ПОДПИСКЕ, а не потому что задача твоя → объясняем, откуда взялось, и куда идти
-  // отписываться. Иначе человек получает уведомления о задаче, к которой не причастен, и не
-  // понимает почему (решение владельца: подписывать с пометкой).
-  const subscribedOnly = new Set(
-    subscribers
-      .filter((sub) => sub.state === "subscribed" && !isInvolvedInTask(task, sub.telegram_id))
-      .map((sub) => sub.telegram_id),
-  );
-  const hint = "\n\n<i>Вы получаете это, потому что комментировали задачу. Отписаться — тумблером в её карточке.</i>";
-
-  const results = await Promise.allSettled(
-    recipients.map((rid) => sendTelegram(rid, subscribedOnly.has(rid) ? text + hint : text)),
-  );
-  for (const r of results) {
-    // Отписался от бота / заблокировал — норма, не ошибка приложения: в колокольчике уведомление уже лежит.
-    if (r.status === "rejected") {
-      console.error("notification push failed:", r.reason);
-    }
-  }
-}
 
 // ── Роуты ────────────────────────────────────────────────────────────────────
 

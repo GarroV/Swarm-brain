@@ -71,6 +71,7 @@ import type { TgCallbackQuery, TgMessage } from "./lib/types.ts";
 import { classifyRequest, isOwnPrivateChat } from "./lib/webhook-auth.ts";
 import { processingFrozen } from "../_shared/processing-freeze.ts";
 import { onlyLive } from "../_shared/tasks/live.ts";
+import { onlyLiveEntries } from "../_shared/entries/live.ts";
 import { externalFetch, VIA_GRANOLA, VIA_TELEGRAM } from "../_shared/external-fetch.ts";
 
 const TELEGRAM_BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN")!;
@@ -430,6 +431,7 @@ Deno.serve(async (req: Request) => {
     }
     await getReadAiToken();
     // Check if meetings are still coming in — alert if last one is >3 days ago
+    // archive-ok: мониторинг приёма: архивная встреча тоже значит, что Read.ai присылает
     const { data: lastMeeting } = await supabase
       .from("entries").select("created_at").eq("source", "read_ai")
       .order("created_at", { ascending: false }).limit(1).maybeSingle();
@@ -701,9 +703,11 @@ Deno.serve(async (req: Request) => {
       await handleAddTask(chatId);
     } else if (command === "/meetings" || text === "🎙 Встречи") {
       await pollGranolaForUser(chatId, userId);
-      const { data: meetings } = await supabase
-        .from("entries")
-        .select("id, metadata, created_at, source, owner_id")
+      const { data: meetings } = await onlyLiveEntries(
+        supabase
+          .from("entries")
+          .select("id, metadata, created_at, source, owner_id"),
+      )
         .eq("group_id", groupId)
         .in("source", ENTRY_MEETING_SOURCES)
         .or("metadata->>confirmed.is.null,metadata->>confirmed.eq.false")
@@ -929,15 +933,19 @@ Deno.serve(async (req: Request) => {
       ] = await Promise.all([
         // Статистика — по ВСЕМ источникам встреч (вкл. опубликованные рекордерные `desktop-agent`);
         // pending-фильтр ниже — только внешние (рекордерные pending живут в таблице `meetings`).
-        supabase.from("entries").select("*", { count: "exact", head: true }).eq("group_id", groupId).in(
+        onlyLiveEntries(supabase.from("entries").select("*", { count: "exact", head: true })).eq("group_id", groupId)
+          .in(
+            "source",
+            ALL_MEETING_SOURCES,
+          ),
+        onlyLiveEntries(supabase.from("entries").select("id, metadata, created_at")).eq("group_id", groupId).eq(
           "source",
-          ALL_MEETING_SOURCES,
-        ),
-        supabase.from("entries").select("id, metadata, created_at").eq("group_id", groupId).eq("source", "read_ai").eq(
+          "read_ai",
+        ).eq(
           "metadata->>confirmed",
           "false",
         ).order("created_at", { ascending: false }),
-        supabase.from("entries").select("metadata, created_at, source").eq("group_id", groupId).in(
+        onlyLiveEntries(supabase.from("entries").select("metadata, created_at, source")).eq("group_id", groupId).in(
           "source",
           ALL_MEETING_SOURCES,
         ).order("created_at", { ascending: false }).limit(1).maybeSingle(),

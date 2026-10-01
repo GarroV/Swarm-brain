@@ -1,8 +1,8 @@
 import { supabase } from "../lib/supabase.ts";
 import { chatComplete, getEmbedding } from "../lib/openai.ts";
 import { sendInlineMessage, sendMessage } from "../lib/telegram.ts";
-import { clearSession, extractEntryMeta, getSession, setSession } from "../lib/storage.ts";
-import { applyGeneralSentinel, specificCountries } from "../../_shared/meta-extract.ts";
+import { clearSession, getSession, setSession } from "../lib/storage.ts";
+import { applyGeneralSentinel, extractEntryMeta, specificCountries } from "../../_shared/meta-extract.ts";
 import { getUserGroupId } from "../lib/workspace.ts";
 import { buildTezisyUserMessage, TEZISY_PROMPT } from "../../_shared/tezisy-prompt.ts";
 import { findDuplicateMeeting, type MeetingAttendee, parseMeetingContent } from "../../_shared/meeting-dedup.ts";
@@ -96,6 +96,7 @@ function buildNoteContent(note: Record<string, unknown>): string {
 
 async function getProcessedIds(telegramId: number): Promise<Set<string>> {
   const [savedRes, pendingRes, integrationRes] = await Promise.all([
+    // archive-ok: архивная заметка Granola уже была импортирована — без неё удалённое вернулось бы «новым»
     // Опубликованные (legacy pending + опубликованные) в entries — по granola_note_id.
     supabase.from("entries").select("metadata").eq("source", "granola")
       .eq("metadata->>added_by_telegram_id", String(telegramId)),
@@ -213,7 +214,7 @@ async function prepareGranolaEntry(
     cached
       ? Promise.resolve(cached.tezises)
       : chatComplete(GRANOLA_TEZISY_PROMPT, buildTezisyUserMessage(content.slice(0, 12000))),
-    extractEntryMeta(content.slice(0, 4000)),
+    extractEntryMeta(content, Deno.env.get("OPENAI_API_KEY")!),
   ]);
 
   // Extract entry_date from content (content always has it in "Дата: ..." line)
@@ -383,6 +384,7 @@ export async function pollGranolaForUser(chatId: number, telegramId: number): Pr
   const notes = await fetchNotesSince(integration.api_key, since);
   if (!notes.length) return 0;
 
+  // archive-ok: архивная заметка Granola уже была импортирована — без неё удалённое вернулось бы «новым»
   const [savedRes] = await Promise.all([
     supabase.from("entries").select("metadata").eq("source", "granola")
       .eq("metadata->>added_by_telegram_id", String(telegramId)),

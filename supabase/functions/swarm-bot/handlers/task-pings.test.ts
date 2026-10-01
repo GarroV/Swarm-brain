@@ -47,8 +47,9 @@ Deno.test("isPingDue: без даты пинга — нет", () => {
   assertEquals(isPingDue(row({ remind_date: null }), "2026-08-26"), false);
 });
 
-Deno.test("isPingDue: закрытая задача не пингует (оба написания статуса)", () => {
+Deno.test("isPingDue: закрытая задача не пингует (оба закрытых статуса)", () => {
   assertEquals(isPingDue(row({ status: "done" }), "2026-08-26"), false);
+  assertEquals(isPingDue(row({ status: "cancelled" }), "2026-08-26"), false);
 });
 
 Deno.test("pingRecipients: пинг идёт исполнителям", () => {
@@ -146,4 +147,9 @@ Deno.test("settlePing: недоставку пытаемся отдать не �
 Deno.test("settlePing: получателей нет вовсе — гасим сразу (иначе задача висит в выборке вечно)", () => {
   const r = row({ assignee_telegram_ids: [], remind_set_by: null, created_by_telegram_id: null });
   assertEquals(settlePing(r, [], "2026-08-26").done, true);
+});
+
+Deno.test("pingRecipients: демо-аккаунтам пинг не шлётся, живым — да (#675)", () => {
+  assertEquals(pingRecipients(row({ assignee_telegram_ids: [900000001, 111, 900000004] })), [111]);
+  assertEquals(pingRecipients(row({ assignee_telegram_ids: [900000004] })), []);
 });

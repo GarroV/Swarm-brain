@@ -9,6 +9,7 @@ import {
 import { findDuplicateMeeting, type MeetingAttendee } from "./meeting-dedup.ts";
 import { arbitrateFullness, type TranscriptLike } from "./meeting-fullness.ts";
 import { type DraftMeetingRow, hasCoOwners, oneOnOnePartner } from "./meeting-access.ts";
+import { onlyLiveEntries } from "./entries/live.ts";
 
 // Публикация черновика встречи (таблица meetings) в базу знаний (entries). Одна реализация
 // для веба (swarm-api POST /agent-meetings/:id/publish) и MCP (publish_draft_meeting, issue #513):
@@ -88,6 +89,7 @@ export async function publishDraftMeeting(
   const sharedWith = visibility.ok ? visibility.sharedWith : [];
   // идемпотентность: уже опубликовано → вернуть существующую запись
   if (meeting.status === "in_base" && meeting.entry_id) {
+    // archive-ok: идемпотентность: встреча уже опубликована в эту запись — отдаём её как есть, а не null
     const { data: existing } = await supabase.from("entries").select(
       cols,
     ).eq("id", meeting.entry_id as string).single();
@@ -147,6 +149,8 @@ export async function publishDraftMeeting(
     // сам записавший есть в attendees календарной записи той же встречи.
     viewerEmail: opts.viewerEmail,
     viewerId: opts.telegramId,
+    // Только записи той же видимости (#579): личная публикация не трогает командную запись.
+    publishPrivate: opts.isPrivate,
   });
   // Фильтр приватности теперь ВНУТРИ findDuplicateMeeting (issue #45) — чужое личное сюда
   // не доходит; прежняя ручная проверка на этой строке была единственной из четырёх.
@@ -192,8 +196,10 @@ export async function publishDraftMeeting(
       // а факт замены пишем в metadata (кто, когда, чем именно оказалась полнее).
       const prevMeta = ((dup as unknown as { metadata?: Record<string, unknown> })
         .metadata ?? {}) as Record<string, unknown>;
-      const { data: prevEntry } = await supabase.from("entries").select(
-        "metadata",
+      const { data: prevEntry } = await onlyLiveEntries(
+        supabase.from("entries").select(
+          "metadata",
+        ),
       ).eq("id", dup.id).single();
       const baseMeta = ((prevEntry as { metadata?: Record<string, unknown> } | null)
         ?.metadata ?? prevMeta) as Record<string, unknown>;
@@ -227,6 +233,7 @@ export async function publishDraftMeeting(
       );
     }
 
+    // archive-ok: запись-дубль только что найдена живой выборкой дедупа и обновлена — перечитываем её по id
     const { data: existing } = await supabase.from("entries").select(
       cols,
     ).eq("id", dup.id).single();
@@ -299,6 +306,7 @@ export async function publishDraftMeeting(
     .maybeSingle();
   if (!linked) {
     // параллельная публикация — убираем дубль, возвращаем уже привязанную запись
+    // archive-ok: откат только что вставленного дубля — его никто не видел
     await supabase.from("entries").delete().eq(
       "id",
       (created as { id: string }).id,
@@ -306,6 +314,7 @@ export async function publishDraftMeeting(
     const { data: m2 } = await supabase.from("meetings").select("entry_id")
       .eq("id", meetingId).single();
     const existingId = (m2 as { entry_id: string | null }).entry_id;
+    // archive-ok: возвращаем запись, уже привязанную к этой встрече (meetings.entry_id), — какая есть
     const { data: existing } = await supabase.from("entries").select(
       cols,
     ).eq("id", existingId as string).single();

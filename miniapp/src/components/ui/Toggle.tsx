@@ -8,6 +8,10 @@ import { cn } from "@/lib/utils";
 //
 // Анимируются только transform и background-color — свойства, дружелюбные к компоновщику,
 // поэтому переключение не вызывает раскладку страницы.
+//
+// Выключенное состояние — контур и бегунок цветом --ink-mute (issue #612): трек --surface-2 с
+// границей --line-2 давал ~1.1:1 к панели, и выключенный тумблер было не видно вовсе. Граница
+// элемента управления — не меньше 3:1 (ink-mute: 3.1 на белом, 5.0 в тёмной теме).
 
 type ToggleProps = {
   on: boolean;
@@ -38,18 +42,19 @@ export function Toggle({ on, onChange, asVisual, color = "var(--accent-ink)", ar
       style={{
         width: w,
         height: h,
-        background: on ? color : "var(--surface-2)",
-        border: `1px solid ${on ? color : "var(--line-2)"}`,
+        background: on ? color : "transparent",
+        border: `1px solid ${on ? color : "var(--ink-mute)"}`,
       }}
     >
       <span
-        className="absolute rounded-full bg-white transition-transform"
+        className="absolute rounded-full transition-[transform,background-color]"
         style={{
+          background: on ? "#fff" : "var(--ink-mute)",
           width: knob,
           height: knob,
           left: 2,
           transform: `translateX(${on ? w - knob - 6 : 0}px)`,
-          boxShadow: "0 1px 2px rgba(0,0,0,.18)",
+          boxShadow: on ? "0 1px 2px rgba(0,0,0,.18)" : "none",
         }}
       />
     </Tag>

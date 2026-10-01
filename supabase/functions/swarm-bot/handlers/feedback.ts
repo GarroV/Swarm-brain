@@ -1,7 +1,7 @@
 import { supabase } from "../lib/supabase.ts";
-import { externalFetch, VIA_TELEGRAM_FILE } from "../../_shared/external-fetch.ts";
 import { makeFeedbackPingDeps, sendFeedbackPing } from "../../_shared/feedback-ping.ts";
 import { removeStorageObject } from "../../_shared/storage-links.ts";
+import { FEEDBACK_SCOPE } from "../../_shared/storage-files.ts";
 import { getTelegramFileUrl, sendInlineMessage, sendMessage } from "../lib/telegram.ts";
 import {
   clearSession,
@@ -13,6 +13,7 @@ import {
 } from "../lib/storage.ts";
 import { FEEDBACK_CATEGORIES, feedbackCategoryLabel, isFeedbackCategory } from "../../_shared/feedback-categories.ts";
 import type { TgCallbackQuery } from "../lib/types.ts";
+import { externalFetch, VIA_TELEGRAM_FILE } from "../../_shared/external-fetch.ts";
 
 const TELEGRAM_BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN")!;
 const BOT_NAME = Deno.env.get("BOT_NAME") ?? "bot";
@@ -63,11 +64,11 @@ async function screenshotToStorage(photoFileId: string): Promise<string | undefi
     const res = await externalFetch(tgUrl, {}, VIA_TELEGRAM_FILE);
     if (!res.ok) return undefined;
     const buffer = await res.arrayBuffer();
-    const { path } = await uploadToStorage("feedback.jpg", buffer, "image/jpeg", "feedback");
-    if (!path) return undefined;
+    const { path, file } = await uploadToStorage("feedback.jpg", buffer, "image/jpeg", "feedback", FEEDBACK_SCOPE);
+    if (!path || !file) return undefined;
     // Незарегистрированный скрин не отдаст ни один эндпоинт — такой файл только занимает место.
     if (await registerFeedbackFile(path)) {
-      await discardOrphanFile(path);
+      await discardOrphanFile(file);
       return undefined;
     }
     return path;
@@ -214,7 +215,7 @@ export async function cleanupOldFeedback(): Promise<number> {
   const stuck: string[] = [];
   for (const f of rows) {
     if (!f.screenshot_url) continue;
-    const res = await removeStorageObject(supabase, f.screenshot_url);
+    const res = await removeStorageObject(supabase, f.screenshot_url, { kind: "feedback" });
     if (res.status === "failed") {
       stuck.push(f.id);
       console.error(`[feedback cleanup] файл не удалён (${f.id}): ${res.error}`);

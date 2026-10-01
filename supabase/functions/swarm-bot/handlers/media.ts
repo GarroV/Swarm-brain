@@ -414,7 +414,7 @@ export async function handleDocument(
     }
 
     const [stored, summary] = await Promise.all([
-      uploadToStorage(name, buffer, mime || "text/plain", "documents"),
+      uploadToStorage(name, buffer, mime || "text/plain", "documents", groupId),
       generateSummary(text),
     ]);
 
@@ -459,6 +459,7 @@ export async function handleDocument(
       buffer,
       mime || "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
       "spreadsheets",
+      groupId,
     );
 
     let extracted: string;
@@ -519,7 +520,7 @@ export async function handleDocument(
     const tgUrl = await getTelegramFileUrl(doc.file_id);
     const pdfRes = await externalFetch(tgUrl, {}, VIA_TELEGRAM_FILE);
     const pdfBuffer = await pdfRes.arrayBuffer();
-    const stored = await uploadToStorage(name, pdfBuffer, "application/pdf", "pdfs");
+    const stored = await uploadToStorage(name, pdfBuffer, "application/pdf", "pdfs", groupId);
 
     if (!stored.path) {
       await sendMessage(chatId, `⚠️ Не удалось сохранить PDF: ${stored.error ?? "неизвестная ошибка"}`);

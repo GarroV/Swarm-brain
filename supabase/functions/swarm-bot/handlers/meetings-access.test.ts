@@ -81,7 +81,8 @@ function branches(src: string): Array<{ prefix: string; body: string }> {
   }));
 }
 
-const WRITES_ENTRY = /\.from\("entries"\)\.(?:update\(|delete\(\))/;
+// Архивация (archiveEntry, #569) — тоже запись: встреча пропадает у всех.
+const WRITES_ENTRY = /\.from\("entries"\)\.(?:update\(|delete\(\))|archiveEntry\(/;
 const CHECKS_RIGHTS = /action: "(?:edit|delete)"|canActOnMeeting\(/;
 
 function unguardedWrites(src: string): string[] {
@@ -101,7 +102,14 @@ Deno.test("удаление встречи: права delete и выход ДО
   if (!md) throw new Error("ветка удаления md_ не найдена — детектор устарел");
   const guard = md.body.indexOf('action: "delete"');
   const refusal = md.body.search(/if \(!entry\) \{[^}]*return true;/);
-  const del = md.body.search(/\.from\("entries"\)\.delete\(\)/);
+  // Удаление встречи — архивация (#569): физического delete в ветке больше нет.
+  const del = md.body.search(/archiveEntry\(/);
+  assertEquals(del >= 0, true, "ветка md_ не архивирует встречу");
+  assertEquals(
+    /\.from\("(?:entries|tasks|task_history)"\)\.delete\(\)/.test(md.body),
+    false,
+    "встреча или её задачи стираются физически (#687)",
+  );
   assertEquals(guard >= 0, true, "удаление берёт встречу без права delete");
   assertEquals(refusal >= 0 && refusal < del, true, "при отказе удаление всё равно выполняется");
 });

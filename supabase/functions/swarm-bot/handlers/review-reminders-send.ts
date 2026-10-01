@@ -9,6 +9,7 @@ import {
   selectDueReminders,
   STALE_HOURS,
 } from "./review-reminders.ts";
+import { onlyLiveEntries } from "../../_shared/entries/live.ts";
 
 const WEB_BASE_URL = Deno.env.get("WEB_BASE_URL") ?? "";
 
@@ -28,9 +29,11 @@ export async function sendReviewReminders(now: Date = new Date()): Promise<void>
 
   // Невычитанные встречи-записи (metadata.confirmed != true), достаточно старые (> 48ч по created_at).
   const staleISO = new Date(now.getTime() - STALE_HOURS * 3_600_000).toISOString();
-  const { data, error } = await supabase
-    .from("entries")
-    .select("id, owner_id, metadata, entry_date, created_at, last_review_reminded_at")
+  const { data, error } = await onlyLiveEntries(
+    supabase
+      .from("entries")
+      .select("id, owner_id, metadata, entry_date, created_at, last_review_reminded_at"),
+  )
     .eq("entry_type", "meeting")
     .in("source", ENTRY_MEETING_SOURCES)
     .or("metadata->>confirmed.is.null,metadata->>confirmed.eq.false")

@@ -9,6 +9,7 @@
 // Деплой: supabase functions deploy google-oauth --no-verify-jwt  (вызывает CF Pages, не браузер).
 // Секреты: WEB_JWT_SECRET (подпись /link).
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { isDemoSession } from "../_shared/demo-session.ts";
 
 const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
 const JWT_SECRET = Deno.env.get("WEB_JWT_SECRET") ?? "";
@@ -53,6 +54,12 @@ Deno.serve(async (req: Request) => {
     }
     if (!timingSafeEq(body.sig, await hmacHex(`${tgId}|${refresh}`))) {
       return new Response("forbidden", { status: 403 });
+    }
+    // Демо-сессия общая для всех посетителей витрины: календарь, привязанный одним, увидели бы
+    // следующие. Отказ здесь — последний рубеж за CF Pages (start.ts отказывает раньше) и
+    // swarm-api (/google/connect-url), issue #573.
+    if (isDemoSession(tgId)) {
+      return new Response("Integrations cannot be connected in the demo", { status: 403 });
     }
     const { error } = await supabase.from("user_integrations").upsert(
       { telegram_id: tgId, service: "google_calendar", api_key: refresh, skipped_note_ids: [] },

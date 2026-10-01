@@ -8,6 +8,7 @@
 // Клиент передаётся параметром: модуль не тянет lib/supabase.ts и проверяется тестом без базы.
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { visibilityFilter } from "./visibility.ts";
+import { onlyLiveEntries } from "../../_shared/entries/live.ts";
 
 // Потолок частей одной записи: swarm-mcp режет текст на десятки частей, не на тысячи.
 const MAX_CHUNKS = 200;
@@ -25,9 +26,11 @@ export async function loadEntryForExport(
   entryId: string,
   { groupId, userId }: { groupId: string; userId: number },
 ): Promise<{ entry: ExportEntry; fullContent: string } | null> {
-  const { data } = await supabase
-    .from("entries")
-    .select("content, summary, metadata, source, created_at")
+  const { data } = await onlyLiveEntries(
+    supabase
+      .from("entries")
+      .select("content, summary, metadata, source, created_at"),
+  )
     .eq("id", entryId)
     .eq("group_id", groupId)
     .or(visibilityFilter(userId))
@@ -41,9 +44,11 @@ export async function loadEntryForExport(
 
   const chunkGroup = entry.metadata?.chunk_group_id;
   if (!entry.summary && typeof chunkGroup === "string" && chunkGroup) {
-    const { data: chunks } = await supabase
-      .from("entries")
-      .select("content, metadata")
+    const { data: chunks } = await onlyLiveEntries(
+      supabase
+        .from("entries")
+        .select("content, metadata"),
+    )
       .eq("group_id", groupId)
       .eq("metadata->>chunk_group_id", chunkGroup)
       .or(visibilityFilter(userId))

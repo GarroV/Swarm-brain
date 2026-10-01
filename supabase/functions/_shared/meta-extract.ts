@@ -1,13 +1,14 @@
 // Общий извлекатель стран/типа/даты + логика тега "General" + сборка текста эмбеддинга.
-// Единый источник для путей ингеста, у которых нет доступа к swarm-bot/lib (swarm-api,
-// read-ai-webhook, ретег-скрипт). Использует общее COUNTRY_PROMPT_RULE — чтобы правило
-// анти-конфузии соседних рынков (ME≠RS≠HR≠SI) применялось везде одинаково.
+// ЕДИНСТВЕННАЯ реализация extractEntryMeta (issue #582): её зовут swarm-api, swarm-bot
+// (granola.ts), swarm-mcp (add_knowledge/upload_file), meeting-publish. Использует общее
+// COUNTRY_PROMPT_RULE — чтобы правило анти-конфузии соседних рынков (ME≠RS≠HR≠SI)
+// применялось везде одинаково — и оба слоя защиты от «галлюцинации года» (_shared/llm-date.ts).
 //
-// swarm-bot/lib/storage.ts исторически держит свою копию той же логики (buildEntryIndex/
-// saveEntry) поверх собственных openai.ts-обёрток — не трогаем, чтобы не задеть множество
-// бот-флоу; но новые/починенные пути зовут ЭТОТ модуль.
+// swarm-bot/lib/storage.ts buildEntryIndex — отдельный вызов (тезисы + ключевые слова + мета
+// одним запросом), это не копия extractEntryMeta; дату нормализует тем же normalizeExtractedEventDate.
 
 import { COUNTRY_PROMPT_RULE, ENTRY_TYPE_PROMPT_RULE, normalizeCountries } from "./countries.ts";
+import { normalizeExtractedEventDate, todayIso } from "./llm-date.ts";
 import { externalFetch, VIA_OPENAI_CHAT, VIA_OPENAI_EMBEDDING } from "./external-fetch.ts";
 
 const OPENAI = "https://api.openai.com/v1";
@@ -55,9 +56,40 @@ export function buildEmbeddingInput(baseText: string, countries: readonly string
   ].filter(Boolean).join("\n").slice(0, 8000);
 }
 
-// LLM-извлечение стран/типа/даты через общее COUNTRY_PROMPT_RULE. Нормализует в ISO-коды.
+const emptyMeta = (): EntryMeta => ({ countries: [], entry_type: "note", entry_date: null });
+const META_INPUT_CHARS = 4000;
+
+// Системный промпт извлечения. Слой 1 против выдуманного года: модель знает сегодняшнюю дату.
+export function buildEntryMetaPrompt(today: string): string {
+  return `Сегодня ${today}.\n` +
+    "Проанализируй текст и верни JSON (только JSON, без markdown):\n" +
+    '{"countries":["Spain","Bulgaria"],"entry_type":"meeting|note","entry_date":"YYYY-MM-DD или null"}\n' +
+    COUNTRY_PROMPT_RULE + "\n" +
+    ENTRY_TYPE_PROMPT_RULE + "\n" +
+    "entry_date — дата события из текста, null если нет. Год считай от сегодняшней даты: назван только день и месяц — бери ближайший подходящий год, НИКОГДА не из головы.";
+}
+
+// Разбор ответа модели. Слой 2 против выдуманного года: дата вне окна −400…+7 дней
+// чинится по году (normalizeExtractedEventDate), непригодная → null.
+export function parseEntryMeta(raw: string, today: string): EntryMeta {
+  const parsed = JSON.parse(raw.replace(/```json\n?|\n?```/g, "").trim());
+  const countries = Array.isArray(parsed.countries)
+    ? (parsed.countries as unknown[]).filter((c): c is string => typeof c === "string")
+    : [];
+  return {
+    countries: normalizeCountries(countries),
+    entry_type: parsed.entry_type === "meeting" ? "meeting" : "note",
+    entry_date: normalizeExtractedEventDate(typeof parsed.entry_date === "string" ? parsed.entry_date : null, today),
+  };
+}
+
+// LLM-извлечение стран/типа/даты. Нормализует страны в ISO-коды, дату — по году.
 // Фейл-безопасно: при любой ошибке — пустые страны/note/null (вызывающий решает про General).
-export async function extractEntryMeta(content: string, openaiKey: string): Promise<EntryMeta> {
+export async function extractEntryMeta(
+  content: string,
+  openaiKey: string,
+  today: string = todayIso(),
+): Promise<EntryMeta> {
   try {
     const res = await externalFetch(`${OPENAI}/chat/completions`, {
       method: "POST",
@@ -67,27 +99,20 @@ export async function extractEntryMeta(content: string, openaiKey: string): Prom
         temperature: 0,
         response_format: { type: "json_object" },
         messages: [
-          {
-            role: "system",
-            content:
-              'Проанализируй текст и верни JSON (только JSON, без markdown): {"countries":["Spain","Bulgaria"],"entry_type":"meeting|note","entry_date":null}\n' +
-              COUNTRY_PROMPT_RULE + "\n" + ENTRY_TYPE_PROMPT_RULE +
-              "\nentry_date — дата события из текста, null если нет.",
-          },
-          { role: "user", content: content.slice(0, 4000) },
+          { role: "system", content: buildEntryMetaPrompt(today) },
+          { role: "user", content: content.slice(0, META_INPUT_CHARS) },
         ],
         max_tokens: 200,
       }),
     }, VIA_OPENAI_CHAT);
-    if (!res.ok) return { countries: [], entry_type: "note", entry_date: null };
-    const parsed = JSON.parse((await res.json()).choices[0].message.content);
-    return {
-      countries: normalizeCountries(Array.isArray(parsed.countries) ? parsed.countries : []),
-      entry_type: parsed.entry_type === "meeting" ? "meeting" : "note",
-      entry_date: /^\d{4}-\d{2}-\d{2}$/.test(parsed.entry_date ?? "") ? parsed.entry_date : null,
-    };
-  } catch {
-    return { countries: [], entry_type: "note", entry_date: null };
+    if (!res.ok) {
+      console.error("extractEntryMeta: OpenAI ответил", res.status);
+      return emptyMeta();
+    }
+    return parseEntryMeta((await res.json()).choices[0].message.content, today);
+  } catch (e) {
+    console.error("extractEntryMeta: извлечение не удалось", e);
+    return emptyMeta();
   }
 }
 

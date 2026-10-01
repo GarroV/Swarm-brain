@@ -50,3 +50,18 @@ supabase/functions/_shared/tasks/recur-close.ts|supabase/functions/_shared/tasks
 # на доске «Проекты» у всей команды (docs/decisions/2026-10-01-sprint-dnd-groups.md).
 supabase/functions/_shared/tasks/sprint-groups.ts|supabase/functions/_shared/tasks/sprint-groups.test.ts
 miniapp/src/lib/sprintGrouping.ts|miniapp/src/lib/sprintGrouping.test.ts
+# Подключение интеграций: демо-сессия общая для всех посетителей, и привязка одного досталась бы
+# следующим (issue #573). Ошибка в отказе молчит — кнопка «работает», а ключ ложится в общий аккаунт.
+supabase/functions/swarm-api/integrations.ts|supabase/functions/swarm-api/integrations.test.ts
+# Дедуп публикации и видимость (#579): ошибка не падает — личная публикация молча переписывает
+# командную запись или прикрепляется к ней.
+supabase/functions/_shared/meeting-publish-visibility.ts|supabase/functions/_shared/meeting-dedup-visibility.test.ts
+# Дата события записи от модели: выдуманный год не падает, он молча ставит встречу в 2023
+# и человек читает её как факт (issue #582). Окна дат и общий извлекатель меты.
+supabase/functions/_shared/llm-date.ts|supabase/functions/_shared/llm-date.test.ts
+supabase/functions/_shared/meta-extract.ts|supabase/functions/_shared/meta-extract.test.ts
+# Уведомления о комментарии к задаче: правило получателей и рассылка, общие для веба и MCP
+# (issue #521). Ошибка молчит — заголовок и текст чужой приватной задачи уходят в бот человеку,
+# который её не видит, или автор шлёт уведомление сам себе.
+supabase/functions/_shared/tasks/notify.ts|supabase/functions/_shared/tasks/notify.test.ts
+supabase/functions/_shared/tasks/comment-fanout.ts|supabase/functions/_shared/tasks/comment-fanout.test.ts
