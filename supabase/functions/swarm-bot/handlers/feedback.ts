@@ -77,6 +77,14 @@ async function screenshotToStorage(photoFileId: string): Promise<string | undefi
   }
 }
 
+// Подпись автора в канале. У человека без @username бот передаёт сюда его номер строкой, а
+// раньше и undefined — отсюда «@744230399» и «@undefined» (#537). Настоящий username — «@имя»,
+// иначе честное «ID 744230399», по которому админ найдёт человека.
+export function feedbackAuthor(username: string | null | undefined, telegramId: number): string {
+  const u = typeof username === "string" ? username.trim().replace(/^@+/, "") : "";
+  return u && !/^-?\d+$/.test(u) ? `@${u}` : `ID ${telegramId}`;
+}
+
 async function saveFeedback(
   telegramId: number,
   username: string,
@@ -105,7 +113,9 @@ async function saveFeedback(
     hour: "2-digit",
     minute: "2-digit",
   });
-  const channelText = `<b>[${BOT_NAME}]</b> 🐛 ${feedbackCategoryLabel(category)} · @${username} · ${date}\n\n${text}`;
+  const channelText = `<b>[${BOT_NAME}]</b> 🐛 ${feedbackCategoryLabel(category)} · ${
+    feedbackAuthor(username, telegramId)
+  } · ${date}\n\n${text}`;
   await postToChannel(channelId, channelText, screenshotUrl);
 }
 

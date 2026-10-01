@@ -42,6 +42,7 @@
 // Запуск: SMOKE_SUPABASE_URL=… SMOKE_SERVICE_KEY=… deno run --allow-all scripts/scriba-watchdog-smoke.ts
 // Красный, если хоть одно ожидание не сошлось или окружения нет.
 
+import { fromFileUrl } from "@std/path";
 import { grantCache } from "./scriba-smoke-grants.ts";
 
 import { ingestFormOf } from "./smoke-m4a.ts";
@@ -288,7 +289,7 @@ function spawnFunction(
       "run",
       "--allow-all",
       ...extra,
-      decodeURIComponent(new URL(path, import.meta.url).pathname),
+      fromFileUrl(new URL(path, import.meta.url)),
     ],
     env: {
       DENO_SERVE_ADDRESS: `tcp:127.0.0.1:${port}`,

@@ -27,47 +27,13 @@ base_ref() {
   echo "$TAG"
 }
 
-# Миграции релиза, которых ещё нет на проде. Печатает неприменённые версии в stdout.
-# Коды: 0 — всё применено (или миграций нет), 1 — есть неприменённые, 3 — проверить НЕЧЕМ.
-#
-# Зачем гейт: до 25.09.2026 раскатка катила функции, не глядя на миграции, и код уезжал вперёд
-# схемы. Так функция, которой нужна новая колонка, начинает отвечать 400 — то есть раздел
-# продукта ложится у всей команды до утра, когда никто не смотрит (issue #509, случаи #494 и
-# #508). Опаснее всего, что мину взрывает ЧУЖАЯ раскатка: достаточно влить такой PR в main, и
-# ближайший ночной прогон по любому другому PR увезёт его функции вместе со своими.
-#
-# Спрашиваем Management API, а не базу: прод-ключа в CI нет и не будет (решение 2026-08-28), а
-# SUPABASE_ACCESS_TOKEN там есть — тот самый, которым и деплоятся функции.
-pending_migrations() {
-  local files="$1"
-  [ -n "$files" ] || return 0
-  [ -n "${SUPABASE_ACCESS_TOKEN:-}" ] || return 3
-  local applied
-  applied=$(curl -fsS -m 30 \
-    -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
-    "https://api.supabase.com/v1/projects/$PROJECT_REF/database/migrations" 2>/dev/null) || return 3
-  local pending
-  pending=$(printf '%s' "$applied" | python3 -c '
-import json, re, sys
-try:
-    done = {str(m.get("version")) for m in json.load(sys.stdin)}
-except Exception:
-    sys.exit(3)   # ответ не разобрать — это «проверить нечем», а не «всё хорошо»
-missing = []
-for line in sys.argv[1].splitlines():
-    name = line.strip().rsplit("/", 1)[-1]
-    if not name:
-        continue
-    m = re.match(r"(\d{14})", name)
-    # Файл без версии в имени пропускать нельзя: молчаливый пропуск и есть та дыра, что чинится.
-    if not m or m.group(1) not in done:
-        missing.append(name)
-print("\n".join(missing))
-' "$files") || return 3
-  [ -z "$pending" ] && return 0
-  printf '%s\n' "$pending"
-  return 1
-}
+# Гейт миграций (pending_migrations и др.) — общий с ночной автоматикой, см. scripts/lib/migrations-gate.sh.
+# Зачем: до 25.09.2026 раскатка катила функции, не глядя на миграции, и код уезжал вперёд схемы
+# (issue #509, случаи #494 и #508). Опаснее всего, что мину взрывает ЧУЖАЯ раскатка: достаточно
+# влить такой PR в main, и ближайший ночной прогон по любому другому PR увезёт его функции вместе
+# со своими. Коды pending_migrations: 0 — всё применено, 1 — есть неприменённые, 3 — проверить НЕЧЕМ.
+# shellcheck source=lib/migrations-gate.sh
+. "$REPO_ROOT/scripts/lib/migrations-gate.sh"
 
 # Изменённые edge-функции. Правка в _shared/ тянет за собой всех её потребителей —
 # иначе на проде окажется функция со старой копией общего модуля.

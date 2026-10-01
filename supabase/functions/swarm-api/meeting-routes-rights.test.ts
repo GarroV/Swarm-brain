@@ -4,9 +4,10 @@
 // Обычный тест эндпоинта здесь не поможет: index.ts без базы не поднять. Сам гард покрыт
 // entries-guard.test.ts, а этот детектор держит, что маршруты зовут именно его, с нужным
 // действием.
+import { fromFileUrl } from "https://deno.land/std@0.224.0/path/mod.ts";
 import { assertEquals } from "jsr:@std/assert@1";
 
-const HERE = decodeURIComponent(new URL(".", import.meta.url).pathname);
+const HERE = fromFileUrl(new URL(".", import.meta.url));
 
 /** Тело обработчика метода внутри маршрута /meetings/:id. */
 function methodBlock(src: string, method: string): string {

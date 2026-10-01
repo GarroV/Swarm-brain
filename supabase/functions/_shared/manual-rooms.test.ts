@@ -1,6 +1,7 @@
 // «Бота на эту комнату уже позвали руками» — одно правило на двоих: автозапуск (meeting-calendar,
 // не ведёт второго бота) и сигнал «бот не пришёл» (meeting-missed, молчит). Разойдись они — и
 // сигнал гаснет там, где бот на деле не едет: мёртвое приглашение утром глушило пропуск вечером.
+import { fromFileUrl } from "https://deno.land/std@0.224.0/path/mod.ts";
 import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import { coveredRooms, inviteCoversRoom, type ManualInviteRow } from "./manual-rooms.ts";
 
@@ -87,7 +88,7 @@ Deno.test("coveredRooms: комнаты только покрывающих пр
 
 /** Корень находки: у каждой функции был свой запрос с разной семантикой. Теперь запрос один. */
 Deno.test("meeting-calendar и meeting-missed берут комнаты из _shared/manual-rooms.ts, а не своим запросом", async () => {
-  const root = decodeURIComponent(new URL("../", import.meta.url).pathname);
+  const root = fromFileUrl(new URL("../", import.meta.url));
   for (const fn of ["meeting-calendar", "meeting-missed"]) {
     const text = await Deno.readTextFile(`${root}${fn}/index.ts`);
     assertEquals(

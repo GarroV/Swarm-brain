@@ -10,6 +10,7 @@
 // Сканируем построчно, помня последнюю встреченную from("<таблица>"): в supabase-js цепочка
 // бывает разорвана на десяток строк (.insert({...}) на 18 строк, а .select("*") в конце), и
 // проверка «в пределах трёх строк» такие случаи пропускала — проверено, пропустила две.
+import { fromFileUrl } from "https://deno.land/std@0.224.0/path/mod.ts";
 import { assertEquals } from "jsr:@std/assert@1";
 
 const FILES = [
@@ -22,7 +23,7 @@ const FILES = [
   "task-subscriptions.ts",
   "stats.ts",
 ];
-const HERE = decodeURIComponent(new URL(".", import.meta.url).pathname);
+const HERE = fromFileUrl(new URL(".", import.meta.url));
 
 /** Строки со `.select("*")`, где текущая таблица цепочки — `table`. */
 function starSelectsOn(src: string, table: string): number[] {

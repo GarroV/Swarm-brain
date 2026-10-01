@@ -7,6 +7,8 @@ import { generateNameAliases } from "../lib/name-aliases.ts";
 import { assignUserToWorkspace } from "../lib/workspace.ts";
 import { onlyLive } from "../../_shared/tasks/live.ts";
 import { externalFetch, VIA_TELEGRAM } from "../../_shared/external-fetch.ts";
+import { isSuperadmin, type MemberRow } from "../../_shared/users/admin-scope.ts";
+import { canActOnUser, canAddUsers, isEditableProfileField, type UserAction, type UsersActor } from "./users-scope.ts";
 
 const TELEGRAM_BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN")!;
 
@@ -18,9 +20,40 @@ export const PROFILE_FIELDS: Record<string, string> = {
   email: "Email",
 };
 
+const NO_RIGHTS = "Недостаточно прав для этого действия.";
+
+async function loadUsersActor(telegramId: number, groupId: string): Promise<UsersActor> {
+  return { telegramId, groupId, isAdmin: await isAdminUser(telegramId) };
+}
+
+/** Строка человека в воркспейсе действующего (суперадмину — любая). Ошибка чтения = нет прав. */
+async function loadTargetRow(actor: UsersActor, targetId: number): Promise<MemberRow | null> {
+  if (!Number.isFinite(targetId)) return null;
+  let q = supabase.from("allowed_users").select("telegram_id, group_id").eq("telegram_id", targetId);
+  if (!isSuperadmin(actor)) q = q.eq("group_id", actor.groupId);
+  const { data, error } = await q.limit(1);
+  if (error) {
+    console.error("[users] target row:", error.message);
+    return null;
+  }
+  return ((data ?? [])[0] as MemberRow | undefined) ?? null;
+}
+
+/** Проверка прав с ответом человеку; true — можно продолжать. */
+async function allowUserAction(
+  chatId: number,
+  actor: UsersActor,
+  targetId: number,
+  action: UserAction,
+): Promise<boolean> {
+  if (canActOnUser(actor, await loadTargetRow(actor, targetId), action)) return true;
+  await sendMessage(chatId, NO_RIGHTS);
+  return false;
+}
+
 export async function handleUsers(
   chatId: number,
-  _adminId: number,
+  adminId: number,
   argText: string,
   groupId: string,
   messageId?: number,
@@ -89,7 +122,13 @@ export async function handleUsers(
     return;
   }
 
+  const actor = await loadUsersActor(adminId, groupId);
+
   if (sub === "add") {
+    if (!canAddUsers(actor)) {
+      await sendMessage(chatId, NO_RIGHTS);
+      return;
+    }
     if (!targetArg) {
       await sendMessage(chatId, "Использование: /users add [telegram_id или @username]");
       return;
@@ -115,16 +154,22 @@ export async function handleUsers(
   }
 
   if (sub === "remove") {
+    if (!canAddUsers(actor)) {
+      await sendMessage(chatId, NO_RIGHTS);
+      return;
+    }
     if (!targetArg) {
       await sendMessage(chatId, "Использование: /users remove [telegram_id или @username]");
       return;
     }
     if (targetArg.startsWith("@")) {
       const uname = targetArg.slice(1);
-      const { error, count } = await supabase.from("allowed_users").delete({ count: "exact" }).eq("username", uname).is(
+      let del = supabase.from("allowed_users").delete({ count: "exact" }).eq("username", uname).is(
         "telegram_id",
         null,
       );
+      if (!isSuperadmin(actor)) del = del.eq("group_id", groupId);
+      const { error, count } = await del;
       if (error) {
         await sendMessage(chatId, `Ошибка: ${error.message}`);
         return;
@@ -139,10 +184,14 @@ export async function handleUsers(
         await sendMessage(chatId, "Нельзя удалить администратора.");
         return;
       }
-      const { error, count } = await supabase.from("allowed_users").delete({ count: "exact" }).eq(
+      if (!(await allowUserAction(chatId, actor, Number(targetArg), "remove"))) return;
+      // Только из этого воркспейса: у человека могут быть строки и в других (#674).
+      let del = supabase.from("allowed_users").delete({ count: "exact" }).eq(
         "telegram_id",
         Number(targetArg),
       );
+      if (!isSuperadmin(actor)) del = del.eq("group_id", groupId);
+      const { error, count } = await del;
       if (error) {
         await sendMessage(chatId, `Ошибка: ${error.message}`);
         return;
@@ -156,6 +205,8 @@ export async function handleUsers(
   }
 
   if (sub === "profile") {
+    const id = Number(targetArg);
+    if (targetArg && !isNaN(id) && !(await allowUserAction(chatId, actor, id, "view"))) return;
     await handleUsersProfile(chatId, targetArg ?? "");
     return;
   }
@@ -366,12 +417,20 @@ export async function handleUserCallbacks(
 ): Promise<boolean> {
   const data = cb.data;
   const msgId = cb.message.message_id;
+  // Права — один раз на любой колбэк этого обработчика (#674).
+  const isOurs = data === "ua_list" || data === "ua_add" ||
+    /^(udel_|udelc_|ptasks_|pu_|pe_)/.test(data);
+  const actor = isOurs ? await loadUsersActor(userId, groupId) : null;
 
   if (data === "ua_list") {
     await handleUsers(chatId, userId, "list", groupId, msgId);
     return true;
   }
   if (data === "ua_add") {
+    if (!actor || !canAddUsers(actor)) {
+      await sendMessage(chatId, NO_RIGHTS);
+      return true;
+    }
     await sendMessage(
       chatId,
       "Для добавления пользователя отправь команду:\n\n<code>/users add @username</code>\n\nили\n\n<code>/users add 123456789</code>",
@@ -380,6 +439,7 @@ export async function handleUserCallbacks(
   }
   if (data.startsWith("udel_")) {
     const targetId = Number(data.replace("udel_", ""));
+    if (!actor || !(await allowUserAction(chatId, actor, targetId, "remove"))) return true;
     const { data: profile } = await supabase.from("user_profiles").select("first_name, last_name").eq(
       "telegram_id",
       targetId,
@@ -393,33 +453,50 @@ export async function handleUserCallbacks(
   }
   if (data.startsWith("udelc_")) {
     const targetId = Number(data.replace("udelc_", ""));
+    if (!actor || !(await allowUserAction(chatId, actor, targetId, "remove"))) return true;
     const { data: profile } = await supabase.from("user_profiles").select("first_name, last_name").eq(
       "telegram_id",
       targetId,
     ).maybeSingle();
     const name = [profile?.first_name, profile?.last_name].filter(Boolean).join(" ") || `ID ${targetId}`;
-    await supabase.from("allowed_users").delete().eq("telegram_id", targetId);
+    // Только из этого воркспейса: у человека могут быть строки и в других (#674).
+    let del = supabase.from("allowed_users").delete().eq("telegram_id", targetId);
+    if (!isSuperadmin(actor)) del = del.eq("group_id", groupId);
+    const { error: delErr } = await del;
+    if (delErr) {
+      console.error("[users] remove:", delErr.message);
+      await sendMessage(chatId, "Не удалось удалить. Попробуй ещё раз.");
+      return true;
+    }
     await sendMessage(chatId, `✅ ${name} удалён.`);
     await handleUsers(chatId, userId, "list", groupId, msgId);
     return true;
   }
   if (data.startsWith("ptasks_")) {
-    await handleProfileTasks(chatId, Number(data.replace("ptasks_", "")));
+    const targetId = Number(data.replace("ptasks_", ""));
+    if (!actor || !(await allowUserAction(chatId, actor, targetId, "view"))) return true;
+    await handleProfileTasks(chatId, targetId);
     return true;
   }
   if (data.startsWith("pu_")) {
-    await showProfile(chatId, Number(data.replace("pu_", "")), msgId);
+    const targetId = Number(data.replace("pu_", ""));
+    if (!actor || !(await allowUserAction(chatId, actor, targetId, "view"))) return true;
+    await showProfile(chatId, targetId, msgId);
     return true;
   }
   if (data.startsWith("pe_menu_")) {
-    await showProfileEditMenu(chatId, Number(data.replace("pe_menu_", "")), msgId);
+    const targetId = Number(data.replace("pe_menu_", ""));
+    if (!actor || !(await allowUserAction(chatId, actor, targetId, "edit"))) return true;
+    await showProfileEditMenu(chatId, targetId, msgId);
     return true;
   }
   if (data.startsWith("pe_")) {
     const parts = data.split("_");
     const targetId = Number(parts[1]);
     const field = parts.slice(2).join("_");
-    const label = PROFILE_FIELDS[field] ?? field;
+    if (!isEditableProfileField(PROFILE_FIELDS, field)) return true;
+    if (!actor || !(await allowUserAction(chatId, actor, targetId, "edit"))) return true;
+    const label = PROFILE_FIELDS[field];
     const { data: currentProfile } = await supabase.from("user_profiles").select(field).eq("telegram_id", targetId)
       .maybeSingle();
     const currentValue = (currentProfile as Record<string, unknown> | null)?.[field];
@@ -477,6 +554,7 @@ export async function handleUserSessionInput(
   userId: number,
   action: string,
   text: string,
+  groupId = "",
 ): Promise<boolean> {
   if (action === "onboard_role") {
     await clearSession(chatId);
@@ -555,6 +633,10 @@ export async function handleUserSessionInput(
     const parts = action.split("_");
     const targetId = Number(parts[1]);
     const field = parts.slice(2).join("_");
+    // Сессию ставит кнопка pe_, но права проверяем заново: между кнопкой и вводом их могли снять (#674).
+    if (!isEditableProfileField(PROFILE_FIELDS, field)) return true;
+    const actor = await loadUsersActor(userId, groupId);
+    if (!(await allowUserAction(chatId, actor, targetId, "edit"))) return true;
     await handleProfileEdit(chatId, targetId, field, text);
     return true;
   }

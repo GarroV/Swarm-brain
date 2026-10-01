@@ -7,9 +7,10 @@
 // Ядро — весь рабочий код supabase/functions, кроме модулей бота (список ниже). В ядре:
 //   1. нет литерала `scriba` (ни в коде, ни в комментариях) — имя живёт в профиле бота;
 //   2. из модулей бота импортируются только профиль и его тексты (плюс явные точки монтирования).
+import { fromFileUrl } from "https://deno.land/std@0.224.0/path/mod.ts";
 import { assert, assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
 
-const ROOT = decodeURIComponent(new URL("../", import.meta.url).pathname);
+const ROOT = fromFileUrl(new URL("../", import.meta.url));
 
 /**
  * Модули бота на сервере. Каталог — вся функция целиком. Новый модуль бота вписывается сюда;

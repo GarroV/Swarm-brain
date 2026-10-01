@@ -7,8 +7,9 @@
 // Проверка: у каждого ответа apiErr(5xx, …) и json({ error: … }, 5xx) текст — строковый
 // литерал (или INTERNAL_ERROR_MESSAGE), а не выражение из пойманной ошибки.
 import { assertEquals } from "jsr:@std/assert@1";
+import { fromFileUrl } from "https://deno.land/std@0.224.0/path/mod.ts";
 
-const HERE = decodeURIComponent(new URL(".", import.meta.url).pathname);
+const HERE = fromFileUrl(new URL(".", import.meta.url));
 
 // Известные исключения: место в защищённом разделе («Проекты», .github/protected-paths.txt),
 // который правится только по отдельной просьбе владельца. Счёт точный: новое место того же

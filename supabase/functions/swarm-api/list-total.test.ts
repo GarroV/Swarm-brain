@@ -8,9 +8,10 @@
 // Правило: каждый GET-эндпоинт, отдающий список, возвращает X-Total-Count — сколько строк
 // подходит под фильтры БЕЗ лимита. Заголовком, а не конвертом: ответ остаётся голым массивом,
 // поэтому бот и MCP не задеты.
+import { fromFileUrl } from "https://deno.land/std@0.224.0/path/mod.ts";
 import { assertEquals } from "jsr:@std/assert@1";
 
-const HERE = decodeURIComponent(new URL(".", import.meta.url).pathname);
+const HERE = fromFileUrl(new URL(".", import.meta.url));
 
 /** Списочные GET-роуты, которые обязаны отдавать счётчик. */
 const LIST_ROUTES = ["/tasks", "/entries", "/meetings", "/agent-meetings"];
