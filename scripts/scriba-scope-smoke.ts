@@ -25,6 +25,8 @@
 // Запуск: SMOKE_SUPABASE_URL=… SMOKE_SERVICE_KEY=… deno run --allow-all scripts/scriba-scope-smoke.ts
 // Красный, если хоть одно ожидание не сошлось или окружения нет.
 
+import { fromFileUrl } from "@std/path";
+
 const PORT_BASE = Number(Deno.env.get("SMOKE_PORT_BASE") ?? "4490");
 const PORT = {
   invite: PORT_BASE + 4,
@@ -119,9 +121,8 @@ function spawnFunction(name: string, port: number): Deno.ChildProcess {
       "run",
       "--allow-all",
       `--preload=${PRELOAD}`,
-      decodeURIComponent(
-        new URL(`../supabase/functions/${name}/index.ts`, import.meta.url)
-          .pathname,
+      fromFileUrl(
+        new URL(`../supabase/functions/${name}/index.ts`, import.meta.url),
       ),
     ],
     env: {

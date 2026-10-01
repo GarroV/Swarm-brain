@@ -1,6 +1,7 @@
 // Демо — это ЛИЧНОСТЬ (демо-пользователь секретной ссылки), а не слаг воркспейса: проект запрещает
 // решать что-либо по конкретному group_id (CLAUDE.md, §Идентификаторы). Слаг меняется или
 // строка демо-человека лежит в другой группе — и отказ «из демо нельзя» молча перестаёт работать.
+import { fromFileUrl } from "https://deno.land/std@0.224.0/path/mod.ts";
 import { assert, assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import { DEMO_GROUP_ID, DEMO_USER_ID, isDemoSession } from "./demo-session.ts";
 
@@ -19,7 +20,7 @@ Deno.test("DEMO_GROUP_ID — синтетическая группа демо-с
 
 /** Рабочий код всех функций: демо решается одной функцией, а не сравнением group_id со слагом. */
 Deno.test("никто не решает «это демо» сравнением group_id со строкой", async () => {
-  const root = decodeURIComponent(new URL("../", import.meta.url).pathname);
+  const root = fromFileUrl(new URL("../", import.meta.url));
   const offenders: string[] = [];
   const bySlug = /\b(group_?id|groupId)\s*[!=]==?\s*["'`]demo["'`]/i;
   for await (const dir of Deno.readDir(root)) {

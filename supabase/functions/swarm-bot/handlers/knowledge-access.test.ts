@@ -1,9 +1,10 @@
 // Детектор: ИИ-инструмент бота `update_entry` правит запись только внутри воркспейса и после
 // проверки прав (_shared/entries/entry-edit.ts — сами права покрыты его тестом).
 // Обработчик без базы и модели не поднять, поэтому правило держится по исходнику.
+import { fromFileUrl } from "https://deno.land/std@0.224.0/path/mod.ts";
 import { assertEquals } from "jsr:@std/assert@1";
 
-const HERE = decodeURIComponent(new URL(".", import.meta.url).pathname);
+const HERE = fromFileUrl(new URL(".", import.meta.url));
 
 function updateEntryProblems(src: string): string[] {
   const start = src.indexOf('case "update_entry": {');

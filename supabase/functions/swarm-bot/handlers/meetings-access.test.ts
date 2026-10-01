@@ -11,9 +11,10 @@
 // Обычный тест такую дыру не ловит: каждая новая ветка добавляется одной строкой и работает.
 // Поэтому правило проверяется по исходнику — новая ветка обязана брать запись загрузчиком
 // `loadEntryForAction`, который зовёт общий гард `_shared/entries/access.ts`.
+import { fromFileUrl } from "https://deno.land/std@0.224.0/path/mod.ts";
 import { assertEquals } from "jsr:@std/assert@1";
 
-const HERE = decodeURIComponent(new URL(".", import.meta.url).pathname);
+const HERE = fromFileUrl(new URL(".", import.meta.url));
 
 /** Строки, где встреча читается напрямую по id, минуя загрузчик с проверкой. */
 function rawSelectsById(src: string): number[] {
