@@ -39,3 +39,7 @@ supabase/functions/swarm-api/meeting-ask-access.ts|supabase/functions/swarm-api/
 # Заморозка и обработка встреч: пропущенная проверка не падает — она тихо пишет в меняющуюся
 # схему во время работ или отдаёт ждущую встречу сторожу застоя в 'failed'.
 supabase/functions/_shared/processing-freeze.ts|supabase/functions/_shared/processing-freeze.test.ts
+# Лиз обработки встречи и приём выгрузки (issue #578): ошибка не падает — встреча молча
+# обрабатывается дважды, и люди получают двойные тезисы и уведомления.
+supabase/functions/_shared/meeting-processing-lease.ts|supabase/functions/_shared/meeting-processing-lease.test.ts
+supabase/functions/meeting-ingest/accept-upload.ts|supabase/functions/meeting-ingest/accept-upload.test.ts

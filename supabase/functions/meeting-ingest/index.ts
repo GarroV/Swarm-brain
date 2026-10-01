@@ -3,7 +3,8 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { AgentAuthError, resolveActingIdentity } from "../_shared/agent-auth.ts";
 import { assertGrantMeeting, GrantScopeError } from "../_shared/agent-grant.ts";
 import { type InMemoryPart, runMeetingStep, uploadPartsAndBuildState } from "../_shared/meeting-processor.ts";
-import { promoteQueued, readQueued, writeQueued } from "../_shared/meeting-queue.ts";
+import { discardState, promoteQueued, readQueued, writeQueued } from "../_shared/meeting-queue.ts";
+import { acceptUpload } from "./accept-upload.ts";
 import { decideUpload, uploadSource } from "./second-recording.ts";
 import { freshChallenge, holderSecondsCorrection, mayCorrectHolderSeconds } from "./challenge.ts";
 import { lowerHolderSeconds, measureUpload, type Rival, settleChallengeUpload } from "./challenge-io.ts";
@@ -170,6 +171,30 @@ function runInline(id: string): Promise<void> {
   return job;
 }
 
+// Строка встречи сменилась, пока заливалось аудио: наше аудио убираем. Если та же выгрузка уже принята
+// (параллельный ретрай клиента) — это повтор, 200; иначе встреча ушла другому или заморожена — 409.
+async function refuseChangedMeeting(
+  meetingId: string,
+  state: Awaited<ReturnType<typeof uploadPartsAndBuildState>>,
+  source: string,
+  webUrl: string,
+): Promise<Response> {
+  await discardState(supabase, meetingId, state, false);
+  const { data } = await supabase.from("meetings")
+    .select("sources:process_state->sources")
+    .eq("id", meetingId)
+    .maybeSingle();
+  const now = (data as { sources?: unknown } | null)?.sources;
+  if (Array.isArray(now) && now.includes(source)) {
+    console.log(
+      `meeting-ingest: ${meetingId} — параллельный повтор выгрузки (${source}), вторую обработку не запускаем`,
+    );
+    return json({ ok: true, meeting_id: meetingId, web_url: webUrl, summary_status: "already_processed" });
+  }
+  console.warn(`meeting-ingest: ${meetingId} — строка встречи сменилась за время выгрузки, запись не принята`);
+  return fail("meeting changed while the upload was stored, claim again", 409);
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method !== "POST") return new Response("OK", { status: 200 });
 
@@ -204,7 +229,7 @@ Deno.serve(async (req: Request) => {
     // Источники и первый сегмент — без тяжёлых jsonb целиком: только чтобы решить судьбу второй
     // записи той же встречи (second-recording.ts).
     .select(
-      "id, claim_owner, notes_edited_at, status, summary_status, sources:process_state->sources, first_segment:transcript->segments->0, recorded_seconds, agent_last_seen_at, recorders",
+      "id, claim_owner, notes_edited_at, status, summary_status, sources:process_state->sources, gen:process_state->>gen, first_segment:transcript->segments->0, recorded_seconds, agent_last_seen_at, recorders",
     )
     .eq("id", meetingId)
     .maybeSingle();
@@ -217,6 +242,7 @@ Deno.serve(async (req: Request) => {
     status: string | null;
     summary_status: string | null;
     sources: unknown;
+    gen: string | null;
     first_segment: unknown;
     recorded_seconds: number | null;
     agent_last_seen_at: string | null;
@@ -278,7 +304,11 @@ Deno.serve(async (req: Request) => {
     rival = settled.rival;
     // Перехват сбросил маркеры обработки тем же UPDATE (claim-patch.ts takeoverPatch).
     if (!rival) {
-      m = { ...m, claim_owner: uploader, ...(settled.reset ? { summary_status: null, sources: null } : {}) };
+      m = {
+        ...m,
+        claim_owner: uploader,
+        ...(settled.reset ? { summary_status: null, sources: null, gen: null } : {}),
+      };
     }
   }
 
@@ -350,17 +380,21 @@ Deno.serve(async (req: Request) => {
   // обработка вот-вот начнётся — если оставить лиз с момента claim, он истечёт посреди работы,
   // встреча снова станет «свободной» и право заберёт следующий претендент, даже с записью на
   // три минуты (ветка «свободна» в meeting-claim длительности не сравнивает).
-  await supabase
-    .from("meetings")
-    .update({
-      summary_status: "processing",
-      process_state: state,
-      last_progress_at: nowIso,
-      processing_lease: null,
-      lease_expires_at: claimLeaseUntil(),
-      updated_at: nowIso,
-    })
-    .eq("id", m.id);
+  // Пишем, только если строка такая же, какой её проверили выше (issue #578): за время заливки аудио её
+  // мог занять параллельный ретрай этой же выгрузки, перехватить другой рекордер или заморозить человек.
+  const accepted = await acceptUpload(supabase, m.id, {
+    claimOwner: m.claim_owner,
+    summaryStatus: m.summary_status,
+    gen: m.gen ?? null,
+  }, {
+    summary_status: "processing",
+    process_state: state,
+    last_progress_at: nowIso,
+    processing_lease: null,
+    lease_expires_at: claimLeaseUntil(),
+    updated_at: nowIso,
+  });
+  if (!accepted) return await refuseChangedMeeting(m.id, state, source, webUrl);
 
   await runInline(m.id);
 
