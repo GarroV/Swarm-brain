@@ -68,3 +68,68 @@ export function dropAction(
     targetTaskId: target.taskId,
   };
 }
+
+// ── Задержка над целью → подзадача (дополнение владельца 01.10.2026) ──────────────────────
+// «может быть задержать, и при этом должно показать явно что это будет подзадача». Бросок сразу
+// группирует; подержал над той же задачей — режим меняется на «подзадача», и экран показывает
+// силуэт будущей строки. Время передаётся снаружи: функция не знает про таймеры браузера.
+
+/** Сколько держать над задачей, чтобы бросок сделал подзадачу, а не группу. */
+export const SUBTASK_HOLD_MS = 700;
+/** Долгое нажатие на таче, после которого строка «поднимается»; короче — это прокрутка. */
+export const LONG_PRESS_MS = 400;
+
+export type HoverMode = "group" | "subtask";
+
+/** `enteredAt` — когда курсор встал на текущую цель; null — цели нет, таймер сброшен. */
+export function hoverMode(enteredAt: number | null, now: number): HoverMode {
+  if (enteredAt === null) return "group";
+  return now - enteredAt >= SUBTASK_HOLD_MS ? "subtask" : "group";
+}
+
+export type DraggedTask = {
+  taskId: string;
+  projectId: string | null;
+  parentId: string | null;
+  /** Свои подзадачи у тащимой: вложенность одна, такая задача подзадачей не станет. */
+  hasKids: boolean;
+};
+
+/** Почему подзадачи не выйдет — экран пишет причину на силуэте. */
+export type SubtaskBlock = "self" | "target-subtask" | "has-kids" | "already";
+
+export function subtaskBlock(
+  dragged: DraggedTask,
+  target: Extract<DropTarget, { kind: "task" }>,
+): SubtaskBlock | null {
+  if (target.taskId === dragged.taskId) return "self";
+  // Вложенность одна (решение 24.09.2026): родителем годится только задача верхнего уровня.
+  if (target.isSubtask) return "target-subtask";
+  if (dragged.hasKids) return "has-kids";
+  if (dragged.parentId === target.taskId) return "already";
+  return null;
+}
+
+export type ResolvedDrop =
+  | DropAction
+  /** Сделать тащимую подзадачей `parentTaskId`; подзадача живёт в проекте родителя. */
+  | { kind: "subtask"; parentTaskId: string; projectId: string | null };
+
+export function resolveDrop(
+  dragged: DraggedTask,
+  target: DropTarget,
+  mode: HoverMode,
+  projects: readonly GroupingProject[],
+): ResolvedDrop {
+  if (target.kind === "task" && mode === "subtask") {
+    if (subtaskBlock(dragged, target) !== null) return NONE;
+    return {
+      kind: "subtask",
+      parentTaskId: target.taskId,
+      projectId: target.projectId,
+    };
+  }
+  return dropAction(dragged.taskId, target, projects, {
+    draggedProjectId: dragged.projectId,
+  });
+}

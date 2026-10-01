@@ -1,5 +1,12 @@
 import { assertEquals } from "@std/assert";
-import { dropAction, type GroupingProject } from "./sprintGrouping.ts";
+import {
+  dropAction,
+  type GroupingProject,
+  hoverMode,
+  resolveDrop,
+  SUBTASK_HOLD_MS,
+  subtaskBlock,
+} from "./sprintGrouping.ts";
 
 // Что случится, когда задачу бросили в списке спринта. Ошибка здесь не падает: задача молча
 // переезжает не в тот проект или из чужого закрытого проекта — и это видно только на доске.
@@ -99,5 +106,81 @@ Deno.test("dropAction: на заголовок своей же группы — 
   assertEquals(
     dropAction("a", { kind: "header", projectId: null }, ALL),
     { kind: "none" },
+  );
+});
+
+// ── Режим «подзадача» (задержка над целью) ────────────────────────────────────
+// Владелец: «может быть задержать, и при этом должно показать явно что это будет подзадача».
+// Время передаётся снаружи — таймер браузера тут ни при чём.
+
+Deno.test("hoverMode: сразу и до порога — группа, после задержки — подзадача", () => {
+  assertEquals(hoverMode(1000, 1000), "group");
+  assertEquals(hoverMode(1000, 1000 + SUBTASK_HOLD_MS - 1), "group");
+  assertEquals(hoverMode(1000, 1000 + SUBTASK_HOLD_MS), "subtask");
+});
+
+Deno.test("hoverMode: цели нет (курсор ушёл) — группа, таймер сброшен", () => {
+  assertEquals(hoverMode(null, 99999), "group");
+});
+
+const dragged = (o: Partial<Parameters<typeof subtaskBlock>[0]> = {}) => ({
+  taskId: "a",
+  projectId: "p" as string | null,
+  parentId: null as string | null,
+  hasKids: false,
+  ...o,
+});
+
+Deno.test("subtaskBlock: обычная задача на обычную — можно", () => {
+  assertEquals(subtaskBlock(dragged(), task("b", "s")), null);
+});
+
+Deno.test("subtaskBlock: на себя, на подзадачу, со своими подзадачами — нельзя", () => {
+  assertEquals(subtaskBlock(dragged(), task("a", "p")), "self");
+  assertEquals(subtaskBlock(dragged(), task("b", "p", true)), "target-subtask");
+  assertEquals(
+    subtaskBlock(dragged({ hasKids: true }), task("b", "p")),
+    "has-kids",
+  );
+});
+
+Deno.test("subtaskBlock: уже подзадача этой цели — ничего делать не надо", () => {
+  assertEquals(
+    subtaskBlock(dragged({ parentId: "b" }), task("b", "p")),
+    "already",
+  );
+});
+
+Deno.test("resolveDrop: режим подзадачи — родитель и его проект", () => {
+  assertEquals(resolveDrop(dragged(), task("b", "s"), "subtask", ALL), {
+    kind: "subtask",
+    parentTaskId: "b",
+    projectId: "s",
+  });
+});
+
+Deno.test("resolveDrop: подзадача невозможна — бросок ничего не делает", () => {
+  assertEquals(
+    resolveDrop(dragged({ hasKids: true }), task("b", "s"), "subtask", ALL),
+    { kind: "none" },
+  );
+});
+
+Deno.test("resolveDrop: режим группы — как dropAction, проект тащимой учитывается", () => {
+  assertEquals(resolveDrop(dragged(), task("b", "p"), "group", ALL), {
+    kind: "create",
+    parentId: "p",
+    targetTaskId: "b",
+  });
+  assertEquals(
+    resolveDrop(dragged({ projectId: "g" }), task("b", "g"), "group", ALL),
+    { kind: "none" },
+  );
+});
+
+Deno.test("resolveDrop: заголовок — всегда перенос, режим не важен", () => {
+  assertEquals(
+    resolveDrop(dragged(), { kind: "header", projectId: "g" }, "subtask", ALL),
+    { kind: "move", projectId: "g" },
   );
 });

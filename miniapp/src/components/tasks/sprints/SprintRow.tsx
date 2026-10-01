@@ -6,6 +6,8 @@ import { RoyIcon } from "@/components/roy/icons";
 import { useDt } from "@/components/roy/nav";
 import { AssigneeChip, CarryBadge, CarryFlag, CountChip } from "./atoms";
 import { fmtDay, fmtDayShort, isOverdue } from "./format";
+import type { SubtaskBlock } from "@/lib/sprintGrouping";
+import { blockText } from "./groupingText";
 
 // Строка состава спринта — таблицей, в колонках стенда (screens-work.js → sprintTaskRow):
 // задача · срок · рынок · сверка · исполнитель. Быстрые действия («✓ выполнено», «→ перенести»)
@@ -58,6 +60,25 @@ export type RowHandlers = {
   parentOf?: (item: SprintCycleItem) => string | null;
   /** Открыть живую задачу по id — подзадачу вне строк группы и родителя из подписи «из «…»». */
   onOpenTask?: (taskId: string) => void;
+};
+
+/** Строка в перетаскивании (группы спринта, 01.10.2026): ручка, цель и что покажет бросок. */
+export type RowDnd = {
+  /** data-атрибут цели и начало жеста — из useRowDrag. */
+  bind: {
+    "data-sg-task": string;
+    onPointerDown: (e: React.PointerEvent<HTMLElement>) => void;
+  };
+  state:
+    | null
+    /** Эту строку тащат. */
+    | { kind: "source" }
+    /** Над строкой, бросок соберёт группу. */
+    | { kind: "group" }
+    /** Подержали над строкой: бросок сделает тащимую подзадачей (или объяснит, почему нет). */
+    | { kind: "subtask"; title: string; block: SubtaskBlock | null };
+  /** Запасной путь без жеста: окно «Сгруппировать с… / Сделать подзадачей…». */
+  onMenu?: () => void;
 };
 
 /** Подзадачи строки (#478): шеврон разворота и «X/Y». */
@@ -113,8 +134,9 @@ function CheckChip({ status, note, unchecked }: {
 /** Строка задачи. Клик открывает карточку — но только у живой: у упоминания и у чужой
  *  приватной открывать нечего, и «кнопка, которая ничего не делает» хуже её отсутствия. */
 export function SprintRow(
-  { item, unchecked, showExtra, h, depth = 0, kids, parent }: {
+  { item, unchecked, showExtra, h, depth = 0, kids, parent, dnd }: {
     item: SprintCycleItem;
+    dnd?: RowDnd;
     depth?: 0 | 1;
     kids?: RowKids;
     /** Родитель вне этой группы — подпись «из «…»», кликом открывает родителя. */
@@ -151,13 +173,21 @@ export function SprintRow(
   const quiet =
     "rounded-[6px] border px-1.5 py-0.5 leading-none transition-colors";
 
+  const drag = dnd?.state ?? null;
+
   return (
     <div
       role="row"
+      {...dnd?.bind}
       onClick={openable ? () => h.onOpen!(item) : undefined}
       className={cn(
         "group relative grid items-center border-t border-line first:border-t-0 transition-colors",
         openable && "cursor-pointer hover:bg-surface-2",
+        // Долгое нажатие на таче не должно выделять текст и звать системное меню.
+        dnd && "select-none [-webkit-touch-callout:none]",
+        drag?.kind === "source" && "opacity-45",
+        drag?.kind === "group" &&
+          "bg-primary/8 outline outline-2 -outline-offset-2 outline-primary/70",
       )}
       style={{
         gridTemplateColumns: SPRINT_COLS,
@@ -165,6 +195,17 @@ export function SprintRow(
         fontSize: 13.5,
       }}
     >
+      {drag?.kind === "group" && (
+        <span
+          className="pointer-events-none absolute right-2 top-1/2 z-[1] -translate-y-1/2 rounded-[6px] bg-primary px-2 py-0.5 font-semibold text-primary-foreground shadow"
+          style={{ fontSize: 11.5 }}
+        >
+          {dt("Сгруппировать", "Group")}
+          <span className="ml-1.5 font-normal opacity-80">
+            · {dt("задержите — станет подзадачей", "hold to make it a subtask")}
+          </span>
+        </span>
+      )}
       <div
         className="flex min-w-0 items-center gap-2 px-3"
         style={depth ? { paddingLeft: 34 } : undefined}
@@ -388,6 +429,23 @@ export function SprintRow(
             →
           </button>
         )}
+        {live && dnd?.onMenu && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              dnd.onMenu!();
+            }}
+            title={dt(
+              "Сгруппировать с… / Сделать подзадачей…",
+              "Group with… / Make a subtask of…",
+            )}
+            aria-label={dt("Сгруппировать или сделать подзадачей", "Group or make a subtask")}
+            className={cn(quiet, "border-line bg-surface text-ink-soft hover:text-ink")}
+          >
+            ⋯
+          </button>
+        )}
       </div>
 
       {
@@ -419,6 +477,39 @@ export function SprintRow(
             className="w-full rounded-[6px] border border-line bg-surface px-2 py-1 text-ink outline-none focus:border-accent-line"
             style={{ fontSize: 12 }}
           />
+        </div>
+      )}
+      {
+        /* Силуэт будущей подзадачи (дополнение владельца 01.10.2026: «может отобразить какой-то
+          типа силуэт будущей задачи»): строка с отступом прямо под целью — видно, куда встанет. */
+      }
+      {drag?.kind === "subtask" && (
+        <div className="col-span-full px-2 pb-2">
+          <div
+            className={cn(
+              "flex items-center gap-2 rounded-[6px] border border-dashed px-3 py-1.5",
+              drag.block
+                ? "border-ink-mute/50 text-ink-mute"
+                : "border-primary/70 bg-primary/8 text-ink",
+            )}
+            style={{ paddingLeft: 34, fontSize: 12.5 }}
+          >
+            <span className="min-w-0 truncate opacity-70">↳ {drag.title}</span>
+            <span
+              className={cn(
+                "ml-auto shrink-0 font-semibold",
+                drag.block ? "text-ink-mute" : "text-primary",
+              )}
+              style={{ fontSize: 11.5 }}
+            >
+              {drag.block
+                ? blockText(dt, drag.block, item.title)
+                : dt(
+                  `Станет подзадачей «${item.title}»`,
+                  `Becomes a subtask of “${item.title}”`,
+                )}
+            </span>
+          </div>
         </div>
       )}
     </div>

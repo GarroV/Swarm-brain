@@ -1,7 +1,8 @@
 "use client";
 import { sprintRows } from "@/lib/sprintSubtasks";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import type { SprintCycleItem, Task } from "@/types";
+import { createPortal } from "react-dom";
+import type { Project, SprintCycleItem, Task } from "@/types";
 import { cn } from "@/lib/utils";
 import type { DirectionNode, InitiativeNode } from "@/lib/initiatives";
 import { isBareDirection } from "@/lib/initiatives";
@@ -9,14 +10,28 @@ import { RoyIcon } from "@/components/roy/icons";
 import { useDt } from "@/components/roy/nav";
 import { fmtDay } from "./format";
 import {
+  type RowDnd,
   type RowHandlers,
   SPRINT_COLS,
   SprintRow,
   SubtaskLiteRow,
 } from "./SprintRow";
+import { resolveDrop, subtaskBlock } from "@/lib/sprintGrouping";
+import { type DragView, type RowInfo, useRowDrag } from "./useRowDrag";
+import type { GroupingProps } from "./useDragGroups";
 
 /** Развёрнутые задачи с подзадачами — удобство одного зрителя, поэтому localStorage. */
 const OPEN_KEY = "swarm.sprint.openSubtasks";
+
+/** Перетаскивание в группе: строки как ручки и цели, заголовок как цель, кнопки группы спринта. */
+type DndCtx = {
+  rowDnd: (item: SprintCycleItem) => RowDnd | undefined;
+  header: (projectId: string | null) => {
+    bind: { "data-sg-header": string };
+    over: boolean;
+  };
+  grouping: GroupingProps;
+};
 
 /** Подзадачи для строк группы: все видимые задачи, task_id состава, развёрнутость. */
 type SubCtx = {
@@ -58,6 +73,57 @@ function AddTaskRow({ projectId, onAdd }: {
   );
 }
 
+/** Кнопки заголовка группы спринта (решение 01.10.2026): имя, «В проекты» — снять признак и
+ *  показать группу на доске «Проекты», «Распустить» — задачи в родителя, группа в архив. На
+ *  компьютере проявляются по наведению, на телефоне видны всегда — как хвост строки задачи. */
+function GroupControls({ group, grouping }: {
+  group: Project;
+  grouping: GroupingProps;
+}) {
+  const dt = useDt();
+  const btn =
+    "rounded-[6px] border border-line bg-surface px-1.5 py-0.5 leading-none text-ink-soft transition-colors hover:text-ink disabled:opacity-50";
+  return (
+    <span
+      className="flex shrink-0 items-center gap-1 pr-2 transition-opacity lg:opacity-0 lg:group-hover/head:opacity-100 lg:focus-within:opacity-100"
+      style={{ fontSize: 11.5 }}
+    >
+      <span
+        className="mr-1 rounded-[5px] border border-dashed border-line px-1.5 py-0.5 text-ink-mute"
+        style={{ fontSize: 10.5 }}
+        title={dt(
+          "Группа спринта: на доске «Проекты» её нет, пока не нажмёте «В проекты»",
+          "Sprint group: not on the Projects board until you press “To projects”",
+        )}
+      >
+        {dt("группа спринта", "sprint group")}
+      </span>
+      <button type="button" className={btn} disabled={grouping.busy} onClick={() => grouping.onRename(group)}>
+        {dt("Переименовать", "Rename")}
+      </button>
+      <button type="button" className={btn} disabled={grouping.busy} onClick={() => grouping.onPromote(group)}>
+        {dt("В проекты", "To projects")}
+      </button>
+      <button type="button" className={btn} disabled={grouping.busy} onClick={() => grouping.onDissolve(group)}>
+        {dt("Распустить", "Ungroup")}
+      </button>
+    </span>
+  );
+}
+
+/** Строка, которую тащат, — карточкой у пальца или курсора. */
+function DragGhost({ view }: { view: DragView }) {
+  return createPortal(
+    <div
+      className="pointer-events-none fixed z-[200] max-w-[280px] truncate rounded-[8px] border border-primary/60 bg-[var(--popover)] px-3 py-1.5 text-ink shadow-[0_12px_30px_-10px_rgba(0,0,0,.5)]"
+      style={{ left: view.x + 14, top: view.y + 10, fontSize: 13 }}
+    >
+      {view.dragged.title}
+    </div>,
+    document.body,
+  );
+}
+
 /** Группа: заголовок-строка и задачи под ним. Сворачивается — на кросс-командном проекте
  *  инициатив десятки, и развёрнутые разом они превращают экран в ленту без структуры. */
 function Group(
@@ -74,8 +140,13 @@ function Group(
     h,
     onAdd,
     subtasks: subCtx,
+    dnd,
+    dropTo,
   }: {
     node: InitiativeNode;
+    dnd?: DndCtx;
+    /** Куда переносит бросок на заголовок; undefined — заголовок не цель (группировка по людям). */
+    dropTo?: string | null;
     name: string;
     sub?: string | null;
     due?: string | null;
@@ -93,13 +164,22 @@ function Group(
   const dt = useDt();
   const { done, total } = node.progress;
   const bad = node.items.filter((i) => i.check_status === "problem").length;
+  const target = dnd && dropTo !== undefined ? dnd.header(dropTo) : null;
+  const sprintGroup = node.project?.sprint_group ? node.project : null;
   return (
     <div className="mb-2">
+      <div
+        {...target?.bind}
+        className={cn(
+          "group/head flex items-center border-b border-line rounded-t-[6px] transition-colors",
+          target?.over && "bg-primary/8 outline outline-2 -outline-offset-2 outline-primary/70",
+        )}
+      >
       <button
         type="button"
         onClick={onToggle}
         aria-expanded={!collapsed}
-        className="flex w-full items-baseline gap-2.5 border-b border-line px-3 pb-1.5 pt-2 text-left"
+        className="flex min-w-0 flex-1 items-baseline gap-2.5 px-3 pb-1.5 pt-2 text-left"
       >
         <RoyIcon
           name="cright"
@@ -150,6 +230,10 @@ function Group(
           {dt(`${done} из ${total}`, `${done} of ${total}`)}
         </span>
       </button>
+      {sprintGroup && dnd && (
+        <GroupControls group={sprintGroup} grouping={dnd.grouping} />
+      )}
+      </div>
       {!collapsed && (
         <div>
           {sprintRows(node.items, {
@@ -171,6 +255,7 @@ function Group(
               : (
                 <SprintRow
                   key={row.item.id}
+                  dnd={dnd?.rowDnd(row.item)}
                   item={row.item}
                   depth={row.depth}
                   unchecked={unchecked}
@@ -214,9 +299,13 @@ export function InitiativeList({
   noneLabel,
   onAdd,
   tasks = [],
+  grouping,
   ...h
 }: {
   board: DirectionNode[];
+  /** Есть — строки перетаскиваются: на задачу — группа (подержать — подзадача), на заголовок —
+   *  перенос. Нет — список не тащится (принятый спринт, группировка по людям). */
+  grouping?: GroupingProps;
   /** Все видимые задачи — из них подзадачи строк (#478); отдельного запроса нет. */
   tasks?: Task[];
   /** Подпись группы-остатка. По умолчанию «Без направления»; при группировке по людям —
@@ -279,7 +368,82 @@ export function InitiativeList({
     [tasks, sprintTaskIds, openKids, toggleKids],
   );
 
-  const common = { unchecked, showExtra, h, onAdd, subtasks: sub };
+  // Строки, которые можно тащить и на которые можно бросать: живые задачи состава.
+  const rows = useMemo(() => {
+    const kids = new Set(tasks.map((t) => t.parent_id).filter(Boolean));
+    const map = new Map<string, RowInfo>();
+    board.forEach((d) =>
+      d.initiatives.forEach((ini) =>
+        ini.items.forEach((i) => {
+          if (!i.task_id || i.removed || i.hidden) return;
+          const parentId = h.parentOf?.(i) ?? null;
+          map.set(i.task_id, {
+            taskId: i.task_id,
+            projectId: i.project_id ?? null,
+            parentId,
+            isSubtask: parentId !== null,
+            hasKids: kids.has(i.task_id),
+            title: i.title,
+          });
+        })
+      )
+    );
+    return map;
+  }, [board, tasks, h]);
+  const drag = useRowDrag({
+    enabled: !!grouping && !grouping.busy,
+    rows,
+    onDrop: (dragged, target, mode) => grouping?.onDrop(dragged, target, mode),
+  });
+  const view = drag.view;
+
+  const dnd: DndCtx | undefined = grouping && {
+    grouping,
+    rowDnd: (item) => {
+      const id = item.task_id;
+      const row = id ? rows.get(id) : undefined;
+      if (!id || !row) return undefined;
+      let state: RowDnd["state"] = null;
+      if (view?.dragged.taskId === id) state = { kind: "source" };
+      else if (view && view.targetKey === `task:${id}`) {
+        const target = {
+          kind: "task" as const,
+          taskId: id,
+          projectId: row.projectId,
+          isSubtask: row.isSubtask,
+        };
+        if (view.mode === "subtask") {
+          state = {
+            kind: "subtask",
+            title: view.dragged.title,
+            block: subtaskBlock(view.dragged, target),
+          };
+        } else if (
+          resolveDrop(view.dragged, target, "group", grouping.projects).kind !==
+            "none"
+        ) state = { kind: "group" };
+      }
+      return {
+        bind: drag.rowProps(id),
+        state,
+        onMenu: () => grouping.onMenu(row, [...rows.values()]),
+      };
+    },
+    header: (projectId) => {
+      const bind = drag.headerProps(projectId);
+      const over = !!view &&
+        view.targetKey === `header:${bind["data-sg-header"]}` &&
+        resolveDrop(
+            view.dragged,
+            { kind: "header", projectId },
+            "group",
+            grouping.projects,
+          ).kind !== "none";
+      return { bind, over };
+    },
+  };
+
+  const common = { unchecked, showExtra, h, onAdd, subtasks: sub, dnd };
 
   return (
     <div className="rounded-[10px] border border-line bg-surface">
@@ -300,6 +464,7 @@ export function InitiativeList({
         <span className="px-2">{dt("Исполнитель", "Assignee")}</span>
         <span />
       </div>
+      {view && <DragGhost view={view} />}
       <div className="px-1 pb-2">
         {board.map((dir) => {
           const dirName = dir.project?.name ?? noneLabel ??
@@ -314,6 +479,7 @@ export function InitiativeList({
                 node={dir.initiatives[0]}
                 name={dirName}
                 addTo={dir.project?.id ?? null}
+                dropTo={dir.project?.id ?? null}
                 collapsed={closed.has(dirKey)}
                 onToggle={() => toggle(dirKey)}
                 {...common}
@@ -323,7 +489,12 @@ export function InitiativeList({
           return (
             <section key={dirKey}>
               <div
-                className="px-3 pb-1 pt-4 font-semibold uppercase text-ink-mute"
+                {...dnd?.header(dir.project?.id ?? null).bind}
+                className={cn(
+                  "rounded-[6px] px-3 pb-1 pt-4 font-semibold uppercase text-ink-mute",
+                  dnd?.header(dir.project?.id ?? null).over &&
+                    "bg-primary/8 text-primary",
+                )}
                 style={{ fontSize: 10.5, letterSpacing: "0.1em" }}
               >
                 {dir.project?.emoji ? `${dir.project.emoji} ` : ""}
@@ -341,6 +512,7 @@ export function InitiativeList({
                     name={ini.project?.name ?? dt("Общее", "General")}
                     sub={owner}
                     due={ini.project?.end_date ?? null}
+                    dropTo={ini.project?.id ?? dir.project?.id ?? null}
                     collapsed={closed.has(key)}
                     onToggle={() => toggle(key)}
                     {...common}

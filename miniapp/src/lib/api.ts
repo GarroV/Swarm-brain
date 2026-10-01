@@ -2199,9 +2199,25 @@ export async function fetchSpaceJournal(
   return Array.isArray(body) ? body : body?.events ?? [];
 }
 
-export async function fetchProjects(): Promise<Project[]> {
-  if (DEV_MODE) return [...mockProjects]; // копия: иначе оптимистичный append в UI дублирует (общая ссылка)
-  return apiFetch<Project[]>("/projects");
+// Группы спринта сервер по умолчанию не отдаёт (правило — `_shared/tasks/sprint-groups.ts`):
+// их просит только экран спринта. Мок повторяет то же правило, иначе локально группа всплыла бы
+// на доске «Проекты» и проверка глазами врала.
+export async function fetchProjects(
+  opts: { sprintGroups?: boolean } = {},
+): Promise<Project[]> {
+  if (DEV_MODE) {
+    // копия: иначе оптимистичный append в UI дублирует (общая ссылка)
+    if (opts.sprintGroups) return [...mockProjects];
+    const hidden = new Set(
+      mockProjects.filter((p) => p.sprint_group).map((p) => p.id),
+    );
+    return mockProjects.filter((p) =>
+      !hidden.has(p.id) && !(p.parent_id && hidden.has(p.parent_id))
+    );
+  }
+  return apiFetch<Project[]>(
+    opts.sprintGroups ? "/projects?sprint_groups=1" : "/projects",
+  );
 }
 
 export async function createProject(
@@ -2212,10 +2228,12 @@ export async function createProject(
     parent_id?: string | null;
     sprint_id?: string | null;
     is_private?: boolean;
+    sprint_group?: boolean;
   },
 ): Promise<Project> {
   if (DEV_MODE) {
     const p: Project = {
+      sprint_group: input.sprint_group ?? false,
       id: Date.now().toString(),
       group_id: "cee",
       name: input.name,
@@ -2260,6 +2278,8 @@ export async function updateProject(
       parent_id: string | null;
       sprint_id: string | null;
       is_private: boolean;
+      // Только false: «В проекты» снимает признак группы спринта, поставить его нельзя.
+      sprint_group: false;
       owner_telegram_id: number | null;
       start_date: string | null;
       end_date: string | null;
@@ -2278,6 +2298,29 @@ export async function updateProject(
   return apiFetch<Project>(`/projects/${id}`, {
     method: "PATCH",
     body: JSON.stringify(fields),
+  });
+}
+
+// «Распустить» группу спринта: задачи уходят в родительский проект (или без проекта), сама
+// группа архивируется. Обычный проект сервер так не распускает (404).
+export async function dissolveSprintGroup(
+  id: string,
+): Promise<{ moved: number }> {
+  if (DEV_MODE) {
+    const g = mockProjects.find((p) => p.id === id);
+    if (!g?.sprint_group) throw new Error("Not found");
+    const to = g.parent_id ?? null;
+    let moved = 0;
+    mockTasks = mockTasks.map((t) => {
+      if (t.project_id !== id) return t;
+      moved++;
+      return { ...t, project_id: to };
+    });
+    mockProjects = mockProjects.filter((p) => p.id !== id);
+    return { moved };
+  }
+  return apiFetch<{ moved: number }>(`/projects/${id}/dissolve`, {
+    method: "POST",
   });
 }
 

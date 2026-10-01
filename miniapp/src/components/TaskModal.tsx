@@ -281,7 +281,9 @@ export function TaskModal({ task: taskOpened, open, onClose, onSaved, prefill, m
   // Личность тянем ТУТ ЖЕ и ставим состояние одним заходом: иначе между ответами
   // список успел бы мигнуть всеми проектами воркспейса, от чего и уходим.
   useEffect(() => {
-    void Promise.all([fetchProjects(), fetchMe().then((m) => m.telegram_id).catch(() => null)])
+    // С группами спринта: задача может лежать в группе, и пилюля должна её назвать. В пункты
+    // выбора группы не попадают (buildProjectOptions).
+    void Promise.all([fetchProjects({ sprintGroups: true }), fetchMe().then((m) => m.telegram_id).catch(() => null)])
       .then(([list, id]) => { setMyId(id); setProjects(list); })
       .catch(() => {});
   }, []);
