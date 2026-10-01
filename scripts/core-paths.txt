@@ -43,3 +43,6 @@ supabase/functions/_shared/processing-freeze.ts|supabase/functions/_shared/proce
 # обрабатывается дважды, и люди получают двойные тезисы и уведомления.
 supabase/functions/_shared/meeting-processing-lease.ts|supabase/functions/_shared/meeting-processing-lease.test.ts
 supabase/functions/meeting-ingest/accept-upload.ts|supabase/functions/meeting-ingest/accept-upload.test.ts
+# Повтор «готово» по регулярной задаче (issue #577): ошибка в правиле не падает — она молча
+# перекатывает срок второй раз, и вхождение графика пропадает.
+supabase/functions/_shared/tasks/recur-close.ts|supabase/functions/_shared/tasks/recur-close.test.ts

@@ -42,3 +42,7 @@ requesting_user_id = any(e.shared_with)|true|supabase/functions/_shared/entries/
 # у service_role. Убрать воркспейс — запись чужого воркспейса находится; выдать anon — видно в правах.
   where e.group_id = p_group_id|  where true|supabase/functions/_shared/entries/country-search.db.test.ts|supabase/migrations/20261001120000_entries_shared_with.sql
 revoke all on function public.search_entries_by_country(text, text, bigint) from public, anon, authenticated;|grant execute on function public.search_entries_by_country(text, text, bigint) to anon;|supabase/functions/_shared/entries/country-search.db.test.ts|supabase/migrations/20261001120000_entries_shared_with.sql
+# Обновление задачи одной транзакцией (issue #577): ожидание снимка, блокировка, права на вызов.
+if (to_jsonb(v_row) -> v_key) is distinct from (p_expect -> v_key) then|if false then|supabase/functions/_shared/tasks/task-update.db.test.ts|supabase/migrations/20261001130000_task_apply_update.sql
+   for update;|   ;|supabase/functions/_shared/tasks/task-update.db.test.ts|supabase/migrations/20261001130000_task_apply_update.sql
+revoke all on function public.task_apply_update(uuid, jsonb, jsonb, jsonb) from public, anon, authenticated;|grant execute on function public.task_apply_update(uuid, jsonb, jsonb, jsonb) to anon;|supabase/functions/_shared/tasks/task-update.db.test.ts|supabase/migrations/20261001130000_task_apply_update.sql
