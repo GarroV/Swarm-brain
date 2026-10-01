@@ -38,3 +38,7 @@ revoke all on function public.maintenance_announce(integer, integer, text, text)
 # мной» — второй участник перестаёт находить встречу; заменить на true — её находит третий.
  or requesting_user_id = any(e.shared_with)||supabase/functions/_shared/entries/search-visibility.db.test.ts|supabase/migrations/20261001120000_entries_shared_with.sql
 requesting_user_id = any(e.shared_with)|true|supabase/functions/_shared/entries/search-visibility.db.test.ts|supabase/migrations/20261001120000_entries_shared_with.sql
+# Нечёткий поиск по стране (решение владельца 01.10.2026): воркспейс обязателен и вызов только
+# у service_role. Убрать воркспейс — запись чужого воркспейса находится; выдать anon — видно в правах.
+  where e.group_id = p_group_id|  where true|supabase/functions/_shared/entries/country-search.db.test.ts|supabase/migrations/20261001120000_entries_shared_with.sql
+revoke all on function public.search_entries_by_country(text, text, bigint) from public, anon, authenticated;|grant execute on function public.search_entries_by_country(text, text, bigint) to anon;|supabase/functions/_shared/entries/country-search.db.test.ts|supabase/migrations/20261001120000_entries_shared_with.sql

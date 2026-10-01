@@ -173,3 +173,37 @@ AS $function$
   limit match_count;
 $function$
 ;
+
+-- ── Нечёткий поиск по стране для ассистента бота ──────────────────────────────────────────
+-- Решение владельца 01.10.2026: «бот который сворм брейн должен уметь искать в базе. шансы
+-- использования минимальны, но он должен уметь». Прежняя сигнатура (country_query) не знала
+-- ни воркспейса, ни смотрящего — снимается; код её больше не зовёт (проверено grep и по
+-- pg_proc на проде: других функций, ссылающихся на неё, нет). Новая — то же правило видимости,
+-- что у поиска выше, плюс воркспейс обязателен: без него (null) строк нет.
+drop function if exists public.search_entries_by_country(text);
+
+create or replace function public.search_entries_by_country(
+  country_query text,
+  p_group_id text,
+  requesting_user_id bigint
+)
+ RETURNS TABLE(id uuid, content text, summary text, source text)
+ LANGUAGE sql
+ STABLE
+ SET search_path TO 'public'
+AS $function$
+  select e.id, e.content, e.summary, e.source
+  from public.entries e
+  where e.group_id = p_group_id
+    and (e.is_private = false or (requesting_user_id is not null and (e.owner_id = requesting_user_id or requesting_user_id = any(e.shared_with))))
+    -- Невычитанная встреча в поиск не попадает (issue #70).
+    and (e.entry_type <> 'meeting' or coalesce(e.metadata->>'confirmed', 'false') = 'true')
+    and exists (select 1 from unnest(e.countries) c where c ilike '%' || country_query || '%')
+  order by e.created_at desc
+  limit 5;
+$function$
+;
+
+-- Грант на PUBLIC наследуется в anon/authenticated — снимаем и с него (урок GHSA-vxrp-599j-46hv).
+revoke all on function public.search_entries_by_country(text, text, bigint) from public, anon, authenticated;
+grant execute on function public.search_entries_by_country(text, text, bigint) to service_role;

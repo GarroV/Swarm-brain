@@ -593,9 +593,18 @@ export async function executeTool(
             .filter((e) => e.group_id === groupId);
         } catch { /* fall through */ }
 
+        // Fallback: нечёткое совпадение тега страны — RPC сам держит воркспейс и видимость
+        // (общие, свои и разделённые со мной).
+        if (!entries.length) {
+          const { data: fuzzy } = await supabase.rpc("search_entries_by_country", {
+            country_query: country,
+            p_group_id: groupId,
+            requesting_user_id: userId || null,
+          }).then((r) => r, () => ({ data: null }));
+          entries = (fuzzy ?? []) as KbEntry[];
+        }
+
         // Fallback: точное совпадение тега страны — свой воркспейс и видимые записи.
-        // (Прежний нечёткий RPC search_entries_by_country не знает ни воркспейса, ни
-        // приватности, поэтому отсюда не вызывается.)
         if (!entries.length) {
           const { data: exact } = await supabase.from("entries").select("id, content, summary, source")
             .contains("countries", [country])
