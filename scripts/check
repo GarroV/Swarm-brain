@@ -45,14 +45,6 @@ failed=()
 skipped=()
 
 # ──── доска инициатив ────────────────────────────────────────────────────────
-# Конфиг репозитория — ЯВНО, всюду. Без `--config` deno ищет его сам, вверх от файла, и для
-# всего под `miniapp/` находит `miniapp/package.json` — то есть НЕ наш deno.json. Правила из
-# него в этот момент не действуют: выключенный на весь репозиторий `no-sloppy-imports`
-# воскресает и валит линт на `./format` — том самом расширении-без-расширения, которое
-# обязателен писать веб. Локально это выглядит как «правило не выключается», в CI — как
-# красный гейт на пустом месте.
-CFG=(--config deno.json)
-
 initiatives_gate() {
   REPORT=reports/check.json
   FAILED=0
@@ -80,7 +72,14 @@ initiatives_gate() {
   # воскресает и валит линт на `./format` — том самом расширении-без-расширения, которое
   # обязателен писать веб. Локально это выглядит как «правило не выключается», в CI — как
   # красный гейт на пустом месте.
+  #
+  # Конфиг — свой у каждой области, и один на область: серверные файлы (`supabase/functions/`)
+  # форматируются и линтуются по `supabase/functions/deno.json` (ширина строки 120) — ровно так
+  # же, как их проверяет «сервер · формат» ниже. До 01.10.2026 гейт доски звал для них корневой
+  # конфиг (умолчательные 80), и один и тот же файл проходил одну проверку и валил другую — обе
+  # удовлетворить было нельзя (issue #689). Остальное — по корневому `deno.json`.
   CFG=(--config deno.json)
+  SERVER_CFG=(--config supabase/functions/deno.json)
 
   # Файлы фичи, которые уже существуют. Пока стройка не началась, список пуст — это
   # сообщается вслух и отдельной строкой в отчёте, а не выглядит как пройденная проверка.
@@ -91,6 +90,21 @@ initiatives_gate() {
     [ -e "$p" ] && EXISTING+=("$p")
   done < scripts/feature-paths.txt
   N=${#EXISTING[@]}
+  SERVER_FILES=()
+  OTHER_FILES=()
+  for p in ${EXISTING[@]+"${EXISTING[@]}"}; do
+    case "$p" in
+      supabase/functions/*) SERVER_FILES+=("$p") ;;
+      *) OTHER_FILES+=("$p") ;;
+    esac
+  done
+  # deno_by_area <fmt --check|lint> — одна команда по двум областям, каждая со своим конфигом.
+  deno_by_area() {
+    local st=0
+    if [ "${#SERVER_FILES[@]}" -gt 0 ]; then deno "$@" "${SERVER_CFG[@]}" "${SERVER_FILES[@]}" 2>&1 || st=1; fi
+    if [ "${#OTHER_FILES[@]}" -gt 0 ]; then deno "$@" "${CFG[@]}" "${OTHER_FILES[@]}" 2>&1 || st=1; fi
+    return $st
+  }
 
   if [ "$N" -eq 0 ]; then
     row "формат" "empty" 0 0 "файлов фичи ещё нет"
@@ -98,10 +112,10 @@ initiatives_gate() {
     row "мёртвый-код" "empty" 0 0 "файлов фичи ещё нет"
     row "границы" "empty" 0 0 "файлов фичи ещё нет"
   else
-    out=$(deno fmt "${CFG[@]}" --check "${EXISTING[@]}" 2>&1); st=$?; keep формат "$out"
+    out=$(deno_by_area fmt --check); st=$?; keep формат "$out"
     row "формат" "$([ $st -eq 0 ] && echo pass || echo fail)" "$N" 0 "$(echo "$out" | tail -1 | tr -d '"' | tr '\n' ' ')"
 
-    out=$(deno lint "${CFG[@]}" "${EXISTING[@]}" 2>&1); st=$?; keep линт "$out"
+    out=$(deno_by_area lint); st=$?; keep линт "$out"
     row "линт" "$([ $st -eq 0 ] && echo pass || echo fail)" "$N" 0 "$(echo "$out" | tail -2 | tr -d '"' | tr '\n' ' ')"
 
     out=$(deno run -A scripts/check-graph.ts 2>&1); st=$?; keep граф "$out"
@@ -269,8 +283,9 @@ if [[ "$scope" == "all" || "$scope" == "server" ]]; then
 
     if [ "${#touched[@]}" -gt 0 ]; then
       printf '\nфайлов сервера, затронутых стройкой: %d\n' "${#touched[@]}"
-      run "сервер · формат"  deno fmt --check "${touched[@]}"
-      run "сервер · линт"    deno lint "${touched[@]}"
+      # Конфиг явно: тот же `supabase/functions/deno.json`, что у гейта доски выше (#689).
+      run "сервер · формат"  deno fmt --check --config supabase/functions/deno.json "${touched[@]}"
+      run "сервер · линт"    deno lint --config supabase/functions/deno.json "${touched[@]}"
     else
       printf '\n○ сервер · формат и линт: стройка пока не трогала ни одного файла supabase/functions\n'
       skipped+=("сервер · формат и линт (стройка не трогала файлов сервера)")
