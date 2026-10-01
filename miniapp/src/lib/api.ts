@@ -1,4 +1,5 @@
 import { getInitData } from "./telegram";
+import { isNetworkFailure, reportConnection, reportUnauthorized } from "./connection";
 import type { TaskFile, TaskFileLimits } from "./taskFiles";
 import type { BackdropId } from "./backdrop";
 import type {
@@ -548,8 +549,26 @@ async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
   }
 }
 
+/**
+ * Один выход в сеть для API. Сообщает шине связи, дошёл ли запрос до сервера (issue #467):
+ * обрыв — плашка «нет связи» на весь экран вместо «Не загрузилось» в каждом виджете;
+ * 401 от любого запроса — повод заново войти, а не ещё одна плашка.
+ */
+async function sendRequest(url: string, init: RequestInit): Promise<Response> {
+  let res: Response;
+  try {
+    res = await fetch(url, init);
+  } catch (e) {
+    if (isNetworkFailure(e)) reportConnection("network_error");
+    throw e;
+  }
+  reportConnection("response");
+  if (res.status === 401) reportUnauthorized();
+  return res;
+}
+
 async function apiFetchRaw<T>(path: string, options?: RequestInit): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, {
+  const res = await sendRequest(`${API_BASE}${path}`, {
     ...options,
     // no-store: ответы приватного API не должны ни отдаваться из кэша, ни в него попадать.
     // Второй слой защиты рядом с sw.js (issue #71 — экран показывал данные «на шаг назад»).
@@ -605,7 +624,7 @@ async function apiFetchNoContentTypeRaw<T>(
   path: string,
   options?: RequestInit,
 ): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, {
+  const res = await sendRequest(`${API_BASE}${path}`, {
     ...options,
     cache: "no-store",
     credentials: "include",
