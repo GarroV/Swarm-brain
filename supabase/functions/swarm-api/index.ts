@@ -124,6 +124,7 @@ import { handleAdminRoutes } from "./admin.ts";
 import { apiErr, corsHeaders, json, parseListLimit } from "./http.ts";
 import { handleMeetingInviteRoutes } from "./meeting-invites.ts";
 import { DEMO_GROUP_ID, isDemoSession } from "../_shared/demo-session.ts";
+import { handleIntegrationConnectRoutes, makeIntegrationsDeps } from "./integrations.ts";
 import { handleAutojoinRoutes, makeAutojoinStore, makeCalendarCheck } from "./autojoin.ts";
 import { handleTaskLabelRoutes } from "./task-labels.ts";
 import { handleTaskCommentRoutes } from "./task-comments.ts";
@@ -3114,14 +3115,6 @@ Deno.serve(async (req: Request) => {
     return json(data ?? [], 200, origin);
   }
 
-  // ── GET /google/connect-url — ссылка для подключения Google-календаря ──────────────
-  // Поток живёт на CF Pages (/api/auth/google/start?flow=calendar) рядом с веб-сессией:
-  // start и callback сами сверяют сессию браузера. Путь относительный — веб открывает его
-  // на своём же адресе.
-  if (req.method === "GET" && routePath === "/google/connect-url") {
-    return json({ url: "/api/auth/google/start?flow=calendar" }, 200, origin);
-  }
-
   // ── DELETE /integrations/google — отключить Google-календарь ─────────────────────
   if (req.method === "DELETE" && routePath === "/integrations/google") {
     await supabase.from("user_integrations").delete().eq(
@@ -3131,35 +3124,14 @@ Deno.serve(async (req: Request) => {
     return new Response(null, { status: 204, headers: corsHeaders(origin) });
   }
 
-  // ── POST /integrations/granola ────────────────────────────────────────────────
-  if (req.method === "POST" && routePath === "/integrations/granola") {
-    let body: Record<string, unknown>;
-    try {
-      body = await req.json();
-    } catch {
-      return apiErr(400, "Invalid JSON", origin);
-    }
-    if (!body.api_key || typeof body.api_key !== "string") {
-      return apiErr(400, "api_key required", origin);
-    }
-    const validRes = await fetch(
-      "https://public-api.granola.ai/v1/notes?limit=1",
-      {
-        headers: { Authorization: `Bearer ${body.api_key}` },
-      },
-    );
-    if (!validRes.ok) return apiErr(400, "Invalid Granola API key", origin);
-    await supabase.from("user_integrations").upsert(
-      {
-        telegram_id,
-        service: "granola",
-        api_key: body.api_key,
-        skipped_note_ids: [],
-      },
-      { onConflict: "telegram_id,service" },
-    );
-    return new Response(null, { status: 204, headers: corsHeaders(origin) });
-  }
+  // ── GET /google/connect-url · POST /integrations/granola — подключение (integrations.ts) ──
+  // Демо интеграции не подключает: сессия общая для всех посетителей витрины (issue #573).
+  const connectResp = await handleIntegrationConnectRoutes(
+    { telegramId: telegram_id, isDemo, origin, ...makeIntegrationsDeps(supabase) },
+    req,
+    routePath,
+  );
+  if (connectResp) return connectResp;
 
   // ── DELETE /integrations/granola ──────────────────────────────────────────────
   if (req.method === "DELETE" && routePath === "/integrations/granola") {
@@ -3530,15 +3502,19 @@ Deno.serve(async (req: Request) => {
         username,
         text,
         category,
-        source: "web",
+        // Отзыв из демо остаётся владельцу («фидбек нужен конечно», 28.09.2026), но помечен
+        // источником `demo`, чтобы не путался с отзывами команды (issue #603).
+        source: isDemo ? "demo" : "web",
         screenshot_url: screenshotUrl,
       })
       .select("id").single();
 
-    const { data: channelRow } = await supabase.from("app_settings")
+    // Канал команды демо не пингует: посетитель витрины — не сотрудник, а его отзыв и так
+    // лежит в ленте с пометкой `demo` (issue #603).
+    const { data: channelRow } = isDemo ? { data: null } : await supabase.from("app_settings")
       .select("value").eq("key", "feedback_channel_id").maybeSingle();
     const channelId = (channelRow as { value?: string } | null)?.value;
-    if (channelId && feedbackRow) {
+    if (channelId && feedbackRow && !isDemo) {
       const date = new Date().toLocaleDateString("ru-RU");
       const caption = `<b>[Веб]</b> 🐛 ${
         feedbackCategoryLabel(category)

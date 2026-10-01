@@ -50,3 +50,6 @@ supabase/functions/_shared/tasks/recur-close.ts|supabase/functions/_shared/tasks
 # на доске «Проекты» у всей команды (docs/decisions/2026-10-01-sprint-dnd-groups.md).
 supabase/functions/_shared/tasks/sprint-groups.ts|supabase/functions/_shared/tasks/sprint-groups.test.ts
 miniapp/src/lib/sprintGrouping.ts|miniapp/src/lib/sprintGrouping.test.ts
+# Подключение интеграций: демо-сессия общая для всех посетителей, и привязка одного досталась бы
+# следующим (issue #573). Ошибка в отказе молчит — кнопка «работает», а ключ ложится в общий аккаунт.
+supabase/functions/swarm-api/integrations.ts|supabase/functions/swarm-api/integrations.test.ts
