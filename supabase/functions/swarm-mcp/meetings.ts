@@ -33,7 +33,7 @@ const supabase = createClient(
 const QUEUE_LIMIT = 50;
 const TITLE_MAX = 200;
 // Ответ публикации агенту: хватает id и признаков склейки, текст записи обратно не нужен.
-const PUBLISH_COLUMNS = "id, is_private, metadata";
+const PUBLISH_COLUMNS = "id, is_private, shared_with, metadata";
 const NOT_FOUND = "Черновик не найден.";
 
 type Caller = { requesting_user_id?: number };
@@ -144,7 +144,7 @@ async function meetingText(
   const groupId = await resolveGroupId(callerId);
   if (!groupId) return { ok: false, msg: `Запись ${args.entry_id} не найдена.` };
   const { data } = await supabase.from("entries")
-    .select("id, summary, content, is_private, owner_id, group_id").eq("id", args.entry_id).maybeSingle();
+    .select("id, summary, content, is_private, owner_id, shared_with, group_id").eq("id", args.entry_id).maybeSingle();
   const row = data as (EntryAccessRow & { summary: string | null; content: string | null }) | null;
   const denied = entryAccessError(args.entry_id, row, callerId, groupId ?? null);
   if (denied) return { ok: false, msg: denied };
@@ -214,7 +214,8 @@ export const MEETING_REVIEW_TOOL_DEFINITIONS = [
         base: {
           type: "string",
           enum: ["team", "personal"],
-          description: "team — база команды (по умолчанию), personal — личная",
+          description:
+            "team — база команды (по умолчанию), personal — личная. Встречу нескольких владельцев в личную нельзя; исключение — встреча 1-1 (ровно двое): тогда одна личная запись видна обоим",
         },
         countries: {
           type: "array",

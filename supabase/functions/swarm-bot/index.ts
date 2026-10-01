@@ -12,7 +12,7 @@ import { checkRecordingWatchdog } from "./lib/recording-watchdog.ts";
 import { makeWatchdogStore } from "./lib/recording-watchdog-store.ts";
 import { sweepGhostMeetings } from "./lib/ghost-sweep.ts";
 import { makeGhostStore } from "./lib/ghost-sweep-store.ts";
-import { autoSyncProfile, clearSession, getSession } from "./lib/storage.ts";
+import { autoSyncProfile, clearSession, getSession, visibilityFilter } from "./lib/storage.ts";
 import { checkAllowedWithGroup } from "./lib/workspace.ts";
 import { getReadAiToken } from "./lib/readai.ts";
 import { handleAdd, handleAsk } from "./handlers/knowledge.ts";
@@ -69,6 +69,8 @@ import {
 } from "./lib/mcp-setup.ts";
 import type { TgCallbackQuery, TgMessage } from "./lib/types.ts";
 import { classifyRequest, isOwnPrivateChat } from "./lib/webhook-auth.ts";
+import { processingFrozen } from "../_shared/processing-freeze.ts";
+import { onlyLive } from "../_shared/tasks/live.ts";
 
 const TELEGRAM_BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN")!;
 const CRON_SECRET = Deno.env.get("CRON_SECRET") ?? "";
@@ -207,8 +209,11 @@ async function sweepStuckMeetings(staleMinutes = 15): Promise<number> {
     updated_at: string | null;
   };
 
-  // (1) Зависшие в processing — по застою heartbeat.
-  const { data: rows } = await supabase
+  // (1) Зависшие в processing — по застою heartbeat. Во время заморозки обработка стоит намеренно
+  // (_shared/processing-freeze.ts): застой — не поломка, класс (1) пропускаем. Ждущим встречам
+  // meeting-process и так ставит отметку «жива, ждёт» — это второй замок на тот же случай.
+  const frozen = await processingFrozen(supabase);
+  const { data: rows } = frozen ? { data: [] } : await supabase
     .from("meetings")
     .select("id, title, recorders, last_progress_at, updated_at")
     .eq("summary_status", "processing");
@@ -397,7 +402,9 @@ Deno.serve(async (req: Request) => {
   }
 
   if (body.granola_poll === true) {
-    const count = await ingestNewGranolaNotesAllUsers();
+    // Заметки Granola лежат у Granola — во время заморозки их не забираем, следующий час
+    // заберёт всё, что накопилось (решение владельца 01.10.2026, _shared/processing-freeze.ts).
+    const count = (await processingFrozen(supabase)) ? 0 : await ingestNewGranolaNotesAllUsers();
     await sweepStuckMeetings();
     await checkRecorderHealth();
     return new Response(`OK: ${count} new granola meetings`, { status: 200 });
@@ -695,8 +702,8 @@ Deno.serve(async (req: Request) => {
         .eq("group_id", groupId)
         .in("source", ENTRY_MEETING_SOURCES)
         .or("metadata->>confirmed.is.null,metadata->>confirmed.eq.false")
-        // Видимость: только свои + не-приватные (чужие приватные встречи не показываем).
-        .or(`is_private.eq.false,owner_id.eq.${userId}`)
+        // Видимость: общие, свои и разделённые со мной (чужие личные встречи не показываем).
+        .or(visibilityFilter(userId))
         .order("created_at", { ascending: false })
         .limit(20);
       if (!meetings?.length) {
@@ -929,9 +936,15 @@ Deno.serve(async (req: Request) => {
           "source",
           ALL_MEETING_SOURCES,
         ).order("created_at", { ascending: false }).limit(1).maybeSingle(),
-        supabase.from("tasks").select("*", { count: "exact", head: true }).eq("group_id", groupId).eq("status", "open")
+        onlyLive(supabase.from("tasks").select("*", { count: "exact", head: true })).eq("group_id", groupId).eq(
+          "status",
+          "open",
+        )
           .eq("is_private", false),
-        supabase.from("tasks").select("*", { count: "exact", head: true }).eq("group_id", groupId).eq("status", "open")
+        onlyLive(supabase.from("tasks").select("*", { count: "exact", head: true })).eq("group_id", groupId).eq(
+          "status",
+          "open",
+        )
           .eq("is_private", false).lt("due_date", new Date().toISOString().split("T")[0]),
       ]);
 

@@ -162,7 +162,7 @@ export function TasksFromMeeting({
           <button
             type="button"
             onClick={actions.addOwn}
-            className="inline-flex items-center gap-1.5 rounded-[8px] border border-line bg-surface font-semibold text-ink-soft transition-[transform,border-color] duration-150 hover:scale-[1.03] hover:border-line-2 active:scale-[0.97]"
+            className="inline-flex items-center gap-1.5 rounded-full border border-line bg-surface font-semibold text-ink-soft transition-[transform,border-color] duration-150 hover:scale-[1.03] hover:border-line-2 active:scale-[0.97]"
             // Тач-цель: кнопки были 32px при норме 44 (аудит мобилки 2026-08-24).
             style={{ padding: "6px 12px", fontSize: 12, minHeight: 40 }}
           >
@@ -173,7 +173,7 @@ export function TasksFromMeeting({
             type="button"
             disabled={streaming || !hasContent}
             onClick={extract}
-            className="inline-flex items-center gap-1.5 rounded-[8px] border border-line bg-surface font-semibold text-ink-soft transition-[transform,opacity,border-color] duration-150 hover:scale-[1.03] hover:border-line-2 active:scale-[0.97] disabled:opacity-50"
+            className="inline-flex items-center gap-1.5 rounded-full border border-line bg-surface font-semibold text-ink-soft transition-[transform,opacity,border-color] duration-150 hover:scale-[1.03] hover:border-line-2 active:scale-[0.97] disabled:opacity-50"
             style={{ padding: "6px 12px", fontSize: 12, minHeight: 40 }}
           >
             <RoyIcon name="spark" size={13} strokeWidth={1.9} />

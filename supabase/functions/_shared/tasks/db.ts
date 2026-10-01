@@ -1,14 +1,10 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import type { Task, TaskInput } from "./types.ts";
-import {
-  completionPatch,
-  hidesClosedByDefault,
-  isClosedStatus,
-  shouldCascadeClose,
-} from "./statuses.ts";
+import { completionPatch, hidesClosedByDefault, isClosedStatus, shouldCascadeClose } from "./statuses.ts";
 import { buildRecurPatch, type RecurRow, todayInTz } from "./recurrence.ts";
 import { defaultDueDate } from "./due.ts";
 import { historyRowsFor, isJournaled, type TaskSnapshot } from "./history.ts";
+import { duplicateRecurClose, recurCloseNote } from "./recur-close.ts";
 import { ASSIGNEE_SCAN_LIMIT, narrowByAssignee } from "./assignee-filter.ts";
 
 const supabase = createClient(
@@ -31,9 +27,7 @@ export async function createTask(
     // одного правила в разных клиентах у нас уже расходились (линза задач, #440).
     due_date: input.due_date ?? defaultDueDate(),
     remind_date: input.remind_date ?? null,
-    remind_set_by: input.remind_date
-      ? (input.remind_set_by ?? input.created_by_telegram_id ?? null)
-      : null,
+    remind_set_by: input.remind_date ? (input.remind_set_by ?? input.created_by_telegram_id ?? null) : null,
     tags: input.tags ?? [],
     country: input.country ?? null,
     task_role: input.task_role ?? null,
@@ -41,9 +35,7 @@ export async function createTask(
     source: input.source ?? "manual",
     status: input.status ?? "open",
     // Задача может родиться уже закрытой (импорт, MCP) — тогда дата закрытия ставится сразу.
-    completed_at: isClosedStatus(input.status)
-      ? new Date().toISOString()
-      : null,
+    completed_at: isClosedStatus(input.status) ? new Date().toISOString() : null,
     meeting_id: input.meeting_id ?? null,
     group_id: groupId ?? input.group_id ?? null,
     confirmed: input.confirmed ?? false,
@@ -158,8 +150,7 @@ export async function listTasksWithTotal(filters: {
 
   if (filters.period === "week") {
     const today = new Date().toISOString().split("T")[0];
-    const end =
-      new Date(Date.now() + 7 * 86_400_000).toISOString().split("T")[0];
+    const end = new Date(Date.now() + 7 * 86_400_000).toISOString().split("T")[0];
     q = q.gte("due_date", today).lte("due_date", end);
   }
 
@@ -214,71 +205,150 @@ export interface RecurResult {
   recurred: { from: string; to: string };
 }
 
+type UpdateFields = Partial<TaskInput> & {
+  status?: string;
+  url?: string;
+  due_date?: string | null;
+};
+type UpdateOpts = { actor?: string; actorTelegramId?: number };
+
+/**
+ * Строку изменили между чтением снимка и записью (ответ функции task_apply_update с кодом
+ * PT409). Ничего не записано — патч и журнал надо пересчитать от свежего снимка.
+ */
+class TaskUpdateConflict extends Error {}
+
+/** Сколько раз пересчитываем патч, если строку изменили одновременно с нами. */
+const MAX_CONFLICT_RETRIES = 3;
+
+/**
+ * Единственная точка записи задачи: веб (PATCH /tasks), бот и MCP ходят через неё.
+ *
+ * Изменение, перекат регулярной задачи и журнал пишутся ОДНОЙ транзакцией в Postgres
+ * (`task_apply_update`, issue #577). Любой сбой записи — исключение: вызывающий обязан сказать
+ * человеку «не сохранилось», а не «обновлено». До #577 это были три независимых вызова, и
+ * ошибку UPDATE никто не читал.
+ */
 export async function updateTask(
   id: string,
-  fields: Partial<TaskInput> & {
-    status?: string;
-    url?: string;
-    due_date?: string | null;
-  },
-  opts: { actor?: string; actorTelegramId?: number } = {},
+  fields: UpdateFields,
+  opts: UpdateOpts = {},
+): Promise<RecurResult | null> {
+  for (let attempt = 1;; attempt++) {
+    try {
+      return await updateTaskOnce(id, fields, opts);
+    } catch (e) {
+      if (!(e instanceof TaskUpdateConflict)) throw e;
+      if (attempt >= MAX_CONFLICT_RETRIES) {
+        throw new Error(
+          "Задачу одновременно изменил кто-то ещё — обнови и попробуй снова",
+        );
+      }
+    }
+  }
+}
+
+async function loadSnapshot(id: string): Promise<UpdateSnapshotRow | null> {
+  const { data, error } = await supabase.from("tasks")
+    .select("*")
+    .eq("id", id)
+    .is("archived_at", null)
+    .maybeSingle();
+  // Без снимка регулярная задача закрылась бы как обычная, а журнал записал бы пустоту —
+  // поэтому сбой чтения роняет запрос, а не превращается в «снимка нет».
+  if (error) throw new Error(`Не удалось прочитать задачу: ${error.message}`);
+  // Двойное приведение: при динамическом select(string) supabase-js форму строки не выводит.
+  return data as unknown as UpdateSnapshotRow | null;
+}
+
+/** Последнее закрытие цикла этой задачи — для защиты от повторного «готово» (F-018). */
+async function lastRecurClose(
+  id: string,
+): Promise<{ note: string | null; created_at: string } | null> {
+  const { data, error } = await supabase.from("task_history")
+    .select("note, created_at")
+    .eq("task_id", id)
+    .like("note", "цикл закрыт%")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) {
+    throw new Error(`Не удалось прочитать журнал задачи: ${error.message}`);
+  }
+  return data as { note: string | null; created_at: string } | null;
+}
+
+/** Значение графика: из ЭТОГО патча, если оно в нём есть, иначе сохранённое. */
+function pick<K extends keyof RecurRow>(
+  fields: UpdateFields,
+  row: UpdateSnapshotRow,
+  key: K,
+): RecurRow[K] {
+  const f = fields as Record<string, unknown>;
+  return (key in f && f[key] !== undefined ? f[key] ?? null : row[key]) as RecurRow[K];
+}
+
+async function updateTaskOnce(
+  id: string,
+  fields: UpdateFields,
+  opts: UpdateOpts,
 ): Promise<RecurResult | null> {
   let patch: Record<string, unknown> = { ...fields };
   let result: RecurResult | null = null;
-  let prev: { status: string; completed_at: string | null } | null = null;
-  let snapshot: TaskSnapshot | null = null;
+  let row: UpdateSnapshotRow | null = null;
+  // Чего ждём в строке на момент записи: от этих значений посчитаны перекат и журнал.
+  const expect: Record<string, unknown> = {};
 
-  // Прежний снимок строки отвечает сразу на четыре вопроса: не перекат ли это регулярной задачи,
-  // ставить ли дату закрытия, что записать в историю статуса и какие ещё поля изменились (журнал,
-  // issue #286). Снимок берём целиком, потому что в журнал идёт ЛЮБОЕ поле, кроме служебного
-  // шума (решение владельца 09.09.2026: «уметь всё что угодно отмечать у задач»). Апдейт задачи
-  // — не hot path (человек нажал кнопку), поэтому один лишний SELECT здесь дешевле, чем
-  // невосстановимо потерянная история.
+  // Снимок нужен, чтобы понять, не перекат ли это, ставить ли дату закрытия и что писать в
+  // журнал (решение владельца 09.09.2026: журналируется ЛЮБОЕ поле, кроме служебного шума).
+  // Патч только из служебных полей (координаты дерева и т.п.) снимка не требует.
   const touchesJournaled = Object.keys(fields).some(isJournaled);
   if (touchesJournaled) {
-    const { data } = await supabase.from("tasks")
-      .select("*")
-      .eq("id", id)
-      .maybeSingle();
-    // Двойное приведение: при динамическом select(string) supabase-js форму строки не выводит
-    // (тот же приём, что в listTasksWithTotal).
-    const row = data as unknown as UpdateSnapshotRow | null;
-    if (row) {
-      snapshot = row as TaskSnapshot;
-      prev = { status: row.status, completed_at: row.completed_at ?? null };
+    row = await loadSnapshot(id);
+    if (!row) throw new Error("Задача не найдена");
 
-      // Закрытие РЕГУЛЯРНОЙ задачи — не закрытие, а перекат на следующее вхождение графика.
-      // Живёт здесь, потому что это единственная точка записи статуса задач: веб (PATCH /tasks),
-      // бот и MCP ходят через неё, и обойти перекат нельзя.
-      if (fields.status === "done") {
-        // Значения из ЭТОГО же патча важнее сохранённых: срок/частоту могли поменять и закрыть
-        // задачу одним запросом (MCP умеет), и считать надо от нового графика, а не от прежнего.
-        const effective: RecurRow = {
-          status: (fields.status as string) ?? row.status,
-          recur_freq: fields.recur_freq !== undefined
-            ? fields.recur_freq ?? null
-            : row.recur_freq,
-          recur_anchor_dom: fields.recur_anchor_dom !== undefined
-            ? fields.recur_anchor_dom ?? null
-            : row.recur_anchor_dom,
-          due_date: fields.due_date !== undefined
-            ? fields.due_date ?? null
-            : row.due_date,
-          start_date: fields.start_date !== undefined
-            ? fields.start_date ?? null
-            : row.start_date,
-          remind_date: fields.remind_date !== undefined
-            ? fields.remind_date ?? null
-            : row.remind_date,
-        };
-        const recurPatch = buildRecurPatch(effective, todayInTz());
-        if (recurPatch) {
-          patch = { ...patch, ...recurPatch }; // у переката приоритет над «done» из запроса
-          result = {
-            recurred: { from: effective.due_date!, to: recurPatch.due_date },
-          };
+    // Закрытие РЕГУЛЯРНОЙ задачи — не закрытие, а перекат на следующее вхождение графика.
+    if (fields.status === "done") {
+      // Значения из ЭТОГО же патча важнее сохранённых: срок/частоту могли поменять и закрыть
+      // задачу одним запросом (MCP умеет), и считать надо от нового графика.
+      const effective: RecurRow = {
+        status: "done",
+        recur_freq: pick(fields, row, "recur_freq"),
+        recur_anchor_dom: pick(fields, row, "recur_anchor_dom"),
+        due_date: pick(fields, row, "due_date"),
+        start_date: pick(fields, row, "start_date"),
+        remind_date: pick(fields, row, "remind_date"),
+      };
+      const recurPatch = buildRecurPatch(effective, todayInTz());
+      if (recurPatch) {
+        // Повтор только что выполненного «готово» (двойной клик, ретрай MCP) не перекатывает
+        // срок второй раз, а отвечает тем же перекатом (F-018). Только если патч не трогает
+        // сам график: «перенеси срок и закрой» — это уже другой запрос.
+        const touchesSchedule = ["due_date", "recur_freq", "recur_anchor_dom"]
+          .some((k) => k in fields);
+        if (!touchesSchedule) {
+          const dup = duplicateRecurClose({
+            lastClose: await lastRecurClose(id),
+            currentDue: row.due_date,
+            nowMs: Date.now(),
+          });
+          if (dup) return { recurred: dup };
         }
+        patch = { ...patch, ...recurPatch }; // у переката приоритет над «done» из запроса
+        result = {
+          recurred: { from: effective.due_date!, to: recurPatch.due_date },
+        };
+        // Перекат считан от этого срока и этого статуса: если параллельный запрос успел их
+        // сменить, наш перекат недействителен.
+        expect.due_date = row.due_date;
+        expect.status = row.status;
+        expect.recur_freq = row.recur_freq;
       }
+    }
+    // Журнал пишет «было → стало» от снимка. Если поле успели поменять параллельно, «было»
+    // соврёт — поэтому ждём в строке ровно те значения, от которых считали.
+    for (const k of Object.keys(fields)) {
+      if (isJournaled(k) && k in row) expect[k] = row[k] ?? null;
     }
   }
 
@@ -289,60 +359,62 @@ export async function updateTask(
     ...patch,
     ...completionPatch(
       nextStatus,
-      prev?.completed_at,
+      row?.completed_at,
       new Date().toISOString(),
     ),
+    updated_at: new Date().toISOString(),
   };
 
-  await supabase.from("tasks")
-    .update({ ...patch, updated_at: new Date().toISOString() })
-    .eq("id", id);
-
-  if (result) {
-    // В roll-forward-модели от выполнения не остаётся НИКАКОГО следа (статус снова «открыто»,
-    // задача в «Готовых» не появится). Строка в уже существующей task_history — единственная
-    // память о том, что цикл закрыли.
-    await supabase.from("task_history").insert({
+  const groupId = (row?.group_id as string | null | undefined) ?? null;
+  const history = result
+    // В roll-forward-модели от выполнения не остаётся НИКАКОГО следа (статус снова «открыто»),
+    // поэтому строка журнала — единственная память о том, что цикл закрыли.
+    ? [{
       task_id: id,
+      field: "status",
+      old_value: "done",
+      new_value: "open",
       changed_by: opts.actor ?? "recurring",
-      old_status: fields.status ?? null,
+      changed_by_telegram_id: opts.actorTelegramId ?? null,
+      group_id: groupId,
+      old_status: "done",
       new_status: "open",
-      note:
-        `цикл закрыт, следующий срок ${result.recurred.to} (было ${result.recurred.from})`,
-    });
-  } else {
-    // Журнал изменений: статус, срок, исполнитель, проект, спринт, приоритет — по строке на
-    // каждое РЕАЛЬНО изменившееся поле (issue #286). До 09.09.2026 историю писал только бот и
-    // только на перекате: на проде лежали две строки на две задачи, и вопрос руководства «где,
-    // когда, куда передвинули» ответа не имел. Пишем из общей точки — значит веб, бот и MCP
-    // попадают в журнал сразу, без правок в трёх местах.
-    const rows = historyRowsFor({
+      note: recurCloseNote(result.recurred.from, result.recurred.to),
+    }]
+    // Журнал изменений: по строке на каждое РЕАЛЬНО изменившееся поле (issue #286).
+    : historyRowsFor({
       taskId: id,
-      snapshot,
+      snapshot: row,
       patch,
       actor: opts.actor ?? null,
       actorTelegramId: opts.actorTelegramId ?? null,
-      groupId: (snapshot?.group_id as string | null | undefined) ?? null,
+      groupId,
     });
-    if (rows.length) {
-      const { error } = await supabase.from("task_history").insert(rows);
-      // Журнал не должен ронять апдейт задачи, но и молчать нельзя: пустой отчёт через месяц
-      // неотличим от «никто ничего не двигал».
-      if (error) {
-        console.error(`task_history insert failed for ${id}:`, error.message);
-      }
-    }
+
+  const { error } = await supabase.rpc("task_apply_update", {
+    p_task_id: id,
+    p_patch: patch,
+    p_expect: expect,
+    p_history: history,
+  });
+  if (error) {
+    if (error.code === "PT409") throw new TaskUpdateConflict(error.message);
+    if (error.code === "PT404") throw new Error("Задача не найдена");
+    throw new Error(`Задача не сохранена: ${error.message}`);
   }
 
   // Каскад закрытия на подзадачи (#478). Через ту же функцию: у каждой подзадачи свой журнал и
-  // своя дата закрытия. Вложенность — один уровень, так что рекурсия неглубокая.
-  if (prev && shouldCascadeClose(prev.status, nextStatus, !!result)) {
-    const { data: kids, error } = await supabase.from("tasks")
+  // своя дата закрытия. Каждая подзадача — своя транзакция: родитель к этому моменту уже
+  // записан, а сбой на подзадаче уходит наверх ошибкой, а не теряется в логе.
+  if (row && shouldCascadeClose(row.status, nextStatus, !!result)) {
+    const { data: kids, error: kidsErr } = await supabase.from("tasks")
       .select("id, status")
       .eq("parent_id", id)
       .is("archived_at", null);
-    if (error) {
-      console.error(`subtask cascade lookup failed for ${id}:`, error.message);
+    if (kidsErr) {
+      throw new Error(
+        `Задача сохранена, но подзадачи не закрыты: ${kidsErr.message}`,
+      );
     }
     for (const k of (kids ?? []) as Array<{ id: string; status: string }>) {
       if (isClosedStatus(k.status)) continue;

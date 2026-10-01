@@ -15,7 +15,11 @@ import type {
   SprintCycleItem,
   Task,
 } from "@/types";
-import { computeProgress, spaceProjects } from "@/lib/initiatives";
+import {
+  computeProgress,
+  spaceProjects,
+  withdrawnFromPlan,
+} from "@/lib/initiatives";
 
 export interface SprintHistoryRow {
   id: string;
@@ -84,6 +88,8 @@ export interface CurrentRow {
   total: number;
   percent: number;
   cancelled: number;
+  /** Плановые, снятые из идущего спринта (#576): в `total`, невыполненными. */
+  withdrawn: number;
   risk: number;
   problem: number;
   unchecked: number;
@@ -164,12 +170,16 @@ export function buildSpaceReport(input: SpaceReportInput): SpaceReport {
 
   const checks = (s: CheckStatus) =>
     live.filter((i) => i.check_status === s).length;
+  // Снятые плановые (#576) — в знаменателе невыполненными, как в шапке спринта.
+  const withdrawn = withdrawnFromPlan(input.current?.withdrawn ?? []).length;
+  const liveDone = live.filter((i) => i.status === "done").length;
   const current: CurrentRow | null = input.current
     ? {
       name: input.current.name,
-      done: live.filter((i) => i.status === "done").length,
-      total: live.length,
-      percent: pct(live.filter((i) => i.status === "done").length, live.length),
+      done: liveDone,
+      total: live.length + withdrawn,
+      percent: pct(liveDone, live.length + withdrawn),
+      withdrawn,
       cancelled:
         items.filter((i) => !i.removed && i.status === "cancelled").length,
       risk: checks("risk"),

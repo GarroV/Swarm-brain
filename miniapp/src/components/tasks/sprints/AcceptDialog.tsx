@@ -187,7 +187,7 @@ export function AcceptDialog(
             <Button
               variant="outline"
               size="lg"
-              className="h-11 rounded-[8px] text-[15px]"
+              className="h-11 rounded-full text-[15px]"
               disabled={busy}
               onClick={onCancel}
             >
@@ -195,7 +195,7 @@ export function AcceptDialog(
             </Button>
             <Button
               size="lg"
-              className="h-11 rounded-[8px] text-[15px] font-semibold"
+              className="h-11 rounded-full text-[15px] font-semibold"
               disabled={busy}
               onClick={submit}
             >

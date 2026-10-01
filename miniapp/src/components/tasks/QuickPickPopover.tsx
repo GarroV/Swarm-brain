@@ -75,7 +75,7 @@ export function QuickPickPopover({ icon, ariaLabel, options, value, onPick, filt
         aria-expanded={open}
         onPointerDown={(e) => e.stopPropagation()}
         onClick={(e) => { e.stopPropagation(); setOpen((o) => !o); }}
-        className="flex items-center justify-center rounded-[9px] border border-line-2 bg-surface transition-colors hover:bg-surface-2 active:scale-[0.92] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+        className="flex items-center justify-center rounded-full border border-line-2 bg-surface transition-colors hover:bg-surface-2 active:scale-[0.92] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
         style={{ width: 26, height: 26, color: value ? "var(--accent-ink)" : "var(--ink-soft)" }}
       >
         <RoyIcon name={icon} size={15} strokeWidth={1.9} />

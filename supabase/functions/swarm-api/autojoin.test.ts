@@ -4,6 +4,14 @@
 // (ctx.telegramId), тело запроса её не задаёт — «включить коллеге» здесь красное.
 import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import { type AutojoinContext, type AutojoinStore, handleAutojoinRoutes } from "./autojoin.ts";
+import type { AutojoinCalendarCheck } from "../_shared/autojoin-calendar.ts";
+
+const CAL_OK: AutojoinCalendarCheck = {
+  status: "ok",
+  meetings: 2,
+  events: 3,
+  next: { title: "Weekly", starts_at: "2026-10-01T11:00:00Z", platform: "meet" },
+};
 
 function fakeStore(initial: Record<number, boolean>) {
   const flags = { ...initial };
@@ -25,7 +33,14 @@ function fakeStore(initial: Record<number, boolean>) {
 }
 
 function ctx(store: AutojoinStore, over: Partial<AutojoinContext> = {}): AutojoinContext {
-  return { store, telegramId: 1, isDemo: false, origin: "http://localhost", ...over };
+  return {
+    store,
+    telegramId: 1,
+    isDemo: false,
+    origin: "http://localhost",
+    checkCalendar: () => Promise.resolve(CAL_OK),
+    ...over,
+  };
 }
 
 function put(body: unknown): Request {
@@ -45,7 +60,7 @@ Deno.test("по умолчанию выключено: GET отдаёт свой
 Deno.test("включение и выключение меняют флаг самого человека", async () => {
   const { store, flags } = fakeStore({ 1: false });
   const on = await handleAutojoinRoutes(ctx(store), put({ enabled: true }), "/scriba/autojoin");
-  assertEquals([on?.status, await on!.json()], [200, { enabled: true }]);
+  assertEquals([on?.status, await on!.json()], [200, { enabled: true, calendar: CAL_OK }]);
   assertEquals(flags[1], true);
   const off = await handleAutojoinRoutes(ctx(store), put({ enabled: false }), "/scriba/autojoin");
   assertEquals([off?.status, await off!.json()], [200, { enabled: false }]);
@@ -100,4 +115,42 @@ Deno.test("чужие пути и методы — не наш маршрут", 
   assertEquals(await handleAutojoinRoutes(ctx(store), GET(), "/scriba/other"), null);
   const del = new Request("http://localhost/scriba/autojoin", { method: "DELETE" });
   assertEquals((await handleAutojoinRoutes(ctx(store), del, "/scriba/autojoin"))?.status, 405);
+});
+
+Deno.test("КАЛЕНДАРЬ: включённому отдаётся живая проверка, выключенному в Google не ходим", async () => {
+  let checks = 0;
+  const checkCalendar = () => {
+    checks++;
+    return Promise.resolve(CAL_OK);
+  };
+  const { store } = fakeStore({ 1: true, 2: false });
+  const on = await handleAutojoinRoutes(ctx(store, { checkCalendar }), GET(), "/scriba/autojoin");
+  assertEquals(await on!.json(), { enabled: true, calendar: CAL_OK });
+  const off = await handleAutojoinRoutes(ctx(store, { checkCalendar, telegramId: 2 }), GET(), "/scriba/autojoin");
+  assertEquals(await off!.json(), { enabled: false });
+  assertEquals(checks, 1);
+});
+
+Deno.test("КАЛЕНДАРЬ: включение без календаря сохраняет флаг и говорит, что подключить", async () => {
+  const { store, flags } = fakeStore({ 1: false });
+  const notConnected: AutojoinCalendarCheck = { status: "not_connected", meetings: 0, events: 0, next: null };
+  const res = await handleAutojoinRoutes(
+    ctx(store, { checkCalendar: () => Promise.resolve(notConnected) }),
+    put({ enabled: true }),
+    "/scriba/autojoin",
+  );
+  assertEquals([res?.status, await res!.json()], [200, { enabled: true, calendar: notConnected }]);
+  assertEquals(flags[1], true);
+});
+
+Deno.test("КАЛЕНДАРЬ: сбой проверки — флаг сохранён, статус unavailable, не 500", async () => {
+  const { store, flags } = fakeStore({ 1: false });
+  const res = await handleAutojoinRoutes(
+    ctx(store, { checkCalendar: () => Promise.reject(new Error("db down")) }),
+    put({ enabled: true }),
+    "/scriba/autojoin",
+  );
+  assertEquals(res?.status, 200);
+  assertEquals((await res!.json()).calendar.status, "unavailable");
+  assertEquals(flags[1], true);
 });

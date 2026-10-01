@@ -1,7 +1,13 @@
 import { assertEquals, assertStringIncludes } from "jsr:@std/assert@1";
 import { formatDraftMeeting, formatProposedTasks, formatPublishOutcome, formatReviewQueue } from "./meetings-format.ts";
 
-const row = { id: "m1", title: "Синк", started_at: "2026-09-25T10:30:00Z", source: "desktop-agent", draft_notes_md: "- тезис" };
+const row = {
+  id: "m1",
+  title: "Синк",
+  started_at: "2026-09-25T10:30:00Z",
+  source: "desktop-agent",
+  draft_notes_md: "- тезис",
+};
 
 Deno.test("formatReviewQueue: пустая очередь говорит словами", () => {
   assertStringIncludes(formatReviewQueue([], 0), "пуста");
@@ -23,7 +29,11 @@ Deno.test("formatReviewQueue: полная выдача не пугает пре
 });
 
 Deno.test("formatDraftMeeting: участники по имени, без имени — по почте", () => {
-  const out = formatDraftMeeting({ ...row, status: "awaiting_review", attendees: [{ name: "Анна" }, { email: "b@x.io" }] });
+  const out = formatDraftMeeting({
+    ...row,
+    status: "awaiting_review",
+    attendees: [{ name: "Анна" }, { email: "b@x.io" }],
+  });
   assertStringIncludes(out, "Участники: Анна, b@x.io");
   assertStringIncludes(out, "на вычитке");
 });
@@ -49,10 +59,19 @@ Deno.test("formatProposedTasks: ненайденный исполнитель �
 });
 
 Deno.test("formatProposedTasks: найденный исполнитель печатается как есть", () => {
-  const out = formatProposedTasks([{ title: "Позвонить", assignee: "Аня", resolved_assignee: "Анна Иванова" }], "Vasiliy Garro");
+  const out = formatProposedTasks(
+    [{ title: "Позвонить", assignee: "Аня", resolved_assignee: "Анна Иванова" }],
+    "Vasiliy Garro",
+  );
   assertStringIncludes(out, "Исполнитель: Анна Иванова");
 });
 
 Deno.test("formatProposedTasks: пусто — словами", () => {
   assertStringIncludes(formatProposedTasks([], "x"), "не нашлось");
+});
+
+Deno.test("formatPublishOutcome: личная 1-1 называет, что встреча видна двоим", () => {
+  const text = formatPublishOutcome({ id: "e1", is_private: true, shared_with: [-37] }, 201);
+  assertStringIncludes(text, "видна тебе и второму участнику");
+  assertStringIncludes(formatPublishOutcome({ id: "e2", is_private: true, shared_with: [] }, 201), "в личную базу");
 });

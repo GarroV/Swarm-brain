@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { canActOnMeeting, type MeetingAction } from "../_shared/entries/meeting-rights.ts";
+import { canMutateEntry, canViewEntry, entryVisibilityOr } from "../_shared/entries/access.ts";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -10,7 +11,7 @@ import { canActOnMeeting, type MeetingAction } from "../_shared/entries/meeting-
 // ответе они чистый балласт: на списке встреч это давало 6 МБ из 10 (issue #102), на одной
 // записи — 26 кБ на каждое открытие.
 export const ENTRY_COLUMNS =
-  "id,content,summary,added_by,source,metadata,countries,entry_type,entry_date,group_id,is_private,owner_id,created_at,updated_at";
+  "id,content,summary,added_by,source,metadata,countries,entry_type,entry_date,group_id,is_private,owner_id,shared_with,created_at,updated_at";
 
 /**
  * То же, что ENTRY_COLUMNS, но для СПИСКОВ: вместо полных content/summary берутся
@@ -23,7 +24,7 @@ export const ENTRY_COLUMNS =
  * Где НЕ применять: одиночный доступ (GET /:id) и очередь вычитки — там текст нужен целиком.
  */
 export const ENTRY_LIST_COLUMNS =
-  "id,content:content_preview,summary:summary_preview,list_truncated,added_by,source,metadata,countries,entry_type,entry_date,group_id,is_private,owner_id,created_at,updated_at";
+  "id,content:content_preview,summary:summary_preview,list_truncated,added_by,source,metadata,countries,entry_type,entry_date,group_id,is_private,owner_id,shared_with,created_at,updated_at";
 
 export type EntryRow = {
   id: string;
@@ -38,6 +39,8 @@ export type EntryRow = {
   group_id: string | null;
   is_private: boolean;
   owner_id: number | null;
+  /** С кем разделена личная запись (встреча 1-1, #641). У общей пусто. */
+  shared_with: number[];
   created_at: string;
 };
 
@@ -88,13 +91,13 @@ export async function getEntrySecure(
   // Приватность — БЕЗ admin-байпаса (решение владельца 2026-08-07): личная запись видна
   // ТОЛЬКО владельцу, даже админу/руководителю. Оверсайт-исключение оставлено лишь для ЗАДАЧ
   // (см. canViewTask в swarm-api), не для записей/встреч.
-  // Layer 2: visibility — private entries invisible to non-owners
-  if (data.is_private && data.owner_id !== telegramId) {
+  // Layer 2: visibility — личную видят владелец и те, с кем она разделена (1-1, #641).
+  if (!canViewEntry(data, telegramId)) {
     throw new EntryAccessError(404, "Not found");
   }
 
   // Layer 3: ownership — for mutations (DELETE / PATCH)
-  if (requireOwner && data.owner_id !== telegramId) {
+  if (requireOwner && !canMutateEntry(data, telegramId)) {
     throw new EntryAccessError(403, "Forbidden");
   }
 
@@ -160,9 +163,7 @@ export function buildEntriesQuery(
     .from("entries")
     .select(select, opts?.count ? { count: opts.count } : undefined)
     .eq("group_id", groupId)
-    .or(
-      `is_private.eq.false,and(is_private.eq.true,owner_id.eq.${telegramId})`,
-    );
+    .or(entryVisibilityOr(telegramId));
 }
 
 /**

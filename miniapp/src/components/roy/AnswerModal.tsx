@@ -70,7 +70,7 @@ export function AnswerModal({ query, onClose }: { query: string; onClose: () => 
           <button
             onClick={onClose}
             aria-label="Закрыть"
-            className="flex items-center justify-center rounded-[10px] p-1.5 text-ink-soft transition-colors hover:bg-surface-2 hover:text-ink active:scale-[0.95] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+            className="flex items-center justify-center rounded-full p-1.5 text-ink-soft transition-colors hover:bg-surface-2 hover:text-ink active:scale-[0.95] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
           >
             <RoyIcon name="x" size={18} />
           </button>

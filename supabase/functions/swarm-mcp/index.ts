@@ -34,7 +34,7 @@ import { detectQuerySince } from "../_shared/query-time.ts";
 import { ALL_MEETING_SOURCES } from "../_shared/sources.ts";
 import { isFeedbackStatus } from "../_shared/feedback-categories.ts";
 import { normalizeExtractedEventDate, todayIso } from "../_shared/llm-date.ts";
-import { entryAccessError, type EntryAccessRow } from "../_shared/entries/access.ts";
+import { canViewEntry, entryAccessError, type EntryAccessRow, entryVisibilityOr } from "../_shared/entries/access.ts";
 import { withTokenIdentity } from "./identity.ts";
 import { authorizeToolCall, NO_WORKSPACE_MESSAGE, resolveCallerScope, withCallerIdentity } from "./auth.ts";
 import {
@@ -150,8 +150,10 @@ async function extractEntryMeta(
   }
 }
 
+// Правило видимости — одно на все поверхности (_shared/entries/access.ts): общие, свои и
+// разделённые со мной (встреча 1-1, #641).
 function visibilityFilter(userId: number): string {
-  return `is_private.eq.false,and(is_private.eq.true,owner_id.eq.${userId})`;
+  return entryVisibilityOr(userId);
 }
 
 function mimeFromExtension(filename: string): string {
@@ -675,7 +677,7 @@ async function toolGetEntry(args: { id: string; requesting_user_id?: number }): 
 
   const { data, error } = await supabase
     .from("entries")
-    .select("content, source, created_at, is_private, owner_id")
+    .select("content, source, created_at, is_private, owner_id, shared_with")
     .eq("id", args.id)
     .eq("group_id", scope.groupId)
     .maybeSingle();
@@ -688,8 +690,9 @@ async function toolGetEntry(args: { id: string; requesting_user_id?: number }): 
     created_at: string;
     is_private: boolean;
     owner_id: number | null;
+    shared_with: number[] | null;
   };
-  if (row.is_private && row.owner_id !== scope.userId) {
+  if (!canViewEntry(row, scope.userId)) {
     return "Запись не найдена.";
   }
 
@@ -962,7 +965,7 @@ async function toolListEntries(
 async function toolDeleteEntry(args: { id: string; requesting_user_id?: number }): Promise<string> {
   const { data: entry, error: fetchErr } = await supabase
     .from("entries")
-    .select("metadata, source, owner_id, is_private, group_id")
+    .select("metadata, source, owner_id, is_private, group_id, shared_with")
     .eq("id", args.id)
     .maybeSingle();
 
@@ -1013,7 +1016,7 @@ async function toolUpdateEntry(
 ): Promise<string> {
   const { data: existing, error: fetchErr } = await supabase
     .from("entries")
-    .select("metadata, is_private, owner_id, group_id")
+    .select("metadata, is_private, owner_id, group_id, shared_with")
     .eq("id", args.id)
     .maybeSingle();
 
@@ -1114,7 +1117,7 @@ async function toolUpdateEntry(
 async function toolReindexEntry(args: { id: string; summary?: string; requesting_user_id?: number }): Promise<string> {
   const { data: entry, error } = await supabase
     .from("entries")
-    .select("id, content, summary, source, is_private, owner_id, group_id")
+    .select("id, content, summary, source, is_private, owner_id, group_id, shared_with")
     .eq("id", args.id)
     .maybeSingle();
 

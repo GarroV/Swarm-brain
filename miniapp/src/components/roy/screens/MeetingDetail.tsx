@@ -30,7 +30,7 @@ export function ActionChip({ icon, label, onClick, danger }: { icon: RoyIconName
     <button
       type="button"
       onClick={onClick}
-      className="inline-flex items-center gap-1.5 rounded-[8px] border px-3 py-2 font-semibold transition-transform active:scale-[0.96]"
+      className="inline-flex items-center gap-1.5 rounded-full border px-3 py-2 font-semibold transition-transform active:scale-[0.96]"
       // Тач-цель: правка названия/тезисов/стран и удаление были 38px при норме 44.
       style={{ fontSize: 13, borderColor: "var(--line-2)", color: danger ? "var(--pri-high)" : "var(--accent-ink)", minHeight: 40 }}
     >
@@ -127,8 +127,9 @@ export function MeetingDetail({ id }: { id: string }) {
   };
   // Точечный вопрос по тезисам. Ответ пересказывает транскрипт, поэтому только тем, кто встречу
   // записывал (сервер проверяет записавших и совладельцев; здесь — владелец записи, чтобы не
-  // показывать кнопку, которая откажет).
-  const askEntry = e && e.metadata?.meeting_id && me && e.owner_id === me.telegram_id
+  // показывать кнопку, которая откажет). Встреча 1-1 на двоих — и второй участник (#641).
+  const askEntry = e && e.metadata?.meeting_id && me &&
+      (e.owner_id === me.telegram_id || (e.is_private && (e.shared_with ?? []).includes(me.telegram_id)))
     ? (fragment: string, question: string) => askMeeting("entry", id, fragment, question)
     : undefined;
   const applyFromReading = (answer: string, mode: AskApply, fragment: string) => {
@@ -215,7 +216,7 @@ export function MeetingDetail({ id }: { id: string }) {
                       onClick={reprocess}
                       disabled={reproc}
                       title="Пересобрать тезисы текущим ИИ-промптом из транскрипта"
-                      className="inline-flex items-center gap-1.5 rounded-[9px] border border-accent-line bg-card/60 font-semibold text-accent-ink transition-transform active:scale-[0.97] disabled:opacity-50"
+                      className="inline-flex items-center gap-1.5 rounded-full border border-accent-line bg-card/60 font-semibold text-accent-ink transition-transform active:scale-[0.97] disabled:opacity-50"
                       style={{ padding: "3px 9px", fontSize: 11 }}
                     >
                       <RoyIcon name="spark" size={12} strokeWidth={1.9} /> {reproc ? "Обрабатываю…" : "Переобработать"}
@@ -273,8 +274,8 @@ export function MeetingDetail({ id }: { id: string }) {
                   style={{ fontSize: 20, letterSpacing: "-0.01em" }}
                 />
                 <div className="mt-2 flex gap-2">
-                  <button type="button" onClick={saveTitle} disabled={busy} className="flex-1 rounded-[8px] bg-primary py-2.5 font-semibold text-primary-foreground disabled:opacity-60" style={{ fontSize: 14 }}>Сохранить</button>
-                  <button type="button" onClick={() => setEditingTitle(false)} className="rounded-[8px] border border-line-2 px-4 py-2.5 font-semibold text-ink-soft" style={{ fontSize: 14 }}>Отмена</button>
+                  <button type="button" onClick={saveTitle} disabled={busy} className="flex-1 rounded-full bg-primary py-2.5 font-semibold text-primary-foreground disabled:opacity-60" style={{ fontSize: 14 }}>Сохранить</button>
+                  <button type="button" onClick={() => setEditingTitle(false)} className="rounded-full border border-line-2 px-4 py-2.5 font-semibold text-ink-soft" style={{ fontSize: 14 }}>Отмена</button>
                 </div>
               </div>
             ) : (
@@ -311,10 +312,10 @@ export function MeetingDetail({ id }: { id: string }) {
                   })}
                 </div>
                 <div className="mt-3 flex gap-2">
-                  <button type="button" onClick={saveCountries} disabled={busy} className="flex-1 rounded-[8px] bg-primary py-2.5 font-semibold text-primary-foreground disabled:opacity-60" style={{ fontSize: 14 }}>
+                  <button type="button" onClick={saveCountries} disabled={busy} className="flex-1 rounded-full bg-primary py-2.5 font-semibold text-primary-foreground disabled:opacity-60" style={{ fontSize: 14 }}>
                     Сохранить
                   </button>
-                  <button type="button" onClick={() => setEditingCountries(false)} className="rounded-[8px] border border-line-2 px-4 py-2.5 font-semibold text-ink-soft" style={{ fontSize: 14 }}>
+                  <button type="button" onClick={() => setEditingCountries(false)} className="rounded-full border border-line-2 px-4 py-2.5 font-semibold text-ink-soft" style={{ fontSize: 14 }}>
                     Отмена
                   </button>
                 </div>
@@ -367,7 +368,7 @@ export function MeetingDetail({ id }: { id: string }) {
               onChange={(s) => setStorage(s as "shared" | "personal")}
             />
           </div>
-          <button type="button" onClick={confirm} disabled={busy} className="w-full rounded-[8px] bg-primary py-3.5 font-semibold text-primary-foreground transition-transform active:scale-[0.99] disabled:opacity-60" style={{ fontSize: 15 }}>
+          <button type="button" onClick={confirm} disabled={busy} className="w-full rounded-full bg-primary py-3.5 font-semibold text-primary-foreground transition-transform active:scale-[0.99] disabled:opacity-60" style={{ fontSize: 15 }}>
             {storage === "personal" ? "Сохранить в личное" : "Сохранить в базу"}
           </button>
         </div>

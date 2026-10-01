@@ -227,7 +227,7 @@ export function NotificationsBell({ className }: { className?: string }) {
             : dt("Уведомления", "Notifications")
         }
         aria-expanded={open}
-        className="relative flex size-10 items-center justify-center rounded-[8px] border border-line bg-surface shadow-[0_4px_14px_-8px_rgba(27,32,40,.25)] transition-colors hover:bg-surface-2 active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+        className="relative flex size-10 items-center justify-center rounded-full border border-line bg-surface shadow-[0_4px_14px_-8px_rgba(27,32,40,.25)] transition-colors hover:bg-surface-2 active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
       >
         {/* Покачивание при непрочитанном (issue #609): раз в ~9 с, короткое — привлекает взгляд,
             но не дёргает постоянно. «Уменьшить движение» гасит его целиком (globals.css). */}

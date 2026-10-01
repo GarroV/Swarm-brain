@@ -179,7 +179,7 @@ export function SmartListNav({ variant, compact, active, counts, onSelect, query
                     type="button"
                     onClick={(e) => { e.stopPropagation(); onEditLabel(l); }}
                     aria-label={`Редактировать список «${l.name}»`}
-                    className="flex shrink-0 items-center justify-center rounded-[8px] p-1.5 text-ink-mute opacity-0 transition-opacity hover:bg-surface-2 hover:text-ink-soft group-hover/row:opacity-100"
+                    className="flex shrink-0 items-center justify-center rounded-full p-1.5 text-ink-mute opacity-0 transition-opacity hover:bg-surface-2 hover:text-ink-soft group-hover/row:opacity-100"
                   >
                     <RoyIcon name="dots" size={15} strokeWidth={1.9} />
                   </button>

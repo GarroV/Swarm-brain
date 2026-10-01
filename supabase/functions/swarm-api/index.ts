@@ -102,6 +102,7 @@ import {
   type MeetingAttendee,
 } from "../_shared/meeting-dedup.ts";
 import { publishDraftMeeting } from "../_shared/meeting-publish.ts";
+import { entryVisibilityOr } from "../_shared/entries/access.ts";
 import { canMutateTask, canViewTask } from "../_shared/tasks/access.ts";
 import { todayIso } from "../_shared/llm-date.ts";
 import {
@@ -116,12 +117,13 @@ import {
   canDeleteDraftMeeting,
   type DraftMeetingRow,
   draftMeetingsOwnScopedFilter,
+  oneOnOnePartner,
 } from "../_shared/meeting-access.ts";
 import { handleAdminRoutes } from "./admin.ts";
 import { apiErr, corsHeaders, json, parseListLimit } from "./http.ts";
 import { handleMeetingInviteRoutes } from "./meeting-invites.ts";
 import { DEMO_GROUP_ID, isDemoSession } from "../_shared/demo-session.ts";
-import { handleAutojoinRoutes, makeAutojoinStore } from "./autojoin.ts";
+import { handleAutojoinRoutes, makeAutojoinStore, makeCalendarCheck } from "./autojoin.ts";
 import { handleTaskLabelRoutes } from "./task-labels.ts";
 import { handleTaskCommentRoutes } from "./task-comments.ts";
 import { handleTaskFileRoutes } from "./task-files.ts";
@@ -151,6 +153,7 @@ import {
   maintenanceVerdict,
   readMaintenance,
 } from "../_shared/maintenance.ts";
+import { onlyLive } from "../_shared/tasks/live.ts";
 
 // Сколько задач отдаём вебу за раз. Дефолт движка (_shared/tasks/db.ts) — 200, и для БОТА он
 // верен: тот печатает список сообщением в чат, дампить туда базу нельзя. Для веба он смертелен —
@@ -287,6 +290,24 @@ async function withRecorderNames<T extends { recorders?: unknown }>(
       ...new Set(idsOf(r).map((id) => names.get(id) ?? `#${id}`)),
     ],
   }));
+}
+
+// Встреча 1-1 (#641): у черновика ровно двое владельцев-людей — тогда экран вычитки предлагает
+// «Личное» и называет второго («Видно только вам и …»). Не 1-1 или уже в базе → one_on_one=null.
+// Решение при публикации сервер принимает заново (resolvePublishVisibility) — это только подсказка.
+async function withOneOnOne<T extends Record<string, unknown>>(
+  rows: T[],
+  viewerId: number,
+): Promise<Array<T & { one_on_one: { partner_id: number; partner_name: string | null } | null }>> {
+  const partners = rows.map((r) =>
+    r.status === "in_base" ? null : oneOnOnePartner(r as unknown as DraftMeetingRow, viewerId)
+  );
+  const ids = [...new Set(partners.filter((p): p is number => p !== null))];
+  const names = ids.length ? await resolveNames(ids) : new Map<number, string>();
+  return rows.map((r, i) => {
+    const p = partners[i];
+    return { ...r, one_on_one: p === null ? null : { partner_id: p, partner_name: names.get(p) ?? null } };
+  });
 }
 
 // Имя импортёра встречи-записи (Granola/Read.ai): кто из команды вкинул её. Источник —
@@ -866,7 +887,13 @@ Deno.serve(async (req: Request) => {
 
   // Автозапуск бота по календарю (D021): человек включает и выключает его себе, рядом с календарём.
   const autojoinResp = await handleAutojoinRoutes(
-    { store: makeAutojoinStore(supabase), telegramId: telegram_id, isDemo, origin },
+    {
+      store: makeAutojoinStore(supabase),
+      telegramId: telegram_id,
+      isDemo,
+      origin,
+      checkCalendar: makeCalendarCheck(supabase, telegram_id),
+    },
     req,
     routePath,
   );
@@ -1135,9 +1162,9 @@ Deno.serve(async (req: Request) => {
       // parent_id при создании (подзадача): родитель того же воркспейса. Если задан — форсим project_linked.
       const parentId = (body.parent_id as string | null) ?? null;
       if (parentId) {
-        const { data: par } = await supabase.from("tasks").select(
+        const { data: par } = await onlyLive(supabase.from("tasks").select(
           "id, project_id, group_id",
-        ).eq("id", parentId).maybeSingle();
+        )).eq("id", parentId).maybeSingle();
         if (!par || par.group_id !== groupId) {
           return apiErr(400, "parent_id не найден в этом воркспейсе", origin);
         }
@@ -1389,13 +1416,14 @@ Deno.serve(async (req: Request) => {
               origin,
             );
           }
-          const { data: par } = await supabase.from("tasks").select(
+          const { data: par } = await onlyLive(supabase.from("tasks").select(
             "id, group_id",
-          ).eq("id", rawParent).maybeSingle();
+          )).eq("id", rawParent).maybeSingle();
           if (!par || par.group_id !== groupId) {
             return apiErr(400, "parent_id не найден в этом воркспейсе", origin);
           }
           // цикл: rawParent не должен быть потомком текущей задачи (идём вверх по parent_id)
+          // archive-ok: обход дерева на цикл: архивная задача остаётся звеном parent_id, пропуск дал бы ложное «цикла нет»
           const sibQ = supabase.from("tasks").select("id, parent_id").eq(
             "group_id",
             groupId,
@@ -1482,6 +1510,7 @@ Deno.serve(async (req: Request) => {
         // Каскад: если задача ушла из дерева (project_linked=false) — её поддерево тоже в бэклог
         // (иначе висели бы подзадачи с родителем-в-бэклоге, нарушая инвариант дерева).
         if (fields.project_linked === false) {
+          // archive-ok: каскад в бэклог идёт по всему поддереву, архив не мешает
           const sibQ = supabase.from("tasks").select("id, parent_id").eq(
             "group_id",
             groupId,
@@ -2651,7 +2680,7 @@ Deno.serve(async (req: Request) => {
     const status = url.searchParams.get("status") ?? "awaiting_review";
     let q = supabase.from("meetings")
       .select(
-        "id, title, source, identity_kind, started_at, ended_at, status, has_draft_notes, recorders, co_owners, entry_id, created_at",
+        "id, title, source, identity_kind, started_at, ended_at, status, has_draft_notes, recorders, co_owners, attendees, entry_id, created_at",
         { count: "exact" },
       )
       .eq("group_id", groupId)
@@ -2679,7 +2708,7 @@ Deno.serve(async (req: Request) => {
     );
     // Сколько черновиков подходит под фильтр БЕЗ лимита 50 (issue #112).
     return json(
-      enrichedList.map(toAgentListRow),
+      await withOneOnOne(enrichedList.map(toAgentListRow), telegram_id),
       200,
       origin,
       count != null ? { "X-Total-Count": String(count) } : undefined,
@@ -2872,9 +2901,10 @@ Deno.serve(async (req: Request) => {
           };
         }
       }
+      const [withPair] = await withOneOnOne([enriched as Record<string, unknown>], telegram_id);
       return json(
         {
-          ...(enriched as Record<string, unknown>),
+          ...withPair,
           in_base_duplicate: inBaseDuplicate,
         },
         200,
@@ -3579,9 +3609,7 @@ Deno.serve(async (req: Request) => {
       .gte("created_at", since)
       .eq("group_id", groupId)
       .not("source", "eq", "digest")
-      .or(
-        `is_private.eq.false,and(is_private.eq.true,owner_id.eq.${telegram_id})`,
-      )
+      .or(entryVisibilityOr(telegram_id))
       .order("created_at", { ascending: false })
       .limit(80);
     // Охват: по умолчанию строго по своим рынкам (markets) — для всех, включая админа. Админ может

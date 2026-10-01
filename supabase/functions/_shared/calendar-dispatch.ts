@@ -90,6 +90,31 @@ function declinedBySelf(ev: GEvent): boolean {
   return (ev.attendees ?? []).some((a) => a.self === true && a.responseStatus === "declined");
 }
 
+/** Пойдёт ли бот на встречу без оглядки на время: ответ человека и ссылка на площадку бота. */
+export type JoinVerdict =
+  | { ok: true; link: NonNullable<ReturnType<typeof parseInviteLink>> }
+  | { ok: false; reason: SkipReason; platform?: ConferencePlatform | null };
+
+/**
+ * Правило встречи — одно на обход календаря (planPersonDispatch) и на проверку календаря у
+ * переключателя (_shared/autojoin-calendar.ts): проверка обязана считать ровно те встречи, на которые
+ * бот действительно пойдёт, иначе «бот видит N встреч» разойдётся с тем, куда он придёт.
+ */
+export function joinVerdict(ev: GEvent): JoinVerdict {
+  // Бот идёт только туда, где человек ответил «да» (D024, _shared/calendar-attendance.ts).
+  // Отклонённое — своей причиной: так пропуск читается без догадок.
+  if (declinedBySelf(ev)) return { ok: false, reason: "declined" };
+  if (!acceptedBySelf(ev)) return { ok: false, reason: "not_accepted" };
+  const info = conferenceInfo(ev);
+  if (info.join_url === null) return { ok: false, reason: "no_conference_link" };
+  if (info.platform === null || !botJoinsPlatform(info.platform)) {
+    return { ok: false, reason: "unsupported_platform", platform: info.platform };
+  }
+  const link = parseInviteLink(info.join_url);
+  if (link === null) return { ok: false, reason: "unrecognized_link", platform: info.platform };
+  return { ok: true, link };
+}
+
 /**
  * Встречи одного человека в окне: задания и пропуски.
  *
@@ -121,30 +146,12 @@ export function planPersonDispatch(
         ...span,
       });
 
-    // Бот идёт только туда, где человек ответил «да» (D024, _shared/calendar-attendance.ts).
-    // Отклонённое — своей причиной: так пропуск читается без догадок.
-    if (declinedBySelf(ev)) {
-      skip("declined");
+    const verdict = joinVerdict(ev);
+    if (!verdict.ok) {
+      skip(verdict.reason, verdict.platform);
       continue;
     }
-    if (!acceptedBySelf(ev)) {
-      skip("not_accepted");
-      continue;
-    }
-    const info = conferenceInfo(ev);
-    if (info.join_url === null) {
-      skip("no_conference_link");
-      continue;
-    }
-    if (info.platform === null || !botJoinsPlatform(info.platform)) {
-      skip("unsupported_platform", info.platform);
-      continue;
-    }
-    const link = parseInviteLink(info.join_url);
-    if (link === null) {
-      skip("unrecognized_link", info.platform);
-      continue;
-    }
+    const link = verdict.link;
     if (manualRooms.has(link.room)) {
       skip("manual_invite_exists", link.platform);
       continue;

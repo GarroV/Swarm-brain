@@ -709,6 +709,7 @@ export async function toolGetRecentComments(
   // Видимость считаем тем же каноническим правилом, что и поштучное чтение (canViewTask +
   // воркспейс). Оверсайт админа по задачам сохраняется осознанно — docs/decisions/2026-08-21-admin-visibility.md.
   const isAdmin = args.requesting_user_id === ADMIN_USER_ID;
+  // archive-ok: журнал изменений: у архивной задачи тоже есть история, и «кто её убрал» — ровно то, что в нём ищут
   const { data: taskRows } = await supabase
     .from("tasks").select("id, title, group_id, is_private, owner_id")
     .in("id", [...new Set(raw.map((r) => r.task_id))]);

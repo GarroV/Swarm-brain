@@ -7,7 +7,8 @@
 // смерть воркера — следующий тик cron (функция meeting-process) продолжит с того же места.
 //
 // Поток состояния (process_state.stage): 'transcribe' → 'summarize' → summary_status='done'.
-// Защита от двойной обработки — лиз (processing_lease). Heartbeat — last_progress_at (его
+// Защита от двойной обработки — лиз (processing_lease, `meeting-processing-lease.ts`): его значение —
+// токен воркера, каждая запись воркера условна по токену и продлевает лиз (issue #578). Heartbeat — last_progress_at (его
 // смотрит watchdog: валит в 'failed' только по ЗАСТОЮ, а не по общему возрасту). Poison-part
 // (часть, которая стабильно падает) добивается через attempts и не блокирует встречу вечно.
 //
@@ -28,10 +29,12 @@ import { useGlossaryHint } from "./bot-profile.ts";
 import { extractChatContent } from "./openai-chat.ts";
 import { buildSegments, type Segment, speakerLegend, type SpeakerSpan } from "./speakers.ts";
 import { arbitrateFullness, transcriptVolume } from "./meeting-fullness.ts";
+import { processingFrozen } from "./processing-freeze.ts";
 import { discardState, promoteQueued, requeueLost } from "./meeting-queue.ts";
 import { isFrozen, unfrozen } from "./meeting-frozen.ts";
 import { type RivalClaim, rivalOwnershipPatch, settleRival } from "./meeting-rival.ts";
 import { claimLeaseUntil } from "./meeting-lease.ts";
+import { isLeaseLost, LEASE_STALE_MS, ProcessingLease, rethrowIfLeaseLost } from "./meeting-processing-lease.ts";
 
 export type { Segment, SpeakerSpan };
 
@@ -45,8 +48,11 @@ export const AUDIO_BUCKET = "meeting-audio";
 const TRANSCRIBE_CONCURRENCY = 3;
 // Попыток на одну часть, прежде чем считать её «отравленной» и пропустить (poison-pill guard).
 const MAX_PART_ATTEMPTS = 4;
-// Лиз протух → воркер, взявший встречу, считается мёртвым, и её можно перехватить.
-export const LEASE_STALE_MS = 5 * 60_000;
+// Лиз протух → воркер, взявший встречу, считается мёртвым (канон — meeting-processing-lease.ts).
+export { LEASE_STALE_MS };
+// Потолок одного обращения к модели (Whisper, тезисы). Без него зависший ответ держал воркер до
+// убийства рантаймом; лиз всё это время продлевал бы пульс, и встреча стояла бы за мёртвым вызовом.
+export const MODEL_CALL_TIMEOUT_MS = 180_000;
 
 const OPENAI_AUDIO_MAX_BYTES = 25 * 1024 * 1024;
 
@@ -144,8 +150,14 @@ interface MeetingRow {
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
 // ── OpenAI / Telegram ─────────────────────────────────────────────────────────
-async function openaiFetch(url: string, init: RequestInit, attempts = 4): Promise<Response> {
-  let res = await fetch(url, init);
+// Каждая попытка — со своим потолком времени; `signal` (лиз потерян) прерывает и ожидание, и паузу.
+async function openaiFetch(url: string, init: RequestInit, signal?: AbortSignal, attempts = 4): Promise<Response> {
+  const attempt = () => {
+    const timeout = AbortSignal.timeout(MODEL_CALL_TIMEOUT_MS);
+    signal?.throwIfAborted();
+    return fetch(url, { ...init, signal: signal ? AbortSignal.any([signal, timeout]) : timeout });
+  };
+  let res = await attempt();
   for (let i = 1; i < attempts; i++) {
     const retryable = res.status === 429 || (res.status >= 500 && res.status < 600);
     if (res.ok || !retryable) return res;
@@ -153,7 +165,7 @@ async function openaiFetch(url: string, init: RequestInit, attempts = 4): Promis
     const delayMs = Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter * 1000 : Math.pow(2, i - 1) * 1000;
     await res.body?.cancel();
     await sleep(delayMs);
-    res = await fetch(url, init);
+    res = await attempt();
   }
   return res;
 }
@@ -163,6 +175,7 @@ async function transcribeAudio(
   filename: string,
   languageHint?: string,
   withGlossary = true,
+  signal?: AbortSignal,
 ): Promise<{ segments: Segment[]; language?: string; viaFallback: boolean }> {
   const form = new FormData();
   form.append("file", audio, filename);
@@ -182,7 +195,7 @@ async function transcribeAudio(
     method: "POST",
     headers: { Authorization: `Bearer ${OPENAI_API_KEY}` },
     body: form,
-  });
+  }, signal);
   const data = await res.json();
   if (!res.ok) {
     throw new Error((data as { error?: { message?: string } }).error?.message ?? "OpenAI transcription error");
@@ -233,9 +246,16 @@ async function transcribePartInto(
   p: Part,
   hint: string | undefined,
   source: string | undefined,
+  signal?: AbortSignal,
 ): Promise<void> {
   const blob = await downloadPart(supabase, p.path);
-  const { segments: segs, language, viaFallback } = await transcribeAudio(blob, p.name, hint, useGlossaryHint(source));
+  const { segments: segs, language, viaFallback } = await transcribeAudio(
+    blob,
+    p.name,
+    hint,
+    useGlossaryHint(source),
+    signal,
+  );
   p.segments = segs.map((s) => ({ start: s.start + p.offset, end: s.end + p.offset, text: s.text }));
   if (language) p.lang = language;
   p.viaFallback = viaFallback;
@@ -261,6 +281,8 @@ interface ChatOpts {
   temperature?: number;
   model?: string;
   maxTokens?: number;
+  /** Отмена извне: лиз обработки потерян — ответ модели уже некому записать. */
+  signal?: AbortSignal;
 }
 
 export async function chatComplete(system: string, user: string, opts: ChatOpts = {}): Promise<string> {
@@ -281,7 +303,7 @@ export async function chatComplete(system: string, user: string, opts: ChatOpts 
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${OPENAI_API_KEY}` },
       body: JSON.stringify(body),
-    });
+    }, opts.signal);
     const data = await res.json();
     if (!res.ok) throw new Error((data as { error?: { message?: string } }).error?.message ?? "OpenAI error");
     return extractChatContent(data, model);
@@ -291,6 +313,8 @@ export async function chatComplete(system: string, user: string, opts: ChatOpts 
   try {
     return await callModel(model);
   } catch (e) {
+    // Отменили извне (лиз потерян) — запасная модель тоже ни к чему.
+    if (opts.signal?.aborted) throw opts.signal.reason ?? e;
     // Основная модель упала — не теряем тезисы: пробуем запасную (только если основная была gpt-5).
     if (isGpt5(model) && TEZIS_FALLBACK_MODEL !== model) {
       console.error(`meeting-processor: тезисы на ${model} упали (${e}), фолбэк на ${TEZIS_FALLBACK_MODEL}`);
@@ -375,53 +399,35 @@ export async function uploadPartsAndBuildState(
 }
 
 // ── Лиз и состояние ───────────────────────────────────────────────────────────
-// Атомарно берём лиз: ставим processing_lease=now ТОЛЬКО если он пуст или протух. Параллельный
-// тик/проход получит null (его WHERE не сматчит свежий лиз) → не возьмётся за ту же встречу.
-async function claimLease(supabase: SupabaseClient, id: string): Promise<boolean> {
-  const nowIso = new Date().toISOString();
-  const staleIso = new Date(Date.now() - LEASE_STALE_MS).toISOString();
-  const { data } = await supabase
-    .from("meetings")
-    .update({ processing_lease: nowIso })
-    .eq("id", id)
-    .eq("summary_status", "processing")
-    .or(`processing_lease.is.null,processing_lease.lt.${staleIso}`)
-    .select("id")
-    .maybeSingle();
-  return !!data;
-}
+// Взятие, продление и снятие лиза — `meeting-processing-lease.ts` (условная UPDATE по токену).
 
-// Запись в строку встречи от имени воркера — только пока состояние в строке его поколения.
-// Состояние старой формы (без gen) пишется без условия, как раньше. true — строка обновлена.
+// Запись в строку встречи от имени воркера — только пока лиз его (иначе LeaseLostError) и пока
+// состояние в строке его поколения. Состояние старой формы (без gen) — без условия на поколение.
+// Запись без снятия лиза его же и продлевает. true — строка обновлена.
 // `content` — пишется содержимое встречи (стенограмма, тезисы, название): тогда ещё и только в
 // незамороженную встречу (meeting-frozen.ts) — её могли опубликовать или править, пока шла обработка.
 async function writeOwn(
-  supabase: SupabaseClient,
-  id: string,
+  lease: ProcessingLease,
   gen: string | undefined,
   patch: Record<string, unknown>,
   content = false,
 ): Promise<boolean> {
-  let q = supabase.from("meetings").update(patch).eq("id", id);
-  if (gen) q = q.eq("process_state->>gen", gen);
-  if (content) q = unfrozen(q);
-  const { data, error } = await q.select("id");
-  if (error) throw new Error(`meetings ${id}: ${error.message}`);
-  return (data?.length ?? 0) > 0;
-}
-
-async function releaseLease(supabase: SupabaseClient, id: string, gen?: string): Promise<void> {
-  await writeOwn(supabase, id, gen, { processing_lease: null });
+  return await lease.write(patch, (q) => {
+    let r = gen ? q.eq("process_state->>gen", gen) : q;
+    if (content) r = unfrozen(r);
+    return r;
+  }, gen);
 }
 
 // Персист прогресса: process_state + heartbeat. summary_status НЕ трогаем (остаётся processing).
-// Вместе с прогрессом продлеваем лиз права транскрибации (issue #285): обработка длинной записи
-// идёт дольше 30 минут (на проде такие встречи есть), а истёкший лиз означает «встреча свободна» —
-// и её подхватывал любой следующий claim, теряя уже принятое аудио держателя.
+// Вместе с прогрессом продлеваем оба лиза: обработки (processing_lease, issue #578 — иначе через
+// LEASE_STALE_MS встречу брал второй воркер) и права транскрибации (issue #285): обработка длинной
+// записи идёт дольше 30 минут, а истёкший лиз права означает «встреча свободна» — и её подхватывал
+// любой следующий claim, теряя уже принятое аудио держателя.
 // false — состояние в строке уже не наше (см. writeOwn).
-async function saveState(supabase: SupabaseClient, id: string, state: ProcessState): Promise<boolean> {
+async function saveState(lease: ProcessingLease, state: ProcessState): Promise<boolean> {
   const nowIso = new Date().toISOString();
-  return await writeOwn(supabase, id, state.gen, {
+  return await writeOwn(lease, state.gen, {
     process_state: state,
     last_progress_at: nowIso,
     lease_expires_at: claimLeaseUntil(),
@@ -429,8 +435,8 @@ async function saveState(supabase: SupabaseClient, id: string, state: ProcessSta
   });
 }
 
-async function markFailed(supabase: SupabaseClient, m: MeetingRow, state: ProcessState): Promise<void> {
-  const applied = await writeOwn(supabase, m.id, state.gen, {
+async function markFailed(lease: ProcessingLease, m: MeetingRow, state: ProcessState): Promise<void> {
+  const applied = await writeOwn(lease, state.gen, {
     summary_status: "failed",
     processing_lease: null,
     updated_at: new Date().toISOString(),
@@ -480,11 +486,11 @@ function labelsOf(segments: readonly Segment[]): string[] {
 // публикации): длительность слепа к потерянному звуку (#10), а длительность бота серверу не
 // известна вовсе. true — текущая остаётся, встреча вернулась в прежний статус, уведомлений нет.
 async function keepCurrentTranscript(
-  supabase: SupabaseClient,
-  id: string,
+  lease: ProcessingLease,
   state: ProcessState,
   segments: Segment[],
 ): Promise<boolean> {
+  const { supabase, meetingId: id } = lease;
   const { data } = await supabase.from("meetings").select("transcript, notes_edited_at, status").eq("id", id)
     .maybeSingle();
   const current = data as
@@ -505,7 +511,7 @@ async function keepCurrentTranscript(
   );
   if (verdict.replace) return false;
   const nowIso = new Date().toISOString();
-  await writeOwn(supabase, id, state.gen, {
+  await writeOwn(lease, state.gen, {
     summary_status: state.challenge?.priorStatus ?? "done",
     processing_lease: null,
     last_progress_at: nowIso,
@@ -517,7 +523,8 @@ async function keepCurrentTranscript(
 }
 
 // ── Финал: сводим транскрипт → тезисы → done → уведомляем → чистим Storage ──────
-async function summarizeAndFinish(supabase: SupabaseClient, m: MeetingRow, state: ProcessState): Promise<void> {
+async function summarizeAndFinish(lease: ProcessingLease, m: MeetingRow, state: ProcessState): Promise<void> {
+  const { supabase, signal } = lease;
   // Запись претендента сдвигается своим mic и говорит от своего имени: в строке встречи пока
   // держатель (meeting-rival.ts).
   const rival = state.rival && state.owner !== undefined ? { ...state.rival, owner: state.owner } : null;
@@ -537,12 +544,13 @@ async function summarizeAndFinish(supabase: SupabaseClient, m: MeetingRow, state
     const idxs = partsNeedingRetranscribe(toVoteParts(state.parts), resolved);
     for (const i of idxs) {
       try {
-        await transcribePartInto(supabase, state.parts[i], pin, state.source);
+        await transcribePartInto(supabase, state.parts[i], pin, state.source, signal);
       } catch (e) {
+        rethrowIfLeaseLost(signal.reason ?? e);
         console.error(`meeting-processor: ре-транскрибация части ${state.parts[i].path} упала:`, e);
       }
     }
-    if (idxs.length > 0) await saveState(supabase, m.id, state);
+    if (idxs.length > 0) await saveState(lease, state);
   }
 
   // Сборка стенограммы (сдвиг mic↔system, метки говорящих, сортировка) — в _shared/speakers.ts.
@@ -550,13 +558,13 @@ async function summarizeAndFinish(supabase: SupabaseClient, m: MeetingRow, state
   const segments = buildSegments(state.parts, micOffset, state.speakers ?? []);
 
   // Вторая запись встречи (T156): стенограмма заменяется ЦЕЛИКОМ, только если эта полнее.
-  if (state.challenge && await keepCurrentTranscript(supabase, m.id, state, segments)) return;
+  if (state.challenge && await keepCurrentTranscript(lease, state, segments)) return;
 
   const hasMic = state.parts.some((p) => p.track === "mic" && p.done);
   const transcript = { language: resolved, model: hasMic ? "whisper-1+mic" : "whisper-1", segments };
   const writtenAt = new Date().toISOString();
   const ownership = rival ? rivalOwnershipPatch(rival.owner, rival, writtenAt) : {};
-  if (!(await writeOwn(supabase, m.id, state.gen, { transcript, ...ownership, updated_at: writtenAt }, true))) {
+  if (!(await writeOwn(lease, state.gen, { transcript, ...ownership, updated_at: writtenAt }, true))) {
     await requeueLost(supabase, m.id, state);
     return;
   }
@@ -576,7 +584,7 @@ async function summarizeAndFinish(supabase: SupabaseClient, m: MeetingRow, state
       buildTezisyUserMessage(
         `Встреча: ${m.title ?? "без названия"}\n\n${speakerLegend(ownerName, labelsOf(segments))}\n${transcriptText}`,
       ),
-      { temperature: 0.3 }, // применяется к фолбэк-gpt-4o; terra (GPT-5) температуру игнорирует
+      { temperature: 0.3, signal }, // температура — для фолбэк-gpt-4o; terra (GPT-5) её игнорирует
     )).trim();
     // Пустой ответ модели при СОДЕРЖАТЕЛЬНОМ транскрипте — это сбой сводки, а НЕ пустая встреча.
     // Раньше "" сохранялось с summary_status="done" → ревью вечно «Тезисы готовятся…» без кнопки.
@@ -585,7 +593,7 @@ async function summarizeAndFinish(supabase: SupabaseClient, m: MeetingRow, state
       console.error(
         `meeting-processor: пустая сводка от модели для ${m.id} при непустом транскрипте (${transcriptText.length} симв) — mark failed`,
       );
-      await writeOwn(supabase, m.id, state.gen, {
+      await writeOwn(lease, state.gen, {
         summary_status: "failed",
         last_progress_at: new Date().toISOString(),
         processing_lease: null,
@@ -607,15 +615,17 @@ async function summarizeAndFinish(supabase: SupabaseClient, m: MeetingRow, state
         const t = (await chatComplete(
           "Придумай короткое название встречи на русском: 3–6 слов, по сути обсуждения, без даты, кавычек и префиксов. Верни ТОЛЬКО название.",
           tezisi.slice(0, 2000),
-          { model: "gpt-4o-mini", maxTokens: 60 }, // заголовок — дешёвая быстрая модель, не terra
+          { model: "gpt-4o-mini", maxTokens: 60, signal }, // заголовок — дешёвая быстрая модель, не terra
         )).trim().replace(/^["«»\s]+|["«»\s]+$/g, "").slice(0, 120);
         if (t) finalTitle = t;
-      } catch { /* оставляем исходный заголовок */ }
+      } catch (e) {
+        rethrowIfLeaseLost(signal.reason ?? e); // иначе оставляем исходный заголовок
+      }
     }
   }
 
   const nowIso = new Date().toISOString();
-  const finished = await writeOwn(supabase, m.id, state.gen, {
+  const finished = await writeOwn(lease, state.gen, {
     draft_notes_md: tezisi,
     title: finalTitle,
     summary_status: "done",
@@ -727,14 +737,21 @@ async function finishAndPromote(
 // Делает ОГРАНИЧЕННУЮ бюджетом работу по одной встрече: берёт лиз, транскрибирует следующие
 // части, и если все готовы — сводит тезисы. Безопасно прерывается по бюджету (cron продолжит).
 // Возвращает {claimed, done}: claimed=false → встречу обрабатывает кто-то другой (лиз занят).
+// deferred=true → действует заморозка: встречу не трогаем вовсе, её подхватит первый тик cron после
+// разморозки (решение владельца 01.10.2026, _shared/processing-freeze.ts).
 export async function runMeetingStep(
   supabase: SupabaseClient,
   meetingId: string,
   budgetMs: number,
-): Promise<{ claimed: boolean; done: boolean }> {
+  now: Date = new Date(),
+): Promise<{ claimed: boolean; done: boolean; deferred?: boolean }> {
   const startedAt = Date.now();
-  if (!(await claimLease(supabase, meetingId))) return { claimed: false, done: false };
-  let gen: string | undefined;
+  if (await processingFrozen(supabase, now)) {
+    console.log(`meeting-processor: ${meetingId} — заморозка, обработка отложена`);
+    return { claimed: false, done: false, deferred: true };
+  }
+  const lease = await ProcessingLease.claim(supabase, meetingId);
+  if (!lease) return { claimed: false, done: false };
 
   try {
     const { data } = await supabase
@@ -747,7 +764,8 @@ export async function runMeetingStep(
       return { claimed: true, done: m?.summary_status === "done" };
     }
     const state = m.process_state;
-    gen = state.gen;
+    // Пульс продлевает лиз, пока идут долгие вызовы модели (запись прогресса продлевает его и сама).
+    lease.startHeartbeat(state.gen);
 
     if (state.stage === "transcribe") {
       while (Date.now() - startedAt < budgetMs) {
@@ -768,13 +786,15 @@ export async function runMeetingStep(
           try {
             // Микрофон пинуем на язык встречи; систему — как есть (автодетект).
             const hint = p.track === "mic" ? micHint : undefined;
-            await transcribePartInto(supabase, p, hint, state.source);
+            await transcribePartInto(supabase, p, hint, state.source, lease.signal);
           } catch (e) {
+            // Потерянный лиз — не сбой части: попытку не списываем, шаг прекращается.
+            rethrowIfLeaseLost(lease.signal.reason ?? e);
             p.attempts = (p.attempts ?? 0) + 1;
             console.error(`meeting-processor: part ${p.path} attempt ${p.attempts} failed:`, e);
           }
         });
-        if (!(await saveState(supabase, meetingId, state))) {
+        if (!(await saveState(lease, state))) {
           await requeueLost(supabase, meetingId, state);
           return { claimed: true, done: true };
         }
@@ -783,23 +803,31 @@ export async function runMeetingStep(
       if (recoverable.length > 0) return { claimed: true, done: false }; // ещё есть части — продолжит следующий тик
       // Все оставшиеся части либо готовы, либо отравлены. Если не вышло НИ ОДНОЙ — это провал.
       if (!state.parts.some((p) => p.done)) {
-        await markFailed(supabase, m, state);
+        await markFailed(lease, m, state);
         return await finishAndPromote(supabase, meetingId);
       }
       state.stage = "summarize";
-      if (!(await saveState(supabase, meetingId, state))) {
+      if (!(await saveState(lease, state))) {
         await requeueLost(supabase, meetingId, state);
         return { claimed: true, done: true };
       }
     }
 
     if (state.stage === "summarize") {
-      await summarizeAndFinish(supabase, m, state);
+      await summarizeAndFinish(lease, m, state);
       return await finishAndPromote(supabase, meetingId);
     }
     return { claimed: true, done: false };
+  } catch (e) {
+    // Лиз перехватил другой воркер: встречу ведёт он, этот молча выходит, ничего не записав.
+    if (isLeaseLost(lease.signal.reason ?? e)) {
+      console.warn(`meeting-processor: ${meetingId} — лиз обработки перехвачен, шаг прекращён без записи`);
+      return { claimed: true, done: false };
+    }
+    throw e;
   } finally {
-    // Снимаем лиз, ЕСЛИ встреча ещё processing (done/failed уже обнулили его сами) — и только свой.
-    await releaseLease(supabase, meetingId, gen).catch(() => {});
+    lease.stopHeartbeat();
+    // Снимаем лиз, ЕСЛИ он ещё наш (done/failed обнулили его сами той же записью). Чужой не трогаем.
+    await lease.release().catch(() => {});
   }
 }

@@ -156,3 +156,40 @@ Deno.test("видимость личной встречи меняет толь�
   assertEquals(canChangeMeetingPrivacy(privateMeeting, owner), true);
   assertEquals(canChangeMeetingPrivacy(privateMeeting, admin), false);
 });
+
+// ── Личная встреча 1-1 на двоих (#641) ───────────────────────────────────────────────────────
+// Второй участник видит и правит (он такой же участник разговора), но не удаляет и не меняет
+// видимость: удаление и смена видимости остаются за владельцем записи. Админа здесь нет.
+const PARTNER_ID = 555;
+const oneOnOne: MeetingRightsRow = { ...privateMeeting, shared_with: [PARTNER_ID] };
+const partner: MeetingViewer = { id: PARTNER_ID, email: "partner@example.com" };
+
+Deno.test("1-1 на двоих: партнёр видит и правит", () => {
+  assertEquals(canActOnMeeting(oneOnOne, partner, "view"), true);
+  assertEquals(canActOnMeeting(oneOnOne, partner, "edit"), true);
+});
+
+Deno.test("1-1 на двоих: партнёр не удаляет и не меняет видимость", () => {
+  assertEquals(canActOnMeeting(oneOnOne, partner, "delete"), false);
+  assertEquals(canChangeMeetingPrivacy(oneOnOne, partner), false);
+  assertNotEquals(meetingAccessError("m1", oneOnOne, partner, "cee", "delete"), null);
+});
+
+Deno.test("1-1 на двоих: владелец может всё", () => {
+  for (const a of ["view", "edit", "delete"] as MeetingAction[]) {
+    assertEquals(canActOnMeeting(oneOnOne, owner, a), true);
+  }
+});
+
+Deno.test("1-1 на двоих: участник воркспейса, админ и даже участник по календарю не видят", () => {
+  for (const v of [outsider, admin, participant]) {
+    for (const a of ["view", "edit", "delete"] as MeetingAction[]) {
+      assertEquals(canActOnMeeting(oneOnOne, v, a), false);
+    }
+    assertEquals(meetingAccessError("m1", oneOnOne, v, "cee", "view"), "Встреча m1 не найдена.");
+  }
+});
+
+Deno.test("1-1 на двоих: партнёр из чужого воркспейса не видит", () => {
+  assertEquals(meetingAccessError("m1", oneOnOne, partner, "other", "view"), "Встреча m1 не найдена.");
+});

@@ -15,7 +15,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { computeSprintStats, type SprintItemView } from "./sprint-stats.ts";
 import { nextCycleDates } from "./sprint-dates.ts";
 import { getCycle, type SprintCycle } from "./sprint-cycles.ts";
-import { listItems } from "./sprint-items.ts";
+import { listComposition } from "./sprint-items.ts";
 
 const supabase = createClient(
   Deno.env.get("SUPABASE_URL")!,
@@ -57,17 +57,25 @@ export async function acceptCycle(
     );
   }
 
-  const items = await listItems(id, groupId, { id: acceptedBy, isAdmin: true });
-  const stats = computeSprintStats(items.map((it): SprintItemView => ({
-    in_plan: it.in_plan,
-    status: it.status,
-    assignees: it.assignees,
-    project: it.project,
-    completed_at: it.completed_at,
-    check_status: it.check_status,
-    to_carry: it.to_carry,
-    removed_at: it.removed_at,
-  })));
+  // Снятые из идущего спринта входят в итоги (#576): плановые из них — невыполненной частью
+  // плана, иначе снятие отстающих поднимало бы процент.
+  const { items, withdrawn } = await listComposition(id, groupId, {
+    id: acceptedBy,
+    isAdmin: true,
+  });
+  const stats = computeSprintStats(
+    [...items, ...withdrawn].map((it): SprintItemView => ({
+      in_plan: it.in_plan,
+      status: it.status,
+      assignees: it.assignees,
+      project: it.project,
+      completed_at: it.completed_at,
+      check_status: it.check_status,
+      to_carry: it.to_carry,
+      removed_at: it.removed_at,
+      withdrawn_at: it.withdrawn_at,
+    })),
+  );
 
   const next = nextCycleDates({
     name: cycle.name,

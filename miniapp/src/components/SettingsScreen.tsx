@@ -2,7 +2,7 @@
 import { useState, useEffect } from "react";
 import {
   fetchMe, patchMe, fetchConfig, fetchIntegrations, connectGranola, disconnectGranola,
-  googleConnectUrl, disconnectGoogle,
+  openGoogleConnect, disconnectGoogle,
   fetchGranolaUnprocessed, previewGranolaNote, importGranolaNote, skipGranolaNote,
   generateDigest, uploadFile, logout,
   fetchRecorderSetup, mintRecorderToken,
@@ -522,12 +522,7 @@ export function GoogleCalendarSection() {
       .then((l) => setConnected(l.some((i) => i.service === "google_calendar")))
       .catch(() => setConnected(false));
   }, []);
-  const connect = async () => {
-    const url = await googleConnectUrl();
-    const tg = (window as unknown as { Telegram?: { WebApp?: { openLink?: (u: string) => void } } }).Telegram?.WebApp;
-    if (tg?.openLink) tg.openLink(url);
-    else window.open(url, "_blank");
-  };
+  const connect = () => openGoogleConnect();
   const disconnect = async () => {
     if (!(await confirm({ title: "Отключить Google-календарь?", description: "bumblebee перестанет предлагать записи по календарю, а тезисы — получать название и участников.", confirmText: "Отключить" }))) return;
     await disconnectGoogle();

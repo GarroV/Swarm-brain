@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState, type ReactNode } from "react";
-import { fetchAutojoin, fetchIntegrations, fetchMcpSetup, fetchRecorderSetup } from "@/lib/api";
+import { fetchAutojoin, fetchIntegrations, fetchMcpSetup, fetchRecorderSetup, openGoogleConnect } from "@/lib/api";
 import { buildConnectors, connectorsSummary, type ConnectorId, type ConnectorsInput } from "@/lib/connectors";
 import { SectionLabel } from "@/components/roy/ui";
 import { useDt } from "@/components/roy/nav";
@@ -23,13 +23,15 @@ const TITLE: Record<ConnectorId, [string, string]> = {
 const ABOUT: Record<ConnectorId, [string[], string[]]> = {
   bot: [
     [
-      "scriba — наш бот для Google Meet. Он сам заходит на ваши встречи и записывает их, вам ничего не нужно запускать.",
-      "Включите его — и он будет приходить на каждую встречу Meet из вашего календаря, на которую вы согласились. После встречи во «Встречах» появятся стенограмма и тезисы.",
+      "scriba — наш бот для встреч в Google Meet и Контур.Толке. Он сам заходит на ваши встречи и записывает их, вам ничего не нужно запускать.",
+      "Включите его — и он будет приходить на каждую встречу Meet или Толка из вашего календаря, на которую вы согласились. После встречи во «Встречах» появятся стенограмма и тезисы.",
+      "В Толке встреча должна быть публичной: scriba входит по ссылке как гость, а в закрытую комнату гостя не пустят.",
       "Участники видят scriba в списке как отдельного гостя, в том числе внешние. Выключить можно в любой момент — подействует в течение минуты.",
     ],
     [
-      "scriba is our Google Meet bot. It joins your meetings on its own and records them — nothing to launch.",
-      "Turn it on and it will join every Meet meeting from your calendar that you accepted. After the meeting, the transcript and notes appear in Meetings.",
+      "scriba is our meeting bot for Google Meet and Kontur.Talk. It joins your meetings on its own and records them — nothing to launch.",
+      "Turn it on and it will join every Meet or Talk meeting from your calendar that you accepted. After the meeting, the transcript and notes appear in Meetings.",
+      "In Kontur.Talk the meeting must be public: scriba joins by link as a guest, and a private room won't let guests in.",
       "Participants see scriba as a separate guest, external ones included. You can turn it off any time — it takes effect within a minute.",
     ],
   ],
@@ -133,7 +135,9 @@ export function ConnectorsSection({ me, panels, dense = false }: { me: Me; panel
   const { connected, total, attention } = connectorsSummary(list);
 
   const panelOf = (id: ConnectorId) =>
-    id === "bot" ? <BotPanel hasCalendar={hasCalendar} onChange={setBotAutojoin} /> : panels[id];
+    id === "bot"
+      ? <BotPanel hasCalendar={hasCalendar} on={input.botAutojoin === true} onChange={setBotAutojoin} />
+      : panels[id];
   const toggle = (id: ConnectorId) => setOpen(open === id ? null : id);
   // Справа всегда что-то выбрано: по умолчанию scriba, в демо (где его нет) — первая плитка.
   const selected: ConnectorId = open ?? (list.some((c) => c.id === "bot") ? "bot" : list[0].id);
@@ -193,18 +197,34 @@ export function ConnectorsSection({ me, panels, dense = false }: { me: Me; panel
   );
 }
 
-/** Бот ходит по календарю: без подключённого Google-календаря включать нечего — говорим, что подключить. */
-function BotPanel({ hasCalendar, onChange }: { hasCalendar: boolean; onChange: (on: boolean) => void }) {
+/**
+ * Бот ходит по календарю. Переключатель виден всегда: включивший бота до отключения календаря должен
+ * мочь его выключить. Пока бот выключен и календаря нет — подсказка с кнопкой; у включённого о
+ * календаре говорит живая проверка под переключателем (AutojoinToggle), а не наличие плитки.
+ */
+function BotPanel({ hasCalendar, on, onChange }: { hasCalendar: boolean; on: boolean; onChange: (on: boolean) => void }) {
   const dt = useDt();
-  if (!hasCalendar) {
-    return (
-      <p className="text-ink-soft" style={{ fontSize: 12.5 }}>
-        {dt(
-          "scriba узнаёт о встречах из Google Календаря — сначала подключите его в плитке «Google Календарь».",
-          "scriba learns about meetings from Google Calendar — connect it first in the Google Calendar tile.",
-        )}
-      </p>
-    );
-  }
-  return <AutojoinToggle bare onChange={onChange} />;
+  return (
+    <div className="flex flex-col gap-2.5">
+      {!hasCalendar && !on && (
+        <div className="flex flex-col gap-2 text-ink-soft" style={{ fontSize: 12.5 }}>
+          <p>
+            {dt(
+              "scriba узнаёт о встречах из Google Календаря — подключите его, иначе боту некуда будет прийти.",
+              "scriba learns about meetings from Google Calendar — connect it, or the bot will have nowhere to go.",
+            )}
+          </p>
+          <button
+            type="button"
+            onClick={() => void openGoogleConnect()}
+            className="self-start rounded-full bg-primary px-3.5 py-1.5 font-semibold text-primary-foreground transition-transform active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+            style={{ fontSize: 12.5 }}
+          >
+            {dt("Подключить календарь", "Connect calendar")}
+          </button>
+        </div>
+      )}
+      <AutojoinToggle bare onChange={onChange} />
+    </div>
+  );
 }

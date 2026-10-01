@@ -512,3 +512,136 @@ Deno.test("список спринтов фильтруется по прост�
     await db.end();
   }
 });
+
+// #576: снятие задачи из идущего спринта не должно поднимать процент. Раньше DELETE удалял
+// строку состава, и плановая задача уходила из знаменателя бесследно.
+Deno.test("снятая из идущего спринта плановая задача остаётся в плане невыполненной", async () => {
+  const db = await connect();
+  try {
+    const { tabId } = await seed(db);
+    const mk = async (title: string, status: string) =>
+      (await db.queryObject<{ id: string }>`
+        insert into tasks (title, status, group_id, created_by)
+        values (${title}, ${status}, ${WS}, 'test') returning id`).rows[0].id;
+    const done = await mk("Сделана", "done");
+    const lagging = await mk("Отстаёт", "open");
+    const cycle = (await db.queryObject<{ id: string }>`
+      insert into sprint_cycles (group_id, tab_id, name, start_date, end_date, status)
+      values (${WS}, ${tabId}, 'Спринт 1 · 01.09 — 14.09', current_date - 13, current_date, 'active')
+      returning id`).rows[0].id;
+    for (const t of [done, lagging]) {
+      await db.queryArray`
+        insert into sprint_items (cycle_id, task_id, in_plan) values (${cycle}, ${t}, true)`;
+    }
+
+    assertEquals(
+      (await call("DELETE", `/sprint-cycles/${cycle}/tasks/${lagging}`))
+        ?.status,
+      204,
+    );
+    const detail = await (await call("GET", `/sprint-cycles/${cycle}`))!.json();
+    assertEquals(detail.items.map((i: { title: string }) => i.title), [
+      "Сделана",
+    ]);
+    assertEquals(
+      detail.withdrawn.map((i: { title: string; in_plan: boolean }) => [
+        i.title,
+        i.in_plan,
+      ]),
+      [["Отстаёт", true]],
+      "снятая строка должна остаться следом, а не исчезнуть",
+    );
+    const row = await db.queryObject<{ withdrawn_by: string | null }>`
+      select withdrawn_by from sprint_items where cycle_id = ${cycle} and task_id = ${lagging}`;
+    assertEquals(row.rows[0].withdrawn_by, String(ME));
+
+    // Отметка на снятой строке не ставится: из спринта она ушла.
+    assertEquals(
+      (await call("PATCH", `/sprint-cycles/${cycle}/tasks/${lagging}`, {
+        body: { check_status: "ok" },
+      }))?.status,
+      404,
+    );
+
+    const accepted = await call("POST", `/sprint-cycles/${cycle}/accept`, {
+      body: {},
+    });
+    assertEquals(accepted?.status, 200);
+    const result = await accepted!.json();
+    assertEquals(
+      [
+        result.cycle.stats.plan,
+        result.cycle.stats.planDone,
+        result.cycle.stats.planPercent,
+        result.cycle.stats.withdrawn,
+      ],
+      [2, 1, 50, 1],
+      "процент считается от плана старта: снятая — невыполненная, а не исчезнувшая",
+    );
+    assertEquals(result.carried, 0, "снятая задача в следующий спринт не едет");
+  } finally {
+    await db.end();
+  }
+});
+
+Deno.test("снять и вернуть в идущий спринт — задача остаётся плановой", async () => {
+  const db = await connect();
+  try {
+    const { tabId } = await seed(db);
+    const task = (await db.queryObject<{ id: string }>`
+      insert into tasks (title, status, group_id, created_by)
+      values ('Задача', 'open', ${WS}, 'test') returning id`).rows[0].id;
+    const cycle = (await db.queryObject<{ id: string }>`
+      insert into sprint_cycles (group_id, tab_id, name, start_date, end_date, status)
+      values (${WS}, ${tabId}, 'Спринт 1', current_date - 13, current_date, 'active')
+      returning id`).rows[0].id;
+    await db.queryArray`
+      insert into sprint_items (cycle_id, task_id, in_plan, carry_count)
+      values (${cycle}, ${task}, true, 2)`;
+
+    await call("DELETE", `/sprint-cycles/${cycle}/tasks/${task}`);
+    const back = await call("POST", `/sprint-cycles/${cycle}/tasks`, {
+      body: { task_ids: [task] },
+    });
+    assertEquals((await back!.json()).added, 1);
+
+    const detail = await (await call("GET", `/sprint-cycles/${cycle}`))!.json();
+    assertEquals(detail.withdrawn, []);
+    assertEquals(
+      detail.items.map((i: { in_plan: boolean; carry_count: number }) => [
+        i.in_plan,
+        i.carry_count,
+      ]),
+      [[true, 2]],
+      "возврат — та же строка: план и счётчик переносов на месте",
+    );
+  } finally {
+    await db.end();
+  }
+});
+
+Deno.test("в черновике убранная задача удаляется — план ещё не зафиксирован", async () => {
+  const db = await connect();
+  try {
+    const { tabId } = await seed(db);
+    const task = (await db.queryObject<{ id: string }>`
+      insert into tasks (title, status, group_id, created_by)
+      values ('Задача', 'open', ${WS}, 'test') returning id`).rows[0].id;
+    const cycle = (await db.queryObject<{ id: string }>`
+      insert into sprint_cycles (group_id, tab_id, name, start_date, end_date, status)
+      values (${WS}, ${tabId}, 'Спринт 1', current_date, current_date + 13, 'draft')
+      returning id`).rows[0].id;
+    await db.queryArray`
+      insert into sprint_items (cycle_id, task_id, in_plan) values (${cycle}, ${task}, true)`;
+
+    assertEquals(
+      (await call("DELETE", `/sprint-cycles/${cycle}/tasks/${task}`))?.status,
+      204,
+    );
+    const left = await db.queryObject<{ n: bigint }>`
+      select count(*) as n from sprint_items where cycle_id = ${cycle}`;
+    assertEquals(Number(left.rows[0].n), 0);
+  } finally {
+    await db.end();
+  }
+});

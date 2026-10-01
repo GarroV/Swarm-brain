@@ -13,6 +13,7 @@ import {
   UPLOAD_TTL_SEC,
   uploadSlotsSince,
 } from "../_shared/task-files.ts";
+import { onlyLive } from "../_shared/tasks/live.ts";
 
 // Роуты файлов к задаче (решение владельца 2026-09-30, docs/decisions/2026-09-30-task-files-on-muspelheim.md):
 //   GET    /tasks/:id/files                 — список + лимиты (веб показывает их под кнопкой)
@@ -98,8 +99,10 @@ export async function handleTaskFileRoutes(
   const m = list ?? complete ?? url ?? one;
   if (!m) return null;
 
-  const { data: taskData } = await supabase.from("tasks")
-    .select("id, group_id, is_private, owner_id").eq("id", m[1]).maybeSingle();
+  const { data: taskData } = await onlyLive(
+    supabase.from("tasks")
+      .select("id, group_id, is_private, owner_id"),
+  ).eq("id", m[1]).maybeSingle();
   const task = taskData as TaskRow | null;
   if (
     !task || task.group_id !== groupId ||

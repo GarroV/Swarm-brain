@@ -2,10 +2,10 @@ import { assertEquals, assertRejects } from "jsr:@std/assert@1";
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import {
   decideFileAccess,
-  getFileSecure,
   FileAccessError,
-  type StorageFileRow,
   type FileRequester,
+  getFileSecure,
+  type StorageFileRow,
 } from "./file-access.ts";
 
 const entryFile: StorageFileRow = {
@@ -121,4 +121,17 @@ Deno.test("getFileSecure: feedback screenshot resolves for admin, 404 for member
     () => getFileSecure(makeSupabase({ storage_files: reg }), "feedback/s.png", member),
     FileAccessError,
   );
+});
+
+Deno.test("вложение личной встречи 1-1 видит второй участник, третий — нет (#641)", () => {
+  const row = {
+    path: "p",
+    owner_kind: "entry" as const,
+    group_id: "cee",
+    owner_user_id: 1,
+    is_private: true,
+    shared_with: [-37],
+  };
+  assertEquals(decideFileAccess(row, { groupId: "cee", telegramId: -37, isAdmin: false }).allowed, true);
+  assertEquals(decideFileAccess(row, { groupId: "cee", telegramId: 999, isAdmin: true }).allowed, false);
 });

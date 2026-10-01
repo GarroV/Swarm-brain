@@ -54,3 +54,53 @@ Deno.test("export_entry в боте берёт запись через loadEntry
   assertEquals(body.includes("loadEntryForExport("), true, "выгрузка без гарда");
   assertEquals(/\.from\("entries"\)/.test(body), false, "выгрузка читает entries своим запросом");
 });
+
+// ── Обзорные инструменты ассистента: дайджест, страны, поиск по стране ─────────────────────
+// Каждый запрос к entries — со своим воркспейсом и фильтром видимости (общие, свои и
+// разделённые со мной, #641); RPC поиска получают смотрящего, нечёткий поиск по стране — ещё и
+// воркспейс (решение владельца 01.10.2026: бот «должен уметь» искать по стране).
+function toolBody(src: string, name: string): string {
+  const start = src.indexOf(`case "${name}": {`);
+  if (start < 0) throw new Error(`инструмент ${name} не найден — детектор устарел`);
+  const end = src.indexOf("\n      case ", start + 1);
+  return src.slice(start, end < 0 ? undefined : end);
+}
+
+function overviewProblems(src: string, name: string): string[] {
+  const body = toolBody(src, name);
+  const problems: string[] = [];
+  const reads = body.match(/\.from\("entries"\)[\s\S]*?;/g) ?? [];
+  for (const q of reads) {
+    if (!q.includes('.eq("group_id", groupId)')) problems.push(`${name}: запрос к entries без воркспейса`);
+    if (!/\.or\(visibilityFilter\(userId( \|\| 0)?\)\)/.test(q)) problems.push(`${name}: запрос без фильтра видимости`);
+  }
+  for (const call of body.match(/\.rpc\("match_entries", \{[\s\S]*?\}\)/g) ?? []) {
+    if (!call.includes("requesting_user_id")) problems.push(`${name}: match_entries без смотрящего`);
+  }
+  for (const call of body.match(/\.rpc\("search_entries_by_country", \{[\s\S]*?\}\)/g) ?? []) {
+    if (!call.includes("p_group_id: groupId") || !call.includes("requesting_user_id")) {
+      problems.push(`${name}: поиск по стране без воркспейса или смотрящего`);
+    }
+  }
+  return problems;
+}
+
+for (const name of ["get_digest", "get_countries_list", "get_entries_by_country", "search_by_country"]) {
+  Deno.test(`${name} в боте: свой воркспейс и фильтр видимости`, async () => {
+    const src = await Deno.readTextFile(`${HERE}knowledge.ts`);
+    assertEquals(overviewProblems(src, name), []);
+  });
+}
+
+Deno.test("search_by_country в боте: нечёткий поиск по стране на месте", async () => {
+  const src = await Deno.readTextFile(`${HERE}knowledge.ts`);
+  assertEquals(toolBody(src, "search_by_country").includes('rpc("search_entries_by_country"'), true);
+});
+
+Deno.test("детектор обзорных инструментов ловит запрос без воркспейса", () => {
+  const broken = `case "get_digest": {
+        const { data } = await supabase.from("entries").select("x").order("created_at");
+      }
+      case "next": {`;
+  assertEquals(overviewProblems(broken, "get_digest").length > 0, true);
+});

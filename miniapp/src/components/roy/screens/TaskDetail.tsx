@@ -109,10 +109,10 @@ export function TaskDetail({ id }: { id: string }) {
         <>
           <button type="button" aria-label="Закрыть меню" className="fixed inset-0 z-40" onClick={() => setMenu(false)} />
           <div className="roy-pop absolute right-4 top-14 z-50 flex gap-1 rounded-[10px] border border-line bg-surface p-1.5 shadow-[0_10px_30px_rgba(0,0,0,.18)]">
-            <button type="button" aria-label="Изменить" onClick={() => { setMenu(false); push({ view: "newTask", params: { id } }); }} className="flex items-center justify-center rounded-[10px] p-2.5 transition-colors hover:bg-accent-soft active:scale-[0.94]" style={{ color: "var(--accent-ink)" }}>
+            <button type="button" aria-label="Изменить" onClick={() => { setMenu(false); push({ view: "newTask", params: { id } }); }} className="flex items-center justify-center rounded-full p-2.5 transition-colors hover:bg-accent-soft active:scale-[0.94]" style={{ color: "var(--accent-ink)" }}>
               <RoyIcon name="pencil" size={20} strokeWidth={1.9} />
             </button>
-            <button type="button" aria-label="Удалить" onClick={del} className="flex items-center justify-center rounded-[10px] p-2.5 transition-colors active:scale-[0.94]" style={{ color: "var(--pri-high)" }}>
+            <button type="button" aria-label="Удалить" onClick={del} className="flex items-center justify-center rounded-full p-2.5 transition-colors active:scale-[0.94]" style={{ color: "var(--pri-high)" }}>
               <RoyIcon name="trash" size={20} strokeWidth={1.9} />
             </button>
           </div>
@@ -135,7 +135,7 @@ export function TaskDetail({ id }: { id: string }) {
             <button
               type="button"
               onClick={() => setStatus(isClosed(t) ? "open" : "done")}
-              className="flex w-full items-center justify-center gap-2 rounded-xl py-2.5 text-sm font-semibold"
+              className="flex w-full items-center justify-center gap-2 rounded-full py-2.5 text-sm font-semibold"
               style={isClosed(t)
                 ? { color: "var(--ink-soft)", background: "var(--surface-2)", border: "1px solid var(--line-2)" }
                 : { color: "var(--accent-ink)", background: "var(--accent-soft)", border: "1px solid var(--accent-line)" }}

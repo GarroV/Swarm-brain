@@ -26,6 +26,7 @@
 // (рекордер кладёт структурно). Работает и против уже существующих записей — бэкфилл не нужен.
 
 import { type SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { canViewEntry } from "./entries/access.ts";
 
 const TOLERANCE_MIN = 5;
 // Окно для сигнала «публикующий есть в участниках кандидата»: шире базового (рекордер стартует
@@ -67,8 +68,18 @@ export function comparableKeys(a: string, b: string): boolean {
 // одноимённых РАЗНЫХ встреч в один день нет ни одной, поэтому окно времени сигналу не нужно
 // (Granola подключается к созвону позже начала — разрыв доходил до 25 минут).
 const GENERIC_TITLES = new Set([
-  "встреча", "встречи", "созвон", "звонок", "meeting", "call", "newmeeting", "11", "1on1",
-  "untitled", "безназвания", "конференция",
+  "встреча",
+  "встречи",
+  "созвон",
+  "звонок",
+  "meeting",
+  "call",
+  "newmeeting",
+  "11",
+  "1on1",
+  "untitled",
+  "безназвания",
+  "конференция",
 ]);
 
 export function normTitle(t: string | null | undefined): string {
@@ -187,7 +198,15 @@ type Candidate = {
   source: string | null;
   is_private: boolean | null;
   owner_id: number | null;
-  metadata: (Record<string, unknown> & { attendees?: MeetingAttendee[]; title?: string; identity_key?: string; meeting_id?: string }) | null;
+  shared_with: number[] | null;
+  metadata:
+    | (Record<string, unknown> & {
+      attendees?: MeetingAttendee[];
+      title?: string;
+      identity_key?: string;
+      meeting_id?: string;
+    })
+    | null;
 };
 
 /**
@@ -214,7 +233,7 @@ export async function findDuplicateMeeting(
 
   const { data, error } = await supabase
     .from("entries")
-    .select("id, content, source, is_private, owner_id, metadata")
+    .select("id, content, source, is_private, owner_id, shared_with, metadata")
     .eq("entry_type", "meeting")
     .eq("group_id", inc.groupId)
     .eq("entry_date", inc.entryDate)
@@ -225,7 +244,11 @@ export async function findDuplicateMeeting(
   // входящую встречу. Отбор здесь, до всей логики матчинга: так его нельзя «забыть» в очередном
   // вызывающем, чем и был вызван issue #45.
   const visible = (data as Candidate[]).filter(
-    (c) => !c.is_private || (inc.viewerId != null && c.owner_id === inc.viewerId),
+    (c) =>
+      canViewEntry(
+        { is_private: c.is_private ?? false, owner_id: c.owner_id, shared_with: c.shared_with },
+        inc.viewerId,
+      ),
   );
 
   // Время кандидатов из meetings.started_at. Без этого запроса время записей РЕКОРДЕРА неизвестно:

@@ -7,6 +7,7 @@ import {
   type SubscriptionState,
   type TaskSubscriber,
 } from "../_shared/tasks/notify.ts";
+import { onlyLive } from "../_shared/tasks/live.ts";
 
 // Подписка на уведомления о комментариях к задаче (issue #82).
 // Канон решения — docs/decisions/2026-08-24-comment-subscription.md: комментарий подписывает,
@@ -22,8 +23,7 @@ import {
 type SubTaskRow = NotifiableTask & { id: string; group_id: string | null };
 
 // Select локальный (свой набор полей), а ПРАВИЛО доступа общее — `canViewTask`.
-const TASK_FIELDS =
-  "id, group_id, is_private, owner_id, assignee_telegram_ids, created_by_telegram_id";
+const TASK_FIELDS = "id, group_id, is_private, owner_id, assignee_telegram_ids, created_by_telegram_id";
 
 /**
  * Подписчики задачи с признаком админа каждого.
@@ -152,7 +152,7 @@ export async function handleTaskSubscriptionRoutes(
   if (!m) return null;
   const taskId = m[1];
 
-  const { data } = await supabase.from("tasks").select(TASK_FIELDS).eq(
+  const { data } = await onlyLive(supabase.from("tasks").select(TASK_FIELDS)).eq(
     "id",
     taskId,
   ).maybeSingle();

@@ -17,7 +17,7 @@ import type { Task, User } from "@/types";
 import { recurrenceOptions } from "@/lib/recurrenceLabels";
 import { useDt } from "@/components/roy/nav";
 
-const TRIGGER = "flex h-[26px] w-[26px] items-center justify-center rounded-[9px] border border-line-2 bg-surface transition-colors hover:bg-surface-2 active:scale-[0.92] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]";
+const TRIGGER = "flex h-[26px] w-[26px] items-center justify-center rounded-full border border-line-2 bg-surface transition-colors hover:bg-surface-2 active:scale-[0.92] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]";
 
 /** Оптимистичная правка задачи: сразу патчим строку локально, затем персист + сверка (reload). */
 export async function saveTaskPatch(

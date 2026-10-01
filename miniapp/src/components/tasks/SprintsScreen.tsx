@@ -333,7 +333,12 @@ export function SprintsScreen() {
   const plan = items.filter((i) => i.in_plan);
   // Цифры шапки и дерево доски считает lib/initiatives — то же правило, что у серверных
   // итогов. Считать их здесь значило бы завести второй ответ на вопрос «сколько сделано».
-  const kpi = useMemo(() => sprintKpi(items), [items]);
+  // Снятые из идущего спринта (#576) — в знаменателе: процент считается от плана старта.
+  const withdrawn = detail?.withdrawn;
+  const kpi = useMemo(() => sprintKpi(items, withdrawn ?? []), [
+    items,
+    withdrawn,
+  ]);
   const board = useMemo(() => buildBoard(items, projects), [items, projects]);
   // Вторая группировка того же состава — по людям. Ради неё был отдельный экран сверки;
   // после переезда отметок в строку (владелец 19.09.2026) это переключатель внутри списка:
@@ -886,7 +891,7 @@ export function SprintsScreen() {
             type="button"
             onClick={submitCycle}
             disabled={busy}
-            className="h-[28px] rounded-[7px] bg-primary px-3 font-semibold text-primary-foreground disabled:opacity-50"
+            className="h-[28px] rounded-full bg-primary px-3 font-semibold text-primary-foreground disabled:opacity-50"
             style={{ fontSize: 12.5 }}
           >
             {busy ? dt("Создание…", "Creating…") : dt("Создать", "Create")}
@@ -994,6 +999,11 @@ export function SprintsScreen() {
                           parentOf={(item) =>
                             item.task_id ? tasks.find((t) => t.id === item.task_id)?.parent_id ?? null : null}
                           users={users}
+                          tasks={tasks}
+                          onOpenTask={(id) => {
+                            const live = tasks.find((t) => t.id === id);
+                            if (live) setEditing(live);
+                          }}
                           // Принятый спринт — слепок: в него не дописывают. В группировке по
                           // людям «+ задача» нет: группа — человек, а не проект, и класть
                           // задачу «в человека» некуда.
@@ -1082,7 +1092,7 @@ export function SprintsScreen() {
                 type="button"
                 onClick={() => setPoolOpen(false)}
                 title={dt("Закрыть", "Close")}
-                className="ml-auto rounded-lg p-1.5 text-ink-soft hover:bg-surface-2 hover:text-ink"
+                className="ml-auto rounded-full p-1.5 text-ink-soft hover:bg-surface-2 hover:text-ink"
               >
                 <RoyIcon name="x" size={14} />
               </button>

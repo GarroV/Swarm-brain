@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect, useMemo, useRef } from "react";
 import type { Task, TaskLink, User, Project } from "@/types";
-import { TaskLinksField } from "@/components/tasks/TaskLinksField";
+import { useCardSections } from "@/components/tasks/useCardSections";
 import { displayName } from "@/lib/utils";
 import { DatePicker } from "@/components/ui/DatePicker";
 import {
@@ -25,8 +25,6 @@ import { PILL_GROUP_CLS, pillSegmentCls, pillSegmentSelectCls, PropertyPillBody,
 import { useConfirm } from "@/components/ui/confirm";
 import { RoyIcon, type RoyIconName } from "@/components/roy/icons";
 import { TaskComments } from "@/components/tasks/TaskComments";
-import { TaskFiles } from "@/components/tasks/TaskFiles";
-import { TaskSubtasks } from "@/components/tasks/TaskSubtasks";
 import { COUNTRY_NAMES, countryCode } from "@/lib/countries";
 import { CountryPopover } from "@/components/tasks/CountryPopover";
 import { linkify } from "@/lib/linkify";
@@ -112,7 +110,13 @@ function TaskOrigin({ task }: { task: Task }) {
   );
 }
 
-export function TaskModal({ task: taskProp, open, onClose, onSaved, prefill, meetingId, projectId }: TaskModalProps) {
+export function TaskModal({ task: taskOpened, open, onClose, onSaved, prefill, meetingId, projectId }: TaskModalProps) {
+  // Переход по связи родитель ↔ подзадача внутри той же карточки (владелец 01.10.2026: «вижу
+  // подзадачу, но нельзя перейти. хотя интуитивно хочется кликнуть»). Карточка остаётся открытой,
+  // в ней просто другая задача; закрыли или открыли другую снаружи — переход забывается.
+  const [navTask, setNavTask] = useState<Task | null>(null);
+  useEffect(() => { setNavTask(null); }, [open, taskOpened?.id]);
+  const taskProp = navTask ?? taskOpened;
   // На десктопе карточка задачи — ВСЕГДА панель справа на всю высоту (docs/redesign/stand
   // detail.js), колонки формы в ней идут одна под другой. Решает само окно, а не вызывающий экран:
   // пока это был флаг, его передавали три точки входа из десяти, и спринты, доска, таймлайн и
@@ -389,8 +393,9 @@ export function TaskModal({ task: taskProp, open, onClose, onSaved, prefill, mee
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, isEdit, isPartial, title, description, status, dueDate, remindDate, recurFreq, country, taskRole, assigneeId, selProject, labelIds, links]);
 
-  // Закрытие: досрочно сохраняем pending-изменения (пока debounce не успел сработать).
-  const handleClose = () => {
+  // Досрочно сохраняем pending-изменения (пока debounce не успел сработать) — перед закрытием
+  // и перед переходом к связанной задаче.
+  const flushPending = () => {
     if (isEdit && task && !isPartial && title.trim()) {
       const snap = formSnapshot();
       if (snap !== savedSnapRef.current) {
@@ -401,6 +406,15 @@ export function TaskModal({ task: taskProp, open, onClose, onSaved, prefill, mee
         }
       }
     }
+  };
+  const openRelated = (t: Task) => {
+    flushPending();
+    setNavTask(t);
+  };
+
+  // Закрытие: досрочно сохраняем pending-изменения (пока debounce не успел сработать).
+  const handleClose = () => {
+    flushPending();
     onClose();
   };
 
@@ -471,13 +485,28 @@ export function TaskModal({ task: taskProp, open, onClose, onSaved, prefill, mee
           : "";
   const saveHintDanger = titleMissing || saveState === "error" || hydrateFailed;
 
+  // Ссылки, подзадачи и файлы: пустые — пиктограммами в одной строке, непустые — разделами
+  // (решение владельца 01.10.2026, docs/decisions/2026-10-01-task-card-compact-sections.md).
+  const sections = useCardSections({
+    task: task ?? null,
+    isEdit,
+    isPartial,
+    links,
+    setLinks,
+    onSaved,
+    onOpenTask: openRelated,
+  });
+
   return (
     <Dialog open={open} onOpenChange={(o) => !o && handleClose()}>
       <DialogContent
         showCloseButton={false}
         overlayClassName={drawer ? "bg-[rgba(10,13,17,.12)]" : undefined}
         className={cn("gap-0 rounded-[14px] border border-line bg-[var(--popover)] p-0 sm:max-w-2xl", drawer && DRAWER_CLS)}
+        {...sections.dropProps}
       >
+        {sections.fileInput}
+        {sections.dropOverlay}
         {/* Шапка: заголовок + индикатор автосейва (edit) + удалить (edit) + закрыть */}
         <div className="flex items-center justify-between gap-3 border-b border-line px-[18px] py-2.5">
           <div className="flex min-w-0 items-baseline gap-2.5">
@@ -502,7 +531,7 @@ export function TaskModal({ task: taskProp, open, onClose, onSaved, prefill, mee
                 aria-label="Удалить задачу"
                 title="Удалить задачу"
                 // Тач-цель 40x40: на телефоне кнопка была 29x29 при норме 44 — и это удаление.
-                className="flex size-10 items-center justify-center rounded-[7px] text-ink-soft transition-colors hover:bg-surface-2 hover:text-[var(--pri-high)] active:scale-[0.95] disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+                className="flex size-10 items-center justify-center rounded-full text-ink-soft transition-colors hover:bg-surface-2 hover:text-[var(--pri-high)] active:scale-[0.95] disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
               >
                 <RoyIcon name="trash" size={17} />
               </button>
@@ -511,7 +540,7 @@ export function TaskModal({ task: taskProp, open, onClose, onSaved, prefill, mee
               type="button"
               onClick={handleClose}
               aria-label="Закрыть"
-              className="flex size-10 items-center justify-center rounded-[7px] text-ink-soft transition-colors hover:bg-surface-2 hover:text-ink active:scale-[0.95] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+              className="flex size-10 items-center justify-center rounded-full text-ink-soft transition-colors hover:bg-surface-2 hover:text-ink active:scale-[0.95] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
             >
               <RoyIcon name="x" size={18} />
             </button>
@@ -540,7 +569,7 @@ export function TaskModal({ task: taskProp, open, onClose, onSaved, prefill, mee
               <button
                 type="button"
                 onClick={() => setHydrateAttempt((n) => n + 1)}
-                className="shrink-0 rounded-[7px] border border-line-2 bg-surface px-3 font-medium text-ink transition-colors hover:bg-surface-2 active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+                className="shrink-0 rounded-full border border-line-2 bg-surface px-3 font-medium text-ink transition-colors hover:bg-surface-2 active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
                 style={{ fontSize: 12.5, minHeight: 30 }}
               >
                 {dt("Повторить", "Retry")}
@@ -798,10 +827,11 @@ export function TaskModal({ task: taskProp, open, onClose, onSaved, prefill, mee
               </div>
             )}
 
-            {/* У недогруженной задачи поле ссылок только для чтения — отправлять их всё равно нельзя. */}
-            <div data-card-block="links">
-              <TaskLinksField links={links} onChange={setLinks} disabled={isPartial} />
-            </div>
+            {/* Строка пиктограмм пустых разделов — на месте прежнего поля ссылок, над описанием:
+                так она всегда на первом экране, даже под длинным описанием, а заполненные
+                «Ссылки» встают ровно туда, где была пиктограмма. */}
+            {links.length > 0 && <div data-card-block="links">{sections.linksSection}</div>}
+            {sections.bar}
 
             <div data-card-block="description" className="flex flex-col">
               <label htmlFor="modal-desc" className={labelCls} style={{ fontSize: 12 }}>{dt("Описание", "Description")}</label>
@@ -839,15 +869,15 @@ export function TaskModal({ task: taskProp, open, onClose, onSaved, prefill, mee
           </div>
           </fieldset>
 
-          {isEdit && task && !isPartial && (
+          {sections.subtasksSection && (
             <div data-card-block="subtasks" className="mt-3.5 border-t border-line pt-3">
-              <TaskSubtasks task={task} onChanged={onSaved} />
+              {sections.subtasksSection}
             </div>
           )}
 
-          {isEdit && task && (
+          {sections.filesSection && (
             <div data-card-block="files" className="mt-3.5 border-t border-line pt-3">
-              <TaskFiles taskId={task.id} taskOwnerId={task.owner_id ?? null} />
+              {sections.filesSection}
             </div>
           )}
 
@@ -868,7 +898,7 @@ export function TaskModal({ task: taskProp, open, onClose, onSaved, prefill, mee
               type="button"
               onClick={onClose}
               disabled={creating}
-              className="h-[30px] rounded-[7px] border border-line-2 bg-surface px-3 font-medium text-ink-soft transition-colors hover:bg-surface-2 hover:text-ink active:scale-[0.97] disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+              className="h-[30px] rounded-full border border-line-2 bg-surface px-3 font-medium text-ink-soft transition-colors hover:bg-surface-2 hover:text-ink active:scale-[0.97] disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
               style={{ fontSize: 12.5 }}
             >
               Отмена
@@ -877,7 +907,7 @@ export function TaskModal({ task: taskProp, open, onClose, onSaved, prefill, mee
               type="button"
               onClick={handleCreate}
               disabled={creating}
-              className="h-[30px] rounded-[7px] bg-primary px-3.5 font-semibold text-primary-foreground transition-[transform,background-color] hover:bg-primary/90 active:scale-[0.97] disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+              className="h-[30px] rounded-full bg-primary px-3.5 font-semibold text-primary-foreground transition-[transform,background-color] hover:bg-primary/90 active:scale-[0.97] disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
               style={{ fontSize: 12.5 }}
             >
               {creating ? "Создание…" : "Создать"}

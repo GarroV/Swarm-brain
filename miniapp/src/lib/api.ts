@@ -1472,6 +1472,10 @@ let mockCycleItems: Record<string, MockItemRow[]> = {
     { id: "si2", task_id: "p_search", in_plan: true },
     { id: "si3", task_id: "p_dig", in_plan: true },
     { id: "si4", task_id: "2", in_plan: false },
+    // Подзадачи (#478): одна подзадача «Поиска» в составе, вторая — нет; «Хартбит» — подзадача
+    // задачи вне спринта (подпись «из «…»»).
+    { id: "si5", task_id: "p_s_hybrid", in_plan: true },
+    { id: "si6", task_id: "p_s_heart", in_plan: true },
   ],
   sc_draft: [],
 };
@@ -2470,8 +2474,10 @@ const devTaskFiles = new Map<string, TaskFile[]>();
 
 export async function fetchTaskFiles(taskId: string): Promise<TaskFilesList> {
   if (DEV_MODE) {
+    // Файл-образец — только у задачи «1»: у остальных моков файлов нет, иначе пустую
+    // карточку (без ссылок, файлов и подзадач) в DEV_MODE не открыть вовсе.
     if (!devTaskFiles.has(taskId)) {
-      devTaskFiles.set(taskId, [{
+      devTaskFiles.set(taskId, taskId !== "1" ? [] : [{
         id: "f1", name: "Договор_Сербия.pdf", size: 2_516_582, mime: "application/pdf", inline: true,
         uploaded_by: 123456, uploaded_by_name: "Dev User", created_at: new Date(Date.now() - 86_400_000 * 3).toISOString(),
       }]);
@@ -2925,6 +2931,25 @@ let mockAgentMeetings: AgentMeeting[] = [
     entry_id: null,
     created_at: "2026-06-13T11:30:00+03:00",
   },
+  {
+    // Встреча 1-1 двух людей из SWARM (#641) — «Личное» доступно, запись увидят только двое.
+    id: "am-3",
+    title: "Vasiliy x Aleksandra 1-1",
+    source: "desktop-agent",
+    identity_kind: "calendar",
+    started_at: "2026-06-14T15:00:00+03:00",
+    ended_at: "2026-06-14T15:50:00+03:00",
+    status: "awaiting_review",
+    summary_status: "done",
+    draft_notes_md: "### Планы\n- Сверили приоритеты на квартал",
+    transcript: { language: "ru", model: "whisper-large-v3-turbo", segments: [{ start: 0, end: 5, text: "Давай по планам." }] },
+    attendees: [{ name: "Vasiliy", email: "v@example.com" }, { name: "Aleksandra", email: "a@example.com" }],
+    recorders: [{ telegram_id: 744230399, claimed_at: "2026-06-14T15:50:10+03:00", role: "transcribe" }],
+    co_owners: [224830225],
+    one_on_one: { partner_id: 224830225, partner_name: "Aleksandra" },
+    entry_id: null,
+    created_at: "2026-06-14T15:50:00+03:00",
+  },
 ];
 
 // all=true — админский оверрайд: показать все pending черновики воркспейса, а не только
@@ -3190,21 +3215,73 @@ export async function disconnectGoogle(): Promise<void> {
 // человек включил. По умолчанию выключено; выключение гасит и уже заведённые задания (сервер).
 let mockAutojoin = false;
 
-export async function fetchAutojoin(): Promise<boolean> {
-  if (DEV_MODE) return mockAutojoin;
-  return (await apiFetch<{ enabled: boolean }>("/scriba/autojoin")).enabled;
+/**
+ * Живая проверка календаря у переключателя бота (решение 01.10.2026): есть ли доступ и встречи, на
+ * которые бот пойдёт. Сервер отдаёт её только при включённом автозапуске. Форма —
+ * _shared/autojoin-calendar.ts (AutojoinCalendarCheck).
+ */
+export type AutojoinCalendarStatus = "not_connected" | "no_access" | "unavailable" | "no_meetings" | "ok";
+export interface AutojoinCalendarCheck {
+  status: AutojoinCalendarStatus;
+  meetings: number;
+  events: number;
+  next: { title: string | null; starts_at: string; platform: string } | null;
+}
+export interface AutojoinState {
+  enabled: boolean;
+  calendar?: AutojoinCalendarCheck;
 }
 
-export async function setAutojoin(enabled: boolean): Promise<boolean> {
+// Моки: статус календаря задаётся параметром адреса ?mock_calendar=<статус> или ключом localStorage
+// `mock_calendar` (адрес теряется при переходах) — чтобы снять каждое состояние плашки без живого Google.
+function mockAutojoinCalendar(): AutojoinCalendarCheck {
+  let forced: string | null = null;
+  if (typeof window !== "undefined") {
+    forced = new URLSearchParams(window.location.search).get("mock_calendar");
+    try {
+      forced ??= window.localStorage.getItem("mock_calendar");
+    } catch {
+      // Хранилище недоступно (приватное окно) — остаётся статус по умолчанию.
+    }
+  }
+  const status = (["not_connected", "no_access", "unavailable", "no_meetings", "ok"] as const)
+    .find((s) => s === forced) ?? "ok";
+  if (status !== "ok") return { status, meetings: 0, events: status === "no_meetings" ? 3 : 0, next: null };
+  const start = new Date(Date.now() + 90 * 60_000);
+  start.setMinutes(0, 0, 0);
+  return { status, meetings: 4, events: 6, next: { title: "Weekly sync", starts_at: start.toISOString(), platform: "meet" } };
+}
+
+function mockAutojoinState(): AutojoinState {
+  return mockAutojoin ? { enabled: true, calendar: mockAutojoinCalendar() } : { enabled: false };
+}
+
+export async function fetchAutojoinState(): Promise<AutojoinState> {
+  if (DEV_MODE) return mockAutojoinState();
+  return apiFetch<AutojoinState>("/scriba/autojoin");
+}
+
+export async function fetchAutojoin(): Promise<boolean> {
+  return (await fetchAutojoinState()).enabled;
+}
+
+export async function setAutojoin(enabled: boolean): Promise<AutojoinState> {
   if (DEV_MODE) {
     mockAutojoin = enabled;
-    return enabled;
+    return mockAutojoinState();
   }
-  const res = await apiFetch<{ enabled: boolean }>("/scriba/autojoin", {
+  return apiFetch<AutojoinState>("/scriba/autojoin", {
     method: "PUT",
     body: JSON.stringify({ enabled }),
   });
-  return res.enabled;
+}
+
+/** Подключить Google-календарь: внутри Telegram — его окном, в браузере — новой вкладкой. */
+export async function openGoogleConnect(): Promise<void> {
+  const url = await googleConnectUrl();
+  const tg = (window as unknown as { Telegram?: { WebApp?: { openLink?: (u: string) => void } } }).Telegram?.WebApp;
+  if (tg?.openLink) tg.openLink(url);
+  else window.open(url, "_blank");
 }
 
 export async function fetchGranolaUnprocessed(

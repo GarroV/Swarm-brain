@@ -199,7 +199,7 @@ export function SprintBar(p: SprintBarProps) {
       {p.sprintTab && d && (
         <>
           {/* Вид запоминается у человека; канбан — только на компьютере (D003). */}
-          <span className="inline-flex overflow-hidden rounded-[8px] border border-line-2 bg-surface">
+          <span className="inline-flex overflow-hidden rounded-full border border-line-2 bg-surface">
             {(["list", "kanban"] as const).map((v) => {
               const off = v === "kanban" && p.kanbanDisabled;
               const on = p.view === v;
@@ -275,7 +275,7 @@ export function SprintBar(p: SprintBarProps) {
               type="button"
               onClick={p.onStart}
               disabled={p.busy}
-              className="h-[30px] rounded-[7px] bg-primary px-3 font-semibold text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
+              className="h-[30px] rounded-full bg-primary px-3 font-semibold text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
               style={{ fontSize: 12.5 }}
             >
               {dt("Начать спринт", "Start sprint")}
@@ -287,7 +287,7 @@ export function SprintBar(p: SprintBarProps) {
               onClick={p.onAccept}
               disabled={p.busy}
               className={cn(
-                "h-[30px] rounded-[7px] border px-3 font-semibold transition-colors disabled:opacity-50",
+                "h-[30px] rounded-full border px-3 font-semibold transition-colors disabled:opacity-50",
                 over
                   ? "border-primary bg-primary text-primary-foreground"
                   : "border-line-2 bg-surface text-ink-soft hover:bg-surface-2 hover:text-ink",

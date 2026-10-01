@@ -18,6 +18,7 @@ import {
 import type { Lens, SmartListId } from "@/lib/smartLists";
 import { Avatar, DetailPanelContext, NavHeader, ROY_TABS, RoyHeader, RoyTabBar } from "./ui";
 import { HeaderActions } from "./HeaderActions";
+import { PanelHostContext, SidePanelFrame } from "./SidePanel";
 import { initials } from "./dash/shared";
 import { DESKTOP_QUERY, useIsDesktop } from "./useIsDesktop";
 import { SearchScreen } from "./screens/SearchScreen";
@@ -66,6 +67,8 @@ export function RoyApp({ me }: { me: Me | null }) {
   }, [me]);
 
   const [stack, setStack] = useState<RoyRoute[]>([]);
+  // Контейнер правой панели: SidePanel экранов вроде «Настроек» порталится сюда (PanelHostContext).
+  const [panelHost, setPanelHost] = useState<HTMLElement | null>(null);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
   // Единое окно-редактор задачи (открывается по клику откуда угодно) + ревизия для рефреша списков.
   const [taskModalTask, setTaskModalTask] = useState<Task | null>(null);
@@ -391,7 +394,8 @@ export function RoyApp({ me }: { me: Me | null }) {
               badges={{ meetings: reviewCount }}
             />
           )}
-          <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
+          <div ref={setPanelHost} className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
+            <PanelHostContext.Provider value={panelHost}>
             <div
               className={cn(
                 "roy-pane relative mx-auto flex min-h-0 w-full flex-1 flex-col overflow-hidden lg:ml-0 min-[1497px]:border-r min-[1497px]:border-line",
@@ -456,6 +460,7 @@ export function RoyApp({ me }: { me: Me | null }) {
                 </div>
               )}
             </div>
+            </PanelHostContext.Provider>
             {panelMode && top && <DetailPanel route={top} depth={stack.length} section={sectionTitle ? shellDt(sectionTitle[0], sectionTitle[1]) : shellDt("Главная", "Home")} onClose={() => setStack([])} />}
             {
               /* Профиль/управление на десктопе — пункты левой рейки (Команда/Настройки/Админ),
@@ -513,33 +518,15 @@ function KeptTab({ id, tab, visited, children }: { id: RoyTab; tab: RoyTab; visi
 
 const PANEL_VIEWS = new Set<RoyRoute["view"]>(["meetingDetail", "record", "meetingReview"]);
 
-// Панель карточки справа (десктоп): ширина — --detail-w стенда. Esc и клик мимо закрывают её,
-// но не когда поверх открыто окно (у него свой Esc).
+// Панель карточки справа (десктоп): каркас, Esc и клик мимо — общие, `SidePanelFrame`.
 function DetailPanel({ route, depth, section, onClose }: { route: RoyRoute; depth: number; section: string | null; onClose: () => void }) {
   const dt = useDt();
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== "Escape" || e.defaultPrevented) return;
-      if (document.querySelector("[role=dialog], [role=alertdialog], [role=menu]")) return;
-      // Идёт правка текста (TezisyEditor и поля с data-panel-edit) — Esc отменяет её, а не закрывает панель.
-      if (document.activeElement?.closest("[data-panel-edit]")) return;
-      onClose();
-    };
-    // capture: проверяем до того, как окно поверх обработает Esc и исчезнет из DOM.
-    window.addEventListener("keydown", onKey, true);
-    return () => window.removeEventListener("keydown", onKey, true);
-  }, [onClose]);
   return (
-    <>
-      <button type="button" aria-label={dt("Закрыть карточку", "Close the card")} onClick={onClose}
-        className="absolute inset-0 z-40 cursor-default bg-[rgba(10,13,17,.12)]" />
-      <aside aria-label={dt("Карточка", "Card")}
-        className="roy-pop absolute inset-y-0 right-0 z-40 flex w-[560px] max-w-[96vw] flex-col overflow-hidden border-l border-line bg-background shadow-[-12px_0_40px_rgba(10,13,17,.12)] min-[1560px]:w-[640px]">
-        <DetailPanelContext.Provider value={{ section, canBack: depth > 1, onClose }}>
-          <PushScreen key={JSON.stringify(route)} route={route} />
-        </DetailPanelContext.Provider>
-      </aside>
-    </>
+    <SidePanelFrame label={dt("Карточка", "Card")} onClose={onClose}>
+      <DetailPanelContext.Provider value={{ section, canBack: depth > 1, onClose }}>
+        <PushScreen key={JSON.stringify(route)} route={route} />
+      </DetailPanelContext.Provider>
+    </SidePanelFrame>
   );
 }
 

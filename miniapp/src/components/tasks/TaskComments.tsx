@@ -176,7 +176,7 @@ export function TaskComments({ taskId }: { taskId: string }) {
                    "Notifications for new comments are on. Click to unsubscribe.")
               : dt("Уведомления отключены. Нажмите, чтобы подписаться.",
                    "Notifications are off. Click to subscribe.")}
-            className="flex shrink-0 items-center gap-1.5 rounded-[7px] px-2 py-1 transition-colors hover:bg-surface-2 disabled:opacity-50"
+            className="flex shrink-0 items-center gap-1.5 rounded-full px-2 py-1 transition-colors hover:bg-surface-2 disabled:opacity-50"
             style={{ fontSize: 12, color: sub.notified ? "var(--accent-ink)" : "var(--ink-mute)" }}
           >
             <RoyIcon name="bell" size={13} strokeWidth={2} />
@@ -210,7 +210,7 @@ export function TaskComments({ taskId }: { taskId: string }) {
           disabled={!draft.trim() || sending || tooLong}
           aria-label="Отправить"
           title="Отправить (Enter)"
-          className="flex size-10 shrink-0 items-center justify-center rounded-[8px] bg-primary text-primary-foreground transition-transform active:scale-[0.94] disabled:opacity-40"
+          className="flex size-10 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground transition-transform active:scale-[0.94] disabled:opacity-40"
         >
           <RoyIcon name="arrow" size={16} strokeWidth={2.2} />
         </button>

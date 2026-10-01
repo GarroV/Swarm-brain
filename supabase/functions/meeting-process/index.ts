@@ -1,11 +1,15 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { runMeetingStep, LEASE_STALE_MS } from "../_shared/meeting-processor.ts";
+import { LEASE_STALE_MS, runMeetingStep } from "../_shared/meeting-processor.ts";
+import { holdWaitingMeetings, processingFrozen } from "../_shared/processing-freeze.ts";
 
 // meeting-process — cron-воркер durable-обработки встреч. Триггерится pg_cron каждую минуту
 // (net.http_post с X-Cron-Secret, см. cron.job 'meetings-process'). Берёт незаконченные встречи
 // в summary_status='processing' и продвигает каждую на шаг (транскрибация следующих частей или
 // финальная сводка тезисов) в рамках бюджета. Переживает wall-clock: что не успели — добьём в
 // следующий тик. Логику шага держит _shared/meeting-processor.ts (общая с meeting-ingest).
+// Во время заморозки тик встреч не берёт, а только ставит ждущим отметку «жива, ждёт», чтобы
+// сторож застоя не свалил их в 'failed'; после разморозки следующий тик продолжит сам
+// (решение владельца 01.10.2026, _shared/processing-freeze.ts).
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -24,6 +28,12 @@ Deno.serve(async (req: Request) => {
   if (req.method !== "POST") return new Response("OK", { status: 200 });
   if (!CRON_SECRET || req.headers.get("X-Cron-Secret") !== CRON_SECRET) {
     return new Response("Forbidden", { status: 403 });
+  }
+
+  if (await processingFrozen(supabase)) {
+    const waiting = await holdWaitingMeetings(supabase, LEASE_STALE_MS);
+    console.log(`meeting-process: заморозка — обработка отложена, ждут ${waiting}`);
+    return new Response(JSON.stringify({ ok: true, deferred: true, waiting }), { status: 200 });
   }
 
   const startedAt = Date.now();

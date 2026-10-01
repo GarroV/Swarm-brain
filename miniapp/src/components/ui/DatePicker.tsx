@@ -133,16 +133,16 @@ export function DatePicker({ value, onChange, className = "", placeholder, varia
           <div className="flex gap-1.5 mb-2">
             {([[tx("Сегодня", "Today"), 0], [tx("Завтра", "Tomorrow"), 1], [tx("+неделя", "+week"), 7]] as const).map(([l, n]) => (
               <button key={l} type="button" onClick={() => preset(n)}
-                className="flex-1 rounded-lg bg-surface-2 border border-line text-[11px] font-semibold py-1 text-ink-soft hover:text-ink hover:bg-surface">{l}</button>
+                className="flex-1 rounded-full bg-surface-2 border border-line text-[11px] font-semibold py-1 text-ink-soft hover:text-ink hover:bg-surface">{l}</button>
             ))}
           </div>
 
           <div className="flex items-center justify-between px-1 mb-1">
             <button type="button" onClick={() => setView(addMonths(view, -1))}
-              className="p-1.5 rounded-md hover:bg-surface-2 text-ink-soft" aria-label={tx("Предыдущий месяц", "Previous month")}><RoyIcon name="cleft" size={14} /></button>
+              className="p-1.5 rounded-full hover:bg-surface-2 text-ink-soft" aria-label={tx("Предыдущий месяц", "Previous month")}><RoyIcon name="cleft" size={14} /></button>
             <span className="text-sm font-semibold text-ink">{monthName(view.getMonth(), lang)} {view.getFullYear()}</span>
             <button type="button" onClick={() => setView(addMonths(view, 1))}
-              className="p-1.5 rounded-md hover:bg-surface-2 text-ink-soft" aria-label={tx("Следующий месяц", "Next month")}><RoyIcon name="cright" size={14} /></button>
+              className="p-1.5 rounded-full hover:bg-surface-2 text-ink-soft" aria-label={tx("Следующий месяц", "Next month")}><RoyIcon name="cright" size={14} /></button>
           </div>
 
           <div className="grid grid-cols-7 mb-1">
@@ -167,7 +167,7 @@ export function DatePicker({ value, onChange, className = "", placeholder, varia
 
           {value && (
             <button type="button" onClick={() => { onChange(""); setOpen(false); }}
-              className="w-full mt-2 rounded-lg border border-line text-[12px] py-1.5 text-ink-soft hover:text-destructive hover:border-destructive/40 transition-colors">{clearLabel}</button>
+              className="w-full mt-2 rounded-full border border-line text-[12px] py-1.5 text-ink-soft hover:text-destructive hover:border-destructive/40 transition-colors">{clearLabel}</button>
           )}
         </div>,
         document.body,

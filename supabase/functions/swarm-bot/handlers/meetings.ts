@@ -13,6 +13,7 @@ import { getWorkspaceMarkets } from "../lib/workspace.ts";
 import { COUNTRY_NAMES } from "../../_shared/countries.ts";
 import { buildEmbeddingInput, marketTagsFromInput } from "../../_shared/meta-extract.ts";
 import type { TgCallbackQuery } from "../lib/types.ts";
+import { onlyLive } from "../../_shared/tasks/live.ts";
 
 const TELEGRAM_BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN")!;
 
@@ -40,7 +41,7 @@ async function loadEntryForAction(
   // metadata нужна всегда: по ней (metadata.attendees) считается причастность к встрече.
   const select = [
     ...new Set(
-      [...columns.split(","), "metadata", "is_private", "owner_id", "group_id"]
+      [...columns.split(","), "metadata", "is_private", "owner_id", "shared_with", "group_id"]
         .map((c) => c.trim()).filter(Boolean),
     ),
   ].join(", ");
@@ -259,6 +260,7 @@ export async function handleMeetingCallbacks(
     const meetingId = entry.metadata?.meeting_id as string | null ?? null;
 
     if (meetingId) {
+      // archive-ok: удаление встречи: ищем задачи для уборки, архив тоже (физическое удаление здесь — отдельный дефект)
       const { data: taskIds } = await supabase.from("tasks").select("id").eq("meeting_id", meetingId);
       if (taskIds?.length) {
         const ids = taskIds.map((t: { id: string }) => t.id);
@@ -277,7 +279,7 @@ export async function handleMeetingCallbacks(
       const { data: meetings } = await supabase
         .from("entries").select("id, metadata, created_at, source, entry_type")
         .eq("group_id", groupId)
-        // Личные встречи в списке — только свои (правило видимости записей).
+        // Личные встречи в списке — свои и разделённые со мной (правило видимости записей).
         .or(visibilityFilter(userId))
         .or("source.in.(read_ai,voice,desktop-agent),entry_type.in.(transcript,meeting)")
         .order("created_at", { ascending: false }).limit(15);
@@ -340,7 +342,7 @@ export async function handleMeetingCallbacks(
 
     let tasksText = "";
     if (meetingId) {
-      const { data: tasks } = await supabase.from("tasks").select("title, assignees, due_date, status").eq(
+      const { data: tasks } = await onlyLive(supabase.from("tasks").select("title, assignees, due_date, status")).eq(
         "meeting_id",
         meetingId,
       ).limit(8);
@@ -494,7 +496,10 @@ export async function handleMeetingCallbacks(
     ).maybeSingle();
     const full = prof ? [prof.first_name, prof.last_name].filter(Boolean).join(" ") : "";
     const assigneeName = full || (au?.username ? `@${au.username}` : `ID ${targetTgId}`);
-    const { data: meetingTasks } = await supabase.from("tasks").select("id, assignees").eq("meeting_id", meetingId);
+    const { data: meetingTasks } = await onlyLive(supabase.from("tasks").select("id, assignees")).eq(
+      "meeting_id",
+      meetingId,
+    );
     for (const t of (meetingTasks ?? []) as Array<{ id: string; assignees: string[] }>) {
       const existing = t.assignees ?? [];
       if (!existing.includes(assigneeName)) {
@@ -789,7 +794,7 @@ export async function handleMeetingSessionInput(
     const meetingId = action.replace("meeting_tag_", "");
     const rawTags = text.split(",").map((t) => t.trim()).filter(Boolean);
     const { data: found } = await supabase
-      .from("entries").select("id, metadata, is_private, owner_id, group_id")
+      .from("entries").select("id, metadata, is_private, owner_id, shared_with, group_id")
       .eq("group_id", groupId)
       .or(`metadata->>meeting_id.eq.${meetingId},id.eq.${meetingId}`);
     // Теги — правка встречи: только те записи, которые нажавшему можно править.

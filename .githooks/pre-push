@@ -13,8 +13,17 @@
 # он собран из частей, иначе хук блокировал бы сам себя). Хранить такой файл вне git
 # (~/Documents/workbench/private/), детали уязвимостей — в приватном advisory.
 #
+# Что проверяется: только коммиты, которых ещё нет ни в одной ветке на этом удалённом
+# (`git rev-list <local> --not --remotes=<remote>` — тот же приём, что у git-lfs и у
+# сторожей секретов). Коммит, уже достижимый из origin/*, публичен: пуш его не раскрывает.
+# Раньше диапазон считался от удалённой ветки, и после слияния main в ветку хук стопорил
+# пуш на старых коммитах main, давно публичных (issue #617).
+#
 # Осознанный обход: git push --no-verify
 set -uo pipefail
+
+REMOTE="${1:-origin}"   # git передаёт имя удалённого (или URL — тогда исключать нечего,
+                        # и проверяется вся история ветки: ошибка в безопасную сторону)
 
 ZERO='0000000000000000000000000000000000000000'
 MARKER="PRIVATE-DO-NOT""-PUBLISH"
@@ -32,17 +41,25 @@ report() {
   echo "   • $1" >&2
 }
 
+has_update=0
 while read -r _local_ref local_sha _remote_ref remote_sha; do
-  [ "$local_sha" = "$ZERO" ] && continue          # удаление ветки — не наша забота
+  [ "$local_sha" = "$ZERO" ] && continue          # удаление ветки — раскрывать нечего
+  has_update=1
 
-  if [ "$remote_sha" = "$ZERO" ]; then
-    base=$(git merge-base "$local_sha" refs/remotes/origin/main 2>/dev/null || true)
-    if [ -n "$base" ]; then range="$base..$local_sha"; else range="$local_sha"; fi
-  else
-    range="$remote_sha..$local_sha"
+  # Новое = достижимо из local_sha, но не из веток удалённого и не из того, что уже
+  # лежит в обновляемой ветке. remote_sha может отсутствовать локально (не сделан fetch) —
+  # тогда исключаем только по --remotes: проверяется больше, а не меньше.
+  revs=("$local_sha" --not "--remotes=$REMOTE")
+  if [ "$remote_sha" != "$ZERO" ] && git cat-file -e "$remote_sha^{commit}" 2>/dev/null; then
+    revs+=("$remote_sha")
   fi
 
-  files=$(git log --name-only --pretty=format: "$range" 2>/dev/null | sort -u | sed '/^$/d')
+  # Ошибка git здесь — не «нечего проверять»: сторож закрывается, а не пропускает.
+  if ! names=$(git log --name-only --pretty=format: "${revs[@]}" 2>/dev/null); then
+    report "${_local_ref} — не удалось прочитать пушимые коммиты (git log упал)"
+    continue
+  fi
+  files=$(printf '%s\n' "$names" | sort -u | sed '/^$/d')
   [ -z "$files" ] && continue
 
   while IFS= read -r f; do
@@ -52,8 +69,13 @@ while read -r _local_ref local_sha _remote_ref remote_sha; do
       report "$f — имя выглядит как внутренний security-документ"
       continue
     fi
-    # Маркер ищем по всем версиям файла в диапазоне: он мог быть добавлен и удалён внутри.
-    if git log -p "$range" -- "$f" 2>/dev/null | grep -q "$MARKER"; then
+    # Маркер ищем по всем новым версиям файла: он мог быть добавлен и удалён внутри.
+    # Без `git log | grep -q`: grep выходит на первом совпадении, git log получает SIGPIPE
+    # (141), и под pipefail пайплайн «ложен» — маркер пропускался молча, если после
+    # совпадения git log ещё писал (файл добавлен и удалён в пушимых коммитах).
+    if ! patch=$(git log -p "${revs[@]}" -- "$f" 2>/dev/null); then
+      report "$f — не удалось прочитать историю файла"
+    elif printf '%s' "$patch" | grep -F -- "$MARKER" >/dev/null; then
       report "$f — помечен маркером запрета публикации"
     fi
   done <<< "$files"
@@ -78,7 +100,14 @@ TXT
   exit 1
 fi
 
-# Шаг 2 — единая команда прогона. Хук ОБЯЗАН падать, когда инструмента нет, а не
+# Шаг 2 — единая команда прогона. Пушатся одни удаления веток — проверять нечего:
+# гейт на удаление висел минутами и не давал убрать пачку влитых веток (issue #664).
+if [ "$has_update" -eq 0 ]; then
+  echo "pre-push: только удаление веток — гейт не нужен"
+  exit 0
+fi
+
+# Единая команда прогона. Хук ОБЯЗАН падать, когда инструмента нет, а не
 # пропускать проверку молча: молчаливо пропущенный гейт неотличим от пройденного.
 root="$(git rev-parse --show-toplevel)"
 

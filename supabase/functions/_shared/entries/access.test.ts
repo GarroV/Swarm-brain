@@ -6,7 +6,7 @@
 // без владельца и воркспейса. Тест, который проверяет только «свой доступ работает», такую
 // дыру не ловит — падать должно на ЧУЖОМ.
 import { assertEquals, assertNotEquals } from "jsr:@std/assert@1";
-import { canMutateEntry, canViewEntry, entryAccessError } from "./access.ts";
+import { canMutateEntry, canViewEntry, entryAccessError, entryVisibilityOr } from "./access.ts";
 
 const OWNER = 111;
 const OTHER = 222;
@@ -68,4 +68,47 @@ Deno.test("админского обхода у записей НЕТ: пара�
   const src = await Deno.readTextFile(new URL("./access.ts", import.meta.url));
   const code = src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/[^\n]*$/gm, "");
   assertEquals(/isAdmin/.test(code), false);
+});
+
+// ── Личная запись на двоих: встреча 1-1 (#641) ──────────────────────────────────────────────
+// Одна запись, владелец — опубликовавший, второй участник — в shared_with. Видят оба, третий нет.
+const PARTNER = -37; // веб-пользователь без Telegram: отрицательный id — живой человек
+const наДвоих = { is_private: true, owner_id: OWNER, group_id: "cee", shared_with: [PARTNER] };
+
+Deno.test("запись на двоих: видит владелец и второй участник", () => {
+  assertEquals(canViewEntry(наДвоих, OWNER), true);
+  assertEquals(canViewEntry(наДвоих, PARTNER), true);
+});
+
+Deno.test("запись на двоих: третий участник воркспейса НЕ видит, отказ = «не найдена»", () => {
+  assertEquals(canViewEntry(наДвоих, OTHER), false);
+  assertEquals(entryAccessError("e1", наДвоих, OTHER, "cee"), "Запись e1 не найдена.");
+});
+
+Deno.test("запись на двоих: без зрителя не видна никому", () => {
+  assertEquals(canViewEntry(наДвоих, null), false);
+  assertEquals(canViewEntry(наДвоих, undefined), false);
+});
+
+Deno.test("запись на двоих: id строкой из базы (bigint) всё равно совпадает", () => {
+  const row = { ...наДвоих, shared_with: [String(PARTNER)] as unknown as number[] };
+  assertEquals(canViewEntry(row, PARTNER), true);
+});
+
+Deno.test("запись на двоих: править и удалять как ЗАПИСЬ может только владелец", () => {
+  // Правка встречи участником — по правилу встреч (meeting-rights), не по общему правилу записей.
+  assertEquals(canMutateEntry(наДвоих, OWNER), true);
+  assertEquals(canMutateEntry(наДвоих, PARTNER), false);
+});
+
+Deno.test("фильтр видимости для запроса: общая, своя и разделённая со мной", () => {
+  assertEquals(entryVisibilityOr(OWNER), "is_private.eq.false,owner_id.eq.111,shared_with.cs.{111}");
+  assertEquals(entryVisibilityOr(PARTNER), "is_private.eq.false,owner_id.eq.-37,shared_with.cs.{-37}");
+});
+
+Deno.test("фильтр видимости: мусор вместо id даёт только общие записи", () => {
+  // В строку PostgREST не должно попасть ничего, кроме целого числа.
+  assertEquals(entryVisibilityOr(Number.NaN), "is_private.eq.false");
+  assertEquals(entryVisibilityOr("1),or(is_private.eq.true" as unknown as number), "is_private.eq.false");
+  assertEquals(entryVisibilityOr(12.7), "is_private.eq.false,owner_id.eq.12,shared_with.cs.{12}");
 });

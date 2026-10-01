@@ -1,7 +1,8 @@
 "use client";
 import { useState } from "react";
 import { cn, displayName } from "@/lib/utils";
-import type { CheckStatus, SprintCycleItem } from "@/types";
+import type { CheckStatus, SprintCycleItem, Task } from "@/types";
+import { RoyIcon } from "@/components/roy/icons";
 import { useDt } from "@/components/roy/nav";
 import { AssigneeChip, CarryBadge, CarryFlag, CountChip } from "./atoms";
 import { fmtDay, fmtDayShort, isOverdue } from "./format";
@@ -55,6 +56,16 @@ export type RowHandlers = {
   marketOf?: (item: SprintCycleItem) => string | null;
   /** Родительская задача строки (#478): подзадача встаёт под родителя, если он тоже в составе. */
   parentOf?: (item: SprintCycleItem) => string | null;
+  /** Открыть живую задачу по id — подзадачу вне строк группы и родителя из подписи «из «…»». */
+  onOpenTask?: (taskId: string) => void;
+};
+
+/** Подзадачи строки (#478): шеврон разворота и «X/Y». */
+export type RowKids = {
+  done: number;
+  total: number;
+  open: boolean;
+  onToggle: () => void;
 };
 
 /**
@@ -101,14 +112,19 @@ function CheckChip({ status, note, unchecked }: {
 
 /** Строка задачи. Клик открывает карточку — но только у живой: у упоминания и у чужой
  *  приватной открывать нечего, и «кнопка, которая ничего не делает» хуже её отсутствия. */
-export function SprintRow({ item, unchecked, showExtra, h, depth = 0 }: {
-  item: SprintCycleItem;
-  depth?: 0 | 1;
-  unchecked: boolean;
-  /** Спринт начат: взятое после старта помечаем «сверх плана». */
-  showExtra: boolean;
-  h: RowHandlers;
-}) {
+export function SprintRow(
+  { item, unchecked, showExtra, h, depth = 0, kids, parent }: {
+    item: SprintCycleItem;
+    depth?: 0 | 1;
+    kids?: RowKids;
+    /** Родитель вне этой группы — подпись «из «…»», кликом открывает родителя. */
+    parent?: { id: string; title: string };
+    unchecked: boolean;
+    /** Спринт начат: взятое после старта помечаем «сверх плана». */
+    showExtra: boolean;
+    h: RowHandlers;
+  },
+) {
   const dt = useDt();
   const closed = CLOSED.has(item.status);
   const needsNote = item.check_status === "risk" ||
@@ -140,7 +156,7 @@ export function SprintRow({ item, unchecked, showExtra, h, depth = 0 }: {
       role="row"
       onClick={openable ? () => h.onOpen!(item) : undefined}
       className={cn(
-        "group grid items-center border-t border-line first:border-t-0 transition-colors",
+        "group relative grid items-center border-t border-line first:border-t-0 transition-colors",
         openable && "cursor-pointer hover:bg-surface-2",
       )}
       style={{
@@ -153,6 +169,28 @@ export function SprintRow({ item, unchecked, showExtra, h, depth = 0 }: {
         className="flex min-w-0 items-center gap-2 px-3"
         style={depth ? { paddingLeft: 34 } : undefined}
       >
+        {kids && (
+          // Шеврон — в левом поле строки, чтобы колонка названий не съезжала у строк без подзадач.
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              kids.onToggle();
+            }}
+            aria-expanded={kids.open}
+            aria-label={kids.open
+              ? dt("Свернуть подзадачи", "Collapse subtasks")
+              : dt("Показать подзадачи", "Show subtasks")}
+            className="absolute left-0 top-0 flex h-[38px] w-3 items-center justify-center text-ink-mute hover:text-ink"
+          >
+            <RoyIcon
+              name="cright"
+              size={9}
+              strokeWidth={2.6}
+              className={cn("transition-transform", kids.open && "rotate-90")}
+            />
+          </button>
+        )}
         <span
           className={cn(
             "size-[7px] shrink-0 rounded-full",
@@ -174,6 +212,42 @@ export function SprintRow({ item, unchecked, showExtra, h, depth = 0 }: {
         >
           {item.hidden ? dt("Приватная задача", "Private task") : item.title}
         </span>
+        {kids && (
+          <span
+            className={cn(
+              "shrink-0 font-mono",
+              kids.done === kids.total ? "text-status-done" : "text-ink-mute",
+            )}
+            style={{ fontSize: 11.5 }}
+            title={dt("подзадачи: готово / всего", "subtasks: done / total")}
+          >
+            {kids.done}/{kids.total}
+          </span>
+        )}
+        {parent && (
+          h.onOpenTask
+            ? (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  h.onOpenTask!(parent.id);
+                }}
+                className="min-w-0 max-w-[40%] shrink truncate text-ink-mute underline-offset-2 hover:text-ink hover:underline"
+                style={{ fontSize: 11.5 }}
+              >
+                ↳ {dt("из", "of")} «{parent.title}»
+              </button>
+            )
+            : (
+              <span
+                className="min-w-0 max-w-[40%] shrink truncate text-ink-mute"
+                style={{ fontSize: 11.5 }}
+              >
+                ↳ {dt("из", "of")} «{parent.title}»
+              </span>
+            )
+        )}
         {item.removed && (
           <span
             className="shrink-0 whitespace-nowrap text-ink-mute"
@@ -233,7 +307,7 @@ export function SprintRow({ item, unchecked, showExtra, h, depth = 0 }: {
                 "Как идут дела: по плану → риск → проблема",
                 "How it is going: on track → at risk → problem",
               )}
-              className="max-w-full rounded-[6px] transition-opacity hover:opacity-80"
+              className="max-w-full rounded-full transition-opacity hover:opacity-80"
             >
               <CheckChip
                 status={item.check_status}
@@ -347,6 +421,71 @@ export function SprintRow({ item, unchecked, showExtra, h, depth = 0 }: {
           />
         </div>
       )}
+    </div>
+  );
+}
+
+/** Подзадача под развёрнутой строкой, которой нет среди строк этой группы: либо не в составе
+ *  спринта, либо в составе, но в другой группе. Только смотреть и открыть — действия спринта
+ *  живут на её собственной строке. */
+export function SubtaskLiteRow({ task, inSprint, onOpen }: {
+  task: Task;
+  inSprint: boolean;
+  onOpen?: (taskId: string) => void;
+}) {
+  const dt = useDt();
+  const closed = CLOSED.has(task.status);
+  const who = task.assignees?.[0] ?? null;
+  return (
+    <div
+      role="row"
+      onClick={onOpen ? () => onOpen(task.id) : undefined}
+      className={cn(
+        "grid items-center border-t border-line transition-colors",
+        onOpen && "cursor-pointer hover:bg-surface-2",
+        !inSprint && "opacity-70",
+      )}
+      style={{ gridTemplateColumns: SPRINT_COLS, minHeight: 34, fontSize: 13 }}
+    >
+      <div
+        className="flex min-w-0 items-center gap-2 px-3"
+        style={{ paddingLeft: 34 }}
+      >
+        <span
+          className={cn(
+            "size-[6px] shrink-0 rounded-full",
+            STATUS_TONE[task.status] ?? "bg-status-open",
+          )}
+          title={task.status}
+        />
+        <span
+          className={cn(
+            "min-w-0 truncate",
+            closed ? "text-ink-mute line-through" : "text-ink-soft",
+          )}
+        >
+          {task.title}
+        </span>
+        <span
+          className="shrink-0 rounded-full border border-dashed border-line px-1.5 py-0.5 text-ink-mute"
+          style={{ fontSize: 10.5 }}
+        >
+          {inSprint
+            ? dt("в спринте", "in sprint")
+            : dt("не в спринте", "not in sprint")}
+        </span>
+      </div>
+      <div className="px-2 font-mono text-ink-mute" style={{ fontSize: 12 }}>
+        {task.due_date ? fmtDayShort(task.due_date) : "—"}
+      </div>
+      <div className="px-2 font-mono text-ink-mute" style={{ fontSize: 12 }}>
+        {task.country ?? "—"}
+      </div>
+      <div />
+      <div className="min-w-0 truncate px-2 text-ink-mute">
+        {who ? displayName(who) : "—"}
+      </div>
+      <div />
     </div>
   );
 }

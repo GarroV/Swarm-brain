@@ -13,6 +13,7 @@
 // импортируют по адресу; короткие имена оставлены тестам, которые не раскатываются.
 // deno-lint-ignore-file no-import-prefix
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { onlyLive } from "./live.ts";
 
 const supabase = createClient(
   Deno.env.get("SUPABASE_URL")!,
@@ -56,6 +57,12 @@ export interface SprintItem {
   /** Задача удалена: строка осталась упоминанием и в счёт не идёт. */
   removed: boolean;
   removed_at: string | null;
+  /**
+   * Когда задачу сняли из ИДУЩЕГО спринта (#576). Такие строки в состав (`listItems`) не
+   * попадают — их отдаёт `listComposition().withdrawn`, и итоги считают плановые из них
+   * невыполненными.
+   */
+  withdrawn_at: string | null;
   /**
    * Сколько у задачи комментариев и ссылок. Не содержимое, а ЧИСЛО: в списке нужно понять,
    * где шло обсуждение и где лежит материал, не открывая карточку. У скрытой приватной — 0:
@@ -103,6 +110,31 @@ export async function listItems(
   groupId: string,
   viewer: Viewer,
 ): Promise<SprintItem[]> {
+  return (await listComposition(cycleId, groupId, viewer)).items;
+}
+
+/**
+ * Состав спринта и отдельно — снятые из идущего спринта (#576). Разделены, потому что снятая
+ * задача в спринте больше не живёт (её не двигают, не сверяют, не переносят), но из плана
+ * не исчезает: итоги обязаны видеть её, иначе снятие отстающих поднимает процент.
+ */
+export async function listComposition(
+  cycleId: string,
+  groupId: string,
+  viewer: Viewer,
+): Promise<{ items: SprintItem[]; withdrawn: SprintItem[] }> {
+  const all = await loadAllItems(cycleId, groupId, viewer);
+  return {
+    items: all.filter((i) => i.withdrawn_at == null),
+    withdrawn: all.filter((i) => i.withdrawn_at != null),
+  };
+}
+
+async function loadAllItems(
+  cycleId: string,
+  groupId: string,
+  viewer: Viewer,
+): Promise<SprintItem[]> {
   const { data: cycle } = await supabase.from("sprint_cycles")
     .select("id").eq("id", cycleId).eq("group_id", groupId).maybeSingle();
   if (!cycle) return [];
@@ -112,7 +144,7 @@ export async function listItems(
   // вычисляемой, ответ превращается в «неизвестно что» (TS2352).
   const { data: rows } = await supabase.from("sprint_items")
     .select(
-      "id, task_id, in_plan, added_at, frozen_at, frozen_title, frozen_status, frozen_assignees, frozen_project, frozen_completed_at, frozen_due_date, check_status, check_note, check_at, check_by, to_carry, carry_reason, carry_count, carried_manual, removed_title, removed_project_id, removed_at",
+      "id, task_id, in_plan, added_at, frozen_at, frozen_title, frozen_status, frozen_assignees, frozen_project, frozen_completed_at, frozen_due_date, check_status, check_note, check_at, check_by, to_carry, carry_reason, carry_count, carried_manual, removed_title, removed_project_id, removed_at, withdrawn_at",
     )
     .eq("cycle_id", cycleId).order("added_at", { ascending: true });
   const items = (rows ?? []) as Record<string, unknown>[];
@@ -123,7 +155,9 @@ export async function listItems(
   );
   const live = new Map<string, Record<string, unknown>>();
   if (liveIds.length > 0) {
-    const { data: tasks } = await supabase.from("tasks").select(TASK_FIELDS).in(
+    const { data: tasks } = await onlyLive(
+      supabase.from("tasks").select(TASK_FIELDS),
+    ).in(
       "id",
       liveIds,
     );
@@ -191,6 +225,7 @@ export async function listItems(
       carried_manual: (r.carried_manual as boolean | null) ?? null,
       removed,
       removed_at: (r.removed_at as string | null) ?? null,
+      withdrawn_at: (r.withdrawn_at as string | null) ?? null,
       comment_count: hidden || frozen || removed
         ? 0
         : comments.get(r.task_id as string) ?? 0,
@@ -252,20 +287,41 @@ export async function addItems(
     .maybeSingle();
   if (!cycle || (cycle as { status: string }).status === "accepted") return 0;
 
-  const { data: tasks } = await supabase.from("tasks")
-    .select("id, status")
+  const { data: tasks } = await onlyLive(
+    supabase.from("tasks")
+      .select("id, status"),
+  )
     .in("id", taskIds).eq("group_id", groupId).eq("is_private", false);
   const allowed = (tasks ?? []) as { id: string; status: string }[];
   if (allowed.length === 0) return 0;
 
   const { data: existing } = await supabase.from("sprint_items")
-    .select("task_id").eq("cycle_id", cycleId);
-  const already = new Set(
-    (existing ?? []).map((r) => (r as { task_id: string | null }).task_id),
+    .select("task_id, withdrawn_at").eq("cycle_id", cycleId);
+  const rows = (existing ?? []) as {
+    task_id: string | null;
+    withdrawn_at: string | null;
+  }[];
+  const already = new Set(rows.map((r) => r.task_id));
+  const withdrawnIds = new Set(
+    rows.filter((r) => r.withdrawn_at != null).map((r) => r.task_id),
   );
 
+  // Снятую из идущего спринта задачу возвращают той же строкой (#576): с прежним `in_plan`,
+  // отметками и счётчиком переносов. Новая строка сделала бы плановую задачу «сверх плана» —
+  // «снять и вернуть» выводило бы её из плана.
+  const revive = allowed.filter((t) => withdrawnIds.has(t.id)).map((t) => t.id);
+  let revived = 0;
+  if (revive.length > 0) {
+    const { data: back } = await supabase.from("sprint_items")
+      .update({ withdrawn_at: null, withdrawn_by: null })
+      .eq("cycle_id", cycleId).in("task_id", revive)
+      .not("withdrawn_at", "is", null)
+      .select("id");
+    revived = (back ?? []).length;
+  }
+
   const fresh = allowed.filter((t) => !already.has(t.id));
-  if (fresh.length === 0) return 0;
+  if (fresh.length === 0) return revived;
 
   const { data: inserted } = await supabase.from("sprint_items").insert(
     fresh.map((t) => ({
@@ -289,22 +345,39 @@ export async function addItems(
       .in("id", fromBacklog);
   }
 
-  return (inserted ?? []).length;
+  return revived + (inserted ?? []).length;
 }
 
+/**
+ * Убрать задачу из спринта.
+ *
+ * Черновик — строка удаляется: план ещё не зафиксирован, состав правится свободно.
+ * Идущий — строка ПОМЕЧАЕТСЯ снятой (#576), а не удаляется: план зафиксирован на старте, и
+ * физическое удаление уменьшало знаменатель — «убрать отстающее» поднимало процент, не
+ * оставляя следа. Принятый — не правится.
+ */
 export async function removeItem(
   cycleId: string,
   taskId: string,
   groupId: string,
+  actor: string | null = null,
 ): Promise<boolean> {
   const { data: cycle } = await supabase.from("sprint_cycles")
     .select("id, status").eq("id", cycleId).eq("group_id", groupId)
     .maybeSingle();
-  if (!cycle || (cycle as { status: string }).status === "accepted") {
-    return false;
+  const status = (cycle as { status: string } | null)?.status;
+  if (!cycle || status === "accepted") return false;
+
+  if (status === "draft") {
+    const { data } = await supabase.from("sprint_items")
+      .delete().eq("cycle_id", cycleId).eq("task_id", taskId)
+      .select("id").maybeSingle();
+    return !!data;
   }
+
   const { data } = await supabase.from("sprint_items")
-    .delete().eq("cycle_id", cycleId).eq("task_id", taskId)
+    .update({ withdrawn_at: new Date().toISOString(), withdrawn_by: actor })
+    .eq("cycle_id", cycleId).eq("task_id", taskId).is("withdrawn_at", null)
     .select("id").maybeSingle();
   return !!data;
 }
@@ -363,6 +436,7 @@ export async function updateItem(
 
   const { data } = await supabase.from("sprint_items")
     .update(fields).eq("cycle_id", cycleId).eq("task_id", taskId)
+    .is("withdrawn_at", null)
     .select("id").maybeSingle();
   if (!data) return null;
 

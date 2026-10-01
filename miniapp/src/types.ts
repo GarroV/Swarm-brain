@@ -100,6 +100,11 @@ export type SprintStats = {
   cancelled: number;
   /** Упоминания удалённых задач: в составе видны, в счёте не участвуют. */
   removed: number;
+  /**
+   * Плановые, снятые из идущего спринта (#576): входят в `plan` невыполненными. У итогов,
+   * посчитанных до #576, ключа нет.
+   */
+  withdrawn?: number;
   check_ok: number;
   check_risk: number;
   check_problem: number;
@@ -168,6 +173,8 @@ export type SprintCycleItem = {
   /** Задача удалена: строка осталась упоминанием и в счёт не идёт. */
   removed: boolean;
   removed_at: string | null;
+  /** Когда задачу сняли из идущего спринта (#576); в составе (`items`) всегда null. */
+  withdrawn_at?: string | null;
   /**
    * Задача приватная и смотрящий не владелец: строка видна, содержимого нет. Убрать её совсем
    * значило бы молча уменьшить состав, и цифры отчёта перестали бы сходиться у разных людей.
@@ -197,7 +204,14 @@ export type JournalEvent = {
 };
 
 /** GET /sprint-cycles/:id отдаёт спринт вместе с составом — экран без него бесполезен. */
-export type SprintCycleDetail = SprintCycle & { items: SprintCycleItem[] };
+export type SprintCycleDetail = SprintCycle & {
+  items: SprintCycleItem[];
+  /**
+   * Снятые из идущего спринта (#576): в составе их нет, но плановые из них остаются в
+   * знаменателе процента. Старый сервер поля не отдаёт — тогда считаем без них.
+   */
+  withdrawn?: SprintCycleItem[];
+};
 
 export type Project = {
   id: string;
@@ -300,6 +314,8 @@ export type Entry = {
   group_id: string | null;
   is_private: boolean;
   owner_id: number | null;
+  // С кем разделена личная запись — второй участник встречи 1-1 (#641). У общей пусто.
+  shared_with?: number[] | null;
   created_at: string;
   // true — сервер НЕ создал запись, а привязал черновик к уже существующей встрече
   // (кросс-источниковый дедуп, issue #170). Значит запись в базе общая, и интерфейс обязан
@@ -383,6 +399,10 @@ export type AgentMeeting = {
   // GET /agent-meetings/:id. Нужно, чтобы человек видел это ДО публикации: встреча общая,
   // и в базу пойдёт самая полная версия (решение владельца 2026-08-28).
   in_base_duplicate?: { id: string; title: string; source: string } | null;
+  // Встреча 1-1 (#641): ровно двое, оба в SWARM — тогда «Личное» сохраняет ОДНУ запись, видную
+  // обоим. Приходит в ДЕТАЛИ GET /agent-meetings/:id; партнёр — второй участник для смотрящего.
+  // При публикации сервер решает заново и клиенту не верит.
+  one_on_one?: { partner_id: number; partner_name: string | null } | null;
   // Когда человек правил тезисы черновика руками (meetings.notes_edited_at). Автоматика такой
   // текст не перезаписывает — ни его версией чужой, ни чужой его.
   notes_edited_at?: string | null;

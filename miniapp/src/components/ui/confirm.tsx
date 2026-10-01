@@ -118,7 +118,7 @@ export function ConfirmProvider({ children }: { children: React.ReactNode }) {
                     ref={cancelRef}
                     variant="outline"
                     size="lg"
-                    className="h-11 rounded-[8px] text-[15px]"
+                    className="h-11 rounded-full text-[15px]"
                     onClick={() => settle(false)}
                   >
                     {cancelText}
@@ -127,7 +127,7 @@ export function ConfirmProvider({ children }: { children: React.ReactNode }) {
                     variant={tone === "danger" ? "destructive" : "default"}
                     size="lg"
                     className={cn(
-                      "h-11 rounded-[8px] text-[15px] font-semibold",
+                      "h-11 rounded-full text-[15px] font-semibold",
                       tone === "danger" &&
                         "bg-destructive text-white hover:bg-destructive/90 dark:bg-destructive dark:text-white dark:hover:bg-destructive/90",
                     )}

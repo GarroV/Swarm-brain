@@ -154,7 +154,7 @@ export function RoyProjectsScreen() {
           <button
             type="button"
             onClick={() => setAdding(true)}
-            className="flex w-full items-center gap-2 rounded-[18px] border border-dashed border-line-2 px-4 py-3 text-ink-mute transition-colors active:bg-surface-2"
+            className="flex w-full items-center gap-2 rounded-full border border-dashed border-line-2 px-4 py-3 text-ink-mute transition-colors active:bg-surface-2"
             style={{ fontSize: 14, minHeight: 44 }}
           >
             <RoyIcon name="plus" size={17} />

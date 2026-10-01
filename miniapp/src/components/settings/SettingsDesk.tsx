@@ -14,11 +14,14 @@ import { TelegramPanel } from "@/components/profile/TelegramPanel";
 import { BackdropSection } from "@/components/profile/BackdropSection";
 import { useDt } from "@/components/roy/nav";
 import { useIsDesktop } from "@/components/roy/useIsDesktop";
+import { SidePanel } from "@/components/roy/SidePanel";
 
 // «Настройки» десктопа — компактное бенто (решение владельца 2026-09-25: «сделать очень компактный
 // бенто, а не пытаться разнести все по всему экрану»): «Профиль» на две трети, рядом плитки «Фон» и
 // «Дайджест», ниже интеграции одной строкой. Содержимое — прежние секции SettingsScreen: действие
-// строки открывает одну панель ПОД бенто (а не раздувает плитку), повторное нажатие — закрывает.
+// строки открывает пояснение в панели справа, как карточку задачи или встречи (решение владельца
+// 2026-09-30: «при нажатии на элементы я ожидаю что справа будет появляться пояснение», issue #639;
+// до этого панель вставала под бенто). Esc, «Закрыть» и клик мимо её закрывают.
 // Раздела «Файлы и фидбек» нет (решение владельца 2026-09-25: «файлы никто не добавляет»;
 // фидбек — плавающая кнопка). Разделов стенда «Доступы», «Списки», «Роли задач» здесь нет: токены живут в карточках
 // интеграций, списки задач правятся на доске задач, ролей задач в продукте нет. Строки «Язык»
@@ -80,15 +83,9 @@ function SettingsDesk() {
               </Tile>
             </div>
             {panel && (
-              <section aria-label={dt(...PANEL_TITLE[panel])} className="rounded-[12px] border border-accent-line bg-surface px-4 py-3">
-                <div className="mb-2 flex items-center justify-between">
-                  <h3 className="font-semibold text-ink" style={{ fontSize: 13.5 }}>{dt(...PANEL_TITLE[panel])}</h3>
-                  <button type="button" onClick={() => setPanel(null)} className="text-ink-mute hover:text-ink" style={{ fontSize: 12 }}>
-                    {dt("Закрыть", "Close")}
-                  </button>
-                </div>
+              <SidePanel title={dt(...PANEL_TITLE[panel])} onClose={() => setPanel(null)}>
                 <PanelBody panel={panel} me={me} onProfileSaved={(patch) => setMe({ ...me, ...patch })} />
-              </section>
+              </SidePanel>
             )}
           </>
         )}
@@ -159,7 +156,7 @@ function Action({ on, onClick, children }: { on: boolean; onClick: () => void; c
   return (
     <button type="button" aria-expanded={on} onClick={onClick}
       className={cn(
-        "inline-flex h-[26px] shrink-0 items-center self-start rounded-[7px] border px-2.5 font-medium transition-colors",
+        "inline-flex h-[26px] shrink-0 items-center self-start rounded-full border px-2.5 font-medium transition-colors",
         on ? "border-primary bg-accent-soft text-primary" : "border-line-2 bg-surface text-ink hover:bg-surface-2",
       )}
       style={{ fontSize: 12 }}>
