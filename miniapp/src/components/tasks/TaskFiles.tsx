@@ -1,39 +1,25 @@
 "use client";
-import { useCallback, useEffect, useRef, useState, type DragEvent } from "react";
-import { useDt, useRoyNav } from "@/components/roy/nav";
+import type { ReactNode, Ref } from "react";
+import { useDt } from "@/components/roy/nav";
 import { RoyIcon, type RoyIconName } from "@/components/roy/icons";
 import { cn } from "@/lib/utils";
-import {
-  ApiError,
-  fetchTaskFiles,
-  removeTaskFile,
-  taskFileUrl,
-  uploadTaskFile,
-  UploadAbortedError,
-} from "@/lib/api";
-import {
-  fileExt,
-  fileKind,
-  formatSize,
-  splitPicked,
-  type FileKind,
-  type RejectReason,
-  type TaskFile,
-  type TaskFileLimits,
-} from "@/lib/taskFiles";
+import { fileExt, fileKind, formatSize, type FileKind, type TaskFile } from "@/lib/taskFiles";
+import { CardIconBar, CardSectionHeader, CardSectionMenu, MenuTitle } from "@/components/tasks/CardSectionMenu";
+import { useTaskFiles, type TaskFilesState, type Uploading } from "@/components/tasks/useTaskFiles";
 
 // Файлы к задаче (#638, решение владельца 2026-09-30: «не забудь проработать визуал. это важно»).
 // Блок живёт в карточке задачи (TaskModal и экран TaskDetail) рядом с подзадачами и комментариями.
 // Лимит показывается честно, до выбора файла: «до 50 МБ · до 10 файлов» — цифры приходят с сервера,
 // и отказ по размеру или типу звучит сразу, а не после минуты загрузки. Байты лежат на MUSPELHEIM:
 // если он недоступен, блок говорит об этом, а не делает вид, что файлов нет.
+//
+// С 01.10.2026 пустой раздел не рисуется: от него остаётся пиктограмма со скрепкой, а выбор и бросок
+// файла живут в её меню (FilePickPanel). Бросить файл можно и на всю карточку — FileDropOverlay.
+// Состояние и загрузка — в хуке useTaskFiles.
 
 const KIND_ICON: Record<FileKind, RoyIconName> = {
   pdf: "pdf", image: "image", sheet: "board", slides: "graph", doc: "doc", archive: "clip", other: "doc",
 };
-
-type Uploading = { key: string; name: string; size: number; share: number; ctrl: AbortController; error?: string };
-type Rejected = { key: string; name: string; reason: RejectReason };
 
 function useLoc() {
   const dt = useDt();
@@ -43,181 +29,128 @@ function useLoc() {
   return { dt, en, date };
 }
 
-export function TaskFiles({ taskId, taskOwnerId }: { taskId: string; taskOwnerId: number | null }) {
-  const { dt, en, date } = useLoc();
-  const { me, toast } = useRoyNav();
-  const [files, setFiles] = useState<TaskFile[] | null>(null);
-  const [limits, setLimits] = useState<TaskFileLimits | null>(null);
-  const [available, setAvailable] = useState(true);
-  const [uploads, setUploads] = useState<Uploading[]>([]);
-  const [rejected, setRejected] = useState<Rejected[]>([]);
-  const [dragging, setDragging] = useState(false);
-  const inputRef = useRef<HTMLInputElement>(null);
-  const dragDepth = useRef(0);
+/** Скрытый input выбора файлов. Живёт вне меню: меню закрывается раньше, чем браузер вернёт выбор. */
+export function FileInput({ f }: { f: TaskFilesState }) {
+  return (
+    <input
+      ref={f.inputRef}
+      type="file"
+      multiple
+      hidden
+      accept={f.limits?.accept.map((x) => `.${x}`).join(",")}
+      onChange={(e) => {
+        if (e.target.files) f.pick(e.target.files);
+        e.target.value = "";
+      }}
+    />
+  );
+}
 
-  useEffect(() => {
-    let alive = true;
-    fetchTaskFiles(taskId)
-      .then((r) => {
-        if (!alive) return;
-        setFiles(r.files);
-        setLimits(r.limits);
-        setAvailable(r.available);
-      })
-      .catch(() => {
-        if (alive) setFiles([]);
-        if (alive) setAvailable(false);
-      });
-    return () => { alive = false; };
-  }, [taskId]);
-
-  const patchUpload = (key: string, patch: Partial<Uploading>) =>
-    setUploads((cur) => cur.map((u) => (u.key === key ? { ...u, ...patch } : u)));
-
-  const startUpload = useCallback((file: File) => {
-    const key = `${file.name}-${file.size}-${Math.random()}`;
-    const ctrl = new AbortController();
-    setUploads((cur) => [...cur, { key, name: file.name, size: file.size, share: 0, ctrl }]);
-    uploadTaskFile(taskId, file, (share) => patchUpload(key, { share }), ctrl.signal)
-      .then((saved) => {
-        setFiles((cur) => [...(cur ?? []), saved]);
-        setUploads((cur) => cur.filter((u) => u.key !== key));
-      })
-      .catch((e) => {
-        if (e instanceof UploadAbortedError) {
-          setUploads((cur) => cur.filter((u) => u.key !== key));
-          return;
-        }
-        const offline = e instanceof ApiError && (e.status === 0 || e.status === 502 || e.status === 503);
-        patchUpload(key, {
-          error: offline
-            ? dt("Хранилище файлов сейчас недоступно", "File storage is unreachable right now")
-            : e instanceof ApiError && e.status === 403
-            ? dt("В демо файлы не загружаются", "File uploads are disabled in the demo")
-            : e instanceof ApiError && e.status === 429
-            ? dt("Слишком много незавершённых загрузок за сутки — попробуйте позже", "Too many unfinished uploads today — try again later")
-            : e instanceof ApiError && e.message && e.status === 400
-            ? e.message
-            : dt("Не загрузилось — попробуйте ещё раз", "Upload failed — try again"),
-        });
-      });
-  }, [taskId, dt]);
-
-  const pick = (list: FileList | File[]) => {
-    if (!limits) return;
-    const busy = (files?.length ?? 0) + uploads.filter((u) => !u.error).length;
-    const { ok, rejected: bad } = splitPicked([...list], limits, busy);
-    setRejected(bad.map((b) => ({ key: `${b.file.name}-${Math.random()}`, name: b.file.name, reason: b.reason })));
-    ok.forEach(startUpload);
-  };
-
-  const open = async (f: TaskFile) => {
-    // Окно открываем сразу, в том же клике: после await браузер счёл бы его всплывающим и закрыл.
-    const win = f.inline ? window.open("", "_blank") : null;
-    try {
-      const url = await taskFileUrl(taskId, f.id);
-      if (win) {
-        win.opener = null;
-        win.location.href = url;
-      } else {
-        const a = document.createElement("a");
-        a.href = url;
-        a.rel = "noopener";
-        a.click();
-      }
-    } catch {
-      win?.close();
-      toast(dt("Файл сейчас недоступен — хранилище не отвечает", "The file is unavailable — storage isn't responding"));
-    }
-  };
-
-  const remove = async (f: TaskFile) => {
-    const before = files;
-    setFiles((cur) => (cur ?? []).filter((x) => x.id !== f.id));
-    try {
-      await removeTaskFile(taskId, f.id);
-    } catch {
-      setFiles(before);
-      toast(dt("Не удалось убрать файл", "Couldn't remove the file"));
-    }
-  };
-
-  const canRemove = (f: TaskFile) =>
-    !!me && (me.is_admin || f.uploaded_by === me.telegram_id || taskOwnerId === me.telegram_id);
-
-  const onDrag = (e: DragEvent, delta: 1 | -1 | 0) => {
-    if (!e.dataTransfer.types.includes("Files") || !available) return;
-    e.preventDefault();
-    if (delta !== 0) {
-      dragDepth.current = Math.max(0, dragDepth.current + delta);
-      setDragging(dragDepth.current > 0);
-    }
-  };
-  const onDrop = (e: DragEvent) => {
-    if (!e.dataTransfer.types.includes("Files")) return;
-    e.preventDefault();
-    dragDepth.current = 0;
-    setDragging(false);
-    if (available) pick(e.dataTransfer.files);
-  };
-
-  const count = files?.length ?? 0;
-  const full = !!limits && count + uploads.filter((u) => !u.error).length >= limits.maxFiles;
-  const limitText = limits
-    ? dt(
-      `до ${formatSize(limits.maxBytes)} каждый · до ${limits.maxFiles} файлов`,
-      `up to ${formatSize(limits.maxBytes, true)} each · up to ${limits.maxFiles} files`,
-    )
-    : "";
-  const reasonText = (r: RejectReason) =>
-    r === "too_big"
-      ? dt(`больше ${formatSize(limits?.maxBytes ?? 0)}`, `larger than ${formatSize(limits?.maxBytes ?? 0, true)}`)
-      : r === "type"
-      ? dt("такой тип не принимаем — видео и программы нельзя", "this type isn't accepted — no video or programs")
-      : r === "empty"
-      ? dt("файл пустой", "the file is empty")
-      : dt(`у задачи уже ${limits?.maxFiles} файлов`, `the task already has ${limits?.maxFiles} files`);
-
+/** Содержимое меню скрепки: «Выбрать файл» и зона, куда можно бросить файл. */
+export function FilePickPanel({ f, onPicked }: { f: TaskFilesState; onPicked?: () => void }) {
+  const dt = useDt();
+  if (!f.available || !f.limits) {
+    return (
+      <p className="text-ink-soft" style={{ fontSize: 12.5 }}>
+        {dt("Хранилище файлов сейчас недоступно", "File storage is unreachable right now")}
+      </p>
+    );
+  }
   return (
     <div
-      className="relative"
-      onDragEnter={(e) => onDrag(e, 1)}
-      onDragOver={(e) => onDrag(e, 0)}
-      onDragLeave={(e) => onDrag(e, -1)}
-      onDrop={onDrop}
+      className="flex flex-col gap-2"
+      onDrop={(e) => {
+        if (e.dataTransfer.types.includes("Files")) onPicked?.();
+      }}
     >
-      <div className="mb-1.5 flex items-center gap-2">
-        <span className="font-semibold text-ink" style={{ fontSize: 13 }}>{dt("Файлы", "Files")}</span>
-        {count > 0 && <span className="font-mono text-ink-mute" style={{ fontSize: 11.5 }}>{count}</span>}
-        {available && limits && (
-          <button
-            type="button"
-            disabled={full}
-            onClick={() => inputRef.current?.click()}
-            title={full ? reasonText("too_many") : limitText}
-            className="ml-auto inline-flex items-center gap-1 rounded-full px-2 py-1 font-medium text-primary transition-colors hover:bg-surface-2 disabled:cursor-not-allowed disabled:text-ink-mute"
-            style={{ fontSize: 12.5 }}
-          >
-            <RoyIcon name="clip" size={14} strokeWidth={1.8} />
-            {dt("Прикрепить", "Attach")}
-          </button>
+      <MenuTitle>{dt("Файл", "File")}</MenuTitle>
+      <button
+        type="button"
+        disabled={f.full}
+        onClick={() => {
+          onPicked?.();
+          f.choose();
+        }}
+        className={cn(
+          "flex w-full flex-col items-center justify-center gap-1 rounded-full border border-dashed border-line-2 px-3 py-4 text-ink-mute transition-colors",
+          "hover:border-primary/50 hover:text-ink-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]",
+          "disabled:cursor-not-allowed disabled:hover:border-line-2 disabled:hover:text-ink-mute",
         )}
-        <input
-          ref={inputRef}
-          type="file"
-          multiple
-          hidden
-          accept={limits?.accept.map((x) => `.${x}`).join(",")}
-          onChange={(e) => {
-            if (e.target.files) pick(e.target.files);
-            e.target.value = "";
+        style={{ fontSize: 12.5 }}
+      >
+        <RoyIcon name="upload" size={16} strokeWidth={1.8} className="shrink-0" />
+        <span>
+          <span className="font-medium text-primary">{dt("Выбрать файл", "Choose a file")}</span>
+          <span className="hidden lg:inline">{dt(" или перетащите сюда", " or drop it here")}</span>
+        </span>
+        <span className="text-ink-mute" style={{ fontSize: 11.5 }}>
+          {f.full ? f.reasonText("too_many") : f.limitText}
+        </span>
+      </button>
+    </div>
+  );
+}
+
+/** Подсветка броска файла поверх карточки — пока над ней тащат файл. */
+export function FileDropOverlay({ show }: { show: boolean }) {
+  const dt = useDt();
+  if (!show) return null;
+  return (
+    <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-[12px] border-2 border-dashed border-primary bg-background/85 backdrop-blur-[2px]">
+      <span className="inline-flex items-center gap-2 font-semibold text-primary" style={{ fontSize: 13.5 }}>
+        <RoyIcon name="upload" size={16} strokeWidth={2} />
+        {dt("Отпустите — прикрепим к задаче", "Drop to attach to the task")}
+      </span>
+    </div>
+  );
+}
+
+/** Меню скрепки целиком — для строки пустых разделов (variant "icon") и для «+» у заголовка. */
+export function FilesMenu({ f, variant = "icon", triggerRef, onDone }: {
+  f: TaskFilesState;
+  variant?: "icon" | "plus";
+  triggerRef?: Ref<HTMLButtonElement>;
+  /** Файл выбран или брошен на меню — меню закрыто. */
+  onDone?: () => void;
+}) {
+  const dt = useDt();
+  return (
+    <CardSectionMenu
+      icon="clip"
+      variant={variant}
+      label={dt("Прикрепить файл", "Attach a file")}
+      disabled={variant === "plus" && f.full}
+      width={280}
+      triggerRef={triggerRef}
+    >
+      {(close) => (
+        <FilePickPanel
+          f={f}
+          onPicked={() => {
+            close();
+            onDone?.();
           }}
         />
-      </div>
+      )}
+    </CardSectionMenu>
+  );
+}
 
-      {files === null && <div className="roy-shim" style={{ height: 40, borderRadius: 8 }} />}
+/** Непустой раздел «Файлы»: заголовок с «+» (action), список, загрузки и отказы. Пустой не рисуется. */
+export function TaskFilesSection({ f, action }: { f: TaskFilesState; action?: ReactNode }) {
+  const { dt, en, date } = useLoc();
+  if (!f.loaded || f.empty) return null;
+  const { files, uploads, rejected, count } = f;
 
-      {!available && files !== null && (
+  return (
+    <div>
+      <CardSectionHeader
+        title={dt("Файлы", "Files")}
+        count={count > 0 ? count : undefined}
+        action={f.available && f.limits ? action : undefined}
+      />
+
+      {!f.available && (
         <p className="flex items-center gap-1.5 rounded-[8px] bg-surface-2 px-3 py-2 text-ink-soft" style={{ fontSize: 12.5 }}>
           <RoyIcon name="warn" size={14} strokeWidth={1.8} className="shrink-0" />
           {dt(
@@ -229,13 +162,10 @@ export function TaskFiles({ taskId, taskOwnerId }: { taskId: string; taskOwnerId
 
       {(count > 0 || uploads.length > 0) && (
         <ul className="overflow-hidden rounded-[10px] border border-line">
-          {(files ?? []).map((f) => (
-            <FileRow key={f.id} file={f} en={en} date={date} canRemove={canRemove(f)} onOpen={() => open(f)} onRemove={() => remove(f)} />
+          {(files ?? []).map((file) => (
+            <FileRow key={file.id} file={file} en={en} date={date} canRemove={f.canRemove(file)} onOpen={() => f.open(file)} onRemove={() => f.remove(file)} />
           ))}
-          {uploads.map((u) => (
-            <UploadRow key={u.key} u={u} en={en}
-              onCancel={() => (u.error ? setUploads((cur) => cur.filter((x) => x.key !== u.key)) : u.ctrl.abort())} />
-          ))}
+          {uploads.map((u) => <UploadRow key={u.key} u={u} en={en} onCancel={() => f.cancelUpload(u)} />)}
         </ul>
       )}
 
@@ -245,48 +175,36 @@ export function TaskFiles({ taskId, taskOwnerId }: { taskId: string; taskOwnerId
             <div className="min-w-0 flex-1 space-y-0.5">
               {rejected.map((r) => (
                 <p key={r.key} className="text-ink-soft">
-                  <span className="font-medium text-ink">{r.name}</span> — {reasonText(r.reason)}
+                  <span className="font-medium text-ink">{r.name}</span> — {f.reasonText(r.reason)}
                 </p>
               ))}
             </div>
-            <button type="button" onClick={() => setRejected([])} aria-label={dt("Скрыть", "Dismiss")}
+            <button type="button" onClick={f.dismissRejected} aria-label={dt("Скрыть", "Dismiss")}
               className="shrink-0 rounded p-0.5 text-ink-mute hover:bg-surface hover:text-ink">
               <RoyIcon name="x" size={13} strokeWidth={2} />
             </button>
           </div>
         </div>
       )}
+    </div>
+  );
+}
 
-      {available && limits && (
-        <button
-          type="button"
-          disabled={full}
-          onClick={() => inputRef.current?.click()}
-          className={cn(
-            "mt-2 flex w-full items-center justify-center gap-2 rounded-full border border-dashed border-line-2 px-3 text-ink-mute transition-colors",
-            "hover:border-primary/50 hover:text-ink-soft disabled:cursor-not-allowed disabled:hover:border-line-2 disabled:hover:text-ink-mute",
-            count > 0 ? "py-2" : "py-4",
-          )}
-          style={{ fontSize: 12.5 }}
-        >
-          <RoyIcon name="upload" size={15} strokeWidth={1.8} className="shrink-0" />
-          <span>
-            <span className="hidden lg:inline">{dt("Перетащите файлы сюда или ", "Drop files here or ")}</span>
-            <span className="hidden font-medium text-primary lg:inline">{dt("выберите", "choose")}</span>
-            <span className="font-medium text-primary lg:hidden">{dt("Выбрать файлы", "Choose files")}</span>
-            <span className="text-ink-mute"> · {limitText}</span>
-          </span>
-        </button>
-      )}
-
-      {dragging && (
-        <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-[12px] border-2 border-dashed border-primary bg-background/85 backdrop-blur-[2px]">
-          <span className="inline-flex items-center gap-2 font-semibold text-primary" style={{ fontSize: 13.5 }}>
-            <RoyIcon name="upload" size={16} strokeWidth={2} />
-            {dt("Отпустите — прикрепим к задаче", "Drop to attach to the task")}
-          </span>
-        </div>
-      )}
+/** Самостоятельный блок «Файлы» — для экрана TaskDetail, где нет общей строки пиктограмм. */
+export function TaskFiles({ taskId, taskOwnerId }: { taskId: string; taskOwnerId: number | null }) {
+  const dt = useDt();
+  const f = useTaskFiles(taskId, taskOwnerId);
+  return (
+    <div className="relative" {...f.dropProps}>
+      <FileInput f={f} />
+      {f.empty
+        ? (
+          <CardIconBar label={dt("Добавить к задаче", "Add to the task")}>
+            <FilesMenu f={f} />
+          </CardIconBar>
+        )
+        : <TaskFilesSection f={f} action={<FilesMenu f={f} variant="plus" />} />}
+      <FileDropOverlay show={f.dragging} />
     </div>
   );
 }
