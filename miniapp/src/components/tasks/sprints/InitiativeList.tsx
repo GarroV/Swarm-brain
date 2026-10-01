@@ -1,13 +1,25 @@
 "use client";
-import { nestBy } from "@/lib/subtasks";
-import { useState } from "react";
+import { sprintRows } from "@/lib/sprintSubtasks";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import type { SprintCycleItem, Task } from "@/types";
 import { cn } from "@/lib/utils";
 import type { DirectionNode, InitiativeNode } from "@/lib/initiatives";
 import { isBareDirection } from "@/lib/initiatives";
 import { RoyIcon } from "@/components/roy/icons";
 import { useDt } from "@/components/roy/nav";
 import { fmtDay } from "./format";
-import { type RowHandlers, SPRINT_COLS, SprintRow } from "./SprintRow";
+import { type RowHandlers, SPRINT_COLS, SprintRow, SubtaskLiteRow } from "./SprintRow";
+
+/** Развёрнутые задачи с подзадачами — удобство одного зрителя, поэтому localStorage. */
+const OPEN_KEY = "swarm.sprint.openSubtasks";
+
+/** Подзадачи для строк группы: все видимые задачи, task_id состава, развёрнутость. */
+type SubCtx = {
+  tasks: Task[];
+  sprintTaskIds: Set<string>;
+  isOpen: (taskId: string) => boolean;
+  toggle: (taskId: string) => void;
+};
 
 // Список спринта — главный экран доски инициатив: направление → инициатива → задачи.
 // Он же второй вид того же состава, что канбан (TaskKanban): одна задача, одна правда,
@@ -56,6 +68,7 @@ function Group(
     showExtra,
     h,
     onAdd,
+    subtasks: subCtx,
   }: {
     node: InitiativeNode;
     name: string;
@@ -69,6 +82,7 @@ function Group(
     showExtra: boolean;
     h: RowHandlers;
     onAdd?: (projectId: string | null) => void;
+    subtasks: SubCtx;
   },
 ) {
   const dt = useDt();
@@ -133,17 +147,42 @@ function Group(
       </button>
       {!collapsed && (
         <div>
-          {nestBy(node.items, (i) => i.task_id, (i) => h.parentOf?.(i) ?? null)
-            .map(({ item, depth }) => (
-              <SprintRow
-                key={item.id}
-                item={item}
-                depth={depth}
-                unchecked={unchecked}
-                showExtra={showExtra}
-                h={h}
-              />
-            ))}
+          {sprintRows(node.items, {
+            idOf: (i) => i.task_id,
+            parentOf: (i) => h.parentOf?.(i) ?? null,
+            tasks: subCtx.tasks,
+            sprintTaskIds: subCtx.sprintTaskIds,
+            isOpen: subCtx.isOpen,
+          }).map((row) =>
+            row.kind === "task"
+              ? (
+                <SubtaskLiteRow
+                  key={`t-${row.task.id}`}
+                  task={row.task}
+                  inSprint={row.inSprint}
+                  onOpen={h.onOpenTask}
+                />
+              )
+              : (
+                <SprintRow
+                  key={row.item.id}
+                  item={row.item}
+                  depth={row.depth}
+                  unchecked={unchecked}
+                  showExtra={showExtra}
+                  h={h}
+                  parent={row.parent}
+                  kids={row.kids
+                    ? {
+                      done: row.kids.done,
+                      total: row.kids.total,
+                      open: subCtx.isOpen(row.kids.taskId),
+                      onToggle: () => subCtx.toggle(row.kids!.taskId),
+                    }
+                    : undefined}
+                />
+              )
+          )}
           {onAdd && (
             <AddTaskRow
               projectId={addTo !== undefined ? addTo : node.project?.id ?? null}
@@ -169,9 +208,12 @@ export function InitiativeList({
   users = [],
   noneLabel,
   onAdd,
+  tasks = [],
   ...h
 }: {
   board: DirectionNode[];
+  /** Все видимые задачи — из них подзадачи строк (#478); отдельного запроса нет. */
+  tasks?: Task[];
   /** Подпись группы-остатка. По умолчанию «Без направления»; при группировке по людям —
    *  «Без исполнителя»: остаток называется по тому, чего в нём нет. */
   noneLabel?: string;
@@ -197,7 +239,36 @@ export function InitiativeList({
       return next;
     });
 
-  const common = { unchecked, showExtra, h, onAdd };
+  const [openKids, setOpenKids] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(OPEN_KEY);
+      if (raw) setOpenKids(new Set(JSON.parse(raw) as string[]));
+    } catch { /* нет хранилища — просто всё свёрнуто */ }
+  }, []);
+  const toggleKids = useCallback((taskId: string) => {
+    setOpenKids((prev) => {
+      const next = new Set(prev);
+      if (next.has(taskId)) next.delete(taskId);
+      else next.add(taskId);
+      try {
+        localStorage.setItem(OPEN_KEY, JSON.stringify([...next]));
+      } catch { /* не запомнили — не беда */ }
+      return next;
+    });
+  }, []);
+  const sprintTaskIds = useMemo(() => {
+    const ids = new Set<string>();
+    const add = (items: SprintCycleItem[]) => items.forEach((i) => i.task_id && ids.add(i.task_id));
+    board.forEach((d) => d.initiatives.forEach((ini) => add(ini.items)));
+    return ids;
+  }, [board]);
+  const sub: SubCtx = useMemo(
+    () => ({ tasks, sprintTaskIds, isOpen: (id: string) => openKids.has(id), toggle: toggleKids }),
+    [tasks, sprintTaskIds, openKids, toggleKids],
+  );
+
+  const common = { unchecked, showExtra, h, onAdd, subtasks: sub };
 
   return (
     <div className="rounded-[10px] border border-line bg-surface">

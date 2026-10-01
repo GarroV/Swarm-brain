@@ -994,6 +994,11 @@ export function SprintsScreen() {
                           parentOf={(item) =>
                             item.task_id ? tasks.find((t) => t.id === item.task_id)?.parent_id ?? null : null}
                           users={users}
+                          tasks={tasks}
+                          onOpenTask={(id) => {
+                            const live = tasks.find((t) => t.id === id);
+                            if (live) setEditing(live);
+                          }}
                           // Принятый спринт — слепок: в него не дописывают. В группировке по
                           // людям «+ задача» нет: группа — человек, а не проект, и класть
                           // задачу «в человека» некуда.

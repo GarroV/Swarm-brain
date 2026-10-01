@@ -1472,6 +1472,10 @@ let mockCycleItems: Record<string, MockItemRow[]> = {
     { id: "si2", task_id: "p_search", in_plan: true },
     { id: "si3", task_id: "p_dig", in_plan: true },
     { id: "si4", task_id: "2", in_plan: false },
+    // Подзадачи (#478): одна подзадача «Поиска» в составе, вторая — нет; «Хартбит» — подзадача
+    // задачи вне спринта (подпись «из «…»»).
+    { id: "si5", task_id: "p_s_hybrid", in_plan: true },
+    { id: "si6", task_id: "p_s_heart", in_plan: true },
   ],
   sc_draft: [],
 };
