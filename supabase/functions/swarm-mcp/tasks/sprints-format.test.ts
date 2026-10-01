@@ -1,10 +1,5 @@
 import { assert, assertEquals, assertStringIncludes } from "@std/assert";
-import {
-  formatSpaces,
-  formatSprint,
-  isIsoDate,
-  pickSpace,
-} from "./sprints-format.ts";
+import { formatSpaces, formatSprint, isIsoDate, pickSpace } from "./sprints-format.ts";
 import type { Sprint } from "../../_shared/tasks/types.ts";
 import type { SprintCycle } from "../../_shared/tasks/sprint-cycles.ts";
 import type { SprintItem } from "../../_shared/tasks/sprint-items.ts";

@@ -93,8 +93,7 @@ export function computeSprintStats(
 
   const plan = [...counted.filter((i) => i.in_plan), ...withdrawn];
   const extra = counted.filter((i) => !i.in_plan);
-  const isDone = (i: SprintItemView) =>
-    i.withdrawn_at == null && isClosedStatus(i.status);
+  const isDone = (i: SprintItemView) => i.withdrawn_at == null && isClosedStatus(i.status);
   const done = (list: readonly SprintItemView[]) => list.filter(isDone).length;
 
   const planDone = done(plan);
@@ -147,15 +146,12 @@ export function computeSprintStats(
   const carriedManual = carry.filter((c) => c.kind === "manual").length;
   const carriedAuto = carry.filter((c) => c.kind === "auto").length;
 
-  const checks = (kind: string) =>
-    live.filter((i) => i.check_status === kind).length;
+  const checks = (kind: string) => live.filter((i) => i.check_status === kind).length;
 
   return {
     plan: plan.length,
     planDone,
-    planPercent: plan.length === 0
-      ? 0
-      : Math.round((planDone / plan.length) * 100),
+    planPercent: plan.length === 0 ? 0 : Math.round((planDone / plan.length) * 100),
     extra: extra.length,
     extraDone: done(extra),
     carried: carriedManual + carriedAuto,
@@ -168,12 +164,8 @@ export function computeSprintStats(
     check_risk: checks("risk"),
     check_problem: checks("problem"),
     unassigned,
-    byPerson: [...people.values()].sort((a, b) =>
-      b.plan - a.plan || b.done - a.done || a.name.localeCompare(b.name)
-    ),
-    byProject: [...projects.values()].sort((a, b) =>
-      b.total - a.total || (a.name ?? "￿").localeCompare(b.name ?? "￿")
-    ),
+    byPerson: [...people.values()].sort((a, b) => b.plan - a.plan || b.done - a.done || a.name.localeCompare(b.name)),
+    byProject: [...projects.values()].sort((a, b) => b.total - a.total || (a.name ?? "￿").localeCompare(b.name ?? "￿")),
     byDay: [...days.entries()].map(([day, n]) => ({ day, done: n })).sort((
       a,
       b,

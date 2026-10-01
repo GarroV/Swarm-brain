@@ -14,12 +14,7 @@
 // Линт просит короткое имя из карты импортов; см. пояснение в _shared/tasks/sprint-items.ts.
 // deno-lint-ignore-file no-import-prefix
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import {
-  createSprint,
-  deleteSprint,
-  listSprints,
-  updateSprint,
-} from "../../_shared/tasks/sprints.ts";
+import { createSprint, deleteSprint, listSprints, updateSprint } from "../../_shared/tasks/sprints.ts";
 import {
   createCycle,
   deleteCycle,
@@ -40,20 +35,11 @@ import {
   removeItem,
   updateItem,
 } from "../../_shared/tasks/sprint-items.ts";
-import {
-  AcceptConflictError,
-  acceptCycle,
-} from "../../_shared/tasks/sprint-accept.ts";
+import { AcceptConflictError, acceptCycle } from "../../_shared/tasks/sprint-accept.ts";
 import { computeSprintStats } from "../../_shared/tasks/sprint-stats.ts";
 import type { Sprint } from "../../_shared/tasks/types.ts";
 import { ADMIN_USER_ID } from "./tools.ts";
-import {
-  formatCycles,
-  formatSpaces,
-  formatSprint,
-  isIsoDate,
-  pickSpace,
-} from "./sprints-format.ts";
+import { formatCycles, formatSpaces, formatSprint, isIsoDate, pickSpace } from "./sprints-format.ts";
 
 const supabase = createClient(
   Deno.env.get("SUPABASE_URL")!,
@@ -134,8 +120,7 @@ async function withMember(
 export function toolGetSprintSpaces(args: Args): Promise<string> {
   return withMember(
     args,
-    async (m) =>
-      formatSpaces(await spaces(m.groupId), await listCycles(m.groupId)),
+    async (m) => formatSpaces(await spaces(m.groupId), await listCycles(m.groupId)),
   );
 }
 
@@ -165,9 +150,7 @@ export function toolRenameSprintSpace(args: Args): Promise<string> {
     const space = await loadSpace(m.groupId, args.space);
     if (typeof space === "string") return space;
     const updated = await updateSprint(space.id, { name }, m.groupId);
-    return updated
-      ? `✅ «${space.name}» → «${updated.name}».`
-      : "Пространство не найдено.";
+    return updated ? `✅ «${space.name}» → «${updated.name}».` : "Пространство не найдено.";
   });
 }
 
@@ -200,9 +183,7 @@ export function toolGetSprints(args: Args): Promise<string> {
     } else {
       // Только спринты пространств: спринт на вкладке проектов — смешение сущностей (#483),
       // в разделе «Спринты» его не видно, значит, и здесь не показываем.
-      cycles = (await listCycles(m.groupId)).filter((c) =>
-        c.tab_id !== null && nameById.has(c.tab_id)
-      );
+      cycles = (await listCycles(m.groupId)).filter((c) => c.tab_id !== null && nameById.has(c.tab_id));
     }
     if (args.include_accepted !== true) {
       cycles = cycles.filter((c) => c.status !== "accepted");
@@ -334,9 +315,7 @@ export function toolAcceptSprint(args: Args): Promise<string> {
         summary: typeof args.summary === "string" ? args.summary : null,
       });
       if (!r) return "Спринт не найден.";
-      const next = r.next
-        ? `\nСледующий спринт: «${r.next.name}» (id: ${r.next.id}).`
-        : "";
+      const next = r.next ? `\nСледующий спринт: «${r.next.name}» (id: ${r.next.id}).` : "";
       return `✅ Спринт «${r.cycle.name}» принят. Зафиксировано строк: ${r.frozen}; перенесено: ${r.carried} (вручную ${r.carried_manual}, само ${r.carried_auto}).${next}`;
     } catch (e) {
       if (e instanceof AcceptConflictError) return `Не принят: ${e.message}`;
@@ -351,9 +330,7 @@ export function toolDeleteSprint(args: Args): Promise<string> {
     const cycle = await loadCycle(m.groupId, args.sprint_id);
     if (typeof cycle === "string") return cycle;
     const ok = await deleteCycle(cycle.id, m.groupId, m.userId);
-    return ok
-      ? `✅ Спринт «${cycle.name}» убран в архив.`
-      : "Принятый спринт не удаляется — это архив периода.";
+    return ok ? `✅ Спринт «${cycle.name}» убран в архив.` : "Принятый спринт не удаляется — это архив периода.";
   });
 }
 
@@ -366,9 +343,7 @@ export function toolAddSprintTasks(args: Args): Promise<string> {
     if (cycle.status === "accepted") {
       return "Спринт принят, состав не меняется.";
     }
-    const ids = Array.isArray(args.task_ids)
-      ? args.task_ids.filter((x): x is string => typeof x === "string")
-      : [];
+    const ids = Array.isArray(args.task_ids) ? args.task_ids.filter((x): x is string => typeof x === "string") : [];
     if (ids.length === 0) {
       return "Нужен task_ids — массив id задач (из get_tasks).";
     }
@@ -377,12 +352,8 @@ export function toolAddSprintTasks(args: Args): Promise<string> {
     }
     const added = await addItems(cycle.id, ids, m.groupId, String(m.userId));
     const skipped = ids.length - added;
-    const kind = cycle.status === "draft"
-      ? "в план"
-      : "сверх плана (спринт уже идёт)";
-    const why = skipped
-      ? ` Пропущено ${skipped}: уже в составе, личные или не из твоего воркспейса.`
-      : "";
+    const kind = cycle.status === "draft" ? "в план" : "сверх плана (спринт уже идёт)";
+    const why = skipped ? ` Пропущено ${skipped}: уже в составе, личные или не из твоего воркспейса.` : "";
     return `✅ Добавлено ${added} ${kind}.${why}`;
   });
 }
@@ -394,9 +365,7 @@ export function toolRemoveSprintTask(args: Args): Promise<string> {
     const taskId = str(args.task_id);
     if (!taskId) return "Нужен task_id.";
     const ok = await removeItem(cycle.id, taskId, m.groupId, String(m.userId));
-    return ok
-      ? "✅ Задача убрана из состава."
-      : "Задачи нет в составе, или спринт уже принят.";
+    return ok ? "✅ Задача убрана из состава." : "Задачи нет в составе, или спринт уже принят.";
   });
 }
 
@@ -414,9 +383,7 @@ export function toolMarkSprintTask(args: Args): Promise<string> {
       patch.check_status = args.check_status as ItemPatch["check_status"];
     }
     if ("check_note" in args) {
-      patch.check_note = typeof args.check_note === "string"
-        ? args.check_note
-        : null;
+      patch.check_note = typeof args.check_note === "string" ? args.check_note : null;
     }
     if ("to_carry" in args) {
       if (typeof args.to_carry !== "boolean") {
@@ -425,9 +392,7 @@ export function toolMarkSprintTask(args: Args): Promise<string> {
       patch.to_carry = args.to_carry;
     }
     if ("carry_reason" in args) {
-      patch.carry_reason = typeof args.carry_reason === "string"
-        ? args.carry_reason
-        : null;
+      patch.carry_reason = typeof args.carry_reason === "string" ? args.carry_reason : null;
     }
     if (Object.keys(patch).length === 0) {
       return "Нечего менять: check_status, check_note, to_carry, carry_reason.";

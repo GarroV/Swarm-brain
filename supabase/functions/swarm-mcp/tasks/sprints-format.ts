@@ -57,14 +57,10 @@ export function pickSpace(
     return { ok: true, value: partial[0] };
   }
   if (exact.length > 1 || partial.length > 1) {
-    const many = (exact.length > 1 ? exact : partial).map((s) =>
-      `«${s.name}» (id: ${s.id})`
-    );
+    const many = (exact.length > 1 ? exact : partial).map((s) => `«${s.name}» (id: ${s.id})`);
     return {
       ok: false,
-      error: `Под «${query}» подходит несколько пространств: ${
-        many.join(", ")
-      }. Укажи id.`,
+      error: `Под «${query}» подходит несколько пространств: ${many.join(", ")}. Укажи id.`,
     };
   }
   return {
@@ -76,9 +72,7 @@ export function pickSpace(
 function cycleLine(c: SprintCycle, spaceName: string | null): string {
   const where = spaceName ? ` · ${spaceName}` : "";
   const check = c.check_date ? `, сверка ${c.check_date}` : "";
-  return `• ${c.name} — ${
-    STAGE[c.status] ?? c.status
-  }, ${c.start_date} → ${c.end_date}${check}${where} (id: ${c.id})`;
+  return `• ${c.name} — ${STAGE[c.status] ?? c.status}, ${c.start_date} → ${c.end_date}${check}${where} (id: ${c.id})`;
 }
 
 export function formatSpaces(
@@ -93,9 +87,7 @@ export function formatSpaces(
     const own = cycles.filter((c) => c.tab_id === s.id);
     const live = own.find((c) => c.status !== "accepted");
     const accepted = own.filter((c) => c.status === "accepted").length;
-    const now = live
-      ? `сейчас: ${live.name} (${STAGE[live.status]}, id: ${live.id})`
-      : "живого спринта нет";
+    const now = live ? `сейчас: ${live.name} (${STAGE[live.status]}, id: ${live.id})` : "живого спринта нет";
     return `• ${s.name} (id: ${s.id}) — ${now}; принятых: ${accepted}`;
   });
   return `Пространства спринтов:\n${lines.join("\n")}`;
@@ -106,9 +98,7 @@ export function formatCycles(
   spaceNameById: ReadonlyMap<string, string>,
 ): string {
   if (cycles.length === 0) return "Спринтов нет.";
-  return cycles.map((c) =>
-    cycleLine(c, c.tab_id ? spaceNameById.get(c.tab_id) ?? null : null)
-  ).join("\n");
+  return cycles.map((c) => cycleLine(c, c.tab_id ? spaceNameById.get(c.tab_id) ?? null : null)).join("\n");
 }
 
 function itemLine(i: SprintItem): string {
@@ -117,16 +107,10 @@ function itemLine(i: SprintItem): string {
   const who = i.assignees.length ? ` — ${i.assignees.join(", ")}` : "";
   const due = i.due_date ? `, срок ${i.due_date}` : "";
   const plan = i.in_plan ? "" : " · сверх плана";
-  const check = i.check_status
-    ? ` · ${CHECK[i.check_status]}${i.check_note ? `: ${i.check_note}` : ""}`
-    : "";
-  const carry = i.to_carry
-    ? ` · к переносу${i.carry_reason ? `: ${i.carry_reason}` : ""}`
-    : "";
+  const check = i.check_status ? ` · ${CHECK[i.check_status]}${i.check_note ? `: ${i.check_note}` : ""}` : "";
+  const carry = i.to_carry ? ` · к переносу${i.carry_reason ? `: ${i.carry_reason}` : ""}` : "";
   const removed = i.removed ? " · задача удалена, осталась упоминанием" : "";
-  return `  • ${mark} ${i.title}${who}${due}${plan}${check}${carry}${removed} (task_id: ${
-    i.task_id ?? "—"
-  })`;
+  return `  • ${mark} ${i.title}${who}${due}${plan}${check}${carry}${removed} (task_id: ${i.task_id ?? "—"})`;
 }
 
 export function formatSprint(
@@ -136,19 +120,13 @@ export function formatSprint(
   stats: SprintStats,
 ): string {
   const head = [
-    `Спринт «${cycle.name}» — ${
-      STAGE[cycle.status] ?? cycle.status
-    } (id: ${cycle.id})`,
-    `Пространство: ${
-      spaceName ?? "без пространства"
-    } · ${cycle.start_date} → ${cycle.end_date}` +
+    `Спринт «${cycle.name}» — ${STAGE[cycle.status] ?? cycle.status} (id: ${cycle.id})`,
+    `Пространство: ${spaceName ?? "без пространства"} · ${cycle.start_date} → ${cycle.end_date}` +
     (cycle.check_date ? ` · сверка ${cycle.check_date}` : ""),
     `План: ${stats.planDone} из ${stats.plan} (${stats.planPercent}%) · сверх плана: ${stats.extraDone} из ${stats.extra}` +
     (stats.cancelled ? ` · отменено: ${stats.cancelled}` : "") +
     // Итоги, посчитанные до #576, этого ключа не знают — нет цифры, нет и хвоста.
-    (stats.withdrawn
-      ? ` · снято из плана: ${stats.withdrawn} (в плане, не выполнены)`
-      : ""),
+    (stats.withdrawn ? ` · снято из плана: ${stats.withdrawn} (в плане, не выполнены)` : ""),
     `Сверка: идёт ${stats.check_ok}, риск ${stats.check_risk}, проблема ${stats.check_problem}`,
   ];
   if (cycle.summary) head.push(`Итог: ${cycle.summary}`);
@@ -161,8 +139,6 @@ export function formatSprint(
     const key = i.hidden ? "—" : i.project ?? "Без проекта";
     byProject.set(key, [...(byProject.get(key) ?? []), i]);
   }
-  const body = [...byProject.entries()].map(([p, list]) =>
-    `${p}:\n${list.map(itemLine).join("\n")}`
-  );
+  const body = [...byProject.entries()].map(([p, list]) => `${p}:\n${list.map(itemLine).join("\n")}`);
   return `${head.join("\n")}\n\nСостав (${items.length}):\n${body.join("\n")}`;
 }
