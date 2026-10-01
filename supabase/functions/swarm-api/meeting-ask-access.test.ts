@@ -1,7 +1,7 @@
 // Кто может спросить по встрече (#641, решение владельца 01.10.2026 про встречу на двоих:
 // «другой учатсинк тоже»). Тест падает на ЧУЖОМ: третий человек обязан получить отказ.
 import { assertEquals } from "jsr:@std/assert@1";
-import { canAskAboutMeeting } from "./meeting-ask.ts";
+import { canAskAboutMeeting } from "./meeting-ask-access.ts";
 
 const OWNER = 111;
 const PARTNER = -37;

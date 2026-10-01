@@ -1,8 +1,8 @@
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { apiErr, json } from "./http.ts";
 import { EntryAccessError, type EntryRow, getEntrySecure } from "./entries-guard.ts";
-import { canViewEntry, type EntryAccessRow } from "../_shared/entries/access.ts";
-import { canAccessDraftMeeting, type DraftMeetingRow } from "../_shared/meeting-access.ts";
+import type { DraftMeetingRow } from "../_shared/meeting-access.ts";
+import { canAskAboutMeeting } from "./meeting-ask-access.ts";
 import { answerMeetingQuestion, MeetingAskError, parseMeetingAskBody } from "../_shared/meeting-ask.ts";
 
 // Точечный вопрос по встрече (логика и промпт — `_shared/meeting-ask.ts`):
@@ -74,25 +74,4 @@ export async function handleMeetingAskRoutes(
     console.error("meeting-ask: модель не ответила", e);
     return apiErr(502, "Не удалось получить ответ — попробуй ещё раз", origin);
   }
-}
-
-/**
- * Можно ли спросить по встрече. `entry` — опубликованная запись (null для черновика), `meeting` —
- * строка meetings с владельцами черновика.
- *
- * Владельцы черновика спрашивают всегда. Кроме них — тот, кому видна ЛИЧНАЯ запись этой встречи
- * (тем же правилом `canViewEntry`, что и сама видимость): у личной записи круг видящих и есть
- * круг участников — владелец и второй участник встречи 1-1. По общей записи остальные не
- * спрашивают: они видят тезисы, но не сырую запись.
- */
-export function canAskAboutMeeting(
-  entry: EntryAccessRow | null,
-  meeting: DraftMeetingRow | null,
-  viewerId: number,
-  viewerGroupId: string,
-): boolean {
-  if (!meeting) return false;
-  if (canAccessDraftMeeting(meeting, viewerId, false, viewerGroupId)) return true;
-  if (!entry || meeting.group_id !== viewerGroupId) return false;
-  return entry.is_private && canViewEntry(entry, viewerId);
 }
