@@ -28,6 +28,7 @@ import { useGlossaryHint } from "./bot-profile.ts";
 import { extractChatContent } from "./openai-chat.ts";
 import { buildSegments, type Segment, speakerLegend, type SpeakerSpan } from "./speakers.ts";
 import { arbitrateFullness, transcriptVolume } from "./meeting-fullness.ts";
+import { processingFrozen } from "./processing-freeze.ts";
 import { discardState, promoteQueued, requeueLost } from "./meeting-queue.ts";
 import { isFrozen, unfrozen } from "./meeting-frozen.ts";
 import { type RivalClaim, rivalOwnershipPatch, settleRival } from "./meeting-rival.ts";
@@ -727,12 +728,19 @@ async function finishAndPromote(
 // Делает ОГРАНИЧЕННУЮ бюджетом работу по одной встрече: берёт лиз, транскрибирует следующие
 // части, и если все готовы — сводит тезисы. Безопасно прерывается по бюджету (cron продолжит).
 // Возвращает {claimed, done}: claimed=false → встречу обрабатывает кто-то другой (лиз занят).
+// deferred=true → действует заморозка: встречу не трогаем вовсе, её подхватит первый тик cron после
+// разморозки (решение владельца 01.10.2026, _shared/processing-freeze.ts).
 export async function runMeetingStep(
   supabase: SupabaseClient,
   meetingId: string,
   budgetMs: number,
-): Promise<{ claimed: boolean; done: boolean }> {
+  now: Date = new Date(),
+): Promise<{ claimed: boolean; done: boolean; deferred?: boolean }> {
   const startedAt = Date.now();
+  if (await processingFrozen(supabase, now)) {
+    console.log(`meeting-processor: ${meetingId} — заморозка, обработка отложена`);
+    return { claimed: false, done: false, deferred: true };
+  }
   if (!(await claimLease(supabase, meetingId))) return { claimed: false, done: false };
   let gen: string | undefined;
 

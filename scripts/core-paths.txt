@@ -36,3 +36,6 @@ supabase/functions/_shared/entries/access.ts|supabase/functions/_shared/entries/
 supabase/functions/_shared/entries/meeting-rights.ts|supabase/functions/_shared/entries/meeting-rights.test.ts
 supabase/functions/_shared/meeting-access.ts|supabase/functions/_shared/meeting-access.test.ts
 supabase/functions/swarm-api/meeting-ask-access.ts|supabase/functions/swarm-api/meeting-ask-access.test.ts
+# Заморозка и обработка встреч: пропущенная проверка не падает — она тихо пишет в меняющуюся
+# схему во время работ или отдаёт ждущую встречу сторожу застоя в 'failed'.
+supabase/functions/_shared/processing-freeze.ts|supabase/functions/_shared/processing-freeze.test.ts

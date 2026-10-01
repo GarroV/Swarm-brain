@@ -109,6 +109,15 @@ else:
     else:
         print(f'Заморожено до {until}')
 "
+    # Во время заморозки обработка встреч стоит (решение 01.10.2026): видно, сколько записей
+    # принято и ждёт разморозки — после неё их подхватит первый тик meeting-process.
+    WAIT=$(q "select count(*) as n from meetings where summary_status = 'processing';")
+    echo "$WAIT" | python3 -c "
+import json, re, sys
+m = re.search(r'\{.*\}', sys.stdin.read(), re.S)
+rows = json.loads(m.group(0)).get('rows') if m else None
+print(f'Записей в обработке или в ожидании: {rows[0][\"n\"] if rows else \"?\"}')
+"
     ;;
 
   *) red "Использование: ./scripts/maintenance.sh [freeze [минут]|unfreeze|status]"; exit 2 ;;
