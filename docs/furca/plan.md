@@ -156,7 +156,7 @@ export interface PlatformAdapter {
 **Машинный отчёт прогона:** JUnit XML в `reports/check.xml`. Приёмка читает **его**, а не код
 возврата: код одинаков и при двухстах выполненных проверках, и при нуле зарегистрированных.
 
-**Хук:** `.githooks/pre-push` зовёт `scripts/check`; включается `git config core.hooksPath .githooks`.
+**Хук:** `.githooks/pre-push` зовёт `scripts/check` (кроме пуша одних удалений веток — там проверять нечего, #664); включается `git config core.hooksPath .githooks`.
 Хук **обязан падать, когда инструмента нет**, а не пропускать проверку молча. В репозитории уже есть
 `.githooks/pre-commit` с `deno check` — он остаётся, `pre-push` добавляется рядом.
 
