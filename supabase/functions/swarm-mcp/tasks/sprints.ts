@@ -36,7 +36,7 @@ import {
   isCheckStatus,
   ItemLockedError,
   type ItemPatch,
-  listItems,
+  listComposition,
   removeItem,
   updateItem,
 } from "../../_shared/tasks/sprint-items.ts";
@@ -216,16 +216,18 @@ export function toolGetSprint(args: Args): Promise<string> {
     const cycle = await loadCycle(m.groupId, args.sprint_id);
     if (typeof cycle === "string") return cycle;
     // Состав — глазами спрашивающего: чужая приватная задача остаётся строкой без содержимого.
-    const items = await listItems(cycle.id, m.groupId, {
+    const { items, withdrawn } = await listComposition(cycle.id, m.groupId, {
       id: String(m.userId),
       isAdmin: m.isAdmin,
     });
     const space = (await spaces(m.groupId)).find((s) => s.id === cycle.tab_id);
+    // Снятые из идущего спринта (#576) в составе не показываются, но в итогах остаются:
+    // плановые из них — невыполненной частью плана.
     return formatSprint(
       cycle,
       space?.name ?? null,
       items,
-      computeSprintStats(items),
+      computeSprintStats([...items, ...withdrawn]),
     );
   });
 }
@@ -391,7 +393,7 @@ export function toolRemoveSprintTask(args: Args): Promise<string> {
     if (typeof cycle === "string") return cycle;
     const taskId = str(args.task_id);
     if (!taskId) return "Нужен task_id.";
-    const ok = await removeItem(cycle.id, taskId, m.groupId);
+    const ok = await removeItem(cycle.id, taskId, m.groupId, String(m.userId));
     return ok
       ? "✅ Задача убрана из состава."
       : "Задачи нет в составе, или спринт уже принят.";

@@ -333,7 +333,12 @@ export function SprintsScreen() {
   const plan = items.filter((i) => i.in_plan);
   // Цифры шапки и дерево доски считает lib/initiatives — то же правило, что у серверных
   // итогов. Считать их здесь значило бы завести второй ответ на вопрос «сколько сделано».
-  const kpi = useMemo(() => sprintKpi(items), [items]);
+  // Снятые из идущего спринта (#576) — в знаменателе: процент считается от плана старта.
+  const withdrawn = detail?.withdrawn;
+  const kpi = useMemo(() => sprintKpi(items, withdrawn ?? []), [
+    items,
+    withdrawn,
+  ]);
   const board = useMemo(() => buildBoard(items, projects), [items, projects]);
   // Вторая группировка того же состава — по людям. Ради неё был отдельный экран сверки;
   // после переезда отметок в строку (владелец 19.09.2026) это переключатель внутри списка:

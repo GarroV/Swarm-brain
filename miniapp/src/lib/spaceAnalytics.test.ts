@@ -275,3 +275,25 @@ Deno.test("markdown: заголовки таблиц на месте, пусты
   // Пустых таблиц в выгрузке нет: их некуда читать, а место они занимают.
   assertEquals(md.includes("## Просрочка"), false);
 });
+
+// #576: текущий спринт в аналитике считается так же, как шапка: снятые плановые — в знаменателе.
+Deno.test("текущий спринт: снятая плановая задача остаётся невыполненной", () => {
+  const r = buildSpaceReport({
+    ...EMPTY,
+    current: {
+      ...detail([item({ status: "done" }), item({ status: "open" })]),
+      withdrawn: [
+        item({ status: "open", withdrawn_at: "2026-09-12T09:00:00Z" }),
+      ],
+    },
+  });
+  assertEquals(
+    [
+      r.current?.done,
+      r.current?.total,
+      r.current?.percent,
+      r.current?.withdrawn,
+    ],
+    [1, 3, 33, 1],
+  );
+});

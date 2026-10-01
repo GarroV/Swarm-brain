@@ -197,3 +197,97 @@ Deno.test("процент округляется до целого", () => {
   ]);
   assertEquals(s.planPercent, 33);
 });
+
+// #576: снятие задачи из ИДУЩЕГО спринта не должно улучшать отчёт. План — то, что было в составе
+// на старте; снятая плановая задача остаётся в знаменателе невыполненной, а сверх плана — не в
+// счёт вовсе (её в плане и не было).
+Deno.test("снятая из идущего спринта плановая задача остаётся в плане невыполненной", () => {
+  const s = computeSprintStats([
+    item({ status: "done", completed_at: "2026-09-10T09:00:00Z" }),
+    item({ status: "open" }),
+    item({ status: "open", withdrawn_at: "2026-09-12T09:00:00Z" }),
+    item({ status: "open", withdrawn_at: "2026-09-12T09:00:00Z" }),
+  ]);
+  assertEquals(s.plan, 4);
+  assertEquals(s.planDone, 1);
+  assertEquals(s.planPercent, 25);
+  assertEquals(s.withdrawn, 2);
+});
+
+Deno.test("снятая плановая задача не засчитывается, даже если её потом закрыли", () => {
+  const s = computeSprintStats([
+    item({ status: "done", completed_at: "2026-09-10T09:00:00Z" }),
+    item({
+      status: "done",
+      completed_at: "2026-09-13T09:00:00Z",
+      withdrawn_at: "2026-09-12T09:00:00Z",
+    }),
+  ]);
+  assertEquals(s.planDone, 1);
+  assertEquals(s.planPercent, 50);
+  assertEquals(s.byDay, [{ day: "2026-09-10", done: 1 }]);
+});
+
+Deno.test("снятая не переносится, не считается в сверке, но остаётся в строке человека", () => {
+  const s = computeSprintStats([
+    item({ status: "open", check_status: "risk", to_carry: true }),
+    item({
+      status: "open",
+      check_status: "problem",
+      to_carry: true,
+      withdrawn_at: "2026-09-12T09:00:00Z",
+    }),
+  ]);
+  assertEquals(s.carried, 1);
+  assertEquals(s.carried_manual, 1);
+  assertEquals(s.check_problem, 0);
+  assertEquals(s.check_risk, 1);
+  assertEquals(s.byPerson, [{ name: "Марина", plan: 2, done: 0 }]);
+  assertEquals(s.byProject, [{ name: "Открытие точки", total: 2, done: 0 }]);
+});
+
+Deno.test("снятая задача сверх плана в счёт не идёт совсем", () => {
+  const s = computeSprintStats([
+    item({ status: "open" }),
+    item({
+      in_plan: false,
+      status: "done",
+      completed_at: "2026-09-10T09:00:00Z",
+    }),
+    item({
+      in_plan: false,
+      status: "open",
+      withdrawn_at: "2026-09-12T09:00:00Z",
+    }),
+  ]);
+  assertEquals(s.plan, 1);
+  assertEquals(s.extra, 1);
+  assertEquals(s.extraDone, 1);
+  assertEquals(s.withdrawn, 0);
+  assertEquals(s.byProject, [{ name: "Открытие точки", total: 2, done: 1 }]);
+});
+
+Deno.test("снятая и отменённая плановая — всё равно невыполненная из плана, а не «отменено»", () => {
+  const s = computeSprintStats([
+    item({ status: "done", completed_at: "2026-09-10T09:00:00Z" }),
+    item({ status: "cancelled", withdrawn_at: "2026-09-12T09:00:00Z" }),
+  ]);
+  assertEquals(s.plan, 2);
+  assertEquals(s.planPercent, 50);
+  assertEquals(s.cancelled, 0);
+  assertEquals(s.withdrawn, 1);
+});
+
+Deno.test("удалённая задача остаётся упоминанием, даже если её перед этим сняли", () => {
+  const s = computeSprintStats([
+    item({ status: "done", completed_at: "2026-09-10T09:00:00Z" }),
+    item({
+      status: "cancelled",
+      withdrawn_at: "2026-09-12T09:00:00Z",
+      removed_at: "2026-09-13T09:00:00Z",
+    }),
+  ]);
+  assertEquals(s.plan, 1);
+  assertEquals(s.removed, 1);
+  assertEquals(s.withdrawn, 0);
+});

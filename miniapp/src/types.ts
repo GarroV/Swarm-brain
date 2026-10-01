@@ -100,6 +100,11 @@ export type SprintStats = {
   cancelled: number;
   /** Упоминания удалённых задач: в составе видны, в счёте не участвуют. */
   removed: number;
+  /**
+   * Плановые, снятые из идущего спринта (#576): входят в `plan` невыполненными. У итогов,
+   * посчитанных до #576, ключа нет.
+   */
+  withdrawn?: number;
   check_ok: number;
   check_risk: number;
   check_problem: number;
@@ -168,6 +173,8 @@ export type SprintCycleItem = {
   /** Задача удалена: строка осталась упоминанием и в счёт не идёт. */
   removed: boolean;
   removed_at: string | null;
+  /** Когда задачу сняли из идущего спринта (#576); в составе (`items`) всегда null. */
+  withdrawn_at?: string | null;
   /**
    * Задача приватная и смотрящий не владелец: строка видна, содержимого нет. Убрать её совсем
    * значило бы молча уменьшить состав, и цифры отчёта перестали бы сходиться у разных людей.
@@ -197,7 +204,14 @@ export type JournalEvent = {
 };
 
 /** GET /sprint-cycles/:id отдаёт спринт вместе с составом — экран без него бесполезен. */
-export type SprintCycleDetail = SprintCycle & { items: SprintCycleItem[] };
+export type SprintCycleDetail = SprintCycle & {
+  items: SprintCycleItem[];
+  /**
+   * Снятые из идущего спринта (#576): в составе их нет, но плановые из них остаются в
+   * знаменателе процента. Старый сервер поля не отдаёт — тогда считаем без них.
+   */
+  withdrawn?: SprintCycleItem[];
+};
 
 export type Project = {
   id: string;

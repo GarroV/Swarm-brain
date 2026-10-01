@@ -172,6 +172,7 @@ Deno.test("шапка: сделано, отменённые, отметки св
     percent: 25,
     cancelled: 1,
     removed: 1,
+    withdrawn: 0,
     checkOk: 1,
     checkRisk: 1,
     checkProblem: 1,
@@ -262,4 +263,45 @@ Deno.test("по людям: «без исполнителя» — последн
     item("t2", null, { assignees: ["Аня"] }),
   ]);
   assertEquals(board.map((d) => d.project?.name ?? null), ["Аня", null]);
+});
+
+// #576: снятая из идущего спринта плановая задача — невыполненная часть плана. Раньше её строка
+// исчезала, и «убрать отстающее» поднимало процент шапки.
+Deno.test("шапка: снятые из идущего спринта плановые остаются в знаменателе", () => {
+  const kpi = sprintKpi(
+    [item("a", "ini1", { status: "done" }), item("b", "ini1")],
+    [
+      item("w1", "ini1", { withdrawn_at: "2026-09-12T09:00:00Z" }),
+      item("w2", "ini1", {
+        withdrawn_at: "2026-09-12T09:00:00Z",
+        status: "done",
+      }),
+      // Снятая сверх плана в плане и не была — в счёт не идёт.
+      item("x", "ini1", {
+        in_plan: false,
+        withdrawn_at: "2026-09-12T09:00:00Z",
+      }),
+    ],
+  );
+  assertEquals([kpi.total, kpi.done, kpi.percent, kpi.withdrawn], [
+    4,
+    1,
+    25,
+    2,
+  ]);
+  // Отметки и хвосты — только у тех, кто в спринте.
+  assertEquals([kpi.unchecked, kpi.unassigned], [2, 2]);
+});
+
+Deno.test("шапка: без списка снятых — как раньше (старый сервер его не отдаёт)", () => {
+  const kpi = sprintKpi([
+    item("a", "ini1", { status: "done" }),
+    item("b", "ini1"),
+  ]);
+  assertEquals([kpi.total, kpi.done, kpi.percent, kpi.withdrawn], [
+    2,
+    1,
+    50,
+    0,
+  ]);
 });

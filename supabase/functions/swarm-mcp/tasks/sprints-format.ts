@@ -144,7 +144,11 @@ export function formatSprint(
     } · ${cycle.start_date} → ${cycle.end_date}` +
     (cycle.check_date ? ` · сверка ${cycle.check_date}` : ""),
     `План: ${stats.planDone} из ${stats.plan} (${stats.planPercent}%) · сверх плана: ${stats.extraDone} из ${stats.extra}` +
-    (stats.cancelled ? ` · отменено: ${stats.cancelled}` : ""),
+    (stats.cancelled ? ` · отменено: ${stats.cancelled}` : "") +
+    // Итоги, посчитанные до #576, этого ключа не знают — нет цифры, нет и хвоста.
+    (stats.withdrawn
+      ? ` · снято из плана: ${stats.withdrawn} (в плане, не выполнены)`
+      : ""),
     `Сверка: идёт ${stats.check_ok}, риск ${stats.check_risk}, проблема ${stats.check_problem}`,
   ];
   if (cycle.summary) head.push(`Итог: ${cycle.summary}`);

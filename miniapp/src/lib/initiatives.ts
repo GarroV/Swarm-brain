@@ -48,6 +48,8 @@ export interface SprintKpi extends Progress {
   cancelled: number;
   /** Упоминания удалённых задач: в составе видны, в счёте не участвуют. */
   removed: number;
+  /** Плановые, снятые из идущего спринта (#576): в знаменателе, невыполненными. */
+  withdrawn: number;
   checkOk: number;
   checkRisk: number;
   checkProblem: number;
@@ -78,11 +80,31 @@ export function computeProgress(items: readonly BoardRow[]): Progress {
   };
 }
 
-export function sprintKpi(items: readonly SprintCycleItem[]): SprintKpi {
+/**
+ * Плановые из снятых в идущем спринте (#576). Снятая задача — невыполненная часть плана, что
+ * бы с ней ни случилось потом: иначе «убрать отстающее» поднимает процент. То же правило, что
+ * `computeSprintStats` на сервере. Удалённая задача остаётся упоминанием и сюда не идёт.
+ */
+export function withdrawnFromPlan(
+  withdrawn: readonly SprintCycleItem[],
+): SprintCycleItem[] {
+  return withdrawn.filter((i) => i.in_plan && !isMention(i));
+}
+
+export function sprintKpi(
+  items: readonly SprintCycleItem[],
+  withdrawn: readonly SprintCycleItem[] = [],
+): SprintKpi {
   const live = counted(items);
   const check = (s: string) => live.filter((i) => i.check_status === s).length;
+  const progress = computeProgress(items);
+  const out = withdrawnFromPlan(withdrawn).length;
+  const total = progress.total + out;
   return {
-    ...computeProgress(items),
+    total,
+    done: progress.done,
+    percent: total === 0 ? 0 : Math.round((progress.done / total) * 100),
+    withdrawn: out,
     cancelled:
       items.filter((i) => !isMention(i) && i.status === "cancelled").length,
     removed: items.filter(isMention).length,

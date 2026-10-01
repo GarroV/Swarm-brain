@@ -14,7 +14,7 @@ import {
   isCheckStatus,
   ItemLockedError,
   type ItemPatch,
-  listItems,
+  listComposition,
   removeItem,
   updateItem,
 } from "../_shared/tasks/sprint-items.ts";
@@ -118,11 +118,10 @@ export async function handleSprintCycleRoutes(
       // а второй запрос стоил бы лишнего круга на каждом открытии.
       // `viewer` обязателен — состав показывается глазами спрашивающего, и чужая приватная
       // задача остаётся в нём строкой без содержимого.
-      return json(
-        { ...cycle, items: await listItems(id, groupId, viewer) },
-        200,
-        origin,
-      );
+      // Снятые из идущего спринта (#576) — отдельным списком: в составе их нет, но шапке
+      // нужны плановые из них, чтобы процент считался от зафиксированного плана.
+      const { items, withdrawn } = await listComposition(id, groupId, viewer);
+      return json({ ...cycle, items, withdrawn }, 200, origin);
     }
     if (req.method === "PATCH") {
       const body = await readBody(req);
@@ -283,7 +282,7 @@ export async function handleSprintCycleRoutes(
     }
 
     if (req.method === "DELETE") {
-      const ok = await removeItem(cycleId, taskId, groupId);
+      const ok = await removeItem(cycleId, taskId, groupId, actor);
       if (!ok) return apiErr(404, "Not found или спринт уже принят", origin);
       return new Response(null, { status: 204, headers: corsHeaders(origin) });
     }

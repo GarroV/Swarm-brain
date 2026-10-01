@@ -102,6 +102,7 @@ const item = (over: Partial<SprintItem>): SprintItem => ({
   carried_manual: null,
   removed: false,
   removed_at: null,
+  withdrawn_at: null,
   comment_count: 0,
   link_count: 0,
   hidden: false,
@@ -127,4 +128,24 @@ Deno.test("formatSprint: чужая личная задача — строкой
   );
   assert(!text.includes("secret-1"), "и её id тоже");
   assertEquals(text.split("\n")[0], "Спринт «Спринт 1» — идёт (id: c1)");
+});
+
+Deno.test("formatSprint: снятая из идущего спринта задача — в плане невыполненной (#576)", () => {
+  const items = [item({ task_id: "a", status: "done" })];
+  const withdrawn = [
+    item({
+      task_id: "w",
+      title: "Снятая",
+      withdrawn_at: "2026-09-12T09:00:00Z",
+    }),
+  ];
+  const text = formatSprint(
+    cycle,
+    "Тестовое",
+    items,
+    computeSprintStats([...items, ...withdrawn]),
+  );
+  assertStringIncludes(text, "План: 1 из 2 (50%)");
+  assertStringIncludes(text, "снято из плана: 1");
+  assert(!text.includes("Снятая"), "в составе снятой задачи нет");
 });
