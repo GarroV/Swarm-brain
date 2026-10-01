@@ -14,6 +14,7 @@ import { RoyIcon } from "./icons";
 import { ROY_TYPE } from "./ui";
 import { useDt, useRoyNav } from "./nav";
 import { saveRecent } from "./screens/SearchScreen";
+import { HeaderNotice } from "./DeployNoticeBar";
 import { TaskModal } from "@/components/TaskModal";
 
 // Главная (десктоп) по стенду — docs/decisions/2026-09-24-home-by-stand.md, образец
@@ -142,7 +143,11 @@ function HomeHeader() {
     // relative z-30: окна шапки — поверх содержимого экрана (#487).
     <div className="relative z-30 flex shrink-0 items-center gap-3 border-b border-line px-6 py-3">
       <h1 className="leading-[1.1]" style={ROY_TYPE.pageTitle}>{dt("Главная", "Home")}</h1>
-      <form className="ml-auto w-full max-w-[380px]" role="search" onSubmit={(e) => { e.preventDefault(); go(); }}>
+      {/* Плашка делит место с поиском: на тесной шапке ужимается поиск (у плашки shrink 0.01), до
+          220px, и только потом плашка переносит текст. Раньше поиск (w-full) забирал всё, и плашка
+          ломалась на пять строк. */}
+      <HeaderNotice flex="flex-[1_0.01_auto]" />
+      <form className="ml-auto min-w-[220px] flex-[0_100_380px]" role="search" onSubmit={(e) => { e.preventDefault(); go(); }}>
         <label className="flex h-[32px] items-center gap-2 rounded-[8px] border border-line-2 bg-surface px-2.5 focus-within:border-primary focus-within:ring-2 focus-within:ring-accent-soft">
           <RoyIcon name="spark" size={15} className="shrink-0 text-primary" />
           <input

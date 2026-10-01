@@ -5,7 +5,7 @@ import { RoyIcon } from "./icons";
 import { cn } from "@/lib/utils";
 import { fetchNotifications, markNotificationsRead, fetchTask, type SwarmNotification } from "@/lib/api";
 import { publishNotice } from "@/lib/deployNotice";
-import { freezeWindow } from "@/lib/maintenance";
+import { freezeNoticeText, freezeWindow } from "@/lib/maintenance";
 
 // Колокольчик уведомлений: бейдж непрочитанных + поповер-лента, клик по строке открывает
 // задачу. Поведение и оформление поповера — как у ProfileMenu (клик-вне, Esc, тот же попап),
@@ -276,10 +276,14 @@ function MaintenanceLine({
         {when || dt("Время уточняется", "Time to be confirmed")}
       </span>
       {" "}
-      {text || dt(
-        "Изменения на время работ не принимаются — чтение работает.",
-        "Changes are paused during the work — reading still works.",
-      )}
+      {/* Без своего текста — шаблон владельца (lib/maintenance, тот же у плашки). Без окна
+          времени шаблон не собрать — тогда прежняя общая фраза. */}
+      {text || (w
+        ? dt(freezeNoticeText(w).ru, freezeNoticeText(w).en)
+        : dt(
+          "Изменения на время работ не принимаются — чтение работает.",
+          "Changes are paused during the work — reading still works.",
+        ))}
     </>
   );
 }
