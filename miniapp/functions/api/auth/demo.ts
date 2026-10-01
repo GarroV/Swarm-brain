@@ -7,7 +7,8 @@ import { signJWT } from "../../_lib/jwt";
 // Изоляция «нет дыр в рабочие» держится НЕ здесь, а в swarm-api (барьер isDemo):
 // эта сессия форсится в group_id='demo', не админ, не минтит токены. Здесь — только выдача
 // сессии по секрету. Секрет (DEMO_ACCESS_KEY) — высокоэнтропийный, в env CF Pages.
-const DEMO_USER_ID = 900000001;
+// Тот же id, что DEMO_USER_ID в supabase/functions/_shared/demo-session.ts (сборки разные).
+export const DEMO_USER_ID = 900000001;
 const SESSION_MAX_AGE = 7 * 86400;
 
 type Env = { WEB_JWT_SECRET: string; DEMO_ACCESS_KEY: string };

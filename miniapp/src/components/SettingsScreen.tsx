@@ -15,7 +15,7 @@ import { ProfileHeader } from "@/components/profile/ProfileHeader";
 import { ConnectorsSection } from "@/components/profile/ConnectorsSection";
 import { TelegramPanel } from "@/components/profile/TelegramPanel";
 import { BackdropSection } from "@/components/profile/BackdropSection";
-import { useDt } from "@/components/roy/nav";
+import { useDt, useIsDemo } from "@/components/roy/nav";
 import { SectionLabel } from "@/components/roy/ui";
 
 import { Button } from "@/components/ui/button";
@@ -203,6 +203,8 @@ export function GranolaSection() {
   const [notesLoading, setNotesLoading] = useState(false);
   const [selectedNote, setSelectedNote] = useState<GranolaNote | null>(null);
   const [showForm, setShowForm] = useState(false);
+  const [connectError, setConnectError] = useState<string | null>(null);
+  const isDemo = useIsDemo();
 
   useEffect(() => {
     fetchIntegrations()
@@ -223,11 +225,15 @@ export function GranolaSection() {
   const handleConnect = async () => {
     if (!apiKey.trim()) return;
     setConnecting(true);
+    setConnectError(null);
     try {
       await connectGranola(apiKey.trim());
       setIntegration({ service: "granola", last_polled_at: null, skipped_note_ids: [] });
       setShowForm(false);
       setApiKey("");
+    } catch (e) {
+      // Отказ сервера (неверный ключ, демо) не молчит: показываем его текст.
+      setConnectError(e instanceof Error ? e.message : String(e));
     } finally {
       setConnecting(false);
     }
@@ -249,7 +255,9 @@ export function GranolaSection() {
           <RoyIcon name="link" size={16} strokeWidth={1.9} className="text-ink-mute" />
           <span className="text-muted-foreground">Granola не подключена</span>
         </div>
-        {!showForm ? (
+        {isDemo ? (
+          <DemoIntegrationNotice />
+        ) : !showForm ? (
           <Button size="sm" variant="outline" onClick={() => setShowForm(true)} className="w-full">
             Подключить Granola
           </Button>
@@ -267,6 +275,7 @@ export function GranolaSection() {
               </Button>
               <Button size="sm" variant="outline" onClick={() => setShowForm(false)}>Отмена</Button>
             </div>
+            {connectError && <p role="alert" className="text-xs text-destructive">{connectError}</p>}
           </div>
         )}
       </div>
@@ -512,6 +521,19 @@ export function AccountSection() {
   );
 }
 
+/** Демо подключать интеграции не может — сессия общая для всех посетителей (issue #573). */
+function DemoIntegrationNotice() {
+  const dt = useDt();
+  return (
+    <p role="note" className="rounded-[10px] border border-accent-line bg-surface px-3 py-2 text-xs text-muted-foreground">
+      {dt(
+        "В демо интеграции не подключаются: демо-аккаунт общий для всех посетителей.",
+        "Integrations cannot be connected in the demo: the demo account is shared by every visitor.",
+      )}
+    </p>
+  );
+}
+
 // ── Google Calendar section ────────────────────────────────────────────────────
 
 export function GoogleCalendarSection() {
@@ -522,7 +544,13 @@ export function GoogleCalendarSection() {
       .then((l) => setConnected(l.some((i) => i.service === "google_calendar")))
       .catch(() => setConnected(false));
   }, []);
-  const connect = () => openGoogleConnect();
+  const isDemo = useIsDemo();
+  const [connectError, setConnectError] = useState<string | null>(null);
+  // Отказ сервера не молчит: раньше промис падал в никуда, и кнопка просто «не работала».
+  const connect = () => {
+    setConnectError(null);
+    openGoogleConnect().catch((e) => setConnectError(e instanceof Error ? e.message : String(e)));
+  };
   const disconnect = async () => {
     if (!(await confirm({ title: "Отключить Google-календарь?", description: "bumblebee перестанет предлагать записи по календарю, а тезисы — получать название и участников.", confirmText: "Отключить" }))) return;
     await disconnectGoogle();
@@ -539,9 +567,12 @@ export function GoogleCalendarSection() {
           <span className="text-sm text-status-done">✓ Подключён</span>
           <Button variant="outline" size="sm" onClick={disconnect}>Отключить</Button>
         </div>
+      ) : isDemo ? (
+        <DemoIntegrationNotice />
       ) : (
         <Button onClick={connect}>Подключить Google-календарь</Button>
       )}
+      {connectError && <p role="alert" className="text-xs text-destructive">{connectError}</p>}
     </div>
   );
 }

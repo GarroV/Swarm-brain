@@ -117,6 +117,7 @@ claude mcp add supabase-swarm -- npx -y @supabase/mcp-server-supabase@0.12.0 \
 | Воркспейсы | `swarm-bot/lib/workspace.ts` | §Воркспейсы |
 | **Файлы: загрузка, ссылки, доступ, удаление** | `_shared/storage-files.ts` (в приватный бакет + реестр), `_shared/storage-links.ts` (ссылки `/api/file/<path>`, удаление), `swarm-api/file-access.ts` (проверка доступа), эндпоинт `GET /file/*` | §Файлы и Storage |
 | Фидбек (приём бот+веб, категории, скрины, разбор) | бот `swarm-bot/handlers/feedback.ts`; веб `swarm-api` `POST /feedback` + `miniapp/.../roy/{FeedbackForm,FeedbackFab}.tsx`; разбор `swarm-mcp` (`get_feedback`/`resolve_feedback`); канон категорий `_shared/feedback-categories.ts` | §Таблица feedback |
+| Демо: что демо-сессии запрещено | правило «это демо» — `_shared/demo-session.ts` (`isDemoSession`); барьер `isDemo` в `swarm-api/index.ts` (группа `demo`, без админки и токенов); **интеграции не подключаются** — `swarm-api/integrations.ts` + CF `api/auth/google/start.ts` + `google-oauth/link` (403 `demo_not_allowed`, #573); фидбек — `source='demo'` без пинга канала (#603); сброс — `public.demo_reset()` | §Безопасность (Demo-сессия) |
 | Telegram helpers / новый хендлер | `swarm-bot/lib/telegram.ts`, `handlers/<name>.ts` | §swarm-bot |
 | `ADMIN_USER_ID` (зашит) | `swarm-bot/lib/supabase.ts` → `744230399` | §Контроль доступа |
 

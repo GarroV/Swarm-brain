@@ -286,6 +286,9 @@ async function breakDemo(db: Client) {
      where telegram_id = ${guest}`;
   await db
     .queryArray`insert into user_integrations (telegram_id, service, api_key) values (${guest}, 'granola', 'visitor-key')`;
+  // Календарь посетителя — тоже интеграция: сброс обязан снести и её (issue #573).
+  await db
+    .queryArray`insert into user_integrations (telegram_id, service, api_key) values (${guest}, 'google_calendar', 'visitor-refresh')`;
   await db
     .queryArray`insert into feedback (telegram_id, text) values (${guest}, ${DEMO_FEEDBACK[0]})`;
   await db
