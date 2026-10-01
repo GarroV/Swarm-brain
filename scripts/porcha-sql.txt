@@ -7,14 +7,14 @@
 # старой функцией приёмки. Строки новой (#576) идут после — их восстановление возвращает живую редакцию.
 before delete on public.tasks|before insert on public.tasks|supabase/functions/_shared/tasks/sprint-accept.db.test.ts
 and frozen_at is null|and true|supabase/functions/_shared/tasks/sprint-accept.db.test.ts
-and t.is_private = false|and true|supabase/functions/_shared/tasks/sprint-accept.db.test.ts|supabase/migrations/20261001120000_sprint_items_withdrawn.sql
+and t.is_private = false|and true|supabase/functions/_shared/tasks/sprint-accept.db.test.ts|supabase/migrations/20261001140000_sprint_items_withdrawn.sql
 # Условия «на всякий случай» сюда не попадают: их порча краснеть не заставит, потому что они
 # ничего не держат. Такое условие не вносится в список, а убирается из SQL — 18.09.2026 так
 # ушло `si.removed_at is null` из приёмки: упоминание отсекает соединение по внешнему ключу.
-si.carry_count + 1|si.carry_count|supabase/functions/_shared/tasks/sprint-accept.db.test.ts|supabase/migrations/20261001120000_sprint_items_withdrawn.sql
-v_cycle.status <> 'active'|v_cycle.status = 'нет такого статуса'|supabase/functions/_shared/tasks/sprint-accept.db.test.ts|supabase/migrations/20261001120000_sprint_items_withdrawn.sql
+si.carry_count + 1|si.carry_count|supabase/functions/_shared/tasks/sprint-accept.db.test.ts|supabase/migrations/20261001140000_sprint_items_withdrawn.sql
+v_cycle.status <> 'active'|v_cycle.status = 'нет такого статуса'|supabase/functions/_shared/tasks/sprint-accept.db.test.ts|supabase/migrations/20261001140000_sprint_items_withdrawn.sql
 # #576: снятая из идущего спринта задача не переносится — функция приёмки живёт в новой миграции.
-and si.withdrawn_at is null|and true|supabase/functions/swarm-api/sprint-routes.db.test.ts|supabase/migrations/20261001120000_sprint_items_withdrawn.sql
+and si.withdrawn_at is null|and true|supabase/functions/swarm-api/sprint-routes.db.test.ts|supabase/migrations/20261001140000_sprint_items_withdrawn.sql
 # Сброс демо (issue #580). Четвёртое поле — миграция сброса. Порча, РАСШИРЯЮЩАЯ удаление за
 # пределы демо, здесь только точечная — на строку тестового пользователя 800000901: тестовый
 # контур общий, и порча «удалить без условия» стёрла бы чужие данные на самом стенде.

@@ -42,7 +42,7 @@
 `_shared/tasks/sprint-stats.ts` (`computeSprintStats`, под тестами) — итоги приёмки и
 `get_sprint` в MCP; `miniapp/src/lib/initiatives.ts` (`withdrawnFromPlan`, `sprintKpi`) и
 `lib/spaceAnalytics.ts` — шапка и аналитика идущего спринта. Данные — миграция
-`20261001120000_sprint_items_withdrawn.sql`.
+`20261001140000_sprint_items_withdrawn.sql`.
 
 ## Что владельцу решить
 
