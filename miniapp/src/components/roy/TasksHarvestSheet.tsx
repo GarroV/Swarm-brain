@@ -6,6 +6,7 @@ import { RoyIcon } from "./icons";
 import { countryCode, countryFlag } from "@/lib/countries";
 import { effectiveAssigneeId, resolveAssigneeId, taskCountLabel, type ProposedTask } from "@/lib/proposedTasks";
 import type { User } from "@/types";
+import { formatDate } from "@/lib/displayFormat";
 
 // Разбор задач, предложенных из встречи. До 2026-08-27 предложения жили строками в УЗКОЙ
 // правой панели ревью: заголовок резался в одну строку, исполнитель не показывался вовсе,
@@ -57,12 +58,7 @@ function flipVars(anchor: DOMRect | null, geo: Geometry | null): CSSProperties {
 }
 
 function fmtDate(iso: string | null): string | null {
-  if (!iso) return null;
-  try {
-    return new Date(iso).toLocaleDateString("ru-RU", { day: "numeric", month: "short" });
-  } catch {
-    return null;
-  }
+  return formatDate(iso, { day: "numeric", month: "short" });
 }
 
 export type HarvestActions = {

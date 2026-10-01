@@ -13,6 +13,7 @@ import { InviteBotCard } from "../InviteBotCard";
 import { MeetingsDesk } from "./MeetingsDesk";
 import { useConfirm } from "@/components/ui/confirm";
 import type { Entry } from "@/types";
+import { formatDate } from "@/lib/displayFormat";
 
 const SEGS = [
   { id: "all", label: "Все", en: "All" },
@@ -28,12 +29,7 @@ export function sourceLabel(s: string): string {
 }
 const isConfirmed = (e: Entry) => e.metadata?.confirmed === true;
 function fmtDate(iso: string | null): string | null {
-  if (!iso) return null;
-  try {
-    return new Date(iso).toLocaleDateString("ru-RU", { day: "numeric", month: "short" });
-  } catch {
-    return null;
-  }
+  return formatDate(iso, { day: "numeric", month: "short" });
 }
 function ActionIcon({ name, label, color, onClick }: { name: RoyIconName; label: string; color: string; onClick: () => void }) {
   return (

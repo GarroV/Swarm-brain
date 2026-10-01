@@ -7,6 +7,7 @@ import { fetchTaskComments, addTaskComment, deleteTaskComment, fetchTaskSubscrip
 import { displayName } from "@/lib/utils";
 import { linkify } from "@/lib/linkify";
 import { COMMENT_COLLAPSE_AT, COMMENT_MAX, COMMENT_WARN_LEFT, collapsePreview } from "@/lib/taskComments";
+import { formatDate } from "@/lib/displayFormat";
 
 // Потолок высоты поля ввода. До issue #445 поле было в одну строку с потолком 112px:
 // вставленный большой текст человек не видел и не мог перечитать перед отправкой.
@@ -18,12 +19,7 @@ function fmtNum(n: number, locale: string): string {
 }
 
 function fmtDate(iso: string | null): string {
-  if (!iso) return "—";
-  try {
-    return new Date(iso).toLocaleDateString("ru-RU", { day: "numeric", month: "long" });
-  } catch {
-    return "—";
-  }
+  return formatDate(iso, { day: "numeric", month: "long" }) ?? "—";
 }
 
 // Лента комментариев/истории задачи + добавление. Самодостаточна (грузит по taskId).

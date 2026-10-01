@@ -7,6 +7,7 @@ import { TaskRow } from "@/components/tasks/TaskRow";
 import { isDone } from "@/lib/smartLists";
 import { updateTask } from "@/lib/api";
 import type { Task } from "@/types";
+import { formatDate, isRawId } from "@/lib/displayFormat";
 
 // Общий каркас панелей desktop-главного экрана «Рой». Вынесено из RoyDashboard,
 // чтобы пять панелей (PersonalTasks/SearchHero/Materials/MeetingsApprove/TeamTasks)
@@ -15,17 +16,12 @@ import type { Task } from "@/types";
 
 // ── Форматирование даты «Рой» (ru, day + short month) ───────────────────────────
 export function fmtDate(iso: string | null, locale: string = "ru-RU"): string | null {
-  if (!iso) return null;
-  try {
-    return new Date(iso).toLocaleDateString(locale, { day: "numeric", month: "short" });
-  } catch {
-    return null;
-  }
+  return formatDate(iso, { day: "numeric", month: "short" }, locale);
 }
 
 // Инициалы для аватара. Сырой telegram_id (только цифры) → «Я» (себя не подписываем числом).
 export function initials(name: string | undefined | null): string {
-  if (!name || /^\d+$/.test(name.trim())) return "Я";
+  if (!name || isRawId(name)) return "Я";
   return name.trim().split(/\s+/).slice(0, 2).map((p) => p[0]?.toUpperCase() ?? "").join("") || "Я";
 }
 

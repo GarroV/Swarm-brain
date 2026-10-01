@@ -32,6 +32,7 @@ import { useDt } from "@/components/roy/nav";
 import { useIsDesktop } from "@/components/roy/useIsDesktop";
 import { recurrenceOptions } from "@/lib/recurrenceLabels";
 import { buildProjectOptions } from "@/lib/projectPicker";
+import { isRawId } from "@/lib/displayFormat";
 
 // Функционал ролей пока не используется командой — поле скрыто в UI, но не удалено
 // (данные task_role продолжают сохраняться на уже размеченных задачах).
@@ -298,7 +299,7 @@ export function TaskModal({ task: taskOpened, open, onClose, onSaved, prefill, m
     const curName = task?.assignees?.[0];
     assigneeOptions.unshift({
       id: assigneeId,
-      name: curName && !/^\d+$/.test(curName) ? curName : `#${assigneeId}`,
+      name: curName && !isRawId(curName) ? curName : `#${assigneeId}`,
     });
   }
 

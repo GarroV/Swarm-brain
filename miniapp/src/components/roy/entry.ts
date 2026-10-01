@@ -1,4 +1,5 @@
 import type { RoyTypeKey } from "./ui";
+import { isRawId } from "@/lib/displayFormat";
 
 // Хелперы записи базы, общие для Базы и RecordDetail.
 
@@ -50,7 +51,7 @@ const SYSTEM_ADDED_BY = new Set(["granola", "read_ai", "claude_desktop", "deskto
 export function entryImporterName(e: { importer_name?: string | null; added_by?: string | null }): string {
   if (e.importer_name) return e.importer_name;
   const ab = (e.added_by ?? "").trim();
-  if (!ab || SYSTEM_ADDED_BY.has(ab) || /^\d+$/.test(ab)) return "";
+  if (!ab || SYSTEM_ADDED_BY.has(ab) || isRawId(ab)) return "";
   return ab;
 }
 

@@ -9,6 +9,7 @@ import { TaskComments } from "@/components/tasks/TaskComments";
 import { TaskFiles } from "@/components/tasks/TaskFiles";
 import { displayName } from "@/lib/utils";
 import type { Task, Entry } from "@/types";
+import { formatDate } from "@/lib/displayFormat";
 
 // Переключателя статусов в карточке БОЛЬШЕ НЕТ (решение владельца 21.09.2026: «статусы в
 // самой задаче давай пока скроем. мы к ним привяжемся в проектах и спринтах, но в самом теле
@@ -20,12 +21,7 @@ const norm = (s: string) => (s === "progress" ? "in_progress" : s);
 const isClosed = (t: Task) => norm(t.status) === "done" || t.status === "cancelled";
 
 function fmtDate(iso: string | null): string {
-  if (!iso) return "—";
-  try {
-    return new Date(iso).toLocaleDateString("ru-RU", { day: "numeric", month: "long" });
-  } catch {
-    return "—";
-  }
+  return formatDate(iso, { day: "numeric", month: "long" }) ?? "—";
 }
 
 // Человекочитаемый источник задачи (провенанс): откуда задача взялась.
