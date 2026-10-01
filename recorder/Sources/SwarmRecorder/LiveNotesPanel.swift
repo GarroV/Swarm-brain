@@ -1,4 +1,5 @@
 import AppKit
+import RecorderKit
 
 /// Единое окно рекордера «Рой · заметки» (Granola-режим, Фаза 3).
 /// Один морф-объект: компактная пилюля-шапка (контролы) ⇄ развёрнутый блокнот (шапка + пометки).
@@ -56,7 +57,10 @@ final class LiveNotesPanel: NSObject, NSTextFieldDelegate {
         // Контекст прошлой встречи обязан уйти вместе с прошлой записью: иначе на следующем
         // созвоне человек увидел бы блок предыдущего (и решил бы, что это про эту встречу).
         setContext(nil)
-        clearPersistedNotes()   // новая запись — прошлый персист пометок больше не актуален
+        // Буфер прошлой записи без встречи (краш до стопа) не стираем молча — откладываем (#613).
+        parkOrphanNotes()
+        // Не ушедшее в прошлый раз — досылаем в фоне, пока идёт новая запись (#613).
+        Task { await drainOutbox(config: config) }
         editedTitle = nil
         startedAt = Date()
         ensurePanel()
@@ -602,28 +606,80 @@ final class LiveNotesPanel: NSObject, NSTextFieldDelegate {
 
     func flush(meetingId: String, config: SwarmConfig) async {
         stopTimers()
-        let pending = buffer
-        guard !pending.isEmpty else { hide(); return }
-        guard let jwt = await fetchWebToken(config: config) else {
-            // Нет web-JWT: панель всё равно прячем (буфер и его копия на диске остаются для разбора).
-            NSLog("SwarmRecorder: live-пометки не слиты — нет web-JWT (\(pending.count) шт.)"); hide(); return
+        let pending = buffer.map { PendingNote(meetingId: meetingId, offset: $0.offset, text: $0.text) }
+        // Пометки переезжают в очередь ДО отправки: что не уйдёт, то в ней и останется (#613).
+        if !pending.isEmpty {
+            saveOutbox(LiveNotesOutbox.merge(loadOutbox(), pending))
+            buffer.removeAll(); clearPersistedNotes()
         }
-        let api = config.ingestBaseURL.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-            + "/swarm-api/agent-meetings/\(meetingId)/notes"
-        guard let url = URL(string: api) else { return }
-        var sent = 0
-        for n in pending {
+        hide()
+        await drainOutbox(config: config)
+    }
+
+    // MARK: - очередь неотправленных пометок (#613)
+
+    private var draining = false
+
+    /// Отправить всё из очереди. Не ушедшее остаётся; отвергнутое сервером насовсем — в журнал.
+    private func drainOutbox(config: SwarmConfig) async {
+        guard !draining else { return }
+        let queued = loadOutbox()
+        guard !queued.isEmpty else { return }
+        draining = true
+        defer { draining = false }
+        guard let jwt = await fetchWebToken(config: config) else {
+            NSLog("SwarmRecorder: live-пометки ждут отправки — нет web-JWT (\(queued.count) шт.)"); return
+        }
+        let base = config.ingestBaseURL.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        var left: [PendingNote] = []
+        var sent = 0, dropped = 0
+        for n in queued {
+            guard let url = URL(string: base + "/swarm-api/agent-meetings/\(n.meetingId)/notes") else { dropped += 1; continue }
             var req = URLRequest(url: url); req.httpMethod = "POST"
             req.setValue("Bearer \(jwt)", forHTTPHeaderField: "Authorization")
             req.setValue("application/json", forHTTPHeaderField: "Content-Type")
             req.httpBody = try? JSONSerialization.data(withJSONObject: ["offset_sec": n.offset, "text": n.text])
             req.timeoutInterval = 15
-            if let (_, resp) = try? await URLSession.shared.data(for: req),
-               let code = (resp as? HTTPURLResponse)?.statusCode, code == 200 || code == 201 { sent += 1 }
+            let code = (try? await URLSession.shared.data(for: req)).flatMap { ($0.1 as? HTTPURLResponse)?.statusCode }
+            switch LiveNotesOutbox.delivery(forStatus: code) {
+            case .sent: sent += 1
+            case .retry: left.append(n)
+            case .drop:
+                dropped += 1
+                NSLog("SwarmRecorder: live-пометка отвергнута сервером (\(code.map(String.init) ?? "—")) → встреча \(n.meetingId), сдвиг \(n.offset)с")
+            }
         }
-        NSLog("SwarmRecorder: live-пометки слиты \(sent)/\(pending.count) → встреча \(meetingId)")
-        if sent == pending.count { buffer.removeAll(); clearPersistedNotes() }
-        hide()
+        // Пока шла отправка, могла прийти новая пачка со стопа — не затираем её.
+        let fresh = loadOutbox().filter { !queued.contains($0) }
+        saveOutbox(LiveNotesOutbox.merge(left, fresh))
+        NSLog("SwarmRecorder: live-пометки: ушло \(sent), ждут \(left.count), отвергнуто \(dropped)")
+    }
+
+    private static var outboxFileURL: URL {
+        notesFileURL.deletingLastPathComponent().appendingPathComponent("live-notes-outbox.json")
+    }
+    private func loadOutbox() -> [PendingNote] {
+        guard let data = try? Data(contentsOf: Self.outboxFileURL) else { return [] }
+        return LiveNotesOutbox.decode(data)
+    }
+    private func saveOutbox(_ notes: [PendingNote]) {
+        if notes.isEmpty { try? FileManager.default.removeItem(at: Self.outboxFileURL); return }
+        guard let data = LiveNotesOutbox.encode(notes) else { return }
+        try? data.write(to: Self.outboxFileURL, options: .atomic)
+    }
+
+    /// Буфер прошлой записи, не дошедший до стопа (краш, принудительный выход): встречи у него нет,
+    /// отправить некуда. Не стираем, а откладываем рядом с датой — человек достанет руками.
+    private func parkOrphanNotes() {
+        let fm = FileManager.default
+        guard let data = try? Data(contentsOf: Self.notesFileURL),
+              let arr = try? JSONSerialization.jsonObject(with: data) as? [Any], !arr.isEmpty else {
+            clearPersistedNotes(); return
+        }
+        let stamp = ISO8601DateFormatter().string(from: Date()).replacingOccurrences(of: ":", with: "-")
+        let parked = Self.notesFileURL.deletingLastPathComponent().appendingPathComponent("live-notes-orphan-\(stamp).json")
+        try? fm.moveItem(at: Self.notesFileURL, to: parked)
+        NSLog("SwarmRecorder: \(arr.count) live-пометок прошлой записи без встречи отложены в \(parked.path)")
     }
 
     private func fetchWebToken(config: SwarmConfig) async -> String? {
