@@ -11,7 +11,7 @@
 | Описание страны: сети, теги OSM, юрлица, источники | `scripts/market/countries/<CC>.ts` | руками, это единственное место |
 | Реестр источников: что, откуда, как часто, когда сверено | [SOURCES.md](SOURCES.md) | генерируется из конфигов: `deno run -A scripts/market/sources-doc.ts > docs/market/SOURCES.md`; тест `scripts/market/sources-doc.test.ts` падает, если документ отстал |
 | Автоматические сборщики | `scripts/market/adapters/` (у каждого `about`: откуда и что берёт) | код |
-| Запуск сборщиков | `scripts/market/run.ts` (`--country`, `--source`, `--since`) | — |
+| Запуск сборщиков | `scripts/market/run.ts` (`--country`, `--source`, `--since`; неизвестный `--source` — ошибка со списком допустимых) | — |
 | Ручная часть страны (сводка, события, таблица пицц, доставка…) | снимок `<CC>.import.json`, импорт кнопкой в «Источниках и свежести» → таблица `mkt_editorial` | вне git: `~/Documents/workbench/private/market/` |
 | Разведка по странам (реестры, локаторы сетей) | `~/Documents/workbench/private/market/research/` | вне git |
 | Полнота страниц | `scripts/market/parity.sql` | — |

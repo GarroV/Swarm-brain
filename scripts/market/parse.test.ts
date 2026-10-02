@@ -232,7 +232,7 @@ Deno.test("parseOverpass matches chains without a brand tag by name prefix, Cyri
           id: 4,
           lat: 44.8,
           lon: 20.4,
-          tags: { brand: "KFC", name: "Walter" },
+          tags: { brand: "KFC", name: "Walter KFC" },
         },
       ],
     },
@@ -360,4 +360,33 @@ Deno.test("parseOverpass: a city within range beats a nearer suburb town; a town
     ],
   }, { kfc: ["KFC"] });
   assertEquals(pts.map((p) => p.city), ["Beograd", "Stara Pazova"]);
+});
+
+Deno.test("parseOverpass: a wrong brand tag on another business is dropped; Cyrillic and branch names stay", () => {
+  const n = (id: number, tags: Record<string, string>) => ({
+    type: "node",
+    id,
+    lat: 45,
+    lon: 15,
+    tags,
+  });
+  const pts = parseOverpass({
+    elements: [
+      n(1, { brand: "Pizza Hut", name: "Me Gutsa IBO pizza" }),
+      n(2, { brand: "Pizza Hut", name: "Pizza Hut Arena" }),
+      n(3, { brand: "Starbucks", name: "Старбакс" }),
+      n(4, { brand: "Pizza Hut" }),
+      n(5, { brand: "McDonald's", name: "McDonalds Pula" }),
+    ],
+  }, {
+    pizzahut: ["Pizza Hut"],
+    starbucks: ["Starbucks"],
+    mcdonalds: ["McDonald's"],
+  });
+  assertEquals(pts.map((p) => p.osm_id), [
+    "node/2",
+    "node/3",
+    "node/4",
+    "node/5",
+  ]);
 });

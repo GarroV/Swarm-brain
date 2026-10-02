@@ -1,4 +1,4 @@
-import { assertEquals, assertRejects } from "@std/assert";
+import { assertEquals, assertRejects, assertThrows } from "@std/assert";
 import { httpGet } from "./lib.ts";
 import { dueAdapters, isDue } from "./run.ts";
 import { daysBetween } from "./adapters/dodo.ts";
@@ -26,6 +26,14 @@ Deno.test("registries run in the first week of the month only, weekly always", (
   assertEquals(dueAdapters(EE, "2026-10-20", "ee-ariregister"), [
     "ee-ariregister",
   ]);
+});
+
+Deno.test("an unknown source id fails loudly with the allowed ids instead of collecting nothing", () => {
+  assertThrows(
+    () => dueAdapters(EE, "2026-10-20", "osm"),
+    Error,
+    "osm-overpass",
+  );
 });
 
 Deno.test("Dodo days run from since to yesterday, across month end", () => {
