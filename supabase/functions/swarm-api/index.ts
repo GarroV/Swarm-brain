@@ -142,9 +142,8 @@ import {
 } from "./public-roadmap.ts";
 // Календарь на сегодня для панели главной (issue #218): доступ к Google — общий модуль
 // (его же зовёт meeting-current), отбор событий дня и границы суток — чистая логика под тестами.
-import { accessToken, listEvents } from "../_shared/google-calendar.ts";
+import { todayCalendarEvents } from "../_shared/calendar-today.ts";
 import {
-  dayBounds,
   type RecorderPresence,
   todayMeetings,
 } from "../_shared/meetings-today.ts";
@@ -2988,41 +2987,16 @@ async function routeRequest(req: Request): Promise<Response> {
   // «переподключить», `calendar_error`/пустой список → обычное пустое состояние. Молча
   // показать пустоту при отвалившейся интеграции нельзя — это урок #175.
   if (req.method === "GET" && routePath === "/calendar/today") {
-    const { data: integ } = await supabase
-      .from("user_integrations").select("api_key")
-      .eq("telegram_id", telegram_id).eq("service", "google_calendar")
-      .maybeSingle();
-    const refresh = (integ as { api_key?: string } | null)?.api_key;
-    if (!refresh) {
-      return json({ meetings: [], reason: "not_connected" }, 200, origin);
-    }
-
-    const tok = await accessToken(refresh);
-    // `token_expired` (→ панель предлагает «Переподключить») — ТОЛЬКО реально мёртвый refresh_token
-    // (invalid_grant/invalid_client). Временная запинка Google (429/5xx/сеть) идёт в `calendar_error` —
-    // то же пустое состояние, что при сбое Calendar API, без призыва переподключаться (issue #302).
-    if (!tok.ok) {
-      return json(
-        {
-          meetings: [],
-          reason: tok.deadGrant ? "token_expired" : "calendar_error",
-        },
-        200,
-        origin,
-      );
-    }
-    const token = tok.token;
-
     // Пояс берём у клиента: сервер живёт в UTC и не знает, какие сутки у человека сейчас.
-    const tzOffset = Number(url.searchParams.get("tz_offset") ?? "0");
-    const { timeMin, timeMax } = dayBounds(
-      new Date().toISOString(),
-      Number.isFinite(tzOffset) ? tzOffset : 0,
+    const cal = await todayCalendarEvents(
+      supabase,
+      telegram_id,
+      Number(url.searchParams.get("tz_offset") ?? "0"),
     );
-    const items = await listEvents(token, timeMin, timeMax, 25);
-    if (!items) {
-      return json({ meetings: [], reason: "calendar_error" }, 200, origin);
+    if (!cal.ok) {
+      return json({ meetings: [], reason: cal.reason }, 200, origin);
     }
+    const items = cal.events;
 
     // Где сидит сам человек: рекордер сообщает это в heartbeat. Панель по этим флагам
     // рисует `ON AIR` / `REC` вместо кнопки «Подключиться» — предлагать зайти туда, где

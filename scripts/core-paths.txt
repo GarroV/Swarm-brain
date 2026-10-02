@@ -69,3 +69,7 @@ supabase/functions/_shared/tasks/comment-fanout.ts|supabase/functions/_shared/ta
 # Граница ошибок swarm-api: правило «клиенту — общий текст, подробность — в лог». Ошибка здесь
 # не падает — она молча отдаёт человеку текст базы или пишет в лог значения строки.
 supabase/functions/swarm-api/client-error.ts|supabase/functions/swarm-api/client-error.test.ts
+# Личные метки и лента уведомлений — общие для веба и MCP: ошибка в фильтре владельца или
+# видимости не падает, она молча отдаёт чужую метку или заголовок чужой приватной задачи.
+supabase/functions/_shared/tasks/labels.ts|supabase/functions/_shared/tasks/labels.test.ts
+supabase/functions/_shared/notifications/feed.ts|supabase/functions/_shared/notifications/feed.test.ts

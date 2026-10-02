@@ -23,6 +23,7 @@ import {
   toolGetTaskStats,
 } from "./tasks/analytics.ts";
 import { SPRINT_TOOL_DEFINITIONS, SPRINT_TOOLS } from "./tasks/sprints.ts";
+import { PERSONAL_TOOL_DEFINITIONS, PERSONAL_TOOLS } from "./tasks/personal.ts";
 import {
   COUNTRY_PROMPT_RULE,
   detectQueryCountry,
@@ -248,6 +249,7 @@ const TOOLS = [
   ...COMMENT_TOOL_DEFINITIONS,
   ...ANALYTICS_TOOL_DEFINITIONS,
   ...SPRINT_TOOL_DEFINITIONS,
+  ...PERSONAL_TOOL_DEFINITIONS,
   ...MEETING_REVIEW_TOOL_DEFINITIONS,
   {
     name: "get_meetings",
@@ -1294,6 +1296,8 @@ Deno.serve(async (req: Request) => {
 
       if (Object.hasOwn(SPRINT_TOOLS, name)) {
         result = await SPRINT_TOOLS[name](args);
+      } else if (Object.hasOwn(PERSONAL_TOOLS, name)) {
+        result = await PERSONAL_TOOLS[name](args as Record<string, unknown> & { requesting_user_id: number });
       } else if (name === "whoami") {
         result = await toolWhoami(args as { requesting_user_id?: number });
       } else if (name === "search_knowledge") {
