@@ -51,6 +51,17 @@ Deno.test("parseDodoUnits keeps pizzerias only, with coordinates when present", 
   ]);
 });
 
+Deno.test("parseDodoUnits drops the API's placeholder start date", () => {
+  // Пиццерия, которая так и не открылась, приходит с BeginDateWork «0001-01-01».
+  const [u] = parseDodoUnits([{
+    Name: "X",
+    Type: 1,
+    State: 0,
+    BeginDateWork: "0001-01-01T00:00:00",
+  }]);
+  assertEquals(u.opened, null);
+});
+
 Deno.test("parseFinancialMetrics turns previous_month into YYYY-MM", () => {
   assertEquals(
     parseFinancialMetrics({

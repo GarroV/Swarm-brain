@@ -89,6 +89,14 @@ type RawUnit = {
   AddressDetails?: { LocalityName?: string | null } | null;
   Location?: { Latitude: number; Longitude: number } | null;
 };
+/** Не открывшаяся пиццерия приходит с BeginDateWork «0001-01-01» — это пустое значение,
+ *  а не дата: такая точка уехала бы в начало всех графиков. */
+const EARLIEST_REAL_YEAR = 1990;
+function openedDate(raw: string | null | undefined): string | null {
+  if (!raw || Number(raw.slice(0, 4)) < EARLIEST_REAL_YEAR) return null;
+  return raw.slice(0, 10);
+}
+
 /** Только пиццерии (Type=1); офисы и производства не точки рынка. */
 export function parseDodoUnits(raw: RawUnit[]): DodoUnit[] {
   return raw.filter((u) => u.Type === 1).map((u) => ({
@@ -97,7 +105,7 @@ export function parseDodoUnits(raw: RawUnit[]): DodoUnit[] {
     address: u.AddressText ?? null,
     lat: u.Location?.Latitude ?? null,
     lng: u.Location?.Longitude ?? null,
-    opened: u.BeginDateWork ? u.BeginDateWork.slice(0, 10) : null,
+    opened: openedDate(u.BeginDateWork),
     open: u.State === 1,
     organization: u.OrganizationName ?? null,
   }));
