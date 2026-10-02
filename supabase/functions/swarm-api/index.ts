@@ -108,7 +108,7 @@ import {
   callExtractor,
   EXTRACT_MAX_TASKS,
   type ExtractedTask,
-  gptExtractTasks,
+  extractTasks,
   toExtractedTask,
 } from "../_shared/task-extract.ts";
 import {
@@ -3682,9 +3682,17 @@ async function routeRequest(req: Request): Promise<Response> {
       return await streamExtractTasks(body.text, origin);
     }
 
-    // Единый экстрактор (тот же `gptExtractTasks`, что на публикации встречи) — без дубля промпта.
-    // Та же форма {title,description,assignee,due_date,country}; при сбое GPT отдаёт [] (мягко, не 500).
-    const extracted = await gptExtractTasks(body.text);
+    // Единый экстрактор (`extractTasks`, общий с MCP) — без дубля промпта. Отказ модели — 502,
+    // как у потоковой ветки, а не пустой список: «задач нет» и «модель молчит» различаются (#374).
+    const result = await extractTasks(body.text);
+    if (!result.ok) {
+      return json({
+        error: "Task extraction is unavailable right now. Try again in a minute.",
+        error_ru: "Разбор задач сейчас недоступен. Попробуйте через минуту.",
+        code: "extractor_unavailable",
+      }, 502, origin);
+    }
+    const extracted = result.tasks;
 
     // Только предложение, без записи в базу: в базу попадает лишь то, что человек выбрал на
     // экране (решение 05.09.2026, issue #581). Прежний режим «создать до 10 задач сразу» снят —

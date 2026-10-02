@@ -7,7 +7,7 @@ import {
 import { publishDraftMeeting } from "../_shared/meeting-publish.ts";
 import { ADMIN_USER_ID, matchAssignee, resolveGroupId } from "./tasks/tools.ts";
 import { entryAccessError, type EntryAccessRow } from "../_shared/entries/access.ts";
-import { EXTRACT_MAX_TASKS, gptExtractTasks } from "../_shared/task-extract.ts";
+import { EXTRACT_MAX_TASKS, extractTasks } from "../_shared/task-extract.ts";
 import {
   type DraftRow,
   formatDraftMeeting,
@@ -160,7 +160,12 @@ export async function toolExtractTasksFromMeeting(
 ): Promise<string> {
   const src = await meetingText(args);
   if (!src.ok) return src.msg;
-  const extracted = (await gptExtractTasks(src.text)).slice(0, EXTRACT_MAX_TASKS);
+  const result = await extractTasks(src.text);
+  // Модель недоступна — так и говорим: «задач нет» здесь было бы неправдой (issue #374).
+  if (!result.ok) {
+    return "Ошибка: модель разбора задач сейчас не ответила. Попробуй через минуту — задачи ещё не разобраны.";
+  }
+  const extracted = result.tasks.slice(0, EXTRACT_MAX_TASKS);
   const proposed: ProposedTask[] = await Promise.all(extracted.map(async (t) => ({
     ...t,
     resolved_assignee: t.assignee ? (await matchAssignee(t.assignee))?.display_name ?? null : null,
