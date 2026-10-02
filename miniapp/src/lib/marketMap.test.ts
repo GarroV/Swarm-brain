@@ -1,5 +1,5 @@
 import { assertEquals } from "jsr:@std/assert@1";
-import { chainCounts, chainSlots, fitBox, makeVb, type MapFilters, nearByChain, openBucket, pickOpenYear, topCities, visibleLocations } from "./marketMap.ts";
+import { chainCounts, chainOrder, chainSlots, fitBox, makeVb, type MapFilters, nearByChain, openBucket, pickOpenYear, topCities, visibleLocations } from "./marketMap.ts";
 import type { MarketLocation } from "../types.ts";
 
 const loc = (id: string, chain_key: string, opened: string | null, status: MarketLocation["status"] = "open", closed: string | null = null, city = "A"): MarketLocation => ({
@@ -115,4 +115,11 @@ Deno.test("chainSlots: catalogue slot is kept only while free, no two chains sha
   assertEquals(s.get("subway"), 7);
   const all = [...s.values()];
   assertEquals(new Set(all).size, all.length);
+});
+
+Deno.test("chips follow the reference: coloured chains by colour slot, then grey ones by name, bakeries last", () => {
+  const ch = (key: string, name: string, is_bakery = false) => ({ key, name, is_bakery });
+  const chains = [ch("tutto", "TuttoBene"), ch("mlinar", "Mlinar", true), ch("dodo", "Dodo"), ch("biberon", "Biberon"), ch("mcd", "McDonald's"), ch("batak", "Batak")];
+  const slots = new Map([["mcd", 1], ["dodo", 2], ["batak", 8], ["tutto", 0], ["biberon", 0], ["mlinar", 0]]);
+  assertEquals(chainOrder(chains, slots).map((c) => c.key), ["mcd", "dodo", "batak", "biberon", "tutto", "mlinar"]);
 });

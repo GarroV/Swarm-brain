@@ -4,7 +4,7 @@
 // из хорватского отчёта (стили в market.css, всё внутри корня .mkt).
 import { createContext, type PointerEvent, type ReactNode, useCallback, useContext, useMemo, useRef, useState } from "react";
 import type { MarketBundle } from "@/types";
-import { chainSlots } from "@/lib/marketMap";
+import { chainOrder, chainSlots } from "@/lib/marketMap";
 import { type Editorial, parseEditorial } from "@/lib/marketEditorial";
 
 export function useEditorial(bundle: MarketBundle): Editorial {
@@ -23,12 +23,14 @@ export function useChainColor(bundle: MarketBundle): (key: string) => string {
   }, [bundle.chains, bundle.locations]);
 }
 
-/** Сети в порядке эталона: сначала не пекарни, потом по слоту, потом по имени. */
+/** Сети в порядке эталона (chainOrder): по слоту цвета, который реально на экране, а не по слоту
+ *  справочника — иначе порядок фильтра расходится с цветами. */
 export function useChainOrder(bundle: MarketBundle): MarketBundle["chains"] {
-  return useMemo(
-    () => bundle.chains.slice().sort((a, b) => Number(a.is_bakery) - Number(b.is_bakery) || (a.slot || 99) - (b.slot || 99) || a.name.localeCompare(b.name)),
-    [bundle.chains],
-  );
+  return useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const l of bundle.locations) counts.set(l.chain_key, (counts.get(l.chain_key) ?? 0) + 1);
+    return chainOrder(bundle.chains, chainSlots(bundle.chains, counts));
+  }, [bundle.chains, bundle.locations]);
 }
 
 const MONTHS_RU = ["янв", "фев", "мар", "апр", "май", "июн", "июл", "авг", "сен", "окт", "ноя", "дек"];

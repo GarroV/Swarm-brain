@@ -207,7 +207,7 @@ export function MapView({ shape, locs, col, chainName, bakery, mode, vb, setVb }
         <button type="button" aria-label={dt("Приблизить", "Zoom in")} onClick={() => zoom(1 / BUTTON_STEP)}>+</button>
         <button type="button" aria-label={dt("Отдалить", "Zoom out")} onClick={() => zoom(BUTTON_STEP)}>−</button>
       </div>
-      <div className="mapnote">{dt("Границы: Natural Earth", "Borders: Natural Earth")}</div>
+      <div className="mapnote">{dt("Границы: Natural Earth · города: OpenStreetMap", "Borders: Natural Earth · towns: OpenStreetMap")}</div>
     </div>
   );
 }

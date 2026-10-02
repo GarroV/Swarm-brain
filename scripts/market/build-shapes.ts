@@ -14,7 +14,8 @@ const W = 750;
 const PAD = 0.07; // поле вокруг страны: соседи и море, чтобы контур не висел в пустоте
 const TOL = 0.35; // допуск упрощения, px итоговой карты
 const MIN_AREA = 6; // озеро меньше 6 px² не видно
-const MAX_CITIES = 12;
+const MAX_CITIES = 14;
+const CITY_GAP = 45; // px итоговой карты между подписями городов
 const RIVER_RANK = 6; // scalerank Natural Earth: меньше — крупнее река
 const OUT = new URL("../../miniapp/public/market/shapes/", import.meta.url);
 
@@ -128,6 +129,41 @@ function areas(cc: string, own: Feature[], proj: Proj, H: number) {
   }));
 }
 
+// Подписи городов — из OpenStreetMap (place=city|town с населением, местное написание; у Сербии
+// латиница): в Natural Earth мало городов (у Хорватии нет Вараждина, Сисака, Винковцев) и имена
+// английские, а в данных — местные. Ответ кэшируется рядом с файлами Natural Earth, повторная
+// сборка его переиспользует; нет сети и кэша — города Natural Earth.
+type Place = { name: string; lat: number; lng: number; pop: number; capital: boolean };
+async function osmPlaces(cc: string): Promise<Place[]> {
+  const cache = `${dir}/osm_places_${cc}.json`;
+  let j: { elements: Array<{ lat: number; lon: number; tags: Record<string, string> }> };
+  try {
+    j = JSON.parse(await Deno.readTextFile(cache));
+  } catch {
+    const q = `[out:json][timeout:120];area["ISO3166-1"="${cc}"][admin_level=2]->.a;node["place"~"^(city|town)$"](area.a);out tags center;`;
+    try {
+      const r = await fetch("https://overpass-api.de/api/interpreter", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded", "User-Agent": "swarm-market/1.0 build-shapes" },
+        body: `data=${encodeURIComponent(q)}`,
+      });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      j = await r.json();
+      await Deno.writeTextFile(cache, JSON.stringify(j));
+    } catch (e) {
+      console.error(`${cc}: города OSM недоступны (${e}), беру Natural Earth`);
+      return [];
+    }
+  }
+  return j.elements.filter((e) => e.tags?.name).map((e) => ({
+    name: (cc === "RS" ? e.tags["name:sr-Latn"] : undefined) ?? e.tags.name,
+    lat: e.lat,
+    lng: e.lon,
+    pop: Number(String(e.tags.population ?? "0").replace(/[^\d]/g, "")) || (e.tags.place === "city" ? 1 : 0),
+    capital: e.tags.capital === "yes" || e.tags.capital === "2",
+  }));
+}
+
 async function real(cc: string) {
   const [countries, regions, lakes, rivers, places] = await Promise.all([
     load("admin_0_countries"),
@@ -148,14 +184,18 @@ async function real(cc: string) {
       return x > -50 && x < W + 50 && y > -50 && y < H + 50;
     });
   const near = countries.filter((f) => f !== me && rings(f.geometry).some(inFrame));
-  const cities: City[] = places
+  const osm = await osmPlaces(cc);
+  const cityList = osm.length ? osm : places
     .filter((f) => f.properties.adm0_a3 === A3[cc])
-    .sort((a, b) => Number(b.properties.pop_max) - Number(a.properties.pop_max))
-    .slice(0, MAX_CITIES)
-    .map((f, rank) => {
-      const [x, y] = project(proj, Number(f.properties.longitude), Number(f.properties.latitude));
-      return { name: String(f.properties.name), x: round(x), y: round(y), capital: f.properties.adm0cap === 1, rank };
-    });
+    .map((f) => ({ name: String(f.properties.name), lat: Number(f.properties.latitude), lng: Number(f.properties.longitude), pop: Number(f.properties.pop_max), capital: f.properties.adm0cap === 1 }));
+  const cities: City[] = cityList
+    .sort((a, b) => b.pop - a.pop)
+    .map((f) => ({ f, xy: project(proj, f.lng, f.lat) }))
+    // Пригород рядом с крупным городом (Velika Gorica у Загреба) подпись не получает: место
+    // отдаётся следующему по величине городу другого края, как в списке эталона.
+    .reduce<Array<{ f: Place; xy: Pt }>>((acc, c) =>
+      acc.length < MAX_CITIES && acc.every((a) => Math.hypot(a.xy[0] - c.xy[0], a.xy[1] - c.xy[1]) > CITY_GAP) ? [...acc, c] : acc, [])
+    .map(({ f, xy: [x, y] }, rank) => ({ name: f.name, x: round(x), y: round(y), capital: f.capital, rank }));
   return {
     W,
     H,
@@ -172,7 +212,7 @@ async function real(cc: string) {
       H,
     ),
     cities,
-    source: "Natural Earth 10m (public domain)",
+    source: "Natural Earth 10m (public domain); города — OpenStreetMap (ODbL)",
   };
 }
 

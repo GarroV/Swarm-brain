@@ -29,6 +29,13 @@ export function chainSlots(chains: Array<Pick<MarketChain, "key" | "is_bakery"> 
 }
 
 
+/** Порядок сетей в фильтре и легендах, как в эталоне: пекарни в конце; цветные сети — по слоту
+ *  цвета (McDonald's, Dodo, KFC…), серые — по алфавиту. Слот — тот же, что даёт цвет (chainSlots). */
+export function chainOrder<T extends Pick<MarketChain, "key" | "name" | "is_bakery">>(chains: T[], slots: Map<string, number>): T[] {
+  const s = (k: string) => slots.get(k) || 99;
+  return chains.slice().sort((a, b) => Number(a.is_bakery) - Number(b.is_bakery) || s(a.key) - s(b.key) || a.name.localeCompare(b.name));
+}
+
 /** Корзина года открытия: «до первого года / без даты» или сам год. */
 export const PRE = "pre";
 export function openBucket(l: Pick<MarketLocation, "opened">, firstYear: number): string {

@@ -1,5 +1,6 @@
 "use client";
-// Подложка карты страны в виде эталона: соседи (--land2, линия --line .8) и своя страна (--land,
+// Подложка карты страны в виде эталона: соседи (--land2 тёплого тона против холодного моря —
+// иначе суша и море сливаются; линия --land2-line .8) и своя страна (--land,
 // граница --border 1.2), море — фон .mapbox. Геометрия рисуется один раз генератором
 // scripts/market/build-shapes.ts (Natural Earth 10m) и лежит в public/market/shapes/<CC>.json.
 import { useEffect, useRef, useState } from "react";
@@ -10,7 +11,7 @@ export function MapBaseLayers({ shape }: { shape: Shape }) {
   return (
     <g>
       {shape.land && (
-        <path d={shape.land} fill="var(--land2)" stroke="var(--line)" strokeWidth={0.8} vectorEffect="non-scaling-stroke" strokeLinejoin="round" />
+        <path d={shape.land} fill="var(--land2)" stroke="var(--land2-line)" strokeWidth={0.8} vectorEffect="non-scaling-stroke" strokeLinejoin="round" />
       )}
       <path d={shape.path} fill="var(--land)" fillRule="evenodd" stroke="var(--border)" strokeWidth={1.2} vectorEffect="non-scaling-stroke" strokeLinejoin="round" />
     </g>
