@@ -5,6 +5,7 @@ import type {
   IngestPayload,
   OsmPoint,
 } from "../../supabase/functions/market-ingest/types.ts";
+import { distanceM } from "../../supabase/functions/_shared/market/geo.ts";
 
 export const UA = "swarm-market/1.0 (+https://github.com/GarroV/Swarm-brain)";
 const TIMEOUT_MS = 170_000;
@@ -167,12 +168,61 @@ type OverpassEl = {
  *  и обрезанном списке. Принять такой список — значит записать «точки пропали» и успешный прогон. */
 const OVERPASS_FAILURE = /error|timed out|out of memory/i;
 
+/** Города и посёлки (place=city|town) из того же ответа Overpass: точке без addr:city достаётся
+ *  ближайший в пределах 15 км — иначе топ городов и пресеты карты теряют большую часть точек
+ *  (в Сербии addr:city есть у 44 из 231). */
+const PLACE_KINDS = new Set(["city", "town"]);
+const PLACE_RADIUS_M = 15_000;
+
+const SR_CYR: Record<string, string> = {
+  а: "a",
+  б: "b",
+  в: "v",
+  г: "g",
+  д: "d",
+  ђ: "đ",
+  е: "e",
+  ж: "ž",
+  з: "z",
+  и: "i",
+  ј: "j",
+  к: "k",
+  л: "l",
+  љ: "lj",
+  м: "m",
+  н: "n",
+  њ: "nj",
+  о: "o",
+  п: "p",
+  р: "r",
+  с: "s",
+  т: "t",
+  ћ: "ć",
+  у: "u",
+  ф: "f",
+  х: "h",
+  ц: "c",
+  ч: "č",
+  џ: "dž",
+  ш: "š",
+};
+/** Сербская кириллица → латиница (однозначно). В сербском OSM город пишут и так и так —
+ *  без этого «Београд» и «Beograd» в топе городов — два города. */
+export function srLatin(s: string): string {
+  return [...s].map((ch) => {
+    const lo = ch.toLowerCase(), l = SR_CYR[lo];
+    if (l === undefined) return ch;
+    return ch === lo ? l : l[0].toUpperCase() + l.slice(1);
+  }).join("");
+}
+
 /** names: ключ сети → начала тега name — для сетей, у которых в OSM нет тега brand (часто
  *  локальные, бывает кириллицей). Совпадение — имя целиком или имя и дальше пробел. brand важнее. */
 export function parseOverpass(
   j: { elements: OverpassEl[]; remark?: string },
   brands: Record<string, string[]>,
   names: Record<string, string[]> = {},
+  opts: { toLatin?: (s: string) => string } = {},
 ): OsmPoint[] {
   if (j.remark && OVERPASS_FAILURE.test(j.remark)) {
     throw new Error(`overpass: ${j.remark.slice(0, 200)}`);
@@ -189,7 +239,34 @@ export function parseOverpass(
     const n = (name ?? "").toLowerCase();
     return prefixes.find(([p]) => n === p || n.startsWith(`${p} `))?.[1];
   };
+  const latin = opts.toLatin ?? ((x: string) => x);
+  const places = j.elements.flatMap((e) =>
+    PLACE_KINDS.has(e.tags?.place ?? "") && e.lat !== undefined &&
+      e.lon !== undefined && e.tags?.name
+      ? [{
+        name: e.tags["name:sr-Latn"] ?? latin(e.tags.name),
+        lat: e.lat,
+        lng: e.lon,
+      }]
+      : []
+  );
+  const cityOf = (addr: string | undefined, lat: number, lng: number) => {
+    if (addr) {
+      const a = latin(addr);
+      return places.find((p) => p.name.toLowerCase() === a.toLowerCase())
+        ?.name ?? a;
+    }
+    let best: { name: string; d: number } | null = null;
+    for (const p of places) {
+      const d = distanceM({ lat, lng }, p);
+      if (d <= PLACE_RADIUS_M && (!best || d < best.d)) {
+        best = { name: p.name, d };
+      }
+    }
+    return best?.name ?? null;
+  };
   return j.elements.flatMap((e): OsmPoint[] => {
+    if (e.tags?.place) return [];
     const chain = byBrand.get((e.tags?.brand ?? "").toLowerCase()) ??
       byName(e.tags?.name);
     const lat = e.lat ?? e.center?.lat, lng = e.lon ?? e.center?.lon;
@@ -201,7 +278,7 @@ export function parseOverpass(
       name: e.tags?.name ?? e.tags?.brand ?? chain,
       lat,
       lng,
-      city: e.tags?.["addr:city"] ?? null,
+      city: cityOf(e.tags?.["addr:city"], lat, lng),
       address: street || null,
       osm_id: `${e.type}/${e.id}`,
     }];

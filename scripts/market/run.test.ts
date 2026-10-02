@@ -53,6 +53,8 @@ Deno.test("Overpass query escapes brand names", () => {
   const q = overpassQuery("HR", ["Domino's", "McDonald's", "A.B"]);
   assertEquals(q.includes(`^(Domino's|McDonald's|A\\.B)$`), true);
   assertEquals(q.includes(`"ISO3166-1"="HR"`), true);
+  // города и посёлки — тем же запросом, для города точки без addr:city
+  assertEquals(q.includes(`node["place"~"^(city|town)$"](area.a);`), true);
 });
 
 Deno.test("Romanian yearly files are picked case-insensitively, .txt only", () => {

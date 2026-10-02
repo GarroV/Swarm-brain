@@ -127,6 +127,38 @@ Deno.test("osm: new point → one candidate, trusted untouched, osm point flagge
   assertEquals(t, { status: "open", missing_weeks: 0 });
 });
 
+Deno.test("osm: a matched point gets its empty city filled, a known city is never overwritten", async () => {
+  await reset();
+  const kept = await sb.from("mkt_locations").update({ city: "Kept" }).eq(
+    "country",
+    CC,
+  ).eq("ext_key", "osm1");
+  if (kept.error) throw new Error(kept.error.message);
+  const pt = (lat: number, lng: number, id: string) => ({
+    chain: "kfc",
+    name: "N",
+    lat,
+    lng,
+    city: "Beograd",
+    address: null,
+    osm_id: id,
+  });
+  await applyIngest(sb, {
+    source: "osm",
+    country: CC,
+    started_at,
+    points: [pt(45.8, 15.9, "node/1"), pt(45.9, 16.0, "node/2")],
+  }, "2026-10-05");
+  const { data } = await sb.from("mkt_locations").select("ext_key, city").eq(
+    "country",
+    CC,
+  ).order("ext_key");
+  assertEquals(data, [{ ext_key: "osm1", city: "Kept" }, {
+    ext_key: "trusted",
+    city: "Beograd",
+  }]);
+});
+
 Deno.test("osm: a country with over 1000 known points is matched in full", async () => {
   await reset();
   // Больше страницы PostgREST (1000 строк) и больше, чем влезает id в один URL.

@@ -7,6 +7,7 @@ import {
   parseFinancialMetrics,
   parseNbsAverage,
   parseOverpass,
+  srLatin,
 } from "./lib.ts";
 import {
   parseCompanyWall,
@@ -279,4 +280,46 @@ Deno.test("parseCompanyWall reads total income and employees per year, checks th
     parseCompanyWall(stale, "21093564", "u", rate).map((y) => y.year),
     [2023, 2024],
   );
+});
+
+Deno.test("srLatin transliterates Serbian Cyrillic, digraphs included, and leaves Latin alone", () => {
+  assertEquals(
+    srLatin("Нови Београд, Љиљана Џаковић"),
+    "Novi Beograd, Ljiljana Džaković",
+  );
+  assertEquals(srLatin("Čačak"), "Čačak");
+});
+
+Deno.test("parseOverpass: city from the address in one script, else the nearest town within 15 km", () => {
+  const node = (
+    id: number,
+    lat: number,
+    lon: number,
+    tags: Record<string, string>,
+  ) => ({ type: "node", id, lat, lon, tags });
+  const pts = parseOverpass(
+    {
+      elements: [
+        node(1, 44.817, 20.457, {
+          place: "city",
+          name: "Београд",
+          "name:sr-Latn": "Beograd",
+        }),
+        node(2, 45.255, 19.845, { place: "city", name: "Нови Сад" }),
+        node(10, 44.80, 20.47, { brand: "KFC" }),
+        node(11, 45.25, 19.84, { brand: "KFC", "addr:city": "нови сад" }),
+        node(12, 44.81, 20.40, { brand: "KFC", "addr:city": "Нови Београд" }),
+        node(13, 43.32, 21.90, { brand: "KFC" }),
+      ],
+    },
+    { kfc: ["KFC"] },
+    {},
+    { toLatin: srLatin },
+  );
+  assertEquals(pts.map((p) => [p.osm_id, p.city]), [
+    ["node/10", "Beograd"],
+    ["node/11", "Novi Sad"],
+    ["node/12", "Novi Beograd"],
+    ["node/13", null],
+  ]);
 });

@@ -9,7 +9,7 @@
 |---|---|---|---|---|---|
 | Продажи Dodo | https://publicapi.dodois.io/hr/api/v1/ | пиццерии Dodo (unitinfo/all: адрес, координаты, BeginDateWork) и выручка по месяцам с числом пиццерий; курс к евро — ЕЦБ, для динара — НБС (kurs.resenje.org) | авто, `dodo-publicapi` | раз в неделю | — |
 | Точки | https://publicapi.dodois.io/hr/api/v1/ | сеть dodo: пиццерии Dodo (unitinfo/all: адрес, координаты, BeginDateWork) и выручка по месяцам с числом пиццерий; курс к евро — ЕЦБ, для динара — НБС (kurs.resenje.org) | авто, `dodo-publicapi` | раз в неделю | — |
-| Точки | https://overpass-api.de/api/interpreter | точки сетей по тегу brand (osmBrands в конфиге) или по началу name среди заведений общепита (osmNames) из OpenStreetMap, координаты, адрес, дата открытия, если она есть в теге | авто, `osm-overpass` | раз в неделю | — |
+| Точки | https://overpass-api.de/api/interpreter | точки сетей по тегу brand (osmBrands в конфиге) или по началу name среди заведений общепита (osmNames) из OpenStreetMap, координаты, адрес, дата открытия, если она есть в теге; город — из addr:city, а без него — ближайший place=city\|town в пределах 15 км | авто, `osm-overpass` | раз в неделю | — |
 | Точки | снимок ручных источников (импорт в «Источниках и свежести») | локальные сети и пекарни с датами открытия: локаторы сетей, Wolt, пресса; дата — по посту сети, появлению в Wolt или первому отзыву, а не по дате статьи | вручную | по запросу | 2026-10-02 |
 | Выручки юрлиц | https://www.fina.hr (Info.BIZ), companywall.hr | выручка и сотрудники юрлиц из companies снимка; OIB — рег. номер (Fina Info.BIZ: вход по учётной записи, условия запрещают перепубликацию — обновление раз в год вручную) | вручную | по запросу | 2026-10-02 |
 | Цены | сайты сетей и Wolt | средняя пицца ~30 см (маргарита, пепперони, ветчина-грибы, премиум) — свой сайт и Wolt, акции | вручную | по запросу | 2026-10-01 |
@@ -49,7 +49,7 @@
 |---|---|---|---|---|---|
 | Продажи Dodo | https://publicapi.dodois.io/ro/api/v1/ | пиццерии Dodo (unitinfo/all: адрес, координаты, BeginDateWork) и выручка по месяцам с числом пиццерий; курс к евро — ЕЦБ, для динара — НБС (kurs.resenje.org) | авто, `dodo-publicapi` | раз в неделю | — |
 | Точки | https://publicapi.dodois.io/ro/api/v1/ | сеть dodo: пиццерии Dodo (unitinfo/all: адрес, координаты, BeginDateWork) и выручка по месяцам с числом пиццерий; курс к евро — ЕЦБ, для динара — НБС (kurs.resenje.org) | авто, `dodo-publicapi` | раз в неделю | — |
-| Точки | https://overpass-api.de/api/interpreter | точки сетей по тегу brand (osmBrands в конфиге) или по началу name среди заведений общепита (osmNames) из OpenStreetMap, координаты, адрес, дата открытия, если она есть в теге | авто, `osm-overpass` | раз в неделю | — |
+| Точки | https://overpass-api.de/api/interpreter | точки сетей по тегу brand (osmBrands в конфиге) или по началу name среди заведений общепита (osmNames) из OpenStreetMap, координаты, адрес, дата открытия, если она есть в теге; город — из addr:city, а без него — ближайший place=city\|town в пределах 15 км | авто, `osm-overpass` | раз в неделю | — |
 | Выручки юрлиц | https://data.gov.ro (набор situatii financiare) | годовая отчётность юрлиц Румынии по CUI из companies: оборот и сотрудники; лей → евро по годовому курсу ЕЦБ | авто, `ro-datagov` | раз в год | — |
 | Цены | — | ещё не собирались | вручную | по запросу | — |
 | Факты рынка | — | ещё не собирались; ручной части нет | вручную | по запросу | — |
@@ -87,7 +87,7 @@
 |---|---|---|---|---|---|
 | Продажи Dodo | https://publicapi.dodois.io/ee/api/v1/ | пиццерии Dodo (unitinfo/all: адрес, координаты, BeginDateWork) и выручка по месяцам с числом пиццерий; курс к евро — ЕЦБ, для динара — НБС (kurs.resenje.org) | авто, `dodo-publicapi` | раз в неделю | — |
 | Точки | https://publicapi.dodois.io/ee/api/v1/ | сеть dodo: пиццерии Dodo (unitinfo/all: адрес, координаты, BeginDateWork) и выручка по месяцам с числом пиццерий; курс к евро — ЕЦБ, для динара — НБС (kurs.resenje.org) | авто, `dodo-publicapi` | раз в неделю | — |
-| Точки | https://overpass-api.de/api/interpreter | точки сетей по тегу brand (osmBrands в конфиге) или по началу name среди заведений общепита (osmNames) из OpenStreetMap, координаты, адрес, дата открытия, если она есть в теге | авто, `osm-overpass` | раз в неделю | — |
+| Точки | https://overpass-api.de/api/interpreter | точки сетей по тегу brand (osmBrands в конфиге) или по началу name среди заведений общепита (osmNames) из OpenStreetMap, координаты, адрес, дата открытия, если она есть в теге; город — из addr:city, а без него — ближайший place=city\|town в пределах 15 км | авто, `osm-overpass` | раз в неделю | — |
 | Выручки юрлиц | https://avaandmed.ariregister.rik.ee | годовые отчёты юрлиц Эстонии (открытые данные e-Äriregister): выручка и сотрудники по рег. коду из companies | авто, `ee-ariregister` | раз в месяц | — |
 | Цены | — | ещё не собирались | вручную | по запросу | — |
 | Факты рынка | — | ещё не собирались; ручной части нет | вручную | по запросу | — |
@@ -120,7 +120,7 @@
 |---|---|---|---|---|---|
 | Продажи Dodo | https://publicapi.dodois.io/rs/api/v1/ | пиццерии Dodo (unitinfo/all: адрес, координаты, BeginDateWork) и выручка по месяцам с числом пиццерий; курс к евро — ЕЦБ, для динара — НБС (kurs.resenje.org) | авто, `dodo-publicapi` | раз в неделю | — |
 | Точки | https://publicapi.dodois.io/rs/api/v1/ | сеть dodo: пиццерии Dodo (unitinfo/all: адрес, координаты, BeginDateWork) и выручка по месяцам с числом пиццерий; курс к евро — ЕЦБ, для динара — НБС (kurs.resenje.org) | авто, `dodo-publicapi` | раз в неделю | — |
-| Точки | https://overpass-api.de/api/interpreter | точки сетей по тегу brand (osmBrands в конфиге) или по началу name среди заведений общепита (osmNames) из OpenStreetMap, координаты, адрес, дата открытия, если она есть в теге | авто, `osm-overpass` | раз в неделю | 2026-10-02 |
+| Точки | https://overpass-api.de/api/interpreter | точки сетей по тегу brand (osmBrands в конфиге) или по началу name среди заведений общепита (osmNames) из OpenStreetMap, координаты, адрес, дата открытия, если она есть в теге; город — из addr:city, а без него — ближайший place=city\|town в пределах 15 км | авто, `osm-overpass` | раз в неделю | 2026-10-02 |
 | Выручки юрлиц | https://www.companywall.<страна>/firma/<slug>/<id> (ссылки — в companies.url конфига) | общие доходы (Ukupni prihodi) — шире выручки от продаж; выручки от продаж (poslovni prihodi) есть только в APR (fin.apr.gov.rs) за капчей | авто, `companywall` | раз в год | 2026-10-02 |
 | Цены | Wolt (JSON меню по slug заведения, без входа) | ещё не собирались; кандидат в автоматический адаптер | вручную | по запросу | — |
 | Факты рынка | — | ещё не собирались; ручной части нет | вручную | по запросу | — |

@@ -34,6 +34,8 @@ export type CountryConfig = {
   dodoCode: string;
   /** Валюта отчётности юрлиц, если не евро (RSD — курс НБС, остальные — ЕЦБ). */
   currency?: string;
+  /** Письменность городов: «sr-Latn» — сербскую кириллицу из OSM переводить в латиницу. */
+  cityScript?: "sr-Latn";
   chains: CountryChain[];
   companies: CountryCompany[];
   sources: ConfigSource[];

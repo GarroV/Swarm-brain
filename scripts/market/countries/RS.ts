@@ -9,6 +9,7 @@ export const RS: CountryConfig = {
   country: "RS",
   dodoCode: "rs",
   currency: "RSD",
+  cityScript: "sr-Latn",
   chains: [
     { key: "dodo", name: "Dodo Pizza", segment: "pizza" },
     {

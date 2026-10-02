@@ -196,6 +196,14 @@ async function applyOsm(
       "osm seen",
     );
   }
+  // Город OSM только дописывает пустое поле: известный город (из снимка, локатора, руки) не меняется.
+  for (const m of r.matched.filter((m) => m.found.city)) {
+    await must(
+      sb.from("mkt_locations").update({ city: m.found.city })
+        .eq("id", m.existing.id).is("city", null),
+      "osm city",
+    );
+  }
   for (const f of r.unmatched) {
     const key = locKey(f.chain, f.lat, f.lng, f.address);
     await propose(sb, {

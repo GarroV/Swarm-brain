@@ -18,11 +18,13 @@ const MAX_CITIES = 12;
 const RIVER_RANK = 6; // scalerank Natural Earth: меньше — крупнее река
 const OUT = new URL("../../miniapp/public/market/shapes/", import.meta.url);
 
-const A3: Record<string, string> = { HR: "HRV", RO: "ROU", EE: "EST" };
+const A3: Record<string, string> = { HR: "HRV", RO: "ROU", EE: "EST", RS: "SRB" };
 
 // Укрупнённые регионы для тренда «по регионам»: области Natural Earth (admin_1) сведены в
 // привычные деления страны — как в референсе по Хорватии. В Румынии — 8 регионов развития,
-// в Эстонии — 5 регионов NUTS 3. Область без строки здесь — ошибка генератора, а не «прочее».
+// в Эстонии — 5 регионов NUTS 3, в Сербии — 4 статистических региона (NUTS 2; Natural Earth
+// рисует Косово отдельной страной, его округов здесь нет; Расинский округ в NE подписан
+// «Pomoravski», оба «Pomoravski» лежат в одном регионе). Область без строки здесь — ошибка генератора, а не «прочее».
 type Area = { ru: string; en: string; a1: string[] };
 const AREAS: Record<string, Area[]> = {
   HR: [
@@ -49,6 +51,12 @@ const AREAS: Record<string, Area[]> = {
     { ru: "Центральная Эстония", en: "Central Estonia", a1: ["Järva", "Lääne-Viru", "Rapla"] },
     { ru: "Северо-Восточная Эстония", en: "North-East Estonia", a1: ["Ida-Viru"] },
     { ru: "Южная Эстония", en: "South Estonia", a1: ["Jõgeva", "Põlva", "Tartu", "Valga", "Viljandi", "Võru"] },
+  ],
+  RS: [
+    { ru: "Белград", en: "Belgrade", a1: ["Grad Beograd"] },
+    { ru: "Воеводина", en: "Vojvodina", a1: ["Severno-Backi", "Zapadno-Backi", "Južno-Backi", "Severno-Banatski", "Srednje-Banatski", "Južno-Banatski", "Sremski"] },
+    { ru: "Шумадия и Западная Сербия", en: "Šumadija and Western Serbia", a1: ["Zlatiborski", "Kolubarski", "Macvanski", "Moravicki", "Pomoravski", "Raški", "Šumadijski"] },
+    { ru: "Южная и Восточная Сербия", en: "Southern and Eastern Serbia", a1: ["Borski", "Branicevski", "Zajecarski", "Jablanicki", "Nišavski", "Pirotski", "Podunavski", "Pcinjski", "Toplicki"] },
   ],
 };
 

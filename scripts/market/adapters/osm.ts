@@ -1,7 +1,7 @@
 // OpenStreetMap через Overpass: только предлагает точки международных сетей (кандидаты),
 // сам ничего не подтверждает. Запрос по тегу brand в границах страны — тяжёлый запрос по
 // всем заведениям Overpass не тянет (сверка 02.10.2026).
-import { httpGet, parseOverpass } from "../lib.ts";
+import { httpGet, parseOverpass, srLatin } from "../lib.ts";
 import type { Adapter } from "./types.ts";
 
 const OVERPASS = "https://overpass-api.de/api/interpreter";
@@ -26,7 +26,7 @@ export function overpassQuery(
   return `[out:json][timeout:150];area["ISO3166-1"="${cc}"][admin_level=2]->.a;` +
     `(${
       re ? `nwr["brand"~"^(${re})$",i](area.a);` : ""
-    }${byName});out center tags;`;
+    }${byName}node["place"~"^(city|town)$"](area.a););out center tags;`;
 }
 
 export const osm: Adapter = {
@@ -34,7 +34,7 @@ export const osm: Adapter = {
   about: {
     url: "https://overpass-api.de/api/interpreter",
     what:
-      "точки сетей по тегу brand (osmBrands в конфиге) или по началу name среди заведений общепита (osmNames) из OpenStreetMap, координаты, адрес, дата открытия, если она есть в теге",
+      "точки сетей по тегу brand (osmBrands в конфиге) или по началу name среди заведений общепита (osmNames) из OpenStreetMap, координаты, адрес, дата открытия, если она есть в теге; город — из addr:city, а без него — ближайший place=city|town в пределах 15 км",
   },
   async collect(cfg) {
     const started_at = new Date().toISOString();
@@ -60,7 +60,12 @@ export const osm: Adapter = {
           encodeURIComponent(overpassQuery(cfg.country, all, allNames))
         }`,
       });
-      return { ...base, points: parseOverpass(await r.json(), brands, names) };
+      return {
+        ...base,
+        points: parseOverpass(await r.json(), brands, names, {
+          toLatin: cfg.cityScript === "sr-Latn" ? srLatin : undefined,
+        }),
+      };
     } catch (e) {
       return { ...base, failed: String(e) };
     }
