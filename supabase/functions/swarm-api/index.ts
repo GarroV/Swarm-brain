@@ -222,6 +222,15 @@ async function withEntries(
   }
 }
 
+/** Английское имя страны по ISO-коду; не код (General, имя по-русски) — как есть. */
+function englishCountry(code: string): string {
+  try {
+    return new Intl.DisplayNames(["en"], { type: "region" }).of(code) ?? code;
+  } catch {
+    return code;
+  }
+}
+
 // Имена пользователей по telegram_id: «Имя Фамилия» → @username → e-mail (вошедшие через Google,
 // #537). Правило и запросы — в _shared/users/display-name.ts (общие с swarm-mcp). Кого назвать
 // нечем, в карте нет. Обёртка оставлена, т.к. её ждут зависимости модулей (deps.resolveNames).
@@ -3570,11 +3579,11 @@ async function routeRequest(req: Request): Promise<Response> {
     });
 
     if (!entries?.length) {
-      const msg = (scope === "markets")
-        ? `За этот период нет записей по вашим странам (${
-          markets.map((m) => COUNTRY_NAMES[m] ?? m).join(", ")
-        }).`
-        : "За указанный период нет записей.";
+      // Демо — всегда по-английски, и страны тоже (#52): витрина для заказчиков.
+      const names = markets.map((m) => isDemo ? englishCountry(COUNTRY_NAMES[m] ? m : (NAME_TO_CODE[m.toLowerCase()] ?? m)) : (COUNTRY_NAMES[m] ?? m)).join(", ");
+      const msg = scope === "markets"
+        ? (isDemo ? `No records for your countries (${names}) in this period.` : `За этот период нет записей по вашим странам (${names}).`)
+        : (isDemo ? "No records in this period." : "За указанный период нет записей.");
       return json({ text: msg }, 200, origin);
     }
 
