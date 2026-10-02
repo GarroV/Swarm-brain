@@ -3275,6 +3275,12 @@ export async function fetchIntegrations(): Promise<Integration[]> {
   return apiFetch<Integration[]>("/integrations");
 }
 
+/** Одноразовая ссылка на бота для привязки Telegram (#92); действует 15 минут. */
+export async function linkTelegram(): Promise<{ url: string; expires_at: string }> {
+  if (DEV_MODE) return { url: "https://t.me/", expires_at: new Date(Date.now() + 15 * 60_000).toISOString() };
+  return apiFetch<{ url: string; expires_at: string }>("/telegram/link", { method: "POST" });
+}
+
 export async function connectGranola(api_key: string): Promise<void> {
   if (DEV_MODE) {
     mockIntegrations.push({

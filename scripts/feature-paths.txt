@@ -41,3 +41,8 @@ supabase/functions/_shared/demo-reset.db.test.ts
 supabase/functions/swarm-api/public-roadmap.ts
 supabase/functions/swarm-api/public-roadmap.test.ts
 supabase/functions/swarm-api/public-roadmap.db.test.ts
+supabase/functions/_shared/telegram-link.ts
+supabase/functions/_shared/telegram-link.test.ts
+supabase/functions/swarm-bot/lib/telegram-link-store.ts
+supabase/functions/swarm-bot/lib/telegram-link-store.db.test.ts
+supabase/functions/swarm-api/telegram-link.ts
