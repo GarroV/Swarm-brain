@@ -792,12 +792,18 @@ export function TaskModal({ task: taskOpened, open, onClose, onSaved, prefill, m
             {SHOW_TASK_ROLE && (
               <div>
                 <label htmlFor="modal-role" className={labelCls} style={{ fontSize: 12 }}>Роль</label>
-                <select id="modal-role" className={fieldCls} value={taskRole} onChange={(e) => setTaskRole(e.target.value)}>
-                  <option value={NONE}>— Нет —</option>
-                  {TASK_ROLES.map((r) => (
-                    <option key={r.value} value={r.value}>{r.label}</option>
-                  ))}
-                </select>
+                {/* Своё меню, а не нативный <select>: macOS раскрывает тот системным поверх интерфейса (#300). */}
+                <Select value={taskRole} onValueChange={(v) => setTaskRole(v ?? NONE)}>
+                  <SelectTrigger id="modal-role" className={fieldCls}>
+                    {TASK_ROLES.find((r) => r.value === taskRole)?.label ?? dt("— Нет —", "— None —")}
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={NONE}>{dt("— Нет —", "— None —")}</SelectItem>
+                    {TASK_ROLES.map((r) => (
+                      <SelectItem key={r.value} value={r.value}>{r.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
             )}
 
