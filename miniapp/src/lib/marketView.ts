@@ -85,17 +85,6 @@ export function orderChannels(orders: Record<string, unknown> | null): Record<st
   );
 }
 
-/** Сетка плотности: число точек в ячейке n×n поверх контура. */
-export function densityGrid(points: Array<[number, number]>, W: number, H: number, n: number): number[][] {
-  const g = Array.from({ length: n }, () => Array<number>(n).fill(0));
-  for (const [x, y] of points) {
-    const i = Math.min(n - 1, Math.max(0, Math.floor((y / H) * n)));
-    const j = Math.min(n - 1, Math.max(0, Math.floor((x / W) * n)));
-    g[i][j]++;
-  }
-  return g;
-}
-
 export const fmtEur = (v: number | null): string => {
   if (v === null) return "—";
   const a = Math.abs(v);

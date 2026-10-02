@@ -4,6 +4,7 @@
 // и лежит в public/market/shapes/<CC>.json; здесь только раскраска токенами темы.
 import { useEffect, useRef, useState } from "react";
 import type { Shape } from "@/lib/marketView";
+import type { ViewBox } from "./heat";
 
 /** Слои под точками. `clipId` — контур страны, по нему обрезается режим «Плотность»; `unit` —
  *  единиц viewBox на экранный пиксель (кружки городов). Толщина линий — экранная
@@ -75,15 +76,18 @@ const CHAR_PX = 6.2; // средняя ширина символа подпис�
 /** Подписи городов — HTML поверх карты: в SVG шрифт уменьшался бы вместе с картой и на
  *  телефоне становился нечитаемым. Подпись, которая налезает на более крупный город, не
  *  показывается: на узкой карте остаются столица и пара крупнейших. */
-export function CityLabels({ shape, width }: { shape: Shape; width: number }) {
-  const scale = width / shape.W;
-  const limit = width < NARROW_PX ? NARROW_LABELS : Infinity;
+export function CityLabels({ shape, width, vb }: { shape: Shape; width: number; vb: ViewBox }) {
+  const scale = width / vb.w;
+  const height = (vb.h * width) / vb.w;
+  const limit = width < NARROW_PX && vb.w >= shape.W ? NARROW_LABELS : Infinity;
+  const at = (c: { x: number; y: number }) => [(c.x - vb.x) * scale, (c.y - vb.y) * scale] as const;
   const placed: Array<[number, number, number, number]> = [];
   const shown = width
     ? [...(shape.cities ?? [])].sort((a, b) => Number(b.capital) - Number(a.capital) || a.rank - b.rank).filter((c) => {
       const w = c.name.length * CHAR_PX + 6, h = LABEL_PX + 4;
-      const x = c.x * scale + 5, y = c.y * scale - h / 2;
-      if (placed.length >= limit || x + w > width || y < 0 || y + h > shape.H * scale) return false;
+      const [cx, cy] = at(c);
+      const x = cx + 5, y = cy - h / 2;
+      if (placed.length >= limit || x < 0 || x + w > width || y < 0 || y + h > height) return false;
       if (placed.some(([px, py, pw, ph]) => x < px + pw && x + w > px && y < py + ph && y + h > py)) return false;
       placed.push([x, y, w, h]);
       return true;
@@ -97,8 +101,8 @@ export function CityLabels({ shape, width }: { shape: Shape; width: number }) {
           key={c.name}
           className="absolute whitespace-nowrap text-ink-soft"
           style={{
-            left: c.x * scale + 5,
-            top: c.y * scale,
+            left: at(c)[0] + 5,
+            top: at(c)[1],
             transform: "translateY(-50%)",
             fontSize: LABEL_PX,
             fontWeight: c.capital ? 600 : 450,

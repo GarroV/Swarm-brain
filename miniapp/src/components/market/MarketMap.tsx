@@ -1,63 +1,100 @@
 "use client";
-// Карта точек страны: контур (public/market/shapes/<CC>.json) + точки сетей на конец
-// выбранного года. Режим «Плотность» — сетка 20×20, где больше точек, там темнее.
+// Карта точек страны по образцу хорватского референса (решение владельца 02.10.2026,
+// docs/decisions/2026-10-02-market-follow-reference-visual.md): хитмап по умолчанию, точки
+// и оба слоя; зум и сдвиг; пресеты «Вся страна» и крупные города; год с проигрыванием;
+// фильтры года открытия, сетей, пекарен и анонсов; справа — число точек и топ городов.
 import { useEffect, useMemo, useState } from "react";
-import type { MarketBundle, MarketLocation } from "@/types";
-import { aliveAtYearEnd } from "@/lib/marketStats";
-import { densityGrid, project, segmentColor, type Shape } from "@/lib/marketView";
+import type { MarketBundle } from "@/types";
+import { chainColors, topCities, visibleLocations } from "@/lib/marketMap";
+import { project, type Shape } from "@/lib/marketView";
 import { useDt } from "@/components/roy/nav";
-import { CityLabels, MapBaseLayers, useElementWidth } from "./MapBase";
+import { clampVb, type MapMode, MapView } from "./MapView";
+import { MapSidebar } from "./MapSidebar";
+import type { ViewBox } from "./heat";
 import { Chip, Empty, Section, SourceCaption } from "./ui";
 
-const GRID = 20;
-const VERIF: Record<string, [string, string]> = {
-  official: ["официально", "official"],
-  confirmed: ["проверено", "confirmed"],
-  corrected: ["исправлено", "corrected"],
-  added: ["добавлено вручную", "added manually"],
-  unverified: ["не проверено", "unverified"],
-  internal: ["данные Dodo", "Dodo data"],
-};
+const PLAY_MS = 900;
+const OPEN_YEARS = 5; // фильтр «Год открытия»: последние пять лет поштучно, раньше — одной корзиной
+const PRESET_CITIES = 4;
+const PRESET_SPAN = 0.25; // ширина кадра города — четверть страны
 
 export function MarketMap({ bundle }: { bundle: MarketBundle }) {
   const dt = useDt();
+  const thisYear = new Date().getFullYear();
+  const openFirst = thisYear - OPEN_YEARS;
   const [shape, setShape] = useState<Shape | null>(null);
   const [shapeFailed, setShapeFailed] = useState(false);
-  const [mode, setMode] = useState<"points" | "density">("points");
-  const [hidden, setHidden] = useState<Set<string>>(new Set());
-  const thisYear = new Date().getFullYear();
+  const [mode, setMode] = useState<MapMode>("heat");
   const [year, setYear] = useState(thisYear);
-  const [hover, setHover] = useState<MarketLocation | null>(null);
-  const [mapRef, mapWidth] = useElementWidth<HTMLDivElement>();
+  const [playing, setPlaying] = useState(false);
+  const [openYears, setOpenYears] = useState<Set<string> | null>(null);
+  const [hidden, setHidden] = useState<Set<string>>(new Set());
+  const [bakeries, setBakeries] = useState(false);
+  const [planned, setPlanned] = useState(true);
+  const [vb, setVb] = useState<ViewBox>({ x: 0, y: 0, w: 1, h: 1 });
+  const [preset, setPreset] = useState<string | null>(null);
 
   useEffect(() => {
     setShape(null);
     setShapeFailed(false);
     fetch(`/market/shapes/${bundle.country}.json`)
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
-      .then(setShape)
+      .then((s: Shape) => {
+        setShape(s);
+        setVb({ x: 0, y: 0, w: s.W, h: s.H });
+        setPreset(null);
+      })
       .catch((e) => {
         console.error("[MarketMap] shape", e);
         setShapeFailed(true);
       });
   }, [bundle.country]);
 
-  const chainByKey = useMemo(() => new Map(bundle.chains.map((c) => [c.key, c])), [bundle.chains]);
   const firstYear = useMemo(() => {
     const ys = bundle.locations.map((l) => Number(l.opened?.slice(0, 4))).filter((y) => y > 1990);
     return ys.length ? Math.max(Math.min(...ys), thisYear - 25) : thisYear - 5;
   }, [bundle.locations, thisYear]);
 
+  // Проигрывание: шаг в год, с конца — с начала; на текущем годе останавливается.
+  useEffect(() => {
+    if (!playing) return;
+    const id = setTimeout(() => {
+      if (year >= thisYear) setPlaying(false);
+      else setYear(year + 1);
+    }, PLAY_MS);
+    return () => clearTimeout(id);
+  }, [playing, year, thisYear]);
+  const togglePlay = () => {
+    if (!playing && year >= thisYear) setYear(firstYear);
+    setPlaying(!playing);
+  };
+
+  const bakery = useMemo(() => new Set(bundle.chains.filter((c) => c.is_bakery).map((c) => c.key)), [bundle.chains]);
+  const colors = useMemo(() => chainColors(bundle.chains, bundle.locations), [bundle.chains, bundle.locations]);
+  const chainName = useMemo(() => new Map(bundle.chains.map((c) => [c.key, c.name])), [bundle.chains]);
   const visible = useMemo(
-    () =>
-      bundle.locations.filter((l) => !hidden.has(l.chain_key) && aliveAtYearEnd([l], year) === 1),
-    [bundle.locations, hidden, year],
+    () => visibleLocations(bundle.locations, bakery, { year, thisYear, hidden, bakeries, planned, openYears, firstYear: openFirst }),
+    [bundle.locations, bakery, year, thisYear, hidden, bakeries, planned, openYears, openFirst],
   );
+  // Счётчики сетей — без учёта выключенных сетей, иначе выключенная показывала бы ноль.
   const counts = useMemo(() => {
+    const all = visibleLocations(bundle.locations, bakery, { year, thisYear, hidden: new Set(), bakeries: true, planned, openYears, firstYear: openFirst });
     const c = new Map<string, number>();
-    for (const l of bundle.locations) if (aliveAtYearEnd([l], year)) c.set(l.chain_key, (c.get(l.chain_key) ?? 0) + 1);
+    for (const l of all) c.set(l.chain_key, (c.get(l.chain_key) ?? 0) + 1);
     return c;
-  }, [bundle.locations, year]);
+  }, [bundle.locations, bakery, year, thisYear, planned, openYears, openFirst]);
+  const chains = useMemo(() => [...bundle.chains].sort((a, b) => (counts.get(b.key) ?? 0) - (counts.get(a.key) ?? 0)), [bundle.chains, counts]);
+
+  // Пресеты: крупнейшие города по числу точек, центр кадра — средняя их точек.
+  const presets = useMemo(() => {
+    if (!shape) return [];
+    return topCities(bundle.locations.filter((l) => l.status !== "closed"), PRESET_CITIES).map(({ city }) => {
+      const ps = bundle.locations.filter((l) => l.city === city).map((l) => project(shape.proj, l.lat, l.lng));
+      const cx = ps.reduce((s, p) => s + p[0], 0) / ps.length, cy = ps.reduce((s, p) => s + p[1], 0) / ps.length;
+      const w = shape.W * PRESET_SPAN, h = (w * shape.H) / shape.W;
+      return { city, vb: clampVb({ x: cx - w / 2, y: cy - h / 2, w, h }, shape) };
+    });
+  }, [shape, bundle.locations]);
 
   if (!bundle.locations.length) {
     return (
@@ -68,119 +105,85 @@ export function MarketMap({ bundle }: { bundle: MarketBundle }) {
     );
   }
 
-  const toggle = (key: string) =>
-    setHidden((h) => {
-      const n = new Set(h);
-      if (n.has(key)) n.delete(key);
-      else n.add(key);
-      return n;
-    });
-  // Точки — в экранных пикселях: до первого замера ширины считаем карту в натуральную величину.
-  const dot = shape && mapWidth ? shape.W / mapWidth : 1;
-  const pts = shape ? visible.map((l) => [l, project(shape.proj, l.lat, l.lng)] as const) : [];
-  const grid = shape && mode === "density" ? densityGrid(pts.map(([, p]) => p), shape.W, shape.H, GRID) : null;
-  const gridMax = grid ? Math.max(1, ...grid.flat()) : 1;
-  const sorted = [...bundle.chains].sort((a, b) => (counts.get(b.key) ?? 0) - (counts.get(a.key) ?? 0));
+  const go = (name: string | null, v: ViewBox) => {
+    setPreset(name);
+    setVb(v);
+  };
+  const userVb = (f: (v: ViewBox) => ViewBox) => {
+    setPreset(null);
+    setVb(f);
+  };
 
   return (
-    <Section
-      title={dt("Карта точек", "Locations map")}
-      aside={
-        <div className="flex gap-1.5">
-          <Chip active={mode === "points"} onClick={() => setMode("points")}>{dt("Точки", "Points")}</Chip>
-          <Chip active={mode === "density"} onClick={() => setMode("density")}>{dt("Плотность", "Density")}</Chip>
-        </div>
-      }
-    >
-      <div className="mb-3 flex flex-wrap gap-1.5">
-        {sorted.map((c) => (
-          <Chip key={c.key} active={!hidden.has(c.key)} onClick={() => toggle(c.key)} color={segmentColor(c.segment)}>
-            {c.name} <span className="text-ink-mute">{counts.get(c.key) ?? 0}</span>
+    <Section title={dt("Карта точек", "Locations map")}>
+      {shape && (
+        <div className="mb-3 flex flex-wrap gap-1.5">
+          <Chip active={preset === null && vb.w >= shape.W} onClick={() => go(null, { x: 0, y: 0, w: shape.W, h: shape.H })}>
+            {dt("Вся страна", "Whole country")}
           </Chip>
-        ))}
-      </div>
-      <label className="mb-3 flex items-center gap-3 text-ink-soft" style={{ fontSize: 13 }}>
-        <span className="shrink-0">{dt("На конец года", "At year end")} <b className="text-ink">{year}</b></span>
-        <input
-          type="range"
-          min={firstYear}
-          max={thisYear}
-          value={year}
-          onChange={(e) => setYear(Number(e.target.value))}
-          className="w-full accent-[var(--accent)]"
-          aria-label={dt("Год", "Year")}
-        />
-      </label>
-      <div className="relative" ref={mapRef}>
-        {shapeFailed && <Empty text={dt("Контур страны не загрузился.", "Country outline failed to load.")} />}
-        {shape && (
-          <svg viewBox={`0 0 ${shape.W} ${shape.H}`} className="block h-auto w-full overflow-hidden rounded-lg" role="img" aria-label={dt("Карта точек", "Locations map")}>
-            <MapBaseLayers shape={shape} clipId={`mkt-clip-${bundle.country}`} unit={dot} />
-            {grid &&
-              grid.flatMap((row, i) =>
-                row.map((n, j) =>
-                  n
-                    ? (
-                      <rect
-                        key={`${i}:${j}`}
-                        x={(j * shape.W) / GRID}
-                        y={(i * shape.H) / GRID}
-                        width={shape.W / GRID}
-                        height={shape.H / GRID}
-                        fill="var(--chart-1)"
-                        opacity={0.12 + 0.75 * (n / gridMax)}
-                        clipPath={`url(#mkt-clip-${bundle.country})`}
-                      >
-                        <title>{n}</title>
-                      </rect>
-                    )
-                    : null
-                )
+          {presets.map((p) => (
+            <Chip key={p.city} active={preset === p.city} onClick={() => go(p.city, p.vb)}>{p.city}</Chip>
+          ))}
+        </div>
+      )}
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_300px]">
+        <div className="min-w-0">
+          {shapeFailed && <Empty text={dt("Контур страны не загрузился.", "Country outline failed to load.")} />}
+          {shape && (
+            <MapView
+              shape={shape}
+              locs={visible}
+              colors={colors}
+              chainName={chainName}
+              bakery={bakery}
+              mode={mode}
+              vb={vb}
+              setVb={userVb}
+              country={bundle.country}
+            />
+          )}
+          <p className="mt-2 text-ink-mute" style={{ fontSize: 12 }}>
+            {mode === "dots"
+              ? dt(
+                "Цвет — сеть. Полый кружок — дата открытия оценена, пунктир — анонс, бледная — на паузе.",
+                "Colour is the chain. Hollow dot — opening date estimated, dashed — announced, faded — paused.",
+              )
+              : dt(
+                "Чем темнее, тем больше точек рядом. Колесо или +/− — масштаб, перетаскивание — сдвиг.",
+                "Darker means more locations nearby. Wheel or +/− to zoom, drag to pan.",
               )}
-            {!grid &&
-              pts.map(([l, [x, y]]) => {
-                const ch = chainByKey.get(l.chain_key);
-                const color = segmentColor(ch?.segment ?? "other");
-                const dodo = l.chain_key === "dodo";
-                return (
-                  <circle
-                    key={l.id}
-                    cx={x}
-                    cy={y}
-                    r={(dodo ? 5 : 3.6) * dot}
-                    fill={l.opened_estimated ? "var(--map-country)" : color}
-                    // Светлая обводка разделяет точки в плотном центре города, иначе они
-                    // сливаются в одно пятно; у полой (дата оценена) обводка — цвет сети.
-                    stroke={dodo ? "var(--ink)" : l.opened_estimated ? color : "var(--map-country)"}
-                    strokeWidth={(dodo ? 1.5 : l.opened_estimated ? 1.2 : 0.8) * dot}
-                    onMouseEnter={() => setHover(l)}
-                    onMouseLeave={() => setHover((h) => (h?.id === l.id ? null : h))}
-                    onClick={() => setHover(l)}
-                  />
-                );
-              })}
-          </svg>
-        )}
-        {shape && <CityLabels shape={shape} width={mapWidth} />}
-        {hover && (
-          <div className="pointer-events-none absolute left-2 top-2 max-w-[260px] rounded-lg border border-line bg-card p-2.5 shadow-sm" style={{ fontSize: 12 }}>
-            <div className="font-semibold text-ink">{hover.name}</div>
-            <div className="text-ink-soft">{[hover.address, hover.city].filter(Boolean).join(", ")}</div>
-            <div className="text-ink-mute">
-              {dt("Открыта", "Opened")} {hover.opened ?? "—"}
-              {hover.opened_estimated ? dt(" (оценка)", " (estimated)") : ""}
-              {hover.status === "closed" ? ` · ${dt("закрыта", "closed")} ${hover.closed ?? ""}` : ""}
-            </div>
-            <div className="text-ink-mute">{VERIF[hover.verification] ? dt(...VERIF[hover.verification]) : hover.verification}</div>
-          </div>
-        )}
+          </p>
+        </div>
+        <MapSidebar
+          mode={mode}
+          setMode={setMode}
+          year={year}
+          setYear={(y) => {
+            setPlaying(false);
+            setYear(y);
+          }}
+          firstYear={firstYear}
+          thisYear={thisYear}
+          playing={playing}
+          togglePlay={togglePlay}
+          openFirst={openFirst}
+          openYears={openYears}
+          setOpenYears={setOpenYears}
+          chains={chains}
+          counts={counts}
+          colors={colors}
+          hidden={hidden}
+          setHidden={setHidden}
+          bakeries={bakeries}
+          setBakeries={setBakeries}
+          hasBakeries={bakery.size > 0}
+          planned={planned}
+          setPlanned={setPlanned}
+          hasPlanned={bundle.locations.some((l) => l.status === "planned")}
+          total={visible.length}
+          cities={topCities(visible)}
+        />
       </div>
-      <p className="mt-2 text-ink-mute" style={{ fontSize: 12 }}>
-        {dt(
-          "Цвет — сегмент сети. Dodo — с обводкой. Полый кружок — дата открытия оценена.",
-          "Colour is the chain's segment. Dodo has an outline. Hollow dot — opening date estimated.",
-        )}
-      </p>
       <SourceCaption bundle={bundle} feeds="locations" />
     </Section>
   );

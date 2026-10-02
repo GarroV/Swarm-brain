@@ -2052,6 +2052,8 @@ _Админка (`admin.ts`, админы: `telegram_id 744230399` или `is_ad
 
 Страна описывается одним файлом `scripts/market/countries/<CC>.ts` (тип — `countries/types.ts`, реестр — `countries/index.ts`). Добавить страну = файл + строка в `index.ts`; добавить сеть = строка в `chains`. Подложку карты новой страны рисует один раз `scripts/market/build-shapes.ts` (Natural Earth 10m, public domain: страна, регионы, соседи, море, озёра, крупные реки, города) → `miniapp/public/market/shapes/<CC>.json`; код в `A3` генератора. Demoland (`XD`) выдумана и строится там же; после правки берега проверять, что точки демо остались на суше. Цвета подложки — токены `--map-*` в `globals.css`, точки и толщина линий — в экранных пикселях (`MapBase.tsx`).
 
+Карта на экране повторяет хорватский референс (решение [2026-10-02-market-follow-reference-visual](decisions/2026-10-02-market-follow-reference-visual.md)): по умолчанию хитмап — радиальные штампы на canvas, накопленная плотность красится шкалой `--heat0..3` (`heat.ts`); режимы «Точки» и «Оба»; зум колесом и +/−, сдвиг перетаскиванием через viewBox (`MapView.tsx`); пресеты «Вся страна» + четыре города с наибольшим числом точек; год на конец периода с проигрыванием; фильтры года открытия (последние 5 лет поштучно, раньше и без даты — одной корзиной), сетей, пекарен (по умолчанию скрыты) и анонсов (видны только на текущем годе); справа — число точек и топ-10 городов (`MapSidebar.tsx`). Какие точки видны и цвет сети — `lib/marketMap.ts` (под тестами): палитра `--mkt-s1..8`, McDonald's/Dodo/KFC/Burger King/Domino's/Pizza Hut держат свой цвет во всех странах, свободные слоты — остальным по числу точек, пекарни после обычных сетей, сверх восьми — серый `--mkt-s0`. Тот же цвет сети — в «Динамике сетей».
+
 ### Где что лежит
 
 | Слой | Файлы |
@@ -2061,7 +2063,7 @@ _Админка (`admin.ts`, админы: `telegram_id 744230399` или `is_ad
 | Приём | `supabase/functions/market-ingest/` |
 | API | `supabase/functions/swarm-api/market.ts` (подключён в `index.ts`) |
 | Сборщики | `scripts/market/` (`run.ts`, `lib.ts`, `registry.ts`, `countries/`, `adapters/`, `demoland-seed.ts`; разовый генератор карт `build-shapes.ts` + `shapes-geo.ts`), workflow `.github/workflows/market-collect.yml` |
-| Веб | `miniapp/src/components/market/*`, `lib/marketView.ts`, `marketStats.ts`, `marketDemo.ts`, клиент в `lib/api.ts` (`fetchMarketCountries`, `fetchMarket`, `importMarketSnapshot`, `fetchMarketCandidates`, `decideMarketCandidate`, `acceptAllMarketLocations`), типы `Market*` в `types.ts`, контуры стран `miniapp/public/market/shapes/{HR,RO,EE,XD}.json` |
+| Веб | `miniapp/src/components/market/*`, `lib/marketView.ts`, `marketStats.ts`, `marketMap.ts`, `marketDemo.ts`, клиент в `lib/api.ts` (`fetchMarketCountries`, `fetchMarket`, `importMarketSnapshot`, `fetchMarketCandidates`, `decideMarketCandidate`, `acceptAllMarketLocations`), типы `Market*` в `types.ts`, контуры стран `miniapp/public/market/shapes/{HR,RO,EE,XD}.json` |
 
 ---
 

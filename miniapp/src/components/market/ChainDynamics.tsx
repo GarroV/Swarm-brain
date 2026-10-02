@@ -4,7 +4,7 @@
 import { useMemo, useState } from "react";
 import type { MarketBundle } from "@/types";
 import { unitsByYear } from "@/lib/marketStats";
-import { segmentColor } from "@/lib/marketView";
+import { chainColors } from "@/lib/marketMap";
 import { useDt } from "@/components/roy/nav";
 import { Chip, mono, Section, SourceCaption } from "./ui";
 
@@ -25,6 +25,7 @@ export function ChainDynamics({ bundle }: { bundle: MarketBundle }) {
     () => [...bundle.chains].sort((a, b) => (series[b.key]?.at(-1) ?? 0) - (series[a.key]?.at(-1) ?? 0)),
     [bundle.chains, series],
   );
+  const colors = useMemo(() => chainColors(bundle.chains, bundle.locations), [bundle.chains, bundle.locations]);
   // Точка без даты открытия (всё, что пришло из OSM) рисуется открытой с первого года графика:
   // линия выходит плоской, и это надо сказать на экране, а не оставить читаться как история.
   const undated = useMemo(() => bundle.locations.filter((l) => !l.opened && l.status !== "planned").length, [bundle.locations]);
@@ -54,7 +55,7 @@ export function ChainDynamics({ bundle }: { bundle: MarketBundle }) {
     <Section title={dt("Динамика сетей", "Chain dynamics")}>
       <div className="mb-3 flex flex-wrap gap-1.5">
         {ranked.map((c) => (
-          <Chip key={c.key} active={shown.has(c.key)} onClick={() => toggle(c.key)} color={segmentColor(c.segment)}>
+          <Chip key={c.key} active={shown.has(c.key)} onClick={() => toggle(c.key)} color={colors.get(c.key)}>
             {c.name}
           </Chip>
         ))}
@@ -73,7 +74,7 @@ export function ChainDynamics({ bundle }: { bundle: MarketBundle }) {
         ))}
         {ranked.filter((c) => shown.has(c.key)).map((c) => {
           const v = series[c.key] ?? [];
-          const color = segmentColor(c.segment);
+          const color = colors.get(c.key) ?? "var(--mkt-s0)";
           return (
             <g key={c.key}>
               <polyline

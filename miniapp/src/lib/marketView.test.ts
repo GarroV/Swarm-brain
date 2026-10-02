@@ -1,5 +1,5 @@
 import { assertEquals } from "jsr:@std/assert@1";
-import { densityGrid, freshness, medianPizza30, orderChannels, revenuePerUnit } from "./marketView.ts";
+import { freshness, medianPizza30, orderChannels, revenuePerUnit } from "./marketView.ts";
 import type { MarketPrice, MarketRun, MarketSource } from "../types.ts";
 
 const price = (chain_key: string, size_cm: number | null, price_eur: number): MarketPrice => ({
@@ -79,7 +79,3 @@ Deno.test("order channels drop the internal _days map", () => {
   assertEquals(orderChannels(null), {});
 });
 
-Deno.test("density grid clamps edge points into the last cell", () => {
-  const g = densityGrid([[0, 0], [100, 100], [99, 1]], 100, 100, 2);
-  assertEquals(g, [[1, 1], [0, 1]]);
-});
