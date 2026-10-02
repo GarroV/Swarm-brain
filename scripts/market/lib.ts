@@ -163,10 +163,17 @@ type OverpassEl = {
   tags?: Record<string, string>;
 };
 /** brands: ключ сети → значения тега brand в OSM (без учёта регистра). */
+/** Таймаут и нехватку памяти Overpass сообщает не кодом ответа, а строкой `remark` при HTTP 200
+ *  и обрезанном списке. Принять такой список — значит записать «точки пропали» и успешный прогон. */
+const OVERPASS_FAILURE = /error|timed out|out of memory/i;
+
 export function parseOverpass(
-  j: { elements: OverpassEl[] },
+  j: { elements: OverpassEl[]; remark?: string },
   brands: Record<string, string[]>,
 ): OsmPoint[] {
+  if (j.remark && OVERPASS_FAILURE.test(j.remark)) {
+    throw new Error(`overpass: ${j.remark.slice(0, 200)}`);
+  }
   const byBrand = new Map(
     Object.entries(brands).flatMap(([key, names]) =>
       names.map((n) => [n.toLowerCase(), key])

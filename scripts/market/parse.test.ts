@@ -1,4 +1,4 @@
-import { assertEquals } from "@std/assert";
+import { assertEquals, assertThrows } from "@std/assert";
 import {
   lines,
   parseCountBySource,
@@ -81,6 +81,20 @@ Deno.test("parseFinancialMetrics turns previous_month into YYYY-MM", () => {
       },
     }),
     null,
+  );
+});
+
+Deno.test("parseOverpass refuses a timed-out answer instead of returning a partial list", () => {
+  // Overpass отдаёт таймаут как HTTP 200 с remark и обрезанным списком.
+  assertThrows(
+    () =>
+      parseOverpass({
+        remark:
+          'runtime error: Query timed out in "query" at line 3 after 181 seconds.',
+        elements: [],
+      }, { kfc: ["KFC"] }),
+    Error,
+    "timed out",
   );
 });
 
