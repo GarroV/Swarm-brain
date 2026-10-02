@@ -3,7 +3,12 @@
 // Дозаполнение эмбеддингов (#373): запись без индекса должна получить его на следующем проходе,
 // отказ модели на одной записи не должен останавливать остальные и не должен пропадать молча.
 import { assertEquals } from "@std/assert";
-import { type BackfillEntry, backfillMissingEmbeddings, type BackfillStore, backfillText } from "./embedding-backfill.ts";
+import {
+  type BackfillEntry,
+  backfillMissingEmbeddings,
+  type BackfillStore,
+  backfillText,
+} from "./embedding-backfill.ts";
 
 function fakeStore(rows: BackfillEntry[]) {
   const saved = new Map<string, number[]>();
@@ -38,7 +43,10 @@ Deno.test("запись без эмбеддинга получает его", as
 
 Deno.test("отказ модели на одной записи не останавливает остальные и считается", async () => {
   const { store, saved } = fakeStore([row("a"), row("bad"), row("c")]);
-  const r = await backfillMissingEmbeddings(store, (t) => t.includes("bad") ? Promise.reject(new Error("429")) : Promise.resolve([1]));
+  const r = await backfillMissingEmbeddings(
+    store,
+    (t) => t.includes("bad") ? Promise.reject(new Error("429")) : Promise.resolve([1]),
+  );
   assertEquals(r, { filled: 2, failed: 1 });
   assertEquals([...saved.keys()], ["a", "c"]);
 });

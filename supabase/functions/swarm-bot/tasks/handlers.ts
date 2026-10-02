@@ -670,7 +670,10 @@ export async function handleTaskCallbacks(
     const sep = rest.indexOf(":");
     const taskId = rest.slice(0, sep);
     const country = rest.slice(sep + 1);
-    await dbUpdateTask(taskId, { country: country === "none" ? null : country }, { actor: username, actorTelegramId: userId });
+    await dbUpdateTask(taskId, { country: country === "none" ? null : country }, {
+      actor: username,
+      actorTelegramId: userId,
+    });
     await sendMessage(chatId, country === "none" ? "🌍 Страна убрана." : `🌍 Страна: <b>${country}</b>`);
     return true;
   }
@@ -734,7 +737,10 @@ export async function handleTaskCallbacks(
     const profiles = await getProfilesForPrompt();
     const profileMap = buildProfileMap(profiles);
     const name = profileMap[targetTgId] ?? `ID ${targetTgId}`;
-    await dbUpdateTask(taskId, { assignees: [name], assignee_telegram_ids: [targetTgId], status: "open" }, { actor: username, actorTelegramId: userId });
+    await dbUpdateTask(taskId, { assignees: [name], assignee_telegram_ids: [targetTgId], status: "open" }, {
+      actor: username,
+      actorTelegramId: userId,
+    });
     await sendMessage(chatId, `✅ Назначено: <b>${name}</b>`);
     return true;
   }
