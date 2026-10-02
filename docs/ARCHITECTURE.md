@@ -2050,7 +2050,7 @@ _Админка (`admin.ts`, админы: `telegram_id 744230399` или `is_ad
 | Финансы юрлиц | `ee-ariregister` (EE), `ro-datagov` (RO) | месяц / год | — (Fina закрыта, вручную) | да | да |
 | Локальные сети, цены, факты рынка | `manual` (снимок) | по необходимости | да | первичный сбор | первичный сбор |
 
-Страна описывается одним файлом `scripts/market/countries/<CC>.ts` (тип — `countries/types.ts`, реестр — `countries/index.ts`). Добавить страну = файл + строка в `index.ts`; добавить сеть = строка в `chains`.
+Страна описывается одним файлом `scripts/market/countries/<CC>.ts` (тип — `countries/types.ts`, реестр — `countries/index.ts`). Добавить страну = файл + строка в `index.ts`; добавить сеть = строка в `chains`. Подложку карты новой страны рисует один раз `scripts/market/build-shapes.ts` (Natural Earth 10m, public domain: страна, регионы, соседи, море, озёра, крупные реки, города) → `miniapp/public/market/shapes/<CC>.json`; код в `A3` генератора. Demoland (`XD`) выдумана и строится там же; после правки берега проверять, что точки демо остались на суше. Цвета подложки — токены `--map-*` в `globals.css`, точки и толщина линий — в экранных пикселях (`MapBase.tsx`).
 
 ### Где что лежит
 
@@ -2060,7 +2060,7 @@ _Админка (`admin.ts`, админы: `telegram_id 744230399` или `is_ad
 | Общая логика | `supabase/functions/_shared/market/{types,snapshot,geo,rules,db}.ts` (валидатор снимка, сопоставление 150 м, правила, доступ к базе) |
 | Приём | `supabase/functions/market-ingest/` |
 | API | `supabase/functions/swarm-api/market.ts` (подключён в `index.ts`) |
-| Сборщики | `scripts/market/` (`run.ts`, `lib.ts`, `registry.ts`, `countries/`, `adapters/`, `demoland-seed.ts`), workflow `.github/workflows/market-collect.yml` |
+| Сборщики | `scripts/market/` (`run.ts`, `lib.ts`, `registry.ts`, `countries/`, `adapters/`, `demoland-seed.ts`; разовый генератор карт `build-shapes.ts` + `shapes-geo.ts`), workflow `.github/workflows/market-collect.yml` |
 | Веб | `miniapp/src/components/market/*`, `lib/marketView.ts`, `marketStats.ts`, `marketDemo.ts`, клиент в `lib/api.ts` (`fetchMarketCountries`, `fetchMarket`, `importMarketSnapshot`, `fetchMarketCandidates`, `decideMarketCandidate`, `acceptAllMarketLocations`), типы `Market*` в `types.ts`, контуры стран `miniapp/public/market/shapes/{HR,RO,EE,XD}.json` |
 
 ---

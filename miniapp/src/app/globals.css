@@ -141,6 +141,16 @@
   --accent-soft: #E8EEF8;
   --accent-ink: #1F4E9C;
   --accent-line: #C9D9F0;
+  /* Карта «Анализа рынка» (MapBase.tsx): непрозрачные, чтобы подложка читалась на любом заднике */
+  --map-sea: #E9F0F7;
+  --map-water-edge: #C9D8E8;
+  --map-river: #B7CDE3;
+  --map-land: #F3F4F6;
+  --map-border: #D5DAE1;
+  --map-country: #FFFFFF;
+  --map-region: #E3E7EC;
+  --map-outline: #9AA6B4;
+  --map-city: #5C6672;
   --status-open: #B8C0C9;            /* «открыто» = ink-empty стенда */
   --status-prog: #1F4E9C;            /* «в работе» = акцент (d-in_progress стенда) */
   --status-done: #1E8E5E;
@@ -198,6 +208,15 @@
   --accent-soft: #0A2230;
   --accent-ink: #5CEBFF;
   --accent-line: #134A5C;
+  --map-sea: #08101F;
+  --map-water-edge: #2A4670;
+  --map-river: #2D4F80;
+  --map-land: #111A2D;
+  --map-border: #24324F;
+  --map-country: #18233D;
+  --map-region: #26355A;
+  --map-outline: #3F5580;
+  --map-city: #93A4C3;
   --status-open: #5A6472;
   --status-prog: #6FA0F0;
   --status-done: #4CB88A;

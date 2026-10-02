@@ -3,7 +3,19 @@ import type { MarketFinancial, MarketPrice, MarketRun, MarketSource } from "../t
 import { aliveAtYearEnd } from "./marketStats";
 
 export type Proj = { K: number; L0: number; LAT0: number; CS: number };
-export type Shape = { path: string; proj: Proj; W: number; H: number };
+export type MapCity = { name: string; x: number; y: number; capital: boolean; rank: number };
+/** Подложка карты (scripts/market/build-shapes.ts): `path` — страна, остальное — контекст. */
+export type Shape = {
+  path: string;
+  proj: Proj;
+  W: number;
+  H: number;
+  land?: string;
+  regions?: string;
+  lakes?: string;
+  rivers?: string;
+  cities?: MapCity[];
+};
 
 /** Та же эквидистантная проекция, что у контуров (public/market/shapes/*.json). */
 export const project = (p: Proj, lat: number, lng: number): [number, number] => [

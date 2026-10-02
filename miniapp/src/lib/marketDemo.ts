@@ -24,7 +24,7 @@ function rng(seed: number) {
 
 // Города в открытом океане (контур — public/market/shapes/XD.json): ни с какой реальной
 // страной точки не перепутать. Название, lat, lng, вес (сколько точек тянет город).
-const CITIES: Array<[string, number, number, number]> = [
+export const CITIES: Array<[string, number, number, number]> = [
   ["Northport", 45.1, -33.6, 9],
   ["Ravenmoor", 44.2, -34.2, 5],
   ["Sunvale", 43.7, -32.4, 4],

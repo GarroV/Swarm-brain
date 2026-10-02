@@ -6,6 +6,7 @@ import type { MarketBundle, MarketLocation } from "@/types";
 import { aliveAtYearEnd } from "@/lib/marketStats";
 import { densityGrid, project, segmentColor, type Shape } from "@/lib/marketView";
 import { useDt } from "@/components/roy/nav";
+import { CityLabels, MapBaseLayers, useElementWidth } from "./MapBase";
 import { Chip, Empty, Section, SourceCaption } from "./ui";
 
 const GRID = 20;
@@ -27,6 +28,7 @@ export function MarketMap({ bundle }: { bundle: MarketBundle }) {
   const thisYear = new Date().getFullYear();
   const [year, setYear] = useState(thisYear);
   const [hover, setHover] = useState<MarketLocation | null>(null);
+  const [mapRef, mapWidth] = useElementWidth<HTMLDivElement>();
 
   useEffect(() => {
     setShape(null);
@@ -73,6 +75,8 @@ export function MarketMap({ bundle }: { bundle: MarketBundle }) {
       else n.add(key);
       return n;
     });
+  // Точки — в экранных пикселях: до первого замера ширины считаем карту в натуральную величину.
+  const dot = shape && mapWidth ? shape.W / mapWidth : 1;
   const pts = shape ? visible.map((l) => [l, project(shape.proj, l.lat, l.lng)] as const) : [];
   const grid = shape && mode === "density" ? densityGrid(pts.map(([, p]) => p), shape.W, shape.H, GRID) : null;
   const gridMax = grid ? Math.max(1, ...grid.flat()) : 1;
@@ -107,11 +111,11 @@ export function MarketMap({ bundle }: { bundle: MarketBundle }) {
           aria-label={dt("Год", "Year")}
         />
       </label>
-      <div className="relative">
+      <div className="relative" ref={mapRef}>
         {shapeFailed && <Empty text={dt("Контур страны не загрузился.", "Country outline failed to load.")} />}
         {shape && (
-          <svg viewBox={`0 0 ${shape.W} ${shape.H}`} className="h-auto w-full" role="img" aria-label={dt("Карта точек", "Locations map")}>
-            <path d={shape.path} fill="var(--surface-2)" stroke="var(--line-2)" strokeWidth={1.2} />
+          <svg viewBox={`0 0 ${shape.W} ${shape.H}`} className="block h-auto w-full overflow-hidden rounded-lg" role="img" aria-label={dt("Карта точек", "Locations map")}>
+            <MapBaseLayers shape={shape} clipId={`mkt-clip-${bundle.country}`} unit={dot} />
             {grid &&
               grid.flatMap((row, i) =>
                 row.map((n, j) =>
@@ -125,6 +129,7 @@ export function MarketMap({ bundle }: { bundle: MarketBundle }) {
                         height={shape.H / GRID}
                         fill="var(--chart-1)"
                         opacity={0.12 + 0.75 * (n / gridMax)}
+                        clipPath={`url(#mkt-clip-${bundle.country})`}
                       >
                         <title>{n}</title>
                       </rect>
@@ -142,10 +147,12 @@ export function MarketMap({ bundle }: { bundle: MarketBundle }) {
                     key={l.id}
                     cx={x}
                     cy={y}
-                    r={dodo ? 5 : 3.2}
-                    fill={l.opened_estimated ? "none" : color}
-                    stroke={dodo ? "var(--ink)" : color}
-                    strokeWidth={dodo ? 1.6 : 1.2}
+                    r={(dodo ? 5 : 3.6) * dot}
+                    fill={l.opened_estimated ? "var(--map-country)" : color}
+                    // Светлая обводка разделяет точки в плотном центре города, иначе они
+                    // сливаются в одно пятно; у полой (дата оценена) обводка — цвет сети.
+                    stroke={dodo ? "var(--ink)" : l.opened_estimated ? color : "var(--map-country)"}
+                    strokeWidth={(dodo ? 1.5 : l.opened_estimated ? 1.2 : 0.8) * dot}
                     onMouseEnter={() => setHover(l)}
                     onMouseLeave={() => setHover((h) => (h?.id === l.id ? null : h))}
                     onClick={() => setHover(l)}
@@ -154,6 +161,7 @@ export function MarketMap({ bundle }: { bundle: MarketBundle }) {
               })}
           </svg>
         )}
+        {shape && <CityLabels shape={shape} width={mapWidth} />}
         {hover && (
           <div className="pointer-events-none absolute left-2 top-2 max-w-[260px] rounded-lg border border-line bg-card p-2.5 shadow-sm" style={{ fontSize: 12 }}>
             <div className="font-semibold text-ink">{hover.name}</div>
