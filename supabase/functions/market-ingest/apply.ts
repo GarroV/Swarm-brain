@@ -5,7 +5,7 @@
 // deno-lint-ignore-file no-import-prefix
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { matchPoints } from "../_shared/market/geo.ts";
-import { foldDailyOrders, shouldFlagClosed } from "../_shared/market/rules.ts";
+import { foldDailyOrders, shouldFlagClosed, toEur } from "../_shared/market/rules.ts";
 import { locKey, must, recordRun } from "../_shared/market/db.ts";
 import { TRUSTED, type Verification } from "../_shared/market/types.ts";
 import type { IngestPayload, OsmPoint, RegistryYear } from "./types.ts";
@@ -13,26 +13,41 @@ import type { IngestPayload, OsmPoint, RegistryYear } from "./types.ts";
 type Stats = Record<string, number>;
 const now = () => new Date().toISOString();
 /** Источник в журнале → адаптер в mkt_sources (у реестров адаптер приходит в нагрузке). */
-const ADAPTER_OF: Record<string, string> = { osm: "osm-overpass", dodo: "dodo-publicapi" };
+const ADAPTER_OF: Record<string, string> = {
+  osm: "osm-overpass",
+  dodo: "dodo-publicapi",
+};
 
 /** Один открытый кандидат на одну находку: повторный прогон недели не плодит дубли.
  *  Частичный уникальный индекс mkt_candidates_pending_once страхует от гонки двух прогонов. */
 async function propose(
   sb: SupabaseClient,
-  row: Record<string, unknown> & { payload: { key: string; [k: string]: unknown } },
+  row: Record<string, unknown> & {
+    payload: { key: string; [k: string]: unknown };
+  },
 ) {
   const { data, error } = await sb.from("mkt_candidates").select("id")
-    .eq("country", row.country as string).eq("kind", row.kind as string).eq("status", "pending")
+    .eq("country", row.country as string).eq("kind", row.kind as string).eq(
+      "status",
+      "pending",
+    )
     .eq("payload->>key", row.payload.key).limit(1);
   if (error) throw new Error(`candidate lookup: ${error.message}`);
   if (data?.length) return;
   const ins = await sb.from("mkt_candidates").insert(row);
-  if (ins.error && ins.error.code !== "23505") throw new Error(`candidate: ${ins.error.message}`);
+  if (ins.error && ins.error.code !== "23505") {
+    throw new Error(`candidate: ${ins.error.message}`);
+  }
 }
 
-export async function applyIngest(sb: SupabaseClient, p: IngestPayload, today: string): Promise<Stats> {
+export async function applyIngest(
+  sb: SupabaseClient,
+  p: IngestPayload,
+  today: string,
+): Promise<Stats> {
   const country = p.country.toUpperCase();
-  const adapter = ("adapter" in p && p.adapter) || ADAPTER_OF[p.source] || p.source;
+  const adapter = ("adapter" in p && p.adapter) || ADAPTER_OF[p.source] ||
+    p.source;
   if ("failed" in p) {
     await recordRun(sb, {
       source: adapter,
@@ -48,12 +63,25 @@ export async function applyIngest(sb: SupabaseClient, p: IngestPayload, today: s
     let stats: Stats = {};
     if (p.source === "config") stats = await applyConfig(sb, country, p);
     else if (p.source === "osm") stats = await applyOsm(sb, country, p.points);
-    else if (p.source === "dodo") stats = await applyDodo(sb, country, p, today);
-    else if (p.source === "registry") stats = await applyRegistry(sb, country, p.years);
+    else if (p.source === "dodo") {
+      stats = await applyDodo(sb, country, p, today);
+    } else if (p.source === "registry") {
+      stats = await applyRegistry(sb, country, p.years);
+    }
     if (p.source !== "config") {
-      await recordRun(sb, { source: adapter, country, status: "ok", started_at: p.started_at, stats, error: null });
+      await recordRun(sb, {
+        source: adapter,
+        country,
+        status: "ok",
+        started_at: p.started_at,
+        stats,
+        error: null,
+      });
       await must(
-        sb.from("mkt_sources").update({ last_ok_at: now() }).eq("country", country).eq("adapter", adapter),
+        sb.from("mkt_sources").update({ last_ok_at: now() }).eq(
+          "country",
+          country,
+        ).eq("adapter", adapter),
         "source stamp",
       );
     }
@@ -71,7 +99,11 @@ export async function applyIngest(sb: SupabaseClient, p: IngestPayload, today: s
   }
 }
 
-async function applyConfig(sb: SupabaseClient, country: string, p: Extract<IngestPayload, { source: "config" }>) {
+async function applyConfig(
+  sb: SupabaseClient,
+  country: string,
+  p: Extract<IngestPayload, { source: "config" }>,
+) {
   await must(
     sb.from("mkt_chains").upsert(
       p.chains.map((c, i) => ({
@@ -89,7 +121,12 @@ async function applyConfig(sb: SupabaseClient, country: string, p: Extract<Inges
   );
   for (const co of p.companies) {
     await must(
-      sb.from("mkt_companies").upsert({ country, chain_key: co.chain, name: co.name, reg_id: co.regId }, {
+      sb.from("mkt_companies").upsert({
+        country,
+        chain_key: co.chain,
+        name: co.name,
+        reg_id: co.regId,
+      }, {
         onConflict: "country,name",
       }),
       "config company",
@@ -111,7 +148,11 @@ async function applyConfig(sb: SupabaseClient, country: string, p: Extract<Inges
     ),
     "config sources",
   );
-  return { chains: p.chains.length, companies: p.companies.length, sources: p.sources.length };
+  return {
+    chains: p.chains.length,
+    companies: p.companies.length,
+    sources: p.sources.length,
+  };
 }
 
 type ExistingLoc = {
@@ -125,23 +166,33 @@ type ExistingLoc = {
   missing_weeks: number;
 };
 
-async function applyOsm(sb: SupabaseClient, country: string, points: OsmPoint[]): Promise<Stats> {
+async function applyOsm(
+  sb: SupabaseClient,
+  country: string,
+  points: OsmPoint[],
+): Promise<Stats> {
   const chains = [...new Set(points.map((x) => x.chain))];
   const existing = chains.length
     ? await must<ExistingLoc[]>(
       sb.from("mkt_locations")
-        .select("id, chain_key, ext_key, lat, lng, verification, source_kind, missing_weeks")
+        .select(
+          "id, chain_key, ext_key, lat, lng, verification, source_kind, missing_weeks",
+        )
         .eq("country", country).in("chain_key", chains).neq("status", "closed"),
       "osm existing",
     )
     : [];
-  const r = matchPoints(existing.map((e) => ({ ...e, chain: e.chain_key })), points);
+  const r = matchPoints(
+    existing.map((e) => ({ ...e, chain: e.chain_key })),
+    points,
+  );
   if (r.matched.length) {
     await must(
-      sb.from("mkt_locations").update({ last_seen_at: now(), missing_weeks: 0 }).in(
-        "id",
-        r.matched.map((m) => m.existing.id),
-      ),
+      sb.from("mkt_locations").update({ last_seen_at: now(), missing_weeks: 0 })
+        .in(
+          "id",
+          r.matched.map((m) => m.existing.id),
+        ),
       "osm seen",
     );
   }
@@ -171,9 +222,24 @@ async function applyOsm(sb: SupabaseClient, country: string, points: OsmPoint[])
   let flagged = 0;
   for (const e of r.missing.filter((m) => m.source_kind === "osm")) {
     const weeks = e.missing_weeks + 1;
-    await must(sb.from("mkt_locations").update({ missing_weeks: weeks }).eq("id", e.id), "osm missing");
-    if (shouldFlagClosed({ verification: e.verification, source_kind: e.source_kind, missing_weeks: weeks })) {
-      await propose(sb, { country, kind: "maybe_closed", source: "osm", target_id: e.id, payload: { key: e.ext_key } });
+    await must(
+      sb.from("mkt_locations").update({ missing_weeks: weeks }).eq("id", e.id),
+      "osm missing",
+    );
+    if (
+      shouldFlagClosed({
+        verification: e.verification,
+        source_kind: e.source_kind,
+        missing_weeks: weeks,
+      })
+    ) {
+      await propose(sb, {
+        country,
+        kind: "maybe_closed",
+        source: "osm",
+        target_id: e.id,
+        payload: { key: e.ext_key },
+      });
       flagged++;
     }
   }
@@ -192,7 +258,12 @@ async function applyDodo(
   today: string,
 ): Promise<Stats> {
   await must(
-    sb.from("mkt_chains").upsert({ country, key: "dodo", name: "Dodo Pizza", segment: "pizza" }, {
+    sb.from("mkt_chains").upsert({
+      country,
+      key: "dodo",
+      name: "Dodo Pizza",
+      segment: "pizza",
+    }, {
       onConflict: "country,key",
       ignoreDuplicates: true,
     }),
@@ -226,7 +297,13 @@ async function applyDodo(
     );
   }
   for (const month of [...new Set(p.days.map((d) => d.date.slice(0, 7)))]) {
-    await mergeMonthDays(sb, country, month, p.days.filter((d) => d.date.startsWith(month)), today);
+    await mergeMonthDays(
+      sb,
+      country,
+      month,
+      p.days.filter((d) => d.date.startsWith(month)),
+      today,
+    );
   }
   if (p.revenue) {
     await must(
@@ -235,14 +312,23 @@ async function applyDodo(
         month: p.revenue.month,
         revenue_local: p.revenue.amount,
         currency: p.revenue.currency,
-        revenue_eur: p.revenue.currency === "EUR" ? p.revenue.amount : null,
+        // Без курса месяца евро не выдумываем: пусто, а не сумма в леях под видом евро.
+        revenue_eur: toEur(
+          p.revenue.amount,
+          p.revenue.currency,
+          p.revenue.rates ?? {},
+        ),
         units: p.revenue.units,
         updated_at: now(),
       }, { onConflict: "country,month" }),
       "dodo revenue",
     );
   }
-  return { units: p.units.length, no_coords: p.units.length - withCoords.length, days: p.days.length };
+  return {
+    units: p.units.length,
+    no_coords: p.units.length - withCoords.length,
+    days: p.days.length,
+  };
 }
 
 /** Дни храним внутри месяца (orders._days) и сумму каналов пересчитываем из них:
@@ -254,12 +340,21 @@ async function mergeMonthDays(
   days: Array<{ date: string; counts: Record<string, number> }>,
   today: string,
 ) {
-  const { data: cur, error } = await sb.from("mkt_dodo_monthly").select("orders").eq("country", country)
+  const { data: cur, error } = await sb.from("mkt_dodo_monthly").select(
+    "orders",
+  ).eq("country", country)
     .eq("month", month).maybeSingle();
   if (error) throw new Error(`dodo month: ${error.message}`);
-  const stored = (cur?.orders as { _days?: Record<string, Record<string, number>> } | null)?._days ?? {};
-  const merged = { ...stored, ...Object.fromEntries(days.map((d) => [d.date, d.counts])) };
-  const [folded] = foldDailyOrders(Object.entries(merged).map(([date, counts]) => ({ date, counts })), today);
+  const stored = (cur?.orders as { _days?: Record<string, Record<string, number>> } | null)
+    ?._days ?? {};
+  const merged = {
+    ...stored,
+    ...Object.fromEntries(days.map((d) => [d.date, d.counts])),
+  };
+  const [folded] = foldDailyOrders(
+    Object.entries(merged).map(([date, counts]) => ({ date, counts })),
+    today,
+  );
   await must(
     sb.from("mkt_dodo_monthly").upsert({
       country,
@@ -278,18 +373,35 @@ type FinRow = {
   employees: number | null;
   verification: string;
 };
-const n = (v: number | string | null | undefined): number | null => (v === null || v === undefined ? null : Number(v));
+const n = (
+  v: number | string | null | undefined,
+): number | null => (v === null || v === undefined ? null : Number(v));
 const sameNumbers = (cur: FinRow, y: RegistryYear): boolean =>
-  n(cur.revenue_eur) === n(y.revenue_eur) && n(cur.net_profit_eur) === n(y.net_profit_eur) &&
+  n(cur.revenue_eur) === n(y.revenue_eur) &&
+  n(cur.net_profit_eur) === n(y.net_profit_eur) &&
   n(cur.employees) === n(y.employees);
 
-async function applyRegistry(sb: SupabaseClient, country: string, years: RegistryYear[]): Promise<Stats> {
+async function applyRegistry(
+  sb: SupabaseClient,
+  country: string,
+  years: RegistryYear[],
+): Promise<Stats> {
   const companies = await must<Array<{ id: string; reg_id: string }>>(
-    sb.from("mkt_companies").select("id, reg_id").eq("country", country).not("reg_id", "is", null),
+    sb.from("mkt_companies").select("id, reg_id").eq("country", country).not(
+      "reg_id",
+      "is",
+      null,
+    ),
     "reg companies",
   );
   const byReg = new Map(companies.map((c) => [c.reg_id, c.id]));
-  const stats = { years: years.length, written: 0, proposed: 0, unchanged: 0, unknown_companies: 0 };
+  const stats = {
+    years: years.length,
+    written: 0,
+    proposed: 0,
+    unchanged: 0,
+    unknown_companies: 0,
+  };
   for (const y of years) {
     const company_id = byReg.get(y.reg_id);
     if (!company_id) {
@@ -320,7 +432,11 @@ async function applyRegistry(sb: SupabaseClient, country: string, years: Registr
       stats.proposed++;
     } else {
       await must(
-        sb.from("mkt_financials").upsert({ ...row, verification: "official", updated_at: now() }, {
+        sb.from("mkt_financials").upsert({
+          ...row,
+          verification: "official",
+          updated_at: now(),
+        }, {
           onConflict: "company_id,year",
         }),
         "reg write",

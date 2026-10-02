@@ -3,6 +3,7 @@ import {
   getJson,
   parseCountBySource,
   parseDodoUnits,
+  parseEcbSeries,
   parseFinancialMetrics,
 } from "../lib.ts";
 import type { Adapter } from "./types.ts";
@@ -10,6 +11,8 @@ import type { Adapter } from "./types.ts";
 const api = (cc: string, path: string) =>
   `https://publicapi.dodois.io/${cc}/api/v1/${path}`;
 const DEFAULT_DAYS = 8;
+const ecbMonth = (cur: string, month: string) =>
+  `https://data-api.ecb.europa.eu/service/data/EXR/M.${cur}.EUR.SP00.A?format=jsondata&startPeriod=${month}&endPeriod=${month}`;
 
 /** Дни с since по вчера включительно: сегодняшний день ещё не закрыт. */
 export function daysBetween(since: string, today: string): string[] {
@@ -51,6 +54,13 @@ export const dodo: Adapter = {
       const revenue = parseFinancialMetrics(
         await getJson(api(cfg.dodoCode, "FinancialMetrics")),
       );
+      // Не евро (леи) — месячный курс ЕЦБ; курса ещё нет — евро останется пустым, а не ложным.
+      if (revenue && revenue.currency !== "EUR") {
+        const rate = parseEcbSeries(
+          await getJson(ecbMonth(revenue.currency, revenue.month)),
+        )[revenue.month];
+        if (rate) revenue.rates = { [revenue.currency]: rate };
+      }
       return { ...base, units, days, revenue };
     } catch (e) {
       return { ...base, failed: String(e) };

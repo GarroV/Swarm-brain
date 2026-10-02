@@ -26,7 +26,12 @@ export type RegistryYear = {
   employees: number | null;
   source: string;
 };
-export type SourceFeed = "locations" | "financials" | "dodo" | "prices" | "facts";
+export type SourceFeed =
+  | "locations"
+  | "financials"
+  | "dodo"
+  | "prices"
+  | "facts";
 export type ConfigSource = {
   adapter: string;
   feeds: SourceFeed;
@@ -35,17 +40,39 @@ export type ConfigSource = {
   mode: "auto" | "manual" | "blocked";
   reason?: string;
 };
-export type ConfigChain = { key: string; name: string; segment: string; bakery?: boolean; slot?: number };
-export type ConfigCompany = { chain: string | null; name: string; regId: string };
+export type ConfigChain = {
+  key: string;
+  name: string;
+  segment: string;
+  bakery?: boolean;
+  slot?: number;
+};
+export type ConfigCompany = {
+  chain: string | null;
+  name: string;
+  regId: string;
+};
 
 type Base = { country: string; started_at: string };
 export type IngestPayload =
-  | Base & { source: "config"; chains: ConfigChain[]; companies: ConfigCompany[]; sources: ConfigSource[] }
+  | Base & {
+    source: "config";
+    chains: ConfigChain[];
+    companies: ConfigCompany[];
+    sources: ConfigSource[];
+  }
   | Base & {
     source: "dodo";
     units: DodoUnit[];
     days: Array<{ date: string; counts: Record<string, number> }>;
-    revenue: { month: string; amount: number; currency: string; units: number | null } | null;
+    /** rates — единиц валюты за 1 € в этом месяце (ЕЦБ), когда страна платит не в евро. */
+    revenue: {
+      month: string;
+      amount: number;
+      currency: string;
+      units: number | null;
+      rates?: Record<string, number>;
+    } | null;
   }
   | Base & { source: "osm"; points: OsmPoint[] }
   | Base & { source: "registry"; adapter: string; years: RegistryYear[] }

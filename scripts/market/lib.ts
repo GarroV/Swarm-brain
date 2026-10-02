@@ -127,7 +127,13 @@ type FinMetrics = {
 export function parseFinancialMetrics(
   j: FinMetrics,
 ):
-  | { month: string; amount: number; currency: string; units: number | null }
+  | {
+    month: string;
+    amount: number;
+    currency: string;
+    units: number | null;
+    rates?: Record<string, number>;
+  }
   | null {
   const pm = j.response?.previous_month;
   const m = MONTHS.indexOf(pm?.name ?? "");
@@ -189,17 +195,24 @@ type EcbJson = {
     dimensions: { observation: Array<{ values: Array<{ id: string }> }> };
   };
 };
-/** Среднегодовой курс ЕЦБ (EXR/A.<CUR>.EUR.SP00.A): год → единиц валюты за 1 €. */
-export function parseEcbAnnual(j: EcbJson): Record<number, number> {
-  const years = j.structure.dimensions.observation[0]?.values ?? [];
+/** Ряд курсов ЕЦБ: период («2025» или «2026-09») → единиц валюты за 1 €. */
+export function parseEcbSeries(j: EcbJson): Record<string, number> {
+  const periods = j.structure.dimensions.observation[0]?.values ?? [];
   const series = Object.values(j.dataSets[0]?.series ?? {})[0];
   if (!series) return {};
   return Object.fromEntries(
     Object.entries(series.observations).flatMap(([i, [v]]) =>
-      typeof v === "number" && years[Number(i)]
-        ? [[Number(years[Number(i)].id), v]]
+      typeof v === "number" && periods[Number(i)]
+        ? [[periods[Number(i)].id, v]]
         : []
     ),
+  );
+}
+
+/** Среднегодовой курс ЕЦБ (EXR/A.<CUR>.EUR.SP00.A): год → единиц валюты за 1 €. */
+export function parseEcbAnnual(j: EcbJson): Record<number, number> {
+  return Object.fromEntries(
+    Object.entries(parseEcbSeries(j)).map(([y, v]) => [Number(y), v]),
   );
 }
 
