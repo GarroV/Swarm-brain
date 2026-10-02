@@ -26,6 +26,14 @@ export function dueAdapters(
   only?: string,
 ): string[] {
   const auto = cfg.sources.filter((s) => s.mode === "auto");
+  // Опечатка в id (osm вместо osm-overpass) раньше давала зелёный прогон без сбора (#763).
+  if (only && !auto.some((s) => s.adapter === only)) {
+    throw new Error(
+      `источник «${only}» не найден; допустимые: ${
+        [...new Set(auto.map((s) => s.adapter))].join(", ")
+      }`,
+    );
+  }
   const ids = only
     ? auto.filter((s) => s.adapter === only).map((s) => s.adapter)
     : auto.filter((s) => isDue(s.cadence, today)).map((s) => s.adapter);
