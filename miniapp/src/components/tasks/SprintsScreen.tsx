@@ -1030,7 +1030,20 @@ export function SprintsScreen() {
                 /* Пул — способ набрать состав, поэтому он нужен обоим видам; на телефоне его
                 нет (D003): выбор галочками в узкой колонке нечитаем. */
               }
-              {accepted && reportOpen && <SprintReport cycle={detail} />}
+              {accepted && reportOpen && (
+                <SprintReport
+                  cycle={detail}
+                  onSaveSummary={async (summary) => {
+                    try {
+                      await updateSprintCycle(detail.id, { summary });
+                      setErr(null);
+                      await load();
+                    } catch (e) {
+                      setErr(e instanceof Error ? e.message : dt("Не удалось сохранить итог", "Failed to save the summary"));
+                    }
+                  }}
+                />
+              )}
               {showJournal
                 ? <JournalScreen space={space} />
                 : showAnalytics
