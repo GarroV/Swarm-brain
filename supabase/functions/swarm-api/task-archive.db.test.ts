@@ -20,10 +20,10 @@ for (const name of ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY"]) {
 // Импорт динамический: клиент базы создаётся на уровне модуля, переменные обязаны стоять раньше.
 const { handleTaskArchiveRoutes } = await import("./task-archive.ts");
 
-const WS = "t_archive";
-const OTHER_WS = "t_archive_other";
-const ME = 311;
-const SOMEONE_ELSE = 322;
+const WS = "t_task_archive";
+const OTHER_WS = "t_task_archive_other";
+const ME = 900489;
+const SOMEONE_ELSE = 900490;
 
 async function connect(): Promise<Client> {
   const db = new Client(DB_URL);
