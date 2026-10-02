@@ -138,7 +138,7 @@ export function Freshness({ bundle, isAdmin, onChanged }: { bundle: MarketBundle
         <tbody>
           {rows.map((r) => (
             <tr key={`${r.adapter}:${r.feeds}`} className="border-t border-line align-top">
-              <td className="py-1.5 pr-3 text-ink">{adapterName(dt, r.adapter)}</td>
+              <td className="py-1.5 pr-3 text-ink">{adapterName(dt, r.adapter, bundle.country)}</td>
               <td className="py-1.5 pr-3 text-ink-soft">{FEED[r.feeds] ? dt(...FEED[r.feeds]) : r.feeds}</td>
               <td className={`py-1.5 ${r.bad ? "text-destructive" : "text-ink-soft"}`}>
                 {r.mode === "auto" ? daysAgo(dt, r.lastOk) : r.reason ?? `${dt("вручную", "manual")} · ${daysAgo(dt, r.lastOk)}`}

@@ -14,11 +14,18 @@ const ADAPTER_NAME: Record<string, [string, string]> = {
   "osm-overpass": ["OpenStreetMap", "OpenStreetMap"],
   "ee-ariregister": ["реестр Эстонии (ariregister)", "Estonian e-Business Register"],
   "ro-datagov": ["data.gov.ro (Минфин Румынии)", "data.gov.ro (Romanian MoF)"],
-  companywall: ["CompanyWall (данные APR Сербии)", "CompanyWall (Serbian APR data)"],
   manual: ["ручная заливка", "manual upload"],
 };
-export const adapterName = (dt: Dt, id: string): string => {
-  const n = ADAPTER_NAME[id];
+/** CompanyWall везде один, а данные за ним — реестр своей страны. */
+const COMPANYWALL: Record<string, [string, string]> = {
+  RS: ["CompanyWall (данные APR Сербии)", "CompanyWall (Serbian APR data)"],
+  SI: ["CompanyWall (данные AJPES Словении)", "CompanyWall (Slovenian AJPES data)"],
+  ME: ["CompanyWall (данные налоговой Черногории)", "CompanyWall (Montenegrin tax office data)"],
+};
+export const adapterName = (dt: Dt, id: string, country?: string): string => {
+  const n = id === "companywall"
+    ? COMPANYWALL[country ?? ""] ?? ["CompanyWall", "CompanyWall"]
+    : ADAPTER_NAME[id];
   return n ? dt(n[0], n[1]) : id;
 };
 
@@ -35,7 +42,7 @@ export function SourceCaption({ bundle, feeds }: { bundle: MarketBundle; feeds: 
   const own = bundle.sources.filter((s) => want.includes(s.feeds));
   // Один и тот же источник кормит несколько тем (ручная заливка, API Dodo) — в подписи он один раз.
   const parts = [...new Set(own.map((s) =>
-    adapterName(dt, s.adapter) +
+    adapterName(dt, s.adapter, bundle.country) +
     (s.mode === "blocked" || (s.mode === "manual" && s.reason) ? ` (${s.reason ?? dt("закрыт", "unavailable")})` : ` — ${daysAgo(dt, s.last_ok_at)}`)
   ))];
   if (!parts.length) return null;

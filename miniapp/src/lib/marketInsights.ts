@@ -48,7 +48,7 @@ export type Kpis = {
   undated: number;
   from: number;
   newBrands: Array<{ name: string; year: number | null; planned: boolean }>;
-  topRevenue: { name: string; year: number; revenue: number; units: number; othersUnits: number } | null;
+  topRevenue: { chain: string; name: string; year: number; revenue: number; units: number; othersUnits: number } | null;
 };
 
 /** Первый год сети в стране: из `first_entry`, иначе по самой ранней точке. */
@@ -92,15 +92,20 @@ export function kpis(b: Pick<MarketBundle, "chains" | "locations" | "companies" 
     .filter((n) => n.planned || (n.year !== null && n.year >= p.early[0] - 1))
     .sort((a, b) => (a.year ?? 9999) - (b.year ?? 9999));
 
-  const finYears = b.financials.filter((f) => f.revenue_eur !== null).map((f) => f.year);
+  const chainOfCo = new Map(b.companies.map((c) => [c.id, c.chain_key]));
+  const finYears = b.financials
+    .filter((f) => f.revenue_eur !== null && !bakery.has(chainOfCo.get(f.company_id) ?? ""))
+    .map((f) => f.year);
   let topRevenue: Kpis["topRevenue"] = null;
   if (finYears.length) {
     const fy = Math.max(...finYears);
-    const [top] = [...chainRevenue(b, fy)].sort((a, b) => b[1] - a[1]);
+    // Пекарни в главную цифру не идут, как и в счёт ресторанов: у Pečjak (Словения) выручка
+    // оптового производства, а не точек.
+    const [top] = [...chainRevenue(b, fy)].filter(([k]) => !bakery.has(k)).sort((a, b) => b[1] - a[1]);
     if (top) {
       const units = aliveNow.filter((l) => l.chain_key === top[0]).length;
       const othersUnits = aliveNow.filter((l) => l.chain_key !== top[0] && !bakery.has(l.chain_key)).length;
-      topRevenue = { name: name.get(top[0]) ?? top[0], year: fy, revenue: top[1], units, othersUnits };
+      topRevenue = { chain: top[0], name: name.get(top[0]) ?? top[0], year: fy, revenue: top[1], units, othersUnits };
     }
   }
   return {
