@@ -1,20 +1,21 @@
 /* Стили эталона «Анализа рынка» — хорватский отчёт коллеги (Приложение A инструкции, решение
    docs/decisions/2026-10-02-market-follow-reference-visual.md). Перенесены как есть, только с
    областью действия: всё внутри .mkt, тёмная тема — по классу .dark на <html>, как в Swarm.
-   Сгенерировано из шаблона эталона; правки — сверяя с ним. */
-.mkt{--bg:#F5F1E8; --surface:#ffffff; --ink:#1A1A1A; --ink2:#3F3F46; --muted:#6B6B6B; --line:#E5DFCB; --line2:#EFE9DA;
-  --accent:#5B3DEC; --accent-soft:#EFEBFF; --orange:#FF6A1F; --orange-soft:#FFE8DA; --purple-dark:#4A2FD0; --purple-deep:#2E1A8C;
-  --sea:#E4DEFA; --land:#FFFFFF; --land2:#EFE9DA; --border:#B9AEEA;
-  --s1:#2a78d6; --s2:#FF6A1F; --s3:#1baf7a; --s4:#eda100; --s5:#e87ba4; --s6:#008300; --s7:#5B3DEC; --s8:#e34948; --s0:#9A9A9A;
+   Сгенерировано из шаблона эталона; правки — сверяя с ним. Палитра оформления — токены Swarm
+   (globals.css), а не фиолетовая гамма эталона (решение владельца 02.10.2026, ночь). */
+.mkt{--bg:#F7F9FB; --surface:#FFFFFF; --ink:#1B2028; --ink2:#3B4552; --muted:#5C6672; --line:#DCE1E7; --line2:#ECEFF3;
+  --accent:#1F4E9C; --accent-soft:#E8EEF8; --orange:#FF6A1F; --orange-soft:#FFE8DA; --purple-dark:#173D7A; --purple-deep:#0F2A57;
+  --sea:#DDE7F3; --land:#FFFFFF; --land2:#EEF1F5; --border:#B7C6DC;
+  --s1:#2a78d6; --s2:#FF6A1F; --s3:#1baf7a; --s4:#eda100; --s5:#e87ba4; --s6:#008300; --s7:#0097A7; --s8:#e34948; --s0:#9A9A9A;
   --heat0:#FFE8DA; --heat1:#FF9A5C; --heat2:#FF6A1F; --heat3:#8A2E05;
   --good:#1E8E5E; --warn:#C27000; --bad:#C53030; --teal:#0097A7;
   --f-disp:var(--font-mkt),system-ui,-apple-system,"Segoe UI",sans-serif; --f-body:var(--font-mkt),system-ui,-apple-system,"Segoe UI",sans-serif; --f-mono:var(--font-mkt-mono),ui-monospace,Menlo,Consolas,monospace;
   background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:15px;line-height:1.5}
 .mkt *,.mkt *::before,.mkt *::after{box-sizing:border-box}
-.dark .mkt{--bg:#110C2B; --surface:#1B1540; --ink:#F3F0FF; --ink2:#C9C2EE; --muted:#9A93C4; --line:#2F2760; --line2:#231C4D;
-  --accent:#8F7BFF; --accent-soft:#2A2163; --orange:#FF7A33; --orange-soft:#3A1F12; --purple-dark:#3A25A8; --purple-deep:#1F1366;
-  --sea:#0C0822; --land:#251D52; --land2:#18123A; --border:#5546A8;
-  --s1:#3987e5; --s2:#FF7A33; --s3:#199e70; --s4:#c98500; --s5:#d55181; --s6:#1a9a1a; --s7:#9085e9; --s8:#e66767; --s0:#7C76A0;
+.dark .mkt{--bg:#070A10; --surface:#0D1220; --ink:#EAF2FF; --ink2:#C3CEE3; --muted:#93A4C3; --line:#2A3A5C; --line2:#1E2A45;
+  --accent:#00E5FF; --accent-soft:#0A2230; --orange:#FF7A33; --orange-soft:#3A1F12; --purple-dark:#0F1D33; --purple-deep:#081221;
+  --sea:#05080E; --land:#1A2438; --land2:#131A2E; --border:#2A3A5C;
+  --s1:#3987e5; --s2:#FF7A33; --s3:#199e70; --s4:#c98500; --s5:#d55181; --s6:#1a9a1a; --s7:#26B5C4; --s8:#e66767; --s0:#6B7790;
   --heat0:#3A1F12; --heat1:#B4470F; --heat2:#FF7A33; --heat3:#FFD9BF; --good:#4cc06a; --warn:#e3a33a; --bad:#ef6b6b; --teal:#26B5C4;;color-scheme:dark}
 .dark .mkt header{background:var(--purple-dark)}
 
