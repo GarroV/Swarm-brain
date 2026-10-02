@@ -284,6 +284,7 @@ export function toolUpdateSprint(args: Args): Promise<string> {
       return "В этом пространстве уже есть незакрытый спринт — перенос не сделан.";
     }
     if (updated === "tab_missing") return "Пространство не найдено.";
+    if (updated === "accepted_locked") return "Сроки принятого спринта не меняются.";
     if (!updated) return "Спринт не найден.";
     return `✅ Спринт обновлён.\n${
       formatCycles(

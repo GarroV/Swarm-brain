@@ -147,6 +147,9 @@ export async function handleSprintCycleRoutes(
         return apiErr(400, "start_date не может быть позже end_date", origin);
       }
       const updated = await updateCycle(id, fields, groupId);
+      if (updated === "accepted_locked") {
+        return apiErr(409, "Сроки принятого спринта не меняются", origin);
+      }
       if (updated === "tab_missing") {
         return apiErr(404, "Пространство не найдено", origin);
       }

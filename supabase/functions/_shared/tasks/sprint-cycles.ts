@@ -149,7 +149,7 @@ export async function updateCycle(
   id: string,
   fields: Partial<CycleInput> & { summary?: string | null },
   groupId: string,
-): Promise<SprintCycle | null | "tab_busy" | "tab_missing"> {
+): Promise<SprintCycle | null | "tab_busy" | "tab_missing" | "accepted_locked"> {
   // Пространство подтверждаем в ЭТОМ воркспейсе (#397): без проверки чужой `tab_id` увёл бы
   // спринт из поля зрения команды — строка осталась бы в базе, а с экрана пропала.
   if (
@@ -158,10 +158,19 @@ export async function updateCycle(
   ) {
     return "tab_missing";
   }
-  const { data, error } = await supabase.from("sprint_cycles")
+  // Сроки принятого спринта неизменны (#297): итоги посчитаны по ним, сдвиг задним числом
+  // переписал бы историю. Итог (`summary`) у принятого править можно — он и пишется после.
+  const movesDates = fields.start_date !== undefined || fields.end_date !== undefined;
+  let q = supabase.from("sprint_cycles")
     .update({ ...fields, updated_at: new Date().toISOString() })
-    .eq("id", id).eq("group_id", groupId)
-    .select().maybeSingle();
+    .eq("id", id).eq("group_id", groupId);
+  if (movesDates) q = q.neq("status", "accepted");
+  const { data, error } = await q.select().maybeSingle();
+  if (!error && !data && movesDates) {
+    const { data: exists } = await supabase.from("sprint_cycles").select("status")
+      .eq("id", id).eq("group_id", groupId).maybeSingle();
+    if (exists?.status === "accepted") return "accepted_locked";
+  }
   // 23505 — частичный уникальный индекс «один незакрытый спринт на пространство». Отличаем
   // его от прочих сбоев: это не поломка, а занятое место, и человеку надо сказать именно так.
   if (error?.code === "23505") return "tab_busy";

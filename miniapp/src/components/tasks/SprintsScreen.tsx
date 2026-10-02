@@ -195,6 +195,9 @@ export function SprintsScreen() {
   // при создании, со временем получает смысл («Запуск Эстонии»), и менять имя должно быть
   // можно, не пересоздавая период (#403).
   const [renaming, setRenaming] = useState<string | null>(null);
+  // Правка сроков открытого спринта (#297): опечатка в датах или сдвиг раньше лечились только
+  // удалением спринта и сбором состава заново.
+  const [dates, setDates] = useState<{ start_date: string; end_date: string } | null>(null);
   const [space, setSpace] = useState<string | null>(null);
   const [spacePicked, setSpacePicked] = useState(false);
   const [users, setUsers] = useState<User[]>([]);
@@ -747,6 +750,22 @@ export function SprintsScreen() {
     );
   }
 
+  async function saveDates() {
+    if (!detail || !dates) return;
+    if (dates.start_date > dates.end_date) {
+      setErr(dt("Начало не может быть позже конца", "Start can't be after end"));
+      return;
+    }
+    try {
+      await updateSprintCycle(detail.id, dates);
+      setDates(null);
+      setErr(null);
+      await load();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : dt("Не удалось сохранить сроки", "Failed to save the dates"));
+    }
+  }
+
   const newSprint = () => {
     const today = new Date();
     const end = new Date();
@@ -843,6 +862,9 @@ export function SprintsScreen() {
         // тумблер первая кнопка превращает экран в тупик.
         onNewSprint={editMode || spaceCycles.length === 0 ? newSprint : undefined}
         onRename={isAdmin && editMode && editable ? () => setRenaming(detail!.name) : undefined}
+        onEditDates={isAdmin && editMode && editable
+          ? () => setDates({ start_date: detail!.start_date, end_date: detail!.end_date })
+          : undefined}
         onDelete={isAdmin && editable ? removeCycle : undefined}
         move={isAdmin && editMode && editable && spaces.length > 0
           ? { spaces, onMove: moveCycle }
@@ -873,6 +895,45 @@ export function SprintsScreen() {
           )
           : undefined}
       />
+
+      {dates && detail && (
+        <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-line bg-surface-2 px-4 pb-2 lg:px-5">
+          <span className="text-ink-soft" style={{ fontSize: 12.5 }}>{dt("Сроки спринта", "Sprint dates")}</span>
+          <input
+            type="date"
+            aria-label={dt("Начало", "Start")}
+            value={dates.start_date}
+            onChange={(e) => setDates({ ...dates, start_date: e.target.value })}
+            className="h-[28px] rounded-[7px] border border-line bg-surface px-2 text-ink outline-none focus:border-accent-line"
+            style={{ fontSize: 12.5 }}
+          />
+          <input
+            type="date"
+            aria-label={dt("Конец", "End")}
+            value={dates.end_date}
+            onChange={(e) => setDates({ ...dates, end_date: e.target.value })}
+            className="h-[28px] rounded-[7px] border border-line bg-surface px-2 text-ink outline-none focus:border-accent-line"
+            style={{ fontSize: 12.5 }}
+          />
+          <button
+            type="button"
+            onClick={saveDates}
+            disabled={busy || !dates.start_date || !dates.end_date}
+            className="h-[28px] rounded-full bg-primary px-3 font-semibold text-primary-foreground disabled:opacity-50"
+            style={{ fontSize: 12.5 }}
+          >
+            {dt("Сохранить", "Save")}
+          </button>
+          <button
+            type="button"
+            onClick={() => setDates(null)}
+            className="px-2 text-ink-soft hover:text-ink"
+            style={{ fontSize: 12.5 }}
+          >
+            {dt("Отмена", "Cancel")}
+          </button>
+        </div>
+      )}
 
       {creating && (
         <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-line bg-surface-2 px-4 pb-2 lg:px-5">
