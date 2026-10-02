@@ -69,6 +69,16 @@ while read -r _local_ref local_sha _remote_ref remote_sha; do
       report "$f — имя выглядит как внутренний security-документ"
       continue
     fi
+    # Рабочий html владельца в корне (#465: так в main попала выгрузка доски с именами).
+    # Ловим только живущий на вершине ветки файл — коммит, удаляющий такой, не держим.
+    case "$f" in
+      */*) ;;
+      *.html)
+        if git cat-file -e "$local_sha:$f" 2>/dev/null; then
+          report "$f — рабочий html в корне репозитория; место ему в ~/Documents/workbench/private/"
+          continue
+        fi ;;
+    esac
     # Маркер ищем по всем новым версиям файла: он мог быть добавлен и удалён внутри.
     # Без `git log | grep -q`: grep выходит на первом совпадении, git log получает SIGPIPE
     # (141), и под pipefail пайплайн «ложен» — маркер пропускался молча, если после
