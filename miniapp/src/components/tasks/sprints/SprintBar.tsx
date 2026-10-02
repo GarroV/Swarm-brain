@@ -169,7 +169,10 @@ export function SprintBar(p: SprintBarProps) {
           className="mx-1 whitespace-nowrap font-mono text-ink-soft"
           style={{ fontSize: 12 }}
           title={d.status === "active" && left >= 0
-            ? dt(`осталось ${left} дн.`, `${left} day(s) left`)
+            ? dt(
+              `осталось ${left} дн.`,
+              left === 1 ? "1 day left" : `${left} days left`,
+            )
             : undefined}
         >
           {fmtRange(d.start_date, d.end_date)}

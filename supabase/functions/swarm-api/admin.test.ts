@@ -171,11 +171,11 @@ Deno.test("PATCH — занятый email → 409 с понятным текст
 });
 
 Deno.test("PATCH реального юзера по telegram_id — прежний путь профиля не тронут", async () => {
-  const { client, calls } = makeSupabase({ data: { telegram_id: 507931827 } });
+  const { client, calls } = makeSupabase({ data: { telegram_id: 900000102 } });
   const res = await handleAdminRoutes(
     client,
     patchReq({ role: "BD", email: "K.Zabardaevax@dodobrands.io" }),
-    "/admin/users/507931827",
+    "/admin/users/900000102",
     ADMIN,
     true,
     "*",
@@ -193,7 +193,7 @@ Deno.test("PATCH реального юзера по telegram_id — прежни
     string,
     unknown
   >;
-  assertEquals(upsert.telegram_id, 507931827);
+  assertEquals(upsert.telegram_id, 900000102);
   assertEquals(upsert.role, "BD");
 });
 

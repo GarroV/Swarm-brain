@@ -2009,7 +2009,7 @@ export async function removeTaskFromSprintCycle(
 // ── Projects (Project Space) ────────────────────────────────────────────────────
 // created_by расставлен как на проде (свои + чужие + ничейная строка): без этого DEV_MODE
 // не проверяет отбор «только свои проекты» в селекте карточки задачи. MOCK_ME = 123456.
-const MOCK_COLLEAGUE = 507931827;
+const MOCK_COLLEAGUE = 900000102;
 let mockProjects: Project[] = [
   {
     id: "pr1",
@@ -3005,7 +3005,7 @@ let mockAgentMeetings: AgentMeeting[] = [
       role: "transcribe",
     }],
     // Второй участник встречи из SWARM — совладелец: показывает вид «только в общую базу».
-    co_owners: [135201285],
+    co_owners: [900000103],
     entry_id: null,
     created_at: "2026-06-12T14:47:00+03:00",
   },
@@ -3029,7 +3029,7 @@ let mockAgentMeetings: AgentMeeting[] = [
   {
     // Встреча 1-1 двух людей из SWARM (#641) — «Личное» доступно, запись увидят только двое.
     id: "am-3",
-    title: "Vasiliy x Aleksandra 1-1",
+    title: "Vasiliy x Anna 1-1",
     source: "desktop-agent",
     identity_kind: "calendar",
     started_at: "2026-06-14T15:00:00+03:00",
@@ -3038,10 +3038,10 @@ let mockAgentMeetings: AgentMeeting[] = [
     summary_status: "done",
     draft_notes_md: "### Планы\n- Сверили приоритеты на квартал",
     transcript: { language: "ru", model: "whisper-large-v3-turbo", segments: [{ start: 0, end: 5, text: "Давай по планам." }] },
-    attendees: [{ name: "Vasiliy", email: "v@example.com" }, { name: "Aleksandra", email: "a@example.com" }],
+    attendees: [{ name: "Vasiliy", email: "v@example.com" }, { name: "Anna", email: "a@example.com" }],
     recorders: [{ telegram_id: 744230399, claimed_at: "2026-06-14T15:50:10+03:00", role: "transcribe" }],
-    co_owners: [224830225],
-    one_on_one: { partner_id: 224830225, partner_name: "Aleksandra" },
+    co_owners: [900000101],
+    one_on_one: { partner_id: 900000101, partner_name: "Anna" },
     entry_id: null,
     created_at: "2026-06-14T15:50:00+03:00",
   },
@@ -3597,7 +3597,7 @@ export type ReviewCount = { telegram_id: number; name: string; count: number };
 export async function fetchReviewCounts(): Promise<ReviewCount[]> {
   if (DEV_MODE) {
     return [
-      { telegram_id: 224830225, name: "Александра Миронова", count: 3 },
+      { telegram_id: 900000101, name: "Анна Соколова", count: 3 },
       { telegram_id: 744230399, name: "Vasiliy Garro", count: 1 },
     ];
   }

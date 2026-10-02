@@ -45,7 +45,17 @@ export interface JournalEvent {
   actor: string | null;
   task_id: string | null;
   task_title: string | null;
+  /** Готовая строка по-русски — запасной вариант для старого клиента. */
   text: string;
+  /** Части события для сборки строки на языке клиента (issue #459: демо — по-английски). */
+  params?: JournalParams;
+}
+
+export interface JournalParams {
+  cycle?: string | null;
+  percent?: number;
+  status?: string;
+  reason?: string | null;
 }
 
 function since(days: number | null): string | null {
@@ -222,6 +232,7 @@ export async function handleSpaceJournalRoutes(
         task_id: null,
         task_title: null,
         text: `Спринт начат: ${c.name}`,
+        params: { cycle: c.name },
       });
     }
     if (c.accepted_at && (!from || c.accepted_at >= from)) {
@@ -233,6 +244,7 @@ export async function handleSpaceJournalRoutes(
         task_id: null,
         task_title: null,
         text: percent === undefined ? `Спринт принят: ${c.name}` : `Спринт принят: ${c.name} — выполнено ${percent}%`,
+        params: percent === undefined ? { cycle: c.name } : { cycle: c.name, percent },
       });
     }
   }
@@ -268,7 +280,8 @@ export async function handleSpaceJournalRoutes(
       // приватность больше ничего не закрывает, а пропажу из спринта надо объяснить.
       const title = it.task_id ? titles.get(it.task_id) : null;
       if (it.task_id && !title) continue;
-      const cycle = cycleNames.get(it.cycle_id) ?? "спринт";
+      const cycleName = cycleNames.get(it.cycle_id) ?? null;
+      const cycle = cycleName ?? "спринт";
 
       if (!from || it.added_at >= from) {
         events.push({
@@ -278,6 +291,7 @@ export async function handleSpaceJournalRoutes(
           task_id: it.task_id,
           task_title: title ?? null,
           text: `Взята в ${cycle}`,
+          params: { cycle: cycleName },
         });
       }
       if (it.check_at && it.check_status && (!from || it.check_at >= from)) {
@@ -288,6 +302,7 @@ export async function handleSpaceJournalRoutes(
           task_id: it.task_id,
           task_title: title ?? null,
           text: `Сверка: ${it.check_status}`,
+          params: { status: it.check_status },
         });
       }
       if (it.carry_at && it.to_carry && (!from || it.carry_at >= from)) {
@@ -298,6 +313,7 @@ export async function handleSpaceJournalRoutes(
           task_id: it.task_id,
           task_title: title ?? null,
           text: it.carry_reason ? `К переносу: ${it.carry_reason}` : "К переносу",
+          params: { reason: it.carry_reason },
         });
       }
       if (it.removed_at && (!from || it.removed_at >= from)) {
@@ -308,6 +324,7 @@ export async function handleSpaceJournalRoutes(
           task_id: null,
           task_title: it.removed_title,
           text: `Задача удалена, в ${cycle} осталась упоминанием`,
+          params: { cycle: cycleName },
         });
       }
     }

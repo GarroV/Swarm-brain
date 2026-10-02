@@ -200,7 +200,10 @@ export type JournalEvent = {
   actor: string | null;
   task_id: string | null;
   task_title: string | null;
+  /** Готовая строка по-русски от сервера — запасной вариант, когда `params` нет. */
   text: string;
+  /** Части события для сборки строки на языке интерфейса (`lib/journalText.ts`, issue #459). */
+  params?: { cycle?: string | null; percent?: number; status?: string; reason?: string | null };
 };
 
 /** GET /sprint-cycles/:id отдаёт спринт вместе с составом — экран без него бесполезен. */

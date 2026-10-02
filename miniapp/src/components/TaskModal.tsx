@@ -92,21 +92,22 @@ type SaveState = "idle" | "saving" | "saved" | "error";
 // Автора может не быть у старых задач и у пришедших из встреч/бота — тогда молчим, а не пишем
 // «неизвестно»: пустая строка честнее выдуманной.
 function TaskOrigin({ task }: { task: Task }) {
+  const dt = useDt();
   const created = (() => {
     if (!task.created_at) return null;
     const d = new Date(task.created_at);
     if (isNaN(d.getTime())) return null;
     // ru-RU с year:numeric добавляет « г.» — в интерфейсе это канцелярит, режем.
-    return d.toLocaleDateString("ru-RU", { day: "numeric", month: "long", year: "numeric" }).replace(/\s*г\.$/, "");
+    return d.toLocaleDateString(dt("ru-RU", "en-GB"), { day: "numeric", month: "long", year: "numeric" }).replace(/\s*г\.$/, "");
   })();
   if (!created && !task.created_by_name) return null;
 
   return (
     <div className="mt-3 flex flex-wrap items-center gap-x-1.5 gap-y-1 border-t border-line pt-2.5 text-ink-mute" style={{ fontSize: 11.5 }}>
       <RoyIcon name="clock" size={12} strokeWidth={1.9} className="shrink-0" />
-      {created && <span>Создана {created}</span>}
+      {created && <span>{dt("Создана", "Created")} {created}</span>}
       {created && task.created_by_name && <span aria-hidden>·</span>}
-      {task.created_by_name && <span>автор: <span className="text-ink-soft font-medium">{task.created_by_name}</span></span>}
+      {task.created_by_name && <span>{dt("автор:", "by")} <span className="text-ink-soft font-medium">{task.created_by_name}</span></span>}
     </div>
   );
 }
@@ -514,7 +515,7 @@ export function TaskModal({ task: taskOpened, open, onClose, onSaved, prefill, m
         <div className="flex items-center justify-between gap-3 border-b border-line px-[18px] py-2.5">
           <div className="flex min-w-0 items-baseline gap-2.5">
             <h2 className="shrink-0 font-semibold text-ink" style={{ fontSize: 16, letterSpacing: "-0.01em" }}>
-              {isEdit ? "Изменить задачу" : "Новая задача"}
+              {isEdit ? dt("Изменить задачу", "Edit task") : dt("Новая задача", "New task")}
             </h2>
             {isEdit && saveHint && (
               <span

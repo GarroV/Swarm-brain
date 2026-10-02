@@ -16,7 +16,7 @@ const CALENDAR_SIDE = {
 };
 const ROOM_SIDE = {
   startedAt: "2026-08-26T12:01:36+00:00",
-  ownerEmail: "I.Ravilova@dodobrands.io",   // регистр не важен
+  ownerEmail: "I.Ravilova@dodobrands.io", // регистр не важен
   attendees: [],
 };
 
@@ -37,22 +37,38 @@ Deno.test("записавшего нет в списке участников �
 });
 
 Deno.test("сильное пересечение состава склеивает (две записи одного инвайта)", () => {
-  const a = { startedAt: "2026-08-26T11:00:00+00:00", ownerEmail: null, attendees: [{ name: "Анна" }, { name: "Борис" }, { name: "Вера" }] };
-  const b = { startedAt: "2026-08-26T11:02:00+00:00", ownerEmail: null, attendees: [{ name: "Анна" }, { name: "Борис" }, { name: "Вера" }] };
+  const a = {
+    startedAt: "2026-08-26T11:00:00+00:00",
+    ownerEmail: null,
+    attendees: [{ name: "Анна" }, { name: "Борис" }, { name: "Вера" }],
+  };
+  const b = {
+    startedAt: "2026-08-26T11:02:00+00:00",
+    ownerEmail: null,
+    attendees: [{ name: "Анна" }, { name: "Борис" }, { name: "Вера" }],
+  };
   assertEquals(sameMeetingByRoster(a, b), { same: true, reason: "roster_overlap" });
 });
 
 Deno.test("разные встречи, делящие одного человека, НЕ склеиваются (кейс 1-1 ⨯ большой созвон)", () => {
-  const oneToOne = { startedAt: "2026-06-19T08:00:00+00:00", ownerEmail: null, attendees: [{ name: "Maria" }, { name: "Aleksandra" }] };
+  const oneToOne = {
+    startedAt: "2026-06-19T08:00:00+00:00",
+    ownerEmail: null,
+    attendees: [{ name: "Maria" }, { name: "Anna" }],
+  };
   const big = {
-    startedAt: "2026-06-19T08:05:00+00:00", ownerEmail: null,
-    attendees: Array.from({ length: 14 }, (_, i) => ({ name: `Человек ${i}` })).concat([{ name: "Aleksandra" }]),
+    startedAt: "2026-06-19T08:05:00+00:00",
+    ownerEmail: null,
+    attendees: Array.from({ length: 14 }, (_, i) => ({ name: `Человек ${i}` })).concat([{ name: "Anna" }]),
   };
   assertEquals(sameMeetingByRoster(oneToOne, big), { same: false, reason: "no_signal" });
 });
 
 Deno.test("без времени хотя бы у одной стороны сопоставление не делаем", () => {
-  assertEquals(sameMeetingByRoster({ ...ROOM_SIDE, startedAt: null }, CALENDAR_SIDE), { same: false, reason: "no_time" });
+  assertEquals(sameMeetingByRoster({ ...ROOM_SIDE, startedAt: null }, CALENDAR_SIDE), {
+    same: false,
+    reason: "no_time",
+  });
 });
 
 // ── Ключ комнаты сужается до дня (issue #181) ──────────────────────────────────
@@ -69,7 +85,10 @@ Deno.test("scopeRoomKey — регулярная встреча в ТОЙ ЖЕ �
 });
 
 Deno.test("scopeRoomKey — календарь и manual не трогаем, повторное сужение идемпотентно", () => {
-  assertEquals(scopeRoomKey("calendar", "evt@google.com:2026-08-26", "2026-08-26T12:00:00+00:00"), "evt@google.com:2026-08-26");
+  assertEquals(
+    scopeRoomKey("calendar", "evt@google.com:2026-08-26", "2026-08-26T12:00:00+00:00"),
+    "evt@google.com:2026-08-26",
+  );
   assertEquals(scopeRoomKey("manual", "manual:uuid-1", "2026-08-26T12:00:00+00:00"), "manual:uuid-1");
   assertEquals(scopeRoomKey("room", "kontur:x:2026-08-26", "2026-08-26T12:00:00+00:00"), "kontur:x:2026-08-26");
   assertEquals(scopeRoomKey("room", "kontur:x", null), "kontur:x");

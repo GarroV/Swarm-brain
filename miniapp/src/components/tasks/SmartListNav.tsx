@@ -99,7 +99,7 @@ export function SmartListNav({ variant, compact, active, counts, onSelect, query
           <input
             value={query ?? ""}
             onChange={(e) => onQuery(e.target.value)}
-            placeholder="Поиск"
+            placeholder={dt("Поиск", "Search")}
             className="w-full bg-transparent outline-none placeholder:text-ink-mute"
             style={{ fontSize: 13 }}
           />
@@ -144,7 +144,7 @@ export function SmartListNav({ variant, compact, active, counts, onSelect, query
       {onRange && (
         <>
           <div className="my-1.5 border-t border-line" />
-          <div className="px-2.5 pb-1 font-mono uppercase text-ink-mute" style={{ fontSize: 10, letterSpacing: "0.08em" }}>Период</div>
+          <div className="px-2.5 pb-1 font-mono uppercase text-ink-mute" style={{ fontSize: 10, letterSpacing: "0.08em" }}>{dt("Период", "Period")}</div>
           <RangePicker variant="rail" value={range ?? null} onChange={onRange} />
         </>
       )}
@@ -153,7 +153,7 @@ export function SmartListNav({ variant, compact, active, counts, onSelect, query
       {onSelectLabel && labels && (
         <>
           <div className="my-1.5 border-t border-line" />
-          <div className="px-2.5 pb-1 font-mono uppercase text-ink-mute" style={{ fontSize: 10, letterSpacing: "0.08em" }}>Мои списки</div>
+          <div className="px-2.5 pb-1 font-mono uppercase text-ink-mute" style={{ fontSize: 10, letterSpacing: "0.08em" }}>{dt("Мои списки", "My lists")}</div>
           {labels.map((l) => {
             const on = activeLabelId === l.id;
             const count = labelCounts?.[l.id] ?? 0;
@@ -178,7 +178,7 @@ export function SmartListNav({ variant, compact, active, counts, onSelect, query
                   <button
                     type="button"
                     onClick={(e) => { e.stopPropagation(); onEditLabel(l); }}
-                    aria-label={`Редактировать список «${l.name}»`}
+                    aria-label={dt(`Редактировать список «${l.name}»`, `Edit list “${l.name}”`)}
                     className="flex shrink-0 items-center justify-center rounded-full p-1.5 text-ink-mute opacity-0 transition-opacity hover:bg-surface-2 hover:text-ink-soft group-hover/row:opacity-100"
                   >
                     <RoyIcon name="dots" size={15} strokeWidth={1.9} />
@@ -195,7 +195,7 @@ export function SmartListNav({ variant, compact, active, counts, onSelect, query
               style={{ fontSize: 13.5 }}
             >
               <RoyIcon name="plus" size={16} strokeWidth={2} />
-              <span className="flex-1 text-left">Новый список</span>
+              <span className="flex-1 text-left">{dt("Новый список", "New list")}</span>
             </button>
           )}
         </>

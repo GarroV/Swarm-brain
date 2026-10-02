@@ -5,6 +5,7 @@ import { fetchSpaceJournal } from "@/lib/api";
 import { uiLocale } from "./format";
 import { RoyIcon, type RoyIconName } from "@/components/roy/icons";
 import { useDt } from "@/components/roy/nav";
+import { journalText } from "@/lib/journalText";
 
 // Журнал пространства: что происходило, по дням. Лента нужна не для отчёта, а для вопроса
 // «что изменилось, пока меня не было» — поэтому свежее сверху и период переключается одним
@@ -181,7 +182,7 @@ export function JournalScreen({ space }: { space: string | null }) {
                   {e.actor && (
                     <span className="font-semibold">{`${e.actor} `}</span>
                   )}
-                  <span className="text-ink-soft">{e.text}</span>
+                  <span className="text-ink-soft">{journalText(e, dt)}</span>
                   {e.task_title && (
                     <span className="text-ink">{` · ${e.task_title}`}</span>
                   )}

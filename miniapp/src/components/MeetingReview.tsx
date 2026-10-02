@@ -32,11 +32,11 @@ function fmtTs(sec: number): string {
 
 // Время суток сегмента = старт записи + смещение сегмента (сек). started_at в UTC →
 // toLocaleTimeString переводит в локальную зону браузера. Фолбэк на MM:SS, если старта нет.
-function fmtClock(startISO: string | null, sec: number): string {
+function fmtClock(startISO: string | null, sec: number, locale: string): string {
   if (!startISO) return fmtTs(sec);
   const base = Date.parse(startISO);
   if (Number.isNaN(base)) return fmtTs(sec);
-  return new Date(base + Math.max(0, sec) * 1000).toLocaleTimeString("ru-RU", {
+  return new Date(base + Math.max(0, sec) * 1000).toLocaleTimeString(locale, {
     hour: "2-digit",
     minute: "2-digit",
     second: "2-digit",
@@ -45,10 +45,10 @@ function fmtClock(startISO: string | null, sec: number): string {
 
 // Дата вычитки — тем же форматом, что в списках встреч и в очереди черновиков («12 июн.»).
 // ISO-срез на этом экране был третьим форматом даты в одном разделе.
-function fmtDay(iso: string | null): string {
+function fmtDay(iso: string | null, locale: string): string {
   if (!iso) return "";
   const d = new Date(iso);
-  return isNaN(d.getTime()) ? "" : d.toLocaleDateString("ru-RU", { day: "numeric", month: "short" });
+  return isNaN(d.getTime()) ? "" : d.toLocaleDateString(locale, { day: "numeric", month: "short" });
 }
 
 export function MeetingReview({ id, onClose, onChanged }: Props) {
@@ -268,7 +268,7 @@ export function MeetingReview({ id, onClose, onChanged }: Props) {
       <div className="space-y-1">
         {segments.map((sg, i) => (
           <div key={i} className="flex gap-2 text-sm">
-            <span className="w-16 shrink-0 font-mono text-xs text-ink-mute">{fmtClock(meeting.started_at, sg.start)}</span>
+            <span className="w-16 shrink-0 font-mono text-xs text-ink-mute">{fmtClock(meeting.started_at, sg.start, dt("ru-RU", "en-GB"))}</span>
             <span className="flex-1 text-ink">{sg.text}</span>
           </div>
         ))}
@@ -294,7 +294,7 @@ export function MeetingReview({ id, onClose, onChanged }: Props) {
           {published
             ? <span className="inline-flex items-center gap-1 font-semibold" style={{ fontSize: 12, color: "var(--status-done)" }}><RoyIcon name="check" size={12} strokeWidth={2.2} /> {dt("В базе", "In the base")}</span>
             : <span className="inline-flex items-center gap-1 font-semibold" style={{ fontSize: 12, color: "var(--status-open)" }}><RoyIcon name="clock" size={12} strokeWidth={1.9} /> {dt("На вычитке", "In review")}</span>}
-          {meeting.started_at && <span className="text-ink-mute" style={{ fontSize: 12 }}>{fmtDay(meeting.started_at)}</span>}
+          {meeting.started_at && <span className="text-ink-mute" style={{ fontSize: 12 }}>{fmtDay(meeting.started_at, dt("ru-RU", "en-GB"))}</span>}
           {who && <span className="truncate text-ink-mute" style={{ fontSize: 12 }}>· {dt("записали", "recorded by")}: {who}</span>}
         </div>
 

@@ -13,10 +13,10 @@ type Props = { onOpen: (id: string) => void };
 
 // Дата в очереди печаталась ISO-срезом (2026-06-12), а в списке ниже — «12 июн.»: один экран
 // с двумя форматами. Формат один — как в остальных списках встреч.
-function fmtDate(iso: string | null): string {
+function fmtDate(iso: string | null, locale: string): string {
   if (!iso) return "";
   const d = new Date(iso);
-  return isNaN(d.getTime()) ? "" : d.toLocaleDateString("ru-RU", { day: "numeric", month: "short" });
+  return isNaN(d.getTime()) ? "" : d.toLocaleDateString(locale, { day: "numeric", month: "short" });
 }
 
 // Очередь черновиков desktop-agent «на вычитке». Невидима, пока черновиков нет
@@ -76,7 +76,7 @@ export function AgentReviewQueue({ onOpen }: Props) {
                 {/* Формат даты — общий («12 июн.»), признак готовности тезисов — hasDraftNotes из
                     main: списочный /agent-meetings больше не возвращает текст тезисов (#108),
                     поэтому проверять draft_notes_md напрямую нельзя. */}
-                {fmtDate(m.started_at ?? m.created_at)}
+                {fmtDate(m.started_at ?? m.created_at, dt("ru-RU", "en-GB"))}
                 {hasDraftNotes(m) ? "" : " · готовим тезисы…"}
               </p>
             </button>
