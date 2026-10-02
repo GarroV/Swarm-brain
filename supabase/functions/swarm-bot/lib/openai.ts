@@ -11,7 +11,7 @@ export function getEmbedding(text: string): Promise<number[]> {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${OPENAI_API_KEY}` },
       body: JSON.stringify({ model: "text-embedding-3-small", input: text.slice(0, 8000) }),
-    }, VIA_OPENAI_EMBEDDING);
+    }, { ...VIA_OPENAI_EMBEDDING, usage: { purpose: "bot:embedding" } });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error?.message ?? "OpenAI embeddings error");
     return data.data[0].embedding;
@@ -39,7 +39,7 @@ export function chatComplete(
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${OPENAI_API_KEY}` },
       body: JSON.stringify(body),
-    }, VIA_OPENAI_CHAT);
+    }, { ...VIA_OPENAI_CHAT, usage: { purpose: "bot:chat" } });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error?.message ?? "OpenAI error");
     return data.choices[0].message.content;

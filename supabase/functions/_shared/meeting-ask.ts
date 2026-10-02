@@ -6,6 +6,7 @@
 // Отличие от «Переобработать» с пожеланием: та пересобирает тезисы целиком и стирает ручные
 // правки; вопрос отвечает только про фрагмент. Отличие от POST /ask: тот ищет по всей базе.
 
+import { withUsageLabel } from "./model-usage.ts";
 import { type SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { chatComplete, loadMeetingTextForModel } from "./meeting-processor.ts";
 import {
@@ -85,10 +86,15 @@ export async function answerMeetingQuestion(
 ): Promise<string> {
   const meetingText = await loadMeetingTextForModel(supabase, meetingId);
   if (meetingText === null) throw new MeetingAskError(400, "У встречи нет транскрипта — спросить не по чему");
-  const raw = await chatComplete(MEETING_ASK_SYSTEM, buildMeetingAskUserMessage(meetingText, input), {
-    temperature: 0.2,
-    maxTokens: 1200,
-  });
+  const raw = await withUsageLabel(
+    { meetingId },
+    () =>
+      chatComplete(MEETING_ASK_SYSTEM, buildMeetingAskUserMessage(meetingText, input), {
+        temperature: 0.2,
+        maxTokens: 1200,
+        purpose: "meeting:ask",
+      }),
+  );
   const answer = normalizeAskAnswer(raw);
   if (!answer) throw new MeetingAskError(502, "Модель не дала ответа — попробуй ещё раз");
   return answer;

@@ -1026,7 +1026,7 @@ export async function handleAsk(chatId: number, question: string, userId: number
         tool_choice: round === 0 ? "required" : "auto",
         max_tokens: 3500,
       }),
-    }, VIA_OPENAI_CHAT);
+    }, { ...VIA_OPENAI_CHAT, usage: { purpose: "bot:knowledge:chat" } });
 
     if (!res.ok) {
       finalAnswer = "Ошибка при обращении к AI. Попробуй ещё раз.";

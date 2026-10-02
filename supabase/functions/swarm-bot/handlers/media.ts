@@ -58,7 +58,7 @@ async function transcribeAudio(fileId: string): Promise<string> {
     method: "POST",
     headers: { Authorization: `Bearer ${OPENAI_API_KEY}` },
     body: form,
-  }, VIA_OPENAI_LONG);
+  }, { ...VIA_OPENAI_LONG, usage: { purpose: "bot:media:long" } });
   const data = await res.json();
   if (!res.ok) throw new Error(data.error?.message ?? "Whisper error");
   const segments = (data.segments ?? []) as Array<{ text: string; no_speech_prob?: number; avg_logprob?: number }>;
@@ -94,7 +94,7 @@ async function describeImage(fileId: string): Promise<string> {
       }],
       max_tokens: 1000,
     }),
-  }, VIA_OPENAI_CHAT);
+  }, { ...VIA_OPENAI_CHAT, usage: { purpose: "bot:media:chat" } });
   const data = await res.json();
   if (!res.ok) throw new Error(data.error?.message ?? "Vision error");
   return data.choices[0].message.content;

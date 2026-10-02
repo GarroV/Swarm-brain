@@ -136,7 +136,7 @@ async function getEmbedding(text: string): Promise<number[]> {
       model: "text-embedding-3-small",
       input: text.slice(0, 8000),
     }),
-  }, VIA_OPENAI_EMBEDDING);
+  }, { ...VIA_OPENAI_EMBEDDING, usage: { purpose: "meeting-claim:embedding" } });
   const data = await res.json();
   if (!res.ok) {
     throw new Error(

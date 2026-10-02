@@ -128,7 +128,8 @@ export function RoyRail({
       <div className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-2 py-2.5">
         {MAIN.map(renderItem)}
       </div>
-      <div className="flex flex-col gap-0.5 border-t border-line px-2 py-2">
+      {/* Тема пилюлей и инструменты пиктограммами — одним рядом, без подписи (владелец 02.10.2026). */}
+      <div className="flex items-center gap-1 border-t border-line px-2 py-2 max-[1099px]:flex-col max-[1099px]:gap-0.5">
         <ThemeSwitch />
         <FootTools items={foot} active={active} onSelect={onSelect} />
       </div>
@@ -214,7 +215,7 @@ function FootTools({ items, active, onSelect }: {
   const [feedbackOpen, setFeedbackOpen] = useState(false);
   const feedback = dt("Фидбек", "Feedback");
   return (
-    <div className="flex items-center justify-end gap-1 px-1 max-[1099px]:flex-col max-[1099px]:gap-0.5 max-[1099px]:px-0">
+    <div className="ml-auto flex items-center gap-0.5 max-[1099px]:ml-0 max-[1099px]:flex-col">
       {items.map((item) => {
         const on = active === item.id;
         const label = dt(item.label[0], item.label[1]);
@@ -235,8 +236,8 @@ function FootTools({ items, active, onSelect }: {
   );
 }
 
-// Переключатель темы над «Настройками» (решение владельца 2026-09-25). Широкая рейка — три кнопки
-// «системная / светлая / тёмная», узкая (пиктограммы) — одна кнопка, листающая по кругу.
+// Переключатель темы рядом с «Настройками» (решение владельца 2026-09-25; пилюлей в один ряд с
+// инструментами — 02.10.2026). Широкая рейка — пилюля «системная / светлая / тёмная», узкая (пиктограммы) — одна кнопка, листающая по кругу.
 const THEME_LABEL: Record<ThemeId, [string, string]> = {
   system: ["Как в системе", "System"], light: ["Светлая", "Light"], dark: ["Тёмная", "Dark"],
 };
@@ -260,14 +261,13 @@ function ThemeSwitch() {
   return (
     <>
       <div role="radiogroup" aria-label={dt("Тема", "Theme")}
-        className="mb-1 flex items-center gap-1 px-1 max-[1099px]:hidden">
-        <span className="flex-1 text-ink-mute" style={{ fontSize: 12 }}>{dt("Тема", "Theme")}</span>
+        className="flex overflow-hidden rounded-full border border-line-2 bg-surface max-[1099px]:hidden">
         {THEME_IDS.map((t) => (
           <button key={t} type="button" role="radio" aria-checked={theme === t}
             title={dt(...THEME_LABEL[t])} aria-label={dt(...THEME_LABEL[t])} onClick={() => pick(t)}
             className={cn(
-              "grid size-[28px] place-items-center rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]",
-              theme === t ? "bg-accent-soft text-accent-ink" : "text-ink-mute hover:bg-surface hover:text-ink",
+              "grid h-[26px] w-[28px] place-items-center border-r border-line-2 transition-colors last:border-r-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--ring)]",
+              theme === t ? "bg-primary text-primary-foreground" : "text-ink-mute hover:bg-surface-2 hover:text-ink",
             )}>
             <RoyIcon name={THEME_ICON[t]} size={15} strokeWidth={1.7} />
           </button>

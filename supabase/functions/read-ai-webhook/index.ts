@@ -61,7 +61,7 @@ async function getEmbedding(text: string): Promise<number[]> {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${OPENAI_API_KEY}` },
     body: JSON.stringify({ model: "text-embedding-3-small", input: text.slice(0, 8000) }),
-  }, VIA_OPENAI_EMBEDDING);
+  }, { ...VIA_OPENAI_EMBEDDING, usage: { purpose: "read-ai:embedding" } });
   const data = await res.json();
   if (!res.ok) throw new Error((data as { error?: { message?: string } }).error?.message ?? "OpenAI error");
   return (data as { data: Array<{ embedding: number[] }> }).data[0].embedding;
@@ -77,7 +77,7 @@ async function chatComplete(system: string, user: string, json = false): Promise
       max_tokens: 2000,
       ...(json ? { response_format: { type: "json_object" } } : {}),
     }),
-  }, VIA_OPENAI_CHAT);
+  }, { ...VIA_OPENAI_CHAT, usage: { purpose: "read-ai:chat" } });
   const data = await res.json();
   if (!res.ok) throw new Error((data as { error?: { message?: string } }).error?.message ?? "OpenAI error");
   return (data as { choices: Array<{ message: { content: string } }> }).choices[0].message.content;

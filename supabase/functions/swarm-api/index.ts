@@ -138,6 +138,9 @@ import { externalFetch, VIA_GRANOLA, VIA_OPENAI_CHAT, VIA_OPENAI_EMBEDDING } fro
 import { handleSprintCycleRoutes } from "./sprint-cycles.ts";
 import { handleSpaceJournalRoutes } from "./space-journal.ts";
 import { handleTaskArchiveRoutes } from "./task-archive.ts";
+import { handleTelegramLinkRoutes } from "./telegram-link.ts";
+import { handleModelUsageRoutes } from "./model-usage.ts";
+import { SUPERADMIN_TELEGRAM_ID } from "../_shared/users/admin-scope.ts";
 import { handleNotificationRoutes } from "./notifications.ts";
 import { handleTaskSubscriptionRoutes } from "./task-subscriptions.ts";
 import {
@@ -671,6 +674,16 @@ async function routeRequest(req: Request): Promise<Response> {
     });
   }
 
+  // Расход OpenAI (#311) — только суперадмин: деньги всей системы, а не воркспейса.
+  const usageResp = await handleModelUsageRoutes(
+    req,
+    routePath,
+    supabase,
+    !isDemo && telegram_id === SUPERADMIN_TELEGRAM_ID,
+    origin,
+  );
+  if (usageResp) return usageResp;
+
   // Admin routes: гейт isAdmin, объём — воркспейс админа (суперадмину — все), см. admin-scope.ts
   const adminResp = await handleAdminRoutes(
     supabase,
@@ -690,7 +703,7 @@ async function routeRequest(req: Request): Promise<Response> {
       supabase.from("user_profiles").select(
         "first_name, last_name, role, markets, ui_backdrop",
       ).eq("telegram_id", telegram_id).maybeSingle(),
-      supabase.from("allowed_users").select("username, email").eq(
+      supabase.from("allowed_users").select("username, email, telegram_chat_id").eq(
         "telegram_id",
         telegram_id,
       ).maybeSingle(),
@@ -702,7 +715,9 @@ async function routeRequest(req: Request): Promise<Response> {
       markets?: string[];
       ui_backdrop?: string | null;
     } | null;
-    const au = allowedUser as { username?: string | null; email?: string | null } | null;
+    const au = allowedUser as
+      | { username?: string | null; email?: string | null; telegram_chat_id?: number | null }
+      | null;
     const username = au?.username ?? null;
     // Вошедший через Google без имени — e-mail, а не номер (#537). username — без «@», как было.
     const name = personName(
@@ -721,6 +736,10 @@ async function routeRequest(req: Request): Promise<Response> {
         ui_backdrop: p?.ui_backdrop ?? null,
         is_admin: isAdmin,
         is_demo: isDemo,
+        // Telegram привязан: номер и есть Telegram (> 0) или привязан из веба (#92).
+        telegram_linked: telegram_id > 0 || Boolean(au?.telegram_chat_id),
+        // Суперадмин — видит разделы всей системы (расход модели, #311).
+        is_superadmin: !isDemo && telegram_id === SUPERADMIN_TELEGRAM_ID,
       },
       200,
       origin,
@@ -1007,6 +1026,13 @@ async function routeRequest(req: Request): Promise<Response> {
   if (journalResp) return journalResp;
 
   // Архив задач (/tasks/archived, /tasks/:id/restore, #489) — модулем, до маршрута /tasks/:id.
+  const telegramLinkResp = await handleTelegramLinkRoutes(
+    { supabase, telegramId: telegram_id, isDemo, botToken: BOT_TOKEN, origin },
+    req,
+    routePath,
+  );
+  if (telegramLinkResp) return telegramLinkResp;
+
   const archiveResp = await handleTaskArchiveRoutes(req, routePath, telegram_id, groupId, isAdmin, origin);
   if (archiveResp) return archiveResp;
 
@@ -2140,7 +2166,7 @@ async function routeRequest(req: Request): Promise<Response> {
           ],
           max_tokens: 500,
         }),
-      }, VIA_OPENAI_CHAT)
+      }, { ...VIA_OPENAI_CHAT, usage: { purpose: "web:chat" } })
       : null;
     const summary = summaryRes?.ok
       ? (await summaryRes.json()).choices[0].message.content
@@ -2179,7 +2205,7 @@ async function routeRequest(req: Request): Promise<Response> {
         model: "text-embedding-3-small",
         input: q.slice(0, 8000),
       }),
-    }, VIA_OPENAI_EMBEDDING);
+    }, { ...VIA_OPENAI_EMBEDDING, usage: { purpose: "web:embedding" } });
     if (!embRes.ok) return apiErr(500, "Embedding failed", origin);
     const embedding: number[] = (await embRes.json()).data[0].embedding;
     try {
@@ -2219,7 +2245,7 @@ async function routeRequest(req: Request): Promise<Response> {
         model: "text-embedding-3-small",
         input: q.slice(0, 8000),
       }),
-    }, VIA_OPENAI_EMBEDDING);
+    }, { ...VIA_OPENAI_EMBEDDING, usage: { purpose: "web:embedding" } });
     if (!embRes.ok) return apiErr(500, "Embedding failed", origin);
     const embedding: number[] = (await embRes.json()).data[0].embedding;
     // 2) retrieve (воркспейс-изоляция и приватность — внутри matchEntries/RPC)
@@ -2295,7 +2321,7 @@ async function routeRequest(req: Request): Promise<Response> {
         ],
         max_tokens: 700,
       }),
-    }, VIA_OPENAI_CHAT);
+    }, { ...VIA_OPENAI_CHAT, usage: { purpose: "web:chat" } });
     if (!askRes.ok) {
       // деградация: вернуть источники без AI-ответа, экран покажет список
       return json(
@@ -2474,7 +2500,7 @@ async function routeRequest(req: Request): Promise<Response> {
             model: "text-embedding-3-small",
             input: tezisi.slice(0, 8000),
           }),
-        }, VIA_OPENAI_EMBEDDING);
+        }, { ...VIA_OPENAI_EMBEDDING, usage: { purpose: "web:embedding" } });
         if (r.ok) embedding = (await r.json()).data[0].embedding;
       } catch { /* эмбеддинг не критичен — текст обновим в любом случае */ }
       const upd: Record<string, unknown> = { summary: tezisi, content: tezisi };
@@ -3211,7 +3237,7 @@ async function routeRequest(req: Request): Promise<Response> {
           ],
           max_tokens: 500,
         }),
-      }, VIA_OPENAI_CHAT,
+      }, { ...VIA_OPENAI_CHAT, usage: { purpose: "web:chat" } },
     );
     if (!summaryRes.ok) return apiErr(500, "GPT error", origin);
     const summary = (await summaryRes.json()).choices[0].message.content;
@@ -3313,7 +3339,7 @@ async function routeRequest(req: Request): Promise<Response> {
           ],
           max_tokens: 500,
         }),
-      }, VIA_OPENAI_CHAT),
+      }, { ...VIA_OPENAI_CHAT, usage: { purpose: "web:chat" } }),
     ]);
     const summary = summaryRes.ok
       ? (await summaryRes.json()).choices[0].message.content
@@ -3669,7 +3695,7 @@ async function routeRequest(req: Request): Promise<Response> {
         ],
         max_tokens: 2600,
       }),
-    }, VIA_OPENAI_CHAT);
+    }, { ...VIA_OPENAI_CHAT, usage: { purpose: "web:chat" } });
     if (!gptRes.ok) return apiErr(500, "GPT error", origin);
     const text = (await gptRes.json()).choices[0].message.content;
     return json({ text, sources }, 200, origin);
