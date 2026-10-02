@@ -73,3 +73,4 @@ supabase/functions/swarm-api/client-error.ts|supabase/functions/swarm-api/client
 # видимости не падает, она молча отдаёт чужую метку или заголовок чужой приватной задачи.
 supabase/functions/_shared/tasks/labels.ts|supabase/functions/_shared/tasks/labels.test.ts
 supabase/functions/_shared/notifications/feed.ts|supabase/functions/_shared/notifications/feed.test.ts
+supabase/functions/swarm-api/task-archive.ts|supabase/functions/swarm-api/task-archive.db.test.ts

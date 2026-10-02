@@ -450,3 +450,34 @@ export async function deleteTask(
     .update(archivePatch(archivedBy))
     .eq("id", id).is("archived_at", null);
 }
+
+/** Сколько архивных задач отдаём за раз: архив копится годами, а читают его верхушку. */
+export const ARCHIVE_PAGE = 200;
+
+/** Архив воркспейса (#489), свежие сверху. Видимость решает вызывающий (`canViewTask`). */
+export async function listArchivedTasks(groupId: string): Promise<Task[]> {
+  // archive-ok: это и есть экран архива — выборка ровно архивных задач
+  const { data, error } = await supabase.from("tasks").select("*")
+    .eq("group_id", groupId).not("archived_at", "is", null)
+    .order("archived_at", { ascending: false }).limit(ARCHIVE_PAGE);
+  if (error) throw new Error(`archive list: ${error.message}`);
+  return (data ?? []) as Task[];
+}
+
+/** Архивная задача по id; живая — null (возвращать из архива нечего). */
+export async function getArchivedTask(id: string): Promise<Task | null> {
+  // archive-ok: возврат из архива читает именно архивную строку
+  const { data } = await supabase.from("tasks").select("*").eq("id", id)
+    .not("archived_at", "is", null).maybeSingle();
+  return data as Task | null;
+}
+
+/** Вернуть задачу из архива (#489). Состав спринтов, из которого она ушла при архивации, не
+ *  восстанавливается: спринт за это время мог быть принят, и задача вернулась бы в чужой план. */
+export async function restoreTask(id: string): Promise<boolean> {
+  const { data, error } = await supabase.from("tasks")
+    .update({ archived_at: null, archived_by: null, updated_at: new Date().toISOString() })
+    .eq("id", id).not("archived_at", "is", null).select("id").maybeSingle();
+  if (error) throw new Error(`archive restore: ${error.message}`);
+  return !!data;
+}

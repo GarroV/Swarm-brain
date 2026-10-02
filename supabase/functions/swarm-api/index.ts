@@ -136,6 +136,7 @@ import { makeFeedbackPingDeps, sendFeedbackPing } from "../_shared/feedback-ping
 import { externalFetch, VIA_GRANOLA, VIA_OPENAI_CHAT, VIA_OPENAI_EMBEDDING } from "../_shared/external-fetch.ts";
 import { handleSprintCycleRoutes } from "./sprint-cycles.ts";
 import { handleSpaceJournalRoutes } from "./space-journal.ts";
+import { handleTaskArchiveRoutes } from "./task-archive.ts";
 import { handleNotificationRoutes } from "./notifications.ts";
 import { handleTaskSubscriptionRoutes } from "./task-subscriptions.ts";
 import {
@@ -982,6 +983,10 @@ async function routeRequest(req: Request): Promise<Response> {
     resolveNames,
   );
   if (journalResp) return journalResp;
+
+  // Архив задач (/tasks/archived, /tasks/:id/restore, #489) — модулем, до маршрута /tasks/:id.
+  const archiveResp = await handleTaskArchiveRoutes(req, routePath, telegram_id, groupId, isAdmin, origin);
+  if (archiveResp) return archiveResp;
 
   // GET /tasks or POST /tasks
   if (routePath === "/tasks") {
