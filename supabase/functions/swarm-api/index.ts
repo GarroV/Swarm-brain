@@ -124,6 +124,7 @@ import { apiErr, corsHeaders, json, parseListLimit, routePathOf } from "./http.t
 import { errorDetail, INTERNAL_ERROR_MESSAGE, serverError, withErrorBoundary } from "./client-error.ts";
 import { handleMeetingInviteRoutes } from "./meeting-invites.ts";
 import { DEMO_GROUP_ID, isDemoSession } from "../_shared/demo-session.ts";
+import { DEMO_REQUESTS, englishDemoResponse } from "./demo-english.ts";
 import { handleIntegrationConnectRoutes, makeIntegrationsDeps } from "./integrations.ts";
 import { handleAutojoinRoutes, makeAutojoinStore, makeCalendarCheck } from "./autojoin.ts";
 import { handleTaskLabelRoutes } from "./task-labels.ts";
@@ -497,7 +498,11 @@ async function sprintInWorkspace(
 // ── Main handler ──────────────────────────────────────────────────────────────
 
 // Граница ошибок (issue #584): не пойманное в маршруте — 500 с общим текстом, подробность в лог.
-Deno.serve((req: Request) => withErrorBoundary(req, routeRequest));
+Deno.serve(async (req: Request) => {
+  const res = await withErrorBoundary(req, routeRequest);
+  // Демо-витрина — по-английски и в отказах сервера (issue #605); рабочие сессии не трогаем.
+  return DEMO_REQUESTS.has(req) ? await englishDemoResponse(res) : res;
+});
 
 async function routeRequest(req: Request): Promise<Response> {
   const origin = req.headers.get("Origin") ?? "";
@@ -587,6 +592,7 @@ async function routeRequest(req: Request): Promise<Response> {
   // Группа форсится в 'demo' (НЕ из БД), админ-права запрещены. Барьер «нет дыр в рабочие»:
   // все data-запросы фильтруются по этому group_id, admin-роуты недоступны (isAdmin=false).
   const isDemo = isDemoSession(telegram_id);
+  if (isDemo) DEMO_REQUESTS.add(req);
   const groupId = isDemo ? DEMO_GROUP_ID : (userRow as { group_id: string | null }).group_id;
   if (!groupId) {
     return apiErr(403, "No workspace assigned", origin);
