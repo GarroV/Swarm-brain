@@ -12,6 +12,7 @@ import { Segmented } from "@/components/roy/ui";
 import { RoyIcon } from "@/components/roy/icons";
 import { useDt } from "@/components/roy/nav";
 import { useConfirm } from "@/components/ui/confirm";
+import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select";
 
 const fieldCls =
   "w-full rounded-[8px] border border-line bg-surface px-3 py-2 text-sm text-ink outline-none transition-colors focus:border-[var(--accent-ink)] placeholder:text-ink-mute";
@@ -239,16 +240,14 @@ function WorkspaceUsers({ wsId, allWorkspaces, desk = false }: { wsId: string; a
                   <span className="truncate text-ink-soft">{u.email || <span className="text-ink-mute">{dt("не привязана", "not linked")}</span>}</span>
                   <div className="flex items-center justify-end gap-1.5">
                     {!u.pending && others.length > 0 && (
-                      <select
-                        defaultValue=""
-                        aria-label={dt("Переместить в другой воркспейс", "Move to another workspace")}
-                        onChange={(e) => { handleMove(u.telegram_id!, e.target.value); e.currentTarget.value = ""; }}
+                      <MoveSelect
+                        others={others}
+                        onPick={(id) => handleMove(u.telegram_id!, id)}
+                        label={dt("↪ Перенести…", "↪ Move…")}
+                        ariaLabel={dt("Переместить в другой воркспейс", "Move to another workspace")}
                         className="h-[28px] max-w-[120px] rounded-[7px] border border-line-2 bg-surface px-1.5 text-ink-soft outline-none focus:border-primary"
-                        style={{ fontSize: 12 }}
-                      >
-                        <option value="">{dt("↪ Перенести…", "↪ Move…")}</option>
-                        {others.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
-                      </select>
+                        fontSize={12}
+                      />
                     )}
                     <button type="button" onClick={() => (editKey === userRef(u) ? setEditKey(null) : startEdit(u))}
                       className={`h-[28px] rounded-full border px-2.5 font-medium transition-colors ${u.email ? "border-line-2 bg-surface text-ink hover:bg-surface-2" : "border-[var(--pri-med)] text-[var(--pri-med)] hover:bg-surface-2"}`}
@@ -340,15 +339,14 @@ function WorkspaceUsers({ wsId, allWorkspaces, desk = false }: { wsId: string; a
                   </div>
                 </div>
               ) : !desk && !u.pending && others.length > 0 ? (
-                <select
-                  defaultValue=""
-                  onChange={(e) => { handleMove(u.telegram_id!, e.target.value); e.currentTarget.value = ""; }}
+                <MoveSelect
+                  others={others}
+                  onPick={(id) => handleMove(u.telegram_id!, id)}
+                  label={dt("↪ Переместить в…", "↪ Move to…")}
+                  ariaLabel={dt("Переместить в другой воркспейс", "Move to another workspace")}
                   className="mt-2 w-full rounded-[10px] border border-line bg-surface-2 px-2 py-1 text-ink-soft outline-none focus:border-[var(--accent-ink)]"
-                  style={{ fontSize: 11.5 }}
-                >
-                  <option value="">↪ Переместить в…</option>
-                  {others.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
-                </select>
+                  fontSize={11.5}
+                />
               ) : null}
             </div>
           ))}
@@ -570,5 +568,28 @@ export function AdminScreen() {
         <WorkspaceList onSelect={setSelected} />
       </div>
     </div>
+  );
+}
+
+/** «Перенести в другой воркспейс» — действие, а не поле: значение не держим, после выбора меню
+ *  снова показывает подпись. Своё меню вместо нативного <select> — macOS раскрывал тот системным
+ *  поверх интерфейса (#300). */
+function MoveSelect({ others, onPick, label, ariaLabel, className, fontSize }: {
+  others: AdminWorkspace[];
+  onPick: (workspaceId: string) => void;
+  label: string;
+  ariaLabel: string;
+  className: string;
+  fontSize: number;
+}) {
+  return (
+    <Select value={null} onValueChange={(v) => { if (typeof v === "string" && v) onPick(v); }}>
+      <SelectTrigger aria-label={ariaLabel} className={className} style={{ fontSize }}>
+        <span className="truncate">{label}</span>
+      </SelectTrigger>
+      <SelectContent>
+        {others.map((w) => <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>)}
+      </SelectContent>
+    </Select>
   );
 }

@@ -1,7 +1,7 @@
 // Словарь топонимов для контекста рекордера (issue #229): «Марибор» → SI.
 // Главное здесь — НЕГАТИВНЫЕ кейсы: цена ложного срабатывания выше цены пустого блока,
 // потому что в панель поедут тезисы чужого рынка, и человек им поверит.
-import { assertEquals } from "jsr:@std/assert";
+import { assertEquals } from "@std/assert";
 import { detectToponymCountry } from "./toponyms.ts";
 import { contextCountry } from "./meeting-context.ts";
 
@@ -25,16 +25,16 @@ Deno.test("несколько стран в топонимах — null, нау�
 
 Deno.test("омонимы и имена НЕ дают страну — иначе в панель поедет чужой рынок", () => {
   // Каждый кейс — реальная ловушка, из-за которой топоним в словарь не попал.
-  assertEquals(detectToponymCountry("Сплит-тест лендинга"), null);        // Split (HR)
-  assertEquals(detectToponymCountry("Встреча, которой не было"), null);   // «котор» + «-ой»
-  assertEquals(detectToponymCountry("Разбор с Софией"), null);            // София (BG) = имя
-  assertEquals(detectToponymCountry("Бар: выручка за неделю"), null);     // Бар (ME)
-  assertEquals(detectToponymCountry("Ниша для нового продукта"), null);   // Ниш (RS)
+  assertEquals(detectToponymCountry("Сплит-тест лендинга"), null); // Split (HR)
+  assertEquals(detectToponymCountry("Встреча, которой не было"), null); // «котор» + «-ой»
+  assertEquals(detectToponymCountry("Разбор с Софией"), null); // София (BG) = имя
+  assertEquals(detectToponymCountry("Бар: выручка за неделю"), null); // Бар (ME)
+  assertEquals(detectToponymCountry("Ниша для нового продукта"), null); // Ниш (RS)
   assertEquals(detectToponymCountry("Победа над бэклогом"), null);
-  assertEquals(detectToponymCountry("Tart and pastry supplier"), null);   // Тарту (EE)
-  assertEquals(detectToponymCountry("Goal setting session"), null);       // Гоа (IN) латиницей
-  assertEquals(detectToponymCountry("Bernard 1:1"), null);                // Берн (CH)
-  assertEquals(detectToponymCountry("Call with Peter"), null);            // Питер (RU)
+  assertEquals(detectToponymCountry("Tart and pastry supplier"), null); // Тарту (EE)
+  assertEquals(detectToponymCountry("Goal setting session"), null); // Гоа (IN) латиницей
+  assertEquals(detectToponymCountry("Bernard 1:1"), null); // Берн (CH)
+  assertEquals(detectToponymCountry("Call with Peter"), null); // Питер (RU)
 });
 
 Deno.test("пусто и мусор — null, без исключений", () => {
@@ -47,7 +47,7 @@ Deno.test("contextCountry: страна в названии сильнее то�
   // Явное указание страны имеет приоритет, топоним — только когда страны нет.
   assertEquals(contextCountry("Dodo Pizza Bulgaria"), "BG");
   assertEquals(contextCountry("Созвон про Марибор"), "SI");
-  // Две страны в названии: детектор отдаёт ОДНУ (первое самое длинное совпадение),
-  // топонимы в этом случае не зовутся вообще. Кросс-маркет не отсекается — issue #449.
-  assertEquals(contextCountry("Сербия и Хорватия: встреча в Загребе"), "HR");
+  // Две страны в названии = кросс-маркет: блока контекста нет, и топоним «Загреб» не
+  // перевешивает название (issue #449).
+  assertEquals(contextCountry("Сербия и Хорватия: встреча в Загребе"), null);
 });
