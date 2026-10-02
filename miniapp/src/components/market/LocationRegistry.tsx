@@ -125,7 +125,7 @@ export function LocationRegistry({ bundle }: { bundle: MarketBundle }) {
               return (
                 <tr key={l.id} className="border-t border-line align-top">
                   <td className="py-2 pl-3">
-                    <span className="inline-flex items-center gap-1.5 text-ink">
+                    <span className="inline-flex items-center gap-1.5 whitespace-nowrap text-ink">
                       <span className="inline-block size-2 shrink-0 rounded-full" style={{ background: colors.get(l.chain_key) }} />
                       {chainName.get(l.chain_key) ?? l.chain_key}
                     </span>

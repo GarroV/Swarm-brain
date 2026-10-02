@@ -91,7 +91,7 @@ export function PizzaSection({ bundle }: { bundle: MarketBundle }) {
                   {units}
                   {paused ? <div className="text-ink-mute" style={{ fontSize: 11 }}>{dt(`пауза: ${paused}`, `paused: ${paused}`)}</div> : null}
                 </td>
-                <td className="py-2 pr-3 text-ink-soft" style={mono}>{entry && yearOf(entry) ? entry.slice(0, 7) : "—"}</td>
+                <td className="whitespace-nowrap py-2 pr-3 text-ink-soft" style={mono}>{entry && yearOf(entry) ? entry.slice(0, 7) : "—"}</td>
                 {finYears.map((fy) => <td key={fy} className="py-2 pr-3 text-right text-ink" style={mono}>{money(revByYear.get(fy)?.get(c.key) ?? null)}</td>)}
                 {finYears.length > 0 && <td className="py-2 pr-3 text-right font-semibold text-ink" style={mono}>{money(perUnit(c.key, finYears.at(-1)!))}</td>}
                 <td className="max-w-[280px] py-2 pr-3 text-ink-mute" style={{ fontSize: 11.5 }}>{userNote(c.notes) ?? c.operator ?? "—"}</td>
@@ -154,8 +154,8 @@ export function PizzaSection({ bundle }: { bundle: MarketBundle }) {
                             <>
                               <div className="font-semibold text-ink" style={mono}>€{dec(cell.price)}</div>
                               <div className="text-ink-mute" style={{ ...mono, fontSize: 11 }}>
-                                {cell.cm ? `${cell.cm} ${dt("см", "cm")}` : dt("размер не указан", "size n/a")}
-                                {cell.per100 !== null ? ` · €${dec(cell.per100)} / 100 ${dt("см²", "cm²")}` : ""}
+                                {cell.cm ? `${ru ? String(cell.cm).replace(".", ",") : cell.cm}\u00a0${dt("см", "cm")}` : dt("размер не указан", "size n/a")}
+                                {cell.per100 !== null ? ` · €${dec(cell.per100)}\u00a0/\u00a0100\u00a0${dt("см²", "cm²")}` : ""}
                               </div>
                               <div className="text-ink-mute" style={{ fontSize: 11 }}>{cell.item}</div>
                             </>

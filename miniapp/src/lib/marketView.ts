@@ -157,7 +157,7 @@ export function fmtMoney(v: number | null, ru: boolean): string {
   const a = Math.abs(v);
   const n = (x: number, d: number) => (ru ? x.toFixed(d).replace(".", ",") : x.toFixed(d));
   if (a >= 1e9) return ru ? `€${n(v / 1e9, 2)} млрд` : `€${n(v / 1e9, 2)}bn`;
-  if (a >= 1e5) return ru ? `€${n(v / 1e6, a >= 1e8 ? 0 : a >= 1e7 ? 1 : 2)} млн` : `€${n(v / 1e6, a >= 1e8 ? 0 : a >= 1e7 ? 1 : 2)}m`;
+  if (a >= 1e5) return ru ? `€${n(v / 1e6, a >= 1e7 ? 1 : 2)} млн` : `€${n(v / 1e6, a >= 1e7 ? 1 : 2)}m`;
   if (a >= 1e3) return ru ? `€${Math.round(v / 1e3)} тыс.` : `€${Math.round(v / 1e3)}k`;
-  return `€${ru ? n(v, a < 100 ? 2 : 0) : n(v, a < 100 ? 2 : 0)}`;
+  return `€${n(v, a < 100 ? 2 : 0)}`;
 }

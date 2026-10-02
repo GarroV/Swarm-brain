@@ -98,7 +98,8 @@ export const firstUrl = (s: string | null): string | null => s?.match(/https?:\/
 /** Подпись источника для людей: домен, а не полный адрес. */
 export const sourceLabel = (s: string | null): string | null => {
   const u = firstUrl(s);
-  if (!u) return s && s.length <= 40 ? s : null;
+  // Без ссылки — это пометка ресерча («ESTIMATE from … figures above»), а не источник.
+  if (!u) return null;
   try {
     return new URL(u).hostname.replace(/^www\./, "");
   } catch {

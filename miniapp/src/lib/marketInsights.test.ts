@@ -109,6 +109,7 @@ Deno.test("prettyFigures localises money, thousands and decimals for Russian", (
   assertEquals(prettyFigures("revenue €2479392, stores 7, LFL 7.8%", true), "revenue €2,48 млн, stores 7, LFL 7,8%");
   assertEquals(prettyFigures("EUR 32.0m / 39.2m", true), "€32,0 млн / 39,2 млн");
   assertEquals(prettyFigures("14,351 firms", true), "14 351 firms");
+  assertEquals(prettyFigures("EUR 1,161/month", true), "€1 161/month");
   assertEquals(prettyFigures("EUR 3.65bn", false), "€3.65bn");
 });
 
@@ -116,13 +117,15 @@ Deno.test("factCards keeps the newest of a series, drops stale, long and empty o
   const f = (value: string | null, text: string, date: string | null) => ({ topic: "market", value, text, date, source: null }) as MarketFact;
   const cards = factCards([
     f("revenue €1908101", "Domino's Pizza: H1 2025", "H1 2025"),
-    f("revenue €2479392", "Domino's Pizza: H1 2026", "H1 2026"),
+    f("revenue €2479392, system sales €2600000, stores 7, LFL 7.8%", "Domino's Pizza: H1 2026", "H1 2026"),
+    f("revenue €1822096, stores 5", "Domino's Pizza: H1 2024", "H1 2024"),
     f("HRK 550M", "Fast food market size", "c.2019"),
     f("not found", "No evidence", "2026"),
     f("EUR 2.7bn revenue; 8,466 businesses", "Food service market size", "2025"),
     f("1 Globalna hrana 232.9M; 2 Pleter 42.7M; 3 Filia 37.3M; 4 Nautika 21.2M; 5 Virtuoz 20M", "Ranking", "2024"),
   ], NOW, true);
   assertEquals(cards.map((c) => c.head), ["revenue €2,48 млн", "€2,70 млрд revenue"]);
+  assertEquals(cards[0].more, "system sales €2,60 млн; stores 7; LFL 7,8%");
   assertEquals(cards[1].more, "8 466 businesses");
 });
 

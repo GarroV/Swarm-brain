@@ -137,7 +137,7 @@ function useCards(bundle: MarketBundle, now: Date, dt: Dt, ru: boolean): CardDat
       cards.push({
         title: dt("Пицца-сети", "Pizza chains"),
         // В заголовке — два крупнейших и Dodo, если он не среди них: раздел делается для Dodo.
-        value: [...pizza.slice(0, 2), ...pizza.slice(2).filter(({ c }) => c.key === "dodo")].map(({ c, n }) => `${c.name}\u00a0${n}`).join(" · "),
+        value: [...pizza.slice(0, 2), ...pizza.slice(2).filter(({ c }) => c.key === "dodo")].map(({ c, n }) => `${c.name.replace(/ /g, "\u00a0")}\u00a0${n}`).join(" · "),
         body: dt(
           `Где работают: ${where.join("; ")}.${paused ? ` У Dodo на паузе: ${paused}.` : ""}`,
           `Where they operate: ${where.join("; ")}.${paused ? ` Dodo paused: ${paused}.` : ""}`,

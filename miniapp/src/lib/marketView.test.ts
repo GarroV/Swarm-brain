@@ -1,5 +1,5 @@
 import { assertEquals } from "jsr:@std/assert@1";
-import { areaOf, freshness, insideRings, pathRings, medianPizza30, orderChannels, revenuePerUnit, unitMonths } from "./marketView.ts";
+import { areaOf, fmtMoney, freshness, insideRings, pathRings, medianPizza30, orderChannels, revenuePerUnit, unitMonths } from "./marketView.ts";
 import type { MarketPrice, MarketRun, MarketSource } from "../types.ts";
 
 const price = (chain_key: string, size_cm: number | null, price_eur: number): MarketPrice => ({
@@ -94,4 +94,8 @@ Deno.test("area of a point: inside wins, a coastal point just outside goes to th
   const a = { ru: "A", en: "A", rings: pathRings("M0,0L10,0L10,10L0,10Z") };
   const b = { ru: "B", en: "B", rings: pathRings("M40,0L50,0L50,10L40,10Z") };
   assertEquals([areaOf([a, b], [5, 5])?.ru, areaOf([a, b], [14, 5])?.ru, areaOf([a, b], [36, 5])?.ru, areaOf([a, b], [25, 200])], ["A", "A", "B", null]);
+});
+
+Deno.test("fmtMoney keeps one decimal for hundreds of millions", () => {
+  assertEquals([fmtMoney(262_500_000, true), fmtMoney(3_710_000, true), fmtMoney(819_000, false), fmtMoney(null, true)], ["€262,5 млн", "€3,71 млн", "€0.82m", "—"]);
 });

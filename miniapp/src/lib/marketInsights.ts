@@ -268,9 +268,12 @@ export function cagr(series: Array<[number, number | null]>): number | null {
 // ── Тексты фактов. Факты — сырые строки ресерча на английском: «revenue €2479392»,
 // «EUR 32.0m / 39.2m», «14,351 firms». На экране — те же цифры в принятом виде.
 const MULT: Record<string, number> = { bn: 1e9, m: 1e6, M: 1e6, k: 1e3 };
+// До 100 тыс. — точная сумма («€1 161/month»): округление до тысяч здесь врёт.
+const exactOrShort = (v: number, ru: boolean) =>
+  v >= 1e5 ? fmtMoney(v, ru) : `€${Number.isInteger(v) ? v.toLocaleString(ru ? "ru-RU" : "en-US").replace(/\u00a0/g, " ") : ru ? String(v).replace(".", ",") : v}`;
 export function prettyFigures(s: string, ru: boolean): string {
   let out = s.replace(/(?:EUR|€)\s?(~)?(\d+(?:,\d{3})*(?:\.\d+)?)\s?(bn|m|M|k)?\b/g, (_, t: string | undefined, n: string, u: string | undefined) =>
-    `${t ?? ""}${fmtMoney(Number(n.replace(/,/g, "")) * (u ? MULT[u] : 1), ru)}`
+    `${t ?? ""}${exactOrShort(Number(n.replace(/,/g, "")) * (u ? MULT[u] : 1), ru)}`
   );
   if (!ru) return out;
   out = out.replace(/\b(\d+(?:\.\d+)?)(bn|m)\b/g, (_, n: string, u: string) => `${n} ${u === "bn" ? "млрд" : "млн"}`);
@@ -282,6 +285,7 @@ export type FactCard = { head: string; more: string | null; text: string; date: 
 const EMPTY_VALUE = /^(n\/a|not found|no count|none)/i;
 const MAX_HEAD = 34;
 const MAX_PARTS = 4;
+const RANKING = /^\d{1,2}\s+\p{Lu}/u;
 const FACT_MAX_AGE_YEARS = 3;
 export function factCards(facts: MarketFact[], now: Date, ru: boolean): FactCard[] {
   const seen = new Set<string>();
@@ -294,9 +298,10 @@ export function factCards(facts: MarketFact[], now: Date, ru: boolean): FactCard
     // Ряд одного показателя («Domino's Pizza: H1 2024 / H1 2025 / H1 2026») — только свежий.
     const series = f.text.split(":")[0].replace(/[\d.,]+/g, "").trim().toLowerCase();
     if (seen.has(series)) continue;
-    const [head, ...rest] = f.value!.split(";").map((x) => x.trim()).filter(Boolean);
+    // Части факта разделены «;» или «, »: «revenue €2479392, stores 7, LFL 7.8%».
+    const [head, ...rest] = f.value!.split(/;\s*|,\s+/).map((x) => x.trim()).filter(Boolean);
     // Рейтинг из пяти и больше мест — список, а не цифра: в карточку не помещается.
-    if (!head || head.length > MAX_HEAD || rest.length >= MAX_PARTS) continue;
+    if (!head || head.length > MAX_HEAD || rest.length >= MAX_PARTS || RANKING.test(head)) continue;
     seen.add(series);
     out.push({ head: prettyFigures(head, ru), more: rest.length ? prettyFigures(rest.join("; "), ru) : null, text: f.text, date: f.date, source: f.source });
   }

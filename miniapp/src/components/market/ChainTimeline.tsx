@@ -152,7 +152,9 @@ export function ChainTimeline({ bundle }: { bundle: MarketBundle }) {
           </div>
 
           <div className="mt-3 overflow-hidden rounded-lg border border-line p-2">
-            <div className="mb-1 text-ink-mute" style={{ ...mono, fontSize: 11 }}>{dt("Открытий за год (с известной датой)", "Openings per year (with a known date)")}</div>
+            <div className="mb-1 text-ink-mute" style={{ ...mono, fontSize: 11 }}>{dt("Открытий за год (с известной датой)", "Openings per year (with a known date)")}
+              {W < NARROW && dt(` · ’${String(thisYear).slice(2)}* — ${now.getMonth()} мес.`, ` · ’${String(thisYear).slice(2)}* — ${now.getMonth()} mo.`)}
+            </div>
             <svg viewBox={`0 0 ${W} ${BAR_H}`} className="block h-auto w-full" role="img" aria-label={dt("Открытий за год", "Openings per year")}>
               {ticks.map((t) => (
                 <g key={t}>
@@ -176,7 +178,7 @@ export function ChainTimeline({ bundle }: { bundle: MarketBundle }) {
                     })}
                     {b.total > 0 && <text x={cx} y={by(b.total) - 5} fontSize={11} fontWeight={600} textAnchor="middle" fill="var(--ink)">{b.total}</text>}
                     <text x={cx} y={BAR_H - 6} fontSize={10.5} textAnchor="middle" fill="var(--ink-mute)" style={mono}>
-                      {b.year === thisYear ? dt(`${b.year} (${now.getMonth()} мес.)`, `${b.year} (${now.getMonth()} mo.)`) : b.year}
+                      {b.year === thisYear && W >= NARROW ? dt(`${b.year} (${now.getMonth()} мес.)`, `${b.year} (${now.getMonth()} mo.)`) : W < NARROW ? `’${String(b.year).slice(2)}${b.year === thisYear ? "*" : ""}` : b.year}
                     </text>
                   </g>
                 );
