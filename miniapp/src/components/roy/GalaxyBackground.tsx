@@ -14,6 +14,11 @@ import { useEffect, useRef } from "react";
 // (на широком мониторе там пусто) — ещё ярче и свой поток «пролетающих» частиц. Под полем
 // карточки непрозрачные, поэтому прибавка видна в просветах и справа, а не под текстом.
 //
+// Цельность с 02.10.2026 (владелец: «галактика теперь не выглядит цельной»): у края поля был
+// шов — справа звёзды скачком ярче, а поток шёл только по полосе и рисовал длинные плоские
+// хвосты, похожие на царапины. Теперь прибавка и плотность потока нарастают плавно к правому
+// краю, поток летит по всему экрану, а хвост короткий и гаснет к концу.
+//
 // Цена кадра. Всё, что не движется (база, туман, ядро, сканлайны, вуаль, виньетка), рисуется
 // один раз на ресайз в два закадровых холста и кладётся drawImage; ореолы крупных звёзд —
 // готовый спрайт на тон, а не createRadialGradient на звезду в каждом кадре. Так звёзд стало
@@ -26,7 +31,10 @@ const DRIFT_N = 170; // поток справа от поля
 const HALO_MAX = 110; // было 70
 const ALPHA = 0.6; // общая яркость звёзд, было 0.5
 const GUTTER_BOOST = 1.45; // справа от поля звёзды ярче: там нет карточек и текста
-const MIN_GUTTER = 80; // уже — полосы справа считай нет, поток идёт по всей ширине
+const MIN_GUTTER = 80; // уже — полосы справа считай нет
+const RAMP = 420; // ширина плавного перехода к прибавке у края поля, px (без шва)
+const DRIFT_FLOOR = 0.3; // поток слева от края поля виден слабее, но виден — не обрывается
+const TAIL_STEPS = 4; // хвост — гаснущие отрезки, а не одна плоская полоса
 const PANE_POLL_FRAMES = 90; // край поля перечитываем раз в ~1.5 с, а не каждый кадр
 
 type Star = { rf: number; a0: number; sz: number; tw: number; tone: number };
@@ -44,12 +52,18 @@ function makeStars(): Star[] {
   return out;
 }
 
-// Пролетающие частицы: медленный дрейф влево-вверх по полосе справа, с коротким хвостом.
+const smooth = (a: number, b: number, x: number) => {
+  const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
+  return t * t * (3 - 2 * t);
+};
+
+// Пролетающие частицы: медленный дрейф влево-вверх по всему экрану, гуще к правому краю.
+// vy заметно больше прежнего — полёт по диагонали, как по ходу рукавов, а не плоские штрихи.
 function makeDrift(): Drift[] {
   return Array.from({ length: DRIFT_N }, () => {
     const fast = Math.random() < 0.18; // редкие «кометы» быстрее и с хвостом подлиннее
     const v = (fast ? 0.045 : 0.012) + Math.random() * (fast ? 0.05 : 0.025); // px/мс
-    return { x: Math.random(), y: Math.random(), vx: -v, vy: -v * (0.15 + Math.random() * 0.35), sz: 0.6 + Math.random() * (fast ? 1.4 : 1.1), al: 0.35 + Math.random() * 0.5, tw: Math.random() * 6.283, tone: Math.random() < 0.55 ? 1 : (Math.random() < 0.5 ? 0 : 3) };
+    return { x: Math.random(), y: Math.random(), vx: -v, vy: -v * (0.3 + Math.random() * 0.4), sz: 0.6 + Math.random() * (fast ? 1.4 : 1.1), al: 0.35 + Math.random() * 0.5, tw: Math.random() * 6.283, tone: Math.random() < 0.55 ? 1 : (Math.random() < 0.5 ? 0 : 3) };
   });
 }
 
@@ -125,23 +139,30 @@ export function GalaxyBackground() {
       readGutter();
     };
 
+    // Прибавка у края поля: 0 далеко слева, 1 за краем, плавно между — без шва.
+    const edgeRamp = (x: number) => (gutterL < W ? smooth(gutterL - RAMP, gutterL + RAMP * 0.3, x) : 0);
+
     const drawDrift = (t: number, dt: number) => {
-      const x0 = gutterL < W ? gutterL : 0, span = W - x0;
       for (const p of DRIFT) {
         if (!reduce) {
-          p.x += (p.vx * dt) / span; p.y += (p.vy * dt) / H;
+          p.x += (p.vx * dt) / W; p.y += (p.vy * dt) / H;
           if (p.x < 0) { p.x += 1; p.y = Math.random(); }
           if (p.y < 0) p.y += 1;
         }
-        const x = x0 + p.x * span, y = p.y * H;
+        const x = p.x * W, y = p.y * H;
         const tw = reduce ? 1 : 0.75 + 0.25 * Math.sin(t * 0.002 + p.tw);
-        const al = p.al * tw;
+        const al = p.al * tw * (gutterL < W ? DRIFT_FLOOR + (1 - DRIFT_FLOOR) * edgeRamp(x) : 1);
+        if (al < 0.03) continue;
         ctx.fillStyle = `rgba(${TONES[p.tone]},${al})`;
         ctx.fillRect(x - p.sz * 0.5, y - p.sz * 0.5, p.sz, p.sz);
-        // Хвост по направлению полёта — видно, что частица летит, а не мерцает на месте.
-        const tail = -p.vx * 260;
-        ctx.fillStyle = `rgba(${TONES[p.tone]},${al * 0.28})`;
-        ctx.fillRect(x, y - p.sz * 0.25, tail, Math.max(0.6, p.sz * 0.5));
+        // Хвост по направлению полёта (назад по скорости), гаснет к концу — видно, что
+        // частица летит, и не читается как царапина.
+        const len = Math.hypot(p.vx, p.vy) * 110, ux = -p.vx / Math.hypot(p.vx, p.vy), uy = -p.vy / Math.hypot(p.vx, p.vy);
+        const step = len / TAIL_STEPS, w = Math.max(0.5, p.sz * 0.45);
+        for (let k = 1; k <= TAIL_STEPS; k++) {
+          ctx.fillStyle = `rgba(${TONES[p.tone]},${al * 0.32 * (1 - k / (TAIL_STEPS + 1))})`;
+          ctx.fillRect(x + ux * step * k - w * 0.5, y + uy * step * k - w * 0.5, w, w);
+        }
       }
     };
 
@@ -165,7 +186,8 @@ export function GalaxyBackground() {
         if (x < -30 || x > W + 30 || y < -30 || y > H + 30) continue;
         const tw = reduce ? 1 : (0.72 + 0.28 * Math.sin(t * 0.0012 + s.tw));
         let al = (0.6 - s.rf * 0.3) * tw * ALPHA;
-        if (x > gutterL) al = Math.min(1, al * GUTTER_BOOST);
+        const ramp = edgeRamp(x);
+        if (ramp > 0) al = Math.min(1, al * (1 + (GUTTER_BOOST - 1) * ramp));
         if (al < 0.02) continue;
         if (s.sz > 1.9 && halos < HALO_MAX) {
           halos++;
