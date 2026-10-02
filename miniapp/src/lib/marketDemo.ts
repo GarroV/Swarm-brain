@@ -182,11 +182,17 @@ const FACTS: MarketFact[] = [
   fact("insight", null, "Pizza Planet closes more units than it opens since 2023"),
 ];
 
-function dodoMonths(r: () => number): MarketDodoMonth[] {
+export const DODO_MONTHS = 18;
+/** Месяцы и даты запусков — от «сейчас»: демо всегда выглядит свежим, а не застывшим на дне
+ *  генерации (сид на сервере пересчитывает их так же, от now()). */
+const daysAgoIso = (now: Date, d: number) => new Date(now.getTime() - d * 86_400_000).toISOString();
+
+function dodoMonths(r: () => number, now: Date): MarketDodoMonth[] {
   const out: MarketDodoMonth[] = [];
   let rev = 180_000;
-  for (let i = 0; i < 18; i++) {
-    const month = new Date(Date.UTC(2025, 3 + i, 1)).toISOString().slice(0, 7);
+  for (let i = 0; i < DODO_MONTHS; i++) {
+    const back = DODO_MONTHS - 1 - i;
+    const month = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - back, 1)).toISOString().slice(0, 7);
     rev *= 1.01 + r() * 0.05;
     const total = Math.round(rev / 21);
     const aggregator = Math.round(total * (0.38 + r() * 0.06));
@@ -198,7 +204,7 @@ function dodoMonths(r: () => number): MarketDodoMonth[] {
       revenue_eur: Math.round(rev),
       units: 6 + Math.floor(i / 6),
       orders: { aggregator, site, mobile, restaurant: Math.max(0, total - aggregator - site - mobile) },
-      complete: i < 17,
+      complete: back > 0,
     });
   }
   return out;
@@ -227,7 +233,11 @@ const source = (
   last_ok_at,
 });
 
-export function demolandBundle(): MarketBundle {
+/** Возраст запусков и источников в днях — общий для DEV_MODE и сида. */
+export const DEMO_AGES = { dodo: 3, osm: 3, registry: 26, registryFailed: 5, manual: 17 };
+
+export function demolandBundle(now: Date = new Date()): MarketBundle {
+  const at = (d: number) => daysAgoIso(now, d);
   const r = rng(20261002);
   const locs = locations(r);
   const { companies, financials } = money(r);
@@ -239,19 +249,19 @@ export function demolandBundle(): MarketBundle {
     financials,
     prices: prices(r),
     facts: FACTS,
-    dodo: dodoMonths(r),
+    dodo: dodoMonths(r, now),
     runs: [
-      run("dodo-publicapi", "2026-09-27T23:01:10Z", { units: 7, days: 8 }),
-      run("osm-overpass", "2026-09-27T23:02:40Z", { points: 41, matched: 39, new_candidates: 2, maybe_closed: 0 }),
-      run("xd-registry", "2026-09-06T23:04:00Z", {}, "registry site returned HTTP 503"),
+      run("dodo-publicapi", at(DEMO_AGES.dodo), { units: 7, days: 8 }),
+      run("osm-overpass", at(DEMO_AGES.osm), { points: 41, matched: 39, new_candidates: 2, maybe_closed: 0 }),
+      run("xd-registry", at(DEMO_AGES.registryFailed), {}, "registry site returned HTTP 503"),
     ],
     sources: [
-      source("dodo-publicapi", "dodo", "weekly", "2026-09-27T23:01:10Z"),
-      source("osm-overpass", "locations", "weekly", "2026-09-27T23:02:40Z"),
-      source("xd-registry", "financials", "monthly", "2026-08-02T23:04:00Z"),
-      source("manual", "prices", "manual", "2026-09-15T10:00:00Z"),
-      source("manual", "facts", "manual", "2026-09-15T10:00:00Z"),
+      source("dodo-publicapi", "dodo", "weekly", at(DEMO_AGES.dodo)),
+      source("osm-overpass", "locations", "weekly", at(DEMO_AGES.osm)),
+      source("xd-registry", "financials", "monthly", at(DEMO_AGES.registry)),
+      source("manual", "prices", "manual", at(DEMO_AGES.manual)),
+      source("manual", "facts", "manual", at(DEMO_AGES.manual)),
     ],
-    pending: 2,
+    pending: 0,
   };
 }
