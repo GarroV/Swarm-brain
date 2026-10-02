@@ -14,6 +14,7 @@ const ADAPTER_NAME: Record<string, [string, string]> = {
   "osm-overpass": ["OpenStreetMap", "OpenStreetMap"],
   "ee-ariregister": ["реестр Эстонии (ariregister)", "Estonian e-Business Register"],
   "ro-datagov": ["data.gov.ro (Минфин Румынии)", "data.gov.ro (Romanian MoF)"],
+  companywall: ["CompanyWall (данные APR Сербии)", "CompanyWall (Serbian APR data)"],
   manual: ["ручная заливка", "manual upload"],
 };
 export const adapterName = (dt: Dt, id: string): string => {

@@ -38,7 +38,7 @@ const VLAB: Record<MarketVerification, [string, string]> = {
 };
 const SRC_CHARS = 40;
 // Сортировка по правилам языка страны (č, ș, õ…); код страны не всегда код языка.
-const LANG_OF: Record<string, string> = { EE: "et" };
+const LANG_OF: Record<string, string> = { EE: "et", RS: "sr-Latn", SI: "sl", ME: "sr-Latn" };
 
 function collator(country: string): Intl.Collator {
   try {
