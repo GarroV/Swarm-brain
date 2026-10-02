@@ -124,13 +124,17 @@ export function usageKind(url: string): UsageKind {
 
 type Insert = (row: Record<string, unknown>) => Promise<{ error: { message: string } | null }>;
 
+// Свой fetch, снятый при загрузке модуля: запись расхода — не вызов модели, и подмена
+// globalThis.fetch в тестах (они считают запросы к OpenAI) не должна её ловить.
+const nativeFetch = globalThis.fetch;
+
 let insertRow: Insert | null | undefined;
 function envInsert(): Insert | null {
   if (insertRow !== undefined) return insertRow;
   const url = Deno.env.get("SUPABASE_URL");
   const key = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
   if (!url || !key) return (insertRow = null);
-  const db = createClient(url, key);
+  const db = createClient(url, key, { global: { fetch: (input, init) => nativeFetch(input, init) } });
   insertRow = async (row) => await db.from("model_usage").insert(row);
   return insertRow;
 }
