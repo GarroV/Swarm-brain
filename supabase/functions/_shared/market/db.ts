@@ -349,3 +349,33 @@ export async function decideCandidate(
   );
   return "ok";
 }
+
+/** Первичная заливка страны без ручного снимка: все находки точек от OSM принимаются разом,
+ *  но остаются «не проверено» — человек их не смотрел, и пропажа из OSM по-прежнему
+ *  предлагает закрытие. «Возможно закрыта» и правки финансов сюда не входят: по одной. */
+export async function acceptAllNewLocations(sb: SupabaseClient, cc: string, by: number): Promise<number> {
+  const country = cc.toUpperCase();
+  const pending = await allRows<{ id: string; payload: { row?: Record<string, unknown> } }>(
+    (from, to) =>
+      sb.from("mkt_candidates").select("id, payload").eq("country", country).eq("kind", "new_location")
+        .eq("status", "pending").order("id").range(from, to),
+    "pending new",
+  );
+  for (let i = 0; i < pending.length; i += PAGE) {
+    const chunk = pending.slice(i, i + PAGE);
+    const rows = new Map(chunk.map((c) => [String(c.payload.row?.ext_key), c.payload.row ?? {}]));
+    await must(
+      sb.from("mkt_locations").upsert(
+        [...rows.values()].map((row) => ({ country, ...row, source_kind: "osm", verification: "unverified" })),
+        { onConflict: "country,ext_key" },
+      ),
+      "accept all",
+    );
+    await must(
+      sb.from("mkt_candidates").update({ status: "accepted", decided_by: by, decided_at: now() })
+        .in("id", chunk.map((c) => c.id)),
+      "accept all decide",
+    );
+  }
+  return pending.length;
+}

@@ -11,9 +11,14 @@ const YEARS_BACK = 3;
 type Resource = { name: string; url: string };
 type Ckan = { result: { resources: Resource[] } };
 
-/** Файлы года: обычные фирмы (UU) и малые/микро (BL_BS_SL). Есть копии в .csv — берём .txt. */
+/** Файлы года: обычные фирмы (UU), малые/микро (BL_BS_SL) и отчитывающиеся по МСФО (IR —
+ *  там Sphera). Колонки у всех трёх одни. Есть копии в .csv — берём .txt. */
 export function pickRoFiles(resources: Resource[], year: number): Resource[] {
-  const want = [`WEB_UU_AN${year}.TXT`, `WEB_BL_BS_SL_AN${year}.TXT`];
+  const want = [
+    `WEB_UU_AN${year}.TXT`,
+    `WEB_BL_BS_SL_AN${year}.TXT`,
+    `WEB_IR_AN${year}.TXT`,
+  ];
   return resources.filter((r) => want.includes(r.name.toUpperCase()));
 }
 
@@ -47,7 +52,7 @@ export const roDatagov: Adapter = {
         const files = pickRoFiles(pkg.result.resources, y);
         if (!files.length) {
           throw new Error(
-            `situatii_financiare_${y}: нет файлов WEB_UU_AN / WEB_BL_BS_SL_AN`,
+            `situatii_financiare_${y}: нет файлов WEB_UU_AN / WEB_BL_BS_SL_AN / WEB_IR_AN`,
           );
         }
         for (const res of files) {

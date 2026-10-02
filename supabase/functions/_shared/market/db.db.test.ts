@@ -2,7 +2,7 @@
 // Пропускаться тест не умеет: базы нет — прогон падает и говорит, что поднять.
 import { assertEquals } from "@std/assert";
 import { createClient } from "@supabase/supabase-js";
-import { importSnapshot, loadCountry } from "./db.ts";
+import { acceptAllNewLocations, decideCandidate, importSnapshot, loadCountry } from "./db.ts";
 import { validateSnapshot } from "./snapshot.ts";
 
 for (const name of ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY"]) {
@@ -39,7 +39,7 @@ async function wipe() {
   const { data: cos } = await sb.from("mkt_companies").select("id").eq("country", CC);
   const ids = (cos ?? []).map((r) => r.id);
   if (ids.length) await sb.from("mkt_financials").delete().in("company_id", ids);
-  for (const t of ["mkt_locations", "mkt_companies", "mkt_prices", "mkt_facts", "mkt_sources"]) {
+  for (const t of ["mkt_candidates", "mkt_locations", "mkt_companies", "mkt_prices", "mkt_facts", "mkt_sources"]) {
     await sb.from(t).delete().eq("country", CC);
   }
   await sb.from("mkt_chains").delete().eq("country", CC);
@@ -86,5 +86,38 @@ Deno.test("loadCountry returns more than the 1000-row PostgREST page", async () 
     if (error) throw new Error(error.message);
   }
   assertEquals((await loadCountry(sb, CC)).locations.length, 1100);
+  await wipe();
+});
+
+const cand = (i: number) => ({
+  country: CC,
+  kind: "new_location",
+  source: "osm",
+  payload: {
+    key: `kfc:${i}`,
+    row: { chain_key: "kfc", ext_key: `kfc:${i}`, name: `KFC ${i}`, lat: 45 + i / 100, lng: 15, status: "open" },
+  },
+});
+
+Deno.test("bulk accept of OSM finds keeps them unverified; a single accept confirms", async () => {
+  await wipe();
+  await sb.from("mkt_chains").insert({ country: CC, key: "kfc", name: "KFC" });
+  const { data, error } = await sb.from("mkt_candidates").insert([cand(1), cand(2), cand(3)]).select("id");
+  if (error) throw new Error(error.message);
+  await sb.from("mkt_candidates").insert({ country: CC, kind: "maybe_closed", source: "osm", payload: { key: "x" } });
+  assertEquals(await decideCandidate(sb, data![0].id, true, 1), "ok");
+  assertEquals(await acceptAllNewLocations(sb, CC, 1), 2);
+  const locs = (await loadCountry(sb, CC)).locations as Array<
+    { ext_key: string; verification: string; source_kind: string }
+  >;
+  assertEquals(
+    locs.map((l) => [l.ext_key, l.verification, l.source_kind]).sort(),
+    [["kfc:1", "confirmed", "osm"], ["kfc:2", "unverified", "osm"], ["kfc:3", "unverified", "osm"]],
+  );
+  // Принимаются только находки точек: «возможно закрыта» требует решения по одной.
+  const { count } = await sb.from("mkt_candidates").select("id", { count: "exact", head: true })
+    .eq("country", CC).eq("status", "pending");
+  assertEquals(count, 1);
+  assertEquals(await acceptAllNewLocations(sb, CC, 1), 0);
   await wipe();
 });

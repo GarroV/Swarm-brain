@@ -69,6 +69,15 @@ Deno.test("candidates are admin-only; unknown candidate is 404", async () => {
   await teardown();
 });
 
+Deno.test("accept-all is admin-only and reports how many finds became points", async () => {
+  await setup();
+  assertEquals((await call("/market/QB/candidates/accept-all", { method: "POST" }))!.status, 403);
+  const res = await call("/market/QB/candidates/accept-all", { method: "POST", admin: true });
+  assertEquals(res!.status, 200);
+  assertEquals(await res!.json(), { accepted: 0 });
+  await teardown();
+});
+
 Deno.test("routes outside /market are not handled", async () => {
   assertEquals(await call("/tasks"), null);
   assertEquals(await call("/marketing"), null);

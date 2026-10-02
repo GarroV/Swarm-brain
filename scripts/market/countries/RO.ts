@@ -65,8 +65,13 @@ export const RO: CountryConfig = {
       name: "Premier Restaurants Romania SRL",
       regId: "6205722",
     },
-    { chain: "kfc", name: "Sphera Franchise Group SA", regId: "37586457" },
-    { chain: "dominos", name: "Domino's Pizza SRL", regId: "13393467" },
+    // Холдинг KFC/Pizza Hut: в реестре — его отдельная отчётность (сборы с дочерних), не выручка
+    // ресторанов. Операционные дочерние — кандидат на добавление после сверки CUI.
+    {
+      chain: "kfc",
+      name: "Sphera Franchise Group SA (holding)",
+      regId: "37586457",
+    },
     { chain: "dominos", name: "Domino's Pizza Maxim SRL", regId: "24335356" },
     { chain: "jerrys", name: "Jerry's Pizza Est SRL", regId: "10556918" },
     { chain: "jerrys", name: "Jerry's Pizza Nord SRL", regId: "14509340" },

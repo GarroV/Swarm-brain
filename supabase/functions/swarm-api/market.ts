@@ -9,6 +9,7 @@ import { apiErr, corsHeaders, json } from "./http.ts";
 import { serverError } from "./client-error.ts";
 import { canSeeCountry } from "../_shared/market/rules.ts";
 import {
+  acceptAllNewLocations,
   decideCandidate,
   importSnapshot,
   listCandidates,
@@ -19,7 +20,7 @@ import { validateSnapshot } from "../_shared/market/snapshot.ts";
 
 const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
 
-const COUNTRY_ROUTE = /^\/market\/([A-Za-z]{2})(\/import|\/candidates)?$/;
+const COUNTRY_ROUTE = /^\/market\/([A-Za-z]{2})(\/import|\/candidates|\/candidates\/accept-all)?$/;
 const DECIDE_ROUTE = /^\/market\/candidates\/([0-9a-f-]{36})\/(accept|reject)$/;
 
 async function allowedMarkets(groupId: string): Promise<string[] | null> {
@@ -77,6 +78,10 @@ export async function handleMarketRoutes(
       return json(await listCandidates(supabase, cc), 200, origin);
     }
     if (m[2] === "/import" && req.method === "POST") return await importRoute(req, cc, isAdmin, origin);
+    if (m[2] === "/candidates/accept-all" && req.method === "POST") {
+      if (!isAdmin) return apiErr(403, "Forbidden", origin);
+      return json({ accepted: await acceptAllNewLocations(supabase, cc, telegramId) }, 200, origin);
+    }
     return null;
   } catch (e) {
     return serverError(origin, "market", e);
