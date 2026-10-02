@@ -181,14 +181,14 @@ export function RangePicker({ value, onChange, variant = "rail" }: Props) {
 
           <div className="mt-2 flex items-center gap-1.5">
             {anchor && (
-              <span className="flex-1 px-1 text-[11px] text-ink-soft">Выберите конец периода</span>
+              <span className="flex-1 px-1 text-[11px] text-ink-soft">{tx("Выберите конец периода", "Pick the end of the period")}</span>
             )}
             {!anchor && value && (
               <button type="button" onClick={() => { onChange(null); setOpen(false); }}
-                className="flex-1 rounded-full border border-line py-1.5 text-[12px] text-ink-soft transition-colors hover:border-destructive/40 hover:text-destructive">Сбросить период</button>
+                className="flex-1 rounded-full border border-line py-1.5 text-[12px] text-ink-soft transition-colors hover:border-destructive/40 hover:text-destructive">{tx("Сбросить период", "Clear period")}</button>
             )}
             {!anchor && !value && (
-              <span className="flex-1 px-1 text-[11px] text-ink-soft">Или выберите период в календаре</span>
+              <span className="flex-1 px-1 text-[11px] text-ink-soft">{tx("Или выберите период в календаре", "Or pick a period in the calendar")}</span>
             )}
           </div>
         </div>,

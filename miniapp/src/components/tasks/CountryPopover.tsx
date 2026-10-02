@@ -8,6 +8,7 @@ import { createPortal } from "react-dom";
 import { RoyIcon } from "@/components/roy/icons";
 import { countryName, countryFlag, countryCode } from "@/lib/countries";
 import { propertyPillCls } from "@/components/ui/PropertyPill";
+import { useDt } from "@/components/roy/nav";
 
 type Props = {
   value: string;                 // id выбранной страны ("" = Global)
@@ -23,7 +24,9 @@ type Props = {
 
 const W = 288, H = 300;
 
-export function CountryPopover({ value, codes, onChange, variant = "chip", label = "Страна" }: Props) {
+export function CountryPopover({ value, codes, onChange, variant = "chip", label: labelProp }: Props) {
+  const dt = useDt();
+  const label = labelProp ?? dt("Страна", "Country");
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
   const btnRef = useRef<HTMLButtonElement>(null);
@@ -70,7 +73,7 @@ export function CountryPopover({ value, codes, onChange, variant = "chip", label
         <button
           ref={btnRef}
           type="button"
-          aria-label="Страна"
+          aria-label={label}
           aria-haspopup="menu"
           aria-expanded={open}
           onPointerDown={(e) => e.stopPropagation()}

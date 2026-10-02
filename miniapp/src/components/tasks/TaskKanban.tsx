@@ -27,10 +27,10 @@ export type KanbanHandlers = {
   onOpenTask: (task: Task) => void;
 };
 
-function fmtDay(iso: string | null): string | null {
+function fmtDay(iso: string | null, locale: string): string | null {
   if (!iso) return null;
   const d = new Date(iso);
-  return isNaN(d.getTime()) ? null : d.toLocaleDateString("ru-RU", { day: "numeric", month: "short" });
+  return isNaN(d.getTime()) ? null : d.toLocaleDateString(locale, { day: "numeric", month: "short" });
 }
 
 function initials(names: string[]): string {
@@ -48,6 +48,7 @@ function KanbanCard({ task, badge, draggable, onDragStart, onDragEnd, onOpen, on
   onRemove?: () => void;
   removeTitle?: string;
 }) {
+  const dt = useDt();
   return (
     <div draggable={draggable}
       onDragStart={(e) => { onDragStart(); e.dataTransfer.effectAllowed = "move"; }}
@@ -68,7 +69,7 @@ function KanbanCard({ task, badge, draggable, onDragStart, onDragEnd, onOpen, on
         <p className="text-sm font-medium leading-snug text-ink">{task.title}</p>
       )}
       <div className="flex items-center gap-2 mt-2 text-[11px] text-ink-soft">
-        {task.due_date && <span className="inline-flex items-center gap-1"><RoyIcon name="cal" size={11} /> {fmtDay(task.due_date)}</span>}
+        {task.due_date && <span className="inline-flex items-center gap-1"><RoyIcon name="cal" size={11} /> {fmtDay(task.due_date, dt("ru-RU", "en-GB"))}</span>}
         {task.assignees.length > 0 && <span className="ml-auto font-bold">{initials(task.assignees)}</span>}
       </div>
     </div>

@@ -7,9 +7,9 @@ import { useDt } from "@/components/roy/nav";
 // на приёмке чистой функцией `computeSprintStats` и лежат в строке спринта — переоткрытие задачи
 // потом архив не меняет. Поэтому здесь только рисование, и цифры отчёта не «уплывают» со временем.
 
-function fmtDay(value: string): string {
+function fmtDay(value: string, locale: string): string {
   const d = new Date(value);
-  return isNaN(d.getTime()) ? value : d.toLocaleDateString("ru-RU", { day: "numeric", month: "short" });
+  return isNaN(d.getTime()) ? value : d.toLocaleDateString(locale, { day: "numeric", month: "short" });
 }
 
 function Row({ label, value, hint }: { label: string; value: string; hint?: string }) {
@@ -113,7 +113,7 @@ export function SprintReport({ cycle }: { cycle: SprintCycle }) {
                 {s.byDay.map((d) => {
                   const max = Math.max(...s.byDay.map((x) => x.done), 1);
                   return (
-                    <div key={d.day} className="h-full flex-1 flex flex-col justify-end items-center gap-1" title={`${fmtDay(d.day)}: ${d.done}`}>
+                    <div key={d.day} className="h-full flex-1 flex flex-col justify-end items-center gap-1" title={`${fmtDay(d.day, dt("ru-RU", "en-GB"))}: ${d.done}`}>
                       <div className="w-full rounded-sm bg-primary/70" style={{ height: `${Math.max((d.done / max) * 100, 4)}%` }} />
                       <span className="text-[9px] leading-none text-ink-soft/70">{new Date(d.day).getDate() || ""}</span>
                     </div>
