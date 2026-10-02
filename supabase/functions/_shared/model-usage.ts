@@ -32,10 +32,13 @@ export function withUsageLabel<T>(label: UsageLabel, fn: () => Promise<T>): Prom
 
 // Цены, USD. Источник — прайс OpenAI на 02.10.2026; модель без цены честно даёт cost = null,
 // а не ноль: админка показывает её токены и пометку «цена не задана».
-// Токены — за 1M; транскрибация — за минуту аудио.
-const PRICES: Record<string, { input?: number; output?: number; perMinute?: number }> = {
-  "gpt-4o-mini": { input: 0.15, output: 0.6 },
-  "gpt-4o": { input: 2.5, output: 10 },
+// Токены — за 1M; транскрибация — за минуту аудио. `cached` — вход, взятый из кэша промпта
+// (он входит в prompt_tokens, но стоит дешевле); reasoning-токены входят в completion_tokens
+// и оплачиваются как выход, отдельной цены у них нет.
+const PRICES: Record<string, { input?: number; cached?: number; output?: number; perMinute?: number }> = {
+  "gpt-5.6-terra": { input: 2, cached: 0.2, output: 12 },
+  "gpt-4o-mini": { input: 0.15, cached: 0.075, output: 0.6 },
+  "gpt-4o": { input: 2.5, cached: 1.25, output: 10 },
   "text-embedding-3-small": { input: 0.02 },
   "whisper-1": { perMinute: 0.006 },
 };
@@ -52,6 +55,7 @@ export interface UsageNumbers {
   model: string | null;
   kind: UsageKind;
   promptTokens?: number | null;
+  cachedTokens?: number | null;
   completionTokens?: number | null;
   audioSeconds?: number | null;
 }
@@ -70,12 +74,15 @@ export function costUsd(u: UsageNumbers): number | null {
   if (p.input === undefined || u.promptTokens == null) return null;
   const out = u.completionTokens ?? 0;
   if (out > 0 && p.output === undefined) return null;
-  return round6((u.promptTokens * p.input + out * (p.output ?? 0)) / 1_000_000);
+  const cached = Math.min(u.cachedTokens ?? 0, u.promptTokens);
+  const input = (u.promptTokens - cached) * p.input + cached * (p.cached ?? p.input);
+  return round6((input + out * (p.output ?? 0)) / 1_000_000);
 }
 
 export interface ParsedUsage {
   model: string | null;
   promptTokens: number | null;
+  cachedTokens: number | null;
   completionTokens: number | null;
   reasoningTokens: number | null;
   audioSeconds: number | null;
@@ -88,9 +95,14 @@ export function parseUsage(kind: UsageKind, body: unknown): ParsedUsage {
   const b = (body ?? {}) as Record<string, unknown>;
   const usage = (b.usage ?? {}) as Record<string, unknown>;
   const details = (usage.completion_tokens_details ?? {}) as Record<string, unknown>;
+  const promptDetails = (usage.prompt_tokens_details ?? usage.input_tokens_details ?? {}) as Record<
+    string,
+    unknown
+  >;
   return {
     model: typeof b.model === "string" ? b.model : null,
     promptTokens: num(usage.prompt_tokens) ?? num(usage.input_tokens),
+    cachedTokens: num(promptDetails.cached_tokens),
     completionTokens: kind === "embedding" ? null : num(usage.completion_tokens) ?? num(usage.output_tokens),
     reasoningTokens: num(details.reasoning_tokens),
     audioSeconds: kind === "transcription" ? num(b.duration) : null,

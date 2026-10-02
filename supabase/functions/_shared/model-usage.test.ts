@@ -17,8 +17,26 @@ Deno.test("стоимость эмбеддинга и транскрибации
 });
 
 Deno.test("неизвестная модель или нет длительности — стоимость не выдумываем", () => {
-  assertEquals(costUsd({ model: "gpt-5.6-terra", kind: "chat", promptTokens: 1000, completionTokens: 10 }), null);
+  assertEquals(costUsd({ model: "gpt-9-unknown", kind: "chat", promptTokens: 1000, completionTokens: 10 }), null);
   assertEquals(costUsd({ model: "whisper-1", kind: "transcription" }), null);
+});
+
+Deno.test("тезисы gpt-5.6-terra: кэшированный вход по своей цене", () => {
+  // $2 / 1M вход, $0.20 / 1M из кэша, $12 / 1M выход (reasoning — внутри выхода)
+  assertEquals(
+    costUsd({ model: "gpt-5.6-terra", kind: "chat", promptTokens: 1_000_000, completionTokens: 1_000_000 }),
+    14,
+  );
+  assertEquals(
+    costUsd({
+      model: "gpt-5.6-terra",
+      kind: "chat",
+      promptTokens: 1_000_000,
+      cachedTokens: 500_000,
+      completionTokens: 0,
+    }),
+    1.1,
+  );
 });
 
 Deno.test("датированная версия модели считается по цене базовой", () => {
@@ -32,15 +50,21 @@ Deno.test("usage из ответа чата, эмбеддинга и транс�
   assertEquals(
     parseUsage("chat", {
       model: "gpt-4o",
-      usage: { prompt_tokens: 10, completion_tokens: 3, completion_tokens_details: { reasoning_tokens: 2 } },
+      usage: {
+        prompt_tokens: 10,
+        prompt_tokens_details: { cached_tokens: 4 },
+        completion_tokens: 3,
+        completion_tokens_details: { reasoning_tokens: 2 },
+      },
     }),
-    { model: "gpt-4o", promptTokens: 10, completionTokens: 3, reasoningTokens: 2, audioSeconds: null },
+    { model: "gpt-4o", promptTokens: 10, cachedTokens: 4, completionTokens: 3, reasoningTokens: 2, audioSeconds: null },
   );
   assertEquals(
     parseUsage("embedding", { model: "text-embedding-3-small", usage: { prompt_tokens: 7, total_tokens: 7 } }),
     {
       model: "text-embedding-3-small",
       promptTokens: 7,
+      cachedTokens: null,
       completionTokens: null,
       reasoningTokens: null,
       audioSeconds: null,
@@ -48,7 +72,14 @@ Deno.test("usage из ответа чата, эмбеддинга и транс�
   );
   assertEquals(
     parseUsage("transcription", { duration: 61.5, text: "…" }),
-    { model: null, promptTokens: null, completionTokens: null, reasoningTokens: null, audioSeconds: 61.5 },
+    {
+      model: null,
+      promptTokens: null,
+      cachedTokens: null,
+      completionTokens: null,
+      reasoningTokens: null,
+      audioSeconds: 61.5,
+    },
   );
 });
 
