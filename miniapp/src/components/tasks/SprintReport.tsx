@@ -79,6 +79,11 @@ export function SprintReport({ cycle }: { cycle: SprintCycle }) {
               hint={dt("из добавленных по ходу", "of those added mid-sprint")} />
             <Row label={dt("Перенесено", "Carried over")} value={String(s.carried)}
               hint={dt("в следующий спринт", "to the next sprint")} />
+            {/* Отменённые — отдельной цифрой, вне процента (решение владельца 18.09.2026, #299). */}
+            {s.cancelled > 0 && (
+              <Row label={dt("Отменено", "Cancelled")} value={String(s.cancelled)}
+                hint={dt("вне процента плана", "not counted in plan %")} />
+            )}
             <Row label={dt("Без исполнителя", "Unassigned")} value={String(s.unassigned)} />
           </div>
 

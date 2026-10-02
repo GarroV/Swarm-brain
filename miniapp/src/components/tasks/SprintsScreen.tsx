@@ -1072,6 +1072,9 @@ export function SprintsScreen() {
                             : t.status === col.status)
                           )}
                           groupOf={(t) => groupLabels.get(t.id) ?? null}
+                          // «Готово» собирает оба закрытых статуса (процент считает их вместе,
+                          // спека §6), но «сделали» и «передумали» человеку надо различать (#299).
+                          badgeFor={(t) => t.status === "cancelled" ? dt("Отменена", "Cancelled") : undefined}
                           readOnly={accepted}
                           onRemoveCard={accepted ? undefined : removeFromSprint}
                           removeTitle={dt(

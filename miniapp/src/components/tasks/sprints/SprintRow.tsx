@@ -255,6 +255,11 @@ export function SprintRow(
         >
           {item.hidden ? dt("Приватная задача", "Private task") : item.title}
         </span>
+        {item.status === "cancelled" && !item.removed && (
+          <span className="shrink-0 text-ink-mute" style={{ fontSize: 11.5 }}>
+            {dt("отменена", "cancelled")}
+          </span>
+        )}
         {kids && (
           <span
             className={cn(
