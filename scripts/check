@@ -166,7 +166,7 @@ initiatives_gate() {
     row "покрытие" "skip" 0 0 "без тестов не считается"
   else
   rm -rf reports/cov
-  deno test -A --coverage=reports/cov --reporter=junit supabase/ files/ \
+  deno test -A --coverage=reports/cov --reporter=junit supabase/ files/ scripts/market/ \
     > reports/tests-functions.junit.xml 2> reports/tests.log; st1=$?
   deno test -A --no-check --coverage=reports/cov --reporter=junit \
     miniapp/sw.test.ts miniapp/src/lib/ > reports/tests-web.junit.xml 2>> reports/tests.log; st2=$?
