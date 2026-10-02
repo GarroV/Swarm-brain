@@ -128,6 +128,7 @@ import { DEMO_REQUESTS, englishDemoResponse } from "./demo-english.ts";
 import { handleIntegrationConnectRoutes, makeIntegrationsDeps } from "./integrations.ts";
 import { handleAutojoinRoutes, makeAutojoinStore, makeCalendarCheck } from "./autojoin.ts";
 import { handleTaskLabelRoutes } from "./task-labels.ts";
+import { handlePublicShortLink, handleShortLinkRoutes, isPublicShortLinkPath } from "./short-links.ts";
 import { handleTaskCommentRoutes } from "./task-comments.ts";
 import { handleTaskFileRoutes } from "./task-files.ts";
 import { handleStatsRoutes } from "./stats.ts";
@@ -524,6 +525,10 @@ async function routeRequest(req: Request): Promise<Response> {
   if (isPublicRoadmapPath(publicPath)) {
     return handlePublicRoadmap(supabase, req, publicPath);
   }
+  // Переход по короткой ссылке (`/s/<code>` веба) — БЕЗ авторизации: наружу только адрес.
+  if (isPublicShortLinkPath(publicPath)) {
+    return handlePublicShortLink(supabase, req, publicPath);
+  }
 
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 204, headers: corsHeaders(origin) });
@@ -862,6 +867,14 @@ async function routeRequest(req: Request): Promise<Response> {
   }
 
   // Персональные смарт-метки задач (/task-labels*) — доступ строго свой (owner_id).
+  // Сокращатель ссылок («Полезности»): свои ссылки, доступ по owner_id.
+  const shortLinkResp = await handleShortLinkRoutes(
+    { supabase, telegramId: telegram_id, groupId, isDemo, origin },
+    req,
+    routePath,
+  );
+  if (shortLinkResp) return shortLinkResp;
+
   // Приглашение бота на созвон (D017): человек вставляет ссылку — бот постучится.
   const inviteResp = await handleMeetingInviteRoutes(
     { supabase, telegramId: telegram_id, groupId, isDemo, origin },

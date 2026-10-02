@@ -1163,6 +1163,47 @@ export async function deleteTaskLabel(id: string): Promise<void> {
   await apiFetch<void>(`/task-labels/${id}`, { method: "DELETE" });
 }
 
+// ── Сокращатель ссылок («Полезности») ──────────────────────────────────────────
+// Короткий адрес собирает экран: `${location.origin}/s/${code}` — переход обслуживает
+// Pages Function functions/s/[code].ts.
+export type ShortLink = {
+  code: string;
+  url: string;
+  clicks: number;
+  last_clicked_at: string | null;
+  created_at: string;
+};
+
+let MOCK_SHORT_LINKS: ShortLink[] = [];
+
+export async function fetchShortLinks(): Promise<ShortLink[]> {
+  if (DEV_MODE) return MOCK_SHORT_LINKS;
+  return apiFetch<ShortLink[]>("/short-links");
+}
+
+export async function createShortLink(url: string): Promise<ShortLink> {
+  if (DEV_MODE) {
+    const l: ShortLink = {
+      code: Math.random().toString(36).slice(2, 8),
+      url,
+      clicks: 0,
+      last_clicked_at: null,
+      created_at: new Date().toISOString(),
+    };
+    MOCK_SHORT_LINKS = [l, ...MOCK_SHORT_LINKS];
+    return l;
+  }
+  return apiFetch<ShortLink>("/short-links", { method: "POST", body: JSON.stringify({ url }) });
+}
+
+export async function archiveShortLink(code: string): Promise<void> {
+  if (DEV_MODE) {
+    MOCK_SHORT_LINKS = MOCK_SHORT_LINKS.filter((l) => l.code !== code);
+    return;
+  }
+  await apiFetch<void>(`/short-links/${code}`, { method: "DELETE" });
+}
+
 // Preview-извлечение: вернуть предложенные задачи БЕЗ создания (для ревью на экране встреч).
 // Ответ модели прогоняется через normalizeProposedTasks — вторым слоем поверх промпта:
 // GPT регулярно пишет СТРОКУ "null" вместо JSON null, и она доезжала до карточки чипом

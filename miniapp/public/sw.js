@@ -34,6 +34,9 @@ self.addEventListener("fetch", (event) => {
   // Backend-вызовы (приватные данные) — мимо кэша: и same-origin прокси /api/*, и прямой режим.
   if (url.pathname === "/api" || url.pathname.startsWith("/api/")) return;
   if (url.pathname.includes("/functions/v1/") || url.hostname.endsWith(".supabase.co")) return;
+  // Короткие ссылки (/s/<code>) — переадресация на чужой адрес, кэшировать её нельзя: снятая
+  // ссылка продолжила бы открываться у тех, кто уже ходил по ней.
+  if (url.pathname.startsWith("/s/")) return;
   // Только same-origin статика.
   if (url.origin !== self.location.origin) return;
 
