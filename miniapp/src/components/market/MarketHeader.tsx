@@ -4,7 +4,7 @@
 import { useMemo } from "react";
 import type { MarketBundle } from "@/types";
 import { countryName } from "@/lib/countries";
-import { yearOf } from "@/lib/marketInsights";
+import { kpis, yearOf } from "@/lib/marketInsights";
 import { aliveAtYearEnd } from "@/lib/marketStats";
 import { useDt, useLang } from "@/components/roy/nav";
 import { dec, useEditorial } from "./ref";
@@ -42,7 +42,7 @@ export function MarketHeader({ bundle }: { bundle: MarketBundle }) {
     ];
     const curated = ed.kpis[2];
     if (curated?.value && curated.label) out.push({ value: curated.value, label: curated.label, note: curated.note });
-    const leader = revenueLeader(bundle);
+    const leader = kpis(bundle, new Date()).topRevenue;
     if (leader) {
       const units = aliveAtYearEnd(bundle.locations.filter((l) => l.chain_key === leader.chain), leader.year, year);
       out.push({
@@ -87,15 +87,3 @@ export function MarketHeader({ bundle }: { bundle: MarketBundle }) {
   );
 }
 
-/** Сеть с самой большой выручкой за последний год отчётности — 4-я плитка эталона. */
-function revenueLeader(b: MarketBundle): { chain: string; name: string; year: number; revenue: number } | null {
-  const company = new Map(b.companies.map((c) => [c.id, c]));
-  const chainName = new Map(b.chains.map((c) => [c.key, c.name]));
-  const rows = b.financials.flatMap((f) => {
-    const chain = company.get(f.company_id)?.chain_key;
-    return chain && f.revenue_eur !== null && chainName.has(chain) ? [{ chain, year: f.year, revenue: f.revenue_eur }] : [];
-  });
-  const last = Math.max(...rows.map((r) => r.year));
-  const top = rows.filter((r) => r.year === last).sort((x, y) => y.revenue - x.revenue)[0];
-  return top ? { ...top, name: chainName.get(top.chain)! } : null;
-}

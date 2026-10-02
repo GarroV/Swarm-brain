@@ -34,7 +34,22 @@ Deno.test("kpis: bakeries are set aside, closures and undated are counted, top r
   assertEquals([k.restaurants, k.bakeries, k.bakeryNames], [5, 2, ["MLINAR"]]);
   assertEquals([k.openings, k.closures, k.undated, k.from], [3, 1, 1, 2021]);
   assertEquals(k.newBrands.map((x) => [x.name, x.year, x.planned]), [["DODO", 2024, false], ["KFC", 2025, false], ["TACO", null, true]]);
-  assertEquals(k.topRevenue, { name: "MCD", year: 2025, revenue: 262e6, units: 3, othersUnits: 2 });
+  assertEquals(k.topRevenue, { chain: "mcd", name: "MCD", year: 2025, revenue: 262e6, units: 3, othersUnits: 2 });
+});
+
+Deno.test("kpis: a bakery with the biggest revenue never becomes the headline revenue", () => {
+  const b = bundle({
+    chains: [chain("mcd"), chain("pecjak", { is_bakery: true })],
+    locations: [loc("mcd", "2019"), loc("pecjak", "2020")],
+    companies: [{ id: "c1", chain_key: "mcd", name: "M", reg_id: null, owner: null, notes: null }, { id: "c2", chain_key: "pecjak", name: "P", reg_id: null, owner: null, notes: null }],
+    financials: [
+      { company_id: "c1", year: 2025, revenue_eur: 5e6, employees: null, source: null, verification: "official", note: null },
+      { company_id: "c2", year: 2025, revenue_eur: 60e6, employees: null, source: null, verification: "official", note: null },
+    ],
+  });
+  assertEquals(kpis(b, NOW).topRevenue?.name, "MCD");
+  const onlyBakery = bundle({ ...b, financials: [b.financials[1]] });
+  assertEquals(kpis(onlyBakery, NOW).topRevenue, null);
 });
 
 Deno.test("trend: openings per year in each period, the unfinished period annualised", () => {
