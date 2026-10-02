@@ -458,7 +458,7 @@ async function osmPlaces(cc: string): Promise<Place[]> {
     }
   }
   return j.elements.filter((e) => e.tags?.name).map((e) => ({
-    name: (cc === "RS" ? e.tags["name:sr-Latn"] : undefined) ?? e.tags.name,
+    name: ((cc === "RS" ? e.tags["name:sr-Latn"] : undefined) ?? e.tags.name).split(/ \/ | - /)[0],
     lat: e.lat,
     lng: e.lon,
     pop: Number(String(e.tags.population ?? "0").replace(/[^\d]/g, "")) ||

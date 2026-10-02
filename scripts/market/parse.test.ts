@@ -447,3 +447,22 @@ Deno.test("parseCompanyWall reads a Montenegrin page: PIB, staff only as a sente
     "PIB",
   );
 });
+
+Deno.test("parseOverpass: a bilingual place name keeps its first part, the full form still matches addr:city", () => {
+  const n = (
+    id: number,
+    lat: number,
+    lon: number,
+    tags: Record<string, string>,
+  ) => ({ type: "node", id, lat, lon, tags });
+  const pts = parseOverpass({
+    elements: [
+      n(1, 45.548, 13.73, { place: "town", name: "Koper / Capodistria" }),
+      n(2, 41.93, 19.22, { place: "town", name: "Ulcinj - Ulqin" }),
+      n(10, 45.549, 13.731, { brand: "KFC" }),
+      n(11, 45.6, 13.8, { brand: "KFC", "addr:city": "Koper / Capodistria" }),
+      n(12, 41.931, 19.221, { brand: "KFC" }),
+    ],
+  }, { kfc: ["KFC"] });
+  assertEquals(pts.map((p) => p.city), ["Koper", "Koper", "Ulcinj"]);
+});

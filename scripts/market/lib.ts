@@ -265,7 +265,11 @@ export function parseOverpass(
       !PLACE_KINDS.has(t.place ?? "") || e.lat === undefined ||
       e.lon === undefined || !t.name
     ) return [];
-    const name = (opts.toLatin && t["name:sr-Latn"]) || latin(t.name);
+    // Двуязычные места пишут оба имени: «Koper / Capodistria», «Ulcinj - Ulqin». Город — первое,
+    // иначе Dodo («Koper») и OSM дают два разных города в списках.
+    const name = ((opts.toLatin && t["name:sr-Latn"]) || latin(t.name)).split(
+      / \/ | - /,
+    )[0];
     const aliases = [name, t.name, t["name:en"]].filter(Boolean)
       .map((x) => latin(x!).toLowerCase());
     return [{
