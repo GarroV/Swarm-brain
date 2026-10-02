@@ -6,7 +6,7 @@
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { matchPoints } from "../_shared/market/geo.ts";
 import { foldDailyOrders, shouldFlagClosed, toEur } from "../_shared/market/rules.ts";
-import { locKey, must, recordRun } from "../_shared/market/db.ts";
+import { allRows, ID_BATCH, locKey, must, recordRun } from "../_shared/market/db.ts";
 import { TRUSTED, type Verification } from "../_shared/market/types.ts";
 import type { DodoUnit, IngestPayload, OsmPoint, RegistryYear } from "./types.ts";
 
@@ -173,12 +173,14 @@ async function applyOsm(
 ): Promise<Stats> {
   const chains = [...new Set(points.map((x) => x.chain))];
   const existing = chains.length
-    ? await must<ExistingLoc[]>(
-      sb.from("mkt_locations")
-        .select(
-          "id, chain_key, ext_key, lat, lng, verification, source_kind, missing_weeks",
-        )
-        .eq("country", country).in("chain_key", chains).neq("status", "closed"),
+    ? await allRows<ExistingLoc>(
+      (from, to) =>
+        sb.from("mkt_locations")
+          .select(
+            "id, chain_key, ext_key, lat, lng, verification, source_kind, missing_weeks",
+          )
+          .eq("country", country).in("chain_key", chains).neq("status", "closed")
+          .order("id").range(from, to),
       "osm existing",
     )
     : [];
@@ -186,13 +188,11 @@ async function applyOsm(
     existing.map((e) => ({ ...e, chain: e.chain_key })),
     points,
   );
-  if (r.matched.length) {
+  const seen = r.matched.map((m) => m.existing.id);
+  for (let i = 0; i < seen.length; i += ID_BATCH) {
     await must(
       sb.from("mkt_locations").update({ last_seen_at: now(), missing_weeks: 0 })
-        .in(
-          "id",
-          r.matched.map((m) => m.existing.id),
-        ),
+        .in("id", seen.slice(i, i + ID_BATCH)),
       "osm seen",
     );
   }

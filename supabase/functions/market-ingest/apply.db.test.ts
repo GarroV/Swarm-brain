@@ -127,6 +127,48 @@ Deno.test("osm: new point → one candidate, trusted untouched, osm point flagge
   assertEquals(t, { status: "open", missing_weeks: 0 });
 });
 
+Deno.test("osm: a country with over 1000 known points is matched in full", async () => {
+  await reset();
+  // Больше страницы PostgREST (1000 строк) и больше, чем влезает id в один URL.
+  const N = 1100;
+  const known = Array.from({ length: N }, (_, i) => ({
+    country: CC,
+    chain_key: "kfc",
+    ext_key: `bulk${i}`,
+    name: `B${i}`,
+    lat: 40 + Math.floor(i / 50) * 0.01,
+    lng: 10 + (i % 50) * 0.01,
+    status: "open",
+    verification: "unverified",
+    source_kind: "osm",
+    missing_weeks: 1,
+  }));
+  const ins = await sb.from("mkt_locations").insert(known);
+  if (ins.error) throw new Error(ins.error.message);
+  await applyIngest(sb, {
+    source: "osm",
+    country: CC,
+    started_at,
+    points: known.map((k, i) => ({
+      chain: "kfc",
+      name: k.name,
+      lat: k.lat,
+      lng: k.lng,
+      city: null,
+      address: null,
+      osm_id: `node/${i}`,
+    })),
+  }, "2026-10-05");
+  const { data: runs } = await sb.from("mkt_runs").select("status, error").eq("country", CC);
+  assertEquals(runs, [{ status: "ok", error: null }]);
+  const { count: fresh } = await sb.from("mkt_candidates").select("id", { count: "exact", head: true })
+    .eq("country", CC).eq("kind", "new_location");
+  assertEquals(fresh, 0);
+  const { count: stale } = await sb.from("mkt_locations").select("id", { count: "exact", head: true })
+    .eq("country", CC).like("ext_key", "bulk%").neq("missing_weeks", 0);
+  assertEquals(stale, 0);
+});
+
 Deno.test("dodo: re-sending the same days does not double the month; units upserted as internal", async () => {
   await reset();
   const p = {

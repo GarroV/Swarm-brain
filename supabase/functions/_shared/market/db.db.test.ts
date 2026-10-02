@@ -138,3 +138,13 @@ Deno.test("snapshot import skips Dodo points once the Dodo API owns them in the 
   assertEquals(locs.map((l) => l.ext_key), ["dodo:One"]);
   await wipe();
 });
+
+Deno.test("bulk accept handles more finds than fit in one request URL", async () => {
+  await wipe();
+  await sb.from("mkt_chains").insert({ country: CC, key: "kfc", name: "KFC" });
+  const { error } = await sb.from("mkt_candidates").insert(Array.from({ length: 400 }, (_, i) => cand(i)));
+  if (error) throw new Error(error.message);
+  assertEquals(await acceptAllNewLocations(sb, CC, 1), 400);
+  assertEquals((await loadCountry(sb, CC)).pending, 0);
+  await wipe();
+});

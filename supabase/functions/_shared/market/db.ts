@@ -26,7 +26,7 @@ const now = () => new Date().toISOString();
 const PAGE = 1000;
 /** PostgREST отдаёт не больше 1000 строк за запрос и молча обрезает остальное: на стране с
  *  тысячей точек экран показал бы не всё. Читаем страницами, пока не придёт неполная. */
-async function allRows<T>(
+export async function allRows<T>(
   page: (from: number, to: number) => PromiseLike<Res<T[]>>,
   ctx: string,
 ): Promise<T[]> {
@@ -363,6 +363,9 @@ export async function decideCandidate(
 /** Первичная заливка страны без ручного снимка: все находки точек от OSM принимаются разом,
  *  но остаются «не проверено» — человек их не смотрел, и пропажа из OSM по-прежнему
  *  предлагает закрытие. «Возможно закрыта» и правки финансов сюда не входят: по одной. */
+/** Сколько id влезает в один `.in()`: он уходит в URL, и на ~350 uuid шлюз отвечает
+ *  «URI too long» (поймано на Румынии 02.10.2026). */
+export const ID_BATCH = 100;
 export async function acceptAllNewLocations(sb: SupabaseClient, cc: string, by: number): Promise<number> {
   const country = cc.toUpperCase();
   const pending = await allRows<{ id: string; payload: { row?: Record<string, unknown> } }>(
@@ -371,8 +374,8 @@ export async function acceptAllNewLocations(sb: SupabaseClient, cc: string, by: 
         .eq("status", "pending").order("id").range(from, to),
     "pending new",
   );
-  for (let i = 0; i < pending.length; i += PAGE) {
-    const chunk = pending.slice(i, i + PAGE);
+  for (let i = 0; i < pending.length; i += ID_BATCH) {
+    const chunk = pending.slice(i, i + ID_BATCH);
     const rows = new Map(chunk.map((c) => [String(c.payload.row?.ext_key), c.payload.row ?? {}]));
     await must(
       sb.from("mkt_locations").upsert(
