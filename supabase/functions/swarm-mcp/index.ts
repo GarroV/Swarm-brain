@@ -69,7 +69,7 @@ import { archiveEntry } from "../_shared/entries/archive.ts";
 
 // Адрес веба: ссылку на файл отдаём абсолютной — получатель ответа (Claude Desktop)
 // не наша страница, относительный путь там некликабелен.
-const WEB_BASE_URL = Deno.env.get("WEB_BASE_URL") ?? "https://swarm-brain.pages.dev";
+const WEB_BASE_URL = Deno.env.get("WEB_BASE_URL") ?? "https://swarm-team.app";
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
