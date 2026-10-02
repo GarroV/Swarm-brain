@@ -34,6 +34,7 @@ const A3: Record<string, string> = {
   RS: "SRB",
   SI: "SVN",
   ME: "MNE",
+  BG: "BGR",
 };
 
 // Укрупнённые регионы для тренда «по регионам»: области Natural Earth (admin_1) сведены в
@@ -42,7 +43,8 @@ const A3: Record<string, string> = {
 // рисует Косово отдельной страной, его округов здесь нет; Расинский округ в NE подписан
 // «Pomoravski», оба «Pomoravski» лежат в одном регионе), в Словении — 12 статистических регионов
 // (поле region у 193 общин Natural Earth) сведены в 6 исторических земель, в Черногории — три
-// статистических региона MONSTAT, Подгорица отдельно. Область без строки
+// статистических региона MONSTAT, Подгорица отдельно, в Болгарии — 6 регионов планирования
+// (NUTS 2), София-город отдельно. Область без строки
 // здесь — ошибка генератора, а не «прочее».
 type Area = { ru: string; en: string; a1: string[] };
 const AREAS: Record<string, Area[]> = {
@@ -237,8 +239,61 @@ const AREAS: Record<string, Area[]> = {
   ME: [
     { ru: "Подгорица", en: "Podgorica", a1: ["Podgorica"] },
     { ru: "Центр", en: "Centre", a1: ["Cetinje", "Danilovgrad", "Nikšic"] },
-    { ru: "Побережье", en: "Coast", a1: ["Bar", "Budva", "Herceg Novi", "Kotor", "Tivat", "Ulcinj"] },
-    { ru: "Север", en: "North", a1: ["Andrijevica", "Berane", "Bijelo Polje", "Kolašin", "Mojkovac", "Plav", "Pljevlja", "Plužine", "Rožaje", "Šavnik", "Žabljak"] },
+    {
+      ru: "Побережье",
+      en: "Coast",
+      a1: ["Bar", "Budva", "Herceg Novi", "Kotor", "Tivat", "Ulcinj"],
+    },
+    {
+      ru: "Север",
+      en: "North",
+      a1: [
+        "Andrijevica",
+        "Berane",
+        "Bijelo Polje",
+        "Kolašin",
+        "Mojkovac",
+        "Plav",
+        "Pljevlja",
+        "Plužine",
+        "Rožaje",
+        "Šavnik",
+        "Žabljak",
+      ],
+    },
+  ],
+  BG: [
+    { ru: "София", en: "Sofia", a1: ["Grad Sofiya"] },
+    {
+      ru: "Юго-Запад",
+      en: "South-West",
+      a1: ["Sofia", "Blagoevgrad", "Pernik", "Kyustendil"],
+    },
+    {
+      ru: "Юг — центр",
+      en: "South-Central",
+      a1: ["Plovdiv", "Haskovo", "Pazardzhik", "Smolyan", "Kardzhali"],
+    },
+    {
+      ru: "Юго-Восток",
+      en: "South-East",
+      a1: ["Burgas", "Sliven", "Yambol", "Stara Zagora"],
+    },
+    {
+      ru: "Северо-Восток",
+      en: "North-East",
+      a1: ["Varna", "Dobrich", "Shumen", "Targovishte"],
+    },
+    {
+      ru: "Север — центр",
+      en: "North-Central",
+      a1: ["Veliko Tarnovo", "Gabrovo", "Ruse", "Razgrad", "Silistra"],
+    },
+    {
+      ru: "Северо-Запад",
+      en: "North-West",
+      a1: ["Vidin", "Vratsa", "Montana", "Pleven", "Lovech"],
+    },
   ],
 };
 /** Поле admin_1, по которому области сводятся в регионы: обычно name, у Словении — region. */
