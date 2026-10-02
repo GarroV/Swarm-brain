@@ -222,6 +222,15 @@ async function withEntries(
   }
 }
 
+/** Английское имя страны по ISO-коду; не код (General, имя по-русски) — как есть. */
+function englishCountry(code: string): string {
+  try {
+    return new Intl.DisplayNames(["en"], { type: "region" }).of(code) ?? code;
+  } catch {
+    return code;
+  }
+}
+
 // Имена пользователей по telegram_id: «Имя Фамилия» → @username → e-mail (вошедшие через Google,
 // #537). Правило и запросы — в _shared/users/display-name.ts (общие с swarm-mcp). Кого назвать
 // нечем, в карте нет. Обёртка оставлена, т.к. её ждут зависимости модулей (deps.resolveNames).
@@ -1871,8 +1880,10 @@ async function routeRequest(req: Request): Promise<Response> {
     if (Object.keys(fields).length === 0) {
       return new Response(null, { status: 204, headers: corsHeaders(origin) });
     }
-    const { error: meErr } = await supabase.from("user_profiles").update(fields)
-      .eq("telegram_id", telegram_id);
+    // upsert, а не update: у части команды строки профиля нет вовсе, и update молча
+    // обновлял ноль строк, отвечая «сохранено» (#165). Пишутся только присланные поля.
+    const { error: meErr } = await supabase.from("user_profiles")
+      .upsert({ telegram_id, ...fields }, { onConflict: "telegram_id" });
     if (meErr) {
       console.error("[PATCH /me] update failed", meErr);
       return apiErr(500, "Could not save profile", origin);
@@ -3054,7 +3065,8 @@ async function routeRequest(req: Request): Promise<Response> {
   // ── GET /integrations ─────────────────────────────────────────────────────────
   if (req.method === "GET" && routePath === "/integrations") {
     const { data } = await supabase.from("user_integrations")
-      .select("service, last_polled_at, skipped_note_ids")
+      // last_error — причина последнего отказа сервиса (#175): веб показывает её вместо «подключено».
+      .select("service, last_polled_at, skipped_note_ids, last_error, last_error_at")
       .eq("telegram_id", telegram_id);
     return json(data ?? [], 200, origin);
   }
@@ -3570,11 +3582,11 @@ async function routeRequest(req: Request): Promise<Response> {
     });
 
     if (!entries?.length) {
-      const msg = (scope === "markets")
-        ? `За этот период нет записей по вашим странам (${
-          markets.map((m) => COUNTRY_NAMES[m] ?? m).join(", ")
-        }).`
-        : "За указанный период нет записей.";
+      // Демо — всегда по-английски, и страны тоже (#52): витрина для заказчиков.
+      const names = markets.map((m) => isDemo ? englishCountry(COUNTRY_NAMES[m] ? m : (NAME_TO_CODE[m.toLowerCase()] ?? m)) : (COUNTRY_NAMES[m] ?? m)).join(", ");
+      const msg = scope === "markets"
+        ? (isDemo ? `No records for your countries (${names}) in this period.` : `За этот период нет записей по вашим странам (${names}).`)
+        : (isDemo ? "No records in this period." : "За указанный период нет записей.");
       return json({ text: msg }, 200, origin);
     }
 

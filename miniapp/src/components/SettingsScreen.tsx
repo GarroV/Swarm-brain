@@ -37,6 +37,7 @@ export function ProfileSection({ me, onSaved }: { me: Me; onSaved?: (patch: Pick
   const [marketsLoading, setMarketsLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   useEffect(() => {
     fetchConfig()
@@ -44,20 +45,35 @@ export function ProfileSection({ me, onSaved }: { me: Me; onSaved?: (patch: Pick
       .finally(() => setMarketsLoading(false));
   }, []);
 
-  const toggleMarket = (m: string) => {
-    setMarkets((prev) => prev.includes(m) ? prev.filter((x) => x !== m) : [...prev, m]);
-  };
-
-  const handleSave = async () => {
+  // Сохраняем сразу по выбору, как рынки записи на вычитке: кнопка «Сохранить» внизу
+  // оставляла подсвеченные, но не записанные рынки (#165). Отказ откатывает выбор и виден.
+  const save = async (next: { role: string | null; markets: string[] }, prev: { role: string | null; markets: string[] }) => {
     setSaving(true);
+    setSaveError(null);
     try {
-      await patchMe({ role: role || null, markets });
-      onSaved?.({ role: role || null, markets });
+      await patchMe(next);
+      onSaved?.(next);
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
+    } catch (e) {
+      setRole(prev.role);
+      setMarkets(prev.markets);
+      setSaveError(e instanceof Error ? e.message : String(e));
     } finally {
       setSaving(false);
     }
+  };
+
+  const toggleMarket = (m: string) => {
+    const next = markets.includes(m) ? markets.filter((x) => x !== m) : [...markets, m];
+    setMarkets(next);
+    void save({ role, markets: next }, { role, markets });
+  };
+
+  const changeRole = (v: string | null) => {
+    const next = v || null;
+    setRole(next);
+    void save({ role: next, markets }, { role, markets });
   };
 
   return (
@@ -71,7 +87,7 @@ export function ProfileSection({ me, onSaved }: { me: Me; onSaved?: (patch: Pick
       </div>
       <div>
         <Label htmlFor="role" className="text-xs">Роль</Label>
-        <Select value={role ?? ""} onValueChange={(v) => setRole(v || null)}>
+        <Select value={role ?? ""} onValueChange={changeRole}>
           <SelectTrigger id="role" className="mt-1">
             <SelectValue placeholder="Выбрать роль" />
           </SelectTrigger>
@@ -100,9 +116,11 @@ export function ProfileSection({ me, onSaved }: { me: Me; onSaved?: (patch: Pick
           </div>
         )}
       </div>
-      <Button size="sm" onClick={handleSave} disabled={saving} className="w-full">
-        {saving ? "Сохраняю…" : saved ? "✓ Сохранено" : "Сохранить"}
-      </Button>
+      <p role={saveError ? "alert" : "status"} className={`text-xs ${saveError ? "text-destructive" : "text-muted-foreground"}`}>
+        {saveError
+          ? `Не сохранилось: ${saveError}`
+          : saving ? "Сохраняю…" : saved ? "✓ Сохранено" : "Роль и рынки сохраняются сразу"}
+      </p>
     </div>
   );
 }
@@ -204,6 +222,7 @@ export function GranolaSection() {
   const [selectedNote, setSelectedNote] = useState<GranolaNote | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [connectError, setConnectError] = useState<string | null>(null);
+  const [notesError, setNotesError] = useState<string | null>(null);
   const isDemo = useIsDemo();
 
   useEffect(() => {
@@ -214,7 +233,10 @@ export function GranolaSection() {
 
   const loadNotes = async () => {
     setNotesLoading(true);
+    setNotesError(null);
+    // Отказ Granola (ключ отозван, подписка кончилась) не выдаём за «нет новых заметок» (#175).
     try { setNotes(await fetchGranolaUnprocessed("7d")); }
+    catch (e) { setNotes([]); setNotesError(e instanceof Error ? e.message : String(e)); }
     finally { setNotesLoading(false); }
   };
 
@@ -294,6 +316,12 @@ export function GranolaSection() {
         </button>
       </div>
 
+      {(notesError || integration.last_error) && (
+        <p role="alert" className="text-xs text-destructive">
+          Granola отвечает отказом{integration.last_error ? ` (${integration.last_error})` : ""} — новые заметки не приходят. Проверь подписку и ключ Granola; если ключ сменился — отключи и подключи заново.
+        </p>
+      )}
+
       <div>
         <div className="flex items-center justify-between mb-2">
           <p className="text-sm font-medium">Необработанные заметки</p>
@@ -301,7 +329,7 @@ export function GranolaSection() {
         </div>
         {notesLoading ? (
           <p className="text-xs text-muted-foreground">Загрузка…</p>
-        ) : notes.length === 0 ? (
+        ) : notesError ? null : notes.length === 0 ? (
           <p className="text-xs text-muted-foreground">Нет новых заметок</p>
         ) : (
           <div className="space-y-2">
