@@ -174,7 +174,7 @@ func runNotesSelfTest(seconds: Double) {
     let app = NSApplication.shared
     app.setActivationPolicy(.regular)
 
-    let cfg = SwarmConfig(token: "selftest", ingestBaseURL: "http://127.0.0.1:1", webBaseURL: "https://swarm-brain.pages.dev")
+    let cfg = SwarmConfig(token: "selftest", ingestBaseURL: "http://127.0.0.1:1", webBaseURL: WebBase.current)
     Task { @MainActor in
         // Панель — main-actor: и берём, и трогаем её ТОЛЬКО отсюда, иначе Swift 6 это запретит.
         let panel = LiveNotesPanel.shared

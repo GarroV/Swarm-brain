@@ -1,4 +1,5 @@
 import Foundation
+import RecorderKit
 
 // Конфиг рекордера: персональный токen + базовые URL.
 // Читается из ~/Library/Application Support/SwarmRecorder/config.json (см. README).
@@ -16,7 +17,9 @@ struct SwarmConfig: Codable {
     static func load() throws -> SwarmConfig {
         let url = configURL()
         let data = try Data(contentsOf: url)
-        return try JSONDecoder().decode(SwarmConfig.self, from: data)
+        var cfg = try JSONDecoder().decode(SwarmConfig.self, from: data)
+        cfg.webBaseURL = WebBase.migrated(cfg.webBaseURL)  // пустой/прежний → текущий (#753, #758)
+        return cfg
     }
 
     // Онбординг: сохранить персональный токен с зашитыми URL прод-окружения
@@ -25,7 +28,7 @@ struct SwarmConfig: Codable {
         let cfg = SwarmConfig(
             token: token,
             ingestBaseURL: "https://vbqglndbxkpmreccpqmr.supabase.co/functions/v1",
-            webBaseURL: "https://swarm-brain.pages.dev"
+            webBaseURL: WebBase.current
         )
         let url = configURL()
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
