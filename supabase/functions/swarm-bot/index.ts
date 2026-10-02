@@ -73,6 +73,7 @@ import { processingFrozen } from "../_shared/processing-freeze.ts";
 import { onlyLive } from "../_shared/tasks/live.ts";
 import { onlyLiveEntries } from "../_shared/entries/live.ts";
 import { externalFetch, VIA_GRANOLA, VIA_TELEGRAM } from "../_shared/external-fetch.ts";
+import { WEB_BASE_URL } from "./lib/web-url.ts";
 
 const TELEGRAM_BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN")!;
 const CRON_SECRET = Deno.env.get("CRON_SECRET") ?? "";
@@ -673,7 +674,7 @@ Deno.serve(async (req: Request) => {
         `<b>Swarm Brain</b> — командная база знаний и задачи.\n\n` +
           `Напиши вопрос — найду ответ по базе. Чтобы сохранить: кнопка 📥 <b>Добавить</b>, либо пришли 🎤 голос · 📎 файл · 🔗 ссылку · пересланное сообщение.\n\n` +
           `🌐 <b>Swarm Brain</b> — приложение: задачи, встречи, поиск.\n` +
-          `🔗 https://swarm-brain.pages.dev — вход через Telegram, ставится как приложение (Dock / экран «Домой»).\n\n` +
+          `🔗 ${WEB_BASE_URL} — вход через Telegram, ставится как приложение (Dock / экран «Домой»).\n\n` +
           `🎙 <b>bumblebee — запись встреч (Mac):</b> /recordertoken → приложение встанет в /Applications. Затем привяжи Google-календарь в Swarm Brain → Настройки → Google Calendar (без него bumblebee не видит встреч).\n\n` +
           `🖥 <b>Claude Desktop:</b> /setup — подключить автоматически.\n\n` +
           `📖 /help — полная справка`,

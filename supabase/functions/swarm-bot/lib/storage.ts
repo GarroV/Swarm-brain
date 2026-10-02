@@ -368,7 +368,7 @@ export async function generateSummary(text: string): Promise<string | null> {
 
 // Адрес веба: ссылка в сообщении Telegram ведёт в браузер, где у человека есть сессия и
 // где проверяется доступ. Signed URL здесь не годится — сообщение живёт дольше подписи.
-const WEB_BASE_URL = Deno.env.get("WEB_BASE_URL") ?? "https://swarm-brain.pages.dev";
+import { WEB_BASE_URL } from "./web-url.ts";
 
 /**
  * Кладёт файл в приватный бакет и возвращает ПУТЬ (публичной ссылки больше не существует).
