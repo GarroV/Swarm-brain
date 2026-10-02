@@ -22,3 +22,20 @@ if [ "$GOT" != "fn-a " ]; then
   exit 1
 fi
 echo "✔ транзитивный потребитель найден: ${GOT}"
+
+# Сверка с продом (issue #243): функция, раскатанная ПОСЛЕ последней правки, помечается
+# «уже на проде»; раскатанная ДО — нет.
+eval "$(sed -n '/^prod_functions_json() {/,/^}/p;/^annotate_functions() {/,/^}/p' "$SRC")"
+LAST=$(git log -1 --format=%ct)
+printf '[{"slug":"fn-a","updated_at":%s},{"slug":"fn-b","updated_at":%s}]' \
+  "$(( (LAST + 60) * 1000 ))" "$(( (LAST - 60) * 1000 ))" > "$T/prod.json"
+OUT=$(PROD_FUNCTIONS_JSON_FILE="$T/prod.json" annotate_functions HEAD~1 $'fn-a\nfn-b')
+if ! printf '%s\n' "$OUT" | grep -q '· fn-a — уже на проде'; then
+  echo "✘ fn-a раскатана после правки — должна быть помечена «уже на проде», получено: ${OUT}"
+  exit 1
+fi
+if printf '%s\n' "$OUT" | grep -q '· fn-b — уже на проде'; then
+  echo "✘ fn-b раскатана до правки — пометки «уже на проде» быть не должно, получено: ${OUT}"
+  exit 1
+fi
+echo "✔ сверка с продом: раскатанная после правки помечена, раскатанная до — нет"

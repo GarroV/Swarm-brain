@@ -64,6 +64,39 @@ changed_functions() {
   printf '%s\n%s\n' "$direct" "$consumers" | sed '/^$/d' | sort -u
 }
 
+# Сверка накопителя с продом (issue #243). Метку двигает только `go`: функция, выкатанная мимо
+# него (ручной `supabase functions deploy`, отдельная кнопка), так и висит «к раскатке», и шум
+# прячет то, что действительно ждёт. Поэтому для каждой функции сравниваем время её раскатки на
+# проде с последним коммитом, который её касается (её папка или _shared — с запасом: правка в
+# _shared считается правкой всех). Раскатана позже — помечаем «уже на проде». Без токена или
+# без ответа API — говорим, что не сверено, а не молчим.
+prod_functions_json() {
+  # Подмена ответа API — только для scripts/test-deploy-window.sh.
+  if [ -n "${PROD_FUNCTIONS_JSON_FILE:-}" ]; then cat "$PROD_FUNCTIONS_JSON_FILE"; return; fi
+  [ -n "${SUPABASE_ACCESS_TOKEN:-}" ] || return 3
+  curl -fsS -m 30 -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+    "https://api.supabase.com/v1/projects/$PROJECT_REF/functions" 2>/dev/null || return 3
+}
+
+annotate_functions() {
+  local base=$1 funcs=$2 json f prod_ms last_s
+  if ! json=$(prod_functions_json); then
+    echo "$funcs" | sed 's/^/  · /'
+    echo "  (с продом не сверено: нет SUPABASE_ACCESS_TOKEN или API не ответил)"
+    return
+  fi
+  while IFS= read -r f; do
+    [ -z "$f" ] && continue
+    prod_ms=$(printf '%s' "$json" | jq -r --arg s "$f" '.[] | select(.slug == $s) | .updated_at // empty')
+    last_s=$(git log -1 --format=%ct "$base"..HEAD -- "supabase/functions/$f" supabase/functions/_shared)
+    if [ -n "$prod_ms" ] && [ -n "$last_s" ] && [ "$((prod_ms / 1000))" -gt "$last_s" ]; then
+      echo "  · $f — уже на проде: раскатана после последней правки, мимо метки"
+    else
+      echo "  · $f"
+    fi
+  done <<< "$funcs"
+}
+
 case "${1:-plan}" in
   init)
     git tag -f "$TAG" HEAD >/dev/null
@@ -83,7 +116,7 @@ case "${1:-plan}" in
     git log --oneline "$BASE"..HEAD | sed 's/^/  /'
 
     head_ "Edge-функции к раскатке"
-    [ -n "$FUNCS" ] && echo "$FUNCS" | sed 's/^/  · /' || echo "  (нет)"
+    [ -n "$FUNCS" ] && annotate_functions "$BASE" "$FUNCS" || echo "  (нет)"
 
     head_ "Веб (miniapp)"
     if [ "$WEB" -gt 0 ]; then
