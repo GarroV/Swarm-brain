@@ -112,7 +112,7 @@ async function getEmbedding(text: string): Promise<number[]> {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${OPENAI_API_KEY}` },
     body: JSON.stringify({ model: "text-embedding-3-small", input: text.slice(0, 8000) }),
-  }, VIA_OPENAI_EMBEDDING);
+  }, { ...VIA_OPENAI_EMBEDDING, usage: { purpose: "mcp:embedding" } });
   const data = await res.json() as { data?: Array<{ embedding: number[] }>; error?: { message?: string } };
   if (!res.ok || !data.data?.[0]) {
     throw new Error(`OpenAI embeddings: HTTP ${res.status} ${data.error?.message ?? ""}`.trim());
@@ -154,7 +154,7 @@ async function chatComplete(
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${OPENAI_API_KEY}` },
     body: JSON.stringify(body),
-  }, VIA_OPENAI_CHAT);
+  }, { ...VIA_OPENAI_CHAT, usage: { purpose: "mcp:chat" } });
   const data = await res.json() as { choices: Array<{ message: { content: string } }> };
   return data.choices[0].message.content;
 }

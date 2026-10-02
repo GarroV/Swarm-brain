@@ -278,6 +278,10 @@ export type Me = {
   markets: string[];
   is_admin: boolean;
   is_demo?: boolean;
+  /** Telegram привязан (номер и есть Telegram или привязан из веба, #92). Нет поля — сервер до #92. */
+  telegram_linked?: boolean;
+  /** Суперадмин: разделы всей системы (расход модели, #311). */
+  is_superadmin?: boolean;
   /** Задник веба (lib/backdrop.ts); null — по умолчанию. Нет поля — сервер до #backdrop. */
   ui_backdrop?: string | null;
 };

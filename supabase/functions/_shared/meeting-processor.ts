@@ -14,6 +14,7 @@
 //
 // Используется двумя функциями: meeting-ingest (приём + inline-проход) и meeting-process (cron).
 
+import { withUsageLabel } from "./model-usage.ts";
 import { type SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import {
   dropConsecutiveRuns,
@@ -152,8 +153,20 @@ interface MeetingRow {
 // Каждая попытка — со своим потолком времени; `signal` (лиз потерян) прерывает и ожидание, и паузу.
 // Повтор 429/5xx объявлен явно (`attempts`): для Whisper и тезисов повторный POST безопасен —
 // он ничего не меняет у нас, только стоит денег. Механика — общий externalFetch.
-function openaiFetch(url: string, init: RequestInit, signal?: AbortSignal, attempts = 4): Promise<Response> {
-  return externalFetch(url, init, { service: "openai", timeoutMs: MODEL_CALL_TIMEOUT_MS, signal, attempts });
+function openaiFetch(
+  url: string,
+  init: RequestInit,
+  signal?: AbortSignal,
+  attempts = 4,
+  purpose?: string,
+): Promise<Response> {
+  return externalFetch(url, init, {
+    service: "openai",
+    timeoutMs: MODEL_CALL_TIMEOUT_MS,
+    signal,
+    attempts,
+    usage: purpose ? { purpose } : undefined,
+  });
 }
 
 async function transcribeAudio(
@@ -177,11 +190,17 @@ async function transcribeAudio(
   // речь (перевод живёт лишь на отдельном /translations, всегда только в английский). Прежний
   // комментарий «language="ru" переводил всё на русский» был ошибочным диагнозом — пин безопасен.
   if (languageHint) form.append("language", languageHint);
-  const res = await openaiFetch("https://api.openai.com/v1/audio/transcriptions", {
-    method: "POST",
-    headers: { Authorization: `Bearer ${OPENAI_API_KEY}` },
-    body: form,
-  }, signal);
+  const res = await openaiFetch(
+    "https://api.openai.com/v1/audio/transcriptions",
+    {
+      method: "POST",
+      headers: { Authorization: `Bearer ${OPENAI_API_KEY}` },
+      body: form,
+    },
+    signal,
+    undefined,
+    "meeting:transcription",
+  );
   const data = await res.json();
   if (!res.ok) {
     throw new Error((data as { error?: { message?: string } }).error?.message ?? "OpenAI transcription error");
@@ -269,6 +288,8 @@ interface ChatOpts {
   maxTokens?: number;
   /** Отмена извне: лиз обработки потерян — ответ модели уже некому записать. */
   signal?: AbortSignal;
+  /** Подпись для учёта расхода (#311): «meeting:tezisy», «meeting:tasks»… */
+  purpose?: string;
 }
 
 export async function chatComplete(system: string, user: string, opts: ChatOpts = {}): Promise<string> {
@@ -285,11 +306,17 @@ export async function chatComplete(system: string, user: string, opts: ChatOpts 
         max_tokens: maxTokens,
         ...(opts.temperature !== undefined ? { temperature: opts.temperature } : {}),
       };
-    const res = await openaiFetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${OPENAI_API_KEY}` },
-      body: JSON.stringify(body),
-    }, opts.signal);
+    const res = await openaiFetch(
+      "https://api.openai.com/v1/chat/completions",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${OPENAI_API_KEY}` },
+        body: JSON.stringify(body),
+      },
+      opts.signal,
+      undefined,
+      opts.purpose ?? "chat",
+    );
     const data = await res.json();
     if (!res.ok) throw new Error((data as { error?: { message?: string } }).error?.message ?? "OpenAI error");
     return extractChatContent(data, model);
@@ -570,7 +597,7 @@ async function summarizeAndFinish(lease: ProcessingLease, m: MeetingRow, state: 
       buildTezisyUserMessage(
         `Встреча: ${m.title ?? "без названия"}\n\n${speakerLegend(ownerName, labelsOf(segments))}\n${transcriptText}`,
       ),
-      { temperature: 0.3, signal }, // температура — для фолбэк-gpt-4o; terra (GPT-5) её игнорирует
+      { temperature: 0.3, signal, purpose: "meeting:tezisy" }, // температура — для фолбэк-gpt-4o; terra (GPT-5) её игнорирует
     )).trim();
     // Пустой ответ модели при СОДЕРЖАТЕЛЬНОМ транскрипте — это сбой сводки, а НЕ пустая встреча.
     // Раньше "" сохранялось с summary_status="done" → ревью вечно «Тезисы готовятся…» без кнопки.
@@ -601,7 +628,7 @@ async function summarizeAndFinish(lease: ProcessingLease, m: MeetingRow, state: 
         const t = (await chatComplete(
           "Придумай короткое название встречи на русском: 3–6 слов, по сути обсуждения, без даты, кавычек и префиксов. Верни ТОЛЬКО название.",
           tezisi.slice(0, 2000),
-          { model: "gpt-4o-mini", maxTokens: 60, signal }, // заголовок — дешёвая быстрая модель, не terra
+          { model: "gpt-4o-mini", maxTokens: 60, signal, purpose: "meeting:title" }, // заголовок — дешёвая быстрая модель, не terra
         )).trim().replace(/^["«»\s]+|["«»\s]+$/g, "").slice(0, 120);
         if (t) finalTitle = t;
       } catch (e) {
@@ -698,7 +725,7 @@ export async function buildTezisyFromTranscript(
   const raw = (await chatComplete(
     TEZIS_SYSTEM,
     buildTezisyUserMessage(meetingText, note),
-    { temperature: 0.3 },
+    { temperature: 0.3, purpose: "meeting:rebuild" },
   )).trim();
   // Пустой ответ модели — не затираем существующие тезисы пустой строкой и не метим done;
   // бросаем, чтобы swarm-api вернул ошибку, а кнопка «Переобработать» осталась для повторной попытки.
@@ -725,11 +752,21 @@ async function finishAndPromote(
 // Возвращает {claimed, done}: claimed=false → встречу обрабатывает кто-то другой (лиз занят).
 // deferred=true → действует заморозка: встречу не трогаем вовсе, её подхватит первый тик cron после
 // разморозки (решение владельца 01.10.2026, _shared/processing-freeze.ts).
-export async function runMeetingStep(
+export function runMeetingStep(
   supabase: SupabaseClient,
   meetingId: string,
   budgetMs: number,
   now: Date = new Date(),
+): Promise<{ claimed: boolean; done: boolean; deferred?: boolean }> {
+  // Каждый вызов модели внутри шага записывается в расход этой встречи (#311).
+  return withUsageLabel({ meetingId }, () => meetingStep(supabase, meetingId, budgetMs, now));
+}
+
+async function meetingStep(
+  supabase: SupabaseClient,
+  meetingId: string,
+  budgetMs: number,
+  now: Date,
 ): Promise<{ claimed: boolean; done: boolean; deferred?: boolean }> {
   const startedAt = Date.now();
   if (await processingFrozen(supabase, now)) {

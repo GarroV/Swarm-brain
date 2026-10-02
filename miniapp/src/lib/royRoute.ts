@@ -28,6 +28,7 @@ export type RoyRoute =
   | { view: "settings" }
   | { view: "team" }
   | { view: "stats" }
+  | { view: "tools" }
   | { view: "admin" }
   | { view: "more" }
   | { view: "map" }

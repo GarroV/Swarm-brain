@@ -29,6 +29,7 @@ import { RoyProjectsScreen } from "./screens/RoyProjectsScreen";
 import { ProjectTasksScreen } from "./screens/ProjectTasksScreen";
 import { TaskDetail } from "./screens/TaskDetail";
 import { StatsDesk } from "@/components/stats/StatsDesk";
+import { ToolsDesk } from "@/components/tools/ToolsDesk";
 import { NewTask } from "./screens/NewTask";
 import { RoyBaseScreen } from "./screens/RoyBaseScreen";
 import { NewEntry } from "./screens/NewEntry";
@@ -328,9 +329,10 @@ export function RoyApp({ me }: { me: Me | null }) {
     meetings: "cal",
     base: "book",
   };
-  const RAIL_PUSH: Partial<Record<RailId, "team" | "stats" | "settings" | "admin">> = {
+  const RAIL_PUSH: Partial<Record<RailId, "team" | "stats" | "tools" | "settings" | "admin">> = {
     team: "team",
     stats: "stats",
+    tools: "tools",
     settings: "settings",
     admin: "admin",
   };
@@ -342,7 +344,7 @@ export function RoyApp({ me }: { me: Me | null }) {
   };
   const pushed = stack[0]?.view;
   const railActive: RailId | null =
-    pushed === "team" || pushed === "stats" || pushed === "settings" || pushed === "admin"
+    pushed === "team" || pushed === "stats" || pushed === "tools" || pushed === "settings" || pushed === "admin"
       ? pushed
       : (Object.keys(RAIL_TAB) as RailId[]).find((k) => RAIL_TAB[k] === tab) ?? null;
   const SECTION_TITLE: Partial<Record<RoyTab, [string, string]>> = {
@@ -570,6 +572,13 @@ function PushScreen({ route }: { route: RoyRoute }) {
       </Wrapped>
     );
   }
+  if (route.view === "tools") {
+    return (
+      <Wrapped title={dt("Полезности", "Tools")}>
+        <ToolsDesk />
+      </Wrapped>
+    );
+  }
   if (route.view === "team") {
     return (
       <Wrapped title={dt("Команда", "Team")}>
@@ -664,6 +673,7 @@ function MoreScreen({ root = false }: { root?: boolean }) {
     { label: dt("База", "Knowledge base"), route: { view: "base" } },
     { label: dt("Команда", "Team"), route: { view: "team" } },
     { label: dt("Статистика", "Stats"), route: { view: "stats" } },
+    { label: dt("Полезности", "Tools"), route: { view: "tools" } },
     { label: dt("Настройки", "Settings"), route: { view: "settings" } },
     { label: dt("Карта системы", "System map"), route: { view: "map" } },
   ];

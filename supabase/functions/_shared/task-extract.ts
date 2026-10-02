@@ -74,7 +74,7 @@ export function callExtractor(
       Authorization: `Bearer ${Deno.env.get("OPENAI_API_KEY")!}`,
     },
     body: extractRequestBody(text, today, stream),
-  }, VIA_OPENAI_LONG);
+  }, { ...VIA_OPENAI_LONG, usage: { purpose: "task-extract:long" } });
 }
 
 // Слой 2 поверх промпта: выдуманный моделью год и строковые «пустоты» чиним здесь — промпт

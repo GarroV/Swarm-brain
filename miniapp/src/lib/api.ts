@@ -1165,6 +1165,47 @@ export async function deleteTaskLabel(id: string): Promise<void> {
   await apiFetch<void>(`/task-labels/${id}`, { method: "DELETE" });
 }
 
+// ── Сокращатель ссылок («Полезности») ──────────────────────────────────────────
+// Короткий адрес собирает экран: `${location.origin}/s/${code}` — переход обслуживает
+// Pages Function functions/s/[code].ts.
+export type ShortLink = {
+  code: string;
+  url: string;
+  clicks: number;
+  last_clicked_at: string | null;
+  created_at: string;
+};
+
+let MOCK_SHORT_LINKS: ShortLink[] = [];
+
+export async function fetchShortLinks(): Promise<ShortLink[]> {
+  if (DEV_MODE) return MOCK_SHORT_LINKS;
+  return apiFetch<ShortLink[]>("/short-links");
+}
+
+export async function createShortLink(url: string): Promise<ShortLink> {
+  if (DEV_MODE) {
+    const l: ShortLink = {
+      code: Math.random().toString(36).slice(2, 8),
+      url,
+      clicks: 0,
+      last_clicked_at: null,
+      created_at: new Date().toISOString(),
+    };
+    MOCK_SHORT_LINKS = [l, ...MOCK_SHORT_LINKS];
+    return l;
+  }
+  return apiFetch<ShortLink>("/short-links", { method: "POST", body: JSON.stringify({ url }) });
+}
+
+export async function archiveShortLink(code: string): Promise<void> {
+  if (DEV_MODE) {
+    MOCK_SHORT_LINKS = MOCK_SHORT_LINKS.filter((l) => l.code !== code);
+    return;
+  }
+  await apiFetch<void>(`/short-links/${code}`, { method: "DELETE" });
+}
+
 // Preview-извлечение: вернуть предложенные задачи БЕЗ создания (для ревью на экране встреч).
 // Ответ модели прогоняется через normalizeProposedTasks — вторым слоем поверх промпта:
 // GPT регулярно пишет СТРОКУ "null" вместо JSON null, и она доезжала до карточки чипом
@@ -3306,6 +3347,33 @@ export async function fetchMeetingInvite(id: string): Promise<MeetingInvite> {
 export async function fetchIntegrations(): Promise<Integration[]> {
   if (DEV_MODE) return mockIntegrations;
   return apiFetch<Integration[]>("/integrations");
+}
+
+export type UsageSlice = { key: string; usd: number; calls: number; unpriced: number; tokens: number };
+export type ModelUsage = {
+  days: number;
+  since: string;
+  truncated: boolean;
+  total_usd: number;
+  calls: number;
+  unpriced_calls: number;
+  tokens: number;
+  audio_minutes: number;
+  by_purpose: UsageSlice[];
+  by_model: UsageSlice[];
+  by_day: Array<{ day: string; usd: number; calls: number }>;
+  top_meetings: Array<{ meeting_id: string; usd: number; calls: number; title: string | null }>;
+};
+
+/** Расход OpenAI за период (#311), только суперадмину. */
+export async function fetchModelUsage(days: 7 | 30 | 90): Promise<ModelUsage> {
+  return apiFetch<ModelUsage>(`/admin/model-usage?days=${days}`);
+}
+
+/** Одноразовая ссылка на бота для привязки Telegram (#92); действует 15 минут. */
+export async function linkTelegram(): Promise<{ url: string; expires_at: string }> {
+  if (DEV_MODE) return { url: "https://t.me/", expires_at: new Date(Date.now() + 15 * 60_000).toISOString() };
+  return apiFetch<{ url: string; expires_at: string }>("/telegram/link", { method: "POST" });
 }
 
 export async function connectGranola(api_key: string): Promise<void> {

@@ -15,6 +15,7 @@
 //   изменяет состояние, повторённый вслепую, мог уже выполниться — например, сообщение ушло);
 // - повторяются 429, 5xx и обрыв сети; истёкший срок не повторяется — бюджет времени уже сожжён.
 
+import { recordModelUsage, type UsageLabel } from "./model-usage.ts";
 import { parseOpenAiError, reportModelFailure } from "./model-health.ts";
 
 export const TELEGRAM_TIMEOUT_MS = 10_000; // sendMessage, правка сообщений, getMe, getFile
@@ -65,6 +66,8 @@ export interface ExternalFetchOptions {
   fetchFn?: typeof fetch;
   /** Подмена паузы для тестов. */
   sleepFn?: (ms: number, signal?: AbortSignal) => Promise<void>;
+  /** Подпись вызова OpenAI для учёта расхода (`model-usage.ts`, #311): зачем и к чему. */
+  usage?: UsageLabel;
 }
 
 /** URL для лога: без query (там бывают ключи и запросы людей) и без токена бота в пути. */
@@ -156,6 +159,7 @@ export async function externalFetch(
     if (!canRetry) {
       if (opts.service === "openai") await noteModelOutcome(res, failure);
       if (failure) throw failure;
+      if (opts.service === "openai" && res?.ok) await recordModelUsage(url, init, res, opts.usage);
       return res as Response;
     }
     await res?.body?.cancel();

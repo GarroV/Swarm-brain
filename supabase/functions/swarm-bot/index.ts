@@ -1,3 +1,5 @@
+import { LINKED_REPLY, parseLinkStart } from "../_shared/telegram-link.ts";
+import { claimTelegramLink, resolveIdentity } from "./lib/telegram-link-store.ts";
 import { ADMIN_USER_ID, isAdminUser, supabase } from "./lib/supabase.ts";
 import {
   answerCallback,
@@ -467,7 +469,8 @@ Deno.serve(async (req: Request) => {
   // ── Callback query (inline button press) ────────────────────────────────────
   if (update.callback_query) {
     const cb = update.callback_query;
-    const userId = cb.from.id ?? 0;
+    // Привязанный из веба человек работает под номером своей строки, а не Telegram (#92).
+    const userId = await resolveIdentity(cb.from.id ?? 0);
     const username = cb.from.username ?? String(userId);
     const chatId = cb.message.chat.id;
 
@@ -540,7 +543,20 @@ Deno.serve(async (req: Request) => {
   if (!message) return new Response("OK", { status: 200 });
 
   const chatId = message.chat.id;
-  const userId = message.from?.id ?? 0;
+
+  // Привязка Telegram из веба (#92): `/start link_<код>` в личке — до проверки доступа, ведь
+  // этот Telegram боту ещё не знаком. Ответ — только согласованная строка об успехе; отказ
+  // (код истёк, Telegram занят) бот не озвучивает — причину показывает экран Настроек.
+  const linkCode = message.chat.type === "private" ? parseLinkStart(message.text) : null;
+  if (linkCode) {
+    const outcome = await claimTelegramLink(linkCode, message.from?.id ?? 0);
+    if (outcome === "linked") await sendMessage(chatId, LINKED_REPLY);
+    else console.warn(`[telegram-link] not linked: ${outcome}`);
+    return new Response("OK", { status: 200 });
+  }
+
+  // Привязанный из веба человек работает под номером своей строки, а не Telegram (#92).
+  const userId = await resolveIdentity(message.from?.id ?? 0);
   const username = message.from?.username ?? String(userId);
 
   // ── Группы: без явного обращения не отвечаем ──────────────────────────────
