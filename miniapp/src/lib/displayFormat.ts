@@ -12,10 +12,16 @@ export function isRawId(value: string | null | undefined): boolean {
  * Дата для показа или null. `new Date(битая строка)` не бросает исключение, а даёт Invalid Date,
  * и toLocaleDateString печатал на экране «Invalid Date» мимо всех try/catch.
  */
+/** Локаль интерфейса по `<html lang>`: его ставит RoyApp (демо — `en`, issue #459). Без DOM
+ *  (тесты, сборка) — русская, как и сам интерфейс команды. */
+export function uiLocale(): string {
+  return typeof document !== "undefined" && document.documentElement.lang === "en" ? "en-GB" : "ru-RU";
+}
+
 export function formatDate(
   iso: string | null | undefined,
   options: Intl.DateTimeFormatOptions,
-  locale = "ru-RU",
+  locale = uiLocale(),
 ): string | null {
   if (!iso) return null;
   const d = new Date(iso);

@@ -7,7 +7,7 @@ import { TaskRow } from "@/components/tasks/TaskRow";
 import { isDone } from "@/lib/smartLists";
 import { updateTask } from "@/lib/api";
 import type { Task } from "@/types";
-import { formatDate, isRawId } from "@/lib/displayFormat";
+import { formatDate, isRawId, uiLocale } from "@/lib/displayFormat";
 
 // Общий каркас панелей desktop-главного экрана «Рой». Вынесено из RoyDashboard,
 // чтобы пять панелей (PersonalTasks/SearchHero/Materials/MeetingsApprove/TeamTasks)
@@ -15,7 +15,7 @@ import { formatDate, isRawId } from "@/lib/displayFormat";
 // loading (roy-shim), empty- и failed-состояние. Flat, тонкие границы — без бенто-визуала.
 
 // ── Форматирование даты «Рой» (ru, day + short month) ───────────────────────────
-export function fmtDate(iso: string | null, locale: string = "ru-RU"): string | null {
+export function fmtDate(iso: string | null, locale: string = uiLocale()): string | null {
   return formatDate(iso, { day: "numeric", month: "short" }, locale);
 }
 
