@@ -169,7 +169,7 @@ type OverpassEl = {
 const OVERPASS_FAILURE = /error|timed out|out of memory/i;
 
 /** Города и посёлки (place=city|town) из того же ответа Overpass: точке без addr:city достаётся
- *  ближайший в пределах 15 км — иначе топ городов и пресеты карты теряют большую часть точек
+ *  ближайший город (place=city) в пределах 15 км, а если города рядом нет — ближайший посёлок — иначе топ городов и пресеты карты теряют большую часть точек
  *  (в Сербии addr:city есть у 44 из 231). */
 const PLACE_KINDS = new Set(["city", "town"]);
 const PLACE_RADIUS_M = 15_000;
@@ -240,28 +240,38 @@ export function parseOverpass(
     return prefixes.find(([p]) => n === p || n.startsWith(`${p} `))?.[1];
   };
   const latin = opts.toLatin ?? ((x: string) => x);
-  const places = j.elements.flatMap((e) =>
-    PLACE_KINDS.has(e.tags?.place ?? "") && e.lat !== undefined &&
-      e.lon !== undefined && e.tags?.name
-      ? [{
-        name: e.tags["name:sr-Latn"] ?? latin(e.tags.name),
-        lat: e.lat,
-        lng: e.lon,
-      }]
-      : []
-  );
+  const places = j.elements.flatMap((e) => {
+    const t = e.tags ?? {};
+    if (
+      !PLACE_KINDS.has(t.place ?? "") || e.lat === undefined ||
+      e.lon === undefined || !t.name
+    ) return [];
+    const name = (opts.toLatin && t["name:sr-Latn"]) || latin(t.name);
+    const aliases = [name, t.name, t["name:en"]].filter(Boolean)
+      .map((x) => latin(x!).toLowerCase());
+    return [{
+      name,
+      aliases,
+      lat: e.lat,
+      lng: e.lon,
+      city: t.place === "city",
+    }];
+  });
+  // Адресный город сводится к имени населённого пункта, если совпал с любым его написанием
+  // (местное, латиница, английское: «Београд», «Beograd», «Belgrade»).
   const cityOf = (addr: string | undefined, lat: number, lng: number) => {
     if (addr) {
       const a = latin(addr);
-      return places.find((p) => p.name.toLowerCase() === a.toLowerCase())
-        ?.name ?? a;
+      return places.find((p) => p.aliases.includes(a.toLowerCase()))?.name ??
+        a;
     }
-    let best: { name: string; d: number } | null = null;
+    // Город в радиусе главнее посёлка, даже более близкого: у окраин столицы свои посёлки.
+    let best: { name: string; d: number; city: boolean } | null = null;
     for (const p of places) {
       const d = distanceM({ lat, lng }, p);
-      if (d <= PLACE_RADIUS_M && (!best || d < best.d)) {
-        best = { name: p.name, d };
-      }
+      if (d > PLACE_RADIUS_M) continue;
+      const better = !best || (p.city !== best.city ? p.city : d < best.d);
+      if (better) best = { name: p.name, d, city: p.city };
     }
     return best?.name ?? null;
   };

@@ -304,11 +304,13 @@ Deno.test("parseOverpass: city from the address in one script, else the nearest 
           place: "city",
           name: "Београд",
           "name:sr-Latn": "Beograd",
+          "name:en": "Belgrade",
         }),
         node(2, 45.255, 19.845, { place: "city", name: "Нови Сад" }),
         node(10, 44.80, 20.47, { brand: "KFC" }),
         node(11, 45.25, 19.84, { brand: "KFC", "addr:city": "нови сад" }),
         node(12, 44.81, 20.40, { brand: "KFC", "addr:city": "Нови Београд" }),
+        node(14, 44.79, 20.45, { brand: "KFC", "addr:city": "Belgrade" }),
         node(13, 43.32, 21.90, { brand: "KFC" }),
       ],
     },
@@ -320,6 +322,42 @@ Deno.test("parseOverpass: city from the address in one script, else the nearest 
     ["node/10", "Beograd"],
     ["node/11", "Novi Sad"],
     ["node/12", "Novi Beograd"],
+    ["node/14", "Beograd"],
     ["node/13", null],
   ]);
+});
+
+Deno.test("parseOverpass: a Serbian spelling tag never renames towns of other countries", () => {
+  const [p] = parseOverpass({
+    elements: [
+      {
+        type: "node",
+        id: 1,
+        lat: 47.16,
+        lon: 27.58,
+        tags: { place: "city", name: "Iași", "name:sr-Latn": "Jaši" },
+      },
+      { type: "node", id: 2, lat: 47.161, lon: 27.581, tags: { brand: "KFC" } },
+    ],
+  }, { kfc: ["KFC"] });
+  assertEquals(p.city, "Iași");
+});
+
+Deno.test("parseOverpass: a city within range beats a nearer suburb town; a town counts only with no city near", () => {
+  const n = (
+    id: number,
+    lat: number,
+    lon: number,
+    tags: Record<string, string>,
+  ) => ({ type: "node", id, lat, lon, tags });
+  const pts = parseOverpass({
+    elements: [
+      n(1, 44.817, 20.457, { place: "city", name: "Beograd" }),
+      n(2, 44.70, 20.47, { place: "town", name: "Pinosava" }),
+      n(3, 44.99, 20.08, { place: "town", name: "Stara Pazova" }),
+      n(10, 44.71, 20.47, { brand: "KFC" }),
+      n(11, 44.99, 20.09, { brand: "KFC" }),
+    ],
+  }, { kfc: ["KFC"] });
+  assertEquals(pts.map((p) => p.city), ["Beograd", "Stara Pazova"]);
 });

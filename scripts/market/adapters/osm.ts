@@ -34,7 +34,7 @@ export const osm: Adapter = {
   about: {
     url: "https://overpass-api.de/api/interpreter",
     what:
-      "точки сетей по тегу brand (osmBrands в конфиге) или по началу name среди заведений общепита (osmNames) из OpenStreetMap, координаты, адрес, дата открытия, если она есть в теге; город — из addr:city, а без него — ближайший place=city|town в пределах 15 км",
+      "точки сетей по тегу brand (osmBrands в конфиге) или по началу name среди заведений общепита (osmNames) из OpenStreetMap, координаты, адрес, дата открытия, если она есть в теге; город — из addr:city, а без него — ближайший place=city в пределах 15 км, нет города — ближайший place=town",
   },
   async collect(cfg) {
     const started_at = new Date().toISOString();
