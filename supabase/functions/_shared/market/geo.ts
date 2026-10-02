@@ -43,3 +43,12 @@ export function matchPoints<
     missing: existing.filter((_, i) => !usedE.has(i)),
   };
 }
+
+/** Есть ли рядом (ближе radiusM) точка той же сети. */
+export function nearSameChain(
+  p: { chain: string } & GeoPoint,
+  refs: Array<{ chain: string } & GeoPoint>,
+  radiusM = MATCH_RADIUS_M,
+): boolean {
+  return refs.some((r) => r.chain === p.chain && distanceM(r, p) <= radiusM);
+}

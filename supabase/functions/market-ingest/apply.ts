@@ -4,7 +4,7 @@
 // Линт просит короткое имя из карты импортов; см. пояснение в sprint-items.ts.
 // deno-lint-ignore-file no-import-prefix
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { matchPoints } from "../_shared/market/geo.ts";
+import { matchPoints, nearSameChain } from "../_shared/market/geo.ts";
 import { foldDailyOrders, shouldFlagClosed, toEur } from "../_shared/market/rules.ts";
 import { allRows, ID_BATCH, locKey, must, recordRun } from "../_shared/market/db.ts";
 import { TRUSTED, type Verification } from "../_shared/market/types.ts";
@@ -161,6 +161,7 @@ type ExistingLoc = {
   ext_key: string;
   lat: number;
   lng: number;
+  status?: string;
   verification: Verification;
   source_kind: string;
   missing_weeks: number;
@@ -207,17 +208,29 @@ async function applyOsm(
       (from, to) =>
         sb.from("mkt_locations")
           .select(
-            "id, chain_key, ext_key, lat, lng, verification, source_kind, missing_weeks",
+            "id, chain_key, ext_key, lat, lng, status, verification, source_kind, missing_weeks",
           )
-          .eq("country", country).in("chain_key", chains).neq("status", "closed")
+          .eq("country", country).in("chain_key", chains)
           .order("id").range(from, to),
       "osm existing",
     )
     : [];
-  const r = matchPoints(
-    existing.map((e) => ({ ...e, chain: e.chain_key })),
-    points,
-  );
+  const all = existing.map((e) => ({ ...e, chain: e.chain_key }));
+  const live = all.filter((e) => e.status !== "closed");
+  // Одно место в OSM часто нарисовано дважды (узлом и контуром здания). Второй объект не находит
+  // пары и раньше вставал отдельной точкой рядом с проверенной (Хорватия 02.10.2026: дубли в
+  // 8–24 м от точек снимка). Такие «зеркала» — машинные строки без ручных правок — убираются.
+  const isMirror = (e: typeof all[number]) =>
+    e.source_kind === "osm" && e.verification === "unverified" &&
+    nearSameChain(e, live.filter((x) => x.source_kind !== "osm"));
+  const mirrors = live.filter(isMirror).map((e) => e.id);
+  for (let i = 0; i < mirrors.length; i += ID_BATCH) {
+    await must(
+      sb.from("mkt_locations").delete().in("id", mirrors.slice(i, i + ID_BATCH)),
+      "osm mirrors",
+    );
+  }
+  const r = matchPoints(live.filter((e) => !mirrors.includes(e.id)), points);
   const seen = r.matched.map((m) => m.existing.id);
   for (let i = 0; i < seen.length; i += ID_BATCH) {
     await must(
@@ -238,7 +251,10 @@ async function applyOsm(
   // автомат). Вставка без перезаписи: точка с тем же ключом, закрытая или поправленная руками,
   // остаётся как есть.
   const added = new Set<string>();
-  const rows = r.unmatched.map((f) => {
+  // Находка рядом с уже известной точкой той же сети (в т.ч. закрытой) — второй объект того же
+  // места, а не новая точка.
+  const fresh = r.unmatched.filter((f) => !nearSameChain(f, all));
+  const rows = fresh.map((f) => {
     const key = locKey(f.chain, f.lat, f.lng, f.address);
     added.add(key);
     return {
@@ -295,7 +311,7 @@ async function applyOsm(
   return {
     points: points.length,
     matched: r.matched.length,
-    new_candidates: r.unmatched.length,
+    new_candidates: fresh.length,
     maybe_closed: flagged,
   };
 }
