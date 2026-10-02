@@ -70,7 +70,9 @@ export function stepHealth(
 /** Что делать — по причине. Квота и ключ чинятся человеком, 5xx обычно проходят сами. */
 export function failureAdvice(f: ModelFailure): string {
   if (f.code === "insufficient_quota") return "Кончилась квота/баланс OpenAI — пополнить счёт.";
-  if (f.status === 401 || f.code === "invalid_api_key") return "Ключ OpenAI не принят — проверить секрет OPENAI_API_KEY.";
+  if (f.status === 401 || f.code === "invalid_api_key") {
+    return "Ключ OpenAI не принят — проверить секрет OPENAI_API_KEY.";
+  }
   if (f.status === 429) return "OpenAI ограничивает частоту — если не проходит за час, смотреть лимиты.";
   if (f.status !== null && f.status >= 500) return "Сбой на стороне OpenAI — обычно проходит сам, следить.";
   return "Ответа нет (сеть или срок) — проверить доступность api.openai.com.";
