@@ -99,7 +99,8 @@ function csp(hashes) {
     "worker-src 'self' blob:",
     "manifest-src 'self'",
     // Виджет Telegram может рисовать iframe (oauth.telegram.org) — оставляем ему место.
-    "frame-src 'self' https://oauth.telegram.org https://telegram.org",
+    // PDF-редактор («Полезности») открывается окном с iframe — его адрес тоже здесь.
+    "frame-src 'self' https://oauth.telegram.org https://telegram.org https://swarm-pdf.pages.dev",
     `frame-ancestors ${EMBEDDERS.join(" ")}`,
     "base-uri 'self'",
     "object-src 'none'",
