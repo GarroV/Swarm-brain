@@ -4,6 +4,8 @@ import type { TaskFile, TaskFileLimits } from "./taskFiles";
 import type { BackdropId } from "./backdrop";
 import type {
   AdminUser,
+  MarketBundle,
+  MarketCandidate,
   AdminWorkspace,
   AgentMeeting,
   CheckStatus,
@@ -1303,6 +1305,37 @@ export async function fetchSprints(kind?: SprintKind): Promise<Sprint[]> {
     return kind ? mockSprints.filter((s) => (s.kind ?? "board_tab") === kind) : mockSprints;
   }
   return apiFetch<Sprint[]>(kind ? `/sprints?kind=${kind}` : "/sprints");
+}
+
+// «Анализ рынка» (решение 02.10.2026): данные — рынок страны, видимость режет сервер по
+// allowed_markets воркспейса; демо видит только выдуманную Demoland (XD).
+export async function fetchMarketCountries(): Promise<string[]> {
+  if (DEV_MODE) return ["XD"];
+  return apiFetch<string[]>("/market/countries");
+}
+
+export async function fetchMarket(cc: string): Promise<MarketBundle> {
+  if (DEV_MODE) return (await import("./marketDemo")).demolandBundle();
+  return apiFetch<MarketBundle>(`/market/${cc}`);
+}
+
+/** Снимок ручных источников (админ). Битый снимок — ApiError 400 с body.details: string[]. */
+export async function importMarketSnapshot(cc: string, snapshot: unknown): Promise<Record<string, number>> {
+  return apiFetch<Record<string, number>>(`/market/${cc}/import`, { method: "POST", body: JSON.stringify(snapshot) });
+}
+
+export async function fetchMarketCandidates(cc: string): Promise<MarketCandidate[]> {
+  if (DEV_MODE) return [];
+  return apiFetch<MarketCandidate[]>(`/market/${cc}/candidates`);
+}
+
+export async function decideMarketCandidate(id: string, accept: boolean): Promise<void> {
+  return apiFetch<void>(`/market/candidates/${id}/${accept ? "accept" : "reject"}`, { method: "POST" });
+}
+
+/** Первичная заливка: все находки точек от OSM — разом, остаются «не проверено». */
+export async function acceptAllMarketLocations(cc: string): Promise<{ accepted: number }> {
+  return apiFetch<{ accepted: number }>(`/market/${cc}/candidates/accept-all`, { method: "POST" });
 }
 
 export async function createSprint(

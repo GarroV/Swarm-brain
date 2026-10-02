@@ -76,3 +76,7 @@ Deno.test("id с непечатным содержимым переживает 
   const route = { view: "taskDetail", params: { id: "a b&c=d" } } as const;
   assertEquals(queryToState(stateToQuery("task", route)), { tab: "task", route });
 });
+
+Deno.test("market tab survives the URL round-trip", () => {
+  assertEquals(queryToState(stateToQuery("market", null)).tab, "market");
+});

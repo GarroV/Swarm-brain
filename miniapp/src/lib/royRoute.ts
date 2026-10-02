@@ -11,7 +11,8 @@
 // проекты, встречи, еще»), см. docs/decisions/2026-08-22-mobile-nav.md.
 // `sprints` — десктопный раздел левой рейки (витрина нового вида, 24.09.2026): спринты
 // отдельным пунктом, а не видом внутри доски задач.
-export type RoyTab = "search" | "task" | "projects" | "sprints" | "book" | "cal" | "more";
+// `market` — «Анализ рынка» (решение 02.10.2026): десктоп — пункт рейки, мобайл — строка «Ещё».
+export type RoyTab = "search" | "task" | "projects" | "sprints" | "market" | "book" | "cal" | "more";
 
 export type RoyRoute =
   | { view: "answer"; params: { query: string } }

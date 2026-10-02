@@ -38,6 +38,7 @@ import { RoyDashboard } from "./RoyDashboard";
 import { FeedbackDialog } from "./FeedbackFab";
 import { MeetingReview } from "@/components/MeetingReview";
 import { TasksScreen } from "@/components/tasks/TasksScreen";
+import { MarketScreen } from "@/components/market/MarketScreen";
 import { TasksTable } from "@/components/tasks/table/TasksTable";
 import { TeamScreen } from "@/components/TeamScreen";
 import { SettingsRoute } from "@/components/settings/SettingsDesk";
@@ -195,7 +196,7 @@ export function RoyApp({ me }: { me: Me | null }) {
       // десктопные разделы. На мобайле сохранённые десктопные значения мигрируем, иначе человек с
       // живой сессией после деплоя попал бы на экран, которого в баре нет (подсветки таба нет).
       const valid = saved &&
-          (["search", "task", "projects", "sprints", "book", "cal", "more"] as const)
+          (["search", "task", "projects", "sprints", "market", "book", "cal", "more"] as const)
             .includes(saved as RoyTab)
         ? (saved as RoyTab)
         : null;
@@ -323,6 +324,7 @@ export function RoyApp({ me }: { me: Me | null }) {
     tasks: "task",
     projects: "projects",
     sprints: "sprints",
+    market: "market",
     meetings: "cal",
     base: "book",
   };
@@ -347,6 +349,7 @@ export function RoyApp({ me }: { me: Me | null }) {
     task: ["Задачи", "Tasks"],
     projects: ["Проекты", "Projects"],
     sprints: ["Спринты", "Sprints"],
+    market: ["Анализ рынка", "Market analysis"],
     book: ["База", "Knowledge"],
     cal: ["Встречи", "Meetings"],
     more: ["Ещё", "More"],
@@ -438,12 +441,13 @@ export function RoyApp({ me }: { me: Me | null }) {
                     {tab === "projects" &&
                       (isDesktop ? <TasksScreen only="sprint" /> : <RoyProjectsScreen />)}
                     {tab === "sprints" && <TasksScreen only="sprints" />}
+                    {tab === "market" && <MarketScreen />}
                     <KeptTab id="book" tab={tab} visited={visited}><RoyBaseScreen /></KeptTab>
                     <KeptTab id="cal" tab={tab} visited={visited}><RoyMeetingsScreen /></KeptTab>
                     {tab === "more" && <MoreScreen root />}
                   </div>
                   <RoyTabBar
-                    active={tab === "sprints" ? "more" : tab}
+                    active={tab === "sprints" || tab === "market" ? "more" : tab}
                     onChange={(id) => setTab(id as RoyTab)}
                     className="lg:hidden"
                     badges={{ cal: reviewCount }}
@@ -692,6 +696,9 @@ function MoreScreen({ root = false }: { root?: boolean }) {
       <div className="min-h-0 flex-1 space-y-2.5 overflow-y-auto px-4 py-3">
         <button type="button" onClick={() => setTab("sprints")} className={rowClass} style={{ fontSize: 15 }}>
           {dt("Спринты", "Sprints")}
+        </button>
+        <button type="button" onClick={() => setTab("market")} className={rowClass} style={{ fontSize: 15 }}>
+          {dt("Анализ рынка", "Market analysis")}
         </button>
         {rows.map((r) => (
           <button
