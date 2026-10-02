@@ -38,11 +38,13 @@ supabase functions deploy meeting-invite --no-verify-jwt     # оркестра�
 supabase functions deploy meeting-calendar --no-verify-jwt   # бот scriba сам по календарю: задания на встречи Meet людей с автозапуском (T100)
 supabase functions deploy meeting-missed --no-verify-jwt     # рекордер: бот не пришёл на мою встречу → позвать руками (T102)
 supabase functions deploy meeting-calendar-snapshot --no-verify-jwt  # снимок календарей для пропусков, 08/11/12 по Белграду (pg_cron раз в час, X-Cron-Secret; T164)
+supabase functions deploy market-ingest --no-verify-jwt     # приём данных сборщиков «Анализа рынка» (токен MARKET_INGEST_TOKEN; зовёт market-collect.yml)
 # granola-poller — legacy, НЕ деплоить: поллинг Granola внутри swarm-bot ({granola_poll:true} крон)
 # daily_report_cron — ежедневный отчёт активности админу (pg_cron '0 6 * * *' → swarm-bot {"daily_report_cron":true})
 # review_reminders_cron — напоминалка владельцу про невычитанные встречи >48ч, кнопка в веб (pg_cron 'review-reminders-hourly' почасовой, гейт рабочих часов Белграда в коде → swarm-bot {"review_reminders_cron":true})
 # task_pings_cron — «пинги» задач: наступившие ручные напоминания → Telegram + колокольчик (pg_cron 'task-pings-hourly' почасовой → swarm-bot {"task_pings_cron":true}; регистрация pg_cron — вручную в проде, как остальные)
 # demo-reset — сброс демо-воркспейса к эталону каждые 30 минут (pg_cron 'demo-reset' '*/30 * * * *' → select public.demo_reset(); без секрета и Edge Function — поэтому, в отличие от остальных, регистрируется САМОЙ миграцией 20260928180000_demo_auto_reset.sql)
+# market-demoland — засев выдуманной страны XD для демо «Анализа рынка» раз в сутки (pg_cron 'market-demoland' '17 3 * * *' → select public.market_demoland_seed(); как demo-reset, регистрируется САМОЙ миграцией 20261003110000_market_demoland.sql)
 # feedback_retention_cron — чистка закрытого фидбека (done/wontfix >90 дней) + скрины в приватном бакете (pg_cron раз в сутки → swarm-bot {"feedback_retention_cron":true}; регистрация pg_cron — вручную в проде, как остальные)
 supabase secrets set BOT_NAME=swarm-bot                       # env-переменные
 ```
@@ -85,6 +87,7 @@ claude mcp add supabase-swarm -- npx -y @supabase/mcp-server-supabase@0.12.0 \
 | `bot.yml` | push/PR, ТОЛЬКО при изменениях в `bot/**`, `scripts/check`, `scripts/gate-coverage.sh` | `npm ci --prefix bot` → **`scripts/check bot`**: формат, линт с типами, типы, тесты, порог покрытия, мёртвый код, границы модулей. Та же команда у приёмки блока и хука pre-push | `ubuntu-latest`, 15 мин |
 | `recorder.yml` | push/PR, ТОЛЬКО при изменениях в `recorder/**` | `swift build -c release` — ловит поломку до тега релиза | `macos-latest`, 25 мин |
 | `recorder-release.yml` | push тега `recorder-build-*` | собирает предсобранный `.app` (внутри архива имя пока `SwarmRecorder.app` — переходное, см. recorder/README.md) и публикует **release-asset**. ⚠️ Скачивают его НЕ оттуда: раздача идёт из Storage `swarm_drive/recorder/` (issue #91), asset туда надо залить. Причина — не видимость репозитория (он публичный, asset отдаётся анонимно), а одна точка раздачи, которую смена видимости не ломает: в 20.08–27.08.2026 приватный репозиторий отдавал 404 и уронил установку | `macos-14`, 30 мин |
+| `market-collect.yml` | cron воскресенье 23:00 UTC + ручной запуск (`country`, `source`, `since`, `dry_run`) | `scripts/market/run.ts`: собирает открытые источники «Анализа рынка» по странам из `scripts/market/countries` и шлёт в `market-ingest`. Секрет Actions `MARKET_INGEST_TOKEN`, переменная `MARKET_INGEST_URL`; ключ базы не нужен. Сбой источника не останавливает остальные, прогон заканчивается красным | `ubuntu-latest`, 60 мин |
 
 - **Ничего не деплоит.** Edge-функции — руками (`supabase functions deploy`), веб — Cloudflare Pages сам по push. Единственный workflow, который влияет на пользователей, — `recorder-release.yml`: без него `.app` придётся собирать локально и заливать в релиз вручную.
 - **`timeout-minutes` обязателен на каждом job** (добавлено 2026-08-20). Без него зависший job висит до дефолтных **6 часов** GitHub: в приватном `GarroV/multa` так трижды за день (19.08) сгорело **1080 минут** из месячной квоты аккаунта, после чего Actions встали во всех приватных репозиториях ([multa#148](https://github.com/GarroV/multa/issues/148)). С таймаутом зависший прогон честно падает и присылает уведомление, а не съедает квоту молча.
@@ -247,6 +250,7 @@ claude mcp add supabase-swarm -- npx -y @supabase/mcp-server-supabase@0.12.0 \
 | 🧭 **Мобильная навигация** (таб-бар, поиск, «Ещё», проекты) — табы **Задачи · Проекты · Встречи · Ещё**, дом — задачи; поиск не таб, а иконка в шапке (push-роут `ask`); база — пункт «Ещё» (роут `base`); настройки/команда/админ/карта доступны с ЛЮБОГО таба (были только с «Поиска»). Проекты на телефоне — список → задачи внутри (роут `project`), канбана нет намеренно. Жест строки один во всём приложении: тап открывает, свайп влево — Изменить/Удалить (`MobileTaskRow`); тап определяет браузер через `onClick`, а НЕ `pointerup` — иначе скролл открывает карточку | `miniapp/src/components/roy/{RoyApp.tsx,nav.ts,ui.tsx,SwipeRow.tsx,MobileTaskRow.tsx}`, `roy/screens/{RoyTasksScreen,RoyProjectsScreen,ProjectTasksScreen,RoyMeetingsScreen,RoyBaseScreen,SearchScreen}.tsx`, `components/tasks/LensMenu.tsx` | ADR [2026-08-22-mobile-nav](decisions/2026-08-22-mobile-nav.md) · §Навигация мобайла в [MINIAPP_ARCHITECTURE.md](MINIAPP_ARCHITECTURE.md) · смоук `miniapp/e2e/` |
 | 🧭 **«Карта проекта»** — чип в шапке дашборда → полноэкранный iframe со статическим `system-map.html` (35 узлов вшиты в HTML). **Обзор, НЕ источник истины:** обновляется руками раз в ~2 месяца, в DoD **не входит** — тронул экран/вкладку, карту править не обязан; канон системы остаётся [ARCHITECTURE.md](ARCHITECTURE.md) | `miniapp/src/components/roy/dash/ProjectMapButton.tsx`, `miniapp/public/system-map.html` | решение [decisions/2026-09-03-project-map-manual-refresh.md](decisions/2026-09-03-project-map-manual-refresh.md), ревизия [#62](https://github.com/GarroV/Swarm-brain/issues/62) |
 | API-клиент / типы | `miniapp/src/lib/api.ts`, `miniapp/src/types.ts` | MINIAPP_ARCHITECTURE.md |
+| 🧭 **«Анализ рынка»** (решение 02.10.2026) — раздел по странам Dodo из открытых источников; видимость по `workspaces.allowed_markets`, демо видит только выдуманную `XD` | веб `miniapp/src/components/market/*` (`MarketScreen` и секции), `lib/marketView.ts`/`marketStats.ts`/`marketDemo.ts`, вкладка `market` в `lib/royRoute.ts`/`royUrl.ts`, `RoyRail.tsx`, `RoyApp.tsx`; API `swarm-api/market.ts`; приём `market-ingest/`; логика `_shared/market/`; сборщики и конфиги стран `scripts/market/`; workflow `market-collect.yml`; таблицы `mkt_*` | §Анализ рынка в [ARCHITECTURE](ARCHITECTURE.md) |
 
 ### MCP / установщики
 | Concern | Файлы | Детали |
@@ -317,6 +321,7 @@ claude mcp add supabase-swarm -- npx -y @supabase/mcp-server-supabase@0.12.0 \
 | `OPENAI_API_KEY` | да |
 | `BOT_NAME` | нет (дефолт `"bot"`) |
 | `MCP_AUTH_REQUIRED` | устарела с 2026-09-30 — `swarm-mcp` без токена отказывает всегда (`auth.ts`) |
+| `MARKET_INGEST_TOKEN` | да для сбора «Анализа рынка» (`market-ingest`; тот же токен — секрет Actions, адрес — переменная Actions `MARKET_INGEST_URL`) |
 
 ---
 

@@ -13,6 +13,7 @@ import { DodoSection } from "./DodoSection";
 import { Freshness } from "./Freshness";
 import { LocationRegistry } from "./LocationRegistry";
 import { MarketMap } from "./MarketMap";
+import { MarketSummary } from "./MarketSummary";
 import { MoneySection } from "./MoneySection";
 import { PricesDelivery } from "./PricesDelivery";
 import { Chip, Empty } from "./ui";
@@ -111,6 +112,7 @@ export function MarketScreen() {
         </div>
         {!bundle ? <Empty text={dt("Загружаю…", "Loading…")} /> : (
           <>
+            <MarketSummary bundle={bundle} />
             <MarketMap bundle={bundle} />
             <ChainDynamics bundle={bundle} />
             <MoneySection bundle={bundle} />
