@@ -1,5 +1,5 @@
 import { assert, assertEquals, assertStringIncludes } from "@std/assert";
-import { formatSpaces, formatSprint, isIsoDate, pickSpace } from "./sprints-format.ts";
+import { formatJournal, formatSpaces, formatSprint, isIsoDate, JOURNAL_LINES, pickSpace } from "./sprints-format.ts";
 import type { Sprint } from "../../_shared/tasks/types.ts";
 import type { SprintCycle } from "../../_shared/tasks/sprint-cycles.ts";
 import type { SprintItem } from "../../_shared/tasks/sprint-items.ts";
@@ -143,4 +143,34 @@ Deno.test("formatSprint: снятая из идущего спринта зад�
   assertStringIncludes(text, "План: 1 из 2 (50%)");
   assertStringIncludes(text, "снято из плана: 1");
   assert(!text.includes("Снятая"), "в составе снятой задачи нет");
+});
+
+Deno.test("журнал пространства: время по Белграду, автор, задача; пусто — так и сказано (#485)", () => {
+  const text = formatJournal("Тестовое", "7", [
+    {
+      at: "2026-10-01T10:05:00Z",
+      kind: "comment",
+      actor: "Анна",
+      task_id: "t1",
+      task_title: "Запуск в Сербии",
+      text: "комментарий: готово к ревью",
+    },
+  ]);
+  assertStringIncludes(text, "Журнал «Тестовое» за 7 дн.");
+  assertStringIncludes(text, "01.10, 12:05 · Анна · «Запуск в Сербии» — комментарий: готово к ревью");
+  assertEquals(formatJournal("Тестовое", "all", []), "Журнал «Тестовое» за всё время: событий нет.");
+});
+
+Deno.test("журнал пространства: длинная лента режется с подсказкой сузить период", () => {
+  const many = Array.from({ length: JOURNAL_LINES + 5 }, (_, i) => ({
+    at: "2026-10-01T10:05:00Z",
+    kind: "task_change" as const,
+    actor: null,
+    task_id: null,
+    task_title: null,
+    text: `событие ${i}`,
+  }));
+  const text = formatJournal("Тестовое", "all", many);
+  assertStringIncludes(text, "…и ещё 5");
+  assert(!text.includes(`событие ${JOURNAL_LINES}`));
 });

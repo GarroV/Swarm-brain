@@ -1,4 +1,5 @@
 "use client";
+import { useState } from "react";
 import type { SprintCycle } from "@/types";
 import { RoyIcon } from "@/components/roy/icons";
 import { useDt } from "@/components/roy/nav";
@@ -43,7 +44,11 @@ function Bars({ rows }: { rows: { label: string; done: number; total: number }[]
   );
 }
 
-export function SprintReport({ cycle }: { cycle: SprintCycle }) {
+export function SprintReport({ cycle, onSaveSummary }: {
+  cycle: SprintCycle;
+  /** Дописать итог после приёмки (#298): цифры — снимок, а ретро пишут и после встречи. */
+  onSaveSummary?: (summary: string | null) => Promise<void>;
+}) {
   const dt = useDt();
   const s = cycle.stats;
 
@@ -128,16 +133,76 @@ export function SprintReport({ cycle }: { cycle: SprintCycle }) {
             </div>
           )}
 
-          {cycle.summary && (
-            <div className="border-t border-line pt-2">
-              <p className="mb-1 text-[10px] font-bold uppercase tracking-wide text-ink-soft/80">
-                {dt("Итог словами", "Summary")}
-              </p>
-              <p className="text-xs leading-relaxed text-ink-soft">{cycle.summary}</p>
-            </div>
-          )}
+          <SummaryBlock summary={cycle.summary} onSave={onSaveSummary} />
         </div>
       )}
+    </div>
+  );
+}
+
+function SummaryBlock({ summary, onSave }: {
+  summary: string | null;
+  onSave?: (summary: string | null) => Promise<void>;
+}) {
+  const dt = useDt();
+  const [draft, setDraft] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  if (!summary && !onSave) return null;
+  const save = async () => {
+    if (!onSave || draft === null) return;
+    setSaving(true);
+    try {
+      await onSave(draft.trim() || null);
+      setDraft(null);
+    } finally {
+      setSaving(false);
+    }
+  };
+  return (
+    <div className="border-t border-line pt-2">
+      <div className="mb-1 flex items-center gap-2">
+        <p className="text-[10px] font-bold uppercase tracking-wide text-ink-soft/80">
+          {dt("Итог словами", "Summary")}
+        </p>
+        {onSave && draft === null && (
+          <button
+            type="button"
+            onClick={() => setDraft(summary ?? "")}
+            className="ml-auto text-[11px] text-accent-ink hover:underline"
+          >
+            {summary ? dt("Изменить", "Edit") : dt("Дописать", "Add")}
+          </button>
+        )}
+      </div>
+      {draft !== null
+        ? (
+          <div className="space-y-1.5">
+            <textarea
+              autoFocus
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              rows={4}
+              placeholder={dt("Выводы спринта: что получилось, что нет, что меняем", "Sprint takeaways: what worked, what didn't, what changes")}
+              className="w-full rounded-[7px] border border-line bg-surface px-2 py-1.5 text-xs text-ink outline-none focus:border-accent-line"
+            />
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={save}
+                disabled={saving}
+                className="h-[26px] rounded-full bg-primary px-3 text-xs font-semibold text-primary-foreground disabled:opacity-50"
+              >
+                {dt("Сохранить", "Save")}
+              </button>
+              <button type="button" onClick={() => setDraft(null)} className="px-1 text-xs text-ink-soft hover:text-ink">
+                {dt("Отмена", "Cancel")}
+              </button>
+            </div>
+          </div>
+        )
+        : summary
+        ? <p className="whitespace-pre-wrap text-xs leading-relaxed text-ink-soft">{summary}</p>
+        : <p className="text-xs text-ink-mute">{dt("Итог не записан.", "No summary yet.")}</p>}
     </div>
   );
 }

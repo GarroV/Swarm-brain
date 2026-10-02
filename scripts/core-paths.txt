@@ -13,7 +13,7 @@ miniapp/src/lib/initiatives.ts|miniapp/src/lib/initiatives.test.ts
 miniapp/src/lib/spaceAnalytics.ts|miniapp/src/lib/spaceAnalytics.test.ts
 # Журнал пространства собирает события из чужих таблиц: ошибка в правиле видимости молчит
 # и показывает чужую приватную задачу под видом «ленты».
-supabase/functions/swarm-api/space-journal.ts|supabase/functions/swarm-api/space-journal.db.test.ts
+supabase/functions/_shared/space-journal.ts|supabase/functions/swarm-api/space-journal.db.test.ts
 # Сроки инициативы: перепутанный интервал не падает, он просто рисует полоску не там.
 supabase/functions/swarm-api/project-fields.ts|supabase/functions/swarm-api/project-fields.test.ts
 # Ссылки задачи: список схем в коде — единственное, что стоит между `javascript:` в поле
@@ -73,3 +73,4 @@ supabase/functions/swarm-api/client-error.ts|supabase/functions/swarm-api/client
 # видимости не падает, она молча отдаёт чужую метку или заголовок чужой приватной задачи.
 supabase/functions/_shared/tasks/labels.ts|supabase/functions/_shared/tasks/labels.test.ts
 supabase/functions/_shared/notifications/feed.ts|supabase/functions/_shared/notifications/feed.test.ts
+supabase/functions/swarm-api/task-archive.ts|supabase/functions/swarm-api/task-archive.db.test.ts

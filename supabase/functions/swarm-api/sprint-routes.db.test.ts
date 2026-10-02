@@ -438,6 +438,38 @@ Deno.test("отметка сверки сохраняется, а на прин�
   }
 });
 
+Deno.test("сроки идущего спринта сдвигаются, принятого — 409 (#297)", async () => {
+  const db = await connect();
+  try {
+    const { tabId } = await seed(db);
+    const cycle = await db.queryObject<{ id: string }>`
+      insert into sprint_cycles (group_id, tab_id, name, start_date, end_date, status)
+      values (${WS}, ${tabId}, 'Спринт 1', '2026-09-01', '2026-09-14', 'active')
+      returning id`;
+    const path = `/sprint-cycles/${cycle.rows[0].id}`;
+    const moved = await call("PATCH", path, {
+      body: { start_date: "2026-09-02", end_date: "2026-09-16" },
+    });
+    assertEquals(moved?.status, 200);
+    assertEquals((await moved!.json()).end_date, "2026-09-16");
+
+    await db
+      .queryArray`update sprint_cycles set status = 'accepted' where id = ${cycle.rows[0].id}`;
+    assertEquals(
+      (await call("PATCH", path, { body: { end_date: "2026-09-20" } }))?.status,
+      409,
+      "сроки принятого спринта — история, задним числом не сдвигаются",
+    );
+    assertEquals(
+      (await call("PATCH", path, { body: { summary: "итог" } }))?.status,
+      200,
+      "итог принятого спринта править можно",
+    );
+  } finally {
+    await db.end();
+  }
+});
+
 Deno.test("снятая пометка «к переносу» уносит с собой причину", async () => {
   const db = await connect();
   try {

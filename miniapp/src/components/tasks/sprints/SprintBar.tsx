@@ -38,6 +38,8 @@ export type SprintBarProps = {
   busy: boolean;
   onNewSprint?: () => void;
   onRename?: () => void;
+  /** Сдвинуть сроки (#297) — только у непринятого спринта. */
+  onEditDates?: () => void;
   onDelete?: () => void;
   /** Перенос спринта в другое пространство (#397) — только в режиме правки. */
   move?: { spaces: Sprint[]; onMove: (tabId: string | null) => void };
@@ -106,6 +108,14 @@ export function SprintBar(p: SprintBarProps) {
         label: dt("Переименовать", "Rename"),
         action: true,
         onPick: p.onRename,
+      }]
+      : []),
+    ...(p.onEditDates
+      ? [{
+        key: "__dates__",
+        label: dt("Сроки", "Dates"),
+        action: true,
+        onPick: p.onEditDates,
       }]
       : []),
     ...(p.onDelete

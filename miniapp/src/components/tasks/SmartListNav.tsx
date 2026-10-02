@@ -4,6 +4,7 @@ import { RoyIcon, type RoyIconName } from "@/components/roy/icons";
 import { HIDE_WHEN_EMPTY, SMART_LISTS, type SmartListId, type StatusFilter, type StatusSet } from "@/lib/smartLists";
 import { StatusFilters } from "./StatusFilters";
 import { useDt } from "@/components/roy/nav";
+import { TaskArchiveButton } from "./TaskArchive";
 import { RangePicker } from "@/components/ui/RangePicker";
 import type { DateRange } from "@/lib/dateRange";
 
@@ -41,10 +42,12 @@ type SmartListNavProps = {
       а не в этой ленте: в прокрутке чип уезжал за край и активный фильтр был не виден. */
   range?: DateRange | null;
   onRange?: (range: DateRange | null) => void;
+  /** Архив задач (#489): кнопка внизу навигации; после «Вернуть» список перезагружается. */
+  onArchiveRestored?: () => void;
 };
 
 // Навигация по смарт-спискам: вертикальный рельс (десктоп) или горизонтальные чипы (мобайл).
-export function SmartListNav({ variant, compact, active, counts, onSelect, query, onQuery, statuses, statusCounts, onToggleStatus, labels, labelCounts, activeLabelId, onSelectLabel, onCreateLabel, onEditLabel, range, onRange }: SmartListNavProps) {
+export function SmartListNav({ variant, compact, active, counts, onSelect, query, onQuery, statuses, statusCounts, onToggleStatus, labels, labelCounts, activeLabelId, onSelectLabel, onCreateLabel, onEditLabel, range, onRange, onArchiveRestored }: SmartListNavProps) {
   const dt = useDt();
   // «Регулярные» видны только когда такие задачи есть (решение владельца 2026-08-27: «если
   // задач таких нет, то список скрывается»). Активный список не прячем даже при нуле — иначе,
@@ -198,6 +201,12 @@ export function SmartListNav({ variant, compact, active, counts, onSelect, query
               <span className="flex-1 text-left">{dt("Новый список", "New list")}</span>
             </button>
           )}
+        </>
+      )}
+      {onArchiveRestored && (
+        <>
+          <div className="my-1.5 border-t border-line" />
+          <TaskArchiveButton onRestored={onArchiveRestored} />
         </>
       )}
     </aside>

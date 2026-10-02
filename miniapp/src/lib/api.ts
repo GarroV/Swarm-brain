@@ -1070,6 +1070,18 @@ export async function deleteTask(id: string): Promise<void> {
   return apiFetch<void>(`/tasks/${id}`, { method: "DELETE" });
 }
 
+/** Архив задач (#489): убранные задачи воркспейса, свежие сверху; чужие личные сервер не отдаёт. */
+export async function fetchArchivedTasks(): Promise<Task[]> {
+  if (DEV_MODE) return [];
+  return apiFetch<Task[]>("/tasks/archived");
+}
+
+/** Вернуть задачу из архива. Состав спринтов, из которого она ушла, не восстанавливается. */
+export async function restoreTask(id: string): Promise<void> {
+  if (DEV_MODE) return;
+  return apiFetch<void>(`/tasks/${id}/restore`, { method: "POST" });
+}
+
 // ── Персональные смарт-метки задач ──────────────────────────────────────────
 export type TaskLabel = {
   id: string;

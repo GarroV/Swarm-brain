@@ -136,6 +136,7 @@ export function RemindersTasks() {
         }}
         range={r.range}
         onRange={r.setRange}
+        onArchiveRestored={() => { void r.reload(); }}
       />
 
       <div className="flex min-h-0 flex-1 flex-col">
