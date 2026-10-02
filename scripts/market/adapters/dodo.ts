@@ -14,6 +14,25 @@ const DEFAULT_DAYS = 8;
 const ecbMonth = (cur: string, month: string) =>
   `https://data-api.ecb.europa.eu/service/data/EXR/M.${cur}.EUR.SP00.A?format=jsondata&startPeriod=${month}&endPeriod=${month}`;
 
+/** Не евро (леи) — месячный курс ЕЦБ. В начале месяца курса за прошлый ещё может не быть
+ *  (ЕЦБ отвечает 404): тогда евро остаётся пустым, а точки и дни всё равно сохраняются —
+ *  иначе один неопубликованный курс выбрасывал бы весь недельный сбор. */
+async function monthRate(
+  currency: string,
+  month: string,
+): Promise<Record<string, number> | undefined> {
+  try {
+    const rate =
+      parseEcbSeries(await getJson(ecbMonth(currency, month)))[month];
+    return rate ? { [currency]: rate } : undefined;
+  } catch (e) {
+    console.warn(
+      `dodo: курса ${currency} за ${month} нет — евро останется пустым (${e})`,
+    );
+    return undefined;
+  }
+}
+
 /** Дни с since по вчера включительно: сегодняшний день ещё не закрыт. */
 export function daysBetween(since: string, today: string): string[] {
   const out: string[] = [];
@@ -54,14 +73,15 @@ export const dodo: Adapter = {
       const revenue = parseFinancialMetrics(
         await getJson(api(cfg.dodoCode, "FinancialMetrics")),
       );
-      // Не евро (леи) — месячный курс ЕЦБ; курса ещё нет — евро останется пустым, а не ложным.
-      if (revenue && revenue.currency !== "EUR") {
-        const rate = parseEcbSeries(
-          await getJson(ecbMonth(revenue.currency, revenue.month)),
-        )[revenue.month];
-        if (rate) revenue.rates = { [revenue.currency]: rate };
-      }
-      return { ...base, units, days, revenue };
+      const rates = revenue && revenue.currency !== "EUR"
+        ? await monthRate(revenue.currency, revenue.month)
+        : undefined;
+      return {
+        ...base,
+        units,
+        days,
+        revenue: revenue && rates ? { ...revenue, rates } : revenue,
+      };
     } catch (e) {
       return { ...base, failed: String(e) };
     }

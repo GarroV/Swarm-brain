@@ -1,6 +1,6 @@
 import { assert, assertEquals } from "@std/assert";
 import { distanceM, matchPoints } from "./geo.ts";
-import { canSeeCountry, foldDailyOrders, shouldFlagClosed, toEur } from "./rules.ts";
+import { canSeeCountry, type DayOrders, foldDailyOrders, shouldFlagClosed, toEur } from "./rules.ts";
 
 Deno.test("distanceM: 0.001° of latitude is ~111 m", () => {
   const d = distanceM({ lat: 45.8, lng: 15.97 }, { lat: 45.801, lng: 15.97 });
@@ -31,6 +31,15 @@ Deno.test("shouldFlagClosed: only osm-sourced, untrusted, 3+ weeks", () => {
   assert(!shouldFlagClosed({ verification: "unverified", source_kind: "snapshot", missing_weeks: 9 }));
 });
 
+Deno.test("foldDailyOrders marks a past month complete only when every day is there", () => {
+  const feb: DayOrders[] = Array.from({ length: 28 }, (_, i) => ({
+    date: `2026-02-${String(i + 1).padStart(2, "0")}`,
+    counts: i === 3 ? {} : { site: 1 } as Record<string, number>, // день без заказов — тоже собранный день
+  }));
+  assertEquals(foldDailyOrders(feb, "2026-10-02")[0].complete, true);
+  assertEquals(foldDailyOrders(feb.slice(1), "2026-10-02")[0].complete, false);
+});
+
 Deno.test("foldDailyOrders sums by month and marks the current month incomplete", () => {
   const r = foldDailyOrders([
     { date: "2026-09-29", counts: { aggregator: 2, restaurant: 1 } },
@@ -38,7 +47,8 @@ Deno.test("foldDailyOrders sums by month and marks the current month incomplete"
     { date: "2026-10-01", counts: { site: 1 } },
   ], "2026-10-02");
   assertEquals(r, [
-    { month: "2026-09", orders: { aggregator: 5, restaurant: 1 }, complete: true },
+    // Собраны 2 дня из 30 — месяц прошёл, но не полный: показать его итогом значит соврать.
+    { month: "2026-09", orders: { aggregator: 5, restaurant: 1 }, complete: false },
     { month: "2026-10", orders: { site: 1 }, complete: false },
   ]);
 });

@@ -17,17 +17,28 @@ export function shouldFlagClosed(
 export type DayOrders = { date: string; counts: Record<string, number> };
 export type MonthOrders = { month: string; orders: Record<string, number>; complete: boolean };
 
-/** Дневные заказы → месяцы; месяц `today` и позже помечается неполным. */
+const daysInMonth = (month: string) =>
+  new Date(Date.UTC(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 0)).getUTCDate();
+
+/** Дневные заказы → месяцы. Полный — только прошедший месяц, у которого собран каждый день:
+ *  первый прогон приносит последние 8 дней, а упавший недельный прогон оставляет дыру, и
+ *  такой месяц на экране выглядел бы итогом. */
 export function foldDailyOrders(days: DayOrders[], today: string): MonthOrders[] {
   const by = new Map<string, Record<string, number>>();
+  const seen = new Map<string, Set<string>>();
   for (const d of days) {
     const month = d.date.slice(0, 7);
     const acc = { ...(by.get(month) ?? {}) };
     for (const [k, v] of Object.entries(d.counts)) if (v) acc[k] = (acc[k] ?? 0) + v;
     by.set(month, acc);
+    seen.set(month, new Set([...(seen.get(month) ?? []), d.date]));
   }
   const current = today.slice(0, 7);
-  return [...by.keys()].sort().map((month) => ({ month, orders: by.get(month)!, complete: month < current }));
+  return [...by.keys()].sort().map((month) => ({
+    month,
+    orders: by.get(month)!,
+    complete: month < current && seen.get(month)!.size === daysInMonth(month),
+  }));
 }
 
 /** `rates` — единиц валюты за 1 EUR (как в курсах ЕЦБ). */

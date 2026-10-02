@@ -25,19 +25,13 @@ export function DodoSection({ bundle }: { bundle: MarketBundle }) {
   const totals = months.map((m) => Object.values(orderChannels(m.orders)).reduce((s, v) => s + v, 0));
   const ordMax = Math.max(1, ...totals);
   const channels = [...new Set(months.flatMap((m) => Object.keys(orderChannels(m.orders))))];
+  // Выручка приходит из FinancialMetrics только за прошедший месяц целиком; «неполный»
+  // относится к заказам по дням, у выручки его не бывает.
   const hasRevenue = months.some((m) => m.revenue_eur !== null);
   const latestLocal = [...months].reverse().find((m) => m.revenue_local !== null && m.currency && m.currency !== "EUR");
 
   return (
     <Section title={dt("Dodo в стране", "Dodo in the country")}>
-      <svg width="0" height="0" aria-hidden className="absolute">
-        <defs>
-          <pattern id="mkt-hatch" width="5" height="5" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
-            <rect width="5" height="5" fill="var(--surface-2)" />
-            <line x1="0" y1="0" x2="0" y2="5" stroke="var(--chart-1)" strokeWidth="2" />
-          </pattern>
-        </defs>
-      </svg>
       {hasRevenue && (
         <>
           <h3 className="mb-2 text-ink-soft" style={{ fontSize: 13 }}>{dt("Выручка по месяцам, €", "Revenue by month, €")}</h3>
@@ -52,7 +46,7 @@ export function DodoSection({ bundle }: { bundle: MarketBundle }) {
                       width={10}
                       y={100 - ((m.revenue_eur ?? 0) / revMax) * 100}
                       height={((m.revenue_eur ?? 0) / revMax) * 100}
-                      fill={m.complete ? "var(--chart-1)" : "url(#mkt-hatch)"}
+                      fill="var(--chart-1)"
                     />
                   </svg>
                 </div>
@@ -76,9 +70,10 @@ export function DodoSection({ bundle }: { bundle: MarketBundle }) {
           <div className="grid gap-1" style={{ gridTemplateColumns: `repeat(${months.length}, minmax(0, 1fr))` }}>
             {months.map((m, i) => {
               const ch = orderChannels(m.orders);
+              const days = Object.keys((m.orders?._days as Record<string, unknown> | undefined) ?? {}).length;
               return (
                 <div key={m.month} className="flex flex-col items-center gap-0.5">
-                  <div className="flex h-24 w-3/4 flex-col-reverse" title={`${m.month}: ${totals[i]}`} style={{ opacity: m.complete ? 1 : 0.55 }}>
+                  <div className="flex h-24 w-3/4 flex-col-reverse" title={`${m.month}: ${totals[i]}${m.complete ? "" : ` · ${dt(`дней: ${days}`, `days: ${days}`)}`}`} style={{ opacity: m.complete ? 1 : 0.55 }}>
                     {channels.map((c) => (
                       <div key={c} style={{ height: `${((ch[c] ?? 0) / ordMax) * 100}%`, background: `var(--chart-${CHANNEL[c]?.[2] ?? 5})` }} />
                     ))}
@@ -95,7 +90,7 @@ export function DodoSection({ bundle }: { bundle: MarketBundle }) {
                 {CHANNEL[c] ? dt(CHANNEL[c][0], CHANNEL[c][1]) : c}
               </span>
             ))}
-            <span className="text-ink-mute">{dt("бледнее — месяц не закончился", "faded — month not finished")}</span>
+            <span className="text-ink-mute">{dt("бледнее — собраны не все дни месяца", "faded — not every day of the month collected")}</span>
           </div>
         </>
       )}

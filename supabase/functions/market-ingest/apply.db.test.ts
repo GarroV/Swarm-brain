@@ -194,7 +194,8 @@ Deno.test("dodo: re-sending the same days does not double the month; units upser
     .eq("country", CC).eq("month", "2026-09")
     .single();
   assertEquals((data!.orders as Record<string, number>).aggregator, 4);
-  assertEquals(data!.complete, true);
+  // Собран один день сентября из 30 — месяц прошёл, но итогом не считается.
+  assertEquals(data!.complete, false);
   const { data: u } = await sb.from("mkt_locations").select(
     "verification, source_kind",
   ).eq("country", CC).eq(

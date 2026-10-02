@@ -27,7 +27,7 @@ export function MarketSummary({ bundle }: { bundle: MarketBundle }) {
     const pizza = bundle.chains.filter((c) => c.segment === "pizza").sort((a, b) => (now.get(b.key) ?? 0) - (now.get(a.key) ?? 0));
     const rank = pizza.findIndex((c) => c.key === "dodo");
     const openedThisYear = bundle.locations.filter((l) => l.opened?.startsWith(String(year))).length;
-    const lastDodo = [...bundle.dodo].reverse().find((m) => m.complete && m.revenue_eur !== null);
+    const lastDodo = [...bundle.dodo].reverse().find((m) => m.revenue_eur !== null);
     const bad = freshness(bundle.sources, bundle.runs, new Date()).filter((f) => f.bad).length;
     return { total: [...now.values()].reduce((a, b) => a + b, 0), chains: now.size, rank, pizzaCount: pizza.length, openedThisYear, lastDodo, bad };
   }, [bundle, year]);
