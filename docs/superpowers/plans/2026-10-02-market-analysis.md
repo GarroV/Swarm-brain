@@ -49,7 +49,8 @@
 | `supabase/functions/market-ingest/index.ts` | приём данных сборщиков по токену |
 | `scripts/market/lib.ts` | HTTP с User-Agent, отправка в ingest, журнал |
 | `scripts/market/dodo.ts`, `osm.ts`, `registry-ee.ts`, `registry-ro.ts` | сборщики |
-| `scripts/market/brands.ts` | сеть → тег OSM `brand`/`brand:wikidata` по странам |
+| `scripts/market/countries/<CC>.ts` | конфиг страны: сети, бренды OSM, юрлица, источники |
+| `scripts/market/adapters/*.ts` | адаптеры источников по единому контракту |
 | `.github/workflows/market-collect.yml` | расписание и ручной запуск |
 | `miniapp/src/lib/marketStats.ts` | производные для экрана (точки на конец года, тренды) |
 | `miniapp/src/components/market/*.tsx` | экран и секции |
@@ -272,13 +273,7 @@ deno eval 'import {validateSnapshot} from "./supabase/functions/_shared/market/s
 ```
 Expected: `[ 23, 611, 16 ]`. Если ошибки — разобрать: правится валидатор, если файл законный, а не наоборот.
 
-- [ ] **Step 7: остальное содержимое хорватского файла — ничего не теряем.** Часть данных живёт не в JSON, а в коде страницы и в соседних ключах:
-  - `chains[].hist` (число точек по годам из новостей, напр. Submarine) → новая колонка `mkt_chains.hist jsonb` (добавить в миграцию Task 3 и в `SnapChain.hist: Array<{year:number;count:number;source:string|null}>`), экран рисует её поверх расчёта `unitsByYear`, если у сети она есть.
-  - `pizzafin.chains[].periods` (годовые и полугодовые периоды Domino's/Pizza Hut/Dodo: выручка, system sales, точки на конец периода, LFL) → годовые периоды сливаются в `companies[].years` того же юрлица (по `oib`), полугодия и system sales — в `facts` темы `market` с `value`; `pizzafin.commentary` → `facts` темы `commentary`.
-  - Таблица оценок «Как работают сети» и тексты блока «Ключевые цифры» зашиты в `<script>` страницы — вынести их руками в снимок: оценки → новый ключ `ratings: [{chain, location_name, platform, rating, rating_count, seen_on}]` (`SnapRating`, таблица `mkt_ratings` уже есть), ключевые цифры → `facts` темы `insight`.
-  - `dodoOps` (заказы и средний чек по каналам по пиццериям, янв–июль 2026) и `dodo` (продажи по месяцам) — переносятся снимком, а историю с апреля 2024 доливает сборщик Dodo с `--since 2024-04-01` (Task 6), расхождение — повод разобраться, а не перезаписать.
-  - `checked` (какие сети проверены и отсутствуют: Starbucks, Subway…) и `dropped` → `facts` темы `market` («сети, которых на рынке нет»).
-  Тесты Step 2 дополнить случаями `hist`, `pizzafin` и `ratings`.
+- [ ] **Step 7: что из хорватского файла идёт в ручные источники.** Цель — не воспроизвести страницу, а заполнить то, у чего нет автоматического источника (решение 02.10.2026). Берём: `fin` и годовые периоды `pizzafin` (→ `companies[].years` по `oib`) — источник `manual:fina`; `delivery` — `manual:delivery`; `prices` — `manual:prices`; точки локальных сетей — пока их локатор не написан (`manual:locations`). Не берём: тексты «Ключевых цифр» и таблицу оценок, зашитые в код страницы (сводка считается из данных), `dodo`/`dodoOps` (их доливает сборщик Dodo с `--since 2024-04-01`), производные `paths/proj/trends`. `chains[].hist` (число точек по годам из новостей) → `SnapChain.hist` и колонка `mkt_chains.hist`. Тест Step 2 дополнить случаями `hist` и `pizzafin`.
 
 - [ ] **Step 8: commit** — `git add supabase/functions/_shared/market && git commit -m "feat(market): snapshot types and validator"`
 
@@ -641,8 +636,19 @@ create table public.mkt_runs (
 );
 create index mkt_runs_recent on public.mkt_runs (country, source, finished_at desc);
 
+-- Источники страны (из конфига scripts/market/countries/<CC>.ts): что кормит каждый блок,
+-- как часто и когда последний раз успешно. Страница показывает возраст данных по ним.
+create table public.mkt_sources (
+  country text not null, adapter text not null, chain_key text not null default '',
+  feeds text not null check (feeds in ('locations','financials','dodo','prices','facts')),
+  cadence text not null check (cadence in ('weekly','monthly','yearly','manual')),
+  mode text not null check (mode in ('auto','manual','blocked')), reason text,
+  last_ok_at timestamptz,
+  primary key (country, adapter, chain_key, feeds)
+);
+
 do $$ declare t text; begin
-  foreach t in array array['mkt_chains','mkt_locations','mkt_companies','mkt_financials','mkt_prices','mkt_ratings','mkt_facts','mkt_dodo_monthly','mkt_candidates','mkt_runs'] loop
+  foreach t in array array['mkt_chains','mkt_locations','mkt_companies','mkt_financials','mkt_prices','mkt_ratings','mkt_facts','mkt_dodo_monthly','mkt_candidates','mkt_runs','mkt_sources'] loop
     execute format('alter table public.%I enable row level security', t);
     execute format('revoke all on public.%I from anon, authenticated', t);
   end loop;
@@ -1192,6 +1198,7 @@ Deno.serve(async (req) => {
 
 **Interfaces:**
 - Consumes: `IngestPayload` (Task 5).
+- Produces: конфиги стран `scripts/market/countries/{HR,RO,EE}.ts` (тип `CountryConfig = { country; currency; chains: Array<{ key; name; segment; bakery?; osmBrands: string[]; locator?: string }>; companies: Array<{ chain; name; regId }>; sources: Array<{ adapter: string; feeds: "locations"|"financials"|"dodo"|"prices"|"facts"; chain?: string; cadence: "weekly"|"monthly"|"yearly"; mode: "auto"|"manual"|"blocked"; reason?: string }> }`) — единственное место, где страна описана; адаптеры в `scripts/market/adapters/<id>.ts` по контракту `collect(cfg: CountryConfig, opts) → IngestPayload` (неудача = `{ failed }`, не исключение). `run.ts` перед сбором шлёт в ingest `{source:"config"}` с цепями, юрлицами и источниками → upsert `mkt_chains`, `mkt_companies`, `mkt_sources`; каждая успешная отправка ставит `mkt_sources.last_ok_at`. `brands.ts` не нужен — бренды OSM живут в конфиге.
 - Produces: `deno run -A scripts/market/run.ts --country HR,RO,EE --source dodo,osm,registry [--dry-run] [--since YYYY-MM-DD]` (`--since` — дозаливка истории заказов Dodo по дням, по умолчанию последние 8 дней) — в `--dry-run` печатает полезную нагрузку и ничего не шлёт. Env: `MARKET_INGEST_URL`, `MARKET_INGEST_TOKEN`.
 - Парсеры — чистые функции: `parseDodoUnits(json): DodoUnit[]`, `parseCountBySource(json): Record<string, number>`, `parseOverpass(json, brands): OsmPoint[]`, `parseEeElements(csvText, regIds): RegistryYear[]`, `parseRoBilant(csvText, cuis, rates): RegistryYear[]`.
 
@@ -1264,7 +1271,7 @@ export async function postIngest(payload: unknown) {
 }
 ```
 
-`brands.ts`: `export const BRANDS: Record<string, Record<string, string>> = { HR: { "McDonald's": "mcdonalds", KFC: "kfc", "Burger King": "burgerking", "Domino's": "dominos", "Pizza Hut": "pizzahut", Mlinar: "mlinar" }, RO: { … }, EE: { … } }` — ключи сетей RO/EE берутся из их снимков (Task 7), значения — ключи `mkt_chains`.
+Конфиг (бывший `brands.ts`): `export const BRANDS: Record<string, Record<string, string>> = { HR: { "McDonald's": "mcdonalds", KFC: "kfc", "Burger King": "burgerking", "Domino's": "dominos", "Pizza Hut": "pizzahut", Mlinar: "mlinar" }, RO: { … }, EE: { … } }` — ключи сетей RO/EE берутся из их снимков (Task 7), значения — ключи `mkt_chains`.
 
 `run.ts` — разбирает `--country/--source/--dry-run`, для каждой пары вызывает `collect`, печатает итог строкой `CC source → ok {stats}` / `→ FAILED <ошибка>`; **код выхода 1, если хоть один источник `failed`** (иначе упавший прогон в Actions зеленеет).
 
@@ -1310,7 +1317,7 @@ jobs:
 
 ---
 
-### Task 7: Первичные снимки Румынии и Эстонии (данные, не код)
+### Task 7: Конфиги RO/EE, локаторы локальных сетей, первичная заливка ручных источников
 
 **Files:**
 - Create (вне git): `~/Documents/workbench/private/market/RO.snapshot.json`, `EE.snapshot.json`
@@ -1320,12 +1327,12 @@ jobs:
 - Consumes: формат снимка (Task 1), отчёты исследования `RO.md`/`EE.md` (скопировать из scratchpad сессии в `~/Documents/workbench/private/market/research/`).
 - Produces: два снимка, проходящие `validateSnapshot`.
 
-Разовое исследование — как была собрана Хорватия. Отдельный агент на страну.
+Конфиг страны — код (в git, без реальных цифр); ручные данные — снимок вне git. Локаторы локальных сетей: по инструкции коллеги (`~/Documents/workbench/private/market/handoff/`) для HR и разведкой для RO/EE пишется адаптер `locator:<сеть>` там, где список точек открыт; иначе источник `manual` с причиной.
 
 - [ ] **Step 1:** для каждой страны собрать `chains` (Dodo, McDonald's, KFC, Burger King, Domino's, Pizza Hut, Subway и 3–6 крупнейших локальных: RO — Jerry's Pizza, Trenta, Spartan, Salad Box…; EE — Hesburger, Peetri Pizza, Kotipizza…), `locs` (официальные локаторы сетей, с `src` и `v`; Dodo — из publicapi), `fin.companies` (EE — коды из ariregister, RO — CUI; годы 2021–2025 из открытых выгрузок с `v:"official"`), `delivery.facts`, `prices.items` (сайты сетей; Wolt/Glovo — только просмотр, без автоматизации).
 - [ ] **Step 2:** `deno eval` с `validateSnapshot` по каждому файлу → `ok`. Сводка «сети/точки/юрлица» — в отчёт владельцу.
 - [ ] **Step 3:** импорт в локальную базу (как Task 3 Step 6), сухой прогон сборщиков с `--dry-run` по RO/EE: кандидатов OSM не больше разумного (сотни — значит в `brands.ts` перепутаны ключи).
-- [ ] **Step 4: commit** только `brands.ts` — `git commit -m "feat(market): OSM brand map for RO and EE"`.
+- [ ] **Step 4: commit** конфигов и адаптеров локаторов — `git commit -m "feat(market): RO and EE country configs and local locators"`.
 
 ---
 
