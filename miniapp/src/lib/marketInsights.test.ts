@@ -1,5 +1,5 @@
 import { assertEquals } from "jsr:@std/assert@1";
-import { cagr, chainCities, cityShare, datedShare, dodoYoY, dropDeadChains, events, factCards, formatClass, fullOperatingMonths, kpis, openingsByYear, periods, prettyFigures, trend, userNote } from "./marketInsights.ts";
+import { cagr, chainCities, editorialEvent, eventsByYear, growthSeries, marksPerYear, refEvent, timelineMarks, timeOf, cityShare, datedShare, dodoYoY, dropDeadChains, events, factCards, formatClass, fullOperatingMonths, kpis, periods, prettyFigures, trend, userNote } from "./marketInsights.ts";
 import type { MarketBundle, MarketChain, MarketFact, MarketLocation } from "../types.ts";
 
 const NOW = new Date("2026-10-02T12:00:00Z");
@@ -25,9 +25,9 @@ Deno.test("kpis: bakeries are set aside, closures and undated are counted, top r
     ],
     companies: [{ id: "c1", chain_key: "mcd", name: "GH", reg_id: null, owner: null, notes: null }, { id: "c2", chain_key: "kfc", name: "AR", reg_id: null, owner: null, notes: null }],
     financials: [
-      { company_id: "c1", year: 2025, revenue_eur: 262e6, net_profit_eur: null, employees: null, source: null, verification: "official", note: null },
-      { company_id: "c2", year: 2025, revenue_eur: 19e6, net_profit_eur: null, employees: null, source: null, verification: "official", note: null },
-      { company_id: "c2", year: 2024, revenue_eur: 999e6, net_profit_eur: null, employees: null, source: null, verification: "official", note: null },
+      { company_id: "c1", year: 2025, revenue_eur: 262e6, employees: null, source: null, verification: "official", note: null },
+      { company_id: "c2", year: 2025, revenue_eur: 19e6, employees: null, source: null, verification: "official", note: null },
+      { company_id: "c2", year: 2024, revenue_eur: 999e6, employees: null, source: null, verification: "official", note: null },
     ],
   });
   const k = kpis(b, NOW);
@@ -35,13 +35,6 @@ Deno.test("kpis: bakeries are set aside, closures and undated are counted, top r
   assertEquals([k.openings, k.closures, k.undated, k.from], [3, 1, 1, 2021]);
   assertEquals(k.newBrands.map((x) => [x.name, x.year, x.planned]), [["DODO", 2024, false], ["KFC", 2025, false], ["TACO", null, true]]);
   assertEquals(k.topRevenue, { name: "MCD", year: 2025, revenue: 262e6, units: 3, othersUnits: 2 });
-});
-
-Deno.test("openings by year count only dated non-bakery openings, per chain", () => {
-  const locs = [loc("a", "2025-01"), loc("a", "2025"), loc("b", "2025-06"), loc("a", null), loc("bk", "2025", "open", null), loc("b", "2026", "planned")];
-  const [y25, y26] = openingsByYear(locs, new Set(["bk"]), [2025, 2026]);
-  assertEquals([y25.total, [...y25.byChain]], [3, [["a", 2], ["b", 1]]]);
-  assertEquals(y26.total, 0);
 });
 
 Deno.test("trend: openings per year in each period, the unfinished period annualised", () => {
@@ -143,4 +136,34 @@ Deno.test("chain cities merge spellings with and without diacritics", () => {
 Deno.test("dated share counts operating non-bakery locations with a known opening year", () => {
   const locs = [loc("a", "2020"), loc("a", null), loc("a", null), loc("b", "2021"), loc("a", "2019", "closed", "2020")];
   assertEquals(datedShare(locs, new Set(["b"]), 2026), 33);
+});
+
+Deno.test("timeOf: year only is mid-year and not precise, month is the 15th, day is exact", () => {
+  assertEquals(timeOf("2023"), { t: new Date(2023, 6, 1).getTime(), precise: false });
+  assertEquals(timeOf("2023-04"), { t: new Date(2023, 3, 15).getTime(), precise: true });
+  assertEquals(timeOf("2023-04-02")?.t, new Date(2023, 3, 2).getTime());
+  assertEquals(timeOf(null), null);
+});
+
+Deno.test("timeline marks: openings, announcements and closures since the first year, bakeries left out", () => {
+  const locs = [loc("a", "2020-05"), loc("a", "2022"), loc("a", "2019", "closed", "2023-02"), loc("a", "2026-11", "planned"), loc("bk", "2024"), loc("a", "2024-01", "closed", null)];
+  const marks = timelineMarks(locs, new Set(["bk"]), 2021);
+  assertEquals(marks.map((m) => [m.loc.opened, m.kind, m.precise]), [["2022", "open", false], ["2019", "close", true], ["2024-01", "open", true], ["2026-11", "plan", true]]);
+  const [y22, y23, y24, y26] = marksPerYear(marks, [2022, 2023, 2024, 2026]);
+  assertEquals([y22.total, y23.total, y24.total, y26.total], [1, 0, 1, 0]);
+});
+
+Deno.test("events: computed kinds map onto the reference tags, year-only events close their year", () => {
+  assertEquals(refEvent({ date: "2022", year: 2022, kind: "close", chain: "a", text: "x" }).kind, "exit");
+  assertEquals(refEvent({ date: "2022", year: 2022, kind: "planned", chain: "a", text: "x" }).kind, "plan");
+  assertEquals(refEvent({ date: "2022", year: 2022, kind: "event", chain: null, text: "x" }).kind, null);
+  assertEquals(editorialEvent({ date: "2022", kind: "deal", chain: "", text: "x" }).chain, null);
+  const by = eventsByYear([{ date: "2022" }, { date: "2022-12-30" }, { date: "2021-03" }, { date: "2022-01" }]);
+  assertEquals(by, [["2021", [{ date: "2021-03" }]], ["2022", [{ date: "2022-01" }, { date: "2022-12-30" }, { date: "2022" }]]]);
+});
+
+Deno.test("growth series: the chain's own counter wins per year, other years come from the registry", () => {
+  const locs = [loc("a", "2019"), loc("a", "2022"), loc("a", null), loc("a", "2018", "closed", "2023"), loc("b", "2021")];
+  assertEquals(growthSeries(locs, "a", [2020, 2022, 2023], null, 2026), [3, 4, 3]);
+  assertEquals(growthSeries(locs, "a", [2020, 2022, 2023], { 2020: 11, 2023: 17 }, 2026), [11, 4, 17]);
 });

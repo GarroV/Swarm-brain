@@ -4,10 +4,12 @@ export type StatLoc = { chain: string; opened: string | null; status: string; cl
 
 const yearOf = (s: string | null): number | null => (s && /^\d{4}/.test(s) ? Number(s.slice(0, 4)) : null);
 
-/** Точек на конец года. Без даты открытия — считается открытой до начала графика;
- *  анонс не считается вовсе; закрытая без даты закрытия — закрыта в текущем году. */
+/** Точек на конец года, как aliveAt эталона. Без даты открытия — считается открытой до начала
+ *  графика; анонс не считается вовсе; закрытая без даты закрытия не считается ни в одном году —
+ *  кроме точки из API Dodo (source_kind dodo): про неё известно, что она работала, и в прошлых
+ *  годах она есть. */
 export function aliveAtYearEnd(
-  locs: Array<Omit<StatLoc, "chain">>,
+  locs: Array<Omit<StatLoc, "chain"> & { source_kind?: string }>,
   year: number,
   thisYear = new Date().getFullYear(),
 ): number {
@@ -16,9 +18,10 @@ export function aliveAtYearEnd(
     const o = yearOf(l.opened);
     if (o !== null && o > year) return false;
     if (l.status !== "closed") return true;
-    // Закрыта без даты (так отдаёт Dodo API): в прошлых годах была, сейчас её нет.
-    const c = yearOf(l.closed) ?? thisYear;
-    return c > year;
+    const c = yearOf(l.closed);
+    if (c !== null) return c > year;
+    // Закрыта без даты: так отдаёт API Dodo — в прошлых годах была, сейчас её нет.
+    return l.source_kind === "dodo" && thisYear > year;
   }).length;
 }
 

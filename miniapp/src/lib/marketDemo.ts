@@ -116,9 +116,11 @@ function locations(r: () => number): MarketLocation[] {
   return out;
 }
 
-function money(r: () => number): { companies: MarketCompany[]; financials: MarketFinancial[] } {
+// Демо-юрлица пишут в базу и прибыль (как реестры), но экран её не получает и не показывает.
+type DemoFinancial = MarketFinancial & { net_profit_eur: number | null };
+function money(r: () => number): { companies: MarketCompany[]; financials: DemoFinancial[] } {
   const companies: MarketCompany[] = [];
-  const financials: MarketFinancial[] = [];
+  const financials: DemoFinancial[] = [];
   CHAINS.forEach((ch, i) => {
     const id = `xd-co-${ch.key}`;
     companies.push({

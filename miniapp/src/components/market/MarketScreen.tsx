@@ -9,7 +9,6 @@ import { fetchMarket, fetchMarketCountries } from "@/lib/api";
 import { countryFlag, countryName } from "@/lib/countries";
 import { useDt, useRoyNav } from "@/components/roy/nav";
 import { ChainDynamics } from "./ChainDynamics";
-import { DodoSection } from "./DodoSection";
 import { Freshness } from "./Freshness";
 import { LocationRegistry } from "./LocationRegistry";
 import { MarketMap } from "./MarketMap";
@@ -20,7 +19,11 @@ import { MarketSummary } from "./MarketSummary";
 import { MoneySection } from "./MoneySection";
 import { DeliverySection } from "./DeliverySection";
 import { PizzaSection } from "./PizzaSection";
-import { Chip, Empty } from "./ui";
+import { Empty } from "./ui";
+import { MarketHeader } from "./MarketHeader";
+import { TipProvider } from "./ref";
+import { mktMono, mktSans } from "./fonts";
+import "./market.css";
 
 const LAST_KEY = "market_country";
 const DEMO_COUNTRY = "XD";
@@ -111,27 +114,33 @@ export function MarketScreen() {
   }
 
   return (
-    <div className="h-full overflow-y-auto">
-      <div className="mx-auto max-w-[1180px] space-y-4 px-4 py-4 lg:px-5">
-        <div className="flex flex-wrap items-center gap-1.5">
-          {(countries ?? []).map((c) => <Chip key={c} active={c === cc} onClick={() => pick(c)}>{label(c)}</Chip>)}
+    <div className={`mkt h-full overflow-y-auto ${mktSans.variable} ${mktMono.variable}`}>
+      <TipProvider>
+        <div className="mkt-wrap">
+          {(countries?.length ?? 0) > 1 && (
+            <div className="seg" role="group" aria-label={dt("Страна", "Country")} style={{ alignSelf: "flex-start" }}>
+              {(countries ?? []).map((c) => (
+                <button key={c} type="button" aria-pressed={c === cc} onClick={() => pick(c)}>{label(c)}</button>
+              ))}
+            </div>
+          )}
+          {!bundle ? <Empty text={dt("Загружаю…", "Loading…")} /> : (
+            <>
+              <MarketHeader bundle={bundle} />
+              <MarketSummary bundle={bundle} />
+              <MarketMap bundle={bundle} />
+              <ChainTimeline bundle={bundle} />
+              <MarketTrend bundle={bundle} />
+              <ChainDynamics bundle={bundle} />
+              <PizzaSection bundle={bundle} />
+              <DeliverySection bundle={bundle} />
+              <MoneySection bundle={bundle} />
+              <LocationRegistry bundle={bundle} />
+              <Freshness bundle={bundle} isAdmin={!!me?.is_admin} onChanged={refresh} />
+            </>
+          )}
         </div>
-        {!bundle ? <Empty text={dt("Загружаю…", "Loading…")} /> : (
-          <>
-            <MarketSummary bundle={bundle} />
-            <MarketMap bundle={bundle} />
-            <ChainTimeline bundle={bundle} />
-            <MarketTrend bundle={bundle} />
-            <ChainDynamics bundle={bundle} />
-            <PizzaSection bundle={bundle} />
-            <DodoSection bundle={bundle} />
-            <DeliverySection bundle={bundle} />
-            <MoneySection bundle={bundle} />
-            <LocationRegistry bundle={bundle} />
-            <Freshness bundle={bundle} isAdmin={!!me?.is_admin} onChanged={refresh} />
-          </>
-        )}
-      </div>
+      </TipProvider>
     </div>
   );
 }

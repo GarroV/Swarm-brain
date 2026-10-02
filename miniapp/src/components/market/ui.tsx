@@ -31,21 +31,17 @@ export function daysAgo(dt: Dt, iso: string | null): string {
 export function SourceCaption({ bundle, feeds }: { bundle: MarketBundle; feeds: MarketSource["feeds"] | Array<MarketSource["feeds"]> }) {
   const dt = useDt();
   const want = Array.isArray(feeds) ? feeds : [feeds];
-  // Один и тот же источник (ручная заливка) кормит несколько тем — в подписи он один раз.
-  const own = bundle.sources.filter((s, i, all) => want.includes(s.feeds) && all.findIndex((o) => want.includes(o.feeds) && o.adapter === s.adapter && o.chain_key === s.chain_key) === i);
-  if (!own.length) return null;
+  const own = bundle.sources.filter((s) => want.includes(s.feeds));
+  // Один и тот же источник кормит несколько тем (ручная заливка, API Dodo) — в подписи он один раз.
+  const parts = [...new Set(own.map((s) =>
+    adapterName(dt, s.adapter) +
+    (s.mode === "blocked" || (s.mode === "manual" && s.reason) ? ` (${s.reason ?? dt("закрыт", "unavailable")})` : ` — ${daysAgo(dt, s.last_ok_at)}`)
+  ))];
+  if (!parts.length) return null;
   return (
-    <p className="mt-3 text-ink-mute" style={{ fontSize: 12 }}>
+    <p className="small">
       {dt("Источник: ", "Source: ")}
-      {own.map((s, i) => (
-        <span key={`${s.adapter}:${s.chain_key}`}>
-          {i > 0 && " · "}
-          {adapterName(dt, s.adapter)}
-          {s.mode === "blocked" || (s.mode === "manual" && s.reason)
-            ? ` (${s.reason ?? dt("закрыт", "unavailable")})`
-            : ` — ${daysAgo(dt, s.last_ok_at)}`}
-        </span>
-      ))}
+      {parts.join(" · ")}
     </p>
   );
 }
@@ -106,28 +102,6 @@ export const sourceLabel = (s: string | null): string | null => {
     return null;
   }
 };
-
-/** Карточка цифры факта — одна на «Рынок доставки» и «Выручки операторов». */
-export function FactTile({ card }: { card: { head: string; more: string | null; text: string; date: string | null; source: string | null } }) {
-  const url = firstUrl(card.source);
-  const label = sourceLabel(card.source);
-  return (
-    <div className="rounded-xl border border-line bg-surface p-3.5">
-      <div className="font-semibold text-ink" style={{ fontSize: 16, lineHeight: 1.25 }}>{card.head}</div>
-      {card.more && <div className="mt-0.5 text-ink-soft" style={{ fontSize: 12 }}>{card.more}</div>}
-      <div className="mt-1.5 line-clamp-3 text-ink-soft" style={{ fontSize: 12.5, lineHeight: 1.45 }} title={card.text}>{card.text}</div>
-      <div className="mt-1.5 text-ink-mute" style={{ fontSize: 11.5 }}>
-        {card.date && <span style={mono}>{card.date}</span>}
-        {label && (
-          <>
-            {card.date && " · "}
-            {url ? <a href={url} target="_blank" rel="noopener noreferrer" className="text-accent-ink underline">{label}</a> : label}
-          </>
-        )}
-      </div>
-    </div>
-  );
-}
 
 /** Таблица шире экрана: прокрутка по горизонтали с тенью у края, пока справа есть что
  *  смотреть, — иначе на телефоне обрезанная колонка выглядит как вся таблица. */

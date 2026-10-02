@@ -1,52 +1,50 @@
 "use client";
-// Карта точек страны по образцу хорватского референса (решение владельца 02.10.2026,
-// docs/decisions/2026-10-02-market-follow-reference-visual.md): хитмап по умолчанию, точки
-// и оба слоя; зум и сдвиг; пресеты «Вся страна» и крупные города; год с проигрыванием;
-// фильтры года открытия, сетей, пекарен и анонсов; справа — число точек и топ городов.
+// Блок «Карта — Где стоят рестораны» эталона (#map-sec, решение владельца 02.10.2026,
+// docs/decisions/2026-10-02-market-follow-reference-visual.md): хитмап по умолчанию, точки и оба
+// слоя; зум и сдвиг; пресеты кадра (ручная часть, без неё — крупнейшие города); состояние сети
+// на конец года с проигрыванием; фильтры года открытия, сетей, пекарен и анонсов; справа —
+// число точек и топ городов.
 import { useEffect, useMemo, useState } from "react";
 import type { MarketBundle } from "@/types";
-import { chainColors, topCities, visibleLocations } from "@/lib/marketMap";
+import { chainCounts, fitBox, makeVb, PRE, pickOpenYear, topCities, type ViewBox, visibleLocations } from "@/lib/marketMap";
 import { project } from "@/lib/marketView";
 import { useDt } from "@/components/roy/nav";
-import { clampVb, type MapMode, MapView } from "./MapView";
+import { type MapMode, MapView } from "./MapView";
 import { useShape } from "./MapBase";
 import { MapSidebar } from "./MapSidebar";
-import type { ViewBox } from "./heat";
-import { Chip, Empty, Section, SourceCaption } from "./ui";
+import { RefSection, useChainColor, useChainOrder, useEditorial } from "./ref";
+import { Empty, SourceCaption } from "./ui";
 
 const PLAY_MS = 900;
-const OPEN_YEARS = 5; // фильтр «Год открытия»: последние пять лет поштучно, раньше — одной корзиной
+const PLAY_FROM = 2020; // проигрывание и ползунок — с 2020, как в эталоне
+const OPEN_FIRST = 2021; // фильтр «Год открытия»: поштучно с 2021, раньше и без даты — одной корзиной
 const PRESET_CITIES = 4;
-const PRESET_SPAN = 0.25; // ширина кадра города — четверть страны
+const PRESET_SPAN = 0.25; // без ручной части: кадр города — четверть страны
+const CITY_LIMIT = 10;
 
 export function MarketMap({ bundle }: { bundle: MarketBundle }) {
   const dt = useDt();
+  const ed = useEditorial(bundle);
+  const col = useChainColor(bundle);
+  const order = useChainOrder(bundle);
   const thisYear = new Date().getFullYear();
-  const openFirst = thisYear - OPEN_YEARS;
   const { shape, failed: shapeFailed } = useShape(bundle.country);
   const [mode, setMode] = useState<MapMode>("heat");
   const [year, setYear] = useState(thisYear);
   const [playing, setPlaying] = useState(false);
   const [openYears, setOpenYears] = useState<Set<string> | null>(null);
-  const [hidden, setHidden] = useState<Set<string>>(new Set());
+  // Включённые сети; пока не трогали (или сменилась страна) — все, кроме пекарен.
+  const [onState, setOnState] = useState<{ country: string; on: Set<string> } | null>(null);
   const [bakeries, setBakeries] = useState(false);
   const [planned, setPlanned] = useState(true);
   const [vb, setVb] = useState<ViewBox>({ x: 0, y: 0, w: 1, h: 1 });
-  const [preset, setPreset] = useState<string | null>(null);
 
   // Новая подложка — вид на всю страну.
   useEffect(() => {
-    if (!shape) return;
-    setVb({ x: 0, y: 0, w: shape.W, h: shape.H });
-    setPreset(null);
+    if (shape) setVb({ x: 0, y: 0, w: shape.W, h: shape.H });
   }, [shape]);
 
-  const firstYear = useMemo(() => {
-    const ys = bundle.locations.map((l) => Number(l.opened?.slice(0, 4))).filter((y) => y > 1990);
-    return ys.length ? Math.max(Math.min(...ys), thisYear - 25) : thisYear - 5;
-  }, [bundle.locations, thisYear]);
-
-  // Проигрывание: шаг в год, с конца — с начала; на текущем годе останавливается.
+  // Проигрывание: с PLAY_FROM шаг в год; после текущего года останавливается.
   useEffect(() => {
     if (!playing) return;
     const id = setTimeout(() => {
@@ -56,96 +54,90 @@ export function MarketMap({ bundle }: { bundle: MarketBundle }) {
     return () => clearTimeout(id);
   }, [playing, year, thisYear]);
   const togglePlay = () => {
-    if (!playing && year >= thisYear) setYear(firstYear);
+    if (!playing) setYear(PLAY_FROM);
     setPlaying(!playing);
   };
 
   const bakery = useMemo(() => new Set(bundle.chains.filter((c) => c.is_bakery).map((c) => c.key)), [bundle.chains]);
-  const colors = useMemo(() => chainColors(bundle.chains, bundle.locations), [bundle.chains, bundle.locations]);
-  const chainName = useMemo(() => new Map(bundle.chains.map((c) => [c.key, c.name])), [bundle.chains]);
-  const visible = useMemo(
-    () => visibleLocations(bundle.locations, bakery, { year, thisYear, hidden, bakeries, planned, openYears, firstYear: openFirst }),
-    [bundle.locations, bakery, year, thisYear, hidden, bakeries, planned, openYears, openFirst],
+  const on = useMemo(
+    () => (onState?.country === bundle.country ? onState.on : new Set(bundle.chains.filter((c) => !c.is_bakery).map((c) => c.key))),
+    [onState, bundle.country, bundle.chains],
   );
-  // Счётчики сетей — без учёта выключенных сетей, иначе выключенная показывала бы ноль.
-  const counts = useMemo(() => {
-    const all = visibleLocations(bundle.locations, bakery, { year, thisYear, hidden: new Set(), bakeries: true, planned, openYears, firstYear: openFirst });
-    const c = new Map<string, number>();
-    for (const l of all) c.set(l.chain_key, (c.get(l.chain_key) ?? 0) + 1);
-    return c;
-  }, [bundle.locations, bakery, year, thisYear, planned, openYears, openFirst]);
-  const chains = useMemo(() => [...bundle.chains].sort((a, b) => (counts.get(b.key) ?? 0) - (counts.get(a.key) ?? 0)), [bundle.chains, counts]);
+  const setOn = (s: Set<string>) => setOnState({ country: bundle.country, on: s });
+  const chainName = useMemo(() => new Map(bundle.chains.map((c) => [c.key, c.name])), [bundle.chains]);
+  const slot = useMemo(() => new Map(bundle.chains.map((c) => [c.key, c.slot || 99])), [bundle.chains]);
+  const buckets = useMemo(() => [PRE, ...Array.from({ length: Math.max(0, thisYear - OPEN_FIRST + 1) }, (_, i) => String(OPEN_FIRST + i))], [thisYear]);
+  const visible = useMemo(() => {
+    const hidden = new Set(bundle.chains.filter((c) => !on.has(c.key)).map((c) => c.key));
+    return visibleLocations(bundle.locations, bakery, { year, thisYear, hidden, bakeries, planned, openYears, firstYear: OPEN_FIRST });
+  }, [bundle.locations, bundle.chains, bakery, on, year, thisYear, bakeries, planned, openYears]);
+  const counts = useMemo(() => chainCounts(bundle.locations), [bundle.locations]);
 
-  // Пресеты: крупнейшие города по числу точек, центр кадра — средняя их точек.
+  // Пресеты: ручная часть (box = [lng0, lat0, lng1, lat1], вписать как fitBox эталона), без неё —
+  // крупнейшие города по числу точек, центр кадра — средняя их точек.
   const presets = useMemo(() => {
     if (!shape) return [];
+    if (ed.mapPresets.length) {
+      return ed.mapPresets.map(({ name, box: [lng0, lat0, lng1, lat1] }) => {
+        const a = project(shape.proj, lat0, lng0), c = project(shape.proj, lat1, lng1);
+        return { name, vb: fitBox(a[0], a[1], c[0], c[1], shape.W, shape.H) };
+      });
+    }
     return topCities(bundle.locations.filter((l) => l.status !== "closed"), PRESET_CITIES).map(({ city }) => {
       const ps = bundle.locations.filter((l) => l.city === city).map((l) => project(shape.proj, l.lat, l.lng));
       const cx = ps.reduce((s, p) => s + p[0], 0) / ps.length, cy = ps.reduce((s, p) => s + p[1], 0) / ps.length;
       const w = shape.W * PRESET_SPAN, h = (w * shape.H) / shape.W;
-      return { city, vb: clampVb({ x: cx - w / 2, y: cy - h / 2, w, h }, shape) };
+      return { name: city, vb: makeVb(cx - w / 2, cy - h / 2, w, shape.W, shape.H) };
     });
-  }, [shape, bundle.locations]);
+  }, [shape, ed.mapPresets, bundle.locations]);
+
+  const lede = ed.texts.map ?? dt(
+    "Хитмап показывает плотность точек; переключитесь на «Точки», чтобы увидеть каждую. Фильтр «Год открытия» оставляет точки, открытые в выбранные годы; ползунок показывает, какой была сеть на конец года. Колесо или кнопки +/− для зума, перетаскивание для сдвига.",
+    "The heatmap shows location density; switch to “Dots” to see each one. The “Opening year” filter keeps locations opened in the selected years; the slider shows the network as it stood at year end. Wheel or +/− to zoom, drag to pan.",
+  );
+  const feeds = ed.mapPresets.length || ed.texts.map ? ["locations" as const, "editorial" as const] : "locations" as const;
+  const head = { id: "map-sec", eyebrow: dt("Карта", "Map"), title: dt("Где стоят рестораны", "Where the restaurants are"), lede };
 
   if (!bundle.locations.length) {
     return (
-      <Section title={dt("Карта точек", "Locations map")}>
+      <RefSection {...head}>
         <Empty text={dt("Точек пока нет: сборщик ещё не запускался.", "No locations yet: the collector has not run.")} />
         <SourceCaption bundle={bundle} feeds="locations" />
-      </Section>
+      </RefSection>
     );
   }
 
-  const go = (name: string | null, v: ViewBox) => {
-    setPreset(name);
-    setVb(v);
+  const toggleChain = (k: string) => {
+    const n = new Set(on);
+    if (n.has(k)) n.delete(k);
+    else n.add(k);
+    setOn(n);
   };
-  const userVb = (f: (v: ViewBox) => ViewBox) => {
-    setPreset(null);
-    setVb(f);
+  const setBakeriesOn = (v: boolean) => {
+    setBakeries(v);
+    const n = new Set(on);
+    for (const k of bakery) {
+      if (v) n.add(k);
+      else n.delete(k);
+    }
+    setOn(n);
   };
 
   return (
-    <Section title={dt("Карта точек", "Locations map")}>
-      {shape && (
-        <div className="mb-3 flex flex-wrap gap-1.5">
-          <Chip active={preset === null && vb.w >= shape.W} onClick={() => go(null, { x: 0, y: 0, w: shape.W, h: shape.H })}>
-            {dt("Вся страна", "Whole country")}
-          </Chip>
-          {presets.map((p) => (
-            <Chip key={p.city} active={preset === p.city} onClick={() => go(p.city, p.vb)}>{p.city}</Chip>
-          ))}
-        </div>
-      )}
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_300px]">
-        <div className="min-w-0">
-          {shapeFailed && <Empty text={dt("Контур страны не загрузился.", "Country outline failed to load.")} />}
+    <RefSection {...head}>
+      <div className="mapgrid">
+        <div className="mapcol">
           {shape && (
-            <MapView
-              shape={shape}
-              locs={visible}
-              colors={colors}
-              chainName={chainName}
-              bakery={bakery}
-              mode={mode}
-              vb={vb}
-              setVb={userVb}
-              country={bundle.country}
-            />
+            <div className="maptools">
+              <button type="button" onClick={() => setVb({ x: 0, y: 0, w: shape.W, h: shape.H })}>{dt("Вся страна", "Whole country")}</button>
+              {presets.map((p) => <button key={p.name} type="button" onClick={() => setVb(p.vb)}>{p.name}</button>)}
+            </div>
           )}
-          <p className="mt-2 text-ink-mute" style={{ fontSize: 12 }}>
-            {mode === "dots"
-              ? dt(
-                "Цвет — сеть. Полый кружок — дата открытия оценена, пунктир — анонс, бледная — на паузе.",
-                "Colour is the chain. Hollow dot — opening date estimated, dashed — announced, faded — paused.",
-              )
-              : dt(
-                "Чем темнее, тем больше точек рядом. Колесо или +/− — масштаб, перетаскивание — сдвиг.",
-                "Darker means more locations nearby. Wheel or +/− to zoom, drag to pan.",
-              )}
-          </p>
+          {shapeFailed && <Empty text={dt("Контур страны не загрузился.", "Country outline failed to load.")} />}
+          {shape && <MapView shape={shape} locs={visible} col={col} chainName={chainName} bakery={bakery} mode={mode} vb={vb} setVb={setVb} />}
         </div>
         <MapSidebar
+          bakeryLabel={ed.texts.bakery_names ?? null}
           mode={mode}
           setMode={setMode}
           year={year}
@@ -153,29 +145,33 @@ export function MarketMap({ bundle }: { bundle: MarketBundle }) {
             setPlaying(false);
             setYear(y);
           }}
-          firstYear={firstYear}
+          playFrom={PLAY_FROM}
           thisYear={thisYear}
           playing={playing}
           togglePlay={togglePlay}
-          openFirst={openFirst}
+          openFirst={OPEN_FIRST}
+          buckets={buckets}
           openYears={openYears}
-          setOpenYears={setOpenYears}
-          chains={chains}
+          pickOpenYear={(b) => setOpenYears(pickOpenYear(openYears, b, buckets))}
+          allOpenYears={() => setOpenYears(null)}
+          chains={order}
           counts={counts}
-          colors={colors}
-          hidden={hidden}
-          setHidden={setHidden}
+          col={col}
+          on={on}
+          toggleChain={toggleChain}
+          allOn={() => setOn(new Set([...on, ...bundle.chains.filter((c) => !c.is_bakery || bakeries).map((c) => c.key)]))}
+          allOff={() => setOn(new Set())}
           bakeries={bakeries}
-          setBakeries={setBakeries}
-          hasBakeries={bakery.size > 0}
+          setBakeries={setBakeriesOn}
           planned={planned}
           setPlanned={setPlanned}
           hasPlanned={bundle.locations.some((l) => l.status === "planned")}
           total={visible.length}
-          cities={topCities(visible)}
+          cities={topCities(visible, CITY_LIMIT, (k) => slot.get(k) ?? 99)}
+          chainName={chainName}
         />
       </div>
-      <SourceCaption bundle={bundle} feeds="locations" />
-    </Section>
+      <SourceCaption bundle={bundle} feeds={feeds} />
+    </RefSection>
   );
 }

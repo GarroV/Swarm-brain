@@ -8,7 +8,7 @@ import { aliveAtYearEnd } from "./marketStats";
  *  держат свой цвет во всех странах (McDonald's всегда синий, Dodo — оранжевый), остальным
  *  свободные слоты раздаются по числу точек — сперва обычным сетям, потом пекарням: пекарни по
  *  умолчанию скрыты и не должны отнимать цвет у видимых сетей. */
-const KNOWN_SLOT: Record<string, number> = { mcdonalds: 1, dodo: 2, kfc: 3, burgerking: 4, dominos: 5, pizzahut: 6 };
+export const KNOWN_SLOT: Record<string, number> = { mcdonalds: 1, dodo: 2, kfc: 3, burgerking: 4, dominos: 5, pizzahut: 6 };
 const SLOTS = 8;
 
 export function chainSlots(chains: Pick<MarketChain, "key" | "is_bakery">[], counts: Map<string, number>): Map<string, number> {
@@ -27,7 +27,6 @@ export function chainSlots(chains: Pick<MarketChain, "key" | "is_bakery">[], cou
   return out;
 }
 
-export const slotColor = (slot: number) => `var(--mkt-s${slot})`;
 
 /** Корзина года открытия: «до первого года / без даты» или сам год. */
 export const PRE = "pre";
@@ -61,8 +60,9 @@ export function visibleLocations(locs: MarketLocation[], bakery: ReadonlySet<str
 
 export type CityRow = { city: string; total: number; byChain: Array<[string, number]> };
 
-/** Топ городов по видимым точкам; внутри строки — сети по убыванию (полоска из отрезков). */
-export function topCities(locs: Pick<MarketLocation, "city" | "chain_key">[], limit = 10): CityRow[] {
+/** Топ городов по видимым точкам; внутри строки — сети по `rank` (слот, как в эталоне), без
+ *  него — по убыванию числа точек. */
+export function topCities(locs: Pick<MarketLocation, "city" | "chain_key">[], limit = 10, rank?: (key: string) => number): CityRow[] {
   const by = new Map<string, Map<string, number>>();
   for (const l of locs) {
     if (!l.city) continue;
@@ -74,15 +74,57 @@ export function topCities(locs: Pick<MarketLocation, "city" | "chain_key">[], li
     .map(([city, m]) => ({
       city,
       total: [...m.values()].reduce((a, b) => a + b, 0),
-      byChain: [...m.entries()].sort((a, b) => b[1] - a[1]),
+      byChain: [...m.entries()].sort((a, b) => (rank ? rank(a[0]) - rank(b[0]) : 0) || b[1] - a[1]),
     }))
     .sort((a, b) => b.total - a.total || a.city.localeCompare(b.city))
     .slice(0, limit);
 }
 
-/** Цвет каждой сети страны (css-значение): слоты считаются от числа точек в стране. */
-export function chainColors(chains: Pick<MarketChain, "key" | "is_bakery">[], locs: Pick<MarketLocation, "chain_key">[]): Map<string, string> {
-  const counts = new Map<string, number>();
-  for (const l of locs) counts.set(l.chain_key, (counts.get(l.chain_key) ?? 0) + 1);
-  return new Map([...chainSlots(chains, counts)].map(([k, s]) => [k, slotColor(s)]));
+/** Выбор в фильтре «Год открытия» как в эталоне; null — «все годы». При всех годах клик
+ *  оставляет только нажатый, дальше — переключение; пусто или все — снова null. */
+export function pickOpenYear(cur: ReadonlySet<string> | null, k: string, all: readonly string[]): Set<string> | null {
+  if (!cur) return new Set([k]);
+  const next = new Set(cur);
+  if (next.has(k)) next.delete(k);
+  else next.add(k);
+  return next.size && all.some((b) => !next.has(b)) ? next : null;
 }
+
+/** Число на чипе сети — работающие и на паузе, без фильтров (как в эталоне). */
+export function chainCounts(locs: Pick<MarketLocation, "chain_key" | "status">[]): Map<string, number> {
+  const out = new Map<string, number>();
+  for (const l of locs) if (l.status === "open" || l.status === "paused") out.set(l.chain_key, (out.get(l.chain_key) ?? 0) + 1);
+  return out;
+}
+
+export type ViewBox = { x: number; y: number; w: number; h: number };
+export const MIN_VB_W = 20;
+
+/** Новый кадр как setVB эталона: ширина в пределах [20; 1,2 страны], высота — по пропорции. */
+export function makeVb(x: number, y: number, w: number, W: number, H: number): ViewBox {
+  const ww = Math.min(Math.max(w, MIN_VB_W), W * 1.2);
+  return { x, y, w: ww, h: (ww * H) / W };
+}
+
+/** Кадр, вписывающий прямоугольник (fitBox эталона): добирается до пропорций карты по
+ *  меньшей стороне и центрируется. Углы — в любом порядке. */
+export function fitBox(x0: number, y0: number, x1: number, y1: number, W: number, H: number): ViewBox {
+  const ar = W / H;
+  let w = Math.abs(x1 - x0), h = Math.abs(y1 - y0);
+  if (w / h > ar) h = w / ar;
+  else w = h * ar;
+  return makeVb((x0 + x1) / 2 - w / 2, (y0 + y1) / 2 - h / 2, w, W, H);
+}
+
+/** Точки в радиусе курсора (подсказка хитмапа): сколько и каких сетей, крупные первыми. */
+export function nearByChain(pts: Array<{ x: number; y: number; chain: string }>, mx: number, my: number, radius: number): { n: number; byChain: Array<[string, number]> } {
+  const by = new Map<string, number>();
+  let n = 0;
+  for (const p of pts) {
+    if (Math.hypot(p.x - mx, p.y - my) >= radius) continue;
+    n++;
+    by.set(p.chain, (by.get(p.chain) ?? 0) + 1);
+  }
+  return { n, byChain: [...by].sort((a, b) => b[1] - a[1]) };
+}
+

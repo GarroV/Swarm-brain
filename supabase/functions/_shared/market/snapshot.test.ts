@@ -212,3 +212,23 @@ Deno.test("company chain names with notes in brackets still match; empty compani
     "dominos",
   ]]);
 });
+
+Deno.test("keeps every note of a financial year, so the screen can mark derived values", () => {
+  const year = (y: Record<string, unknown>) => ({ year: 2024, revenue_eur: 1000, ...y });
+  const s = ok(validateSnapshot({
+    ...base,
+    fin: {
+      companies: [{
+        chain: "Domino's",
+        company: "X d.o.o.",
+        oib: "123",
+        years: [
+          year({ note: "DERIVED from growth", revenue_note: "rounded", v_note: "checked" }),
+          { ...year({ revenue_note: "~4.1M" }), year: 2023 },
+          { ...year({}), year: 2022 },
+        ],
+      }],
+    },
+  }));
+  assertEquals(s.companies[0].years.map((y) => y.note), ["DERIVED from growth · rounded · checked", "~4.1M", null]);
+});

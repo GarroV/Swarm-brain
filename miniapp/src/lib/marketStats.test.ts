@@ -15,11 +15,14 @@ Deno.test("aliveAtYearEnd handles partial dates, closures and announcements", ()
   assertEquals(aliveAtYearEnd(locs, 2024), 2);
 });
 
-Deno.test("a closure without a date is gone now but still counted in past years", () => {
-  // Dodo API отдаёт закрытую пиццерию без даты закрытия: она есть в прошлом, но не сейчас.
+Deno.test("a closure without a date: never counted, except a Dodo API point that is gone only now", () => {
+  // Правило эталона: закрытую без даты точку реестра не считаем ни в одном году.
   const shut = [{ chain: "a", opened: "2019", status: "closed", closed: null }];
-  assertEquals(aliveAtYearEnd(shut, 2026, 2026), 0);
-  assertEquals(aliveAtYearEnd(shut, 2025, 2026), 1);
+  assertEquals(aliveAtYearEnd(shut, 2025, 2026), 0);
+  // API Dodo отдаёт закрытую пиццерию без даты закрытия: она есть в прошлом, но не сейчас.
+  const api = [{ ...shut[0], source_kind: "dodo" }];
+  assertEquals(aliveAtYearEnd(api, 2026, 2026), 0);
+  assertEquals(aliveAtYearEnd(api, 2025, 2026), 1);
 });
 
 Deno.test("unitsByYear groups per chain", () => {

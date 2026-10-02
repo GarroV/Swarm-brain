@@ -1,8 +1,8 @@
 "use client";
-// Первые блоки страны по образцу референса: полоса из четырёх ключевых цифр и карточки
-// «Рынок в цифрах». Цифры считаются из реестра точек, юрлиц и продаж Dodo
-// (lib/marketInsights.ts) и пересчитываются после каждого сбора; карточка без данных
-// не показывается, а не рисует ноль.
+// «Рынок в цифрах» эталона (#summary): карточки .panel.cc. Есть ручная часть страны
+// (editorial.summary) — карточки из неё, как в эталоне. Нет — цифры считаются из реестра
+// точек, юрлиц и продаж Dodo (lib/marketInsights.ts) и пересчитываются после каждого сбора;
+// карточка без данных не показывается, а не рисует ноль.
 import { useMemo } from "react";
 import type { MarketBundle } from "@/types";
 import {
@@ -11,7 +11,6 @@ import {
   cityShare,
   datedOpenings,
   dodoYoY,
-  kpis,
   datedShare,
   openingsByChain,
   periods,
@@ -20,34 +19,24 @@ import {
 import { aliveAtYearEnd } from "@/lib/marketStats";
 import { fmtMoney, revenuePerUnit } from "@/lib/marketView";
 import { useDt, useLang } from "@/components/roy/nav";
+import { monthShort, RefSection, useEditorial } from "./ref";
+import { SourceCaption } from "./ui";
 
 type Dt = (ru: string, en: string) => string;
 
 // Ниже этой доли точек с датой открытия выводы о темпе не показываем.
 const MIN_DATED_SHARE = 20;
-const MONTHS_RU = ["янв", "фев", "мар", "апр", "май", "июн", "июл", "авг", "сен", "окт", "ноя", "дек"];
-const MONTHS_EN = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 const money = (v: number, ru: boolean) => fmtMoney(v, ru);
 const num = (v: number, ru: boolean) => (ru ? String(v).replace(".", ",") : String(v));
 const list = (xs: string[], dt: Dt) => (xs.length < 2 ? xs.join("") : `${xs.slice(0, -1).join(", ")} ${dt("и", "and")} ${xs.at(-1)}`);
 
-function Kpi({ value, label, hint }: { value: string; label: string; hint?: string }) {
-  return (
-    <div className="rounded-xl border border-line bg-surface p-3.5" style={{ borderTop: "3px solid var(--accent-ink)" }}>
-      <div className="font-bold text-accent-ink" style={{ fontSize: 26, letterSpacing: "-0.02em", lineHeight: 1.15 }}>{value}</div>
-      <div className="mt-1 text-ink" style={{ fontSize: 13 }}>{label}</div>
-      {hint && <div className="mt-1 text-ink-soft" style={{ fontSize: 12 }}>{hint}</div>}
-    </div>
-  );
-}
-
 function Card({ title, value, body }: { title: string; value: string; body: string }) {
   return (
-    <div className="rounded-xl border border-line bg-surface p-4">
-      <div className="font-semibold text-accent-ink" style={{ fontSize: 13 }}>{title}</div>
-      <div className="mt-1.5 font-bold text-ink" style={{ fontSize: 17, letterSpacing: "-0.01em", lineHeight: 1.3 }}>{value}</div>
-      <p className="mt-1.5 text-ink-soft" style={{ fontSize: 12.5, lineHeight: 1.5 }}>{body}</p>
+    <div className="panel cc">
+      <h3>{title}</h3>
+      <div className="big">{value}</div>
+      {body && <p>{body}</p>}
     </div>
   );
 }
@@ -166,8 +155,7 @@ function useCards(bundle: MarketBundle, now: Date, dt: Dt, ru: boolean): CardDat
 
     const yoy = dodoYoY(bundle.dodo);
     if (yoy) {
-      const M = ru ? MONTHS_RU : MONTHS_EN;
-      const mon = (m: string) => M[Number(m.slice(5, 7)) - 1];
+      const mon = (m: string) => monthShort(Number(m.slice(5, 7)), ru);
       const range = `${mon(yoy.months[0])}${yoy.months.length > 1 ? `–${mon(yoy.months.at(-1)!)}` : ""} ${yoy.months.at(-1)!.slice(0, 4)}`;
       const sign = yoy.change > 0 ? "+" : yoy.change < 0 ? "−" : "";
       const [u0, u1] = yoy.units;
@@ -187,59 +175,26 @@ export function MarketSummary({ bundle }: { bundle: MarketBundle }) {
   const dt = useDt();
   const ru = useLang() === "ru";
   const now = useMemo(() => new Date(), []);
-  const k = useMemo(() => kpis(bundle, now), [bundle, now]);
-  const cards = useCards(bundle, now, dt, ru);
-  const y = now.getFullYear();
-  const brands = k.newBrands.map((b) => (b.planned ? dt(`${b.name} — анонс`, `${b.name} — announced`) : `${b.name} ${b.year}`));
+  const ed = useEditorial(bundle);
+  const computed = useCards(bundle, now, dt, ru);
+  const curated = ed.summary.length > 0;
+  const cards: CardData[] = curated ? ed.summary.map((c) => ({ title: c.title, value: c.big, body: c.text })) : computed;
+  if (!cards.length) return null;
 
   return (
-    <div className="space-y-4">
-      <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-4">
-        <Kpi
-          value={String(k.restaurants)}
-          label={dt("ресторанов сетей работает", "chain restaurants operating")}
-          hint={k.bakeries ? dt(`без учёта ${k.bakeries} пекарен и кафе (${k.bakeryNames.join(", ")})`, `excluding ${k.bakeries} bakeries and cafés (${k.bakeryNames.join(", ")})`) : undefined}
-        />
-        <Kpi
-          value={String(k.openings)}
-          label={dt(`открытий с датой ${k.from}–${y}`, `dated openings ${k.from}–${y}`)}
-          hint={dt(
-            `${k.closures} закрытий за тот же период; у ${k.undated} работающих точек дата неизвестна`,
-            `${k.closures} closures in the same period; ${k.undated} operating locations have no date`,
-          )}
-        />
-        <Kpi
-          value={String(k.newBrands.length)}
-          label={dt(`новых брендов с ${k.from - 1}`, `new brands since ${k.from - 1}`)}
-          hint={brands.length ? brands.join(", ") : dt("по году входа сетей и датам первых точек", "by chain entry year and first-location dates")}
-        />
-        {k.topRevenue
-          ? (
-            <Kpi
-              value={money(k.topRevenue.revenue, ru)}
-              label={dt(`выручка ${k.topRevenue.name} ${k.topRevenue.year}`, `${k.topRevenue.name} revenue ${k.topRevenue.year}`)}
-              hint={k.topRevenue.units > k.topRevenue.othersUnits
-                ? dt(`${k.topRevenue.units} ресторанов, больше всех остальных сетей вместе`, `${k.topRevenue.units} restaurants, more than all other chains combined`)
-                : dt(`${k.topRevenue.units} ресторанов`, `${k.topRevenue.units} restaurants`)}
-            />
-          )
-          : <Kpi value="—" label={dt("выручка сетей", "chain revenue")} hint={dt("отчётов юрлиц пока нет", "no company filings yet")} />}
-      </div>
-      {cards.length > 0 && (
-        <section className="pt-3">
-          <div className="mb-0.5 font-semibold uppercase tracking-wider text-accent-ink" style={{ fontSize: 11 }}>{dt("Ключевые цифры", "Key figures")}</div>
-          <h2 className="font-bold text-ink" style={{ fontSize: 18, letterSpacing: "-0.01em" }}>{dt("Рынок в цифрах", "The market in numbers")}</h2>
-          <p className="mb-3 mt-1 max-w-[680px] text-ink-soft" style={{ fontSize: 13 }}>
-            {dt(
-              "Открытия с известной датой, выручки юрлиц и продажи Dodo. Ниже на странице — данные, из которых взяты эти цифры.",
-              "Openings with a known date, company revenues and Dodo sales. The data behind these figures is further down the page.",
-            )}
-          </p>
-          <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
-            {cards.map((c) => <Card key={c.title} {...c} />)}
-          </div>
-        </section>
+    <RefSection
+      id="summary"
+      eyebrow={dt("Ключевые цифры", "Key figures")}
+      title={dt("Рынок в цифрах", "The market in numbers")}
+      lede={ed.texts.summary ?? dt(
+        "Открытия с известной датой, выручки юрлиц и продажи Dodo. Ниже на странице — данные, из которых взяты эти цифры.",
+        "Openings with a known date, company revenues and Dodo sales. The data behind these figures is further down the page.",
       )}
-    </div>
+    >
+      <div className="concl">
+        {cards.map((c) => <Card key={c.title} {...c} />)}
+      </div>
+      <SourceCaption bundle={bundle} feeds={curated ? "editorial" : ["locations", "financials", "dodo"]} />
+    </RefSection>
   );
 }

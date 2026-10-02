@@ -1,55 +1,19 @@
 "use client";
-// Подложка карты страны: море, соседи, страна с регионами, озёра, реки и подписи городов.
-// Геометрия рисуется один раз генератором scripts/market/build-shapes.ts (Natural Earth 10m)
-// и лежит в public/market/shapes/<CC>.json; здесь только раскраска токенами темы.
+// Подложка карты страны в виде эталона: соседи (--land2, линия --line .8) и своя страна (--land,
+// граница --border 1.2), море — фон .mapbox. Геометрия рисуется один раз генератором
+// scripts/market/build-shapes.ts (Natural Earth 10m) и лежит в public/market/shapes/<CC>.json.
 import { useEffect, useRef, useState } from "react";
 import type { Shape } from "@/lib/marketView";
-import type { ViewBox } from "./heat";
 
-/** Слои под точками. `clipId` — контур страны, по нему обрезается режим «Плотность»; `unit` —
- *  единиц viewBox на экранный пиксель (кружки городов). Толщина линий — экранная
- *  (non-scaling-stroke): на телефоне граница не истончается до невидимой. */
-export function MapBaseLayers({ shape, clipId, unit }: { shape: Shape; clipId: string; unit: number }) {
+/** Слои под точками. Толщина линий — экранная (non-scaling-stroke), как в эталоне. */
+export function MapBaseLayers({ shape }: { shape: Shape }) {
   return (
-    <>
-      <defs>
-        <clipPath id={clipId}>
-          <path d={shape.path} clipRule="evenodd" />
-        </clipPath>
-      </defs>
-      <rect width={shape.W} height={shape.H} fill="var(--map-sea)" />
-      {shape.land && <path d={shape.land} fill="var(--map-land)" stroke="var(--map-border)" strokeWidth={0.6} strokeLinejoin="round" vectorEffect="non-scaling-stroke" />}
-      <path d={shape.path} fill="var(--map-country)" fillRule="evenodd" />
-      {shape.regions && (
-        <path d={shape.regions} fill="none" stroke="var(--map-region)" strokeWidth={0.6} strokeLinejoin="round" vectorEffect="non-scaling-stroke" clipPath={`url(#${clipId})`} />
+    <g>
+      {shape.land && (
+        <path d={shape.land} fill="var(--land2)" stroke="var(--line)" strokeWidth={0.8} vectorEffect="non-scaling-stroke" strokeLinejoin="round" />
       )}
-      {shape.lakes && <path d={shape.lakes} fill="var(--map-sea)" stroke="var(--map-water-edge)" strokeWidth={0.5} vectorEffect="non-scaling-stroke" />}
-      {shape.rivers && (
-        <path
-          d={shape.rivers}
-          fill="none"
-          stroke="var(--map-river)"
-          strokeWidth={1}
-          vectorEffect="non-scaling-stroke"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          clipPath={`url(#${clipId})`}
-        />
-      )}
-      <path d={shape.path} fill="none" stroke="var(--map-outline)" strokeWidth={1} strokeLinejoin="round" fillRule="evenodd" vectorEffect="non-scaling-stroke" />
-      {(shape.cities ?? []).map((c) => (
-        <circle
-          key={c.name}
-          cx={c.x}
-          cy={c.y}
-          r={(c.capital ? 3 : 2) * unit}
-          fill={c.capital ? "var(--map-city)" : "var(--map-country)"}
-          stroke="var(--map-city)"
-          strokeWidth={1}
-          vectorEffect="non-scaling-stroke"
-        />
-      ))}
-    </>
+      <path d={shape.path} fill="var(--land)" fillRule="evenodd" stroke="var(--border)" strokeWidth={1.2} vectorEffect="non-scaling-stroke" strokeLinejoin="round" />
+    </g>
   );
 }
 
@@ -68,52 +32,32 @@ export function useElementWidth<T extends HTMLElement>() {
   return [ref, width] as const;
 }
 
-const LABEL_PX = 11;
-const NARROW_PX = 520; // уже — карта телефонная, подписей не больше NARROW_LABELS
-const NARROW_LABELS = 5;
-const CHAR_PX = 6.2; // средняя ширина символа подписи; точность не нужна — нужен запас от слипания
+const LABEL_PX = 12, LABEL_HALO = 3, LABEL_OFF = 6;
 
-/** Подписи городов — HTML поверх карты: в SVG шрифт уменьшался бы вместе с картой и на
- *  телефоне становился нечитаемым. Подпись, которая налезает на более крупный город, не
- *  показывается: на узкой карте остаются столица и пара крупнейших. */
-export function CityLabels({ shape, width, vb }: { shape: Shape; width: number; vb: ViewBox }) {
-  const scale = width / vb.w;
-  const height = (vb.h * width) / vb.w;
-  const limit = width < NARROW_PX && vb.w >= shape.W ? NARROW_LABELS : Infinity;
-  const at = (c: { x: number; y: number }) => [(c.x - vb.x) * scale, (c.y - vb.y) * scale] as const;
-  const placed: Array<[number, number, number, number]> = [];
-  const shown = width
-    ? [...(shape.cities ?? [])].sort((a, b) => Number(b.capital) - Number(a.capital) || a.rank - b.rank).filter((c) => {
-      const w = c.name.length * CHAR_PX + 6, h = LABEL_PX + 4;
-      const [cx, cy] = at(c);
-      const x = cx + 5, y = cy - h / 2;
-      if (placed.length >= limit || x < 0 || x + w > width || y < 0 || y + h > height) return false;
-      if (placed.some(([px, py, pw, ph]) => x < px + pw && x + w > px && y < py + ph && y + h > py)) return false;
-      placed.push([x, y, w, h]);
-      return true;
-    })
-    : [];
-
+/** Подписи городов — SVG-текст эталона: кегль 12 px экрана (делится на масштаб), обводка цвета
+ *  суши под текстом. `unit` — единиц карты на экранный пиксель. */
+export function CityLabels({ shape, unit }: { shape: Shape; unit: number }) {
   return (
-    <div className="pointer-events-none absolute inset-0" aria-hidden>
-      {shown.map((c) => (
-        <span
+    <g pointerEvents="none">
+      {(shape.cities ?? []).map((c) => (
+        <text
           key={c.name}
-          className="absolute whitespace-nowrap text-ink-soft"
-          style={{
-            left: at(c)[0] + 5,
-            top: at(c)[1],
-            transform: "translateY(-50%)",
-            fontSize: LABEL_PX,
-            fontWeight: c.capital ? 600 : 450,
-            color: c.capital ? "var(--ink)" : undefined,
-            textShadow: "0 0 2px var(--map-country), 0 0 2px var(--map-country), 0 0 3px var(--map-country)",
-          }}
+          x={c.x}
+          y={c.y}
+          dx={LABEL_OFF * unit}
+          dy={-LABEL_OFF * unit}
+          fontSize={LABEL_PX * unit}
+          fontFamily="Inter, system-ui, sans-serif"
+          fontWeight={600}
+          fill="var(--ink2)"
+          stroke="var(--land)"
+          strokeWidth={LABEL_HALO * unit}
+          paintOrder="stroke"
         >
           {c.name}
-        </span>
+        </text>
       ))}
-    </div>
+    </g>
   );
 }
 

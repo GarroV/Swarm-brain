@@ -45,6 +45,7 @@ export type ImportCounts = {
   years: number;
   prices: number;
   facts: number;
+  editorial: number;
 };
 
 async function importCompanies(sb: SupabaseClient, country: string, s: Snapshot): Promise<number> {
@@ -79,6 +80,7 @@ async function touchManualSources(sb: SupabaseClient, country: string, s: Snapsh
     s.companies.length ? "financials" : null,
     s.prices.length ? "prices" : null,
     s.facts.length ? "facts" : null,
+    Object.keys(s.editorial ?? {}).length ? "editorial" : null,
   ].filter((f): f is string => f !== null);
   if (!feeds.length) return;
   await must(
@@ -182,6 +184,17 @@ export async function importSnapshot(sb: SupabaseClient, cc: string, s: Snapshot
       "facts",
     );
   }
+  const blocks = Object.entries(s.editorial ?? {});
+  if (blocks.length) {
+    // Блок заменяется целиком: ручная часть — снимок на дату, а не накопление.
+    await must(
+      sb.from("mkt_editorial").upsert(
+        blocks.map(([block, payload]) => ({ country, block, payload, updated_at: now() })),
+        { onConflict: "country,block" },
+      ),
+      "editorial",
+    );
+  }
   await touchManualSources(sb, country, s);
 
   return {
@@ -191,6 +204,7 @@ export async function importSnapshot(sb: SupabaseClient, cc: string, s: Snapshot
     years,
     prices: s.prices.length,
     facts: new Set(s.facts.map((f) => `${f.topic}|${f.text}`)).size,
+    editorial: blocks.length,
   };
 }
 
@@ -199,7 +213,7 @@ const LOC_COLS = "id, chain_key, ext_key, name, city, address, lat, lng, placeme
 
 export async function loadCountry(sb: SupabaseClient, cc: string) {
   const country = cc.toUpperCase();
-  const [chains, locations, companies, prices, facts, dodo, runs, sources, pending] = await Promise.all([
+  const [chains, locations, companies, prices, facts, dodo, runs, sources, pending, editorial] = await Promise.all([
     must<Array<{ key: string; name: string; slot: number; segment: string; is_bakery: boolean; hist: unknown }>>(
       sb.from("mkt_chains")
         .select("key, name, slot, segment, is_bakery, origin, operator, first_entry, notes, hist")
@@ -245,13 +259,17 @@ export async function loadCountry(sb: SupabaseClient, cc: string) {
       "status",
       "pending",
     ),
+    must<Array<{ block: string; payload: unknown }>>(
+      sb.from("mkt_editorial").select("block, payload").eq("country", country),
+      "editorial",
+    ),
   ]);
   const ids = companies.map((c) => c.id);
   const financials = ids.length
     ? await allRows<unknown>(
       (from, to) =>
         sb.from("mkt_financials")
-          .select("company_id, year, revenue_eur, net_profit_eur, employees, source, verification, note")
+          .select("company_id, year, revenue_eur, employees, source, verification, note")
           .in("company_id", ids)
           .order("company_id")
           .order("year")
@@ -271,6 +289,7 @@ export async function loadCountry(sb: SupabaseClient, cc: string) {
     runs,
     sources,
     pending: pending.count ?? 0,
+    editorial: Object.fromEntries(editorial.map((e) => [e.block, e.payload])),
   };
 }
 export type CountryBundle = Awaited<ReturnType<typeof loadCountry>>;

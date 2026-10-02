@@ -1,44 +1,76 @@
 "use client";
-// Таймлайн по образцу референса: дорожки сетей с отметкой на каждое открытие и закрытие,
-// столбцы «Открытий за год» по сетям и карточки событий по годам. Открытия и закрытия
-// берутся из реестра точек, сделки и прочие события — из фактов (topic deal / timeline).
-import { useMemo, useState } from "react";
-import type { MarketBundle } from "@/types";
-import { chainColors } from "@/lib/marketMap";
-import { type EventKind, events, openingsByChain, openingsByYear, periods, yearOf } from "@/lib/marketInsights";
+// Таймлайн эталона (#timeline): дорожки сетей с отметкой на каждое открытие, анонс и
+// закрытие, столбцы «Открытий за год», легенда и карточки событий по годам. Отметки — из
+// реестра точек; события — из ручной части (editorial.events), без неё — вычисленные из
+// реестра и фактов (сделки, прочие события).
+import { type PointerEvent, type ReactNode, useMemo, useState } from "react";
+import type { MarketBundle, MarketLocation } from "@/types";
+import type { EdEventKind } from "@/lib/marketEditorial";
+import {
+  editorialEvent,
+  events,
+  eventsByYear,
+  marksPerYear,
+  refEvent,
+  type RefEvent,
+  TIMELINE_FROM,
+  timelineMarks,
+  type TlMark,
+} from "@/lib/marketInsights";
 import { useDt, useLang } from "@/components/roy/nav";
-import { Empty, mono, Section, SourceCaption, useWidth } from "./ui";
+import { fmtDate, RefSection, Sw, useChainColor, useEditorial, useTip } from "./ref";
+import { Empty, SourceCaption } from "./ui";
 
-const LANES = 9;
-// Ширина графика = ширина рамки в пикселях (не больше W_MAX): текст в SVG тогда того же
-// кегля, что и вокруг, — на телефоне подписи не сжимаются до 7 px и всё влезает без прокрутки.
-const W_MAX = 1000, W_MIN = 320, NARROW = 600, LANE = 30, RIGHT = 44, TOP = 22;
-const BAR_H = 190, BAR_PAD = { l: 30, b: 22, t: 18 };
+type Dt = (ru: string, en: string) => string;
+
+// Геометрия эталона: ширина 1180, подписи дорожек 130, справа «+N» 40.
+const W = 1180, LW = 130, RW = 40, ROW_H = 30, TOP0 = 26, MIN_W = 900;
+const BARS_H = 210, BARS_T = 22, BARS_B = 26, BAR_W = 46, TICK = 5;
+// Вычисленных событий за год бывают сотни — карточка показывает первые, остальные по кнопке.
 const PER_CARD = 8;
-const MONTHS_RU = ["янв", "фев", "мар", "апр", "мая", "июн", "июл", "авг", "сен", "окт", "ноя", "дек"];
-const MONTHS_EN = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-const KIND: Record<EventKind, [string, string, string]> = {
-  entry: ["вход", "entry", "var(--accent-ink)"],
-  open: ["открытие", "opening", "var(--ink-mute)"],
-  close: ["уход", "closure", "var(--mkt-s8)"],
-  pause: ["пауза", "pause", "var(--mkt-s8)"],
-  planned: ["анонс", "announced", "var(--mkt-s4)"],
-  deal: ["сделка", "deal", "var(--mkt-s2)"],
-  event: ["событие", "event", "var(--ink-mute)"],
+
+const TAG: Record<EdEventKind, [string, string, string]> = {
+  entry: ["Вход", "Entry", "entry"],
+  exit: ["Уход", "Exit", "exit"],
+  deal: ["Сделка", "Deal", "deal"],
+  open: ["Открытие", "Opening", ""],
+  plan: ["Анонс", "Announced", "deal"],
+  pause: ["Пауза", "Pause", "exit"],
 };
 
-/** Дата как доля года: «2024-08» → 2024.58; только год — середина года. */
-function at(date: string): number | null {
-  const y = yearOf(date);
-  if (y === null) return null;
-  const m = /^\d{4}-(\d{2})/.exec(date);
-  const d = /^\d{4}-\d{2}-(\d{2})/.exec(date);
-  return m ? y + (Number(m[1]) - 1 + (d ? (Number(d[1]) - 1) / 31 : 0.5)) / 12 : y + 0.5;
+const STATUS: Record<MarketLocation["status"], [string, string]> = {
+  open: ["Работает", "Operating"],
+  closed: ["Закрыта", "Closed"],
+  planned: ["Анонс", "Announced"],
+  paused: ["Приостановлена", "Paused"],
+};
+
+/** Подсказка точки — locTip эталона. */
+function LocTip({ l, chain, dt, ru }: { l: MarketLocation; chain: string; dt: Dt; ru: boolean }) {
+  return (
+    <>
+      <b>{l.name}</b>
+      <br />
+      <span className="k">{chain}{l.city ? ` · ${l.city}` : ""}</span>
+      {l.address && <><br />{l.address}</>}
+      <br />
+      <span className="k">{dt("Открытие:", "Opened:")}</span> {fmtDate(l.opened, ru)}
+      {l.opened_estimated ? dt(" (оценка)", " (estimate)") : ""}
+      {l.status !== "open" && (
+        <>
+          <br />
+          <span className="k">{dt("Статус:", "Status:")}</span> {dt(...STATUS[l.status])}
+          {l.closed ? `${l.status === "paused" ? dt(" с ", " since ") : " "}${fmtDate(l.closed, ru)}` : ""}
+        </>
+      )}
+      {l.format && <><br /><span className="k">{l.format}</span></>}
+    </>
+  );
 }
 
 // «Dodo Pizza — Dodo Pizza Bucharest-5»: название сети уже стоит жирным, из названия точки
 // его убираем. Если от названия ничего не остаётся — оставляем как было.
-function withoutBrand(text: string, brand: string | undefined): string {
+function withoutBrand(text: string, brand: string | null): string {
   if (!brand || !text.toLowerCase().startsWith(brand.toLowerCase())) return text;
   const rest = text.slice(brand.length).replace(/^[\s,—–-]+/, "");
   return rest || text;
@@ -47,200 +79,214 @@ function withoutBrand(text: string, brand: string | undefined): string {
 export function ChainTimeline({ bundle }: { bundle: MarketBundle }) {
   const dt = useDt();
   const ru = useLang() === "ru";
-  const [box, width] = useWidth<HTMLDivElement>();
+  const ed = useEditorial(bundle);
+  const col = useChainColor(bundle);
   const now = useMemo(() => new Date(), []);
-  const p = periods(now);
   const thisYear = now.getFullYear();
-  const from = p.early[0];
-  const years = useMemo(() => Array.from({ length: thisYear - from + 1 }, (_, i) => from + i), [from, thisYear]);
+  const years = useMemo(() => Array.from({ length: thisYear - TIMELINE_FROM + 1 }, (_, i) => TIMELINE_FROM + i), [thisYear]);
   const bakery = useMemo(() => new Set(bundle.chains.filter((c) => c.is_bakery).map((c) => c.key)), [bundle.chains]);
-  const colors = useMemo(() => chainColors(bundle.chains, bundle.locations), [bundle.chains, bundle.locations]);
   const name = useMemo(() => new Map(bundle.chains.map((c) => [c.key, c.name])), [bundle.chains]);
-  const lanes = useMemo(() => [...openingsByChain(bundle.locations, bakery, [from, thisYear])].slice(0, LANES), [bundle.locations, bakery, from, thisYear]);
-  const bars = useMemo(() => openingsByYear(bundle.locations, bakery, years), [bundle.locations, bakery, years]);
-  const evs = useMemo(() => events(bundle, from - 1), [bundle, from]);
+  const marks = useMemo(() => timelineMarks(bundle.locations, bakery, TIMELINE_FROM), [bundle.locations, bakery]);
+  const curated = ed.events.length > 0;
+  const evs = useMemo(
+    () => (curated ? ed.events.map(editorialEvent) : events(bundle, TIMELINE_FROM - 1).map(refEvent).map((e) => ({ ...e, chain: e.chain ? name.get(e.chain) ?? e.chain : null }))),
+    [curated, ed.events, bundle, name],
+  );
+  // Дорожки — сети с отметками, по слоту, потом по имени (как у эталона).
+  const lanes = useMemo(() => {
+    const slot = new Map(bundle.chains.map((c) => [c.key, c.slot || 99]));
+    return [...new Set(marks.map((m) => m.loc.chain_key))]
+      .sort((a, b) => (slot.get(a) ?? 99) - (slot.get(b) ?? 99) || (name.get(a) ?? a).localeCompare(name.get(b) ?? b));
+  }, [marks, bundle.chains, name]);
 
-  if (!lanes.length && !evs.length) {
-    return (
-      <Section title={dt("Таймлайн", "Timeline")}>
-        <Empty text={dt("Нет точек с датой открытия.", "No locations with an opening date.")} />
-      </Section>
-    );
-  }
-
-  const W = Math.min(W_MAX, Math.max(W_MIN, width || W_MAX));
-  const LABEL = W < NARROW ? 96 : 130;
-  const t0 = from, t1 = thisYear + 1;
-  const x = (t: number) => LABEL + ((t - t0) / (t1 - t0)) * (W - LABEL - RIGHT);
-  const today = thisYear + now.getMonth() / 12 + now.getDate() / 365;
-  const H = TOP + lanes.length * LANE + 8;
-  const legend = [...new Set(bars.flatMap((b) => [...b.byChain.keys()]))];
-  // Круглый шаг оси (1, 2, 5, 10…) и верх оси кратный ему: «0, 5, 10, 15», а не «0, 10, 19».
-  const rawMax = Math.max(1, ...bars.map((b) => b.total));
-  const step = [1, 2, 5, 10, 20, 50, 100].find((s) => rawMax / s <= 4) ?? 100;
-  const maxBar = Math.ceil(rawMax / step) * step;
-  const ticks = Array.from({ length: maxBar / step + 1 }, (_, i) => i * step);
-  const bw = (W - BAR_PAD.l) / years.length;
-  const by = (n: number) => BAR_H - BAR_PAD.b - (n / maxBar) * (BAR_H - BAR_PAD.b - BAR_PAD.t);
+  const title = dt(`Открытия и закрытия, ${TIMELINE_FROM} – ${thisYear}`, `Openings and closures, ${TIMELINE_FROM} – ${thisYear}`);
+  const lede = ed.texts.timeline ?? dt(
+    "Каждая отметка — ресторан. Закрашенный кружок — точная дата (месяц или день), полый — известен только год, крест — закрытие, пунктир — анонс.",
+    "Each mark is a restaurant. Filled dot — exact date (month or day), hollow — year only, cross — closure, dashed — announced.",
+  );
 
   return (
-    <Section title={dt(`Открытия и закрытия, ${from}–${thisYear}`, `Openings and closures, ${from}–${thisYear}`)}>
-      <p className="-mt-1 mb-3 text-ink-soft" style={{ fontSize: 12.5 }}>
-        {dt(
-          "Каждая отметка — ресторан. Закрашенный кружок — точная дата (месяц или день), полый — известен только год, крест — закрытие, пунктир — анонс.",
-          "Each mark is a restaurant. Filled dot — exact date (month or day), hollow — year only, cross — closure, dashed — announced.",
-        )}
-      </p>
+    <RefSection id="timeline" eyebrow={dt("Таймлайн", "Timeline")} title={title} lede={lede}>
+      {!lanes.length && !evs.length && <Empty text={dt("Нет точек с датой открытия.", "No locations with an opening date.")} />}
       {lanes.length > 0 && (
         <>
-          <div ref={box} className="overflow-hidden rounded-lg border border-line">
-            <svg viewBox={`0 0 ${W} ${H}`} className="block h-auto w-full" role="img" aria-label={dt("Открытия по сетям", "Openings by chain")}>
-              {years.map((yr) => (
-                <g key={yr}>
-                  <line x1={x(yr)} x2={x(yr)} y1={TOP - 6} y2={H} stroke="var(--line)" />
-                  <text x={x(yr) + 4} y={TOP - 9} fontSize={10} fill="var(--ink-mute)" style={mono}>{yr}</text>
-                </g>
-              ))}
-              <line x1={x(today)} x2={x(today)} y1={TOP - 6} y2={H} stroke="var(--accent-ink)" strokeDasharray="3 3" />
-              <text x={x(today) - 3} y={H - 3} fontSize={9.5} textAnchor="end" fill="var(--accent-ink)">{dt("сегодня", "today")}</text>
-              {lanes.map(([k, n], i) => {
-                const cy = TOP + i * LANE + LANE / 2;
-                const color = colors.get(k) ?? "var(--mkt-s0)";
-                const own = bundle.locations.filter((l) => l.chain_key === k);
-                return (
-                  <g key={k}>
-                    <line x1={LABEL} x2={W - RIGHT} y1={cy} y2={cy} stroke="var(--line)" strokeDasharray="1 3" />
-                    <text x={4} y={cy + 4} fontSize={11.5} fill="var(--ink)">{name.get(k) ?? k}</text>
-                    <text x={W - 4} y={cy + 4} fontSize={10.5} textAnchor="end" fill="var(--ink-mute)" style={mono}>+{n}</text>
-                    {own.map((l) => {
-                      const t = l.opened ? at(l.opened) : null;
-                      const marks = [];
-                      if (t !== null && t >= t0) {
-                        const exact = /^\d{4}-\d{2}/.test(l.opened!) && !l.opened_estimated;
-                        const planned = l.status === "planned";
-                        marks.push(
-                          <circle
-                            key="o"
-                            cx={x(t)}
-                            cy={cy}
-                            r={5}
-                            fill={exact && !planned ? color : "var(--surface)"}
-                            stroke={color}
-                            strokeWidth={exact && !planned ? 0 : 1.6}
-                            strokeDasharray={planned ? "2 1.6" : undefined}
-                          >
-                            <title>{`${l.name}${l.city ? `, ${l.city}` : ""} — ${l.opened}`}</title>
-                          </circle>,
-                        );
-                      }
-                      const c = l.status === "closed" && l.closed ? at(l.closed) : null;
-                      if (c !== null && c >= t0) {
-                        marks.push(
-                          <g key="c" stroke="var(--mkt-s8)" strokeWidth={1.8}>
-                            <line x1={x(c) - 4.5} x2={x(c) + 4.5} y1={cy - 4.5} y2={cy + 4.5} />
-                            <line x1={x(c) - 4.5} x2={x(c) + 4.5} y1={cy + 4.5} y2={cy - 4.5} />
-                            <title>{`${l.name} — ${dt("закрыта", "closed")} ${l.closed}`}</title>
-                          </g>,
-                        );
-                      }
-                      return marks.length ? <g key={l.id}>{marks}</g> : null;
-                    })}
-                  </g>
-                );
-              })}
-            </svg>
+          <div className="panel scroll"><Lanes lanes={lanes} marks={marks} name={name} col={col} now={now} dt={dt} ru={ru} /></div>
+          <div className="panel scroll" style={{ padding: "12px 4px 4px" }}>
+            <PerYear marks={marks} years={years} slotOf={bundle.chains} name={name} col={col} now={now} dt={dt} />
           </div>
-
-          <div className="mt-3 overflow-hidden rounded-lg border border-line p-2">
-            <div className="mb-1 text-ink-mute" style={{ ...mono, fontSize: 11 }}>{dt("Открытий за год (с известной датой)", "Openings per year (with a known date)")}
-              {W < NARROW && dt(` · ’${String(thisYear).slice(2)}* — ${now.getMonth()} мес.`, ` · ’${String(thisYear).slice(2)}* — ${now.getMonth()} mo.`)}
-            </div>
-            <svg viewBox={`0 0 ${W} ${BAR_H}`} className="block h-auto w-full" role="img" aria-label={dt("Открытий за год", "Openings per year")}>
-              {ticks.map((t) => (
-                <g key={t}>
-                  <line x1={BAR_PAD.l} x2={W} y1={by(t)} y2={by(t)} stroke="var(--line)" />
-                  <text x={BAR_PAD.l - 6} y={by(t) + 4} fontSize={10} textAnchor="end" fill="var(--ink-mute)" style={mono}>{t}</text>
-                </g>
-              ))}
-              {bars.map((b, i) => {
-                const cx = BAR_PAD.l + i * bw + bw / 2, w = Math.min(46, bw * 0.45);
-                let acc = 0;
-                return (
-                  <g key={b.year}>
-                    {[...b.byChain].map(([k, n]) => {
-                      const y0 = by(acc), y1 = by(acc + n);
-                      acc += n;
-                      return (
-                        <rect key={k} x={cx - w / 2} y={y1} width={w} height={Math.max(0, y0 - y1 - 1)} fill={colors.get(k) ?? "var(--mkt-s0)"}>
-                          <title>{`${name.get(k) ?? k}: ${n}`}</title>
-                        </rect>
-                      );
-                    })}
-                    {b.total > 0 && <text x={cx} y={by(b.total) - 5} fontSize={11} fontWeight={600} textAnchor="middle" fill="var(--ink)">{b.total}</text>}
-                    <text x={cx} y={BAR_H - 6} fontSize={10.5} textAnchor="middle" fill="var(--ink-mute)" style={mono}>
-                      {b.year === thisYear && W >= NARROW ? dt(`${b.year} (${now.getMonth()} мес.)`, `${b.year} (${now.getMonth()} mo.)`) : W < NARROW ? `’${String(b.year).slice(2)}${b.year === thisYear ? "*" : ""}` : b.year}
-                    </text>
-                  </g>
-                );
-              })}
-            </svg>
-          </div>
-          <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-ink-soft" style={{ fontSize: 12 }}>
-            {legend.map((k) => (
-              <span key={k} className="inline-flex items-center gap-1.5">
-                <span className="inline-block size-2 rounded-full" style={{ background: colors.get(k) }} />
-                {name.get(k) ?? k}
-              </span>
-            ))}
+          <div className="legend">
+            {lanes.map((k) => <span key={k}><Sw color={col(k)} />{name.get(k) ?? k}</span>)}
           </div>
         </>
       )}
-
       {evs.length > 0 && (
-        <div className="mt-4 grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-4">
-          {[...new Set(evs.map((e) => e.year))].map((yr) => (
-            <YearCard key={yr} year={yr} items={evs.filter((e) => e.year === yr)} name={name} ru={ru} />
-          ))}
+        <div className="events">
+          {eventsByYear(evs).map(([y, list]) => <YearCard key={y} year={y} items={list} collapse={!curated} dt={dt} ru={ru} />)}
         </div>
       )}
-      <SourceCaption bundle={bundle} feeds="locations" />
-    </Section>
+      <SourceCaption bundle={bundle} feeds={curated ? ["locations", "editorial"] : ["locations", "facts"]} />
+    </RefSection>
   );
 }
 
-function YearCard({ year, items, name, ru }: { year: number; items: ReturnType<typeof events>; name: Map<string, string>; ru: boolean }) {
-  const dt = useDt();
-  const [all, setAll] = useState(false);
-  // Сначала то, что меняет рынок: входы, уходы, сделки; рядовые открытия — после.
-  const rank = (k: EventKind) => (k === "open" ? 1 : 0);
-  const shown = all ? items : [...items].sort((a, b) => rank(a.kind) - rank(b.kind)).slice(0, PER_CARD).sort((a, b) => a.date.localeCompare(b.date));
-  const M = ru ? MONTHS_RU : MONTHS_EN;
-  const when = (d: string) => {
-    const m = /^\d{4}-(\d{2})(?:-(\d{2}))?/.exec(d);
-    if (!m) return dt("год", "year");
-    return m[2] ? `${Number(m[2])} ${M[Number(m[1]) - 1]}` : M[Number(m[1]) - 1];
+type Col = (key: string) => string;
+
+function Lanes(
+  { lanes, marks, name, col, now, dt, ru }: { lanes: string[]; marks: Array<TlMark<MarketLocation>>; name: Map<string, string>; col: Col; now: Date; dt: Dt; ru: boolean },
+) {
+  const tip = useTip();
+  const thisYear = now.getFullYear();
+  const t0 = new Date(TIMELINE_FROM, 0, 1).getTime(), t1 = new Date(thisYear + 1, 0, 1).getTime();
+  const h = TOP0 + lanes.length * ROW_H + 10;
+  const X = (t: number) => LW + ((t - t0) / (t1 - t0)) * (W - LW - RW);
+  const xt = X(now.getTime());
+  const grid = Array.from({ length: thisYear + 2 - TIMELINE_FROM }, (_, i) => TIMELINE_FROM + i);
+  const show = (m: TlMark<MarketLocation>, e: PointerEvent) => {
+    const head = m.kind === "close" ? dt("Закрытие", "Closure") : m.kind === "plan" ? dt("Анонс", "Announced") : null;
+    const chain = name.get(m.loc.chain_key) ?? m.loc.chain_key;
+    tip.show(<>{head && <><b>{head}</b><br /></>}<LocTip l={m.loc} chain={chain} dt={dt} ru={ru} /></>, e);
   };
   return (
-    <div className="rounded-xl border border-line bg-surface p-3.5">
-      <div className="mb-2 font-bold text-ink" style={{ fontSize: 18 }}>{year}</div>
-      <ul className="flex flex-col gap-2">
-        {shown.map((e, i) => {
-          const [ruK, enK, color] = KIND[e.kind];
+    <svg className="tlsvg" viewBox={`0 0 ${W} ${h}`} width={W} style={{ minWidth: MIN_W, width: "100%" }} role="img" aria-label={dt("Открытия по сетям", "Openings by chain")}>
+      {grid.map((y) => {
+        const x = X(new Date(y, 0, 1).getTime());
+        return (
+          <g key={y}>
+            <line x1={x} x2={x} y1={TOP0 - 6} y2={h - 6} stroke="var(--line2)" strokeWidth={1} />
+            {y <= thisYear && <text x={x + 6} y={16} className="ax">{y}</text>}
+          </g>
+        );
+      })}
+      <line x1={xt} x2={xt} y1={TOP0 - 6} y2={h - 6} stroke="var(--accent)" strokeDasharray="3 3" />
+      <text x={xt + 4} y={h - 10} className="ax" style={{ fill: "var(--accent)" }}>{dt("сегодня", "today")}</text>
+      {lanes.map((k, i) => {
+        const y = TOP0 + i * ROW_H + ROW_H / 2;
+        const own = marks.filter((m) => m.loc.chain_key === k);
+        return (
+          <g key={k}>
+            <line x1={LW} x2={W - RW} y1={y} y2={y} stroke="var(--line2)" />
+            <text x={0} y={y + 4}>{name.get(k) ?? k}</text>
+            <text x={W - 4} y={y + 4} textAnchor="end" className="ax">+{own.filter((m) => m.kind === "open").length}</text>
+            {own.map((m, j) => <Mark key={`${m.loc.id}-${m.kind}-${j}`} m={m} x={X(m.t)} y={y} color={col(k)} onMove={(e) => show(m, e)} onLeave={tip.hide} />)}
+          </g>
+        );
+      })}
+    </svg>
+  );
+}
+
+function Mark(
+  { m, x, y, color, onMove, onLeave }: { m: TlMark<MarketLocation>; x: number; y: number; color: string; onMove: (e: PointerEvent) => void; onLeave: () => void },
+) {
+  const ev = { onPointerMove: onMove, onPointerLeave: onLeave, style: { cursor: "default" } };
+  if (m.kind === "close") {
+    const d = 5;
+    return (
+      <g {...ev}>
+        <path d={`M${x - d},${y - d}L${x + d},${y + d}M${x - d},${y + d}L${x + d},${y - d}`} stroke="var(--bad)" strokeWidth={2.2} strokeLinecap="round" />
+        <circle cx={x} cy={y} r={9} fill="transparent" />
+      </g>
+    );
+  }
+  if (m.kind === "plan") return <circle cx={x} cy={y} r={6} fill="var(--surface)" stroke={color} strokeWidth={2} strokeDasharray="2.5 2" {...ev} />;
+  if (m.precise) return <circle cx={x} cy={y} r={6} fill={color} stroke="var(--surface)" strokeWidth={2} {...ev} />;
+  return <circle cx={x} cy={y} r={5} fill="var(--surface)" stroke={color} strokeWidth={2} {...ev} />;
+}
+
+function PerYear(
+  { marks, years, slotOf, name, col, now, dt }: {
+    marks: Array<TlMark<MarketLocation>>;
+    years: number[];
+    slotOf: MarketBundle["chains"];
+    name: Map<string, string>;
+    col: Col;
+    now: Date;
+    dt: Dt;
+  },
+) {
+  const tip = useTip();
+  const thisYear = now.getFullYear();
+  const slot = new Map(slotOf.map((c) => [c.key, c.slot || 99]));
+  const rows = marksPerYear(marks, years);
+  const mx = Math.max(1, ...rows.map((r) => r.total));
+  const t0 = new Date(TIMELINE_FROM, 0, 1).getTime(), t1 = new Date(thisYear + 1, 0, 1).getTime();
+  const X = (t: number) => LW + ((t - t0) / (t1 - t0)) * (W - LW - RW);
+  const Y = (v: number) => BARS_H - BARS_B - (v / mx) * (BARS_H - BARS_T - BARS_B);
+  const ticks = Array.from({ length: Math.floor(mx / TICK) + 1 }, (_, i) => i * TICK);
+  const months = now.getMonth();
+  return (
+    <svg className="tlsvg" viewBox={`0 0 ${W} ${BARS_H}`} style={{ minWidth: MIN_W, width: "100%" }} role="img" aria-label={dt("Открытий за год", "Openings per year")}>
+      <text x={LW} y={12} className="ax">{dt("Открытий за год (с известной датой)", "Openings per year (with a known date)")}</text>
+      {ticks.map((v) => (
+        <g key={v}>
+          <line x1={LW} x2={W - RW} y1={Y(v)} y2={Y(v)} stroke="var(--line2)" />
+          <text x={LW - 8} y={Y(v) + 4} textAnchor="end" className="ax">{v}</text>
+        </g>
+      ))}
+      {rows.map((r) => {
+        const xc = X(new Date(r.year, 6, 1).getTime()), a = xc - BAR_W / 2, b = xc + BAR_W / 2;
+        const parts = [...r.byChain].sort((p, q) => (slot.get(p[0]) ?? 99) - (slot.get(q[0]) ?? 99));
+        let acc = 0;
+        const bars: ReactNode[] = parts.map(([k, v], j) => {
+          const y0 = Y(acc), y1 = Y(acc + v);
+          acc += v;
+          // Верхний кусок столбца скруглён, как у эталона.
+          const d = j === parts.length - 1
+            ? `M${a},${y0}V${y1 + 3}Q${a},${y1} ${a + 3},${y1}H${b - 3}Q${b},${y1} ${b},${y1 + 3}V${y0}Z`
+            : `M${a},${y0}V${y1}H${b}V${y0}Z`;
           return (
-            <li key={`${e.date}-${i}`} className="grid grid-cols-[52px_1fr] gap-2" style={{ fontSize: 12.5, lineHeight: 1.4 }}>
-              <span className="text-ink-mute" style={{ ...mono, fontSize: 11 }}>{when(e.date)}</span>
-              <span className="text-ink-soft">
-                <span className="mr-1 rounded border px-1 py-px uppercase" style={{ ...mono, fontSize: 9.5, color, borderColor: color }}>{dt(ruK, enK)}</span>
-                {e.chain && <b className="text-ink">{name.get(e.chain) ?? e.chain}</b>}
-                {e.chain ? " — " : ""}
-                {withoutBrand(e.text, e.chain ? name.get(e.chain) : undefined)}
-              </span>
-            </li>
+            <path
+              key={k}
+              d={d}
+              fill={col(k)}
+              stroke="var(--surface)"
+              strokeWidth={1.5}
+              onPointerMove={(e) => tip.show(<><b>{r.year}</b><br />{name.get(k) ?? k}: {v}</>, e)}
+              onPointerLeave={tip.hide}
+            />
           );
-        })}
-      </ul>
-      {items.length > PER_CARD && (
-        <button type="button" onClick={() => setAll(!all)} className="mt-2 text-accent-ink" style={{ fontSize: 12 }}>
+        });
+        return (
+          <g key={r.year}>
+            {bars}
+            <text x={xc} y={Y(r.total) - 6} textAnchor="middle" style={{ fontWeight: 600, fill: "var(--ink)" }}>{r.total}</text>
+            <text x={xc} y={BARS_H - 8} textAnchor="middle" className="ax">
+              {r.year === thisYear ? dt(`${r.year} (${months} мес.)`, `${r.year} (${months} mo.)`) : r.year}
+            </text>
+          </g>
+        );
+      })}
+    </svg>
+  );
+}
+
+function YearCard({ year, items, collapse, dt, ru }: { year: string; items: RefEvent[]; collapse: boolean; dt: Dt; ru: boolean }) {
+  const [all, setAll] = useState(false);
+  // Вычисленных событий много: сначала то, что меняет рынок (входы, уходы, сделки), рядовые
+  // открытия — после; внутри показанного — снова по дате.
+  const rank = (e: RefEvent) => (e.kind === "open" ? 1 : 0);
+  const cut = collapse && !all && items.length > PER_CARD;
+  const shown = cut
+    ? items.map((e, i) => ({ e, i })).sort((p, q) => rank(p.e) - rank(q.e) || p.i - q.i).slice(0, PER_CARD).sort((p, q) => p.i - q.i).map((x) => x.e)
+    : items;
+  return (
+    <div className="panel yr">
+      <h3>{year}</h3>
+      {shown.map((e, i) => {
+        const tag = e.kind ? TAG[e.kind] : null;
+        return (
+          <div key={`${e.date}-${i}`} className="ev">
+            <span className="d">{e.date.length > 4 ? fmtDate(e.date, ru).replace(` ${year}`, "") : dt("год", "year")}</span>
+            <span>
+              <span className={`tag ${tag ? tag[2] : ""}`}>{tag ? dt(tag[0], tag[1]) : dt("Событие", "Event")}</span>
+              {e.chain && <><b>{e.chain}</b> — </>}
+              {collapse ? withoutBrand(e.text, e.chain) : e.text}
+            </span>
+          </div>
+        );
+      })}
+      {collapse && items.length > PER_CARD && (
+        <button type="button" onClick={() => setAll(!all)} style={{ alignSelf: "flex-start", fontSize: 12, color: "var(--accent)" }}>
           {all ? dt("Свернуть", "Collapse") : dt(`Ещё ${items.length - PER_CARD}`, `${items.length - PER_CARD} more`)}
         </button>
       )}

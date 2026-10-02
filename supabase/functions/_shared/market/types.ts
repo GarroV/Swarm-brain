@@ -84,6 +84,8 @@ export type SnapDodoMonth = {
   complete: boolean;
 };
 export type Snapshot = {
+  /** Ручная часть страны (блоки эталона, вписанные руками) — см. editorial.ts. */
+  editorial?: Record<string, unknown>;
   chains: SnapChain[];
   locations: SnapLocation[];
   companies: SnapCompany[];

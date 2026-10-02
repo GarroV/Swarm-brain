@@ -495,7 +495,6 @@ export type MarketFinancial = {
   company_id: string;
   year: number;
   revenue_eur: number | null;
-  net_profit_eur: number | null;
   employees: number | null;
   source: string | null;
   verification: MarketVerification;
@@ -538,7 +537,7 @@ export type MarketRun = {
 export type MarketSource = {
   adapter: string;
   chain_key: string;
-  feeds: "locations" | "financials" | "dodo" | "prices" | "facts";
+  feeds: "locations" | "financials" | "dodo" | "prices" | "facts" | "editorial";
   cadence: "weekly" | "monthly" | "yearly" | "manual";
   mode: "auto" | "manual" | "blocked";
   reason: string | null;
@@ -556,6 +555,8 @@ export type MarketBundle = {
   runs: MarketRun[];
   sources: MarketSource[];
   pending: number;
+  /** Ручная часть страны по блокам эталона (mkt_editorial); разбирает lib/marketEditorial.ts. */
+  editorial?: Record<string, unknown>;
 };
 export type MarketCandidate = {
   id: string;

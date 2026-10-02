@@ -1,7 +1,7 @@
 "use client";
 // Свежесть источников и действия админа: очередь кандидатов от сборщиков (принять /
 // отклонить, «принять все новые точки» для первичной заливки) и загрузка снимка ручных
-// источников. Красным — авто-источник, который упал или молчит дольше STALE_DAYS.
+// источников. Этого блока нет в эталоне: это процесс Swarm (сбор и проверка), он стоит последним. Красным — авто-источник, который упал или молчит дольше STALE_DAYS.
 import { useCallback, useEffect, useState } from "react";
 import type { MarketBundle, MarketCandidate } from "@/types";
 import {
@@ -13,7 +13,8 @@ import {
 } from "@/lib/api";
 import { freshness, STALE_DAYS } from "@/lib/marketView";
 import { useDt } from "@/components/roy/nav";
-import { adapterName, daysAgo, Section } from "./ui";
+import { adapterName, daysAgo } from "./ui";
+import { RefSection } from "./ref";
 
 const FEED: Record<string, [string, string]> = {
   locations: ["точки", "locations"],
@@ -21,6 +22,7 @@ const FEED: Record<string, [string, string]> = {
   dodo: ["продажи Dodo", "Dodo sales"],
   prices: ["цены", "prices"],
   facts: ["факты рынка", "market facts"],
+  editorial: ["ручная часть отчёта", "report editorial"],
 };
 const KIND: Record<MarketCandidate["kind"], [string, string]> = {
   new_location: ["новая точка", "new location"],
@@ -130,7 +132,8 @@ export function Freshness({ bundle, isAdmin, onChanged }: { bundle: MarketBundle
   const dt = useDt();
   const rows = freshness(bundle.sources, bundle.runs, new Date());
   return (
-    <Section title={dt("Источники и свежесть", "Sources and freshness")}>
+    <RefSection id="sources" eyebrow={dt("Источники", "Sources")} title={dt("Источники и свежесть", "Sources and freshness")}>
+      <div className="panel" style={{ padding: "12px 16px" }}>
       <table className="w-full border-collapse" style={{ fontSize: 12 }}>
         <tbody>
           {rows.map((r) => (
@@ -160,6 +163,7 @@ export function Freshness({ bundle, isAdmin, onChanged }: { bundle: MarketBundle
           <SnapshotUpload cc={bundle.country} onChanged={onChanged} />
         </div>
       )}
-    </Section>
+      </div>
+    </RefSection>
   );
 }

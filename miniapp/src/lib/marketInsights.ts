@@ -3,6 +3,7 @@
 // Всё считается на экране из реестра точек, юрлиц и продаж Dodo — после каждого сбора
 // цифры пересчитываются сами, руками их никто не пишет. Без React — под тестами.
 import type { MarketBundle, MarketChain, MarketFact, MarketLocation } from "../types.ts";
+import type { EdEvent, EdEventKind } from "./marketEditorial.ts";
 import { aliveAtYearEnd } from "./marketStats";
 import { fmtMoney } from "./marketView";
 
@@ -115,14 +116,6 @@ export function kpis(b: Pick<MarketBundle, "chains" | "locations" | "companies" 
   };
 }
 
-/** Открытия с датой по годам и сетям — для столбцов «Открытий за год». */
-export function openingsByYear(locs: Loc[], bakery: ReadonlySet<string>, years: number[]): Array<{ year: number; byChain: Map<string, number>; total: number }> {
-  return years.map((year) => {
-    const byChain = countBy(datedOpenings(locs, bakery, [year, year]), (l) => l.chain_key);
-    return { year, byChain, total: [...byChain.values()].reduce((a, n) => a + n, 0) };
-  });
-}
-
 /** Сравнение периодов по группам: открытий в год раньше и сейчас. */
 export type TrendRow = { group: string; early: number; recent: number };
 export function trend<T extends Loc>(locs: T[], bakery: ReadonlySet<string>, p: Periods, group: (l: T) => string | null): TrendRow[] {
@@ -130,7 +123,8 @@ export function trend<T extends Loc>(locs: T[], bakery: ReadonlySet<string>, p: 
   const r = countBy(datedOpenings(locs, bakery, p.recent), group);
   return [...new Set([...e.keys(), ...r.keys()])]
     .map((g) => ({ group: g, early: perYear(e.get(g) ?? 0, p.earlyMonths), recent: perYear(r.get(g) ?? 0, p.recentMonths) }))
-    .sort((a, b) => b.early + b.recent - (a.early + a.recent) || a.group.localeCompare(b.group));
+    // Порядок эталона: по недавнему периоду, при равенстве — по раннему.
+    .sort((a, b) => b.recent - a.recent || b.early - a.early || a.group.localeCompare(b.group));
 }
 
 /** Событие таймлайна: открытие и закрытие — из реестра, сделка и прочее — из фактов. */
@@ -320,4 +314,74 @@ export function userNote(s: string | null): string | null {
   const kept = s.split(/(?<=[.!?])\s+/).filter((x) => !INTERNAL_NOTE.test(x)).join(" ").trim();
   if (!kept) return null;
   return kept.length > MAX_NOTE ? `${kept.slice(0, MAX_NOTE).trimEnd()}…` : kept;
+}
+
+// ── Таймлайн, события и динамика сетей в разметке эталона.
+
+/** Первый год таймлайна эталона; динамика сетей начинается годом раньше. */
+export const TIMELINE_FROM = 2021;
+
+/** Дата на оси времени, как tOf эталона: только год — 1 июля, месяц — 15-е число.
+ *  precise — известен хотя бы месяц. */
+export function timeOf(s: string | null | undefined): { t: number; precise: boolean } | null {
+  const m = String(s ?? "").match(/^(\d{4})(?:-(\d{2}))?(?:-(\d{2}))?/);
+  if (!m) return null;
+  const y = +m[1], mo = m[2] ? +m[2] - 1 : 6, d = m[3] ? +m[3] : m[2] ? 15 : 1;
+  return { t: new Date(y, mo, d).getTime(), precise: !!m[2] };
+}
+
+/** Отметка дорожки: открытие (или анонс) и закрытие точки с года from, без пекарен. */
+export type TlMark<T> = { loc: T; kind: "open" | "plan" | "close"; t: number; precise: boolean };
+export function timelineMarks<T extends Loc>(locs: T[], bakery: ReadonlySet<string>, from: number): Array<TlMark<T>> {
+  const out: Array<TlMark<T>> = [];
+  for (const l of locs) {
+    if (bakery.has(l.chain_key)) continue;
+    const o = timeOf(l.opened);
+    if (o && (yearOf(l.opened) ?? 0) >= from) out.push({ loc: l, kind: l.status === "planned" ? "plan" : "open", ...o });
+    const c = l.status === "closed" ? timeOf(l.closed) : null;
+    if (c && (yearOf(l.closed) ?? 0) >= from) out.push({ loc: l, kind: "close", ...c });
+  }
+  return out.sort((a, b) => a.t - b.t);
+}
+
+/** Открытий за год по сетям — столбцы под дорожками (анонсы и закрытия не считаются). */
+export function marksPerYear<T extends Loc>(marks: Array<TlMark<T>>, years: number[]): Array<{ year: number; byChain: Map<string, number>; total: number }> {
+  return years.map((year) => {
+    const byChain = new Map<string, number>();
+    for (const m of marks) {
+      if (m.kind !== "open" || new Date(m.t).getFullYear() !== year) continue;
+      byChain.set(m.loc.chain_key, (byChain.get(m.loc.chain_key) ?? 0) + 1);
+    }
+    return { year, byChain, total: [...byChain.values()].reduce((a, n) => a + n, 0) };
+  });
+}
+
+/** Событие на карточке года: виды эталона; «event» (прочий факт) тега эталона не имеет — null. */
+export type RefEvent = { date: string; kind: EdEventKind | null; chain: string | null; text: string };
+const REF_KIND: Record<EventKind, EdEventKind | null> = { entry: "entry", open: "open", close: "exit", pause: "pause", planned: "plan", deal: "deal", event: null };
+export const refEvent = (e: MarketEvent): RefEvent => ({ date: e.date, kind: REF_KIND[e.kind], chain: e.chain, text: e.text });
+export const editorialEvent = (e: EdEvent): RefEvent => ({ date: e.date, kind: e.kind, chain: e.chain || null, text: e.text });
+
+/** События по годам, как у эталона: внутри года по дате, событие «только год» — в конце года. */
+export function eventsByYear<E extends { date: string }>(list: E[]): Array<[string, E[]]> {
+  const key = (d: string) => (d.length > 4 ? d : `${d}-13`);
+  const by = new Map<string, E[]>();
+  for (const e of [...list].sort((a, b) => key(a.date).localeCompare(key(b.date)))) {
+    const y = e.date.slice(0, 4);
+    by.set(y, [...(by.get(y) ?? []), e]);
+  }
+  return [...by];
+}
+
+/** Точек сети на конец каждого года. Счётчик из истории сети (ручной или из справочника)
+ *  важнее реестра — как SUB у Submarine в эталоне; года без счётчика — из реестра. */
+export function growthSeries(
+  locs: Array<Pick<MarketLocation, "chain_key" | "opened" | "status" | "closed">>,
+  chain: string,
+  years: number[],
+  hist: Record<number, number> | null,
+  thisYear = new Date().getFullYear(),
+): number[] {
+  const own = locs.filter((l) => l.chain_key === chain);
+  return years.map((y) => hist?.[y] ?? aliveAtYearEnd(own, y, thisYear));
 }

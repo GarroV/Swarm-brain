@@ -64,10 +64,6 @@ export const project = (p: Proj, lat: number, lng: number): [number, number] => 
   (p.LAT0 - lat) * p.K,
 ];
 
-/** Цвет — по сегменту, а не по сети: сетей в стране до двух десятков, а различимых цветов
- *  графика пять. Сегмент на карте читается сразу («где пицца, где бургеры»), сеть — фильтром. */
-const SEGMENT_COLOR: Record<string, number> = { pizza: 1, burger: 4, chicken: 5, bakery: 3 };
-export const segmentColor = (segment: string): string => `var(--chart-${SEGMENT_COLOR[segment] ?? 2})`;
 
 /** Медиана цены пиццы ~30 см (28–32 см) по сети: так сравнимы сети с разной линейкой размеров. */
 export function medianPizza30(prices: MarketPrice[], chain: string): number | null {

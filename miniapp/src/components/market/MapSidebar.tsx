@@ -1,10 +1,10 @@
 "use client";
-// Боковая панель карты — как в референсе: вид, год с проигрыванием, год открытия, сети,
-// флажки пекарен и анонсов, число точек и топ городов.
+// Боковая панель карты — .panel.side эталона: вид, состояние сети на конец года с
+// проигрыванием, год открытия, сети, флажки пекарен и анонсов, число точек и топ городов.
 import type { MarketChain } from "@/types";
 import { type CityRow, PRE } from "@/lib/marketMap";
 import { useDt } from "@/components/roy/nav";
-import { Chip } from "./ui";
+import { Sw } from "./ref";
 import type { MapMode } from "./MapView";
 
 type Props = {
@@ -12,157 +12,131 @@ type Props = {
   setMode: (m: MapMode) => void;
   year: number;
   setYear: (y: number) => void;
-  firstYear: number;
+  playFrom: number;
   thisYear: number;
   playing: boolean;
   togglePlay: () => void;
   openFirst: number;
+  buckets: readonly string[];
   openYears: ReadonlySet<string> | null;
-  setOpenYears: (s: Set<string> | null) => void;
-  chains: MarketChain[];
+  pickOpenYear: (b: string) => void;
+  allOpenYears: () => void;
+  chains: MarketChain[]; // в порядке эталона: не пекарни, слот, имя
   counts: Map<string, number>;
-  colors: Map<string, string>;
-  hidden: ReadonlySet<string>;
-  setHidden: (s: Set<string>) => void;
+  col: (key: string) => string;
+  on: ReadonlySet<string>;
+  toggleChain: (k: string) => void;
+  allOn: () => void;
+  allOff: () => void;
   bakeries: boolean;
   setBakeries: (v: boolean) => void;
-  hasBakeries: boolean;
   planned: boolean;
   setPlanned: (v: boolean) => void;
   hasPlanned: boolean;
   total: number;
   cities: CityRow[];
+  chainName: Map<string, string>;
+  bakeryLabel: string | null; // texts.bakery_names ручной части, иначе — имена сетей-пекарен
 };
 
-const label = "mb-1.5 block font-semibold uppercase tracking-wide text-ink-mute";
+const MODES = [["heat", "Хитмап", "Heatmap"], ["dots", "Точки", "Dots"], ["both", "Оба", "Both"]] as const;
 
 export function MapSidebar(p: Props) {
   const dt = useDt();
-  const buckets = [PRE, ...Array.from({ length: p.thisYear - p.openFirst + 1 }, (_, i) => String(p.openFirst + i))];
-  // Клик по году при «всех» оставляет только его; дальше — переключение; пусто → снова все.
-  const pickYear = (b: string) => {
-    const cur = p.openYears ?? new Set<string>();
-    const next = p.openYears ? new Set(cur) : new Set<string>();
-    if (p.openYears && cur.has(b)) next.delete(b);
-    else next.add(b);
-    p.setOpenYears(next.size && next.size < buckets.length ? next : null);
-  };
-  const toggleChain = (k: string) => {
-    const n = new Set(p.hidden);
-    if (n.has(k)) n.delete(k);
-    else n.add(k);
-    p.setHidden(n);
-  };
-  const visibleChains = p.chains.filter((c) => p.bakeries || !c.is_bakery);
-  const cityMax = Math.max(1, ...p.cities.map((c) => c.total));
+  const bakeryNames = p.chains.filter((c) => c.is_bakery).map((c) => c.name);
+  const bakeryLabel = p.bakeryLabel ?? bakeryNames.join(", ");
+  const cityMax = p.cities.length ? p.cities[0].total : 1;
 
   return (
-    <aside className="flex flex-col gap-4" style={{ fontSize: 13 }}>
-      <div>
-        <span className={label} style={{ fontSize: 11 }}>{dt("Вид", "View")}</span>
-        <div className="flex flex-wrap gap-1.5">
-          {([["heat", "Хитмап", "Heatmap"], ["dots", "Точки", "Dots"], ["both", "Оба", "Both"]] as const).map(([m, ru, en]) => (
-            <Chip key={m} active={p.mode === m} onClick={() => p.setMode(m)}>{dt(ru, en)}</Chip>
+    <div className="panel side">
+      <div className="ctl">
+        <span className="lbl">{dt("Вид", "View")}</span>
+        <div className="seg">
+          {MODES.map(([m, ru, en]) => (
+            <button key={m} type="button" aria-pressed={p.mode === m} onClick={() => p.setMode(m)}>{dt(ru, en)}</button>
           ))}
         </div>
       </div>
 
-      <div>
-        <span className={label} style={{ fontSize: 11 }}>
-          {dt("На конец года", "At year end")} <b className="text-ink">{p.year}</b>
-        </span>
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={p.togglePlay}
-            aria-label={p.playing ? dt("Пауза", "Pause") : dt("Проиграть по годам", "Play through years")}
-            className="size-8 shrink-0 rounded-md border border-line bg-card text-ink hover:bg-accent-soft"
-          >
-            {p.playing ? "❚❚" : "▶"}
+      <div className="ctl">
+        <label htmlFor="mkt-map-yr">{dt("Состояние сети на конец года", "Network at year end")}</label>
+        <div className="yearrow">
+          <button type="button" onClick={p.togglePlay} aria-label={dt(`Проиграть ${p.playFrom}–${p.thisYear}`, `Play ${p.playFrom}–${p.thisYear}`)}>
+            {p.playing ? "■" : "▶"}
           </button>
-          <input
-            type="range"
-            min={p.firstYear}
-            max={p.thisYear}
-            value={p.year}
-            onChange={(e) => p.setYear(Number(e.target.value))}
-            className="w-full accent-[var(--accent-ink)]"
-            aria-label={dt("Год", "Year")}
-          />
+          <input type="range" id="mkt-map-yr" min={p.playFrom} max={p.thisYear} step={1} value={p.year} onChange={(e) => p.setYear(Number(e.target.value))} />
+          <output htmlFor="mkt-map-yr">{p.year}</output>
         </div>
       </div>
 
-      <div>
-        <span className={label} style={{ fontSize: 11 }}>{dt("Год открытия", "Opening year")}</span>
-        <div className="flex flex-wrap gap-1.5">
-          {buckets.map((b) => (
-            <Chip key={b} active={!p.openYears || p.openYears.has(b)} onClick={() => pickYear(b)}>
+      <div className="ctl">
+        <span className="lbl">{dt("Год открытия", "Opening year")}</span>
+        <div className="seg">
+          {p.buckets.map((b) => (
+            <button key={b} type="button" aria-pressed={!!p.openYears?.has(b)} onClick={() => p.pickOpenYear(b)}>
               {b === PRE ? dt(`до ${p.openFirst} / н.д.`, `before ${p.openFirst} / n/a`) : b}
-            </Chip>
+            </button>
           ))}
-          <Chip active={!p.openYears} onClick={() => p.setOpenYears(null)}>{dt("Все годы", "All years")}</Chip>
+          <button type="button" aria-pressed={!p.openYears} onClick={p.allOpenYears}>{dt("Все годы", "All years")}</button>
         </div>
       </div>
 
-      <div>
-        <div className="mb-1.5 flex items-center justify-between">
-          <span className={label} style={{ fontSize: 11, marginBottom: 0 }}>{dt("Сети", "Chains")}</span>
-          <span className="flex gap-2 text-accent-ink" style={{ fontSize: 12 }}>
-            <button type="button" onClick={() => p.setHidden(new Set())}>{dt("Все", "All")}</button>
-            <button type="button" onClick={() => p.setHidden(new Set(p.chains.map((c) => c.key)))}>{dt("Сбросить", "Clear")}</button>
-          </span>
-        </div>
-        <div className="flex flex-wrap gap-1.5">
-          {visibleChains.map((c) => (
-            <Chip key={c.key} active={!p.hidden.has(c.key)} onClick={() => toggleChain(c.key)} color={p.colors.get(c.key)}>
-              {c.name} <span className="text-ink-mute">{p.counts.get(c.key) ?? 0}</span>
-            </Chip>
+      <div className="ctl">
+        <span className="lbl">{dt("Сети", "Chains")}</span>
+        <div className="chips">
+          {p.chains.map((c) => (
+            <button key={c.key} type="button" className="chip" aria-pressed={p.on.has(c.key)} onClick={() => p.toggleChain(c.key)}>
+              <Sw color={p.col(c.key)} />
+              {c.name} <span className="ct">{p.counts.get(c.key) ?? 0}</span>
+            </button>
           ))}
+        </div>
+        <div className="seg">
+          <button type="button" onClick={p.allOn}>{dt("Все", "All")}</button>
+          <button type="button" onClick={p.allOff}>{dt("Сбросить", "Clear")}</button>
         </div>
       </div>
 
-      {(p.hasBakeries || p.hasPlanned) && (
-        <div className="flex flex-col gap-1.5 text-ink-soft">
-          {p.hasBakeries && (
-            <label className="flex items-center gap-2">
-              <input type="checkbox" checked={p.bakeries} onChange={(e) => p.setBakeries(e.target.checked)} className="accent-[var(--accent-ink)]" />
-              {dt("Пекарни и кафе", "Bakeries and cafés")}
+      {(bakeryNames.length > 0 || p.hasPlanned) && (
+        <div className="ctl">
+          {bakeryNames.length > 0 && (
+            <label className="check">
+              <input type="checkbox" checked={p.bakeries} onChange={(e) => p.setBakeries(e.target.checked)} />
+              {dt("Пекарни и кафе", "Bakeries and cafés")} ({bakeryLabel})
             </label>
           )}
           {p.hasPlanned && (
-            <label className="flex items-center gap-2">
-              <input type="checkbox" checked={p.planned} onChange={(e) => p.setPlanned(e.target.checked)} className="accent-[var(--accent-ink)]" />
+            <label className="check">
+              <input type="checkbox" checked={p.planned} onChange={(e) => p.setPlanned(e.target.checked)} />
               {dt("Показать анонсированные", "Show announced")}
             </label>
           )}
         </div>
       )}
 
-      <div className="rounded-lg border border-line p-3">
-        <div className="text-ink-mute" style={{ fontSize: 11 }}>{dt("Точек на карте", "Locations on the map")}</div>
-        <div className="font-semibold text-ink tabular-nums" style={{ fontSize: 24 }}>{p.total}</div>
+      <div className="stat">
+        <span className="muted">{dt("Точек на карте", "Locations on the map")}</span>
+        <b>{p.total}</b>
       </div>
 
-      {p.cities.length > 0 && (
-        <div>
-          <span className={label} style={{ fontSize: 11 }}>{dt("Топ городов", "Top cities")}</span>
-          <ul className="flex flex-col gap-1.5">
-            {p.cities.map((c) => (
-              <li key={c.city}>
-                <div className="flex justify-between text-ink-soft" style={{ fontSize: 12 }}>
-                  <span className="truncate">{c.city}</span>
-                  <span className="tabular-nums text-ink">{c.total}</span>
-                </div>
-                <div className="flex h-1.5 overflow-hidden rounded-full bg-surface-2" style={{ width: `${(c.total / cityMax) * 100}%` }}>
-                  {c.byChain.map(([k, n]) => (
-                    <span key={k} style={{ width: `${(n / c.total) * 100}%`, background: p.colors.get(k) }} />
+      <div className="ctl">
+        <span className="lbl">{dt("Топ городов", "Top cities")}</span>
+        <div className="citybars">
+          {p.cities.length
+            ? p.cities.map((c) => (
+              <div key={c.city} className="cb">
+                <span className="c">{c.city}</span>
+                <span className="bar">
+                  {c.byChain.map(([k, v]) => (
+                    <i key={k} style={{ width: `${(v / cityMax) * 100}%`, background: p.col(k) }} title={`${p.chainName.get(k) ?? k}: ${v}`} />
                   ))}
-                </div>
-              </li>
-            ))}
-          </ul>
+                </span>
+                <span className="n">{c.total}</span>
+              </div>
+            ))
+            : <span className="muted">{dt("Нет точек при текущих фильтрах", "No locations with the current filters")}</span>}
         </div>
-      )}
-    </aside>
+      </div>
+    </div>
   );
 }

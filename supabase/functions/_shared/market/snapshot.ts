@@ -1,8 +1,9 @@
 // Разбор снимка страны для «Анализа рынка». Снимок заливает РУЧНЫЕ источники — то, что кодом
 // пока не собирается (финансы из Fina, точки локальных сетей без локатора, факты рынка, цены).
 // Формат — данные хорватского анализа как есть (короткие ключи точек c/n/a/p/o/est/s/cl/f/src/v/vn).
-// Не берём: производные ключи файла (paths/proj/trends/W/H — экран считает их сам) и продажи
-// Dodo (dodo/dodoOps — их доливает сборщик из publicapi.dodois.io, у них есть живой источник).
+// Не берём: производные ключи файла (paths/proj/trends/W/H — экран считает их сам). Внутренние
+// выгрузки Dodo (продажи по месяцам из отчёта Sales, заказы по каналам из Dodo IS) приходят
+// ручными блоками editorial.dodo_monthly / dodo_ops — у сборщика publicapi их нет.
 // Битый снимок отклоняется целиком с перечнем причин: частичный импорт оставил бы страну в
 // состоянии, которого не было ни в одном источнике.
 import {
@@ -19,6 +20,7 @@ import {
   type Verification,
   VERIFICATIONS,
 } from "./types.ts";
+import { parseEditorial } from "./editorial.ts";
 
 type R = Record<string, unknown>;
 const str = (v: unknown): string | null =>
@@ -96,7 +98,10 @@ function parseYears(raw: unknown): SnapFinYear[] {
     employees: num(y.employees),
     source: str(y.source),
     verification: verif(y.v),
-    note: str(y.v_note) ?? str(y.revenue_note),
+    // Все пометки записи: по ним экран ставит звёздочку «пересчитано» (DERIVED / «~»), как эталон.
+    note: [...new Set([str(y.note), str(y.revenue_note), str(y.v_note)].filter((x): x is string => x !== null))].join(
+      " · ",
+    ) || null,
   }));
 }
 
@@ -264,7 +269,8 @@ export function validateSnapshot(raw: unknown): SnapshotResult {
   const facts = parseFacts(B);
   const companies = parseCompanies(B, chainKey, facts);
   const prices = parsePrices(B, chainKey);
+  const editorial = parseEditorial(B.editorial, errors);
   return errors.length
     ? { ok: false, errors }
-    : { ok: true, snapshot: { chains, locations, companies, prices, facts, dodo: [] } };
+    : { ok: true, snapshot: { chains, locations, companies, prices, facts, dodo: [], editorial } };
 }
