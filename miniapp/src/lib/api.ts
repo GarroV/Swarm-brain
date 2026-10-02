@@ -31,6 +31,7 @@ import type {
 import { createRequestCache, REQUEST_CACHE_TTL_MS } from "./request-cache";
 import { normalizeProposedTasks, type ProposedTask } from "./proposedTasks";
 import type { DeployNotice } from "@/lib/deployNotice";
+import type { SwarmNotification } from "./notificationTypes";
 import { type MeetingInvite, parseInviteResponse } from "./meetingInvite";
 import {
   type Maintenance,
@@ -2398,20 +2399,8 @@ export type TaskComment = {
 
 // Уведомление в колокольчике. Сейчас единственный тип — комментарий к задаче;
 // поле `type` заведено под назначения/смены статуса (беклог), UI на него уже смотрит.
-export type SwarmNotification = {
-  id: string;
-  /** maintenance — плановые работы (заморозка, issue #609): без задачи, содержимое в payload. */
-  type: "task_comment" | "task_reminder" | "maintenance";
-  task_id: string | null;
-  task_title: string;
-  comment_id: string | null;
-  content: string;
-  actor_telegram_id: number | null;
-  actor_name: string;
-  read_at: string | null;
-  created_at: string;
-  payload?: MaintenanceNotice;
-};
+// Тип живёт отдельно (issue #383): чистые модули (homeNews) берут его, не таща в граф весь клиент.
+export type { SwarmNotification } from "./notificationTypes";
 
 export type NotificationsResponse = {
   items: SwarmNotification[];
@@ -3326,13 +3315,10 @@ let mockAutojoin = false;
  * которые бот пойдёт. Сервер отдаёт её только при включённом автозапуске. Форма —
  * _shared/autojoin-calendar.ts (AutojoinCalendarCheck).
  */
-export type AutojoinCalendarStatus = "not_connected" | "no_access" | "unavailable" | "no_meetings" | "ok";
-export interface AutojoinCalendarCheck {
-  status: AutojoinCalendarStatus;
-  meetings: number;
-  events: number;
-  next: { title: string | null; starts_at: string; platform: string } | null;
-}
+// Форма проверки живёт рядом с её текстом (autojoinNotice.ts), чтобы тест текста не тянул
+// весь клиент в граф (issue #383).
+import type { AutojoinCalendarCheck } from "./autojoinNotice";
+export type { AutojoinCalendarCheck, AutojoinCalendarStatus } from "./autojoinNotice";
 export interface AutojoinState {
   enabled: boolean;
   calendar?: AutojoinCalendarCheck;

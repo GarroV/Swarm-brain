@@ -1,7 +1,13 @@
 // Плашка у переключателя бота: что показала живая проверка календаря (решение 01.10.2026,
 // docs/decisions/2026-10-01-autojoin-calendar-check.md). Чистая функция — тексты и тон проверяются
 // без экрана. Статусы — _shared/autojoin-calendar.ts.
-import type { AutojoinCalendarCheck } from "./api";
+export type AutojoinCalendarStatus = "not_connected" | "no_access" | "unavailable" | "no_meetings" | "ok";
+export interface AutojoinCalendarCheck {
+  status: AutojoinCalendarStatus;
+  meetings: number;
+  events: number;
+  next: { title: string | null; starts_at: string; platform: string } | null;
+}
 
 export type NoticeTone = "warn" | "soft" | "ok";
 

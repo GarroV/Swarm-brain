@@ -5,7 +5,7 @@
 // Чистая логика без React.
 
 import type { SprintCycle, SprintCycleItem, Task } from "@/types";
-import type { SwarmNotification } from "@/lib/api";
+import type { SwarmNotification } from "@/lib/notificationTypes";
 import { toISO } from "@/lib/calendar";
 import { isDone } from "@/lib/smartLists";
 import { dueDay } from "@/lib/taskCalendar";

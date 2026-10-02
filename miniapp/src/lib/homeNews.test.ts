@@ -1,7 +1,7 @@
 import { assertEquals } from "jsr:@std/assert";
 import { checkpointReminder, freshComments, hotTasks, HOT_LIMIT } from "./homeNews.ts";
 import type { SprintCycle, SprintCycleItem, Task } from "../types.ts";
-import type { SwarmNotification } from "./api.ts";
+import type { SwarmNotification } from "./notificationTypes.ts";
 
 const NOW = new Date(2026, 8, 25, 12, 0, 0); // пт 25.09.2026
 
