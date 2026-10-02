@@ -419,3 +419,31 @@ Deno.test("parseCompanyWall reads a Slovenian page: MŠ, Celotni prihodki, Štev
     "MŠ",
   );
 });
+
+Deno.test("parseCompanyWall reads a Montenegrin page: PIB, staff only as a sentence for the last year", () => {
+  const page =
+    `<p>PIB 03671429 Reg. broj 5</p><p>društvo zapošljava ukupno 13 radnika, dok</p><p>Preuzmi 2023 2024 2025 Ukupni prihodi 0,00 0,00 298.878,00 Ukupni rashodi 1,00 2,00 3,00</p>`;
+  const ys = parseCompanyWall(
+    page,
+    "03671429",
+    "https://www.companywall.me/firma/food-v-doo/MMEX2Htq",
+    () => 1,
+  );
+  // 0,00 за годы до основания — фирмы ещё не было, года нет.
+  assertEquals(ys.map((y) => [y.year, y.revenue_eur, y.employees]), [[
+    2025,
+    298878,
+    13,
+  ]]);
+  assertThrows(
+    () =>
+      parseCompanyWall(
+        page,
+        "99999999",
+        "https://www.companywall.me/firma/x",
+        () => 1,
+      ),
+    Error,
+    "PIB",
+  );
+});

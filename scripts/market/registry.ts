@@ -94,8 +94,9 @@ export function parseRoBilant(
 /** «3.061.881.000,00» → 3061881000. */
 const cwNum = (s: string) => Number(s.replace(/\./g, "").replace(",", "."));
 
-/** Подписи страницы CompanyWall по языку сайта. В Сербии (и .me) — APR: «Ukupni prihodi»,
- *  MB из 8 цифр; в Словении (.si) — AJPES: «Celotni prihodki», MŠ из 10 цифр. */
+/** Подписи страницы CompanyWall по сайту. В Сербии — APR: «Ukupni prihodi», MB из 8 цифр;
+ *  в Словении (.si) — AJPES: «Celotni prihodki», MŠ из 10 цифр; в Черногории (.me) — налоговая:
+ *  «Ukupni prihodi», PIB из 8 цифр. */
 const CW_LABELS = {
   sr: {
     id: "MB",
@@ -113,10 +114,21 @@ const CW_LABELS = {
     staff: "Število zaposlenih",
     registry: "celotni prihodki — все доходы, AJPES",
   },
+  me: {
+    id: "PIB",
+    digits: 8,
+    dl: "Preuzmi",
+    income: "Ukupni prihodi",
+    staff: "Broj zaposlenih",
+    registry: "ukupni prihodi — все доходы, Poreska uprava",
+  },
 } as const;
-const cwLang = (
-  url: string,
-) => (/companywall\.si\//.test(url) ? CW_LABELS.sl : CW_LABELS.sr);
+const cwLang = (url: string) =>
+  /companywall\.si\//.test(url)
+    ? CW_LABELS.sl
+    : /companywall\.me\//.test(url)
+    ? CW_LABELS.me
+    : CW_LABELS.sr;
 
 /** Страница юрлица CompanyWall: строка общих доходов и число сотрудников за три последних
  *  поданных года. Номер юрлица на странице обязан совпасть с конфигом — иначе ссылка указывает
@@ -133,7 +145,10 @@ export function parseCompanyWall(
     .replace(/<[^>]+>/g, " ")
     .replace(/&nbsp;|&#160;/g, " ") // между «Preuzmi» и годами на живой странице стоит &nbsp;
     // словенская страница пишет буквы с гачеком сущностями: «M&#x160;» — это «MŠ»
-    .replace(/&#x([0-9a-f]+);/gi, (_, h) => String.fromCodePoint(parseInt(h, 16)))
+    .replace(
+      /&#x([0-9a-f]+);/gi,
+      (_, h) => String.fromCodePoint(parseInt(h, 16)),
+    )
     .replace(/&#(\d+);/g, (_, d) => String.fromCodePoint(Number(d)))
     .replace(/\s+/g, " ");
   const id = text.match(new RegExp(`(?:^|\\s)${L.id} (\\d{${L.digits}})\\b`))
@@ -154,13 +169,16 @@ export function parseCompanyWall(
   }
   const years = income[1].trim().split(" ").map(Number);
   const values = income[2].trim().split(" ").map(cwNum);
-  const staff =
-    text.match(new RegExp(`${L.staff} ((?:${NUM} ?)+)`))?.[1]?.trim()
-      .split(" ").map(cwNum) ?? [];
+  const row = text.match(new RegExp(`${L.staff} ((?:${NUM} ?)+)`))?.[1]
+    ?.trim().split(" ").map(cwNum);
+  // В Черногории строки сотрудников нет — только фраза о последнем годе.
+  const last = Number(text.match(/zapošljava ukupno (\d+) radnika/)?.[1] ?? 0);
+  const staff = row ?? years.map((_, i) => (i === years.length - 1 ? last : 0));
   const out: RegistryYear[] = [];
   years.forEach((year, i) => {
     const v = values[i];
     if (i > 0 && i === years.length - 1 && v === values[i - 1]) return;
+    if (!v) return; // 0,00 — года до основания фирмы, её ещё не было
     const fx = rate(year);
     out.push({
       reg_id: regId,
