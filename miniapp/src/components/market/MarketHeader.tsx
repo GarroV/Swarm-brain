@@ -49,7 +49,7 @@ export function MarketHeader({ bundle }: { bundle: MarketBundle }) {
       out.push({
         value: `€${dec(leader.revenue / 1e6, 1, ru)} ${dt("млн", "M")}`,
         label: dt(`выручка ${leader.name} ${leader.year}`, `${leader.name} revenue ${leader.year}`),
-        note: ed.kpis[3]?.note ?? (units ? dt(`${units} точек на конец ${leader.year}`, `${units} locations at the end of ${leader.year}`) : null),
+        note: ed.kpis[3]?.note ?? (units ? dt(`${units} ${ruPlural(units, "точка", "точки", "точек")} на конец ${leader.year}`, `${units} locations at the end of ${leader.year}`) : null),
       });
     }
     return out;
