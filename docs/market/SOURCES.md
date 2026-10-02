@@ -223,3 +223,37 @@
 |---|---|---|
 | dodo | Food V. d.o.o. | 03671429 |
 | caffeine | Caffeine Company d.o.o. | 03075966 |
+
+## BG — Болгария
+
+| Что | Откуда | Что именно | Как | Частота | Сверено |
+|---|---|---|---|---|---|
+| Продажи Dodo | https://publicapi.dodois.io/bg/api/v1/ | пиццерии Dodo (unitinfo/all: адрес, координаты, BeginDateWork) и выручка по месяцам с числом пиццерий; курс к евро — ЕЦБ, для динара — НБС (kurs.resenje.org) | авто, `dodo-publicapi` | раз в неделю | — |
+| Точки | https://publicapi.dodois.io/bg/api/v1/ | сеть dodo: пиццерии Dodo (unitinfo/all: адрес, координаты, BeginDateWork) и выручка по месяцам с числом пиццерий; курс к евро — ЕЦБ, для динара — НБС (kurs.resenje.org) | авто, `dodo-publicapi` | раз в неделю | — |
+| Точки | https://overpass-api.de/api/interpreter | точки сетей по тегу brand (osmBrands в конфиге) или по началу name среди заведений общепита (osmNames) из OpenStreetMap, координаты, адрес, дата открытия, если она есть в теге; город — из addr:city, а без него — ближайший place=city в пределах 15 км, нет города — ближайший place=town | авто, `osm-overpass` | раз в неделю | 2026-10-03 |
+| Выручки юрлиц | Търговски регистър (registryagency.bg) — годовые отчёты PDF | бесплатного машинного источника нет: papagal.bg за защитой от ботов, companybook.bg и finansi.bg — 2024–2025 платно; вопрос владельцу | вручную | по запросу | — |
+| Цены | Wolt / Glovo (JSON меню по slug заведения, без входа) | ещё не собирались; кандидат в автоматический адаптер | вручную | по запросу | — |
+| Факты рынка | — | ещё не собирались; ручной части нет | вручную | по запросу | — |
+
+Сети (по чему их ищет `osm-overpass`: тег brand или начало name; пусто — сети в OSM нет, точки из других источников):
+
+| Ключ | Сеть | Сегмент | Поиск в OSM |
+|---|---|---|---|
+| `dodo` | Dodo Pizza | pizza | — |
+| `dominos` | Domino's | pizza | brand: Domino's, Domino's Pizza |
+| `papajohns` | Papa John's | pizza | brand: Papa John's |
+| `pizzalab` | Pizza Lab | pizza | brand: Pizza Lab |
+| `mcdonalds` | McDonald's | burger | brand: McDonald's, McDonalds, Макдоналдс |
+| `burgerking` | Burger King | burger | brand: Burger King |
+| `hesburger` | Hesburger | burger | brand: Hesburger |
+| `skapto` | Skapto | burger | name: Skapto, Скапто |
+| `kfc` | KFC | chicken | brand: KFC |
+| `subway` | Subway | sandwich | brand: Subway |
+| `go-grill` | GO Grill | grill | brand: GO Grill |
+| `happy` | Happy Bar & Grill | grill | brand: Happy Bar & Grill |
+| `aladin` | Aladin Foods | other | brand: Aladin Foods |
+| `starbucks` | Starbucks | coffee | brand: Starbucks |
+| `costa` | Costa Coffee | coffee | brand: Costa |
+| `fornetti` | Fornetti | bakery, пекарня | brand: Fornetti |
+| `sofiyska-banitsa` | Sofiyska banitsa | bakery, пекарня | brand: Софийска баница |
+| `kings-bakery` | King's Bakery | bakery, пекарня | name: King's Bakery |
