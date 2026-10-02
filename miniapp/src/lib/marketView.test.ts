@@ -32,6 +32,15 @@ Deno.test("revenue per unit divides by units alive at year end; no units → nul
   assertEquals(revenuePerUnit({ revenue_eur: null, year: 2022 }, locs), null);
 });
 
+Deno.test("revenue per unit is not shown when most of the chain's units have no opening date", () => {
+  // Точки из OSM без даты считаются открытыми во все годы: делить выручку 2023 на число
+  // точек 2026 значит показать ложную цифру.
+  const undated = { opened: null, status: "open", closed: null };
+  const locs = [undated, undated, undated, { opened: "2020", status: "open", closed: null }];
+  assertEquals(revenuePerUnit({ revenue_eur: 800, year: 2023 }, locs), null);
+  assertEquals(revenuePerUnit({ revenue_eur: 800, year: 2023 }, [undated, ...locs.slice(3), locs[3]]), 267);
+});
+
 const src = (adapter: string, mode: "auto" | "manual", last_ok_at: string | null): MarketSource => ({
   adapter,
   chain_key: "",

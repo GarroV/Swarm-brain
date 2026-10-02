@@ -25,6 +25,9 @@ export function ChainDynamics({ bundle }: { bundle: MarketBundle }) {
     () => [...bundle.chains].sort((a, b) => (series[b.key]?.at(-1) ?? 0) - (series[a.key]?.at(-1) ?? 0)),
     [bundle.chains, series],
   );
+  // Точка без даты открытия (всё, что пришло из OSM) рисуется открытой с первого года графика:
+  // линия выходит плоской, и это надо сказать на экране, а не оставить читаться как история.
+  const undated = useMemo(() => bundle.locations.filter((l) => !l.opened && l.status !== "planned").length, [bundle.locations]);
   const [picked, setPicked] = useState<Set<string> | null>(null);
   const shown = picked ?? new Set(ranked.slice(0, TOP).map((c) => c.key));
 
@@ -101,6 +104,14 @@ export function ChainDynamics({ bundle }: { bundle: MarketBundle }) {
           </div>
         ))}
       </div>
+      {undated > 0 && (
+        <p className="mt-2 text-ink-mute" style={{ fontSize: 12 }}>
+          {dt(
+            `У ${undated} из ${bundle.locations.length} точек нет даты открытия — они считаются открытыми с ${FROM_YEAR} года, поэтому рост до сегодняшнего дня по ним не виден.`,
+            `${undated} of ${bundle.locations.length} locations have no opening date — they count as open since ${FROM_YEAR}, so their growth up to today is not shown.`,
+          )}
+        </p>
+      )}
       <SourceCaption bundle={bundle} feeds="locations" />
     </Section>
   );

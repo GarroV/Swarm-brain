@@ -28,14 +28,17 @@ export function medianPizza30(prices: MarketPrice[], chain: string): number | nu
 }
 
 /** Выручка юрлица за год на одну работавшую к концу года точку его сети. Нет выручки или
- *  точек — null, а не деление на ноль. */
+ *  точек — null, а не деление на ноль. Если у большинства точек нет даты открытия (так у
+ *  всего, что пришло из OSM), число точек того года неизвестно — тоже null. */
 export function revenuePerUnit(
   fin: Pick<MarketFinancial, "revenue_eur" | "year">,
   chainLocs: Array<{ opened: string | null; status: string; closed: string | null }>,
 ): number | null {
   if (fin.revenue_eur === null) return null;
   const units = aliveAtYearEnd(chainLocs, fin.year);
-  return units ? Math.round(fin.revenue_eur / units) : null;
+  const undated = aliveAtYearEnd(chainLocs.filter((l) => !l.opened), fin.year);
+  if (!units || undated * 2 > units) return null;
+  return Math.round(fin.revenue_eur / units);
 }
 
 export const STALE_DAYS = 8;
