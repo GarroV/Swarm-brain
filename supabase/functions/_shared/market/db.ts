@@ -121,8 +121,18 @@ export async function importSnapshot(sb: SupabaseClient, cc: string, s: Snapshot
     "chains",
   );
 
+  // Точки Dodo — истина в API Dodo (сборщик ведёт их под ключом «dodo:<имя>»). Когда API уже
+  // завёл их в стране, ручной снимок их не трогает, иначе каждый импорт рождал бы двойников.
+  const { count: apiDodo, error: dodoErr } = await sb.from("mkt_locations").select("id", { count: "exact", head: true })
+    .eq("country", country).eq("chain_key", "dodo").like("ext_key", "dodo:%").not(
+      "ext_key",
+      "match",
+      "^dodo:-?[0-9]+\\.[0-9]{4}:",
+    );
+  if (dodoErr) throw new Error(`dodo api points: ${dodoErr.message}`);
+  const own = apiDodo ? s.locations.filter((l) => l.chain !== "dodo") : s.locations;
   // Две записи с одним ключом в одном upsert Postgres не примет — берём последнюю.
-  const locs = new Map(s.locations.map((l) => [locKey(l.chain, l.lat, l.lng, l.address), l]));
+  const locs = new Map(own.map((l) => [locKey(l.chain, l.lat, l.lng, l.address), l]));
   if (locs.size) {
     await must(
       sb.from("mkt_locations").upsert(

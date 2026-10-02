@@ -121,3 +121,20 @@ Deno.test("bulk accept of OSM finds keeps them unverified; a single accept confi
   assertEquals(await acceptAllNewLocations(sb, CC, 1), 0);
   await wipe();
 });
+
+Deno.test("snapshot import skips Dodo points once the Dodo API owns them in the country", async () => {
+  await wipe();
+  const snap = {
+    chains: [{ key: "dodo", name: "Dodo Pizza", slot: 1, segment: "pizza" }],
+    locs: [{ c: "dodo", n: "Dodo One", city: "A", a: "St 1", lat: 45.8, lng: 15.9, s: "open", v: "internal" }],
+  };
+  const v = validateSnapshot(snap);
+  if (!v.ok) throw new Error(v.errors.join("; "));
+  await importSnapshot(sb, CC, v.snapshot);
+  assertEquals((await loadCountry(sb, CC)).locations.length, 1);
+  await sb.from("mkt_locations").update({ ext_key: "dodo:One" }).eq("country", CC);
+  await importSnapshot(sb, CC, v.snapshot);
+  const locs = (await loadCountry(sb, CC)).locations as Array<{ ext_key: string }>;
+  assertEquals(locs.map((l) => l.ext_key), ["dodo:One"]);
+  await wipe();
+});

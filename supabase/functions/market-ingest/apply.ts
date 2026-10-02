@@ -8,7 +8,7 @@ import { matchPoints } from "../_shared/market/geo.ts";
 import { foldDailyOrders, shouldFlagClosed, toEur } from "../_shared/market/rules.ts";
 import { locKey, must, recordRun } from "../_shared/market/db.ts";
 import { TRUSTED, type Verification } from "../_shared/market/types.ts";
-import type { IngestPayload, OsmPoint, RegistryYear } from "./types.ts";
+import type { DodoUnit, IngestPayload, OsmPoint, RegistryYear } from "./types.ts";
 
 type Stats = Record<string, number>;
 const now = () => new Date().toISOString();
@@ -251,6 +251,37 @@ async function applyOsm(
   };
 }
 
+/** Точка Dodo, заведённая раньше не из API (ручной снимок: ключ по координатам и адресу),
+ *  и пиццерия из API — одна и та же, если ближе MATCH_RADIUS_M. Такую точку переводим на
+ *  ключ API, и upsert ниже обновляет её, а не заводит двойника (поймано на стенде 02.10.2026:
+ *  у каждой пиццерии Загреба было по две записи). */
+const LOC_KEY = /^dodo:-?\d+\.\d{4}:-?\d+\.\d{4}:/;
+async function adoptKnownDodoPoints(
+  sb: SupabaseClient,
+  country: string,
+  units: Array<DodoUnit & { lat: number; lng: number }>,
+) {
+  if (!units.length) return;
+  const known = await must<Array<{ id: string; ext_key: string; lat: number; lng: number }>>(
+    sb.from("mkt_locations").select("id, ext_key, lat, lng").eq("country", country).eq("chain_key", "dodo"),
+    "dodo known",
+  );
+  // Ключ снимка — locKey: «dodo:<lat4>:<lng4>:<адрес>»; ключ API — «dodo:<имя пиццерии>».
+  const legacy = known.filter((k) => LOC_KEY.test(k.ext_key));
+  const taken = new Set(known.map((k) => k.ext_key));
+  const fresh = units.filter((u) => !taken.has(`dodo:${u.name}`));
+  const r = matchPoints(
+    legacy.map((k) => ({ ...k, chain: "dodo" })),
+    fresh.map((u) => ({ ...u, chain: "dodo" })),
+  );
+  for (const m of r.matched) {
+    await must(
+      sb.from("mkt_locations").update({ ext_key: `dodo:${m.found.name}` }).eq("id", m.existing.id),
+      "dodo adopt",
+    );
+  }
+}
+
 async function applyDodo(
   sb: SupabaseClient,
   country: string,
@@ -270,6 +301,7 @@ async function applyDodo(
     "dodo chain",
   );
   const withCoords = p.units.filter((u) => u.lat !== null && u.lng !== null);
+  await adoptKnownDodoPoints(sb, country, withCoords as Array<DodoUnit & { lat: number; lng: number }>);
   if (withCoords.length) {
     await must(
       sb.from("mkt_locations").upsert(

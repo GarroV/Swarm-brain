@@ -162,6 +162,53 @@ Deno.test("dodo: re-sending the same days does not double the month; units upser
   assertEquals(u, [{ verification: "internal", source_kind: "dodo" }]);
 });
 
+Deno.test("dodo: a unit near an already known Dodo point updates it instead of adding a twin", async () => {
+  await reset();
+  await sb.from("mkt_chains").upsert({ country: CC, key: "dodo", name: "Dodo Pizza" }, { onConflict: "country,key" });
+  const known = await sb.from("mkt_locations").insert({
+    country: CC,
+    chain_key: "dodo",
+    ext_key: "dodo:45.8040:15.9590:tratinskaulica12",
+    name: "Dodo Pizza Zagreb-1 (Tresnjevka)",
+    lat: 45.804,
+    lng: 15.959,
+    status: "paused",
+    opened: "2023",
+    source_kind: "dodo",
+    verification: "internal",
+  });
+  if (known.error) throw new Error(known.error.message);
+  const unit = (name: string, lat: number, lng: number) => ({
+    name,
+    city: "Zagreb",
+    address: null,
+    lat,
+    lng,
+    opened: "2023-05-01",
+    open: true,
+    organization: "X d.o.o.",
+  });
+  const p = {
+    source: "dodo" as const,
+    country: CC,
+    started_at,
+    revenue: null,
+    days: [],
+    units: [unit("Zagreb-1", 45.8041, 15.9592), unit("Zagreb-9", 45.9, 16.1)],
+  };
+  await applyIngest(sb, p, "2026-10-05");
+  await applyIngest(sb, p, "2026-10-05");
+  const { data } = await sb.from("mkt_locations").select("ext_key, status, opened").eq("country", CC).eq(
+    "chain_key",
+    "dodo",
+  )
+    .order("ext_key");
+  assertEquals(data, [
+    { ext_key: "dodo:Zagreb-1", status: "open", opened: "2023-05-01" },
+    { ext_key: "dodo:Zagreb-9", status: "open", opened: "2023-05-01" },
+  ]);
+});
+
 Deno.test("dodo: revenue in local currency is converted with the month's ECB rate", async () => {
   await reset();
   const base = {
