@@ -72,11 +72,11 @@ Deno.test("мульти-участничий дубль — то же время
 });
 
 Deno.test("ЛОЖНЫЙ дубль (реальный кейс): 1-1 vs большая встреча, общий 1 человек → НЕ дубль", async () => {
-  // «Maria / Aleksandra» 08:00 (2 чел.) vs «CVM IMF» 08:15 (14 чел.), общий — только Aleksandra.
+  // «Maria / Anna» 08:00 (2 чел.) vs «CVM IMF» 08:15 (14 чел.), общий — только Anna.
   const rows = [{
     id: "cvm",
     content:
-      "Встреча: CVM IMF / May Review\nДата: 19.06.2026, 08:15\nУчастники: Aleksandra Mironova, Farukh Davurov, Pavel Vasko, Ekaterina Bochkareva, S Kuznetsov, Indira Ravilova, D Gorbunova, A Krasavtsev, Anna Leonova, A Nuralieva, Sergey Artemov, Vasiliy Garro, S Andreev, Ilya Kholodnov",
+      "Встреча: CVM IMF / May Review\nДата: 19.06.2026, 08:15\nУчастники: Anna Sokolova, Farukh Davurov, Pavel Vasko, Ekaterina Bochkareva, S Kuznetsov, Indira Ravilova, D Gorbunova, A Krasavtsev, Anna Leonova, A Nuralieva, Sergey Artemov, Vasiliy Garro, S Andreev, Ilya Kholodnov",
     source: "granola",
     is_private: false,
     owner_id: null,
@@ -86,7 +86,7 @@ Deno.test("ЛОЖНЫЙ дубль (реальный кейс): 1-1 vs боль�
     groupId: "cee",
     entryDate: "2026-06-19",
     startedAt: "2026-06-19T08:00:00Z",
-    attendees: [{ name: "Aleksandra Mironova" }, { name: "Maria Molchanova" }],
+    attendees: [{ name: "Anna Sokolova" }, { name: "Maria Ivanova" }],
   });
   assertEquals(dup, null); // overlap=1 < 2 → не склеиваем разные встречи
 });

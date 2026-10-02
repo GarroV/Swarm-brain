@@ -3,7 +3,7 @@ import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import { buildProjectOptions } from "./projectPicker.ts";
 import type { Project } from "../types.ts";
 
-const ME = 744230399, COLLEAGUE = 507931827;
+const ME = 744230399, COLLEAGUE = 900000102;
 
 function proj(p: Partial<Project> & { id: string; name: string }): Project {
   return {
@@ -18,7 +18,7 @@ const ALL: Project[] = [
   proj({ id: "vibe", name: "Vibe Coding" }),
   proj({ id: "pl", name: "P&L", parent_id: "vibe" }),
   proj({ id: "imf", name: "IMF & HQ IT" }),
-  proj({ id: "karpov", name: "Дмитрий Карпов", parent_id: "imf" }),
+  proj({ id: "orlov", name: "Иван Орлов", parent_id: "imf" }),
   proj({ id: "revizii", name: "Анализ ревизий", created_by: COLLEAGUE }),
   proj({ id: "romania", name: "Румыния июнь-август", parent_id: "revizii", created_by: COLLEAGUE }),
 ];
@@ -26,7 +26,7 @@ const ALL: Project[] = [
 Deno.test("чужие проекты и их подпроекты в список не попадают", () => {
   const { tops, subs } = buildProjectOptions(ALL, { viewerId: ME });
   assertEquals(tops.map((o) => o.id), ["imf", "vibe"]);
-  assertEquals(subs.map((o) => o.id), ["karpov", "pl"]);
+  assertEquals(subs.map((o) => o.id), ["orlov", "pl"]);
 });
 
 Deno.test("проекты и подпроекты разведены по секциям — верхние отдельно от вложенных", () => {
@@ -59,13 +59,13 @@ Deno.test("подпроекты сортируются группами: сна�
   const many: Project[] = [
     proj({ id: "imf", name: "IMF & HQ IT" }),
     proj({ id: "vibe", name: "Vibe Coding" }),
-    proj({ id: "s2", name: "Юля Емельянова", parent_id: "imf" }),
-    proj({ id: "s1", name: "Алексей Канаев", parent_id: "imf" }),
+    proj({ id: "s2", name: "Пётр Зайцев", parent_id: "imf" }),
+    proj({ id: "s1", name: "Ольга Белова", parent_id: "imf" }),
     proj({ id: "s3", name: "P&L", parent_id: "vibe" }),
   ];
   const { subs } = buildProjectOptions(many, { viewerId: ME });
   assertEquals(subs.map((o) => `${o.parentName}/${o.name}`), [
-    "IMF & HQ IT/Алексей Канаев", "IMF & HQ IT/Юля Емельянова", "Vibe Coding/P&L",
+    "IMF & HQ IT/Ольга Белова", "IMF & HQ IT/Пётр Зайцев", "Vibe Coding/P&L",
   ]);
 });
 
@@ -79,7 +79,7 @@ Deno.test("чужой подпроект в моей группе тоже не 
   // только проекты и подпроекты которые создал я, все, не больше».
   const list = [...ALL, proj({ id: "chuzhoy", name: "Испания", parent_id: "imf", created_by: COLLEAGUE })];
   const { subs } = buildProjectOptions(list, { viewerId: ME });
-  assertEquals(subs.map((o) => o.id), ["karpov", "pl"]);
+  assertEquals(subs.map((o) => o.id), ["orlov", "pl"]);
 });
 
 Deno.test("строка без автора — не моя, в список не идёт", () => {
@@ -103,5 +103,5 @@ Deno.test("группа спринта в селектор не попадает
   ];
   const { tops, subs } = buildProjectOptions(withGroups, { viewerId: ME });
   assertEquals(tops.map((o) => o.id), ["imf", "vibe"]);
-  assertEquals(subs.map((o) => o.id), ["karpov", "pl"]);
+  assertEquals(subs.map((o) => o.id), ["orlov", "pl"]);
 });

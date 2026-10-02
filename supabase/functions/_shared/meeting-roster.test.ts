@@ -43,10 +43,10 @@ Deno.test("сильное пересечение состава склеивае
 });
 
 Deno.test("разные встречи, делящие одного человека, НЕ склеиваются (кейс 1-1 ⨯ большой созвон)", () => {
-  const oneToOne = { startedAt: "2026-06-19T08:00:00+00:00", ownerEmail: null, attendees: [{ name: "Maria" }, { name: "Aleksandra" }] };
+  const oneToOne = { startedAt: "2026-06-19T08:00:00+00:00", ownerEmail: null, attendees: [{ name: "Maria" }, { name: "Anna" }] };
   const big = {
     startedAt: "2026-06-19T08:05:00+00:00", ownerEmail: null,
-    attendees: Array.from({ length: 14 }, (_, i) => ({ name: `Человек ${i}` })).concat([{ name: "Aleksandra" }]),
+    attendees: Array.from({ length: 14 }, (_, i) => ({ name: `Человек ${i}` })).concat([{ name: "Anna" }]),
   };
   assertEquals(sameMeetingByRoster(oneToOne, big), { same: false, reason: "no_signal" });
 });
