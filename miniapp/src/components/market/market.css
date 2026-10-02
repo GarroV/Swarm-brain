@@ -160,6 +160,7 @@
 .mkt .crow .b i{display:block;height:8px;border-radius:0 2px 2px 0}
 .mkt .tone-a{background:var(--line)}.mkt .tone-b{background:var(--accent)}
 .mkt .pgrid{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1fr);gap:16px}
+.mkt .pgrid>:only-child{grid-column:1/-1}
 @media (max-width:960px){.mkt .pgrid{grid-template-columns:minmax(0,1fr)}}
 .mkt .chartbox{padding:14px 16px;display:flex;flex-direction:column;gap:8px;min-width:0}
 .mkt .chartbox svg text{fill:var(--muted);font-family:var(--f-mono);font-size:10.5px}

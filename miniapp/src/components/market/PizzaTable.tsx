@@ -82,6 +82,11 @@ export function PizzaTable({ model, color }: { model: PzModel; color: (k: string
   const dt = useDt();
   const ru = useLang() === "ru";
   const bold = model.opacity.indexOf(1);
+  // Колонка из одних прочерков (страна без ручной части: нет дат входа, заметок, выручки на
+  // точку) не показывается — таблица короче и не выглядит недоделанной.
+  const hasEntry = model.rows.some((r) => r.entry !== "—");
+  const hasNote = model.rows.some((r) => r.note && r.note !== "—");
+  const perCols = model.perHead.map((_, i) => i).filter((i) => model.rows.some((r) => r.per[i] !== null));
   return (
     <div className="panel scroll">
       <table>
@@ -89,11 +94,11 @@ export function PizzaTable({ model, color }: { model: PzModel; color: (k: string
           <tr>
             <th>{dt("Сеть", "Chain")}</th>
             <th className="r">{dt("Точек", "Units")}</th>
-            <th>{dt("Вход", "Entry")}</th>
+            {hasEntry && <th>{dt("Вход", "Entry")}</th>}
             {model.revHead.map((h) => <th key={h} className="r">{h}</th>)}
-            {model.perHead.map((h) => <th key={h} className="r">{h}</th>)}
+            {perCols.map((i) => <th key={model.perHead[i]} className="r">{model.perHead[i]}</th>)}
             {model.lfl && <th>LFL</th>}
-            <th>{dt("Примечание", "Note")}</th>
+            {hasNote && <th>{dt("Примечание", "Note")}</th>}
           </tr>
         </thead>
         <tbody>
@@ -101,11 +106,11 @@ export function PizzaTable({ model, color }: { model: PzModel; color: (k: string
             <tr key={r.key + r.name}>
               <td style={{ whiteSpace: "nowrap" }}><Sw color={color(r.key)} inline /><b>{r.name}</b></td>
               <td className="r">{r.units}</td>
-              <td style={{ whiteSpace: "nowrap" }}>{r.entry}</td>
+              {hasEntry && <td style={{ whiteSpace: "nowrap" }}>{r.entry}</td>}
               {r.rev.map((v, i) => <td key={i} className="r">{fmtK(v, ru)}</td>)}
-              {r.per.map((v, i) => <td key={i} className="r">{i === bold ? <b>{fmtK(v, ru)}</b> : fmtK(v, ru)}</td>)}
+              {perCols.map((i) => <td key={i} className="r">{i === bold ? <b>{fmtK(r.per[i], ru)}</b> : fmtK(r.per[i], ru)}</td>)}
               {model.lfl && <td style={{ whiteSpace: "nowrap" }}>{r.lfl ?? "—"}</td>}
-              <td className="small" style={{ minWidth: 220 }}>{r.note}</td>
+              {hasNote && <td className="small" style={{ minWidth: 220 }}>{r.note}</td>}
             </tr>
           ))}
         </tbody>

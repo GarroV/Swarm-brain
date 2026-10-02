@@ -7,9 +7,12 @@ export const MONEY_FIRST_YEAR = 2021;
 
 /** Годы таблицы: с первого года эталона по последний год, за который есть отчётность. */
 export function moneyYears(financials: Array<Pick<MarketFinancial, "year" | "revenue_eur">>, thisYear: number, first = MONEY_FIRST_YEAR): number[] {
-  const last = Math.max(...financials.filter((f) => f.revenue_eur !== null && f.year <= thisYear).map((f) => f.year), -Infinity);
+  const known = financials.filter((f) => f.revenue_eur !== null && f.year <= thisYear).map((f) => f.year);
+  const last = Math.max(...known, -Infinity);
   if (!Number.isFinite(last) || last < first) return [];
-  return Array.from({ length: last - first + 1 }, (_, i) => first + i);
+  // Года, где выручки нет ни у кого (страна собрана с реестра за последние три года), — пустые колонки.
+  const from = Math.max(first, Math.min(...known));
+  return Array.from({ length: last - from + 1 }, (_, i) => from + i);
 }
 
 /** f() эталона: от 10 млн — один знак, меньше — два. Ненулевое меньше 5 тыс. — «<0,01», а не ноль. */

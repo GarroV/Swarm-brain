@@ -10,6 +10,11 @@ Deno.test("moneyYears: с 2021 по последний год с выручко�
   assertEquals(moneyYears([], 2026), []);
 });
 
+Deno.test("moneyYears: без колонок из одних прочерков — начало с первого года, где выручка есть хоть у кого-то", () => {
+  const fin = [{ year: 2023, revenue_eur: 1 }, { year: 2022, revenue_eur: null }, { year: 2025, revenue_eur: 3 }];
+  assertEquals(moneyYears(fin, 2026), [2023, 2024, 2025]);
+});
+
 Deno.test("fmtMln: два знака до 10 млн, один от 10 млн, «<0,01» вместо нуля", () => {
   assertEquals(fmtMln(9_994_000, true), "9,99");
   assertEquals(fmtMln(12_340_000, false), "12.3");

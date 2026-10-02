@@ -15,6 +15,8 @@ import { computedPizza, editorialPizza, PizzaTable, PizzaUnitChart } from "./Piz
 import { fmtDate, RefSection, useChainColor, useChainOrder, useEditorial } from "./ref";
 import { SourceCaption } from "./ui";
 
+const MIN_DODO_MONTHS = 3;
+
 export function PizzaSection({ bundle }: { bundle: MarketBundle }) {
   const dt = useDt();
   const ru = useLang() === "ru";
@@ -30,7 +32,9 @@ export function PizzaSection({ bundle }: { bundle: MarketBundle }) {
 
   const t = ed.texts;
   const hasUnits = !!model && model.rows.some((r) => r.per.some((v) => v !== null));
-  const hasDodo = dodo.bars.length > 0;
+  // Один-два месяца — не ряд, а пустая карточка: у стран без внутренней выгрузки публичный API
+  // даёт только прошлый месяц, ряд копится сам. До трёх месяцев карточку не показываем.
+  const hasDodo = dodo.bars.length >= MIN_DODO_MONTHS;
   const ops = ed.dodoOps.length
     ? <DodoOpsEditorial rows={ed.dodoOps} texts={t} country={bundle.country} />
     : <DodoOpsComputed bundle={bundle} now={now} />;
@@ -59,7 +63,7 @@ export function PizzaSection({ bundle }: { bundle: MarketBundle }) {
       )}
     >
       {model && <PizzaTable model={model} color={color} />}
-      {(hasUnits || bundle.dodo.length > 0 || hasDodo) && (
+      {(hasUnits || hasDodo) && (
         <div className="pgrid">
           {hasUnits && model && (
             <div className="panel chartbox">
@@ -73,7 +77,7 @@ export function PizzaSection({ bundle }: { bundle: MarketBundle }) {
               </p>
             </div>
           )}
-          {(hasDodo || bundle.dodo.length > 0) && (
+          {hasDodo && (
             <div className="panel chartbox">
               <h3>{t.dodo_title ?? dt("Dodo: продажи по месяцам, € тыс.", "Dodo: sales by month, € thousand")}</h3>
               {hasDodo && <DodoMonthlyChart bars={dodo.bars} editorial={dodo.editorial} second={ed.texts.dodo_second ?? secondDodoName(bundle)} vat={Number(ed.texts.dodo_vat) || null} />}
