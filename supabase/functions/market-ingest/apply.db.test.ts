@@ -2,6 +2,7 @@
 import { assertEquals } from "@std/assert";
 import { createClient } from "@supabase/supabase-js";
 import { applyIngest } from "./apply.ts";
+import { locKey } from "../_shared/market/db.ts";
 
 for (const n of ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY"]) {
   if (!Deno.env.get(n)) {
@@ -120,7 +121,14 @@ Deno.test("osm: new point → one candidate, trusted untouched, osm point flagge
     "country",
     CC,
   ).order("kind");
-  assertEquals(c!.map((x) => x.kind), ["maybe_closed", "new_location"]);
+  // новая точка встаёт сама (unverified, источник OSM), в очереди остаётся только закрытие
+  assertEquals(c!.map((x) => x.kind), ["maybe_closed"]);
+  const { data: n } = await sb.from("mkt_locations").select("verification, source_kind").eq("country", CC).eq(
+    "name",
+    "N",
+  )
+    .single();
+  assertEquals(n, { verification: "unverified", source_kind: "osm" });
   const { data: t } = await sb.from("mkt_locations").select(
     "status, missing_weeks",
   ).eq("ext_key", "trusted").single();
@@ -157,6 +165,40 @@ Deno.test("osm: a matched point gets its empty city filled, a known city is neve
     ext_key: "trusted",
     city: "Beograd",
   }]);
+});
+
+Deno.test("osm: old pending finds are closed by the run, a point closed by hand is not reopened", async () => {
+  await reset();
+  const found = { chain: "kfc", name: "N", lat: 45.8, lng: 15.9, city: null, address: null, osm_id: "node/1" };
+  const gone = { ...found, lat: 46.6, lng: 16.6, osm_id: "node/2" };
+  const keyOf = (p: typeof found) => locKey(p.chain, p.lat, p.lng, p.address);
+  const ins = await sb.from("mkt_candidates").insert([found, gone].map((p) => ({
+    country: CC,
+    kind: "new_location",
+    source: "osm",
+    payload: { key: keyOf(p), row: {} },
+  })));
+  if (ins.error) throw new Error(ins.error.message);
+  const shut = await sb.from("mkt_locations").insert({
+    country: CC,
+    chain_key: "kfc",
+    ext_key: "shut",
+    name: "S",
+    lat: 47.0,
+    lng: 17.0,
+    status: "closed",
+    verification: "confirmed",
+    source_kind: "osm",
+    missing_weeks: 0,
+  });
+  if (shut.error) throw new Error(shut.error.message);
+  const reopen = { ...found, lat: 47.0, lng: 17.0, osm_id: "node/3" };
+  await applyIngest(sb, { source: "osm", country: CC, started_at, points: [found, reopen] }, "2026-10-05");
+  const { count } = await sb.from("mkt_candidates").select("id", { count: "exact", head: true }).eq("country", CC)
+    .eq("kind", "new_location").eq("status", "pending");
+  assertEquals(count, 0);
+  const { data: closed } = await sb.from("mkt_locations").select("status").eq("country", CC).eq("status", "closed");
+  assertEquals(closed!.length, 1);
 });
 
 Deno.test("osm: a country with over 1000 known points is matched in full", async () => {

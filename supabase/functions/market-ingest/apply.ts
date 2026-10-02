@@ -166,6 +166,36 @@ type ExistingLoc = {
   missing_weeks: number;
 };
 
+/** Находки «новая точка», висящие с прежних прогонов (очередь была до автоприёма; у Хорватии
+ *  они пришли до импорта снимка), закрывает полный прогон OSM: добавленная им → accepted,
+ *  остальные (точка уже известна или пропала из OSM) → rejected. decided_by 0 — сборщик. */
+async function closeStaleFinds(
+  sb: SupabaseClient,
+  country: string,
+  added: Set<string>,
+) {
+  const pending = await allRows<{ id: string; payload: { key?: string } }>(
+    (from, to) =>
+      sb.from("mkt_candidates").select("id, payload").eq("country", country)
+        .eq("kind", "new_location").eq("status", "pending").order("id")
+        .range(from, to),
+    "osm stale finds",
+  );
+  for (const status of ["accepted", "rejected"] as const) {
+    const ids = pending.filter((c) => added.has(String(c.payload.key)) === (status === "accepted")).map((c) => c.id);
+    for (let i = 0; i < ids.length; i += ID_BATCH) {
+      await must(
+        sb.from("mkt_candidates").update({
+          status,
+          decided_by: 0,
+          decided_at: now(),
+        }).in("id", ids.slice(i, i + ID_BATCH)),
+        "osm stale decide",
+      );
+    }
+  }
+}
+
 async function applyOsm(
   sb: SupabaseClient,
   country: string,
@@ -204,28 +234,39 @@ async function applyOsm(
       "osm city",
     );
   }
-  for (const f of r.unmatched) {
+  // Новая точка OSM встаёт сразу, как «не проверено» (решение владельца 02.10.2026: полный
+  // автомат). Вставка без перезаписи: точка с тем же ключом, закрытая или поправленная руками,
+  // остаётся как есть.
+  const added = new Set<string>();
+  const rows = r.unmatched.map((f) => {
     const key = locKey(f.chain, f.lat, f.lng, f.address);
-    await propose(sb, {
+    added.add(key);
+    return {
       country,
-      kind: "new_location",
-      source: "osm",
-      payload: {
-        key,
-        row: {
-          chain_key: f.chain,
-          ext_key: key,
-          name: f.name,
-          city: f.city,
-          address: f.address,
-          lat: f.lat,
-          lng: f.lng,
-          status: "open",
-          source: `https://www.openstreetmap.org/${f.osm_id}`,
-        },
-      },
-    });
+      chain_key: f.chain,
+      ext_key: key,
+      name: f.name,
+      city: f.city,
+      address: f.address,
+      lat: f.lat,
+      lng: f.lng,
+      status: "open",
+      source: `https://www.openstreetmap.org/${f.osm_id}`,
+      source_kind: "osm",
+      verification: "unverified",
+      last_seen_at: now(),
+    };
+  });
+  for (let i = 0; i < rows.length; i += ID_BATCH) {
+    await must(
+      sb.from("mkt_locations").upsert(rows.slice(i, i + ID_BATCH), {
+        onConflict: "country,ext_key",
+        ignoreDuplicates: true,
+      }),
+      "osm add",
+    );
   }
+  await closeStaleFinds(sb, country, added);
   // Пропажа из OSM двигает только точки, которые привёл сам OSM, — проверенные не трогаются.
   let flagged = 0;
   for (const e of r.missing.filter((m) => m.source_kind === "osm")) {
