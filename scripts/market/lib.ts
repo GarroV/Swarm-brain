@@ -224,6 +224,19 @@ export function srLatin(s: string): string {
 
 /** names: ключ сети → начала тега name — для сетей, у которых в OSM нет тега brand (часто
  *  локальные, бывает кириллицей). Совпадение — имя целиком или имя и дальше пробел. brand важнее. */
+const squash = (s: string) =>
+  s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(
+    /[^a-z0-9]/g,
+    "",
+  );
+
+/** Имя сходится с сетью: пустое, не латиница, или содержит одно из названий сети. */
+function nameFits(name: string | undefined, variants: string[]): boolean {
+  if (!name || /[\u0400-\u04ff]/.test(name)) return true;
+  const n = squash(name);
+  return variants.some((v) => squash(v) !== "" && n.includes(squash(v)));
+}
+
 export function parseOverpass(
   j: { elements: OverpassEl[]; remark?: string },
   brands: Record<string, string[]>,
@@ -283,8 +296,18 @@ export function parseOverpass(
   };
   return j.elements.flatMap((e): OsmPoint[] => {
     if (e.tags?.place) return [];
-    const chain = byBrand.get((e.tags?.brand ?? "").toLowerCase()) ??
-      byName(e.tags?.name);
+    const viaBrand = byBrand.get((e.tags?.brand ?? "").toLowerCase());
+    // Тег brand иногда ошибочно стоит на чужом заведении («Me Gutsa IBO pizza» с brand=Pizza Hut):
+    // латинское имя без названия сети — не точка сети. Кириллица не сверяется (Старбакс).
+    if (
+      viaBrand &&
+      !nameFits(e.tags?.name, [
+        ...brands[viaBrand],
+        ...(names[viaBrand] ?? []),
+        e.tags!.brand!,
+      ])
+    ) return [];
+    const chain = viaBrand ?? byName(e.tags?.name);
     const lat = e.lat ?? e.center?.lat, lng = e.lon ?? e.center?.lon;
     if (!chain || lat === undefined || lng === undefined) return [];
     const street = [e.tags?.["addr:street"], e.tags?.["addr:housenumber"]]

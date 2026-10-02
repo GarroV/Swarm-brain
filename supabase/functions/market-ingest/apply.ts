@@ -4,7 +4,7 @@
 // Линт просит короткое имя из карты импортов; см. пояснение в sprint-items.ts.
 // deno-lint-ignore-file no-import-prefix
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { matchPoints, nearSameChain } from "../_shared/market/geo.ts";
+import { matchPoints, samePlace } from "../_shared/market/geo.ts";
 import { foldDailyOrders, shouldFlagClosed, toEur } from "../_shared/market/rules.ts";
 import { allRows, ID_BATCH, locKey, must, recordRun } from "../_shared/market/db.ts";
 import { TRUSTED, type Verification } from "../_shared/market/types.ts";
@@ -161,6 +161,7 @@ type ExistingLoc = {
   ext_key: string;
   lat: number;
   lng: number;
+  address?: string | null;
   status?: string;
   verification: Verification;
   source_kind: string;
@@ -208,7 +209,7 @@ async function applyOsm(
       (from, to) =>
         sb.from("mkt_locations")
           .select(
-            "id, chain_key, ext_key, lat, lng, status, verification, source_kind, missing_weeks",
+            "id, chain_key, ext_key, lat, lng, address, status, verification, source_kind, missing_weeks",
           )
           .eq("country", country).in("chain_key", chains)
           .order("id").range(from, to),
@@ -222,7 +223,7 @@ async function applyOsm(
   // 8–24 м от точек снимка). Такие «зеркала» — машинные строки без ручных правок — убираются.
   const isMirror = (e: typeof all[number]) =>
     e.source_kind === "osm" && e.verification === "unverified" &&
-    nearSameChain(e, live.filter((x) => x.source_kind !== "osm"));
+    samePlace(e, live.filter((x) => x.source_kind !== "osm"));
   const mirrors = live.filter(isMirror).map((e) => e.id);
   for (let i = 0; i < mirrors.length; i += ID_BATCH) {
     await must(
@@ -253,7 +254,7 @@ async function applyOsm(
   const added = new Set<string>();
   // Находка рядом с уже известной точкой той же сети (в т.ч. закрытой) — второй объект того же
   // места, а не новая точка.
-  const fresh = r.unmatched.filter((f) => !nearSameChain(f, all));
+  const fresh = r.unmatched.filter((f) => !samePlace(f, all));
   const rows = fresh.map((f) => {
     const key = locKey(f.chain, f.lat, f.lng, f.address);
     added.add(key);

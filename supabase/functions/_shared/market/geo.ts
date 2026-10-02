@@ -44,11 +44,29 @@ export function matchPoints<
   };
 }
 
-/** Есть ли рядом (ближе radiusM) точка той же сети. */
-export function nearSameChain(
-  p: { chain: string } & GeoPoint,
-  refs: Array<{ chain: string } & GeoPoint>,
+/** На сколько координаты одной точки расходятся между источниками, когда совпадает адрес:
+ *  снимок ставит точку по адресу, OSM — по зданию (Хорватия: до 3 км у трассы). */
+export const SAME_ADDRESS_RADIUS_M = 5000;
+
+/** «Ulica kneza Mislava 1, 10000 Zagreb (…)» → «kneza mislava 1»: до запятой и скобки, без
+ *  диакритики и слова «ulica». Без номера дома адрес ничего не доказывает — null. */
+export function streetKey(address: string | null | undefined): string | null {
+  if (!address) return null;
+  const s = address.split(/[,(]/)[0].normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase().replace(/\bul(ica)?\b\.?/g, " ").replace(/[^a-z0-9]+/g, " ").trim();
+  return /\d/.test(s) && /[a-z]{3}/.test(s) ? s : null;
+}
+
+/** Та же точка той же сети: ближе radiusM — или тот же адрес (улица и дом) в пределах 5 км. */
+export function samePlace(
+  p: { chain: string; address?: string | null } & GeoPoint,
+  refs: Array<{ chain: string; address?: string | null } & GeoPoint>,
   radiusM = MATCH_RADIUS_M,
 ): boolean {
-  return refs.some((r) => r.chain === p.chain && distanceM(r, p) <= radiusM);
+  const key = streetKey(p.address);
+  return refs.some((r) => {
+    if (r.chain !== p.chain) return false;
+    const d = distanceM(r, p);
+    return d <= radiusM || (key !== null && d <= SAME_ADDRESS_RADIUS_M && streetKey(r.address) === key);
+  });
 }
