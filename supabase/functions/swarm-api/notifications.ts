@@ -1,39 +1,18 @@
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { json } from "./http.ts";
-import { canViewTask } from "../_shared/tasks/access.ts";
+import {
+  feedLimit,
+  isSystemNotification,
+  loadNotificationFeed,
+  markNotificationsRead,
+} from "../_shared/notifications/feed.ts";
 
 // Лента уведомлений (колокольчик). Рассылку события «к твоей задаче написали комментарий» делает
 // `_shared/tasks/comment-fanout.ts` — одна реализация для веба и MCP (issue #521).
 // Роуты: GET /notifications, POST /notifications/read.
 // Возвращает null, если путь не про уведомления (index.ts идёт дальше).
 
-const DEFAULT_LIMIT = 30;
-const MAX_LIMIT = 100;
-
-type NotificationRow = {
-  id: string;
-  type: string;
-  task_id: string | null;
-  comment_id: string | null;
-  actor_telegram_id: number | null;
-  read_at: string | null;
-  created_at: string;
-  payload: Record<string, unknown> | null;
-  tasks: { title: string; is_private: boolean; owner_id: number | null } | null;
-  task_comments: { content: string } | null;
-};
-
-const SELECT_WITH_REFS = "id, type, task_id, comment_id, actor_telegram_id, read_at, created_at, payload, " +
-  "tasks(title, is_private, owner_id), task_comments(content)";
-
 // ── Роуты ────────────────────────────────────────────────────────────────────
-
-/** Типы без задачи: содержимое события лежит в `payload`. Рассылает их SQL-функция
- *  `public.maintenance_announce()` (миграция 20260928200000), а не этот модуль. */
-const SYSTEM_TYPES = new Set(["maintenance"]);
-function isSystemNotification(type: string): boolean {
-  return SYSTEM_TYPES.has(type);
-}
 
 /** Ключ строки `app_settings` с объявлением о раскатке. */
 export const DEPLOY_NOTICE_KEY = "deploy_notice";
@@ -105,32 +84,17 @@ export async function handleNotificationRoutes(
 
   // GET /notifications?limit=30 — лента (новые сверху) + счётчик непрочитанных.
   if (routePath === "/notifications" && req.method === "GET") {
-    const raw = parseInt(new URL(req.url).searchParams.get("limit") ?? "", 10);
-    const limit = Number.isFinite(raw) ? Math.min(Math.max(raw, 1), MAX_LIMIT) : DEFAULT_LIMIT;
-
-    const { data, error } = await supabase
-      .from("notifications")
-      .select(SELECT_WITH_REFS)
-      .eq("recipient_telegram_id", telegramId)
-      .order("created_at", { ascending: false })
-      .limit(limit);
-    if (error) {
-      console.error("notifications list failed:", error);
+    const feed = await loadNotificationFeed(
+      supabase,
+      telegramId,
+      isAdmin,
+      feedLimit(new URL(req.url).searchParams.get("limit")),
+    );
+    if (!feed.ok) {
+      console.error("notifications list failed:", feed.cause);
       return json({ error: "Не удалось загрузить уведомления" }, 500, origin);
     }
-
-    // Задачу могли сделать приватной ПОСЛЕ уведомления — тогда её из ленты убираем
-    // (иначе заголовок утечёт задним числом). Оверсайт админа здесь УЧИТЫВАЕМ: доставку
-    // решает `commentRecipients` при отправке, и если строка уже есть, значит человек
-    // имел право её получить; прятать её потом от админа, который эту задачу и так видит
-    // на доске, смысла нет (решение владельца 2026-08-24,
-    // docs/decisions/2026-08-24-comment-subscription.md).
-    const rows = (data ?? []) as unknown as NotificationRow[];
-    // Системные события (заморозка, issue #609) задачи не имеют — их видит адресат, и только.
-    const visible = rows.filter((r) =>
-      isSystemNotification(r.type) ||
-      (r.tasks && canViewTask(r.tasks, telegramId, isAdmin))
-    );
+    const visible = feed.rows;
 
     const names = await resolveNames(
       visible.map((r) => r.actor_telegram_id).filter((x): x is number => !!x),
@@ -165,18 +129,9 @@ export async function handleNotificationRoutes(
   if (routePath === "/notifications/read" && req.method === "POST") {
     const body = await req.json().catch(() => ({})) as { ids?: unknown };
     const ids = Array.isArray(body.ids) ? body.ids.filter((x): x is string => typeof x === "string") : null;
-    if (ids && ids.length === 0) return json({ ok: true }, 200, origin);
-
-    // Фильтр по recipient_telegram_id — чужие уведомления пометить нельзя даже по точному id.
-    let q = supabase
-      .from("notifications")
-      .update({ read_at: new Date().toISOString() })
-      .eq("recipient_telegram_id", telegramId)
-      .is("read_at", null);
-    if (ids) q = q.in("id", ids);
-    const { error } = await q;
-    if (error) {
-      console.error("notifications read failed:", error);
+    const marked = await markNotificationsRead(supabase, telegramId, ids);
+    if (!marked.ok) {
+      console.error("notifications read failed:", marked.cause);
       return json({ error: "Не удалось отметить прочитанным" }, 500, origin);
     }
     return json({ ok: true }, 200, origin);

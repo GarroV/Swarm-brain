@@ -92,6 +92,10 @@ chmod +x ~/.swarm-brain/bin/swarm-mcp-bridge.sh
 | `publish_draft_meeting` | Опубликовать черновик в базу (как «Согласовать» в вебе) |
 | `extract_tasks_from_meeting` | Предложить задачи по тезисам встречи — ничего не создаёт |
 | `delete_task_comment` | Удалить свой комментарий к задаче |
+| `create_task_label` / `rename_task_label` / `delete_task_label` | Личные метки задач: создать, переименовать, удалить (метка снимается с задач, задачи остаются) |
+| `set_task_subscription` | Следить за задачей — новые комментарии придут уведомлением (`notify: false` — выключить) |
+| `get_notifications` / `mark_notifications_read` | Мои уведомления (колокольчик Swarm) и отметка «прочитано» |
+| `get_today_meetings` | Встречи на сегодня из Google-календаря: время, с кем, ссылка. Передай свой пояс (`tz_offset_minutes`, Белград летом 120) |
 | `get_users` | Список команды с профилями |
 | `get_storage_stats` | Статистика базы |
 | `list_entries` | Список записей с фильтрами (источник, тип, дата, файлы, страны) — для ревизии |

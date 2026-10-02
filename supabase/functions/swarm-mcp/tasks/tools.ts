@@ -576,7 +576,7 @@ export async function toolGetProjects(args: { requesting_user_id: number }): Pro
 
 // ── Комментарии к задачам (апдейты) ────────────────────────────────────────────
 
-async function commentTaskGuard(
+export async function commentTaskGuard(
   taskId: string,
   requestingUserId: number,
 ): Promise<{ ok: true; task: Task } | { ok: false; msg: string }> {

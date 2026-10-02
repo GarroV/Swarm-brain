@@ -3,6 +3,7 @@ import { json } from "./http.ts";
 import { canViewTask } from "../_shared/tasks/access.ts";
 import { isCommentRecipient, type NotifiableTask, type SubscriptionState } from "../_shared/tasks/notify.ts";
 import { onlyLive } from "../_shared/tasks/live.ts";
+import { setTaskSubscription } from "../_shared/tasks/subscription-store.ts";
 
 // Подписка на уведомления о комментариях к задаче (issue #82).
 // Канон решения — docs/decisions/2026-08-24-comment-subscription.md: комментарий подписывает,
@@ -113,23 +114,12 @@ export async function handleTaskSubscriptionRoutes(
     if (typeof body.notify !== "boolean") {
       return json({ error: "notify: ожидается true/false" }, 400, origin);
     }
-    const state: SubscriptionState = body.notify ? "subscribed" : "muted";
-    const { error } = await supabase
-      .from("task_subscriptions")
-      .upsert(
-        {
-          task_id: taskId,
-          telegram_id: telegramId,
-          state,
-          reason: "manual",
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: "task_id,telegram_id" },
-      );
-    if (error) {
-      console.error("task_subscriptions patch failed:", error);
+    const saved = await setTaskSubscription(supabase, taskId, telegramId, body.notify);
+    if (!saved.ok) {
+      console.error("task_subscriptions patch failed:", saved.cause);
       return json({ error: "Не удалось сохранить подписку" }, 500, origin);
     }
+    const state = saved.state;
     return json(
       view(task, telegramId, isAdmin, { state, reason: "manual" }),
       200,
