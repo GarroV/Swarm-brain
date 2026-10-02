@@ -9,6 +9,7 @@ import type { SprintCycle } from "../../_shared/tasks/sprint-cycles.ts";
 import type { SprintItem } from "../../_shared/tasks/sprint-items.ts";
 import type { SprintStats } from "../../_shared/tasks/sprint-stats.ts";
 import { isClosedStatus } from "../../_shared/tasks/statuses.ts";
+import type { JournalEvent } from "../../_shared/space-journal.ts";
 
 const STAGE: Record<string, string> = {
   draft: "планирование",
@@ -141,4 +142,27 @@ export function formatSprint(
   }
   const body = [...byProject.entries()].map(([p, list]) => `${p}:\n${list.map(itemLine).join("\n")}`);
   return `${head.join("\n")}\n\nСостав (${items.length}):\n${body.join("\n")}`;
+}
+
+/** Больше событий Claude в ответ не кладём: лента за всё время — сотни строк. */
+export const JOURNAL_LINES = 60;
+
+/** Лента пространства для Claude (#485): время по Белграду, кто, задача, что случилось. */
+export function formatJournal(spaceName: string, days: string, events: JournalEvent[]): string {
+  const period = days === "all" ? "всё время" : `${days} дн.`;
+  if (events.length === 0) return `Журнал «${spaceName}» за ${period}: событий нет.`;
+  const fmt = new Intl.DateTimeFormat("ru-RU", {
+    timeZone: "Europe/Belgrade",
+    day: "2-digit",
+    month: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+  const lines = events.slice(0, JOURNAL_LINES).map((e) => {
+    const who = e.actor ? ` · ${e.actor}` : "";
+    const task = e.task_title ? ` · «${e.task_title}»` : "";
+    return `- ${fmt.format(new Date(e.at))}${who}${task} — ${e.text}`;
+  });
+  const more = events.length > JOURNAL_LINES ? `\n…и ещё ${events.length - JOURNAL_LINES} — сузь период (days).` : "";
+  return `Журнал «${spaceName}» за ${period}, новые сверху:\n${lines.join("\n")}${more}`;
 }

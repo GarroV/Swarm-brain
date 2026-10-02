@@ -39,7 +39,9 @@ import { AcceptConflictError, acceptCycle } from "../../_shared/tasks/sprint-acc
 import { computeSprintStats } from "../../_shared/tasks/sprint-stats.ts";
 import type { Sprint } from "../../_shared/tasks/types.ts";
 import { ADMIN_USER_ID } from "./tools.ts";
-import { formatCycles, formatSpaces, formatSprint, isIsoDate, pickSpace } from "./sprints-format.ts";
+import { formatCycles, formatJournal, formatSpaces, formatSprint, isIsoDate, pickSpace } from "./sprints-format.ts";
+import { JOURNAL_PERIODS, loadSpaceJournal } from "../../_shared/space-journal.ts";
+import { resolvePersonNames } from "../../_shared/users/display-name.ts";
 
 const supabase = createClient(
   Deno.env.get("SUPABASE_URL")!,
@@ -116,6 +118,26 @@ async function withMember(
 }
 
 // ── Пространства ──────────────────────────────────────────────────────────────
+
+/** Лента пространства (#485): правки и комментарии задач его спринтов, состав, сверка, старт и
+ *  приёмка. Видимость — та же, что в вебе: чужая приватная задача в ленту не попадает. */
+export function toolGetSprintJournal(args: Args): Promise<string> {
+  return withMember(args, async (m) => {
+    const space = await loadSpace(m.groupId, args.space);
+    if (typeof space === "string") return space;
+    const days = str(args.days) ?? "7";
+    if (!JOURNAL_PERIODS.includes(days)) return `days: принимаются ${JOURNAL_PERIODS.join(", ")}.`;
+    const result = await loadSpaceJournal(
+      space.id,
+      m.groupId,
+      m.userId,
+      days,
+      (ids) => resolvePersonNames(supabase, ids),
+    );
+    if (!result.ok) return result.status === 404 ? "Пространство не найдено." : result.error;
+    return formatJournal(space.name, days, result.events);
+  });
+}
 
 export function toolGetSprintSpaces(args: Args): Promise<string> {
   return withMember(
@@ -494,6 +516,15 @@ export const SPRINT_TOOL_DEFINITIONS = [
     },
   ),
   tool(
+    "get_sprint_journal",
+    "Журнал пространства спринтов: правки и комментарии задач его спринтов, состав, сверка, старт и приёмка — новые сверху. Отвечает на «что было за неделю по спринту». Чужие личные задачи в ленту не попадают.",
+    {
+      space: SPACE,
+      days: { type: "string", enum: ["1", "3", "7", "all"], description: "Период в днях или all; по умолчанию 7" },
+    },
+    ["space"],
+  ),
+  tool(
     "get_sprint",
     "Спринт целиком: этап, даты, план/факт, сверка и состав по проектам с task_id. Чужие личные задачи — строкой без содержимого.",
     { sprint_id: SPRINT_ID },
@@ -608,6 +639,7 @@ export const SPRINT_TOOL_DEFINITIONS = [
 type ToolFn = (args: Args) => Promise<string>;
 
 export const SPRINT_TOOLS: Record<string, ToolFn> = {
+  get_sprint_journal: toolGetSprintJournal,
   get_sprint_spaces: toolGetSprintSpaces,
   create_sprint_space: toolCreateSprintSpace,
   rename_sprint_space: toolRenameSprintSpace,

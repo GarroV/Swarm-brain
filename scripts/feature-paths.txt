@@ -19,6 +19,8 @@ miniapp/src/lib/spaceAnalytics.ts
 miniapp/src/lib/spaceAnalytics.test.ts
 miniapp/src/components/tasks/sprints
 supabase/functions/swarm-api/space-journal.ts
+supabase/functions/_shared/space-journal.ts
+supabase/functions/_shared/journal-actors.ts
 supabase/functions/swarm-api/space-journal.db.test.ts
 supabase/functions/swarm-api/project-fields.ts
 supabase/functions/swarm-api/project-fields.test.ts

@@ -3,8 +3,6 @@
 //
 // ⚠️ Таблица `sprints` — это вкладки доски проектов. Спринты живут в `sprint_cycles`.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { computeSprintStats, type SprintItemView } from "./sprint-stats.ts";
-import { isClosedStatus } from "./statuses.ts";
 
 const supabase = createClient(
   Deno.env.get("SUPABASE_URL")!,
@@ -140,9 +138,7 @@ function defaultCheckDate(startDate: string): string | null {
     Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]) + CHECK_OFFSET_DAYS),
   );
   const pad = (n: number) => String(n).padStart(2, "0");
-  return `${t.getUTCFullYear()}-${pad(t.getUTCMonth() + 1)}-${
-    pad(t.getUTCDate())
-  }`;
+  return `${t.getUTCFullYear()}-${pad(t.getUTCMonth() + 1)}-${pad(t.getUTCDate())}`;
 }
 
 export async function updateCycle(
