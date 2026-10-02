@@ -16,7 +16,11 @@ fin as (
   from public.mkt_financials f join public.mkt_companies co on co.id = f.company_id
   left join public.mkt_chains ch on ch.country = co.country and ch.key = co.chain_key group by 1
 ),
-dodo as (select country, count(*) filter (where complete) months from public.mkt_dodo_monthly group by 1),
+dodo as (
+  select country, count(*) filter (where revenue_eur is not null) months,
+    count(*) filter (where orders - '_days' <> '{}'::jsonb) order_months
+  from public.mkt_dodo_monthly group by 1
+),
 pr as (select country, count(*) n, count(distinct chain_key) chains from public.mkt_prices group by 1),
 fa as (
   select country, count(*) filter (where topic = 'delivery') delivery, count(*) filter (where topic = 'market') market
@@ -33,7 +37,8 @@ select c.country,
   coalesce(fin.companies, 0)::int as "юрлиц с выручкой",
   coalesce(fin.pizza_companies, 0)::int as "пицца-юрлиц с выручкой",
   'pizza_table' = any(ed.b) as "таблица пицц: ручная",
-  coalesce(dodo.months, 0)::int as "месяцев Dodo",
+  coalesce(dodo.months, 0)::int as "месяцев выручки Dodo",
+  coalesce(dodo.order_months, 0)::int as "месяцев заказов Dodo",
   'dodo_ops' = any(ed.b) as "операции Dodo",
   coalesce(pr.chains, 0)::int as "сетей с ценами",
   'basket' = any(ed.b) as "корзина",

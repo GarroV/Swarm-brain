@@ -6,7 +6,7 @@ import type { ReactNode } from "react";
 import type { MarketBundle } from "@/types";
 import type { EdDodoOps } from "@/lib/marketEditorial";
 import { countryName } from "@/lib/countries";
-import { fullOperatingMonths } from "@/lib/marketInsights";
+import { fullOrderMonths } from "@/lib/marketInsights";
 import { type OpsSum, opsByMonth, opsByUnit, opsSum, scaleBottom, scaleTop, ticks } from "@/lib/marketDodo";
 import { orderChannels } from "@/lib/marketView";
 import { useDt, useLang } from "@/components/roy/nav";
@@ -254,7 +254,7 @@ const ORDER_MONTHS = 12;
 export function DodoOpsComputed({ bundle, now }: { bundle: MarketBundle; now: Date }) {
   const dt = useDt();
   const ru = useLang() === "ru";
-  const months = fullOperatingMonths(bundle.dodo, now).slice(-ORDER_MONTHS).filter((m) => Object.keys(orderChannels(m.orders)).length);
+  const months = fullOrderMonths(bundle.dodo, now).slice(-ORDER_MONTHS).filter((m) => Object.keys(orderChannels(m.orders)).length);
   if (!months.length) return null;
   const channels = [...new Set(months.flatMap((m) => Object.keys(orderChannels(m.orders))))];
   const meta = (c: string) => CHANNEL[c] ?? [c, c, OTHER_COLOR];

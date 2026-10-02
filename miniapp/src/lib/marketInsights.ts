@@ -232,13 +232,27 @@ export function dropDeadChains<B extends Pick<MarketBundle, "chains" | "location
  *  приходит отдельно и только за прошедший месяц целиком — иначе вся история выручки,
  *  у которой нет дневных заказов, выпала бы. */
 export function fullOperatingMonths(dodo: MarketBundle["dodo"], now: Date = new Date()): MarketBundle["dodo"] {
+  return fullMonths(dodo, now, (m) => m.revenue_eur !== null && m.revenue_eur > 0);
+}
+
+/** То же по заказам: публичный API Dodo отдаёт заказы по каналам за любую прошлую дату, а выручку —
+ *  только за прошлый месяц, поэтому история операций строится по заказам. Служебные ключи `_…` не считаются. */
+export function fullOrderMonths(dodo: MarketBundle["dodo"], now: Date = new Date()): MarketBundle["dodo"] {
+  const total = (o: Record<string, unknown> | null) =>
+    Object.entries(o ?? {}).reduce((s, [k, v]) => s + (!k.startsWith("_") && typeof v === "number" ? v : 0), 0);
+  return fullMonths(dodo, now, (m) => total(m.orders) > 0);
+}
+
+/** Полные месяцы работы: не текущий, работающий и с работающим предыдущим месяцем подряд — так
+ *  отпадают месяц открытия и первый месяц после паузы. */
+function fullMonths(dodo: MarketBundle["dodo"], now: Date, isWorking: (m: MarketBundle["dodo"][number]) => boolean): MarketBundle["dodo"] {
   const current = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
   const sorted = [...dodo].sort((a, b) => a.month.localeCompare(b.month));
   const nextMonth = (m: string) => {
     const [y, mm] = m.split("-").map(Number);
     return mm === 12 ? `${y + 1}-01` : `${y}-${String(mm + 1).padStart(2, "0")}`;
   };
-  const working = (m: MarketBundle["dodo"][number] | undefined) => !!m && m.revenue_eur !== null && m.revenue_eur > 0;
+  const working = (m: MarketBundle["dodo"][number] | undefined) => !!m && isWorking(m);
   return sorted.filter((m, i) => {
     if (m.month >= current || !working(m)) return false;
     const prev = sorted[i - 1];

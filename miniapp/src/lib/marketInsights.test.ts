@@ -1,5 +1,5 @@
 import { assertEquals } from "jsr:@std/assert@1";
-import { cagr, chainCities, editorialEvent, eventsByYear, growthSeries, marksPerYear, refEvent, timelineMarks, timeOf, cityShare, datedShare, dodoYoY, dropDeadChains, events, factCards, formatClass, fullOperatingMonths, kpis, periods, prettyFigures, trend, userNote } from "./marketInsights.ts";
+import { cagr, chainCities, editorialEvent, eventsByYear, growthSeries, marksPerYear, refEvent, timelineMarks, timeOf, cityShare, datedShare, dodoYoY, dropDeadChains, events, factCards, formatClass, fullOperatingMonths, fullOrderMonths, kpis, periods, prettyFigures, trend, userNote } from "./marketInsights.ts";
 import type { MarketBundle, MarketChain, MarketFact, MarketLocation } from "../types.ts";
 
 const NOW = new Date("2026-10-02T12:00:00Z");
@@ -166,4 +166,19 @@ Deno.test("growth series: the chain's own counter wins per year, other years com
   const locs = [loc("a", "2019"), loc("a", "2022"), loc("a", null), loc("a", "2018", "closed", "2023"), loc("b", "2021")];
   assertEquals(growthSeries(locs, "a", [2020, 2022, 2023], null, 2026), [3, 4, 3]);
   assertEquals(growthSeries(locs, "a", [2020, 2022, 2023], { 2020: 11, 2023: 17 }, 2026), [11, 4, 17]);
+});
+
+Deno.test("fullOrderMonths: months with orders, without the opening month, pauses and the current month", () => {
+  const NOW = new Date("2026-10-02T10:00:00Z");
+  const m = (month: string, orders: Record<string, unknown> | null) => ({ month, revenue_local: null, currency: null, revenue_eur: null, units: 1, orders, complete: true });
+  const d = [
+    m("2024-03", { site: 5, _days: {} }), // открытие — неполный
+    m("2024-04", { site: 50, aggregator: 10 }),
+    m("2024-05", { _days: { "2024-05-01": {} } }), // пауза: только служебный ключ
+    m("2024-06", { site: 40 }), // после паузы — снова неполный
+    m("2024-07", { site: 45 }),
+    m("2026-09", { site: 1 }),
+    m("2026-10", { site: 9 }), // текущий
+  ];
+  assertEquals(fullOrderMonths(d, NOW).map((x) => x.month), ["2024-04", "2024-07"]);
 });
