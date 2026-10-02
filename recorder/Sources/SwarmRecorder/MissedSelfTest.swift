@@ -38,7 +38,7 @@ final class MissedSelfTest: NSObject {
         statusItem.button?.title = "🐝 missed"
         widget.onInviteBot = { [weak self] id in
             print("missed: кнопка «Позвать бота» в капсуле по \(id)")
-            Task { @MainActor in
+            Task { @MainActor [weak self] in
                 let ok = await self?.watcher.invite(id) ?? false
                 print("missed: приглашение из капсулы \(ok ? "принято" : "НЕ принято")")
             }

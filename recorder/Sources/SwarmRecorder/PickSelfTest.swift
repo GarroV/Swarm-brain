@@ -45,7 +45,7 @@ final class PickSelfTest: NSObject {
         }
         widget.onInviteBot = { [weak self] id in
             print("pick: «Позвать бота» по \(id)")
-            Task { @MainActor in _ = await self?.watcher.invite(id) }
+            Task { @MainActor [weak self] in _ = await self?.watcher.invite(id) }
         }
         widget.onMissedDismiss = { [weak self] id in self?.watcher.dismissInCapsule(id) }
     }

@@ -65,7 +65,7 @@ final class MissedMeetingsWatcher: NSObject {
 
     func start() {
         let t = Timer.scheduledTimer(withTimeInterval: 20, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.tick() }
+            Task { @MainActor [weak self] in self?.tick() }
         }
         RunLoop.main.add(t, forMode: .common)
         timer = t
