@@ -390,3 +390,32 @@ Deno.test("parseOverpass: a wrong brand tag on another business is dropped; Cyri
     "node/5",
   ]);
 });
+
+Deno.test("parseCompanyWall reads a Slovenian page: MŠ, Celotni prihodki, Število zaposlenih, euros as is", () => {
+  const page =
+    `<p>D&#x160; SI 87822237 M&#x160; <span>8065152000</span> Datum</p><p>Prevzemi finančno poročilo Prevzemi 2023 2024 2025 Celotni prihodki 1.293.260,96 1.516.346,04 1.945.075,61 Celotni odhodki 1,00 2,00 3,00</p>
+    <p>&#x160;tevilo zaposlenih 8,94 11,82 13,02 Povprečna plača</p>`;
+  const ys = parseCompanyWall(
+    page,
+    "8065152000",
+    "https://www.companywall.si/podjetje/x/y",
+    () => 1,
+  );
+  assertEquals(ys.map((y) => [y.year, y.revenue_eur, y.employees]), [
+    [2023, 1293261, 9],
+    [2024, 1516346, 12],
+    [2025, 1945076, 13],
+  ]);
+  assertEquals(ys[0].source.includes("Celotni prihodki"), true);
+  assertThrows(
+    () =>
+      parseCompanyWall(
+        page,
+        "1111111000",
+        "https://www.companywall.si/p",
+        () => 1,
+      ),
+    Error,
+    "MŠ",
+  );
+});

@@ -1,5 +1,5 @@
-// CompanyWall (companywall.rs, .me, .hr…): страница юрлица с итогами из государственного реестра
-// (в Сербии — APR, где отчётность закрыта капчей). Только страницы /firma/, разрешённые robots.txt;
+// CompanyWall (companywall.rs, .si, .me…): страница юрлица с итогами из государственного реестра
+// (в Сербии — APR, где отчётность закрыта капчей; в Словении — AJPES). Только страницы юрлиц (/firma/, в .si — /podjetje/), разрешённые robots.txt;
 // поиск по сайту robots запрещает, поэтому ссылка на каждую фирму записана в конфиге (companies.url).
 import { getJson, httpGet, parseEcbAnnual, parseNbsAverage } from "../lib.ts";
 import { parseCompanyWall } from "../registry.ts";
@@ -31,9 +31,9 @@ export const companywall: Adapter = {
   id: "companywall",
   about: {
     url:
-      "https://www.companywall.<страна>/firma/<slug>/<id> (ссылки — в companies.url конфига)",
+      "https://www.companywall.<страна>/firma|podjetje/<slug>/<id> (ссылки — в companies.url конфига)",
     what:
-      "общие доходы (Ukupni prihodi) и сотрудники юрлиц за три последних поданных года из государственного реестра; MB на странице сверяется с конфигом; не евро → евро по среднегодовому курсу (динар — НБС)",
+      "общие доходы (Ukupni prihodi / Celotni prihodki) и сотрудники юрлиц за три последних поданных года из государственного реестра (APR / AJPES); номер юрлица (MB / MŠ) на странице сверяется с конфигом; не евро → евро по среднегодовому курсу (динар — НБС)",
   },
   async collect(cfg, opts) {
     const started_at = new Date().toISOString();
