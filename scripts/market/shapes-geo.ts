@@ -12,7 +12,13 @@ export const project = (p: Proj, lng: number, lat: number): Pt => [
 
 /** Обрезка кольца прямоугольником (Сазерленд — Ходжман): соседняя страна целиком весила бы
  *  мегабайты, а на карте видна её кромка. */
-export function clipRing(ring: Pt[], x0: number, y0: number, x1: number, y1: number): Pt[] {
+export function clipRing(
+  ring: Pt[],
+  x0: number,
+  y0: number,
+  x1: number,
+  y1: number,
+): Pt[] {
   const edges: Array<[(p: Pt) => boolean, (a: Pt, b: Pt) => Pt]> = [
     [(p) => p[0] >= x0, (a, b) => cross(a, b, 0, x0)],
     [(p) => p[0] <= x1, (a, b) => cross(a, b, 0, x1)],
@@ -41,8 +47,15 @@ function cross(a: Pt, b: Pt, axis: 0 | 1, v: number): Pt {
 }
 
 /** Линия (река) → куски внутри рамки; на границе рамки кусок кончается. */
-export function clipLine(line: Pt[], x0: number, y0: number, x1: number, y1: number): Pt[][] {
-  const inside = (p: Pt) => p[0] >= x0 && p[0] <= x1 && p[1] >= y0 && p[1] <= y1;
+export function clipLine(
+  line: Pt[],
+  x0: number,
+  y0: number,
+  x1: number,
+  y1: number,
+): Pt[][] {
+  const inside = (p: Pt) =>
+    p[0] >= x0 && p[0] <= x1 && p[1] >= y0 && p[1] <= y1;
   const runs: Pt[][] = [];
   let cur: Pt[] = [];
   for (const p of line) {
@@ -80,7 +93,9 @@ export function simplify(pts: Pt[], tol: number): Pt[] {
 function segDist(p: Pt, a: Pt, b: Pt): number {
   const dx = b[0] - a[0], dy = b[1] - a[1];
   const len2 = dx * dx + dy * dy;
-  const t = len2 ? Math.max(0, Math.min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / len2)) : 0;
+  const t = len2
+    ? Math.max(0, Math.min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / len2))
+    : 0;
   return Math.hypot(p[0] - a[0] - t * dx, p[1] - a[1] - t * dy);
 }
 
@@ -89,7 +104,9 @@ const n = (v: number) => Math.round(v * 10) / 10;
 /** Кольца → путь `M…Z`; совпадающие соседние точки после округления выбрасываются. */
 export function toPath(rings: Pt[][], closed: boolean): string {
   return rings.map((r) => {
-    const pts = r.map(([x, y]) => `${n(x)},${n(y)}`).filter((s, i, a) => i === 0 || s !== a[i - 1]);
+    const pts = r.map(([x, y]) => `${n(x)},${n(y)}`).filter((s, i, a) =>
+      i === 0 || s !== a[i - 1]
+    );
     return pts.length > 1 ? `M${pts.join("L")}${closed ? "Z" : ""}` : "";
   }).join("");
 }

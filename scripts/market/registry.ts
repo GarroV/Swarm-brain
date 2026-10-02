@@ -94,10 +94,33 @@ export function parseRoBilant(
 /** «3.061.881.000,00» → 3061881000. */
 const cwNum = (s: string) => Number(s.replace(/\./g, "").replace(",", "."));
 
-/** Страница юрлица CompanyWall (данные APR и других реестров): строки «Ukupni prihodi» (общие
- *  доходы — шире выручки от продаж, это видно в пометке) и «Broj zaposlenih» за три последних
- *  поданных года. Номер MB на странице обязан совпасть с конфигом — иначе ссылка указывает не
- *  на ту фирму. Последний год, повторяющий предыдущий до копейки, — незаполненный год страницы
+/** Подписи страницы CompanyWall по языку сайта. В Сербии (и .me) — APR: «Ukupni prihodi»,
+ *  MB из 8 цифр; в Словении (.si) — AJPES: «Celotni prihodki», MŠ из 10 цифр. */
+const CW_LABELS = {
+  sr: {
+    id: "MB",
+    digits: 8,
+    dl: "Preuzmi",
+    income: "Ukupni prihodi",
+    staff: "Broj zaposlenih",
+    registry: "общие доходы, APR",
+  },
+  sl: {
+    id: "MŠ",
+    digits: 10,
+    dl: "Prevzemi",
+    income: "Celotni prihodki",
+    staff: "Število zaposlenih",
+    registry: "celotni prihodki — все доходы, AJPES",
+  },
+} as const;
+const cwLang = (
+  url: string,
+) => (/companywall\.si\//.test(url) ? CW_LABELS.sl : CW_LABELS.sr);
+
+/** Страница юрлица CompanyWall: строка общих доходов и число сотрудников за три последних
+ *  поданных года. Номер юрлица на странице обязан совпасть с конфигом — иначе ссылка указывает
+ *  не на ту фирму. Последний год, повторяющий предыдущий до копейки, — незаполненный год страницы
  *  (так у Glovoapp 2025), его нет. Прибыль не берём: её нет нигде в разделе. */
 export function parseCompanyWall(
   html: string,
@@ -105,29 +128,34 @@ export function parseCompanyWall(
   url: string,
   rate: (year: number) => number | null,
 ): RegistryYear[] {
+  const L = cwLang(url);
   const text = html.replace(/<script[\s\S]*?<\/script>/g, " ")
     .replace(/<[^>]+>/g, " ")
     .replace(/&nbsp;|&#160;/g, " ") // между «Preuzmi» и годами на живой странице стоит &nbsp;
+    // словенская страница пишет буквы с гачеком сущностями: «M&#x160;» — это «MŠ»
+    .replace(/&#x([0-9a-f]+);/gi, (_, h) => String.fromCodePoint(parseInt(h, 16)))
+    .replace(/&#(\d+);/g, (_, d) => String.fromCodePoint(Number(d)))
     .replace(/\s+/g, " ");
-  const mb = text.match(/\bMB (\d{8})\b/)?.[1];
-  if (mb !== regId) {
+  const id = text.match(new RegExp(`(?:^|\\s)${L.id} (\\d{${L.digits}})\\b`))
+    ?.[1];
+  if (id !== regId) {
     throw new Error(
-      `companywall: на странице MB ${
-        mb ?? "не найден"
+      `companywall: на странице ${L.id} ${
+        id ?? "не найден"
       }, в конфиге ${regId} (${url})`,
     );
   }
   const NUM = "[\\d.]+,\\d{2}";
   const income = text.match(
-    new RegExp(`Preuzmi ((?:\\d{4} ?)+) Ukupni prihodi ((?:${NUM} ?)+)`),
+    new RegExp(`${L.dl} ((?:\\d{4} ?)+) ${L.income} ((?:${NUM} ?)+)`),
   );
   if (!income) {
-    throw new Error(`companywall: нет строки «Ukupni prihodi» (${url})`);
+    throw new Error(`companywall: нет строки «${L.income}» (${url})`);
   }
   const years = income[1].trim().split(" ").map(Number);
   const values = income[2].trim().split(" ").map(cwNum);
   const staff =
-    text.match(new RegExp(`Broj zaposlenih ((?:${NUM} ?)+)`))?.[1]?.trim()
+    text.match(new RegExp(`${L.staff} ((?:${NUM} ?)+)`))?.[1]?.trim()
       .split(" ").map(cwNum) ?? [];
   const out: RegistryYear[] = [];
   years.forEach((year, i) => {
@@ -140,7 +168,7 @@ export function parseCompanyWall(
       revenue_eur: v && fx ? Math.round(v / fx) : null,
       net_profit_eur: null,
       employees: staff[i] ? Math.round(staff[i]) : null,
-      source: `${url} — Ukupni prihodi (общие доходы, APR)`,
+      source: `${url} — ${L.income} (${L.registry})`,
     });
   });
   return out;
