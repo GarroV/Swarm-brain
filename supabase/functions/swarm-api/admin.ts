@@ -16,32 +16,18 @@ import {
 } from "./admin-scope.ts";
 import { onlyLiveEntries } from "../_shared/entries/live.ts";
 import { externalFetch, VIA_TELEGRAM } from "../_shared/external-fetch.ts";
-import { errorDetail, INTERNAL_ERROR_MESSAGE } from "./client-error.ts";
+import { serverError } from "./client-error.ts";
+import { apiErr, json } from "./http.ts";
 
 const ADMIN_TELEGRAM_ID = SUPERADMIN_TELEGRAM_ID;
 
 export type AdminDeps = { announce?: typeof announceEmailChange };
 
-function json(data: unknown, status: number, origin: string): Response {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: {
-      "Content-Type": "application/json",
-      "Access-Control-Allow-Origin": origin,
-      "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-    },
-  });
-}
-
-function apiErr(status: number, msg: string, origin: string) {
-  return json({ error: msg }, status, origin);
-}
-
+// Ответы — общие `json`/`apiErr` из http.ts (issue #722): до этого у админки были свои копии
+// без `Cache-Control: no-store` и с CORS, отражавшим любой origin.
 // Неожиданная ошибка (база и т.п.): подробность — в лог, клиенту — общий текст (issue #584).
-// Свой, а не serverError из client-error.ts: у админки собственные заголовки ответа (json выше).
 function serverFail(origin: string, where: string, err: unknown): Response {
-  console.error(`[swarm-api] admin: ${where}: ${errorDetail(err)}`);
-  return apiErr(500, INTERNAL_ERROR_MESSAGE, origin);
+  return serverError(origin, `admin: ${where}`, err);
 }
 
 export async function handleAdminRoutes(
