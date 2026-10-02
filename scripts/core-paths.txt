@@ -75,3 +75,5 @@ supabase/functions/_shared/tasks/labels.ts|supabase/functions/_shared/tasks/labe
 supabase/functions/_shared/notifications/feed.ts|supabase/functions/_shared/notifications/feed.test.ts
 supabase/functions/swarm-api/task-archive.ts|supabase/functions/swarm-api/task-archive.db.test.ts
 supabase/functions/swarm-bot/lib/telegram-link-store.ts|supabase/functions/swarm-bot/lib/telegram-link-store.db.test.ts
+supabase/functions/_shared/model-usage.ts|supabase/functions/_shared/model-usage.test.ts
+supabase/functions/_shared/model-usage-summary.ts|supabase/functions/_shared/model-usage-summary.test.ts

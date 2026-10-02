@@ -104,7 +104,7 @@ export async function extractEntryMeta(
         ],
         max_tokens: 200,
       }),
-    }, VIA_OPENAI_CHAT);
+    }, { ...VIA_OPENAI_CHAT, usage: { purpose: "meta-extract:chat" } });
     if (!res.ok) {
       console.error("extractEntryMeta: OpenAI ответил", res.status);
       return emptyMeta();
@@ -123,7 +123,7 @@ export async function embed(text: string, openaiKey: string): Promise<number[] |
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${openaiKey}` },
       body: JSON.stringify({ model: "text-embedding-3-small", input: text.slice(0, 8000) }),
-    }, VIA_OPENAI_EMBEDDING);
+    }, { ...VIA_OPENAI_EMBEDDING, usage: { purpose: "meta-extract:embedding" } });
     if (!res.ok) return null;
     return (await res.json()).data[0].embedding;
   } catch {

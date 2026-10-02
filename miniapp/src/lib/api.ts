@@ -3275,6 +3275,27 @@ export async function fetchIntegrations(): Promise<Integration[]> {
   return apiFetch<Integration[]>("/integrations");
 }
 
+export type UsageSlice = { key: string; usd: number; calls: number; unpriced: number; tokens: number };
+export type ModelUsage = {
+  days: number;
+  since: string;
+  truncated: boolean;
+  total_usd: number;
+  calls: number;
+  unpriced_calls: number;
+  tokens: number;
+  audio_minutes: number;
+  by_purpose: UsageSlice[];
+  by_model: UsageSlice[];
+  by_day: Array<{ day: string; usd: number; calls: number }>;
+  top_meetings: Array<{ meeting_id: string; usd: number; calls: number; title: string | null }>;
+};
+
+/** Расход OpenAI за период (#311), только суперадмину. */
+export async function fetchModelUsage(days: 7 | 30 | 90): Promise<ModelUsage> {
+  return apiFetch<ModelUsage>(`/admin/model-usage?days=${days}`);
+}
+
 /** Одноразовая ссылка на бота для привязки Telegram (#92); действует 15 минут. */
 export async function linkTelegram(): Promise<{ url: string; expires_at: string }> {
   if (DEV_MODE) return { url: "https://t.me/", expires_at: new Date(Date.now() + 15 * 60_000).toISOString() };
