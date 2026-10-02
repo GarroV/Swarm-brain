@@ -1880,8 +1880,10 @@ async function routeRequest(req: Request): Promise<Response> {
     if (Object.keys(fields).length === 0) {
       return new Response(null, { status: 204, headers: corsHeaders(origin) });
     }
-    const { error: meErr } = await supabase.from("user_profiles").update(fields)
-      .eq("telegram_id", telegram_id);
+    // upsert, а не update: у части команды строки профиля нет вовсе, и update молча
+    // обновлял ноль строк, отвечая «сохранено» (#165). Пишутся только присланные поля.
+    const { error: meErr } = await supabase.from("user_profiles")
+      .upsert({ telegram_id, ...fields }, { onConflict: "telegram_id" });
     if (meErr) {
       console.error("[PATCH /me] update failed", meErr);
       return apiErr(500, "Could not save profile", origin);
