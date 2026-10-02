@@ -113,9 +113,28 @@ async function getEmbedding(text: string): Promise<number[]> {
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${OPENAI_API_KEY}` },
     body: JSON.stringify({ model: "text-embedding-3-small", input: text.slice(0, 8000) }),
   }, VIA_OPENAI_EMBEDDING);
-  const data = await res.json() as { data: Array<{ embedding: number[] }> };
+  const data = await res.json() as { data?: Array<{ embedding: number[] }>; error?: { message?: string } };
+  if (!res.ok || !data.data?.[0]) throw new Error(`OpenAI embeddings: HTTP ${res.status} ${data.error?.message ?? ""}`.trim());
   return data.data[0].embedding;
 }
+
+/**
+ * Эмбеддинг для СОХРАНЕНИЯ: отказ модели не роняет запись (#373). Главное правило базы —
+ * «сначала сохрани оригинал»: раньше отказ OpenAI ронял add_knowledge целиком, и текст терялся.
+ * Теперь запись ложится с embedding = null, ежечасный проход swarm-bot дозаполняет индекс, а
+ * человек слышит честное «пока не находится поиском» (UNINDEXED_NOTE).
+ */
+async function embeddingOrNull(text: string): Promise<number[] | null> {
+  try {
+    return await getEmbedding(text);
+  } catch (e) {
+    console.error("[swarm-mcp] эмбеддинг не получен — запись сохраняется без индекса:", e);
+    return null;
+  }
+}
+
+const UNINDEXED_NOTE =
+  "\n⚠️ Модель поиска сейчас не ответила: запись сохранена, но поиском по смыслу пока не находится. Индекс дозаполнится автоматически в течение часа.";
 
 async function chatComplete(
   system: string,
@@ -723,10 +742,11 @@ async function toolAddKnowledge(
   const ownerId = isPrivate ? scope.userId : null;
   const workspaceGroupId = scope.groupId;
   const [summaryEmbedding, entryMeta] = await Promise.all([
-    getEmbedding(args.summary.slice(0, 8000)),
+    embeddingOrNull(args.summary.slice(0, 8000)),
     extractEntryMeta(args.summary, OPENAI_API_KEY),
   ]);
 
+  let unindexed = summaryEmbedding === null;
   // First chunk: summary + metadata + embedding
   const { error: insertErr } = await supabase.from("entries").insert({
     content: chunks[0],
@@ -746,7 +766,8 @@ async function toolAddKnowledge(
 
   // Remaining chunks: content only, same chunk_group_id in metadata
   if (chunks.length > 1) {
-    const restEmbeddings = await Promise.all(chunks.slice(1).map((c) => getEmbedding(c)));
+    const restEmbeddings = await Promise.all(chunks.slice(1).map((c) => embeddingOrNull(c)));
+    if (restEmbeddings.includes(null)) unindexed = true;
     try {
       await Promise.all(
         chunks.slice(1).map((chunk, i) =>
@@ -773,7 +794,9 @@ async function toolAddKnowledge(
 
   const contentNote = !args.content?.trim() ? " (оригинал не передан)" : "";
   const dest = isPrivate ? "личное хранилище" : "базу знаний";
-  return `✅ Добавлено в ${dest} (${chunks.length} ${chunks.length === 1 ? "часть" : "части/частей"}).${contentNote}`;
+  return `✅ Добавлено в ${dest} (${chunks.length} ${chunks.length === 1 ? "часть" : "части/частей"}).${contentNote}${
+    unindexed ? UNINDEXED_NOTE : ""
+  }`;
 }
 
 async function toolUploadFile(args: {
@@ -797,7 +820,7 @@ async function toolUploadFile(args: {
   }
 
   const [embedding, entryMeta] = await Promise.all([
-    getEmbedding(args.summary.slice(0, 8000)),
+    embeddingOrNull(args.summary.slice(0, 8000)),
     extractEntryMeta(args.summary, OPENAI_API_KEY),
   ]);
 
@@ -840,7 +863,9 @@ async function toolUploadFile(args: {
   }
 
   const sizeKb = Math.round(uploadResult.fileSizeBytes / 1024);
-  return `✅ Файл загружен: ${args.file_name} (${sizeKb} KB)\n📎 ${absoluteFileUrl(uploadResult.path, WEB_BASE_URL)}`;
+  return `✅ Файл загружен: ${args.file_name} (${sizeKb} KB)\n📎 ${absoluteFileUrl(uploadResult.path, WEB_BASE_URL)}${
+    embedding === null ? UNINDEXED_NOTE : ""
+  }`;
 }
 
 async function toolGetStorageStats(args: { requesting_user_id?: number } = {}): Promise<string> {
