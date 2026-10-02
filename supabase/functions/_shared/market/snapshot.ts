@@ -47,8 +47,11 @@ function parseChains(raw: unknown, errors: string[]): SnapChain[] {
       return year !== null && count !== null ? [{ year, count, source: str(h.source) }] : [];
     }),
   }));
+  const declared = new Set<string>();
   chains.forEach((c, i) => {
     if (!c.key || !c.name) errors.push(`chains[${i}]: нужны key и name`);
+    else if (declared.has(c.key)) errors.push(`chains[${i}]: ключ «${c.key}» уже объявлен`);
+    declared.add(c.key);
   });
   return chains;
 }
@@ -173,9 +176,13 @@ function parseCompanies(B: R, chainKey: (v: unknown) => string | null, facts: Sn
   return companies.filter((c) => c.years.length > 0 || c.reg_id);
 }
 
+/** Ключ уникальности mkt_prices: две строки с одним ключом Postgres отвергает целиком
+ *  («cannot affect row a second time») — уже после записи сетей и точек. */
+const priceKey = (p: SnapPrice) => [p.chain, p.item, p.size_cm, p.channel, p.seen_on].join("|");
+
 function parsePrices(B: R, chainKey: (v: unknown) => string | null): SnapPrice[] {
   const P = (B.prices ?? {}) as R;
-  return arr(P.items).flatMap((p): SnapPrice[] => {
+  const rows = arr(P.items).flatMap((p): SnapPrice[] => {
     const c = chainKey(p.chain), price = num(p.price_eur);
     if (!c || price === null) return [];
     return [{
@@ -189,6 +196,7 @@ function parsePrices(B: R, chainKey: (v: unknown) => string | null): SnapPrice[]
       seen_on: str(P.seen),
     }];
   });
+  return [...new Map(rows.map((p) => [priceKey(p), p])).values()];
 }
 
 function parseFacts(B: R): SnapFact[] {

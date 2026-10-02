@@ -74,6 +74,21 @@ Deno.test("rejects location of unknown chain and coordinates out of range", () =
   assertEquals(e, ["locs[0]: сеть «ghost» не объявлена в chains", "locs[1]: координаты вне диапазона"]);
 });
 
+Deno.test("rejects a chain key declared twice", () => {
+  const e = errs(validateSnapshot({ chains: [chain, { ...chain, name: "Other" }], locs: [loc] }));
+  assertEquals(e, ["chains[1]: ключ «dominos» уже объявлен"]);
+});
+
+Deno.test("a price listed twice under one key is imported once, the later row wins", () => {
+  // Две одинаковые строки цены валили upsert в Postgres уже после записи сетей и точек.
+  const item = { chain: "Domino's", pizza: "Margherita", cm: 30, channel: "site" };
+  const s = ok(validateSnapshot({
+    ...base,
+    prices: { seen: "2026-09-01", items: [{ ...item, price_eur: 9 }, { ...item, price_eur: 10 }] },
+  }));
+  assertEquals(s.prices.map((p) => p.price_eur), [10]);
+});
+
 Deno.test("rejects unknown status and verification", () => {
   const e = errs(validateSnapshot({ chains: [chain], locs: [{ ...loc, s: "gone", v: "maybe" }] }));
   assertEquals(e, ["locs[0]: статус «gone» неизвестен", "locs[0]: статус проверки «maybe» неизвестен"]);
