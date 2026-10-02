@@ -24,6 +24,7 @@ export type RailId =
   | "base"
   | "team"
   | "stats"
+  | "tools"
   | "settings"
   | "admin";
 
@@ -38,6 +39,7 @@ const MAIN: RailItem[] = [
   { id: "base", label: ["База", "Knowledge"], icon: "book" },
   { id: "team", label: ["Команда", "Team"], icon: "team" },
   { id: "stats", label: ["Статистика", "Stats"], icon: "graph" },
+  { id: "tools", label: ["Полезности", "Tools"], icon: "spark" },
 ];
 
 const FOOT: RailItem[] = [

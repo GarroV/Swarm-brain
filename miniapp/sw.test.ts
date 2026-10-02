@@ -73,6 +73,10 @@ Deno.test("навигация обслуживается SW (network-first + о�
   assertEquals(await swIntercepts(`${ORIGIN}/roy`, { mode: "navigate", destination: "document" }), true);
 });
 
+Deno.test("короткие ссылки /s/<code> идут мимо SW: снятая ссылка не должна открываться из кэша", async () => {
+  assertEquals(await swIntercepts(`${ORIGIN}/s/k7Fq2a`, { mode: "navigate", destination: "document" }), false);
+});
+
 Deno.test("мутации API не трогаем в принципе", async () => {
   assertEquals(await swIntercepts(`${ORIGIN}/api/entries`, { method: "POST" }), false);
 });
