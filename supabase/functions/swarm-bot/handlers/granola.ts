@@ -8,6 +8,7 @@ import { buildTezisyUserMessage, TEZISY_PROMPT } from "../../_shared/tezisy-prom
 import { findDuplicateMeeting, type MeetingAttendee, parseMeetingContent } from "../../_shared/meeting-dedup.ts";
 import type { TgCallbackQuery } from "../lib/types.ts";
 import { externalFetch, VIA_GRANOLA } from "../../_shared/external-fetch.ts";
+import { brokeMessage, decideNotice, describeGranolaFailure, recoveredMessage } from "../lib/integration-health.ts";
 
 const GRANOLA_API = "https://public-api.granola.ai/v1";
 import { WEB_BASE_URL as WEB_URL } from "../lib/web-url.ts";
@@ -42,15 +43,25 @@ async function fetchGranolaNote(apiKey: string, noteId: string): Promise<Record<
   return await res.json() as Record<string, unknown>;
 }
 
-async function fetchNotesSince(apiKey: string, createdAfter: string): Promise<GranolaNote[]> {
+type NotesResult = { ok: true; notes: GranolaNote[] } | { ok: false; error: string };
+
+/** Заметки с честным отказом (#175): сбой Granola — не пустой список, а причина. */
+async function fetchNotesChecked(apiKey: string, createdAfter: string): Promise<NotesResult> {
   const res = await externalFetch(
     `${GRANOLA_API}/notes?created_after=${encodeURIComponent(createdAfter)}&limit=50`,
     { headers: { Authorization: `Bearer ${apiKey}` } },
     VIA_GRANOLA,
   );
-  if (!res.ok) return [];
-  const data = await res.json() as { notes: GranolaNote[] };
-  return data.notes ?? [];
+  if (!res.ok) return { ok: false, error: describeGranolaFailure(res.status, await res.text().catch(() => "")) };
+  const data = await res.json() as { notes?: GranolaNote[] };
+  return { ok: true, notes: data.notes ?? [] };
+}
+
+/** Для ручных путей бота: сбой виден в логе, человеку — пустой список, как и было. */
+async function fetchNotesSince(apiKey: string, createdAfter: string): Promise<GranolaNote[]> {
+  const r = await fetchNotesChecked(apiKey, createdAfter);
+  if (!r.ok) console.error(`[granola] заметки не получены: ${r.error}`);
+  return r.ok ? r.notes : [];
 }
 
 function buildNoteContent(note: Record<string, unknown>): string {
@@ -440,6 +451,9 @@ const MAX_GRANOLA_INGEST_PER_USER = 6;
 // поэтому встреча сразу видна И в Telegram, И в вебе («на согласовании»). Дедуп — через
 // getProcessedIds (уже сохранённые granola_note_id + skipped). Окно — фиксированные 48ч
 // (как pollGranolaForUser): дедуп защищает от повторов, а сбойную вставку подхватит след. прогон.
+/** Отказ Granola при ежечасном импорте: причина уходит в user_integrations.last_error (#175). */
+class GranolaUnavailable extends Error {}
+
 async function ingestNewGranolaNotesForUser(integration: {
   telegram_id: number;
   api_key: string;
@@ -448,7 +462,9 @@ async function ingestNewGranolaNotesForUser(integration: {
   if (!groupId) return 0; // пользователь не привязан к воркспейсу — пропускаем
 
   const since = new Date(Date.now() - 48 * 3_600_000).toISOString();
-  const notes = await fetchNotesSince(integration.api_key, since);
+  const fetched = await fetchNotesChecked(integration.api_key, since);
+  if (!fetched.ok) throw new GranolaUnavailable(fetched.error);
+  const notes = fetched.notes;
   if (!notes.length) return 0;
 
   const processedIds = await getProcessedIds(integration.telegram_id);
@@ -532,23 +548,45 @@ async function ingestNewGranolaNotesForUser(integration: {
 // у всех подключённых пользователей. Заменяет standalone-функцию granola-poller, которая
 // только слала уведомление в Telegram и ничего не клала в БД.
 export async function ingestNewGranolaNotesAllUsers(): Promise<number> {
-  const { data: integrations } = await supabase
+  const { data: integrations, error } = await supabase
     .from("user_integrations")
-    .select("telegram_id, api_key")
+    .select("telegram_id, api_key, last_error, last_error_notified_at")
     .eq("service", "granola");
+  if (error) console.error("granola integrations:", error.message);
   if (!integrations?.length) return 0;
 
   let total = 0;
-  for (const integration of integrations as Array<{ telegram_id: number; api_key: string }>) {
+  for (
+    const integration of integrations as Array<{
+      telegram_id: number;
+      api_key: string;
+      last_error: string | null;
+      last_error_notified_at: string | null;
+    }>
+  ) {
+    // Состояние: null — опрос прошёл; строка — причина отказа Granola. Сбой своей стороны (база,
+    // модель) состояние интеграции не меняет: интеграция в нём не виновата.
+    let nextError: string | null = integration.last_error;
     try {
       total += await ingestNewGranolaNotesForUser(integration);
+      nextError = null;
     } catch (err) {
+      if (err instanceof GranolaUnavailable) nextError = err.message;
       console.error("granola ingest error", integration.telegram_id, err);
     }
+    const now = new Date();
+    const notice = decideNotice(integration.last_error_notified_at, nextError, now);
     // Курсор двигаем для информативности; на корректность дедупа он не влияет (окно фикс. 48ч).
     await supabase.from("user_integrations")
-      .update({ last_polled_at: new Date().toISOString() })
+      .update({
+        last_polled_at: now.toISOString(),
+        last_error: nextError,
+        last_error_at: nextError ? (integration.last_error === nextError ? undefined : now.toISOString()) : null,
+        last_error_notified_at: notice.notifiedAt,
+      })
       .eq("telegram_id", integration.telegram_id).eq("service", "granola");
+    if (notice.send === "broke") await sendMessage(integration.telegram_id, brokeMessage(nextError!));
+    if (notice.send === "recovered") await sendMessage(integration.telegram_id, recoveredMessage());
   }
   return total;
 }

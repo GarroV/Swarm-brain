@@ -204,6 +204,7 @@ export function GranolaSection() {
   const [selectedNote, setSelectedNote] = useState<GranolaNote | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [connectError, setConnectError] = useState<string | null>(null);
+  const [notesError, setNotesError] = useState<string | null>(null);
   const isDemo = useIsDemo();
 
   useEffect(() => {
@@ -214,7 +215,10 @@ export function GranolaSection() {
 
   const loadNotes = async () => {
     setNotesLoading(true);
+    setNotesError(null);
+    // Отказ Granola (ключ отозван, подписка кончилась) не выдаём за «нет новых заметок» (#175).
     try { setNotes(await fetchGranolaUnprocessed("7d")); }
+    catch (e) { setNotes([]); setNotesError(e instanceof Error ? e.message : String(e)); }
     finally { setNotesLoading(false); }
   };
 
@@ -294,6 +298,12 @@ export function GranolaSection() {
         </button>
       </div>
 
+      {(notesError || integration.last_error) && (
+        <p role="alert" className="text-xs text-destructive">
+          Granola отвечает отказом{integration.last_error ? ` (${integration.last_error})` : ""} — новые заметки не приходят. Проверь подписку и ключ Granola; если ключ сменился — отключи и подключи заново.
+        </p>
+      )}
+
       <div>
         <div className="flex items-center justify-between mb-2">
           <p className="text-sm font-medium">Необработанные заметки</p>
@@ -301,7 +311,7 @@ export function GranolaSection() {
         </div>
         {notesLoading ? (
           <p className="text-xs text-muted-foreground">Загрузка…</p>
-        ) : notes.length === 0 ? (
+        ) : notesError ? null : notes.length === 0 ? (
           <p className="text-xs text-muted-foreground">Нет новых заметок</p>
         ) : (
           <div className="space-y-2">

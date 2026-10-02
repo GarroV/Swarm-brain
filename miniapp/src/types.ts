@@ -347,6 +347,9 @@ export type Integration = {
   service: string;
   last_polled_at: string | null;
   skipped_note_ids: string[];
+  /** Причина последнего отказа сервиса (#175), null — последний опрос прошёл. */
+  last_error?: string | null;
+  last_error_at?: string | null;
 };
 
 export type GranolaNote = {

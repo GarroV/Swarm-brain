@@ -3063,7 +3063,8 @@ async function routeRequest(req: Request): Promise<Response> {
   // ── GET /integrations ─────────────────────────────────────────────────────────
   if (req.method === "GET" && routePath === "/integrations") {
     const { data } = await supabase.from("user_integrations")
-      .select("service, last_polled_at, skipped_note_ids")
+      // last_error — причина последнего отказа сервиса (#175): веб показывает её вместо «подключено».
+      .select("service, last_polled_at, skipped_note_ids, last_error, last_error_at")
       .eq("telegram_id", telegram_id);
     return json(data ?? [], 200, origin);
   }
