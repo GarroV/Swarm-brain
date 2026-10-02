@@ -123,7 +123,12 @@
 // машине владельца: эстафета → launchd, kill -9 → подъём + вердикт «оборвалась», «Выйти» → не
 // поднимается, SIGTERM → выход 0, запись с системным звуком под launchd → claim→upload→done,
 // строки log/session_abnormal доехали в базу. Тег recorder-build-35.
-const LATEST_BUILD = 35;
+// build 36 (2026-10-02): адрес веба swarm-team.app (пустой и прежний из config.json подменяются,
+// issue #753); капсула только для созвонов + «Позвать бота» на своём созвоне; досылка неотправленных
+// live-пометок; журнал различает источник нажатия. Выпуск снова собирается на macos-14 (PR #762).
+// Проверено ВЖИВУЮ на машине владельца: ручная запись → sending → встреча на проде awaiting_review.
+// Тег recorder-build-36.
+const LATEST_BUILD = 36;
 // URL предсобранного .app. Установщик и апдейтер качают отсюда — сборки из исходников на машине
 // юзера больше нет (issue #19).
 // ⚠️ РАЗДАЁМ ИЗ SUPABASE STORAGE, НЕ С GITHUB (issue #91, 2026-08-25). Репозиторий приватный
@@ -132,7 +137,8 @@ const LATEST_BUILD = 35;
 // не содержит (токен вписывается локально при установке). Держать в синхроне с релизом: каждый
 // новый build ОБЯЗАН быть залит в Storage до подъёма LATEST_BUILD — иначе снова раздадим 404.
 // Заливка: POST /storage/v1/object/swarm_drive/recorder/SwarmRecorder-<N>.zip (service_role, x-upsert).
-const ASSET_URL = `https://vbqglndbxkpmreccpqmr.supabase.co/storage/v1/object/public/swarm_drive/recorder/SwarmRecorder-${LATEST_BUILD}.zip`;
+const ASSET_URL =
+  `https://vbqglndbxkpmreccpqmr.supabase.co/storage/v1/object/public/swarm_drive/recorder/SwarmRecorder-${LATEST_BUILD}.zip`;
 
 Deno.serve((req: Request) => {
   if (req.method === "OPTIONS") {
@@ -144,7 +150,10 @@ Deno.serve((req: Request) => {
     });
   }
   if (req.method !== "GET") {
-    return new Response("Method Not Allowed", { status: 405, headers: { "Allow": "GET, OPTIONS", "Access-Control-Allow-Origin": "*" } });
+    return new Response("Method Not Allowed", {
+      status: 405,
+      headers: { "Allow": "GET, OPTIONS", "Access-Control-Allow-Origin": "*" },
+    });
   }
   return new Response(JSON.stringify({ build: LATEST_BUILD, url: ASSET_URL }), {
     status: 200,
