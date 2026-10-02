@@ -240,13 +240,12 @@ async function applyOsm(
       "osm seen",
     );
   }
-  // Город OSM только дописывает пустое поле: известный город (из снимка, локатора, руки) не меняется.
+  // Город OSM дописывает пустое поле; известный город (из снимка, локатора, руки) не меняется.
+  // Исключение — машинная точка OSM («не проверено»): её город и есть город OSM, он обновляется.
   for (const m of r.matched.filter((m) => m.found.city)) {
-    await must(
-      sb.from("mkt_locations").update({ city: m.found.city })
-        .eq("id", m.existing.id).is("city", null),
-      "osm city",
-    );
+    const machine = m.existing.source_kind === "osm" && m.existing.verification === "unverified";
+    const q = sb.from("mkt_locations").update({ city: m.found.city }).eq("id", m.existing.id);
+    await must(machine ? q : q.is("city", null), "osm city");
   }
   // Новая точка OSM встаёт сразу, как «не проверено» (решение владельца 02.10.2026: полный
   // автомат). Вставка без перезаписи: точка с тем же ключом, закрытая или поправленная руками,

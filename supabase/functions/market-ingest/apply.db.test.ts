@@ -135,19 +135,31 @@ Deno.test("osm: new point → one candidate, trusted untouched, osm point flagge
   assertEquals(t, { status: "open", missing_weeks: 0 });
 });
 
-Deno.test("osm: a matched point gets its empty city filled, a known city is never overwritten", async () => {
+Deno.test("osm: an empty city is filled, a checked point keeps its city, a machine OSM point follows OSM", async () => {
   await reset();
-  const kept = await sb.from("mkt_locations").update({ city: "Kept" }).eq(
-    "country",
-    CC,
-  ).eq("ext_key", "osm1");
-  if (kept.error) throw new Error(kept.error.message);
-  const pt = (lat: number, lng: number, id: string) => ({
+  for (const [key, city] of [["trusted", "Kept"], ["osm1", "Koper / Capodistria"]]) {
+    const r = await sb.from("mkt_locations").update({ city }).eq("country", CC).eq("ext_key", key);
+    if (r.error) throw new Error(r.error.message);
+  }
+  const blank = await sb.from("mkt_locations").insert({
+    country: CC,
+    chain_key: "kfc",
+    ext_key: "blank",
+    name: "B",
+    lat: 46.5,
+    lng: 16.5,
+    status: "open",
+    verification: "confirmed",
+    source_kind: "snapshot",
+    missing_weeks: 0,
+  });
+  if (blank.error) throw new Error(blank.error.message);
+  const pt = (lat: number, lng: number, id: string, city: string) => ({
     chain: "kfc",
     name: "N",
     lat,
     lng,
-    city: "Beograd",
+    city,
     address: null,
     osm_id: id,
   });
@@ -155,16 +167,14 @@ Deno.test("osm: a matched point gets its empty city filled, a known city is neve
     source: "osm",
     country: CC,
     started_at,
-    points: [pt(45.8, 15.9, "node/1"), pt(45.9, 16.0, "node/2")],
+    points: [pt(45.8, 15.9, "node/1", "Beograd"), pt(45.9, 16.0, "node/2", "Koper"), pt(46.5, 16.5, "node/3", "Celje")],
   }, "2026-10-05");
-  const { data } = await sb.from("mkt_locations").select("ext_key, city").eq(
-    "country",
-    CC,
-  ).order("ext_key");
-  assertEquals(data, [{ ext_key: "osm1", city: "Kept" }, {
-    ext_key: "trusted",
-    city: "Beograd",
-  }]);
+  const { data } = await sb.from("mkt_locations").select("ext_key, city").eq("country", CC).order("ext_key");
+  assertEquals(data, [
+    { ext_key: "blank", city: "Celje" },
+    { ext_key: "osm1", city: "Koper" },
+    { ext_key: "trusted", city: "Kept" },
+  ]);
 });
 
 Deno.test("osm: old pending finds are closed by the run, a point closed by hand is not reopened", async () => {
