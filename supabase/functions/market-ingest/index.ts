@@ -5,6 +5,8 @@
 // deno-lint-ignore-file no-import-prefix
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { applyIngest } from "./apply.ts";
+import { validateSnapshot } from "../_shared/market/snapshot.ts";
+import { acceptAllNewLocations, importSnapshot } from "../_shared/market/db.ts";
 
 const supabase = createClient(
   Deno.env.get("SUPABASE_URL")!,
@@ -43,6 +45,8 @@ export async function handleIngest(
   ) {
     return new Response("Bad payload", { status: 400 });
   }
+  const admin = await adminAction(body);
+  if (admin) return admin;
   try {
     const stats = await applyIngest(
       supabase,
@@ -52,6 +56,41 @@ export async function handleIngest(
     return Response.json({ ok: true, stats });
   } catch (e) {
     console.error("market-ingest", e);
+    return Response.json({ ok: false, error: "apply failed" }, { status: 500 });
+  }
+}
+
+/** Решения админа без его входа: те же кнопки «Импорт снимка» и «Принять все» из «Источников и
+ *  свежести», но по токену сборщика — чтобы страну можно было довести скриптом
+ *  (scripts/market/admin.ts), а не руками в вебе. Права те же: только таблицы mkt_*. */
+const COLLECTOR = 0; // decided_by для решений, принятых сборщиком, а не человеком
+
+async function adminAction(
+  body: { source: string; country: string; snapshot?: unknown },
+): Promise<Response | null> {
+  const cc = body.country.toUpperCase();
+  if (body.source === "snapshot") {
+    const v = validateSnapshot(body.snapshot);
+    if (!v.ok) {
+      return Response.json({ ok: false, error: "Invalid snapshot", details: v.errors }, {
+        status: 400,
+      });
+    }
+    return await guarded(() => importSnapshot(supabase, cc, v.snapshot));
+  }
+  if (body.source === "accept_new") {
+    return await guarded(async () => ({
+      accepted: await acceptAllNewLocations(supabase, cc, COLLECTOR),
+    }));
+  }
+  return null;
+}
+
+async function guarded(f: () => Promise<unknown>): Promise<Response> {
+  try {
+    return Response.json({ ok: true, stats: await f() });
+  } catch (e) {
+    console.error("market-ingest admin", e);
     return Response.json({ ok: false, error: "apply failed" }, { status: 500 });
   }
 }

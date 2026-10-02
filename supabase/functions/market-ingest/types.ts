@@ -81,4 +81,7 @@ export type IngestPayload =
   }
   | Base & { source: "osm"; points: OsmPoint[] }
   | Base & { source: "registry"; adapter: string; years: RegistryYear[] }
+  // решения админа по токену сборщика (index.ts adminAction, scripts/market/admin.ts)
+  | Base & { source: "snapshot"; snapshot: unknown }
+  | Base & { source: "accept_new" }
   | Base & { source: string; adapter?: string; failed: string };
