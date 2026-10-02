@@ -5,6 +5,7 @@ import {
   parseDodoUnits,
   parseEcbSeries,
   parseFinancialMetrics,
+  parseNbsAverage,
 } from "../lib.ts";
 import type { Adapter } from "./types.ts";
 
@@ -14,7 +15,10 @@ const DEFAULT_DAYS = 8;
 const ecbMonth = (cur: string, month: string) =>
   `https://data-api.ecb.europa.eu/service/data/EXR/M.${cur}.EUR.SP00.A?format=jsondata&startPeriod=${month}&endPeriod=${month}`;
 
-/** Не евро (леи) — месячный курс ЕЦБ. В начале месяца курса за прошлый ещё может не быть
+const nbsMonth = (month: string) =>
+  `https://kurs.resenje.org/api/v1/currencies/eur/rates/${month}-01/count/31`;
+
+/** Не евро — месячный курс ЕЦБ (леи и т. п.), динар — средний курс НБС: у ЕЦБ его нет. В начале месяца курса за прошлый ещё может не быть
  *  (ЕЦБ отвечает 404): тогда евро остаётся пустым, а точки и дни всё равно сохраняются —
  *  иначе один неопубликованный курс выбрасывал бы весь недельный сбор. */
 async function monthRate(
@@ -22,8 +26,9 @@ async function monthRate(
   month: string,
 ): Promise<Record<string, number> | undefined> {
   try {
-    const rate =
-      parseEcbSeries(await getJson(ecbMonth(currency, month)))[month];
+    const rate = currency === "RSD"
+      ? parseNbsAverage(await getJson(nbsMonth(month)), month)
+      : parseEcbSeries(await getJson(ecbMonth(currency, month)))[month];
     return rate ? { [currency]: rate } : undefined;
   } catch (e) {
     console.warn(
@@ -49,7 +54,7 @@ export const dodo: Adapter = {
   about: {
     url: "https://publicapi.dodois.io/<код страны>/api/v1/",
     what:
-      "пиццерии Dodo (unitinfo/all: адрес, координаты, BeginDateWork) и выручка по месяцам с числом пиццерий; курс к евро — ЕЦБ",
+      "пиццерии Dodo (unitinfo/all: адрес, координаты, BeginDateWork) и выручка по месяцам с числом пиццерий; курс к евро — ЕЦБ, для динара — НБС (kurs.resenje.org)",
   },
   async collect(cfg, opts) {
     const started_at = new Date().toISOString();

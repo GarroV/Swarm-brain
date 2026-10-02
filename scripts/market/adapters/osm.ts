@@ -8,10 +8,25 @@ const OVERPASS = "https://overpass-api.de/api/interpreter";
 const esc = (s: string) =>
   s.replace(/[\\^$.*+?()[\]{}|]/g, "\\$&").replace(/"/g, '\\"');
 
-export function overpassQuery(cc: string, brands: string[]): string {
+/** names — начала тега name для сетей без тега brand: ищутся только среди заведений общепита и
+ *  пекарен, иначе запрос по всей стране Overpass не вытягивает. */
+export function overpassQuery(
+  cc: string,
+  brands: string[],
+  names: string[] = [],
+): string {
   const re = brands.map(esc).join("|");
+  const byName = names.length
+    ? (() => {
+      const nr = names.map(esc).join("|");
+      return `nwr["amenity"~"^(fast_food|restaurant|cafe)$"]["name"~"^(${nr})",i](area.a);` +
+        `nwr["shop"~"^(bakery|pastry)$"]["name"~"^(${nr})",i](area.a);`;
+    })()
+    : "";
   return `[out:json][timeout:150];area["ISO3166-1"="${cc}"][admin_level=2]->.a;` +
-    `nwr["brand"~"^(${re})$",i](area.a);out center tags;`;
+    `(${
+      re ? `nwr["brand"~"^(${re})$",i](area.a);` : ""
+    }${byName});out center tags;`;
 }
 
 export const osm: Adapter = {
@@ -19,7 +34,7 @@ export const osm: Adapter = {
   about: {
     url: "https://overpass-api.de/api/interpreter",
     what:
-      "точки сетей по тегам brand / name из OpenStreetMap (osmBrands в конфиге), координаты, адрес, дата открытия, если она есть в теге",
+      "точки сетей по тегу brand (osmBrands в конфиге) или по началу name среди заведений общепита (osmNames) из OpenStreetMap, координаты, адрес, дата открытия, если она есть в теге",
   },
   async collect(cfg) {
     const started_at = new Date().toISOString();
@@ -30,14 +45,22 @@ export const osm: Adapter = {
       ) => [c.key, c.osmBrands!]),
     );
     try {
+      const names = Object.fromEntries(
+        cfg.chains.filter((c) => c.osmNames?.length).map((
+          c,
+        ) => [c.key, c.osmNames!]),
+      );
       const all = Object.values(brands).flat();
-      if (!all.length) return { ...base, points: [] };
+      const allNames = Object.values(names).flat();
+      if (!all.length && !allNames.length) return { ...base, points: [] };
       const r = await httpGet(OVERPASS, {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: `data=${encodeURIComponent(overpassQuery(cfg.country, all))}`,
+        body: `data=${
+          encodeURIComponent(overpassQuery(cfg.country, all, allNames))
+        }`,
       });
-      return { ...base, points: parseOverpass(await r.json(), brands) };
+      return { ...base, points: parseOverpass(await r.json(), brands, names) };
     } catch (e) {
       return { ...base, failed: String(e) };
     }

@@ -5,9 +5,15 @@ import {
   parseDodoUnits,
   parseEcbAnnual,
   parseFinancialMetrics,
+  parseNbsAverage,
   parseOverpass,
 } from "./lib.ts";
-import { parseEeElements, parseEeReports, parseRoBilant } from "./registry.ts";
+import {
+  parseCompanyWall,
+  parseEeElements,
+  parseEeReports,
+  parseRoBilant,
+} from "./registry.ts";
 
 const fixture = (name: string) =>
   Deno.readTextFileSync(new URL(`./fixtures/${name}`, import.meta.url));
@@ -193,4 +199,84 @@ Deno.test("lines splits across chunk borders and strips CR", async () => {
   const got: string[] = [];
   for await (const l of lines(s)) got.push(l);
   assertEquals(got, ["a;1", "b;2", "c;3"]);
+});
+
+Deno.test("parseOverpass matches chains without a brand tag by name prefix, Cyrillic too", () => {
+  const pts = parseOverpass(
+    {
+      elements: [
+        {
+          type: "node",
+          id: 1,
+          lat: 44.8,
+          lon: 20.4,
+          tags: { name: "Скроз добра пекара Врачар", shop: "bakery" },
+        },
+        {
+          type: "node",
+          id: 2,
+          lat: 44.8,
+          lon: 20.4,
+          tags: { name: "Walter", amenity: "fast_food" },
+        },
+        {
+          type: "node",
+          id: 3,
+          lat: 44.8,
+          lon: 20.4,
+          tags: { name: "Walterova kuća", amenity: "restaurant" },
+        },
+        {
+          type: "node",
+          id: 4,
+          lat: 44.8,
+          lon: 20.4,
+          tags: { brand: "KFC", name: "Walter" },
+        },
+      ],
+    },
+    { kfc: ["KFC"] },
+    { skroz: ["Skroz dobra pekara", "Скроз добра пекара"], walter: ["Walter"] },
+  );
+  assertEquals(pts.map((p) => [p.osm_id, p.chain]), [["node/1", "skroz"], [
+    "node/2",
+    "walter",
+  ], ["node/4", "kfc"]]);
+});
+
+Deno.test("parseNbsAverage averages the NBS middle rate over the days of that month only", () => {
+  const r = (date: string, exchange_middle: number) => ({
+    code: "EUR",
+    date,
+    exchange_middle,
+  });
+  const j = {
+    rates: [r("2026-09-01", 117), r("2026-09-30", 118), r("2026-10-01", 200)],
+  };
+  assertEquals(parseNbsAverage(j, "2026-09"), 117.5);
+  assertEquals(parseNbsAverage({ rates: [] }, "2026-09"), null);
+});
+
+Deno.test("parseCompanyWall reads total income and employees per year, checks the registry id, drops a repeated last year", () => {
+  const page =
+    `<div>PIB 108918724 MB 21093564</div><p>Preuzmi finansijske podatke Preuzmi &nbsp; </p><span>2023</span> <span>2024 2025</span> Ukupni prihodi 3.061.881.000,00 3.910.846.000,00 4.713.945.000,00 Ukupni rashodi 1,00 2,00 3,00</p>
+    <p>Ebitda 1,00 2,00 3,00 Broj zaposlenih 561,00 762,00 870,00 Prosečna</p>`;
+  const rate = (y: number) => (y === 2025 ? 117 : 117.2);
+  const ys = parseCompanyWall(page, "21093564", "https://cw/x", rate);
+  assertEquals(ys.map((y) => [y.year, y.revenue_eur, y.employees]), [
+    [2023, 26125265, 561],
+    [2024, 33368993, 762],
+    [2025, 40290128, 870],
+  ]);
+  assertEquals(ys[0].net_profit_eur, null);
+  assertThrows(
+    () => parseCompanyWall(page, "99999999", "u", rate),
+    Error,
+    "MB",
+  );
+  const stale = page.replace("4.713.945.000,00", "3.910.846.000,00");
+  assertEquals(
+    parseCompanyWall(stale, "21093564", "u", rate).map((y) => y.year),
+    [2023, 2024],
+  );
 });

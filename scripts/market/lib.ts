@@ -167,9 +167,12 @@ type OverpassEl = {
  *  и обрезанном списке. Принять такой список — значит записать «точки пропали» и успешный прогон. */
 const OVERPASS_FAILURE = /error|timed out|out of memory/i;
 
+/** names: ключ сети → начала тега name — для сетей, у которых в OSM нет тега brand (часто
+ *  локальные, бывает кириллицей). Совпадение — имя целиком или имя и дальше пробел. brand важнее. */
 export function parseOverpass(
   j: { elements: OverpassEl[]; remark?: string },
   brands: Record<string, string[]>,
+  names: Record<string, string[]> = {},
 ): OsmPoint[] {
   if (j.remark && OVERPASS_FAILURE.test(j.remark)) {
     throw new Error(`overpass: ${j.remark.slice(0, 200)}`);
@@ -179,8 +182,16 @@ export function parseOverpass(
       names.map((n) => [n.toLowerCase(), key])
     ),
   );
+  const prefixes = Object.entries(names).flatMap(([key, ns]) =>
+    ns.map((n) => [n.toLowerCase(), key] as const)
+  );
+  const byName = (name: string | undefined) => {
+    const n = (name ?? "").toLowerCase();
+    return prefixes.find(([p]) => n === p || n.startsWith(`${p} `))?.[1];
+  };
   return j.elements.flatMap((e): OsmPoint[] => {
-    const chain = byBrand.get((e.tags?.brand ?? "").toLowerCase());
+    const chain = byBrand.get((e.tags?.brand ?? "").toLowerCase()) ??
+      byName(e.tags?.name);
     const lat = e.lat ?? e.center?.lat, lng = e.lon ?? e.center?.lon;
     if (!chain || lat === undefined || lng === undefined) return [];
     const street = [e.tags?.["addr:street"], e.tags?.["addr:housenumber"]]
@@ -195,6 +206,18 @@ export function parseOverpass(
       osm_id: `${e.type}/${e.id}`,
     }];
   });
+}
+
+/** Курс динара: у ЕЦБ ряда RSD нет (404), берём средний курс Национального банка Сербии за период
+ *  («2026-09» — месяц, «2025» — год; exchange_middle, динаров за 1 €), по дням периода; зеркало kurs.resenje.org. Дней нет — null. */
+export function parseNbsAverage(
+  j: { rates: Array<{ date: string; exchange_middle: number }> },
+  period: string,
+): number | null {
+  const days = j.rates.filter((r) => r.date.startsWith(`${period}-`));
+  if (!days.length) return null;
+  const avg = days.reduce((s, r) => s + r.exchange_middle, 0) / days.length;
+  return Math.round(avg * 10_000) / 10_000;
 }
 
 type EcbJson = {

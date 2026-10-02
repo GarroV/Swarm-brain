@@ -19,15 +19,21 @@ export type CountryChain = {
   bakery?: boolean;
   /** Значения тега brand в OpenStreetMap. Пусто — сеть в OSM не ищем (локальная, её там нет). */
   osmBrands?: string[];
+  /** Начала тега name, если тега brand у сети в OSM нет (локальные сети; можно кириллицей). */
+  osmNames?: string[];
 };
 export type CountryCompany = {
   chain: string | null;
   name: string;
   regId: string;
+  /** Страница юрлица в CompanyWall (адаптер companywall): /firma/<slug>/<id>. */
+  url?: string;
 };
 export type CountryConfig = {
   country: string;
   dodoCode: string;
+  /** Валюта отчётности юрлиц, если не евро (RSD — курс НБС, остальные — ЕЦБ). */
+  currency?: string;
   chains: CountryChain[];
   companies: CountryCompany[];
   sources: ConfigSource[];

@@ -68,3 +68,20 @@ Deno.test("Romanian yearly files are picked case-insensitively, .txt only", () =
     "WEB_BL_BS_SL_AN2025.txt",
   ]);
 });
+
+Deno.test("Overpass query adds a name search among food places only when chains have osmNames", () => {
+  assertEquals(overpassQuery("HR", ["KFC"]).includes(`["name"~`), false);
+  const q = overpassQuery("RS", ["KFC"], ["Walter", "Скроз добра пекара"]);
+  assertEquals(
+    q.includes(
+      `["amenity"~"^(fast_food|restaurant|cafe)$"]["name"~"^(Walter|Скроз добра пекара)",i]`,
+    ),
+    true,
+  );
+  assertEquals(
+    q.includes(
+      `["shop"~"^(bakery|pastry)$"]["name"~"^(Walter|Скроз добра пекара)",i]`,
+    ),
+    true,
+  );
+});

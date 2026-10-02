@@ -35,6 +35,12 @@ const NAMES: Record<string, string> = {
   ME: "Черногория",
 };
 
+const osmSearch = (ch: CountryConfig["chains"][number]) =>
+  [
+    ch.osmBrands?.length ? `brand: ${ch.osmBrands.join(", ")}` : null,
+    ch.osmNames?.length ? `name: ${ch.osmNames.join(", ")}` : null,
+  ]
+    .filter(Boolean).join("; ");
 const cell = (s: string | undefined | null) =>
   (s ?? "").replace(/\|/g, "\\|").replace(/\n/g, " ") || "—";
 
@@ -61,15 +67,15 @@ function country(c: CountryConfig): string {
   }
   out.push(
     "",
-    "Сети (теги OSM — по ним ищет `osm-overpass`; пусто — сети в OSM нет, точки из других источников):",
+    "Сети (по чему их ищет `osm-overpass`: тег brand или начало name; пусто — сети в OSM нет, точки из других источников):",
     "",
   );
-  out.push("| Ключ | Сеть | Сегмент | Теги brand в OSM |", "|---|---|---|---|");
+  out.push("| Ключ | Сеть | Сегмент | Поиск в OSM |", "|---|---|---|---|");
   for (const ch of c.chains) {
     out.push(
       `| \`${ch.key}\` | ${cell(ch.name)} | ${ch.segment}${
         ch.bakery ? ", пекарня" : ""
-      } | ${cell(ch.osmBrands?.join(", "))} |`,
+      } | ${cell(osmSearch(ch))} |`,
     );
   }
   if (c.companies.length) {

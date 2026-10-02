@@ -7,29 +7,29 @@
 
 | Что | Откуда | Что именно | Как | Частота | Сверено |
 |---|---|---|---|---|---|
-| Продажи Dodo | https://publicapi.dodois.io/hr/api/v1/ | пиццерии Dodo (unitinfo/all: адрес, координаты, BeginDateWork) и выручка по месяцам с числом пиццерий; курс к евро — ЕЦБ | авто, `dodo-publicapi` | раз в неделю | — |
-| Точки | https://publicapi.dodois.io/hr/api/v1/ | сеть dodo: пиццерии Dodo (unitinfo/all: адрес, координаты, BeginDateWork) и выручка по месяцам с числом пиццерий; курс к евро — ЕЦБ | авто, `dodo-publicapi` | раз в неделю | — |
-| Точки | https://overpass-api.de/api/interpreter | точки сетей по тегам brand / name из OpenStreetMap (osmBrands в конфиге), координаты, адрес, дата открытия, если она есть в теге | авто, `osm-overpass` | раз в неделю | — |
+| Продажи Dodo | https://publicapi.dodois.io/hr/api/v1/ | пиццерии Dodo (unitinfo/all: адрес, координаты, BeginDateWork) и выручка по месяцам с числом пиццерий; курс к евро — ЕЦБ, для динара — НБС (kurs.resenje.org) | авто, `dodo-publicapi` | раз в неделю | — |
+| Точки | https://publicapi.dodois.io/hr/api/v1/ | сеть dodo: пиццерии Dodo (unitinfo/all: адрес, координаты, BeginDateWork) и выручка по месяцам с числом пиццерий; курс к евро — ЕЦБ, для динара — НБС (kurs.resenje.org) | авто, `dodo-publicapi` | раз в неделю | — |
+| Точки | https://overpass-api.de/api/interpreter | точки сетей по тегу brand (osmBrands в конфиге) или по началу name среди заведений общепита (osmNames) из OpenStreetMap, координаты, адрес, дата открытия, если она есть в теге | авто, `osm-overpass` | раз в неделю | — |
 | Точки | снимок ручных источников (импорт в «Источниках и свежести») | локальные сети и пекарни с датами открытия: локаторы сетей, Wolt, пресса; дата — по посту сети, появлению в Wolt или первому отзыву, а не по дате статьи | вручную | по запросу | 2026-10-02 |
 | Выручки юрлиц | https://www.fina.hr (Info.BIZ), companywall.hr | выручка и сотрудники юрлиц из companies снимка; OIB — рег. номер (Fina Info.BIZ: вход по учётной записи, условия запрещают перепубликацию — обновление раз в год вручную) | вручную | по запросу | 2026-10-02 |
 | Цены | сайты сетей и Wolt | средняя пицца ~30 см (маргарита, пепперони, ветчина-грибы, премиум) — свой сайт и Wolt, акции | вручную | по запросу | 2026-10-01 |
 | Факты рынка | пресса, отчёты платформ доставки и мастер-франчайзи | события сетей, рынок доставки, факты рынка; ручная часть экрана — блоки editorial снимка | вручную | по запросу | 2026-10-02 |
 
-Сети (теги OSM — по ним ищет `osm-overpass`; пусто — сети в OSM нет, точки из других источников):
+Сети (по чему их ищет `osm-overpass`: тег brand или начало name; пусто — сети в OSM нет, точки из других источников):
 
-| Ключ | Сеть | Сегмент | Теги brand в OSM |
+| Ключ | Сеть | Сегмент | Поиск в OSM |
 |---|---|---|---|
 | `dodo` | Dodo Pizza | pizza | — |
-| `dominos` | Domino's | pizza | Domino's, Domino's Pizza |
-| `pizzahut` | Pizza Hut | pizza | Pizza Hut |
+| `dominos` | Domino's | pizza | brand: Domino's, Domino's Pizza |
+| `pizzahut` | Pizza Hut | pizza | brand: Pizza Hut |
 | `pizzaexpress_hr` | Pizza Express HR | pizza | — |
 | `tuttobene` | TuttoBene Pizzeria & Fast Food | pizza | — |
-| `mcdonalds` | McDonald's | burger | McDonald's |
-| `burgerking` | Burger King | burger | Burger King |
+| `mcdonalds` | McDonald's | burger | brand: McDonald's |
+| `burgerking` | Burger King | burger | brand: Burger King |
 | `submarine-burger` | Submarine Burger | burger | — |
-| `kfc` | KFC | chicken | KFC |
+| `kfc` | KFC | chicken | brand: KFC |
 | `batak-grill` | Batak Grill | grill | — |
-| `mlinar` | Mlinar | bakery, пекарня | Mlinar |
+| `mlinar` | Mlinar | bakery, пекарня | brand: Mlinar |
 | `pan-pek` | Pan-Pek | bakery, пекарня | — |
 | `pekara-dubravica` | Pekara Dubravica | bakery, пекарня | — |
 | `leggiero` | Leggiero / Leggiero Food | coffee, пекарня | — |
@@ -47,27 +47,27 @@
 
 | Что | Откуда | Что именно | Как | Частота | Сверено |
 |---|---|---|---|---|---|
-| Продажи Dodo | https://publicapi.dodois.io/ro/api/v1/ | пиццерии Dodo (unitinfo/all: адрес, координаты, BeginDateWork) и выручка по месяцам с числом пиццерий; курс к евро — ЕЦБ | авто, `dodo-publicapi` | раз в неделю | — |
-| Точки | https://publicapi.dodois.io/ro/api/v1/ | сеть dodo: пиццерии Dodo (unitinfo/all: адрес, координаты, BeginDateWork) и выручка по месяцам с числом пиццерий; курс к евро — ЕЦБ | авто, `dodo-publicapi` | раз в неделю | — |
-| Точки | https://overpass-api.de/api/interpreter | точки сетей по тегам brand / name из OpenStreetMap (osmBrands в конфиге), координаты, адрес, дата открытия, если она есть в теге | авто, `osm-overpass` | раз в неделю | — |
+| Продажи Dodo | https://publicapi.dodois.io/ro/api/v1/ | пиццерии Dodo (unitinfo/all: адрес, координаты, BeginDateWork) и выручка по месяцам с числом пиццерий; курс к евро — ЕЦБ, для динара — НБС (kurs.resenje.org) | авто, `dodo-publicapi` | раз в неделю | — |
+| Точки | https://publicapi.dodois.io/ro/api/v1/ | сеть dodo: пиццерии Dodo (unitinfo/all: адрес, координаты, BeginDateWork) и выручка по месяцам с числом пиццерий; курс к евро — ЕЦБ, для динара — НБС (kurs.resenje.org) | авто, `dodo-publicapi` | раз в неделю | — |
+| Точки | https://overpass-api.de/api/interpreter | точки сетей по тегу brand (osmBrands в конфиге) или по началу name среди заведений общепита (osmNames) из OpenStreetMap, координаты, адрес, дата открытия, если она есть в теге | авто, `osm-overpass` | раз в неделю | — |
 | Выручки юрлиц | https://data.gov.ro (набор situatii financiare) | годовая отчётность юрлиц Румынии по CUI из companies: оборот и сотрудники; лей → евро по годовому курсу ЕЦБ | авто, `ro-datagov` | раз в год | — |
 | Цены | — | ещё не собирались | вручную | по запросу | — |
 | Факты рынка | — | ещё не собирались; ручной части нет | вручную | по запросу | — |
 
-Сети (теги OSM — по ним ищет `osm-overpass`; пусто — сети в OSM нет, точки из других источников):
+Сети (по чему их ищет `osm-overpass`: тег brand или начало name; пусто — сети в OSM нет, точки из других источников):
 
-| Ключ | Сеть | Сегмент | Теги brand в OSM |
+| Ключ | Сеть | Сегмент | Поиск в OSM |
 |---|---|---|---|
 | `dodo` | Dodo Pizza | pizza | — |
-| `dominos` | Domino's | pizza | Domino's, Domino's Pizza |
-| `pizzahut` | Pizza Hut | pizza | Pizza Hut, Pizza Hut Delivery |
-| `jerrys` | Jerry's Pizza | pizza | Jerry's Pizza |
-| `mcdonalds` | McDonald's | burger | McDonald's |
-| `burgerking` | Burger King | burger | Burger King |
-| `kfc` | KFC | chicken | KFC |
-| `subway` | Subway | sandwich | Subway |
-| `spartan` | Spartan | grill | Spartan |
-| `saladbox` | Salad Box | other | Salad Box |
+| `dominos` | Domino's | pizza | brand: Domino's, Domino's Pizza |
+| `pizzahut` | Pizza Hut | pizza | brand: Pizza Hut, Pizza Hut Delivery |
+| `jerrys` | Jerry's Pizza | pizza | brand: Jerry's Pizza |
+| `mcdonalds` | McDonald's | burger | brand: McDonald's |
+| `burgerking` | Burger King | burger | brand: Burger King |
+| `kfc` | KFC | chicken | brand: KFC |
+| `subway` | Subway | sandwich | brand: Subway |
+| `spartan` | Spartan | grill | brand: Spartan |
+| `saladbox` | Salad Box | other | brand: Salad Box |
 
 Юрлица операторов (по рег. номеру их ищут адаптеры реестров):
 
@@ -85,26 +85,26 @@
 
 | Что | Откуда | Что именно | Как | Частота | Сверено |
 |---|---|---|---|---|---|
-| Продажи Dodo | https://publicapi.dodois.io/ee/api/v1/ | пиццерии Dodo (unitinfo/all: адрес, координаты, BeginDateWork) и выручка по месяцам с числом пиццерий; курс к евро — ЕЦБ | авто, `dodo-publicapi` | раз в неделю | — |
-| Точки | https://publicapi.dodois.io/ee/api/v1/ | сеть dodo: пиццерии Dodo (unitinfo/all: адрес, координаты, BeginDateWork) и выручка по месяцам с числом пиццерий; курс к евро — ЕЦБ | авто, `dodo-publicapi` | раз в неделю | — |
-| Точки | https://overpass-api.de/api/interpreter | точки сетей по тегам brand / name из OpenStreetMap (osmBrands в конфиге), координаты, адрес, дата открытия, если она есть в теге | авто, `osm-overpass` | раз в неделю | — |
+| Продажи Dodo | https://publicapi.dodois.io/ee/api/v1/ | пиццерии Dodo (unitinfo/all: адрес, координаты, BeginDateWork) и выручка по месяцам с числом пиццерий; курс к евро — ЕЦБ, для динара — НБС (kurs.resenje.org) | авто, `dodo-publicapi` | раз в неделю | — |
+| Точки | https://publicapi.dodois.io/ee/api/v1/ | сеть dodo: пиццерии Dodo (unitinfo/all: адрес, координаты, BeginDateWork) и выручка по месяцам с числом пиццерий; курс к евро — ЕЦБ, для динара — НБС (kurs.resenje.org) | авто, `dodo-publicapi` | раз в неделю | — |
+| Точки | https://overpass-api.de/api/interpreter | точки сетей по тегу brand (osmBrands в конфиге) или по началу name среди заведений общепита (osmNames) из OpenStreetMap, координаты, адрес, дата открытия, если она есть в теге | авто, `osm-overpass` | раз в неделю | — |
 | Выручки юрлиц | https://avaandmed.ariregister.rik.ee | годовые отчёты юрлиц Эстонии (открытые данные e-Äriregister): выручка и сотрудники по рег. коду из companies | авто, `ee-ariregister` | раз в месяц | — |
 | Цены | — | ещё не собирались | вручную | по запросу | — |
 | Факты рынка | — | ещё не собирались; ручной части нет | вручную | по запросу | — |
 
-Сети (теги OSM — по ним ищет `osm-overpass`; пусто — сети в OSM нет, точки из других источников):
+Сети (по чему их ищет `osm-overpass`: тег brand или начало name; пусто — сети в OSM нет, точки из других источников):
 
-| Ключ | Сеть | Сегмент | Теги brand в OSM |
+| Ключ | Сеть | Сегмент | Поиск в OSM |
 |---|---|---|---|
 | `dodo` | Dodo Pizza | pizza | — |
-| `dominos` | Domino's | pizza | Domino's, Domino's Pizza |
-| `peetri` | Peetri Pizza | pizza | Peetri Pizza |
-| `kotipizza` | Kotipizza | pizza | Kotipizza |
-| `mcdonalds` | McDonald's | burger | McDonald's |
-| `hesburger` | Hesburger | burger | Hesburger |
-| `burgerking` | Burger King | burger | Burger King |
-| `kfc` | KFC | chicken | KFC |
-| `subway` | Subway | sandwich | Subway |
+| `dominos` | Domino's | pizza | brand: Domino's, Domino's Pizza |
+| `peetri` | Peetri Pizza | pizza | brand: Peetri Pizza |
+| `kotipizza` | Kotipizza | pizza | brand: Kotipizza |
+| `mcdonalds` | McDonald's | burger | brand: McDonald's |
+| `hesburger` | Hesburger | burger | brand: Hesburger |
+| `burgerking` | Burger King | burger | brand: Burger King |
+| `kfc` | KFC | chicken | brand: KFC |
+| `subway` | Subway | sandwich | brand: Subway |
 
 Юрлица операторов (по рег. номеру их ищут адаптеры реестров):
 
@@ -113,3 +113,45 @@
 | dodo | Osaühing VIP Shop | 11452320 |
 | dodo | DigiLike OÜ | 14924021 |
 | hesburger | AS Hesburger | 10312806 |
+
+## RS — Сербия
+
+| Что | Откуда | Что именно | Как | Частота | Сверено |
+|---|---|---|---|---|---|
+| Продажи Dodo | https://publicapi.dodois.io/rs/api/v1/ | пиццерии Dodo (unitinfo/all: адрес, координаты, BeginDateWork) и выручка по месяцам с числом пиццерий; курс к евро — ЕЦБ, для динара — НБС (kurs.resenje.org) | авто, `dodo-publicapi` | раз в неделю | — |
+| Точки | https://publicapi.dodois.io/rs/api/v1/ | сеть dodo: пиццерии Dodo (unitinfo/all: адрес, координаты, BeginDateWork) и выручка по месяцам с числом пиццерий; курс к евро — ЕЦБ, для динара — НБС (kurs.resenje.org) | авто, `dodo-publicapi` | раз в неделю | — |
+| Точки | https://overpass-api.de/api/interpreter | точки сетей по тегу brand (osmBrands в конфиге) или по началу name среди заведений общепита (osmNames) из OpenStreetMap, координаты, адрес, дата открытия, если она есть в теге | авто, `osm-overpass` | раз в неделю | 2026-10-02 |
+| Выручки юрлиц | https://www.companywall.<страна>/firma/<slug>/<id> (ссылки — в companies.url конфига) | общие доходы (Ukupni prihodi) — шире выручки от продаж; выручки от продаж (poslovni prihodi) есть только в APR (fin.apr.gov.rs) за капчей | авто, `companywall` | раз в год | 2026-10-02 |
+| Цены | Wolt (JSON меню по slug заведения, без входа) | ещё не собирались; кандидат в автоматический адаптер | вручную | по запросу | — |
+| Факты рынка | — | ещё не собирались; ручной части нет | вручную | по запросу | — |
+
+Сети (по чему их ищет `osm-overpass`: тег brand или начало name; пусто — сети в OSM нет, точки из других источников):
+
+| Ключ | Сеть | Сегмент | Поиск в OSM |
+|---|---|---|---|
+| `dodo` | Dodo Pizza | pizza | — |
+| `pizzahut` | Pizza Hut | pizza | brand: Pizza Hut |
+| `caribic` | Caribic Pizza | pizza | name: Caribic, Карибик |
+| `mcdonalds` | McDonald's | burger | brand: McDonald's, McDonalds, Мекдоналдс, Макдоналдс |
+| `burgerking` | Burger King | burger | brand: Burger King |
+| `kfc` | KFC | chicken | brand: KFC |
+| `walter` | Walter | grill | name: Walter, Валтер |
+| `tacobell` | Taco Bell | other | brand: Taco Bell |
+| `burrito-madre` | Burrito Madre | other | name: Burrito Madre |
+| `starbucks` | Starbucks | coffee | brand: Starbucks, Старбакс |
+| `skroz-dobra-pekara` | Skroz dobra pekara | bakery, пекарня | name: Skroz dobra pekara, Скроз добра пекара |
+| `hleb-i-kifle` | Hleb i kifle | bakery, пекарня | name: Hleb i kifle, Хлеб и кифле |
+| `zlatni-klas` | Zlatni klas | bakery, пекарня | name: Zlatni klas, Златни клас |
+
+Юрлица операторов (по рег. номеру их ищут адаптеры реестров):
+
+| Сеть | Юрлицо | Рег. номер |
+|---|---|---|
+| dodo | Anton Nefedev PR Picerije ANGARA | 66479366 |
+| mcdonalds | Nicefoods Restorani d.o.o. | 07092652 |
+| kfc | AmRest d.o.o. | 20343052 |
+| starbucks | AmRest Coffee SRB d.o.o. | 21335517 |
+| walter | Walter BBQ d.o.o. | 21093564 |
+| caribic | MMM Pizza Group d.o.o. | 20526068 |
+| skroz-dobra-pekara | Trgocentar d.o.o. | 07773820 |
+| hleb-i-kifle | Hleb i kifle d.o.o. | 20301708 |
