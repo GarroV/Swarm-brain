@@ -40,7 +40,7 @@ function OrdersChart({ bars }: { bars: Bar[] }) {
   const BT = 16, BB = 24, STEP = 2500;
   const mx = scaleTop(Math.max(0, ...bars.map((b) => b.total)), STEP, 7500);
   // Отступ под подписи шкалы: у эталона 40 под «7 500»; длиннее подпись — шире отступ.
-  const L = Math.max(40, 10 + 6.5 * intFmt(mx, ru).length);
+  const L = Math.max(40, 10 + CHAR_W * intFmt(mx, ru).length);
   const Y = (v: number) => H - BB - (v / mx) * (H - BT - BB);
   const bw = (W - L) / Math.max(1, bars.length);
   const pc = (v: number) => `${dec(v * 100, 1, ru)}%`;
@@ -86,12 +86,19 @@ function OrdersChart({ bars }: { bars: Bar[] }) {
               );
             })}
             <text x={x + w / 2} y={H - 8} textAnchor="middle">{b.label}</text>
-            <text x={x + w / 2} y={Y(b.total) - 5} textAnchor="middle" style={{ fill: "var(--ink2)" }}>{intFmt(b.total, ru)}</text>
+            <text x={x + w / 2} y={Y(b.total) - 5} textAnchor="middle" style={{ fill: "var(--ink2)" }}>{totalLabel(b.total, bw, ru)}</text>
           </g>
         );
       })}
     </svg>
   );
+}
+
+/** Подпись над столбцом: полное число, а если оно шире столбца (много месяцев) — в тысячах, чтобы соседние не слипались. */
+const CHAR_W = 6.5;
+function totalLabel(v: number, bw: number, ru: boolean): string {
+  const full = intFmt(v, ru);
+  return full.length * CHAR_W + 6 <= bw ? full : `${dec(v / 1000, 1, ru)}k`;
 }
 
 type Series = { name: string; color: string; dashed: boolean; vals: Array<number | null> };
@@ -206,7 +213,7 @@ export function DodoOpsEditorial({ rows, texts, country }: { rows: EdDodoOps[]; 
         <div className="panel chartbox">
           <h3>{units === 2 ? dt("Заказы по месяцам и каналам, обе пиццерии", "Orders by month and channel, both pizzerias") : dt("Заказы по месяцам и каналам", "Orders by month and channel")}</h3>
           <OrdersChart bars={bars} />
-          <Legend items={CHN.map((c) => ({ name: chName(c), color: c.color }))} />
+          <Legend items={CHN.map((c) => ({ name: dt(...c.name), color: c.color }))} />
         </div>
         <div className="panel chartbox">
           <h3>{dt("Средний чек по каналам, €", "Average check by channel, €")}</h3>

@@ -139,7 +139,7 @@ export function MoneySection({ bundle }: { bundle: MarketBundle }) {
                       <td className="co">
                         <b>{name}</b>
                         <br />
-                        <span className="muted">{[company.name === name ? null : company.name, company.reg_id].filter(Boolean).join(" · ")}</span>
+                        <span className="muted">{[company.name === name ? null : company.name, company.reg_id && [ed.texts.reg_id_label, company.reg_id].filter(Boolean).join(" ")].filter(Boolean).join(" · ")}</span>
                       </td>
                       {years.map((y, i) => {
                         const v = fmtMln(rev[i], ru);

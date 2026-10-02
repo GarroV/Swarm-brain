@@ -4,7 +4,7 @@
 // из хорватского отчёта (стили в market.css, всё внутри корня .mkt).
 import { createContext, type PointerEvent, type ReactNode, useCallback, useContext, useMemo, useRef, useState } from "react";
 import type { MarketBundle } from "@/types";
-import { chainSlots, KNOWN_SLOT } from "@/lib/marketMap";
+import { chainSlots } from "@/lib/marketMap";
 import { type Editorial, parseEditorial } from "@/lib/marketEditorial";
 
 export function useEditorial(bundle: MarketBundle): Editorial {
@@ -12,16 +12,13 @@ export function useEditorial(bundle: MarketBundle): Editorial {
 }
 
 /** Цвет сети как в эталоне: var(--s<слот>). Международные сети — всегда своим слотом (Dodo
- *  оранжевый в любой стране), остальные — слотом из справочника, если он не занят, иначе по числу точек. */
+ *  оранжевый в любой стране), остальные — слотом из справочника, если он не занят, иначе по числу точек
+ *  (раздача — chainSlots). */
 export function useChainColor(bundle: MarketBundle): (key: string) => string {
   return useMemo(() => {
     const counts = new Map<string, number>();
     for (const l of bundle.locations) counts.set(l.chain_key, (counts.get(l.chain_key) ?? 0) + 1);
     const slot = chainSlots(bundle.chains, counts);
-    const known = new Set(bundle.chains.filter((c) => KNOWN_SLOT[c.key]).map((c) => slot.get(c.key)));
-    for (const c of bundle.chains) {
-      if (!KNOWN_SLOT[c.key] && c.slot >= 1 && c.slot <= 8 && !known.has(c.slot)) slot.set(c.key, c.slot);
-    }
     return (key: string) => `var(--s${slot.get(key) ?? 0})`;
   }, [bundle.chains, bundle.locations]);
 }

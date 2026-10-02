@@ -25,7 +25,7 @@ export function editorialPizza(ed: Editorial, dt: Dt): PzModel | null {
   return {
     revHead: rev.map((k) => (/^\d{4}$/.test(k) ? dt(`Выручка ${k}`, `Revenue ${k}`) : k)),
     perHead: per.map((k) => dt(`На точку, ${k}`, `Per unit, ${k}`)),
-    perLabel: per,
+    perLabel: per.map((k) => ed.texts[`pizza_label_${k}`] ?? k), // подпись периода в графике эталона длиннее, чем в шапке таблицы
     opacity: per.map((_, i) => (i === 0 ? 1 : 0.5)),
     rows: ed.pizzaTable.map((r) => ({
       key: r.chain,

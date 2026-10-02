@@ -33,7 +33,7 @@ Deno.test("pickMoneyRows: префикс по сети или юрлицу, за
   const companies = [co("a", "Alpha Foods d.o.o.", "burgo"), co("b", "Beta Group", null), co("c", "Gamma LLC", "pizzo"), co("d", "Delta", "nofin")];
   const names: Record<string, string> = { burgo: "Burgo (drive chain)", pizzo: "Pizzo" };
   const rows = pickMoneyRows(
-    [{ prefix: "Burgo", chains: ["burgo"] }, { prefix: "Beta", chains: null }, { prefix: "Zeta", chains: ["pizzo"] }, { prefix: "Delta", chains: ["nofin"] }, { prefix: "Nope", chains: null }],
+    [{ prefix: "Burgo", chains: ["burgo"], company: null, label: null }, { prefix: "Beta", chains: null, company: null, label: null }, { prefix: "Zeta", chains: ["pizzo"], company: null, label: null }, { prefix: "Delta", chains: ["nofin"], company: null, label: null }, { prefix: "Nope", chains: null, company: null, label: null }],
     companies,
     (k) => (k ? names[k] ?? null : null),
     (id) => id !== "d",
@@ -43,6 +43,12 @@ Deno.test("pickMoneyRows: префикс по сети или юрлицу, за
 
 Deno.test("pickMoneyRows: явное юрлицо по рег. номеру — для строки без сети в справочнике", () => {
   const companies = [{ ...co("v", "Virtus services d.o.o.", null), reg_id: "123" }, co("l", "Lumo", null)];
-  const rows = pickMoneyRows([{ prefix: "Lumo cafe", chains: null, company: "123" }], companies, () => null, () => true);
+  const rows = pickMoneyRows([{ prefix: "Lumo cafe", chains: null, company: "123", label: null }], companies, () => null, () => true);
   assertEquals(rows.map((r) => [r.company.id, r.name]), [["v", "Lumo cafe"]]);
+});
+
+Deno.test("pickMoneyRows: label from editorial names the row as the reference does", () => {
+  const companies = [co("d", "Pizza Dom d.o.o.", "dom")];
+  const rows = pickMoneyRows([{ prefix: "Dom", chains: ["dom"], company: null, label: "Domino's Pizza" }], companies, () => "Dom", () => true);
+  assertEquals(rows.map((r) => r.name), ["Domino's Pizza"]);
 });

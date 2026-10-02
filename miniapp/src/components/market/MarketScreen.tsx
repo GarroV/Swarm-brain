@@ -13,6 +13,7 @@ import { Freshness } from "./Freshness";
 import { LocationRegistry } from "./LocationRegistry";
 import { MarketMap } from "./MarketMap";
 import { dropDeadChains } from "@/lib/marketInsights";
+import { applyLocationDates, parseEditorial } from "@/lib/marketEditorial";
 import { ChainTimeline } from "./ChainTimeline";
 import { MarketTrend } from "./MarketTrend";
 import { MarketSummary } from "./MarketSummary";
@@ -49,8 +50,14 @@ export function MarketScreen() {
   const [countries, setCountries] = useState<string[] | null>(null);
   const [cc, setCc] = useState<string | null>(null);
   const [raw, setBundle] = useState<MarketBundle | null>(null);
-  // Сети без единой работающей точки не показываются нигде (правило эталона).
-  const bundle = useMemo(() => (raw ? dropDeadChains(raw) : null), [raw]);
+  // Сети без единой работающей точки не показываются нигде (правило эталона). Уточнённые даты
+  // открытия из ручной части (editorial.location_dates) — до всех расчётов, чтобы карта, таймлайн,
+  // динамика и плитки считали от одной даты.
+  const bundle = useMemo(() => {
+    if (!raw) return null;
+    const dates = parseEditorial(raw.editorial).locationDates;
+    return dropDeadChains(dates.length ? { ...raw, locations: applyLocationDates(raw.locations, dates) } : raw);
+  }, [raw]);
   const [failed, setFailed] = useState<"countries" | "country" | null>(null);
   const [reload, setReload] = useState(0);
 

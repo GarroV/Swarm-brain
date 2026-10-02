@@ -41,7 +41,7 @@ export type MoneyRowPick = { company: MarketCompany; name: string; chains: strin
 /** Строки ручной части → юрлица: название сети или юрлица начинается с префикса строки, иначе
  *  юрлицо одной из сетей строки. Юрлица без отчётности и ненайденные строки пропускаются. */
 export function pickMoneyRows(
-  rows: Array<{ prefix: string; chains: string[] | null; company?: string | null }>,
+  rows: Array<{ prefix: string; chains: string[] | null; company?: string | null; label?: string | null }>,
   companies: MarketCompany[],
   chainName: (key: string | null) => string | null,
   hasFinancials: (companyId: string) => boolean,
@@ -52,6 +52,6 @@ export function pickMoneyRows(
     const byName = byCompany ?? pool.find((c) => (chainName(c.chain_key) ?? "").startsWith(r.prefix) || c.name.startsWith(r.prefix));
     const company = byName ?? (r.chains ? pool.find((c) => c.chain_key !== null && r.chains!.includes(c.chain_key)) : undefined);
     if (!company) return [];
-    return [{ company, name: (byCompany ? r.prefix : chainName(company.chain_key) ?? r.prefix).replace(/\s*\(.*\)/, ""), chains: r.chains }];
+    return [{ company, name: (r.label ?? (byCompany ? r.prefix : chainName(company.chain_key) ?? r.prefix)).replace(/\s*\(.*\)/, ""), chains: r.chains }];
   });
 }

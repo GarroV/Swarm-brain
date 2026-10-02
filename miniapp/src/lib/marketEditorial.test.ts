@@ -1,5 +1,5 @@
 import { assertEquals } from "jsr:@std/assert@1";
-import { parseEditorial } from "./marketEditorial.ts";
+import { applyLocationDates, parseEditorial } from "./marketEditorial.ts";
 
 Deno.test("empty or broken editorial gives empty blocks, not a crash", () => {
   for (const raw of [undefined, null, 7, "x", []]) {
@@ -58,4 +58,25 @@ Deno.test("growth keeps only year keys with numbers", () => {
 Deno.test("map presets need four numbers", () => {
   const e = parseEditorial({ map_presets: [{ name: "Z", box: [1, 2, 3, 4] }, { name: "Bad", box: [1, 2, "3", 4] }] });
   assertEquals(e.mapPresets.map((p) => p.name), ["Z"]);
+});
+
+Deno.test("location dates from editorial override the collected opening date by exact name", () => {
+  const ed = parseEditorial({
+    location_dates: [
+      { name: "Dodo Pizza Zagreb-1", opened: "2024-03-22", note: "Данные Dodo" },
+      { name: "no date" },
+      { name: "Dodo Pizza Zagreb-9", opened: "2024-01-01" },
+    ],
+  });
+  assertEquals(ed.locationDates.length, 2);
+  const locs = [
+    { name: "Dodo Pizza Zagreb-1", opened: "2023-04-24", opened_estimated: true, verification_note: null },
+    { name: "Dodo Pizza Zagreb-2", opened: "2025-03-31", opened_estimated: false, verification_note: "x" },
+  ];
+  const out = applyLocationDates(locs, ed.locationDates);
+  assertEquals(out[0].opened, "2024-03-22");
+  assertEquals(out[0].opened_estimated, false);
+  assertEquals(out[0].verification_note, "Дата открытия: Данные Dodo (собрано 2023-04-24)");
+  assertEquals(out[1], locs[1]);
+  assertEquals(locs[0].opened, "2023-04-24");
 });

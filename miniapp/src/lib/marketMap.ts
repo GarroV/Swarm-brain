@@ -11,19 +11,20 @@ import { aliveAtYearEnd } from "./marketStats";
 export const KNOWN_SLOT: Record<string, number> = { mcdonalds: 1, dodo: 2, kfc: 3, burgerking: 4, dominos: 5, pizzahut: 6 };
 const SLOTS = 8;
 
-export function chainSlots(chains: Pick<MarketChain, "key" | "is_bakery">[], counts: Map<string, number>): Map<string, number> {
+/** Слоты цвета сетей: международные — всегда своим (KNOWN_SLOT), остальные — слотом справочника,
+ *  пока он свободен (крупная сеть первой), прочие — первым свободным по числу точек. Два цвета не совпадают. */
+export function chainSlots(chains: Array<Pick<MarketChain, "key" | "is_bakery"> & { slot?: number }>, counts: Map<string, number>): Map<string, number> {
   const out = new Map<string, number>();
   const used = new Set<number>();
-  for (const c of chains) {
-    const s = KNOWN_SLOT[c.key];
-    if (s) {
-      out.set(c.key, s);
-      used.add(s);
-    }
-  }
-  const free = Array.from({ length: SLOTS }, (_, i) => i + 1).filter((s) => !used.has(s));
+  const take = (key: string, s: number) => {
+    out.set(key, s);
+    used.add(s);
+  };
+  for (const c of chains) if (KNOWN_SLOT[c.key]) take(c.key, KNOWN_SLOT[c.key]);
   const rest = chains.filter((c) => !out.has(c.key)).sort((a, b) => Number(a.is_bakery) - Number(b.is_bakery) || (counts.get(b.key) ?? 0) - (counts.get(a.key) ?? 0));
-  for (const c of rest) out.set(c.key, free.shift() ?? 0);
+  for (const c of rest) if (c.slot && c.slot >= 1 && c.slot <= SLOTS && !used.has(c.slot)) take(c.key, c.slot);
+  const free = Array.from({ length: SLOTS }, (_, i) => i + 1).filter((s) => !used.has(s));
+  for (const c of rest) if (!out.has(c.key)) out.set(c.key, free.shift() ?? 0);
   return out;
 }
 

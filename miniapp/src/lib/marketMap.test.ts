@@ -99,3 +99,20 @@ Deno.test("cursor radius counts points strictly inside and groups them by chain"
   const pts = [{ x: 0, y: 0, chain: "a" }, { x: 3, y: 0, chain: "b" }, { x: 0, y: 3, chain: "b" }, { x: 5, y: 0, chain: "a" }];
   assertEquals(nearByChain(pts, 0, 0, 5), { n: 3, byChain: [["b", 2], ["a", 1]] });
 });
+
+Deno.test("chainSlots: catalogue slot is kept only while free, no two chains share a colour", () => {
+  const chains = [
+    { key: "dodo", is_bakery: false, slot: 2 },
+    { key: "pizzaplanet", is_bakery: false, slot: 2 },
+    { key: "burgerbarn", is_bakery: false, slot: 3 },
+    { key: "subway", is_bakery: false, slot: 7 },
+    { key: "spartan", is_bakery: false, slot: 7 },
+  ];
+  const counts = new Map([["pizzaplanet", 30], ["burgerbarn", 10], ["subway", 5], ["spartan", 1]]);
+  const s = chainSlots(chains, counts);
+  assertEquals(s.get("dodo"), 2);
+  assertEquals(s.get("burgerbarn"), 3);
+  assertEquals(s.get("subway"), 7);
+  const all = [...s.values()];
+  assertEquals(new Set(all).size, all.length);
+});

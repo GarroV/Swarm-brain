@@ -29,7 +29,9 @@ export type EdRating = { chain: string; point: string; city: string; google: num
 export type EdPlatform = { name: string; slot: number; note: string | null; years: Array<{ year: number; revenue_eur: number }> };
 export type EdFigure = { big: string; text: string; source: string | null };
 /** company — рег. номер или начало названия юрлица: для строки, у которой нет сети в справочнике. */
-export type EdMoneyRow = { prefix: string; chains: string[] | null; company: string | null };
+export type EdMoneyRow = { prefix: string; chains: string[] | null; company: string | null; label: string | null };
+/** Уточнённая дата открытия точки (журнал вычитки эталона): имя точки ровно как в реестре. */
+export type EdLocationDate = { name: string; opened: string; note: string | null };
 export type EdPreset = { name: string; box: [number, number, number, number] };
 export type EdPriceCol = { title: string; chain: string; channel: RegExp | null; cm: number | null; exclude: RegExp | null };
 
@@ -52,6 +54,7 @@ export type Editorial = {
   moneyRows: EdMoneyRow[];
   mapPresets: EdPreset[];
   pricesCols: EdPriceCol[];
+  locationDates: EdLocationDate[];
 };
 
 const EVENT_KINDS: readonly EdEventKind[] = ["entry", "exit", "deal", "open", "plan", "pause"];
@@ -174,15 +177,32 @@ export function parseEditorial(raw: unknown): Editorial {
     }),
     deliveryFigures: rows(e.delivery_figures, figure),
     marketFacts: rows(e.market_facts, figure),
-    moneyRows: rows(e.money_rows, (r) => (str(r.prefix) ? { prefix: r.prefix as string, chains: Array.isArray(r.chains) ? strList(r.chains) : null, company: textOf(r.company) } : null)),
+    moneyRows: rows(e.money_rows, (r) => (str(r.prefix) ? { prefix: r.prefix as string, chains: Array.isArray(r.chains) ? strList(r.chains) : null, company: textOf(r.company), label: str(r.label) } : null)),
     mapPresets: rows(e.map_presets, (r) => {
       const box = list(r.box).map(num);
       return str(r.name) && box.length === 4 && box.every((x) => x !== null) ? { name: r.name as string, box: box as EdPreset["box"] } : null;
     }),
+    locationDates: rows(e.location_dates, (r) =>
+      str(r.name) && /^\d{4}(-\d{2}(-\d{2})?)?$/.test(String(r.opened)) ? { name: r.name as string, opened: r.opened as string, note: str(r.note) } : null
+    ),
     pricesCols: rows(e.prices_cols, (r) =>
       str(r.title) && str(r.chain) ? { title: r.title as string, chain: r.chain as string, channel: regex(r.channel), cm: num(r.cm), exclude: regex(r.exclude) } : null
     ),
   };
+}
+
+type Dated = { name: string; opened: string | null; opened_estimated: boolean; verification_note: string | null };
+
+/** Точки с уточнённой датой из ручной части — новыми объектами; в пометке проверки остаётся собранная дата. */
+export function applyLocationDates<T extends Dated>(locs: T[], dates: EdLocationDate[]): T[] {
+  if (!dates.length) return locs;
+  const by = new Map(dates.map((d) => [d.name, d]));
+  return locs.map((l) => {
+    const d = by.get(l.name);
+    if (!d || d.opened === l.opened) return l;
+    const was = l.opened ? ` (собрано ${l.opened})` : "";
+    return { ...l, opened: d.opened, opened_estimated: false, verification_note: `Дата открытия: ${d.note ?? "ручная часть"}${was}` };
+  });
 }
 
 function figure(r: Raw): EdFigure | null {
