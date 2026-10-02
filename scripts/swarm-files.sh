@@ -22,7 +22,7 @@ DATA="${ROOT}\\data"
 FUNNEL_PORT=10000
 FUNNEL_PATH=/swarm-files
 PUBLIC_URL="https://muspelheim.tail48dfee.ts.net:${FUNNEL_PORT}${FUNNEL_PATH}"
-ORIGINS="${FILES_ALLOWED_ORIGINS:-https://swarm-brain.pages.dev}"
+ORIGINS="${FILES_ALLOWED_ORIGINS:-https://swarm-team.app,https://swarm-brain.pages.dev}"
 
 remote() { ssh "$HOST" "$@"; }
 say() { printf '[swarm-files %s] %s\n' "$(date +%H:%M:%S)" "$*"; }
