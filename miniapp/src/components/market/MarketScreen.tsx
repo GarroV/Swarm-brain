@@ -22,6 +22,7 @@ import { DeliverySection } from "./DeliverySection";
 import { PizzaSection } from "./PizzaSection";
 import { Empty } from "./ui";
 import { MarketHeader } from "./MarketHeader";
+import { ExportButtons } from "./ExportButtons";
 import { TipProvider } from "./ref";
 import { mktMono, mktSans } from "./fonts";
 import "./market.css";
@@ -124,13 +125,18 @@ export function MarketScreen() {
     <div className={`mkt h-full overflow-y-auto ${mktSans.variable} ${mktMono.variable}`}>
       <TipProvider>
         <div className="mkt-wrap">
-          {(countries?.length ?? 0) > 1 && (
-            <div className="seg" role="group" aria-label={dt("Страна", "Country")} style={{ alignSelf: "flex-start" }}>
-              {(countries ?? []).map((c) => (
-                <button key={c} type="button" aria-pressed={c === cc} onClick={() => pick(c)}>{label(c)}</button>
-              ))}
-            </div>
-          )}
+          <div data-export="skip" style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", gap: 8 }}>
+            {(countries?.length ?? 0) > 1
+              ? (
+                <div className="seg" role="group" aria-label={dt("Страна", "Country")}>
+                  {(countries ?? []).map((c) => (
+                    <button key={c} type="button" aria-pressed={c === cc} onClick={() => pick(c)}>{label(c)}</button>
+                  ))}
+                </div>
+              )
+              : <span />}
+            {bundle && <ExportButtons country={bundle.country} name={countryName(bundle.country) || bundle.country} />}
+          </div>
           {!bundle ? <Empty text={dt("Загружаю…", "Loading…")} /> : (
             <>
               <MarketHeader bundle={bundle} />
