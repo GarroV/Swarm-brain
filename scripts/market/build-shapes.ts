@@ -33,6 +33,7 @@ const A3: Record<string, string> = {
   EE: "EST",
   RS: "SRB",
   SI: "SVN",
+  ME: "MNE",
 };
 
 // Укрупнённые регионы для тренда «по регионам»: области Natural Earth (admin_1) сведены в
@@ -40,7 +41,8 @@ const A3: Record<string, string> = {
 // в Эстонии — 5 регионов NUTS 3, в Сербии — 4 статистических региона (NUTS 2; Natural Earth
 // рисует Косово отдельной страной, его округов здесь нет; Расинский округ в NE подписан
 // «Pomoravski», оба «Pomoravski» лежат в одном регионе), в Словении — 12 статистических регионов
-// (поле region у 193 общин Natural Earth) сведены в 6 исторических земель. Область без строки
+// (поле region у 193 общин Natural Earth) сведены в 6 исторических земель, в Черногории — три
+// статистических региона MONSTAT, Подгорица отдельно. Область без строки
 // здесь — ошибка генератора, а не «прочее».
 type Area = { ru: string; en: string; a1: string[] };
 const AREAS: Record<string, Area[]> = {
@@ -231,6 +233,12 @@ const AREAS: Record<string, Area[]> = {
       en: "Dolenjska, Posavje and Zasavje",
       a1: ["Jugovzhodna Slovenija", "Spodnjeposavska", "Zasavska"],
     },
+  ],
+  ME: [
+    { ru: "Подгорица", en: "Podgorica", a1: ["Podgorica"] },
+    { ru: "Центр", en: "Centre", a1: ["Cetinje", "Danilovgrad", "Nikšic"] },
+    { ru: "Побережье", en: "Coast", a1: ["Bar", "Budva", "Herceg Novi", "Kotor", "Tivat", "Ulcinj"] },
+    { ru: "Север", en: "North", a1: ["Andrijevica", "Berane", "Bijelo Polje", "Kolašin", "Mojkovac", "Plav", "Pljevlja", "Plužine", "Rožaje", "Šavnik", "Žabljak"] },
   ],
 };
 /** Поле admin_1, по которому области сводятся в регионы: обычно name, у Словении — region. */

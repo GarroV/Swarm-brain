@@ -193,3 +193,33 @@
 | hot-horse | Hot - Horse d.o.o. | 5873525000 |
 | pecjak | Pekarna Pečjak d.o.o. | 5879612000 |
 | brumat | Pekarna Brumat d.o.o. | 5986613000 |
+
+## ME — Черногория
+
+| Что | Откуда | Что именно | Как | Частота | Сверено |
+|---|---|---|---|---|---|
+| Продажи Dodo | https://publicapi.dodois.io/me/api/v1/ | пиццерии Dodo (unitinfo/all: адрес, координаты, BeginDateWork) и выручка по месяцам с числом пиццерий; курс к евро — ЕЦБ, для динара — НБС (kurs.resenje.org) | авто, `dodo-publicapi` | раз в неделю | — |
+| Точки | https://publicapi.dodois.io/me/api/v1/ | сеть dodo: пиццерии Dodo (unitinfo/all: адрес, координаты, BeginDateWork) и выручка по месяцам с числом пиццерий; курс к евро — ЕЦБ, для динара — НБС (kurs.resenje.org) | авто, `dodo-publicapi` | раз в неделю | — |
+| Точки | https://overpass-api.de/api/interpreter | точки сетей по тегу brand (osmBrands в конфиге) или по началу name среди заведений общепита (osmNames) из OpenStreetMap, координаты, адрес, дата открытия, если она есть в теге; город — из addr:city, а без него — ближайший place=city в пределах 15 км, нет города — ближайший place=town | авто, `osm-overpass` | раз в неделю | 2026-10-03 |
+| Выручки юрлиц | https://www.companywall.<страна>/firma\|podjetje/<slug>/<id> (ссылки — в companies.url конфига) | все доходы (Ukupni prihodi, налоговая) — шире выручки от продаж; сотрудники только за последний год; у Pekara Montenegro много юрлиц | авто, `companywall` | раз в год | 2026-10-03 |
+| Цены | Wolt (JSON меню по slug заведения, без входа) | ещё не собирались; кандидат в автоматический адаптер | вручную | по запросу | — |
+| Факты рынка | — | ещё не собирались; ручной части нет | вручную | по запросу | — |
+
+Сети (по чему их ищет `osm-overpass`: тег brand или начало name; пусто — сети в OSM нет, точки из других источников):
+
+| Ключ | Сеть | Сегмент | Поиск в OSM |
+|---|---|---|---|
+| `dodo` | Dodo Pizza | pizza | — |
+| `pizzahut` | Pizza Hut | pizza | brand: Pizza Hut; name: Pizza Hut |
+| `burgerking` | Burger King | burger | brand: Burger King |
+| `walter` | Walter | grill | name: Walter, Валтер |
+| `caffeine` | Caffeine Coffee Shop | coffee | name: Caffeine Coffee Shop, Caffeine |
+| `pekara-montenegro` | Pekara Montenegro | bakery, пекарня | name: Pekara Montenegro |
+| `pekara-sicilia` | Pekara Sicilia | bakery, пекарня | name: Pekara Sicilia |
+
+Юрлица операторов (по рег. номеру их ищут адаптеры реестров):
+
+| Сеть | Юрлицо | Рег. номер |
+|---|---|---|
+| dodo | Food V. d.o.o. | 03671429 |
+| caffeine | Caffeine Company d.o.o. | 03075966 |

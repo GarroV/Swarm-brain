@@ -1,5 +1,5 @@
 // CompanyWall (companywall.rs, .si, .me…): страница юрлица с итогами из государственного реестра
-// (в Сербии — APR, где отчётность закрыта капчей; в Словении — AJPES). Только страницы юрлиц (/firma/, в .si — /podjetje/), разрешённые robots.txt;
+// (в Сербии — APR, где отчётность закрыта капчей; в Словении — AJPES; в Черногории — налоговая). Только страницы юрлиц (/firma/, в .si — /podjetje/), разрешённые robots.txt;
 // поиск по сайту robots запрещает, поэтому ссылка на каждую фирму записана в конфиге (companies.url).
 import { getJson, httpGet, parseEcbAnnual, parseNbsAverage } from "../lib.ts";
 import { parseCompanyWall } from "../registry.ts";
