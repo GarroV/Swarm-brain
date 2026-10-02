@@ -1,4 +1,5 @@
-import { functionsBase, PROD_HOST } from "../../_lib/api-url";
+import { functionsBase } from "../../_lib/api-url";
+import { isProdHost } from "../../../src/lib/prodHosts";
 
 // Cloudflare Pages Function: POST /api/auth/token (форма: token=<личный smcp_-токен>)
 // Вход на ВИТРИНУ (превью ветки) — ТОЛЬКО для владельца. Google и Telegram на превью не работают
@@ -18,7 +19,7 @@ const toLogin = (err: string) => new Response(null, { status: 302, headers: { Lo
 
 export async function onRequestPost(ctx: Ctx): Promise<Response> {
   const { request, env } = ctx;
-  if (new URL(request.url).hostname === PROD_HOST) return new Response("Not found", { status: 404 });
+  if (isProdHost(new URL(request.url).hostname)) return new Response("Not found", { status: 404 });
 
   const form = await request.formData().catch(() => null);
   const token = String(form?.get("token") ?? "").trim();

@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
+import { isProdHost } from "@/lib/prodHosts";
 
 // Публичный числовой id бота @swarm_brain_bot (из Telegram embed: TWidgetLogin.init('widget_login', <id>, …)).
 // Нужен для JS-метода Telegram.Login.auth (своя кнопка вместо фиксированного iframe-виджета).
@@ -18,9 +19,6 @@ const ERR_TEXT: Record<string, string> = {
   owner_only: "This preview is open to its owner only.",
 };
 
-// Боевой адрес. На любом другом (превью ветки — витрина нового интерфейса) Google и Telegram
-// не работают, поэтому там вход по личному токену, и только для владельца (/api/auth/token).
-const PROD_HOST = "swarm-brain.pages.dev";
 
 // Соты (Hero Patterns Hexagons), янтарь на прозрачном — фоновая текстура «улья».
 const HONEYCOMB =
@@ -46,7 +44,8 @@ export default function LoginPage() {
       } catch { /* кривой next → без редиректа */ }
     }
     nextRef.current = safeNext;
-    setIsPreview(window.location.hostname !== PROD_HOST);
+    // Не боевой адрес (превью ветки): Google и Telegram там не работают — вход по токену владельца.
+    setIsPreview(!isProdHost(window.location.hostname));
     setGoogleHref(safeNext ? `/api/auth/google/start?next=${encodeURIComponent(safeNext)}` : "/api/auth/google/start");
 
     const e = params.get("err");
