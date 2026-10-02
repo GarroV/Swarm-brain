@@ -121,6 +121,13 @@ export function parseExtractorReply(reply: unknown, today: string): ExtractResul
   };
 }
 
+/** Тело ответа API при отказе модели (502): EN основной, RU рядом, код для клиента. */
+export const EXTRACTOR_UNAVAILABLE = {
+  error: "Task extraction is unavailable right now. Try again in a minute.",
+  error_ru: "Разбор задач сейчас недоступен. Попробуйте через минуту.",
+  code: "extractor_unavailable",
+} as const;
+
 export async function extractTasks(text: string): Promise<ExtractResult> {
   const today = todayIso();
   const res = await callExtractor(text, today, false);

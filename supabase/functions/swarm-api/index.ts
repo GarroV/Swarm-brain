@@ -108,6 +108,7 @@ import {
   callExtractor,
   EXTRACT_MAX_TASKS,
   type ExtractedTask,
+  EXTRACTOR_UNAVAILABLE,
   extractTasks,
   toExtractedTask,
 } from "../_shared/task-extract.ts";
@@ -3686,11 +3687,7 @@ async function routeRequest(req: Request): Promise<Response> {
     // как у потоковой ветки, а не пустой список: «задач нет» и «модель молчит» различаются (#374).
     const result = await extractTasks(body.text);
     if (!result.ok) {
-      return json({
-        error: "Task extraction is unavailable right now. Try again in a minute.",
-        error_ru: "Разбор задач сейчас недоступен. Попробуйте через минуту.",
-        code: "extractor_unavailable",
-      }, 502, origin);
+      return json(EXTRACTOR_UNAVAILABLE, 502, origin);
     }
     const extracted = result.tasks;
 
