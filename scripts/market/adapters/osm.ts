@@ -5,6 +5,8 @@ import { httpGet, parseOverpass, srLatin } from "../lib.ts";
 import type { Adapter } from "./types.ts";
 
 const OVERPASS = "https://overpass-api.de/api/interpreter";
+// Публичный Overpass отвечает 504/429 по несколько минут подряд (02.10.2026 — трижды за вечер).
+const OVERPASS_RETRY_MS = [60_000, 180_000, 300_000];
 const esc = (s: string) =>
   s.replace(/[\\^$.*+?()[\]{}|]/g, "\\$&").replace(/"/g, '\\"');
 
@@ -59,7 +61,7 @@ export const osm: Adapter = {
         body: `data=${
           encodeURIComponent(overpassQuery(cfg.country, all, allNames))
         }`,
-      });
+      }, OVERPASS_RETRY_MS);
       return {
         ...base,
         points: parseOverpass(await r.json(), brands, names, {

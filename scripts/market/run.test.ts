@@ -1,4 +1,5 @@
-import { assertEquals } from "@std/assert";
+import { assertEquals, assertRejects } from "@std/assert";
+import { httpGet } from "./lib.ts";
 import { dueAdapters, isDue } from "./run.ts";
 import { daysBetween } from "./adapters/dodo.ts";
 import { findEeLinks } from "./adapters/ee-ariregister.ts";
@@ -86,4 +87,26 @@ Deno.test("Overpass query adds a name search among food places only when chains 
     ),
     true,
   );
+});
+
+Deno.test("httpGet retries a busy server (429/504) with the given pauses, fails fast on other errors", async () => {
+  const real = globalThis.fetch;
+  const answer = (codes: number[]) => {
+    let i = 0;
+    globalThis.fetch = (() =>
+      Promise.resolve(
+        new Response("x", { status: codes[i++] ?? 200 }),
+      )) as typeof fetch;
+    return () => i;
+  };
+  try {
+    let calls = answer([504, 429, 200]);
+    assertEquals((await httpGet("u", {}, [1, 1])).status, 200);
+    assertEquals(calls(), 3);
+    calls = answer([404, 200]);
+    await assertRejects(() => httpGet("u", {}, [1, 1]), Error, "HTTP 404");
+    assertEquals(calls(), 1);
+  } finally {
+    globalThis.fetch = real;
+  }
 });

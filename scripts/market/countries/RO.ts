@@ -23,7 +23,8 @@ export const RO: CountryConfig = {
       key: "jerrys",
       name: "Jerry's Pizza",
       segment: "pizza",
-      osmBrands: ["Jerry's Pizza"],
+      osmBrands: ["Jerry's Pizza", "Jerry’s Pizza"],
+      osmNames: ["Jerry's Pizza", "Jerry’s Pizza", "Jerrys Pizza"],
     },
     {
       key: "mcdonalds",

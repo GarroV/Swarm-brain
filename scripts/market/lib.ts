@@ -10,10 +10,16 @@ import { distanceM } from "../../supabase/functions/_shared/market/geo.ts";
 export const UA = "swarm-market/1.0 (+https://github.com/GarroV/Swarm-brain)";
 const TIMEOUT_MS = 170_000;
 
-/** GET с User-Agent (Overpass без него отвечает 406), один повтор через 5 с. */
+/** Перегрузка сервера, а не ошибка запроса: такой ответ стоит повторить позже. */
+const BUSY = new Set([429, 502, 503, 504]);
+
+/** GET с User-Agent (Overpass без него отвечает 406). Ответ «занят» (429/5xx шлюза) повторяется
+ *  с паузами `delays`, прочие ошибки — сразу сбой. Overpass бывает занят минутами: его адаптер
+ *  передаёт длинные паузы, иначе недельный прогон теряется целиком. */
 export async function httpGet(
   url: string,
   init: RequestInit = {},
+  delays: number[] = [5000],
 ): Promise<Response> {
   for (let attempt = 0;; attempt++) {
     const r = await fetch(url, {
@@ -23,10 +29,10 @@ export async function httpGet(
     });
     if (r.ok) return r;
     await r.body?.cancel();
-    if (attempt >= 1) {
+    if (!BUSY.has(r.status) || attempt >= delays.length) {
       throw new Error(`${url.slice(0, 120)} → HTTP ${r.status}`);
     }
-    await new Promise((res) => setTimeout(res, 5000));
+    await new Promise((res) => setTimeout(res, delays[attempt]));
   }
 }
 export async function getJson<T = unknown>(

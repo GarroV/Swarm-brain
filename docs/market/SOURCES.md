@@ -61,7 +61,7 @@
 | `dodo` | Dodo Pizza | pizza | — |
 | `dominos` | Domino's | pizza | brand: Domino's, Domino's Pizza |
 | `pizzahut` | Pizza Hut | pizza | brand: Pizza Hut, Pizza Hut Delivery |
-| `jerrys` | Jerry's Pizza | pizza | brand: Jerry's Pizza |
+| `jerrys` | Jerry's Pizza | pizza | brand: Jerry's Pizza, Jerry’s Pizza; name: Jerry's Pizza, Jerry’s Pizza, Jerrys Pizza |
 | `mcdonalds` | McDonald's | burger | brand: McDonald's |
 | `burgerking` | Burger King | burger | brand: Burger King |
 | `kfc` | KFC | chicken | brand: KFC |

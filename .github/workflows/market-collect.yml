@@ -34,7 +34,7 @@ jobs:
   collect:
     name: Собрать и отправить
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 120 # повторы Overpass при перегрузке: до ~10 мин на страну
     permissions:
       contents: read
     steps:
