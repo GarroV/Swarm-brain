@@ -15,7 +15,7 @@
 //   3. Тезисы через обычный классификатор (COUNTRY_PROMPT_RULE) — слабейший сигнал, он же
 //      исторический источник перетега, поэтому только когда первых двух нет.
 // Ничего не сработало → пусто: это «Общее», а не повод угадать рынок.
-import { detectQueryCountry, normalizeCountries } from "./countries.ts";
+import { ALIASES, detectAliasCountries, normalizeCountries } from "./countries.ts";
 import { specificCountries } from "./meta-extract.ts";
 
 export type MarketSource = "title" | "participants" | "notes";
@@ -40,9 +40,19 @@ export interface MarketSignals {
 // 26.08: «IT+BD» уехала с ['RS','BG']). Два кандидата = кросс-маркет: предлагать нечего.
 const MAX_SUGGESTED = 1;
 
+/** Все страны, названные в заголовке встречи прямо. Одна — рынок встречи; несколько —
+ *  кросс-маркет. Одно правило для подсказки на вычитке и для контекста рекордера. */
+export function titleCountries(title: string | null | undefined): string[] {
+  return title ? detectAliasCountries(title, ALIASES) : [];
+}
+
 export function pickSuggestedMarkets(signals: MarketSignals): MarketSuggestion {
-  const fromTitle = signals.title ? detectQueryCountry(signals.title) : null;
-  if (fromTitle) return { markets: [fromTitle], source: "title" };
+  // Две и больше страны в названии («Сербия и Хорватия») = кросс-маркет: предлагать нечего,
+  // и к участникам за догадкой не идём — название уже ответило. Раньше брали первое самое
+  // длинное совпадение, и такая встреча молча становилась HR (issue #449).
+  const fromTitle = titleCountries(signals.title);
+  if (fromTitle.length === 1) return { markets: fromTitle, source: "title" };
+  if (fromTitle.length > 1) return { markets: [], source: null };
 
   const lists = signals.participantMarkets
     .map((m) => normalizeCountries(specificCountries(m)))

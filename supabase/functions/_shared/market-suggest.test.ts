@@ -76,3 +76,10 @@ Deno.test("General из классификатора — это не рынок"
     { markets: [], source: null },
   );
 });
+
+Deno.test("две страны в названии — кросс-маркет: не предлагается и участники не перевешивают (#449)", () => {
+  assertEquals(
+    pickSuggestedMarkets({ title: "Сербия и Хорватия: встреча", participantMarkets: [["RS"]], notesMarkets: [] }),
+    { markets: [], source: null },
+  );
+});

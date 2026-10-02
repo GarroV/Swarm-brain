@@ -32,7 +32,7 @@ export const COUNTRY_NAMES: Record<string, string> = {
   CH: "Швейцария",
 };
 
-const ALIASES: Record<string, string> = {
+export const ALIASES: Record<string, string> = {
   "сербия": "RS", "serbia": "RS",
   "хорватия": "HR", "croatia": "HR",
   "словения": "SI", "slovenia": "SI",
