@@ -11,36 +11,27 @@
 // Порядок шагов строго: Claude Desktop (MCP) → рекордер → Google-авторизация.
 // Привязка Google-календаря — только в вебе Swarm Brain → Настройки (команды бота нет).
 
-const WEB_URL = "https://swarm-brain.pages.dev";
+import { WEB_BASE_URL as WEB_URL } from "../lib/web-url.ts";
 
 // ── Справка: обзор возможностей + вход в мастер настройки ──────────────────────
 export function getHelpText(): string {
   return (
     "<b>Swarm Brain — справка</b>\n\n" +
-
     `Командная база знаний, встречи и задачи. База <b>одна</b>, а входов три: этот бот, <a href="${WEB_URL}">веб-приложение</a> и Claude Desktop. ` +
     "Что создал в одном — видно в остальных: задачи, встречи и знания общие для всей команды.\n\n" +
-
     "<b>📥 База знаний</b>\n" +
     "Печатаешь текст — бот <b>ищет по базе</b> (или /ask [вопрос]). Сохранить: перешли сообщение · пришли 📎 файл (PDF/Excel/TXT/CSV) · 🎤 голос · 🖼 фото · 🔗 ссылку, либо «сохрани: …» / /add [текст]. /status — статистика.\n\n" +
-
     "<b>🎙 Встречи</b>\n" +
     "Прилетают автоматически (Read.ai · Granola · bumblebee) → /meetings — вычитка и подтверждение тезисов.\n\n" +
-
     "<b>✅ Задачи</b>\n" +
     "/tasks — активные · /tasks [имя или страна] — фильтр · /addtask — создать. Те же задачи видны в вебе и в Claude.\n\n" +
-
     "<b>👥 Команда</b>\n" +
     "/users — список · /users add @username · /users remove @username.\n\n" +
-
     "<b>📓 Granola</b>\n" +
     "Заметки подтягиваются раз в час → /meetings. Подключить: /connect granola <code>&lt;API-ключ&gt;</code> (Granola → Settings → API Key) · вручную /granola · отключить /disconnect granola.\n\n" +
-
     "<b>🛠 Сервис</b>\n" +
     "/feedback — фидбек · /reset — сброс · /help — справка.\n\n" +
-
     "━━━━━━━━━━━━━━━\n\n" +
-
     "🔌 <b>Как подключить</b>\n" +
     "Swarm Brain можно открыть в вебе и в Claude Desktop, а встречи — писать через bumblebee на Mac. " +
     "Чтобы всё это заработало, нужна разовая настройка: 3 шага (Claude · bumblebee · Google). Жми кнопку ниже 👇"
@@ -54,8 +45,7 @@ export function helpKeyboard(): unknown[][] {
 
 // ── Мастер настройки: меню + 3 шага ───────────────────────────────────────────
 
-const GUIDE_MENU_TEXT =
-  "⚙️ <b>Настройка системы — 3 шага</b>\n\n" +
+const GUIDE_MENU_TEXT = "⚙️ <b>Настройка системы — 3 шага</b>\n\n" +
   "Swarm Brain работает через веб-приложение, Claude Desktop и bumblebee — запись встреч на Mac. " +
   "Выбери шаг (лучше по порядку) — инструкция откроется прямо здесь.";
 

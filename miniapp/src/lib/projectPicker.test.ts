@@ -8,7 +8,8 @@ const ME = 744230399, COLLEAGUE = 507931827;
 function proj(p: Partial<Project> & { id: string; name: string }): Project {
   return {
     group_id: "cee", color: null, emoji: null, parent_id: null, sprint_id: null,
-    created_by: ME, created_at: "2026-08-01T00:00:00Z", is_private: false, ...p,
+    created_by: ME, created_at: "2026-08-01T00:00:00Z", is_private: false,
+    owner_telegram_id: null, start_date: null, end_date: null, position: null, ...p,
   };
 }
 
@@ -23,13 +24,13 @@ const ALL: Project[] = [
 ];
 
 Deno.test("чужие проекты и их подпроекты в список не попадают", () => {
-  const { tops, subs } = buildProjectOptions(ALL, { viewerId: ME, selectedId: null });
+  const { tops, subs } = buildProjectOptions(ALL, { viewerId: ME });
   assertEquals(tops.map((o) => o.id), ["imf", "vibe"]);
   assertEquals(subs.map((o) => o.id), ["karpov", "pl"]);
 });
 
 Deno.test("проекты и подпроекты разведены по секциям — верхние отдельно от вложенных", () => {
-  const { tops, subs } = buildProjectOptions(ALL, { viewerId: ME, selectedId: null });
+  const { tops, subs } = buildProjectOptions(ALL, { viewerId: ME });
   assertEquals(tops.every((o) => o.parentName === null), true);
   assertEquals(subs.every((o) => o.parentName !== null), true);
 });
@@ -41,7 +42,7 @@ Deno.test("у подпроекта подписана его группа — и
     proj({ id: "mk1", name: "Маркетинг", parent_id: "es" }),
     proj({ id: "mk2", name: "Маркетинг", parent_id: "me" }),
   ];
-  const { subs } = buildProjectOptions(dubli, { viewerId: ME, selectedId: null });
+  const { subs } = buildProjectOptions(dubli, { viewerId: ME });
   assertEquals(subs.map((o) => `${o.parentName} › ${o.name}`), ["Испания › Маркетинг", "Черногория › Маркетинг"]);
 });
 
@@ -50,7 +51,7 @@ Deno.test("внутри секции сортировка по алфавиту,
     proj({ id: "b", name: "Обучение", created_at: "2026-08-01T00:00:00Z" }),
     proj({ id: "a", name: "Качество", created_at: "2026-08-30T00:00:00Z" }),
   ];
-  const { tops } = buildProjectOptions(shuffled, { viewerId: ME, selectedId: null });
+  const { tops } = buildProjectOptions(shuffled, { viewerId: ME });
   assertEquals(tops.map((o) => o.name), ["Качество", "Обучение"]);
 });
 
@@ -62,43 +63,35 @@ Deno.test("подпроекты сортируются группами: сна�
     proj({ id: "s1", name: "Алексей Канаев", parent_id: "imf" }),
     proj({ id: "s3", name: "P&L", parent_id: "vibe" }),
   ];
-  const { subs } = buildProjectOptions(many, { viewerId: ME, selectedId: null });
+  const { subs } = buildProjectOptions(many, { viewerId: ME });
   assertEquals(subs.map((o) => `${o.parentName}/${o.name}`), [
     "IMF & HQ IT/Алексей Канаев", "IMF & HQ IT/Юля Емельянова", "Vibe Coding/P&L",
   ]);
 });
 
-Deno.test("чужой проект не всплывает в списке даже когда задача к нему привязана", () => {
-  // Владелец 2026-09-06: «все, не больше». Проверено живым прогоном: привязка при этом не рвётся —
-  // Base UI не сбрасывает значение, которого нет среди пунктов, а подпись в карточке считается
-  // по ПОЛНОМУ списку проектов (TaskModal), не по этому. Оторвать задачу можно только руками.
-  const { tops } = buildProjectOptions(ALL, { viewerId: ME, selectedId: "revizii" });
-  assertEquals(tops.map((o) => o.id), ["imf", "vibe"]);
-});
-
-Deno.test("чужой ПОДпроект — так же: привязка есть, строки в списке нет", () => {
-  const { subs } = buildProjectOptions(ALL, { viewerId: ME, selectedId: "romania" });
-  assertEquals(subs.map((o) => o.id), ["karpov", "pl"]);
-});
+// Привязка задачи к чужому проекту функцию не касается: о выбранном значении она не знает
+// (параметр selectedId снят 06.09.2026, a56a5bc), а подпись в карточке считается по ПОЛНОМУ
+// списку проектов (TaskModal). Поэтому тестов «выбран чужой — строки всё равно нет» здесь нет:
+// они повторяли бы первый тест (issue #431).
 
 Deno.test("чужой подпроект в моей группе тоже не показываем — «только те, что создал я»", () => {
   // Уточнение владельца 2026-09-06: «мне надо чтобы выпадающий список проектов показывал
   // только проекты и подпроекты которые создал я, все, не больше».
   const list = [...ALL, proj({ id: "chuzhoy", name: "Испания", parent_id: "imf", created_by: COLLEAGUE })];
-  const { subs } = buildProjectOptions(list, { viewerId: ME, selectedId: null });
+  const { subs } = buildProjectOptions(list, { viewerId: ME });
   assertEquals(subs.map((o) => o.id), ["karpov", "pl"]);
 });
 
 Deno.test("строка без автора — не моя, в список не идёт", () => {
   const list = [proj({ id: "nobody", name: "Дайджест", created_by: null }), proj({ id: "moy", name: "Vibe Coding" })];
-  const { tops } = buildProjectOptions(list, { viewerId: ME, selectedId: null });
+  const { tops } = buildProjectOptions(list, { viewerId: ME });
   assertEquals(tops.map((o) => o.id), ["moy"]);
 });
 
 Deno.test("личность зрителя ещё не известна — показываем всё, это витрина, а не замок", () => {
   // Отбор по автору — удобство выбора; доступ стережёт сервер (canViewProject в swarm-api).
   // Пустой список при неизвестном зрителе означал бы «не к чему привязать задачу».
-  const { tops, subs } = buildProjectOptions(ALL, { viewerId: null, selectedId: null });
+  const { tops, subs } = buildProjectOptions(ALL, { viewerId: null });
   assertEquals(tops.length + subs.length, ALL.length);
 });
 

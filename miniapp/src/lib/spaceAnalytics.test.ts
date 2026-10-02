@@ -43,6 +43,8 @@ function item(over: Partial<SprintCycleItem> = {}): SprintCycleItem {
     carry_reason: null,
     carry_count: 0,
     carried_manual: null,
+    comment_count: 0,
+    link_count: 0,
     removed: false,
     removed_at: null,
     hidden: false,

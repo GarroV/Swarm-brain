@@ -45,14 +45,22 @@ fi
 
 # stderr НЕ глушим: с `set -e` упавший запрос давал бы пустой вывод и код 1 — сбой, который
 # выглядит как «просто ничего не нашлось». Проверено на себе.
+# Сообщение о сбое — в stderr: q() зовут через $(…), и stdout ушёл бы в переменную молча.
 q() {
   local out
   if ! out=$(supabase db query --linked "$1" 2>&1); then
-    red "Запрос к проду не прошёл:"
+    red "Запрос к проду не прошёл:" >&2
     echo "$out" | sed 's/^/    /' >&2
     return 1
   fi
   echo "$out"
+}
+
+# Запрос не прошёл = проверка не состоялась → код 3, а не 1 (issues #437, #438). Голое
+# `X=$(q …)` под `set -e` роняло скрипт кодом 1 — «люди работают», который обходится FORCE=1.
+not_checked() {
+  red "Проверка не выполнилась — состояние прода неизвестно. Не катим." >&2
+  exit 3
 }
 
 # ── 1. Запись/обработка встречи — жёсткий стоп ────────────────────────────────
@@ -66,7 +74,7 @@ select
     where recorder_last_recording is true
       and recorder_last_seen > now() - interval '$RECORDER_FRESH_MIN minutes') as recording,
   (select count(*) from meetings where summary_status = 'processing') as processing;
-")
+") || not_checked
 # Не смогли прочитать ответ — считаем, что встреча ИДЁТ: непонятное состояние прода не повод
 # катить (fail-closed). Иначе упавший запрос молча читался бы как «чисто».
 read -r RECORDING PROCESSING < <(echo "$REC_JSON" | python3 -c "
@@ -110,7 +118,7 @@ select coalesce(nullif(trim(p.first_name || ' ' || coalesce(p.last_name, '')), '
        to_char(max(w.ts) at time zone 'Europe/Belgrade', 'HH24:MI') as last_seen
   from w left join user_profiles p on p.telegram_id = w.uid
  group by 1 order by max(w.ts) desc;
-")
+") || not_checked
 
 # Отчёт печатает python, а «есть ли кто» отдаёт кодом возврата: разбирать stdout шелла ради
 # одного числа — источник тихих ошибок.

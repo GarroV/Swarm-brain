@@ -14,7 +14,7 @@ import { onlyLiveEntries } from "../../_shared/entries/live.ts";
 import { externalFetch, VIA_OPENAI_CHAT, VIA_TELEGRAM_UPLOAD } from "../../_shared/external-fetch.ts";
 
 // Ссылка на файл в сообщении бота ведёт в веб: там сессия человека и проверка доступа.
-const WEB_BASE_URL = Deno.env.get("WEB_BASE_URL") ?? "https://swarm-brain.pages.dev";
+import { WEB_BASE_URL } from "../lib/web-url.ts";
 
 const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY")!;
 const TELEGRAM_BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN")!;

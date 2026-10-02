@@ -10,7 +10,7 @@ import type { TgCallbackQuery } from "../lib/types.ts";
 import { externalFetch, VIA_GRANOLA } from "../../_shared/external-fetch.ts";
 
 const GRANOLA_API = "https://public-api.granola.ai/v1";
-const WEB_URL = "https://swarm-brain.pages.dev";
+import { WEB_BASE_URL as WEB_URL } from "../lib/web-url.ts";
 
 // Единый промпт тезисов — общий канон из _shared/tezisy-prompt.ts (DRY с рекордером/read-ai),
 // чтобы тезисы выглядели одинаково независимо от точки входа.

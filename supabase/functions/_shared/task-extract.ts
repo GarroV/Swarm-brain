@@ -96,21 +96,47 @@ export function toExtractedTask(
   };
 }
 
-export async function gptExtractTasks(text: string): Promise<ExtractedTask[]> {
+// Результат разбора. Отказ модели и «задач нет» — РАЗНЫЕ ответы (issue #374): раньше сбой
+// OpenAI возвращал пустой список, и экран честно говорил «задач нет», когда модель молчала
+// (так выглядел отказ 18.09.2026). Ответ, который не разбирается в список, — тоже отказ.
+export type ExtractResult =
+  | { ok: true; tasks: ExtractedTask[] }
+  | { ok: false; reason: "upstream" | "malformed" };
+
+/** Ответ chat/completions → задачи. Чистая функция: без сети, под тестами. */
+export function parseExtractorReply(reply: unknown, today: string): ExtractResult {
+  const content = (reply as { choices?: Array<{ message?: { content?: unknown } }> } | null)
+    ?.choices?.[0]?.message?.content;
+  if (typeof content !== "string") return { ok: false, reason: "malformed" };
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(content.replace(/```json\n?|\n?```/g, "").trim());
+  } catch {
+    return { ok: false, reason: "malformed" };
+  }
+  if (!Array.isArray(parsed)) return { ok: false, reason: "malformed" };
+  return {
+    ok: true,
+    tasks: parsed.map((item) => toExtractedTask(item, today)).filter((t): t is ExtractedTask => t !== null),
+  };
+}
+
+/** Тело ответа API при отказе модели (502): EN основной, RU рядом, код для клиента. */
+export const EXTRACTOR_UNAVAILABLE = {
+  error: "Task extraction is unavailable right now. Try again in a minute.",
+  error_ru: "Разбор задач сейчас недоступен. Попробуйте через минуту.",
+  code: "extractor_unavailable",
+} as const;
+
+export async function extractTasks(text: string): Promise<ExtractResult> {
   const today = todayIso();
   const res = await callExtractor(text, today, false);
-  if (!res.ok) return [];
-  try {
-    const raw = (await res.json()).choices[0].message.content.replace(
-      /```json\n?|\n?```/g,
-      "",
-    ).trim();
-    const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return [];
-    return (parsed as unknown[])
-      .map((item) => toExtractedTask(item, today))
-      .filter((t): t is ExtractedTask => t !== null);
-  } catch {
-    return [];
+  if (!res.ok) {
+    console.error(`[task-extract] модель ответила ${res.status}`);
+    return { ok: false, reason: "upstream" };
   }
+  const reply = await res.json().catch(() => null);
+  const result = parseExtractorReply(reply, today);
+  if (!result.ok) console.error("[task-extract] ответ модели не разобрался в список задач");
+  return result;
 }
