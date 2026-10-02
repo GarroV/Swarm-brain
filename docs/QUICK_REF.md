@@ -70,7 +70,7 @@ claude mcp add supabase-swarm -- npx -y @supabase/mcp-server-supabase@0.12.0 \
 
 > Проверено 2026-06-28 через CF API. Веб «Рой» выкатывается **сам** на каждый push в `main` — отдельный ручной шаг НЕ нужен (в отличие от edge-функций выше).
 
-- **Проект:** `swarm-brain` → `https://swarm-brain.pages.dev`, git-привязка к `GarroV/Swarm-brain`, **production branch = `main`** (переключено в дашборде CF при ренейме 2026-07-25).
+- **Проект:** `swarm-brain` → **`https://swarm-team.app`** (основной с 02.10.2026, #753); прежний `https://swarm-brain.pages.dev` отвечает 301 на тот же путь нового (кроме `/api/*` и превью веток; выключатель `LEGACY_REDIRECT` в env Pages). Боевые адреса — `miniapp/src/lib/prodHosts.ts`. Вход через Telegram — только на новом (BotFather `/setdomain`), Google — на обоих, git-привязка к `GarroV/Swarm-brain`, **production branch = `main`** (переключено в дашборде CF при ренейме 2026-07-25).
 - **Build:** root dir `miniapp`, command `npm run build`, output `out`. Pages Functions из `miniapp/functions/` (прокси авторизации `/api/*`) деплоятся вместе.
 - **Цикл:** push в `main` → авто-сборка CF → прод за ~1–3 мин (проверено: последние деплои `deploy/success`).
 - **Env** (живут в дашборде CF Pages → Settings → Variables, НЕ в репо): `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_BOT_USERNAME`, `NEXT_PUBLIC_DEV_MODE`, `SWARM_API_URL`, `TELEGRAM_BOT_TOKEN`, `WEB_JWT_SECRET`.
