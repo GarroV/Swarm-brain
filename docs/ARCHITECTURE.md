@@ -1986,6 +1986,8 @@ _Админка (`admin.ts`, админы: `telegram_id 744230399` или `is_ad
 ## Анализ рынка
 
 > Решение владельца 02.10.2026: [decisions/2026-10-02-market-analysis-section.md](decisions/2026-10-02-market-analysis-section.md). Дизайн: [superpowers/specs/2026-10-02-market-analysis-design.md](superpowers/specs/2026-10-02-market-analysis-design.md). Что не сделано — [issue #742](https://github.com/GarroV/Swarm-brain/issues/742). Пользовательского гайда пока нет ([MATERIALS.md](MATERIALS.md)).
+>
+> Как довести страну до уровня эталона, что даёт API Dodo, полнота страниц по странам — [market/README.md](market/README.md). Что, откуда и как часто собирается — [market/SOURCES.md](market/SOURCES.md) (генерируется из `scripts/market/countries/*.ts`).
 
 ### Что это
 

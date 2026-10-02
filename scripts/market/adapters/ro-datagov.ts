@@ -24,6 +24,11 @@ export function pickRoFiles(resources: Resource[], year: number): Resource[] {
 
 export const roDatagov: Adapter = {
   id: "ro-datagov",
+  about: {
+    url: "https://data.gov.ro (набор situatii financiare)",
+    what:
+      "годовая отчётность юрлиц Румынии по CUI из companies: оборот и сотрудники; лей → евро по годовому курсу ЕЦБ",
+  },
   async collect(cfg, opts) {
     const started_at = new Date().toISOString();
     const base = {

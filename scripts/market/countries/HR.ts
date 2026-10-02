@@ -97,16 +97,41 @@ export const HR: CountryConfig = {
       feeds: "locations",
       cadence: "manual",
       mode: "manual",
+      url: "снимок ручных источников (импорт в «Источниках и свежести»)",
+      note:
+        "локальные сети и пекарни с датами открытия: локаторы сетей, Wolt, пресса; дата — по посту сети, появлению в Wolt или первому отзыву, а не по дате статьи",
+      checked: "2026-10-02",
     },
     {
       adapter: "manual",
       feeds: "financials",
       cadence: "manual",
       mode: "manual",
+      url: "https://www.fina.hr (Info.BIZ), companywall.hr",
+      note: "выручка и сотрудники юрлиц из companies снимка; OIB — рег. номер",
+      checked: "2026-10-02",
       reason:
         "Fina Info.BIZ: вход по учётной записи, условия запрещают перепубликацию — обновление раз в год вручную",
     },
-    { adapter: "manual", feeds: "prices", cadence: "manual", mode: "manual" },
-    { adapter: "manual", feeds: "facts", cadence: "manual", mode: "manual" },
+    {
+      adapter: "manual",
+      feeds: "prices",
+      cadence: "manual",
+      mode: "manual",
+      url: "сайты сетей и Wolt",
+      note:
+        "средняя пицца ~30 см (маргарита, пепперони, ветчина-грибы, премиум) — свой сайт и Wolt, акции",
+      checked: "2026-10-01",
+    },
+    {
+      adapter: "manual",
+      feeds: "facts",
+      cadence: "manual",
+      mode: "manual",
+      url: "пресса, отчёты платформ доставки и мастер-франчайзи",
+      note:
+        "события сетей, рынок доставки, факты рынка; ручная часть экрана — блоки editorial снимка",
+      checked: "2026-10-02",
+    },
   ],
 };

@@ -102,7 +102,19 @@ export const RO: CountryConfig = {
       cadence: "yearly",
       mode: "auto",
     },
-    { adapter: "manual", feeds: "prices", cadence: "manual", mode: "manual" },
-    { adapter: "manual", feeds: "facts", cadence: "manual", mode: "manual" },
+    {
+      adapter: "manual",
+      feeds: "prices",
+      cadence: "manual",
+      mode: "manual",
+      note: "ещё не собирались",
+    },
+    {
+      adapter: "manual",
+      feeds: "facts",
+      cadence: "manual",
+      mode: "manual",
+      note: "ещё не собирались; ручной части нет",
+    },
   ],
 };

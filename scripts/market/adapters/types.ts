@@ -11,5 +11,7 @@ export type CollectOpts = {
  *  нагрузкой { failed } — его запишет журнал запусков, остальные источники страны продолжат. */
 export type Adapter = {
   id: string;
+  /** Откуда и что берёт — строка реестра источников docs/market/SOURCES.md (генерируется). */
+  about: { url: string; what: string };
   collect(cfg: CountryConfig, opts: CollectOpts): Promise<IngestPayload>;
 };

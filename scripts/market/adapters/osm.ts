@@ -16,6 +16,11 @@ export function overpassQuery(cc: string, brands: string[]): string {
 
 export const osm: Adapter = {
   id: "osm-overpass",
+  about: {
+    url: "https://overpass-api.de/api/interpreter",
+    what:
+      "точки сетей по тегам brand / name из OpenStreetMap (osmBrands в конфиге), координаты, адрес, дата открытия, если она есть в теге",
+  },
   async collect(cfg) {
     const started_at = new Date().toISOString();
     const base = { country: cfg.country, started_at, source: "osm" as const };

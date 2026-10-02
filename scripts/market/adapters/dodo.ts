@@ -46,6 +46,11 @@ export function daysBetween(since: string, today: string): string[] {
 
 export const dodo: Adapter = {
   id: "dodo-publicapi",
+  about: {
+    url: "https://publicapi.dodois.io/<код страны>/api/v1/",
+    what:
+      "пиццерии Dodo (unitinfo/all: адрес, координаты, BeginDateWork) и выручка по месяцам с числом пиццерий; курс к евро — ЕЦБ",
+  },
   async collect(cfg, opts) {
     const started_at = new Date().toISOString();
     const base = { country: cfg.country, started_at, source: "dodo" as const };

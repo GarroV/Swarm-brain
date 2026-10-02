@@ -39,6 +39,11 @@ export type ConfigSource = {
   cadence: "weekly" | "monthly" | "yearly" | "manual";
   mode: "auto" | "manual" | "blocked";
   reason?: string;
+  /** Только для реестра источников (docs/market/SOURCES.md), на сервер не уходят: откуда берём
+   *  вручную, что именно и когда человек последний раз сверял источник (YYYY-MM-DD). */
+  url?: string;
+  note?: string;
+  checked?: string;
 };
 export type ConfigChain = {
   key: string;

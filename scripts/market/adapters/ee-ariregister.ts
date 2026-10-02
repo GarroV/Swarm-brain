@@ -28,6 +28,11 @@ export function findEeLinks(
 
 export const eeAriregister: Adapter = {
   id: "ee-ariregister",
+  about: {
+    url: "https://avaandmed.ariregister.rik.ee",
+    what:
+      "годовые отчёты юрлиц Эстонии (открытые данные e-Äriregister): выручка и сотрудники по рег. коду из companies",
+  },
   async collect(cfg) {
     const started_at = new Date().toISOString();
     const base = {
