@@ -201,6 +201,46 @@ Deno.test("osm: old pending finds are closed by the run, a point closed by hand 
   assertEquals(closed!.length, 1);
 });
 
+Deno.test("osm: one place mapped twice in OSM is one point; a mirror next to a verified point goes away", async () => {
+  await reset();
+  const base = { country: CC, chain_key: "kfc", name: "K", status: "open", missing_weeks: 0 };
+  const ins = await sb.from("mkt_locations").insert([
+    { ...base, ext_key: "snap", lat: 44.8, lng: 15.9, verification: "confirmed", source_kind: "snapshot" },
+    { ...base, ext_key: "mirror", lat: 44.80007, lng: 15.9, verification: "unverified", source_kind: "osm" },
+    {
+      ...base,
+      ext_key: "shut",
+      lat: 44.0,
+      lng: 14.0,
+      verification: "confirmed",
+      source_kind: "snapshot",
+      status: "closed",
+    },
+  ]);
+  if (ins.error) throw new Error(ins.error.message);
+  const pt = { chain: "kfc", name: "K", city: null, address: null };
+  await applyIngest(sb, {
+    source: "osm",
+    country: CC,
+    started_at,
+    points: [
+      { ...pt, lat: 44.80001, lng: 15.9, osm_id: "node/1" },
+      { ...pt, lat: 44.80008, lng: 15.9, osm_id: "way/2" },
+      { ...pt, lat: 44.00002, lng: 14.0, osm_id: "node/3" },
+      { ...pt, lat: 43.0, lng: 13.0, osm_id: "node/4" },
+    ],
+  }, "2026-10-05");
+  const { data } = await sb.from("mkt_locations").select("ext_key, status").eq("country", CC).lt("lat", 45).order(
+    "lat",
+    { ascending: false },
+  );
+  assertEquals(data!.map((r) => r.ext_key === "snap" || r.ext_key === "shut" ? r.ext_key : r.status), [
+    "snap",
+    "shut",
+    "open",
+  ]);
+});
+
 Deno.test("osm: a country with over 1000 known points is matched in full", async () => {
   await reset();
   // Больше страницы PostgREST (1000 строк) и больше, чем влезает id в один URL.
