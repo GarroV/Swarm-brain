@@ -1,0 +1,44 @@
+{
+  "dataSets": [
+    {
+      "series": {
+        "0:0:0:0:0": {
+          "attributes": [
+            0,
+            null,
+            0,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            0,
+            null,
+            0,
+            null,
+            0,
+            null,
+            0,
+            0,
+            0,
+            0
+          ],
+          "observations": {
+            "0": [4.9467176470588],
+            "1": [4.974634765625],
+            "2": [5.0423901960784]
+          }
+        }
+      }
+    }
+  ],
+  "structure": {
+    "dimensions": {
+      "observation": [
+        { "values": [{ "id": "2023" }, { "id": "2024" }, { "id": "2025" }] }
+      ]
+    }
+  }
+}

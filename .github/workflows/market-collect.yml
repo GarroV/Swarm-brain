@@ -1,0 +1,59 @@
+name: Сбор «Анализа рынка»
+
+# Раз в неделю собирает открытые источники по странам из scripts/market/countries и шлёт их
+# в функцию market-ingest. Ключ базы сюда не попадает: у сборщика только свой токен
+# MARKET_INGEST_TOKEN, которым функция и проверяет отправителя. Реестры (EE/RO) идут в первую
+# неделю месяца — это решает сам run.ts по cadence источника.
+# Сбой источника не останавливает остальные: он пишется в журнал запусков (страница покажет),
+# а прогон заканчивается красным, чтобы его было видно в Actions.
+
+on:
+  schedule:
+    - cron: "0 23 * * 0"        # воскресенье 23:00 UTC — ночь, никому не мешает
+  workflow_dispatch:
+    inputs:
+      country:
+        description: "Страны через запятую (пусто — все)"
+        required: false
+      source:
+        description: "Один адаптер, например osm-overpass (пусто — все, чей срок подошёл)"
+        required: false
+      since:
+        description: "С какого дня брать заказы Dodo, YYYY-MM-DD (пусто — 8 дней назад)"
+        required: false
+      dry_run:
+        description: "Собрать, но не отправлять"
+        type: boolean
+        default: false
+
+concurrency:
+  group: market-collect
+  cancel-in-progress: false
+
+jobs:
+  collect:
+    name: Собрать и отправить
+    runs-on: ubuntu-latest
+    timeout-minutes: 120 # повторы Overpass при перегрузке: до ~10 мин на страну
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: Сбор
+        env:
+          MARKET_INGEST_URL: ${{ vars.MARKET_INGEST_URL }}
+          MARKET_INGEST_TOKEN: ${{ secrets.MARKET_INGEST_TOKEN }}
+          IN_COUNTRY: ${{ inputs.country }}
+          IN_SOURCE: ${{ inputs.source }}
+          IN_SINCE: ${{ inputs.since }}
+          IN_DRY: ${{ inputs.dry_run }}
+        run: |
+          args=()
+          [ -n "$IN_COUNTRY" ] && args+=(--country "$IN_COUNTRY")
+          [ -n "$IN_SOURCE" ] && args+=(--source "$IN_SOURCE")
+          [ -n "$IN_SINCE" ] && args+=(--since "$IN_SINCE")
+          [ "$IN_DRY" = "true" ] && args+=(--dry-run)
+          deno run --allow-net --allow-env --allow-read --allow-write --allow-run=unzip scripts/market/run.ts "${args[@]}"

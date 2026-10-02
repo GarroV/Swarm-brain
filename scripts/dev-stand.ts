@@ -25,6 +25,7 @@ const STATIC_DIR = Deno.env.get("STAND_STATIC") ?? "miniapp/out";
 const API = Deno.env.get("STAND_API") ?? "http://127.0.0.1:54321/functions/v1/swarm-api";
 const SECRET = Deno.env.get("WEB_JWT_SECRET") ?? "local-dev-stand-secret-not-a-real-one-32b";
 const DEMO_USER_ID = 900000001; // тот же демо-пользователь, что в проде
+const LOGIN_USER = Number(Deno.env.get("STAND_LOGIN_USER") ?? 0) || null;
 
 
 // Отдача статики: путь без расширения — это маршрут, ему соответствует `<путь>.html`
@@ -75,6 +76,20 @@ async function handler(req: Request): Promise<Response> {
       headers: {
         Location: "/",
         // Без Secure: стенд ходит по http, и Secure-cookie браузер бы не сохранил.
+        "Set-Cookie": `roj_session=${jwt}; HttpOnly; SameSite=Lax; Path=/; Max-Age=604800`,
+      },
+    });
+  }
+
+  // Вход не-демо пользователем — только если стенд запущен с STAND_LOGIN_USER (id из
+  // allowed_users базы стенда). Нужен, чтобы показать то, что демо не видит (рынки, админку).
+  // Подпись — тем же локальным секретом стенда; на прод-секрете стенд не запускают.
+  if (url.pathname === "/api/auth/login" && LOGIN_USER) {
+    const jwt = await signJWT({ telegram_id: LOGIN_USER }, SECRET);
+    return new Response(null, {
+      status: 302,
+      headers: {
+        Location: "/",
         "Set-Cookie": `roj_session=${jwt}; HttpOnly; SameSite=Lax; Path=/; Max-Age=604800`,
       },
     });

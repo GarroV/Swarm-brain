@@ -449,3 +449,124 @@ export type MeetingNotes = {
   live: MeetingLiveNote[];
   personal: Array<{ id: string; content: string; created_at: string }>;
 };
+
+// «Анализ рынка» — ответ GET /market/:cc (CountryBundle в supabase/functions/_shared/market/db.ts).
+export type MarketVerification = "official" | "confirmed" | "corrected" | "added" | "unverified" | "internal";
+export type MarketChain = {
+  key: string;
+  name: string;
+  slot: number;
+  segment: string;
+  is_bakery: boolean;
+  origin: string | null;
+  operator: string | null;
+  first_entry: string | null;
+  notes: string | null;
+  hist: Array<{ year: number; count: number; source: string | null }> | null;
+};
+export type MarketLocation = {
+  id: string;
+  chain_key: string;
+  ext_key: string;
+  name: string;
+  city: string | null;
+  address: string | null;
+  lat: number;
+  lng: number;
+  placement: string | null;
+  opened: string | null;
+  opened_estimated: boolean;
+  status: "open" | "closed" | "planned" | "paused";
+  closed: string | null;
+  format: string | null;
+  source: string | null;
+  source_kind: "snapshot" | "dodo" | "osm" | "manual";
+  verification: MarketVerification;
+  verification_note: string | null;
+  missing_weeks: number;
+  first_seen_at: string;
+  last_seen_at: string | null;
+};
+export type MarketCompany = {
+  id: string;
+  chain_key: string | null;
+  name: string;
+  reg_id: string | null;
+  owner: string | null;
+  notes: string | null;
+};
+export type MarketFinancial = {
+  company_id: string;
+  year: number;
+  revenue_eur: number | null;
+  employees: number | null;
+  source: string | null;
+  verification: MarketVerification;
+  note: string | null;
+};
+export type MarketPrice = {
+  chain_key: string;
+  item: string;
+  item_type: string | null;
+  size_cm: number | null;
+  price_eur: number;
+  channel: string | null;
+  source: string | null;
+  seen_on: string | null;
+};
+export type MarketFact = {
+  topic: "delivery" | "market" | "deal" | "timeline" | "insight" | "commentary";
+  date: string | null;
+  text: string;
+  value: string | null;
+  source: string | null;
+};
+export type MarketDodoMonth = {
+  month: string;
+  revenue_local: number | null;
+  currency: string | null;
+  revenue_eur: number | null;
+  units: number | null;
+  orders: Record<string, unknown> | null;
+  complete: boolean;
+};
+export type MarketRun = {
+  source: string;
+  status: "ok" | "failed";
+  started_at: string;
+  finished_at: string;
+  stats: Record<string, number>;
+  error: string | null;
+};
+export type MarketSource = {
+  adapter: string;
+  chain_key: string;
+  feeds: "locations" | "financials" | "dodo" | "prices" | "facts" | "editorial";
+  cadence: "weekly" | "monthly" | "yearly" | "manual";
+  mode: "auto" | "manual" | "blocked";
+  reason: string | null;
+  last_ok_at: string | null;
+};
+export type MarketBundle = {
+  country: string;
+  chains: MarketChain[];
+  locations: MarketLocation[];
+  companies: MarketCompany[];
+  financials: MarketFinancial[];
+  prices: MarketPrice[];
+  facts: MarketFact[];
+  dodo: MarketDodoMonth[];
+  runs: MarketRun[];
+  sources: MarketSource[];
+  pending: number;
+  /** Ручная часть страны по блокам эталона (mkt_editorial); разбирает lib/marketEditorial.ts. */
+  editorial?: Record<string, unknown>;
+};
+export type MarketCandidate = {
+  id: string;
+  kind: "new_location" | "maybe_closed" | "financial_update";
+  source: string;
+  payload: { key: string; row?: Record<string, unknown> };
+  target_id: string | null;
+  created_at: string;
+};

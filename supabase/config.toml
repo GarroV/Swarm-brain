@@ -371,6 +371,9 @@ allow_dynamic_registration = false
 # на ручной флаг --no-verify-jwt и не терял его. Менять на true — только осознанно.
 [functions.swarm-api]
 verify_jwt = false
+# «Анализ рынка»: сборщики из GitHub Actions шлют Bearer MARKET_INGEST_TOKEN (не JWT).
+[functions.market-ingest]
+verify_jwt = false
 [functions.swarm-bot]
 verify_jwt = false
 [functions.swarm-mcp]

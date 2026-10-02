@@ -138,6 +138,7 @@ import { externalFetch, VIA_GRANOLA, VIA_OPENAI_CHAT, VIA_OPENAI_EMBEDDING } fro
 import { handleSprintCycleRoutes } from "./sprint-cycles.ts";
 import { handleSpaceJournalRoutes } from "./space-journal.ts";
 import { handleTaskArchiveRoutes } from "./task-archive.ts";
+import { handleMarketRoutes } from "./market.ts";
 import { handleTelegramLinkRoutes } from "./telegram-link.ts";
 import { handleModelUsageRoutes } from "./model-usage.ts";
 import { SUPERADMIN_TELEGRAM_ID } from "../_shared/users/admin-scope.ts";
@@ -1035,6 +1036,10 @@ async function routeRequest(req: Request): Promise<Response> {
 
   const archiveResp = await handleTaskArchiveRoutes(req, routePath, telegram_id, groupId, isAdmin, origin);
   if (archiveResp) return archiveResp;
+
+  // «Анализ рынка» (/market/*): данные страны по allowed_markets, импорт и кандидаты — админу.
+  const marketResp = await handleMarketRoutes(req, routePath, telegram_id, groupId, isAdmin, isDemo, origin);
+  if (marketResp) return marketResp;
 
   // GET /tasks or POST /tasks
   if (routePath === "/tasks") {

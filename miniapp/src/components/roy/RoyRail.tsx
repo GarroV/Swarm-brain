@@ -20,6 +20,7 @@ export type RailId =
   | "tasks"
   | "projects"
   | "sprints"
+  | "market"
   | "meetings"
   | "base"
   | "team"
@@ -35,6 +36,7 @@ const MAIN: RailItem[] = [
   { id: "tasks", label: ["Задачи", "Tasks"], icon: "task" },
   { id: "projects", label: ["Проекты", "Projects"], icon: "board" },
   { id: "sprints", label: ["Спринты", "Sprints"], icon: "repeat" },
+  { id: "market", label: ["Анализ рынка", "Market analysis"], icon: "globe" },
   { id: "meetings", label: ["Встречи", "Meetings"], icon: "cal" },
   { id: "base", label: ["База", "Knowledge"], icon: "book" },
   { id: "team", label: ["Команда", "Team"], icon: "team" },

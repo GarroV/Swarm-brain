@@ -5,6 +5,7 @@
     // версия, размазанная по файлам, обновляется в одном месте и забывается в трёх остальных.
     "@std/assert": "https://deno.land/std@0.224.0/assert/mod.ts",
     "@std/path": "https://deno.land/std@0.224.0/path/mod.ts",
+    "@std/cli/parse-args": "https://deno.land/std@0.224.0/cli/parse_args.ts",
     "postgres": "https://deno.land/x/postgres@v0.19.3/mod.ts",
     // Алиас веба (его знают Vite/Next, но не Deno): без него type-check тестов miniapp падает
     // на первом же `@/types` и обрывает ВЕСЬ прогон до запуска тестов (issue #207).
@@ -25,6 +26,6 @@
     // раннера нет, тесты чистой логики гоняются здесь же). Флаг -A обязателен: часть тестов
     // установщика Claude Desktop пишет во временный каталог и запускает подпроцесс, и под
     // урезанными правами (--allow-read / --allow-net) они падают правами, а не по сути.
-    "test": "deno test -A supabase/ files/ miniapp/sw.test.ts miniapp/src/lib/"
+    "test": "deno test -A supabase/ files/ scripts/market/ miniapp/sw.test.ts miniapp/src/lib/"
   }
 }

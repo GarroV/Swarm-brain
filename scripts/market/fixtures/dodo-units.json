@@ -1,0 +1,19 @@
+[{ "Name": "Office", "Type": 0, "State": 1, "Location": null }, {
+  "Name": "Tallinn-1",
+  "Type": 1,
+  "State": 1,
+  "BeginDateWork": "2015-10-31",
+  "OrganizationName": "Demo OU",
+  "AddressText": "Demo 10",
+  "AddressDetails": { "LocalityName": "Tallinn" },
+  "Location": { "Latitude": 59.43, "Longitude": 24.76 }
+}, {
+  "Name": "Tartu-1",
+  "Type": 1,
+  "State": 0,
+  "BeginDateWork": "2019-02-01",
+  "OrganizationName": "Demo OU",
+  "AddressText": "Demo 5",
+  "AddressDetails": { "LocalityName": "Tartu" },
+  "Location": null
+}]
