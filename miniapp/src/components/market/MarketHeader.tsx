@@ -5,6 +5,7 @@ import { useMemo } from "react";
 import type { MarketBundle } from "@/types";
 import { countryName } from "@/lib/countries";
 import { kpis, yearOf } from "@/lib/marketInsights";
+import { ruPlural } from "@/lib/ruPlural";
 import { aliveAtYearEnd } from "@/lib/marketStats";
 import { useDt, useLang } from "@/components/roy/nav";
 import { dec, useEditorial } from "./ref";
@@ -32,12 +33,12 @@ export function MarketHeader({ bundle }: { bundle: MarketBundle }) {
       {
         value: String(rest.filter((l) => l.status === "open").length),
         label: dt("ресторанов сетей работает", "chain restaurants open"),
-        note: bakeries ? dt(`без учёта ${bakeries} пекарен и кафе-баров (${bakeryNames})`, `excluding ${bakeries} bakeries and café bars (${bakeryNames})`) : null,
+        note: bakeries ? dt(`без учёта ${bakeries} ${ruPlural(bakeries, "пекарни и кафе-бара", "пекарен и кафе-баров", "пекарен и кафе-баров")} (${bakeryNames})`, `excluding ${bakeries} bakeries and café bars (${bakeryNames})`) : null,
       },
       {
         value: String(opened),
         label: dt(`открытий с датой ${FIRST_YEAR}–${year}`, `dated openings ${FIRST_YEAR}–${year}`),
-        note: dt(`${closed} закрытий за тот же период; у ${undated} работающих точек дата неизвестна`, `${closed} closures in the same period; ${undated} open locations have no date`),
+        note: dt(`${closed} ${ruPlural(closed, "закрытие", "закрытия", "закрытий")} за тот же период; у ${undated} ${ruPlural(undated, "работающей точки", "работающих точек", "работающих точек")} дата неизвестна`, `${closed} closures in the same period; ${undated} open locations have no date`),
       },
     ];
     const curated = ed.kpis[2];
