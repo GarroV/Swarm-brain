@@ -15,6 +15,8 @@
 //   изменяет состояние, повторённый вслепую, мог уже выполниться — например, сообщение ушло);
 // - повторяются 429, 5xx и обрыв сети; истёкший срок не повторяется — бюджет времени уже сожжён.
 
+import { parseOpenAiError, reportModelFailure } from "./model-health.ts";
+
 export const TELEGRAM_TIMEOUT_MS = 10_000; // sendMessage, правка сообщений, getMe, getFile
 export const TELEGRAM_UPLOAD_TIMEOUT_MS = 60_000; // sendDocument / sendPhoto с файлом
 export const TELEGRAM_FILE_TIMEOUT_MS = 60_000; // скачивание файла с api.telegram.org/file (до 20 МБ)
@@ -98,6 +100,24 @@ function retryDelayMs(res: Response | null, attempt: number): number {
 
 const isRetryableStatus = (status: number) => status === 429 || (status >= 500 && status < 600);
 
+/** Системный отказ модели: ответа нет, ключ/доступ, частота, 5xx. 400/404/413 — ошибка запроса
+ *  вызывающего, о здоровье модели она ничего не говорит. */
+export function isSystemModelFailure(status: number | null): boolean {
+  return status === null || status === 401 || status === 403 || status === 429 || status >= 500;
+}
+
+/** Итог вызова OpenAI → отметка для сигнала админу (`model-health.ts`, issue #372). Тело ответа
+ *  читается из копии: оригинал нужен вызывающему для разбора. */
+async function noteModelOutcome(res: Response | null, failure: ExternalFetchError | null): Promise<void> {
+  if (res && res.ok) return;
+  const status = res ? res.status : null;
+  if (!isSystemModelFailure(status)) return;
+  const detail = res
+    ? parseOpenAiError(res.status, await res.clone().text().catch(() => ""))
+    : { status: null, code: failure?.reason ?? null, message: null };
+  await reportModelFailure(detail);
+}
+
 export async function externalFetch(
   url: string,
   init: RequestInit,
@@ -123,7 +143,10 @@ export async function externalFetch(
       const reason: ExternalFailure = timeout.aborted ? "timeout" : "network";
       failure = new ExternalFetchError(opts.service, reason, target, { cause: e });
       console.error(`[external] ${opts.service} ${target}: ${reason} (попытка ${attempt}/${attempts})`);
-      if (reason === "timeout") throw failure;
+      if (reason === "timeout") {
+        if (opts.service === "openai") await noteModelOutcome(null, failure);
+        throw failure;
+      }
     }
 
     const canRetry = attempt < attempts && (failure !== null || (res !== null && isRetryableStatus(res.status)));
@@ -131,6 +154,7 @@ export async function externalFetch(
       console.error(`[external] ${opts.service} ${target}: HTTP ${res.status} (попытка ${attempt}/${attempts})`);
     }
     if (!canRetry) {
+      if (opts.service === "openai") await noteModelOutcome(res, failure);
       if (failure) throw failure;
       return res as Response;
     }
