@@ -155,7 +155,7 @@ export function Freshness({ bundle, isAdmin, onChanged }: { bundle: MarketBundle
         )}
       </p>
       {isAdmin && (
-        <div className="mt-4 space-y-3 border-t border-line pt-3">
+        <div className="mt-4 space-y-3 border-t border-line pt-3" data-export="skip">
           <h3 className="text-ink-soft" style={{ fontSize: 13 }}>
             {dt("Кандидаты от сборщиков", "Collector candidates")} <span className="text-ink-mute">{bundle.pending}</span>
           </h3>

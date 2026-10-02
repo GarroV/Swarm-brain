@@ -7,11 +7,16 @@ import { useDt } from "@/components/roy/nav";
 
 /** Шрифты эталона — той же ссылкой, что в хорватском отчёте; без сети файл падает на системный шрифт. */
 const FONTS = "https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap";
-/** Печать: фон и цвета как на экране, блоки не рвутся между страницами, прокрутка таблиц раскрыта. */
+/** Печать: раскладка десктопа (PRINT_W) сжата в ширину листа A4 — иначе широкие таблицы режутся
+ *  справа; фон и цвета как на экране, блоки не рвутся, прокрутка таблиц раскрыта, переключатели
+ *  карты (год, режим) не печатаются — в файле они не работают. */
+const PRINT_W = 1160; // px; 190 мм печатной ширины A4 ≈ 718 px → масштаб 0,62
 const PRINT_CSS = `@page{size:A4;margin:10mm}
 @media print{html,body{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+.mkt .mkt-wrap{width:${PRINT_W}px;max-width:none;zoom:${(718 / PRINT_W).toFixed(2)};padding:0;gap:24px}
 .mkt .panel,.mkt .kpi,.mkt .cc,.mkt .chartbox,.mkt header{break-inside:avoid}
-.mkt .scroll{overflow:visible!important}.mkt .mkt-wrap{padding:0;gap:24px}}`;
+.mkt .scroll{overflow:visible!important}.mkt .seg{display:none}
+.mkt table td{white-space:normal!important;overflow-wrap:anywhere}}`; // реестр на экране держит строки в одну линию и листается — на бумаге переносим
 
 /** Правила стилей, нужные снимку: всё под .mkt, переменные тем (:root, .dark) и любое правило,
  *  которое срабатывает хоть на одном элементе снимка (утилиты Tailwind в «Источниках»). Группы
