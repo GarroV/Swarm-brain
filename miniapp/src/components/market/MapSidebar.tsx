@@ -86,7 +86,7 @@ export function MapSidebar(p: Props) {
             max={p.thisYear}
             value={p.year}
             onChange={(e) => p.setYear(Number(e.target.value))}
-            className="w-full accent-[var(--accent)]"
+            className="w-full accent-[var(--accent-ink)]"
             aria-label={dt("Год", "Year")}
           />
         </div>
@@ -125,13 +125,13 @@ export function MapSidebar(p: Props) {
         <div className="flex flex-col gap-1.5 text-ink-soft">
           {p.hasBakeries && (
             <label className="flex items-center gap-2">
-              <input type="checkbox" checked={p.bakeries} onChange={(e) => p.setBakeries(e.target.checked)} className="accent-[var(--accent)]" />
+              <input type="checkbox" checked={p.bakeries} onChange={(e) => p.setBakeries(e.target.checked)} className="accent-[var(--accent-ink)]" />
               {dt("Пекарни и кафе", "Bakeries and cafés")}
             </label>
           )}
           {p.hasPlanned && (
             <label className="flex items-center gap-2">
-              <input type="checkbox" checked={p.planned} onChange={(e) => p.setPlanned(e.target.checked)} className="accent-[var(--accent)]" />
+              <input type="checkbox" checked={p.planned} onChange={(e) => p.setPlanned(e.target.checked)} className="accent-[var(--accent-ink)]" />
               {dt("Показать анонсированные", "Show announced")}
             </label>
           )}

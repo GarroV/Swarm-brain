@@ -6,9 +6,10 @@
 import { useEffect, useMemo, useState } from "react";
 import type { MarketBundle } from "@/types";
 import { chainColors, topCities, visibleLocations } from "@/lib/marketMap";
-import { project, type Shape } from "@/lib/marketView";
+import { project } from "@/lib/marketView";
 import { useDt } from "@/components/roy/nav";
 import { clampVb, type MapMode, MapView } from "./MapView";
+import { useShape } from "./MapBase";
 import { MapSidebar } from "./MapSidebar";
 import type { ViewBox } from "./heat";
 import { Chip, Empty, Section, SourceCaption } from "./ui";
@@ -22,8 +23,7 @@ export function MarketMap({ bundle }: { bundle: MarketBundle }) {
   const dt = useDt();
   const thisYear = new Date().getFullYear();
   const openFirst = thisYear - OPEN_YEARS;
-  const [shape, setShape] = useState<Shape | null>(null);
-  const [shapeFailed, setShapeFailed] = useState(false);
+  const { shape, failed: shapeFailed } = useShape(bundle.country);
   const [mode, setMode] = useState<MapMode>("heat");
   const [year, setYear] = useState(thisYear);
   const [playing, setPlaying] = useState(false);
@@ -34,21 +34,12 @@ export function MarketMap({ bundle }: { bundle: MarketBundle }) {
   const [vb, setVb] = useState<ViewBox>({ x: 0, y: 0, w: 1, h: 1 });
   const [preset, setPreset] = useState<string | null>(null);
 
+  // Новая подложка — вид на всю страну.
   useEffect(() => {
-    setShape(null);
-    setShapeFailed(false);
-    fetch(`/market/shapes/${bundle.country}.json`)
-      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
-      .then((s: Shape) => {
-        setShape(s);
-        setVb({ x: 0, y: 0, w: s.W, h: s.H });
-        setPreset(null);
-      })
-      .catch((e) => {
-        console.error("[MarketMap] shape", e);
-        setShapeFailed(true);
-      });
-  }, [bundle.country]);
+    if (!shape) return;
+    setVb({ x: 0, y: 0, w: shape.W, h: shape.H });
+    setPreset(null);
+  }, [shape]);
 
   const firstYear = useMemo(() => {
     const ys = bundle.locations.map((l) => Number(l.opened?.slice(0, 4))).filter((y) => y > 1990);

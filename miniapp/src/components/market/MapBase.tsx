@@ -116,3 +116,29 @@ export function CityLabels({ shape, width, vb }: { shape: Shape; width: number; 
     </div>
   );
 }
+
+/** Подложка страны: один запрос на страну на всю сессию, общий для карты и тренда. */
+const shapeCache = new Map<string, Promise<Shape>>();
+export function useShape(country: string): { shape: Shape | null; failed: boolean } {
+  const [state, setState] = useState<{ country: string; shape: Shape | null; failed: boolean }>({ country, shape: null, failed: false });
+  useEffect(() => {
+    let alive = true;
+    if (!shapeCache.has(country)) {
+      shapeCache.set(
+        country,
+        fetch(`/market/shapes/${country}.json`).then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`)))),
+      );
+    }
+    shapeCache.get(country)!
+      .then((shape) => alive && setState({ country, shape, failed: false }))
+      .catch((e) => {
+        console.error("[market] shape", country, e);
+        shapeCache.delete(country);
+        if (alive) setState({ country, shape: null, failed: true });
+      });
+    return () => {
+      alive = false;
+    };
+  }, [country]);
+  return state.country === country ? state : { shape: null, failed: false };
+}

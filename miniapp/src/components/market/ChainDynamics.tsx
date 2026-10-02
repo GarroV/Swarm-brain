@@ -1,118 +1,88 @@
 "use client";
-// Динамика сетей: число работающих точек на конец года (из реестра точек) и таймлайн
-// открытий/закрытий по годам. Считается на экране, в базе не хранится.
-import { useMemo, useState } from "react";
+// Динамика сетей по образцу референса: мини-график на каждую из крупных сетей — точек на
+// конец года, от года перед ранним периодом до сегодня. Считается из дат открытия и
+// закрытия в реестре; точка без даты считается открытой с первого года графика, это
+// подписано у сети, а не спрятано.
+import { useMemo } from "react";
 import type { MarketBundle } from "@/types";
-import { unitsByYear } from "@/lib/marketStats";
 import { chainColors } from "@/lib/marketMap";
+import { periods } from "@/lib/marketInsights";
+import { aliveAtYearEnd, unitsByYear } from "@/lib/marketStats";
 import { useDt } from "@/components/roy/nav";
-import { Chip, mono, Section, SourceCaption } from "./ui";
+import { mono, Section, SourceCaption } from "./ui";
 
-const FROM_YEAR = 2021;
 const TOP = 8;
-const W = 640, H = 220, PAD = { l: 34, r: 12, t: 10, b: 24 };
+const BAR_H = 64;
 
 export function ChainDynamics({ bundle }: { bundle: MarketBundle }) {
   const dt = useDt();
-  const thisYear = new Date().getFullYear();
-  const years = useMemo(() => Array.from({ length: thisYear - FROM_YEAR + 1 }, (_, i) => FROM_YEAR + i), [thisYear]);
-  const locs = useMemo(
-    () => bundle.locations.map((l) => ({ chain: l.chain_key, opened: l.opened, status: l.status, closed: l.closed })),
-    [bundle.locations],
-  );
-  const series = useMemo(() => unitsByYear(locs, bundle.chains.map((c) => c.key), years), [locs, bundle.chains, years]);
-  const ranked = useMemo(
-    () => [...bundle.chains].sort((a, b) => (series[b.key]?.at(-1) ?? 0) - (series[a.key]?.at(-1) ?? 0)),
-    [bundle.chains, series],
-  );
+  const now = useMemo(() => new Date(), []);
+  const thisYear = now.getFullYear();
+  const from = periods(now).early[0] - 1;
+  const years = useMemo(() => Array.from({ length: thisYear - from + 1 }, (_, i) => from + i), [from, thisYear]);
   const colors = useMemo(() => chainColors(bundle.chains, bundle.locations), [bundle.chains, bundle.locations]);
-  // Точка без даты открытия (всё, что пришло из OSM) рисуется открытой с первого года графика:
-  // линия выходит плоской, и это надо сказать на экране, а не оставить читаться как история.
-  const undated = useMemo(() => bundle.locations.filter((l) => !l.opened && l.status !== "planned").length, [bundle.locations]);
-  const [picked, setPicked] = useState<Set<string> | null>(null);
-  const shown = picked ?? new Set(ranked.slice(0, TOP).map((c) => c.key));
-
-  const timeline = useMemo(() =>
-    years.map((y) => ({
-      y,
-      opened: bundle.locations.filter((l) => Number(l.opened?.slice(0, 4)) === y).length,
-      closed: bundle.locations.filter((l) => l.status === "closed" && Number(l.closed?.slice(0, 4)) === y).length,
-    })), [bundle.locations, years]);
-
-  if (!bundle.locations.length) return null;
-  const max = Math.max(1, ...ranked.filter((c) => shown.has(c.key)).flatMap((c) => series[c.key] ?? []));
-  const x = (i: number) => PAD.l + (i * (W - PAD.l - PAD.r)) / Math.max(1, years.length - 1);
-  const y = (v: number) => H - PAD.b - (v / max) * (H - PAD.t - PAD.b);
-  const tlMax = Math.max(1, ...timeline.flatMap((t) => [t.opened, t.closed]));
-  const toggle = (k: string) => {
-    const n = new Set(shown);
-    if (n.has(k)) n.delete(k);
-    else n.add(k);
-    setPicked(n);
-  };
+  const regular = useMemo(() => bundle.chains.filter((c) => !c.is_bakery), [bundle.chains]);
+  const series = useMemo(() => {
+    const locs = bundle.locations.map((l) => ({ chain: l.chain_key, opened: l.opened, status: l.status, closed: l.closed }));
+    return unitsByYear(locs, regular.map((c) => c.key), years);
+  }, [bundle.locations, regular, years]);
+  const ranked = useMemo(
+    // Сеть, у которой ни одна точка не датирована, роста не показывает — плоская карточка
+    // читалась бы как «рост ноль», поэтому такие сети сюда не попадают.
+    () =>
+      [...regular]
+        .filter((c) => bundle.locations.some((l) => l.chain_key === c.key && Number(l.opened?.slice(0, 4)) > from))
+        .sort((a, b) => (series[b.key]?.at(-1) ?? 0) - (series[a.key]?.at(-1) ?? 0))
+        .filter((c) => (series[c.key]?.at(-1) ?? 0) > 0)
+        .slice(0, TOP),
+    [regular, series, bundle.locations, from],
+  );
+  if (!ranked.length) return null;
 
   return (
-    <Section title={dt("Динамика сетей", "Chain dynamics")}>
-      <div className="mb-3 flex flex-wrap gap-1.5">
-        {ranked.map((c) => (
-          <Chip key={c.key} active={shown.has(c.key)} onClick={() => toggle(c.key)} color={colors.get(c.key)}>
-            {c.name}
-          </Chip>
-        ))}
-      </div>
-      <svg viewBox={`0 0 ${W} ${H}`} className="h-auto w-full" role="img" aria-label={dt("Точек на конец года", "Units at year end")}>
-        {[0, 0.5, 1].map((f) => (
-          <g key={f}>
-            <line x1={PAD.l} x2={W - PAD.r} y1={y(max * f)} y2={y(max * f)} stroke="var(--line)" />
-            <text x={PAD.l - 6} y={y(max * f) + 4} textAnchor="end" fontSize={10} fill="var(--ink-mute)" style={mono}>
-              {Math.round(max * f)}
-            </text>
-          </g>
-        ))}
-        {years.map((yr, i) => (
-          <text key={yr} x={x(i)} y={H - 6} textAnchor="middle" fontSize={10} fill="var(--ink-mute)" style={mono}>{yr}</text>
-        ))}
-        {ranked.filter((c) => shown.has(c.key)).map((c) => {
+    <Section title={dt("Число точек на конец года", "Locations at year end")}>
+      <p className="-mt-1 mb-3 max-w-[680px] text-ink-soft" style={{ fontSize: 12.5 }}>
+        {dt(
+          `Посчитано по датам открытия и закрытия из реестра ниже. Точки без даты считаются открытыми до ${from + 1} года, поэтому у сетей с такими точками рост скорее занижен.`,
+          `Counted from opening and closing dates in the registry below. Undated locations count as open before ${from + 1}, so growth of chains with such locations is likely understated.`,
+        )}
+      </p>
+      <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-4">
+        {ranked.map((c) => {
           const v = series[c.key] ?? [];
+          const max = Math.max(1, ...v);
           const color = colors.get(c.key) ?? "var(--mkt-s0)";
+          const undated = aliveAtYearEnd(bundle.locations.filter((l) => l.chain_key === c.key && !l.opened), thisYear);
+          const first = v.findIndex((n) => n > 0);
           return (
-            <g key={c.key}>
-              <polyline
-                points={v.map((n, i) => `${x(i)},${y(n)}`).join(" ")}
-                fill="none"
-                stroke={color}
-                strokeWidth={c.key === "dodo" ? 2.6 : 1.6}
-                strokeDasharray={c.key === "dodo" ? undefined : c.slot % 2 ? undefined : "4 3"}
-              >
-                <title>{`${c.name}: ${v.join(" → ")}`}</title>
-              </polyline>
-              <text x={x(v.length - 1) + 3} y={y(v.at(-1) ?? 0) - 3} fontSize={10} fill={color}>{c.name}</text>
-            </g>
+            <div key={c.key} className="rounded-xl border border-line bg-surface p-3.5">
+              <div className="flex items-start justify-between gap-2">
+                <span className="inline-flex items-center gap-1.5 font-semibold text-ink" style={{ fontSize: 13 }}>
+                  <span className="inline-block size-2.5 rounded-full" style={{ background: color }} />
+                  {c.name}
+                </span>
+                <span className="font-semibold text-ink" style={{ fontSize: 20, lineHeight: 1 }}>{v.at(-1)}</span>
+              </div>
+              <div className="mt-1 text-ink-mute" style={{ fontSize: 11.5 }}>
+                {dt(`+${(v.at(-1) ?? 0) - (v[0] ?? 0)} с конца ${from}`, `+${(v.at(-1) ?? 0) - (v[0] ?? 0)} since end of ${from}`)}
+                {undated ? dt(` · ${undated} точек без даты`, ` · ${undated} undated`) : ""}
+              </div>
+              <div className="mt-2 flex items-end gap-1" style={{ height: BAR_H + 14 }}>
+                {v.map((n, i) => (
+                  <div key={years[i]} className="flex flex-1 flex-col items-center justify-end" style={{ height: "100%" }} title={`${years[i]}: ${n}`}>
+                    {(i === first || i === v.length - 1) && n > 0 && <span className="text-ink-soft" style={{ ...mono, fontSize: 10 }}>{n}</span>}
+                    <div className="w-full rounded-t-sm" style={{ height: (n / max) * BAR_H, background: color, opacity: i === v.length - 1 ? 1 : 0.55 }} />
+                  </div>
+                ))}
+              </div>
+              <div className="mt-1 flex justify-between text-ink-mute" style={{ ...mono, fontSize: 10 }}>
+                <span>{from}</span>
+                <span>{thisYear}</span>
+              </div>
+            </div>
           );
         })}
-      </svg>
-
-      <h3 className="mb-2 mt-4 text-ink-soft" style={{ fontSize: 13 }}>{dt("Открытия и закрытия по годам", "Openings and closures by year")}</h3>
-      <div className="grid gap-1" style={{ gridTemplateColumns: `repeat(${timeline.length}, minmax(0, 1fr))` }}>
-        {timeline.map((t) => (
-          <div key={t.y} className="flex flex-col items-center gap-0.5" title={`${t.y}: +${t.opened} / −${t.closed}`}>
-            <div className="flex h-16 items-end gap-0.5">
-              <div className="w-2.5 rounded-sm" style={{ height: `${(t.opened / tlMax) * 100}%`, background: "var(--chart-3)" }} />
-              <div className="w-2.5 rounded-sm" style={{ height: `${(t.closed / tlMax) * 100}%`, background: "var(--chart-5)" }} />
-            </div>
-            <span className="text-ink-mute" style={{ ...mono, fontSize: 10 }}>{t.y}</span>
-            <span className="text-ink-soft" style={{ ...mono, fontSize: 10 }}>+{t.opened} −{t.closed}</span>
-          </div>
-        ))}
       </div>
-      {undated > 0 && (
-        <p className="mt-2 text-ink-mute" style={{ fontSize: 12 }}>
-          {dt(
-            `У ${undated} из ${bundle.locations.length} точек нет даты открытия — они считаются открытыми с ${FROM_YEAR} года, поэтому рост до сегодняшнего дня по ним не виден.`,
-            `${undated} of ${bundle.locations.length} locations have no opening date — they count as open since ${FROM_YEAR}, so their growth up to today is not shown.`,
-          )}
-        </p>
-      )}
       <SourceCaption bundle={bundle} feeds="locations" />
     </Section>
   );

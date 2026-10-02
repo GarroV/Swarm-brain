@@ -3,7 +3,7 @@
 // docs/superpowers/specs/2026-10-02-market-analysis-design.md. Страны — те, что видит
 // воркспейс (allowed_markets, у демо — только выдуманная Demoland), данные приходят одним
 // ответом GET /market/:cc, каждая секция подписывает свой источник и его свежесть.
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { MarketBundle } from "@/types";
 import { fetchMarket, fetchMarketCountries } from "@/lib/api";
 import { countryFlag, countryName } from "@/lib/countries";
@@ -13,9 +13,13 @@ import { DodoSection } from "./DodoSection";
 import { Freshness } from "./Freshness";
 import { LocationRegistry } from "./LocationRegistry";
 import { MarketMap } from "./MarketMap";
+import { dropDeadChains } from "@/lib/marketInsights";
+import { ChainTimeline } from "./ChainTimeline";
+import { MarketTrend } from "./MarketTrend";
 import { MarketSummary } from "./MarketSummary";
 import { MoneySection } from "./MoneySection";
-import { PricesDelivery } from "./PricesDelivery";
+import { DeliverySection } from "./DeliverySection";
+import { PizzaSection } from "./PizzaSection";
 import { Chip, Empty } from "./ui";
 
 const LAST_KEY = "market_country";
@@ -41,7 +45,9 @@ export function MarketScreen() {
   const { me } = useRoyNav();
   const [countries, setCountries] = useState<string[] | null>(null);
   const [cc, setCc] = useState<string | null>(null);
-  const [bundle, setBundle] = useState<MarketBundle | null>(null);
+  const [raw, setBundle] = useState<MarketBundle | null>(null);
+  // Сети без единой работающей точки не показываются нигде (правило эталона).
+  const bundle = useMemo(() => (raw ? dropDeadChains(raw) : null), [raw]);
   const [failed, setFailed] = useState<"countries" | "country" | null>(null);
   const [reload, setReload] = useState(0);
 
@@ -114,10 +120,13 @@ export function MarketScreen() {
           <>
             <MarketSummary bundle={bundle} />
             <MarketMap bundle={bundle} />
+            <ChainTimeline bundle={bundle} />
+            <MarketTrend bundle={bundle} />
             <ChainDynamics bundle={bundle} />
-            <MoneySection bundle={bundle} />
+            <PizzaSection bundle={bundle} />
             <DodoSection bundle={bundle} />
-            <PricesDelivery bundle={bundle} />
+            <DeliverySection bundle={bundle} />
+            <MoneySection bundle={bundle} />
             <LocationRegistry bundle={bundle} />
             <Freshness bundle={bundle} isAdmin={!!me?.is_admin} onChanged={refresh} />
           </>

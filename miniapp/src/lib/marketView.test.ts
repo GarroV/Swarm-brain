@@ -1,5 +1,5 @@
 import { assertEquals } from "jsr:@std/assert@1";
-import { freshness, medianPizza30, orderChannels, revenuePerUnit } from "./marketView.ts";
+import { areaOf, freshness, insideRings, pathRings, medianPizza30, orderChannels, revenuePerUnit, unitMonths } from "./marketView.ts";
 import type { MarketPrice, MarketRun, MarketSource } from "../types.ts";
 
 const price = (chain_key: string, size_cm: number | null, price_eur: number): MarketPrice => ({
@@ -20,14 +20,18 @@ Deno.test("pizza ~30 cm median uses 28–32 cm only, per chain, even count avera
   assertEquals(medianPizza30(p, "c"), null);
 });
 
-Deno.test("revenue per unit divides by units alive at year end; no units → null", () => {
+Deno.test("revenue per unit divides by months of operation × 12, opening and closing months excluded", () => {
   const locs = [
     { opened: "2020", status: "open", closed: null },
     { opened: "2021", status: "closed", closed: "2023" },
-    { opened: "2024", status: "open", closed: null },
+    { opened: "2024-04", status: "open", closed: null },
   ];
   assertEquals(revenuePerUnit({ revenue_eur: 900, year: 2022 }, locs), 450);
-  assertEquals(revenuePerUnit({ revenue_eur: 900, year: 2023 }, locs), 900);
+  // 2023: 12 мес. + полгода у закрытой (известен только год) = 18 мес.
+  assertEquals(revenuePerUnit({ revenue_eur: 900, year: 2023 }, locs), 600);
+  // 2024: 12 мес. + май–декабрь у открытой в апреле = 20 мес.
+  assertEquals(revenuePerUnit({ revenue_eur: 900, year: 2024 }, locs), 540);
+  assertEquals(unitMonths({ opened: "2024-03", status: "closed", closed: "2024-10" }, 2024), 6);
   assertEquals(revenuePerUnit({ revenue_eur: 900, year: 2019 }, locs), null);
   assertEquals(revenuePerUnit({ revenue_eur: null, year: 2022 }, locs), null);
 });
@@ -79,3 +83,15 @@ Deno.test("order channels drop the internal _days map", () => {
   assertEquals(orderChannels(null), {});
 });
 
+
+Deno.test("point in area: parses the generator's path and respects holes", () => {
+  const rings = pathRings("M0,0L10,0L10,10L0,10ZM3,3L6,3L6,6L3,6Z");
+  assertEquals(rings.length, 2);
+  assertEquals([insideRings(rings, [1, 1]), insideRings(rings, [4, 4]), insideRings(rings, [11, 5])], [true, false, false]);
+});
+
+Deno.test("area of a point: inside wins, a coastal point just outside goes to the nearest, far away is none", () => {
+  const a = { ru: "A", en: "A", rings: pathRings("M0,0L10,0L10,10L0,10Z") };
+  const b = { ru: "B", en: "B", rings: pathRings("M40,0L50,0L50,10L40,10Z") };
+  assertEquals([areaOf([a, b], [5, 5])?.ru, areaOf([a, b], [14, 5])?.ru, areaOf([a, b], [36, 5])?.ru, areaOf([a, b], [25, 200])], ["A", "A", "B", null]);
+});

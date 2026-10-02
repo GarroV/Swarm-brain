@@ -20,6 +20,38 @@ const OUT = new URL("../../miniapp/public/market/shapes/", import.meta.url);
 
 const A3: Record<string, string> = { HR: "HRV", RO: "ROU", EE: "EST" };
 
+// Укрупнённые регионы для тренда «по регионам»: области Natural Earth (admin_1) сведены в
+// привычные деления страны — как в референсе по Хорватии. В Румынии — 8 регионов развития,
+// в Эстонии — 5 регионов NUTS 3. Область без строки здесь — ошибка генератора, а не «прочее».
+type Area = { ru: string; en: string; a1: string[] };
+const AREAS: Record<string, Area[]> = {
+  HR: [
+    { ru: "Загреб и окрестности", en: "Zagreb area", a1: ["Grad Zagreb", "Zagrebacka", "Krapinsko-Zagorska"] },
+    { ru: "Далмация", en: "Dalmatia", a1: ["Zadarska", "Šibensko-Kninska", "Splitsko-Dalmatinska", "Dubrovacko-Neretvanska"] },
+    { ru: "Истрия и Кварнер", en: "Istria and Kvarner", a1: ["Istarska", "Primorsko-Goranska", "Licko-Senjska"] },
+    { ru: "Славония", en: "Slavonia", a1: ["Osjecko-Baranjska", "Vukovarsko-Srijemska", "Brodsko-Posavska", "Požeško-Slavonska", "Viroviticko-Podravska"] },
+    { ru: "Север", en: "North", a1: ["Varaždinska", "Medimurska", "Koprivničko-Križevačka", "Bjelovarsko-bilogorska"] },
+    { ru: "Центр", en: "Centre", a1: ["Sisacko-Moslavacka", "Karlovacka"] },
+  ],
+  RO: [
+    { ru: "Бухарест-Илфов", en: "Bucharest-Ilfov", a1: ["Bucharest", "Ilfov"] },
+    { ru: "Северо-Запад", en: "North-West", a1: ["Bihor", "Bistrita-Nasaud", "Cluj", "Maramures", "Satu Mare", "Salaj"] },
+    { ru: "Центр", en: "Centre", a1: ["Alba", "Brasov", "Covasna", "Harghita", "Mures", "Sibiu"] },
+    { ru: "Северо-Восток", en: "North-East", a1: ["Bacau", "Botosani", "Iasi", "Neamt", "Suceava", "Vaslui"] },
+    { ru: "Юго-Восток", en: "South-East", a1: ["Braila", "Buzau", "Constanta", "Galati", "Tulcea", "Vrancea"] },
+    { ru: "Юг — Мунтения", en: "South-Muntenia", a1: ["Arges", "Calarasi", "Dâmbovita", "Giurgiu", "Ialomita", "Prahova", "Teleorman"] },
+    { ru: "Юго-Запад — Олтения", en: "South-West Oltenia", a1: ["Dolj", "Gorj", "Mehedinti", "Olt", "Vâlcea"] },
+    { ru: "Запад", en: "West", a1: ["Arad", "Caras-Severin", "Hunedoara", "Timis"] },
+  ],
+  EE: [
+    { ru: "Северная Эстония", en: "North Estonia", a1: ["Harju"] },
+    { ru: "Западная Эстония", en: "West Estonia", a1: ["Hiiu", "Lääne", "Pärnu", "Saare"] },
+    { ru: "Центральная Эстония", en: "Central Estonia", a1: ["Järva", "Lääne-Viru", "Rapla"] },
+    { ru: "Северо-Восточная Эстония", en: "North-East Estonia", a1: ["Ida-Viru"] },
+    { ru: "Южная Эстония", en: "South Estonia", a1: ["Jõgeva", "Põlva", "Tartu", "Valga", "Viljandi", "Võru"] },
+  ],
+};
+
 type Geom = { type: string; coordinates: unknown };
 type Feature = { properties: Record<string, unknown>; geometry: Geom | null };
 type City = { name: string; x: number; y: number; capital: boolean; rank: number };
@@ -74,6 +106,20 @@ function linePath(src: number[][][], proj: Proj, H: number): string {
 
 const round = (v: number) => Math.round(v * 10) / 10;
 
+/** Укрупнённые регионы: контур каждого — объединение его областей (путь SVG в координатах карты). */
+function areas(cc: string, own: Feature[], proj: Proj, H: number) {
+  const table = AREAS[cc];
+  if (!table) return undefined;
+  const names = own.map((f) => String(f.properties.name));
+  const lost = names.filter((n) => !table.some((a) => a.a1.includes(n)));
+  if (lost.length) throw new Error(`${cc}: области без укрупнённого региона: ${lost.join(", ")}`);
+  return table.map((a) => ({
+    ru: a.ru,
+    en: a.en,
+    path: polyPath(own.filter((f) => a.a1.includes(String(f.properties.name))).flatMap((f) => rings(f.geometry)), proj, H),
+  }));
+}
+
 async function real(cc: string) {
   const [countries, regions, lakes, rivers, places] = await Promise.all([
     load("admin_0_countries"),
@@ -109,6 +155,7 @@ async function real(cc: string) {
     path: polyPath(own, proj, H),
     land: polyPath(near.flatMap((f) => rings(f.geometry)), proj, H),
     regions: polyPath(regions.filter((f) => f.properties.adm0_a3 === A3[cc]).flatMap((f) => rings(f.geometry)), proj, H),
+    areas: areas(cc, regions.filter((f) => f.properties.adm0_a3 === A3[cc]), proj, H),
     lakes: polyPath(lakes.flatMap((f) => rings(f.geometry)).filter(inFrame), proj, H, MIN_AREA),
     rivers: linePath(
       rivers.filter((f) => f.properties.featurecla === "River" && Number(f.properties.scalerank) <= RIVER_RANK)
