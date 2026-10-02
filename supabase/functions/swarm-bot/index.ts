@@ -70,6 +70,9 @@ import {
 import type { TgCallbackQuery, TgMessage } from "./lib/types.ts";
 import { classifyRequest, isOwnPrivateChat } from "./lib/webhook-auth.ts";
 import { processingFrozen } from "../_shared/processing-freeze.ts";
+import { backfillMissingEmbeddings } from "./lib/embedding-backfill.ts";
+import { makeBackfillStore } from "./lib/embedding-backfill-store.ts";
+import { getEmbedding } from "./lib/openai.ts";
 import { onlyLive } from "../_shared/tasks/live.ts";
 import { onlyLiveEntries } from "../_shared/entries/live.ts";
 import { externalFetch, VIA_GRANOLA, VIA_TELEGRAM } from "../_shared/external-fetch.ts";
@@ -411,10 +414,19 @@ Deno.serve(async (req: Request) => {
   if (body.granola_poll === true) {
     // Заметки Granola лежат у Granola — во время заморозки их не забираем, следующий час
     // заберёт всё, что накопилось (решение владельца 01.10.2026, _shared/processing-freeze.ts).
-    const count = (await processingFrozen(supabase)) ? 0 : await ingestNewGranolaNotesAllUsers();
+    const frozen = await processingFrozen(supabase);
+    const count = frozen ? 0 : await ingestNewGranolaNotesAllUsers();
     await sweepStuckMeetings();
     await checkRecorderHealth();
-    return new Response(`OK: ${count} new granola meetings`, { status: 200 });
+    // Записи, сохранённые без эмбеддинга при отказе модели (#373), — тем же ежечасным проходом:
+    // отдельного cron-задания не заводим. Во время заморозки не пишем, как и Granola.
+    const backfill = frozen
+      ? { filled: 0, failed: 0 }
+      : await backfillMissingEmbeddings(makeBackfillStore(supabase), getEmbedding);
+    return new Response(
+      `OK: ${count} new granola meetings, embeddings filled ${backfill.filled}, failed ${backfill.failed}`,
+      { status: 200 },
+    );
   }
 
   if (body.meetings_watchdog === true) {
