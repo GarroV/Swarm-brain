@@ -59,8 +59,8 @@ export function TaskQuickActions({ task, users, markets, labels, onPatch, onChan
       <DatePicker
         variant="compact"
         icon="bell"
-        ariaLabel="Пинг"
-        clearLabel="Убрать пинг"
+        ariaLabel={dt("Пинг", "Reminder")}
+        clearLabel={dt("Убрать пинг", "Clear reminder")}
         value={task.remind_date ?? ""}
         onChange={(iso) => commit({ remind_date: iso || null }, { remind_date: iso || null, reminded_at: null })}
         className={TRIGGER}
@@ -83,7 +83,7 @@ export function TaskQuickActions({ task, users, markets, labels, onPatch, onChan
       )}
       <QuickPickPopover
         icon="team"
-        ariaLabel="Исполнитель"
+        ariaLabel={dt("Исполнитель", "Assignee")}
         clearable
         value={task.assignee_telegram_ids?.[0] != null ? String(task.assignee_telegram_ids[0]) : ""}
         options={users.map((u) => ({ id: String(u.telegram_id), label: displayName(u.name) }))}
@@ -98,7 +98,7 @@ export function TaskQuickActions({ task, users, markets, labels, onPatch, onChan
       {labels.length > 0 && (
         <PictogramPicker
           triggerIcon="tag"
-          ariaLabel="Списки"
+          ariaLabel={dt("Списки", "Lists")}
           multi
           options={labels.map((l) => ({ id: l.id, label: l.name, icon: ((l.icon as RoyIconName) || "tag") }))}
           selected={task.label_ids ?? []}

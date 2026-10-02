@@ -104,7 +104,7 @@ export function SearchScreen({ onBack }: { onBack?: () => void }) {
             <input
               value={q}
               onChange={(e) => setQ(e.target.value)}
-              placeholder="Спросить или найти…"
+              placeholder={dt("Спросить или найти…", "Ask or search…")}
               enterKeyHint="search"
               className="flex-1 bg-transparent text-ink outline-none placeholder:text-ink-mute"
               style={{ fontSize: 16 }}
@@ -115,7 +115,7 @@ export function SearchScreen({ onBack }: { onBack?: () => void }) {
 
       {recent.length > 0 && (
         <div className="px-5 pt-6">
-          <SectionLabel>Недавнее</SectionLabel>
+          <SectionLabel>{dt("Недавнее", "Recent")}</SectionLabel>
           <div className="flex flex-wrap gap-2">
             {recent.map((r) => (
               <Chip key={r} onClick={() => go(r)}>
@@ -128,7 +128,7 @@ export function SearchScreen({ onBack }: { onBack?: () => void }) {
 
       {showContinue && (
         <div className="px-5 pt-6 pb-24">
-          <SectionLabel>Продолжить</SectionLabel>
+          <SectionLabel>{dt("Продолжить", "Continue")}</SectionLabel>
           <div className="flex flex-col gap-2">
             {inProgressTasks.length > 0 && (
               <button
@@ -145,9 +145,9 @@ export function SearchScreen({ onBack }: { onBack?: () => void }) {
                   </span>
                   <div className="min-w-0 flex-1">
                     <div className="font-semibold text-ink" style={{ fontSize: 14.5, letterSpacing: "-0.01em" }}>
-                      {inProgressTasks.length} {inProgressTasks.length === 1 ? "задача в работе" : inProgressTasks.length < 5 ? "задачи в работе" : "задач в работе"}
+                      {inProgressTasks.length} {dt(inProgressTasks.length === 1 ? "задача в работе" : inProgressTasks.length < 5 ? "задачи в работе" : "задач в работе", inProgressTasks.length === 1 ? "task in progress" : "tasks in progress")}
                     </div>
-                    <div className="text-ink-mute" style={{ fontSize: 12 }}>Открыть в задачах</div>
+                    <div className="text-ink-mute" style={{ fontSize: 12 }}>{dt("Открыть в задачах", "Open in tasks")}</div>
                   </div>
                   <RoyIcon name="cright" size={16} strokeWidth={2} className="shrink-0 text-ink-mute" />
                 </RoyCard>
