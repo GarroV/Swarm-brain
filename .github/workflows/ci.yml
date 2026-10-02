@@ -52,6 +52,8 @@ jobs:
       # («не смог проверить»), а не 1 («люди работают», обходится FORCE) — issues #437, #438.
       - name: Проверка активности перед раскаткой
         run: ./scripts/test-deploy-activity.sh
+      - name: План раскатки — транзитивные потребители _shared
+        run: ./scripts/test-deploy-window.sh
 
   edge:
     name: Edge Functions (Deno) — типы + тесты

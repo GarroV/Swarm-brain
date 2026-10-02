@@ -519,7 +519,7 @@ export async function handleTaskCallbacks(
     const lastUnderscore = rest.lastIndexOf("_");
     const taskId = rest.slice(0, lastUnderscore);
     const newStatus = rest.slice(lastUnderscore + 1);
-    await dbUpdateTask(taskId, { status: newStatus });
+    await dbUpdateTask(taskId, { status: newStatus }, { actor: username, actorTelegramId: userId });
     const task = await dbGetTask(taskId);
     if (!task) {
       await editInlineMessage(chatId, cb.message.message_id, "Задача не найдена.", [[{
@@ -591,7 +591,7 @@ export async function handleTaskCallbacks(
         country = raw; // backwards compat with old buttons that stored name
       }
     }
-    await dbUpdateTask(taskId, { country });
+    await dbUpdateTask(taskId, { country }, { actor: username, actorTelegramId: userId });
     await setSession(chatId, "addtask_due", taskId);
     await sendMessage(chatId, `Дедлайн? (ДД.ММ.ГГГГ или «пропустить» — тогда завтра)`);
     return true;
@@ -605,7 +605,7 @@ export async function handleTaskCallbacks(
       await sendMessage(chatId, "Задача не найдена.");
       return true;
     }
-    await dbUpdateTask(taskId, { confirmed: true, status: "open" });
+    await dbUpdateTask(taskId, { confirmed: true, status: "open" }, { actor: username, actorTelegramId: userId });
     await sendMessage(chatId, `✅ Подтверждено: <b>${task.title}</b>`);
     const confirmedTask = { ...task, confirmed: true, status: "open" };
     await broadcastTaskAssigned(confirmedTask, groupId);
@@ -670,7 +670,10 @@ export async function handleTaskCallbacks(
     const sep = rest.indexOf(":");
     const taskId = rest.slice(0, sep);
     const country = rest.slice(sep + 1);
-    await dbUpdateTask(taskId, { country: country === "none" ? null : country });
+    await dbUpdateTask(taskId, { country: country === "none" ? null : country }, {
+      actor: username,
+      actorTelegramId: userId,
+    });
     await sendMessage(chatId, country === "none" ? "🌍 Страна убрана." : `🌍 Страна: <b>${country}</b>`);
     return true;
   }
@@ -688,7 +691,7 @@ export async function handleTaskCallbacks(
     }
     const current = task.tags ?? [];
     const updated = current.includes(tag) ? current.filter((t) => t !== tag) : [...current, tag];
-    await dbUpdateTask(taskId, { tags: updated });
+    await dbUpdateTask(taskId, { tags: updated }, { actor: username, actorTelegramId: userId });
     await sendMessage(chatId, `🏷 Теги: <b>${updated.join(", ") || "нет"}</b>`);
     return true;
   }
@@ -734,7 +737,10 @@ export async function handleTaskCallbacks(
     const profiles = await getProfilesForPrompt();
     const profileMap = buildProfileMap(profiles);
     const name = profileMap[targetTgId] ?? `ID ${targetTgId}`;
-    await dbUpdateTask(taskId, { assignees: [name], assignee_telegram_ids: [targetTgId], status: "open" });
+    await dbUpdateTask(taskId, { assignees: [name], assignee_telegram_ids: [targetTgId], status: "open" }, {
+      actor: username,
+      actorTelegramId: userId,
+    });
     await sendMessage(chatId, `✅ Назначено: <b>${name}</b>`);
     return true;
   }
@@ -852,7 +858,7 @@ export async function handleTaskSessionInput(
       await setSession(chatId, "task_rename", context);
       return true;
     }
-    await dbUpdateTask(context, { title: newTitle });
+    await dbUpdateTask(context, { title: newTitle }, { actorTelegramId: userId });
     await sendMessage(chatId, `✏️ Название: <b>${newTitle}</b>`);
     return true;
   }
@@ -898,7 +904,7 @@ export async function handleTaskSessionInput(
     const taskId = context;
     if (["пропустить", "skip", "пропуск"].includes(text.trim().toLowerCase())) {
       const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().split("T")[0];
-      await dbUpdateTask(taskId, { due_date: tomorrow, status: "open", confirmed: true });
+      await dbUpdateTask(taskId, { due_date: tomorrow, status: "open", confirmed: true }, { actorTelegramId: userId });
       const task = await dbGetTask(taskId);
       if (task) {
         await sendMessage(chatId, "✅ Задача создана!");
@@ -917,7 +923,7 @@ export async function handleTaskSessionInput(
       await setSession(chatId, "addtask_due", taskId);
       return true;
     }
-    await dbUpdateTask(taskId, { due_date: due, status: "open", confirmed: true });
+    await dbUpdateTask(taskId, { due_date: due, status: "open", confirmed: true }, { actorTelegramId: userId });
     const task = await dbGetTask(taskId);
     if (task) {
       await sendMessage(chatId, "✅ Задача создана!");
@@ -931,7 +937,7 @@ export async function handleTaskSessionInput(
     await clearSession(chatId);
     const taskId = context;
     if (text.trim().toLowerCase() === "убрать") {
-      await dbUpdateTask(taskId, { due_date: null });
+      await dbUpdateTask(taskId, { due_date: null }, { actorTelegramId: userId });
       await sendMessage(chatId, "📅 Дедлайн убран.");
       return true;
     }
@@ -946,7 +952,7 @@ export async function handleTaskSessionInput(
       await setSession(chatId, "task_date", taskId);
       return true;
     }
-    await dbUpdateTask(taskId, { due_date: due });
+    await dbUpdateTask(taskId, { due_date: due }, { actorTelegramId: userId });
     const dueFmt = new Date(due + "T12:00:00").toLocaleDateString("ru-RU", {
       day: "numeric",
       month: "long",

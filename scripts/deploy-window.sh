@@ -38,20 +38,29 @@ base_ref() {
 # Изменённые edge-функции. Правка в _shared/ тянет за собой всех её потребителей —
 # иначе на проде окажется функция со старой копией общего модуля.
 changed_functions() {
-  local base=$1 direct shared_files consumers
+  local base=$1 direct queue seen consumers f bn importers
   direct=$(git diff --name-only "$base"..HEAD -- supabase/functions/ \
     | awk -F/ 'NF >= 4 && $3 != "_shared" {print $3}' | sort -u | grep -v '^_' || true)
-  shared_files=$(git diff --name-only "$base"..HEAD -- supabase/functions/_shared/ \
+  # Обход транзитивный: _shared → _shared → функция (issue #292). Изменённый history.ts
+  # импортирует только _shared/tasks/db.ts, а уже его — swarm-api, swarm-bot, swarm-mcp; прежний
+  # обход останавливался на первом шаге и печатал «функций нет».
+  queue=$(git diff --name-only "$base"..HEAD -- supabase/functions/_shared/ \
     | grep -v '\.test\.ts$' || true)
+  seen=$'\n'
   consumers=""
-  if [ -n "$shared_files" ]; then
-    for f in $shared_files; do
-      local bn; bn=$(basename "$f")
-      consumers+=$(grep -rl -- "$bn" supabase/functions --include='*.ts' 2>/dev/null \
-        | awk -F/ 'NF >= 4 && $3 != "_shared" {print $3}' || true)
-      consumers+=$'\n'
-    done
-  fi
+  while [ -n "$queue" ]; do
+    f=$(printf '%s\n' "$queue" | head -1)
+    queue=$(printf '%s\n' "$queue" | sed 1d)
+    case "$seen" in *$'\n'"$f"$'\n'*) continue ;; esac
+    seen+="$f"$'\n'
+    bn=$(basename "$f")
+    importers=$(grep -rl -- "$bn" supabase/functions --include='*.ts' 2>/dev/null \
+      | grep -v '\.test\.ts$' || true)
+    consumers+=$(printf '%s\n' "$importers" | awk -F/ 'NF >= 4 && $3 != "_shared" {print $3}')
+    consumers+=$'\n'
+    queue+=$'\n'$(printf '%s\n' "$importers" | awk -F/ '$3 == "_shared"')
+    queue=$(printf '%s\n' "$queue" | sed '/^$/d')
+  done
   printf '%s\n%s\n' "$direct" "$consumers" | sed '/^$/d' | sort -u
 }
 
