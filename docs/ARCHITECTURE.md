@@ -1597,6 +1597,9 @@ afconvert — лежат в `meeting-ingest/testdata/` и меряются та�
 | `SWARM_API_URL` | `api/[[path]].ts` | да | Целевой URL swarm-api для прокси-форварда (`/api/*` → swarm-api) |
 | `WEB_JWT_SECRET` | `api/auth/telegram.ts`, `_lib/jwt.ts` | да | HS256-секрет выдачи/проверки браузерного JWT (тот же, что в Supabase) |
 | `TELEGRAM_BOT_TOKEN` | `api/auth/telegram.ts` | да | Проверка подписи Telegram Login Widget (тот же, что в Supabase) |
+| `LEGACY_REDIRECT` | `_middleware.ts` | нет | `on` — прежний адрес `swarm-brain.pages.dev` отвечает 301 на тот же путь `swarm-team.app` (кроме `/api/*` и превью веток). Включается в один заход со сменой домена у бота, issue #753 |
+
+**Боевые адреса веба** — единый список `miniapp/src/lib/prodHosts.ts` (`swarm-team.app` основной, `swarm-brain.pages.dev` прежний; любой другой хост = превью ветки: вход по токену владельца, `api/auth/token.ts` открыт только там). Читают страница входа и функции; тест `src/lib/legacyRedirect.test.ts`. **`_middleware.ts`** — переадресация с прежнего адреса (выключатель `LEGACY_REDIRECT`).
 
 Помимо прокси `/api/*` и входа: **`s/[code].ts`** — `GET /s/<code>`, переход по короткой ссылке: спрашивает `/public/s/<code>` у swarm-api и отвечает **302** (не 301 — постоянную браузер кэширует навсегда, и снятие ссылки перестаёт работать), `no-store`, `Referrer-Policy: no-referrer`; нет ссылки — двуязычная страница 404. Service worker `/s/*` не трогает (`public/sw.js`, тест `sw.test.ts`).
 

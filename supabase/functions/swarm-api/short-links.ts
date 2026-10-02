@@ -11,8 +11,8 @@ import { generateShortCode, normalizeTargetUrl, SHORT_CODE_RE } from "./short-li
 //   • DELETE /short-links/:code — убрать свою (архивация, физически не удаляем).
 // Доступ — только в коде (service_role, RLS не защищает): чужие ссылки не видны и не трогаются.
 
-// Хосты, на которых живёт `/s/…`: ссылка на них же — петля. Свой домен добавится сюда.
-export const SHORT_LINK_HOSTS = ["swarm-brain.pages.dev"] as const;
+// Хосты, на которых живёт `/s/…`: ссылка на них же — петля. Боевые адреса веба — miniapp/src/lib/prodHosts.ts.
+export const SHORT_LINK_HOSTS = ["swarm-team.app", "swarm-brain.pages.dev"] as const;
 
 const LIST_LIMIT = 100;
 const DAILY_CREATE_LIMIT = 200;
