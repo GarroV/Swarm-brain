@@ -114,7 +114,9 @@ async function getEmbedding(text: string): Promise<number[]> {
     body: JSON.stringify({ model: "text-embedding-3-small", input: text.slice(0, 8000) }),
   }, VIA_OPENAI_EMBEDDING);
   const data = await res.json() as { data?: Array<{ embedding: number[] }>; error?: { message?: string } };
-  if (!res.ok || !data.data?.[0]) throw new Error(`OpenAI embeddings: HTTP ${res.status} ${data.error?.message ?? ""}`.trim());
+  if (!res.ok || !data.data?.[0]) {
+    throw new Error(`OpenAI embeddings: HTTP ${res.status} ${data.error?.message ?? ""}`.trim());
+  }
   return data.data[0].embedding;
 }
 

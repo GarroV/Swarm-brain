@@ -65,7 +65,11 @@ Deno.test("тезисы нормализуются в ISO; два и больш�
 
 Deno.test("пересечение участников из двух рынков тоже не предлагается (порог 1)", () => {
   assertEquals(
-    pickSuggestedMarkets({ title: "Weekly sync", participantMarkets: [["RS", "BG"], ["RS", "BG", "HR"]], notesMarkets: [] }),
+    pickSuggestedMarkets({
+      title: "Weekly sync",
+      participantMarkets: [["RS", "BG"], ["RS", "BG", "HR"]],
+      notesMarkets: [],
+    }),
     { markets: [], source: null },
   );
 });
