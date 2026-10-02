@@ -1171,10 +1171,18 @@ export async function deleteTaskLabel(id: string): Promise<void> {
 export type ShortLink = {
   code: string;
   url: string;
+  title: string | null;
+  note: string | null;
+  owner_id: number;
+  owner_name: string;
+  /** Автор или админ — сервер решает, экран только прячет кнопки. */
+  can_manage: boolean;
   clicks: number;
   last_clicked_at: string | null;
   created_at: string;
 };
+
+export type ShortLinkMeta = { title: string; note: string };
 
 let MOCK_SHORT_LINKS: ShortLink[] = [];
 
@@ -1183,11 +1191,16 @@ export async function fetchShortLinks(): Promise<ShortLink[]> {
   return apiFetch<ShortLink[]>("/short-links");
 }
 
-export async function createShortLink(url: string): Promise<ShortLink> {
+export async function createShortLink(url: string, meta: ShortLinkMeta): Promise<ShortLink> {
   if (DEV_MODE) {
     const l: ShortLink = {
       code: Math.random().toString(36).slice(2, 8),
       url,
+      title: meta.title.trim(),
+      note: meta.note.trim() || null,
+      owner_id: 1,
+      owner_name: "Dev",
+      can_manage: true,
       clicks: 0,
       last_clicked_at: null,
       created_at: new Date().toISOString(),
@@ -1195,7 +1208,17 @@ export async function createShortLink(url: string): Promise<ShortLink> {
     MOCK_SHORT_LINKS = [l, ...MOCK_SHORT_LINKS];
     return l;
   }
-  return apiFetch<ShortLink>("/short-links", { method: "POST", body: JSON.stringify({ url }) });
+  return apiFetch<ShortLink>("/short-links", { method: "POST", body: JSON.stringify({ url, ...meta }) });
+}
+
+export async function updateShortLink(code: string, meta: ShortLinkMeta): Promise<ShortLink> {
+  if (DEV_MODE) {
+    MOCK_SHORT_LINKS = MOCK_SHORT_LINKS.map((l) =>
+      l.code === code ? { ...l, title: meta.title.trim(), note: meta.note.trim() || null } : l
+    );
+    return MOCK_SHORT_LINKS.find((l) => l.code === code)!;
+  }
+  return apiFetch<ShortLink>(`/short-links/${code}`, { method: "PATCH", body: JSON.stringify(meta) });
 }
 
 export async function archiveShortLink(code: string): Promise<void> {
