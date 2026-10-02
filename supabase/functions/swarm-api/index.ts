@@ -887,9 +887,9 @@ async function routeRequest(req: Request): Promise<Response> {
   }
 
   // Персональные смарт-метки задач (/task-labels*) — доступ строго свой (owner_id).
-  // Сокращатель ссылок («Полезности»): свои ссылки, доступ по owner_id.
+  // Сокращатель ссылок («Полезности»): ссылки своего пространства; править — автор или админ.
   const shortLinkResp = await handleShortLinkRoutes(
-    { supabase, telegramId: telegram_id, groupId, isDemo, origin },
+    { supabase, telegramId: telegram_id, groupId, isDemo, isAdmin, origin, resolveNames },
     req,
     routePath,
   );

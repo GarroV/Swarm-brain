@@ -1,7 +1,15 @@
 // Проверка адреса для сокращателя. Ошибка здесь молчаливая и дорогая: пропущенная схема
 // `javascript:` или петля через наш же домен не падает, а переадресует людей не туда.
 import { assert, assertEquals } from "@std/assert";
-import { generateShortCode, normalizeTargetUrl, SHORT_CODE_LENGTH, SHORT_CODE_RE } from "./short-links-core.ts";
+import {
+  generateShortCode,
+  MAX_NOTE_LENGTH,
+  MAX_TITLE_LENGTH,
+  normalizeLinkMeta,
+  normalizeTargetUrl,
+  SHORT_CODE_LENGTH,
+  SHORT_CODE_RE,
+} from "./short-links-core.ts";
 
 const HOSTS = ["swarm-brain.pages.dev"];
 
@@ -59,4 +67,22 @@ Deno.test("код: байты сверх кратного 62 отбрасыва�
   let i = 0;
   const code = generateShortCode(6, (n) => Uint8Array.from({ length: n }, () => bytes[i++ % bytes.length]));
   assertEquals(code, "AB9ABA");
+});
+
+Deno.test("название обязательно: пустое и из пробелов отбиваются", () => {
+  assertEquals(normalizeLinkMeta("", null), { ok: false, error: "title_required" });
+  assertEquals(normalizeLinkMeta("   ", "x"), { ok: false, error: "title_required" });
+  assertEquals(normalizeLinkMeta(undefined, null), { ok: false, error: "invalid" });
+});
+
+Deno.test("название и комментарий обрезаются, пустой комментарий → null", () => {
+  assertEquals(normalizeLinkMeta("  Акция  ", "  "), { ok: true, title: "Акция", note: null });
+  assertEquals(normalizeLinkMeta("Акция", " для СМС "), { ok: true, title: "Акция", note: "для СМС" });
+});
+
+Deno.test("длины ограничены как в базе", () => {
+  assertEquals(normalizeLinkMeta("я".repeat(MAX_TITLE_LENGTH), null).ok, true);
+  assertEquals(normalizeLinkMeta("я".repeat(MAX_TITLE_LENGTH + 1), null), { ok: false, error: "title_too_long" });
+  assertEquals(normalizeLinkMeta("a", "я".repeat(MAX_NOTE_LENGTH + 1)), { ok: false, error: "note_too_long" });
+  assertEquals(normalizeLinkMeta("a", 5), { ok: false, error: "invalid" });
 });

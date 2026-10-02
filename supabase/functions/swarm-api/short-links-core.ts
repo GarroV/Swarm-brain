@@ -59,3 +59,24 @@ export function generateShortCode(
   }
   return out;
 }
+
+export const MAX_TITLE_LENGTH = 120;
+export const MAX_NOTE_LENGTH = 500;
+
+export type LinkMetaError = "title_required" | "title_too_long" | "note_too_long" | "invalid";
+export type LinkMetaResult =
+  | { ok: true; title: string; note: string | null }
+  | { ok: false; error: LinkMetaError };
+
+/** Название (обязательно) и комментарий (пустой → null). Длины совпадают с check в миграции. */
+export function normalizeLinkMeta(rawTitle: unknown, rawNote: unknown): LinkMetaResult {
+  if (typeof rawTitle !== "string" || (rawNote != null && typeof rawNote !== "string")) {
+    return { ok: false, error: "invalid" };
+  }
+  const title = rawTitle.trim();
+  const note = typeof rawNote === "string" ? rawNote.trim() : "";
+  if (!title) return { ok: false, error: "title_required" };
+  if (title.length > MAX_TITLE_LENGTH) return { ok: false, error: "title_too_long" };
+  if (note.length > MAX_NOTE_LENGTH) return { ok: false, error: "note_too_long" };
+  return { ok: true, title, note: note || null };
+}

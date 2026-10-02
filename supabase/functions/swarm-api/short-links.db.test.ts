@@ -56,3 +56,27 @@ Deno.test("anon/authenticated не вызывают переход и не чи�
     await db.end();
   }
 });
+
+Deno.test("название и комментарий: пустые и слишком длинные отбивает сама база", async () => {
+  const db = await connect();
+  const rejects = async (title: string | null, note: string | null) => {
+    try {
+      await db.queryArray`insert into public.short_links (code, url, owner_id, title, note)
+        values ('tMeta9', 'https://example.com/c.pdf', 1, ${title}, ${note})`;
+      return false;
+    } catch {
+      return true;
+    }
+  };
+  try {
+    await db.queryArray`delete from public.short_links where code = 'tMeta9'`;
+    assertEquals(await rejects("", null), true);
+    assertEquals(await rejects("я".repeat(121), null), true);
+    assertEquals(await rejects("ok", ""), true);
+    assertEquals(await rejects("ok", "я".repeat(501)), true);
+    assertEquals(await rejects("я".repeat(120), "я".repeat(500)), false);
+  } finally {
+    await db.queryArray`delete from public.short_links where code = 'tMeta9'`;
+    await db.end();
+  }
+});
