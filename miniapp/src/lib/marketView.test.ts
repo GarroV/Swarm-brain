@@ -1,5 +1,5 @@
 import { assertEquals } from "jsr:@std/assert@1";
-import { areaOf, fmtMoney, freshness, insideRings, pathRings, medianPizza30, orderChannels, revenuePerUnit, unitMonths } from "./marketView.ts";
+import { areaOf, fmtMoney, freshness, lastCollected, insideRings, pathRings, medianPizza30, orderChannels, revenuePerUnit, unitMonths } from "./marketView.ts";
 import type { MarketPrice, MarketRun, MarketSource } from "../types.ts";
 
 const price = (chain_key: string, size_cm: number | null, price_eur: number): MarketPrice => ({
@@ -76,6 +76,14 @@ Deno.test("freshness: last run failed or older than 8 days is bad; manual never 
     ["fail", 5, true, "boom"],
     ["man", null, false, null],
   ]);
+});
+
+Deno.test("collection date is the latest successful automatic run; manual sources and no runs give none", () => {
+  assertEquals(
+    lastCollected([src("a", "auto", "2026-10-01T03:00:00Z"), src("b", "auto", "2026-10-03T02:10:00Z"), src("m", "manual", "2026-10-09T00:00:00Z")]),
+    "2026-10-03T02:10:00Z",
+  );
+  assertEquals(lastCollected([src("a", "auto", null), src("m", "manual", "2026-10-09T00:00:00Z")]), null);
 });
 
 Deno.test("order channels drop the internal _days map", () => {

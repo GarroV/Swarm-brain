@@ -8,7 +8,8 @@ import { kpis, yearOf } from "@/lib/marketInsights";
 import { ruPlural } from "@/lib/ruPlural";
 import { aliveAtYearEnd } from "@/lib/marketStats";
 import { useDt, useLang } from "@/components/roy/nav";
-import { dec, useEditorial } from "./ref";
+import { lastCollected } from "@/lib/marketView";
+import { dec, fmtDate, useEditorial } from "./ref";
 
 const FIRST_YEAR = 2021;
 
@@ -19,6 +20,7 @@ export function MarketHeader({ bundle }: { bundle: MarketBundle }) {
   const ru = useLang() === "ru";
   const ed = useEditorial(bundle);
   const year = new Date().getFullYear();
+  const collected = lastCollected(bundle.sources);
   const name = countryName(bundle.country) || bundle.country;
 
   const tiles = useMemo<Tile[]>(() => {
@@ -71,6 +73,7 @@ export function MarketHeader({ bundle }: { bundle: MarketBundle }) {
           )}
         </p>
         <div className="meta">
+          {collected && <span>{dt("Сборка: ", "Collected: ")}{fmtDate(collected, ru)}</span>}
           <span>{dt(`${bundle.locations.length} записей · ${bundle.chains.length} сетей`, `${bundle.locations.length} records · ${bundle.chains.length} chains`)}</span>
           {h?.sources && <span>{h.sources}</span>}
         </div>

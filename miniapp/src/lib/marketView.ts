@@ -115,6 +115,16 @@ export function revenuePerUnit(fin: Pick<MarketFinancial, "revenue_eur" | "year"
 export const STALE_DAYS = 8;
 export type Freshness = { adapter: string; feeds: string; mode: string; reason: string | null; lastOk: string | null; daysAgo: number | null; lastError: string | null; bad: boolean };
 
+/** Дата актуальной сборки страны для шапки: последний успешный запуск автоматического источника.
+ *  Ручные источники не считаются — их дата говорит о вычитке, а не о сборе. */
+export function lastCollected(sources: MarketSource[]): string | null {
+  return sources
+    .filter((s) => s.mode === "auto" && s.last_ok_at)
+    .map((s) => s.last_ok_at as string)
+    .sort()
+    .at(-1) ?? null;
+}
+
 /** Свежесть каждого источника: последний успешный запуск и последняя ошибка, если она позже.
  *  Плохо — авто-источник, который упал последним прогоном или молчит дольше недели с запасом. */
 export function freshness(sources: MarketSource[], runs: MarketRun[], now: Date): Freshness[] {
