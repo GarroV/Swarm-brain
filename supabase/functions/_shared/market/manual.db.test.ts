@@ -176,3 +176,80 @@ Deno.test("price: converted to euro, same day overwrites, status counts it", asy
   assert(status.includes("Цены: 1"), status);
   await wipe();
 });
+
+Deno.test("location fix by id keeps a closed point closed; Dodo points stay with the Dodo API", async () => {
+  await wipe();
+  await seedChain();
+  await sb.from("mkt_chains").insert({ country: CC, key: "dodo", name: "Dodo", slot: 1 });
+  const { data: shut } = await sb.from("mkt_locations").insert({
+    country: CC,
+    chain_key: "kfc",
+    ext_key: "snap-1",
+    name: "KFC Old",
+    lat: 42.1,
+    lng: 23.1,
+    status: "closed",
+    closed: "2023",
+    source_kind: "snapshot",
+    verification: "confirmed",
+  }).select("id").single();
+  const fix = await upsertLocation(sb, CC, { id: shut!.id, chain: "kfc", city: "Sofia", source: SRC });
+  assert(fix.ok, JSON.stringify(fix));
+  assertEquals([fix.after.status, fix.after.closed, fix.after.city], ["closed", "2023", "Sofia"]);
+
+  const { data: dodo } = await sb.from("mkt_locations").insert({
+    country: CC,
+    chain_key: "dodo",
+    ext_key: "dodo:Sofia 1",
+    name: "Dodo Sofia 1",
+    lat: 42.2,
+    lng: 23.2,
+    status: "open",
+    source_kind: "dodo",
+    verification: "official",
+  }).select("id").single();
+  const refused = await upsertLocation(sb, CC, { id: dodo!.id, chain: "dodo", opened: "2023-04", source: SRC });
+  assert(!refused.ok && refused.error.includes("location_dates"), JSON.stringify(refused));
+});
+
+Deno.test("company year: omitted headcount survives, same reg_id under another spelling is the same company", async () => {
+  await wipe();
+  await seedChain();
+  await sb.from("mkt_companies").insert({ country: CC, name: "ДОДО БЪЛГАРИЯ ЕООД", reg_id: "999" });
+  const a = await setCompanyYear(sb, CC, {
+    company: "Dodo Bulgaria EOOD",
+    reg_id: "999",
+    year: 2024,
+    revenue: 100,
+    currency: "EUR",
+    employees: 50,
+    source: SRC,
+  });
+  assert(a.ok, JSON.stringify(a));
+  const b = await setCompanyYear(sb, CC, {
+    company: "Dodo Bulgaria EOOD",
+    reg_id: "999",
+    year: 2024,
+    revenue: 120,
+    currency: "EUR",
+    source: SRC,
+  });
+  assert(b.ok);
+  assertEquals(b.after.employees, 50);
+  const { data: cos } = await sb.from("mkt_companies").select("name").eq("country", CC);
+  assertEquals(cos?.map((c) => c.name), ["ДОДО БЪЛГАРИЯ ЕООД"]);
+});
+
+Deno.test("dates must be real calendar dates", async () => {
+  await wipe();
+  await seedChain();
+  const r = await upsertLocation(sb, CC, {
+    chain: "kfc",
+    name: "Z",
+    lat: 42,
+    lng: 23,
+    opened: "2024-13-99",
+    source: SRC,
+  });
+  assert(!r.ok);
+});

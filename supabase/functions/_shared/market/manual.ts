@@ -121,7 +121,17 @@ export async function setCompanyYear(
   if (input.chain && !(await chainExists(sb, country, input.chain))) {
     return { ok: false, error: `сети «${input.chain}» в стране нет — сначала market_upsert_chain` };
   }
-  const company = await must<{ id: string; name: string }>(
+  // Юрлицо узнаём по рег. номеру: модель пишет название по-своему («Dodo Bulgaria EOOD» против
+  // «ДОДО БЪЛГАРИЯ ЕООД» из реестра), а вторая строка под тем же номером раздвоила бы «Деньги»
+  // и сбила сборщик реестра, который ищет юрлицо по номеру.
+  const reg = text(input.reg_id);
+  const known = reg
+    ? await must<{ id: string; name: string } | null>(
+      sb.from("mkt_companies").select("id, name").eq("country", country).eq("reg_id", reg).limit(1).maybeSingle(),
+      "company by reg_id",
+    )
+    : null;
+  const company = known ?? await must<{ id: string; name: string }>(
     sb.from("mkt_companies").upsert({
       country,
       name: input.company.trim(),
@@ -142,7 +152,9 @@ export async function setCompanyYear(
       company_id: company.id,
       year,
       revenue_eur,
-      employees: num(input.employees),
+      ...(num(input.employees) !== null ? { employees: num(input.employees) } : {}),
+      // Прибыль раздел не показывает, а рядом с новой выручкой старая цифра была бы из другого отчёта.
+      net_profit_eur: null,
       source: input.source.trim(),
       verification: "confirmed",
       note: [conv, text(input.note)].filter(Boolean).join(" · ") || null,
@@ -174,21 +186,32 @@ export type LocationInput = {
   source: string;
   note?: string;
 };
-const LOC_COLS = "id, chain_key, name, city, address, lat, lng, opened, status, closed, source, verification";
+const LOC_COLS =
+  "id, chain_key, name, city, address, lat, lng, opened, status, closed, source, source_kind, verification";
 type LocRow = Record<string, unknown> & { id: string };
-const DATE = /^\d{4}(-\d{2}(-\d{2})?)?$/;
+const DATE = /^(\d{4})(?:-(\d{2})(?:-(\d{2}))?)?$/;
+/** ГГГГ, ГГГГ-ММ или ГГГГ-ММ-ДД, и дата настоящая: «2024-13-99» не пройдёт. */
+export function isPartialDate(v: string): boolean {
+  const m = DATE.exec(v);
+  if (!m) return false;
+  const [y, mo, d] = [Number(m[1]), m[2] ? Number(m[2]) : 1, m[3] ? Number(m[3]) : 1];
+  const dt = new Date(Date.UTC(y, mo - 1, d));
+  return dt.getUTCFullYear() === y && dt.getUTCMonth() === mo - 1 && dt.getUTCDate() === d;
+}
 
 export async function upsertLocation(sb: SupabaseClient, cc: string, input: LocationInput): Promise<Change<LocRow>> {
   const country = cc.toUpperCase();
   const bad = baseCheck(country, input.source);
   if (bad) return { ok: false, error: bad };
   for (const f of ["opened", "closed"] as const) {
-    if (input[f] !== undefined && !DATE.test(String(input[f]))) {
+    if (input[f] !== undefined && !isPartialDate(String(input[f]))) {
       return { ok: false, error: `${f} — ГГГГ, ГГГГ-ММ или ГГГГ-ММ-ДД` };
     }
   }
-  const status = input.status ?? (input.closed ? "closed" : "open");
-  if (!["open", "closed", "planned", "paused"].includes(status)) {
+  // Статус меняется, только если его назвали или дали дату закрытия: правка города у закрытой
+  // точки не должна её открывать. Новая точка без статуса — открытая.
+  const status = input.status ?? (input.closed ? "closed" : input.id ? undefined : "open");
+  if (status !== undefined && !["open", "closed", "planned", "paused"].includes(status)) {
     return { ok: false, error: "status — open, closed, planned или paused" };
   }
   const patch = {
@@ -199,7 +222,7 @@ export async function upsertLocation(sb: SupabaseClient, cc: string, input: Loca
     ...(num(input.lng) !== null ? { lng: input.lng } : {}),
     ...(input.opened ? { opened: input.opened, opened_estimated: false } : {}),
     ...(input.closed ? { closed: input.closed } : {}),
-    status,
+    ...(status ? { status } : {}),
     source: input.source.trim(),
     ...(text(input.note) ? { verification_note: text(input.note) } : {}),
   };
@@ -210,6 +233,13 @@ export async function upsertLocation(sb: SupabaseClient, cc: string, input: Loca
       "location",
     );
     if (!before) return { ok: false, error: "точки с таким id в стране нет — id бери из market_get" };
+    // Пиццерии Dodo ведёт API Dodo: еженедельный сбор перезаписал бы ручную правку молча.
+    if (before.source_kind === "dodo") {
+      return {
+        ok: false,
+        error: "точки Dodo ведёт API Dodo и правка не удержится; уточнённую дату открытия внеси блоком location_dates",
+      };
+    }
     // Поправленная руками точка становится ручной: сборщик OSM её больше не двигает и не удаляет,
     // а свою машинную копию на том же месте снимает сам.
     const after = await must<LocRow>(
