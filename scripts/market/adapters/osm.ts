@@ -1,7 +1,7 @@
 // OpenStreetMap через Overpass: новые точки сетей встают на карту сами как «не проверено»,
 // подтверждённого не трогают. Запрос по тегу brand в границах страны — тяжёлый запрос по
 // всем заведениям Overpass не тянет (сверка 02.10.2026).
-import { httpGet, parseOverpass, srLatin } from "../lib.ts";
+import { httpGet, parseOverpassAll, srLatin } from "../lib.ts";
 import type { Adapter } from "./types.ts";
 
 const OVERPASS = "https://overpass-api.de/api/interpreter";
@@ -54,7 +54,9 @@ export const osm: Adapter = {
       );
       const all = Object.values(brands).flat();
       const allNames = Object.values(names).flat();
-      if (!all.length && !allNames.length) return { ...base, points: [] };
+      if (!all.length && !allNames.length) {
+        return { ...base, points: [], rejected: [] };
+      }
       const r = await httpGet(OVERPASS, {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -62,12 +64,16 @@ export const osm: Adapter = {
           encodeURIComponent(overpassQuery(cfg.country, all, allNames))
         }`,
       }, OVERPASS_RETRY_MS);
-      return {
-        ...base,
-        points: parseOverpass(await r.json(), brands, names, {
+      const { points, rejected } = parseOverpassAll(
+        await r.json(),
+        brands,
+        names,
+        {
           toLatin: cfg.cityScript === "sr-Latn" ? srLatin : undefined,
-        }),
-      };
+          exclude: cfg.osmExclude,
+        },
+      );
+      return { ...base, points, rejected };
     } catch (e) {
       return { ...base, failed: String(e) };
     }

@@ -36,6 +36,9 @@ export type CountryConfig = {
   currency?: string;
   /** Письменность городов: «sr-Latn» — сербскую кириллицу из OSM переводить в латиницу. */
   cityScript?: "sr-Latn";
+  /** Объекты OSM, подписанные именем сети, но ей не принадлежащие: id («node/1») → причина.
+   *  Сборщик их не берёт, а машинную точку на их месте удаляет. */
+  osmExclude?: Record<string, string>;
   chains: CountryChain[];
   companies: CountryCompany[];
   sources: ConfigSource[];
