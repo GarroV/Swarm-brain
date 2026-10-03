@@ -4,7 +4,7 @@ import { useDt } from "@/components/roy/nav";
 import { RoyIcon } from "@/components/roy/icons";
 import type { RoyIconName } from "@/lib/royIcons";
 import { ShortLinkTool } from "./ShortLinkTool";
-import { PdfEditorPanel } from "./PdfEditorPanel";
+import { PdfToolsPanel } from "./PdfToolsPanel";
 import { QrTool } from "./QrTool";
 
 // «Полезности» (решение владельца 2026-10-02): плитки небольших сервисов. Новый сервис = запись в
@@ -13,10 +13,8 @@ import { QrTool } from "./QrTool";
 // сдвигались»): свёрнутая — плитка фиксированной ширины, раскрытая — на всю строку на своём месте,
 // остальные съезжают ниже; щелчок по шапке сворачивает. Раскрытых может быть несколько.
 
-type ToolId = "shortLinks" | "qr" | "pdfEditor";
+type ToolId = "shortLinks" | "qr" | "pdf";
 
-// PDF-редактор — форк BentoPDF (GarroV/swarm-pdf), Cloudflare Pages; файлы не покидают браузер.
-export const PDF_EDITOR_URL = "https://swarm-pdf.pages.dev/edit-pdf-text";
 
 type Tool = { id: ToolId; icon: RoyIconName; title: [string, string]; text: [string, string] };
 
@@ -34,12 +32,12 @@ const TOOLS: Tool[] = [
     text: ["Адрес или текст → код для печати, PNG и SVG", "Link or text → a printable code, PNG and SVG"],
   },
   {
-    id: "pdfEditor",
+    id: "pdf",
     icon: "pdf",
-    title: ["PDF-редактор", "PDF editor"],
+    title: ["PDF", "PDF"],
     text: [
-      "Править текст прямо в PDF. Файл обрабатывается в браузере и никуда не загружается",
-      "Edit text right in a PDF. The file is processed in your browser and never uploaded",
+      "Править текст, склеить, разрезать, сжать, подписать, конвертировать. Файлы не покидают браузер",
+      "Edit text, merge, split, compress, sign, convert. Files never leave your browser",
     ],
   },
 ];
@@ -47,7 +45,7 @@ const TOOLS: Tool[] = [
 const TOOL_BODY: Record<ToolId, () => React.ReactNode> = {
   shortLinks: () => <ShortLinkTool />,
   qr: () => <QrTool />,
-  pdfEditor: () => <PdfEditorPanel url={PDF_EDITOR_URL} />,
+  pdf: () => <PdfToolsPanel />,
 };
 
 const TILE_CLASS =
@@ -56,8 +54,8 @@ const TILE_CLASS =
 export function ToolsDesk() {
   const dt = useDt();
   // expanded — что раскрыто сейчас; mounted — что хоть раз открывали. Открытый однажды сервис
-  // остаётся смонтированным и при сворачивании только прячется: так PDF-редактор не теряет
-  // несохранённую правку (см. PdfEditorPanel).
+  // остаётся смонтированным и при сворачивании только прячется: так PDF-инструменты не теряют
+  // несохранённую правку (см. PdfToolsPanel).
   const [expanded, setExpanded] = useState<ReadonlySet<ToolId>>(new Set());
   const [mounted, setMounted] = useState<ReadonlySet<ToolId>>(new Set());
 
