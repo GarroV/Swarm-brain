@@ -42,7 +42,7 @@ function errorText(e: unknown, dt: Dt): string {
 
 const shortUrl = (code: string) => `${window.location.origin}/s/${code}`;
 
-export function ShortLinkTool({ onBack }: { onBack: () => void }) {
+export function ShortLinkTool() {
   const dt = useDt();
   const [input, setInput] = useState("");
   const [title, setTitle] = useState("");
@@ -119,13 +119,7 @@ export function ShortLinkTool({ onBack }: { onBack: () => void }) {
   };
 
   return (
-    <div className="mx-auto w-full max-w-[720px] p-4">
-      <button type="button" onClick={onBack}
-        className="mb-3 inline-flex items-center gap-1 text-ink-soft hover:text-ink" style={{ fontSize: 13 }}>
-        <RoyIcon name="cleft" size={16} />
-        {dt("Полезности", "Tools")}
-      </button>
-      <h2 className="mb-1 font-semibold text-ink" style={{ fontSize: 18 }}>{dt("Короткие ссылки", "Short links")}</h2>
+    <div className="w-full max-w-[720px] p-4">
       <p className="mb-4 text-ink-soft" style={{ fontSize: 13 }}>
         {dt(
           "Вставьте длинную ссылку и дайте ей название — короткая сразу окажется в буфере обмена. Открыть её может любой, у кого она есть; список ниже видит вся команда.",
