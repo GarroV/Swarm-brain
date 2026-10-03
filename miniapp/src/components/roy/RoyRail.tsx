@@ -11,8 +11,8 @@ import { FeedbackDialog } from "./FeedbackFab";
 import { readTheme, saveTheme, THEME_CHANGE_EVENT, THEME_IDS, type ThemeId } from "@/lib/theme";
 
 // Левая рейка десктопа — навигация нового вида (витрина, решение владельца 24.09.2026:
-// «оставляем текущие экраны, но навигация между ними уже новая»). Плоский список папок,
-// как в стенде (docs/redesign/stand/js/app.js → NAV/NAVFOOT). Экраны внутри — прежние.
+// «оставляем текущие экраны, но навигация между ними уже новая»). Список папок тремя
+// группами (см. GROUPS), по образцу стенда (docs/redesign/stand/js/app.js → NAV/NAVFOOT). Экраны внутри — прежние.
 // Мобайл рейку не видит: там нижний таб-бар (RoyTabBar).
 
 export type RailId =
@@ -31,17 +31,26 @@ export type RailId =
 
 type RailItem = { id: RailId; label: [string, string]; icon: RoyIconName };
 
-const MAIN: RailItem[] = [
-  { id: "home", label: ["Главная", "Home"], icon: "home" },
-  { id: "tasks", label: ["Задачи", "Tasks"], icon: "task" },
-  { id: "projects", label: ["Проекты", "Projects"], icon: "board" },
-  { id: "sprints", label: ["Спринты", "Sprints"], icon: "repeat" },
-  { id: "market", label: ["Анализ рынка", "Market analysis"], icon: "globe" },
-  { id: "meetings", label: ["Встречи", "Meetings"], icon: "cal" },
-  { id: "base", label: ["База", "Knowledge"], icon: "book" },
-  { id: "team", label: ["Команда", "Team"], icon: "team" },
-  { id: "stats", label: ["Статистика", "Stats"], icon: "graph" },
-  { id: "tools", label: ["Полезности", "Tools"], icon: "spark" },
+// Порядок и группы — решение владельца 03.10.2026: основная работа сверху, «Анализ рынка,
+// Полезности, Статистика» — отдельной подгруппой («как бы саб-отдел»), ниже Команда и База.
+// Группы разделены тонкой линией.
+const GROUPS: RailItem[][] = [
+  [
+    { id: "home", label: ["Главная", "Home"], icon: "home" },
+    { id: "meetings", label: ["Встречи", "Meetings"], icon: "cal" },
+    { id: "tasks", label: ["Задачи", "Tasks"], icon: "task" },
+    { id: "projects", label: ["Проекты", "Projects"], icon: "board" },
+    { id: "sprints", label: ["Спринты", "Sprints"], icon: "repeat" },
+  ],
+  [
+    { id: "market", label: ["Анализ рынка", "Market analysis"], icon: "globe" },
+    { id: "tools", label: ["Полезности", "Tools"], icon: "spark" },
+    { id: "stats", label: ["Статистика", "Stats"], icon: "graph" },
+  ],
+  [
+    { id: "team", label: ["Команда", "Team"], icon: "team" },
+    { id: "base", label: ["База", "Knowledge"], icon: "book" },
+  ],
 ];
 
 const FOOT: RailItem[] = [
@@ -128,7 +137,12 @@ export function RoyRail({
       </div>
       <RailSearch />
       <div className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-2 py-2.5">
-        {MAIN.map(renderItem)}
+        {GROUPS.map((group, gi) => (
+          <div key={gi} className="flex flex-col gap-0.5">
+            {gi > 0 && <div aria-hidden className="mx-2.5 my-1.5 h-px bg-line max-[1099px]:mx-1.5" />}
+            {group.map(renderItem)}
+          </div>
+        ))}
       </div>
       {/* Тема пилюлей и инструменты пиктограммами — одним рядом, без подписи (владелец 02.10.2026). */}
       <div className="flex items-center gap-1 border-t border-line px-2 py-2 max-[1099px]:flex-col max-[1099px]:gap-0.5">
