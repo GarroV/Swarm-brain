@@ -79,7 +79,8 @@ export type IngestPayload =
       rates?: Record<string, number>;
     } | null;
   }
-  | Base & { source: "osm"; points: OsmPoint[] }
+  // rejected — объекты с именем сети, но не её (ложный brand, исключение в конфиге)
+  | Base & { source: "osm"; points: OsmPoint[]; rejected?: OsmPoint[] }
   | Base & { source: "registry"; adapter: string; years: RegistryYear[] }
   // решения админа по токену сборщика (index.ts adminAction, scripts/market/admin.ts)
   | Base & { source: "snapshot"; snapshot: unknown }

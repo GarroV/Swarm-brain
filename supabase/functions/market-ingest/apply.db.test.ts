@@ -251,6 +251,63 @@ Deno.test("osm: one place mapped twice in OSM is one point; a mirror next to a v
   ]);
 });
 
+Deno.test("osm: a machine point on the spot of a rejected object goes away; a checked one and one with a real neighbour stay", async () => {
+  await reset();
+  const base = {
+    country: CC,
+    chain_key: "kfc",
+    name: "K",
+    status: "open",
+    missing_weeks: 0,
+  };
+  const ins = await sb.from("mkt_locations").insert([
+    {
+      ...base,
+      ext_key: "fake",
+      lat: 44.5,
+      lng: 15.5,
+      verification: "unverified",
+      source_kind: "osm",
+    },
+    {
+      ...base,
+      ext_key: "checked",
+      lat: 44.4,
+      lng: 15.4,
+      verification: "confirmed",
+      source_kind: "osm",
+    },
+    {
+      ...base,
+      ext_key: "nextdoor",
+      lat: 44.3,
+      lng: 15.3,
+      verification: "unverified",
+      source_kind: "osm",
+    },
+  ]);
+  if (ins.error) throw new Error(ins.error.message);
+  const pt = { chain: "kfc", name: "K", city: null, address: null };
+  const r = await applyIngest(sb, {
+    source: "osm",
+    country: CC,
+    started_at,
+    points: [{ ...pt, lat: 44.3, lng: 15.3, osm_id: "node/9" }],
+    rejected: [
+      { ...pt, lat: 44.50001, lng: 15.5, osm_id: "node/1" },
+      { ...pt, lat: 44.40001, lng: 15.4, osm_id: "node/2" },
+      { ...pt, lat: 44.30005, lng: 15.3, osm_id: "node/3" },
+    ],
+  }, "2026-10-05");
+  const { data } = await sb.from("mkt_locations").select("ext_key").eq(
+    "country",
+    CC,
+  ).lt("lat", 45).gt("lat", 44.2)
+    .order("ext_key");
+  assertEquals(data!.map((x) => x.ext_key), ["checked", "nextdoor"]);
+  assertEquals((r as Record<string, unknown>).removed_wrong, 1);
+});
+
 Deno.test("osm: a country with over 1000 known points is matched in full", async () => {
   await reset();
   // Больше страницы PostgREST (1000 строк) и больше, чем влезает id в один URL.

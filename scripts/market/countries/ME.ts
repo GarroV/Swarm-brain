@@ -9,6 +9,11 @@ export const ME: CountryConfig = {
   country: "ME",
   dodoCode: "me",
   cityScript: "sr-Latn",
+  osmExclude: {
+    // В OSM «Pizza hut», на картах Google — «Pizza Hutt Ulqin», Donji Štoj: местная пиццерия,
+    // не сеть (владелец, 03.10.2026). Pizza Hut в Черногории не найдена.
+    "node/12989476482": "местная «Pizza Hutt Ulqin», не сеть",
+  },
   chains: [
     { key: "dodo", name: "Dodo Pizza", segment: "pizza" },
     {

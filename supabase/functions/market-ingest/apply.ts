@@ -62,7 +62,7 @@ export async function applyIngest(
   try {
     let stats: Stats = {};
     if (p.source === "config") stats = await applyConfig(sb, country, p);
-    else if (p.source === "osm") stats = await applyOsm(sb, country, p.points);
+    else if (p.source === "osm") stats = await applyOsm(sb, country, p.points, p.rejected ?? []);
     else if (p.source === "dodo") {
       stats = await applyDodo(sb, country, p, today);
     } else if (p.source === "registry") {
@@ -202,8 +202,9 @@ async function applyOsm(
   sb: SupabaseClient,
   country: string,
   points: OsmPoint[],
+  rejected: OsmPoint[] = [],
 ): Promise<Stats> {
-  const chains = [...new Set(points.map((x) => x.chain))];
+  const chains = [...new Set([...points, ...rejected].map((x) => x.chain))];
   const existing = chains.length
     ? await allRows<ExistingLoc>(
       (from, to) =>
@@ -224,7 +225,13 @@ async function applyOsm(
   const isMirror = (e: typeof all[number]) =>
     e.source_kind === "osm" && e.verification === "unverified" &&
     samePlace(e, live.filter((x) => x.source_kind !== "osm"));
-  const mirrors = live.filter(isMirror).map((e) => e.id);
+  // Машинная точка на месте отсеянного объекта (ложный brand, исключение в конфиге) — не точка
+  // сети: убирается сразу. Если рядом есть и принятая точка той же сети, строку не трогаем.
+  const isWrong = (e: typeof all[number]) =>
+    e.source_kind === "osm" && e.verification === "unverified" &&
+    samePlace(e, rejected) && !samePlace(e, points);
+  const wrong = live.filter(isWrong).map((e) => e.id);
+  const mirrors = [...live.filter(isMirror).map((e) => e.id), ...wrong];
   for (let i = 0; i < mirrors.length; i += ID_BATCH) {
     await must(
       sb.from("mkt_locations").delete().in("id", mirrors.slice(i, i + ID_BATCH)),
@@ -313,6 +320,7 @@ async function applyOsm(
     matched: r.matched.length,
     new_candidates: fresh.length,
     maybe_closed: flagged,
+    removed_wrong: wrong.length,
   };
 }
 

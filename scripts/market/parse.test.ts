@@ -7,6 +7,7 @@ import {
   parseFinancialMetrics,
   parseNbsAverage,
   parseOverpass,
+  parseOverpassAll,
   srLatin,
 } from "./lib.ts";
 import {
@@ -389,6 +390,33 @@ Deno.test("parseOverpass: a wrong brand tag on another business is dropped; Cyri
     "node/4",
     "node/5",
   ]);
+});
+
+Deno.test("parseOverpassAll returns what it rejected: wrong brand tag and objects excluded in the config", () => {
+  const n = (id: number, tags: Record<string, string>) => ({
+    type: "node",
+    id,
+    lat: 41.9,
+    lon: 19.3,
+    tags,
+  });
+  const r = parseOverpassAll(
+    {
+      elements: [
+        n(1, { brand: "Pizza Hut", name: "Me Gutsa IBO pizza" }),
+        n(2, { amenity: "restaurant", name: "Pizza hut" }),
+        n(3, { brand: "Pizza Hut", name: "Pizza Hut Arena" }),
+      ],
+    },
+    { pizzahut: ["Pizza Hut"] },
+    { pizzahut: ["Pizza Hut"] },
+    { exclude: { "node/2": "местная пиццерия" } },
+  );
+  assertEquals(r.points.map((p) => p.osm_id), ["node/3"]);
+  assertEquals(r.rejected.map((p) => [p.osm_id, p.chain]), [[
+    "node/1",
+    "pizzahut",
+  ], ["node/2", "pizzahut"]]);
 });
 
 Deno.test("parseCompanyWall reads a Slovenian page: MŠ, Celotni prihodki, Število zaposlenih, euros as is", () => {

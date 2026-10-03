@@ -237,12 +237,29 @@ function nameFits(name: string | undefined, variants: string[]): boolean {
   return variants.some((v) => squash(v) !== "" && n.includes(squash(v)));
 }
 
+export type OverpassOpts = {
+  toLatin?: (s: string) => string;
+  /** OSM-объекты, которые не точки сети, хотя подписаны её именем: id («node/1») → причина. */
+  exclude?: Record<string, string>;
+};
+
 export function parseOverpass(
   j: { elements: OverpassEl[]; remark?: string },
   brands: Record<string, string[]>,
   names: Record<string, string[]> = {},
-  opts: { toLatin?: (s: string) => string } = {},
+  opts: OverpassOpts = {},
 ): OsmPoint[] {
+  return parseOverpassAll(j, brands, names, opts).points;
+}
+
+/** Точки сетей и отсеянные объекты: ложный тег brand и исключённые в конфиге. Отсеянные уходят
+ *  на сервер отдельно — машинная точка на их месте удаляется, а не ждёт три недели пропажи. */
+export function parseOverpassAll(
+  j: { elements: OverpassEl[]; remark?: string },
+  brands: Record<string, string[]>,
+  names: Record<string, string[]> = {},
+  opts: OverpassOpts = {},
+): { points: OsmPoint[]; rejected: OsmPoint[] } {
   if (j.remark && OVERPASS_FAILURE.test(j.remark)) {
     throw new Error(`overpass: ${j.remark.slice(0, 200)}`);
   }
@@ -298,34 +315,41 @@ export function parseOverpass(
     }
     return best?.name ?? null;
   };
-  return j.elements.flatMap((e): OsmPoint[] => {
-    if (e.tags?.place) return [];
-    const viaBrand = byBrand.get((e.tags?.brand ?? "").toLowerCase());
-    // Тег brand иногда ошибочно стоит на чужом заведении («Me Gutsa IBO pizza» с brand=Pizza Hut):
-    // латинское имя без названия сети — не точка сети. Кириллица не сверяется (Старбакс).
-    if (
-      viaBrand &&
-      !nameFits(e.tags?.name, [
-        ...brands[viaBrand],
-        ...(names[viaBrand] ?? []),
-        e.tags!.brand!,
-      ])
-    ) return [];
-    const chain = viaBrand ?? byName(e.tags?.name);
-    const lat = e.lat ?? e.center?.lat, lng = e.lon ?? e.center?.lon;
-    if (!chain || lat === undefined || lng === undefined) return [];
-    const street = [e.tags?.["addr:street"], e.tags?.["addr:housenumber"]]
-      .filter(Boolean).join(" ");
-    return [{
-      chain,
-      name: e.tags?.name ?? e.tags?.brand ?? chain,
-      lat,
-      lng,
-      city: cityOf(e.tags?.["addr:city"], lat, lng),
-      address: street || null,
-      osm_id: `${e.type}/${e.id}`,
-    }];
-  });
+  const found = j.elements.flatMap(
+    (e): Array<OsmPoint & { why: string | null }> => {
+      if (e.tags?.place) return [];
+      const viaBrand = byBrand.get((e.tags?.brand ?? "").toLowerCase());
+      // Тег brand иногда ошибочно стоит на чужом заведении («Me Gutsa IBO pizza» с brand=Pizza Hut):
+      // латинское имя без названия сети — не точка сети. Кириллица не сверяется (Старбакс).
+      const wrongBrand = viaBrand !== undefined &&
+        !nameFits(e.tags?.name, [
+          ...brands[viaBrand],
+          ...(names[viaBrand] ?? []),
+          e.tags!.brand!,
+        ]);
+      const chain = viaBrand ?? byName(e.tags?.name);
+      const lat = e.lat ?? e.center?.lat, lng = e.lon ?? e.center?.lon;
+      if (!chain || lat === undefined || lng === undefined) return [];
+      const osm_id = `${e.type}/${e.id}`;
+      const street = [e.tags?.["addr:street"], e.tags?.["addr:housenumber"]]
+        .filter(Boolean).join(" ");
+      return [{
+        chain,
+        name: e.tags?.name ?? e.tags?.brand ?? chain,
+        lat,
+        lng,
+        city: cityOf(e.tags?.["addr:city"], lat, lng),
+        address: street || null,
+        osm_id,
+        why: opts.exclude?.[osm_id] ?? (wrongBrand ? "brand" : null),
+      }];
+    },
+  );
+  const strip = ({ why: _w, ...p }: OsmPoint & { why: string | null }) => p;
+  return {
+    points: found.filter((p) => p.why === null).map(strip),
+    rejected: found.filter((p) => p.why !== null).map(strip),
+  };
 }
 
 /** Курс динара: у ЕЦБ ряда RSD нет (404), берём средний курс Национального банка Сербии за период
