@@ -737,11 +737,12 @@ async function toolAddKnowledge(
   const chunkGroupId = chunks.length > 1 ? crypto.randomUUID() : null;
 
   // Личность вызывающего — только из токена (tools/call перетирает поля личности в аргументах).
-  // Владелец ЛИЧНОЙ записи = вызывающий; воркспейс записи = воркспейс вызывающего.
+  // Автор записи (owner_id) = вызывающий — и у личной, и у общей (решение 03.10, #790: каждая
+  // запись помечена автором; added_by — канал, не человек). Воркспейс = воркспейс вызывающего.
   const scope = await callerScope(args.requesting_user_id);
   if (!scope) return NO_WORKSPACE_MESSAGE;
   const isPrivate = args.is_private === true;
-  const ownerId = isPrivate ? scope.userId : null;
+  const ownerId = scope.userId;
   const workspaceGroupId = scope.groupId;
   const [summaryEmbedding, entryMeta] = await Promise.all([
     embeddingOrNull(args.summary.slice(0, 8000)),
@@ -844,6 +845,7 @@ async function toolUploadFile(args: {
     entry_type: entryMeta.entry_type,
     entry_date: entryMeta.entry_date,
     group_id: workspaceGroupId,
+    owner_id: scope.userId, // автор, #790
   }).select("id").single();
 
   if (error) {
