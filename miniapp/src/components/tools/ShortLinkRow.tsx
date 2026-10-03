@@ -2,6 +2,7 @@
 import { useState, type FormEvent } from "react";
 import type { ShortLink, ShortLinkMeta } from "@/lib/api";
 import { RoyIcon } from "@/components/roy/icons";
+import { QrCard } from "./QrCard";
 
 // Строка списка коротких ссылок: название, автор и время, куда ведёт, переходы.
 // Править и убирать может автор или админ (can_manage считает сервер). Адрес назначения
@@ -31,6 +32,7 @@ export function ShortLinkRow({ link: l, dt, copied, onCopy, onSave, onArchive }:
   const [title, setTitle] = useState(l.title ?? "");
   const [note, setNote] = useState(l.note ?? "");
   const [saving, setSaving] = useState(false);
+  const [showQr, setShowQr] = useState(false);
 
   const save = async (ev: FormEvent) => {
     ev.preventDefault();
@@ -80,6 +82,10 @@ export function ShortLinkRow({ link: l, dt, copied, onCopy, onSave, onArchive }:
           className="shrink-0 rounded-[8px] border border-line px-2.5 py-1.5 text-ink" style={{ fontSize: 12 }}>
           {copied ? dt("Скопировано", "Copied") : dt("Копировать", "Copy")}
         </button>
+        <button type="button" onClick={() => setShowQr((v) => !v)} aria-pressed={showQr}
+          className={`shrink-0 rounded-[8px] border px-2.5 py-1.5 ${showQr ? "border-ink text-ink" : "border-line text-ink"}`} style={{ fontSize: 12 }}>
+          QR
+        </button>
         {l.can_manage && (
           <>
             <button type="button" onClick={() => setEditing(true)} aria-label={dt("Изменить", "Edit")}
@@ -93,6 +99,11 @@ export function ShortLinkRow({ link: l, dt, copied, onCopy, onSave, onArchive }:
           </>
         )}
       </div>
+      {showQr && (
+        <div className="mt-2.5">
+          <QrCard value={shortUrl(l.code)} fileName={l.title ?? l.code} />
+        </div>
+      )}
       {l.note && <p className="mt-1.5 whitespace-pre-wrap text-ink" style={{ fontSize: 13 }}>{l.note}</p>}
       <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-0.5 text-ink-soft" style={{ fontSize: 12 }}>
         <span>{l.owner_name} · {when(l.created_at)}</span>

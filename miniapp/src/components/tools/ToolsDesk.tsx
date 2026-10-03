@@ -5,6 +5,7 @@ import { RoyIcon } from "@/components/roy/icons";
 import type { RoyIconName } from "@/lib/royIcons";
 import { ShortLinkTool } from "./ShortLinkTool";
 import { PdfEditorPanel } from "./PdfEditorPanel";
+import { QrTool } from "./QrTool";
 
 // «Полезности» (решение владельца 2026-10-02): плитки небольших сервисов. Новый сервис = запись в
 // TOOLS + его компонент в TOOL_BODY. Плитки ведут себя как проекты на доске (решение владельца
@@ -12,7 +13,7 @@ import { PdfEditorPanel } from "./PdfEditorPanel";
 // сдвигались»): свёрнутая — плитка фиксированной ширины, раскрытая — на всю строку на своём месте,
 // остальные съезжают ниже; щелчок по шапке сворачивает. Раскрытых может быть несколько.
 
-type ToolId = "shortLinks" | "pdfEditor";
+type ToolId = "shortLinks" | "qr" | "pdfEditor";
 
 // PDF-редактор — форк BentoPDF (GarroV/swarm-pdf), Cloudflare Pages; файлы не покидают браузер.
 export const PDF_EDITOR_URL = "https://swarm-pdf.pages.dev/edit-pdf-text";
@@ -27,6 +28,12 @@ const TOOLS: Tool[] = [
     text: ["Длинная ссылка → короткая, для SMS и сообщений", "Long link → short one, for SMS and messages"],
   },
   {
+    id: "qr",
+    icon: "qr",
+    title: ["QR-код", "QR code"],
+    text: ["Адрес или текст → код для печати, PNG и SVG", "Link or text → a printable code, PNG and SVG"],
+  },
+  {
     id: "pdfEditor",
     icon: "pdf",
     title: ["PDF-редактор", "PDF editor"],
@@ -39,6 +46,7 @@ const TOOLS: Tool[] = [
 
 const TOOL_BODY: Record<ToolId, () => React.ReactNode> = {
   shortLinks: () => <ShortLinkTool />,
+  qr: () => <QrTool />,
   pdfEditor: () => <PdfEditorPanel url={PDF_EDITOR_URL} />,
 };
 
