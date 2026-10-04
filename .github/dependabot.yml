@@ -1,0 +1,12 @@
+# Actions в workflow закреплены по SHA (защита от подмены тега, см. tj-actions/changed-files,
+# CVE-2025-30066). Чтобы закреплённые версии не устаревали без исправлений, Dependabot раз в
+# месяц предлагает одну сгруппированную PR с новыми SHA.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    groups:
+      actions:
+        patterns: ["*"]

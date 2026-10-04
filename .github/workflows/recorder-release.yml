@@ -25,7 +25,7 @@ jobs:
     # каждый публикует свой ассет — отменять предыдущий нельзя, релиз останется без файла.
     timeout-minutes: 30   # SDK macOS 14 → бинарь с minos 13.0 запускается на 13/14/15+
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Build prebuilt .app (universal, macOS 13+)
         run: bash ./recorder/build-app-ci.sh
@@ -35,7 +35,7 @@ jobs:
         run: echo "build=$(tr -dc '0-9' < recorder/VERSION)" >> "$GITHUB_OUTPUT"
 
       - name: Publish release asset
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           tag_name: recorder-build-${{ steps.v.outputs.build }}
           name: SwarmRecorder build ${{ steps.v.outputs.build }} (prebuilt)
