@@ -75,13 +75,21 @@ async function importCompanies(sb: SupabaseClient, country: string, s: Snapshot)
 
 /** Ручные источники, которые залил этот импорт: страница показывает их возраст. */
 async function touchManualSources(sb: SupabaseClient, country: string, s: Snapshot): Promise<void> {
-  const feeds = [
-    s.locations.length ? "locations" : null,
-    s.companies.length ? "financials" : null,
-    s.prices.length ? "prices" : null,
-    s.facts.length ? "facts" : null,
-    Object.keys(s.editorial ?? {}).length ? "editorial" : null,
-  ].filter((f): f is string => f !== null);
+  await markManualFed(
+    sb,
+    country,
+    [
+      s.locations.length ? "locations" : null,
+      s.companies.length ? "financials" : null,
+      s.prices.length ? "prices" : null,
+      s.facts.length ? "facts" : null,
+      Object.keys(s.editorial ?? {}).length ? "editorial" : null,
+    ].filter((f): f is string => f !== null),
+  );
+}
+
+/** Отметить ручной источник страны свежим: импорт снимка и ручной ввод через MCP. */
+export async function markManualFed(sb: SupabaseClient, country: string, feeds: string[]): Promise<void> {
   if (!feeds.length) return;
   await must(
     sb.from("mkt_sources").upsert(
