@@ -1,6 +1,8 @@
 // Приём данных сборщиков «Анализа рынка» из GitHub Actions (workflow market-collect).
 // Только POST и только с токеном MARKET_INGEST_TOKEN: ключ service role в Actions не кладём,
-// у токена нет прав ни на что, кроме таблиц mkt_* через эту функцию.
+// у токена нет прав ни на что, кроме таблиц mkt_* через эту функцию. Решения админа (импорт
+// снимка, «принять все») — по отдельному MARKET_ADMIN_TOKEN, которого в Actions нет: утечка
+// токена сборщика из CI не даёт принимать решения за админа.
 // Линт просит короткое имя из карты импортов; см. пояснение в sprint-items.ts.
 // deno-lint-ignore-file no-import-prefix
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
@@ -13,6 +15,8 @@ const supabase = createClient(
   Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
 );
 const TOKEN = Deno.env.get("MARKET_INGEST_TOKEN") ?? "";
+const ADMIN_TOKEN = Deno.env.get("MARKET_ADMIN_TOKEN") ?? "";
+const ADMIN_SOURCES = new Set(["snapshot", "accept_new"]);
 
 /** Сравнение без утечки по времени; пустой ожидаемый токен не пускает никого. */
 export function sameSecret(given: string, expected: string): boolean {
@@ -27,6 +31,7 @@ export function sameSecret(given: string, expected: string): boolean {
 export async function handleIngest(
   req: Request,
   token = TOKEN,
+  adminToken = ADMIN_TOKEN,
 ): Promise<Response> {
   if (req.method !== "POST") {
     return new Response("Method not allowed", { status: 405 });
@@ -35,7 +40,9 @@ export async function handleIngest(
     /^Bearer /,
     "",
   );
-  if (!sameSecret(given, token)) {
+  const isCollector = sameSecret(given, token);
+  const isAdmin = sameSecret(given, adminToken);
+  if (!isCollector && !isAdmin) {
     return new Response("Unauthorized", { status: 401 });
   }
   const body = await req.json().catch(() => null);
@@ -44,6 +51,10 @@ export async function handleIngest(
     !body?.started_at
   ) {
     return new Response("Bad payload", { status: 400 });
+  }
+  // Каждый токен — только своя работа: сборщик не принимает решений, админ не льёт данные.
+  if (ADMIN_SOURCES.has(body.source) ? !isAdmin : !isCollector) {
+    return new Response("Forbidden", { status: 403 });
   }
   const admin = await adminAction(body);
   if (admin) return admin;
@@ -61,8 +72,8 @@ export async function handleIngest(
 }
 
 /** Решения админа без его входа: те же кнопки «Импорт снимка» и «Принять все» из «Источников и
- *  свежести», но по токену сборщика — чтобы страну можно было довести скриптом
- *  (scripts/market/admin.ts), а не руками в вебе. Права те же: только таблицы mkt_*. */
+ *  свежести», но по токену админа MARKET_ADMIN_TOKEN — чтобы страну можно было довести
+ *  скриптом (scripts/market/admin.ts), а не руками в вебе. Права те же: только таблицы mkt_*. */
 const COLLECTOR = 0; // decided_by для решений, принятых сборщиком, а не человеком
 
 async function adminAction(

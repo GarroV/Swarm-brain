@@ -46,11 +46,16 @@ export async function getJson<T = unknown>(
   return await r.json() as T;
 }
 
-export async function postIngest(payload: IngestPayload): Promise<unknown> {
+/** tokenVar — имя переменной с токеном: сборщик шлёт MARKET_INGEST_TOKEN, решения админа
+ *  (scripts/market/admin.ts) — MARKET_ADMIN_TOKEN. */
+export async function postIngest(
+  payload: IngestPayload,
+  tokenVar = "MARKET_INGEST_TOKEN",
+): Promise<unknown> {
   const url = Deno.env.get("MARKET_INGEST_URL"),
-    token = Deno.env.get("MARKET_INGEST_TOKEN");
+    token = Deno.env.get(tokenVar);
   if (!url || !token) {
-    throw new Error("нет MARKET_INGEST_URL / MARKET_INGEST_TOKEN");
+    throw new Error(`нет MARKET_INGEST_URL / ${tokenVar}`);
   }
   const r = await fetch(url, {
     method: "POST",

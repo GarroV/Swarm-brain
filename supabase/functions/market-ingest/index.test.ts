@@ -42,8 +42,8 @@ Deno.test("ingest rejects wrong method, wrong token and bad payload before touch
   assertEquals((await post("Bearer t0ken", "not json")).status, 400);
 });
 
-Deno.test("admin actions of the collector: token required, a broken snapshot is refused with details before the base", async () => {
-  const post = (auth: string, body: unknown) =>
+Deno.test("admin actions need the admin token: the collector token is refused, each token does only its own work", async () => {
+  const post = (auth: string, body: unknown, adminToken = "adm1n") =>
     handleIngest(
       new Request("http://x", {
         method: "POST",
@@ -51,18 +51,24 @@ Deno.test("admin actions of the collector: token required, a broken snapshot is 
         body: JSON.stringify(body),
       }),
       "t0ken",
+      adminToken,
     );
   const started_at = "2026-10-02T00:00:00Z";
+  const accept = { source: "accept_new", country: "HR", started_at };
+  const snapshot = { source: "snapshot", country: "HR", started_at, snapshot: { nonsense: true } };
+  assertEquals((await post("Bearer nope", accept)).status, 401);
+  // токен сборщика (лежит в Actions) решений не принимает
+  assertEquals((await post("Bearer t0ken", accept)).status, 403);
+  assertEquals((await post("Bearer t0ken", snapshot)).status, 403);
+  // админ не льёт данные сборщика
   assertEquals(
-    (await post("Bearer nope", { source: "accept_new", country: "HR", started_at })).status,
-    401,
+    (await post("Bearer adm1n", { source: "osm", country: "HR", started_at, failed: "x" })).status,
+    403,
   );
-  const bad = await post("Bearer t0ken", {
-    source: "snapshot",
-    country: "HR",
-    started_at,
-    snapshot: { nonsense: true },
-  });
+  // админ-токен не задан — решений не принимает никто
+  assertEquals((await post("Bearer ", accept, "")).status, 401);
+  assertEquals((await post("Bearer t0ken", accept, "")).status, 403);
+  const bad = await post("Bearer adm1n", snapshot);
   assertEquals(bad.status, 400);
   assert(Array.isArray((await bad.json()).details));
 });
