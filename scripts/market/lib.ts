@@ -47,7 +47,7 @@ export async function getJson<T = unknown>(
 }
 
 /** tokenVar — имя переменной с токеном: сборщик шлёт MARKET_INGEST_TOKEN, решения админа
- *  (scripts/market/admin.ts) — MARKET_ADMIN_TOKEN. */
+ *  (scripts/market/admin.ts) — SWARM_TOKEN, личный MCP-токен админа. */
 export async function postIngest(
   payload: IngestPayload,
   tokenVar = "MARKET_INGEST_TOKEN",

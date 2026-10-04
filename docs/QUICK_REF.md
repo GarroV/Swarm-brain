@@ -325,7 +325,6 @@ claude mcp add supabase-swarm -- npx -y @supabase/mcp-server-supabase@0.12.0 \
 | `BOT_NAME` | нет (дефолт `"bot"`) |
 | `MCP_AUTH_REQUIRED` | устарела с 2026-09-30 — `swarm-mcp` без токена отказывает всегда (`auth.ts`) |
 | `MARKET_INGEST_TOKEN` | да для сбора «Анализа рынка» (`market-ingest`; тот же токен — секрет Actions, адрес — переменная Actions `MARKET_INGEST_URL`) |
-| `MARKET_ADMIN_TOKEN` | нет; только для `scripts/market/admin.ts` (импорт снимка, «Принять все»). В Actions не класть, значение не совпадает с `MARKET_INGEST_TOKEN` |
 
 ---
 
