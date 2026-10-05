@@ -18,14 +18,15 @@ export function hasDraftNotes(m: { has_draft_notes?: boolean; draft_notes_md?: s
   return (m.draft_notes_md ?? "").trim().length > 0;
 }
 
+/** Имя в интерфейсе: бот встреч или рекордер на Mac. */
 export type RecordedBy = "scriba" | "bumblebee";
 
 /**
  * Чем записана встреча: ботом встреч (scriba) или рекордером на Mac (bumblebee). Решение владельца
  * 03.10.2026 «надо различать бамблби и скрибу» (#788): раньше подпись «bumblebee» стояла на всём.
  *
- * Источник истины — `recorded_by`: его ставит сервер, когда пишет стенограмму, — то есть это тот,
- * чья запись в итоге легла в базу. Пока стенограммы нет, но строку завёл бот (`agent_version`
+ * Источник истины — `recorded_by` (`bot` | `recorder`, нейтральные значения сервера): его ставит
+ * сервер, когда пишет стенограмму, — то есть это тот, чья запись в итоге легла в базу. Пока стенограммы нет, но строку завёл бот (`agent_version`
  * scriba-…), встречу пишет бот. Иначе — рекордер. Встреча не из рекордера/бота — null.
  */
 export function recordedByOf(m: {
@@ -34,6 +35,7 @@ export function recordedByOf(m: {
   agent_version?: string | null;
 }): RecordedBy | null {
   if (m.source !== "desktop-agent" && m.source !== "swarm-recorder") return null;
-  if (m.recorded_by === "scriba" || m.recorded_by === "bumblebee") return m.recorded_by;
+  if (m.recorded_by === "bot") return "scriba";
+  if (m.recorded_by === "recorder") return "bumblebee";
   return m.agent_version?.startsWith("scriba-") ? "scriba" : "bumblebee";
 }

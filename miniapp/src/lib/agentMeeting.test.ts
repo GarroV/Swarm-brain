@@ -27,8 +27,8 @@ Deno.test("ничего не известно — считаем, что не г
 
 Deno.test("recordedByOf: отметка сервера важнее того, кто завёл строку", () => {
   // Строку завёл бот, но его не впустили — в стенограмме запись рекордера.
-  assertEquals(recordedByOf({ source: "desktop-agent", agent_version: "scriba-2513", recorded_by: "bumblebee" }), "bumblebee");
-  assertEquals(recordedByOf({ source: "desktop-agent", agent_version: "0.1.0", recorded_by: "scriba" }), "scriba");
+  assertEquals(recordedByOf({ source: "desktop-agent", agent_version: "scriba-2513", recorded_by: "recorder" }), "bumblebee");
+  assertEquals(recordedByOf({ source: "desktop-agent", agent_version: "0.1.0", recorded_by: "bot" }), "scriba");
 });
 
 Deno.test("recordedByOf: без отметки — по тому, кто завёл строку", () => {
@@ -38,6 +38,6 @@ Deno.test("recordedByOf: без отметки — по тому, кто зав�
 });
 
 Deno.test("recordedByOf: встреча не из рекордера и не от бота — null", () => {
-  assertEquals(recordedByOf({ source: "granola", recorded_by: "scriba" }), null);
+  assertEquals(recordedByOf({ source: "granola", recorded_by: "bot" }), null);
   assertEquals(recordedByOf({ source: null }), null);
 });

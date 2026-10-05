@@ -394,9 +394,9 @@ export type AgentMeeting = {
   // Опционально: старые ответы списка его не отдавали; с 05.10.2026 приходит и в списке
   // GET /agent-meetings (нужно, чтобы опознать пустой слот бота встреч, #788), и в детали.
   summary_status?: "processing" | "done" | "failed";
-  // Чья запись в стенограмме (#788): scriba — бот встреч, bumblebee — рекордер на Mac; null — ещё не
+  // Чья запись в стенограмме (#788): bot — бот встреч, recorder — рекордер на Mac; null — ещё не
   // расшифровано. Подпись источника — через recordedByOf()/sourceLabel(), не напрямую.
-  recorded_by?: "scriba" | "bumblebee" | null;
+  recorded_by?: "bot" | "recorder" | null;
   // Кто завёл строку: у бота встреч — scriba-<сборка>.
   agent_version?: string | null;
   // Текст тезисов — только в ДЕТАЛИ. В списке вместо него признак наличия (issue #108).

@@ -1,20 +1,21 @@
--- Чья запись легла в стенограмму встречи: бота встреч (scriba) или рекордера на Mac (bumblebee).
+-- Чья запись легла в стенограмму встречи: бота встреч (bot) или рекордера на Mac (recorder).
+-- Значения нейтральные: имена бота и рекордера подставляет интерфейс.
 -- Бот ходит на встречу за человека, и по meetings.recorders (telegram_id человека) их записи
 -- неотличимы (решение владельца 03.10.2026, #788). Ставит обработчик в той же UPDATE, что пишет
 -- стенограмму (_shared/recorded-by.ts); null — запись не из рекордера/бота или ещё не расшифрована.
 alter table public.meetings
   add column if not exists recorded_by text
-  check (recorded_by in ('scriba', 'bumblebee'));
+  check (recorded_by in ('bot', 'recorder'));
 
 comment on column public.meetings.recorded_by is
-  'Чья запись в стенограмме: scriba (бот встреч) | bumblebee (рекордер на Mac). Ставит meeting-processor.';
+  'Чья запись в стенограмме: bot (бот встреч) | recorder (рекордер на Mac). Ставит meeting-processor.';
 
 -- Уже расшифрованные встречи — по источнику последней выгрузки (process_state.source:
 -- agent:… — бот, person:… — рекордер). Без источника — встречи до бота встреч: их писал рекордер.
 update public.meetings
 set recorded_by = case
-  when process_state ->> 'source' like 'agent:%' then 'scriba'
-  else 'bumblebee'
+  when process_state ->> 'source' like 'agent:%' then 'bot'
+  else 'recorder'
 end
 where source = 'desktop-agent'
   and transcript is not null

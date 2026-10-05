@@ -1,5 +1,6 @@
 // Список колонок — единый канон ENTRY_COLUMNS в entries-guard.ts (обязательный слой доступа
 // к entries). Здесь только то, что специфично для СПИСОЧНОГО ответа /meetings: урезание.
+import { BOT_PROFILE } from "../_shared/bot-profile.ts";
 
 // Форма ответа GET /meetings. Вынесено отдельно, чтобы решение «какие колонки уезжают
 // в браузер» было в одном месте и под тестом, а не растворялось в 2000-строчном роутере.
@@ -118,11 +119,11 @@ type SlotRow = {
  * Бот встреч заявил встречу, но так и не записал её (не впустили, закрыт гостевой вход), и сторож
  * пометил строку failed. Записи нет и не было — в черновиках она висела «запись есть, не удалось
  * обработать» с советом переобработать то, чего нет. Решение владельца 03.10.2026: «не надо пустые
- * встречи в базу вкидывать» (docs/decisions/2026-10-03-no-empty-meetings-bumblebee-vs-scriba.md, #788).
+ * встречи в базу вкидывать» (#788).
  * Запись рекордера, пришедшая в ту же строку, снимает признак: у неё появляются секунды.
  */
 export function isMissedBotSlot(row: SlotRow): boolean {
-  const byBot = typeof row.agent_version === "string" && row.agent_version.startsWith("scriba-");
+  const byBot = typeof row.agent_version === "string" && row.agent_version.startsWith(`${BOT_PROFILE.name}-`);
   const recorded = typeof row.recorded_seconds === "number" && row.recorded_seconds > 0;
   return byBot && !recorded && row.recorded_by == null && row.summary_status === "failed";
 }

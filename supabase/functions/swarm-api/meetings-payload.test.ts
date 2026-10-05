@@ -187,11 +187,11 @@ Deno.test("isMissedBotSlot: запись есть или слот ещё жив�
   const slot = { agent_version: "scriba-2513", recorded_seconds: null, recorded_by: null, summary_status: "failed" };
   // В строку бота легла запись рекордера.
   assertEquals(
-    isMissedBotSlot({ ...slot, recorded_seconds: 1010, recorded_by: "bumblebee", summary_status: "done" }),
+    isMissedBotSlot({ ...slot, recorded_seconds: 1010, recorded_by: "recorder", summary_status: "done" }),
     false,
   );
   assertEquals(isMissedBotSlot({ ...slot, recorded_seconds: 1010 }), false);
-  assertEquals(isMissedBotSlot({ ...slot, recorded_by: "scriba" }), false);
+  assertEquals(isMissedBotSlot({ ...slot, recorded_by: "bot" }), false);
   // Встреча идёт: сторож ещё не решил.
   assertEquals(isMissedBotSlot({ ...slot, summary_status: null }), false);
   // Сбой обработки у рекордера — это настоящая запись, её прятать нельзя.
