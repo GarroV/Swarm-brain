@@ -1,4 +1,5 @@
 "use client";
+import { PILL_GROUP_CLS, pillSegmentCls } from "@/components/ui/PropertyPill";
 import { useState, useEffect, useCallback, useContext } from "react";
 import { askMeeting, fetchAgentMeeting, fetchAgentMeetingNotes, patchAgentMeetingDraft, renameAgentMeeting, publishAgentMeeting, resummarizeAgentMeeting, deleteAgentMeeting } from "@/lib/api";
 import type { AgentMeeting, MeetingLiveNote } from "@/types";
@@ -403,13 +404,13 @@ function BasePill({ value, onChange }: { value: "workspace" | "personal"; onChan
     { id: "personal", label: dt("Личное", "Personal") },
   ] as const;
   return (
-    <div role="radiogroup" aria-label={dt("Куда сохранить", "Save to")} className="inline-flex rounded-full border border-line-2 bg-surface p-0.5">
+    <div role="radiogroup" aria-label={dt("Куда сохранить", "Save to")} className={PILL_GROUP_CLS}>
       {items.map((it) => {
         const on = it.id === value;
         return (
           <button key={it.id} type="button" role="radio" aria-checked={on} onClick={() => onChange(it.id)}
-            // Выбранное читается сразу: заливка основным цветом, невыбранное — прозрачное.
-            className={`rounded-full px-3.5 transition-colors ${on ? "bg-primary font-semibold text-primary-foreground shadow-sm" : "bg-transparent font-medium text-ink-soft hover:text-ink"}`}
+            // Мягкий сегмент, как статус в карточке задачи (владелец 05.10.2026).
+            className={`${pillSegmentCls(on)} px-3.5`}
             style={{ fontSize: 13, minHeight: 36 }}>
             {it.label}
           </button>

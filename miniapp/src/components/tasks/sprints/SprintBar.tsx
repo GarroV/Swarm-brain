@@ -1,4 +1,5 @@
 "use client";
+import { PILL_GROUP_CLS, pillSegmentCls } from "@/components/ui/PropertyPill";
 import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import type { Sprint, SprintCycle, SprintCycleDetail } from "@/types";
@@ -212,7 +213,7 @@ export function SprintBar(p: SprintBarProps) {
       {p.sprintTab && d && (
         <>
           {/* Вид запоминается у человека; канбан — только на компьютере (D003). */}
-          <span className="inline-flex overflow-hidden rounded-full border border-line-2 bg-surface">
+          <span className={PILL_GROUP_CLS}>
             {(["list", "kanban"] as const).map((v) => {
               const off = v === "kanban" && p.kanbanDisabled;
               const on = p.view === v;
@@ -229,14 +230,7 @@ export function SprintBar(p: SprintBarProps) {
                       "Kanban is desktop only",
                     )
                     : undefined}
-                  className={cn(
-                    "h-[28px] border-r border-line-2 px-3 font-medium transition-colors last:border-r-0",
-                    on
-                      ? "bg-primary font-semibold text-primary-foreground"
-                      : off
-                      ? "text-ink-mute"
-                      : "text-ink-soft hover:bg-surface-2",
-                  )}
+                  className={cn(pillSegmentCls(on), "sm:min-h-[26px] px-3")}
                   style={{ fontSize: 12.5 }}
                 >
                   {v === "list" ? dt("Список", "List") : dt("Канбан", "Kanban")}
