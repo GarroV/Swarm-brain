@@ -283,6 +283,7 @@ describe("оркестратор", () => {
       await orchestrator.startForMeeting(MEET, "meet", 744, {
         calendarKey: "evt-1:2026-09-28",
         startsAt: "2026-09-28T10:00:00.000Z",
+        title: "Качество агрегаторы",
       });
 
       const spec = engine.specs[0];
@@ -290,6 +291,7 @@ describe("оркестратор", () => {
         expect.arrayContaining([
           "SCRIBA_CALENDAR_KEY=evt-1:2026-09-28",
           "SCRIBA_CALENDAR_STARTS_AT=2026-09-28T10:00:00.000Z",
+          "SCRIBA_CALENDAR_TITLE=Качество агрегаторы",
         ]),
       );
       expect(spec?.env.some((line) => line.startsWith("SCRIBA_INVITE_"))).toBe(false);

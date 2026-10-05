@@ -218,6 +218,7 @@ export async function publishDraftMeeting(
           attendees: (meeting as { attendees?: unknown }).attendees ??
             baseMeta.attendees ?? [],
           identity_key: (meeting.identity_key as string | null) ?? null,
+          recorded_by: (meeting.recorded_by as string | null | undefined) ?? null,
           superseded: {
             at: new Date().toISOString(),
             by_telegram_id: opts.telegramId,
@@ -270,6 +271,8 @@ export async function publishDraftMeeting(
         confirmed: true,
         attendees: (meeting as { attendees?: unknown }).attendees ?? [],
         identity_key: (meeting.identity_key as string | null) ?? null,
+        // Чья запись: бот встреч или рекордер (_shared/recorded-by.ts, #788) — подпись источника в UI.
+        recorded_by: (meeting.recorded_by as string | null | undefined) ?? null,
       },
       countries,
       entry_date: entryDate,

@@ -61,6 +61,13 @@ describe("calendarClaim", () => {
     });
     expect(claim).not.toHaveProperty("invite_id");
     expect(claim).not.toHaveProperty("join_url");
+    expect(claim).not.toHaveProperty("title");
+  });
+
+  it("несёт название события: без него сервер называет встречу «участник — дата»", () => {
+    const claim = calendarClaim({ version: 3, calendar: { ...CALENDAR, title: "Weekly" } });
+
+    expect(claim.title).toBe("Weekly");
   });
 });
 

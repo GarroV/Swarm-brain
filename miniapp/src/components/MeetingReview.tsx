@@ -11,6 +11,7 @@ import { applyAskAnswerToText } from "@/lib/tezisyLines";
 import { useDt, useRoyNav } from "@/components/roy/nav";
 import { useConfirm } from "@/components/ui/confirm";
 import { hasSeveralOwners, canDeleteDraft } from "@/lib/draftOwners";
+import { recordedByOf } from "@/lib/agentMeeting";
 
 type Props = { id: string; onClose: () => void; onChanged?: () => void };
 
@@ -289,7 +290,7 @@ export function MeetingReview({ id, onClose, onChanged }: Props) {
       <div className="flex-1 overflow-y-auto px-5 pb-6">
         <div className="mb-2 flex flex-wrap items-center gap-2 pt-1">
           <span className="inline-flex items-center gap-1.5 font-semibold" style={{ fontSize: 12, color: "var(--meet-ink)", background: "var(--meet-soft)", borderRadius: 8, padding: "3px 9px" }}>
-            <RoyIcon name="meet" size={12} strokeWidth={1.9} /> bumblebee
+            <RoyIcon name="meet" size={12} strokeWidth={1.9} /> {recordedByOf(meeting) ?? "bumblebee"}
           </span>
           {published
             ? <span className="inline-flex items-center gap-1 font-semibold" style={{ fontSize: 12, color: "var(--status-done)" }}><RoyIcon name="check" size={12} strokeWidth={2.2} /> {dt("В базе", "In the base")}</span>

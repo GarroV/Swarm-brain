@@ -71,7 +71,7 @@ export function MeetingsDesk() {
       : periodBounds(f.period);
     return drafts.filter((m) => {
       if (q && !(m.title ?? "").toLowerCase().includes(q)) return false;
-      if (f.sources.length && !f.sources.includes(sourceLabel(m.source))) return false;
+      if (f.sources.length && !f.sources.includes(sourceLabel(m))) return false;
       const day = m.started_at?.slice(0, 10);
       if (bounds && (!day || day < bounds.from || day > bounds.to)) return false;
       return true;
@@ -84,7 +84,7 @@ export function MeetingsDesk() {
     return by;
   }, [tasks]);
 
-  const sources = [...new Set([...all.map((e) => sourceLabel(e.source)), ...drafts.map((m) => sourceLabel(m.source))])].sort();
+  const sources = [...new Set([...all.map((e) => sourceLabel(e)), ...drafts.map((m) => sourceLabel(m))])].sort();
   const people = [...new Set(all.map(personOf).filter(Boolean))].sort();
   const total = all.length + drafts.length;
   const count = shown.length + shownDrafts.length;
@@ -168,7 +168,7 @@ export function MeetingsDesk() {
               <EntryRow key={e.id} e={e} tasks={taskCount.get(e.id) ?? 0} state="pending"
                 onOpen={() => push({ view: "meetingDetail", params: { id: e.id } })} />
             ))}
-            <Section title={dt("Черновики bumblebee", "bumblebee drafts")} sub={dt("запись есть, тезисов ещё нет", "recorded, no notes yet")} n={shownDrafts.length} />
+            <Section title={dt("Черновики записей", "Recording drafts")} sub={dt("запись есть, тезисов ещё нет", "recorded, no notes yet")} n={shownDrafts.length} />
             {shownDrafts.map((m) => <DraftRow key={m.id} m={m} onOpen={() => push({ view: "meetingReview", params: { id: m.id } })} />)}
             <Section title={dt("Все встречи", "All meetings")} n={rest.length} />
             {rest.map((e) => (
@@ -244,7 +244,7 @@ function EntryRow({ e, tasks, state, onOpen }: { e: Entry; tasks: number; state:
       </div>
       <div className="px-2 text-ink-soft">{fmtDay(meetingDay(e), dt("ru-RU", "en-GB"))}</div>
       <div className="flex min-w-0 items-center gap-1 overflow-hidden px-2">
-        <Tag>{sourceLabel(e.source)}</Tag>
+        <Tag>{sourceLabel(e)}</Tag>
         {(e.countries ?? []).slice(0, 3).map((c) => <Tag key={c} mono>{countryCode(c)}</Tag>)}
       </div>
       <div className="px-3 text-right font-mono text-ink-soft" style={{ fontSize: 12 }}>
@@ -263,7 +263,7 @@ function DraftRow({ m, onOpen }: { m: AgentMeeting; onOpen: () => void }) {
         <span className="truncate text-ink">{m.title ?? dt("Запись без названия", "Untitled recording")}</span>
       </div>
       <div className="px-2 text-ink-soft">{fmtDay(m.started_at, dt("ru-RU", "en-GB"))}</div>
-      <div className="px-2"><Tag>{sourceLabel(m.source)}</Tag></div>
+      <div className="px-2"><Tag>{sourceLabel(m)}</Tag></div>
       <div className="px-3 text-right text-ink-mute">—</div>
     </RowShell>
   );

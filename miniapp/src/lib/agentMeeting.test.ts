@@ -1,6 +1,6 @@
 // deno test --allow-read miniapp/src/lib/agentMeeting.test.ts
 import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import { hasDraftNotes } from "./agentMeeting.ts";
+import { hasDraftNotes, recordedByOf } from "./agentMeeting.ts";
 
 Deno.test("списочная форма: читаем флаг has_draft_notes", () => {
   assertEquals(hasDraftNotes({ has_draft_notes: true }), true);
@@ -23,4 +23,21 @@ Deno.test("флаг приоритетнее текста: в списке те�
 
 Deno.test("ничего не известно — считаем, что не готово (fail-closed, показываем «готовим…»)", () => {
   assertEquals(hasDraftNotes({}), false);
+});
+
+Deno.test("recordedByOf: отметка сервера важнее того, кто завёл строку", () => {
+  // Строку завёл бот, но его не впустили — в стенограмме запись рекордера.
+  assertEquals(recordedByOf({ source: "desktop-agent", agent_version: "scriba-2513", recorded_by: "recorder" }), "bumblebee");
+  assertEquals(recordedByOf({ source: "desktop-agent", agent_version: "0.1.0", recorded_by: "bot" }), "scriba");
+});
+
+Deno.test("recordedByOf: без отметки — по тому, кто завёл строку", () => {
+  assertEquals(recordedByOf({ source: "desktop-agent", agent_version: "scriba-2513" }), "scriba");
+  assertEquals(recordedByOf({ source: "desktop-agent", agent_version: "0.1.0", recorded_by: null }), "bumblebee");
+  assertEquals(recordedByOf({ source: "swarm-recorder" }), "bumblebee");
+});
+
+Deno.test("recordedByOf: встреча не из рекордера и не от бота — null", () => {
+  assertEquals(recordedByOf({ source: "granola", recorded_by: "bot" }), null);
+  assertEquals(recordedByOf({ source: null }), null);
 });
