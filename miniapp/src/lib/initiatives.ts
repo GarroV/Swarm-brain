@@ -118,13 +118,19 @@ export function sprintKpi(
 }
 
 /** Порядок внутри уровня: по имени, безымянная группа («Общее», «Без направления») — с краю. */
+// Числа в названии сравниваются как числа: инициативы нумеруют («1.», «2.», … «14.»), и
+// строковое сравнение ставило «14.» раньше «2.» (владелец 05.10.2026: «от 1 по нарастающей»).
+function byNumberedName(a: string, b: string): number {
+  return a.localeCompare(b, undefined, { numeric: true });
+}
+
 function byName(
   a: { project: Project | null },
   b: { project: Project | null },
 ): number {
   if (a.project === null) return -1;
   if (b.project === null) return 1;
-  return a.project.name.localeCompare(b.project.name);
+  return byNumberedName(a.project.name, b.project.name);
 }
 
 /**
@@ -189,7 +195,7 @@ export function buildBoard<T extends BoardRow>(
   directions.sort((a, b) => {
     if (a.project === null) return 1;
     if (b.project === null) return -1;
-    return a.project.name.localeCompare(b.project.name);
+    return byNumberedName(a.project.name, b.project.name);
   });
   return directions;
 }
@@ -232,7 +238,7 @@ export function buildPeopleBoard<T extends BoardRow & { assignees: string[] }>(
   nodes.sort((a, b) => {
     if (a.project === null) return 1;
     if (b.project === null) return -1;
-    return a.project.name.localeCompare(b.project.name);
+    return byNumberedName(a.project.name, b.project.name);
   });
   return nodes;
 }

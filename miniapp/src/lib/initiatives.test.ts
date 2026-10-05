@@ -307,3 +307,14 @@ Deno.test("шапка: без списка снятых — как раньше 
     0,
   ]);
 });
+
+Deno.test("порядок: номера в названиях идут по возрастанию — «2.» раньше «14.»", () => {
+  const groups = [
+    project("g14", "14. Gemba"),
+    project("g2", "2. Аудиты"),
+    project("g1", "1. Рейтинги"),
+    project("g18", "18. Рынки"),
+  ];
+  const board = buildBoard(groups.map((g) => item(`t-${g.id}`, g.id)), groups);
+  assertEquals(board.map((d) => d.project?.id), ["g1", "g2", "g14", "g18"]);
+});
