@@ -184,3 +184,37 @@ Deno.test("resolveDrop: заголовок — всегда перенос, ре
     { kind: "move", projectId: "g" },
   );
 });
+
+Deno.test("resolveDrop: подзадачу на заголовок своей группы — отвязать, задача встаёт отдельно (#807)", () => {
+  // Перенос отвязывает подзадачу от родителя (moveWithKids снимает parent_id).
+  assertEquals(
+    resolveDrop(
+      dragged({ projectId: "g", parentId: "b" }),
+      { kind: "header", projectId: "g" },
+      "group",
+      ALL,
+    ),
+    { kind: "move", projectId: "g" },
+  );
+  assertEquals(
+    resolveDrop(
+      dragged({ projectId: null, parentId: "b" }),
+      { kind: "header", projectId: null },
+      "group",
+      ALL,
+    ),
+    { kind: "move", projectId: null },
+  );
+});
+
+Deno.test("resolveDrop: обычную задачу на заголовок своей группы — ничего", () => {
+  assertEquals(
+    resolveDrop(
+      dragged({ projectId: "g" }),
+      { kind: "header", projectId: "g" },
+      "group",
+      ALL,
+    ),
+    { kind: "none" },
+  );
+});
