@@ -320,39 +320,52 @@ export function MeetingReview({ id, onClose, onChanged }: Props) {
         )}
 
         {!published && !editing && !editingTitle && (
-          // Публикация и правка — одним рядом над текстом (решение владельца 2026-09-30): куда
-          // сохранить — пилюлей, рядом «Сохранить»; раньше это была отдельная плашка внизу.
-          <div className="mb-4 flex flex-wrap items-center gap-2">
-            {notesReady && (
-              <>
-                {teamOnly ? (
-                  // Не кнопка: выбора нет — это факт о встрече, поэтому без рамки и мелким текстом.
-                  <span className="inline-flex items-center gap-1.5 text-ink-soft" style={{ fontSize: 12.5 }}
-                    title={dt("На встрече были другие участники SWARM, поэтому она уходит в базу команды.", "Other SWARM members attended, so it goes to the team base.")}>
-                    <RoyIcon name="team" size={14} strokeWidth={1.9} />
-                    {dt("Общая · в команду", "Shared · team")}
-                  </span>
-                ) : (
-                  <BasePill value={base} onChange={setBase} />
-                )}
-                {oneOnOne && base === "personal" && (
-                  <span className="text-ink-soft" style={{ fontSize: 12 }}>
-                    {oneOnOne.partner_name
-                      ? dt(`Видно только вам и ${oneOnOne.partner_name}`, `Visible only to you and ${oneOnOne.partner_name}`)
-                      : dt("Видно только вам и второму участнику", "Visible only to you and the other participant")}
-                  </span>
-                )}
-                <button type="button" onClick={handlePublish} disabled={publishing} aria-busy={publishing}
-                  className="inline-flex items-center gap-1.5 rounded-full bg-primary px-4 font-semibold text-primary-foreground transition-transform active:scale-[0.96] disabled:opacity-60"
-                  style={{ fontSize: 13, minHeight: 40 }}>
-                  {publishing ? <Spinner /> : <RoyIcon name="check" size={15} strokeWidth={2.2} />}
-                  {publishing ? dt("Сохраняю…", "Saving…") : dt("Сохранить", "Save")}
+          // Публикация и правка — одним рядом над текстом (решение владельца 2026-09-30). Размеры —
+          // норма витрины (30px на десктопе, 40px тач-цель на телефоне), вид — как охват задач (LensToggle), ничего не меняет ширину при
+          // переключении «Команда/Личное», а подсказка о видимости — своей строкой под рядом.
+          <div className="mb-4">
+            <div className="flex flex-wrap items-center gap-1.5">
+              {notesReady && (
+                <>
+                  {teamOnly ? (
+                    // Не кнопка: выбора нет — это факт о встрече, поэтому без рамки и мелким текстом.
+                    <span className="inline-flex items-center gap-1.5 text-ink-soft" style={{ fontSize: 12.5 }}
+                      title={dt("На встрече были другие участники SWARM, поэтому она уходит в базу команды.", "Other SWARM members attended, so it goes to the team base.")}>
+                      <RoyIcon name="team" size={14} strokeWidth={1.9} />
+                      {dt("Общая · в команду", "Shared · team")}
+                    </span>
+                  ) : (
+                    <BasePill value={base} onChange={setBase} />
+                  )}
+                  <button type="button" onClick={handlePublish} disabled={publishing} aria-busy={publishing}
+                    className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap h-10 rounded-full border border-transparent bg-primary px-3.5 lg:h-[30px] font-semibold text-primary-foreground transition-transform active:scale-[0.96] disabled:opacity-60"
+                    style={{ fontSize: 12.5 }}>
+                    {publishing ? <Spinner /> : <RoyIcon name="check" size={14} strokeWidth={2.2} />}
+                    {publishing ? dt("Сохраняю…", "Saving…") : dt("Сохранить", "Save")}
+                  </button>
+                </>
+              )}
+              {canRename && <Chip icon="pencil" label={dt("Название", "Title")} onClick={() => { setTitleDraft(meeting.title ?? ""); setEditingTitle(true); }} />}
+              {notesReady && <Chip icon="pencil" label={dt("Тезисы", "Summary")} onClick={() => { setEditing(true); setView("tez"); }} />}
+              {canDeleteDraft(meeting, me?.telegram_id) && !deleting && (
+                <button type="button" onClick={handleDelete} aria-label={dt("Удалить черновик", "Delete draft")} title={dt("Удалить черновик", "Delete draft")}
+                  className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full transition-colors lg:h-[30px] lg:w-[30px] hover:bg-surface-2 active:scale-[0.94]"
+                  style={{ color: "var(--pri-high)" }}>
+                  <RoyIcon name="trash" size={16} strokeWidth={1.9} />
                 </button>
-              </>
+              )}
+            </div>
+            {notesReady && !teamOnly && (
+              <p className="mt-1.5 text-ink-mute" style={{ fontSize: 12 }}>
+                {base === "workspace"
+                  ? dt("Увидит вся команда", "The whole team will see it")
+                  : oneOnOne?.partner_name
+                    ? dt(`Видно только вам и ${oneOnOne.partner_name}`, `Visible only to you and ${oneOnOne.partner_name}`)
+                    : oneOnOne
+                      ? dt("Видно только вам и второму участнику", "Visible only to you and the other participant")
+                      : dt("Видно только вам", "Visible only to you")}
+              </p>
             )}
-            {canRename && <Chip icon="pencil" label={dt("Название", "Title")} onClick={() => { setTitleDraft(meeting.title ?? ""); setEditingTitle(true); }} />}
-            {notesReady && <Chip icon="pencil" label={dt("Тезисы", "Summary")} onClick={() => { setEditing(true); setView("tez"); }} />}
-            {canDeleteDraft(meeting, me?.telegram_id) && !deleting && <Chip icon="trash" danger label={dt("Удалить", "Delete")} onClick={handleDelete} />}
           </div>
         )}
 
@@ -402,14 +415,14 @@ function BasePill({ value, onChange }: { value: "workspace" | "personal"; onChan
     { id: "personal", label: dt("Личное", "Personal") },
   ] as const;
   return (
-    <div role="radiogroup" aria-label={dt("Куда сохранить", "Save to")} className="inline-flex rounded-full border border-line-2 bg-surface p-0.5">
+    <div role="radiogroup" aria-label={dt("Куда сохранить", "Save to")} className="inline-flex shrink-0 gap-[3px] rounded-full border border-line bg-surface-2 p-[3px]">
       {items.map((it) => {
         const on = it.id === value;
         return (
           <button key={it.id} type="button" role="radio" aria-checked={on} onClick={() => onChange(it.id)}
-            // Выбранное читается сразу: заливка основным цветом, невыбранное — прозрачное.
-            className={`rounded-full px-3.5 transition-colors ${on ? "bg-primary font-semibold text-primary-foreground shadow-sm" : "bg-transparent font-medium text-ink-soft hover:text-ink"}`}
-            style={{ fontSize: 13, minHeight: 36 }}>
+            // Как охват в задачах: насыщенность одна у обеих половин, иначе ширина прыгает при выборе.
+            className={`h-8 whitespace-nowrap rounded-full px-3 font-semibold lg:h-[22px] transition-colors ${on ? "bg-surface text-ink shadow-[0_1px_4px_rgba(27,32,40,.08)]" : "text-ink-soft hover:text-ink"}`}
+            style={{ fontSize: 12.5 }}>
             {it.label}
           </button>
         );
@@ -419,12 +432,12 @@ function BasePill({ value, onChange }: { value: "workspace" | "personal"; onChan
 }
 
 // Кнопка-чип верхнего ряда — та же форма, что «Сохранить»: круглая, 40px.
-function Chip({ icon, label, onClick, danger }: { icon: RoyIconName; label: string; onClick: () => void; danger?: boolean }) {
+function Chip({ icon, label, onClick }: { icon: RoyIconName; label: string; onClick: () => void }) {
   return (
     <button type="button" onClick={onClick}
-      className="inline-flex items-center gap-1.5 rounded-full border px-4 font-semibold transition-transform active:scale-[0.96]"
-      style={{ fontSize: 13, minHeight: 40, borderColor: "var(--line-2)", color: danger ? "var(--pri-high)" : "var(--accent-ink)" }}>
-      <RoyIcon name={icon} size={15} strokeWidth={1.9} />
+      className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap h-10 rounded-full border border-line bg-surface-2 px-3 lg:h-[30px] font-semibold transition-colors hover:bg-surface active:scale-[0.96]"
+      style={{ fontSize: 12.5, color: "var(--accent-ink)" }}>
+      <RoyIcon name={icon} size={14} strokeWidth={1.9} />
       {label}
     </button>
   );
