@@ -98,6 +98,17 @@ describe("readMeetingConfig — событие календаря (T100)", () =>
     });
   });
 
+  it("название события доезжает до заявки контейнера", () => {
+    const config = readMeetingConfig({
+      ...BASE,
+      [MEETING_ENV.calendarKey]: "evt-1:2026-09-28",
+      [MEETING_ENV.calendarStartsAt]: "2026-09-28T10:00:00.000Z",
+      [MEETING_ENV.calendarTitle]: "Качество агрегаторы",
+    });
+
+    expect(config.calendar?.title).toBe("Качество агрегаторы");
+  });
+
   it.each([MEETING_ENV.calendarKey, MEETING_ENV.calendarStartsAt])(
     "половина пары (только %s) — отказ на старте",
     (name) => {

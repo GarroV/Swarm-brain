@@ -58,6 +58,11 @@ export interface CalendarReference {
    * Начало встречи по календарю: с ним заявка выглядит как заявка рекордера на ту же встречу.
    */
   readonly startsAt: string;
+  /**
+   * Название события в календаре. Без него сервер называет встречу «участник — дата», и в
+   * очереди вычитки календарная встреча бота неотличима от ручной записи.
+   */
+  readonly title?: string;
 }
 
 /**
@@ -77,6 +82,7 @@ export function calendarClaim(input: {
     identity_kind: "calendar",
     identity_key: input.calendar.calendarKey,
     started_at: input.calendar.startsAt,
+    ...(input.calendar.title !== undefined && { title: input.calendar.title }),
     agent_version: `scriba-${String(input.version)}`,
     recorded_seconds: 0,
   };

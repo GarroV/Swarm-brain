@@ -171,6 +171,7 @@ function basisEnvironment(basis: MeetingBasis | null): Record<string, string> {
     return {
       [MEETING_ENV.calendarKey]: basis.calendarKey,
       [MEETING_ENV.calendarStartsAt]: basis.startsAt,
+      ...(basis.title !== undefined && { [MEETING_ENV.calendarTitle]: basis.title }),
     };
   }
   return { [MEETING_ENV.inviteId]: basis.id, [MEETING_ENV.inviteJoinUrl]: basis.joinUrl };
