@@ -253,7 +253,7 @@ export function SprintBar(p: SprintBarProps) {
               )}
             >
               <RoyIcon name="plus" size={12} strokeWidth={2} />
-              {dt("Набрать состав", "Pick tasks")}
+              {dt("Добавить задачи из проектов", "Add tasks from projects")}
               <span className="font-mono text-ink-mute">{p.poolCount}</span>
             </ToolbarButton>
           )}

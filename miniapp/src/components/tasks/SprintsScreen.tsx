@@ -46,6 +46,7 @@ import { SprintTaskPool } from "@/components/tasks/SprintTaskPool";
 import { SprintReport } from "@/components/tasks/SprintReport";
 import { TaskModal } from "@/components/TaskModal";
 import { RoyIcon } from "@/components/roy/icons";
+import { PILL_BTN } from "./sprints/atoms";
 import { useConfirm } from "@/components/ui/confirm";
 import { buildQuickAddInput } from "@/lib/quickAddTask";
 import { poolCandidates, projectLabel } from "@/lib/sprintPool";
@@ -346,7 +347,21 @@ export function SprintsScreen() {
     items,
     withdrawn,
   ]);
-  const board = useMemo(() => buildBoard(items, projects), [items, projects]);
+  // Пустые группы задач пространства видны в живом спринте: «Добавить группу» создаёт группу
+  // до первой задачи, и без этого бросить в неё было бы некуда. Принятый спринт — слепок.
+  const board = useMemo(
+    () =>
+      buildBoard(
+        items,
+        projects,
+        accepted
+          ? []
+          : projects.filter((p) =>
+            p.sprint_group === true && p.sprint_id === space && p.parent_id === null
+          ),
+      ),
+    [items, projects, accepted, space],
+  );
   // Вторая группировка того же состава — по людям. Ради неё был отдельный экран сверки;
   // после переезда отметок в строку (владелец 19.09.2026) это переключатель внутри списка:
   // на встрече идут по человеку, в работе — по инициативе.
@@ -692,8 +707,8 @@ export function SprintsScreen() {
     } catch (e) {
       setErr(
         e instanceof Error ? e.message : dt(
-          "Не удалось сохранить инициативу",
-          "Failed to save the initiative",
+          "Не удалось сохранить группу",
+          "Failed to save the group",
         ),
       );
     }
@@ -711,8 +726,8 @@ export function SprintsScreen() {
           <>
             <p>
               {dt(
-                "1. Нажмите «Набрать состав» в полосе сверху и отметьте задачи галочками — появится «Добавить в спринт».",
-                "1. Press “Pick tasks” in the bar above and tick the tasks — an “Add to sprint” button appears.",
+                "1. Нажмите «Добавить задачи из проектов» в полосе сверху и отметьте задачи галочками — появится «Добавить в спринт».",
+                "1. Press “Add tasks from projects” in the bar above and tick the tasks — an “Add to sprint” button appears.",
               )}
             </p>
             <p>
@@ -1069,6 +1084,17 @@ export function SprintsScreen() {
                           <span className="font-semibold text-ink" style={{ fontSize: 13 }}>
                             {dt("Состав", "Tasks")} · <span className="font-mono">{items.length}</span>
                           </span>
+                          {!accepted && !byPeople && (
+                            <button
+                              type="button"
+                              className={PILL_BTN}
+                              disabled={sprintGroups.grouping.busy}
+                              onClick={sprintGroups.grouping.onAddGroup}
+                            >
+                              <RoyIcon name="plus" size={12} strokeWidth={2} />
+                              {dt("Добавить группу", "Add group")}
+                            </button>
+                          )}
                           <GroupingToggle
                             value={grouping}
                             onChange={setGrouping}

@@ -9,6 +9,7 @@ import { isBareDirection } from "@/lib/initiatives";
 import { RoyIcon } from "@/components/roy/icons";
 import { useDt } from "@/components/roy/nav";
 import { fmtDay } from "./format";
+import { PILL_BTN } from "./atoms";
 import {
   type RowDnd,
   type RowHandlers,
@@ -81,28 +82,22 @@ function GroupControls({ group, grouping }: {
   grouping: GroupingProps;
 }) {
   const dt = useDt();
-  const btn =
-    "rounded-[6px] border border-line bg-surface px-1.5 py-0.5 leading-none text-ink-soft transition-colors hover:text-ink disabled:opacity-50";
   return (
-    <span
-      // На телефоне — своей строкой под названием: в одну строку с ним кнопки уезжали за край
-      // экрана (замерено на 390 px: таблица шире экрана, а кнопки жались к её правому краю), и нажать «Распустить» было нельзя.
-      className="flex shrink-0 basis-full flex-wrap items-center justify-start gap-1 pl-8 pr-2 pb-1.5 lg:justify-end transition-opacity lg:basis-auto lg:pb-0 lg:pl-0 lg:opacity-0 lg:group-hover/head:opacity-100 lg:focus-within:opacity-100"
-      style={{ fontSize: 11.5 }}
-    >
+    <span // У названия (владелец 05.10.2026: «настройки группы надо передвинуть к названию»). На
+     // телефоне — своей строкой под названием: в одну строку кнопки уезжали за край экрана.
+    className="order-last flex shrink-0 basis-full flex-wrap items-center gap-1.5 pb-2 pl-8 pr-2 transition-opacity lg:order-none lg:basis-auto lg:pb-0 lg:pl-0 lg:opacity-0 lg:group-hover/head:opacity-100 lg:focus-within:opacity-100">
       <span
-        className="mr-1 hidden rounded-[5px] border border-dashed border-line px-1.5 py-0.5 text-ink-mute lg:inline"
-        style={{ fontSize: 10.5 }}
+        className="inline-flex h-[30px] items-center rounded-full border border-dashed border-line-2 px-3 text-[13px] text-ink-mute"
         title={dt(
-          "Группа спринта: на доске «Проекты» её нет, пока не нажмёте «В проекты»",
-          "Sprint group: not on the Projects board until you press “To projects”",
+          "Группа задач: на доске «Проекты» её нет, пока не нажмёте «В проекты»",
+          "Task group: not on the Projects board until you press “To projects”",
         )}
       >
-        {dt("группа спринта", "sprint group")}
+        {dt("группа задач", "task group")}
       </span>
       <button
         type="button"
-        className={btn}
+        className={PILL_BTN}
         disabled={grouping.busy}
         onClick={() => grouping.onRename(group)}
       >
@@ -110,7 +105,7 @@ function GroupControls({ group, grouping }: {
       </button>
       <button
         type="button"
-        className={btn}
+        className={PILL_BTN}
         disabled={grouping.busy}
         onClick={() => grouping.onPromote(group)}
       >
@@ -118,7 +113,7 @@ function GroupControls({ group, grouping }: {
       </button>
       <button
         type="button"
-        className={btn}
+        className={PILL_BTN}
         disabled={grouping.busy}
         onClick={() => grouping.onDissolve(group)}
       >
@@ -202,7 +197,7 @@ function Group(
           type="button"
           onClick={onToggle}
           aria-expanded={!collapsed}
-          className="flex min-w-0 flex-1 items-baseline gap-2.5 px-3 pb-1.5 pt-2 text-left"
+          className="flex min-w-0 items-baseline gap-2.5 px-3 pb-1.5 pt-2 text-left"
         >
           <RoyIcon
             name="cright"
@@ -213,7 +208,7 @@ function Group(
               !collapsed && "rotate-90",
             )}
           />
-          <span className="flex min-w-0 flex-1 items-baseline gap-2">
+          <span className="flex min-w-0 items-baseline gap-2">
             {node.project?.emoji && <span>{node.project.emoji}</span>}
             <span
               className="min-w-0 truncate font-semibold text-ink"
@@ -235,6 +230,18 @@ function Group(
               </span>
             )}
           </span>
+        </button>
+        {sprintGroup && dnd && (
+          <GroupControls group={sprintGroup} grouping={dnd.grouping} />
+        )}
+        {/* Пустое место и счётчик тоже сворачивают группу — как раньше вся строка. */}
+        <button
+          type="button"
+          tabIndex={-1}
+          aria-hidden="true"
+          onClick={onToggle}
+          className="flex min-w-0 flex-1 items-baseline justify-end gap-2.5 self-stretch px-3 pb-1.5 pt-2"
+        >
           {bad > 0 && (
             <span
               className="shrink-0 font-semibold text-pri-high"
@@ -255,12 +262,20 @@ function Group(
             {dt(`${done} из ${total}`, `${done} of ${total}`)}
           </span>
         </button>
-        {sprintGroup && dnd && (
-          <GroupControls group={sprintGroup} grouping={dnd.grouping} />
-        )}
       </div>
       {!collapsed && (
         <div>
+          {node.items.length === 0 && (
+            <div
+              className="px-3 py-2 pl-[27px] text-ink-mute"
+              style={{ fontSize: 12.5 }}
+            >
+              {dt(
+                "Пусто — перетащите сюда задачи",
+                "Empty — drag tasks here",
+              )}
+            </div>
+          )}
           {sprintRows(node.items, {
             idOf: (i) => i.task_id,
             parentOf: (i) => h.parentOf?.(i) ?? null,
@@ -506,7 +521,9 @@ export function InitiativeList({
     <div className="rounded-[10px] border border-line bg-surface">
       <div
         role="row"
-        className="sticky top-0 z-10 grid items-center rounded-t-[10px] border-b border-line bg-surface-2 font-semibold uppercase text-ink-mute"
+        // px-1 — тот же отступ, что у строк ниже: без него шапка шире строк, и столбцы
+        // разъезжались (владелец 05.10.2026: «шапка не бьётся со столбами»).
+        className="sticky top-0 z-10 grid items-center rounded-t-[10px] border-b border-line bg-surface-2 px-1 font-semibold uppercase text-ink-mute"
         style={{
           gridTemplateColumns: SPRINT_COLS,
           height: 32,

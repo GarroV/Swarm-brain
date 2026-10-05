@@ -134,7 +134,7 @@ export function GroupingToggle(
 ) {
   const dt = useDt();
   const opts: { id: SprintGrouping; label: string }[] = [
-    { id: "initiatives", label: dt("по инициативам", "by initiative") },
+    { id: "initiatives", label: dt("по группам", "by group") },
     { id: "people", label: dt("по людям", "by person") },
   ];
   // Тихий текстовый переключатель (стенд: `.sgrp` + `.lk`): группировка — свойство списка,

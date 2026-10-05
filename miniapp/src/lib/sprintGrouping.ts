@@ -129,6 +129,11 @@ export function resolveDrop(
       projectId: target.projectId,
     };
   }
+  // Подзадачу бросили на заголовок её же группы — вытащить её обратно в отдельную задачу (#807).
+  // Перенос отвязывает подзадачу от родителя, проект остаётся тем же.
+  if (target.kind === "header" && dragged.parentId !== null) {
+    return { kind: "move", projectId: target.projectId };
+  }
   return dropAction(dragged.taskId, target, projects, {
     draggedProjectId: dragged.projectId,
   });
