@@ -318,3 +318,12 @@ Deno.test("порядок: номера в названиях идут по во
   const board = buildBoard(groups.map((g) => item(`t-${g.id}`, g.id)), groups);
   assertEquals(board.map((d) => d.project?.id), ["g1", "g2", "g14", "g18"]);
 });
+
+Deno.test("пустая группа задач видна: «Добавить группу» создаёт её до первой задачи", () => {
+  const groups = [project("g1", "1. Рейтинги"), project("g2", "2. Аудиты")];
+  const board = buildBoard([item("t1", "g2")], groups, [groups[0], groups[1]]);
+  assertEquals(board.map((d) => d.project?.id), ["g1", "g2"]);
+  assertEquals(board[0].initiatives.length, 1);
+  assertEquals(board[0].initiatives[0].items, []);
+  assertEquals(board[1].initiatives[0].items.map((i) => i.id), ["t1"]);
+});

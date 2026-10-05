@@ -31,6 +31,8 @@ export type GroupingProps = {
   onRename: (group: Project) => void;
   onPromote: (group: Project) => void;
   onDissolve: (group: Project) => void;
+  /** Явная кнопка «Добавить группу»: пустая группа задач в пространстве экрана. */
+  onAddGroup: () => void;
 };
 
 type Naming =
@@ -40,7 +42,8 @@ type Naming =
     targetTaskId: string;
     parentId: string | null;
   }
-  | { kind: "rename"; group: Project };
+  | { kind: "rename"; group: Project }
+  | { kind: "new" };
 
 export function useDragGroups(
   { projects, tasks, space, reload, onError }: {
@@ -130,6 +133,18 @@ export function useDragGroups(
       }
       return;
     }
+    if (naming.kind === "new") {
+      const ok = await run(() =>
+        createProject({
+          name,
+          parent_id: null,
+          sprint_group: true,
+          sprint_id: space,
+        })
+      );
+      if (ok) setNaming(null);
+      return;
+    }
     const { dragged, targetTaskId, parentId } = naming;
     const ok = await run(async () => {
       const group = await createProject({
@@ -164,6 +179,7 @@ export function useDragGroups(
     onPromote: (group) =>
       void run(() => updateProject(group.id, { sprint_group: false })),
     onDissolve: (group) => void run(() => dissolveSprintGroup(group.id)),
+    onAddGroup: () => setNaming({ kind: "new" }),
   };
 
   const dialogs = (
@@ -171,6 +187,7 @@ export function useDragGroups(
       <GroupNameDialog
         open={naming !== null}
         rename={naming?.kind === "rename"}
+        empty={naming?.kind === "new"}
         initial={naming?.kind === "rename" ? naming.group.name : ""}
         busy={busy}
         onCancel={() => setNaming(null)}

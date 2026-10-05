@@ -144,6 +144,9 @@ function byName(
 export function buildBoard<T extends BoardRow>(
   items: readonly T[],
   projects: readonly Project[],
+  /** Группы задач, видные и без задач: «Добавить группу» создаёт пустую, и до первой задачи
+   *  её иначе не было бы на экране — бросить задачу было бы некуда. */
+  shownEmpty: readonly Project[] = [],
 ): DirectionNode<T>[] {
   const byId = new Map(projects.map((p) => [p.id, p]));
 
@@ -170,6 +173,9 @@ export function buildBoard<T extends BoardRow>(
     const inner = tree.get(dirKey)!;
     if (!inner.has(iniKey)) inner.set(iniKey, []);
     inner.get(iniKey)!.push(item);
+  }
+  for (const group of shownEmpty) {
+    if (!tree.has(group.id)) tree.set(group.id, new Map([["", []]]));
   }
 
   const directions: DirectionNode<T>[] = [];
