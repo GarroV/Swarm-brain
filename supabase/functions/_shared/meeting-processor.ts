@@ -34,6 +34,7 @@ import { processingFrozen } from "./processing-freeze.ts";
 import { discardState, promoteQueued, requeueLost } from "./meeting-queue.ts";
 import { isFrozen, unfrozen } from "./meeting-frozen.ts";
 import { type RivalClaim, rivalOwnershipPatch, settleRival } from "./meeting-rival.ts";
+import { recordedByOf } from "./recorded-by.ts";
 import { claimLeaseUntil } from "./meeting-lease.ts";
 import { isLeaseLost, LEASE_STALE_MS, ProcessingLease, rethrowIfLeaseLost } from "./meeting-processing-lease.ts";
 import { externalFetch, VIA_TELEGRAM } from "./external-fetch.ts";
@@ -577,7 +578,10 @@ async function summarizeAndFinish(lease: ProcessingLease, m: MeetingRow, state: 
   const transcript = { language: resolved, model: hasMic ? "whisper-1+mic" : "whisper-1", segments };
   const writtenAt = new Date().toISOString();
   const ownership = rival ? rivalOwnershipPatch(rival.owner, rival, writtenAt) : {};
-  if (!(await writeOwn(lease, state.gen, { transcript, ...ownership, updated_at: writtenAt }, true))) {
+  // Чья запись легла в стенограмму — в той же UPDATE (_shared/recorded-by.ts).
+  const recordedBy = recordedByOf(state.source);
+  const authorship = recordedBy ? { recorded_by: recordedBy } : {};
+  if (!(await writeOwn(lease, state.gen, { transcript, ...ownership, ...authorship, updated_at: writtenAt }, true))) {
     await requeueLost(supabase, m.id, state);
     return;
   }

@@ -1,9 +1,5 @@
 import { assertEquals } from "jsr:@std/assert@1";
-import {
-  LIST_PREVIEW_CHARS,
-  toAgentListRow,
-  toListRow,
-} from "./meetings-payload.ts";
+import { isMissedBotSlot, LIST_PREVIEW_CHARS, toAgentListRow, toListRow } from "./meetings-payload.ts";
 
 Deno.test("toListRow режет content и summary и честно помечает truncated", () => {
   const row = {
@@ -173,4 +169,31 @@ Deno.test("toAgentListRow: признак из базы, текст в стро�
 Deno.test("toAgentListRow: has_draft_notes=false из базы — это НЕ «поля нет»", () => {
   const out = toAgentListRow({ id: "a", has_draft_notes: false });
   assertEquals(out.has_draft_notes, false);
+});
+
+Deno.test("isMissedBotSlot: бот заявил, записи нет, сторож пометил failed — пустой слот", () => {
+  assertEquals(
+    isMissedBotSlot({
+      agent_version: "scriba-2513",
+      recorded_seconds: null,
+      recorded_by: null,
+      summary_status: "failed",
+    }),
+    true,
+  );
+});
+
+Deno.test("isMissedBotSlot: запись есть или слот ещё живой — не прятать", () => {
+  const slot = { agent_version: "scriba-2513", recorded_seconds: null, recorded_by: null, summary_status: "failed" };
+  // В строку бота легла запись рекордера.
+  assertEquals(
+    isMissedBotSlot({ ...slot, recorded_seconds: 1010, recorded_by: "bumblebee", summary_status: "done" }),
+    false,
+  );
+  assertEquals(isMissedBotSlot({ ...slot, recorded_seconds: 1010 }), false);
+  assertEquals(isMissedBotSlot({ ...slot, recorded_by: "scriba" }), false);
+  // Встреча идёт: сторож ещё не решил.
+  assertEquals(isMissedBotSlot({ ...slot, summary_status: null }), false);
+  // Сбой обработки у рекордера — это настоящая запись, её прятать нельзя.
+  assertEquals(isMissedBotSlot({ ...slot, agent_version: "0.1.0" }), false);
 });

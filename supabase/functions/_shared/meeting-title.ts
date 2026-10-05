@@ -34,6 +34,16 @@ export function displayNameOf(src: NameSource): string | null {
   return clean(src.username);
 }
 
+function stampOf(when: Date): string {
+  return new Intl.DateTimeFormat("ru-RU", {
+    timeZone: TITLE_TZ,
+    day: "2-digit",
+    month: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(when);
+}
+
 export function defaultMeetingTitle(
   name: string | null | undefined,
   startedAtISO: string | null | undefined,
@@ -41,13 +51,25 @@ export function defaultMeetingTitle(
 ): string {
   const parsed = startedAtISO ? new Date(startedAtISO) : null;
   const when = parsed && !Number.isNaN(parsed.getTime()) ? parsed : now;
-  const stamp = new Intl.DateTimeFormat("ru-RU", {
-    timeZone: TITLE_TZ,
-    day: "2-digit",
-    month: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(when);
   const who = (clean(name) ?? NO_NAME).slice(0, MAX_NAME_LEN);
-  return `${who} — ${stamp}`;
+  return `${who} — ${stampOf(when)}`;
+}
+
+// Название — заглушка, которую поставил сервер, а не человек и не календарь? Заглушка встаёт, когда
+// первая заявка пришла без названия: так бот встреч заводил календарные встречи до 05.10.2026 (#804),
+// и пришедший следом рекордер с настоящим названием уже ничего не менял. Сверяем хвост «— дата» с
+// началом встречи: имя в заглушке могло быть любым (тот, кто заявил первым), а человек, правивший
+// название руками, такой хвост с точностью до минуты не напишет.
+export function isDefaultMeetingTitle(
+  title: string | null | undefined,
+  startedAtISO: string | null | undefined,
+): boolean {
+  const t = clean(title);
+  if (!t || !startedAtISO) return false;
+  const when = new Date(startedAtISO);
+  if (Number.isNaN(when.getTime())) return false;
+  const tail = ` — ${stampOf(when)}`;
+  if (!t.endsWith(tail)) return false;
+  const who = t.slice(0, -tail.length);
+  return who.length > 0 && who.length <= MAX_NAME_LEN;
 }

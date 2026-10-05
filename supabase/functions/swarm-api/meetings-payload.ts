@@ -67,9 +67,7 @@ export function toListRow<T extends Row>(
   const s = cut(rest.summary as string | null | undefined);
   const out = { ...rest, content: c.v ?? "", summary: s.v };
   // База знает про усечение точно; длина — страховка на случай полных колонок в запросе.
-  return (fromDb === true || c.cut || s.cut)
-    ? { ...out, truncated: true as const }
-    : out;
+  return (fromDb === true || c.cut || s.cut) ? { ...out, truncated: true as const } : out;
 }
 
 // ── GET /agent-meetings (списочный) ───────────────────────────────────────────
@@ -103,8 +101,28 @@ export function toAgentListRow<T extends AgentRow>(
   row: T,
 ): Omit<T, "draft_notes_md" | "has_draft_notes"> & { has_draft_notes: boolean } {
   const { draft_notes_md, has_draft_notes: fromDb, ...rest } = row;
-  const flag = typeof fromDb === "boolean"
-    ? fromDb
-    : (draft_notes_md ?? "").trim().length > 0;
+  const flag = typeof fromDb === "boolean" ? fromDb : (draft_notes_md ?? "").trim().length > 0;
   return { ...rest, has_draft_notes: flag };
+}
+
+// ── Пустой слот бота встреч ───────────────────────────────────────────────────
+
+type SlotRow = {
+  agent_version?: unknown;
+  recorded_by?: unknown;
+  recorded_seconds?: unknown;
+  summary_status?: unknown;
+};
+
+/**
+ * Бот встреч заявил встречу, но так и не записал её (не впустили, закрыт гостевой вход), и сторож
+ * пометил строку failed. Записи нет и не было — в черновиках она висела «запись есть, не удалось
+ * обработать» с советом переобработать то, чего нет. Решение владельца 03.10.2026: «не надо пустые
+ * встречи в базу вкидывать» (docs/decisions/2026-10-03-no-empty-meetings-bumblebee-vs-scriba.md, #788).
+ * Запись рекордера, пришедшая в ту же строку, снимает признак: у неё появляются секунды.
+ */
+export function isMissedBotSlot(row: SlotRow): boolean {
+  const byBot = typeof row.agent_version === "string" && row.agent_version.startsWith("scriba-");
+  const recorded = typeof row.recorded_seconds === "number" && row.recorded_seconds > 0;
+  return byBot && !recorded && row.recorded_by == null && row.summary_status === "failed";
 }
