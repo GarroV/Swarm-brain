@@ -13,6 +13,7 @@ import { useDt, useRoyNav } from "@/components/roy/nav";
 import { useConfirm } from "@/components/ui/confirm";
 import { hasSeveralOwners, canDeleteDraft } from "@/lib/draftOwners";
 import { recordedByOf } from "@/lib/agentMeeting";
+import { TasksFromMeeting } from "@/components/roy/TasksFromMeeting";
 
 type Props = { id: string; onClose: () => void; onChanged?: () => void };
 
@@ -68,7 +69,7 @@ export function MeetingReview({ id, onClose, onChanged }: Props) {
   const [publishing, setPublishing] = useState(false);
   const [reprocessing, setReprocessing] = useState(false);
   const [base, setBase] = useState<"workspace" | "personal">("workspace");
-  const [view, setView] = useState<"tez" | "notes" | "tr">("tez");
+  const [view, setView] = useState<"tez" | "tasks" | "notes" | "tr">("tez");
   const [liveNotes, setLiveNotes] = useState<MeetingLiveNote[]>([]);
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState("");
@@ -207,6 +208,11 @@ export function MeetingReview({ id, onClose, onChanged }: Props) {
   // Транскрипт — инструмент вычитки: по нему сверяют тезисы. Встреча в базе его не показывает —
   // он дублирует тезисы (решение владельца 2026-09-25).
   const showTranscript = hasTranscript && !published;
+  // Задачи из черновика — как на доске вычитки (MeetAdminScreen): из тезисов, а без них из
+  // транскрипта. Записи в базе ещё нет, поэтому задачи без привязки к встрече. Опубликованная
+  // встреча ведёт задачи в своей карточке (MeetingDetail), здесь блок не нужен.
+  const taskText = published ? "" : (meeting.draft_notes_md?.trim() || segments.map((s) => s.text).join("\n"));
+  const showTasks = taskText.trim().length > 0;
   const who = meeting.recorder_names?.length ? meeting.recorder_names.join(", ") : recorders.length ? String(recorders.length) : "";
 
   const tezBlock = notesReady ? (
@@ -278,8 +284,15 @@ export function MeetingReview({ id, onClose, onChanged }: Props) {
     </div>
   );
 
+  const tasksBlock = showTasks ? (
+    <div className="mb-4">
+      <TasksFromMeeting text={taskText} resetKey={meeting.id} onAdded={onChanged} />
+    </div>
+  ) : null;
+
   const tabs = ([
     ["tez", "Тезисы", "Summary", null],
+    ...(showTasks ? [["tasks", "Задачи", "Tasks", null] as const] : []),
     ...(liveNotes.length ? [["notes", "Пометки", "Notes", liveNotes.length] as const] : []),
     ...(showTranscript ? [["tr", "Транскрипт", "Transcript", segments.length] as const] : []),
   ] as const);
@@ -374,11 +387,13 @@ export function MeetingReview({ id, onClose, onChanged }: Props) {
               </div>
             )}
             {tab === "tez" && tezBlock}
+            {tab === "tasks" && tasksBlock}
             {tab === "notes" && notesBlock}
             {tab === "tr" && transcriptBlock}
           </>
         ) : (
           <>
+            {tasksBlock}
             {tezBlock}
             {notesBlock}
             {transcriptBlock}
