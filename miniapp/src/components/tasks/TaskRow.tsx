@@ -37,7 +37,7 @@ export function TaskRow({ task, onToggle, showAssignee = true, now = new Date(),
   const ping = done || task.reminded_at ? null : fmtDue(task.remind_date, dt("ru-RU", "en-US"));
   // Цикличность: показываем всегда, когда есть — по карточке должно быть видно, что
   // галочка не закроет задачу, а перенесёт её на следующий раз.
-  const recur = recurrenceBadge(task.recur_freq, task.due_date, task.recur_anchor_dom);
+  const recur = recurrenceBadge(task, task.due_date, task.recur_anchor_dom);
   const high = task.priority === "high";
   const fromMeeting = Boolean(task.meeting_id);
   const hasAssignee = showAssignee && (task.assignees?.length ?? 0) > 0;

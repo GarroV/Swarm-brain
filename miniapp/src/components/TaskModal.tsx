@@ -30,7 +30,8 @@ import { CountryPopover } from "@/components/tasks/CountryPopover";
 import { linkify } from "@/lib/linkify";
 import { useDt } from "@/components/roy/nav";
 import { useIsDesktop } from "@/components/roy/useIsDesktop";
-import { recurrenceOptions } from "@/lib/recurrenceLabels";
+import { recurValueOf, type RecurValue } from "@/lib/recurrenceLabels";
+import { RecurrencePicker } from "@/components/tasks/RecurrencePicker";
 import { buildProjectOptions } from "@/lib/projectPicker";
 import { isRawId } from "@/lib/displayFormat";
 
@@ -158,11 +159,9 @@ export function TaskModal({ task: taskOpened, open, onClose, onSaved, prefill, m
     setDescEditing(true);
   };
   const [dueDate, setDueDate] = useState("");
-  // Цикличность: null — обычная задача. Производная от срока (день недели/число берутся из
-  // него), поэтому без срока включить нельзя.
-  const [recurFreq, setRecurFreq] = useState<string | null>(null);
-  // Чипы частоты раскрыты? Свёрнуты по умолчанию: в сводке видно значение, детали — по клику.
-  const [recurOpen, setRecurOpen] = useState(false);
+  // Повтор: null — обычная задача. Правило (#823) считается от срока; без срока меню
+  // повтора подставит срок = сегодня.
+  const [recur, setRecur] = useState<RecurValue | null>(null);
   // Пинг — ручное напоминание, живёт рядом со сроком и независимо от него.
   const [remindDate, setRemindDate] = useState("");
   const [remindedAt, setRemindedAt] = useState<string | null>(null);
@@ -223,7 +222,7 @@ export function TaskModal({ task: taskOpened, open, onClose, onSaved, prefill, m
     const initialStatus = normStatus(task?.status);
     const initialDue = task?.due_date ?? prefill?.due_date ?? "";
     const initialRemind = task?.remind_date ?? "";
-    const initialRecur = task?.recur_freq ?? null;
+    const initialRecur = task ? recurValueOf(task) : null;
     const initialCountry = task?.country ?? prefill?.country ?? "";
     const initialRole = task?.task_role ?? NONE;
     const cur = task?.assignee_telegram_ids?.[0]?.toString() ?? NONE;
@@ -240,8 +239,7 @@ export function TaskModal({ task: taskOpened, open, onClose, onSaved, prefill, m
     setDescEditing(!initialDescription.trim());
     setDueDate(initialDue);
     setRemindDate(initialRemind);
-    setRecurFreq(initialRecur);
-    setRecurOpen(false);
+    setRecur(initialRecur);
     setRemindedAt(task?.reminded_at ?? null);
     setCountry(initialCountry);
     setTaskRole(initialRole);
@@ -259,7 +257,7 @@ export function TaskModal({ task: taskOpened, open, onClose, onSaved, prefill, m
       status: initialStatus,
       dueDate: initialDue,
       remindDate: initialRemind,
-      recurFreq: initialRecur,
+      recur: initialRecur,
       country: initialCountry,
       taskRole: initialRole,
       assigneeId: cur,
@@ -318,21 +316,9 @@ export function TaskModal({ task: taskOpened, open, onClose, onSaved, prefill, m
     }
   }
 
-  // Варианты цикличности зависят только от срока — считаем один раз на рендер.
-  // Якорь показываем, только пока срок не тронут: изменил дату — подпись идёт за новой,
+  // Якорь числа показываем, только пока срок не тронут: изменил дату — подпись идёт за новой,
   // потому что сервер пересчитает якорь по тому же правилу (recurrencePatchFor).
-  const recurOptions = recurrenceOptions(
-    dueDate,
-    dueDate === (task?.due_date ?? "") ? task?.recur_anchor_dom : null,
-  );
-
-  // Значение строки «Повторять»: сама частота словами. Без срока строка выключена и честно
-  // говорит почему — раньше это была приписка мелким шрифтом рядом с чекбоксом.
-  const recurValueLabel = !recurOptions
-    ? dt("нужен срок", "needs a due date")
-    : recurFreq
-      ? (() => { const o = recurOptions.find((x) => x.freq === recurFreq); return o ? dt(o.ru, o.en) : "—"; })()
-      : "—";
+  const recurAnchor = dueDate === (task?.due_date ?? "") ? task?.recur_anchor_dom : null;
 
   // Пилюля «проект › подпроект»: из одного выбранного id (задача живёт либо в проекте, либо в
   // подпроекте) достаём оба уровня. Имена — по ПОЛНОМУ списку: задача может лежать в чужом
@@ -346,7 +332,7 @@ export function TaskModal({ task: taskOpened, open, onClose, onSaved, prefill, m
 
   // Текущий снапшот формы (для сравнения с сохранённым) — те же ключи, что в useEffect open.
   const formSnapshot = () =>
-    JSON.stringify({ title, description, status, dueDate, remindDate, recurFreq, country, taskRole, assigneeId, selProject, labelIds, links });
+    JSON.stringify({ title, description, status, dueDate, remindDate, recur, country, taskRole, assigneeId, selProject, labelIds, links });
 
   // Собрать PATCH из текущих значений формы. null → сохранять нечего/нельзя (пустое название).
   const buildPatch = (): UpdateTaskInput | null => {
@@ -358,7 +344,10 @@ export function TaskModal({ task: taskOpened, open, onClose, onSaved, prefill, m
       description: description.trim() || null,
       due_date: dueDate || null,
       remind_date: remindDate || null,
-      recur_freq: recurFreq,
+      recur_freq: recur?.freq ?? null,
+      recur_interval: recur?.interval ?? 1,
+      recur_weekdays: recur?.weekdays ?? null,
+      recur_setpos: recur?.setpos ?? null,
       country: country || null,
       task_role: taskRole === NONE ? null : taskRole,
       status,
@@ -395,7 +384,7 @@ export function TaskModal({ task: taskOpened, open, onClose, onSaved, prefill, m
     }, AUTOSAVE_DELAY);
     return () => clearTimeout(h);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, isEdit, isPartial, title, description, status, dueDate, remindDate, recurFreq, country, taskRole, assigneeId, selProject, labelIds, links]);
+  }, [open, isEdit, isPartial, title, description, status, dueDate, remindDate, recur, country, taskRole, assigneeId, selProject, labelIds, links]);
 
   // Досрочно сохраняем pending-изменения (пока debounce не успел сработать) — перед закрытием
   // и перед переходом к связанной задаче.
@@ -437,7 +426,10 @@ export function TaskModal({ task: taskOpened, open, onClose, onSaved, prefill, m
         links,
         due_date: dueDate || null,
         remind_date: remindDate || null,
-        recur_freq: recurFreq,
+        recur_freq: recur?.freq ?? null,
+        recur_interval: recur?.interval ?? 1,
+        recur_weekdays: recur?.weekdays ?? null,
+        recur_setpos: recur?.setpos ?? null,
         country: country || null,
         task_role: taskRole === NONE ? null : taskRole,
       };
@@ -638,16 +630,16 @@ export function TaskModal({ task: taskOpened, open, onClose, onSaved, prefill, m
 
                 {/* Срок · пинг · повтор — одна пилюля по логике статуса (владелец 29.09.2026):
                     пустой сегмент — бледный значок, заданный — заливка и значение, пилюля растёт
-                    ровно на то, что задано. Повтор считается от срока (день недели/число берутся из
-                    него), поэтому без срока сегмент выключен и в подсказке говорит почему; варианты
-                    частоты — чипами под рядом. */}
+                    ровно на то, что задано. Повтор считается от срока; без срока меню повтора
+                    подставит срок = сегодня. Быстрые варианты и «Настроить…» — в RecurrencePicker
+                    (#823). */}
                 <span role="group" aria-label={dt("Сроки", "Dates")} className={PILL_GROUP_CLS}>
                   <DatePicker
                     variant="segment"
                     value={dueDate}
                     // Сняли срок — цикличность гаснет вместе с ним: без срока считать следующее
                     // вхождение не от чего, а тихо оставленная частота молча перестала бы работать.
-                    onChange={(iso) => { setDueDate(iso); if (!iso) { setRecurFreq(null); setRecurOpen(false); } }}
+                    onChange={(iso) => { setDueDate(iso); if (!iso) setRecur(null); }}
                     ariaLabel={dt("Срок", "Due date")}
                     clearLabel={dt("Убрать срок", "Clear due date")}
                   />
@@ -659,18 +651,13 @@ export function TaskModal({ task: taskOpened, open, onClose, onSaved, prefill, m
                     ariaLabel={dt("Пинг", "Ping")}
                     clearLabel={dt("Убрать пинг", "Clear ping")}
                   />
-                  <button
-                    type="button"
-                    disabled={!recurOptions}
-                    aria-expanded={recurOpen}
-                    aria-label={`${dt("Повтор", "Repeat")}: ${recurFreq ? recurValueLabel : recurOptions ? dt("не повторять", "never") : recurValueLabel}`}
-                    title={`${dt("Повтор", "Repeat")}: ${recurFreq ? recurValueLabel : recurOptions ? dt("не повторять", "never") : recurValueLabel}`}
-                    onClick={() => setRecurOpen((o) => !o)}
-                    className={pillSegmentCls(!!recurFreq)}
-                  >
-                    <RoyIcon name="repeat" size={14} strokeWidth={2} />
-                    {recurFreq && <span className="whitespace-nowrap" style={{ fontSize: 12.5 }}>{recurValueLabel}</span>}
-                  </button>
+                  <RecurrencePicker
+                    variant="segment"
+                    value={recur}
+                    due={dueDate}
+                    anchorDom={recurAnchor}
+                    onChange={(v, due) => { setRecur(v); if (due) setDueDate(due); }}
+                  />
                 </span>
 
                 {/* Проект › подпроект — сегментная пилюля (владелец 29.09.2026: «чтобы это
@@ -757,35 +744,6 @@ export function TaskModal({ task: taskOpened, open, onClose, onSaved, prefill, m
                     ? dt("Пинг: уже напомнили — выбери новый день, чтобы напомнить снова", "Ping: already sent — pick a new day to be reminded again")
                     : dt("Пинг: напомним в этот день, один раз", "Ping: one reminder on this day")}
                 </p>
-              )}
-
-              {recurOpen && recurOptions && (
-                <div>
-                  <div className="flex flex-wrap gap-1.5">
-                    {[{ freq: null as string | null, ru: "Не повторять", en: "Never" }, ...recurOptions].map((o) => {
-                      const on = o.freq === recurFreq;
-                      return (
-                        <button
-                          key={o.freq ?? "none"}
-                          type="button"
-                          onClick={() => setRecurFreq(o.freq)}
-                          className={`inline-flex items-center rounded-full border px-2.5 py-1 font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] ${on ? "border-primary bg-accent-soft text-accent-ink" : "border-line-2 bg-surface text-ink-soft hover:bg-surface-2"}`}
-                          style={{ fontSize: 11.5 }}
-                        >
-                          {dt(o.ru, o.en)}
-                        </button>
-                      );
-                    })}
-                  </div>
-                  {recurFreq && (
-                    <p className="mt-1.5 text-ink-mute" style={{ fontSize: 11 }}>
-                      {dt(
-                        "Отметишь готовой — задача не закроется, а перенесётся на следующий раз",
-                        "Marking it done rolls the task to its next occurrence instead of closing it",
-                      )}
-                    </p>
-                  )}
-                </div>
               )}
             </div>
 

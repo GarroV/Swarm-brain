@@ -1,6 +1,6 @@
 import { sendInlineMessage } from "../lib/telegram.ts";
 import type { Task } from "./types.ts";
-import { recurFreqLabelRu } from "../../_shared/tasks/recurrence.ts";
+import { recurrenceLabelRu } from "../../_shared/tasks/recurrence.ts";
 
 export const STATUS_LABEL: Record<string, string> = {
   open: "📌",
@@ -17,9 +17,10 @@ function formatDue(due: string | null): string {
 }
 
 // Регулярная задача обязана быть видна ДО нажатия «Готово»: галочка её не закроет, а перенесёт
-// на следующий раз, и без пометки человек жмёт кнопку с неверным ожиданием.
+// на следующий раз, и без пометки человек жмёт кнопку с неверным ожиданием. Подпись — правило
+// словами («каждые 2 недели: ср», «каждый 3-й понедельник месяца»), тем же модулем, что веб.
 function formatRecur(task: Task): string {
-  const label = recurFreqLabelRu(task.recur_freq);
+  const label = recurrenceLabelRu(task);
   return label ? `🔁 ${label}` : "";
 }
 

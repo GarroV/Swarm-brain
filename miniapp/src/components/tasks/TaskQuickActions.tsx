@@ -1,6 +1,6 @@
 "use client";
-// Быстрые действия в строке задачи: СРОК / ПИНГ / ЦИКЛИЧНОСТЬ / ИСПОЛНИТЕЛЬ / РЫНОК / СПИСКИ
-// без открытия карточки.
+// Быстрые действия в строке задачи: СРОК / ПИНГ / ПОВТОР / ИСПОЛНИТЕЛЬ / РЫНОК / СПИСКИ
+// без открытия карточки. Повтор — RecurrencePicker (быстрые варианты + меню правила).
 // Срок — DatePicker (compact); исполнитель — QuickPickPopover; страна — CountryPopover
 // (variant="icon", сетка флагов, единый компонент с формой TaskModal); списки — пиктограммы-метки
 // (PictogramPicker, multi).
@@ -14,7 +14,8 @@ import { updateTask, type UpdateTaskInput, type TaskLabel } from "@/lib/api";
 import { displayName } from "@/lib/utils";
 import type { RoyIconName } from "@/components/roy/icons";
 import type { Task, User } from "@/types";
-import { recurrenceOptions } from "@/lib/recurrenceLabels";
+import { recurValueOf, type RecurValue } from "@/lib/recurrenceLabels";
+import { RecurrencePicker } from "@/components/tasks/RecurrencePicker";
 import { useDt } from "@/components/roy/nav";
 
 const TRIGGER = "flex h-[26px] w-[26px] items-center justify-center rounded-full border border-line-2 bg-surface transition-colors hover:bg-surface-2 active:scale-[0.92] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]";
@@ -36,6 +37,18 @@ export function toggleLabelPatch(task: Task, labelId: string): { fields: UpdateT
   const patch: Partial<Task> = { label_ids: next };
   if (next.length > 0 && !task.is_private) { fields.is_private = true; patch.is_private = true; }
   return { fields, patch };
+}
+
+/** PATCH и локальный патч строки для выбранного правила повтора (null — снять). */
+function recurrencePatch(v: RecurValue | null, due: string | null): { fields: UpdateTaskInput; patch: Partial<Task> } {
+  const rule = {
+    recur_freq: v?.freq ?? null,
+    recur_interval: v?.interval ?? 1,
+    recur_weekdays: v?.weekdays ?? null,
+    recur_setpos: v?.setpos ?? null,
+  };
+  const withDue = due ? { due_date: due } : {};
+  return { fields: { ...rule, ...withDue }, patch: { ...rule, ...withDue } };
 }
 
 export function TaskQuickActions({ task, users, markets, labels, onPatch, onChanged }: { task: Task; users: User[]; markets: string[]; labels: TaskLabel[]; onPatch: (patch: Partial<Task>) => void; onChanged: () => void }) {
@@ -66,21 +79,18 @@ export function TaskQuickActions({ task, users, markets, labels, onPatch, onChan
         className={TRIGGER}
         placeholder=""
       />
-      {/* Цикличность — только у задачи со сроком: день недели и число берутся из него, без срока
-          считать следующее вхождение не от чего (то же правило, что в форме). */}
-      {task.due_date && (
-        <QuickPickPopover
-          icon="repeat"
-          ariaLabel={dt("Повторять", "Repeat")}
-          clearable
-          value={task.recur_freq ?? ""}
-          options={(recurrenceOptions(task.due_date, task.recur_anchor_dom) ?? []).map((o) => ({
-            id: o.freq,
-            label: dt(o.ru, o.en),
-          }))}
-          onPick={(freq) => commit({ recur_freq: freq || null }, { recur_freq: freq || null })}
-        />
-      )}
+      {/* Повтор (#823): быстрые варианты и «Настроить…» — отдельное меню правила. Без срока
+          меню подставляет срок = сегодня и шлёт его вместе с правилом. */}
+      <RecurrencePicker
+        variant="icon"
+        value={recurValueOf(task)}
+        due={task.due_date ?? ""}
+        anchorDom={task.recur_anchor_dom}
+        onChange={(v, due) => {
+          const { fields, patch } = recurrencePatch(v, due);
+          commit(fields, patch);
+        }}
+      />
       <QuickPickPopover
         icon="team"
         ariaLabel={dt("Исполнитель", "Assignee")}

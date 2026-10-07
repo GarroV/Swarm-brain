@@ -1382,6 +1382,9 @@ Deno.serve(async (req: Request) => {
             project_name?: string;
             parent_task_id?: string;
             recur_freq?: string | null;
+            recur_interval?: number | null;
+            recur_weekdays?: number[] | null;
+            recur_setpos?: number | null;
             hidden_from_hub?: boolean;
             requesting_user_id: number;
           },

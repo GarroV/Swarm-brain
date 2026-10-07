@@ -67,8 +67,17 @@ export type CreateTaskInput = {
   parent_id?: string | null;
   tree_x?: number | null;
   tree_y?: number | null;
-  /** Цикличность: daily | weekly | monthly; null — снять. Требует срока (API отобьёт без него). */
+  /**
+   * Цикличность: daily | weekly | monthly | yearly; null — снять (сервер обнулит и правило).
+   * Требует срока (API отобьёт без него).
+   */
   recur_freq?: string | null;
+  /** Каждые N (1–99). Не прислали — сервер сохранит прежнее, пока частота та же. */
+  recur_interval?: number;
+  /** Только weekly: дни ISO 1=пн..7=вс; null — день недели срока. */
+  recur_weekdays?: number[] | null;
+  /** Только monthly: n-й (1–5) или последний (-1) день недели срока; null — по числу. */
+  recur_setpos?: number | null;
   /**
    * Ссылки задачи. ⚠️ Списочный ответ GET /tasks их НЕ отдаёт (TASK_LIST_COLUMNS) — задача из
    * списка приходит с `links === undefined`. Слать это поле можно только с догруженной по id
@@ -227,6 +236,9 @@ function mkMock(o: Partial<Task> & { id: string; title: string }): Task {
     tree_y: o.tree_y ?? null,
     recur_freq: o.recur_freq ?? null,
     recur_anchor_dom: o.recur_anchor_dom ?? null,
+    recur_interval: o.recur_interval ?? 1,
+    recur_weekdays: o.recur_weekdays ?? null,
+    recur_setpos: o.recur_setpos ?? null,
   };
 }
 let mockTasks: Task[] = [
@@ -330,6 +342,15 @@ let mockTasks: Task[] = [
     assignee_telegram_ids: [123456],
     due_date: mockDay(12),
     recur_freq: "monthly",
+  }),
+  mkMock({
+    id: "12",
+    title: "Biweekly 1:1",
+    assignees: ["Dev User"],
+    assignee_telegram_ids: [123456],
+    due_date: mockDay(3),
+    recur_freq: "weekly",
+    recur_interval: 2,
   }),
   // ── демо-дерево проекта pr1 «Swarm Brain» (для локального просмотра v2) ──
   mkMock({
@@ -984,9 +1005,12 @@ export async function createTask(input: CreateTaskInput): Promise<Task> {
       tree_x: input.tree_x ?? null,
       tree_y: input.tree_y ?? null,
       recur_freq: input.recur_freq ?? null,
-      recur_anchor_dom: input.recur_freq === "monthly" && input.due_date
+      recur_anchor_dom: (input.recur_freq === "monthly" || input.recur_freq === "yearly") && input.due_date
         ? Number(input.due_date.slice(8, 10))
         : null,
+      recur_interval: input.recur_freq ? (input.recur_interval ?? 1) : 1,
+      recur_weekdays: input.recur_freq === "weekly" ? (input.recur_weekdays ?? null) : null,
+      recur_setpos: input.recur_freq === "monthly" ? (input.recur_setpos ?? null) : null,
     };
     mockTasks.push(newTask);
     return newTask;
@@ -1044,6 +1068,17 @@ export async function updateTask(
     }
     if (fields.tree_x !== undefined) task.tree_x = fields.tree_x ?? null;
     if (fields.tree_y !== undefined) task.tree_y = fields.tree_y ?? null;
+    // Повтор — грубое зеркало recurrencePatchFor: снятие гасит правило целиком.
+    if (fields.recur_freq !== undefined) task.recur_freq = fields.recur_freq ?? null;
+    if (fields.recur_interval !== undefined) task.recur_interval = fields.recur_interval;
+    if (fields.recur_weekdays !== undefined) task.recur_weekdays = fields.recur_weekdays ?? null;
+    if (fields.recur_setpos !== undefined) task.recur_setpos = fields.recur_setpos ?? null;
+    if (task.recur_freq === null) {
+      task.recur_interval = 1;
+      task.recur_weekdays = null;
+      task.recur_setpos = null;
+      task.recur_anchor_dom = null;
+    }
     if ((fields as { project_linked?: boolean }).project_linked !== undefined) {
       task.project_linked = (fields as { project_linked?: boolean })
         .project_linked!;
