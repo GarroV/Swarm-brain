@@ -34,7 +34,8 @@ export type ChallengeOutcome =
    * держателя уже есть своя версия (`rival`), выгрузка идёт на сравнение, а владелец пока прежний.
    */
   | { ok: true; reset: boolean; measuredSec: number | null; rival?: Rival }
-  | { ok: false; status: number; error: string };
+  /** `refused` — сверка прошла, и наша запись не полнее: отказ по существу, а не по гонке или сбою. */
+  | { ok: false; status: number; error: string; refused?: boolean };
 
 /**
  * Выгрузка свежего претендента: измерить, прогнать арбитраж по измеренному и перехватить право той
@@ -66,7 +67,7 @@ export async function settleChallengeUpload(
   );
   if (verdict.kind === "refuse") {
     await writeRecorders(supabase, meetingId, uploader, "defer", null, null);
-    return { ok: false, status: 409, error: verdict.reason };
+    return { ok: false, status: 409, error: verdict.reason, refused: true };
   }
   if (verdict.kind === "takeover" && holderHasVersion(row)) {
     return { ok: true, reset: false, measuredSec, rival: { recordedSeconds: verdict.seconds, micStartOffset } };
