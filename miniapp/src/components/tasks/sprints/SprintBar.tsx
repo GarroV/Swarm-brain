@@ -32,8 +32,9 @@ export type SprintBarProps = {
   view: SprintView;
   onView: (v: SprintView) => void;
   kanbanDisabled: boolean;
-  poolCount: number;
-  onPool?: () => void;
+  /** Панель «План» открыта (решение 07.10.2026: план пространства вместо бэклога). */
+  planOpen: boolean;
+  onPlan?: () => void;
   editMode: boolean;
   onEditMode: () => void;
   busy: boolean;
@@ -238,17 +239,17 @@ export function SprintBar(p: SprintBarProps) {
               );
             })}
           </span>
-          {p.onPool && (
+          {p.onPlan && (
             <ToolbarButton
-              onClick={p.onPool}
+              on={p.planOpen}
+              onClick={p.onPlan}
               title={dt(
-                "Взять задачи из бэклога",
-                "Take tasks from the backlog",
+                "Весь план пространства: группы и задачи — отсюда задачи берут в спринт",
+                "The whole space plan: groups and tasks — tasks are taken into the sprint from here",
               )}
             >
-              <RoyIcon name="plus" size={12} strokeWidth={2} />
-              {dt("Добавить задачи из проектов", "Add tasks from projects")}
-              <span className="font-mono text-ink-mute">{p.poolCount}</span>
+              <RoyIcon name="board" size={12} strokeWidth={2} />
+              {dt("План", "Plan")}
             </ToolbarButton>
           )}
           {
