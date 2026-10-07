@@ -54,6 +54,9 @@ export async function createTask(
     tree_y: input.tree_y ?? null,
     recur_freq: input.recur_freq ?? null,
     recur_anchor_dom: input.recur_anchor_dom ?? null,
+    recur_interval: input.recur_interval ?? 1,
+    recur_weekdays: input.recur_weekdays ?? null,
+    recur_setpos: input.recur_setpos ?? null,
     // Пустой массив, а не null: колонка объявлена not null, и «ссылок нет» — это пустой
     // список, по которому фронт сразу рисует поле, не проверяя на null.
     links: input.links ?? [],
@@ -195,6 +198,9 @@ type UpdateSnapshotRow = TaskSnapshot & {
   completed_at: string | null;
   recur_freq: string | null;
   recur_anchor_dom: number | null;
+  recur_interval: number | null;
+  recur_weekdays: number[] | null;
+  recur_setpos: number | null;
   due_date: string | null;
   start_date: string | null;
   remind_date: string | null;
@@ -327,6 +333,9 @@ async function updateTaskOnce(
         status: "done",
         recur_freq: pick(fields, row, "recur_freq"),
         recur_anchor_dom: pick(fields, row, "recur_anchor_dom"),
+        recur_interval: pick(fields, row, "recur_interval"),
+        recur_weekdays: pick(fields, row, "recur_weekdays"),
+        recur_setpos: pick(fields, row, "recur_setpos"),
         due_date: pick(fields, row, "due_date"),
         start_date: pick(fields, row, "start_date"),
         remind_date: pick(fields, row, "remind_date"),
@@ -336,8 +345,14 @@ async function updateTaskOnce(
         // Повтор только что выполненного «готово» (двойной клик, ретрай MCP) не перекатывает
         // срок второй раз, а отвечает тем же перекатом (F-018). Только если патч не трогает
         // сам график: «перенеси срок и закрой» — это уже другой запрос.
-        const touchesSchedule = ["due_date", "recur_freq", "recur_anchor_dom"]
-          .some((k) => k in fields);
+        const touchesSchedule = [
+          "due_date",
+          "recur_freq",
+          "recur_anchor_dom",
+          "recur_interval",
+          "recur_weekdays",
+          "recur_setpos",
+        ].some((k) => k in fields);
         if (!touchesSchedule) {
           const dup = duplicateRecurClose({
             lastClose: await lastRecurClose(id),

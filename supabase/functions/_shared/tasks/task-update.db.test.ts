@@ -268,3 +268,84 @@ Deno.test("обычная правка пишет журнал той же тр�
     await db.end();
   }
 });
+
+// ── Произвольная повторяемость (#823): новые колонки правила ──────────────────
+
+async function ruleRow(db: Client, id: string) {
+  const r = await db.queryObject<{
+    freq: string | null;
+    interval: number;
+    weekdays: number[] | null;
+    setpos: number | null;
+    due: string | null;
+  }>`select recur_freq as freq, recur_interval as interval,
+            recur_weekdays as weekdays, recur_setpos as setpos,
+            due_date::text as due
+       from tasks where id = ${id}`;
+  return r.rows[0];
+}
+
+Deno.test("#823: правило пишется в новые колонки и обнуляется при снятии", async () => {
+  const db = await connect();
+  try {
+    await seed(db);
+    const id = await addTask(db, { due: "2026-10-05", freq: "weekly" });
+
+    await updateTask(id, {
+      recur_freq: "weekly",
+      recur_interval: 2,
+      recur_weekdays: [1, 4],
+      recur_setpos: null,
+    }, { actorTelegramId: ACTOR });
+    const set = await ruleRow(db, id);
+    assertEquals(set.interval, 2);
+    assertEquals(set.weekdays, [1, 4]);
+
+    await updateTask(id, {
+      recur_freq: null,
+      recur_anchor_dom: null,
+      recur_interval: 1,
+      recur_weekdays: null,
+      recur_setpos: null,
+    }, { actorTelegramId: ACTOR });
+    const cleared = await ruleRow(db, id);
+    assertEquals(cleared.freq, null);
+    assertEquals(cleared.interval, 1);
+    assertEquals(cleared.weekdays, null);
+  } finally {
+    await db.end();
+  }
+});
+
+Deno.test("#823: перекат на базе учитывает интервал — каждые 2 недели", async () => {
+  const db = await connect();
+  try {
+    await seed(db);
+    const today = todayInTz();
+    const id = await addTask(db, { due: today, freq: "weekly" });
+    await db.queryArray`update tasks set recur_interval = 2 where id = ${id}`;
+
+    const res = await updateTask(id, { status: "done" }, {
+      actorTelegramId: ACTOR,
+    });
+    const want = nextOccurrence("weekly", null, today, today, { interval: 2 });
+    assertEquals(res?.recurred, { from: today, to: want });
+    assertEquals((await row(db, id)).due, want);
+  } finally {
+    await db.end();
+  }
+});
+
+Deno.test("#823: CHECK в базе отбивает мусор в правиле, yearly принимает", async () => {
+  const db = await connect();
+  try {
+    await seed(db);
+    const id = await addTask(db, { due: "2026-10-05", freq: "yearly" });
+    assertEquals((await ruleRow(db, id)).freq, "yearly");
+    await assertRejects(() => db.queryArray`update tasks set recur_interval = 0 where id = ${id}`);
+    await assertRejects(() => db.queryArray`update tasks set recur_weekdays = '{8}' where id = ${id}`);
+    await assertRejects(() => db.queryArray`update tasks set recur_setpos = 6 where id = ${id}`);
+  } finally {
+    await db.end();
+  }
+});

@@ -43,6 +43,8 @@ import {
   TaskUserError,
 } from "../_shared/tasks/db.ts";
 import {
+  pickRecurExtras,
+  RECUR_BODY_KEYS,
   recurrencePatchFor,
   resolveRecurrence,
 } from "../_shared/tasks/recurrence.ts";
@@ -1179,7 +1181,11 @@ async function routeRequest(req: Request): Promise<Response> {
 
       // Цикличность: частоту проверяет, число месяца выводит из срока один хелпер на
       // веб/бота/MCP — иначе anchor выводили бы тремя способами или забыли бы вовсе.
-      const recur = resolveRecurrence(body.recur_freq, dueDate);
+      const recur = resolveRecurrence(
+        body.recur_freq,
+        dueDate,
+        pickRecurExtras(body),
+      );
       if (!recur.ok) return apiErr(400, recur.error, origin);
 
       const isPrivate = body.is_private === true;
@@ -1268,6 +1274,9 @@ async function routeRequest(req: Request): Promise<Response> {
         tags: Array.isArray(body.tags) ? (body.tags as string[]) : undefined,
         recur_freq: recur.recur_freq,
         recur_anchor_dom: recur.recur_anchor_dom,
+        recur_interval: recur.recur_interval,
+        recur_weekdays: recur.recur_weekdays,
+        recur_setpos: recur.recur_setpos,
       };
 
       try {
@@ -1500,11 +1509,20 @@ async function routeRequest(req: Request): Promise<Response> {
       if (dateErr) return apiErr(400, dateErr, origin);
 
       // Цикличность (null — снять). Число месяца выводим из ИТОГОВОГО срока: его могли
-      // поменять этим же запросом.
-      if ("recur_freq" in body) {
-        const recur = recurrencePatchFor(body.recur_freq, effDue, task);
+      // поменять этим же запросом. Правило (#823: интервал, дни недели, n-й день) проверяет и
+      // обнуляет тот же хелпер — писатели его не разбирают.
+      if (RECUR_BODY_KEYS.some((k) => k in body)) {
+        const recur = recurrencePatchFor(
+          "recur_freq" in body ? body.recur_freq : undefined,
+          effDue,
+          task,
+          pickRecurExtras(body),
+        );
         if (!recur.ok) return apiErr(400, recur.error, origin);
         fields.recur_freq = recur.recur_freq;
+        fields.recur_interval = recur.recur_interval;
+        fields.recur_weekdays = recur.recur_weekdays;
+        fields.recur_setpos = recur.recur_setpos;
         // Ключа нет = якорь оставляем как есть (человек не трогал ни срок, ни частоту):
         // иначе правка названия сбросила бы график зажатой задачи с 31-го числа на 28-е.
         if ("recur_anchor_dom" in recur) {

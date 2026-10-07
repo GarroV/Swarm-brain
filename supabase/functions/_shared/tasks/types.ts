@@ -35,10 +35,15 @@ export type Task = {
   parent_id: string | null;
   tree_x: number | null;
   tree_y: number | null;
-  // Цикличность: NULL = обычная задача. День недели/число берутся из due_date,
+  // Цикличность: NULL = обычная задача. День недели/число по умолчанию берутся из due_date,
   // recur_anchor_dom помнит исходное число месяца для monthly (31 янв → 28 фев → 31 мар).
   recur_freq: string | null;
   recur_anchor_dom: number | null;
+  // Правило #823 (словарь RRULE колонками): каждые N; дни недели ISO 1–7 (только weekly);
+  // n-й/последний (-1) день недели срока в месяце (только monthly). Канон — recurrence-rule.ts.
+  recur_interval: number;
+  recur_weekdays: number[] | null;
+  recur_setpos: number | null;
   // Не показывать в публичной дорожной карте хаба (issue #562). Необязательно в типе: узкие
   // проекции (TASK_LIST_COLUMNS) его не читают.
   hidden_from_hub?: boolean;
@@ -77,6 +82,9 @@ export type TaskInput = {
   tree_y?: number | null;
   recur_freq?: string | null;
   recur_anchor_dom?: number | null;
+  recur_interval?: number;
+  recur_weekdays?: number[] | null;
+  recur_setpos?: number | null;
   hidden_from_hub?: boolean;
   /** Ссылки на материалы: массив {title, url}. Разбор и проверка схемы — `links.ts`. */
   links?: { title: string | null; url: string }[];
