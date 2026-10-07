@@ -65,4 +65,19 @@ describe("RunLogs — журнал запуска бота на диске сл�
     }).not.toThrow();
     expect(said).toHaveLength(1);
   });
+
+  it("сбой обрезки — сообщение службе, а не падение", async () => {
+    const said: string[] = [];
+    const logs = new RunLogs({
+      directory,
+      log: (line) => {
+        said.push(line);
+      },
+    });
+    await rm(directory, { recursive: true, force: true });
+    expect(() => {
+      logs.prune();
+    }).not.toThrow();
+    expect(said).toHaveLength(1);
+  });
 });
