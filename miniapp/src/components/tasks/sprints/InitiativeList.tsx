@@ -16,6 +16,7 @@ import {
   SPRINT_COLS,
   SprintRow,
   SubtaskLiteRow,
+  TASK_INDENT,
 } from "./SprintRow";
 import { resolveDrop, subtaskBlock } from "@/lib/sprintGrouping";
 import { type DragView, type RowInfo, useRowDrag } from "./useRowDrag";
@@ -267,8 +268,8 @@ function Group(
         <div>
           {node.items.length === 0 && (
             <div
-              className="px-3 py-2 pl-[27px] text-ink-mute"
-              style={{ fontSize: 12.5 }}
+              className="px-3 py-2 text-ink-mute"
+              style={{ paddingLeft: TASK_INDENT + 20, fontSize: 12.5 }}
             >
               {dt(
                 "Пусто — перетащите сюда задачи",
@@ -525,7 +526,9 @@ export function InitiativeList({
           letterSpacing: "0.08em",
         }}
       >
-        <span className="px-3 pl-[27px]">{dt("Задача", "Task")}</span>
+        <span className="px-3" style={{ paddingLeft: TASK_INDENT + 20 }}>
+          {dt("Задача", "Task")}
+        </span>
         <span className="px-2">{dt("Срок", "Due")}</span>
         <span className="px-2">{dt("Рынок", "Market")}</span>
         <span className="px-2">{dt("Сверка", "Check")}</span>

@@ -17,6 +17,12 @@ import { blockText } from "./groupingText";
 /** Колонки — одни на шапку и строки, иначе вертикаль рвётся между группами. */
 export const SPRINT_COLS = "minmax(0,1fr) 64px 56px 128px 168px 64px";
 
+// Лесенка дерева (владелец 07.10.2026: «чтобы не было шатания, каскадом»): задача начинается
+// под именем группы, подзадача — ступенью правее. У каждой строки задачи постоянное место под
+// стрелку подзадач, поэтому точки и названия одного уровня стоят в одну линию.
+export const TASK_INDENT = 32;
+export const SUBTASK_INDENT = 52;
+
 const CLOSED = new Set(["done", "cancelled"]);
 
 // Один элемент вместо трёх кнопок: строка и так длинная (#411). Порядок повторяет разговор на
@@ -210,30 +216,32 @@ export function SprintRow(
       )}
       <div
         className="flex min-w-0 items-center gap-2 px-3"
-        style={depth ? { paddingLeft: 34 } : undefined}
+        style={{ paddingLeft: depth ? SUBTASK_INDENT : TASK_INDENT }}
       >
-        {kids && (
-          // Шеврон — в левом поле строки, чтобы колонка названий не съезжала у строк без подзадач.
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              kids.onToggle();
-            }}
-            aria-expanded={kids.open}
-            aria-label={kids.open
-              ? dt("Свернуть подзадачи", "Collapse subtasks")
-              : dt("Показать подзадачи", "Show subtasks")}
-            className="absolute left-0 top-0 flex h-[38px] w-3 items-center justify-center text-ink-mute hover:text-ink"
-          >
-            <RoyIcon
-              name="cright"
-              size={9}
-              strokeWidth={2.6}
-              className={cn("transition-transform", kids.open && "rotate-90")}
-            />
-          </button>
-        )}
+        {/* Место под стрелку есть у каждой строки — с подзадачами она там, без них пусто. */}
+        {kids
+          ? (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                kids.onToggle();
+              }}
+              aria-expanded={kids.open}
+              aria-label={kids.open
+                ? dt("Свернуть подзадачи", "Collapse subtasks")
+                : dt("Показать подзадачи", "Show subtasks")}
+              className="flex w-3 shrink-0 items-center justify-center self-stretch text-ink-mute hover:text-ink"
+            >
+              <RoyIcon
+                name="cright"
+                size={9}
+                strokeWidth={2.6}
+                className={cn("transition-transform", kids.open && "rotate-90")}
+              />
+            </button>
+          )
+          : <span aria-hidden="true" className="w-3 shrink-0" />}
         <span
           className={cn(
             "size-[7px] shrink-0 rounded-full",
@@ -467,7 +475,10 @@ export function SprintRow(
           вместо объяснения. */
       }
       {h.onNote && !closed && live && (needsNote || item.to_carry) && (
-        <div className="col-span-full px-3 pb-2 pl-[27px]">
+        <div
+          className="col-span-full px-3 pb-2"
+          style={{ paddingLeft: TASK_INDENT + 20 }}
+        >
           <input
             value={noteValue}
             onClick={(e) => e.stopPropagation()}
@@ -505,7 +516,7 @@ export function SprintRow(
                 ? "border-ink-mute/50 text-ink-mute"
                 : "border-primary/70 bg-primary/8 text-ink",
             )}
-            style={{ paddingLeft: 34, fontSize: 12.5 }}
+            style={{ paddingLeft: SUBTASK_INDENT, fontSize: 12.5 }}
           >
             <span className="min-w-0 truncate opacity-70">↳ {drag.title}</span>
             <span
@@ -551,8 +562,9 @@ export function SubtaskLiteRow({ task, inSprint, onOpen }: {
     >
       <div
         className="flex min-w-0 items-center gap-2 px-3"
-        style={{ paddingLeft: 34 }}
+        style={{ paddingLeft: SUBTASK_INDENT }}
       >
+        <span aria-hidden="true" className="w-3 shrink-0" />
         <span
           className={cn(
             "size-[6px] shrink-0 rounded-full",
