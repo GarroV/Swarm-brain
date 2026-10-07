@@ -1250,7 +1250,9 @@ export function SprintsScreen() {
                             {dt("Мои задачи", "My tasks")}
                           </label>
                         </div>
-                        <div className="min-w-[640px]">
+                        {/* Контейнер состава: колонки уступают место названию по его ширине, а не по
+                            ширине окна (SPRINT_GRID в sprints/SprintRow.tsx). */}
+                        <div className="@container/sprint min-w-[320px]">
                         {mineBoards
                           ? (
                             <>

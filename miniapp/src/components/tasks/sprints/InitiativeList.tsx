@@ -11,12 +11,15 @@ import { useDt } from "@/components/roy/nav";
 import { fmtDay } from "./format";
 import { PILL_BTN } from "./atoms";
 import {
+  NARROW_INVISIBLE,
+  PHONE_TIGHT,
   type RowDnd,
   type RowHandlers,
-  SPRINT_COLS,
+  SPRINT_GRID,
   SprintRow,
   SubtaskLiteRow,
   TASK_INDENT,
+  TIGHT_INVISIBLE,
 } from "./SprintRow";
 import { resolveDrop, subtaskBlock } from "@/lib/sprintGrouping";
 import { type DragView, type RowInfo, useRowDrag } from "./useRowDrag";
@@ -89,7 +92,9 @@ function GroupControls({ group, grouping }: {
   return (
     <span // У названия (владелец 05.10.2026: «настройки группы надо передвинуть к названию»). На
      // телефоне — своей строкой под названием: в одну строку кнопки уезжали за край экрана.
-    className="order-last flex shrink-0 basis-full flex-wrap items-center gap-1.5 pb-2 pl-8 pr-2 transition-opacity lg:order-none lg:basis-auto lg:pb-0 lg:pl-0 lg:opacity-0 lg:group-hover/head:opacity-100 lg:focus-within:opacity-100">
+    // На компьютере в покое и ширины не занимают (max-w-0): прозрачные, они держали 340px и
+    // резали название группы на узком окне — а название сокращается последним.
+    className="order-last flex shrink-0 basis-full flex-wrap items-center gap-1.5 pb-2 pl-8 pr-2 transition-opacity lg:order-none lg:basis-auto lg:max-w-0 lg:flex-nowrap lg:overflow-hidden lg:pb-0 lg:pl-0 lg:pr-0 lg:opacity-0 lg:group-hover/head:max-w-none lg:group-hover/head:pr-2 lg:group-hover/head:opacity-100 lg:focus-within:max-w-none lg:focus-within:pr-2 lg:focus-within:opacity-100">
       <button
         type="button"
         className={PILL_BTN}
@@ -241,7 +246,7 @@ function Group(
           tabIndex={-1}
           aria-hidden="true"
           onClick={onToggle}
-          className="flex min-w-0 flex-1 items-baseline justify-end gap-2.5 self-stretch px-3 pb-1.5 pt-2"
+          className="flex flex-1 items-baseline justify-end gap-2.5 self-stretch whitespace-nowrap px-3 pb-1.5 pt-2"
         >
           {bad > 0 && (
             <span
@@ -518,9 +523,11 @@ export function InitiativeList({
         role="row"
         // px-1 — тот же отступ, что у строк ниже: без него шапка шире строк, и столбцы
         // разъезжались (владелец 05.10.2026: «шапка не бьётся со столбами»).
-        className="sticky top-0 z-10 grid items-center rounded-t-[10px] border-b border-line bg-surface-2 px-1 font-semibold uppercase text-ink-mute"
+        className={cn(
+          "sticky top-0 z-10 grid items-center rounded-t-[10px] border-b border-line bg-surface-2 px-1 font-semibold uppercase text-ink-mute",
+          SPRINT_GRID,
+        )}
         style={{
-          gridTemplateColumns: SPRINT_COLS,
           height: 32,
           fontSize: 10.5,
           letterSpacing: "0.08em",
@@ -529,10 +536,17 @@ export function InitiativeList({
         <span className="px-3" style={{ paddingLeft: TASK_INDENT + 20 }}>
           {dt("Задача", "Task")}
         </span>
-        <span className="px-2">{dt("Срок", "Due")}</span>
-        <span className="px-2">{dt("Рынок", "Market")}</span>
-        <span className="px-2">{dt("Сверка", "Check")}</span>
-        <span className="px-2">{dt("Исполнитель", "Assignee")}</span>
+        <span className={cn("px-2", PHONE_TIGHT)}>{dt("Срок", "Due")}</span>
+        {/* Подписи узких столбцов — невидимые, но на месте: display:none выбил бы ячейку из сетки. */}
+        <span className={cn("overflow-hidden px-2", TIGHT_INVISIBLE)}>
+          {dt("Рынок", "Market")}
+        </span>
+        <span className={cn("overflow-hidden px-2", TIGHT_INVISIBLE)}>
+          {dt("Сверка", "Check")}
+        </span>
+        <span className={cn("overflow-hidden px-2", NARROW_INVISIBLE)}>
+          {dt("Исполнитель", "Assignee")}
+        </span>
         <span />
       </div>
       {view && <DragGhost view={view} />}
