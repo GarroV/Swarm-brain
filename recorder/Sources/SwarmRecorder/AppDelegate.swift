@@ -96,6 +96,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     // на этом статусе меню молчит, чтобы не пугать человека ложной тревогой.
     private var notificationsAllowed: Bool?
     private var micWasActive = false
+    // Вопрос «Встречу записывает Скриба — продолжить?» (BotPrompt, решение владельца 07.10.2026):
+    // в какой записи уже спросили (её recordStartedAt) и висит ли вопрос в капсуле сейчас.
+    private var botPromptAskedFor: Date?
+    private var botPromptShown = false
     // Маяк присутствия для панели «Встречи сегодня» (issue #218): что мы уже рассказали
     // серверу и когда. Логика «пора или нет» — RecorderKit.PresenceBeacon.
     private var presenceSent: PresenceBeacon.State?
@@ -201,6 +205,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         Task { _ = await Permissions.requestMicrophone() }
 
         widget.onStop = { [weak self] in self?.stopTapped() }
+        widget.onBotKeep = { [weak self] in
+            Diagnostics.shared.log("BOT-PROMPT продолжить запись рекордером")
+            self?.botPromptShown = false
+            self?.syncWidget()
+        }
+        widget.onBotStop = { [weak self] in
+            Diagnostics.shared.log("BOT-PROMPT остановить — встречу пишет бот")
+            self?.botPromptShown = false
+            self?.stopTapped()
+        }
         widget.onRecord = { [weak self] in self?.widgetRecord() }
         widget.onJoin = { [weak self] in self?.widgetJoin() }
         widget.onJoinChoice = { [weak self] key in self?.joinChosen(key) }
@@ -575,6 +589,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 if let m = meetings.first { self?.lastCalendar = (m, Date()) }
                 self?.handleDetection(meetings: meetings, micActive: micOn,
                                       recordedNow: lookup?.recordedNow ?? [])
+                if let recordedNow = lookup?.recordedNow { self?.askIfBotRecords(recordedNow) }
                 // Присутствие обновляем ОТДЕЛЬНО от handleDetection: тот выходит по
                 // `guard case .idle`, а панели нужен сигнал и во время записи.
                 self?.pulsePresence(onCall: micOn, calendarKey: meetings.first?.key)
@@ -600,6 +615,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         if Date() < until { return true }
         dismissedUntil.removeValue(forKey: key)
         return false
+    }
+
+    /// Бот начал писать встречу, которую пишет рекордер: спросить человека, продолжать ли
+    /// (BotPrompt, решение владельца 07.10.2026). Один раз за запись.
+    private func askIfBotRecords(_ recordedNow: [String]) {
+        guard isRecording else { return }
+        let asked = botPromptAskedFor != nil && botPromptAskedFor == recordStartedAt
+        guard BotPrompt.shouldAsk(recordingKey: identity?.key, isCalendar: identity?.kind == .calendar,
+                                  recordedNow: recordedNow, alreadyAsked: asked) else { return }
+        botPromptAskedFor = recordStartedAt
+        botPromptShown = true
+        Diagnostics.shared.log("BOT-PROMPT встречу \(identity?.key ?? "—") пишет бот — спрашиваем")
+        syncWidget()
     }
 
     /// `recordedNow` — ключи встреч, которые уже пишет бот (или чужой рекордер): их не предлагаем,
@@ -923,8 +951,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     // узкая пилюля без текста: встреча и так пишется.
     private func syncWidget() {
         if configError != nil { widget.hide(); return }
+        if !isRecording { botPromptShown = false }
         switch state {
         case .recording:
+            // Вопрос про бота важнее блокнота: свёрнутый он не виден, а ответ нужен человеку сейчас.
+            if botPromptShown { widget.showBotPrompt(); return }
             // Развёрнут блокнот → показываем его (пилюлю прячем); свёрнуто → вертикальная пилюля рекордера.
             if notesExpanded { widget.hide() }
             else { widget.showRecording(startedAt: recordStartedAt ?? Date()) }

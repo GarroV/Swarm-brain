@@ -34,6 +34,9 @@ final class RecorderWidget {
     var onProcessingDismiss: (() -> Void)?
     // Клик по марке «Рой» во время записи — свернуть/развернуть панель заметок (Granola-режим).
     var onToggleNotes: (() -> Void)?
+    // Встречу пишет бот (решение владельца 07.10.2026): «Продолжить» запись рекордером или «Остановить».
+    var onBotKeep: (() -> Void)?
+    var onBotStop: (() -> Void)?
     // Источник уровня входа 0…1 (ставит AppDelegate → recorder.currentMicLevel()).
     // Виджет сам опрашивает его таймером, пока идёт запись.
     var levelProvider: (() -> Float)?
@@ -93,6 +96,8 @@ final class RecorderWidget {
     private let bannerRecord = NSButton()
     private let bannerClose = NSButton()
     private let bannerButtons = NSStackView()
+    private let botKeep = NSButton()
+    private let botStop = NSButton()
     private let bannerColumn = NSStackView()
     private let bannerRow = NSStackView()
     // Бот в капсуле (D031) — только кнопка «Позвать бота» рядом с «Подключиться»/«Записать»,
@@ -121,6 +126,7 @@ final class RecorderWidget {
 
     func showRecording(startedAt: Date) {
         ensurePanel()
+        setBotButtons(visible: false)
         shownMissed = nil
         hideChoice()
         recRow.isHidden = false
@@ -137,6 +143,7 @@ final class RecorderWidget {
     /// `missed` — кнопка «Позвать бота» этого созвона (D031), nil — кнопки нет.
     func showPending(notice: MeetingNotice, canJoin: Bool, missed: MissedCapsule? = nil) {
         ensurePanel()
+        setBotButtons(visible: false)
         stopLevelMeter()
         shownMissed = missed
         hideChoice()
@@ -159,6 +166,7 @@ final class RecorderWidget {
     /// у строки, куда бота можно позвать, — своя кнопка «Позвать бота» (D031).
     func showChoice(_ choices: [Choice]) {
         ensurePanel()
+        setBotButtons(visible: false)
         stopLevelMeter()
         shownMissed = nil
         shownChoiceMissed = choices.map(\.missed)
@@ -174,6 +182,33 @@ final class RecorderWidget {
         bannerClose.toolTip = "Не записывать эти встречи"
         missedFailure.isHidden = true
         showBanner()
+    }
+
+    /// Встречу, которую пишет рекордер, начал писать бот (BotPrompt, решение владельца 07.10.2026):
+    /// баннер с вопросом поверх записи. Запись при этом идёт — выбор человека ничего не теряет.
+    func showBotPrompt() {
+        ensurePanel()
+        stopLevelMeter()
+        shownMissed = nil
+        hideChoice()
+        bannerTitle.stringValue = BotPrompt.title
+        bannerTitle.toolTip = nil
+        setSubtitle(BotPrompt.question, lines: 1)
+        bannerSubtitle.toolTip = nil
+        setBotButtons(visible: true)
+        bannerClose.isHidden = true      // ответ обязателен: ✕ здесь читался бы как «не знаю что»
+        missedFailure.isHidden = true
+        showBanner()
+    }
+
+    private func setBotButtons(visible: Bool) {
+        botKeep.isHidden = !visible
+        botStop.isHidden = !visible
+        if visible {
+            bannerJoin.isHidden = true
+            bannerRecord.isHidden = true
+            bannerInvite.isHidden = true
+        }
     }
 
     private func hideChoice() {
@@ -466,7 +501,13 @@ final class RecorderWidget {
         bannerInvite.tag = -1
         bannerInvite.setAccessibilityIdentifier("missed.invite")
         bannerInvite.isHidden = true
-        bannerButtons.setViews([bannerJoin, bannerRecord, bannerInvite], in: .leading)
+        textButton(botKeep, title: BotPrompt.keep, filled: true, action: #selector(botKeepAction))
+        botKeep.setAccessibilityIdentifier("bot.keep")
+        textButton(botStop, title: BotPrompt.stop, filled: false, action: #selector(botStopAction))
+        botStop.setAccessibilityIdentifier("bot.stop")
+        botKeep.isHidden = true
+        botStop.isHidden = true
+        bannerButtons.setViews([bannerJoin, bannerRecord, bannerInvite, botKeep, botStop], in: .leading)
         styleFailure(missedFailure)
         missedFailure.setAccessibilityIdentifier("missed.failure")
         missedFailure.isHidden = true
@@ -721,6 +762,8 @@ final class RecorderWidget {
     @objc private func toggleNotesAction() { onToggleNotes?() }
     @objc private func stopAction() { onStop?() }
     @objc private func recordAction() { onRecord?() }
+    @objc private func botKeepAction() { onBotKeep?() }
+    @objc private func botStopAction() { onBotStop?() }
     // ✕ закрывает всё, что в капсуле: предложение записать и кнопки «Позвать бота» вместе.
     @objc private func dismissAction() {
         for id in shownMissedIds { onMissedDismiss?(id) }
