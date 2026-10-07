@@ -573,7 +573,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 // Для ручного старта — первая из идущих (сервер отдаёт только созвоны, D026); при
                 // пересечении (D027) выбор делается в капсуле, а «Записать» из меню берёт первую.
                 if let m = meetings.first { self?.lastCalendar = (m, Date()) }
-                self?.handleDetection(meetings: meetings, micActive: micOn)
+                self?.handleDetection(meetings: meetings, micActive: micOn,
+                                      recordedNow: lookup?.recordedNow ?? [])
                 // Присутствие обновляем ОТДЕЛЬНО от handleDetection: тот выходит по
                 // `guard case .idle`, а панели нужен сигнал и во время записи.
                 self?.pulsePresence(onCall: micOn, calendarKey: meetings.first?.key)
@@ -601,7 +602,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         return false
     }
 
-    private func handleDetection(meetings: [MeetingIdentity.Info], micActive: Bool) {
+    /// `recordedNow` — ключи встреч, которые уже пишет бот (или чужой рекордер): их не предлагаем,
+    /// а звонок без календаря при непустом списке не считаем незаписанным (issue #821 — плашка
+    /// «Идёт звонок · Записать» висела весь созвон, который писал бот).
+    private func handleDetection(meetings: [MeetingIdentity.Info], micActive: Bool, recordedNow: [String] = []) {
         let wasActive = micWasActive
         micWasActive = micActive
         guard case .idle = state else { return }
@@ -609,7 +613,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // Календарь — приоритет (богаче: название, участники, упреждение). Только созвоны (D026),
         // все пересекающиеся (D027), без закрытых человеком.
         let offers = MeetingChoice.offers(meetings, key: \.key, hasLink: { $0.joinURL != nil },
-                                          isDismissed: { self.isMeetingDismissed($0) })
+                                          isDismissed: { self.isMeetingDismissed($0) || recordedNow.contains($0) })
         if !offers.isEmpty {
             callActive = false
             if !MeetingChoice.sameOffer(pendingMeetings, offers, key: \.key) {
@@ -619,6 +623,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             return
         }
         if !pendingMeetings.isEmpty { pendingMeetings = []; rebuildMenu() }
+
+        // Звонок уже пишет бот — не предлагаем записывать его ещё раз (issue #821).
+        if !recordedNow.isEmpty {
+            if callActive { callActive = false; rebuildMenu() }
+            return
+        }
 
         // Нет события календаря → запасной детект звонка по микрофону.
         if micActive && !wasActive {
