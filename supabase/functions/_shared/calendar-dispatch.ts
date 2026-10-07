@@ -175,12 +175,14 @@ export function planPersonDispatch(
 /** Организатор события (почта, нижний регистр): одна встреча у всех участников — один организатор. */
 export interface EventPeople {
   organizer: string | null;
+  /** Событие из календаря самого организатора (`organizer.self`): его не подделать импортом. */
+  own: boolean;
 }
 
 const mail = (e: string | undefined) => (e ?? "").trim().toLowerCase();
 
 function peopleOf(ev: GEvent): EventPeople {
-  return { organizer: mail(ev.organizer?.email) || null };
+  return { organizer: mail(ev.organizer?.email) || null, own: ev.organizer?.self === true };
 }
 
 /** Комната встречи: одна ссылка в разных событиях календаря — одна комната. */
@@ -207,8 +209,14 @@ function sameMeeting(a: EventPeople | undefined, b: EventPeople | undefined): bo
  * правило совладельцев (meeting-claim). Другой организатор — другая встреча, два задания.
  */
 export function dropSameRoom(jobs: readonly DispatchJob[], who: ReadonlyMap<string, EventPeople>): DispatchJob[] {
+  // Остаётся событие из календаря самого организатора: организатора в импортированном (.ics)
+  // событии можно вписать чужого, и тогда подделка вытеснила бы настоящую встречу и забрала
+  // запись себе (замечание проверки безопасности, 07.10.2026). Порядок остальных — как пришли.
+  const ownFirst = [...jobs].sort((a, b) =>
+    Number(!!who.get(b.calendar_key)?.own) - Number(!!who.get(a.calendar_key)?.own)
+  );
   const kept: DispatchJob[] = [];
-  for (const job of jobs) {
+  for (const job of ownFirst) {
     const twin = kept.find((k) =>
       k.calendar_key !== job.calendar_key && roomOf(k.join_url) === roomOf(job.join_url) && overlaps(k, job) &&
       sameMeeting(who.get(k.calendar_key), who.get(job.calendar_key))

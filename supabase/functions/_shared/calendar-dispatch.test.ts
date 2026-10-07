@@ -236,3 +236,21 @@ Deno.test("тот же организатор и комната, время не
   );
   assertEquals(dropSameRoom([...a.jobs, ...b.jobs], new Map([...a.who!, ...b.who!])).length, 2);
 });
+
+Deno.test("двойник с вписанным организатором не вытесняет событие из календаря самого организатора", () => {
+  // Первый по порядку завёл (импортом) событие на ту же комнату и вписал чужого организатора.
+  const forged = planPersonDispatch(
+    [event({ organizer: org("boss@x.io"), attendees: yes("a@x.io") })],
+    1,
+    NOW,
+    new Set(),
+  );
+  const real = planPersonDispatch(
+    [event({ id: "e2", iCalUID: "other-uid", organizer: { email: "boss@x.io", self: true } })],
+    2,
+    NOW,
+    new Set(),
+  );
+  assertEquals(real.jobs.length, 1);
+  assertEquals(mergeDispatch([forged, real]).jobs.map((j) => j.invited_by), [2]);
+});
