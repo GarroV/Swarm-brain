@@ -2,6 +2,7 @@ import { assertEquals } from "jsr:@std/assert@1";
 import {
   canAccessDraftMeeting,
   canDeleteDraftMeeting,
+  canHideDraftMeeting,
   draftMeetingsOwnScopedFilter,
   hasCoOwners,
   oneOnOnePartner,
@@ -55,7 +56,7 @@ Deno.test("список очереди own-scoped ВСЕГДА, флага «п�
   assertEquals(draftMeetingsOwnScopedFilter.length, 1);
   assertEquals(
     draftMeetingsOwnScopedFilter(555),
-    'recorders.cs.[{"telegram_id":555}],co_owners.cs.{555}',
+    'and(recorders.cs.[{"telegram_id":555}],hidden_for.not.cs.{555}),and(co_owners.cs.{555},hidden_for.not.cs.{555})',
   );
 });
 
@@ -69,10 +70,19 @@ Deno.test("совладелец (участник встречи из SWARM) в�
   assertEquals(canAccessDraftMeeting(coOwned, OTHER, false, "other"), false);
 });
 
-Deno.test("удалить черновик может только записавший, совладелец — нет", () => {
-  assertEquals(canDeleteDraftMeeting(coOwned, RECORDER), true);
+Deno.test("удалить можно только свою встречу с одним владельцем — групповую не стереть у всех (#818)", () => {
+  assertEquals(canDeleteDraftMeeting(draft, RECORDER), true);
+  assertEquals(canDeleteDraftMeeting(coOwned, RECORDER), false);
   assertEquals(canDeleteDraftMeeting(coOwned, OTHER), false);
   assertEquals(canDeleteDraftMeeting(null, RECORDER), false);
+});
+
+Deno.test("групповую встречу каждый её владелец скрывает у себя, одиночную и чужую — нет (#818)", () => {
+  assertEquals(canHideDraftMeeting(coOwned, RECORDER), true);
+  assertEquals(canHideDraftMeeting(coOwned, OTHER), true);
+  assertEquals(canHideDraftMeeting(coOwned, 333), false);
+  assertEquals(canHideDraftMeeting(draft, RECORDER), false);
+  assertEquals(canHideDraftMeeting(null, RECORDER), false);
 });
 
 Deno.test("несколько владельцев: совладельцы или двое записавших", () => {

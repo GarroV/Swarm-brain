@@ -3268,6 +3268,15 @@ export async function askMeeting(
   return r.answer;
 }
 
+/** Скрыть черновик групповой встречи у себя — у остальных владельцев он остаётся (issue #818). */
+export async function hideAgentMeeting(id: string): Promise<void> {
+  if (DEV_MODE) {
+    mockAgentMeetings = mockAgentMeetings.filter((x) => x.id !== id);
+    return;
+  }
+  return apiFetch<void>(`/agent-meetings/${id}/hide`, { method: "POST" });
+}
+
 export async function deleteAgentMeeting(id: string): Promise<void> {
   if (DEV_MODE) {
     mockAgentMeetings = mockAgentMeetings.filter((x) => x.id !== id);

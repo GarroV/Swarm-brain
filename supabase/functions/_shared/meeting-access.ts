@@ -89,9 +89,19 @@ export function canAccessDraftMeeting(
   return recorderIds(meeting).includes(viewerId) || (meeting.co_owners ?? []).includes(viewerId);
 }
 
-/** Удалить черновик может только записавший (запустил бота или рекордер), не совладелец. */
+/**
+ * Удалить черновик может только записавший (запустил бота или рекордер), не совладелец, — и только
+ * когда владелец у встречи один. Черновик групповой встречи — одна строка на всех: удаление стирало
+ * его у остальных (issue #818). Групповую встречу каждый скрывает у себя (`canHideDraftMeeting`).
+ */
 export function canDeleteDraftMeeting(meeting: DraftMeetingRow | null | undefined, viewerId: number): boolean {
-  return !!meeting && recorderIds(meeting).includes(viewerId);
+  return !!meeting && recorderIds(meeting).includes(viewerId) && !hasCoOwners(meeting);
+}
+
+/** Скрыть черновик у себя — любой его владелец, когда владельцев больше одного (issue #818). */
+export function canHideDraftMeeting(meeting: DraftMeetingRow | null | undefined, viewerId: number): boolean {
+  if (!meeting || !hasCoOwners(meeting)) return false;
+  return recorderIds(meeting).includes(viewerId) || (meeting.co_owners ?? []).includes(viewerId);
 }
 
 /** Больше одного владельца — тогда публикация только в общую базу. */
@@ -103,8 +113,10 @@ export function hasCoOwners(meeting: DraftMeetingRow): boolean {
  * Фильтр очереди вычитки для запроса к БД (`.or(...)`): только черновики, где смотрящий записывал
  * или стал совладельцем. Параметра «показать все» нет сознательно — раньше `?all=true` у админа
  * отдавал весь воркспейс. viewerId — число из токена, в фильтр не попадает ничего чужого.
+ * Скрытые смотрящим у себя (`hidden_for`, issue #818) не отдаются.
  */
 export function draftMeetingsOwnScopedFilter(viewerId: number): string {
   const id = Math.trunc(viewerId);
-  return `recorders.cs.[{"telegram_id":${id}}],co_owners.cs.{${id}}`;
+  const notHidden = `hidden_for.not.cs.{${id}}`;
+  return `and(recorders.cs.[{"telegram_id":${id}}],${notHidden}),and(co_owners.cs.{${id}},${notHidden})`;
 }

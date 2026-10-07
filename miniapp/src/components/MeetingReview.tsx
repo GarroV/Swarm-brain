@@ -1,7 +1,7 @@
 "use client";
 import { PILL_GROUP_CLS, pillSegmentCls } from "@/components/ui/PropertyPill";
 import { useState, useEffect, useCallback, useContext } from "react";
-import { askMeeting, fetchAgentMeeting, fetchAgentMeetingNotes, patchAgentMeetingDraft, renameAgentMeeting, publishAgentMeeting, resummarizeAgentMeeting, deleteAgentMeeting } from "@/lib/api";
+import { askMeeting, fetchAgentMeeting, fetchAgentMeetingNotes, patchAgentMeetingDraft, renameAgentMeeting, publishAgentMeeting, resummarizeAgentMeeting, deleteAgentMeeting, hideAgentMeeting } from "@/lib/api";
 import type { AgentMeeting, MeetingLiveNote } from "@/types";
 import { DetailPanelContext, NavHeader, SectionLabel } from "@/components/roy/ui";
 import { RoyIcon, type RoyIconName } from "@/components/roy/icons";
@@ -12,7 +12,7 @@ import { applyAskAnswerToText } from "@/lib/tezisyLines";
 import { useDt, useLang, useRoyNav } from "@/components/roy/nav";
 import { speakerLabelAt } from "@/lib/transcriptSpeaker";
 import { useConfirm } from "@/components/ui/confirm";
-import { hasSeveralOwners, canDeleteDraft } from "@/lib/draftOwners";
+import { hasSeveralOwners, canDeleteDraft, canHideDraft } from "@/lib/draftOwners";
 import { recordedByOf } from "@/lib/agentMeeting";
 import { TasksFromMeeting } from "@/components/roy/TasksFromMeeting";
 
@@ -166,6 +166,27 @@ export function MeetingReview({ id, onClose, onChanged }: Props) {
       onClose();
     } catch {
       toast(dt("Не удалось удалить", "Could not delete"));
+    } finally { setDeleting(false); }
+  };
+
+  // Групповая встреча — одна строка на всех владельцев: скрываем у себя, у остальных остаётся (#818).
+  const handleHide = async () => {
+    if (!meeting) return;
+    const ok = await confirm({
+      title: dt(`Скрыть «${meeting.title ?? ""}» у себя?`, `Hide “${meeting.title ?? ""}” for yourself?`),
+      description: dt("Встреча пропадёт из вашей вычитки. У остальных участников она останется.", "The meeting leaves your review queue. Other participants keep it."),
+      confirmText: dt("Скрыть", "Hide"),
+      cancelText: dt("Отмена", "Cancel"),
+    });
+    if (!ok) return;
+    setDeleting(true);
+    try {
+      await hideAgentMeeting(id);
+      toast(dt("Встреча скрыта у вас", "Meeting hidden for you"));
+      onChanged?.();
+      onClose();
+    } catch {
+      toast(dt("Не удалось скрыть", "Could not hide"));
     } finally { setDeleting(false); }
   };
 
@@ -379,6 +400,7 @@ export function MeetingReview({ id, onClose, onChanged }: Props) {
                   <RoyIcon name="trash" size={16} strokeWidth={1.9} />
                 </button>
               )}
+              {canHideDraft(meeting) && !deleting && <Chip icon="eye" label={dt("Скрыть у себя", "Hide for me")} onClick={handleHide} />}
             </div>
             {notesReady && !teamOnly && (
               <p className="mt-1.5 text-ink-mute" style={{ fontSize: 12 }}>

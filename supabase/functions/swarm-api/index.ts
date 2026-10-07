@@ -115,6 +115,7 @@ import {
 import {
   canAccessDraftMeeting,
   canDeleteDraftMeeting,
+  canHideDraftMeeting,
   type DraftMeetingRow,
   draftMeetingsOwnScopedFilter,
   oneOnOnePartner,
@@ -2785,12 +2786,13 @@ async function routeRequest(req: Request): Promise<Response> {
   const agentMarketMatch = routePath.match(
     /^\/agent-meetings\/([^/]+)\/market-suggestion$/,
   );
+  const agentHideMatch = routePath.match(/^\/agent-meetings\/([^/]+)\/hide$/);
   if (
     agentMeetingMatch || agentPublishMatch || agentNotesMatch ||
-    agentResummarizeMatch || agentMarketMatch
+    agentResummarizeMatch || agentMarketMatch || agentHideMatch
   ) {
     const mId = (agentMeetingMatch ?? agentPublishMatch ?? agentNotesMatch ??
-      agentResummarizeMatch ?? agentMarketMatch)![1];
+      agentResummarizeMatch ?? agentMarketMatch ?? agentHideMatch)![1];
     const { data: mRow } = await supabase.from("meetings").select("*").eq(
       "id",
       mId,
@@ -2809,6 +2811,20 @@ async function routeRequest(req: Request): Promise<Response> {
     }
     // Сужение для компилятора: гард уже вернул 404 при meeting=null. Строка недостижима.
     if (!meeting) return apiErr(404, "Not found", origin);
+
+    // POST /:id/hide — скрыть черновик групповой встречи у себя (issue #818). Строка общая на
+    // всех владельцев, поэтому не удаляем, а отмечаем смотрящего в hidden_for.
+    if (agentHideMatch && req.method === "POST") {
+      if (!canHideDraftMeeting(meeting as DraftMeetingRow, telegram_id)) {
+        return apiErr(409, "Only a meeting with several owners can be hidden — delete it instead", origin);
+      }
+      const prev = Array.isArray(meeting.hidden_for) ? (meeting.hidden_for as unknown[]).map(Number) : [];
+      const { error } = await supabase.from("meetings")
+        .update({ hidden_for: [...new Set([...prev, telegram_id])] })
+        .eq("id", mId);
+      if (error) return serverError(origin, "agent-meetings hide", error);
+      return new Response(null, { status: 204, headers: corsHeaders(origin) });
+    }
 
     // POST /:id/resummarize — пере-сводка тезисов ТЕКУЩИМ промптом из сохранённого транскрипта
     // (без повторной транскрибации). Только до публикации; заголовок не трогаем.
@@ -3008,6 +3024,10 @@ async function routeRequest(req: Request): Promise<Response> {
         return apiErr(409, "Уже в базе — удаляйте через раздел «База»", origin);
       }
       // Совладелец по приглашению черновик не удаляет — он общий (решение владельца 2026-09-25).
+      // Групповую встречу не удаляет никто: она стёрлась бы у всех — её скрывают у себя (#818).
+      if (canHideDraftMeeting(meeting as DraftMeetingRow, telegram_id)) {
+        return apiErr(409, "This meeting has several owners — hide it for yourself instead", origin);
+      }
       if (!canDeleteDraftMeeting(meeting as DraftMeetingRow, telegram_id)) {
         return apiErr(
           403,

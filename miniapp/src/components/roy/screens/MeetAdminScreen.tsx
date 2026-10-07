@@ -1,7 +1,7 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRoyNav, useDt } from "../nav";
-import { canDeleteDraft, hasSeveralOwners } from "@/lib/draftOwners";
+import { canDeleteDraft, canHideDraft, hasSeveralOwners } from "@/lib/draftOwners";
 import { groupNotesByAuthor } from "@/lib/meetingNotes";
 import { NavHeader, RoyCard, SectionLabel, Avatar, Segmented, TezisyBlocks, Participants } from "../ui";
 import { RoyIcon } from "../icons";
@@ -21,6 +21,7 @@ import {
   resummarizeAgentMeeting,
   deleteMeeting,
   deleteAgentMeeting,
+  hideAgentMeeting,
   publishAgentMeeting,
   fetchMarketSuggestion,
   fetchMeetingNotes,
@@ -1135,7 +1136,7 @@ function ActionsPanel({
   // Исключение — встреча 1-1 (#641): «Личное» сохранит одну запись, видную обоим.
   const oneOnOne = isAgent ? item.data.one_on_one ?? null : null;
   const sharedOwners = isAgent && hasSeveralOwners(item.data) && !oneOnOne;
-  const canReject = !isAgent || canDeleteDraft(item.data, me?.telegram_id);
+  const canReject = !isAgent || canDeleteDraft(item.data, me?.telegram_id) || canHideDraft(item.data);
   // Встреча уже согласована и лежит в базе (режим «Все встречи»). Решение по ней принято —
   // выбор хранилища и «Согласовать» бессмысленны (владелец 2026-08-21: «почему на уже
   // сохранённых встречах до сих пор доступен выбор сохранения в разные пространства?»).
@@ -1622,6 +1623,12 @@ export function MeetAdminScreen({ initialMode = "review" }: { initialMode?: "rev
       if (!(await confirm({ title: `Удалить встречу «${itemTitle(item)}»?`, description: "Встреча и её расшифровка будут удалены без возможности восстановления." }))) return;
       await deleteMeeting(item.data.id);
       toast("Встреча удалена");
+      await animateRemove(item.data.id);
+    } else if (canHideDraft(item.data)) {
+      // Групповая встреча — одна строка на всех: скрываем у себя, у остальных остаётся (#818).
+      if (!(await confirm({ title: `Скрыть «${itemTitle(item)}» у себя?`, description: "Встреча пропадёт из вашей вычитки. У остальных участников она останется." }))) return;
+      await hideAgentMeeting(item.data.id);
+      toast("Встреча скрыта у вас");
       await animateRemove(item.data.id);
     } else {
       if (!(await confirm({ title: `Удалить черновик «${itemTitle(item)}»?`, description: "Расшифровка и тезисы будут удалены без возможности восстановления." }))) return;
