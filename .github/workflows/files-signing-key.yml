@@ -30,7 +30,7 @@ jobs:
           BASE_URL: ${{ inputs.base_url }}
         run: |
           [[ "$BASE_URL" =~ ^https://[A-Za-z0-9.-]+(:[0-9]+)?(/[A-Za-z0-9_-]+)*$ ]] || { echo "отказ: base_url не https-адрес" >&2; exit 1; }
-      - uses: supabase/setup-cli@v1
+      - uses: supabase/setup-cli@1dedf2c611547ede7232d26866dd3c56ab903bbb # v1
         with:
           version: 2.118.0
       - name: Выпустить пару и записать закрытый ключ

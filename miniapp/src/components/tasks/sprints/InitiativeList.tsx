@@ -16,6 +16,7 @@ import {
   SPRINT_COLS,
   SprintRow,
   SubtaskLiteRow,
+  TASK_INDENT,
 } from "./SprintRow";
 import { resolveDrop, subtaskBlock } from "@/lib/sprintGrouping";
 import { type DragView, type RowInfo, useRowDrag } from "./useRowDrag";
@@ -51,14 +52,16 @@ type SubCtx = {
 // группами подпись направления капсом, у инициативы одна строка-заголовок «имя · владелец ·
 // X из Y» без рамки вокруг (рамка в рамке делала экран тесным).
 
-/** Строка «+ задача» внутри инициативы. Открывает СТАНДАРТНУЮ карточку задачи с уже
- *  проставленной инициативой (решение владельца 19.09.2026: «при добавлении давай вызывать
- *  нашу стандартную менюшку добавления задачи»). */
-function AddTaskRow({ projectId, onAdd }: {
+/** Плюсик «добавить задачу» в шапке группы (владелец 07.10.2026: «небольшой плюсик … лаконично,
+ *  спокойно, красиво»). Открывает СТАНДАРТНУЮ карточку задачи с уже проставленной группой
+ *  (решение владельца 19.09.2026: «давай вызывать нашу стандартную менюшку»). На компьютере
+ *  проявляется по наведению на шапку, на телефоне виден всегда. */
+function AddTaskButton({ projectId, onAdd }: {
   projectId: string | null;
   onAdd: (projectId: string | null) => void;
 }) {
   const dt = useDt();
+  const label = dt("Добавить задачу", "Add a task");
   return (
     <button
       type="button"
@@ -66,10 +69,11 @@ function AddTaskRow({ projectId, onAdd }: {
         e.stopPropagation();
         onAdd(projectId);
       }}
-      className="w-full border-t border-line px-3 py-1.5 pl-[27px] text-left font-medium text-ink-mute transition-colors hover:bg-surface-2 hover:text-ink"
-      style={{ fontSize: 12.5 }}
+      title={label}
+      aria-label={label}
+      className="ml-1 grid size-6 shrink-0 place-items-center self-center rounded-full text-ink-mute transition-[opacity,colors] hover:bg-surface-2 hover:text-ink lg:opacity-0 lg:group-hover/head:opacity-100 lg:focus-visible:opacity-100"
     >
-      {dt("+ задача", "+ task")}
+      <RoyIcon name="plus" size={13} strokeWidth={2.2} />
     </button>
   );
 }
@@ -86,15 +90,6 @@ function GroupControls({ group, grouping }: {
     <span // У названия (владелец 05.10.2026: «настройки группы надо передвинуть к названию»). На
      // телефоне — своей строкой под названием: в одну строку кнопки уезжали за край экрана.
     className="order-last flex shrink-0 basis-full flex-wrap items-center gap-1.5 pb-2 pl-8 pr-2 transition-opacity lg:order-none lg:basis-auto lg:pb-0 lg:pl-0 lg:opacity-0 lg:group-hover/head:opacity-100 lg:focus-within:opacity-100">
-      <span
-        className="inline-flex h-[30px] items-center rounded-full border border-dashed border-line-2 px-3 text-[13px] text-ink-mute"
-        title={dt(
-          "Группа задач: на доске «Проекты» её нет, пока не нажмёте «В проекты»",
-          "Task group: not on the Projects board until you press “To projects”",
-        )}
-      >
-        {dt("группа задач", "task group")}
-      </span>
       <button
         type="button"
         className={PILL_BTN}
@@ -231,6 +226,12 @@ function Group(
             )}
           </span>
         </button>
+        {onAdd && (
+          <AddTaskButton
+            projectId={addTo !== undefined ? addTo : node.project?.id ?? null}
+            onAdd={onAdd}
+          />
+        )}
         {sprintGroup && dnd && (
           <GroupControls group={sprintGroup} grouping={dnd.grouping} />
         )}
@@ -267,8 +268,8 @@ function Group(
         <div>
           {node.items.length === 0 && (
             <div
-              className="px-3 py-2 pl-[27px] text-ink-mute"
-              style={{ fontSize: 12.5 }}
+              className="px-3 py-2 text-ink-mute"
+              style={{ paddingLeft: TASK_INDENT + 20, fontSize: 12.5 }}
             >
               {dt(
                 "Пусто — перетащите сюда задачи",
@@ -312,12 +313,6 @@ function Group(
                     : undefined}
                 />
               )
-          )}
-          {onAdd && (
-            <AddTaskRow
-              projectId={addTo !== undefined ? addTo : node.project?.id ?? null}
-              onAdd={onAdd}
-            />
           )}
         </div>
       )}
@@ -531,7 +526,9 @@ export function InitiativeList({
           letterSpacing: "0.08em",
         }}
       >
-        <span className="px-3 pl-[27px]">{dt("Задача", "Task")}</span>
+        <span className="px-3" style={{ paddingLeft: TASK_INDENT + 20 }}>
+          {dt("Задача", "Task")}
+        </span>
         <span className="px-2">{dt("Срок", "Due")}</span>
         <span className="px-2">{dt("Рынок", "Market")}</span>
         <span className="px-2">{dt("Сверка", "Check")}</span>

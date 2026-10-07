@@ -68,6 +68,8 @@ export interface DispatchSkip {
 export interface DispatchPlan {
   jobs: DispatchJob[];
   skipped: DispatchSkip[];
+  /** Кто в событии задания: своя почта и почты участников — для «одна комната — один бот». */
+  who?: Map<string, EventPeople>;
 }
 
 /**
@@ -129,6 +131,7 @@ export function planPersonDispatch(
 ): DispatchPlan {
   const jobs: DispatchJob[] = [];
   const skipped: DispatchSkip[] = [];
+  const who = new Map<string, EventPeople>();
   for (const ev of events) {
     if (ev.status === "cancelled") continue;
     const span = windowSpan(ev, nowMs);
@@ -156,6 +159,7 @@ export function planPersonDispatch(
       skip("manual_invite_exists", link.platform);
       continue;
     }
+    who.set(key, peopleOf(ev));
     jobs.push({
       calendar_key: key,
       invited_by: person,
@@ -165,7 +169,61 @@ export function planPersonDispatch(
       ...span,
     });
   }
-  return { jobs, skipped };
+  return { jobs, skipped, who };
+}
+
+/** Организатор события (почта, нижний регистр): одна встреча у всех участников — один организатор. */
+export interface EventPeople {
+  organizer: string | null;
+  /** Событие из календаря самого организатора (`organizer.self`): его не подделать импортом. */
+  own: boolean;
+}
+
+const mail = (e: string | undefined) => (e ?? "").trim().toLowerCase();
+
+function peopleOf(ev: GEvent): EventPeople {
+  return { organizer: mail(ev.organizer?.email) || null, own: ev.organizer?.self === true };
+}
+
+/** Комната встречи: одна ссылка в разных событиях календаря — одна комната. */
+export const roomOf = (joinUrl: string): string => parseInviteLink(joinUrl)?.room ?? joinUrl.trim();
+
+const overlaps = (a: DispatchJob, b: DispatchJob) =>
+  Date.parse(a.starts_at) < Date.parse(b.ends_at) && Date.parse(b.starts_at) < Date.parse(a.ends_at);
+
+/**
+ * Два события — одна встреча, если у них один организатор (плюс та же комната и пересекающееся
+ * время — проверяет `dropSameRoom`). Совпадения ссылки мало: событие с чужой ссылкой заводит кто
+ * угодно, но организатором в нём будет он сам — и встреча с чужой не склеится (замечание проверки
+ * безопасности, 07.10.2026).
+ */
+function sameMeeting(a: EventPeople | undefined, b: EventPeople | undefined): boolean {
+  return !!a?.organizer && a.organizer === b?.organizer;
+}
+
+/**
+ * Одна комната — один бот (07.10.2026: на IT+BD в Контур пришли два бота). У двух людей одна встреча
+ * может стоять РАЗНЫМИ событиями на одну ссылку (разрезанная серия «это и следующие», отдельные
+ * приглашения): ключи разные, комната одна. Второе задание в ту же комнату в пересекающееся время
+ * у того же организатора (`sameMeeting`) отбрасывается; доступ к записи участникам даёт обычное
+ * правило совладельцев (meeting-claim). Другой организатор — другая встреча, два задания.
+ */
+export function dropSameRoom(jobs: readonly DispatchJob[], who: ReadonlyMap<string, EventPeople>): DispatchJob[] {
+  // Остаётся событие из календаря самого организатора: организатора в импортированном (.ics)
+  // событии можно вписать чужого, и тогда подделка вытеснила бы настоящую встречу и забрала
+  // запись себе (замечание проверки безопасности, 07.10.2026). Порядок остальных — как пришли.
+  const ownFirst = [...jobs].sort((a, b) =>
+    Number(!!who.get(b.calendar_key)?.own) - Number(!!who.get(a.calendar_key)?.own)
+  );
+  const kept: DispatchJob[] = [];
+  for (const job of ownFirst) {
+    const twin = kept.find((k) =>
+      k.calendar_key !== job.calendar_key && roomOf(k.join_url) === roomOf(job.join_url) && overlaps(k, job) &&
+      sameMeeting(who.get(k.calendar_key), who.get(job.calendar_key))
+    );
+    if (!twin) kept.push(job);
+  }
+  return kept;
 }
 
 /**
@@ -174,10 +232,17 @@ export function planPersonDispatch(
  * задание уже есть, не громкий — бот туда идёт.
  */
 export function mergeDispatch(plans: DispatchPlan[]): DispatchPlan {
-  const jobs = new Map<string, DispatchJob>();
+  const byKey = new Map<string, DispatchJob>();
+  const who = new Map<string, EventPeople>();
   for (const plan of plans) {
-    for (const job of plan.jobs) if (!jobs.has(job.calendar_key)) jobs.set(job.calendar_key, job);
+    for (const job of plan.jobs) {
+      if (byKey.has(job.calendar_key)) continue;
+      byKey.set(job.calendar_key, job);
+      const people = plan.who?.get(job.calendar_key);
+      if (people) who.set(job.calendar_key, people);
+    }
   }
+  const jobs = new Map(dropSameRoom([...byKey.values()], who).map((j) => [j.calendar_key, j]));
   const skipped = plans
     .flatMap((p) => p.skipped)
     .filter((s) => s.calendar_key === null || !jobs.has(s.calendar_key));

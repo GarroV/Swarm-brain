@@ -15,6 +15,8 @@ import { calendarKeyOf } from "../_shared/calendar-key.ts";
 // Обмен refresh→access и запрос событий — общий модуль (его же зовёт swarm-api для панели
 // «Встречи сегодня», issue #218). Здесь своей копии больше нет.
 import { accessToken, listEvents } from "../_shared/google-calendar.ts";
+// «Эту встречу уже пишут» (issue #821) — то же правило живой записи, что у арбитра записей.
+import { loadRecordedNow } from "../_shared/bot-recording.ts";
 
 const supabase = createClient(
   Deno.env.get("SUPABASE_URL")!,
@@ -43,8 +45,9 @@ function meetingOf(ev: GEvent, link: ConferenceCall | ConferenceInfo) {
 }
 
 // «Встречи нет» и почему. Оба поля: `meetings` — новый рекордер (D027), `meeting` — раскатанный.
-function none(reason: string): Response {
-  return json({ meetings: [], meeting: null, reason });
+// `extra` — `recorded_now` для рекордера человека (issue #821).
+function none(reason: string, extra: Record<string, unknown> = {}): Response {
+  return json({ meetings: [], meeting: null, reason, ...extra });
 }
 
 function json(body: unknown, status = 200): Response {
@@ -81,20 +84,35 @@ Deno.serve(async (req: Request) => {
     return none("no_ongoing_event");
   }
 
+  // Встречи человека, которые прямо сейчас уже пишет бот (или чужой рекордер): по ним рекордер
+  // не предлагает «Записать» — плашка висела, пока звонок писал бот (issue #821). Ключи календаря;
+  // звонок без календаря рекордер гасит по непустому списку. Отдаётся в КАЖДОМ ответе человеку —
+  // в том числе без календаря: бота на звонок могли позвать руками.
+  const { data: who } = await supabase.from("allowed_users").select("email")
+    .eq("telegram_id", identity.telegramId).maybeSingle();
+  const recordedNow = {
+    recorded_now: await loadRecordedNow(
+      supabase,
+      identity.telegramId,
+      (who as { email?: string | null } | null)?.email ?? null,
+      new Date().toISOString(),
+    ),
+  };
+
   const { data } = await supabase.from("user_integrations")
     .select("api_key").eq("telegram_id", identity.telegramId).eq(
       "service",
       "google_calendar",
     ).maybeSingle();
   const refresh = (data as { api_key?: string } | null)?.api_key;
-  if (!refresh) return none("google_not_connected");
+  if (!refresh) return none("google_not_connected", recordedNow);
 
   const tok = await accessToken(refresh);
   // `token_refresh_failed` (→ рекордер просит переподключить календарь) — ТОЛЬКО когда Google
   // подтвердил, что refresh_token реально мёртв (invalid_grant/invalid_client). Временный сбой
   // (429/5xx/сеть) — та же ветка, что ошибка Calendar API: рекордер её не показывает как «мёртво».
   if (!tok.ok) {
-    return none(tok.deadGrant ? "token_refresh_failed" : "calendar_api_error");
+    return none(tok.deadGrant ? "token_refresh_failed" : "calendar_api_error", recordedNow);
   }
   const token = tok.token;
 
@@ -107,7 +125,7 @@ Deno.serve(async (req: Request) => {
   const timeMax = new Date(now.getTime() + LOOKAHEAD_MIN * 60_000)
     .toISOString();
   const items = await listEvents(token, timeMin, timeMax, 10);
-  if (!items) return none("calendar_api_error");
+  if (!items) return none("calendar_api_error", recordedNow);
   if (grant) return grantMeeting(items, grant.calendarKey);
   // Только созвоны (D026): слот, заглушка, напоминание без ссылки на Meet/Толк/Zoom капсулу не
   // зовут — для них есть уведомления Google. Пересекающиеся созвоны — все, списком (D027): капсула
@@ -120,6 +138,6 @@ Deno.serve(async (req: Request) => {
   const meetings = currentEvents(items, now.getTime(), (ev) => calls.has(ev))
     .map((ev) => meetingOf(ev, calls.get(ev)!));
   // `meeting` — первое из списка, для раскатанных рекордеров, которые знают только одно поле.
-  if (!meetings.length) return none("no_ongoing_event");
-  return json({ meetings, meeting: meetings[0] });
+  if (!meetings.length) return none("no_ongoing_event", recordedNow);
+  return json({ meetings, meeting: meetings[0], ...recordedNow });
 });

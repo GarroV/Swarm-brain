@@ -1,0 +1,42 @@
+name: Сторож секретов
+
+# gitleaks по ВСЕЙ истории ветки на каждый push и PR, без фильтра путей (bot/** тоже).
+# Репозиторий публичный: ключ в любом коммите любой ветки читается анонимно, а удаление
+# следующим коммитом его не убирает — поэтому смотрим историю, а не только рабочее дерево.
+# Правила — .gitleaks.toml (встроенные + формат токенов Swarm smcp_, которого GitHub не знает).
+# Бинарь качается с релиза и сверяется по sha256: стороннего action здесь нет.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: leak-scan-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gitleaks:
+    name: Сторож секретов (gitleaks, вся история)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      GITLEAKS_VERSION: 8.30.1
+      GITLEAKS_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+      - name: Поставить gitleaks (сверка sha256)
+        run: |
+          f="gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          curl -fsSL -o "$RUNNER_TEMP/$f" "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/$f"
+          echo "${GITLEAKS_SHA256}  $RUNNER_TEMP/$f" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/$f" -C "$RUNNER_TEMP" gitleaks
+      # --redact: найденное значение не попадает в публичный лог прогона.
+      - name: Скан истории
+        run: |
+          "$RUNNER_TEMP/gitleaks" git . --config .gitleaks.toml --redact --verbose --no-banner --exit-code 1

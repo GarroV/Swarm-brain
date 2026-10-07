@@ -2,6 +2,7 @@ import { getInitData } from "./telegram";
 import { isNetworkFailure, reportConnection, reportUnauthorized } from "./connection";
 import type { TaskFile, TaskFileLimits } from "./taskFiles";
 import type { BackdropId } from "./backdrop";
+import type { UsageCell } from "./usageCube";
 import type {
   AdminUser,
   MarketBundle,
@@ -152,6 +153,7 @@ const MOCK_ME: Me = {
   role: "bd",
   markets: ["KZ", "PL"],
   is_admin: true,
+  is_superadmin: true,
 };
 
 const MOCK_USERS: User[] = [
@@ -3383,8 +3385,9 @@ export async function fetchIntegrations(): Promise<Integration[]> {
 
 export type UsageSlice = { key: string; usd: number; calls: number; unpriced: number; tokens: number };
 export type ModelUsage = {
-  days: number;
-  since: string;
+  /** Период, дни по Белграду, обе границы включительно (#822). */
+  from: string;
+  to: string;
   truncated: boolean;
   total_usd: number;
   calls: number;
@@ -3395,11 +3398,28 @@ export type ModelUsage = {
   by_model: UsageSlice[];
   by_day: Array<{ day: string; usd: number; calls: number }>;
   top_meetings: Array<{ meeting_id: string; usd: number; calls: number; title: string | null }>;
+  /** Клетки день × назначение × модель × встреча (#822). Нет у функции до раскатки #836. */
+  cells?: UsageCell[];
+  /** Последние вызовы периода, новые сверху (до 300). */
+  recent?: UsageCall[];
+  /** Названия всех встреч из `cells`. */
+  meeting_titles?: Record<string, string | null>;
+};
+export type UsageCall = {
+  at: string;
+  purpose: string;
+  model: string;
+  meeting_id: string | null;
+  /** null — модель не в прайсе. */
+  usd: number | null;
+  tokens: number;
+  audio_seconds: number;
 };
 
-/** Расход OpenAI за период (#311), только суперадмину. */
-export async function fetchModelUsage(days: 7 | 30 | 90): Promise<ModelUsage> {
-  return apiFetch<ModelUsage>(`/admin/model-usage?days=${days}`);
+/** Расход OpenAI за период (#311, #822), только суперадмину. `from`/`to` — «YYYY-MM-DD» включительно. */
+export async function fetchModelUsage(from: string, to: string): Promise<ModelUsage> {
+  if (DEV_MODE) return mockModelUsage(from, to);
+  return apiFetch<ModelUsage>(`/admin/model-usage?from=${from}&to=${to}`);
 }
 
 /** Одноразовая ссылка на бота для привязки Telegram (#92); действует 15 минут. */
@@ -3769,4 +3789,29 @@ export async function patchAdminUser(
     method: "PATCH",
     body: JSON.stringify(fields),
   });
+}
+
+// Заглушка «Расхода модели» для DEV_MODE: каждый третий день по доллару с хвостом, чтобы на
+// графике были и столбцы, и пустые дни.
+function mockModelUsage(from: string, to: string): ModelUsage {
+  const by_day: ModelUsage["by_day"] = [];
+  for (let d = new Date(`${from}T12:00:00Z`), i = 0; d.toISOString().slice(0, 10) <= to; d.setUTCDate(d.getUTCDate() + 1), i++) {
+    if (i % 3 === 0) by_day.push({ day: d.toISOString().slice(0, 10), usd: 1 + (i % 7) * 0.4, calls: 3 + (i % 5) });
+  }
+  const total = by_day.reduce((s, r) => s + r.usd, 0);
+  const calls = by_day.reduce((s, r) => s + r.calls, 0);
+  const slice = { key: "meeting:transcription", usd: total, calls, unpriced: 0, tokens: 0 };
+  // Клетки: две трети дня — транскрибация, треть — тезисы, у каждой своя встреча.
+  const cells: UsageCell[] = by_day.flatMap((r, i) => [
+    { day: r.day, purpose: "meeting:transcription", model: "whisper-1", meeting_id: `m${i % 4}`, usd: r.usd * 2 / 3, calls: r.calls - 1, unpriced: 0, tokens: 0, audio_seconds: 1800 },
+    { day: r.day, purpose: "meeting:tezisy", model: "gpt-5.6-terra", meeting_id: `m${i % 4}`, usd: r.usd / 3, calls: 1, unpriced: 0, tokens: 12000, audio_seconds: 0 },
+  ]);
+  const recent: UsageCall[] = cells.slice(-20).reverse().map((c) => ({
+    at: `${c.day}T10:00:00Z`, purpose: c.purpose, model: c.model, meeting_id: c.meeting_id, usd: c.usd, tokens: c.tokens, audio_seconds: c.audio_seconds,
+  }));
+  const meeting_titles = { m0: "Weekly sync", m1: "IT + BD", m2: "Market review", m3: null };
+  return {
+    from, to, truncated: false, total_usd: total, calls, unpriced_calls: 0, tokens: 0, audio_minutes: 0,
+    by_purpose: [slice], by_model: [{ ...slice, key: "whisper-1" }], by_day, top_meetings: [], cells, recent, meeting_titles,
+  };
 }

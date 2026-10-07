@@ -54,7 +54,7 @@ prod_up() {
   [ -s "$ACCOUNT_DIR/google-state.json" ] ||
     die "входа бота нет ($ACCOUNT_DIR/google-state.json): гостем в боевые встречи не идём"
   protect "$STATE"
-  mkdir -p "$STATE/lease" "$STATE/account-copies"
+  mkdir -p "$STATE/lease" "$STATE/account-copies" "$STATE/runs"
   local token rev version image egress_extra=""
   token=$(read_token)
   # Добавка к списку выхода встреч наружу (T178): одна строка «host:port,host:port» в

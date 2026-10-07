@@ -300,7 +300,15 @@ Deno.serve(async (req: Request) => {
       [...read.systemParts, ...read.micParts],
       new Date().toISOString(),
     );
-    if (!settled.ok) return fail(settled.error, settled.status);
+    if (!settled.ok) {
+      // Бот-претендент поверх короткой записи (meeting-claim, botJoinsOverShort), а запись держателя
+      // оказалась не короче: в базе осталась более полная — штатный исход, не потеря. Отказ бот
+      // прочёл бы как сбой выгрузки и прислал человеку ложное «записанное не ушло».
+      if (settled.refused && identity.kind === "bot") {
+        return json({ ok: true, meeting_id: meetingId, web_url: webUrl, summary_status: "not_fuller" });
+      }
+      return fail(settled.error, settled.status);
+    }
     rival = settled.rival;
     // Перехват сбросил маркеры обработки тем же UPDATE (claim-patch.ts takeoverPatch).
     if (!rival) {

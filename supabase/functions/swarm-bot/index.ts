@@ -22,6 +22,7 @@ import { handleDocument, handlePhoto, handleUrl, handleVoice } from "./handlers/
 import {
   classifyEntryCommand,
   extractUrl,
+  isTaskComment,
   parseCreateTaskCommand,
   parseManageCommand,
   parseSaveCommand,
@@ -53,6 +54,7 @@ import {
   handleFeedbackSessionInput,
 } from "./handlers/feedback.ts";
 import { handleWorkspace } from "./handlers/workspace.ts";
+import { handleForwardForTask, handleTaskComment } from "./tasks/forward-task.ts";
 import { handleSuperadmin, handleSuperadminCallbacks, handleSuperadminSession } from "./handlers/superadmin.ts";
 import { generatePersonalDigest, sendAllDigests } from "./handlers/digest.ts";
 import { sendDailyReport } from "./handlers/daily-report-send.ts";
@@ -625,6 +627,11 @@ Deno.serve(async (req: Request) => {
         message.forward_origin || message.forward_date || message.forward_from || message.forward_from_chat,
       );
 
+      // Пересланное после комментария «создай задачу» → задача, а не запись (tasks/forward-task.ts).
+      if (isForward && await handleForwardForTask(chatId, userId, groupId, message, text, action)) {
+        return new Response("OK", { status: 200 });
+      }
+
       // Ждём новое значение для замены записи — весь текст/URL = новое значение.
       if (action === "manage_replace") {
         await handleManageSessionInput(chatId, userId, action, text, session?.context ?? undefined, groupId);
@@ -675,6 +682,11 @@ Deno.serve(async (req: Request) => {
         // Порядок: создать задачу ("добавь задачу: …") → сохранить ("сохрани:", "добавь в базу:")
         // → иначе текст = вопрос/поиск. Всё детерминированно, без LLM-угадайки.
         const createTaskCmd = parseCreateTaskCommand(text);
+        // «добавь задачу» без текста — комментарий к пересылке: ждём пересланное (tasks/forward-task.ts).
+        if (isTaskComment(text)) {
+          await handleTaskComment(chatId);
+          return new Response("OK", { status: 200 });
+        }
         const saveContent = createTaskCmd ? null : parseSaveCommand(text);
         if (createTaskCmd) {
           await handleQuickCreateTask(chatId, userId, groupId, createTaskCmd);

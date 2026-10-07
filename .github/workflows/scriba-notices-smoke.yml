@@ -41,12 +41,12 @@ jobs:
     # Норма — 2-3 минуты (скачивание образов + миграции + смоук). Потолок — от зависания.
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-      - uses: supabase/setup-cli@v1
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: supabase/setup-cli@1dedf2c611547ede7232d26866dd3c56ab903bbb # v1
         with:
           # Та же версия, на которой смоук проверен порчей локально.
           version: 2.118.0
-      - uses: denoland/setup-deno@v2
+      - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2
         with:
           deno-version: v2.x
       # Смоуку нужны база и REST над ней; auth (gotrue) оставлен, потому что без него
