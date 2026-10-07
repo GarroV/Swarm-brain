@@ -187,9 +187,9 @@ export function SprintsScreen() {
   // ПЛАНА — только в план: план шире спринта.
   const [addIntoSprint, setAddIntoSprint] = useState(true);
   // Режим правки прячет СТРУКТУРНЫЕ кнопки (завести пространство, переименовать, удалить,
-  // взять из бэклога, «+ задача»). Ежедневные отметки — «готово», «к переносу», «как идут
-  // дела» — остаются всегда: прятать их за тумблер значит требовать два клика на действие,
-  // которое делают по десять раз в день.
+  // новый спринт). Ежедневные отметки — «готово», «к переносу», «как идут дела» — и набор
+  // состава («План», «+» в группе, решение 07.10.2026) остаются всегда: прятать их за тумблер
+  // значит требовать два клика на действие, которое делают по десять раз в день.
   const [editMode, setEditMode] = useState(false);
   // Esc закрывает шторку плана на телефоне: открытая поверх экрана панель обязана закрываться
   // клавишей, иначе человек ищет крестик глазами.
@@ -1214,9 +1214,11 @@ export function SprintsScreen() {
                     className={cn("flex-1 min-w-0 overflow-auto transition-colors", planDropCls)}
                   >
                     {items.length === 0 ? emptyComposition : (
-                      <div className="min-w-[640px]">
-                        {/* «Состав · N» и тихая группировка справа (стенд: `.shead`). */}
-                        <div className="mb-2 flex items-center gap-3 px-0.5">
+                      <>
+                        {/* «Состав · N» и тихая группировка справа (стенд: `.shead`). Вне
+                            таблицы шириной 640px: на телефоне строка переносится, а не уезжает
+                            за край вместе с флажком «Мои задачи». */}
+                        <div className="mb-2 flex flex-wrap items-center gap-x-3 gap-y-2 px-0.5">
                           <span className="font-semibold text-ink" style={{ fontSize: 13 }}>
                             {dt("Состав", "Tasks")} · <span className="font-mono">{items.length}</span>
                           </span>
@@ -1248,6 +1250,7 @@ export function SprintsScreen() {
                             {dt("Мои задачи", "My tasks")}
                           </label>
                         </div>
+                        <div className="min-w-[640px]">
                         {mineBoards
                           ? (
                             <>
@@ -1270,7 +1273,8 @@ export function SprintsScreen() {
                             </>
                           )
                           : initiativeList(byPeople ? peopleBoard : board)}
-                      </div>
+                        </div>
+                      </>
                     )}
                   </div>
                 )

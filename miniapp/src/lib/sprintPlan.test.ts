@@ -1,5 +1,5 @@
 // План пространства спринтов (решение 07.10.2026): что входит, как считается, как фильтруется.
-import { assertEquals } from "jsr:@std/assert";
+import { assertEquals } from "@std/assert";
 import { buildPlan, canTake, planProjects } from "./sprintPlan.ts";
 import { splitMine } from "./sprintMine.ts";
 import type { Project, Task } from "../types.ts";
