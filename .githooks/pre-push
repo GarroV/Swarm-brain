@@ -62,6 +62,16 @@ while read -r _local_ref local_sha _remote_ref remote_sha; do
   files=$(printf '%s\n' "$names" | sort -u | sed '/^$/d')
   [ -z "$files" ] && continue
 
+  # Ключи и токены в пушимых коммитах (.gitleaks.toml; тот же скан в CI — leak-scan.yml).
+  # CI видит токен уже после пуша, а репозиторий публичный, поэтому ловим здесь. Нет
+  # gitleaks — пуш стоит: молча пропущенный скан неотличим от чистого.
+  if ! command -v gitleaks >/dev/null 2>&1; then
+    report "gitleaks не установлен — brew install gitleaks"
+  elif ! gitleaks git . --config "$(git rev-parse --show-toplevel)/.gitleaks.toml" \
+      --log-opts="${revs[*]}" --redact --verbose --no-banner --log-level error >&2; then
+    report "${_local_ref} — в пушимых коммитах похоже на ключ или токен (выше — где именно)"
+  fi
+
   while IFS= read -r f; do
     [ -z "$f" ] && continue
     case "$f" in .githooks/*) continue ;; esac     # сама защита — не материал

@@ -2,6 +2,7 @@ import { clearNonceCookie, hmacSign, OAUTH_NONCE_COOKIE, readCookie, verifyState
 import { type GoogleName, hasCalendarScope, nameSigPayload, normalizeName } from "../../../_lib/google-name";
 import { signJWT, SESSION_TTL_SEC, verifyJWT } from "../../../_lib/jwt";
 import { swarmApiUrl } from "../../../_lib/api-url";
+import { CALENDAR_REPAIR_COOKIE, calendarRepairCookie, needsCalendarRepair } from "../../../_lib/calendar-repair";
 
 // CF Pages Function: GET /api/auth/google/callback — Google вернул code.
 // Обмен кода → userinfo → сверка verified email + домена → резолв личности через Supabase
@@ -18,10 +19,10 @@ const CALENDAR_LINK_URL = "https://vbqglndbxkpmreccpqmr.supabase.co/functions/v1
 
 type GoogleTokens = { access_token?: string; refresh_token?: string; scope?: string };
 
-function redirect(location: string, extraCookie?: string): Response {
+function redirect(location: string, ...extraCookies: string[]): Response {
   const headers = new Headers({ Location: location });
   headers.append("Set-Cookie", clearNonceCookie());
-  if (extraCookie) headers.append("Set-Cookie", extraCookie);
+  for (const c of extraCookies) headers.append("Set-Cookie", c);
   return new Response(null, { status: 302, headers });
 }
 function loginErr(origin: string, err: string): Response {
@@ -64,6 +65,18 @@ async function linkCalendar(env: Env, telegramId: number, refreshToken: string):
   });
   if (linkRes && !linkRes.ok) console.error("google-oauth/link ответил", linkRes.status);
   return linkRes?.ok === true;
+}
+
+/** Есть ли привязка календаря у только что вошедшего; null — swarm-api не ответил. */
+async function calendarLinked(env: Env, jwt: string): Promise<boolean | null> {
+  const res = await fetch(`${swarmApiUrl(env)}/integrations`, { headers: { Authorization: `Bearer ${jwt}` } })
+    .catch(() => null);
+  if (!res?.ok) {
+    console.error("google-login: не проверить привязку календаря", res?.status ?? "сеть");
+    return null;
+  }
+  const rows = await res.json().catch(() => null) as Array<{ service?: string }> | null;
+  return Array.isArray(rows) ? rows.some((x) => x.service === "google_calendar") : null;
 }
 
 export async function onRequestGet(ctx: Ctx): Promise<Response> {
@@ -135,9 +148,26 @@ export async function onRequestGet(ctx: Ctx): Promise<Response> {
 
   // 5) сессия
   const jwt = await signJWT({ telegram_id: r.telegram_id }, env.WEB_JWT_SECRET);
+  const sessionCookie = `roj_session=${jwt}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=${SESSION_TTL_SEC}`;
+
+  // 6) ремонт привязки календаря (issue #828, см. _lib/calendar-repair.ts)
+  const repair = needsCalendarRepair({
+    calendarGranted: hasCalendarScope(tok.scope),
+    gotRefreshToken: Boolean(tok.refresh_token),
+    linked: hasCalendarScope(tok.scope) && !tok.refresh_token ? await calendarLinked(env, jwt) : null,
+    askedRecently: readCookie(request.headers.get("Cookie"), CALENDAR_REPAIR_COOKIE) != null,
+  });
+  if (repair) {
+    return redirect(
+      `${origin}/api/auth/google/start?flow=calendar&next=${encodeURIComponent(st.next)}`,
+      sessionCookie,
+      calendarRepairCookie(),
+    );
+  }
+
   return redirect(
     `${origin}${st.next}`,
-    `roj_session=${jwt}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=${SESSION_TTL_SEC}`,
+    sessionCookie,
   );
 }
 

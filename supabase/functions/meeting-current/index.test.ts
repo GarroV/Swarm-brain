@@ -18,6 +18,8 @@ const TOKEN_HASH = Array.from(new Uint8Array(hashBuffer))
 let googleConnected = true;
 let tokenExchangeOk = true;
 let calendarItems: unknown[] | null = [];
+// Встречи, которые «сейчас пишутся» (issue #821): то, что база отдаёт на запрос recorded_now.
+let recordingRows: unknown[] = [];
 
 const json = (body: unknown, status = 200) =>
   Promise.resolve(
@@ -45,6 +47,9 @@ const stubFetch = ((input: Request | URL | string) => {
       recorder_token_prev_hash: null,
       recorder_token_prev_expires_at: null,
     });
+  }
+  if (url.includes("/rest/v1/meetings")) {
+    return json(recordingRows);
   }
   if (url.includes("/rest/v1/user_integrations")) {
     return googleConnected ? json({ api_key: "refresh-token" }) : json(null);
@@ -291,4 +296,18 @@ Deno.test("без токена — 401, и ни слова про встречу
 
   assertEquals(status, 401);
   assertEquals(body.meeting, undefined);
+});
+
+Deno.test("встречу уже пишет бот — ключ в recorded_now, даже без календаря (#821)", async () => {
+  const lease = new Date(Date.now() + 60_000).toISOString();
+  recordingRows = [{ identity_key: "room:abc", lease_expires_at: lease, agent_last_recording: true }];
+  googleConnected = false;
+  try {
+    const { status, body } = await call();
+    assertEquals(status, 200);
+    assertEquals((body as { recorded_now?: string[] }).recorded_now, ["room:abc"]);
+  } finally {
+    recordingRows = [];
+    googleConnected = true;
+  }
 });
