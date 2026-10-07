@@ -118,13 +118,19 @@ export function sprintKpi(
 }
 
 /** Порядок внутри уровня: по имени, безымянная группа («Общее», «Без направления») — с краю. */
+// Числа в названии сравниваются как числа: инициативы нумеруют («1.», «2.», … «14.»), и
+// строковое сравнение ставило «14.» раньше «2.» (владелец 05.10.2026: «от 1 по нарастающей»).
+function byNumberedName(a: string, b: string): number {
+  return a.localeCompare(b, undefined, { numeric: true });
+}
+
 function byName(
   a: { project: Project | null },
   b: { project: Project | null },
 ): number {
   if (a.project === null) return -1;
   if (b.project === null) return 1;
-  return a.project.name.localeCompare(b.project.name);
+  return byNumberedName(a.project.name, b.project.name);
 }
 
 /**
@@ -138,6 +144,9 @@ function byName(
 export function buildBoard<T extends BoardRow>(
   items: readonly T[],
   projects: readonly Project[],
+  /** Группы задач, видные и без задач: «Добавить группу» создаёт пустую, и до первой задачи
+   *  её иначе не было бы на экране — бросить задачу было бы некуда. */
+  shownEmpty: readonly Project[] = [],
 ): DirectionNode<T>[] {
   const byId = new Map(projects.map((p) => [p.id, p]));
 
@@ -165,6 +174,9 @@ export function buildBoard<T extends BoardRow>(
     if (!inner.has(iniKey)) inner.set(iniKey, []);
     inner.get(iniKey)!.push(item);
   }
+  for (const group of shownEmpty) {
+    if (!tree.has(group.id)) tree.set(group.id, new Map([["", []]]));
+  }
 
   const directions: DirectionNode<T>[] = [];
   for (const [dirKey, inner] of tree) {
@@ -189,7 +201,7 @@ export function buildBoard<T extends BoardRow>(
   directions.sort((a, b) => {
     if (a.project === null) return 1;
     if (b.project === null) return -1;
-    return a.project.name.localeCompare(b.project.name);
+    return byNumberedName(a.project.name, b.project.name);
   });
   return directions;
 }
@@ -232,7 +244,7 @@ export function buildPeopleBoard<T extends BoardRow & { assignees: string[] }>(
   nodes.sort((a, b) => {
     if (a.project === null) return 1;
     if (b.project === null) return -1;
-    return a.project.name.localeCompare(b.project.name);
+    return byNumberedName(a.project.name, b.project.name);
   });
   return nodes;
 }

@@ -82,7 +82,12 @@ describe("calendarTriggerFor", () => {
         JOB.join_url,
         "meet",
         PERSON,
-        { calendarKey: JOB.calendar_key, startsAt: JOB.starts_at, grantToken: JOB.grant_token },
+        {
+          calendarKey: JOB.calendar_key,
+          startsAt: JOB.starts_at,
+          title: JOB.title,
+          grantToken: JOB.grant_token,
+        },
       ],
     ]);
     expect(seen).toHaveLength(1);
@@ -102,6 +107,7 @@ describe("calendarTriggerFor", () => {
       identity_kind: "calendar",
       identity_key: JOB.calendar_key,
       started_at: JOB.starts_at,
+      title: JOB.title,
     });
     expect(claim?.body).not.toHaveProperty("invite_id");
     expect(notices).toHaveLength(1);

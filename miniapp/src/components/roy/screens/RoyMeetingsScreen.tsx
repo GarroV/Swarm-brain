@@ -14,6 +14,7 @@ import { MeetingsDesk } from "./MeetingsDesk";
 import { useConfirm } from "@/components/ui/confirm";
 import type { Entry } from "@/types";
 import { formatDate } from "@/lib/displayFormat";
+import { recordedByOf } from "@/lib/agentMeeting";
 
 const SEGS = [
   { id: "all", label: "Все", en: "All" },
@@ -21,11 +22,23 @@ const SEGS = [
   { id: "confirmed", label: "Подтверждены", en: "Confirmed" },
 ];
 
-export function sourceLabel(s: string): string {
-  if (s === "granola") return "Granola";
-  if (s === "read_ai") return "Read.ai";
-  if (s === "desktop-agent") return "bumblebee";
-  return "Встреча";
+// Источник встречи для подписи. Запись рекордера и бота встреч различаются (#788): чьей записью
+// встреча легла в базу, говорит recorded_by — у черновика в строке, у записи базы в metadata.
+export function sourceLabel(x: {
+  source: string;
+  recorded_by?: string | null;
+  agent_version?: string | null;
+  metadata?: Record<string, unknown> | null;
+}): string {
+  if (x.source === "granola") return "Granola";
+  if (x.source === "read_ai") return "Read.ai";
+  const fromMeta = x.metadata?.recorded_by;
+  const by = recordedByOf({
+    source: x.source,
+    recorded_by: x.recorded_by ?? (typeof fromMeta === "string" ? fromMeta : null),
+    agent_version: x.agent_version,
+  });
+  return by ?? "Встреча";
 }
 const isConfirmed = (e: Entry) => e.metadata?.confirmed === true;
 function fmtDate(iso: string | null): string | null {
@@ -64,7 +77,7 @@ function MeetingCard({ e, onOpen, onRemove, mobile }: { e: Entry; onOpen: () => 
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <span className="inline-flex items-center font-semibold" style={{ fontSize: 11, color: "var(--meet-ink)", background: "var(--meet-soft)", borderRadius: 7, padding: "1px 7px" }}>
-                {sourceLabel(e.source)}
+                {sourceLabel(e)}
               </span>
               {isConfirmed(e) && <StorageBadge isPrivate={e.is_private} />}
               <Market code={e.countries?.[0]} />

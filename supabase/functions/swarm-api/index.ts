@@ -31,7 +31,7 @@ import {
   getMeetingSecure,
 } from "./entries-guard.ts";
 import { canChangeMeetingPrivacy } from "../_shared/entries/meeting-rights.ts";
-import { toAgentListRow, toListRow } from "./meetings-payload.ts";
+import { isMissedBotSlot, toAgentListRow, toListRow } from "./meetings-payload.ts";
 import { TASK_LIST_COLUMNS } from "./task-columns.ts";
 import { resolveDigestScope } from "./digest-scope.ts";
 import {
@@ -2735,7 +2735,7 @@ async function routeRequest(req: Request): Promise<Response> {
     const status = url.searchParams.get("status") ?? "awaiting_review";
     let q = supabase.from("meetings")
       .select(
-        "id, title, source, identity_kind, started_at, ended_at, status, has_draft_notes, recorders, co_owners, attendees, entry_id, created_at",
+        "id, title, source, identity_kind, started_at, ended_at, status, has_draft_notes, recorders, co_owners, attendees, entry_id, created_at, recorded_by, agent_version, recorded_seconds, summary_status",
         { count: "exact" },
       )
       .eq("group_id", groupId)
@@ -2758,15 +2758,17 @@ async function routeRequest(req: Request): Promise<Response> {
     // С 25.09.2026 текст не выбирается ВООБЩЕ (issue #491) — раньше он читался и выбрасывался
     // в toAgentListRow: 119 мс базы на опрос, из них ~88 мс на выброшенное.
     // Полный текст берёт деталь GET /agent-meetings/:id — она его и так до-загружает.
-    const enrichedList = await withRecorderNames(
-      (data ?? []) as Array<{ recorders?: unknown }>,
-    );
-    // Сколько черновиков подходит под фильтр БЕЗ лимита 50 (issue #112).
+    // Пустые слоты бота встреч (заявился, записи нет) в черновики не попадают (#788).
+    const rows = (data ?? []) as Array<{ recorders?: unknown; agent_version?: unknown; recorded_by?: unknown; recorded_seconds?: unknown; summary_status?: unknown }>;
+    const shown = rows.filter((r) => !isMissedBotSlot(r));
+    const enrichedList = await withRecorderNames(shown);
+    // Сколько черновиков подходит под фильтр БЕЗ лимита 50 (issue #112) — за вычетом спрятанных.
+    const total = count != null ? count - (rows.length - shown.length) : null;
     return json(
       await withOneOnOne(enrichedList.map(toAgentListRow), telegram_id),
       200,
       origin,
-      count != null ? { "X-Total-Count": String(count) } : undefined,
+      total != null ? { "X-Total-Count": String(total) } : undefined,
     );
   }
 

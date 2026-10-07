@@ -15,7 +15,7 @@ import { withGuards } from "./guard-query.ts";
 import { CHALLENGER_ROLE } from "../meeting-ingest/challenge.ts";
 import { boundClaimSeconds, type MeetingClock } from "./claim-clock.ts";
 import { AgentAuthError, type AgentIdentity, resolveActingIdentity } from "../_shared/agent-auth.ts";
-import { defaultMeetingTitle, displayNameOf } from "../_shared/meeting-title.ts";
+import { defaultMeetingTitle, displayNameOf, isDefaultMeetingTitle } from "../_shared/meeting-title.ts";
 import { ROSTER_TOLERANCE_MIN, sameMeetingByRoster, scopeRoomKey } from "../_shared/meeting-roster.ts";
 import { accessToken, listEvents } from "../_shared/google-calendar.ts";
 import {
@@ -557,6 +557,27 @@ async function keepReserve(meetingId: string, body: ClaimBody, ownerId: number):
   if (error) console.error(`meeting-claim: запасная ${meetingId} — recorded_seconds: ${error.message}`);
 }
 
+// Название ставится только при создании строки, поэтому заглушка «участник — дата» от первой заявки
+// без названия (бот встреч до 05.10.2026, #804) раньше оставалась навсегда, хотя следом приходил
+// рекордер с названием из календаря. Меняем только заглушку и только неопубликованной встречи;
+// условие на прежнее название не даёт перетереть то, что человек поправил между чтением и записью.
+async function replaceDefaultTitle(meetingId: string, incoming: string | undefined): Promise<void> {
+  const title = (incoming ?? "").trim();
+  if (!title) return;
+  const { data, error } = await supabase.from("meetings").select("title, started_at, entry_id")
+    .eq("id", meetingId).maybeSingle();
+  if (error || !data) {
+    console.error(`meeting-claim: название ${meetingId} не прочитано: ${error?.message ?? "строки нет"}`);
+    return;
+  }
+  const row = data as { title: string | null; started_at: string | null; entry_id: string | null };
+  if (row.entry_id !== null || row.title === title || !isDefaultMeetingTitle(row.title, row.started_at)) return;
+  const { error: werr } = await supabase.from("meetings").update({ title })
+    .eq("id", meetingId).eq("title", row.title as string).is("entry_id", null);
+  if (werr) console.error(`meeting-claim: название ${meetingId} не записано: ${werr.message}`);
+  else console.log(`meeting-claim: заглушка названия ${meetingId} заменена названием из заявки`);
+}
+
 // Личные пометки участника → приватная entry (is_private, owner_id) с metadata.meeting_id.
 // Идемпотентно: повторный claim обновляет ту же entry, а не плодит копии.
 async function savePersonalNotes(
@@ -900,6 +921,7 @@ Deno.serve(async (req: Request) => {
     body.mic_start_offset,
     body.attendees,
   );
+  await replaceDefaultTitle(meetingId, body.title);
 
   // Пропуск бота открывает дальше только эту встречу (T165): heartbeat, выгрузка, статус и
   // уведомления по нему сверяются с meeting_agent_grants.meeting_id.

@@ -32,6 +32,7 @@ function referenceOf(job: CalendarJob): CalendarReference {
   return {
     calendarKey: job.calendar_key,
     startsAt: job.starts_at,
+    ...(job.title !== null && job.title.trim() !== "" && { title: job.title }),
     ...(job.grant_token !== undefined && { grantToken: job.grant_token }),
   };
 }

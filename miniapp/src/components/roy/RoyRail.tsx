@@ -1,4 +1,5 @@
 "use client";
+import { PILL_GROUP_CLS, pillSegmentCls } from "@/components/ui/PropertyPill";
 import { useEffect, useRef, useState } from "react";
 import { cn, displayName } from "@/lib/utils";
 import { fetchConfig } from "@/lib/api";
@@ -277,14 +278,13 @@ function ThemeSwitch() {
   return (
     <>
       <div role="radiogroup" aria-label={dt("Тема", "Theme")}
-        className="flex overflow-hidden rounded-full border border-line-2 bg-surface max-[1099px]:hidden">
+        // Мягкий сегмент, как статус в карточке задачи (владелец 05.10.2026: «не жёсткая граница,
+        // а как бы мягкая… пространство переключателя единое»).
+        className={cn(PILL_GROUP_CLS, "max-[1099px]:hidden")}>
         {THEME_IDS.map((t) => (
           <button key={t} type="button" role="radio" aria-checked={theme === t}
             title={dt(...THEME_LABEL[t])} aria-label={dt(...THEME_LABEL[t])} onClick={() => pick(t)}
-            className={cn(
-              "grid h-[26px] w-[28px] place-items-center border-r border-line-2 transition-colors last:border-r-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--ring)]",
-              theme === t ? "bg-primary text-primary-foreground" : "text-ink-mute hover:bg-surface-2 hover:text-ink",
-            )}>
+            className={cn(pillSegmentCls(theme === t), "sm:min-h-[24px] sm:w-[28px] sm:px-0")}>
             <RoyIcon name={THEME_ICON[t]} size={15} strokeWidth={1.7} />
           </button>
         ))}
