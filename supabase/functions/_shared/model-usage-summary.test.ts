@@ -85,3 +85,67 @@ Deno.test("период: мусор, перевёрнутые границы и 
   assertEquals(typeof parsePeriod("2025-01-01", "2026-01-02"), "string");
   assertEquals(typeof parsePeriod("2025-01-01", "2025-12-31"), "object");
 });
+
+Deno.test("summarizeUsage: ячейки день × назначение × модель × встреча складываются (#822)", () => {
+  const s = summarizeUsage([
+    row({
+      created_at: "2026-10-07T08:00:00Z",
+      purpose: "meeting:transcription",
+      model: "whisper-1",
+      meeting_id: "a",
+      cost_usd: 0.1,
+      audio_seconds: 60,
+      prompt_tokens: 0,
+      completion_tokens: 0,
+    }),
+    row({
+      created_at: "2026-10-07T09:00:00Z",
+      purpose: "meeting:transcription",
+      model: "whisper-1",
+      meeting_id: "a",
+      cost_usd: 0.2,
+      audio_seconds: 30,
+      prompt_tokens: 0,
+      completion_tokens: 0,
+    }),
+    row({
+      created_at: "2026-10-07T23:30:00Z",
+      purpose: "bot:chat",
+      model: null,
+      meeting_id: null,
+      cost_usd: null,
+      prompt_tokens: 7,
+      completion_tokens: 3,
+    }),
+  ]);
+  assertEquals(s.cells, [
+    {
+      day: "2026-10-07",
+      purpose: "meeting:transcription",
+      model: "whisper-1",
+      meeting_id: "a",
+      usd: 0.3,
+      calls: 2,
+      unpriced: 0,
+      tokens: 0,
+      audio_seconds: 90,
+    },
+    // 23:30 UTC — это уже 8 октября по Белграду.
+    {
+      day: "2026-10-08",
+      purpose: "bot:chat",
+      model: "—",
+      meeting_id: null,
+      usd: 0,
+      calls: 1,
+      unpriced: 1,
+      tokens: 10,
+      audio_seconds: 0,
+    },
+  ]);
+  assertEquals(s.recent.map((r) => [r.at, r.usd]), [
+    ["2026-10-07T23:30:00Z", null],
+    ["2026-10-07T09:00:00Z", 0.2],
+    ["2026-10-07T08:00:00Z", 0.1],
+  ]);
+});

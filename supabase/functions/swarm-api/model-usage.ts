@@ -15,6 +15,8 @@ import {
 export const MODEL_USAGE_PATH = "/admin/model-usage";
 const PAGE = 1000;
 const MAX_ROWS = 50_000;
+// Сколько id встреч за раз в `in(...)`: длинный список упирается в длину URL PostgREST.
+const TITLE_BATCH = 200;
 
 async function loadRows(
   supabase: SupabaseClient,
@@ -58,10 +60,14 @@ export async function handleModelUsageRoutes(
   try {
     const { rows, truncated } = await loadRows(supabase, period.since, period.until);
     const summary = summarizeUsage(rows.filter((r) => inPeriod(r.created_at, period)));
-    const ids = summary.top_meetings.map((m) => m.meeting_id);
+    // Названия всех встреч периода: веб фильтрует и считает «самые дорогие» сам (#822).
+    const ids = [...new Set(summary.cells.map((c) => c.meeting_id).filter((id): id is string => id !== null))];
     const titles = new Map<string, string | null>();
-    if (ids.length > 0) {
-      const { data, error } = await supabase.from("meetings").select("id, title").in("id", ids);
+    for (let i = 0; i < ids.length; i += TITLE_BATCH) {
+      const { data, error } = await supabase.from("meetings").select("id, title").in(
+        "id",
+        ids.slice(i, i + TITLE_BATCH),
+      );
       if (error) throw new Error(`meetings: ${error.message}`);
       for (const m of (data ?? []) as Array<{ id: string; title: string | null }>) titles.set(m.id, m.title);
     }
@@ -72,6 +78,7 @@ export async function handleModelUsageRoutes(
         truncated,
         ...summary,
         top_meetings: summary.top_meetings.map((m) => ({ ...m, title: titles.get(m.meeting_id) ?? null })),
+        meeting_titles: Object.fromEntries(titles),
       },
       200,
       origin,

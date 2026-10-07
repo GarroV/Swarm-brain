@@ -32,7 +32,37 @@ export interface UsageSummary {
   by_model: Slice[];
   by_day: Array<{ day: string; usd: number; calls: number }>;
   top_meetings: Array<{ meeting_id: string; usd: number; calls: number }>;
+  /** Расход в разрезе день × назначение × модель × встреча: веб сам фильтрует и раскладывает (#822). */
+  cells: UsageCell[];
+  /** Последние вызовы периода, новые сверху — «когда, на что, сколько». */
+  recent: RecentCall[];
 }
+
+export interface UsageCell {
+  day: string;
+  purpose: string;
+  model: string;
+  meeting_id: string | null;
+  usd: number;
+  calls: number;
+  unpriced: number;
+  tokens: number;
+  audio_seconds: number;
+}
+
+export interface RecentCall {
+  at: string;
+  purpose: string;
+  model: string;
+  meeting_id: string | null;
+  /** null — модель не в прайсе. */
+  usd: number | null;
+  tokens: number;
+  audio_seconds: number;
+}
+
+/** Сколько последних вызовов отдаём в журнал. */
+export const RECENT_CALLS = 300;
 
 export const TOP_MEETINGS = 10;
 const round6 = (n: number) => Math.round(n * 1e6) / 1e6;
@@ -105,6 +135,7 @@ export function summarizeUsage(rows: UsageRow[]): UsageSummary {
   const models = new Map<string, Slice>();
   const days = new Map<string, { usd: number; calls: number }>();
   const meetings = new Map<string, { usd: number; calls: number }>();
+  const cells = new Map<string, UsageCell>();
   let total = 0, unpriced = 0, tokens = 0, audioSec = 0;
 
   for (const r of rows) {
@@ -120,6 +151,28 @@ export function summarizeUsage(rows: UsageRow[]): UsageSummary {
     const day = usageDay(r.created_at);
     const d = days.get(day) ?? { usd: 0, calls: 0 };
     days.set(day, { usd: d.usd + cost, calls: d.calls + 1 });
+    const model = r.model ?? "—";
+    const ck = `${day}|${r.purpose}|${model}|${r.meeting_id ?? ""}`;
+    const c = cells.get(ck) ??
+      {
+        day,
+        purpose: r.purpose,
+        model,
+        meeting_id: r.meeting_id,
+        usd: 0,
+        calls: 0,
+        unpriced: 0,
+        tokens: 0,
+        audio_seconds: 0,
+      };
+    cells.set(ck, {
+      ...c,
+      usd: c.usd + cost,
+      calls: c.calls + 1,
+      unpriced: c.unpriced + (r.cost_usd === null ? 1 : 0),
+      tokens: c.tokens + t,
+      audio_seconds: c.audio_seconds + Number(r.audio_seconds ?? 0),
+    });
     if (r.meeting_id) {
       const m = meetings.get(r.meeting_id) ?? { usd: 0, calls: 0 };
       meetings.set(r.meeting_id, { usd: m.usd + cost, calls: m.calls + 1 });
@@ -139,5 +192,17 @@ export function summarizeUsage(rows: UsageRow[]): UsageSummary {
     top_meetings: [...meetings.entries()]
       .map(([meeting_id, v]) => ({ meeting_id, usd: round6(v.usd), calls: v.calls }))
       .sort((a, b) => b.usd - a.usd).slice(0, TOP_MEETINGS),
+    cells: [...cells.values()].map((c) => ({ ...c, usd: round6(c.usd) }))
+      .sort((a, b) => a.day.localeCompare(b.day) || b.usd - a.usd),
+    recent: [...rows].sort((a, b) => b.created_at.localeCompare(a.created_at)).slice(0, RECENT_CALLS)
+      .map((r) => ({
+        at: r.created_at,
+        purpose: r.purpose,
+        model: r.model ?? "—",
+        meeting_id: r.meeting_id,
+        usd: r.cost_usd === null ? null : round6(Number(r.cost_usd)),
+        tokens: (r.prompt_tokens ?? 0) + (r.completion_tokens ?? 0),
+        audio_seconds: Number(r.audio_seconds ?? 0),
+      })),
   };
 }
