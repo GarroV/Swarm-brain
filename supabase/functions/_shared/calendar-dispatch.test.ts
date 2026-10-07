@@ -5,7 +5,13 @@
 // где его ждут, и никто этого не видит. Поэтому каждая граница — отдельным тестом.
 import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import type { GEvent } from "../meeting-current/select.ts";
-import { DISPATCH_LATE_MS, DISPATCH_LEAD_MS, dropSameRoom, mergeDispatch, planPersonDispatch } from "./calendar-dispatch.ts";
+import {
+  DISPATCH_LATE_MS,
+  DISPATCH_LEAD_MS,
+  dropSameRoom,
+  mergeDispatch,
+  planPersonDispatch,
+} from "./calendar-dispatch.ts";
 
 const NOW = Date.parse("2026-09-28T10:00:00+03:00");
 const PERSON = 111;
