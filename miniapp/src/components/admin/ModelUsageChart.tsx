@@ -68,8 +68,8 @@ export function ModelUsageChart({ buckets, series, seriesName, grain, onGrain, o
           ))}
         </div>
         {hovered && (
-          <div role="status" className="pointer-events-none absolute right-0 top-0 z-10 rounded-[8px] border border-line bg-surface px-2.5 py-2 shadow-sm"
-            style={{ fontSize: 12, minWidth: 180 }}>
+          <div role="status" className="pointer-events-none absolute top-0 z-10 rounded-[8px] border border-line bg-surface px-2.5 py-2 shadow-sm"
+            style={{ fontSize: 12, minWidth: 180, ...tipSide(hover!, buckets.length) }}>
             <div className="font-semibold text-ink">{bucketLabel(hovered, grain, lang)} · {usd(hovered.usd)} · {hovered.calls}</div>
             {hovered.parts.map((p, k) => p > 0 && (
               <div key={series[k]} className="flex items-center justify-between gap-3 text-ink-soft">
@@ -90,6 +90,12 @@ export function ModelUsageChart({ buckets, series, seriesName, grain, onGrain, o
       )}
     </section>
   );
+}
+
+// Подсказка — над наведённым столбцом: в левой половине графика открывается вправо от него, в правой — влево.
+function tipSide(i: number, n: number): { left: string } | { right: string } {
+  const pct = ((i + 0.5) / n) * 100;
+  return pct < 50 ? { left: `calc(60px + ${pct}% * 0.95)` } : { right: `${(100 - pct) * 0.95}%` };
 }
 
 function Swatch({ k }: { k: number }) {
