@@ -14,6 +14,9 @@ export type CountrySales = {
   deltaPct: number | null;
 };
 
+/** €125к / €1.25м — короткая запись выручки. */
+export const fmtEur = (v: number): string => (v >= 1e6 ? `€${(v / 1e6).toFixed(2)}м` : `€${(v / 1e3).toFixed(0)}к`);
+
 export type SalesState = { byCc: Record<string, CountrySales>; loading: boolean; failed: string[] };
 
 export function useCountrySales(codes: string[]): SalesState {

@@ -3,9 +3,9 @@ import { useMemo } from "react";
 import { useDt, useRoyNav } from "../nav";
 import { DashTaskRow } from "../dash/shared";
 import type { DashboardData } from "../dash/useDashboardData";
-import { AreaSpark, } from "./LineChart";
+import { AreaSpark } from "./LineChart";
 import { Delta } from "./QualityWidgets";
-import type { SalesState } from "./useCountrySales";
+import { fmtEur, type SalesState } from "./useCountrySales";
 import { isDone, isOverdue } from "@/lib/smartLists";
 import { countryFlag } from "@/lib/countries";
 
@@ -91,8 +91,6 @@ export function BoardWidget({ data }: { data: DashboardData }) {
     </div>
   );
 }
-
-const fmtEur = (v: number) => (v >= 1e6 ? `€${(v / 1e6).toFixed(2)}м` : `€${(v / 1e3).toFixed(0)}к`);
 
 export function SalesWidget({ codes, sales }: { codes: string[]; sales: SalesState }) {
   const dt = useDt();

@@ -3,7 +3,7 @@ import { useMemo, useState } from "react";
 import { useDt } from "../nav";
 import { MiniSpark } from "./LineChart";
 import { Delta, TONE_CELL, tone } from "./QualityWidgets";
-import type { SalesState } from "./useCountrySales";
+import { fmtEur, type SalesState } from "./useCountrySales";
 import { countryFlag, countryName } from "@/lib/countries";
 import {
   COLL_NORM, RKO_NORM, RKO_WARN, RS_CRIT, RS_NORM, weighted,
@@ -150,7 +150,7 @@ export function CountriesWidget({ scope, sales, narrow, onNarrow, onMarket }: {
       <div className="overflow-auto">
         <table className="w-full border-collapse" style={{ fontSize: 12.5 }}>
           <thead style={{ fontSize: 10.5, letterSpacing: "0.06em" }}>
-            <tr><th className={th}>{dt("Страна", "Country")}</th><th className={th}>{dt("Пицц.", "Pizz.")}</th><th className={th}>{dt("РС", "Std")}</th><th className={th}>{dt("РКО", "CX")}</th><th className={th}>{dt("Инсп.", "Insp.")}</th><th className={th}>{dt("Продажи", "Sales")}</th></tr>
+            <tr><th className={th}>{dt("Страна", "Country")}</th><th className={th}>{dt("Пицц.", "Pizz.")}</th><th className={th}>{dt("РС", "Std")}</th><th className={th}>{dt("РКО", "CX")}</th><th className={th}>{dt("Инсп.", "Insp.")}</th><th className={th} title={dt("Выручка за последний закрытый месяц, € — данные «Анализа рынка»", "Revenue for the last closed month, € — Market analysis data")}>{dt("Продажи, мес.", "Sales, mo.")}</th></tr>
           </thead>
           <tbody>
             {scope.map((c) => {
@@ -163,7 +163,10 @@ export function CountriesWidget({ scope, sales, narrow, onNarrow, onMarket }: {
                   <td className={td}><Cell v={c.rs} t={tone(c.rs, RS_NORM, 85)} /></td>
                   <td className={td}><Cell v={c.rko} t={tone(c.rko, RKO_NORM, RKO_WARN)} digits={1} /></td>
                   <td className={td}><Cell v={c.coll} t={tone(c.coll, COLL_NORM, 70)} /></td>
-                  <td className={`${td} font-mono ${s?.deltaPct == null ? "text-ink-mute" : s.deltaPct >= 0 ? "text-[var(--status-done)]" : "text-[var(--pri-high)]"}`}>{sales.loading ? "…" : pct(s?.deltaPct ?? null)}</td>
+                  <td className={`${td} whitespace-nowrap font-mono text-ink`}>
+                    {sales.loading ? "…" : s?.last != null ? fmtEur(s.last) : "—"}
+                    {s?.deltaPct != null && <span className={`ml-1.5 ${s.deltaPct >= 0 ? "text-[var(--status-done)]" : "text-[var(--pri-high)]"}`} style={{ fontSize: 11 }}>{pct(s.deltaPct)}</span>}
+                  </td>
                 </tr>
               );
             })}
