@@ -32,7 +32,7 @@ jobs:
     timeout-minutes: 5
     steps:
       # Полная история: гейт считает диапазон от точки расхождения с базовой веткой.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0
       - name: Тронуто ли защищённое без разрешения
@@ -43,7 +43,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       # Фикстуры и подставной ответ API — сеть и секреты не нужны. Порча обязательна: она
       # доказывает, что прогон краснеет, когда гейт пропускает код вперёд схемы (issues #444, #557).
       - name: Гейт миграций ночной раскатки
@@ -64,8 +64,8 @@ jobs:
     # зависший прогон всё равно держит очередь и молча тормозит релиз. Норма здесь — 2-3 минуты.
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-      - uses: denoland/setup-deno@v2
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2
         with:
           deno-version: v2.x
       - name: deno check (все edge-функции)
@@ -77,7 +77,7 @@ jobs:
       # роутов, журнал пространства): транзакцию и правило видимости моком не проверить — мок
       # согласится с моделью автора. Поэтому в CI поднимается локальный контур Supabase, а
       # пропуск «базы нет» считается падением, а не пропуском.
-      - uses: supabase/setup-cli@v1
+      - uses: supabase/setup-cli@1dedf2c611547ede7232d26866dd3c56ab903bbb # v1
         with:
           version: 2.118.0
       - name: Локальный контур Supabase
@@ -93,8 +93,8 @@ jobs:
       run:
         working-directory: miniapp
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 20
           cache: npm
@@ -106,7 +106,7 @@ jobs:
       # раннера тестов у Next тут нет, а заводить второй ради шести файлов незачем. До 2026-08-27
       # эти тесты не гонялись НИГДЕ — ни в CI, ни локально (issue #130), и регрессия в дефолтах
       # задач или в дедупликации запросов проехала бы CI зелёной.
-      - uses: denoland/setup-deno@v2
+      - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2
         with:
           deno-version: v2.x
       - run: npm test
@@ -119,15 +119,15 @@ jobs:
     # обязан гоняться сам, а не «когда кто-то вспомнит прогнать его локально».
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           # Гейт сервера scriba считает затронутые файлы от коммита из .scriba-build-base;
           # в мелком клоне его нет, и формат/линт остались бы без файлов.
           fetch-depth: 0
-      - uses: denoland/setup-deno@v2
+      - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2
         with:
           deno-version: v2.x
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 20
           cache: npm
@@ -135,7 +135,7 @@ jobs:
       - name: Зависимости веба (нужны проверке типов)
         working-directory: miniapp
         run: npm ci
-      - uses: supabase/setup-cli@v1
+      - uses: supabase/setup-cli@1dedf2c611547ede7232d26866dd3c56ab903bbb # v1
         with:
           version: 2.118.0
       - name: Локальный контур Supabase
@@ -153,7 +153,7 @@ jobs:
         run: make porcha
       - name: Машинный отчёт прогона
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: check-report
           path: reports/
