@@ -11,12 +11,14 @@ import { useDt } from "@/components/roy/nav";
 import { fmtDay } from "./format";
 import { PILL_BTN } from "./atoms";
 import {
+  NARROW_INVISIBLE,
   type RowDnd,
   type RowHandlers,
-  SPRINT_COLS,
+  SPRINT_GRID,
   SprintRow,
   SubtaskLiteRow,
   TASK_INDENT,
+  TIGHT_INVISIBLE,
 } from "./SprintRow";
 import { resolveDrop, subtaskBlock } from "@/lib/sprintGrouping";
 import { type DragView, type RowInfo, useRowDrag } from "./useRowDrag";
@@ -518,9 +520,11 @@ export function InitiativeList({
         role="row"
         // px-1 — тот же отступ, что у строк ниже: без него шапка шире строк, и столбцы
         // разъезжались (владелец 05.10.2026: «шапка не бьётся со столбами»).
-        className="sticky top-0 z-10 grid items-center rounded-t-[10px] border-b border-line bg-surface-2 px-1 font-semibold uppercase text-ink-mute"
+        className={cn(
+          "sticky top-0 z-10 grid items-center rounded-t-[10px] border-b border-line bg-surface-2 px-1 font-semibold uppercase text-ink-mute",
+          SPRINT_GRID,
+        )}
         style={{
-          gridTemplateColumns: SPRINT_COLS,
           height: 32,
           fontSize: 10.5,
           letterSpacing: "0.08em",
@@ -530,9 +534,16 @@ export function InitiativeList({
           {dt("Задача", "Task")}
         </span>
         <span className="px-2">{dt("Срок", "Due")}</span>
-        <span className="px-2">{dt("Рынок", "Market")}</span>
-        <span className="px-2">{dt("Сверка", "Check")}</span>
-        <span className="px-2">{dt("Исполнитель", "Assignee")}</span>
+        {/* Подписи узких столбцов — невидимые, но на месте: display:none выбил бы ячейку из сетки. */}
+        <span className={cn("overflow-hidden px-2", TIGHT_INVISIBLE)}>
+          {dt("Рынок", "Market")}
+        </span>
+        <span className={cn("overflow-hidden px-2", TIGHT_INVISIBLE)}>
+          {dt("Сверка", "Check")}
+        </span>
+        <span className={cn("overflow-hidden px-2", NARROW_INVISIBLE)}>
+          {dt("Исполнитель", "Assignee")}
+        </span>
         <span />
       </div>
       {view && <DragGhost view={view} />}

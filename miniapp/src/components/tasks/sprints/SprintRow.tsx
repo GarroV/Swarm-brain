@@ -14,8 +14,25 @@ import { blockText } from "./groupingText";
 // живут в хвосте строки и проявляются при наведении: строка спокойная, а ежедневный клик
 // по-прежнему один (#407).
 
-/** Колонки — одни на шапку и строки, иначе вертикаль рвётся между группами. */
-export const SPRINT_COLS = "minmax(0,1fr) 64px 56px 128px 168px 64px";
+/** Колонки — одни на шапку и строки, иначе вертикаль рвётся между группами.
+ *
+ *  Узкое окно (владелец 07.10.2026: название задачи «должно сокращаться в последнюю очередь»):
+ *  ширину считает контейнер состава (`@container/sprint` в SprintsScreen), а не окно — открытая
+ *  панель «План» тоже отнимает место. Уступают по очереди:
+ *    < 860px — исполнитель сворачивается до аватарки (имя — в подсказке);
+ *    < 720px — рынок прячется (он есть в карточке), сверка — до цветной точки (состояние в подсказке).
+ *  Срок и хвост с действиями остаются; название получает всё остальное. Столбцов всегда шесть:
+ *  спрятанный рынок — нулевой ширины и невидимый, иначе ячейки строки съехали бы по сетке. */
+export const SPRINT_GRID =
+  "grid-cols-[minmax(0,1fr)_64px_56px_128px_168px_64px] @max-[860px]/sprint:grid-cols-[minmax(0,1fr)_64px_56px_128px_44px_56px] @max-[720px]/sprint:grid-cols-[minmax(0,1fr)_60px_0px_40px_44px_48px]";
+
+/** Ячейка, которая уходит первой на узком составе — исполнитель по имени. */
+export const NARROW_HIDE_NAME = "@max-[860px]/sprint:hidden";
+export const NARROW_INVISIBLE = "@max-[860px]/sprint:invisible";
+/** Ячейки, которые уходят второй ступенью: рынок целиком, подпись сверки. */
+export const TIGHT_HIDE = "@max-[720px]/sprint:hidden";
+export const TIGHT_INVISIBLE =
+  "@max-[720px]/sprint:invisible @max-[720px]/sprint:px-0";
 
 // Лесенка дерева (владелец 07.10.2026: «чтобы не было шатания, каскадом»): задача начинается
 // под именем группы, подзадача — ступенью правее. У каждой строки задачи постоянное место под
@@ -116,9 +133,10 @@ function CheckChip({ status, note, unchecked }: {
     : "—";
   return (
     <span
-      title={note ?? undefined}
+      // На узком составе подпись прячется до точки — тогда состояние читается из подсказки.
+      title={note ? `${label} · ${note}` : label}
       className={cn(
-        "inline-flex h-[22px] max-w-full items-center gap-1.5 truncate rounded-[6px] border px-2 font-medium",
+        "inline-flex h-[22px] max-w-full items-center gap-1.5 truncate rounded-[6px] border px-2 font-medium @max-[720px]/sprint:px-1.5",
         status
           ? CHECK_TONE[status]
           : "border-transparent text-ink-mute group-hover:border-line",
@@ -131,8 +149,10 @@ function CheckChip({ status, note, unchecked }: {
           status ? "bg-current" : "border border-dashed border-ink-mute",
         )}
       />
-      {label}
-      {note ? " ·" : ""}
+      <span className={TIGHT_HIDE}>
+        {label}
+        {note ? " ·" : ""}
+      </span>
     </span>
   );
 }
@@ -194,9 +214,9 @@ export function SprintRow(
         drag?.kind === "source" && "opacity-45",
         drag?.kind === "group" &&
           "bg-primary/8 outline outline-2 -outline-offset-2 outline-primary/70",
+        SPRINT_GRID,
       )}
       style={{
-        gridTemplateColumns: SPRINT_COLS,
         minHeight: 38,
         fontSize: 13.5,
       }}
@@ -347,7 +367,13 @@ export function SprintRow(
           : <span className="text-ink-mute">—</span>}
       </div>
 
-      <div className="px-2 font-mono text-ink-soft" style={{ fontSize: 12 }}>
+      <div
+        className={cn(
+          "min-w-0 overflow-hidden px-2 font-mono text-ink-soft",
+          TIGHT_INVISIBLE,
+        )}
+        style={{ fontSize: 12 }}
+      >
         {market ?? <span className="text-ink-mute">—</span>}
       </div>
 
@@ -386,15 +412,27 @@ export function SprintRow(
       <div className="flex min-w-0 items-center gap-1.5 px-2 text-ink-soft">
         {live && (
           <>
-            {who ? <AssigneeChip name={who} /> : null}
-            <span className="min-w-0 truncate">
+            {who
+              ? (
+                <span
+                  className="shrink-0"
+                  title={item.assignees.map(displayName).join(", ")}
+                >
+                  <AssigneeChip name={who} />
+                </span>
+              )
+              : null}
+            <span className={cn("min-w-0 truncate", who && NARROW_HIDE_NAME)}>
               {who
                 ? displayName(who)
                 : <span className="text-ink-mute">—</span>}
             </span>
             {item.assignees.length > 1 && (
               <span
-                className="shrink-0 font-mono text-ink-mute"
+                className={cn(
+                  "shrink-0 font-mono text-ink-mute",
+                  NARROW_HIDE_NAME,
+                )}
                 style={{ fontSize: 11 }}
                 title={item.assignees.join(", ")}
               >
@@ -557,8 +595,9 @@ export function SubtaskLiteRow({ task, inSprint, onOpen }: {
         "grid items-center border-t border-line transition-colors",
         onOpen && "cursor-pointer hover:bg-surface-2",
         !inSprint && "opacity-70",
+        SPRINT_GRID,
       )}
-      style={{ gridTemplateColumns: SPRINT_COLS, minHeight: 34, fontSize: 13 }}
+      style={{ minHeight: 34, fontSize: 13 }}
     >
       <div
         className="flex min-w-0 items-center gap-2 px-3"
@@ -592,11 +631,20 @@ export function SubtaskLiteRow({ task, inSprint, onOpen }: {
       <div className="px-2 font-mono text-ink-mute" style={{ fontSize: 12 }}>
         {task.due_date ? fmtDayShort(task.due_date) : "—"}
       </div>
-      <div className="px-2 font-mono text-ink-mute" style={{ fontSize: 12 }}>
+      <div
+        className={cn(
+          "min-w-0 overflow-hidden px-2 font-mono text-ink-mute",
+          TIGHT_INVISIBLE,
+        )}
+        style={{ fontSize: 12 }}
+      >
         {task.country ?? "—"}
       </div>
       <div />
-      <div className="min-w-0 truncate px-2 text-ink-mute">
+      <div
+        className="min-w-0 truncate px-2 text-ink-mute"
+        title={who ? displayName(who) : undefined}
+      >
         {who ? displayName(who) : "—"}
       </div>
       <div />
