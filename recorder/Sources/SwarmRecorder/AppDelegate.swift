@@ -487,33 +487,78 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         sendHeartbeat(presence: now)
     }
 
-    // Тихий авто-апдейт: только в простое (запись/отправку не рвём) и один раз за сессию (после
-    // апдейта приложение перезапустится). Сервер новее → запускаем отсоединённый хелпер
-    // (скачивает готовый .app и переподписывает тем же cert → права не слетают). Подробности —
-    // Updater.swift.
-    private var updateSpawned = false
+    // Тихий авто-апдейт: запись и отправку не рвём, в остальном — сам. Сервер новее → запускаем
+    // отсоединённый хелпер (скачивает готовый .app и переподписывает тем же cert → права не
+    // слетают). Подробности — Updater.swift; когда спрашивать сервер — RecorderKit.UpdateGate.
+    //
+    // До сборки 37 запуск хелпера был «раз за сессию», а проверка шла только в простое: одна
+    // сорвавшаяся попытка или залипшая ошибка отключали обновления до перезапуска приложения, и
+    // трое из шести сидели на 26/32 неделями (issue #843). Теперь хелпер, не перезапустивший
+    // приложение за UpdateGate.attemptTimeout, считается сорвавшимся: его хвост журнала уходит
+    // в диагностику на сервер, а попытка повторяется через час.
+    private var updateSpawnedAt: Date?
     private var lastUpdateCheckAt: Date?
-    // Релизы редкие → проверять часто незачем. Чек на старте (lastUpdateCheckAt=nil) + не чаще
-    // раза в 6ч. maintenanceTick (15 мин, нужен очереди загрузок) лишь предлагает чек — троттл режет.
-    private let updateCheckMinInterval: TimeInterval = 6 * 3600
+    private var lastUpdateAttemptFailed = false
+    private var reportedNotInstalled = false
+    private var updateSpawned: Bool {
+        guard let at = updateSpawnedAt else { return false }
+        return !UpdateGate.attemptFailed(spawnedAt: at, now: Date())
+    }
+    private var updateActivity: UpdateGate.Activity {
+        switch state {
+        case .recording, .sending: return .busy
+        default: return .free
+        }
+    }
+
     private func checkForUpdate() {
-        guard let cfg = config, configError == nil, !updateSpawned else { return }
-        if case .idle = state {} else { return }   // не лезем во время записи/отправки/ошибки
-        if let last = lastUpdateCheckAt, Date().timeIntervalSince(last) < updateCheckMinInterval { return }
+        guard let cfg = config, configError == nil else { return }
+        let now = Date()
+        if UpdateGate.attemptFailed(spawnedAt: updateSpawnedAt, now: now) { reportFailedUpdateAttempt() }
         // Обновляем ТОЛЬКО установленную в /Applications копию — не трогаем запуск из dev/temp/DMG
-        // (иначе своп снёс бы произвольный путь). build-app.sh/install.sh ставят именно туда.
-        guard Bundle.main.bundlePath.hasPrefix("/Applications/") else { return }
-        lastUpdateCheckAt = Date()
+        // (иначе своп снёс бы произвольный путь). install.sh ставит именно туда.
+        guard Bundle.main.bundlePath.hasPrefix("/Applications/") else {
+            if !reportedNotInstalled {
+                reportedNotInstalled = true
+                Diagnostics.shared.log("UPDATE пропущено: приложение не в /Applications (\(Bundle.main.bundlePath))")
+            }
+            return
+        }
+        guard UpdateGate.verdict(activity: updateActivity, spawnedAt: updateSpawnedAt, lastCheckAt: lastUpdateCheckAt,
+                                 lastAttemptFailed: lastUpdateAttemptFailed, now: now) == .check else { return }
+        lastUpdateCheckAt = now
         Task {
-            guard let latest = await Updater.latestRelease(config: cfg), latest.build > Updater.currentBuild else { return }
-            // Перепроверяем простой и взводим флаг на ГЛАВНОМ потоке (state/updateSpawned — только там).
+            let cur = Updater.currentBuild
+            guard let latest = await Updater.latestRelease(config: cfg) else {
+                Diagnostics.shared.log("UPDATE сервер версий не ответил; повтор через час")
+                await MainActor.run { self.lastUpdateAttemptFailed = true }
+                return
+            }
+            guard latest.build > cur else {
+                await MainActor.run { self.lastUpdateAttemptFailed = false }
+                return
+            }
+            // Перепроверяем занятость и взводим отметку на ГЛАВНОМ потоке (state/updateSpawnedAt — только там).
             let go: Bool = await MainActor.run {
-                guard case .idle = self.state, !self.updateSpawned else { return false }
-                self.updateSpawned = true
+                guard self.updateActivity == .free, !self.updateSpawned else { return false }
+                self.updateSpawnedAt = Date()
                 return true
             }
-            if go { Updater.runUpdater(currentBuild: Updater.currentBuild, targetBuild: latest.build, assetURL: latest.assetURL) }
+            guard go else { return }
+            Diagnostics.shared.log("UPDATE запускаю обновление \(cur) → \(latest.build)")
+            Updater.runUpdater(currentBuild: cur, targetBuild: latest.build, assetURL: latest.assetURL)
         }
+    }
+
+    // Хелпер запущен давно, а мы всё ещё живы — обновление не состоялось. Причину пишем в
+    // диагностику (она сама уезжает на сервер), иначе сорвавшиеся попытки снова будут невидимы.
+    private func reportFailedUpdateAttempt() {
+        updateSpawnedAt = nil
+        lastUpdateAttemptFailed = true
+        let text = (try? String(contentsOf: Updater.helperLogURL, encoding: .utf8)) ?? ""
+        let tail = UpdateGate.attemptTail(log: String(text.suffix(16_000)))
+        Diagnostics.shared.log("UPDATE не состоялось, повтор через час; журнал хелпера: "
+            + (tail.isEmpty ? "пуст" : tail.joined(separator: " | ")))
     }
 
     // Идёт ручная проверка обновления (пункт меню показывает это вместо кнопки).
@@ -525,7 +570,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         guard !updateCheckInFlight else { return }
         updateCheckInFlight = true
         rebuildMenu()
-        let idle: Bool = { if case .idle = state, !updateSpawned { return true }; return false }()
+        let idle = updateActivity == .free && !updateSpawned
         let cfg = config
         Task {
             let decision = await Updater.decide(config: cfg, isIdle: idle)
@@ -553,7 +598,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         case .upToDate(let build):
             infoAlert("Установлена последняя версия", "Сборка \(build) — обновлять нечего.")
         case .available(let build, let from, let assetURL):
-            updateSpawned = true
+            updateSpawnedAt = Date()
+            Diagnostics.shared.log("UPDATE по кнопке \(from) → \(build)")
             Updater.runUpdater(currentBuild: from, targetBuild: build, assetURL: assetURL)
             infoAlert("Обновляю до сборки \(build)",
                       "Сейчас \(from). Скачаю и перезапущу — это займёт несколько секунд. Разрешение на запись звука не слетит, токен останется прежним.")
