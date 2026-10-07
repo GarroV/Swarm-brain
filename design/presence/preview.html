@@ -1,0 +1,22 @@
+<!doctype html><meta charset="utf-8">
+<link rel="stylesheet" href="avatars.css">
+<style>body{margin:0;padding:12px;background:#1b1a22;color:#ddd;font:12px system-ui}
+.row{display:flex;gap:10px;align-items:center;margin:4px 0}.big{width:84px}.sm{width:28px}
+.lbl{width:150px;font-size:11px}.light{background:#f4f4f6;padding:4px 8px;display:flex;gap:6px;border-radius:6px}</style>
+<div id="o"></div>
+<script src="render.js"></script>
+<script>
+const part = new URLSearchParams(location.search).get("part");
+const s = document.createElement("script"); s.src = part;
+s.onload = () => {
+  const o = document.getElementById("o");
+  for (const g of window.GLYPHS) {
+    let h = `<div class="row"><div class="lbl">${g.id}. ${g.name}</div>`;
+    for (const v of ["a","b","c"]) h += `<div class="big">${PresenceAvatar.avatar(g,v)}</div>`;
+    h += `<div class="light">`; for (const v of ["a","b","c"]) h += `<div class="sm">${PresenceAvatar.avatar(g,v)}</div>`;
+    h += `</div></div>`; o.insertAdjacentHTML("beforeend", h);
+  }
+  document.title = "ready";
+};
+document.head.appendChild(s);
+</script>

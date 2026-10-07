@@ -1,0 +1,36 @@
+.av { display: block; overflow: visible; }
+.av .ring { fill: none; }
+.av .b, .av .k, .av .l { stroke-linejoin: round; stroke-linecap: round; }
+
+/* А — неоновая трубка: глиф одной светящейся линией, белая сердцевина, тёмно-синий фон */
+.v-a .s1 { stop-color: hsl(var(--h) 70% 11%); }
+.v-a .s2 { stop-color: #03060f; }
+.v-a .fr1 { fill: none; stroke: hsl(var(--h) 100% 60% / .28); stroke-width: .8; }
+.v-a .glow .b, .v-a .glow .k, .v-a .glow .l { fill: none; stroke: hsl(var(--h) 100% 55%); stroke-width: 3.6; opacity: .55; }
+.v-a .glow .e { fill: hsl(var(--h) 100% 55%); }
+.v-a .glow { filter: blur(1.6px); }
+.v-a .g .b, .v-a .g .k { fill: none; stroke: hsl(var(--h) 100% 86%); stroke-width: 1.5; }
+.v-a .g .l { fill: none; stroke: hsl(var(--h) 100% 78%); stroke-width: 1.2; }
+.v-a .g .e { fill: #f2fbff; }
+.v-a .ring { stroke: hsl(var(--h) 100% 58% / .75); stroke-width: 1.1; }
+
+/* Б — резной камень: глиф-рельеф из тёмного камня, кромка подсвечена синим неоном, рамка-меандр */
+.v-b .bg { fill: #0a1120; }
+.v-b .fret { fill: none; stroke: hsl(var(--h) 90% 55% / .55); stroke-width: .9; stroke-linejoin: miter; }
+.v-b .b { fill: #16233b; stroke: hsl(var(--h) 100% 62%); stroke-width: 1.8; }
+.v-b .k { fill: #1d3354; stroke: hsl(var(--h) 100% 70%); stroke-width: 1.8; }
+.v-b .l { fill: none; stroke: hsl(var(--h) 95% 72%); stroke-width: 1.4; }
+.v-b .e { fill: hsl(var(--h) 100% 82%); }
+.v-b .g { filter: drop-shadow(0 0 1.4px hsl(var(--h) 100% 60% / .9)); }
+.v-b .ring { stroke: hsl(var(--h) 100% 60%); stroke-width: 1.2; filter: drop-shadow(0 0 2px hsl(var(--h) 100% 55%)); }
+
+/* В — ультрамарин: глиф залит светящимся льдом, линии врезаны тёмным, фон глубокий ультрамарин */
+.v-c .s1 { stop-color: hsl(calc(var(--h) + 8) 85% 30%); }
+.v-c .s2 { stop-color: #040822; }
+.v-c .fr1 { fill: none; stroke: hsl(var(--h) 100% 70% / .3); stroke-width: .7; stroke-dasharray: 1.2 1.6; }
+.v-c .b { fill: hsl(var(--h) 100% 72%); stroke: #061033; stroke-width: 1.5; }
+.v-c .k { fill: hsl(calc(var(--h) + 16) 95% 56%); stroke: #061033; stroke-width: 1.5; }
+.v-c .l { fill: none; stroke: #061033; stroke-width: 1.6; }
+.v-c .e { fill: #061033; }
+.v-c .g { filter: drop-shadow(0 0 2.4px hsl(var(--h) 100% 60% / .85)); }
+.v-c .ring { stroke: hsl(var(--h) 100% 66%); stroke-width: 1.3; filter: drop-shadow(0 0 2.4px hsl(var(--h) 100% 58%)); }
