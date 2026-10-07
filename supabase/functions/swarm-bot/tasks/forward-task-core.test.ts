@@ -6,7 +6,10 @@ const chat = { id: 1 };
 
 Deno.test("forwardSenderName: человек, скрытый, канал, легаси", () => {
   assertEquals(
-    forwardSenderName({ chat, forward_origin: { type: "user", sender_user: { first_name: "Иван", last_name: "Петров" } } }),
+    forwardSenderName({
+      chat,
+      forward_origin: { type: "user", sender_user: { first_name: "Иван", last_name: "Петров" } },
+    }),
     "Иван Петров",
   );
   assertEquals(forwardSenderName({ chat, forward_origin: { type: "hidden_user", sender_user_name: "Босс" } }), "Босс");

@@ -15,7 +15,14 @@ import { sendMessage } from "../lib/telegram.ts";
 import type { TgMessage } from "../lib/types.ts";
 import { dbCreateTask } from "./db.ts";
 import { sendTaskCard } from "./formatter.ts";
-import { buildDescription, forwardSenderName, isFresh, taskTitle, WAIT_TTL_MS, waitStartedAt } from "./forward-task-core.ts";
+import {
+  buildDescription,
+  forwardSenderName,
+  isFresh,
+  taskTitle,
+  WAIT_TTL_MS,
+  waitStartedAt,
+} from "./forward-task-core.ts";
 
 export const FWD_WAIT = "fwd_task_wait";
 

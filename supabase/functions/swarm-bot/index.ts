@@ -22,10 +22,10 @@ import { handleDocument, handlePhoto, handleUrl, handleVoice } from "./handlers/
 import {
   classifyEntryCommand,
   extractUrl,
+  isTaskComment,
   parseCreateTaskCommand,
   parseManageCommand,
   parseSaveCommand,
-  isTaskComment,
 } from "./lib/intent.ts";
 import { ALL_MEETING_SOURCES, ENTRY_MEETING_SOURCES, sourceLabel } from "../_shared/sources.ts";
 import { buildClaudeProjectPrompt } from "../_shared/claude-project-prompt.ts";
