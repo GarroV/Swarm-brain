@@ -20,11 +20,13 @@ import { blockText } from "./groupingText";
  *  ширину считает контейнер состава (`@container/sprint` в SprintsScreen), а не окно — открытая
  *  панель «План» тоже отнимает место. Уступают по очереди:
  *    < 860px — исполнитель сворачивается до аватарки (имя — в подсказке);
- *    < 720px — рынок прячется (он есть в карточке), сверка — до цветной точки (состояние в подсказке).
+ *    < 720px — рынок прячется (он есть в карточке), сверка — до цветной точки (состояние в подсказке);
+ *    < 480px (телефон) — строка в два этажа: название на всю ширину, под ним справа срок
+ *      («дд.мм» без полей), сверка, исполнитель и кнопки хвоста — в одну строку им не хватало места.
  *  Срок и хвост с действиями остаются; название получает всё остальное. Столбцов всегда шесть:
  *  спрятанный рынок — нулевой ширины и невидимый, иначе ячейки строки съехали бы по сетке. */
 export const SPRINT_GRID =
-  "grid-cols-[minmax(0,1fr)_64px_56px_128px_168px_64px] @max-[860px]/sprint:grid-cols-[minmax(0,1fr)_64px_56px_128px_44px_56px] @max-[720px]/sprint:grid-cols-[minmax(0,1fr)_60px_0px_40px_44px_48px]";
+  "grid-cols-[minmax(0,1fr)_64px_56px_128px_168px_64px] @max-[860px]/sprint:grid-cols-[minmax(0,1fr)_64px_56px_128px_44px_56px] @max-[720px]/sprint:grid-cols-[minmax(0,1fr)_60px_0px_40px_44px_48px] @max-[480px]/sprint:grid-cols-[minmax(0,1fr)_40px_0px_40px_44px_96px]";
 
 /** Ячейка, которая уходит первой на узком составе — исполнитель по имени. */
 export const NARROW_HIDE_NAME = "@max-[860px]/sprint:hidden";
@@ -33,6 +35,18 @@ export const NARROW_INVISIBLE = "@max-[860px]/sprint:invisible";
 export const TIGHT_HIDE = "@max-[720px]/sprint:hidden";
 export const TIGHT_INVISIBLE =
   "@max-[720px]/sprint:invisible @max-[720px]/sprint:px-0";
+/** Телефон: название — первым этажом на всю строку, остальное — вторым, с колонки срока.
+ *  Шапка таблицы остаётся одним этажом: её подписи стоят над вторым этажом строк. */
+export const PHONE_TITLE =
+  "@max-[480px]/sprint:col-span-6 @max-[480px]/sprint:pt-2";
+/** Исполнитель на узком составе уступает место кнопкам хвоста, пока на строку наведён курсор. */
+export const HOVER_YIELD =
+  "lg:@max-[860px]/sprint:group-hover:invisible lg:@max-[860px]/sprint:group-focus-within:invisible";
+export const PHONE_TIGHT = "@max-[480px]/sprint:px-0";
+export const PHONE_META =
+  "@max-[480px]/sprint:col-start-2 @max-[480px]/sprint:px-0";
+/** Нижнее поле строки на телефоне — у строки, а не у ячейки: иначе второй этаж съедет по вертикали. */
+export const PHONE_ROW = "@max-[480px]/sprint:pb-1.5";
 
 // Лесенка дерева (владелец 07.10.2026: «чтобы не было шатания, каскадом»): задача начинается
 // под именем группы, подзадача — ступенью правее. У каждой строки задачи постоянное место под
@@ -215,6 +229,7 @@ export function SprintRow(
         drag?.kind === "group" &&
           "bg-primary/8 outline outline-2 -outline-offset-2 outline-primary/70",
         SPRINT_GRID,
+        PHONE_ROW,
       )}
       style={{
         minHeight: 38,
@@ -235,7 +250,7 @@ export function SprintRow(
         </span>
       )}
       <div
-        className="flex min-w-0 items-center gap-2 px-3"
+        className={cn("flex min-w-0 items-center gap-2 px-3", PHONE_TITLE)}
         style={{ paddingLeft: depth ? SUBTASK_INDENT : TASK_INDENT }}
       >
         {/* Место под стрелку есть у каждой строки — с подзадачами она там, без них пусто. */}
@@ -358,6 +373,7 @@ export function SprintRow(
       <div
         className={cn(
           "px-2 font-mono",
+          PHONE_META,
           late ? "font-semibold text-pri-high" : "text-ink-soft",
         )}
         style={{ fontSize: 12 }}
@@ -409,7 +425,12 @@ export function SprintRow(
           : null}
       </div>
 
-      <div className="flex min-w-0 items-center gap-1.5 px-2 text-ink-soft">
+      <div
+        className={cn(
+          "flex min-w-0 items-center gap-1.5 px-2 text-ink-soft",
+          HOVER_YIELD,
+        )}
+      >
         {live && (
           <>
             {who
@@ -443,7 +464,11 @@ export function SprintRow(
         )}
       </div>
 
-      {/* Хвост строки: быстрые действия. На компьютере — по наведению, на телефоне видны всегда. */}
+      {
+        /* Хвост строки: быстрые действия. На компьютере — по наведению, на телефоне видны всегда.
+          Кнопкам нужно ~94px, а колонка на узком составе 48: они заходят на колонку исполнителя,
+          а его аватарка на это время прячется (HOVER_YIELD), чтобы не просвечивать между кнопками. */
+      }
       <div
         className="flex items-center justify-end gap-1 pr-3 transition-opacity lg:opacity-0 lg:group-hover:opacity-100 lg:focus-within:opacity-100"
         style={{ fontSize: 11 }}
@@ -596,11 +621,12 @@ export function SubtaskLiteRow({ task, inSprint, onOpen }: {
         onOpen && "cursor-pointer hover:bg-surface-2",
         !inSprint && "opacity-70",
         SPRINT_GRID,
+        PHONE_ROW,
       )}
       style={{ minHeight: 34, fontSize: 13 }}
     >
       <div
-        className="flex min-w-0 items-center gap-2 px-3"
+        className={cn("flex min-w-0 items-center gap-2 px-3", PHONE_TITLE)}
         style={{ paddingLeft: SUBTASK_INDENT }}
       >
         <span aria-hidden="true" className="w-3 shrink-0" />
@@ -628,7 +654,10 @@ export function SubtaskLiteRow({ task, inSprint, onOpen }: {
             : dt("не в спринте", "not in sprint")}
         </span>
       </div>
-      <div className="px-2 font-mono text-ink-mute" style={{ fontSize: 12 }}>
+      <div
+        className={cn("px-2 font-mono text-ink-mute", PHONE_META)}
+        style={{ fontSize: 12 }}
+      >
         {task.due_date ? fmtDayShort(task.due_date) : "—"}
       </div>
       <div

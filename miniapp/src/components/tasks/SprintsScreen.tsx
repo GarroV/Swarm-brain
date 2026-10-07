@@ -1252,7 +1252,7 @@ export function SprintsScreen() {
                         </div>
                         {/* Контейнер состава: колонки уступают место названию по его ширине, а не по
                             ширине окна (SPRINT_GRID в sprints/SprintRow.tsx). */}
-                        <div className="@container/sprint min-w-[420px]">
+                        <div className="@container/sprint min-w-[320px]">
                         {mineBoards
                           ? (
                             <>
