@@ -3,6 +3,7 @@
 // станет стенограммой встречи, которую команда читает как факт.
 import { assertEquals, assertThrows } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import {
+  botJoinsOverShort,
   botStillRecording,
   claimAction,
   decideHeld,
@@ -11,6 +12,7 @@ import {
   heldGuards,
   type HeldRow,
   readClaimSeconds,
+  shortClipGuards,
 } from "./arbiter.ts";
 import { MAX_RECORDED_SECONDS } from "../_shared/meeting-lease.ts";
 
@@ -110,6 +112,8 @@ function passes(held: HeldRow, guards: Guard[]): boolean {
         return row[g.column] === g.value;
       case "isNull":
         return row[g.column] === null;
+      case "notNull":
+        return row[g.column] !== null && row[g.column] !== undefined;
       case "neq":
         return row[g.column] !== g.value;
       case "notTrue":
@@ -190,4 +194,57 @@ Deno.test("deferReasonOf: причина отказа совпадает с ве
   assertEquals(deferReasonOf(stopped, 3100, NOW), "similar");
   assertEquals(deferReasonOf(stopped, 0, NOW), "unknown");
   assertEquals(deferReasonOf({ ...stopped, recorded_seconds: null }, 1200, NOW), "unknown");
+});
+
+// ── Бот поверх короткой записи (07.10.2026) ───────────────────────────────────
+
+/** Рекордер человека уже выгрузил первые две минуты встречи; обработка кончилась, лиз ещё жив. */
+function shortClipRow(seconds = 120): HeldRow {
+  return {
+    claim_owner: OTHER,
+    recorded_seconds: seconds,
+    transcript: { segments: [{ end: seconds }] },
+    notes_edited_at: null,
+    status: null,
+    lease_expires_at: "2026-09-28T12:20:00.000Z",
+    agent_last_recording: null,
+    summary_status: "done",
+  };
+}
+
+Deno.test("ЯДРО: короткая готовая запись рекордера не отменяет бота — он идёт писать встречу", () => {
+  assertEquals(decideHeld(shortClipRow(), 0, BOT_OWNER, NOW), "defer", "старое правило отказывало бы");
+  assertEquals(botJoinsOverShort(shortClipRow(), true, 0, NOW), true);
+  assertEquals(
+    botJoinsOverShort({ ...shortClipRow(), claim_owner: BOT_OWNER }, true, 0, NOW),
+    true,
+    "запись того же человека — тоже",
+  );
+});
+
+Deno.test("ЯДРО: бот поверх записи — только когда всё сразу", () => {
+  assertEquals(botJoinsOverShort(shortClipRow(), false, 0, NOW), false, "рекордер, а не бот");
+  assertEquals(botJoinsOverShort(shortClipRow(), true, 60, NOW), false, "бот уже с секундами — обычное правило");
+  assertEquals(botJoinsOverShort(shortClipRow(300), true, 0, NOW), false, "запись от 5 минут — бот не идёт");
+  assertEquals(botJoinsOverShort({ ...shortClipRow(), transcript: null }, true, 0, NOW), false, "выгрузка ещё идёт");
+  assertEquals(
+    botJoinsOverShort({ ...shortClipRow(), summary_status: "processing" }, true, 0, NOW),
+    false,
+    "обработка идёт",
+  );
+  assertEquals(botJoinsOverShort({ ...shortClipRow(), notes_edited_at: NOW }, true, 0, NOW), false, "правили руками");
+  assertEquals(botJoinsOverShort({ ...shortClipRow(), status: "in_base" }, true, 0, NOW), false, "опубликовано");
+  assertEquals(botJoinsOverShort(liveBotRow(60), true, 0, NOW), false, "встречу уже пишет бот");
+});
+
+Deno.test("ЯДРО (TOCTOU): бот поверх записи не ложится на строку, изменившуюся после чтения", () => {
+  const held = shortClipRow();
+  const guards = shortClipGuards(held, NOW);
+  assertEquals(passes(held, guards), true);
+  assertEquals(passes({ ...held, recorded_seconds: 900 }, guards), false, "секунды выросли");
+  assertEquals(passes({ ...held, summary_status: "processing" }, guards), false, "пошла обработка");
+  assertEquals(passes({ ...held, summary_status: null }, guards), true, "маркер пуст — можно");
+  assertEquals(passes({ ...held, transcript: null }, guards), false, "стенограммы нет");
+  assertEquals(passes({ ...held, claim_owner: 333 }, guards), false, "держатель сменился");
+  assertEquals(passes({ ...held, status: "in_base" }, guards), false, "опубликовали");
 });

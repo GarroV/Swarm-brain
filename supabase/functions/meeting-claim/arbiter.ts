@@ -33,6 +33,8 @@ export interface HeldRow {
   status: string | null;
   lease_expires_at: string | null;
   agent_last_recording: boolean | null;
+  /** Нужен только правилу «бот поверх короткой записи»: идущая обработка — не трогать. */
+  summary_status?: string | null;
 }
 
 /**
@@ -132,6 +134,7 @@ export type Guard =
   | { kind: "neq"; column: string; value: string }
   | { kind: "notTrue"; column: string }
   | { kind: "before"; column: string; value: string }
+  | { kind: "notNull"; column: string }
   | { kind: "anyOf"; clauses: Guard[] };
 
 /**
@@ -160,5 +163,45 @@ export function heldGuards(row: HeldRow, nowIso: string): Guard[] {
     },
     { kind: "isNull", column: "notes_edited_at" },
     { kind: "neq", column: "status", value: PUBLISHED_STATUS },
+  ];
+}
+
+/**
+ * Бот поверх короткой записи (07.10.2026, аудит границы рекордер ↔ бот). Бот заявляется ДО захода в
+ * звонок, с нулём секунд, и по правилу полноты проигрывал любой уже готовой записи: рекордер
+ * человека, случайно записавший первые две минуты, отменял бота на всю встречу. Короткая готовая
+ * запись бота больше не останавливает: он идёт и пишет, а стенограмма рекордера остаётся на месте
+ * до выгрузки бота — meeting-ingest оставит более полную (second-recording.ts). Не пустили бота —
+ * короткая запись никуда не делась.
+ *
+ * Только когда всё сразу:
+ *   • заявляет бот и пока без секунд (до звонка);
+ *   • встречу никто не правил и не публиковал;
+ *   • бот её сейчас не пишет;
+ *   • у встречи уже есть стенограмма и она не в обработке — иначе выгрузка держателя ещё идёт, и
+ *     смена claim_owner отняла бы у неё право (meeting-ingest пускает только держателя);
+ *   • записано меньше `TAKEOVER_MIN_EXTRA_SEC` — короче порога, по которому полная запись бота и так
+ *     перехватила бы встречу.
+ */
+export function botJoinsOverShort(row: HeldRow, isBot: boolean, candidate: number, nowIso: string): boolean {
+  if (!isBot || candidate > 0) return false;
+  if (isFrozen(row) || botStillRecording(row, nowIso)) return false;
+  if (row.transcript === null || row.summary_status === "processing") return false;
+  return heldSeconds(row) < TAKEOVER_MIN_EXTRA_SEC;
+}
+
+/** Условия UPDATE для `botJoinsOverShort`: те же, что у перехвата, плюс стенограмма есть и не в обработке. */
+export function shortClipGuards(row: HeldRow, nowIso: string): Guard[] {
+  return [
+    ...heldGuards(row, nowIso),
+    { kind: "notNull", column: "transcript" },
+    {
+      kind: "anyOf",
+      clauses: [{ kind: "isNull", column: "summary_status" }, {
+        kind: "neq",
+        column: "summary_status",
+        value: "processing",
+      }],
+    },
   ];
 }

@@ -59,3 +59,17 @@ export function refreshPatch(input: ClaimPatchInput): Record<string, unknown> {
     recorded_seconds: input.recordedSeconds,
   };
 }
+
+/**
+ * Бот поверх короткой готовой записи (arbiter.ts, `botJoinsOverShort`): право и лиз — ему, чтобы
+ * его удары держали встречу. Не трогаются стенограмма, секунды держателя и маркеры обработки:
+ * короткая запись остаётся, пока выгрузка бота не окажется полнее (meeting-ingest).
+ */
+export function botJoinPatch(input: Pick<ClaimPatchInput, "ownerId" | "leaseIso" | "nowIso">): Record<string, unknown> {
+  return {
+    claim_owner: input.ownerId,
+    lease_expires_at: input.leaseIso,
+    updated_at: input.nowIso,
+    agent_last_recording: false,
+  };
+}
