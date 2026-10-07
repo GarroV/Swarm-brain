@@ -22,7 +22,7 @@ export interface GEvent {
   conferenceData?: {
     entryPoints?: Array<{ entryPointType?: string; uri?: string }>;
   };
-  organizer?: { self?: boolean };
+  organizer?: { self?: boolean; email?: string };
   creator?: { self?: boolean };
   attendees?: Array<
     {

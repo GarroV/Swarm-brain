@@ -30,7 +30,7 @@ import { CLAIM_LEASE_TTL_SEC } from "../_shared/meeting-lease.ts";
 import { updateRecorders } from "../_shared/recorders-write.ts";
 import { PUBLISHED_STATUS } from "../_shared/meeting-frozen.ts";
 import { bindGrantMeeting, GrantScopeError } from "../_shared/agent-grant.ts";
-import { coOwnersFromAttendees, mergeAttendees, withCoInvited } from "../_shared/meeting-owners.ts";
+import { coOwnersFromAttendees, mergeAttendees } from "../_shared/meeting-owners.ts";
 import { BOT_PROFILE } from "../_shared/bot-profile.ts";
 import { onlyLiveEntries } from "../_shared/entries/live.ts";
 import { externalFetch, VIA_OPENAI_EMBEDDING } from "../_shared/external-fetch.ts";
@@ -258,43 +258,21 @@ async function registerRecorder(
 // 2026-09-25, _shared/meeting-owners.ts). Пересчитываем на каждом claim — после записи recorders,
 // чтобы записавшие (они владельцы и так) в совладельцы не попадали.
 async function refreshAttendees(meetingId: string, incoming: Attendee[] | undefined, nowIso: string): Promise<void> {
-  const { data, error } = await supabase.from("meetings").select("recorders, attendees, group_id, identity_key")
-    .eq("id", meetingId).maybeSingle();
+  const { data, error } = await supabase.from("meetings").select("recorders, attendees, group_id").eq("id", meetingId)
+    .maybeSingle();
   if (error || !data) {
     console.error(`meeting-claim: участники ${meetingId} не прочитаны: ${error?.message ?? "строки нет"}`);
     return;
   }
-  const row = data as {
-    recorders?: RecorderEntry[] | null;
-    attendees?: Attendee[] | null;
-    group_id?: string | null;
-    identity_key?: string | null;
-  };
+  const row = data as { recorders?: RecorderEntry[] | null; attendees?: Attendee[] | null; group_id?: string | null };
   const attendees = mergeAttendees(row.attendees, incoming);
-  const recorderIds = (row.recorders ?? []).map((r) => r.telegram_id);
-  const fromAttendees = await coOwnersOf(row.group_id ?? null, attendees, recorderIds);
-  const coOwners = fromAttendees === null
-    ? null
-    : withCoInvited(fromAttendees, await coInvitedOf(row.group_id ?? null, row.identity_key ?? null), recorderIds);
+  const coOwners = await coOwnersOf(row.group_id ?? null, attendees, (row.recorders ?? []).map((r) => r.telegram_id));
   const { error: werr } = await supabase.from("meetings").update({
     attendees,
     ...(coOwners ? { co_owners: coOwners } : {}),
     updated_at: nowIso,
   }).eq("id", meetingId);
   if (werr) console.error(`meeting-claim: участники ${meetingId} не записаны: ${werr.message}`);
-}
-
-// Люди, у которых та же комната в то же время стояла ДРУГИМ событием календаря: бот второй раз не
-// пошёл (одна комната — один бот, _shared/calendar-dispatch.ts), а доступ к записи им положен.
-async function coInvitedOf(groupId: string | null, identityKey: string | null): Promise<number[]> {
-  if (!groupId || !identityKey) return [];
-  const { data, error } = await supabase.from("meeting_calendar_jobs").select("co_invited")
-    .eq("group_id", groupId).eq("calendar_key", identityKey).maybeSingle();
-  if (error) {
-    console.error(`meeting-claim: co_invited ${identityKey} не прочитаны: ${error.message}`);
-    return [];
-  }
-  return ((data as { co_invited?: number[] } | null)?.co_invited ?? []).map(Number);
 }
 
 // null — не смогли прочитать участников воркспейса: оставляем прежних совладельцев, а не обнуляем.

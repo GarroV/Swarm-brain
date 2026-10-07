@@ -68,8 +68,8 @@ export interface DispatchSkip {
 export interface DispatchPlan {
   jobs: DispatchJob[];
   skipped: DispatchSkip[];
-  /** Люди, чью встречу бот запишет по чужому событию той же комнаты (dropSameRoom). */
-  joined?: Array<{ into: string; person: number }>;
+  /** Кто в событии задания: своя почта и почты участников — для «одна комната — один бот». */
+  who?: Map<string, EventPeople>;
 }
 
 /**
@@ -131,6 +131,7 @@ export function planPersonDispatch(
 ): DispatchPlan {
   const jobs: DispatchJob[] = [];
   const skipped: DispatchSkip[] = [];
+  const who = new Map<string, EventPeople>();
   for (const ev of events) {
     if (ev.status === "cancelled") continue;
     const span = windowSpan(ev, nowMs);
@@ -158,6 +159,7 @@ export function planPersonDispatch(
       skip("manual_invite_exists", link.platform);
       continue;
     }
+    who.set(key, peopleOf(ev));
     jobs.push({
       calendar_key: key,
       invited_by: person,
@@ -167,7 +169,53 @@ export function planPersonDispatch(
       ...span,
     });
   }
-  return { jobs, skipped };
+  return { jobs, skipped, who };
+}
+
+/** Организатор события (почта, нижний регистр): одна встреча у всех участников — один организатор. */
+export interface EventPeople {
+  organizer: string | null;
+}
+
+const mail = (e: string | undefined) => (e ?? "").trim().toLowerCase();
+
+function peopleOf(ev: GEvent): EventPeople {
+  return { organizer: mail(ev.organizer?.email) || null };
+}
+
+/** Комната встречи: одна ссылка в разных событиях календаря — одна комната. */
+export const roomOf = (joinUrl: string): string => parseInviteLink(joinUrl)?.room ?? joinUrl.trim();
+
+const overlaps = (a: DispatchJob, b: DispatchJob) =>
+  Date.parse(a.starts_at) < Date.parse(b.ends_at) && Date.parse(b.starts_at) < Date.parse(a.ends_at);
+
+/**
+ * Два события — одна встреча, если у них один организатор (плюс та же комната и пересекающееся
+ * время — проверяет `dropSameRoom`). Совпадения ссылки мало: событие с чужой ссылкой заводит кто
+ * угодно, но организатором в нём будет он сам — и встреча с чужой не склеится (замечание проверки
+ * безопасности, 07.10.2026).
+ */
+function sameMeeting(a: EventPeople | undefined, b: EventPeople | undefined): boolean {
+  return !!a?.organizer && a.organizer === b?.organizer;
+}
+
+/**
+ * Одна комната — один бот (07.10.2026: на IT+BD в Контур пришли два бота). У двух людей одна встреча
+ * может стоять РАЗНЫМИ событиями на одну ссылку (разрезанная серия «это и следующие», отдельные
+ * приглашения): ключи разные, комната одна. Второе задание в ту же комнату в пересекающееся время
+ * у того же организатора (`sameMeeting`) отбрасывается; доступ к записи участникам даёт обычное
+ * правило совладельцев (meeting-claim). Другой организатор — другая встреча, два задания.
+ */
+export function dropSameRoom(jobs: readonly DispatchJob[], who: ReadonlyMap<string, EventPeople>): DispatchJob[] {
+  const kept: DispatchJob[] = [];
+  for (const job of jobs) {
+    const twin = kept.find((k) =>
+      k.calendar_key !== job.calendar_key && roomOf(k.join_url) === roomOf(job.join_url) && overlaps(k, job) &&
+      sameMeeting(who.get(k.calendar_key), who.get(job.calendar_key))
+    );
+    if (!twin) kept.push(job);
+  }
+  return kept;
 }
 
 /**
@@ -175,48 +223,20 @@ export function planPersonDispatch(
  * у двоих коллег в календаре одно событие, а бот на него нужен один. Пропуск встречи, на которую
  * задание уже есть, не громкий — бот туда идёт.
  */
-/** Комната встречи: одна ссылка в разных событиях календаря — одна комната. */
-export const roomOf = (joinUrl: string): string => parseInviteLink(joinUrl)?.room ?? joinUrl.trim();
-
-type RoomSlot = Pick<DispatchJob, "calendar_key" | "join_url" | "starts_at" | "ends_at">;
-
-const overlaps = (a: RoomSlot, b: RoomSlot) =>
-  Date.parse(a.starts_at) < Date.parse(b.ends_at) && Date.parse(b.starts_at) < Date.parse(a.ends_at);
-
-/**
- * Одна комната — один бот. У двух людей встреча может стоять РАЗНЫМИ событиями календаря на одну
- * ссылку (каждому прислали своё приглашение, серию разрезали «это и следующие»): ключи встречи
- * разные, комната одна. 07.10.2026 так в комнату Контура пришли два бота (IT+BD). Задание в комнату,
- * куда в пересекающееся время бот уже идёт по другому событию (`existing` или раньше в `jobs`),
- * отбрасывается. Это не пропуск: бот в комнате будет. Его человек — в `joined`: он получит доступ
- * к записи как совладелец (meeting_calendar_jobs.co_invited → meeting-claim).
- */
-export function dropSameRoom(
-  jobs: readonly DispatchJob[],
-  existing: readonly RoomSlot[],
-): { kept: DispatchJob[]; joined: Array<{ into: string; person: number }> } {
-  const kept: DispatchJob[] = [];
-  const joined: Array<{ into: string; person: number }> = [];
-  for (const job of jobs) {
-    const room = roomOf(job.join_url);
-    const twin = [...existing, ...kept].find((e) =>
-      e.calendar_key !== job.calendar_key && roomOf(e.join_url) === room && overlaps(e, job)
-    );
-    if (twin) joined.push({ into: twin.calendar_key, person: job.invited_by });
-    else kept.push(job);
-  }
-  return { kept, joined };
-}
-
 export function mergeDispatch(plans: DispatchPlan[]): DispatchPlan {
   const byKey = new Map<string, DispatchJob>();
+  const who = new Map<string, EventPeople>();
   for (const plan of plans) {
-    for (const job of plan.jobs) if (!byKey.has(job.calendar_key)) byKey.set(job.calendar_key, job);
+    for (const job of plan.jobs) {
+      if (byKey.has(job.calendar_key)) continue;
+      byKey.set(job.calendar_key, job);
+      const people = plan.who?.get(job.calendar_key);
+      if (people) who.set(job.calendar_key, people);
+    }
   }
-  const { kept, joined } = dropSameRoom([...byKey.values()], []);
-  const jobs = new Map(kept.map((j) => [j.calendar_key, j]));
+  const jobs = new Map(dropSameRoom([...byKey.values()], who).map((j) => [j.calendar_key, j]));
   const skipped = plans
     .flatMap((p) => p.skipped)
     .filter((s) => s.calendar_key === null || !jobs.has(s.calendar_key));
-  return { jobs: [...jobs.values()], skipped, joined };
+  return { jobs: [...jobs.values()], skipped };
 }

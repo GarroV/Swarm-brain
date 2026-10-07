@@ -5,13 +5,7 @@
 // где его ждут, и никто этого не видит. Поэтому каждая граница — отдельным тестом.
 import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import type { GEvent } from "../meeting-current/select.ts";
-import {
-  DISPATCH_LATE_MS,
-  DISPATCH_LEAD_MS,
-  dropSameRoom,
-  mergeDispatch,
-  planPersonDispatch,
-} from "./calendar-dispatch.ts";
+import { DISPATCH_LATE_MS, DISPATCH_LEAD_MS, dropSameRoom, mergeDispatch, planPersonDispatch } from "./calendar-dispatch.ts";
 
 const NOW = Date.parse("2026-09-28T10:00:00+03:00");
 const PERSON = 111;
@@ -76,7 +70,7 @@ Deno.test("вне окна — ни задания, ни пропуска: эт�
 Deno.test("весь день и отменённые — не встречи бота, молча", () => {
   const allDay = event({ start: { date: "2026-09-28" }, end: { date: "2026-09-29" } });
   const cancelled = event({ status: "cancelled" });
-  assertEquals(plan([allDay, cancelled]), { jobs: [], skipped: [] });
+  assertEquals(plan([allDay, cancelled]), { jobs: [], skipped: [], who: new Map() });
 });
 
 Deno.test("ГРОМКО: нет ссылки на звонок — пропуск с причиной no_conference_link", () => {
@@ -197,24 +191,32 @@ Deno.test("сведение: разные встречи не склеивают
   assertEquals(merged.skipped.map((s) => [s.invited_by, s.reason]), [[2, "no_conference_link"]]);
 });
 
-Deno.test("одна комната в разных событиях у двух людей — один бот (07.10.2026, IT+BD)", () => {
-  const a = planPersonDispatch([event()], 1, NOW, new Set());
-  const b = planPersonDispatch([event({ id: "other", iCalUID: "other-uid" })], 2, NOW, new Set());
-  assertEquals(a.jobs.length + b.jobs.length, 2);
+// ── Одна комната — один бот (07.10.2026) ────────────────────────────────────
+
+const org = (email: string) => ({ email });
+// Участник, ответивший «да» (D024): без этого бот на встречу не идёт вовсе.
+const yes = (self: string) => [{ email: self, self: true, responseStatus: "accepted" }];
+
+Deno.test("одна встреча разными событиями у двоих (тот же организатор, комната, время) — один бот", () => {
+  const a = planPersonDispatch([event({ organizer: org("boss@x.io"), attendees: yes("a@x.io") })], 1, NOW, new Set());
+  const b = planPersonDispatch([event({ id: "e2", iCalUID: "other-uid", organizer: org("Boss@x.io"), attendees: yes("b@x.io") })], 2, NOW, new Set());
   assertEquals(a.jobs[0].calendar_key === b.jobs[0].calendar_key, false);
-  const merged = mergeDispatch([a, b]);
-  assertEquals(merged.jobs.map((j) => j.invited_by), [1]);
-  // Второй человек не теряет доступ: станет совладельцем записи.
-  assertEquals(merged.joined, [{ into: a.jobs[0].calendar_key, person: 2 }]);
+  assertEquals(mergeDispatch([a, b]).jobs.map((j) => j.invited_by), [1]);
 });
 
-Deno.test("dropSameRoom: комнату уже занимает задание прошлого прохода — второе не заводим", () => {
-  const job = planPersonDispatch([event({ id: "other", iCalUID: "other-uid" })], 2, NOW, new Set()).jobs[0];
-  const earlier = { ...job, calendar_key: "first:2026-09-28" };
-  assertEquals(dropSameRoom([job], [earlier]), { kept: [], joined: [{ into: "first:2026-09-28", person: 2 }] });
-  // Та же встреча (тот же ключ) — не дубль: повторная вставка молчит в базе сама.
-  assertEquals(dropSameRoom([job], [job]).kept.length, 1);
-  // Та же комната, но время не пересекается — другая встреча.
-  const later = { ...earlier, starts_at: "2026-09-28T20:00:00Z", ends_at: "2026-09-28T21:00:00Z" };
-  assertEquals(dropSameRoom([job], [later]).kept.length, 1);
+Deno.test("чужая ссылка в своём событии — другой организатор, другая встреча: два задания", () => {
+  const a = planPersonDispatch([event({ organizer: org("boss@x.io"), attendees: yes("a@x.io") })], 1, NOW, new Set());
+  const b = planPersonDispatch([event({ id: "e2", iCalUID: "other-uid", organizer: org("b@x.io"), attendees: yes("b@x.io") })], 2, NOW, new Set());
+  assertEquals(mergeDispatch([a, b]).jobs.map((j) => j.invited_by), [1, 2]);
+});
+
+Deno.test("тот же организатор и комната, время не пересекается — разные встречи", () => {
+  const a = planPersonDispatch([event({ organizer: org("boss@x.io"), attendees: yes("a@x.io") })], 1, NOW, new Set());
+  const b = planPersonDispatch(
+    [event({ id: "e2", iCalUID: "other-uid", organizer: org("boss@x.io"), attendees: yes("b@x.io") }, 40, 30)],
+    2,
+    NOW + 39 * 60_000,
+    new Set(),
+  );
+  assertEquals(dropSameRoom([...a.jobs, ...b.jobs], new Map([...a.who!, ...b.who!])).length, 2);
 });

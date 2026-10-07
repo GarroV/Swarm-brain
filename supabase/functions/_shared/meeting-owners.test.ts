@@ -1,5 +1,5 @@
 import { assertEquals } from "jsr:@std/assert@1";
-import { coOwnersFromAttendees, mergeAttendees, withCoInvited } from "./meeting-owners.ts";
+import { coOwnersFromAttendees, mergeAttendees } from "./meeting-owners.ts";
 
 // Решение владельца 2026-09-25 (п. 26–27 журнала cards-in-panel): у черновика встречи несколько
 // владельцев — кто записывал, плюс участники встречи, у которых есть SWARM. Совладельцев
@@ -47,9 +47,4 @@ Deno.test("склейка участников: новые дописывают�
   );
   assertEquals(got, [{ email: "anna@x.io", name: "Anna" }, { email: "boris@x.io", name: "Boris" }]);
   assertEquals(mergeAttendees(null, null), []);
-});
-
-Deno.test("withCoInvited: человек из второго события той же комнаты — совладелец, записавший — нет", () => {
-  assertEquals(withCoInvited([5], [7, 5, 9], [9]), [5, 7]);
-  assertEquals(withCoInvited([], [], [1]), []);
 });

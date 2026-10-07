@@ -31,15 +31,9 @@ function fakeSource(
 ) {
   const table: FakeJob[] = [...(over.seed ?? [])];
   const inserted: DispatchJob[] = [];
-  const coInvited: Array<{ into: string; person: number }> = [];
   const source: SweepSource = {
     autojoinPeople: () => Promise.resolve([1]),
     manualRooms: () => Promise.resolve(new Set<string>()),
-    activeJobs: () => Promise.resolve(table.map(({ taken: _, ...j }) => j)),
-    addCoInvited: (_g, into, person) => {
-      coInvited.push({ into, person });
-      return Promise.resolve();
-    },
     refreshToken: (id) => Promise.resolve(over.tokens ? (over.tokens[id] ?? null) : "r"),
     accessToken: () => Promise.resolve({ ok: true, token: "a" }),
     listEvents: () => Promise.resolve([meeting()]),
@@ -68,7 +62,7 @@ function fakeSource(
     },
     ...over,
   };
-  return { source, inserted, table, coInvited };
+  return { source, inserted, table };
 }
 
 Deno.test("встреча Meet в окне — задание заведено и отдано оркестратору", async () => {
@@ -161,12 +155,4 @@ Deno.test("забранное задание выключение не трог�
   const result = await sweep(source, AGENT, NOW);
   assertEquals(result.jobs, []);
   assertEquals(table.length, 1);
-});
-
-Deno.test("комнату уже занимает задание по другому событию — второе не заводится", async () => {
-  const first = { ...(await sweep(fakeSource().source, AGENT, NOW)).jobs[0], calendar_key: "first:key", taken: true };
-  const { source, inserted, coInvited } = fakeSource({ seed: [first] });
-  await sweep(source, AGENT, NOW);
-  assertEquals(inserted, []);
-  assertEquals(coInvited, [{ into: "first:key", person: 1 }]);
 });
