@@ -157,14 +157,14 @@ jobs:
     # функций scriba тоже ходят в настоящую.
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           # Затронутые файлы считаются от коммита из .scriba-build-base; в мелком клоне его нет.
           fetch-depth: 0
-      - uses: denoland/setup-deno@v2
+      - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2
         with:
           deno-version: v2.x
-      - uses: supabase/setup-cli@v1
+      - uses: supabase/setup-cli@1dedf2c611547ede7232d26866dd3c56ab903bbb # v1
         with:
           version: 2.118.0
       - name: Локальный контур Supabase
@@ -173,7 +173,7 @@ jobs:
         run: ./scripts/check server
       - name: Машинный отчёт прогона
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: check-report-server
           path: reports/
