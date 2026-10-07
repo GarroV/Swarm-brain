@@ -9,7 +9,8 @@ import { TezisyEditor } from "@/components/roy/tezisy/TezisyEditor";
 import { TezisyReader } from "@/components/roy/tezisy/TezisyReader";
 import type { AskApply } from "@/components/roy/tezisy/AskPopover";
 import { applyAskAnswerToText } from "@/lib/tezisyLines";
-import { useDt, useRoyNav } from "@/components/roy/nav";
+import { useDt, useLang, useRoyNav } from "@/components/roy/nav";
+import { speakerLabelAt } from "@/lib/transcriptSpeaker";
 import { useConfirm } from "@/components/ui/confirm";
 import { hasSeveralOwners, canDeleteDraft } from "@/lib/draftOwners";
 import { recordedByOf } from "@/lib/agentMeeting";
@@ -56,6 +57,7 @@ function fmtDay(iso: string | null, locale: string): string {
 
 export function MeetingReview({ id, onClose, onChanged }: Props) {
   const dt = useDt();
+  const lang = useLang();
   const panel = useContext(DetailPanelContext);
   const { toast, me } = useRoyNav();
   const confirm = useConfirm();
@@ -270,16 +272,24 @@ export function MeetingReview({ id, onClose, onChanged }: Props) {
     </div>
   );
 
+  // «я» в транскрипте рекордера — тот, кто записывал; имя подставляем, только если он один (#819).
+  const meName = meeting.recorder_names?.length === 1 ? meeting.recorder_names[0] : null;
   const transcriptBlock = showTranscript && (
     <div className="mb-4">
       {!panel && <SectionLabel>{dt("Транскрипт", "Transcript")}</SectionLabel>}
       <div className="space-y-1">
-        {segments.map((sg, i) => (
-          <div key={i} className="flex gap-2 text-sm">
-            <span className="w-16 shrink-0 font-mono text-xs text-ink-mute">{fmtClock(meeting.started_at, sg.start, dt("ru-RU", "en-GB"))}</span>
-            <span className="flex-1 text-ink">{sg.text}</span>
-          </div>
-        ))}
+        {segments.map((sg, i) => {
+          const speaker = speakerLabelAt(segments, i, { meName: meName, lang });
+          return (
+            <div key={i}>
+              {speaker && <div className={`text-xs font-medium text-ink-soft ${i > 0 ? "mt-2" : ""}`}>{speaker}</div>}
+              <div className="flex gap-2 text-sm">
+                <span className="w-16 shrink-0 font-mono text-xs text-ink-mute">{fmtClock(meeting.started_at, sg.start, dt("ru-RU", "en-GB"))}</span>
+                <span className="flex-1 text-ink">{sg.text}</span>
+              </div>
+            </div>
+          );
+        })}
       </div>
     </div>
   );
