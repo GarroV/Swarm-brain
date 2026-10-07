@@ -1,5 +1,5 @@
 import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import { classifyEntryCommand, parseManageCommand, extractUrl, parseSaveCommand, parseCreateTaskCommand } from "./intent.ts";
+import { classifyEntryCommand, parseManageCommand, extractUrl, parseSaveCommand, parseCreateTaskCommand, parseTaskComment } from "./intent.ts";
 
 Deno.test("parseCreateTaskCommand: создание задачи себе", () => {
   for (const [t, title] of [
@@ -130,4 +130,27 @@ Deno.test("parseSaveCommand: НЕ сейв → null", () => {
 Deno.test("extractUrl: достаёт первый URL или null", () => {
   assertEquals(extractUrl("замени на https://pyrus.com/t#uf714369"), "https://pyrus.com/t#uf714369");
   assertEquals(extractUrl("нет ссылки тут"), null);
+});
+
+Deno.test("parseTaskComment: комментарий к пересланному без текста задачи", () => {
+  assertEquals(parseTaskComment("создай задачу"), { rest: "", assigneeMention: null });
+  assertEquals(parseTaskComment("Сделай задачу."), { rest: "", assigneeMention: null });
+  assertEquals(parseTaskComment("в задачи"), { rest: "", assigneeMention: null });
+  assertEquals(parseTaskComment("это задача"), { rest: "", assigneeMention: null });
+  assertEquals(parseTaskComment("задача до пятницы"), { rest: "до пятницы", assigneeMention: null });
+  assertEquals(parseTaskComment("добавь мне задачу"), { rest: "", assigneeMention: null });
+});
+
+Deno.test("parseTaskComment: исполнитель и срок из комментария", () => {
+  assertEquals(
+    parseTaskComment("поставь Ксении задачу до пятницы"),
+    { rest: "до пятницы", assigneeMention: "Ксении" },
+  );
+});
+
+Deno.test("parseTaskComment: не задача — не перехватываем", () => {
+  for (const t of ["задачи на сегодня", "задачи Ксении", "какие у меня задачи?", "задачник открой", "сохрани это", "добавь в базу", "привет"]) {
+    assertEquals(parseTaskComment(t), null, t);
+  }
+  assertEquals(parseTaskComment("создай задачу " + "x".repeat(400)), null);
 });

@@ -107,3 +107,31 @@ export function parseCreateTaskCommand(text: string): { title: string; assigneeM
   const assigneeMention = tm[1] ? null : (tm[2] ? tm[2].trim() : null); // мне/себе → себе; имя → mention
   return { title, assigneeMention };
 }
+
+// Комментарий к пересланному сообщению: «создай задачу», «в задачи», «поставь Ксении задачу до
+// пятницы». Telegram присылает комментарий и пересланное ДВУМЯ отдельными апдейтами, поэтому
+// комментарий распознаём сам по себе — без текста задачи, в отличие от parseCreateTaskCommand.
+// Возвращает исполнителя из комментария и остаток (там может быть срок или своё название).
+const COMMENT_VERB_RE =
+  /^\s*(?:добавь(?:те)?|создай(?:те)?|заведи(?:те)?|постав[иь](?:те)?|запланируй(?:те)?|сделай(?:те)?|оформи(?:те)?)\s+/iu;
+const COMMENT_BARE_RE = /^\s*(?:это\s+)?(?:в\s+)?(?:задач[уаи]|таск)(?=[\s:.,!]|$)[\s:.,!]*/iu;
+const COMMENT_MAX_LEN = 300;
+const BARE_DUE_RE = /^(?:до|к)\s+\S/iu;
+
+export function parseTaskComment(raw: string): { rest: string; assigneeMention: string | null } | null {
+  if (!raw || raw.length > COMMENT_MAX_LEN) return null;
+  const text = raw.trim().replace(/[.!]+$/u, "");
+  const bare = text.match(COMMENT_BARE_RE);
+  if (bare) {
+    // Без глагола только «задача» целиком или со сроком: «задачи на сегодня» — это вопрос.
+    const rest = text.slice(bare[0].length).trim();
+    return rest === "" || BARE_DUE_RE.test(rest) ? { rest, assigneeMention: null } : null;
+  }
+  const vm = text.match(COMMENT_VERB_RE);
+  if (!vm) return null;
+  const afterVerb = text.slice(vm[0].length);
+  const tm = afterVerb.match(TASK_WORD_RE);
+  if (!tm) return null;
+  const assigneeMention = tm[1] ? null : (tm[2] ? tm[2].trim() : null);
+  return { rest: afterVerb.slice(tm[0].length).trim(), assigneeMention };
+}
