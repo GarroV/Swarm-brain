@@ -51,14 +51,16 @@ type SubCtx = {
 // группами подпись направления капсом, у инициативы одна строка-заголовок «имя · владелец ·
 // X из Y» без рамки вокруг (рамка в рамке делала экран тесным).
 
-/** Строка «+ задача» внутри инициативы. Открывает СТАНДАРТНУЮ карточку задачи с уже
- *  проставленной инициативой (решение владельца 19.09.2026: «при добавлении давай вызывать
- *  нашу стандартную менюшку добавления задачи»). */
-function AddTaskRow({ projectId, onAdd }: {
+/** Плюсик «добавить задачу» в шапке группы (владелец 07.10.2026: «небольшой плюсик … лаконично,
+ *  спокойно, красиво»). Открывает СТАНДАРТНУЮ карточку задачи с уже проставленной группой
+ *  (решение владельца 19.09.2026: «давай вызывать нашу стандартную менюшку»). На компьютере
+ *  проявляется по наведению на шапку, на телефоне виден всегда. */
+function AddTaskButton({ projectId, onAdd }: {
   projectId: string | null;
   onAdd: (projectId: string | null) => void;
 }) {
   const dt = useDt();
+  const label = dt("Добавить задачу", "Add a task");
   return (
     <button
       type="button"
@@ -66,10 +68,11 @@ function AddTaskRow({ projectId, onAdd }: {
         e.stopPropagation();
         onAdd(projectId);
       }}
-      className="w-full border-t border-line px-3 py-1.5 pl-[27px] text-left font-medium text-ink-mute transition-colors hover:bg-surface-2 hover:text-ink"
-      style={{ fontSize: 12.5 }}
+      title={label}
+      aria-label={label}
+      className="ml-1 grid size-6 shrink-0 place-items-center self-center rounded-full text-ink-mute transition-[opacity,colors] hover:bg-surface-2 hover:text-ink lg:opacity-0 lg:group-hover/head:opacity-100 lg:focus-visible:opacity-100"
     >
-      {dt("+ задача", "+ task")}
+      <RoyIcon name="plus" size={13} strokeWidth={2.2} />
     </button>
   );
 }
@@ -231,6 +234,12 @@ function Group(
             )}
           </span>
         </button>
+        {onAdd && (
+          <AddTaskButton
+            projectId={addTo !== undefined ? addTo : node.project?.id ?? null}
+            onAdd={onAdd}
+          />
+        )}
         {sprintGroup && dnd && (
           <GroupControls group={sprintGroup} grouping={dnd.grouping} />
         )}
@@ -312,12 +321,6 @@ function Group(
                     : undefined}
                 />
               )
-          )}
-          {onAdd && (
-            <AddTaskRow
-              projectId={addTo !== undefined ? addTo : node.project?.id ?? null}
-              onAdd={onAdd}
-            />
           )}
         </div>
       )}
