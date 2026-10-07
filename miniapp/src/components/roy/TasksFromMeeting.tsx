@@ -1,21 +1,19 @@
 "use client";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useRoyNav, useDt } from "./nav";
 import { RoyIcon } from "./icons";
 import { createTask, extractTasksStreamed, fetchMe, fetchUsers } from "@/lib/api";
 import { effectiveAssigneeId, taskCountLabel } from "@/lib/proposedTasks";
 import type { Me, User } from "@/types";
 import { TaskModal } from "@/components/TaskModal";
-import { TasksHarvestSheet, type DraftTask, type HarvestActions } from "./TasksHarvestSheet";
+import { TasksHarvest, type DraftTask, type HarvestActions } from "./TasksHarvest";
 
 // Генерация задач из встречи ПО ЯВНОМУ действию пользователя (кнопка), не автоматически.
 // Превью (POST /tasks/extract { save:false }) не создаёт ничего в базе — предложения живут
 // в памяти вкладки, пока человек их не примет.
 //
-// Сам разбор вынесен в TasksHarvestSheet: правая панель ревью слишком узкая, чтобы вычитывать
-// в ней семь задач (заголовки резались, исполнителя не было видно, каждую приходилось
-// открывать отдельно). Здесь остались кнопки, сводка и вся работа с данными — сохранение
-// пачкой и привязка к встрече; лист занимается только показом и правкой.
+// Разбор рисует TasksHarvest прямо здесь, под кнопками, — без листа поверх экрана (issue #830).
+// Здесь кнопки и вся работа с данными: сохранение пачкой и привязка к встрече.
 //
 // text — источник для извлечения (entry.content или draft_notes_md черновика рекордера).
 // meetingId — entry.id для привязки задач (у agent-черновика записи ещё нет → undefined,
@@ -25,14 +23,11 @@ export function TasksFromMeeting({
 }: { text: string; meetingId?: string | null; resetKey: string; onAdded?: () => void }) {
   const { toast } = useRoyNav();
   const dt = useDt();
-  const anchorRef = useRef<HTMLDivElement>(null);
 
   const [tasks, setTasks] = useState<DraftTask[] | null>(null);
-  // streaming — модель ещё пишет: лист УЖЕ открыт и дописывается, кнопка занята.
+  // streaming — модель ещё пишет: строки дописываются по мере ответа, кнопка занята.
   const [streaming, setStreaming] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [sheetOpen, setSheetOpen] = useState(false);
-  const [anchorRect, setAnchorRect] = useState<DOMRect | null>(null);
   const [users, setUsers] = useState<User[]>([]);
   // Кто разбирает: задача без названного ответственного остаётся на нём (effectiveAssigneeId).
   const [me, setMe] = useState<Me | null>(null);
@@ -45,7 +40,6 @@ export function TasksFromMeeting({
     setTasks(null);
     setStreaming(false);
     setBusy(false);
-    setSheetOpen(false);
     setEditing(null);
   }, [resetKey]);
 
@@ -58,19 +52,12 @@ export function TasksFromMeeting({
     return () => { alive = false; };
   }, []);
 
-  const openSheet = useCallback(() => {
-    setAnchorRect(anchorRef.current?.getBoundingClientRect() ?? null);
-    setSheetOpen(true);
-  }, []);
-
-  // Лист открывается ДО запроса и дописывается по мере ответа модели: ожидание — это её
-  // генерация (3–5 с по прод-логам), и держать перед человеком пустой экран всё это время
-  // незачем, если первая задача готова примерно через секунду.
+  // Строки появляются по мере ответа модели: ожидание — это её генерация (3–5 с по прод-логам),
+  // а первая задача готова примерно через секунду.
   const extract = async () => {
     if (streaming) return;
     setTasks([]);
     setStreaming(true);
-    openSheet();
     let seen = 0;
     try {
       await extractTasksStreamed(text, (proposed) => {
@@ -79,8 +66,8 @@ export function TasksFromMeeting({
       });
     } catch {
       toast(dt("Не удалось вычленить задачи", "Could not extract tasks"));
-      // Что успело приехать — оставляем: половина разбора полезнее пустого листа.
-      if (seen === 0) setSheetOpen(false);
+      // Что успело приехать — оставляем: половина разбора полезнее пустого. Ничего — убираем блок.
+      if (seen === 0) setTasks(null);
     } finally {
       setStreaming(false);
     }
@@ -130,7 +117,7 @@ export function TasksFromMeeting({
     if (addedKeys.size > 0) onAdded?.();
     if (addedKeys.size === chosen.length) {
       toast(dt(`Добавлено ${taskCountLabel(addedKeys.size)}`, `Added ${addedKeys.size} task${addedKeys.size === 1 ? "" : "s"}`) + orphanTail);
-      setSheetOpen(false);
+      setTasks(null);
     } else {
       toast(dt(
         `Добавлено ${addedKeys.size} из ${chosen.length} — остальные остались в разборе`,
@@ -150,10 +137,9 @@ export function TasksFromMeeting({
   };
 
   const hasContent = Boolean(text?.trim());
-  const pending = tasks?.length ?? 0;
 
   return (
-    <div ref={anchorRef}>
+    <div>
       <div className="flex items-center justify-between" style={{ margin: "0 4px 9px" }}>
         <span className="font-bold uppercase text-ink-mute" style={{ fontSize: 12, letterSpacing: "0.05em" }}>
           {dt("Задачи из встречи", "Tasks from meeting")}
@@ -188,40 +174,17 @@ export function TasksFromMeeting({
         </p>
       )}
 
-      {hasContent && pending === 0 && tasks !== null && !streaming && (
-        <p className="text-ink-mute" style={{ fontSize: 12.5 }}>
-          {dt("Задач не найдено.", "No tasks found.")}
-        </p>
+      {/* Разбор — прямо здесь, под кнопками (issue #830). */}
+      {tasks !== null && (
+        <TasksHarvest
+          tasks={tasks}
+          users={users}
+          meId={me?.telegram_id ?? null}
+          busy={busy}
+          streaming={streaming}
+          actions={actions}
+        />
       )}
-
-      {/* Сводка вместо списка: сам разбор живёт в листе, а здесь остаётся вход в него —
-          чтобы закрытый разбор не терялся и его можно было открыть заново. */}
-      {pending > 0 && (
-        <button
-          type="button"
-          onClick={openSheet}
-          className="flex w-full items-center justify-between gap-2 rounded-[8px] border border-line bg-surface px-3 text-left font-semibold text-ink-soft transition-[transform,border-color] duration-150 hover:scale-[1.01] hover:border-line-2 active:scale-[0.99]"
-          style={{ minHeight: 44, fontSize: 12.5 }}
-        >
-          <span>{dt(`${taskCountLabel(pending)} предложено`, `${pending} task${pending === 1 ? "" : "s"} proposed`)}</span>
-          <span className="inline-flex items-center gap-1 text-ink">
-            {dt("Разобрать", "Review")}
-            <RoyIcon name="cright" size={13} strokeWidth={2.1} />
-          </span>
-        </button>
-      )}
-
-      <TasksHarvestSheet
-        open={sheetOpen}
-        onClose={() => setSheetOpen(false)}
-        anchorRect={anchorRect}
-        tasks={tasks ?? []}
-        users={users}
-        meId={me?.telegram_id ?? null}
-        busy={busy}
-        streaming={streaming}
-        actions={actions}
-      />
 
       {/* Тот же редактор задачи, что в разделе задач. Открывается из разбора (✎ / «Своя»).
           Приватность/командность и списки — штатными средствами TaskModal. */}
