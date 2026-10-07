@@ -10,12 +10,14 @@ import { useDt } from "@/components/roy/nav";
 // отмена; пустое имя кнопку не нажимает.
 
 export function GroupNameDialog(
-  { open, initial, busy, rename, onCancel, onSubmit }: {
+  { open, initial, busy, rename, empty, onCancel, onSubmit }: {
     open: boolean;
     initial: string;
     busy: boolean;
     /** Переименование существующей группы — другой заголовок и кнопка. */
     rename?: boolean;
+    /** Пустая группа с кнопки «Добавить группу»: задачи переносят в неё потом. */
+    empty?: boolean;
     onCancel: () => void;
     onSubmit: (name: string) => void;
   },
@@ -57,10 +59,15 @@ export function GroupNameDialog(
           </DialogPrimitive.Title>
           {!rename && (
             <DialogPrimitive.Description className="mt-1.5 text-[13px] leading-relaxed text-ink-soft">
-              {dt(
-                "Обе задачи уйдут в новую группу спринта. На доске «Проекты» её не будет, пока не нажмёте «В проекты».",
-                "Both tasks move into a new sprint group. It stays off the Projects board until you press “To projects”.",
-              )}
+              {empty
+                ? dt(
+                  "Группа появится в списке пустой — перетащите в неё задачи. На доске «Проекты» её не будет, пока не нажмёте «В проекты».",
+                  "The group appears empty in the list — drag tasks into it. It stays off the Projects board until you press “To projects”.",
+                )
+                : dt(
+                  "Обе задачи уйдут в новую группу задач. На доске «Проекты» её не будет, пока не нажмёте «В проекты».",
+                  "Both tasks move into a new task group. It stays off the Projects board until you press “To projects”.",
+                )}
             </DialogPrimitive.Description>
           )}
           <input

@@ -8,6 +8,7 @@ import { entryTagKey, deriveEntryTitle, isSearchIndexSummary, entryImporterName 
 import { fetchEntry, createTask } from "@/lib/api";
 import type { Entry } from "@/types";
 import { formatDate } from "@/lib/displayFormat";
+import { recordedByOf } from "@/lib/agentMeeting";
 
 function fmtDate(iso: string | null): string {
   return formatDate(iso, { day: "numeric", month: "short", year: "numeric" }) ?? "";
@@ -47,7 +48,7 @@ export function RecordBody({ entry: e }: { entry: Entry }) {
       <div className="mb-3.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-ink-soft" style={{ fontSize: 12 }}>
         <span className="inline-flex items-center gap-1.5">
           <RoyIcon name="link" size={13} className="text-ink-mute" />
-          Источник: <span className="font-semibold text-ink">{sourceLabel(e.source)}</span>
+          Источник: <span className="font-semibold text-ink">{recordedByOf({ source: e.source, recorded_by: typeof e.metadata?.recorded_by === "string" ? e.metadata.recorded_by : null }) ?? sourceLabel(e.source)}</span>
         </span>
         {who && <span>· добавил: <span className="font-semibold text-ink">{who}</span></span>}
       </div>

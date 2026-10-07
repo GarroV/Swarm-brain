@@ -64,7 +64,7 @@ export function applyMeetingsFilter(
       const own = (e.countries ?? []).map(countryCode);
       if (!own.some((c) => wantCountries.has(c))) return false;
     }
-    if (f.sources.length > 0 && !f.sources.includes(sourceLabel(e.source))) return false;
+    if (f.sources.length > 0 && !f.sources.includes(sourceLabel(e))) return false;
     if (f.people.length > 0 && !f.people.includes(personOf(e))) return false;
     if (f.storage !== "any" && (f.storage === "personal") !== Boolean(e.is_private)) return false;
     if (f.status !== "any" && (f.status === "confirmed") !== isConfirmed(e)) return false;

@@ -1,4 +1,5 @@
 "use client";
+import { PILL_GROUP_CLS, pillSegmentCls } from "@/components/ui/PropertyPill";
 import { useEffect, useState } from "react";
 import { useDt } from "@/components/roy/nav";
 
@@ -134,30 +135,31 @@ export function GroupingToggle(
 ) {
   const dt = useDt();
   const opts: { id: SprintGrouping; label: string }[] = [
-    { id: "initiatives", label: dt("по инициативам", "by initiative") },
+    { id: "initiatives", label: dt("по группам", "by group") },
     { id: "people", label: dt("по людям", "by person") },
   ];
-  // Тихий текстовый переключатель (стенд: `.sgrp` + `.lk`): группировка — свойство списка,
-  // а не отдельный экран, и кнопками она перетягивала бы внимание с состава.
+  // Мягкий сегмент, как статус в карточке задачи (владелец 05.10.2026: все переключатели —
+  // в едином стиле). Раньше был текстовыми ссылками и терялся рядом с кнопками.
   return (
     <span
       className="ml-auto flex items-center gap-2.5"
       style={{ fontSize: 12 }}
     >
       <span className="text-ink-mute">{dt("группировать", "group")}</span>
-      {opts.map((o) => (
-        <button
-          key={o.id}
-          type="button"
-          onClick={() => onChange(o.id)}
-          aria-pressed={value === o.id}
-          className={value === o.id
-            ? "font-semibold text-ink underline underline-offset-[3px]"
-            : "text-ink-soft hover:text-accent-ink"}
-        >
-          {o.label}
-        </button>
-      ))}
+      <span className={PILL_GROUP_CLS}>
+        {opts.map((o) => (
+          <button
+            key={o.id}
+            type="button"
+            onClick={() => onChange(o.id)}
+            aria-pressed={value === o.id}
+            className={pillSegmentCls(value === o.id)}
+            style={{ fontSize: 12.5 }}
+          >
+            {o.label}
+          </button>
+        ))}
+      </span>
     </span>
   );
 }

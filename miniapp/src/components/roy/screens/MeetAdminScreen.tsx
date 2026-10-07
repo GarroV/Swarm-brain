@@ -75,7 +75,7 @@ function MeetingsStats({ meetings, markets }: { meetings: Entry[]; markets: stri
     if (other) out.push(["Другие", other]);
     return out;
   })();
-  const sourceCounts = tally(meetings.map((e) => sourceLabel(e.source)));
+  const sourceCounts = tally(meetings.map((e) => sourceLabel(e)));
   return (
     <div className="min-h-0 flex-1 overflow-y-auto p-3 space-y-3">
       <div className="px-1 text-ink-mute" style={{ fontSize: 12 }}>Всего: {meetings.length}</div>
@@ -150,7 +150,7 @@ function MeetingsFilters({
   const marketSet = new Set((markets ?? []).map(countryCode));
   const countryCounts = countBy((e) => (e.countries ?? []).map(countryCode))
     .filter(([c]) => marketSet.size === 0 || marketSet.has(c));
-  const sourceCounts = countBy((e) => [sourceLabel(e.source)]);
+  const sourceCounts = countBy((e) => [sourceLabel(e)]);
   const peopleCounts = countBy((e) => [personOf(e)]);
 
   const active = isFilterActive(value);
@@ -273,7 +273,7 @@ function fmtDate(iso: string | null): string | null {
 }
 
 function itemSource(it: MeetItem): string {
-  return sourceLabel(it.data.source);
+  return sourceLabel(it.data);
 }
 
 // Кто принёс запись: для entry — резолвнутое имя импортёра через общий хелпер (прячет системные

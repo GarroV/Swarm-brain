@@ -31,6 +31,7 @@ export const MEETING_ENV = {
   inviteJoinUrl: "SCRIBA_INVITE_JOIN_URL",
   calendarKey: "SCRIBA_CALENDAR_KEY",
   calendarStartsAt: "SCRIBA_CALENDAR_STARTS_AT",
+  calendarTitle: "SCRIBA_CALENDAR_TITLE",
   accountState: "SCRIBA_GOOGLE_STATE",
 } as const;
 
@@ -173,7 +174,8 @@ function readCalendar(
       `у встречи одно основание: ${MEETING_ENV.calendarKey} не сочетается с ${MEETING_ENV.inviteId}`,
     );
   }
-  return { calendarKey, startsAt };
+  const title = text(environment, MEETING_ENV.calendarTitle);
+  return { calendarKey, startsAt, ...(title !== null && { title }) };
 }
 
 /**

@@ -1,4 +1,5 @@
 "use client";
+import { PILL_GROUP_CLS, pillSegmentCls } from "@/components/ui/PropertyPill";
 import { useState, useEffect, useCallback, useContext } from "react";
 import { askMeeting, fetchAgentMeeting, fetchAgentMeetingNotes, patchAgentMeetingDraft, renameAgentMeeting, publishAgentMeeting, resummarizeAgentMeeting, deleteAgentMeeting } from "@/lib/api";
 import type { AgentMeeting, MeetingLiveNote } from "@/types";
@@ -11,6 +12,8 @@ import { applyAskAnswerToText } from "@/lib/tezisyLines";
 import { useDt, useRoyNav } from "@/components/roy/nav";
 import { useConfirm } from "@/components/ui/confirm";
 import { hasSeveralOwners, canDeleteDraft } from "@/lib/draftOwners";
+import { recordedByOf } from "@/lib/agentMeeting";
+import { TasksFromMeeting } from "@/components/roy/TasksFromMeeting";
 
 type Props = { id: string; onClose: () => void; onChanged?: () => void };
 
@@ -66,7 +69,7 @@ export function MeetingReview({ id, onClose, onChanged }: Props) {
   const [publishing, setPublishing] = useState(false);
   const [reprocessing, setReprocessing] = useState(false);
   const [base, setBase] = useState<"workspace" | "personal">("workspace");
-  const [view, setView] = useState<"tez" | "notes" | "tr">("tez");
+  const [view, setView] = useState<"tez" | "tasks" | "notes" | "tr">("tez");
   const [liveNotes, setLiveNotes] = useState<MeetingLiveNote[]>([]);
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState("");
@@ -205,6 +208,11 @@ export function MeetingReview({ id, onClose, onChanged }: Props) {
   // Транскрипт — инструмент вычитки: по нему сверяют тезисы. Встреча в базе его не показывает —
   // он дублирует тезисы (решение владельца 2026-09-25).
   const showTranscript = hasTranscript && !published;
+  // Задачи из черновика — как на доске вычитки (MeetAdminScreen): из тезисов, а без них из
+  // транскрипта. Записи в базе ещё нет, поэтому задачи без привязки к встрече. Опубликованная
+  // встреча ведёт задачи в своей карточке (MeetingDetail), здесь блок не нужен.
+  const taskText = published ? "" : (meeting.draft_notes_md?.trim() || segments.map((s) => s.text).join("\n"));
+  const showTasks = taskText.trim().length > 0;
   const who = meeting.recorder_names?.length ? meeting.recorder_names.join(", ") : recorders.length ? String(recorders.length) : "";
 
   const tezBlock = notesReady ? (
@@ -276,8 +284,15 @@ export function MeetingReview({ id, onClose, onChanged }: Props) {
     </div>
   );
 
+  const tasksBlock = showTasks ? (
+    <div className="mb-4">
+      <TasksFromMeeting text={taskText} resetKey={meeting.id} onAdded={onChanged} />
+    </div>
+  ) : null;
+
   const tabs = ([
     ["tez", "Тезисы", "Summary", null],
+    ...(showTasks ? [["tasks", "Задачи", "Tasks", null] as const] : []),
     ...(liveNotes.length ? [["notes", "Пометки", "Notes", liveNotes.length] as const] : []),
     ...(showTranscript ? [["tr", "Транскрипт", "Transcript", segments.length] as const] : []),
   ] as const);
@@ -289,7 +304,7 @@ export function MeetingReview({ id, onClose, onChanged }: Props) {
       <div className="flex-1 overflow-y-auto px-5 pb-6">
         <div className="mb-2 flex flex-wrap items-center gap-2 pt-1">
           <span className="inline-flex items-center gap-1.5 font-semibold" style={{ fontSize: 12, color: "var(--meet-ink)", background: "var(--meet-soft)", borderRadius: 8, padding: "3px 9px" }}>
-            <RoyIcon name="meet" size={12} strokeWidth={1.9} /> bumblebee
+            <RoyIcon name="meet" size={12} strokeWidth={1.9} /> {recordedByOf(meeting) ?? "bumblebee"}
           </span>
           {published
             ? <span className="inline-flex items-center gap-1 font-semibold" style={{ fontSize: 12, color: "var(--status-done)" }}><RoyIcon name="check" size={12} strokeWidth={2.2} /> {dt("В базе", "In the base")}</span>
@@ -372,11 +387,13 @@ export function MeetingReview({ id, onClose, onChanged }: Props) {
               </div>
             )}
             {tab === "tez" && tezBlock}
+            {tab === "tasks" && tasksBlock}
             {tab === "notes" && notesBlock}
             {tab === "tr" && transcriptBlock}
           </>
         ) : (
           <>
+            {tasksBlock}
             {tezBlock}
             {notesBlock}
             {transcriptBlock}
@@ -402,13 +419,13 @@ function BasePill({ value, onChange }: { value: "workspace" | "personal"; onChan
     { id: "personal", label: dt("Личное", "Personal") },
   ] as const;
   return (
-    <div role="radiogroup" aria-label={dt("Куда сохранить", "Save to")} className="inline-flex rounded-full border border-line-2 bg-surface p-0.5">
+    <div role="radiogroup" aria-label={dt("Куда сохранить", "Save to")} className={PILL_GROUP_CLS}>
       {items.map((it) => {
         const on = it.id === value;
         return (
           <button key={it.id} type="button" role="radio" aria-checked={on} onClick={() => onChange(it.id)}
-            // Выбранное читается сразу: заливка основным цветом, невыбранное — прозрачное.
-            className={`rounded-full px-3.5 transition-colors ${on ? "bg-primary font-semibold text-primary-foreground shadow-sm" : "bg-transparent font-medium text-ink-soft hover:text-ink"}`}
+            // Мягкий сегмент, как статус в карточке задачи (владелец 05.10.2026).
+            className={`${pillSegmentCls(on)} px-3.5`}
             style={{ fontSize: 13, minHeight: 36 }}>
             {it.label}
           </button>

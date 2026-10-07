@@ -205,7 +205,7 @@ export function AnalyticsScreen(
       />
 
       <Table
-        title={dt("По инициативам", "By initiative")}
+        title={dt("По группам задач", "By task group")}
         head={[
           dt("Направление", "Direction"),
           dt("Инициатива", "Initiative"),

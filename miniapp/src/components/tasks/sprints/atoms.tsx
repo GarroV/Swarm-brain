@@ -11,6 +11,12 @@ import { avatarTone, initials } from "@/lib/people";
 // местах — список спринта, «Все инициативы», сверка, аналитика, — и нарисованные заново
 // в каждом они начинают означать разное: серый «риск» в одном экране и жёлтый в другом.
 
+/** Кнопка-пилюля экрана спринта — тот же вид и размер, что у кнопок карточки задачи
+ *  (TaskModal: h-30, rounded-full, border-line-2, 13 px). Владелец 05.10.2026: «все элементы
+ *  сделать в едином стиле и размере как в задачах». */
+export const PILL_BTN =
+  "inline-flex h-[30px] shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border border-line-2 bg-surface px-3 text-[13px] font-medium text-ink-soft transition-colors hover:bg-surface-2 hover:text-ink active:scale-[0.97] disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]";
+
 /** Полоска выполнения. Пустой прогресс рисуем серой полосой, а не пустотой: иначе
  *  «ничего не сделано» и «не загрузилось» выглядят одинаково. */
 export function ProgressBar({ percent, className = "" }: {
