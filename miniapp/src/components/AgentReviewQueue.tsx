@@ -1,6 +1,7 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
-import { fetchAgentMeetings, deleteAgentMeeting } from "@/lib/api";
+import { fetchAgentMeetings, deleteAgentMeeting, hideAgentMeeting } from "@/lib/api";
+import { canHideDraft } from "@/lib/draftOwners";
 import type { AgentMeeting } from "@/types";
 import { RoyIcon } from "@/components/roy/icons";
 import { useDt, useRoyNav } from "@/components/roy/nav";
@@ -44,14 +45,19 @@ export function AgentReviewQueue({ onOpen }: Props) {
 
   useEffect(() => { load(); }, [load]);
 
+  // Групповую встречу не удаляем у всех, а скрываем у себя (issue #818).
   const remove = async (m: AgentMeeting) => {
-    if (!(await confirm({ title: `Удалить черновик «${m.title ?? "Встреча"}»?`, description: "Расшифровка и тезисы будут удалены без возможности восстановления." }))) return;
+    const hide = canHideDraft(m);
+    const ask = hide
+      ? { title: `Скрыть «${m.title ?? "Встреча"}» у себя?`, description: "Встреча пропадёт из вашей вычитки. У остальных участников она останется." }
+      : { title: `Удалить черновик «${m.title ?? "Встреча"}»?`, description: "Расшифровка и тезисы будут удалены без возможности восстановления." };
+    if (!(await confirm(ask))) return;
     setItems((prev) => prev.filter((x) => x.id !== m.id));
     try {
-      await deleteAgentMeeting(m.id);
-      toast("Черновик удалён");
+      await (hide ? hideAgentMeeting(m.id) : deleteAgentMeeting(m.id));
+      toast(hide ? "Встреча скрыта у вас" : "Черновик удалён");
     } catch {
-      toast("Не удалось удалить");
+      toast(hide ? "Не удалось скрыть" : "Не удалось удалить");
       load();
     }
   };
