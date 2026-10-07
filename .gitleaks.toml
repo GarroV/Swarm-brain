@@ -1,0 +1,22 @@
+# Сторож секретов: CI (.github/workflows/secrets-scan.yml) гоняет gitleaks по ВСЕЙ истории ветки.
+# Репозиторий публичный — любой ключ в любом коммите любой ветки читается анонимно, и удаление
+# новым коммитом его не убирает. Встроенные правила gitleaks + наши форматы, которых GitHub не знает.
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "swarm-agent-token"
+description = "Токен Swarm (MCP / рекордер): smcp_ + 32 hex"
+regex = '''smcp_[0-9a-f]{32}'''
+keywords = ["smcp_"]
+
+# Публичные значения, известные всем: не секреты.
+[[allowlists]]
+description = "Демо-JWT локального стенда Supabase и тестовые заглушки"
+regexTarget = "match"
+regexes = [
+  # демо-JWT локального стенда: payload начинается с {"iss":"supabase-demo"
+  '''eyJ[A-Za-z0-9_-]+\.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIi[A-Za-z0-9_-]*\.[A-Za-z0-9_-]+''',
+  '''SECRET = "test-secret''',
+]
