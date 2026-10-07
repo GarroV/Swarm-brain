@@ -43,6 +43,49 @@ const DAY_FMT = new Intl.DateTimeFormat("en-CA", {
   day: "2-digit",
 });
 
+/** День вызова по Белграду, «YYYY-MM-DD» — по нему режутся и график, и период. */
+export const usageDay = (createdAt: string) => DAY_FMT.format(new Date(createdAt));
+
+/** Самый длинный период, который отдаём за раз (#822): год с запасом на високосный. */
+export const MAX_PERIOD_DAYS = 366;
+const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
+const DAY_MS = 86_400_000;
+
+function dayMs(day: string): number | null {
+  if (!ISO_DAY.test(day)) return null;
+  const ms = Date.parse(`${day}T00:00:00Z`);
+  // 2026-02-31 Date.parse молча превращает в 3 марта — такой день не принимаем.
+  return Number.isNaN(ms) || new Date(ms).toISOString().slice(0, 10) !== day ? null : ms;
+}
+
+/**
+ * Период из запроса: дни по Белграду, обе границы включительно (#822). Строкой — текст ошибки
+ * для 400. `since`/`until` — окно выборки из базы с запасом в сутки с каждой стороны (Белград
+ * от UTC отстоит на час-два); точную границу держит `inPeriod` по дню Белграда.
+ */
+export function parsePeriod(
+  from: string | null,
+  to: string | null,
+): { from: string; to: string; since: string; until: string } | string {
+  if (from === null || to === null) return "from and to are required (YYYY-MM-DD)";
+  const a = dayMs(from), b = dayMs(to);
+  if (a === null || b === null) return "from and to must be dates YYYY-MM-DD";
+  if (a > b) return "from must not be after to";
+  if ((b - a) / DAY_MS + 1 > MAX_PERIOD_DAYS) return `period must not exceed ${MAX_PERIOD_DAYS} days`;
+  return {
+    from,
+    to,
+    since: new Date(a - DAY_MS).toISOString(),
+    until: new Date(b + 2 * DAY_MS).toISOString(),
+  };
+}
+
+/** Строка попадает в период по своему дню в Белграде. */
+export const inPeriod = (createdAt: string, p: { from: string; to: string }) => {
+  const d = usageDay(createdAt);
+  return d >= p.from && d <= p.to;
+};
+
 function addTo(map: Map<string, Slice>, key: string, r: UsageRow, tokens: number) {
   const s = map.get(key) ?? { key, usd: 0, calls: 0, unpriced: 0, tokens: 0 };
   map.set(key, {
@@ -74,7 +117,7 @@ export function summarizeUsage(rows: UsageRow[]): UsageSummary {
     if (r.cost_usd === null) unpriced++;
     addTo(purposes, r.purpose, rr, t);
     addTo(models, r.model ?? "—", rr, t);
-    const day = DAY_FMT.format(new Date(r.created_at));
+    const day = usageDay(r.created_at);
     const d = days.get(day) ?? { usd: 0, calls: 0 };
     days.set(day, { usd: d.usd + cost, calls: d.calls + 1 });
     if (r.meeting_id) {

@@ -152,6 +152,7 @@ const MOCK_ME: Me = {
   role: "bd",
   markets: ["KZ", "PL"],
   is_admin: true,
+  is_superadmin: true,
 };
 
 const MOCK_USERS: User[] = [
@@ -3374,8 +3375,9 @@ export async function fetchIntegrations(): Promise<Integration[]> {
 
 export type UsageSlice = { key: string; usd: number; calls: number; unpriced: number; tokens: number };
 export type ModelUsage = {
-  days: number;
-  since: string;
+  /** Период, дни по Белграду, обе границы включительно (#822). */
+  from: string;
+  to: string;
   truncated: boolean;
   total_usd: number;
   calls: number;
@@ -3388,9 +3390,10 @@ export type ModelUsage = {
   top_meetings: Array<{ meeting_id: string; usd: number; calls: number; title: string | null }>;
 };
 
-/** Расход OpenAI за период (#311), только суперадмину. */
-export async function fetchModelUsage(days: 7 | 30 | 90): Promise<ModelUsage> {
-  return apiFetch<ModelUsage>(`/admin/model-usage?days=${days}`);
+/** Расход OpenAI за период (#311, #822), только суперадмину. `from`/`to` — «YYYY-MM-DD» включительно. */
+export async function fetchModelUsage(from: string, to: string): Promise<ModelUsage> {
+  if (DEV_MODE) return mockModelUsage(from, to);
+  return apiFetch<ModelUsage>(`/admin/model-usage?from=${from}&to=${to}`);
 }
 
 /** Одноразовая ссылка на бота для привязки Telegram (#92); действует 15 минут. */
@@ -3760,4 +3763,20 @@ export async function patchAdminUser(
     method: "PATCH",
     body: JSON.stringify(fields),
   });
+}
+
+// Заглушка «Расхода модели» для DEV_MODE: каждый третий день по доллару с хвостом, чтобы на
+// графике были и столбцы, и пустые дни.
+function mockModelUsage(from: string, to: string): ModelUsage {
+  const by_day: ModelUsage["by_day"] = [];
+  for (let d = new Date(`${from}T12:00:00Z`), i = 0; d.toISOString().slice(0, 10) <= to; d.setUTCDate(d.getUTCDate() + 1), i++) {
+    if (i % 3 === 0) by_day.push({ day: d.toISOString().slice(0, 10), usd: 1 + (i % 7) * 0.4, calls: 3 + (i % 5) });
+  }
+  const total = by_day.reduce((s, r) => s + r.usd, 0);
+  const calls = by_day.reduce((s, r) => s + r.calls, 0);
+  const slice = { key: "meeting:transcription", usd: total, calls, unpriced: 0, tokens: 0 };
+  return {
+    from, to, truncated: false, total_usd: total, calls, unpriced_calls: 0, tokens: 0, audio_minutes: 0,
+    by_purpose: [slice], by_model: [{ ...slice, key: "whisper-1" }], by_day, top_meetings: [],
+  };
 }

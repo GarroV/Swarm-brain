@@ -1,5 +1,5 @@
 import { assertEquals } from "@std/assert";
-import { summarizeUsage, type UsageRow } from "./model-usage-summary.ts";
+import { inPeriod, parsePeriod, summarizeUsage, type UsageRow } from "./model-usage-summary.ts";
 
 const row = (o: Partial<UsageRow>): UsageRow => ({
   created_at: "2026-10-01T10:00:00Z",
@@ -64,4 +64,24 @@ Deno.test("самые дорогие встречи — сумма всех вы
 Deno.test("пусто — нули, а не ошибка", () => {
   const s = summarizeUsage([]);
   assertEquals([s.total_usd, s.calls, s.unpriced_calls, s.by_day.length], [0, 0, 0, 0]);
+});
+
+Deno.test("период: дни по Белграду, обе границы включительно (#822)", () => {
+  const p = parsePeriod("2026-10-01", "2026-10-31");
+  if (typeof p === "string") throw new Error(p);
+  // 30.09 23:30 UTC — уже 1 октября в Белграде; 31.10 23:30 UTC — уже 1 ноября.
+  assertEquals(inPeriod("2026-09-30T23:30:00Z", p), true);
+  assertEquals(inPeriod("2026-09-30T21:30:00Z", p), false);
+  assertEquals(inPeriod("2026-10-31T22:30:00Z", p), true);
+  assertEquals(inPeriod("2026-10-31T23:30:00Z", p), false);
+  // Окно выборки шире периода — точную границу держит inPeriod.
+  assertEquals(p.since <= "2026-09-30T21:30:00Z" && p.until > "2026-10-31T23:30:00Z", true);
+});
+
+Deno.test("период: мусор, перевёрнутые границы и больше года — отказ", () => {
+  assertEquals(typeof parsePeriod(null, "2026-10-01"), "string");
+  assertEquals(typeof parsePeriod("2026-02-31", "2026-03-05"), "string");
+  assertEquals(typeof parsePeriod("2026-10-05", "2026-10-01"), "string");
+  assertEquals(typeof parsePeriod("2025-01-01", "2026-01-02"), "string");
+  assertEquals(typeof parsePeriod("2025-01-01", "2025-12-31"), "object");
 });
