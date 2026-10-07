@@ -5,7 +5,13 @@
 // где его ждут, и никто этого не видит. Поэтому каждая граница — отдельным тестом.
 import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import type { GEvent } from "../meeting-current/select.ts";
-import { DISPATCH_LATE_MS, DISPATCH_LEAD_MS, dropSameRoom, mergeDispatch, planPersonDispatch } from "./calendar-dispatch.ts";
+import {
+  DISPATCH_LATE_MS,
+  DISPATCH_LEAD_MS,
+  dropSameRoom,
+  mergeDispatch,
+  planPersonDispatch,
+} from "./calendar-dispatch.ts";
 
 const NOW = Date.parse("2026-09-28T10:00:00+03:00");
 const PERSON = 111;
@@ -199,14 +205,24 @@ const yes = (self: string) => [{ email: self, self: true, responseStatus: "accep
 
 Deno.test("одна встреча разными событиями у двоих (тот же организатор, комната, время) — один бот", () => {
   const a = planPersonDispatch([event({ organizer: org("boss@x.io"), attendees: yes("a@x.io") })], 1, NOW, new Set());
-  const b = planPersonDispatch([event({ id: "e2", iCalUID: "other-uid", organizer: org("Boss@x.io"), attendees: yes("b@x.io") })], 2, NOW, new Set());
+  const b = planPersonDispatch(
+    [event({ id: "e2", iCalUID: "other-uid", organizer: org("Boss@x.io"), attendees: yes("b@x.io") })],
+    2,
+    NOW,
+    new Set(),
+  );
   assertEquals(a.jobs[0].calendar_key === b.jobs[0].calendar_key, false);
   assertEquals(mergeDispatch([a, b]).jobs.map((j) => j.invited_by), [1]);
 });
 
 Deno.test("чужая ссылка в своём событии — другой организатор, другая встреча: два задания", () => {
   const a = planPersonDispatch([event({ organizer: org("boss@x.io"), attendees: yes("a@x.io") })], 1, NOW, new Set());
-  const b = planPersonDispatch([event({ id: "e2", iCalUID: "other-uid", organizer: org("b@x.io"), attendees: yes("b@x.io") })], 2, NOW, new Set());
+  const b = planPersonDispatch(
+    [event({ id: "e2", iCalUID: "other-uid", organizer: org("b@x.io"), attendees: yes("b@x.io") })],
+    2,
+    NOW,
+    new Set(),
+  );
   assertEquals(mergeDispatch([a, b]).jobs.map((j) => j.invited_by), [1, 2]);
 });
 
