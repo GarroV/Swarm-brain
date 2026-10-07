@@ -13,6 +13,7 @@ import {
   type DispatchJob,
   type DispatchPlan,
   type DispatchSkip,
+  dropSameRoom,
   mergeDispatch,
   planPersonDispatch,
 } from "../_shared/calendar-dispatch.ts";
@@ -30,6 +31,10 @@ export interface SweepSource {
   refreshToken(telegramId: number): Promise<string | null>;
   accessToken(refresh: string): Promise<TokenResult>;
   listEvents(token: string, timeMin: string, timeMax: string, maxResults: number): Promise<GEvent[] | null>;
+  /** Задания воркспейса, чья встреча ещё не кончилась (забранные и нет): по ним видно занятые комнаты. */
+  activeJobs(groupId: string, nowIso: string): Promise<DispatchJob[]>;
+  /** Человек — совладелец записи задания `calendarKey` (его событие той же комнаты бот пропустил). */
+  addCoInvited(groupId: string, calendarKey: string, person: number): Promise<void>;
   /** Завести задания; уже заведённые на ту же встречу воркспейса не трогаются. */
   insertJobs(groupId: string, jobs: DispatchJob[]): Promise<void>;
   /** Погасить незабранные задания воркспейса тех, кого нет в `people` (выключили автозапуск). */
@@ -88,7 +93,13 @@ export async function sweep(
   // согласие, согласие — флаг сейчас. Гасим ДО вставки: иначе задание выключившего держало бы
   // ключ встречи, и коллега с той же встречей остался бы без бота (вставка по ключу молчит).
   await source.dropPendingJobsExcept(agent.groupId, people);
-  if (merged.jobs.length > 0) await source.insertJobs(agent.groupId, merged.jobs);
+  // Комнату, куда бот уже идёт по другому событию (прошлый проход), второй раз не занимаем.
+  const fresh = dropSameRoom(merged.jobs, await source.activeJobs(agent.groupId, nowIso));
+  if (fresh.kept.length > 0) await source.insertJobs(agent.groupId, fresh.kept);
+  // После вставки: совладелец может быть приписан к заданию, заведённому этим же проходом.
+  for (const j of [...(merged.joined ?? []), ...fresh.joined]) {
+    await source.addCoInvited(agent.groupId, j.into, j.person);
+  }
   // Проход идёт секунды (календари в Google), за них человек мог выключить — перечитываем
   // согласие перед самым забором. Остаётся окно между этим чтением и UPDATE забора — миллисекунды.
   const current = await source.autojoinPeople(agent.groupId);

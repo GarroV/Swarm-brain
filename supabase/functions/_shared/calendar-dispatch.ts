@@ -68,6 +68,8 @@ export interface DispatchSkip {
 export interface DispatchPlan {
   jobs: DispatchJob[];
   skipped: DispatchSkip[];
+  /** Люди, чью встречу бот запишет по чужому событию той же комнаты (dropSameRoom). */
+  joined?: Array<{ into: string; person: number }>;
 }
 
 /**
@@ -173,13 +175,48 @@ export function planPersonDispatch(
  * у двоих коллег в календаре одно событие, а бот на него нужен один. Пропуск встречи, на которую
  * задание уже есть, не громкий — бот туда идёт.
  */
-export function mergeDispatch(plans: DispatchPlan[]): DispatchPlan {
-  const jobs = new Map<string, DispatchJob>();
-  for (const plan of plans) {
-    for (const job of plan.jobs) if (!jobs.has(job.calendar_key)) jobs.set(job.calendar_key, job);
+/** Комната встречи: одна ссылка в разных событиях календаря — одна комната. */
+export const roomOf = (joinUrl: string): string => parseInviteLink(joinUrl)?.room ?? joinUrl.trim();
+
+type RoomSlot = Pick<DispatchJob, "calendar_key" | "join_url" | "starts_at" | "ends_at">;
+
+const overlaps = (a: RoomSlot, b: RoomSlot) =>
+  Date.parse(a.starts_at) < Date.parse(b.ends_at) && Date.parse(b.starts_at) < Date.parse(a.ends_at);
+
+/**
+ * Одна комната — один бот. У двух людей встреча может стоять РАЗНЫМИ событиями календаря на одну
+ * ссылку (каждому прислали своё приглашение, серию разрезали «это и следующие»): ключи встречи
+ * разные, комната одна. 07.10.2026 так в комнату Контура пришли два бота (IT+BD). Задание в комнату,
+ * куда в пересекающееся время бот уже идёт по другому событию (`existing` или раньше в `jobs`),
+ * отбрасывается. Это не пропуск: бот в комнате будет. Его человек — в `joined`: он получит доступ
+ * к записи как совладелец (meeting_calendar_jobs.co_invited → meeting-claim).
+ */
+export function dropSameRoom(
+  jobs: readonly DispatchJob[],
+  existing: readonly RoomSlot[],
+): { kept: DispatchJob[]; joined: Array<{ into: string; person: number }> } {
+  const kept: DispatchJob[] = [];
+  const joined: Array<{ into: string; person: number }> = [];
+  for (const job of jobs) {
+    const room = roomOf(job.join_url);
+    const twin = [...existing, ...kept].find((e) =>
+      e.calendar_key !== job.calendar_key && roomOf(e.join_url) === room && overlaps(e, job)
+    );
+    if (twin) joined.push({ into: twin.calendar_key, person: job.invited_by });
+    else kept.push(job);
   }
+  return { kept, joined };
+}
+
+export function mergeDispatch(plans: DispatchPlan[]): DispatchPlan {
+  const byKey = new Map<string, DispatchJob>();
+  for (const plan of plans) {
+    for (const job of plan.jobs) if (!byKey.has(job.calendar_key)) byKey.set(job.calendar_key, job);
+  }
+  const { kept, joined } = dropSameRoom([...byKey.values()], []);
+  const jobs = new Map(kept.map((j) => [j.calendar_key, j]));
   const skipped = plans
     .flatMap((p) => p.skipped)
     .filter((s) => s.calendar_key === null || !jobs.has(s.calendar_key));
-  return { jobs: [...jobs.values()], skipped };
+  return { jobs: [...jobs.values()], skipped, joined };
 }

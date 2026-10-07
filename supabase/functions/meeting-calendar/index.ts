@@ -45,6 +45,7 @@ import { recordSweepMisses } from "./missed.ts";
 import { makeMissStore } from "../_shared/calendar-miss-store.ts";
 import { mintGrants } from "../_shared/agent-grant.ts";
 import { loadCoveredRooms } from "../_shared/manual-rooms.ts";
+import type { DispatchJob } from "../_shared/calendar-dispatch.ts";
 
 const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
 
@@ -80,6 +81,23 @@ const source: SweepSource = {
   },
   accessToken,
   listEvents,
+  async activeJobs(groupId, nowIso) {
+    const { data, error } = await supabase.from("meeting_calendar_jobs")
+      .select("calendar_key, invited_by, join_url, platform, title, starts_at, ends_at")
+      .eq("group_id", groupId).gt("ends_at", nowIso);
+    fail("meeting_calendar_jobs active", error);
+    return (data ?? []) as DispatchJob[];
+  },
+  async addCoInvited(groupId, calendarKey, person) {
+    const { data, error } = await supabase.from("meeting_calendar_jobs").select("co_invited")
+      .eq("group_id", groupId).eq("calendar_key", calendarKey).maybeSingle();
+    fail("meeting_calendar_jobs co_invited read", error);
+    const current = ((data as { co_invited?: number[] } | null)?.co_invited ?? []).map(Number);
+    if (!data || current.includes(person)) return;
+    const { error: werr } = await supabase.from("meeting_calendar_jobs").update({ co_invited: [...current, person] })
+      .eq("group_id", groupId).eq("calendar_key", calendarKey);
+    fail("meeting_calendar_jobs co_invited write", werr);
+  },
   async insertJobs(groupId, jobs) {
     const { error } = await supabase.from("meeting_calendar_jobs")
       .upsert(jobs.map((j) => ({ ...j, group_id: groupId })), {

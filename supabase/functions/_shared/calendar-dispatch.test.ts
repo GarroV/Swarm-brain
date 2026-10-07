@@ -5,7 +5,7 @@
 // где его ждут, и никто этого не видит. Поэтому каждая граница — отдельным тестом.
 import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import type { GEvent } from "../meeting-current/select.ts";
-import { DISPATCH_LATE_MS, DISPATCH_LEAD_MS, mergeDispatch, planPersonDispatch } from "./calendar-dispatch.ts";
+import { DISPATCH_LATE_MS, DISPATCH_LEAD_MS, dropSameRoom, mergeDispatch, planPersonDispatch } from "./calendar-dispatch.ts";
 
 const NOW = Date.parse("2026-09-28T10:00:00+03:00");
 const PERSON = 111;
@@ -189,4 +189,26 @@ Deno.test("сведение: разные встречи не склеивают
   const merged = mergeDispatch([a, b]);
   assertEquals(merged.jobs.length, 1);
   assertEquals(merged.skipped.map((s) => [s.invited_by, s.reason]), [[2, "no_conference_link"]]);
+});
+
+Deno.test("одна комната в разных событиях у двух людей — один бот (07.10.2026, IT+BD)", () => {
+  const a = planPersonDispatch([event()], 1, NOW, new Set());
+  const b = planPersonDispatch([event({ id: "other", iCalUID: "other-uid" })], 2, NOW, new Set());
+  assertEquals(a.jobs.length + b.jobs.length, 2);
+  assertEquals(a.jobs[0].calendar_key === b.jobs[0].calendar_key, false);
+  const merged = mergeDispatch([a, b]);
+  assertEquals(merged.jobs.map((j) => j.invited_by), [1]);
+  // Второй человек не теряет доступ: станет совладельцем записи.
+  assertEquals(merged.joined, [{ into: a.jobs[0].calendar_key, person: 2 }]);
+});
+
+Deno.test("dropSameRoom: комнату уже занимает задание прошлого прохода — второе не заводим", () => {
+  const job = planPersonDispatch([event({ id: "other", iCalUID: "other-uid" })], 2, NOW, new Set()).jobs[0];
+  const earlier = { ...job, calendar_key: "first:2026-09-28" };
+  assertEquals(dropSameRoom([job], [earlier]), { kept: [], joined: [{ into: "first:2026-09-28", person: 2 }] });
+  // Та же встреча (тот же ключ) — не дубль: повторная вставка молчит в базе сама.
+  assertEquals(dropSameRoom([job], [job]).kept.length, 1);
+  // Та же комната, но время не пересекается — другая встреча.
+  const later = { ...earlier, starts_at: "2026-09-28T20:00:00Z", ends_at: "2026-09-28T21:00:00Z" };
+  assertEquals(dropSameRoom([job], [later]).kept.length, 1);
 });

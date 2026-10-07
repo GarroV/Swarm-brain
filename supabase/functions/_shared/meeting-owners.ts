@@ -46,3 +46,12 @@ export function mergeAttendees<T extends Attendee>(
   }
   return out;
 }
+
+/**
+ * Совладельцы + люди, чьё событие той же комнаты бот пропустил (meeting_calendar_jobs.co_invited,
+ * «одна комната — один бот», 07.10.2026). Записавшие в совладельцы не попадают — они владельцы и так.
+ */
+export function withCoInvited(coOwners: number[], coInvited: number[], recorderIds: number[]): number[] {
+  const skip = new Set(recorderIds.map(Number));
+  return [...new Set([...coOwners, ...coInvited.map(Number).filter((id) => !skip.has(id))])];
+}
