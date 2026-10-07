@@ -89,15 +89,6 @@ function GroupControls({ group, grouping }: {
     <span // У названия (владелец 05.10.2026: «настройки группы надо передвинуть к названию»). На
      // телефоне — своей строкой под названием: в одну строку кнопки уезжали за край экрана.
     className="order-last flex shrink-0 basis-full flex-wrap items-center gap-1.5 pb-2 pl-8 pr-2 transition-opacity lg:order-none lg:basis-auto lg:pb-0 lg:pl-0 lg:opacity-0 lg:group-hover/head:opacity-100 lg:focus-within:opacity-100">
-      <span
-        className="inline-flex h-[30px] items-center rounded-full border border-dashed border-line-2 px-3 text-[13px] text-ink-mute"
-        title={dt(
-          "Группа задач: на доске «Проекты» её нет, пока не нажмёте «В проекты»",
-          "Task group: not on the Projects board until you press “To projects”",
-        )}
-      >
-        {dt("группа задач", "task group")}
-      </span>
       <button
         type="button"
         className={PILL_BTN}
