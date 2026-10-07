@@ -12,6 +12,8 @@
  *   SCRIBA_BOT_TOKEN            — токен служебного агента (обязательно, только из секретов);
  *   SCRIBA_IMAGE                — образ контейнера встречи (обязательно);
  *   SCRIBA_LEASE_HOST_DIR       — каталог поводка на хосте (обязательно, свой у службы);
+ *   SCRIBA_RUN_LOG_DIR          — куда писать журнал каждого запуска `<run>.log` (#832); пусто —
+ *                                 журнал встречи не сохраняется (контейнер удаляется вместе с ним);
  *   SCRIBA_PROJECT              — имя стенда, метка контейнеров и томов (по умолчанию scriba);
  *   SCRIBA_BOT_VERSION          — номер сборки, уходит в heartbeat и заявку (по умолчанию 0);
  *   SCRIBA_INVITE_POLL_MS       — пауза между опросами приглашений (по умолчанию 5000);
@@ -48,6 +50,7 @@ import { inviteTriggerFor } from "./invite-service.ts";
 import { NoticeClient } from "./notice-client.ts";
 import { JournaledNotifier, type Notifier } from "./notices.ts";
 import { Orchestrator } from "./orchestrator.ts";
+import { RunLogs } from "./run-log.ts";
 
 type Environment = Readonly<Record<string, string | undefined>>;
 
@@ -129,6 +132,10 @@ async function main(environment: Environment): Promise<void> {
     new JournaledNotifier(new NoticeClient({ baseUrl: swarmUrl, token: grant, onBehalfOf }), log);
 
   const account = accountCopies(environment);
+  const runLogDirectory = nonEmpty(environment.SCRIBA_RUN_LOG_DIR);
+  const runLogs =
+    runLogDirectory === undefined ? undefined : new RunLogs({ directory: runLogDirectory, log });
+  runLogs?.prune();
   const engine = new DockerodeEngine();
   const project = nonEmpty(environment.SCRIBA_PROJECT) ?? "scriba";
   const image = required(environment, "SCRIBA_IMAGE");
@@ -159,6 +166,7 @@ async function main(environment: Environment): Promise<void> {
     maxMeetings: positive(environment, "SCRIBA_MAX_MEETINGS", DEFAULT_MAX_MEETINGS),
     limits: containerLimits(environment),
     ...(account !== undefined && { account }),
+    ...(runLogs !== undefined && { runLogs }),
   });
   const intervalMs = positive(environment, "SCRIBA_INVITE_POLL_MS", 5000);
   const trigger = inviteTriggerFor({

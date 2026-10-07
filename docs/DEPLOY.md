@@ -277,7 +277,8 @@ make unfreeze          # снять раньше срока; по сроку р�
 | `scripts/scriba-prod.sh status` / `logs` / `down` | Состояние, журнал, погасить (токен и вход бота остаются) |
 
 - **Папки на VPS** (`/srv/scriba`, доступ только у `garva`): `repo` — клон `main`; `state` — токен
-  (`bot.token`), `prod.env`, аренды и копии входа на встречи; `account/google-state.json` — вход
+  (`bot.token`), `prod.env`, аренды и копии входа на встречи, `runs/` — журнал каждого запуска встречи
+  (`<run>.log`, 500 последних, #832: найти по id запуска из строки «закончил встречу» в `logs`); `account/google-state.json` — вход
   Google-аккаунта бота. Портов нет: бот сам ходит в Swarm. Серверная половина — `scripts/scriba-prod/stand.sh`.
 - **Не больше трёх встреч сразу** (`SCRIBA_MAX_MEETINGS=3` в `stand.sh`): встреча берёт до 2 ГБ и 2 ядер,
   а VPS общий с другими продуктами (6 ядер, 12 ГБ).
