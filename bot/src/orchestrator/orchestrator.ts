@@ -39,6 +39,7 @@ import type { Notifier } from "./notices.ts";
 import { parseStateLine } from "./state-line.ts";
 import { describeError } from "./describe-error.ts";
 import type { MeetingEgress, MeetingNetwork } from "./egress.ts";
+import type { RunLogs, RunLogWriter } from "./run-log.ts";
 
 // eslint-disable-next-line sonarjs/redundant-type-aliases -- имя из контракта блока (docs/furca/blocks/orchestrator.md)
 export type ContainerId = string;
@@ -115,6 +116,11 @@ export interface OrchestratorOptions {
    */
   readonly account?: AccountCopies;
   /**
+   * Журнал каждого запуска на диске службы (#832): контейнер встречи удаляется по выходе вместе
+   * со своим журналом. Не задан — журнал только в памяти (хвост для «контейнер умер»).
+   */
+  readonly runLogs?: RunLogs;
+  /**
    * Выход встречи наружу (T178): своя internal-сеть и egress-прокси. Обязателен — встреча без
    * него ходила бы куда угодно с живой сессией аккаунта бота в браузере.
    */
@@ -133,6 +139,7 @@ interface Managed {
   meetingId: string | null;
   outcome: string | null;
   readonly tail: string[];
+  readonly journal: RunLogWriter | null;
   exited: Promise<void>;
 }
 
@@ -363,6 +370,7 @@ export class Orchestrator {
       meetingId: null,
       outcome: null,
       tail: [],
+      journal: this.options.runLogs?.open(runId) ?? null,
       exited: Promise.resolve(),
     };
     managed.exited = this.watchExit(managed, exitCode);
@@ -390,6 +398,7 @@ export class Orchestrator {
   }
 
   private onLogLine(managed: Managed, line: string): void {
+    managed.journal?.line(line);
     managed.tail.push(line);
     if (managed.tail.length > LOG_TAIL_LINES) managed.tail.shift();
     const state = parseStateLine(line);
@@ -407,10 +416,18 @@ export class Orchestrator {
         ? { kind: "finished", outcome: managed.outcome }
         : { kind: "died", exitCode: code, meetingId: managed.meetingId },
     );
+    managed.journal?.line(
+      `# выход: код ${String(code)}, исход ${managed.outcome ?? "не назван"}, ` +
+        `встреча ${managed.meetingId ?? "не заявлена"}`,
+    );
+    this.options.runLogs?.prune();
     await this.releaseAccount(managed.runId);
     await this.releaseEgress(managed.runId);
     if (code === 0) {
-      this.log(`контейнер ${managed.id} закончил встречу: ${managed.outcome ?? "исход не назван"}`);
+      this.log(
+        `контейнер ${managed.id} закончил встречу: ${managed.outcome ?? "исход не назван"} ` +
+          `(запуск ${managed.runId}, встреча ${managed.meetingId ?? "не заявлена"})`,
+      );
       return;
     }
 
