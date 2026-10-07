@@ -56,13 +56,16 @@ jobs:
         run: ./scripts/test-deploy-window.sh
 
   edge:
-    name: Edge Functions (Deno) — типы + тесты
+    name: Edge Functions (Deno) — типы
     runs-on: ubuntu-latest
-    # Потолок на случай зависания (сеть, установка Deno, тест без своего таймаута): без него job
-    # висит до дефолтных 6 часов GitHub. В приватном репозитории такое трижды за день выбило
-    # месячную квоту аккаунта (GarroV/multa#148) — Swarm публичный и минуты бесплатны, но
-    # зависший прогон всё равно держит очередь и молча тормозит релиз. Норма здесь — 2-3 минуты.
+    # Потолок на случай зависания (сеть, установка Deno): без него job висит до дефолтных
+    # 6 часов GitHub. В приватном репозитории такое трижды за день выбило месячную квоту
+    # аккаунта (GarroV/multa#148) — Swarm публичный и минуты бесплатны, но зависший прогон
+    # всё равно держит очередь и молча тормозит релиз.
     timeout-minutes: 10
+    # Тесты функций здесь больше не гоняются (#826): тот же набор (`supabase/`, `files/`) на
+    # настоящей базе гоняет гейт доски инициатив, с покрытием. Третий прогон на своём контуре
+    # стоил 2,5 минуты раннера и ничего не проверял сверх гейта.
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2
@@ -70,20 +73,6 @@ jobs:
           deno-version: v2.x
       - name: deno check (все edge-функции)
         run: deno check $(find supabase/functions -mindepth 2 -maxdepth 2 -name index.ts)
-      # Тесты настоящего мёржа конфига Claude Desktop идут ТОЛЬКО на macOS: их JSON-движок —
-      # plutil (Apple-only), и на Linux-раннере они честно помечаются пропуском (см. HAS_PLUTIL
-      # в swarm-setup/script.test.ts). Инварианты мёржа при этом проверяются статически и здесь.
-      # Часть тестов ходит в НАСТОЯЩУЮ базу (приёмка спринта, триггер удаления задачи, гварды
-      # роутов, журнал пространства): транзакцию и правило видимости моком не проверить — мок
-      # согласится с моделью автора. Поэтому в CI поднимается локальный контур Supabase, а
-      # пропуск «базы нет» считается падением, а не пропуском.
-      - uses: supabase/setup-cli@1dedf2c611547ede7232d26866dd3c56ab903bbb # v1
-        with:
-          version: 2.118.0
-      - name: Локальный контур Supabase
-        run: ./scripts/ci-supabase-up
-      - name: deno test
-        run: ./scripts/with-local-db deno test -A supabase/functions/ files/
 
   miniapp:
     name: Mini App (Next.js) — сборка + типы
@@ -143,10 +132,12 @@ jobs:
       # Области явно: `scripts/check` без аргумента гоняет ещё и бота, а бот проверяется
       # своим workflow (`bot.yml`, там же `npm ci --prefix bot`). Здесь node_modules бота
       # нет, и полный прогон честно покраснел бы на «окружение не поднято».
+      # Тесты функций на настоящей базе — только здесь (задание Edge их больше не гоняет, #826).
+      # Часть тестов ходит в НАСТОЯЩУЮ базу (приёмка спринта, триггер удаления задачи, гварды
+      # роутов, журнал пространства): транзакцию и правило видимости моком не проверить, поэтому
+      # пропуск «базы нет» считается падением, а не пропуском.
       - name: Гейт доски инициатив
         run: ./scripts/check initiatives
-      - name: Гейт сервера scriba
-        run: ./scripts/check server
       # Порча отвечает на вопрос, на который гейт не отвечает: проверяют ли эти проверки хоть
       # что-нибудь. Ломаем ядро и базу нарочно и убеждаемся, что тесты краснеют.
       - name: Порча
@@ -156,4 +147,33 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: check-report
+          path: reports/
+
+  gate-server:
+    name: Гейт сервера scriba (scripts/check server)
+    runs-on: ubuntu-latest
+    # Отдельным заданием параллельно гейту доски (#826): на одном раннере они шли подряд, и
+    # 49 секунд сервера стояли на критическом пути каждого PR. Базу поднимает свою — тесты
+    # функций scriba тоже ходят в настоящую.
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          # Затронутые файлы считаются от коммита из .scriba-build-base; в мелком клоне его нет.
+          fetch-depth: 0
+      - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2
+        with:
+          deno-version: v2.x
+      - uses: supabase/setup-cli@1dedf2c611547ede7232d26866dd3c56ab903bbb # v1
+        with:
+          version: 2.118.0
+      - name: Локальный контур Supabase
+        run: ./scripts/ci-supabase-up
+      - name: Гейт сервера scriba
+        run: ./scripts/check server
+      - name: Машинный отчёт прогона
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: check-report-server
           path: reports/
