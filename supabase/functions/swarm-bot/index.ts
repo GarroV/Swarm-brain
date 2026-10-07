@@ -25,7 +25,7 @@ import {
   parseCreateTaskCommand,
   parseManageCommand,
   parseSaveCommand,
-  parseTaskComment,
+  isTaskComment,
 } from "./lib/intent.ts";
 import { ALL_MEETING_SOURCES, ENTRY_MEETING_SOURCES, sourceLabel } from "../_shared/sources.ts";
 import { buildClaudeProjectPrompt } from "../_shared/claude-project-prompt.ts";
@@ -682,10 +682,9 @@ Deno.serve(async (req: Request) => {
         // Порядок: создать задачу ("добавь задачу: …") → сохранить ("сохрани:", "добавь в базу:")
         // → иначе текст = вопрос/поиск. Всё детерминированно, без LLM-угадайки.
         const createTaskCmd = parseCreateTaskCommand(text);
-        const taskComment = parseTaskComment(text);
-        // Комментарий к пересылке («создай задачу») — ждём пересланное; своё название в
-        // комментарии без пересланного → обычное «добавь задачу …» ниже.
-        if (taskComment && await handleTaskComment(chatId, text, taskComment, createTaskCmd !== null)) {
+        // «добавь задачу» без текста — комментарий к пересылке: ждём пересланное (tasks/forward-task.ts).
+        if (isTaskComment(text)) {
+          await handleTaskComment(chatId);
           return new Response("OK", { status: 200 });
         }
         const saveContent = createTaskCmd ? null : parseSaveCommand(text);
