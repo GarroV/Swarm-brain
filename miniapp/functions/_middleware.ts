@@ -8,6 +8,11 @@ import { LEGACY_HOST, PRIMARY_HOST } from "../src/lib/prodHosts";
 //   • /api/* НЕ переадресуем: POST после 301 браузер превращает в GET, и открытая вкладка молча
 //     потеряла бы сохранения. Такая вкладка дорабатывает до перезагрузки.
 //   • /s/<code> переадресуется как всё остальное: разосланные короткие ссылки продолжают работать.
+//   • исключение из /api/* — демо-вход /api/auth/demo (только GET, переход по ссылке витрины):
+//     он ставит сессию на свой хост и шлёт на «/», а «/» старого хоста уезжает на новый без куки —
+//     демо падало на логин (issue #816). Поэтому вход сам переезжает и ставит куку уже на новом.
+const DEMO_LOGIN_PATH = "/api/auth/demo";
+
 type Env = { LEGACY_REDIRECT?: string };
 type Ctx = { request: Request; env: Env; next: () => Promise<Response> };
 
@@ -15,7 +20,8 @@ export function legacyRedirectTarget(requestUrl: string, enabled: boolean): stri
   if (!enabled) return null;
   const url = new URL(requestUrl);
   if (url.hostname !== LEGACY_HOST) return null;
-  if (url.pathname === "/api" || url.pathname.startsWith("/api/")) return null;
+  const isApi = url.pathname === "/api" || url.pathname.startsWith("/api/");
+  if (isApi && url.pathname !== DEMO_LOGIN_PATH) return null;
   return `https://${PRIMARY_HOST}${url.pathname}${url.search}`;
 }
 

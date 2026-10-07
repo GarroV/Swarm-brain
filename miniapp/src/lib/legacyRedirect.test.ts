@@ -32,3 +32,12 @@ Deno.test("API, превью веток и новый адрес не переа
   assertEquals(legacyRedirectTarget("https://a1b2c3.swarm-brain.pages.dev/", true), null);
   assertEquals(legacyRedirectTarget("https://swarm-team.app/", true), null);
 });
+
+Deno.test("демо-вход переезжает на новый хост целиком, с ключом — иначе кука остаётся на старом (#816)", () => {
+  assertEquals(
+    legacyRedirectTarget("https://swarm-brain.pages.dev/api/auth/demo?key=k", true),
+    "https://swarm-team.app/api/auth/demo?key=k",
+  );
+  assertEquals(legacyRedirectTarget("https://swarm-brain.pages.dev/api/auth/demo?key=k", false), null);
+  assertEquals(legacyRedirectTarget("https://swarm-brain.pages.dev/api/auth/telegram", true), null);
+});
