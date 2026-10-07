@@ -191,8 +191,10 @@ function CalNote({ title, hint, action }: { title: string; hint: string; action?
   );
 }
 
-export function MeetingsToday({ className, flat, first }: {
+export function MeetingsToday({ className, flat, first, flatBody }: {
   className?: string;
+  /** Подложка тела плоского вида (виджет главной). */
+  flatBody?: string;
   /** Вид главной по стенду — надпись вместо карточки. */
   flat?: boolean;
   first?: boolean;
@@ -258,6 +260,7 @@ export function MeetingsToday({ className, flat, first }: {
       className={className}
       flat={flat}
       first={first}
+      flatBody={flatBody}
       count={flat && !needsCalendar ? meetings.length : undefined}
     >
       {flat ? (

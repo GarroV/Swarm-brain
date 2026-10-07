@@ -21,12 +21,13 @@ export function RoyDashboard() {
   const data = useDashboardData();
   const { bumpTasks } = useRoyNav();
   const [creating, setCreating] = useState(false);
+  const [editing, setEditing] = useState(false);
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
-      <HomeHeader />
+      <HomeHeader editing={editing} onEdit={() => setEditing(true)} />
       <div className="min-h-0 flex-1 overflow-auto">
-        <HomeGrid data={data} onCreateTask={() => setCreating(true)} />
+        <HomeGrid data={data} onCreateTask={() => setCreating(true)} editing={editing} onEditing={setEditing} />
       </div>
       {/* Быстрое создание задачи с главной — окно поверх, без ухода на доску. */}
       <TaskModal open={creating} onClose={() => setCreating(false)} onSaved={bumpTasks} />
@@ -35,7 +36,7 @@ export function RoyDashboard() {
 }
 
 // Шапка главной: заголовок и поиск по базе (стенд: поиск в шапке вместо поиска посреди главной).
-function HomeHeader() {
+function HomeHeader({ editing, onEdit }: { editing: boolean; onEdit: () => void }) {
   const dt = useDt();
   const { openAnswer } = useRoyNav();
   const [q, setQ] = useState("");
@@ -68,6 +69,12 @@ function HomeHeader() {
         </label>
       </form>
       <div className="flex shrink-0 items-center gap-2">
+        {/* Настройка главной: виджеты и «Мои страны» (решение 07.10.2026). */}
+        <button type="button" onClick={onEdit} disabled={editing} aria-pressed={editing}
+          className="flex h-[32px] items-center gap-1.5 rounded-[8px] border border-line-2 bg-surface px-2.5 font-semibold text-ink-soft hover:border-accent-line hover:text-primary disabled:border-primary disabled:text-primary"
+          style={{ fontSize: 12.5 }}>
+          <span aria-hidden="true">⚙</span>{dt("Настроить главную", "Customize home")}
+        </button>
         <NotificationsBell />
         <ProjectMapButton />
       </div>

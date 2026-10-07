@@ -5,7 +5,7 @@ import { HomeLabel } from "../dash/shared";
 import type { DashboardData } from "../dash/useDashboardData";
 import { MeetingsToday } from "../dash/MeetingsToday";
 import { HomeNews, LatestInBase } from "../dash/HomeSide";
-import { CountryBar } from "./CountryBar";
+import { CountryEditor, NarrowChip } from "./CountryEditor";
 import { HomeTasksWidget, TeamTasksWidget } from "./TaskWidgets";
 import { BoardWidget, MapsSoonWidget, SalesWidget, TopTasksWidget } from "./MiscWidgets";
 import { RkoWidget, RsWidget, SampleTag, ViolationsWidget } from "./QualityWidgets";
@@ -41,12 +41,13 @@ const META: Record<WidgetId, Meta> = {
   latest: { title: ["Последнее в базе", "Latest in the base"], hint: ["Свежие записи и встречи базы знаний.", "Fresh entries and meetings in the knowledge base."], ownTitle: true },
 };
 
-export function HomeGrid({ data, onCreateTask }: { data: DashboardData; onCreateTask: () => void }) {
+type Props = { data: DashboardData; onCreateTask: () => void; editing: boolean; onEditing: (v: boolean) => void };
+
+export function HomeGrid({ data, onCreateTask, editing, onEditing: setEditing }: Props) {
   const dt = useDt();
   const lang = dt("ru", "en") === "en" ? 1 : 0;
   const { me, setTab } = useRoyNav();
   const [layout, setLayoutState] = useState<LayoutItem[]>(DEFAULT_LAYOUT);
-  const [editing, setEditing] = useState(false);
   const [gallery, setGallery] = useState(false);
   const [dragId, setDragId] = useState<WidgetId | null>(null);
   const [overId, setOverId] = useState<WidgetId | null>(null);
@@ -71,10 +72,10 @@ export function HomeGrid({ data, onCreateTask }: { data: DashboardData; onCreate
 
   const body = (id: WidgetId): ReactNode => {
     if (!codes.length && META[id].sample) {
-      return <div className="rounded-[12px] border border-dashed border-line-2 px-4 py-6 text-center text-ink-mute" style={{ fontSize: 13 }}>{dt("Выберите свои страны вверху — метрики считаются по ним", "Pick your countries above — metrics are scoped to them")}</div>;
+      return <div className="rounded-[12px] border border-dashed border-line-2 px-4 py-6 text-center text-ink-mute" style={{ fontSize: 13 }}>{dt("Выберите свои страны в «Настроить главную» — метрики считаются по ним", "Pick your countries in “Customize home” — metrics are scoped to them")}</div>;
     }
     switch (id) {
-      case "calls": return <MeetingsToday flat first />;
+      case "calls": return <MeetingsToday flat first flatBody="overflow-hidden rounded-[12px] border border-line bg-surface p-1.5" />;
       case "top5": return <TopTasksWidget data={data} onCreate={onCreateTask} />;
       case "board": return <BoardWidget data={data} />;
       case "rs": return <RsWidget scope={scope} imf={imf} />;
@@ -99,21 +100,25 @@ export function HomeGrid({ data, onCreateTask }: { data: DashboardData; onCreate
 
   return (
     <div className="min-w-0 pb-8">
-      <CountryBar markets={markets} onMarkets={(m) => { setMarkets(m); if (narrow && !m.includes(narrow)) setNarrow(null); }}
-        narrow={narrow} onNarrow={setNarrow} editing={editing} onEdit={() => setEditing(true)} />
+      {narrow && !editing && <NarrowChip cc={narrow} onClear={() => setNarrow(null)} />}
 
       {editing && (
-        <div className="sticky top-0 z-20 mx-6 mt-3 flex flex-wrap items-center justify-between gap-3 rounded-[12px] border border-accent-line bg-accent-soft px-4 py-2.5 shadow-sm" style={{ fontSize: 13 }}>
+        <div className="sticky top-0 z-20 mx-6 mt-3 flex flex-col gap-2.5 rounded-[12px] border border-accent-line bg-accent-soft px-4 py-3 shadow-sm" style={{ fontSize: 13 }}>
+          <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="text-ink"><b>{dt("Настройка главной.", "Customizing home.")}</b> {dt("Перетащите виджеты за ⠿, меняйте ширину, скрывайте лишнее. Раскладка — только ваша.", "Drag widgets by ⠿, change width, hide what you don't need. The layout is yours only.")}</div>
           <div className="flex flex-wrap gap-2">
             <button type="button" onClick={() => setGallery(true)} className="rounded-[8px] border border-line-2 bg-surface px-3 py-1.5 font-semibold">{dt("+ Добавить виджет", "+ Add widget")}</button>
             <button type="button" onClick={() => setLayout(DEFAULT_LAYOUT)} className="rounded-[8px] border border-line-2 bg-surface px-3 py-1.5 font-semibold">{dt("Как было по умолчанию", "Reset to default")}</button>
             <button type="button" onClick={() => setEditing(false)} className="rounded-[8px] bg-primary px-3 py-1.5 font-semibold text-primary-foreground">{dt("Готово", "Done")}</button>
           </div>
+          </div>
+          <div className="border-t border-accent-line pt-2.5">
+            <CountryEditor markets={markets} onMarkets={(m) => { setMarkets(m); if (narrow && !m.includes(narrow)) setNarrow(null); }} />
+          </div>
         </div>
       )}
 
-      <div className="grid grid-cols-1 gap-x-5 gap-y-2 px-6 min-[1100px]:grid-cols-2">
+      <div className="grid grid-cols-1 gap-x-5 gap-y-2 px-6 pt-1 min-[1100px]:grid-cols-2">
         {layout.map((it, i) => {
           const m = META[it.id];
           return (
