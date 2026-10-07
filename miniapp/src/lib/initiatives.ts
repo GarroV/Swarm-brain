@@ -120,7 +120,7 @@ export function sprintKpi(
 /** Порядок внутри уровня: по имени, безымянная группа («Общее», «Без направления») — с краю. */
 // Числа в названии сравниваются как числа: инициативы нумеруют («1.», «2.», … «14.»), и
 // строковое сравнение ставило «14.» раньше «2.» (владелец 05.10.2026: «от 1 по нарастающей»).
-function byNumberedName(a: string, b: string): number {
+export function byNumberedName(a: string, b: string): number {
   return a.localeCompare(b, undefined, { numeric: true });
 }
 

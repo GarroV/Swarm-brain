@@ -3,6 +3,7 @@
 // станет стенограммой встречи, которую команда читает как факт.
 import { assertEquals, assertThrows } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import {
+  botJoinsOverShort,
   botStillRecording,
   claimAction,
   decideHeld,
@@ -190,4 +191,43 @@ Deno.test("deferReasonOf: причина отказа совпадает с ве
   assertEquals(deferReasonOf(stopped, 3100, NOW), "similar");
   assertEquals(deferReasonOf(stopped, 0, NOW), "unknown");
   assertEquals(deferReasonOf({ ...stopped, recorded_seconds: null }, 1200, NOW), "unknown");
+});
+
+// ── Бот поверх короткой записи (07.10.2026) ───────────────────────────────────
+
+/** Рекордер человека уже выгрузил первые две минуты встречи; обработка кончилась, лиз ещё жив. */
+function shortClipRow(seconds = 120): HeldRow {
+  return {
+    claim_owner: OTHER,
+    recorded_seconds: seconds,
+    transcript: { segments: [{ end: seconds }] },
+    notes_edited_at: null,
+    status: null,
+    lease_expires_at: "2026-09-28T12:20:00.000Z",
+    agent_last_recording: null,
+  };
+}
+
+Deno.test("ЯДРО: короткая готовая запись рекордера не отменяет бота — он идёт претендентом", () => {
+  assertEquals(decideHeld(shortClipRow(), 0, BOT_OWNER, NOW), "defer", "старое правило отказывало бы");
+  assertEquals(botJoinsOverShort(shortClipRow(), true, 0, NOW), true);
+  assertEquals(
+    botJoinsOverShort({ ...shortClipRow(), claim_owner: BOT_OWNER }, true, 0, NOW),
+    true,
+    "запись того же человека — тоже",
+  );
+});
+
+Deno.test("ЯДРО: бот поверх записи — только когда всё сразу", () => {
+  assertEquals(botJoinsOverShort(shortClipRow(), false, 0, NOW), false, "рекордер, а не бот");
+  assertEquals(botJoinsOverShort(shortClipRow(), true, 60, NOW), false, "бот уже с секундами — обычное правило");
+  assertEquals(botJoinsOverShort(shortClipRow(300), true, 0, NOW), false, "запись от 5 минут — бот не идёт");
+  assertEquals(
+    botJoinsOverShort({ ...shortClipRow(), transcript: null, recorded_seconds: null }, true, 0, NOW),
+    false,
+    "держатель ещё не записал (например, другой бот до звонка) — второго бота не шлём",
+  );
+  assertEquals(botJoinsOverShort({ ...shortClipRow(), notes_edited_at: NOW }, true, 0, NOW), false, "правили руками");
+  assertEquals(botJoinsOverShort({ ...shortClipRow(), status: "in_base" }, true, 0, NOW), false, "опубликовано");
+  assertEquals(botJoinsOverShort(liveBotRow(60), true, 0, NOW), false, "встречу уже пишет бот");
 });

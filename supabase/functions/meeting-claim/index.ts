@@ -2,6 +2,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { occupyPatch, refreshPatch } from "./claim-patch.ts";
 import {
+  botJoinsOverShort,
   claimAction,
   decideHeld,
   type DeferReason,
@@ -448,6 +449,25 @@ async function resolveExisting(
   // (2) Занята. Кто получает право — arbiter.ts: правило полноты и поправка «бот ещё пишет» (D020).
   const candidate = body.recorded_seconds ?? 0;
   const held = heldSeconds(row);
+
+  // Бот до звонка поверх короткой готовой записи (arbiter.ts, botJoinsOverShort) — претендент, как
+  // заявка другого человека (T160): строка встречи не трогается, бот пишет и выгружает, право решит
+  // измеренная длина в meeting-ingest. Удары бота-претендента принимает meeting-heartbeat.
+  if (botJoinsOverShort(row, identity.kind === "bot", candidate, nowIso)) {
+    console.log(
+      `meeting-claim: бот-претендент ${row.id} поверх короткой записи — ${Math.round(held)}с у ${row.claim_owner}`,
+    );
+    return {
+      decision: "transcribe",
+      recorderRole: CHALLENGER_ROLE,
+      supersededOwner: null,
+      heldBy,
+      recordedSeconds,
+      deferReason: null,
+      heldSeconds: held,
+    };
+  }
+
   const verdict = decideHeld(row, candidate, identity.telegramId, nowIso);
   if (verdict === "defer") {
     return {

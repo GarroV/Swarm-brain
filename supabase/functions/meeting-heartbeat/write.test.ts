@@ -3,6 +3,7 @@ import { assertEquals, assertThrows } from "https://deno.land/std@0.224.0/assert
 import type { AgentIdentity } from "../_shared/agent-auth.ts";
 import {
   buildHeartbeatWrites,
+  challengerWrites,
   freshnessFilter,
   HeartbeatRejected,
   type HeartbeatWrite,
@@ -11,6 +12,7 @@ import {
   type RecordedPrior,
   recordedSecondsCeiling,
   recordedSecondsWrite,
+  renewChallenge,
 } from "./write.ts";
 
 const NOW = "2026-09-17T10:00:00.000Z";
@@ -392,4 +394,35 @@ Deno.test("ЯДРО: запись встречи с секундами треб�
   );
   assertEquals(freshnessFilter(w.fallback!), `agent_last_seen_at.is.null,agent_last_seen_at.lt.${NOW}`);
   assertEquals(freshnessFilter({ table: "allowed_users", match: {}, patch: {}, requireHit: false }), null);
+});
+
+Deno.test("ЯДРО: бот-претендент поверх короткой записи — удар принят, строка встречи не пишется", () => {
+  const writes = buildHeartbeatWrites(bot, { recording: true, meeting_id: MEETING_ID, recorded_seconds: 60 }, NOW);
+  const own = challengerWrites(writes, [{ telegram_id: 222, role: "transcribe" }, {
+    telegram_id: 111,
+    role: "challenger",
+  }], 111);
+  assertEquals(own?.map((w) => w.table), ["service_agents"], "лиз и пульс встречи претендент не держит");
+});
+
+Deno.test("ЯДРО: без роли challenger у того же человека — отказ остаётся отказом", () => {
+  const writes = buildHeartbeatWrites(bot, { recording: true, meeting_id: MEETING_ID }, NOW);
+  assertEquals(challengerWrites(writes, [{ telegram_id: 111, role: "defer" }], 111), null);
+  assertEquals(
+    challengerWrites(writes, [{ telegram_id: 222, role: "challenger" }], 111),
+    null,
+    "претендент — другой человек",
+  );
+  assertEquals(challengerWrites(writes, null, 111), null);
+});
+
+Deno.test("ЯДРО: пишущий бот-претендент продлевает свою заявку — выгрузка через час не получит отказ", () => {
+  const list = [{ telegram_id: 222, role: "transcribe", claimed_at: "a" }, {
+    telegram_id: 111,
+    role: "challenger",
+    claimed_at: "b",
+  }];
+  assertEquals(renewChallenge(list, 111, NOW), [list[0], { ...list[1], claimed_at: NOW }]);
+  assertEquals(renewChallenge(list, 222, NOW), null, "держатель — не претендент");
+  assertEquals(renewChallenge([{ telegram_id: 111, role: "defer", claimed_at: "b" }], 111, NOW), null);
 });

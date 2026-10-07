@@ -26,7 +26,7 @@ graphify-out/
 
 # Отчёты сканера безопасности AITriage — локальные артефакты прогонов, не код
 aitriage-reports/
-bot/node_modules/
+bot/node_modules
 bot/coverage/
 .coverage-server/
 

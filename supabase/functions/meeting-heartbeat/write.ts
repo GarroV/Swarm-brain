@@ -1,4 +1,5 @@
 import type { AgentIdentity } from "../_shared/agent-auth.ts";
+import { CHALLENGER_ROLE } from "../meeting-ingest/challenge.ts";
 import { assertGrantMeeting, GrantScopeError } from "../_shared/agent-grant.ts";
 import { CLAIM_LEASE_TTL_SEC, claimLeaseUntil, MAX_RECORDED_SECONDS } from "../_shared/meeting-lease.ts";
 
@@ -328,4 +329,38 @@ export async function applyWrites(writes: HeartbeatWrite[], store: WriteStore): 
     return (await store.count(write)) > 0 ? "stale" : "missed";
   }
   return "ok";
+}
+
+/**
+ * Бот-претендент (meeting-claim, `botJoinsOverShort`: бот пошёл поверх короткой готовой записи).
+ * Встреча не его — claim_owner держателя, и удар по ней промахивается. Отвечать ему 403 нельзя: бот
+ * прочтёт это как «право ушло другой записи» и уйдёт со звонка без выгрузки. Претендент встречу не
+ * держит — лиз, пульс и секунды в строку встречи не пишутся (право решит измеренная выгрузка), —
+ * но жив он сам: строка агента освежается. Претендент — только с ролью `challenger` в `recorders`
+ * этой встречи у того же человека; пропуск бота к встрече уже сверен (`assertGrantMeeting`).
+ */
+export function challengerWrites(
+  writes: HeartbeatWrite[],
+  recorders: unknown,
+  telegramId: number,
+): HeartbeatWrite[] | null {
+  const list = Array.isArray(recorders) ? recorders : [];
+  const isChallenger = list.some((r) => r?.telegram_id === telegramId && r?.role === CHALLENGER_ROLE);
+  if (!isChallenger) return null;
+  return writes.filter((w) => w.table !== "meetings");
+}
+
+/**
+ * Продлить заявку бота-претендента, пока он пишет. Выгрузку претендента meeting-ingest принимает,
+ * только пока заявка свежая (`freshChallenge`: не старше лиза, 30 минут), а бот пишет встречу час
+ * и дольше — без продления его выгрузка получила бы отказ и запись пропала. Продлевает только удар
+ * `recording:true` того же человека; null — продлевать нечего.
+ */
+export function renewChallenge(recorders: unknown[], telegramId: number, nowIso: string): unknown[] | null {
+  const at = recorders.findIndex((r) =>
+    (r as { telegram_id?: unknown })?.telegram_id === telegramId &&
+    (r as { role?: unknown })?.role === CHALLENGER_ROLE
+  );
+  if (at < 0) return null;
+  return recorders.map((r, i) => i === at ? { ...(r as Record<string, unknown>), claimed_at: nowIso } : r);
 }

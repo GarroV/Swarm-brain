@@ -24,11 +24,17 @@ function formatRecur(task: Task): string {
   return label ? `🔁 ${label}` : "";
 }
 
+// Название задачи приходит от людей (в том числе из пересланного сообщения): без экранирования
+// «<» в тексте ломает разбор HTML у Telegram, и карточка не доходит.
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
 export function formatTaskLine(task: Task): string {
   const country = task.country ? `🌍 ${task.country}` : "";
   const due = formatDue(task.due_date);
   const meta = [country, due, formatRecur(task)].filter(Boolean).join(" | ");
-  return [`📌 <b>${task.title}</b>`, meta].filter(Boolean).join("\n");
+  return [`📌 <b>${escapeHtml(task.title)}</b>`, meta].filter(Boolean).join("\n");
 }
 
 export async function sendTaskCard(chatId: number, task: Task): Promise<void> {
@@ -36,7 +42,7 @@ export async function sendTaskCard(chatId: number, task: Task): Promise<void> {
   const country = task.country ? `🌍 ${task.country}` : "";
   const due = formatDue(task.due_date);
   const meta = [who, country, due, formatRecur(task)].filter(Boolean).join(" | ");
-  const text = [`📌 <b>${task.title}</b>`, meta].filter(Boolean).join("\n");
+  const text = [`📌 <b>${escapeHtml(task.title)}</b>`, meta].filter(Boolean).join("\n");
 
   await sendInlineMessage(chatId, text, [[
     { text: "✅ Готово", callback_data: `ts_${task.id}_done` },

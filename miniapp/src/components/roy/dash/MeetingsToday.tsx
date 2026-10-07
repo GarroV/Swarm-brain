@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { useDt } from "../nav";
 import { RoyIcon } from "../icons";
 import { DashBlock, Row } from "./shared";
-import { fetchTodayMeetings, type TodayMeeting, type TodayMeetings } from "@/lib/api";
+import { fetchTodayMeetings, openGoogleConnect, type TodayMeeting, type TodayMeetings } from "@/lib/api";
 import { hasJoined, markJoined } from "@/lib/joinedCalls";
 
 // Право-ВЕРХ главного экрана: встречи из календаря на сегодня (issue #218).
@@ -177,15 +177,20 @@ function FlatMeetingRow({ m, dt, locale, joined, onJoined }: {
 
 // Пустое и «нет доступа» — словом и дорогой (стенд .cnone): пустой список при отвалившемся
 // календаре читался бы как «встреч сегодня нет», а это неправда.
-function CalNote({ title, hint, action }: { title: string; hint: string; action?: { text: string; href: string } }) {
+// Кнопка сразу ведёт в Google — тем же openGoogleConnect, что плитка календаря в настройках.
+// Раньше здесь стояла ссылка на «/?settings=integrations», которую веб не читает: страница
+// перезагружалась и снова писала «не подключён» (issue #824).
+const connectCalendar = () => void openGoogleConnect();
+
+function CalNote({ title, hint, action }: { title: string; hint: string; action?: { text: string } }) {
   return (
     <div className="flex flex-col items-start gap-1 rounded-[10px] border border-dashed border-line-2 px-3 py-2.5">
       <b className="font-semibold text-ink" style={{ fontSize: 13 }}>{title}</b>
       <span className="text-ink-mute" style={{ fontSize: 12 }}>{hint}</span>
       {action && (
-        <a href={action.href} className="mt-1 rounded-full bg-primary px-2.5 py-1 font-semibold text-primary-foreground" style={{ fontSize: 11.5 }}>
+        <button type="button" onClick={connectCalendar} className="mt-1 rounded-full bg-primary px-2.5 py-1 font-semibold text-primary-foreground" style={{ fontSize: 11.5 }}>
           {action.text}
-        </a>
+        </button>
       )}
     </div>
   );
@@ -267,7 +272,7 @@ export function MeetingsToday({ className, flat, first }: {
             hint={reason === "token_expired"
               ? dt("Google отозвал разрешение — встречи дня сейчас не приходят", "Google revoked access — today's meetings aren't coming in")
               : dt("Встречи дня и запуск рекордера берутся из Google Calendar", "Today's meetings and the recorder come from Google Calendar")}
-            action={{ text: reason === "token_expired" ? dt("Переподключить", "Reconnect") : dt("Подключить календарь", "Connect calendar"), href: "/?settings=integrations" }}
+            action={{ text: reason === "token_expired" ? dt("Переподключить", "Reconnect") : dt("Подключить календарь", "Connect calendar") }}
           />
         ) : meetings.length === 0 ? (
           reason === "calendar_error"
@@ -285,8 +290,9 @@ export function MeetingsToday({ className, flat, first }: {
               ? dt("Доступ к календарю истёк", "Calendar access expired")
               : dt("Календарь не подключён", "Calendar not connected")}
           </div>
-          <a
-            href="/?settings=integrations"
+          <button
+            type="button"
+            onClick={connectCalendar}
             className="mt-3 inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 font-semibold"
             style={{ fontSize: 12, background: "var(--accent-ink)", color: "#fff" }}
           >
@@ -294,7 +300,7 @@ export function MeetingsToday({ className, flat, first }: {
             {reason === "token_expired"
               ? dt("Переподключить", "Reconnect")
               : dt("Подключить календарь", "Connect calendar")}
-          </a>
+          </button>
         </div>
       ) : (
         meetings.map((m) => (

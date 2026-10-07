@@ -30,6 +30,8 @@ services:
       # Вход бота в Google (T175) живёт у окна входа (scripts/scriba-login.sh).
       SCRIBA_GOOGLE_STATE_FILE: /run/scriba-account-src/google-state.json
       SCRIBA_ACCOUNT_COPIES_DIR: ${PROD_ACCOUNT_COPIES_DAEMON_DIR}
+      # Журнал каждого запуска встречи (#832): контейнер встречи удаляется вместе со своим журналом.
+      SCRIBA_RUN_LOG_DIR: /var/lib/scriba/runs
     volumes:
       - type: bind
         source: /var/run/docker.sock
@@ -44,3 +46,6 @@ services:
       - type: bind
         source: ${PROD_STATE_DIR}/account-copies
         target: ${PROD_ACCOUNT_COPIES_DAEMON_DIR}
+      - type: bind
+        source: ${PROD_STATE_DIR}/runs
+        target: /var/lib/scriba/runs

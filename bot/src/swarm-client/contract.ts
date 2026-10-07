@@ -138,7 +138,7 @@ export interface IngestResponse {
   readonly meeting_id: string;
   readonly web_url: string;
   /**
-   * `processing` | `already_processed` | `skipped_human_edit`.
+   * `processing` | `already_processed` | `skipped_human_edit` | `not_fuller` (бот-претендент: в базе осталась более полная запись).
    */
   readonly summary_status: string;
 }

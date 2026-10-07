@@ -96,6 +96,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     // на этом статусе меню молчит, чтобы не пугать человека ложной тревогой.
     private var notificationsAllowed: Bool?
     private var micWasActive = false
+    // Вопрос «Встречу записывает Скриба — продолжить?» (BotPrompt, решение владельца 07.10.2026):
+    // в какой записи уже спросили (её recordStartedAt) и висит ли вопрос в капсуле сейчас.
+    private var botPromptAskedFor: Date?
+    private var botPromptShown = false
     // Маяк присутствия для панели «Встречи сегодня» (issue #218): что мы уже рассказали
     // серверу и когда. Логика «пора или нет» — RecorderKit.PresenceBeacon.
     private var presenceSent: PresenceBeacon.State?
@@ -201,6 +205,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         Task { _ = await Permissions.requestMicrophone() }
 
         widget.onStop = { [weak self] in self?.stopTapped() }
+        widget.onBotKeep = { [weak self] in
+            Diagnostics.shared.log("BOT-PROMPT продолжить запись рекордером")
+            self?.botPromptShown = false
+            self?.syncWidget()
+        }
+        widget.onBotStop = { [weak self] in
+            Diagnostics.shared.log("BOT-PROMPT остановить — встречу пишет бот")
+            self?.botPromptShown = false
+            self?.stopTapped()
+        }
         widget.onRecord = { [weak self] in self?.widgetRecord() }
         widget.onJoin = { [weak self] in self?.widgetJoin() }
         widget.onJoinChoice = { [weak self] key in self?.joinChosen(key) }
@@ -473,33 +487,78 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         sendHeartbeat(presence: now)
     }
 
-    // Тихий авто-апдейт: только в простое (запись/отправку не рвём) и один раз за сессию (после
-    // апдейта приложение перезапустится). Сервер новее → запускаем отсоединённый хелпер
-    // (скачивает готовый .app и переподписывает тем же cert → права не слетают). Подробности —
-    // Updater.swift.
-    private var updateSpawned = false
+    // Тихий авто-апдейт: запись и отправку не рвём, в остальном — сам. Сервер новее → запускаем
+    // отсоединённый хелпер (скачивает готовый .app и переподписывает тем же cert → права не
+    // слетают). Подробности — Updater.swift; когда спрашивать сервер — RecorderKit.UpdateGate.
+    //
+    // До сборки 37 запуск хелпера был «раз за сессию», а проверка шла только в простое: одна
+    // сорвавшаяся попытка или залипшая ошибка отключали обновления до перезапуска приложения, и
+    // трое из шести сидели на 26/32 неделями (issue #843). Теперь хелпер, не перезапустивший
+    // приложение за UpdateGate.attemptTimeout, считается сорвавшимся: его хвост журнала уходит
+    // в диагностику на сервер, а попытка повторяется через час.
+    private var updateSpawnedAt: Date?
     private var lastUpdateCheckAt: Date?
-    // Релизы редкие → проверять часто незачем. Чек на старте (lastUpdateCheckAt=nil) + не чаще
-    // раза в 6ч. maintenanceTick (15 мин, нужен очереди загрузок) лишь предлагает чек — троттл режет.
-    private let updateCheckMinInterval: TimeInterval = 6 * 3600
+    private var lastUpdateAttemptFailed = false
+    private var reportedNotInstalled = false
+    private var updateSpawned: Bool {
+        guard let at = updateSpawnedAt else { return false }
+        return !UpdateGate.attemptFailed(spawnedAt: at, now: Date())
+    }
+    private var updateActivity: UpdateGate.Activity {
+        switch state {
+        case .recording, .sending: return .busy
+        default: return .free
+        }
+    }
+
     private func checkForUpdate() {
-        guard let cfg = config, configError == nil, !updateSpawned else { return }
-        if case .idle = state {} else { return }   // не лезем во время записи/отправки/ошибки
-        if let last = lastUpdateCheckAt, Date().timeIntervalSince(last) < updateCheckMinInterval { return }
+        guard let cfg = config, configError == nil else { return }
+        let now = Date()
+        if UpdateGate.attemptFailed(spawnedAt: updateSpawnedAt, now: now) { reportFailedUpdateAttempt() }
         // Обновляем ТОЛЬКО установленную в /Applications копию — не трогаем запуск из dev/temp/DMG
-        // (иначе своп снёс бы произвольный путь). build-app.sh/install.sh ставят именно туда.
-        guard Bundle.main.bundlePath.hasPrefix("/Applications/") else { return }
-        lastUpdateCheckAt = Date()
+        // (иначе своп снёс бы произвольный путь). install.sh ставит именно туда.
+        guard Bundle.main.bundlePath.hasPrefix("/Applications/") else {
+            if !reportedNotInstalled {
+                reportedNotInstalled = true
+                Diagnostics.shared.log("UPDATE пропущено: приложение не в /Applications (\(Bundle.main.bundlePath))")
+            }
+            return
+        }
+        guard UpdateGate.verdict(activity: updateActivity, spawnedAt: updateSpawnedAt, lastCheckAt: lastUpdateCheckAt,
+                                 lastAttemptFailed: lastUpdateAttemptFailed, now: now) == .check else { return }
+        lastUpdateCheckAt = now
         Task {
-            guard let latest = await Updater.latestRelease(config: cfg), latest.build > Updater.currentBuild else { return }
-            // Перепроверяем простой и взводим флаг на ГЛАВНОМ потоке (state/updateSpawned — только там).
+            let cur = Updater.currentBuild
+            guard let latest = await Updater.latestRelease(config: cfg) else {
+                Diagnostics.shared.log("UPDATE сервер версий не ответил; повтор через час")
+                await MainActor.run { self.lastUpdateAttemptFailed = true }
+                return
+            }
+            guard latest.build > cur else {
+                await MainActor.run { self.lastUpdateAttemptFailed = false }
+                return
+            }
+            // Перепроверяем занятость и взводим отметку на ГЛАВНОМ потоке (state/updateSpawnedAt — только там).
             let go: Bool = await MainActor.run {
-                guard case .idle = self.state, !self.updateSpawned else { return false }
-                self.updateSpawned = true
+                guard self.updateActivity == .free, !self.updateSpawned else { return false }
+                self.updateSpawnedAt = Date()
                 return true
             }
-            if go { Updater.runUpdater(currentBuild: Updater.currentBuild, targetBuild: latest.build, assetURL: latest.assetURL) }
+            guard go else { return }
+            Diagnostics.shared.log("UPDATE запускаю обновление \(cur) → \(latest.build)")
+            Updater.runUpdater(currentBuild: cur, targetBuild: latest.build, assetURL: latest.assetURL)
         }
+    }
+
+    // Хелпер запущен давно, а мы всё ещё живы — обновление не состоялось. Причину пишем в
+    // диагностику (она сама уезжает на сервер), иначе сорвавшиеся попытки снова будут невидимы.
+    private func reportFailedUpdateAttempt() {
+        updateSpawnedAt = nil
+        lastUpdateAttemptFailed = true
+        let text = (try? String(contentsOf: Updater.helperLogURL, encoding: .utf8)) ?? ""
+        let tail = UpdateGate.attemptTail(log: String(text.suffix(16_000)))
+        Diagnostics.shared.log("UPDATE не состоялось, повтор через час; журнал хелпера: "
+            + (tail.isEmpty ? "пуст" : tail.joined(separator: " | ")))
     }
 
     // Идёт ручная проверка обновления (пункт меню показывает это вместо кнопки).
@@ -511,7 +570,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         guard !updateCheckInFlight else { return }
         updateCheckInFlight = true
         rebuildMenu()
-        let idle: Bool = { if case .idle = state, !updateSpawned { return true }; return false }()
+        let idle = updateActivity == .free && !updateSpawned
         let cfg = config
         Task {
             let decision = await Updater.decide(config: cfg, isIdle: idle)
@@ -539,7 +598,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         case .upToDate(let build):
             infoAlert("Установлена последняя версия", "Сборка \(build) — обновлять нечего.")
         case .available(let build, let from, let assetURL):
-            updateSpawned = true
+            updateSpawnedAt = Date()
+            Diagnostics.shared.log("UPDATE по кнопке \(from) → \(build)")
             Updater.runUpdater(currentBuild: from, targetBuild: build, assetURL: assetURL)
             infoAlert("Обновляю до сборки \(build)",
                       "Сейчас \(from). Скачаю и перезапущу — это займёт несколько секунд. Разрешение на запись звука не слетит, токен останется прежним.")
@@ -573,7 +633,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 // Для ручного старта — первая из идущих (сервер отдаёт только созвоны, D026); при
                 // пересечении (D027) выбор делается в капсуле, а «Записать» из меню берёт первую.
                 if let m = meetings.first { self?.lastCalendar = (m, Date()) }
-                self?.handleDetection(meetings: meetings, micActive: micOn)
+                self?.handleDetection(meetings: meetings, micActive: micOn,
+                                      recordedNow: lookup?.recordedNow ?? [])
+                if let recordedNow = lookup?.recordedNow { self?.askIfBotRecords(recordedNow) }
                 // Присутствие обновляем ОТДЕЛЬНО от handleDetection: тот выходит по
                 // `guard case .idle`, а панели нужен сигнал и во время записи.
                 self?.pulsePresence(onCall: micOn, calendarKey: meetings.first?.key)
@@ -601,7 +663,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         return false
     }
 
-    private func handleDetection(meetings: [MeetingIdentity.Info], micActive: Bool) {
+    /// Бот начал писать встречу, которую пишет рекордер: спросить человека, продолжать ли
+    /// (BotPrompt, решение владельца 07.10.2026). Один раз за запись.
+    private func askIfBotRecords(_ recordedNow: [String]) {
+        guard isRecording else { return }
+        let asked = botPromptAskedFor != nil && botPromptAskedFor == recordStartedAt
+        guard BotPrompt.shouldAsk(recordingKey: identity?.key, isCalendar: identity?.kind == .calendar,
+                                  recordedNow: recordedNow, alreadyAsked: asked) else { return }
+        botPromptAskedFor = recordStartedAt
+        botPromptShown = true
+        Diagnostics.shared.log("BOT-PROMPT встречу \(identity?.key ?? "—") пишет бот — спрашиваем")
+        syncWidget()
+    }
+
+    /// `recordedNow` — ключи встреч, которые уже пишет бот (или чужой рекордер): их не предлагаем,
+    /// а звонок без календаря при непустом списке не считаем незаписанным (issue #821 — плашка
+    /// «Идёт звонок · Записать» висела весь созвон, который писал бот).
+    private func handleDetection(meetings: [MeetingIdentity.Info], micActive: Bool, recordedNow: [String] = []) {
         let wasActive = micWasActive
         micWasActive = micActive
         guard case .idle = state else { return }
@@ -609,7 +687,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // Календарь — приоритет (богаче: название, участники, упреждение). Только созвоны (D026),
         // все пересекающиеся (D027), без закрытых человеком.
         let offers = MeetingChoice.offers(meetings, key: \.key, hasLink: { $0.joinURL != nil },
-                                          isDismissed: { self.isMeetingDismissed($0) })
+                                          isDismissed: { self.isMeetingDismissed($0) || recordedNow.contains($0) })
         if !offers.isEmpty {
             callActive = false
             if !MeetingChoice.sameOffer(pendingMeetings, offers, key: \.key) {
@@ -619,6 +697,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             return
         }
         if !pendingMeetings.isEmpty { pendingMeetings = []; rebuildMenu() }
+
+        // Звонок уже пишет бот — не предлагаем записывать его ещё раз (issue #821).
+        if !recordedNow.isEmpty {
+            if callActive { callActive = false; rebuildMenu() }
+            return
+        }
 
         // Нет события календаря → запасной детект звонка по микрофону.
         if micActive && !wasActive {
@@ -913,8 +997,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     // узкая пилюля без текста: встреча и так пишется.
     private func syncWidget() {
         if configError != nil { widget.hide(); return }
+        if !isRecording { botPromptShown = false }
         switch state {
         case .recording:
+            // Вопрос про бота важнее блокнота: свёрнутый он не виден, а ответ нужен человеку сейчас.
+            if botPromptShown { widget.showBotPrompt(); return }
             // Развёрнут блокнот → показываем его (пилюлю прячем); свёрнуто → вертикальная пилюля рекордера.
             if notesExpanded { widget.hide() }
             else { widget.showRecording(startedAt: recordStartedAt ?? Date()) }
