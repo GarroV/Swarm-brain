@@ -12,7 +12,6 @@ import {
   heldGuards,
   type HeldRow,
   readClaimSeconds,
-  shortClipGuards,
 } from "./arbiter.ts";
 import { MAX_RECORDED_SECONDS } from "../_shared/meeting-lease.ts";
 
@@ -112,8 +111,6 @@ function passes(held: HeldRow, guards: Guard[]): boolean {
         return row[g.column] === g.value;
       case "isNull":
         return row[g.column] === null;
-      case "notNull":
-        return row[g.column] !== null && row[g.column] !== undefined;
       case "neq":
         return row[g.column] !== g.value;
       case "notTrue":
@@ -208,11 +205,10 @@ function shortClipRow(seconds = 120): HeldRow {
     status: null,
     lease_expires_at: "2026-09-28T12:20:00.000Z",
     agent_last_recording: null,
-    summary_status: "done",
   };
 }
 
-Deno.test("ЯДРО: короткая готовая запись рекордера не отменяет бота — он идёт писать встречу", () => {
+Deno.test("ЯДРО: короткая готовая запись рекордера не отменяет бота — он идёт претендентом", () => {
   assertEquals(decideHeld(shortClipRow(), 0, BOT_OWNER, NOW), "defer", "старое правило отказывало бы");
   assertEquals(botJoinsOverShort(shortClipRow(), true, 0, NOW), true);
   assertEquals(
@@ -226,25 +222,12 @@ Deno.test("ЯДРО: бот поверх записи — только когд�
   assertEquals(botJoinsOverShort(shortClipRow(), false, 0, NOW), false, "рекордер, а не бот");
   assertEquals(botJoinsOverShort(shortClipRow(), true, 60, NOW), false, "бот уже с секундами — обычное правило");
   assertEquals(botJoinsOverShort(shortClipRow(300), true, 0, NOW), false, "запись от 5 минут — бот не идёт");
-  assertEquals(botJoinsOverShort({ ...shortClipRow(), transcript: null }, true, 0, NOW), false, "выгрузка ещё идёт");
   assertEquals(
-    botJoinsOverShort({ ...shortClipRow(), summary_status: "processing" }, true, 0, NOW),
+    botJoinsOverShort({ ...shortClipRow(), transcript: null, recorded_seconds: null }, true, 0, NOW),
     false,
-    "обработка идёт",
+    "держатель ещё не записал (например, другой бот до звонка) — второго бота не шлём",
   );
   assertEquals(botJoinsOverShort({ ...shortClipRow(), notes_edited_at: NOW }, true, 0, NOW), false, "правили руками");
   assertEquals(botJoinsOverShort({ ...shortClipRow(), status: "in_base" }, true, 0, NOW), false, "опубликовано");
   assertEquals(botJoinsOverShort(liveBotRow(60), true, 0, NOW), false, "встречу уже пишет бот");
-});
-
-Deno.test("ЯДРО (TOCTOU): бот поверх записи не ложится на строку, изменившуюся после чтения", () => {
-  const held = shortClipRow();
-  const guards = shortClipGuards(held, NOW);
-  assertEquals(passes(held, guards), true);
-  assertEquals(passes({ ...held, recorded_seconds: 900 }, guards), false, "секунды выросли");
-  assertEquals(passes({ ...held, summary_status: "processing" }, guards), false, "пошла обработка");
-  assertEquals(passes({ ...held, summary_status: null }, guards), true, "маркер пуст — можно");
-  assertEquals(passes({ ...held, transcript: null }, guards), false, "стенограммы нет");
-  assertEquals(passes({ ...held, claim_owner: 333 }, guards), false, "держатель сменился");
-  assertEquals(passes({ ...held, status: "in_base" }, guards), false, "опубликовали");
 });

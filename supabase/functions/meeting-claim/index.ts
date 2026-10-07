@@ -1,6 +1,6 @@
 // ВСЕХ функциях); перевод на голые спецификаторы из import-map из ветки непроверяем. См. _shared/agent-auth.ts.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { botJoinPatch, occupyPatch, refreshPatch } from "./claim-patch.ts";
+import { occupyPatch, refreshPatch } from "./claim-patch.ts";
 import {
   botJoinsOverShort,
   claimAction,
@@ -11,7 +11,6 @@ import {
   type HeldRow,
   heldSeconds,
   readClaimSeconds,
-  shortClipGuards,
 } from "./arbiter.ts";
 import { withGuards } from "./guard-query.ts";
 import { CHALLENGER_ROLE } from "../meeting-ingest/challenge.ts";
@@ -315,7 +314,7 @@ type ExistingMeetingRow = HeldRow & { id: string };
 
 // Колонки строки встречи для арбитража: и найденной по составу, и по конфликту ключа.
 const EXISTING_COLUMNS =
-  "id, identity_key, started_at, attendees, claim_owner, recorded_seconds, transcript, notes_edited_at, status, created_at, lease_expires_at, agent_last_recording, summary_status";
+  "id, identity_key, started_at, attendees, claim_owner, recorded_seconds, transcript, notes_edited_at, status, created_at, lease_expires_at, agent_last_recording";
 
 type RosterCandidate = ExistingMeetingRow & {
   identity_key: string | null;
@@ -451,35 +450,24 @@ async function resolveExisting(
   const candidate = body.recorded_seconds ?? 0;
   const held = heldSeconds(row);
 
-  // Бот до звонка поверх короткой готовой записи (arbiter.ts, botJoinsOverShort): идёт писать,
-  // стенограмма остаётся до его выгрузки. Строка сменилась, пока считали, — обычный арбитраж ниже.
+  // Бот до звонка поверх короткой готовой записи (arbiter.ts, botJoinsOverShort) — претендент, как
+  // заявка другого человека (T160): строка встречи не трогается, бот пишет и выгружает, право решит
+  // измеренная длина в meeting-ingest. Удары бота-претендента принимает meeting-heartbeat.
   if (botJoinsOverShort(row, identity.kind === "bot", candidate, nowIso)) {
-    const { data: joined } = await withGuards(
-      supabase.from("meetings").update(botJoinPatch({ ownerId: identity.telegramId, leaseIso, nowIso })).eq(
-        "id",
-        row.id,
-      ),
-      shortClipGuards(row, nowIso),
-    )
-      .select("id")
-      .maybeSingle();
-    if (joined) {
-      console.log(
-        `meeting-claim: бот поверх короткой записи ${row.id} — ${
-          Math.round(held)
-        }с у ${row.claim_owner}, право у ${identity.telegramId}`,
-      );
-      return {
-        decision: "transcribe",
-        // Не superseded: стенограмма держателя остаётся в базе, пока выгрузка бота не окажется полнее.
-        supersededOwner: null,
-        heldBy: identity.telegramId,
-        recordedSeconds,
-        deferReason: null,
-        heldSeconds: held,
-      };
-    }
+    console.log(
+      `meeting-claim: бот-претендент ${row.id} поверх короткой записи — ${Math.round(held)}с у ${row.claim_owner}`,
+    );
+    return {
+      decision: "transcribe",
+      recorderRole: CHALLENGER_ROLE,
+      supersededOwner: null,
+      heldBy,
+      recordedSeconds,
+      deferReason: null,
+      heldSeconds: held,
+    };
   }
+
   const verdict = decideHeld(row, candidate, identity.telegramId, nowIso);
   if (verdict === "defer") {
     return {

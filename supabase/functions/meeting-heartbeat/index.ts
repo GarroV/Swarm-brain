@@ -25,14 +25,17 @@
 // Деплой: supabase functions deploy meeting-heartbeat --no-verify-jwt (рекордер хитит с Bearer-токеном).
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { AgentAuthError, resolveActingIdentity } from "../_shared/agent-auth.ts";
+import { updateRecorders } from "../_shared/recorders-write.ts";
 import {
   buildHeartbeatWrites,
+  challengerWrites,
   freshnessFilter,
   type HeartbeatBody,
   HeartbeatRejected,
   type HeartbeatWrite,
   NOT_CLAIM_OWNER,
   type RecordedPrior,
+  renewChallenge,
   runHeartbeat,
   type WriteStore,
 } from "./write.ts";
@@ -121,6 +124,31 @@ Deno.serve(async (req: Request) => {
   // Не отличаем «встречи нет» от «встреча чужая»: ответ не должен подтверждать чужие id.
   // code — для бота: по своей встрече такой отказ значит «право ушло другой записи» (D019).
   if (outcome === "missed") {
+    // Бот-претендент поверх короткой записи (write.ts, challengerWrites): удар принят, встреча не тронута.
+    const meeting = writes.find((w) => w.table === "meetings");
+    if (meeting) {
+      const { data, error } = await supabase.from("meetings").select("recorders")
+        .eq("id", meeting.match.id).eq("group_id", meeting.match.group_id).maybeSingle();
+      if (error) {
+        console.error(`meeting-heartbeat: recorders: ${error.message}`);
+        return json({ error: "update failed" }, 500);
+      }
+      const own = challengerWrites(writes, (data as { recorders?: unknown } | null)?.recorders, identity.telegramId);
+      if (own) {
+        try {
+          for (const w of own) await store.update(w);
+          if (meeting.patch.agent_last_recording === true) {
+            const id = String(meeting.match.id);
+            const tid = identity.telegramId;
+            await updateRecorders(supabase, id, (cur) => renewChallenge(cur, tid, nowIso));
+          }
+        } catch (e) {
+          console.error(`meeting-heartbeat: ${e instanceof Error ? e.message : String(e)}`);
+          return json({ error: "update failed" }, 500);
+        }
+        return json({ ok: true, challenger: true });
+      }
+    }
     return json({ error: "meeting is not yours", code: NOT_CLAIM_OWNER }, 403);
   }
   // Опоздавший удар: встречу уже освежил более поздний. Дальше ничего не пишется — строку агента

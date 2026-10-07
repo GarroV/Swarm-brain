@@ -23,8 +23,6 @@ function orClause(g: Guard): string {
       return `${g.column}.is.null,${g.column}.is.false`;
     case "before":
       return `${g.column}.lt.${g.value}`;
-    case "notNull":
-      return `${g.column}.not.is.null`;
     case "anyOf":
       return `or(${g.clauses.map(orClause).join(",")})`;
   }
