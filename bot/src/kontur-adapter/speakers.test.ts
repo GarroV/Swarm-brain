@@ -18,7 +18,7 @@ function inCall(tiles: KonturTile[], participantCount: number | null = null): Ko
   };
 }
 
-const BOT = "scriba (запись)";
+const BOT = "Scriba Notetaker";
 
 describe("pickKonturSpeaker", () => {
   it("говорящий — плитка с active-speaker", () => {
