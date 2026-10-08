@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 
-import { KONTUR_TURN_RELAYS, pinTurnRelays } from "./turn-relay.ts";
+import { KONTUR_TURN_RELAYS, collectAudioHealth, pinTurnRelays } from "./turn-relay.ts";
 
 interface Captured {
   readonly config: { readonly iceServers?: readonly { readonly urls: unknown }[] } | undefined;
@@ -87,5 +87,89 @@ describe("pinTurnRelays", () => {
 
     expect(urlsOf(created[0]?.config)).toEqual(["turns:relay.example.com:443"]);
     expect(scope.__test_peers).toEqual([peer]);
+  });
+});
+
+function fakePeer(stats: readonly Record<string, unknown>[]): object {
+  return {
+    getStats: () =>
+      Promise.resolve({
+        forEach: (callback: (stat: Record<string, unknown>) => void) => {
+          for (const stat of stats) callback(stat);
+        },
+      }),
+  };
+}
+
+describe("collectAudioHealth", () => {
+  it("складывает входящие аудиопакеты и называет выбранный TURN", async () => {
+    scope.__test_peers = [
+      fakePeer([
+        { id: "a", type: "inbound-rtp", kind: "audio", packetsReceived: 120 },
+        { id: "v", type: "inbound-rtp", kind: "video", packetsReceived: 999 },
+        { id: "t", type: "transport", selectedCandidatePairId: "p" },
+        { id: "p", type: "candidate-pair", localCandidateId: "l" },
+        {
+          id: "l",
+          type: "local-candidate",
+          candidateType: "relay",
+          url: "turns:dtl-talk-stun5.ktalk.host:443",
+        },
+      ]),
+      fakePeer([{ id: "b", type: "inbound-rtp", kind: "audio", packetsReceived: 5 }]),
+    ];
+
+    const health = await collectAudioHealth("__test_peers");
+
+    expect(health).toEqual({
+      peers: 2,
+      packets: 125,
+      path: "relay turns:dtl-talk-stun5.ktalk.host:443",
+    });
+  });
+
+  it("без соединений — ноль и пути нет", async () => {
+    const health = await collectAudioHealth("__test_peers");
+
+    expect(health).toEqual({ peers: 0, packets: 0, path: null });
+  });
+
+  it("пара без локального кандидата пути не даёт", async () => {
+    scope.__test_peers = [
+      fakePeer([
+        { id: "t", type: "transport", selectedCandidatePairId: "p" },
+        { id: "p", type: "candidate-pair" },
+        { id: "a", type: "inbound-rtp", kind: "audio" },
+      ]),
+    ];
+
+    const health = await collectAudioHealth("__test_peers");
+
+    expect(health).toEqual({ peers: 1, packets: 0, path: null });
+  });
+});
+
+describe("pinTurnRelays без WebRTC", () => {
+  it("на странице без RTCPeerConnection ничего не делает", () => {
+    delete scope.RTCPeerConnection;
+
+    pinTurnRelays({ relays: KONTUR_TURN_RELAYS, peersGlobal: "__test_peers" });
+
+    expect(scope.RTCPeerConnection).toBeUndefined();
+    expect(scope.__test_peers).toBeUndefined();
+  });
+
+  it("конфиг без iceServers и сервер без urls проходят как есть", () => {
+    const created = install();
+    const Peer = scope.RTCPeerConnection as new (config?: unknown) => object;
+
+    const bare = new Peer();
+    const odd = new Peer({
+      iceServers: [{ username: "u" }, { url: "turns:sd2-talk-stun4.ktalk.host:443" }],
+    });
+
+    expect([bare, odd]).toEqual(created);
+    expect(created[0]?.config).toBeUndefined();
+    expect(urlsOf(created[1]?.config)).toEqual([undefined, "turns:dtl-talk-stun5.ktalk.host:443"]);
   });
 });
