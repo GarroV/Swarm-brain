@@ -50,3 +50,44 @@ export class SilenceWatch {
     return "silent";
   }
 }
+
+/**
+ * Тихий конец встречи (#376): люди разошлись, а чья-то вкладка осталась в звонке — правило
+ * «один в звонке» не срабатывает, и бот часами пишет тишину, которую потом оплачивает Whisper
+ * (06.10 и 08.10.2026: разговор 22–50 минут, запись — 3 часа до выхода последнего).
+ *
+ * Условие: `quietMs` подряд каждый замер — цифровая тишина, и за то же время никто не
+ * подсвечен говорящим. Неудачный замер сбрасывает отсчёт: уйти из живой встречи по непрочитанному
+ * сигналу дороже, чем постоять лишнее. Сигнала о говорящих нет вовсе (`lastSpokeAt === null`) —
+ * решает один звук. Говорящий при тишине в записи — это сломанный захват, а не конец встречи:
+ * об этом предупреждает `SilenceWatch`, бот остаётся.
+ */
+export interface QuietSample {
+  readonly silent: boolean | null;
+  /**
+  Когда (часы `now`) кто-то последний раз был подсвечен говорящим; `null` — ни разу.
+  */
+  readonly lastSpokeAt: number | null;
+}
+
+export class QuietEndTimer {
+  readonly #quietMs: number;
+  #silentSince: number | null = null;
+
+  constructor(quietMs: number) {
+    this.#quietMs = quietMs;
+  }
+
+  /**
+  Пора ли уходить.
+  */
+  observe(sample: QuietSample, nowMs: number): boolean {
+    if (sample.silent !== true) {
+      this.#silentSince = null;
+      return false;
+    }
+    this.#silentSince ??= nowMs;
+    if (nowMs - this.#silentSince < this.#quietMs) return false;
+    return sample.lastSpokeAt === null || nowMs - sample.lastSpokeAt >= this.#quietMs;
+  }
+}

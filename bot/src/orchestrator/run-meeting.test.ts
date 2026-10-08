@@ -656,3 +656,47 @@ describe("сторож тишины (#861)", () => {
     expect(lines.some((line) => line.includes("замер звука не удался"))).toBe(true);
   });
 });
+
+type Speakers = "silent" | "talking" | "no_signal";
+
+async function quietRun(speakers: Speakers): Promise<string[]> {
+  const world = build({ alone: [false], stopAfterPolls: 1000 });
+  const lines: string[] = [];
+  const lastSpokeAt =
+    speakers === "no_signal"
+      ? undefined
+      : (): number | null => (speakers === "talking" ? world.now : null);
+  await runMeeting({
+    ...world.options,
+    timing: { ...TIMING, audioSampleMs: 60_000, silenceAlertMs: 180_000, quietEndMs: 900_000 },
+    timeline: { ...world.options.timeline, ...(lastSpokeAt && { lastSpokeAt }) },
+    log: (line) => {
+      lines.push(line);
+    },
+    audioWatch: { sampleSilent: () => Promise.resolve(true), report: (): void => undefined },
+  });
+  return lines;
+}
+
+describe("тихий конец встречи (#376)", () => {
+  const QUIET = "тишина и никто не говорит";
+
+  it("люди в звонке, но 15 минут тишины и никто не говорит — бот выходит", async () => {
+    const lines = await quietRun("silent");
+
+    expect(lines.some((line) => line.includes(QUIET))).toBe(true);
+    expect(lines.some((line) => line.includes("остановка снаружи"))).toBe(false);
+  });
+
+  it("сборщик говорящих без сигнала — решает один звук", async () => {
+    const lines = await quietRun("no_signal");
+
+    expect(lines.some((line) => line.includes(QUIET))).toBe(true);
+  });
+
+  it("кто-то подсвечен говорящим — тишина в записи не конец встречи", async () => {
+    const lines = await quietRun("talking");
+
+    expect(lines.some((line) => line.includes(QUIET))).toBe(false);
+  });
+});

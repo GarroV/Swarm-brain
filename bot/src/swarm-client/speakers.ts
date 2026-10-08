@@ -100,6 +100,7 @@ export class SpeakerTimelineCollector {
   private readonly intervalMs: number;
   private readonly now: () => number;
   private startedAtMs = 0;
+  private lastSpokeAtMs: number | null = null;
   private running = false;
   private timer: NodeJS.Timeout | undefined;
   /**
@@ -145,6 +146,7 @@ export class SpeakerTimelineCollector {
     try {
       const name = await this.source.activeSpeaker();
       this.samples.push({ at, name });
+      if (name !== null) this.lastSpokeAtMs = this.now();
     } catch (error) {
       // Сбой опроса — это «не знаем», а не «никто не говорит»: закрываем текущий интервал
       // снимком `null` и говорим о сбое наружу, а не проглатываем его.
@@ -161,6 +163,14 @@ export class SpeakerTimelineCollector {
     this.running = true;
     this.startedAtMs = this.now();
     this.loop = this.pollForever();
+  }
+
+  /**
+   * Когда (часы `now`) кто-то последний раз был подсвечен говорящим; `null` — ни разу.
+   * Сторожу тихого конца встречи (`QuietEndTimer`).
+   */
+  lastSpokeAt(): number | null {
+    return this.lastSpokeAtMs;
   }
 
   /**
