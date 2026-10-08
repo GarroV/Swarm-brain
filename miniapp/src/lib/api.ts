@@ -1420,7 +1420,7 @@ export async function fetchMarket(cc: string): Promise<MarketBundle> {
   return apiFetch<MarketBundle>(`/market/${cc}`);
 }
 
-// ── Баллы РС и РКО по пиццериям (GET /quality, таблица quality_scores) ──────────
+// ── Баллы РС и РКО по пиццериям (GET /quality — прокси к API Децимуса) ──────────
 export type QualityKind = "rs" | "rko";
 export interface QualityPeriod {
   start: string; // ГГГГ-ММ-ДД: РС — 1-е или 16-е число, РКО — понедельник
@@ -1440,7 +1440,7 @@ export interface QualityData {
   units: QualityUnit[];
 }
 
-/** Баллы пиццерий по странам воркспейса. Загружает их админ через MCP quality_import. */
+/** Баллы пиццерий по странам воркспейса. Источник — Децимус (GarroV/decimus#567), Swarm только читает. */
 export async function fetchQuality(kind: QualityKind): Promise<QualityData> {
   if (DEV_MODE) return mockQuality(kind);
   return apiFetch<QualityData>(`/quality?kind=${kind}`);

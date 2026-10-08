@@ -260,7 +260,7 @@ claude mcp add supabase-swarm -- npx -y @supabase/mcp-server-supabase@0.12.0 \
 | 🧭 **«Карта проекта»** — чип в шапке дашборда → полноэкранный iframe со статическим `system-map.html` (35 узлов вшиты в HTML). **Обзор, НЕ источник истины:** обновляется руками раз в ~2 месяца, в DoD **не входит** — тронул экран/вкладку, карту править не обязан; канон системы остаётся [ARCHITECTURE.md](ARCHITECTURE.md) | `miniapp/src/components/roy/dash/ProjectMapButton.tsx`, `miniapp/public/system-map.html` | решение [decisions/2026-09-03-project-map-manual-refresh.md](decisions/2026-09-03-project-map-manual-refresh.md), ревизия [#62](https://github.com/GarroV/Swarm-brain/issues/62) |
 | API-клиент / типы | `miniapp/src/lib/api.ts`, `miniapp/src/types.ts` | MINIAPP_ARCHITECTURE.md |
 | 🧭 **«Анализ рынка»** (решение 02.10.2026) — раздел по странам Dodo из открытых источников; видимость по `workspaces.allowed_markets`, демо видит только выдуманную `XD` | веб `miniapp/src/components/market/*` (`MarketScreen` и секции), `lib/marketView.ts`/`marketStats.ts`/`marketDemo.ts`, вкладка `market` в `lib/royRoute.ts`/`royUrl.ts`, `RoyRail.tsx`, `RoyApp.tsx`; API `swarm-api/market.ts`; ручной ввод из Claude Desktop — MCP `swarm-mcp/market.ts` (`market_*`, шаблон отчёта `_shared/market/template.ts`, запись `_shared/market/manual.ts`); приём `market-ingest/`; логика `_shared/market/`; сборщики и конфиги стран `scripts/market/`; workflow `market-collect.yml`; таблицы `mkt_*` | §Анализ рынка в [ARCHITECTURE](ARCHITECTURE.md) |
-| 🧭 **Баллы РС и РКО по пиццериям** (решение 08.10.2026) — лист «Качество по пиццериям» в CSV → MCP `quality_import` (админ: свои страны, без переноса чужих пиццерий; владелец — всё) → таблица `quality_scores` → `GET /quality?kind=rs\|rko` для главной | разбор `_shared/quality/sheet.ts`, границы `_shared/quality/scope.ts`, запись `_shared/quality/store.ts`, MCP `swarm-mcp/quality.ts` (`quality_import`, `quality_status`), API `swarm-api/quality.ts`, клиент `fetchQuality` в `miniapp/src/lib/api.ts` | §Баллы РС и РКО в [ARCHITECTURE](ARCHITECTURE.md) |
+| 🧭 **Баллы РС и РКО по пиццериям** (решение 08.10.2026) — источник **Децимус**, Swarm только читает: `GET /quality?kind=rs\|rko` — прокси к API Децимуса с кэшем 5 мин, страны по `allowed_markets`; своей таблицы и загрузки нет | `swarm-api/quality.ts`, `quality-view.ts` (+`.test.ts`) | ARCHITECTURE §Баллы РС и РКО, [decimus#567](https://github.com/GarroV/decimus/issues/567) |
 
 ### MCP / установщики
 | Concern | Файлы | Детали |
@@ -328,6 +328,7 @@ claude mcp add supabase-swarm -- npx -y @supabase/mcp-server-supabase@0.12.0 \
 | `TELEGRAM_BOT_TOKEN` | да |
 | `SUPABASE_URL` | да |
 | `SUPABASE_SERVICE_ROLE_KEY` | да |
+| `DECIMUS_API_URL`, `DECIMUS_API_TOKEN` | нет (swarm-api; без них баллы РС/РКО на главной → «не загрузилось») |
 | `OPENAI_API_KEY` | да |
 | `BOT_NAME` | нет (дефолт `"bot"`) |
 | `MCP_AUTH_REQUIRED` | устарела с 2026-09-30 — `swarm-mcp` без токена отказывает всегда (`auth.ts`) |
