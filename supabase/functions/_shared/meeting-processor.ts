@@ -371,14 +371,6 @@ async function downloadPart(supabase: SupabaseClient, path: string): Promise<Blo
   return data as Blob;
 }
 
-async function cleanupStorage(supabase: SupabaseClient, state: ProcessState): Promise<void> {
-  const paths = state.parts.map((p) => p.path);
-  if (paths.length === 0) return;
-  try {
-    await supabase.storage.from(AUDIO_BUCKET).remove(paths);
-  } catch { /* лучше осиротевший файл, чем сбой done */ }
-}
-
 // Заливает части (из памяти) в Storage и строит начальный process_state. Часть > 25МБ
 // (лимит Whisper) — ошибка наверх (рекордер режет, но подстрахуемся). Вызывается meeting-ingest.
 export async function uploadPartsAndBuildState(
@@ -666,7 +658,8 @@ async function summarizeAndFinish(lease: ProcessingLease, m: MeetingRow, state: 
     if (r && typeof r.telegram_id === "number") await sendTelegram(r.telegram_id, text, keyboard).catch(() => {});
   }
 
-  await cleanupStorage(supabase, state);
+  // Аудио не удаляем: неделю оно лежит для проверок обрезки и распознавания, чистит meeting-process
+  // (_shared/meeting-audio-retention.ts, решение владельца 08.10.2026).
 }
 
 // Пере-сводка тезисов из УЖЕ сохранённого транскрипта (meetings.transcript) ТЕКУЩИМ промптом —
