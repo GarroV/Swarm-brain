@@ -37,6 +37,7 @@ import { LEASE_WRITE_INTERVAL_MS, writeLease } from "./lease.ts";
 import { inBackground } from "./background.ts";
 import type { Notifier } from "./notices.ts";
 import { parseStateLine } from "./state-line.ts";
+import { type SilenceAlertInput, silenceAlertText } from "./owner-alert.ts";
 import { describeError } from "./describe-error.ts";
 import type { MeetingEgress, MeetingNetwork } from "./egress.ts";
 import type { RunLogs, RunLogWriter } from "./run-log.ts";
@@ -125,6 +126,11 @@ export interface OrchestratorOptions {
    * него ходила бы куда угодно с живой сессией аккаунта бота в браузере.
    */
   readonly egress: MeetingEgress;
+  /**
+   * Срочное предупреждение владельцу (канал FURCA, #861): тишина в записи при людях в звонке.
+   * Не задан — тревога остаётся строкой журнала.
+   */
+  readonly alertOwner?: (text: string) => Promise<void>;
 }
 
 interface Managed {
@@ -404,6 +410,32 @@ export class Orchestrator {
     const state = parseStateLine(line);
     if (state?.meetingId !== undefined) managed.meetingId = state.meetingId;
     if (state?.outcome !== undefined) managed.outcome = state.outcome;
+    if (state?.audio !== undefined) {
+      this.alertSilence(managed, {
+        audio: state.audio,
+        title: state.title,
+        platform: state.platform,
+        runId: managed.runId,
+      });
+    }
+  }
+
+  private alertSilence(managed: Managed, input: SilenceAlertInput): void {
+    const text = silenceAlertText(input);
+    const send = this.options.alertOwner;
+    if (send === undefined) {
+      this.log(`предупреждение владельцу не настроено (канал FURCA): ${text}`);
+      return;
+    }
+    inBackground(
+      async () => {
+        await send(text);
+        managed.journal?.line(`# предупреждение владельцу ушло: ${text}`);
+      },
+      (error) => {
+        this.log(`предупреждение владельцу НЕ ушло (${describeError(error)}): ${text}`);
+      },
+    );
   }
 
   private async onExit(managed: Managed, code: number | null): Promise<void> {

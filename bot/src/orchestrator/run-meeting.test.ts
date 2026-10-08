@@ -596,3 +596,63 @@ describe("сбои по дороге не роняют встречу", () => {
     spy.mockRestore();
   });
 });
+
+async function watch(script: Script, silent: (call: number) => boolean | null): Promise<string[]> {
+  const world = build(script);
+  const reports: string[] = [];
+  let samples = 0;
+  const options: MeetingRunOptions = {
+    ...world.options,
+    timing: { ...TIMING, audioSampleMs: 60_000, silenceAlertMs: 180_000 },
+    audioWatch: {
+      sampleSilent: () => {
+        samples += 1;
+        return Promise.resolve(silent(samples));
+      },
+      report: (alert) => {
+        reports.push(alert);
+      },
+    },
+  };
+  await runMeeting(options);
+  return reports;
+}
+
+describe("сторож тишины (#861)", () => {
+  it("люди в звонке и 3 минуты тишины — одно предупреждение", async () => {
+    const reports = await watch({ alone: [false], stopAfterPolls: 120 }, () => true);
+
+    expect(reports).toEqual(["silent"]);
+  });
+
+  it("звук вернулся — одно «вернулся», дальше сторож молчит", async () => {
+    const reports = await watch({ alone: [false], stopAfterPolls: 120 }, (call) =>
+      call <= 4 ? true : call % 2 === 0,
+    );
+
+    expect(reports).toEqual(["silent", "back"]);
+  });
+
+  it("бот один или замер не удался — тревоги нет", async () => {
+    expect(await watch({ alone: [null], stopAfterPolls: 120 }, () => true)).toEqual([]);
+    expect(await watch({ alone: [false], stopAfterPolls: 120 }, () => null)).toEqual([]);
+  });
+
+  it("сбой замера пишется в журнал и не роняет встречу", async () => {
+    const world = build({ alone: [false], stopAfterPolls: 30 });
+    const lines: string[] = [];
+    const outcome = await runMeeting({
+      ...world.options,
+      log: (line) => {
+        lines.push(line);
+      },
+      audioWatch: {
+        sampleSilent: () => Promise.reject(new Error("ffmpeg упал")),
+        report: (): void => undefined,
+      },
+    });
+
+    expect(outcome).toBe("recorded");
+    expect(lines.some((line) => line.includes("замер звука не удался"))).toBe(true);
+  });
+});

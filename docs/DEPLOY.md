@@ -312,6 +312,7 @@ make unfreeze          # снять раньше срока; по сроку р�
   /app/src/kontur-adapter/smoke-kontur.ts`. Хост, которого не хватило живой встрече (медиасерверы Толка
   `*.ktalk.host` уже в правиле), — строка `egress deny <host:port>` в `docker logs scriba-prod-egress`; добавка —
   `/srv/scriba/state/egress-extra` (одна строка `host:port,host:port`), затем `scriba-prod.sh up`.
+- **Предупреждения владельцу о тишине (#861):** секрет канала FURCA — `/srv/scriba/state/alert-channel.secret` (права 600, скопирован из `/srv/furca-channel/.env` на сервере, наружу не выходит). `up` кладёт его в `prod.env` и подключает оркестратор к сети `furca-channel_default`; файла нет или сети нет — `up` пишет «ВНИМАНИЕ», бот работает, тревога остаётся в журнале.
 - **Откат на MUSPELHEIM:** там всё осталось (`C:\projects\scriba-prod`; `stand.ps1` — в тамошнем клоне, в `main` его больше нет: клон не обновлять), бот
   погашен. Вернуть: там `token-hash` → кнопка токена → `up`; на VPS — `scriba-prod.sh down`.
 

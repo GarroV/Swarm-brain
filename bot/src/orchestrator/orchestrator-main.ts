@@ -32,7 +32,10 @@
  *                                 в контейнер монтируется своя копия одним файлом на чтение;
  *   SCRIBA_EGRESS_EXTRA         — добавка к списку выхода контейнеров встреч наружу (T178), через
  *                                 запятую, только точные host:port. Всё остальное, кроме
- *                                 Google/Meet и SCRIBA_CONTAINER_SWARM_URL, закрыто.
+ *                                 Google/Meet и SCRIBA_CONTAINER_SWARM_URL, закрыто;
+ *   SCRIBA_ALERT_CHANNEL_URL    — канал FURCA для срочных предупреждений владельцу (#861), например
+ *                                 http://furca-channel-bot-1:8090; задаётся вместе с
+ *   SCRIBA_ALERT_CHANNEL_SECRET — секретом канала. Не заданы — тревога только в журнале.
  *
  * Кривое окружение — отказ на старте с именем переменной: служба, которая «работает» и никого
  * не зовёт, — ровно та тишина, против которой она заведена.
@@ -50,6 +53,7 @@ import { inviteTriggerFor } from "./invite-service.ts";
 import { NoticeClient } from "./notice-client.ts";
 import { JournaledNotifier, type Notifier } from "./notices.ts";
 import { Orchestrator } from "./orchestrator.ts";
+import { channelAlert } from "./owner-alert.ts";
 import { RunLogs } from "./run-log.ts";
 
 type Environment = Readonly<Record<string, string | undefined>>;
@@ -123,6 +127,24 @@ function accountCopies(environment: Environment): AccountCopies | undefined {
   return new FileAccountCopies({ stateFile, copiesDirectory, log });
 }
 
+/**
+ * Срочные предупреждения владельцу: обе переменные вместе или ни одной (как вход аккаунта).
+ */
+function ownerAlert(environment: Environment): ((text: string) => Promise<void>) | undefined {
+  const url = nonEmpty(environment.SCRIBA_ALERT_CHANNEL_URL);
+  const secret = nonEmpty(environment.SCRIBA_ALERT_CHANNEL_SECRET);
+  if (url === undefined && secret === undefined) {
+    log("канал предупреждений владельцу не настроен — тишина в записи только в журнале");
+    return undefined;
+  }
+  if (url === undefined || secret === undefined) {
+    throw new Error(
+      "SCRIBA_ALERT_CHANNEL_URL и SCRIBA_ALERT_CHANNEL_SECRET задаются только вместе",
+    );
+  }
+  return channelAlert({ url, secret });
+}
+
 async function main(environment: Environment): Promise<void> {
   const swarmUrl = required(environment, "SCRIBA_SWARM_URL");
   const token = required(environment, "SCRIBA_BOT_TOKEN");
@@ -132,6 +154,7 @@ async function main(environment: Environment): Promise<void> {
     new JournaledNotifier(new NoticeClient({ baseUrl: swarmUrl, token: grant, onBehalfOf }), log);
 
   const account = accountCopies(environment);
+  const alertOwner = ownerAlert(environment);
   const runLogDirectory = nonEmpty(environment.SCRIBA_RUN_LOG_DIR);
   const runLogs =
     runLogDirectory === undefined ? undefined : new RunLogs({ directory: runLogDirectory, log });
@@ -167,6 +190,7 @@ async function main(environment: Environment): Promise<void> {
     limits: containerLimits(environment),
     ...(account !== undefined && { account }),
     ...(runLogs !== undefined && { runLogs }),
+    ...(alertOwner !== undefined && { alertOwner }),
   });
   const intervalMs = positive(environment, "SCRIBA_INVITE_POLL_MS", 5000);
   const trigger = inviteTriggerFor({

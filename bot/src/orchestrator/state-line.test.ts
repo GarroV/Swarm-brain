@@ -10,6 +10,13 @@ describe("строка состояния", () => {
     });
   });
 
+  it("тишина в записи: состояние, название и площадка; чужие значения отбрасываются", () => {
+    expect(
+      parseStateLine(formatStateLine({ audio: "silent", title: "Синк", platform: "kontur" })),
+    ).toEqual({ audio: "silent", title: "Синк", platform: "kontur" });
+    expect(parseStateLine('scriba-state {"audio":"loud","title":"","platform":""}')).toBeNull();
+  });
+
   it("находится и с префиксом журнала перед ней", () => {
     expect(parseStateLine('2026-09-26T10:00:00Z scriba-state {"meetingId":"m-2"}')).toEqual({
       meetingId: "m-2",
