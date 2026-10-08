@@ -65,3 +65,8 @@ new.ping_delivered_to := '{}';|null;|supabase/functions/_shared/tasks/archive-sp
 revoke all on public.meeting_notices from anon, authenticated;|revoke all on public.meeting_notices from anon, authenticated; create table public.porcha_no_rls (id int);|supabase/functions/_shared/public-tables-locked.db.test.ts|supabase/migrations/20261002110000_scriba_tables_revoke_anon.sql
 # Архив встреч (#569): архивная запись не попадает в поиск — ни в одну из четырёх функций.
     and e.archived_at is null|    and true|supabase/functions/_shared/entries/archive.db.test.ts|supabase/migrations/20261002100000_entries_archive.sql
+# Справочник людей (#874): фантом вошёл — его задачи переезжают на аккаунт; соисполнители — в «мои».
+SET assignee_telegram_ids = ARRAY[p_telegram]|SET assignee_telegram_ids = assignee_telegram_ids|supabase/functions/_shared/people/people.db.test.ts|supabase/migrations/20261008220000_people.sql
+WHERE p.id = ANY (NEW.coassignee_person_ids)|WHERE false|supabase/functions/_shared/people/people.db.test.ts|supabase/migrations/20261008220000_people.sql
+WHERE group_id = NEW.group_id AND email = v_email|WHERE false|supabase/functions/_shared/people/people.db.test.ts|supabase/migrations/20261008220000_people.sql
+    NEW.assignee_person_id := NULL;|    NULL;|supabase/functions/_shared/people/people.db.test.ts|supabase/migrations/20261008220000_people.sql

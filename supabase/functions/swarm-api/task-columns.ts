@@ -25,6 +25,10 @@ export const TASK_LIST_COLUMNS = [
   "country",
   "assignees",
   "assignee_telegram_ids",
+  // Справочник людей (#874): исполнитель без входа, соисполнители и их «мои задачи».
+  "assignee_person_id",
+  "coassignee_person_ids",
+  "coassignee_telegram_ids",
   "label_ids",
   "project_id",
   "project_linked",

@@ -29,6 +29,7 @@ import type {
   SprintStatus,
   Task,
   TaskLink,
+  Person,
   User,
 } from "@/types";
 import { createRequestCache, REQUEST_CACHE_TTL_MS } from "./request-cache";
@@ -51,6 +52,8 @@ export type CreateTaskInput = {
   /** Пинг: день напоминания. null — снять. Перенос взводит сгоревший пинг заново (делает API). */
   remind_date?: string | null;
   assignee_telegram_id?: number | null;
+  assignee_person_id?: string | null;
+  coassignee_person_ids?: string[];
   country?: string | null;
   task_role?: string | null;
   priority?: string | null;
@@ -855,6 +858,21 @@ export async function patchMe(fields: UpdateMeInput): Promise<void> {
 export async function fetchUsers(): Promise<User[]> {
   if (DEV_MODE) return MOCK_USERS;
   return apiFetch<User[]>("/users");
+}
+
+// ── Справочник людей (GET/POST /people, #874) ──────────────────────────────────
+// Люди с аккаунтом и без: из них выбираются исполнитель и соисполнители задачи.
+export async function fetchPeople(): Promise<Person[]> {
+  if (DEV_MODE) {
+    return MOCK_USERS.map((u) => ({ id: `mock-${u.telegram_id}`, name: u.name, email: null, telegram_id: u.telegram_id }));
+  }
+  return apiFetch<Person[]>("/people");
+}
+
+/** Завести человека без входа. Почта уже есть в воркспейсе — вернётся тот же человек. */
+export async function createPerson(name: string, email: string | null): Promise<Person> {
+  if (DEV_MODE) return { id: `mock-${Date.now()}`, name, email, telegram_id: null };
+  return apiFetch<Person>("/people", { method: "POST", body: JSON.stringify({ name, email }) });
 }
 
 // ── Статистика по людям (GET /stats/people) ─────────────────────────────────
