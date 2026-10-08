@@ -1420,6 +1420,60 @@ export async function fetchMarket(cc: string): Promise<MarketBundle> {
   return apiFetch<MarketBundle>(`/market/${cc}`);
 }
 
+// ── Баллы РС и РКО по пиццериям (GET /quality, таблица quality_scores) ──────────
+export type QualityKind = "rs" | "rko";
+export interface QualityPeriod {
+  start: string; // ГГГГ-ММ-ДД: РС — 1-е или 16-е число, РКО — понедельник
+  end: string;
+}
+export interface QualityUnit {
+  id: string; // id пиццерии Dodo IS, 32 hex
+  name: string;
+  cc: string;
+  developer: string | null;
+  /** Выровнены по `periods`; null — в этот период балла нет. */
+  scores: (number | null)[];
+}
+export interface QualityData {
+  kind: QualityKind;
+  periods: QualityPeriod[]; // по возрастанию
+  units: QualityUnit[];
+}
+
+/** Баллы пиццерий по странам воркспейса. Загружает их админ через MCP quality_import. */
+export async function fetchQuality(kind: QualityKind): Promise<QualityData> {
+  if (DEV_MODE) return mockQuality(kind);
+  return apiFetch<QualityData>(`/quality?kind=${kind}`);
+}
+
+// Синтетика для DEV_MODE: выдуманные пиццерии в четырёх странах, баллы детерминированы от индекса.
+function mockQuality(kind: QualityKind): QualityData {
+  const iso = (d: Date) => d.toISOString().slice(0, 10);
+  const day = (y: number, m: number, d: number) => new Date(Date.UTC(y, m, d));
+  const periods: QualityPeriod[] = kind === "rs"
+    ? Array.from({ length: 12 }, (_, i) => {
+      const m = i >> 1, first = i % 2 === 0;
+      return { start: iso(day(2026, m, first ? 1 : 16)), end: iso(day(2026, first ? m : m + 1, first ? 15 : 0)) };
+    })
+    : Array.from({ length: 12 }, (_, i) => ({ start: iso(day(2026, 6, 6 + i * 7)), end: iso(day(2026, 6, 12 + i * 7)) }));
+  const names: [string, string][] = [
+    ["BG", "Demo Sofia-1"], ["BG", "Demo Varna-1"], ["RS", "Demo Novi Sad-1"],
+    ["RS", "Demo Belgrade-2"], ["PL", "Demo Krakow-1"], ["NG", "Demo Lagos-1"], ["NG", "Demo Abuja-3"],
+  ];
+  const base = kind === "rs" ? 84 : 90;
+  return {
+    kind,
+    periods,
+    units: names.map(([cc, name], u) => ({
+      id: String(u + 1).padStart(32, "d"),
+      name,
+      cc,
+      developer: "Demo Developer",
+      scores: periods.map((_, p) => (u + p) % 7 === 3 ? null : Math.min(100, base + ((u * 5 + p * 3) % 15) - 4)),
+    })),
+  };
+}
+
 /** Снимок ручных источников (админ). Битый снимок — ApiError 400 с body.details: string[]. */
 export async function importMarketSnapshot(cc: string, snapshot: unknown): Promise<Record<string, number>> {
   return apiFetch<Record<string, number>>(`/market/${cc}/import`, { method: "POST", body: JSON.stringify(snapshot) });

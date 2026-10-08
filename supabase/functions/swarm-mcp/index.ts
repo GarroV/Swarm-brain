@@ -25,6 +25,7 @@ import {
 import { SPRINT_TOOL_DEFINITIONS, SPRINT_TOOLS } from "./tasks/sprints.ts";
 import { PERSONAL_TOOL_DEFINITIONS, PERSONAL_TOOLS } from "./tasks/personal.ts";
 import { MARKET_TOOL_DEFINITIONS, MARKET_TOOLS } from "./market.ts";
+import { QUALITY_TOOL_DEFINITIONS, QUALITY_TOOLS } from "./quality.ts";
 import {
   COUNTRY_PROMPT_RULE,
   detectQueryCountry,
@@ -273,6 +274,7 @@ const TOOLS = [
   ...SPRINT_TOOL_DEFINITIONS,
   ...PERSONAL_TOOL_DEFINITIONS,
   ...MARKET_TOOL_DEFINITIONS,
+  ...QUALITY_TOOL_DEFINITIONS,
   ...MEETING_REVIEW_TOOL_DEFINITIONS,
   {
     name: "get_meetings",
@@ -1331,6 +1333,8 @@ Deno.serve(async (req: Request) => {
         result = await PERSONAL_TOOLS[name](args as Record<string, unknown> & { requesting_user_id: number });
       } else if (Object.hasOwn(MARKET_TOOLS, name)) {
         result = await MARKET_TOOLS[name](args as Record<string, unknown> & { requesting_user_id: number });
+      } else if (Object.hasOwn(QUALITY_TOOLS, name)) {
+        result = await QUALITY_TOOLS[name](args as Record<string, unknown> & { requesting_user_id: number });
       } else if (name === "whoami") {
         result = await toolWhoami(args as { requesting_user_id?: number });
       } else if (name === "search_knowledge") {
