@@ -33,6 +33,12 @@ import {
   nextGuestRoomStep,
 } from "./page.ts";
 import { isAloneKonturSnapshot, pickKonturSpeaker } from "./speakers.ts";
+import {
+  KONTUR_TURN_RELAYS,
+  PEERS_GLOBAL,
+  collectAudioHealth,
+  pinTurnRelays,
+} from "./turn-relay.ts";
 import type { KonturSnapshot } from "./types.ts";
 import { checkKonturUrl } from "./url.ts";
 
@@ -49,6 +55,10 @@ const CONTROL_TIMEOUT_MS = 5000;
 */
 const STEP_READY_TIMEOUT_MS = 20_000;
 const TYPE_DELAY_MS = 60;
+/**
+Как часто писать в журнал, доходит ли звук звонка (`turn-relay.ts`).
+*/
+const AUDIO_REPORT_INTERVAL_MS = 60_000;
 
 export interface GuestRoomTiming {
   /**
@@ -110,6 +120,7 @@ export class KonturAdapter implements PlatformAdapter {
   #lastStep: { readonly stage: StageVerdict["stage"]; readonly atMs: number } | null = null;
   #aloneSignalReported = false;
   #speakerSignalReported = false;
+  #audioReport: { readonly atMs: number; readonly packets: number } | null = null;
 
   constructor(dependencies: KonturAdapterDependencies) {
     this.#deps = dependencies;
@@ -277,6 +288,31 @@ export class KonturAdapter implements PlatformAdapter {
     return null;
   }
 
+  /**
+   * Раз в минуту — доходит ли звук: число принятых аудиопакетов и путь медиа. Ноль новых пакетов
+   * при живом соединении — та самая тишина #861, она пишется громко, а не угадывается по записи.
+   */
+  async #reportAudio(): Promise<void> {
+    const now = Date.now();
+    const previous = this.#audioReport;
+    if (previous !== null && now - previous.atMs < AUDIO_REPORT_INTERVAL_MS) return;
+    try {
+      const health = await this.#requirePage().evaluate(collectAudioHealth, PEERS_GLOBAL);
+      this.#audioReport = { atMs: now, packets: health.packets };
+      if (previous === null) return;
+      const fresh = health.packets - previous.packets;
+      const line = `аудиопакетов +${String(fresh)} за минуту, соединений ${String(health.peers)}, путь ${health.path ?? "не выбран"}`;
+      this.#log(
+        fresh > 0
+          ? `звук: ${line}`
+          : `ЗВУКА ИЗ ЗВОНКА НЕТ (все молчат или медиа не доходит): ${line}`,
+      );
+    } catch (error) {
+      this.#log(`звук: статистика WebRTC не прочитана — ${String(error)}`);
+      this.#audioReport = { atMs: now, packets: previous?.packets ?? 0 };
+    }
+  }
+
   async join(url: string, displayName: string): Promise<void> {
     const target = checkKonturUrl(url);
     this.#displayName = displayName;
@@ -292,6 +328,11 @@ export class KonturAdapter implements PlatformAdapter {
     this.#context = context;
     // Половина вторая: захват устройств отказан до того, как Толк успеет его попросить.
     await context.addInitScript(denyCaptureDevices);
+    // Медиа — только через проверенные TURN Толка: часть его серверов звук не пропускает (#861).
+    await context.addInitScript(pinTurnRelays, {
+      relays: KONTUR_TURN_RELAYS,
+      peersGlobal: PEERS_GLOBAL,
+    });
     await this.#deps.prepareContext?.(context);
 
     const page = await context.newPage();
@@ -346,6 +387,7 @@ export class KonturAdapter implements PlatformAdapter {
   }
 
   async activeSpeaker(): Promise<string | null> {
+    await this.#reportAudio();
     const snapshot = await this.#snapshot();
     if (snapshot.tiles.length === 0) {
       if (!this.#speakerSignalReported) {
