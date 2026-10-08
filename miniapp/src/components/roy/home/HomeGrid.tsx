@@ -11,9 +11,9 @@ import { BoardWidget, MapsSoonWidget, SalesWidget, TopTasksWidget } from "./Misc
 import { RkoWidget, RsWidget, SampleTag, ViolationsWidget } from "./QualityWidgets";
 import { AttentionWidget, CountriesWidget, PizzeriasWidget } from "./TableWidgets";
 import { useCountrySales } from "./useCountrySales";
+import { useQuality, type QualityState } from "./useQuality";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
-import { COUNTRY_NAMES } from "@/lib/countries";
-import { countrySample } from "@/lib/homeQualitySample";
+import { countryOf } from "@/lib/homeQuality";
 import {
   addWidget, DEFAULT_LAYOUT, hideWidget, loadLayout, moveBefore, moveBy, saveLayout, toggleWidth,
   WIDGET_IDS, DEFAULT_WIDTH, type LayoutItem, type WidgetId,
@@ -22,17 +22,22 @@ import {
 // Главная из виджетов (decisions/2026-10-07-home-dashboard-direction.md). Каждый собирает её сам:
 // «Настроить главную» → перетащить, ↑↓, ширина ½ / вся строка, скрыть, добавить из каталога.
 
-type Meta = { title: [string, string]; hint: [string, string]; ownTitle?: boolean; sample?: boolean; meta?: [string, string] };
+// scoped — метрика считается по «Моим странам» (без них — подсказка выбрать); quality — на баллах
+// РС/РКО из GET /quality (загрузка, ошибка, «ещё не загружены»); sample — цифры для вида, плашка «образец».
+type Meta = {
+  title: [string, string]; hint: [string, string]; ownTitle?: boolean;
+  scoped?: boolean; quality?: boolean; sample?: boolean; meta?: [string, string];
+};
 const META: Record<WidgetId, Meta> = {
   calls: { title: ["Созвоны сегодня", "Today's calls"], hint: ["Встречи дня из календаря и кнопка «подключиться».", "Today's meetings from your calendar with a join button."], ownTitle: true },
   top5: { title: ["Ближайшие задачи", "Next tasks"], hint: ["Пять моих задач с ближайшим сроком.", "My five tasks with the nearest due date."], meta: ["топ-5 по сроку", "top 5 by due date"] },
   board: { title: ["Доска", "Board"], hint: ["Стикеры-задания (OKR, дайджест, вычитка) и объявления админа.", "Task stickers (OKRs, digest, review) and admin notices."], meta: ["что от тебя ждут", "what's expected of you"] },
-  rs: { title: ["Стандарты · РС", "Standards"], hint: ["Балл по волнам, критическая зона, собираемость инспектором.", "Score by wave, critical zone, inspector coverage."], sample: true },
-  rko: { title: ["Клиентский опыт · РКО", "Customer experience"], hint: ["Балл по неделям и отчёты гостей.", "Weekly score and guest reports."], sample: true },
-  pz: { title: ["Пиццерии", "Pizzerias"], hint: ["Все пиццерии подборки: РС, РКО, отчёты, худшие сверху.", "Every pizzeria in your selection, worst first."], sample: true, meta: ["худшие сверху", "worst first"] },
-  att: { title: ["Куда смотреть", "Needs attention"], hint: ["Сигналы по порогам в моих странах.", "Threshold alerts in my countries."], sample: true },
-  countries: { title: ["Мои страны", "My countries"], hint: ["Сводка по странам подборки; клик сужает главную.", "Per-country summary; click to focus."], sample: true },
-  viol: { title: ["Топ-5 нарушений", "Top 5 violations"], hint: ["Самые частые нарушения стандартов в волне.", "Most frequent standards violations this wave."], sample: true },
+  rs: { title: ["Стандарты · РС", "Standards"], hint: ["Балл по волнам, критическая зона, обнуления, пиццерии без оценки.", "Score by wave, critical zone, zeroed and unrated pizzerias."], scoped: true, quality: true },
+  rko: { title: ["Клиентский опыт · РКО", "Customer experience"], hint: ["Балл по неделям, резкие падения, пиццерии ниже порога.", "Weekly score, sharp drops, pizzerias below threshold."], scoped: true, quality: true },
+  pz: { title: ["Пиццерии", "Pizzerias"], hint: ["Все пиццерии подборки: РС, РКО, худшие сверху.", "Every pizzeria in your selection, worst first."], scoped: true, quality: true, meta: ["худшие сверху", "worst first"] },
+  att: { title: ["Куда смотреть", "Needs attention"], hint: ["Сигналы по порогам в моих странах.", "Threshold alerts in my countries."], scoped: true, quality: true },
+  countries: { title: ["Мои страны", "My countries"], hint: ["Сводка по странам подборки; клик сужает главную.", "Per-country summary; click to focus."], scoped: true, quality: true },
+  viol: { title: ["Топ-5 нарушений", "Top 5 violations"], hint: ["Самые частые нарушения стандартов в волне.", "Most frequent standards violations this wave."], scoped: true, sample: true },
   sales: { title: ["Продажи Dodo", "Dodo sales"], hint: ["Выручка моих стран по месяцам — данные «Анализа рынка».", "Monthly revenue of my countries from Market analysis."], meta: ["публичный API Dodo", "Dodo public API"] },
   maps: { title: ["Карты и отзывы", "Maps & reviews"], hint: ["Рейтинги Google и Яндекса, отзывы. Заработает с Pointer.", "Google and Yandex ratings, reviews. Arrives with Pointer."], meta: ["Pointer · ждём ключ", "Pointer · awaiting key"] },
   myTasks: { title: ["Мои задачи", "My tasks"], hint: ["Полная таблица: просрочено, сегодня, дальше, без срока.", "Full table: overdue, today, later, no date."] },
@@ -66,23 +71,27 @@ export function HomeGrid({ data, onCreateTask, editing, onEditing: setEditing }:
 
   const setLayout = (next: LayoutItem[]) => { setLayoutState(next); saveLayout(next); };
   const codes = narrow && markets.includes(narrow) ? [narrow] : markets;
-  const scope = useMemo(() => codes.map(countrySample), [codes.join(",")]); // eslint-disable-line react-hooks/exhaustive-deps
-  const imf = useMemo(() => Object.keys(COUNTRY_NAMES).map(countrySample), []);
+  const quality = useQuality();
+  const q = quality.data;
+  const scope = useMemo(() => (q ? codes.map((cc) => countryOf(q, cc)) : []), [q, codes.join(",")]); // eslint-disable-line react-hooks/exhaustive-deps
+  const mine = useMemo(() => (q ? markets.map((cc) => countryOf(q, cc)) : []), [q, markets]);
   const sales = useCountrySales(markets);
 
   const body = (id: WidgetId): ReactNode => {
-    if (!codes.length && META[id].sample) {
-      return <div className="rounded-[12px] border border-dashed border-line-2 px-4 py-6 text-center text-ink-mute" style={{ fontSize: 13 }}>{dt("Выберите свои страны в «Настроить главную» — метрики считаются по ним", "Pick your countries in “Customize home” — metrics are scoped to them")}</div>;
+    if (!codes.length && META[id].scoped) {
+      return <div className={note} style={{ fontSize: 13 }}>{dt("Выберите свои страны в «Настроить главную» — метрики считаются по ним", "Pick your countries in “Customize home” — metrics are scoped to them")}</div>;
     }
+    const gate = META[id].quality ? qualityGate(quality, id) : null;
+    if (gate) return gate;
     switch (id) {
       case "calls": return <MeetingsToday flat first flatBody="overflow-hidden rounded-[12px] border border-line bg-surface p-1.5" />;
       case "top5": return <TopTasksWidget data={data} onCreate={onCreateTask} />;
       case "board": return <BoardWidget data={data} />;
-      case "rs": return <RsWidget scope={scope} imf={imf} />;
-      case "rko": return <RkoWidget scope={scope} imf={imf} />;
+      case "rs": return q && <RsWidget q={q} scope={scope} />;
+      case "rko": return q && <RkoWidget q={q} scope={scope} />;
       case "pz": return <PizzeriasWidget scope={scope} />;
       case "att": return <AttentionWidget scope={scope} />;
-      case "countries": return <CountriesWidget scope={markets.map(countrySample)} sales={sales} narrow={narrow} onNarrow={setNarrow} onMarket={() => setTab("market")} />;
+      case "countries": return <CountriesWidget scope={mine} sales={sales} narrow={narrow} onNarrow={setNarrow} onMarket={() => setTab("market")} />;
       case "viol": return <ViolationsWidget scope={scope} />;
       case "sales": return <SalesWidget codes={codes} sales={sales} />;
       case "maps": return <MapsSoonWidget />;
@@ -175,6 +184,32 @@ export function HomeGrid({ data, onCreateTask, editing, onEditing: setEditing }:
       </Dialog>
     </div>
   );
+}
+
+const note = "rounded-[12px] border border-dashed border-line-2 px-4 py-6 text-center text-ink-mute";
+
+/** Состояние баллов вместо виджета: загрузка, ошибка с повтором, баллов ещё нет. null — рисуем виджет. */
+function qualityGate({ data, loading, failed, retry }: QualityState, id: WidgetId): ReactNode {
+  if (loading) return <div className="roy-shim" style={{ height: id === "countries" ? 160 : 220, borderRadius: 12 }} />;
+  if (failed || !data) return <QualityFailed onRetry={retry} />;
+  // «Мои страны» без баллов всё равно полезны: в них продажи.
+  if (!data.countries.length && id !== "countries") return <QualityEmpty />;
+  return null;
+}
+
+function QualityFailed({ onRetry }: { onRetry: () => void }) {
+  const dt = useDt();
+  return (
+    <div className={note} style={{ fontSize: 13 }}>
+      {dt("Баллы РС и РКО не загрузились.", "Couldn't load standards and CX scores.")}{" "}
+      <button type="button" onClick={onRetry} className="font-semibold text-primary hover:underline">{dt("Повторить", "Retry")}</button>
+    </div>
+  );
+}
+
+function QualityEmpty() {
+  const dt = useDt();
+  return <div className={note} style={{ fontSize: 13 }}>{dt("Баллы РС и РКО ещё не загружены", "Standards and CX scores haven't been loaded yet")}</div>;
 }
 
 function ToolBtn({ label, disabled, onClick, children }: { label: string; disabled?: boolean; onClick: () => void; children: ReactNode }) {

@@ -6,11 +6,12 @@ import { Delta, TONE_CELL, tone } from "./QualityWidgets";
 import { fmtEur, type SalesState } from "./useCountrySales";
 import { countryFlag, countryName } from "@/lib/countries";
 import {
-  COLL_NORM, RKO_NORM, RKO_WARN, RS_CRIT, RS_NORM, weighted,
-  type CheckKind, type CountrySample, type PizzeriaSample,
-} from "@/lib/homeQualitySample";
+  RKO_DROP, RKO_NORM, RKO_WARN, RS_CRIT, RS_DROP, RS_NORM, RS_WARN, selectionMean,
+  type CountryQuality, type Pizzeria,
+} from "@/lib/homeQuality";
 
 // Таблицы главной: все пиццерии подборки, «Куда смотреть» (сигналы по порогам) и «Мои страны».
+// Баллы — настоящие (GET /quality); тип проверки, отчёты гостей и собираемость сняты: источника нет.
 
 const card = "rounded-[12px] border border-line bg-surface";
 const th = "sticky top-0 bg-surface px-2.5 py-2 text-left font-semibold uppercase text-ink-mute";
@@ -34,30 +35,24 @@ function Tabs<K extends string>({ tabs, value, onChange }: { tabs: Array<[K, str
   );
 }
 
-function kindLabel(k: CheckKind, dt: (ru: string, en: string) => string): [string, string] {
-  if (k === "inspector") return [dt("инспектор", "inspector"), "border-line-2 text-ink-soft"];
-  if (k === "online") return [dt("онлайн", "online"), "border-accent-line text-primary"];
-  if (k === "self") return [dt("самопроверка", "self-check"), "border-[var(--pri-med)] text-[var(--pri-med)]"];
-  return [dt("не найдено", "not found"), "border-[var(--pri-high)] text-[var(--pri-high)]"];
-}
-
-type PzFilter = "all" | "crit" | "rko" | "noRep" | "drop" | "noInsp";
-const PZ_FILTERS: Record<PzFilter, (p: PizzeriaSample) => boolean> = {
+type PzFilter = "all" | "crit" | "rko" | "drop" | "missed";
+const rsChange = (p: Pizzeria) => (p.rs != null && p.rsPrev != null ? p.rs - p.rsPrev : null);
+const rkoChange = (p: Pizzeria) => (p.rko != null && p.rkoPrev != null ? p.rko - p.rkoPrev : null);
+const PZ_FILTERS: Record<PzFilter, (p: Pizzeria) => boolean> = {
   all: () => true,
   crit: (p) => p.rs != null && p.rs < RS_CRIT,
-  rko: (p) => p.rko < RKO_WARN,
-  noRep: (p) => p.cliRest === 0 || p.cliDeliv === 0,
-  drop: (p) => (p.rs != null && p.rsPrev != null && p.rs - p.rsPrev <= -8) || p.rko - p.rkoPrev <= -3,
-  noInsp: (p) => p.kind === "self" || p.kind === "none",
+  rko: (p) => p.rko != null && p.rko < RKO_WARN,
+  drop: (p) => (rsChange(p) ?? 0) <= -RS_DROP || (rkoChange(p) ?? 0) <= -RKO_DROP,
+  missed: (p) => p.rsMissed || p.rkoMissed,
 };
 
-export function PizzeriasWidget({ scope }: { scope: CountrySample[] }) {
+export function PizzeriasWidget({ scope }: { scope: CountryQuality[] }) {
   const dt = useDt();
   const [f, setF] = useState<PzFilter>("all");
   const all = useMemo(() => scope.flatMap((c) => c.pizzerias).sort((a, b) => (a.rs ?? 101) - (b.rs ?? 101)), [scope]);
   const labels: Record<PzFilter, string> = {
     all: dt("Все", "All"), crit: dt(`РС ниже ${RS_CRIT}`, `Standards <${RS_CRIT}`), rko: dt("РКО ниже нормы", "CX below target"),
-    noRep: dt("Без отчётов", "No reports"), drop: dt("Падение", "Dropping"), noInsp: dt("Без инспектора", "No inspector"),
+    drop: dt("Падение", "Dropping"), missed: dt("Без оценки", "Not rated"),
   };
   const tabs = (Object.keys(PZ_FILTERS) as PzFilter[]).map((k) => [k, labels[k], all.filter(PZ_FILTERS[k]).length] as [PzFilter, string, number]);
   const rows = all.filter(PZ_FILTERS[f]);
@@ -69,30 +64,19 @@ export function PizzeriasWidget({ scope }: { scope: CountrySample[] }) {
           <thead style={{ fontSize: 10.5, letterSpacing: "0.06em" }}>
             <tr>
               <th className={th}>{dt("Пиццерия", "Pizzeria")}</th><th className={th}>{dt("РС", "Std")}</th>
-              <th className={`${th} max-[900px]:hidden`}>{dt("6 волн", "6 waves")}</th><th className={`${th} max-[900px]:hidden`}>{dt("Проверка", "Check")}</th>
-              <th className={th}>{dt("РКО", "CX")}</th><th className={`${th} max-[900px]:hidden`}>{dt("Отчёты · рест / дост", "Reports · in / deliv")}</th>
-              <th className={`${th} max-[900px]:hidden`}>{dt("Карты ★", "Maps ★")}</th>
+              <th className={`${th} max-[900px]:hidden`}>{dt("6 волн", "6 waves")}</th><th className={th}>{dt("РКО", "CX")}</th>
             </tr>
           </thead>
           <tbody>
-            {rows.map((p) => {
-              const [kl, kc] = kindLabel(p.kind, dt);
-              return (
-                <tr key={p.name} className="hover:bg-surface-2">
-                  <td className={td}><span className="font-medium text-ink">{p.name}</span> <span className="ml-1 text-ink-mute" style={{ fontSize: 11 }}>{countryFlag(p.cc)}</span></td>
-                  <td className={td}><Cell v={p.rs} t={tone(p.rs, RS_NORM, RS_CRIT)} /> <Delta v={p.rs != null && p.rsPrev != null ? p.rs - p.rsPrev : null} digits={0} small /></td>
-                  <td className={`${td} max-[900px]:hidden`}><MiniSpark values={p.rsHist} /></td>
-                  <td className={`${td} max-[900px]:hidden`}><span className={`whitespace-nowrap rounded-full border px-2 py-0.5 ${kc}`} style={{ fontSize: 11 }}>{kl}</span></td>
-                  <td className={td}><Cell v={p.rko} t={tone(p.rko, RKO_NORM, RKO_WARN)} digits={1} /> <Delta v={p.rko - p.rkoPrev} small /></td>
-                  <td className={`${td} max-[900px]:hidden`}>
-                    <Cell v={p.cliRest} t={p.cliRest === 0 ? "bad" : p.cliRest === 1 ? "warn" : "good"} /> <span className="text-ink-mute">/</span>{" "}
-                    <Cell v={p.cliDeliv} t={p.cliDeliv === 0 ? "bad" : p.cliDeliv < 3 ? "warn" : "good"} />
-                  </td>
-                  <td className={`${td} text-ink-mute max-[900px]:hidden`} style={{ fontSize: 11.5 }}>{dt("скоро", "soon")}</td>
-                </tr>
-              );
-            })}
-            {!rows.length && <tr><td colSpan={7} className={`${td} py-5 text-center text-ink-mute`}>{dt("Таких пиццерий нет", "No pizzerias here")}</td></tr>}
+            {rows.map((p) => (
+              <tr key={p.key} className="hover:bg-surface-2">
+                <td className={td}><span className="font-medium text-ink">{p.name}</span> <span className="ml-1 text-ink-mute" style={{ fontSize: 11 }}>{countryFlag(p.cc)}</span></td>
+                <td className={td}><Cell v={p.rs} t={tone(p.rs, RS_NORM, RS_CRIT)} /> <Delta v={rsChange(p)} digits={0} small /></td>
+                <td className={`${td} max-[900px]:hidden`}><MiniSpark values={p.rsHist} /></td>
+                <td className={td}><Cell v={p.rko} t={tone(p.rko, RKO_NORM, RKO_WARN)} digits={1} /> <Delta v={rkoChange(p)} small /></td>
+              </tr>
+            ))}
+            {!rows.length && <tr><td colSpan={4} className={`${td} py-5 text-center text-ink-mute`}>{dt("Таких пиццерий нет", "No pizzerias here")}</td></tr>}
           </tbody>
         </table>
       </div>
@@ -100,28 +84,41 @@ export function PizzeriasWidget({ scope }: { scope: CountrySample[] }) {
   );
 }
 
-type Signal = { key: string; area: "crit" | "rs" | "rko" | "ops"; title: string; text: string; value: string; note: string };
+type Signal = { key: string; area: "crit" | "rs" | "rko"; title: string; text: string; value: string; note: string };
 
-export function AttentionWidget({ scope }: { scope: CountrySample[] }) {
+/** Сигналы по порогам: пиццерии в критической зоне РС, резкое падение РКО, страны ниже нормы. */
+function signalsOf(scope: CountryQuality[], dt: (ru: string, en: string) => string): Signal[] {
+  const out: Signal[] = [];
+  for (const c of scope) {
+    for (const p of c.pizzerias) {
+      if (p.rs != null && p.rs < RS_CRIT) {
+        out.push({ key: `c${p.key}`, area: "crit", title: p.name, text: dt(`РС в критической зоне (ниже ${RS_CRIT})`, `Standards in the critical zone (<${RS_CRIT})`), value: String(p.rs), note: p.rsPrev == null ? "" : dt(`было ${p.rsPrev}`, `was ${p.rsPrev}`) });
+      }
+      const drop = rkoChange(p);
+      if (p.rko != null && drop != null && drop <= -RKO_DROP) {
+        out.push({ key: `k${p.key}`, area: "rko", title: p.name, text: dt("РКО резко упал за неделю", "CX dropped sharply this week"), value: p.rko.toFixed(1), note: drop.toFixed(1) });
+      }
+    }
+    const country = dt(countryName(c.cc), c.cc);
+    if (c.rs != null && c.rs < RS_NORM) {
+      out.push({ key: `s${c.cc}`, area: "rs", title: country, text: dt(`Средний РС страны ниже нормы ${RS_NORM}`, `Country standards average below ${RS_NORM}`), value: c.rs.toFixed(1), note: dt(`норма ${RS_NORM}`, `target ${RS_NORM}`) });
+    }
+    if (c.rko != null && c.rko < RKO_NORM) {
+      out.push({ key: `n${c.cc}`, area: "rko", title: country, text: dt(`Средний РКО страны ниже нормы ${RKO_NORM}`, `Country CX average below ${RKO_NORM}`), value: c.rko.toFixed(1), note: dt(`норма ${RKO_NORM}`, `target ${RKO_NORM}`) });
+    }
+  }
+  const order = { crit: 0, rko: 1, rs: 2 };
+  return out.sort((a, b) => order[a.area] - order[b.area]);
+}
+
+export function AttentionWidget({ scope }: { scope: CountryQuality[] }) {
   const dt = useDt();
   const [f, setF] = useState<"all" | Signal["area"]>("all");
-  const signals = useMemo<Signal[]>(() => {
-    const out: Signal[] = [];
-    for (const c of scope) {
-      for (const p of c.pizzerias) {
-        if (p.rs != null && p.rs < RS_CRIT) out.push({ key: `c${p.name}`, area: "crit", title: p.name, text: dt(`РС в критической зоне (ниже ${RS_CRIT})`, `Standards in the critical zone (<${RS_CRIT})`), value: String(p.rs), note: dt(`было ${p.rsPrev}`, `was ${p.rsPrev}`) });
-        if (p.rko - p.rkoPrev <= -3) out.push({ key: `k${p.name}`, area: "rko", title: p.name, text: dt("РКО резко упал за неделю", "CX dropped sharply this week"), value: p.rko.toFixed(1), note: (p.rko - p.rkoPrev).toFixed(1) });
-        if (p.cliRest === 0) out.push({ key: `o${p.name}`, area: "ops", title: p.name, text: dt("Ни одного отчёта гостя по ресторану за неделю", "No dine-in guest report this week"), value: "0", note: dt("норма ≥2", "target ≥2") });
-      }
-      if (c.coll < COLL_NORM) out.push({ key: `s${c.cc}`, area: "rs", title: countryName(c.cc), text: dt("Инспектор проверил не все пиццерии волны", "Inspector didn't cover every pizzeria"), value: `${c.coll}%`, note: dt(`норма ${COLL_NORM}%`, `target ${COLL_NORM}%`) });
-    }
-    const order = { crit: 0, rko: 1, rs: 2, ops: 3 };
-    return out.sort((a, b) => order[a.area] - order[b.area]);
-  }, [scope, dt]);
-  const names = { all: dt("Все", "All"), crit: dt("Критично", "Critical"), rs: dt("РС", "Standards"), rko: dt("РКО", "CX"), ops: dt("Процессы", "Process") };
-  const tabs = (["all", "crit", "rs", "rko", "ops"] as const).map((k) => [k, names[k], k === "all" ? signals.length : signals.filter((s) => s.area === k).length] as ["all" | Signal["area"], string, number]);
+  const signals = useMemo(() => signalsOf(scope, dt), [scope, dt]);
+  const names = { all: dt("Все", "All"), crit: dt("Критично", "Critical"), rs: dt("РС", "Standards"), rko: dt("РКО", "CX") };
+  const tabs = (["all", "crit", "rs", "rko"] as const).map((k) => [k, names[k], k === "all" ? signals.length : signals.filter((s) => s.area === k).length] as ["all" | Signal["area"], string, number]);
   const rows = signals.filter((s) => f === "all" || s.area === f).slice(0, 8);
-  const icon = { crit: ["!", "bad"], rs: ["◔", "warn"], rko: ["↓", "warn"], ops: ["∅", "warn"] } as const;
+  const icon = { crit: ["!", "bad"], rs: ["◔", "warn"], rko: ["↓", "warn"] } as const;
   return (
     <div className={card}>
       <Tabs tabs={tabs} value={f} onChange={setF} />
@@ -140,7 +137,7 @@ export function AttentionWidget({ scope }: { scope: CountrySample[] }) {
 }
 
 export function CountriesWidget({ scope, sales, narrow, onNarrow, onMarket }: {
-  scope: CountrySample[]; sales: SalesState; narrow: string | null; onNarrow: (cc: string | null) => void; onMarket: () => void;
+  scope: CountryQuality[]; sales: SalesState; narrow: string | null; onNarrow: (cc: string | null) => void; onMarket: () => void;
 }) {
   const dt = useDt();
   const n = scope.reduce((s, c) => s + c.pizzerias.length, 0);
@@ -150,7 +147,7 @@ export function CountriesWidget({ scope, sales, narrow, onNarrow, onMarket }: {
       <div className="overflow-auto">
         <table className="w-full border-collapse" style={{ fontSize: 12.5 }}>
           <thead style={{ fontSize: 10.5, letterSpacing: "0.06em" }}>
-            <tr><th className={th}>{dt("Страна", "Country")}</th><th className={th}>{dt("Пицц.", "Pizz.")}</th><th className={th}>{dt("РС", "Std")}</th><th className={th}>{dt("РКО", "CX")}</th><th className={th}>{dt("Инсп.", "Insp.")}</th><th className={th} title={dt("Выручка за последний закрытый месяц, € — данные «Анализа рынка»", "Revenue for the last closed month, € — Market analysis data")}>{dt("Продажи, мес.", "Sales, mo.")}</th></tr>
+            <tr><th className={th}>{dt("Страна", "Country")}</th><th className={th}>{dt("Пицц.", "Pizz.")}</th><th className={th}>{dt("РС", "Std")}</th><th className={th}>{dt("РКО", "CX")}</th><th className={th} title={dt("Выручка за последний закрытый месяц, € — данные «Анализа рынка»", "Revenue for the last closed month, € — Market analysis data")}>{dt("Продажи, мес.", "Sales, mo.")}</th></tr>
           </thead>
           <tbody>
             {scope.map((c) => {
@@ -160,9 +157,8 @@ export function CountriesWidget({ scope, sales, narrow, onNarrow, onMarket }: {
                   className={`cursor-pointer hover:bg-surface-2 ${narrow === c.cc ? "bg-accent-soft" : ""}`}>
                   <td className={td}><span className="mr-1.5">{countryFlag(c.cc)}</span><span className="font-medium text-ink">{dt(countryName(c.cc), c.cc)}</span></td>
                   <td className={`${td} font-mono text-ink-soft`}>{c.pizzerias.length}</td>
-                  <td className={td}><Cell v={c.rs} t={tone(c.rs, RS_NORM, 85)} /></td>
+                  <td className={td}><Cell v={c.rs} t={tone(c.rs, RS_NORM, RS_WARN)} digits={1} /></td>
                   <td className={td}><Cell v={c.rko} t={tone(c.rko, RKO_NORM, RKO_WARN)} digits={1} /></td>
-                  <td className={td}><Cell v={c.coll} t={tone(c.coll, COLL_NORM, 70)} /></td>
                   <td className={`${td} whitespace-nowrap font-mono text-ink`}>
                     {sales.loading ? "…" : s?.last != null ? fmtEur(s.last) : "—"}
                     {s?.deltaPct != null && <span className={`ml-1.5 ${s.deltaPct >= 0 ? "text-[var(--status-done)]" : "text-[var(--pri-high)]"}`} style={{ fontSize: 11 }}>{pct(s.deltaPct)}</span>}
@@ -172,9 +168,9 @@ export function CountriesWidget({ scope, sales, narrow, onNarrow, onMarket }: {
             })}
             <tr className="bg-surface-2 font-semibold">
               <td className={td}>Σ {dt("по подборке", "selection")}</td><td className={`${td} font-mono`}>{n}</td>
-              <td className={`${td} font-mono`}>{weighted(scope, (c) => c.rs)?.toFixed(1) ?? "—"}</td>
-              <td className={`${td} font-mono`}>{weighted(scope, (c) => c.rko)?.toFixed(1) ?? "—"}</td>
-              <td className={`${td} font-mono`}>{weighted(scope, (c) => c.coll)?.toFixed(0) ?? "—"}%</td><td className={td} />
+              <td className={`${td} font-mono`}>{selectionMean(scope, (p) => p.rs)?.toFixed(1) ?? "—"}</td>
+              <td className={`${td} font-mono`}>{selectionMean(scope, (p) => p.rko)?.toFixed(1) ?? "—"}</td>
+              <td className={td} />
             </tr>
           </tbody>
         </table>

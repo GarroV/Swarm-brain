@@ -4,14 +4,17 @@ import { useDt } from "../nav";
 import { LineChart, type ChartSeries } from "./LineChart";
 import { CountryMenu, PeriodMenu, SERIES_COLORS, useChartPrefs, type ChartPrefs } from "./ChartControls";
 import { countryName } from "@/lib/countries";
-import { bucketize, niceScale, type Grain, type MonthRange, type Point } from "@/lib/homeChartSeries";
+import { alignTo, bucketize, niceScale, type Grain, type MonthRange } from "@/lib/homeChartSeries";
 import {
-  COLL_NORM, RKO_BOUNDS, RKO_DEFAULT, RKO_NORM, RKO_WARN, RS_BOUNDS, RS_CRIT, RS_DEFAULT, RS_NORM, RS_WARN, VIOLATIONS,
-  countrySample, historyAvg, weighted, type CountrySample,
-} from "@/lib/homeQualitySample";
+  RKO_CRIT, RKO_DROP, RKO_NORM, RKO_WARN, RS_CRIT, RS_NORM, RS_WARN,
+  chartBounds, countryOf, latestWave, latestWeek, selectionHistory, selectionMean,
+  type CountryQuality, type Pizzeria, type QualityKind, type QualityModel,
+} from "@/lib/homeQuality";
+import { VIOLATIONS } from "@/lib/homeQualitySample";
 
-// Виджеты РС (стандарты) и РКО (клиентский опыт) по подборке стран. Данные — образец
-// (lib/homeQualitySample.ts), пока РС и РКО не заведены в Swarm.
+// Виджеты РС (стандарты) и РКО (клиентский опыт) по подборке стран. Баллы — настоящие, GET /quality
+// (модель — lib/homeQuality.ts). Метрики без источника (собираемость инспектором, отчёты гостей)
+// сняты, а не нарисованы. «Топ-5 нарушений» — пока образец (lib/homeQualitySample.ts).
 
 export type Tone = "good" | "warn" | "bad" | "";
 export const TONE_TEXT: Record<Tone, string> = {
@@ -36,7 +39,7 @@ export function SampleTag() {
   const dt = useDt();
   return (
     <span className="rounded-full border border-dashed border-line-2 px-2 py-0.5 text-ink-mute" style={{ fontSize: 10.5 }}
-      title={dt("РС и РКО ещё не заведены в Swarm — цифры для вида", "Standards and CX data aren't in Swarm yet — sample numbers")}>
+      title={dt("Нарушений стандартов ещё нет в Swarm — цифры для вида", "Standards violations aren't in Swarm yet — sample numbers")}>
       {dt("образец данных", "sample data")}
     </span>
   );
@@ -86,32 +89,34 @@ function Legend({ series, norm }: { series: ChartSeries[]; norm: string }) {
 
 /**
  * График рейтинга с настройками: страны (одной линией «мои» или линия на страну) и период
- * «с — по» с разбивкой. IMF — пунктиром для сравнения, в любом режиме.
+ * «с — по» с разбивкой. IMF (все страны с данными) — пунктиром для сравнения, в любом режиме.
+ * Монтируется, когда данные уже пришли: границы периода считаются по ним.
  */
-function RatingChart({ id, scope, imf, history, bounds, defaults, grains, norm, normLabel, fmt, aria }: {
-  id: string; scope: CountrySample[]; imf: CountrySample[]; history: (c: CountrySample) => Point[];
-  bounds: MonthRange; defaults: ChartPrefs; grains: Grain[]; norm: number; normLabel: string;
-  fmt: (v: number) => string; aria: string;
+function RatingChart({ id, kind, q, scope, bounds, months, grains, norm, normLabel, fmt, aria }: {
+  id: string; kind: QualityKind; q: QualityModel; scope: CountryQuality[]; bounds: MonthRange; months: number;
+  grains: Grain[]; norm: number; normLabel: string; fmt: (v: number) => string; aria: string;
 }) {
   const dt = useDt();
   const en = dt("ru", "en") === "en";
-  const [prefs, update] = useChartPrefs(id, defaults, bounds, grains);
-  const series = (points: Point[]) => bucketize(points, prefs.range, prefs.grain, en);
+  const initial: ChartPrefs = { countries: [], range: chartBounds(bounds, months).defaults, grain: grains[0] };
+  const [prefs, update] = useChartPrefs(id, initial, bounds, grains);
+  const series = (list: CountryQuality[]) => bucketize(selectionHistory(q, list, kind), prefs.range, prefs.grain, en);
+  // Ось — корзины IMF: в них есть данные хоть одной страны, ряды стран выравниваются по ним.
+  const imfBuckets = series(q.countries);
+  const keys = imfBuckets.map((b) => b.key);
   const lines: ChartSeries[] = prefs.countries.length
     ? prefs.countries.map((cc, i) => ({
-      id: cc, label: dt(countryName(cc), cc), color: SERIES_COLORS[i],
-      values: series(history(countrySample(cc))).map((b) => b.value),
+      id: cc, label: dt(countryName(cc), cc), color: SERIES_COLORS[i], values: alignTo(keys, series([countryOf(q, cc)])),
     }))
-    : [{ id: "mine", label: dt("Мои страны", "My countries"), color: "var(--primary)", values: series(historyAvg(scope, history)).map((b) => b.value) }];
-  const imfBuckets = series(historyAvg(imf, history));
+    : [{ id: "mine", label: dt("Мои страны", "My countries"), color: "var(--primary)", values: alignTo(keys, series(scope)) }];
   const all: ChartSeries[] = [...lines, { id: "imf", label: "IMF", color: "var(--ink-mute)", values: imfBuckets.map((b) => b.value), dashed: true }];
-  const scale = niceScale(all.flatMap((s) => s.values), norm);
+  const scale = niceScale(all.flatMap((s) => s.values).filter((v): v is number => v != null), norm);
   return (
     <div className="flex flex-col gap-2">
       <div className="flex flex-wrap items-center gap-1.5">
         <CountryMenu value={prefs.countries} onChange={(countries) => update({ countries })} mine={scope.map((c) => c.cc)} />
         <PeriodMenu range={prefs.range} grain={prefs.grain} grains={grains} bounds={bounds}
-          defaults={defaults} onChange={update} />
+          defaults={initial} onChange={update} />
       </div>
       <Legend series={all} norm={normLabel} />
       <LineChart labels={imfBuckets.map((b) => b.label)} series={all} norm={norm}
@@ -120,22 +125,27 @@ function RatingChart({ id, scope, imf, history, bounds, defaults, grains, norm, 
   );
 }
 
-const RS_PREFS: ChartPrefs = { countries: [], range: RS_DEFAULT, grain: "wave" };
-const RKO_PREFS: ChartPrefs = { countries: [], range: RKO_DEFAULT, grain: "week" };
-
 const card = "flex flex-col gap-3 rounded-[12px] border border-line bg-surface p-4";
+/** Подпись под плашкой: две первые пиццерии списка или текст «нет». */
+const firstTwo = (list: Pizzeria[], show: (p: Pizzeria) => string, none: string) => list.slice(0, 2).map(show).join(", ") || none;
 
-export function RsWidget({ scope, imf }: { scope: CountrySample[]; imf: CountrySample[] }) {
+type Props = { q: QualityModel; scope: CountryQuality[] };
+
+export function RsWidget({ q, scope }: Props) {
   const dt = useDt();
-  const rs = weighted(scope, (c) => c.rs);
-  const prev = weighted(scope, (c) => c.rsPrev);
-  const imfRs = weighted(imf, (c) => c.rs);
+  const lang = dt("ru", "en") === "en" ? 1 : 0;
+  const rs = selectionMean(scope, (p) => p.rs);
+  const prev = selectionMean(scope, (p) => p.rsPrev);
+  const imfRs = selectionMean(q.countries, (p) => p.rs);
   const pz = scope.flatMap((c) => c.pizzerias);
   const rated = pz.filter((p) => p.rs != null);
   const crit = rated.filter((p) => (p.rs ?? 100) < RS_CRIT).sort((a, b) => (a.rs ?? 0) - (b.rs ?? 0));
-  const coll = weighted(scope, (c) => c.coll);
-  const noInsp = pz.filter((p) => p.kind === "self" || p.kind === "none").length;
+  const zeroed = rated.filter((p) => p.rs === 0);
+  const onTarget = rated.filter((p) => (p.rs ?? 0) >= RS_NORM).length;
+  const missed = pz.filter((p) => p.rsMissed);
+  const wave = latestWave(q, lang);
   const t = tone(rs, RS_NORM, RS_WARN);
+  const none = dt("нет", "none");
   return (
     <div className={card}>
       <div className="flex items-start justify-between gap-3">
@@ -143,36 +153,45 @@ export function RsWidget({ scope, imf }: { scope: CountrySample[]; imf: CountryS
           deltaNote={dt("к прошлой волне", "vs previous wave")} normOk={t}
           normText={t === "good" ? dt("в норме", "on target") : dt(`ниже нормы ${RS_NORM}`, `below ${RS_NORM}`)}
           bench={`IMF ${imfRs?.toFixed(1) ?? "—"}`} />
-        <div className="whitespace-nowrap text-right text-ink-mute" style={{ fontSize: 12, lineHeight: 1.5 }}>
-          {dt("волна", "wave")} <b className="text-ink">{dt("Сентябрь 2", "September 2")}</b><br />{dt("15–30 сентября", "Sep 15–30")}
-        </div>
+        {wave && (
+          <div className="whitespace-nowrap text-right text-ink-mute" style={{ fontSize: 12, lineHeight: 1.5 }}>
+            {dt("волна", "wave")} <b className="text-ink">{wave.name}</b><br />{wave.days}
+          </div>
+        )}
       </div>
       <div className="grid grid-cols-2 gap-2 min-[1400px]:grid-cols-4">
         <Stat label={dt(`Критическая зона <${RS_CRIT}`, `Critical <${RS_CRIT}`)} value={`${crit.length} / ${rated.length}`}
-          cls={TONE_TEXT[crit.length ? "bad" : "good"]} note={crit.slice(0, 2).map((p) => `${p.name} ${p.rs}`).join(", ") || dt("нет", "none")} />
-        <Stat label={dt("Обнуления", "Zeroed")} value="0" cls={TONE_TEXT.good} note={dt("за волну", "this wave")} />
-        <Stat label={dt("Собираемость инспектором", "Inspector coverage")} value={coll == null ? "—" : `${coll.toFixed(0)}%`}
-          cls={TONE_TEXT[tone(coll, COLL_NORM, 70)]} note={dt(`норма >${COLL_NORM}%`, `target >${COLL_NORM}%`)} />
-        <Stat label={dt("Без инспектора", "No inspector")} value={noInsp} cls={TONE_TEXT[noInsp ? "warn" : "good"]}
-          note={dt("самопроверка или не найдено", "self-check or not found")} />
+          cls={TONE_TEXT[crit.length ? "bad" : "good"]} note={firstTwo(crit, (p) => `${p.name} ${p.rs}`, none)} />
+        <Stat label={dt("Обнуления", "Zeroed")} value={zeroed.length} cls={TONE_TEXT[zeroed.length ? "bad" : "good"]}
+          note={zeroed.length ? firstTwo(zeroed, (p) => p.name, none) : dt("балл 0 в волне", "score 0 this wave")} />
+        <Stat label={dt(`Пиццерий в норме ≥${RS_NORM}`, `On target ≥${RS_NORM}`)} value={`${onTarget} / ${rated.length}`} />
+        <Stat label={dt("Без оценки в волне", "Not rated this wave")} value={missed.length} cls={TONE_TEXT[missed.length ? "warn" : "good"]}
+          note={firstTwo(missed, (p) => p.name, dt("все оценены", "all rated"))} />
       </div>
-      <RatingChart id="rs" scope={scope} imf={imf} history={(c) => c.rsHistory} bounds={RS_BOUNDS} defaults={RS_PREFS}
-        grains={["wave", "month", "quarter"]} norm={RS_NORM} normLabel={dt(`Норма ≥ ${RS_NORM}`, `Target ≥ ${RS_NORM}`)}
-        fmt={(v) => v.toFixed(0)} aria={dt("Средний балл РС", "Average standards score")} />
+      {q.rsBounds && (
+        <RatingChart id="rs" kind="rs" q={q} scope={scope} bounds={q.rsBounds} months={8}
+          grains={["wave", "month", "quarter"]} norm={RS_NORM} normLabel={dt(`Норма ≥ ${RS_NORM}`, `Target ≥ ${RS_NORM}`)}
+          fmt={(v) => v.toFixed(0)} aria={dt("Средний балл РС", "Average standards score")} />
+      )}
     </div>
   );
 }
 
-export function RkoWidget({ scope, imf }: { scope: CountrySample[]; imf: CountrySample[] }) {
+export function RkoWidget({ q, scope }: Props) {
   const dt = useDt();
-  const rko = weighted(scope, (c) => c.rko);
-  const prev = weighted(scope, (c) => c.rkoPrev);
-  const imfRko = weighted(imf, (c) => c.rko);
+  const rko = selectionMean(scope, (p) => p.rko);
+  const prev = selectionMean(scope, (p) => p.rkoPrev);
+  const imfRko = selectionMean(q.countries, (p) => p.rko);
   const pz = scope.flatMap((c) => c.pizzerias);
-  const restOk = pz.length ? (pz.filter((p) => p.cliRest > 0).length / pz.length) * 100 : null;
-  const delivOk = pz.length ? (pz.filter((p) => p.cliDeliv > 0).length / pz.length) * 100 : null;
-  const drop = pz.filter((p) => p.rko - p.rkoPrev <= -3).sort((a, b) => (a.rko - a.rkoPrev) - (b.rko - b.rkoPrev));
+  const rated = pz.filter((p) => p.rko != null);
+  const change = (p: Pizzeria) => (p.rko != null && p.rkoPrev != null ? p.rko - p.rkoPrev : 0);
+  const drop = rated.filter((p) => change(p) <= -RKO_DROP).sort((a, b) => change(a) - change(b));
+  const crit = rated.filter((p) => (p.rko ?? 100) < RKO_CRIT).sort((a, b) => (a.rko ?? 0) - (b.rko ?? 0));
+  const onTarget = rated.filter((p) => (p.rko ?? 0) >= RKO_NORM).length;
+  const missed = pz.filter((p) => p.rkoMissed);
+  const week = latestWeek(q);
   const t = tone(rko, RKO_NORM, RKO_WARN);
+  const none = dt("нет", "none");
   return (
     <div className={card}>
       <div className="flex items-start justify-between gap-3">
@@ -180,27 +199,31 @@ export function RkoWidget({ scope, imf }: { scope: CountrySample[]; imf: Country
           deltaNote={dt("к прошлой неделе", "vs previous week")} normOk={t}
           normText={t === "good" ? dt("в норме", "on target") : dt(`ниже нормы ${RKO_NORM}`, `below ${RKO_NORM}`)}
           bench={`IMF ${imfRko?.toFixed(1) ?? "—"}`} />
-        <div className="whitespace-nowrap text-right text-ink-mute" style={{ fontSize: 12, lineHeight: 1.5 }}>
-          {dt("неделя", "week")} <b className="text-ink">28.09 — 04.10</b><br />{dt("отчёты гостей", "guest reports")}
-        </div>
+        {week && (
+          <div className="whitespace-nowrap text-right text-ink-mute" style={{ fontSize: 12, lineHeight: 1.5 }}>
+            {dt("неделя", "week")}<br /><b className="text-ink">{week}</b>
+          </div>
+        )}
       </div>
       <div className="grid grid-cols-2 gap-2 min-[1400px]:grid-cols-4">
-        <Stat label={dt("Отчёты · ресторан", "Reports · dine-in")} value={restOk == null ? "—" : `${restOk.toFixed(0)}%`}
-          cls={TONE_TEXT[tone(restOk, 100, 75)]} note={dt(`${pz.filter((p) => !p.cliRest).length} без отчёта`, `${pz.filter((p) => !p.cliRest).length} without`)} />
-        <Stat label={dt("Отчёты · доставка", "Reports · delivery")} value={delivOk == null ? "—" : `${delivOk.toFixed(0)}%`}
-          cls={TONE_TEXT[tone(delivOk, 100, 75)]} note={dt(`${pz.filter((p) => !p.cliDeliv).length} без отчёта`, `${pz.filter((p) => !p.cliDeliv).length} without`)} />
-        <Stat label={dt("Пиццерий в норме", "Pizzerias on target")} value={`${pz.filter((p) => p.rko >= RKO_NORM).length} / ${pz.length}`} />
-        <Stat label={dt("Резкое падение ≥3", "Sharp drop ≥3")} value={drop.length} cls={TONE_TEXT[drop.length ? "warn" : "good"]}
-          note={drop.slice(0, 2).map((p) => `${p.name} ${(p.rko - p.rkoPrev).toFixed(1)}`).join(", ") || dt("нет", "none")} />
+        <Stat label={dt(`Пиццерий в норме ≥${RKO_NORM}`, `On target ≥${RKO_NORM}`)} value={`${onTarget} / ${rated.length}`} />
+        <Stat label={dt(`Резкое падение ≥${RKO_DROP}`, `Sharp drop ≥${RKO_DROP}`)} value={drop.length} cls={TONE_TEXT[drop.length ? "warn" : "good"]}
+          note={firstTwo(drop, (p) => `${p.name} ${change(p).toFixed(1)}`, none)} />
+        <Stat label={dt(`Ниже ${RKO_CRIT}`, `Below ${RKO_CRIT}`)} value={crit.length} cls={TONE_TEXT[crit.length ? "bad" : "good"]}
+          note={firstTwo(crit, (p) => `${p.name} ${p.rko?.toFixed(1)}`, none)} />
+        <Stat label={dt("Без оценки за неделю", "Not rated this week")} value={missed.length} cls={TONE_TEXT[missed.length ? "warn" : "good"]}
+          note={firstTwo(missed, (p) => p.name, dt("все оценены", "all rated"))} />
       </div>
-      <RatingChart id="rko" scope={scope} imf={imf} history={(c) => c.rkoHistory} bounds={RKO_BOUNDS} defaults={RKO_PREFS}
-        grains={["week", "month", "quarter"]} norm={RKO_NORM} normLabel={dt(`Норма ≥ ${RKO_NORM}`, `Target ≥ ${RKO_NORM}`)}
-        fmt={(v) => v.toFixed(1)} aria={dt("Средний балл РКО", "Average CX score")} />
+      {q.rkoBounds && (
+        <RatingChart id="rko" kind="rko" q={q} scope={scope} bounds={q.rkoBounds} months={2}
+          grains={["week", "month", "quarter"]} norm={RKO_NORM} normLabel={dt(`Норма ≥ ${RKO_NORM}`, `Target ≥ ${RKO_NORM}`)}
+          fmt={(v) => v.toFixed(1)} aria={dt("Средний балл РКО", "Average CX score")} />
+      )}
     </div>
   );
 }
 
-export function ViolationsWidget({ scope }: { scope: CountrySample[] }) {
+export function ViolationsWidget({ scope }: { scope: CountryQuality[] }) {
   const dt = useDt();
   const n = scope.reduce((s, c) => s + c.pizzerias.length, 0);
   const rows = VIOLATIONS.map(([ru, en, k]) => ({ name: dt(ru, en), count: Math.max(1, Math.round(n * k)) }));

@@ -1,6 +1,6 @@
 // Раскладка главной из виджетов: перестановка, ширина, скрытие, разбор сохранённого.
 import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import { addWidget, DEFAULT_LAYOUT, hideWidget, moveBefore, moveBy, parseLayout, toggleWidth } from "./homeLayout.ts";
+import { addWidget, DEFAULT_LAYOUT, WIDGET_IDS, hideWidget, moveBefore, moveBy, parseLayout, toggleWidth } from "./homeLayout.ts";
 
 Deno.test("parseLayout drops unknown widgets, duplicates and bad widths", () => {
   const got = parseLayout([{ id: "rs", w: "full" }, { id: "nope", w: "half" }, { id: "rs", w: "half" }, { id: "calls", w: "huge" }]);
@@ -32,4 +32,10 @@ Deno.test("toggleWidth, hide and add keep the rest untouched", () => {
   assertEquals(hidden.some((x) => x.id === "board"), false);
   assertEquals(addWidget(hidden, "board").at(-1), { id: "board", w: "full" });
   assertEquals(addWidget(DEFAULT_LAYOUT, "calls"), DEFAULT_LAYOUT);
+});
+
+Deno.test("sample violations widget is in the catalog but not on the default home", () => {
+  assertEquals(WIDGET_IDS.includes("viol"), true);
+  assertEquals(DEFAULT_LAYOUT.some((x) => x.id === "viol"), false);
+  assertEquals(addWidget(DEFAULT_LAYOUT, "viol").at(-1), { id: "viol", w: "half" });
 });

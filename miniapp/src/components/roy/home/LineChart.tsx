@@ -9,7 +9,8 @@ export type ChartSeries = {
   label: string;
   /** CSS-цвет из токенов темы (var(--chart-1) …), чтобы линия читалась в обеих темах. */
   color: string;
-  values: number[];
+  /** null — в этой точке у ряда данных нет: линия рвётся. */
+  values: Array<number | null>;
   /** Пунктир — сравнение (IMF), не предмет графика. */
   dashed?: boolean;
 };
@@ -32,12 +33,14 @@ export function LineChart({ labels, series, norm, min, max, ticks, fmt, ariaLabe
   const n = labels.length;
   const x = (i: number) => (n === 1 ? (L + W - R) / 2 : L + (i * (W - L - R)) / (n - 1));
   const y = (v: number) => T + (1 - (Math.min(max, Math.max(min, v)) - min) / (max - min)) * (H - T - B);
-  const path = (s: number[]) => s.map((v, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(v).toFixed(1)}`).join("");
+  // Разрыв на null: следующая точка начинает новый отрезок (M), а не тянется от пропуска.
+  const path = (s: Array<number | null>) => s.map((v, i) => (v == null ? "" : `${i && s[i - 1] != null ? "L" : "M"}${x(i).toFixed(1)},${y(v).toFixed(1)}`)).join("");
   const step = Math.max(1, Math.ceil(n / 5));
   const last = n - 1;
   const solid = series.filter((s) => !s.dashed);
   const lead = solid.length === 1 ? solid[0] : null;
-  const bench = series.find((s) => s.dashed);
+  const leadLast = lead?.values[last] ?? null;
+  const benchLast = series.find((s) => s.dashed)?.values[last] ?? null;
 
   const onMove = (e: React.MouseEvent<SVGSVGElement>) => {
     const box = e.currentTarget.getBoundingClientRect();
@@ -68,19 +71,21 @@ export function LineChart({ labels, series, norm, min, max, ticks, fmt, ariaLabe
             strokeWidth={s.dashed ? 1.5 : 2} strokeDasharray={s.dashed ? "5 4" : undefined} strokeLinejoin="round"
             className="transition-[d] duration-300" />
         ))}
-        {solid.map((s) => (
-          <circle key={s.id} cx={x(last)} cy={y(s.values[last])} r={solid.length > 1 ? 3 : 4} fill={s.color} stroke="var(--surface)" strokeWidth={2} />
-        ))}
-        {hover == null && lead && (
-          <text x={x(last) - 6} y={y(lead.values[last]) + (bench && lead.values[last] < bench.values[last] ? 16 : -9)} textAnchor="end"
-            fill="var(--ink)" style={{ fontWeight: 600, fontSize: 11 }}>{fmt(lead.values[last])}</text>
+        {solid.map((s) => {
+          const v = s.values[last];
+          return v == null ? null : <circle key={s.id} cx={x(last)} cy={y(v)} r={solid.length > 1 ? 3 : 4} fill={s.color} stroke="var(--surface)" strokeWidth={2} />;
+        })}
+        {hover == null && leadLast != null && (
+          <text x={x(last) - 6} y={y(leadLast) + (benchLast != null && leadLast < benchLast ? 16 : -9)} textAnchor="end"
+            fill="var(--ink)" style={{ fontWeight: 600, fontSize: 11 }}>{fmt(leadLast)}</text>
         )}
         {hover != null && (
           <g>
             <line x1={x(hover)} x2={x(hover)} y1={T} y2={H - B} stroke="var(--line-2)" />
-            {series.map((s) => (
-              <circle key={s.id} cx={x(hover)} cy={y(s.values[hover])} r={s.dashed ? 3 : 4} fill={s.color} stroke="var(--surface)" strokeWidth={2} />
-            ))}
+            {series.map((s) => {
+              const v = s.values[hover];
+              return v == null ? null : <circle key={s.id} cx={x(hover)} cy={y(v)} r={s.dashed ? 3 : 4} fill={s.color} stroke="var(--surface)" strokeWidth={2} />;
+            })}
           </g>
         )}
       </svg>
@@ -88,12 +93,15 @@ export function LineChart({ labels, series, norm, min, max, ticks, fmt, ariaLabe
         <div className="pointer-events-none absolute top-0 z-10 rounded-[8px] border border-line-2 bg-popover px-2.5 py-1.5 text-ink shadow-md"
           style={{ fontSize: 12, left: `${(x(hover) / W) * 100}%`, transform: hover > n / 2 ? "translateX(calc(-100% - 10px))" : "translateX(10px)" }}>
           <div className="font-semibold">{labels[hover]}</div>
-          {[...series].sort((a, b) => b.values[hover] - a.values[hover]).map((s) => (
-            <div key={s.id} className={`flex items-center gap-1.5 whitespace-nowrap ${s.dashed ? "text-ink-soft" : ""}`}>
-              <span style={{ color: s.color }}>●</span> {s.label}
-              <b className="ml-auto pl-3 font-mono">{fmt(s.values[hover])}</b>
-            </div>
-          ))}
+          {[...series].sort((a, b) => (b.values[hover] ?? -Infinity) - (a.values[hover] ?? -Infinity)).map((s) => {
+            const v = s.values[hover];
+            return (
+              <div key={s.id} className={`flex items-center gap-1.5 whitespace-nowrap ${s.dashed ? "text-ink-soft" : ""}`}>
+                <span style={{ color: s.color }}>●</span> {s.label}
+                <b className="ml-auto pl-3 font-mono">{v == null ? "—" : fmt(v)}</b>
+              </div>
+            );
+          })}
         </div>
       )}
     </div>

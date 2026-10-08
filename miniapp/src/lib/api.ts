@@ -1459,6 +1459,7 @@ function mockQuality(kind: QualityKind): QualityData {
   const names: [string, string][] = [
     ["BG", "Demo Sofia-1"], ["BG", "Demo Varna-1"], ["RS", "Demo Novi Sad-1"],
     ["RS", "Demo Belgrade-2"], ["PL", "Demo Krakow-1"], ["NG", "Demo Lagos-1"], ["NG", "Demo Abuja-3"],
+    ["KZ", "Demo Almaty-1"], ["KZ", "Demo Astana-2"],
   ];
   const base = kind === "rs" ? 84 : 90;
   return {

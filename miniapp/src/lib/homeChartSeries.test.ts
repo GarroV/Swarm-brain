@@ -1,5 +1,5 @@
 import { assertEquals } from "jsr:@std/assert@1";
-import { bucketize, canShift, clampRange, monthKey, niceScale, rangeLabel, shiftRange, type Point } from "./homeChartSeries.ts";
+import { alignTo, bucketize, canShift, clampRange, monthKey, niceScale, rangeLabel, shiftRange, type Point } from "./homeChartSeries.ts";
 
 const m = (y: number, mo: number) => y * 12 + (mo - 1);
 const BOUNDS = { from: m(2024, 10), to: m(2026, 9) };
@@ -50,4 +50,10 @@ Deno.test("niceScale includes the norm and steps by round numbers", () => {
   assertEquals(s.min <= 79, true);
   assertEquals(s.ticks.every((t) => Number.isInteger(t * 2)), true);
   assertEquals(niceScale([99, 100], 90).max, 100); // выше сотни шкала не уходит
+});
+
+Deno.test("alignTo puts null where a series has no bucket", () => {
+  const b = (key: string, value: number) => ({ key, label: key, value });
+  assertEquals(alignTo(["a", "b", "c"], [b("a", 1), b("c", 3)]), [1, null, 3]);
+  assertEquals(alignTo(["a"], []), [null]);
 });

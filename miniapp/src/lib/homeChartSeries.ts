@@ -84,6 +84,15 @@ export function bucketize(points: Point[], range: MonthRange, grain: Grain, en: 
   return [...acc.entries()].map(([key, v]) => ({ key, label: v.label, value: Math.round((v.sum / v.n) * 10) / 10 }));
 }
 
+/**
+ * Значения корзин, выровненные по ключам общей оси (обычно — корзины IMF). Где у ряда точки нет,
+ * стоит null: линия рвётся, а не дорисовывается выдуманным значением.
+ */
+export function alignTo(keys: string[], buckets: Bucket[]): Array<number | null> {
+  const byKey = new Map(buckets.map((b) => [b.key, b.value]));
+  return keys.map((k) => byKey.get(k) ?? null);
+}
+
 /** Шкала оси: границы и 3–6 «круглых» делений, норма всегда в пределах. */
 export function niceScale(values: number[], norm: number, cap = 100): { min: number; max: number; ticks: number[] } {
   const all = [...values.filter(Number.isFinite), norm];
