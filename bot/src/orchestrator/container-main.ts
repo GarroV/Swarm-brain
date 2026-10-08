@@ -15,7 +15,9 @@ import path from "node:path";
 
 import { type Browser, type BrowserContext, chromium } from "playwright";
 
+import { monitorSourceName } from "../container/audio.ts";
 import { readSettings } from "../container/environment.ts";
+import { SILENCE_MAX_VOLUME_DB, parseVolumeDetect } from "../container/loudness.ts";
 import { probeAudioEnvironment } from "../container/probe.ts";
 import { segmentSeconds } from "../container/segments.ts";
 import { KonturAdapter, konturLaunchOptions } from "../kontur-adapter/kontur.ts";
@@ -35,8 +37,13 @@ import { ALIVE_TOUCH_MS, adoptOrphanedRuns, runQueueRoot, touchAlive } from "./r
 import { FfmpegRecorder } from "./recorder.ts";
 import { type MeetingRecorder, runMeeting } from "./run-meeting.ts";
 import { formatStateLine } from "./state-line.ts";
+import { run } from "../container/shell.ts";
 
 const LEASE_CHECK_MS = 10_000;
+/**
+Длина одного замера громкости для сторожа тишины.
+*/
+const LOUDNESS_SAMPLE_SECONDS = 5;
 
 const log = (line: string): void => {
   console.log(`[scriba ${new Date().toISOString()}] ${line}`);
@@ -120,6 +127,31 @@ function audioRecorder(
     },
     stop: async (): Promise<number> => (recorder === null ? 0 : recorder.stop()),
   };
+}
+
+/**
+ * Тише ли порога то, что сейчас пишется: 5 с `volumedetect` по monitor-source параллельно с
+ * ffmpeg записи (pulse отдаёт монитор нескольким читателям). `null` — замер не удался.
+ */
+async function sampleSilent(sinkName: string): Promise<boolean | null> {
+  const result = await run("ffmpeg", [
+    "-hide_banner",
+    "-nostdin",
+    "-nostats",
+    "-f",
+    "pulse",
+    "-i",
+    monitorSourceName(sinkName),
+    "-t",
+    String(LOUDNESS_SAMPLE_SECONDS),
+    "-af",
+    "volumedetect",
+    "-f",
+    "null",
+    "-",
+  ]);
+  const stats = parseVolumeDetect(result.stderr);
+  return stats === null ? null : stats.maxDb < SILENCE_MAX_VOLUME_DB;
 }
 
 /**
@@ -282,6 +314,19 @@ async function main(): Promise<number> {
       log,
       reportMeetingId: (meetingId) => {
         console.log(formatStateLine({ meetingId }));
+      },
+      audioWatch: {
+        sampleSilent: async () => sampleSilent(settings.sinkName),
+        report: (audio) => {
+          const title = config.calendar?.title;
+          console.log(
+            formatStateLine({
+              audio,
+              platform: config.platform,
+              ...(title !== undefined && { title }),
+            }),
+          );
+        },
       },
     });
     console.log(formatStateLine({ outcome }));

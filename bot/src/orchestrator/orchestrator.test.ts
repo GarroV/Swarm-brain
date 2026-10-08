@@ -171,6 +171,11 @@ class FakeEngine implements ContainerEngine {
   }
 }
 
+const settle = async (): Promise<void> =>
+  new Promise((resolve) => {
+    setTimeout(resolve, 0);
+  });
+
 describe("оркестратор", () => {
   let leaseDirectory: string;
   let engine: FakeEngine;
@@ -209,6 +214,34 @@ describe("оркестратор", () => {
       newRunId: () => "run-1",
       ...(extraEnvironment && { extraEnv: extraEnvironment }),
     });
+  }
+
+  function withAlert(alertOwner?: (text: string) => Promise<void>): {
+    readonly orchestrator: Orchestrator;
+    readonly lines: string[];
+  } {
+    const lines: string[] = [];
+    const built = new Orchestrator({
+      egress,
+      engine,
+      project: "scriba-test",
+      image: "scriba:dev",
+      leaseDirectory,
+      swarmUrl: "https://swarm.example/functions/v1",
+      token: "bot-token",
+      version: 7,
+      notifierFor: () => ({
+        notify: (): Promise<NoticeResult> =>
+          Promise.resolve({ delivered: true, shouldLeave: false }),
+      }),
+      log: (line) => {
+        lines.push(line);
+      },
+      leaseIntervalMs: 20,
+      newRunId: () => "run-1",
+      ...(alertOwner !== undefined && { alertOwner }),
+    });
+    return { orchestrator: built, lines };
   }
 
   beforeEach(async () => {
@@ -459,6 +492,47 @@ describe("оркестратор", () => {
 
     it("кривой потолок — отказ при сборке оркестратора, а не «без ограничений»", () => {
       expect(() => build(undefined, { maxMeetings: 0 })).toThrow(/maxMeetings/);
+    });
+  });
+
+  describe("предупреждение владельцу о тишине (#861)", () => {
+    it("строка тишины из журнала контейнера — текст владельцу", async () => {
+      orchestrator.close();
+      const sent: string[] = [];
+      const scene = withAlert((text) => {
+        sent.push(text);
+        return Promise.resolve();
+      });
+      orchestrator = scene.orchestrator;
+      const id = await orchestrator.startForMeeting(MEET, "meet", 744);
+
+      engine.say(id, 'scriba-state {"audio":"silent","title":"Синк","platform":"kontur"}');
+      engine.say(id, 'scriba-state {"audio":"back","title":"Синк","platform":"kontur"}');
+      await settle();
+
+      expect(sent).toEqual([
+        "⚠️ Scriba: в звонке «Синк» (Толк) 3 мин нет звука, запись сейчас пишет тишину. Запуск run-1.",
+        "✅ Scriba: звук в «Синк» вернулся.",
+      ]);
+    });
+
+    it("канал не настроен или не ответил — тревога громко в журнале", async () => {
+      orchestrator.close();
+      const quiet = withAlert();
+      orchestrator = quiet.orchestrator;
+      const first = await orchestrator.startForMeeting(MEET, "meet", 744);
+      engine.say(first, 'scriba-state {"audio":"silent"}');
+      expect(quiet.lines.some((line) => line.includes("не настроено (канал FURCA)"))).toBe(true);
+
+      orchestrator.close();
+      const broken = withAlert(() => Promise.reject(new Error("канал FURCA ответил 503")));
+      orchestrator = broken.orchestrator;
+      const second = await orchestrator.startForMeeting(MEET, "meet", 744);
+      engine.say(second, 'scriba-state {"audio":"silent"}');
+      await settle();
+      expect(broken.lines.some((line) => line.includes("НЕ ушло (канал FURCA ответил 503)"))).toBe(
+        true,
+      );
     });
   });
 

@@ -32,6 +32,9 @@ services:
       SCRIBA_ACCOUNT_COPIES_DIR: ${PROD_ACCOUNT_COPIES_DAEMON_DIR}
       # Журнал каждого запуска встречи (#832): контейнер встречи удаляется вместе со своим журналом.
       SCRIBA_RUN_LOG_DIR: /var/lib/scriba/runs
+      # Срочные предупреждения владельцу о тишине в записи (#861) — канал FURCA; пусто — только журнал.
+      SCRIBA_ALERT_CHANNEL_URL: ${SCRIBA_ALERT_CHANNEL_URL:-}
+      SCRIBA_ALERT_CHANNEL_SECRET: ${SCRIBA_ALERT_CHANNEL_SECRET:-}
     volumes:
       - type: bind
         source: /var/run/docker.sock
