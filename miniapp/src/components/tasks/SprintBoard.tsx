@@ -45,9 +45,12 @@ function statusCounts(list: Task[], dt: (ru: string, en: string) => string) {
 
 const ALL = "__all__";            // селектор вкладок: показать проекты ВСЕХ вкладок (обзор)
 const EXPANDED_KEY = "swarm.board.expandedProjects"; // localStorage: какие проекты раскрыты (персонально)
-// Подпроекты по умолчанию РАЗВЁРНУТЫ (обратная полярность к EXPANDED_KEY — так поведение для
-// уже существующих пользователей не меняется молча: пустой localStorage = как раньше, всё видно).
-const COLLAPSED_SUBS_KEY = "swarm.board.collapsedSubprojects";
+// Подпроекты при каждом входе СВЁРНУТЫ и раскрытие не запоминается (владелец 08.10.2026: «дефолт
+// что при входе в проекты у тебя все подпроекты свёрнуты»). До этого они были развёрнуты, а
+// свёрнутые запоминались в localStorage `swarm.board.collapsedSubprojects` — ключ больше не читается.
+// Колонка доски не выше 10 карточек, дальше прокрутка внутри колонки (владелец 08.10.2026: «ограничить
+// высоту проекта на 10 плиток, сейчас слишком всё растягивается»).
+const BOARD_MAX_CARDS = 10;
 const NO_SECTION = "__none__";    // секция для задач без проекта
 
 // Первая колонка доски — общий бэклог: в неё падает всё, что не в трёх рабочих статусах
@@ -130,11 +133,8 @@ export function SprintBoard() {
   });
   const [addingSubOf, setAddingSubOf] = useState<string | null>(null);
   const [subName, setSubName] = useState("");
-  // Подпроекты — своё персональное сворачивание, отдельное от EXPANDED_KEY (см. коммент выше).
-  const [collapsedSubs, setCollapsedSubs] = useState<Set<string>>(() => {
-    if (typeof window === "undefined") return new Set();
-    try { return new Set(JSON.parse(localStorage.getItem(COLLAPSED_SUBS_KEY) ?? "[]") as string[]); } catch { return new Set(); }
-  });
+  // Раскрытые подпроекты — только на время визита (см. коммент у BOARD_MAX_CARDS).
+  const [openSubs, setOpenSubs] = useState<Set<string>>(() => new Set());
 
   const load = useCallback(async () => {
     try {
@@ -224,11 +224,10 @@ export function SprintBoard() {
     });
   }
 
-  function toggleCollapsedSub(id: string) {
-    setCollapsedSubs((prev) => {
+  function toggleOpenSub(id: string) {
+    setOpenSubs((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id); else next.add(id);
-      try { localStorage.setItem(COLLAPSED_SUBS_KEY, JSON.stringify([...next])); } catch { /* приватный режим/квота — не критично */ }
       return next;
     });
   }
@@ -605,7 +604,7 @@ export function SprintBoard() {
               {open && (kids.length === 0 ? (
                 <div>
                   <TaskKanban sectionId={sec.id} columns={COLUMNS} tasks={secDirectTasks}
-                    tasksForColumn={boardColumnTasks} kanban={kanban} />
+                    tasksForColumn={boardColumnTasks} maxCards={BOARD_MAX_CARDS} kanban={kanban} />
                   {renderAddSubproject(sec.id)}
                 </div>
               ) : (
@@ -614,22 +613,22 @@ export function SprintBoard() {
                   <KanbanColumn sectionId={sec.id} column={COLUMNS[0]}
                     tasks={[...secDirectTasks, ...kidsWithTasks.flatMap((k) => k.tasks)].filter((t) => isBacklogStatus(t.status))}
                     badgeFor={(t) => (t.project_id !== sec.id ? kids.find((k) => k.id === t.project_id)?.name : undefined)}
-                    kanban={kanban} />
+                    maxCards={BOARD_MAX_CARDS} kanban={kanban} />
                   {/* Пространства подпроектов: у каждого только рабочие колонки. */}
                   <div className="flex-1 min-w-0 space-y-3">
                     {kidsWithTasks.map(({ kid, tasks: kidTasks }) => {
-                      const subOpen = !collapsedSubs.has(kid.id);
+                      const subOpen = openSubs.has(kid.id);
                       return (
                       <div key={kid.id}>
                         {/* Заголовок подпроекта: draggable (перенос в другой проект, #30) +
                             сворачивание (#29, та же семантика, что у проекта верхнего уровня). */}
-                        <div onClick={() => toggleCollapsedSub(kid.id)}
+                        <div onClick={() => toggleOpenSub(kid.id)}
                           {...dnd.dragProps(kid.id, renaming?.id !== kid.id)}
                           {...dnd.dropProps(kid, "y")}
                           style={{ boxShadow: dnd.hintShadow(kid.id, "y") }}
                           title={dt("Нажмите — свернуть · перетащите — изменить порядок или перенести в другой проект", "Click to collapse · drag to reorder or move to another project")}
                           className="flex items-center gap-2 px-1 pb-1.5 cursor-grab active:cursor-grabbing">
-                          <button onClick={(e) => { e.stopPropagation(); toggleCollapsedSub(kid.id); }} className="rounded-full p-0.5 text-ink-soft hover:bg-surface-2" title={subOpen ? dt("Свернуть", "Collapse") : dt("Развернуть", "Expand")}>
+                          <button onClick={(e) => { e.stopPropagation(); toggleOpenSub(kid.id); }} className="rounded-full p-0.5 text-ink-soft hover:bg-surface-2" title={subOpen ? dt("Свернуть", "Collapse") : dt("Развернуть", "Expand")}>
                             <RoyIcon name="cright" size={11} className="transition-transform duration-200" style={{ transform: subOpen ? "rotate(90deg)" : undefined }} />
                           </button>
                           {renaming?.id === kid.id ? (
@@ -680,7 +679,7 @@ export function SprintBoard() {
                             >
                               {WORK_COLUMNS.map((col) => (
                                 <KanbanColumn key={col.status} sectionId={kid.id} column={col}
-                                  tasks={kidTasks.filter((t) => t.status === col.status)} kanban={kanban} />
+                                  tasks={kidTasks.filter((t) => t.status === col.status)} maxCards={BOARD_MAX_CARDS} kanban={kanban} />
                               ))}
                             </div>
                           </div>
