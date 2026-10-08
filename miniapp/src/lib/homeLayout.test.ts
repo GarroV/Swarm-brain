@@ -19,14 +19,15 @@ Deno.test("moveBefore puts the dragged widget in front of the target", () => {
 });
 
 Deno.test("moveBy stops at the edges", () => {
-  assertEquals(moveBy(DEFAULT_LAYOUT, "calls", -1), DEFAULT_LAYOUT);
-  assertEquals(moveBy(DEFAULT_LAYOUT, "calls", 1).slice(0, 2).map((x) => x.id), ["top5", "calls"]);
+  const [first, second] = DEFAULT_LAYOUT.map((x) => x.id);
+  assertEquals(moveBy(DEFAULT_LAYOUT, first, -1), DEFAULT_LAYOUT);
+  assertEquals(moveBy(DEFAULT_LAYOUT, first, 1).slice(0, 2).map((x) => x.id), [second, first]);
 });
 
 Deno.test("toggleWidth, hide and add keep the rest untouched", () => {
   const wide = toggleWidth(DEFAULT_LAYOUT, "calls");
-  assertEquals(wide[0], { id: "calls", w: "full" });
-  assertEquals(wide.slice(1), DEFAULT_LAYOUT.slice(1));
+  assertEquals(wide.find((x) => x.id === "calls"), { id: "calls", w: "full" });
+  assertEquals(wide.filter((x) => x.id !== "calls"), DEFAULT_LAYOUT.filter((x) => x.id !== "calls"));
   const hidden = hideWidget(DEFAULT_LAYOUT, "board");
   assertEquals(hidden.some((x) => x.id === "board"), false);
   assertEquals(addWidget(hidden, "board").at(-1), { id: "board", w: "full" });

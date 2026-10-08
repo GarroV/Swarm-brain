@@ -17,7 +17,8 @@ export const DEFAULT_WIDTH: Record<WidgetId, WidgetWidth> = {
   myTasks: "full", teamTasks: "half", news: "half", latest: "half",
 };
 
-const DEFAULT_ORDER: WidgetId[] = ["calls", "top5", "board", "rs", "rko", "pz", "att", "countries", "viol", "maps"];
+// Доска — первой (владелец 08.10.2026: «доску давай выше сделаем»).
+const DEFAULT_ORDER: WidgetId[] = ["board", "calls", "top5", "rs", "rko", "pz", "att", "countries", "viol", "maps"];
 export const DEFAULT_LAYOUT: LayoutItem[] = DEFAULT_ORDER.map((id) => ({ id, w: DEFAULT_WIDTH[id] }));
 
 const isWidgetId = (v: unknown): v is WidgetId => typeof v === "string" && (WIDGET_IDS as readonly string[]).includes(v);
@@ -71,7 +72,8 @@ export function addWidget(layout: LayoutItem[], id: WidgetId): LayoutItem[] {
   return [...layout, { id, w: DEFAULT_WIDTH[id] }];
 }
 
-const LS_KEY = "roy_home_layout_v1";
+// v2 — с подъёмом доски наверх: сохранённая v1 держала бы старый порядок, и смена умолчания не была бы видна.
+const LS_KEY = "roy_home_layout_v2";
 
 export function loadLayout(): LayoutItem[] {
   try {
