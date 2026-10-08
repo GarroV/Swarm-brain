@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { type DragEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   acceptSprintCycle,
@@ -42,15 +42,18 @@ import type {
   KanbanHandlers,
   KanbanQuickAdd,
 } from "@/components/tasks/TaskKanban";
-import { SprintTaskPool } from "@/components/tasks/SprintTaskPool";
+import { PLAN_DRAG_MIME, PlanPanel } from "@/components/tasks/sprints/PlanPanel";
+import { useStoredFlag } from "@/components/tasks/sprints/useStoredFlag";
+import { splitMine } from "@/lib/sprintMine";
 import { SprintReport } from "@/components/tasks/SprintReport";
 import { TaskModal } from "@/components/TaskModal";
 import { RoyIcon } from "@/components/roy/icons";
 import { PILL_BTN } from "./sprints/atoms";
 import { useConfirm } from "@/components/ui/confirm";
 import { buildQuickAddInput } from "@/lib/quickAddTask";
-import { poolCandidates, projectLabel } from "@/lib/sprintPool";
+import { projectLabel } from "@/lib/sprintPlan";
 import { useDt, useRoyNav } from "@/components/roy/nav";
+import { cn } from "@/lib/utils";
 import { useIsDesktop } from "@/components/roy/useIsDesktop";
 import {
   AcceptDialog,
@@ -171,27 +174,33 @@ export function SprintsScreen() {
   const [addingTo, setAddingTo] = useState<string | null | undefined>(
     undefined,
   );
-  // Панель «Задачи» слева: нужна только при наборе состава. Выбор помнится между заходами —
-  // как у переключателя видов (замечание владельца 19.09.2026).
-  // Бэклог живёт в ШТОРКЕ, а не в постоянной колонке (владелец 19.09.2026: «добавление задач
-  // громоздко»): половина ширины экрана под список, из которого берут раз в неделю, — плохой
-  // размен. Открывается кнопкой и закрывается по Esc и клику вне.
-  const [poolOpen, setPoolOpen] = useState(false);
+  // Панель «План» (решение владельца 07.10.2026): весь проект пространства деревом — источник
+  // набора спринта вместо шторки бэклога. На компьютере — колонка рядом со списком, открытость
+  // помнится между заходами; на телефоне — шторка поверх по кнопке.
+  const [planOpen, setPlanOpen] = useStoredFlag("swarm.sprints.planOpen", true);
+  const [planSheet, setPlanSheet] = useState(false);
+  // Задачу плана несут над списком: подсветка зоны броска.
+  const [planDrop, setPlanDrop] = useState(false);
+  // «Мои задачи» наверху списка (решение владельца 07.10.2026).
+  const [mineFirst, setMineFirst] = useStoredFlag("swarm.sprints.mine", false);
+  // Задача, заведённая плюсиком в группе СПРИНТА, сразу идёт в спринт; заведённая в группе
+  // ПЛАНА — только в план: план шире спринта.
+  const [addIntoSprint, setAddIntoSprint] = useState(true);
   // Режим правки прячет СТРУКТУРНЫЕ кнопки (завести пространство, переименовать, удалить,
-  // взять из бэклога, «+ задача»). Ежедневные отметки — «готово», «к переносу», «как идут
-  // дела» — остаются всегда: прятать их за тумблер значит требовать два клика на действие,
-  // которое делают по десять раз в день.
+  // новый спринт). Ежедневные отметки — «готово», «к переносу», «как идут дела» — и набор
+  // состава («План», «+» в группе, решение 07.10.2026) остаются всегда: прятать их за тумблер
+  // значит требовать два клика на действие, которое делают по десять раз в день.
   const [editMode, setEditMode] = useState(false);
-  // Esc закрывает шторку: открытая поверх экрана панель обязана закрываться клавишей, иначе
-  // человек ищет крестик глазами.
+  // Esc закрывает шторку плана на телефоне: открытая поверх экрана панель обязана закрываться
+  // клавишей, иначе человек ищет крестик глазами.
   useEffect(() => {
-    if (!poolOpen) return;
+    if (!planSheet) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setPoolOpen(false);
+      if (e.key === "Escape") setPlanSheet(false);
     };
     globalThis.addEventListener("keydown", onKey);
     return () => globalThis.removeEventListener("keydown", onKey);
-  }, [poolOpen]);
+  }, [planSheet]);
   // Переименование спринта: null — не правим, иначе черновик имени. Спринт, названный датами
   // при создании, со временем получает смысл («Запуск Эстонии»), и менять имя должно быть
   // можно, не пересоздавая период (#403).
@@ -331,12 +340,6 @@ export function SprintsScreen() {
     return { cards: out, groupLabels: labels };
   }, [items, tasks, projects]);
 
-  // Пул слева. Правило отбора — `poolCandidates` в lib/sprintPool.ts (под тестами): не взятые
-  // в спринт, не закрытые, не приватные.
-  const poolTasks = useMemo(() => poolCandidates(tasks, inSprint), [
-    tasks,
-    inSprint,
-  ]);
 
   const plan = items.filter((i) => i.in_plan);
   // Цифры шапки и дерево доски считает lib/initiatives — то же правило, что у серверных
@@ -349,24 +352,38 @@ export function SprintsScreen() {
   ]);
   // Пустые группы задач пространства видны в живом спринте: «Добавить группу» создаёт группу
   // до первой задачи, и без этого бросить в неё было бы некуда. Принятый спринт — слепок.
-  const board = useMemo(
+  const shownGroups = useMemo(
     () =>
-      buildBoard(
-        items,
-        projects,
-        accepted
-          ? []
-          : projects.filter((p) =>
-            p.sprint_group === true && p.sprint_id === space && p.parent_id === null
-          ),
+      accepted ? [] : projects.filter((p) =>
+        p.sprint_group === true && p.sprint_id === space && p.parent_id === null
       ),
-    [items, projects, accepted, space],
+    [projects, accepted, space],
+  );
+  const board = useMemo(
+    () => buildBoard(items, projects, shownGroups),
+    [items, projects, shownGroups],
   );
   // Вторая группировка того же состава — по людям. Ради неё был отдельный экран сверки;
   // после переезда отметок в строку (владелец 19.09.2026) это переключатель внутри списка:
   // на встрече идут по человеку, в работе — по инициативе.
   const peopleBoard = useMemo(() => buildPeopleBoard(items), [items]);
   const byPeople = grouping === "people";
+  // «Мои задачи» наверху: тот же состав, поделённый на два блока, каждый в своей группировке.
+  // Пустые группы — только в нижнем блоке: «мои» пустыми не бывают.
+  const mineSplit = useMemo(
+    () => splitMine(items, tasks, me?.telegram_id),
+    [items, tasks, me?.telegram_id],
+  );
+  const mineBoards = useMemo(() => {
+    if (!mineFirst) return null;
+    const { mine, others } = mineSplit;
+    return byPeople
+      ? { mine: buildPeopleBoard(mine), others: buildPeopleBoard(others) }
+      : {
+        mine: buildBoard(mine, projects),
+        others: buildBoard(others, projects, shownGroups),
+      };
+  }, [mineFirst, mineSplit, byPeople, projects, shownGroups]);
   // Группы спринта перетаскиванием (решение 01.10.2026): бросок, окно названия, кнопки группы.
   const sprintGroups = useDragGroups({
     projects,
@@ -421,9 +438,18 @@ export function SprintsScreen() {
       if (detail) reloadDetail(detail.id);
       return;
     }
+    if (!addIntoSprint) {
+      await reloadDetail(detail.id);
+      return;
+    }
     try {
       await addTasksToSprintCycle(detail.id, [created.id]);
-    } catch { /* задача создана; в спринт её можно взять из панели слева */ }
+    } catch (e) {
+      // Задача создана и лежит в плане — говорим, что в спринт она не попала.
+      setErr(e instanceof Error
+        ? e.message
+        : dt("Задача создана, но в спринт не добавлена — возьмите её из плана", "The task was created but not added to the sprint — take it from the plan"));
+    }
     await reloadDetail(detail.id);
   }
 
@@ -721,31 +747,23 @@ export function SprintsScreen() {
       <p className="font-semibold text-ink">
         {dt("В спринте пока нет задач", "The sprint is empty")}
       </p>
-      {isDesktop
-        ? (
-          <>
-            <p>
-              {dt(
-                "1. Нажмите «Добавить задачи из проектов» в полосе сверху и отметьте задачи галочками — появится «Добавить в спринт».",
-                "1. Press “Add tasks from projects” in the bar above and tick the tasks — an “Add to sprint” button appears.",
-              )}
-            </p>
-            <p>
-              {dt(
-                "2. Одну задачу быстрее добавить кнопкой «+» в её строке.",
-                "2. A single task is faster to add with the “+” on its row.",
-              )}
-            </p>
-          </>
-        )
-        : (
-          <p>
-            {dt(
-              "Состав спринта набирают с компьютера — на телефоне спринт только смотрят и отмечают.",
-              "A sprint is filled from a computer — on a phone you read it and mark progress.",
-            )}
-          </p>
+      <p>
+        {isDesktop
+          ? dt(
+            "Перетащите задачи сюда из «Плана» слева или нажмите → у задачи. План открывается кнопкой «План» в полосе сверху.",
+            "Drag tasks here from the “Plan” on the left or press → on a task. The plan opens with the “Plan” button in the bar above.",
+          )
+          : dt(
+            "Откройте «План» в полосе сверху и нажмите → у задачи.",
+            "Open the “Plan” in the bar above and press → on a task.",
+          )}
+      </p>
+      <p>
+        {dt(
+          "Новую задачу заведите плюсиком у группы в плане.",
+          "Create a new task with the plus next to a group in the plan.",
         )}
+      </p>
     </div>
   );
 
@@ -814,6 +832,114 @@ export function SprintsScreen() {
 
   const editable = !!detail && !accepted;
   const sprintTab = !showAnalytics && !showJournal;
+  const planColumn = isDesktop && planOpen && editable && sprintTab;
+
+  // Список состава: одна отрисовка и для всего состава, и для блоков «Мои / Остальные».
+  const initiativeList = (b: typeof board) => (
+    <InitiativeList
+      board={b}
+      noneLabel={byPeople
+        ? dt("Без исполнителя", "Unassigned")
+        : undefined}
+      unchecked={unchecked}
+      showExtra={plan.length > 0}
+      marketOf={(item) =>
+        item.frozen || !item.task_id
+          ? null
+          : tasks.find((t) => t.id === item.task_id)?.country ?? null}
+      parentOf={(item) =>
+        item.task_id ? tasks.find((t) => t.id === item.task_id)?.parent_id ?? null : null}
+      users={users}
+      tasks={tasks}
+      // Принятый спринт — слепок, а при группировке по людям группа — человек,
+      // а не проект: перетаскивать в «человека» нечего.
+      grouping={accepted || byPeople ? undefined : sprintGroups.grouping}
+      onOpenTask={(id) => {
+        const live = tasks.find((t) => t.id === id);
+        if (live) setEditing(live);
+      }}
+      // Принятый спринт — слепок: в него не дописывают. В группировке по
+      // людям «+ задача» нет: группа — человек, а не проект, и класть
+      // задачу «в человека» некуда.
+      onAdd={accepted || byPeople
+        ? undefined
+        : (projectId) => {
+          setAddIntoSprint(true);
+          setAddingTo(projectId);
+        }}
+      onDone={accepted ? undefined : toggleDone}
+      onCarry={accepted ? undefined : toggleCarry}
+      onCheck={accepted
+        ? undefined
+        : (item, status) =>
+          markItem(item, {
+            check_status: status,
+            // Сняли отметку — убираем и причину: висящая причина от снятого
+            // риска читается как живая.
+            ...(status === null
+              ? { check_note: null }
+              : {}),
+          })}
+      onNote={accepted
+        ? undefined
+        : (item, patch) => markItem(item, patch)}
+      onOpen={(item) => {
+        // Открываем ЖИВУЮ задачу: строка спринта — это её отражение, и править
+        // надо задачу. У упоминания и приватной чужой открывать нечего — такие
+        // строки список кликабельными и не делает.
+        const live = item.task_id
+          ? tasks.find((t) => t.id === item.task_id)
+          : undefined;
+        if (live) setEditing(live);
+      }}
+    />
+  );
+
+  const planPanel = (onClose: () => void) => (
+    <PlanPanel
+      tasks={tasks}
+      projects={projects}
+      users={users}
+      space={space}
+      spaceName={spaces.find((s) => s.id === space)?.name ?? ""}
+      inSprint={inSprint}
+      onTake={editable ? (id) => addToSprint([id]) : undefined}
+      onAdd={(projectId) => {
+        setAddIntoSprint(false);
+        setAddingTo(projectId);
+      }}
+      onOpen={setEditing}
+      onClose={onClose}
+      canDrag={isDesktop}
+      busy={busy}
+    />
+  );
+
+  // Зона броска задачи из плана — весь список или канбан спринта: группу задача несёт с собой
+  // (её проект), поэтому целиться в конкретную группу не нужно.
+  const planDropProps = editable
+    ? {
+      onDragOver: (e: DragEvent) => {
+        if (!e.dataTransfer.types.includes(PLAN_DRAG_MIME)) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = "copy";
+        if (!planDrop) setPlanDrop(true);
+      },
+      onDragLeave: (e: DragEvent) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setPlanDrop(false);
+      },
+      onDrop: (e: DragEvent) => {
+        setPlanDrop(false);
+        const id = e.dataTransfer.getData(PLAN_DRAG_MIME);
+        if (!id) return;
+        e.preventDefault();
+        addToSprint([id]);
+      },
+    }
+    : {};
+  const planDropCls = planDrop
+    ? "rounded-[10px] bg-primary/5 outline-dashed outline-2 -outline-offset-2 outline-primary/60"
+    : "";
 
   return (
     <div className="flex flex-col h-full min-h-0">
@@ -868,8 +994,10 @@ export function SprintsScreen() {
         view={isDesktop ? view : "list"}
         onView={setView}
         kanbanDisabled={!isDesktop}
-        poolCount={poolTasks.length}
-        onPool={editable ? () => setPoolOpen(true) : undefined}
+        planOpen={isDesktop ? planOpen : planSheet}
+        onPlan={editable
+          ? () => (isDesktop ? setPlanOpen(!planOpen) : setPlanSheet(true))
+          : undefined}
         editMode={editMode}
         onEditMode={() => setEditMode((v) => !v)}
         busy={busy}
@@ -1059,6 +1187,11 @@ export function SprintsScreen() {
                   }}
                 />
               )}
+              {planColumn && (
+                <div className="min-h-0 w-[320px] shrink-0 xl:w-[360px]">
+                  {planPanel(() => setPlanOpen(false))}
+                </div>
+              )}
               {showJournal
                 ? <JournalScreen space={space} />
                 : showAnalytics
@@ -1076,11 +1209,16 @@ export function SprintsScreen() {
                 )
                 : showList
                 ? (
-                  <div className="flex-1 min-w-0 overflow-auto">
+                  <div
+                    {...planDropProps}
+                    className={cn("flex-1 min-w-0 overflow-auto transition-colors", planDropCls)}
+                  >
                     {items.length === 0 ? emptyComposition : (
-                      <div className="min-w-[640px]">
-                        {/* «Состав · N» и тихая группировка справа (стенд: `.shead`). */}
-                        <div className="mb-2 flex items-center gap-3 px-0.5">
+                      <>
+                        {/* «Состав · N» и тихая группировка справа (стенд: `.shead`). Вне
+                            таблицы шириной 640px: на телефоне строка переносится, а не уезжает
+                            за край вместе с флажком «Мои задачи». */}
+                        <div className="mb-2 flex flex-wrap items-center gap-x-3 gap-y-2 px-0.5">
                           <span className="font-semibold text-ink" style={{ fontSize: 13 }}>
                             {dt("Состав", "Tasks")} · <span className="font-mono">{items.length}</span>
                           </span>
@@ -1099,67 +1237,54 @@ export function SprintsScreen() {
                             value={grouping}
                             onChange={setGrouping}
                           />
+                          <label
+                            className="flex shrink-0 cursor-pointer select-none items-center gap-1.5 text-ink-soft"
+                            style={{ fontSize: 12.5 }}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={mineFirst}
+                              onChange={(e) => setMineFirst(e.target.checked)}
+                              className="accent-[var(--primary)]"
+                            />
+                            {dt("Мои задачи", "My tasks")}
+                          </label>
                         </div>
-                        <InitiativeList
-                          board={byPeople ? peopleBoard : board}
-                          noneLabel={byPeople
-                            ? dt("Без исполнителя", "Unassigned")
-                            : undefined}
-                          unchecked={unchecked}
-                          showExtra={plan.length > 0}
-                          marketOf={(item) =>
-                            item.frozen || !item.task_id
-                              ? null
-                              : tasks.find((t) => t.id === item.task_id)?.country ?? null}
-                          parentOf={(item) =>
-                            item.task_id ? tasks.find((t) => t.id === item.task_id)?.parent_id ?? null : null}
-                          users={users}
-                          tasks={tasks}
-                          // Принятый спринт — слепок, а при группировке по людям группа — человек,
-                          // а не проект: перетаскивать в «человека» нечего.
-                          grouping={accepted || byPeople ? undefined : sprintGroups.grouping}
-                          onOpenTask={(id) => {
-                            const live = tasks.find((t) => t.id === id);
-                            if (live) setEditing(live);
-                          }}
-                          // Принятый спринт — слепок: в него не дописывают. В группировке по
-                          // людям «+ задача» нет: группа — человек, а не проект, и класть
-                          // задачу «в человека» некуда.
-                          onAdd={accepted || byPeople || !editMode
-                            ? undefined
-                            : (projectId) => setAddingTo(projectId)}
-                          onDone={accepted ? undefined : toggleDone}
-                          onCarry={accepted ? undefined : toggleCarry}
-                          onCheck={accepted
-                            ? undefined
-                            : (item, status) =>
-                              markItem(item, {
-                                check_status: status,
-                                // Сняли отметку — убираем и причину: висящая причина от снятого
-                                // риска читается как живая.
-                                ...(status === null
-                                  ? { check_note: null }
-                                  : {}),
-                              })}
-                          onNote={accepted
-                            ? undefined
-                            : (item, patch) => markItem(item, patch)}
-                          onOpen={(item) => {
-                            // Открываем ЖИВУЮ задачу: строка спринта — это её отражение, и править
-                            // надо задачу. У упоминания и приватной чужой открывать нечего — такие
-                            // строки список кликабельными и не делает.
-                            const live = item.task_id
-                              ? tasks.find((t) => t.id === item.task_id)
-                              : undefined;
-                            if (live) setEditing(live);
-                          }}
-                        />
-                      </div>
+                        {/* Контейнер состава: колонки уступают место названию по его ширине, а не по
+                            ширине окна (SPRINT_GRID в sprints/SprintRow.tsx). */}
+                        <div className="@container/sprint min-w-[320px]">
+                        {mineBoards
+                          ? (
+                            <>
+                              <SectionLabel
+                                label={dt("Мои задачи", "My tasks")}
+                                count={mineSplit.mine.length}
+                              />
+                              {mineSplit.mine.length === 0
+                                ? (
+                                  <p className="mb-4 px-0.5 text-ink-mute" style={{ fontSize: 12.5 }}>
+                                    {dt("На вас в этом спринте задач нет", "No tasks on you in this sprint")}
+                                  </p>
+                                )
+                                : initiativeList(mineBoards.mine)}
+                              <SectionLabel
+                                label={dt("Остальные", "Everyone else")}
+                                count={mineSplit.others.length}
+                              />
+                              {initiativeList(mineBoards.others)}
+                            </>
+                          )
+                          : initiativeList(byPeople ? peopleBoard : board)}
+                        </div>
+                      </>
                     )}
                   </div>
                 )
                 : (
-                  <div className="flex-1 min-w-0 flex gap-3 overflow-x-auto">
+                  <div
+                    {...planDropProps}
+                    className={cn("flex-1 min-w-0 flex gap-3 overflow-x-auto transition-colors", planDropCls)}
+                  >
                     {items.length === 0
                       ? emptyComposition
                       : COLUMNS.map((col) => (
@@ -1190,41 +1315,19 @@ export function SprintsScreen() {
           </>
         )}
 
-      {/* Шторка бэклога. Поверх экрана, а не колонкой: набор состава — редкое действие, и
-          отдавать ему половину ширины каждый день незачем (#407). Подложка закрывает по клику
-          вне, Esc — клавишей. */}
-      {/* В body порталом: внутри экрана `fixed` привязывается к предку со скроллом/трансформом,
-          шторка вырастает выше окна, и список задач в ней не прокручивается (замечание
-          владельца 28.09.2026). */}
-      {poolOpen && typeof document !== "undefined" && createPortal(
+      {/* План на телефоне — шторкой поверх экрана: колонке рядом со списком там нет места.
+          В body порталом: внутри экрана `fixed` привязывается к предку со скроллом и шторка
+          вырастает выше окна (замечание владельца 28.09.2026). Закрывается по клику вне и Esc. */}
+      {planSheet && !isDesktop && editable && typeof document !== "undefined" && createPortal(
         <div className="fixed inset-0 z-40 flex justify-end">
           <button
             type="button"
             aria-label={dt("Закрыть", "Close")}
-            onClick={() => setPoolOpen(false)}
+            onClick={() => setPlanSheet(false)}
             className="absolute inset-0 bg-ink/30 backdrop-blur-[1px]"
           />
-          <aside className="relative flex h-full w-full max-w-[420px] flex-col border-l border-line bg-background p-3 shadow-xl">
-            <div className="mb-2 flex items-center gap-2">
-              <h3 className="text-sm font-bold text-ink">
-                {dt("Взять из бэклога", "Take from the backlog")}
-              </h3>
-              <button
-                type="button"
-                onClick={() => setPoolOpen(false)}
-                title={dt("Закрыть", "Close")}
-                className="ml-auto rounded-full p-1.5 text-ink-soft hover:bg-surface-2 hover:text-ink"
-              >
-                <RoyIcon name="x" size={14} />
-              </button>
-            </div>
-            <SprintTaskPool
-              tasks={poolTasks}
-              projects={projects}
-              users={users}
-              adding={busy}
-              onAdd={addToSprint}
-            />
+          <aside className="relative flex h-full w-full max-w-[420px] flex-col bg-background p-2 shadow-xl">
+            {planPanel(() => setPlanSheet(false))}
           </aside>
         </div>,
         document.body,
@@ -1255,6 +1358,20 @@ export function SprintsScreen() {
         }}
       />
       {sprintGroups.dialogs}
+    </div>
+  );
+}
+
+/** Подпись блока «Мои задачи» / «Остальные» над списком состава. */
+function SectionLabel({ label, count }: { label: string; count: number }) {
+  return (
+    <div
+      className="mb-1.5 mt-1 flex items-center gap-2 px-0.5 font-semibold uppercase tracking-[0.06em] text-ink-mute"
+      style={{ fontSize: 11 }}
+    >
+      {label}
+      <span className="font-mono">{count}</span>
+      <span className="h-px flex-1 bg-line" />
     </div>
   );
 }

@@ -30,6 +30,9 @@ enum Updater {
         SwarmConfig.configURL().deletingLastPathComponent()
     }
 
+    // Журнал хелпера обновления: по его хвосту видно, на каком шаге сорвалась попытка (#843).
+    static var helperLogURL: URL { supportDir().appendingPathComponent("self-update.log") }
+
     // Файл-замок «идёт запись»: апдейтер не подменяет приложение, пока он есть (не рвём запись).
     static var recordingLockURL: URL { supportDir().appendingPathComponent(".recording") }
     static func setRecordingLock(_ active: Bool) {

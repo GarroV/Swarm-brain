@@ -14,8 +14,45 @@ import { blockText } from "./groupingText";
 // живут в хвосте строки и проявляются при наведении: строка спокойная, а ежедневный клик
 // по-прежнему один (#407).
 
-/** Колонки — одни на шапку и строки, иначе вертикаль рвётся между группами. */
-export const SPRINT_COLS = "minmax(0,1fr) 64px 56px 128px 168px 64px";
+/** Колонки — одни на шапку и строки, иначе вертикаль рвётся между группами.
+ *
+ *  Узкое окно (владелец 07.10.2026: название задачи «должно сокращаться в последнюю очередь»):
+ *  ширину считает контейнер состава (`@container/sprint` в SprintsScreen), а не окно — открытая
+ *  панель «План» тоже отнимает место. Уступают по очереди:
+ *    < 860px — исполнитель сворачивается до аватарки (имя — в подсказке);
+ *    < 720px — рынок прячется (он есть в карточке), сверка — до цветной точки (состояние в подсказке);
+ *    < 480px (телефон) — строка в два этажа: название на всю ширину, под ним справа срок
+ *      («дд.мм» без полей), сверка, исполнитель и кнопки хвоста — в одну строку им не хватало места.
+ *  Срок и хвост с действиями остаются; название получает всё остальное. Столбцов всегда шесть:
+ *  спрятанный рынок — нулевой ширины и невидимый, иначе ячейки строки съехали бы по сетке. */
+export const SPRINT_GRID =
+  "grid-cols-[minmax(0,1fr)_64px_56px_128px_168px_64px] @max-[860px]/sprint:grid-cols-[minmax(0,1fr)_64px_56px_128px_44px_56px] @max-[720px]/sprint:grid-cols-[minmax(0,1fr)_60px_0px_40px_44px_48px] @max-[480px]/sprint:grid-cols-[minmax(0,1fr)_40px_0px_40px_44px_96px]";
+
+/** Ячейка, которая уходит первой на узком составе — исполнитель по имени. */
+export const NARROW_HIDE_NAME = "@max-[860px]/sprint:hidden";
+export const NARROW_INVISIBLE = "@max-[860px]/sprint:invisible";
+/** Ячейки, которые уходят второй ступенью: рынок целиком, подпись сверки. */
+export const TIGHT_HIDE = "@max-[720px]/sprint:hidden";
+export const TIGHT_INVISIBLE =
+  "@max-[720px]/sprint:invisible @max-[720px]/sprint:px-0";
+/** Телефон: название — первым этажом на всю строку, остальное — вторым, с колонки срока.
+ *  Шапка таблицы остаётся одним этажом: её подписи стоят над вторым этажом строк. */
+export const PHONE_TITLE =
+  "@max-[480px]/sprint:col-span-6 @max-[480px]/sprint:pt-2";
+/** Исполнитель на узком составе уступает место кнопкам хвоста, пока на строку наведён курсор. */
+export const HOVER_YIELD =
+  "lg:@max-[860px]/sprint:group-hover:invisible lg:@max-[860px]/sprint:group-focus-within:invisible";
+export const PHONE_TIGHT = "@max-[480px]/sprint:px-0";
+export const PHONE_META =
+  "@max-[480px]/sprint:col-start-2 @max-[480px]/sprint:px-0";
+/** Нижнее поле строки на телефоне — у строки, а не у ячейки: иначе второй этаж съедет по вертикали. */
+export const PHONE_ROW = "@max-[480px]/sprint:pb-1.5";
+
+// Лесенка дерева (владелец 07.10.2026: «чтобы не было шатания, каскадом»): задача начинается
+// под именем группы, подзадача — ступенью правее. У каждой строки задачи постоянное место под
+// стрелку подзадач, поэтому точки и названия одного уровня стоят в одну линию.
+export const TASK_INDENT = 32;
+export const SUBTASK_INDENT = 52;
 
 const CLOSED = new Set(["done", "cancelled"]);
 
@@ -110,9 +147,10 @@ function CheckChip({ status, note, unchecked }: {
     : "—";
   return (
     <span
-      title={note ?? undefined}
+      // На узком составе подпись прячется до точки — тогда состояние читается из подсказки.
+      title={note ? `${label} · ${note}` : label}
       className={cn(
-        "inline-flex h-[22px] max-w-full items-center gap-1.5 truncate rounded-[6px] border px-2 font-medium",
+        "inline-flex h-[22px] max-w-full items-center gap-1.5 truncate rounded-[6px] border px-2 font-medium @max-[720px]/sprint:px-1.5",
         status
           ? CHECK_TONE[status]
           : "border-transparent text-ink-mute group-hover:border-line",
@@ -125,8 +163,10 @@ function CheckChip({ status, note, unchecked }: {
           status ? "bg-current" : "border border-dashed border-ink-mute",
         )}
       />
-      {label}
-      {note ? " ·" : ""}
+      <span className={TIGHT_HIDE}>
+        {label}
+        {note ? " ·" : ""}
+      </span>
     </span>
   );
 }
@@ -188,9 +228,10 @@ export function SprintRow(
         drag?.kind === "source" && "opacity-45",
         drag?.kind === "group" &&
           "bg-primary/8 outline outline-2 -outline-offset-2 outline-primary/70",
+        SPRINT_GRID,
+        PHONE_ROW,
       )}
       style={{
-        gridTemplateColumns: SPRINT_COLS,
         minHeight: 38,
         fontSize: 13.5,
       }}
@@ -209,31 +250,33 @@ export function SprintRow(
         </span>
       )}
       <div
-        className="flex min-w-0 items-center gap-2 px-3"
-        style={depth ? { paddingLeft: 34 } : undefined}
+        className={cn("flex min-w-0 items-center gap-2 px-3", PHONE_TITLE)}
+        style={{ paddingLeft: depth ? SUBTASK_INDENT : TASK_INDENT }}
       >
-        {kids && (
-          // Шеврон — в левом поле строки, чтобы колонка названий не съезжала у строк без подзадач.
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              kids.onToggle();
-            }}
-            aria-expanded={kids.open}
-            aria-label={kids.open
-              ? dt("Свернуть подзадачи", "Collapse subtasks")
-              : dt("Показать подзадачи", "Show subtasks")}
-            className="absolute left-0 top-0 flex h-[38px] w-3 items-center justify-center text-ink-mute hover:text-ink"
-          >
-            <RoyIcon
-              name="cright"
-              size={9}
-              strokeWidth={2.6}
-              className={cn("transition-transform", kids.open && "rotate-90")}
-            />
-          </button>
-        )}
+        {/* Место под стрелку есть у каждой строки — с подзадачами она там, без них пусто. */}
+        {kids
+          ? (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                kids.onToggle();
+              }}
+              aria-expanded={kids.open}
+              aria-label={kids.open
+                ? dt("Свернуть подзадачи", "Collapse subtasks")
+                : dt("Показать подзадачи", "Show subtasks")}
+              className="flex w-3 shrink-0 items-center justify-center self-stretch text-ink-mute hover:text-ink"
+            >
+              <RoyIcon
+                name="cright"
+                size={9}
+                strokeWidth={2.6}
+                className={cn("transition-transform", kids.open && "rotate-90")}
+              />
+            </button>
+          )
+          : <span aria-hidden="true" className="w-3 shrink-0" />}
         <span
           className={cn(
             "size-[7px] shrink-0 rounded-full",
@@ -330,6 +373,7 @@ export function SprintRow(
       <div
         className={cn(
           "px-2 font-mono",
+          PHONE_META,
           late ? "font-semibold text-pri-high" : "text-ink-soft",
         )}
         style={{ fontSize: 12 }}
@@ -339,7 +383,13 @@ export function SprintRow(
           : <span className="text-ink-mute">—</span>}
       </div>
 
-      <div className="px-2 font-mono text-ink-soft" style={{ fontSize: 12 }}>
+      <div
+        className={cn(
+          "min-w-0 overflow-hidden px-2 font-mono text-ink-soft",
+          TIGHT_INVISIBLE,
+        )}
+        style={{ fontSize: 12 }}
+      >
         {market ?? <span className="text-ink-mute">—</span>}
       </div>
 
@@ -375,18 +425,35 @@ export function SprintRow(
           : null}
       </div>
 
-      <div className="flex min-w-0 items-center gap-1.5 px-2 text-ink-soft">
+      <div
+        className={cn(
+          "flex min-w-0 items-center gap-1.5 px-2 text-ink-soft",
+          HOVER_YIELD,
+        )}
+      >
         {live && (
           <>
-            {who ? <AssigneeChip name={who} /> : null}
-            <span className="min-w-0 truncate">
+            {who
+              ? (
+                <span
+                  className="shrink-0"
+                  title={item.assignees.map(displayName).join(", ")}
+                >
+                  <AssigneeChip name={who} />
+                </span>
+              )
+              : null}
+            <span className={cn("min-w-0 truncate", who && NARROW_HIDE_NAME)}>
               {who
                 ? displayName(who)
                 : <span className="text-ink-mute">—</span>}
             </span>
             {item.assignees.length > 1 && (
               <span
-                className="shrink-0 font-mono text-ink-mute"
+                className={cn(
+                  "shrink-0 font-mono text-ink-mute",
+                  NARROW_HIDE_NAME,
+                )}
                 style={{ fontSize: 11 }}
                 title={item.assignees.join(", ")}
               >
@@ -397,7 +464,11 @@ export function SprintRow(
         )}
       </div>
 
-      {/* Хвост строки: быстрые действия. На компьютере — по наведению, на телефоне видны всегда. */}
+      {
+        /* Хвост строки: быстрые действия. На компьютере — по наведению, на телефоне видны всегда.
+          Кнопкам нужно ~94px, а колонка на узком составе 48: они заходят на колонку исполнителя,
+          а его аватарка на это время прячется (HOVER_YIELD), чтобы не просвечивать между кнопками. */
+      }
       <div
         className="flex items-center justify-end gap-1 pr-3 transition-opacity lg:opacity-0 lg:group-hover:opacity-100 lg:focus-within:opacity-100"
         style={{ fontSize: 11 }}
@@ -467,7 +538,10 @@ export function SprintRow(
           вместо объяснения. */
       }
       {h.onNote && !closed && live && (needsNote || item.to_carry) && (
-        <div className="col-span-full px-3 pb-2 pl-[27px]">
+        <div
+          className="col-span-full px-3 pb-2"
+          style={{ paddingLeft: TASK_INDENT + 20 }}
+        >
           <input
             value={noteValue}
             onClick={(e) => e.stopPropagation()}
@@ -505,7 +579,7 @@ export function SprintRow(
                 ? "border-ink-mute/50 text-ink-mute"
                 : "border-primary/70 bg-primary/8 text-ink",
             )}
-            style={{ paddingLeft: 34, fontSize: 12.5 }}
+            style={{ paddingLeft: SUBTASK_INDENT, fontSize: 12.5 }}
           >
             <span className="min-w-0 truncate opacity-70">↳ {drag.title}</span>
             <span
@@ -546,13 +620,16 @@ export function SubtaskLiteRow({ task, inSprint, onOpen }: {
         "grid items-center border-t border-line transition-colors",
         onOpen && "cursor-pointer hover:bg-surface-2",
         !inSprint && "opacity-70",
+        SPRINT_GRID,
+        PHONE_ROW,
       )}
-      style={{ gridTemplateColumns: SPRINT_COLS, minHeight: 34, fontSize: 13 }}
+      style={{ minHeight: 34, fontSize: 13 }}
     >
       <div
-        className="flex min-w-0 items-center gap-2 px-3"
-        style={{ paddingLeft: 34 }}
+        className={cn("flex min-w-0 items-center gap-2 px-3", PHONE_TITLE)}
+        style={{ paddingLeft: SUBTASK_INDENT }}
       >
+        <span aria-hidden="true" className="w-3 shrink-0" />
         <span
           className={cn(
             "size-[6px] shrink-0 rounded-full",
@@ -577,14 +654,26 @@ export function SubtaskLiteRow({ task, inSprint, onOpen }: {
             : dt("не в спринте", "not in sprint")}
         </span>
       </div>
-      <div className="px-2 font-mono text-ink-mute" style={{ fontSize: 12 }}>
+      <div
+        className={cn("px-2 font-mono text-ink-mute", PHONE_META)}
+        style={{ fontSize: 12 }}
+      >
         {task.due_date ? fmtDayShort(task.due_date) : "—"}
       </div>
-      <div className="px-2 font-mono text-ink-mute" style={{ fontSize: 12 }}>
+      <div
+        className={cn(
+          "min-w-0 overflow-hidden px-2 font-mono text-ink-mute",
+          TIGHT_INVISIBLE,
+        )}
+        style={{ fontSize: 12 }}
+      >
         {task.country ?? "—"}
       </div>
       <div />
-      <div className="min-w-0 truncate px-2 text-ink-mute">
+      <div
+        className="min-w-0 truncate px-2 text-ink-mute"
+        title={who ? displayName(who) : undefined}
+      >
         {who ? displayName(who) : "—"}
       </div>
       <div />

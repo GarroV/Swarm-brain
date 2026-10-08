@@ -15,9 +15,10 @@ EXCLUDE="realtime,imgproxy,mailpit,postgres-meta,studio,edge-runtime,logflare,ve
 ATTEMPTS=3
 
 for i in $(seq 1 "$ATTEMPTS"); do
+  # Свежий раннер: контур при запуске сам накатывает все миграции и seed. `db reset` следом
+  # накатывал их второй раз — 28 секунд на каждое задание с базой впустую (#826).
   if supabase start -x "$EXCLUDE"; then
-    supabase db reset
-    exit $?
+    exit 0
   fi
   echo "контур не поднялся (попытка $i из $ATTEMPTS)" >&2
   supabase stop --no-backup >/dev/null 2>&1 || true

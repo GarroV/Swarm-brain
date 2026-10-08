@@ -43,6 +43,9 @@ export const TASK_LIST_COLUMNS = [
   // что описана выше про description, только тише.
   "recur_freq",
   "recur_anchor_dom",
+  "recur_interval",
+  "recur_weekdays",
+  "recur_setpos",
   // нужен серверу для вычисляемого created_by_name, клиент читает уже имя
   "created_by_telegram_id",
 ].join(",");

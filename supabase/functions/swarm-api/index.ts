@@ -43,6 +43,8 @@ import {
   TaskUserError,
 } from "../_shared/tasks/db.ts";
 import {
+  pickRecurExtras,
+  RECUR_BODY_KEYS,
   recurrencePatchFor,
   resolveRecurrence,
 } from "../_shared/tasks/recurrence.ts";
@@ -115,6 +117,7 @@ import {
 import {
   canAccessDraftMeeting,
   canDeleteDraftMeeting,
+  canHideDraftMeeting,
   type DraftMeetingRow,
   draftMeetingsOwnScopedFilter,
   oneOnOnePartner,
@@ -1179,7 +1182,11 @@ async function routeRequest(req: Request): Promise<Response> {
 
       // Цикличность: частоту проверяет, число месяца выводит из срока один хелпер на
       // веб/бота/MCP — иначе anchor выводили бы тремя способами или забыли бы вовсе.
-      const recur = resolveRecurrence(body.recur_freq, dueDate);
+      const recur = resolveRecurrence(
+        body.recur_freq,
+        dueDate,
+        pickRecurExtras(body),
+      );
       if (!recur.ok) return apiErr(400, recur.error, origin);
 
       const isPrivate = body.is_private === true;
@@ -1268,6 +1275,9 @@ async function routeRequest(req: Request): Promise<Response> {
         tags: Array.isArray(body.tags) ? (body.tags as string[]) : undefined,
         recur_freq: recur.recur_freq,
         recur_anchor_dom: recur.recur_anchor_dom,
+        recur_interval: recur.recur_interval,
+        recur_weekdays: recur.recur_weekdays,
+        recur_setpos: recur.recur_setpos,
       };
 
       try {
@@ -1500,11 +1510,20 @@ async function routeRequest(req: Request): Promise<Response> {
       if (dateErr) return apiErr(400, dateErr, origin);
 
       // Цикличность (null — снять). Число месяца выводим из ИТОГОВОГО срока: его могли
-      // поменять этим же запросом.
-      if ("recur_freq" in body) {
-        const recur = recurrencePatchFor(body.recur_freq, effDue, task);
+      // поменять этим же запросом. Правило (#823: интервал, дни недели, n-й день) проверяет и
+      // обнуляет тот же хелпер — писатели его не разбирают.
+      if (RECUR_BODY_KEYS.some((k) => k in body)) {
+        const recur = recurrencePatchFor(
+          "recur_freq" in body ? body.recur_freq : undefined,
+          effDue,
+          task,
+          pickRecurExtras(body),
+        );
         if (!recur.ok) return apiErr(400, recur.error, origin);
         fields.recur_freq = recur.recur_freq;
+        fields.recur_interval = recur.recur_interval;
+        fields.recur_weekdays = recur.recur_weekdays;
+        fields.recur_setpos = recur.recur_setpos;
         // Ключа нет = якорь оставляем как есть (человек не трогал ни срок, ни частоту):
         // иначе правка названия сбросила бы график зажатой задачи с 31-го числа на 28-е.
         if ("recur_anchor_dom" in recur) {
@@ -2785,12 +2804,13 @@ async function routeRequest(req: Request): Promise<Response> {
   const agentMarketMatch = routePath.match(
     /^\/agent-meetings\/([^/]+)\/market-suggestion$/,
   );
+  const agentHideMatch = routePath.match(/^\/agent-meetings\/([^/]+)\/hide$/);
   if (
     agentMeetingMatch || agentPublishMatch || agentNotesMatch ||
-    agentResummarizeMatch || agentMarketMatch
+    agentResummarizeMatch || agentMarketMatch || agentHideMatch
   ) {
     const mId = (agentMeetingMatch ?? agentPublishMatch ?? agentNotesMatch ??
-      agentResummarizeMatch ?? agentMarketMatch)![1];
+      agentResummarizeMatch ?? agentMarketMatch ?? agentHideMatch)![1];
     const { data: mRow } = await supabase.from("meetings").select("*").eq(
       "id",
       mId,
@@ -2809,6 +2829,20 @@ async function routeRequest(req: Request): Promise<Response> {
     }
     // Сужение для компилятора: гард уже вернул 404 при meeting=null. Строка недостижима.
     if (!meeting) return apiErr(404, "Not found", origin);
+
+    // POST /:id/hide — скрыть черновик групповой встречи у себя (issue #818). Строка общая на
+    // всех владельцев, поэтому не удаляем, а отмечаем смотрящего в hidden_for.
+    if (agentHideMatch && req.method === "POST") {
+      if (!canHideDraftMeeting(meeting as DraftMeetingRow, telegram_id)) {
+        return apiErr(409, "Only a meeting with several owners can be hidden — delete it instead", origin);
+      }
+      const prev = Array.isArray(meeting.hidden_for) ? (meeting.hidden_for as unknown[]).map(Number) : [];
+      const { error } = await supabase.from("meetings")
+        .update({ hidden_for: [...new Set([...prev, telegram_id])] })
+        .eq("id", mId);
+      if (error) return serverError(origin, "agent-meetings hide", error);
+      return new Response(null, { status: 204, headers: corsHeaders(origin) });
+    }
 
     // POST /:id/resummarize — пере-сводка тезисов ТЕКУЩИМ промптом из сохранённого транскрипта
     // (без повторной транскрибации). Только до публикации; заголовок не трогаем.
@@ -3008,6 +3042,10 @@ async function routeRequest(req: Request): Promise<Response> {
         return apiErr(409, "Уже в базе — удаляйте через раздел «База»", origin);
       }
       // Совладелец по приглашению черновик не удаляет — он общий (решение владельца 2026-09-25).
+      // Групповую встречу не удаляет никто: она стёрлась бы у всех — её скрывают у себя (#818).
+      if (canHideDraftMeeting(meeting as DraftMeetingRow, telegram_id)) {
+        return apiErr(409, "This meeting has several owners — hide it for yourself instead", origin);
+      }
       if (!canDeleteDraftMeeting(meeting as DraftMeetingRow, telegram_id)) {
         return apiErr(
           403,

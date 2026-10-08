@@ -45,10 +45,10 @@ jobs:
       contents: write           # метка prod-deployed двигается и пушится
     steps:
       # fetch-depth: 0 — без истории и метки prod-deployed не понять, какие функции изменились.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0
-      - uses: supabase/setup-cli@v1
+      - uses: supabase/setup-cli@1dedf2c611547ede7232d26866dd3c56ab903bbb # v1
         with:
           version: 2.118.0
       - name: Настроить git для метки prod-deployed

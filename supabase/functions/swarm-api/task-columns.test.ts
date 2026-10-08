@@ -57,6 +57,9 @@ Deno.test("тянет всё, что списки реально читают", 
     "created_by_telegram_id",
     "recur_freq",
     "recur_anchor_dom",
+    "recur_interval",
+    "recur_weekdays",
+    "recur_setpos",
   ];
   for (const f of need) {
     assert(cols().includes(f), `${f} нужно списку, но не запрашивается`);

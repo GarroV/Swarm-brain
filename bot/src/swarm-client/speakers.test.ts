@@ -172,4 +172,23 @@ describe("SpeakerTimelineCollector", () => {
 
     await expect(collector.stop()).resolves.toEqual([]);
   });
+
+  it("помнит, когда кто-то говорил последним, — тишина его не стирает", async () => {
+    let clock = 1000;
+    const script = [null, "Вера", null, null];
+    const source = scriptedSource(script);
+    const collector = new SpeakerTimelineCollector(source, {
+      intervalMs: 5,
+      now: () => (clock += 10),
+    });
+
+    expect(collector.lastSpokeAt()).toBeNull();
+    collector.start();
+    await waitUntil(() => source.calls() >= afterScript(script));
+    const spoke = collector.lastSpokeAt();
+    await collector.stop();
+
+    expect(spoke).not.toBeNull();
+    expect(spoke).toBeLessThan(clock);
+  });
 });

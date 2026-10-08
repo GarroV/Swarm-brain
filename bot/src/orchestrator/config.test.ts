@@ -140,13 +140,13 @@ describe("readMeetingConfig — событие календаря (T100)", () =>
 });
 
 describe("имя бота в звонке", () => {
-  it("в Толк гостем — имя, под которым бота видят в Meet (профиль Google «scriba (запись)»)", () => {
+  it("в Толк гостем — имя, под которым бота видят в Meet (профиль Google «Scriba Notetaker»)", () => {
     const config = readMeetingConfig({
       ...BASE,
       [MEETING_ENV.platform]: "kontur",
       [MEETING_ENV.joinUrl]: "https://dodobrands.ktalk.ru/abc",
     });
-    expect(config.displayName).toBe("scriba (запись)");
+    expect(config.displayName).toBe("Scriba Notetaker");
   });
 
   it("в Meet — прежнее имя профиля", () => {

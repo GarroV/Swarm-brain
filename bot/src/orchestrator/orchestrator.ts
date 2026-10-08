@@ -37,8 +37,10 @@ import { LEASE_WRITE_INTERVAL_MS, writeLease } from "./lease.ts";
 import { inBackground } from "./background.ts";
 import type { Notifier } from "./notices.ts";
 import { parseStateLine } from "./state-line.ts";
+import { type SilenceAlertInput, silenceAlertText } from "./owner-alert.ts";
 import { describeError } from "./describe-error.ts";
 import type { MeetingEgress, MeetingNetwork } from "./egress.ts";
+import type { RunLogs, RunLogWriter } from "./run-log.ts";
 
 // eslint-disable-next-line sonarjs/redundant-type-aliases -- имя из контракта блока (docs/furca/blocks/orchestrator.md)
 export type ContainerId = string;
@@ -115,10 +117,20 @@ export interface OrchestratorOptions {
    */
   readonly account?: AccountCopies;
   /**
+   * Журнал каждого запуска на диске службы (#832): контейнер встречи удаляется по выходе вместе
+   * со своим журналом. Не задан — журнал только в памяти (хвост для «контейнер умер»).
+   */
+  readonly runLogs?: RunLogs;
+  /**
    * Выход встречи наружу (T178): своя internal-сеть и egress-прокси. Обязателен — встреча без
    * него ходила бы куда угодно с живой сессией аккаунта бота в браузере.
    */
   readonly egress: MeetingEgress;
+  /**
+   * Срочное предупреждение владельцу (канал FURCA, #861): тишина в записи при людях в звонке.
+   * Не задан — тревога остаётся строкой журнала.
+   */
+  readonly alertOwner?: (text: string) => Promise<void>;
 }
 
 interface Managed {
@@ -133,6 +145,7 @@ interface Managed {
   meetingId: string | null;
   outcome: string | null;
   readonly tail: string[];
+  readonly journal: RunLogWriter | null;
   exited: Promise<void>;
 }
 
@@ -363,6 +376,7 @@ export class Orchestrator {
       meetingId: null,
       outcome: null,
       tail: [],
+      journal: this.options.runLogs?.open(runId) ?? null,
       exited: Promise.resolve(),
     };
     managed.exited = this.watchExit(managed, exitCode);
@@ -390,11 +404,38 @@ export class Orchestrator {
   }
 
   private onLogLine(managed: Managed, line: string): void {
+    managed.journal?.line(line);
     managed.tail.push(line);
     if (managed.tail.length > LOG_TAIL_LINES) managed.tail.shift();
     const state = parseStateLine(line);
     if (state?.meetingId !== undefined) managed.meetingId = state.meetingId;
     if (state?.outcome !== undefined) managed.outcome = state.outcome;
+    if (state?.audio !== undefined) {
+      this.alertSilence(managed, {
+        audio: state.audio,
+        title: state.title,
+        platform: state.platform,
+        runId: managed.runId,
+      });
+    }
+  }
+
+  private alertSilence(managed: Managed, input: SilenceAlertInput): void {
+    const text = silenceAlertText(input);
+    const send = this.options.alertOwner;
+    if (send === undefined) {
+      this.log(`предупреждение владельцу не настроено (канал FURCA): ${text}`);
+      return;
+    }
+    inBackground(
+      async () => {
+        await send(text);
+        managed.journal?.line(`# предупреждение владельцу ушло: ${text}`);
+      },
+      (error) => {
+        this.log(`предупреждение владельцу НЕ ушло (${describeError(error)}): ${text}`);
+      },
+    );
   }
 
   private async onExit(managed: Managed, code: number | null): Promise<void> {
@@ -407,10 +448,18 @@ export class Orchestrator {
         ? { kind: "finished", outcome: managed.outcome }
         : { kind: "died", exitCode: code, meetingId: managed.meetingId },
     );
+    managed.journal?.line(
+      `# выход: код ${String(code)}, исход ${managed.outcome ?? "не назван"}, ` +
+        `встреча ${managed.meetingId ?? "не заявлена"}`,
+    );
+    this.options.runLogs?.prune();
     await this.releaseAccount(managed.runId);
     await this.releaseEgress(managed.runId);
     if (code === 0) {
-      this.log(`контейнер ${managed.id} закончил встречу: ${managed.outcome ?? "исход не назван"}`);
+      this.log(
+        `контейнер ${managed.id} закончил встречу: ${managed.outcome ?? "исход не назван"} ` +
+          `(запуск ${managed.runId}, встреча ${managed.meetingId ?? "не заявлена"})`,
+      );
       return;
     }
 

@@ -1,5 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { LEASE_STALE_MS, runMeetingStep } from "../_shared/meeting-processor.ts";
+import { AUDIO_BUCKET, LEASE_STALE_MS, runMeetingStep } from "../_shared/meeting-processor.ts";
+import { isPurgeMinute, purgeExpiredAudio } from "../_shared/meeting-audio-retention.ts";
 import { holdWaitingMeetings, processingFrozen } from "../_shared/processing-freeze.ts";
 
 // meeting-process — cron-воркер durable-обработки встреч. Триггерится pg_cron каждую минуту
@@ -37,6 +38,15 @@ Deno.serve(async (req: Request) => {
   }
 
   const startedAt = Date.now();
+  // Раз в час — снести аудио старше недели. Сбой чистки не мешает обработке встреч.
+  if (isPurgeMinute(new Date(startedAt))) {
+    try {
+      const removed = await purgeExpiredAudio(supabase, AUDIO_BUCKET);
+      if (removed > 0) console.log(`meeting-process: удалено устаревшего аудио — ${removed}`);
+    } catch (e) {
+      console.error("meeting-process: чистка аудио не удалась:", e);
+    }
+  }
   const staleIso = new Date(Date.now() - LEASE_STALE_MS).toISOString();
 
   // Кандидаты: в обработке, с манифестом, и НЕ под свежим лизом (никто другой их сейчас не двигает).

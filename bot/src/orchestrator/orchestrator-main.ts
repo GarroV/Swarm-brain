@@ -12,6 +12,8 @@
  *   SCRIBA_BOT_TOKEN            — токен служебного агента (обязательно, только из секретов);
  *   SCRIBA_IMAGE                — образ контейнера встречи (обязательно);
  *   SCRIBA_LEASE_HOST_DIR       — каталог поводка на хосте (обязательно, свой у службы);
+ *   SCRIBA_RUN_LOG_DIR          — куда писать журнал каждого запуска `<run>.log` (#832); пусто —
+ *                                 журнал встречи не сохраняется (контейнер удаляется вместе с ним);
  *   SCRIBA_PROJECT              — имя стенда, метка контейнеров и томов (по умолчанию scriba);
  *   SCRIBA_BOT_VERSION          — номер сборки, уходит в heartbeat и заявку (по умолчанию 0);
  *   SCRIBA_INVITE_POLL_MS       — пауза между опросами приглашений (по умолчанию 5000);
@@ -30,7 +32,10 @@
  *                                 в контейнер монтируется своя копия одним файлом на чтение;
  *   SCRIBA_EGRESS_EXTRA         — добавка к списку выхода контейнеров встреч наружу (T178), через
  *                                 запятую, только точные host:port. Всё остальное, кроме
- *                                 Google/Meet и SCRIBA_CONTAINER_SWARM_URL, закрыто.
+ *                                 Google/Meet и SCRIBA_CONTAINER_SWARM_URL, закрыто;
+ *   SCRIBA_ALERT_CHANNEL_URL    — канал FURCA для срочных предупреждений владельцу (#861), например
+ *                                 http://furca-channel-bot-1:8090; задаётся вместе с
+ *   SCRIBA_ALERT_CHANNEL_SECRET — секретом канала. Не заданы — тревога только в журнале.
  *
  * Кривое окружение — отказ на старте с именем переменной: служба, которая «работает» и никого
  * не зовёт, — ровно та тишина, против которой она заведена.
@@ -48,6 +53,8 @@ import { inviteTriggerFor } from "./invite-service.ts";
 import { NoticeClient } from "./notice-client.ts";
 import { JournaledNotifier, type Notifier } from "./notices.ts";
 import { Orchestrator } from "./orchestrator.ts";
+import { channelAlert } from "./owner-alert.ts";
+import { RunLogs } from "./run-log.ts";
 
 type Environment = Readonly<Record<string, string | undefined>>;
 
@@ -120,6 +127,24 @@ function accountCopies(environment: Environment): AccountCopies | undefined {
   return new FileAccountCopies({ stateFile, copiesDirectory, log });
 }
 
+/**
+ * Срочные предупреждения владельцу: обе переменные вместе или ни одной (как вход аккаунта).
+ */
+function ownerAlert(environment: Environment): ((text: string) => Promise<void>) | undefined {
+  const url = nonEmpty(environment.SCRIBA_ALERT_CHANNEL_URL);
+  const secret = nonEmpty(environment.SCRIBA_ALERT_CHANNEL_SECRET);
+  if (url === undefined && secret === undefined) {
+    log("канал предупреждений владельцу не настроен — тишина в записи только в журнале");
+    return undefined;
+  }
+  if (url === undefined || secret === undefined) {
+    throw new Error(
+      "SCRIBA_ALERT_CHANNEL_URL и SCRIBA_ALERT_CHANNEL_SECRET задаются только вместе",
+    );
+  }
+  return channelAlert({ url, secret });
+}
+
 async function main(environment: Environment): Promise<void> {
   const swarmUrl = required(environment, "SCRIBA_SWARM_URL");
   const token = required(environment, "SCRIBA_BOT_TOKEN");
@@ -129,6 +154,11 @@ async function main(environment: Environment): Promise<void> {
     new JournaledNotifier(new NoticeClient({ baseUrl: swarmUrl, token: grant, onBehalfOf }), log);
 
   const account = accountCopies(environment);
+  const alertOwner = ownerAlert(environment);
+  const runLogDirectory = nonEmpty(environment.SCRIBA_RUN_LOG_DIR);
+  const runLogs =
+    runLogDirectory === undefined ? undefined : new RunLogs({ directory: runLogDirectory, log });
+  runLogs?.prune();
   const engine = new DockerodeEngine();
   const project = nonEmpty(environment.SCRIBA_PROJECT) ?? "scriba";
   const image = required(environment, "SCRIBA_IMAGE");
@@ -159,6 +189,8 @@ async function main(environment: Environment): Promise<void> {
     maxMeetings: positive(environment, "SCRIBA_MAX_MEETINGS", DEFAULT_MAX_MEETINGS),
     limits: containerLimits(environment),
     ...(account !== undefined && { account }),
+    ...(runLogs !== undefined && { runLogs }),
+    ...(alertOwner !== undefined && { alertOwner }),
   });
   const intervalMs = positive(environment, "SCRIBA_INVITE_POLL_MS", 5000);
   const trigger = inviteTriggerFor({

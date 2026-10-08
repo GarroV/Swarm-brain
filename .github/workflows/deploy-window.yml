@@ -55,20 +55,24 @@ jobs:
     permissions:
       contents: write        # пуш в main
       pull-requests: write   # мёрж, снятие метки, комментарий
+      actions: write         # следующий прогон по цепочке (шаг в конце)
     steps:
       # fetch-depth: 0 — нужны метка prod-deployed и история: без них не понять, какие edge-функции
       # изменились с прошлой раскатки (на shallow-клоне diff по метке невозможен).
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0
       # CLI нужен для `supabase functions deploy` после мёржа.
-      - uses: supabase/setup-cli@v1
+      - uses: supabase/setup-cli@1dedf2c611547ede7232d26866dd3c56ab903bbb # v1
         with:
           version: 2.118.0
       - name: Настроить git для метки prod-deployed
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+      - name: Голова main до прогона
+        id: before
+        run: echo "sha=$(git ls-remote origin refs/heads/main | cut -f1)" >> "$GITHUB_OUTPUT"
       - name: Раскатка помеченного PR
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -81,3 +85,28 @@ jobs:
           # без него он честно скажет «проверить нечем» и остановит раскатку, а не пропустит молча.
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
         run: bash scripts/deploy-window-merge.sh
+      # Цепочка (#841). Расписание GitHub на деле отдаёт ОДИН-ДВА прогона за ночь из 32 (замер
+      # 29.09–07.10: ровно один прогон в окне каждую ночь), а прогон берёт один PR — очередь из семи
+      # PR раскатывалась бы неделю. Поэтому прогон, который что-то влил, сам ставит следующий, пока
+      # в очереди есть помеченные PR. «Один PR за прогон» не нарушается: каждый PR — свой прогон и
+      # свой коммит в main. Цепочка рвётся сама: прогон, который ничего не влил (окно кончилось,
+      # PR ждёт миграцию, чеки не зелёные), следующего не ставит.
+      - name: Следующий PR — следующим прогоном
+        if: success() && inputs.dry_run != true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          BEFORE: ${{ steps.before.outputs.sha }}
+        run: |
+          after=$(git ls-remote origin refs/heads/main | cut -f1)
+          if [ "$after" = "$BEFORE" ]; then
+            echo "Этот прогон ничего не влил — цепочку не продолжаю."
+            exit 0
+          fi
+          left=$(gh pr list --repo "$REPO" --state open --label deploy-window --json number --jq length)
+          if [ "$left" -eq 0 ]; then
+            echo "Очередь пуста — цепочка закончена."
+            exit 0
+          fi
+          echo "Влит один PR, в очереди ещё $left — ставлю следующий прогон."
+          gh workflow run deploy-window.yml --repo "$REPO" --ref main -f dry_run=false -f force=false

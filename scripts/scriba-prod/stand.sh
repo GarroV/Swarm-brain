@@ -23,6 +23,9 @@ STATE="$ROOT/state"
 ACCOUNT_DIR="$ROOT/account"
 COMPOSE="$REPO/scripts/scriba-prod/compose.yml"
 ENV_FILE="$STATE/prod.env"
+# Канал FURCA (/srv/furca-channel): контейнер и его сеть — для предупреждений владельцу (#861).
+ALERT_CHANNEL_CONTAINER=furca-channel-bot-1
+ALERT_CHANNEL_NETWORK=furca-channel_default
 TOKEN_FILE="$STATE/bot.token"
 PROJECT=scriba-prod
 SWARM_URL='https://vbqglndbxkpmreccpqmr.supabase.co/functions/v1'
@@ -54,13 +57,20 @@ prod_up() {
   [ -s "$ACCOUNT_DIR/google-state.json" ] ||
     die "входа бота нет ($ACCOUNT_DIR/google-state.json): гостем в боевые встречи не идём"
   protect "$STATE"
-  mkdir -p "$STATE/lease" "$STATE/account-copies"
+  mkdir -p "$STATE/lease" "$STATE/account-copies" "$STATE/runs"
   local token rev version image egress_extra=""
   token=$(read_token)
   # Добавка к списку выхода встреч наружу (T178): одна строка «host:port,host:port» в
   # $STATE/egress-extra. Нужна, когда живой встрече не хватило хоста (медиасерверы Толка, T111):
   # его имя стоит в строке «egress deny» журнала прокси scriba-prod-egress.
   [ -f "$STATE/egress-extra" ] && egress_extra=$(tr -d '[:space:]' < "$STATE/egress-extra")
+  # Срочные предупреждения владельцу (#861): секрет канала FURCA — в $STATE/alert-channel.secret
+  # (права 600), канал — соседний контейнер на этом же сервере, оркестратор цепляется к его сети.
+  local alert_url="" alert_secret=""
+  if [ -f "$STATE/alert-channel.secret" ]; then
+    alert_secret=$(tr -d '[:space:]' < "$STATE/alert-channel.secret")
+    alert_url="http://$ALERT_CHANNEL_CONTAINER:8090"
+  fi
   rev=$(git -C "$REPO" rev-parse --short HEAD)
   version=$(git -C "$REPO" rev-list --count HEAD)
   image="scriba-prod:$rev"
@@ -79,9 +89,17 @@ PROD_STATE_DIR=$STATE
 PROD_ACCOUNT_DIR=$ACCOUNT_DIR
 PROD_LEASE_DAEMON_DIR=$STATE/lease
 PROD_ACCOUNT_COPIES_DAEMON_DIR=$STATE/account-copies
+SCRIBA_ALERT_CHANNEL_URL=$alert_url
+SCRIBA_ALERT_CHANNEL_SECRET=$alert_secret
 EOF
   )
   dc up -d --force-recreate orchestrator >/dev/null
+  if [ -n "$alert_url" ]; then
+    docker network connect "$ALERT_CHANNEL_NETWORK" "$PROJECT-orchestrator-1" 2>/dev/null ||
+      say "ВНИМАНИЕ: сеть канала FURCA $ALERT_CHANNEL_NETWORK не подключена — предупреждения владельцу не дойдут"
+  else
+    say "ВНИМАНИЕ: нет $STATE/alert-channel.secret — предупреждения владельцу о тишине только в журнале"
+  fi
   sleep 15
   show_status
 }

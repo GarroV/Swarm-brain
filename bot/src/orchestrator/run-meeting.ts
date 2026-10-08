@@ -22,6 +22,7 @@ import { inBackground } from "./background.ts";
 import type { Notice, NoticeResult, Notifier } from "./notices.ts";
 import { describeError } from "./describe-error.ts";
 import { BOT_PROFILE } from "./profile.ts";
+import { type AudioAlert, QuietEndTimer, SilenceWatch } from "./audio-watch.ts";
 
 /**
  * Адаптер площадки в том объёме, который нужен процессу встречи.
@@ -60,6 +61,10 @@ export interface MeetingRecorder {
 interface TimelineCollector {
   start(): void;
   stop(): Promise<SpeakerSpan[]>;
+  /**
+   * Когда (часы `now`) кто-то последний раз говорил; `null` — ни разу. Нет метода — нет сигнала.
+   */
+  lastSpokeAt?(): number | null;
 }
 
 export interface MeetingTiming {
@@ -84,6 +89,18 @@ export interface MeetingTiming {
    * Шаг опроса: дверь, одиночество, сигнал остановки.
    */
   readonly pollMs: number;
+  /**
+  Шаг замера звука для сторожа тишины.
+  */
+  readonly audioSampleMs: number;
+  /**
+  Сколько тишины при людях до предупреждения.
+  */
+  readonly silenceAlertMs: number;
+  /**
+  Сколько тишины без говорящих до выхода из звонка (#376).
+  */
+  readonly quietEndMs: number;
 }
 
 const DEFAULT_TIMING: MeetingTiming = {
@@ -93,7 +110,22 @@ const DEFAULT_TIMING: MeetingTiming = {
   aloneMs: BOT_PROFILE.aloneMs,
   heartbeatMs: BOT_PROFILE.heartbeatMs,
   pollMs: BOT_PROFILE.pollMs,
+  audioSampleMs: BOT_PROFILE.silence.sampleMs,
+  silenceAlertMs: BOT_PROFILE.silence.alertMs,
+  quietEndMs: BOT_PROFILE.silence.endMs,
 };
+
+/**
+ * Сторож тишины (#861): замер звука записи и куда сказать о тревоге. Процесс встречи только
+ * решает «пора»; мерит и доносит контейнер (ffmpeg по monitor-source, строка состояния).
+ */
+interface AudioWatchHooks {
+  /**
+  Тише ли порога то, что сейчас пишется; `null` — замер не удался.
+  */
+  readonly sampleSilent: () => Promise<boolean | null>;
+  readonly report: (alert: AudioAlert) => void;
+}
 
 export interface MeetingRunOptions {
   readonly joinUrl: string;
@@ -127,6 +159,7 @@ export interface MeetingRunOptions {
    * Сообщить наружу `meeting_id`: оркестратор читает его из журнала, если контейнер умрёт.
    */
   readonly reportMeetingId?: (meetingId: string) => void;
+  readonly audioWatch?: AudioWatchHooks;
 }
 
 export type MeetingOutcome =
@@ -186,6 +219,14 @@ interface RunContext {
    * Когда началась и когда остановилась запись (часы `now`); `null` — ещё нет.
    */
   readonly recording: { startedAt: number | null; stoppedAt: number | null };
+  /**
+  Последний ответ «один ли бот» — сторожу тишины.
+  */
+  readonly lastAlone: { value: boolean | null };
+  /**
+  Взводит сторож звука: тишина без говорящих дольше `quietEndMs` — встреча кончилась.
+  */
+  readonly quietEnd: { value: boolean };
 }
 
 /**
@@ -313,8 +354,48 @@ async function passDoor(context: RunContext): Promise<DoorResult> {
 /**
  * Сидеть в звонке, пока не останемся одни дольше порога или пока не остановят снаружи.
  */
+/**
+ * Сторож тишины за процессом встречи: замер не чаще раза в `audioSampleMs`, в фоне, без
+ * наложения — опрос участников ждать его не должен.
+ */
+function audioWatcher(context: RunContext): () => void {
+  const hooks = context.options.audioWatch;
+  if (hooks === undefined) return (): void => undefined;
+  const watch = new SilenceWatch(context.timing.silenceAlertMs);
+  const quiet = new QuietEndTimer(context.timing.quietEndMs);
+  let nextAt = context.now();
+  let isBusy = false;
+  return (): void => {
+    if (isBusy || context.now() < nextAt) return;
+    isBusy = true;
+    nextAt = context.now() + context.timing.audioSampleMs;
+    inBackground(
+      async () => {
+        const silent = await hooks.sampleSilent();
+        const alert = watch.observe({ silent, alone: context.lastAlone.value }, context.now());
+        if (alert !== null) {
+          context.log(
+            alert === "silent"
+              ? `ТИШИНА В ЗАПИСИ: в звонке люди, а звука нет ${String(context.timing.silenceAlertMs / 60_000)} мин`
+              : "звук в записи вернулся",
+          );
+          hooks.report(alert);
+        }
+        const lastSpokeAt = context.options.timeline.lastSpokeAt?.() ?? null;
+        if (quiet.observe({ silent, lastSpokeAt }, context.now())) context.quietEnd.value = true;
+        isBusy = false;
+      },
+      (error) => {
+        isBusy = false;
+        context.log(`замер звука не удался: ${describeError(error)}`);
+      },
+    );
+  };
+}
+
 async function stayInCall(context: RunContext): Promise<void> {
   const timer = new AloneTimer(context.timing.aloneMs);
+  const checkAudio = audioWatcher(context);
   while (!context.options.stop.aborted) {
     if (context.takenOver.value) return;
     let alone: boolean | null;
@@ -324,8 +405,16 @@ async function stayInCall(context: RunContext): Promise<void> {
       context.log(`опрос участников не удался: ${describeError(error)}`);
       alone = null;
     }
+    context.lastAlone.value = alone;
+    checkAudio();
     if (timer.observe(alone, context.now())) {
       context.log(`один в звонке дольше ${String(context.timing.aloneMs)} мс — встреча кончилась`);
+      return;
+    }
+    if (context.quietEnd.value) {
+      context.log(
+        `тишина и никто не говорит дольше ${String(context.timing.quietEndMs)} мс — встреча кончилась`,
+      );
       return;
     }
     await context.sleep(context.timing.pollMs);
@@ -472,6 +561,8 @@ export async function runMeeting(options: MeetingRunOptions): Promise<MeetingOut
     meetingId,
     takenOver: { value: false },
     recording: { startedAt: null, stoppedAt: null },
+    lastAlone: { value: null },
+    quietEnd: { value: false },
   };
   const outcome = await afterClaim(context);
   try {

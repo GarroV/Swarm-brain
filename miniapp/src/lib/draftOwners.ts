@@ -10,7 +10,15 @@ export function hasSeveralOwners(m: Draft): boolean {
   return new Set([...(m.recorders ?? []).map((r) => r.telegram_id), ...(m.co_owners ?? [])]).size > 1;
 }
 
-/** Удалить черновик может только записавший, совладелец по приглашению — нет. */
+/**
+ * Удалить черновик может только записавший, совладелец по приглашению — нет. И только встречу с
+ * одним владельцем: групповая — одна строка на всех, удаление стирало её у остальных (issue #818).
+ */
 export function canDeleteDraft(m: Draft, viewerId: number | null | undefined): boolean {
-  return viewerId != null && (m.recorders ?? []).some((r) => r.telegram_id === viewerId);
+  return viewerId != null && !hasSeveralOwners(m) && (m.recorders ?? []).some((r) => r.telegram_id === viewerId);
+}
+
+/** Групповую встречу каждый её владелец скрывает у себя — у остальных она остаётся (issue #818). */
+export function canHideDraft(m: Draft): boolean {
+  return hasSeveralOwners(m);
 }

@@ -2,7 +2,12 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { createTask, deleteTask, getTask, listTasksWithTotal, updateTask } from "../../_shared/tasks/db.ts";
 import { projectLabel, truncationNote, visibleProjectNameById } from "./task-list.ts";
 
-import { recurrencePatchFor, resolveRecurrence } from "../../_shared/tasks/recurrence.ts";
+import {
+  pickRecurExtras,
+  RECUR_BODY_KEYS,
+  recurrencePatchFor,
+  resolveRecurrence,
+} from "../../_shared/tasks/recurrence.ts";
 import { commentDeleteDenial, validateCommentContent } from "../../_shared/tasks/comments.ts";
 import { afterTaskComment } from "../../_shared/tasks/comment-fanout.ts";
 import { personLabel, resolvePersonNames } from "../../_shared/users/display-name.ts";
@@ -207,6 +212,9 @@ export async function toolAddTask(args: {
   labels?: string[];
   project_name?: string;
   recur_freq?: string | null;
+  recur_interval?: number | null;
+  recur_weekdays?: number[] | null;
+  recur_setpos?: number | null;
   remind_date?: string;
   status?: string;
   confirmed?: boolean;
@@ -272,7 +280,7 @@ export async function toolAddTask(args: {
   // Цикличность — тем же хелпером, что в вебе: частота проверяется, число месяца выводится из
   // срока. Без срока считать следующее вхождение не от чего, поэтому отказ, а не тихое NULL.
   const dueDate = args.due_date ?? parent?.due_date ?? null;
-  const recur = resolveRecurrence(args.recur_freq, dueDate);
+  const recur = resolveRecurrence(args.recur_freq, dueDate, pickRecurExtras(args));
   if (!recur.ok) return `Ошибка: ${recur.error}`;
 
   // Пинг (#622): отдельно от срока — «дедлайн 1 марта, напомнить 1 декабря».
@@ -314,6 +322,9 @@ export async function toolAddTask(args: {
       project_linked: parent ? !!project_id : undefined,
       recur_freq: recur.recur_freq,
       recur_anchor_dom: recur.recur_anchor_dom,
+      recur_interval: recur.recur_interval,
+      recur_weekdays: recur.recur_weekdays,
+      recur_setpos: recur.recur_setpos,
       remind_date: ping?.ok ? ping.fields.remind_date : null,
       remind_set_by: ping?.ok ? ping.fields.remind_set_by : null,
     }, groupId);
@@ -341,6 +352,9 @@ export async function toolUpdateTask(args: {
   labels?: string[];
   project_name?: string;
   recur_freq?: string | null;
+  recur_interval?: number | null;
+  recur_weekdays?: number[] | null;
+  recur_setpos?: number | null;
   remind_date?: string | null;
   parent_task_id?: string;
   hidden_from_hub?: boolean;
@@ -417,11 +431,19 @@ export async function toolUpdateTask(args: {
   // Цикличность (null — снять). Считаем от ИТОГОВОГО срока: его могли поменять этим же вызовом.
   // Якорь числа месяца хелпер трогает только когда изменился срок или частота — иначе правка
   // одного названия увела бы зажатую задачу с 31-го числа на 28-е.
-  if ("recur_freq" in args) {
+  if (RECUR_BODY_KEYS.some((k) => k in args)) {
     const effDue = "due_date" in args ? (args.due_date ?? null) : task.due_date;
-    const recur = recurrencePatchFor(args.recur_freq, effDue, task);
+    const recur = recurrencePatchFor(
+      "recur_freq" in args ? args.recur_freq : undefined,
+      effDue,
+      task,
+      pickRecurExtras(args),
+    );
     if (!recur.ok) return `Ошибка: ${recur.error}`;
     fields.recur_freq = recur.recur_freq;
+    fields.recur_interval = recur.recur_interval;
+    fields.recur_weekdays = recur.recur_weekdays;
+    fields.recur_setpos = recur.recur_setpos;
     if ("recur_anchor_dom" in recur) fields.recur_anchor_dom = recur.recur_anchor_dom;
   }
   // Регулярная задача без срока молча перестала бы повторяться.
@@ -798,9 +820,27 @@ export const TASK_TOOL_DEFINITIONS = [
         },
         recur_freq: {
           type: ["string", "null"],
-          enum: ["daily", "weekly", "monthly", null],
+          enum: ["daily", "weekly", "monthly", "yearly", null],
           description:
-            "Цикличность: задача не закрывается, а переносится на следующее вхождение (daily — каждый день, weekly — тот же день недели, monthly — то же число месяца). ТРЕБУЕТ due_date: день недели и число берутся из срока. null — снять цикличность.",
+            "Цикличность: задача не закрывается, а переносится на следующее вхождение графика (daily — каждый день, weekly — тот же день недели, monthly — то же число месяца, yearly — та же дата каждый год). ТРЕБУЕТ due_date: день недели, число и месяц берутся из срока, интервал отсчитывается от него. null — снять цикличность вместе со всеми полями правила.",
+        },
+        recur_interval: {
+          type: ["integer", "null"],
+          minimum: 1,
+          maximum: 99,
+          description:
+            "Каждые N дней/недель/месяцев/лет (по recur_freq), от срока. По умолчанию 1. «Каждые 2 недели» = weekly + 2.",
+        },
+        recur_weekdays: {
+          type: ["array", "null"],
+          items: { type: "integer", minimum: 1, maximum: 7 },
+          description:
+            "Только для weekly: дни недели, 1 = пн … 7 = вс («пн и чт» = [1, 4]). null — день недели срока. Недели с шагом recur_interval считаются от недели срока.",
+        },
+        recur_setpos: {
+          type: ["integer", "null"],
+          description:
+            "Только для monthly: n-й (1–5) или последний (-1) день недели срока в месяце. «Каждый 3-й понедельник» = monthly + 3 при сроке в понедельник. Если 5-го такого дня в месяце нет — месяц пропускается. null — по числу месяца.",
         },
         remind_date: {
           type: "string",
@@ -863,9 +903,27 @@ export const TASK_TOOL_DEFINITIONS = [
         },
         recur_freq: {
           type: ["string", "null"],
-          enum: ["daily", "weekly", "monthly", null],
+          enum: ["daily", "weekly", "monthly", "yearly", null],
           description:
-            "Цикличность: задача не закрывается, а переносится на следующее вхождение (daily — каждый день, weekly — тот же день недели, monthly — то же число месяца). ТРЕБУЕТ due_date: день недели и число берутся из срока. null — снять цикличность.",
+            "Цикличность: задача не закрывается, а переносится на следующее вхождение графика (daily — каждый день, weekly — тот же день недели, monthly — то же число месяца, yearly — та же дата каждый год). ТРЕБУЕТ due_date: день недели, число и месяц берутся из срока, интервал отсчитывается от него. null — снять цикличность вместе со всеми полями правила.",
+        },
+        recur_interval: {
+          type: ["integer", "null"],
+          minimum: 1,
+          maximum: 99,
+          description:
+            "Каждые N дней/недель/месяцев/лет (по recur_freq), от срока. По умолчанию 1. «Каждые 2 недели» = weekly + 2.",
+        },
+        recur_weekdays: {
+          type: ["array", "null"],
+          items: { type: "integer", minimum: 1, maximum: 7 },
+          description:
+            "Только для weekly: дни недели, 1 = пн … 7 = вс («пн и чт» = [1, 4]). null — день недели срока. Недели с шагом recur_interval считаются от недели срока.",
+        },
+        recur_setpos: {
+          type: ["integer", "null"],
+          description:
+            "Только для monthly: n-й (1–5) или последний (-1) день недели срока в месяце. «Каждый 3-й понедельник» = monthly + 3 при сроке в понедельник. Если 5-го такого дня в месяце нет — месяц пропускается. null — по числу месяца.",
         },
         remind_date: {
           type: ["string", "null"],
