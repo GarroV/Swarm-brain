@@ -18,6 +18,8 @@ const MIGRATION = new URL(
 );
 const FN = "public.meeting_audio_expired(integer, integer)";
 const PREFIX = "t_audio_retention";
+// Встреча в обработке: её части не трогаются, сколько бы им ни было.
+const BUSY = "7e57a0d0-0000-4000-8000-00000000a0d1";
 
 async function connect(): Promise<Client> {
   const client = new Client(DB_URL);
@@ -48,7 +50,14 @@ async function scenario(run: (db: Client) => Promise<void>): Promise<void> {
          ('meeting-audio', '${PREFIX}/old-a.m4a', now() - interval '9 days'),
          ('meeting-audio', '${PREFIX}/old-b.m4a', now() - interval '8 days'),
          ('meeting-audio', '${PREFIX}/fresh.m4a', now() - interval '6 days'),
+         ('meeting-audio', '${PREFIX}/today.m4a', now()),
+         ('meeting-audio', '${PREFIX}/queued/person_1.json', now() - interval '9 days'),
+         ('meeting-audio', '${BUSY}/gen/sys-0.m4a', now() - interval '9 days'),
          ('swarm_private', '${PREFIX}/other-bucket.m4a', now() - interval '30 days')`,
+    );
+    await db.queryArray(
+      `insert into public.meetings (id, source, identity_kind, identity_key, summary_status)
+       values ('${BUSY}', 'desktop-agent', 'manual', '${BUSY}', 'processing')`,
     );
     await run(db);
   } finally {
@@ -82,6 +91,22 @@ Deno.test("meeting_audio_expired: лимит соблюдается, старш�
     );
     assertEquals(limited.rows.length, all.rows[0].n - 1);
     assertEquals(limited.rows.some((r) => r.name === `${PREFIX}/old-b.m4a`), false);
+  });
+});
+
+Deno.test("meeting_audio_expired: ноль и минус в сроке — не моложе суток", async () => {
+  await scenario(async (db) => {
+    assertEquals(await expired(db, 0, 1000), [`${PREFIX}/old-a.m4a`, `${PREFIX}/old-b.m4a`, `${PREFIX}/fresh.m4a`]);
+    assertEquals(await expired(db, -5, 1000), [`${PREFIX}/old-a.m4a`, `${PREFIX}/old-b.m4a`, `${PREFIX}/fresh.m4a`]);
+  });
+});
+
+Deno.test("meeting_audio_expired: части встречи в обработке не отдаются", async () => {
+  await scenario(async (db) => {
+    const r = await db.queryObject<{ n: number }>(
+      `select count(*)::int as n from public.meeting_audio_expired(7, 1000) as name where name like '${BUSY}/%'`,
+    );
+    assertEquals(r.rows[0].n, 0);
   });
 });
 
