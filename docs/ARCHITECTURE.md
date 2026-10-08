@@ -1206,7 +1206,7 @@ orchestrator](furca/blocks/orchestrator.md).
 | Настройка | Бот | Сервер | Кто на сервере читает |
 |---|---|---|---|
 | Имя (в звонке и в текстах) | `name` | `name` → `{bot}` в шаблонах | `_shared/bot-notice-texts.ts`, `_shared/calendar-missed.ts`, `meeting-missed/handle.ts`, сторож |
-| Имя гостя, которое бот вводит сам (Толк) | `guestName` («scriba (запись)» — как люди видят бота в Meet, где имя из профиля Google) | — | — |
+| Имя гостя, которое бот вводит сам (Толк) | `guestName` («Scriba Notetaker» — как люди видят бота в Meet, где имя из профиля Google) | — | — |
 | Площадки | `platforms` (`meet`, `kontur`) | `platforms` | `_shared/meeting-invite.ts` (`BOT_PLATFORMS`), `_shared/calendar-missed.ts` (`canInvite`) |
 | Толк: ожидание закрытой комнаты (D040) | `guestRoom.waitMs/reloadMs` (10 мин, перезагрузка раз в 25 с) | `guestRoom.waitMinutes` → `{guest_wait}` | `_shared/bot-notice-texts.ts` (`guest_access_closed`) |
 | Дверь: ждать, повтор, сигналов | `door.waitMs/repeatMs/maxNotices` | `door.waitSeconds/repeatSeconds/maxAttempts` → `{door_wait}` | `_shared/notices.ts` (потолки базы, текст двери) |

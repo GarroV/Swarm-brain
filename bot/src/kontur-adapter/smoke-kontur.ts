@@ -27,7 +27,7 @@ const ROOM = "https://dodobrands.ktalk.ru/smoke-room";
 /**
 Имя гостя, которое процесс встречи передаёт адаптеру (профиль бота, `guestName`).
 */
-const GUEST_NAME = "scriba (запись)";
+const GUEST_NAME = "Scriba Notetaker";
 const FIXTURES_DIRECTORY =
   process.env.SCRIBA_KONTUR_FIXTURES ?? fileURLToPath(new URL("fixtures/", import.meta.url));
 
