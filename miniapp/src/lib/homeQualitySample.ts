@@ -3,6 +3,8 @@
 // Всё ниже — синтетика, детерминированная от кода страны, чтобы виджеты можно было увидеть
 // в продукте. Настоящие баллы сюда НЕ кладём: репозиторий публичный.
 
+import { monthKey, type MonthRange, type Point } from "./homeChartSeries";
+
 export const RS_NORM = 90;
 export const RS_WARN = 85;
 export const RS_CRIT = 80;
@@ -34,11 +36,42 @@ export type CountrySample = {
   coll: number;
   rsWaves: number[];
   rkoWeeks: number[];
+  /** Полная история для графика с выбором периода: волны (1-е и 16-е число) и недели (понедельник). */
+  rsHistory: Point[];
+  rkoHistory: Point[];
   pizzerias: PizzeriaSample[];
 };
 
 export const WAVES = 16;
 export const WEEKS = 7;
+
+// История образца: два года волн РС и недель РКО, последняя точка — «Сентябрь 2» и неделя с 28.09.2026.
+const HISTORY_WAVES = 48;
+const HISTORY_WEEKS = 104;
+const LAST_WAVE = new Date(2026, 8, 16);
+const LAST_WEEK = new Date(2026, 8, 28);
+
+function waveDate(stepsBack: number): Date {
+  const halves = LAST_WAVE.getMonth() * 2 + 1 - stepsBack; // от января 2026: индекс полумесяца
+  const month = Math.floor(halves / 2);
+  return new Date(LAST_WAVE.getFullYear(), month, halves - month * 2 === 0 ? 1 : 16);
+}
+
+function weekDate(stepsBack: number): Date {
+  const d = new Date(LAST_WEEK);
+  d.setDate(d.getDate() - stepsBack * 7);
+  return d;
+}
+
+const dated = (values: number[], at: (stepsBack: number) => Date): Point[] =>
+  values.map((value, i) => ({ date: at(values.length - 1 - i), value }));
+
+/** Сколько данных есть у образца — границы выбора периода. */
+export const RS_BOUNDS: MonthRange = { from: monthKey(waveDate(HISTORY_WAVES - 1)), to: monthKey(LAST_WAVE) };
+export const RKO_BOUNDS: MonthRange = { from: monthKey(weekDate(HISTORY_WEEKS - 1)) + 1, to: monthKey(LAST_WEEK) };
+/** Период по умолчанию — как было до выбора периода: 8 месяцев волн и 2 месяца недель. */
+export const RS_DEFAULT: MonthRange = { from: RS_BOUNDS.to - 7, to: RS_BOUNDS.to };
+export const RKO_DEFAULT: MonthRange = { from: RKO_BOUNDS.to - 1, to: RKO_BOUNDS.to };
 
 function seeded(seed: string): () => number {
   let h = 2166136261;
@@ -69,13 +102,18 @@ export function countrySample(cc: string): CountrySample {
   const rnd = seeded(cc);
   const rs = Math.round(70 + rnd() * 26);
   const rko = round1(87 + rnd() * 9);
-  const rsWaves = walk(rnd, rs, WAVES, 6, 55, 100);
-  const rkoWeeks = walk(rnd, rko, WEEKS, 2.4, 80, 100);
+  // История — своим зерном, чтобы остальной образец (пиццерии, собираемость) не сдвинулся.
+  const hist = seeded(`${cc}:history`);
+  const rsLong = walk(hist, rs, HISTORY_WAVES, 6, 55, 100);
+  const rkoLong = walk(hist, rko, HISTORY_WEEKS, 2.4, 80, 100);
+  const rsWaves = rsLong.slice(-WAVES);
+  const rkoWeeks = rkoLong.slice(-WEEKS);
   const count = 2 + Math.floor(rnd() * 4);
   const pizzerias = Array.from({ length: count }, (_, i) => pizzeriaSample(cc, i, rs, rko));
   return {
     cc, rs, rsPrev: rsWaves[WAVES - 2], rko, rkoPrev: rkoWeeks[WEEKS - 2],
     coll: Math.round(50 + rnd() * 50), rsWaves, rkoWeeks, pizzerias,
+    rsHistory: dated(rsLong, waveDate), rkoHistory: dated(rkoLong, weekDate),
   };
 }
 
@@ -105,6 +143,12 @@ export function seriesAvg(list: CountrySample[], pick: (c: CountrySample) => num
 
 const MONTHS_RU = ["Янв", "Фев", "Мар", "Апр", "Май", "Июн", "Июл", "Авг", "Сен", "Окт", "Ноя", "Дек"];
 const MONTHS_EN = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+/** Взвешенная по числу пиццерий история подборки — одна линия «мои страны» или «IMF». */
+export function historyAvg(list: CountrySample[], pick: (c: CountrySample) => Point[]): Point[] {
+  if (!list.length) return [];
+  return pick(list[0]).map((p, i) => ({ date: p.date, value: round1(weighted(list, (c) => pick(c)[i].value) ?? 0) }));
+}
 
 /** Подписи полумесячных волн РС, заканчивая волной `last` (по умолчанию «Сентябрь 2» 2026). */
 export function waveLabels(lang: 0 | 1, lastMonth = 8, lastHalf: 1 | 2 = 2): string[] {

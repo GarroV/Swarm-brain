@@ -1,33 +1,43 @@
 "use client";
 import { useState } from "react";
 
-// Линия «моя подборка» против IMF с полосой нормы. Одна ось, подписи значений только у
-// последней точки; остальное — по наведению (вертикальная линия + подсказка).
+// Линии подборки против IMF с полосой нормы. Одна ось; подпись значения — у последней точки
+// единственной сплошной линии, при нескольких странах значения — в подсказке по наведению.
+
+export type ChartSeries = {
+  id: string;
+  label: string;
+  /** CSS-цвет из токенов темы (var(--chart-1) …), чтобы линия читалась в обеих темах. */
+  color: string;
+  values: number[];
+  /** Пунктир — сравнение (IMF), не предмет графика. */
+  dashed?: boolean;
+};
 
 type Props = {
   labels: string[];
-  mine: number[];
-  imf: number[];
+  series: ChartSeries[];
   norm: number;
   min: number;
   max: number;
   ticks: number[];
   fmt: (v: number) => string;
   ariaLabel: string;
-  mineLabel: string;
-  imfLabel: string;
 };
 
 const W = 400, H = 170, L = 30, R = 30, T = 10, B = 24;
 
-export function LineChart({ labels, mine, imf, norm, min, max, ticks, fmt, ariaLabel, mineLabel, imfLabel }: Props) {
+export function LineChart({ labels, series, norm, min, max, ticks, fmt, ariaLabel }: Props) {
   const [hover, setHover] = useState<number | null>(null);
   const n = labels.length;
-  const x = (i: number) => L + (i * (W - L - R)) / Math.max(1, n - 1);
+  const x = (i: number) => (n === 1 ? (L + W - R) / 2 : L + (i * (W - L - R)) / (n - 1));
   const y = (v: number) => T + (1 - (Math.min(max, Math.max(min, v)) - min) / (max - min)) * (H - T - B);
   const path = (s: number[]) => s.map((v, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(v).toFixed(1)}`).join("");
-  const step = Math.ceil(n / 5);
+  const step = Math.max(1, Math.ceil(n / 5));
   const last = n - 1;
+  const solid = series.filter((s) => !s.dashed);
+  const lead = solid.length === 1 ? solid[0] : null;
+  const bench = series.find((s) => s.dashed);
 
   const onMove = (e: React.MouseEvent<SVGSVGElement>) => {
     const box = e.currentTarget.getBoundingClientRect();
@@ -36,6 +46,7 @@ export function LineChart({ labels, mine, imf, norm, min, max, ticks, fmt, ariaL
     setHover(Math.min(last, Math.max(0, i)));
   };
 
+  if (!n) return null;
   return (
     <div className="relative">
       <svg viewBox={`0 0 ${W} ${H}`} width="100%" role="img" aria-label={ariaLabel}
@@ -50,29 +61,39 @@ export function LineChart({ labels, mine, imf, norm, min, max, ticks, fmt, ariaL
           </g>
         ))}
         {labels.map((lb, i) => (i % step === last % step ? (
-          <text key={lb} x={x(i)} y={H - 6} textAnchor={i === last ? "end" : "middle"} fill="currentColor">{lb}</text>
+          <text key={`${lb}-${i}`} x={x(i)} y={H - 6} textAnchor={i === last && n > 1 ? "end" : "middle"} fill="currentColor">{lb}</text>
         ) : null))}
-        <path d={path(imf)} fill="none" stroke="var(--ink-mute)" strokeWidth={1.5} strokeDasharray="5 4" />
-        <path d={path(mine)} fill="none" stroke="var(--primary)" strokeWidth={2} strokeLinejoin="round" />
-        <circle cx={x(last)} cy={y(mine[last])} r={4} fill="var(--primary)" stroke="var(--surface)" strokeWidth={2} />
-        {hover == null && (
-          <text x={x(last) - 6} y={y(mine[last]) + (mine[last] < imf[last] ? 16 : -9)} textAnchor="end"
-            fill="var(--ink)" style={{ fontWeight: 600, fontSize: 11 }}>{fmt(mine[last])}</text>
+        {series.map((s) => (
+          <path key={s.id} d={path(s.values)} fill="none" stroke={s.color}
+            strokeWidth={s.dashed ? 1.5 : 2} strokeDasharray={s.dashed ? "5 4" : undefined} strokeLinejoin="round"
+            className="transition-[d] duration-300" />
+        ))}
+        {solid.map((s) => (
+          <circle key={s.id} cx={x(last)} cy={y(s.values[last])} r={solid.length > 1 ? 3 : 4} fill={s.color} stroke="var(--surface)" strokeWidth={2} />
+        ))}
+        {hover == null && lead && (
+          <text x={x(last) - 6} y={y(lead.values[last]) + (bench && lead.values[last] < bench.values[last] ? 16 : -9)} textAnchor="end"
+            fill="var(--ink)" style={{ fontWeight: 600, fontSize: 11 }}>{fmt(lead.values[last])}</text>
         )}
         {hover != null && (
           <g>
             <line x1={x(hover)} x2={x(hover)} y1={T} y2={H - B} stroke="var(--line-2)" />
-            <circle cx={x(hover)} cy={y(mine[hover])} r={4} fill="var(--primary)" stroke="var(--surface)" strokeWidth={2} />
-            <circle cx={x(hover)} cy={y(imf[hover])} r={3} fill="var(--ink-mute)" stroke="var(--surface)" strokeWidth={2} />
+            {series.map((s) => (
+              <circle key={s.id} cx={x(hover)} cy={y(s.values[hover])} r={s.dashed ? 3 : 4} fill={s.color} stroke="var(--surface)" strokeWidth={2} />
+            ))}
           </g>
         )}
       </svg>
       {hover != null && (
-        <div className="pointer-events-none absolute top-0 rounded-[8px] border border-line-2 bg-popover px-2.5 py-1.5 text-ink shadow-md"
+        <div className="pointer-events-none absolute top-0 z-10 rounded-[8px] border border-line-2 bg-popover px-2.5 py-1.5 text-ink shadow-md"
           style={{ fontSize: 12, left: `${(x(hover) / W) * 100}%`, transform: hover > n / 2 ? "translateX(calc(-100% - 10px))" : "translateX(10px)" }}>
           <div className="font-semibold">{labels[hover]}</div>
-          <div className="whitespace-nowrap"><span className="text-primary">●</span> {mineLabel} <b className="font-mono">{fmt(mine[hover])}</b></div>
-          <div className="whitespace-nowrap text-ink-soft"><span>●</span> {imfLabel} <b className="font-mono">{fmt(imf[hover])}</b></div>
+          {[...series].sort((a, b) => b.values[hover] - a.values[hover]).map((s) => (
+            <div key={s.id} className={`flex items-center gap-1.5 whitespace-nowrap ${s.dashed ? "text-ink-soft" : ""}`}>
+              <span style={{ color: s.color }}>●</span> {s.label}
+              <b className="ml-auto pl-3 font-mono">{fmt(s.values[hover])}</b>
+            </div>
+          ))}
         </div>
       )}
     </div>

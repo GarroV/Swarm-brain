@@ -1,10 +1,13 @@
 "use client";
 import type { ReactNode } from "react";
 import { useDt } from "../nav";
-import { LineChart } from "./LineChart";
+import { LineChart, type ChartSeries } from "./LineChart";
+import { CountryMenu, PeriodMenu, SERIES_COLORS, useChartPrefs, type ChartPrefs } from "./ChartControls";
+import { countryName } from "@/lib/countries";
+import { bucketize, niceScale, type Grain, type MonthRange, type Point } from "@/lib/homeChartSeries";
 import {
-  COLL_NORM, RKO_NORM, RKO_WARN, RS_CRIT, RS_NORM, RS_WARN, VIOLATIONS, WAVES, WEEKS,
-  seriesAvg, waveLabels, weekLabels, weighted, type CountrySample,
+  COLL_NORM, RKO_BOUNDS, RKO_DEFAULT, RKO_NORM, RKO_WARN, RS_BOUNDS, RS_CRIT, RS_DEFAULT, RS_NORM, RS_WARN, VIOLATIONS,
+  countrySample, historyAvg, weighted, type CountrySample,
 } from "@/lib/homeQualitySample";
 
 // Виджеты РС (стандарты) и РКО (клиентский опыт) по подборке стран. Данные — образец
@@ -66,22 +69,64 @@ function Hero({ value, max, delta, deltaNote, normOk, normText, bench }: {
   );
 }
 
-function Legend({ norm }: { norm: string }) {
-  const dt = useDt();
+function Legend({ series, norm }: { series: ChartSeries[]; norm: string }) {
   return (
-    <div className="flex flex-wrap gap-3 text-ink-soft" style={{ fontSize: 11.5 }}>
-      <span className="inline-flex items-center gap-1.5"><i className="inline-block h-0.5 w-3.5 bg-primary" />{dt("Мои страны", "My countries")}</span>
-      <span className="inline-flex items-center gap-1.5"><i className="inline-block h-0.5 w-3.5 bg-ink-mute" />IMF</span>
+    <div className="flex min-w-0 flex-wrap gap-x-3 gap-y-1 text-ink-soft" style={{ fontSize: 11.5 }}>
+      {series.map((s) => (
+        <span key={s.id} className="inline-flex items-center gap-1.5">
+          <i className="inline-block h-0.5 w-3.5" style={s.dashed
+            ? { backgroundImage: `linear-gradient(90deg, ${s.color} 60%, transparent 0)`, backgroundSize: "5px 2px" }
+            : { background: s.color }} />{s.label}
+        </span>
+      ))}
       <span className="inline-flex items-center gap-1.5"><i className="inline-block h-2.5 w-3.5 rounded-sm bg-[var(--status-done)] opacity-30" />{norm}</span>
     </div>
   );
 }
 
+/**
+ * График рейтинга с настройками: страны (одной линией «мои» или линия на страну) и период
+ * «с — по» с разбивкой. IMF — пунктиром для сравнения, в любом режиме.
+ */
+function RatingChart({ id, scope, imf, history, bounds, defaults, grains, norm, normLabel, fmt, aria }: {
+  id: string; scope: CountrySample[]; imf: CountrySample[]; history: (c: CountrySample) => Point[];
+  bounds: MonthRange; defaults: ChartPrefs; grains: Grain[]; norm: number; normLabel: string;
+  fmt: (v: number) => string; aria: string;
+}) {
+  const dt = useDt();
+  const en = dt("ru", "en") === "en";
+  const [prefs, update] = useChartPrefs(id, defaults, bounds, grains);
+  const series = (points: Point[]) => bucketize(points, prefs.range, prefs.grain, en);
+  const lines: ChartSeries[] = prefs.countries.length
+    ? prefs.countries.map((cc, i) => ({
+      id: cc, label: dt(countryName(cc), cc), color: SERIES_COLORS[i],
+      values: series(history(countrySample(cc))).map((b) => b.value),
+    }))
+    : [{ id: "mine", label: dt("Мои страны", "My countries"), color: "var(--primary)", values: series(historyAvg(scope, history)).map((b) => b.value) }];
+  const imfBuckets = series(historyAvg(imf, history));
+  const all: ChartSeries[] = [...lines, { id: "imf", label: "IMF", color: "var(--ink-mute)", values: imfBuckets.map((b) => b.value), dashed: true }];
+  const scale = niceScale(all.flatMap((s) => s.values), norm);
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex flex-wrap items-center gap-1.5">
+        <CountryMenu value={prefs.countries} onChange={(countries) => update({ countries })} mine={scope.map((c) => c.cc)} />
+        <PeriodMenu range={prefs.range} grain={prefs.grain} grains={grains} bounds={bounds}
+          defaults={defaults} onChange={update} />
+      </div>
+      <Legend series={all} norm={normLabel} />
+      <LineChart labels={imfBuckets.map((b) => b.label)} series={all} norm={norm}
+        min={scale.min} max={scale.max} ticks={scale.ticks} fmt={fmt} ariaLabel={aria} />
+    </div>
+  );
+}
+
+const RS_PREFS: ChartPrefs = { countries: [], range: RS_DEFAULT, grain: "wave" };
+const RKO_PREFS: ChartPrefs = { countries: [], range: RKO_DEFAULT, grain: "week" };
+
 const card = "flex flex-col gap-3 rounded-[12px] border border-line bg-surface p-4";
 
 export function RsWidget({ scope, imf }: { scope: CountrySample[]; imf: CountrySample[] }) {
   const dt = useDt();
-  const lang = dt("ru", "en") === "en" ? 1 : 0;
   const rs = weighted(scope, (c) => c.rs);
   const prev = weighted(scope, (c) => c.rsPrev);
   const imfRs = weighted(imf, (c) => c.rs);
@@ -111,11 +156,9 @@ export function RsWidget({ scope, imf }: { scope: CountrySample[]; imf: CountryS
         <Stat label={dt("Без инспектора", "No inspector")} value={noInsp} cls={TONE_TEXT[noInsp ? "warn" : "good"]}
           note={dt("самопроверка или не найдено", "self-check or not found")} />
       </div>
-      <Legend norm={dt(`Норма ≥ ${RS_NORM}`, `Target ≥ ${RS_NORM}`)} />
-      <LineChart labels={waveLabels(lang)} mine={seriesAvg(scope, (c) => c.rsWaves, WAVES)} imf={seriesAvg(imf, (c) => c.rsWaves, WAVES)}
-        norm={RS_NORM} min={60} max={100} ticks={[60, 70, 80, 90, 100]} fmt={(v) => v.toFixed(0)}
-        ariaLabel={dt("Средний балл РС по волнам", "Average standards score by wave")}
-        mineLabel={dt("Мои", "Mine")} imfLabel="IMF" />
+      <RatingChart id="rs" scope={scope} imf={imf} history={(c) => c.rsHistory} bounds={RS_BOUNDS} defaults={RS_PREFS}
+        grains={["wave", "month", "quarter"]} norm={RS_NORM} normLabel={dt(`Норма ≥ ${RS_NORM}`, `Target ≥ ${RS_NORM}`)}
+        fmt={(v) => v.toFixed(0)} aria={dt("Средний балл РС", "Average standards score")} />
     </div>
   );
 }
@@ -150,11 +193,9 @@ export function RkoWidget({ scope, imf }: { scope: CountrySample[]; imf: Country
         <Stat label={dt("Резкое падение ≥3", "Sharp drop ≥3")} value={drop.length} cls={TONE_TEXT[drop.length ? "warn" : "good"]}
           note={drop.slice(0, 2).map((p) => `${p.name} ${(p.rko - p.rkoPrev).toFixed(1)}`).join(", ") || dt("нет", "none")} />
       </div>
-      <Legend norm={dt(`Норма ≥ ${RKO_NORM}`, `Target ≥ ${RKO_NORM}`)} />
-      <LineChart labels={weekLabels()} mine={seriesAvg(scope, (c) => c.rkoWeeks, WEEKS)} imf={seriesAvg(imf, (c) => c.rkoWeeks, WEEKS)}
-        norm={RKO_NORM} min={86} max={98} ticks={[86, 90, 94, 98]} fmt={(v) => v.toFixed(1)}
-        ariaLabel={dt("Средний балл РКО по неделям", "Average CX score by week")}
-        mineLabel={dt("Мои", "Mine")} imfLabel="IMF" />
+      <RatingChart id="rko" scope={scope} imf={imf} history={(c) => c.rkoHistory} bounds={RKO_BOUNDS} defaults={RKO_PREFS}
+        grains={["week", "month", "quarter"]} norm={RKO_NORM} normLabel={dt(`Норма ≥ ${RKO_NORM}`, `Target ≥ ${RKO_NORM}`)}
+        fmt={(v) => v.toFixed(1)} aria={dt("Средний балл РКО", "Average CX score")} />
     </div>
   );
 }
