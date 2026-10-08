@@ -1,4 +1,5 @@
 "use client";
+import { useLayoutEffect, useRef, useState } from "react";
 import type { Task } from "@/types";
 import { RoyIcon } from "@/components/roy/icons";
 import { useDt } from "@/components/roy/nav";
@@ -50,7 +51,7 @@ function KanbanCard({ task, badge, draggable, onDragStart, onDragEnd, onOpen, on
 }) {
   const dt = useDt();
   return (
-    <div draggable={draggable}
+    <div data-kanban-card draggable={draggable}
       onDragStart={(e) => { onDragStart(); e.dataTransfer.effectAllowed = "move"; }}
       onDragEnd={onDragEnd}
       onClick={(e) => { e.stopPropagation(); onOpen?.(); }}
@@ -84,9 +85,10 @@ function KanbanCard({ task, badge, draggable, onDragStart, onDragEnd, onOpen, on
  * Необязательные режимы (доска ими не пользуется, её вывод от них не меняется):
  * `groupOf` — подписать карточки заголовками групп (в спринте это проекты: группировка, не копии);
  * `readOnly` — принятый спринт, архив: ни перетащить, ни добавить, ни открыть;
- * `onRemoveCard` — крестик на карточке (в спринте — «убрать из спринта»).
+ * `onRemoveCard` — крестик на карточке (в спринте — «убрать из спринта»);
+ * `maxCards` — колонка не выше стольких карточек, остальное прокручивается внутри неё.
  */
-export function KanbanColumn({ sectionId, column, tasks, badgeFor, groupOf, readOnly, onRemoveCard, removeTitle, kanban }: {
+export function KanbanColumn({ sectionId, column, tasks, badgeFor, groupOf, readOnly, onRemoveCard, removeTitle, maxCards, kanban }: {
   sectionId: string;
   column: KanbanColumnDef;
   tasks: Task[];
@@ -95,9 +97,11 @@ export function KanbanColumn({ sectionId, column, tasks, badgeFor, groupOf, read
   readOnly?: boolean;
   onRemoveCard?: (t: Task) => void;
   removeTitle?: string;
+  maxCards?: number;
   kanban: KanbanHandlers;
 }) {
   const dt = useDt();
+  const listMaxHeight = useCardCapHeight(maxCards, tasks);
   const { drag, onDragChange, onDropTask, quickAdd, onQuickAddChange, onQuickAddSubmit, onOpenTask } = kanban;
   const adding = !readOnly && quickAdd?.section === sectionId && quickAdd?.status === column.status;
   const card = (t: Task) => (
@@ -146,7 +150,8 @@ export function KanbanColumn({ sectionId, column, tasks, badgeFor, groupOf, read
           placeholder="Новая задача, Enter"
           className="mx-1 mb-1 rounded-md border border-line bg-card px-2 py-1.5 text-sm text-ink outline-none focus:border-primary/50" />
       )}
-      <div className={`flex-1 overflow-y-auto space-y-2 pt-1 min-h-[56px]${readOnly ? "" : " cursor-text"}`}
+      <div ref={listMaxHeight.ref} style={{ maxHeight: listMaxHeight.value }}
+        className={`flex-1 overflow-y-auto space-y-2 pt-1 min-h-[56px]${readOnly ? "" : " cursor-text"}`}
         onClick={(e) => { if (!readOnly && e.target === e.currentTarget && !adding) onQuickAddChange({ section: sectionId, status: column.status, title: "" }); }}
         title={readOnly ? undefined : dt("Кликни по пустому полю — добавить задачу", "Click the empty area to add a task")}>
         {groupOf
@@ -160,6 +165,33 @@ export function KanbanColumn({ sectionId, column, tasks, badgeFor, groupOf, read
       </div>
     </div>
   );
+}
+
+/**
+ * Высота списка карточек ровно по нижний край карточки №maxCards. Карточки разной высоты (заголовок
+ * в одну строку или в четыре), поэтому мерим живые карточки, а не умножаем средний рост: «10 плиток»
+ * должны быть десятью плитками, а не «примерно». Ширина колонки меняет переносы — следим за размером.
+ */
+function useCardCapHeight(maxCards: number | undefined, tasks: Task[]) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [value, setValue] = useState<number | undefined>(undefined);
+  useLayoutEffect(() => {
+    const list = ref.current;
+    if (!list || !maxCards) return;
+    const measure = () => {
+      const cards = list.querySelectorAll<HTMLElement>("[data-kanban-card]");
+      if (cards.length <= maxCards) { setValue(undefined); return; }
+      const last = cards[maxCards - 1].getBoundingClientRect();
+      const top = list.getBoundingClientRect().top - list.scrollTop;
+      // +1 px — чтобы нижняя рамка десятой карточки не срезалась округлением.
+      setValue(Math.ceil(last.bottom - top + 1));
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(list);
+    return () => ro.disconnect();
+  }, [maxCards, tasks]);
+  return { ref, value };
 }
 
 /** Группы по подписи, по алфавиту; «без группы» — последней, чтобы не возглавляла список. */
@@ -182,7 +214,7 @@ function groupTasks(tasks: Task[], groupOf: (t: Task) => string | null, fallback
  * точное совпадение статуса, доска же собирает в первую колонку весь бэклог (любой статус вне
  * рабочих трёх).
  */
-export function TaskKanban({ sectionId, columns, tasks, tasksForColumn, badgeFor, groupOf, readOnly, onRemoveCard, removeTitle, className, kanban }: {
+export function TaskKanban({ sectionId, columns, tasks, tasksForColumn, badgeFor, groupOf, readOnly, onRemoveCard, removeTitle, maxCards, className, kanban }: {
   sectionId: string;
   columns: readonly KanbanColumnDef[];
   tasks: Task[];
@@ -192,6 +224,7 @@ export function TaskKanban({ sectionId, columns, tasks, tasksForColumn, badgeFor
   readOnly?: boolean;
   onRemoveCard?: (t: Task) => void;
   removeTitle?: string;
+  maxCards?: number;
   className?: string;
   kanban: KanbanHandlers;
 }) {
@@ -202,7 +235,7 @@ export function TaskKanban({ sectionId, columns, tasks, tasksForColumn, badgeFor
         <KanbanColumn key={col.status} sectionId={sectionId} column={col}
           tasks={pick(col, tasks)} badgeFor={badgeFor} groupOf={groupOf}
           readOnly={readOnly} onRemoveCard={onRemoveCard} removeTitle={removeTitle}
-          kanban={kanban} />
+          maxCards={maxCards} kanban={kanban} />
       ))}
     </div>
   );
