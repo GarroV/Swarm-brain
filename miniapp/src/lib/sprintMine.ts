@@ -2,6 +2,7 @@
 // того, кто смотрит, собираются наверху отдельным блоком, остальные идут ниже. Правило
 // «чья строка» — здесь, под тестами.
 import type { SprintCycleItem, Task } from "@/types";
+import { isAssignedTo } from "@/lib/smartLists";
 
 /**
  * Делит состав на «мои» и «остальные». Своя — та, где смотрящий среди исполнителей ЖИВОЙ
@@ -10,12 +11,15 @@ import type { SprintCycleItem, Task } from "@/types";
  */
 export function splitMine<T extends Pick<SprintCycleItem, "task_id">>(
   items: readonly T[],
-  tasks: readonly Pick<Task, "id" | "assignee_telegram_ids">[],
+  tasks: readonly Pick<
+    Task,
+    "id" | "assignee_telegram_ids" | "coassignee_telegram_ids"
+  >[],
   me: number | null | undefined,
 ): { mine: T[]; others: T[] } {
   if (me == null) return { mine: [], others: [...items] };
   const own = new Set(
-    tasks.filter((t) => t.assignee_telegram_ids?.includes(me)).map((t) => t.id),
+    tasks.filter((t) => isAssignedTo(t, me)).map((t) => t.id),
   );
   const mine: T[] = [];
   const others: T[] = [];

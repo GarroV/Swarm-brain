@@ -115,6 +115,16 @@ export function isOverdue(task: Task, now: Date = new Date()): boolean {
   return due != null && !isDone(task) && due < midnight(now);
 }
 
+// Задача «моя», если я исполнитель или соисполнитель (#874). Соисполнители с аккаунтом лежат в
+// coassignee_telegram_ids — производной колонке, которую держит база.
+export function isAssignedTo(
+  task: Pick<Task, "assignee_telegram_ids" | "coassignee_telegram_ids">,
+  telegramId: number,
+): boolean {
+  return (task.assignee_telegram_ids?.includes(telegramId) ?? false) ||
+    (task.coassignee_telegram_ids?.includes(telegramId) ?? false);
+}
+
 // ЕДИНЫЙ источник правды о линзе: экспортируется, потому что тем же правилом живёт главный экран
 // (dash/myTasks.ts → блоки «Мои задачи»/«Задачи команды»). Своя копия правила там разошлась с
 // этой и тащила в «команду» ЛИЧНЫЕ задачи коллег — не повторять, звать matchesLens.
@@ -124,10 +134,11 @@ export function matchesLens(task: Task, lens: Lens, me: Viewer | null): boolean 
   // «Команда» = ОБЩИЕ задачи: не приватные И без конкретного исполнителя (формулировка владельца —
   // «командная задача = общая, у которой нет определённого юзера»). Приватные и назначенные на
   // кого-либо (в т.ч. на меня) сюда НЕ попадают — назначенные живут в «Мои». Общую задачу
-  // создаёшь, выбрав в исполнителе «Общие» (без конкретного человека).
+  // создаёшь, выбрав в исполнителе «Общие» (без конкретного человека). Задача на человеке без
+  // входа (#874) тоже здесь: аккаунта у исполнителя нет, и иначе её не увидел бы никто.
   const isTeam = !task.is_private && (task.assignee_telegram_ids?.length ?? 0) === 0;
   if (lens === "team") return isTeam;
-  const isMine = me != null && (task.assignee_telegram_ids?.includes(me.telegram_id) ?? false);
+  const isMine = me != null && isAssignedTo(task, me.telegram_id);
   if (lens === "mine") return isMine;
   // «Все» = мои + командные, НЕ «буквально все»: чужая личная задача — личное дело коллеги
   // (владелец 2026-08-20). Оверсайт руководителя живёт в отдельной линзе «staff».

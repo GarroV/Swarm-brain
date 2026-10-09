@@ -22,6 +22,8 @@ export async function createTask(
     description: input.description ?? null,
     assignees: input.assignees ?? [],
     assignee_telegram_ids: input.assignee_telegram_ids ?? [],
+    assignee_person_id: input.assignee_person_id ?? null,
+    coassignee_person_ids: input.coassignee_person_ids ?? [],
     // Срок обязателен у КАЖДОЙ задачи, откуда бы она ни пришла — веб, бот, MCP, доска
     // (решение владельца 21.09.2026: «по дефолту дедлайн +1 день от времени добавления»).
     // Значение ставится здесь, в единственной точке создания, а не в трёх клиентах: копии

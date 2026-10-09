@@ -147,6 +147,7 @@ import { handleModelUsageRoutes } from "./model-usage.ts";
 import { SUPERADMIN_TELEGRAM_ID } from "../_shared/users/admin-scope.ts";
 import { handleNotificationRoutes } from "./notifications.ts";
 import { handleTaskSubscriptionRoutes } from "./task-subscriptions.ts";
+import { handlePeopleRoutes, resolveTaskPeople } from "./people.ts";
 import {
   handlePublicRoadmap,
   isPublicRoadmapPath,
@@ -994,6 +995,17 @@ async function routeRequest(req: Request): Promise<Response> {
   );
   if (subResp) return subResp;
 
+  // Справочник людей: исполнители без входа и соисполнители (/people) — issue #874.
+  const peopleResp = await handlePeopleRoutes(
+    supabase,
+    req,
+    routePath,
+    telegram_id,
+    groupId,
+    origin,
+  );
+  if (peopleResp) return peopleResp;
+
   // Лента уведомлений (/notifications*) — строго свои: фильтр по recipient_telegram_id.
   const notifResp = await handleNotificationRoutes(
     supabase,
@@ -1175,6 +1187,12 @@ async function routeRequest(req: Request): Promise<Response> {
         }
       }
 
+      // Исполнитель из справочника людей и соисполнители (#874) — поверх assignee_telegram_id.
+      const people = await resolveTaskPeople(supabase, groupId, body);
+      if (typeof people === "string") return apiErr(400, people, origin);
+      if (people.assignees) assignees = people.assignees;
+      if (people.assignee_telegram_ids) assignee_telegram_ids = people.assignee_telegram_ids;
+
       const dueDate = (body.due_date as string | null) ?? null;
       const startDate = (body.start_date as string | null) ?? null;
       const dateErr = validateTaskDates(startDate, dueDate);
@@ -1256,6 +1274,8 @@ async function routeRequest(req: Request): Promise<Response> {
         source: "mini_app",
         assignees,
         assignee_telegram_ids,
+        assignee_person_id: people.assignee_person_id ?? null,
+        coassignee_person_ids: people.coassignee_person_ids ?? [],
         confirmed: true,
         meeting_id: safeMeetingId,
         created_by_telegram_id: telegram_id ?? null,
@@ -1547,6 +1567,7 @@ async function routeRequest(req: Request): Promise<Response> {
         if (!body.assignee_telegram_id) {
           fields.assignees = [];
           fields.assignee_telegram_ids = [];
+          fields.assignee_person_id = null; // «Общие» снимают и исполнителя без входа (#874)
         } else if (typeof body.assignee_telegram_id === "number") {
           const resolved = await resolveAssignee(body.assignee_telegram_id);
           if (resolved) {
@@ -1555,6 +1576,11 @@ async function routeRequest(req: Request): Promise<Response> {
           }
         }
       }
+
+      // Исполнитель из справочника людей и соисполнители (#874).
+      const people = await resolveTaskPeople(supabase, groupId, body);
+      if (typeof people === "string") return apiErr(400, people, origin);
+      Object.assign(fields, people);
 
       try {
         // actorTelegramId — «кто передвинул» в журнале изменений (issue #286). Веб раньше не
