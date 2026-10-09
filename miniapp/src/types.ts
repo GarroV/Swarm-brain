@@ -277,8 +277,6 @@ export type Person = {
   name: string;
   email: string | null;
   telegram_id: number | null;
-  /** Последняя встреча с человеком в воркспейсе (#887); null — встреч не было */
-  last_met_at: string | null;
 };
 
 export type User = {

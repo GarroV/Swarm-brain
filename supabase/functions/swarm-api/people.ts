@@ -9,7 +9,8 @@ import { resolvePersonNames } from "../_shared/users/display-name.ts";
 // Порядок GET /people: сначала люди с аккаунтом (по имени), потом остальные — по последней
 // встрече (last_met_at, свежие первыми, без встреч в конце), затем по имени. Участников встреч
 // заводит триггер базы (people_from_attendees, #887), поэтому «без входа» в справочнике сотни —
-// поле выбора показывает недавних, а поиск идёт по всему списку.
+// поле выбора показывает недавних, а поиск идёт по всему списку. Сама дата встречи наружу НЕ
+// отдаётся — только порядок: «с кем и когда встречался» — не то, что надо раздавать всем.
 //
 // Человек с аккаунтом и без — одна сущность `people`. Аккаунтам запись заводит триггер базы
 // (people_sync_account), поэтому здесь создаются только люди без входа — прямо из поля
@@ -27,9 +28,9 @@ export type PersonView = {
   email: string | null;
   /** null — человек без входа в Swarm */
   telegram_id: number | null;
-  /** Последняя встреча с человеком в воркспейсе; null — встреч не было */
-  last_met_at: string | null;
 };
+
+type SortablePerson = PersonView & { lastMetAt: string | null };
 
 type PersonRow = {
   id: string;
@@ -42,7 +43,7 @@ type PersonRow = {
 const PERSON_SELECT = "id, display_name, email, last_met_at, account:allowed_users(telegram_id)";
 
 // Имя аккаунта берётся из профиля — оно меняется, а display_name записан один раз при заведении.
-async function toViews(supabase: SupabaseClient, rows: PersonRow[]): Promise<PersonView[]> {
+async function toViews(supabase: SupabaseClient, rows: PersonRow[]): Promise<SortablePerson[]> {
   const names = await resolvePersonNames(supabase, rows.map((r) => r.account?.telegram_id));
   return rows.map((r) => {
     const tg = r.account?.telegram_id ?? null;
@@ -51,19 +52,21 @@ async function toViews(supabase: SupabaseClient, rows: PersonRow[]): Promise<Per
       name: (tg != null ? names.get(tg) : null) ?? r.display_name,
       email: r.email,
       telegram_id: tg,
-      last_met_at: r.last_met_at,
+      lastMetAt: r.last_met_at,
     };
   });
 }
 
+const toPublic = ({ lastMetAt: _, ...view }: SortablePerson): PersonView => view;
+
 /** Аккаунты по имени → остальные по последней встрече (свежие первыми, без встреч в конце) → по имени. */
-function comparePeople(a: PersonView, b: PersonView): number {
+function comparePeople(a: SortablePerson, b: SortablePerson): number {
   const accA = a.telegram_id != null, accB = b.telegram_id != null;
   if (accA !== accB) return accA ? -1 : 1;
-  if (!accA && a.last_met_at !== b.last_met_at) {
-    if (a.last_met_at == null) return 1;
-    if (b.last_met_at == null) return -1;
-    const d = Date.parse(b.last_met_at) - Date.parse(a.last_met_at);
+  if (!accA && a.lastMetAt !== b.lastMetAt) {
+    if (a.lastMetAt == null) return 1;
+    if (b.lastMetAt == null) return -1;
+    const d = Date.parse(b.lastMetAt) - Date.parse(a.lastMetAt);
     if (d !== 0) return d;
   }
   return a.name.localeCompare(b.name, "ru");
@@ -73,7 +76,7 @@ async function loadPeople(
   supabase: SupabaseClient,
   groupId: string,
   ids?: string[],
-): Promise<PersonView[]> {
+): Promise<SortablePerson[]> {
   let q = supabase.from("people").select(PERSON_SELECT).eq("group_id", groupId).is(
     "archived_at",
     null,
@@ -105,7 +108,7 @@ export async function handlePeopleRoutes(
 
   if (req.method === "GET") {
     const people = await loadPeople(supabase, groupId);
-    return json([...people].sort(comparePeople), 200, origin);
+    return json([...people].sort(comparePeople).map(toPublic), 200, origin);
   }
 
   if (req.method === "POST") {
@@ -124,7 +127,7 @@ export async function handlePeopleRoutes(
         .eq("group_id", groupId).eq("email", parsed.email).is("archived_at", null).maybeSingle();
       if (found) {
         const [view] = await loadPeople(supabase, groupId, [(found as { id: string }).id]);
-        return json(view, 200, origin);
+        return json(toPublic(view), 200, origin);
       }
     }
     const { data, error } = await supabase.from("people").insert({
@@ -136,7 +139,7 @@ export async function handlePeopleRoutes(
     }).select("id").single();
     if (error) return apiErr(500, "Не удалось добавить человека", origin);
     const [view] = await loadPeople(supabase, groupId, [(data as { id: string }).id]);
-    return json(view, 201, origin);
+    return json(toPublic(view), 201, origin);
   }
 
   return apiErr(405, "Method not allowed", origin);

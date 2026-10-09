@@ -9,9 +9,19 @@
 --   people_from_attendees(...)  — участники с почтой, которых в воркспейсе ещё нет, заводятся
 --                                 (source='calendar'); у всех найденных и заведённых, включая
 --                                 аккаунты, двигается last_met_at.
---   trg_meetings_people         — зовёт функцию на каждой записи встречи: INSERT и UPDATE участников
---                                 (рекордер дописывает участников второго записавшего UPDATE-ом).
---   бэкфилл                     — все нынешние встречи по возрастанию времени.
+--   meeting_is_public(...)      — встреча видна всему воркспейсу: опубликована в ОБЩУЮ базу.
+--   trg_meetings_people         — зовёт функцию, когда встреча становится общей или у общей
+--                                 меняются участники (рекордер дописывает их UPDATE-ом).
+--   trg_entries_people          — запись встречи переведена из личных в общие.
+--   бэкфилл                     — все нынешние общие встречи по возрастанию времени.
+--
+-- ПРИВАТНОСТЬ. Справочник (GET /people) видит весь воркспейс, поэтому в него и в last_met_at идут
+-- только участники встреч, которые и так видны всем: status='in_base' и запись в entries
+-- с is_private=false. Черновик на вычитке видит только записавший (meeting-access.ts), личную
+-- встречу или встречу 1-1 «на двоих» — только владелец (без обхода админом, решение 07.08):
+-- их участники в справочник не попадают, иначе «с кем и когда встречался» стало бы видно всем.
+-- Встреча стала личной позже — уже заведённых людей не трогаем (они могли прийти из других
+-- встреч), новые от неё не заводятся. Совпадает с каноном (б): «участник встречи при публикации».
 --
 -- Только новые колонка, функции и триггер; существующие строки people меняются лишь в last_met_at.
 -- Откат — снести триггер; колонка и заведённые люди никому не мешают.
@@ -83,6 +93,18 @@ BEGIN
      AND (p.last_met_at IS NULL OR p.last_met_at < p_at);
 END $$;
 
+-- ── Встреча видна всему воркспейсу? ───────────────────────────────────────────────────────
+-- Только опубликованная в общую базу своего воркспейса. Всё остальное (черновик, личная запись,
+-- запись на двоих, запись другого воркспейса, запись не найдена) — нет.
+CREATE OR REPLACE FUNCTION public.meeting_is_public(p_group text, p_status text, p_entry uuid)
+RETURNS boolean LANGUAGE sql STABLE SET search_path = public AS $$
+  SELECT p_group IS NOT NULL AND p_status = 'in_base' AND p_entry IS NOT NULL
+     AND EXISTS (
+       SELECT 1 FROM public.entries e
+        WHERE e.id = p_entry AND e.group_id = p_group AND e.is_private = false
+     );
+$$;
+
 -- ── Триггер встречи ────────────────────────────────────────────────────────────────────────
 -- Почему ошибка гасится (EXCEPTION → WARNING), а не роняет запись: встреча — критичный путь
 -- рекордера, и её потеря (транскрипт, claim, тезисы) несравнимо дороже недозаведённого человека.
@@ -92,15 +114,17 @@ END $$;
 CREATE OR REPLACE FUNCTION public.meetings_people_sync()
 RETURNS trigger LANGUAGE plpgsql SET search_path = public AS $$
 BEGIN
-  IF NEW.group_id IS NULL THEN
-    RETURN NULL;
-  END IF;
   IF TG_OP = 'UPDATE'
      AND NEW.attendees IS NOT DISTINCT FROM OLD.attendees
-     AND NEW.group_id IS NOT DISTINCT FROM OLD.group_id THEN
+     AND NEW.group_id IS NOT DISTINCT FROM OLD.group_id
+     AND NEW.status IS NOT DISTINCT FROM OLD.status
+     AND NEW.entry_id IS NOT DISTINCT FROM OLD.entry_id THEN
     RETURN NULL;
   END IF;
   BEGIN
+    IF NOT public.meeting_is_public(NEW.group_id, NEW.status, NEW.entry_id) THEN
+      RETURN NULL;
+    END IF;
     PERFORM public.people_from_attendees(NEW.group_id, NEW.attendees, coalesce(NEW.started_at, NEW.created_at));
   EXCEPTION WHEN others THEN
     RAISE WARNING 'people_from_attendees: встреча % (воркспейс %) — люди не заведены: % [%]',
@@ -111,18 +135,52 @@ END $$;
 
 DROP TRIGGER IF EXISTS trg_meetings_people ON public.meetings;
 CREATE TRIGGER trg_meetings_people
-  AFTER INSERT OR UPDATE OF attendees, group_id ON public.meetings
+  AFTER INSERT OR UPDATE OF attendees, group_id, status, entry_id ON public.meetings
   FOR EACH ROW EXECUTE FUNCTION public.meetings_people_sync();
+
+-- ── Запись встречи стала общей (личная → общая) ─────────────────────────────────────────────
+-- Публикация сама заходит через триггер встречи (UPDATE entry_id/status); здесь — поздний
+-- перевод уже опубликованной записи в общие. Ошибка гасится по той же причине, что выше.
+CREATE OR REPLACE FUNCTION public.entries_people_sync()
+RETURNS trigger LANGUAGE plpgsql SET search_path = public AS $$
+DECLARE
+  m record;
+BEGIN
+  BEGIN
+    FOR m IN
+      SELECT mt.group_id, mt.attendees, coalesce(mt.started_at, mt.created_at) AS at
+        FROM public.meetings mt
+       WHERE mt.entry_id = NEW.id
+         AND public.meeting_is_public(mt.group_id, mt.status, mt.entry_id)
+    LOOP
+      PERFORM public.people_from_attendees(m.group_id, m.attendees, m.at);
+    END LOOP;
+  EXCEPTION WHEN others THEN
+    RAISE WARNING 'people_from_attendees: запись % — люди не заведены: % [%]', NEW.id, SQLERRM, SQLSTATE;
+  END;
+  RETURN NULL;
+END $$;
+
+DROP TRIGGER IF EXISTS trg_entries_people ON public.entries;
+CREATE TRIGGER trg_entries_people
+  AFTER UPDATE OF is_private ON public.entries
+  FOR EACH ROW
+  WHEN (OLD.is_private AND NOT NEW.is_private)
+  EXECUTE FUNCTION public.entries_people_sync();
 
 -- Снаружи (anon через /rest/v1/rpc) — нельзя. Грант на PUBLIC наследуется в anon, снимаем с PUBLIC.
 REVOKE ALL ON FUNCTION public.people_from_attendees(text, jsonb, timestamptz) FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION public.meetings_people_sync() FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION public.entries_people_sync() FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION public.meeting_is_public(text, text, uuid) FROM PUBLIC, anon, authenticated, service_role;
 -- Триггер срабатывает от роли, которая пишет встречу (приложение — service_role): без EXECUTE
 -- функция падала бы, и (из-за EXCEPTION выше) справочник молча не пополнялся бы.
 GRANT EXECUTE ON FUNCTION public.people_from_attendees(text, jsonb, timestamptz) TO service_role;
 GRANT EXECUTE ON FUNCTION public.meetings_people_sync() TO service_role;
+GRANT EXECUTE ON FUNCTION public.entries_people_sync() TO service_role;
+GRANT EXECUTE ON FUNCTION public.meeting_is_public(text, text, uuid) TO service_role;
 
--- ── Бэкфилл: все нынешние встречи, от старых к новым ──────────────────────────────────────
+-- ── Бэкфилл: все нынешние ОБЩИЕ встречи, от старых к новым ────────────────────────────────
 -- От старых к новым — чтобы имя человека бралось из первой встречи, а last_met_at сошёлся на
 -- последней. Встречи с воркспейсом, которого нет, пропускаются (внешний ключ people упал бы).
 DO $$
@@ -134,6 +192,7 @@ BEGIN
       FROM public.meetings m
       JOIN public.workspaces w ON w.id = m.group_id
      WHERE jsonb_typeof(m.attendees) = 'array' AND jsonb_array_length(m.attendees) > 0
+       AND public.meeting_is_public(m.group_id, m.status, m.entry_id)
      ORDER BY coalesce(m.started_at, m.created_at), m.id
   LOOP
     PERFORM public.people_from_attendees(r.group_id, r.attendees, r.at);
