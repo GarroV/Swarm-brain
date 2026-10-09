@@ -84,6 +84,17 @@ async function addItem(
   return r.rows[0].id;
 }
 
+/**
+ * Убрать спринты пространства за тестом: несколько живых спринтов в одном пространстве законны
+ * только с миграции 20261009160000, а порча накатывает старые миграции поверх этой базы — их
+ * индекс «один незакрытый» на оставленных строках падает.
+ */
+async function dropCycles(db: Client, tabId: string) {
+  await db
+    .queryArray`delete from sprint_items where cycle_id in (select id from sprint_cycles where tab_id = ${tabId})`;
+  await db.queryArray`delete from sprint_cycles where tab_id = ${tabId}`;
+}
+
 const accept = (db: Client, cycleId: string) =>
   db.queryObject<{ result: Record<string, unknown> }>`
     select public.accept_sprint_cycle(
@@ -257,8 +268,10 @@ Deno.test("два ИДУЩИХ спринта в одном пространст
 
 Deno.test("запланированных спринтов в пространстве может быть несколько", async () => {
   const db = await connect();
+  let tab = "";
   try {
     const { tabId } = await seed(db);
+    tab = tabId;
     await startCycle(db, tabId);
     for (const n of [4, 5, 6]) {
       await db.queryArray`
@@ -271,14 +284,17 @@ Deno.test("запланированных спринтов в пространс
       select count(*) as n from sprint_cycles where tab_id = ${tabId} and status = 'draft'`;
     assertEquals(live.rows[0].n, 3n);
   } finally {
+    if (tab) await dropCycles(db, tab);
     await db.end();
   }
 });
 
 Deno.test("приёмка везёт хвосты в ближайший запланированный спринт, двойника не создаёт", async () => {
   const db = await connect();
+  let tab = "";
   try {
     const { tabId, projectId } = await seed(db);
+    tab = tabId;
     const cycleId = await startCycle(db, tabId);
     const tail = await addTask(db, projectId, "open", "хвост");
     const planned = await addTask(db, projectId, "open", "уже в плане");
@@ -321,6 +337,7 @@ Deno.test("приёмка везёт хвосты в ближайший запл
       select count(*) as n from sprint_items where cycle_id = ${far.rows[0].id}::uuid`;
     assertEquals(farItems.rows[0].n, 0n);
   } finally {
+    if (tab) await dropCycles(db, tab);
     await db.end();
   }
 });
