@@ -45,7 +45,7 @@ export const norm = (s: string): string => (s === "progress" ? "in_progress" : s
 // ── Панель: шапка-кнопка (раскрыть) + скроллируемое тело ─────────────────────────
 export function DashBlock({
   title, icon, tint, badge, headAction, loading, failed, errorText, retryText, onRetry, empty, emptyText, onHead, onAdd, addLabel, children, className,
-  flat, count, first,
+  flat, count, first, flatBody,
 }: {
   title: string;
   icon: RoyIconName;
@@ -77,6 +77,8 @@ export function DashBlock({
   count?: number;
   /** Плоский вид первым в колонке — без линии сверху. */
   first?: boolean;
+  /** Классы обёртки тела плоского вида: виджет главной кладёт его на подложку, как соседей. */
+  flatBody?: string;
 }) {
   const body = (
     <DashBody loading={loading} failed={failed} errorText={errorText} retryText={retryText} onRetry={onRetry}
@@ -90,7 +92,7 @@ export function DashBlock({
         <HomeLabel first={first} count={count} action={onHead ? { text: headAction ?? "Открыть", onClick: onHead } : undefined}>
           {title}
         </HomeLabel>
-        {body}
+        {flatBody ? <div className={flatBody}>{body}</div> : body}
       </section>
     );
   }

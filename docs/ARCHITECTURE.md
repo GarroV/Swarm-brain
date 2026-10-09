@@ -1620,6 +1620,7 @@ afconvert — лежат в `meeting-ingest/testdata/` и меряются та�
 |-----------|---------------------------|-------------|-----------|
 | `SUPABASE_URL` | все функции (через `_shared`) | да | URL проекта Supabase для клиента |
 | `SUPABASE_SERVICE_ROLE_KEY` | все функции (через `_shared`) | да | Service-role ключ; RLS обходится, фильтрация в коде |
+| `DECIMUS_API_URL` / `DECIMUS_API_TOKEN` | swarm-api | нет (без них `GET /quality` → 503) | API чтения Децимуса: баллы РС/РКО (GarroV/decimus#567); токен сервисный, только чтение |
 | `OPENAI_API_KEY` | swarm-bot, swarm-mcp, swarm-api, meeting-claim, meeting-ingest, meeting-process, read-ai-webhook | да | OpenAI: chat (GPT-4o-mini), embeddings, Whisper-транскрибация |
 | `TELEGRAM_BOT_TOKEN` | swarm-bot, swarm-api, swarm-mcp, meeting-ingest, meeting-process, read-ai-webhook, meeting-notice, granola-poller (legacy) | да | Telegram Bot API: отправка сообщений/уведомлений; проверка подписи Login Widget (веб) и спящей Mini App initData (swarm-api) |
 | `TELEGRAM_API_BASE` | meeting-notice | нет, дефолт `https://api.telegram.org` | База Telegram Bot API. Подменяется только смоуком блока `notices` (`scripts/scriba-notices-smoke.ts`), чтобы прогон всех сценариев отказа не слал сообщений живым людям |
@@ -1684,6 +1685,7 @@ supabase/functions/swarm-api/
 ├── client-error.ts # Граница ошибок: withErrorBoundary (обёртка Deno.serve) + serverError — клиенту общий текст, подробность в лог (#584)
 ├── public-roadmap.ts # GET /public/roadmap/:id — публичная дорожная карта для хаба проектов (без авторизации, белый список)
 ├── market.ts       # /market/* — «Анализ рынка»: данные страны по allowed_markets, импорт снимка и очередь кандидатов (админ)
+├── quality.ts      # GET /quality?kind=rs|rko — прокси к API Децимуса (баллы РС/РКО), страны по allowed_markets
 ├── short-links.ts     # Сокращатель: GET /public/s/:code (без авторизации) + /short-links пространства (править — автор/админ); проверка адреса и код — short-links-core.ts (под тестами)
 ├── meetings-payload.ts # Форма СПИСОЧНОГО ответа GET /meetings (toListRow; режет SQL — issue #490)
 ├── meeting-invites.ts  # /meeting-invites — приглашение бота на созвон (D017)
@@ -1977,6 +1979,7 @@ _Админка (`admin.ts`, админы: `telegram_id 744230399` или `is_ad
 | `POST` | `/market/:cc/import` | Импорт снимка ручных источников (тело — снимок; проверяет `_shared/market/snapshot.ts`, битый → 400 с `details`). **Только админ** |
 | `POST` | `/market/:cc/candidates/accept-all` | Принять разом все кандидаты «новая точка» страны → `{accepted}`; точки встают как `unverified`. **Только админ** |
 | `POST` | `/market/candidates/:id/accept` · `/reject` | Решение по одному кандидату → 204 (уже решён → 409, нет такого → 404). Принятая новая точка → `confirmed`. **Только админ** |
+| `GET` | `/quality?kind=rs\|rko` | Баллы РС или РКО по пиццериям → `{ kind, periods: [{start, end}], units: [{ id, name, cc, developer, scores: (number\|null)[] }] }`; `periods` по возрастанию, `scores` выровнены по ним. Видит весь воркспейс, страны — `workspaces.allowed_markets` (null — все), демо — пусто. Модуль `swarm-api/quality.ts`, канон — §Баллы РС и РКО |
 | `GET` | `/admin/model-usage?from=YYYY-MM-DD&to=YYYY-MM-DD` | Расход OpenAI за период (#311, #822), **только суперадмин** (деньги всей системы). Период — дни по Белграду, обе границы включительно, не длиннее 366 дней (`parsePeriod`; иначе 400); строка попадает в период по своему дню в Белграде (`inPeriod`). Ответ `{ from, to, truncated, total_usd, calls, unpriced_calls, tokens, audio_minutes, by_purpose[], by_model[], by_day[] (дни по Белграду), top_meetings[{meeting_id, title, usd, calls}], cells[{day, purpose, model, meeting_id, usd, calls, unpriced, tokens, audio_seconds}] (клетки день × назначение × модель × встреча), recent[{at, purpose, model, meeting_id, usd\|null, tokens, audio_seconds}] (до 300 последних вызовов периода, `RECENT_CALLS`), meeting_titles{id: title} (все встречи из `cells`, запрос пачками по 200) }`. Вызовы без цены в `total_usd` не входят — считаются в `unpriced_calls`. Код — `swarm-api/model-usage.ts`, сводка — `_shared/model-usage-summary.ts`; иначе 403. Экран — `admin/ModelUsagePanel.tsx`: календарь «с — по» (`RangePicker`) со стрелками ← → (целый месяц листается месяцем, иначе — на длину периода), по умолчанию текущий месяц; график с шагом день / неделя / месяц и подписями дат — столбцы раскладывает `lib/usageBuckets.ts` (пустые дни — нулевые столбцы). Экран считает всё из `cells` (`lib/usageCube.ts`, под тестами): столбцы с разбивкой по назначениям (цвет и легенда, хвост сверх четырёх — «Прочее»), подсказка при наведении, щелчок по столбцу сужает период до него (`ModelUsageChart.tsx`); итоги плюс средний и самый дорогой день; щелчок по строке «На что» / «Модели» фильтрует весь экран; внизу журнал последних вызовов (время по Белграду, назначение, встреча, модель, цена). Без `cells` (функция старше веба) экран просит открыть его позже |
 | `GET` | `/admin/review-counts` | Сводка «на вычитке по участникам»: `[{telegram_id,name,count}]` — агрегат непубликованных встреч (entry confirmed=false по `owner_id`/`added_by` + рекордер-черновики awaiting_review по `recorders[]`) воркспейса админа. Только число, БЕЗ контента (приватность чужого) |
 | `GET` | `/stats/people` | Экран «Статистика»: по каждому участнику воркспейса `{tasks:{open,inProgress,overdue,closed,closedRecent,onTimeRate,onTimeBase,avgCloseDays}, meetings:{published,inReview}, activity:{activeDays,strip[14],lastActiveAt}}` + `activityDays`, `closedWindowDays`, `tasksTruncated`. Считает `_shared/stats/people.ts` (дни по Белграду), выборки — `swarm-api/stats.ts` через общие правила видимости (задачи `listTasksWithTotal`, записи `buildEntriesQuery`). Только числа и даты. `inReview` — число для всех (решение 2026-09-25), тот же подсчёт, что у `/admin/review-counts` (`reviewCountsByMember`); содержимое черновиков не отдаётся. Активность = правки задач (`task_history`), комментарии, авторство записей, запись встреч (`recorders[].claimed_at`) за 90 дней |
@@ -1989,7 +1992,7 @@ _Админка (`admin.ts`, админы: `telegram_id 744230399` или `is_ad
 | `PATCH` | `/admin/workspaces/:id` | Обновить name/allowed_markets (чужой воркспейс → 404) |
 | `PATCH` | `/admin/users/:ref` | Правка профиля (`user_profiles`) по `telegram_id`; для ОЖИДАЮЩЕГО приглашения `ref` = username/email и принимается только `email` → `allowed_users.email`. Цель вне воркспейса админа → 404; почту суперадмина меняет только он (403); смена чужой почты уведомляет человека |
 
-**Переменные окружения:** канон — раздел [Переменные окружения](#переменные-окружения). Для swarm-api: `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `OPENAI_API_KEY`, `TELEGRAM_BOT_TOKEN`, `MINIAPP_ORIGIN`, `INITDATA_MAX_AGE` (опц.), `WEB_JWT_SECRET` (веб-режим: проверка Bearer-сессии).
+**Переменные окружения:** канон — раздел [Переменные окружения](#переменные-окружения). Для swarm-api: `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `OPENAI_API_KEY`, `TELEGRAM_BOT_TOKEN`, `MINIAPP_ORIGIN`, `INITDATA_MAX_AGE` (опц.), `WEB_JWT_SECRET` (веб-режим: проверка Bearer-сессии), `DECIMUS_API_URL` + `DECIMUS_API_TOKEN` (баллы РС/РКО из Децимуса, `GET /quality`).
 
 **Деплой:** `supabase functions deploy swarm-api --no-verify-jwt`
 
@@ -2169,6 +2172,27 @@ _Админка (`admin.ts`, админы: `telegram_id 744230399` или `is_ad
 | API | `supabase/functions/swarm-api/market.ts` (подключён в `index.ts`) |
 | Сборщики | `scripts/market/` (`run.ts`, `lib.ts`, `registry.ts`, `countries/`, `adapters/`, `demoland-seed.ts`; разовый генератор карт `build-shapes.ts` + `shapes-geo.ts`), workflow `.github/workflows/market-collect.yml` |
 | Веб | `miniapp/src/components/market/*`, `lib/marketView.ts`, `marketStats.ts`, `marketMap.ts`, `marketInsights.ts`, `marketPizza.ts`, `marketEditorial.ts` (разбор ручной части), `marketDemo.ts`, стили эталона `components/market/market.css` (всё внутри корня `.mkt`, тёмная тема по `.dark`) и каркас `components/market/ref.tsx`, клиент в `lib/api.ts` (`fetchMarketCountries`, `fetchMarket`, `importMarketSnapshot`, `fetchMarketCandidates`, `decideMarketCandidate`, `acceptAllMarketLocations`), типы `Market*` в `types.ts`, контуры стран `miniapp/public/market/shapes/{HR,RO,EE,XD}.json` |
+
+---
+
+## Баллы РС и РКО по пиццериям
+
+> Решения владельца 08.10.2026 — [decisions/2026-10-07-home-dashboard-direction.md](decisions/2026-10-07-home-dashboard-direction.md): данные о проверках и рейтингах хранит и загружает **Децимус**, Swarm их только читает. Своей таблицы баллов, разбора листа и загрузки в Swarm нет (были в ветке и откачены до раскатки).
+
+**Что это.** Баллы РС (аудит стандартов, полумесячные волны) и РКО (клиентский опыт, недели) по пиццериям IMF для виджетов главной (РС, РКО, пиццерии, «Куда смотреть», страны).
+
+**Откуда.** Выгрузки листа «Качество по пиццериям» таблиц «Аналитика IMF» / «(РКО)» грузятся в Децимус (его раздел «Рейтинги»). Децимус отдаёт API чтения с сервисным токеном — контракт в [GarroV/decimus#567](https://github.com/GarroV/decimus/issues/567); там же собираемость, топ нарушений и выездные проверки — следующие потребители на главной.
+
+**Чтение в Swarm.** `GET /quality?kind=rs|rko` (`swarm-api/quality.ts`) — прокси к `GET /api/v1/ratings/scores` Децимуса:
+- видит весь воркспейс («рейтинги видны всем»); страны — `allowed_markets` воркспейса (null — все), передаются Децимусу и режутся ещё раз в ответе; демо получает пусто;
+- ответ Децимуса проверяется (`swarm-api/quality-view.ts`, тесты `quality-view.test.ts`): баллы не по числу периодов, вне 0–100 или не числом, кривая дата — ошибка 500, а не тихий ноль на экране;
+- кэш в памяти функции на 5 минут по паре (тип, страны), таймаут запроса 10 с;
+- нет `DECIMUS_API_URL`/`DECIMUS_API_TOKEN` → 503 «ratings source is not configured», виджеты показывают «не загрузилось».
+
+| Что | Где |
+|---|---|
+| API | `supabase/functions/swarm-api/quality.ts`, разбор ответа `quality-view.ts` (+ `.test.ts`) |
+| Веб | `miniapp/src/lib/api.ts` (`fetchQuality`, типы `Quality*`), модель главной `miniapp/src/lib/homeQuality.ts` |
 
 ---
 
