@@ -71,3 +71,8 @@ WHERE group_id = NEW.group_id AND email = v_email|WHERE false|supabase/functions
     NEW.assignee_person_id := NULL;|    NULL;|supabase/functions/_shared/people/people.db.test.ts|supabase/migrations/20261008220000_people.sql
 GRANT EXECUTE ON FUNCTION public.people_link_tasks(uuid, bigint) TO service_role;|SELECT 1;|supabase/functions/_shared/people/people.db.test.ts|supabase/migrations/20261008220000_people.sql
 public.workspaces(id) ON DELETE CASCADE|public.workspaces(id)|supabase/functions/_shared/people/people.db.test.ts|supabase/migrations/20261008220000_people.sql
+# Присутствие (#751): журнал — только смены и появления после паузы, пульс зовёт service_role.
+v_gap := NOT FOUND OR v_prev.last_seen_at < v_now - interval '90 seconds';|v_gap := NOT FOUND;|supabase/functions/_shared/presence/presence.db.test.ts|supabase/migrations/20261009140000_presence.sql
+IF v_changed OR (v_gap AND p_state <> 'away') THEN|IF true THEN|supabase/functions/_shared/presence/presence.db.test.ts|supabase/migrations/20261009140000_presence.sql
+OR v_prev.section IS DISTINCT FROM p_section|OR false|supabase/functions/_shared/presence/presence.db.test.ts|supabase/migrations/20261009140000_presence.sql
+GRANT EXECUTE ON FUNCTION public.presence_ping(bigint, text, text, text) TO service_role;|SELECT 1;|supabase/functions/_shared/presence/presence.db.test.ts|supabase/migrations/20261009140000_presence.sql
