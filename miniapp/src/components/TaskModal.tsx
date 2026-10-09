@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect, useMemo, useRef } from "react";
-import type { Task, TaskLink, User, Project } from "@/types";
+import type { Task, TaskLink, Person, Project } from "@/types";
 import { useCardSections } from "@/components/tasks/useCardSections";
 import { displayName } from "@/lib/utils";
 import { DatePicker } from "@/components/ui/DatePicker";
@@ -11,7 +11,8 @@ import {
   createTask,
   updateTask,
   deleteTask,
-  fetchUsers,
+  fetchPeople,
+  createPerson,
   fetchTaskLabels,
   fetchConfig,
   fetchProjects,
@@ -27,6 +28,7 @@ import { RoyIcon, type RoyIconName } from "@/components/roy/icons";
 import { TaskComments } from "@/components/tasks/TaskComments";
 import { COUNTRY_NAMES, countryCode } from "@/lib/countries";
 import { CountryPopover } from "@/components/tasks/CountryPopover";
+import { PeoplePopover } from "@/components/tasks/PeoplePopover";
 import { linkify } from "@/lib/linkify";
 import { useDt } from "@/components/roy/nav";
 import { useIsDesktop } from "@/components/roy/useIsDesktop";
@@ -53,6 +55,22 @@ const STATUSES: { id: string; label: string; en: string; icon: RoyIconName | "ci
   { id: "done", label: "Готово", en: "Done", icon: "check" },
 ];
 const normStatus = (s?: string | null) => (s === "progress" ? "in_progress" : (s ?? "open"));
+
+// Исполнитель без входа в Swarm хранится в форме токеном «p:<person id>» (#874).
+const PERSON_TOKEN = "p:";
+
+function assigneeTokenOf(task: Task | null | undefined): string {
+  const tg = task?.assignee_telegram_ids?.[0];
+  if (tg != null) return tg.toString();
+  return task?.assignee_person_id ? PERSON_TOKEN + task.assignee_person_id : NONE;
+}
+
+// Токен исполнителя → поля запроса: аккаунт — по-старому, человек без входа — assignee_person_id.
+function assigneeFields(token: string): { assignee_telegram_id?: number | null; assignee_person_id?: string } {
+  if (token === NONE) return { assignee_telegram_id: null };
+  if (token.startsWith(PERSON_TOKEN)) return { assignee_person_id: token.slice(PERSON_TOKEN.length) };
+  return { assignee_telegram_id: parseInt(token, 10) };
+}
 
 // Sentinel for the assignee/role selects — empty string is not a valid select value
 const NONE = "__none__";
@@ -170,7 +188,10 @@ export function TaskModal({ task: taskOpened, open, onClose, onSaved, prefill, m
   const [assigneeId, setAssigneeId] = useState(NONE);
   // Исходный исполнитель: чтобы при правке других полей не затирать его (PATCH шлём только при изменении).
   const [initialAssignee, setInitialAssignee] = useState(NONE);
-  const [users, setUsers] = useState<User[]>([]);
+  // Справочник людей (#874): исполнитель и соисполнители выбираются отсюда, в т. ч. люди без входа.
+  const [people, setPeople] = useState<Person[]>([]);
+  const [coIds, setCoIds] = useState<string[]>([]);
+  const [initialCoIds, setInitialCoIds] = useState<string[]>([]);
   const [markets, setMarkets] = useState<string[]>([]);
   const [labels, setLabels] = useState<TaskLabel[]>([]);
   const [labelIds, setLabelIds] = useState<string[]>([]);
@@ -225,7 +246,8 @@ export function TaskModal({ task: taskOpened, open, onClose, onSaved, prefill, m
     const initialRecur = task ? recurValueOf(task) : null;
     const initialCountry = task?.country ?? prefill?.country ?? "";
     const initialRole = task?.task_role ?? NONE;
-    const cur = task?.assignee_telegram_ids?.[0]?.toString() ?? NONE;
+    const cur = assigneeTokenOf(task);
+    const initialCo = task?.coassignee_person_ids ?? [];
     const initialLabels = task?.label_ids ?? [];
     // Ссылок нет в списочной проекции: у недогруженной задачи здесь undefined, и пустой
     // список НЕ отправляется (isPartial глушит автосейв целиком — см. ниже).
@@ -245,6 +267,8 @@ export function TaskModal({ task: taskOpened, open, onClose, onSaved, prefill, m
     setTaskRole(initialRole);
     setAssigneeId(cur);
     setInitialAssignee(cur);
+    setCoIds(initialCo);
+    setInitialCoIds(initialCo);
     setLabelIds(initialLabels);
     setSelProject(initialProject);
     setSaveState("idle");
@@ -261,12 +285,13 @@ export function TaskModal({ task: taskOpened, open, onClose, onSaved, prefill, m
       country: initialCountry,
       taskRole: initialRole,
       assigneeId: cur,
+      coIds: initialCo,
       selProject: initialProject,
       labelIds: initialLabels,
       links: initialLinks,
     });
 
-    fetchUsers().then(setUsers).catch(() => {});
+    fetchPeople().then(setPeople).catch(() => {});
     fetchTaskLabels().then(setLabels).catch(() => {});
     fetchConfig().then((c) => setMarkets(c.allowed_markets ?? [])).catch(() => {});
     // Новая задача — по умолчанию исполнитель = текущий пользователь (обычно чаще правит своё же).
@@ -289,18 +314,28 @@ export function TaskModal({ task: taskOpened, open, onClose, onSaved, prefill, m
   // Состав и порядок выпадашки «Проект»: только свои проекты и подпроекты, двумя секциями.
   const projectOptions = useMemo(() => buildProjectOptions(projects, { viewerId: myId }), [projects, myId]);
 
-  // Опции исполнителя = пользователи воркспейса + текущий исполнитель, если его нет в списке
-  // (иначе select не показал бы его, а сохранение затёрло бы назначение).
-  const assigneeOptions: { id: string; name: string }[] = [
-    ...users.map((u) => ({ id: u.telegram_id.toString(), name: displayName(u.name) })),
-  ];
-  if (assigneeId !== NONE && !assigneeOptions.some((o) => o.id === assigneeId)) {
+  // Исполнитель хранится токеном: telegram_id аккаунта (как раньше) или «p:<id>» человека без
+  // входа. Выбор в справочнике переводится в токен и обратно.
+  const assigneePersonIds = useMemo(() => {
+    if (assigneeId === NONE) return [];
+    if (assigneeId.startsWith(PERSON_TOKEN)) return [assigneeId.slice(PERSON_TOKEN.length)];
+    const p = people.find((x) => x.telegram_id?.toString() === assigneeId);
+    return p ? [p.id] : [];
+  }, [assigneeId, people]);
+  const pickAssignee = (ids: string[]) => {
+    const p = people.find((x) => x.id === ids[0]);
+    setAssigneeId(!p ? NONE : p.telegram_id != null ? p.telegram_id.toString() : PERSON_TOKEN + p.id);
+  };
+  // Имя на пилюле, пока справочник не загрузился или исполнителя в нём нет (старая задача).
+  const assigneeFallback = assigneeId === NONE ? [] : (() => {
     const curName = task?.assignees?.[0];
-    assigneeOptions.unshift({
-      id: assigneeId,
-      name: curName && !isRawId(curName) ? curName : `#${assigneeId}`,
-    });
-  }
+    return [curName && !isRawId(curName) ? curName : `#${assigneeId}`];
+  })();
+  const addPerson = async (name: string, email: string | null) => {
+    const p = await createPerson(name, email);
+    setPeople((list) => (list.some((x) => x.id === p.id) ? list : [...list, p]));
+    return p;
+  };
 
   // Опции страны: рынки воркспейса + «Global» (пусто) + легаси-фолбэк (страна задачи вне
   // текущего allowed_markets — чтобы при редактировании не потерять её).
@@ -332,7 +367,7 @@ export function TaskModal({ task: taskOpened, open, onClose, onSaved, prefill, m
 
   // Текущий снапшот формы (для сравнения с сохранённым) — те же ключи, что в useEffect open.
   const formSnapshot = () =>
-    JSON.stringify({ title, description, status, dueDate, remindDate, recur, country, taskRole, assigneeId, selProject, labelIds, links });
+    JSON.stringify({ title, description, status, dueDate, remindDate, recur, country, taskRole, assigneeId, coIds, selProject, labelIds, links });
 
   // Собрать PATCH из текущих значений формы. null → сохранять нечего/нельзя (пустое название).
   const buildPatch = (): UpdateTaskInput | null => {
@@ -356,7 +391,8 @@ export function TaskModal({ task: taskOpened, open, onClose, onSaved, prefill, m
     };
     // Исполнителя шлём только если поменяли — иначе правка других полей затёрла бы назначение,
     // которое нельзя было префиллить (имя без telegram_id).
-    if (assigneeId !== initialAssignee) patch.assignee_telegram_id = assigneeId === NONE ? null : parseInt(assigneeId, 10);
+    if (assigneeId !== initialAssignee) Object.assign(patch, assigneeFields(assigneeId));
+    if (JSON.stringify(coIds) !== JSON.stringify(initialCoIds)) patch.coassignee_person_ids = coIds;
     // Списки шлём только если поменяли — как исполнителя: иначе правка других полей перезаписала
     // бы метки тем, что было на момент открытия. Видимость задачи списки не меняют (09.10.2026).
     const sameLabels = (a: string[], b: string[]) =>
@@ -386,7 +422,7 @@ export function TaskModal({ task: taskOpened, open, onClose, onSaved, prefill, m
     }, AUTOSAVE_DELAY);
     return () => clearTimeout(h);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, isEdit, isPartial, title, description, status, dueDate, remindDate, recur, country, taskRole, assigneeId, selProject, labelIds, links]);
+  }, [open, isEdit, isPartial, title, description, status, dueDate, remindDate, recur, country, taskRole, assigneeId, coIds, selProject, labelIds, links]);
 
   // Досрочно сохраняем pending-изменения (пока debounce не успел сработать) — перед закрытием
   // и перед переходом к связанной задаче.
@@ -435,8 +471,8 @@ export function TaskModal({ task: taskOpened, open, onClose, onSaved, prefill, m
         country: country || null,
         task_role: taskRole === NONE ? null : taskRole,
       };
-      const assigneeValue = assigneeId === NONE ? null : parseInt(assigneeId, 10);
-      const fields: CreateTaskInput = { ...base, assignee_telegram_id: assigneeValue, project_id: selProject };
+      const fields: CreateTaskInput = { ...base, ...assigneeFields(assigneeId), project_id: selProject };
+      if (coIds.length > 0) fields.coassignee_person_ids = coIds;
       if (meetingId) fields.meeting_id = meetingId;
       const created = await createTask(fields);
       // POST /tasks не принимает label_ids — вешаем метки вторым шагом.
@@ -715,26 +751,28 @@ export function TaskModal({ task: taskOpened, open, onClose, onSaved, prefill, m
                 />
 
                 {/* «Общие» = без конкретного исполнителя → командная задача (вкладка «Команда»).
-                    Пунктир: конкретный человек не назначен. */}
-                <Select value={assigneeId} onValueChange={(v) => setAssigneeId(v ?? NONE)}>
-                  <SelectTrigger
-                    id="modal-assignee"
-                    title={dt("Исполнитель", "Assignee")}
-                    className={propertyPillSelectCls(assigneeId !== NONE)}
-                  >
-                    <PropertyPillBody
-                      icon="team"
-                      label={dt("Исполнитель", "Assignee")}
-                      value={assigneeId === NONE ? dt("Общие", "Unassigned") : (assigneeOptions.find((o) => o.id === assigneeId)?.name ?? `#${assigneeId}`)}
-                    />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value={NONE}>{dt("Общие (вся команда)", "Unassigned (whole team)")}</SelectItem>
-                    {assigneeOptions.map((o) => (
-                      <SelectItem key={o.id} value={o.id}>{o.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                    Человека нет в списке — добавляется тут же (#874). */}
+                <PeoplePopover
+                  people={people}
+                  selected={assigneePersonIds}
+                  onChange={pickAssignee}
+                  onCreate={addPerson}
+                  label={dt("Исполнитель", "Assignee")}
+                  icon="team"
+                  emptyLabel={dt("Общие", "Unassigned")}
+                  clearLabel={dt("Общие (вся команда)", "Unassigned (whole team)")}
+                  fallbackNames={assigneeFallback}
+                />
+                <PeoplePopover
+                  multiple
+                  people={people}
+                  selected={coIds}
+                  onChange={setCoIds}
+                  onCreate={addPerson}
+                  label={dt("Соисполнители", "Co-assignees")}
+                  icon="team"
+                  emptyLabel={dt("Соисполнители", "Co-assignees")}
+                />
               </div>
 
               {/* Подсказка молчит, пока пинга нет. «Уже напомнили» показываем всегда — она

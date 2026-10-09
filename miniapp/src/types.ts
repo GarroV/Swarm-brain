@@ -11,6 +11,11 @@ export type Task = {
   description?: string | null;
   assignees: string[];
   assignee_telegram_ids: number[];
+  // Справочник людей (#874): исполнитель без входа и соисполнители (id из GET /people).
+  // coassignee_telegram_ids — производная для «Мои задачи», её пишет база.
+  assignee_person_id?: string | null;
+  coassignee_person_ids?: string[];
+  coassignee_telegram_ids?: number[];
   due_date: string | null;
   // Пинг — ручное напоминание, независимое от срока: «дедлайн 20-го, вспомнить 1-го».
   // `reminded_at` NOT NULL = пинг уже отзвонил и сгорел (одноразовый, решение владельца 2026-08-26).
@@ -265,6 +270,14 @@ export type Project = {
 
 /** Ссылка на артефакт проекта. url — только http(s), сервер проверяет. */
 export type ProjectLink = { title: string; url: string };
+
+// Человек воркспейса из справочника (GET /people, #874). telegram_id null — без входа в Swarm.
+export type Person = {
+  id: string;
+  name: string;
+  email: string | null;
+  telegram_id: number | null;
+};
 
 export type User = {
   telegram_id: number;
