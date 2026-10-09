@@ -263,7 +263,9 @@ Deno.test("запланированных спринтов в пространс
     for (const n of [4, 5, 6]) {
       await db.queryArray`
         insert into sprint_cycles (group_id, tab_id, name, start_date, end_date, status)
-        values (${WS}, ${tabId}, ${"Спринт " + n}, current_date + ${n * 14}, current_date + ${n * 14 + 13}, 'draft')`;
+        values (${WS}, ${tabId}, ${"Спринт " + n}, current_date + ${n * 14}::int, current_date + ${
+        n * 14 + 13
+      }::int, 'draft')`;
     }
     const live = await db.queryObject<{ n: bigint }>`
       select count(*) as n from sprint_cycles where tab_id = ${tabId} and status = 'draft'`;
