@@ -55,7 +55,6 @@ function item(
     link_count: 0,
     removed: false,
     removed_at: null,
-    hidden: false,
     ...over,
   };
 }
@@ -97,20 +96,6 @@ Deno.test("упоминание удалённой задачи не счита�
     }),
   ]);
   assertEquals(progress, { total: 1, done: 1, percent: 100 });
-});
-
-Deno.test("приватная чужая задача остаётся в счёте", () => {
-  // Содержимое скрыто, но строка есть: убрать её из счёта значит показать разным людям разный
-  // процент одного спринта — и спор о цифрах вместо разговора о работе.
-  const progress = computeProgress([
-    item("a", null, { status: "done" }),
-    item("secret", null, {
-      hidden: true,
-      title: "Приватная задача",
-      task_id: null,
-    }),
-  ]);
-  assertEquals(progress, { total: 2, done: 1, percent: 50 });
 });
 
 Deno.test("дерево: направление → инициатива → задачи", () => {

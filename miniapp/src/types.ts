@@ -37,9 +37,9 @@ export type Task = {
   url?: string | null;
   group_id?: string | null;
   created_by_name: string | null;
+  /** Автор задачи: убрать файл из карточки может он, исполнитель или админ. */
+  created_by_telegram_id?: number | null;
   // Модуль задач (Рой):
-  is_private: boolean;
-  owner_id?: number | null;
   start_date: string | null;
   timeline_position?: number | null;
   sprint_id: string | null;
@@ -189,10 +189,10 @@ export type SprintCycleItem = {
   /** Когда задачу сняли из идущего спринта (#576); в составе (`items`) всегда null. */
   withdrawn_at?: string | null;
   /**
-   * Задача приватная и смотрящий не владелец: строка видна, содержимого нет. Убрать её совсем
-   * значило бы молча уменьшить состав, и цифры отчёта перестали бы сходиться у разных людей.
+   * Устарело (09.10.2026): приватных задач больше нет, сервер шлёт false или не шлёт вовсе.
+   * Клиент поле не читает; оставлено необязательным, чтобы не сломаться о старый ответ.
    */
-  hidden: boolean;
+  hidden?: boolean;
 };
 
 /** Событие журнала пространства: кто и что сделал. Пишется не в таблицу — собирается из

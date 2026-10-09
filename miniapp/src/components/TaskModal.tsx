@@ -393,9 +393,11 @@ export function TaskModal({ task: taskOpened, open, onClose, onSaved, prefill, m
     // которое нельзя было префиллить (имя без telegram_id).
     if (assigneeId !== initialAssignee) Object.assign(patch, assigneeFields(assigneeId));
     if (JSON.stringify(coIds) !== JSON.stringify(initialCoIds)) patch.coassignee_person_ids = coIds;
-    // Списки — личные: выбор списка делает задачу личной (метки живут только на личных задачах).
-    if (labelIds.length > 0 && !task.is_private) patch.is_private = true;
-    if (task.is_private || labelIds.length > 0) patch.label_ids = labelIds;
+    // Списки шлём только если поменяли — как исполнителя: иначе правка других полей перезаписала
+    // бы метки тем, что было на момент открытия. Видимость задачи списки не меняют (09.10.2026).
+    const sameLabels = (a: string[], b: string[]) =>
+      a.length === b.length && [...a].sort().join() === [...b].sort().join();
+    if (!sameLabels(labelIds, task.label_ids ?? [])) patch.label_ids = labelIds;
     return patch;
   };
 
@@ -472,9 +474,8 @@ export function TaskModal({ task: taskOpened, open, onClose, onSaved, prefill, m
       const fields: CreateTaskInput = { ...base, ...assigneeFields(assigneeId), project_id: selProject };
       if (coIds.length > 0) fields.coassignee_person_ids = coIds;
       if (meetingId) fields.meeting_id = meetingId;
-      if (labelIds.length > 0) fields.is_private = true;
       const created = await createTask(fields);
-      // POST /tasks не принимает label_ids — вешаем метки вторым шагом на уже личную задачу.
+      // POST /tasks не принимает label_ids — вешаем метки вторым шагом.
       if (labelIds.length > 0) await updateTask(created.id, { label_ids: labelIds });
       onSaved(created);
       onClose();
@@ -825,11 +826,6 @@ export function TaskModal({ task: taskOpened, open, onClose, onSaved, prefill, m
                     );
                   })}
                 </div>
-                {labelIds.length > 0 && !task?.is_private && (
-                  <p className="mt-1.5 text-ink-mute" style={{ fontSize: 11.5 }}>
-                    {dt("Список личный — задача станет видна только тебе.", "Lists are personal — the task will be visible only to you.")}
-                  </p>
-                )}
               </div>
             )}
 

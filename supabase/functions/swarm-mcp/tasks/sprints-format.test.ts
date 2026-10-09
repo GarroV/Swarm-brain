@@ -100,28 +100,14 @@ const item = (over: Partial<SprintItem>): SprintItem => ({
   withdrawn_at: null,
   comment_count: 0,
   link_count: 0,
-  hidden: false,
   ...over,
 });
 
-Deno.test("formatSprint: чужая личная задача — строкой без названия и без task_id", () => {
-  const items = [
-    item({ task_id: "open-1", title: "Открытая", status: "done" }),
-    item({ task_id: "secret-1", title: "Секрет", hidden: true }),
-  ];
-  const text = formatSprint(
-    cycle,
-    "Тестовое",
-    items,
-    computeSprintStats(items),
-  );
+Deno.test("formatSprint: строка состава с названием и task_id, шапка с этапом", () => {
+  const items = [item({ task_id: "open-1", title: "Открытая", status: "done" })];
+  const text = formatSprint(cycle, "Тестовое", items, computeSprintStats(items));
   assertStringIncludes(text, "[x] Открытая");
-  assertStringIncludes(text, "личная задача");
-  assert(
-    !text.includes("Секрет"),
-    "название чужой личной задачи не раскрывается",
-  );
-  assert(!text.includes("secret-1"), "и её id тоже");
+  assertStringIncludes(text, "task_id: open-1");
   assertEquals(text.split("\n")[0], "Спринт «Спринт 1» — идёт (id: c1)");
 });
 

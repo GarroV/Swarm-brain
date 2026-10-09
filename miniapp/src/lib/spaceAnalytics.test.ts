@@ -47,7 +47,6 @@ function item(over: Partial<SprintCycleItem> = {}): SprintCycleItem {
     link_count: 0,
     removed: false,
     removed_at: null,
-    hidden: false,
     ...over,
   };
 }

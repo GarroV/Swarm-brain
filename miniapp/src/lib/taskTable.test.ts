@@ -10,7 +10,7 @@ function task(over: Partial<Task> & { id: string }): Task {
     due_date: null, remind_date: null, reminded_at: null,
     country: null, priority: null, status: "open",
     created_at: "2026-09-01T10:00:00+00:00", updated_at: null,
-    meeting_id: null, created_by_name: null, is_private: false,
+    meeting_id: null, created_by_name: null,
     start_date: null, sprint_id: null, label_ids: [], project_id: null,
     project_linked: false, parent_id: null, tree_x: null, tree_y: null,
     recur_freq: null, recur_anchor_dom: null,

@@ -19,7 +19,6 @@ function task(over: Partial<Task> & { id: string }): Task {
     updated_at: null,
     meeting_id: null,
     created_by_name: null,
-    is_private: false,
     start_date: null,
     sprint_id: null,
     label_ids: [],

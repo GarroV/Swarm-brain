@@ -427,7 +427,7 @@ export function InitiativeList({
     board.forEach((d) =>
       d.initiatives.forEach((ini) =>
         ini.items.forEach((i) => {
-          if (!i.task_id || i.removed || i.hidden) return;
+          if (!i.task_id || i.removed) return;
           const parentId = h.parentOf?.(i) ?? null;
           map.set(i.task_id, {
             taskId: i.task_id,

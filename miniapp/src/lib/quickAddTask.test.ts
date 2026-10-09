@@ -36,12 +36,13 @@ Deno.test("в списке «Сегодня» задача получает се
   assertEquals(buildQuickAddInput("Отчёт", ME, { todayISO: "2026-08-27" })?.due_date, "2026-08-27");
 });
 
-Deno.test("под активной меткой задача личная, а срок «сегодня» не подставляется", () => {
-  // Метки живут только на личных задачах (API отобьёт метку на общей), и список метки — не
-  // «Сегодня»: срок там был бы навязан.
+Deno.test("под активной меткой задача не становится приватной, а срок «сегодня» не подставляется", () => {
+  // Приватных задач нет (09.10.2026): список метки лишь собирает задачи, видимость не меняет.
+  // Список метки — не «Сегодня»: срок там был бы навязан.
   const input = buildQuickAddInput("Отчёт", ME, { todayISO: "2026-08-27", labelId: "l1" });
-  assertEquals(input?.is_private, true);
+  assertEquals("is_private" in (input ?? {}), false);
   assertEquals("due_date" in (input ?? {}), false);
+  assertEquals(input?.assignee_telegram_id, ME.telegram_id);
 });
 
 Deno.test("без контекста лишних полей не появляется", () => {

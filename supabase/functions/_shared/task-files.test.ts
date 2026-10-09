@@ -98,8 +98,8 @@ Deno.test("task-files: Content-Disposition несёт UTF-8 имя и ASCII-за
   );
 });
 
-Deno.test("task-files: убрать файл — прикрепивший, владелец задачи, админ; остальным нет", () => {
-  const f = { uploadedBy: 1, taskOwnerId: 2 };
+Deno.test("task-files: убрать файл — прикрепивший, создатель задачи, админ; остальным нет", () => {
+  const f = { uploadedBy: 1, taskCreatorId: 2 };
   assertEquals([1, 2, 3].map((id) => canRemoveTaskFile(f, id, false)), [
     true,
     true,
@@ -107,7 +107,7 @@ Deno.test("task-files: убрать файл — прикрепивший, вл�
   ]);
   assertEquals(canRemoveTaskFile(f, 3, true), true);
   assertEquals(
-    canRemoveTaskFile({ uploadedBy: 1, taskOwnerId: null }, 3, false),
+    canRemoveTaskFile({ uploadedBy: 1, taskCreatorId: null }, 3, false),
     false,
   );
 });

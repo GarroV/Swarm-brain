@@ -2,13 +2,12 @@
 // спринтов, сами спринты.
 //
 // Общий модуль (#485): ленту читают и веб (swarm-api `GET /spaces/:id/journal`), и Claude
-// (swarm-mcp `get_sprint_journal`). Правило видимости одно — две копии разошлись бы, и одна из
-// дверей стала бы обходным путём к чужому приватному.
+// (swarm-mcp `get_sprint_journal`). Сборка одна — две копии разошлись бы.
 //
-// ⚠️ Лента собирается из ЧУЖИХ таблиц, у каждой своя защита. Здесь она одна на всех: сначала
-// определяется список задач, которые человеку можно видеть, и только по ним берутся события.
-// Обратный порядок (взять события, потом отфильтровать) означал бы, что новая таблица событий
-// попадает в ленту мимо проверки — так журнал и становится обходным путём к чужому приватному.
+// ⚠️ Лента собирается из ЧУЖИХ таблиц. Порядок один на всех: сначала определяется список задач
+// пространства в воркспейсе спрашивающего, и только по ним берутся события. Обратный порядок
+// (взять события, потом отфильтровать) означал бы, что новая таблица событий попадает в ленту
+// мимо проверки воркспейса.
 
 // Линт просит короткое имя из карты импортов; см. пояснение в sprint-items.ts.
 // deno-lint-ignore-file no-import-prefix
@@ -67,20 +66,16 @@ function since(days: number | null): string | null {
 }
 
 /**
- * Задачи пространства, которые этому человеку можно видеть.
+ * Задачи пространства (видны любому участнику воркспейса — «личных» задач нет, решение 2026-10-09).
  *
  * Задачи пространства — это состав его спринтов (`sprint_items`). НЕ проекты с
  * `projects.sprint_id = tabId`: так было, пока пространство и вкладка доски «Проекты» были одной
  * записью. После их разделения (issue #423) у пространства проектов нет вовсе, и журнал молча
  * терял все правки задач и комментарии — на проде у обоих пространств выходил ноль (24.09.2026).
- *
- * Правило видимости то же, что в списках задач: приватную видит только владелец. Админского
- * обхода здесь нет намеренно — журнал не должен быть щелью, которой нет в обычном списке.
  */
-async function visibleTasks(
+async function spaceTasks(
   tabId: string,
   groupId: string,
-  viewerId: number | null,
 ): Promise<Map<string, string>> {
   const titles = new Map<string, string>();
   const { data: cycles, error: cyclesErr } = await supabase.from(
@@ -102,12 +97,10 @@ async function visibleTasks(
   if (taskIds.length === 0) return titles;
 
   // archive-ok: журнал пространства подписывает события, в том числе об архивной задаче
-  let q = supabase.from("tasks")
+  const { data: tasks, error: tasksErr } = await supabase.from("tasks")
     .select("id, title")
-    .eq("group_id", groupId).in("id", taskIds);
-  q = viewerId === null ? q.eq("is_private", false) : q.or(`is_private.eq.false,owner_id.eq.${viewerId}`);
-
-  const { data: tasks, error: tasksErr } = await q.limit(2000);
+    .eq("group_id", groupId).in("id", taskIds)
+    .limit(2000);
   if (tasksErr) console.error("[space-journal] tasks", tasksErr.message);
   for (const t of (tasks ?? []) as { id: string; title: string }[]) {
     titles.set(t.id, t.title);
@@ -126,7 +119,6 @@ export const JOURNAL_PERIODS = Object.keys(PERIODS);
 export async function loadSpaceJournal(
   tabId: string,
   groupId: string,
-  telegramId: number,
   days: string,
   resolveNames: (ids: number[]) => Promise<Map<number, string>>,
 ): Promise<JournalResult> {
@@ -143,7 +135,7 @@ export async function loadSpaceJournal(
     .maybeSingle();
   if (!tab) return { ok: false, status: 404, error: "Not found" };
 
-  const titles = await visibleTasks(tabId, groupId, telegramId);
+  const titles = await spaceTasks(tabId, groupId);
   const taskIds = [...titles.keys()];
   const events: JournalEvent[] = [];
 
@@ -276,9 +268,9 @@ export async function loadSpaceJournal(
         removed_at: string | null;
       }[]
     ) {
-      // Строка состава ведёт к задаче: нет её в списке видимых — событие в ленту не идёт.
-      // Упоминание удалённой задачи (task_id уже null) показываем: самой задачи нет, её
-      // приватность больше ничего не закрывает, а пропажу из спринта надо объяснить.
+      // Строка состава ведёт к задаче: нет её в списке задач пространства — событие в ленту
+      // не идёт. Упоминание удалённой задачи (task_id уже null) показываем: пропажу из спринта
+      // надо объяснить.
       const title = it.task_id ? titles.get(it.task_id) : null;
       if (it.task_id && !title) continue;
       const cycleName = cycleNames.get(it.cycle_id) ?? null;

@@ -41,7 +41,8 @@ export type TaskFilesState = ReturnType<typeof useTaskFiles>;
 
 export function useTaskFiles(
   taskId: string | null,
-  taskOwnerId: number | null,
+  /** Автор задачи (created_by_telegram_id): вправе убрать любой файл карточки. */
+  taskCreatorId: number | null,
 ) {
   const dt = useDt();
   const { me, toast } = useRoyNav();
@@ -190,7 +191,7 @@ export function useTaskFiles(
   const canRemove = (f: TaskFile) =>
     !!me &&
     (me.is_admin || f.uploaded_by === me.telegram_id ||
-      taskOwnerId === me.telegram_id);
+      taskCreatorId === me.telegram_id);
 
   const onDrag = (e: DragEvent, delta: 1 | -1 | 0) => {
     if (!e.dataTransfer.types.includes("Files") || !available || !limits) {

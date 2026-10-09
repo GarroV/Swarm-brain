@@ -20,7 +20,7 @@ const supabase = createClient(
   Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
 );
 
-const TASK_FIELDS = "id, title, status, assignees, project_id, completed_at, due_date, is_private, owner_id, links";
+const TASK_FIELDS = "id, title, status, assignees, project_id, completed_at, due_date, links";
 
 /** Отметка сверки: как идут дела у задачи в середине спринта. */
 export const CHECK_STATUSES = ["ok", "risk", "problem"] as const;
@@ -64,52 +64,21 @@ export interface SprintItem {
   withdrawn_at: string | null;
   /**
    * Сколько у задачи комментариев и ссылок. Не содержимое, а ЧИСЛО: в списке нужно понять,
-   * где шло обсуждение и где лежит материал, не открывая карточку. У скрытой приватной — 0:
-   * даже счётчик рассказывал бы о чужой задаче больше, чем человеку положено видеть.
+   * где шло обсуждение и где лежит материал, не открывая карточку.
    */
   comment_count: number;
   link_count: number;
-  /**
-   * Задача скрыта от смотрящего (она приватная, а он не владелец). Строка остаётся видимой,
-   * но без содержимого: убрать её совсем значило бы молча уменьшить состав спринта, и цифры
-   * отчёта перестали бы сходиться у разных людей.
-   */
-  hidden: boolean;
-}
-
-export interface Viewer {
-  /** Telegram id смотрящего строкой — как он лежит в `tasks.owner_id`. */
-  id: string | null;
-  isAdmin: boolean;
 }
 
 /**
- * Приватная задача видна только владельцу — то же правило, что в списках задач
- * (`is_private = false OR owner_id = я`). Админ права обхода здесь НЕ получает: решение
- * владельца 07.08.2026 о приватных записях и встречах.
- *
- * Задача без владельца при этом остаётся скрытой от всех: приватность без хозяина — это
- * повод разбираться с данными, а не показывать содержимое всей команде.
- */
-function isHidden(task: Record<string, unknown>, viewer: Viewer): boolean {
-  if (!task.is_private) return false;
-  const owner = task.owner_id == null ? null : String(task.owner_id);
-  return owner === null || viewer.id === null || owner !== viewer.id;
-}
-
-/**
- * Состав спринта глазами конкретного человека.
- *
- * `viewer` обязателен и значения по умолчанию не имеет намеренно: состав спринта обязан
- * показываться глазами конкретного человека, и параметр, который можно забыть передать, —
- * это правило, которое однажды не применится.
+ * Состав спринта. Одинаков для всех участников воркспейса: «личных» задач нет
+ * (решение 2026-10-09, docs/decisions/2026-10-09-tasks-no-private.md).
  */
 export async function listItems(
   cycleId: string,
   groupId: string,
-  viewer: Viewer,
 ): Promise<SprintItem[]> {
-  return (await listComposition(cycleId, groupId, viewer)).items;
+  return (await listComposition(cycleId, groupId)).items;
 }
 
 /**
@@ -120,9 +89,8 @@ export async function listItems(
 export async function listComposition(
   cycleId: string,
   groupId: string,
-  viewer: Viewer,
 ): Promise<{ items: SprintItem[]; withdrawn: SprintItem[] }> {
-  const all = await loadAllItems(cycleId, groupId, viewer);
+  const all = await loadAllItems(cycleId, groupId);
   return {
     items: all.filter((i) => i.withdrawn_at == null),
     withdrawn: all.filter((i) => i.withdrawn_at != null),
@@ -132,7 +100,6 @@ export async function listComposition(
 async function loadAllItems(
   cycleId: string,
   groupId: string,
-  viewer: Viewer,
 ): Promise<SprintItem[]> {
   const { data: cycle } = await supabase.from("sprint_cycles")
     .select("id").eq("id", cycleId).eq("group_id", groupId).maybeSingle();
@@ -170,56 +137,46 @@ async function loadAllItems(
     const t = r.task_id ? live.get(r.task_id as string) : undefined;
     const frozen = !!r.frozen_at;
     const removed = r.removed_at != null;
-    const hidden = !frozen && !!t && isHidden(t, viewer);
     const projectId = (t?.project_id as string | null) ?? null;
 
     const title = removed
       ? (r.removed_title as string | null) ?? "(задача удалена)"
       : frozen
       ? (r.frozen_title as string)
-      : hidden
-      ? "Приватная задача"
       : ((t?.title as string) ?? "(задача удалена)");
 
     return {
       id: r.id as string,
-      task_id: hidden ? null : (r.task_id as string | null) ?? null,
+      task_id: (r.task_id as string | null) ?? null,
       in_plan: !!r.in_plan,
       added_at: r.added_at as string,
       title,
       status: frozen ? (r.frozen_status as string) : ((t?.status as string) ?? "cancelled"),
-      assignees: hidden ? [] : frozen ? ((r.frozen_assignees as string[]) ?? []) : ((t?.assignees as string[]) ?? []),
-      project_id: hidden ? null : projectId,
+      assignees: frozen ? ((r.frozen_assignees as string[]) ?? []) : ((t?.assignees as string[]) ?? []),
+      project_id: projectId,
       project: removed
         ? null
         : frozen
         ? ((r.frozen_project as string | null) ?? null)
-        : hidden
-        ? null
         : (projectId ? projectNames.get(projectId) ?? null : null),
       completed_at: frozen
         ? ((r.frozen_completed_at as string | null) ?? null)
         : ((t?.completed_at as string | null) ?? null),
-      due_date: frozen
-        ? ((r.frozen_due_date as string | null) ?? null)
-        : hidden
-        ? null
-        : ((t?.due_date as string | null) ?? null),
+      due_date: frozen ? ((r.frozen_due_date as string | null) ?? null) : ((t?.due_date as string | null) ?? null),
       frozen,
       check_status: (r.check_status as CheckStatus | null) ?? null,
-      check_note: hidden ? null : (r.check_note as string | null) ?? null,
+      check_note: (r.check_note as string | null) ?? null,
       check_at: (r.check_at as string | null) ?? null,
       check_by: (r.check_by as string | null) ?? null,
       to_carry: !!r.to_carry,
-      carry_reason: hidden ? null : (r.carry_reason as string | null) ?? null,
+      carry_reason: (r.carry_reason as string | null) ?? null,
       carry_count: (r.carry_count as number | null) ?? 0,
       carried_manual: (r.carried_manual as boolean | null) ?? null,
       removed,
       removed_at: (r.removed_at as string | null) ?? null,
       withdrawn_at: (r.withdrawn_at as string | null) ?? null,
-      comment_count: hidden || frozen || removed ? 0 : comments.get(r.task_id as string) ?? 0,
-      link_count: hidden || frozen || removed ? 0 : ((t?.links as unknown[] | null) ?? []).length,
-      hidden,
+      comment_count: frozen || removed ? 0 : comments.get(r.task_id as string) ?? 0,
+      link_count: frozen || removed ? 0 : ((t?.links as unknown[] | null) ?? []).length,
     };
   });
 }
@@ -261,7 +218,7 @@ async function loadProjectNames(
   return names;
 }
 
-/** Набор состава. Чужие воркспейсы, приватные и уже добавленные отсеиваются молча. */
+/** Набор состава. Чужие воркспейсы и уже добавленные отсеиваются молча. */
 export async function addItems(
   cycleId: string,
   taskIds: string[],
@@ -278,7 +235,7 @@ export async function addItems(
     supabase.from("tasks")
       .select("id, status"),
   )
-    .in("id", taskIds).eq("group_id", groupId).eq("is_private", false);
+    .in("id", taskIds).eq("group_id", groupId);
   const allowed = (tasks ?? []) as { id: string; status: string }[];
   if (allowed.length === 0) return 0;
 
@@ -425,9 +382,6 @@ export async function updateItem(
     .select("id").maybeSingle();
   if (!data) return null;
 
-  const items = await listItems(cycleId, groupId, {
-    id: actor,
-    isAdmin: false,
-  });
+  const items = await listItems(cycleId, groupId);
   return items.find((i) => i.task_id === taskId) ?? null;
 }

@@ -37,8 +37,7 @@ export class AcceptConflictError extends Error {}
 /**
  * Приёмка: снимок состава, итоги, следующий спринт и перенос хвостов — всё или ничего.
  *
- * Итоги считаются по составу ГЛАЗАМИ АДМИНИСТРАТОРА участка — приватные задачи входят в
- * цифры, но не в тексты: иначе процент выполнения зависел бы от того, кто нажал кнопку.
+ * Итоги считаются по полному составу — одинаково, кто бы ни нажал кнопку.
  */
 export async function acceptCycle(
   id: string,
@@ -59,10 +58,7 @@ export async function acceptCycle(
 
   // Снятые из идущего спринта входят в итоги (#576): плановые из них — невыполненной частью
   // плана, иначе снятие отстающих поднимало бы процент.
-  const { items, withdrawn } = await listComposition(id, groupId, {
-    id: acceptedBy,
-    isAdmin: true,
-  });
+  const { items, withdrawn } = await listComposition(id, groupId);
   const stats = computeSprintStats(
     [...items, ...withdrawn].map((it): SprintItemView => ({
       in_plan: it.in_plan,

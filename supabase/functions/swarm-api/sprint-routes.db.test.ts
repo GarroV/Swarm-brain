@@ -48,9 +48,8 @@ async function connect(): Promise<Client> {
 }
 
 async function seed(db: Client) {
-  // Порядок удаления — от зависимых строк к тем, на кого они ссылаются: задачи держат
-  // владельца (tasks.owner_id → allowed_users), пользователи держат воркспейс. Наоборот
-  // база не даст, и тест упадёт на уборке, а не на деле.
+  // Порядок удаления — от зависимых строк к тем, на кого они ссылаются: пользователи держат
+  // воркспейс. Наоборот база не даст, и тест упадёт на уборке, а не на деле.
   for (const ws of [WS, OTHER_WS]) {
     await db.queryArray`delete from sprint_cycles where group_id = ${ws}`;
     await db.queryArray`delete from tasks where group_id = ${ws}`;
@@ -65,8 +64,7 @@ async function seed(db: Client) {
       .queryArray`insert into workspaces (id, name) values (${ws}, ${ws})`;
   }
 
-  // Владелец приватной задачи — настоящая строка в allowed_users: у tasks.owner_id внешний
-  // ключ туда, и без неё проверка приватности не доходит до дела.
+  // Участники воркспейса — настоящие строки в allowed_users.
   for (const person of [ME, SOMEONE_ELSE]) {
     await db.queryArray`
       insert into allowed_users (telegram_id, username, added_by, group_id)
@@ -333,57 +331,31 @@ Deno.test("спринт создаёт и стартует любой участ
   }
 });
 
-Deno.test("чужая приватная задача видна строкой, но без содержимого", async () => {
+// «Личных» задач нет (решение 2026-10-09): состав спринта одинаков для всех участников.
+Deno.test("задача коллеги в составе видна целиком", async () => {
   const db = await connect();
   try {
     const { tabId } = await seed(db);
     const project = await db.queryObject<{ id: string }>`
       insert into projects (group_id, name) values (${WS}, 'Инициатива') returning id`;
     const task = await db.queryObject<{ id: string }>`
-      insert into tasks (title, status, group_id, project_id, is_private, owner_id, created_by)
-      values ('Личное дело', 'open', ${WS}, ${project.rows[0].id}, true, ${SOMEONE_ELSE}, 'test')
+      insert into tasks (title, status, group_id, project_id, created_by, created_by_telegram_id)
+      values ('Дело коллеги', 'open', ${WS}, ${project.rows[0].id}, 'test', ${SOMEONE_ELSE})
       returning id`;
     const cycle = await db.queryObject<{ id: string }>`
       insert into sprint_cycles (group_id, tab_id, name, start_date, end_date, status)
       values (${WS}, ${tabId}, 'Спринт 1', current_date, current_date + 13, 'active')
       returning id`;
-    // Задача попала в состав до того, как её сделали приватной: добавление приватной задачи
-    // в спринт и так отбивается, а вот смена признака после добавления — отдельный путь,
-    // и правило видимости обязано работать и на нём.
     await db.queryArray`
       insert into sprint_items (cycle_id, task_id, in_plan)
       values (${cycle.rows[0].id}, ${task.rows[0].id}, true)`;
 
     const mine = await (await call("GET", `/sprint-cycles/${cycle.rows[0].id}`))!
       .json();
-    assertEquals(
-      mine.items.length,
-      1,
-      "строка состава должна остаться: иначе цифры разъедутся",
-    );
-    assertEquals(mine.items[0].hidden, true);
-    assertEquals(mine.items[0].title, "Приватная задача");
-    assertEquals(mine.items[0].assignees, []);
-    assertEquals(
-      mine.items[0].task_id,
-      null,
-      "по id чужую приватную задачу не открыть",
-    );
-
-    const owner = await (await call("GET", `/sprint-cycles/${cycle.rows[0].id}`, {
-      as: SOMEONE_ELSE,
-    }))!.json();
-    assertEquals(owner.items[0].hidden, false, "владелец видит свою задачу");
-    assertEquals(owner.items[0].title, "Личное дело");
-
-    const admin = await (await call("GET", `/sprint-cycles/${cycle.rows[0].id}`, {
-      admin: true,
-    }))!.json();
-    assertEquals(
-      admin.items[0].hidden,
-      true,
-      "админ приватную задачу не открывает: решение владельца 07.08.2026",
-    );
+    assertEquals(mine.items.length, 1);
+    assertEquals(mine.items[0].title, "Дело коллеги");
+    assertEquals(mine.items[0].task_id, task.rows[0].id);
+    assertEquals("hidden" in mine.items[0], false, "поля скрытости в ответе больше нет");
   } finally {
     await db.end();
   }

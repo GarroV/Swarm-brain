@@ -29,13 +29,12 @@ export async function saveTaskPatch(
   try { await updateTask(id, fields); } finally { onChanged(); }
 }
 
-/** Переключение списка: списки личные, поэтому выбор списка делает задачу личной. */
+/** Переключение списка: только метки, видимость задачи не меняется (09.10.2026). */
 export function toggleLabelPatch(task: Task, labelId: string): { fields: UpdateTaskInput; patch: Partial<Task> } {
   const cur = task.label_ids ?? [];
   const next = cur.includes(labelId) ? cur.filter((x) => x !== labelId) : [...cur, labelId];
   const fields: UpdateTaskInput = { label_ids: next };
   const patch: Partial<Task> = { label_ids: next };
-  if (next.length > 0 && !task.is_private) { fields.is_private = true; patch.is_private = true; }
   return { fields, patch };
 }
 

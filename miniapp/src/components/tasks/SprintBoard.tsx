@@ -359,7 +359,7 @@ export function SprintBoard() {
       due_date: null, remind_date: null, reminded_at: null,
       tags: [], country: null, task_role: null, priority: null, source: "mini_app",
       status, created_at: new Date().toISOString(), updated_at: null, meeting_id: null,
-      url: null, group_id: null, created_by_name: null, is_private: false, owner_id: null,
+      url: null, group_id: null, created_by_name: null,
       start_date: null, timeline_position: null, sprint_id, label_ids: [], project_id,
       project_linked: false, parent_id: null, tree_x: null, tree_y: null,
       recur_freq: null, recur_anchor_dom: null,

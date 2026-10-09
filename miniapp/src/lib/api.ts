@@ -60,7 +60,6 @@ export type CreateTaskInput = {
   // Привязка к встрече (entry.id): задача попадает в блок «Задачи из встречи».
   meeting_id?: string | null;
   // Модуль задач (Рой):
-  is_private?: boolean;
   start_date?: string | null;
   sprint_id?: string | null;
   tags?: string[];
@@ -226,8 +225,6 @@ function mkMock(o: Partial<Task> & { id: string; title: string }): Task {
     url: null,
     group_id: "cee",
     created_by_name: o.created_by_name ?? "Dev User",
-    is_private: false,
-    owner_id: null,
     start_date: null,
     timeline_position: null,
     sprint_id: null,
@@ -319,7 +316,6 @@ let mockTasks: Task[] = [
     title: "General team retro notes",
     assignees: [],
     assignee_telegram_ids: [],
-    is_private: false,
   }),
   // ── регулярные задачи: без них смарт-список «Регулярные» скрыт и его не посмотреть ──
   mkMock({
@@ -1011,8 +1007,7 @@ export async function createTask(input: CreateTaskInput): Promise<Task> {
       url: null,
       group_id: "cee",
       created_by_name: MOCK_ME.name,
-      is_private: input.is_private ?? false,
-      owner_id: input.is_private ? MOCK_ME.telegram_id : null,
+      created_by_telegram_id: MOCK_ME.telegram_id,
       start_date: input.start_date ?? null,
       timeline_position: input.timeline_position ?? null,
       sprint_id: input.sprint_id ?? null,
@@ -1101,10 +1096,6 @@ export async function updateTask(
       task.project_linked = (fields as { project_linked?: boolean })
         .project_linked!;
     }
-    if (fields.is_private !== undefined) {
-      task.is_private = fields.is_private;
-      task.owner_id = fields.is_private ? MOCK_ME.telegram_id : null;
-    }
     if ("assignee_telegram_id" in fields) {
       task.assignee_telegram_ids = fields.assignee_telegram_id
         ? [fields.assignee_telegram_id]
@@ -1127,7 +1118,7 @@ export async function deleteTask(id: string): Promise<void> {
   return apiFetch<void>(`/tasks/${id}`, { method: "DELETE" });
 }
 
-/** Архив задач (#489): убранные задачи воркспейса, свежие сверху; чужие личные сервер не отдаёт. */
+/** Архив задач (#489): убранные задачи воркспейса, свежие сверху. */
 export async function fetchArchivedTasks(): Promise<Task[]> {
   if (DEV_MODE) return [];
   return apiFetch<Task[]>("/tasks/archived");
@@ -1698,7 +1689,6 @@ function mockItemBase(): Omit<
     carried_manual: null,
     removed: false,
     removed_at: null,
-    hidden: false,
   };
 }
 

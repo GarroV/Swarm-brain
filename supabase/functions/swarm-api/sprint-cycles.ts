@@ -62,7 +62,6 @@ export async function handleSprintCycleRoutes(
   origin: string,
 ): Promise<Response | null> {
   const actor = String(telegramId);
-  const viewer = { id: actor, isAdmin };
   const url = new URL(req.url);
 
   if (routePath === "/sprint-cycles") {
@@ -112,11 +111,9 @@ export async function handleSprintCycleRoutes(
       if (!cycle) return apiErr(404, "Not found", origin);
       // Состав отдаём вместе с циклом: экран спринта без него всё равно бесполезен,
       // а второй запрос стоил бы лишнего круга на каждом открытии.
-      // `viewer` обязателен — состав показывается глазами спрашивающего, и чужая приватная
-      // задача остаётся в нём строкой без содержимого.
       // Снятые из идущего спринта (#576) — отдельным списком: в составе их нет, но шапке
       // нужны плановые из них, чтобы процент считался от зафиксированного плана.
-      const { items, withdrawn } = await listComposition(id, groupId, viewer);
+      const { items, withdrawn } = await listComposition(id, groupId);
       return json({ ...cycle, items, withdrawn }, 200, origin);
     }
     if (req.method === "PATCH") {
@@ -214,7 +211,7 @@ export async function handleSprintCycleRoutes(
     if (cycle.status === "accepted") {
       return apiErr(409, "Спринт принят, состав не меняется", origin);
     }
-    // Сколько реально добавилось: чужие воркспейсы, приватные и уже добавленные отсеиваются молча.
+    // Сколько реально добавилось: чужие воркспейсы и уже добавленные отсеиваются молча.
     return json(
       { added: await addItems(tasksMatch[1], taskIds, groupId, actor) },
       200,

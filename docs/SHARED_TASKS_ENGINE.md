@@ -43,10 +43,8 @@ listTasks(filters, groupId?) → Promise<Task[]>
              confirmed?, createdBy?, dueToday?, viewerId?, isAdmin?,
              sprintId?, tags?, startDateFrom?, startDateTo?, dueDateFrom?, dueDateTo? }
   Порядок: due_date ASC, nullsFirst:false.
-  Видимость приватных задач (модуль Рой):
-    isAdmin=true → видит все (фильтр приватности не накладывается).
-    иначе viewerId задан → or(is_private.eq.false, owner_id.eq.viewerId).
-    иначе (нет ни isAdmin, ни viewerId) → безопасный дефолт: только is_private=false.
+  Приватности нет (слой личных задач снят 09.10.2026): отдаются все задачи воркспейса,
+    кому что показывать — линзы веба.
   confirmed задан → eq(confirmed).
   Закрытые (done/cancelled/draft) исключаются по умолчанию — правило `hidesClosedByDefault`
     в `_shared/tasks/statuses.ts`: когда не задан ни confirmed, ни dueToday, ни status.
@@ -111,8 +109,7 @@ deleteSprint(id, groupId, archivedBy?: number) → Promise<boolean>
 
 setTasksSprint(taskIds: string[], sprintId: string | null, groupId) → Promise<number>
   Массовое назначение/снятие sprint_id у задач воркспейса.
-  Только командные задачи: in(id) + eq(group_id) + eq(is_private, false)
-    — чужие личные задачи не трогаются (спринт командный).
+  in(id) + eq(group_id).
   Добавляет updated_at. taskIds пуст → возвращает 0 без запроса.
   Возвращает число затронутых задач.
 ```
@@ -132,10 +129,8 @@ listDependencies(taskId: string) → Promise<DepEdge[]>
 
 listWorkspaceDependencies(groupId, viewerId: number, isAdmin: boolean) → Promise<TaskDependency[]>
   Все рёбра воркспейса разом (устраняет N+1 от поэлементного listDependencies).
-  1. Берёт видимые задачи воркспейса (та же приватность, что в listTasks:
-     не админ → or(is_private.eq.false, owner_id.eq.viewerId)).
-  2. Ребро возвращается, только если ВИДИМЫ ОБА конца (task_id и depends_on_id) —
-     приватные задачи не утекают через граф. Нет видимых задач → [].
+  1. Берёт задачи воркспейса (приватности нет с 09.10.2026).
+  2. Ребро возвращается, только если оба конца в воркспейсе. Нет задач → [].
 
 createDependency(taskId, dependsOnId, type: DependencyType) → Promise<CreateDepResult>
   CreateDepResult = { ok:true, dependency } | { ok:false, reason:"cycle"|"duplicate" }.

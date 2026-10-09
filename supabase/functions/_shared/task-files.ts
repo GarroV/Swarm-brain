@@ -147,14 +147,14 @@ export function contentDisposition(name: string, inline: boolean): string {
   return `${inline ? "inline" : "attachment"}; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(name)}`;
 }
 
-export type FileRemoveCtx = { uploadedBy: number; taskOwnerId: number | null };
+export type FileRemoveCtx = { uploadedBy: number; taskCreatorId: number | null };
 
-/** Убрать файл может тот, кто его прикрепил, владелец задачи или админ. */
+/** Убрать файл может тот, кто его прикрепил, создатель задачи или админ. */
 export function canRemoveTaskFile(
   f: FileRemoveCtx,
   viewerId: number,
   isAdmin: boolean,
 ): boolean {
   return isAdmin || f.uploadedBy === viewerId ||
-    (f.taskOwnerId !== null && f.taskOwnerId === viewerId);
+    (f.taskCreatorId !== null && f.taskCreatorId === viewerId);
 }

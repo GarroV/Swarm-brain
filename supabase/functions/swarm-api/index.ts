@@ -104,7 +104,7 @@ import {
 } from "../_shared/meeting-dedup.ts";
 import { publishDraftMeeting } from "../_shared/meeting-publish.ts";
 import { entryVisibilityOr } from "../_shared/entries/access.ts";
-import { canMutateTask, canViewTask } from "../_shared/tasks/access.ts";
+import { mergeOwnLabels } from "../_shared/tasks/labels.ts";
 import { todayIso } from "../_shared/llm-date.ts";
 import {
   callExtractor,
@@ -486,11 +486,10 @@ function entryTagKey(
   }
 }
 
-// ── Task privacy / validation helpers (Рой) ────────────────────────────────────
+// ── Task validation helpers (Рой) ──────────────────────────────────────────────
 
-// canViewTask / canMutateTask переехали в общий `_shared/tasks/access.ts` (issue #45): здесь
-// лежала одна из шести рукописных копий правила, и именно расхождение копий дало дыру в
-// swarm-mcp. Импорт — вверху файла; локальные определения удалены сознательно, не восстанавливать.
+// Доступ к задаче — только воркспейс (`task.group_id === groupId`), «личных» задач нет
+// (решение 2026-10-09). Канон правила — `_shared/tasks/access.ts`.
 
 // start_date не должен быть позже due_date. Возвращает текст ошибки или null.
 function validateTaskDates(
@@ -965,7 +964,6 @@ async function routeRequest(req: Request): Promise<Response> {
     routePath,
     telegram_id,
     groupId,
-    isAdmin,
     origin,
     resolveNames,
   );
@@ -990,7 +988,6 @@ async function routeRequest(req: Request): Promise<Response> {
     routePath,
     telegram_id,
     groupId,
-    isAdmin,
     origin,
   );
   if (subResp) return subResp;
@@ -1012,7 +1009,6 @@ async function routeRequest(req: Request): Promise<Response> {
     req,
     routePath,
     telegram_id,
-    isAdmin,
     origin,
     resolveNames,
   );
@@ -1034,7 +1030,6 @@ async function routeRequest(req: Request): Promise<Response> {
   const journalResp = await handleSpaceJournalRoutes(
     req,
     routePath,
-    telegram_id,
     groupId,
     origin,
     resolveNames,
@@ -1049,7 +1044,7 @@ async function routeRequest(req: Request): Promise<Response> {
   );
   if (telegramLinkResp) return telegramLinkResp;
 
-  const archiveResp = await handleTaskArchiveRoutes(req, routePath, telegram_id, groupId, isAdmin, origin);
+  const archiveResp = await handleTaskArchiveRoutes(req, routePath, groupId, origin);
   if (archiveResp) return archiveResp;
 
   // «Анализ рынка» (/market/*): данные страны по allowed_markets, импорт и кандидаты — админу.
@@ -1096,9 +1091,6 @@ async function routeRequest(req: Request): Promise<Response> {
           telegramId: mine ? telegram_id : undefined,
           limit,
           confirmed: confirmedFilter,
-          // Приватность: владелец видит свои личные задачи; админ — все
-          viewerId: telegram_id,
-          isAdmin,
           sprintId,
           projectId,
           tags,
@@ -1207,7 +1199,6 @@ async function routeRequest(req: Request): Promise<Response> {
       );
       if (!recur.ok) return apiErr(400, recur.error, origin);
 
-      const isPrivate = body.is_private === true;
       const sprintId = (body.sprint_id as string | null) ?? null;
       if (sprintId && !(await sprintInWorkspace(sprintId, groupId))) {
         return apiErr(400, "sprint_id не найден в этом воркспейсе", origin);
@@ -1280,8 +1271,6 @@ async function routeRequest(req: Request): Promise<Response> {
         meeting_id: safeMeetingId,
         created_by_telegram_id: telegram_id ?? null,
         // Модуль задач (Рой):
-        is_private: isPrivate,
-        owner_id: isPrivate ? telegram_id : null,
         start_date: startDate,
         sprint_id: sprintId,
         project_id: projectId,
@@ -1320,10 +1309,6 @@ async function routeRequest(req: Request): Promise<Response> {
       if (!task || task.group_id !== groupId) {
         return apiErr(404, "Not found", origin);
       }
-      // Приватная задача чужого пользователя — 404 (не раскрываем существование)
-      if (!canViewTask(task, telegram_id, isAdmin)) {
-        return apiErr(404, "Not found", origin);
-      }
       const [fresh] = await withFreshAssignees([task]);
       return json(fresh, 200, origin);
     }
@@ -1339,13 +1324,6 @@ async function routeRequest(req: Request): Promise<Response> {
       const task = await getTask(taskId);
       if (!task || task.group_id !== groupId) {
         return apiErr(404, "Not found", origin);
-      }
-      if (!canViewTask(task, telegram_id, isAdmin)) {
-        return apiErr(404, "Not found", origin);
-      }
-      // Мутировать приватную может только владелец/админ
-      if (!canMutateTask(task, telegram_id, isAdmin)) {
-        return apiErr(403, "Forbidden", origin);
       }
 
       const fields: Partial<TaskInput> & {
@@ -1402,40 +1380,18 @@ async function routeRequest(req: Request): Promise<Response> {
             : null;
       }
 
-      // Смена приватности: владелец задаётся/снимается вместе с флагом
-      if (typeof body.is_private === "boolean") {
-        fields.is_private = body.is_private;
-        fields.owner_id = body.is_private
-          ? (task.owner_id ?? telegram_id)
-          : null;
-      }
-
-      // Персональные смарт-метки: только на своей личной задаче (учитываем смену is_private в этом же PATCH).
+      // Персональные смарт-метки (списки): ставятся на любую задачу, но человек меняет только
+      // СВОИ — чужие метки на задаче сохраняются (решение 2026-10-09).
       if (Array.isArray(body.label_ids)) {
-        const effPrivate = typeof fields.is_private === "boolean"
-          ? fields.is_private
-          : task.is_private;
-        const effOwner = "owner_id" in fields ? fields.owner_id : task.owner_id;
-        if (!(effPrivate === true && effOwner === telegram_id)) {
-          return apiErr(400, "Метки доступны только на личных задачах", origin);
-        }
         const ids = (body.label_ids as unknown[]).filter((x): x is string =>
           typeof x === "string"
         );
-        if (ids.length > 0) {
-          const { data: mine } = await supabase
-            .from("task_labels").select("id").eq("owner_id", telegram_id).in(
-              "id",
-              ids,
-            );
-          const valid = new Set(
-            ((mine ?? []) as Array<{ id: string }>).map((r) => r.id),
-          );
-          if (ids.some((id) => !valid.has(id))) {
-            return apiErr(400, "Неизвестная метка", origin);
-          }
+        const merged = await mergeOwnLabels(supabase, telegram_id, task.label_ids ?? [], ids);
+        if (!merged.ok) {
+          if (merged.cause) console.error("task labels merge failed:", merged.cause);
+          return apiErr(merged.status, merged.error, origin);
         }
-        fields.label_ids = ids;
+        fields.label_ids = merged.value;
       }
 
       // Привязка к спринту (с проверкой воркспейса; null — отвязать)
@@ -1636,12 +1592,6 @@ async function routeRequest(req: Request): Promise<Response> {
       if (!task || task.group_id !== groupId) {
         return apiErr(404, "Not found", origin);
       }
-      if (!canViewTask(task, telegram_id, isAdmin)) {
-        return apiErr(404, "Not found", origin);
-      }
-      if (!canMutateTask(task, telegram_id, isAdmin)) {
-        return apiErr(403, "Forbidden", origin);
-      }
       try {
         // archived_by — кто убрал задачу: с архивацией это единственный след автора (issue #427).
         await deleteTask(taskId, telegram_id ?? undefined);
@@ -1787,7 +1737,6 @@ async function routeRequest(req: Request): Promise<Response> {
       return json(
         await listProjects(groupId, {
           viewerId: telegram_id,
-          isAdmin,
           withSprintGroups,
         }),
         200,
@@ -2719,7 +2668,7 @@ async function routeRequest(req: Request): Promise<Response> {
           meta.title = body.title.trim().slice(0, 200);
           fields.metadata = meta;
         }
-        // Смена приватности встречи-записи: владелец задаётся/снимается вместе с флагом (как у задач).
+        // Смена приватности встречи-записи: владелец сохраняется, флаг отвечает только за видимость.
         // Менять видимость — права удаления (владелец/админ): личная встреча скрыта от команды.
         if (
           typeof body.is_private === "boolean" &&

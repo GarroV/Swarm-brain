@@ -46,7 +46,10 @@ export function useCardSections(
   const dt = useDt();
   const editable = isEdit && !!task;
   const subs = useTaskSubtasks(editable && !isPartial ? task : null, onSaved);
-  const files = useTaskFiles(editable ? task.id : null, task?.owner_id ?? null);
+  const files = useTaskFiles(
+    editable ? task.id : null,
+    task?.created_by_telegram_id ?? null,
+  );
 
   // Первое добавление из строки пиктограмм убирает саму пиктограмму — фокус ушёл бы в никуда.
   // Переводим его на «+» появившегося раздела, как только тот отрисуется.

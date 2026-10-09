@@ -1,12 +1,11 @@
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { json } from "./http.ts";
 import { commentDeleteDenial, validateCommentContent } from "../_shared/tasks/comments.ts";
-import { canViewTask } from "../_shared/tasks/access.ts";
 import { afterTaskComment } from "../_shared/tasks/comment-fanout.ts";
 import { onlyLive } from "../_shared/tasks/live.ts";
 
 // Роуты /tasks/:id/comments — комментарии-апдейты к задаче.
-// Доступ: задача того же воркспейса (group_id) + приватную видит только владелец/админ.
+// Доступ: задача того же воркспейса (group_id) — «личных» задач нет (решение 2026-10-09).
 // Возвращает null, если путь не про комментарии (index.ts идёт дальше).
 
 type CommentRow = {
@@ -18,17 +17,11 @@ type CommentRow = {
 type TaskRow = {
   id: string;
   group_id: string | null;
-  is_private: boolean;
-  owner_id: number | null;
   // Ниже — только для рассылки уведомлений (кому и с каким заголовком), см. _shared/tasks/comment-fanout.ts.
   title: string;
   assignee_telegram_ids: number[] | null;
   created_by_telegram_id: number | null;
 };
-
-// Правило приватности — общий гард `_shared/tasks/access.ts` (issue #45): локальная копия
-// здесь была ещё одной из шести, а расходятся они молча.
-const canView = canViewTask;
 
 async function loadTask(
   supabase: SupabaseClient,
@@ -38,7 +31,7 @@ async function loadTask(
     supabase
       .from("tasks")
       .select(
-        "id, group_id, is_private, owner_id, title, assignee_telegram_ids, created_by_telegram_id",
+        "id, group_id, title, assignee_telegram_ids, created_by_telegram_id",
       ),
   )
     .eq("id", taskId).maybeSingle();
@@ -61,10 +54,8 @@ export async function handleTaskCommentRoutes(
 
   const taskId = (listMatch ?? oneMatch)![1];
   const task = await loadTask(supabase, taskId);
-  // 404 и на отсутствие, и на чужой воркспейс/приватность — не палим существование.
-  if (
-    !task || task.group_id !== groupId || !canView(task, telegramId, isAdmin)
-  ) {
+  // 404 и на отсутствие, и на чужой воркспейс — не палим существование.
+  if (!task || task.group_id !== groupId) {
     return json({ error: "Задача не найдена" }, 404, origin);
   }
 
