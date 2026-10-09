@@ -31,7 +31,7 @@ async function connect(): Promise<Client> {
 
 async function cleanup(db: Client) {
   await db.queryArray`delete from tasks where group_id = ${WS}`;
-  await db.queryArray`delete from people where group_id = ${WS}`;
+  // people не удаляем руками: их уносит каскад от воркспейса — так он и проверяется.
   await db.queryArray`delete from allowed_users where group_id = ${WS}`;
   await db.queryArray`delete from workspaces where id = ${WS}`;
 }
@@ -135,6 +135,9 @@ Deno.test("люди без входа: исполнитель и соиспол�
       returning id::text`;
     await db.queryArray`update tasks set assignee_telegram_ids = ${[ACC_TG]}::int8[] where id = ${t3[0][0]}::uuid`;
     assertEquals((await task(db, t3[0][0])).assignee_person_id, null, "один исполнитель, а не два");
+    await cleanup(db);
+    const { rows: left } = await db.queryArray`select count(*)::int from people where group_id = ${WS}`;
+    assertEquals(left[0][0], 0, "люди ушли вместе с воркспейсом");
   } finally {
     await cleanup(db);
     await db.end();

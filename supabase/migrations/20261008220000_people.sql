@@ -25,7 +25,7 @@
 
 CREATE TABLE IF NOT EXISTS public.people (
   id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  group_id     text NOT NULL REFERENCES public.workspaces(id),
+  group_id     text NOT NULL REFERENCES public.workspaces(id) ON DELETE CASCADE,
   display_name text NOT NULL CHECK (char_length(btrim(display_name)) BETWEEN 1 AND 120),
   email        text CHECK (email IS NULL OR (email = lower(btrim(email)) AND email LIKE '%_@_%')),
   account_id   bigint UNIQUE REFERENCES public.allowed_users(id) ON DELETE SET NULL,
@@ -34,6 +34,13 @@ CREATE TABLE IF NOT EXISTS public.people (
   created_at   timestamptz NOT NULL DEFAULT now(),
   archived_at  timestamptz
 );
+
+-- Человек живёт внутри воркспейса: удалили воркспейс — ушли и его люди (у задач ссылка обнулится
+-- сама, ON DELETE SET NULL). Без каскада удаление воркспейса упиралось в автоматически заведённые
+-- записи (смоуки CI 09.10). Пересоздание ключа — чтобы повторный накат дал ту же схему.
+ALTER TABLE public.people DROP CONSTRAINT IF EXISTS people_group_id_fkey;
+ALTER TABLE public.people ADD CONSTRAINT people_group_id_fkey
+  FOREIGN KEY (group_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
 
 -- Одна почта — один человек в воркспейсе (по ней связываемся с календарём и со входом Google).
 CREATE UNIQUE INDEX IF NOT EXISTS people_group_email_uq
@@ -141,9 +148,9 @@ CREATE TRIGGER trg_people_sync_account
 
 -- Функции зовут только триггеры: снаружи (anon через /rest/v1/rpc) — нельзя.
 -- Грант на PUBLIC наследуется в anon, поэтому снимаем именно с PUBLIC.
-REVOKE ALL ON FUNCTION public.people_link_tasks(uuid, bigint) FROM PUBLIC, anon, authenticated;
-REVOKE ALL ON FUNCTION public.people_sync_account() FROM PUBLIC, anon, authenticated;
-REVOKE ALL ON FUNCTION public.tasks_people_sync() FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.people_link_tasks(uuid, bigint) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION public.people_sync_account() FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION public.tasks_people_sync() FROM PUBLIC, anon, authenticated, service_role;
 -- Триггеры срабатывают от роли, которая пишет строку: приложение пишет под service_role, и без
 -- EXECUTE вставка в allowed_users падала бы целиком (поймано живым прогоном на стенде 09.10).
 GRANT EXECUTE ON FUNCTION public.people_link_tasks(uuid, bigint) TO service_role;
