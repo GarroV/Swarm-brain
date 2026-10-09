@@ -84,6 +84,17 @@ async function addItem(
   return r.rows[0].id;
 }
 
+/**
+ * Убрать спринты пространства за тестом: несколько живых спринтов в одном пространстве законны
+ * только с миграции 20261009160000, а порча накатывает старые миграции поверх этой базы — их
+ * индекс «один незакрытый» на оставленных строках падает.
+ */
+async function dropCycles(db: Client, tabId: string) {
+  await db
+    .queryArray`delete from sprint_items where cycle_id in (select id from sprint_cycles where tab_id = ${tabId})`;
+  await db.queryArray`delete from sprint_cycles where tab_id = ${tabId}`;
+}
+
 const accept = (db: Client, cycleId: string) =>
   db.queryObject<{ result: Record<string, unknown> }>`
     select public.accept_sprint_cycle(
@@ -239,7 +250,7 @@ Deno.test("приёмка второй раз отбивается: спринт
   }
 });
 
-Deno.test("два живых спринта в одном пространстве база не пускает", async () => {
+Deno.test("два ИДУЩИХ спринта в одном пространстве база не пускает", async () => {
   const db = await connect();
   try {
     const { tabId } = await seed(db);
@@ -251,6 +262,82 @@ Deno.test("два живых спринта в одном пространств
       `ожидался отказ уникального индекса 23505, пришло: ${err}`,
     );
   } finally {
+    await db.end();
+  }
+});
+
+Deno.test("запланированных спринтов в пространстве может быть несколько", async () => {
+  const db = await connect();
+  let tab = "";
+  try {
+    const { tabId } = await seed(db);
+    tab = tabId;
+    await startCycle(db, tabId);
+    for (const n of [4, 5, 6]) {
+      await db.queryArray`
+        insert into sprint_cycles (group_id, tab_id, name, start_date, end_date, status)
+        values (${WS}, ${tabId}, ${"Спринт " + n}, current_date + ${n * 14}::int, current_date + ${
+        n * 14 + 13
+      }::int, 'draft')`;
+    }
+    const live = await db.queryObject<{ n: bigint }>`
+      select count(*) as n from sprint_cycles where tab_id = ${tabId} and status = 'draft'`;
+    assertEquals(live.rows[0].n, 3n);
+  } finally {
+    if (tab) await dropCycles(db, tab);
+    await db.end();
+  }
+});
+
+Deno.test("приёмка везёт хвосты в ближайший запланированный спринт, двойника не создаёт", async () => {
+  const db = await connect();
+  let tab = "";
+  try {
+    const { tabId, projectId } = await seed(db);
+    tab = tabId;
+    const cycleId = await startCycle(db, tabId);
+    const tail = await addTask(db, projectId, "open", "хвост");
+    const planned = await addTask(db, projectId, "open", "уже в плане");
+    await addItem(db, cycleId, tail);
+    await addItem(db, cycleId, planned);
+    // Заведены заранее: дальний и ближний. Ближний — по дате старта, а не по порядку вставки.
+    const far = await db.queryObject<{ id: string }>`
+      insert into sprint_cycles (group_id, tab_id, name, start_date, end_date, status)
+      values (${WS}, ${tabId}, 'Дальний', current_date + 15, current_date + 28, 'draft') returning id`;
+    const near = await db.queryObject<{ id: string }>`
+      insert into sprint_cycles (group_id, tab_id, name, start_date, end_date, status)
+      values (${WS}, ${tabId}, 'Ближний', current_date + 1, current_date + 14, 'draft') returning id`;
+    const nearId = near.rows[0].id;
+    // Задача уже стоит в плане ближнего — перенос не должен завести вторую строку.
+    await addItem(db, nearId, planned);
+
+    const r = (await accept(db, cycleId)).rows[0].result;
+    assertEquals(
+      r.next_cycle_id,
+      nearId,
+      "хвосты обязаны ехать в ближайший запланированный",
+    );
+    assertEquals(r.next_created, false);
+
+    const cycles = await db.queryObject<{ n: bigint }>`
+      select count(*) as n from sprint_cycles where tab_id = ${tabId} and status = 'draft'`;
+    assertEquals(
+      cycles.rows[0].n,
+      2n,
+      "двойник следующего спринта создан, хотя запланированный был",
+    );
+
+    const items = await db.queryObject<{ task_id: string }>`
+      select task_id from sprint_items where cycle_id = ${nearId}::uuid order by task_id`;
+    assertEquals(
+      items.rows.map((x) => x.task_id).sort(),
+      [planned, tail].sort(),
+    );
+    const farItems = await db.queryObject<{ n: bigint }>`
+      select count(*) as n from sprint_items where cycle_id = ${far.rows[0].id}::uuid`;
+    assertEquals(farItems.rows[0].n, 0n);
+  } finally {
+    if (tab) await dropCycles(db, tab);
     await db.end();
   }
 });

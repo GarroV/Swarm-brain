@@ -82,6 +82,17 @@ async function seed(db: Client) {
   return { tabId: tab.rows[0].id, foreignTabId: foreignTab.rows[0].id };
 }
 
+/**
+ * Убрать спринты пространства за тестом: несколько живых спринтов в одном пространстве законны
+ * только с миграции 20261009160000, а порча накатывает старые миграции поверх этой базы — их
+ * индекс «один незакрытый» на оставленных строках падает.
+ */
+async function dropCycles(db: Client, tabId: string) {
+  await db
+    .queryArray`delete from sprint_items where cycle_id in (select id from sprint_cycles where tab_id = ${tabId})`;
+  await db.queryArray`delete from sprint_cycles where tab_id = ${tabId}`;
+}
+
 function call(
   method: string,
   path: string,
@@ -160,29 +171,54 @@ Deno.test("вкладка доски «Проекты» — не простра�
   }
 });
 
-Deno.test("второй незакрытый спринт в пространстве — 409 с человеческой причиной", async () => {
+Deno.test("будущие спринты заводятся заранее, а второй идущий — 409 с человеческой причиной", async () => {
   const db = await connect();
+  let tab = "";
   try {
     const { tabId } = await seed(db);
+    tab = tabId;
     const body = {
       name: "Спринт 1",
       start_date: "2026-09-01",
       end_date: "2026-09-14",
       tab_id: tabId,
     };
-    assertEquals((await call("POST", "/sprint-cycles", { body }))?.status, 201);
-
-    const second = await call("POST", "/sprint-cycles", {
-      body: { ...body, name: "Спринт 1-бис" },
+    const first = await call("POST", "/sprint-cycles", { body });
+    assertEquals(first?.status, 201);
+    const future = await call("POST", "/sprint-cycles", {
+      body: {
+        ...body,
+        name: "Спринт 2",
+        start_date: "2026-09-15",
+        end_date: "2026-09-28",
+      },
     });
+    assertEquals(
+      future?.status,
+      201,
+      "запланированный спринт обязан создаваться рядом с текущим",
+    );
+
+    const idFirst = (await first!.json()).id as string;
+    const idFuture = (await future!.json()).id as string;
+    assertEquals(
+      (await call("POST", `/sprint-cycles/${idFirst}/start`))?.status,
+      200,
+    );
+    const second = await call("POST", `/sprint-cycles/${idFuture}/start`);
     assertEquals(second?.status, 409);
     const text = await second!.text();
     assertEquals(
-      text.includes("незакрытый спринт"),
+      text.includes("уже идёт спринт"),
       true,
       `отказ должен объяснять причину, а пришло: ${text}`,
     );
+    // Отказ ничего не трогает: будущий остался в планировании.
+    const st = await db.queryObject<{ status: string }>`
+      select status from sprint_cycles where id = ${idFuture}::uuid`;
+    assertEquals(st.rows[0].status, "draft");
   } finally {
+    if (tab) await dropCycles(db, tab);
     await db.end();
   }
 });
@@ -234,8 +270,10 @@ Deno.test("спринт переносится в другое простран�
 
 Deno.test("перенос в занятое пространство — 409, спринт остаётся на месте", async () => {
   const db = await connect();
+  let tab = "";
   try {
     const { tabId } = await seed(db);
+    tab = tabId;
     const second = await db.queryObject<{ id: string }>`
       insert into sprints (id, group_id, name, start_date, end_date, status, kind)
       values (gen_random_uuid(), ${WS}, 'Занятое', current_date, current_date + 30, 'active', 'space')
@@ -261,6 +299,16 @@ Deno.test("перенос в занятое пространство — 409, с
     assertEquals(a?.status, 201);
     assertEquals(b?.status, 201);
     const idA = (await a!.json()).id as string;
+    const idB = (await b!.json()).id as string;
+    // Занято — значит, там ИДЁТ спринт: запланированных может быть сколько угодно.
+    assertEquals(
+      (await call("POST", `/sprint-cycles/${idA}/start`))?.status,
+      200,
+    );
+    assertEquals(
+      (await call("POST", `/sprint-cycles/${idB}/start`))?.status,
+      200,
+    );
 
     const clash = await call("PATCH", `/sprint-cycles/${idA}`, {
       body: { tab_id: busyTab },
@@ -268,11 +316,12 @@ Deno.test("перенос в занятое пространство — 409, с
     assertEquals(clash?.status, 409);
     const text = await clash!.text();
     assertEquals(
-      text.includes("незакрытый спринт"),
+      text.includes("уже идёт спринт"),
       true,
       `отказ должен объяснять причину, а пришло: ${text}`,
     );
   } finally {
+    if (tab) await dropCycles(db, tab);
     await db.end();
   }
 });
@@ -355,7 +404,11 @@ Deno.test("задача коллеги в составе видна целико
     assertEquals(mine.items.length, 1);
     assertEquals(mine.items[0].title, "Дело коллеги");
     assertEquals(mine.items[0].task_id, task.rows[0].id);
-    assertEquals("hidden" in mine.items[0], false, "поля скрытости в ответе больше нет");
+    assertEquals(
+      "hidden" in mine.items[0],
+      false,
+      "поля скрытости в ответе больше нет",
+    );
   } finally {
     await db.end();
   }
