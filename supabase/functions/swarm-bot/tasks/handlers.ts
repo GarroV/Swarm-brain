@@ -773,7 +773,7 @@ export async function handleTaskCallbacks(
 
   // Task list menu: tl_{type}
   if (data.startsWith("tl_")) {
-    await handleTaskListCallback(chatId, userId, username, data.replace("tl_", ""));
+    await handleTaskListCallback(chatId, groupId, data.replace("tl_", ""));
     return true;
   }
 
@@ -782,9 +782,11 @@ export async function handleTaskCallbacks(
 
 // ── Task list menu callbacks ──────────────────────────────────────────────────
 
-async function handleTaskListCallback(chatId: number, _userId: number, _username: string, type: string): Promise<void> {
+// Только задачи своего пространства: до 09.10.2026 списки держались на фильтре «не личная», а
+// пространство не проверяли вовсе — с уходом личных задач это открыло бы чужие пространства.
+async function handleTaskListCallback(chatId: number, groupId: string, type: string): Promise<void> {
   if (type === "done") {
-    const { data } = await onlyLive(supabase.from("tasks").select("*")).eq("status", "done").eq("is_private", false)
+    const { data } = await onlyLive(supabase.from("tasks").select("*")).eq("group_id", groupId).eq("status", "done")
       .order("updated_at", { ascending: false }).limit(15);
     const tasks = (data ?? []) as Task[];
     if (!tasks.length) {
@@ -794,14 +796,13 @@ async function handleTaskListCallback(chatId: number, _userId: number, _username
     await sendMessage(chatId, `<b>✅ Выполненные: ${tasks.length}</b>`);
     for (const t of tasks) await sendTaskCard(chatId, t);
   } else if (type === "export") {
-    await handleTasksExport(chatId);
+    await handleTasksExport(chatId, groupId);
   }
 }
 
-async function handleTasksExport(chatId: number): Promise<void> {
-  const { data } = await onlyLive(supabase.from("tasks").select("*"))
+async function handleTasksExport(chatId: number, groupId: string): Promise<void> {
+  const { data } = await onlyLive(supabase.from("tasks").select("*")).eq("group_id", groupId)
     .not("status", "in", '("draft")')
-    .eq("is_private", false) // экспорт — командные задачи, без личных (Рой)
     .order("due_date", { ascending: true })
     .limit(500);
   const tasks = (data ?? []) as Task[];

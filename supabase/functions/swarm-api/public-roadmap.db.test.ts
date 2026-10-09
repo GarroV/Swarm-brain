@@ -101,19 +101,18 @@ async function seed(db: Client) {
       due?: string;
       completedDaysAgo?: number;
       hidden?: boolean;
-      isPrivate?: boolean;
       confirmed?: boolean;
       archived?: boolean;
     } = {},
   ) =>
     db.queryArray`
       insert into tasks (title, project_id, group_id, status, due_date, completed_at, hidden_from_hub,
-                         is_private, confirmed, archived_at, description, assignees, country, tags)
+                         confirmed, archived_at, description, assignees, country, tags)
       values (${title}, ${project}, ${WS}, ${status}, ${extra.due ?? null},
               ${
       extra.completedDaysAgo === undefined ? null : new Date(Date.now() - extra.completedDaysAgo * 86_400_000)
     },
-              ${extra.hidden ?? false}, ${extra.isPrivate ?? false}, ${extra.confirmed ?? true},
+              ${extra.hidden ?? false}, ${extra.confirmed ?? true},
               ${extra.archived ? new Date() : null},
               ${SECRETS.description}, ${[
       SECRETS.assignee,
@@ -126,7 +125,6 @@ async function seed(db: Client) {
   await t("A: выкачено давно", SUB_A, "done", { completedDaysAgo: 45 });
   await t("A: отменено", SUB_A, "cancelled", { completedDaysAgo: 1 });
   await t("A: скрыто", SUB_A, "open", { hidden: true });
-  await t("A: личное", SUB_A, "open", { isPrivate: true });
   await t("A: на проверке", SUB_A, "open", { confirmed: false });
   await t("A: в архиве", SUB_A, "open", { archived: true });
   await t("Личный подпроект: задача", SUB_PRIVATE, "open");
@@ -238,7 +236,7 @@ Deno.test({
       );
 
       await t.step(
-        "пункты: cancelled, скрытые, личные, неподтверждённые, архивные и done старше 30 дней не попадают",
+        "пункты: cancelled, скрытые, неподтверждённые, архивные и done старше 30 дней не попадают",
         () => {
           const a = body.projects[0].items as Array<
             {

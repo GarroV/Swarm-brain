@@ -194,7 +194,7 @@ export function TaskDetail({ id }: { id: string }) {
                 </button>
               </div>
             )}
-            <div className="mt-5"><TaskFiles taskId={id} taskOwnerId={t.owner_id ?? null} /></div>
+            <div className="mt-5"><TaskFiles taskId={id} taskCreatorId={t.created_by_telegram_id ?? null} /></div>
             <TaskComments taskId={id} />
           </>
         )}

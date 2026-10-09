@@ -1,6 +1,5 @@
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { json } from "./http.ts";
-import { canViewTask } from "../_shared/tasks/access.ts";
 import { isCommentRecipient, type NotifiableTask, type SubscriptionState } from "../_shared/tasks/notify.ts";
 import { onlyLive } from "../_shared/tasks/live.ts";
 import { setTaskSubscription } from "../_shared/tasks/subscription-store.ts";
@@ -19,8 +18,8 @@ import { setTaskSubscription } from "../_shared/tasks/subscription-store.ts";
 
 type SubTaskRow = NotifiableTask & { id: string; group_id: string | null };
 
-// Select локальный (свой набор полей), а ПРАВИЛО доступа общее — `canViewTask`.
-const TASK_FIELDS = "id, group_id, is_private, owner_id, assignee_telegram_ids, created_by_telegram_id";
+// Select локальный (свой набор полей). Доступ — воркспейс задачи (решение 2026-10-09).
+const TASK_FIELDS = "id, group_id, assignee_telegram_ids, created_by_telegram_id";
 
 type SubscriptionView = {
   /** null — явной строки нет, действует поведение по умолчанию */
@@ -50,16 +49,12 @@ async function readState(
 function view(
   task: NotifiableTask,
   telegramId: number,
-  isAdmin: boolean,
   s: { state: SubscriptionState | null; reason: "comment" | "manual" | null },
 ): SubscriptionView {
   return {
     state: s.state,
     reason: s.reason,
-    notified: isCommentRecipient(task, telegramId, {
-      isAdmin,
-      subscription: s.state,
-    }),
+    notified: isCommentRecipient(task, telegramId, { subscription: s.state }),
   };
 }
 
@@ -69,7 +64,6 @@ export async function handleTaskSubscriptionRoutes(
   routePath: string,
   telegramId: number,
   groupId: string,
-  isAdmin: boolean,
   origin: string,
 ): Promise<Response | null> {
   const m = routePath.match(/^\/tasks\/([^/]+)\/subscription$/);
@@ -86,11 +80,8 @@ export async function handleTaskSubscriptionRoutes(
     return json({ error: "Something went wrong. Please try again later." }, 500, origin);
   }
   const task = (data as SubTaskRow | null) ?? null;
-  // 404 и на отсутствие, и на чужой воркспейс/приватность — не палим существование.
-  if (
-    !task || task.group_id !== groupId ||
-    !canViewTask(task, telegramId, isAdmin)
-  ) {
+  // 404 и на отсутствие, и на чужой воркспейс — не палим существование.
+  if (!task || task.group_id !== groupId) {
     return json({ error: "Задача не найдена" }, 404, origin);
   }
 
@@ -100,7 +91,6 @@ export async function handleTaskSubscriptionRoutes(
       view(
         task,
         telegramId,
-        isAdmin,
         await readState(supabase, taskId, telegramId),
       ),
       200,
@@ -121,7 +111,7 @@ export async function handleTaskSubscriptionRoutes(
     }
     const state = saved.state;
     return json(
-      view(task, telegramId, isAdmin, { state, reason: "manual" }),
+      view(task, telegramId, { state, reason: "manual" }),
       200,
       origin,
     );

@@ -9,7 +9,6 @@
 # соседей следом (replay в scripts/porcha-sql) — порядок строк здесь не важен.
 before delete on public.tasks|before insert on public.tasks|supabase/functions/_shared/tasks/sprint-accept.db.test.ts
 and frozen_at is null|and true|supabase/functions/_shared/tasks/sprint-accept.db.test.ts
-and t.is_private = false|and true|supabase/functions/_shared/tasks/sprint-accept.db.test.ts|supabase/migrations/20261001180000_archived_tasks_leave_sprints.sql
 # Условия «на всякий случай» сюда не попадают: их порча краснеть не заставит, потому что они
 # ничего не держат. Такое условие не вносится в список, а убирается из SQL — 18.09.2026 так
 # ушло `si.removed_at is null` из приёмки: упоминание отсекает соединение по внешнему ключу.

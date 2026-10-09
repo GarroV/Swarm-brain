@@ -13,7 +13,7 @@ import { onlyLive } from "../../_shared/tasks/live.ts";
 
 const WEB_BASE_URL = Deno.env.get("WEB_BASE_URL") ?? "";
 const SELECT_PING =
-  "id, title, remind_date, due_date, status, is_private, assignee_telegram_ids, created_by_telegram_id, remind_set_by, owner_id, ping_delivered_to, archived_at";
+  "id, title, remind_date, due_date, status, assignee_telegram_ids, created_by_telegram_id, remind_set_by, ping_delivered_to, archived_at";
 // Разумный потолок на тик: пинги ставят руками, сотнями за раз они не наступают.
 const MAX_PER_TICK = 500;
 

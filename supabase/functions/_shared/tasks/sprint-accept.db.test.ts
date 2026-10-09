@@ -52,11 +52,10 @@ async function addTask(
   projectId: string,
   status: string,
   title: string,
-  isPrivate = false,
 ) {
   const r = await db.queryObject<{ id: string }>`
-    insert into tasks (title, status, group_id, project_id, is_private, created_by)
-    values (${title}, ${status}, ${WS}, ${projectId}, ${isPrivate}, 'test')
+    insert into tasks (title, status, group_id, project_id, created_by)
+    values (${title}, ${status}, ${WS}, ${projectId}, 'test')
     returning id`;
   return r.rows[0].id;
 }
@@ -250,32 +249,6 @@ Deno.test("два живых спринта в одном пространств
       String((err as { fields?: { code?: string } }).fields?.code ?? err) ===
         "23505",
       `ожидался отказ уникального индекса 23505, пришло: ${err}`,
-    );
-  } finally {
-    await db.end();
-  }
-});
-
-Deno.test("приватная задача в следующий спринт не переезжает", async () => {
-  const db = await connect();
-  try {
-    const { tabId, projectId } = await seed(db);
-    const cycleId = await startCycle(db, tabId);
-    const openId = await addTask(db, projectId, "open", "общая");
-    const privateId = await addTask(db, projectId, "open", "личная", true);
-    await addItem(db, cycleId, openId);
-    await addItem(db, cycleId, privateId);
-
-    const res = await accept(db, cycleId);
-    const nextId = String(
-      (res.rows[0].result as Record<string, unknown>).next_cycle_id,
-    );
-    const moved = await db.queryObject<{ task_id: string }>`
-      select task_id from sprint_items where cycle_id = ${nextId}`;
-    assertEquals(
-      moved.rows.map((r) => r.task_id),
-      [openId],
-      "приватная задача уехала бы в спринт, где её состав видит вся команда",
     );
   } finally {
     await db.end();

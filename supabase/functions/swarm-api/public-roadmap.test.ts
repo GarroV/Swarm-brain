@@ -28,7 +28,6 @@ const task = (
   completed_at: null,
   project_id: SUB,
   hidden_from_hub: false,
-  is_private: false,
   archived_at: null,
   confirmed: true,
   ...p,
@@ -102,13 +101,9 @@ Deno.test("done без даты закрытия не попадает: окно
   );
 });
 
-Deno.test("скрытая с хаба, личная, архивная и неподтверждённая задачи не попадают", () => {
+Deno.test("скрытая с хаба, архивная и неподтверждённая задачи не попадают", () => {
   assertEquals(
     toRoadmapItem(task({ title: "a", hidden_from_hub: true }), NOW),
-    null,
-  );
-  assertEquals(
-    toRoadmapItem(task({ title: "a", is_private: true }), NOW),
     null,
   );
   assertEquals(

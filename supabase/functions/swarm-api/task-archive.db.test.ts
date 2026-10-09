@@ -1,5 +1,5 @@
 // Архив задач (#489) — на настоящем обработчике и настоящей базе: здесь проверяется РЕШЕНИЕ О
-// ДОСТУПЕ, а ошибка в нём выглядит как работающий продукт и вылезает утечкой чужой личной задачи.
+// ДОСТУПЕ, а ошибка в нём выглядит как работающий продукт и вылезает утечкой чужого воркспейса.
 //
 // Пропускаться тест не умеет: базы нет — прогон падает и говорит, что поднять.
 import { assert, assertEquals } from "@std/assert";
@@ -43,57 +43,54 @@ async function seed(db: Client) {
       insert into allowed_users (telegram_id, username, added_by, group_id)
       values (${person}, ${"u" + person}, 0, ${WS})`;
   }
-  const add = async (title: string, ws: string, isPrivate: boolean, owner: number | null) =>
+  const add = async (title: string, ws: string, createdBy: number) =>
     (await db.queryObject<{ id: string }>`
-      insert into tasks (title, status, group_id, created_by, is_private, owner_id, archived_at)
-      values (${title}, 'open', ${ws}, 'test', ${isPrivate}, ${owner}, now())
+      insert into tasks (title, status, group_id, created_by, created_by_telegram_id, archived_at)
+      values (${title}, 'open', ${ws}, 'test', ${createdBy}, now())
       returning id`).rows[0].id;
   return {
-    team: await add("Командная в архиве", WS, false, null),
-    mine: await add("Моя личная в архиве", WS, true, ME),
-    theirs: await add("Чужая личная в архиве", WS, true, SOMEONE_ELSE),
-    foreign: await add("Чужой воркспейс", OTHER_WS, false, null),
+    mine: await add("Моя в архиве", WS, ME),
+    colleague: await add("Задача коллеги в архиве", WS, SOMEONE_ELSE),
+    foreign: await add("Чужой воркспейс", OTHER_WS, SOMEONE_ELSE),
   };
 }
 
-function call(method: string, path: string, as = ME) {
+function call(method: string, path: string) {
   return handleTaskArchiveRoutes(
     new Request(`https://api.test${path}`, { method }),
     path,
-    as,
     WS,
-    false,
     "https://web.test",
   );
 }
 
-Deno.test("архив: видны командные и свои личные, чужая личная и чужой воркспейс — нет", async () => {
+// «Личных» задач нет (решение 2026-10-09): архив воркспейса виден любому его участнику целиком,
+// а граница одна — воркспейс.
+Deno.test("архив: видны задачи воркспейса (свои и коллег), чужой воркспейс — нет", async () => {
   const db = await connect();
   try {
     const ids = await seed(db);
     const res = await call("GET", "/tasks/archived");
     assertEquals(res?.status, 200);
     const got = new Set(((await res!.json()) as { id: string }[]).map((t) => t.id));
-    assert(got.has(ids.team) && got.has(ids.mine), "своё и командное должно быть видно");
-    assert(!got.has(ids.theirs), "чужая личная задача в архиве — утечка");
+    assert(got.has(ids.mine) && got.has(ids.colleague), "задачи своего воркспейса должны быть видны");
     assert(!got.has(ids.foreign), "архив чужого воркспейса — утечка");
   } finally {
     await db.end();
   }
 });
 
-Deno.test("возврат: своя возвращается, чужая личная и чужой воркспейс — 404", async () => {
+Deno.test("возврат: задача коллеги возвращается, чужой воркспейс — 404", async () => {
   const db = await connect();
   try {
     const ids = await seed(db);
-    assertEquals((await call("POST", `/tasks/${ids.theirs}/restore`))?.status, 404);
     assertEquals((await call("POST", `/tasks/${ids.foreign}/restore`))?.status, 404);
-    assertEquals((await call("POST", `/tasks/${ids.mine}/restore`))?.status, 204);
+    assertEquals((await call("POST", `/tasks/${ids.colleague}/restore`))?.status, 204);
     const back = await db.queryObject<{ archived_at: string | null }>`
-      select archived_at from tasks where id = ${ids.mine}`;
+      select archived_at from tasks where id = ${ids.colleague}`;
     assertEquals(back.rows[0].archived_at, null);
     assertEquals(
-      (await call("POST", `/tasks/${ids.mine}/restore`))?.status,
+      (await call("POST", `/tasks/${ids.colleague}/restore`))?.status,
       404,
       "живую задачу возвращать неоткуда",
     );

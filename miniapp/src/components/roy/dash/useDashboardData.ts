@@ -73,7 +73,7 @@ export type DashboardData = {
   latest: Entry[];
   /** «мои» задачи (assignee = me) */
   mine: Task[];
-  /** ОБЩИЕ задачи команды: не приватные и без конкретного исполнителя (линза «team») */
+  /** ОБЩИЕ задачи команды: без конкретного исполнителя (линза «team») */
   team: Task[];
   /** мои задачи с дедлайном сегодня/просрочено */
   today: Task[];
@@ -134,7 +134,7 @@ export function useDashboardData(): DashboardData {
   return useMemo<DashboardData>(() => {
     // Линза «team» от личности не зависит (общая задача общая для всех), поэтому me = null
     // просто оставляет личные секции пустыми — без прежнего фолбэка «всё в команду», который
-    // при неопознанном пользователе показывал ему ЛИЧНЫЕ задачи коллег.
+    // при неопознанном пользователе показывал ему задачи, назначенные на коллег.
     const { mine, team } = splitByLens(tasks.list ?? [], meId == null ? null : { telegram_id: meId });
 
     const { today, week, noDate } = groupMine(mine, localTodayISO());

@@ -30,12 +30,12 @@ const ROUTE_RE = /^\/public\/roadmap(?:\/([^/]*))?\/?$/;
 
 // Узкие проекции. Каждая колонка здесь — осознанное решение; закрытые (description, assignees,
 // assignee_telegram_ids, country, tags, label_ids, id задачи, owner_id…) не читаются вовсе.
-// Служебные (group_id, archived_at, is_private, sprint_group, confirmed, hidden_from_hub) нужны фильтрам и
-// наружу не уходят — это гарантирует сборка ответа, а не select.
+// Служебные (group_id, archived_at, is_private доски, sprint_group, confirmed, hidden_from_hub) нужны
+// фильтрам и наружу не уходят — это гарантирует сборка ответа, а не select.
 export const BOARD_COLUMNS = "id, name, group_id, public_roadmap, is_private, archived_at, sprint_group";
 export const PROJECT_COLUMNS = "id, name, position, created_at";
 export const TASK_COLUMNS =
-  "title, status, due_date, completed_at, project_id, hidden_from_hub, is_private, archived_at, confirmed";
+  "title, status, due_date, completed_at, project_id, hidden_from_hub, archived_at, confirmed";
 
 export type RoadmapState = "planned" | "in_progress" | "shipped";
 
@@ -61,7 +61,6 @@ export type RoadmapTaskRow = {
   completed_at: string | null;
   project_id: string | null;
   hidden_from_hub?: boolean | null;
-  is_private?: boolean | null;
   archived_at?: string | null;
   confirmed?: boolean | null;
 };
@@ -90,7 +89,7 @@ export function toRoadmapItem(
   t: RoadmapTaskRow,
   now: Date,
 ): RoadmapItem | null {
-  if (t.hidden_from_hub === true || t.is_private === true) return null;
+  if (t.hidden_from_hub === true) return null;
   if (t.archived_at || t.confirmed === false) return null;
   const due = isoDate(t.due_date);
   switch (t.status) {
@@ -331,7 +330,6 @@ async function loadTasks(
     .in("project_id", projectIds)
     .eq("group_id", groupId)
     .eq("hidden_from_hub", false)
-    .eq("is_private", false)
     .eq("confirmed", true)
     .is("archived_at", null)
     .or(

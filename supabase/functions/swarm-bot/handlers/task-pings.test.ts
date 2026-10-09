@@ -18,11 +18,9 @@ const row = (over: Partial<PingRow> = {}): PingRow => ({
   remind_date: "2026-08-26",
   due_date: "2026-09-20",
   status: "open",
-  is_private: false,
   assignee_telegram_ids: [111],
   created_by_telegram_id: 222,
   remind_set_by: null,
-  owner_id: null,
   ...over,
 });
 
@@ -62,18 +60,6 @@ Deno.test("pingRecipients: у общей задачи без исполните�
 
 Deno.test("pingRecipients: поставившего пинга нет — падаем на создателя задачи", () => {
   assertEquals(pingRecipients(row({ assignee_telegram_ids: [], remind_set_by: null })), [222]);
-});
-
-Deno.test("pingRecipients: приватная задача — ТОЛЬКО владельцу, даже если назначена на другого", () => {
-  const r = row({ is_private: true, owner_id: 111, assignee_telegram_ids: [111, 333], created_by_telegram_id: 333 });
-  assertEquals(pingRecipients(r), [111]);
-});
-
-Deno.test("pingRecipients: приватная задача, назначенная другому — пинг уходит владельцу, а не в пустоту", () => {
-  // Исполнитель 111 приватную задачу НЕ видит (владелец 222). Если бы круг остался пустым,
-  // пинг молча не ушёл бы никому, а задача навсегда осталась бы в выборке крона.
-  const r = row({ is_private: true, owner_id: 222, assignee_telegram_ids: [111], created_by_telegram_id: 333 });
-  assertEquals(pingRecipients(r), [222]);
 });
 
 Deno.test("pingRecipients: получателя нет вовсе — пустой круг (крон такой пинг гасит)", () => {

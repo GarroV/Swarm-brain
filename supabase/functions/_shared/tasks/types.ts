@@ -24,8 +24,6 @@ export type Task = {
   confirmed: boolean;
   created_by_telegram_id: number | null;
   // Модуль задач (Рой):
-  is_private: boolean;
-  owner_id: number | null;
   start_date: string | null;
   timeline_position: number | null;
   sprint_id: string | null;
@@ -69,8 +67,6 @@ export type TaskInput = {
   confirmed?: boolean;
   created_by_telegram_id?: number | null;
   // Модуль задач (Рой):
-  is_private?: boolean;
-  owner_id?: number | null;
   start_date?: string | null;
   timeline_position?: number | null;
   sprint_id?: string | null;

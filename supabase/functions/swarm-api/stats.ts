@@ -3,19 +3,13 @@ import { apiErr, json } from "./http.ts";
 import { buildEntriesQuery } from "./entries-guard.ts";
 import { reviewCountsByMember } from "./admin.ts";
 import { listTasksWithTotal } from "../_shared/tasks/db.ts";
-import {
-  ACTIVITY_DAYS,
-  type ActivityEvent,
-  CLOSED_WINDOW_DAYS,
-  computePeopleStats,
-} from "../_shared/stats/people.ts";
+import { ACTIVITY_DAYS, type ActivityEvent, CLOSED_WINDOW_DAYS, computePeopleStats } from "../_shared/stats/people.ts";
 
 // GET /stats/people — экран «Статистика» (решение владельца 2026-09-25): по каждому участнику
 // воркспейса задачи, встречи и активность. Считает _shared/stats/people.ts; здесь только выборки.
 //
 // Доступ. Все выборки — через общие правила видимости: задачи через listTasksWithTotal
-// (приватные видит владелец, админ — все: оверсайт по задачам, решение 2026-08-21), записи через
-// buildEntriesQuery. Наружу уходят только числа и даты, без названий и текста.
+// (все задачи воркспейса — «личных» нет, решение 2026-10-09), записи через buildEntriesQuery. Наружу уходят только числа и даты, без названий и текста.
 // «На вычитке» — только число, его видят все (решение владельца 2026-09-25: «число "на вычитке"
 // можно показывать. саму вычитку никто кроме пользователя видеть не должен»). Содержимое
 // черновиков сюда не попадает: reviewCountsByMember отдаёт счётчики.
@@ -126,7 +120,6 @@ export async function handleStatsRoutes(
   routePath: string,
   telegramId: number,
   groupId: string,
-  isAdmin: boolean,
   origin: string,
   resolveNames: (ids: number[]) => Promise<Map<number, string>>,
 ): Promise<Response | null> {
@@ -151,11 +144,8 @@ export async function handleStatsRoutes(
               .order("telegram_id").range(a, b),
         ),
         listTasksWithTotal({
-          columns:
-            "status, created_at, completed_at, due_date, assignee_telegram_ids",
+          columns: "status, created_at, completed_at, due_date, assignee_telegram_ids",
           confirmed: true,
-          viewerId: telegramId,
-          isAdmin,
           limit: TASK_LIMIT,
         }, groupId),
         allRows<{ owner_id: number | null; added_by: number | null }>(

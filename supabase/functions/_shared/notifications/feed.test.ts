@@ -23,44 +23,37 @@ function fakeDb(result: { data: unknown; error: unknown }) {
   return { db: db as never, calls };
 }
 
-const row = (id: string, type: string, task: { is_private: boolean; owner_id: number } | null) => ({
+const row = (id: string, type: string, hasTask: boolean) => ({
   id,
   type,
-  task_id: task ? `t-${id}` : null,
+  task_id: hasTask ? `t-${id}` : null,
   comment_id: null,
   actor_telegram_id: 5,
   read_at: null,
   created_at: "2026-10-02T03:00:00Z",
   payload: null,
-  tasks: task ? { title: id, ...task } : null,
+  tasks: hasTask ? { title: id } : null,
   task_comments: null,
 });
 
 const ROWS = [
-  row("public", "comment", { is_private: false, owner_id: 9 }),
-  row("mine-private", "comment", { is_private: true, owner_id: 1 }),
-  row("foreign-private", "comment", { is_private: true, owner_id: 9 }),
-  row("system", "maintenance", null),
-  row("orphan", "comment", null),
+  row("task", "comment", true),
+  row("colleague-task", "comment", true),
+  row("system", "maintenance", false),
+  row("orphan", "comment", false),
 ];
 
-Deno.test("лента: чужая приватная задача и строка без задачи выпадают, системные остаются", async () => {
+Deno.test("лента: строка без задачи выпадает, задачи и системные остаются", async () => {
   const { db, calls } = fakeDb({ data: ROWS, error: null });
-  const r = await loadNotificationFeed(db, 1, false, 30);
-  assertEquals(r.ok && r.rows.map((x) => x.id), ["public", "mine-private", "system"]);
+  const r = await loadNotificationFeed(db, 1, 30);
+  assertEquals(r.ok && r.rows.map((x) => x.id), ["task", "colleague-task", "system"]);
   assertEquals(calls.find((c) => c[0] === "eq"), ["eq", "recipient_telegram_id", 1]);
   assertEquals(calls.find((c) => c[0] === "limit"), ["limit", 30]);
 });
 
-Deno.test("лента: админ видит приватную задачу, которую ему уже прислали", async () => {
-  const { db } = fakeDb({ data: ROWS, error: null });
-  const r = await loadNotificationFeed(db, 1, true, 30);
-  assertEquals(r.ok && r.rows.map((x) => x.id), ["public", "mine-private", "foreign-private", "system"]);
-});
-
 Deno.test("лента: ошибка чтения не превращается в пустую ленту", async () => {
   const { db } = fakeDb({ data: null, error: { message: "boom" } });
-  const r = await loadNotificationFeed(db, 1, false, 30);
+  const r = await loadNotificationFeed(db, 1, 30);
   assertEquals(r.ok, false);
 });
 

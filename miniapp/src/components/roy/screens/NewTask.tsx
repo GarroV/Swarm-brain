@@ -38,7 +38,6 @@ export function NewTask({ id }: { id?: string }) {
   // рождало задачу без срока, а такая не попадала ни в «Сегодня», ни в «Ближайшие» (#440).
   const [due, setDue] = useState(tomorrowLocalISO());
   const [assignee, setAssignee] = useState<number | null>(null);
-  const [isPrivate, setIsPrivate] = useState(false);
   const [markets, setMarkets] = useState<string[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [saving, setSaving] = useState(false);
@@ -58,7 +57,6 @@ export function NewTask({ id }: { id?: string }) {
         setPriority(t.priority ?? "med");
         setDue(t.due_date ? t.due_date.slice(0, 10) : "");
         setAssignee(t.assignee_telegram_ids?.[0] ?? null);
-        setIsPrivate(t.is_private);
       })
       .catch(() => {});
   }, [id]);
@@ -76,7 +74,6 @@ export function NewTask({ id }: { id?: string }) {
       priority,
       due_date: due || tomorrowLocalISO(),
       assignee_telegram_id: assignee,
-      is_private: isPrivate,
     };
     try {
       if (editing) {
@@ -149,14 +146,6 @@ export function NewTask({ id }: { id?: string }) {
             </div>
           </Field>
         )}
-        <button type="button" onClick={() => setIsPrivate((v) => !v)} className="flex w-full items-center justify-between rounded-full border border-line bg-surface px-4 py-3.5">
-          <span className="font-medium text-ink" style={{ fontSize: 14.5 }}>
-            Личная задача
-          </span>
-          <span className="relative inline-block transition-colors" style={{ width: 44, height: 26, borderRadius: 999, background: isPrivate ? "var(--primary)" : "var(--line-2)" }}>
-            <span className="absolute top-0.5 rounded-full bg-white transition-all" style={{ width: 22, height: 22, left: isPrivate ? 20 : 2 }} />
-          </span>
-        </button>
       </div>
       <div className="shrink-0 border-t border-line bg-background dark:bg-[var(--surface)] px-5 pt-3" style={{ paddingBottom: "max(16px, env(safe-area-inset-bottom))" }}>
         <button type="button" onClick={submit} disabled={saving} className="w-full rounded-full bg-primary py-3.5 font-semibold text-primary-foreground transition-transform active:scale-[0.99] disabled:opacity-60" style={{ fontSize: 15 }}>

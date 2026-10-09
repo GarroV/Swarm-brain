@@ -14,7 +14,7 @@ import { todayCalendarEvents } from "../../_shared/calendar-today.ts";
 import { todayMeetings } from "../../_shared/meetings-today.ts";
 import { joinLink } from "../../meeting-current/join-link.ts";
 import { resolvePersonNames } from "../../_shared/users/display-name.ts";
-import { ADMIN_USER_ID, commentTaskGuard, resolveGroupId } from "./tools.ts";
+import { commentTaskGuard, resolveGroupId } from "./tools.ts";
 import { type FeedItem, formatCalendarGap, formatNotifications, formatTodayMeetings } from "./personal-format.ts";
 
 const supabase = createClient(
@@ -69,7 +69,7 @@ async function toolSetTaskSubscription(args: Args): Promise<string> {
 
 async function toolGetNotifications(args: Args): Promise<string> {
   const me = args.requesting_user_id;
-  const feed = await loadNotificationFeed(supabase, me, me === ADMIN_USER_ID, feedLimit(args.limit));
+  const feed = await loadNotificationFeed(supabase, me, feedLimit(args.limit));
   if (!feed.ok) {
     console.error("notifications list failed:", feed.cause);
     return "Ошибка: не удалось загрузить уведомления.";

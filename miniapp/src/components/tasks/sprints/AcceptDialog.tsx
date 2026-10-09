@@ -136,13 +136,11 @@ export function AcceptDialog(
                       >
                         <div className="flex items-center gap-2">
                           <span className="min-w-0 flex-1 truncate text-[13px] text-ink">
-                            {item.hidden
-                              ? dt("Приватная задача", "Private task")
-                              : item.title}
+                            {item.title}
                           </span>
                           <CarryBadge count={item.carry_count} />
                         </div>
-                        {item.task_id && !item.hidden && (
+                        {item.task_id && (
                           <input
                             value={reasons[item.task_id] ?? ""}
                             onChange={(e) =>

@@ -51,7 +51,6 @@ export function dbDeleteTask(
 export async function dbListAllOpen(groupId?: string): Promise<Task[]> {
   let q = onlyLive(supabase.from("tasks").select("*"))
     .not("status", "in", '("done","cancelled","draft")')
-    .eq("is_private", false) // личные задачи (Рой) не показываем в командных списках бота
     // Незавершённый /addtask (confirmed:false, между «Задача?» и вводом дедлайна) не должен
     // мелькать в команде — тот же принцип, что уже используют MCP и miniapp (см. addtask_title).
     .eq("confirmed", true)
