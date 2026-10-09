@@ -8,8 +8,11 @@
 -- Черновик (draft) и есть «запланированный»: нового статуса не нужно.
 
 -- 1. Уникальность сужается с «один незакрытый» до «один идущий». Черновиков — сколько угодно.
+--    Имя индекса прежнее (`…_live_per_tab`) намеренно: миграция доски 20260918120000 создаёт его
+--    через `if not exists`, и порча, переигрывая её поверх живой базы, иначе вернула бы старое
+--    строгое правило рядом с новым.
 drop index if exists public.uniq_sprint_cycles_live_per_tab;
-create unique index if not exists uniq_sprint_cycles_active_per_tab
+create unique index uniq_sprint_cycles_live_per_tab
   on public.sprint_cycles (tab_id)
   where status = 'active'
     and tab_id is not null
