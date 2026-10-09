@@ -71,6 +71,15 @@ WHERE group_id = NEW.group_id AND email = v_email|WHERE false|supabase/functions
     NEW.assignee_person_id := NULL;|    NULL;|supabase/functions/_shared/people/people.db.test.ts|supabase/migrations/20261008220000_people.sql
 GRANT EXECUTE ON FUNCTION public.people_link_tasks(uuid, bigint) TO service_role;|SELECT 1;|supabase/functions/_shared/people/people.db.test.ts|supabase/migrations/20261008220000_people.sql
 public.workspaces(id) ON DELETE CASCADE|public.workspaces(id)|supabase/functions/_shared/people/people.db.test.ts|supabase/migrations/20261008220000_people.sql
+# Участники встреч → справочник (#887): переговорки отсекаются по обоим признакам, дата встречи
+# только вперёд, триггер встречи под service_role (иначе справочник молча не пополняется).
+# Приватность: участник личной встречи или черновика не раскрывается всему воркспейсу.
+WHERE e.id = p_entry AND e.group_id = p_group AND e.is_private = false|WHERE e.id = p_entry AND e.group_id = p_group|supabase/functions/_shared/people/people-meetings.db.test.ts|supabase/migrations/20261009150000_people_from_meetings.sql
+WHEN (OLD.is_private AND NOT NEW.is_private)|WHEN (false)|supabase/functions/_shared/people/people-meetings.db.test.ts|supabase/migrations/20261009150000_people_from_meetings.sql
+AND email NOT LIKE '%@resource.calendar.google.com'|AND true|supabase/functions/_shared/people/people-meetings.db.test.ts|supabase/migrations/20261009150000_people_from_meetings.sql
+AND coalesce(a ->> 'resource', '') <> 'true'|AND true|supabase/functions/_shared/people/people-meetings.db.test.ts|supabase/migrations/20261009150000_people_from_meetings.sql
+AND (p.last_met_at IS NULL OR p.last_met_at < p_at)|AND true|supabase/functions/_shared/people/people-meetings.db.test.ts|supabase/migrations/20261009150000_people_from_meetings.sql
+GRANT EXECUTE ON FUNCTION public.people_from_attendees(text, jsonb, timestamptz) TO service_role;|SELECT 1;|supabase/functions/_shared/people/people-meetings.db.test.ts|supabase/migrations/20261009150000_people_from_meetings.sql
 # Присутствие (#751): журнал — только смены и появления после паузы, пульс зовёт service_role.
 v_gap := NOT FOUND OR v_prev.last_seen_at < v_now - interval '90 seconds';|v_gap := NOT FOUND;|supabase/functions/_shared/presence/presence.db.test.ts|supabase/migrations/20261009140000_presence.sql
 IF v_changed OR (v_gap AND p_state <> 'away') THEN|IF true THEN|supabase/functions/_shared/presence/presence.db.test.ts|supabase/migrations/20261009140000_presence.sql
