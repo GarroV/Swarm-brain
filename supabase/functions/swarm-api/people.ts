@@ -6,6 +6,11 @@ import { resolvePersonNames } from "../_shared/users/display-name.ts";
 //
 // Роуты: GET /people, POST /people. Возвращает null, если путь не про людей.
 //
+// Порядок GET /people: сначала люди с аккаунтом (по имени), потом остальные — по последней
+// встрече (last_met_at, свежие первыми, без встреч в конце), затем по имени. Участников встреч
+// заводит триггер базы (people_from_attendees, #887), поэтому «без входа» в справочнике сотни —
+// поле выбора показывает недавних, а поиск идёт по всему списку.
+//
 // Человек с аккаунтом и без — одна сущность `people`. Аккаунтам запись заводит триггер базы
 // (people_sync_account), поэтому здесь создаются только люди без входа — прямо из поля
 // «Исполнитель»/«Соисполнители» в задаче: «он соответственно утекает в базу и в будущем уже
@@ -22,16 +27,19 @@ export type PersonView = {
   email: string | null;
   /** null — человек без входа в Swarm */
   telegram_id: number | null;
+  /** Последняя встреча с человеком в воркспейсе; null — встреч не было */
+  last_met_at: string | null;
 };
 
 type PersonRow = {
   id: string;
   display_name: string;
   email: string | null;
+  last_met_at: string | null;
   account: { telegram_id: number | null } | null;
 };
 
-const PERSON_SELECT = "id, display_name, email, account:allowed_users(telegram_id)";
+const PERSON_SELECT = "id, display_name, email, last_met_at, account:allowed_users(telegram_id)";
 
 // Имя аккаунта берётся из профиля — оно меняется, а display_name записан один раз при заведении.
 async function toViews(supabase: SupabaseClient, rows: PersonRow[]): Promise<PersonView[]> {
@@ -43,8 +51,22 @@ async function toViews(supabase: SupabaseClient, rows: PersonRow[]): Promise<Per
       name: (tg != null ? names.get(tg) : null) ?? r.display_name,
       email: r.email,
       telegram_id: tg,
+      last_met_at: r.last_met_at,
     };
   });
+}
+
+/** Аккаунты по имени → остальные по последней встрече (свежие первыми, без встреч в конце) → по имени. */
+function comparePeople(a: PersonView, b: PersonView): number {
+  const accA = a.telegram_id != null, accB = b.telegram_id != null;
+  if (accA !== accB) return accA ? -1 : 1;
+  if (!accA && a.last_met_at !== b.last_met_at) {
+    if (a.last_met_at == null) return 1;
+    if (b.last_met_at == null) return -1;
+    const d = Date.parse(b.last_met_at) - Date.parse(a.last_met_at);
+    if (d !== 0) return d;
+  }
+  return a.name.localeCompare(b.name, "ru");
 }
 
 async function loadPeople(
@@ -82,7 +104,8 @@ export async function handlePeopleRoutes(
   if (!groupId) return apiErr(403, "Нет воркспейса", origin);
 
   if (req.method === "GET") {
-    return json(await loadPeople(supabase, groupId), 200, origin);
+    const people = await loadPeople(supabase, groupId);
+    return json([...people].sort(comparePeople), 200, origin);
   }
 
   if (req.method === "POST") {

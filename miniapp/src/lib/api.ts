@@ -859,15 +859,31 @@ export async function fetchUsers(): Promise<User[]> {
 // ── Справочник людей (GET/POST /people, #874) ──────────────────────────────────
 // Люди с аккаунтом и без: из них выбираются исполнитель и соисполнители задачи.
 export async function fetchPeople(): Promise<Person[]> {
-  if (DEV_MODE) {
-    return MOCK_USERS.map((u) => ({ id: `mock-${u.telegram_id}`, name: u.name, email: null, telegram_id: u.telegram_id }));
-  }
+  if (DEV_MODE) return mockPeople();
   return apiFetch<Person[]>("/people");
+}
+
+// Мок повторяет порядок сервера: аккаунты, затем люди без входа от недавних встреч к давним.
+// Участников встреч на проде сотни (#887) — мок даёт их столько же, чтобы поповер проверялся
+// на настоящей длине списка.
+function mockPeople(): Person[] {
+  const accounts = MOCK_USERS.map((u): Person => ({
+    id: `mock-${u.telegram_id}`, name: u.name, email: null, telegram_id: u.telegram_id, last_met_at: null,
+  }));
+  const day = 86_400_000;
+  const guests = Array.from({ length: 400 }, (_, i): Person => ({
+    id: `mock-guest-${i}`,
+    name: i % 7 === 0 ? `guest${i}` : `Guest ${i} Partner`,
+    email: `guest${i}@partner${i % 5}.example.com`,
+    telegram_id: null,
+    last_met_at: i < 380 ? new Date(Date.UTC(2026, 9, 9) - i * day).toISOString() : null,
+  }));
+  return [...accounts, ...guests];
 }
 
 /** Завести человека без входа. Почта уже есть в воркспейсе — вернётся тот же человек. */
 export async function createPerson(name: string, email: string | null): Promise<Person> {
-  if (DEV_MODE) return { id: `mock-${Date.now()}`, name, email, telegram_id: null };
+  if (DEV_MODE) return { id: `mock-${Date.now()}`, name, email, telegram_id: null, last_met_at: null };
   return apiFetch<Person>("/people", { method: "POST", body: JSON.stringify({ name, email }) });
 }
 

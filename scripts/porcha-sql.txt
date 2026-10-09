@@ -71,3 +71,9 @@ WHERE group_id = NEW.group_id AND email = v_email|WHERE false|supabase/functions
     NEW.assignee_person_id := NULL;|    NULL;|supabase/functions/_shared/people/people.db.test.ts|supabase/migrations/20261008220000_people.sql
 GRANT EXECUTE ON FUNCTION public.people_link_tasks(uuid, bigint) TO service_role;|SELECT 1;|supabase/functions/_shared/people/people.db.test.ts|supabase/migrations/20261008220000_people.sql
 public.workspaces(id) ON DELETE CASCADE|public.workspaces(id)|supabase/functions/_shared/people/people.db.test.ts|supabase/migrations/20261008220000_people.sql
+# Участники встреч → справочник (#887): переговорки отсекаются по обоим признакам, дата встречи
+# только вперёд, триггер встречи под service_role (иначе справочник молча не пополняется).
+AND email NOT LIKE '%@resource.calendar.google.com'|AND true|supabase/functions/_shared/people/people-meetings.db.test.ts|supabase/migrations/20261009150000_people_from_meetings.sql
+AND coalesce(a ->> 'resource', '') <> 'true'|AND true|supabase/functions/_shared/people/people-meetings.db.test.ts|supabase/migrations/20261009150000_people_from_meetings.sql
+AND (p.last_met_at IS NULL OR p.last_met_at < p_at)|AND true|supabase/functions/_shared/people/people-meetings.db.test.ts|supabase/migrations/20261009150000_people_from_meetings.sql
+GRANT EXECUTE ON FUNCTION public.people_from_attendees(text, jsonb, timestamptz) TO service_role;|SELECT 1;|supabase/functions/_shared/people/people-meetings.db.test.ts|supabase/migrations/20261009150000_people_from_meetings.sql
