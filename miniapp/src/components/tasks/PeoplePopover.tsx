@@ -43,6 +43,12 @@ export function PeoplePopover({
   const btnRef = useRef<HTMLButtonElement>(null);
   const popRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  // Внутри модального окна (карточка задачи — Radix Dialog) поповер рендерится В окно: окно держит
+  // фокус у себя, и поле поиска, вынесенное в body, не получало фокус — имя было не набрать.
+  const [host, setHost] = useState<HTMLElement | null>(null);
+  // Окно может быть точкой отсчёта для position: fixed (у карточки задачи — CSS translate), и тогда
+  // координаты экрана уводят поповер за край. Сдвиг не угадываем по стилям, а замеряем один раз.
+  const [shift, setShift] = useState<{ x: number; y: number } | null>(null);
 
   const place = useCallback(() => {
     const r = btnRef.current?.getBoundingClientRect();
@@ -53,8 +59,21 @@ export function PeoplePopover({
     setPos({ left: Math.max(8, left), top });
   }, []);
 
-  useLayoutEffect(() => { if (open) place(); }, [open, place]);
-  useEffect(() => { if (open) inputRef.current?.focus(); else { setQuery(""); setError(null); } }, [open]);
+  useLayoutEffect(() => {
+    if (!open) return;
+    setHost(btnRef.current?.closest<HTMLElement>('[role="dialog"]') ?? document.body);
+    setShift(null);
+    place();
+  }, [open, place]);
+
+  useLayoutEffect(() => {
+    if (!open || !pos || !host || shift) return;
+    const r = popRef.current?.getBoundingClientRect();
+    if (r) setShift({ x: r.left - pos.left, y: r.top - pos.top });
+  }, [open, pos, host, shift]);
+  useEffect(() => { if (!open) { setQuery(""); setError(null); } }, [open]);
+  // Фокус — когда поповер уже стоит на месте: скрытое (visibility: hidden) поле фокус не берёт.
+  useEffect(() => { if (open && shift) inputRef.current?.focus(); }, [open, shift]);
 
   useEffect(() => {
     if (!open) return;
@@ -124,13 +143,20 @@ export function PeoplePopover({
         <PropertyPillBody icon={icon} label={label} value={value ?? (multiple ? null : emptyLabel)} />
       </button>
 
-      {open && pos && createPortal(
+      {open && pos && host && createPortal(
         <div
           ref={popRef}
           role="dialog"
           aria-label={label}
           onPointerDown={(e) => e.stopPropagation()}
-          style={{ position: "fixed", left: pos.left, top: pos.top, width: W, maxHeight: H }}
+          style={{
+            position: "fixed",
+            left: pos.left - (shift?.x ?? 0),
+            top: pos.top - (shift?.y ?? 0),
+            width: W,
+            maxHeight: H,
+            visibility: shift ? "visible" : "hidden",
+          }}
           className="z-[100] flex flex-col overflow-hidden rounded-xl border border-line bg-card shadow-xl dark:backdrop-blur-lg"
         >
           <div className="border-b border-line p-2">
@@ -185,7 +211,7 @@ export function PeoplePopover({
           </ul>
           {error && <p role="alert" className="border-t border-line px-2.5 py-1.5 text-destructive" style={{ fontSize: 12 }}>{error}</p>}
         </div>,
-        document.body,
+        host,
       )}
     </>
   );

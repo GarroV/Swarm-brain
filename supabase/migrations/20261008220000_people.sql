@@ -41,7 +41,11 @@ CREATE UNIQUE INDEX IF NOT EXISTS people_group_email_uq
 CREATE INDEX IF NOT EXISTS people_group_idx ON public.people (group_id) WHERE archived_at IS NULL;
 
 -- Внешний замок, как у всех таблиц public (#41): политик нет, ходит только service_role.
+-- Права выдаём явно: на проде их даёт default ACL, а на свежем контуре Supabase CLI — нет
+-- (стенд 09.10.2026: service_role получил только Dxtm, и /people отвечал permission denied).
 ALTER TABLE public.people ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON public.people FROM anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.people TO service_role;
 
 ALTER TABLE public.tasks ADD COLUMN IF NOT EXISTS assignee_person_id uuid
   REFERENCES public.people(id) ON DELETE SET NULL;
@@ -140,6 +144,11 @@ CREATE TRIGGER trg_people_sync_account
 REVOKE ALL ON FUNCTION public.people_link_tasks(uuid, bigint) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.people_sync_account() FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.tasks_people_sync() FROM PUBLIC, anon, authenticated;
+-- Триггеры срабатывают от роли, которая пишет строку: приложение пишет под service_role, и без
+-- EXECUTE вставка в allowed_users падала бы целиком (поймано живым прогоном на стенде 09.10).
+GRANT EXECUTE ON FUNCTION public.people_link_tasks(uuid, bigint) TO service_role;
+GRANT EXECUTE ON FUNCTION public.people_sync_account() TO service_role;
+GRANT EXECUTE ON FUNCTION public.tasks_people_sync() TO service_role;
 
 -- ── Бэкфилл: у каждого нынешнего аккаунта — своя запись ──────────────────────────────────
 -- Имя здесь — запасное: API показывает имя аккаунта из профиля, а display_name нужен, пока

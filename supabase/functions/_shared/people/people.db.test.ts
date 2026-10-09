@@ -96,9 +96,13 @@ Deno.test("люди без входа: исполнитель и соиспол�
     }, "у фантома нет telegram — в «мои» попадает только аккаунт-соисполнитель");
 
     // Фантом вошёл через Google с той же почтой (другой регистр) — запись связалась, задачи у него.
+    // Под service_role, как пишет приложение: без прав на people и функции связывания вход
+    // падал бы целиком (поймано живым прогоном 09.10).
+    await db.queryArray`set role service_role`;
     await db.queryArray`
       insert into allowed_users (telegram_id, username, added_by, group_id, email)
       values (${LATE_TG}, 'late874', ${ACC_TG}, ${WS}, ' LATE874@example.com ')`;
+    await db.queryArray`reset role`;
     assertEquals(await personId(db, { tg: LATE_TG }), phantom, "вход по почте связал, а не завёл дубль");
     assertEquals(await task(db, taskA), {
       assignee_telegram_ids: [LATE_TG],
@@ -117,7 +121,8 @@ Deno.test("люди без входа: исполнитель и соиспол�
       returning id::text`;
     const taskB = t2[0][0];
     assertEquals((await task(db, taskB)).assignee_telegram_ids, [], "до входа задача не его");
-    await db.queryArray`update allowed_users set telegram_id = ${INVITE_TG} where group_id = ${WS} and email = 'invite874@example.com'`;
+    await db
+      .queryArray`update allowed_users set telegram_id = ${INVITE_TG} where group_id = ${WS} and email = 'invite874@example.com'`;
     assertEquals(await task(db, taskB), {
       assignee_telegram_ids: [INVITE_TG],
       assignee_person_id: null,

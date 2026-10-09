@@ -70,3 +70,4 @@ SET assignee_telegram_ids = ARRAY[p_telegram]|SET assignee_telegram_ids = assign
 WHERE p.id = ANY (NEW.coassignee_person_ids)|WHERE false|supabase/functions/_shared/people/people.db.test.ts|supabase/migrations/20261008220000_people.sql
 WHERE group_id = NEW.group_id AND email = v_email|WHERE false|supabase/functions/_shared/people/people.db.test.ts|supabase/migrations/20261008220000_people.sql
     NEW.assignee_person_id := NULL;|    NULL;|supabase/functions/_shared/people/people.db.test.ts|supabase/migrations/20261008220000_people.sql
+GRANT EXECUTE ON FUNCTION public.people_link_tasks(uuid, bigint) TO service_role;|SELECT 1;|supabase/functions/_shared/people/people.db.test.ts|supabase/migrations/20261008220000_people.sql

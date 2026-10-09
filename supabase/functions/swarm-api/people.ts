@@ -178,9 +178,12 @@ export async function resolveTaskPeople(
   const assigneeId = typeof body.assignee_person_id === "string" ? body.assignee_person_id : null;
   if (assigneeId) {
     const p = byId.get(assigneeId)!;
-    Object.assign(out, p.telegram_id != null
-      ? { assignees: [p.name], assignee_telegram_ids: [p.telegram_id], assignee_person_id: null }
-      : { assignees: [p.name], assignee_telegram_ids: [], assignee_person_id: p.id });
+    Object.assign(
+      out,
+      p.telegram_id != null
+        ? { assignees: [p.name], assignee_telegram_ids: [p.telegram_id], assignee_person_id: null }
+        : { assignees: [p.name], assignee_telegram_ids: [], assignee_person_id: p.id },
+    );
   }
   if (coIds) out.coassignee_person_ids = coIds;
   return out;

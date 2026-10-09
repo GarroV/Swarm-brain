@@ -11,7 +11,10 @@ import { isAssignedTo } from "@/lib/smartLists";
  */
 export function splitMine<T extends Pick<SprintCycleItem, "task_id">>(
   items: readonly T[],
-  tasks: readonly Pick<Task, "id" | "assignee_telegram_ids" | "coassignee_telegram_ids">[],
+  tasks: readonly Pick<
+    Task,
+    "id" | "assignee_telegram_ids" | "coassignee_telegram_ids"
+  >[],
   me: number | null | undefined,
 ): { mine: T[]; others: T[] } {
   if (me == null) return { mine: [], others: [...items] };
