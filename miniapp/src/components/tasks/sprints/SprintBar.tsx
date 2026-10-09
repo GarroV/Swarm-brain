@@ -61,7 +61,7 @@ export function SprintBar(p: SprintBarProps) {
     c.status === "active"
       ? dt("идёт", "running")
       : c.status === "draft"
-      ? dt("черновик", "draft")
+      ? dt("запланирован", "planned")
       : dt("принят", "accepted");
 
   // Живые — сверху, принятые — архивом с датами (их со временем станет много).
@@ -282,7 +282,16 @@ export function SprintBar(p: SprintBarProps) {
             <button
               type="button"
               onClick={p.onStart}
-              disabled={p.busy}
+              // Пока идёт другой спринт, этот — запланированный: стартовать его можно после приёмки.
+              disabled={p.busy || p.live.some((c) => c.status === "active")}
+              title={p.live.some((c) =>
+                  c.status === "active"
+                )
+                ? dt(
+                  "Сначала примите идущий спринт",
+                  "Accept the running sprint first",
+                )
+                : undefined}
               className="h-[30px] rounded-full bg-primary px-3 font-semibold text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
               style={{ fontSize: 12.5 }}
             >
