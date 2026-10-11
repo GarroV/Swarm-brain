@@ -99,7 +99,7 @@ Deno.test("failed run changes nothing but is logged", async () => {
   assertEquals(count, 0);
 });
 
-Deno.test("osm: new point → one candidate, trusted untouched, osm point flagged after 3 weeks", async () => {
+Deno.test("osm: new point added, trusted untouched, osm point closed automatically after 3 weeks", async () => {
   await reset();
   const p = {
     source: "osm" as const,
@@ -117,12 +117,18 @@ Deno.test("osm: new point → one candidate, trusted untouched, osm point flagge
   };
   await applyIngest(sb, p, "2026-10-05");
   await applyIngest(sb, p, "2026-10-12");
-  const { data: c } = await sb.from("mkt_candidates").select("kind").eq(
-    "country",
-    CC,
-  ).order("kind");
-  // новая точка встаёт сама (unverified, источник OSM), в очереди остаётся только закрытие
-  assertEquals(c!.map((x) => x.kind), ["maybe_closed"]);
+  // новая точка встаёт сама (unverified, источник OSM), пропавшая закрывается сама — очередь пуста
+  const { data: c } = await sb.from("mkt_candidates").select("kind").eq("country", CC);
+  assertEquals(c, []);
+  const { data: o } = await sb.from("mkt_locations").select("status, closed, verification_note").eq(
+    "ext_key",
+    "osm1",
+  ).single();
+  assertEquals(o, {
+    status: "closed",
+    closed: "2026-10-05",
+    verification_note: "пропала из OpenStreetMap 3 прогонов подряд",
+  });
   const { data: n } = await sb.from("mkt_locations").select("verification, source_kind").eq("country", CC).eq(
     "name",
     "N",
@@ -207,8 +213,8 @@ Deno.test("osm: old pending finds are closed by the run, a point closed by hand 
   const { count } = await sb.from("mkt_candidates").select("id", { count: "exact", head: true }).eq("country", CC)
     .eq("kind", "new_location").eq("status", "pending");
   assertEquals(count, 0);
-  const { data: closed } = await sb.from("mkt_locations").select("status").eq("country", CC).eq("status", "closed");
-  assertEquals(closed!.length, 1);
+  const { data: shutRow } = await sb.from("mkt_locations").select("status").eq("ext_key", "shut").single();
+  assertEquals(shutRow, { status: "closed" });
 });
 
 Deno.test("osm: one place mapped twice in OSM is one point; a mirror next to a verified point goes away", async () => {
@@ -348,6 +354,141 @@ Deno.test("osm: a country with over 1000 known points is matched in full", async
   const { count: stale } = await sb.from("mkt_locations").select("id", { count: "exact", head: true })
     .eq("country", CC).like("ext_key", "bulk%").neq("missing_weeks", 0);
   assertEquals(stale, 0);
+});
+
+const pt = (id: string, lat: number, lng: number, chain = "kfc") => ({
+  chain,
+  name: "P",
+  lat,
+  lng,
+  city: null,
+  address: null,
+  osm_id: id,
+});
+const loc = (ext_key: string, lat: number, lng: number, extra: Record<string, unknown> = {}) => ({
+  country: CC,
+  chain_key: "kfc",
+  ext_key,
+  name: ext_key,
+  lat,
+  lng,
+  status: "open",
+  verification: "unverified",
+  source_kind: "overture",
+  missing_weeks: 0,
+  ...extra,
+});
+const rowOf = async (ext_key: string) =>
+  (await sb.from("mkt_locations").select("status, closed, missing_weeks, source, source_kind").eq("country", CC)
+    .eq("ext_key", ext_key).single()).data;
+
+Deno.test("overture: adds points as overture/unverified with discovered chains after the max slot; existing chain untouched", async () => {
+  await reset();
+  await sb.from("mkt_chains").update({ slot: 4, name: "KFC keep" }).eq("country", CC).eq("key", "kfc");
+  const chains = [
+    { key: "kfc", name: "OVERWRITE", segment: "burger" },
+    { key: "newa", name: "New A", segment: "pizza" },
+    { key: "newb", name: "New B", segment: "bakery", bakery: true },
+  ];
+  const stats = await applyIngest(sb, {
+    source: "overture",
+    country: CC,
+    started_at,
+    chains,
+    points: [pt("08f-a", 50.1, 10.1, "newa"), pt("08f-b", 50.2, 10.2, "newb"), pt("08f-c", 50.3, 10.3, "ghost")],
+  }, "2026-10-12");
+  assertEquals(stats.chains_added, 2);
+  const { data: ch } = await sb.from("mkt_chains").select("key, name, slot, segment, is_bakery").eq("country", CC)
+    .order("slot");
+  assertEquals(ch, [
+    { key: "kfc", name: "KFC keep", slot: 4, segment: "other", is_bakery: false },
+    { key: "newa", name: "New A", slot: 5, segment: "pizza", is_bakery: false },
+    { key: "newb", name: "New B", slot: 6, segment: "bakery", is_bakery: true },
+  ]);
+  const { data: l } = await sb.from("mkt_locations").select("chain_key, source_kind, verification, source").eq(
+    "country",
+    CC,
+  ).eq("source_kind", "overture").order("chain_key");
+  assertEquals(l, [
+    {
+      chain_key: "newa",
+      source_kind: "overture",
+      verification: "unverified",
+      source: "https://explore.overturemaps.org/?id=08f-a",
+    },
+    {
+      chain_key: "newb",
+      source_kind: "overture",
+      verification: "unverified",
+      source: "https://explore.overturemaps.org/?id=08f-b",
+    },
+  ]);
+  assertEquals(stats.dropped_unknown_chain, 1);
+});
+
+Deno.test("overture: a point missing 3 runs is closed with a date and no candidate; osm rows are not touched", async () => {
+  await reset();
+  await sb.from("mkt_locations").insert([
+    loc("ov1", 48.0, 12.0),
+    loc("ov2", 48.5, 12.5),
+    loc("ov3", 49.0, 13.0),
+    loc("ov4", 49.5, 13.5),
+  ]);
+  const run = (points: ReturnType<typeof pt>[]) =>
+    applyIngest(sb, { source: "overture", country: CC, started_at, points }, "2026-10-12");
+  // три из четырёх — не меньше 70%, прогон нормальный; ov1 не приходит
+  const keep = [pt("x", 48.5, 12.5), pt("y", 49.0, 13.0), pt("z", 49.5, 13.5)];
+  await run(keep);
+  await run(keep);
+  assertEquals((await rowOf("ov1"))!.status, "open");
+  const stats = await run(keep);
+  assertEquals(stats.closed_auto, 1);
+  assertEquals(await rowOf("ov1"), {
+    status: "closed",
+    closed: "2026-10-12",
+    missing_weeks: 3,
+    source: null,
+    source_kind: "overture",
+  });
+  assertEquals((await rowOf("osm1"))!.status, "open");
+  const { count } = await sb.from("mkt_candidates").select("id", { count: "exact", head: true }).eq("country", CC);
+  assertEquals(count, 0);
+});
+
+Deno.test("machine: a suspiciously small answer closes nothing and counts no missing weeks", async () => {
+  await reset();
+  const rows = Array.from({ length: 10 }, (_, i) => loc(`ov${i}`, 40 + i * 0.1, 20, { missing_weeks: 2 }));
+  await sb.from("mkt_locations").insert(rows);
+  // 6 из 10 — меньше 70%: прогон подозрительный
+  const points = rows.slice(0, 6).map((r, i) => pt(`p${i}`, r.lat, r.lng));
+  const stats = await applyIngest(sb, { source: "overture", country: CC, started_at, points }, "2026-10-12");
+  assertEquals(stats.suspicious, 1);
+  assertEquals(stats.closed_auto, 0);
+  const { data } = await sb.from("mkt_locations").select("status, missing_weeks").eq("country", CC)
+    .eq("source_kind", "overture");
+  assertEquals(data!.filter((r) => r.status === "closed").length, 0);
+  // пропавшие четыре остались на 2 неделях, не 3
+  assertEquals(data!.filter((r) => r.missing_weeks === 2).length, 4);
+});
+
+Deno.test("machine: a point that comes back after auto-close is reopened; a checked closed one is not", async () => {
+  await reset();
+  await sb.from("mkt_locations").insert([
+    loc("back", 41.0, 21.0, { status: "closed", closed: "2026-09-01", missing_weeks: 3 }),
+    loc("hand", 42.0, 22.0, { status: "closed", closed: "2026-09-01", verification: "confirmed" }),
+    loc("stay", 43.0, 23.0),
+  ]);
+  const stats = await applyIngest(sb, {
+    source: "overture",
+    country: CC,
+    started_at,
+    points: [pt("a", 41.0, 21.0), pt("b", 42.0, 22.0), pt("c", 43.0, 23.0)],
+  }, "2026-10-12");
+  assertEquals(stats.reopened, 1);
+  assertEquals((await rowOf("back"))!.status, "open");
+  assertEquals((await rowOf("back"))!.closed, null);
+  assertEquals((await rowOf("back"))!.missing_weeks, 0);
+  assertEquals((await rowOf("hand"))!.status, "closed");
 });
 
 Deno.test("dodo: re-sending the same days does not double the month; units upserted as internal", async () => {

@@ -5,13 +5,26 @@ export const CLOSE_AFTER_WEEKS = 3;
 /** Выдуманная страна демо (диапазон XA–XZ в ISO 3166 — пользовательские коды). */
 export const DEMO_COUNTRY = "XD";
 
-/** «Возможно закрыта» — только у точки, которую в базу привёл сам OSM и которую никто не
- *  подтвердил. Проверенную запись отсутствие в OSM не трогает никогда: OSM видит не всё
- *  (сверка по Хорватии 02.10.2026 — локальных сетей в нём нет вовсе). */
-export function shouldFlagClosed(
+/** Машинные источники точек: их строки закрываются сами, когда источник перестал их отдавать. */
+export const MACHINE_KINDS = ["osm", "overture"] as const;
+/** Доля живых машинных точек страны, ниже которой ответ источника считается подозрительным. */
+export const SUSPICIOUS_RATIO = 0.7;
+
+/** Автозакрытие — только у точки, которую в базу привёл сам машинный источник (OSM, Overture) и
+ *  которую никто не подтвердил, после CLOSE_AFTER_WEEKS прогонов подряд без неё. Проверенную запись
+ *  отсутствие в источнике не трогает никогда: он видит не всё (сверка по Хорватии 02.10.2026 —
+ *  локальных сетей в OSM нет вовсе). */
+export function shouldAutoClose(
   loc: { verification: Verification; source_kind: string | null; missing_weeks: number },
 ): boolean {
-  return loc.source_kind === "osm" && !TRUSTED.includes(loc.verification) && loc.missing_weeks >= CLOSE_AFTER_WEEKS;
+  return (MACHINE_KINDS as readonly string[]).includes(loc.source_kind ?? "") &&
+    !TRUSTED.includes(loc.verification) && loc.missing_weeks >= CLOSE_AFTER_WEEKS;
+}
+
+/** Прогон, в котором точек заметно меньше, чем машинных строк в базе, — битый релиз или обрезанный
+ *  ответ: пропажу по нему не считаем и не закрываем ничего. */
+export function isSuspiciousRun(found: number, liveMachineRows: number): boolean {
+  return found < SUSPICIOUS_RATIO * liveMachineRows;
 }
 
 export type DayOrders = { date: string; counts: Record<string, number> };
