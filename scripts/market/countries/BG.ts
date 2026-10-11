@@ -2,9 +2,11 @@ import type { CountryConfig } from "./types.ts";
 
 // Болгария. Разведка 03.10.2026 по OSM (все fast_food/restaurant/cafe/bakery страны) и Dodo
 // publicapi: у международных и крупных местных сетей есть тег brand, у Skapto и King's Bakery —
-// только name. Отчётность юрлиц бесплатно и без входа не отдаёт никто (papagal — защита от ботов,
-// companybook и finansi — платно за 2024–2025), поэтому финансов в автоматике нет; платное не берём (решение 03.10) — выручка
-// вручную в снимок из открытых публикаций. С 2026 года страна в евро; отчётность 2025 и раньше — в левах.
+// только name. Финансы юрлиц собирает адаптер bg-registry из годовых отчётов Търговски регистър
+// (бесплатно, без входа; PDF в основном сканы, их читает tesseract): публикуется только
+// подтверждённая выручка (правило — scripts/market/bg-registry.ts). Платные базы (companybook,
+// finansi) не берём (решение 03.10), papagal закрыт защитой от ботов. Юрлица заведены не у всех
+// сетей: у Happy, Subway и Dodo их нет. С 2026 года страна в евро; отчётность 2025 и раньше — в левах.
 export const BG: CountryConfig = {
   country: "BG",
   dodoCode: "bg",
@@ -111,7 +113,15 @@ export const BG: CountryConfig = {
       osmNames: ["King's Bakery"],
     },
   ],
-  companies: [],
+  companies: [
+    { chain: "mcdonalds", name: "Сънфудс България ЕООД", regId: "831507493" },
+    { chain: "kfc", name: "АмРест ЕООД", regId: "175297584" },
+    { chain: "starbucks", name: "АмРест Кофи", regId: "175395555" },
+    { chain: "hesburger", name: "Бългериан Бургер", regId: "204078386" },
+    { chain: "aladin", name: "Аладин Фуудс ООД", regId: "115271421" },
+    { chain: "fornetti", name: "Форнетти България ЕООД", regId: "175212388" },
+    { chain: "pizzalab", name: "Фили Вайб АД", regId: "203418843" },
+  ],
   sources: [
     {
       adapter: "dodo-publicapi",
@@ -134,13 +144,14 @@ export const BG: CountryConfig = {
       checked: "2026-10-03",
     },
     {
-      adapter: "manual",
+      adapter: "bg-registry",
       feeds: "financials",
-      cadence: "manual",
-      mode: "manual",
-      url: "Търговски регистър (registryagency.bg) — годовые отчёты PDF",
+      cadence: "yearly",
+      mode: "auto",
+      url:
+        "Търговски регистър (portal.registryagency.bg) — годовые финансовые отчёты PDF",
       note:
-        "бесплатного машинного источника нет: papagal.bg за защитой от ботов, companybook.bg и finansi.bg — 2024–2025 платно; платное не берём — выручка вручную в снимок из открытых публикаций",
+        "выручка из строки «Приходи от продажби»; публикуется подтверждённая (текстовый слой или совпадение с отчётом следующего года), левы → евро по 1,95583",
     },
     {
       adapter: "manual",

@@ -1,3 +1,4 @@
+import { bgRegistry } from "./bg-registry.ts";
 import { companywall } from "./companywall.ts";
 import { dodo } from "./dodo.ts";
 import { eeAriregister } from "./ee-ariregister.ts";
@@ -7,7 +8,7 @@ import { roDatagov } from "./ro-datagov.ts";
 import type { Adapter } from "./types.ts";
 
 export const ADAPTERS: Record<string, Adapter> = Object.fromEntries(
-  [dodo, osm, overture, eeAriregister, roDatagov, companywall].map((
+  [dodo, osm, overture, eeAriregister, roDatagov, companywall, bgRegistry].map((
     a,
   ) => [a.id, a]),
 );
