@@ -4,8 +4,8 @@
 // loadLayout/saveLayout (пока localStorage устройства, в продукте — профиль пользователя).
 
 export const WIDGET_IDS = [
-  "calls", "top5", "board", "rs", "rko", "pz", "att", "countries", "viol",
-  "sales", "maps", "insp", "myTasks", "teamTasks", "news", "latest",
+  "calls", "top5", "board", "rs", "rko", "pz", "countries", "viol",
+  "sales", "insp", "myTasks", "teamTasks", "news", "latest",
 ] as const;
 export type WidgetId = (typeof WIDGET_IDS)[number];
 export type WidgetWidth = "half" | "full";
@@ -13,13 +13,13 @@ export type LayoutItem = { id: WidgetId; w: WidgetWidth };
 
 export const DEFAULT_WIDTH: Record<WidgetId, WidgetWidth> = {
   calls: "half", top5: "half", board: "full", rs: "half", rko: "half", pz: "full",
-  att: "half", countries: "half", viol: "half", sales: "half", maps: "half", insp: "half",
+  countries: "full", viol: "half", sales: "half", insp: "half",
   myTasks: "full", teamTasks: "half", news: "half", latest: "half",
 };
 
 // Доска — первой (владелец 08.10.2026: «доску давай выше сделаем»). «Топ-5 нарушений» — образец
 // без источника: в каталоге есть, по умолчанию на главную не ставим.
-const DEFAULT_ORDER: WidgetId[] = ["board", "calls", "top5", "rs", "rko", "pz", "att", "countries", "maps"];
+const DEFAULT_ORDER: WidgetId[] = ["board", "calls", "top5", "rs", "rko", "pz", "countries"];
 export const DEFAULT_LAYOUT: LayoutItem[] = DEFAULT_ORDER.map((id) => ({ id, w: DEFAULT_WIDTH[id] }));
 
 const isWidgetId = (v: unknown): v is WidgetId => typeof v === "string" && (WIDGET_IDS as readonly string[]).includes(v);
