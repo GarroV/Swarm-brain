@@ -5,10 +5,10 @@ import { Delta } from "./QualityWidgets";
 import { useMaps } from "./useMaps";
 import type { MapsStat } from "@/lib/api";
 import { countryFlag, countryName } from "@/lib/countries";
-import { mapsCountries, worstUnits } from "@/lib/homeMaps";
+import { mapsCountries } from "@/lib/homeMaps";
 
 // «Карты и отзывы»: по странам подборки — средняя оценка Google и Яндекса, изменение за 30 дней, число
-// отзывов; ниже — пиццерии с худшей оценкой Google. Источник — Децимус (GET /quality/maps).
+// отзывов. Список худших пиццерий снят (владелец 11.10.2026: «худшую оценку убери»). Источник — Децимус (GET /quality/maps).
 
 const card = "rounded-[12px] border border-line bg-surface";
 const th = "px-2.5 py-2 text-left font-semibold uppercase text-ink-mute";
@@ -29,7 +29,6 @@ export function MapsWidget({ codes }: { codes: string[] }) {
   const dt = useDt();
   const { data, loading, failed, retry } = useMaps();
   const rows = useMemo(() => (data ? mapsCountries(data, codes) : []), [data, codes]);
-  const worst = useMemo(() => (data ? worstUnits(data.units, codes) : []), [data, codes]);
 
   if (loading) return <div className="roy-shim" style={{ height: 220, borderRadius: 12 }} />;
   if (failed || !data) {
@@ -67,19 +66,6 @@ export function MapsWidget({ codes }: { codes: string[] }) {
           </tbody>
         </table>
       </div>
-      <div className="border-t border-line px-3 pb-1 pt-2.5 font-semibold uppercase text-ink-mute" style={{ fontSize: 10.5, letterSpacing: "0.06em" }}>
-        {dt("Худшая оценка Google", "Lowest Google rating")}
-      </div>
-      {worst.map((u) => (
-        <div key={u.id} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 border-t border-line px-3 py-2">
-          <div className="min-w-0 truncate"><span className="font-medium text-ink" style={{ fontSize: 13 }}>{u.name}</span> <span className="text-ink-mute" style={{ fontSize: 11 }}>{countryFlag(u.cc)}</span></div>
-          <div className="whitespace-nowrap text-right">
-            <span className="font-mono font-semibold text-ink" style={{ fontSize: 13 }}>{u.avg.toFixed(2)}</span><span className="text-[#E8A400]"> ★</span>{" "}
-            <Delta v={u.change} digits={2} small />
-          </div>
-        </div>
-      ))}
-      {!worst.length && <div className="border-t border-line px-3 py-4 text-center text-ink-mute" style={{ fontSize: 12.5 }}>{dt("У пиццерий подборки пока нет оценок Google", "No Google ratings for this selection's pizzerias yet")}</div>}
     </div>
   );
 }
