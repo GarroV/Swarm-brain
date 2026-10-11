@@ -8,6 +8,7 @@
 // Линт просит короткое имя из карты импортов; см. пояснение в sprint-items.ts.
 // deno-lint-ignore-file no-import-prefix
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { decimusGet, DecimusNotConfigured, workspaceCountries as countriesOf } from "../_shared/decimus.ts";
 import { apiErr, json } from "./http.ts";
 import { serverError } from "./client-error.ts";
 import { type Kind, type QualityView, toView } from "./quality-view.ts";
@@ -16,58 +17,25 @@ import { type MapsView, toMapsView } from "./maps-view.ts";
 const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
 
 const CACHE_MS = 5 * 60 * 1000;
-const TIMEOUT_MS = 10_000;
 
 const MAPS_COMPARE_DAYS = 30;
 
 const cache = new Map<string, { at: number; view: QualityView }>();
 const mapsCache = new Map<string, { at: number; view: MapsView }>();
 
-async function workspaceCountries(groupId: string): Promise<string[] | null> {
-  const { data, error } = await supabase.from("workspaces").select("allowed_markets").eq("id", groupId).maybeSingle();
-  if (error) throw new Error(`allowed_markets: ${error.message}`);
-  const markets = (data?.allowed_markets as string[] | null) ?? null;
-  return markets ? markets.map((m) => m.trim().toUpperCase()) : null;
-}
+const workspaceCountries = (groupId: string) => countriesOf(supabase, groupId);
 
 async function fetchDecimus(kind: Kind, countries: string[] | null): Promise<QualityView> {
-  const base = Deno.env.get("DECIMUS_API_URL");
-  const token = Deno.env.get("DECIMUS_API_TOKEN");
-  if (!base || !token) throw new NotConfigured();
-  const url = new URL("/api/v1/ratings/scores", base);
-  url.searchParams.set("type", kind);
-  if (countries) url.searchParams.set("countries", countries.join(","));
-  const res = await fetch(url, {
-    headers: { Authorization: `Bearer ${token}` },
-    signal: AbortSignal.timeout(TIMEOUT_MS),
-  });
-  if (!res.ok) throw new Error(`decimus ${res.status}: ${(await res.text()).slice(0, 200)}`);
-  return toView(kind, await res.json(), countries);
+  const body = await decimusGet("/api/v1/ratings/scores", { type: kind, countries: countries?.join(",") });
+  return toView(kind, body, countries);
 }
 
 const isoDay = (d: Date) => d.toISOString().slice(0, 10);
 
 /** Срез на сегодня (UTC) против «30 дней назад»; дата входит в ключ кэша, чтобы после полуночи не отдавать вчерашнее. */
 async function fetchMaps(countries: string[] | null, on: string, compare: string): Promise<MapsView> {
-  const base = Deno.env.get("DECIMUS_API_URL");
-  const token = Deno.env.get("DECIMUS_API_TOKEN");
-  if (!base || !token) throw new NotConfigured();
-  const url = new URL("/api/v1/maps/ratings", base);
-  if (countries) url.searchParams.set("countries", countries.join(","));
-  url.searchParams.set("on", on);
-  url.searchParams.set("compare", compare);
-  const res = await fetch(url, {
-    headers: { Authorization: `Bearer ${token}` },
-    signal: AbortSignal.timeout(TIMEOUT_MS),
-  });
-  if (!res.ok) throw new Error(`decimus ${res.status}: ${(await res.text()).slice(0, 200)}`);
-  return toMapsView(await res.json(), countries);
-}
-
-class NotConfigured extends Error {
-  constructor() {
-    super("DECIMUS_API_URL / DECIMUS_API_TOKEN не заданы");
-  }
+  const body = await decimusGet("/api/v1/maps/ratings", { countries: countries?.join(","), on, compare });
+  return toMapsView(body, countries);
 }
 
 export async function handleQualityRoutes(
@@ -93,7 +61,7 @@ export async function handleQualityRoutes(
     cache.set(key, { at: Date.now(), view });
     return json(view, 200, origin);
   } catch (e) {
-    if (e instanceof NotConfigured) {
+    if (e instanceof DecimusNotConfigured) {
       console.error("[quality]", e.message);
       return apiErr(503, "ratings source is not configured", origin);
     }
@@ -124,7 +92,7 @@ async function handleMaps(groupId: string, isDemo: boolean, origin: string): Pro
     mapsCache.set(key, { at: Date.now(), view });
     return json(view, 200, origin);
   } catch (e) {
-    if (e instanceof NotConfigured) {
+    if (e instanceof DecimusNotConfigured) {
       console.error("[quality/maps]", e.message);
       return apiErr(503, "ratings source is not configured", origin);
     }
