@@ -681,6 +681,31 @@ export async function logout(): Promise<void> {
   });
 }
 
+// ── Присутствие (#751) ───────────────────────────────────────────────────────
+// Пульс веба (components/PresencePulse.tsx): раздел и был ли ввод. На экран не выводится.
+// Свой fetch, а не apiFetch: пульс раз в 30 с не должен сбрасывать кэш чтения, будить плашку
+// «нет связи», уводить на вход по 401 или включать заглушку работ по 503 — это фон, а не
+// действие человека. keepalive: запрос `away` на закрытии вкладки должен уйти и после выгрузки
+// страницы (sendBeacon не умеет заголовок tma, а в Telegram авторизация — именно он).
+export type PresencePing = { section: string; active: boolean; away?: boolean };
+
+/** Статус ответа: 204 — записано, 401 — не вошёл (пульс глохнет до перезагрузки). */
+export async function sendPresence(ping: PresencePing): Promise<number> {
+  if (DEV_MODE) {
+    console.debug("[presence] mock", JSON.stringify(ping));
+    return 204;
+  }
+  const res = await fetch(`${API_BASE}/presence`, {
+    method: "POST",
+    keepalive: true,
+    cache: "no-store",
+    credentials: "include",
+    headers: { "Content-Type": "application/json", ...authHeaders() },
+    body: JSON.stringify(ping),
+  });
+  return res.status;
+}
+
 // ── Встречи сегодня из календаря (issue #218) ────────────────────────────────
 // Панель правой колонки главной. Календарь читает СЕРВЕР по OAuth-интеграции — у браузера
 // доступа к календарю нет. Пояс шлём свой: сервер живёт в UTC и не знает, какие у нас сутки.
@@ -859,10 +884,24 @@ export async function fetchUsers(): Promise<User[]> {
 // ── Справочник людей (GET/POST /people, #874) ──────────────────────────────────
 // Люди с аккаунтом и без: из них выбираются исполнитель и соисполнители задачи.
 export async function fetchPeople(): Promise<Person[]> {
-  if (DEV_MODE) {
-    return MOCK_USERS.map((u) => ({ id: `mock-${u.telegram_id}`, name: u.name, email: null, telegram_id: u.telegram_id }));
-  }
+  if (DEV_MODE) return mockPeople();
   return apiFetch<Person[]>("/people");
+}
+
+// Мок повторяет порядок сервера: аккаунты, затем люди без входа от недавних встреч к давним.
+// Участников встреч на проде сотни (#887) — мок даёт их столько же, чтобы поповер проверялся
+// на настоящей длине списка.
+function mockPeople(): Person[] {
+  const accounts = MOCK_USERS.map((u): Person => ({
+    id: `mock-${u.telegram_id}`, name: u.name, email: null, telegram_id: u.telegram_id,
+  }));
+  const guests = Array.from({ length: 400 }, (_, i): Person => ({
+    id: `mock-guest-${i}`,
+    name: i % 7 === 0 ? `guest${i}` : `Guest ${i} Partner`,
+    email: `guest${i}@partner${i % 5}.example.com`,
+    telegram_id: null,
+  }));
+  return [...accounts, ...guests];
 }
 
 /** Завести человека без входа. Почта уже есть в воркспейсе — вернётся тот же человек. */

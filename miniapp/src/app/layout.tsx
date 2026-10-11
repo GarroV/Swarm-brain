@@ -9,6 +9,7 @@ import { BackdropLayer } from "@/components/roy/BackdropLayer";
 import { BACKDROP_SCRIPT } from "@/lib/backdrop";
 import { MaintenanceGate } from "@/components/MaintenanceGate";
 import { ConnectionBanner } from "@/components/ConnectionBanner";
+import { PresencePulse } from "@/components/PresencePulse";
 
 // Golos Text — весь UI, заголовки И метаданные (эталонная кириллица). IBM Plex Mono — цифры
 // и технические метки (сроки, счётчики, таймстампы): так набирает стенд редизайна
@@ -52,6 +53,8 @@ export default function RootLayout({
             сессия, иначе вместо «идут работы» он получит экран входа. */}
         <MaintenanceGate />
         <ConnectionBanner />
+        {/* Пульс присутствия (#751): ничего не рисует, видно только админу через GET /presence. */}
+        <PresencePulse />
         <TelegramProvider>
           <ConfirmProvider>
             <SingleTabGate>{children}</SingleTabGate>

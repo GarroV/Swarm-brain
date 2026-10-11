@@ -148,6 +148,7 @@ import { SUPERADMIN_TELEGRAM_ID } from "../_shared/users/admin-scope.ts";
 import { handleNotificationRoutes } from "./notifications.ts";
 import { handleTaskSubscriptionRoutes } from "./task-subscriptions.ts";
 import { handlePeopleRoutes, resolveTaskPeople } from "./people.ts";
+import { handlePresenceRoutes } from "./presence.ts";
 import {
   handlePublicRoadmap,
   isPublicRoadmapPath,
@@ -1002,6 +1003,22 @@ async function routeRequest(req: Request): Promise<Response> {
     origin,
   );
   if (peopleResp) return peopleResp;
+
+  // Присутствие (#751): пульс веба (POST) и сводка «кто где» только админу (GET). Без UI.
+  const presenceResp = await handlePresenceRoutes(
+    supabase,
+    req,
+    routePath,
+    {
+      telegramId: telegram_id,
+      groupId,
+      isAdmin,
+      isSuperadmin: !isDemo && telegram_id === SUPERADMIN_TELEGRAM_ID,
+      isDemo,
+    },
+    origin,
+  );
+  if (presenceResp) return presenceResp;
 
   // Лента уведомлений (/notifications*) — строго свои: фильтр по recipient_telegram_id.
   const notifResp = await handleNotificationRoutes(

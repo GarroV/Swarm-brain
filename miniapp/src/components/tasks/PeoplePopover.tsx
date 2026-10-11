@@ -11,6 +11,10 @@ import type { Person } from "@/types";
 // списка (владелец 08.10: «он соответственно утекает в базу и в будущем уже можно подставить
 // по списку»). Почта: если в поле набрана почта, она и станет почтой, и именем — по ней
 // человек свяжется со своим аккаунтом, когда войдёт через Google.
+//
+// Участники встреч попадают в справочник сами (#887), и людей без входа — сотни. Поэтому без
+// поиска список короткий: все с аккаунтом и до RECENT_MAX недавних без входа (сервер отдаёт их
+// от свежей встречи к давней), плюс уже выбранные. Поиск — по имени и почте всего справочника.
 
 type Props = {
   people: Person[];
@@ -30,6 +34,7 @@ type Props = {
 
 const W = 280, H = 320;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const RECENT_MAX = 15;
 
 export function PeoplePopover({
   people, selected, multiple = false, onChange, onCreate, label, icon, emptyLabel, clearLabel, fallbackNames,
@@ -95,12 +100,28 @@ export function PeoplePopover({
   }, [open, place]);
 
   const q = query.trim();
-  const filtered = useMemo(() => {
-    const needle = q.toLowerCase();
-    if (!needle) return people;
-    return people.filter((p) => p.name.toLowerCase().includes(needle) || (p.email ?? "").includes(needle));
-  }, [people, q]);
-  const exact = people.some((p) => p.name.toLowerCase() === q.toLowerCase() || p.email === q.toLowerCase());
+  const needle = q.toLowerCase();
+  // Строка поиска считается один раз на список, а не на каждое нажатие клавиши.
+  const index = useMemo(
+    () => people.map((p) => ({ p, name: p.name.toLowerCase(), hay: `${p.name} ${p.email ?? ""}`.toLowerCase() })),
+    [people],
+  );
+  // Без поиска: аккаунты + недавние без входа (+ выбранные, чтобы галочку было видно и снять).
+  const short = useMemo(() => {
+    const accounts = people.filter((p) => p.telegram_id != null);
+    const others = people.filter((p) => p.telegram_id == null);
+    const recent = others.filter((p, i) => i < RECENT_MAX || selected.includes(p.id));
+    return { accounts, recent, hidden: others.length - recent.length };
+  }, [people, selected]);
+  const found = useMemo(
+    () => (needle ? index.filter((x) => x.hay.includes(needle)).map((x) => x.p) : null),
+    [index, needle],
+  );
+  const filtered = found ?? [...short.accounts, ...short.recent];
+  const exact = useMemo(
+    () => needle !== "" && index.some((x) => x.name === needle || x.p.email === needle),
+    [index, needle],
+  );
 
   const byId = useMemo(() => new Map(people.map((p) => [p.id, p])), [people]);
   const names = selected.map((id) => byId.get(id)?.name).filter((n): n is string => !!n);
@@ -180,7 +201,7 @@ export function PeoplePopover({
             {!multiple && clearLabel && !q && (
               <PersonRow on={selected.length === 0} name={clearLabel} onClick={() => { onChange([]); setOpen(false); }} />
             )}
-            {filtered.map((p) => (
+            {(found ?? short.accounts).map((p) => (
               <PersonRow
                 key={p.id}
                 on={selected.includes(p.id)}
@@ -189,6 +210,27 @@ export function PeoplePopover({
                 onClick={() => toggle(p.id)}
               />
             ))}
+            {!found && short.recent.length > 0 && (
+              <>
+                <li role="presentation" className="px-2.5 pb-1 pt-2 text-ink-mute" style={{ fontSize: 11 }}>
+                  {dt("Недавние встречи", "Recent meetings")}
+                </li>
+                {short.recent.map((p) => (
+                  <PersonRow
+                    key={p.id}
+                    on={selected.includes(p.id)}
+                    name={p.name}
+                    hint={dt("без входа", "no account")}
+                    onClick={() => toggle(p.id)}
+                  />
+                ))}
+                {short.hidden > 0 && (
+                  <li role="presentation" className="px-2.5 py-1.5 text-ink-mute" style={{ fontSize: 11 }}>
+                    {dt(`Ещё ${short.hidden} — найди по имени или почте`, `${short.hidden} more — search by name or email`)}
+                  </li>
+                )}
+              </>
+            )}
             {q && !exact && (
               <li>
                 <button
