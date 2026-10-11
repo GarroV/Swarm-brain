@@ -12,6 +12,7 @@ export type Dt = (ru: string, en: string) => string;
 const ADAPTER_NAME: Record<string, [string, string]> = {
   "dodo-publicapi": ["публичный API Dodo", "Dodo public API"],
   "osm-overpass": ["OpenStreetMap", "OpenStreetMap"],
+  overture: ["Overture Maps (открытые данные о местах)", "Overture Maps (open places data)"],
   "ee-ariregister": ["реестр Эстонии (ariregister)", "Estonian e-Business Register"],
   "ro-datagov": ["data.gov.ro (Минфин Румынии)", "data.gov.ro (Romanian MoF)"],
   manual: ["ручная заливка", "manual upload"],
