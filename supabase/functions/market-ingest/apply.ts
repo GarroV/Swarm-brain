@@ -15,7 +15,7 @@ const now = () => new Date().toISOString();
 /** Источник в журнале → адаптер в mkt_sources (у реестров адаптер приходит в нагрузке). */
 const ADAPTER_OF: Record<string, string> = {
   osm: "osm-overpass",
-  overture: "overture-maps",
+  overture: "overture",
   dodo: "dodo-publicapi",
 };
 
