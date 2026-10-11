@@ -77,7 +77,6 @@ export async function deleteSprint(
 }
 
 // Привязывает задачи воркспейса к спринту (массовое назначение sprint_id).
-// Только командные задачи (is_private=false) — спринт командный, чужие личные не трогаем.
 export async function setTasksSprint(
   taskIds: string[],
   sprintId: string | null,
@@ -86,7 +85,7 @@ export async function setTasksSprint(
   if (taskIds.length === 0) return 0;
   const { data } = await supabase.from("tasks")
     .update({ sprint_id: sprintId, updated_at: new Date().toISOString() })
-    .in("id", taskIds).eq("group_id", groupId).eq("is_private", false)
+    .in("id", taskIds).eq("group_id", groupId)
     .select("id");
   return (data ?? []).length;
 }

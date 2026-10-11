@@ -191,9 +191,9 @@ export function TaskFilesSection({ f, action }: { f: TaskFilesState; action?: Re
 }
 
 /** Самостоятельный блок «Файлы» — для экрана TaskDetail, где нет общей строки пиктограмм. */
-export function TaskFiles({ taskId, taskOwnerId }: { taskId: string; taskOwnerId: number | null }) {
+export function TaskFiles({ taskId, taskCreatorId }: { taskId: string; taskCreatorId: number | null }) {
   const dt = useDt();
-  const f = useTaskFiles(taskId, taskOwnerId);
+  const f = useTaskFiles(taskId, taskCreatorId);
   return (
     <div className="relative" {...f.dropProps}>
       <FileInput f={f} />

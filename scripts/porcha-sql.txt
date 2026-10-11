@@ -9,7 +9,6 @@
 # соседей следом (replay в scripts/porcha-sql) — порядок строк здесь не важен.
 before delete on public.tasks|before insert on public.tasks|supabase/functions/_shared/tasks/sprint-accept.db.test.ts
 and frozen_at is null|and true|supabase/functions/_shared/tasks/sprint-accept.db.test.ts
-and t.is_private = false|and true|supabase/functions/_shared/tasks/sprint-accept.db.test.ts|supabase/migrations/20261001180000_archived_tasks_leave_sprints.sql
 # Условия «на всякий случай» сюда не попадают: их порча краснеть не заставит, потому что они
 # ничего не держат. Такое условие не вносится в список, а убирается из SQL — 18.09.2026 так
 # ушло `si.removed_at is null` из приёмки: упоминание отсекает соединение по внешнему ключу.
@@ -65,3 +64,24 @@ new.ping_delivered_to := '{}';|null;|supabase/functions/_shared/tasks/archive-sp
 revoke all on public.meeting_notices from anon, authenticated;|revoke all on public.meeting_notices from anon, authenticated; create table public.porcha_no_rls (id int);|supabase/functions/_shared/public-tables-locked.db.test.ts|supabase/migrations/20261002110000_scriba_tables_revoke_anon.sql
 # Архив встреч (#569): архивная запись не попадает в поиск — ни в одну из четырёх функций.
     and e.archived_at is null|    and true|supabase/functions/_shared/entries/archive.db.test.ts|supabase/migrations/20261002100000_entries_archive.sql
+# Справочник людей (#874): фантом вошёл — его задачи переезжают на аккаунт; соисполнители — в «мои».
+SET assignee_telegram_ids = ARRAY[p_telegram]|SET assignee_telegram_ids = assignee_telegram_ids|supabase/functions/_shared/people/people.db.test.ts|supabase/migrations/20261008220000_people.sql
+WHERE p.id = ANY (NEW.coassignee_person_ids)|WHERE false|supabase/functions/_shared/people/people.db.test.ts|supabase/migrations/20261008220000_people.sql
+WHERE group_id = NEW.group_id AND email = v_email|WHERE false|supabase/functions/_shared/people/people.db.test.ts|supabase/migrations/20261008220000_people.sql
+    NEW.assignee_person_id := NULL;|    NULL;|supabase/functions/_shared/people/people.db.test.ts|supabase/migrations/20261008220000_people.sql
+GRANT EXECUTE ON FUNCTION public.people_link_tasks(uuid, bigint) TO service_role;|SELECT 1;|supabase/functions/_shared/people/people.db.test.ts|supabase/migrations/20261008220000_people.sql
+public.workspaces(id) ON DELETE CASCADE|public.workspaces(id)|supabase/functions/_shared/people/people.db.test.ts|supabase/migrations/20261008220000_people.sql
+# Участники встреч → справочник (#887): переговорки отсекаются по обоим признакам, дата встречи
+# только вперёд, триггер встречи под service_role (иначе справочник молча не пополняется).
+# Приватность: участник личной встречи или черновика не раскрывается всему воркспейсу.
+WHERE e.id = p_entry AND e.group_id = p_group AND e.is_private = false|WHERE e.id = p_entry AND e.group_id = p_group|supabase/functions/_shared/people/people-meetings.db.test.ts|supabase/migrations/20261009150000_people_from_meetings.sql
+WHEN (OLD.is_private AND NOT NEW.is_private)|WHEN (false)|supabase/functions/_shared/people/people-meetings.db.test.ts|supabase/migrations/20261009150000_people_from_meetings.sql
+AND email NOT LIKE '%@resource.calendar.google.com'|AND true|supabase/functions/_shared/people/people-meetings.db.test.ts|supabase/migrations/20261009150000_people_from_meetings.sql
+AND coalesce(a ->> 'resource', '') <> 'true'|AND true|supabase/functions/_shared/people/people-meetings.db.test.ts|supabase/migrations/20261009150000_people_from_meetings.sql
+AND (p.last_met_at IS NULL OR p.last_met_at < p_at)|AND true|supabase/functions/_shared/people/people-meetings.db.test.ts|supabase/migrations/20261009150000_people_from_meetings.sql
+GRANT EXECUTE ON FUNCTION public.people_from_attendees(text, jsonb, timestamptz) TO service_role;|SELECT 1;|supabase/functions/_shared/people/people-meetings.db.test.ts|supabase/migrations/20261009150000_people_from_meetings.sql
+# Присутствие (#751): журнал — только смены и появления после паузы, пульс зовёт service_role.
+v_gap := NOT FOUND OR v_prev.last_seen_at < v_now - interval '90 seconds';|v_gap := NOT FOUND;|supabase/functions/_shared/presence/presence.db.test.ts|supabase/migrations/20261009140000_presence.sql
+IF v_changed OR (v_gap AND p_state <> 'away') THEN|IF true THEN|supabase/functions/_shared/presence/presence.db.test.ts|supabase/migrations/20261009140000_presence.sql
+OR v_prev.section IS DISTINCT FROM p_section|OR false|supabase/functions/_shared/presence/presence.db.test.ts|supabase/migrations/20261009140000_presence.sql
+GRANT EXECUTE ON FUNCTION public.presence_ping(bigint, text, text, text) TO service_role;|SELECT 1;|supabase/functions/_shared/presence/presence.db.test.ts|supabase/migrations/20261009140000_presence.sql

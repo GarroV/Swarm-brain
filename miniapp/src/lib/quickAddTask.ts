@@ -2,8 +2,8 @@
 // список в духе Reminders (useReminderTasks.quickAdd) и доска проектов/спринтов (SprintBoard).
 //
 // Зачем один файл: до 2026-08-27 дефолты жили в двух местах и разошлись — «+» на доске
-// создавал задачу БЕЗ исполнителя, она по правилу линз попадала в «Команда» (общая = не
-// приватная и без исполнителя) и пропадала из «Моих». Владелец: быстрое добавление везде
+// создавал задачу БЕЗ исполнителя, она по правилу линз попадала в «Команда» (общая = без
+// исполнителя) и пропадала из «Моих». Владелец: быстрое добавление везде
 // назначает задачу на меня, общую делаешь осознанно через полную форму.
 //
 // Типы объявлены локально и без импортов, чтобы файл гонялся `deno test` вместе с остальными
@@ -17,7 +17,7 @@ export type QuickAddContext = {
   sprintId?: string | null;
   /** Сегодняшний день (YYYY-MM-DD) — передаётся, только если активен список «Сегодня». */
   todayISO?: string | null;
-  /** Активная персональная метка: задача создаётся личной, метка вешается вторым шагом. */
+  /** Активный личный список: метка вешается вторым шагом, срок «сегодня» не подставляется. */
   labelId?: string | null;
 };
 
@@ -28,7 +28,6 @@ export type QuickAddInput = {
   project_id?: string;
   sprint_id?: string;
   due_date?: string;
-  is_private?: boolean;
 };
 
 export function buildQuickAddInput(
@@ -45,7 +44,6 @@ export function buildQuickAddInput(
   if (ctx.projectId) input.project_id = ctx.projectId;
   if (ctx.sprintId) input.sprint_id = ctx.sprintId;
   // Метка перебивает «сегодня»: список метки — не «Сегодня», навязанный срок там мешает.
-  if (ctx.labelId) input.is_private = true;
-  else if (ctx.todayISO) input.due_date = ctx.todayISO;
+  if (!ctx.labelId && ctx.todayISO) input.due_date = ctx.todayISO;
   return input;
 }

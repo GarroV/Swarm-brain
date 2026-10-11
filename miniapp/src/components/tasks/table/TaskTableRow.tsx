@@ -63,7 +63,7 @@ export function TaskTableRow({ task, order, now, users, markets, labels, project
   const commit = (fields: UpdateTaskInput, patch: Partial<Task>) => saveTaskPatch(task.id, fields, patch, onPatch, onChanged);
 
   // Выбор прямо в ячейке (стенд: cpick) — рынок, исполнитель, списки. Правила те же, что у
-  // быстрых действий: рынки воркспейса, список делает задачу личной.
+  // быстрых действий: рынки воркспейса, списки — только метки.
   const codes = markets.length ? [...markets] : Object.keys(COUNTRY_NAMES);
   if (task.country && !codes.includes(task.country)) codes.push(task.country);
   const marketItems: MenuItem[] = [
@@ -124,7 +124,7 @@ export function TaskTableRow({ task, order, now, users, markets, labels, project
           <CellPick
             title={labelNames.length
               ? labelNames.join(", ")
-              : dt("Списки — личные: задача станет личной", "Lists are personal: the task becomes private")}
+              : dt("Списки", "Lists")}
             items={labelItems}
           >
             <span className="truncate text-ink-mute" style={{ fontSize: 12.5 }}>{labelsShort || "—"}</span>
@@ -183,11 +183,6 @@ export function TaskTableRow({ task, order, now, users, markets, labels, project
             style={{ fontSize: 11, lineHeight: "17px" }}
           >
             {progress.done}/{progress.total}
-          </span>
-        )}
-        {task.is_private && (
-          <span title={dt("Личная", "Private")} className="shrink-0 text-ink-mute">
-            <RoyIcon name="lock" size={12} />
           </span>
         )}
       </div>

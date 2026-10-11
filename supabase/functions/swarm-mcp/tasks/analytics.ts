@@ -4,16 +4,16 @@
 // get_task_stats отвечает на «сколько и как быстро» из полей самой задачи, get_task_history и
 // get_recent_task_changes — на «где, когда, куда» из журнала перемещений.
 //
-// Доступ считается тем же каноническим правилом, что в остальном коде задач: воркспейс +
-// canViewTask (_shared/tasks/access.ts). RLS не авторизация — всё ходит service_role, поэтому
-// промах в проверке здесь сразу означает утечку чужих личных задач.
+// Доступ считается тем же каноническим правилом, что в остальном коде задач: воркспейс задачи
+// (_shared/tasks/access.ts). RLS не авторизация — всё ходит service_role, поэтому промах в
+// проверке здесь сразу означает утечку задач чужого воркспейса.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { getTask, listTasks } from "../../_shared/tasks/db.ts";
 import { resolvePersonNames } from "../../_shared/users/display-name.ts";
-import { canViewTask, taskAccessError } from "../../_shared/tasks/access.ts";
+import { canAccessTask, taskAccessError } from "../../_shared/tasks/access.ts";
 import { computeFlowTimes, computeTaskStats, periodStartISO, type StatsTask } from "../../_shared/tasks/analytics.ts";
-import { ADMIN_USER_ID, fetchProjectRows, resolveGroupId } from "./tools.ts";
+import { fetchProjectRows, resolveGroupId } from "./tools.ts";
 import { pickProjectByName, visibleProjectNames } from "../../_shared/tasks/project-access.ts";
 import { projectNotFoundMessage } from "./format.ts";
 import {
@@ -112,16 +112,11 @@ export async function toolGetTaskStats(args: {
   // ⚠️ confirmed: true обязателен. Без него listTasks применяет свой дефолт «не показывать
   // done/cancelled/draft» — и статистика считала «закрыто за период: 0» при 149 закрытых задачах
   // на проде. Заодно из выдачи уходит очередь на проверке, которой на доске нет.
-  // isAdmin: админ видит все задачи, включая личные (подтверждено владельцем 09.09.2026) —
-  // без этого сводка для руководителя молча недосчитывала бы больше сотни приватных задач.
-  const isAdmin = args.requesting_user_id === ADMIN_USER_ID;
   const tasks = await listTasks({
     country: args.country,
     assigneeText: args.assignee,
     projectId,
     confirmed: true,
-    viewerId: args.requesting_user_id,
-    isAdmin,
     limit: STATS_TASK_CAP,
   }, groupId);
 
@@ -161,13 +156,7 @@ export async function toolGetTaskHistory(args: { task_id: string; requesting_use
   const task = await getTask(args.task_id);
   const groupId = await resolveGroupId(args.requesting_user_id);
   if (!groupId) return `Задача ${args.task_id} не найдена.`;
-  const denied = taskAccessError(
-    args.task_id,
-    task,
-    args.requesting_user_id,
-    args.requesting_user_id === ADMIN_USER_ID,
-    groupId ?? null,
-  );
+  const denied = taskAccessError(args.task_id, task, groupId);
   if (denied) return denied;
 
   const { data, error } = await supabase
@@ -223,20 +212,18 @@ export async function toolGetRecentTaskChanges(
   const raw = (data ?? []) as RawJournalRow[];
   if (!raw.length) return formatRecentChanges([], { sinceISO });
 
-  // Видимость: журнал сам по себе не знает приватности — спрашиваем задачи.
-  const isAdmin = args.requesting_user_id === ADMIN_USER_ID;
+  // Доступ: журнал сам по себе не знает воркспейса — спрашиваем задачи.
   // archive-ok: журнал изменений: у архивной задачи тоже есть история, и «кто её убрал» — ровно то, что в нём ищут
   const { data: taskRows } = await supabase
-    .from("tasks").select("id, title, group_id, is_private, owner_id")
+    .from("tasks").select("id, title, group_id")
     .in("id", [...new Set(raw.map((r) => r.task_id))]);
   const titleById = new Map<string, string>();
   for (
     const t of (taskRows ?? []) as Array<
-      { id: string; title: string; group_id: string | null; is_private: boolean; owner_id: number | null }
+      { id: string; title: string; group_id: string | null }
     >
   ) {
-    if (t.group_id !== groupId) continue;
-    if (!canViewTask(t, args.requesting_user_id, isAdmin)) continue;
+    if (!canAccessTask(t, groupId)) continue;
     titleById.set(t.id, t.title);
   }
 
@@ -279,7 +266,7 @@ export const ANALYTICS_TOOL_DEFINITIONS = [
         country: { type: "string", description: "Страна или рынок" },
         requesting_user_id: {
           type: "number",
-          description: "Твой Telegram user ID — обязателен для фильтрации по воркспейсу и приватности",
+          description: "Твой Telegram user ID — обязателен для фильтрации по воркспейсу",
         },
       },
       required: ["requesting_user_id"],
@@ -316,7 +303,7 @@ export const ANALYTICS_TOOL_DEFINITIONS = [
         },
         requesting_user_id: {
           type: "number",
-          description: "Твой Telegram user ID — обязателен для фильтрации по воркспейсу и приватности",
+          description: "Твой Telegram user ID — обязателен для фильтрации по воркспейсу",
         },
       },
       required: ["requesting_user_id"],

@@ -283,7 +283,6 @@ export async function handleProfileTasks(chatId: number, targetId: number): Prom
       .select("*"),
   )
     .not("status", "in", '("done","cancelled")')
-    .eq("is_private", false) // личные задачи (Рой) не показываем в командном списке по юзеру
     .order("due_date", { ascending: true });
 
   if (error) {

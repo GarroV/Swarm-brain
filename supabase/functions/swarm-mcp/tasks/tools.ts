@@ -11,7 +11,8 @@ import {
 import { commentDeleteDenial, validateCommentContent } from "../../_shared/tasks/comments.ts";
 import { afterTaskComment } from "../../_shared/tasks/comment-fanout.ts";
 import { personLabel, resolvePersonNames } from "../../_shared/users/display-name.ts";
-import { canViewTask, taskAccessError } from "../../_shared/tasks/access.ts";
+import { canAccessTask, taskAccessError } from "../../_shared/tasks/access.ts";
+import { mergeOwnLabels } from "../../_shared/tasks/labels.ts";
 import { subtaskLinkError } from "../../_shared/tasks/subtasks.ts";
 import { pingPatch } from "./ping.ts";
 import type { Task } from "../../_shared/tasks/types.ts";
@@ -164,11 +165,11 @@ async function matchProject(
 // ── Tool implementations (MCP prослойки — резолв + shared engine + форматирование) ──
 
 // ── Подзадачи (#478, #485) ────────────────────────────────────────────────────
-// Родителя проверяем тем же гардом, что любое чтение задачи: чужую личную задачу нельзя ни
+// Родителя проверяем тем же гардом, что любое чтение задачи: задачу чужого воркспейса нельзя ни
 // увидеть, ни подвесить под неё свою — отказ неотличим от «не найдена».
-async function loadParent(parentId: string, userId: number, groupId: string): Promise<Task | string> {
+async function loadParent(parentId: string, groupId: string): Promise<Task | string> {
   const parent = await getTask(parentId);
-  const denied = taskAccessError(parentId, parent, userId, userId === ADMIN_USER_ID, groupId);
+  const denied = taskAccessError(parentId, parent, groupId);
   return denied ?? parent!;
 }
 
@@ -180,17 +181,14 @@ async function hasSubtasks(taskId: string): Promise<boolean> {
 
 /**
  * Для выдачи get_tasks: названия родителей из той же выдачи и счёт подзадач у родителей.
- * Считаем только подзадачи, видимые спрашивающему (тот же предикат, что в списках): иначе число
- * рассказывало бы о чужих личных задачах.
  */
-async function subtaskContext(tasks: Task[], viewerId: number) {
+async function subtaskContext(tasks: Task[]) {
   const titleById = new Map(tasks.map((t) => [t.id, t.title]));
   const ids = tasks.filter((t) => !t.parent_id).map((t) => t.id);
   const progress = new Map<string, { done: number; total: number }>();
   if (ids.length) {
     const { data } = await supabase.from("tasks").select("parent_id, status")
-      .in("parent_id", ids).is("archived_at", null)
-      .or(`is_private.eq.false,owner_id.eq.${viewerId}`);
+      .in("parent_id", ids).is("archived_at", null);
     for (const k of (data ?? []) as Array<{ parent_id: string; status: string }>) {
       const p = progress.get(k.parent_id) ?? { done: 0, total: 0 };
       const closed = k.status === "done" || k.status === "cancelled";
@@ -257,11 +255,10 @@ export async function toolAddTask(args: {
     }
   }
 
-  // Подзадача: живёт в проекте родителя и наследует его срок и приватность — как в вебе
-  // (TaskSubtasks.tsx). Личный родитель с общей подзадачей выставил бы кусок личного на доску.
+  // Подзадача: живёт в проекте родителя и наследует его срок — как в вебе (TaskSubtasks.tsx).
   let parent: Task | null = null;
   if (args.parent_task_id) {
-    const loaded = await loadParent(args.parent_task_id, args.requesting_user_id, groupId);
+    const loaded = await loadParent(args.parent_task_id, groupId);
     if (typeof loaded === "string") return loaded;
     const err = subtaskLinkError(loaded, null, { groupId, childHasKids: false });
     if (err) return err;
@@ -272,7 +269,7 @@ export async function toolAddTask(args: {
     project_id = loaded.project_id;
   }
 
-  // Смарт-метки: только на личной задаче владельца. Наличие меток делает задачу личной.
+  // Смарт-метки — личные списки создающего; ставятся на любую задачу (решение 2026-10-09).
   const labelIds = args.labels?.length && args.requesting_user_id
     ? await resolveLabelIds(args.requesting_user_id, args.labels, true)
     : [];
@@ -310,12 +307,6 @@ export async function toolAddTask(args: {
       confirmed: args.confirmed ?? true,
       created_by_telegram_id: args.requesting_user_id ?? null,
       label_ids: labelIds,
-      is_private: labelIds.length > 0 || parent?.is_private ? true : undefined,
-      owner_id: labelIds.length > 0
-        ? (args.requesting_user_id ?? null)
-        : parent?.is_private
-        ? parent.owner_id
-        : undefined,
       project_id,
       parent_id: parent?.id ?? null,
       // Подзадача всегда в дереве проекта (как форсит swarm-api); без проекта дерева нет.
@@ -363,15 +354,8 @@ export async function toolUpdateTask(args: {
   const task = await getTask(args.id);
   const groupId = await resolveGroupId(args.requesting_user_id);
   if (!groupId) return `Задача ${args.id} не найдена.`;
-  // Воркспейс + приватность одним гардом (issue #45): раньше проверялся только воркспейс, и
-  // вызов без `labels` правил ЧУЖУЮ личную задачу. Отказ неотличим от «не найдена».
-  const denied = taskAccessError(
-    args.id,
-    task,
-    args.requesting_user_id,
-    args.requesting_user_id === ADMIN_USER_ID,
-    groupId ?? null,
-  );
+  // Воркспейс — общим гардом (issue #45). Отказ неотличим от «не найдена».
+  const denied = taskAccessError(args.id, task, groupId);
   if (denied) return denied;
   // Сужение для компилятора: гард уже вернул «не найдена» и при task=null, и при groupId=null
   // (тогда task.group_id !== null). Строка недостижима, но без неё TS не знает о сужении.
@@ -398,12 +382,12 @@ export async function toolUpdateTask(args: {
     }
   }
 
-  // Смарт-метки: только на своей личной задаче.
+  // Смарт-метки: человек меняет только СВОИ метки, чужие на задаче сохраняются (решение 2026-10-09).
   if (args.labels !== undefined) {
-    if (!(task.is_private && task.owner_id === args.requesting_user_id)) {
-      return "Метки доступны только на твоих личных задачах.";
-    }
-    fields.label_ids = await resolveLabelIds(args.requesting_user_id, args.labels, true);
+    const own = await resolveLabelIds(args.requesting_user_id, args.labels, true);
+    const merged = await mergeOwnLabels(supabase, args.requesting_user_id, task.label_ids ?? [], own);
+    if (!merged.ok) return `Ошибка: ${merged.error}`;
+    fields.label_ids = merged.value;
   }
 
   if (args.title !== undefined) fields.title = args.title;
@@ -474,7 +458,7 @@ export async function toolUpdateTask(args: {
     if (!args.parent_task_id) {
       fields.parent_id = null;
     } else {
-      const loaded = await loadParent(args.parent_task_id, args.requesting_user_id, groupId);
+      const loaded = await loadParent(args.parent_task_id, groupId);
       if (typeof loaded === "string") return loaded;
       const effProject = "project_id" in fields ? (fields.project_id as string | null) : task.project_id;
       const err = subtaskLinkError(loaded, { ...task, project_id: effProject }, {
@@ -499,14 +483,7 @@ export async function toolDeleteTask(args: { id: string; requesting_user_id: num
   const task = await getTask(args.id);
   const groupId = await resolveGroupId(args.requesting_user_id);
   if (!groupId) return `Задача ${args.id} не найдена.`;
-  // Приватность не проверялась ВОВСЕ — участник воркспейса удалял чужую личную задачу (issue #45).
-  const denied = taskAccessError(
-    args.id,
-    task,
-    args.requesting_user_id,
-    args.requesting_user_id === ADMIN_USER_ID,
-    groupId ?? null,
-  );
+  const denied = taskAccessError(args.id, task, groupId);
   if (denied) return denied;
   if (!task) return `Задача ${args.id} не найдена.`; // сужение: гард уже отсёк null
   try {
@@ -561,14 +538,13 @@ export async function toolGetTasks(args: {
     labelIds: labelIds.length ? labelIds : undefined,
     projectId: projectMatch?.id,
     noProject: args.no_project === true,
-    viewerId: args.requesting_user_id,
     limit: GET_TASKS_LIMIT,
   }, groupId);
 
   if (!tasks.length) return "Задач не найдено.";
 
   const projectNames = visibleProjectNameById(projectRows, args.requesting_user_id);
-  const { titleById, progress } = await subtaskContext(tasks, args.requesting_user_id);
+  const { titleById, progress } = await subtaskContext(tasks);
   const lines = tasks.map((t) =>
     formatTaskLine({
       ...t,
@@ -605,11 +581,9 @@ export async function commentTaskGuard(
   const task = await getTask(taskId);
   const groupId = await resolveGroupId(requestingUserId);
   if (!groupId) return { ok: false, msg: `Задача ${taskId} не найдена.` };
-  // Приватную задачу видит только владелец — в MCP админ-байпас НЕ применяем (чистка в вебе),
-  // поэтому isAdmin=false намеренно. Тексты отказов сведены к одному «не найдена» (issue #45):
-  // раньше «задача приватная» и «не в твоём воркспейсе» отличались от «не найдена», и перебором
-  // id подтверждалось само существование чужой личной задачи.
-  const denied = taskAccessError(taskId, task, requestingUserId, requestingUserId === ADMIN_USER_ID, groupId ?? null);
+  // Доступ — воркспейс задачи. Отказ сведён к одному «не найдена» (issue #45): перебором id
+  // не подтверждается существование задачи чужого воркспейса.
+  const denied = taskAccessError(taskId, task, groupId);
   if (denied || !task) return { ok: false, msg: denied ?? `Задача ${taskId} не найдена.` };
   return { ok: true, task };
 }
@@ -703,9 +677,9 @@ export async function toolDeleteTaskComment(
 const RECENT_DEFAULT_WINDOW_H = 24; // since не задан — сутки назад: дайджест ежедневный
 const RECENT_DEFAULT_LIMIT = 50;
 const RECENT_MAX_LIMIT = 200;
-// Читаем с запасом к лимиту выдачи: приватные задачи отсеиваются УЖЕ В КОДЕ (RLS не механизм
-// авторизации, всё ходит service_role), и без запаса один болтливый чужой тред съедал бы всю
-// выдачу — человек получил бы пустой дайджест при живых апдейтах по своим задачам.
+// Читаем с запасом к лимиту выдачи: задачи чужих воркспейсов отсеиваются УЖЕ В КОДЕ (RLS не
+// механизм авторизации, всё ходит service_role), и без запаса болтливый чужой воркспейс съедал бы
+// всю выдачу — человек получил бы пустой дайджест при живых апдейтах по своим задачам.
 const RECENT_READ_MULTIPLIER = 4;
 const RECENT_READ_CAP = 500;
 
@@ -745,21 +719,18 @@ export async function toolGetRecentComments(
   >;
   if (!raw.length) return formatRecentComments([], { sinceISO });
 
-  // Видимость считаем тем же каноническим правилом, что и поштучное чтение (canViewTask +
-  // воркспейс). Оверсайт админа по задачам сохраняется осознанно — docs/decisions/2026-08-21-admin-visibility.md.
-  const isAdmin = args.requesting_user_id === ADMIN_USER_ID;
+  // Доступ считаем тем же каноническим правилом, что и поштучное чтение (воркспейс задачи).
   // archive-ok: журнал изменений: у архивной задачи тоже есть история, и «кто её убрал» — ровно то, что в нём ищут
   const { data: taskRows } = await supabase
-    .from("tasks").select("id, title, group_id, is_private, owner_id")
+    .from("tasks").select("id, title, group_id")
     .in("id", [...new Set(raw.map((r) => r.task_id))]);
   const titleById = new Map<string, string>();
   for (
     const t of (taskRows ?? []) as Array<
-      { id: string; title: string; group_id: string | null; is_private: boolean; owner_id: number | null }
+      { id: string; title: string; group_id: string | null }
     >
   ) {
-    if (t.group_id !== groupId) continue;
-    if (!canViewTask(t, args.requesting_user_id, isAdmin)) continue;
+    if (!canAccessTask(t, groupId)) continue;
     titleById.set(t.id, t.title);
   }
 
@@ -811,7 +782,7 @@ export const TASK_TOOL_DEFINITIONS = [
         labels: {
           type: "array",
           items: { type: "string" },
-          description: "Имена личных смарт-меток (папок). Задача с метками становится личной.",
+          description: "Имена твоих личных смарт-меток (списков); ставятся на любую задачу.",
         },
         project_name: {
           type: "string",
@@ -856,7 +827,7 @@ export const TASK_TOOL_DEFINITIONS = [
         parent_task_id: {
           type: "string",
           description:
-            "id родительской задачи — создать ПОДЗАДАЧУ. Вложенность одна: родитель — задача верхнего уровня. Подзадача берёт проект, срок (если не задан) и приватность родителя",
+            "id родительской задачи — создать ПОДЗАДАЧУ. Вложенность одна: родитель — задача верхнего уровня. Подзадача берёт проект и срок (если не задан) родителя",
         },
         confirmed: {
           type: "boolean",
@@ -888,7 +859,8 @@ export const TASK_TOOL_DEFINITIONS = [
         labels: {
           type: "array",
           items: { type: "string" },
-          description: "Имена личных смарт-меток. Работает только на твоих личных задачах.",
+          description:
+            "Имена твоих личных смарт-меток (списков) — ставятся на любую задачу; меняются только твои метки, чужие на задаче сохраняются.",
         },
         task_role: {
           type: "string",
@@ -969,7 +941,7 @@ export const PROJECT_TOOL_DEFINITIONS = [
       properties: {
         requesting_user_id: {
           type: "number",
-          description: "Твой Telegram user ID — обязателен для фильтрации по воркспейсу и приватности",
+          description: "Твой Telegram user ID — обязателен для фильтрации по воркспейсу и приватности проектов",
         },
       },
       required: ["requesting_user_id"],
@@ -1009,7 +981,7 @@ export const COMMENT_TOOL_DEFINITIONS = [
         },
         requesting_user_id: {
           type: "number",
-          description: "Твой Telegram user ID — обязателен для фильтрации по воркспейсу и приватности",
+          description: "Твой Telegram user ID — обязателен для фильтрации по воркспейсу",
         },
       },
       required: ["requesting_user_id"],

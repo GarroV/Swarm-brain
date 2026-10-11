@@ -11,9 +11,8 @@ import { useDt, useRoyNav } from "@/components/roy/nav";
 import { isRawId } from "@/lib/displayFormat";
 
 // «Команда» десктопа по стенду (docs/redesign/stand/js/screens-system.js → screenTeam): таблица
-// Участник · Роль · Рынок · Telegram · Открыто · Просрочено. Счёт задач — по тем задачам, что
-// видны смотрящему (GET /tasks уже отфильтрован правилом видимости), поэтому у коллеги с личными
-// задачами число может быть меньше настоящего. Вкладка «Воркспейсы» стенда — в «Админе».
+// Участник · Роль · Рынок · Telegram · Открыто · Просрочено. Счёт задач — по всем задачам
+// воркспейса из GET /tasks (приватных задач нет с 09.10.2026). Вкладка «Воркспейсы» стенда — в «Админе».
 
 const ROLE_LABELS: Record<string, [string, string]> = {
   marketing: ["Маркетинг", "Marketing"], bd: ["BD", "BD"], rnd: ["R&D", "R&D"],

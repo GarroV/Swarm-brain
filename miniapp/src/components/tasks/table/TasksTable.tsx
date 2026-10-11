@@ -5,6 +5,7 @@ import type { Project, Task, User } from "@/types";
 import { fetchConfig, fetchProjects, fetchUsers, type TaskLabel } from "@/lib/api";
 import { countryName } from "@/lib/countries";
 import { groupByDue, groupByPerson, type TaskSection } from "@/lib/taskTable";
+import { isAssignedTo } from "@/lib/smartLists";
 import { nestSubtasks, progressByParent } from "@/lib/subtasks";
 import { RoyIcon } from "@/components/roy/icons";
 import { useDt } from "@/components/roy/nav";
@@ -57,7 +58,7 @@ export function TasksTable() {
   const scope = r.activeLabelId ? r.visibleByLabel : r.visible;
   const list = useMemo(
     () => scope.filter((t) =>
-      (assignee == null || (t.assignee_telegram_ids ?? []).includes(assignee)) &&
+      (assignee == null || isAssignedTo(t, assignee)) &&
       (market == null || t.country === market)),
     [scope, assignee, market],
   );

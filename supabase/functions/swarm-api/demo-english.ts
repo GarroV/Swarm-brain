@@ -17,14 +17,13 @@ const EN: Record<string, string> = {
   "Нечего менять": "Nothing to change",
   "Неизвестная метка": "Unknown label",
   "Название метки обязательно": "Label name is required",
-  "Метки доступны только на личных задачах": "Labels are available on personal tasks only",
   "Спринт принят, состав не меняется": "The sprint is accepted; its scope no longer changes",
   "Уже опубликовано — правьте запись в базе": "Already published — edit the entry in the knowledge base",
   "Уже в базе — удаляйте через раздел «База»": "Already in the knowledge base — delete it there",
   "У записи нет транскрипта встречи — спросить не по чему": "This entry has no meeting transcript to ask about",
   "Не удалось получить ответ — попробуй ещё раз": "Could not get an answer — try again",
-  "Убрать файл может тот, кто его прикрепил, или владелец задачи":
-    "Only the uploader or the task owner can remove this file",
+  "Убрать файл может тот, кто его прикрепил, или создатель задачи":
+    "Only the uploader or the task creator can remove this file",
   "Файл загрузился не целиком — попробуйте ещё раз": "The file did not upload completely — try again",
   "Хранилище файлов не настроено": "File storage is not configured",
   "Хранилище файлов сейчас недоступно": "File storage is unavailable right now",

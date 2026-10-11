@@ -74,7 +74,6 @@ export async function handleNotificationRoutes(
   req: Request,
   routePath: string,
   telegramId: number,
-  isAdmin: boolean,
   origin: string,
   resolveNames: (ids: number[]) => Promise<Map<number, string>>,
 ): Promise<Response | null> {
@@ -87,7 +86,6 @@ export async function handleNotificationRoutes(
     const feed = await loadNotificationFeed(
       supabase,
       telegramId,
-      isAdmin,
       feedLimit(new URL(req.url).searchParams.get("limit")),
     );
     if (!feed.ok) {

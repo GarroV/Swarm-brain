@@ -120,7 +120,7 @@ async function withMember(
 // ── Пространства ──────────────────────────────────────────────────────────────
 
 /** Лента пространства (#485): правки и комментарии задач его спринтов, состав, сверка, старт и
- *  приёмка. Видимость — та же, что в вебе: чужая приватная задача в ленту не попадает. */
+ *  приёмка. Видит любой участник воркспейса. */
 export function toolGetSprintJournal(args: Args): Promise<string> {
   return withMember(args, async (m) => {
     const space = await loadSpace(m.groupId, args.space);
@@ -130,7 +130,6 @@ export function toolGetSprintJournal(args: Args): Promise<string> {
     const result = await loadSpaceJournal(
       space.id,
       m.groupId,
-      m.userId,
       days,
       (ids) => resolvePersonNames(supabase, ids),
     );
@@ -218,11 +217,7 @@ export function toolGetSprint(args: Args): Promise<string> {
   return withMember(args, async (m) => {
     const cycle = await loadCycle(m.groupId, args.sprint_id);
     if (typeof cycle === "string") return cycle;
-    // Состав — глазами спрашивающего: чужая приватная задача остаётся строкой без содержимого.
-    const { items, withdrawn } = await listComposition(cycle.id, m.groupId, {
-      id: String(m.userId),
-      isAdmin: m.isAdmin,
-    });
+    const { items, withdrawn } = await listComposition(cycle.id, m.groupId);
     const space = (await spaces(m.groupId)).find((s) => s.id === cycle.tab_id);
     // Снятые из идущего спринта (#576) в составе не показываются, но в итогах остаются:
     // плановые из них — невыполненной частью плана.
@@ -376,7 +371,7 @@ export function toolAddSprintTasks(args: Args): Promise<string> {
     const added = await addItems(cycle.id, ids, m.groupId, String(m.userId));
     const skipped = ids.length - added;
     const kind = cycle.status === "draft" ? "в план" : "сверх плана (спринт уже идёт)";
-    const why = skipped ? ` Пропущено ${skipped}: уже в составе, личные или не из твоего воркспейса.` : "";
+    const why = skipped ? ` Пропущено ${skipped}: уже в составе или не из твоего воркспейса.` : "";
     return `✅ Добавлено ${added} ${kind}.${why}`;
   });
 }
@@ -428,8 +423,7 @@ export function toolMarkSprintTask(args: Args): Promise<string> {
         patch,
         String(m.userId),
       );
-      // Название не печатаем: updateItem отдаёт строку не глазами спрашивающего, и у чужой
-      // личной задачи ответ раскрыл бы её заголовок.
+      // Короткое подтверждение: состав целиком — get_sprint.
       return item ? "✅ Отметка сохранена." : "Задачи нет в составе.";
     } catch (e) {
       if (e instanceof ItemLockedError) return `Не сохранено: ${e.message}`;
@@ -517,7 +511,7 @@ export const SPRINT_TOOL_DEFINITIONS = [
   ),
   tool(
     "get_sprint_journal",
-    "Журнал пространства спринтов: правки и комментарии задач его спринтов, состав, сверка, старт и приёмка — новые сверху. Отвечает на «что было за неделю по спринту». Чужие личные задачи в ленту не попадают.",
+    "Журнал пространства спринтов: правки и комментарии задач его спринтов, состав, сверка, старт и приёмка — новые сверху. Отвечает на «что было за неделю по спринту».",
     {
       space: SPACE,
       days: { type: "string", enum: ["1", "3", "7", "all"], description: "Период в днях или all; по умолчанию 7" },
@@ -526,7 +520,7 @@ export const SPRINT_TOOL_DEFINITIONS = [
   ),
   tool(
     "get_sprint",
-    "Спринт целиком: этап, даты, план/факт, сверка и состав по проектам с task_id. Чужие личные задачи — строкой без содержимого.",
+    "Спринт целиком: этап, даты, план/факт, сверка и состав по проектам с task_id.",
     { sprint_id: SPRINT_ID },
     ["sprint_id"],
   ),

@@ -10,7 +10,6 @@
 //   по просрочке нет;
 // • получатель — исполнители; у общей задачи без исполнителя — тот, кто поставил пинг.
 
-import { canViewTask } from "../../_shared/tasks/access.ts";
 import { TASK_TZ, todayInTz } from "../../_shared/tasks/recurrence.ts";
 import { addDays } from "../../_shared/tasks/due.ts";
 import { isClosedStatus } from "../../_shared/tasks/statuses.ts";
@@ -28,11 +27,9 @@ export interface PingRow {
   remind_date: string | null; // YYYY-MM-DD — день, когда напомнить
   due_date: string | null; // YYYY-MM-DD — срок, показываем в напоминании
   status: string;
-  is_private: boolean;
   assignee_telegram_ids: number[] | null;
   created_by_telegram_id: number | null;
   remind_set_by: number | null; // кто поставил пинг (может быть не создатель задачи)
-  owner_id: number | null;
   /** Кому пинг уже дошёл на прошлых тиках (#575): повторно им не шлём. */
   ping_delivered_to?: number[] | null;
   /** Задача в архиве (#575) — пинг не шлём, хотя крон её и так отсекает запросом. */
@@ -60,9 +57,7 @@ export function isPingDue(row: PingRow, today: string): boolean {
 
 /**
  * Кому уходит пинг: исполнителям задачи; если исполнителя нет (общая задача) — тому, кто
- * поставил пинг, а если это неизвестно — создателю задачи. Приватную задачу видит только
- * владелец, поэтому круг дополнительно режется `canViewTask` (без админского оверсайта:
- * пинг — это «твоя задача ждёт», а не поток уведомлений о чужих личных делах).
+ * поставил пинг, а если это неизвестно — создателю задачи.
  */
 export function pingRecipients(row: PingRow): number[] {
   const assignees = (row.assignee_telegram_ids ?? []).filter((id): id is number => !!id);
@@ -73,15 +68,9 @@ export function pingRecipients(row: PingRow): number[] {
   for (const id of candidates) {
     if (!id || seen.has(id)) continue;
     seen.add(id);
-    if (!canViewTask(row, id, false)) continue;
     out.push(id);
   }
-  // Демо-аккаунтам писать некуда (#675). Фильтр после схлопывания приватной: владелец-демо тоже
-  // не получатель, и задача демо гасится крону как «некому отправить».
-  // Приватную задачу видит только владелец. Если исполнитель ей не владеет (задачу закрыли
-  // после назначения), круг схлопывается в ноль — и пинг ушёл бы в никуда, а задача осталась
-  // бы в выборке крона навсегда. Владелец — последний рубеж: он эту задачу точно видит.
-  if (!out.length && row.is_private && row.owner_id) out.push(row.owner_id);
+  // Демо-аккаунтам писать некуда (#675): задача демо гасится крону как «некому отправить».
   return out.filter((id) => !isDemoAccount(id));
 }
 

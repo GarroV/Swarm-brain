@@ -103,7 +103,6 @@ export function formatCycles(
 }
 
 function itemLine(i: SprintItem): string {
-  if (i.hidden) return `  • 🔒 личная задача (скрыта)`;
   const mark = isClosedStatus(i.status) ? "[x]" : "[ ]";
   const who = i.assignees.length ? ` — ${i.assignees.join(", ")}` : "";
   const due = i.due_date ? `, срок ${i.due_date}` : "";
@@ -137,7 +136,7 @@ export function formatSprint(
 
   const byProject = new Map<string, SprintItem[]>();
   for (const i of items) {
-    const key = i.hidden ? "—" : i.project ?? "Без проекта";
+    const key = i.project ?? "Без проекта";
     byProject.set(key, [...(byProject.get(key) ?? []), i]);
   }
   const body = [...byProject.entries()].map(([p, list]) => `${p}:\n${list.map(itemLine).join("\n")}`);

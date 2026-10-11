@@ -4,6 +4,11 @@ export type Task = {
   description: string | null;
   assignees: string[];
   assignee_telegram_ids: number[];
+  // Справочник людей (#874): исполнитель без аккаунта и соисполнители — ссылки на people.
+  // coassignee_telegram_ids — производная для «Мои задачи», пишет только триггер базы.
+  assignee_person_id?: string | null;
+  coassignee_person_ids?: string[];
+  coassignee_telegram_ids?: number[];
   due_date: string | null;
   // Пинг — ручное напоминание, независимое от срока (см. swarm-bot/handlers/task-pings.ts).
   // `reminded_at` NOT NULL = пинг уже сгорел; перенос `remind_date` его снова взводит (API).
@@ -24,8 +29,6 @@ export type Task = {
   confirmed: boolean;
   created_by_telegram_id: number | null;
   // Модуль задач (Рой):
-  is_private: boolean;
-  owner_id: number | null;
   start_date: string | null;
   timeline_position: number | null;
   sprint_id: string | null;
@@ -54,6 +57,8 @@ export type TaskInput = {
   description?: string | null;
   assignees?: string[];
   assignee_telegram_ids?: number[];
+  assignee_person_id?: string | null;
+  coassignee_person_ids?: string[];
   due_date?: string | null;
   remind_date?: string | null;
   reminded_at?: string | null;
@@ -69,8 +74,6 @@ export type TaskInput = {
   confirmed?: boolean;
   created_by_telegram_id?: number | null;
   // Модуль задач (Рой):
-  is_private?: boolean;
-  owner_id?: number | null;
   start_date?: string | null;
   timeline_position?: number | null;
   sprint_id?: string | null;

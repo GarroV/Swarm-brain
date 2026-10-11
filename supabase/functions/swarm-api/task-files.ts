@@ -1,6 +1,5 @@
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { json } from "./http.ts";
-import { canMutateTask, canViewTask } from "../_shared/tasks/access.ts";
 import { importSigningKey, signFileToken } from "../_shared/files-token.ts";
 import {
   canRemoveTaskFile,
@@ -21,7 +20,7 @@ import { onlyLive } from "../_shared/tasks/live.ts";
 //   POST   /tasks/:id/files/:fid/complete   — подтвердить: сервис сверяет, что байты на месте
 //   GET    /tasks/:id/files/:fid/url        — ссылка на скачивание (10 минут)
 //   DELETE /tasks/:id/files/:fid            — убрать (архивация)
-// Доступ к файлу = доступ к задаче (`canViewTask`); 404 и на чужое, и на отсутствующее.
+// Доступ к файлу = доступ к задаче (её воркспейс); 404 и на чужое, и на отсутствующее.
 // Байты идут браузер ↔ MUSPELHEIM напрямую, мимо функции: функция только подписывает ссылку.
 
 const DOWNLOAD_TTL_SEC = 10 * 60;
@@ -43,8 +42,7 @@ const ERROR_TEXT: Record<NewFileError, string> = {
 type TaskRow = {
   id: string;
   group_id: string | null;
-  is_private: boolean;
-  owner_id: number | null;
+  created_by_telegram_id: number | null;
 };
 type FileRow = {
   id: string;
@@ -101,13 +99,10 @@ export async function handleTaskFileRoutes(
 
   const { data: taskData } = await onlyLive(
     supabase.from("tasks")
-      .select("id, group_id, is_private, owner_id"),
+      .select("id, group_id, created_by_telegram_id"),
   ).eq("id", m[1]).maybeSingle();
   const task = taskData as TaskRow | null;
-  if (
-    !task || task.group_id !== groupId ||
-    !canViewTask(task, telegramId, isAdmin)
-  ) {
+  if (!task || task.group_id !== groupId) {
     return json({ error: "Задача не найдена" }, 404, origin);
   }
   const limits = taskFileLimits((n) => Deno.env.get(n));
@@ -137,9 +132,6 @@ export async function handleTaskFileRoutes(
   }
 
   if (list && req.method === "POST") {
-    if (!canMutateTask(task, telegramId, isAdmin)) {
-      return json({ error: "Задача не найдена" }, 404, origin);
-    }
     if (!store) {
       return json({ error: "Хранилище файлов не настроено" }, 503, origin);
     }
@@ -292,14 +284,14 @@ export async function handleTaskFileRoutes(
   if (one && req.method === "DELETE") {
     if (
       !canRemoveTaskFile(
-        { uploadedBy: file.uploaded_by, taskOwnerId: task.owner_id },
+        { uploadedBy: file.uploaded_by, taskCreatorId: task.created_by_telegram_id },
         telegramId,
         isAdmin,
       )
     ) {
       return json(
         {
-          error: "Убрать файл может тот, кто его прикрепил, или владелец задачи",
+          error: "Убрать файл может тот, кто его прикрепил, или создатель задачи",
         },
         403,
         origin,
