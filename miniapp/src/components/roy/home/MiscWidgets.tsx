@@ -9,7 +9,7 @@ import { fmtEur, type SalesState } from "./useCountrySales";
 import { isDone, isOverdue } from "@/lib/smartLists";
 import { countryFlag } from "@/lib/countries";
 
-// Ближайшие задачи, доска стикеров, продажи и заглушка карт.
+// Ближайшие задачи, продажи и заглушка карт. Доска стикеров — StickerBoard.tsx.
 
 export const TOP_TASKS = 5;
 
@@ -42,51 +42,6 @@ export function TopTasksWidget({ data, onCreate }: { data: DashboardData; onCrea
           <button type="button" onClick={onCreate} className="font-medium text-primary hover:underline">{dt("+ задача", "+ task")}</button>
           <button type="button" onClick={() => openTasks("mine", "all")} className="font-medium text-primary hover:underline">{dt("Все →", "All →")}</button>
         </span>
-      </div>
-    </div>
-  );
-}
-
-type Sticker = { key: string; tone: string; kind: string; title: string; body: string; due: string; hot?: boolean; action: string; onClick?: () => void; sample?: boolean; pin?: boolean };
-
-const PAPER: Record<string, string> = {
-  yellow: "bg-[#FFE97A] text-[#3A3000]", pink: "bg-[#FFC9DA] text-[#4A1426]", blue: "bg-[#C7E0FF] text-[#0E2A4D]",
-  green: "bg-[#C9F0C4] text-[#173D14]", paper: "bg-[#FFFDF6] text-[#2A2A2A]",
-};
-
-export function BoardWidget({ data }: { data: DashboardData }) {
-  const dt = useDt();
-  const { setTab, openTasks } = useRoyNav();
-  const review = data.reviewCount + data.pendingMeetings;
-  const overdue = data.mine.filter((t) => isOverdue(t)).length;
-  const stickers: Sticker[] = [
-    { key: "okr", tone: "yellow", kind: dt("Задание · каждый месяц", "Task · monthly"), title: dt("Заполни OKR", "Fill in OKRs"), body: dt("Сентябрьские факты по ключевым результатам ещё не внесены.", "September key-result facts aren't in yet."), due: dt("до 10 окт", "by Oct 10"), hot: true, action: dt("Заполнить", "Fill in"), sample: true },
-    { key: "digest", tone: "pink", kind: dt("Задание · каждую неделю", "Task · weekly"), title: dt("Заполни дайджест", "Fill in the digest"), body: dt("Неделя 41 по твоим странам.", "Week 41 for your countries."), due: dt("пт 18:00", "Fri 18:00"), action: dt("Открыть", "Open"), sample: true },
-    ...(review > 0 ? [{ key: "review", tone: "blue", kind: dt("Задание · сейчас", "Task · now"), title: dt("Вычитай встречи", "Review meetings"), body: dt(`${review} в очереди на вычитку.`, `${review} waiting for review.`), due: dt(`${review} в очереди`, `${review} queued`), action: dt("Вычитать", "Review"), onClick: () => setTab("cal") }] : []),
-    ...(overdue > 0 ? [{ key: "overdue", tone: "green", kind: dt("Задание · задачи", "Task · tasks"), title: dt("Разбери просрочку", "Clear overdue"), body: dt(`${overdue} задач со сроком в прошлом.`, `${overdue} tasks are past due.`), due: dt("сегодня", "today"), hot: true, action: dt("Открыть", "Open"), onClick: () => openTasks("mine", "all") }] : []),
-    { key: "ann", tone: "paper", kind: dt("Объявление · Админ", "Notice · Admin"), title: dt("Новая норма", "New target"), body: dt("С 1 ноября собираемость инспекторских проверок — не ниже 90%.", "From Nov 1 inspector coverage must be at least 90%."), due: dt("до 1 ноя", "by Nov 1"), action: dt("Понятно", "Got it"), sample: true, pin: true },
-  ];
-  return (
-    <div className="rounded-[14px] border border-line bg-[repeating-linear-gradient(45deg,color-mix(in_srgb,var(--pri-med)_7%,var(--surface-2))_0_2px,var(--surface-2)_2px_9px)] p-4">
-      <div className="flex gap-4 overflow-x-auto pb-2 pt-2" style={{ scrollSnapType: "x mandatory" }}>
-        {stickers.map((s, i) => (
-          <article key={s.key} className={`relative flex min-h-[190px] w-[200px] shrink-0 flex-col gap-2 rounded-[3px] p-4 shadow-[0_8px_18px_rgba(0,0,0,.14)] transition-transform hover:-translate-y-0.5 hover:rotate-0 ${PAPER[s.tone]}`}
-            style={{ transform: `rotate(${[-1.5, 1.2, -0.8, 1, -1.2][i % 5]}deg)`, scrollSnapAlign: "start" }}>
-            {s.pin ? <i className="absolute left-1/2 top-[-6px] h-3.5 w-3.5 -translate-x-1/2 rounded-full bg-[#D03A3A] shadow" />
-              : <i className="absolute left-1/2 top-[-8px] h-4 w-16 -translate-x-1/2 rotate-[-2deg] bg-white/60" />}
-            <div className="font-bold uppercase opacity-60" style={{ fontSize: 10, letterSpacing: "0.1em" }}>{s.kind}</div>
-            <div className="font-bold leading-tight" style={{ fontSize: 19 }}>{s.title}</div>
-            <div className="flex-1 opacity-80" style={{ fontSize: 12.5, lineHeight: 1.4 }}>{s.body}</div>
-            <div className="flex items-center justify-between gap-2">
-              <span className={`rounded px-1.5 py-0.5 font-mono ${s.hot ? "bg-[#D03A3A] text-white" : "bg-black/10"}`} style={{ fontSize: 10.5 }}>{s.due}</span>
-              <button type="button" onClick={s.onClick} className="rounded-[7px] bg-[#1B1B1B] px-2.5 py-1 font-semibold text-white hover:bg-black" style={{ fontSize: 11.5 }}>{s.action}</button>
-            </div>
-            {s.sample && <span className="absolute bottom-1 right-2 opacity-40" style={{ fontSize: 9 }}>{dt("пример", "sample")}</span>}
-          </article>
-        ))}
-        <button type="button" className="grid w-[150px] shrink-0 place-items-center rounded-[6px] border-2 border-dashed border-line-2 text-ink-mute hover:border-accent-line hover:text-primary" style={{ fontSize: 12.5 }}>
-          <span><b className="block text-center" style={{ fontSize: 22 }}>+</b>{dt("Объявление", "Notice")}<br /><small>{dt("видят все", "visible to all")}</small></span>
-        </button>
       </div>
     </div>
   );

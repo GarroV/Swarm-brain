@@ -31,6 +31,8 @@ import type {
   TaskLink,
   Person,
   User,
+  BoardSticker,
+  NewSticker,
 } from "@/types";
 import { createRequestCache, REQUEST_CACHE_TTL_MS } from "./request-cache";
 import { normalizeProposedTasks, type ProposedTask } from "./proposedTasks";
@@ -908,6 +910,82 @@ function mockPeople(): Person[] {
 export async function createPerson(name: string, email: string | null): Promise<Person> {
   if (DEV_MODE) return { id: `mock-${Date.now()}`, name, email, telegram_id: null };
   return apiFetch<Person>("/people", { method: "POST", body: JSON.stringify({ name, email }) });
+}
+
+// ── Стикеры-задания на главной (GET/POST /stickers, ack, archive) ───────────────
+// Создание стикера никому ничего не отправляет: адресаты видят его на главной, у задания
+// появляется задача. Создавать и архивировать — админ; сервер проверяет, мок — нет.
+let MOCK_STICKERS: BoardSticker[] | null = null;
+
+function mockStickers(): BoardSticker[] {
+  if (!MOCK_STICKERS) {
+    const tomorrow = new Date(Date.now() + 20 * 3_600_000).toISOString();
+    // Первый адресат — сам разработчик: на нём видны «мои» стикеры и кнопка «Понятно».
+    const people = mockPeople().slice(0, 5).map((p, i): Person =>
+      i === 0 ? { ...p, name: MOCK_ME.name, telegram_id: MOCK_ME.telegram_id } : p);
+    const addressee = (p: Person, done: boolean) => ({
+      person_id: p.id, name: p.name, telegram_id: p.telegram_id, done,
+      acked_at: done ? new Date().toISOString() : null, task_id: null, task_due: null,
+    });
+    MOCK_STICKERS = [
+      {
+        id: "mock-s1", kind: "task", title: "Fill in the weekly digest", body: "Week 41 for your countries.",
+        due_at: tomorrow, tone: "pink", link: null, created_by: 1, created_at: new Date().toISOString(),
+        mine: true, addressees: people.map((p, i) => addressee(p, i === 1)),
+      },
+      {
+        id: "mock-s2", kind: "notice", title: "New target", body: "From Nov 1 inspector coverage must be at least 90%.",
+        due_at: null, tone: "paper", link: "https://example.com/target", created_by: 1, created_at: new Date().toISOString(),
+        mine: true, addressees: people.map((p, i) => addressee(p, i === 2)),
+      },
+    ];
+  }
+  return MOCK_STICKERS;
+}
+
+export async function fetchStickers(): Promise<BoardSticker[]> {
+  if (DEV_MODE) return mockStickers();
+  return apiFetch<BoardSticker[]>("/stickers");
+}
+
+export async function createSticker(input: NewSticker): Promise<BoardSticker> {
+  if (DEV_MODE) {
+    const everyone = mockPeople().filter((p) => p.telegram_id != null);
+    const chosen = input.all ? everyone : mockPeople().filter((p) => input.person_ids.includes(p.id));
+    const s: BoardSticker = {
+      id: `mock-${Date.now()}`, kind: input.kind, title: input.title, body: input.body, due_at: input.due_at,
+      tone: input.tone, link: input.link, created_by: MOCK_ME.telegram_id, created_at: new Date().toISOString(),
+      mine: chosen.some((p) => p.telegram_id === MOCK_ME.telegram_id),
+      addressees: chosen.map((p) => ({
+        person_id: p.id, name: p.name, telegram_id: p.telegram_id, done: false, acked_at: null, task_id: null, task_due: null,
+      })),
+    };
+    MOCK_STICKERS = [s, ...mockStickers()];
+    return s;
+  }
+  return apiFetch<BoardSticker>("/stickers", { method: "POST", body: JSON.stringify(input) });
+}
+
+/** «Понятно» на объявлении: отмечает вызывающего среди адресатов. */
+export async function ackSticker(id: string): Promise<void> {
+  if (DEV_MODE) {
+    MOCK_STICKERS = mockStickers().map((s) => s.id !== id ? s : {
+      ...s,
+      addressees: s.addressees.map((a) => a.telegram_id === MOCK_ME.telegram_id
+        ? { ...a, done: true, acked_at: new Date().toISOString() } : a),
+    });
+    return;
+  }
+  await apiFetch<unknown>(`/stickers/${id}/ack`, { method: "POST" });
+}
+
+/** В архив (админ). Задачи адресатов остаются. */
+export async function archiveSticker(id: string): Promise<void> {
+  if (DEV_MODE) {
+    MOCK_STICKERS = mockStickers().filter((s) => s.id !== id);
+    return;
+  }
+  await apiFetch<unknown>(`/stickers/${id}/archive`, { method: "POST" });
 }
 
 // ── Статистика по людям (GET /stats/people) ─────────────────────────────────
