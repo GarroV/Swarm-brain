@@ -1625,7 +1625,7 @@ afconvert — лежат в `meeting-ingest/testdata/` и меряются та�
 |-----------|---------------------------|-------------|-----------|
 | `SUPABASE_URL` | все функции (через `_shared`) | да | URL проекта Supabase для клиента |
 | `SUPABASE_SERVICE_ROLE_KEY` | все функции (через `_shared`) | да | Service-role ключ; RLS обходится, фильтрация в коде |
-| `DECIMUS_API_URL` / `DECIMUS_API_TOKEN` | swarm-api | нет (без них `GET /quality` → 503) | API чтения Децимуса: баллы РС/РКО (GarroV/decimus#567); токен сервисный, только чтение |
+| `DECIMUS_API_URL` / `DECIMUS_API_TOKEN` | swarm-api | нет (без них `GET /quality` → 503) | API чтения Децимуса: баллы РС/РКО (GarroV/decimus#567); токен сервисный, только чтение (права `ratings:read`, `inspections:read`, decimus D388). Выпускается на площадке Децимуса (`tools/api_token.py issue swarm`), конвейером в секрет репозитория `DECIMUS_API_TOKEN`, оттуда в Edge Functions кнопкой `decimus-secrets.yml` (сперва смоук 401/200, потом запись). Смена токена — тот же путь, затем `revoke` старого |
 | `OPENAI_API_KEY` | swarm-bot, swarm-mcp, swarm-api, meeting-claim, meeting-ingest, meeting-process, read-ai-webhook | да | OpenAI: chat (GPT-4o-mini), embeddings, Whisper-транскрибация |
 | `TELEGRAM_BOT_TOKEN` | swarm-bot, swarm-api, swarm-mcp, meeting-ingest, meeting-process, read-ai-webhook, meeting-notice, granola-poller (legacy) | да | Telegram Bot API: отправка сообщений/уведомлений; проверка подписи Login Widget (веб) и спящей Mini App initData (swarm-api) |
 | `TELEGRAM_API_BASE` | meeting-notice | нет, дефолт `https://api.telegram.org` | База Telegram Bot API. Подменяется только смоуком блока `notices` (`scripts/scriba-notices-smoke.ts`), чтобы прогон всех сценариев отказа не слал сообщений живым людям |
