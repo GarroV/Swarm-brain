@@ -1572,6 +1572,53 @@ export async function fetchQuality(kind: QualityKind): Promise<QualityData> {
   return apiFetch<QualityData>(`/quality?kind=${kind}`);
 }
 
+export interface MapsStat { avg: number | null; reviews: number; branches: number; delta: number | null }
+export interface MapsUnitStat { avg: number | null; reviews: number; prev_avg: number | null }
+export interface MapsCountry { cc: string; as_of: string | null; maps: { google: MapsStat; yandex: MapsStat } }
+export interface MapsUnit {
+  id: string; name: string; cc: string; city: string | null;
+  maps: { google: MapsUnitStat | null; yandex: MapsUnitStat | null };
+}
+export interface MapsData {
+  on: string; compare: string | null; countries: MapsCountry[]; units: MapsUnit[]; loaded_at: string | null;
+}
+
+/** Рейтинги Google/Яндекс по странам и пиццериям: срез на сегодня против «30 дней назад». Источник — Децимус, Swarm только читает. */
+export async function fetchMapsRatings(): Promise<MapsData> {
+  if (DEV_MODE) return mockMaps();
+  return apiFetch<MapsData>("/quality/maps");
+}
+
+// Синтетика для DEV_MODE: страны и пиццерии те же, что в mockQuality; оценки детерминированы от индекса.
+function mockMaps(): MapsData {
+  const names: [string, string][] = [
+    ["BG", "Demo Sofia-1"], ["BG", "Demo Varna-1"], ["RS", "Demo Novi Sad-1"], ["RS", "Demo Belgrade-2"],
+    ["PL", "Demo Krakow-1"], ["NG", "Demo Lagos-1"], ["NG", "Demo Abuja-3"], ["KZ", "Demo Almaty-1"], ["KZ", "Demo Astana-2"],
+  ];
+  const units: MapsUnit[] = names.map(([cc, name], u) => {
+    const avg = Math.round((3.4 + ((u * 7) % 15) / 10) * 100) / 100;
+    return {
+      id: String(u + 1).padStart(32, "d"), name, cc, city: null,
+      maps: {
+        google: { avg, reviews: 80 + u * 41, prev_avg: Math.round((avg + (u % 3 === 0 ? 0.12 : -0.05)) * 100) / 100 },
+        yandex: cc === "KZ" || cc === "RS" ? { avg: Math.min(5, avg + 0.2), reviews: 20 + u * 9, prev_avg: Math.min(5, avg + 0.15) } : null,
+      },
+    };
+  });
+  const countries: MapsCountry[] = ["BG", "RS", "PL", "NG", "KZ"].map((cc) => {
+    const list = units.filter((x) => x.cc === cc);
+    const stat = (k: "google" | "yandex"): MapsStat => {
+      const rows = list.map((x) => x.maps[k]).filter((m): m is MapsUnitStat => !!m && m.avg != null);
+      const reviews = rows.reduce((a, m) => a + m.reviews, 0);
+      const avg = reviews ? rows.reduce((a, m) => a + (m.avg as number) * m.reviews, 0) / reviews : null;
+      const prev = reviews ? rows.reduce((a, m) => a + (m.prev_avg ?? m.avg as number) * m.reviews, 0) / reviews : null;
+      return { avg: avg == null ? null : Math.round(avg * 100) / 100, reviews, branches: list.length, delta: avg == null || prev == null ? null : Math.round((avg - prev) * 100) / 100 };
+    };
+    return { cc, as_of: "2026-10-10", maps: { google: stat("google"), yandex: stat("yandex") } };
+  });
+  return { on: "2026-10-11", compare: "2026-09-11", countries, units, loaded_at: "2026-10-11T03:10:00Z" };
+}
+
 // Синтетика для DEV_MODE: выдуманные пиццерии в четырёх странах, баллы детерминированы от индекса.
 function mockQuality(kind: QualityKind): QualityData {
   const iso = (d: Date) => d.toISOString().slice(0, 10);

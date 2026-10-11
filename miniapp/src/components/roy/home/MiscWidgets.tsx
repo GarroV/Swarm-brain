@@ -9,7 +9,7 @@ import { fmtEur, type SalesState } from "./useCountrySales";
 import { isDone, isOverdue } from "@/lib/smartLists";
 import { countryFlag } from "@/lib/countries";
 
-// Ближайшие задачи, продажи и заглушка карт. Доска стикеров — StickerBoard.tsx.
+// Ближайшие задачи и продажи. Доска стикеров — StickerBoard.tsx.
 
 export const TOP_TASKS = 5;
 
@@ -71,29 +71,6 @@ export function SalesWidget({ codes, sales }: { codes: string[]; sales: SalesSta
           </div>
         </>
       )}
-    </div>
-  );
-}
-
-export function MapsSoonWidget() {
-  const dt = useDt();
-  return (
-    <div className="grid gap-4 rounded-[12px] border border-dashed border-line-2 bg-surface p-4 min-[1300px]:grid-cols-[1.4fr_1fr]">
-      <div style={{ fontSize: 13, lineHeight: 1.5 }}>
-        <b className="text-ink">{dt("После подключения Pointer здесь появятся:", "Once Pointer is connected you'll see:")}</b>
-        <ul className="mt-1.5 list-disc pl-5 text-ink-soft">
-          <li>{dt("рейтинг пиццерий в Google и Яндексе по месяцам;", "pizzeria ratings on Google and Yandex by month;")}</li>
-          <li>{dt("свежие негативные отзывы с пометкой «без ответа»;", "fresh negative reviews flagged “no reply”;")}</li>
-          <li>{dt("колонка «Карты ★» в таблице пиццерий.", "the “Maps ★” column in the pizzeria table.")}</li>
-        </ul>
-      </div>
-      <div className="flex flex-col justify-center gap-2 opacity-40 grayscale" aria-hidden="true">
-        {[70, 55, 80].map((w, i) => (
-          <div key={w} className="flex items-center gap-2 text-[#E8A400]" style={{ fontSize: 12 }}>
-            <span>{["★★★★☆", "★★☆☆☆", "★★★☆☆"][i]}</span><i className="block h-2 rounded bg-line-2" style={{ width: `${w}%` }} />
-          </div>
-        ))}
-      </div>
     </div>
   );
 }
