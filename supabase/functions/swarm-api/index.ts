@@ -144,6 +144,7 @@ import { handleSpaceJournalRoutes } from "./space-journal.ts";
 import { handleTaskArchiveRoutes } from "./task-archive.ts";
 import { handleMarketRoutes } from "./market.ts";
 import { handleQualityRoutes } from "./quality.ts";
+import { handleInspectionRoutes } from "./inspections.ts";
 import { handleTelegramLinkRoutes } from "./telegram-link.ts";
 import { handleModelUsageRoutes } from "./model-usage.ts";
 import { SUPERADMIN_TELEGRAM_ID } from "../_shared/users/admin-scope.ts";
@@ -1081,6 +1082,9 @@ async function routeRequest(req: Request): Promise<Response> {
   // Баллы РС и РКО по пиццериям (/quality?kind=) — весь воркспейс, страны по allowed_markets.
   const qualityResp = await handleQualityRoutes(req, routePath, groupId, isDemo, origin);
   if (qualityResp) return qualityResp;
+  // Проверки Децимуса (/inspections, /inspections/:id) — тот же прокси, страны по allowed_markets.
+  const inspectionsResp = await handleInspectionRoutes(req, routePath, groupId, isDemo, origin);
+  if (inspectionsResp) return inspectionsResp;
 
   // GET /tasks or POST /tasks
   if (routePath === "/tasks") {
