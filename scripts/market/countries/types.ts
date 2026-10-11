@@ -39,6 +39,11 @@ export type CountryConfig = {
   /** Объекты OSM, подписанные именем сети, но ей не принадлежащие: id («node/1») → причина.
    *  Сборщик их не берёт, а машинную точку на их месте удаляет. */
   osmExclude?: Record<string, string>;
+  /** Границы страны [запад, юг, восток, север] — для адаптера overture (фильтр по bbox). */
+  bbox?: [number, number, number, number];
+  /** Откуда карта точек: «osm» (Overpass, по умолчанию) или «overture» (Overture Maps —
+   *  для больших стран, где публичный Overpass не вытягивает). Сети вне chains находит overture. */
+  mapSource?: "osm" | "overture";
   chains: CountryChain[];
   companies: CountryCompany[];
   sources: ConfigSource[];

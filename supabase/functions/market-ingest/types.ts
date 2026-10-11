@@ -85,7 +85,12 @@ export type IngestPayload =
     } | null;
   }
   // rejected — объекты с именем сети, но не её (ложный brand, исключение в конфиге)
-  | Base & { source: MachineSource; points: OsmPoint[]; rejected?: OsmPoint[]; chains?: DiscoveredChain[] }
+  | Base & {
+    source: MachineSource;
+    points: OsmPoint[];
+    rejected?: OsmPoint[];
+    chains?: DiscoveredChain[];
+  }
   | Base & { source: "registry"; adapter: string; years: RegistryYear[] }
   // решения админа по токену сборщика (index.ts adminAction, scripts/market/admin.ts)
   | Base & { source: "snapshot"; snapshot: unknown }
