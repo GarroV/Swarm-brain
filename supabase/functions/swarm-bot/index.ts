@@ -993,13 +993,11 @@ Deno.serve(async (req: Request) => {
         onlyLive(supabase.from("tasks").select("*", { count: "exact", head: true })).eq("group_id", groupId).eq(
           "status",
           "open",
-        )
-          .eq("is_private", false),
+        ),
         onlyLive(supabase.from("tasks").select("*", { count: "exact", head: true })).eq("group_id", groupId).eq(
           "status",
           "open",
-        )
-          .eq("is_private", false).lt("due_date", new Date().toISOString().split("T")[0]),
+        ).lt("due_date", new Date().toISOString().split("T")[0]),
       ]);
 
       let statusMsg = `<b>📊 Статус Swarm Brain</b>\n\n`;

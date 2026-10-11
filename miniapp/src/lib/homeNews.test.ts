@@ -11,7 +11,7 @@ function task(over: Partial<Task> & { id: string }): Task {
     due_date: null, remind_date: null, reminded_at: null,
     country: null, priority: null, status: "open",
     created_at: "2026-09-01T10:00:00+00:00", updated_at: null,
-    meeting_id: null, created_by_name: null, is_private: false,
+    meeting_id: null, created_by_name: null,
     start_date: null, sprint_id: null, label_ids: [], project_id: null,
     project_linked: false, parent_id: null, tree_x: null, tree_y: null,
     recur_freq: null, recur_anchor_dom: null,
@@ -69,7 +69,7 @@ function item(over: Partial<SprintCycleItem> & { id: string }): SprintCycleItem 
     assignees: [], project_id: null, project: null, completed_at: null, due_date: null, frozen: false,
     check_status: null, check_note: null, check_at: null, check_by: null, to_carry: false,
     carry_reason: null, carry_count: 0, carried_manual: null, comment_count: 0, link_count: 0,
-    removed: false, removed_at: null, hidden: false,
+    removed: false, removed_at: null,
     ...over,
   } as SprintCycleItem;
 }

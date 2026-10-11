@@ -6,9 +6,10 @@
 // Что выброшено и почему (проверено grep'ом по всем экранам, кроме редактора):
 //   description  — 307 Б на строку, 27% веса; НЕ рендерится ни в одной строке списка;
 //   note, url    — в базе пусто (0 Б), клиент не читает;
-//   tags, task_role, created_by, group_id, confirmed, owner_id, updated_at,
+//   tags, task_role, created_by, group_id, confirmed, updated_at,
 //   timeline_position, remind_set_by — списками не читаются (только фильтры на сервере,
-//   оптимистичные литералы при создании и редактор).
+//   оптимистичные литералы при создании и редактор);
+//   is_private, owner_id — у задач больше не читаются вовсе (решение 2026-10-09, «личных» нет).
 //
 // ⚠️ Экран, который открывает задачу ИЗ ОБЪЕКТА СПИСКА, обязан до-загрузить её по id
 // (fetchTask). Иначе редактор покажет пустое описание и сохранит пустоту поверх реального
@@ -25,6 +26,10 @@ export const TASK_LIST_COLUMNS = [
   "country",
   "assignees",
   "assignee_telegram_ids",
+  // Справочник людей (#874): исполнитель без входа, соисполнители и их «мои задачи».
+  "assignee_person_id",
+  "coassignee_person_ids",
+  "coassignee_telegram_ids",
   "label_ids",
   "project_id",
   "project_linked",
@@ -33,7 +38,6 @@ export const TASK_LIST_COLUMNS = [
   "tree_x",
   "tree_y",
   "meeting_id",
-  "is_private",
   "created_at",
   // дата закрытия: «Сегодня + Готово» на экране задач и отчёты спринтов (#267)
   "completed_at",

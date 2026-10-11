@@ -171,8 +171,8 @@ function CheckChip({ status, note, unchecked }: {
   );
 }
 
-/** Строка задачи. Клик открывает карточку — но только у живой: у упоминания и у чужой
- *  приватной открывать нечего, и «кнопка, которая ничего не делает» хуже её отсутствия. */
+/** Строка задачи. Клик открывает карточку — но только у живой: у упоминания открывать нечего,
+ *  и «кнопка, которая ничего не делает» хуже её отсутствия. */
 export function SprintRow(
   { item, unchecked, showExtra, h, depth = 0, kids, parent, dnd }: {
     item: SprintCycleItem;
@@ -197,7 +197,7 @@ export function SprintRow(
   const saved = (needsNote ? item.check_note : item.carry_reason) ?? "";
   const [note, setNote] = useState<string | null>(null);
   const noteValue = note ?? saved;
-  const live = !item.removed && !item.hidden && !!item.task_id;
+  const live = !item.removed && !!item.task_id;
   const openable = !!h.onOpen && live;
   const late = !!item.due_date && !closed && isOverdue(item.due_date);
   const market = live ? h.marketOf?.(item) ?? null : null;
@@ -289,14 +289,12 @@ export function SprintRow(
             "min-w-0 truncate",
             item.removed
               ? "text-ink-mute line-through"
-              : item.hidden
-              ? "italic text-ink-mute"
               : closed
               ? "text-ink-mute line-through"
               : "text-ink",
           )}
         >
-          {item.hidden ? dt("Приватная задача", "Private task") : item.title}
+          {item.title}
         </span>
         {item.status === "cancelled" && !item.removed && (
           <span className="shrink-0 text-ink-mute" style={{ fontSize: 11.5 }}>

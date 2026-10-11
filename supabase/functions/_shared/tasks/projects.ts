@@ -39,14 +39,11 @@ export type ProjectWithCounts = Project & {
 };
 
 // Проекты воркспейса + счётчики: всего задач в проекте и из них в бэклоге (project_linked=false).
-// Счётчики обязаны уважать приватность задач (та же видимость, что у listTasks) — иначе
-// приватная задача чужого юзера, привязанная к проекту, невидима как узел (GET /tasks её
-// отфильтрует), но продолжает утекать числом в task_count/backlog_count карточки проекта.
+// Счётчики считают все живые задачи воркспейса: «личных» задач нет (решение 2026-10-09).
 export async function listProjects(
   groupId: string,
   opts: {
     viewerId?: number;
-    isAdmin?: boolean;
     /**
      * Включить группы спринта (`sprint_group`). Нужно только экрану спринта и MCP: по умолчанию
      * их нет нигде — доска «Проекты», селекторы и хаб не должны видеть временных групп.
@@ -54,8 +51,7 @@ export async function listProjects(
     withSprintGroups?: boolean;
   } = {},
 ): Promise<ProjectWithCounts[]> {
-  // В отличие от listTasks (predicate is_private/owner_id пушится в сам SQL-запрос + .limit(200)),
-  // тут тянем ВСЕ строки воркспейса и фильтруем приватность в JS ниже — осознанный трейдофф:
+  // Тянем ВСЕ строки воркспейса и фильтруем приватность проектов в JS ниже — осознанный трейдофф:
   // проектов в воркспейсе на порядки меньше, чем задач/записей (обычно единицы-десятки, не тысячи).
   // .limit(500) — просто защитный потолок, а не расчётный лимит: DB-гард глубины (migration
   // 20260812140000) ограничивает вложенность (2 уровня), но НЕ число строк на group_id.
@@ -84,22 +80,13 @@ export async function listProjects(
   list = shown.filter((p) => canViewProject(p, opts.viewerId, index));
   if (list.length === 0) return [];
 
-  // Считаем задачи по проектам одним запросом (без N+1), с ТОЙ ЖЕ visibility-фильтрацией,
-  // что применяет listTasks — включая админский оверсайт по задачам (решение 2026-08-21: чужие
-  // задачи админ видит, чужие проекты нет). Иначе цифра на карточке противоречит доске под ней:
-  // проверено на проде 2026-08-25 — у руководителя подпроект «Дмитрий Карпов» показывал 0 задач,
-  // а доска внутри рисовала 11. Безопасный дефолт без viewerId — как в listTasks: только публичные.
-  let tasksQuery = onlyLive(
+  // Считаем задачи по проектам одним запросом (без N+1).
+  const tasksQuery = onlyLive(
     supabase
       .from("tasks").select("project_id, project_linked"),
   )
     .eq("group_id", groupId)
     .in("project_id", list.map((p) => p.id));
-  if (!opts.isAdmin) {
-    tasksQuery = opts.viewerId !== undefined
-      ? tasksQuery.or(`is_private.eq.false,owner_id.eq.${opts.viewerId}`)
-      : tasksQuery.eq("is_private", false);
-  }
   const { data: tasks } = await tasksQuery;
   const counts = new Map<string, { total: number; backlog: number }>();
   ((tasks ?? []) as Array<

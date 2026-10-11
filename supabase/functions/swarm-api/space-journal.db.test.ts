@@ -1,8 +1,8 @@
 // Журнал пространства: лента и её гвард — на настоящем обработчике и настоящей базе.
 //
 // Главный риск здесь не «лента пустая», а «лента показала лишнее»: она собирается из чужих
-// таблиц (история, комментарии, состав спринтов), и каждая из них про задачу, к которой у
-// человека может не быть доступа. Мок такую ошибку не ловит — он согласится с моей моделью.
+// таблиц (история, комментарии, состав спринтов), и каждая из них про задачу, которая может
+// лежать в чужом воркспейсе. Мок такую ошибку не ловит — он согласится с моей моделью.
 import { assertEquals } from "@std/assert";
 import { Client } from "postgres";
 
@@ -107,75 +107,19 @@ async function intoSprint(db: Client, cycleId: string, taskId: string) {
     insert into sprint_items (cycle_id, task_id, in_plan) values (${cycleId}, ${taskId}, true)`;
 }
 
-async function journal(tabId: string, days = "7", as = ME) {
+async function journal(tabId: string, days = "7") {
   const req = new Request(
     `https://api.test/spaces/${tabId}/journal?days=${days}`,
   );
   const res = await handleSpaceJournalRoutes(
     req,
     `/spaces/${tabId}/journal`,
-    as,
     WS,
     "https://web.test",
     () => Promise.resolve(new Map()),
   );
   return res!;
 }
-
-Deno.test("чужая приватная задача не попадает в ленту ни одним событием", async () => {
-  const db = await connect();
-  try {
-    const { tabId, projectId, cycleId } = await seed(db);
-    const mine = await db.queryObject<{ id: string }>`
-      insert into tasks (title, status, group_id, project_id, created_by)
-      values ('Общая задача', 'open', ${WS}, ${projectId}, 'test') returning id`;
-    const theirs = await db.queryObject<{ id: string }>`
-      insert into tasks (title, status, group_id, project_id, is_private, owner_id, created_by)
-      values ('Личное дело', 'open', ${WS}, ${projectId}, true, ${SOMEONE_ELSE}, 'test')
-      returning id`;
-
-    for (const id of [mine.rows[0].id, theirs.rows[0].id]) {
-      await intoSprint(db, cycleId, id);
-      await db.queryArray`
-        insert into task_history (task_id, field, old_value, new_value, changed_by, group_id)
-        values (${id}, 'status', 'open', 'in_progress', 'tester', ${WS})`;
-      await db.queryArray`
-        insert into task_comments (task_id, content, added_by)
-        values (${id}, 'комментарий', 'tester')`;
-    }
-
-    const { events } = await (await journal(tabId)).json() as {
-      events: Event[];
-    };
-    const titles = events.map((e) => e.task_title);
-    assertEquals(
-      titles.includes("Общая задача"),
-      true,
-      "своё событие должно быть в ленте",
-    );
-    assertEquals(
-      titles.includes("Личное дело"),
-      false,
-      "журнал не должен становиться обходным путём к чужой приватной задаче",
-    );
-    assertEquals(
-      events.some((e) => e.text.includes("комментарий") && e.task_title === "Личное дело"),
-      false,
-      "комментарий к чужой приватной задаче тоже не показывается",
-    );
-
-    const owner = await (await journal(tabId, "7", SOMEONE_ELSE)).json() as {
-      events: Event[];
-    };
-    assertEquals(
-      owner.events.some((e) => e.task_title === "Личное дело"),
-      true,
-      "владелец свою приватную задачу в ленте видит",
-    );
-  } finally {
-    await db.end();
-  }
-});
 
 Deno.test("вкладка чужого воркспейса — 404, а не пустая лента", async () => {
   const db = await connect();

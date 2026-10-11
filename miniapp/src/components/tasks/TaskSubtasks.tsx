@@ -64,7 +64,6 @@ export function useTaskSubtasks(task: Task | null, onChanged?: () => void) {
           project_id: task.project_id,
           due_date: task.due_date ?? tomorrowLocalISO(),
           assignee_telegram_id: task.assignee_telegram_ids?.[0] ?? null,
-          is_private: task.is_private,
         })
       )
       : Promise.resolve(false);

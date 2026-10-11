@@ -133,8 +133,6 @@ function frozenCard(item: SprintCycleItem): Task {
     url: null,
     group_id: null,
     created_by_name: null,
-    is_private: false,
-    owner_id: null,
     start_date: null,
     timeline_position: null,
     sprint_id: null,

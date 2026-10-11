@@ -51,7 +51,7 @@ export function useReminderTasks() {
   const [lens, setLens] = useState<Lens>(() => taskView?.lens ?? readSavedView()?.lens ?? "mine");
   // «По рынкам» и «Все сотрудники» — независимые тумблеры (не значения lens), см. smartLists.ts.
   // «Все сотрудники» (только админ) переопределяет охват на линзу «staff» = буквально все, включая
-  // чужие личные, независимо от lens (владелец 2026-08-19: «если включен тумблер всё сотрудники —
+  // назначенные на коллег, независимо от lens (владелец 2026-08-19: «если включен тумблер всё сотрудники —
   // подтягиваются задачи всех сотрудников»).
   const [byMarket, setByMarket] = useState<boolean>(() => readSavedView()?.byMarket ?? false);
   const [allStaffRaw, setAllStaff] = useState<boolean>(() => readSavedView()?.allStaff ?? false);
@@ -252,7 +252,7 @@ export function useReminderTasks() {
   }, [markMutation]);
 
   // Быстрое добавление в духе Reminders: контекстно по активному списку/метке.
-  // При активной метке задача создаётся личной и сразу получает метку.
+  // При активной метке задача сразу получает метку (видимость задачи метка не меняет).
   const quickAdd = useCallback(async (title: string, labelId?: string) => {
     const trimmed = title.trim();
     if (!trimmed) return;

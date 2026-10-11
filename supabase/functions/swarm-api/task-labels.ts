@@ -30,18 +30,22 @@ export async function handleTaskLabelRoutes(
       .order("sort_order", { ascending: true })
       .order("created_at", { ascending: true });
     const rows = (labels ?? []) as LabelRow[];
-    // Счётчики: тянем label_ids моих личных задач и считаем на месте.
-    const { data: tasks } = await onlyLive(
-      supabase
-        .from("tasks")
-        .select("label_ids"),
-    )
-      .eq("owner_id", telegramId)
-      .eq("is_private", true);
+    // Счётчики: живые задачи воркспейса, на которых стоит хоть одна моя метка, считаем на месте.
+    // Метку можно повесить на любую задачу (решение 2026-10-09), поэтому ищем по самим меткам.
+    const myIds = new Set(rows.map((r) => r.id));
     const counts = new Map<string, number>();
-    for (const t of (tasks ?? []) as Array<{ label_ids: string[] | null }>) {
-      for (const id of t.label_ids ?? []) {
-        counts.set(id, (counts.get(id) ?? 0) + 1);
+    if (myIds.size > 0 && groupId) {
+      const { data: tasks } = await onlyLive(
+        supabase
+          .from("tasks")
+          .select("label_ids"),
+      )
+        .eq("group_id", groupId)
+        .overlaps("label_ids", [...myIds]);
+      for (const t of (tasks ?? []) as Array<{ label_ids: string[] | null }>) {
+        for (const id of t.label_ids ?? []) {
+          if (myIds.has(id)) counts.set(id, (counts.get(id) ?? 0) + 1);
+        }
       }
     }
     return json(

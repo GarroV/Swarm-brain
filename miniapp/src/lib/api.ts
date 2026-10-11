@@ -29,6 +29,7 @@ import type {
   SprintStatus,
   Task,
   TaskLink,
+  Person,
   User,
 } from "@/types";
 import { createRequestCache, REQUEST_CACHE_TTL_MS } from "./request-cache";
@@ -51,13 +52,14 @@ export type CreateTaskInput = {
   /** Пинг: день напоминания. null — снять. Перенос взводит сгоревший пинг заново (делает API). */
   remind_date?: string | null;
   assignee_telegram_id?: number | null;
+  assignee_person_id?: string | null;
+  coassignee_person_ids?: string[];
   country?: string | null;
   task_role?: string | null;
   priority?: string | null;
   // Привязка к встрече (entry.id): задача попадает в блок «Задачи из встречи».
   meeting_id?: string | null;
   // Модуль задач (Рой):
-  is_private?: boolean;
   start_date?: string | null;
   sprint_id?: string | null;
   tags?: string[];
@@ -223,8 +225,6 @@ function mkMock(o: Partial<Task> & { id: string; title: string }): Task {
     url: null,
     group_id: "cee",
     created_by_name: o.created_by_name ?? "Dev User",
-    is_private: false,
-    owner_id: null,
     start_date: null,
     timeline_position: null,
     sprint_id: null,
@@ -316,7 +316,6 @@ let mockTasks: Task[] = [
     title: "General team retro notes",
     assignees: [],
     assignee_telegram_ids: [],
-    is_private: false,
   }),
   // ── регулярные задачи: без них смарт-список «Регулярные» скрыт и его не посмотреть ──
   mkMock({
@@ -682,6 +681,31 @@ export async function logout(): Promise<void> {
   });
 }
 
+// ── Присутствие (#751) ───────────────────────────────────────────────────────
+// Пульс веба (components/PresencePulse.tsx): раздел и был ли ввод. На экран не выводится.
+// Свой fetch, а не apiFetch: пульс раз в 30 с не должен сбрасывать кэш чтения, будить плашку
+// «нет связи», уводить на вход по 401 или включать заглушку работ по 503 — это фон, а не
+// действие человека. keepalive: запрос `away` на закрытии вкладки должен уйти и после выгрузки
+// страницы (sendBeacon не умеет заголовок tma, а в Telegram авторизация — именно он).
+export type PresencePing = { section: string; active: boolean; away?: boolean };
+
+/** Статус ответа: 204 — записано, 401 — не вошёл (пульс глохнет до перезагрузки). */
+export async function sendPresence(ping: PresencePing): Promise<number> {
+  if (DEV_MODE) {
+    console.debug("[presence] mock", JSON.stringify(ping));
+    return 204;
+  }
+  const res = await fetch(`${API_BASE}/presence`, {
+    method: "POST",
+    keepalive: true,
+    cache: "no-store",
+    credentials: "include",
+    headers: { "Content-Type": "application/json", ...authHeaders() },
+    body: JSON.stringify(ping),
+  });
+  return res.status;
+}
+
 // ── Встречи сегодня из календаря (issue #218) ────────────────────────────────
 // Панель правой колонки главной. Календарь читает СЕРВЕР по OAuth-интеграции — у браузера
 // доступа к календарю нет. Пояс шлём свой: сервер живёт в UTC и не знает, какие у нас сутки.
@@ -857,6 +881,35 @@ export async function fetchUsers(): Promise<User[]> {
   return apiFetch<User[]>("/users");
 }
 
+// ── Справочник людей (GET/POST /people, #874) ──────────────────────────────────
+// Люди с аккаунтом и без: из них выбираются исполнитель и соисполнители задачи.
+export async function fetchPeople(): Promise<Person[]> {
+  if (DEV_MODE) return mockPeople();
+  return apiFetch<Person[]>("/people");
+}
+
+// Мок повторяет порядок сервера: аккаунты, затем люди без входа от недавних встреч к давним.
+// Участников встреч на проде сотни (#887) — мок даёт их столько же, чтобы поповер проверялся
+// на настоящей длине списка.
+function mockPeople(): Person[] {
+  const accounts = MOCK_USERS.map((u): Person => ({
+    id: `mock-${u.telegram_id}`, name: u.name, email: null, telegram_id: u.telegram_id,
+  }));
+  const guests = Array.from({ length: 400 }, (_, i): Person => ({
+    id: `mock-guest-${i}`,
+    name: i % 7 === 0 ? `guest${i}` : `Guest ${i} Partner`,
+    email: `guest${i}@partner${i % 5}.example.com`,
+    telegram_id: null,
+  }));
+  return [...accounts, ...guests];
+}
+
+/** Завести человека без входа. Почта уже есть в воркспейсе — вернётся тот же человек. */
+export async function createPerson(name: string, email: string | null): Promise<Person> {
+  if (DEV_MODE) return { id: `mock-${Date.now()}`, name, email, telegram_id: null };
+  return apiFetch<Person>("/people", { method: "POST", body: JSON.stringify({ name, email }) });
+}
+
 // ── Статистика по людям (GET /stats/people) ─────────────────────────────────
 // Форма — зеркало `PersonStats` из supabase/functions/_shared/stats/people.ts.
 export type PersonStats = {
@@ -993,8 +1046,7 @@ export async function createTask(input: CreateTaskInput): Promise<Task> {
       url: null,
       group_id: "cee",
       created_by_name: MOCK_ME.name,
-      is_private: input.is_private ?? false,
-      owner_id: input.is_private ? MOCK_ME.telegram_id : null,
+      created_by_telegram_id: MOCK_ME.telegram_id,
       start_date: input.start_date ?? null,
       timeline_position: input.timeline_position ?? null,
       sprint_id: input.sprint_id ?? null,
@@ -1083,10 +1135,6 @@ export async function updateTask(
       task.project_linked = (fields as { project_linked?: boolean })
         .project_linked!;
     }
-    if (fields.is_private !== undefined) {
-      task.is_private = fields.is_private;
-      task.owner_id = fields.is_private ? MOCK_ME.telegram_id : null;
-    }
     if ("assignee_telegram_id" in fields) {
       task.assignee_telegram_ids = fields.assignee_telegram_id
         ? [fields.assignee_telegram_id]
@@ -1109,7 +1157,7 @@ export async function deleteTask(id: string): Promise<void> {
   return apiFetch<void>(`/tasks/${id}`, { method: "DELETE" });
 }
 
-/** Архив задач (#489): убранные задачи воркспейса, свежие сверху; чужие личные сервер не отдаёт. */
+/** Архив задач (#489): убранные задачи воркспейса, свежие сверху. */
 export async function fetchArchivedTasks(): Promise<Task[]> {
   if (DEV_MODE) return [];
   return apiFetch<Task[]>("/tasks/archived");
@@ -1735,7 +1783,6 @@ function mockItemBase(): Omit<
     carried_manual: null,
     removed: false,
     removed_at: null,
-    hidden: false,
   };
 }
 

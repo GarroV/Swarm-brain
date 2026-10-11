@@ -50,46 +50,7 @@ async function sendTelegram(chatId: number, text: string): Promise<void> {
   }, VIA_TELEGRAM);
 }
 
-// Сколько раз спрашиваем `allowed_users.is_admin`, прежде чем сдаться (issue #537).
-const ADMIN_LOOKUP_ATTEMPTS = 2;
-
-/**
- * Кто из перечисленных — админ. Ошибку запроса НЕ превращаем молча в «никто не админ»
- * (issue #537): тогда админ, подписанный на приватную задачу, тихо терял уведомление.
- * Сначала одна повторная попытка (сбой обычно разовый). Если и она упала — громкая запись
- * в лог с последствием, и все считаются не-админами: выдать оверсайт на приватную задачу,
- * не зная флага, нельзя (это была бы утечка), а потерю видно по логу.
- */
-async function loadAdminIds(supabase: SupabaseClient, ids: number[]): Promise<Set<number>> {
-  let lastError: unknown = null;
-  for (let attempt = 0; attempt < ADMIN_LOOKUP_ATTEMPTS; attempt++) {
-    const { data, error } = await supabase
-      .from("allowed_users")
-      .select("telegram_id, is_admin")
-      .in("telegram_id", ids);
-    if (!error) {
-      return new Set(
-        ((data ?? []) as Array<{ telegram_id: number; is_admin: boolean | null }>)
-          .filter((u) => u.is_admin === true).map((u) => u.telegram_id),
-      );
-    }
-    lastError = error;
-  }
-  console.error(
-    "allowed_users is_admin lookup failed — subscribed admins lose oversight on this notification:",
-    lastError,
-  );
-  return new Set();
-}
-
-/**
- * Подписчики задачи с признаком админа каждого.
- *
- * Админство берём из `allowed_users.is_admin` — на проде флаг стоит и у суперадмина
- * (744230399), поэтому второй критерий (хардкод id) здесь не нужен и третья копия
- * константы в репозитории не появляется. Если флаг у суперадмина когда-нибудь снимут,
- * он потеряет подписочный оверсайт — заметно будет как «не приходят уведомления».
- */
+/** Подписчики задачи: кто подписан явно и кто отписался. */
 export async function loadSubscribers(
   supabase: SupabaseClient,
   taskId: string,
@@ -105,14 +66,9 @@ export async function loadSubscribers(
   const rows = (data ?? []) as Array<
     { telegram_id: number; state: SubscriptionState; reason: "comment" | "manual" }
   >;
-  if (rows.length === 0) return [];
-
-  const admins = await loadAdminIds(supabase, rows.map((r) => r.telegram_id));
-
   return rows.map((r) => ({
     telegram_id: r.telegram_id,
     state: r.state,
-    is_admin: admins.has(r.telegram_id),
     reason: r.reason,
   }));
 }
@@ -154,7 +110,7 @@ export async function notifyTaskComment(
   supabase: SupabaseClient,
   { task, commentId, content, actorTelegramId, actorName }: CommentNotificationInput,
 ): Promise<void> {
-  // Подписки — исключения из круга по умолчанию: добавляют непричастных (обычно админа,
+  // Подписки — исключения из круга по умолчанию: добавляют непричастных (например, админа,
   // который ведёт людей и не может обходить карточки руками) и убирают отписавшихся.
   const subscribers = await loadSubscribers(supabase, task.id);
   const recipients = commentRecipients(task, actorTelegramId, subscribers);

@@ -1,5 +1,5 @@
 // Рассылка о комментарии к задаче — ядро прав (testing.md): уведомление с заголовком и текстом
-// комментария, ушедшее тому, кто задачу не видит, — утечка приватной задачи. Модуль общий для
+// комментария должно уйти причастным и подписчикам и не уйти отписавшемуся. Модуль общий для
 // веба и MCP (issue #521), поэтому проверяем ПОВЕДЕНИЕ: какие строки легли в `notifications`,
 // кому ушёл пуш и что записалось в `task_subscriptions`.
 // Запуск: deno test -A supabase/functions/_shared/tasks/comment-fanout.test.ts
@@ -10,22 +10,15 @@ import { afterTaskComment, type CommentNotificationInput } from "./comment-fanou
 const ACTOR = 10;
 const ASSIGNEE = 20;
 const CREATOR = 30;
-const OWNER = 40;
-const ADMIN_SUB = 50; // админ, подписан явно
-const MEMBER_SUB = 60; // не админ, подписан явно
+const ADMIN_SUB = 50; // руководитель, подписан явно
+const MEMBER_SUB = 60; // коллега, подписан явно
 const MUTED_ASSIGNEE = 70;
 
 type Row = Record<string, unknown>;
 
-// failAdminLookups — сколько первых запросов к allowed_users отвечают ошибкой (issue #537).
-function makeDb(subs: Row[], admins: number[], failAdminLookups = 0) {
-  let adminLookupFailures = failAdminLookups;
+function makeDb(subs: Row[]) {
   const tables: Record<string, Row[]> = {
     task_subscriptions: [...subs],
-    allowed_users: [...subs.map((s) => s.telegram_id), ACTOR].map((id) => ({
-      telegram_id: id,
-      is_admin: admins.includes(id as number),
-    })),
     notifications: [],
   };
   const from = (table: string) => {
@@ -35,10 +28,6 @@ function makeDb(subs: Row[], admins: number[], failAdminLookups = 0) {
       eq: (c: string, v: unknown) => (filters.push((r) => r[c] === v), q),
       in: (c: string, v: unknown[]) => (filters.push((r) => v.includes(r[c])), q),
       then: (ok: (x: unknown) => unknown) => {
-        if (table === "allowed_users" && adminLookupFailures > 0) {
-          adminLookupFailures--;
-          return Promise.resolve({ data: null, error: { message: "boom" } }).then(ok);
-        }
         return Promise.resolve({ data: tables[table].filter((r) => filters.every((f) => f(r))), error: null })
           .then(ok);
       },
@@ -77,13 +66,11 @@ async function withPushSpy(fn: (pushes: Array<{ chat_id: number; text: string }>
   }
 }
 
-const input = (isPrivate: boolean): CommentNotificationInput => ({
+const input = (): CommentNotificationInput => ({
   task: {
     id: "t1",
     title: "Задача <b>",
     group_id: "cee",
-    is_private: isPrivate,
-    owner_id: isPrivate ? OWNER : null,
     created_by_telegram_id: CREATOR,
     assignee_telegram_ids: [ASSIGNEE, ACTOR, MUTED_ASSIGNEE],
   },
@@ -100,9 +87,9 @@ const SUBS: Row[] = [
 ];
 
 Deno.test("общая задача: причастные и подписчики, без автора и отписавшегося", async () => {
-  const { client, tables } = makeDb(SUBS, [ADMIN_SUB]);
+  const { client, tables } = makeDb(SUBS);
   await withPushSpy(async (pushes) => {
-    await afterTaskComment(client, input(false));
+    await afterTaskComment(client, input());
     const recipients = tables.notifications.map((n) => n.recipient_telegram_id);
     assertEquals(recipients, [ASSIGNEE, CREATOR, ADMIN_SUB, MEMBER_SUB]);
     assertEquals(pushes.map((p) => p.chat_id), recipients);
@@ -114,49 +101,13 @@ Deno.test("общая задача: причастные и подписчики
   });
 });
 
-Deno.test("приватная задача: уведомление только тем, кто её видит", async () => {
-  const { client, tables } = makeDb(SUBS, [ADMIN_SUB]);
-  await withPushSpy(async (pushes) => {
-    await afterTaskComment(client, input(true));
-    // Приватную видит владелец (и админ — оверсайтом, только по явной подписке).
-    // Исполнитель, создатель и подписчик-не-админ задачу не видят — им ничего не уходит.
-    const recipients = tables.notifications.map((n) => n.recipient_telegram_id);
-    assertEquals(recipients, [OWNER, ADMIN_SUB]);
-    assertEquals(pushes.map((p) => p.chat_id), recipients);
-  });
-});
-
 Deno.test("автор подписывается участием, ранее отписавшийся — нет", async () => {
-  const { client, tables } = makeDb(SUBS, []);
+  const { client, tables } = makeDb(SUBS);
   await withPushSpy(async () => {
-    await afterTaskComment(client, input(false));
-    await afterTaskComment(client, { ...input(false), actorTelegramId: MUTED_ASSIGNEE });
+    await afterTaskComment(client, input());
+    await afterTaskComment(client, { ...input(), actorTelegramId: MUTED_ASSIGNEE });
   });
   const state = (id: number) => tables.task_subscriptions.find((r) => r.telegram_id === id)?.state;
   assertEquals(state(ACTOR), "subscribed");
   assertEquals(state(MUTED_ASSIGNEE), "muted");
-});
-
-Deno.test("разовая ошибка запроса админов не лишает админа уведомления о приватной задаче", async () => {
-  const { client, tables } = makeDb(SUBS, [ADMIN_SUB], 1);
-  await withPushSpy(async () => {
-    await afterTaskComment(client, input(true));
-  });
-  assertEquals(tables.notifications.map((n) => n.recipient_telegram_id), [OWNER, ADMIN_SUB]);
-});
-
-Deno.test("стойкая ошибка запроса админов — громко в лог, оверсайт не выдаётся вслепую", async () => {
-  const { client, tables } = makeDb(SUBS, [ADMIN_SUB], 99);
-  const logged: unknown[][] = [];
-  const realError = console.error;
-  console.error = (...args: unknown[]) => void logged.push(args);
-  try {
-    await withPushSpy(async () => {
-      await afterTaskComment(client, input(true));
-    });
-  } finally {
-    console.error = realError;
-  }
-  assertEquals(tables.notifications.map((n) => n.recipient_telegram_id), [OWNER]);
-  assertEquals(logged.some((a) => String(a[0]).includes("is_admin lookup failed")), true);
 });

@@ -1,68 +1,30 @@
 import { assertEquals } from "jsr:@std/assert@1";
-import { canMutateTask, canViewTask, taskAccessError } from "./access.ts";
+import { canAccessTask, taskAccessError } from "./access.ts";
 
-// Правило приватности задач жило шестью рукописными копиями и разошлось: swarm-mcp правил и
-// удалял чужие личные задачи (issue #45). Здесь — единственный источник правды, и тесты
+// Правило доступа к задаче — один воркспейс (решение 2026-10-09: «личных» задач нет). Тесты
 // написаны в форме, где «чужое» РЕАЛЬНО существует в данных, а не отсутствует.
 
-const OWNER = 111;
-const OTHER = 222;
-const ADMIN = 744230399;
+const task = { group_id: "cee" };
+const foreign = { group_id: "other" };
 
-const privateTask = { is_private: true, owner_id: OWNER, group_id: "cee" };
-const teamTask = { is_private: false, owner_id: null, group_id: "cee" };
-
-Deno.test("владелец видит и меняет свою личную задачу", () => {
-  assertEquals(canViewTask(privateTask, OWNER, false), true);
-  assertEquals(canMutateTask(privateTask, OWNER, false), true);
+Deno.test("задачу своего воркспейса видит и меняет любой участник", () => {
+  assertEquals(canAccessTask(task, "cee"), true);
+  assertEquals(taskAccessError("t-1", task, "cee"), null);
 });
 
-Deno.test("ЧУЖУЮ личную задачу участник того же воркспейса не видит и не меняет", () => {
-  assertEquals(canViewTask(privateTask, OTHER, false), false);
-  assertEquals(canMutateTask(privateTask, OTHER, false), false);
+Deno.test("задача чужого воркспейса недоступна", () => {
+  assertEquals(canAccessTask(foreign, "cee"), false);
 });
 
-Deno.test("админ имеет оверсайт по задачам (в отличие от записей/встреч)", () => {
-  assertEquals(canViewTask(privateTask, ADMIN, true), true);
-  assertEquals(canMutateTask(privateTask, ADMIN, true), true);
+Deno.test("без воркспейса зрителя доступа нет (fail-closed)", () => {
+  assertEquals(canAccessTask(task, null), false);
+  assertEquals(canAccessTask({ group_id: null }, null), false);
 });
 
-Deno.test("командную задачу видит и меняет любой в воркспейсе", () => {
-  assertEquals(canViewTask(teamTask, OTHER, false), true);
-  assertEquals(canMutateTask(teamTask, OTHER, false), true);
-});
-
-Deno.test("owner_id пуст у приватной задачи — доступ только админу (fail-closed)", () => {
-  const orphan = { is_private: true, owner_id: null, group_id: "cee" };
-  assertEquals(canViewTask(orphan, OTHER, false), false);
-  assertEquals(canViewTask(orphan, ADMIN, true), true);
-});
-
-// ── Отказ неотличим от «нет записи» ───────────────────────────────────────────
-// Иначе перебором id выясняется, что у коллеги есть личная задача, — сам факт уже утечка.
-
-Deno.test("отказ по чужой личной задаче звучит как «не найдена», без деталей", () => {
-  const denied = taskAccessError("t-1", privateTask, OTHER, false);
-  const missing = taskAccessError("t-1", null, OTHER, false);
+// Отказ неотличим от «нет записи»: перебор id не выдаёт задачи чужого воркспейса.
+Deno.test("чужой воркспейс даёт отказ, неотличимый от «не найдена»", () => {
+  const denied = taskAccessError("t-2", foreign, "cee");
+  const missing = taskAccessError("t-2", null, "cee");
   assertEquals(denied, missing);
-  assertEquals(denied, "Задача t-1 не найдена.");
-});
-
-Deno.test("чужой ВОРКСПЕЙС тоже даёт неотличимый отказ", () => {
-  const foreign = { is_private: false, owner_id: null, group_id: "other" };
-  const denied = taskAccessError("t-2", foreign, OTHER, false, "cee");
   assertEquals(denied, "Задача t-2 не найдена.");
-});
-
-Deno.test("доступной задаче taskAccessError возвращает null (пропуск)", () => {
-  assertEquals(taskAccessError("t-3", teamTask, OTHER, false, "cee"), null);
-  assertEquals(taskAccessError("t-4", privateTask, OWNER, false, "cee"), null);
-});
-
-// ⛔ Страховка от повторного «исправления»: оверсайт по задачам — решение владельца
-// (docs/decisions/2026-08-21-admin-visibility.md). Если этот тест покраснел — не правь тест,
-// иди читать решение: скорее всего кто-то снял оверсайт, приняв его за забытую дыру.
-Deno.test("оверсайт руководителя по задачам — осознанное решение, снимать нельзя без «да» владельца", () => {
-  assertEquals(canViewTask(privateTask, ADMIN, true), true);
-  assertEquals(canMutateTask(privateTask, ADMIN, true), true);
 });

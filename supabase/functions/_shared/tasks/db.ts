@@ -22,6 +22,8 @@ export async function createTask(
     description: input.description ?? null,
     assignees: input.assignees ?? [],
     assignee_telegram_ids: input.assignee_telegram_ids ?? [],
+    assignee_person_id: input.assignee_person_id ?? null,
+    coassignee_person_ids: input.coassignee_person_ids ?? [],
     // Срок обязателен у КАЖДОЙ задачи, откуда бы она ни пришла — веб, бот, MCP, доска
     // (решение владельца 21.09.2026: «по дефолту дедлайн +1 день от времени добавления»).
     // Значение ставится здесь, в единственной точке создания, а не в трёх клиентах: копии
@@ -41,8 +43,6 @@ export async function createTask(
     group_id: groupId ?? input.group_id ?? null,
     confirmed: input.confirmed ?? false,
     created_by_telegram_id: input.created_by_telegram_id ?? null,
-    is_private: input.is_private ?? false,
-    owner_id: input.owner_id ?? null,
     start_date: input.start_date ?? null,
     timeline_position: input.timeline_position ?? null,
     sprint_id: input.sprint_id ?? null,
@@ -88,8 +88,6 @@ export async function listTasksWithTotal(filters: {
   createdBy?: number;
   dueToday?: boolean;
   // Модуль задач (Рой):
-  viewerId?: number; // для visibility приватных задач
-  isAdmin?: boolean; // админ видит все приватные
   sprintId?: string;
   tags?: string[]; // ANY-совпадение (overlaps)
   labelIds?: string[]; // ANY-совпадение (overlaps по label_ids)
@@ -106,16 +104,6 @@ export async function listTasksWithTotal(filters: {
     .select(filters.columns ?? "*", { count: "exact" })
     .is("archived_at", null)
     .order("due_date", { ascending: true, nullsFirst: false });
-
-  // Видимость приватных задач: приватная видна только владельцу (админ — все).
-  // Безопасный дефолт: без viewerId показываем только публичные.
-  if (!filters.isAdmin) {
-    if (filters.viewerId !== undefined) {
-      q = q.or(`is_private.eq.false,owner_id.eq.${filters.viewerId}`);
-    } else {
-      q = q.eq("is_private", false);
-    }
-  }
 
   if (filters.confirmed !== undefined) q = q.eq("confirmed", filters.confirmed);
   // Правило «закрытые прячем» живёт в statuses.ts чистой функцией (issue #304): здесь оно
@@ -469,7 +457,7 @@ export async function deleteTask(
 /** Сколько архивных задач отдаём за раз: архив копится годами, а читают его верхушку. */
 export const ARCHIVE_PAGE = 200;
 
-/** Архив воркспейса (#489), свежие сверху. Видимость решает вызывающий (`canViewTask`). */
+/** Архив воркспейса (#489), свежие сверху. Воркспейс задаёт вызывающий. */
 export async function listArchivedTasks(groupId: string): Promise<Task[]> {
   // archive-ok: это и есть экран архива — выборка ровно архивных задач
   const { data, error } = await supabase.from("tasks").select("*")
