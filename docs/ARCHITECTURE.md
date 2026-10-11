@@ -2211,7 +2211,7 @@ _Админка (`admin.ts`, админы: `telegram_id 744230399` или `is_ad
 | Что | Где |
 |---|---|
 | API | `supabase/functions/swarm-api/quality.ts`, разбор ответа `quality-view.ts` (+ `.test.ts`); карты — `maps-view.ts` (+ `.test.ts`) |
-| Веб | `miniapp/src/lib/api.ts` (`fetchQuality`, типы `Quality*`; `fetchMapsRatings`, типы `Maps*`), модели главной `miniapp/src/lib/homeQuality.ts`, `homeMaps.ts` |
+| Веб | `miniapp/src/lib/api.ts` (`fetchQuality`, типы `Quality*`; `fetchMapsRatings`, типы `Maps*`; `fetchInspections`/`fetchInspection`, типы `Inspection*`, моки DEV_MODE), модели главной `miniapp/src/lib/homeQuality.ts`, `homeMaps.ts`, `homeInspections.ts`; виджет `insp` — `miniapp/src/components/roy/home/InspectionsWidget.tsx`, `InspectionPanel.tsx` |
 
 **Карты и отзывы (блок 2 связки с Децимусом, [решение 11.10.2026](decisions/2026-10-11-decimus-link-blocks.md)).** Виджет `maps` главной читает `GET /quality/maps` — прокси к `GET /api/v1/maps/ratings` Децимуса (право токена `ratings:read`, тот же токен и 503 без секретов). Запрос: `countries` = `allowed_markets` воркспейса, `on` = сегодня (UTC), `compare` = `on` − 30 дней. Ответ проверяется `maps-view.ts` (оценка 0..5, отзывы — целые ≥ 0, `cc` — ISO-2, `id` — строка; кривое поле — 500, а не тихий ноль) и режется по странам ещё раз. Кэш — те же 5 минут, ключ включает дату. Виджет подборочный (как РС/РКО): по странам подборки — средняя Google и Яндекс со знаком изменения за 30 дней и число отзывов, ниже — пять пиццерий с худшей оценкой Google (`lib/homeMaps.ts`, под тестами); загружается сам (`home/useMaps.ts`), ошибка — «не загрузилось» с «Повторить». Пока маршрут не раскатан на стороне Децимуса, виджет покажет «не загрузилось».
 
