@@ -9,6 +9,11 @@ export type DodoUnit = {
   open: boolean;
   organization: string | null;
 };
+/** Машинные источники точек: OSM и Overture Maps (у Overture в osm_id лежит id места). */
+export type MachineSource = "osm" | "overture";
+/** Сеть, найденная сборщиком сама (Overture: бренд с несколькими точками в стране). */
+export type DiscoveredChain = { key: string; name: string; segment: string; bakery?: boolean };
+
 export type OsmPoint = {
   chain: string;
   name: string;
@@ -80,7 +85,7 @@ export type IngestPayload =
     } | null;
   }
   // rejected — объекты с именем сети, но не её (ложный brand, исключение в конфиге)
-  | Base & { source: "osm"; points: OsmPoint[]; rejected?: OsmPoint[] }
+  | Base & { source: MachineSource; points: OsmPoint[]; rejected?: OsmPoint[]; chains?: DiscoveredChain[] }
   | Base & { source: "registry"; adapter: string; years: RegistryYear[] }
   // решения админа по токену сборщика (index.ts adminAction, scripts/market/admin.ts)
   | Base & { source: "snapshot"; snapshot: unknown }

@@ -5,16 +5,17 @@
 // deno-lint-ignore-file no-import-prefix
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { matchPoints, samePlace } from "../_shared/market/geo.ts";
-import { foldDailyOrders, shouldFlagClosed, toEur } from "../_shared/market/rules.ts";
+import { foldDailyOrders, isSuspiciousRun, shouldAutoClose, toEur } from "../_shared/market/rules.ts";
 import { allRows, ID_BATCH, locKey, must, recordRun } from "../_shared/market/db.ts";
 import { TRUSTED, type Verification } from "../_shared/market/types.ts";
-import type { DodoUnit, IngestPayload, OsmPoint, RegistryYear } from "./types.ts";
+import type { DiscoveredChain, DodoUnit, IngestPayload, MachineSource, OsmPoint, RegistryYear } from "./types.ts";
 
 type Stats = Record<string, number>;
 const now = () => new Date().toISOString();
 /** Источник в журнале → адаптер в mkt_sources (у реестров адаптер приходит в нагрузке). */
 const ADAPTER_OF: Record<string, string> = {
   osm: "osm-overpass",
+  overture: "overture-maps",
   dodo: "dodo-publicapi",
 };
 
@@ -62,8 +63,9 @@ export async function applyIngest(
   try {
     let stats: Stats = {};
     if (p.source === "config") stats = await applyConfig(sb, country, p);
-    else if (p.source === "osm") stats = await applyOsm(sb, country, p.points, p.rejected ?? []);
-    else if (p.source === "dodo") {
+    else if (p.source === "osm" || p.source === "overture") {
+      stats = await applyMachine(sb, country, p.source, p.points, p.rejected ?? [], p.chains ?? [], today);
+    } else if (p.source === "dodo") {
       stats = await applyDodo(sb, country, p, today);
     } else if (p.source === "registry") {
       stats = await applyRegistry(sb, country, p.years);
@@ -198,12 +200,59 @@ async function closeStaleFinds(
   }
 }
 
-async function applyOsm(
+const SOURCE_TITLE: Record<MachineSource, string> = { osm: "OpenStreetMap", overture: "Overture" };
+const sourceLink = (kind: MachineSource, id: string) =>
+  kind === "osm" ? `https://www.openstreetmap.org/${id}` : `https://explore.overturemaps.org/?id=${id}`;
+
+/** Сети, найденные сборщиком сами, заводятся до сопоставления; существующая сеть не перезаписывается.
+ *  slot — следом за последним в стране. Возвращает число добавленных. */
+async function addDiscoveredChains(sb: SupabaseClient, country: string, found: DiscoveredChain[]) {
+  if (!found.length) return 0;
+  const have = await must<Array<{ key: string; slot: number }>>(
+    sb.from("mkt_chains").select("key, slot").eq("country", country),
+    "machine chains",
+  );
+  const known = new Set(have.map((c) => c.key));
+  const fresh = found.filter((c, i) => !known.has(c.key) && found.findIndex((x) => x.key === c.key) === i);
+  if (!fresh.length) return 0;
+  const top = Math.max(0, ...have.map((c) => c.slot));
+  await must(
+    sb.from("mkt_chains").upsert(
+      fresh.map((c, i) => ({
+        country,
+        key: c.key,
+        name: c.name,
+        segment: c.segment,
+        is_bakery: c.bakery ?? false,
+        slot: top + 1 + i,
+        updated_at: now(),
+      })),
+      { onConflict: "country,key", ignoreDuplicates: true },
+    ),
+    "machine chains add",
+  );
+  return fresh.length;
+}
+
+/** Применение данных машинного источника точек (OSM, Overture): новые точки встают сами,
+ *  пропавшие закрываются сами, вернувшиеся открываются. Проверенные записи не трогаются. */
+async function applyMachine(
   sb: SupabaseClient,
   country: string,
-  points: OsmPoint[],
-  rejected: OsmPoint[] = [],
+  kind: MachineSource,
+  allPoints: OsmPoint[],
+  allRejected: OsmPoint[],
+  discovered: DiscoveredChain[],
+  today: string,
 ): Promise<Stats> {
+  const chainsAdded = await addDiscoveredChains(sb, country, discovered);
+  const knownChains = new Set(
+    (await must<Array<{ key: string }>>(sb.from("mkt_chains").select("key").eq("country", country), "machine known"))
+      .map((c) => c.key),
+  );
+  // Точка сети, которой нет в стране, упёрлась бы во внешний ключ — отбрасывается.
+  const points = allPoints.filter((x) => knownChains.has(x.chain));
+  const rejected = allRejected.filter((x) => knownChains.has(x.chain));
   const chains = [...new Set([...points, ...rejected].map((x) => x.chain))];
   const existing = chains.length
     ? await allRows<ExistingLoc>(
@@ -214,28 +263,31 @@ async function applyOsm(
           )
           .eq("country", country).in("chain_key", chains)
           .order("id").range(from, to),
-      "osm existing",
+      "machine existing",
     )
     : [];
   const all = existing.map((e) => ({ ...e, chain: e.chain_key }));
   const live = all.filter((e) => e.status !== "closed");
+  const isMachine = (e: typeof all[number]) => e.source_kind === kind && e.verification === "unverified";
+  // Охрана от битого ответа: считаем по всей стране, а не только по сетям нагрузки.
+  const { count: liveMachine, error: cntErr } = await sb.from("mkt_locations")
+    .select("id", { count: "exact", head: true }).eq("country", country).eq("source_kind", kind)
+    .eq("verification", "unverified").neq("status", "closed");
+  if (cntErr) throw new Error(`machine count: ${cntErr.message}`);
+  const suspicious = isSuspiciousRun(points.length, liveMachine ?? 0);
   // Одно место в OSM часто нарисовано дважды (узлом и контуром здания). Второй объект не находит
   // пары и раньше вставал отдельной точкой рядом с проверенной (Хорватия 02.10.2026: дубли в
   // 8–24 м от точек снимка). Такие «зеркала» — машинные строки без ручных правок — убираются.
-  const isMirror = (e: typeof all[number]) =>
-    e.source_kind === "osm" && e.verification === "unverified" &&
-    samePlace(e, live.filter((x) => x.source_kind !== "osm"));
+  const isMirror = (e: typeof all[number]) => isMachine(e) && samePlace(e, live.filter((x) => x.source_kind !== kind));
   // Машинная точка на месте отсеянного объекта (ложный brand, исключение в конфиге) — не точка
   // сети: убирается сразу. Если рядом есть и принятая точка той же сети, строку не трогаем.
-  const isWrong = (e: typeof all[number]) =>
-    e.source_kind === "osm" && e.verification === "unverified" &&
-    samePlace(e, rejected) && !samePlace(e, points);
+  const isWrong = (e: typeof all[number]) => isMachine(e) && samePlace(e, rejected) && !samePlace(e, points);
   const wrong = live.filter(isWrong).map((e) => e.id);
   const mirrors = [...live.filter(isMirror).map((e) => e.id), ...wrong];
   for (let i = 0; i < mirrors.length; i += ID_BATCH) {
     await must(
       sb.from("mkt_locations").delete().in("id", mirrors.slice(i, i + ID_BATCH)),
-      "osm mirrors",
+      "machine mirrors",
     );
   }
   const r = matchPoints(live.filter((e) => !mirrors.includes(e.id)), points);
@@ -244,17 +296,32 @@ async function applyOsm(
     await must(
       sb.from("mkt_locations").update({ last_seen_at: now(), missing_weeks: 0 })
         .in("id", seen.slice(i, i + ID_BATCH)),
-      "osm seen",
+      "machine seen",
     );
   }
-  // Город OSM дописывает пустое поле; известный город (из снимка, локатора, руки) не меняется.
-  // Исключение — машинная точка OSM («не проверено»): её город и есть город OSM, он обновляется.
+  // Город источника дописывает пустое поле; известный город (из снимка, локатора, руки) не меняется.
+  // Исключение — машинная точка («не проверено»): её город и есть город источника, он обновляется.
   for (const m of r.matched.filter((m) => m.found.city)) {
-    const machine = m.existing.source_kind === "osm" && m.existing.verification === "unverified";
     const q = sb.from("mkt_locations").update({ city: m.found.city }).eq("id", m.existing.id);
-    await must(machine ? q : q.is("city", null), "osm city");
+    await must(isMachine(m.existing) ? q : q.is("city", null), "machine city");
   }
-  // Новая точка OSM встаёт сразу, как «не проверено» (решение владельца 02.10.2026: полный
+  // Вернувшаяся после автозакрытия точка открывается снова: закрытая машинная строка этого
+  // источника, у которой в ответе нашлась пара. Закрытое руками (проверенное) остаётся закрытым.
+  const reopenIds = all.filter((e) => e.status === "closed" && isMachine(e) && samePlace(e, r.unmatched))
+    .map((e) => e.id);
+  for (let i = 0; i < reopenIds.length; i += ID_BATCH) {
+    await must(
+      sb.from("mkt_locations").update({
+        status: "open",
+        closed: null,
+        verification_note: null,
+        missing_weeks: 0,
+        last_seen_at: now(),
+      }).in("id", reopenIds.slice(i, i + ID_BATCH)),
+      "machine reopen",
+    );
+  }
+  // Новая точка встаёт сразу, как «не проверено» (решение владельца 02.10.2026: полный
   // автомат). Вставка без перезаписи: точка с тем же ключом, закрытая или поправленная руками,
   // остаётся как есть.
   const added = new Set<string>();
@@ -274,8 +341,8 @@ async function applyOsm(
       lat: f.lat,
       lng: f.lng,
       status: "open",
-      source: `https://www.openstreetmap.org/${f.osm_id}`,
-      source_kind: "osm",
+      source: sourceLink(kind, f.osm_id),
+      source_kind: kind,
       verification: "unverified",
       last_seen_at: now(),
     };
@@ -286,41 +353,43 @@ async function applyOsm(
         onConflict: "country,ext_key",
         ignoreDuplicates: true,
       }),
-      "osm add",
+      "machine add",
     );
   }
   await closeStaleFinds(sb, country, added);
-  // Пропажа из OSM двигает только точки, которые привёл сам OSM, — проверенные не трогаются.
-  let flagged = 0;
-  for (const e of r.missing.filter((m) => m.source_kind === "osm")) {
+  // Пропажа двигает только точки, которые привёл сам источник, — проверенные не трогаются.
+  // Подозрительный прогон пропажу не считает вовсе.
+  let closedAuto = 0;
+  for (const e of suspicious ? [] : r.missing.filter((m) => m.source_kind === kind)) {
     const weeks = e.missing_weeks + 1;
-    await must(
-      sb.from("mkt_locations").update({ missing_weeks: weeks }).eq("id", e.id),
-      "osm missing",
-    );
-    if (
-      shouldFlagClosed({
-        verification: e.verification,
-        source_kind: e.source_kind,
-        missing_weeks: weeks,
-      })
-    ) {
-      await propose(sb, {
-        country,
-        kind: "maybe_closed",
-        source: "osm",
-        target_id: e.id,
-        payload: { key: e.ext_key },
-      });
-      flagged++;
+    if (shouldAutoClose({ verification: e.verification, source_kind: e.source_kind, missing_weeks: weeks })) {
+      await must(
+        sb.from("mkt_locations").update({
+          missing_weeks: weeks,
+          status: "closed",
+          closed: today,
+          verification_note: `пропала из ${SOURCE_TITLE[kind]} ${weeks} прогонов подряд`,
+        }).eq("id", e.id),
+        "machine close",
+      );
+      closedAuto++;
+    } else {
+      await must(
+        sb.from("mkt_locations").update({ missing_weeks: weeks }).eq("id", e.id),
+        "machine missing",
+      );
     }
   }
   return {
     points: points.length,
     matched: r.matched.length,
     new_candidates: fresh.length,
-    maybe_closed: flagged,
+    closed_auto: closedAuto,
+    reopened: reopenIds.length,
     removed_wrong: wrong.length,
+    chains_added: chainsAdded,
+    dropped_unknown_chain: allPoints.length - points.length,
+    suspicious: suspicious ? 1 : 0,
   };
 }
 
