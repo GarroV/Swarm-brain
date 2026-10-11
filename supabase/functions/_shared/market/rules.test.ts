@@ -1,6 +1,6 @@
 import { assert, assertEquals } from "@std/assert";
 import { distanceM, matchPoints } from "./geo.ts";
-import { canSeeCountry, type DayOrders, foldDailyOrders, shouldFlagClosed, toEur } from "./rules.ts";
+import { canSeeCountry, type DayOrders, foldDailyOrders, isSuspiciousRun, shouldAutoClose, toEur } from "./rules.ts";
 
 Deno.test("distanceM: 0.001° of latitude is ~111 m", () => {
   const d = distanceM({ lat: 45.8, lng: 15.97 }, { lat: 45.801, lng: 15.97 });
@@ -24,11 +24,13 @@ Deno.test("matchPoints: one existing point is matched once", () => {
   assertEquals(r.unmatched.length, 1);
 });
 
-Deno.test("shouldFlagClosed: only osm-sourced, untrusted, 3+ weeks", () => {
-  assert(shouldFlagClosed({ verification: "unverified", source_kind: "osm", missing_weeks: 3 }));
-  assert(!shouldFlagClosed({ verification: "unverified", source_kind: "osm", missing_weeks: 2 }));
-  assert(!shouldFlagClosed({ verification: "official", source_kind: "osm", missing_weeks: 9 }));
-  assert(!shouldFlagClosed({ verification: "unverified", source_kind: "snapshot", missing_weeks: 9 }));
+Deno.test("shouldAutoClose: only machine-sourced (osm, overture), untrusted, 3+ weeks", () => {
+  assert(shouldAutoClose({ verification: "unverified", source_kind: "osm", missing_weeks: 3 }));
+  assert(!shouldAutoClose({ verification: "unverified", source_kind: "osm", missing_weeks: 2 }));
+  assert(!shouldAutoClose({ verification: "official", source_kind: "osm", missing_weeks: 9 }));
+  assert(!shouldAutoClose({ verification: "unverified", source_kind: "snapshot", missing_weeks: 9 }));
+  assert(shouldAutoClose({ verification: "unverified", source_kind: "overture", missing_weeks: 3 }));
+  assert(!shouldAutoClose({ verification: "confirmed", source_kind: "overture", missing_weeks: 9 }));
 });
 
 Deno.test("foldDailyOrders marks a past month complete only when every day is there", () => {
@@ -66,4 +68,10 @@ Deno.test("canSeeCountry: demo sees only XD, real workspace never XD", () => {
   assert(!canSeeCountry("XD", ["XD"], false));
   assert(!canSeeCountry("EE", null, false));
   assert(canSeeCountry("hr", ["HR"], false));
+});
+
+Deno.test("isSuspiciousRun: under 70% of the live machine rows is suspicious", () => {
+  assert(isSuspiciousRun(69, 100));
+  assert(!isSuspiciousRun(70, 100));
+  assert(!isSuspiciousRun(0, 0));
 });
