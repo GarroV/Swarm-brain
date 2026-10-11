@@ -132,6 +132,7 @@ import { handleIntegrationConnectRoutes, makeIntegrationsDeps } from "./integrat
 import { handleAutojoinRoutes, makeAutojoinStore, makeCalendarCheck } from "./autojoin.ts";
 import { handleTaskLabelRoutes } from "./task-labels.ts";
 import { handlePublicShortLink, handleShortLinkRoutes, isPublicShortLinkPath } from "./short-links.ts";
+import { handleStickerRoutes } from "./stickers.ts";
 import { handleTaskCommentRoutes } from "./task-comments.ts";
 import { handleTaskFileRoutes } from "./task-files.ts";
 import { handleStatsRoutes } from "./stats.ts";
@@ -899,6 +900,14 @@ async function routeRequest(req: Request): Promise<Response> {
     routePath,
   );
   if (shortLinkResp) return shortLinkResp;
+
+  // Стикеры-задания на главной: стикеры своего воркспейса; создавать и архивировать — админ.
+  const stickerResp = await handleStickerRoutes(
+    { supabase, telegramId: telegram_id, groupId, isDemo, isAdmin, origin },
+    req,
+    routePath,
+  );
+  if (stickerResp) return stickerResp;
 
   // Приглашение бота на созвон (D017): человек вставляет ссылку — бот постучится.
   const inviteResp = await handleMeetingInviteRoutes(
