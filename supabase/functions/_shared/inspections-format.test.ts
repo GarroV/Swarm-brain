@@ -44,7 +44,10 @@ Deno.test("formatInspectionDetail: итог, зоны, нарушения с п�
       ...row(),
       deductions: 2.5,
       counts: { major: 1 },
-      zones: [{ zone: "KIT", title_ru: "Кухня", title_en: null, pct: 90 }],
+      zones: [
+        { zone: "KIT", title_ru: "Кухня", title_en: null, share: 60, loss: 3.5, left: 56.5, zeroed: false },
+        { zone: "HALL", title_ru: "Зал", title_en: null, share: 25, loss: 25, left: 0, zeroed: true },
+      ],
     },
     findings: [{
       n: 1,
@@ -61,7 +64,8 @@ Deno.test("formatInspectionDetail: итог, зоны, нарушения с п�
   for (
     const s of [
       "97.5%",
-      "Кухня (KIT) — 90%",
+      "Кухня (KIT) — 56.5 из 60 п.п. (−3.5)",
+      "Зал (HALL) — обнулена (доля 25 п.п.)",
       "1. [major] D1.1 Пункт (повтор) — зона KIT: Текст",
       "https://d.example/registry/x",
     ]

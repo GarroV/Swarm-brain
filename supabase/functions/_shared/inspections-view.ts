@@ -14,7 +14,16 @@ export type Inspection = {
   previous: PrevInspection | null;
 };
 export type InspectionsView = { inspections: Inspection[]; truncated: boolean };
-export type InspectionZone = { zone: string; title_ru: string | null; title_en: string | null; pct: number };
+/** Зона как её хранит движок Децимуса: доля в оценке, потеря и остаток — в процентных пунктах общей оценки. */
+export type InspectionZone = {
+  zone: string;
+  title_ru: string | null;
+  title_en: string | null;
+  share: number | null;
+  loss: number | null;
+  left: number | null;
+  zeroed: boolean;
+};
 export type InspectionFinding = {
   n: number;
   code: string;
@@ -41,6 +50,7 @@ const uuid = (v: unknown, what: string): string => typeof v === "string" && UUID
 const date = (v: unknown, what: string): string => typeof v === "string" && DATE.test(v) ? v : bad(what);
 const pct = (v: unknown, what: string): number =>
   typeof v === "number" && Number.isFinite(v) && v >= 0 && v <= 100 ? v : bad(what);
+const pctOrNull = (v: unknown, what: string): number | null => v == null ? null : pct(v, what);
 const str = (v: unknown, what: string): string => typeof v === "string" && v ? v : bad(what);
 const strOrNull = (v: unknown, what: string): string | null => v == null ? null : typeof v === "string" ? v : bad(what);
 const code = (v: unknown): string => {
@@ -102,7 +112,10 @@ function zone(raw: unknown): InspectionZone {
     zone: str(z.zone, "нет кода зоны"),
     title_ru: strOrNull(z.title_ru, "кривое название зоны"),
     title_en: strOrNull(z.title_en, "кривое название зоны"),
-    pct: pct(z.pct, "процент зоны вне 0–100"),
+    share: pctOrNull(z.share, "доля зоны вне 0–100"),
+    loss: pctOrNull(z.loss, "потеря зоны вне 0–100"),
+    left: pctOrNull(z.left, "остаток зоны вне 0–100"),
+    zeroed: typeof z.zeroed === "boolean" ? z.zeroed : bad("кривой признак обнуления зоны"),
   };
 }
 

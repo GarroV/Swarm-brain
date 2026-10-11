@@ -24,7 +24,10 @@ const detail = () => ({
     ...row(),
     deductions: 12.5,
     counts: { critical: 1, major: 3 },
-    zones: [{ zone: "KIT", title_ru: "Кухня", title_en: "Kitchen", pct: 95 }],
+    zones: [
+      { zone: "KIT", title_ru: "Кухня", title_en: "Kitchen", share: 60, loss: 3.5, left: 56.5, zeroed: false },
+      { zone: "HALL", title_ru: null, title_en: null, share: null, loss: null, left: null, zeroed: true },
+    ],
   },
   findings: [
     { n: 2, code: "D1.2", title_ru: null, title_en: null, level: "major", zone: "KIT", text: null, repeat: false },
@@ -94,7 +97,16 @@ Deno.test("toInspectionDetail: итог, зоны, нарушения по но�
   const d = toInspectionDetail(detail(), null)!;
   assertEquals(d.inspection.deductions, 12.5);
   assertEquals(d.inspection.counts, { critical: 1, major: 3 });
-  assertEquals(d.inspection.zones[0], { zone: "KIT", title_ru: "Кухня", title_en: "Kitchen", pct: 95 });
+  assertEquals(d.inspection.zones[0], {
+    zone: "KIT",
+    title_ru: "Кухня",
+    title_en: "Kitchen",
+    share: 60,
+    loss: 3.5,
+    left: 56.5,
+    zeroed: false,
+  });
+  assertEquals(d.inspection.zones[1].zeroed, true);
   assertEquals(d.findings.map((f) => f.n), [1, 2]);
   assertEquals(d.findings[0].repeat, true);
   assertEquals(d.findings[1].text, null);
@@ -106,8 +118,14 @@ Deno.test("toInspectionDetail: чужая страна — null (вызываю�
 
 Deno.test("toInspectionDetail: кривые зоны, счётчики, нарушения — ошибка", () => {
   const z = detail();
-  z.inspection.zones[0].pct = 120;
+  z.inspection.zones[0].share = 120;
   assertThrows(() => toInspectionDetail(z, null), Error, "decimus");
+  const zl = detail();
+  zl.inspection.zones[0].loss = -1;
+  assertThrows(() => toInspectionDetail(zl, null), Error, "decimus");
+  const zz = detail();
+  (zz.inspection.zones[0] as { zeroed: unknown }).zeroed = "no";
+  assertThrows(() => toInspectionDetail(zz, null), Error, "decimus");
   const c = detail();
   (c.inspection.counts as Record<string, number>).major = -2;
   assertThrows(() => toInspectionDetail(c, null), Error, "decimus");

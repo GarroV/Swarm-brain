@@ -1,12 +1,19 @@
 // Проверки Децимуса текстом для Claude (MCP get_inspections / get_inspection): компактная таблица и деталь.
 // Чистые функции — проверяются без сети. Данные приходят уже проверенными (inspections-view.ts).
-import type { Inspection, InspectionDetail } from "./inspections-view.ts";
+import type { Inspection, InspectionDetail, InspectionZone } from "./inspections-view.ts";
 
 /** Сколько строк списка отдаём Claude за раз: больше — таблица не читается, фильтры сужают. */
 export const INSPECTIONS_TABLE_MAX = 50;
 
 const grade = (g: string | null) => g ?? "—";
 const pct = (n: number) => `${Math.round(n * 10) / 10}%`;
+const pts = (n: number) => `${Math.round(n * 10) / 10}`;
+/** «осталось 18 из 20 п.п. (−2)», обнулённая зона — пометкой. */
+const zoneText = (z: InspectionZone): string => {
+  if (z.zeroed) return `обнулена${z.share != null ? ` (доля ${pts(z.share)} п.п.)` : ""}`;
+  if (z.share == null || z.left == null) return z.loss != null ? `−${pts(z.loss)} п.п.` : "—";
+  return `${pts(z.left)} из ${pts(z.share)} п.п.${z.loss ? ` (−${pts(z.loss)})` : ""}`;
+};
 
 /** Движение к прошлой проверке той же пиццерии: «+2.5» / «−1.0» / «=» / «—» (прошлой нет). */
 export function moveText(r: Pick<Inspection, "score_pct" | "previous">): string {
@@ -46,7 +53,7 @@ export function formatInspectionDetail(d: InspectionDetail, reportUrl: string | 
     "",
     "Зоны:",
     ...(i.zones.length
-      ? i.zones.map((z) => `• ${z.title_ru ?? z.title_en ?? z.zone} (${z.zone}) — ${pct(z.pct)}`)
+      ? i.zones.map((z) => `• ${z.title_ru ?? z.title_en ?? z.zone} (${z.zone}) — ${zoneText(z)}`)
       : ["—"]),
     "",
     `Нарушения (${d.findings.length}):`,

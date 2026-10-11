@@ -2,7 +2,7 @@
 // проверке той же пиццерии и черновик задачи из проверки. Чистые функции без React, под тестами
 // (homeInspections.test.ts).
 
-import type { Inspection, InspectionDetail, InspectionFinding } from "./api";
+import type { Inspection, InspectionDetail, InspectionFinding, InspectionZone } from "./api";
 
 /** Сколько проверок показываем в виджете, пока не нажали «Показать ещё». */
 export const INSPECTIONS_SHOWN = 8;
@@ -25,6 +25,19 @@ export function inspectionChange(r: Pick<Inspection, "score_pct" | "previous">):
 }
 
 export const pctText = (n: number) => `${round1(n)}%`;
+
+/** Подпись зоны: «56.5 / 60» (осталось из доли, п.п. общей оценки); обнулённая — словом. */
+export function zoneValue(z: InspectionZone, dt: (ru: string, en: string) => string): string {
+  if (z.zeroed) return dt("обнулена", "zeroed");
+  if (z.share == null || z.left == null) return z.loss != null ? `−${round1(z.loss)}` : "—";
+  return `${round1(z.left)} / ${round1(z.share)}`;
+}
+
+/** Заполнение полоски зоны, %: остаток от доли; обнулённая — пустая. */
+export function zoneFill(z: InspectionZone): number {
+  if (z.zeroed || !z.share || z.left == null) return 0;
+  return Math.max(0, Math.min(100, (z.left / z.share) * 100));
+}
 
 export type TaskDraft = { title: string; description: string; country: string };
 

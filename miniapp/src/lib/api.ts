@@ -1629,7 +1629,11 @@ export interface Inspection {
   previous: InspectionPrev | null;
 }
 export interface InspectionsData { inspections: Inspection[]; truncated: boolean }
-export interface InspectionZone { zone: string; title_ru: string | null; title_en: string | null; pct: number }
+/** Зона как её хранит движок Децимуса: доля, потеря и остаток — в процентных пунктах общей оценки. */
+export interface InspectionZone {
+  zone: string; title_ru: string | null; title_en: string | null;
+  share: number | null; loss: number | null; left: number | null; zeroed: boolean;
+}
 export interface InspectionFinding {
   n: number; code: string; title_ru: string | null; title_en: string | null;
   level: string; zone: string; text: string | null; repeat: boolean;
@@ -1686,8 +1690,9 @@ function mockInspectionDetail(id: string): InspectionDetail {
     inspection: {
       ...base, deductions: Math.round((100 - base.score_pct) * 10) / 10, counts,
       zones: [
-        { zone: "KIT", title_ru: "Кухня", title_en: "Kitchen", pct: Math.min(100, base.score_pct + 3) },
-        { zone: "HALL", title_ru: "Зал", title_en: "Dining area", pct: Math.max(0, base.score_pct - 4) },
+        { zone: "KIT", title_ru: "Кухня", title_en: "Kitchen", share: 60, loss: 3.5, left: 56.5, zeroed: false },
+        { zone: "HALL", title_ru: "Зал", title_en: "Dining area", share: 25, loss: 25, left: 0, zeroed: true },
+        { zone: "OUT", title_ru: "Снаружи", title_en: "Outside", share: 15, loss: 0, left: 15, zeroed: false },
       ],
     },
     findings,

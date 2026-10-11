@@ -7,7 +7,7 @@ import { useDialogA11y } from "./useDialogA11y";
 import { useInspection } from "./useInspections";
 import type { Inspection } from "@/lib/api";
 import { countryFlag } from "@/lib/countries";
-import { inspectionChange, inspectionTaskDraft, pctText, previousText, type TaskDraft } from "@/lib/homeInspections";
+import { inspectionChange, inspectionTaskDraft, pctText, previousText, zoneFill, zoneValue, type TaskDraft } from "@/lib/homeInspections";
 
 // Боковая панель проверки: итог (из строки списка — виден сразу), зоны и нарушения (GET /inspections/:id),
 // ссылка на отчёт в Децимусе и кнопка «Создать задачу» — она только открывает обычное окно создания задачи
@@ -70,9 +70,9 @@ export function InspectionPanel({ row, onClose, onCreateTask }: { row: Inspectio
                   {data.inspection.zones.map((z) => (
                     <li key={z.zone} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3" style={{ fontSize: 13 }}>
                       <span className="truncate">{dt(z.title_ru ?? z.zone, z.title_en ?? z.zone)}</span>
-                      <span className="font-mono font-semibold">{pctText(z.pct)}</span>
+                      <span className={`font-mono font-semibold ${z.zeroed ? "text-[var(--pri-high)]" : ""}`}>{zoneValue(z, dt)}</span>
                       <span className="col-span-2 h-1.5 overflow-hidden rounded-full bg-surface-2" aria-hidden="true">
-                        <span className="block h-full rounded-full bg-primary" style={{ width: `${z.pct}%` }} />
+                        <span className={`block h-full rounded-full ${z.zeroed ? "bg-[var(--pri-high)]" : "bg-primary"}`} style={{ width: `${zoneFill(z)}%` }} />
                       </span>
                     </li>
                   ))}
