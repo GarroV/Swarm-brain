@@ -42,6 +42,12 @@ jobs:
       - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2
         with:
           deno-version: v2.x
+      # Болгария (bg-registry): отчёты Търговски регистър — PDF, в основном сканы. Нужны poppler
+      # (pdftotext, pdftoppm) и tesseract с болгарским; без них адаптер вернёт сбой, а не пустоту.
+      - name: Утилиты для PDF и распознавания (BG)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends poppler-utils tesseract-ocr tesseract-ocr-bul
       - name: Сбор
         env:
           MARKET_INGEST_URL: ${{ vars.MARKET_INGEST_URL }}
@@ -56,4 +62,4 @@ jobs:
           [ -n "$IN_SOURCE" ] && args+=(--source "$IN_SOURCE")
           [ -n "$IN_SINCE" ] && args+=(--since "$IN_SINCE")
           [ "$IN_DRY" = "true" ] && args+=(--dry-run)
-          deno run --allow-net --allow-env --allow-read --allow-write --allow-run=unzip scripts/market/run.ts "${args[@]}"
+          deno run --allow-net --allow-env --allow-read --allow-write --allow-run=unzip,pdftotext,pdftoppm,tesseract scripts/market/run.ts "${args[@]}"
