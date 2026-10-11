@@ -5,7 +5,7 @@
 
 export const WIDGET_IDS = [
   "calls", "top5", "board", "rs", "rko", "pz", "att", "countries", "viol",
-  "sales", "maps", "myTasks", "teamTasks", "news", "latest",
+  "sales", "maps", "insp", "myTasks", "teamTasks", "news", "latest",
 ] as const;
 export type WidgetId = (typeof WIDGET_IDS)[number];
 export type WidgetWidth = "half" | "full";
@@ -13,7 +13,7 @@ export type LayoutItem = { id: WidgetId; w: WidgetWidth };
 
 export const DEFAULT_WIDTH: Record<WidgetId, WidgetWidth> = {
   calls: "half", top5: "half", board: "full", rs: "half", rko: "half", pz: "full",
-  att: "half", countries: "half", viol: "half", sales: "half", maps: "half",
+  att: "half", countries: "half", viol: "half", sales: "half", maps: "half", insp: "half",
   myTasks: "full", teamTasks: "half", news: "half", latest: "half",
 };
 

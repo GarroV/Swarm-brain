@@ -1619,6 +1619,81 @@ function mockMaps(): MapsData {
   return { on: "2026-10-11", compare: "2026-09-11", countries, units, loaded_at: "2026-10-11T03:10:00Z" };
 }
 
+export interface InspectionPrev { id: string; date: string; score_pct: number; grade: string | null }
+export interface Inspection {
+  id: string;
+  unit: { id: string; dodo_id: string | null; name: string; cc: string };
+  date: string; kind: string | null; score_pct: number; grade: string | null; path: string;
+  /** Ссылка на отчёт в Децимусе, собирает сервер; null — адрес Децимуса не настроен. */
+  report_url: string | null;
+  previous: InspectionPrev | null;
+}
+export interface InspectionsData { inspections: Inspection[]; truncated: boolean }
+export interface InspectionZone { zone: string; title_ru: string | null; title_en: string | null; pct: number }
+export interface InspectionFinding {
+  n: number; code: string; title_ru: string | null; title_en: string | null;
+  level: string; zone: string; text: string | null; repeat: boolean;
+}
+export interface InspectionDetail {
+  inspection: Inspection & { deductions: number; counts: Record<string, number>; zones: InspectionZone[] };
+  findings: InspectionFinding[];
+}
+
+/** Последние подтверждённые проверки Децимуса (по умолчанию 90 дней), новые первыми; Swarm только читает. */
+export async function fetchInspections(): Promise<InspectionsData> {
+  if (DEV_MODE) return mockInspections();
+  return apiFetch<InspectionsData>("/inspections");
+}
+
+/** Итог, зоны и нарушения одной проверки. */
+export async function fetchInspection(id: string): Promise<InspectionDetail> {
+  if (DEV_MODE) return mockInspectionDetail(id);
+  return apiFetch<InspectionDetail>(`/inspections/${encodeURIComponent(id)}`);
+}
+
+// Синтетика для DEV_MODE: пиццерии те же, что в mockMaps; есть падение, рост и проверка без прошлой.
+function mockInspections(): InspectionsData {
+  const rows: [string, string, string, number, string, number | null][] = [
+    ["BG", "Demo Sofia-1", "2026-10-08", 96.5, "A", 93.0], ["RS", "Demo Belgrade-2", "2026-10-06", 81.0, "C", 90.5],
+    ["PL", "Demo Krakow-1", "2026-10-05", 92.0, "B", 92.0], ["KZ", "Demo Almaty-1", "2026-10-03", 88.5, "B", null],
+    ["NG", "Demo Lagos-1", "2026-09-29", 74.0, "D", 79.5], ["BG", "Demo Varna-1", "2026-09-24", 94.5, "A", 91.0],
+    ["RS", "Demo Novi Sad-1", "2026-09-20", 90.0, "B", 87.5], ["KZ", "Demo Astana-2", "2026-09-15", 85.0, "C", 86.0],
+    ["NG", "Demo Abuja-3", "2026-09-10", 79.5, "C", 70.0], ["PL", "Demo Krakow-1", "2026-07-01", 92.0, "B", null],
+  ];
+  const inspections = rows.map(([cc, name, date, score, grade, prev], i): Inspection => {
+    const id = `00000000-0000-4000-8000-${String(i + 1).padStart(12, "0")}`;
+    return {
+      id, unit: { id: String(i + 1).padStart(32, "d"), dodo_id: null, name, cc }, date, kind: "planned", score_pct: score, grade,
+      path: `/registry/${id}`, report_url: `https://decimus.example${`/registry/${id}`}`,
+      previous: prev == null ? null : { id: `${id.slice(0, -1)}9`, date: "2026-07-01", score_pct: prev, grade: prev >= 90 ? "A" : "B" },
+    };
+  });
+  return { inspections, truncated: false };
+}
+
+function mockInspectionDetail(id: string): InspectionDetail {
+  const base = mockInspections().inspections.find((r) => r.id === id) ?? mockInspections().inspections[0];
+  const bad = Math.round((100 - base.score_pct) / 2.5);
+  const levels = ["critical", "major", "major", "minor", "minor", "minor"];
+  const findings: InspectionFinding[] = Array.from({ length: Math.min(bad, 6) }, (_, k) => ({
+    n: k + 1, code: `D${k + 1}.${k + 2}`, title_ru: `Пункт методики ${k + 1}`, title_en: `Methodology item ${k + 1}`,
+    level: levels[k], zone: k % 2 ? "KIT" : "HALL",
+    text: k === 1 ? null : `Demo finding ${k + 1}: the item was not met during the visit.`, repeat: k === 0 && base.previous != null,
+  }));
+  const counts: Record<string, number> = {};
+  for (const f of findings) counts[f.level] = (counts[f.level] ?? 0) + 1;
+  return {
+    inspection: {
+      ...base, deductions: Math.round((100 - base.score_pct) * 10) / 10, counts,
+      zones: [
+        { zone: "KIT", title_ru: "Кухня", title_en: "Kitchen", pct: Math.min(100, base.score_pct + 3) },
+        { zone: "HALL", title_ru: "Зал", title_en: "Dining area", pct: Math.max(0, base.score_pct - 4) },
+      ],
+    },
+    findings,
+  };
+}
+
 // Синтетика для DEV_MODE: выдуманные пиццерии в четырёх странах, баллы детерминированы от индекса.
 function mockQuality(kind: QualityKind): QualityData {
   const iso = (d: Date) => d.toISOString().slice(0, 10);

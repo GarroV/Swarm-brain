@@ -10,6 +10,7 @@ import { useDt, useRoyNav } from "./nav";
 import { saveRecent } from "./screens/SearchScreen";
 import { HeaderNotice } from "./DeployNoticeBar";
 import { TaskModal } from "@/components/TaskModal";
+import type { TaskDraft } from "@/lib/homeInspections";
 
 // Главная (десктоп) — сборная из виджетов: docs/decisions/2026-10-07-home-dashboard-direction.md.
 // Каждый собирает её сам (home/HomeGrid.tsx, раскладка — lib/homeLayout.ts); по умолчанию сверху
@@ -21,16 +22,18 @@ export function RoyDashboard() {
   const data = useDashboardData();
   const { bumpTasks } = useRoyNav();
   const [creating, setCreating] = useState(false);
+  // Черновик задачи из проверки (виджет «Проверки»): только заполняет форму, сохраняет человек.
+  const [draft, setDraft] = useState<TaskDraft | null>(null);
   const [editing, setEditing] = useState(false);
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
       <HomeHeader editing={editing} onEdit={() => setEditing(true)} />
       <div className="min-h-0 flex-1 overflow-auto">
-        <HomeGrid data={data} onCreateTask={() => setCreating(true)} editing={editing} onEditing={setEditing} />
+        <HomeGrid data={data} onCreateTask={() => { setDraft(null); setCreating(true); }} onCreateTaskFrom={(d) => { setDraft(d); setCreating(true); }} editing={editing} onEditing={setEditing} />
       </div>
       {/* Быстрое создание задачи с главной — окно поверх, без ухода на доску. */}
-      <TaskModal open={creating} onClose={() => setCreating(false)} onSaved={bumpTasks} />
+      <TaskModal open={creating} onClose={() => setCreating(false)} onSaved={bumpTasks} prefill={draft ?? undefined} />
     </div>
   );
 }

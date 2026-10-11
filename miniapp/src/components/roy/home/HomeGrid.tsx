@@ -9,6 +9,8 @@ import { CountryEditor, NarrowChip } from "./CountryEditor";
 import { HomeTasksWidget, TeamTasksWidget } from "./TaskWidgets";
 import { SalesWidget, TopTasksWidget } from "./MiscWidgets";
 import { MapsWidget } from "./MapsWidget";
+import { InspectionsWidget } from "./InspectionsWidget";
+import type { TaskDraft } from "@/lib/homeInspections";
 import { BoardWidget } from "./StickerBoard";
 import { RkoWidget, RsWidget, SampleTag, ViolationsWidget } from "./QualityWidgets";
 import { AttentionWidget, CountriesWidget, PizzeriasWidget } from "./TableWidgets";
@@ -42,15 +44,16 @@ const META: Record<WidgetId, Meta> = {
   viol: { title: ["Топ-5 нарушений", "Top 5 violations"], hint: ["Самые частые нарушения стандартов в волне.", "Most frequent standards violations this wave."], scoped: true, sample: true },
   sales: { title: ["Продажи Dodo", "Dodo sales"], hint: ["Выручка моих стран по месяцам — данные «Анализа рынка».", "Monthly revenue of my countries from Market analysis."], meta: ["публичный API Dodo", "Dodo public API"] },
   maps: { title: ["Карты и отзывы", "Maps & reviews"], hint: ["Средняя оценка Google и Яндекса по странам, изменение за 30 дней, худшие пиццерии.", "Average Google and Yandex rating by country, 30-day change, lowest-rated pizzerias."], scoped: true, meta: ["Google · Яндекс, за 30 дней", "Google · Yandex, 30 days"] },
+  insp: { title: ["Проверки", "Inspections"], hint: ["Последние проверки стандартов по странам подборки: балл, класс, движение к прошлой; клик — зоны и нарушения.", "Latest standards inspections in your countries: score, grade, change vs the previous one; click for zones and violations."], scoped: true, meta: ["Децимус, за 90 дней", "Decimus, 90 days"] },
   myTasks: { title: ["Мои задачи", "My tasks"], hint: ["Полная таблица: просрочено, сегодня, дальше, без срока.", "Full table: overdue, today, later, no date."] },
   teamTasks: { title: ["Задачи команды", "Team tasks"], hint: ["Общие задачи без исполнителя.", "Shared tasks with no owner."] },
   news: { title: ["Новости", "News"], hint: ["Комментарии, чекпоинты, встречи на вычитке.", "Comments, checkpoints, meetings to review."], ownTitle: true },
   latest: { title: ["Последнее в базе", "Latest in the base"], hint: ["Свежие записи и встречи базы знаний.", "Fresh entries and meetings in the knowledge base."], ownTitle: true },
 };
 
-type Props = { data: DashboardData; onCreateTask: () => void; editing: boolean; onEditing: (v: boolean) => void };
+type Props = { data: DashboardData; onCreateTask: () => void; onCreateTaskFrom: (draft: TaskDraft) => void; editing: boolean; onEditing: (v: boolean) => void };
 
-export function HomeGrid({ data, onCreateTask, editing, onEditing: setEditing }: Props) {
+export function HomeGrid({ data, onCreateTask, onCreateTaskFrom, editing, onEditing: setEditing }: Props) {
   const dt = useDt();
   const lang = dt("ru", "en") === "en" ? 1 : 0;
   const { me, setTab } = useRoyNav();
@@ -97,6 +100,7 @@ export function HomeGrid({ data, onCreateTask, editing, onEditing: setEditing }:
       case "viol": return <ViolationsWidget scope={scope} />;
       case "sales": return <SalesWidget codes={codes} sales={sales} />;
       case "maps": return <MapsWidget codes={codes} />;
+      case "insp": return <InspectionsWidget codes={codes} onCreateTask={onCreateTaskFrom} />;
       case "myTasks": return <HomeTasksWidget data={data} />;
       case "teamTasks": return <TeamTasksWidget data={data} />;
       case "news": return <HomeNews data={data} now={new Date()} />;
