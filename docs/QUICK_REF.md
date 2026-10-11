@@ -264,6 +264,7 @@ claude mcp add supabase-swarm -- npx -y @supabase/mcp-server-supabase@0.12.0 \
 | API-клиент / типы | `miniapp/src/lib/api.ts`, `miniapp/src/types.ts` | MINIAPP_ARCHITECTURE.md |
 | 🧭 **«Анализ рынка»** (решение 02.10.2026) — раздел по странам Dodo из открытых источников; видимость по `workspaces.allowed_markets`, демо видит только выдуманную `XD` | веб `miniapp/src/components/market/*` (`MarketScreen` и секции), `lib/marketView.ts`/`marketStats.ts`/`marketDemo.ts`, вкладка `market` в `lib/royRoute.ts`/`royUrl.ts`, `RoyRail.tsx`, `RoyApp.tsx`; API `swarm-api/market.ts`; ручной ввод из Claude Desktop — MCP `swarm-mcp/market.ts` (`market_*`, шаблон отчёта `_shared/market/template.ts`, запись `_shared/market/manual.ts`); приём `market-ingest/`; логика `_shared/market/`; сборщики и конфиги стран `scripts/market/`; workflow `market-collect.yml`; таблицы `mkt_*` | §Анализ рынка в [ARCHITECTURE](ARCHITECTURE.md) |
 | 🧭 **Баллы РС и РКО по пиццериям** (решение 08.10.2026) — источник **Децимус**, Swarm только читает: `GET /quality?kind=rs\|rko` — прокси к API Децимуса с кэшем 5 мин, страны по `allowed_markets`; своей таблицы и загрузки нет. Рейтинги карт — `GET /quality/maps` (виджет `maps`, `maps-view.ts`, `homeMaps.ts`) | `swarm-api/quality.ts`, `quality-view.ts` (+`.test.ts`) | ARCHITECTURE §Баллы РС и РКО, [decimus#567](https://github.com/GarroV/decimus/issues/567) |
+| 🧭 **Проверки Децимуса** (блок 3, решение 11.10.2026) — `GET /inspections?from=&to=` и `/inspections/:id` (прокси, кэш 5 мин, страны по `allowed_markets`, деталь чужой страны → 404, `report_url`), MCP `get_inspections` / `get_inspection`; Децимус читается только через общий клиент `_shared/decimus.ts` | `swarm-api/inspections.ts`, `swarm-mcp/inspections.ts`, `_shared/inspections-view.ts` (+`.test.ts`), `_shared/inspections-format.ts`, `_shared/decimus.ts` | ARCHITECTURE §Проверки Децимуса |
 
 ### MCP / установщики
 | Concern | Файлы | Детали |
@@ -331,7 +332,7 @@ claude mcp add supabase-swarm -- npx -y @supabase/mcp-server-supabase@0.12.0 \
 | `TELEGRAM_BOT_TOKEN` | да |
 | `SUPABASE_URL` | да |
 | `SUPABASE_SERVICE_ROLE_KEY` | да |
-| `DECIMUS_API_URL`, `DECIMUS_API_TOKEN` | нет (swarm-api; без них баллы РС/РКО на главной → «не загрузилось») |
+| `DECIMUS_API_URL`, `DECIMUS_API_TOKEN` | нет (swarm-api, swarm-mcp; без них баллы РС/РКО, карты и проверки → «не загрузилось») |
 | `OPENAI_API_KEY` | да |
 | `BOT_NAME` | нет (дефолт `"bot"`) |
 | `MCP_AUTH_REQUIRED` | устарела с 2026-09-30 — `swarm-mcp` без токена отказывает всегда (`auth.ts`) |

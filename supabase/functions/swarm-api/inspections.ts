@@ -15,7 +15,12 @@ import {
 } from "../_shared/decimus.ts";
 import { apiErr, json } from "./http.ts";
 import { serverError } from "./client-error.ts";
-import { type Inspection, type InspectionDetail, toInspectionDetail, toInspectionsView } from "./inspections-view.ts";
+import {
+  type Inspection,
+  type InspectionDetail,
+  toInspectionDetail,
+  toInspectionsView,
+} from "../_shared/inspections-view.ts";
 
 const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
 
@@ -25,7 +30,6 @@ const DEFAULT_WINDOW_DAYS = 90;
 const DAY_MS = 86_400_000;
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const SOURCE_OFF = "inspections source is not configured";
 
 type WithReport<T> = T & { report_url: string | null };
 type ListOut = { inspections: WithReport<Inspection>[]; truncated: boolean };
@@ -112,7 +116,7 @@ async function loadDetail(id: string, countries: string[] | null, key: string): 
 function failure(e: unknown, where: string, origin: string): Response {
   if (e instanceof DecimusNotConfigured) {
     console.error(`[${where}]`, e.message);
-    return apiErr(503, SOURCE_OFF, origin);
+    return apiErr(503, "inspections source is not configured", origin);
   }
   return serverError(origin, where, e);
 }

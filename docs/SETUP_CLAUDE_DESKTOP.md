@@ -99,6 +99,7 @@ chmod +x ~/.swarm-brain/bin/swarm-mcp-bridge.sh
 | `get_today_meetings` | Встречи на сегодня из Google-календаря: время, с кем, ссылка. Передай свой пояс (`tz_offset_minutes`, Белград летом 120) |
 | `market_template` / `market_status` / `market_get` | «Анализ рынка»: шаблон отчёта, что заполнено по стране, что записано в разделе |
 | `market_set_block` / `market_set_company_year` / `market_upsert_location` / `market_upsert_chain` / `market_set_price` | Внести или поправить данные рынка — блок отчёта, выручку юрлица, точку на карте, сеть, цену. Только админ, у каждой записи ссылка на источник; на экране сразу |
+| `get_inspections` / `get_inspection` | Проверки пиццерий из Децимуса: список (фильтры `country`, `from`, `to`, `unit`; балл, класс, движение к прошлой) и одна проверка целиком — зоны, нарушения, ссылка на отчёт |
 | `get_users` | Список команды с профилями |
 | `get_storage_stats` | Статистика базы |
 | `list_entries` | Список записей с фильтрами (источник, тип, дата, файлы, страны) — для ревизии |

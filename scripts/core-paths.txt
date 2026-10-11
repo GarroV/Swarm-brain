@@ -79,4 +79,4 @@ supabase/functions/_shared/model-usage.ts|supabase/functions/_shared/model-usage
 supabase/functions/_shared/model-usage-summary.ts|supabase/functions/_shared/model-usage-summary.test.ts
 # Проверки Децимуса (блок 3): показываются и пересказываются Claude как факт; ошибка не падает —
 # она рисует плавающий процент или чужую страну вместо ошибки/404.
-supabase/functions/swarm-api/inspections-view.ts|supabase/functions/swarm-api/inspections-view.test.ts
+supabase/functions/_shared/inspections-view.ts|supabase/functions/_shared/inspections-view.test.ts
