@@ -58,6 +58,14 @@ export type ConfigCompany = {
   regId: string;
 };
 
+export type MachineSource = "osm" | "overture";
+export type DiscoveredChain = {
+  key: string;
+  name: string;
+  segment: string;
+  bakery?: boolean;
+};
+
 type Base = { country: string; started_at: string };
 export type IngestPayload =
   | Base & {
@@ -80,7 +88,12 @@ export type IngestPayload =
     } | null;
   }
   // rejected — объекты с именем сети, но не её (ложный brand, исключение в конфиге)
-  | Base & { source: "osm"; points: OsmPoint[]; rejected?: OsmPoint[] }
+  | Base & {
+    source: MachineSource;
+    points: OsmPoint[];
+    rejected?: OsmPoint[];
+    chains?: DiscoveredChain[];
+  }
   | Base & { source: "registry"; adapter: string; years: RegistryYear[] }
   // решения админа по токену сборщика (index.ts adminAction, scripts/market/admin.ts)
   | Base & { source: "snapshot"; snapshot: unknown }

@@ -56,4 +56,4 @@ jobs:
           [ -n "$IN_SOURCE" ] && args+=(--source "$IN_SOURCE")
           [ -n "$IN_SINCE" ] && args+=(--since "$IN_SINCE")
           [ "$IN_DRY" = "true" ] && args+=(--dry-run)
-          deno run --allow-net --allow-env --allow-read --allow-write --allow-run=unzip scripts/market/run.ts "${args[@]}"
+          deno run --allow-net --allow-env --allow-read --allow-write --allow-run=unzip --allow-ffi --allow-sys scripts/market/run.ts "${args[@]}"
