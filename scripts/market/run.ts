@@ -25,7 +25,11 @@ export function dueAdapters(
   today: string,
   only?: string,
 ): string[] {
-  const auto = cfg.sources.filter((s) => s.mode === "auto");
+  // Страна на Overture карту из Overpass не берёт, даже если строка источника осталась в конфиге.
+  const auto = cfg.sources.filter((s) =>
+    s.mode === "auto" &&
+    !(cfg.mapSource === "overture" && s.adapter === "osm-overpass")
+  );
   // Опечатка в id (osm вместо osm-overpass) раньше давала зелёный прогон без сбора (#763).
   if (only && !auto.some((s) => s.adapter === only)) {
     throw new Error(
@@ -47,7 +51,10 @@ function summary(p: IngestPayload): string {
       p.revenue?.month ?? "—"
     }`;
   }
-  if (p.source === "osm") return `points=${p.points.length}`;
+  if (p.source === "osm" || p.source === "overture") {
+    return `points=${p.points.length}` +
+      (p.chains ? ` discovered=${p.chains.length}` : "");
+  }
   if (p.source === "registry") {
     return `years=${p.years.length} ` +
       p.years.map((y) =>
