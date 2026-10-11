@@ -279,6 +279,49 @@ export type Person = {
   telegram_id: number | null;
 };
 
+// Стикеры-задания на главной (GET /stickers). Зеркало ответа supabase/functions/swarm-api/stickers.ts.
+export type StickerKind = "task" | "notice";
+export type StickerTone = "yellow" | "pink" | "blue" | "green" | "paper";
+
+export type StickerAddressee = {
+  person_id: string;
+  name: string;
+  /** null — человек без входа в Swarm */
+  telegram_id: number | null;
+  /** задание — его задача закрыта; объявление — нажал «Понятно» */
+  done: boolean;
+  acked_at: string | null;
+  task_id: string | null;
+  task_due: string | null;
+};
+
+export type BoardSticker = {
+  id: string;
+  kind: StickerKind;
+  title: string;
+  body: string;
+  due_at: string | null;
+  tone: StickerTone;
+  link: string | null;
+  created_by: number;
+  created_at: string;
+  /** вызывающий среди адресатов */
+  mine: boolean;
+  addressees: StickerAddressee[];
+};
+
+/** Тело POST /stickers: адресаты — `all` или `person_ids`. */
+export type NewSticker = {
+  kind: StickerKind;
+  title: string;
+  body: string;
+  due_at: string | null;
+  tone: StickerTone;
+  link: string | null;
+  all: boolean;
+  person_ids: string[];
+};
+
 export type User = {
   telegram_id: number;
   name: string;

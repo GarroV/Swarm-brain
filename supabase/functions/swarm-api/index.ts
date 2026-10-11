@@ -132,6 +132,7 @@ import { handleIntegrationConnectRoutes, makeIntegrationsDeps } from "./integrat
 import { handleAutojoinRoutes, makeAutojoinStore, makeCalendarCheck } from "./autojoin.ts";
 import { handleTaskLabelRoutes } from "./task-labels.ts";
 import { handlePublicShortLink, handleShortLinkRoutes, isPublicShortLinkPath } from "./short-links.ts";
+import { handleStickerRoutes } from "./stickers.ts";
 import { handleTaskCommentRoutes } from "./task-comments.ts";
 import { handleTaskFileRoutes } from "./task-files.ts";
 import { handleStatsRoutes } from "./stats.ts";
@@ -142,6 +143,8 @@ import { handleSprintCycleRoutes } from "./sprint-cycles.ts";
 import { handleSpaceJournalRoutes } from "./space-journal.ts";
 import { handleTaskArchiveRoutes } from "./task-archive.ts";
 import { handleMarketRoutes } from "./market.ts";
+import { handleQualityRoutes } from "./quality.ts";
+import { handleInspectionRoutes } from "./inspections.ts";
 import { handleTelegramLinkRoutes } from "./telegram-link.ts";
 import { handleModelUsageRoutes } from "./model-usage.ts";
 import { SUPERADMIN_TELEGRAM_ID } from "../_shared/users/admin-scope.ts";
@@ -899,6 +902,14 @@ async function routeRequest(req: Request): Promise<Response> {
   );
   if (shortLinkResp) return shortLinkResp;
 
+  // Стикеры-задания на главной: стикеры своего воркспейса; создавать и архивировать — админ.
+  const stickerResp = await handleStickerRoutes(
+    { supabase, telegramId: telegram_id, groupId, isDemo, isAdmin, origin },
+    req,
+    routePath,
+  );
+  if (stickerResp) return stickerResp;
+
   // Приглашение бота на созвон (D017): человек вставляет ссылку — бот постучится.
   const inviteResp = await handleMeetingInviteRoutes(
     { supabase, telegramId: telegram_id, groupId, isDemo, origin },
@@ -1067,6 +1078,13 @@ async function routeRequest(req: Request): Promise<Response> {
   // «Анализ рынка» (/market/*): данные страны по allowed_markets, импорт и кандидаты — админу.
   const marketResp = await handleMarketRoutes(req, routePath, telegram_id, groupId, isAdmin, isDemo, origin);
   if (marketResp) return marketResp;
+
+  // Баллы РС и РКО по пиццериям (/quality?kind=) — весь воркспейс, страны по allowed_markets.
+  const qualityResp = await handleQualityRoutes(req, routePath, groupId, isDemo, origin);
+  if (qualityResp) return qualityResp;
+  // Проверки Децимуса (/inspections, /inspections/:id) — тот же прокси, страны по allowed_markets.
+  const inspectionsResp = await handleInspectionRoutes(req, routePath, groupId, isDemo, origin);
+  if (inspectionsResp) return inspectionsResp;
 
   // GET /tasks or POST /tasks
   if (routePath === "/tasks") {

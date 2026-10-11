@@ -72,7 +72,7 @@ function comparePeople(a: SortablePerson, b: SortablePerson): number {
   return a.name.localeCompare(b.name, "ru");
 }
 
-async function loadPeople(
+export async function loadPeople(
   supabase: SupabaseClient,
   groupId: string,
   ids?: string[],
@@ -154,6 +154,15 @@ export type TaskPeopleFields = {
   coassignee_person_ids?: string[];
 };
 
+/** Поля исполнителя задачи для человека из справочника: с аккаунтом — по-старому, без — через person_id. */
+export function assigneeFieldsFor(
+  p: PersonView,
+): Required<Pick<TaskPeopleFields, "assignees" | "assignee_telegram_ids" | "assignee_person_id">> {
+  return p.telegram_id != null
+    ? { assignees: [p.name], assignee_telegram_ids: [p.telegram_id], assignee_person_id: null }
+    : { assignees: [p.name], assignee_telegram_ids: [], assignee_person_id: p.id };
+}
+
 /**
  * Разбирает `assignee_person_id` и `coassignee_person_ids` из тела запроса задачи.
  * Каждый id обязан быть человеком ЭТОГО воркспейса — чужой uuid не пройдёт.
@@ -204,12 +213,7 @@ export async function resolveTaskPeople(
   const assigneeId = typeof body.assignee_person_id === "string" ? body.assignee_person_id : null;
   if (assigneeId) {
     const p = byId.get(assigneeId)!;
-    Object.assign(
-      out,
-      p.telegram_id != null
-        ? { assignees: [p.name], assignee_telegram_ids: [p.telegram_id], assignee_person_id: null }
-        : { assignees: [p.name], assignee_telegram_ids: [], assignee_person_id: p.id },
-    );
+    Object.assign(out, assigneeFieldsFor(p));
   }
   if (coIds) out.coassignee_person_ids = coIds;
   return out;
