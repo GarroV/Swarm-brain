@@ -7,7 +7,14 @@
 // переиздаётся с новым сроком, поэтому человек, который пользуется сервисом, не вылетает
 // никогда. Это единственная точка, через которую ходит весь фронт, — другого места, где
 // можно поймать «пользователь ещё жив», у нас нет.
-import { authTimeForRefresh, verifyJWT, signJWT, shouldRefreshSession, SESSION_TTL_SEC } from "../_lib/jwt";
+import {
+  authTimeForRefresh,
+  isRenewableSession,
+  verifyJWT,
+  signJWT,
+  shouldRefreshSession,
+  SESSION_TTL_SEC,
+} from "../_lib/jwt";
 import { swarmApiUrl } from "../_lib/api-url";
 
 type Env = { SWARM_API_URL?: string; WEB_JWT_SECRET?: string };
@@ -77,6 +84,7 @@ async function renewSessionCookie(
   try {
     const claims = await verifyJWT(token, secret);
     if (!claims) return null; // истёкшая/битая подпись — пусть человек войдёт заново
+    if (!isRenewableSession(claims)) return null; // короткий токен, не сессия входа
     // Старый формат переиздаём сразу — так он переезжает на новый при первом же запросе.
     if (!claims.legacy && !shouldRefreshSession(claims.exp, Math.floor(Date.now() / 1000))) return null;
     // Момент входа переносим как был: продление не должно «омолаживать» сессию относительно

@@ -32,7 +32,7 @@ supabase functions deploy meeting-process --no-verify-jwt    # cron-воркер
 supabase functions deploy meeting-status --no-verify-jwt     # статус встреч пачкой (рекордер чистит локальный бэкап по done)
 supabase functions deploy meeting-heartbeat --no-verify-jwt  # heartbeat рекордера и бота scriba → watchdog checkRecorderHealth (оборванная запись / истечение токена)
 supabase functions deploy recorder-diag --no-verify-jwt      # журнал рекордера с машин команды → recorder_diagnostics (3 дня)
-supabase functions deploy meeting-webtoken --no-verify-jwt   # обмен recorder-токена на web-JWT (cookie roj_session) для панели /live в WKWebView рекордера
+supabase functions deploy meeting-webtoken --no-verify-jwt   # обмен личного токена на web-JWT на 12 ч без продления (пометки рекордера, вход на превью)
 supabase functions deploy meeting-notice --no-verify-jwt     # уведомление владельцу встречи, что запись НЕ идёт (бот scriba: дверь, капча, нет звука, умер контейнер)
 supabase functions deploy meeting-invite --no-verify-jwt     # оркестратор бота scriba забирает приглашения своего воркспейса (D017)
 supabase functions deploy meeting-calendar --no-verify-jwt   # бот scriba сам по календарю: задания на встречи Meet людей с автозапуском (T100)
