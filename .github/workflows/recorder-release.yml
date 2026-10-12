@@ -7,7 +7,11 @@ name: recorder-release
 # Как раскатить новую сборку рекордера:
 #   1) поднять recorder/VERSION (+ код), смёржить в main, проверить сборку;
 #   2) создать и запушить тег recorder-build-<N> (N = VERSION) — CI соберёт и опубликует asset;
-#   3) поднять LATEST_BUILD в supabase/functions/swarm-recorder-version → все рекордеры обновятся.
+#   3) поднять номер и sha256 (из сводки этого прогона) в supabase/functions/_shared/recorder-release.ts
+#      и раскатать swarm-recorder-version + swarm-recorder-setup → все рекордеры обновятся.
+#
+# Архив в бакете НЕ перезаписывается (#203): опубликованная сборка неизменна, и её сумма, зашитая
+# в код, остаётся верной. Пересобрать тот же номер нельзя — поднимай recorder/VERSION.
 
 on:
   push:
@@ -46,6 +50,15 @@ jobs:
           files: recorder/SwarmRecorder-${{ steps.v.outputs.build }}.zip
           fail_on_unmatched_files: true
 
+      - name: Контрольная сумма архива (в _shared/recorder-release.ts)
+        env:
+          BUILD: ${{ steps.v.outputs.build }}
+        run: |
+          set -euo pipefail
+          SHA="$(shasum -a 256 "recorder/SwarmRecorder-$BUILD.zip" | cut -d' ' -f1)"
+          echo "SwarmRecorder-$BUILD.zip sha256 $SHA"
+          printf '### Сборка %s\n\n`RECORDER_ASSET_SHA256 = "%s"`\n' "$BUILD" "$SHA" >> "$GITHUB_STEP_SUMMARY"
+
       # Раздача идёт из Supabase Storage, не с GitHub (issue #91: release asset анонимно 404).
       # Раньше заливали руками с service_role из локального CLI, а у него нет прав на ключи
       # (403 api_gateway_keys_read, 24.09.2026). Ключ берём Management API тем же токеном,
@@ -62,8 +75,10 @@ jobs:
             | python3 -c 'import sys,json; print(next(k["api_key"] for k in json.load(sys.stdin) if k.get("name")=="service_role"))')"
           echo "::add-mask::$KEY"
           curl -fsS -X POST "https://$REF.supabase.co/storage/v1/object/swarm_drive/recorder/SwarmRecorder-$BUILD.zip" \
-            -H "authorization: Bearer $KEY" -H "content-type: application/zip" -H "x-upsert: true" \
+            -H "authorization: Bearer $KEY" -H "content-type: application/zip" \
             --data-binary "@recorder/SwarmRecorder-$BUILD.zip" > /dev/null
-          CODE="$(curl -sS -o /dev/null -w '%{http_code}' "https://$REF.supabase.co/storage/v1/object/public/swarm_drive/recorder/SwarmRecorder-$BUILD.zip")"
+          CODE="$(curl -sS -o pub.zip -w '%{http_code}' "https://$REF.supabase.co/storage/v1/object/public/swarm_drive/recorder/SwarmRecorder-$BUILD.zip")"
           echo "анонимная раздача SwarmRecorder-$BUILD.zip: HTTP $CODE"
           [ "$CODE" = "200" ]
+          # Раздаётся ровно то, что собрано здесь: иначе сумма из сводки не совпадёт у людей.
+          [ "$(shasum -a 256 pub.zip | cut -d' ' -f1)" = "$(shasum -a 256 "recorder/SwarmRecorder-$BUILD.zip" | cut -d' ' -f1)" ]
