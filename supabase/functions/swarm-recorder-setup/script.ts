@@ -172,13 +172,16 @@ fi
 step "$([ "$REUSED_TOKEN" = "1" ] && echo "Сохраняю прежний токен" || echo "Прописываю токен в конфиг")"
 mkdir -p "$CONFIG_DIR" || die "Не удалось создать $CONFIG_DIR"
 TOKEN_ESC="\${SWARM_TOKEN//\\\\/\\\\\\\\}"; TOKEN_ESC="\${TOKEN_ESC//\\"/\\\\\\"}"
-cat > "$CONFIG" <<EOF || die "Не удалось записать $CONFIG"
+# В конфиге личный токен: файл создаётся сразу с правами 0600 (umask в подоболочке), и
+# прежний, записанный старым установщиком читаемым для всех, тоже закрывается (#203).
+(umask 077; cat > "$CONFIG") <<EOF || die "Не удалось записать $CONFIG"
 {
   "token": "$TOKEN_ESC",
   "ingestBaseURL": "$INGEST_BASE_URL",
   "webBaseURL": ""
 }
 EOF
+chmod 600 "$CONFIG" || die "Не удалось закрыть права на $CONFIG"
 say "✓ Конфиг записан: $CONFIG"
 
 # Перезапуск (во время записи — не трогаем, чтобы не оборвать встречу).
