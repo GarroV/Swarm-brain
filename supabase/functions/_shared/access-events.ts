@@ -42,7 +42,7 @@ export async function logAccess(
   kind: AccessKind,
   ctx: AccessContext,
   sessionAuthTime?: number,
-): Promise<void> {
+): Promise<boolean> {
   try {
     const { ip, country } = requestOrigin(ctx.req);
     const row = {
@@ -60,22 +60,34 @@ export async function logAccess(
         ignoreDuplicates: true,
       })
       : await supabase.from("access_events").insert(row);
-    if (error) console.error("access_events:", kind, telegramId, error.message);
+    if (error) {
+      console.error("access_events:", kind, telegramId, error.message);
+      return false;
+    }
+    return true;
   } catch (e) {
     console.error("access_events:", kind, telegramId, e);
+    return false;
   }
 }
 
 // Вход замечается в swarm-api по первому запросу новой сессии. Чтобы не писать в базу на каждый
-// запрос экрана, инстанс помнит уже записанные сессии; холодный старт — максимум ещё одна попытка,
-// которую отсечёт уникальный индекс.
-const seenLogins = new Set<string>();
-const SEEN_LIMIT = 5000;
+// запрос экрана, инстанс помнит уже ЗАПИСАННЫЕ сессии (только после удачной записи — иначе сбой
+// базы навсегда спрятал бы вход); холодный старт — максимум ещё одна попытка, её отсечёт
+// уникальный индекс.
+const loggedLogins = new Set<string>();
+const LOGGED_LIMIT = 5000;
 
-export function isNewLogin(telegramId: number, authTime: number): boolean {
+export async function logLoginOnce(
+  supabase: SupabaseClient,
+  telegramId: number,
+  authTime: number,
+  ctx: AccessContext,
+): Promise<void> {
   const key = `${telegramId}:${authTime}`;
-  if (seenLogins.has(key)) return false;
-  if (seenLogins.size >= SEEN_LIMIT) seenLogins.clear();
-  seenLogins.add(key);
-  return true;
+  if (loggedLogins.has(key)) return;
+  if (await logAccess(supabase, telegramId, "web_login", ctx, authTime)) {
+    if (loggedLogins.size >= LOGGED_LIMIT) loggedLogins.clear();
+    loggedLogins.add(key);
+  }
 }

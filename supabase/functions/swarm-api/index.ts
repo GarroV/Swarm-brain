@@ -5,7 +5,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { verifyInitData } from "./auth.ts";
 import { isRenewableSession, isSessionRevoked, type SessionClaims, verifyJWT } from "../_shared/jwt.ts";
-import { isNewLogin, logAccess } from "../_shared/access-events.ts";
+import { logAccess, logLoginOnce } from "../_shared/access-events.ts";
 import {
   buildRecorderSetupOneLiner,
   buildRecorderUpdateOneLiner,
@@ -618,12 +618,10 @@ async function routeRequest(req: Request): Promise<Response> {
   // Журнал входов (#797): первая встреча новой сессии = вход. Короткий веб-доступ по личному
   // токену (meeting-webtoken) помечается отдельным каналом. Демо — общий вход витрины, не пишем.
   if (webSession && webSession.authTime !== null && !isDemoSession(telegram_id)) {
-    if (isNewLogin(telegram_id, webSession.authTime)) {
-      await logAccess(supabase, telegram_id, "web_login", {
-        via: isRenewableSession(webSession) ? "web" : "token",
-        req,
-      }, webSession.authTime);
-    }
+    await logLoginOnce(supabase, telegram_id, webSession.authTime, {
+      via: isRenewableSession(webSession) ? "web" : "token",
+      req,
+    });
   }
   // Demo-сессия (секретная ссылка, telegram_id === DEMO_USER_ID): жёсткая изоляция.
   // Группа форсится в 'demo' (НЕ из БД), админ-права запрещены. Барьер «нет дыр в рабочие»:
