@@ -54,7 +54,7 @@ enum Updater {
         case busy                           // идёт запись/отправка — не трогаем
         case unreachable                    // сервер версий не ответил
         case upToDate(build: Int)           // уже последняя
-        case available(build: Int, from: Int, assetURL: URL)
+        case available(build: Int, from: Int, assetURL: URL, sha256: String)
     }
 
     static func decide(config: SwarmConfig?, bundlePath: String = Bundle.main.bundlePath,
@@ -65,12 +65,16 @@ enum Updater {
         guard let latest = await latestRelease(config: config) else { return .unreachable }
         let cur = currentBuild
         guard latest.build > cur else { return .upToDate(build: cur) }
-        return .available(build: latest.build, from: cur, assetURL: latest.assetURL)
+        return .available(build: latest.build, from: cur, assetURL: latest.assetURL, sha256: latest.sha256)
     }
 
-    // Спросить сервер последний доступный build и URL артефакта. nil при любой ошибке → не обновляемся.
-    // Источник истины — `swarm-recorder-version` (наш Supabase), GitHub в схеме больше не участвует.
-    static func latestRelease(config: SwarmConfig) async -> (build: Int, assetURL: URL)? {
+    // Спросить сервер последний доступный build, URL артефакта и его sha256. nil при любой ошибке →
+    // не обновляемся. Источник истины — `swarm-recorder-version` (наш Supabase).
+    //
+    // sha256 обязателен (#203): архив лежит в бакете Storage, а сумма зашита в код функции версий,
+    // который меняется только через git и CI. Подмена архива в бакете без подмены кода не проходит —
+    // хелпер сверит сумму до распаковки. Ответ без суммы = не обновляемся.
+    static func latestRelease(config: SwarmConfig) async -> (build: Int, assetURL: URL, sha256: String)? {
         let base = config.ingestBaseURL.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         guard let url = URL(string: base + "/swarm-recorder-version") else { return nil }
         var req = URLRequest(url: url)
@@ -84,7 +88,17 @@ enum Updater {
         else if let s = obj["build"] as? String { build = Int(s) }
         guard let build else { return nil }
         guard let asset = assetURL(from: obj["url"] as? String, build: build, apiBase: base) else { return nil }
-        return (build, asset)
+        guard let sha = sha256(from: obj["sha256"]) else { return nil }
+        return (build, asset, sha)
+    }
+
+    // Ровно 64 шестнадцатеричных знака, приводим к нижнему регистру — в таком виде печатает shasum.
+    // Всё прочее (нет поля, не строка, мусор) → nil: обновляться без суммы нельзя.
+    static func sha256(from raw: Any?) -> String? {
+        guard let s = raw as? String else { return nil }
+        let hex = s.lowercased()
+        guard hex.count == 64, hex.allSatisfy({ $0.isHexDigit }) else { return nil }
+        return hex
     }
 
     // URL артефакта: берём из ответа сервера, а при его отсутствии выводим из адреса API
@@ -176,7 +190,7 @@ enum Updater {
     // Запустить отсоединённый апдейтер. Скачивание идёт при живом приложении (простоя нет);
     // подмена /Applications + перезапуск — только когда нет recording-lock. Скачивание упало /
     // cert отсутствует / версия не новее → ничего не трогаем, остаёмся на рабочей версии.
-    static func runUpdater(currentBuild cur: Int, targetBuild: Int, assetURL: URL) {
+    static func runUpdater(currentBuild cur: Int, targetBuild: Int, assetURL: URL, sha256: String) {
         let appPath = Bundle.main.bundlePath
         let pid = ProcessInfo.processInfo.processIdentifier
         let dir = supportDir()
@@ -188,8 +202,8 @@ enum Updater {
         guard (try? script().write(to: scriptURL, atomically: true, encoding: .utf8)) != nil else { return }
 
         // Полностью отсоединяем (nohup + &): хелпер должен пережить наш SIGTERM и перезапуск.
-        // Аргументы: pid, текущий build, путь .app, lock, целевой build, URL артефакта.
-        let cmd = "nohup bash \(shq(scriptURL.path)) \(pid) \(cur) \(shq(appPath)) \(shq(lockPath)) \(targetBuild) \(shq(assetURL.absoluteString)) >> \(shq(logPath)) 2>&1 &"
+        // Аргументы: pid, текущий build, путь .app, lock, целевой build, URL артефакта, его sha256.
+        let cmd = "nohup bash \(shq(scriptURL.path)) \(pid) \(cur) \(shq(appPath)) \(shq(lockPath)) \(targetBuild) \(shq(assetURL.absoluteString)) \(shq(sha256)) >> \(shq(logPath)) 2>&1 &"
         let p = Process()
         p.executableURL = URL(fileURLWithPath: "/bin/bash")
         p.arguments = ["-c", cmd]
@@ -200,13 +214,13 @@ enum Updater {
     private static func shq(_ s: String) -> String { "'" + s.replacingOccurrences(of: "'", with: "'\\''") + "'" }
 
     // Текст хелпера. Принимает: $1=pid приложения, $2=текущий build, $3=путь .app, $4=lock,
-    // $5=целевой build, $6=URL артефакта.
-    private static func script() -> String {
+    // $5=целевой build, $6=URL артефакта, $7=ожидаемый sha256 архива.
+    static func script() -> String {
         """
         #!/bin/bash
         set -u
         IDENTITY=\(shq(signingIdentity))
-        APP_PID="$1"; CUR="$2"; APP_PATH="$3"; LOCK="$4"; TARGET="$5"; URL="$6"
+        APP_PID="$1"; CUR="$2"; APP_PATH="$3"; LOCK="$4"; TARGET="$5"; URL="$6"; WANT_SHA="${7:-}"
         log(){ echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*"; }
         log "self-update: current build $CUR → build $TARGET, app $APP_PATH (pid $APP_PID)"
         # Стабильный cert обязателен — иначе подпись схлопнется в ad-hoc и грант на запись слетит.
@@ -223,6 +237,10 @@ enum Updater {
           000) log "download failed (нет сети?); keep current"; exit 0 ;;
           *)   log "download failed (HTTP $CODE от $URL — артефакт не опубликован?); keep current"; exit 0 ;;
         esac
+        # Сумма — ДО распаковки (#203): чужой архив не должен даже разворачиваться, а тем более
+        # переподписываться нашим cert'ом. Пустая ожидаемая сумма — тоже отказ.
+        GOT_SHA="$(shasum -a 256 "$TMP/app.zip" 2>/dev/null | cut -d' ' -f1)"
+        if [ -z "$WANT_SHA" ] || [ "$GOT_SHA" != "$WANT_SHA" ]; then log "checksum mismatch (want ${WANT_SHA:-none}, got ${GOT_SHA:-none}); keep current"; exit 0; fi
         if ! ditto -x -k "$TMP/app.zip" "$TMP/unz" >/dev/null 2>&1; then log "unzip failed; keep current"; exit 0; fi
         # Имя бандла в архиве переходное: сейчас там SwarmRecorder.app (иначе апдейтер сборок ≤23
         # не найдёт его и молча не обновится), позже — bumblebee.app. Принимаем оба.

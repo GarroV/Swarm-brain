@@ -44,6 +44,13 @@ const COMMON = [
   "Referrer-Policy: strict-origin-when-cross-origin",
   "Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=()",
   "Cross-Origin-Opener-Policy: same-origin-allow-popups",
+  // Только HTTPS на год вперёд: браузер не пойдёт на http:// даже по старой ссылке, и первый
+  // запрос нельзя перехватить в открытой сети. Без includeSubDomains — поддомены не наши заботы.
+  "Strict-Transport-Security: max-age=31536000",
+  // Запрет встраивания в чужие страницы (кликджекинг) — БЛОКИРУЮЩИЙ, отдельно от основной
+  // политики: та пока в Report-Only (#100), и frame-ancestors внутри неё ничего не запрещал.
+  // Браузер применяет все CSP-заголовки разом, так что этот работает независимо от режима.
+  `Content-Security-Policy: frame-ancestors ${EMBEDDERS.join(" ")}`,
 ];
 
 function htmlFiles(dir) {

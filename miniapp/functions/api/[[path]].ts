@@ -52,13 +52,22 @@ export async function onRequest(ctx: Ctx): Promise<Response> {
 
   const res = await fetch(target, init);
   const renewed = await renewSessionCookie(sessionToken, res.status, env.WEB_JWT_SECRET);
-  if (!renewed) return res;
 
   // Пересобираем ответ, потому что headers у ответа fetch иммутабельны. Тело передаём
   // потоком как есть — не буферизуем, чтобы не ломать стриминг.
   const out = new Response(res.body, res);
-  out.headers.append("Set-Cookie", renewed);
+  stripCors(out.headers);
+  if (renewed) out.headers.append("Set-Cookie", renewed);
   return out;
+}
+
+// CORS-заголовки апстрима (swarm-api отдаёт `*`) прокси наружу не пропускает: фронт ходит сюда
+// со своего же адреса, где CORS не нужен вовсе. За этим адресом сессионная кука — чужим страницам
+// здесь разрешать нечего, даже если кто-то потом включит credentials.
+export function stripCors(headers: Headers): void {
+  for (const name of [...headers.keys()]) {
+    if (name.toLowerCase().startsWith("access-control-")) headers.delete(name);
+  }
 }
 
 // Возвращает готовый Set-Cookie, если сессию пора продлить, иначе null.
