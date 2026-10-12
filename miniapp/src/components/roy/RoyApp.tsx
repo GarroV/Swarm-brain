@@ -4,7 +4,7 @@ import type { Me, Task } from "@/types";
 import { TaskModal } from "@/components/TaskModal";
 import { cn } from "@/lib/utils";
 import { getDeepLinkMeetingId, getDeepLinkTaskId } from "@/lib/telegram";
-import { fetchAgentMeetings, logout } from "@/lib/api";
+import { fetchAgentMeetings, fetchMeetings, logout } from "@/lib/api";
 import { OPEN_MEETING_EVENT } from "@/lib/single-tab";
 import { queryToState, stateToPath } from "@/lib/royUrl";
 import {
@@ -149,12 +149,13 @@ export function RoyApp({ me }: { me: Me | null }) {
   // (разобрал очередь → вернулся на другой таб → счётчик обновится при следующем заходе).
   useEffect(() => {
     let alive = true;
-    fetchAgentMeetings("awaiting_review")
-      .then((list) => {
-        if (alive) setReviewCount(list.length);
-      })
-      .catch(() => {
-        if (alive) setReviewCount(0);
+    // Та же очередь, что у стикера «Вычитай встречи» на главной: черновики рекордера на
+    // вычитке + свои неподтверждённые встречи (#903). Упал один источник — считаем по другому.
+    Promise.allSettled([fetchAgentMeetings("awaiting_review"), fetchMeetings({ confirmed: false })])
+      .then(([review, pending]) => {
+        if (!alive) return;
+        const n = (r: PromiseSettledResult<unknown[]>) => (r.status === "fulfilled" ? r.value.length : 0);
+        setReviewCount(n(review) + n(pending));
       });
     return () => {
       alive = false;
