@@ -14,6 +14,8 @@ const { mintRecorderToken, revokeRecorderToken } = await import("./recorder-toke
 const sb = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
 
 const USER = 990_201;
+// свой воркспейс: на чистой базе CI демо-воркспейса нет
+const WS = "qa-access-events";
 
 async function events(kind?: string) {
   let q = sb.from("access_events").select("kind, via, ip, country, session_auth_time").eq("telegram_id", USER);
@@ -26,7 +28,9 @@ async function events(kind?: string) {
 async function reset() {
   await sb.from("access_events").delete().eq("telegram_id", USER);
   await sb.from("allowed_users").delete().eq("telegram_id", USER);
-  const { error } = await sb.from("allowed_users").insert({ telegram_id: USER, group_id: "demo", added_by: USER });
+  const ws = await sb.from("workspaces").upsert({ id: WS, name: "QA access events" });
+  if (ws.error) throw ws.error;
+  const { error } = await sb.from("allowed_users").insert({ telegram_id: USER, group_id: WS, added_by: USER });
   if (error) throw error;
 }
 
