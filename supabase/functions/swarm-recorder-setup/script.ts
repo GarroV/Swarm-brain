@@ -3,8 +3,8 @@
 //
 // Поток (Option B — prebuilt, БЕЗ Xcode/Command Line Tools на машине юзера — issue #19):
 //   0. Проверить SWARM_TOKEN (^smcp_) и macOS.
-//   1. Узнать последнюю сборку + URL артефакта у swarm-recorder-version.
-//   2. Скачать готовый .app в zip → распаковать (ditto). Имя бандла в архиве переходное
+//   1. Сборка, URL артефакта и его sha256 вшиты при отдаче скрипта (_shared/recorder-release.ts).
+//   2. Скачать готовый .app в zip → сверить sha256 → распаковать (ditto). Имя бандла в архиве переходное
 //      (SwarmRecorder.app, см. recorder/build-app-ci.sh) — принимаем и его, и bumblebee.app.
 //   3. Снять карантин (xattr) — иначе Gatekeeper заблокирует скачанный .app.
 //   4. Создать per-machine self-signed cert (штатные /usr/bin/openssl + security — CLT НЕ нужен).
@@ -14,22 +14,22 @@
 // Почему так: CLT (git/swift) нужен ТОЛЬКО для сборки из исходников — а её мы вынесли в CI.
 // codesign/security/openssl/xattr/ditto — штатные бинарники macOS, работают без CLT (проверено).
 
-// Готовый .app раздаётся из ПУБЛИЧНОГО бакета Storage, а не из GitHub Release (issue #91):
-// репозиторий приватный с 20.08.2026 → анонимный curl за release asset получает 404, и установка
-// падала у каждого нового человека. Канон источника — `swarm-recorder-version` (поле `url`);
-// строка ниже нужна только как фолбэк, если функция версии недоступна.
-const ASSET_BASE_URL = "https://vbqglndbxkpmreccpqmr.supabase.co/storage/v1/object/public/swarm_drive/recorder";
+import { RECORDER_ASSET_SHA256, RECORDER_LATEST_BUILD, recorderAssetUrl } from "../_shared/recorder-release.ts";
+
+// Готовый .app раздаётся из ПУБЛИЧНОГО бакета Storage, а не из GitHub Release (issue #91).
+// Номер, адрес и сумма вшиваются в скрипт из _shared/recorder-release.ts — того же места, откуда
+// их берёт функция версий. Раньше скрипт спрашивал функцию версий и при её недоступности падал на
+// фолбэк-номер, который отстал на десять сборок; сумма же обязана приехать не из бакета (#203).
 const INGEST_BASE_URL = "https://vbqglndbxkpmreccpqmr.supabase.co/functions/v1";
-// Фолбэк-номер сборки, если swarm-recorder-version недоступен. Держать в синхроне с recorder/VERSION.
-const RECORDER_FALLBACK_BUILD = 26;
 
 export const SETUP_SCRIPT = `#!/bin/bash
 # Swarm Brain → bumblebee (macOS). Не запускай вручную — возьми команду в боте: /recordertoken
 set -u
 
-ASSET_BASE_URL="${ASSET_BASE_URL}"
 INGEST_BASE_URL="${INGEST_BASE_URL}"
-FALLBACK_BUILD="${RECORDER_FALLBACK_BUILD}"
+BUILD="${RECORDER_LATEST_BUILD}"
+URL="${recorderAssetUrl(RECORDER_LATEST_BUILD)}"
+WANT_SHA="${RECORDER_ASSET_SHA256}"
 CONFIG_DIR="$HOME/Library/Application Support/SwarmRecorder"
 CONFIG="$CONFIG_DIR/config.json"
 IDENTITY="SwarmRecorder Self-Signed"
@@ -75,15 +75,7 @@ else
   say "✓ Токен принят · macOS · arch=$ARCH"
 fi
 
-# ── 1. Последняя сборка + URL артефакта ─────────────────────────────────────────
-step "Узнаю последнюю сборку рекордера"
-VER_JSON="$(curl -fsSL "$INGEST_BASE_URL/swarm-recorder-version" 2>/dev/null || true)"
-BUILD="$(printf '%s' "$VER_JSON" | grep -oE '"build":[0-9]+' | grep -oE '[0-9]+' | head -1)"
-URL="$(printf '%s' "$VER_JSON" | grep -oE '"url":"[^"]+"' | sed 's/^"url":"//; s/"$//' | head -1)"
-[ -n "$BUILD" ] || BUILD="$FALLBACK_BUILD"
-if [ -z "$URL" ]; then
-  URL="$ASSET_BASE_URL/SwarmRecorder-$BUILD.zip"
-fi
+# ── 1. Сборка ─────────────────────────────────────────────────────────────────
 say "✓ Сборка $BUILD"
 
 # ── 2. Скачиваю готовый .app и распаковываю ─────────────────────────────────────
@@ -102,6 +94,12 @@ case "$HTTP_CODE" in
 Это не твой интернет — файл не опубликован или ссылка протухла. Покажи эту ошибку владельцу Swarm.";;
   *) die "Сервер раздачи ответил HTTP $HTTP_CODE: $URL";;
 esac
+# Сумма архива — ДО распаковки (#203): чужой архив не разворачивается и не подписывается нашим cert'ом.
+GOT_SHA="$(shasum -a 256 "$ZIP" 2>/dev/null | cut -d' ' -f1)"
+if [ "$GOT_SHA" != "$WANT_SHA" ]; then
+  die "Скачанный архив не совпадает с опубликованной сборкой $BUILD (контрольная сумма).
+Ничего не установлено. Покажи эту ошибку владельцу Swarm."
+fi
 if ! ditto -x -k "$ZIP" "$TMP/unz" >/dev/null 2>&1; then
   die "Не удалось распаковать загруженный архив."
 fi
@@ -174,13 +172,16 @@ fi
 step "$([ "$REUSED_TOKEN" = "1" ] && echo "Сохраняю прежний токен" || echo "Прописываю токен в конфиг")"
 mkdir -p "$CONFIG_DIR" || die "Не удалось создать $CONFIG_DIR"
 TOKEN_ESC="\${SWARM_TOKEN//\\\\/\\\\\\\\}"; TOKEN_ESC="\${TOKEN_ESC//\\"/\\\\\\"}"
-cat > "$CONFIG" <<EOF || die "Не удалось записать $CONFIG"
+# В конфиге личный токен: файл создаётся сразу с правами 0600 (umask в подоболочке), и
+# прежний, записанный старым установщиком читаемым для всех, тоже закрывается (#203).
+(umask 077; cat > "$CONFIG") <<EOF || die "Не удалось записать $CONFIG"
 {
   "token": "$TOKEN_ESC",
   "ingestBaseURL": "$INGEST_BASE_URL",
   "webBaseURL": ""
 }
 EOF
+chmod 600 "$CONFIG" || die "Не удалось закрыть права на $CONFIG"
 say "✓ Конфиг записан: $CONFIG"
 
 # Перезапуск (во время записи — не трогаем, чтобы не оборвать встречу).
