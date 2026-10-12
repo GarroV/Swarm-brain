@@ -4,6 +4,7 @@
 // deno-lint-ignore-file no-import-prefix
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import type { Snapshot } from "./types.ts";
+import { readyCountries, STALE_DAYS } from "./readiness.ts";
 
 const slug = (s: string | null): string =>
   (s ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "");
@@ -305,6 +306,25 @@ export type CountryBundle = Awaited<ReturnType<typeof loadCountry>>;
 export async function listCountriesWithData(sb: SupabaseClient): Promise<string[]> {
   const rows = await must<Array<{ country: string }>>(sb.from("mkt_chains").select("country"), "countries");
   return [...new Set(rows.map((r) => r.country))].sort();
+}
+
+/** Коды стран из `countries`, у которых данные обновляются сами (правило — `readiness.ts`). */
+export async function listReadyCountries(sb: SupabaseClient, countries: string[]): Promise<string[]> {
+  if (!countries.length) return [];
+  const since = new Date(Date.now() - 4 * STALE_DAYS * 86_400_000).toISOString();
+  const [sources, runs] = await Promise.all([
+    must<Array<{ country: string; adapter: string; mode: string; last_ok_at: string | null }>>(
+      sb.from("mkt_sources").select("country, adapter, mode, last_ok_at").in("country", countries),
+      "ready sources",
+    ),
+    allRows<{ country: string; source: string; status: string; finished_at: string }>(
+      (from, to) =>
+        sb.from("mkt_runs").select("country, source, status, finished_at").in("country", countries)
+          .gte("finished_at", since).order("finished_at").range(from, to),
+      "ready runs",
+    ),
+  ]);
+  return readyCountries(countries, sources, runs, new Date());
 }
 
 export type RunRecord = {
