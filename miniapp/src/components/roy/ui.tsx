@@ -700,7 +700,7 @@ export function RoyTabBar({ active, onChange, className, badges }: { active: str
                   с первого экрана, поэтому о нём должно быть видно, не заходя внутрь. */}
               {!!badges?.[t.id] && (
                 <span
-                  className="absolute -right-2 -top-1 inline-flex items-center justify-center rounded-full bg-primary font-bold text-primary-foreground"
+                  className="absolute -right-2 -top-1 inline-flex items-center justify-center rounded-full bg-destructive font-bold text-white"
                   style={{ minWidth: 16, height: 16, fontSize: 10, padding: "0 4px" }}
                 >
                   {badges[t.id] > 9 ? "9+" : badges[t.id]}

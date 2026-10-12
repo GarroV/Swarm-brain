@@ -7,6 +7,7 @@ import { Avatar } from "./ui";
 import { RoyIcon, type RoyIconName } from "./icons";
 import { initials } from "./dash/shared";
 import { useDt, useRoyNav } from "./nav";
+import { badgeLabel } from "@/lib/navBadges";
 import { saveRecent } from "./screens/SearchScreen";
 import { FeedbackDialog } from "./FeedbackFab";
 import { readTheme, saveTheme, THEME_CHANGE_EVENT, THEME_IDS, type ThemeId } from "@/lib/theme";
@@ -84,7 +85,7 @@ export function RoyRail({
 
   const renderItem = (item: RailItem) => {
     const on = active === item.id;
-    const badge = badges?.[item.id] ?? 0;
+    const badgeText = badgeLabel(badges?.[item.id]);
     return (
       <button
         key={item.id}
@@ -102,11 +103,14 @@ export function RoyRail({
       >
         <RoyIcon name={item.icon} size={16} strokeWidth={1.7} />
         <span className="min-w-0 flex-1 truncate max-[1099px]:hidden">{dt(item.label[0], item.label[1])}</span>
-        {badge > 0 && (
-          // Счётчик по стенду — тихой серой цифрой, не синей плашкой (визуальный шаг В2). В узкой
-          // рейке — мелкой цифрой в углу пиктограммы.
-          <span className="font-mono text-ink-mute max-[1099px]:absolute max-[1099px]:right-1 max-[1099px]:top-0.5" style={{ fontSize: 11 }}>
-            {badge}
+        {badgeText && (
+          // Красный кружок с числом, как на айфоне (владелец 12.10.2026, issue #903). В узкой
+          // рейке — в углу пиктограммы.
+          <span
+            className="inline-flex min-w-[17px] items-center justify-center rounded-full bg-destructive px-1 font-bold text-white max-[1099px]:absolute max-[1099px]:right-0.5 max-[1099px]:top-0"
+            style={{ fontSize: 10, height: 17, lineHeight: "17px" }}
+          >
+            {badgeText}
           </span>
         )}
       </button>
