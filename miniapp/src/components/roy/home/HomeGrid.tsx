@@ -8,12 +8,11 @@ import { HomeNews, LatestInBase } from "../dash/HomeSide";
 import { CountryEditor, NarrowChip } from "./CountryEditor";
 import { HomeTasksWidget, TeamTasksWidget } from "./TaskWidgets";
 import { SalesWidget, TopTasksWidget } from "./MiscWidgets";
-import { MapsWidget } from "./MapsWidget";
 import { InspectionsWidget } from "./InspectionsWidget";
 import type { TaskDraft } from "@/lib/homeInspections";
 import { BoardWidget } from "./StickerBoard";
 import { RkoWidget, RsWidget, SampleTag, ViolationsWidget } from "./QualityWidgets";
-import { AttentionWidget, CountriesWidget, PizzeriasWidget } from "./TableWidgets";
+import { CountriesWidget, PizzeriasWidget } from "./TableWidgets";
 import { useCountrySales } from "./useCountrySales";
 import { useQuality, type QualityState } from "./useQuality";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
@@ -39,11 +38,9 @@ const META: Record<WidgetId, Meta> = {
   rs: { title: ["Стандарты · РС", "Standards"], hint: ["Балл по волнам, критическая зона, обнуления, пиццерии без оценки.", "Score by wave, critical zone, zeroed and unrated pizzerias."], scoped: true, quality: true },
   rko: { title: ["Клиентский опыт · РКО", "Customer experience"], hint: ["Балл по неделям, резкие падения, пиццерии ниже порога.", "Weekly score, sharp drops, pizzerias below threshold."], scoped: true, quality: true },
   pz: { title: ["Пиццерии", "Pizzerias"], hint: ["Все пиццерии подборки: РС, РКО, худшие сверху.", "Every pizzeria in your selection, worst first."], scoped: true, quality: true, meta: ["худшие сверху", "worst first"] },
-  att: { title: ["Куда смотреть", "Needs attention"], hint: ["Сигналы по порогам в моих странах.", "Threshold alerts in my countries."], scoped: true, quality: true },
-  countries: { title: ["Мои страны", "My countries"], hint: ["Сводка по странам подборки; клик сужает главную.", "Per-country summary; click to focus."], scoped: true, quality: true },
+  countries: { title: ["Мои страны", "My countries"], hint: ["Страны подборки: РС, РКО, Google и Яндекс со стрелкой изменения, продажи; клик раскрывает пиццерии страны.", "Selected countries: standards, CX, Google and Yandex with change arrows, sales; click to expand pizzerias."], scoped: true, quality: true },
   viol: { title: ["Топ-5 нарушений", "Top 5 violations"], hint: ["Самые частые нарушения стандартов в волне.", "Most frequent standards violations this wave."], scoped: true, sample: true },
   sales: { title: ["Продажи Dodo", "Dodo sales"], hint: ["Выручка моих стран по месяцам — данные «Анализа рынка».", "Monthly revenue of my countries from Market analysis."], meta: ["публичный API Dodo", "Dodo public API"] },
-  maps: { title: ["Карты и отзывы", "Maps & reviews"], hint: ["Средняя оценка Google и Яндекса по странам, изменение за 30 дней, худшие пиццерии.", "Average Google and Yandex rating by country, 30-day change, lowest-rated pizzerias."], scoped: true, meta: ["Google · Яндекс, за 30 дней", "Google · Yandex, 30 days"] },
   insp: { title: ["Проверки", "Inspections"], hint: ["Последние проверки стандартов по странам подборки: балл, класс, движение к прошлой; клик — зоны и нарушения.", "Latest standards inspections in your countries: score, grade, change vs the previous one; click for zones and violations."], scoped: true, meta: ["Децимус, за 90 дней", "Decimus, 90 days"] },
   myTasks: { title: ["Мои задачи", "My tasks"], hint: ["Полная таблица: просрочено, сегодня, дальше, без срока.", "Full table: overdue, today, later, no date."] },
   teamTasks: { title: ["Задачи команды", "Team tasks"], hint: ["Общие задачи без исполнителя.", "Shared tasks with no owner."] },
@@ -95,11 +92,9 @@ export function HomeGrid({ data, onCreateTask, onCreateTaskFrom, editing, onEdit
       case "rs": return q && <RsWidget q={q} scope={scope} />;
       case "rko": return q && <RkoWidget q={q} scope={scope} />;
       case "pz": return <PizzeriasWidget scope={scope} />;
-      case "att": return <AttentionWidget scope={scope} />;
       case "countries": return <CountriesWidget scope={mine} sales={sales} narrow={narrow} onNarrow={setNarrow} onMarket={() => setTab("market")} />;
       case "viol": return <ViolationsWidget scope={scope} />;
       case "sales": return <SalesWidget codes={codes} sales={sales} />;
-      case "maps": return <MapsWidget codes={codes} />;
       case "insp": return <InspectionsWidget codes={codes} onCreateTask={onCreateTaskFrom} />;
       case "myTasks": return <HomeTasksWidget data={data} />;
       case "teamTasks": return <TeamTasksWidget data={data} />;

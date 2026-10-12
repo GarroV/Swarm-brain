@@ -1,24 +1,30 @@
 import { assertEquals } from "jsr:@std/assert@1";
 import type { MapsData, MapsUnit } from "./api.ts";
-import { mapsCountries, worstUnits } from "./homeMaps.ts";
+import { countryMaps, mapsByUnit, unitChange } from "./homeMaps.ts";
 
-const unit = (name: string, cc: string, g: [number, number, number | null] | null): MapsUnit => ({
-  id: name, name, cc, city: null,
-  maps: { google: g ? { avg: g[0], reviews: g[1], prev_avg: g[2] } : null, yandex: null },
+const unit = (id: string, google: MapsUnit["maps"]["google"]): MapsUnit => ({
+  id, name: "Dodo Pizza", cc: "RS", city: null, maps: { google, yandex: null },
 });
 
-Deno.test("worstUnits: худшие сверху, без оценки и чужих стран нет, изменение = оценка − прошлая", () => {
-  const units = [
-    unit("A", "RS", [4.5, 10, 4.7]), unit("B", "RS", [3.2, 5, null]), unit("C", "HR", [1, 9, 1]),
-    unit("D", "RS", null), unit("E", "RS", [3.2, 50, 3.0]), unit("F", "RS", [4.9, 1, 4.9]),
-  ];
-  const w = worstUnits(units, ["RS"], 3);
-  assertEquals(w.map((x) => x.name), ["E", "B", "A"]);
-  assertEquals(w.map((x) => x.change), [0.2, null, -0.2]);
+Deno.test("mapsByUnit: ключ — id в нижнем регистре (как Pizzeria.key), не название с карт", () => {
+  const data = { units: [unit("ABCD", { avg: 4.5, reviews: 10, prev_avg: 4.4 })] } as MapsData;
+  const m = mapsByUnit(data);
+  assertEquals(m.get("abcd")?.google?.avg, 4.5);
+  assertEquals(m.has("Dodo Pizza"), false);
+  assertEquals(mapsByUnit(null).size, 0);
 });
 
-Deno.test("mapsCountries: порядок выбора, страны без строки пропускаются", () => {
-  const c = (cc: string) => ({ cc } as MapsData["countries"][number]);
-  const data = { countries: [c("RS"), c("HR")] } as MapsData;
-  assertEquals(mapsCountries(data, ["HR", "XX", "RS"]).map((x) => x.cc), ["HR", "RS"]);
+Deno.test("unitChange: оценка − прошлая, округление до сотых; без прошлой или без оценки — null", () => {
+  assertEquals(unitChange({ avg: 4.55, reviews: 1, prev_avg: 4.4 }), 0.15);
+  assertEquals(unitChange({ avg: 4.3, reviews: 1, prev_avg: 4.4 }), -0.1);
+  assertEquals(unitChange({ avg: 4.3, reviews: 1, prev_avg: null }), null);
+  assertEquals(unitChange({ avg: null, reviews: 0, prev_avg: 4 }), null);
+  assertEquals(unitChange(null), null);
+});
+
+Deno.test("countryMaps: строка страны или null", () => {
+  const data = { countries: [{ cc: "RS" }] } as MapsData;
+  assertEquals(countryMaps(data, "RS")?.cc, "RS");
+  assertEquals(countryMaps(data, "HR"), null);
+  assertEquals(countryMaps(null, "RS"), null);
 });
