@@ -57,5 +57,6 @@ jobs:
           ARGS=("$PHASE")
           [ "$APPLY" = "true" ] && ARGS+=(--apply)
           [ "$VERIFIED" = "true" ] && ARGS+=(--i-verified)
-          SUPABASE_URL="https://$REF.supabase.co" SUPABASE_SERVICE_ROLE_KEY="$KEY" \
+          # Журнал публичный (репозиторий открыт): имена файлов печатаются хешем.
+          STORAGE_MIGRATE_REDACT=1 SUPABASE_URL="https://$REF.supabase.co" SUPABASE_SERVICE_ROLE_KEY="$KEY" \
             deno run -A scripts/storage-migrate.ts "${ARGS[@]}"
