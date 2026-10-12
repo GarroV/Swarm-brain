@@ -5,6 +5,7 @@ import { RoyIcon } from "./icons";
 import { cn } from "@/lib/utils";
 import { fetchNotifications, markNotificationsRead, fetchTask, type SwarmNotification } from "@/lib/api";
 import { publishNotice } from "@/lib/deployNotice";
+import { playChime, unreadObserver } from "@/lib/notificationSound";
 import { freezeNoticeText, freezeWindow } from "@/lib/maintenance";
 
 // Колокольчик уведомлений: бейдж непрочитанных + поповер-лента, клик по строке открывает
@@ -48,6 +49,8 @@ export function NotificationsBell({ className }: { className?: string }) {
       if (!alive.current) return;
       setItems(res.items);
       setUnread(res.unread);
+      // Звук — только когда счётчик вырос по сравнению с прошлым опросом (не при первой загрузке).
+      if (unreadObserver.observe(res.unread)) playChime();
     } catch {
       // Тихо: колокольчик — фоновая поверхность, сеть моргнула → покажем на следующем тике.
     }
@@ -85,6 +88,7 @@ export function NotificationsBell({ className }: { className?: string }) {
     const now = new Date().toISOString();
     setItems((prev) => prev.map((n) => (n.read_at ? n : { ...n, read_at: now })));
     setUnread(0);
+    unreadObserver.observe(0);
     try {
       await markNotificationsRead();
     } catch {
@@ -98,6 +102,7 @@ export function NotificationsBell({ className }: { className?: string }) {
     if (!n.read_at) {
       setItems((prev) => prev.map((x) => (x.id === n.id ? { ...x, read_at: new Date().toISOString() } : x)));
       setUnread((u) => Math.max(0, u - 1));
+      unreadObserver.observe(Math.max(0, unread - 1));
       void markNotificationsRead([n.id]).catch(() => void load());
     }
     if (!n.task_id) return;
@@ -227,7 +232,11 @@ export function NotificationsBell({ className }: { className?: string }) {
             : dt("Уведомления", "Notifications")
         }
         aria-expanded={open}
-        className="relative flex size-10 items-center justify-center rounded-full border border-line bg-surface shadow-[0_4px_14px_-8px_rgba(27,32,40,.25)] transition-colors hover:bg-surface-2 active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+        className={cn(
+          "relative flex size-10 items-center justify-center rounded-full border border-line bg-surface shadow-[0_4px_14px_-8px_rgba(27,32,40,.25)] transition-colors hover:bg-surface-2 active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]",
+          // Пульсирующее кольцо, пока есть непрочитанные (issue #803); без анимации при reduced-motion.
+          unread > 0 && "roy-bell-pulse",
+        )}
       >
         {/* Покачивание при непрочитанном (issue #609): раз в ~9 с, короткое — привлекает взгляд,
             но не дёргает постоянно. «Уменьшить движение» гасит его целиком (globals.css). */}

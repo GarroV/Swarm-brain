@@ -12,6 +12,7 @@ import {
 import { ConnectorsSection } from "@/components/profile/ConnectorsSection";
 import { TelegramPanel } from "@/components/profile/TelegramPanel";
 import { BackdropSection } from "@/components/profile/BackdropSection";
+import { NotificationSoundToggle } from "./NotificationSoundToggle";
 import { useDt } from "@/components/roy/nav";
 import { useIsDesktop } from "@/components/roy/useIsDesktop";
 import { SidePanel } from "@/components/roy/SidePanel";
@@ -75,6 +76,9 @@ function SettingsDesk() {
                   <Action on={panel === "digest"} onClick={() => toggle("digest")}>{dt("Настроить", "Set up")}</Action>
                 </Tile>
               </div>
+              <Tile title={dt("Уведомления", "Notifications")} className="col-span-3">
+                <NotificationSoundToggle />
+              </Tile>
               <Tile title={dt("Интеграции", "Integrations")} className="col-span-3">
                 <ConnectorsSection me={me} dense panels={{
                   calendar: <GoogleCalendarSection />, recorder: <RecorderSection />, telegram: <TelegramPanel me={me} />,
