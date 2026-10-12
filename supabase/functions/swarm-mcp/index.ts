@@ -1368,6 +1368,8 @@ Deno.serve(async (req: Request) => {
             status?: string;
             confirmed?: boolean;
             parent_task_id?: string;
+            created_by_name?: string;
+            mute_created_by?: boolean;
             requesting_user_id?: number;
           },
         );
