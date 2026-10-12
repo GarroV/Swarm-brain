@@ -21,13 +21,19 @@ export interface AccessContext {
   req?: Request;
 }
 
-/** Откуда пришёл запрос: первый адрес из x-forwarded-for и страна от Cloudflare, если прислал. */
+/**
+ * Откуда пришёл запрос — СЫРЫЕ заголовки, не доказательство. Левый адрес x-forwarded-for клиент
+ * может прислать сам, а какие звенья добавляют прокси (Cloudflare Pages → Supabase) мы не
+ * сверяли, поэтому пишем всю цепочку как есть и не выбираем «настоящий» адрес за читателя.
+ */
 export function requestOrigin(req?: Request): { ip: string | null; country: string | null } {
   if (!req) return { ip: null, country: null };
-  const xff = req.headers.get("x-forwarded-for") ?? "";
-  const ip = xff.split(",")[0].trim() || req.headers.get("cf-connecting-ip") || null;
+  const chain = [req.headers.get("x-forwarded-for"), req.headers.get("cf-connecting-ip")]
+    .filter((v): v is string => !!v && v.trim() !== "")
+    .map((v) => v.trim())
+    .join(" | ");
   const country = req.headers.get("cf-ipcountry") || null;
-  return { ip: ip ? ip.slice(0, 64) : null, country: country ? country.slice(0, 8) : null };
+  return { ip: chain ? chain.slice(0, 256) : null, country: country ? country.slice(0, 8) : null };
 }
 
 export async function logAccess(

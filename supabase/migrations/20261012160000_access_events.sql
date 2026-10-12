@@ -16,7 +16,7 @@ CREATE TABLE IF NOT EXISTS public.access_events (
     'recorder_token_revoked'
   )),
   via text NOT NULL,          -- канал: web, bot, recorder, preview, …
-  ip text,
+  ip text,                    -- сырая цепочка x-forwarded-for | cf-connecting-ip, не доказательство
   country text,
   -- Момент входа сессии (секунды) — только у web_login: по нему одна сессия = одна запись.
   session_auth_time bigint

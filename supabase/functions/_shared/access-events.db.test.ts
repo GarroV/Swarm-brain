@@ -40,7 +40,7 @@ Deno.test("выпуск и отзыв токенов попадают в жур�
   assertEquals(await revokeRecorderToken(sb, USER, { via: "bot" }), true);
 
   assertEquals(await events(), [
-    { kind: "mcp_token_issued", via: "web", ip: "203.0.113.7", country: "RS", session_auth_time: null },
+    { kind: "mcp_token_issued", via: "web", ip: "203.0.113.7, 10.0.0.1", country: "RS", session_auth_time: null },
     { kind: "recorder_token_issued", via: "bot", ip: null, country: null, session_auth_time: null },
     { kind: "recorder_token_revoked", via: "bot", ip: null, country: null, session_auth_time: null },
   ]);
