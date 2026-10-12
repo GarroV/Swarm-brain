@@ -1541,7 +1541,7 @@ export async function fetchMarketCountries(): Promise<string[]> {
   return apiFetch<string[]>("/market/countries");
 }
 
-/** Страны, у которых данные обновляются сами (все авто-источники живы; правило — `_shared/market/readiness.ts`).
+/** Страны с проработанной страницей (все разделы заполнены, авто-источники живы; правило — `_shared/market/readiness.ts`).
  *  Отдельный путь, а не поле в `/market/countries`: веб и функции катятся в разное время. Старый сервер
  *  отвечает 404 — тогда готовых нет, переключатель стран остаётся прежним. */
 export async function fetchMarketReady(): Promise<string[]> {

@@ -141,12 +141,12 @@ export function MarketScreen() {
                         key={c}
                         type="button"
                         className={isReady ? "ready" : undefined}
-                        title={isReady ? dt("Данные полные и обновляются сами", "Complete data, updates automatically") : undefined}
+                        title={isReady ? dt("Страница проработана: все разделы заполнены, данные обновляются сами", "Page complete: all sections filled, data updates automatically") : undefined}
                         aria-pressed={c === cc}
                         onClick={() => pick(c)}
                       >
                         {label(c)}
-                        {isReady && <span className="auto">{dt("● авто", "● auto")}</span>}
+                        {isReady && <span className="auto">{dt("● готово", "● ready")}</span>}
                       </button>
                     );
                   })}

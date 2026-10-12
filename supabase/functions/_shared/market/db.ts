@@ -308,11 +308,19 @@ export async function listCountriesWithData(sb: SupabaseClient): Promise<string[
   return [...new Set(rows.map((r) => r.country))].sort();
 }
 
-/** Коды стран из `countries`, у которых данные обновляются сами (правило — `readiness.ts`). */
+/** Коды стран из `countries`, чья страница проработана и данные обновляются сами (`readiness.ts`). */
 export async function listReadyCountries(sb: SupabaseClient, countries: string[]): Promise<string[]> {
   if (!countries.length) return [];
   const since = new Date(Date.now() - 4 * STALE_DAYS * 86_400_000).toISOString();
-  const [sources, runs] = await Promise.all([
+  // Только колонка country (и company_id), без N+1 по странам: один запрос на раздел.
+  const countriesOf = async (table: string) =>
+    new Set(
+      (await allRows<{ country: string }>(
+        (from, to) => sb.from(table).select("country").in("country", countries).order("country").range(from, to),
+        table,
+      )).map((r) => r.country),
+    );
+  const [sources, runs, editorial, prices, facts, companies, financials] = await Promise.all([
     must<Array<{ country: string; adapter: string; mode: string; last_ok_at: string | null }>>(
       sb.from("mkt_sources").select("country, adapter, mode, last_ok_at").in("country", countries),
       "ready sources",
@@ -323,8 +331,27 @@ export async function listReadyCountries(sb: SupabaseClient, countries: string[]
           .gte("finished_at", since).order("finished_at").range(from, to),
       "ready runs",
     ),
+    countriesOf("mkt_editorial"),
+    countriesOf("mkt_prices"),
+    countriesOf("mkt_facts"),
+    allRows<{ id: string; country: string }>(
+      (from, to) => sb.from("mkt_companies").select("id, country").in("country", countries).order("id").range(from, to),
+      "ready companies",
+    ),
+    allRows<{ company_id: string }>(
+      (from, to) => sb.from("mkt_financials").select("company_id").order("company_id").range(from, to),
+      "ready financials",
+    ),
   ]);
-  return readyCountries(countries, sources, runs, new Date());
+  const withFin = new Set(financials.map((f) => f.company_id));
+  const finCountries = new Set(companies.filter((c) => withFin.has(c.id)).map((c) => c.country));
+  const filled = Object.fromEntries(countries.map((c) => [c, {
+    editorial: editorial.has(c),
+    prices: prices.has(c),
+    facts: facts.has(c),
+    financials: finCountries.has(c),
+  }]));
+  return readyCountries(countries, sources, runs, filled, new Date());
 }
 
 export type RunRecord = {
