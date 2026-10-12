@@ -6,8 +6,8 @@
 --
 -- generate_mcp_token / revoke_mcp_token кодом не вызываются (токены выпускает _shared/mcp-token.ts),
 -- но не удаляются: правило «ничего не удаляем физически» и разбор их судьбы — отдельно.
--- projects_enforce_depth не трогаем: таблица projects — защищённый раздел (.github/protected-paths.txt),
--- правка только по прямой просьбе владельца.
+-- Триггерную функцию глубины дерева в разделе «Проекты» не трогаем: это защищённый раздел
+-- (.github/protected-paths.txt), правка только по прямой просьбе владельца.
 ALTER FUNCTION public.generate_mcp_token(bigint) SET search_path = public, pg_temp;
 ALTER FUNCTION public.generate_mcp_token(integer) SET search_path = public, pg_temp;
 ALTER FUNCTION public.revoke_mcp_token(bigint) SET search_path = public, pg_temp;
