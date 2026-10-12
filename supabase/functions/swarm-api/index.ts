@@ -4,7 +4,8 @@
 // роутера живёт в модулях рядом (task-labels.ts, meeting-invites.ts …), они по канону.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { verifyInitData } from "./auth.ts";
-import { isSessionRevoked, type SessionClaims, verifyJWT } from "../_shared/jwt.ts";
+import { isRenewableSession, isSessionRevoked, type SessionClaims, verifyJWT } from "../_shared/jwt.ts";
+import { logAccess, logLoginOnce } from "../_shared/access-events.ts";
 import {
   buildRecorderSetupOneLiner,
   buildRecorderUpdateOneLiner,
@@ -614,6 +615,14 @@ async function routeRequest(req: Request): Promise<Response> {
   ) {
     return apiErr(401, "Unauthorized", origin);
   }
+  // Журнал входов (#797): первая встреча новой сессии = вход. Короткий веб-доступ по личному
+  // токену (meeting-webtoken) помечается отдельным каналом. Демо — общий вход витрины, не пишем.
+  if (webSession && webSession.authTime !== null && !isDemoSession(telegram_id)) {
+    await logLoginOnce(supabase, telegram_id, webSession.authTime, {
+      via: isRenewableSession(webSession) ? "web" : "token",
+      req,
+    });
+  }
   // Demo-сессия (секретная ссылка, telegram_id === DEMO_USER_ID): жёсткая изоляция.
   // Группа форсится в 'demo' (НЕ из БД), админ-права запрещены. Барьер «нет дыр в рабочие»:
   // все data-запросы фильтруются по этому group_id, admin-роуты недоступны (isAdmin=false).
@@ -655,6 +664,7 @@ async function routeRequest(req: Request): Promise<Response> {
       console.error("revoke-sessions: не записал отметку отзыва", telegram_id, error.message);
       return apiErr(500, "Could not sign out everywhere", origin);
     }
+    await logAccess(supabase, telegram_id, "sessions_revoked", { via: "web", req });
     return new Response(null, { status: 204, headers: corsHeaders(origin) });
   }
 
@@ -796,7 +806,7 @@ async function routeRequest(req: Request): Promise<Response> {
         origin,
       );
     }
-    const minted = await mintRecorderToken(supabase, telegram_id);
+    const minted = await mintRecorderToken(supabase, telegram_id, 365, { via: "web", req });
     if (!minted) {
       return apiErr(500, "Не удалось создать токен рекордера", origin);
     }
@@ -837,7 +847,7 @@ async function routeRequest(req: Request): Promise<Response> {
         origin,
       );
     }
-    const minted = await mintMcpToken(supabase, telegram_id);
+    const minted = await mintMcpToken(supabase, telegram_id, { via: "web", req });
     if (!minted) return apiErr(500, "Не удалось создать токен", origin);
     return json({ oneLiner: buildSetupOneLiner(minted.token) }, 200, origin);
   }

@@ -2,6 +2,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { AgentAuthError, verifyAgentToken } from "../_shared/agent-auth.ts";
 import { signJWT } from "../_shared/jwt.ts";
+import { logAccess } from "../_shared/access-events.ts";
 
 // meeting-webtoken — обмен персонального токена рекордера на веб-сессию (тот же JWT, что в
 // cookie roj_session браузера). Зачем: рекордер открывает панель с экраном /live в WKWebView;
@@ -56,5 +57,6 @@ Deno.serve(async (req: Request) => {
     WEB_JWT_SECRET,
     WEBTOKEN_TTL_SEC,
   );
+  await logAccess(supabase, identity.telegramId, "web_access_exchanged", { via: "token", req });
   return json({ ok: true, jwt, telegram_id: identity.telegramId });
 });
