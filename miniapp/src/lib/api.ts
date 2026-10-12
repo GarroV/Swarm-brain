@@ -1541,6 +1541,20 @@ export async function fetchMarketCountries(): Promise<string[]> {
   return apiFetch<string[]>("/market/countries");
 }
 
+/** Страны с проработанной страницей (все разделы заполнены, авто-источники живы; правило — `_shared/market/readiness.ts`).
+ *  Отдельный путь, а не поле в `/market/countries`: веб и функции катятся в разное время. Старый сервер
+ *  отвечает 404 — тогда готовых нет, переключатель стран остаётся прежним. */
+export async function fetchMarketReady(): Promise<string[]> {
+  if (DEV_MODE) return [];
+  try {
+    const list = await apiFetch<unknown>("/market/ready");
+    return Array.isArray(list) ? list.filter((c): c is string => typeof c === "string") : [];
+  } catch (e) {
+    console.warn("[market] ready countries unavailable", e);
+    return [];
+  }
+}
+
 export async function fetchMarket(cc: string): Promise<MarketBundle> {
   if (DEV_MODE) return (await import("./marketDemo")).demolandBundle();
   return apiFetch<MarketBundle>(`/market/${cc}`);
