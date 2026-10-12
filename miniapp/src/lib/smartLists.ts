@@ -6,6 +6,7 @@ import type { Task, Me } from "@/types";
 import type { RoyIconName } from "@/lib/royIcons";
 import { countryCode } from "@/lib/countries";
 import { inRange, dayOf, type DateRange } from "@/lib/dateRange";
+import { toISO } from "@/lib/calendar";
 
 export type SmartListId = "today" | "upcoming" | "all" | "recurring";
 // Линза = ось «чьи задачи»: «mine» — назначенные на меня; «team» — ОБЩИЕ (без конкретного
@@ -192,9 +193,14 @@ function axisDay(task: Task): string | null {
 // Период (модификатор «Эта неделя»/«Этот месяц»/произвольный) — пересечение со списком, а не
 // расширение: задача обязана попасть И в список, И в диапазон. Задача без нужной даты в период
 // не попадает.
-function inPeriod(task: Task, range: DateRange | null): boolean {
+// Исключение — открытая просрочка: пока период захватывает сегодня, она часть нагрузки этого
+// периода и видна в «Просрочено» (владелец 12.10.2026, #902: «Эта неделя» в понедельник
+// начиналась сегодня и прятала всю просрочку). Прошлые периоды показывают только своё.
+function inPeriod(task: Task, range: DateRange | null, now: Date): boolean {
   if (!range) return true;
-  return inRange(axisDay(task), range);
+  if (inRange(axisDay(task), range)) return true;
+  const today = toISO(now);
+  return range.from <= today && today <= range.to && isOverdue(task, now);
 }
 
 // Базовый предикат «принадлежит списку» (без линзы и сортировки).
@@ -209,7 +215,7 @@ export function matchesList(task: Task, listId: SmartListId, now: Date = new Dat
 function inList(task: Task, listId: SmartListId, now: Date, range: DateRange | null = null, statuses: StatusSet = DEFAULT_STATUSES): boolean {
   // Ось статуса — первой: она дешевле остальных проверок.
   if (!matchesStatus(task, statuses)) return false;
-  if (!inPeriod(task, range)) return false;
+  if (!inPeriod(task, range, now)) return false;
   if (listId === "all") return true;
   if (listId === "recurring") {
     // Регулярные НЕ убираются из остальных списков (решение владельца 2026-08-27): задача

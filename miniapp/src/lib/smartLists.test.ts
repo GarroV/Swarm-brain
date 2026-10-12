@@ -196,3 +196,19 @@ Deno.test("«Сегодня + Готово»: закрытая на прошло
   });
   assertEquals(matchesList(t, "today", NOW, null, set("done")), false);
 });
+
+// Владелец 12.10.2026: «куда-то абсолютно потерялись все просроченные» — «Эта неделя» в понедельник
+// начиналась сегодня и отсекала всю открытую просрочку (#902).
+Deno.test("период, захватывающий сегодня, не прячет открытую просрочку; прошлый период — прячет", () => {
+  const week = { preset: "week" as const, from: "2026-09-03", to: "2026-09-09" };
+  const past = { preset: "prev_week" as const, from: "2026-08-24", to: "2026-08-30" };
+  const tasks = [
+    task({ id: "late", status: "open", due_date: "2026-08-20" }),
+    task({ id: "late-done", status: "done", due_date: "2026-08-20", updated_at: "2026-08-21T09:00:00+00:00" }),
+    task({ id: "in-week", status: "open", due_date: "2026-09-05" }),
+    task({ id: "after", status: "open", due_date: "2026-09-20" }),
+  ];
+  const all = set("open", "in_progress", "done");
+  assertEquals(ids(filterTasks(tasks, "all", "mine", ME, NOW, week, all)).sort(), ["in-week", "late"]);
+  assertEquals(ids(filterTasks(tasks, "all", "mine", ME, NOW, past, all)), []);
+});
