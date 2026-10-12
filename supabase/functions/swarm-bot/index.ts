@@ -29,6 +29,7 @@ import {
 } from "./lib/intent.ts";
 import { ALL_MEETING_SOURCES, ENTRY_MEETING_SOURCES, sourceLabel } from "../_shared/sources.ts";
 import { buildClaudeProjectPrompt } from "../_shared/claude-project-prompt.ts";
+import { logAccess } from "../_shared/access-events.ts";
 import { handleEntryCommand, handleManageCallbacks, handleManageSessionInput } from "./handlers/manage.ts";
 import {
   handleAddTask,
@@ -903,6 +904,7 @@ Deno.serve(async (req: Request) => {
       if (revErr) {
         await sendMessage(chatId, "❌ Не удалось отозвать токен. Попробуй позже.");
       } else {
+        await logAccess(supabase, userId, "mcp_token_revoked", { via: "bot" });
         await sendMessage(
           chatId,
           "🔒 <b>Токен отозван.</b> Доступ к Swarm Brain из Claude закрыт. Новый — через /mytoken.",

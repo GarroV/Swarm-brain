@@ -6,6 +6,7 @@
 // null как «без срока»). Хранится только sha256-хэшем в allowed_users.claude_mcp_token_hash.
 
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { type AccessContext, logAccess } from "./access-events.ts";
 
 export const SETUP_URL = "https://vbqglndbxkpmreccpqmr.supabase.co/functions/v1/swarm-setup";
 
@@ -14,7 +15,11 @@ export interface MintedToken {
 }
 
 // Минтит новый бессрочный smcp_-токен, перезаписывая старый (старый сразу мёртв). null при ошибке.
-export async function mintMcpToken(supabase: SupabaseClient, telegramId: number): Promise<MintedToken | null> {
+export async function mintMcpToken(
+  supabase: SupabaseClient,
+  telegramId: number,
+  ctx: AccessContext = { via: "unknown" },
+): Promise<MintedToken | null> {
   // Без дефисов: на десктоп-Telegram двойной клик по <code> выделяет «слово» до дефиса.
   const token = "smcp_" + crypto.randomUUID().replaceAll("-", "");
   const hashBuffer = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(token));
@@ -26,6 +31,7 @@ export async function mintMcpToken(supabase: SupabaseClient, telegramId: number)
     .update({ claude_mcp_token_hash: hashHex, claude_mcp_token_expires_at: null })
     .eq("telegram_id", telegramId);
   if (error) return null;
+  await logAccess(supabase, telegramId, "mcp_token_issued", ctx);
   return { token };
 }
 
@@ -41,8 +47,7 @@ export async function getMcpTokenStatus(
     .maybeSingle();
   if (!data) return { active: false, expiresAt: null };
   const row = data as { claude_mcp_token_hash: string | null; claude_mcp_token_expires_at: string | null };
-  const active =
-    !!row.claude_mcp_token_hash &&
+  const active = !!row.claude_mcp_token_hash &&
     (!row.claude_mcp_token_expires_at || Date.parse(row.claude_mcp_token_expires_at) >= Date.now());
   return { active, expiresAt: row.claude_mcp_token_expires_at };
 }
