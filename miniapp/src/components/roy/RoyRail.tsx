@@ -50,6 +50,8 @@ const GROUPS: RailItem[][] = [
     { id: "stats", label: ["Статистика", "Stats"], icon: "graph" },
   ],
   [
+    // «Админ» — обычный пункт над «Командой», виден только админу (issue #905; был замочком внизу).
+    { id: "admin", label: ["Админ", "Admin"], icon: "lock" },
     { id: "team", label: ["Команда", "Team"], icon: "team" },
     { id: "base", label: ["База", "Knowledge"], icon: "book" },
   ],
@@ -57,7 +59,6 @@ const GROUPS: RailItem[][] = [
 
 const FOOT: RailItem[] = [
   { id: "settings", label: ["Настройки", "Settings"], icon: "sliders" },
-  { id: "admin", label: ["Админ", "Admin"], icon: "lock" },
 ];
 
 export function RoyRail({
@@ -71,7 +72,6 @@ export function RoyRail({
 }) {
   const { me } = useRoyNav();
   const dt = useDt();
-  const foot = FOOT.filter((i) => i.id !== "admin" || me?.is_admin);
   const [wsName, setWsName] = useState<string | null>(null);
 
   // Подпись воркспейса под брендом (стенд: .ws-sub). Не пришло имя — подписи нет, рейка не ломается.
@@ -145,14 +145,14 @@ export function RoyRail({
         {GROUPS.map((group, gi) => (
           <div key={gi} className="flex flex-col gap-0.5">
             {gi > 0 && <div aria-hidden className="mx-2.5 my-1.5 h-px bg-line max-[1099px]:mx-1.5" />}
-            {group.map(renderItem)}
+            {group.filter((i) => i.id !== "admin" || me?.is_admin).map(renderItem)}
           </div>
         ))}
       </div>
       {/* Тема пилюлей и инструменты пиктограммами — одним рядом, без подписи (владелец 02.10.2026). */}
       <div className="flex items-center gap-1 border-t border-line px-2 py-2 max-[1099px]:flex-col max-[1099px]:gap-0.5">
         <ThemeSwitch />
-        <FootTools items={foot} active={active} onSelect={onSelect} />
+        <FootTools items={FOOT} active={active} onSelect={onSelect} />
       </div>
       <div className="flex items-center gap-2 border-t border-line px-3 py-2.5 max-[1099px]:justify-center max-[1099px]:px-0"
         title={displayName(me?.name) || undefined}>
