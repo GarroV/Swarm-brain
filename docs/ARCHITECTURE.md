@@ -1639,7 +1639,7 @@ afconvert — лежат в `meeting-ingest/testdata/` и меряются та�
 | `FILES_BASE_URL` | swarm-api | да (для файлов к задачам) | Публичный адрес `swarm-files` на MUSPELHEIM (`https://muspelheim.tail48dfee.ts.net:10000/swarm-files`). Без него или без ключа файлы отвечают 503, веб пишет «хранилище недоступно». Ставит кнопка `files-signing-key.yml` |
 | `FILES_SIGNING_KEY` | swarm-api | да (для файлов к задачам) | Закрытый ключ Ed25519 (PKCS8, base64) для подписи ссылок на файлы. Рождается в `files-signing-key.yml` и никуда больше не попадает; открытый ключ — `FILES_PUBLIC_KEY` на сервере |
 | `TASK_FILES_MAX_MB` / `TASK_FILES_MAX_COUNT` | swarm-api | нет (50 / 10) | Лимиты файлов к задаче: размер одного файла в МБ и число файлов. Веб берёт их из ответа `GET /tasks/:id/files`, поэтому подпись «до N МБ» меняется вместе с переменной |
-| `WEB_JWT_SECRET` | swarm-api, google-oauth, auth-resolve, meeting-webtoken | да (для веб-режима/Google) | HS256-секрет: проверка `Bearer`-JWT браузерной сессии (swarm-api), выпуск сессии рекордеру (meeting-webtoken), подпись вызовов от CF Pages (`google-oauth/link`, `auth-resolve`). OAuth-state подписывает и проверяет только CF Pages (`miniapp/functions/_lib/oauth-state.ts`). Должен совпадать с CF Pages |
+| `WEB_JWT_SECRET` | swarm-api, google-oauth, auth-resolve, meeting-webtoken | да (для веб-режима/Google) | HS256-секрет: проверка `Bearer`-JWT браузерной сессии (swarm-api), выпуск 12-часового веб-доступа по личному токену (meeting-webtoken; прокси его не продлевает — `isRenewableSession`), подпись вызовов от CF Pages (`google-oauth/link`, `auth-resolve`). OAuth-state подписывает и проверяет только CF Pages (`miniapp/functions/_lib/oauth-state.ts`). Должен совпадать с CF Pages |
 | `WEB_BASE_URL` | meeting-ingest, meeting-process | да (для deep-link) | База веб-фронта (`https://swarm-team.app` с 02.10.2026; прежний pages.dev переадресует): кнопка «Открыть» `?meeting=<id>` в уведомлении (meeting-process/ingest) |
 | `GOOGLE_CLIENT_ID` | `_shared/google-calendar.ts` (meeting-current и др.) + CF Pages | да (для Google Calendar рекордера) | OAuth client id Google-интеграции. refresh_token выдаёт CF Pages (вход и кнопка календаря), а освежает meeting-current — значит, в CF и в Supabase обязан стоять **один и тот же** клиент |
 | `GOOGLE_CLIENT_SECRET` | `_shared/google-calendar.ts` (meeting-current и др.) + CF Pages | да (для Google Calendar рекордера) | OAuth client secret той же интеграции (обмен кода — CF Pages, рефреш токена — meeting-current) |
@@ -2069,7 +2069,7 @@ _Админка (`admin.ts`, админы: `telegram_id 744230399` или `is_ad
      У превью нет env: прокси `/api` берёт публичный адрес swarm-api прода (`miniapp/functions/_lib/api-url.ts`), а Google и
      Telegram там не работают. Вход — `POST /api/auth/token` (форма с личным `smcp_`-токеном на `/login`, видна только не на
      `swarm-brain.pages.dev`): Pages меняет токен на сессию через `meeting-webtoken` прода и ставит `roj_session` **только
-     владельцу** (`telegram_id` 744230399), остальным — `?err=owner_only`; на боевом адресе маршрут отдаёт 404. Сессия 7 дней
+     владельцу** (`telegram_id` 744230399), остальным — `?err=owner_only`; на боевом адресе маршрут отдаёт 404. Сессия 12 часов
      без продления (`WEB_JWT_SECRET` у превью нет). После переезда нового интерфейса на боевой адрес — маршрут удалить.
 ## Анализ рынка
 

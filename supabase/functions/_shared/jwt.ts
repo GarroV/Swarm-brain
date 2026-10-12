@@ -126,6 +126,15 @@ export async function verifyJWT(token: string, secret: string): Promise<SessionC
   return { telegram_id: payload.telegram_id, exp: payload.exp, authTime, legacy };
 }
 
+// Продлевается только настоящая сессия входа: она выдаётся на полный срок, и продление держит
+// exp − auth_time ≥ срока. Короткий токен (личный токен меняется на 12 часов веб-доступа,
+// meeting-webtoken) иначе превратился бы в бесконечную сессию — достаточно положить его в cookie,
+// и прокси переиздал бы его на 30 дней с продлением. Старый формат переезжает как раньше.
+export function isRenewableSession(claims: SessionClaims, ttl = SESSION_TTL_SEC): boolean {
+  if (claims.legacy || claims.authTime === null) return true;
+  return claims.exp - claims.authTime >= ttl;
+}
+
 // Момент входа для переиздания при продлении: у нового формата — как был, у старого —
 // самая ранняя возможная оценка (exp − полный срок), она не позже настоящего входа.
 export function authTimeForRefresh(claims: SessionClaims, ttl = SESSION_TTL_SEC): number {

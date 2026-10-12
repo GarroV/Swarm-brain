@@ -12,7 +12,7 @@ import { signJWT } from "../_shared/jwt.ts";
 // Auth — тот же recorder-токен, что у claim/ingest/status (verifyAgentToken). Деплой --no-verify-jwt.
 //
 // ⚠️ Этот эндпоинт НЕ переводится на resolveActingIdentity вместе с остальными. Он печатает
-// сессию браузера на семь дней, а не право записать встречу: служебный агент, прошедший здесь
+// веб-доступ на 12 часов, а не право записать встречу: служебный агент, прошедший здесь
 // «от имени человека», перестал бы быть записывающим и стал бы этим человеком в вебе.
 // verifyAgentToken — дверь только для людей, и должна ею остаться.
 
@@ -20,6 +20,8 @@ const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const WEB_JWT_SECRET = Deno.env.get("WEB_JWT_SECRET");
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+// 12 часов: рекордеру хватает минут, входу владельца на превью веток (/api/auth/token) — рабочего дня.
+const WEBTOKEN_TTL_SEC = 12 * 3600;
 
 function json(payload: unknown, status = 200): Response {
   return new Response(JSON.stringify(payload), {
@@ -46,10 +48,13 @@ Deno.serve(async (req: Request) => {
     throw e;
   }
 
-  // Срок как у браузерной сессии (signJWT default 7 дней).
+  // Короткий срок без продления (1.2). Раньше выдавалась полная 30-дневная сессия, которую прокси веба ещё и продлевал, —
+  // любой токен рекордера или MCP превращался в бесконечный вход в веб. Прокси короткий токен
+  // не продлевает (isRenewableSession).
   const jwt = await signJWT(
     { telegram_id: identity.telegramId },
     WEB_JWT_SECRET,
+    WEBTOKEN_TTL_SEC,
   );
   return json({ ok: true, jwt, telegram_id: identity.telegramId });
 });
