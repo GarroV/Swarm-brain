@@ -43,13 +43,15 @@ function errorText(e: unknown, dt: Dt): string {
   }
 }
 
+const FIELD_BOX = "rounded-[10px] border border-line bg-surface px-3 py-2.5";
+const FIELD = `${FIELD_BOX} text-ink outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]`;
+
 const shortUrl = (code: string) => `${window.location.origin}/s/${code}`;
 
 export function ShortLinkTool() {
   const dt = useDt();
   const { me } = useRoyNav();
   const isAdmin = me?.is_admin ?? false;
-  const [host, setHost] = useState("");
   const [customCode, setCustomCode] = useState("");
   const [input, setInput] = useState("");
   const [title, setTitle] = useState("");
@@ -60,8 +62,6 @@ export function ShortLinkTool() {
   const [links, setLinks] = useState<ShortLink[] | null>(null);
   const [listFailed, setListFailed] = useState(false);
   const [copied, setCopied] = useState<string | null>(null);
-
-  useEffect(() => setHost(window.location.host), []);
 
   useEffect(() => {
     fetchShortLinks()
@@ -130,73 +130,69 @@ export function ShortLinkTool() {
 
   return (
     <div className="w-full max-w-[720px] p-4">
-      <p className="mb-4 text-ink-soft" style={{ fontSize: 13 }}>
+      <p className="mb-3 text-ink-soft" style={{ fontSize: 13 }}>
         {dt(
-          "Вставьте длинную ссылку и дайте ей название — короткая сразу окажется в буфере обмена. Открыть её может любой, у кого она есть; список ниже видит вся команда.",
-          "Paste a long link and give it a name — the short one goes straight to your clipboard. Anyone who has it can open it; the whole team sees the list below.",
+          "Короткая ссылка сразу копируется в буфер. Список видит вся команда.",
+          "The short link is copied to your clipboard right away. The whole team sees the list.",
         )}
       </p>
 
       <form onSubmit={submit} className="flex flex-col gap-2">
-        <input
-          type="text"
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-          maxLength={120}
-          placeholder={dt("Название, например «Акция, октябрь»", "Name, e.g. “October promo”")}
-          aria-label={dt("Название", "Name")}
-          className="rounded-[10px] border border-line bg-surface px-3 py-2.5 text-ink outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
-          style={{ fontSize: 14 }}
-        />
-        <div className="flex gap-2 max-[520px]:flex-col">
-        <input
-          type="text"
-          inputMode="url"
-          autoComplete="off"
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          placeholder="https://…/document.pdf"
-          aria-label={dt("Длинная ссылка", "Long link")}
-          className="min-w-0 flex-1 rounded-[10px] border border-line bg-surface px-3 py-2.5 text-ink outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
-          style={{ fontSize: 14 }}
-        />
-        <button type="submit" disabled={busy || !input.trim() || !title.trim()}
-          className="rounded-[10px] bg-ink px-4 py-2.5 font-semibold text-surface disabled:opacity-50" style={{ fontSize: 14 }}>
-          {busy ? dt("Сокращаю…", "Shortening…") : dt("Сократить", "Shorten")}
-        </button>
+        <div className="flex gap-2 max-[520px]:contents">
+          <input
+            type="text"
+            inputMode="url"
+            autoComplete="off"
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            placeholder={dt("Длинная ссылка", "Long link")}
+            aria-label={dt("Длинная ссылка", "Long link")}
+            className={`min-w-0 flex-1 ${FIELD}`}
+            style={{ fontSize: 14 }}
+          />
+          <button type="submit" disabled={busy || !input.trim() || !title.trim()}
+            className="rounded-[10px] bg-ink px-4 py-2.5 font-semibold text-surface disabled:opacity-50 max-[520px]:order-last" style={{ fontSize: 14 }}>
+            {busy ? dt("Сокращаю…", "Shortening…") : dt("Сократить", "Shorten")}
+          </button>
         </div>
-        {isAdmin && (
-          <label className="flex items-center rounded-[10px] border border-line bg-surface px-3 py-2.5 focus-within:ring-2 focus-within:ring-[var(--ring)]"
-            style={{ fontSize: 14 }}>
-            <span className="shrink-0 text-ink-soft">{host}/s/</span>
-            <input
-              type="text"
-              autoComplete="off"
-              autoCapitalize="off"
-              spellCheck={false}
-              value={customCode}
-              onChange={(e) => setCustomCode(e.target.value)}
-              maxLength={16}
-              placeholder={dt("Свой код — необязательно", "Custom code — optional")}
-              aria-label={dt("Свой код", "Custom code")}
-              aria-describedby="short-code-hint"
-              className="min-w-0 flex-1 bg-transparent text-ink outline-none"
-            />
-          </label>
-        )}
-        {isAdmin && (
-          <p id="short-code-hint" className="-mt-1 text-ink-soft" style={{ fontSize: 12 }}>
-            {dt("4–16 латинских букв и цифр. Без кода он будет случайным.", "4–16 Latin letters and digits. Leave empty for a random one.")}
-          </p>
-        )}
+        <div className="flex gap-2 max-[520px]:contents">
+          <input
+            type="text"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            maxLength={120}
+            placeholder={dt("Название", "Name")}
+            aria-label={dt("Название", "Name")}
+            className={`min-w-0 flex-1 ${FIELD}`}
+            style={{ fontSize: 14 }}
+          />
+          {isAdmin && (
+            <label className={`flex items-center sm:w-[200px] focus-within:ring-2 focus-within:ring-[var(--ring)] ${FIELD_BOX}`}
+              style={{ fontSize: 14 }} title={dt("4–16 латинских букв и цифр", "4–16 Latin letters and digits")}>
+              <span className="mr-1 shrink-0 text-ink-soft">/s/</span>
+              <input
+                type="text"
+                autoComplete="off"
+                autoCapitalize="off"
+                spellCheck={false}
+                value={customCode}
+                onChange={(e) => setCustomCode(e.target.value)}
+                maxLength={16}
+                placeholder={dt("свой код", "custom code")}
+                aria-label={dt("Свой код, 4–16 латинских букв и цифр", "Custom code, 4–16 Latin letters and digits")}
+                className="min-w-0 flex-1 bg-transparent text-ink outline-none"
+              />
+            </label>
+          )}
+        </div>
         <textarea
           value={note}
           onChange={(e) => setNote(e.target.value)}
           maxLength={500}
-          rows={2}
-          placeholder={dt("Комментарий — необязательно", "Comment — optional")}
+          rows={1}
+          placeholder={dt("Комментарий", "Comment")}
           aria-label={dt("Комментарий", "Comment")}
-          className="resize-y rounded-[10px] border border-line bg-surface px-3 py-2 text-ink outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+          className={`resize-y ${FIELD}`}
           style={{ fontSize: 13 }}
         />
       </form>
