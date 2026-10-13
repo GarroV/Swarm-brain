@@ -71,13 +71,15 @@ case "$CMD" in
     V="${ARGV[1]:-}"; NAME="${ARGV[2]:-}"
     [[ "$V" =~ ^[0-9]{8,14}$ ]] || die "версия миграции должна быть цифрами: '$V'"
     [[ -z "$NAME" || "$NAME" =~ ^[a-z0-9_]+$ ]] || die "имя миграции: только a-z0-9_"
-    ensure_ledger
-    if [ -n "$(psql_ -tA -c "select 1 from supabase_migrations.schema_migrations where version='$V'")" ]; then
-      echo "миграция $V уже применена — пропускаю"; exit 0
-    fi
+    # SQL читается ПЕРВЫМ: `docker exec -i` в проверках ниже забирает stdin себе, и миграция,
+    # прочитанная после них, всегда пуста (13.10.2026 — первый настоящий накат через шлюз).
     TMP=$(mktemp); trap 'rm -f "$TMP"' EXIT
     head -c 10485760 > "$TMP"
     [ -s "$TMP" ] || die "пустая миграция"
+    ensure_ledger
+    if [ -n "$(psql_ -tA -c "select 1 from supabase_migrations.schema_migrations where version='$V'" </dev/null)" ]; then
+      echo "миграция $V уже применена — пропускаю"; exit 0
+    fi
     { cat "$TMP"; printf '\n;insert into supabase_migrations.schema_migrations(version, name) values (%s, %s);\n' "'$V'" "'$NAME'"; } \
       | psql_mig --single-transaction -f - || die "миграция $V не применилась — транзакция откатена"
     echo "миграция $V применена"
