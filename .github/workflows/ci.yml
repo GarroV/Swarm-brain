@@ -54,6 +54,9 @@ jobs:
         run: ./scripts/test-deploy-activity.sh
       - name: План раскатки — транзитивные потребители _shared
         run: ./scripts/test-deploy-window.sh
+      # Команда recorder-upload шлюза на подставном curl: отказы и «не перезаписывать» (#919).
+      - name: Шлюз раскатки — заливка рекордера + порча
+        run: ./scripts/test-gate.sh && ./scripts/test-gate.sh porcha
 
   edge:
     name: Edge Functions (Deno) — типы

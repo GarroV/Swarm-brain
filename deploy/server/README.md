@@ -8,19 +8,21 @@
 
 ## Что это
 
-Прод Swarm — self-hosted Supabase на VPS Contabo (`/srv/swarm/supabase`). Раскатке нужны три
-действия: выложить edge-функции, посмотреть, какие миграции применены, накатить миграцию. Шлюз —
+Прод Swarm — self-hosted Supabase на VPS Contabo (`/srv/swarm/supabase`). Раскатке нужны четыре
+действия: выложить edge-функции, посмотреть, какие миграции применены, накатить миграцию, залить
+сборку рекордера в Storage. Шлюз —
 это ssh-пользователь `swarm-deploy`, у ключа которого **нет оболочки**: что бы клиент ни передал,
-sshd запускает только `gate.sh`, а тот разрешает ровно три команды (всё остальное — отказ):
+sshd запускает только `gate.sh`, а тот разрешает ровно четыре команды (всё остальное — отказ):
 
 | Команда (после `ssh swarm-deploy@host`) | stdin | Что делает |
 |---|---|---|
 | `functions` | tar.gz содержимого `supabase/functions` (корень архива — сам каталог функций) | сохраняет копию текущих функций, выкладывает **все** разом (rsync `--delete`, рантайм-роутер `main`, `hello`, `deno.jsonc` не трогает), перезапускает `supabase-edge-functions`, ждёт ответа пробы; печатает строку результата, ненулевой код при ошибке |
 | `migrations-applied` | — | печатает применённые версии миграций, по одной в строке |
 | `migrate <версия> <имя>` | SQL файла миграции | накат одной транзакцией вместе с записью в `supabase_migrations.schema_migrations`; уже применённая — «пропускаю», код 0. Имя — `[a-z0-9_]` |
+| `recorder-upload <сборка>` | zip рекордера (≤ 100 МБ, начинается с `PK\x03\x04`) | кладёт в Storage `swarm_drive/recorder/SwarmRecorder-<сборка>.zip` через API-шлюз `127.0.0.1:8400` с service-role ключом из `/srv/swarm/supabase/.env` (ключ в аргументы и вывод не попадает), **без перезаписи**: объект уже есть и совпадает по sha256 — «уже загружен», код 0; отличается — отказ. Номер сборки — только цифры. Печатает `sha256`; после заливки сам перечитывает объект и сверяет сумму |
 
 Клиентская сторона: `scripts/lib/swarm-server.sh` (`swarm_server <команда>`),
-`scripts/deploy-window.sh go`, `scripts/migrate-server.sh`, composite-шаг
+`scripts/deploy-window.sh go`, `scripts/migrate-server.sh`, `recorder-release.yml` (шаг заливки), composite-шаг
 `.github/actions/swarm-deploy-ssh` (ключ из секретов CI).
 
 ## Как установлен
@@ -56,6 +58,10 @@ sshd запускает только `gate.sh`, а тот разрешает р�
    ```
 3. Проверить чтением: `ssh -i ~/Documents/workbench/private/swarm-deploy-key swarm-deploy@95.111.249.216 migrations-applied`
    (список версий) — или `make migrate-plan`.
+
+Проверка команды `recorder-upload` без сервера — `scripts/test-gate.sh` (отказы и «не перезаписывать»
+на подставном `curl`; `test-gate.sh porcha` ломает шлюз и требует, чтобы проверки покраснели; в CI — job
+«Скрипты раскатки»). Шлюз после правки нужно **заново положить на сервер** (раздел выше).
 
 ## Откат функций
 

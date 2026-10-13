@@ -14,7 +14,7 @@
 Contabo, self-hosted Supabase в `/srv/swarm/supabase` (issue #915; перестройка CI — #919).
 Облачных CLI (`supabase functions deploy`, `db push`, `link`) и Management API (`api.supabase.com`)
 в раскатке больше нет. Вместо них — **шлюз**: ssh-пользователь `swarm-deploy@95.111.249.216`, чей
-ключ умеет ровно три команды (`functions`, `migrations-applied`, `migrate`). Как устроен и
+ключ умеет ровно четыре команды (`functions`, `migrations-applied`, `migrate`, `recorder-upload`). Как устроен и
 устанавливается шлюз — [deploy/server/README.md](../deploy/server/README.md); канон скрипта —
 `deploy/server/gate.sh`.
 
@@ -23,6 +23,7 @@ Contabo, self-hosted Supabase в `/srv/swarm/supabase` (issue #915; перест
 | Edge-функции | `git archive HEAD:supabase/functions \| ssh … functions`: шлюз сохраняет копию прежнего состояния, кладёт **все** функции разом и перезапускает рантайм (~11 с) | `scripts/deploy-window.sh go`, `make deploy` |
 | Миграции | `scripts/migrate-server.sh [--dry-run]` берёт файлы, которых нет в журнале сервера, и катит каждую `ssh … migrate <версия> <имя>` одной транзакцией вместе с учётной записью; на первой ошибке стоп | `make migrate-plan` / `make migrate`, кнопка `deploy-migrations.yml` |
 | Гейт «код не вперёд схемы» | `pending_migrations` спрашивает `migrations-applied`; код 0 — всё применено, 1 — есть неприменённые, 3 — проверить нечем (нет ключа, ssh не дозвонился, пустой список) | `scripts/lib/migrations-gate.sh` |
+| Сборка рекордера | `recorder-release.yml` по тегу `recorder-build-N`: `swarm_server recorder-upload N < zip` кладёт архив в Storage (без перезаписи), затем анонимный GET с проверкой sha256 | `.github/workflows/recorder-release.yml`, `deploy/server/gate.sh` |
 | Вызов шлюза | `swarm_server <команда>` — ssh с ключом и known_hosts | `scripts/lib/swarm-server.sh` |
 
 **Ключ.** Локально — `~/Documents/workbench/private/swarm-deploy-key` (переопределяется
@@ -41,7 +42,7 @@ Contabo, self-hosted Supabase в `/srv/swarm/supabase` (issue #915; перест
 
 **Что ещё не переделано** (список — в issue #919): кнопки секретов и плашки/заморозки
 (`notice.yml`, `bot-webhook-secret.yml`, `scriba-agent-token.yml`, `files-signing-key.yml`,
-`decimus-secrets.yml`, `seed-demo.yml`), `storage-migrate.yml`, `recorder-release.yml`, а также
+`decimus-secrets.yml`, `seed-demo.yml`), `storage-migrate.yml`, а также
 `scripts/deploy-activity.sh`, `deploy-notice.sh`, `maintenance.sh`, `bot-webhook-secret.sh`,
 `smoke.sh` по-прежнему адресованы облачному проекту. Ниже в этом файле всё, что говорит про
 `supabase functions deploy`, `db push`, `SUPABASE_ACCESS_TOKEN` и Management API, — история до
@@ -114,7 +115,8 @@ make migrate                             # 3. накат на прод — В О
   нужен `SUPABASE_SERVICE_ROLE_KEY`. В секретах репозитория его нет по решению 2026-08-28 (не
   класть service-role в публичный репозиторий). До 13.10.2026 ключ брался на время прогона через
   облачный Management API (`recorder-release.yml`, `storage-migrate.yml`); на своём сервере этого
-  пути нет — эти два workflow ждут переделки (#919).
+  пути нет. `recorder-release.yml` переделан под шлюз (ключ остаётся на сервере, в CI не попадает);
+  `storage-migrate.yml` ждёт переделки (#919).
 - Версия файла — **ровно 14 цифр** (`YYYYMMDDHHMMSS`). Восьмизначные версии вида `20260602`
   ломают CLI, если рядом есть версия с тем же префиксом: по именам файлов `20260602000001_…`
   сортируется раньше `20260602_…` (цифра `0` меньше `_`), а по версиям — позже, и push объявляет
