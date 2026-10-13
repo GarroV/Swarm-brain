@@ -3181,17 +3181,10 @@ async function routeRequest(req: Request): Promise<Response> {
   // «переподключить», `calendar_error`/пустой список → обычное пустое состояние. Молча
   // показать пустоту при отвалившейся интеграции нельзя — это урок #175.
   if (req.method === "GET" && routePath === "/calendar/today") {
-    // Пояс берём у клиента: сервер живёт в UTC и не знает, какие сутки у человека сейчас.
-    const cal = await todayCalendarEvents(
-      supabase,
-      telegram_id,
-      Number(url.searchParams.get("tz_offset") ?? "0"),
-    );
-    if (!cal.ok) {
-      return json({ meetings: [], reason: cal.reason }, 200, origin);
-    }
-    const items = cal.events;
-
+    // Присутствие рекордера читается ПАРАЛЛЕЛЬНО с обменом токена и запросом к Google: оно от них не
+    // зависит (раньше шло четвёртым последовательным шагом, issue #906). Запрос стартует сразу — билдер
+    // PostgREST ленивый, поэтому оборачиваем в async.
+    //
     // Где сидит сам человек: рекордер сообщает это в heartbeat. Панель по этим флагам
     // рисует `ON AIR` / `REC` вместо кнопки «Подключиться» — предлагать зайти туда, где
     // человек уже сидит, значит не понимать, что происходит (решение владельца 04.09.2026).
@@ -3199,12 +3192,26 @@ async function routeRequest(req: Request): Promise<Response> {
     // а миграции накатываются руками (scripts/deploy-window.sh их только показывает). Пока
     // колонок нет, PostgREST ответит ошибкой — тогда панель работает как до фичи, без ON AIR,
     // но ошибку не проглатываем молча: без записи в лог такой перекос порядка не заметить.
-    const { data: rec, error: recErr } = await supabase
-      .from("allowed_users")
-      .select(
-        "recorder_last_seen, recorder_last_recording, recorder_last_on_call, recorder_last_meeting_key",
-      )
-      .eq("telegram_id", telegram_id).maybeSingle();
+    const presenceQuery = (async () =>
+      await supabase
+        .from("allowed_users")
+        .select(
+          "recorder_last_seen, recorder_last_recording, recorder_last_on_call, recorder_last_meeting_key",
+        )
+        .eq("telegram_id", telegram_id).maybeSingle())();
+    // Пояс берём у клиента: сервер живёт в UTC и не знает, какие сутки у человека сейчас.
+    const [cal, { data: rec, error: recErr }] = await Promise.all([
+      todayCalendarEvents(
+        supabase,
+        telegram_id,
+        Number(url.searchParams.get("tz_offset") ?? "0"),
+      ),
+      presenceQuery,
+    ]);
+    if (!cal.ok) {
+      return json({ meetings: [], reason: cal.reason }, 200, origin);
+    }
+    const items = cal.events;
     if (recErr) {
       console.warn(
         "[calendar/today] присутствие рекордера не прочиталось:",

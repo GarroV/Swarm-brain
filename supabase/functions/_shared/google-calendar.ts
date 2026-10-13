@@ -45,9 +45,43 @@ export function isDeadGrantError(status: number, body: string): boolean {
   return status === 400 && /"error"\s*:\s*"(invalid_grant|invalid_client)"/.test(body);
 }
 
+// ── Кэш access-токена (issue #906) ─────────────────────────────────────────────
+// Раньше КАЖДЫЙ вызов (панель «Встречи сегодня» открывается на каждой загрузке главной) заново менял
+// refresh→access у Google: лишний круг ~150–400 мс. Access-токен живёт ~час, держим его в памяти изолята.
+// Ключ — отпечаток (sha-256) refresh-токена: он же отличает пользователей и сам собой сменяется при
+// переподключении календаря; сам токен ни в ключ, ни в лог не попадает. Сбой обмена не кэшируем —
+// мёртвый грант (#302) определяется по-прежнему живым ответом Google.
+const TOKEN_EXPIRY_MARGIN_MS = 5 * 60_000;
+const TOKEN_TTL_CAP_MS = 50 * 60_000;
+const TOKEN_CACHE_MAX = 500;
+
+type CachedToken = { token: string; expiresAt: number };
+export type TokenCache = Map<string, CachedToken>;
+export const defaultTokenCache: TokenCache = new Map();
+
+async function fingerprint(refresh: string): Promise<string> {
+  const d = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(refresh));
+  return [...new Uint8Array(d)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+/** Сбросить кэшированный access-токен (Google ответил 401 — токен отозван до срока). */
+export async function dropCachedToken(refresh: string, cache: TokenCache = defaultTokenCache): Promise<void> {
+  cache.delete(await fingerprint(refresh));
+}
+
 /** refresh_token → access_token. Любую осечку логируем (не сам токен, только код и текст ошибки Google) —
- *  раньше отказ был молчаливым, и постфактум нельзя было понять, что случилось. */
-export async function accessToken(refresh: string, timeoutMs = GOOGLE_TIMEOUT_MS): Promise<TokenResult> {
+ *  раньше отказ был молчаливым, и постфактум нельзя было понять, что случилось.
+ *  Успешный токен кэшируется на `expires_in` минус 5 минут (потолок 50 минут). */
+export async function accessToken(
+  refresh: string,
+  timeoutMs = GOOGLE_TIMEOUT_MS,
+  cache: TokenCache = defaultTokenCache,
+  now: () => number = Date.now,
+): Promise<TokenResult> {
+  const key = await fingerprint(refresh);
+  const hit = cache.get(key);
+  if (hit && hit.expiresAt > now()) return { ok: true, token: hit.token };
+  cache.delete(key);
   const res = await fetchBounded(
     "https://oauth2.googleapis.com/token",
     {
@@ -77,6 +111,11 @@ export async function accessToken(refresh: string, timeoutMs = GOOGLE_TIMEOUT_MS
   if (!token) {
     console.error("google-calendar accessToken: 200 без access_token в ответе");
     return { ok: false, deadGrant: false };
+  }
+  const ttl = Math.min((Number(data.expires_in) || 3600) * 1000 - TOKEN_EXPIRY_MARGIN_MS, TOKEN_TTL_CAP_MS);
+  if (ttl > 0) {
+    if (cache.size >= TOKEN_CACHE_MAX) cache.delete(cache.keys().next().value as string);
+    cache.set(key, { token, expiresAt: now() + ttl });
   }
   return { ok: true, token };
 }
