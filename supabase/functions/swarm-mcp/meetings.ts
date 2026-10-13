@@ -4,6 +4,7 @@ import {
   type DraftMeetingRow,
   draftMeetingsOwnScopedFilter,
 } from "../_shared/meeting-access.ts";
+import { BOT_SLOT_COLUMNS, isMissedBotSlot, type SlotRow } from "../_shared/bot-slot.ts";
 import { publishDraftMeeting } from "../_shared/meeting-publish.ts";
 import { ADMIN_USER_ID, matchAssignee, resolveGroupId } from "./tasks/tools.ts";
 import { entryAccessError, type EntryAccessRow } from "../_shared/entries/access.ts";
@@ -64,7 +65,7 @@ export async function toolGetReviewQueue(args: Caller): Promise<string> {
   if (!groupId) return "Ошибка: пользователь не найден в системе.";
   // Тот же фильтр «свои», что у GET /agent-meetings: записывал ИЛИ совладелец (PR #508).
   const { data, error, count } = await supabase.from("meetings")
-    .select("id, title, source, started_at, draft_notes_md", { count: "exact" })
+    .select(`id, title, source, started_at, draft_notes_md, ${BOT_SLOT_COLUMNS}`, { count: "exact" })
     .eq("group_id", groupId)
     .eq("status", "awaiting_review")
     .or(draftMeetingsOwnScopedFilter(callerId))
@@ -74,7 +75,10 @@ export async function toolGetReviewQueue(args: Caller): Promise<string> {
     console.error("mcp review queue failed:", error);
     return "Ошибка: не удалось загрузить очередь вычитки.";
   }
-  return formatReviewQueue((data ?? []) as QueueRow[], count ?? null);
+  // Пустой слот бота (ждёт у двери, не впустили) в очереди не виден — как в GET /agent-meetings.
+  const rows = (data ?? []) as Array<QueueRow & SlotRow>;
+  const shown = rows.filter((r) => !isMissedBotSlot(r));
+  return formatReviewQueue(shown, count != null ? count - (rows.length - shown.length) : null);
 }
 
 export async function toolGetDraftMeeting(args: Caller & { meeting_id: string }): Promise<string> {

@@ -32,6 +32,7 @@ import {
   getMeetingSecure,
 } from "./entries-guard.ts";
 import { canChangeMeetingPrivacy } from "../_shared/entries/meeting-rights.ts";
+import type { SlotRow } from "../_shared/bot-slot.ts";
 import { isMissedBotSlot, toAgentListRow, toListRow } from "./meetings-payload.ts";
 import {
   applyListFilters,
@@ -2839,7 +2840,7 @@ async function routeRequest(req: Request): Promise<Response> {
     const status = url.searchParams.get("status") ?? "awaiting_review";
     let q = supabase.from("meetings")
       .select(
-        "id, title, source, identity_kind, started_at, ended_at, status, has_draft_notes, recorders, co_owners, attendees, entry_id, created_at, recorded_by, agent_version, recorded_seconds, summary_status",
+        "id, title, source, identity_kind, started_at, ended_at, status, has_draft_notes, recorders, co_owners, attendees, entry_id, created_at, recorded_by, agent_version, recorded_seconds, summary_status, agent_last_seen_at, agent_last_recording",
         { count: "exact" },
       )
       .eq("group_id", groupId)
@@ -2862,8 +2863,9 @@ async function routeRequest(req: Request): Promise<Response> {
     // С 25.09.2026 текст не выбирается ВООБЩЕ (issue #491) — раньше он читался и выбрасывался
     // в toAgentListRow: 119 мс базы на опрос, из них ~88 мс на выброшенное.
     // Полный текст берёт деталь GET /agent-meetings/:id — она его и так до-загружает.
-    // Пустые слоты бота встреч (заявился, записи нет) в черновики не попадают (#788).
-    const rows = (data ?? []) as Array<{ recorders?: unknown; agent_version?: unknown; recorded_by?: unknown; recorded_seconds?: unknown; summary_status?: unknown }>;
+    // Пустые слоты бота встреч (заявился, записи нет) в черновики не попадают (#788): показ —
+    // только пока бот пишет (agent_last_recording + свежий удар), см. _shared/bot-slot.ts.
+    const rows = (data ?? []) as Array<SlotRow & { recorders?: unknown }>;
     const shown = rows.filter((r) => !isMissedBotSlot(r));
     const enrichedList = await withRecorderNames(shown);
     // Сколько черновиков подходит под фильтр БЕЗ лимита 50 (issue #112) — за вычетом спрятанных.

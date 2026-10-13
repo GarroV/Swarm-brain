@@ -13,7 +13,7 @@
 // жива, если её удар свежее AGENT_STALE_MIN. Две встречи бота одновременно не мешают друг
 // другу — у каждой своя отметка (до D018 строка была одна на агента, и вторая встреча метилась
 // 'failed' посреди записи).
-import { AGENT_STALE_MIN } from "./recording-watchdog.ts";
+import { isFreshBotBeat } from "../../_shared/bot-slot.ts";
 
 export interface GhostCandidate {
   id: string;
@@ -38,21 +38,13 @@ export interface GhostSweepDeps {
 /** Порог «встреча брошена», как был у сторожа до #549. */
 export const GHOST_STALE_MIN = 15;
 
-/** Удар свежий: был, читается и не старше порога сторожа оборванной записи (граница включительно). */
-function isFreshBeat(lastSeen: string | null, nowMs: number): boolean {
-  if (!lastSeen) return false;
-  const seenMs = Date.parse(lastSeen);
-  if (Number.isNaN(seenMs)) return false;
-  return seenMs >= nowMs - AGENT_STALE_MIN * 60_000;
-}
-
 /**
  * Пишет ли бот эту встречу прямо сейчас. Единственное место критерия. Порог — тот же
  * AGENT_STALE_MIN, что у сторожа оборванной записи: «жив» для одного сторожа не должен быть
  * «мёртв» для другого.
  */
 export function botKeepsMeetingAlive(meeting: GhostCandidate, nowMs: number): boolean {
-  return isFreshBeat(meeting.agent_last_seen_at, nowMs);
+  return isFreshBotBeat(meeting.agent_last_seen_at, nowMs);
 }
 
 export async function sweepGhostMeetings(deps: GhostSweepDeps): Promise<number> {
