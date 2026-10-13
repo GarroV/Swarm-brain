@@ -227,12 +227,12 @@ export function useReminderTasks() {
   // Персональные списки-метки: счётчики по всем меткам + задачи активной метки.
   const labelCounts = useMemo(() => {
     const m: Record<string, number> = {};
-    for (const l of labels) m[l.id] = countByLabel(list, l.id, range);
+    for (const l of labels) m[l.id] = countByLabel(list, l.id, range, now);
     return m;
-  }, [labels, list, range]);
+  }, [labels, list, range, now]);
   const visibleByLabel: Task[] = useMemo(
-    () => (activeLabelId ? filterByLabel(queried, activeLabelId, range) : []),
-    [activeLabelId, queried, range],
+    () => (activeLabelId ? filterByLabel(queried, activeLabelId, range, now) : []),
+    [activeLabelId, queried, range, now],
   );
 
   // Тумблер «По рынкам» (без «Все сотрудники»): группируем ТЕКУЩИЙ охват (Мои/Команда/Все) по
