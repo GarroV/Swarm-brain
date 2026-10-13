@@ -11,8 +11,8 @@
 // у ассета там своя, независимая от бакета сумма) и сверить с копией в бакете. Раскатать обе функции.
 // История сборок — в шапке swarm-recorder-version/index.ts.
 import { STORAGE_PUBLIC_URL } from "./public-url.ts";
-export const RECORDER_LATEST_BUILD = 36;
-export const RECORDER_ASSET_SHA256 = "390ea7f6924c0f28a87351a855a89947e0a925fc96c8b4e608ecc0589a3b099e";
+export const RECORDER_LATEST_BUILD = 37;
+export const RECORDER_ASSET_SHA256 = "62fc3e828c8dd5475aea142be758a0df32b50c65d7b48b02fae31e30edb74c57";
 
 export const RECORDER_ASSET_BASE = `${STORAGE_PUBLIC_URL}/swarm_drive/recorder`;
 
