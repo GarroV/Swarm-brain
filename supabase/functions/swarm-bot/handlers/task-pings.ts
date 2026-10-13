@@ -45,6 +45,21 @@ export interface InlineUrlButton {
 // (`todayIn`) остались на месте, а формула жила в одном файле.
 export const todayIn = todayInTz;
 
+// Пинги не уходят ночью: наступивший с полуночи пинг ждёт 9:00 по Москве (решение владельца
+// 13.10.2026, docs/decisions/2026-10-13-notification-curfew.md: «поставим время отправки таких
+// напоминаний на утро 9 часов… по Москве»). Раньше крон раз в час слал их ровно в полночь по
+// Белграду — в момент смены даты.
+export const PING_SEND_TZ = "Europe/Moscow";
+export const PING_SEND_FROM_HOUR = 9;
+
+/** Можно ли слать пинги в этот момент: с 9:00 по Москве до конца суток. */
+export function pingSendingOpen(now: Date): boolean {
+  const hour = Number(
+    new Intl.DateTimeFormat("en-GB", { timeZone: PING_SEND_TZ, hour: "2-digit", hourCycle: "h23" }).format(now),
+  );
+  return hour >= PING_SEND_FROM_HOUR;
+}
+
 /**
  * Пора ли слать пинг. Прошедшая дата тоже считается наступившей: крон мог простоять
  * (деплой, сбой), и пропущенный пинг лучше отдать с опозданием, чем потерять молча.

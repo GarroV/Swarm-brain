@@ -7,6 +7,7 @@ import {
   PING_RETRY_DAYS,
   pingRecipients,
   type PingRow,
+  pingSendingOpen,
   settlePing,
   todayIn,
 } from "./task-pings.ts";
@@ -138,4 +139,12 @@ Deno.test("settlePing: получателей нет вовсе — гасим �
 Deno.test("pingRecipients: демо-аккаунтам пинг не шлётся, живым — да (#675)", () => {
   assertEquals(pingRecipients(row({ assignee_telegram_ids: [900000001, 111, 900000004] })), [111]);
   assertEquals(pingRecipients(row({ assignee_telegram_ids: [900000004] })), []);
+});
+
+Deno.test("pingSendingOpen: ночью закрыто, с 9:00 по Москве открыто", () => {
+  // Москва = UTC+3 круглый год.
+  assertEquals(pingSendingOpen(new Date("2026-10-13T22:00:00Z")), false); // 00:00 Белград, 01:00 Москва
+  assertEquals(pingSendingOpen(new Date("2026-10-14T05:59:00Z")), false); // 08:59 Москва
+  assertEquals(pingSendingOpen(new Date("2026-10-14T06:00:00Z")), true); // 09:00 Москва
+  assertEquals(pingSendingOpen(new Date("2026-10-14T20:30:00Z")), true); // 23:30 Москва — дневной пинг не задерживаем
 });

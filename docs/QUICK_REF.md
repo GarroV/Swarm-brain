@@ -48,7 +48,7 @@ make migrate       # накатить их (сначала миграции, п�
 # granola-poller — legacy, НЕ деплоить: поллинг Granola внутри swarm-bot ({granola_poll:true} крон)
 # daily_report_cron — ежедневный отчёт активности админу (pg_cron '0 6 * * *' → swarm-bot {"daily_report_cron":true})
 # review_reminders_cron — напоминалка владельцу про невычитанные встречи >48ч, кнопка в веб (pg_cron 'review-reminders-hourly' почасовой, гейт рабочих часов Белграда в коде → swarm-bot {"review_reminders_cron":true})
-# task_pings_cron — «пинги» задач: наступившие ручные напоминания → Telegram + колокольчик (pg_cron 'task-pings-hourly' почасовой → swarm-bot {"task_pings_cron":true}; регистрация pg_cron — вручную в проде, как остальные)
+# task_pings_cron — «пинги» задач: наступившие ручные напоминания → Telegram + колокольчик (pg_cron 'task-pings-hourly' почасовой → swarm-bot {"task_pings_cron":true}; до 9:00 МСК не шлёт — наступившее ночью уходит утром; регистрация pg_cron — вручную в проде, как остальные)
 # demo-reset — сброс демо-воркспейса к эталону каждые 30 минут (pg_cron 'demo-reset' '*/30 * * * *' → select public.demo_reset(); без секрета и Edge Function — поэтому, в отличие от остальных, регистрируется САМОЙ миграцией 20260928180000_demo_auto_reset.sql)
 # market-demoland — засев выдуманной страны XD для демо «Анализа рынка» раз в сутки (pg_cron 'market-demoland' '17 3 * * *' → select public.market_demoland_seed(); как demo-reset, регистрируется САМОЙ миграцией 20261003110000_market_demoland.sql)
 # feedback_retention_cron — чистка закрытого фидбека (done/wontfix >90 дней) + скрины в приватном бакете (pg_cron раз в сутки → swarm-bot {"feedback_retention_cron":true}; регистрация pg_cron — вручную в проде, как остальные)
