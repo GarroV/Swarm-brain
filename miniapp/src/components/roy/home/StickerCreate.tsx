@@ -74,7 +74,7 @@ export function StickerCreate({ onClose, onCreated }: { onClose: () => void; onC
       <label className="flex cursor-pointer items-center gap-2 rounded-md px-1.5 py-1 hover:bg-surface-2">
         <input type="checkbox" checked={picked.has(p.id)} onChange={() => toggle(p.id)} />
         <span>{p.name}</span>
-        {guest && p.email && <span className="truncate text-ink-mute" style={{ fontSize: 11 }}>{p.email}</span>}
+        {guest && p.email && p.name !== p.email.split("@")[0] && <span className="truncate text-ink-mute" style={{ fontSize: 11 }}>{p.email}</span>}
       </label>
     </li>
   );
