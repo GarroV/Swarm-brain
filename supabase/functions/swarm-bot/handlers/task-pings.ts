@@ -46,7 +46,7 @@ export interface InlineUrlButton {
 export const todayIn = todayInTz;
 
 // Пинги не уходят ночью: наступивший с полуночи пинг ждёт 9:00 по Москве (решение владельца
-// 13.10.2026, docs/decisions/2026-10-13-task-pings-morning.md: «поставим время отправки таких
+// 13.10.2026, docs/decisions/2026-10-13-notification-curfew.md: «поставим время отправки таких
 // напоминаний на утро 9 часов… по Москве»). Раньше крон раз в час слал их ровно в полночь по
 // Белграду — в момент смены даты.
 export const PING_SEND_TZ = "Europe/Moscow";
