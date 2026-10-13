@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Проверка гейта миграций ночной раскатки (scripts/lib/migrations-gate.sh) на фикстурах:
-# временный git-репозиторий с main, меткой prod-deployed и ветками PR, ответ Management API —
-# подставной (MIGRATIONS_API_JSON), сеть не нужна.
+# временный git-репозиторий с main, меткой prod-deployed и ветками PR, список применённых версий с сервера —
+# подставной (MIGRATIONS_APPLIED), сеть не нужна.
 #
 #   scripts/test-migrations-gate.sh           — прогнать случаи на настоящей библиотеке
 #   scripts/test-migrations-gate.sh porcha    — ещё и порча: испортить копию библиотеки
@@ -82,29 +82,29 @@ run_cases() {
     # shellcheck source=lib/migrations-gate.sh
     . "$LIB"
     FAILS=0
-    applied_a='[{"version":"20260901000000","name":"a"}]'
-    applied_ab='[{"version":"20260901000000"},{"version":"20260927120000"}]'
-    applied_ac='[{"version":"20260901000000"},{"version":"20260928000000"}]'
+    applied_a=$'20260901000000'
+    applied_ab=$'20260901000000\n20260927120000'
+    applied_ac=$'20260901000000\n20260928000000'
 
-    MIGRATIONS_API_JSON="$applied_a"
+    MIGRATIONS_APPLIED="$applied_a"
     expect "PR без миграций — вливать"                    0 "миграций нет" pr_migrations_gate main pr-code prod-deployed
     expect "PR с ненакатанной миграцией — НЕ вливать"     1 "20260927120000_b.sql" pr_migrations_gate main pr-migr prod-deployed
     expect "причина отказа зовёт кнопку миграций"         1 "deploy-migrations.yml" pr_migrations_gate main pr-migr prod-deployed
-    MIGRATIONS_API_JSON="$applied_ab"
+    MIGRATIONS_APPLIED="$applied_ab"
     expect "PR с миграцией, уже накатанной кнопкой — вливать" 0 "на проде применены" pr_migrations_gate main pr-migr prod-deployed
-    MIGRATIONS_API_JSON="$applied_a"
+    MIGRATIONS_APPLIED="$applied_a"
     expect "PR правит существующую миграцию — НЕ вливать" 1 "20260901000000_a.sql" pr_migrations_gate main pr-edit prod-deployed
     expect "PR удаляет существующую миграцию — НЕ вливать" 1 "существующий файл" pr_migrations_gate main pr-del prod-deployed
     expect "миграция без версии в имени — НЕ вливать"     1 "fix_something.sql" pr_migrations_gate main pr-noversion prod-deployed
     expect "в main уже лежит ненакатанная — НЕ вливать даже PR без миграций" 1 "20260928000000_c.sql" pr_migrations_gate main-dirty pr-code-on-dirty prod-deployed
-    MIGRATIONS_API_JSON="$applied_ac"
+    MIGRATIONS_APPLIED="$applied_ac"
     expect "в main миграция накатана — вливать"           0 "на проде применены" pr_migrations_gate main-dirty pr-code-on-dirty prod-deployed
-    MIGRATIONS_API_JSON="не json"
-    expect "ответ API не разобрать — НЕ вливать (проверить нечем)" 3 "проверить их на проде нечем" pr_migrations_gate main pr-migr prod-deployed
-    expect "ответ API не нужен, если миграций нет"        0 "" pr_migrations_gate main pr-code prod-deployed
-    unset MIGRATIONS_API_JSON
-    SUPABASE_ACCESS_TOKEN="" expect "нет токена — НЕ вливать (проверить нечем)" 3 "нечем" pr_migrations_gate main pr-migr prod-deployed
-    MIGRATIONS_API_JSON="$applied_a"
+    MIGRATIONS_APPLIED=""
+    expect "список применённых пуст — НЕ вливать (проверить нечем)" 3 "проверить их на проде нечем" pr_migrations_gate main pr-migr prod-deployed
+    expect "список с сервера не нужен, если миграций нет"        0 "" pr_migrations_gate main pr-code prod-deployed
+    unset MIGRATIONS_APPLIED
+    SWARM_DEPLOY_KEY_FILE=/nonexistent expect "нет ключа — НЕ вливать (проверить нечем)" 3 "нечем" pr_migrations_gate main pr-migr prod-deployed
+    MIGRATIONS_APPLIED="$applied_a"
     expect "нет метки prod-deployed, а миграция есть — НЕ вливать" 3 "нет метки" pr_migrations_gate main pr-migr no-such-tag
     expect "голова PR не найдена — НЕ вливать"            3 "" pr_migrations_gate main no-such-branch prod-deployed
     exit "$FAILS"
@@ -124,6 +124,7 @@ if [ "${1:-}" = "porcha" ]; then
     'новые миграции PR не видны|s/--diff-filter=A "\$1\.\.\$2"/--diff-filter=X "\$1..\$2"/'
     'правка старых миграций не видна|s/--diff-filter=MDT/--diff-filter=X/'
     'миграции main не проверяются|s/main_new=\$\(added_migrations "\$base_tag" "\$main_ref"\) \|\| main_new=""/main_new=""/'
+    'пустой список применённых считается «всё применено»|s/\|\| return 3\n  pending=/|| return 0\n  pending=/'
     '«проверить нечем» пропускается как «можно»|s/\*\) GATE_REASON=/*) return 0; GATE_REASON=/'
   )
   PORCHA_FAILED=0

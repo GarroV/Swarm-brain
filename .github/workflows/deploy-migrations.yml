@@ -1,12 +1,13 @@
 name: Накат миграций БД (руками)
 
-# Накатывает миграции из supabase/migrations на прод по кнопке.
+# Накатывает миграции из supabase/migrations на прод по кнопке — на свой сервер через шлюз по ssh
+# (scripts/migrate-server.sh, docs/DEPLOY.md). До 13.10.2026 это был `supabase db push` в облако;
+# с переезда на свой сервер (#915, #919) облачного проекта нет.
 #
-# Зачем отдельно: `supabase db push --linked` — штатный путь (docs/DEPLOY.md), но ЛОКАЛЬНО он
-# упирается в права. CLI сначала просит Platform API завести временную login-роль, и на личном
-# токене это отвечает 403 «does not have the necessary privileges», после чего просит
-# SUPABASE_DB_PASSWORD, которого в рабочем окружении нет (issue #398). В CI тот же CLI ходит
-# токеном из секретов репозитория — тем же, которым раскатываются функции.
+# Что делает скрипт: сверяет файлы supabase/migrations/<версия>_<имя>.sql с журналом применённых
+# на сервере и катит неприменённые по порядку версий, каждую одной транзакцией вместе с учётной
+# записью; останавливается на первой ошибке. Миграция старше последней применённой тоже накатится
+# (прежний флаг include_all больше не нужен — сверка идёт по версиям, а не по «хвосту» истории).
 #
 # Порядок остаётся прежним: сначала миграция, потом функции. Деплой функций раньше базы = код
 # обращается к колонкам и таблицам, которых ещё нет.
@@ -21,10 +22,6 @@ on:
         description: "Сухой прогон: показать, что уедет на прод, ничего не менять"
         type: boolean
         default: true
-      include_all:
-        description: "Накатить и те миграции, что старше последней применённой на проде"
-        type: boolean
-        default: false
 
 concurrency:
   group: deploy-window          # общая с раскаткой функций: две раскатки разом не нужны никогда
@@ -37,30 +34,17 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-      - uses: supabase/setup-cli@1dedf2c611547ede7232d26866dd3c56ab903bbb # v1
+      - name: Ключ раскатки на свой сервер
+        uses: ./.github/actions/swarm-deploy-ssh
         with:
-          version: 2.118.0
-      - name: Привязать проект
-        env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-          # Пароль базы в секретах может отсутствовать: без него CLI заводит временную
-          # login-роль через Platform API. Пустая переменная этому не мешает.
-          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
-        run: supabase link --project-ref vbqglndbxkpmreccpqmr
+          ssh-key: ${{ secrets.SWARM_DEPLOY_SSH_KEY }}
+          known-hosts: ${{ secrets.SWARM_DEPLOY_KNOWN_HOSTS }}
       - name: План или накат
         env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
           DRY_RUN: ${{ inputs.dry_run }}
-          INCLUDE_ALL: ${{ inputs.include_all }}
         run: |
-          # --include-all нужен, когда файл миграции старше последней применённой на проде:
-          # так бывает у ветки, пролежавшей дольше соседних. Без флага CLI отказывается
-          # вставлять её «в середину» истории и выходит с кодом 1.
-          EXTRA=""
-          if [ "$INCLUDE_ALL" = "true" ]; then EXTRA="--include-all"; fi
           if [ "$DRY_RUN" = "true" ]; then
-            supabase db push --linked --dry-run $EXTRA
+            ./scripts/migrate-server.sh --dry-run
           else
-            supabase db push --linked $EXTRA
+            ./scripts/migrate-server.sh
           fi
