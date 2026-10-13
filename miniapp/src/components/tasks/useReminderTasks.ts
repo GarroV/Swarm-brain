@@ -1,6 +1,6 @@
 "use client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { fetchMe, fetchTasks, updateTask, deleteTask, createTask, fetchTaskLabels, type TaskLabel } from "@/lib/api";
+import { fetchMe, fetchTasks, fetchTasksDelta, updateTask, deleteTask, createTask, fetchTaskLabels, type TaskLabel } from "@/lib/api";
 import { buildQuickAddInput } from "@/lib/quickAddTask";
 import type { Me, Task } from "@/types";
 import {
@@ -11,6 +11,17 @@ import {
 import { resolveRange, type DateRange } from "@/lib/dateRange";
 import { migrateSavedView, savedStatuses, type SavedTasksView, type StoredTasksView } from "@/lib/tasksView";
 import { useRoyNav } from "@/components/roy/nav";
+import { mergeTasksDelta } from "@/lib/tasksDelta";
+import { startVisiblePolling } from "@/lib/visiblePolling";
+
+const POLL_MS = 10_000;
+// Запас на разбег часов клиента и сервера: since первой дельты берём от часов клиента (полный
+// список serverTime не несёт), поэтому отступаем назад. Лишнее перекрытие безвредно — слияние
+// идемпотентно; недобор поймает периодическая полная пересверка.
+const SINCE_OVERLAP_MS = 60_000;
+// Раз в N тиков (≈5 мин) — полная загрузка вместо дельты: дельта опирается на updated_at, который
+// проставляет код приложения, а не триггер; запись в обход него (SQL, миграции) дельта не увидит.
+const FULL_RESYNC_EVERY = 30;
 
 function todayISO(now: Date): string {
   const y = now.getFullYear();
@@ -123,9 +134,35 @@ export function useReminderTasks() {
 
   // Фон каждые 10с тянет ТОЛЬКО задачи (они меняются). Профиль и метки — редкие: грузим на
   // маунте и при возврате фокуса, а не в поллинге (меньше вызовов Edge Function, меньше «дыхания»).
+  // Полная загрузка: первая, после своих мутаций, при усечённой дельте и раз в FULL_RESYNC_EVERY тиков.
+  // Фоновые тики между ними — дельта (pollTasks): сервер отдаёт только изменённое после `since`.
+  const tasksRef = useRef<Task[] | null>(null);
+  tasksRef.current = tasks;
+  const sinceRef = useRef<string | null>(null);
+  const deltaTicksRef = useRef(0);
   const loadTasks = useCallback(async () => {
-    try { setTasks(mergePending(await fetchTasks())); } catch { /* оставляем текущее при ошибке */ }
+    const startedAt = new Date(Date.now() - SINCE_OVERLAP_MS).toISOString();
+    try {
+      const full = await fetchTasks();
+      sinceRef.current = startedAt;
+      deltaTicksRef.current = 0;
+      setTasks(mergePending(full));
+    } catch { /* оставляем текущее при ошибке */ }
   }, [mergePending]);
+  const pollTasks = useCallback(async () => {
+    const since = sinceRef.current;
+    if (!since || tasksRef.current === null || deltaTicksRef.current >= FULL_RESYNC_EVERY) return loadTasks();
+    try {
+      const delta = await fetchTasksDelta(since);
+      if (delta.truncated) return loadTasks();
+      sinceRef.current = delta.serverTime;
+      deltaTicksRef.current += 1;
+      if (delta.tasks.length === 0) return;
+      // Слияние считаем ВНЕ setState-апдейтера: mergePending меняет ref, а апдейтер в StrictMode
+      // вызывается дважды — второй вызов потерял бы оптимистичные задачи.
+      setTasks(mergePending(mergeTasksDelta(tasksRef.current ?? [], delta.tasks)));
+    } catch { /* оставляем текущее при ошибке */ }
+  }, [loadTasks, mergePending]);
   const loadMeta = useCallback(async () => {
     try {
       const [m, l] = await Promise.all([fetchMe(), fetchTaskLabels()]);
@@ -147,19 +184,20 @@ export function useReminderTasks() {
     reload();
   }, [tasksVersion, reload]);
 
+  // Скрытая вкладка не опрашивает (startVisiblePolling); при возврате — одна догрузка дельтой
+  // (+ профиль и метки, они в поллинге не участвуют).
   useEffect(() => {
     load();
-    const interval = setInterval(() => {
-      if (Date.now() - lastMutationRef.current < 4_000) return; // пауза после действия — фон не моргает
-      loadTasks();
-    }, 10_000);
-    const onVisibility = () => { if (document.visibilityState === "visible") load(); };
-    document.addEventListener("visibilitychange", onVisibility);
-    return () => {
-      clearInterval(interval);
-      document.removeEventListener("visibilitychange", onVisibility);
-    };
-  }, [load, loadTasks]);
+    return startVisiblePolling(
+      document,
+      () => {
+        if (Date.now() - lastMutationRef.current < 4_000) return; // пауза после действия — фон не моргает
+        pollTasks();
+      },
+      POLL_MS,
+      () => { pollTasks(); loadMeta(); },
+    );
+  }, [load, pollTasks, loadMeta]);
 
   // now фиксируем по данным, а не пересоздаём каждый рендер — иначе useMemo ниже (counts/visible/
   // группы) инвалидируются на каждый ввод/ховер. Меняется вместе с задачами (поллинг раз в 10с).

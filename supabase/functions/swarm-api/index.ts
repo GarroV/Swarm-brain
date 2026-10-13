@@ -34,6 +34,7 @@ import {
 import { canChangeMeetingPrivacy } from "../_shared/entries/meeting-rights.ts";
 import { isMissedBotSlot, toAgentListRow, toListRow } from "./meetings-payload.ts";
 import { TASK_LIST_COLUMNS } from "./task-columns.ts";
+import { deltaColumns, parseSince, type TasksDeltaResponse } from "./tasks-delta.ts";
 import { resolveDigestScope } from "./digest-scope.ts";
 import {
   createTask,
@@ -1124,12 +1125,22 @@ async function routeRequest(req: Request): Promise<Response> {
       const startDateTo = url.searchParams.get("start_date_to") ?? undefined;
       const dueDateFrom = url.searchParams.get("due_date_from") ?? undefined;
       const dueDateTo = url.searchParams.get("due_date_to") ?? undefined;
+      // Дельта: `since` — только изменённое после него (включая архивные). Момент снимаем ДО
+      // чтения базы: правка, прилетевшая во время запроса, попадёт и в этот ответ, и в следующий
+      // (слияние по id идемпотентно), а не потеряется.
+      const sinceRaw = url.searchParams.get("since");
+      const since = parseSince(sinceRaw);
+      if (sinceRaw !== null && since === null) {
+        return apiErr(400, "since must be an ISO date", origin);
+      }
+      const serverTime = new Date().toISOString();
 
       const { tasks, total } = await listTasksWithTotal(
         {
           // Узкая проекция: 1146 → 583 Б на строку (issue #116). description в списках не
           // рендерится; редактор до-загружает задачу по id.
-          columns: TASK_LIST_COLUMNS,
+          columns: since ? deltaColumns(TASK_LIST_COLUMNS) : TASK_LIST_COLUMNS,
+          updatedAfter: since ?? undefined,
           status,
           country,
           assigneeText,
@@ -1200,6 +1211,14 @@ async function routeRequest(req: Request): Promise<Response> {
       const totalHeader = total != null
         ? { "X-Total-Count": String(total) }
         : undefined;
+      if (since) {
+        const delta: TasksDeltaResponse<typeof tasksWithCreator[number]> = {
+          tasks: tasksWithCreator,
+          serverTime,
+          truncated: tasks.length >= limit,
+        };
+        return json(delta, 200, origin, totalHeader);
+      }
       return json(tasksWithCreator, 200, origin, totalHeader);
     }
 
