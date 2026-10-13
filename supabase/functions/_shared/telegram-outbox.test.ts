@@ -17,13 +17,14 @@ const row = (id: number, attempts = 0): OutboxRow => ({
   attempts,
 });
 
-function harness(rows: OutboxRow[], failFor: number[] = []) {
+function harness(rows: OutboxRow[], failFor: number[] = [], removed: number[] = []) {
   const sentIds: number[] = [];
   const failures: Array<{ id: number; attempts: number; error: string; giveUp: boolean }> = [];
   const calls: number[] = [];
   const limits: number[] = [];
   const store: OutboxStore = {
     enqueue: () => Promise.resolve(),
+    members: (ids) => Promise.resolve(new Set(ids.filter((rid) => !removed.includes(rid / 10)))),
     unsent: (limit) => (limits.push(limit), Promise.resolve(rows.slice(0, limit))),
     markSent: (id) => (sentIds.push(id), Promise.resolve()),
     markFailed: (id, attempts, error, giveUp) => (failures.push({ id, attempts, error, giveUp }), Promise.resolve()),
@@ -75,4 +76,13 @@ Deno.test("потолок за тик передаётся в выборку", a
   const res = await drainTelegramOutbox({ store: h.store, send: h.send, now: MORNING, sleep: h.sleep, limit: 2 });
   assertEquals(h.limits, [2]);
   assertEquals(res.sent, 2);
+});
+
+Deno.test("drain: получателя убрали из команды, пока сообщение ждало утра — не шлём, в архив", async () => {
+  const h = harness([row(1), row(2)], [], [2]);
+  const res = await drainTelegramOutbox({ store: h.store, send: h.send, now: MORNING, sleep: h.sleep });
+  assertEquals(h.calls, [1]);
+  assertEquals(h.sentIds, [1]);
+  assertEquals(h.failures.map((f) => [f.id, f.giveUp]), [[2, true]]);
+  assertEquals(res.gaveUp, 1);
 });
