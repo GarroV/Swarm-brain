@@ -7,8 +7,9 @@
 
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { type AccessContext, logAccess } from "./access-events.ts";
+import { FUNCTIONS_BASE_URL } from "./public-url.ts";
 
-export const SETUP_URL = "https://vbqglndbxkpmreccpqmr.supabase.co/functions/v1/swarm-setup";
+export const SETUP_URL = `${FUNCTIONS_BASE_URL}/swarm-setup`;
 
 export interface MintedToken {
   token: string;

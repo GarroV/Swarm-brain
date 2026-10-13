@@ -10,11 +10,11 @@
 // архив; сумму брать из сводки его прогона (или `shasum -a 256` скачанного из релиза на GitHub —
 // у ассета там своя, независимая от бакета сумма) и сверить с копией в бакете. Раскатать обе функции.
 // История сборок — в шапке swarm-recorder-version/index.ts.
+import { STORAGE_PUBLIC_URL } from "./public-url.ts";
 export const RECORDER_LATEST_BUILD = 36;
 export const RECORDER_ASSET_SHA256 = "390ea7f6924c0f28a87351a855a89947e0a925fc96c8b4e608ecc0589a3b099e";
 
-export const RECORDER_ASSET_BASE =
-  "https://vbqglndbxkpmreccpqmr.supabase.co/storage/v1/object/public/swarm_drive/recorder";
+export const RECORDER_ASSET_BASE = `${STORAGE_PUBLIC_URL}/swarm_drive/recorder`;
 
 export function recorderAssetUrl(build: number): string {
   return `${RECORDER_ASSET_BASE}/SwarmRecorder-${build}.zip`;

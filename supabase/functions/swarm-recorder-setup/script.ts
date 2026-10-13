@@ -15,12 +15,13 @@
 // codesign/security/openssl/xattr/ditto — штатные бинарники macOS, работают без CLT (проверено).
 
 import { RECORDER_ASSET_SHA256, RECORDER_LATEST_BUILD, recorderAssetUrl } from "../_shared/recorder-release.ts";
+import { FUNCTIONS_BASE_URL } from "../_shared/public-url.ts";
 
 // Готовый .app раздаётся из ПУБЛИЧНОГО бакета Storage, а не из GitHub Release (issue #91).
 // Номер, адрес и сумма вшиваются в скрипт из _shared/recorder-release.ts — того же места, откуда
 // их берёт функция версий. Раньше скрипт спрашивал функцию версий и при её недоступности падал на
 // фолбэк-номер, который отстал на десять сборок; сумма же обязана приехать не из бакета (#203).
-const INGEST_BASE_URL = "https://vbqglndbxkpmreccpqmr.supabase.co/functions/v1";
+const INGEST_BASE_URL = FUNCTIONS_BASE_URL;
 
 export const SETUP_SCRIPT = `#!/bin/bash
 # Swarm Brain → bumblebee (macOS). Не запускай вручную — возьми команду в боте: /recordertoken

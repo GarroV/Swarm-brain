@@ -1,7 +1,7 @@
 import { clearNonceCookie, hmacSign, OAUTH_NONCE_COOKIE, readCookie, verifyState } from "../../../_lib/oauth-state";
 import { type GoogleName, hasCalendarScope, nameSigPayload, normalizeName } from "../../../_lib/google-name";
 import { signJWT, SESSION_TTL_SEC, verifyJWT } from "../../../_lib/jwt";
-import { swarmApiUrl } from "../../../_lib/api-url";
+import { functionsBase, swarmApiUrl } from "../../../_lib/api-url";
 import { CALENDAR_REPAIR_COOKIE, calendarRepairCookie, needsCalendarRepair } from "../../../_lib/calendar-repair";
 
 // CF Pages Function: GET /api/auth/google/callback — Google вернул code.
@@ -14,8 +14,6 @@ type Env = { GOOGLE_CLIENT_ID: string; GOOGLE_CLIENT_SECRET: string; WEB_JWT_SEC
 type Ctx = { request: Request; env: Env };
 
 const ALLOWED_DOMAIN = "dodobrands.io";
-const RESOLVE_URL = "https://vbqglndbxkpmreccpqmr.supabase.co/functions/v1/auth-resolve";
-const CALENDAR_LINK_URL = "https://vbqglndbxkpmreccpqmr.supabase.co/functions/v1/google-oauth/link";
 
 type GoogleTokens = { access_token?: string; refresh_token?: string; scope?: string };
 
@@ -55,7 +53,7 @@ async function exchangeCode(env: Env, origin: string, code: string): Promise<Goo
 
 async function linkCalendar(env: Env, telegramId: number, refreshToken: string): Promise<boolean> {
   const linkSig = await hmacSign(env.WEB_JWT_SECRET, `${telegramId}|${refreshToken}`);
-  const linkRes = await fetch(CALENDAR_LINK_URL, {
+  const linkRes = await fetch(`${functionsBase(env)}/google-oauth/link`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ telegram_id: telegramId, refresh_token: refreshToken, sig: linkSig }),
@@ -117,7 +115,7 @@ export async function onRequestGet(ctx: Ctx): Promise<Response> {
   // user_profiles.first_name — источник дефолтного названия записи без календаря (#184).
   const name: GoogleName = { given: normalizeName(ui.given_name), family: normalizeName(ui.family_name) };
   const sig = await hmacSign(env.WEB_JWT_SECRET, nameSigPayload(email, name));
-  const rRes = await fetch(RESOLVE_URL, {
+  const rRes = await fetch(`${functionsBase(env)}/auth-resolve`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ email, sig, given_name: name.given ?? "", family_name: name.family ?? "" }),

@@ -82,6 +82,7 @@ import { onlyLive } from "../_shared/tasks/live.ts";
 import { onlyLiveEntries } from "../_shared/entries/live.ts";
 import { externalFetch, VIA_GRANOLA, VIA_TELEGRAM } from "../_shared/external-fetch.ts";
 import { WEB_BASE_URL } from "./lib/web-url.ts";
+import { FUNCTIONS_BASE_URL } from "../_shared/public-url.ts";
 
 const TELEGRAM_BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN")!;
 const CRON_SECRET = Deno.env.get("CRON_SECRET") ?? "";
@@ -92,7 +93,7 @@ const CRON_SECRET = Deno.env.get("CRON_SECRET") ?? "";
 const TELEGRAM_WEBHOOK_SECRET = Deno.env.get("TELEGRAM_WEBHOOK_SECRET") ?? "";
 const TELEGRAM_WEBHOOK_ENFORCE = Deno.env.get("TELEGRAM_WEBHOOK_ENFORCE") === "1";
 // Эндпоинт MCP-сервера для ручного подключения (веб-коннектор claude.ai: URL + Bearer-токен).
-const SWARM_MCP_URL = "https://vbqglndbxkpmreccpqmr.supabase.co/functions/v1/swarm-mcp";
+const SWARM_MCP_URL = `${FUNCTIONS_BASE_URL}/swarm-mcp`;
 
 // Боковое меню команд Telegram — для пользователя видны ТОЛЬКО эти три (решение владельца
 // 2026-08-09, расширено 2026-09-09: «Спросить, Добавить, Добавить задачу — всё, больше там

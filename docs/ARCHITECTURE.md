@@ -61,7 +61,7 @@
 - Разработка в ветке **`main`** (дефолтная; переименована из `sandbox_vas` 2026-07-25).
 - Edge Functions: `supabase functions deploy <name> --no-verify-jwt`. **Инвариант:** `verify_jwt = false` закреплён для всех функций в `supabase/config.toml` (`[functions.<name>]`) — деплой не должен молча терять публичность шлюза. **Никогда не ставить `verify_jwt = true`**: все функции делают свою авторизацию в коде (recorder/MCP-токен, сессионный JWT, вебхук-секрет) и шлют не-JWT `Bearer`, который шлюз с verify_jwt отобьёт 401 `INVALID_JWT_FORMAT` ещё до функции (так 2026-06-30 молча падали ВСЕ загрузки рекордера — разбор в QUICK_REF/BACKLOG).
 - Веб-интерфейс: `cd miniapp && npm run build` → `out/` → Cloudflare Pages.
-- Прод project-ref: `vbqglndbxkpmreccpqmr` (развёртывание Dodo Brands). `ADMIN_USER_ID = 744230399` зашит в `swarm-bot/lib/supabase.ts`.
+- **Боевой API с 13.10.2026 — на своём сервере (self-hosted Supabase на VPS Contabo), адрес `https://api.swarm-team.app`** (функции `…/functions/v1/<имя>`, хранилище `…/storage/v1/…`); источник адреса в функциях — `_shared/public-url.ts` (env `SWARM_PUBLIC_URL`), в вебе — `miniapp/functions/_lib/api-url.ts`. Решение: [decisions/2026-10-13-move-to-own-server.md](decisions/2026-10-13-move-to-own-server.md). Облачный project-ref `vbqglndbxkpmreccpqmr` (Free-план, ограничен 12.10.2026 за egress) — прежний прод. `ADMIN_USER_ID = 744230399` зашит в `swarm-bot/lib/supabase.ts`.
 
 ## Стек
 

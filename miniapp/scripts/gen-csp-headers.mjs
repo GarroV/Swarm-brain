@@ -24,9 +24,9 @@ const outDir = join(root, "out");
 const apiOrigin = (() => {
   const raw = process.env.NEXT_PUBLIC_API_URL ?? "";
   try {
-    return raw.startsWith("http") ? new URL(raw).origin : "https://vbqglndbxkpmreccpqmr.supabase.co";
+    return raw.startsWith("http") ? new URL(raw).origin : "https://api.swarm-team.app";
   } catch {
-    return "https://vbqglndbxkpmreccpqmr.supabase.co";
+    return "https://api.swarm-team.app";
   }
 })();
 

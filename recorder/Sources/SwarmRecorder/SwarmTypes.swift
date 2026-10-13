@@ -5,7 +5,7 @@ import RecorderKit
 // Читается из ~/Library/Application Support/SwarmRecorder/config.json (см. README).
 struct SwarmConfig: Codable {
     var token: String
-    var ingestBaseURL: String   // напр. https://<ref>.supabase.co/functions/v1
+    var ingestBaseURL: String   // напр. https://api.swarm-team.app/functions/v1
     var webBaseURL: String
 
     static func configURL() -> URL {
@@ -28,7 +28,7 @@ struct SwarmConfig: Codable {
     static func saveToken(_ token: String) throws {
         let cfg = SwarmConfig(
             token: token,
-            ingestBaseURL: "https://vbqglndbxkpmreccpqmr.supabase.co/functions/v1",
+            ingestBaseURL: "https://api.swarm-team.app/functions/v1",
             webBaseURL: WebBase.current
         )
         let url = configURL()

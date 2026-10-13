@@ -1,10 +1,11 @@
 import { ADMIN_USER_ID, supabase } from "./supabase.ts";
 import { sendMessage } from "./telegram.ts";
 import { externalFetch, VIA_READ_AI } from "../../_shared/external-fetch.ts";
+import { FUNCTIONS_BASE_URL } from "../../_shared/public-url.ts";
 
 const READ_AI_TOKEN_URL = "https://authn.read.ai/oauth2/token";
 export const READ_AI_API = "https://api.read.ai/v1";
-export const READ_AI_AUTH_URL = "https://vbqglndbxkpmreccpqmr.supabase.co/functions/v1/read-ai-auth?start=1";
+export const READ_AI_AUTH_URL = `${FUNCTIONS_BASE_URL}/read-ai-auth?start=1`;
 
 export async function getReadAiToken(): Promise<string | null> {
   const { data } = await supabase.from("oauth_tokens").select("*").eq("service", "read_ai").maybeSingle();
