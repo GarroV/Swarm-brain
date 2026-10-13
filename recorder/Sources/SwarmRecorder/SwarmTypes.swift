@@ -20,6 +20,7 @@ struct SwarmConfig: Codable {
         var cfg = try JSONDecoder().decode(SwarmConfig.self, from: data)
         restrictToOwner(url)  // установки до build 37 писали конфиг с токеном читаемым для всех (#203)
         cfg.webBaseURL = WebBase.migrated(cfg.webBaseURL)  // пустой/прежний → текущий (#753, #758)
+        cfg.ingestBaseURL = IngestBase.migrated(cfg.ingestBaseURL)  // облачный → свой сервер (#915)
         return cfg
     }
 
@@ -28,7 +29,7 @@ struct SwarmConfig: Codable {
     static func saveToken(_ token: String) throws {
         let cfg = SwarmConfig(
             token: token,
-            ingestBaseURL: "https://api.swarm-team.app/functions/v1",
+            ingestBaseURL: IngestBase.current,
             webBaseURL: WebBase.current
         )
         let url = configURL()
