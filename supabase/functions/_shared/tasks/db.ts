@@ -1,5 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import type { Task, TaskInput } from "./types.ts";
+import { deltaOrFilter } from "./delta.ts";
 import { completionPatch, hidesClosedByDefault, isClosedStatus, shouldCascadeClose } from "./statuses.ts";
 import { buildRecurPatch, type RecurRow, todayInTz } from "./recurrence.ts";
 import { defaultDueDate } from "./due.ts";
@@ -98,12 +99,21 @@ export async function listTasksWithTotal(filters: {
   startDateTo?: string;
   dueDateFrom?: string;
   dueDateTo?: string;
+  /**
+   * Дельта (веб-поллинг, `GET /tasks?since=`): только задачи, изменённые ПОСЛЕ этого момента,
+   * И архивные тоже — чтобы клиент их убрал у себя. Остальные фильтры и groupId применяются
+   * как обычно: дельта не обходит ни воркспейс, ни фильтры. Колонки обязаны содержать
+   * `archived_at` (см. DELTA_EXTRA_COLUMNS), иначе клиент не отличит архивную от живой.
+   */
+  updatedAfter?: string;
 }, groupId?: string): Promise<{ tasks: Task[]; total: number | null }> {
+  // archive-ok: дельта обязана отдать архивные задачи — по ним клиент убирает строку у себя
   let q = supabase
     .from("tasks")
-    .select(filters.columns ?? "*", { count: "exact" })
-    .is("archived_at", null)
-    .order("due_date", { ascending: true, nullsFirst: false });
+    .select(filters.columns ?? "*", { count: "exact" });
+  // Дельта берёт и архивные (их возврат — сигнал «убери»); обычный список — только живые.
+  q = filters.updatedAfter ? q.or(deltaOrFilter(filters.updatedAfter)) : q.is("archived_at", null);
+  q = q.order("due_date", { ascending: true, nullsFirst: false });
 
   if (filters.confirmed !== undefined) q = q.eq("confirmed", filters.confirmed);
   // Правило «закрытые прячем» живёт в statuses.ts чистой функцией (issue #304): здесь оно

@@ -3,6 +3,7 @@ import { isNetworkFailure, reportConnection, reportUnauthorized } from "./connec
 import type { TaskFile, TaskFileLimits } from "./taskFiles";
 import type { BackdropId } from "./backdrop";
 import type { UsageCell } from "./usageCube";
+import type { TasksDeltaResponse } from "./tasksDelta";
 import type {
   AdminUser,
   MarketBundle,
@@ -1093,6 +1094,17 @@ export async function fetchTasks(
   params.set("confirmed", "true");
   const qs = params.toString();
   return apiFetch<Task[]>(`/tasks${qs ? `?${qs}` : ""}`);
+}
+
+/**
+ * Дельта списка задач: только изменённое после `since` (включая архивные — с `archived_at`).
+ * Те же правила доступа, что у полного списка, — на сервере это тот же запрос с доп. условием.
+ * Слияние — `mergeTasksDelta` (lib/tasksDelta.ts); `serverTime` из ответа — следующий `since`.
+ */
+export async function fetchTasksDelta(since: string): Promise<TasksDeltaResponse> {
+  if (DEV_MODE) return { tasks: [], serverTime: new Date().toISOString(), truncated: false };
+  const params = new URLSearchParams({ confirmed: "true", since });
+  return apiFetch<TasksDeltaResponse>(`/tasks?${params.toString()}`);
 }
 
 export async function fetchTask(id: string): Promise<Task> {
