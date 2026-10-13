@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useState } from "react";
+import { useState } from "react";
 import { useDt, useRoyNav } from "../nav";
 import { RoyHeader, Segmented, RoyCard, Market, StorageBadge } from "../ui";
 import { HeaderActions } from "../HeaderActions";
@@ -7,10 +7,12 @@ import { RoyIcon, type RoyIconName } from "../icons";
 import { SwipeRow } from "../SwipeRow";
 import { useIsDesktop } from "../useIsDesktop";
 import { deriveEntryTitle, entryImporterName } from "../entry";
-import { fetchMeetings, deleteMeeting } from "@/lib/api";
+import { deleteMeeting } from "@/lib/api";
 import { AgentReviewQueue } from "@/components/AgentReviewQueue";
 import { InviteBotCard } from "../InviteBotCard";
 import { MeetingsDesk } from "./MeetingsDesk";
+import { useMeetingsList } from "./useMeetingsList";
+import { EMPTY_FILTERS } from "@/lib/meetingsFilters";
 import { useConfirm } from "@/components/ui/confirm";
 import type { Entry } from "@/types";
 import { formatDate } from "@/lib/displayFormat";
@@ -121,24 +123,21 @@ export function RoyMeetingsScreen() {
   const dt = useDt();
   const confirm = useConfirm();
   const isDesktop = useIsDesktop();
-  const [meetings, setMeetings] = useState<Entry[] | null>(null);
   const [seg, setSeg] = useState("all");
+  const [reloadKey, setReloadKey] = useState(0);
 
-  const load = useCallback(() => {
-    fetchMeetings()
-      .then(setMeetings)
-      .catch(() => setMeetings([]));
-  }, []);
-  useEffect(() => {
-    load();
-  }, [load]);
+  // Лёгкие строки и частями: вычитка + вчера и сегодня, остальное по «Показать ещё».
+  // На десктопе экран отдаёт место MeetingsDesk со своим списком — свой не грузим.
+  const list = useMeetingsList(EMPTY_FILTERS, { reloadKey, pending: !isDesktop, skipConfirmed: isDesktop });
+  const meetings = list.loading ? null : [...list.pending, ...list.confirmed];
+  const load = () => setReloadKey((k) => k + 1);
   const all = meetings ?? [];
   const items = all.filter((e) => (seg === "all" ? true : seg === "confirmed" ? isConfirmed(e) : !isConfirmed(e)));
 
   const open = (id: string) => push({ view: "meetingDetail", params: { id } });
   const remove = async (e: Entry) => {
     if (!(await confirm({ title: `Удалить встречу «${deriveEntryTitle(e)}»?`, description: "Встреча и её расшифровка будут удалены без возможности восстановления." }))) return;
-    setMeetings((prev) => prev?.filter((x) => x.id !== e.id) ?? null);
+    list.remove(e.id);
     try {
       await deleteMeeting(e.id);
       toast("Встреча удалена");
@@ -151,7 +150,7 @@ export function RoyMeetingsScreen() {
 
   const segmented = <Segmented items={SEGS.map((x) => ({ id: x.id, label: dt(x.label, x.en) }))} value={seg} onChange={setSeg} />;
   const skeleton = meetings == null && [0, 1, 2].map((i) => <div key={i} className="roy-shim" style={{ height: 72, borderRadius: 10 }} />);
-  const emptyFeed = meetings && items.length === 0 && <div className="py-10 text-center text-sm text-ink-soft">{dt("Встреч нет", "No meetings")}</div>;
+  const emptyFeed = meetings && items.length === 0 && !list.hasMore && <div className="py-10 text-center text-sm text-ink-soft">{dt("Встреч нет", "No meetings")}</div>;
   const feedCards = (mobile: boolean) =>
     items.map((e) => <MeetingCard key={e.id} e={e} mobile={mobile} onOpen={() => open(e.id)} onRemove={() => remove(e)} />);
 
@@ -173,6 +172,17 @@ export function RoyMeetingsScreen() {
         {skeleton}
         {emptyFeed}
         {feedCards(true)}
+        {!list.loading && list.hasMore && (
+          <button
+            type="button"
+            disabled={list.loadingMore}
+            onClick={list.loadMore}
+            className="w-full rounded-[10px] border border-line-2 bg-surface py-2.5 text-ink-soft disabled:opacity-60"
+            style={{ fontSize: 13 }}
+          >
+            {list.loadingMore ? dt("Загрузка…", "Loading…") : dt("Показать ещё", "Show more")}
+          </button>
+        )}
       </div>
     </div>
   );

@@ -46,7 +46,7 @@ export function SearchScreen({ onBack }: { onBack?: () => void }) {
   useEffect(() => {
     setRecent(loadRecent());
     fetchTasks().then(setTasks).catch(() => setTasks([]));
-    fetchMeetings().then(setMeetings).catch(() => setMeetings([]));
+    fetchMeetings({ light: true, limit: 50 }).then(setMeetings).catch(() => setMeetings([]));
   }, []);
 
   const go = (query: string) => {
