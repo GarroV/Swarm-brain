@@ -1,5 +1,6 @@
 import { ADMIN_USER_ID, isAdminUser, supabase } from "../lib/supabase.ts";
 import { buildKeyboard, editInlineMessage, sendInlineMessage, sendMessage } from "../lib/telegram.ts";
+import { notifyMessage } from "../lib/notify.ts";
 import { clearSession, setSession } from "../lib/storage.ts";
 import type { Task, TgCallbackQuery } from "../lib/types.ts";
 import { sendTaskCard } from "../tasks/index.ts";
@@ -339,18 +340,27 @@ export async function handleBroadcast(chatId: number, adminId: number, text: str
     return;
   }
 
+  // Рассылка — сообщение людям по инициативе бота: в комендантский час (23:00–9:00 МСК) уходит
+  // в очередь до утра, а админу отчёт честно говорит, сколько отложено.
   let sent = 0;
+  let queued = 0;
   let failed = 0;
   for (const id of ids) {
     try {
-      await sendMessage(id, text.trim());
-      sent++;
+      const result = await notifyMessage(id, text.trim(), "broadcast");
+      if (result === "queued") queued++;
+      else sent++;
     } catch {
       failed++;
     }
   }
 
-  await sendMessage(chatId, `✅ Отправлено: <b>${sent}</b>${failed ? `, не доставлено: <b>${failed}</b>` : ""}`);
+  await sendMessage(
+    chatId,
+    `✅ Отправлено: <b>${sent}</b>${queued ? `, отложено до 9:00 по Москве: <b>${queued}</b>` : ""}${
+      failed ? `, не доставлено: <b>${failed}</b>` : ""
+    }`,
+  );
 }
 
 export async function handleUsersProfile(chatId: number, argText: string): Promise<void> {

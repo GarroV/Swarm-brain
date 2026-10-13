@@ -28,22 +28,25 @@ import {
   projectNotFoundMessage,
   type RecentCommentRow,
 } from "./format.ts";
-import { externalFetch, VIA_TELEGRAM } from "../../_shared/external-fetch.ts";
+import { notifyPerson } from "../../_shared/notify-person.ts";
 
 // Оверсайт руководителя по ЗАДАЧАМ — осознанное решение владельца, см. docs/decisions/2026-08-21-admin-visibility.md.
 // На проекты и записи он НЕ распространяется.
 export const ADMIN_USER_ID = 744230399;
 
-const TELEGRAM_BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN");
-
+// «Подтверди в боте» — уведомление по инициативе бота: в комендантский час (23:00–9:00 МСК) ждёт
+// утра в `telegram_outbox`. Сбой доставки не должен ронять создание задачи — она уже записана.
 async function notifyCreator(telegramId: number, taskTitle: string): Promise<void> {
-  if (!TELEGRAM_BOT_TOKEN) return;
   const text = `📋 Новая задача на проверке: <b>${taskTitle}</b>\n\nОткрой /tasks → ⏳ На проверке чтобы подтвердить.`;
-  await externalFetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ chat_id: telegramId, text, parse_mode: "HTML" }),
-  }, VIA_TELEGRAM);
+  try {
+    await notifyPerson(supabase, {
+      recipientId: telegramId,
+      kind: "task_review_queue",
+      payload: { text, parse_mode: "HTML" },
+    });
+  } catch (e) {
+    console.error("notifyCreator failed:", e);
+  }
 }
 
 const supabase = createClient(

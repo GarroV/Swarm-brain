@@ -14,6 +14,7 @@ import { TASK_TZ, todayInTz } from "../../_shared/tasks/recurrence.ts";
 import { addDays } from "../../_shared/tasks/due.ts";
 import { isClosedStatus } from "../../_shared/tasks/statuses.ts";
 import { isDemoAccount } from "../../_shared/demo-session.ts";
+import { inCurfew } from "../../_shared/curfew.ts";
 
 // Часовой пояс и календарный «сегодня» — канон в _shared/tasks/recurrence.ts (одна копия
 // на весь модуль задач: перекат регулярных и пинги обязаны считать один и тот же день).
@@ -45,19 +46,15 @@ export interface InlineUrlButton {
 // (`todayIn`) остались на месте, а формула жила в одном файле.
 export const todayIn = todayInTz;
 
-// Пинги не уходят ночью: наступивший с полуночи пинг ждёт 9:00 по Москве (решение владельца
-// 13.10.2026, docs/decisions/2026-10-13-notification-curfew.md: «поставим время отправки таких
-// напоминаний на утро 9 часов… по Москве»). Раньше крон раз в час слал их ровно в полночь по
-// Белграду — в момент смены даты.
-export const PING_SEND_TZ = "Europe/Moscow";
-export const PING_SEND_FROM_HOUR = 9;
+// Пинги не уходят в комендантский час (23:00–9:00 по Москве, `_shared/curfew.ts`; решение
+// владельца 13.10.2026, docs/decisions/2026-10-13-notification-curfew.md): наступивший с полуночи
+// пинг ждёт 9:00. Раньше крон раз в час слал их ровно в полночь по Белграду — в момент смены даты.
+// В очередь `telegram_outbox` пинги НЕ кладутся: `reminded_at` ставится только по факту доставки,
+// поэтому крон сам подберёт их первым тиком после 9:00.
 
-/** Можно ли слать пинги в этот момент: с 9:00 по Москве до конца суток. */
+/** Можно ли слать пинги в этот момент: вне комендантского часа. */
 export function pingSendingOpen(now: Date): boolean {
-  const hour = Number(
-    new Intl.DateTimeFormat("en-GB", { timeZone: PING_SEND_TZ, hour: "2-digit", hourCycle: "h23" }).format(now),
-  );
-  return hour >= PING_SEND_FROM_HOUR;
+  return !inCurfew(now);
 }
 
 /**

@@ -1,7 +1,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { externalFetch, VIA_GRANOLA, VIA_TELEGRAM } from "../_shared/external-fetch.ts";
+import { externalFetch, VIA_GRANOLA } from "../_shared/external-fetch.ts";
+import { notifyPerson } from "../_shared/notify-person.ts";
 
-const TELEGRAM_BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN")!;
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const GRANOLA_API = "https://public-api.granola.ai/v1";
@@ -29,16 +29,12 @@ async function sendTelegram(
   text: string,
   keyboard: Array<Array<{ text: string; callback_data: string }>>,
 ): Promise<void> {
-  await externalFetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      chat_id: chatId,
-      text,
-      parse_mode: "HTML",
-      reply_markup: { inline_keyboard: keyboard },
-    }),
-  }, VIA_TELEGRAM);
+  // Уведомление по инициативе бота: в комендантский час (23:00–9:00 МСК) ждёт утра в очереди.
+  await notifyPerson(supabase, {
+    recipientId: chatId,
+    kind: "granola_new_meeting",
+    payload: { text, parse_mode: "HTML", reply_markup: { inline_keyboard: keyboard } },
+  });
 }
 
 async function fetchNotesSince(apiKey: string, createdAfter: string): Promise<GranolaNote[]> {
