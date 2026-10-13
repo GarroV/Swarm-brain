@@ -66,6 +66,11 @@ const MIME: Record<string, string> = {
   zip: "application/zip",
 };
 
+/** Content-Type по расширению; неизвестное — октет-поток (браузер скачает, а не откроет). */
+export function mimeForName(name: string): string {
+  return MIME[fileExt(name)] ?? "application/octet-stream";
+}
+
 function positiveInt(raw: string | undefined, fallback: number): number {
   const n = Number(raw);
   return Number.isInteger(n) && n > 0 ? n : fallback;
