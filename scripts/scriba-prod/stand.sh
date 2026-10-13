@@ -28,7 +28,7 @@ ALERT_CHANNEL_CONTAINER=furca-channel-bot-1
 ALERT_CHANNEL_NETWORK=furca-channel_default
 TOKEN_FILE="$STATE/bot.token"
 PROJECT=scriba-prod
-SWARM_URL='https://vbqglndbxkpmreccpqmr.supabase.co/functions/v1'
+SWARM_URL='https://api.swarm-team.app/functions/v1'
 # VPS общий: встреча берёт до 2 ГБ и 2 ядер, четыре сразу задушили бы соседей.
 MAX_MEETINGS=3
 
