@@ -359,7 +359,7 @@ Deno.serve(async (req: Request) => {
   // Переустановка вебхука на саму эту функцию. URL берём из окружения, а НЕ из тела запроса —
   // иначе триггер стал бы способом увести все сообщения команды на чужой адрес.
   if (body.set_webhook === true) {
-    const target = `${Deno.env.get("SUPABASE_URL")}/functions/v1/swarm-bot`;
+    const target = `${FUNCTIONS_BASE_URL}/swarm-bot`;
     const res = await externalFetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/setWebhook`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },

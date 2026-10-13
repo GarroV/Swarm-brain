@@ -340,6 +340,7 @@ claude mcp add supabase-swarm -- npx -y @supabase/mcp-server-supabase@0.12.0 \
 |-----------|-------------|
 | `TELEGRAM_BOT_TOKEN` | да |
 | `SUPABASE_URL` | да |
+| `SWARM_PUBLIC_URL` | нет (по умолчанию `https://api.swarm-team.app`; публичные ссылки — только через `_shared/public-url.ts`, не от `SUPABASE_URL`) |
 | `SUPABASE_SERVICE_ROLE_KEY` | да |
 | `DECIMUS_API_URL`, `DECIMUS_API_TOKEN` | нет (swarm-api, swarm-mcp; без них баллы РС/РКО, карты и проверки → «не загрузилось») |
 | `OPENAI_API_KEY` | да |

@@ -10,6 +10,7 @@
 
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { LEGACY_PUBLIC_BUCKET, storagePathFromLink } from "./storage-links.ts";
+import { toPublicUrl } from "./public-url.ts";
 
 export const PRIVATE_BUCKET = "swarm_private";
 
@@ -171,7 +172,7 @@ export async function externalFileUrl(
 
   const { data, error } = await supabase.storage.from(bucket).createSignedUrl(path, ttlSec);
   if (error || !data?.signedUrl) return null;
-  return data.signedUrl;
+  return toPublicUrl(data.signedUrl);
 }
 
 // Имя объекта в Storage обязано быть ASCII: ключ с кириллицей отвергается («Invalid key»),
