@@ -28,6 +28,7 @@ const TITLE: Record<ConnectorId, string> = {
 const SKIN: Record<ConnectorState, string> = {
   expired: "border-accent-line bg-accent-soft",
   expiring: "border-accent-line bg-surface",
+  silent: "border-accent-line bg-surface",
   off: "border-line bg-surface",
   connected: "border-line bg-surface",
 };
@@ -35,6 +36,7 @@ const SKIN: Record<ConnectorState, string> = {
 const DOT: Record<ConnectorState, string> = {
   expired: "bg-status-prog",
   expiring: "bg-status-prog",
+  silent: "bg-status-prog",
   off: "bg-line-2",
   connected: "bg-status-done",
 };
@@ -55,6 +57,7 @@ export function ConnectorTile({ c, open, onToggle }: { c: Connector; open: boole
     c.id === "bot" ? (c.state === "connected" ? dt("Включён", "On") : dt("Выключен", "Off"))
     : c.state === "connected" ? dt("Подключён", "Connected")
     : c.state === "expired" ? dt("Токен истёк", "Token expired")
+    : c.state === "silent" ? dt("Не отвечает", "Not responding")
     : c.state === "expiring" ? dt(`Токен до ${shortDate(c.expiresAt)}`, `Token until ${shortDate(c.expiresAt)}`)
     : c.id === "telegram" ? dt("Не привязан", "Not linked")
     : dt("Не подключён", "Not connected");

@@ -96,17 +96,21 @@ export async function revokeRecorderToken(
 export async function getRecorderTokenStatus(
   supabase: SupabaseClient,
   telegramId: number,
-): Promise<{ active: boolean; expiresAt: string | null }> {
+): Promise<{ active: boolean; expiresAt: string | null; lastSeenAt: string | null }> {
   const { data } = await supabase
     .from("allowed_users")
-    .select("recorder_token_hash, recorder_token_expires_at")
+    .select("recorder_token_hash, recorder_token_expires_at, recorder_last_seen_at")
     .eq("telegram_id", telegramId)
     .maybeSingle();
-  if (!data) return { active: false, expiresAt: null };
-  const row = data as { recorder_token_hash: string | null; recorder_token_expires_at: string | null };
+  if (!data) return { active: false, expiresAt: null, lastSeenAt: null };
+  const row = data as {
+    recorder_token_hash: string | null;
+    recorder_token_expires_at: string | null;
+    recorder_last_seen_at: string | null;
+  };
   const active = !!row.recorder_token_hash &&
     (!row.recorder_token_expires_at || Date.parse(row.recorder_token_expires_at) >= Date.now());
-  return { active, expiresAt: row.recorder_token_expires_at };
+  return { active, expiresAt: row.recorder_token_expires_at, lastSeenAt: row.recorder_last_seen_at };
 }
 
 // Есть ли активный токен (булев ярлык поверх getRecorderTokenStatus).

@@ -44,6 +44,7 @@ import { ALL_MEETING_SOURCES } from "../_shared/sources.ts";
 import { isFeedbackStatus } from "../_shared/feedback-categories.ts";
 import { normalizeExtractedEventDate, todayIso } from "../_shared/llm-date.ts";
 import { canViewEntry, entryAccessError, type EntryAccessRow, entryVisibilityOr } from "../_shared/entries/access.ts";
+import { markClientSeen } from "../_shared/client-seen.ts";
 import { withTokenIdentity } from "./identity.ts";
 import { authorizeToolCall, NO_WORKSPACE_MESSAGE, resolveCallerScope, withCallerIdentity } from "./auth.ts";
 import {
@@ -1285,6 +1286,8 @@ Deno.serve(async (req: Request) => {
         tokenError = "Token expired — run /mytoken in the bot to get a fresh one";
       } else {
         verifiedTelegramId = row.telegram_id;
+        // Отметка «Claude Desktop жив» для карточки интеграции (#921); ошибка записи запрос не роняет.
+        await markClientSeen(supabase, row.telegram_id, "mcp");
       }
     } else {
       tokenError = "Invalid token — run /mytoken in the bot to get a fresh one";
