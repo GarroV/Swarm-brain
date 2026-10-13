@@ -40,17 +40,30 @@ export function dueBucket(task: Task, now: Date = new Date()): DueBucket {
 export type TaskSection = { key: string; label: string; tasks: Task[]; late?: number };
 
 // Секции по сроку в фиксированном порядке; пустые не показываются.
+// Просроченное и сегодняшнее — одна секция «Задачи сегодня», просроченные сверху (владелец
+// 13.10.2026: «просрочено заменим на "задачи сегодня"»); `late` — сколько в ней просроченных.
+// Главная («Мои задачи», homeTasks.ts) держит своё деление и этим не задета.
+const TODAY_LABEL: [string, string] = ["Задачи сегодня", "Today's tasks"];
+
 export function groupByDue(tasks: Task[], now: Date, lang: 0 | 1): TaskSection[] {
   const by = new Map<DueBucket, Task[]>();
   for (const t of tasks) {
     const b = dueBucket(t, now);
     by.set(b, [...(by.get(b) ?? []), t]);
   }
-  return DUE_BUCKETS.filter((b) => by.has(b.id)).map((b) => ({
-    key: b.id,
-    label: b.label[lang],
-    tasks: by.get(b.id)!,
-  }));
+  const over = by.get("over") ?? [];
+  const today = [...over, ...(by.get("today") ?? [])];
+  const sections: TaskSection[] = today.length
+    ? [{ key: "today", label: TODAY_LABEL[lang], tasks: today, late: over.length }]
+    : [];
+  return [
+    ...sections,
+    ...DUE_BUCKETS.filter((b) => b.id !== "over" && b.id !== "today" && by.has(b.id)).map((b) => ({
+      key: b.id,
+      label: b.label[lang],
+      tasks: by.get(b.id)!,
+    })),
+  ];
 }
 
 export const UNASSIGNED = "0";
