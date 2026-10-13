@@ -1,6 +1,6 @@
 import { assert, assertEquals } from "jsr:@std/assert";
-import { dueInputToIso, isHotDue, orderStickers, safeStickerHref, stickerProgress } from "./stickers.ts";
-import type { BoardSticker, StickerAddressee } from "../types.ts";
+import { dueInputToIso, groupRecipients, isHotDue, orderStickers, safeStickerHref, stickerProgress } from "./stickers.ts";
+import type { BoardSticker, Person, StickerAddressee } from "../types.ts";
 
 const NOW = new Date("2026-10-11T12:00:00Z");
 const ME = 7;
@@ -70,4 +70,20 @@ Deno.test("срок из поля формы: пусто и мусор — null,
   assertEquals(dueInputToIso(""), null);
   assertEquals(dueInputToIso("не дата"), null);
   assert(dueInputToIso("2026-10-12T10:00")!.endsWith("Z"));
+});
+
+const person = (id: string, name: string, telegram_id: number | null, email: string | null = null): Person => ({ id, name, email, telegram_id });
+
+Deno.test("«Кому»: люди с входом и без входа — в разных группах, порядок сохранён", () => {
+  const people = [person("a", "Anna", 1), person("g1", "Guest One", null), person("b", "Boris", 2), person("g2", "a.kislyakova", null)];
+  const { users, guests } = groupRecipients(people, "");
+  assertEquals(users.map((p) => p.id), ["a", "b"]);
+  assertEquals(guests.map((p) => p.id), ["g1", "g2"]);
+});
+
+Deno.test("«Кому»: поиск ищет по имени и почте в обеих группах", () => {
+  const people = [person("a", "Anna Kis", 1), person("g1", "Guest", null, "kis@x.com"), person("g2", "Other", null, "o@x.com")];
+  const { users, guests } = groupRecipients(people, "  KIS ");
+  assertEquals(users.map((p) => p.id), ["a"]);
+  assertEquals(guests.map((p) => p.id), ["g1"]);
 });
