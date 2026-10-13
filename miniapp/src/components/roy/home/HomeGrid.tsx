@@ -80,6 +80,9 @@ export function HomeGrid({ data, onCreateTask, onCreateTaskFrom, editing, onEdit
   const sales = useCountrySales(markets);
 
   const body = (id: WidgetId): ReactNode => {
+    // Пока профиль (me) не пришёл, страны неизвестны: подсказку «выберите страны» не показываем — она мигала
+    // 0.3–1.5 с у людей с уже выбранными странами (issue #906). Тот же скелетон, что у загрузки баллов.
+    if (!me && META[id].scoped) return <div className="roy-shim" style={{ height: id === "countries" ? 160 : 220, borderRadius: 12 }} />;
     if (!codes.length && META[id].scoped) {
       return <div className={note} style={{ fontSize: 13 }}>{dt("Выберите свои страны в «Настроить главную» — метрики считаются по ним", "Pick your countries in “Customize home” — metrics are scoped to them")}</div>;
     }
