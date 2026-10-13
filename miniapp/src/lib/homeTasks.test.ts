@@ -21,7 +21,7 @@ function task(over: Partial<Task> & { id: string }): Task {
 const ru = (r: string) => r;
 const ids = (ts: Task[]) => ts.map((t) => t.id);
 
-Deno.test("groupHome: секции по стенду в порядке Просрочено → Сегодня → Дальше → Без срока", () => {
+Deno.test("groupHome: секции: Задачи сегодня (просроченные сверху) → Дальше → Без срока", () => {
   const s = groupHome([
     task({ id: "n", due_date: null }),
     task({ id: "l", due_date: "2026-09-30" }),
@@ -29,8 +29,18 @@ Deno.test("groupHome: секции по стенду в порядке Прос�
     task({ id: "o", due_date: "2026-09-20" }),
   ], NOW, 0);
   assertEquals(s.map((x) => [x.label, ids(x.tasks)]), [
-    ["Просрочено", ["o"]], ["Сегодня", ["t"]], ["Дальше", ["l"]], ["Без срока", ["n"]],
+    ["Задачи сегодня", ["o", "t"]], ["Дальше", ["l"]], ["Без срока", ["n"]],
   ]);
+});
+
+Deno.test("groupHome: просроченные в «Задачи сегодня» — сверху, старшие первыми, счётчик late", () => {
+  const s = groupHome([
+    task({ id: "t", due_date: "2026-09-24" }),
+    task({ id: "o2", due_date: "2026-09-22" }),
+    task({ id: "o1", due_date: "2026-09-18" }),
+  ], NOW, 0);
+  assertEquals(ids(s[0].tasks), ["o1", "o2", "t"]);
+  assertEquals(s[0].late, 2);
 });
 
 Deno.test("groupHome: «Дальше» — шесть ближайших по сроку, «Без срока» — четыре", () => {
@@ -67,12 +77,12 @@ Deno.test("groupHome: пинг на сегодня поднимает задач
     task({ id: "ping", due_date: "2027-09-24", remind_date: "2026-09-24" }),
     task({ id: "pingNoDue", remind_date: "2026-09-24" }),
   ], NOW, 0);
-  assertEquals(s.map((x) => [x.label, ids(x.tasks)]), [["Сегодня", ["ping", "pingNoDue"]], ["Дальше", ["far"]]]);
+  assertEquals(s.map((x) => [x.label, ids(x.tasks)]), [["Задачи сегодня", ["ping", "pingNoDue"]], ["Дальше", ["far"]]]);
 });
 
 Deno.test("groupHome: отзвонивший сегодня пинг задачу не убирает (reminded_at ставится в полночь)", () => {
   const s = groupHome([task({ id: "p", due_date: "2027-01-01", remind_date: "2026-09-24", reminded_at: "2026-09-23T22:00:00+00:00" })], NOW, 0);
-  assertEquals(s.map((x) => [x.label, ids(x.tasks)]), [["Сегодня", ["p"]]]);
+  assertEquals(s.map((x) => [x.label, ids(x.tasks)]), [["Задачи сегодня", ["p"]]]);
 });
 
 Deno.test("groupHome: «Дальше» ранжируется по ближайшему из срока и будущего пинга", () => {
@@ -95,7 +105,7 @@ Deno.test("groupHome: прошедший пинг не делает задачу
 
 Deno.test("groupHome: просроченный срок остаётся в «Просрочено», даже если пинг сегодня", () => {
   const s = groupHome([task({ id: "o", due_date: "2026-09-20", remind_date: "2026-09-24" })], NOW, 0);
-  assertEquals(s.map((x) => [x.label, ids(x.tasks)]), [["Просрочено", ["o"]]]);
+  assertEquals(s.map((x) => [x.label, ids(x.tasks)]), [["Задачи сегодня", ["o"]]]);
 });
 
 Deno.test("homeDateReason: строка знает, что её подняло — пинг или срок", () => {

@@ -57,6 +57,7 @@ export function HomeTaskTable({ sections, projectName, labelNames, showLabels = 
               style={{ height: 28, fontSize: 10.5, letterSpacing: "0.07em" }}
             >
               {sec.label} · {sec.tasks.length}
+              {!!sec.late && <span className="ml-2 font-semibold text-pri-high">{en ? `${sec.late} overdue` : `просрочено ${sec.late}`}</span>}
             </div>
           )}
           {sec.tasks.map((t) => (

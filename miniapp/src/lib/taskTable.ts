@@ -42,8 +42,8 @@ export type TaskSection = { key: string; label: string; tasks: Task[]; late?: nu
 // Секции по сроку в фиксированном порядке; пустые не показываются.
 // Просроченное и сегодняшнее — одна секция «Задачи сегодня», просроченные сверху (владелец
 // 13.10.2026: «просрочено заменим на "задачи сегодня"»); `late` — сколько в ней просроченных.
-// Главная («Мои задачи», homeTasks.ts) держит своё деление и этим не задета.
-const TODAY_LABEL: [string, string] = ["Задачи сегодня", "Today's tasks"];
+// Главная («Мои задачи», homeTasks.ts) сводит секцию так же и берёт ту же подпись.
+export const TODAY_LABEL: [string, string] = ["Задачи сегодня", "Today's tasks"];
 
 export function groupByDue(tasks: Task[], now: Date, lang: 0 | 1): TaskSection[] {
   const by = new Map<DueBucket, Task[]>();

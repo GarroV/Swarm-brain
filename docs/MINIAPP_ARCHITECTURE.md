@@ -266,7 +266,7 @@ gridTemplateColumns: minmax(0,1fr)  344px
    [Мои задачи — HomeTaskTable,           [MeetingsToday flat, HomeNews,
     Задачи команды — HomeTaskTable]         WaitingForYou, LatestInBase]
 ```
-Решения владельца 24.09.2026: «Мои задачи» — **Просрочено · Сегодня · Дальше (6 ближайших) · Без срока (4)** (отменяет #217 «только сегодня»); «Личный дайджест» с главной снят, на его месте «Топ 5 новостей» — `PersonalDigest.tsx`, `SearchHero.tsx`, `PersonalTasks.tsx`, `TeamTasks.tsx`, `MeetingsApprove.tsx`, `Materials.tsx` на главной больше не рендерятся, файлы оставлены.
+Решения владельца 24.09.2026: «Мои задачи» — **Задачи сегодня · Дальше (6 ближайших) · Без срока (4)** (отменяет #217 «только сегодня»; с 13.10.2026 просроченное стоит в «Задачах сегодня» сверху со счётчиком «просрочено N», как в списке задач — `groupHome` в `lib/homeTasks.ts`); «Личный дайджест» с главной снят, на его месте «Топ 5 новостей» — `PersonalDigest.tsx`, `SearchHero.tsx`, `PersonalTasks.tsx`, `TeamTasks.tsx`, `MeetingsApprove.tsx`, `Materials.tsx` на главной больше не рендерятся, файлы оставлены.
 
 **Модуль `src/components/roy/dash/`:**
 | Файл | Назначение |

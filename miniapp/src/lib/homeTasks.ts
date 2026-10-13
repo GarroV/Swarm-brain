@@ -4,7 +4,7 @@
 // правило одно и под тестами.
 
 import type { Task } from "@/types";
-import { DUE_BUCKETS, dueBucket, type TaskSection } from "@/lib/taskTable";
+import { DUE_BUCKETS, dueBucket, TODAY_LABEL, type TaskSection } from "@/lib/taskTable";
 import { isDone } from "@/lib/smartLists";
 
 /** «Дальше» — только ближайшие: главная показывает, что подходит, а не весь список. */
@@ -51,7 +51,9 @@ const byHomeDate = (now: Date) => (a: Task, b: Task) =>
   (homeDateReason(a, now)?.date ?? "9999").localeCompare(homeDateReason(b, now)?.date ?? "9999");
 
 /**
- * «Мои задачи» главной: Просрочено · Сегодня · Дальше (ближайшие 6) · Без срока (4).
+ * «Мои задачи» главной: Задачи сегодня (просроченные сверху) · Дальше (ближайшие 6) · Без срока (4).
+ * Просрочка и сегодня — одна секция, как в списке задач (владелец 13.10.2026: «свести — объединить? можно»);
+ * `late` — сколько в ней просроченных.
  * Секцию решает ближайшее из срока и пинга (homeDateReason), просрочка — только по сроку.
  * Закрытые не показываются. Пустые секции не выводятся. Вход не мутируется.
  */
@@ -70,8 +72,7 @@ export function groupHome(mine: Task[], now: Date, lang: 0 | 1): TaskSection[] {
     else later.push(t);
   }
   const sections: TaskSection[] = [
-    { key: "over", label: label("over", lang), tasks: [...over].sort(byDue) },
-    { key: "today", label: label("today", lang), tasks: today },
+    { key: "today", label: TODAY_LABEL[lang], tasks: [...[...over].sort(byDue), ...today], late: over.length },
     { key: "later", label: label("later", lang), tasks: [...later].sort(byHomeDate(now)).slice(0, HOME_LATER_LIMIT) },
     { key: "nodue", label: label("nodue", lang), tasks: nodue.slice(0, HOME_NODUE_LIMIT) },
   ];
