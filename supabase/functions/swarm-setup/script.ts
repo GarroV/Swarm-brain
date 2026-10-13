@@ -18,8 +18,9 @@
 // стриминга. swarm-mcp объявляет только `capabilities: { tools: {} }` и по своей инициативе
 // не шлёт ничего, поэтому сегодня это ничего не отнимает. Когда понадобится — issue #94
 // (полноценный клиент Streamable HTTP одним бинарником).
+import { FUNCTIONS_BASE_URL } from "../_shared/public-url.ts";
 
-const MCP_URL = "https://vbqglndbxkpmreccpqmr.supabase.co/functions/v1/swarm-mcp";
+const MCP_URL = `${FUNCTIONS_BASE_URL}/swarm-mcp`;
 
 // Текст моста. Кладётся в ~/.swarm-brain/bin/swarm-mcp-bridge.sh, в конфиг Claude попадает как
 // `command: /bin/bash, args: [<путь>]`. Адрес и заголовок приходят из env — токен не светится
