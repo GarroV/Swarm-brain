@@ -9,7 +9,7 @@ import {
   type ShortLinkMeta,
   updateShortLink,
 } from "@/lib/api";
-import { useDt } from "@/components/roy/nav";
+import { useDt, useRoyNav } from "@/components/roy/nav";
 import { RoyIcon } from "@/components/roy/icons";
 import { ShortLinkRow } from "./ShortLinkRow";
 
@@ -30,6 +30,9 @@ function errorText(e: unknown, dt: Dt): string {
     case "credentials": return dt("Ссылка с логином и паролем внутри не принимается", "Links with a login and password inside are not accepted");
     case "loop": return dt("Это уже короткая ссылка", "This is already a short link");
     case "too_long": return dt("Ссылка слишком длинная", "The link is too long");
+    case "custom_code_forbidden": return dt("Свой код может задать только админ", "Only an admin can set a custom code");
+    case "code_invalid": return dt("Код — от 4 до 16 латинских букв и цифр", "The code must be 4–16 Latin letters and digits");
+    case "code_taken": return dt("Такой код уже занят — выберите другой", "This code is already taken — choose another");
     case "rate_limited": return dt("Слишком много ссылок за сутки — попробуйте завтра", "Too many links today — try again tomorrow");
     case "title_required": return dt("Дайте ссылке название", "Give the link a name");
     case "title_too_long": return dt("Название длиннее 120 символов", "The name is longer than 120 characters");
@@ -44,6 +47,10 @@ const shortUrl = (code: string) => `${window.location.origin}/s/${code}`;
 
 export function ShortLinkTool() {
   const dt = useDt();
+  const { me } = useRoyNav();
+  const isAdmin = me?.is_admin ?? false;
+  const [host, setHost] = useState("");
+  const [customCode, setCustomCode] = useState("");
   const [input, setInput] = useState("");
   const [title, setTitle] = useState("");
   const [note, setNote] = useState("");
@@ -53,6 +60,8 @@ export function ShortLinkTool() {
   const [links, setLinks] = useState<ShortLink[] | null>(null);
   const [listFailed, setListFailed] = useState(false);
   const [copied, setCopied] = useState<string | null>(null);
+
+  useEffect(() => setHost(window.location.host), []);
 
   useEffect(() => {
     fetchShortLinks()
@@ -77,11 +86,12 @@ export function ShortLinkTool() {
     setBusy(true);
     setError(null);
     try {
-      const link = await createShortLink(input, { title, note });
+      const link = await createShortLink(input, { title, note }, isAdmin ? customCode : undefined);
       setLinks((prev) => [link, ...(prev ?? [])]);
       setInput("");
       setTitle("");
       setNote("");
+      setCustomCode("");
       await copy(link.code);
     } catch (e) {
       setError(errorText(e, dt));
@@ -155,6 +165,30 @@ export function ShortLinkTool() {
           {busy ? dt("Сокращаю…", "Shortening…") : dt("Сократить", "Shorten")}
         </button>
         </div>
+        {isAdmin && (
+          <label className="flex items-center rounded-[10px] border border-line bg-surface px-3 py-2.5 focus-within:ring-2 focus-within:ring-[var(--ring)]"
+            style={{ fontSize: 14 }}>
+            <span className="shrink-0 text-ink-soft">{host}/s/</span>
+            <input
+              type="text"
+              autoComplete="off"
+              autoCapitalize="off"
+              spellCheck={false}
+              value={customCode}
+              onChange={(e) => setCustomCode(e.target.value)}
+              maxLength={16}
+              placeholder={dt("Свой код — необязательно", "Custom code — optional")}
+              aria-label={dt("Свой код", "Custom code")}
+              aria-describedby="short-code-hint"
+              className="min-w-0 flex-1 bg-transparent text-ink outline-none"
+            />
+          </label>
+        )}
+        {isAdmin && (
+          <p id="short-code-hint" className="-mt-1 text-ink-soft" style={{ fontSize: 12 }}>
+            {dt("4–16 латинских букв и цифр. Без кода он будет случайным.", "4–16 Latin letters and digits. Leave empty for a random one.")}
+          </p>
+        )}
         <textarea
           value={note}
           onChange={(e) => setNote(e.target.value)}

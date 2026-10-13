@@ -60,6 +60,15 @@ export function generateShortCode(
   return out;
 }
 
+export type CustomCodeResult = { ok: true; code: string } | { ok: false; error: "code_invalid" };
+
+/** Свой код после `/s/`: обрезаем пробелы по краям, дальше тот же формат, что у случайного
+ *  (и у check в миграции). Регистр сохраняем как ввели; занятость без учёта регистра — в базе. */
+export function normalizeCustomCode(raw: string): CustomCodeResult {
+  const code = raw.trim();
+  return SHORT_CODE_RE.test(code) ? { ok: true, code } : { ok: false, error: "code_invalid" };
+}
+
 export const MAX_TITLE_LENGTH = 120;
 export const MAX_NOTE_LENGTH = 500;
 

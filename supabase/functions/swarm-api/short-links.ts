@@ -1,13 +1,23 @@
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { json } from "./http.ts";
 import { serverError } from "./client-error.ts";
-import { generateShortCode, normalizeLinkMeta, normalizeTargetUrl, SHORT_CODE_RE } from "./short-links-core.ts";
+import {
+  generateShortCode,
+  normalizeCustomCode,
+  normalizeLinkMeta,
+  normalizeTargetUrl,
+  SHORT_CODE_RE,
+} from "./short-links-core.ts";
 
 // Сокращатель ссылок («Полезности»).
 //   • GET  /public/s/:code     — БЕЗ авторизации: адрес для переадресации + счётчик клика.
 //                                Зовёт только Pages Function веба `functions/s/[code].ts`.
 //   • GET    /short-links             — все живые ссылки СВОЕГО пространства (group_id), с автором.
-//   • POST   /short-links {url,title,note?} — создать; название обязательно.
+//   • POST   /short-links {url,title,note?,code?} — создать; название обязательно. `code` — свой код
+//                                       после `/s/` (только админ; 4–16 латиница/цифры; 403
+//                                       custom_code_forbidden, 400 code_invalid, 409 code_taken —
+//                                       занятость без учёта регистра, архивные коды тоже заняты).
+//                                       Нет `code` — случайный.
 //   • PATCH  /short-links/:code {title?,note?} — поправить название/комментарий (автор или админ).
 //                                       Адрес назначения не меняется: под ним уже разосланы СМС.
 //   • DELETE /short-links/:code       — убрать в архив (автор или админ; физически не удаляем).
@@ -110,11 +120,19 @@ async function create(ctx: Ctx, req: Request): Promise<Response> {
   // переадресацию куда угодно.
   if (isDemo) return json({ error: "demo_readonly" }, 403, origin);
 
-  const body = await req.json().catch(() => ({})) as { url?: unknown; title?: unknown; note?: unknown };
+  const body = await req.json().catch(() => ({})) as {
+    url?: unknown;
+    title?: unknown;
+    note?: unknown;
+    code?: unknown;
+  };
   const target = normalizeTargetUrl(typeof body.url === "string" ? body.url : "", SHORT_LINK_HOSTS);
   if (!target.ok) return json({ error: target.error }, 400, origin);
   const meta = normalizeLinkMeta(body.title, body.note);
   if (!meta.ok) return json({ error: meta.error }, 400, origin);
+
+  const customCode = await resolveCustomCode(ctx, body.code);
+  if (customCode instanceof Response) return customCode;
 
   const since = new Date(Date.now() - 24 * 3600 * 1000).toISOString();
   const { count, error: countErr } = await supabase
@@ -125,11 +143,13 @@ async function create(ctx: Ctx, req: Request): Promise<Response> {
   if (countErr) return serverError(origin, "short links quota", countErr);
   if ((count ?? 0) >= DAILY_CREATE_LIMIT) return json({ error: "rate_limited" }, 429, origin);
 
-  for (let attempt = 0; attempt < CODE_ATTEMPTS; attempt++) {
+  // Свой код — одна попытка: занятый не заменить случайным, человек ждёт именно этот адрес.
+  const attempts = customCode ? 1 : CODE_ATTEMPTS;
+  for (let attempt = 0; attempt < attempts; attempt++) {
     const { data, error } = await supabase
       .from("short_links")
       .insert({
-        code: generateShortCode(),
+        code: customCode ?? generateShortCode(),
         url: target.url,
         title: meta.title,
         note: meta.note,
@@ -141,8 +161,27 @@ async function create(ctx: Ctx, req: Request): Promise<Response> {
     if (!error) return json((await present(ctx, [data as LinkRow]))[0], 201, origin);
     // 23505 — код уже занят (одна на десятки миллиардов при 6 символах): пробуем другой.
     if (error.code !== "23505") return serverError(origin, "short link create", error);
+    if (customCode) return json({ error: "code_taken" }, 409, origin);
   }
   return serverError(origin, "short link create", new Error("no free code"));
+}
+
+/** Свой код из тела запроса: null — не задан (случайный), Response — отказ. Занятость считаем
+ *  без учёта регистра и по архивным тоже: под архивным кодом уже разосланы ссылки. */
+async function resolveCustomCode(ctx: Ctx, raw: unknown): Promise<string | null | Response> {
+  const { supabase, origin } = ctx;
+  if (raw == null || (typeof raw === "string" && !raw.trim())) return null;
+  if (!ctx.isAdmin) return json({ error: "custom_code_forbidden" }, 403, origin);
+  const parsed = normalizeCustomCode(typeof raw === "string" ? raw : "");
+  if (!parsed.ok) return json({ error: parsed.error }, 400, origin);
+  // Код уже прошёл формат: `%` и `_` в нём быть не может, ilike по точному значению безопасен.
+  const { count, error } = await supabase
+    .from("short_links")
+    .select("code", { count: "exact", head: true })
+    .ilike("code", parsed.code);
+  if (error) return serverError(origin, "short link code check", error);
+  if ((count ?? 0) > 0) return json({ error: "code_taken" }, 409, origin);
+  return parsed.code;
 }
 
 /** Изменение живой ссылки своего пространства: автор — свою, админ — любую. Чужая для

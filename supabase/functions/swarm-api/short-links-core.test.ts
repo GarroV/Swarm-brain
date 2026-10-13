@@ -5,6 +5,7 @@ import {
   generateShortCode,
   MAX_NOTE_LENGTH,
   MAX_TITLE_LENGTH,
+  normalizeCustomCode,
   normalizeLinkMeta,
   normalizeTargetUrl,
   SHORT_CODE_LENGTH,
@@ -85,4 +86,23 @@ Deno.test("длины ограничены как в базе", () => {
   assertEquals(normalizeLinkMeta("я".repeat(MAX_TITLE_LENGTH + 1), null), { ok: false, error: "title_too_long" });
   assertEquals(normalizeLinkMeta("a", "я".repeat(MAX_NOTE_LENGTH + 1)), { ok: false, error: "note_too_long" });
   assertEquals(normalizeLinkMeta("a", 5), { ok: false, error: "invalid" });
+});
+
+Deno.test("свой код: годный проходит, регистр сохраняется, пробелы по краям срезаются", () => {
+  assertEquals(normalizeCustomCode("meridius"), { ok: true, code: "meridius" });
+  assertEquals(normalizeCustomCode("  MeRiDiUs1  "), { ok: true, code: "MeRiDiUs1" });
+  assertEquals(normalizeCustomCode("abcd"), { ok: true, code: "abcd" });
+  assertEquals(normalizeCustomCode("a".repeat(16)), { ok: true, code: "a".repeat(16) });
+});
+
+Deno.test("свой код: короткий, длинный, кириллица, пробел внутри, символы — code_invalid", () => {
+  const bad = { ok: false, error: "code_invalid" } as const;
+  assertEquals(normalizeCustomCode("abc"), bad);
+  assertEquals(normalizeCustomCode("a".repeat(17)), bad);
+  assertEquals(normalizeCustomCode("меридиус"), bad);
+  assertEquals(normalizeCustomCode("mer idius"), bad);
+  assertEquals(normalizeCustomCode("   "), bad);
+  assertEquals(normalizeCustomCode("mer/idius"), bad);
+  assertEquals(normalizeCustomCode("meridius.pdf"), bad);
+  assertEquals(normalizeCustomCode("meri-dius"), bad);
 });
