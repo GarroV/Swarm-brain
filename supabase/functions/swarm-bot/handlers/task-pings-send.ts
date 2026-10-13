@@ -6,6 +6,7 @@ import {
   isPingDue,
   pingRecipients,
   type PingRow,
+  pingSendingOpen,
   settlePing,
   todayIn,
 } from "./task-pings.ts";
@@ -17,10 +18,11 @@ const SELECT_PING =
 // Разумный потолок на тик: пинги ставят руками, сотнями за раз они не наступают.
 const MAX_PER_TICK = 500;
 
-// Крон → шлёт наступившие пинги. Пинг одноразовый: отправили — гасим (`reminded_at`), поэтому
-// гейта рабочих часов здесь НЕТ (в отличие от напоминаний о вычитке): день выбрал человек, а
-// тик крона стоит на утро — переносить его на следующий день значило бы опоздать на сутки.
+// Крон (раз в час) → шлёт наступившие пинги. Пинг одноразовый: отправили — гасим (`reminded_at`).
+// До 9:00 по Москве не шлёт ничего (`pingSendingOpen`): наступившее ночью уходит первым утренним
+// тиком того же дня, а не в полночь (решение владельца 13.10.2026).
 export async function sendTaskPings(now: Date = new Date()): Promise<number> {
+  if (!pingSendingOpen(now)) return 0;
   const today = todayIn(now);
   // Архивная задача пинг не шлёт (#575): человек её убрал, и напоминание о ней — призрак.
   const { data, error } = await onlyLive(supabase.from("tasks").select(SELECT_PING))
