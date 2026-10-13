@@ -184,6 +184,7 @@ import { onlyLive } from "../_shared/tasks/live.ts";
 import { onlyLiveEntries } from "../_shared/entries/live.ts";
 import { archiveEntry } from "../_shared/entries/archive.ts";
 import { personName, resolvePersonNames } from "../_shared/users/display-name.ts";
+import { toPublicUrl } from "../_shared/public-url.ts";
 
 // Сколько задач отдаём вебу за раз. Дефолт движка (_shared/tasks/db.ts) — 200, и для БОТА он
 // верен: тот печатает список сообщением в чат, дампить туда базу нельзя. Для веба он смертелен —
@@ -2440,7 +2441,7 @@ async function routeRequest(req: Request): Promise<Response> {
         status: 302,
         headers: {
           ...corsHeaders(origin),
-          Location: signed.signedUrl,
+          Location: toPublicUrl(signed.signedUrl),
           "Cache-Control": "no-store",
         },
       });

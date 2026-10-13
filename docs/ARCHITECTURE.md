@@ -1624,7 +1624,8 @@ afconvert — лежат в `meeting-ingest/testdata/` и меряются та�
 
 | Переменная | Где используется (функции) | Обязательная | Назначение |
 |-----------|---------------------------|-------------|-----------|
-| `SUPABASE_URL` | все функции (через `_shared`) | да | URL проекта Supabase для клиента |
+| `SUPABASE_URL` | все функции (через `_shared`) | да | URL проекта Supabase для клиента. На своём сервере — внутренний `http://api-gw:8000`: только для клиента базы и вызовов функция→функция, людям и внешним сервисам не отдаётся |
+| `SWARM_PUBLIC_URL` | `_shared/public-url.ts` (скрипты установки, MCP-адрес, вебхук бота, OAuth redirect_uri, подписанные ссылки на файлы) | нет (по умолчанию `https://api.swarm-team.app`) | Публичный адрес API. **Правило: всё, что уходит человеку или внешнему сервису, строится от `FUNCTIONS_BASE_URL` / `STORAGE_PUBLIC_URL` / `toPublicUrl()` из `_shared/public-url.ts`, а не от `SUPABASE_URL`** |
 | `SUPABASE_SERVICE_ROLE_KEY` | все функции (через `_shared`) | да | Service-role ключ; RLS обходится, фильтрация в коде |
 | `DECIMUS_API_URL` / `DECIMUS_API_TOKEN` | swarm-api, swarm-mcp | нет (без них `GET /quality`, `/quality/maps`, `/inspections` → 503, MCP `get_inspections` → «источник не настроен») | API чтения Децимуса: баллы РС/РКО (GarroV/decimus#567); токен сервисный, только чтение (права `ratings:read`, `inspections:read`, decimus D388). Выпускается на площадке Децимуса (`tools/api_token.py issue swarm`), конвейером в секрет репозитория `DECIMUS_API_TOKEN`, оттуда в Edge Functions кнопкой `decimus-secrets.yml` (сперва смоук 401/200, потом запись). Смена токена — тот же путь, затем `revoke` старого |
 | `OPENAI_API_KEY` | swarm-bot, swarm-mcp, swarm-api, meeting-claim, meeting-ingest, meeting-process, read-ai-webhook | да | OpenAI: chat (GPT-4o-mini), embeddings, Whisper-транскрибация |
