@@ -25,6 +25,9 @@ function makeDb(subs: Row[]) {
     task_subscriptions: [...subs],
     notifications: [],
     telegram_outbox: [],
+    // Очередь запоминает пространство получателя (telegram-outbox.ts): все — в одном.
+    allowed_users: [ACTOR, ASSIGNEE, CREATOR, ADMIN_SUB, MEMBER_SUB, MUTED_ASSIGNEE]
+      .map((id) => ({ telegram_id: id, telegram_chat_id: null, group_id: "ws" })),
   };
   const from = (table: string) => {
     const filters: Array<(r: Row) => boolean> = [];
@@ -32,6 +35,11 @@ function makeDb(subs: Row[]) {
       select: () => q,
       eq: (c: string, v: unknown) => (filters.push((r) => r[c] === v), q),
       in: (c: string, v: unknown[]) => (filters.push((r) => v.includes(r[c])), q),
+      // Только форма, которой очередь ищет получателя: telegram_id.in.(…),telegram_chat_id.in.(…).
+      or: (expr: string) => {
+        const ids = (/telegram_id\.in\.\(([^)]*)\)/.exec(expr)?.[1] ?? "").split(",").map(Number);
+        return (filters.push((r) => ids.includes(r.telegram_id as number)), q);
+      },
       then: (ok: (x: unknown) => unknown) => {
         return Promise.resolve({ data: tables[table].filter((r) => filters.every((f) => f(r))), error: null })
           .then(ok);
@@ -126,6 +134,7 @@ Deno.test("комендантский час: пуши ложатся в telegra
     assertEquals(recipients, [ASSIGNEE, CREATOR, ADMIN_SUB, MEMBER_SUB]);
     assertEquals(tables.telegram_outbox.map((r) => r.recipient_id), recipients);
     assertEquals(tables.telegram_outbox.every((r) => r.kind === "task_comment" && r.method === "sendMessage"), true);
+    assertEquals(tables.telegram_outbox.every((r) => r.group_id === "ws"), true);
     const first = tables.telegram_outbox[0].payload as { chat_id: number; text: string; parse_mode: string };
     assertEquals([first.chat_id, first.parse_mode], [ASSIGNEE, "HTML"]);
   });
