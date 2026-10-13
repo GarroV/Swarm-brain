@@ -3356,8 +3356,10 @@ export async function uploadFile(
 
 // all=true — админский оверрайд: показать все pending встречи воркспейса, а не только
 // свои. Уважается сервером ТОЛЬКО для админа; для остальных всегда own-scoped.
+// light — лёгкие строки (без тезисов/участников, `truncated: true`; полную встречу берёт
+// fetchMeeting(id)); limit — сколько строк, по умолчанию сервер отдаёт до 500.
 export async function fetchMeetings(
-  filters?: { confirmed?: boolean; all?: boolean },
+  filters?: { confirmed?: boolean; all?: boolean; light?: boolean; limit?: number },
 ): Promise<Entry[]> {
   if (DEV_MODE) {
     if (filters?.confirmed !== undefined) {
@@ -3372,8 +3374,67 @@ export async function fetchMeetings(
     params.set("confirmed", String(filters.confirmed));
   }
   if (filters?.all) params.set("all", "true");
+  if (filters?.light) params.set("light", "1");
+  if (filters?.limit) params.set("limit", String(filters.limit));
   const qs = params.toString();
   return apiFetch<Entry[]>(`/meetings${qs ? `?${qs}` : ""}`);
+}
+
+/** Параметры страницы списка встреч (`GET /meetings?light=1`, swarm-api/meetings-list.ts). */
+export type MeetingsPageQuery = {
+  confirmed?: boolean;
+  limit?: number;
+  offset?: number;
+  q?: string;
+  /** День встречи YYYY-MM-DD, границы включительно. */
+  from?: string;
+  to?: string;
+  storage?: "shared" | "personal";
+};
+
+export type MeetingsPage = {
+  rows: Entry[];
+  /** Сколько строк подходит под запрос БЕЗ лимита (X-Total-Count). */
+  total: number | null;
+  /** Сколько встреч всего, без фильтров экрана (X-Unfiltered-Count). */
+  unfilteredTotal: number | null;
+};
+
+const headerCount = (res: Response, name: string): number | null => {
+  const raw = res.headers.get(name);
+  return raw != null && /^\d+$/.test(raw) ? Number(raw) : null;
+};
+
+/** Лёгкая страница списка встреч с серверными фильтрами и счётчиками. */
+export async function fetchMeetingsPage(query: MeetingsPageQuery): Promise<MeetingsPage> {
+  if (DEV_MODE) {
+    const all = mockMeetings.filter((m) =>
+      query.confirmed === undefined || Boolean(m.metadata.confirmed) === query.confirmed
+    );
+    const offset = query.offset ?? 0;
+    const rows = all.slice(offset, offset + (query.limit ?? 50));
+    return { rows, total: all.length, unfilteredTotal: all.length };
+  }
+  const params = new URLSearchParams({ light: "1" });
+  if (query.confirmed !== undefined) params.set("confirmed", String(query.confirmed));
+  if (query.limit) params.set("limit", String(query.limit));
+  if (query.offset) params.set("offset", String(query.offset));
+  if (query.q) params.set("q", query.q);
+  if (query.from) params.set("from", query.from);
+  if (query.to) params.set("to", query.to);
+  if (query.storage) params.set("storage", query.storage);
+  const res = await fetch(`${API_BASE}/meetings?${params}`, {
+    cache: "no-store",
+    credentials: "include",
+    headers: { "Content-Type": "application/json", ...authHeaders() },
+  });
+  const body = await res.json().catch(() => ({ error: res.statusText }));
+  if (!res.ok) throw new ApiError(res.status, body.error ?? res.statusText, body);
+  return {
+    rows: (body ?? []) as Entry[],
+    total: headerCount(res, "X-Total-Count"),
+    unfilteredTotal: headerCount(res, "X-Unfiltered-Count"),
+  };
 }
 
 export async function fetchMeeting(id: string): Promise<Entry> {

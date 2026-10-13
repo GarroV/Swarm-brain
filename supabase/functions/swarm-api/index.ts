@@ -33,6 +33,13 @@ import {
 } from "./entries-guard.ts";
 import { canChangeMeetingPrivacy } from "../_shared/entries/meeting-rights.ts";
 import { isMissedBotSlot, toAgentListRow, toListRow } from "./meetings-payload.ts";
+import {
+  applyListFilters,
+  ENTRY_LIGHT_COLUMNS,
+  hasListFilters,
+  parseMeetingsListParams,
+  toLightRow,
+} from "./meetings-list.ts";
 import { TASK_LIST_COLUMNS } from "./task-columns.ts";
 import { deltaColumns, parseSince, type TasksDeltaResponse } from "./tasks-delta.ts";
 import { resolveDigestScope } from "./digest-scope.ts";
@@ -2454,37 +2461,47 @@ async function routeRequest(req: Request): Promise<Response> {
     const confirmedParam = url.searchParams.get("confirmed");
     // Лимит настраиваемый (?limit=), дефолт 500 — прежний хардкод 50 обрезал список «Все встречи»
     // (у команды уже 60+ встреч только за 2 недели). Потолок 2000 — защита от гигантского payload.
-    const limit = parseListLimit(url.searchParams.get("limit"), {
-      def: 500,
-      max: 2000,
-    });
+    // ?light=1 — лёгкие строки постранично (meetings-list.ts): по 50, ?offset=, фильтры
+    // ?q= ?from= ?to= ?storage=. Без light=1 ответ прежний (бот/MCP/старые вкладки не задеты).
+    const lp = parseMeetingsListParams(url.searchParams, { def: 500, max: 2000 });
+    const limit = lp.limit;
     // Несогласованные (очередь вычитки) — по причастности: владелец ИЛИ участник встречи.
     // Обычный фильтр видимости тут не годится: «ничья» неприватная встреча из read-ai висела
     // бы в очереди у всего воркспейса (issue #66). Согласованные — обычное правило.
-    // Очередь вычитки (единицы строк) — текст нужен сразу и целиком, поэтому ENTRY_COLUMNS.
+    // Очередь вычитки (единицы строк) — без light текст нужен сразу и целиком (ENTRY_COLUMNS);
+    // с light — лёгкие колонки, полный текст экран берёт по id.
     // Большой список — превью из базы (ENTRY_LIST_COLUMNS): 230 встреч × полный транскрипт =
     // ~10 МБ в браузер (issue #102), а выбирать полный текст ради 400 символов стоило 654 мс
-    // базы против 15 мс (issue #490). Форму ответа приводит toListRow ниже.
+    // базы против 15 мс (issue #490). Форму ответа приводит toListRow/toLightRow ниже.
     const isReviewQueue = confirmedParam === "false";
+    const listColumns = lp.light ? ENTRY_LIGHT_COLUMNS : ENTRY_LIST_COLUMNS;
+    const baseList = () =>
+      buildEntriesQuery(supabase, listColumns, {
+        groupId,
+        telegramId: telegram_id,
+      }, { count: "exact" })
+        .eq("entry_type", "meeting");
     let q = (isReviewQueue
-      ? buildReviewQueueQuery(supabase, ENTRY_COLUMNS, {
+      ? buildReviewQueueQuery(supabase, lp.light ? ENTRY_LIGHT_COLUMNS : ENTRY_COLUMNS, {
         groupId,
         telegramId: telegram_id,
         email: userEmail,
-      })
-      : buildEntriesQuery(supabase, ENTRY_LIST_COLUMNS, {
-        groupId,
-        telegramId: telegram_id,
-      }, { count: "exact" }))
-      .eq("entry_type", "meeting")
+      }).eq("entry_type", "meeting")
+      : baseList())
+      // id — tie-breaker: без него строки с одним created_at (импорт пачкой) могут поменяться
+      // местами между страницами, и offset-пагинация теряет или дублирует встречи.
       .order("created_at", { ascending: false })
-      .limit(limit);
+      .order("id", { ascending: false })
+      .range(lp.offset, lp.offset + limit - 1);
     if (confirmedParam === "true") {
       q = q.eq("metadata->>confirmed", "true");
     }
     if (confirmedParam === "false") {
       q = q.or("metadata->>confirmed.is.null,metadata->>confirmed.eq.false");
     }
+    // Фильтры экрана — только у списка согласованных; очередь вычитки (единицы строк)
+    // клиент фильтрует сам.
+    if (!isReviewQueue) q = applyListFilters(q, lp);
     const { data, error, count } = await q;
     if (error) return serverError(origin, "meetings list", error);
     const rows = (data ?? []) as unknown as Array<
@@ -2515,11 +2532,25 @@ async function routeRequest(req: Request): Promise<Response> {
     const named = await withImporterNames(rows, recMap);
     // Сколько встреч подходит под фильтр БЕЗ лимита (issue #112). У очереди вычитки счёта нет:
     // buildReviewQueueQuery считает причастность в два запроса, и число там соврало бы.
+    // Лёгкий режим: ещё и «сколько встреч всего БЕЗ фильтров экрана» — для «Показано N из M».
+    // Фильтров нет — это тот же count; есть — лёгкий второй запрос на одну строку.
+    let unfiltered = count;
+    if (lp.light && !isReviewQueue && hasListFilters(lp)) {
+      let uq = baseList().order("created_at", { ascending: false }).limit(1);
+      if (confirmedParam === "true") uq = uq.eq("metadata->>confirmed", "true");
+      const { count: all, error: uErr } = await uq;
+      if (uErr) return serverError(origin, "meetings list total", uErr);
+      unfiltered = all;
+    }
+    const headers: Record<string, string> = {};
+    if (count != null) headers["X-Total-Count"] = String(count);
+    if (unfiltered != null) headers["X-Unfiltered-Count"] = String(unfiltered);
+    const shape = lp.light ? toLightRow : (isReviewQueue ? (r: unknown) => r : toListRow);
     return json(
-      isReviewQueue ? named : named.map(toListRow),
+      (named as unknown[]).map((r) => (shape as (r: unknown) => unknown)(r)),
       200,
       origin,
-      count != null ? { "X-Total-Count": String(count) } : undefined,
+      headers,
     );
   }
 
