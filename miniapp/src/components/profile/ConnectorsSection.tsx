@@ -107,16 +107,16 @@ export function ConnectorsSection({ me, panels, dense = false }: { me: Me; panel
     let alive = true;
     Promise.all([
       fetchIntegrations().catch(() => []),
-      fetchRecorderSetup().catch(() => ({ active: false, expiresAt: null })),
-      fetchMcpSetup().catch(() => ({ active: false, expiresAt: null })),
+      fetchRecorderSetup().catch(() => ({ active: false, expiresAt: null, lastSeenAt: undefined })),
+      fetchMcpSetup().catch(() => ({ active: false, expiresAt: null, lastSeenAt: undefined })),
       // В демо бот не ходит — карточки нет (botAutojoin: undefined).
       me.is_demo ? Promise.resolve(undefined) : fetchAutojoin().catch(() => false),
     ]).then(([integrations, recorder, mcp, botAutojoin]) => {
       if (!alive) return;
       setInput({
         services: integrations.map((i) => i.service),
-        recorder: { active: recorder.active, expiresAt: recorder.expiresAt },
-        mcp: { active: mcp.active, expiresAt: mcp.expiresAt },
+        recorder: { active: recorder.active, expiresAt: recorder.expiresAt, lastSeenAt: recorder.lastSeenAt },
+        mcp: { active: mcp.active, expiresAt: mcp.expiresAt, lastSeenAt: mcp.lastSeenAt },
         // Синтетическая личность (веб-вход по e-mail без Telegram) — отрицательный id,
         // см. auth-resolve. Для человека это и значит «Telegram не привязан».
         telegramLinked: me.telegram_id > 0,

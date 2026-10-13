@@ -831,12 +831,19 @@ export async function fetchConfig(): Promise<WorkspaceConfig> {
 
 // Рекордер встреч (Mac): статус токена и минт/перевыпуск однострочника установки.
 export async function fetchRecorderSetup(): Promise<
-  { active: boolean; expiresAt: string | null; updateOneLiner?: string }
+  {
+    active: boolean;
+    expiresAt: string | null;
+    // Когда рекордер последний раз обращался к серверу (null — ни разу). Нет поля — сервер
+    // старее веба: статус «не отвечает» не показываем (lib/integrationStatus.ts).
+    lastSeenAt?: string | null;
+    updateOneLiner?: string;
+  }
 > {
-  if (DEV_MODE) return { active: false, expiresAt: null };
-  return apiFetch<{ active: boolean; expiresAt: string | null }>(
-    "/recorder/setup",
-  );
+  if (DEV_MODE) return { active: false, expiresAt: null, lastSeenAt: null };
+  return apiFetch<
+    { active: boolean; expiresAt: string | null; lastSeenAt?: string | null; updateOneLiner?: string }
+  >("/recorder/setup");
 }
 export async function mintRecorderToken(): Promise<
   { oneLiner: string; expiresAt: string }
@@ -848,10 +855,12 @@ export async function mintRecorderToken(): Promise<
 
 // Claude Desktop (MCP): статус токена и минт/перевыпуск однострочника установки.
 export async function fetchMcpSetup(): Promise<
-  { active: boolean; expiresAt: string | null }
+  { active: boolean; expiresAt: string | null; lastSeenAt?: string | null }
 > {
-  if (DEV_MODE) return { active: false, expiresAt: null };
-  return apiFetch<{ active: boolean; expiresAt: string | null }>("/mcp/setup");
+  if (DEV_MODE) return { active: false, expiresAt: null, lastSeenAt: null };
+  return apiFetch<
+    { active: boolean; expiresAt: string | null; lastSeenAt?: string | null }
+  >("/mcp/setup");
 }
 export async function mintMcpToken(): Promise<{ oneLiner: string }> {
   return apiFetch<{ oneLiner: string }>("/mcp/token", { method: "POST" });
