@@ -141,10 +141,11 @@ Deno.test("pingRecipients: демо-аккаунтам пинг не шлётс�
   assertEquals(pingRecipients(row({ assignee_telegram_ids: [900000004] })), []);
 });
 
-Deno.test("pingSendingOpen: ночью закрыто, с 9:00 по Москве открыто", () => {
+Deno.test("pingSendingOpen: комендантский час 23:00–9:00 по Москве закрыт, днём открыт", () => {
   // Москва = UTC+3 круглый год.
   assertEquals(pingSendingOpen(new Date("2026-10-13T22:00:00Z")), false); // 00:00 Белград, 01:00 Москва
   assertEquals(pingSendingOpen(new Date("2026-10-14T05:59:00Z")), false); // 08:59 Москва
   assertEquals(pingSendingOpen(new Date("2026-10-14T06:00:00Z")), true); // 09:00 Москва
-  assertEquals(pingSendingOpen(new Date("2026-10-14T20:30:00Z")), true); // 23:30 Москва — дневной пинг не задерживаем
+  assertEquals(pingSendingOpen(new Date("2026-10-14T19:59:00Z")), true); // 22:59 Москва
+  assertEquals(pingSendingOpen(new Date("2026-10-14T20:00:00Z")), false); // 23:00 Москва — час начался
 });

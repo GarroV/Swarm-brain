@@ -7,6 +7,10 @@ import { assertEquals } from "jsr:@std/assert@1";
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { afterTaskComment, type CommentNotificationInput } from "./comment-fanout.ts";
 
+// Пуш в бота зависит от часа (комендантский час 23:00–9:00 МСК): тесты фиксируют день, ночь — отдельный тест.
+const DAY = new Date("2026-10-14T09:00:00Z"); // 12:00 по Москве
+const NIGHT = new Date("2026-10-13T22:30:00Z"); // 01:30 по Москве
+
 const ACTOR = 10;
 const ASSIGNEE = 20;
 const CREATOR = 30;
@@ -20,6 +24,10 @@ function makeDb(subs: Row[]) {
   const tables: Record<string, Row[]> = {
     task_subscriptions: [...subs],
     notifications: [],
+    telegram_outbox: [],
+    // Очередь запоминает пространство получателя (telegram-outbox.ts): все — в одном.
+    allowed_users: [ACTOR, ASSIGNEE, CREATOR, ADMIN_SUB, MEMBER_SUB, MUTED_ASSIGNEE]
+      .map((id) => ({ telegram_id: id, telegram_chat_id: null, group_id: "ws" })),
   };
   const from = (table: string) => {
     const filters: Array<(r: Row) => boolean> = [];
@@ -27,12 +35,17 @@ function makeDb(subs: Row[]) {
       select: () => q,
       eq: (c: string, v: unknown) => (filters.push((r) => r[c] === v), q),
       in: (c: string, v: unknown[]) => (filters.push((r) => v.includes(r[c])), q),
+      // Только форма, которой очередь ищет получателя: telegram_id.in.(…),telegram_chat_id.in.(…).
+      or: (expr: string) => {
+        const ids = (/telegram_id\.in\.\(([^)]*)\)/.exec(expr)?.[1] ?? "").split(",").map(Number);
+        return (filters.push((r) => ids.includes(r.telegram_id as number)), q);
+      },
       then: (ok: (x: unknown) => unknown) => {
         return Promise.resolve({ data: tables[table].filter((r) => filters.every((f) => f(r))), error: null })
           .then(ok);
       },
-      insert: (rows: Row[]) => {
-        tables[table].push(...rows);
+      insert: (rows: Row | Row[]) => {
+        tables[table].push(...(Array.isArray(rows) ? rows : [rows]));
         return Promise.resolve({ error: null });
       },
       upsert: (row: Row, opts: { ignoreDuplicates?: boolean }) => {
@@ -89,7 +102,7 @@ const SUBS: Row[] = [
 Deno.test("общая задача: причастные и подписчики, без автора и отписавшегося", async () => {
   const { client, tables } = makeDb(SUBS);
   await withPushSpy(async (pushes) => {
-    await afterTaskComment(client, input());
+    await afterTaskComment(client, input(), DAY);
     const recipients = tables.notifications.map((n) => n.recipient_telegram_id);
     assertEquals(recipients, [ASSIGNEE, CREATOR, ADMIN_SUB, MEMBER_SUB]);
     assertEquals(pushes.map((p) => p.chat_id), recipients);
@@ -104,10 +117,25 @@ Deno.test("общая задача: причастные и подписчики
 Deno.test("автор подписывается участием, ранее отписавшийся — нет", async () => {
   const { client, tables } = makeDb(SUBS);
   await withPushSpy(async () => {
-    await afterTaskComment(client, input());
-    await afterTaskComment(client, { ...input(), actorTelegramId: MUTED_ASSIGNEE });
+    await afterTaskComment(client, input(), DAY);
+    await afterTaskComment(client, { ...input(), actorTelegramId: MUTED_ASSIGNEE }, DAY);
   });
   const state = (id: number) => tables.task_subscriptions.find((r) => r.telegram_id === id)?.state;
   assertEquals(state(ACTOR), "subscribed");
   assertEquals(state(MUTED_ASSIGNEE), "muted");
+});
+
+Deno.test("комендантский час: пуши ложатся в telegram_outbox, в Telegram не уходят, колокольчик работает", async () => {
+  const { client, tables } = makeDb(SUBS);
+  await withPushSpy(async (pushes) => {
+    await afterTaskComment(client, input(), NIGHT);
+    assertEquals(pushes, []);
+    const recipients = tables.notifications.map((n) => n.recipient_telegram_id);
+    assertEquals(recipients, [ASSIGNEE, CREATOR, ADMIN_SUB, MEMBER_SUB]);
+    assertEquals(tables.telegram_outbox.map((r) => r.recipient_id), recipients);
+    assertEquals(tables.telegram_outbox.every((r) => r.kind === "task_comment" && r.method === "sendMessage"), true);
+    assertEquals(tables.telegram_outbox.every((r) => r.group_id === "ws"), true);
+    const first = tables.telegram_outbox[0].payload as { chat_id: number; text: string; parse_mode: string };
+    assertEquals([first.chat_id, first.parse_mode], [ASSIGNEE, "HTML"]);
+  });
 });

@@ -37,12 +37,12 @@ import { type RivalClaim, rivalOwnershipPatch, settleRival } from "./meeting-riv
 import { recordedByOf } from "./recorded-by.ts";
 import { claimLeaseUntil } from "./meeting-lease.ts";
 import { isLeaseLost, LEASE_STALE_MS, ProcessingLease, rethrowIfLeaseLost } from "./meeting-processing-lease.ts";
-import { externalFetch, VIA_TELEGRAM } from "./external-fetch.ts";
+import { externalFetch } from "./external-fetch.ts";
+import { notifyPerson } from "./notify-person.ts";
 
 export type { Segment, SpeakerSpan };
 
 const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY")!;
-const TELEGRAM_BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN")!;
 const WEB_BASE_URL = Deno.env.get("WEB_BASE_URL") ?? "";
 
 export const AUDIO_BUCKET = "meeting-audio";
@@ -338,17 +338,24 @@ export async function chatComplete(system: string, user: string, opts: ChatOpts 
   }
 }
 
-async function sendTelegram(chatId: number, text: string, keyboard?: InlineButton[][]): Promise<void> {
-  await externalFetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      chat_id: chatId,
+// Сообщение рекордеру о итоге обработки — уведомление по инициативе бота: в комендантский час
+// (23:00–9:00 МСК) ждёт утра в `telegram_outbox` (_shared/notify-person.ts).
+async function sendTelegram(
+  supabase: SupabaseClient,
+  kind: string,
+  chatId: number,
+  text: string,
+  keyboard?: InlineButton[][],
+): Promise<void> {
+  await notifyPerson(supabase, {
+    recipientId: chatId,
+    kind,
+    payload: {
       text,
       parse_mode: "HTML",
       ...(keyboard ? { reply_markup: { inline_keyboard: keyboard } } : {}),
-    }),
-  }, VIA_TELEGRAM);
+    },
+  });
 }
 
 async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
@@ -451,7 +458,9 @@ async function markFailed(lease: ProcessingLease, m: MeetingRow, state: ProcessS
   const note =
     "⚠️ Не удалось обработать запись встречи — не получилось транскрибировать аудио. Попробуй записать заново.";
   for (const r of m.recorders ?? []) {
-    if (r && typeof r.telegram_id === "number") await sendTelegram(r.telegram_id, note).catch(() => {});
+    if (r && typeof r.telegram_id === "number") {
+      await sendTelegram(lease.supabase, "meeting_failed", r.telegram_id, note).catch(() => {});
+    }
   }
 }
 
@@ -655,7 +664,9 @@ async function summarizeAndFinish(lease: ProcessingLease, m: MeetingRow, state: 
   const text = `📝 Встреча обработана и готова${titleStr}`;
   const keyboard: InlineButton[][] | undefined = webUrl ? [[{ text: "Открыть", url: webUrl }]] : undefined;
   for (const r of m.recorders ?? []) {
-    if (r && typeof r.telegram_id === "number") await sendTelegram(r.telegram_id, text, keyboard).catch(() => {});
+    if (r && typeof r.telegram_id === "number") {
+      await sendTelegram(lease.supabase, "meeting_ready", r.telegram_id, text, keyboard).catch(() => {});
+    }
   }
 
   // Аудио не удаляем: неделю оно лежит для проверок обрезки и распознавания, чистит meeting-process

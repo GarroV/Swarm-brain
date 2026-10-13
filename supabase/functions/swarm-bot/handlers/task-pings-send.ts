@@ -1,5 +1,5 @@
 import { supabase } from "../lib/supabase.ts";
-import { sendInlineMessage, sendMessage } from "../lib/telegram.ts";
+import { notifyMessage } from "../lib/notify.ts";
 import {
   formatPings,
   groupByRecipient,
@@ -49,8 +49,8 @@ export async function sendTaskPings(now: Date = new Date()): Promise<number> {
   for (const [recipientId, rows] of byRecipient) {
     const { text, keyboard } = formatPings(rows, WEB_BASE_URL);
     try {
-      if (keyboard.length) await sendInlineMessage(recipientId, text, keyboard);
-      else await sendMessage(recipientId, text);
+      // «queued» (тик пересёк 23:00) — принято: очередь доставит утром, пинг считается дошедшим.
+      await notifyMessage(recipientId, text, "task_ping", keyboard.length ? keyboard : undefined);
     } catch (e) {
       // Не смогли написать (не запускал бота / заблокировал) — пинг НЕ гасим: попробуем на
       // следующем тике. Иначе напоминание сгорело бы, ни разу никого не достигнув.

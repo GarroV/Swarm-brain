@@ -10,6 +10,9 @@ import {
   sendMessage,
 } from "./lib/telegram.ts";
 import { gateGroupMessage } from "./lib/group-gate.ts";
+import { notifyMessage } from "./lib/notify.ts";
+import { drainTelegramOutbox, makeOutboxStore } from "../_shared/telegram-outbox.ts";
+import { sendTelegramCall } from "../_shared/notify-person.ts";
 import { checkRecordingWatchdog } from "./lib/recording-watchdog.ts";
 import { makeWatchdogStore } from "./lib/recording-watchdog-store.ts";
 import { sweepGhostMeetings } from "./lib/ghost-sweep.ts";
@@ -242,7 +245,7 @@ async function sweepStuckMeetings(staleMinutes = 15): Promise<number> {
     for (const r of m.recorders ?? []) {
       if (!r || typeof r.telegram_id !== "number") continue;
       try {
-        await sendMessage(r.telegram_id, note);
+        await notifyMessage(r.telegram_id, note, "meeting_stuck");
       } catch (e) {
         console.error(`sweepStuckMeetings: notify failed for ${m.id} / ${r.telegram_id}:`, e);
       }
@@ -271,7 +274,7 @@ async function checkRecorderHealth(): Promise<void> {
   try {
     const r = await checkRecordingWatchdog({
       store: makeWatchdogStore(supabase),
-      send: sendMessage,
+      send: (telegramId, html) => notifyMessage(telegramId, html, "recording_watchdog"),
       nowMs: Date.now(),
       logError: (m) => console.error(m),
     });
@@ -298,10 +301,11 @@ async function checkRecorderHealth(): Promise<void> {
     const days = Math.max(1, Math.ceil((new Date(u.recorder_token_expires_at).getTime() - Date.now()) / 86_400_000));
     await supabase.from("allowed_users").update({ recorder_expiry_warned: true }).eq("telegram_id", u.telegram_id);
     try {
-      await sendMessage(
+      await notifyMessage(
         u.telegram_id,
         `🎙 <b>Токен bumblebee истекает через ${days} дн.</b> Чтобы запись встреч не прервалась — ` +
           `переустанови bumblebee: /recordertoken.`,
+        "recorder_token_expiry",
       );
     } catch (e) {
       console.error(`checkRecorderHealth signal2 ${u.telegram_id}:`, e);
@@ -408,8 +412,16 @@ Deno.serve(async (req: Request) => {
   }
 
   if (body.task_pings_cron === true) {
+    // Сперва очередь комендантского часа: первый тик после 9:00 МСК выпускает накопленное за ночь
+    // (внутри часа drain ничего не делает). Сбой очереди не должен съесть пинги, идущие следом.
+    let outboxSent = 0;
+    try {
+      outboxSent = (await drainTelegramOutbox({ store: makeOutboxStore(supabase), send: sendTelegramCall })).sent;
+    } catch (e) {
+      console.error("telegram_outbox drain failed:", e);
+    }
     const sent = await sendTaskPings();
-    return new Response(`OK: ${sent} pings sent`, { status: 200 });
+    return new Response(`OK: ${sent} pings sent, ${outboxSent} queued messages delivered`, { status: 200 });
   }
 
   if (body.feedback_retention_cron === true) {

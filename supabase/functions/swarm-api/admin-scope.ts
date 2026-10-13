@@ -19,7 +19,8 @@ import {
   type MemberRow,
   SUPERADMIN_TELEGRAM_ID,
 } from "../_shared/users/admin-scope.ts";
-import { externalFetch, VIA_TELEGRAM } from "../_shared/external-fetch.ts";
+import { notifyPerson } from "../_shared/notify-person.ts";
+import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 export { canChangeAccountKeys, canManageMember, canManageWorkspace, isSuperadmin, SUPERADMIN_TELEGRAM_ID };
 export type { AdminActor, MemberRow };
@@ -85,7 +86,7 @@ export type EmailChangeEvent = {
  */
 export async function announceEmailChange(
   ev: EmailChangeEvent,
-  send: (chatId: number, text: string) => Promise<boolean> = sendTelegramText,
+  send: (chatId: number, text: string) => Promise<boolean>,
 ): Promise<void> {
   const canMessage = ev.targetTelegramId != null && ev.targetTelegramId > 0;
   let delivered = false;
@@ -111,18 +112,23 @@ export async function announceEmailChange(
   }));
 }
 
-async function sendTelegramText(chatId: number, text: string): Promise<boolean> {
-  const token = Deno.env.get("TELEGRAM_BOT_TOKEN");
-  if (!token) return false;
-  const r = await externalFetch(`https://api.telegram.org/bot${token}/sendMessage`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      chat_id: chatId,
-      text,
-      disable_web_page_preview: true,
-    }),
-  }, VIA_TELEGRAM);
-  if (!r.ok) console.error("[admin] telegram sendMessage:", r.status);
-  return r.ok;
+/**
+ * Отправитель уведомления о смене почты. Это сообщение человеку по инициативе бота: в комендантский
+ * час (23:00–9:00 МСК) оно ложится в очередь `telegram_outbox` и уходит утром — для журнала это
+ * «принято» (true). false — Telegram не принял.
+ */
+export function makeEmailChangeSender(supabase: SupabaseClient): (chatId: number, text: string) => Promise<boolean> {
+  return async (chatId, text) => {
+    try {
+      await notifyPerson(supabase, {
+        recipientId: chatId,
+        kind: "email_change",
+        payload: { text, disable_web_page_preview: true },
+      });
+      return true;
+    } catch (e) {
+      console.error("[admin] telegram sendMessage:", e);
+      return false;
+    }
+  };
 }

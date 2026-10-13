@@ -1,6 +1,7 @@
 import { supabase } from "../lib/supabase.ts";
 import { chatComplete, getEmbedding } from "../lib/openai.ts";
 import { sendInlineMessage, sendMessage } from "../lib/telegram.ts";
+import { notifyMessage } from "../lib/notify.ts";
 import { clearSession, getSession, setSession } from "../lib/storage.ts";
 import { applyGeneralSentinel, extractEntryMeta, specificCountries } from "../../_shared/meta-extract.ts";
 import { getUserGroupId } from "../lib/workspace.ts";
@@ -538,7 +539,7 @@ async function ingestNewGranolaNotesForUser(integration: {
     if (attendeeNames) text += `\n👥 ${attendeeNames}`;
     text +=
       `\n\nДобавлена в очередь вычитки. Открой <a href="${WEB_URL}">Swarm Brain</a> → Встречи → «на вычитке», проверь тезисы и опубликуй.`;
-    await sendMessage(integration.telegram_id, text);
+    await notifyMessage(integration.telegram_id, text, "granola_new_meeting");
   }
 
   return created;
@@ -585,8 +586,10 @@ export async function ingestNewGranolaNotesAllUsers(): Promise<number> {
         last_error_notified_at: notice.notifiedAt,
       })
       .eq("telegram_id", integration.telegram_id).eq("service", "granola");
-    if (notice.send === "broke") await sendMessage(integration.telegram_id, brokeMessage(nextError!));
-    if (notice.send === "recovered") await sendMessage(integration.telegram_id, recoveredMessage());
+    if (notice.send === "broke") {
+      await notifyMessage(integration.telegram_id, brokeMessage(nextError!), "granola_health");
+    }
+    if (notice.send === "recovered") await notifyMessage(integration.telegram_id, recoveredMessage(), "granola_health");
   }
   return total;
 }
