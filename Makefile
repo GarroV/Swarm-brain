@@ -10,7 +10,7 @@ SB         := C:/projects/swarm-staging
 # Инициализация (демо-дефолт Supabase для приватного staging): см. docs/DEPLOY.md.
 STAGING_PGPW := $(shell cat $(HOME)/.swarm/staging_pgpw 2>/dev/null)
 
-.PHONY: help smoke-staging smoke-prod staging-sync-functions staging-migrate staging-psql staging-ps staging-up staging-down deploy-plan deploy who notice notice-off freeze unfreeze freeze-status
+.PHONY: help smoke-staging smoke-prod staging-sync-functions staging-migrate staging-psql staging-ps staging-up staging-down deploy-plan deploy migrate-plan migrate who notice notice-off freeze unfreeze freeze-status
 
 check: ## Единый прогон проверок доски инициатив (формат, линт, типы, тесты, покрытие, мёртвый код, границы)
 	@./scripts/check
@@ -27,7 +27,9 @@ porcha: ## Порча: ломаем ядро нарочно и убеждаем�
 
 help:
 	@echo "deploy-plan            — что готово, но НЕ раскатано (накопитель; ничего не меняет)"
-	@echo "deploy                 — раскатать накопленное (окно: будни 09:00–09:59 Белград; нужно «да» владельца)"
+	@echo "deploy                 — раскатать накопленное на свой сервер (окно 23:00–06:59 Белград; нужно «да» владельца)"
+	@echo "migrate-plan           — какие миграции не применены на проде (ничего не меняет)"
+	@echo "migrate                — накатить неприменённые миграции на прод (нужно «да» владельца; сначала миграции, потом deploy)"
 	@echo "who                    — кто сейчас в проде (запись/обработка встречи = стоп; люди = предупреждение)"
 	@echo "notice MIN=15          — объявить обновление: плашка в вебе с отсчётом (правка прод-данных!)"
 	@echo "notice-off             — снять объявление вручную (deploy снимает его сам)"
@@ -81,6 +83,13 @@ deploy-plan:
 
 deploy:
 	@./scripts/deploy-window.sh go
+
+# Миграции на свой сервер через шлюз (scripts/migrate-server.sh, docs/DEPLOY.md).
+migrate-plan:
+	@./scripts/migrate-server.sh --dry-run
+
+migrate:
+	@./scripts/migrate-server.sh
 
 # Кто в проде прямо сейчас. Отдельная цель, потому что смотреть полезно и без раскатки.
 who:

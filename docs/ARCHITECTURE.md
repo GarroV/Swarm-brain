@@ -59,9 +59,9 @@
 ## Ветка и деплой (канон)
 
 - Разработка в ветке **`main`** (дефолтная; переименована из `sandbox_vas` 2026-07-25).
-- Edge Functions: `supabase functions deploy <name> --no-verify-jwt`. **Инвариант:** `verify_jwt = false` закреплён для всех функций в `supabase/config.toml` (`[functions.<name>]`) — деплой не должен молча терять публичность шлюза. **Никогда не ставить `verify_jwt = true`**: все функции делают свою авторизацию в коде (recorder/MCP-токен, сессионный JWT, вебхук-секрет) и шлют не-JWT `Bearer`, который шлюз с verify_jwt отобьёт 401 `INVALID_JWT_FORMAT` ещё до функции (так 2026-06-30 молча падали ВСЕ загрузки рекордера — разбор в QUICK_REF/BACKLOG).
+- Edge Functions: с 13.10.2026 раскатка — шлюз на своём сервере (`make deploy` → `scripts/deploy-window.sh go` → `git archive HEAD:supabase/functions | ssh swarm-deploy@… functions`, все функции разом, [DEPLOY.md](DEPLOY.md), `deploy/server/README.md`). **Инвариант:** `verify_jwt = false` закреплён для всех функций в `supabase/config.toml` (`[functions.<name>]`) — деплой не должен молча терять публичность шлюза. **Никогда не ставить `verify_jwt = true`**: все функции делают свою авторизацию в коде (recorder/MCP-токен, сессионный JWT, вебхук-секрет) и шлют не-JWT `Bearer`, который шлюз с verify_jwt отобьёт 401 `INVALID_JWT_FORMAT` ещё до функции (так 2026-06-30 молча падали ВСЕ загрузки рекордера — разбор в QUICK_REF/BACKLOG).
 - Веб-интерфейс: `cd miniapp && npm run build` → `out/` → Cloudflare Pages.
-- **Боевой API с 13.10.2026 — на своём сервере (self-hosted Supabase на VPS Contabo), адрес `https://api.swarm-team.app`** (функции `…/functions/v1/<имя>`, хранилище `…/storage/v1/…`); источник адреса в функциях — `_shared/public-url.ts` (env `SWARM_PUBLIC_URL`), в вебе — `miniapp/functions/_lib/api-url.ts`. Решение: [decisions/2026-10-13-move-to-own-server.md](decisions/2026-10-13-move-to-own-server.md). Облачный project-ref `vbqglndbxkpmreccpqmr` (Free-план, ограничен 12.10.2026 за egress) — прежний прод. `ADMIN_USER_ID = 744230399` зашит в `swarm-bot/lib/supabase.ts`.
+- **Боевой API с 13.10.2026 — на своём сервере (self-hosted Supabase на VPS Contabo), адрес `https://api.swarm-team.app`** (функции `…/functions/v1/<имя>`, хранилище `…/storage/v1/…`); источник адреса в функциях — `_shared/public-url.ts` (env `SWARM_PUBLIC_URL`), в вебе — `miniapp/functions/_lib/api-url.ts`. Решение: [decisions/2026-10-13-move-to-own-server.md](decisions/2026-10-13-move-to-own-server.md). Облачный project-ref `vbqglndbxkpmreccpqmr` (Free-план, ограничен 12.10.2026 за egress) — прежний прод; раскатка (CI, `make deploy`/`migrate`) на него больше не ходит — шлюз на своём сервере, #919. `ADMIN_USER_ID = 744230399` зашит в `swarm-bot/lib/supabase.ts`.
 
 ## Стек
 
@@ -110,7 +110,7 @@
 | `google-oauth` | HTTP POST (server-to-server от CF Pages) | Запись привязки Google-календаря для рекордера (как Granola/Read.ai). Единственная ручка — **`/link`**: `POST {telegram_id, refresh_token, sig}` с подписью `HMAC(telegram_id\|refresh)` на `WEB_JWT_SECRET`, кладёт refresh в `user_integrations(service='google_calendar')` (вызывает CF Pages, у которого нет `SERVICE_ROLE`). Сам OAuth-поток (consent → обмен кода) — на CF Pages `/api/auth/google/{start,callback}`: и вход, и кнопка «Подключить календарь» (`flow=calendar`), см. [Аутентификация в swarm-api](#swarm-api--бэкенд-веб-интерфейса) п.3. Ручки `/start` и `/callback` этой функции сняты 2026-09-30 (любой другой путь → 404). Секрет `WEB_JWT_SECRET` |
 | `swarm-api` | HTTP (веб-интерфейс) | REST API для веб-интерфейса «Рой» (браузер/PWA): задачи, спринты, зависимости, entries CRUD, поиск/RAG, встречи (`/meetings` + `/agent-meetings`), интеграции (Granola/Google), дайджест, фидбек, админка. Третий клиент поверх `_shared/tasks/db.ts`. Полный список эндпоинтов — в разделе [swarm-api — бэкенд веб-интерфейса](#swarm-api--бэкенд-веб-интерфейса) (канон) |
 
-**Деплой:** `supabase functions deploy <name> --no-verify-jwt` (обязательно `--no-verify-jwt` для Telegram webhook)
+**Деплой:** `make deploy` — шлюз на своём сервере выкладывает все функции разом ([DEPLOY.md](DEPLOY.md)); `verify_jwt = false` (обязательно для Telegram webhook) закреплён в `supabase/config.toml`
 
 ### Внешние вызовы — `_shared/external-fetch.ts` (срок, лог, повтор)
 
@@ -2038,7 +2038,7 @@ _Админка (`admin.ts`, админы: `telegram_id 744230399` или `is_ad
 
 **Переменные окружения:** канон — раздел [Переменные окружения](#переменные-окружения). Для swarm-api: `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `OPENAI_API_KEY`, `TELEGRAM_BOT_TOKEN`, `MINIAPP_ORIGIN`, `INITDATA_MAX_AGE` (опц.), `WEB_JWT_SECRET` (веб-режим: проверка Bearer-сессии), `DECIMUS_API_URL` + `DECIMUS_API_TOKEN` (баллы РС/РКО из Децимуса, `GET /quality`).
 
-**Деплой:** `supabase functions deploy swarm-api --no-verify-jwt`
+**Деплой:** `make deploy` (все функции разом через шлюз, [DEPLOY.md](DEPLOY.md))
 
 ### Публичная дорожная карта (хаб проектов)
 
@@ -2337,7 +2337,7 @@ Next.js 16, `output: "export"` (статический HTML/CSS/JS в `miniapp/o
 ## Деплой и разработка
 
 - Ветка: `main` → всегда разрабатывать здесь (дефолтная на GitHub)
-- Деплой Edge Functions: `supabase functions deploy swarm-bot --no-verify-jwt`
+- Деплой Edge Functions: `make deploy` (шлюз на своём сервере, все функции разом, [DEPLOY.md](DEPLOY.md))
 - ⚠️ `granola-poller` — legacy, **не деплоить** как обычный шаг: standalone-функция выведена из крона. Поллинг Granola идёт внутри `swarm-bot` (часовой крон с `{granola_poll:true}` → `ingestNewGranolaNotesAllUsers`). См. таблицу Edge Functions выше.
 - Деплой веб-интерфейса: `cd miniapp && npm run build` → `out/` → Cloudflare Pages
 - После каждого изменения функционала: обновить этот файл (ARCHITECTURE) + `docs/BACKLOG.md`. **Changelog руками не вести** — генерируется из git (`scripts/changelog.sh`); источник истины — conventional commit-сообщения.

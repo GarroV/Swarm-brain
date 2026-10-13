@@ -1,0 +1,35 @@
+name: Ключ раскатки на свой сервер
+description: >
+  Пишет ключ шлюза раскатки и known_hosts из секретов во временные файлы (права 600) и
+  экспортирует SWARM_DEPLOY_KEY_FILE / SWARM_DEPLOY_KNOWN_HOSTS_FILE для scripts/lib/swarm-server.sh.
+  Секретов нет (pull_request от форка) — ничего не пишет: скрипты раскатки тогда честно отвечают
+  «проверить нечем» (код 3), а не падают. Ключ в лог не печатается.
+inputs:
+  ssh-key:
+    description: секрет SWARM_DEPLOY_SSH_KEY
+    required: false
+    default: ""
+  known-hosts:
+    description: секрет SWARM_DEPLOY_KNOWN_HOSTS
+    required: false
+    default: ""
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        SSH_KEY: ${{ inputs.ssh-key }}
+        KNOWN_HOSTS: ${{ inputs.known-hosts }}
+      run: |
+        if [ -z "$SSH_KEY" ] || [ -z "$KNOWN_HOSTS" ]; then
+          echo "Секретов раскатки нет (форк или не заведены) — ключ не пишу, сервер недоступен."
+          exit 0
+        fi
+        umask 077
+        printf '%s\n' "$SSH_KEY" > "$RUNNER_TEMP/swarm-deploy-key"
+        printf '%s\n' "$KNOWN_HOSTS" > "$RUNNER_TEMP/swarm-deploy-known-hosts"
+        {
+          echo "SWARM_DEPLOY_KEY_FILE=$RUNNER_TEMP/swarm-deploy-key"
+          echo "SWARM_DEPLOY_KNOWN_HOSTS_FILE=$RUNNER_TEMP/swarm-deploy-known-hosts"
+        } >> "$GITHUB_ENV"
+        echo "Ключ раскатки записан во временный файл."

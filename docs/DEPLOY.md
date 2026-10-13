@@ -6,7 +6,46 @@
 
 > 🚦 **Раскатка на прод — отдельное действие с отдельным «да» владельца** (решение 24.08.2026, канон — [decisions/2026-08-24-deploy-window.md](decisions/2026-08-24-deploy-window.md)). Окно: **23:00–06:59 по Белграду, любой день** (утреннее 09:00–10:00 отменено 27.08.2026, канон [decisions/2026-08-27-deploy-at-night.md](decisions/2026-08-27-deploy-at-night.md)); штатный путь — метка `deploy-window` на PR, ночью его вольёт автоматика. Пуш в `main` считается раскаткой (веб собирается с `main` автоматически). Накопитель: `make deploy-plan` / `make deploy` (`scripts/deploy-window.sh`, метка `prod-deployed`). Правка общего модуля `_shared/` тянет функции-потребители **транзитивно**: `_shared` → `_shared` → функция (#292, тест `scripts/test-deploy-window.sh`). Ночная автоматика уже в расписании — `.github/workflows/deploy-window.yml`, прогон каждые 15 минут окна (репозиторий публичный с 27.08, минуты Actions бесплатны); **PR с миграцией она вливает только после того, как миграция накатана на прод** — раздел «Ночная автоматика и миграции» ниже. **PR, влитый руками, edge-функции НЕ раскатывает** (ночной прогон ищет только открытые PR с меткой) — для такого случая есть кнопка `.github/workflows/deploy-functions.yml` (`gh workflow run deploy-functions.yml -f dry_run=false`), она зовёт тот же `scripts/deploy-window.sh`. Кнопка даёт руки, а не разрешение: «да» владельца и окно по-прежнему обязательны.
 >
-> **Накопитель сверяется с продом** (issue #243): `make deploy-plan` для каждой функции сравнивает время её раскатки на проде (Management API, нужен `SUPABASE_ACCESS_TOKEN`) с последним коммитом, который её касается (её папка или `_shared`). Раскатанная позже помечается «уже на проде: раскатана после последней правки, мимо метки» — значит, её выкатили не через `go`, и метка `prod-deployed` отстала. Без токена план так и пишет: «с продом не сверено». Локальная метка тоже может отставать: перед планом `git fetch --force --tags origin`. Тест — `scripts/test-deploy-window.sh`.
+> **Накопитель и прод.** С 13.10.2026 `make deploy-plan` не сверяет функции с продом по времени раскатки (источником был облачный Management API, его нет): он показывает функции, изменившиеся с метки `prod-deployed`, а выкладывает шлюз всё разом — это идемпотентно. Зато миграции сверяются по-прежнему — с журналом сервера. Метка может отставать, если раскатывали мимо `go` (ручная выкладка на сервере): перед планом `git fetch --force --tags origin`. Тест — `scripts/test-deploy-window.sh`.
+
+## Прод — свой сервер, раскатка через шлюз (с 13.10.2026)
+
+Прод Swarm переехал с облачного Supabase (`vbqglndbxkpmreccpqmr`, мёртв) на свой сервер: VPS
+Contabo, self-hosted Supabase в `/srv/swarm/supabase` (issue #915; перестройка CI — #919).
+Облачных CLI (`supabase functions deploy`, `db push`, `link`) и Management API (`api.supabase.com`)
+в раскатке больше нет. Вместо них — **шлюз**: ssh-пользователь `swarm-deploy@95.111.249.216`, чей
+ключ умеет ровно три команды (`functions`, `migrations-applied`, `migrate`). Как устроен и
+устанавливается шлюз — [deploy/server/README.md](../deploy/server/README.md); канон скрипта —
+`deploy/server/gate.sh`.
+
+| Что | Как | Где в коде |
+|---|---|---|
+| Edge-функции | `git archive HEAD:supabase/functions \| ssh … functions`: шлюз сохраняет копию прежнего состояния, кладёт **все** функции разом и перезапускает рантайм (~11 с) | `scripts/deploy-window.sh go`, `make deploy` |
+| Миграции | `scripts/migrate-server.sh [--dry-run]` берёт файлы, которых нет в журнале сервера, и катит каждую `ssh … migrate <версия> <имя>` одной транзакцией вместе с учётной записью; на первой ошибке стоп | `make migrate-plan` / `make migrate`, кнопка `deploy-migrations.yml` |
+| Гейт «код не вперёд схемы» | `pending_migrations` спрашивает `migrations-applied`; код 0 — всё применено, 1 — есть неприменённые, 3 — проверить нечем (нет ключа, ssh не дозвонился, пустой список) | `scripts/lib/migrations-gate.sh` |
+| Вызов шлюза | `swarm_server <команда>` — ssh с ключом и known_hosts | `scripts/lib/swarm-server.sh` |
+
+**Ключ.** Локально — `~/Documents/workbench/private/swarm-deploy-key` (переопределяется
+`SWARM_DEPLOY_KEY_FILE`; адрес — `SWARM_DEPLOY_HOST`, known_hosts — `SWARM_DEPLOY_KNOWN_HOSTS_FILE`).
+В CI — секреты репозитория `SWARM_DEPLOY_SSH_KEY` и `SWARM_DEPLOY_KNOWN_HOSTS`; их во временные
+файлы (права 600) пишет composite-шаг `.github/actions/swarm-deploy-ssh` и экспортирует пути через
+`$GITHUB_ENV`. Ключ в лог не печатается. В `pull_request` от форков секретов нет — шаг ничего не
+пишет, и гейт миграций честно отвечает «проверить нечем» (код 3).
+
+**Откат функций.** Перед каждой выкладкой шлюз кладёт копию прежнего состояния в
+`/var/backups/swarm-functions/functions-<время>.tgz` (хранит 10 последних). Если рантайм не ответил
+после перезапуска, шлюз сам печатает команду отката; вручную на сервере:
+`tar -xzf /var/backups/swarm-functions/functions-<время>.tgz -C /srv/swarm/supabase/volumes/functions && docker restart supabase-edge-functions`.
+Нормальный путь отката — `git revert` и обычная раскатка. Миграции откатом не снимаются
+(см. ниже «Почему автоматика не накатывает миграции сама»).
+
+**Что ещё не переделано** (список — в issue #919): кнопки секретов и плашки/заморозки
+(`notice.yml`, `bot-webhook-secret.yml`, `scriba-agent-token.yml`, `files-signing-key.yml`,
+`decimus-secrets.yml`, `seed-demo.yml`), `storage-migrate.yml`, `recorder-release.yml`, а также
+`scripts/deploy-activity.sh`, `deploy-notice.sh`, `maintenance.sh`, `bot-webhook-secret.sh`,
+`smoke.sh` по-прежнему адресованы облачному проекту. Ниже в этом файле всё, что говорит про
+`supabase functions deploy`, `db push`, `SUPABASE_ACCESS_TOKEN` и Management API, — история до
+13.10.2026, если не оговорено иначе.
 
 ## Контуры
 
@@ -15,7 +54,7 @@
 | **local** | `supabase start` на Маке (Docker) | `http://127.0.0.1:54321/functions/v1` | локальный |
 | **test** (общий тестовый стек) | `supabase start` на **MUSPELHEIM**, `C:\projects\swarm-test` (клон `main`); с Мака — SSH-туннель на `127.0.0.1:54321/54322`, его поднимает `./scripts/with-local-db` | `http://127.0.0.1:54321/functions/v1` (через туннель) | на сервере, снаружи закрыт брандмауэром |
 | **staging** 🔻 _погашен 06.08.2026 (см. баннер)_ | self-hosted Supabase на **MUSPELHEIM** (Tailscale, приватно) | `http://100.64.116.67:8020/functions/v1` | `100.64.116.67:5433` |
-| **prod** | Supabase cloud `vbqglndbxkpmreccpqmr` | `https://vbqglndbxkpmreccpqmr.supabase.co/functions/v1` | cloud |
+| **prod** | self-hosted Supabase на VPS Contabo (`/srv/swarm/supabase`), раскатка через шлюз (раздел выше) | `https://api.swarm-team.app/functions/v1` | на сервере |
 
 **Тестовый стек на MUSPELHEIM** (с 25.09.2026, решение владельца: регулярные стенды — на сервере, на Маке только временные, канон `dotfiles/claude/decisions/2026-09-25-stendy-na-muspelheim.md`). На нём идут тесты базы всех сессий Swarm. `./scripts/with-local-db` сперва ищет стек на своей машине (так работает CI), а если его нет — поднимает туннель к серверу; `SWARM_TEST_STAND=local` отключает поход на сервер. Ключи стандартные для `supabase start`, поэтому порты 54320–54329 закрыты для входящих правилом брандмауэра «Swarm test stand: no external access» — стек доступен только через туннель. Запуск на сервере — без studio, аналитики, vector и pg_meta: для тестов не нужны, а ядра ели: `supabase start -x 'studio,logflare,vector,postgres-meta,imgproxy'` — в PowerShell список **в кавычках**, иначе он рассыпается на отдельные аргументы и исключение молча не срабатывает. Схема на сервере — миграции `main`; чтобы прогнать тесты на миграциях своей ветки: `./scripts/with-local-db sh -c 'supabase db reset --db-url "$SUPABASE_DB_URL"'` (стек общий — сбрасывая, сбрасываешь его всем сессиям, как и раньше с общим стеком на Маке). Хук `pre-push` на стенд не ходит (с 01.10.2026): тесты базы и порча — в CI на чистой базе, локально — `make test-db` / `./scripts/check`; где что гоняется — `docs/QUICK_REF.md`, раздел про единую команду проверок.
 
@@ -29,8 +68,8 @@ Staging использует **демо-ключи** Supabase (ANON/SERVICE/JWT 
 
 | Поверхность | Пред-прод |
 |---|---|
-| Edge-функции | `supabase functions serve` локально → `make staging-sync-functions` + `make smoke-staging` → прод + `make smoke-prod` |
-| БД / миграции | `supabase db reset` локально (ловит SQL-поломки) → `supabase db push --linked` на прод. Подробности — раздел «Миграции на прод» ниже |
+| Edge-функции | `supabase functions serve` локально → `make deploy` (шлюз на своём сервере) → смоук вызовом эндпоинта |
+| БД / миграции | `supabase db reset` локально (ловит SQL-поломки) → `make migrate` (`scripts/migrate-server.sh`) на прод. Подробности — раздел «Миграции на прод» ниже |
 | Бот / MCP | локалка + curl синтетического апдейта; strict/тулзы — `make smoke-staging` |
 | Web (miniapp) | CF preview на ветку (авто) → мёрж в `main` |
 | Рекордер | локал-сборка → тег `recorder-build-N` → **заливка zip в Storage `swarm_drive/recorder/`** → `LATEST_BUILD`-гейт (см. `recorder/README.md`) |
@@ -41,44 +80,41 @@ Staging использует **демо-ключи** Supabase (ANON/SERVICE/JWT 
 # edge-функция
 supabase functions serve <fn>            # 1. локально против локальной БД
 #    смоук локально (curl localhost)      # 2. вижу поведение
-make staging-sync-functions              # 3. залить на staging + рестарт edge-runtime
-make smoke-staging                       # 4. смоук на staging (по tailnet)
-supabase functions deploy <fn> --no-verify-jwt   # 5. прод
-make smoke-prod                          # 6. смоук на проде
+make deploy                              # 3. прод: шлюз выкладывает все функции из HEAD (окно + «да» владельца)
+#    смоук на проде: дёрнуть затронутый эндпоинт   # 4.
 
 # миграция БД
 supabase db reset                        # 1. накат ВСЕХ миграций на чистую локальную БД (ловит SQL-поломки)
-supabase db push --linked --dry-run      # 2. что уедет на прод (ничего не меняет)
-supabase db push --linked                # 3. накат на прод — В ОКНО РАСКАТКИ и по «да» владельца
+make migrate-plan                        # 2. что уедет на прод (ничего не меняет)
+make migrate                             # 3. накат на прод — В ОКНО РАСКАТКИ и по «да» владельца
 ```
 
 ## Миграции на прод
 
 **Штатный путь — кнопка «Накат миграций БД (руками)»** (`.github/workflows/deploy-migrations.yml`,
-запуск через Actions или `gh workflow run deploy-migrations.yml -f dry_run=true`). Внутри тот же
-`supabase db push --linked`, но токеном из секретов репозитория.
+запуск через Actions или `gh workflow run deploy-migrations.yml -f dry_run=true`) или локально
+`make migrate-plan` / `make migrate` — обе зовут `scripts/migrate-server.sh`: он сверяет файлы
+`supabase/migrations/<версия>_<имя>.sql` с журналом применённых на сервере (`migrations-applied`) и
+катит неприменённые по порядку версий, каждую одной транзакцией вместе с записью в журнал; повтор уже
+применённой — «пропускаю». На первой ошибке останавливается. Шаблон `_template_new_table.sql` не
+миграция и в накат не попадает. Сухой прогон (`dry_run=true`, по умолчанию) печатает список.
 
-**Локально `supabase db push --linked` не проходит** (проверено 19.09.2026): CLI просит Platform API
-завести временную login-роль, личный токен отвечает `403 does not have the necessary privileges`,
-после чего CLI требует `SUPABASE_DB_PASSWORD`, которого в рабочем окружении нет. Тем же токеном
-`supabase projects list` отвечает нормально, а `projects api-keys` — тоже 403.
-
-**Флаг `include_all`** нужен, когда файл миграции старше последней применённой на проде (ветка
-пролежала дольше соседних): без него CLI отказывается вставлять её «в середину» истории и выходит
-с кодом 1. Сухой прогон (`dry_run=true`, по умолчанию) печатает список «Would push these migrations».
+Миграция старше последней применённой накатится так же — прежний флаг `include_all` не нужен: сверка
+идёт по версиям, а не по «хвосту» истории. (До 13.10.2026 это был `supabase db push --linked`,
+который локально не проходил по правам, issue #398.)
 
 Правила вокруг наката:
 
 - Файл миграции пишем **идемпотентным** (`IF NOT EXISTS` / `IF EXISTS`): накат мог частично
   доехать, и повтор не должен падать.
-- Перед продом — `supabase db reset` на локальном контуре. Staging на MUSPELHEIM погашен
+- Перед продом — `supabase db reset` на локальном контуре (контур у CLI остаётся — это локальная разработка, не раскатка). Staging на MUSPELHEIM погашен
   06.08.2026, поэтому пред-прод сейчас = local → прод.
 - Накат = раскатка: только по явному «да» владельца и в окно 23:00–06:59 (см. `CLAUDE.md` §5).
 - Скриптам, которые ходят в Storage или базу напрямую (например `scripts/storage-migrate.ts`),
   нужен `SUPABASE_SERVICE_ROLE_KEY`. В секретах репозитория его нет по решению 2026-08-28 (не
-  класть service-role в публичный репозиторий). Ключ берётся на время прогона через Management API
-  тем же `SUPABASE_ACCESS_TOKEN`, что раскатывает функции (как в `recorder-release.yml`): перенос
-  файлов — кнопка «Перенос файлов из публичного бакета (руками)», `storage-migrate.yml`.
+  класть service-role в публичный репозиторий). До 13.10.2026 ключ брался на время прогона через
+  облачный Management API (`recorder-release.yml`, `storage-migrate.yml`); на своём сервере этого
+  пути нет — эти два workflow ждут переделки (#919).
 - Версия файла — **ровно 14 цифр** (`YYYYMMDDHHMMSS`). Восьмизначные версии вида `20260602`
   ломают CLI, если рядом есть версия с тем же префиксом: по именам файлов `20260602000001_…`
   сортируется раньше `20260602_…` (цифра `0` меньше `_`), а по версиям — позже, и push объявляет
@@ -131,19 +167,19 @@ gh workflow run notice.yml -f action=unfreeze        # снять идущую �
 ## Код не уезжает вперёд схемы (с 25.09.2026)
 
 `deploy-window.sh` перед раскаткой функций сверяет миграции релиза с применёнными на проде
-(Management API, тем же `SUPABASE_ACCESS_TOKEN`, которым деплоятся функции) и **останавливает
+(список применённых версий с сервера: `swarm_server migrations-applied`) и **останавливает
 раскатку**, если в релизе есть неприменённые: функция, которой нужна новая колонка, ответила бы
 400 и положила раздел у всей команды до утра. `FORCE=1` этот гейт НЕ обходит — он про окно и про
 людей в системе, а не про готовность базы.
 
-Если проверить нечем (нет токена, API не ответил), раскатка тоже останавливается — это «проверка
+Если проверить нечем (нет ключа раскатки, сервер не ответил), раскатка тоже останавливается — это «проверка
 не выполнилась», а не «всё хорошо». Осознанный обход, когда схему проверили руками:
 
 ```bash
 MIGRATIONS_OK=1 ./scripts/deploy-window.sh go
 ```
 
-Порядок для релиза с миграцией: сначала накатить миграции (Actions → «Миграции БД»), потом
+Порядок для релиза с миграцией: сначала накатить миграции (Actions → «Накат миграций БД»), потом
 раскатывать функции. Почему это понадобилось — [issue #509](https://github.com/GarroV/Swarm-brain/issues/509):
 мину взрывала чужая раскатка, ближайший ночной прогон по любому другому PR.
 
@@ -160,7 +196,7 @@ issue #557; сам изъян — #444). Поэтому `scripts/deploy-window-m
 | новые миграции, все уже применены на проде | вливает |
 | новая миграция, которой НЕТ на проде (в PR или уже в `main`) | не вливает: метка остаётся, в PR комментарий с именами файлов и подсказкой про кнопку; очередь не держит — берёт следующий PR |
 | PR правит, переименовывает или удаляет существующий файл миграции | не вливает: версия на проде уже «применена», новое содержимое не накатится никогда — только руками |
-| проверить нечем (нет токена, API не ответил, ветку PR не получить) | не вливает — «проверка не выполнилась», а не «всё хорошо» |
+| проверить нечем (нет ключа, сервер не ответил, ветку PR не получить) | не вливает — «проверка не выполнилась», а не «всё хорошо» |
 
 **Порядок для PR с миграцией:** «да» владельца → кнопка «Накат миграций БД»
 (`gh workflow run deploy-migrations.yml -f dry_run=true`, посмотреть план, затем `-f dry_run=false`)
@@ -171,7 +207,7 @@ scripts/deploy-window-merge.sh` или кнопка `deploy-window.yml` с `dry_
 — прогонов за ночь десятки.
 
 **Почему автоматика не накатывает миграции сама**, хотя технически могла бы (тот же
-`supabase db push --linked` токеном `SUPABASE_ACCESS_TOKEN`, что у кнопки):
+`scripts/migrate-server.sh`, тот же ключ шлюза, что у кнопки):
 
 - миграцию не откатить ни `git revert`, ни следующей сборкой — а именно на этом держится право
   автоматики катить без человека (веб и функции откатываются ревертом);
