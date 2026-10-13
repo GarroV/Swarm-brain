@@ -61,6 +61,7 @@ const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY")!;
 
 import { absoluteFileUrl, removeStorageObject } from "../_shared/storage-links.ts";
+import { FILES_UNAVAILABLE } from "../_shared/swarm-files-storage.ts";
 import {
   discardOwnUpload,
   registerStorageFile,
@@ -199,13 +200,17 @@ async function uploadToStorage(
   const bytes = Uint8Array.from(atob(fileContentBase64), (c) => c.charCodeAt(0));
   // Ключ — в воркспейсе владельца, с uuid, без перезаписи (buildUploadKey). Транслит вместо
   // голой замены: имя «отчёт.pdf» превращалось в «______.pdf».
-  const { file, error } = await uploadNewPrivateFile(supabase, {
+  const { file, error, unavailable } = await uploadNewPrivateFile(supabase, {
     folder: "uploads",
     scope: groupId,
     fileName,
     body: bytes,
     contentType: mimeType,
   });
+  if (unavailable) {
+    console.error(`[swarm-mcp] swarm-files недоступен: ${error}`);
+    throw new Error(`${FILES_UNAVAILABLE.error} / ${FILES_UNAVAILABLE.error_ru}`);
+  }
   if (error || !file) throw new Error(`Storage upload failed: ${error ?? "unknown"}`);
 
   // Публичной ссылки больше нет: наружу отдаётся /api/file/<path>, а в metadata — путь.

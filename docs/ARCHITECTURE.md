@@ -933,6 +933,7 @@ _Все три: перевыпуск **убивает старый токен**,
 | Бакет | Видимость | Что лежит |
 |-------|-----------|-----------|
 | `swarm_private` | приватный | **всё, что принадлежит команде**: вложения записей (`uploads/…`), документы/таблицы/PDF из бота (`documents/`, `spreadsheets/`, `pdfs/`), скрины фидбека (`feedback/…`). Формат ключа — см. «Ключи загрузки» ниже |
+| `swarm-files` (не Storage) | сервис на MUSPELHEIM | **НОВЫЕ вложения записей и скрины фидбека** (решение владельца 13.10.2026: «файлы с этого проекта храним на муспельхейме»), если заданы `FILES_BASE_URL` + `FILES_SIGNING_KEY`. Ключ `<uuid>_<имя в ASCII>`, подробнее — «Файлы на MUSPELHEIM» ниже. Без этих секретов (локальный контур, тесты) новые файлы по-прежнему идут в `swarm_private` |
 | `swarm_drive` | публичный | **только ассеты рекордера** (`recorder/…`): установщик и `Updater.swift` тянут их анонимно, это не секрет. Исторически здесь лежали и файлы команды — отсюда утечка, ради которой сделан приватный бакет |
 
 ### Реестр `storage_files`
@@ -967,6 +968,27 @@ feedback/_feedback/2026-10-01_…_screenshot.png      ← скрины фидб�
   формы ключа не зависит. Переписывать их не нужно.
 - Аудио встреч (`swarm-audio`) и файлы задач (сервис `files/`, ключ `crypto.randomUUID()`)
   этой схемой не покрываются: их ключи строит сервер от id встречи или задачи.
+
+### Файлы на MUSPELHEIM (`bucket='swarm-files'`)
+
+Код — `_shared/swarm-files-storage.ts`; точка выбора одна — `uploadNewPrivateFile` (веб-аплоад,
+скрин фидбека, бот, MCP): есть `FILES_BASE_URL` + `FILES_SIGNING_KEY` → байты PUT-ом уходят в
+`swarm-files` по подписанной `put`-ссылке (`max` = размер файла), иначе — Storage, как раньше.
+
+- **Реестр:** `storage_files.bucket = 'swarm-files'`, `path = <uuid>_<имя>`: первые 36 знаков —
+  ключ объекта на диске, хвост — ASCII-имя для `Content-Disposition` (колонки под имя нет, миграции
+  нет). Бакет по форме пути выводит `bucketForPath` внутри `registerStorageFile`.
+- **Чтение:** права те же (`getFileSecure`: воркспейс, приватность записи, admin-only скрины);
+  `GET /file/*` и `externalFileUrl` (Telegram, 60 с) для этого бакета выдают подписанную `get`-ссылку
+  сервиса (имя и тип — в подписи), для остальных — signed URL Storage. Старые объекты
+  (`swarm_private`/`swarm_drive`) читаются как раньше.
+- **Сервис не ответил** (MUSPELHEIM спит): `POST /entries/upload` и `POST /feedback` со скрином →
+  503 `{error, error_ru, code: 'files_unavailable'}`; бот и MCP отдают тот же текст (EN / RU) в
+  ответе. Строка реестра не пишется, в Storage файл не дублируется.
+- **Удаления байтов нет:** у сервиса нет DELETE. Удаление записи снимает строку реестра
+  (`removeStorageObject`) — файл недоступен, но объект остаётся на диске; откат загрузки
+  (`discardOwnUpload`) для `swarm-files` тоже оставляет осиротевший объект.
+- Скрин фидбека из бота по-прежнему не критичен: не загрузился — отзыв сохраняется без картинки.
 
 ### Как файл доезжает до человека
 
@@ -1638,8 +1660,8 @@ afconvert — лежат в `meeting-ingest/testdata/` и меряются та�
 | `TELEGRAM_WEBHOOK_ENFORCE` | swarm-bot | нет (`1` = включено) | Включает отбивку апдейтов без верного `secret_token` (401 до разбора тела, сверка за постоянное время). **Намеренно отдельно от значения:** включить проверку раньше, чем Telegram узнает секрет через `setWebhook`, значит оборвать бота живым людям. Порядок: задать `TELEGRAM_WEBHOOK_SECRET` → дёрнуть `set_webhook` → убедиться, что апдейты идут → `TELEGRAM_WEBHOOK_ENFORCE=1`. Весь порядок одной кнопкой — CI «Секрет вебхука бота (руками)» (`.github/workflows/bot-webhook-secret.yml` → `scripts/bot-webhook-secret.sh`): `set_webhook`/`webhook_info` вызываются из базы через `pg_net` с заголовками задания `daily-report`, поэтому `CRON_SECRET` в CI не нужен |
 | `INITDATA_MAX_AGE` | swarm-api | нет, дефолт 24ч | TTL свежести `auth_date` в Telegram Mini App initData (секунды). ⚠️ Спящий путь — вход как Mini App отключён |
 | `MINIAPP_ORIGIN` | swarm-api, swarm-mcp | нет | Разрешённый Origin для CORS веб-интерфейса. Он же — база ссылки «Открыть задачу» в пуше о комментарии (`?task=<id>`, см. `_shared/tasks/comment-fanout.ts`): не задан или `*` → пуш уходит без ссылки. Пуш о комментарии шлют swarm-api и swarm-mcp — секрет общий на проект |
-| `FILES_BASE_URL` | swarm-api | да (для файлов к задачам) | Публичный адрес `swarm-files` на MUSPELHEIM (`https://muspelheim.tail48dfee.ts.net:10000/swarm-files`). Без него или без ключа файлы отвечают 503, веб пишет «хранилище недоступно». Ставит кнопка `files-signing-key.yml` |
-| `FILES_SIGNING_KEY` | swarm-api | да (для файлов к задачам) | Закрытый ключ Ed25519 (PKCS8, base64) для подписи ссылок на файлы. Рождается в `files-signing-key.yml` и никуда больше не попадает; открытый ключ — `FILES_PUBLIC_KEY` на сервере |
+| `FILES_BASE_URL` | swarm-api, swarm-bot, swarm-mcp | да (для файлов к задачам и вложений записей) | Публичный адрес `swarm-files` на MUSPELHEIM (`https://muspelheim.tail48dfee.ts.net:10000/swarm-files`). Без него или без ключа файлы отвечают 503, веб пишет «хранилище недоступно». Ставит кнопка `files-signing-key.yml` |
+| `FILES_SIGNING_KEY` | swarm-api, swarm-bot, swarm-mcp | да (для файлов к задачам и вложений записей) | Закрытый ключ Ed25519 (PKCS8, base64) для подписи ссылок на файлы. Рождается в `files-signing-key.yml` и никуда больше не попадает; открытый ключ — `FILES_PUBLIC_KEY` на сервере |
 | `TASK_FILES_MAX_MB` / `TASK_FILES_MAX_COUNT` | swarm-api | нет (50 / 10) | Лимиты файлов к задаче: размер одного файла в МБ и число файлов. Веб берёт их из ответа `GET /tasks/:id/files`, поэтому подпись «до N МБ» меняется вместе с переменной |
 | `WEB_JWT_SECRET` | swarm-api, google-oauth, auth-resolve, meeting-webtoken | да (для веб-режима/Google) | HS256-секрет: проверка `Bearer`-JWT браузерной сессии (swarm-api), выпуск 12-часового веб-доступа по личному токену (meeting-webtoken; прокси его не продлевает — `isRenewableSession`), подпись вызовов от CF Pages (`google-oauth/link`, `auth-resolve`). OAuth-state подписывает и проверяет только CF Pages (`miniapp/functions/_lib/oauth-state.ts`). Должен совпадать с CF Pages |
 | `WEB_BASE_URL` | meeting-ingest, meeting-process | да (для deep-link) | База веб-фронта (`https://swarm-team.app` с 02.10.2026; прежний pages.dev переадресует): кнопка «Открыть» `?meeting=<id>` в уведомлении (meeting-process/ingest) |
@@ -1861,8 +1883,8 @@ _Записи базы знаний (entries — только через `entrie
 | `PATCH` | `/entries/:id` | Правка `content`/`summary` — **только владелец** (`requireOwner`) |
 | `DELETE` | `/entries/:id` | Удалить запись — архивация (`archiveEntry`, #569) вместе с задачами встречи — только владелец; 204. Файл в Storage остаётся, но `/file/*` его больше не отдаёт (запись не живая) |
 | `POST` | `/entries` | Создать заметку из текста: эмбеддинг + классификация стран/типа (GPT-4o-mini, `COUNTRY_PROMPT_RULE`/`ENTRY_TYPE_PROMPT_RULE`) + тезисы (если ≥80 симв); `source=note`, привязка `group_id`/`owner_id`; 201 |
-| `POST` | `/entries/upload` | Multipart-загрузка файла в **приватный** бакет (`swarm_private/uploads/<воркспейс>/<дата>_<uuid>_<имя>`, без перезаписи) + запись (`source=file`) + строка реестра `storage_files`. В `metadata.file_url` кладётся **путь объекта**, наружу отдаётся `/api/file/<path>`; `is_private` опц.; 201. Сбой регистрации → откат (объект и запись удаляются) |
-| `GET` | `/file/*` | **Авторизованная раздача приватного файла.** Путь — всё после `/file/`. Доступ по реестру (`getFileSecure`: владелец через `storage_files` → свежие права из `entries`), затем 302 на signed URL (TTL 60 с). Отказ всегда 404 — существование чужого приватного файла не раскрывается. Для бота не годится (Telegram качает сам, без сессии) |
+| `POST` | `/entries/upload` | Multipart-загрузка файла в **приватное** хранилище: `swarm-files` на MUSPELHEIM (`<uuid>_<имя>`), если заданы `FILES_*`, иначе бакет `swarm_private/uploads/<воркспейс>/<дата>_<uuid>_<имя>` (без перезаписи); сервис недоступен — 503 `files_unavailable` + запись (`source=file`) + строка реестра `storage_files`. В `metadata.file_url` кладётся **путь объекта**, наружу отдаётся `/api/file/<path>`; `is_private` опц.; 201. Сбой регистрации → откат (объект и запись удаляются) |
+| `GET` | `/file/*` | **Авторизованная раздача приватного файла.** Путь — всё после `/file/`. Доступ по реестру (`getFileSecure`: владелец через `storage_files` → свежие права из `entries`), затем 302 на signed URL (TTL 60 с): Storage или, для `bucket='swarm-files'`, подписанная `get`-ссылка сервиса. Отказ всегда 404 — существование чужого приватного файла не раскрывается. Для бота не годится (Telegram качает сам, без сессии) |
 
 **⚡ Форма ответа `GET /meetings` — канон `swarm-api/meetings-payload.ts`** (issue #102, 26.08.2026; обрезка переехала в SQL 25.09.2026, issue #490):
 
@@ -2009,7 +2031,7 @@ _Поиск / RAG / прочее:_
 | `GET` | `/search?q=` | Гибридный поиск по `entries` (`match_entries_hybrid`: русский full-text + вектор через RRF, **фильтр по стране** (когда названа — пул кандидатов = записи этой страны ИЛИ `General`; чужие страны отсекаются) + буст этой страны в ранге + окно свежести — сначала ≤2 нед, добор старых при <5 источников, ступенчатый буст recency; страна детектится из текста запроса — `detectQueryCountry`, понимает русские склонения («Сербии»/«Сербией» → RS, стем+падежное окончание, без ложных «индикатор»/«грузить»); миграция `20260730120000_search_country_filter`) → `Entry[]`  🔒 **Невычитанная встреча в выдачу НЕ попадает** (issue #70, 2026-08-24): `entry_type='meeting'` участвует в поиске только при `metadata.confirmed='true'`. Read.ai создаёт встречу общей и несогласованной, поэтому сырой транскрипт находился всей командой до вычитки; гард очереди (#66) поиск не закрывал — он ходит прямо в RPC. Фильтр добавлен в ОБЕ перегрузки `match_entries_hybrid` и в каждой ДВАЖДЫ (full-text и векторная ветки) + в `match_entries`; миграции `20260824100000`, `20260824101500`. Заметки и документы не затронуты — поля `confirmed` у них нет. |
 | `POST` | `/ask` | RAG-ответ (экран Answer редизайна): embed → `matchEntries` (топ-8, приватность+воркспейс в RPC) → GPT-4o-mini синтез строго по источникам со сносками `[n]` → `{ query, answer, sources[], followups[] }`. Пусто → без GPT; сбой синтеза → деградация до источников |
 | `POST` | `/digest` | Персональный дайджест за период (`{ days }`, дефолт 7): GPT-сводка по `entries` воркспейса (приватность учтена) СТРОГО по рынкам пользователя. Охват решает `resolveDigestScope` (`swarm-api/digest-scope.ts`) по НОРМАЛИЗОВАННЫМ кодам стран: рынки есть → фильтр `countries ∩ markets`; админский `all_countries` → весь воркспейс; **рынков нет → `{ text: "", needs_markets: true }`, дайджест не строится** (issue #154 — раньше пустой `markets` молча снимал фильтр и человек получал сводку по чужим странам). Подсказку «где настроить» рисует веб, сервер отдаёт признак; записей нет → текстовая заглушка |
-| `POST` | `/feedback` | **multipart/form-data**: `text` (обяз.) + `category` + опц. `screenshot` (файл → приватный бакет + реестр). Сохраняет в `feedback` (`source='web'`, у демо-сессии — `source='demo'`; username из `allowed_users`) + пинг в канал `feedback_channel_id` (без кнопок; демо канал не пингует, issue #603); 204 |
+| `POST` | `/feedback` | **multipart/form-data**: `text` (обяз.) + `category` + опц. `screenshot` (файл → `swarm-files`/приватный бакет + реестр; сервис файлов недоступен → 503 `files_unavailable`, отзыв не сохраняется). Сохраняет в `feedback` (`source='web'`, у демо-сессии — `source='demo'`; username из `allowed_users`) + пинг в канал `feedback_channel_id` (без кнопок; демо канал не пингует, issue #603); 204 |
 
 _Админка (`admin.ts`, админы: `telegram_id 744230399` или `is_admin=true`; объём — воркспейс админа, у суперадмина — все, правила `admin-scope.ts`, см. §Контроль доступа):_
 

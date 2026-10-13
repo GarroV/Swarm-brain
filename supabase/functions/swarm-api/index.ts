@@ -144,6 +144,7 @@ import { handlePublicShortLink, handleShortLinkRoutes, isPublicShortLinkPath } f
 import { handleStickerRoutes } from "./stickers.ts";
 import { handleTaskCommentRoutes } from "./task-comments.ts";
 import { handleTaskFileRoutes } from "./task-files.ts";
+import { FILES_BUCKET, FILES_UNAVAILABLE, filesStorage, signedFilesGetUrl } from "../_shared/swarm-files-storage.ts";
 import { handleStatsRoutes } from "./stats.ts";
 import { handleMeetingAskRoutes } from "./meeting-ask.ts";
 import { makeFeedbackPingDeps, sendFeedbackPing } from "../_shared/feedback-ping.ts";
@@ -2128,13 +2129,17 @@ async function routeRequest(req: Request): Promise<Response> {
     // кладём ПУТЬ — ссылку строит отдача (withNormalizedFileLink → /api/file/<path>).
     // Ключ — в воркспейсе владельца, с uuid, без перезаписи (buildUploadKey). Кириллицу в ключе
     // Storage не принимает — имя транслитерируется, настоящее живёт в metadata.filename.
-    const { file: stored, error: uploadError } = await uploadNewPrivateFile(supabase, {
+    const { file: stored, error: uploadError, unavailable } = await uploadNewPrivateFile(supabase, {
       folder: "uploads",
       scope: groupId,
       fileName: file.name,
       body: arrayBuffer,
       contentType: file.type,
     });
+    if (unavailable) {
+      console.error(`[swarm-api] entries upload: ${uploadError}`);
+      return json({ ...FILES_UNAVAILABLE, code: "files_unavailable" }, 503, origin);
+    }
     if (uploadError || !stored) {
       return serverError(origin, "entries upload", uploadError ?? "upload failed");
     }
@@ -2431,17 +2436,26 @@ async function routeRequest(req: Request): Promise<Response> {
         telegramId: telegram_id,
         isAdmin,
       });
-      const { data: signed, error: signErr } = await supabase.storage
-        .from(resolved.bucket)
-        .createSignedUrl(resolved.path, FILE_SIGNED_TTL_SEC);
-      if (signErr || !signed?.signedUrl) {
-        return apiErr(500, "Signing failed", origin);
+      let location: string;
+      if (resolved.bucket === FILES_BUCKET) {
+        // Файл лежит на MUSPELHEIM: права проверены выше, наружу — подписанная get-ссылка сервиса.
+        const store = filesStorage();
+        if (!store) return apiErr(503, "File storage is not configured", origin);
+        location = await signedFilesGetUrl(store, resolved.path, FILE_SIGNED_TTL_SEC);
+      } else {
+        const { data: signed, error: signErr } = await supabase.storage
+          .from(resolved.bucket)
+          .createSignedUrl(resolved.path, FILE_SIGNED_TTL_SEC);
+        if (signErr || !signed?.signedUrl) {
+          return apiErr(500, "Signing failed", origin);
+        }
+        location = toPublicUrl(signed.signedUrl);
       }
       return new Response(null, {
         status: 302,
         headers: {
           ...corsHeaders(origin),
-          Location: toPublicUrl(signed.signedUrl),
+          Location: location,
           "Cache-Control": "no-store",
         },
       });
@@ -3578,14 +3592,19 @@ async function routeRequest(req: Request): Promise<Response> {
     let screenshotUrl: string | null = null;
     if (screenshotFile) {
       const buf = await screenshotFile.arrayBuffer();
-      const { file: shot, error: upErr } = await uploadNewPrivateFile(supabase, {
+      const { file: shot, error: upErr, unavailable: shotUnavailable } = await uploadNewPrivateFile(supabase, {
         folder: "feedback",
         scope: FEEDBACK_SCOPE,
         fileName: screenshotFile.name || "screenshot.png",
         body: buf,
         contentType: screenshotFile.type || "image/png",
       });
-      // Скрин — admin-only, поэтому и он в приватном бакете, а в feedback кладём ПУТЬ.
+      // Сервис файлов не отвечает — не теряем скрин молча: отзыв не сохраняем, человек повторит.
+      if (shotUnavailable) {
+        console.error(`[feedback] скрин не загружен, swarm-files недоступен: ${upErr}`);
+        return json({ ...FILES_UNAVAILABLE, code: "files_unavailable" }, 503, origin);
+      }
+      // Скрин — admin-only, поэтому и он в приватном хранилище, а в feedback кладём ПУТЬ.
       if (shot) {
         const path = shot.path;
         const regFb = await registerStorageFile(supabase, {
