@@ -34,16 +34,21 @@ SQL
 }
 
 read -r -a ARGV <<< "${SSH_ORIGINAL_COMMAND:-}"
+[ "${#ARGV[@]}" -le 3 ] || die "слишком много аргументов"
 CMD="${ARGV[0]:-}"
 logger -t swarm-deploy "команда: ${CMD} ${ARGV[1]:-}"
 
 case "$CMD" in
   functions)
     TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
-    head -c 52428800 | tar -xzf - -C "$TMP" --no-same-owner --no-same-permissions \
+    # Распаковка — НЕ от root: архив приходит снаружи, и обход пути/ссылки внутри него не должны
+    # дать прав больше, чем у swarm-deploy. До rsync пускаем только обычные файлы и каталоги.
+    chown swarm-deploy:swarm-deploy "$TMP"
+    head -c 52428800 | runuser -u swarm-deploy -- tar -xzf - -C "$TMP" --no-same-owner --no-same-permissions \
       || die "архив не распаковался"
     [ -f "$TMP/swarm-api/index.ts" ] && [ -d "$TMP/_shared" ] || die "в архиве нет supabase/functions"
-    if find "$TMP" -type l | grep -q .; then die "в архиве есть ссылки — отказ"; fi
+    if find "$TMP" ! -type f ! -type d | grep -q .; then die "в архиве есть ссылки или спецфайлы — отказ"; fi
+    if find "$TMP" -type f -links +1 | grep -q .; then die "в архиве есть жёсткие ссылки — отказ"; fi
     mkdir -p "$KEEP"; STAMP=$(date +%Y%m%d-%H%M%S)
     tar -czf "$KEEP/functions-$STAMP.tgz" -C "$FN" .
     ls -1t "$KEEP"/functions-*.tgz | tail -n +11 | xargs -r rm -f
