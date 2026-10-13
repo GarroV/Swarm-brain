@@ -15,16 +15,24 @@ const row = (id: number, attempts = 0): OutboxRow => ({
   payload: { chat_id: id * 10, text: `m${id}` },
   kind: "test",
   attempts,
+  group_id: "ws",
 });
 
-function harness(rows: OutboxRow[], failFor: number[] = [], removed: number[] = []) {
+function harness(rows: OutboxRow[], failFor: number[] = [], removed: number[] = [], moved: number[] = []) {
   const sentIds: number[] = [];
   const failures: Array<{ id: number; attempts: number; error: string; giveUp: boolean }> = [];
   const calls: number[] = [];
   const limits: number[] = [];
   const store: OutboxStore = {
     enqueue: () => Promise.resolve(),
-    members: (ids) => Promise.resolve(new Set(ids.filter((rid) => !removed.includes(rid / 10)))),
+    members: (ids) =>
+      Promise.resolve(
+        new Map(
+          ids.filter((rid) => !removed.includes(rid / 10)).map((
+            rid,
+          ) => [rid, moved.includes(rid / 10) ? "other" : "ws"]),
+        ),
+      ),
     unsent: (limit) => (limits.push(limit), Promise.resolve(rows.slice(0, limit))),
     markSent: (id) => (sentIds.push(id), Promise.resolve()),
     markFailed: (id, attempts, error, giveUp) => (failures.push({ id, attempts, error, giveUp }), Promise.resolve()),
@@ -84,5 +92,13 @@ Deno.test("drain: получателя убрали из команды, пок�
   assertEquals(h.calls, [1]);
   assertEquals(h.sentIds, [1]);
   assertEquals(h.failures.map((f) => [f.id, f.giveUp]), [[2, true]]);
+  assertEquals(res.gaveUp, 1);
+});
+
+Deno.test("drain: получателя перевели в другое пространство — не шлём, в архив", async () => {
+  const h = harness([row(1), row(2)], [], [], [2]);
+  const res = await drainTelegramOutbox({ store: h.store, send: h.send, now: MORNING, sleep: h.sleep });
+  assertEquals(h.calls, [1]);
+  assertEquals(h.failures.map((f) => [f.id, f.error]), [[2, "recipient moved to another workspace"]]);
   assertEquals(res.gaveUp, 1);
 });

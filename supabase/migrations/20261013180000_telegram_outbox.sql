@@ -24,6 +24,8 @@ create table if not exists public.telegram_outbox (
   payload      jsonb not null,
   -- Кто поставил в очередь: короткая метка отправителя (digest, task_comment, granola_new…).
   kind         text not null,
+  -- Пространство получателя на момент постановки: утром сообщение уходит, только если он всё ещё в нём.
+  group_id     text,
   created_at   timestamptz not null default now(),
   sent_at      timestamptz,
   attempts     smallint not null default 0,

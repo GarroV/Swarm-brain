@@ -24,6 +24,8 @@ export interface OutboxMessage {
 
 export interface OutboxRow extends OutboxMessage {
   id: number;
+  /** Пространство получателя в момент постановки в очередь; null — он тогда не был в команде. */
+  group_id: string | null;
   attempts: number;
 }
 
@@ -32,8 +34,8 @@ export interface OutboxStore {
   /** Неотправленные и не сдавшиеся, старые первыми. */
   unsent(limit: number): Promise<OutboxRow[]>;
   markSent(id: number, nowIso: string): Promise<void>;
-  /** Кто из получателей ВСЁ ЕЩЁ в команде (allowed_users по telegram_id или telegram_chat_id). */
-  members(recipientIds: number[]): Promise<Set<number>>;
+  /** Текущее пространство каждого получателя (allowed_users по telegram_id или telegram_chat_id); нет в команде — нет ключа. */
+  members(recipientIds: number[]): Promise<Map<number, string>>;
   /** Неудача: attempts+1 и причина; при `giveUp` строка уходит в архив. */
   markFailed(id: number, attempts: number, error: string, giveUp: boolean, nowIso: string): Promise<void>;
 }
@@ -47,35 +49,45 @@ function must(what: string, res: { error: { message: string } | null }): void {
 }
 
 export function makeOutboxStore(supabase: SupabaseClient): OutboxStore {
+  async function members(recipientIds: number[]): Promise<Map<number, string>> {
+    if (!recipientIds.length) return new Map();
+    const list = recipientIds.join(",");
+    const res = await supabase
+      .from("allowed_users")
+      .select("telegram_id, telegram_chat_id, group_id")
+      .or(`telegram_id.in.(${list}),telegram_chat_id.in.(${list})`);
+    must("members", res);
+    const out = new Map<number, string>();
+    type U = { telegram_id: number | null; telegram_chat_id: number | null; group_id: string | null };
+    for (const u of (res.data ?? []) as U[]) {
+      if (!u.group_id) continue;
+      if (u.telegram_id != null) out.set(Number(u.telegram_id), u.group_id);
+      if (u.telegram_chat_id != null) out.set(Number(u.telegram_chat_id), u.group_id);
+    }
+    return out;
+  }
+
   return {
+    members,
     async enqueue(message) {
-      must("enqueue", await supabase.from(OUTBOX_TABLE).insert(message));
+      // Запоминаем пространство получателя на момент постановки: утром сообщение уйдёт, только если
+      // он всё ещё в нём (содержимое — задачи и встречи этого пространства).
+      const groups = await members([message.recipient_id]);
+      must(
+        "enqueue",
+        await supabase.from(OUTBOX_TABLE).insert({ ...message, group_id: groups.get(message.recipient_id) ?? null }),
+      );
     },
     async unsent(limit) {
       const res = await supabase
         .from(OUTBOX_TABLE)
-        .select("id, recipient_id, method, payload, kind, attempts")
+        .select("id, recipient_id, method, payload, kind, attempts, group_id")
         .is("sent_at", null)
         .is("archived_at", null)
         .order("id", { ascending: true })
         .limit(limit);
       must("unsent", res);
       return (res.data ?? []) as OutboxRow[];
-    },
-    async members(recipientIds) {
-      if (!recipientIds.length) return new Set();
-      const list = recipientIds.join(",");
-      const res = await supabase
-        .from("allowed_users")
-        .select("telegram_id, telegram_chat_id")
-        .or(`telegram_id.in.(${list}),telegram_chat_id.in.(${list})`);
-      must("members", res);
-      const out = new Set<number>();
-      for (const u of (res.data ?? []) as Array<{ telegram_id: number | null; telegram_chat_id: number | null }>) {
-        if (u.telegram_id != null) out.add(Number(u.telegram_id));
-        if (u.telegram_chat_id != null) out.add(Number(u.telegram_chat_id));
-      }
-      return out;
     },
     async markSent(id, nowIso) {
       must("markSent", await supabase.from(OUTBOX_TABLE).update({ sent_at: nowIso }).eq("id", id));
@@ -121,12 +133,14 @@ export async function drainTelegramOutbox(deps: DrainDeps): Promise<DrainResult>
   const sleep = deps.sleep ?? realSleep;
   const spacingMs = deps.spacingMs ?? OUTBOX_SPACING_MS;
   const rows = await deps.store.unsent(deps.limit ?? OUTBOX_MAX_PER_TICK);
-  // Пока сообщение ждало утра, человека могли убрать из команды: тогда оно не уходит, а в архив
-  // (содержимое — задачи и встречи команды — ему больше не положено).
+  // Пока сообщение ждало утра, человека могли убрать из команды или перевести в другое пространство:
+  // тогда оно не уходит, а в архив (содержимое того пространства ему больше не положено).
   const members = await deps.store.members([...new Set(rows.map((r) => r.recipient_id))]);
   for (const [i, row] of rows.entries()) {
-    if (!members.has(row.recipient_id)) {
-      await deps.store.markFailed(row.id, row.attempts, "recipient is no longer a member", true, now.toISOString());
+    const groupNow = members.get(row.recipient_id);
+    if (!groupNow || !row.group_id || groupNow !== row.group_id) {
+      const reason = groupNow ? "recipient moved to another workspace" : "recipient is no longer a member";
+      await deps.store.markFailed(row.id, row.attempts, reason, true, now.toISOString());
       result.gaveUp++;
       continue;
     }
