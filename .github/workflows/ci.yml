@@ -55,6 +55,9 @@ jobs:
       - name: План раскатки — транзитивные потребители _shared
         run: ./scripts/test-deploy-window.sh
       # Команда recorder-upload шлюза на подставном curl: отказы и «не перезаписывать» (#919).
+      # Хук pre-push: метка на уже опубликованном коммите не гоняет scripts/check (#943).
+      - name: Хук pre-push — метка на опубликованном коммите + порча
+        run: ./scripts/test-pre-push.sh && ./scripts/test-pre-push.sh porcha
       - name: Шлюз раскатки — заливка рекордера + порча
         run: ./scripts/test-gate.sh && ./scripts/test-gate.sh porcha
 

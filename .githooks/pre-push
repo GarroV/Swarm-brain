@@ -42,9 +42,22 @@ report() {
 }
 
 has_update=0
+needs_check=0   # 1 — есть обновление, которому нужен гейт scripts/check
 while read -r _local_ref local_sha _remote_ref remote_sha; do
   [ "$local_sha" = "$ZERO" ] && continue          # удаление ветки — раскрывать нечего
   has_update=1
+
+  # Метка (тег) на коммите, который уже лежит в какой-то ветке удалённого, не публикует ничего
+  # нового: прогон scripts/check тут бессмыслен (а в чистом временном worktree без node_modules
+  # он ещё и падает — #943, метка prod-deployed). Сторож security-маркеров ниже по-прежнему идёт.
+  # Ветки и теги с новыми коммитами гейт получают как раньше.
+  if [[ "$_remote_ref" == refs/tags/* ]] \
+     && new_commits=$(git rev-list "$local_sha" --not "--remotes=$REMOTE" 2>/dev/null) \
+     && [ -z "$new_commits" ]; then
+    echo "pre-push: метка ${_remote_ref#refs/tags/} — на уже опубликованном коммите, гейт не нужен" >&2
+  else
+    needs_check=1
+  fi
 
   # Новое = достижимо из local_sha, но не из веток удалённого и не из того, что уже
   # лежит в обновляемой ветке. remote_sha может отсутствовать локально (не сделан fetch) —
@@ -124,6 +137,10 @@ fi
 # гейт на удаление висел минутами и не давал убрать пачку влитых веток (issue #664).
 if [ "$has_update" -eq 0 ]; then
   echo "pre-push: только удаление веток — гейт не нужен"
+  exit 0
+fi
+
+if [ "$needs_check" -eq 0 ]; then
   exit 0
 fi
 
