@@ -17,10 +17,32 @@ export const DEFAULT_WIDTH: Record<WidgetId, WidgetWidth> = {
   myTasks: "full", teamTasks: "half", news: "half", latest: "half",
 };
 
-// Доска — первой (владелец 08.10.2026: «доску давай выше сделаем»). «Топ-5 нарушений» — образец
-// без источника: в каталоге есть, по умолчанию на главную не ставим.
-const DEFAULT_ORDER: WidgetId[] = ["board", "calls", "top5", "rs", "rko", "pz", "countries"];
+// Доска — первой (владелец 08.10.2026: «доску давай выше сделаем»). Под ней две колонки: слева РКО и
+// под ним РС, справа встречи и под ними задачи (владелец 13.10.2026). Половинки идут парами
+// «левая, правая» — см. halfColumns. «Топ-5 нарушений» — образец без источника: в каталоге есть,
+// по умолчанию на главную не ставим.
+const DEFAULT_ORDER: WidgetId[] = ["board", "rko", "calls", "rs", "top5", "pz", "countries"];
 export const DEFAULT_LAYOUT: LayoutItem[] = DEFAULT_ORDER.map((id) => ({ id, w: DEFAULT_WIDTH[id] }));
+
+export type LayoutRun =
+  | { kind: "full"; item: LayoutItem; index: number }
+  | { kind: "halves"; left: { item: LayoutItem; index: number }[]; right: { item: LayoutItem; index: number }[] };
+
+/** Разбить раскладку на строки во всю ширину и прогоны половинок. Половинки прогона раскладываются
+ *  по двум независимым колонкам — чётные по счёту влево, нечётные вправо, — чтобы высокий виджет
+ *  не растягивал строку соседу. `index` — место в раскладке (для ↑↓ и порядка на узком экране). */
+export function halfColumns(layout: LayoutItem[]): LayoutRun[] {
+  const runs: LayoutRun[] = [];
+  layout.forEach((item, index) => {
+    if (item.w === "full") { runs.push({ kind: "full", item, index }); return; }
+    const last = runs[runs.length - 1];
+    const run = last?.kind === "halves" ? last : { kind: "halves" as const, left: [], right: [] };
+    if (run !== last) runs.push(run);
+    const side = run.left.length === run.right.length ? run.left : run.right;
+    side.push({ item, index });
+  });
+  return runs;
+}
 
 const isWidgetId = (v: unknown): v is WidgetId => typeof v === "string" && (WIDGET_IDS as readonly string[]).includes(v);
 
@@ -73,8 +95,9 @@ export function addWidget(layout: LayoutItem[], id: WidgetId): LayoutItem[] {
   return [...layout, { id, w: DEFAULT_WIDTH[id] }];
 }
 
-// v2 — с подъёмом доски наверх: сохранённая v1 держала бы старый порядок, и смена умолчания не была бы видна.
-const LS_KEY = "roy_home_layout_v2";
+// v3 — колонки РКО/РС и встречи/задачи (13.10.2026); v2 — подъём доски наверх. Сохранённая прежняя
+// версия держала бы старый порядок, и смена умолчания не была бы видна.
+const LS_KEY = "roy_home_layout_v3";
 
 export function loadLayout(): LayoutItem[] {
   try {
