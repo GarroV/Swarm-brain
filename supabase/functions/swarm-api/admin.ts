@@ -1,4 +1,5 @@
 import { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { BOT_SLOT_COLUMNS, isMissedBotSlot, type SlotRow } from "../_shared/bot-slot.ts";
 import { normalizeCountries } from "../_shared/countries.ts";
 import { addUserToWorkspace, normalizeUsername } from "../_shared/users/membership.ts";
 import { parseUserRef } from "../_shared/users/user-ref.ts";
@@ -546,7 +547,7 @@ export async function reviewCountsByMember(
     onlyLiveEntries(supabase.from("entries").select("owner_id, metadata"))
       .eq("group_id", groupId).eq("entry_type", "meeting")
       .or("metadata->>confirmed.is.null,metadata->>confirmed.eq.false"),
-    supabase.from("meetings").select("recorders, co_owners")
+    supabase.from("meetings").select(`recorders, co_owners, ${BOT_SLOT_COLUMNS}`)
       .eq("group_id", groupId).eq("status", "awaiting_review"),
   ]);
   // Молча вернуть пустую карту = показать «0 на вычитке» как факт. Пусть вызывающий решает.
@@ -572,12 +573,14 @@ export async function reviewCountsByMember(
   }
   for (
     const m of (mtgRes.data ?? []) as Array<
-      {
+      SlotRow & {
         recorders: Array<{ telegram_id: number }> | null;
         co_owners: number[] | null;
       }
     >
   ) {
+    // Пустой слот бота в очереди не виден — и в счётчик не идёт (одно правило с GET /agent-meetings).
+    if (isMissedBotSlot(m)) continue;
     // Каждому владельцу черновика по разу: записавшим и совладельцам (решение 2026-09-25).
     const owners = new Set([
       ...(m.recorders ?? []).map((r) => r.telegram_id),
