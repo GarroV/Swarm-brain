@@ -39,10 +39,8 @@ export function StickerCreate({ onClose, onCreated }: { onClose: () => void; onC
     return () => { alive = false; };
   }, []);
 
-  const { users, guests } = useMemo(() => groupRecipients(people ?? [], query), [people, query]);
-  const [guestsOpen, setGuestsOpen] = useState(false);
-  // Поиск раскрывает группу «Без входа» сам, пока в ней есть совпадения.
-  const showGuests = guestsOpen || (query.trim().length > 0 && guests.length > 0);
+  // Адресаты — только люди со входом: стикер видят на главной, остальным он бесполезен (владелец 13.10.2026).
+  const { users } = useMemo(() => groupRecipients(people ?? [], query), [people, query]);
 
   const toggle = (id: string) => setPicked((prev) => {
     const next = new Set(prev);
@@ -69,12 +67,11 @@ export function StickerCreate({ onClose, onCreated }: { onClose: () => void; onC
     }
   };
 
-  const row = (p: Person, guest: boolean) => (
+  const row = (p: Person) => (
     <li key={p.id}>
       <label className="flex cursor-pointer items-center gap-2 rounded-md px-1.5 py-1 hover:bg-surface-2">
         <input type="checkbox" checked={picked.has(p.id)} onChange={() => toggle(p.id)} />
         <span>{p.name}</span>
-        {guest && p.email && p.name !== p.email.split("@")[0] && <span className="truncate text-ink-mute" style={{ fontSize: 11 }}>{p.email}</span>}
       </label>
     </li>
   );
@@ -154,29 +151,11 @@ export function StickerCreate({ onClose, onCreated }: { onClose: () => void; onC
               {peopleFailed && <p className="text-[var(--pri-high)]" style={{ fontSize: 12 }}>{dt("Список людей не загрузился", "Couldn't load people")}</p>}
               {people == null && !peopleFailed && <div className="roy-shim" style={{ height: 60, borderRadius: 8 }} />}
               <div className="max-h-[220px] overflow-y-auto" style={{ fontSize: 13 }}>
-                <p className="px-1.5 pb-0.5 font-medium text-ink-soft" style={{ fontSize: 12 }}>{dt("Пользователи", "Users")} · {users.length}</p>
-                <ul>
-                  {users.slice(0, SHOWN).map((p) => row(p, false))}
+                                <ul>
+                  {users.slice(0, SHOWN).map(row)}
                   {people != null && users.length === 0 && <li className="px-1.5 py-1 text-ink-mute">{dt("Никого не найдено", "No one found")}</li>}
                   {users.length > SHOWN && <li className="px-1.5 py-1 text-ink-mute" style={{ fontSize: 11 }}>{dt("Уточните поиск, чтобы увидеть остальных", "Refine the search to see more")}</li>}
                 </ul>
-                {guests.length > 0 && (
-                  <div className="mt-2 border-t border-line pt-2">
-                    <button type="button" aria-expanded={showGuests} onClick={() => setGuestsOpen((v) => !v)} className="flex w-full items-center gap-1 rounded-md px-1.5 py-0.5 text-left font-medium text-ink-soft hover:bg-surface-2" style={{ fontSize: 12 }}>
-                      <span aria-hidden>{showGuests ? "▾" : "▸"}</span>
-                      {dt("Без входа", "No login")} · {guests.length}
-                    </button>
-                    <p className="px-1.5 text-ink-mute" style={{ fontSize: 11 }}>
-                      {dt("Люди из встреч, не участники проекта: стикер на главной они не увидят.", "People from meetings, not project members: they won't see the sticker on the home page.")}
-                    </p>
-                    {showGuests && (
-                      <ul>
-                        {guests.slice(0, SHOWN).map((p) => row(p, true))}
-                        {guests.length > SHOWN && <li className="px-1.5 py-1 text-ink-mute" style={{ fontSize: 11 }}>{dt("Уточните поиск, чтобы увидеть остальных", "Refine the search to see more")}</li>}
-                      </ul>
-                    )}
-                  </div>
-                )}
               </div>
               <p className="text-ink-mute" style={{ fontSize: 12 }}>{dt(`Выбрано: ${picked.size}`, `Selected: ${picked.size}`)}</p>
             </>
