@@ -63,7 +63,10 @@ export function HomeGrid({ data, onCreateTask, onCreateTaskFrom, editing, onEdit
 
   // Раскладка читается после монтирования: экспорт статический, на сборке localStorage нет.
   useEffect(() => { setLayoutState(loadLayout()); }, []);
-  useEffect(() => { setMarkets(me?.markets ?? []); }, [me?.markets]);
+  // Синхронизация с профилем прямо в рендере, а не в эффекте: эффект давал один кадр с пустыми странами
+  // (и подсказкой «выберите страны») сразу после прихода me.
+  const [seenMarkets, setSeenMarkets] = useState(me?.markets);
+  if (seenMarkets !== me?.markets) { setSeenMarkets(me?.markets); setMarkets(me?.markets ?? []); }
   useEffect(() => {
     if (!editing) return;
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape" && !gallery) setEditing(false); };
