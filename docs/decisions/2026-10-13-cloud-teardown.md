@@ -11,7 +11,7 @@
 |---|---|
 | Облачный проект `vbqglndbxkpmreccpqmr` (Supabase Cloud, копия данных команды на 12.10) | Удалить **после 22.10** — дня, до которого Supabase держит ограничение (#915). До этого не трогаем. |
 | Секрет CI `SUPABASE_ACCESS_TOKEN` (облачный PAT) | Удалить вместе с проектом, когда кнопки CI переведены на свой сервер (#919). |
-| Копия прода на MUSPELHEIM: контейнер `swarm-prod-copy-db`, дамп `C:\backups\swarm-prod\2026-10-13` | Пока держим. |
+| Копия прода на MUSPELHEIM: контейнер `swarm-prod-copy-db`, дамп `C:\backups\swarm-prod\2026-10-13` | Пока держим. С 14.10 — постоянный резерв: [2026-10-14-prod-reserve.md](2026-10-14-prod-reserve.md). |
 | MCP `supabase-swarm` в Claude Code (смотрел в облако) | Убран 13.10: показывал вчерашний снимок, а прод без VPS всё равно не прочитать. Прод читается по SSH, см. [DEPLOY.md](../DEPLOY.md). |
 | Остатки `scriba-prod` на MUSPELHEIM (контейнер egress, том записей, образ) | Удалены 13.10: scriba живёт на Contabo с 30.09 (D039). |
 | Прототипы главной `swarm-home-app` / `swarm-home-proto` на MUSPELHEIM | Удалены 13.10 вместе с публикацией в tailnet: главная влита. |
