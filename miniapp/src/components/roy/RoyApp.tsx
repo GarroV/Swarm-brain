@@ -49,6 +49,7 @@ import { type RailId, RoyRail } from "./RoyRail";
 import { NotificationsBell } from "./NotificationsBell";
 import { DeployNoticeBar, HeaderNotice } from "./DeployNoticeBar";
 import { AnswerModal } from "./AnswerModal";
+import { PasskeyStep } from "./PasskeyStep";
 
 // Каркас «Рой»: корневые разделы + push-стек.
 // МОБАЙЛ (решение владельца 2026-08-22, docs/decisions/2026-08-22-mobile-nav.md): нижний таб-бар
@@ -366,6 +367,8 @@ export function RoyApp({ me }: { me: Me | null }) {
         {/* Плашка «скоро обновление»: на десктопе — в шапке экрана (HeaderNotice), здесь только
             мобайл и десктопные экраны без такой шапки. См. шапку DeployNoticeBar.tsx. */}
         <DeployNoticeBar />
+        {/* Второй шаг входа — палец (ключ доступа, #955): сам просит Touch ID после Google/Telegram. */}
+        <PasskeyStep me={me} />
         {me?.is_demo && (
           <div
             className="flex shrink-0 flex-wrap items-center justify-center gap-x-3 gap-y-1 bg-primary px-4 py-1.5 text-primary-foreground"
