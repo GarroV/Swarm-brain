@@ -38,7 +38,7 @@ import {
 import { AcceptConflictError, acceptCycle } from "../../_shared/tasks/sprint-accept.ts";
 import { computeSprintStats } from "../../_shared/tasks/sprint-stats.ts";
 import type { Sprint } from "../../_shared/tasks/types.ts";
-import { ADMIN_USER_ID } from "./tools.ts";
+import { masterAdminFlag } from "../../_shared/users/master-admins.ts";
 import { formatCycles, formatJournal, formatSpaces, formatSprint, isIsoDate, pickSpace } from "./sprints-format.ts";
 import { JOURNAL_PERIODS, loadSpaceJournal } from "../../_shared/space-journal.ts";
 import { resolvePersonNames } from "../../_shared/users/display-name.ts";
@@ -74,7 +74,7 @@ async function member(args: Args): Promise<Member | string> {
   return {
     userId,
     groupId: row.group_id,
-    isAdmin: userId === ADMIN_USER_ID || row.is_admin === true,
+    isAdmin: (await masterAdminFlag(supabase, userId)) || row.is_admin === true,
   };
 }
 

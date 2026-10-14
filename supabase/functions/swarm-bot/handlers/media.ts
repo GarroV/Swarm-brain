@@ -1,5 +1,7 @@
 import { fileLink, generateSummary, registerUploadedFile, saveEntry, uploadToStorage } from "../lib/storage.ts"; // generateSummary used for multi-chunk docs only
 import { getTelegramFileUrl, sendMessage } from "../lib/telegram.ts";
+import { supabase } from "../lib/supabase.ts";
+import { openAIKeyHandle } from "../../_shared/workspace-keys.ts";
 import { TgMessage } from "../lib/types.ts";
 import {
   dropConsecutiveRuns,
@@ -40,9 +42,8 @@ async function keepFileOnly(
   return fileLink(path);
 }
 
-const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY")!;
-
-async function transcribeAudio(fileId: string): Promise<string> {
+// Ключ OpenAI — пространства человека (#233); своего нет → ключ сервера.
+async function transcribeAudio(fileId: string, groupId: string): Promise<string> {
   const tgUrl = await getTelegramFileUrl(fileId);
   const audioRes = await externalFetch(tgUrl, {}, VIA_TELEGRAM_FILE);
   const audioBuffer = await audioRes.arrayBuffer();
@@ -54,11 +55,13 @@ async function transcribeAudio(fileId: string): Promise<string> {
   // (тишина в голосовом так же даёт ютуб-«титры», которые иначе ушли бы в базу как есть).
   form.append("response_format", "verbose_json");
 
+  const key = await openAIKeyHandle(supabase, groupId);
   const res = await externalFetch("https://api.openai.com/v1/audio/transcriptions", {
     method: "POST",
-    headers: { Authorization: `Bearer ${OPENAI_API_KEY}` },
+    headers: { Authorization: `Bearer ${key.key}` },
     body: form,
   }, { ...VIA_OPENAI_LONG, usage: { purpose: "bot:media:long" } });
+  await key.noteResponse(res);
   const data = await res.json();
   if (!res.ok) throw new Error(data.error?.message ?? "Whisper error");
   const segments = (data.segments ?? []) as Array<{ text: string; no_speech_prob?: number; avg_logprob?: number }>;
@@ -74,11 +77,12 @@ async function transcribeAudio(fileId: string): Promise<string> {
   return WHISPER_HALLUCINATION_RE.test(flat) ? "" : flat;
 }
 
-async function describeImage(fileId: string): Promise<string> {
+async function describeImage(fileId: string, groupId: string): Promise<string> {
   const tgUrl = await getTelegramFileUrl(fileId);
+  const key = await openAIKeyHandle(supabase, groupId);
   const res = await externalFetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${OPENAI_API_KEY}` },
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${key.key}` },
     body: JSON.stringify({
       model: "gpt-4o-mini",
       messages: [{
@@ -95,6 +99,7 @@ async function describeImage(fileId: string): Promise<string> {
       max_tokens: 1000,
     }),
   }, { ...VIA_OPENAI_CHAT, usage: { purpose: "bot:media:chat" } });
+  await key.noteResponse(res);
   const data = await res.json();
   if (!res.ok) throw new Error(data.error?.message ?? "Vision error");
   return data.choices[0].message.content;
@@ -415,7 +420,7 @@ export async function handleDocument(
 
     const [stored, summary] = await Promise.all([
       uploadToStorage(name, buffer, mime || "text/plain", "documents", groupId),
-      generateSummary(text),
+      generateSummary(text, groupId),
     ]);
 
     const CHUNK = 3000, OVL = 200;
@@ -481,7 +486,7 @@ export async function handleDocument(
       return;
     }
 
-    const summary = await generateSummary(extracted);
+    const summary = await generateSummary(extracted, groupId);
     const CHUNK = 3000, OVL = 200;
     const chunks: string[] = [];
     for (let p = 0; p < extracted.length; p += CHUNK - OVL) chunks.push(extracted.slice(p, p + CHUNK));
@@ -559,7 +564,7 @@ export async function handlePhoto(
 ): Promise<void> {
   await sendMessage(chatId, "Анализирую изображение...");
   const largest = photos.reduce((a, b) => ((b.file_size ?? 0) > (a.file_size ?? 0) ? b : a));
-  const description = await describeImage(largest.file_id);
+  const description = await describeImage(largest.file_id, groupId);
   await saveEntry(description, username, "image", undefined, undefined, groupId);
   await sendMessage(
     chatId,
@@ -614,7 +619,7 @@ export async function handleVoice(
   groupId: string,
 ): Promise<void> {
   await sendMessage(chatId, `Транскрибирую голосовое (${duration} сек)...`);
-  const transcript = await transcribeAudio(fileId);
+  const transcript = await transcribeAudio(fileId, groupId);
   // Пусто = речь не распозналась (тишина/шум; галлюцинации-«титры» вычищены) — не сохраняем мусор.
   if (!transcript.trim()) {
     await sendMessage(

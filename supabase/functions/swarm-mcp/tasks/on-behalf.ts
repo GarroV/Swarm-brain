@@ -43,12 +43,14 @@ export async function loadCaller(
   telegramId: number,
   groupId: string,
   adminId: number,
+  // Мастер-админ по данным (#233), вычислен вызывающим; нет — по константе adminId, как раньше.
+  isMaster?: boolean,
 ): Promise<OnBehalfCaller> {
   const { data, error } = await supabase.from("allowed_users")
     .select("is_admin").eq("telegram_id", telegramId).maybeSingle();
   if (error) throw new Error(`Не удалось проверить права: ${error.message}`);
   const row = data as { is_admin: boolean | null } | null;
-  return { telegramId, groupId, isAdmin: telegramId === adminId || row?.is_admin === true };
+  return { telegramId, groupId, isAdmin: (isMaster ?? telegramId === adminId) || row?.is_admin === true };
 }
 
 export async function loadTarget(telegramId: number): Promise<OnBehalfTarget | null> {

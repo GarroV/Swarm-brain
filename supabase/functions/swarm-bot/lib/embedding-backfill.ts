@@ -20,6 +20,8 @@ export interface BackfillEntry {
   content: string | null;
   summary: string | null;
   countries: string[] | null;
+  /** Пространство записи: чьим ключом индексировать (#233). */
+  group_id: string | null;
 }
 
 /** Узкая граница к базе: реализация на supabase-js — embedding-backfill-store.ts. */
@@ -47,7 +49,7 @@ export interface BackfillResult {
  */
 export async function backfillMissingEmbeddings(
   store: BackfillStore,
-  embed: (text: string) => Promise<number[]>,
+  embed: (text: string, groupId: string | null) => Promise<number[]>,
   limit = BACKFILL_BATCH,
 ): Promise<BackfillResult> {
   const rows = await store.missing(limit);
@@ -57,7 +59,7 @@ export async function backfillMissingEmbeddings(
     const text = backfillText(row);
     if (!text) continue; // пустой записи нечего индексировать — и пытаться каждый час незачем
     try {
-      await store.save(row.id, await embed(text));
+      await store.save(row.id, await embed(text, row.group_id));
       filled++;
     } catch (err) {
       failed++;

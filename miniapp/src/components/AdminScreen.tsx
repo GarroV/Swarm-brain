@@ -10,7 +10,9 @@ import type { AdminWorkspace, AdminUser } from "@/types";
 import { countryCode, COUNTRY_NAMES } from "@/lib/countries";
 import { Segmented } from "@/components/roy/ui";
 import { RoyIcon } from "@/components/roy/icons";
-import { useDt } from "@/components/roy/nav";
+import { useDt, useRoyNav } from "@/components/roy/nav";
+import { WorkspaceKeyPanel } from "@/components/admin/WorkspaceKeyPanel";
+import { MasterAdminsPanel } from "@/components/admin/MasterAdminsPanel";
 import { useConfirm } from "@/components/ui/confirm";
 import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select";
 
@@ -420,7 +422,8 @@ function WorkspaceMarkets({ ws, onUpdated }: { ws: AdminWorkspace; onUpdated: ()
 // ── Деталь воркспейса (переименование + табы) ─────────────────────────────────
 export function WorkspaceDetail({ ws, onBack, desk = false }: { ws: AdminWorkspace; onBack: () => void; desk?: boolean }) {
   const [workspace, setWorkspace] = useState(ws);
-  const [tab, setTab] = useState<"users" | "markets">("users");
+  const [tab, setTab] = useState<"users" | "markets" | "key">("users");
+  const dt = useDt();
   const [allWorkspaces, setAllWorkspaces] = useState<AdminWorkspace[]>([]);
   const [renaming, setRenaming] = useState(false);
   const [nameDraft, setNameDraft] = useState(ws.name);
@@ -463,15 +466,15 @@ export function WorkspaceDetail({ ws, onBack, desk = false }: { ws: AdminWorkspa
 
       <div className="px-4">
         <Segmented
-          items={[{ id: "users", label: "Пользователи" }, { id: "markets", label: "Рынки" }]}
+          items={[{ id: "users", label: "Пользователи" }, { id: "markets", label: "Рынки" }, { id: "key", label: dt("Ключ", "AI key") }]}
           value={tab}
-          onChange={(v) => setTab(v as "users" | "markets")}
+          onChange={(v) => setTab(v as "users" | "markets" | "key")}
         />
       </div>
       <div className="mt-3 min-h-0 flex-1 overflow-y-auto px-4 pb-4">
-        {tab === "users"
-          ? <WorkspaceUsers wsId={workspace.id} allWorkspaces={allWorkspaces} desk={desk} />
-          : <WorkspaceMarkets ws={workspace} onUpdated={() => setWorkspace((w) => ({ ...w }))} />}
+        {tab === "users" && <WorkspaceUsers wsId={workspace.id} allWorkspaces={allWorkspaces} desk={desk} />}
+        {tab === "markets" && <WorkspaceMarkets ws={workspace} onUpdated={() => setWorkspace((w) => ({ ...w }))} />}
+        {tab === "key" && <WorkspaceKeyPanel wsId={workspace.id} />}
       </div>
     </div>
   );
@@ -553,6 +556,7 @@ function ReviewQueueBlock() {
 
 export function AdminScreen() {
   const [selected, setSelected] = useState<AdminWorkspace | null>(null);
+  const { me } = useRoyNav();
 
   if (selected) return <WorkspaceDetail ws={selected} onBack={() => setSelected(null)} />;
 
@@ -566,6 +570,7 @@ export function AdminScreen() {
         <ReviewQueueBlock />
         <BroadcastBlock />
         <WorkspaceList onSelect={setSelected} />
+        {me?.is_superadmin && <MasterAdminsPanel />}
       </div>
     </div>
   );

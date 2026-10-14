@@ -1,10 +1,10 @@
 // Границы админских действий — ЕДИНОЕ правило для веб-админки (swarm-api `/admin/*`) и
 // админ-панели бота (swarm-bot `sa_*`). Решение владельца 28.09.2026: права админа не урезаем,
 // задаём границы.
-//   • Суперадмин (ADMIN_USER_ID) — глобальный объём: все воркспейсы, создание воркспейсов,
+//   • Суперадмин (мастер-админ: ADMIN_USER_ID ИЛИ строка master_admins, #233) — глобальный объём: все воркспейсы, создание воркспейсов,
 //     перенос людей между воркспейсами, рассылка всем.
 //   • Админ (флаг allowed_users.is_admin) — только СВОЙ воркспейс (его group_id).
-//   • Аккаунт суперадмина (почта входа, флаг админа, членство) меняет только сам суперадмин.
+//   • Аккаунт владельца (константа) меняет только он сам; аккаунт мастер-админа из данных — только мастер-админ.
 
 export const SUPERADMIN_TELEGRAM_ID = 744230399;
 
@@ -12,6 +12,11 @@ export type AdminActor = {
   telegramId: number;
   /** Воркспейс админа — тот же group_id, что index.ts резолвит для всех data-запросов. */
   groupId: string;
+  /**
+   * Мастер-админ по данным (#233): константа ИЛИ строка `master_admins`, вычислен один раз на
+   * запрос (`isMasterAdmin`). Константа остаётся мастер-админом всегда; флаг только добавляет людей из данных (чистые функции и тесты без флага работают как раньше).
+   */
+  isMaster?: boolean;
 };
 
 /** Строка allowed_users в объёме, который нужен правилам. */
@@ -19,10 +24,15 @@ export type MemberRow = {
   telegram_id: number | null;
   group_id: string | null;
   email?: string | null;
+  /**
+   * Цель — мастер-админ из данных (`master_admins`), проставляет `withMasterFlag` при загрузке
+   * строки. Без признака (чистые функции, старые тесты) защищена только константа владельца.
+   */
+  is_master?: boolean;
 };
 
 export function isSuperadmin(actor: AdminActor): boolean {
-  return actor.telegramId === SUPERADMIN_TELEGRAM_ID;
+  return actor.isMaster === true || actor.telegramId === SUPERADMIN_TELEGRAM_ID;
 }
 
 /** Воркспейс в объёме админа: суперадмину любой, остальным — только свой. */
@@ -38,11 +48,16 @@ export function canManageMember(actor: AdminActor, target: MemberRow): boolean {
 
 /**
  * Можно ли менять ключевые поля аккаунта (почта входа, флаг админа, членство):
- * аккаунт суперадмина — только ему самому.
+ *   • аккаунт владельца (константа SUPERADMIN_TELEGRAM_ID) — только он сам: мастер-админ из данных
+ *     его не трогает (иначе — захват аккаунта владельца);
+ *   • аккаунт мастер-админа из данных (`target.is_master`) — только мастер-админ: админ
+ *     пространства не может сменить ему почту входа и войти под ним.
  */
 export function canChangeAccountKeys(
   actor: AdminActor,
   target: MemberRow,
 ): boolean {
-  return target.telegram_id !== SUPERADMIN_TELEGRAM_ID || isSuperadmin(actor);
+  if (target.telegram_id === SUPERADMIN_TELEGRAM_ID) return actor.telegramId === SUPERADMIN_TELEGRAM_ID;
+  if (target.is_master === true) return isSuperadmin(actor);
+  return true;
 }

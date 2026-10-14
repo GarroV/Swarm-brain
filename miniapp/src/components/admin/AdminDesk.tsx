@@ -7,20 +7,23 @@ import { AdminScreen, WorkspaceDetail, WorkspaceList } from "@/components/AdminS
 import { useConfirm } from "@/components/ui/confirm";
 import { useDt, useRoyNav } from "@/components/roy/nav";
 import { useIsDesktop } from "@/components/roy/useIsDesktop";
+import { MasterAdminsPanel } from "@/components/admin/MasterAdminsPanel";
 import { ModelUsagePanel } from "@/components/admin/ModelUsagePanel";
 
 // «Админ» десктопа по стенду (docs/redesign/stand/js/screens-system.js → screenAdmin): вкладки
-// Воркспейсы · Очередь вычитки · Рассылка · Расход модели (суперадмину, #311) вместо стопки сворачиваемых блоков. Воркспейсы —
+// Воркспейсы · Очередь вычитки · Рассылка · Расход модели (суперадмину, #311) · Мастер-админы (суперадмину, #233) вместо стопки сворачиваемых блоков. Воркспейсы —
 // прежние WorkspaceList/WorkspaceDetail (пользователи и рынки внутри воркспейса). Вкладок
 // стенда «Пользователи» (все люди разом), «Встречи от агента» и «Фидбек» здесь нет: людей
 // продукт показывает по воркспейсу, черновики агента разбираются на экране «Встречи», списка
 // фидбека в вебе нет (он приходит админу в Telegram).
 
-type Tab = "ws" | "review" | "broadcast" | "usage";
+type Tab = "ws" | "review" | "broadcast" | "usage" | "masters";
 const TABS: [Tab, string, string][] = [
   ["ws", "Воркспейсы", "Workspaces"], ["review", "Очередь вычитки", "Review queue"], ["broadcast", "Рассылка", "Broadcast"],
-  ["usage", "Расход модели", "Model spend"],
+  ["usage", "Расход модели", "Model spend"], ["masters", "Мастер-админы", "Master admins"],
 ];
+// Вкладки, видимые только мастер-админу (`me.is_superadmin`).
+const SUPERADMIN_TABS: Tab[] = ["usage", "masters"];
 
 /** Маршрут «Админ»: на десктопе — вкладки по стенду, на мобайле — прежний экран. */
 export function AdminRoute() {
@@ -42,7 +45,7 @@ function AdminDesk() {
   return (
     <div className="flex h-full flex-col overflow-hidden">
       <div role="tablist" className="flex shrink-0 items-end gap-5 overflow-x-auto border-b border-line px-5" style={{ height: 40 }}>
-        {TABS.filter(([id]) => id !== "usage" || me?.is_superadmin).map(([id, ru, en]) => (
+        {TABS.filter(([id]) => !SUPERADMIN_TABS.includes(id) || me?.is_superadmin).map(([id, ru, en]) => (
           <button key={id} type="button" role="tab" aria-selected={tab === id}
             onClick={() => { setTab(id); if (id === "ws") setSelected(null); }}
             className={cn(
@@ -62,6 +65,7 @@ function AdminDesk() {
         {tab === "review" && <ReviewTable rows={reviews} total={queued} />}
         {tab === "broadcast" && <Broadcast />}
         {tab === "usage" && me?.is_superadmin && <ModelUsagePanel />}
+        {tab === "masters" && me?.is_superadmin && <div className="p-4"><MasterAdminsPanel /></div>}
       </div>
     </div>
   );

@@ -7,7 +7,7 @@ export function makeBackfillStore(supabase: SupabaseClient): BackfillStore {
   return {
     async missing(limit) {
       const { data, error } = await onlyLiveEntries(
-        supabase.from("entries").select("id, content, summary, countries"),
+        supabase.from("entries").select("id, content, summary, countries, group_id"),
       )
         .is("embedding", null)
         // `not in` в SQL отбрасывает и строки с group_id = null — их берём явно.

@@ -132,7 +132,7 @@ claude mcp add supabase-swarm -- npx -y @supabase/mcp-server-supabase@0.12.0 \
 | Фидбек (приём бот+веб, категории, скрины, разбор) | бот `swarm-bot/handlers/feedback.ts`; веб `swarm-api` `POST /feedback` + `miniapp/.../roy/{FeedbackForm,FeedbackFab}.tsx`; разбор `swarm-mcp` (`get_feedback`/`resolve_feedback`); канон категорий `_shared/feedback-categories.ts` | §Таблица feedback |
 | Демо: что демо-сессии запрещено | правило «это демо» — `_shared/demo-session.ts` (`isDemoSession`); барьер `isDemo` в `swarm-api/index.ts` (группа `demo`, без админки и токенов); **интеграции не подключаются** — `swarm-api/integrations.ts` + CF `api/auth/google/start.ts` + `google-oauth/link` (403 `demo_not_allowed`, #573); фидбек — `source='demo'` без пинга канала (#603); сброс — `public.demo_reset()` | §Безопасность (Demo-сессия) |
 | Telegram helpers / новый хендлер | `swarm-bot/lib/telegram.ts`, `handlers/<name>.ts` | §swarm-bot |
-| `ADMIN_USER_ID` (зашит) | `swarm-bot/lib/supabase.ts` → `744230399` | §Контроль доступа |
+| `ADMIN_USER_ID` (зашит) | `swarm-bot/lib/supabase.ts` → `744230399`; права решаются «константа ИЛИ `master_admins`», адресат тревог — константа | §Контроль доступа |
 
 ### Веб-бэкенд (веб-интерфейс) — `swarm-api/`
 | Concern | Файлы | Детали |
@@ -141,6 +141,7 @@ claude mcp add supabase-swarm -- npx -y @supabase/mcp-server-supabase@0.12.0 \
 | **Доступ к `entries`** (приватность+воркспейс) — НЕ грепать напрямую | `swarm-api/entries-guard.ts` | §Контроль доступа |
 | Ошибки API: что видит клиент при сбое (общий текст 5xx, подробность в лог) | `swarm-api/client-error.ts` (`withErrorBoundary`, `serverError`); детектор `swarm-api/no-raw-error.test.ts` | §swarm-api (Обработка ошибок) |
 | Админка (воркспейсы/бродкаст/профили) | `swarm-api/admin.ts`; границы (объём = свой воркспейс, у суперадмина — все; аккаунт суперадмина — только ему; уведомление о смене почты) — канон `_shared/users/admin-scope.ts` (веб — `swarm-api/admin-scope.ts`, бот `sa_*` — `swarm-bot/handlers/superadmin-scope.ts`, бот `/users` и кнопки профиля — `swarm-bot/handlers/users-scope.ts`) | §swarm-api, §Контроль доступа |
+| Ключ к нейронке пространства (write-only, шифр AES-GCM) и мастер-админы — **#233, этап 2: потребители OpenAI переключены, пока строк нет — ключ сервера; права суперадмина = константа ИЛИ строка `master_admins` (`AdminActor.isMaster`, `masterAdminFlag`), адресат тревог остаётся константой**; ошибка ключа (`last_error`) пишется при 401, ключ берут через `openAIKeyHandle(supabase, groupId)` | `_shared/secret-box.ts`, `_shared/workspace-keys.ts`, `_shared/users/master-admins.ts`; маршруты `GET/PUT/DELETE /admin/workspaces/:id/openai-key`, `GET/POST/DELETE /admin/master-admins` — `swarm-api/workspace-keys-routes.ts`; таблицы `workspace_secrets`, `master_admins`; **экраны (этап 3):** `miniapp/src/components/admin/WorkspaceKeyPanel.tsx` (вкладка «Ключ» в `WorkspaceDetail`), `admin/MasterAdminsPanel.tsx` (вкладка в `AdminDesk`, блок в `AdminScreen`, только `is_superadmin`) | §Ключи пространств |
 | Статистика по людям (`GET /stats/people`, экран «Статистика») | веб `miniapp/src/components/stats/StatsDesk.tsx` + `PersonStatsPanel.tsx`, клиент `fetchPeopleStats` в `lib/api.ts`; расчёт `_shared/stats/people.ts`, выборки `swarm-api/stats.ts`; подсчёт «на вычитке» общий с админкой — `reviewCountsByMember` в `swarm-api/admin.ts` | §swarm-api |
 | Полезности → «PDF» | панель на месте плитки `miniapp/src/components/tools/PdfToolsPanel.tsx` (вкладки-инструменты, iframe на `PDF_APP_URL/<инструмент>?embed=1`; адрес в `frame-src`) → отдельное приложение `swarm-pdf.pages.dev` (репозиторий `GarroV/swarm-pdf`, форк BentoPDF; Cloudflare Pages-проект `swarm-pdf`, сборка `swarm/build.sh` — движки cpdf/Ghostscript/PyMuPDF у себя, без CDN — и выкладка `wrangler pages deploy`, см. `swarm/README.md` там) | MINIAPP_ARCHITECTURE «Полезности» |
 | Полезности → «QR-код» | `miniapp/src/components/tools/QrTool.tsx` + `QrCard.tsx` (библиотека `qrcode`, в браузере; PNG и SVG); кнопка «QR» в `ShortLinkRow.tsx` | MINIAPP_ARCHITECTURE «Полезности» |
@@ -345,6 +346,8 @@ claude mcp add supabase-swarm -- npx -y @supabase/mcp-server-supabase@0.12.0 \
 | `SUPABASE_SERVICE_ROLE_KEY` | да |
 | `DECIMUS_API_URL`, `DECIMUS_API_TOKEN` | нет (swarm-api, swarm-mcp; без них баллы РС/РКО, карты и проверки → «не загрузилось») |
 | `OPENAI_API_KEY` | да |
+| `WORKSPACE_SECRETS_KEY` | да для ключей пространств (#233): base64 от 32 байт, шифрует `workspace_secrets` (`_shared/secret-box.ts`) |
+| `WORKSPACE_OWN_KEYS` | нет; `off` — выключатель: всегда ключ сервера `OPENAI_API_KEY` (`_shared/workspace-keys.ts`) |
 | `BOT_NAME` | нет (дефолт `"bot"`) |
 | `MCP_AUTH_REQUIRED` | устарела с 2026-09-30 — `swarm-mcp` без токена отказывает всегда (`auth.ts`) |
 | `MARKET_INGEST_TOKEN` | да для сбора «Анализа рынка» (`market-ingest`; тот же токен — секрет Actions, адрес — переменная Actions `MARKET_INGEST_URL`) |

@@ -21,10 +21,18 @@ import { onlyLiveEntries } from "../_shared/entries/live.ts";
 import { notifyPerson } from "../_shared/notify-person.ts";
 import { serverError } from "./client-error.ts";
 import { apiErr, json } from "./http.ts";
+import { handleWorkspaceKeysRoutes, type WorkspaceKeysDeps } from "./workspace-keys-routes.ts";
+import { targetIsMasterAdmin, withMasterFlag } from "../_shared/users/master-admins.ts";
 
 const ADMIN_TELEGRAM_ID = SUPERADMIN_TELEGRAM_ID;
 
-export type AdminDeps = { announce?: (ev: EmailChangeEvent) => Promise<void> };
+export type AdminDeps =
+  & {
+    announce?: (ev: EmailChangeEvent) => Promise<void>;
+    /** Мастер-админ по данным (#233), вычислен в index.ts один раз на запрос; нет — по константе. */
+    isMaster?: boolean;
+  }
+  & WorkspaceKeysDeps;
 
 // Ответы — общие `json`/`apiErr` из http.ts (issue #722): до этого у админки были свои копии
 // без `Cache-Control: no-store` и с CORS, отражавшим любой origin.
@@ -53,11 +61,15 @@ export async function handleAdminRoutes(
     return apiErr(403, "Forbidden", origin);
   }
   // Объём: суперадмин — все воркспейсы, админ — только свой (правила — admin-scope.ts).
-  const actor: AdminActor = { telegramId, groupId: adminGroupId };
+  const actor: AdminActor = { telegramId, groupId: adminGroupId, isMaster: deps.isMaster };
   const isSuper = isSuperadmin(actor);
   const announce = deps.announce ??
     ((ev: EmailChangeEvent) => announceEmailChange(ev, makeEmailChangeSender(supabase)));
   const actorName = async () => (await resolveNames([telegramId])).get(telegramId) ?? `#${telegramId}`;
+
+  // Ключ к нейронке у пространства и мастер-админы (#233) — отдельный модуль, чтобы admin.ts не рос.
+  const keysResp = await handleWorkspaceKeysRoutes(supabase, req, routePath, actor, origin, deps);
+  if (keysResp) return keysResp;
 
   // GET /admin/review-counts — СВОДКА «сколько встреч на вычитке у каждого участника».
   // Только агрегат (имя + число), БЕЗ доступа к чужому контенту — для пригляда админа.
@@ -261,7 +273,7 @@ export async function handleAdminRoutes(
       const newEmail = normalizeEmail(body.email);
       let existing: MemberRow | null;
       try {
-        existing = await findAddTarget(supabase, body);
+        existing = await withMasterFlag(supabase, await findAddTarget(supabase, body));
       } catch (e) {
         return serverFail(origin, "member lookup", e);
       }
@@ -328,6 +340,10 @@ export async function handleAdminRoutes(
     if (ref.kind === "telegram") {
       if (ref.telegramId === ADMIN_TELEGRAM_ID) {
         return apiErr(400, "Cannot remove super admin", origin);
+      }
+      // Мастер-админа из данных из пространства убирает только мастер-админ (членство — ключевое поле).
+      if (!isSuper && await targetIsMasterAdmin(supabase, ref.telegramId)) {
+        return apiErr(403, "Forbidden", origin);
       }
       const { error } = await supabase.from("allowed_users").delete()
         .eq("telegram_id", ref.telegramId)
@@ -452,7 +468,7 @@ export async function handleAdminRoutes(
     const { data: targetRow, error: tErr } = await supabase.from("allowed_users")
       .select("telegram_id, group_id, email").eq("telegram_id", targetId).maybeSingle();
     if (tErr) return serverFail(origin, "member read", tErr);
-    const target = targetRow as MemberRow | null;
+    const target = await withMasterFlag(supabase, targetRow as MemberRow | null);
     if (!target || !canManageMember(actor, target)) return apiErr(404, "User not found", origin);
     if ("email" in body && !canChangeAccountKeys(actor, target)) {
       return apiErr(403, "Forbidden", origin);

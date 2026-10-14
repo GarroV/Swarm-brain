@@ -2,6 +2,7 @@ import { loadMeetingViewer, supabase } from "../lib/supabase.ts";
 import { loadEntryForExport } from "../lib/export-entry.ts";
 import { type EditableEntryRow, entryEditError } from "../../_shared/entries/entry-edit.ts";
 import { chatComplete, getEmbedding } from "../lib/openai.ts";
+import { openAIKeyHandle } from "../../_shared/workspace-keys.ts";
 import { getSession, saveEntry, setSession, visibilityFilter } from "../lib/storage.ts";
 import { sendMessage } from "../lib/telegram.ts";
 import type { KbEntry } from "../lib/types.ts";
@@ -16,7 +17,6 @@ import { externalFetch, VIA_OPENAI_CHAT, VIA_TELEGRAM_UPLOAD } from "../../_shar
 // Ссылка на файл в сообщении бота ведёт в веб: там сессия человека и проверка доступа.
 import { WEB_BASE_URL } from "../lib/web-url.ts";
 
-const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY")!;
 const TELEGRAM_BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN")!;
 
 export const KNOWLEDGE_TOOLS = [
@@ -298,7 +298,7 @@ export async function executeTool(
       case "search_knowledge": {
         const query = String(args.query ?? "");
 
-        const embPromise: Promise<KbEntry[]> = getEmbedding(query)
+        const embPromise: Promise<KbEntry[]> = getEmbedding(query, groupId)
           .then((emb) =>
             matchEntries(supabase, emb, {
               groupId,
@@ -370,7 +370,7 @@ export async function executeTool(
         const searchTerms = [...new Set(words.flatMap((w) => w.length > 5 ? [w, w.slice(0, 5)] : [w]))];
 
         const [vecNotes, kwNotes] = await Promise.all([
-          getEmbedding(query)
+          getEmbedding(query, groupId)
             .then((emb) =>
               matchEntries(supabase, emb, {
                 groupId,
@@ -414,7 +414,7 @@ export async function executeTool(
         const searchTerms = [...new Set(words.flatMap((w) => w.length > 5 ? [w, w.slice(0, 5)] : [w]))];
 
         const [vecLinks, kwLinks] = await Promise.all([
-          getEmbedding(query)
+          getEmbedding(query, groupId)
             .then((emb) =>
               matchEntries(supabase, emb, {
                 groupId,
@@ -483,7 +483,7 @@ export async function executeTool(
         const [vecResults, recentDirect] = await Promise.all([
           isGeneral
             ? Promise.resolve([] as Array<{ id: string }>)
-            : getEmbedding(`${country} встреча новости`).then((emb) =>
+            : getEmbedding(`${country} встреча новости`, groupId).then((emb) =>
               supabase.rpc("match_entries", {
                 query_embedding: `[${emb.join(",")}]`,
                 match_threshold: 0.1,
@@ -591,7 +591,7 @@ export async function executeTool(
         // Primary: semantic vector search — works regardless of how country is stored in DB
         let entries: KbEntry[] = [];
         try {
-          const emb = await getEmbedding(country);
+          const emb = await getEmbedding(country, groupId);
           const { data: vecData } = await supabase.rpc("match_entries", {
             query_embedding: `[${emb.join(",")}]`,
             match_threshold: 0.1,
@@ -918,6 +918,7 @@ export async function handleAdd(chatId: number, username: string, text: string, 
           "Напиши поисковый индекс: как это можно назвать (3-5 синонимов/вариантов), к какой теме относится, для чего используется. " +
           "Одна строка на русском, без форматирования, без вводных слов.",
         text.trim(),
+        { groupId },
       );
     } catch { /* summary stays undefined, raw text will be embedded */ }
 
@@ -952,7 +953,7 @@ export async function handleAsk(chatId: number, question: string, userId: number
   // Skip if message starts with save intent — TASK_KEYWORDS may fire on submitted content, not user intent.
   const SAVE_INTENT = /^(добавь|сохрани|занеси|запомни|добавить)\b/i;
   if (!SAVE_INTENT.test(question) && TASK_KEYWORDS.test(question)) {
-    const handled = await smartTaskSearch(chatId, question);
+    const handled = await smartTaskSearch(chatId, question, groupId);
     if (handled) return;
   }
 
@@ -1016,9 +1017,11 @@ export async function handleAsk(chatId: number, question: string, userId: number
   let exportDriveLink: { url: string; title: string; external: boolean } | null = null;
 
   for (let round = 0; round < 6; round++) {
+    // Ключ — пространства спрашивающего (#233); своего нет → ключ сервера.
+    const aiKey = await openAIKeyHandle(supabase, groupId);
     const res = await externalFetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${OPENAI_API_KEY}` },
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${aiKey.key}` },
       body: JSON.stringify({
         model: "gpt-4o-mini",
         messages,
@@ -1027,6 +1030,7 @@ export async function handleAsk(chatId: number, question: string, userId: number
         max_tokens: 3500,
       }),
     }, { ...VIA_OPENAI_CHAT, usage: { purpose: "bot:knowledge:chat" } });
+    await aiKey.noteResponse(res);
 
     if (!res.ok) {
       finalAnswer = "Ошибка при обращении к AI. Попробуй ещё раз.";
