@@ -4,6 +4,7 @@
 //
 import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import { calendarKeyOf, keyShape } from "../meeting-claim/agent-scope.ts";
+import { defaultTokenCache } from "../_shared/google-calendar.ts";
 
 const TOKEN = "smcp_stub-token";
 const hashBuffer = await crypto.subtle.digest(
@@ -283,6 +284,8 @@ Deno.test("календарь не подключён — сказано пря�
 });
 
 Deno.test("refresh-токен мёртв — просим переподключить календарь", async () => {
+  // Кэш access-токена (#906) держит токен прошлых тестов — без сброса до обмена с Google не дойдёт.
+  defaultTokenCache.clear();
   tokenExchangeOk = false;
 
   const { body } = await call();
