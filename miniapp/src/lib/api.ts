@@ -4239,3 +4239,62 @@ function mockModelUsage(from: string, to: string): ModelUsage {
     by_purpose: [slice], by_model: [{ ...slice, key: "whisper-1" }], by_day, top_meetings: [], cells, recent, meeting_titles,
   };
 }
+
+// ── Ключ к нейронке пространства и мастер-админы (#233, этап 3) ──────────────
+// Ключ write-only: сервер отдаёт только статус (last4, когда задан, последняя ошибка), сам ключ — никогда.
+export type WorkspaceKeyStatus = {
+  source: "workspace" | "server";
+  last4: string | null;
+  set_at: string | null;
+  set_by: number | null;
+  last_error: string | null;
+  last_error_at: string | null;
+};
+
+const SERVER_KEY_STATUS: WorkspaceKeyStatus = {
+  source: "server", last4: null, set_at: null, set_by: null, last_error: null, last_error_at: null,
+};
+
+export async function fetchWorkspaceKeyStatus(wsId: string): Promise<WorkspaceKeyStatus> {
+  if (DEV_MODE) return SERVER_KEY_STATUS;
+  return apiFetch<WorkspaceKeyStatus>(`/admin/workspaces/${encodeURIComponent(wsId)}/openai-key`);
+}
+
+export async function setWorkspaceKey(wsId: string, key: string): Promise<WorkspaceKeyStatus> {
+  if (DEV_MODE) return { ...SERVER_KEY_STATUS, source: "workspace", last4: key.slice(-4), set_at: new Date().toISOString() };
+  return apiFetch<WorkspaceKeyStatus>(`/admin/workspaces/${encodeURIComponent(wsId)}/openai-key`, {
+    method: "PUT",
+    body: JSON.stringify({ key }),
+  });
+}
+
+export async function clearWorkspaceKey(wsId: string): Promise<WorkspaceKeyStatus> {
+  if (DEV_MODE) return SERVER_KEY_STATUS;
+  return apiFetch<WorkspaceKeyStatus>(`/admin/workspaces/${encodeURIComponent(wsId)}/openai-key`, { method: "DELETE" });
+}
+
+export type MasterAdmin = {
+  telegram_id: number;
+  added_by: number | null;
+  created_at: string | null;
+  /** Константа в коде: снять нельзя. */
+  builtin: boolean;
+};
+
+export async function fetchMasterAdmins(): Promise<MasterAdmin[]> {
+  if (DEV_MODE) return [{ telegram_id: 744230399, added_by: null, created_at: null, builtin: true }];
+  return apiFetch<MasterAdmin[]>("/admin/master-admins");
+}
+
+export async function addMasterAdmin(telegramId: number): Promise<MasterAdmin[]> {
+  if (DEV_MODE) return fetchMasterAdmins();
+  return apiFetch<MasterAdmin[]>("/admin/master-admins", {
+    method: "POST",
+    body: JSON.stringify({ telegram_id: telegramId }),
+  });
+}
+
+export async function removeMasterAdmin(telegramId: number): Promise<MasterAdmin[]> {
+  if (DEV_MODE) return fetchMasterAdmins();
+  return apiFetch<MasterAdmin[]>(`/admin/master-admins/${telegramId}`, { method: "DELETE" });
+}
