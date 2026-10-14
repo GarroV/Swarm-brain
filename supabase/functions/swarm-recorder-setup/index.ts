@@ -1,6 +1,6 @@
 // swarm-recorder-setup — отдаёт bash-скрипт авто-установки bumblebee (рекордер встреч, macOS).
 // Запускается пользователем так (токен подставляет бот в /recordertoken):
-//   curl -fsSL https://<proj>.supabase.co/functions/v1/swarm-recorder-setup | SWARM_TOKEN='smcp_...' bash
+//   curl -fsSL https://api.swarm-team.app/functions/v1/swarm-recorder-setup | SWARM_TOKEN='smcp_...' bash
 //
 // Скрипт ставит Command Line Tools (если нужно), клонирует публичный репозиторий,
 // создаёт+доверяет стабильному self-signed cert (./setup-signing.sh), собирает и подписывает

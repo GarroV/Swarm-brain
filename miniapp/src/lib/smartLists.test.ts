@@ -10,9 +10,10 @@
 //     «что я закрыл сегодня»), для остальных — по сроку.
 import { assertEquals } from "jsr:@std/assert";
 import {
-  statusBucket, filterTasks, countLists, matchesList, DEFAULT_STATUSES,
+  statusBucket, filterTasks, countLists, matchesList, inPeriodOrOverdue, filterByLabel, countByLabel, DEFAULT_STATUSES,
   type StatusFilter, type SmartListId,
 } from "./smartLists.ts";
+import { presetRange, customRange } from "./dateRange.ts";
 import type { Task, Me } from "../types.ts";
 
 const ME: Me = { telegram_id: 1, name: "Me", username: "me", is_admin: false } as Me;
@@ -197,18 +198,59 @@ Deno.test("«Сегодня + Готово»: закрытая на прошло
   assertEquals(matchesList(t, "today", NOW, null, set("done")), false);
 });
 
-// Владелец 12.10.2026: «куда-то абсолютно потерялись все просроченные» — «Эта неделя» в понедельник
-// начиналась сегодня и отсекала всю открытую просрочку (#902).
-Deno.test("период, захватывающий сегодня, не прячет открытую просрочку; прошлый период — прячет", () => {
-  const week = { preset: "week" as const, from: "2026-09-03", to: "2026-09-09" };
-  const past = { preset: "prev_week" as const, from: "2026-08-24", to: "2026-08-30" };
-  const tasks = [
-    task({ id: "late", status: "open", due_date: "2026-08-20" }),
-    task({ id: "late-done", status: "done", due_date: "2026-08-20", updated_at: "2026-08-21T09:00:00+00:00" }),
-    task({ id: "in-week", status: "open", due_date: "2026-09-05" }),
-    task({ id: "after", status: "open", due_date: "2026-09-20" }),
-  ];
-  const all = set("open", "in_progress", "done");
-  assertEquals(ids(filterTasks(tasks, "all", "mine", ME, NOW, week, all)).sort(), ["in-week", "late"]);
-  assertEquals(ids(filterTasks(tasks, "all", "mine", ME, NOW, past, all)), []);
+// ── Период и просрочка (issue #902, владелец 12.10.2026) ────────────────────────────────────
+// Период, содержащий сегодня, не прячет открытую просрочку со сроком ДО его начала.
+const MONDAY = new Date(2026, 8, 7, 12, 0, 0); // понедельник 07.09.2026: «Эта неделя» = 07–13.09
+const THIS_WEEK = presetRange("week", MONDAY);
+const overdueOpen = task({ id: "od", due_date: "2026-09-03" });
+
+Deno.test("период: в понедельник «Эта неделя» оставляет открытую просрочку (в «Сегодня»)", () => {
+  assertEquals(inPeriodOrOverdue(overdueOpen, THIS_WEEK, MONDAY), true);
+  assertEquals(ids(filterTasks([overdueOpen], "today", "mine", ME, MONDAY, THIS_WEEK, DEFAULT_STATUSES)), ["od"]);
+  assertEquals(countLists([overdueOpen], "mine", ME, MONDAY, THIS_WEEK, DEFAULT_STATUSES).today, 1);
+});
+
+Deno.test("период: закрытая просрочка вне периода не показывается", () => {
+  const done = task({ id: "d", status: "done", due_date: "2026-09-03", completed_at: "2026-09-04T10:00:00+00:00" });
+  assertEquals(inPeriodOrOverdue(done, THIS_WEEK, MONDAY), false);
+});
+
+Deno.test("период: прошлая неделя НЕ добавляет просрочку со срока до неё", () => {
+  const lastWeek = presetRange("prev_week", MONDAY); // 31.08–06.09
+  const before = task({ id: "b", due_date: "2026-08-20" });
+  assertEquals(inPeriodOrOverdue(before, lastWeek, MONDAY), false);
+  // а своя дата внутри прошлой недели — по-прежнему в периоде
+  assertEquals(inPeriodOrOverdue(overdueOpen, lastWeek, MONDAY), true);
+});
+
+Deno.test("период: будущий период не добавляет просрочку", () => {
+  const future = customRange("2026-09-20", "2026-09-27");
+  assertEquals(inPeriodOrOverdue(overdueOpen, future, MONDAY), false);
+});
+
+Deno.test("период: произвольный диапазон, содержащий сегодня, добавляет просрочку", () => {
+  const custom = customRange("2026-09-05", "2026-09-20");
+  assertEquals(inPeriodOrOverdue(overdueOpen, custom, MONDAY), true);
+});
+
+Deno.test("период: «Этот месяц» тоже добавляет просрочку из прошлого месяца", () => {
+  const month = presetRange("month", MONDAY);
+  assertEquals(inPeriodOrOverdue(task({ id: "m", due_date: "2026-08-15" }), month, MONDAY), true);
+});
+
+Deno.test("период: задача без срока в период не попадает (как раньше)", () => {
+  assertEquals(inPeriodOrOverdue(task({ id: "nd" }), THIS_WEEK, MONDAY), false);
+});
+
+Deno.test("период: без периода всё видно; просрочка не нарушает ось «Ближайшие»", () => {
+  assertEquals(inPeriodOrOverdue(overdueOpen, null, MONDAY), true);
+  assertEquals(ids(filterTasks([overdueOpen], "upcoming", "mine", ME, MONDAY, THIS_WEEK, DEFAULT_STATUSES)), []);
+});
+
+Deno.test("период: смарт-метка тоже держит просрочку под «Эта неделя»", () => {
+  const t = task({ id: "l", due_date: "2026-09-03", label_ids: ["L1"] });
+  assertEquals(ids(filterByLabel([t], "L1", THIS_WEEK, MONDAY)), ["l"]);
+  assertEquals(countByLabel([t], "L1", THIS_WEEK, MONDAY), 1);
+  assertEquals(countByLabel([t], "L1", presetRange("prev_week", MONDAY), MONDAY), 1); // своя дата в прошлой неделе
+  assertEquals(countByLabel([task({ id: "x", due_date: "2026-08-20", label_ids: ["L1"] })], "L1", presetRange("prev_week", MONDAY), MONDAY), 0);
 });

@@ -13,6 +13,8 @@ import { countryCode } from "@/lib/countries";
 import type { Me, Integration, GranolaNote } from "@/types";
 import { ProfileHeader } from "@/components/profile/ProfileHeader";
 import { ConnectorsSection } from "@/components/profile/ConnectorsSection";
+import { IntegrationStatusLine } from "@/components/profile/IntegrationStatusLine";
+import { STALE_DAYS } from "@/lib/integrationStatus";
 import { TelegramPanel } from "@/components/profile/TelegramPanel";
 import { NotificationSoundToggle } from "@/components/settings/NotificationSoundToggle";
 import { BackdropSection } from "@/components/profile/BackdropSection";
@@ -612,7 +614,8 @@ export function GoogleCalendarSection() {
 
 export function RecorderSection() {
   const confirm = useConfirm();
-  const [setup, setSetup] = useState<{ active: boolean; expiresAt: string | null; updateOneLiner?: string } | null>(null);
+  const dt = useDt();
+  const [setup, setSetup] = useState<{ active: boolean; expiresAt: string | null; lastSeenAt?: string | null; updateOneLiner?: string } | null>(null);
   const [oneLiner, setOneLiner] = useState<string | null>(null);
   const [minting, setMinting] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -637,7 +640,7 @@ export function RecorderSection() {
     try {
       const { oneLiner: cmd, expiresAt } = await mintRecorderToken();
       setOneLiner(cmd);
-      setSetup({ active: true, expiresAt });
+      setSetup((cur) => ({ ...cur, active: true, expiresAt }));
     } finally {
       setMinting(false);
     }
@@ -665,8 +668,13 @@ export function RecorderSection() {
         bumblebee пишет звук созвона на Mac, сервер делает расшифровку и тезисы — готовая встреча приходит во «Встречи» сама. Токен bumblebee отдельный от Claude Desktop.
       </p>
 
-      {setup?.active && expStr && !oneLiner && (
-        <p className="text-sm text-status-done">✓ Подключён · токен действует до {expStr}</p>
+      {setup?.active && !oneLiner && (
+        <IntegrationStatusLine
+          active
+          lastSeenAt={setup.lastSeenAt}
+          staleDays={STALE_DAYS.recorder}
+          suffix={expStr ? dt(`токен действует до ${expStr}`, `token valid until ${expStr}`) : null}
+        />
       )}
 
       {/* Уже подключённым почти всегда нужно обновить приложение, а не сменить токен. Эта команда
@@ -717,6 +725,8 @@ export function RecorderSection() {
 export function ClaudeDesktopSection() {
   const confirm = useConfirm();
   const [active, setActive] = useState<boolean | null>(null);
+  // undefined — сервер ещё не отдаёт поле; null — клиент ни разу не обращался.
+  const [lastSeenAt, setLastSeenAt] = useState<string | null | undefined>(undefined);
   const [oneLiner, setOneLiner] = useState<string | null>(null);
   const [minting, setMinting] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -726,7 +736,7 @@ export function ClaudeDesktopSection() {
   const [copiedInstr, setCopiedInstr] = useState(false);
 
   useEffect(() => {
-    fetchMcpSetup().then((s) => setActive(s.active)).catch(() => setActive(false));
+    fetchMcpSetup().then((s) => { setActive(s.active); setLastSeenAt(s.lastSeenAt); }).catch(() => setActive(false));
   }, []);
 
   const getInstructions = async () => {
@@ -771,7 +781,7 @@ export function ClaudeDesktopSection() {
         Claude Desktop получает доступ к базе знаний, встречам и задачам — ищет и отвечает по делу прямо на твоём Mac. Токен отдельный от bumblebee, бессрочный.
       </p>
 
-      {active && !oneLiner && <p className="text-sm text-status-done">✓ Подключён</p>}
+      {active && !oneLiner && <IntegrationStatusLine active lastSeenAt={lastSeenAt} staleDays={STALE_DAYS.claude} />}
 
       {!oneLiner ? (
         <Button size="sm" onClick={() => getCommand(active ?? false)} disabled={minting || active === null} className="w-full">

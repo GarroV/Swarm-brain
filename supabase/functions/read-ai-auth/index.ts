@@ -3,9 +3,10 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { handleReadAiAuth, type ReadAiAuthStore } from "./handler.ts";
 import { externalFetch, VIA_READ_AI } from "../_shared/external-fetch.ts";
+import { FUNCTIONS_BASE_URL } from "../_shared/public-url.ts";
 
 const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
-const REDIRECT_URI = `${Deno.env.get("SUPABASE_URL")}/functions/v1/read-ai-auth`;
+const REDIRECT_URI = `${FUNCTIONS_BASE_URL}/read-ai-auth`;
 
 const store: ReadAiAuthStore = {
   async getClientId() {

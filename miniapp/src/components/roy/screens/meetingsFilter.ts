@@ -32,6 +32,16 @@ export function periodBounds(period: PeriodId, now: Date = new Date()): { from: 
   return { from: from.toISOString().slice(0, 10), to: now.toISOString().slice(0, 10) };
 }
 
+// Границы периода, выбранного человеком (пресет или свои даты); null — «всё время».
+export function userBoundsOf(
+  f: Pick<MeetingsFilterState, "period" | "from" | "to">,
+  now: Date = new Date(),
+): { from: string; to: string } | null {
+  return f.period === "custom"
+    ? (f.from || f.to ? { from: f.from || "0000-01-01", to: f.to || "9999-12-31" } : null)
+    : periodBounds(f.period, now);
+}
+
 export function isConfirmed(e: Entry): boolean {
   return (e.metadata as Record<string, unknown> | undefined)?.confirmed === true;
 }
@@ -46,9 +56,7 @@ export function applyMeetingsFilter(
   now: Date = new Date(),
 ): Entry[] {
   const q = f.query.trim().toLowerCase();
-  const bounds = f.period === "custom"
-    ? (f.from || f.to ? { from: f.from || "0000-01-01", to: f.to || "9999-12-31" } : null)
-    : periodBounds(f.period, now);
+  const bounds = userBoundsOf(f, now);
   const wantCountries = new Set(f.countries.map(countryCode));
 
   return meetings.filter((e) => {

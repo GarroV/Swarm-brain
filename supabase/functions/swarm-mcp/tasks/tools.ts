@@ -15,6 +15,7 @@ import { canAccessTask, taskAccessError } from "../../_shared/tasks/access.ts";
 import { mergeOwnLabels } from "../../_shared/tasks/labels.ts";
 import { subtaskLinkError } from "../../_shared/tasks/subtasks.ts";
 import { pingPatch } from "./ping.ts";
+import { loadCaller, loadTarget, onBehalfDenial, recordOnBehalf, shouldMuteCreator } from "./on-behalf.ts";
 import type { Task } from "../../_shared/tasks/types.ts";
 import { pickProjectByName, type ProjectNameRow } from "../../_shared/tasks/project-access.ts";
 import { listProjects } from "../../_shared/tasks/projects.ts";
@@ -27,22 +28,25 @@ import {
   projectNotFoundMessage,
   type RecentCommentRow,
 } from "./format.ts";
-import { externalFetch, VIA_TELEGRAM } from "../../_shared/external-fetch.ts";
+import { notifyPerson } from "../../_shared/notify-person.ts";
 
 // Оверсайт руководителя по ЗАДАЧАМ — осознанное решение владельца, см. docs/decisions/2026-08-21-admin-visibility.md.
 // На проекты и записи он НЕ распространяется.
 export const ADMIN_USER_ID = 744230399;
 
-const TELEGRAM_BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN");
-
+// «Подтверди в боте» — уведомление по инициативе бота: в комендантский час (23:00–9:00 МСК) ждёт
+// утра в `telegram_outbox`. Сбой доставки не должен ронять создание задачи — она уже записана.
 async function notifyCreator(telegramId: number, taskTitle: string): Promise<void> {
-  if (!TELEGRAM_BOT_TOKEN) return;
   const text = `📋 Новая задача на проверке: <b>${taskTitle}</b>\n\nОткрой /tasks → ⏳ На проверке чтобы подтвердить.`;
-  await externalFetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ chat_id: telegramId, text, parse_mode: "HTML" }),
-  }, VIA_TELEGRAM);
+  try {
+    await notifyPerson(supabase, {
+      recipientId: telegramId,
+      kind: "task_review_queue",
+      payload: { text, parse_mode: "HTML" },
+    });
+  } catch (e) {
+    console.error("notifyCreator failed:", e);
+  }
 }
 
 const supabase = createClient(
@@ -217,6 +221,8 @@ export async function toolAddTask(args: {
   status?: string;
   confirmed?: boolean;
   parent_task_id?: string;
+  created_by_name?: string;
+  mute_created_by?: boolean;
   requesting_user_id?: number;
 }): Promise<string> {
   const assignees: string[] = [];
@@ -238,6 +244,18 @@ export async function toolAddTask(args: {
   // таких же пользователей без воркспейса.
   const groupId = args.requesting_user_id ? await resolveGroupId(args.requesting_user_id) : null;
   if (!groupId || !args.requesting_user_id) return "Ошибка: пользователь не найден в системе.";
+  const callerId = args.requesting_user_id;
+
+  // Создатель «от имени» — только админ, только свой воркспейс (on-behalf.ts). Проверка ДО
+  // создания: отказ не должен оставлять задачу на вызывающем.
+  let creator: { telegram_id: number; display_name: string } | null = null;
+  if (args.created_by_name?.trim()) {
+    const found = await matchAssignee(args.created_by_name.trim());
+    const target = found ? await loadTarget(found.telegram_id) : null;
+    const denial = onBehalfDenial(await loadCaller(callerId, groupId, ADMIN_USER_ID), target);
+    if (denial) return denial;
+    if (found && found.telegram_id !== callerId) creator = found;
+  }
 
   // Проект/подпроект доски (issue #28): без него задача создаётся, но на доску (SprintBoard)
   // не попадёт — доска показывает только задачи с project_id.
@@ -305,7 +323,7 @@ export async function toolAddTask(args: {
       // ТОЛЬКО confirmed=true (fetchTasks), поэтому confirmed:false = задача невидима во всём
       // интерфейсе и подтверждается лишь в боте.
       confirmed: args.confirmed ?? true,
-      created_by_telegram_id: args.requesting_user_id ?? null,
+      created_by_telegram_id: creator?.telegram_id ?? callerId,
       label_ids: labelIds,
       project_id,
       parent_id: parent?.id ?? null,
@@ -324,6 +342,23 @@ export async function toolAddTask(args: {
     const confirmed = args.confirmed ?? true;
     if (!confirmed && args.requesting_user_id) {
       await notifyCreator(args.requesting_user_id, args.title);
+    }
+    if (creator) {
+      matchWarning += ` · создатель: ${creator.display_name}`;
+      matchWarning += await recordOnBehalf({
+        taskId: task.id,
+        groupId,
+        caller: callerId,
+        callerName: await actorDisplayName(callerId),
+        creator: creator.telegram_id,
+        creatorName: creator.display_name,
+        mute: shouldMuteCreator({
+          creator: creator.telegram_id,
+          caller: callerId,
+          assignees: assignee_telegram_ids,
+          mute: args.mute_created_by ?? true,
+        }),
+      });
     }
     return addTaskOutcome({ id: task.id, confirmed, warning: matchWarning });
   } catch (e) {
@@ -823,6 +858,16 @@ export const TASK_TOOL_DEFINITIONS = [
           enum: ["backlog", "open", "in_progress", "done", "cancelled"],
           description:
             "Колонка доски, куда положить задачу. По умолчанию open («Открыто»); backlog — колонка «Бэклог».",
+        },
+        created_by_name: {
+          type: "string",
+          description:
+            "ТОЛЬКО АДМИН, для заливки задач из других систем: имя, фамилия или ник того, кто будет указан создателем (участник твоего пространства). По умолчанию создатель — ты. Подмена пишется в журнал задачи.",
+        },
+        mute_created_by: {
+          type: "boolean",
+          description:
+            "Вместе с created_by_name: выключить подставленному создателю уведомления о комментариях к этой задаче (если он не исполнитель). По умолчанию true.",
         },
         parent_task_id: {
           type: "string",

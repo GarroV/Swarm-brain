@@ -122,11 +122,13 @@ export function useDashboardData(): DashboardData {
   // tasksVersion в deps: после сохранения/удаления задачи в окне-редакторе списки задач на
   // главной («Мои»/«Команда») перезапрашиваются (общий рефреш без per-caller колбэков).
   const tasks = useSlice<Task>("home:tasks", fetchTasks, [tasksVersion]);
-  const meetings = useSlice<Entry>("home:meetings", () => fetchMeetings(), []);
+  // Главной нужны недавние встречи (лента за сутки, «последнее в базе», недавние) и заголовки
+  // очереди — лёгкие строки, первые 50 по свежести; полный список встреч грузит экран «Встречи».
+  const meetings = useSlice<Entry>("home:meetings", () => fetchMeetings({ light: true, limit: 50 }), []);
   const entries = useSlice<Entry>("home:entries", fetchEntries, []);
   // Очередь «на согласовании» — ТОЛЬКО свои (даже у админа): чужое непубликованное приватно,
   // в него не лезем. Сводка по участникам — отдельный агрегированный счётчик в админ-панели.
-  const pending = useSlice<Entry>("home:pending", () => fetchMeetings({ confirmed: false }), []);
+  const pending = useSlice<Entry>("home:pending", () => fetchMeetings({ confirmed: false, light: true }), []);
   const review = useSlice<AgentMeeting>("home:review", () => fetchAgentMeetings("awaiting_review"), []);
 
   const meId = me?.telegram_id ?? null;

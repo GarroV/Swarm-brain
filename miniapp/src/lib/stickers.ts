@@ -2,7 +2,7 @@
 // читает, что на нём висит и что уже сделано, поэтому правило одно и под тестами (stickers.test.ts).
 // Канон — docs/decisions/2026-10-08-people-stickers-ratings-mail.md §2.
 
-import type { BoardSticker, StickerAddressee, StickerTone } from "@/types";
+import type { BoardSticker, Person, StickerAddressee, StickerTone } from "@/types";
 
 export const STICKER_TONES: readonly StickerTone[] = ["yellow", "pink", "blue", "green", "paper"];
 export const STICKER_TITLE_MAX = 120;
@@ -71,4 +71,22 @@ export function dueInputToIso(value: string): string | null {
   if (!value) return null;
   const t = new Date(value).getTime();
   return Number.isNaN(t) ? null : new Date(t).toISOString();
+}
+
+/**
+ * Список «Кому» в окне нового стикера: две группы по признаку «есть вход» (telegram_id).
+ * Пользователи видят стикер на главной; люди без входа — записи из встреч, стикер им не покажется.
+ * Поиск идёт по имени и почте в обеих группах; порядок внутри группы — как отдал сервер.
+ * Имя человека — `name` ответа /people: у аккаунта из профиля, у остальных display_name
+ * (логин почты попадает в него только при заведении из встречи, когда у участника нет имени).
+ */
+export function groupRecipients(people: readonly Person[], query: string): { users: Person[]; guests: Person[] } {
+  const q = query.trim().toLowerCase();
+  const found = q
+    ? people.filter((p) => p.name.toLowerCase().includes(q) || (p.email ?? "").toLowerCase().includes(q))
+    : [...people];
+  return {
+    users: found.filter((p) => p.telegram_id != null),
+    guests: found.filter((p) => p.telegram_id == null),
+  };
 }

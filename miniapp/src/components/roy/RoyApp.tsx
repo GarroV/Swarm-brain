@@ -16,7 +16,7 @@ import {
   useRoyNav,
 } from "./nav";
 import type { Lens, SmartListId } from "@/lib/smartLists";
-import { Avatar, DetailPanelContext, NavHeader, ROY_TABS, RoyHeader, RoyTabBar } from "./ui";
+import { Avatar, DetailPanelContext, NavHeader, ROY_TABS, RoyHeader, RoyTabBar, SHELL_BAR_H } from "./ui";
 import { HeaderActions } from "./HeaderActions";
 import { PanelHostContext, SidePanelFrame } from "./SidePanel";
 import { initials } from "./dash/shared";
@@ -425,7 +425,7 @@ export function RoyApp({ me }: { me: Me | null }) {
                     заголовка вкладки (стенд). Мобайл — нижний таб-бар. */
                   }
                   {isDesktop && tab !== "search" && tab !== "sprints" && (
-                    <div className="flex shrink-0 items-center justify-between border-b border-line px-5 py-2">
+                    <div className="flex shrink-0 items-center justify-between border-b border-line px-5" style={{ height: SHELL_BAR_H }}>
                       <h1 className="font-semibold text-ink" style={{ fontSize: 16, letterSpacing: "-0.01em" }}>
                         {sectionTitle ? shellDt(sectionTitle[0], sectionTitle[1]) : null}
                       </h1>
@@ -649,7 +649,7 @@ function Wrapped(
       {/* Десктоп: раздел из левой рейки — та же полоса заголовка, что у табов, без «Назад»
           (рейка всегда на экране, стенд). Мобайл — push-экран с «Назад». */}
       {isDesktop ? (
-        <div className="relative z-30 flex shrink-0 items-center justify-between border-b border-line px-5 py-2">
+        <div className="relative z-30 flex shrink-0 items-center justify-between border-b border-line px-5" style={{ height: SHELL_BAR_H }}>
           <h1 className="font-semibold text-ink" style={{ fontSize: 16, letterSpacing: "-0.01em" }}>{title}</h1>
           <HeaderNotice className="px-4" />
           <NotificationsBell />

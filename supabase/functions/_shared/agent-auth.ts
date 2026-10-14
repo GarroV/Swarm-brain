@@ -3,6 +3,7 @@
 // линта = непроверяемый риск для живого конвейера. Дефект гейта вынесен диспетчеру.
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import type { AgentGrant } from "./agent-grant.ts";
+import { markClientSeen } from "./client-seen.ts";
 
 // Аутентификация агентов по токену. Два вида предъявителя, и разница между ними существенна:
 //
@@ -190,6 +191,11 @@ async function findHuman(
         recorder_token_prev_expires_at: null,
       })
       .eq("telegram_id", row.telegram_id);
+  }
+
+  // Отметка «клиент жив» для карточек интеграций (#921): токен рекордера → рекордер, MCP → Claude Desktop.
+  if (kind === "mcp" || kind === "recorder" || kind === "recorder_prev") {
+    await markClientSeen(supabase, row.telegram_id, kind === "mcp" ? "mcp" : "recorder");
   }
 
   return { telegramId: row.telegram_id, groupId: row.group_id, kind };

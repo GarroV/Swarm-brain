@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { cn } from "@/lib/utils";
 import type { AgentMeeting, Entry, Task } from "@/types";
-import { fetchAgentMeetings, fetchConfig, fetchMeetings, fetchTasks } from "@/lib/api";
+import { fetchAgentMeetings, fetchConfig, fetchTasks } from "@/lib/api";
 import { countryCode, countryName } from "@/lib/countries";
 import { Menu, ToolbarButton, type MenuItem } from "@/components/tasks/table/Menu";
 import { useDt, useRoyNav } from "../nav";
@@ -10,6 +10,7 @@ import { RoyIcon } from "../icons";
 import { deriveEntryTitle } from "../entry";
 import { sourceLabel } from "./RoyMeetingsScreen";
 import { InviteBotButton } from "../InviteBotCard";
+import { useMeetingsList } from "./useMeetingsList";
 import {
   applyMeetingsFilter, EMPTY_FILTERS, isConfirmed, isFilterActive, loadSavedFilters, meetingDay, periodBounds,
   personOf, saveFilters, type MeetingsFilterState, type PeriodId,
@@ -31,11 +32,9 @@ const toggle = (list: string[], v: string) => (list.includes(v) ? list.filter((x
 export function MeetingsDesk() {
   const dt = useDt();
   const { push, tasksVersion } = useRoyNav();
-  const [meetings, setMeetings] = useState<Entry[] | null>(null);
   const [drafts, setDrafts] = useState<AgentMeeting[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [markets, setMarkets] = useState<string[]>([]);
-  const [failed, setFailed] = useState(false);
   // Статус в строке фильтров не выбирается — его заменили секции; сохранённый прежде статус
   // не должен прятать встречи незаметно для человека.
   const [f, setF] = useState<MeetingsFilterState>(() => ({ ...loadSavedFilters(), status: "any" }));
@@ -43,10 +42,16 @@ export function MeetingsDesk() {
   useEffect(() => {
     fetchConfig().then((c) => setMarkets(c.allowed_markets ?? [])).catch(() => setMarkets([]));
   }, []);
-  // Встречи и черновики перечитываются вместе с задачами: панель вычитки бампает tasksVersion
+  // Встречи — лёгкими строками и частями (useMeetingsList): сразу вычитка + вчера и сегодня,
+  // остальное по «Показать ещё». Фильтры страны/источника/«кто принёс» сервер не умеет —
+  // при них остаток докачивается сам.
+  const list = useMeetingsList(f, {
+    reloadKey: tasksVersion,
+    needAll: f.countries.length > 0 || f.sources.length > 0 || f.people.length > 0,
+  });
+  // Черновики перечитываются вместе с задачами: панель вычитки бампает tasksVersion
   // после публикации и удаления, и без этого черновик висел в списке до перезагрузки.
   useEffect(() => {
-    fetchMeetings().then(setMeetings).catch((e) => { console.error("[MeetingsDesk] meetings", e); setFailed(true); setMeetings([]); });
     fetchAgentMeetings("awaiting_review").then(setDrafts).catch((e) => console.warn("[MeetingsDesk] drafts", e));
     fetchTasks().then(setTasks).catch((e) => console.warn("[MeetingsDesk] tasks", e));
   }, [tasksVersion]);
@@ -57,7 +62,7 @@ export function MeetingsDesk() {
     saveFilters(next);
   };
 
-  const all = meetings ?? [];
+  const all = useMemo(() => [...list.pending, ...list.confirmed], [list.pending, list.confirmed]);
   const shown = useMemo(() => applyMeetingsFilter(all, f), [all, f]);
   const pending = shown.filter((e) => !isConfirmed(e));
   const rest = shown.filter(isConfirmed);
@@ -86,7 +91,8 @@ export function MeetingsDesk() {
 
   const sources = [...new Set([...all.map((e) => sourceLabel(e)), ...drafts.map((m) => sourceLabel(m))])].sort();
   const people = [...new Set(all.map(personOf).filter(Boolean))].sort();
-  const total = all.length + drafts.length;
+  // «из M» — все встречи, а не только загруженные: сервер считает согласованные без фильтров.
+  const total = (list.unfilteredTotal ?? list.confirmed.length) + list.pending.length + drafts.length;
   const count = shown.length + shownDrafts.length;
   const active = isFilterActive(f);
 
@@ -96,7 +102,9 @@ export function MeetingsDesk() {
   const multi = (values: string[], chosen: string[], key: "sources" | "people" | "countries", label: (v: string) => string): MenuItem[] =>
     values.map((v) => ({ key: v, label: label(v), on: chosen.includes(v), onPick: () => update({ [key]: toggle(chosen, v) }) }));
 
-  const loading = meetings == null;
+  const loading = list.loading;
+  const failed = list.failed && all.length === 0;
+  const loadingRest = list.loadingMore || (list.hasMore && !list.failed && (f.countries.length > 0 || f.sources.length > 0 || f.people.length > 0));
   return (
     <div className="flex h-full flex-col overflow-hidden">
       {/* Заголовок экрана — в полосе оболочки над ним (RoyApp); второй h1 здесь дублировал бы его. */}
@@ -144,7 +152,7 @@ export function MeetingsDesk() {
             {dt("Встречи не загрузились — обновите страницу", "Meetings failed to load — reload the page")}
           </div>
         )}
-        {!loading && !failed && count === 0 && (
+        {!loading && !failed && count === 0 && !list.hasMore && (
           <div className="rounded-[10px] border border-line bg-surface px-4 py-6 text-center">
             <div className="font-medium text-ink" style={{ fontSize: 13.5 }}>{dt("Встреч в этом срезе нет", "No meetings in this view")}</div>
             <div className="mt-0.5 text-ink-mute" style={{ fontSize: 12.5 }}>
@@ -175,6 +183,29 @@ export function MeetingsDesk() {
               <EntryRow key={e.id} e={e} tasks={taskCount.get(e.id) ?? 0} state="done"
                 onOpen={() => push({ view: "meetingDetail", params: { id: e.id } })} />
             ))}
+          </div>
+        )}
+        {!loading && !failed && count === 0 && list.hasMore && !loadingRest && (
+          <div className="py-3 text-center text-ink-mute" style={{ fontSize: 12.5 }}>
+            {dt("Сегодня и вчера встреч нет — остальные подгружаются кнопкой", "No meetings today or yesterday — load the rest with the button")}
+          </div>
+        )}
+        {!loading && !failed && list.hasMore && (
+          <div className="flex justify-center py-3">
+            <button
+              type="button"
+              disabled={loadingRest}
+              onClick={list.loadMore}
+              className="h-[30px] rounded-[7px] border border-line-2 bg-surface px-3 text-ink-soft transition-colors hover:bg-surface-2 disabled:opacity-60"
+              style={{ fontSize: 12.5 }}
+            >
+              {loadingRest ? dt("Загрузка…", "Loading…") : dt("Показать ещё", "Show more")}
+            </button>
+          </div>
+        )}
+        {!loading && list.failed && all.length > 0 && (
+          <div className="py-2 text-center text-ink-soft" style={{ fontSize: 12.5 }}>
+            {dt("Не удалось догрузить встречи", "Could not load more meetings")}
           </div>
         )}
       </div>

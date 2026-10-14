@@ -6,15 +6,17 @@
 # накопилось» одобренное теряется, а неодобренное уезжает вместе с соседним пушем.
 #
 #   ./scripts/deploy-window.sh plan   — показать, что накопилось с прошлой раскатки
-#   ./scripts/deploy-window.sh go     — раскатать edge-функции и передвинуть метку
+#   ./scripts/deploy-window.sh go     — раскатать edge-функции на свой сервер и передвинуть метку
 #   ./scripts/deploy-window.sh init   — поставить метку на текущий HEAD (первый раз)
 #
 # Окно: 23:00–06:59 по Белграду, любой день. Вне окна `go` отказывается — обойти осознанно:
 # FORCE=1 ./scripts/deploy-window.sh go (живой баг окно обгоняет, но «да» владельца нужно всё равно).
+#
+# Куда катим: свой сервер (VPS Contabo), через шлюз по ssh — scripts/lib/swarm-server.sh,
+# docs/DEPLOY.md, deploy/server/README.md. Нужен ключ раскатки (в CI его пишет шаг swarm-deploy-ssh).
 set -euo pipefail
 
 TAG=prod-deployed
-PROJECT_REF=vbqglndbxkpmreccpqmr
 REPO_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 cd "$REPO_ROOT"
 
@@ -64,39 +66,6 @@ changed_functions() {
   printf '%s\n%s\n' "$direct" "$consumers" | sed '/^$/d' | sort -u
 }
 
-# Сверка накопителя с продом (issue #243). Метку двигает только `go`: функция, выкатанная мимо
-# него (ручной `supabase functions deploy`, отдельная кнопка), так и висит «к раскатке», и шум
-# прячет то, что действительно ждёт. Поэтому для каждой функции сравниваем время её раскатки на
-# проде с последним коммитом, который её касается (её папка или _shared — с запасом: правка в
-# _shared считается правкой всех). Раскатана позже — помечаем «уже на проде». Без токена или
-# без ответа API — говорим, что не сверено, а не молчим.
-prod_functions_json() {
-  # Подмена ответа API — только для scripts/test-deploy-window.sh.
-  if [ -n "${PROD_FUNCTIONS_JSON_FILE:-}" ]; then cat "$PROD_FUNCTIONS_JSON_FILE"; return; fi
-  [ -n "${SUPABASE_ACCESS_TOKEN:-}" ] || return 3
-  curl -fsS -m 30 -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
-    "https://api.supabase.com/v1/projects/$PROJECT_REF/functions" 2>/dev/null || return 3
-}
-
-annotate_functions() {
-  local base=$1 funcs=$2 json f prod_ms last_s
-  if ! json=$(prod_functions_json); then
-    echo "$funcs" | sed 's/^/  · /'
-    echo "  (с продом не сверено: нет SUPABASE_ACCESS_TOKEN или API не ответил)"
-    return
-  fi
-  while IFS= read -r f; do
-    [ -z "$f" ] && continue
-    prod_ms=$(printf '%s' "$json" | jq -r --arg s "$f" '.[] | select(.slug == $s) | .updated_at // empty')
-    last_s=$(git log -1 --format=%ct "$base"..HEAD -- "supabase/functions/$f" supabase/functions/_shared)
-    if [ -n "$prod_ms" ] && [ -n "$last_s" ] && [ "$((prod_ms / 1000))" -gt "$last_s" ]; then
-      echo "  · $f — уже на проде: раскатана после последней правки, мимо метки"
-    else
-      echo "  · $f"
-    fi
-  done <<< "$funcs"
-}
-
 case "${1:-plan}" in
   init)
     git tag -f "$TAG" HEAD >/dev/null
@@ -116,7 +85,12 @@ case "${1:-plan}" in
     git log --oneline "$BASE"..HEAD | sed 's/^/  /'
 
     head_ "Edge-функции к раскатке"
-    [ -n "$FUNCS" ] && annotate_functions "$BASE" "$FUNCS" || echo "  (нет)"
+    if [ -n "$FUNCS" ]; then
+      echo "$FUNCS" | sed 's/^/  · /'
+      echo "  (шлюз выкладывает ВСЕ функции разом из HEAD — идемпотентно; список — что изменилось с метки)"
+    else
+      echo "  (нет)"
+    fi
 
     head_ "Веб (miniapp)"
     if [ "$WEB" -gt 0 ]; then
@@ -135,7 +109,7 @@ case "${1:-plan}" in
       case "$MIGR_STATE" in
         0) echo "  ✅ на проде уже применены — функции можно катить" ;;
         1) echo "  ⛔ НЕ применены на проде:"; echo "$MIGR_PENDING" | sed 's/^/       · /' ;;
-        *) echo "  ⚠ проверить нечем (нет SUPABASE_ACCESS_TOKEN или API не ответил)" ;;
+        *) echo "  ⚠ проверить нечем (нет ключа раскатки или сервер не ответил)" ;;
       esac
     else
       echo "  (нет)"
@@ -202,7 +176,7 @@ case "${1:-plan}" in
         die "Раскатка отменена: в релизе есть миграции, которых НЕТ на проде:
 $(echo "$MIGR_PENDING" | sed 's/^/  · /')
 Функции ждут этих изменений схемы — уехав раньше, они начнут отвечать 400.
-Сначала накатить миграции (кнопка «Миграции БД» в Actions), потом раскатывать."
+Сначала накатить миграции (кнопка «Накат миграций БД» в Actions или scripts/migrate-server.sh), потом раскатывать."
       fi
       [ "${MIGRATIONS_OK:-0}" = "1" ] || die "Раскатка отменена: в релизе есть миграции, а проверить их на проде НЕЧЕМ (причина выше).
 Это НЕ значит «миграции не накатаны» — проверка просто не выполнилась.
@@ -213,8 +187,10 @@ $(echo "$MIGR_PENDING" | sed 's/^/  · /')
 
     if [ -n "$FUNCS" ]; then
       head_ "Раскатка"
-      # shellcheck disable=SC2086
-      supabase functions deploy $FUNCS --no-verify-jwt --project-ref "$PROJECT_REF"
+      # Весь каталог из HEAD одним архивом: шлюз кладёт его в рантайм, держит копию прежнего
+      # состояния и перезапускает рантайм (~11 с). verify_jwt у self-hosted рантайма не включён.
+      # Ошибка любой стороны конвейера (pipefail) валит раскатку: метку не двигаем.
+      git archive --format=tar.gz --prefix= HEAD:supabase/functions | swarm_server functions
     elif [ "$WEB" -gt 0 ] || [ "$COMMITS" -gt 0 ]; then
       head_ "Edge-функций к раскатке нет"
       echo "  Веб уехал сам при мёрже в main (Cloudflare Pages) — двигаю только метку."
@@ -227,7 +203,11 @@ $(echo "$MIGR_PENDING" | sed 's/^/  · /')
     ./scripts/deploy-notice.sh off >/dev/null 2>&1 || echo "(объявление снять не удалось — оно погаснет само по until)"
 
     git tag -f "$TAG" HEAD >/dev/null
-    git push -f origin "refs/tags/$TAG" >/dev/null 2>&1 || echo "(метка осталась локальной)"
+    if ! push_err=$(git push -f origin "refs/tags/$TAG" 2>&1 >/dev/null); then
+      # Раскатка уже прошла; не запушенная метка — накопитель на другой машине будет врать (#943).
+      echo "(метка осталась локальной — пуш отклонён; причина ниже; повторить: git push -f origin refs/tags/$TAG)"
+      printf '%s\n' "$push_err" | sed 's/^/    /' >&2
+    fi
     head_ "Готово. Метка $TAG → $(git rev-parse --short HEAD)"
     echo "Дальше по правилу: проверить на реальном окружении и отчитаться владельцу."
     ;;

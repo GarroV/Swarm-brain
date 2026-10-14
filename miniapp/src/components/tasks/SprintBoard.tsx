@@ -1,5 +1,6 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
+import { startVisiblePolling } from "@/lib/visiblePolling";
 import {
   fetchTasks, updateTask, fetchSprints, createSprint,
   removeTasksFromSprint, deleteSprint,
@@ -158,13 +159,8 @@ export function SprintBoard() {
   // переносим сюда: фоновый рефетч раз в 20с + при возврате фокуса на вкладку.
   useEffect(() => {
     load();
-    const interval = setInterval(load, 20_000);
-    const onVisibility = () => { if (document.visibilityState === "visible") load(); };
-    document.addEventListener("visibilitychange", onVisibility);
-    return () => {
-      clearInterval(interval);
-      document.removeEventListener("visibilitychange", onVisibility);
-    };
+    // Только видимая вкладка: скрытая не тянет доску каждые 20 с (решение 13.10.2026, lib/visiblePolling).
+    return startVisiblePolling(document, load, 20_000);
   }, [load]);
 
   // Автовыбора вкладки здесь НЕТ и быть не должно (снят 21.09.2026, владелец: «верни все

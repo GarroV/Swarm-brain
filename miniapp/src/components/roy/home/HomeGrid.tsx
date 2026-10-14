@@ -8,18 +8,17 @@ import { HomeNews, LatestInBase } from "../dash/HomeSide";
 import { CountryEditor, NarrowChip } from "./CountryEditor";
 import { HomeTasksWidget, TeamTasksWidget } from "./TaskWidgets";
 import { SalesWidget, TopTasksWidget } from "./MiscWidgets";
-import { MapsWidget } from "./MapsWidget";
 import { InspectionsWidget } from "./InspectionsWidget";
 import type { TaskDraft } from "@/lib/homeInspections";
 import { BoardWidget } from "./StickerBoard";
 import { RkoWidget, RsWidget, SampleTag, ViolationsWidget } from "./QualityWidgets";
-import { AttentionWidget, CountriesWidget, PizzeriasWidget } from "./TableWidgets";
+import { CountriesWidget, PizzeriasWidget } from "./TableWidgets";
 import { useCountrySales } from "./useCountrySales";
 import { useQuality, type QualityState } from "./useQuality";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { countryOf } from "@/lib/homeQuality";
 import {
-  addWidget, DEFAULT_LAYOUT, hideWidget, loadLayout, moveBefore, moveBy, saveLayout, toggleWidth,
+  addWidget, DEFAULT_LAYOUT, halfColumns, hideWidget, loadLayout, moveBefore, moveBy, saveLayout, toggleWidth,
   WIDGET_IDS, DEFAULT_WIDTH, type LayoutItem, type WidgetId,
 } from "@/lib/homeLayout";
 
@@ -39,11 +38,9 @@ const META: Record<WidgetId, Meta> = {
   rs: { title: ["Стандарты · РС", "Standards"], hint: ["Балл по волнам, критическая зона, обнуления, пиццерии без оценки.", "Score by wave, critical zone, zeroed and unrated pizzerias."], scoped: true, quality: true },
   rko: { title: ["Клиентский опыт · РКО", "Customer experience"], hint: ["Балл по неделям, резкие падения, пиццерии ниже порога.", "Weekly score, sharp drops, pizzerias below threshold."], scoped: true, quality: true },
   pz: { title: ["Пиццерии", "Pizzerias"], hint: ["Все пиццерии подборки: РС, РКО, худшие сверху.", "Every pizzeria in your selection, worst first."], scoped: true, quality: true, meta: ["худшие сверху", "worst first"] },
-  att: { title: ["Куда смотреть", "Needs attention"], hint: ["Сигналы по порогам в моих странах.", "Threshold alerts in my countries."], scoped: true, quality: true },
-  countries: { title: ["Мои страны", "My countries"], hint: ["Сводка по странам подборки; клик сужает главную.", "Per-country summary; click to focus."], scoped: true, quality: true },
+  countries: { title: ["Мои страны", "My countries"], hint: ["Страны подборки: РС, РКО, Google и Яндекс со стрелкой изменения, продажи; клик раскрывает пиццерии страны.", "Selected countries: standards, CX, Google and Yandex with change arrows, sales; click to expand pizzerias."], scoped: true, quality: true },
   viol: { title: ["Топ-5 нарушений", "Top 5 violations"], hint: ["Самые частые нарушения стандартов в волне.", "Most frequent standards violations this wave."], scoped: true, sample: true },
   sales: { title: ["Продажи Dodo", "Dodo sales"], hint: ["Выручка моих стран по месяцам — данные «Анализа рынка».", "Monthly revenue of my countries from Market analysis."], meta: ["публичный API Dodo", "Dodo public API"] },
-  maps: { title: ["Карты и отзывы", "Maps & reviews"], hint: ["Средняя оценка Google и Яндекса по странам, изменение за 30 дней, худшие пиццерии.", "Average Google and Yandex rating by country, 30-day change, lowest-rated pizzerias."], scoped: true, meta: ["Google · Яндекс, за 30 дней", "Google · Yandex, 30 days"] },
   insp: { title: ["Проверки", "Inspections"], hint: ["Последние проверки стандартов по странам подборки: балл, класс, движение к прошлой; клик — зоны и нарушения.", "Latest standards inspections in your countries: score, grade, change vs the previous one; click for zones and violations."], scoped: true, meta: ["Децимус, за 90 дней", "Decimus, 90 days"] },
   myTasks: { title: ["Мои задачи", "My tasks"], hint: ["Полная таблица: просрочено, сегодня, дальше, без срока.", "Full table: overdue, today, later, no date."] },
   teamTasks: { title: ["Задачи команды", "Team tasks"], hint: ["Общие задачи без исполнителя.", "Shared tasks with no owner."] },
@@ -95,11 +92,9 @@ export function HomeGrid({ data, onCreateTask, onCreateTaskFrom, editing, onEdit
       case "rs": return q && <RsWidget q={q} scope={scope} />;
       case "rko": return q && <RkoWidget q={q} scope={scope} />;
       case "pz": return <PizzeriasWidget scope={scope} />;
-      case "att": return <AttentionWidget scope={scope} />;
       case "countries": return <CountriesWidget scope={mine} sales={sales} narrow={narrow} onNarrow={setNarrow} onMarket={() => setTab("market")} />;
       case "viol": return <ViolationsWidget scope={scope} />;
       case "sales": return <SalesWidget codes={codes} sales={sales} />;
-      case "maps": return <MapsWidget codes={codes} />;
       case "insp": return <InspectionsWidget codes={codes} onCreateTask={onCreateTaskFrom} />;
       case "myTasks": return <HomeTasksWidget data={data} />;
       case "teamTasks": return <TeamTasksWidget data={data} />;
@@ -111,6 +106,37 @@ export function HomeGrid({ data, onCreateTask, onCreateTaskFrom, editing, onEdit
   const drop = (target: WidgetId) => {
     if (dragId) setLayout(moveBefore(layout, dragId, target));
     setDragId(null); setOverId(null);
+  };
+
+  const widget = (it: LayoutItem, i: number) => {
+    const m = META[it.id];
+    return (
+      <section key={it.id} data-widget={it.id}
+        className={`relative min-w-0 rounded-[14px] transition-opacity ${editing ? "cursor-grab outline-2 outline-offset-4 outline-dashed outline-line-2 hover:outline-accent-line" : ""} ${dragId === it.id ? "opacity-40" : ""} ${overId === it.id && dragId !== it.id ? "outline-primary" : ""}`}
+        draggable={editing}
+        onDragStart={(e) => { setDragId(it.id); e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", it.id); }}
+        onDragEnd={() => { setDragId(null); setOverId(null); }}
+        onDragOver={(e) => { if (!editing || !dragId) return; e.preventDefault(); setOverId(it.id); }}
+        onDrop={(e) => { e.preventDefault(); drop(it.id); }}>
+        {editing && (
+          <div className="absolute right-0 top-2 z-10 flex gap-0.5 rounded-[10px] border border-line-2 bg-surface p-0.5 shadow-md" style={{ fontSize: 12 }}>
+            <span className="cursor-grab px-2 py-1 text-ink-mute" aria-hidden="true">⠿</span>
+            <ToolBtn label={dt("Выше", "Up")} disabled={i === 0} onClick={() => setLayout(moveBy(layout, it.id, -1))}>↑</ToolBtn>
+            <ToolBtn label={dt("Ниже", "Down")} disabled={i === layout.length - 1} onClick={() => setLayout(moveBy(layout, it.id, 1))}>↓</ToolBtn>
+            <span className="max-[1099px]:hidden"><ToolBtn label={dt("Ширина", "Width")} onClick={() => setLayout(toggleWidth(layout, it.id))}>{it.w === "full" ? dt("½ ширины", "½ width") : dt("Вся строка", "Full row")}</ToolBtn></span>
+            <ToolBtn label={dt(`Скрыть «${m.title[0]}»`, `Hide “${m.title[1]}”`)} onClick={() => setLayout(hideWidget(layout, it.id))}>{dt("Скрыть ×", "Hide ×")}</ToolBtn>
+          </div>
+        )}
+        <div className={editing ? "pointer-events-none select-none" : ""}>
+          {!m.ownTitle && (
+            <HomeLabel first action={undefined}>
+              <span className="inline-flex items-center gap-2">{m.title[lang]}{m.meta && <span className="font-normal normal-case tracking-normal text-ink-mute">{m.meta[lang]}</span>}{m.sample && <SampleTag />}</span>
+            </HomeLabel>
+          )}
+          {body(it.id)}
+        </div>
+      </section>
+    );
   };
 
   return (
@@ -133,37 +159,21 @@ export function HomeGrid({ data, onCreateTask, onCreateTaskFrom, editing, onEdit
         </div>
       )}
 
-      <div className="grid grid-cols-1 gap-x-5 gap-y-2 px-6 pt-1 min-[1100px]:grid-cols-2">
-        {layout.map((it, i) => {
-          const m = META[it.id];
-          return (
-            <section key={it.id} data-widget={it.id}
-              className={`relative min-w-0 rounded-[14px] transition-opacity ${it.w === "full" ? "min-[1100px]:col-span-2" : ""} ${editing ? "cursor-grab outline-2 outline-offset-4 outline-dashed outline-line-2 hover:outline-accent-line" : ""} ${dragId === it.id ? "opacity-40" : ""} ${overId === it.id && dragId !== it.id ? "outline-primary" : ""}`}
-              draggable={editing}
-              onDragStart={(e) => { setDragId(it.id); e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", it.id); }}
-              onDragEnd={() => { setDragId(null); setOverId(null); }}
-              onDragOver={(e) => { if (!editing || !dragId) return; e.preventDefault(); setOverId(it.id); }}
-              onDrop={(e) => { e.preventDefault(); drop(it.id); }}>
-              {editing && (
-                <div className="absolute right-0 top-2 z-10 flex gap-0.5 rounded-[10px] border border-line-2 bg-surface p-0.5 shadow-md" style={{ fontSize: 12 }}>
-                  <span className="cursor-grab px-2 py-1 text-ink-mute" aria-hidden="true">⠿</span>
-                  <ToolBtn label={dt("Выше", "Up")} disabled={i === 0} onClick={() => setLayout(moveBy(layout, it.id, -1))}>↑</ToolBtn>
-                  <ToolBtn label={dt("Ниже", "Down")} disabled={i === layout.length - 1} onClick={() => setLayout(moveBy(layout, it.id, 1))}>↓</ToolBtn>
-                  <span className="max-[1099px]:hidden"><ToolBtn label={dt("Ширина", "Width")} onClick={() => setLayout(toggleWidth(layout, it.id))}>{it.w === "full" ? dt("½ ширины", "½ width") : dt("Вся строка", "Full row")}</ToolBtn></span>
-                  <ToolBtn label={dt(`Скрыть «${m.title[0]}»`, `Hide “${m.title[1]}”`)} onClick={() => setLayout(hideWidget(layout, it.id))}>{dt("Скрыть ×", "Hide ×")}</ToolBtn>
+      {/* Строка во всю ширину — отдельно; половинки — две независимые колонки (halfColumns), чтобы
+          высокий виджет не растягивал строку соседу. На узком экране колонки растворяются
+          (display: contents), и порядок задаёт место в раскладке. */}
+      <div className="flex flex-col gap-y-2 px-6 pt-1">
+        {halfColumns(layout).map((run) => run.kind === "full"
+          ? <div key={run.item.id}>{widget(run.item, run.index)}</div>
+          : (
+            <div key={run.left[0].item.id} className="flex flex-col gap-y-2 min-[1100px]:grid min-[1100px]:grid-cols-2 min-[1100px]:items-start min-[1100px]:gap-x-5">
+              {[run.left, run.right].map((col, c) => (
+                <div key={c} className="contents min-[1100px]:flex min-[1100px]:min-w-0 min-[1100px]:flex-col min-[1100px]:gap-y-2">
+                  {col.map(({ item, index }) => <div key={item.id} className="min-w-0" style={{ order: index }}>{widget(item, index)}</div>)}
                 </div>
-              )}
-              <div className={editing ? "pointer-events-none select-none" : ""}>
-                {!m.ownTitle && (
-                  <HomeLabel first action={undefined}>
-                    <span className="inline-flex items-center gap-2">{m.title[lang]}{m.meta && <span className="font-normal normal-case tracking-normal text-ink-mute">{m.meta[lang]}</span>}{m.sample && <SampleTag />}</span>
-                  </HomeLabel>
-                )}
-                {body(it.id)}
-              </div>
-            </section>
-          );
-        })}
+              ))}
+            </div>
+          ))}
       </div>
 
       <Dialog open={gallery} onOpenChange={setGallery}>

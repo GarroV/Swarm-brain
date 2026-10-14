@@ -5,7 +5,7 @@ import RecorderKit
 // Читается из ~/Library/Application Support/SwarmRecorder/config.json (см. README).
 struct SwarmConfig: Codable {
     var token: String
-    var ingestBaseURL: String   // напр. https://<ref>.supabase.co/functions/v1
+    var ingestBaseURL: String   // напр. https://api.swarm-team.app/functions/v1
     var webBaseURL: String
 
     static func configURL() -> URL {
@@ -18,7 +18,9 @@ struct SwarmConfig: Codable {
         let url = configURL()
         let data = try Data(contentsOf: url)
         var cfg = try JSONDecoder().decode(SwarmConfig.self, from: data)
+        restrictToOwner(url)  // установки до build 37 писали конфиг с токеном читаемым для всех (#203)
         cfg.webBaseURL = WebBase.migrated(cfg.webBaseURL)  // пустой/прежний → текущий (#753, #758)
+        cfg.ingestBaseURL = IngestBase.migrated(cfg.ingestBaseURL)  // облачный → свой сервер (#915)
         return cfg
     }
 
@@ -27,12 +29,21 @@ struct SwarmConfig: Codable {
     static func saveToken(_ token: String) throws {
         let cfg = SwarmConfig(
             token: token,
-            ingestBaseURL: "https://vbqglndbxkpmreccpqmr.supabase.co/functions/v1",
+            ingestBaseURL: IngestBase.current,
             webBaseURL: WebBase.current
         )
         let url = configURL()
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         try JSONEncoder().encode(cfg).write(to: url)
+        restrictToOwner(url)
+    }
+
+    // В конфиге личный токен — читать его может только владелец учётки (0600), не другие
+    // пользователи и не процессы под ними. Сбой chmod не роняет рекордер: запись важнее.
+    static func restrictToOwner(_ url: URL) {
+        let perms = (try? FileManager.default.attributesOfItem(atPath: url.path)[.posixPermissions]) as? Int
+        guard perms != 0o600 else { return }
+        try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
     }
 }
 

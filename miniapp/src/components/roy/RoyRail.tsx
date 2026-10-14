@@ -3,7 +3,7 @@ import { PILL_GROUP_CLS, pillSegmentCls } from "@/components/ui/PropertyPill";
 import { useEffect, useRef, useState } from "react";
 import { cn, displayName } from "@/lib/utils";
 import { fetchConfig } from "@/lib/api";
-import { Avatar } from "./ui";
+import { Avatar, SHELL_BAR_H } from "./ui";
 import { RoyIcon, type RoyIconName } from "./icons";
 import { initials } from "./dash/shared";
 import { useDt, useRoyNav } from "./nav";
@@ -124,7 +124,7 @@ export function RoyRail({
       // 720px, а 216px рейки на таком окне съели бы треть экрана. Подписи — в title.
       className="roy-rail flex w-[216px] shrink-0 flex-col border-r border-line bg-surface-2 max-[1099px]:w-[56px]"
     >
-      <div className="flex items-center gap-2.5 border-b border-line px-4 py-3.5 max-[1099px]:justify-center max-[1099px]:px-0">
+      <div className="flex shrink-0 items-center gap-2.5 border-b border-line px-4 max-[1099px]:justify-center max-[1099px]:px-0" style={{ height: SHELL_BAR_H }}>
         {/* Бренд-блок: знак — тот же файл, что фавикон (циановый неон), и имя капсом. */}
         {/* eslint-disable-next-line @next/next/no-img-element -- статичный SVG из app/icon.svg, оптимизатор не нужен */}
         <img src="/icon.svg" alt="" aria-hidden width={28} height={28} className="size-7 shrink-0" />

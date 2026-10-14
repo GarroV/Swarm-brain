@@ -7,7 +7,14 @@
 // переиздаётся с новым сроком, поэтому человек, который пользуется сервисом, не вылетает
 // никогда. Это единственная точка, через которую ходит весь фронт, — другого места, где
 // можно поймать «пользователь ещё жив», у нас нет.
-import { authTimeForRefresh, verifyJWT, signJWT, shouldRefreshSession, SESSION_TTL_SEC } from "../_lib/jwt";
+import {
+  authTimeForRefresh,
+  isRenewableSession,
+  verifyJWT,
+  signJWT,
+  shouldRefreshSession,
+  SESSION_TTL_SEC,
+} from "../_lib/jwt";
 import { swarmApiUrl } from "../_lib/api-url";
 
 type Env = { SWARM_API_URL?: string; WEB_JWT_SECRET?: string };
@@ -45,13 +52,22 @@ export async function onRequest(ctx: Ctx): Promise<Response> {
 
   const res = await fetch(target, init);
   const renewed = await renewSessionCookie(sessionToken, res.status, env.WEB_JWT_SECRET);
-  if (!renewed) return res;
 
   // Пересобираем ответ, потому что headers у ответа fetch иммутабельны. Тело передаём
   // потоком как есть — не буферизуем, чтобы не ломать стриминг.
   const out = new Response(res.body, res);
-  out.headers.append("Set-Cookie", renewed);
+  stripCors(out.headers);
+  if (renewed) out.headers.append("Set-Cookie", renewed);
   return out;
+}
+
+// CORS-заголовки апстрима (swarm-api отдаёт `*`) прокси наружу не пропускает: фронт ходит сюда
+// со своего же адреса, где CORS не нужен вовсе. За этим адресом сессионная кука — чужим страницам
+// здесь разрешать нечего, даже если кто-то потом включит credentials.
+export function stripCors(headers: Headers): void {
+  for (const name of [...headers.keys()]) {
+    if (name.toLowerCase().startsWith("access-control-")) headers.delete(name);
+  }
 }
 
 // Возвращает готовый Set-Cookie, если сессию пора продлить, иначе null.
@@ -68,6 +84,7 @@ async function renewSessionCookie(
   try {
     const claims = await verifyJWT(token, secret);
     if (!claims) return null; // истёкшая/битая подпись — пусть человек войдёт заново
+    if (!isRenewableSession(claims)) return null; // короткий токен, не сессия входа
     // Старый формат переиздаём сразу — так он переезжает на новый при первом же запросе.
     if (!claims.legacy && !shouldRefreshSession(claims.exp, Math.floor(Date.now() / 1000))) return null;
     // Момент входа переносим как был: продление не должно «омолаживать» сессию относительно

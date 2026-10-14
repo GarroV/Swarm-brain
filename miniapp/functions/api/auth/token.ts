@@ -13,7 +13,7 @@ type Env = { SWARM_API_URL?: string };
 type Ctx = { request: Request; env: Env };
 
 const OWNER_TELEGRAM_ID = 744230399; // тот же ADMIN_USER_ID, что в lib/supabase.ts
-const SESSION_MAX_AGE = 7 * 86400;   // как у meeting-webtoken (signJWT по умолчанию)
+const SESSION_MAX_AGE = 12 * 3600;   // как у meeting-webtoken (WEBTOKEN_TTL_SEC), без продления
 
 const toLogin = (err: string) => new Response(null, { status: 302, headers: { Location: `/login?err=${err}` } });
 

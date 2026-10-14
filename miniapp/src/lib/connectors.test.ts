@@ -84,3 +84,33 @@ Deno.test("бот: автозапуск включён → connected, выклю
 Deno.test("бот: автозапуск не передан (демо) → карточки нет", () => {
   assertEquals(buildConnectors(input()).some((c) => c.id === "bot"), false);
 });
+
+// Issue #921: «Подключён» нельзя писать за клиента, который не обращался к серверу.
+const seenDaysAgo = (d: number) => new Date(NOW.getTime() - d * 86_400_000).toISOString();
+
+Deno.test("рекордер: токен есть, клиент ни разу не обращался → silent", () => {
+  assertEquals(stateOf(input({ recorder: { active: true, expiresAt: inDays(300), lastSeenAt: null } }), "recorder"), "silent");
+});
+
+Deno.test("рекордер: молчит 4 дня → silent, вчера обращался → connected", () => {
+  assertEquals(stateOf(input({ recorder: { active: true, expiresAt: inDays(300), lastSeenAt: seenDaysAgo(4) } }), "recorder"), "silent");
+  assertEquals(stateOf(input({ recorder: { active: true, expiresAt: inDays(300), lastSeenAt: seenDaysAgo(1) } }), "recorder"), "connected");
+});
+
+Deno.test("Claude Desktop: бессрочный токен, молчит 15 дней → silent; 10 дней → connected", () => {
+  assertEquals(stateOf(input({ mcp: { active: true, expiresAt: null, lastSeenAt: seenDaysAgo(15) } }), "claude"), "silent");
+  assertEquals(stateOf(input({ mcp: { active: true, expiresAt: null, lastSeenAt: seenDaysAgo(10) } }), "claude"), "connected");
+});
+
+Deno.test("старый сервер без lastSeenAt → поведение как раньше, не silent", () => {
+  assertEquals(stateOf(input({ mcp: { active: true, expiresAt: null } }), "claude"), "connected");
+});
+
+Deno.test("истёкший токен остаётся expired, даже если клиент молчит", () => {
+  assertEquals(stateOf(input({ recorder: { active: true, expiresAt: inDays(-1), lastSeenAt: null } }), "recorder"), "expired");
+});
+
+Deno.test("silent считается в «требуют внимания»", () => {
+  const list = buildConnectors(input({ mcp: { active: true, expiresAt: null, lastSeenAt: null } }));
+  assertEquals(connectorsSummary(list).attention, 1);
+});

@@ -14,6 +14,7 @@
 // он генерит signed URL напрямую. См. swarm-bot/lib/storage.ts.
 
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { FILES_BUCKET } from "./swarm-files-storage.ts";
 
 // Бакет, куда файлы клались до перехода на приватный: строки реестра для них могут
 // отсутствовать (они старше реестра), поэтому он же и запасной вариант при удалении.
@@ -189,8 +190,12 @@ export async function removeStorageObject(
   const bucket = reg?.bucket ?? LEGACY_PUBLIC_BUCKET;
   if (!removalAllowed(reg, expected)) return { status: "not-owned", path, bucket };
 
-  const { error } = await supabase.storage.from(bucket).remove([path]);
-  if (error) return { status: "failed", error: error.message, path, bucket };
+  // swarm-files не умеет DELETE: снимаем строку реестра (файл становится недоступен), байты
+  // остаются на диске MUSPELHEIM — как и у «Убрать» файла задачи.
+  if (bucket !== FILES_BUCKET) {
+    const { error } = await supabase.storage.from(bucket).remove([path]);
+    if (error) return { status: "failed", error: error.message, path, bucket };
+  }
 
   await supabase.from("storage_files").delete().eq("path", path);
   return { status: "removed", path, bucket };
