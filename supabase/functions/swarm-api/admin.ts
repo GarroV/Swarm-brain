@@ -21,10 +21,11 @@ import { onlyLiveEntries } from "../_shared/entries/live.ts";
 import { notifyPerson } from "../_shared/notify-person.ts";
 import { serverError } from "./client-error.ts";
 import { apiErr, json } from "./http.ts";
+import { handleWorkspaceKeysRoutes, type WorkspaceKeysDeps } from "./workspace-keys-routes.ts";
 
 const ADMIN_TELEGRAM_ID = SUPERADMIN_TELEGRAM_ID;
 
-export type AdminDeps = { announce?: (ev: EmailChangeEvent) => Promise<void> };
+export type AdminDeps = { announce?: (ev: EmailChangeEvent) => Promise<void> } & WorkspaceKeysDeps;
 
 // Ответы — общие `json`/`apiErr` из http.ts (issue #722): до этого у админки были свои копии
 // без `Cache-Control: no-store` и с CORS, отражавшим любой origin.
@@ -58,6 +59,10 @@ export async function handleAdminRoutes(
   const announce = deps.announce ??
     ((ev: EmailChangeEvent) => announceEmailChange(ev, makeEmailChangeSender(supabase)));
   const actorName = async () => (await resolveNames([telegramId])).get(telegramId) ?? `#${telegramId}`;
+
+  // Ключ к нейронке у пространства и мастер-админы (#233) — отдельный модуль, чтобы admin.ts не рос.
+  const keysResp = await handleWorkspaceKeysRoutes(supabase, req, routePath, actor, origin, deps);
+  if (keysResp) return keysResp;
 
   // GET /admin/review-counts — СВОДКА «сколько встреч на вычитке у каждого участника».
   // Только агрегат (имя + число), БЕЗ доступа к чужому контенту — для пригляда админа.

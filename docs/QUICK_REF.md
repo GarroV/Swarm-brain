@@ -141,6 +141,7 @@ claude mcp add supabase-swarm -- npx -y @supabase/mcp-server-supabase@0.12.0 \
 | **Доступ к `entries`** (приватность+воркспейс) — НЕ грепать напрямую | `swarm-api/entries-guard.ts` | §Контроль доступа |
 | Ошибки API: что видит клиент при сбое (общий текст 5xx, подробность в лог) | `swarm-api/client-error.ts` (`withErrorBoundary`, `serverError`); детектор `swarm-api/no-raw-error.test.ts` | §swarm-api (Обработка ошибок) |
 | Админка (воркспейсы/бродкаст/профили) | `swarm-api/admin.ts`; границы (объём = свой воркспейс, у суперадмина — все; аккаунт суперадмина — только ему; уведомление о смене почты) — канон `_shared/users/admin-scope.ts` (веб — `swarm-api/admin-scope.ts`, бот `sa_*` — `swarm-bot/handlers/superadmin-scope.ts`, бот `/users` и кнопки профиля — `swarm-bot/handlers/users-scope.ts`) | §swarm-api, §Контроль доступа |
+| Ключ к нейронке пространства (write-only, шифр AES-GCM) и мастер-админы — **этап 1 #233, потребители не переключены** | `_shared/secret-box.ts`, `_shared/workspace-keys.ts`, `_shared/users/master-admins.ts`; маршруты `GET/PUT/DELETE /admin/workspaces/:id/openai-key`, `GET/POST/DELETE /admin/master-admins` — `swarm-api/workspace-keys-routes.ts`; таблицы `workspace_secrets`, `master_admins` | §Ключи пространств |
 | Статистика по людям (`GET /stats/people`, экран «Статистика») | веб `miniapp/src/components/stats/StatsDesk.tsx` + `PersonStatsPanel.tsx`, клиент `fetchPeopleStats` в `lib/api.ts`; расчёт `_shared/stats/people.ts`, выборки `swarm-api/stats.ts`; подсчёт «на вычитке» общий с админкой — `reviewCountsByMember` в `swarm-api/admin.ts` | §swarm-api |
 | Полезности → «PDF» | панель на месте плитки `miniapp/src/components/tools/PdfToolsPanel.tsx` (вкладки-инструменты, iframe на `PDF_APP_URL/<инструмент>?embed=1`; адрес в `frame-src`) → отдельное приложение `swarm-pdf.pages.dev` (репозиторий `GarroV/swarm-pdf`, форк BentoPDF; Cloudflare Pages-проект `swarm-pdf`, сборка `swarm/build.sh` — движки cpdf/Ghostscript/PyMuPDF у себя, без CDN — и выкладка `wrangler pages deploy`, см. `swarm/README.md` там) | MINIAPP_ARCHITECTURE «Полезности» |
 | Полезности → «QR-код» | `miniapp/src/components/tools/QrTool.tsx` + `QrCard.tsx` (библиотека `qrcode`, в браузере; PNG и SVG); кнопка «QR» в `ShortLinkRow.tsx` | MINIAPP_ARCHITECTURE «Полезности» |
@@ -345,6 +346,8 @@ claude mcp add supabase-swarm -- npx -y @supabase/mcp-server-supabase@0.12.0 \
 | `SUPABASE_SERVICE_ROLE_KEY` | да |
 | `DECIMUS_API_URL`, `DECIMUS_API_TOKEN` | нет (swarm-api, swarm-mcp; без них баллы РС/РКО, карты и проверки → «не загрузилось») |
 | `OPENAI_API_KEY` | да |
+| `WORKSPACE_SECRETS_KEY` | да для ключей пространств (#233): base64 от 32 байт, шифрует `workspace_secrets` (`_shared/secret-box.ts`) |
+| `WORKSPACE_OWN_KEYS` | нет; `off` — выключатель: всегда ключ сервера `OPENAI_API_KEY` (`_shared/workspace-keys.ts`) |
 | `BOT_NAME` | нет (дефолт `"bot"`) |
 | `MCP_AUTH_REQUIRED` | устарела с 2026-09-30 — `swarm-mcp` без токена отказывает всегда (`auth.ts`) |
 | `MARKET_INGEST_TOKEN` | да для сбора «Анализа рынка» (`market-ingest`; тот же токен — секрет Actions, адрес — переменная Actions `MARKET_INGEST_URL`) |
