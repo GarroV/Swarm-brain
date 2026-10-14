@@ -5,6 +5,7 @@
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import type { Snapshot } from "./types.ts";
 import { readyCountries, STALE_DAYS } from "./readiness.ts";
+import { groupSales, type SalesRow } from "./sales.ts";
 
 const slug = (s: string | null): string =>
   (s ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "");
@@ -215,6 +216,18 @@ export async function importSnapshot(sb: SupabaseClient, cc: string, s: Snapshot
     facts: new Set(s.facts.map((f) => `${f.topic}|${f.text}`)).size,
     editorial: blocks.length,
   };
+}
+
+/** Выручка Dodo по месяцам для нескольких стран ОДНИМ запросом (виджеты продаж на главной, issue #906). */
+export async function loadSales(sb: SupabaseClient, ccs: string[]) {
+  if (!ccs.length) return {};
+  const rows = await allRows<SalesRow>(
+    (from, to) =>
+      sb.from("mkt_dodo_monthly").select("country, month, revenue_eur, complete").in("country", ccs)
+        .order("country").order("month").range(from, to),
+    "dodo sales",
+  );
+  return groupSales(ccs, rows);
 }
 
 const LOC_COLS = "id, chain_key, ext_key, name, city, address, lat, lng, placement, opened, opened_estimated, " +

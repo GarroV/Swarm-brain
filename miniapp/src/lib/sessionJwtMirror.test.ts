@@ -14,11 +14,20 @@ Deno.test("сессия Pages принимается swarm-api и наоборо
   assertEquals((await mirror.verifyJWT(fromApi, SECRET))?.telegram_id, 7);
 });
 
+Deno.test("метка второго шага (#955) читается обеими копиями одинаково", async () => {
+  for (const [signer, verifier] of [[mirror, canon], [canon, mirror]] as const) {
+    const stepped = await signer.signJWT({ telegram_id: 7, second_step: true }, SECRET);
+    const plain = await signer.signJWT({ telegram_id: 7 }, SECRET);
+    assertEquals((await verifier.verifyJWT(stepped, SECRET))?.secondStep, true);
+    assertEquals((await verifier.verifyJWT(plain, SECRET))?.secondStep, false);
+  }
+});
+
 Deno.test("константы и правила отзыва/продления совпадают", () => {
   assertEquals(mirror.SESSION_PURPOSE, canon.SESSION_PURPOSE);
   assertEquals(mirror.LEGACY_MIN_REMAINING_SEC, canon.LEGACY_MIN_REMAINING_SEC);
   assertEquals(mirror.SESSION_TTL_SEC, canon.SESSION_TTL_SEC);
-  const claims = { telegram_id: 1, exp: 2_000_000_000, authTime: null, legacy: true };
+  const claims = { telegram_id: 1, exp: 2_000_000_000, authTime: null, legacy: true, secondStep: false };
   assertEquals(mirror.authTimeForRefresh(claims), canon.authTimeForRefresh(claims));
   const cases = [[null, "2026-10-01T00:00:00Z"], [5, null], [5, "bad"], [5, "2026-10-01T00:00:00Z"], [9_999_999_999, "2026-10-01T00:00:00Z"]] as const;
   for (const [t, r] of cases) {

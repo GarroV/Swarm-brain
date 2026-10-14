@@ -1581,6 +1581,22 @@ export async function fetchMarket(cc: string): Promise<MarketBundle> {
   return apiFetch<MarketBundle>(`/market/${cc}`);
 }
 
+/** Строка выручки Dodo, как её читает главная (подмножество `MarketBundle.dodo`). */
+export type MarketSalesRow = { month: string; revenue_eur: number | null; complete: boolean };
+
+/** Выручка Dodo по нескольким странам одним запросом (GET /market/sales, issue #906): без остального набора
+ *  страны. `denied` — страны вне allowed_markets. 404 = функции ещё старые (веб катится раньше) — зовущий
+ *  откатывается на `fetchMarket` по стране. */
+export async function fetchMarketSales(
+  ccs: string[],
+): Promise<{ sales: Record<string, MarketSalesRow[]>; denied: string[] }> {
+  if (DEV_MODE) {
+    const b = (await import("./marketDemo")).demolandBundle();
+    return { sales: Object.fromEntries(ccs.map((cc) => [cc, b.dodo ?? []])), denied: [] };
+  }
+  return apiFetch(`/market/sales?cc=${ccs.join(",")}`);
+}
+
 // ── Баллы РС и РКО по пиццериям (GET /quality — прокси к API Децимуса) ──────────
 export type QualityKind = "rs" | "rko";
 export interface QualityPeriod {

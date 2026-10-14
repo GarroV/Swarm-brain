@@ -16,7 +16,9 @@ import {
   listCountriesWithData,
   listReadyCountries,
   loadCountry,
+  loadSales,
 } from "../_shared/market/db.ts";
+import { parseSalesCountries } from "../_shared/market/sales.ts";
 import { validateSnapshot } from "../_shared/market/snapshot.ts";
 
 const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
@@ -55,7 +57,8 @@ export async function handleMarketRoutes(
   origin: string,
 ): Promise<Response | null> {
   if (
-    routePath !== "/market/countries" && routePath !== "/market/ready" && !COUNTRY_ROUTE.test(routePath) &&
+    routePath !== "/market/countries" && routePath !== "/market/ready" && routePath !== "/market/sales" &&
+    !COUNTRY_ROUTE.test(routePath) &&
     !DECIDE_ROUTE.test(routePath)
   ) {
     return null;
@@ -77,6 +80,15 @@ export async function handleMarketRoutes(
       // клиент ждёт от /countries плоский массив кодов.
       const shown = (await listCountriesWithData(supabase)).filter(visible);
       return json(await listReadyCountries(supabase, shown), 200, origin);
+    }
+
+    // Лёгкая выручка по странам для главной — те же allowed_markets/демо-правило, что у /market/:cc,
+    // но чужая страна не валит весь ответ, а попадает в `denied` (виджет рисует остальные).
+    if (routePath === "/market/sales" && req.method === "GET") {
+      const ccs = parseSalesCountries(new URL(req.url).searchParams.get("cc"));
+      if (!ccs) return apiErr(400, "cc: 1–30 comma-separated two-letter country codes", origin);
+      const ok = ccs.filter(visible);
+      return json({ sales: await loadSales(supabase, ok), denied: ccs.filter((c) => !visible(c)) }, 200, origin);
     }
 
     const m = routePath.match(COUNTRY_ROUTE);
