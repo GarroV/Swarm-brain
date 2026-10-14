@@ -114,7 +114,7 @@ function ProfileTile({ me, open, onToggle }: { me: Me; open: Panel | null; onTog
         </Line>
         {/* В браузере initData пустой → показываем выход; внутри Telegram — нет. */}
         {!getInitData() && (
-          <Line label={dt("Аккаунт", "Account")} value={dt("вход через Telegram", "signed in with Telegram")}>
+          <Line label={dt("Аккаунт", "Account")} value={dt("вход в этом браузере", "signed in in this browser")}>
             <Action on={open === "account"} onClick={() => onToggle("account")}>{dt("Выйти", "Sign out")}</Action>
           </Line>
         )}
