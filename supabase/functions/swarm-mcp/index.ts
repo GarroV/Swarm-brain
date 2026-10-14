@@ -1230,7 +1230,6 @@ Deno.serve(async (req: Request) => {
         return err(id, -32601, `Unknown tool: ${name}`);
       }
 
-      // Текст, написанный людьми, идёт в блоке <untrusted_data>; подтверждения записи — как есть (untrusted.ts).
       // Каждый ответ — в блок недоверенных данных: текст людей есть почти в любом (untrusted.ts).
       return ok(id, textContent(wrapUntrusted(name, result)));
     } catch (e) {
