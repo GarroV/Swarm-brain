@@ -109,8 +109,8 @@ export function AcceptDialog(
               ? (
                 <p className="rounded-xl bg-surface-2 px-3 py-2 text-[13px] text-ink-soft">
                   {dt(
-                    "Незакрытых задач нет — переносить нечего, следующий спринт создастся пустым.",
-                    "Nothing is left unfinished — there is nothing to carry over, and the next sprint starts empty.",
+                    "Незакрытых задач нет — переносить нечего.",
+                    "Nothing is left unfinished — there is nothing to carry over.",
                   )}
                 </p>
               )
@@ -124,8 +124,8 @@ export function AcceptDialog(
                   </p>
                   <p className="text-[11.5px] text-ink-soft">
                     {dt(
-                      "Следующий спринт создастся сам, встык. Причина — по желанию: она нужна, чтобы через месяц было видно, почему задача висит.",
-                      "The next sprint is created automatically, right after this one. A reason is optional — it is what makes a long-hanging task explainable a month later.",
+                      "Незакрытое уедет в ближайший запланированный спринт, а если его нет — в новый, встык. Причина — по желанию: она нужна, чтобы через месяц было видно, почему задача висит.",
+                      "Open tasks move to the nearest planned sprint, or to a new one right after this. A reason is optional — it is what makes a long-hanging task explainable a month later.",
                     )}
                   </p>
                   <ul className="space-y-1.5">

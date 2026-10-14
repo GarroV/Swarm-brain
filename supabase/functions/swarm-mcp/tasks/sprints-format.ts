@@ -86,10 +86,16 @@ export function formatSpaces(
   }
   const lines = pool.map((s) => {
     const own = cycles.filter((c) => c.tab_id === s.id);
-    const live = own.find((c) => c.status !== "accepted");
+    // Идущий важнее черновиков: с 09.10.2026 запланированных спринтов может быть несколько,
+    // и «сейчас» — это идущий, а без него — ближайший по дате запланированный.
+    const drafts = own.filter((c) => c.status === "draft")
+      .sort((a, b) => a.start_date.localeCompare(b.start_date));
+    const live = own.find((c) => c.status === "active") ?? drafts[0];
+    const ahead = drafts.filter((c) => c !== live);
     const accepted = own.filter((c) => c.status === "accepted").length;
     const now = live ? `сейчас: ${live.name} (${STAGE[live.status]}, id: ${live.id})` : "живого спринта нет";
-    return `• ${s.name} (id: ${s.id}) — ${now}; принятых: ${accepted}`;
+    const next = ahead.length ? `; впереди: ${ahead.map((c) => `${c.name} (id: ${c.id})`).join(", ")}` : "";
+    return `• ${s.name} (id: ${s.id}) — ${now}${next}; принятых: ${accepted}`;
   });
   return `Пространства спринтов:\n${lines.join("\n")}`;
 }
@@ -147,9 +153,15 @@ export function formatSprint(
 export const JOURNAL_LINES = 60;
 
 /** Лента пространства для Claude (#485): время по Белграду, кто, задача, что случилось. */
-export function formatJournal(spaceName: string, days: string, events: JournalEvent[]): string {
+export function formatJournal(
+  spaceName: string,
+  days: string,
+  events: JournalEvent[],
+): string {
   const period = days === "all" ? "всё время" : `${days} дн.`;
-  if (events.length === 0) return `Журнал «${spaceName}» за ${period}: событий нет.`;
+  if (events.length === 0) {
+    return `Журнал «${spaceName}» за ${period}: событий нет.`;
+  }
   const fmt = new Intl.DateTimeFormat("ru-RU", {
     timeZone: "Europe/Belgrade",
     day: "2-digit",

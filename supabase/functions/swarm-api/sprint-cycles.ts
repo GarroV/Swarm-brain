@@ -94,9 +94,6 @@ export async function handleSprintCycleRoutes(
         if (e instanceof UnknownTabError) {
           return apiErr(400, e.message, origin);
         }
-        if (e instanceof LiveCycleExistsError) {
-          return apiErr(409, e.message, origin);
-        }
         return serverError(origin, "sprint cycle create", e);
       }
     }
@@ -151,12 +148,11 @@ export async function handleSprintCycleRoutes(
         return apiErr(404, "Пространство не найдено", origin);
       }
       if (updated === "tab_busy") {
-        // В пространстве может жить только один незакрытый спринт (частичный уникальный
-        // индекс). Молча оставить спринт на месте нельзя: человек увидит «сохранено» и не
+        // В пространстве может идти только один спринт (частичный уникальный индекс). Молча оставить спринт на месте нельзя: человек увидит «сохранено» и не
         // поймёт, почему ничего не переехало.
         return apiErr(
           409,
-          "В этом пространстве уже есть незакрытый спринт",
+          "В этом пространстве уже идёт спринт",
           origin,
         );
       }
@@ -177,9 +173,18 @@ export async function handleSprintCycleRoutes(
 
   const startMatch = routePath.match(/^\/sprint-cycles\/([^/]+)\/start$/);
   if (startMatch && req.method === "POST") {
-    const started = await startCycle(startMatch[1], groupId);
-    if (!started) return apiErr(404, "Not found или спринт уже начат", origin);
-    return json(started, 200, origin);
+    try {
+      const started = await startCycle(startMatch[1], groupId);
+      if (!started) {
+        return apiErr(404, "Not found или спринт уже начат", origin);
+      }
+      return json(started, 200, origin);
+    } catch (e) {
+      if (e instanceof LiveCycleExistsError) {
+        return apiErr(409, e.message, origin);
+      }
+      return serverError(origin, "sprint cycle start", e);
+    }
   }
 
   const acceptMatch = routePath.match(/^\/sprint-cycles\/([^/]+)\/accept$/);

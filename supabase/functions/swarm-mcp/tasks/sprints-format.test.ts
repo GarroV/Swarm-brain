@@ -104,8 +104,15 @@ const item = (over: Partial<SprintItem>): SprintItem => ({
 });
 
 Deno.test("formatSprint: строка состава с названием и task_id, шапка с этапом", () => {
-  const items = [item({ task_id: "open-1", title: "Открытая", status: "done" })];
-  const text = formatSprint(cycle, "Тестовое", items, computeSprintStats(items));
+  const items = [
+    item({ task_id: "open-1", title: "Открытая", status: "done" }),
+  ];
+  const text = formatSprint(
+    cycle,
+    "Тестовое",
+    items,
+    computeSprintStats(items),
+  );
   assertStringIncludes(text, "[x] Открытая");
   assertStringIncludes(text, "task_id: open-1");
   assertEquals(text.split("\n")[0], "Спринт «Спринт 1» — идёт (id: c1)");
@@ -143,8 +150,14 @@ Deno.test("журнал пространства: время по Белград
     },
   ]);
   assertStringIncludes(text, "Журнал «Тестовое» за 7 дн.");
-  assertStringIncludes(text, "01.10, 12:05 · Анна · «Запуск в Сербии» — комментарий: готово к ревью");
-  assertEquals(formatJournal("Тестовое", "all", []), "Журнал «Тестовое» за всё время: событий нет.");
+  assertStringIncludes(
+    text,
+    "01.10, 12:05 · Анна · «Запуск в Сербии» — комментарий: готово к ревью",
+  );
+  assertEquals(
+    formatJournal("Тестовое", "all", []),
+    "Журнал «Тестовое» за всё время: событий нет.",
+  );
 });
 
 Deno.test("журнал пространства: длинная лента режется с подсказкой сузить период", () => {
@@ -159,4 +172,27 @@ Deno.test("журнал пространства: длинная лента ре
   const text = formatJournal("Тестовое", "all", many);
   assertStringIncludes(text, "…и ещё 5");
   assert(!text.includes(`событие ${JOURNAL_LINES}`));
+});
+
+Deno.test("formatSpaces: «сейчас» — идущий спринт, запланированные перечислены впереди по дате", () => {
+  const space = ROWS.find((r) => r.kind === "space")!;
+  const cycle = (id: string, status: SprintCycle["status"], start: string) =>
+    ({
+      id,
+      tab_id: space.id,
+      name: `С-${id}`,
+      status,
+      start_date: start,
+      end_date: start,
+    }) as SprintCycle;
+  const text = formatSpaces(ROWS, [
+    cycle("5", "draft", "2026-11-03"),
+    cycle("4", "draft", "2026-10-20"),
+    cycle("3", "active", "2026-10-06"),
+    cycle("2", "accepted", "2026-09-22"),
+  ]);
+  const line = text.split("\n").find((l) => l.includes(space.id))!;
+  assertEquals(line.includes("сейчас: С-3 (идёт"), true, line);
+  assertEquals(line.indexOf("С-4") < line.indexOf("С-5"), true, line);
+  assertEquals(line.includes("принятых: 1"), true, line);
 });

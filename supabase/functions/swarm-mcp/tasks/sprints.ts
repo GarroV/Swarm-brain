@@ -15,6 +15,7 @@
 // deno-lint-ignore-file no-import-prefix
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { createSprint, deleteSprint, listSprints, updateSprint } from "../../_shared/tasks/sprints.ts";
+import { createProject } from "../../_shared/tasks/projects.ts";
 import {
   createCycle,
   deleteCycle,
@@ -126,14 +127,18 @@ export function toolGetSprintJournal(args: Args): Promise<string> {
     const space = await loadSpace(m.groupId, args.space);
     if (typeof space === "string") return space;
     const days = str(args.days) ?? "7";
-    if (!JOURNAL_PERIODS.includes(days)) return `days: принимаются ${JOURNAL_PERIODS.join(", ")}.`;
+    if (!JOURNAL_PERIODS.includes(days)) {
+      return `days: принимаются ${JOURNAL_PERIODS.join(", ")}.`;
+    }
     const result = await loadSpaceJournal(
       space.id,
       m.groupId,
       days,
       (ids) => resolvePersonNames(supabase, ids),
     );
-    if (!result.ok) return result.status === 404 ? "Пространство не найдено." : result.error;
+    if (!result.ok) {
+      return result.status === 404 ? "Пространство не найдено." : result.error;
+    }
     return formatJournal(space.name, days, result.events);
   });
 }
@@ -158,6 +163,33 @@ export function toolCreateSprintSpace(args: Args): Promise<string> {
       kind: "space",
     }, m.groupId);
     return `✅ Пространство «${s.name}» создано (id: ${s.id}). Спринт в нём: create_sprint.`;
+  });
+}
+
+// Группа задач в пространстве спринтов (инициатива): то же, что «+ Группа» на экране спринтов.
+// Владелец 09.10.2026: «если надо новые инструменты - давай править и делать инструменты» — без
+// этого инструмента перенос плана из Notion упирался в группы, которых ещё нет.
+export function toolCreateSprintGroup(args: Args): Promise<string> {
+  return withMember(args, async (m) => {
+    const name = str(args.name);
+    if (!name) return "Нужно name — имя группы.";
+    const space = await loadSpace(m.groupId, args.space);
+    if (typeof space === "string") return space;
+    const { data: same } = await supabase.from("projects").select("id")
+      .eq("group_id", m.groupId).eq("sprint_id", space.id).eq(
+        "sprint_group",
+        true,
+      )
+      .is("archived_at", null).ilike("name", name).limit(1);
+    if (same?.length) {
+      return `Группа «${name}» в «${space.name}» уже есть (id: ${same[0].id}).`;
+    }
+    const g = await createProject(
+      { name, sprint_id: space.id, sprint_group: true, is_private: false },
+      m.groupId,
+      m.userId,
+    );
+    return `✅ Группа «${g.name}» создана в «${space.name}» (id: ${g.id}). Задачи в неё: add_task с project_name.`;
   });
 }
 
@@ -259,7 +291,7 @@ export function toolCreateSprint(args: Args): Promise<string> {
       );
       return `✅ Спринт «${c.name}» создан в «${space.name}» — планирование, сверка ${c.check_date} (id: ${c.id}). Состав: add_sprint_tasks, старт: start_sprint.`;
     } catch (e) {
-      if (e instanceof LiveCycleExistsError || e instanceof UnknownTabError) {
+      if (e instanceof UnknownTabError) {
         return `Не создан: ${e.message}`;
       }
       throw e;
@@ -298,10 +330,12 @@ export function toolUpdateSprint(args: Args): Promise<string> {
     if (start > end) return "start_date не может быть позже end_date.";
     const updated = await updateCycle(cycle.id, fields, m.groupId);
     if (updated === "tab_busy") {
-      return "В этом пространстве уже есть незакрытый спринт — перенос не сделан.";
+      return "В этом пространстве уже идёт спринт — перенос не сделан.";
     }
     if (updated === "tab_missing") return "Пространство не найдено.";
-    if (updated === "accepted_locked") return "Сроки принятого спринта не меняются.";
+    if (updated === "accepted_locked") {
+      return "Сроки принятого спринта не меняются.";
+    }
     if (!updated) return "Спринт не найден.";
     return `✅ Спринт обновлён.\n${
       formatCycles(
@@ -316,7 +350,13 @@ export function toolStartSprint(args: Args): Promise<string> {
   return withMember(args, async (m) => {
     const cycle = await loadCycle(m.groupId, args.sprint_id);
     if (typeof cycle === "string") return cycle;
-    const started = await startCycle(cycle.id, m.groupId);
+    let started;
+    try {
+      started = await startCycle(cycle.id, m.groupId);
+    } catch (e) {
+      if (e instanceof LiveCycleExistsError) return `Не начат: ${e.message}`;
+      throw e;
+    }
     if (!started) {
       return `Спринт «${cycle.name}» не в планировании — стартовать нечего.`;
     }
@@ -484,6 +524,15 @@ export const SPRINT_TOOL_DEFINITIONS = [
     ["name"],
   ),
   tool(
+    "create_sprint_group",
+    "Создать группу задач (инициативу) в пространстве спринтов — как «+ Группа» в вебе. Задачи в неё кладутся add_task с project_name = имя группы. Может любой участник.",
+    {
+      space: SPACE,
+      name: { type: "string", description: "Имя группы" },
+    },
+    ["space", "name"],
+  ),
+  tool(
     "rename_sprint_space",
     "Переименовать пространство спринтов. Только админ.",
     {
@@ -514,7 +563,11 @@ export const SPRINT_TOOL_DEFINITIONS = [
     "Журнал пространства спринтов: правки и комментарии задач его спринтов, состав, сверка, старт и приёмка — новые сверху. Отвечает на «что было за неделю по спринту».",
     {
       space: SPACE,
-      days: { type: "string", enum: ["1", "3", "7", "all"], description: "Период в днях или all; по умолчанию 7" },
+      days: {
+        type: "string",
+        enum: ["1", "3", "7", "all"],
+        description: "Период в днях или all; по умолчанию 7",
+      },
     },
     ["space"],
   ),
@@ -526,7 +579,7 @@ export const SPRINT_TOOL_DEFINITIONS = [
   ),
   tool(
     "create_sprint",
-    "Создать спринт в пространстве (этап «планирование»). В пространстве может быть только один незакрытый спринт.",
+    "Создать спринт в пространстве (этап «планирование»). Будущие спринты можно заводить заранее, сколько угодно; идёт один — старт второго отказ, пока идущий не принят.",
     {
       space: SPACE,
       name: {
@@ -567,7 +620,7 @@ export const SPRINT_TOOL_DEFINITIONS = [
   ),
   tool(
     "accept_sprint",
-    "Финал — приёмка: фиксирует итоги, создаёт следующий спринт и переносит в него незакрытое.",
+    "Финал — приёмка: фиксирует итоги и переносит незакрытое в ближайший запланированный спринт пространства (если его нет — создаёт следующий).",
     {
       sprint_id: SPRINT_ID,
       summary: {
@@ -636,6 +689,7 @@ export const SPRINT_TOOLS: Record<string, ToolFn> = {
   get_sprint_journal: toolGetSprintJournal,
   get_sprint_spaces: toolGetSprintSpaces,
   create_sprint_space: toolCreateSprintSpace,
+  create_sprint_group: toolCreateSprintGroup,
   rename_sprint_space: toolRenameSprintSpace,
   archive_sprint_space: toolArchiveSprintSpace,
   get_sprints: toolGetSprints,
