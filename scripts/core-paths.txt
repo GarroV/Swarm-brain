@@ -80,3 +80,11 @@ supabase/functions/_shared/model-usage-summary.ts|supabase/functions/_shared/mod
 # Проверки Децимуса (блок 3): показываются и пересказываются Claude как факт; ошибка не падает —
 # она рисует плавающий процент или чужую страну вместо ошибки/404.
 supabase/functions/_shared/inspections-view.ts|supabase/functions/_shared/inspections-view.test.ts
+# Второй шаг входа — палец (ключ доступа, #955). Ошибка не падает: чужой ключ подтверждает чужую
+# сессию, ответ с чужого сайта принимается, вызов срабатывает дважды, а замок обязательности
+# пропускает или запирает не тех. Ядро доступа, тесты — на настоящей криптографии.
+supabase/functions/_shared/passkeys/flow.ts|supabase/functions/_shared/passkeys/flow.test.ts
+supabase/functions/_shared/passkeys/rp.ts|supabase/functions/_shared/passkeys/rp.test.ts
+supabase/functions/_shared/passkeys/second-step.ts|supabase/functions/_shared/passkeys/second-step.test.ts
+supabase/functions/auth-passkey/handler.ts|supabase/functions/auth-passkey/handler.test.ts
+supabase/functions/swarm-api/passkey-admin.ts|supabase/functions/swarm-api/passkey-admin.test.ts

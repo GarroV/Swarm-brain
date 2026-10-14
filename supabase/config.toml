@@ -414,6 +414,9 @@ verify_jwt = false
 verify_jwt = false
 [functions.auth-resolve]
 verify_jwt = false
+# Второй шаг входа — ключ доступа (#955): вызов от CF Pages подписан HMAC на WEB_JWT_SECRET.
+[functions.auth-passkey]
+verify_jwt = false
 [functions.recorder-diag]
 verify_jwt = false
 
