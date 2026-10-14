@@ -14,6 +14,7 @@ import {
   importSnapshot,
   listCandidates,
   listCountriesWithData,
+  listReadyCountries,
   loadCountry,
   loadSales,
 } from "../_shared/market/db.ts";
@@ -56,7 +57,8 @@ export async function handleMarketRoutes(
   origin: string,
 ): Promise<Response | null> {
   if (
-    routePath !== "/market/countries" && routePath !== "/market/sales" && !COUNTRY_ROUTE.test(routePath) &&
+    routePath !== "/market/countries" && routePath !== "/market/ready" && routePath !== "/market/sales" &&
+    !COUNTRY_ROUTE.test(routePath) &&
     !DECIDE_ROUTE.test(routePath)
   ) {
     return null;
@@ -71,6 +73,13 @@ export async function handleMarketRoutes(
     const visible = (cc: string) => canSeeCountry(cc, allowed, isDemo);
     if (routePath === "/market/countries" && req.method === "GET") {
       return json((await listCountriesWithData(supabase)).filter(visible), 200, origin);
+    }
+
+    if (routePath === "/market/ready" && req.method === "GET") {
+      // Отдельный путь, а не поле в /countries: веб и функции катятся в разное время, и старый
+      // клиент ждёт от /countries плоский массив кодов.
+      const shown = (await listCountriesWithData(supabase)).filter(visible);
+      return json(await listReadyCountries(supabase, shown), 200, origin);
     }
 
     // Лёгкая выручка по странам для главной — те же allowed_markets/демо-правило, что у /market/:cc,

@@ -69,6 +69,12 @@
 .mkt .ctl{display:flex;flex-direction:column;gap:8px}
 .mkt .ctl>label,.mkt .ctl>.lbl{font-size:11px;font-family:var(--f-mono);letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
 .mkt .seg{display:flex;flex-wrap:wrap;gap:4px}
+.mkt .seg button.ready{border:2px solid var(--accent);padding:4px 9px}
+.mkt .seg button .auto{margin-left:6px;font-family:var(--f-mono);font-size:10px;letter-spacing:.04em;color:var(--accent)}
+.mkt .seg button[aria-pressed="true"] .auto{color:inherit}
+.mkt .exportbar{display:flex;gap:2px;margin-left:auto}
+.mkt .exportbar button{display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;padding:0;background:transparent;border-color:transparent;color:var(--muted)}
+.mkt .exportbar button:hover{color:var(--ink);border-color:var(--line)}
 .mkt .yearrow{display:flex;align-items:center;gap:10px}
 .mkt .yearrow input{flex:1;accent-color:var(--accent)}
 .mkt .yearrow output{font-family:var(--f-disp);font-size:22px;font-variant-numeric:tabular-nums;min-width:3ch}

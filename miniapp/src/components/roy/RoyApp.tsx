@@ -4,7 +4,7 @@ import type { Me, Task } from "@/types";
 import { TaskModal } from "@/components/TaskModal";
 import { cn } from "@/lib/utils";
 import { getDeepLinkMeetingId, getDeepLinkTaskId } from "@/lib/telegram";
-import { fetchAgentMeetings, logout } from "@/lib/api";
+import { fetchAgentMeetings, fetchMeetings, logout } from "@/lib/api";
 import { OPEN_MEETING_EVENT } from "@/lib/single-tab";
 import { queryToState, stateToPath } from "@/lib/royUrl";
 import {
@@ -46,6 +46,7 @@ import { SettingsRoute } from "@/components/settings/SettingsDesk";
 import { AdminRoute } from "@/components/admin/AdminDesk";
 import { MeetAdminScreen } from "./screens/MeetAdminScreen";
 import { type RailId, RoyRail } from "./RoyRail";
+import { useOverdueCount } from "./useOverdueCount";
 import { NotificationsBell } from "./NotificationsBell";
 import { DeployNoticeBar, HeaderNotice } from "./DeployNoticeBar";
 import { AnswerModal } from "./AnswerModal";
@@ -88,6 +89,8 @@ export function RoyApp({ me }: { me: Me | null }) {
   // эндпоинт /agent-meetings может быть недоступен, и это не повод ронять каркас (та же
   // намеренная деградация, что в AgentReviewQueue).
   const [reviewCount, setReviewCount] = useState(0);
+  // Мои просроченные — кружок на «Задачи» (issue #903); пересчёт при смене таба и правке задачи.
+  const overdueCount = useOverdueCount(me, `${tab}:${stack.length}:${tasksVersion}`);
   // Стек восстановлен из sessionStorage? До этого не персистим, иначе начальный [] затрёт сохранённый.
   const hydrated = useRef(false);
   // Состояние только что пришло ИЗ адреса (popstate или разбор при загрузке) — значит
@@ -147,12 +150,13 @@ export function RoyApp({ me }: { me: Me | null }) {
   // (разобрал очередь → вернулся на другой таб → счётчик обновится при следующем заходе).
   useEffect(() => {
     let alive = true;
-    fetchAgentMeetings("awaiting_review")
-      .then((list) => {
-        if (alive) setReviewCount(list.length);
-      })
-      .catch(() => {
-        if (alive) setReviewCount(0);
+    // Та же очередь, что у стикера «Вычитай встречи» на главной: черновики рекордера на
+    // вычитке + свои неподтверждённые встречи (#903). Упал один источник — считаем по другому.
+    Promise.allSettled([fetchAgentMeetings("awaiting_review"), fetchMeetings({ confirmed: false })])
+      .then(([review, pending]) => {
+        if (!alive) return;
+        const n = (r: PromiseSettledResult<unknown[]>) => (r.status === "fulfilled" ? r.value.length : 0);
+        setReviewCount(n(review) + n(pending));
       });
     return () => {
       alive = false;
@@ -398,7 +402,7 @@ export function RoyApp({ me }: { me: Me | null }) {
             <RoyRail
               active={railActive}
               onSelect={railSelect}
-              badges={{ meetings: reviewCount }}
+              badges={{ meetings: reviewCount, tasks: overdueCount }}
             />
           )}
           <div ref={setPanelHost} className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
@@ -455,7 +459,7 @@ export function RoyApp({ me }: { me: Me | null }) {
                     active={tab === "sprints" || tab === "market" ? "more" : tab}
                     onChange={(id) => setTab(id as RoyTab)}
                     className="lg:hidden"
-                    badges={{ cal: reviewCount }}
+                    badges={{ cal: reviewCount, task: overdueCount }}
                   />
                 </>
               )}

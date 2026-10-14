@@ -7,6 +7,7 @@ import { Avatar, SHELL_BAR_H } from "./ui";
 import { RoyIcon, type RoyIconName } from "./icons";
 import { initials } from "./dash/shared";
 import { useDt, useRoyNav } from "./nav";
+import { badgeLabel } from "@/lib/navBadges";
 import { saveRecent } from "./screens/SearchScreen";
 import { FeedbackDialog } from "./FeedbackFab";
 import { readTheme, saveTheme, THEME_CHANGE_EVENT, THEME_IDS, type ThemeId } from "@/lib/theme";
@@ -49,6 +50,8 @@ const GROUPS: RailItem[][] = [
     { id: "stats", label: ["Статистика", "Stats"], icon: "graph" },
   ],
   [
+    // «Админ» — обычный пункт над «Командой», виден только админу (issue #905; был замочком внизу).
+    { id: "admin", label: ["Админ", "Admin"], icon: "lock" },
     { id: "team", label: ["Команда", "Team"], icon: "team" },
     { id: "base", label: ["База", "Knowledge"], icon: "book" },
   ],
@@ -56,7 +59,6 @@ const GROUPS: RailItem[][] = [
 
 const FOOT: RailItem[] = [
   { id: "settings", label: ["Настройки", "Settings"], icon: "sliders" },
-  { id: "admin", label: ["Админ", "Admin"], icon: "lock" },
 ];
 
 export function RoyRail({
@@ -70,7 +72,6 @@ export function RoyRail({
 }) {
   const { me } = useRoyNav();
   const dt = useDt();
-  const foot = FOOT.filter((i) => i.id !== "admin" || me?.is_admin);
   const [wsName, setWsName] = useState<string | null>(null);
 
   // Подпись воркспейса под брендом (стенд: .ws-sub). Не пришло имя — подписи нет, рейка не ломается.
@@ -84,7 +85,7 @@ export function RoyRail({
 
   const renderItem = (item: RailItem) => {
     const on = active === item.id;
-    const badge = badges?.[item.id] ?? 0;
+    const badgeText = badgeLabel(badges?.[item.id]);
     return (
       <button
         key={item.id}
@@ -102,11 +103,14 @@ export function RoyRail({
       >
         <RoyIcon name={item.icon} size={16} strokeWidth={1.7} />
         <span className="min-w-0 flex-1 truncate max-[1099px]:hidden">{dt(item.label[0], item.label[1])}</span>
-        {badge > 0 && (
-          // Счётчик по стенду — тихой серой цифрой, не синей плашкой (визуальный шаг В2). В узкой
-          // рейке — мелкой цифрой в углу пиктограммы.
-          <span className="font-mono text-ink-mute max-[1099px]:absolute max-[1099px]:right-1 max-[1099px]:top-0.5" style={{ fontSize: 11 }}>
-            {badge}
+        {badgeText && (
+          // Красный кружок с числом, как на айфоне (владелец 12.10.2026, issue #903). В узкой
+          // рейке — в углу пиктограммы.
+          <span
+            className="inline-flex min-w-[17px] items-center justify-center rounded-full bg-destructive px-1 font-bold text-white max-[1099px]:absolute max-[1099px]:right-0.5 max-[1099px]:top-0"
+            style={{ fontSize: 10, height: 17, lineHeight: "17px" }}
+          >
+            {badgeText}
           </span>
         )}
       </button>
@@ -141,14 +145,14 @@ export function RoyRail({
         {GROUPS.map((group, gi) => (
           <div key={gi} className="flex flex-col gap-0.5">
             {gi > 0 && <div aria-hidden className="mx-2.5 my-1.5 h-px bg-line max-[1099px]:mx-1.5" />}
-            {group.map(renderItem)}
+            {group.filter((i) => i.id !== "admin" || me?.is_admin).map(renderItem)}
           </div>
         ))}
       </div>
       {/* Тема пилюлей и инструменты пиктограммами — одним рядом, без подписи (владелец 02.10.2026). */}
       <div className="flex items-center gap-1 border-t border-line px-2 py-2 max-[1099px]:flex-col max-[1099px]:gap-0.5">
         <ThemeSwitch />
-        <FootTools items={foot} active={active} onSelect={onSelect} />
+        <FootTools items={FOOT} active={active} onSelect={onSelect} />
       </div>
       <div className="flex items-center gap-2 border-t border-line px-3 py-2.5 max-[1099px]:justify-center max-[1099px]:px-0"
         title={displayName(me?.name) || undefined}>

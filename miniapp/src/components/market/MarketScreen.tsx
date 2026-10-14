@@ -5,7 +5,7 @@
 // ответом GET /market/:cc, каждая секция подписывает свой источник и его свежесть.
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { MarketBundle } from "@/types";
-import { fetchMarket, fetchMarketCountries } from "@/lib/api";
+import { fetchMarket, fetchMarketCountries, fetchMarketReady } from "@/lib/api";
 import { countryFlag, countryName } from "@/lib/countries";
 import { useDt, useRoyNav } from "@/components/roy/nav";
 import { ChainDynamics } from "./ChainDynamics";
@@ -49,6 +49,7 @@ export function MarketScreen() {
   const dt = useDt();
   const { me } = useRoyNav();
   const [countries, setCountries] = useState<string[] | null>(null);
+  const [ready, setReady] = useState<string[]>([]);
   const [cc, setCc] = useState<string | null>(null);
   const [raw, setBundle] = useState<MarketBundle | null>(null);
   // Сети без единой работающей точки не показываются нигде (правило эталона). Уточнённые даты
@@ -74,6 +75,10 @@ export function MarketScreen() {
         console.error("[MarketScreen] countries", e);
         setFailed("countries");
       });
+  }, [reload]);
+
+  useEffect(() => {
+    fetchMarketReady().then(setReady);
   }, [reload]);
 
   useEffect(() => {
@@ -129,9 +134,22 @@ export function MarketScreen() {
             {(countries?.length ?? 0) > 1
               ? (
                 <div className="seg" role="group" aria-label={dt("Страна", "Country")}>
-                  {(countries ?? []).map((c) => (
-                    <button key={c} type="button" aria-pressed={c === cc} onClick={() => pick(c)}>{label(c)}</button>
-                  ))}
+                  {(countries ?? []).map((c) => {
+                    const isReady = ready.includes(c);
+                    return (
+                      <button
+                        key={c}
+                        type="button"
+                        className={isReady ? "ready" : undefined}
+                        title={isReady ? dt("Страница проработана: все разделы заполнены, данные обновляются сами", "Page complete: all sections filled, data updates automatically") : undefined}
+                        aria-pressed={c === cc}
+                        onClick={() => pick(c)}
+                      >
+                        {label(c)}
+                        {isReady && <span className="auto">{dt("● готово", "● ready")}</span>}
+                      </button>
+                    );
+                  })}
                 </div>
               )
               : <span />}
