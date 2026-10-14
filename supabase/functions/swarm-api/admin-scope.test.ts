@@ -113,6 +113,15 @@ function call(
   return handleAdminRoutes(db.client, req, path, actor, true, "*", names, "cee", { announce: announce.announce });
 }
 
+// Мастер-админ по данным (#233): index.ts вычисляет `isMaster` из master_admins и передаёт в deps.
+function callAsMaster(db: ReturnType<typeof makeDb>, actor: number, method: string, path: string, body?: unknown) {
+  const req = new Request("https://x/admin", {
+    method,
+    ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+  });
+  return handleAdminRoutes(db.client, req, path, actor, true, "*", names, "cee", { isMaster: true });
+}
+
 // ── PATCH /admin/users/:ref ──────────────────────────────────────────────────
 
 Deno.test("админ правит почту участника СВОЕГО воркспейса → 200, человеку уходит уведомление", async () => {
@@ -339,4 +348,31 @@ Deno.test("уведомление: сбой отправки не роняет �
     newEmail: "b@x.io",
     actorName: "Adm",
   }, () => Promise.reject(new Error("down")));
+});
+
+// ── Мастер-админ из данных (не константа) ────────────────────────────────────
+
+Deno.test("мастер-админ из master_admins получает объём суперадмина: все воркспейсы, чужие люди, создание", async () => {
+  const db = makeDb();
+  const list = await (await callAsMaster(db, ADMIN_CEE, "GET", "/admin/workspaces"))!.json() as Array<{ id: string }>;
+  assertEquals(list.map((w) => w.id).sort(), ["cee", "other"]);
+  assertEquals((await callAsMaster(db, ADMIN_CEE, "GET", "/admin/workspaces/other/users"))!.status, 200);
+  assertEquals(
+    (await callAsMaster(db, ADMIN_CEE, "POST", "/admin/workspaces", { id: "new", name: "New" }))!.status,
+    201,
+  );
+});
+
+Deno.test("тот же человек без isMaster — обычный админ: свой воркспейс, создать нельзя", async () => {
+  const db = makeDb();
+  const list = await (await call(db, ADMIN_CEE, "GET", "/admin/workspaces"))!.json() as Array<{ id: string }>;
+  assertEquals(list.map((w) => w.id), ["cee"]);
+  assertEquals((await call(db, ADMIN_CEE, "GET", "/admin/workspaces/other/users"))!.status, 404);
+  assertEquals((await call(db, ADMIN_CEE, "POST", "/admin/workspaces", { id: "new", name: "New" }))!.status, 403);
+});
+
+Deno.test("мастер-админ из данных: список мастер-админов и ключ чужого пространства доступны", async () => {
+  const db = makeDb();
+  assertEquals((await callAsMaster(db, ADMIN_CEE, "GET", "/admin/workspaces/other/openai-key"))!.status, 200);
+  assertEquals((await call(db, ADMIN_CEE, "GET", "/admin/workspaces/other/openai-key"))!.status, 404);
 });

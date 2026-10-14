@@ -1,4 +1,4 @@
-import { ADMIN_USER_ID, isAdminUser, supabase } from "../lib/supabase.ts";
+import { ADMIN_USER_ID, isAdminUser, isMasterUser, supabase } from "../lib/supabase.ts";
 import { buildKeyboard, editInlineMessage, sendInlineMessage, sendMessage } from "../lib/telegram.ts";
 import { notifyMessage } from "../lib/notify.ts";
 import { clearSession, setSession } from "../lib/storage.ts";
@@ -24,7 +24,8 @@ export const PROFILE_FIELDS: Record<string, string> = {
 const NO_RIGHTS = "Недостаточно прав для этого действия.";
 
 async function loadUsersActor(telegramId: number, groupId: string): Promise<UsersActor> {
-  return { telegramId, groupId, isAdmin: await isAdminUser(telegramId) };
+  // isMaster — мастер-админ по данным (#233): от него зависит объём (isSuperadmin).
+  return { telegramId, groupId, isAdmin: await isAdminUser(telegramId), isMaster: await isMasterUser(telegramId) };
 }
 
 /** Строка человека в воркспейсе действующего (суперадмину — любая). Ошибка чтения = нет прав. */

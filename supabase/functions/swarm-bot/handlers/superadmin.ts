@@ -1,9 +1,9 @@
-import { ADMIN_USER_ID, supabase } from "../lib/supabase.ts";
+import { ADMIN_USER_ID, isMasterUser, supabase } from "../lib/supabase.ts";
 import { editInlineMessage, sendInlineMessage, sendMessage } from "../lib/telegram.ts";
 import { clearSession, setSession } from "../lib/storage.ts";
 import { assignUserToWorkspace, createWorkspace, listWorkspaces } from "../lib/workspace.ts";
 import type { TgCallbackQuery } from "../lib/types.ts";
-import type { AdminActor, MemberRow } from "../../_shared/users/admin-scope.ts";
+import { type AdminActor, isSuperadmin, type MemberRow } from "../../_shared/users/admin-scope.ts";
 import { personName } from "../../_shared/users/display-name.ts";
 import {
   actionTarget,
@@ -39,7 +39,7 @@ function parseTgIdWsId(rest: string): { tgId: number; wsId: string } {
 
 // ── Границы (правила — superadmin-scope.ts, общий канон _shared/users/admin-scope.ts) ──
 
-/** Админ и его воркспейс; null — не админ. Тот же признак, что isAdminUser (ADMIN_USER_ID ЛИБО is_admin). */
+/** Админ и его воркспейс; null — не админ. Тот же признак, что isAdminUser (мастер-админ ЛИБО is_admin). */
 async function loadAdminActor(userId: number): Promise<AdminActor | null> {
   const { data } = await supabase
     .from("allowed_users")
@@ -47,8 +47,10 @@ async function loadAdminActor(userId: number): Promise<AdminActor | null> {
     .eq("telegram_id", userId)
     .maybeSingle();
   const row = data as { is_admin?: boolean; group_id?: string | null } | null;
-  if (userId !== ADMIN_USER_ID && row?.is_admin !== true) return null;
-  return { telegramId: userId, groupId: row?.group_id ?? "" };
+  // Мастер-админ по данным (#233) — один раз на запрос; от него зависит объём (isSuperadmin).
+  const isMaster = await isMasterUser(userId);
+  if (!isMaster && row?.is_admin !== true) return null;
+  return { telegramId: userId, groupId: row?.group_id ?? "", isMaster };
 }
 
 /** Строка allowed_users, которую адресует действие (null — такой нет или действие без цели). */
@@ -73,7 +75,7 @@ async function gate(chatId: number, actor: AdminActor, act: BotAdminAction): Pro
 /** Главное меню: «Создать спейс» — только суперадмину. */
 function mainMenu(actor: AdminActor): Array<Array<{ text: string; callback_data: string }>> {
   const row = [{ text: "📋 Спейсы", callback_data: "sa_spaces" }];
-  if (actor.telegramId === ADMIN_USER_ID) row.push({ text: "➕ Создать спейс", callback_data: "sa_create" });
+  if (isSuperadmin(actor)) row.push({ text: "➕ Создать спейс", callback_data: "sa_create" });
   return [row];
 }
 
@@ -287,7 +289,7 @@ export async function handleSuperadminCallbacks(
       msg += `\nРоль: ${roleLabel}`;
 
       // Перенос между спейсами — только суперадмину.
-      const keyboard: Array<Array<{ text: string; callback_data: string }>> = actor.telegramId === ADMIN_USER_ID
+      const keyboard: Array<Array<{ text: string; callback_data: string }>> = isSuperadmin(actor)
         ? [[{ text: "🔄 Сменить спейс", callback_data: `sa_mv_${tgId}_${wsId}` }]]
         : [];
       if (tgId !== ADMIN_USER_ID) {

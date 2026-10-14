@@ -158,8 +158,8 @@ import { handleQualityRoutes } from "./quality.ts";
 import { handleInspectionRoutes } from "./inspections.ts";
 import { handleTelegramLinkRoutes } from "./telegram-link.ts";
 import { handleModelUsageRoutes } from "./model-usage.ts";
-import { SUPERADMIN_TELEGRAM_ID } from "../_shared/users/admin-scope.ts";
 import { openAIKeyHandle } from "../_shared/workspace-keys.ts";
+import { masterAdminFlag } from "../_shared/users/master-admins.ts";
 import { handleNotificationRoutes } from "./notifications.ts";
 import { handleTaskSubscriptionRoutes } from "./task-subscriptions.ts";
 import { handlePeopleRoutes, resolveTaskPeople } from "./people.ts";
@@ -645,8 +645,11 @@ async function routeRequest(req: Request): Promise<Response> {
   if (!groupId) {
     return apiErr(403, "No workspace assigned", origin);
   }
+  // Мастер-админ (#233): константа ИЛИ строка master_admins — один раз на запрос. Права
+  // (все пространства, расход модели) решаются им; владелец заморозки (ADMIN_USER_ID ниже) — отдельно.
+  const isMaster = !isDemo && await masterAdminFlag(supabase, telegram_id);
   const isAdmin = !isDemo &&
-    (telegram_id === ADMIN_USER_ID ||
+    (isMaster ||
       (userRow as { is_admin?: boolean }).is_admin === true);
   // E-mail нужен очереди вычитки: причастность к встрече определяется по metadata.attendees.
   const userEmail = isDemo
@@ -710,7 +713,7 @@ async function routeRequest(req: Request): Promise<Response> {
     req,
     routePath,
     supabase,
-    !isDemo && telegram_id === SUPERADMIN_TELEGRAM_ID,
+    isMaster,
     origin,
   );
   if (usageResp) return usageResp;
@@ -725,6 +728,7 @@ async function routeRequest(req: Request): Promise<Response> {
     origin,
     resolveNames,
     groupId,
+    { isMaster },
   );
   if (adminResp) return adminResp;
 
@@ -770,7 +774,7 @@ async function routeRequest(req: Request): Promise<Response> {
         // Telegram привязан: номер и есть Telegram (> 0) или привязан из веба (#92).
         telegram_linked: telegram_id > 0 || Boolean(au?.telegram_chat_id),
         // Суперадмин — видит разделы всей системы (расход модели, #311).
-        is_superadmin: !isDemo && telegram_id === SUPERADMIN_TELEGRAM_ID,
+        is_superadmin: isMaster,
       },
       200,
       origin,
@@ -1047,7 +1051,7 @@ async function routeRequest(req: Request): Promise<Response> {
       telegramId: telegram_id,
       groupId,
       isAdmin,
-      isSuperadmin: !isDemo && telegram_id === SUPERADMIN_TELEGRAM_ID,
+      isSuperadmin: isMaster,
       isDemo,
     },
     origin,

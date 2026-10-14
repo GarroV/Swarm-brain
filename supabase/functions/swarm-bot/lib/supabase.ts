@@ -1,5 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import type { MeetingViewer } from "../../_shared/entries/meeting-rights.ts";
+import { masterAdminFlag } from "../../_shared/users/master-admins.ts";
 
 export const ADMIN_USER_ID = 744230399;
 
@@ -8,10 +9,18 @@ const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
 export const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
-// Единый признак админа: зашитый суперадмин-разработчик (ADMIN_USER_ID, fail-safe)
+/**
+ * Мастер-админ по данным (#233): константа ADMIN_USER_ID ИЛИ строка master_admins. Для решений о
+ * правах; адресат тревог админу — по-прежнему ADMIN_USER_ID.
+ */
+export function isMasterUser(telegramId: number): Promise<boolean> {
+  return masterAdminFlag(supabase, telegramId);
+}
+
+// Единый признак админа: мастер-админ (ADMIN_USER_ID, fail-safe, ЛИБО строка master_admins)
 // ЛИБО флаг allowed_users.is_admin (руководитель — «видит ВСЁ»). Тот же смысл, что isAdmin в swarm-api.
 export async function isAdminUser(telegramId: number): Promise<boolean> {
-  if (telegramId === ADMIN_USER_ID) return true;
+  if (await isMasterUser(telegramId)) return true;
   const { data } = await supabase
     .from("allowed_users")
     .select("is_admin")
@@ -32,6 +41,6 @@ export async function loadMeetingViewer(viewerId: number): Promise<MeetingViewer
   return {
     id: viewerId,
     email: row?.email ?? null,
-    isAdmin: viewerId === ADMIN_USER_ID || row?.is_admin === true,
+    isAdmin: (await isMasterUser(viewerId)) || row?.is_admin === true,
   };
 }

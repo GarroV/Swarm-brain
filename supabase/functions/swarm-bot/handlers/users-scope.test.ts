@@ -49,3 +49,11 @@ Deno.test("править можно только поля формы, не пр
   assertEquals(isEditableProfileField(fields, "telegram_id"), false);
   assertEquals(isEditableProfileField(fields, "toString"), false);
 });
+
+Deno.test("мастер-админ из master_admins действует в любом воркспейсе и добавляет людей", () => {
+  const master: UsersActor = { telegramId: 555, groupId: "ws-a", isAdmin: true, isMaster: true };
+  assertEquals(canActOnUser(master, stranger, "remove"), true);
+  assertEquals(canActOnUser(master, superRow, "edit"), true);
+  assertEquals(canActOnUser(admin, stranger, "view"), false);
+  assertEquals(canActOnUser(admin, superRow, "edit"), false);
+});

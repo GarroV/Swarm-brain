@@ -6,7 +6,8 @@ import {
 } from "../_shared/meeting-access.ts";
 import { BOT_SLOT_COLUMNS, isMissedBotSlot, type SlotRow } from "../_shared/bot-slot.ts";
 import { publishDraftMeeting } from "../_shared/meeting-publish.ts";
-import { ADMIN_USER_ID, matchAssignee, resolveGroupId } from "./tasks/tools.ts";
+import { matchAssignee, resolveGroupId } from "./tasks/tools.ts";
+import { masterAdminFlag } from "../_shared/users/master-admins.ts";
 import { entryAccessError, type EntryAccessRow } from "../_shared/entries/access.ts";
 import { EXTRACT_MAX_TASKS, extractTasks } from "../_shared/task-extract.ts";
 import {
@@ -51,7 +52,7 @@ async function loadOwnDraft(
   // Один текст отказа на «нет такого» и «не твой»: иначе перебором id подтверждается чужой черновик.
   if (
     !meeting || !groupId ||
-    !canAccessDraftMeeting(meeting as DraftMeetingRow, callerId, callerId === ADMIN_USER_ID, groupId)
+    !canAccessDraftMeeting(meeting as DraftMeetingRow, callerId, await masterAdminFlag(supabase, callerId), groupId)
   ) {
     return { ok: false, msg: NOT_FOUND };
   }

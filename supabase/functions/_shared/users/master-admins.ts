@@ -1,6 +1,8 @@
 // Мастер-админы (#233, этап 1): доступ ко всем пространствам. Мастер-админ = константа
 // SUPERADMIN_TELEGRAM_ID (запасной, пока константа в коде) ЛИБО строка в `master_admins`.
-// Пока нигде не подключено вместо существующих проверок суперадмина (`isSuperadmin`).
+// Права суперадмина (`isSuperadmin`, `AdminActor.isMaster`) решаются этим признаком: он вычисляется
+// один раз на запрос (`masterAdminFlag`) и кладётся в актора. Адресат технических тревог — другое
+// дело: он остаётся константой и отсюда не берётся.
 
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { SUPERADMIN_TELEGRAM_ID } from "./admin-scope.ts";
@@ -37,6 +39,20 @@ async function loadIds(supabase: SupabaseClient): Promise<Set<number>> {
 export async function isMasterAdmin(supabase: SupabaseClient, telegramId: number): Promise<boolean> {
   if (telegramId === SUPERADMIN_TELEGRAM_ID) return true;
   return (await loadIds(supabase)).has(telegramId);
+}
+
+/**
+ * Признак мастер-админа для РЕШЕНИЙ О ПРАВАХ: `isMasterAdmin`, но сбой чтения списка не роняет
+ * запрос, а даёт «нет» (константа остаётся «да» без базы). Отказ — безопасная сторона для прав;
+ * сбой виден в журнале функции.
+ */
+export async function masterAdminFlag(supabase: SupabaseClient, telegramId: number): Promise<boolean> {
+  try {
+    return await isMasterAdmin(supabase, telegramId);
+  } catch (e) {
+    console.error("master-admins: список не прочитан, права мастер-админа не выданы:", e);
+    return false;
+  }
 }
 
 export async function listMasterAdmins(supabase: SupabaseClient): Promise<MasterAdmin[]> {

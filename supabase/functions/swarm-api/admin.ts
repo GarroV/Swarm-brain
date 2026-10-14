@@ -25,7 +25,13 @@ import { handleWorkspaceKeysRoutes, type WorkspaceKeysDeps } from "./workspace-k
 
 const ADMIN_TELEGRAM_ID = SUPERADMIN_TELEGRAM_ID;
 
-export type AdminDeps = { announce?: (ev: EmailChangeEvent) => Promise<void> } & WorkspaceKeysDeps;
+export type AdminDeps =
+  & {
+    announce?: (ev: EmailChangeEvent) => Promise<void>;
+    /** Мастер-админ по данным (#233), вычислен в index.ts один раз на запрос; нет — по константе. */
+    isMaster?: boolean;
+  }
+  & WorkspaceKeysDeps;
 
 // Ответы — общие `json`/`apiErr` из http.ts (issue #722): до этого у админки были свои копии
 // без `Cache-Control: no-store` и с CORS, отражавшим любой origin.
@@ -54,7 +60,7 @@ export async function handleAdminRoutes(
     return apiErr(403, "Forbidden", origin);
   }
   // Объём: суперадмин — все воркспейсы, админ — только свой (правила — admin-scope.ts).
-  const actor: AdminActor = { telegramId, groupId: adminGroupId };
+  const actor: AdminActor = { telegramId, groupId: adminGroupId, isMaster: deps.isMaster };
   const isSuper = isSuperadmin(actor);
   const announce = deps.announce ??
     ((ev: EmailChangeEvent) => announceEmailChange(ev, makeEmailChangeSender(supabase)));

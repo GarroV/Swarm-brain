@@ -5,6 +5,7 @@ import {
   addMasterAdmin,
   isMasterAdmin,
   listMasterAdmins,
+  masterAdminFlag,
   removeMasterAdmin,
   resetMasterAdminsCache,
 } from "./master-admins.ts";
@@ -71,4 +72,28 @@ Deno.test("listMasterAdmins: константа показана и помече
   const db = makeFakeDb({ master_admins: [{ telegram_id: OTHER, added_by: 1, created_at: "t" }] });
   const list = await listMasterAdmins(db.client);
   assertEquals(list.map((r) => [r.telegram_id, r.builtin]), [[SUPERADMIN_TELEGRAM_ID, true], [OTHER, false]]);
+});
+
+Deno.test("masterAdminFlag: человек из master_admins — да, обычный — нет, константа — да без базы", async () => {
+  resetMasterAdminsCache();
+  const db = makeFakeDb({ master_admins: [{ telegram_id: OTHER }] });
+  assertEquals(await masterAdminFlag(db.client, OTHER), true);
+  assertEquals(await masterAdminFlag(db.client, 999), false);
+  assertEquals(await masterAdminFlag(db.client, SUPERADMIN_TELEGRAM_ID), true);
+});
+
+Deno.test("masterAdminFlag: сбой чтения списка — «нет» для прав (не исключение); константа остаётся «да»", async () => {
+  resetMasterAdminsCache();
+  const broken = {
+    from: () => ({ select: () => Promise.resolve({ data: null, error: { code: "42P01" } }) }),
+  } as unknown as Parameters<typeof masterAdminFlag>[0];
+  const log = console.error;
+  console.error = () => {};
+  try {
+    assertEquals(await masterAdminFlag(broken, OTHER), false);
+    assertEquals(await masterAdminFlag(broken, SUPERADMIN_TELEGRAM_ID), true);
+  } finally {
+    console.error = log;
+    resetMasterAdminsCache();
+  }
 });
