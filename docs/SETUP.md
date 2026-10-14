@@ -109,7 +109,8 @@ supabase secrets set WEB_BASE_URL=<URL_веб-фронтенда_или_Mini_App
 
 | Secret | Описание | Обязателен |
 |--------|----------|-----------|
-| `WEB_JWT_SECRET` | Секрет подписи веб-сессий (Bearer-токены swarm-api) и вызовов от CF Pages (`google-oauth/link`, `auth-resolve`). Тот же ключ стоит в CF Pages — там он подписывает сессии и OAuth-state. Без него веб-логин отдаёт 500 | нужен для веб-логина и Google-connect |
+| `WEB_JWT_SECRET` | Секрет подписи веб-сессий (Bearer-токены swarm-api) и вызовов от CF Pages (`google-oauth/link`, `auth-resolve`, `auth-passkey`). Тот же ключ стоит в CF Pages — там он подписывает сессии и OAuth-state. Без него веб-логин отдаёт 500 | нужен для веб-логина и Google-connect |
+| `SECOND_STEP_REQUIRED` | Замок «второй шаг входа (палец, #955) обязателен» в swarm-api: `1` — сессии без пройденного шага получают 403 `second_step_required`. По умолчанию не задан (выключен): шаг только предлагается. Включается отдельным решением владельца | нет |
 | `WEB_BASE_URL` | Базовый URL веб-фронтенда — используется в ссылках на встречи (`meeting-ingest`, `meeting-process`) | нужен для веб-ссылок |
 
 ### 7.3 Google Drive (опционально — только если включён аплоад файлов в Drive)
