@@ -232,3 +232,22 @@ Deno.test("WorkspaceKeyError: тексты по-английски, код ма�
     );
     assertEquals([rej.code, rej.message], ["rejected", "OpenAI rejected the key."]);
   }));
+
+Deno.test("resetKeyCache: с id сбрасывает только это пространство, без аргумента — все", () =>
+  withEnv(BASE, async () => {
+    const db = makeFakeDb({ workspaces: [{ id: "cee" }, { id: "demo" }] });
+    await getOpenAIKey(db.client, "cee");
+    await getOpenAIKey(db.client, "demo");
+    assertEquals(db.reads.workspace_secrets, 2);
+
+    resetKeyCache("cee");
+    await getOpenAIKey(db.client, "demo"); // из кэша
+    assertEquals(db.reads.workspace_secrets, 2);
+    await getOpenAIKey(db.client, "cee"); // сброшено → читаем заново
+    assertEquals(db.reads.workspace_secrets, 3);
+
+    resetKeyCache();
+    await getOpenAIKey(db.client, "cee");
+    await getOpenAIKey(db.client, "demo");
+    assertEquals(db.reads.workspace_secrets, 5);
+  }));

@@ -9,6 +9,7 @@ import { assignUserToWorkspace } from "../lib/workspace.ts";
 import { onlyLive } from "../../_shared/tasks/live.ts";
 import { externalFetch, VIA_TELEGRAM } from "../../_shared/external-fetch.ts";
 import { isSuperadmin, type MemberRow } from "../../_shared/users/admin-scope.ts";
+import { withMasterFlag } from "../../_shared/users/master-admins.ts";
 import { canActOnUser, canAddUsers, isEditableProfileField, type UserAction, type UsersActor } from "./users-scope.ts";
 
 const TELEGRAM_BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN")!;
@@ -38,7 +39,8 @@ async function loadTargetRow(actor: UsersActor, targetId: number): Promise<Membe
     console.error("[users] target row:", error.message);
     return null;
   }
-  return ((data ?? [])[0] as MemberRow | undefined) ?? null;
+  // is_master — признак цели: админ воркспейса не правит аккаунт мастер-админа (fail-closed при сбое списка).
+  return await withMasterFlag(supabase, ((data ?? [])[0] as MemberRow | undefined) ?? null);
 }
 
 /** Проверка прав с ответом человеку; true — можно продолжать. */

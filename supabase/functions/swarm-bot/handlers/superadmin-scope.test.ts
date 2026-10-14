@@ -137,3 +137,16 @@ Deno.test("мастер-админ из master_admins: перенос, созд�
   assert(!allow(ADMIN, { kind: "create" }));
   assertEquals(visibleWorkspaces(ADMIN, [{ id: "cee" }, { id: "other" }]).length, 1);
 });
+
+Deno.test("мастер-админ из данных как цель: админ не убирает и не перетирает, мастер — может", () => {
+  const masterRow = { telegram_id: 555, group_id: "cee", is_master: true };
+  assert(!allow(ADMIN, { kind: "remove", tgId: 555, wsId: "cee" }, masterRow));
+  assert(!allow(ADMIN, { kind: "add", wsId: "cee", input: "555" }, masterRow));
+  assert(allow(MASTER_FROM_DATA, { kind: "remove", tgId: 555, wsId: "cee" }, masterRow));
+});
+
+Deno.test("аккаунт владельца: мастер из данных его не убирает и не перетирает", () => {
+  assert(!allow(MASTER_FROM_DATA, { kind: "remove", tgId: 744230399, wsId: "cee" }, superRow));
+  assert(!allow(MASTER_FROM_DATA, { kind: "add", wsId: "cee", input: "744230399" }, superRow));
+  assert(allow(SUPER, { kind: "add", wsId: "cee", input: "744230399" }, superRow));
+});

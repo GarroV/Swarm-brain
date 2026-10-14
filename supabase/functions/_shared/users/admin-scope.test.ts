@@ -40,8 +40,22 @@ Deno.test("объём: мастер из данных управляет люб�
   assert(canManageWorkspace(ADMIN, "cee"));
 });
 
-Deno.test("аккаунт константного суперадмина: мастер из данных меняет, обычный админ — нет", () => {
+Deno.test("аккаунт владельца (константа): меняет только он сам — не мастер из данных, не админ", () => {
   const row = { telegram_id: SUPERADMIN_TELEGRAM_ID, group_id: "cee" };
-  assertEquals(canChangeAccountKeys(MASTER_FROM_DATA, row), true);
+  assertEquals(canChangeAccountKeys(CONSTANT, row), true);
+  assertEquals(canChangeAccountKeys(MASTER_FROM_DATA, row), false);
   assertEquals(canChangeAccountKeys(ADMIN, row), false);
+});
+
+Deno.test("аккаунт мастер-админа из данных (is_master): меняет только мастер-админ", () => {
+  const row = { telegram_id: 555, group_id: "cee", is_master: true };
+  assertEquals(canChangeAccountKeys(ADMIN, row), false);
+  assertEquals(canChangeAccountKeys(ADMIN_FLAGGED_OFF, row), false);
+  assertEquals(canChangeAccountKeys(MASTER_FROM_DATA, row), true);
+  assertEquals(canChangeAccountKeys(CONSTANT, row), true);
+});
+
+Deno.test("обычный человек (is_master false или без признака): админ меняет, как раньше", () => {
+  assertEquals(canChangeAccountKeys(ADMIN, { telegram_id: 20, group_id: "cee", is_master: false }), true);
+  assertEquals(canChangeAccountKeys(ADMIN, { telegram_id: 20, group_id: "cee" }), true);
 });

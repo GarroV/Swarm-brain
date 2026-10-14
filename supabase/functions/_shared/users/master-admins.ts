@@ -7,8 +7,6 @@
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { SUPERADMIN_TELEGRAM_ID } from "./admin-scope.ts";
 
-const CACHE_TTL_MS = 60_000;
-
 export type MasterAdmin = {
   telegram_id: number;
   added_by: number | null;
@@ -21,24 +19,16 @@ export type MasterAdminResult =
   | { ok: true }
   | { ok: false; reason: "invalid_id" | "builtin" | "last" | "not_found"; message: string };
 
-let cache: { ids: Set<number>; expires: number } | null = null;
-
-export function resetMasterAdminsCache(): void {
-  cache = null;
-}
-
-async function loadIds(supabase: SupabaseClient): Promise<Set<number>> {
-  if (cache && cache.expires > Date.now()) return cache.ids;
-  const { data, error } = await supabase.from("master_admins").select("telegram_id");
-  if (error) throw new Error(`master-admins: не прочитать список (${error.code ?? "db"})`);
-  const ids = new Set((data ?? []).map((r: { telegram_id: number }) => Number(r.telegram_id)));
-  cache = { ids, expires: Date.now() + CACHE_TTL_MS };
-  return ids;
-}
-
+/**
+ * Мастер-админ ли `telegramId`. Без кэша: решение о правах читает таблицу на каждый вызов (PK),
+ * поэтому снятый мастер-админ теряет права сразу на всех экземплярах функции.
+ */
 export async function isMasterAdmin(supabase: SupabaseClient, telegramId: number): Promise<boolean> {
   if (telegramId === SUPERADMIN_TELEGRAM_ID) return true;
-  return (await loadIds(supabase)).has(telegramId);
+  const { data, error } = await supabase.from("master_admins").select("telegram_id")
+    .eq("telegram_id", telegramId).maybeSingle();
+  if (error) throw new Error(`master-admins: не прочитать список (${error.code ?? "db"})`);
+  return data != null;
 }
 
 /**
@@ -53,6 +43,32 @@ export async function masterAdminFlag(supabase: SupabaseClient, telegramId: numb
     console.error("master-admins: список не прочитан, права мастер-админа не выданы:", e);
     return false;
   }
+}
+
+/**
+ * Признак мастер-админа для ЦЕЛИ действия: сбой чтения списка → «мастер» (fail-closed): лучше
+ * отказать админу пространства, чем отдать ему аккаунт мастера. Нет аккаунта (`null`) — не мастер.
+ */
+export async function targetIsMasterAdmin(
+  supabase: SupabaseClient,
+  telegramId: number | null | undefined,
+): Promise<boolean> {
+  if (telegramId == null) return false;
+  try {
+    return await isMasterAdmin(supabase, Number(telegramId));
+  } catch (e) {
+    console.error("master-admins: список не прочитан, цель считается мастер-админом:", e);
+    return true;
+  }
+}
+
+/** Строка allowed_users с признаком `is_master` (см. `MemberRow`); null → null. */
+export async function withMasterFlag<T extends { telegram_id: number | null }>(
+  supabase: SupabaseClient,
+  row: T | null,
+): Promise<(T & { is_master: boolean }) | null> {
+  if (!row) return null;
+  return { ...row, is_master: await targetIsMasterAdmin(supabase, row.telegram_id) };
 }
 
 export async function listMasterAdmins(supabase: SupabaseClient): Promise<MasterAdmin[]> {
@@ -85,7 +101,6 @@ export async function addMasterAdmin(
     { telegram_id: telegramId, added_by: actorTid },
     { onConflict: "telegram_id", ignoreDuplicates: true },
   );
-  resetMasterAdminsCache();
   if (error) throw new Error(`master-admins: не добавить (${error.code ?? "db"})`);
   return { ok: true };
 }
@@ -111,7 +126,6 @@ export async function removeMasterAdmin(
     return { ok: false, reason: "last", message: "Нельзя удалить последнего мастер-админа" };
   }
   const { error: delErr } = await supabase.from("master_admins").delete().eq("telegram_id", telegramId);
-  resetMasterAdminsCache();
   if (delErr) throw new Error(`master-admins: не удалить (${delErr.code ?? "db"})`);
   return { ok: true };
 }

@@ -1,7 +1,6 @@
 import { assert, assertEquals } from "jsr:@std/assert@1";
 import { makeFakeDb } from "../_shared/workspace-keys.fake.ts";
 import { resetKeyCache } from "../_shared/workspace-keys.ts";
-import { resetMasterAdminsCache } from "../_shared/users/master-admins.ts";
 import { handleAdminRoutes } from "./admin.ts";
 
 const SUPER = 744230399;
@@ -15,7 +14,6 @@ function setup() {
   Deno.env.set("WORKSPACE_SECRETS_KEY", btoa(String.fromCharCode(...new Uint8Array(32).fill(3))));
   Deno.env.delete("WORKSPACE_OWN_KEYS");
   resetKeyCache();
-  resetMasterAdminsCache();
   return makeFakeDb({ workspaces: [{ id: "cee" }, { id: "demo" }] });
 }
 

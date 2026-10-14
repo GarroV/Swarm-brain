@@ -11,6 +11,8 @@ const SUPER = 744230399;
 const ADMIN_CEE = 1001; // флаг is_admin, воркспейс cee
 const MEMBER_CEE = 2001;
 const MEMBER_OTHER = 3001; // чужой воркспейс
+const MASTER_CEE = 4001;
+const SUPER_LIKE_MASTER = 5005; // ещё один мастер-админ из данных (isMaster через deps) // мастер-админ из master_admins (не константа), состоит в cee
 const PENDING_OTHER = "stranger"; // ожидающее приглашение в чужом воркспейсе
 
 type Row = Record<string, unknown>;
@@ -23,6 +25,7 @@ function fixtures(): Record<string, Row[]> {
       { id: 2, telegram_id: ADMIN_CEE, group_id: "cee", email: "adm@x.io", username: "adm", is_admin: true },
       { id: 3, telegram_id: MEMBER_CEE, group_id: "cee", email: "m@x.io", username: "m", is_admin: false },
       { id: 4, telegram_id: MEMBER_OTHER, group_id: "other", email: "o@x.io", username: "o", is_admin: false },
+      { id: 6, telegram_id: MASTER_CEE, group_id: "cee", email: "mst@x.io", username: "mst", is_admin: true },
       { id: 5, telegram_id: null, group_id: "other", email: null, username: PENDING_OTHER, is_admin: false },
     ],
     workspaces: [{ id: "cee", name: "CEE", allowed_markets: null }, {
@@ -31,6 +34,7 @@ function fixtures(): Record<string, Row[]> {
       allowed_markets: null,
     }],
     user_profiles: [],
+    master_admins: [{ telegram_id: MASTER_CEE }],
   };
 }
 
@@ -297,7 +301,7 @@ Deno.test("рассылка админа уходит только его вор
   try {
     const res = await call(db, ADMIN_CEE, "POST", "/admin/broadcast", { text: "hi" });
     assertEquals(res!.status, 200);
-    assertEquals(sentTo.sort(), [ADMIN_CEE, MEMBER_CEE].sort());
+    assertEquals(sentTo.sort(), [ADMIN_CEE, MEMBER_CEE, MASTER_CEE].sort());
   } finally {
     globalThis.fetch = realFetch;
     if (prevToken == null) Deno.env.delete("TELEGRAM_BOT_TOKEN");
@@ -375,4 +379,62 @@ Deno.test("мастер-админ из данных: список мастер-
   const db = makeDb();
   assertEquals((await callAsMaster(db, ADMIN_CEE, "GET", "/admin/workspaces/other/openai-key"))!.status, 200);
   assertEquals((await call(db, ADMIN_CEE, "GET", "/admin/workspaces/other/openai-key"))!.status, 404);
+});
+
+// ── Аккаунт мастер-админа из данных и аккаунт владельца (константа) ────────────
+
+Deno.test("админ пространства меняет почту входа мастер-админа из данных → 403, в базу ничего не пишется", async () => {
+  const db = makeDb();
+  const res = await call(db, ADMIN_CEE, "PATCH", `/admin/users/${MASTER_CEE}`, { email: "take@x.io" });
+  assertEquals(res!.status, 403);
+  assertEquals(db.writes, []);
+});
+
+Deno.test("админ пространства добавлением/переносом перетирает мастер-админа из данных → 403", async () => {
+  const db = makeDb();
+  const res = await call(db, ADMIN_CEE, "POST", "/admin/workspaces/cee/users", {
+    telegram_id: MASTER_CEE,
+    email: "take@x.io",
+  });
+  assertEquals(res!.status, 403);
+  assertEquals(db.writes, []);
+});
+
+Deno.test("админ пространства убирает мастер-админа из данных из пространства → 403, ничего не удалено", async () => {
+  const db = makeDb();
+  const res = await call(db, ADMIN_CEE, "DELETE", `/admin/workspaces/cee/users/${MASTER_CEE}`);
+  assertEquals(res!.status, 403);
+  assertEquals(db.writes, []);
+});
+
+Deno.test("мастер-админ меняет почту другого мастер-админа из данных → 200", async () => {
+  const db = makeDb();
+  const res = await callAsMaster(db, SUPER_LIKE_MASTER, "PATCH", `/admin/users/${MASTER_CEE}`, { email: "m2@x.io" });
+  assertEquals(res!.status, 200);
+});
+
+Deno.test("мастер-админ из данных НЕ меняет аккаунт владельца (константа) → 403", async () => {
+  const db = makeDb();
+  const res = await callAsMaster(db, MASTER_CEE, "PATCH", `/admin/users/${SUPER}`, { email: "take@x.io" });
+  assertEquals(res!.status, 403);
+  assertEquals(db.writes, []);
+  const add = await callAsMaster(db, MASTER_CEE, "POST", "/admin/workspaces/other/users", {
+    telegram_id: SUPER,
+    email: "take@x.io",
+  });
+  assertEquals(add!.status, 403);
+  assertEquals(db.writes, []);
+});
+
+Deno.test("мастер-админ из данных не снимает константу из списка мастер-админов (409)", async () => {
+  const db = makeDb();
+  const res = await callAsMaster(db, MASTER_CEE, "DELETE", `/admin/master-admins/${SUPER}`);
+  assertEquals(res!.status, 409);
+  assertEquals(db.writes, []);
+});
+
+Deno.test("владелец (константа) меняет почту мастер-админа из данных → 200", async () => {
+  const db = makeDb();
+  const res = await call(db, SUPER, "PATCH", `/admin/users/${MASTER_CEE}`, { email: "m3@x.io" });
+  assertEquals(res!.status, 200);
 });

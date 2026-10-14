@@ -53,7 +53,21 @@ Deno.test("править можно только поля формы, не пр
 Deno.test("мастер-админ из master_admins действует в любом воркспейсе и добавляет людей", () => {
   const master: UsersActor = { telegramId: 555, groupId: "ws-a", isAdmin: true, isMaster: true };
   assertEquals(canActOnUser(master, stranger, "remove"), true);
-  assertEquals(canActOnUser(master, superRow, "edit"), true);
   assertEquals(canActOnUser(admin, stranger, "view"), false);
   assertEquals(canActOnUser(admin, superRow, "edit"), false);
+});
+
+Deno.test("мастер-админ из данных как цель: админ воркспейса не правит и не убирает, мастер — может", () => {
+  const master: UsersActor = { telegramId: 555, groupId: "ws-a", isAdmin: true, isMaster: true };
+  const masterRow = { telegram_id: 777, group_id: "ws-a", is_master: true };
+  assertEquals(canActOnUser(admin, masterRow, "edit"), false);
+  assertEquals(canActOnUser(admin, masterRow, "remove"), false);
+  assertEquals(canActOnUser(admin, masterRow, "view"), true);
+  assertEquals(canActOnUser(master, masterRow, "remove"), true);
+});
+
+Deno.test("аккаунт владельца: мастер из данных его не правит", () => {
+  const master: UsersActor = { telegramId: 555, groupId: "ws-a", isAdmin: true, isMaster: true };
+  assertEquals(canActOnUser(master, superRow, "edit"), false);
+  assertEquals(canActOnUser(superadmin, superRow, "edit"), true);
 });

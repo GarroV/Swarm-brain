@@ -185,6 +185,7 @@ Deno.test("PATCH реального юзера по telegram_id — прежни
   // сначала — строка цели в allowed_users (границы объёма админа, admin-scope.ts)
   assertEquals(calls.filter((c) => c.method === "from").map((c) => c.args[0]), [
     "allowed_users",
+    "master_admins", // цель — не мастер-админ ли (аккаунт мастера админ пространства не правит)
     "user_profiles",
     "allowed_users",
     "user_profiles",

@@ -4,6 +4,7 @@ import { clearSession, setSession } from "../lib/storage.ts";
 import { assignUserToWorkspace, createWorkspace, listWorkspaces } from "../lib/workspace.ts";
 import type { TgCallbackQuery } from "../lib/types.ts";
 import { type AdminActor, isSuperadmin, type MemberRow } from "../../_shared/users/admin-scope.ts";
+import { withMasterFlag } from "../../_shared/users/master-admins.ts";
 import { personName } from "../../_shared/users/display-name.ts";
 import {
   actionTarget,
@@ -62,7 +63,7 @@ async function loadTarget(act: BotAdminAction): Promise<MemberRow | null> {
     ? await q.eq("telegram_id", t.telegramId).limit(1).maybeSingle()
     : await q.ilike("username", t.username).limit(1).maybeSingle();
   if (error) throw new Error(error.message);
-  return (data as MemberRow | null) ?? null;
+  return await withMasterFlag(supabase, (data as MemberRow | null) ?? null);
 }
 
 /** Действие в объёме админа? Отказ — сообщение и true (колбэк обработан). */
