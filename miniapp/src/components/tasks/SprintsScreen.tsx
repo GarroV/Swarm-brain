@@ -55,6 +55,7 @@ import { projectLabel } from "@/lib/sprintPlan";
 import { useDt, useRoyNav } from "@/components/roy/nav";
 import { cn } from "@/lib/utils";
 import { useIsDesktop } from "@/components/roy/useIsDesktop";
+import { SHELL_BAR_H } from "@/components/roy/ui";
 import {
   AcceptDialog,
   type AcceptSubmit,
@@ -943,7 +944,7 @@ export function SprintsScreen() {
     <div className="flex flex-col h-full min-h-0">
       {/* Заголовок раздела с вкладками (стенд): на десктопе шапку оболочки заменяет эта строка,
           на телефоне остаются одни вкладки. */}
-      <div className="flex shrink-0 items-stretch gap-5 border-b border-line px-4 lg:px-5" style={{ minHeight: 44 }}>
+      <div className="flex shrink-0 items-stretch gap-5 border-b border-line px-4 lg:px-5" style={{ minHeight: isDesktop ? SHELL_BAR_H : 44 }}>
         {isDesktop && (
           <h1 className="self-center font-semibold text-ink" style={{ fontSize: 16, letterSpacing: "-0.01em" }}>
             {dt("Спринты", "Sprints")}
