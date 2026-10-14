@@ -94,7 +94,11 @@ Deno.test("openai-key: плохой ключ — 400 без эха ключа, �
   const db = setup();
   const bad = await call(db, "PUT", "/admin/workspaces/cee/openai-key", ADMIN_CEE, true, "cee", { key: "nope" });
   assertEquals(bad.status, 400);
-  await bad.body?.cancel();
+  // ответ несёт машинный код: экран показывает текст на своём языке по нему
+  assertEquals(await bad.json(), {
+    error: 'The key must start with "sk-" and contain no spaces.',
+    code: "invalid_format",
+  });
   const res = await handleAdminRoutes(
     db.client,
     new Request("https://x/a", { method: "PUT", body: "{" }),

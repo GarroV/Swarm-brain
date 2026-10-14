@@ -121,7 +121,12 @@ export async function handleMeetings(chatId: number, hoursBack = 24, _groupId = 
   );
 }
 
-export async function handleMeetingCallback(chatId: number, _username: string, meetingId: string): Promise<void> {
+export async function handleMeetingCallback(
+  chatId: number,
+  _username: string,
+  meetingId: string,
+  groupId: string,
+): Promise<void> {
   await sendMessage(chatId, "Обрабатываю встречу...");
 
   const meeting = await readAiGet(`/meetings/${meetingId}`) as Record<string, unknown>;
@@ -155,6 +160,7 @@ export async function handleMeetingCallback(chatId: number, _username: string, m
       "2. ✅ Задачи с ответственными и дедлайнами (если есть)\n" +
       "Отвечай на русском языке. Будь конкретным.",
     contentParts,
+    { groupId },
   );
 
   await setSession(chatId, `meeting_pending_${meetingId}`, JSON.stringify({ content: contentParts, title }));
@@ -249,7 +255,7 @@ export async function handleMeetingCallbacks(
   }
 
   if (data.startsWith("meeting_")) {
-    await handleMeetingCallback(chatId, username, data.replace("meeting_", ""));
+    await handleMeetingCallback(chatId, username, data.replace("meeting_", ""), groupId);
     return true;
   }
   if (data.startsWith("md_")) {
@@ -588,7 +594,7 @@ export async function handleMeetingCallbacks(
     try {
       const base = (entry.summary as string | null) || (entry.content as string | null) || "";
       if (base) {
-        const emb = await getEmbedding(buildEmbeddingInput(base, countries));
+        const emb = await getEmbedding(buildEmbeddingInput(base, countries), groupId);
         await supabase.from("entries").update({ embedding: emb }).eq("id", entryId).eq("group_id", groupId);
       }
     } catch (e) {
@@ -709,6 +715,7 @@ export async function handleMeetingSessionInput(
     const parsed = await chatComplete(
       `Сегодня ${today}. Преобразуй дату из текста пользователя в формат ГГГГ-ММ-ДД. Верни ТОЛЬКО дату в этом формате, без пояснений. Если не можешь распознать — верни "null".`,
       text.trim(),
+      { groupId },
     );
     const dateVal = /^\d{4}-\d{2}-\d{2}$/.test(parsed.trim()) ? parsed.trim() : null;
     if (!dateVal) await sendMessage(chatId, "Не удалось распознать дату. Попробуй ещё раз.");
@@ -756,6 +763,7 @@ export async function handleMeetingSessionInput(
         `Текущее название: ${currentTitle}\n` +
         `Текущие тезисы:\n${(entry.summary as string) ?? ""}`,
       (entry.content as string ?? "").slice(0, 6000),
+      { groupId },
     );
 
     let newTitle: string | null = null;

@@ -1,11 +1,13 @@
-// Ключ к нейронке у пространства (#233, этап 1). Только добавляем: ни один существующий потребитель
-// OPENAI_API_KEY пока сюда не переключён.
+// Ключ к нейронке у пространства (#233). Потребители берут ключ через `getOpenAIKey` /
+// `resolveOpenAIKey`; пока в `workspace_secrets` нет строк, это ровно ключ сервера OPENAI_API_KEY.
 //
 // Правило выбора ключа (`getOpenAIKey`):
-//   • функция выключена (`WORKSPACE_OWN_KEYS=off`) или у пространства своего ключа нет → ключ
-//     сервера `OPENAI_API_KEY`, как и сейчас;
+//   • пространства нет (служебный вызов, `groupId` null/undefined), функция выключена
+//     (`WORKSPACE_OWN_KEYS=off`) или у пространства своего ключа нет → ключ сервера `OPENAI_API_KEY`, как и сейчас;
 //   • свой ключ есть → он. Не расшифровался — ОШИБКА, а не тихий переход на ключ сервера: это
 //     тратило бы чужие деньги (решение владельца 14.10.2026).
+//   • OpenAI отказал ключу пространства (401) — `reportKeyRejected` пишет ошибку в строку, показ — в
+//     статусе. На ключ сервера НЕ переключаемся: вызов падает как обычно. Людям ничего не шлём.
 // Ключ наружу не отдаётся никогда: статус — только last4/дата; в ошибки и логи ключ не попадает.
 
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
@@ -23,7 +25,15 @@ export type KeyStatus = {
   last4: string | null;
   set_at: string | null;
   set_by: number | null;
+  /** Когда OpenAI последний раз отказал этому ключу (401); очищается новым ключом. */
+  last_error: string | null;
+  last_error_at: string | null;
 };
+
+export type OpenAIKeySource = "workspace" | "server";
+export type ResolvedKey = { key: string | undefined; source: OpenAIKeySource };
+
+const REJECTED_MARK = "rejected";
 
 /** Отказ с текстом для человека. `code` — машинная причина, `status` — HTTP-статус маршрута. */
 export class WorkspaceKeyError extends Error {
@@ -68,14 +78,16 @@ async function loadOwnKey(supabase: SupabaseClient, groupId: string): Promise<st
 }
 
 /**
- * Ключ OpenAI для пространства. `undefined` — нет ни своего ключа, ни ключа сервера
- * (так же, как `Deno.env.get`). Ошибка чтения/расшифровки — исключение, не фолбэк.
+ * Ключ OpenAI и его источник. `key` undefined — нет ни своего ключа, ни ключа сервера (так же, как
+ * `Deno.env.get`). `groupId` пустой — служебный вызов без пространства: ключ сервера. Ошибка
+ * чтения/расшифровки — исключение, не фолбэк.
  */
-export async function getOpenAIKey(
+export async function resolveOpenAIKey(
   supabase: SupabaseClient,
-  groupId: string,
-): Promise<string | undefined> {
-  if (!ownKeysEnabled()) return Deno.env.get("OPENAI_API_KEY");
+  groupId: string | null | undefined,
+): Promise<ResolvedKey> {
+  const server = Deno.env.get("OPENAI_API_KEY");
+  if (!groupId || !ownKeysEnabled()) return { key: server, source: "server" };
   const hit = cache.get(groupId);
   let own: string | null;
   if (hit && hit.expires > Date.now()) {
@@ -84,23 +96,98 @@ export async function getOpenAIKey(
     own = await loadOwnKey(supabase, groupId);
     cache.set(groupId, { key: own, expires: Date.now() + CACHE_TTL_MS });
   }
-  return own ?? Deno.env.get("OPENAI_API_KEY");
+  return own ? { key: own, source: "workspace" } : { key: server, source: "server" };
 }
+
+/** Только ключ (см. `resolveOpenAIKey`). */
+export async function getOpenAIKey(
+  supabase: SupabaseClient,
+  groupId: string | null | undefined,
+): Promise<string | undefined> {
+  return (await resolveOpenAIKey(supabase, groupId)).key;
+}
+
+/**
+ * OpenAI отказал ключу пространства (401): фиксируем в строке, сбрасываем кэш. Никому ничего не
+ * шлём, на ключ сервера не переходим. Сбой записи не должен ронять вызов — логируем и идём дальше.
+ */
+export async function reportKeyRejected(supabase: SupabaseClient, groupId: string): Promise<void> {
+  resetKeyCache(groupId);
+  const { error } = await supabase.from("workspace_secrets")
+    .update({ last_error: REJECTED_MARK, last_error_at: new Date().toISOString() })
+    .eq("group_id", groupId).eq("kind", KIND);
+  if (error) console.error(`workspace-keys: не записать отказ ключа (${error.code ?? "db"})`);
+}
+
+/** После ответа OpenAI: 401 на ключе пространства → `reportKeyRejected`. Ответ не трогает. */
+export async function noteOpenAIResponse(
+  supabase: SupabaseClient,
+  groupId: string | null | undefined,
+  resolved: ResolvedKey,
+  res: { status: number },
+): Promise<void> {
+  if (res.status === 401 && resolved.source === "workspace" && groupId) {
+    await reportKeyRejected(supabase, groupId);
+  }
+}
+
+/**
+ * Ключ на один вызов OpenAI: `key` — в заголовок, `noteResponse(res)` — после ответа (401 на ключе
+ * пространства фиксируется). Для кода, где ключ раньше передавался строкой.
+ */
+export type KeyHandle = { key: string; noteResponse(res: { status: number }): Promise<void> };
+/** Принимают и обычную строку (ключ сервера, как раньше), и ручку. */
+export type KeyLike = string | KeyHandle;
+
+export async function openAIKeyHandle(
+  supabase: SupabaseClient,
+  groupId: string | null | undefined,
+): Promise<KeyHandle> {
+  const resolved = await resolveOpenAIKey(supabase, groupId);
+  return {
+    key: resolved.key ?? "",
+    noteResponse: (res) => noteOpenAIResponse(supabase, groupId, resolved, res),
+  };
+}
+
+export const keyOf = (k: KeyLike): string => (typeof k === "string" ? k : k.key);
+export const noteKeyResponse = (k: KeyLike, res: { status: number }): Promise<void> =>
+  typeof k === "string" ? Promise.resolve() : k.noteResponse(res);
 
 /** Чей ключ у пространства. Ключ не содержит и не расшифровывается. */
 export async function keyStatus(supabase: SupabaseClient, groupId: string): Promise<KeyStatus> {
-  const server: KeyStatus = { source: "server", last4: null, set_at: null, set_by: null };
+  const server: KeyStatus = {
+    source: "server",
+    last4: null,
+    set_at: null,
+    set_by: null,
+    last_error: null,
+    last_error_at: null,
+  };
   if (!ownKeysEnabled()) return server;
   const { data, error } = await supabase
     .from("workspace_secrets")
-    .select("last4, set_at, set_by")
+    .select("last4, set_at, set_by, last_error, last_error_at")
     .eq("group_id", groupId)
     .eq("kind", KIND)
     .maybeSingle();
   if (error) throw new Error(`workspace-keys: не прочитать статус ключа (${error.code ?? "db"})`);
   if (!data) return server;
-  const row = data as { last4: string; set_at: string; set_by: number };
-  return { source: "workspace", last4: row.last4, set_at: row.set_at, set_by: Number(row.set_by) };
+  const row = data as {
+    last4: string;
+    set_at: string;
+    set_by: number;
+    last_error: string | null;
+    last_error_at: string | null;
+  };
+  return {
+    source: "workspace",
+    last4: row.last4,
+    set_at: row.set_at,
+    set_by: Number(row.set_by),
+    last_error: row.last_error ?? null,
+    last_error_at: row.last_error_at ?? null,
+  };
 }
 
 function normalizeKey(raw: unknown): string {
@@ -108,7 +195,7 @@ function normalizeKey(raw: unknown): string {
   const ok = key.startsWith("sk-") && !/\s/.test(key) && key.length >= MIN_KEY_LENGTH &&
     key.length <= MAX_KEY_LENGTH;
   if (!ok) {
-    throw new WorkspaceKeyError("invalid_format", "Ключ должен начинаться с sk- и не содержать пробелов.", 400);
+    throw new WorkspaceKeyError("invalid_format", 'The key must start with "sk-" and contain no spaces.', 400);
   }
   return key;
 }
@@ -122,12 +209,12 @@ async function verifyWithOpenAI(key: string, fetchImpl: typeof fetch): Promise<v
       signal: AbortSignal.timeout(VERIFY_TIMEOUT_MS),
     });
   } catch {
-    throw new WorkspaceKeyError("unverifiable", "Не удалось проверить ключ, попробуйте позже.", 503);
+    throw new WorkspaceKeyError("unverifiable", "Could not verify the key, please try again later.", 503);
   }
   await res.body?.cancel();
-  if (res.status === 401) throw new WorkspaceKeyError("rejected", "Ключ не принят OpenAI.", 400);
+  if (res.status === 401) throw new WorkspaceKeyError("rejected", "OpenAI rejected the key.", 400);
   if (!res.ok) {
-    throw new WorkspaceKeyError("unverifiable", "Не удалось проверить ключ, попробуйте позже.", 503);
+    throw new WorkspaceKeyError("unverifiable", "Could not verify the key, please try again later.", 503);
   }
 }
 
@@ -150,6 +237,8 @@ export async function setOpenAIKey(
     last4: key.slice(-4),
     set_by: actorTid,
     set_at: new Date().toISOString(),
+    last_error: null,
+    last_error_at: null,
   }, { onConflict: "group_id,kind" });
   resetKeyCache(groupId);
   if (error) throw new Error(`workspace-keys: не сохранить ключ (${error.code ?? "db"})`);

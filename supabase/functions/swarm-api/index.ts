@@ -159,6 +159,7 @@ import { handleInspectionRoutes } from "./inspections.ts";
 import { handleTelegramLinkRoutes } from "./telegram-link.ts";
 import { handleModelUsageRoutes } from "./model-usage.ts";
 import { SUPERADMIN_TELEGRAM_ID } from "../_shared/users/admin-scope.ts";
+import { openAIKeyHandle } from "../_shared/workspace-keys.ts";
 import { handleNotificationRoutes } from "./notifications.ts";
 import { handleTaskSubscriptionRoutes } from "./task-subscriptions.ts";
 import { handlePeopleRoutes, resolveTaskPeople } from "./people.ts";
@@ -377,10 +378,11 @@ async function withFreshAssignees<
 //   {"type":"error","message":…} — модель оборвалась на середине; молча не глотаем
 async function streamExtractTasks(
   text: string,
+  groupId: string,
   origin: string,
 ): Promise<Response> {
   const today = todayIso();
-  const upstream = await callExtractor(text, today, true);
+  const upstream = await callExtractor({ supabase, groupId }, text, today, true);
   // Проверяем ДО того, как отдать 200: после начала потока сообщить об ошибке уже нечем.
   if (!upstream.ok || !upstream.body) {
     return apiErr(502, "Extractor unavailable", origin);
@@ -2214,7 +2216,8 @@ async function routeRequest(req: Request): Promise<Response> {
     const addedBy = (profile as { first_name?: string } | null)?.first_name ||
       String(telegram_id);
 
-    const OPENAI_KEY = Deno.env.get("OPENAI_API_KEY")!;
+    // Ключ OpenAI — пространства вызывающего (#233); своего нет → ключ сервера.
+    const OPENAI_KEY = await openAIKeyHandle(supabase, groupId);
 
     // Ручная заметка из miniapp: эмбеддинг по контенту + страны/тип/дата через общее
     // COUNTRY_PROMPT_RULE (тот же извлекатель, что и в остальных путях ингеста).
@@ -2228,7 +2231,7 @@ async function routeRequest(req: Request): Promise<Response> {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${OPENAI_KEY}`,
+          Authorization: `Bearer ${OPENAI_KEY.key}`,
         },
         body: JSON.stringify({
           model: "gpt-4o-mini",
@@ -2245,6 +2248,7 @@ async function routeRequest(req: Request): Promise<Response> {
         }),
       }, { ...VIA_OPENAI_CHAT, usage: { purpose: "web:chat" } })
       : null;
+    if (summaryRes) await OPENAI_KEY.noteResponse(summaryRes);
     const summary = summaryRes?.ok
       ? (await summaryRes.json()).choices[0].message.content
       : null;
@@ -2271,18 +2275,20 @@ async function routeRequest(req: Request): Promise<Response> {
   if (req.method === "GET" && routePath === "/search") {
     const q = url.searchParams.get("q");
     if (!q?.trim()) return apiErr(400, "q required", origin);
-    const OPENAI_KEY = Deno.env.get("OPENAI_API_KEY")!;
+    // Ключ OpenAI — пространства вызывающего (#233); своего нет → ключ сервера.
+    const OPENAI_KEY = await openAIKeyHandle(supabase, groupId);
     const embRes = await externalFetch("https://api.openai.com/v1/embeddings", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${OPENAI_KEY}`,
+        Authorization: `Bearer ${OPENAI_KEY.key}`,
       },
       body: JSON.stringify({
         model: "text-embedding-3-small",
         input: q.slice(0, 8000),
       }),
     }, { ...VIA_OPENAI_EMBEDDING, usage: { purpose: "web:embedding" } });
+    await OPENAI_KEY.noteResponse(embRes);
     if (!embRes.ok) return apiErr(500, "Embedding failed", origin);
     const embedding: number[] = (await embRes.json()).data[0].embedding;
     try {
@@ -2310,19 +2316,21 @@ async function routeRequest(req: Request): Promise<Response> {
     }
     const q = (askBody.q ?? "").trim();
     if (!q) return apiErr(400, "q required", origin);
-    const OPENAI_KEY = Deno.env.get("OPENAI_API_KEY")!;
+    // Ключ OpenAI — пространства вызывающего (#233); своего нет → ключ сервера.
+    const OPENAI_KEY = await openAIKeyHandle(supabase, groupId);
     // 1) эмбеддинг запроса
     const embRes = await externalFetch("https://api.openai.com/v1/embeddings", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${OPENAI_KEY}`,
+        Authorization: `Bearer ${OPENAI_KEY.key}`,
       },
       body: JSON.stringify({
         model: "text-embedding-3-small",
         input: q.slice(0, 8000),
       }),
     }, { ...VIA_OPENAI_EMBEDDING, usage: { purpose: "web:embedding" } });
+    await OPENAI_KEY.noteResponse(embRes);
     if (!embRes.ok) return apiErr(500, "Embedding failed", origin);
     const embedding: number[] = (await embRes.json()).data[0].embedding;
     // 2) retrieve (воркспейс-изоляция и приватность — внутри matchEntries/RPC)
@@ -2377,7 +2385,7 @@ async function routeRequest(req: Request): Promise<Response> {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${OPENAI_KEY}`,
+        Authorization: `Bearer ${OPENAI_KEY.key}`,
       },
       body: JSON.stringify({
         model: "gpt-4o-mini",
@@ -2399,6 +2407,7 @@ async function routeRequest(req: Request): Promise<Response> {
         max_tokens: 700,
       }),
     }, { ...VIA_OPENAI_CHAT, usage: { purpose: "web:chat" } });
+    await OPENAI_KEY.noteResponse(askRes);
     if (!askRes.ok) {
       // деградация: вернуть источники без AI-ответа, экран покажет список
       return json(
@@ -2597,20 +2606,22 @@ async function routeRequest(req: Request): Promise<Response> {
       }
       const tezisi = await resummarizeFromTranscript(supabase, meetingRowId);
       // Освежаем эмбеддинг (контент изменился) — как при публикации. Не критично при сбое.
-      const OPENAI_KEY = Deno.env.get("OPENAI_API_KEY")!;
+      // Ключ OpenAI — пространства вызывающего (#233); своего нет → ключ сервера.
+    const OPENAI_KEY = await openAIKeyHandle(supabase, groupId);
       let embedding: number[] | null = null;
       try {
         const r = await externalFetch("https://api.openai.com/v1/embeddings", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            Authorization: `Bearer ${OPENAI_KEY}`,
+            Authorization: `Bearer ${OPENAI_KEY.key}`,
           },
           body: JSON.stringify({
             model: "text-embedding-3-small",
             input: tezisi.slice(0, 8000),
           }),
         }, { ...VIA_OPENAI_EMBEDDING, usage: { purpose: "web:embedding" } });
+        await OPENAI_KEY.noteResponse(r);
         if (r.ok) embedding = (await r.json()).data[0].embedding;
       } catch { /* эмбеддинг не критичен — текст обновим в любом случае */ }
       const upd: Record<string, unknown> = { summary: tezisi, content: tezisi };
@@ -2993,7 +3004,7 @@ async function routeRequest(req: Request): Promise<Response> {
         try {
           const meta = await extractEntryMeta(
             draftNotes,
-            Deno.env.get("OPENAI_API_KEY")!,
+            await openAIKeyHandle(supabase, groupId),
           );
           suggestion = pickSuggestedMarkets({
             title,
@@ -3344,7 +3355,8 @@ async function routeRequest(req: Request): Promise<Response> {
     if (!noteRes.ok) return apiErr(404, "Note not found", origin);
     const note = await noteRes.json() as Record<string, unknown>;
 
-    const OPENAI_KEY = Deno.env.get("OPENAI_API_KEY")!;
+    // Ключ OpenAI — пространства вызывающего (#233); своего нет → ключ сервера.
+    const OPENAI_KEY = await openAIKeyHandle(supabase, groupId);
     const content = [note.title, note.content ?? note.transcript ?? ""].filter(
       Boolean,
     ).join("\n\n");
@@ -3354,7 +3366,7 @@ async function routeRequest(req: Request): Promise<Response> {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${OPENAI_KEY}`,
+          Authorization: `Bearer ${OPENAI_KEY.key}`,
         },
         body: JSON.stringify({
           model: "gpt-4o-mini",
@@ -3371,6 +3383,7 @@ async function routeRequest(req: Request): Promise<Response> {
         }),
       }, { ...VIA_OPENAI_CHAT, usage: { purpose: "web:chat" } },
     );
+    await OPENAI_KEY.noteResponse(summaryRes);
     if (!summaryRes.ok) return apiErr(500, "GPT error", origin);
     const summary = (await summaryRes.json()).choices[0].message.content;
     return json({ summary }, 200, origin);
@@ -3444,7 +3457,8 @@ async function routeRequest(req: Request): Promise<Response> {
       "\n",
     ).trim();
 
-    const OPENAI_KEY = Deno.env.get("OPENAI_API_KEY")!;
+    // Ключ OpenAI — пространства вызывающего (#233); своего нет → ключ сервера.
+    const OPENAI_KEY = await openAIKeyHandle(supabase, groupId);
     // Granola-импорт из miniapp: раньше countries хардкодился [] (в отличие от бот-пути
     // Granola, который тегирует). Привязываем к рынкам через общее COUNTRY_PROMPT_RULE,
     // затем эмбеддим контент ВМЕСТЕ со странами.
@@ -3456,7 +3470,7 @@ async function routeRequest(req: Request): Promise<Response> {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${OPENAI_KEY}`,
+          Authorization: `Bearer ${OPENAI_KEY.key}`,
         },
         body: JSON.stringify({
           model: "gpt-4o-mini",
@@ -3473,6 +3487,7 @@ async function routeRequest(req: Request): Promise<Response> {
         }),
       }, { ...VIA_OPENAI_CHAT, usage: { purpose: "web:chat" } }),
     ]);
+    await OPENAI_KEY.noteResponse(summaryRes);
     const summary = summaryRes.ok
       ? (await summaryRes.json()).choices[0].message.content
       : null;
@@ -3812,12 +3827,13 @@ async function routeRequest(req: Request): Promise<Response> {
       role ? `Роль: ${role}` : "",
       userName ? `Имя: ${userName}` : "",
     ].filter(Boolean).join(" | ");
-    const OPENAI_KEY = Deno.env.get("OPENAI_API_KEY")!;
+    // Ключ OpenAI — пространства вызывающего (#233); своего нет → ключ сервера.
+    const OPENAI_KEY = await openAIKeyHandle(supabase, groupId);
     const gptRes = await externalFetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${OPENAI_KEY}`,
+        Authorization: `Bearer ${OPENAI_KEY.key}`,
       },
       body: JSON.stringify({
         model: "gpt-4o-mini",
@@ -3833,6 +3849,7 @@ async function routeRequest(req: Request): Promise<Response> {
         max_tokens: 2600,
       }),
     }, { ...VIA_OPENAI_CHAT, usage: { purpose: "web:chat" } });
+    await OPENAI_KEY.noteResponse(gptRes);
     if (!gptRes.ok) return apiErr(500, "GPT error", origin);
     const text = (await gptRes.json()).choices[0].message.content;
     return json({ text, sources }, 200, origin);
@@ -3853,12 +3870,12 @@ async function routeRequest(req: Request): Promise<Response> {
     // Потоковый режим — по Accept, а не по новому пути: контракт эндпоинта не меняется,
     // старый JSON-ответ продолжает работать для всех, кто про поток не знает.
     if ((req.headers.get("Accept") ?? "").includes("text/event-stream")) {
-      return await streamExtractTasks(body.text, origin);
+      return await streamExtractTasks(body.text, groupId, origin);
     }
 
     // Единый экстрактор (`extractTasks`, общий с MCP) — без дубля промпта. Отказ модели — 502,
     // как у потоковой ветки, а не пустой список: «задач нет» и «модель молчит» различаются (#374).
-    const result = await extractTasks(body.text);
+    const result = await extractTasks({ supabase, groupId }, body.text);
     if (!result.ok) {
       return json(EXTRACTOR_UNAVAILABLE, 502, origin);
     }

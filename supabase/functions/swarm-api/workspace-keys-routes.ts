@@ -71,7 +71,7 @@ async function handleKeyRoute(
     const status = await setOpenAIKey(supabase, wsId, body.key, actor.telegramId, deps.fetchImpl);
     return json(status, 200, origin);
   } catch (e) {
-    if (e instanceof WorkspaceKeyError) return apiErr(e.status, e.message, origin);
+    if (e instanceof WorkspaceKeyError) return apiErr(e.status, e.message, origin, e.code);
     throw e;
   }
 }

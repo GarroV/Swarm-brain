@@ -39,6 +39,7 @@ import {
   specificCountries,
 } from "../_shared/meta-extract.ts";
 import { matchEntries } from "../_shared/search.ts";
+import { openAIKeyHandle } from "../_shared/workspace-keys.ts";
 import { detectQuerySince } from "../_shared/query-time.ts";
 import { ALL_MEETING_SOURCES } from "../_shared/sources.ts";
 import { isFeedbackStatus } from "../_shared/feedback-categories.ts";
@@ -58,7 +59,6 @@ import {
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY")!;
 
 import { absoluteFileUrl, removeStorageObject } from "../_shared/storage-links.ts";
 import { FILES_UNAVAILABLE } from "../_shared/swarm-files-storage.ts";
@@ -111,12 +111,16 @@ function textContent(text: string) {
   return { content: [{ type: "text", text }] };
 }
 
-async function getEmbedding(text: string): Promise<number[]> {
+// Ключ OpenAI — пространства вызывающего (#233), пока у него своего нет — ключ сервера. `groupId`
+// есть в каждом инструменте: сюда он приходит из callerScope.
+async function getEmbedding(groupId: string, text: string): Promise<number[]> {
+  const key = await openAIKeyHandle(supabase, groupId);
   const res = await externalFetch("https://api.openai.com/v1/embeddings", {
     method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${OPENAI_API_KEY}` },
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${key.key}` },
     body: JSON.stringify({ model: "text-embedding-3-small", input: text.slice(0, 8000) }),
   }, { ...VIA_OPENAI_EMBEDDING, usage: { purpose: "mcp:embedding" } });
+  await key.noteResponse(res);
   const data = await res.json() as { data?: Array<{ embedding: number[] }>; error?: { message?: string } };
   if (!res.ok || !data.data?.[0]) {
     throw new Error(`OpenAI embeddings: HTTP ${res.status} ${data.error?.message ?? ""}`.trim());
@@ -130,9 +134,9 @@ async function getEmbedding(text: string): Promise<number[]> {
  * Теперь запись ложится с embedding = null, ежечасный проход swarm-bot дозаполняет индекс, а
  * человек слышит честное «пока не находится поиском» (UNINDEXED_NOTE).
  */
-async function embeddingOrNull(text: string): Promise<number[] | null> {
+async function embeddingOrNull(groupId: string, text: string): Promise<number[] | null> {
   try {
-    return await getEmbedding(text);
+    return await getEmbedding(groupId, text);
   } catch (e) {
     console.error("[swarm-mcp] эмбеддинг не получен — запись сохраняется без индекса:", e);
     return null;
@@ -143,6 +147,7 @@ const UNINDEXED_NOTE =
   "\n⚠️ Модель поиска сейчас не ответила: запись сохранена, но поиском по смыслу пока не находится. Индекс дозаполнится автоматически в течение часа.";
 
 async function chatComplete(
+  groupId: string,
   system: string,
   user: string,
   opts: { temperature?: number; json?: boolean } = {},
@@ -154,11 +159,13 @@ async function chatComplete(
   };
   if (opts.temperature !== undefined) body.temperature = opts.temperature;
   if (opts.json) body.response_format = { type: "json_object" };
+  const key = await openAIKeyHandle(supabase, groupId);
   const res = await externalFetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${OPENAI_API_KEY}` },
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${key.key}` },
     body: JSON.stringify(body),
   }, { ...VIA_OPENAI_CHAT, usage: { purpose: "mcp:chat" } });
+  await key.noteResponse(res);
   const data = await res.json() as { choices: Array<{ message: { content: string } }> };
   return data.choices[0].message.content;
 }
@@ -512,7 +519,7 @@ async function toolSearchKnowledge(
 ): Promise<string> {
   const scope = await callerScope(args.requesting_user_id);
   if (!scope) return NO_WORKSPACE_MESSAGE;
-  const embedding = await getEmbedding(args.query);
+  const embedding = await getEmbedding(scope.groupId, args.query);
 
   let data;
   try {
@@ -755,8 +762,8 @@ async function toolAddKnowledge(
   const ownerId = scope.userId;
   const workspaceGroupId = scope.groupId;
   const [summaryEmbedding, entryMeta] = await Promise.all([
-    embeddingOrNull(args.summary.slice(0, 8000)),
-    extractEntryMeta(args.summary, OPENAI_API_KEY),
+    embeddingOrNull(scope.groupId, args.summary.slice(0, 8000)),
+    openAIKeyHandle(supabase, scope.groupId).then((key) => extractEntryMeta(args.summary, key)),
   ]);
 
   let unindexed = summaryEmbedding === null;
@@ -779,7 +786,7 @@ async function toolAddKnowledge(
 
   // Remaining chunks: content only, same chunk_group_id in metadata
   if (chunks.length > 1) {
-    const restEmbeddings = await Promise.all(chunks.slice(1).map((c) => embeddingOrNull(c)));
+    const restEmbeddings = await Promise.all(chunks.slice(1).map((c) => embeddingOrNull(scope.groupId, c)));
     if (restEmbeddings.includes(null)) unindexed = true;
     try {
       await Promise.all(
@@ -833,8 +840,8 @@ async function toolUploadFile(args: {
   }
 
   const [embedding, entryMeta] = await Promise.all([
-    embeddingOrNull(args.summary.slice(0, 8000)),
-    extractEntryMeta(args.summary, OPENAI_API_KEY),
+    embeddingOrNull(scope.groupId, args.summary.slice(0, 8000)),
+    openAIKeyHandle(supabase, scope.groupId).then((key) => extractEntryMeta(args.summary, key)),
   ]);
 
   const workspaceGroupId = scope.groupId;
@@ -1115,13 +1122,13 @@ async function toolUpdateEntry(
 
   if (args.content) {
     updates.content = args.content;
-    const emb = await getEmbedding(args.content.slice(0, 8000));
+    const emb = await getEmbedding(scopeUpd.groupId, args.content.slice(0, 8000));
     updates.embedding = emb;
   }
   if (args.summary) {
     updates.summary = args.summary;
     if (!args.content) {
-      const emb = await getEmbedding(args.summary.slice(0, 8000));
+      const emb = await getEmbedding(scopeUpd.groupId, args.summary.slice(0, 8000));
       updates.embedding = emb;
     }
   }
@@ -1193,7 +1200,7 @@ async function toolReindexEntry(args: { id: string; summary?: string; requesting
 
   let parsed: { summary?: string; countries?: string[]; entry_type?: string; entry_date?: string; keywords?: string };
   try {
-    const raw = await chatComplete(system, e.content.slice(0, 5000), { temperature: 0, json: true });
+    const raw = await chatComplete(scopeRx.groupId, system, e.content.slice(0, 5000), { temperature: 0, json: true });
     parsed = JSON.parse(raw.replace(/```json\n?|\n?```/g, "").trim());
   } catch {
     return `Ошибка GPT при анализе записи ${args.id}.`;
@@ -1214,7 +1221,7 @@ async function toolReindexEntry(args: { id: string; summary?: string; requesting
     keywords ? `Ключевые слова: ${keywords}` : "",
   ].filter(Boolean).join("\n").slice(0, 8000);
 
-  const embedding = await getEmbedding(embeddingText);
+  const embedding = await getEmbedding(scopeRx.groupId, embeddingText);
 
   const updates: Record<string, unknown> = { countries, embedding };
   if (newSummary && newSummary !== e.summary) updates.summary = newSummary;

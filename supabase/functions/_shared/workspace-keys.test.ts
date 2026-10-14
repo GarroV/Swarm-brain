@@ -4,7 +4,11 @@ import {
   clearOpenAIKey,
   getOpenAIKey,
   keyStatus,
+  noteOpenAIResponse,
+  openAIKeyHandle,
+  reportKeyRejected,
   resetKeyCache,
+  resolveOpenAIKey,
   setOpenAIKey,
   WorkspaceKeyError,
 } from "./workspace-keys.ts";
@@ -147,5 +151,84 @@ Deno.test("setOpenAIKey: key обрезается по краям; в базе �
 Deno.test("keyStatus: без своего ключа — server и пустые поля", () =>
   withEnv(BASE, async () => {
     const db = makeFakeDb();
-    assertEquals(await keyStatus(db.client, "cee"), { source: "server", last4: null, set_at: null, set_by: null });
+    assertEquals(await keyStatus(db.client, "cee"), {
+      source: "server",
+      last4: null,
+      set_at: null,
+      set_by: null,
+      last_error: null,
+      last_error_at: null,
+    });
+  }));
+
+Deno.test("getOpenAIKey: без пространства (null/undefined/пусто) → ключ сервера, в базу не ходит", () =>
+  withEnv(BASE, async () => {
+    const db = makeFakeDb({ workspaces: [{ id: "cee" }] });
+    await setOpenAIKey(db.client, "cee", WS_KEY, ACTOR, okFetch);
+    const before = db.reads.workspace_secrets ?? 0;
+    for (const g of [null, undefined, ""]) {
+      assertEquals(await getOpenAIKey(db.client, g), SERVER_KEY);
+      assertEquals((await resolveOpenAIKey(db.client, g)).source, "server");
+    }
+    assertEquals(db.reads.workspace_secrets ?? 0, before);
+  }));
+
+Deno.test("resolveOpenAIKey: источник — workspace у пространства со своим ключом, server у остальных", () =>
+  withEnv(BASE, async () => {
+    const db = makeFakeDb({ workspaces: [{ id: "cee" }, { id: "demo" }] });
+    await setOpenAIKey(db.client, "cee", WS_KEY, ACTOR, okFetch);
+    assertEquals(await resolveOpenAIKey(db.client, "cee"), { key: WS_KEY, source: "workspace" });
+    assertEquals(await resolveOpenAIKey(db.client, "demo"), { key: SERVER_KEY, source: "server" });
+  }));
+
+Deno.test("reportKeyRejected: 401 на ключе пространства пишет ошибку; ключ сервера не подставляется", () =>
+  withEnv(BASE, async () => {
+    const db = makeFakeDb({ workspaces: [{ id: "cee" }] });
+    await setOpenAIKey(db.client, "cee", WS_KEY, ACTOR, okFetch);
+    const handle = await openAIKeyHandle(db.client, "cee");
+    assertEquals(handle.key, WS_KEY);
+    await handle.noteResponse({ status: 401 });
+    const st = await keyStatus(db.client, "cee");
+    assertEquals(st.last_error, "rejected");
+    assert(st.last_error_at !== null);
+    // дальше вызовы по-прежнему идут ключом пространства (и падают как обычно), а не чужим
+    assertEquals(await getOpenAIKey(db.client, "cee"), WS_KEY);
+    assert(!JSON.stringify(st).includes(WS_KEY));
+  }));
+
+Deno.test("noteOpenAIResponse: не-401 и ключ сервера ничего не пишут", () =>
+  withEnv(BASE, async () => {
+    const db = makeFakeDb({ workspaces: [{ id: "cee" }, { id: "demo" }] });
+    await setOpenAIKey(db.client, "cee", WS_KEY, ACTOR, okFetch);
+    const own = await resolveOpenAIKey(db.client, "cee");
+    for (const status of [200, 429, 500]) await noteOpenAIResponse(db.client, "cee", own, { status });
+    // 401 на ключе сервера (у demo своего ключа нет) — это не отказ ключа пространства
+    const server = await resolveOpenAIKey(db.client, "demo");
+    await noteOpenAIResponse(db.client, "demo", server, { status: 401 });
+    await noteOpenAIResponse(db.client, null, server, { status: 401 });
+    assertEquals((await keyStatus(db.client, "cee")).last_error, null);
+    assertEquals(db.tables.workspace_secrets.length, 1);
+  }));
+
+Deno.test("setOpenAIKey: новый ключ очищает прежнюю ошибку", () =>
+  withEnv(BASE, async () => {
+    const db = makeFakeDb({ workspaces: [{ id: "cee" }] });
+    await setOpenAIKey(db.client, "cee", WS_KEY, ACTOR, okFetch);
+    await reportKeyRejected(db.client, "cee");
+    assertEquals((await keyStatus(db.client, "cee")).last_error, "rejected");
+    const after = await setOpenAIKey(db.client, "cee", "sk-workspace-2222222222222222", ACTOR, okFetch);
+    assertEquals(after.last_error, null);
+    assertEquals(after.last_error_at, null);
+  }));
+
+Deno.test("WorkspaceKeyError: тексты по-английски, код машинный", () =>
+  withEnv(BASE, async () => {
+    const db = makeFakeDb({ workspaces: [{ id: "cee" }] });
+    const bad = await assertRejects(() => setOpenAIKey(db.client, "cee", "nope", ACTOR, okFetch), WorkspaceKeyError);
+    assertEquals([bad.code, bad.message], ["invalid_format", 'The key must start with "sk-" and contain no spaces.']);
+    const rej = await assertRejects(
+      () => setOpenAIKey(db.client, "cee", WS_KEY, ACTOR, statusFetch(401)),
+      WorkspaceKeyError,
+    );
+    assertEquals([rej.code, rej.message], ["rejected", "OpenAI rejected the key."]);
   }));

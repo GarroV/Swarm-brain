@@ -5,6 +5,7 @@ import { notifyMessage } from "../lib/notify.ts";
 import { clearSession, getSession, setSession } from "../lib/storage.ts";
 import { applyGeneralSentinel, extractEntryMeta, specificCountries } from "../../_shared/meta-extract.ts";
 import { getUserGroupId } from "../lib/workspace.ts";
+import { openAIKeyHandle } from "../../_shared/workspace-keys.ts";
 import { buildTezisyUserMessage, TEZISY_PROMPT } from "../../_shared/tezisy-prompt.ts";
 import { findDuplicateMeeting, type MeetingAttendee, parseMeetingContent } from "../../_shared/meeting-dedup.ts";
 import type { TgCallbackQuery } from "../lib/types.ts";
@@ -201,6 +202,7 @@ type PreparedGranolaEntry = {
 async function prepareGranolaEntry(
   noteId: string,
   telegramId: number,
+  groupId: string,
   cached?: GranolaPreviewCache,
 ): Promise<PreparedGranolaEntry | null> {
   let title: string;
@@ -225,8 +227,8 @@ async function prepareGranolaEntry(
   const [tezises, entryMeta] = await Promise.all([
     cached
       ? Promise.resolve(cached.tezises)
-      : chatComplete(GRANOLA_TEZISY_PROMPT, buildTezisyUserMessage(content.slice(0, 12000))),
-    extractEntryMeta(content, Deno.env.get("OPENAI_API_KEY")!),
+      : chatComplete(GRANOLA_TEZISY_PROMPT, buildTezisyUserMessage(content.slice(0, 12000)), { groupId }),
+    openAIKeyHandle(supabase, groupId).then((key) => extractEntryMeta(content, key)),
   ]);
 
   // Extract entry_date from content (content always has it in "Дата: ..." line)
@@ -253,7 +255,7 @@ async function prepareGranolaEntry(
     tezises ?? "",
     specific.length > 0 ? `Страны: ${specific.join(", ")}` : "",
   ].filter(Boolean).join("\n").slice(0, 8000);
-  const embedding = await getEmbedding(embeddingText || content.slice(0, 8000));
+  const embedding = await getEmbedding(embeddingText || content.slice(0, 8000), groupId);
 
   return { title, content, tezises, entryDate, startTime, attendees, countries, embedding };
 }
@@ -273,7 +275,7 @@ async function saveGranolaNote(
   }
   await sendMessage(chatId, "Импортирую встречу…");
 
-  const prepared = await prepareGranolaEntry(noteId, telegramId, cached);
+  const prepared = await prepareGranolaEntry(noteId, telegramId, groupId, cached);
   if (!prepared) {
     await sendMessage(chatId, "Не удалось получить заметку из Granola.");
     return false;
@@ -475,7 +477,7 @@ async function ingestNewGranolaNotesForUser(integration: {
 
   let created = 0;
   for (const note of newNotes) {
-    const prepared = await prepareGranolaEntry(note.id, integration.telegram_id);
+    const prepared = await prepareGranolaEntry(note.id, integration.telegram_id, groupId);
     if (!prepared) continue;
     const { title, tezises, entryDate, startTime, attendees } = prepared;
 
@@ -660,7 +662,9 @@ export async function handleGranolaCallbacks(
 
     const title = (note.title as string) || "Встреча";
     const content = buildNoteContent(note);
-    const tezises = await chatComplete(GRANOLA_TEZISY_PROMPT, buildTezisyUserMessage(content.slice(0, 12000)));
+    const tezises = await chatComplete(GRANOLA_TEZISY_PROMPT, buildTezisyUserMessage(content.slice(0, 12000)), {
+      groupId: await getUserGroupId(userId),
+    });
 
     await setSession(chatId, `granola_preview_${noteId}`, JSON.stringify({ content, title, tezises }));
 
@@ -754,6 +758,7 @@ export async function handleGranolaSessionInput(
         `Текущее название: ${cached.title}\n` +
         `Текущие тезисы:\n${cached.tezises}`,
       cached.content.slice(0, 6000),
+      { groupId: await getUserGroupId(telegramId) },
     );
 
     let newTitle = cached.title;
@@ -793,6 +798,7 @@ export async function handleGranolaSessionInput(
   const parsed = await chatComplete(
     `Сегодня ${today}. Преобразуй дату из текста пользователя в формат ГГГГ-ММ-ДД. Верни ТОЛЬКО дату, без пояснений. Если не можешь распознать — верни "null".`,
     text.trim(),
+    { groupId: await getUserGroupId(telegramId) },
   );
 
   const dateVal = /^\d{4}-\d{2}-\d{2}$/.test(parsed.trim()) ? parsed.trim() : null;

@@ -179,12 +179,13 @@ export async function handleAddTask(chatId: number): Promise<void> {
 
 // ── smartTaskSearch ───────────────────────────────────────────────────────────
 
-export async function smartTaskSearch(chatId: number, question: string): Promise<boolean> {
+export async function smartTaskSearch(chatId: number, question: string, groupId: string): Promise<boolean> {
   if (!TASK_KEYWORDS.test(question)) return false;
 
   const raw = await chatComplete(
     `Из вопроса извлеки фильтр. Верни JSON: {"person":"Имя или null","country":"Страна или null","period":"week/null"}\nТолько JSON.`,
     question,
+    { groupId },
   );
 
   let person: string | null = null;
@@ -915,6 +916,7 @@ export async function handleTaskSessionInput(
     const parsed = await chatComplete(
       `Сегодня ${today}. Преобразуй дату из текста пользователя в формат ГГГГ-ММ-ДД. Только дату, без пояснений. Если не распознал — верни "null".`,
       text.trim(),
+      { groupId },
     );
     const due = normalizeExtractedDueDate(parsed.trim(), today);
     if (!due) {
@@ -944,6 +946,7 @@ export async function handleTaskSessionInput(
     const parsed = await chatComplete(
       `Сегодня ${today}. Преобразуй дату в формат ГГГГ-ММ-ДД. Только дату. Если не распознал — "null".`,
       text.trim(),
+      { groupId },
     );
     const due = /^\d{4}-\d{2}-\d{2}$/.test(parsed.trim()) ? parsed.trim() : null;
     if (!due) {

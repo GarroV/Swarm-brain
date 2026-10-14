@@ -28,7 +28,7 @@ export function makeFakeDb(initial: Record<string, Row[]> = {}): FakeDb {
 
   const from = (table: string) => {
     const filters: Array<[string, unknown]> = [];
-    let op: "select" | "upsert" | "delete" = "select";
+    let op: "select" | "upsert" | "delete" | "update" = "select";
     let payload: Row | null = null;
     let ignoreDuplicates = false;
     const rows = () => tables[table] ?? (tables[table] = []);
@@ -40,6 +40,10 @@ export function makeFakeDb(initial: Record<string, Row[]> = {}): FakeDb {
       }
       if (op === "delete") {
         tables[table] = rows().filter((r) => !match(r));
+        return { data: null, error: null };
+      }
+      if (op === "update") {
+        tables[table] = rows().map((r) => (match(r) ? { ...r, ...payload! } : r));
         return { data: null, error: null };
       }
       const keyCols = KEYS[table];
@@ -59,6 +63,11 @@ export function makeFakeDb(initial: Record<string, Row[]> = {}): FakeDb {
         return b;
       },
       delete: () => (op = "delete", b),
+      update: (row: Row) => {
+        op = "update";
+        payload = row;
+        return b;
+      },
       maybeSingle: () => {
         const r = run();
         return Promise.resolve({ data: (r.data as Row[])[0] ?? null, error: null });

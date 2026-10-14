@@ -1,6 +1,6 @@
 -- Ключ к нейронке у пространства и список мастер-админов: этап 1 задачи #233
 -- (docs/decisions/2026-10-14-workspace-settings-and-keys.md). Миграция только создаёт новые
--- объекты и поведение для команды не меняет: потребители пока не переключены.
+-- объекты и поведение для команды не меняет: пока в workspace_secrets нет строк, везде ключ сервера.
 --
 -- workspace_secrets — ключ пространства В ЗАШИФРОВАННОМ ВИДЕ (AES-256-GCM, _shared/secret-box.ts;
 -- ключ шифрования — секрет сервера WORKSPACE_SECRETS_KEY, в базу не попадает). В AAD шифротекста
@@ -19,6 +19,8 @@ create table if not exists public.workspace_secrets (
   last4      text not null,
   set_by     bigint not null,
   set_at     timestamptz not null default now(),
+  last_error    text,
+  last_error_at timestamptz,
   primary key (group_id, kind)
 );
 
@@ -26,6 +28,9 @@ comment on table public.workspace_secrets is
   'Секреты пространств в зашифрованном виде (AES-256-GCM, AAD = group_id:kind). Читает только service_role через _shared/workspace-keys.ts; ключ наружу не отдаётся. #233.';
 comment on column public.workspace_secrets.last4 is
   'Последние 4 символа ключа — единственное, что показывается человеку.';
+
+comment on column public.workspace_secrets.last_error is
+  'Последний отказ OpenAI этому ключу (rejected = 401); очищается новым ключом. Показ — только в статусе ключа.';
 
 create table if not exists public.master_admins (
   telegram_id bigint primary key,

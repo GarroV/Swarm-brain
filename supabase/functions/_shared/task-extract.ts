@@ -1,5 +1,7 @@
 import { normalizeExtractedDueDate, todayIso } from "./llm-date.ts";
 import { externalFetch, VIA_OPENAI_LONG } from "./external-fetch.ts";
+import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { openAIKeyHandle } from "./workspace-keys.ts";
 
 // Вынесено из swarm-api/index.ts без изменений (issue #514): тем же экстрактором теперь
 // пользуется MCP (extract_tasks_from_meeting), а копий промпта в проекте и так хватает.
@@ -62,19 +64,26 @@ export function extractRequestBody(
   });
 }
 
-export function callExtractor(
+/** Ключ OpenAI для разбора: пространство того, кто разбирает (#233), иначе ключ сервера. */
+export type ExtractorAuth = { supabase: SupabaseClient; groupId: string | null | undefined };
+
+export async function callExtractor(
+  auth: ExtractorAuth,
   text: string,
   today: string,
   stream: boolean,
 ): Promise<Response> {
-  return externalFetch("https://api.openai.com/v1/chat/completions", {
+  const key = await openAIKeyHandle(auth.supabase, auth.groupId);
+  const res = await externalFetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${Deno.env.get("OPENAI_API_KEY")!}`,
+      Authorization: `Bearer ${key.key}`,
     },
     body: extractRequestBody(text, today, stream),
   }, { ...VIA_OPENAI_LONG, usage: { purpose: "task-extract:long" } });
+  await key.noteResponse(res);
+  return res;
 }
 
 // Слой 2 поверх промпта: выдуманный моделью год и строковые «пустоты» чиним здесь — промпт
@@ -128,9 +137,9 @@ export const EXTRACTOR_UNAVAILABLE = {
   code: "extractor_unavailable",
 } as const;
 
-export async function extractTasks(text: string): Promise<ExtractResult> {
+export async function extractTasks(auth: ExtractorAuth, text: string): Promise<ExtractResult> {
   const today = todayIso();
-  const res = await callExtractor(text, today, false);
+  const res = await callExtractor(auth, text, today, false);
   if (!res.ok) {
     console.error(`[task-extract] модель ответила ${res.status}`);
     return { ok: false, reason: "upstream" };

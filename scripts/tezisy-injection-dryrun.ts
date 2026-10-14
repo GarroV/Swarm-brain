@@ -164,6 +164,8 @@ async function runOnce(
 ) {
   const out = (await chatComplete(TEZIS_SYSTEM, buildTezisyUserMessage(text), {
     temperature: 0.3,
+    // Служебный прогон без пространства и без базы: ключ сервера (OPENAI_API_KEY), `supabase` не читается.
+    auth: { supabase: null as never, groupId: null },
   })).trim();
   const file = `${outDir}/${label}-${i}.md`;
   await Deno.writeTextFile(file, out + "\n");

@@ -93,6 +93,7 @@ export async function generatePersonalDigest(
       `📋 На следующий период\n\n` +
       `Будь конкретным. Отвечай на русском.`,
     entriesText.slice(0, 8000),
+    { groupId },
   );
 
   const digestContent = `Дайджест за ${periodLabel} · ${userName || `ID ${userId}`}\n\n${digest}`;
