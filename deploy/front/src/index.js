@@ -25,6 +25,9 @@
 // Caddy резерва отдаёт его по /__reserve/active. Автоматического перескока при
 // сбое VPS нет намеренно — иначе две базы разошлись бы молча. Ответ резерва
 // запоминается на RESERVE_CHECK_MS и обновляется в фоне: запрос его не ждёт.
+// Переключает только явный ответ резерва (200/404); сбой проверки состояние не
+// меняет. Пока изоляты не переспросили, в переходные 30 с часть запросов может
+// уйти по старому пути — поэтому down.ps1 гасит сервисы лишь через минуту.
 
 const FRONT_KEY_HEADER = "X-Swarm-Front-Key";
 const CLIENT_IP_HEADER = "X-Swarm-Client-IP";
@@ -41,12 +44,20 @@ async function checkReserve(env) {
       `http://${env.RESERVE_HOST}/__reserve/active`,
       { signal: AbortSignal.timeout(RESERVE_TIMEOUT_MS) },
     );
-    const active = res.status === 200;
-    if (active !== reserve.active) console.log("reserve active:", active);
-    reserve.active = active;
-  } catch {
-    // Холодный резерв: туннель не поднят — это обычное состояние.
-    reserve.active = false;
+    // Состояние меняет только явный ответ: 200 — флажок есть, 404 — флажка нет.
+    // Любой другой ответ, как и сбой ниже, оставляет прежнее: иначе один
+    // сорванный запрос к активному резерву вернул бы трафик на VPS, и записи
+    // разошлись бы по двум базам. Caddy и туннель резерва работают и в холодном
+    // состоянии, так что явный 404 доступен всегда, пока жив MUSPELHEIM.
+    if (res.status === 200 || res.status === 404) {
+      const active = res.status === 200;
+      if (active !== reserve.active) console.log("reserve active:", active);
+      reserve.active = active;
+    } else {
+      console.warn("reserve check: unexpected status", res.status);
+    }
+  } catch (error) {
+    console.warn("reserve check failed", String(error));
   } finally {
     reserve.checkedAt = Date.now();
     reserve.checking = false;
