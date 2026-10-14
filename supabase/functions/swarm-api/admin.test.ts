@@ -1,4 +1,5 @@
 import { assertEquals } from "jsr:@std/assert@1";
+import { FakeTime } from "jsr:@std/testing@1/time";
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { handleAdminRoutes } from "./admin.ts";
 
@@ -171,6 +172,9 @@ Deno.test("PATCH — занятый email → 409 с понятным текст
 });
 
 Deno.test("PATCH реального юзера по telegram_id — прежний путь профиля не тронут", async () => {
+  // Днём по Москве: в комендантский час (_shared/curfew.ts) путь извещения ходит в базу иначе,
+  // и порядок вызовов ниже перестаёт сходиться — тест ночью краснел.
+  using _clock = new FakeTime(new Date("2026-10-14T09:00:00Z"));
   const { client, calls } = makeSupabase({ data: { telegram_id: 900000102 } });
   const res = await handleAdminRoutes(
     client,
