@@ -30,9 +30,9 @@ import { SidePanel } from "@/components/roy/SidePanel";
 
 const ROLE_LABEL: Record<string, string> = { bd: "BD", marketing: "Marketing", rnd: "R&D" };
 
-type Panel = "role" | "telegram" | "backdrop" | "account" | "digest";
+type Panel = "role" | "backdrop" | "account" | "digest";
 const PANEL_TITLE: Record<Panel, [string, string]> = {
-  role: ["Роль и рынки", "Role and markets"], telegram: ["Telegram", "Telegram"],
+  role: ["Роль и рынки", "Role and markets"],
   backdrop: ["Фон", "Background"], account: ["Аккаунт", "Account"], digest: ["Дайджест", "Digest"],
 };
 
@@ -109,9 +109,7 @@ function ProfileTile({ me, open, onToggle }: { me: Me; open: Panel | null; onTog
         <Line label={dt("Роль и рынки", "Role and markets")} value={roleMarkets || dt("не выбраны", "not set")} muted={!roleMarkets}>
           <Action on={open === "role"} onClick={() => onToggle("role")}>{dt("Изменить", "Edit")}</Action>
         </Line>
-        <Line label="Telegram" value={me.username ? `@${me.username}` : dt("без имени пользователя", "no username")} muted={!me.username}>
-          <Action on={open === "telegram"} onClick={() => onToggle("telegram")}>{dt("Подробнее", "Details")}</Action>
-        </Line>
+        {/* Строки «Telegram» здесь нет: подключение живёт в «Интеграциях» ниже, дубль путал (владелец 15.10.2026). */}
         {/* В браузере initData пустой → показываем выход; внутри Telegram — нет. */}
         {!getInitData() && (
           <Line label={dt("Аккаунт", "Account")} value={dt("вход в этом браузере", "signed in in this browser")}>
@@ -126,7 +124,6 @@ function ProfileTile({ me, open, onToggle }: { me: Me; open: Panel | null; onTog
 function PanelBody({ panel, me, onProfileSaved }: { panel: Panel; me: Me; onProfileSaved: (patch: Pick<Me, "role" | "markets">) => void }) {
   switch (panel) {
     case "role": return <ProfileSection me={me} onSaved={onProfileSaved} />;
-    case "telegram": return <TelegramPanel me={me} />;
     case "backdrop": return <BackdropSection />;
     case "account": return <AccountSection />;
     case "digest": return <DigestSection isAdmin={!!me.is_admin} />;
