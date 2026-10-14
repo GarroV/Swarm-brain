@@ -1,5 +1,5 @@
 import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import { classifyFailure, deviceName, shouldAutoStart, stepPending } from "./passkeyStep.ts";
+import { failureNotice, deviceName, shouldAutoStart, stepPending } from "./passkeyStep.ts";
 import type { Me } from "@/types";
 
 const me = (over: Partial<Me> = {}, step: Partial<NonNullable<Me["second_step"]>> = {}): Me =>
@@ -41,9 +41,10 @@ Deno.test("имя ключа: браузер · система", () => {
   assertEquals(deviceName("curl"), "Browser");
 });
 
-Deno.test("осечки окна: ключ уже на устройстве — подтверждаем им; остальное — тихая ссылка", () => {
-  assertEquals(classifyFailure("create", "InvalidStateError"), "already_here");
-  assertEquals(classifyFailure("get", "InvalidStateError"), "retry_link");
-  assertEquals(classifyFailure("create", "NotAllowedError"), "retry_link");
-  assertEquals(classifyFailure("get", undefined), "retry_link");
+Deno.test("осечка подтверждения (ключи есть) — строка про код или сброс, не про сохранение нового ключа", () => {
+  assertEquals(failureNotice("get"), "confirm_or_reset");
+});
+
+Deno.test("осечка первого сохранения — строка-ссылка «Включить вход по Touch ID»", () => {
+  assertEquals(failureNotice("create"), "enable_link");
 });

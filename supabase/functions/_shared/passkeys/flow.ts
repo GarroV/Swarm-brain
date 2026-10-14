@@ -55,13 +55,16 @@ export function cleanDeviceName(raw: unknown): string {
 }
 
 /**
- * Выдать вызов. `here` — в браузере есть метка «ключ тут сохранён». Есть метка и есть ключи —
- * подтверждение сохранённого (get, с перечнем ключей человека); иначе — сохранить новый (create,
- * уже сохранённые исключены, чтобы устройство не завело второй ключ).
+ * Выдать вызов. Правило владельца 14.10.2026 («в новом браузере палец без проверки не сохраняем»):
+ *   • у человека НЕТ ключей (самый первый вход, или админ сбросил вход) — сохранить палец сам (create);
+ *   • ключи ЕСТЬ — только подтверждение (get, с перечнем его ключей), независимо от того, какие
+ *     метки помнит браузер: синхронизированный ключ (iCloud) подтянется, а нового не заводится.
+ *     Не вышло — вход остаётся «без второго шага»; новый ключ под такой сессией не принимается.
+ * Место для второй части (код из приложения-аутентификатора): отказ get отдаёт веб, он же покажет подсказку.
  */
 export async function startStep(
   deps: StepDeps,
-  input: { telegramId: number; origin: unknown; here: boolean; userName: string },
+  input: { telegramId: number; origin: unknown; userName: string },
 ): Promise<StartResult> {
   const now = deps.now ?? Date.now;
   const rp = relyingPartyFor(input.origin);
@@ -72,7 +75,7 @@ export async function startStep(
   if (issued >= MAX_CHALLENGES_PER_WINDOW) return { ok: false, reason: "throttled" };
 
   const keys = await deps.store.listForPerson(input.telegramId);
-  const confirm = input.here && keys.length > 0;
+  const confirm = keys.length > 0;
   const descriptors = keys.map((k) => ({ id: k.credentialId, transports: k.transports }));
 
   if (confirm) {
@@ -93,7 +96,6 @@ export async function startStep(
     userName: input.userName,
     userID: enc.encode(String(input.telegramId)),
     attestationType: "none",
-    excludeCredentials: descriptors,
     authenticatorSelection: {
       authenticatorAttachment: "platform",
       residentKey: "required",
@@ -152,6 +154,9 @@ async function finishRegistration(
   });
   if (!verified.verified) return { ok: false, reason: "failed" };
   const cred = verified.registrationInfo.credential;
+  // Первый ключ — только человеку без ключей. Вызов выдавался, пока их не было, но с тех пор мог
+  // появиться ключ (другой браузер): тогда новый не принимаем — подтверждать надо уже сохранённым.
+  if ((await deps.store.listForPerson(input.telegramId)).length > 0) return { ok: false, reason: "failed" };
   // Номер уже занят — тот же ключ сохранён раньше (двойной клик): шаг всё равно пройден,
   // но ЧУЖОЙ ключ под своим именем так не присвоить: проверяем владельца.
   const stored = await deps.store.insertPasskey({

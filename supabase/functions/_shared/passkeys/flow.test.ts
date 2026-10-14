@@ -19,13 +19,13 @@ function setup() {
 
 type Deps = ReturnType<typeof setup>["deps"];
 
-async function start(deps: Deps, telegramId: number, here: boolean, origin: unknown = ORIGIN) {
-  return await startStep(deps, { telegramId, origin, here, userName: `u${telegramId}` });
+async function start(deps: Deps, telegramId: number, origin: unknown = ORIGIN) {
+  return await startStep(deps, { telegramId, origin, userName: `u${telegramId}` });
 }
 
 /** Сохранить ключ человеку: полный проход create. */
 async function enroll(deps: Deps, telegramId: number, device: SoftAuthenticator) {
-  const s = await start(deps, telegramId, false);
+  const s = await start(deps, telegramId);
   assert(s.ok && s.mode === "create");
   const cred = await device.register({ challenge: s.options.challenge as string, origin: ORIGIN, rpID: RP_ID });
   return await finishStep(deps, { telegramId, origin: ORIGIN, name: "Chrome · Mac", credential: cred });
@@ -33,7 +33,7 @@ async function enroll(deps: Deps, telegramId: number, device: SoftAuthenticator)
 
 Deno.test("create: платформенный ключ, без вопросов, UV обязателен, окно — встроенный датчик", async () => {
   const { deps } = setup();
-  const s = await start(deps, ANNA, false);
+  const s = await start(deps, ANNA);
   assert(s.ok && s.mode === "create");
   const sel = s.options.authenticatorSelection as Record<string, string>;
   assertEquals(sel.authenticatorAttachment, "platform");
@@ -52,11 +52,11 @@ Deno.test("сохранение ключа: настоящий ответ при
   assertEquals(store.keys[0].credentialId, device.id);
 });
 
-Deno.test("метка есть и ключ есть: подтверждение (get) с перечнем ключей человека; счётчик растёт", async () => {
+Deno.test("ключ есть: подтверждение (get) с перечнем ключей человека; счётчик растёт", async () => {
   const { deps, store } = setup();
   const device = await SoftAuthenticator.create();
   await enroll(deps, ANNA, device);
-  const s = await start(deps, ANNA, true);
+  const s = await start(deps, ANNA);
   assert(s.ok && s.mode === "get");
   assertEquals((s.options.allowCredentials as Array<{ id: string }>).map((c) => c.id), [device.id]);
   assertEquals(s.options.userVerification, "required");
@@ -69,26 +69,59 @@ Deno.test("метка есть и ключ есть: подтверждение 
   assertEquals(store.keys[0].signCount, 1);
 });
 
-Deno.test("метка есть, а ключей нет (снят уборкой или админом): снова сохранение", async () => {
-  const { deps } = setup();
-  const s = await start(deps, ANNA, true);
+Deno.test("ключей нет (первый вход или админ сбросил вход): палец сохраняется сам (create)", async () => {
+  const { deps, store } = setup();
+  const device = await SoftAuthenticator.create();
+  await enroll(deps, ANNA, device);
+  // Сброс входа админом: ключей нет — снова «первый вход».
+  await store.deleteForPerson(ANNA);
+  const s = await start(deps, ANNA);
   assert(s.ok && s.mode === "create");
 });
 
-Deno.test("метки нет, а ключ у человека есть: сохранение нового, прежние исключены", async () => {
-  const { deps } = setup();
-  const device = await SoftAuthenticator.create();
-  await enroll(deps, ANNA, device);
-  const s = await start(deps, ANNA, false);
-  assert(s.ok && s.mode === "create");
-  assertEquals((s.options.excludeCredentials as Array<{ id: string }>).map((c) => c.id), [device.id]);
+Deno.test("новый браузер: ключи у человека есть — сначала подтверждение, новый ключ НЕ создаётся", async () => {
+  const { deps, store } = setup();
+  await enroll(deps, ANNA, await SoftAuthenticator.create());
+  const fresh = await SoftAuthenticator.create(); // другое устройство без метки и без ключа Анны
+  for (let i = 0; i < 3; i++) {
+    const s = await start(deps, ANNA);
+    assert(s.ok && s.mode === "get", "режим create при ключах недопустим");
+    // На новом устройстве нужного ключа нет: подпись чужим ключом — отказ, ничего не заведено.
+    const cred = await fresh.assert({ challenge: s.options.challenge as string, origin: ORIGIN, rpID: RP_ID });
+    assertEquals(await finishStep(deps, { telegramId: ANNA, origin: ORIGIN, credential: cred }), {
+      ok: false,
+      reason: "failed",
+    });
+  }
+  assertEquals(store.keys.length, 1);
+});
+
+Deno.test("сервер не принимает новый ключ, если у человека уже есть ключи (вызов выдан, пока их не было)", async () => {
+  const { deps, store } = setup();
+  const second = await SoftAuthenticator.create();
+  const s = await start(deps, ANNA);
+  assert(s.ok && s.mode === "create"); // ключей ещё нет
+  await store.insertPasskey({
+    telegramId: ANNA,
+    credentialId: "other-browser",
+    publicKey: "p",
+    signCount: 0,
+    transports: [],
+    name: "Safari · Mac",
+  });
+  const cred = await second.register({ challenge: s.options.challenge as string, origin: ORIGIN, rpID: RP_ID });
+  assertEquals(await finishStep(deps, { telegramId: ANNA, origin: ORIGIN, name: "Chrome · Mac", credential: cred }), {
+    ok: false,
+    reason: "failed",
+  });
+  assertEquals(store.keys.map((k) => k.credentialId), ["other-browser"]);
 });
 
 Deno.test("чужой origin: и выдача, и приём отказывают", async () => {
   const { deps } = setup();
-  assertEquals(await start(deps, ANNA, false, "https://evil.example"), { ok: false, reason: "origin" });
+  assertEquals(await start(deps, ANNA, "https://evil.example"), { ok: false, reason: "origin" });
   const device = await SoftAuthenticator.create();
-  const s = await start(deps, ANNA, false);
+  const s = await start(deps, ANNA);
   assert(s.ok);
   const cred = await device.register({ challenge: s.options.challenge as string, origin: ORIGIN, rpID: RP_ID });
   assertEquals(await finishStep(deps, { telegramId: ANNA, origin: "https://evil.example", credential: cred }), {
@@ -100,7 +133,7 @@ Deno.test("чужой origin: и выдача, и приём отказываю�
 Deno.test("ответ с чужого сайта (clientData.origin не тот): отказ, ключ не сохранён", async () => {
   const { deps, store } = setup();
   const device = await SoftAuthenticator.create();
-  const s = await start(deps, ANNA, false);
+  const s = await start(deps, ANNA);
   assert(s.ok);
   const cred = await device.register({
     challenge: s.options.challenge as string,
@@ -118,7 +151,7 @@ Deno.test("вызов снимается один раз: повтор того 
   const { deps } = setup();
   const device = await SoftAuthenticator.create();
   await enroll(deps, ANNA, device);
-  const s = await start(deps, ANNA, true);
+  const s = await start(deps, ANNA);
   assert(s.ok);
   const cred = await device.assert({ challenge: s.options.challenge as string, origin: ORIGIN, rpID: RP_ID });
   assertEquals((await finishStep(deps, { telegramId: ANNA, origin: ORIGIN, credential: cred })).ok, true);
@@ -131,7 +164,7 @@ Deno.test("вызов снимается один раз: повтор того 
 Deno.test("просроченный вызов (2 минуты) не принимается", async () => {
   const { deps, advance } = setup();
   const device = await SoftAuthenticator.create();
-  const s = await start(deps, ANNA, false);
+  const s = await start(deps, ANNA);
   assert(s.ok);
   const cred = await device.register({ challenge: s.options.challenge as string, origin: ORIGIN, rpID: RP_ID });
   advance(2 * 60 * 1000 + 1);
@@ -144,7 +177,7 @@ Deno.test("просроченный вызов (2 минуты) не прини�
 Deno.test("чужой вызов: ответ на вызов Анны от имени Бориса не проходит, а вызов Анны цел", async () => {
   const { deps } = setup();
   const device = await SoftAuthenticator.create();
-  const sa = await start(deps, ANNA, false);
+  const sa = await start(deps, ANNA);
   assert(sa.ok);
   const cred = await device.register({ challenge: sa.options.challenge as string, origin: ORIGIN, rpID: RP_ID });
   // У Бориса вызова нет вовсе.
@@ -153,7 +186,7 @@ Deno.test("чужой вызов: ответ на вызов Анны от им�
     reason: "failed",
   });
   // У Бориса свой вызов, но подпись — на вызов Анны.
-  const sb = await start(deps, BORIS, false);
+  const sb = await start(deps, BORIS);
   assert(sb.ok);
   assertNotEquals(sb.options.challenge, sa.options.challenge);
   assertEquals(await finishStep(deps, { telegramId: BORIS, origin: ORIGIN, credential: cred }), {
@@ -166,8 +199,8 @@ Deno.test("чужой вызов: ответ на вызов Анны от им�
 Deno.test("новый вызов вытесняет прежний: по старому войти нельзя", async () => {
   const { deps } = setup();
   const device = await SoftAuthenticator.create();
-  const first = await start(deps, ANNA, false);
-  await start(deps, ANNA, false);
+  const first = await start(deps, ANNA);
+  await start(deps, ANNA);
   assert(first.ok);
   const cred = await device.register({ challenge: first.options.challenge as string, origin: ORIGIN, rpID: RP_ID });
   assertEquals(await finishStep(deps, { telegramId: ANNA, origin: ORIGIN, credential: cred }), {
@@ -182,7 +215,7 @@ Deno.test("ключ Анны шаг Бориса не подтверждает",
   const boris = await SoftAuthenticator.create();
   await enroll(deps, ANNA, annas);
   await enroll(deps, BORIS, boris);
-  const s = await start(deps, BORIS, true);
+  const s = await start(deps, BORIS);
   assert(s.ok && s.mode === "get");
   const cred = await annas.assert({ challenge: s.options.challenge as string, origin: ORIGIN, rpID: RP_ID });
   assertEquals(await finishStep(deps, { telegramId: BORIS, origin: ORIGIN, credential: cred }), {
@@ -196,7 +229,7 @@ Deno.test("неизвестный ключ: тот же единственный
   const known = await SoftAuthenticator.create();
   const stranger = await SoftAuthenticator.create();
   await enroll(deps, ANNA, known);
-  const s = await start(deps, ANNA, true);
+  const s = await start(deps, ANNA);
   assert(s.ok);
   const cred = await stranger.assert({ challenge: s.options.challenge as string, origin: ORIGIN, rpID: RP_ID });
   assertEquals(await finishStep(deps, { telegramId: ANNA, origin: ORIGIN, credential: cred }), {
@@ -208,7 +241,7 @@ Deno.test("неизвестный ключ: тот же единственный
 Deno.test("без проверки пользователя (UV) ни сохранение, ни подтверждение не проходят", async () => {
   const { deps, store } = setup();
   const device = await SoftAuthenticator.create();
-  const s = await start(deps, ANNA, false);
+  const s = await start(deps, ANNA);
   assert(s.ok);
   const bad = await device.register({
     challenge: s.options.challenge as string,
@@ -222,7 +255,7 @@ Deno.test("без проверки пользователя (UV) ни сохра
   });
   assertEquals(store.keys.length, 0);
   await enroll(deps, ANNA, device);
-  const g = await start(deps, ANNA, true);
+  const g = await start(deps, ANNA);
   assert(g.ok);
   const noUv = await device.assert({
     challenge: g.options.challenge as string,
@@ -241,7 +274,7 @@ Deno.test("откат счётчика подписей (клон ключа) о
   const device = await SoftAuthenticator.create();
   await enroll(deps, ANNA, device);
   for (const counter of [5, 3]) {
-    const s = await start(deps, ANNA, true);
+    const s = await start(deps, ANNA);
     assert(s.ok);
     const cred = await device.assert({
       challenge: s.options.challenge as string,
@@ -259,7 +292,7 @@ Deno.test("ключ с нулевым счётчиком (синхронизир
   const device = await SoftAuthenticator.create();
   await enroll(deps, ANNA, device);
   for (let i = 0; i < 2; i++) {
-    const s = await start(deps, ANNA, true);
+    const s = await start(deps, ANNA);
     assert(s.ok);
     const cred = await device.assert({
       challenge: s.options.challenge as string,
@@ -273,7 +306,7 @@ Deno.test("ключ с нулевым счётчиком (синхронизир
 
 Deno.test("мусор вместо ответа: отказ без падения, вызов потрачен", async () => {
   const { deps } = setup();
-  const s = await start(deps, ANNA, false);
+  const s = await start(deps, ANNA);
   assert(s.ok);
   for (const junk of [null, 5, {}, { id: 7 }, { id: "x", response: {} }]) {
     assertEquals(await finishStep(deps, { telegramId: ANNA, origin: ORIGIN, credential: junk }), {
@@ -285,16 +318,16 @@ Deno.test("мусор вместо ответа: отказ без падени�
 
 Deno.test("ограничитель: больше положенного числа вызовов за окно — 429, окно проходит — снова можно", async () => {
   const { deps, advance } = setup();
-  for (let i = 0; i < MAX_CHALLENGES_PER_WINDOW; i++) assert((await start(deps, ANNA, false)).ok);
-  assertEquals(await start(deps, ANNA, false), { ok: false, reason: "throttled" });
-  assert((await start(deps, BORIS, false)).ok, "счётчик свой у каждого человека");
+  for (let i = 0; i < MAX_CHALLENGES_PER_WINDOW; i++) assert((await start(deps, ANNA)).ok);
+  assertEquals(await start(deps, ANNA), { ok: false, reason: "throttled" });
+  assert((await start(deps, BORIS)).ok, "счётчик свой у каждого человека");
   advance(10 * 60 * 1000 + 1);
-  assert((await start(deps, ANNA, false)).ok);
+  assert((await start(deps, ANNA)).ok);
 });
 
 Deno.test("демо-сессии шаг не предлагается и не принимается", async () => {
   const { deps } = setup();
-  assertEquals(await start(deps, 900000001, false), { ok: false, reason: "not_applicable" });
+  assertEquals(await start(deps, 900000001), { ok: false, reason: "not_applicable" });
   assertEquals(await finishStep(deps, { telegramId: 900000001, origin: ORIGIN, credential: {} }), {
     ok: false,
     reason: "not_applicable",

@@ -9,10 +9,11 @@ import { browserSupportsWebAuthn, startAuthentication, startRegistration } from 
 import type { Me } from "@/types";
 import { useDt } from "./nav";
 import {
-  classifyFailure,
   deviceName,
+  failureNotice,
   HERE_KEY,
   shouldAutoStart,
+  type StepNotice,
   stepPending,
   TRIED_KEY,
 } from "@/lib/passkeyStep";
@@ -47,11 +48,11 @@ async function postJson(url: string, body: unknown): Promise<{ ok: boolean; data
 
 class StepFailed extends Error {}
 
-/** Один проход: вызов → окно устройства → проверка. Возвращает true, если шаг пройден. */
-async function runStep(): Promise<{ done: boolean; failure?: ReturnType<typeof classifyFailure>; mode?: "create" | "get" }> {
-  const opts = await postJson("/api/auth/passkey/options", { here: readKey(HERE_KEY) === "1" });
+/** Один проход: вызов → окно устройства → проверка. Режим (create/get) выбирает сервер по ключам человека. */
+async function runStep(): Promise<{ done: boolean; notice?: StepNotice }> {
+  const opts = await postJson("/api/auth/passkey/options", {});
   const mode = opts.data.mode as "create" | "get" | undefined;
-  if (!opts.ok || !mode || !opts.data.options) return { done: false, failure: "retry_link" };
+  if (!opts.ok || !mode || !opts.data.options) return { done: false, notice: "enable_link" };
   try {
     const credential = mode === "create"
       ? await startRegistration({ optionsJSON: opts.data.options as CreationOptions })
@@ -60,8 +61,10 @@ async function runStep(): Promise<{ done: boolean; failure?: ReturnType<typeof c
     if (!res.ok) throw new StepFailed();
     writeKey(HERE_KEY, "1");
     return { done: true };
-  } catch (e) {
-    return { done: false, mode, failure: classifyFailure(mode, (e as { name?: string })?.name) };
+  } catch {
+    // Закрыли окно, нет ключа на устройстве, браузер не дал открыть без жеста, сервер отказал.
+    // При подтверждении новый ключ НЕ создаём — это решает failureNotice.
+    return { done: false, notice: failureNotice(mode) };
   }
 }
 
@@ -69,27 +72,18 @@ export function PasskeyStep({ me }: { me: Me | null }) {
   const dt = useDt();
   const pending = stepPending(me);
   const [done, setDone] = useState(false);
-  const [showLink, setShowLink] = useState(false);
+  const [notice, setNotice] = useState<StepNotice | null>(null);
   const busy = useRef(false);
   const started = useRef(false);
 
   async function attempt(): Promise<void> {
     if (busy.current) return;
     busy.current = true;
-    setShowLink(false);
+    setNotice(null);
     try {
-      let r = await runStep();
-      // Ключ с этого устройства уже есть, метка потерялась: ставим её и подтверждаем им.
-      if (!r.done && r.failure === "already_here") {
-        writeKey(HERE_KEY, "1");
-        r = await runStep();
-      }
+      const r = await runStep();
       if (r.done) setDone(true);
-      else {
-        // Подтверждение не вышло (ключ с устройства удалён?) — следующий клик сохранит заново.
-        if (r.mode === "get") writeKey(HERE_KEY, null);
-        setShowLink(true);
-      }
+      else setNotice(r.notice ?? "enable_link");
     } finally {
       busy.current = false;
     }
@@ -102,17 +96,32 @@ export function PasskeyStep({ me }: { me: Me | null }) {
       writeKey(TRIED_KEY, String(pending.session));
       void attempt();
     } else {
-      setShowLink(true);
+      setNotice("enable_link");
     }
     // attempt читает только ref-ы и localStorage: зависимость от него зациклила бы эффект.
   }, [pending]);
 
-  if (!pending || done || !showLink) return null;
+  if (!pending || done || !notice) return null;
+  const retry = (
+    <button type="button" onClick={() => void attempt()} className="underline underline-offset-2">
+      {notice === "enable_link"
+        ? dt("Включить вход по Touch ID в этом браузере", "Turn on Touch ID sign-in in this browser")
+        : dt("Повторить", "Try again")}
+    </button>
+  );
   return (
-    <div className="shrink-0 px-4 py-1 text-center" style={{ fontSize: 12 }}>
-      <button type="button" onClick={() => void attempt()} className="text-muted-foreground underline underline-offset-2">
-        {dt("Включить вход по Touch ID в этом браузере", "Turn on Touch ID sign-in in this browser")}
-      </button>
+    <div className="shrink-0 px-4 py-1 text-center text-muted-foreground" style={{ fontSize: 12 }}>
+      {notice === "enable_link"
+        ? retry
+        : (
+          <>
+            {dt(
+              "Подтвердите вход кодом из приложения-аутентификатора или попросите админа пространства сбросить вход. ",
+              "Confirm sign-in with your authenticator app code, or ask your workspace admin to reset sign-in. ",
+            )}
+            {retry}
+          </>
+        )}
     </div>
   );
 }

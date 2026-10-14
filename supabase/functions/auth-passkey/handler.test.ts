@@ -64,7 +64,7 @@ Deno.test("запрос старше минуты (повтор) — 403", async
 
 Deno.test("удалённый из allowed_users шаг не проходит ни на выдаче, ни на приёме", async () => {
   const d = deps();
-  const a = await call(d, { op: "start", telegram_id: 7777, origin: ORIGIN, here: false });
+  const a = await call(d, { op: "start", telegram_id: 7777, origin: ORIGIN });
   assertEquals([a.status, a.body.reason], [403, "unknown_user"]);
   const f = await call(d, { op: "finish", telegram_id: 7777, origin: ORIGIN, credential: {} });
   assertEquals([f.status, f.body.reason], [403, "unknown_user"]);
@@ -73,7 +73,7 @@ Deno.test("удалённый из allowed_users шаг не проходит н
 Deno.test("полный проход через HTTP: сохранение, затем подтверждение; осечка — 401 без подробностей", async () => {
   const d = deps();
   const device = await SoftAuthenticator.create();
-  const s1 = await call(d, { op: "start", telegram_id: 1001, origin: ORIGIN, here: false });
+  const s1 = await call(d, { op: "start", telegram_id: 1001, origin: ORIGIN });
   assertEquals([s1.status, s1.body.mode], [200, "create"]);
   const reg = await device.register({ challenge: s1.body.options.challenge, origin: ORIGIN, rpID: "swarm-team.app" });
   assertEquals(
@@ -81,7 +81,7 @@ Deno.test("полный проход через HTTP: сохранение, за
     { ok: true, mode: "create" },
   );
 
-  const s2 = await call(d, { op: "start", telegram_id: 1001, origin: ORIGIN, here: true });
+  const s2 = await call(d, { op: "start", telegram_id: 1001, origin: ORIGIN });
   assertEquals(s2.body.mode, "get");
   const asr = await device.assert({ challenge: s2.body.options.challenge, origin: ORIGIN, rpID: "swarm-team.app" });
   assertEquals((await call(d, { op: "finish", telegram_id: 1001, origin: ORIGIN, credential: asr })).body, {
@@ -95,7 +95,7 @@ Deno.test("полный проход через HTTP: сохранение, за
 Deno.test("чужой origin — 403, неизвестная операция — 400, GET — 405", async () => {
   const d = deps();
   assertEquals(
-    (await call(d, { op: "start", telegram_id: 1001, origin: "https://evil.example", here: false })).status,
+    (await call(d, { op: "start", telegram_id: 1001, origin: "https://evil.example" })).status,
     403,
   );
   assertEquals((await call(d, { op: "boom", telegram_id: 1001, origin: ORIGIN })).status, 400);

@@ -86,13 +86,13 @@ Deno.test("verify: отозванная сессия (swarm-api сказал 401
   assertEquals(calls.length, 0);
 });
 
-Deno.test("options: режим и параметры от auth-passkey проходят как есть, here передаётся, сессию не трогает", async () => {
+Deno.test("options: режим и параметры от auth-passkey проходят как есть, сессию не трогает", async () => {
   const calls = stubFetch({ status: 200 }, { status: 200, body: { ok: true, mode: "get", options: { challenge: "c" } } });
-  const res = await options({ request: await req("/api/auth/passkey/options", { here: true }, { cookie: await session(7, 1_700_000_000) }), env });
+  const res = await options({ request: await req("/api/auth/passkey/options", {}, { cookie: await session(7, 1_700_000_000) }), env });
   assertEquals([res.status, res.headers.get("Set-Cookie")], [200, null]);
   assertEquals((await res.json()).mode, "get");
   const c = calls.find((x) => x.url.endsWith("/auth-passkey"))!;
-  assertEquals([c.body?.op, c.body?.here, c.body?.telegram_id], ["start", true, 7]);
+  assertEquals([c.body?.op, c.body?.telegram_id], ["start", 7]);
 });
 
 Deno.test("вызов auth-passkey подписан HMAC на тот же секрет, что у auth-resolve", async () => {
@@ -104,7 +104,7 @@ Deno.test("вызов auth-passkey подписан HMAC на тот же сек
     raw = String(init?.body);
     return Promise.resolve(new Response(JSON.stringify({ ok: true, mode: "create", options: {} })));
   }) as typeof fetch;
-  await options({ request: await req("/api/auth/passkey/options", { here: false }, { cookie: await session(7, 1_700_000_000) }), env });
+  await options({ request: await req("/api/auth/passkey/options", {}, { cookie: await session(7, 1_700_000_000) }), env });
   const { hmacSign } = await import("../../functions/_lib/oauth-state.ts");
   assertEquals(sig, await hmacSign(SECRET, raw));
 });
