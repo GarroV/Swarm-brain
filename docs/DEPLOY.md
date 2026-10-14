@@ -369,6 +369,34 @@ make unfreeze          # снять раньше срока; по сроку р�
 | `scripts/swarm-files.sh publish` | Путь `/swarm-files` на Funnel-порту 10000 — вход снаружи |
 | `scripts/swarm-files.sh status` / `logs` / `down` | Состояние и место на диске, журнал, погасить |
 
+## Резерв прода на MUSPELHEIM (с 14.10.2026)
+
+Решение владельца: «резерв это копия, которую можно поднять за минуту» ([decisions/2026-10-14-prod-reserve.md](decisions/2026-10-14-prod-reserve.md), #958).
+Рекордер и бот встреч `scriba` в резерв не входят: «главное чтобы сам сервис работал». Telegram-бот Swarm и MCP ходят через тот же `api.swarm-team.app` и переезжают вместе с сервисом.
+
+**Что это.** На MUSPELHEIM в `C:\projects\swarm-reserve` стоит тот же стек Supabase, что на VPS: те же compose-файлы из архива прода плюс `stack\docker-compose.reserve.yml`. У резерва свои имена контейнеров `swarm-reserve-*`, Caddy и туннель Cloudflare `swarm-reserve`. Обычно работает только база: резерв холодный, ничего не запускает и не отправляет.
+
+**Как освежается.** Каждый день в 04:40 задача **Swarm Reserve Refresh** забирает с VPS:
+- архив стека: env, код функций, файлы storage;
+- список заданий cron;
+- свежий дамп базы.
+
+Дамп восстанавливается рядом со старой копией и подменяет её только после сверки. Ключ, которым MUSPELHEIM ходит на VPS, умеет только эти три выгрузки. Итог прогона — одна строка в `C:\backups\swarm-prod\last_refresh.txt`. Активный резерв не освежается.
+
+**Как переключить на резерв** (VPS лёг), на MUSPELHEIM:
+
+```
+powershell -File C:\projects\swarm-reserve\up.ps1 -Activate
+```
+
+Скрипт поднимает весь стек, ставит задания cron и кладёт флажок `state\active`. Worker `api.swarm-team.app` (`deploy/front`) раз в 30 с спрашивает резерв по `/__reserve/active` и, увидев флажок, шлёт туда весь трафик: веб, бот, MCP. Подъём из холодного состояния занимает меньше минуты, первый запрос к функциям — несколько секунд. Без `-Activate` стек поднимается только для проверки (`check.ps1`), и трафик прода туда не идёт.
+
+**Как вернуть.** `down.ps1` снимает флажок (трафик вернётся на VPS в течение 30 с), убирает задания и гасит всё, кроме базы. Данные, записанные на резерве, сами на VPS не уедут: перед `down.ps1` их надо перенести, иначе ночное обновление их затрёт.
+
+**Почему переключение ручное.** При автоматическом перескоке на сбое VPS обе базы принимали бы записи и молча разошлись бы.
+
+Устройство: `muspelheim-infra/swarm-reserve/`, сторона VPS — `vps-infra/projects/swarm-reserve/`.
+
 ## Команды (`make help`)
 - `make smoke-staging` / `make smoke-prod` — смоук edge-функций (`scripts/smoke.sh`, один и тот же набор проверок для любого контура).
 - `make staging-sync-functions` — tar `supabase/functions` → scp на MUSPELHEIM → распаковка в `volumes/functions/` → рестарт `supabase-edge-functions`.

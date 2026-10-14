@@ -18,19 +18,62 @@
 //
 // Запасного пути через интернет, как у meridius, здесь нет: публичного имени
 // у сервера больше нет. Туннель лёг — честный 502, а не тишина.
+//
+// Резерв (Swarm-brain #958, «копия, которую можно поднять за минуту»): тот же стек
+// на MUSPELHEIM за своим туннелем (привязка RESERVE). Весь трафик уходит туда,
+// только когда резерв сам объявил себя активным: файл active кладёт up.ps1 -Activate,
+// Caddy резерва отдаёт его по /__reserve/active. Автоматического перескока при
+// сбое VPS нет намеренно — иначе две базы разошлись бы молча. Ответ резерва
+// запоминается на RESERVE_CHECK_MS и обновляется в фоне: запрос его не ждёт.
 
 const FRONT_KEY_HEADER = "X-Swarm-Front-Key";
 const CLIENT_IP_HEADER = "X-Swarm-Client-IP";
+const RESERVE_CHECK_MS = 30_000;
+const RESERVE_TIMEOUT_MS = 3_000;
+
+// Память изолята: активен ли резерв и когда спрашивали.
+const reserve = { active: false, checkedAt: 0, checking: false };
+
+async function checkReserve(env) {
+  reserve.checking = true;
+  try {
+    const res = await env.RESERVE.fetch(
+      `http://${env.RESERVE_HOST}/__reserve/active`,
+      { signal: AbortSignal.timeout(RESERVE_TIMEOUT_MS) },
+    );
+    const active = res.status === 200;
+    if (active !== reserve.active) console.log("reserve active:", active);
+    reserve.active = active;
+  } catch {
+    // Холодный резерв: туннель не поднят — это обычное состояние.
+    reserve.active = false;
+  } finally {
+    reserve.checkedAt = Date.now();
+    reserve.checking = false;
+  }
+}
+
+function pickTarget(env, ctx) {
+  if (env.RESERVE && env.RESERVE_HOST) {
+    if (!reserve.checking && Date.now() - reserve.checkedAt > RESERVE_CHECK_MS) {
+      ctx.waitUntil(checkReserve(env));
+    }
+    if (reserve.active) {
+      return { binding: env.RESERVE, origin: `http://${env.RESERVE_HOST}` };
+    }
+  }
+  return { binding: env.EDGE, origin: `https://${env.ORIGIN_HOST}` };
+}
 
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     if (!env.ORIGIN_HOST || !env.FRONT_KEY || !env.EDGE) {
       // Без настроек не пересылаем вовсе: Caddy всё равно отказал бы, а так
       // причина видна сразу.
       return new Response("front is not configured", { status: 503 });
     }
     const front = new URL(request.url);
-    const origin = `https://${env.ORIGIN_HOST}`;
+    const { binding, origin } = pickTarget(env, ctx);
     // Хост сервера закреплён, а не собран из пути: `new URL("//evil.com/x", origin)`
     // читает путь как адрес другого сайта, и запрос ушёл бы туда вместе с
     // ключом фронта. Путь только присваивается, итог сверяется ещё раз.
@@ -61,7 +104,7 @@ export default {
     const hasBody = !["GET", "HEAD"].includes(request.method);
     let response;
     try {
-      response = await env.EDGE.fetch(upstream, {
+      response = await binding.fetch(upstream, {
         method: request.method,
         headers,
         body: hasBody ? request.body : undefined,
