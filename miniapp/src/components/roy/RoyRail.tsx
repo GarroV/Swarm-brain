@@ -2,7 +2,8 @@
 import { PILL_GROUP_CLS, pillSegmentCls } from "@/components/ui/PropertyPill";
 import { useEffect, useRef, useState } from "react";
 import { cn, displayName } from "@/lib/utils";
-import { fetchConfig } from "@/lib/api";
+import { fetchConfig, logout } from "@/lib/api";
+import { useConfirm } from "@/components/ui/confirm";
 import { Avatar, SHELL_BAR_H } from "./ui";
 import { RoyIcon, type RoyIconName } from "./icons";
 import { initials } from "./dash/shared";
@@ -154,7 +155,7 @@ export function RoyRail({
         <ThemeSwitch />
         <FootTools items={FOOT} active={active} onSelect={onSelect} />
       </div>
-      <div className="flex items-center gap-2 border-t border-line px-3 py-2.5 max-[1099px]:justify-center max-[1099px]:px-0"
+      <div className="flex items-center gap-2 border-t border-line px-3 py-2.5 max-[1099px]:flex-col max-[1099px]:justify-center max-[1099px]:gap-1 max-[1099px]:px-0"
         title={displayName(me?.name) || undefined}>
         <Avatar size={26}>{initials(me?.name)}</Avatar>
         <div className="min-w-0 max-[1099px]:hidden">
@@ -165,6 +166,7 @@ export function RoyRail({
             {me?.is_admin ? dt("Админ", "Admin") : dt("Участник", "Member")}
           </div>
         </div>
+        <LogoutButton />
       </div>
     </nav>
   );
@@ -226,6 +228,37 @@ function RailSearch() {
 const FOOT_TOOL =
   "grid size-[28px] place-items-center rounded-[7px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] max-[1099px]:h-[34px] max-[1099px]:w-full max-[1099px]:rounded-[8px]";
 const FOOT_IDLE = "text-ink-mute hover:bg-surface hover:text-ink";
+
+// Выход — явной кнопкой у профиля (владелец 14.10.2026: «как из сворма выйти? где кнопка»); раньше
+// жил только в Настройках → Аккаунт. Тот же путь, что там: подтверждение, logout(), экран входа.
+function LogoutButton() {
+  const dt = useDt();
+  const confirm = useConfirm();
+  const [busy, setBusy] = useState(false);
+  const label = dt("Выйти", "Sign out");
+  const onClick = async () => {
+    const ok = await confirm({
+      title: dt("Выйти из аккаунта?", "Sign out?"),
+      description: dt("Сессия в этом браузере завершится.", "Your session in this browser will end."),
+      confirmText: label,
+    });
+    if (!ok) return;
+    setBusy(true);
+    try {
+      await logout();
+      window.location.href = "/login";
+    } catch (e) {
+      console.warn("[RoyRail] logout", e);
+      setBusy(false);
+    }
+  };
+  return (
+    <button type="button" onClick={onClick} disabled={busy} title={label} aria-label={label}
+      className={cn(FOOT_TOOL, FOOT_IDLE, "ml-auto shrink-0 max-[1099px]:ml-0")}>
+      <RoyIcon name="logout" size={15} strokeWidth={1.7} />
+    </button>
+  );
+}
 
 function FootTools({ items, active, onSelect }: {
   items: RailItem[];
