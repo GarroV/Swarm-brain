@@ -89,3 +89,6 @@ GRANT EXECUTE ON FUNCTION public.presence_ping(bigint, text, text, text) TO serv
 # Будущие спринты (20261011130000): хвосты едут в БЛИЖАЙШИЙ запланированный, и двойник не создаётся.
 order by start_date, created_at|order by start_date desc, created_at|supabase/functions/_shared/tasks/sprint-accept.db.test.ts|supabase/migrations/20261011130000_future_sprints.sql
 if v_next_id is null then|if true then|supabase/functions/_shared/tasks/sprint-accept.db.test.ts|supabase/migrations/20261011130000_future_sprints.sql
+# Ключи доступа (#955): уборка снимает ключ без входа 30 дней по last_used_at, у неиспользованного —
+# по created_at. Порча считает только от создания — недавно использованный старый ключ уехал бы зря.
+where coalesce(last_used_at, created_at) < now() - c_idle;|where created_at < now() - c_idle;|supabase/functions/_shared/passkeys/passkeys.db.test.ts|supabase/migrations/20261014130000_passkeys.sql

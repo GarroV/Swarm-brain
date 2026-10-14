@@ -121,7 +121,7 @@ export function RoyRail({
       className="roy-rail flex w-[216px] shrink-0 flex-col border-r border-line bg-surface-2 max-[1099px]:w-[56px]"
     >
       <div className="flex shrink-0 items-center gap-2.5 border-b border-line px-4 max-[1099px]:justify-center max-[1099px]:px-0" style={{ height: SHELL_BAR_H }}>
-        {/* Бренд-блок: знак — тот же файл, что фавикон (циановый неон), и имя капсом. */}
+        {/* Бренд-блок: знак — тот же файл, что фавикон (глитч-S, decisions/2026-10-14-logo-s.md), и имя капсом. */}
         {/* eslint-disable-next-line @next/next/no-img-element -- статичный SVG из app/icon.svg, оптимизатор не нужен */}
         <img src="/icon.svg" alt="" aria-hidden width={28} height={28} className="size-7 shrink-0" />
         <span className="flex min-w-0 flex-col max-[1099px]:hidden">

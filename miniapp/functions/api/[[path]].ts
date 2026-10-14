@@ -89,7 +89,11 @@ async function renewSessionCookie(
     if (!claims.legacy && !shouldRefreshSession(claims.exp, Math.floor(Date.now() / 1000))) return null;
     // Момент входа переносим как был: продление не должно «омолаживать» сессию относительно
     // «выйти везде» (swarm-api сверяет его с allowed_users.sessions_revoked_at).
-    const fresh = await signJWT({ telegram_id: claims.telegram_id, auth_time: authTimeForRefresh(claims) }, secret);
+    // Метка второго шага (палец, #955) переезжает на новую куку: продление не должно её терять.
+    const fresh = await signJWT(
+      { telegram_id: claims.telegram_id, auth_time: authTimeForRefresh(claims), second_step: claims.secondStep },
+      secret,
+    );
     return `roj_session=${fresh}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=${SESSION_TTL_SEC}`;
   } catch {
     // Продление — удобство, а не авторизация: сбой крипты не должен ронять запрос к API.

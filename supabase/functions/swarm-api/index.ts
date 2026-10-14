@@ -5,6 +5,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { verifyInitData } from "./auth.ts";
 import { isRenewableSession, isSessionRevoked, type SessionClaims, verifyJWT } from "../_shared/jwt.ts";
+import { isSecondStepRequired, parseSecondStepAudience, secondStepBlocks, secondStepState } from "../_shared/passkeys/second-step.ts";
 import { logAccess, logLoginOnce } from "../_shared/access-events.ts";
 import {
   buildRecorderSetupOneLiner,
@@ -222,6 +223,10 @@ const ADMIN_USER_ID = 744230399; // см. lib/supabase.ts swarm-bot — един
 // изолирована в синтетический воркспейс: не админ, не видит рабочие данные, не минтит токены.
 // Правило «это демо» — одно на все функции: _shared/demo-session.ts.
 const WEB_JWT_SECRET = Deno.env.get("WEB_JWT_SECRET"); // подпись веб-сессий (Login Widget, B+)
+// Замок «второй шаг входа обязателен» (палец, #955). По умолчанию выключен: шаг предлагается, но не требуется.
+const SECOND_STEP_REQUIRED = isSecondStepRequired(Deno.env.get("SECOND_STEP_REQUIRED"));
+// Кому шаг применим (пилот): не задано — никому, `all` — всем, список telegram id — только им.
+const SECOND_STEP_AUDIENCE = parseSecondStepAudience(Deno.env.get("SECOND_STEP_AUDIENCE"));
 
 const supabase = createClient(
   Deno.env.get("SUPABASE_URL")!,
@@ -656,6 +661,17 @@ async function routeRequest(req: Request): Promise<Response> {
   // Снимаем префикс функции (/functions/v1/swarm-api) — один, известный (#592).
   const routePath = routePathOf(url.pathname);
 
+  // Второй шаг входа (палец, #955): состояние идёт в /me, замок обязательности — переменная
+  // SECOND_STEP_REQUIRED, по умолчанию выключен; аудитория — SECOND_STEP_AUDIENCE, по умолчанию никто.
+  const secondStep = secondStepState(webSession, {
+    isDemo,
+    required: SECOND_STEP_REQUIRED,
+    audience: SECOND_STEP_AUDIENCE,
+  });
+  if (secondStepBlocks(secondStep, req.method, routePath)) {
+    return json({ error: "second_step_required" }, 403, origin);
+  }
+
   // Заморозка на время раскатки: изменения не принимаем, чтение оставляем (пустой экран
   // пугает сильнее честной плашки). Владелец проходит всегда — он катит и проверяет.
   // 503 + Retry-After: веб показывает заглушку и сохранить не даёт. Рекордер сюда пишет только
@@ -769,6 +785,8 @@ async function routeRequest(req: Request): Promise<Response> {
         telegram_linked: telegram_id > 0 || Boolean(au?.telegram_chat_id),
         // Суперадмин — видит разделы всей системы (расход модели, #311).
         is_superadmin: !isDemo && telegram_id === SUPERADMIN_TELEGRAM_ID,
+        // Второй шаг входа (палец, #955): веб по нему сам предлагает сохранить или подтвердить ключ.
+        second_step: secondStep,
       },
       200,
       origin,
