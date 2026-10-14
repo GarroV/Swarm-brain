@@ -5,7 +5,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { verifyInitData } from "./auth.ts";
 import { isRenewableSession, isSessionRevoked, type SessionClaims, verifyJWT } from "../_shared/jwt.ts";
-import { isSecondStepRequired, secondStepBlocks, secondStepState } from "../_shared/passkeys/second-step.ts";
+import { isSecondStepRequired, parseSecondStepAudience, secondStepBlocks, secondStepState } from "../_shared/passkeys/second-step.ts";
 import { logAccess, logLoginOnce } from "../_shared/access-events.ts";
 import {
   buildRecorderSetupOneLiner,
@@ -225,6 +225,8 @@ const ADMIN_USER_ID = 744230399; // см. lib/supabase.ts swarm-bot — един
 const WEB_JWT_SECRET = Deno.env.get("WEB_JWT_SECRET"); // подпись веб-сессий (Login Widget, B+)
 // Замок «второй шаг входа обязателен» (палец, #955). По умолчанию выключен: шаг предлагается, но не требуется.
 const SECOND_STEP_REQUIRED = isSecondStepRequired(Deno.env.get("SECOND_STEP_REQUIRED"));
+// Кому шаг применим (пилот): не задано — никому, `all` — всем, список telegram id — только им.
+const SECOND_STEP_AUDIENCE = parseSecondStepAudience(Deno.env.get("SECOND_STEP_AUDIENCE"));
 
 const supabase = createClient(
   Deno.env.get("SUPABASE_URL")!,
@@ -660,8 +662,12 @@ async function routeRequest(req: Request): Promise<Response> {
   const routePath = routePathOf(url.pathname);
 
   // Второй шаг входа (палец, #955): состояние идёт в /me, замок обязательности — переменная
-  // SECOND_STEP_REQUIRED, по умолчанию выключен.
-  const secondStep = secondStepState(webSession, { isDemo, required: SECOND_STEP_REQUIRED });
+  // SECOND_STEP_REQUIRED, по умолчанию выключен; аудитория — SECOND_STEP_AUDIENCE, по умолчанию никто.
+  const secondStep = secondStepState(webSession, {
+    isDemo,
+    required: SECOND_STEP_REQUIRED,
+    audience: SECOND_STEP_AUDIENCE,
+  });
   if (secondStepBlocks(secondStep, req.method, routePath)) {
     return json({ error: "second_step_required" }, 403, origin);
   }

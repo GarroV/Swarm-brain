@@ -2,6 +2,8 @@
 // Замок включается переменной SECOND_STEP_REQUIRED=1 в swarm-api и по умолчанию ВЫКЛЮЧЕН: в первой
 // части шаг только предлагается и отмечается в сессии (метка `sf` в JWT), работу он не блокирует.
 // Когда владелец скажет включать — одна переменная, код не меняется.
+// Пилот: аудиторию шага задаёт SECOND_STEP_AUDIENCE (пусто — никому, `all` — всем, список telegram id).
+// Замок действует только на тех, к кому шаг применим.
 import { isRenewableSession, type SessionClaims } from "../jwt.ts";
 
 export type SecondStepState = {
@@ -19,11 +21,33 @@ export function isSecondStepRequired(env: string | undefined): boolean {
   return env === "1" || env === "true";
 }
 
+/** Кому применим шаг: никому (по умолчанию), всем или списку telegram id. */
+export type SecondStepAudience = "none" | "all" | ReadonlySet<number>;
+
+/** Разбор SECOND_STEP_AUDIENCE: пусто → никому; `all` → всем; список id через запятую → только им. Не-числа отбрасываются. */
+export function parseSecondStepAudience(env: string | undefined): SecondStepAudience {
+  const raw = (env ?? "").trim().toLowerCase();
+  if (raw === "all") return "all";
+  const ids = raw
+    .split(",")
+    .map((part) => part.trim())
+    .filter((part) => /^\d+$/.test(part))
+    .map(Number);
+  return ids.length > 0 ? new Set(ids) : "none";
+}
+
+function inAudience(audience: SecondStepAudience, telegramId: number): boolean {
+  if (audience === "all") return true;
+  if (audience === "none") return false;
+  return audience.has(telegramId);
+}
+
 export function secondStepState(
   claims: SessionClaims | null,
-  opts: { isDemo: boolean; required: boolean },
+  opts: { isDemo: boolean; required: boolean; audience: SecondStepAudience },
 ): SecondStepState {
-  const applies = claims !== null && !opts.isDemo && isRenewableSession(claims);
+  const applies = claims !== null && !opts.isDemo && isRenewableSession(claims) &&
+    inAudience(opts.audience, claims.telegram_id);
   return {
     applies,
     done: applies && claims!.secondStep,
