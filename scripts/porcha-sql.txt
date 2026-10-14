@@ -85,3 +85,6 @@ v_gap := NOT FOUND OR v_prev.last_seen_at < v_now - interval '90 seconds';|v_gap
 IF v_changed OR (v_gap AND p_state <> 'away') THEN|IF true THEN|supabase/functions/_shared/presence/presence.db.test.ts|supabase/migrations/20261009140000_presence.sql
 OR v_prev.section IS DISTINCT FROM p_section|OR false|supabase/functions/_shared/presence/presence.db.test.ts|supabase/migrations/20261009140000_presence.sql
 GRANT EXECUTE ON FUNCTION public.presence_ping(bigint, text, text, text) TO service_role;|SELECT 1;|supabase/functions/_shared/presence/presence.db.test.ts|supabase/migrations/20261009140000_presence.sql
+# Ключи доступа (#955): уборка снимает ключ без входа 30 дней по last_used_at, у неиспользованного —
+# по created_at. Порча считает только от создания — недавно использованный старый ключ уехал бы зря.
+where coalesce(last_used_at, created_at) < now() - c_idle;|where created_at < now() - c_idle;|supabase/functions/_shared/passkeys/passkeys.db.test.ts|supabase/migrations/20261014130000_passkeys.sql
