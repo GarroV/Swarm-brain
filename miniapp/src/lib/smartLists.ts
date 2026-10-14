@@ -5,7 +5,8 @@
 import type { Task, Me } from "@/types";
 import type { RoyIconName } from "@/lib/royIcons";
 import { countryCode } from "@/lib/countries";
-import { inRange, dayOf, type DateRange } from "@/lib/dateRange";
+import { inRange, dayOf, rangeIncludesDay, type DateRange } from "@/lib/dateRange";
+import { toISO } from "@/lib/calendar";
 
 export type SmartListId = "today" | "upcoming" | "all" | "recurring";
 // Линза = ось «чьи задачи»: «mine» — назначенные на меня; «team» — ОБЩИЕ (без конкретного
@@ -192,9 +193,17 @@ function axisDay(task: Task): string | null {
 // Период (модификатор «Эта неделя»/«Этот месяц»/произвольный) — пересечение со списком, а не
 // расширение: задача обязана попасть И в список, И в диапазон. Задача без нужной даты в период
 // не попадает.
-function inPeriod(task: Task, range: DateRange | null): boolean {
+// Исключение — ПРОСРОЧКА (issue #902, владелец 12.10.2026: «куда-то потерялись все просроченные»):
+// открытая задача со сроком ДО начала периода остаётся видимой, если период содержит сегодня
+// («Эта неделя» в понедельник начинается сегодня — без этого весь долг исчезал). Прошлый и
+// будущий периоды живут только своими датами. Закрытые — только своими датами. Без срока — как раньше
+// (в период не попадает). Единое правило для списков, счётчиков и меток.
+export function inPeriodOrOverdue(task: Task, range: DateRange | null, now: Date = new Date()): boolean {
   if (!range) return true;
-  return inRange(axisDay(task), range);
+  if (inRange(axisDay(task), range)) return true;
+  if (isDone(task)) return false;
+  const due = dayOf(task.due_date);
+  return due != null && due < range.from && rangeIncludesDay(range, toISO(now));
 }
 
 // Базовый предикат «принадлежит списку» (без линзы и сортировки).
@@ -209,7 +218,7 @@ export function matchesList(task: Task, listId: SmartListId, now: Date = new Dat
 function inList(task: Task, listId: SmartListId, now: Date, range: DateRange | null = null, statuses: StatusSet = DEFAULT_STATUSES): boolean {
   // Ось статуса — первой: она дешевле остальных проверок.
   if (!matchesStatus(task, statuses)) return false;
-  if (!inPeriod(task, range)) return false;
+  if (!inPeriodOrOverdue(task, range, now)) return false;
   if (listId === "all") return true;
   if (listId === "recurring") {
     // Регулярные НЕ убираются из остальных списков (решение владельца 2026-08-27): задача
@@ -349,17 +358,17 @@ export function groupByAssigneeThenMarket(tasks: Task[], listId: SmartListId, le
 
 // ── Персональные смарт-метки (личные списки) ────────────────────────────────
 // Список метки авто-собирает незавершённые задачи с этой меткой. Сортировка — как today/upcoming/all.
-const inLabel = (t: Task, labelId: string, range: DateRange | null): boolean =>
+const inLabel = (t: Task, labelId: string, range: DateRange | null, now: Date): boolean =>
   statusBucket(t) === "open" || statusBucket(t) === "in_progress"
-    ? (t.label_ids?.includes(labelId) ?? false) && inRange(dayOf(t.due_date), range)
+    ? (t.label_ids?.includes(labelId) ?? false) && inPeriodOrOverdue(t, range, now)
     : false;
 
-export function filterByLabel(tasks: Task[], labelId: string, range: DateRange | null = null): Task[] {
+export function filterByLabel(tasks: Task[], labelId: string, range: DateRange | null = null, now: Date = new Date()): Task[] {
   return tasks
-    .filter((t) => inLabel(t, labelId, range))
+    .filter((t) => inLabel(t, labelId, range, now))
     .sort(chain(byDueAsc, byPriorityDesc, byCreatedDesc));
 }
 
-export function countByLabel(tasks: Task[], labelId: string, range: DateRange | null = null): number {
-  return tasks.filter((t) => inLabel(t, labelId, range)).length;
+export function countByLabel(tasks: Task[], labelId: string, range: DateRange | null = null, now: Date = new Date()): number {
+  return tasks.filter((t) => inLabel(t, labelId, range, now)).length;
 }

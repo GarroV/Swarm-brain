@@ -1,5 +1,5 @@
 import { assertEquals, assertStringIncludes } from "jsr:@std/assert@1";
-import { SETUP_SCRIPT, MERGE_FUNCTION, BRIDGE_SCRIPT } from "./script.ts";
+import { BRIDGE_SCRIPT, MERGE_FUNCTION, SETUP_SCRIPT } from "./script.ts";
 
 // Тесты установщика Claude Desktop. Скрипт правит ЧУЖОЙ файл конфигурации пользователя, где уже
 // могут жить другие MCP-серверы, и рапортует об успехе — здесь закрыты три класса:
@@ -44,13 +44,18 @@ async function runMerge(existing: string | null): Promise<{ code: number; raw: s
   const cfgPath = `${dir}/claude_desktop_config.json`;
   if (existing !== null) await Deno.writeTextFile(cfgPath, existing);
   const script = `${MERGE_FUNCTION}\nmerge_config "$1" "$2"\n`;
-  const cmd = new Deno.Command("bash", { args: ["-c", script, "bash", cfgPath, SRV_JSON], stdout: "piped", stderr: "piped" });
+  const cmd = new Deno.Command("bash", {
+    args: ["-c", script, "bash", cfgPath, SRV_JSON],
+    stdout: "piped",
+    stderr: "piped",
+  });
   const { code } = await cmd.output();
   const raw = await Deno.readTextFile(cfgPath).catch(() => "");
   await Deno.remove(dir, { recursive: true });
   return { code, raw };
 }
 
+// deno-lint-ignore no-explicit-any -- разбор произвольного конфига в тесте
 async function mergeJson(existing: string | null): Promise<Record<string, any>> {
   const { code, raw } = await runMerge(existing);
   assertEquals(code, 0);
@@ -145,7 +150,7 @@ Deno.test("статика мёржа: ключ mcpServers создаётся, а
 
 Deno.test("токен проверяется на сервере ДО записи конфига", () => {
   const probeAt = SETUP_SCRIPT.indexOf("Проверяю токен на сервере");
-  const writeAt = SETUP_SCRIPT.indexOf("merge_config \"$CONFIG\"");
+  const writeAt = SETUP_SCRIPT.indexOf('merge_config "$CONFIG"');
   assertEquals(probeAt > 0 && writeAt > probeAt, true);
 });
 
@@ -159,7 +164,103 @@ Deno.test("Node в схему не вернулся: ни npx, ни mcp-remote, 
 
 Deno.test("мост: шлёт токен заголовком и не отвечает на уведомления", () => {
   assertStringIncludes(BRIDGE_SCRIPT, "Authorization: $AUTH");
-  assertStringIncludes(BRIDGE_SCRIPT, "want_reply");
+  assertStringIncludes(BRIDGE_SCRIPT, "continue"); // нет id — ничего не печатаем
   // Токен не должен попадать в аргументы процесса — иначе он виден в ps любому на машине.
   assertEquals(BRIDGE_SCRIPT.includes("smcp_"), false);
+});
+
+// --- Мост при сбое (issue #935): живой прогон настоящего моста против фейкового сервера ---
+// Мост не должен молчать: на запрос с id клиент ждёт ответ с тем же id, иначе висит 30 минут.
+
+type FakeHandler = (req: Request) => Response | Promise<Response>;
+
+async function runBridge(handler: FakeHandler | null, input: string): Promise<{ out: string; ms: number }> {
+  const dir = await Deno.makeTempDir();
+  const bridgePath = `${dir}/bridge.sh`;
+  await Deno.writeTextFile(bridgePath, BRIDGE_SCRIPT);
+  const server = handler ? Deno.serve({ port: 0, onListen() {}, hostname: "127.0.0.1" }, handler) : null;
+  // Без сервера — порт, на котором никто не слушает (мгновенный отказ соединения).
+  const port = server ? (server.addr as Deno.NetAddr).port : 1;
+  const started = Date.now();
+  try {
+    const child = new Deno.Command("bash", {
+      args: [bridgePath],
+      env: {
+        SWARM_MCP_URL: `http://127.0.0.1:${port}/mcp`,
+        SWARM_MCP_AUTH: "Bearer test",
+        SWARM_MCP_MAX_TIME: "2",
+      },
+      stdin: "piped",
+      stdout: "piped",
+      stderr: "null",
+    }).spawn();
+    const w = child.stdin.getWriter();
+    await w.write(new TextEncoder().encode(input));
+    await w.close();
+    const { stdout } = await child.output();
+    return { out: new TextDecoder().decode(stdout), ms: Date.now() - started };
+  } finally {
+    if (server) await server.shutdown();
+    await Deno.remove(dir, { recursive: true });
+  }
+}
+
+// «Не отвечает»: висим, пока клиент (curl по --max-time) не закроет соединение — иначе shutdown зависнет.
+const hangUntilClosed: FakeHandler = (req) =>
+  new Promise<Response>((resolve) =>
+    req.signal.addEventListener("abort", () => resolve(new Response(null, { status: 499 })))
+  );
+
+const REQ7 = '{"jsonrpc":"2.0","id":7,"method":"tools/list"}\n';
+const CLOUD_402 = () =>
+  new Response('{"message":"Service for this project is restricted \\"quota\\""}', { status: 402 });
+
+Deno.test("мост: HTTP 402 старого облака даёт JSON-RPC error с тем же id и подсказкой про переезд", async () => {
+  const { out } = await runBridge(CLOUD_402, REQ7);
+  const msg = JSON.parse(out.trim());
+  assertEquals(msg.jsonrpc, "2.0");
+  assertEquals(msg.id, 7);
+  assertEquals(msg.error.code, -32000);
+  assertStringIncludes(msg.error.message, "HTTP 402");
+  assertStringIncludes(msg.error.message, "Service for this project is restricted");
+  assertStringIncludes(msg.error.message, "Swarm moved to a new server");
+  assertStringIncludes(msg.error.message, "Swarm переехал на новый сервер");
+});
+
+Deno.test("мост: строковый id с пробелами вокруг двоеточия сохраняется как есть", async () => {
+  const { out } = await runBridge(CLOUD_402, '{"jsonrpc":"2.0", "id" : "abc-1","method":"x"}\n');
+  assertEquals(JSON.parse(out.trim()).id, "abc-1");
+});
+
+Deno.test("мост: валидный ответ JSON-RPC проходит как есть", async () => {
+  const ok = '{"jsonrpc":"2.0","id":7,"result":{"tools":[]}}';
+  const { out } = await runBridge(() => new Response(ok, { status: 200 }), REQ7);
+  assertEquals(out.trim(), ok);
+});
+
+Deno.test("мост: сервер не отвечает за MAX_TIME — error с тем же id, а не тишина", async () => {
+  const { out, ms } = await runBridge(hangUntilClosed, REQ7);
+  const msg = JSON.parse(out.trim());
+  assertEquals(msg.id, 7);
+  assertStringIncludes(msg.error.message, "no response");
+  assertEquals(ms < 10000, true);
+});
+
+Deno.test("мост: сервер недоступен (отказ соединения) — error с подсказкой про переезд", async () => {
+  const { out } = await runBridge(null, REQ7);
+  const msg = JSON.parse(out.trim());
+  assertEquals(msg.id, 7);
+  assertStringIncludes(msg.error.message, "Swarm moved to a new server");
+});
+
+Deno.test("мост: 200 без JSON-RPC в теле — error, а не мусор в stdout", async () => {
+  const { out } = await runBridge(() => new Response("<html>oops</html>", { status: 200 }), REQ7);
+  const msg = JSON.parse(out.trim());
+  assertEquals(msg.id, 7);
+  assertStringIncludes(msg.error.message, "not a JSON-RPC response");
+});
+
+Deno.test("мост: уведомление (без id) остаётся молчаливым даже при сбое", async () => {
+  const { out } = await runBridge(CLOUD_402, '{"jsonrpc":"2.0","method":"notifications/initialized"}\n');
+  assertEquals(out, "");
 });

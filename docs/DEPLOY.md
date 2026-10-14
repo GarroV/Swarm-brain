@@ -6,7 +6,7 @@
 
 > 🚦 **Раскатка на прод — отдельное действие с отдельным «да» владельца** (решение 24.08.2026, канон — [decisions/2026-08-24-deploy-window.md](decisions/2026-08-24-deploy-window.md)). Окно: **23:00–06:59 по Белграду, любой день** (утреннее 09:00–10:00 отменено 27.08.2026, канон [decisions/2026-08-27-deploy-at-night.md](decisions/2026-08-27-deploy-at-night.md)); штатный путь — метка `deploy-window` на PR, ночью его вольёт автоматика. Пуш в `main` считается раскаткой (веб собирается с `main` автоматически). Накопитель: `make deploy-plan` / `make deploy` (`scripts/deploy-window.sh`, метка `prod-deployed`). Правка общего модуля `_shared/` тянет функции-потребители **транзитивно**: `_shared` → `_shared` → функция (#292, тест `scripts/test-deploy-window.sh`). Ночная автоматика уже в расписании — `.github/workflows/deploy-window.yml`, прогон каждые 15 минут окна (репозиторий публичный с 27.08, минуты Actions бесплатны); **PR с миграцией она вливает только после того, как миграция накатана на прод** — раздел «Ночная автоматика и миграции» ниже. **PR, влитый руками, edge-функции НЕ раскатывает** (ночной прогон ищет только открытые PR с меткой) — для такого случая есть кнопка `.github/workflows/deploy-functions.yml` (`gh workflow run deploy-functions.yml -f dry_run=false`), она зовёт тот же `scripts/deploy-window.sh`. Кнопка даёт руки, а не разрешение: «да» владельца и окно по-прежнему обязательны.
 >
-> **Накопитель и прод.** С 13.10.2026 `make deploy-plan` не сверяет функции с продом по времени раскатки (источником был облачный Management API, его нет): он показывает функции, изменившиеся с метки `prod-deployed`, а выкладывает шлюз всё разом — это идемпотентно. Зато миграции сверяются по-прежнему — с журналом сервера. Метка может отставать, если раскатывали мимо `go` (ручная выкладка на сервере): перед планом `git fetch --force --tags origin`. Тест — `scripts/test-deploy-window.sh`.
+> **Накопитель и прод.** С 13.10.2026 `make deploy-plan` не сверяет функции с продом по времени раскатки (источником был облачный Management API, его нет): он показывает функции, изменившиеся с метки `prod-deployed`, а выкладывает шлюз всё разом — это идемпотентно. Зато миграции сверяются по-прежнему — с журналом сервера. Метку `go` ставит и пушит сам; если пуш отклонён, скрипт печатает причину и команду повтора. Хук `pre-push` пропускает `scripts/check` для метки на коммите, который уже есть на origin (#943; тест `scripts/test-pre-push.sh`). Метка может отставать, если раскатывали мимо `go` (ручная выкладка на сервере): перед планом `git fetch --force --tags origin`. Тест — `scripts/test-deploy-window.sh`.
 
 ## Прод — свой сервер, раскатка через шлюз (с 13.10.2026)
 
@@ -14,7 +14,7 @@
 Contabo, self-hosted Supabase в `/srv/swarm/supabase` (issue #915; перестройка CI — #919).
 Облачных CLI (`supabase functions deploy`, `db push`, `link`) и Management API (`api.supabase.com`)
 в раскатке больше нет. Вместо них — **шлюз**: ssh-пользователь `swarm-deploy@95.111.249.216`, чей
-ключ умеет ровно три команды (`functions`, `migrations-applied`, `migrate`). Как устроен и
+ключ умеет ровно четыре команды (`functions`, `migrations-applied`, `migrate`, `recorder-upload`). Как устроен и
 устанавливается шлюз — [deploy/server/README.md](../deploy/server/README.md); канон скрипта —
 `deploy/server/gate.sh`.
 
@@ -23,6 +23,7 @@ Contabo, self-hosted Supabase в `/srv/swarm/supabase` (issue #915; перест
 | Edge-функции | `git archive HEAD:supabase/functions \| ssh … functions`: шлюз сохраняет копию прежнего состояния, кладёт **все** функции разом и перезапускает рантайм (~11 с) | `scripts/deploy-window.sh go`, `make deploy` |
 | Миграции | `scripts/migrate-server.sh [--dry-run]` берёт файлы, которых нет в журнале сервера, и катит каждую `ssh … migrate <версия> <имя>` одной транзакцией вместе с учётной записью; на первой ошибке стоп | `make migrate-plan` / `make migrate`, кнопка `deploy-migrations.yml` |
 | Гейт «код не вперёд схемы» | `pending_migrations` спрашивает `migrations-applied`; код 0 — всё применено, 1 — есть неприменённые, 3 — проверить нечем (нет ключа, ssh не дозвонился, пустой список) | `scripts/lib/migrations-gate.sh` |
+| Сборка рекордера | `recorder-release.yml` по тегу `recorder-build-N`: `swarm_server recorder-upload N < zip` кладёт архив в Storage (без перезаписи), затем анонимный GET с проверкой sha256 | `.github/workflows/recorder-release.yml`, `deploy/server/gate.sh` |
 | Вызов шлюза | `swarm_server <команда>` — ssh с ключом и known_hosts | `scripts/lib/swarm-server.sh` |
 
 **Ключ.** Локально — `~/Documents/workbench/private/swarm-deploy-key` (переопределяется
@@ -41,7 +42,7 @@ Contabo, self-hosted Supabase в `/srv/swarm/supabase` (issue #915; перест
 
 **Что ещё не переделано** (список — в issue #919): кнопки секретов и плашки/заморозки
 (`notice.yml`, `bot-webhook-secret.yml`, `scriba-agent-token.yml`, `files-signing-key.yml`,
-`decimus-secrets.yml`, `seed-demo.yml`), `storage-migrate.yml`, `recorder-release.yml`, а также
+`decimus-secrets.yml`, `seed-demo.yml`), `storage-migrate.yml`, а также
 `scripts/deploy-activity.sh`, `deploy-notice.sh`, `maintenance.sh`, `bot-webhook-secret.sh`,
 `smoke.sh` по-прежнему адресованы облачному проекту. Ниже в этом файле всё, что говорит про
 `supabase functions deploy`, `db push`, `SUPABASE_ACCESS_TOKEN` и Management API, — история до
@@ -114,7 +115,8 @@ make migrate                             # 3. накат на прод — В О
   нужен `SUPABASE_SERVICE_ROLE_KEY`. В секретах репозитория его нет по решению 2026-08-28 (не
   класть service-role в публичный репозиторий). До 13.10.2026 ключ брался на время прогона через
   облачный Management API (`recorder-release.yml`, `storage-migrate.yml`); на своём сервере этого
-  пути нет — эти два workflow ждут переделки (#919).
+  пути нет. `recorder-release.yml` переделан под шлюз (ключ остаётся на сервере, в CI не попадает);
+  `storage-migrate.yml` ждёт переделки (#919).
 - Версия файла — **ровно 14 цифр** (`YYYYMMDDHHMMSS`). Восьмизначные версии вида `20260602`
   ломают CLI, если рядом есть версия с тем же префиксом: по именам файлов `20260602000001_…`
   сортируется раньше `20260602_…` (цифра `0` меньше `_`), а по версиям — позже, и push объявляет

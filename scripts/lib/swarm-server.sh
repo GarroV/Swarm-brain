@@ -5,8 +5,9 @@
 #   swarm_server functions            < tar.gz каталога supabase/functions
 #   swarm_server migrations-applied
 #   swarm_server migrate <версия> <имя> < файл.sql
+#   swarm_server recorder-upload <сборка> < SwarmRecorder-<сборка>.zip
 #
-# Ключ у шлюза принудительный: на сервере он может запустить только эти три команды.
+# Ключ у шлюза принудительный: на сервере он может запустить только эти четыре команды.
 # Настройка (все переменные необязательны):
 #   SWARM_DEPLOY_HOST                 — адрес сервера (по умолчанию VPS Contabo)
 #   SWARM_DEPLOY_KEY_FILE             — приватный ключ (по умолчанию ~/Documents/workbench/private/swarm-deploy-key)
