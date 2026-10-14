@@ -546,7 +546,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             }
             guard go else { return }
             Diagnostics.shared.log("UPDATE запускаю обновление \(cur) → \(latest.build)")
-            Updater.runUpdater(currentBuild: cur, targetBuild: latest.build, assetURL: latest.assetURL)
+            Updater.runUpdater(currentBuild: cur, targetBuild: latest.build, assetURL: latest.assetURL, sha256: latest.sha256)
         }
     }
 
@@ -597,10 +597,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                       "Сервер не ответил — похоже, нет сети. bumblebee проверяет обновления и сам, в простое, так что можно просто попробовать позже.")
         case .upToDate(let build):
             infoAlert("Установлена последняя версия", "Сборка \(build) — обновлять нечего.")
-        case .available(let build, let from, let assetURL):
+        case .available(let build, let from, let assetURL, let sha256):
             updateSpawnedAt = Date()
             Diagnostics.shared.log("UPDATE по кнопке \(from) → \(build)")
-            Updater.runUpdater(currentBuild: from, targetBuild: build, assetURL: assetURL)
+            Updater.runUpdater(currentBuild: from, targetBuild: build, assetURL: assetURL, sha256: sha256)
             infoAlert("Обновляю до сборки \(build)",
                       "Сейчас \(from). Скачаю и перезапущу — это займёт несколько секунд. Разрешение на запись звука не слетит, токен останется прежним.")
         }

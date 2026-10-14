@@ -7,9 +7,10 @@
 // plaintext отдаётся пользователю один раз. TTL по умолчанию 365 дней.
 
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { type AccessContext, logAccess } from "./access-events.ts";
+import { FUNCTIONS_BASE_URL } from "./public-url.ts";
 
-export const RECORDER_SETUP_URL =
-  "https://vbqglndbxkpmreccpqmr.supabase.co/functions/v1/swarm-recorder-setup";
+export const RECORDER_SETUP_URL = `${FUNCTIONS_BASE_URL}/swarm-recorder-setup`;
 
 export interface MintedRecorderToken {
   token: string;
@@ -32,6 +33,7 @@ export async function mintRecorderToken(
   supabase: SupabaseClient,
   telegramId: number,
   ttlDays = 365,
+  ctx: AccessContext = { via: "unknown" },
 ): Promise<MintedRecorderToken | null> {
   // Текущий хэш нужен ДО перезаписи — он и станет перекрытием.
   const { data: before } = await supabase
@@ -65,6 +67,7 @@ export async function mintRecorderToken(
     })
     .eq("telegram_id", telegramId);
   if (error) return null;
+  await logAccess(supabase, telegramId, "recorder_token_issued", ctx);
   return { token, expiresAt };
 }
 
@@ -73,6 +76,7 @@ export async function mintRecorderToken(
 export async function revokeRecorderToken(
   supabase: SupabaseClient,
   telegramId: number,
+  ctx: AccessContext = { via: "unknown" },
 ): Promise<boolean> {
   const { error } = await supabase
     .from("allowed_users")
@@ -83,6 +87,7 @@ export async function revokeRecorderToken(
       recorder_token_prev_expires_at: null,
     })
     .eq("telegram_id", telegramId);
+  if (!error) await logAccess(supabase, telegramId, "recorder_token_revoked", ctx);
   return !error;
 }
 
@@ -91,18 +96,21 @@ export async function revokeRecorderToken(
 export async function getRecorderTokenStatus(
   supabase: SupabaseClient,
   telegramId: number,
-): Promise<{ active: boolean; expiresAt: string | null }> {
+): Promise<{ active: boolean; expiresAt: string | null; lastSeenAt: string | null }> {
   const { data } = await supabase
     .from("allowed_users")
-    .select("recorder_token_hash, recorder_token_expires_at")
+    .select("recorder_token_hash, recorder_token_expires_at, recorder_last_seen_at")
     .eq("telegram_id", telegramId)
     .maybeSingle();
-  if (!data) return { active: false, expiresAt: null };
-  const row = data as { recorder_token_hash: string | null; recorder_token_expires_at: string | null };
-  const active =
-    !!row.recorder_token_hash &&
+  if (!data) return { active: false, expiresAt: null, lastSeenAt: null };
+  const row = data as {
+    recorder_token_hash: string | null;
+    recorder_token_expires_at: string | null;
+    recorder_last_seen_at: string | null;
+  };
+  const active = !!row.recorder_token_hash &&
     (!row.recorder_token_expires_at || Date.parse(row.recorder_token_expires_at) >= Date.now());
-  return { active, expiresAt: row.recorder_token_expires_at };
+  return { active, expiresAt: row.recorder_token_expires_at, lastSeenAt: row.recorder_last_seen_at };
 }
 
 // Есть ли активный токен (булев ярлык поверх getRecorderTokenStatus).

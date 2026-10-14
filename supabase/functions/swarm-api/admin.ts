@@ -1,4 +1,5 @@
 import { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { BOT_SLOT_COLUMNS, isMissedBotSlot, type SlotRow } from "../_shared/bot-slot.ts";
 import { normalizeCountries } from "../_shared/countries.ts";
 import { addUserToWorkspace, normalizeUsername } from "../_shared/users/membership.ts";
 import { parseUserRef } from "../_shared/users/user-ref.ts";
@@ -8,20 +9,22 @@ import {
   canChangeAccountKeys,
   canManageMember,
   canManageWorkspace,
+  type EmailChangeEvent,
   isForeignEmailChange,
   isSuperadmin,
+  makeEmailChangeSender,
   type MemberRow,
   normalizeEmail,
   SUPERADMIN_TELEGRAM_ID,
 } from "./admin-scope.ts";
 import { onlyLiveEntries } from "../_shared/entries/live.ts";
-import { externalFetch, VIA_TELEGRAM } from "../_shared/external-fetch.ts";
+import { notifyPerson } from "../_shared/notify-person.ts";
 import { serverError } from "./client-error.ts";
 import { apiErr, json } from "./http.ts";
 
 const ADMIN_TELEGRAM_ID = SUPERADMIN_TELEGRAM_ID;
 
-export type AdminDeps = { announce?: typeof announceEmailChange };
+export type AdminDeps = { announce?: (ev: EmailChangeEvent) => Promise<void> };
 
 // Ответы — общие `json`/`apiErr` из http.ts (issue #722): до этого у админки были свои копии
 // без `Cache-Control: no-store` и с CORS, отражавшим любой origin.
@@ -52,7 +55,8 @@ export async function handleAdminRoutes(
   // Объём: суперадмин — все воркспейсы, админ — только свой (правила — admin-scope.ts).
   const actor: AdminActor = { telegramId, groupId: adminGroupId };
   const isSuper = isSuperadmin(actor);
-  const announce = deps.announce ?? announceEmailChange;
+  const announce = deps.announce ??
+    ((ev: EmailChangeEvent) => announceEmailChange(ev, makeEmailChangeSender(supabase)));
   const actorName = async () => (await resolveNames([telegramId])).get(telegramId) ?? `#${telegramId}`;
 
   // GET /admin/review-counts — СВОДКА «сколько встреч на вычитке у каждого участника».
@@ -161,29 +165,24 @@ export async function handleAdminRoutes(
     ]
       .filter((id) => id !== ADMIN_TELEGRAM_ID);
 
-    let sent = 0, failed = 0;
+    // Рассылка — сообщение людям по инициативе бота: в комендантский час (23:00–9:00 МСК) оно
+    // ложится в очередь `telegram_outbox` и уходит утром; `queued` — сколько отложено.
+    let sent = 0, queued = 0, failed = 0;
     for (const id of ids) {
       try {
-        const r = await externalFetch(
-          `https://api.telegram.org/bot${botToken}/sendMessage`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              chat_id: id,
-              text,
-              disable_web_page_preview: true,
-            }),
-          },
-          VIA_TELEGRAM,
-        );
-        if (r.ok) sent++;
-        else failed++;
+        const result = await notifyPerson(supabase, {
+          recipientId: id,
+          kind: "broadcast",
+          payload: { text, disable_web_page_preview: true },
+        });
+        // `sent` — принято (ушло или ждёт утра): экран админа сверяет его с `total`.
+        sent++;
+        if (result === "queued") queued++;
       } catch {
         failed++;
       }
     }
-    return json({ sent, failed, total: ids.length }, 200, origin);
+    return json({ sent, queued, failed, total: ids.length }, 200, origin);
   }
 
   // GET/POST /admin/workspaces/:id/users
@@ -548,7 +547,7 @@ export async function reviewCountsByMember(
     onlyLiveEntries(supabase.from("entries").select("owner_id, metadata"))
       .eq("group_id", groupId).eq("entry_type", "meeting")
       .or("metadata->>confirmed.is.null,metadata->>confirmed.eq.false"),
-    supabase.from("meetings").select("recorders, co_owners")
+    supabase.from("meetings").select(`recorders, co_owners, ${BOT_SLOT_COLUMNS}`)
       .eq("group_id", groupId).eq("status", "awaiting_review"),
   ]);
   // Молча вернуть пустую карту = показать «0 на вычитке» как факт. Пусть вызывающий решает.
@@ -574,12 +573,14 @@ export async function reviewCountsByMember(
   }
   for (
     const m of (mtgRes.data ?? []) as Array<
-      {
+      SlotRow & {
         recorders: Array<{ telegram_id: number }> | null;
         co_owners: number[] | null;
       }
     >
   ) {
+    // Пустой слот бота в очереди не виден — и в счётчик не идёт (одно правило с GET /agent-meetings).
+    if (isMissedBotSlot(m)) continue;
     // Каждому владельцу черновика по разу: записавшим и совладельцам (решение 2026-09-25).
     const owners = new Set([
       ...(m.recorders ?? []).map((r) => r.telegram_id),

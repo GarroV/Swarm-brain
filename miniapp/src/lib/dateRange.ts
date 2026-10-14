@@ -91,6 +91,11 @@ export function inRange(day: string | null, range: DateRange | null): boolean {
   return day >= range.from && day <= range.to;
 }
 
+// Содержит ли период календарный день (ISO «YYYY-MM-DD») — границы включительно.
+export function rangeIncludesDay(range: DateRange, day: string): boolean {
+  return day >= range.from && day <= range.to;
+}
+
 // Подпись для триггера в рельсе: у пресета — его имя, у произвольного — «12–25 авг» / «28 авг — 3 сен».
 export function rangeLabel(range: DateRange | null, lang: Lang = "ru"): string {
   const en = lang === "en";

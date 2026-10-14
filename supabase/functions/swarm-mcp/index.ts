@@ -25,6 +25,7 @@ import {
 import { SPRINT_TOOL_DEFINITIONS, SPRINT_TOOLS } from "./tasks/sprints.ts";
 import { PERSONAL_TOOL_DEFINITIONS, PERSONAL_TOOLS } from "./tasks/personal.ts";
 import { MARKET_TOOL_DEFINITIONS, MARKET_TOOLS } from "./market.ts";
+import { INSPECTION_TOOL_DEFINITIONS, INSPECTION_TOOLS } from "./inspections.ts";
 import {
   COUNTRY_PROMPT_RULE,
   detectQueryCountry,
@@ -43,6 +44,7 @@ import { ALL_MEETING_SOURCES } from "../_shared/sources.ts";
 import { isFeedbackStatus } from "../_shared/feedback-categories.ts";
 import { normalizeExtractedEventDate, todayIso } from "../_shared/llm-date.ts";
 import { canViewEntry, entryAccessError, type EntryAccessRow, entryVisibilityOr } from "../_shared/entries/access.ts";
+import { markClientSeen } from "../_shared/client-seen.ts";
 import { withTokenIdentity } from "./identity.ts";
 import { authorizeToolCall, NO_WORKSPACE_MESSAGE, resolveCallerScope, withCallerIdentity } from "./auth.ts";
 import {
@@ -59,6 +61,7 @@ const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY")!;
 
 import { absoluteFileUrl, removeStorageObject } from "../_shared/storage-links.ts";
+import { FILES_UNAVAILABLE } from "../_shared/swarm-files-storage.ts";
 import {
   discardOwnUpload,
   registerStorageFile,
@@ -197,13 +200,17 @@ async function uploadToStorage(
   const bytes = Uint8Array.from(atob(fileContentBase64), (c) => c.charCodeAt(0));
   // Ключ — в воркспейсе владельца, с uuid, без перезаписи (buildUploadKey). Транслит вместо
   // голой замены: имя «отчёт.pdf» превращалось в «______.pdf».
-  const { file, error } = await uploadNewPrivateFile(supabase, {
+  const { file, error, unavailable } = await uploadNewPrivateFile(supabase, {
     folder: "uploads",
     scope: groupId,
     fileName,
     body: bytes,
     contentType: mimeType,
   });
+  if (unavailable) {
+    console.error(`[swarm-mcp] swarm-files недоступен: ${error}`);
+    throw new Error(`${FILES_UNAVAILABLE.error} / ${FILES_UNAVAILABLE.error_ru}`);
+  }
   if (error || !file) throw new Error(`Storage upload failed: ${error ?? "unknown"}`);
 
   // Публичной ссылки больше нет: наружу отдаётся /api/file/<path>, а в metadata — путь.
@@ -273,6 +280,7 @@ const TOOLS = [
   ...SPRINT_TOOL_DEFINITIONS,
   ...PERSONAL_TOOL_DEFINITIONS,
   ...MARKET_TOOL_DEFINITIONS,
+  ...INSPECTION_TOOL_DEFINITIONS,
   ...MEETING_REVIEW_TOOL_DEFINITIONS,
   {
     name: "get_meetings",
@@ -1283,6 +1291,8 @@ Deno.serve(async (req: Request) => {
         tokenError = "Token expired — run /mytoken in the bot to get a fresh one";
       } else {
         verifiedTelegramId = row.telegram_id;
+        // Отметка «Claude Desktop жив» для карточки интеграции (#921); ошибка записи запрос не роняет.
+        await markClientSeen(supabase, row.telegram_id, "mcp");
       }
     } else {
       tokenError = "Invalid token — run /mytoken in the bot to get a fresh one";
@@ -1329,6 +1339,8 @@ Deno.serve(async (req: Request) => {
         result = await SPRINT_TOOLS[name](args);
       } else if (Object.hasOwn(PERSONAL_TOOLS, name)) {
         result = await PERSONAL_TOOLS[name](args as Record<string, unknown> & { requesting_user_id: number });
+      } else if (Object.hasOwn(INSPECTION_TOOLS, name)) {
+        result = await INSPECTION_TOOLS[name](args as Record<string, unknown> & { requesting_user_id?: number });
       } else if (Object.hasOwn(MARKET_TOOLS, name)) {
         result = await MARKET_TOOLS[name](args as Record<string, unknown> & { requesting_user_id: number });
       } else if (name === "whoami") {
@@ -1364,6 +1376,8 @@ Deno.serve(async (req: Request) => {
             status?: string;
             confirmed?: boolean;
             parent_task_id?: string;
+            created_by_name?: string;
+            mute_created_by?: boolean;
             requesting_user_id?: number;
           },
         );

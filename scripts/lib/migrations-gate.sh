@@ -6,34 +6,36 @@
 # Зачем гейт (issue #509, #444, #557): функция или веб, которым нужна новая колонка, уехав раньше
 # схемы, отвечают 400 и кладут раздел у всей команды до утра, когда никто не смотрит.
 #
-# Спрашиваем Management API, а не базу: прод-ключа в CI нет и не будет (решение 2026-08-28), а
-# SUPABASE_ACCESS_TOKEN там есть — тот самый, которым и деплоятся функции.
+# Спрашиваем шлюз на своём сервере (`swarm_server migrations-applied`, scripts/lib/swarm-server.sh),
+# а не базу: пароля базы в CI нет и не будет (решение 2026-08-28), есть только ключ шлюза, который
+# умеет ровно три команды. С 13.10.2026 прод — свой сервер; облачный Management API мёртв (#919).
 #
 # Тесты на фикстурах и порча — scripts/test-migrations-gate.sh (job «Скрипты раскатки» в CI).
 
-GATE_PROJECT_REF="${PROJECT_REF:-vbqglndbxkpmreccpqmr}"
+GATE_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=swarm-server.sh
+. "$GATE_LIB_DIR/swarm-server.sh"
 GATE_MIGR_DIR="supabase/migrations/"
 
-# Какие из файлов НЕ применены, по ответу Management API (JSON-массив объектов с полем version).
-#   $1 — файлы миграций, по одному в строке;  $2 — ответ API.
+# Какие из файлов НЕ применены, по списку применённых версий (по одной в строке).
+#   $1 — файлы миграций, по одному в строке;  $2 — применённые версии.
 # Печатает неприменённые имена. Коды: 0 — всё применено (или файлов нет), 1 — есть неприменённые,
-# 3 — ответ не разобрать (это «проверить нечем», а не «всё хорошо»).
+# 3 — список применённых пуст (в ledger сервера они есть всегда: пустой ответ — это «проверить
+# нечем», а не «всё хорошо»).
 missing_migrations() {
   local files="$1" applied="$2" pending
   [ -n "$files" ] || return 0
+  [ -n "$(printf '%s' "$applied" | tr -d '[:space:]')" ] || return 3
   pending=$(printf '%s' "$applied" | python3 -c '
-import json, re, sys
-try:
-    data = json.load(sys.stdin)
-    done = {str(m.get("version")) for m in data}
-except Exception:
-    sys.exit(3)
+import re, sys
+done = {l.strip() for l in sys.stdin if l.strip()}
 missing = []
 for line in sys.argv[1].splitlines():
     name = line.strip().rsplit("/", 1)[-1]
-    if not name:
+    # Шаблон новой таблицы — не миграция.
+    if not name or name.startswith("_"):
         continue
-    m = re.match(r"(\d{14})", name)
+    m = re.match(r"(\d{8,14})_", name)
     # Файл без версии в имени пропускать нельзя: молчаливый пропуск и есть та дыра, что чинится.
     if not m or m.group(1) not in done:
         missing.append(name)
@@ -44,18 +46,15 @@ print("\n".join(missing))
   return 1
 }
 
-# То же, но с живым ответом прода. Коды как у missing_migrations; 3 — ещё и «нет токена или API
-# не ответил». MIGRATIONS_API_JSON — подставить ответ API вместо сети (тесты на фикстурах).
+# То же, но с живым списком с сервера. Коды как у missing_migrations; 3 — ещё и «нет ключа или
+# сервер не ответил». MIGRATIONS_APPLIED — подставить список вместо сети (тесты на фикстурах).
 pending_migrations() {
   local files="$1" applied
   [ -n "$files" ] || return 0
-  if [ -n "${MIGRATIONS_API_JSON+set}" ]; then
-    applied="$MIGRATIONS_API_JSON"
+  if [ -n "${MIGRATIONS_APPLIED+set}" ]; then
+    applied="$MIGRATIONS_APPLIED"
   else
-    [ -n "${SUPABASE_ACCESS_TOKEN:-}" ] || return 3
-    applied=$(curl -fsS -m 30 \
-      -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
-      "https://api.supabase.com/v1/projects/$GATE_PROJECT_REF/database/migrations" 2>/dev/null) || return 3
+    applied=$(swarm_server migrations-applied) || return 3
   fi
   missing_migrations "$files" "$applied"
 }
@@ -110,7 +109,7 @@ pr_migrations_gate() {
     0) GATE_PLAN="$GATE_PLAN — на проде применены"; return 0 ;;
     1) GATE_REASON="на проде НЕ накатаны миграции: $(printf '%s' "$pending" | paste -sd, -). Код уехал бы раньше схемы. Сначала кнопка «Накат миграций БД» (deploy-migrations.yml) по «да» владельца — метка остаётся, следующий прогон увидит схему и вольёт PR."
        return 1 ;;
-    *) GATE_REASON="в релизе есть миграции ($(printf '%s' "$all" | xargs -n1 basename | paste -sd, -)), а проверить их на проде нечем (нет SUPABASE_ACCESS_TOKEN или API не ответил). Это не «не накатаны» — проверка не выполнилась."
+    *) GATE_REASON="в релизе есть миграции ($(printf '%s' "$all" | xargs -n1 basename | paste -sd, -)), а проверить их на проде нечем (нет ключа раскатки или сервер не ответил). Это не «не накатаны» — проверка не выполнилась."
        return 3 ;;
   esac
 }

@@ -4,7 +4,8 @@
 // роутера живёт в модулях рядом (task-labels.ts, meeting-invites.ts …), они по канону.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { verifyInitData } from "./auth.ts";
-import { isSessionRevoked, type SessionClaims, verifyJWT } from "../_shared/jwt.ts";
+import { isRenewableSession, isSessionRevoked, type SessionClaims, verifyJWT } from "../_shared/jwt.ts";
+import { logAccess, logLoginOnce } from "../_shared/access-events.ts";
 import {
   buildRecorderSetupOneLiner,
   buildRecorderUpdateOneLiner,
@@ -31,8 +32,17 @@ import {
   getMeetingSecure,
 } from "./entries-guard.ts";
 import { canChangeMeetingPrivacy } from "../_shared/entries/meeting-rights.ts";
+import type { SlotRow } from "../_shared/bot-slot.ts";
 import { isMissedBotSlot, toAgentListRow, toListRow } from "./meetings-payload.ts";
+import {
+  applyListFilters,
+  ENTRY_LIGHT_COLUMNS,
+  hasListFilters,
+  parseMeetingsListParams,
+  toLightRow,
+} from "./meetings-list.ts";
 import { TASK_LIST_COLUMNS } from "./task-columns.ts";
+import { deltaColumns, parseSince, type TasksDeltaResponse } from "./tasks-delta.ts";
 import { resolveDigestScope } from "./digest-scope.ts";
 import {
   createTask,
@@ -132,8 +142,10 @@ import { handleIntegrationConnectRoutes, makeIntegrationsDeps } from "./integrat
 import { handleAutojoinRoutes, makeAutojoinStore, makeCalendarCheck } from "./autojoin.ts";
 import { handleTaskLabelRoutes } from "./task-labels.ts";
 import { handlePublicShortLink, handleShortLinkRoutes, isPublicShortLinkPath } from "./short-links.ts";
+import { handleStickerRoutes } from "./stickers.ts";
 import { handleTaskCommentRoutes } from "./task-comments.ts";
 import { handleTaskFileRoutes } from "./task-files.ts";
+import { FILES_BUCKET, FILES_UNAVAILABLE, filesStorage, signedFilesGetUrl } from "../_shared/swarm-files-storage.ts";
 import { handleStatsRoutes } from "./stats.ts";
 import { handleMeetingAskRoutes } from "./meeting-ask.ts";
 import { makeFeedbackPingDeps, sendFeedbackPing } from "../_shared/feedback-ping.ts";
@@ -142,6 +154,8 @@ import { handleSprintCycleRoutes } from "./sprint-cycles.ts";
 import { handleSpaceJournalRoutes } from "./space-journal.ts";
 import { handleTaskArchiveRoutes } from "./task-archive.ts";
 import { handleMarketRoutes } from "./market.ts";
+import { handleQualityRoutes } from "./quality.ts";
+import { handleInspectionRoutes } from "./inspections.ts";
 import { handleTelegramLinkRoutes } from "./telegram-link.ts";
 import { handleModelUsageRoutes } from "./model-usage.ts";
 import { SUPERADMIN_TELEGRAM_ID } from "../_shared/users/admin-scope.ts";
@@ -172,6 +186,7 @@ import { onlyLive } from "../_shared/tasks/live.ts";
 import { onlyLiveEntries } from "../_shared/entries/live.ts";
 import { archiveEntry } from "../_shared/entries/archive.ts";
 import { personName, resolvePersonNames } from "../_shared/users/display-name.ts";
+import { toPublicUrl } from "../_shared/public-url.ts";
 
 // Сколько задач отдаём вебу за раз. Дефолт движка (_shared/tasks/db.ts) — 200, и для БОТА он
 // верен: тот печатает список сообщением в чат, дампить туда базу нельзя. Для веба он смертелен —
@@ -611,6 +626,14 @@ async function routeRequest(req: Request): Promise<Response> {
   ) {
     return apiErr(401, "Unauthorized", origin);
   }
+  // Журнал входов (#797): первая встреча новой сессии = вход. Короткий веб-доступ по личному
+  // токену (meeting-webtoken) помечается отдельным каналом. Демо — общий вход витрины, не пишем.
+  if (webSession && webSession.authTime !== null && !isDemoSession(telegram_id)) {
+    await logLoginOnce(supabase, telegram_id, webSession.authTime, {
+      via: isRenewableSession(webSession) ? "web" : "token",
+      req,
+    });
+  }
   // Demo-сессия (секретная ссылка, telegram_id === DEMO_USER_ID): жёсткая изоляция.
   // Группа форсится в 'demo' (НЕ из БД), админ-права запрещены. Барьер «нет дыр в рабочие»:
   // все data-запросы фильтруются по этому group_id, admin-роуты недоступны (isAdmin=false).
@@ -652,6 +675,7 @@ async function routeRequest(req: Request): Promise<Response> {
       console.error("revoke-sessions: не записал отметку отзыва", telegram_id, error.message);
       return apiErr(500, "Could not sign out everywhere", origin);
     }
+    await logAccess(supabase, telegram_id, "sessions_revoked", { via: "web", req });
     return new Response(null, { status: 204, headers: corsHeaders(origin) });
   }
 
@@ -793,7 +817,7 @@ async function routeRequest(req: Request): Promise<Response> {
         origin,
       );
     }
-    const minted = await mintRecorderToken(supabase, telegram_id);
+    const minted = await mintRecorderToken(supabase, telegram_id, 365, { via: "web", req });
     if (!minted) {
       return apiErr(500, "Не удалось создать токен рекордера", origin);
     }
@@ -834,7 +858,7 @@ async function routeRequest(req: Request): Promise<Response> {
         origin,
       );
     }
-    const minted = await mintMcpToken(supabase, telegram_id);
+    const minted = await mintMcpToken(supabase, telegram_id, { via: "web", req });
     if (!minted) return apiErr(500, "Не удалось создать токен", origin);
     return json({ oneLiner: buildSetupOneLiner(minted.token) }, 200, origin);
   }
@@ -898,6 +922,14 @@ async function routeRequest(req: Request): Promise<Response> {
     routePath,
   );
   if (shortLinkResp) return shortLinkResp;
+
+  // Стикеры-задания на главной: стикеры своего воркспейса; создавать и архивировать — админ.
+  const stickerResp = await handleStickerRoutes(
+    { supabase, telegramId: telegram_id, groupId, isDemo, isAdmin, origin },
+    req,
+    routePath,
+  );
+  if (stickerResp) return stickerResp;
 
   // Приглашение бота на созвон (D017): человек вставляет ссылку — бот постучится.
   const inviteResp = await handleMeetingInviteRoutes(
@@ -1068,6 +1100,13 @@ async function routeRequest(req: Request): Promise<Response> {
   const marketResp = await handleMarketRoutes(req, routePath, telegram_id, groupId, isAdmin, isDemo, origin);
   if (marketResp) return marketResp;
 
+  // Баллы РС и РКО по пиццериям (/quality?kind=) — весь воркспейс, страны по allowed_markets.
+  const qualityResp = await handleQualityRoutes(req, routePath, groupId, isDemo, origin);
+  if (qualityResp) return qualityResp;
+  // Проверки Децимуса (/inspections, /inspections/:id) — тот же прокси, страны по allowed_markets.
+  const inspectionsResp = await handleInspectionRoutes(req, routePath, groupId, isDemo, origin);
+  if (inspectionsResp) return inspectionsResp;
+
   // GET /tasks or POST /tasks
   if (routePath === "/tasks") {
     if (req.method === "GET") {
@@ -1096,12 +1135,22 @@ async function routeRequest(req: Request): Promise<Response> {
       const startDateTo = url.searchParams.get("start_date_to") ?? undefined;
       const dueDateFrom = url.searchParams.get("due_date_from") ?? undefined;
       const dueDateTo = url.searchParams.get("due_date_to") ?? undefined;
+      // Дельта: `since` — только изменённое после него (включая архивные). Момент снимаем ДО
+      // чтения базы: правка, прилетевшая во время запроса, попадёт и в этот ответ, и в следующий
+      // (слияние по id идемпотентно), а не потеряется.
+      const sinceRaw = url.searchParams.get("since");
+      const since = parseSince(sinceRaw);
+      if (sinceRaw !== null && since === null) {
+        return apiErr(400, "since must be an ISO date", origin);
+      }
+      const serverTime = new Date().toISOString();
 
       const { tasks, total } = await listTasksWithTotal(
         {
           // Узкая проекция: 1146 → 583 Б на строку (issue #116). description в списках не
           // рендерится; редактор до-загружает задачу по id.
-          columns: TASK_LIST_COLUMNS,
+          columns: since ? deltaColumns(TASK_LIST_COLUMNS) : TASK_LIST_COLUMNS,
+          updatedAfter: since ?? undefined,
           status,
           country,
           assigneeText,
@@ -1172,6 +1221,14 @@ async function routeRequest(req: Request): Promise<Response> {
       const totalHeader = total != null
         ? { "X-Total-Count": String(total) }
         : undefined;
+      if (since) {
+        const delta: TasksDeltaResponse<typeof tasksWithCreator[number]> = {
+          tasks: tasksWithCreator,
+          serverTime,
+          truncated: tasks.length >= limit,
+        };
+        return json(delta, 200, origin, totalHeader);
+      }
       return json(tasksWithCreator, 200, origin, totalHeader);
     }
 
@@ -2073,13 +2130,17 @@ async function routeRequest(req: Request): Promise<Response> {
     // кладём ПУТЬ — ссылку строит отдача (withNormalizedFileLink → /api/file/<path>).
     // Ключ — в воркспейсе владельца, с uuid, без перезаписи (buildUploadKey). Кириллицу в ключе
     // Storage не принимает — имя транслитерируется, настоящее живёт в metadata.filename.
-    const { file: stored, error: uploadError } = await uploadNewPrivateFile(supabase, {
+    const { file: stored, error: uploadError, unavailable } = await uploadNewPrivateFile(supabase, {
       folder: "uploads",
       scope: groupId,
       fileName: file.name,
       body: arrayBuffer,
       contentType: file.type,
     });
+    if (unavailable) {
+      console.error(`[swarm-api] entries upload: ${uploadError}`);
+      return json({ ...FILES_UNAVAILABLE, code: "files_unavailable" }, 503, origin);
+    }
     if (uploadError || !stored) {
       return serverError(origin, "entries upload", uploadError ?? "upload failed");
     }
@@ -2376,17 +2437,26 @@ async function routeRequest(req: Request): Promise<Response> {
         telegramId: telegram_id,
         isAdmin,
       });
-      const { data: signed, error: signErr } = await supabase.storage
-        .from(resolved.bucket)
-        .createSignedUrl(resolved.path, FILE_SIGNED_TTL_SEC);
-      if (signErr || !signed?.signedUrl) {
-        return apiErr(500, "Signing failed", origin);
+      let location: string;
+      if (resolved.bucket === FILES_BUCKET) {
+        // Файл лежит на MUSPELHEIM: права проверены выше, наружу — подписанная get-ссылка сервиса.
+        const store = filesStorage();
+        if (!store) return apiErr(503, "File storage is not configured", origin);
+        location = await signedFilesGetUrl(store, resolved.path, FILE_SIGNED_TTL_SEC);
+      } else {
+        const { data: signed, error: signErr } = await supabase.storage
+          .from(resolved.bucket)
+          .createSignedUrl(resolved.path, FILE_SIGNED_TTL_SEC);
+        if (signErr || !signed?.signedUrl) {
+          return apiErr(500, "Signing failed", origin);
+        }
+        location = toPublicUrl(signed.signedUrl);
       }
       return new Response(null, {
         status: 302,
         headers: {
           ...corsHeaders(origin),
-          Location: signed.signedUrl,
+          Location: location,
           "Cache-Control": "no-store",
         },
       });
@@ -2407,37 +2477,47 @@ async function routeRequest(req: Request): Promise<Response> {
     const confirmedParam = url.searchParams.get("confirmed");
     // Лимит настраиваемый (?limit=), дефолт 500 — прежний хардкод 50 обрезал список «Все встречи»
     // (у команды уже 60+ встреч только за 2 недели). Потолок 2000 — защита от гигантского payload.
-    const limit = parseListLimit(url.searchParams.get("limit"), {
-      def: 500,
-      max: 2000,
-    });
+    // ?light=1 — лёгкие строки постранично (meetings-list.ts): по 50, ?offset=, фильтры
+    // ?q= ?from= ?to= ?storage=. Без light=1 ответ прежний (бот/MCP/старые вкладки не задеты).
+    const lp = parseMeetingsListParams(url.searchParams, { def: 500, max: 2000 });
+    const limit = lp.limit;
     // Несогласованные (очередь вычитки) — по причастности: владелец ИЛИ участник встречи.
     // Обычный фильтр видимости тут не годится: «ничья» неприватная встреча из read-ai висела
     // бы в очереди у всего воркспейса (issue #66). Согласованные — обычное правило.
-    // Очередь вычитки (единицы строк) — текст нужен сразу и целиком, поэтому ENTRY_COLUMNS.
+    // Очередь вычитки (единицы строк) — без light текст нужен сразу и целиком (ENTRY_COLUMNS);
+    // с light — лёгкие колонки, полный текст экран берёт по id.
     // Большой список — превью из базы (ENTRY_LIST_COLUMNS): 230 встреч × полный транскрипт =
     // ~10 МБ в браузер (issue #102), а выбирать полный текст ради 400 символов стоило 654 мс
-    // базы против 15 мс (issue #490). Форму ответа приводит toListRow ниже.
+    // базы против 15 мс (issue #490). Форму ответа приводит toListRow/toLightRow ниже.
     const isReviewQueue = confirmedParam === "false";
+    const listColumns = lp.light ? ENTRY_LIGHT_COLUMNS : ENTRY_LIST_COLUMNS;
+    const baseList = () =>
+      buildEntriesQuery(supabase, listColumns, {
+        groupId,
+        telegramId: telegram_id,
+      }, { count: "exact" })
+        .eq("entry_type", "meeting");
     let q = (isReviewQueue
-      ? buildReviewQueueQuery(supabase, ENTRY_COLUMNS, {
+      ? buildReviewQueueQuery(supabase, lp.light ? ENTRY_LIGHT_COLUMNS : ENTRY_COLUMNS, {
         groupId,
         telegramId: telegram_id,
         email: userEmail,
-      })
-      : buildEntriesQuery(supabase, ENTRY_LIST_COLUMNS, {
-        groupId,
-        telegramId: telegram_id,
-      }, { count: "exact" }))
-      .eq("entry_type", "meeting")
+      }).eq("entry_type", "meeting")
+      : baseList())
+      // id — tie-breaker: без него строки с одним created_at (импорт пачкой) могут поменяться
+      // местами между страницами, и offset-пагинация теряет или дублирует встречи.
       .order("created_at", { ascending: false })
-      .limit(limit);
+      .order("id", { ascending: false })
+      .range(lp.offset, lp.offset + limit - 1);
     if (confirmedParam === "true") {
       q = q.eq("metadata->>confirmed", "true");
     }
     if (confirmedParam === "false") {
       q = q.or("metadata->>confirmed.is.null,metadata->>confirmed.eq.false");
     }
+    // Фильтры экрана — только у списка согласованных; очередь вычитки (единицы строк)
+    // клиент фильтрует сам.
+    if (!isReviewQueue) q = applyListFilters(q, lp);
     const { data, error, count } = await q;
     if (error) return serverError(origin, "meetings list", error);
     const rows = (data ?? []) as unknown as Array<
@@ -2468,11 +2548,25 @@ async function routeRequest(req: Request): Promise<Response> {
     const named = await withImporterNames(rows, recMap);
     // Сколько встреч подходит под фильтр БЕЗ лимита (issue #112). У очереди вычитки счёта нет:
     // buildReviewQueueQuery считает причастность в два запроса, и число там соврало бы.
+    // Лёгкий режим: ещё и «сколько встреч всего БЕЗ фильтров экрана» — для «Показано N из M».
+    // Фильтров нет — это тот же count; есть — лёгкий второй запрос на одну строку.
+    let unfiltered = count;
+    if (lp.light && !isReviewQueue && hasListFilters(lp)) {
+      let uq = baseList().order("created_at", { ascending: false }).limit(1);
+      if (confirmedParam === "true") uq = uq.eq("metadata->>confirmed", "true");
+      const { count: all, error: uErr } = await uq;
+      if (uErr) return serverError(origin, "meetings list total", uErr);
+      unfiltered = all;
+    }
+    const headers: Record<string, string> = {};
+    if (count != null) headers["X-Total-Count"] = String(count);
+    if (unfiltered != null) headers["X-Unfiltered-Count"] = String(unfiltered);
+    const shape = lp.light ? toLightRow : (isReviewQueue ? (r: unknown) => r : toListRow);
     return json(
-      isReviewQueue ? named : named.map(toListRow),
+      (named as unknown[]).map((r) => (shape as (r: unknown) => unknown)(r)),
       200,
       origin,
-      count != null ? { "X-Total-Count": String(count) } : undefined,
+      headers,
     );
   }
 
@@ -2746,7 +2840,7 @@ async function routeRequest(req: Request): Promise<Response> {
     const status = url.searchParams.get("status") ?? "awaiting_review";
     let q = supabase.from("meetings")
       .select(
-        "id, title, source, identity_kind, started_at, ended_at, status, has_draft_notes, recorders, co_owners, attendees, entry_id, created_at, recorded_by, agent_version, recorded_seconds, summary_status",
+        "id, title, source, identity_kind, started_at, ended_at, status, has_draft_notes, recorders, co_owners, attendees, entry_id, created_at, recorded_by, agent_version, recorded_seconds, summary_status, agent_last_seen_at, agent_last_recording",
         { count: "exact" },
       )
       .eq("group_id", groupId)
@@ -2769,8 +2863,9 @@ async function routeRequest(req: Request): Promise<Response> {
     // С 25.09.2026 текст не выбирается ВООБЩЕ (issue #491) — раньше он читался и выбрасывался
     // в toAgentListRow: 119 мс базы на опрос, из них ~88 мс на выброшенное.
     // Полный текст берёт деталь GET /agent-meetings/:id — она его и так до-загружает.
-    // Пустые слоты бота встреч (заявился, записи нет) в черновики не попадают (#788).
-    const rows = (data ?? []) as Array<{ recorders?: unknown; agent_version?: unknown; recorded_by?: unknown; recorded_seconds?: unknown; summary_status?: unknown }>;
+    // Пустые слоты бота встреч (заявился, записи нет) в черновики не попадают (#788): показ —
+    // только пока бот пишет (agent_last_recording + свежий удар), см. _shared/bot-slot.ts.
+    const rows = (data ?? []) as Array<SlotRow & { recorders?: unknown }>;
     const shown = rows.filter((r) => !isMissedBotSlot(r));
     const enrichedList = await withRecorderNames(shown);
     // Сколько черновиков подходит под фильтр БЕЗ лимита 50 (issue #112) — за вычетом спрятанных.
@@ -3499,14 +3594,19 @@ async function routeRequest(req: Request): Promise<Response> {
     let screenshotUrl: string | null = null;
     if (screenshotFile) {
       const buf = await screenshotFile.arrayBuffer();
-      const { file: shot, error: upErr } = await uploadNewPrivateFile(supabase, {
+      const { file: shot, error: upErr, unavailable: shotUnavailable } = await uploadNewPrivateFile(supabase, {
         folder: "feedback",
         scope: FEEDBACK_SCOPE,
         fileName: screenshotFile.name || "screenshot.png",
         body: buf,
         contentType: screenshotFile.type || "image/png",
       });
-      // Скрин — admin-only, поэтому и он в приватном бакете, а в feedback кладём ПУТЬ.
+      // Сервис файлов не отвечает — не теряем скрин молча: отзыв не сохраняем, человек повторит.
+      if (shotUnavailable) {
+        console.error(`[feedback] скрин не загружен, swarm-files недоступен: ${upErr}`);
+        return json({ ...FILES_UNAVAILABLE, code: "files_unavailable" }, 503, origin);
+      }
+      // Скрин — admin-only, поэтому и он в приватном хранилище, а в feedback кладём ПУТЬ.
       if (shot) {
         const path = shot.path;
         const regFb = await registerStorageFile(supabase, {

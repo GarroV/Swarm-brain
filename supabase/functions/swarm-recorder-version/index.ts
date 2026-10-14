@@ -128,17 +128,13 @@
 // live-пометок; журнал различает источник нажатия. Выпуск снова собирается на macos-14 (PR #762).
 // Проверено ВЖИВУЮ на машине владельца: ручная запись → sending → встреча на проде awaiting_review.
 // Тег recorder-build-36.
-const LATEST_BUILD = 36;
-// URL предсобранного .app. Установщик и апдейтер качают отсюда — сборки из исходников на машине
-// юзера больше нет (issue #19).
-// ⚠️ РАЗДАЁМ ИЗ SUPABASE STORAGE, НЕ С GITHUB (issue #91, 2026-08-25). Репозиторий приватный
-// с 20.08.2026 → release asset анонимно отдаёт 404, и установка у любого нового человека падала
-// с враньём «нет интернета или блокирует прокси». Бакет `swarm_drive` публичный, бинарник секретов
-// не содержит (токен вписывается локально при установке). Держать в синхроне с релизом: каждый
-// новый build ОБЯЗАН быть залит в Storage до подъёма LATEST_BUILD — иначе снова раздадим 404.
-// Заливка: POST /storage/v1/object/swarm_drive/recorder/SwarmRecorder-<N>.zip (service_role, x-upsert).
-const ASSET_URL =
-  `https://vbqglndbxkpmreccpqmr.supabase.co/storage/v1/object/public/swarm_drive/recorder/SwarmRecorder-${LATEST_BUILD}.zip`;
+// Номер сборки и сумма её архива живут в _shared/recorder-release.ts (#203): их же берёт
+// установщик. Раздаём из Supabase Storage, не с GitHub (issue #91); каждый новый build ОБЯЗАН быть
+// залит в Storage до подъёма номера — иначе снова раздадим 404.
+import { RECORDER_ASSET_SHA256, RECORDER_LATEST_BUILD, recorderAssetUrl } from "../_shared/recorder-release.ts";
+
+const LATEST_BUILD = RECORDER_LATEST_BUILD;
+const ASSET_URL = recorderAssetUrl(LATEST_BUILD);
 
 Deno.serve((req: Request) => {
   if (req.method === "OPTIONS") {
@@ -155,7 +151,7 @@ Deno.serve((req: Request) => {
       headers: { "Allow": "GET, OPTIONS", "Access-Control-Allow-Origin": "*" },
     });
   }
-  return new Response(JSON.stringify({ build: LATEST_BUILD, url: ASSET_URL }), {
+  return new Response(JSON.stringify({ build: LATEST_BUILD, url: ASSET_URL, sha256: RECORDER_ASSET_SHA256 }), {
     status: 200,
     headers: {
       "Content-Type": "application/json; charset=utf-8",

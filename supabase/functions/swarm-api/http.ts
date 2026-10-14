@@ -11,7 +11,7 @@ export function corsHeaders(origin: string): Record<string, string> {
     "Access-Control-Allow-Headers": "Content-Type, Authorization",
     // Без Expose-Headers браузер не отдаст JS ничего, кроме простых заголовков — на
     // cross-origin запросах X-Total-Count был бы виден в DevTools и невидим коду.
-    "Access-Control-Expose-Headers": "X-Total-Count",
+    "Access-Control-Expose-Headers": "X-Total-Count, X-Unfiltered-Count",
   };
 }
 

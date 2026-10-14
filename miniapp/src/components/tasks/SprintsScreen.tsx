@@ -64,6 +64,7 @@ import { projectLabel } from "@/lib/sprintPlan";
 import { useDt, useRoyNav } from "@/components/roy/nav";
 import { cn } from "@/lib/utils";
 import { useIsDesktop } from "@/components/roy/useIsDesktop";
+import { SHELL_BAR_H } from "@/components/roy/ui";
 import {
   AcceptDialog,
   type AcceptSubmit,
@@ -977,7 +978,7 @@ export function SprintsScreen() {
       }
       <div
         className="flex shrink-0 items-stretch gap-5 border-b border-line px-4 lg:px-5"
-        style={{ minHeight: 44 }}
+        style={{ minHeight: isDesktop ? SHELL_BAR_H : 44 }}
       >
         {isDesktop && (
           <h1

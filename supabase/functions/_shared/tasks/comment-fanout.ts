@@ -6,7 +6,7 @@ import {
   type SubscriptionState,
   type TaskSubscriber,
 } from "./notify.ts";
-import { externalFetch, VIA_TELEGRAM } from "../external-fetch.ts";
+import { notifyPerson } from "../notify-person.ts";
 
 // Что происходит ПОСЛЕ сохранения комментария к задаче: автор подписывается на задачу, а
 // причастные и подписчики получают уведомление (колокольчик + пуш в бота).
@@ -33,21 +33,14 @@ function truncate(s: string, max: number): string {
   return s.length <= max ? s : `${s.slice(0, max - 1)}…`;
 }
 
-// Окружение читается в момент вызова, а не при импорте модуля: так модуль одинаково работает в
-// любой функции, куда его подключили, и проверяется тестом без перезагрузки.
-async function sendTelegram(chatId: number, text: string): Promise<void> {
-  const token = Deno.env.get("TELEGRAM_BOT_TOKEN");
-  if (!token) return;
-  await externalFetch(`https://api.telegram.org/bot${token}/sendMessage`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      chat_id: chatId,
-      text,
-      parse_mode: "HTML",
-      disable_web_page_preview: true,
-    }),
-  }, VIA_TELEGRAM);
+// Пуш о комментарии — уведомление по инициативе бота: в комендантский час (23:00–9:00 МСК) он
+// ждёт утра в `telegram_outbox` (_shared/notify-person.ts); колокольчик в вебе работает как обычно.
+async function sendTelegram(supabase: SupabaseClient, chatId: number, text: string, now: Date): Promise<void> {
+  await notifyPerson(supabase, {
+    recipientId: chatId,
+    kind: "task_comment",
+    payload: { text, parse_mode: "HTML", disable_web_page_preview: true },
+  }, now);
 }
 
 /** Подписчики задачи: кто подписан явно и кто отписался. */
@@ -109,6 +102,7 @@ export type CommentNotificationInput = {
 export async function notifyTaskComment(
   supabase: SupabaseClient,
   { task, commentId, content, actorTelegramId, actorName }: CommentNotificationInput,
+  now: Date = new Date(),
 ): Promise<void> {
   // Подписки — исключения из круга по умолчанию: добавляют непричастных (например, админа,
   // который ведёт людей и не может обходить карточки руками) и убирают отписавшихся.
@@ -144,7 +138,9 @@ export async function notifyTaskComment(
   );
 
   const results = await Promise.allSettled(
-    recipients.map((rid) => sendTelegram(rid, subscribedOnly.has(rid) ? text + SUBSCRIPTION_HINT : text)),
+    recipients.map((rid) =>
+      sendTelegram(supabase, rid, subscribedOnly.has(rid) ? text + SUBSCRIPTION_HINT : text, now)
+    ),
   );
   for (const r of results) {
     // Отписался от бота / заблокировал — норма, не ошибка приложения: в колокольчике уведомление уже лежит.
@@ -159,7 +155,8 @@ export async function notifyTaskComment(
 export async function afterTaskComment(
   supabase: SupabaseClient,
   input: CommentNotificationInput,
+  now: Date = new Date(),
 ): Promise<void> {
   await ensureCommentSubscription(supabase, input.task.id, input.actorTelegramId);
-  await notifyTaskComment(supabase, input);
+  await notifyTaskComment(supabase, input, now);
 }

@@ -352,10 +352,10 @@ func runUpdateSelfTest(apply: Bool) {
         case .busy:                print("SELFTEST_UPDATE decision=busy")
         case .unreachable:         print("SELFTEST_UPDATE decision=unreachable")
         case .upToDate(let b):     print("SELFTEST_UPDATE decision=up_to_date build=\(b)")
-        case .available(let b, let from, let url):
+        case .available(let b, let from, let url, let sha):
             print("SELFTEST_UPDATE decision=available from=\(from) to=\(b) url=\(url.lastPathComponent)")
             if apply {
-                Updater.runUpdater(currentBuild: from, targetBuild: b, assetURL: url)
+                Updater.runUpdater(currentBuild: from, targetBuild: b, assetURL: url, sha256: sha)
                 print("SELFTEST_UPDATE applied=yes (хелпер запущен, приложение перезапустится)")
             }
         }

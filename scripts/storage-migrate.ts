@@ -35,6 +35,17 @@ if (!url || !key) {
 }
 const supabase = createClient(url, key);
 
+// В публичном репозитории журнал Actions читает кто угодно, а имена файлов команды — это
+// названия внутренних документов. Под кнопкой (storage-migrate.yml) путь печатается как
+// папка + короткий хеш: по нему видно, что перенеслось, но не что это за документ.
+const redact = Deno.env.get("STORAGE_MIGRATE_REDACT") === "1";
+async function shown(path: string): Promise<string> {
+  if (!redact) return path;
+  const d = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(path));
+  const h = Array.from(new Uint8Array(d).slice(0, 4)).map((b) => b.toString(16).padStart(2, "0")).join("");
+  return `${path.split("/")[0]}/…${h}`;
+}
+
 const phase = Deno.args[0] ?? "plan";
 const apply = Deno.args.includes("--apply");
 const verified = Deno.args.includes("--i-verified");
@@ -127,21 +138,21 @@ async function copyPhase() {
 
   let done = 0, failed = 0;
   for (const o of todo) {
-    if (!apply) { console.log(`[сухой прогон] ${o.path} (${human(o.size)})`); continue; }
+    if (!apply) { console.log(`[сухой прогон] ${await shown(o.path)} (${human(o.size)})`); continue; }
     const { data, error: dlErr } = await supabase.storage.from(SOURCE_BUCKET).download(o.path);
-    if (dlErr || !data) { console.error(`✗ скачать ${o.path}: ${dlErr?.message}`); failed++; continue; }
+    if (dlErr || !data) { console.error(`✗ скачать ${await shown(o.path)}: ${dlErr?.message}`); failed++; continue; }
     const buf = await data.arrayBuffer();
     const { error: upErr } = await supabase.storage.from(PRIVATE_BUCKET).upload(o.path, buf, {
       contentType: data.type || "application/octet-stream",
       upsert: true,
     });
-    if (upErr) { console.error(`✗ залить ${o.path}: ${upErr.message}`); failed++; continue; }
+    if (upErr) { console.error(`✗ залить ${await shown(o.path)}: ${upErr.message}`); failed++; continue; }
     // Сверка сразу: копия без проверки размера — это надежда, а не перенос.
     const { data: check } = await supabase.storage.from(PRIVATE_BUCKET)
       .list(o.path.split("/").slice(0, -1).join("/"), { search: o.path.split("/").pop() });
     const gotSize = (check?.[0]?.metadata as { size?: number } | undefined)?.size ?? -1;
     if (gotSize !== o.size) {
-      console.error(`✗ размер не совпал ${o.path}: было ${o.size}, стало ${gotSize}`);
+      console.error(`✗ размер не совпал ${await shown(o.path)}: было ${o.size}, стало ${gotSize}`);
       failed++;
       continue;
     }
@@ -183,7 +194,7 @@ async function backfillPhase() {
         // Помечаем путь обработанным ТОЛЬКО после успеха: иначе следующая запись того же
         // файла (чанки делят один объект) сочтёт его зарегистрированным и перепишет ссылку
         // на путь, которого нет в реестре, — файл станет недоступен.
-        if (regErr) { console.error(`✗ реестр ${path}: ${regErr.message}`); continue; }
+        if (regErr) { console.error(`✗ реестр ${await shown(path)}: ${regErr.message}`); continue; }
       }
       seen.add(path);
       regs++;
@@ -208,7 +219,7 @@ async function backfillPhase() {
     if (apply) {
       const { error: regErr } = await supabase.from("storage_files")
         .upsert({ path, bucket: PRIVATE_BUCKET, owner_kind: "feedback", entry_id: null }, { onConflict: "path" });
-      if (regErr) { console.error(`✗ реестр скрина ${path}: ${regErr.message}`); continue; }
+      if (regErr) { console.error(`✗ реестр скрина ${await shown(path)}: ${regErr.message}`); continue; }
     }
     fbRegs++;
     if (f.screenshot_url !== path) {
@@ -263,10 +274,10 @@ async function collectCheck(): Promise<Check> {
 async function verifyPhase() {
   const c = await collectCheck();
   console.log(`Копии на месте: ${c.total - c.missing.length}/${c.total}`);
-  if (c.missing.length) console.log(`  ✗ не перенесены: ${c.missing.slice(0, 10).map((o) => o.path).join(", ")}${c.missing.length > 10 ? " …" : ""}`);
+  if (c.missing.length) console.log(`  ✗ не перенесены: ${(await Promise.all(c.missing.slice(0, 10).map((o) => shown(o.path)))).join(", ")}${c.missing.length > 10 ? " …" : ""}`);
   console.log(`Ссылок ещё в старом виде (URL вместо пути): ${c.stillUrl.length}`);
   console.log(`Файлов записей вне реестра (будут 404 на /file): ${c.unregistered.length}`);
-  if (c.unregistered.length) console.log(`  ${c.unregistered.slice(0, 10).join(", ")}${c.unregistered.length > 10 ? " …" : ""}`);
+  if (c.unregistered.length) console.log(`  ${(await Promise.all(c.unregistered.slice(0, 10).map(shown))).join(", ")}${c.unregistered.length > 10 ? " …" : ""}`);
   console.log(`Объектов без владельца (перенесены, но показать их некому): ${c.orphans.length}`);
 
   const ok = !c.missing.length && !c.stillUrl.length && !c.unregistered.length;

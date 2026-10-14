@@ -6,10 +6,22 @@
 // анонимно. Теперь путь один: upload в swarm_private → строка реестра (чей файл) → ссылка
 // наружу только через /api/file/<path> (см. storage-links.ts).
 //
+// Новые файлы кладутся в swarm-files на MUSPELHEIM, если заданы FILES_BASE_URL и FILES_SIGNING_KEY
+// (swarm-files-storage.ts); без них — Storage, как раньше. Старые объекты читаются из своего бакета.
+//
 // Реестр пишется ПОСЛЕ создания записи-владельца: entry_id — внешний ключ, и до insert его нет.
 
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { LEGACY_PUBLIC_BUCKET, storagePathFromLink } from "./storage-links.ts";
+import { toPublicUrl } from "./public-url.ts";
+import {
+  bucketForPath,
+  buildFilesPath,
+  FILES_BUCKET,
+  filesStorage,
+  putFilesObject,
+  signedFilesGetUrl,
+} from "./swarm-files-storage.ts";
 
 export const PRIVATE_BUCKET = "swarm_private";
 
@@ -82,7 +94,12 @@ export function isOwnUploadKey(path: string, scope: string): boolean {
 /** Файл, созданный этим запросом: только его и разрешено откатить (discardOwnUpload). */
 export type UploadedFile = StoredFile & { scope: string };
 
-/** Новая загрузка: уникальный ключ в воркспейсе владельца, без перезаписи. */
+/**
+ * Новая загрузка. Настроен swarm-files (FILES_BASE_URL + FILES_SIGNING_KEY) → байты уходят
+ * туда (ключ `<uuid>_<имя>`, бакет реестра 'swarm-files'); иначе — приватный бакет Storage:
+ * уникальный ключ в воркспейсе владельца, без перезаписи. Сервис недоступен → ошибка с
+ * `unavailable`, объекта нет и в Storage он НЕ дублируется (решение: файлы живут на MUSPELHEIM).
+ */
 export async function uploadNewPrivateFile(
   supabase: SupabaseClient,
   params: {
@@ -92,7 +109,16 @@ export async function uploadNewPrivateFile(
     body: ArrayBuffer | Uint8Array;
     contentType: string;
   },
-): Promise<{ file: UploadedFile | null; error: string | null }> {
+  env?: (name: string) => string | undefined,
+  fetchFn?: typeof fetch,
+): Promise<{ file: UploadedFile | null; error: string | null; unavailable?: boolean }> {
+  const store = filesStorage(env);
+  if (store) {
+    const path = buildFilesPath(safeStorageName(params.fileName));
+    const { error } = await putFilesObject(store, path, params.body, fetchFn);
+    if (error) return { file: null, error, unavailable: true };
+    return { file: { path, bucket: FILES_BUCKET, scope: params.scope }, error: null };
+  }
   let path: string;
   try {
     path = buildUploadKey(params);
@@ -116,6 +142,9 @@ export async function discardOwnUpload(
   supabase: SupabaseClient,
   file: UploadedFile,
 ): Promise<{ removed: boolean; error: string | null }> {
+  // swarm-files не умеет DELETE: осиротевший объект остаётся на диске, но без строки реестра он
+  // недоступен никому (ссылку выдаёт только getFileSecure).
+  if (file.bucket === FILES_BUCKET) return { removed: false, error: null };
   if (!isOwnUploadKey(file.path, file.scope)) {
     return { removed: false, error: `not an own upload key: ${file.path}` };
   }
@@ -135,7 +164,7 @@ export async function registerStorageFile(
 ): Promise<{ error: string | null }> {
   const { error } = await supabase.from("storage_files").insert({
     path: params.path,
-    bucket: params.bucket ?? PRIVATE_BUCKET,
+    bucket: params.bucket ?? bucketForPath(params.path, PRIVATE_BUCKET),
     owner_kind: params.owner.kind,
     entry_id: params.owner.kind === "entry" ? params.owner.entryId : null,
   });
@@ -169,9 +198,13 @@ export async function externalFileUrl(
     .maybeSingle();
   const bucket = (reg as { bucket?: string } | null)?.bucket ?? LEGACY_PUBLIC_BUCKET;
 
+  if (bucket === FILES_BUCKET) {
+    const store = filesStorage();
+    return store ? await signedFilesGetUrl(store, path, ttlSec) : null;
+  }
   const { data, error } = await supabase.storage.from(bucket).createSignedUrl(path, ttlSec);
   if (error || !data?.signedUrl) return null;
-  return data.signedUrl;
+  return toPublicUrl(data.signedUrl);
 }
 
 // Имя объекта в Storage обязано быть ASCII: ключ с кириллицей отвергается («Invalid key»),

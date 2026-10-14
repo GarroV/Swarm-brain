@@ -18,8 +18,9 @@
 // стриминга. swarm-mcp объявляет только `capabilities: { tools: {} }` и по своей инициативе
 // не шлёт ничего, поэтому сегодня это ничего не отнимает. Когда понадобится — issue #94
 // (полноценный клиент Streamable HTTP одним бинарником).
+import { FUNCTIONS_BASE_URL } from "../_shared/public-url.ts";
 
-const MCP_URL = "https://vbqglndbxkpmreccpqmr.supabase.co/functions/v1/swarm-mcp";
+const MCP_URL = `${FUNCTIONS_BASE_URL}/swarm-mcp`;
 
 // Текст моста. Кладётся в ~/.swarm-brain/bin/swarm-mcp-bridge.sh, в конфиг Claude попадает как
 // `command: /bin/bash, args: [<путь>]`. Адрес и заголовок приходят из env — токен не светится
@@ -28,23 +29,84 @@ export const BRIDGE_SCRIPT = `#!/bin/bash
 # Мост stdio ↔ HTTP для MCP-сервера Swarm Brain. Ставится установщиком (/setup), руками не правь.
 # Claude Desktop говорит по stdio построчным JSON-RPC, swarm-mcp — по HTTP. Задача моста ровно
 # в этом переводе. Замена mcp-remote: ни Node, ни npm не нужны.
+# Мост не молчит при сбое (issue #935): на любой запрос с "id" клиент ждёт ответ с тем же id,
+# иначе висит до своего таймаута (30 минут). Поэтому сбой curl, не-2xx и ответ не в формате
+# JSON-RPC превращаются в JSON-RPC error с тем же id. Уведомления (без "id") остаются молчаливыми.
 set -u
 URL="\${SWARM_MCP_URL:?}"
 AUTH="\${SWARM_MCP_AUTH:?}"
+MAX_TIME="\${SWARM_MCP_MAX_TIME:-120}"
+export LC_ALL=C
+BODY="$(mktemp)"
+ERRF="$(mktemp)"
+trap 'rm -f "$BODY" "$ERRF"' EXIT
+
+# Экранирование для JSON-строки: управляющие символы выбрасываем, \\ и " экранируем.
+json_escape() {
+  printf '%s' "$1" | tr -d '\\000-\\037' | sed -e 's/\\\\/\\\\\\\\/g' -e 's/"/\\\\"/g'
+}
+
+# id запроса: первое вхождение "id" — число или строка в кавычках (пробелы вокруг : допустимы).
+extract_id() {
+  case "$1" in *'"id"'*) ;; *) return 0 ;; esac
+  rest="\${1#*\\"id\\"}"
+  # Два выражения вместо альтернации: BSD sed (macOS) не знает \\|.
+  printf '%s' "$rest" | sed -n \\
+    -e 's/^[[:space:]]*:[[:space:]]*\\("[^"]*"\\).*/\\1/p' \\
+    -e 's/^[[:space:]]*:[[:space:]]*\\(-\\{0,1\\}[0-9][0-9.eE+-]*\\).*/\\1/p' | head -n 1
+}
+
+# Поле "message" из тела ответа сервера (если тело — JSON), до 200 символов.
+server_message() {
+  tr -d '\\000-\\037' < "$BODY" | sed -n 's/.*"message"[[:space:]]*:[[:space:]]*"\\([^"]*\\).*/\\1/p' | head -n 1 | cut -c1-200
+}
+
+emit_error() {
+  id="$1"; rc="$2"; code="$3"
+  if [ "$rc" != "0" ]; then
+    detail="no response (curl exit $rc)"
+    detail_ru="нет ответа (curl, код $rc)"
+  else
+    case "$code" in
+      2??)
+        detail="HTTP $code, not a JSON-RPC response"
+        detail_ru="HTTP $code, ответ не в формате JSON-RPC"
+        ;;
+      *)
+        detail="HTTP $code"
+        detail_ru="HTTP $code"
+        ;;
+    esac
+  fi
+  srv="$(server_message)"
+  [ -n "$srv" ] && srv=" [$srv]"
+  msg="Swarm MCP: $detail$srv. / Swarm MCP: $detail_ru."
+  # 402/404 или хост недоступен (curl 6 — DNS, 7 — соединение) = старый адрес после переезда.
+  case "$rc:$code" in
+    6:*|7:*|0:402|0:404)
+      msg="$msg Swarm moved to a new server — restart Claude (and re-run the installer if it persists) / Swarm переехал на новый сервер — перезапусти Claude (если не помогло — запусти установщик заново)."
+      ;;
+  esac
+  printf '{"jsonrpc":"2.0","id":%s,"error":{"code":-32000,"message":"%s"}}\\n' "$id" "$(json_escape "$msg")"
+}
 
 while IFS= read -r line; do
   [ -n "$line" ] || continue
   # Уведомление (нет "id") ответа не требует — по JSON-RPC отвечать на него нельзя.
-  case "$line" in
-    *'"id"'*) want_reply=1 ;;
-    *) want_reply=0 ;;
-  esac
-  resp="$(printf '%s' "$line" | curl -sS --max-time 120 -X POST "$URL" \\
+  id="$(extract_id "$line")"
+  : > "$BODY"
+  code="$(printf '%s' "$line" | curl -sS --max-time "$MAX_TIME" -X POST "$URL" \\
       -H "Content-Type: application/json" \\
       -H "Authorization: $AUTH" \\
-      --data-binary @- 2>/dev/null)"
-  if [ "$want_reply" = "1" ] && [ -n "$resp" ]; then
-    printf '%s\\n' "$resp"
+      -o "$BODY" -w '%{http_code}' \\
+      --data-binary @- 2>"$ERRF")"
+  rc=$?
+  [ -n "$id" ] || continue
+  case "$code" in 2??) is2xx=1 ;; *) is2xx=0 ;; esac
+  if [ "$rc" = "0" ] && [ "$is2xx" = "1" ] && grep -q '"jsonrpc"' "$BODY"; then
+    printf '%s\\n' "$(cat "$BODY")"
+  else
+    emit_error "$id" "$rc" "$code"
   fi
 done
 `;

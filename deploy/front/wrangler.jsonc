@@ -1,0 +1,18 @@
+// Фронт API Swarm на Cloudflare: api.swarm-team.app → туннель → Caddy на VPS Contabo →
+// шлюз self-hosted Supabase (docs/decisions/2026-10-13-move-to-own-server.md).
+// Деплой: npx wrangler deploy -c deploy/front/wrangler.jsonc
+// Ключ: npx wrangler secret put FRONT_KEY -c deploy/front/wrangler.jsonc (тот же, что в
+// /srv/edge/sites/swarm-front.snippet на VPS). Устройство — src/index.js (копия фронта maximus).
+{
+  "name": "swarm-api",
+  "main": "src/index.js",
+  "compatibility_date": "2026-09-01",
+  "workers_dev": false,
+  "routes": [{ "pattern": "api.swarm-team.app", "custom_domain": true }],
+  // Туннель до Caddy на VPS (VPC-сервис vps-edge-caddy, общий для проектов VPS).
+  "vpc_services": [
+    { "binding": "EDGE", "service_id": "01a11a74-ba20-7ea3-a9c1-581681d0c341" },
+  ],
+  // Внутреннее имя сайта в Caddy (vps-infra edge/sites/swarm.caddy).
+  "vars": { "ORIGIN_HOST": "swarm.vps.internal" },
+}

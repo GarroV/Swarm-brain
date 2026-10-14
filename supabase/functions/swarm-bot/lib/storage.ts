@@ -8,6 +8,7 @@ import {
   uploadNewPrivateFile,
 } from "../../_shared/storage-files.ts";
 import { absoluteFileUrl } from "../../_shared/storage-links.ts";
+import { FILES_UNAVAILABLE } from "../../_shared/swarm-files-storage.ts";
 import { chatComplete, getEmbedding } from "./openai.ts";
 import { COUNTRY_PROMPT_RULE, ENTRY_TYPE_PROMPT_RULE, normalizeCountries } from "../../_shared/countries.ts";
 import { applyGeneralSentinel, specificCountries } from "../../_shared/meta-extract.ts";
@@ -384,13 +385,17 @@ export async function uploadToStorage(
   scope: string,
 ): Promise<{ path: string | null; file: UploadedFile | null; error: string | null }> {
   try {
-    const { file, error } = await uploadNewPrivateFile(supabase, {
+    const { file, error, unavailable } = await uploadNewPrivateFile(supabase, {
       folder,
       scope,
       fileName,
       body: buffer,
       contentType: mimeType,
     });
+    if (unavailable) {
+      console.error(`[storage] swarm-files недоступен: ${error}`);
+      return { path: null, file: null, error: `${FILES_UNAVAILABLE.error} / ${FILES_UNAVAILABLE.error_ru}` };
+    }
     if (error || !file) return { path: null, file: null, error: error ?? "upload failed" };
     return { path: file.path, file, error: null };
   } catch (e) {

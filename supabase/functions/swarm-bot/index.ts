@@ -10,6 +10,9 @@ import {
   sendMessage,
 } from "./lib/telegram.ts";
 import { gateGroupMessage } from "./lib/group-gate.ts";
+import { notifyMessage } from "./lib/notify.ts";
+import { drainTelegramOutbox, makeOutboxStore } from "../_shared/telegram-outbox.ts";
+import { sendTelegramCall } from "../_shared/notify-person.ts";
 import { checkRecordingWatchdog } from "./lib/recording-watchdog.ts";
 import { makeWatchdogStore } from "./lib/recording-watchdog-store.ts";
 import { sweepGhostMeetings } from "./lib/ghost-sweep.ts";
@@ -29,6 +32,7 @@ import {
 } from "./lib/intent.ts";
 import { ALL_MEETING_SOURCES, ENTRY_MEETING_SOURCES, sourceLabel } from "../_shared/sources.ts";
 import { buildClaudeProjectPrompt } from "../_shared/claude-project-prompt.ts";
+import { logAccess } from "../_shared/access-events.ts";
 import { handleEntryCommand, handleManageCallbacks, handleManageSessionInput } from "./handlers/manage.ts";
 import {
   handleAddTask,
@@ -81,6 +85,7 @@ import { onlyLive } from "../_shared/tasks/live.ts";
 import { onlyLiveEntries } from "../_shared/entries/live.ts";
 import { externalFetch, VIA_GRANOLA, VIA_TELEGRAM } from "../_shared/external-fetch.ts";
 import { WEB_BASE_URL } from "./lib/web-url.ts";
+import { FUNCTIONS_BASE_URL } from "../_shared/public-url.ts";
 
 const TELEGRAM_BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN")!;
 const CRON_SECRET = Deno.env.get("CRON_SECRET") ?? "";
@@ -91,7 +96,7 @@ const CRON_SECRET = Deno.env.get("CRON_SECRET") ?? "";
 const TELEGRAM_WEBHOOK_SECRET = Deno.env.get("TELEGRAM_WEBHOOK_SECRET") ?? "";
 const TELEGRAM_WEBHOOK_ENFORCE = Deno.env.get("TELEGRAM_WEBHOOK_ENFORCE") === "1";
 // Эндпоинт MCP-сервера для ручного подключения (веб-коннектор claude.ai: URL + Bearer-токен).
-const SWARM_MCP_URL = "https://vbqglndbxkpmreccpqmr.supabase.co/functions/v1/swarm-mcp";
+const SWARM_MCP_URL = `${FUNCTIONS_BASE_URL}/swarm-mcp`;
 
 // Боковое меню команд Telegram — для пользователя видны ТОЛЬКО эти три (решение владельца
 // 2026-08-09, расширено 2026-09-09: «Спросить, Добавить, Добавить задачу — всё, больше там
@@ -240,7 +245,7 @@ async function sweepStuckMeetings(staleMinutes = 15): Promise<number> {
     for (const r of m.recorders ?? []) {
       if (!r || typeof r.telegram_id !== "number") continue;
       try {
-        await sendMessage(r.telegram_id, note);
+        await notifyMessage(r.telegram_id, note, "meeting_stuck");
       } catch (e) {
         console.error(`sweepStuckMeetings: notify failed for ${m.id} / ${r.telegram_id}:`, e);
       }
@@ -269,7 +274,7 @@ async function checkRecorderHealth(): Promise<void> {
   try {
     const r = await checkRecordingWatchdog({
       store: makeWatchdogStore(supabase),
-      send: sendMessage,
+      send: (telegramId, html) => notifyMessage(telegramId, html, "recording_watchdog"),
       nowMs: Date.now(),
       logError: (m) => console.error(m),
     });
@@ -296,10 +301,11 @@ async function checkRecorderHealth(): Promise<void> {
     const days = Math.max(1, Math.ceil((new Date(u.recorder_token_expires_at).getTime() - Date.now()) / 86_400_000));
     await supabase.from("allowed_users").update({ recorder_expiry_warned: true }).eq("telegram_id", u.telegram_id);
     try {
-      await sendMessage(
+      await notifyMessage(
         u.telegram_id,
         `🎙 <b>Токен bumblebee истекает через ${days} дн.</b> Чтобы запись встреч не прервалась — ` +
           `переустанови bumblebee: /recordertoken.`,
+        "recorder_token_expiry",
       );
     } catch (e) {
       console.error(`checkRecorderHealth signal2 ${u.telegram_id}:`, e);
@@ -357,7 +363,7 @@ Deno.serve(async (req: Request) => {
   // Переустановка вебхука на саму эту функцию. URL берём из окружения, а НЕ из тела запроса —
   // иначе триггер стал бы способом увести все сообщения команды на чужой адрес.
   if (body.set_webhook === true) {
-    const target = `${Deno.env.get("SUPABASE_URL")}/functions/v1/swarm-bot`;
+    const target = `${FUNCTIONS_BASE_URL}/swarm-bot`;
     const res = await externalFetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/setWebhook`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -406,8 +412,16 @@ Deno.serve(async (req: Request) => {
   }
 
   if (body.task_pings_cron === true) {
+    // Сперва очередь комендантского часа: первый тик после 9:00 МСК выпускает накопленное за ночь
+    // (внутри часа drain ничего не делает). Сбой очереди не должен съесть пинги, идущие следом.
+    let outboxSent = 0;
+    try {
+      outboxSent = (await drainTelegramOutbox({ store: makeOutboxStore(supabase), send: sendTelegramCall })).sent;
+    } catch (e) {
+      console.error("telegram_outbox drain failed:", e);
+    }
     const sent = await sendTaskPings();
-    return new Response(`OK: ${sent} pings sent`, { status: 200 });
+    return new Response(`OK: ${sent} pings sent, ${outboxSent} queued messages delivered`, { status: 200 });
   }
 
   if (body.feedback_retention_cron === true) {
@@ -903,6 +917,7 @@ Deno.serve(async (req: Request) => {
       if (revErr) {
         await sendMessage(chatId, "❌ Не удалось отозвать токен. Попробуй позже.");
       } else {
+        await logAccess(supabase, userId, "mcp_token_revoked", { via: "bot" });
         await sendMessage(
           chatId,
           "🔒 <b>Токен отозван.</b> Доступ к Swarm Brain из Claude закрыт. Новый — через /mytoken.",

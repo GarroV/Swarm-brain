@@ -439,6 +439,10 @@ Deno.test("verifyAgentToken без подмены работает как ран
   });
 });
 
+// Обновления, гасящие перекрытие (отметки last_seen пишутся тем же клиентом и сюда не относятся).
+const graceUpdates = (updates: Call[]) =>
+  updates.filter((u) => "recorder_token_prev_hash" in (u.args[0] as Record<string, unknown>));
+
 // ── Жизненный цикл личного токена (существующее поведение, теперь под тестом) ─
 
 Deno.test("пустой заголовок подмены = заголовка нет: человеку он не мешает", async () => {
@@ -482,7 +486,7 @@ Deno.test("перекрытие при перевыпуске: предыдущ�
       .kind,
     "recorder_prev",
   );
-  assertEquals(old.updates.length, 0, "предыдущим токеном перекрытие не гасим");
+  assertEquals(graceUpdates(old.updates).length, 0, "предыдущим токеном перекрытие не гасим");
 
   const fresh = makeSupabase({ userByToken: withOverlap });
   assertEquals(
@@ -490,10 +494,25 @@ Deno.test("перекрытие при перевыпуске: предыдущ�
     "recorder",
   );
   assertEquals(
-    fresh.updates.length,
+    graceUpdates(fresh.updates).length,
     1,
     "вход новым токеном гасит перекрытие немедленно",
   );
+});
+
+Deno.test("вход токеном рекордера и MCP отмечает обращение клиента в своей колонке (#921)", async () => {
+  const seenColumns = (updates: Call[]) =>
+    updates.flatMap((u) => Object.keys(u.args[0] as Record<string, unknown>)).filter((k) =>
+      k.endsWith("_last_seen_at")
+    );
+
+  const rec = makeSupabase({ userByToken: await userRow() });
+  await resolveActingIdentity(rec.client, req(HUMAN_TOKEN));
+  assertEquals(seenColumns(rec.updates), ["recorder_last_seen_at"]);
+
+  const mcp = makeSupabase({ userByToken: await userRow() });
+  await resolveActingIdentity(mcp.client, req(MCP_TOKEN));
+  assertEquals(seenColumns(mcp.updates), ["mcp_last_seen_at"]);
 });
 
 // ── Дверь агента «сам за себя» (resolveServiceAgent, D017) ────────────────────

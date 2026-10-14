@@ -1,5 +1,5 @@
 import { supabase } from "../lib/supabase.ts";
-import { sendInlineMessage, sendMessage } from "../lib/telegram.ts";
+import { notifyMessage } from "../lib/notify.ts";
 import { ENTRY_MEETING_SOURCES } from "../../_shared/sources.ts";
 import {
   formatReminder,
@@ -60,8 +60,8 @@ export async function sendReviewReminders(now: Date = new Date()): Promise<void>
   for (const [ownerId, ownerRows] of groupByOwner(due)) {
     const { text, keyboard } = formatReminder(ownerRows, WEB_BASE_URL);
     try {
-      if (keyboard.length) await sendInlineMessage(ownerId, text, keyboard);
-      else await sendMessage(ownerId, text);
+      // Гейт рабочих часов выше строже комендантского часа, но «queued» тоже принимаем как доставленное.
+      await notifyMessage(ownerId, text, "review_reminder", keyboard.length ? keyboard : undefined);
     } catch (e) {
       // Не смогли написать (владелец не запускал бота / заблокировал) — НЕ помечаем как
       // напомненные, чтобы попробовать снова на следующем тике.

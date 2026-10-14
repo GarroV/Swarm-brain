@@ -1,6 +1,7 @@
 import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import {
   authTimeForRefresh,
+  isRenewableSession,
   isSessionRevoked,
   LEGACY_MIN_REMAINING_SEC,
   SESSION_REFRESH_AFTER_SEC,
@@ -143,4 +144,17 @@ Deno.test("isSessionRevoked: без отзыва жива; старый форм
 
 Deno.test("isSessionRevoked: нечитаемая отметка отзыва — считаем отозванной", () => {
   assertEquals(isSessionRevoked({ authTime: 9_999_999_999 }, "not-a-date"), true);
+});
+
+Deno.test("isRenewableSession: сессия входа продлевается, короткий токен — нет", async () => {
+  const session = await verifyJWT(await signJWT({ telegram_id: 1 }, SECRET), SECRET);
+  const short = await verifyJWT(await signJWT({ telegram_id: 1 }, SECRET, 12 * 3600), SECRET);
+  assertEquals(isRenewableSession(session!), true);
+  assertEquals(isRenewableSession(short!), false);
+});
+
+Deno.test("isRenewableSession: продлённая сессия (вход давно, срок от сейчас) остаётся продлеваемой", async () => {
+  const longAgo = Math.floor(Date.now() / 1000) - 20 * 86400;
+  const renewed = await verifyJWT(await signJWT({ telegram_id: 1, auth_time: longAgo }, SECRET), SECRET);
+  assertEquals(isRenewableSession(renewed!), true);
 });

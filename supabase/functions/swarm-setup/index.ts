@@ -1,6 +1,6 @@
 // swarm-setup — отдаёт bash-скрипт авто-подключения Claude Desktop (macOS).
 // Запускается пользователем так (токен подставляет бот в /setup):
-//   curl -fsSL https://<proj>.supabase.co/functions/v1/swarm-setup | SWARM_TOKEN='smcp_...' bash
+//   curl -fsSL https://api.swarm-team.app/functions/v1/swarm-setup | SWARM_TOKEN='smcp_...' bash
 //
 // Скрипт ставит Node в ~/.swarm-brain (без sudo, если в системе его нет), безопасно
 // мёржит блок swarm-brain в claude_desktop_config.json и перезапускает Claude Desktop.

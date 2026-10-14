@@ -34,6 +34,8 @@ import {
   applyMeetingsFilter, isFilterActive, isConfirmed, personOf,
   EMPTY_FILTERS, loadSavedFilters, saveFilters, type MeetingsFilterState, type PeriodId,
 } from "./meetingsFilter";
+import { useMeetingsList } from "./useMeetingsList";
+import { mergeById } from "@/lib/meetingsPaging";
 import { formatDate } from "@/lib/displayFormat";
 
 // Статистика по «Все встречи»: сортированный подсчёт (по убыванию).
@@ -1406,8 +1408,6 @@ export function MeetAdminScreen({ initialMode = "review" }: { initialMode?: "rev
   useEffect(() => { modeRef.current = mode; }, [mode]);
   const [entries, setEntries] = useState<Entry[] | null>(null);
   const [agentMeetings, setAgentMeetings] = useState<AgentMeeting[] | null>(null);
-  // «Все встречи» — грузятся лениво при первом переключении в этот режим.
-  const [allMeetings, setAllMeetings] = useState<Entry[] | null>(null);
   // Фильтры режима «Все встречи» (владелец 2026-08-21: правый блок статистики → блок фильтров).
   // Выбор переживает уход с экрана и перезагрузку (владелец 2026-08-28: «человек выставил —
   // система запомнила»). Хранилище читаем ПОСЛЕ монтирования, а не в инициализаторе useState:
@@ -1419,6 +1419,12 @@ export function MeetAdminScreen({ initialMode = "review" }: { initialMode?: "rev
     setFiltersState(next);
     saveFilters(next);
   }, []);
+  // «Все встречи» — лёгкие строки частями (useMeetingsList), грузятся при первом заходе в режим.
+  // Правая колонка считает статистику («По странам», «Источники») по всему списку, поэтому в этом
+  // режиме остаток докачивается сам (needAll) — лёгкая строка ~0.6 КБ вместо ~1.7 КБ прежней.
+  // Очередь вычитки (`entries`, полные строки) подмешивается ниже: в режиме «Все» видны и она.
+  const allList = useMeetingsList(filters, { pending: false, needAll: true, skipConfirmed: mode !== "all" });
+  const updateAllRow = allList.update;
   const [markets, setMarkets] = useState<string[] | null>(null);
   const [selected, setSelected] = useState<MeetItem | null>(null);
 
@@ -1482,12 +1488,10 @@ export function MeetAdminScreen({ initialMode = "review" }: { initialMode?: "rev
     };
   }, [load]);
 
-  // «Все встречи» — весь доступный список (fetchMeetings без фильтра; приватность на бэке).
-  useEffect(() => {
-    if (mode === "all" && allMeetings === null) {
-      fetchMeetings().then(setAllMeetings).catch(() => setAllMeetings([]));
-    }
-  }, [mode, allMeetings]);
+  // «Все встречи» = очередь вычитки + согласованные; null, пока список едет (скелет в колонке).
+  const allMeetings: Entry[] | null = mode === "all" && !allList.loading && entries !== null
+    ? mergeById(entries, allList.confirmed)
+    : null;
 
   const switchMode = (m: string) => { setSelected(null); setMode(m as "review" | "all"); };
 
@@ -1517,10 +1521,10 @@ export function MeetAdminScreen({ initialMode = "review" }: { initialMode?: "rev
         setSelected((prev) =>
           prev && prev.kind === "entry" && prev.data.id === id ? { kind: "entry", data: full } : prev,
         );
-        setAllMeetings((prev) => prev?.map((e) => (e.id === id ? full : e)) ?? null);
+        updateAllRow(id, () => full);
       })
       .catch(() => toast("Не удалось загрузить расшифровку — попробуйте открыть встречу снова"));
-  }, [toast]);
+  }, [toast, updateAllRow]);
 
   // Список зависит от режима: Ревью — очередь (черновики + неподтверждённые), Все — весь доступный.
   const reviewItems: MeetItem[] = [
@@ -1535,7 +1539,7 @@ export function MeetAdminScreen({ initialMode = "review" }: { initialMode?: "rev
   const removeFromList = (id: string) => {
     setEntries((prev) => prev?.filter((e) => e.id !== id) ?? null);
     setAgentMeetings((prev) => prev?.filter((m) => m.id !== id) ?? null);
-    setAllMeetings((prev) => prev?.filter((e) => e.id !== id) ?? null);
+    allList.remove(id);
     setSelected((prev) => (prev && prev.data.id === id ? null : prev));
   };
 
@@ -1556,7 +1560,9 @@ export function MeetAdminScreen({ initialMode = "review" }: { initialMode?: "rev
   // Иммутабельно заменяет запись в списке встреч и в выбранной (если совпадает id).
   const onEntryUpdated = (updated: Entry) => {
     setEntries((prev) => prev?.map((e) => (e.id === updated.id ? updated : e)) ?? null);
-    setAllMeetings((prev) => prev?.map((e) => (e.id === updated.id ? updated : e)) ?? null);
+    // Согласованная встреча переезжает из очереди вычитки в общий список — upsert добавит её, если её там ещё нет.
+    if (updated.metadata?.confirmed === true) allList.upsert(updated);
+    else allList.update(updated.id, () => updated);
     setSelected((prev) =>
       prev && prev.kind === "entry" && prev.data.id === updated.id
         ? { kind: "entry", data: updated }
