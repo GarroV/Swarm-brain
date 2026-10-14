@@ -203,7 +203,11 @@ $(echo "$MIGR_PENDING" | sed 's/^/  · /')
     ./scripts/deploy-notice.sh off >/dev/null 2>&1 || echo "(объявление снять не удалось — оно погаснет само по until)"
 
     git tag -f "$TAG" HEAD >/dev/null
-    git push -f origin "refs/tags/$TAG" >/dev/null 2>&1 || echo "(метка осталась локальной)"
+    if ! push_err=$(git push -f origin "refs/tags/$TAG" 2>&1 >/dev/null); then
+      # Раскатка уже прошла; не запушенная метка — накопитель на другой машине будет врать (#943).
+      echo "(метка осталась локальной — пуш отклонён; причина ниже; повторить: git push -f origin refs/tags/$TAG)"
+      printf '%s\n' "$push_err" | sed 's/^/    /' >&2
+    fi
     head_ "Готово. Метка $TAG → $(git rev-parse --short HEAD)"
     echo "Дальше по правилу: проверить на реальном окружении и отчитаться владельцу."
     ;;
