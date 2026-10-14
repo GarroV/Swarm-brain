@@ -530,7 +530,7 @@ export function AccountSection() {
   const [busy, setBusy] = useState(false);
 
   const handleLogout = async () => {
-    if (!(await confirm({ title: "Выйти из аккаунта?", description: "Сессия в браузере завершится. Войти снова — через Telegram, можно другим аккаунтом.", confirmText: "Выйти" }))) return;
+    if (!(await confirm({ title: "Выйти из аккаунта?", description: "Сессия в браузере завершится. Войти снова — через Google или Telegram, можно другим аккаунтом.", confirmText: "Выйти" }))) return;
     setBusy(true);
     try {
       await logout();
@@ -543,7 +543,7 @@ export function AccountSection() {
   return (
     <div className="space-y-2">
       <p className="text-xs text-muted-foreground">
-        Завершить сессию в браузере. После выхода — вход через Telegram (можно другим аккаунтом).
+        Завершить сессию в браузере. После выхода — вход через Google или Telegram (можно другим аккаунтом).
       </p>
       <Button size="sm" variant="outline" onClick={handleLogout} disabled={busy} className="w-full">
         {busy ? "Выхожу…" : "Выйти / сменить аккаунт"}
