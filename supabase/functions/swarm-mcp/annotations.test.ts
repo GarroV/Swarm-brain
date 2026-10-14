@@ -1,5 +1,5 @@
 import { assert, assertEquals } from "jsr:@std/assert@1";
-import { annotationsFor, isUntrustedResult, TOOL_CLASSES, withAnnotations } from "./annotations.ts";
+import { annotationsFor, TOOL_CLASSES, withAnnotations } from "./annotations.ts";
 import { negotiateProtocolVersion, SERVER_INSTRUCTIONS } from "./protocol.ts";
 
 // tool-definitions.ts тянет модули с клиентом базы, которому нужны переменные окружения при импорте.
@@ -48,18 +48,6 @@ Deno.test("withAnnotations adds annotations; an unknown tool gets the cautious o
   const unknown = withAnnotations({ name: "brand_new_tool", description: "", inputSchema: {} });
   assertEquals(unknown.annotations.readOnlyHint, false);
   assertEquals(unknown.annotations.destructiveHint, true);
-});
-
-Deno.test("tools that return people's text are wrapped, write confirmations are not", () => {
-  for (const n of ["get_meetings", "get_entry", "search_knowledge", "get_task_comments", "get_draft_meeting"]) {
-    assert(isUntrustedResult(n), `${n} must be wrapped`);
-  }
-  for (const n of ["whoami", "add_task", "delete_entry", "market_set_block", "unknown_tool"]) {
-    assert(!isUntrustedResult(n), `${n} must not be wrapped`);
-  }
-  for (const t of TOOLS) {
-    if (isUntrustedResult(t.name)) assertEquals(annotationsFor(t.name)?.readOnlyHint, true, `${t.name}`);
-  }
 });
 
 Deno.test("negotiateProtocolVersion echoes known versions, falls back to 2025-03-26", () => {

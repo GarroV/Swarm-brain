@@ -38,7 +38,7 @@ import { canViewEntry, entryAccessError, type EntryAccessRow, entryVisibilityOr 
 import { markClientSeen } from "../_shared/client-seen.ts";
 import { withTokenIdentity } from "./identity.ts";
 import { TOOLS } from "./tool-definitions.ts";
-import { isUntrustedResult, withAnnotations } from "./annotations.ts";
+import { withAnnotations } from "./annotations.ts";
 import { negotiateProtocolVersion, SERVER_INSTRUCTIONS } from "./protocol.ts";
 import { wrapUntrusted } from "./untrusted.ts";
 import { authorizeToolCall, NO_WORKSPACE_MESSAGE, resolveCallerScope, withCallerIdentity } from "./auth.ts";
@@ -1231,7 +1231,8 @@ Deno.serve(async (req: Request) => {
       }
 
       // Текст, написанный людьми, идёт в блоке <untrusted_data>; подтверждения записи — как есть (untrusted.ts).
-      return ok(id, textContent(isUntrustedResult(name) ? wrapUntrusted(name, result) : result));
+      // Каждый ответ — в блок недоверенных данных: текст людей есть почти в любом (untrusted.ts).
+      return ok(id, textContent(wrapUntrusted(name, result)));
     } catch (e) {
       return err(id, -32603, e instanceof Error ? e.message : String(e));
     }

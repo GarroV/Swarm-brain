@@ -1,4 +1,4 @@
-// Классификация инструментов MCP: аннотации (ToolAnnotations, MCP 2025-03-26) и признак «в ответе текст людей».
+// Классификация инструментов MCP: аннотации (ToolAnnotations, MCP 2025-03-26). Обёртка ответов — для всех (untrusted.ts).
 // Одна карта на все инструменты: новый инструмент без записи здесь не пройдёт тест annotations.test.ts.
 // Клиент показывает подтверждение по destructiveHint и не просит его для readOnlyHint (issue #967).
 
@@ -15,47 +15,45 @@ interface ToolClass {
   /** read — ничего не меняет; write — добавляет или правит; destructive — удаляет, архивирует, снимает, публикует. */
   kind: "read" | "write" | "destructive";
   idempotent: boolean;
-  /** В ответе текст, написанный людьми: результат оборачивается в <untrusted_data> (untrusted.ts). */
-  untrusted: boolean;
 }
 
-const read = (untrusted: boolean): ToolClass => ({ kind: "read", idempotent: true, untrusted });
-const write = (idempotent: boolean): ToolClass => ({ kind: "write", idempotent, untrusted: false });
-const destructive = (idempotent: boolean): ToolClass => ({ kind: "destructive", idempotent, untrusted: false });
+const read = (): ToolClass => ({ kind: "read", idempotent: true });
+const write = (idempotent: boolean): ToolClass => ({ kind: "write", idempotent });
+const destructive = (idempotent: boolean): ToolClass => ({ kind: "destructive", idempotent });
 
 export const TOOL_CLASSES: Record<string, ToolClass> = {
-  // Чтение; текст людей внутри — оборачиваем.
-  search_knowledge: read(true),
-  get_tasks: read(true),
-  get_meetings: read(true),
-  get_feedback: read(true),
-  get_entry: read(true),
-  list_entries: read(true),
-  get_task_comments: read(true),
-  get_recent_comments: read(true),
-  get_task_history: read(true),
-  get_recent_task_changes: read(true),
-  get_notifications: read(true),
-  get_today_meetings: read(true),
-  get_review_queue: read(true),
-  get_draft_meeting: read(true),
-  extract_tasks_from_meeting: read(true), // предлагает задачи по тезисам, сам ничего не создаёт
-  get_inspections: read(true),
-  get_inspection: read(true),
-  market_get: read(true),
-  get_sprints: read(true),
-  get_sprint: read(true),
-  get_sprint_journal: read(true),
-  // Чтение; только служебные данные — без обёртки.
-  whoami: read(false),
-  get_users: read(false),
-  get_projects: read(false),
-  list_task_labels: read(false),
-  get_task_stats: read(false),
-  get_storage_stats: read(false),
-  get_sprint_spaces: read(false),
-  market_template: read(false),
-  market_status: read(false),
+  // Чтение.
+  search_knowledge: read(),
+  get_tasks: read(),
+  get_meetings: read(),
+  get_feedback: read(),
+  get_entry: read(),
+  list_entries: read(),
+  get_task_comments: read(),
+  get_recent_comments: read(),
+  get_task_history: read(),
+  get_recent_task_changes: read(),
+  get_notifications: read(),
+  get_today_meetings: read(),
+  get_review_queue: read(),
+  get_draft_meeting: read(),
+  extract_tasks_from_meeting: read(), // предлагает задачи по тезисам, сам ничего не создаёт
+  get_inspections: read(),
+  get_inspection: read(),
+  market_get: read(),
+  get_sprints: read(),
+  get_sprint: read(),
+  get_sprint_journal: read(),
+  // Чтение (служебные данные).
+  whoami: read(),
+  get_users: read(),
+  get_projects: read(),
+  list_task_labels: read(),
+  get_task_stats: read(),
+  get_storage_stats: read(),
+  get_sprint_spaces: read(),
+  market_template: read(),
+  market_status: read(),
   // Запись: добавляет или правит.
   add_knowledge: write(false),
   upload_file: write(false),
@@ -114,9 +112,4 @@ export function withAnnotations<T extends ToolDefinition>(tool: T): T & { annota
     annotations: annotationsFor(tool.name) ??
       { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
   };
-}
-
-/** Ответ инструмента несёт текст людей и должен идти в <untrusted_data>. */
-export function isUntrustedResult(name: string): boolean {
-  return Object.hasOwn(TOOL_CLASSES, name) && TOOL_CLASSES[name].untrusted;
 }
