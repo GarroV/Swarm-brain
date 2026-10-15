@@ -9,15 +9,64 @@
 # Что НЕ поднимаем: тесты ходят в Postgres (54322) и в REST через kong (54321). Хранилище
 # оставлено — миграция 20260919190000 пишет в storage.buckets, схему которой создаёт
 # storage-api; auth оставлен — на нём держится kong-маршрутизация контура.
+#
+# Кеш образов (#980). Если задан SUPABASE_IMAGES_DIR (в CI — каталог под actions/cache с ключом
+# от версии CLI), образы контура лежат там одним архивом: есть архив — `docker load` до старта,
+# и CLI ничего не качает (он сперва смотрит локальные образы); нет — после первого успешного
+# старта архив пишется, и actions/cache сохранит его по итогам задания. Скачивание остаётся
+# только при промахе кеша. Без переменной (локальный запуск) поведение прежнее.
+#
+# Запасные реестры: CLI 2.118 сам идёт public.ecr.aws -> ghcr.io -> Docker Hub, если не задан
+# SUPABASE_INTERNAL_IMAGE_REGISTRY. Эту переменную НЕ ставим: любое её значение отключает
+# перебор и оставляет единственный реестр (apps/cli-go/internal/utils/docker.go,
+# GetRegistryImageUrls, v2.118.0).
 set -uo pipefail
 
 EXCLUDE="realtime,imgproxy,mailpit,postgres-meta,studio,edge-runtime,logflare,vector,supavisor"
 ATTEMPTS=3
+LOG="$(mktemp)"
+ARCHIVE="${SUPABASE_IMAGES_DIR:+$SUPABASE_IMAGES_DIR/images.tar.gz}"
+# Лимит реестра узнаём по тексту отказа Docker и называем его прямо, чтобы красное не читали
+# как падение тестов.
+REGISTRY_LIMIT_RE='toomanyrequests|Rate exceeded|Data limit exceeded'
+
+if [ -n "$ARCHIVE" ] && [ -s "$ARCHIVE" ]; then
+  echo "кеш образов: попадание, загружаю $ARCHIVE ($(du -h "$ARCHIVE" | cut -f1))"
+  if ! gunzip -c "$ARCHIVE" | docker load; then
+    echo "кеш образов: архив битый, качаю образы заново" >&2
+    rm -f "$ARCHIVE"
+  fi
+elif [ -n "$ARCHIVE" ]; then
+  echo "кеш образов: промах, образы будут скачаны с реестра"
+fi
+
+# Сохраняем только при промахе: архив уже есть — actions/cache его не перезапишет.
+save_images() {
+  { [ -n "$ARCHIVE" ] && [ ! -s "$ARCHIVE" ]; } || return 0
+  local images
+  images="$(docker images --format '{{.Repository}}:{{.Tag}}' | grep -E '^(public\.ecr\.aws|ghcr\.io)/supabase/|^supabase/' || true)"
+  if [ -z "$images" ]; then
+    echo "кеш образов: нечего сохранять" >&2
+    return 0
+  fi
+  mkdir -p "$(dirname "$ARCHIVE")"
+  # shellcheck disable=SC2086
+  if docker save $images | gzip -1 > "$ARCHIVE.tmp" && mv "$ARCHIVE.tmp" "$ARCHIVE"; then
+    echo "кеш образов: сохранено $(echo "$images" | wc -l | tr -d ' ') образов, $(du -h "$ARCHIVE" | cut -f1)"
+  else
+    echo "кеш образов: не удалось сохранить (не критично)" >&2
+    rm -f "$ARCHIVE" "$ARCHIVE.tmp"
+  fi
+}
 
 for i in $(seq 1 "$ATTEMPTS"); do
   # Свежий раннер: контур при запуске сам накатывает все миграции и seed. `db reset` следом
   # накатывал их второй раз — 28 секунд на каждое задание с базой впустую (#826).
-  if supabase start -x "$EXCLUDE"; then
+  if supabase start -x "$EXCLUDE" 2>&1 | tee "$LOG"; then
+    if grep -qE "$REGISTRY_LIMIT_RE" "$LOG"; then
+      echo "::warning::реестр образов отвечал лимитом (toomanyrequests), контур поднялся после повтора"
+    fi
+    save_images
     exit 0
   fi
   echo "контур не поднялся (попытка $i из $ATTEMPTS)" >&2
@@ -25,5 +74,9 @@ for i in $(seq 1 "$ATTEMPTS"); do
   [ "$i" -lt "$ATTEMPTS" ] && sleep $((i * 45))
 done
 
-echo "ОТКАЗ: контур Supabase не поднялся за $ATTEMPTS попытки — смотри строки выше (реестр образов?)" >&2
+if grep -qE "$REGISTRY_LIMIT_RE" "$LOG"; then
+  echo "ОТКАЗ: ЛИМИТ РЕЕСТРА ОБРАЗОВ — контур Supabase не поднялся за $ATTEMPTS попытки: реестр режет скачивание (toomanyrequests). Это не падение тестов, до них дело не дошло; перезапусти прогон позже." >&2
+else
+  echo "ОТКАЗ: контур Supabase не поднялся за $ATTEMPTS попытки — смотри строки выше" >&2
+fi
 exit 1
