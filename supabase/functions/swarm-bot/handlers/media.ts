@@ -17,6 +17,7 @@ import {
   VIA_TELEGRAM_FILE,
   VIA_USER_LINK,
 } from "../../_shared/external-fetch.ts";
+import { escapeHtml, sanitizeModelHtml } from "../../_shared/telegram-html.ts";
 
 // Файл залит, но текста из него не достали (не разобрался формат / пусто). Запись всё равно
 // создаём: она ВЛАДЕЛЕЦ файла. Без неё объект остаётся в хранилище ничей, реестра нет, и
@@ -403,7 +404,7 @@ export async function handleDocument(
   const name = doc.file_name ?? "файл";
 
   if (isTextFile(mime, name)) {
-    await sendMessage(chatId, `Читаю файл <b>${name}</b>...`);
+    await sendMessage(chatId, `Читаю файл <b>${escapeHtml(name)}</b>...`);
     const tgUrl = await getTelegramFileUrl(doc.file_id);
     const res = await externalFetch(tgUrl, {}, VIA_TELEGRAM_FILE);
     const buffer = await res.arrayBuffer();
@@ -444,13 +445,16 @@ export async function handleDocument(
     const fileMsg = stored.path
       ? `\n📎 <a href="${fileLink(stored.path)}">Скачать файл</a>`
       : (stored.error ? `\n⚠️ Storage: ${stored.error}` : "");
-    const summaryMsg = summary ? `\n\n<b>Тезисы:</b>\n${summary}` : "";
-    await sendMessage(chatId, `✅ Файл <b>${name}</b> сохранён (${text.length} символов).${summaryMsg}${fileMsg}`);
+    const summaryMsg = summary ? `\n\n<b>Тезисы:</b>\n${sanitizeModelHtml(summary)}` : "";
+    await sendMessage(
+      chatId,
+      `✅ Файл <b>${escapeHtml(name)}</b> сохранён (${text.length} символов).${summaryMsg}${fileMsg}`,
+    );
     return;
   }
 
   if (isSpreadsheet(mime, name)) {
-    await sendMessage(chatId, `Обрабатываю таблицу <b>${name}</b>...`);
+    await sendMessage(chatId, `Обрабатываю таблицу <b>${escapeHtml(name)}</b>...`);
     const tgUrl = await getTelegramFileUrl(doc.file_id);
     const res = await externalFetch(tgUrl, {}, VIA_TELEGRAM_FILE);
     const buffer = await res.arrayBuffer();
@@ -507,16 +511,16 @@ export async function handleDocument(
     const fileMsg = stored.path
       ? `\n📎 <a href="${fileLink(stored.path)}">Скачать файл</a>`
       : (stored.error ? `\n⚠️ Storage: ${stored.error}` : "");
-    const summaryMsg = summary ? `\n\n<b>Тезисы:</b>\n${summary}` : "";
+    const summaryMsg = summary ? `\n\n<b>Тезисы:</b>\n${sanitizeModelHtml(summary)}` : "";
     await sendMessage(
       chatId,
-      `✅ Таблица <b>${name}</b> сохранена (${extracted.length} символов).${summaryMsg}${fileMsg}`,
+      `✅ Таблица <b>${escapeHtml(name)}</b> сохранена (${extracted.length} символов).${summaryMsg}${fileMsg}`,
     );
     return;
   }
 
   if (mime === "application/pdf" || getFileExt(name) === ".pdf") {
-    await sendMessage(chatId, `Обрабатываю PDF <b>${name}</b>...`);
+    await sendMessage(chatId, `Обрабатываю PDF <b>${escapeHtml(name)}</b>...`);
     const tgUrl = await getTelegramFileUrl(doc.file_id);
     const pdfRes = await externalFetch(tgUrl, {}, VIA_TELEGRAM_FILE);
     const pdfBuffer = await pdfRes.arrayBuffer();
@@ -538,7 +542,7 @@ export async function handleDocument(
     await registerUploadedFile(stored.path, savedPdf.id);
     await sendMessage(
       chatId,
-      `✅ PDF <b>${name}</b> сохранён.\n📎 <a href="${fileLink(stored.path)}">Скачать файл</a>`,
+      `✅ PDF <b>${escapeHtml(name)}</b> сохранён.\n📎 <a href="${fileLink(stored.path)}">Скачать файл</a>`,
     );
     return;
   }
@@ -546,7 +550,7 @@ export async function handleDocument(
   await sendMessage(
     chatId,
     `Формат <code>${
-      mime || name
+      escapeHtml(mime || name)
     }</code> пока не поддерживается.\n\nПоддерживаемые форматы: TXT, MD, CSV, JSON, XLSX, PDF.`,
   );
 }
@@ -563,7 +567,7 @@ export async function handlePhoto(
   await saveEntry(description, username, "image", undefined, undefined, groupId);
   await sendMessage(
     chatId,
-    `Изображение обработано и сохранено:\n\n<i>${description.slice(0, 500)}${
+    `Изображение обработано и сохранено:\n\n<i>${escapeHtml(description.slice(0, 500))}${
       description.length > 500 ? "..." : ""
     }</i>`,
   );
@@ -586,7 +590,7 @@ export async function handleUrl(
         return;
       }
       await saveEntry(content, username, "url", { url }, undefined, groupId);
-      await sendMessage(chatId, `Страница сохранена (${content.length} символов):\n<code>${url}</code>`);
+      await sendMessage(chatId, `Страница сохранена (${content.length} символов):\n<code>${escapeHtml(url)}</code>`);
     } catch (err) {
       await sendMessage(chatId, `Не удалось загрузить страницу: ${err instanceof Error ? err.message : String(err)}`);
     }
@@ -601,7 +605,9 @@ export async function handleUrl(
     await saveEntry(content, username, "link", { url, title }, undefined, groupId);
     await sendMessage(
       chatId,
-      `🔗 Ссылка сохранена.\n<code>${url}</code>${description ? `\n\n<i>${description}</i>` : ""}`,
+      `🔗 Ссылка сохранена.\n<code>${escapeHtml(url)}</code>${
+        description ? `\n\n<i>${escapeHtml(description)}</i>` : ""
+      }`,
     );
   }
 }
@@ -627,7 +633,7 @@ export async function handleVoice(
   await sendMessage(
     chatId,
     summary
-      ? `✅ Сохранено.\n\n<b>Тезисы:</b>\n${summary}`
-      : `✅ Транскрипция сохранена:\n\n<i>${transcript.slice(0, 500)}</i>`,
+      ? `✅ Сохранено.\n\n<b>Тезисы:</b>\n${sanitizeModelHtml(summary)}`
+      : `✅ Транскрипция сохранена:\n\n<i>${escapeHtml(transcript.slice(0, 500))}</i>`,
   );
 }

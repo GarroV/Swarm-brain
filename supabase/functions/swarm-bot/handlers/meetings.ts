@@ -15,6 +15,7 @@ import { buildEmbeddingInput, marketTagsFromInput } from "../../_shared/meta-ext
 import type { TgCallbackQuery } from "../lib/types.ts";
 import { onlyLive } from "../../_shared/tasks/live.ts";
 import { onlyLiveEntries } from "../../_shared/entries/live.ts";
+import { escapeHtml, sanitizeModelHtml } from "../../_shared/telegram-html.ts";
 import { archiveEntry } from "../../_shared/entries/archive.ts";
 import { externalFetch, VIA_TELEGRAM, VIA_TELEGRAM_UPLOAD } from "../../_shared/external-fetch.ts";
 
@@ -158,7 +159,7 @@ export async function handleMeetingCallback(chatId: number, _username: string, m
   );
 
   await setSession(chatId, `meeting_pending_${meetingId}`, JSON.stringify({ content: contentParts, title }));
-  await sendMessage(chatId, `<b>📋 ${title}</b>\n\n${gptResult}`);
+  await sendMessage(chatId, `<b>📋 ${escapeHtml(title)}</b>\n\n${sanitizeModelHtml(gptResult)}`);
   await sendInlineMessage(chatId, "Сохранить встречу в базу знаний?", [[
     { text: "💾 В базу", callback_data: `meeting_save_pub_${meetingId}` },
     { text: "🔒 В личное", callback_data: `meeting_save_priv_${meetingId}` },
@@ -238,7 +239,7 @@ export async function handleMeetingCallbacks(
       isPrivate ? userId : undefined,
     );
     const label = isPrivate ? "🔒 Встреча сохранена в личное хранилище" : "💾 Встреча сохранена в базу знаний";
-    await sendMessage(chatId, `${label}: <b>${title}</b>`);
+    await sendMessage(chatId, `${label}: <b>${escapeHtml(title)}</b>`);
     return true;
   }
 
@@ -272,7 +273,7 @@ export async function handleMeetingCallbacks(
       return true;
     }
 
-    await sendMessage(chatId, `🗑 Удалено: <b>${title}</b> и все связанные задачи.`);
+    await sendMessage(chatId, `🗑 Удалено: <b>${escapeHtml(title)}</b> и все связанные задачи.`);
     return true;
   }
   if (data.startsWith("rai_")) {
@@ -302,7 +303,7 @@ export async function handleMeetingCallbacks(
           });
           const duration = m.metadata?.duration ? ` · ${Math.round((m.metadata.duration as number) / 60)} мин` : "";
           const tags = (m.metadata?.tags as string[] | undefined)?.length
-            ? `\n🏷 ${(m.metadata.tags as string[]).join(", ")}`
+            ? `\n🏷 ${escapeHtml((m.metadata.tags as string[]).join(", "))}`
             : "";
           const meetingId = (m.metadata?.meeting_id as string | undefined) ?? m.id;
           const row1 = [{ text: "🔍 Подробнее", callback_data: `mr_${m.id}` }];
@@ -310,7 +311,7 @@ export async function handleMeetingCallbacks(
             { text: "🌍 Рынки", callback_data: `mctry_${m.id}` },
             { text: "👤 Участники", callback_data: `massign_${meetingId}` },
           ];
-          await sendInlineMessage(chatId, `📋 <b>${title}</b>\n📅 ${date}${duration}${tags}`, [row1, row2]);
+          await sendInlineMessage(chatId, `📋 <b>${escapeHtml(title)}</b>\n📅 ${date}${duration}${tags}`, [row1, row2]);
         }
       }
     } else if (sub === "import") {
@@ -339,9 +340,8 @@ export async function handleMeetingCallbacks(
     });
     const src = entry.source === "granola" ? "📓 Granola" : "📹 Read.ai";
 
-    const escHtml = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
     const summaryText = entry.summary
-      ? escHtml((entry.summary as string).slice(0, 2000))
+      ? escapeHtml((entry.summary as string).slice(0, 2000))
       : "<i>Тезисы не сгенерированы</i>";
 
     let tasksText = "";
@@ -356,13 +356,13 @@ export async function handleMeetingCallbacks(
             const who = t.assignees?.join(", ");
             const due = t.due_date ? ` · до ${t.due_date}` : "";
             const done = t.status === "done" ? " ✓" : "";
-            return `• ${t.title}${who ? ` (${who})` : ""}${due}${done}`;
+            return `• ${escapeHtml(t.title)}${who ? ` (${escapeHtml(who)})` : ""}${due}${done}`;
           }).join("\n");
       }
     }
 
-    const tagsLine = tags?.length ? `\n🏷 ${tags.join(", ")}` : "";
-    const header = `<b>${title}</b>\n${src} · <i>${dateStr}</i>${tagsLine}`;
+    const tagsLine = tags?.length ? `\n🏷 ${escapeHtml(tags.join(", "))}` : "";
+    const header = `<b>${escapeHtml(title)}</b>\n${src} · <i>${dateStr}</i>${tagsLine}`;
 
     const keyboard: Array<Array<{ text: string; callback_data: string }>> = [];
     keyboard.push([
@@ -519,7 +519,7 @@ export async function handleMeetingCallbacks(
         await supabase.from("tasks").update({ assignees: [...existing, assigneeName] }).eq("id", t.id);
       }
     }
-    await sendMessage(chatId, `✅ <b>${assigneeName}</b> добавлен(а) к задачам встречи.`);
+    await sendMessage(chatId, `✅ <b>${escapeHtml(assigneeName)}</b> добавлен(а) к задачам встречи.`);
     return true;
   }
   if (data.startsWith("mexp_")) {
@@ -604,7 +604,7 @@ export async function handleMeetingCallbacks(
     await editInlineMessage(
       chatId,
       cb.message.message_id,
-      `🌍 Рынки встречи: <b>${names.length ? names.join(", ") : "не заданы"}</b>${collapsedNote}`,
+      `🌍 Рынки встречи: <b>${names.length ? escapeHtml(names.join(", ")) : "не заданы"}</b>${collapsedNote}`,
       kb,
     );
     return true;
@@ -650,7 +650,7 @@ export async function handleMeetingCallbacks(
       owner_id: publisherId,
     }).eq("id", entryId).eq("group_id", groupId);
     const title = ((entry.metadata as Record<string, unknown>)?.title as string) ?? "Встреча";
-    await sendMessage(chatId, `✅ Встреча сохранена: <b>${title}</b>`);
+    await sendMessage(chatId, `✅ Встреча сохранена: <b>${escapeHtml(title)}</b>`);
     // Авто-извлечение задач из встречи УБРАНО 05.09.2026 (решение владельца: «раз бот —
     // удаляй все»). Бот клал такие задачи в статус `pending`, подтвердить их можно было
     // только карточкой в Telegram, а в вебе статус не показывался вовсе — так на проде
@@ -693,7 +693,7 @@ export async function handleMeetingSessionInput(
       await supabase.from("entries").update({
         metadata: { ...(entry.metadata as Record<string, unknown>), title: newTitle },
       }).eq("id", entryId).eq("group_id", groupId);
-      await sendMessage(chatId, `✅ Название: <b>${newTitle}</b>`, {
+      await sendMessage(chatId, `✅ Название: <b>${escapeHtml(newTitle)}</b>`, {
         inline_keyboard: [[
           { text: "✅ Сохранить", callback_data: `mc_${entryId}` },
           { text: "📅 Дата", callback_data: `med_${entryId}` },
@@ -781,7 +781,7 @@ export async function handleMeetingSessionInput(
       return true;
     }
 
-    const titleLine = newTitle ? `✅ Название: <b>${newTitle}</b>\n\n` : "";
+    const titleLine = newTitle ? `✅ Название: <b>${escapeHtml(newTitle)}</b>\n\n` : "";
     await sendMessage(chatId, `${titleLine}✅ Тезисы обновлены.\n\n${newSummary.slice(0, 1400)}`, {
       inline_keyboard: [[{ text: "✅ Подтвердить встречу", callback_data: `mc_${entryId}` }]],
     });
@@ -797,7 +797,7 @@ export async function handleMeetingSessionInput(
       await supabase.from("entries").update({
         metadata: { ...(entry.metadata as Record<string, unknown>), title: newTitle },
       }).eq("id", entryId).eq("group_id", groupId);
-      await sendMessage(chatId, `✅ Встреча переименована: <b>${newTitle}</b>`);
+      await sendMessage(chatId, `✅ Встреча переименована: <b>${escapeHtml(newTitle)}</b>`);
     }
     return true;
   }
@@ -824,7 +824,7 @@ export async function handleMeetingSessionInput(
           groupId,
         );
       }
-      await sendMessage(chatId, `🏷 Теги сохранены: <b>${rawTags.join(", ")}</b>`);
+      await sendMessage(chatId, `🏷 Теги сохранены: <b>${escapeHtml(rawTags.join(", "))}</b>`);
     }
     return true;
   }

@@ -62,6 +62,7 @@ import {
   type UploadedFile,
   uploadNewPrivateFile,
 } from "../_shared/storage-files.ts";
+import { UNTRUSTED_DATA_RULE, wrapUntrustedForModel } from "../_shared/untrusted-prompt.ts";
 import { onlyLiveEntries } from "../_shared/entries/live.ts";
 import { archiveEntry } from "../_shared/entries/archive.ts";
 
@@ -895,11 +896,15 @@ async function toolReindexEntry(args: { id: string; summary?: string; requesting
     COUNTRY_PROMPT_RULE + "\n" +
     ENTRY_TYPE_PROMPT_RULE + "\n" +
     "entry_date — дата события из текста. Год считай от сегодняшней даты, НИКОГДА не из головы.\n" +
-    "keywords — 5-8 ключевых слов и синонимов для поиска.";
+    "keywords — 5-8 ключевых слов и синонимов для поиска.\n" +
+    UNTRUSTED_DATA_RULE;
 
   let parsed: { summary?: string; countries?: string[]; entry_type?: string; entry_date?: string; keywords?: string };
   try {
-    const raw = await chatComplete(system, e.content.slice(0, 5000), { temperature: 0, json: true });
+    const raw = await chatComplete(system, wrapUntrustedForModel(e.content.slice(0, 5000)), {
+      temperature: 0,
+      json: true,
+    });
     parsed = JSON.parse(raw.replace(/```json\n?|\n?```/g, "").trim());
   } catch {
     return `Ошибка GPT при анализе записи ${args.id}.`;

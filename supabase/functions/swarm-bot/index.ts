@@ -58,6 +58,7 @@ import {
   handleFeedbackSessionInput,
 } from "./handlers/feedback.ts";
 import { handleWorkspace } from "./handlers/workspace.ts";
+import { escapeHtml } from "../_shared/telegram-html.ts";
 import { handleForwardForTask, handleTaskComment } from "./tasks/forward-task.ts";
 import { handleSuperadmin, handleSuperadminCallbacks, handleSuperadminSession } from "./handlers/superadmin.ts";
 import { generatePersonalDigest, sendAllDigests } from "./handlers/digest.ts";
@@ -814,10 +815,14 @@ Deno.serve(async (req: Request) => {
           });
           const src = m.source === "granola" ? "📓" : "📹";
           const owner = m.owner_id != null ? (nameById.get(m.owner_id) ?? "неизвестно") : null;
-          await sendInlineMessage(chatId, `${src} <b>${title}</b>\n📅 ${dateStr}${owner ? ` · 🧑 ${owner}` : ""}`, [[
-            { text: "🔍 Тезисы", callback_data: `mr_${m.id}` },
-            { text: "🗑", callback_data: `md_${m.id}` },
-          ]]);
+          await sendInlineMessage(
+            chatId,
+            `${src} <b>${escapeHtml(title)}</b>\n📅 ${dateStr}${owner ? ` · 🧑 ${escapeHtml(owner)}` : ""}`,
+            [[
+              { text: "🔍 Тезисы", callback_data: `mr_${m.id}` },
+              { text: "🗑", callback_data: `md_${m.id}` },
+            ]],
+          );
         }
       }
     } else if (command === "/granola") {
@@ -827,7 +832,7 @@ Deno.serve(async (req: Request) => {
       if (!service || !apiKey) {
         await sendMessage(chatId, "Использование: <code>/connect granola ВАШ_КЛЮЧ</code>");
       } else if (service.toLowerCase() !== "granola") {
-        await sendMessage(chatId, `Неизвестный сервис: <code>${service}</code>. Доступно: granola`);
+        await sendMessage(chatId, `Неизвестный сервис: <code>${escapeHtml(service)}</code>. Доступно: granola`);
       } else {
         await sendMessage(chatId, "Проверяю ключ...");
         const testRes = await externalFetch("https://public-api.granola.ai/v1/notes?limit=1", {
@@ -856,7 +861,7 @@ Deno.serve(async (req: Request) => {
         if (error) {
           await sendMessage(chatId, `Ошибка: ${error.message}`);
         } else {
-          await sendMessage(chatId, `✅ <b>${service}</b> отключена.`);
+          await sendMessage(chatId, `✅ <b>${escapeHtml(service)}</b> отключена.`);
         }
       }
     } else if (command === "/superadmin") {
@@ -1043,7 +1048,7 @@ Deno.serve(async (req: Request) => {
           "Без названия";
         const src = sourceLabel((lastMeeting as { source: string }).source);
         const freshness = hoursAgo < 24 ? `${hoursAgo} ч назад` : `${Math.round(hoursAgo / 24)} дн назад`;
-        statusMsg += `Последняя: <b>${title}</b> · ${src} · ${freshness}\n`;
+        statusMsg += `Последняя: <b>${escapeHtml(title)}</b> · ${src} · ${freshness}\n`;
       }
 
       statusMsg += `\n<b>✅ Задачи</b>\n`;
@@ -1052,7 +1057,10 @@ Deno.serve(async (req: Request) => {
 
       await sendMessage(chatId, statusMsg);
     } else {
-      await sendMessage(chatId, `Неизвестная команда: <code>${command}</code>\n\nИспользуй /help для списка команд.`);
+      await sendMessage(
+        chatId,
+        `Неизвестная команда: <code>${escapeHtml(command)}</code>\n\nИспользуй /help для списка команд.`,
+      );
     }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);

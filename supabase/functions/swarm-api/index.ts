@@ -117,6 +117,8 @@ import { publishDraftMeeting } from "../_shared/meeting-publish.ts";
 import { entryVisibilityOr } from "../_shared/entries/access.ts";
 import { mergeOwnLabels } from "../_shared/tasks/labels.ts";
 import { todayIso } from "../_shared/llm-date.ts";
+import { escapeHtml } from "../_shared/telegram-html.ts";
+import { UNTRUSTED_DATA_RULE, wrapUntrustedForModel } from "../_shared/untrusted-prompt.ts";
 import {
   callExtractor,
   EXTRACT_MAX_TASKS,
@@ -2253,11 +2255,11 @@ async function routeRequest(req: Request): Promise<Response> {
           messages: [
             {
               role: "system",
-              content: isDemo
+              content: (isDemo
                 ? "Make concise bullet points from the text. Only concrete facts: names, numbers, decisions, dates. 3–7 points. A bulleted list in English."
-                : "Сделай краткие тезисы из текста. Только конкретные факты: имена, цифры, решения, даты. 3–7 пунктов. Маркированный список на русском.",
+                : "Сделай краткие тезисы из текста. Только конкретные факты: имена, цифры, решения, даты. 3–7 пунктов. Маркированный список на русском.") + "\n" + UNTRUSTED_DATA_RULE,
             },
-            { role: "user", content: body.content.slice(0, 6000) },
+            { role: "user", content: wrapUntrustedForModel(body.content.slice(0, 6000)) },
           ],
           max_tokens: 500,
         }),
@@ -2403,15 +2405,15 @@ async function routeRequest(req: Request): Promise<Response> {
         messages: [
           {
             role: "system",
-            content: isDemo
+            content: (isDemo
               ? 'You are the Dodo CEE team assistant. Answer the question ONLY from the numbered sources, in English. Put a footnote [n] on every statement (you may use [1][3]).\nIMPORTANT: if the sources concern DIFFERENT meetings / topics / countries — do NOT glue them into one artificial paragraph and do NOT invent shared trends/conclusions («revenue drop», «overall we see…») that aren\'t in the sources. In that case give a SHORT list: one «- » point per meeting/topic with the key fact and a footnote [n]. If the question is narrow and the sources are on one topic — answer coherently in 2–4 sentences.\nDon\'t invent facts, numbers or generalizations. If there\'s little data — say so honestly. Return STRICTLY JSON: {"answer":"...","followups":["...","..."]}. In answer you may use line breaks and «- » points. followups — 2–3 short clarifying questions.'
-              : 'Ты — ассистент команды Dodo CEE. Отвечай на вопрос ТОЛЬКО на основе пронумерованных источников, по-русски. Ставь сноску [n] на каждое утверждение (можно [1][3]).\nВАЖНО: если источники относятся к РАЗНЫМ встречам / темам / странам — НЕ склеивай их в один искусственный абзац и НЕ выдумывай общие тренды/выводы («падение выручки», «в целом наблюдается…»), которых нет в источниках. В этом случае дай КОРОТКИЙ список: по одному пункту «- » на встречу/тему с ключевым фактом и сноской [n]. Если вопрос узкий и источники об одной теме — ответь связно в 2–4 предложения.\nНе выдумывай факты, цифры и обобщения. Если данных мало — скажи честно. Даты источников указаны в скобках — при вопросе о «последнем/недавнем» или если источники разных дат, предпочитай более свежие и называй даты. Верни СТРОГО JSON: {"answer":"...","followups":["...","..."]}. В answer можно использовать переносы строк и пункты «- ». followups — 2–3 коротких уточняющих вопроса.',
+              : 'Ты — ассистент команды Dodo CEE. Отвечай на вопрос ТОЛЬКО на основе пронумерованных источников, по-русски. Ставь сноску [n] на каждое утверждение (можно [1][3]).\nВАЖНО: если источники относятся к РАЗНЫМ встречам / темам / странам — НЕ склеивай их в один искусственный абзац и НЕ выдумывай общие тренды/выводы («падение выручки», «в целом наблюдается…»), которых нет в источниках. В этом случае дай КОРОТКИЙ список: по одному пункту «- » на встречу/тему с ключевым фактом и сноской [n]. Если вопрос узкий и источники об одной теме — ответь связно в 2–4 предложения.\nНе выдумывай факты, цифры и обобщения. Если данных мало — скажи честно. Даты источников указаны в скобках — при вопросе о «последнем/недавнем» или если источники разных дат, предпочитай более свежие и называй даты. Верни СТРОГО JSON: {"answer":"...","followups":["...","..."]}. В answer можно использовать переносы строк и пункты «- ». followups — 2–3 коротких уточняющих вопроса.') + "\n" + UNTRUSTED_DATA_RULE,
           },
           {
             role: "user",
             content: isDemo
-              ? `Question: ${q}\n\nSources:\n${ctx}`
-              : `Вопрос: ${q}\n\nИсточники:\n${ctx}`,
+              ? `Question: ${q}\n\nSources:\n${wrapUntrustedForModel(ctx)}`
+              : `Вопрос: ${q}\n\nИсточники:\n${wrapUntrustedForModel(ctx)}`,
           },
         ],
         max_tokens: 700,
@@ -3386,11 +3388,11 @@ async function routeRequest(req: Request): Promise<Response> {
           messages: [
             {
               role: "system",
-              content: isDemo
+              content: (isDemo
                 ? "Make concise meeting bullet points. Only concrete facts: participants, decisions, actions. 3–7 points in English."
-                : "Сделай краткие тезисы встречи. Только конкретные факты: участники, решения, действия. 3–7 пунктов на русском.",
+                : "Сделай краткие тезисы встречи. Только конкретные факты: участники, решения, действия. 3–7 пунктов на русском.") + "\n" + UNTRUSTED_DATA_RULE,
             },
-            { role: "user", content: String(content).slice(0, 6000) },
+            { role: "user", content: wrapUntrustedForModel(String(content).slice(0, 6000)) },
           ],
           max_tokens: 500,
         }),
@@ -3488,11 +3490,11 @@ async function routeRequest(req: Request): Promise<Response> {
           messages: [
             {
               role: "system",
-              content: isDemo
+              content: (isDemo
                 ? "Make concise meeting bullet points. 3–7 points in English."
-                : "Сделай краткие тезисы встречи. 3–7 пунктов на русском.",
+                : "Сделай краткие тезисы встречи. 3–7 пунктов на русском.") + "\n" + UNTRUSTED_DATA_RULE,
             },
-            { role: "user", content: content.slice(0, 6000) },
+            { role: "user", content: wrapUntrustedForModel(content.slice(0, 6000)) },
           ],
           max_tokens: 500,
         }),
@@ -3673,7 +3675,7 @@ async function routeRequest(req: Request): Promise<Response> {
       const date = new Date().toLocaleDateString("ru-RU");
       const caption = `<b>[Веб]</b> 🐛 ${
         feedbackCategoryLabel(category)
-      } · @${username} · ${date}\n\n${text}`;
+      } · @${escapeHtml(username)} · ${date}\n\n${escapeHtml(text)}`;
       // Скрин — путь в приватном бакете: модуль отдаёт его Telegram подписанной ссылкой и проверяет ответ.
       await sendFeedbackPing(makeFeedbackPingDeps(supabase, BOT_TOKEN), {
         chatId: channelId,
@@ -3849,11 +3851,11 @@ async function routeRequest(req: Request): Promise<Response> {
         messages: [
           {
             role: "system",
-            content: isDemo
+            content: (isDemo
               ? `You are a team analyst. Compile a personal digest for ${periodLabel} for the employee (${contextLine}).\n\nKEY: group STRICTLY BY COUNTRY. Each record is tagged with its country at the start — [Country · date]. For EACH country that has records, make a separate block strictly in this format:\n## <Country>\n- point (what was discussed / done / a problem / a plan for this country) [N]\nAt the END of each point put a footnote [N] — the number of the source the fact came from (the number is given at the start of each record as «[источник N]»). Exactly ONE number per point — the record the fact came from.\n3–7 points per country — don't spare details: concrete facts, numbers, decisions, problems, plans, open questions. Do NOT mention countries with no records. Don't mix different countries in one block.\n\nNO DUPLICATES: use each record in EXACTLY ONE country block (per its tag) — do NOT repeat the same fact/point across countries.\n\nSTRICT: use ONLY facts from the records. Do NOT invent numbers, company names, people's NAMES, events, dates. If an owner/name isn't stated in a record, don't write it. Don't write intro paragraphs or conclusions — only country blocks. Reply in English.`
-              : `Ты аналитик команды. Составь персональный дайджест за ${periodLabel} для сотрудника (${contextLine}).\n\nГЛАВНОЕ: сгруппируй СТРОГО ПО СТРАНАМ. Каждая запись помечена страной в начале — [Страна · дата]. Для КАЖДОЙ страны, по которой есть записи, сделай отдельный блок строго в формате:\n## <Страна>\n- пункт (что обсуждали / сделали / проблема / план по этой стране) [N]\nВ КОНЦЕ каждого пункта ставь сноску [N] — номер источника, из которого взят факт (номер указан в начале каждой записи как «[источник N]»). Ровно ОДИН номер на пункт — та запись, откуда факт.\n3–7 пунктов на страну — не жалей деталей: конкретные факты, числа, решения, проблемы, планы, открытые вопросы. Страны без записей НЕ упоминай. Не смешивай разные страны в один блок.\n\nБЕЗ ДУБЛЕЙ: каждую запись используй РОВНО в ОДНОМ страновом блоке (по её метке) — НЕ повторяй один и тот же факт/пункт в разных странах.\n\nЖЁСТКО: используй ТОЛЬКО факты из записей. НЕ придумывай цифры, названия компаний, ИМЕНА людей, события, сроки. Если ответственный/имя не указаны в записи — не пиши их. Не пиши вводных абзацев и итогов — только блоки по странам. Отвечай на русском.`,
+              : `Ты аналитик команды. Составь персональный дайджест за ${periodLabel} для сотрудника (${contextLine}).\n\nГЛАВНОЕ: сгруппируй СТРОГО ПО СТРАНАМ. Каждая запись помечена страной в начале — [Страна · дата]. Для КАЖДОЙ страны, по которой есть записи, сделай отдельный блок строго в формате:\n## <Страна>\n- пункт (что обсуждали / сделали / проблема / план по этой стране) [N]\nВ КОНЦЕ каждого пункта ставь сноску [N] — номер источника, из которого взят факт (номер указан в начале каждой записи как «[источник N]»). Ровно ОДИН номер на пункт — та запись, откуда факт.\n3–7 пунктов на страну — не жалей деталей: конкретные факты, числа, решения, проблемы, планы, открытые вопросы. Страны без записей НЕ упоминай. Не смешивай разные страны в один блок.\n\nБЕЗ ДУБЛЕЙ: каждую запись используй РОВНО в ОДНОМ страновом блоке (по её метке) — НЕ повторяй один и тот же факт/пункт в разных странах.\n\nЖЁСТКО: используй ТОЛЬКО факты из записей. НЕ придумывай цифры, названия компаний, ИМЕНА людей, события, сроки. Если ответственный/имя не указаны в записи — не пиши их. Не пиши вводных абзацев и итогов — только блоки по странам. Отвечай на русском.`) + "\n" + UNTRUSTED_DATA_RULE,
           },
-          { role: "user", content: entriesText.slice(0, 13000) },
+          { role: "user", content: wrapUntrustedForModel(entriesText.slice(0, 13000)) },
         ],
         max_tokens: 2600,
       }),

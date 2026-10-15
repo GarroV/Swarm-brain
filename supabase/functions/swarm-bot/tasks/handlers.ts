@@ -17,6 +17,7 @@ import type { TgCallbackQuery } from "../lib/types.ts";
 import { onlyLive } from "../../_shared/tasks/live.ts";
 import { externalFetch, VIA_TELEGRAM_UPLOAD } from "../../_shared/external-fetch.ts";
 import { notifyMessage } from "../lib/notify.ts";
+import { escapeHtml } from "../../_shared/telegram-html.ts";
 
 const TELEGRAM_BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN")!;
 
@@ -40,7 +41,7 @@ async function broadcastTaskAssigned(task: Task, groupId: string): Promise<void>
     ? ` · до ${new Date(task.due_date + "T12:00:00").toLocaleDateString("ru-RU", { day: "numeric", month: "long" })}`
     : "";
   const country = task.country ? ` · ${task.country}` : "";
-  const text = `📋 Тебе назначена задача: <b>${task.title}</b>${country}${due}`;
+  const text = `📋 Тебе назначена задача: <b>${escapeHtml(task.title)}</b>${country}${due}`;
 
   // Уведомление по инициативе бота: в комендантский час (23:00–9:00 МСК) ждёт утра в `telegram_outbox`.
   // Заблокировавший бота исполнитель не должен ронять создание задачи, уже записанной выше.
@@ -140,7 +141,7 @@ export async function handleTasks(chatId: number, _userId: number, filter: strin
 
     const lines: string[] = [`<b>📋 Все задачи (${tasks.length})</b>`];
     for (const [assignee, atasks] of groups) {
-      lines.push(`\n<b>👤 ${assignee} (${atasks.length})</b>`);
+      lines.push(`\n<b>👤 ${escapeHtml(assignee)} (${atasks.length})</b>`);
       for (const t of atasks.slice(0, 10)) lines.push(formatTaskLine(t));
     }
     if (noAssignee.length) {
@@ -154,10 +155,10 @@ export async function handleTasks(chatId: number, _userId: number, filter: strin
   // Search by person name
   const tasks = await dbListTasks({ assignee: filter.trim(), limit: 200, groupId });
   if (!tasks.length) {
-    await sendMessage(chatId, `Задач для <b>${filter.trim()}</b> не найдено.`);
+    await sendMessage(chatId, `Задач для <b>${escapeHtml(filter.trim())}</b> не найдено.`);
     return;
   }
-  await sendMessage(chatId, `<b>👤 ${filter.trim()}: ${tasks.length} задач</b>`);
+  await sendMessage(chatId, `<b>👤 ${escapeHtml(filter.trim())}: ${tasks.length} задач</b>`);
   for (const t of tasks.slice(0, 15)) await sendTaskCard(chatId, t);
 }
 
@@ -209,7 +210,7 @@ export async function smartTaskSearch(chatId: number, question: string): Promise
     const who = t.assignees?.join(", ") || "—";
     const due = t.due_date ? ` · до ${t.due_date}` : "";
     const c = t.country ? ` · ${t.country}` : "";
-    return `• ${t.title} (${who}${due}${c})`;
+    return `• ${escapeHtml(t.title)} (${escapeHtml(who)}${due}${c})`;
   }).join("\n");
 
   await sendMessage(chatId, `<b>Задачи по запросу:</b>\n\n${lines}`);
@@ -283,8 +284,8 @@ function buildTaskDetailMessage(task: Task): { text: string; keyboard: unknown[]
   const statusLabel = STATUS_LABEL_FULL[task.status] ?? task.status;
 
   const srcLabel = SOURCE_LABEL_BOT[task.source] ?? task.source ?? "—";
-  const text = `📌 <b>${task.title}</b>\n\n` +
-    `👤 ${who}\n` +
+  const text = `📌 <b>${escapeHtml(task.title)}</b>\n\n` +
+    `👤 ${escapeHtml(who)}\n` +
     `📅 Дедлайн: ${due}\n` +
     `🏷 Статус: ${statusLabel}\n` +
     `📍 Источник: ${srcLabel}`;
@@ -435,7 +436,7 @@ export async function handleTaskCallbacks(
     }
 
     const parts: string[] = [];
-    for (const [a, ts] of groups) parts.push(`👤 ${a} (${ts.length})`);
+    for (const [a, ts] of groups) parts.push(`👤 ${escapeHtml(a)} (${ts.length})`);
     if (noAssignee.length) parts.push(`❓ Без исполнителя (${noAssignee.length})`);
     const header = `👥 <b>Команда (${limited.length}):</b>\n${parts.join(" · ")}`;
 
@@ -539,7 +540,7 @@ export async function handleTaskCallbacks(
     await editInlineMessage(
       chatId,
       cb.message.message_id,
-      `Удалить задачу?\n<b>${title}</b>`,
+      `Удалить задачу?\n<b>${escapeHtml(title)}</b>`,
       [[
         { text: "✅ Да, удалить", callback_data: `tk_delc_${taskId}` },
         { text: "Отмена", callback_data: `tk_t_${taskId}` },
@@ -604,7 +605,7 @@ export async function handleTaskCallbacks(
       return true;
     }
     await dbUpdateTask(taskId, { confirmed: true, status: "open" }, { actor: username, actorTelegramId: userId });
-    await sendMessage(chatId, `✅ Подтверждено: <b>${task.title}</b>`);
+    await sendMessage(chatId, `✅ Подтверждено: <b>${escapeHtml(task.title)}</b>`);
     const confirmedTask = { ...task, confirmed: true, status: "open" };
     await broadcastTaskAssigned(confirmedTask, groupId);
     return true;
@@ -615,7 +616,7 @@ export async function handleTaskCallbacks(
     const taskId = data.replace("tren_", "");
     const task = await dbGetTask(taskId);
     await setSession(chatId, "task_rename", taskId);
-    await sendMessage(chatId, `Новое название для:\n<i>${task?.title ?? ""}</i>`);
+    await sendMessage(chatId, `Новое название для:\n<i>${escapeHtml(task?.title ?? "")}</i>`);
     return true;
   }
 
@@ -623,7 +624,7 @@ export async function handleTaskCallbacks(
   if (data.startsWith("tdc_")) {
     const taskId = data.replace("tdc_", "");
     const task = await dbGetTask(taskId);
-    await sendInlineMessage(chatId, `Удалить <b>${task?.title ?? taskId}</b>?`, [[
+    await sendInlineMessage(chatId, `Удалить <b>${escapeHtml(task?.title ?? taskId)}</b>?`, [[
       { text: "✅ Да", callback_data: `tdconf_${taskId}` },
       { text: "Отмена", callback_data: `tdcanc_${taskId}` },
     ]]);
@@ -633,7 +634,7 @@ export async function handleTaskCallbacks(
     const taskId = data.replace("tdconf_", "");
     const task = await dbGetTask(taskId);
     await dbDeleteTask(taskId, userId);
-    await sendMessage(chatId, `🗑 Удалено: <b>${task?.title ?? taskId}</b>`);
+    await sendMessage(chatId, `🗑 Удалено: <b>${escapeHtml(task?.title ?? taskId)}</b>`);
     return true;
   }
   if (data.startsWith("tdcanc_")) {
@@ -690,7 +691,7 @@ export async function handleTaskCallbacks(
     const current = task.tags ?? [];
     const updated = current.includes(tag) ? current.filter((t) => t !== tag) : [...current, tag];
     await dbUpdateTask(taskId, { tags: updated }, { actor: username, actorTelegramId: userId });
-    await sendMessage(chatId, `🏷 Теги: <b>${updated.join(", ") || "нет"}</b>`);
+    await sendMessage(chatId, `🏷 Теги: <b>${escapeHtml(updated.join(", ")) || "нет"}</b>`);
     return true;
   }
 
@@ -739,7 +740,7 @@ export async function handleTaskCallbacks(
       actor: username,
       actorTelegramId: userId,
     });
-    await sendMessage(chatId, `✅ Назначено: <b>${name}</b>`);
+    await sendMessage(chatId, `✅ Назначено: <b>${escapeHtml(name)}</b>`);
     return true;
   }
 
@@ -761,10 +762,10 @@ export async function handleTaskCallbacks(
     await sendMessage(
       chatId,
       recur
-        ? `🔁 <b>${task.title}</b> — цикл закрыт, следующий срок ${
+        ? `🔁 <b>${escapeHtml(task.title)}</b> — цикл закрыт, следующий срок ${
           new Date(recur.recurred.to + "T12:00:00").toLocaleDateString("ru-RU", { day: "numeric", month: "long" })
         }`
-        : `${STATUS_LABEL[newStatus] ?? newStatus} <b>${task.title}</b>`,
+        : `${STATUS_LABEL[newStatus] ?? newStatus} <b>${escapeHtml(task.title)}</b>`,
     );
     return true;
   }
@@ -858,7 +859,7 @@ export async function handleTaskSessionInput(
       return true;
     }
     await dbUpdateTask(context, { title: newTitle }, { actorTelegramId: userId });
-    await sendMessage(chatId, `✏️ Название: <b>${newTitle}</b>`);
+    await sendMessage(chatId, `✏️ Название: <b>${escapeHtml(newTitle)}</b>`);
     return true;
   }
 
@@ -890,7 +891,7 @@ export async function handleTaskSessionInput(
     const countryButtons = markets.map((m, i) => [{ text: `🌍 ${m}`, callback_data: `tac_${task.id}:${i}` }]);
     countryButtons.push([{ text: "❌ Без рынка", callback_data: `tac_${task.id}:none` }]);
     countryButtons.push([{ text: "🚫 Отмена", callback_data: `tacx_${task.id}` }]);
-    await sendInlineMessage(chatId, `📌 <b>${title}</b>\n\nРынок?`, countryButtons);
+    await sendInlineMessage(chatId, `📌 <b>${escapeHtml(title)}</b>\n\nРынок?`, countryButtons);
     return true;
   }
 
