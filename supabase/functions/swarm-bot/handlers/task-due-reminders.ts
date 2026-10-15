@@ -14,6 +14,7 @@
 
 import { addDays } from "../../_shared/tasks/due.ts";
 import { todayInTz } from "../../_shared/tasks/recurrence.ts";
+import { CURFEW_TZ } from "../../_shared/curfew.ts";
 import { isClosedStatus } from "../../_shared/tasks/statuses.ts";
 import { formatPings, type InlineUrlButton, pingRecipients, type PingRow } from "./task-pings.ts";
 
@@ -74,4 +75,18 @@ export function formatDueReminders(
   webBaseUrl: string,
 ): { text: string; keyboard: InlineUrlButton[][] } {
   return formatPings(rows, webBaseUrl, DUE_REMINDER_HEADING);
+}
+
+/** Напоминание о сроке уходит утром: с 9:00 до 13:00 по Москве (повторы недоставленного — в том же окне). */
+export const DUE_REMINDER_MORNING_END_HOUR = 13;
+
+/**
+ * Утреннее окно напоминаний о сроке. Владелец согласовал «накануне срока, утром»: без этого окна
+ * часовой крон слал бы напоминание и вечером — например, сразу после раскатки днём.
+ */
+export function dueReminderWindowOpen(now: Date): boolean {
+  const hour = Number(
+    new Intl.DateTimeFormat("en-GB", { timeZone: CURFEW_TZ, hour: "2-digit", hourCycle: "h23" }).format(now),
+  );
+  return hour >= 9 && hour < DUE_REMINDER_MORNING_END_HOUR;
 }
