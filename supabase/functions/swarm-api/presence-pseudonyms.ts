@@ -3,7 +3,8 @@
 //
 // Раздача идёт по ВСЕМ участникам пространства, а не по тем, кто сейчас онлайн: тогда зверь
 // не «прыгает», когда кто-то заходит или уходит, и у двух людей до 50 человек не бывает одного
-// зверя. Сами картинки и имена живут в вебе (miniapp/src/components/presence/animals.ts) —
+// зверя. Раздача зависит от серверного ключа (HMAC): по одному telegram_id и номеру окна, которые
+// не секрет, вычислить, кто есть какой зверь, нельзя. Сами картинки и имена живут в вебе (miniapp/src/components/presence/animals.ts) —
 // сервер отдаёт только индексы.
 
 /** Сколько зверей в наборе (веб держит столько же иконок и имён). */
@@ -20,14 +21,29 @@ export function pseudonymWindow(nowMs: number): number {
   return Math.floor(nowMs / PSEUDONYM_WINDOW_MS);
 }
 
-/** FNV-1a по кодовым точкам — тот же хеш, что в утверждённом макете. */
-function hash(s: string): number {
-  let h = 2166136261;
-  for (const c of s) {
-    h ^= c.codePointAt(0)!;
-    h = Math.imul(h, 16777619);
-  }
-  return h >>> 0;
+const encoder = new TextEncoder();
+
+/** Метка вывода ключа: смена версии перетасует всех, не трогая исходный секрет. */
+const KEY_LABEL = "presence-pseudonym-v1";
+
+/**
+ * Ключ раздачи выводится из уже существующего серверного секрета (WEB_JWT_SECRET) с меткой
+ * назначения, а не берётся как есть: новый секрет заводить не нужно, а сам секрет в раздачу
+ * напрямую не попадает. Секрет не логируется и наружу не выходит.
+ */
+export async function derivePseudonymKey(secret: string): Promise<CryptoKey> {
+  if (!secret) throw new Error("presence: пустой секрет для псевдонимов");
+  const base = await crypto.subtle.importKey("raw", encoder.encode(secret), { name: "HMAC", hash: "SHA-256" }, false, [
+    "sign",
+  ]);
+  const derived = await crypto.subtle.sign("HMAC", base, encoder.encode(KEY_LABEL));
+  return crypto.subtle.importKey("raw", derived, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+}
+
+/** HMAC-SHA256(ключ, сообщение) → первые 4 байта как uint32. */
+async function mac32(key: CryptoKey, message: string): Promise<number> {
+  const sig = new DataView(await crypto.subtle.sign("HMAC", key, encoder.encode(message)));
+  return sig.getUint32(0);
 }
 
 /** Детерминированный PRNG (mulberry32) — равномерное число в [0, 1). */
@@ -42,9 +58,9 @@ function rng(seed: number): () => number {
   };
 }
 
-/** Перестановка 0..ANIMAL_COUNT-1, перемешанная сидом от окна (Фишер — Йетс). */
-function animalPermutation(window: number): number[] {
-  const rand = rng(hash(`w${window}`));
+/** Перестановка 0..ANIMAL_COUNT-1, перемешанная сидом от окна и ключа (Фишер — Йетс). */
+async function animalPermutation(key: CryptoKey, window: number): Promise<number[]> {
+  const rand = rng(await mac32(key, `w:${window}`));
   const order = Array.from({ length: ANIMAL_COUNT }, (_, i) => i);
   for (let k = order.length - 1; k > 0; k--) {
     const j = Math.floor(rand() * (k + 1));
@@ -54,18 +70,28 @@ function animalPermutation(window: number): number[] {
 }
 
 /**
- * Зверь и стиль каждому участнику на окно. Участников сортируем по хешу (id, окно), k-му
+ * Зверь и стиль каждому участнику на окно. Участников сортируем по HMAC(id, окно), k-му
  * достаётся perm[k]: повторов нет, пока людей не больше ANIMAL_COUNT. Результат не зависит
- * от порядка входного массива.
+ * от порядка входного массива; другой ключ даёт другую раздачу.
  */
-export function assignPseudonyms(memberIds: readonly number[], window: number): Map<number, Pseudonym> {
-  const perm = animalPermutation(window);
-  const ranked = [...new Set(memberIds)]
-    .map((id) => ({ id, rank: hash(`${id}:${window}`) }))
-    .sort((a, b) => a.rank - b.rank || a.id - b.id);
+export async function assignPseudonyms(
+  memberIds: readonly number[],
+  window: number,
+  key: CryptoKey,
+): Promise<Map<number, Pseudonym>> {
+  const perm = await animalPermutation(key, window);
+  const unique = [...new Set(memberIds)];
+  const ranked = await Promise.all(
+    unique.map(async (id) => ({
+      id,
+      rank: await mac32(key, `${id}:${window}`),
+      style: await mac32(key, `${id}:${window}:s`),
+    })),
+  );
+  ranked.sort((a, b) => a.rank - b.rank || a.id - b.id);
   const out = new Map<number, Pseudonym>();
-  ranked.forEach(({ id }, k) => {
-    out.set(id, { animal: perm[k % ANIMAL_COUNT], style: hash(`${id}:${window}:s`) % STYLE_COUNT });
+  ranked.forEach(({ id, style }, k) => {
+    out.set(id, { animal: perm[k % ANIMAL_COUNT], style: style % STYLE_COUNT });
   });
   return out;
 }

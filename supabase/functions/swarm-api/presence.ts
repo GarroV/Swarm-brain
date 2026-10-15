@@ -1,7 +1,7 @@
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { apiErr, corsHeaders, json } from "./http.ts";
 import { resolvePersonNames } from "../_shared/users/display-name.ts";
-import { assignPseudonyms, pseudonymWindow } from "./presence-pseudonyms.ts";
+import { assignPseudonyms, derivePseudonymKey, pseudonymWindow } from "./presence-pseudonyms.ts";
 
 // Присутствие (#751): кто, где, что и когда делает в вебе. Канон схемы — миграция
 // 20261009140000_presence.sql, решения — docs/decisions/2026-10-07-presence-avatars.md.
@@ -71,14 +71,15 @@ export type StripPayload = { window: number; people: StripPerson[] };
  * стиля, раздел и состояние; telegram_id наружу не выходит. Раздают по ВСЕМ участникам
  * пространства (`memberIds`), поэтому зверь не меняется, когда кто-то заходит или уходит.
  */
-export function buildStrip(
+export async function buildStrip(
+  key: CryptoKey,
   memberIds: readonly number[],
   rows: readonly Pick<PresenceRow, "telegram_id" | "section" | "state" | "last_seen_at">[],
   selfId: number,
   now: number,
-): StripPayload {
+): Promise<StripPayload> {
   const window = pseudonymWindow(now);
-  const pseudonyms = assignPseudonyms(memberIds, window);
+  const pseudonyms = await assignPseudonyms(memberIds, window, key);
   const people: StripPerson[] = [];
   for (const r of rows) {
     if (r.telegram_id === selfId || !isOnline(r, now)) continue;
@@ -97,7 +98,13 @@ export function buildStrip(
   return { window, people };
 }
 
-async function readStrip(supabase: SupabaseClient, groupId: string, selfId: number, origin: string): Promise<Response> {
+async function readStrip(
+  supabase: SupabaseClient,
+  key: CryptoKey,
+  groupId: string,
+  selfId: number,
+  origin: string,
+): Promise<Response> {
   const now = Date.now();
   const onlineIso = new Date(now - ONLINE_WINDOW_MS).toISOString();
   const [rowsRes, membersRes] = await Promise.all([
@@ -111,7 +118,7 @@ async function readStrip(supabase: SupabaseClient, groupId: string, selfId: numb
   }
   const memberIds = ((membersRes.data ?? []) as { telegram_id: number }[]).map((m) => m.telegram_id);
   const rows = (rowsRes.data ?? []) as Pick<PresenceRow, "telegram_id" | "section" | "state" | "last_seen_at">[];
-  return json(buildStrip(memberIds, rows, selfId, now), 200, origin); // json() отдаёт no-store
+  return json(await buildStrip(key, memberIds, rows, selfId, now), 200, origin); // json() отдаёт no-store
 }
 
 async function readPresence(
@@ -171,6 +178,8 @@ export async function handlePresenceRoutes(
     isAdmin: boolean;
     isSuperadmin: boolean;
     isDemo: boolean;
+    /** Серверный секрет, из которого выводится ключ раздачи зверей (WEB_JWT_SECRET). */
+    pseudonymSecret?: string;
   },
   origin: string,
 ): Promise<Response | null> {
@@ -178,7 +187,13 @@ export async function handlePresenceRoutes(
     if (req.method !== "GET") return apiErr(405, "Method not allowed", origin);
     // Демо-сессия — одна на всех зрителей витрины: показывать там нечего.
     if (ctx.isDemo) return json({ window: pseudonymWindow(Date.now()), people: [] }, 200, origin);
-    return readStrip(supabase, ctx.groupId, ctx.telegramId, origin);
+    // Без серверного секрета детерминированной раздачи по открытым данным быть не должно.
+    if (!ctx.pseudonymSecret) {
+      console.error("presence: нет секрета для псевдонимов (WEB_JWT_SECRET) — полоска отключена");
+      return apiErr(500, "Presence strip is not configured", origin);
+    }
+    const key = await derivePseudonymKey(ctx.pseudonymSecret);
+    return readStrip(supabase, key, ctx.groupId, ctx.telegramId, origin);
   }
   if (routePath !== "/presence") return null;
 

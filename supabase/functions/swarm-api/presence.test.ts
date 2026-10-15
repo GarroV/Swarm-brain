@@ -1,6 +1,7 @@
 // Присутствие (#751): админский GET видит только админ, состояние считает сервер, полоска анонимна.
 import { assertEquals } from "@std/assert";
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { derivePseudonymKey } from "./presence-pseudonyms.ts";
 import { buildStrip, handlePresenceRoutes, isOnline, parseLogMinutes, parsePing } from "./presence.ts";
 
 const NO_DB = new Proxy({}, {
@@ -68,12 +69,14 @@ Deno.test("в системе: пульс свежее 45 с и вкладка н
 });
 
 // ── Полоска /presence/strip ────────────────────────────────────────────────────────────────
+const KEY = await derivePseudonymKey("test-secret");
 const NOW = Date.parse("2026-10-15T12:00:00Z");
 const MEMBERS = [101_234_567, 202_345_678, 303_456_789, 404_567_890];
 const fresh = "2026-10-15T11:59:50Z";
 
-Deno.test("полоска: себя нет, ушедших и протухших нет, чужой воркспейс не показывается", () => {
-  const strip = buildStrip(
+Deno.test("полоска: себя нет, ушедших и протухших нет, чужой воркспейс не показывается", async () => {
+  const strip = await buildStrip(
+    KEY,
     MEMBERS,
     [
       { telegram_id: MEMBERS[0], section: "tasks", state: "active", last_seen_at: fresh },
@@ -90,13 +93,13 @@ Deno.test("полоска: себя нет, ушедших и протухших
   assertEquals(strip.people[0].state, "idle");
 });
 
-Deno.test("полоска: активные первыми, зверь и стиль не меняются между вызовами", () => {
+Deno.test("полоска: активные первыми, зверь и стиль не меняются между вызовами", async () => {
   const rows = [
     { telegram_id: MEMBERS[1], section: "a", state: "idle" as const, last_seen_at: fresh },
     { telegram_id: MEMBERS[2], section: "b", state: "active" as const, last_seen_at: fresh },
   ];
-  const a = buildStrip(MEMBERS, rows, MEMBERS[0], NOW);
-  const b = buildStrip(MEMBERS, [...rows].reverse(), MEMBERS[0], NOW);
+  const a = await buildStrip(KEY, MEMBERS, rows, MEMBERS[0], NOW);
+  const b = await buildStrip(KEY, MEMBERS, [...rows].reverse(), MEMBERS[0], NOW);
   assertEquals(a, b);
   assertEquals(a.people.map((p) => p.state), ["active", "idle"]);
 });
@@ -123,7 +126,7 @@ Deno.test("полоска: ответ не содержит telegram_id, имё�
     supabase,
     new Request("https://x/presence/strip"),
     "/presence/strip",
-    { ...ctx, telegramId: MEMBERS[0] },
+    { ...ctx, telegramId: MEMBERS[0], pseudonymSecret: "test-secret" },
     "",
   );
   assertEquals(res?.status, 200);
@@ -152,4 +155,9 @@ Deno.test("полоска: демо — пустой список без баз�
     "",
   );
   assertEquals(post?.status, 405);
+});
+
+Deno.test("полоска: нет серверного секрета — 500, а не раздача без ключа; база не читается", async () => {
+  const res = await handlePresenceRoutes(NO_DB, new Request("https://x/presence/strip"), "/presence/strip", ctx, "");
+  assertEquals(res?.status, 500);
 });
