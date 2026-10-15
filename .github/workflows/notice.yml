@@ -52,20 +52,19 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-      - uses: supabase/setup-cli@1dedf2c611547ede7232d26866dd3c56ab903bbb # v1
-        with:
-          version: 2.118.0
-      - name: Привязать проект
-        env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
-        run: supabase link --project-ref vbqglndbxkpmreccpqmr
+      - name: Облачной базы больше нет — честный отказ
+        # Прод с 13.10.2026 на своём сервере; supabase link в облачный проект писал в отключённую
+        # базу и заканчивался зелёным, ничего не сделав (#978). Шлюз раскатки (deploy/server/gate.sh)
+        # умеет только functions / migrations-applied / migrate / recorder-upload — команды
+        # «плашка/заморозка» в нём нет. Пока её не добавят на сервер, кнопка падает громко.
+        # Обход: ssh contabo, `select public.maintenance_announce(<lead>, <минут>, '', '')`.
+        run: |
+          echo "::error::Кнопка не подключена к серверу Swarm: шлюзу раскатки нужна команда для плашки и заморозки (#978). Обход: ssh contabo, select public.maintenance_announce(...) — см. docs/DEPLOY.md"
+          exit 1
       - name: Выполнить
         # Ввод — только через env, не подстановкой ${{ }} в текст скрипта: иначе текст плашки
         # исполнялся бы как shell.
         env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
           ACTION: ${{ inputs.action }}
           MINUTES: ${{ inputs.minutes }}
           LEAD_MIN: ${{ inputs.lead }}
