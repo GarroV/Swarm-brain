@@ -32,7 +32,7 @@ Deno.test("get_tasks: неизвестный список — отказ со с
     assert(refused.includes(LABEL), refused);
 
     const ok = await toolGetTasks({ label: LABEL.toUpperCase(), requesting_user_id: USER });
-    assert(!ok.includes("не найден"), ok);
+    assert(!ok.includes("НЕ применён"), ok);
   } finally {
     await wipe();
   }
