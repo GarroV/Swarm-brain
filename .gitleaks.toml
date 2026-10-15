@@ -19,4 +19,6 @@ regexes = [
   # демо-JWT локального стенда: payload начинается с {"iss":"supabase-demo"
   '''eyJ[A-Za-z0-9_-]+\.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIi[A-Za-z0-9_-]*\.[A-Za-z0-9_-]+''',
   '''SECRET = "test-secret''',
+  # метка вывода ключа псевдонимов присутствия — не секрет (presence-pseudonyms.ts)
+  '''KEY_LABEL = "presence-pseudonym-v1''',
 ]

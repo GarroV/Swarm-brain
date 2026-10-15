@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils";
 import { fetchNotifications, markNotificationsRead, fetchTask, type SwarmNotification } from "@/lib/api";
 import { publishNotice } from "@/lib/deployNotice";
 import { playChime, unreadObserver } from "@/lib/notificationSound";
+import { PresenceStrip } from "@/components/presence/PresenceStrip";
 import { freezeNoticeText, freezeWindow } from "@/lib/maintenance";
 
 // Колокольчик уведомлений: бейдж непрочитанных + поповер-лента, клик по строке открывает
@@ -120,7 +121,12 @@ export function NotificationsBell({ className }: { className?: string }) {
   const locale = dt("ru-RU", "en-GB");
 
   return (
-    <div className={cn("relative", className)}>
+    // Полоска присутствия стоит слева от колокольчика: колокольчик рендерится в шапке каждого
+    // экрана, так полоска появляется везде без правки каждой шапки. Внешний div — раскладка
+    // (className вызывающего), внутренний relative — якорь поповера, как было.
+    <div className={cn("flex items-center gap-3", className)}>
+      <PresenceStrip />
+      <div className="relative">
       {open && (
         <>
           <button
@@ -254,6 +260,7 @@ export function NotificationsBell({ className }: { className?: string }) {
           </span>
         )}
       </button>
+      </div>
     </div>
   );
 }

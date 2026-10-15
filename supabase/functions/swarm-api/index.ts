@@ -1067,6 +1067,7 @@ async function routeRequest(req: Request): Promise<Response> {
       isAdmin,
       isSuperadmin: !isDemo && telegram_id === SUPERADMIN_TELEGRAM_ID,
       isDemo,
+      pseudonymSecret: WEB_JWT_SECRET,
     },
     origin,
   );
