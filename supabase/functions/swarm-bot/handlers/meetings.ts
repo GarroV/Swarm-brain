@@ -777,12 +777,12 @@ export async function handleMeetingSessionInput(
     }
     const { error } = await supabase.from("entries").update(updates).eq("id", entryId).eq("group_id", groupId);
     if (error) {
-      await sendMessage(chatId, `Ошибка: ${error.message}`);
+      await sendMessage(chatId, `Ошибка: ${escapeHtml(error.message)}`);
       return true;
     }
 
     const titleLine = newTitle ? `✅ Название: <b>${escapeHtml(newTitle)}</b>\n\n` : "";
-    await sendMessage(chatId, `${titleLine}✅ Тезисы обновлены.\n\n${newSummary.slice(0, 1400)}`, {
+    await sendMessage(chatId, `${titleLine}✅ Тезисы обновлены.\n\n${sanitizeModelHtml(newSummary.slice(0, 1400))}`, {
       inline_keyboard: [[{ text: "✅ Подтвердить встречу", callback_data: `mc_${entryId}` }]],
     });
     return true;
