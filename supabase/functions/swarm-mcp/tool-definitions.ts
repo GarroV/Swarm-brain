@@ -5,13 +5,13 @@ import {
   LABEL_TOOL_DEFINITIONS,
   PROJECT_TOOL_DEFINITIONS,
   TASK_TOOL_DEFINITIONS,
-} from "./tasks/tools.ts";
-import { ANALYTICS_TOOL_DEFINITIONS } from "./tasks/analytics.ts";
-import { SPRINT_TOOL_DEFINITIONS } from "./tasks/sprints.ts";
-import { PERSONAL_TOOL_DEFINITIONS } from "./tasks/personal.ts";
-import { MARKET_TOOL_DEFINITIONS } from "./market.ts";
-import { INSPECTION_TOOL_DEFINITIONS } from "./inspections.ts";
-import { MEETING_REVIEW_TOOL_DEFINITIONS } from "./meetings.ts";
+} from "./tasks/tools-defs.ts";
+import { ANALYTICS_TOOL_DEFINITIONS } from "./tasks/analytics-defs.ts";
+import { SPRINT_TOOL_DEFINITIONS } from "./tasks/sprints-defs.ts";
+import { PERSONAL_TOOL_DEFINITIONS } from "./tasks/personal-defs.ts";
+import { MARKET_TOOL_DEFINITIONS } from "./market-defs.ts";
+import { INSPECTION_TOOL_DEFINITIONS } from "./inspections-defs.ts";
+import { MEETING_REVIEW_TOOL_DEFINITIONS } from "./meetings-defs.ts";
 
 export const TOOLS = [
   {
