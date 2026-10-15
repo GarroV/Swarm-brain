@@ -1,7 +1,7 @@
-// Присутствие (#751): видно только админу, состояние считает сервер.
+// Присутствие (#751): админский GET видит только админ, состояние считает сервер, полоска анонимна.
 import { assertEquals } from "@std/assert";
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { handlePresenceRoutes, isOnline, parseLogMinutes, parsePing } from "./presence.ts";
+import { buildStrip, handlePresenceRoutes, isOnline, parseLogMinutes, parsePing } from "./presence.ts";
 
 const NO_DB = new Proxy({}, {
   get() {
@@ -60,9 +60,96 @@ Deno.test("окно журнала: 1…1440 минут, мусор — 60", () 
   assertEquals(parseLogMinutes("15"), 15);
 });
 
-Deno.test("в системе: пульс свежее 90 с и вкладка не скрыта", () => {
+Deno.test("в системе: пульс свежее 45 с и вкладка не скрыта", () => {
   const now = Date.parse("2026-10-09T12:00:00Z");
-  assertEquals(isOnline({ state: "idle", last_seen_at: "2026-10-09T11:59:00Z" }, now), true);
+  assertEquals(isOnline({ state: "idle", last_seen_at: "2026-10-09T11:59:30Z" }, now), true);
   assertEquals(isOnline({ state: "away", last_seen_at: "2026-10-09T11:59:50Z" }, now), false);
-  assertEquals(isOnline({ state: "active", last_seen_at: "2026-10-09T11:58:00Z" }, now), false);
+  assertEquals(isOnline({ state: "active", last_seen_at: "2026-10-09T11:59:00Z" }, now), false);
+});
+
+// ── Полоска /presence/strip ────────────────────────────────────────────────────────────────
+const NOW = Date.parse("2026-10-15T12:00:00Z");
+const MEMBERS = [101_234_567, 202_345_678, 303_456_789, 404_567_890];
+const fresh = "2026-10-15T11:59:50Z";
+
+Deno.test("полоска: себя нет, ушедших и протухших нет, чужой воркспейс не показывается", () => {
+  const strip = buildStrip(
+    MEMBERS,
+    [
+      { telegram_id: MEMBERS[0], section: "tasks", state: "active", last_seen_at: fresh },
+      { telegram_id: MEMBERS[1], section: "meetings", state: "idle", last_seen_at: fresh },
+      { telegram_id: MEMBERS[2], section: "home", state: "away", last_seen_at: fresh },
+      { telegram_id: MEMBERS[3], section: "home", state: "active", last_seen_at: "2026-10-15T11:58:00Z" },
+      { telegram_id: 999, section: "home", state: "active", last_seen_at: fresh },
+    ],
+    MEMBERS[0],
+    NOW,
+  );
+  assertEquals(strip.people.length, 1);
+  assertEquals(strip.people[0].section, "meetings");
+  assertEquals(strip.people[0].state, "idle");
+});
+
+Deno.test("полоска: активные первыми, зверь и стиль не меняются между вызовами", () => {
+  const rows = [
+    { telegram_id: MEMBERS[1], section: "a", state: "idle" as const, last_seen_at: fresh },
+    { telegram_id: MEMBERS[2], section: "b", state: "active" as const, last_seen_at: fresh },
+  ];
+  const a = buildStrip(MEMBERS, rows, MEMBERS[0], NOW);
+  const b = buildStrip(MEMBERS, [...rows].reverse(), MEMBERS[0], NOW);
+  assertEquals(a, b);
+  assertEquals(a.people.map((p) => p.state), ["active", "idle"]);
+});
+
+Deno.test("полоска: ответ не содержит telegram_id, имён и e-mail (детектор приватности)", async () => {
+  const rows = MEMBERS.map((id) => ({
+    telegram_id: id,
+    section: "tasks/mine/today",
+    state: "active",
+    last_seen_at: fresh,
+  }));
+  const supabase = {
+    from: (table: string) => {
+      const chain: Record<string, unknown> = {};
+      const data = table === "presence"
+        ? rows
+        : MEMBERS.map((telegram_id) => ({ telegram_id, email: "x@y.z", name: "Иван" }));
+      for (const m of ["select", "eq", "gte", "neq", "not"]) chain[m] = () => chain;
+      chain.then = (ok: (v: unknown) => unknown) => ok({ data, error: null });
+      return chain;
+    },
+  } as unknown as SupabaseClient;
+  const res = await handlePresenceRoutes(
+    supabase,
+    new Request("https://x/presence/strip"),
+    "/presence/strip",
+    { ...ctx, telegramId: MEMBERS[0] },
+    "",
+  );
+  assertEquals(res?.status, 200);
+  const text = await res!.text();
+  for (const id of MEMBERS) assertEquals(text.includes(String(id)), false, `id ${id} в ответе`);
+  for (const bad of ["telegram_id", "email", "name", "x@y.z", "Иван"]) {
+    assertEquals(text.includes(bad), false, `«${bad}» в ответе`);
+  }
+  const body = JSON.parse(text) as { window: number; people: Record<string, unknown>[] };
+  assertEquals(body.people.length, 3);
+  for (const p of body.people) assertEquals(Object.keys(p).sort(), ["animal", "key", "section", "state", "style"]);
+});
+
+Deno.test("полоска: демо — пустой список без базы; не GET — 405", async () => {
+  const demo = await handlePresenceRoutes(NO_DB, new Request("https://x/presence/strip"), "/presence/strip", {
+    ...ctx,
+    isDemo: true,
+  }, "");
+  assertEquals(demo?.status, 200);
+  assertEquals((await demo!.json()).people, []);
+  const post = await handlePresenceRoutes(
+    NO_DB,
+    new Request("https://x/presence/strip", { method: "POST" }),
+    "/presence/strip",
+    ctx,
+    "",
+  );
+  assertEquals(post?.status, 405);
 });

@@ -1,17 +1,20 @@
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { apiErr, corsHeaders, json } from "./http.ts";
 import { resolvePersonNames } from "../_shared/users/display-name.ts";
+import { assignPseudonyms, pseudonymWindow } from "./presence-pseudonyms.ts";
 
-// Присутствие (#751): кто, где, что и когда делает в вебе. БЕЗ вывода на экран — данные только
-// для админа через GET /presence. Канон схемы — миграция 20261009140000_presence.sql.
+// Присутствие (#751): кто, где, что и когда делает в вебе. Канон схемы — миграция
+// 20261009140000_presence.sql, решения — docs/decisions/2026-10-07-presence-avatars.md.
 //
-// Роуты: POST /presence (пульс любого вошедшего), GET /presence (только админ).
+// Роуты: POST /presence (пульс любого вошедшего), GET /presence (только админ, с настоящими
+// именами — для админки), GET /presence/strip (любой участник, анонимно — для полоски в шапке:
+// только зверь, стиль, раздел и состояние, ни id, ни имён).
 // Возвращает null, если путь не про присутствие.
 
 /** Раздел — короткий путь вида «tasks/mine/today» или «meetings/meetingdetail» (собирает веб). */
 const SECTION_RE = /^[a-z0-9_\-/]{1,40}$/;
-/** Пульс веба раз в 30 с; три пропущенных — человека в системе нет. */
-const ONLINE_WINDOW_MS = 90_000;
+/** Пульс веба раз в 15 с; три пропущенных — человека в системе нет (полоска должна быть живой). */
+const ONLINE_WINDOW_MS = 45_000;
 const LOG_MINUTES_DEFAULT = 60;
 const LOG_MINUTES_MAX = 1440;
 const LOG_ROWS_MAX = 5000;
@@ -58,6 +61,57 @@ type LogRow = {
 /** Кто сейчас в системе: свежий пульс и вкладка не скрыта. */
 export function isOnline(row: Pick<PresenceRow, "state" | "last_seen_at">, now: number): boolean {
   return row.state !== "away" && now - Date.parse(row.last_seen_at) < ONLINE_WINDOW_MS;
+}
+
+export type StripPerson = { key: string; animal: number; style: number; section: string; state: "active" | "idle" };
+export type StripPayload = { window: number; people: StripPerson[] };
+
+/**
+ * Полоска: онлайн-участники (кроме самого смотрящего) в виде зверей. Только индексы зверя и
+ * стиля, раздел и состояние; telegram_id наружу не выходит. Раздают по ВСЕМ участникам
+ * пространства (`memberIds`), поэтому зверь не меняется, когда кто-то заходит или уходит.
+ */
+export function buildStrip(
+  memberIds: readonly number[],
+  rows: readonly Pick<PresenceRow, "telegram_id" | "section" | "state" | "last_seen_at">[],
+  selfId: number,
+  now: number,
+): StripPayload {
+  const window = pseudonymWindow(now);
+  const pseudonyms = assignPseudonyms(memberIds, window);
+  const people: StripPerson[] = [];
+  for (const r of rows) {
+    if (r.telegram_id === selfId || !isOnline(r, now)) continue;
+    const p = pseudonyms.get(r.telegram_id);
+    if (!p) continue; // пульс от того, кого нет в составе пространства, — не показываем
+    people.push({
+      key: `${p.animal}-${p.style}`,
+      animal: p.animal,
+      style: p.style,
+      section: r.section,
+      state: r.state === "active" ? "active" : "idle",
+    });
+  }
+  // Порядок не должен выдавать никого по id: активные первыми, дальше по зверю.
+  people.sort((a, b) => Number(b.state === "active") - Number(a.state === "active") || a.animal - b.animal);
+  return { window, people };
+}
+
+async function readStrip(supabase: SupabaseClient, groupId: string, selfId: number, origin: string): Promise<Response> {
+  const now = Date.now();
+  const onlineIso = new Date(now - ONLINE_WINDOW_MS).toISOString();
+  const [rowsRes, membersRes] = await Promise.all([
+    supabase.from("presence").select("telegram_id, section, state, last_seen_at")
+      .eq("group_id", groupId).gte("last_seen_at", onlineIso).neq("state", "away"),
+    supabase.from("allowed_users").select("telegram_id").eq("group_id", groupId).not("telegram_id", "is", null),
+  ]);
+  if (rowsRes.error || membersRes.error) {
+    console.error("presence: полоска", rowsRes.error?.message ?? membersRes.error?.message);
+    return apiErr(500, "Could not read presence", origin);
+  }
+  const memberIds = ((membersRes.data ?? []) as { telegram_id: number }[]).map((m) => m.telegram_id);
+  const rows = (rowsRes.data ?? []) as Pick<PresenceRow, "telegram_id" | "section" | "state" | "last_seen_at">[];
+  return json(buildStrip(memberIds, rows, selfId, now), 200, origin); // json() отдаёт no-store
 }
 
 async function readPresence(
@@ -120,6 +174,12 @@ export async function handlePresenceRoutes(
   },
   origin: string,
 ): Promise<Response | null> {
+  if (routePath === "/presence/strip") {
+    if (req.method !== "GET") return apiErr(405, "Method not allowed", origin);
+    // Демо-сессия — одна на всех зрителей витрины: показывать там нечего.
+    if (ctx.isDemo) return json({ window: pseudonymWindow(Date.now()), people: [] }, 200, origin);
+    return readStrip(supabase, ctx.groupId, ctx.telegramId, origin);
+  }
   if (routePath !== "/presence") return null;
 
   if (req.method === "POST") {
