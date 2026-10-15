@@ -16,6 +16,7 @@ const DRAG_THRESHOLD = 4;
 const LABELS: Record<TaskColumn, [string, string]> = {
   task: ["Задача", "Task"],
   due: ["Срок", "Due"],
+  ping: ["Пинг", "Ping"],
   actions: ["", ""],
   market: ["Рынок", "Market"],
   project: ["Проект", "Project"],

@@ -101,6 +101,16 @@ export function isDone(task: Task): boolean {
   return statusBucket(task) === "done";
 }
 
+/**
+ * Ожидающий пинг задачи — «YYYY-MM-DD» или null. Ждущим пинг считается, пока задача не закрыта и
+ * он не сработал (`reminded_at`): сгоревшая дата вводила бы в заблуждение — «напомнят», хотя уже
+ * напомнили. Одно правило для мобильной строки, колонки «Пинг» и главной.
+ */
+export function pendingPingDay(task: Task): string | null {
+  if (!task.remind_date || task.reminded_at || isDone(task)) return null;
+  return task.remind_date.slice(0, 10);
+}
+
 // Локальная полночь переданной даты (день без времени), в часовом поясе устройства.
 function midnight(d: Date): number {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();

@@ -203,10 +203,12 @@ export function NotificationsBell({ className }: { className?: string }) {
                         {/* У пинга нет автора и текста: событие системное, и «— : » выглядело бы поломкой. */}
                         {n.type === "maintenance" ? (
                           <MaintenanceLine n={n} dt={dt} locale={locale} />
-                        ) : n.type === "task_reminder" ? (
+                        ) : n.type === "task_reminder" || n.type === "task_due_soon" ? (
                           <span className="inline-flex items-center gap-1 font-semibold text-accent-ink">
                             <RoyIcon name="bell" size={11} />
-                            {dt("Напоминание, которое ты поставил", "The reminder you set")}
+                            {n.type === "task_due_soon"
+                              ? dt("Срок завтра", "Due tomorrow")
+                              : dt("Напоминание, которое ты поставил", "The reminder you set")}
                           </span>
                         ) : (
                           <>
