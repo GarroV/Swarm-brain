@@ -93,6 +93,11 @@ function nextDay(day: string): string {
   return d.toISOString();
 }
 
+/** Значение в двойных кавычках условия PostgREST: `\\` и `"` экранируются, запятые и скобки остаются текстом. */
+export function quotePostgrestValue(raw: string): string {
+  return `"${raw.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
+}
+
 /**
  * Накладывает фильтры экрана на запрос списка. Каждый `.or()` в postgrest-js — отдельное
  * условие через И, поэтому они не затирают privacy-фильтр, уже стоящий на запросе.
@@ -104,7 +109,7 @@ function nextDay(day: string): string {
 export function applyListFilters<T extends Filterable<T>>(q: T, p: MeetingsListParams): T {
   let out = q;
   if (p.q) {
-    const pat = `"*${p.q}*"`;
+    const pat = quotePostgrestValue(`*${p.q}*`);
     out = out.or(
       `metadata->>title.ilike.${pat},and(metadata->>title.is.null,or(summary_preview.ilike.${pat},content_preview.ilike.${pat}))`,
     );

@@ -29,6 +29,7 @@ import {
   type RecentCommentRow,
 } from "./format.ts";
 import { notifyPerson } from "../../_shared/notify-person.ts";
+import { escapeHtml } from "../../_shared/telegram-html.ts";
 
 // Оверсайт руководителя по ЗАДАЧАМ — осознанное решение владельца, см. docs/decisions/2026-08-21-admin-visibility.md.
 // На проекты и записи он НЕ распространяется.
@@ -37,7 +38,9 @@ export const ADMIN_USER_ID = 744230399;
 // «Подтверди в боте» — уведомление по инициативе бота: в комендантский час (23:00–9:00 МСК) ждёт
 // утра в `telegram_outbox`. Сбой доставки не должен ронять создание задачи — она уже записана.
 async function notifyCreator(telegramId: number, taskTitle: string): Promise<void> {
-  const text = `📋 Новая задача на проверке: <b>${taskTitle}</b>\n\nОткрой /tasks → ⏳ На проверке чтобы подтвердить.`;
+  const text = `📋 Новая задача на проверке: <b>${
+    escapeHtml(taskTitle)
+  }</b>\n\nОткрой /tasks → ⏳ На проверке чтобы подтвердить.`;
   try {
     await notifyPerson(supabase, {
       recipientId: telegramId,

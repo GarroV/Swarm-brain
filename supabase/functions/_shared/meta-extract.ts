@@ -10,6 +10,7 @@
 import { COUNTRY_PROMPT_RULE, ENTRY_TYPE_PROMPT_RULE, normalizeCountries } from "./countries.ts";
 import { normalizeExtractedEventDate, todayIso } from "./llm-date.ts";
 import { externalFetch, VIA_OPENAI_CHAT, VIA_OPENAI_EMBEDDING } from "./external-fetch.ts";
+import { UNTRUSTED_DATA_RULE, wrapUntrustedForModel } from "./untrusted-prompt.ts";
 
 const OPENAI = "https://api.openai.com/v1";
 
@@ -66,7 +67,8 @@ export function buildEntryMetaPrompt(today: string): string {
     '{"countries":["Spain","Bulgaria"],"entry_type":"meeting|note","entry_date":"YYYY-MM-DD или null"}\n' +
     COUNTRY_PROMPT_RULE + "\n" +
     ENTRY_TYPE_PROMPT_RULE + "\n" +
-    "entry_date — дата события из текста, null если нет. Год считай от сегодняшней даты: назван только день и месяц — бери ближайший подходящий год, НИКОГДА не из головы.";
+    "entry_date — дата события из текста, null если нет. Год считай от сегодняшней даты: назван только день и месяц — бери ближайший подходящий год, НИКОГДА не из головы.\n" +
+    UNTRUSTED_DATA_RULE;
 }
 
 // Разбор ответа модели. Слой 2 против выдуманного года: дата вне окна −400…+7 дней
@@ -100,7 +102,7 @@ export async function extractEntryMeta(
         response_format: { type: "json_object" },
         messages: [
           { role: "system", content: buildEntryMetaPrompt(today) },
-          { role: "user", content: content.slice(0, META_INPUT_CHARS) },
+          { role: "user", content: wrapUntrustedForModel(content.slice(0, META_INPUT_CHARS)) },
         ],
         max_tokens: 200,
       }),

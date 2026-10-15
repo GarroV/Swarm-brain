@@ -13,6 +13,7 @@ import { brokeMessage, decideNotice, describeGranolaFailure, recoveredMessage } 
 
 const GRANOLA_API = "https://public-api.granola.ai/v1";
 import { WEB_BASE_URL as WEB_URL } from "../lib/web-url.ts";
+import { escapeHtml, sanitizeModelHtml } from "../../_shared/telegram-html.ts";
 
 // Единый промпт тезисов — общий канон из _shared/tezisy-prompt.ts (DRY с рекордером/read-ai),
 // чтобы тезисы выглядели одинаково независимо от точки входа.
@@ -173,8 +174,8 @@ async function offerNextGranolaNote(chatId: number, telegramId: number): Promise
     .map((a) => a.name || a.email || "").filter(Boolean).slice(0, 4).join(", ");
 
   const counter = remaining.length > 1 ? ` · ещё ${remaining.length - 1}` : "";
-  const text = `➡️ Следующая встреча${counter}:\n📓 <b>${title}</b>\n📅 ${date}${
-    attendeeNames ? `\n👥 ${attendeeNames}` : ""
+  const text = `➡️ Следующая встреча${counter}:\n📓 <b>${escapeHtml(title)}</b>\n📅 ${date}${
+    attendeeNames ? `\n👥 ${escapeHtml(attendeeNames)}` : ""
   }`;
   await sendInlineMessage(chatId, text, [[
     { text: "🔍 Тезисы", callback_data: `gp_${note.id}` },
@@ -293,7 +294,7 @@ async function saveGranolaNote(
   });
   if (dup) {
     await markSkipped(telegramId, noteId);
-    await sendMessage(chatId, `Эта встреча уже в базе: <b>${dup.title}</b> — повторно не импортирую.`);
+    await sendMessage(chatId, `Эта встреча уже в базе: <b>${escapeHtml(dup.title)}</b> — повторно не импортирую.`);
     return false;
   }
 
@@ -317,7 +318,7 @@ async function saveGranolaNote(
   if (error) {
     if ((error as { code?: string }).code === "23505") {
       await markSkipped(telegramId, noteId);
-      await sendMessage(chatId, `Уже в очереди вычитки: <b>${title}</b>.`);
+      await sendMessage(chatId, `Уже в очереди вычитки: <b>${escapeHtml(title)}</b>.`);
       return true;
     }
     await sendMessage(chatId, `Ошибка импорта: ${error.message}`);
@@ -326,7 +327,9 @@ async function saveGranolaNote(
 
   await sendMessage(
     chatId,
-    `✅ В очереди вычитки: <b>${title}</b>\nОткрой <a href="${WEB_URL}">Swarm Brain</a> → Встречи → «на вычитке», проверь и опубликуй.`,
+    `✅ В очереди вычитки: <b>${
+      escapeHtml(title)
+    }</b>\nОткрой <a href="${WEB_URL}">Swarm Brain</a> → Встречи → «на вычитке», проверь и опубликуй.`,
   );
   return true;
 }
@@ -374,7 +377,9 @@ async function sendNotesList(
     const attendeeNames = (note.attendees ?? [])
       .map((a) => a.name || a.email || "").filter(Boolean).slice(0, 4).join(", ");
 
-    const text = `📓 <b>${title}</b>\n📅 ${date}${attendeeNames ? `\n👥 ${attendeeNames}` : ""}`;
+    const text = `📓 <b>${escapeHtml(title)}</b>\n📅 ${date}${
+      attendeeNames ? `\n👥 ${escapeHtml(attendeeNames)}` : ""
+    }`;
     await sendInlineMessage(chatId, text, [[
       { text: "🔍 Тезисы", callback_data: `gp_${note.id}` },
       { text: "🗑 Пропустить", callback_data: `gd_${note.id}` },
@@ -426,7 +431,9 @@ export async function pollGranolaForUser(chatId: number, telegramId: number): Pr
       });
       const attendeeNames = (note.attendees ?? [])
         .map((a) => a.name || a.email || "").filter(Boolean).slice(0, 4).join(", ");
-      const text = `📓 <b>${title}</b>\n📅 ${date}${attendeeNames ? `\n👥 ${attendeeNames}` : ""}`;
+      const text = `📓 <b>${escapeHtml(title)}</b>\n📅 ${date}${
+        attendeeNames ? `\n👥 ${escapeHtml(attendeeNames)}` : ""
+      }`;
       await sendInlineMessage(chatId, text, [[
         { text: "🔍 Тезисы", callback_data: `gp_${note.id}` },
         { text: "🗑 Пропустить", callback_data: `gd_${note.id}` },
@@ -535,8 +542,8 @@ async function ingestNewGranolaNotesForUser(integration: {
     });
     const attendeeNames = (note.attendees ?? [])
       .map((a) => a.name || a.email || "").filter(Boolean).slice(0, 4).join(", ");
-    let text = `📓 <b>Новая встреча Granola</b>\n<b>${title}</b>\n📅 ${date}`;
-    if (attendeeNames) text += `\n👥 ${attendeeNames}`;
+    let text = `📓 <b>Новая встреча Granola</b>\n<b>${escapeHtml(title)}</b>\n📅 ${date}`;
+    if (attendeeNames) text += `\n👥 ${escapeHtml(attendeeNames)}`;
     text +=
       `\n\nДобавлена в очередь вычитки. Открой <a href="${WEB_URL}">Swarm Brain</a> → Встречи → «на вычитке», проверь тезисы и опубликуй.`;
     await notifyMessage(integration.telegram_id, text, "granola_new_meeting");
@@ -664,7 +671,7 @@ export async function handleGranolaCallbacks(
 
     await setSession(chatId, `granola_preview_${noteId}`, JSON.stringify({ content, title, tezises }));
 
-    await sendMessage(chatId, `📓 <b>${title}</b>\n\n${tezises}`);
+    await sendMessage(chatId, `📓 <b>${escapeHtml(title)}</b>\n\n${sanitizeModelHtml(tezises)}`);
     await sendInlineMessage(chatId, "Сохранить в базу знаний?", [
       [
         { text: "✅ В базу", callback_data: `gc_${noteId}` },
@@ -772,7 +779,7 @@ export async function handleGranolaSessionInput(
     const updatedCache: GranolaPreviewCache = { ...cached, title: newTitle, tezises: newTezises };
     await setSession(chatId, `granola_preview_${noteId}`, JSON.stringify(updatedCache));
 
-    await sendMessage(chatId, `📓 <b>${newTitle}</b>\n\n${newTezises}`);
+    await sendMessage(chatId, `📓 <b>${escapeHtml(newTitle)}</b>\n\n${sanitizeModelHtml(newTezises)}`);
     await sendInlineMessage(chatId, "Сохранить в базу знаний?", [
       [
         { text: "✅ В базу", callback_data: `gc_${noteId}` },
