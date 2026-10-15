@@ -4,6 +4,7 @@ import {
   formatProjectTree,
   formatRecentComments,
   formatTaskLine,
+  labelNotFoundMessage,
   projectNotFoundMessage,
   type ProjectTreeRow,
 } from "./format.ts";
@@ -248,4 +249,15 @@ Deno.test("formatProjectTree: группа спринта помечена — �
   ]);
   assertEquals(out.includes("Связка (группа спринта)"), true);
   assertEquals(out.includes("Проект (группа спринта)"), false);
+});
+
+Deno.test("labelNotFoundMessage: говорит, что фильтр НЕ применён, и называет свои списки", () => {
+  const msg = labelNotFoundMessage("IMF", ["IMF & HQ IT 2025-2026", "Личное"]);
+  assertStringIncludes(msg, "«IMF»");
+  assertStringIncludes(msg, "НЕ применён");
+  assertStringIncludes(msg, "IMF & HQ IT 2025-2026, Личное");
+});
+
+Deno.test("labelNotFoundMessage: у пользователя нет списков — так и говорит", () => {
+  assertStringIncludes(labelNotFoundMessage("IMF", []), "нет списков");
 });
