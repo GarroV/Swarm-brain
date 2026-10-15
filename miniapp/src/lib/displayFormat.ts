@@ -28,3 +28,13 @@ export function formatDate(
   if (Number.isNaN(d.getTime())) return null;
   return d.toLocaleDateString(locale, options);
 }
+
+/**
+ * Короткая дата («16 окт» / «16 Oct») из голого дня «YYYY-MM-DD». Читаем как местный день:
+ * `new Date("2026-10-16")` — полночь UTC, и западнее UTC день уехал бы на вчера.
+ */
+export function formatDay(day: string, locale = uiLocale()): string {
+  const [y, m, d] = day.slice(0, 10).split("-").map(Number);
+  if (!y || !m || !d) return day;
+  return new Date(y, m - 1, d).toLocaleDateString(locale, { day: "numeric", month: "short" }).replace(".", "");
+}

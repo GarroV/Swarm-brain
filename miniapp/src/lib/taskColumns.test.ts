@@ -23,24 +23,29 @@ Deno.test("сохранённая ширина вне пределов приж�
   assertEquals(widths, { task: 900, project: 72, assignee: 200, lists: DEFAULT_COLUMN_WIDTHS.lists });
 });
 
-Deno.test("порядок: чужие колонки выкидываются, дубли схлопываются, новые — в конец", () => {
+Deno.test("порядок: чужие колонки выкидываются, дубли схлопываются, новые — на своё место", () => {
   const { order } = resolveColumnLayout({ order: ["lists", "ghost", "lists", "due", "task"] });
-  assertEquals(order, ["lists", "due", "actions", "market", "project", "assignee"]);
+  assertEquals(order, ["lists", "due", "ping", "actions", "market", "project", "assignee"]);
+});
+
+Deno.test("«Пинг» в раскладке, сохранённой до его появления, встаёт сразу после «Срока»", () => {
+  const { order } = resolveColumnLayout({ order: ["assignee", "due", "actions", "market", "project", "lists"] });
+  assertEquals(order, ["assignee", "due", "ping", "actions", "market", "project", "lists"]);
 });
 
 Deno.test("перестановка ставит колонку на место цели и не мутирует исходный порядок", () => {
   const before = [...DEFAULT_ORDER];
-  assertEquals(moveColumn(before, "due", "project"), ["actions", "market", "project", "due", "assignee", "lists"]);
-  assertEquals(moveColumn(before, "lists", "actions"), ["due", "lists", "actions", "market", "project", "assignee"]);
+  assertEquals(moveColumn(before, "due", "project"), ["ping", "actions", "market", "project", "due", "assignee", "lists"]);
+  assertEquals(moveColumn(before, "lists", "actions"), ["due", "ping", "lists", "actions", "market", "project", "assignee"]);
   assertEquals(moveColumn(before, "due", "due"), before);
   assertEquals(before, [...DEFAULT_ORDER]);
 });
 
 Deno.test("сетка идёт за порядком, а на узкой раскладке — без «Проекта» и «Списков»", () => {
   const l = { ...defaultLayout(), order: moveColumn(DEFAULT_ORDER, "assignee", "due") };
-  assertEquals(gridTemplate(l, false), "minmax(260px,1fr) 160px 88px 168px 64px 128px 104px");
-  assertEquals(gridTemplate(l, true), "minmax(260px,1fr) 160px 88px 168px 64px");
-  assertEquals(gridMinWidth(l, true), 260 + 160 + 88 + 168 + 64);
+  assertEquals(gridTemplate(l, false), "minmax(260px,1fr) 160px 88px 80px 168px 64px 128px 104px");
+  assertEquals(gridTemplate(l, true), "minmax(260px,1fr) 160px 88px 80px 168px 64px");
+  assertEquals(gridMinWidth(l, true), 260 + 160 + 88 + 80 + 168 + 64);
 });
 
 Deno.test("дефолт распознаётся, любая правка — нет", () => {

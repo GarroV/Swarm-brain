@@ -10,7 +10,7 @@
 //     «что я закрыл сегодня»), для остальных — по сроку.
 import { assertEquals } from "jsr:@std/assert";
 import {
-  statusBucket, filterTasks, countLists, matchesList, inPeriodOrOverdue, filterByLabel, countByLabel, DEFAULT_STATUSES,
+  statusBucket, pendingPingDay, filterTasks, countLists, matchesList, inPeriodOrOverdue, filterByLabel, countByLabel, DEFAULT_STATUSES,
   type StatusFilter, type SmartListId,
 } from "./smartLists.ts";
 import { presetRange, customRange } from "./dateRange.ts";
@@ -253,4 +253,12 @@ Deno.test("период: смарт-метка тоже держит проср�
   assertEquals(countByLabel([t], "L1", THIS_WEEK, MONDAY), 1);
   assertEquals(countByLabel([t], "L1", presetRange("prev_week", MONDAY), MONDAY), 1); // своя дата в прошлой неделе
   assertEquals(countByLabel([task({ id: "x", due_date: "2026-08-20", label_ids: ["L1"] })], "L1", presetRange("prev_week", MONDAY), MONDAY), 0);
+});
+
+Deno.test("pendingPingDay: ждущий пинг — дата; сработавший, у закрытой и без даты — null", () => {
+  assertEquals(pendingPingDay(task({ id: "p", remind_date: "2026-10-20" })), "2026-10-20");
+  assertEquals(pendingPingDay(task({ id: "p", remind_date: "2026-10-20T00:00:00Z" })), "2026-10-20");
+  assertEquals(pendingPingDay(task({ id: "p", remind_date: "2026-10-20", reminded_at: "2026-10-20T07:00:00Z" })), null);
+  assertEquals(pendingPingDay(task({ id: "p", remind_date: "2026-10-20", status: "done" })), null);
+  assertEquals(pendingPingDay(task({ id: "p", remind_date: null })), null);
 });

@@ -150,19 +150,25 @@ function escapeHtml(s: string): string {
 
 // Сообщение с пингами одного человека. Кнопка ведёт в веб (как у напоминаний о вычитке —
 // уводим из Telegram туда, где задачу можно закрыть или передвинуть).
-export function formatPings(rows: PingRow[], webBaseUrl: string): { text: string; keyboard: InlineUrlButton[][] } {
+// `heading` — заголовок: у ручного пинга «Напоминание», у напоминания о сроке «Срок завтра»
+// (task-due-reminders.ts); остальной формат один.
+export function formatPings(
+  rows: PingRow[],
+  webBaseUrl: string,
+  heading = "Напоминание",
+): { text: string; keyboard: InlineUrlButton[][] } {
   const n = rows.length;
   const line = (r: PingRow) => `• ${escapeHtml(r.title)}${r.due_date ? ` · срок ${ruShortDate(r.due_date)}` : ""}`;
 
   if (n === 1) {
     const r = rows[0];
     const due = r.due_date ? `\nСрок: ${ruShortDate(r.due_date)}` : "";
-    const text = `🔔 <b>Напоминание</b>\n«${escapeHtml(r.title)}»${due}`;
+    const text = `🔔 <b>${heading}</b>\n«${escapeHtml(r.title)}»${due}`;
     const keyboard = webBaseUrl ? [[{ text: "Открыть задачу", url: `${webBaseUrl}/?task=${r.id}` }]] : [];
     return { text: webBaseUrl ? text : `${text}\n\nОткрой /tasks`, keyboard };
   }
 
-  const header = `🔔 <b>Напоминание</b> по ${n} ${plural(n)}`;
+  const header = `🔔 <b>${heading}</b> по ${n} ${plural(n)}`;
   const shown = rows.slice(0, MAX_BUTTONS);
   const rest = n - shown.length;
   const tail = rest > 0 ? `\n…и ещё ${rest}` : "";
