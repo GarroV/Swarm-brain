@@ -25,6 +25,7 @@ import {
   formatProjectTree,
   formatRecentComments,
   formatTaskLine,
+  labelNotFoundMessage,
   projectNotFoundMessage,
   type RecentCommentRow,
 } from "./format.ts";
@@ -549,6 +550,13 @@ export async function toolGetTasks(args: {
   if (!groupId) return "Ошибка: пользователь не найден в системе.";
 
   const labelIds = args.label ? await resolveLabelIds(args.requesting_user_id, [args.label], false) : [];
+  // Неизвестный список — ОТКАЗ, а не молча снятый фильтр (issue #886).
+  if (args.label && !labelIds.length) {
+    const { data } = await supabase
+      .from("task_labels").select("name").eq("owner_id", args.requesting_user_id).order("sort_order");
+    const names = ((data ?? []) as Array<{ name: string }>).map((r) => r.name);
+    return labelNotFoundMessage(args.label, names);
+  }
 
   // Проект/подпроект доски (issue #28). Не найден — ОТКАЗ, а не игнор фильтра (issue #199):
   // молча отданная полная доска неотличима от «в проекте столько задач», и агент докладывает
