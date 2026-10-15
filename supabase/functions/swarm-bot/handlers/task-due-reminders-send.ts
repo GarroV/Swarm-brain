@@ -13,7 +13,7 @@ import { onlyLive } from "../../_shared/tasks/live.ts";
 
 const WEB_BASE_URL = Deno.env.get("WEB_BASE_URL") ?? "";
 const SELECT_DUE =
-  "id, title, remind_date, reminded_at, due_date, status, assignee_telegram_ids, created_by_telegram_id, remind_set_by, archived_at, due_reminded_for, due_reminder_delivered_to";
+  "id, title, remind_date, reminded_at, due_date, status, assignee_telegram_ids, created_by_telegram_id, remind_set_by, archived_at, created_at, due_reminded_for, due_reminder_delivered_to";
 // Со сроком на завтра бывает много задач (срок по умолчанию — завтра, и закрытые среди них тоже).
 const MAX_PER_TICK = 1000;
 

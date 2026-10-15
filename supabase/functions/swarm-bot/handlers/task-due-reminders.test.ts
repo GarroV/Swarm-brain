@@ -99,3 +99,12 @@ Deno.test("отправка: ночью (комендантский час) ок
     assertEquals(todayIn(new Date()), TODAY);
   }
 });
+
+Deno.test("isDueReminderDue: задачу, заведённую в день напоминания, не напоминаем", () => {
+  // Белград в октябре UTC+2: 14.10 22:30Z — уже 00:30 15-го; 14.10 21:30Z — ещё 23:30 14-го.
+  assertEquals(isDueReminderDue(row({ created_at: "2026-10-15T08:00:00Z" }), TODAY), false);
+  assertEquals(isDueReminderDue(row({ created_at: "2026-10-15T21:30:00Z" }), TODAY), false);
+  assertEquals(isDueReminderDue(row({ created_at: "2026-10-14T22:30:00Z" }), TODAY), false);
+  assertEquals(isDueReminderDue(row({ created_at: "2026-10-14T21:30:00Z" }), TODAY), true);
+  assertEquals(isDueReminderDue(row({ created_at: null }), TODAY), true);
+});

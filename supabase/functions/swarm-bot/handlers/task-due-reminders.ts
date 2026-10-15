@@ -7,10 +7,13 @@
 //   и сегодняшние не трогаем;
 // • одно напоминание на срок: `due_reminded_for` хранит срок, о котором уже напомнили, — перенос
 //   срока даёт новое напоминание за день до нового;
+// • задачу, созданную в день напоминания, не напоминаем: человек её только что завёл, а срок по
+//   умолчанию — завтра (владелец 15.10.2026, «делай»);
 // • ручной пинг важнее: задача с ожидающим пингом (или пингом, сработавшим сегодня) пропускается;
 // • адресаты и недоставка — как у ручного пинга (`pingRecipients`, дошедшим повторно не шлём).
 
 import { addDays } from "../../_shared/tasks/due.ts";
+import { todayInTz } from "../../_shared/tasks/recurrence.ts";
 import { isClosedStatus } from "../../_shared/tasks/statuses.ts";
 import { formatPings, type InlineUrlButton, pingRecipients, type PingRow } from "./task-pings.ts";
 
@@ -20,6 +23,8 @@ export const DUE_REMINDER_HEADING = "Срок завтра";
 export interface DueRow extends PingRow {
   /** Когда сработал ручной пинг (если сработал). */
   reminded_at?: string | null;
+  /** Когда задачу создали (timestamptz). */
+  created_at?: string | null;
   /** Срок, о котором уже напомнили за день. */
   due_reminded_for?: string | null;
   /** Кому напоминание о текущем сроке уже дошло. */
@@ -35,6 +40,8 @@ export function isDueReminderDue(row: DueRow, today: string): boolean {
   if (!row.due_date || row.archived_at || isClosedStatus(row.status)) return false;
   if (row.due_date !== addDays(today, 1)) return false;
   if (row.due_reminded_for === row.due_date) return false;
+  // Заведена сегодня (по календарю команды) — напоминать о ней в тот же день незачем.
+  if (row.created_at && todayInTz(new Date(row.created_at)) >= today) return false;
   if (row.remind_date && (!row.reminded_at || row.remind_date >= today)) return false;
   return true;
 }
