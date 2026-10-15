@@ -15,7 +15,8 @@ import { normalizeExtractedDueDate, todayIso } from "../../_shared/llm-date.ts";
 import type { Task } from "./types.ts";
 import type { TgCallbackQuery } from "../lib/types.ts";
 import { onlyLive } from "../../_shared/tasks/live.ts";
-import { externalFetch, VIA_TELEGRAM, VIA_TELEGRAM_UPLOAD } from "../../_shared/external-fetch.ts";
+import { externalFetch, VIA_TELEGRAM_UPLOAD } from "../../_shared/external-fetch.ts";
+import { notifyMessage } from "../lib/notify.ts";
 
 const TELEGRAM_BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN")!;
 
@@ -41,15 +42,12 @@ async function broadcastTaskAssigned(task: Task, groupId: string): Promise<void>
   const country = task.country ? ` · ${task.country}` : "";
   const text = `📋 Тебе назначена задача: <b>${task.title}</b>${country}${due}`;
 
-  await Promise.all(
-    recipientIds.map((id) =>
-      externalFetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ chat_id: id, text, parse_mode: "HTML" }),
-      }, VIA_TELEGRAM)
-    ),
-  );
+  // Уведомление по инициативе бота: в комендантский час (23:00–9:00 МСК) ждёт утра в `telegram_outbox`.
+  // Заблокировавший бота исполнитель не должен ронять создание задачи, уже записанной выше.
+  const results = await Promise.allSettled(recipientIds.map((id) => notifyMessage(id, text, "task_assigned")));
+  for (const r of results) {
+    if (r.status === "rejected") console.error("broadcastTaskAssigned failed:", r.reason);
+  }
 }
 
 export const TASK_KEYWORDS = /задач|таск|task|сделать|выполнить|поручен|назначен|дедлайн|deadline|кто должен/i;

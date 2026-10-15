@@ -5,7 +5,7 @@ import { ProjectMapButton } from "./dash/ProjectMapButton";
 import { HomeGrid } from "./home/HomeGrid";
 import { NotificationsBell } from "./NotificationsBell";
 import { RoyIcon } from "./icons";
-import { ROY_TYPE } from "./ui";
+import { ROY_TYPE, SHELL_BAR_H } from "./ui";
 import { useDt, useRoyNav } from "./nav";
 import { saveRecent } from "./screens/SearchScreen";
 import { HeaderNotice } from "./DeployNoticeBar";
@@ -14,7 +14,7 @@ import type { TaskDraft } from "@/lib/homeInspections";
 
 // Главная (десктоп) — сборная из виджетов: docs/decisions/2026-10-07-home-dashboard-direction.md.
 // Каждый собирает её сам (home/HomeGrid.tsx, раскладка — lib/homeLayout.ts); по умолчанию сверху
-// созвоны и ближайшие задачи, доска стикеров, РС и РКО по своей подборке стран, пиццерии.
+// доска стикеров, под ней колонки: РКО и РС слева, созвоны и ближайшие задачи справа; дальше пиццерии.
 // Прежние таблицы «Мои задачи» / «Задачи команды», «Новости» и «Последнее в базе» (стенд
 // 24.09.2026) остались виджетами каталога. Поиск — в шапке. На мобайле экран не рендерится.
 
@@ -51,7 +51,7 @@ function HomeHeader({ editing, onEdit }: { editing: boolean; onEdit: () => void 
   };
   return (
     // relative z-30: окна шапки — поверх содержимого экрана (#487).
-    <div className="relative z-30 flex shrink-0 items-center gap-3 border-b border-line px-6 py-3">
+    <div className="relative z-30 flex shrink-0 items-center gap-3 border-b border-line px-6" style={{ height: SHELL_BAR_H }}>
       <h1 className="leading-[1.1]" style={ROY_TYPE.pageTitle}>{dt("Главная", "Home")}</h1>
       {/* Плашка делит место с поиском: на тесной шапке ужимается поиск (у плашки shrink 0.01), до
           220px, и только потом плашка переносит текст. Раньше поиск (w-full) забирал всё, и плашка

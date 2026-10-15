@@ -40,8 +40,19 @@ Deno.test("groupByDue: секции в фиксированном порядке
     task({ id: "over", due_date: "2026-09-20" }),
     task({ id: "done", status: "done" }),
   ], NOW, 0);
-  assertEquals(got.map((s) => s.key), ["over", "later", "done"]);
-  assertEquals(got[0].label, "Просрочено");
+  assertEquals(got.map((s) => s.key), ["today", "later", "done"]);
+  assertEquals(got[0].label, "Задачи сегодня");
+});
+
+Deno.test("groupByDue: просроченные и сегодняшние — одна секция «Задачи сегодня», просроченные сверху", () => {
+  const got = groupByDue([
+    task({ id: "today", due_date: NOW.toISOString() }),
+    task({ id: "over", due_date: "2026-09-20" }),
+    task({ id: "later", due_date: "2026-10-01" }),
+  ], NOW, 0);
+  assertEquals(got.map((s) => s.key), ["today", "later"]);
+  assertEquals(got[0].tasks.map((t) => t.id), ["over", "today"]);
+  assertEquals(got[0].late, 1);
 });
 
 Deno.test("groupByPerson: заваленные сверху, «не назначен» последним, двое исполнителей — в обеих группах", () => {

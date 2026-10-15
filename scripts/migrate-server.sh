@@ -46,7 +46,10 @@ fi
 
 # Версии с одинаковым числом цифр сортируются как строки; разной длины (00000000, 20260519) —
 # тоже верно, потому что порядок задаёт лексикографика, как и у самого CLI.
-mapfile -t pending < <(printf '%s\n' "${pending[@]}" | sort)
+# Без mapfile: на macOS bash 3.2 его нет (#942).
+sorted=()
+while IFS= read -r line; do sorted+=("$line"); done < <(printf '%s\n' "${pending[@]}" | sort)
+pending=("${sorted[@]}")
 
 echo "Неприменённые миграции (${#pending[@]}):"
 for p in "${pending[@]}"; do echo "  · ${p##* }"; done

@@ -1,7 +1,8 @@
 import { supabase } from "../lib/supabase.ts";
 import { chatComplete } from "../lib/openai.ts";
 import { sendMessage } from "../lib/telegram.ts";
-import { saveEntry } from "../lib/storage.ts";
+import { notifyMessage } from "../lib/notify.ts";
+import { saveEntry, visibilityFilter } from "../lib/storage.ts";
 import { getUserGroupId } from "../lib/workspace.ts";
 import { onlyLiveEntries } from "../../_shared/entries/live.ts";
 
@@ -10,7 +11,11 @@ export async function generatePersonalDigest(
   userId: number,
   daysBack: number = 7,
   groupId: string = "",
+  // true — рассылка по крону (digest_cron): человек ничего не просил, значит это уведомление и
+  // в комендантский час оно ждёт утра. false — ответ на его команду, уходит сразу.
+  proactive: boolean = false,
 ): Promise<void> {
+  const say = (text: string) => proactive ? notifyMessage(chatId, text, "digest") : sendMessage(chatId, text);
   const since = new Date(Date.now() - daysBack * 86_400_000).toISOString();
   const periodStart = new Date(Date.now() - daysBack * 86_400_000).toLocaleDateString("ru-RU");
   const periodEnd = new Date().toLocaleDateString("ru-RU");
@@ -24,7 +29,7 @@ export async function generatePersonalDigest(
   const markets: string[] = profile?.markets ?? [];
   const role: string = profile?.role ?? "";
 
-  await sendMessage(chatId, `⏳ Генерирую твой дайджест за ${periodLabel}...`);
+  await say(`⏳ Генерирую твой дайджест за ${periodLabel}...`);
 
   const { data: entries } = await onlyLiveEntries(
     supabase.from("entries")
@@ -32,12 +37,14 @@ export async function generatePersonalDigest(
   )
     .gte("created_at", since)
     .eq("group_id", groupId)
+    // Только то, что этот человек и так видит: чужие личные записи в пересказ не попадают.
+    .or(visibilityFilter(userId))
     .not("source", "eq", "digest")
     .order("created_at", { ascending: false })
     .limit(50);
 
   if (!entries?.length) {
-    await sendMessage(chatId, "За указанный период нет записей.");
+    await say("За указанный период нет записей.");
     return;
   }
 
@@ -61,7 +68,7 @@ export async function generatePersonalDigest(
   });
 
   if (!relevant.length) {
-    await sendMessage(chatId, "За этот период нет релевантных записей.");
+    await say("За этот период нет релевантных записей.");
     return;
   }
 
@@ -98,11 +105,14 @@ export async function generatePersonalDigest(
     { period: periodLabel, days_back: daysBack, user_id: userId },
     undefined,
     groupId,
+    // Личная запись: дайджест пересказывает и личные записи этого человека.
+    true,
+    userId,
   );
 
   let remaining = `<b>📊 Твой дайджест ${periodLabel}</b>\n\n${digest}`;
   while (remaining.length > 0) {
-    await sendMessage(chatId, remaining.slice(0, 4000));
+    await say(remaining.slice(0, 4000));
     remaining = remaining.slice(4000);
   }
 }
@@ -115,7 +125,7 @@ export async function sendAllDigests(daysBack: number = 7): Promise<void> {
   for (const u of (users ?? []) as Array<{ telegram_id: number }>) {
     try {
       const groupId = await getUserGroupId(u.telegram_id) ?? "";
-      await generatePersonalDigest(u.telegram_id, u.telegram_id, daysBack, groupId);
+      await generatePersonalDigest(u.telegram_id, u.telegram_id, daysBack, groupId, true);
     } catch { /* skip failed user */ }
   }
 }

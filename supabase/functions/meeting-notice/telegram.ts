@@ -11,6 +11,8 @@
 // Telegram умеет ответить 200 с телом, которое не разбирается (прокси, обрезанный ответ,
 // HTML-заглушка шлюза), и тогда проверка «ok !== false» пропускала недоставленное сообщение
 // как доставленное.
+import type { TelegramCall } from "../_shared/telegram-outbox.ts";
+
 export interface TelegramSenderConfig {
   botToken: string;
   /** База API. Подменяется смоуком блока, чтобы прогон отказов не стучался в живой Telegram. */
@@ -21,19 +23,20 @@ export interface TelegramSenderConfig {
 
 export type TelegramSender = (chatId: number, text: string) => Promise<void>;
 
-export function makeTelegramSender(config: TelegramSenderConfig): TelegramSender {
+/** Тело сообщения-уведомления без chat_id (его подставляет получатель). Одно место и для отправки, и для очереди. */
+export function noticeBody(text: string): Record<string, unknown> {
+  return { text, parse_mode: "HTML", disable_web_page_preview: true };
+}
+
+/** Вызов Bot API с той же строгой проверкой (`ok: true`); общий для прямой отправки и разбора очереди. */
+export function makeTelegramCaller(config: TelegramSenderConfig): TelegramCall {
   const doFetch = config.fetchImpl ?? fetch;
-  return async (chatId: number, text: string): Promise<void> => {
+  return async (method: string, payload: Record<string, unknown>): Promise<void> => {
     if (config.botToken === "") throw new Error("TELEGRAM_BOT_TOKEN is not set on the server");
-    const res = await doFetch(`${config.apiBase}/bot${config.botToken}/sendMessage`, {
+    const res = await doFetch(`${config.apiBase}/bot${config.botToken}/${method}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        chat_id: chatId,
-        text,
-        parse_mode: "HTML",
-        disable_web_page_preview: true,
-      }),
+      body: JSON.stringify(payload),
     });
 
     let body: { ok?: unknown; description?: unknown } | null = null;
@@ -51,4 +54,9 @@ export function makeTelegramSender(config: TelegramSenderConfig): TelegramSender
       throw new Error(`telegram ${res.status}: ${description}`);
     }
   };
+}
+
+export function makeTelegramSender(config: TelegramSenderConfig): TelegramSender {
+  const call = makeTelegramCaller(config);
+  return (chatId: number, text: string): Promise<void> => call("sendMessage", { chat_id: chatId, ...noticeBody(text) });
 }

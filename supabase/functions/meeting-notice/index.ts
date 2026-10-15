@@ -24,16 +24,30 @@
 // URL-импорты — канон этого репозитория: функции деплоятся без карты импортов.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { handleNotice } from "./handle.ts";
-import { makeTelegramSender } from "./telegram.ts";
+import { makeTelegramCaller, noticeBody } from "./telegram.ts";
+import { notifyPerson } from "../_shared/notify-person.ts";
 
 const supabase = createClient(
   Deno.env.get("SUPABASE_URL")!,
   Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
 );
 
-const sendTelegram = makeTelegramSender({
+const callTelegram = makeTelegramCaller({
   botToken: Deno.env.get("TELEGRAM_BOT_TOKEN") ?? "",
   apiBase: Deno.env.get("TELEGRAM_API_BASE") ?? "https://api.telegram.org",
 });
+
+// Уведомление об отказе записи — сообщение человеку по инициативе бота: в комендантский час
+// (23:00–9:00 МСК) оно ложится в `telegram_outbox` и уходит утром, а журнал считает его принятым.
+// Вне часа — прямая отправка со строгой проверкой `ok: true`, как раньше. Недоставка по-прежнему
+// исключение (handle.ts отвечает 502 и освобождает номер).
+const sendTelegram = async (chatId: number, text: string): Promise<void> => {
+  await notifyPerson(
+    supabase,
+    { recipientId: chatId, kind: "meeting_notice", payload: noticeBody(text) },
+    new Date(),
+    callTelegram,
+  );
+};
 
 Deno.serve((req: Request) => handleNotice(req, { supabase, sendTelegram }));

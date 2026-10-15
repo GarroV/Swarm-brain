@@ -1,9 +1,10 @@
 "use client";
 import { useEffect, useState } from "react";
-import { fetchMarket } from "@/lib/api";
+import { ApiError, fetchMarket, fetchMarketSales, type MarketSalesRow } from "@/lib/api";
+import { recall, remember } from "@/lib/lastSeen";
 
 // Выручка Dodo по странам подборки — НАСТОЯЩИЕ данные «Анализа рынка» (публичный API Dodo,
-// GET /market/:cc). Берём только закрытые месяцы: текущий неполный исказил бы сравнение.
+// GET /market/sales — одним запросом на все страны, issue #906). Берём только закрытые месяцы: текущий неполный исказил бы сравнение.
 
 export type CountrySales = {
   cc: string;
@@ -21,30 +22,54 @@ export type SalesState = { byCc: Record<string, CountrySales>; loading: boolean;
 
 export function useCountrySales(codes: string[]): SalesState {
   const key = [...codes].sort().join(",");
-  const [state, setState] = useState<SalesState>({ byCc: {}, loading: true, failed: [] });
+  // Повторный заход — сразу с прошлой выручкой по этой подборке, обновление в фоне (#906).
+  const memo = `home:sales:${key}`;
+  const [state, setState] = useState<SalesState>(() => recall<SalesState>(memo) ?? { byCc: {}, loading: true, failed: [] });
 
   useEffect(() => {
     let alive = true;
     const list = key ? key.split(",") : [];
-    setState((s) => ({ ...s, loading: true }));
-    Promise.allSettled(list.map((cc) => fetchMarket(cc).then((b) => toSales(cc, b.dodo ?? []))))
-      .then((res) => {
+    setState(recall<SalesState>(memo) ?? { byCc: {}, loading: true, failed: [] });
+    loadSales(list)
+      .then(({ sales, failed }) => {
         if (!alive) return;
         const byCc: Record<string, CountrySales> = {};
-        const failed: string[] = [];
-        res.forEach((r, i) => {
-          if (r.status === "fulfilled") byCc[list[i]] = r.value;
-          else { failed.push(list[i]); console.warn("[home] sales", list[i], r.reason); }
-        });
-        setState({ byCc, loading: false, failed });
+        for (const [cc, rows] of Object.entries(sales)) byCc[cc] = toSales(cc, rows);
+        setState(remember(memo, { byCc, loading: false, failed }));
       });
     return () => { alive = false; };
-  }, [key]);
+  }, [key]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return state;
 }
 
-function toSales(cc: string, dodo: Array<{ month: string; revenue_eur: number | null; complete: boolean }>): CountrySales {
+/**
+ * Один запрос /market/sales. Если сервер его ещё не знает (404 — веб раскатан раньше функций, например на
+ * превью ветки против прода), откатываемся на прежний путь: полный набор по каждой стране. Порядок раскатки
+ * поэтому неважен; убрать откат можно, когда /market/sales в проде.
+ */
+async function loadSales(list: string[]): Promise<{ sales: Record<string, MarketSalesRow[]>; failed: string[] }> {
+  if (!list.length) return { sales: {}, failed: [] };
+  try {
+    const r = await fetchMarketSales(list);
+    return { sales: r.sales, failed: r.denied };
+  } catch (e) {
+    if (!(e instanceof ApiError && e.status === 404)) {
+      console.warn("[home] sales", e);
+      return { sales: {}, failed: list };
+    }
+  }
+  const res = await Promise.allSettled(list.map((cc) => fetchMarket(cc).then((b) => b.dodo ?? [])));
+  const sales: Record<string, MarketSalesRow[]> = {};
+  const failed: string[] = [];
+  res.forEach((r, i) => {
+    if (r.status === "fulfilled") sales[list[i]] = r.value;
+    else { failed.push(list[i]); console.warn("[home] sales", list[i], r.reason); }
+  });
+  return { sales, failed };
+}
+
+function toSales(cc: string, dodo: MarketSalesRow[]): CountrySales {
   const months = dodo
     .filter((m) => m.complete && m.revenue_eur != null)
     .map((m) => [m.month.slice(0, 7), m.revenue_eur as number] as [string, number])

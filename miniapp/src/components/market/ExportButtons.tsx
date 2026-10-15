@@ -3,6 +3,7 @@
 // картинкой) и PDF (тот же HTML, распечатанный браузером из скрытой рамки). Интерактив снимка
 // не переносится: подсказки, зум карты и сортировка остаются только в Swarm.
 import { useState } from "react";
+import { FileCode, FileText } from "lucide-react";
 import { useDt } from "@/components/roy/nav";
 
 /** Шрифты эталона — той же ссылкой, что в хорватском отчёте; без сети файл падает на системный шрифт. */
@@ -125,6 +126,8 @@ export function ExportButtons({ country, name }: { country: string; name: string
   const [failed, setFailed] = useState(false);
   const title = dt(`Рынок QSR · ${name}`, `QSR market · ${name}`);
   const file = `market-${country}-${new Date().toISOString().slice(0, 10)}`;
+  const htmlLabel = dt("Скачать HTML", "Download HTML");
+  const pdfLabel = dt("Скачать PDF", "Download PDF");
   const run = (kind: "html" | "pdf") => {
     try {
       const html = snapshot(title);
@@ -137,9 +140,13 @@ export function ExportButtons({ country, name }: { country: string; name: string
     }
   };
   return (
-    <div className="seg" data-export="skip" role="group" aria-label={dt("Скачать", "Download")}>
-      <button type="button" onClick={() => run("html")}>{dt("Скачать HTML", "Download HTML")}</button>
-      <button type="button" onClick={() => run("pdf")}>{dt("Скачать PDF", "Download PDF")}</button>
+    <div className="exportbar" data-export="skip" role="group" aria-label={dt("Скачать", "Download")}>
+      <button type="button" onClick={() => run("html")} aria-label={htmlLabel} title={htmlLabel}>
+        <FileCode size={16} aria-hidden="true" />
+      </button>
+      <button type="button" onClick={() => run("pdf")} aria-label={pdfLabel} title={pdfLabel}>
+        <FileText size={16} aria-hidden="true" />
+      </button>
       {failed && <span className="small" role="alert">{dt("Не получилось собрать файл.", "Could not build the file.")}</span>}
     </div>
   );

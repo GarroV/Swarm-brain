@@ -5,6 +5,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { verifyInitData } from "./auth.ts";
 import { isRenewableSession, isSessionRevoked, type SessionClaims, verifyJWT } from "../_shared/jwt.ts";
+import { isSecondStepRequired, parseSecondStepAudience, secondStepBlocks, secondStepState } from "../_shared/passkeys/second-step.ts";
 import { logAccess, logLoginOnce } from "../_shared/access-events.ts";
 import {
   buildRecorderSetupOneLiner,
@@ -32,6 +33,7 @@ import {
   getMeetingSecure,
 } from "./entries-guard.ts";
 import { canChangeMeetingPrivacy } from "../_shared/entries/meeting-rights.ts";
+import type { SlotRow } from "../_shared/bot-slot.ts";
 import { isMissedBotSlot, toAgentListRow, toListRow } from "./meetings-payload.ts";
 import {
   applyListFilters,
@@ -221,6 +223,10 @@ const ADMIN_USER_ID = 744230399; // см. lib/supabase.ts swarm-bot — един
 // изолирована в синтетический воркспейс: не админ, не видит рабочие данные, не минтит токены.
 // Правило «это демо» — одно на все функции: _shared/demo-session.ts.
 const WEB_JWT_SECRET = Deno.env.get("WEB_JWT_SECRET"); // подпись веб-сессий (Login Widget, B+)
+// Замок «второй шаг входа обязателен» (палец, #955). По умолчанию выключен: шаг предлагается, но не требуется.
+const SECOND_STEP_REQUIRED = isSecondStepRequired(Deno.env.get("SECOND_STEP_REQUIRED"));
+// Кому шаг применим (пилот): не задано — никому, `all` — всем, список telegram id — только им.
+const SECOND_STEP_AUDIENCE = parseSecondStepAudience(Deno.env.get("SECOND_STEP_AUDIENCE"));
 
 const supabase = createClient(
   Deno.env.get("SUPABASE_URL")!,
@@ -655,6 +661,17 @@ async function routeRequest(req: Request): Promise<Response> {
   // Снимаем префикс функции (/functions/v1/swarm-api) — один, известный (#592).
   const routePath = routePathOf(url.pathname);
 
+  // Второй шаг входа (палец, #955): состояние идёт в /me, замок обязательности — переменная
+  // SECOND_STEP_REQUIRED, по умолчанию выключен; аудитория — SECOND_STEP_AUDIENCE, по умолчанию никто.
+  const secondStep = secondStepState(webSession, {
+    isDemo,
+    required: SECOND_STEP_REQUIRED,
+    audience: SECOND_STEP_AUDIENCE,
+  });
+  if (secondStepBlocks(secondStep, req.method, routePath)) {
+    return json({ error: "second_step_required" }, 403, origin);
+  }
+
   // Заморозка на время раскатки: изменения не принимаем, чтение оставляем (пустой экран
   // пугает сильнее честной плашки). Владелец проходит всегда — он катит и проверяет.
   // 503 + Retry-After: веб показывает заглушку и сохранить не даёт. Рекордер сюда пишет только
@@ -768,6 +785,8 @@ async function routeRequest(req: Request): Promise<Response> {
         telegram_linked: telegram_id > 0 || Boolean(au?.telegram_chat_id),
         // Суперадмин — видит разделы всей системы (расход модели, #311).
         is_superadmin: !isDemo && telegram_id === SUPERADMIN_TELEGRAM_ID,
+        // Второй шаг входа (палец, #955): веб по нему сам предлагает сохранить или подтвердить ключ.
+        second_step: secondStep,
       },
       200,
       origin,
@@ -2839,7 +2858,7 @@ async function routeRequest(req: Request): Promise<Response> {
     const status = url.searchParams.get("status") ?? "awaiting_review";
     let q = supabase.from("meetings")
       .select(
-        "id, title, source, identity_kind, started_at, ended_at, status, has_draft_notes, recorders, co_owners, attendees, entry_id, created_at, recorded_by, agent_version, recorded_seconds, summary_status",
+        "id, title, source, identity_kind, started_at, ended_at, status, has_draft_notes, recorders, co_owners, attendees, entry_id, created_at, recorded_by, agent_version, recorded_seconds, summary_status, agent_last_seen_at, agent_last_recording",
         { count: "exact" },
       )
       .eq("group_id", groupId)
@@ -2862,8 +2881,9 @@ async function routeRequest(req: Request): Promise<Response> {
     // С 25.09.2026 текст не выбирается ВООБЩЕ (issue #491) — раньше он читался и выбрасывался
     // в toAgentListRow: 119 мс базы на опрос, из них ~88 мс на выброшенное.
     // Полный текст берёт деталь GET /agent-meetings/:id — она его и так до-загружает.
-    // Пустые слоты бота встреч (заявился, записи нет) в черновики не попадают (#788).
-    const rows = (data ?? []) as Array<{ recorders?: unknown; agent_version?: unknown; recorded_by?: unknown; recorded_seconds?: unknown; summary_status?: unknown }>;
+    // Пустые слоты бота встреч (заявился, записи нет) в черновики не попадают (#788): показ —
+    // только пока бот пишет (agent_last_recording + свежий удар), см. _shared/bot-slot.ts.
+    const rows = (data ?? []) as Array<SlotRow & { recorders?: unknown }>;
     const shown = rows.filter((r) => !isMissedBotSlot(r));
     const enrichedList = await withRecorderNames(shown);
     // Сколько черновиков подходит под фильтр БЕЗ лимита 50 (issue #112) — за вычетом спрятанных.
@@ -3179,17 +3199,10 @@ async function routeRequest(req: Request): Promise<Response> {
   // «переподключить», `calendar_error`/пустой список → обычное пустое состояние. Молча
   // показать пустоту при отвалившейся интеграции нельзя — это урок #175.
   if (req.method === "GET" && routePath === "/calendar/today") {
-    // Пояс берём у клиента: сервер живёт в UTC и не знает, какие сутки у человека сейчас.
-    const cal = await todayCalendarEvents(
-      supabase,
-      telegram_id,
-      Number(url.searchParams.get("tz_offset") ?? "0"),
-    );
-    if (!cal.ok) {
-      return json({ meetings: [], reason: cal.reason }, 200, origin);
-    }
-    const items = cal.events;
-
+    // Присутствие рекордера читается ПАРАЛЛЕЛЬНО с обменом токена и запросом к Google: оно от них не
+    // зависит (раньше шло четвёртым последовательным шагом, issue #906). Запрос стартует сразу — билдер
+    // PostgREST ленивый, поэтому оборачиваем в async.
+    //
     // Где сидит сам человек: рекордер сообщает это в heartbeat. Панель по этим флагам
     // рисует `ON AIR` / `REC` вместо кнопки «Подключиться» — предлагать зайти туда, где
     // человек уже сидит, значит не понимать, что происходит (решение владельца 04.09.2026).
@@ -3197,12 +3210,26 @@ async function routeRequest(req: Request): Promise<Response> {
     // а миграции накатываются руками (scripts/deploy-window.sh их только показывает). Пока
     // колонок нет, PostgREST ответит ошибкой — тогда панель работает как до фичи, без ON AIR,
     // но ошибку не проглатываем молча: без записи в лог такой перекос порядка не заметить.
-    const { data: rec, error: recErr } = await supabase
-      .from("allowed_users")
-      .select(
-        "recorder_last_seen, recorder_last_recording, recorder_last_on_call, recorder_last_meeting_key",
-      )
-      .eq("telegram_id", telegram_id).maybeSingle();
+    const presenceQuery = (async () =>
+      await supabase
+        .from("allowed_users")
+        .select(
+          "recorder_last_seen, recorder_last_recording, recorder_last_on_call, recorder_last_meeting_key",
+        )
+        .eq("telegram_id", telegram_id).maybeSingle())();
+    // Пояс берём у клиента: сервер живёт в UTC и не знает, какие сутки у человека сейчас.
+    const [cal, { data: rec, error: recErr }] = await Promise.all([
+      todayCalendarEvents(
+        supabase,
+        telegram_id,
+        Number(url.searchParams.get("tz_offset") ?? "0"),
+      ),
+      presenceQuery,
+    ]);
+    if (!cal.ok) {
+      return json({ meetings: [], reason: cal.reason }, 200, origin);
+    }
+    const items = cal.events;
     if (recErr) {
       console.warn(
         "[calendar/today] присутствие рекордера не прочиталось:",

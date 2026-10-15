@@ -12,7 +12,9 @@
   // Туннель до Caddy на VPS (VPC-сервис vps-edge-caddy, общий для проектов VPS).
   "vpc_services": [
     { "binding": "EDGE", "service_id": "01a11a74-ba20-7ea3-a9c1-581681d0c341" },
+    // Резерв на MUSPELHEIM (Swarm-brain #958): туннель swarm-reserve → Caddy резерва.
+    { "binding": "RESERVE", "service_id": "01a13c29-7658-7e01-a93f-3664ca0a079d" },
   ],
   // Внутреннее имя сайта в Caddy (vps-infra edge/sites/swarm.caddy).
-  "vars": { "ORIGIN_HOST": "swarm.vps.internal" },
+  "vars": { "ORIGIN_HOST": "swarm.vps.internal", "RESERVE_HOST": "swarm.reserve.internal" },
 }

@@ -43,8 +43,13 @@ export interface CycleInput {
   check_date?: string | null;
 }
 
-/** В пространстве уже есть живой спринт: роут превращает это в 409. */
+/**
+ * В пространстве уже идёт спринт, а стартуют второй: роут превращает это в 409. Запланированных
+ * (черновиков) может быть сколько угодно — с 09.10.2026 в пространство заводят будущие спринты.
+ */
 export class LiveCycleExistsError extends Error {}
+
+const ACTIVE_EXISTS = "В этом пространстве уже идёт спринт — сначала примите его";
 
 /** Вкладка из чужого воркспейса или её нет вовсе: роут превращает это в 400. */
 export class UnknownTabError extends Error {}
@@ -116,17 +121,8 @@ export async function createCycle(
     created_by: createdBy,
   }).select().single();
 
-  if (error) {
-    // 23505 — частичный уникальный индекс: в пространстве уже есть черновик или идущий
-    // спринт. Это не поломка, а ровно то правило, ради которого индекс и заведён, и человеку
-    // надо сказать по-человечески, а не «duplicate key value violates unique constraint».
-    if (error.code === "23505") {
-      throw new LiveCycleExistsError(
-        "В этом пространстве уже есть незакрытый спринт — примите или удалите его",
-      );
-    }
-    throw new Error(error.message);
-  }
+  // Создаётся всегда черновик, а уникален только идущий спринт: создание места не занимает.
+  if (error) throw new Error(error.message);
   return data as SprintCycle;
 }
 
@@ -145,7 +141,9 @@ export async function updateCycle(
   id: string,
   fields: Partial<CycleInput> & { summary?: string | null },
   groupId: string,
-): Promise<SprintCycle | null | "tab_busy" | "tab_missing" | "accepted_locked"> {
+): Promise<
+  SprintCycle | null | "tab_busy" | "tab_missing" | "accepted_locked"
+> {
   // Пространство подтверждаем в ЭТОМ воркспейсе (#397): без проверки чужой `tab_id` увёл бы
   // спринт из поля зрения команды — строка осталась бы в базе, а с экрана пропала.
   if (
@@ -156,18 +154,22 @@ export async function updateCycle(
   }
   // Сроки принятого спринта неизменны (#297): итоги посчитаны по ним, сдвиг задним числом
   // переписал бы историю. Итог (`summary`) у принятого править можно — он и пишется после.
-  const movesDates = fields.start_date !== undefined || fields.end_date !== undefined;
+  const movesDates = fields.start_date !== undefined ||
+    fields.end_date !== undefined;
   let q = supabase.from("sprint_cycles")
     .update({ ...fields, updated_at: new Date().toISOString() })
     .eq("id", id).eq("group_id", groupId);
   if (movesDates) q = q.neq("status", "accepted");
   const { data, error } = await q.select().maybeSingle();
   if (!error && !data && movesDates) {
-    const { data: exists } = await supabase.from("sprint_cycles").select("status")
+    const { data: exists } = await supabase.from("sprint_cycles").select(
+      "status",
+    )
       .eq("id", id).eq("group_id", groupId).maybeSingle();
     if (exists?.status === "accepted") return "accepted_locked";
   }
-  // 23505 — частичный уникальный индекс «один незакрытый спринт на пространство». Отличаем
+  // 23505 — частичный уникальный индекс «один идущий спринт на пространство»: занят, когда
+  // идущий спринт переносят туда, где уже идёт другой. Отличаем
   // его от прочих сбоев: это не поломка, а занятое место, и человеку надо сказать именно так.
   if (error?.code === "23505") return "tab_busy";
   return (data as SprintCycle | null) ?? null;
@@ -204,11 +206,20 @@ export async function startCycle(
   const cycle = await getCycle(id, groupId);
   if (!cycle || cycle.status !== "draft") return null;
 
+  // Второй идущий спринт база не пустит (уникальный индекс), но проверяем до того, как трогать
+  // состав: иначе отказ оставил бы в черновике отметки «в плане».
+  if (cycle.tab_id) {
+    const { data: running } = await supabase.from("sprint_cycles").select("id")
+      .eq("group_id", groupId).eq("tab_id", cycle.tab_id).eq("status", "active")
+      .is("archived_at", null).limit(1);
+    if (running?.length) throw new LiveCycleExistsError(ACTIVE_EXISTS);
+  }
+
   await supabase.from("sprint_items").update({ in_plan: true }).eq(
     "cycle_id",
     id,
   );
-  const { data } = await supabase.from("sprint_cycles")
+  const { data, error } = await supabase.from("sprint_cycles")
     .update({
       status: "active",
       started_at: new Date().toISOString(),
@@ -216,5 +227,6 @@ export async function startCycle(
     })
     .eq("id", id).eq("group_id", groupId)
     .select().maybeSingle();
+  if (error?.code === "23505") throw new LiveCycleExistsError(ACTIVE_EXISTS);
   return (data as SprintCycle | null) ?? null;
 }

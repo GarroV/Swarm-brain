@@ -35,6 +35,11 @@ type Props = {
   onTake?: (taskId: string) => void;
   /** Завести задачу в группу плана (в спринт она при этом не идёт). */
   onAdd?: (projectId: string) => void;
+  /**
+   * Убрать группу — как «Распустить» в списке спринта: группа уходит в архив, задачи остаются
+   * (без группы). Владелец 09.10.2026: «надо будет добавить тут возможность быстро удалять группы».
+   */
+  onRemove?: (group: Project) => void;
   onOpen: (task: Task) => void;
   onClose: () => void;
   /** Перетаскивание мышью — только на компьютере. */
@@ -50,6 +55,8 @@ export function PlanPanel(p: Props) {
     false,
   );
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
+  // Группа с задачами удаляется вторым нажатием: первое только взводит. Пустая — сразу.
+  const [arming, setArming] = useState<string | null>(null);
 
   const plan = useMemo(
     () =>
@@ -216,6 +223,43 @@ export function PlanPanel(p: Props) {
                     className="grid size-6 shrink-0 place-items-center rounded-full text-ink-mute transition-opacity hover:bg-surface-2 hover:text-ink lg:opacity-0 lg:group-hover/plan:opacity-100 lg:focus-visible:opacity-100"
                   >
                     <RoyIcon name="plus" size={12} strokeWidth={2.2} />
+                  </button>
+                )}
+                {p.onRemove && (
+                  <button
+                    type="button"
+                    disabled={p.busy}
+                    onClick={() => {
+                      if (g.total === 0 || arming === g.project.id) {
+                        setArming(null);
+                        p.onRemove?.(g.project);
+                      } else {
+                        setArming(g.project.id);
+                      }
+                    }}
+                    onBlur={() =>
+                      setArming((a) => (a === g.project.id ? null : a))}
+                    title={dt(
+                      "Удалить группу (задачи останутся, без группы)",
+                      "Delete the group (its tasks stay, ungrouped)",
+                    )}
+                    aria-label={dt("Удалить группу", "Delete the group")}
+                    className={cn(
+                      "shrink-0 rounded-full transition-opacity hover:bg-surface-2 lg:focus-visible:opacity-100",
+                      arming === g.project.id
+                        ? "px-2 py-0.5 font-semibold text-destructive"
+                        : "grid size-6 place-items-center text-ink-mute hover:text-destructive lg:opacity-0 lg:group-hover/plan:opacity-100",
+                    )}
+                    style={arming === g.project.id
+                      ? { fontSize: 11 }
+                      : undefined}
+                  >
+                    {arming === g.project.id
+                      ? dt(
+                        `Удалить? ${g.total} задач уйдут из группы`,
+                        `Delete? ${g.total} tasks leave the group`,
+                      )
+                      : <RoyIcon name="trash" size={12} strokeWidth={2} />}
                   </button>
                 )}
               </div>

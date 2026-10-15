@@ -384,3 +384,15 @@ html[data-backdrop="custom"] :is(.bg-popover, [data-slot="popover-content"], [da
   animation: roy-bell-nudge 9s ease-in-out 1.5s infinite;
 }
 @media (prefers-reduced-motion: reduce) { .roy-bell-nudge { animation: none; } }
+
+/* Кольцо вокруг колокольчика, пока есть непрочитанные (issue #803): расходится и гаснет каждые
+   ~1.8 с — заметно, но без мигания всей кнопки. box-shadow на самой кнопке, лишних элементов нет.
+   Цвет — --primary (светлая и тёмная темы задают его сами). «Уменьшить движение» — без анимации,
+   красный бейдж остаётся. */
+@keyframes roy-bell-pulse {
+  0%   { box-shadow: 0 0 0 0 color-mix(in srgb, var(--primary) 55%, transparent); }
+  70%  { box-shadow: 0 0 0 9px color-mix(in srgb, var(--primary) 0%, transparent); }
+  100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--primary) 0%, transparent); }
+}
+.roy-bell-pulse { animation: roy-bell-pulse 1.8s ease-out infinite; }
+@media (prefers-reduced-motion: reduce) { .roy-bell-pulse { animation: none; } }

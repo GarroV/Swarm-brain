@@ -18,7 +18,7 @@ import { useQuality, type QualityState } from "./useQuality";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { countryOf } from "@/lib/homeQuality";
 import {
-  addWidget, DEFAULT_LAYOUT, hideWidget, loadLayout, moveBefore, moveBy, saveLayout, toggleWidth,
+  addWidget, DEFAULT_LAYOUT, halfColumns, hideWidget, loadLayout, moveBefore, moveBy, saveLayout, toggleWidth,
   WIDGET_IDS, DEFAULT_WIDTH, type LayoutItem, type WidgetId,
 } from "@/lib/homeLayout";
 
@@ -63,7 +63,10 @@ export function HomeGrid({ data, onCreateTask, onCreateTaskFrom, editing, onEdit
 
   // Раскладка читается после монтирования: экспорт статический, на сборке localStorage нет.
   useEffect(() => { setLayoutState(loadLayout()); }, []);
-  useEffect(() => { setMarkets(me?.markets ?? []); }, [me?.markets]);
+  // Синхронизация с профилем прямо в рендере, а не в эффекте: эффект давал один кадр с пустыми странами
+  // (и подсказкой «выберите страны») сразу после прихода me.
+  const [seenMarkets, setSeenMarkets] = useState(me?.markets);
+  if (seenMarkets !== me?.markets) { setSeenMarkets(me?.markets); setMarkets(me?.markets ?? []); }
   useEffect(() => {
     if (!editing) return;
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape" && !gallery) setEditing(false); };
@@ -80,6 +83,9 @@ export function HomeGrid({ data, onCreateTask, onCreateTaskFrom, editing, onEdit
   const sales = useCountrySales(markets);
 
   const body = (id: WidgetId): ReactNode => {
+    // Пока профиль (me) не пришёл, страны неизвестны: подсказку «выберите страны» не показываем — она мигала
+    // 0.3–1.5 с у людей с уже выбранными странами (issue #906). Тот же скелетон, что у загрузки баллов.
+    if (!me && META[id].scoped) return <div className="roy-shim" style={{ height: id === "countries" ? 160 : 220, borderRadius: 12 }} />;
     if (!codes.length && META[id].scoped) {
       return <div className={note} style={{ fontSize: 13 }}>{dt("Выберите свои страны в «Настроить главную» — метрики считаются по ним", "Pick your countries in “Customize home” — metrics are scoped to them")}</div>;
     }
@@ -108,6 +114,37 @@ export function HomeGrid({ data, onCreateTask, onCreateTaskFrom, editing, onEdit
     setDragId(null); setOverId(null);
   };
 
+  const widget = (it: LayoutItem, i: number) => {
+    const m = META[it.id];
+    return (
+      <section key={it.id} data-widget={it.id}
+        className={`relative min-w-0 rounded-[14px] transition-opacity ${editing ? "cursor-grab outline-2 outline-offset-4 outline-dashed outline-line-2 hover:outline-accent-line" : ""} ${dragId === it.id ? "opacity-40" : ""} ${overId === it.id && dragId !== it.id ? "outline-primary" : ""}`}
+        draggable={editing}
+        onDragStart={(e) => { setDragId(it.id); e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", it.id); }}
+        onDragEnd={() => { setDragId(null); setOverId(null); }}
+        onDragOver={(e) => { if (!editing || !dragId) return; e.preventDefault(); setOverId(it.id); }}
+        onDrop={(e) => { e.preventDefault(); drop(it.id); }}>
+        {editing && (
+          <div className="absolute right-0 top-2 z-10 flex gap-0.5 rounded-[10px] border border-line-2 bg-surface p-0.5 shadow-md" style={{ fontSize: 12 }}>
+            <span className="cursor-grab px-2 py-1 text-ink-mute" aria-hidden="true">⠿</span>
+            <ToolBtn label={dt("Выше", "Up")} disabled={i === 0} onClick={() => setLayout(moveBy(layout, it.id, -1))}>↑</ToolBtn>
+            <ToolBtn label={dt("Ниже", "Down")} disabled={i === layout.length - 1} onClick={() => setLayout(moveBy(layout, it.id, 1))}>↓</ToolBtn>
+            <span className="max-[1099px]:hidden"><ToolBtn label={dt("Ширина", "Width")} onClick={() => setLayout(toggleWidth(layout, it.id))}>{it.w === "full" ? dt("½ ширины", "½ width") : dt("Вся строка", "Full row")}</ToolBtn></span>
+            <ToolBtn label={dt(`Скрыть «${m.title[0]}»`, `Hide “${m.title[1]}”`)} onClick={() => setLayout(hideWidget(layout, it.id))}>{dt("Скрыть ×", "Hide ×")}</ToolBtn>
+          </div>
+        )}
+        <div className={editing ? "pointer-events-none select-none" : ""}>
+          {!m.ownTitle && (
+            <HomeLabel first action={undefined}>
+              <span className="inline-flex items-center gap-2">{m.title[lang]}{m.meta && <span className="font-normal normal-case tracking-normal text-ink-mute">{m.meta[lang]}</span>}{m.sample && <SampleTag />}</span>
+            </HomeLabel>
+          )}
+          {body(it.id)}
+        </div>
+      </section>
+    );
+  };
+
   return (
     <div className="min-w-0 pb-8">
       {narrow && !editing && <NarrowChip cc={narrow} onClear={() => setNarrow(null)} />}
@@ -128,37 +165,21 @@ export function HomeGrid({ data, onCreateTask, onCreateTaskFrom, editing, onEdit
         </div>
       )}
 
-      <div className="grid grid-cols-1 gap-x-5 gap-y-2 px-6 pt-1 min-[1100px]:grid-cols-2">
-        {layout.map((it, i) => {
-          const m = META[it.id];
-          return (
-            <section key={it.id} data-widget={it.id}
-              className={`relative min-w-0 rounded-[14px] transition-opacity ${it.w === "full" ? "min-[1100px]:col-span-2" : ""} ${editing ? "cursor-grab outline-2 outline-offset-4 outline-dashed outline-line-2 hover:outline-accent-line" : ""} ${dragId === it.id ? "opacity-40" : ""} ${overId === it.id && dragId !== it.id ? "outline-primary" : ""}`}
-              draggable={editing}
-              onDragStart={(e) => { setDragId(it.id); e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", it.id); }}
-              onDragEnd={() => { setDragId(null); setOverId(null); }}
-              onDragOver={(e) => { if (!editing || !dragId) return; e.preventDefault(); setOverId(it.id); }}
-              onDrop={(e) => { e.preventDefault(); drop(it.id); }}>
-              {editing && (
-                <div className="absolute right-0 top-2 z-10 flex gap-0.5 rounded-[10px] border border-line-2 bg-surface p-0.5 shadow-md" style={{ fontSize: 12 }}>
-                  <span className="cursor-grab px-2 py-1 text-ink-mute" aria-hidden="true">⠿</span>
-                  <ToolBtn label={dt("Выше", "Up")} disabled={i === 0} onClick={() => setLayout(moveBy(layout, it.id, -1))}>↑</ToolBtn>
-                  <ToolBtn label={dt("Ниже", "Down")} disabled={i === layout.length - 1} onClick={() => setLayout(moveBy(layout, it.id, 1))}>↓</ToolBtn>
-                  <span className="max-[1099px]:hidden"><ToolBtn label={dt("Ширина", "Width")} onClick={() => setLayout(toggleWidth(layout, it.id))}>{it.w === "full" ? dt("½ ширины", "½ width") : dt("Вся строка", "Full row")}</ToolBtn></span>
-                  <ToolBtn label={dt(`Скрыть «${m.title[0]}»`, `Hide “${m.title[1]}”`)} onClick={() => setLayout(hideWidget(layout, it.id))}>{dt("Скрыть ×", "Hide ×")}</ToolBtn>
+      {/* Строка во всю ширину — отдельно; половинки — две независимые колонки (halfColumns), чтобы
+          высокий виджет не растягивал строку соседу. На узком экране колонки растворяются
+          (display: contents), и порядок задаёт место в раскладке. */}
+      <div className="flex flex-col gap-y-2 px-6 pt-1">
+        {halfColumns(layout).map((run) => run.kind === "full"
+          ? <div key={run.item.id}>{widget(run.item, run.index)}</div>
+          : (
+            <div key={run.left[0].item.id} className="flex flex-col gap-y-2 min-[1100px]:grid min-[1100px]:grid-cols-2 min-[1100px]:items-start min-[1100px]:gap-x-5">
+              {[run.left, run.right].map((col, c) => (
+                <div key={c} className="contents min-[1100px]:flex min-[1100px]:min-w-0 min-[1100px]:flex-col min-[1100px]:gap-y-2">
+                  {col.map(({ item, index }) => <div key={item.id} className="min-w-0" style={{ order: index }}>{widget(item, index)}</div>)}
                 </div>
-              )}
-              <div className={editing ? "pointer-events-none select-none" : ""}>
-                {!m.ownTitle && (
-                  <HomeLabel first action={undefined}>
-                    <span className="inline-flex items-center gap-2">{m.title[lang]}{m.meta && <span className="font-normal normal-case tracking-normal text-ink-mute">{m.meta[lang]}</span>}{m.sample && <SampleTag />}</span>
-                  </HomeLabel>
-                )}
-                {body(it.id)}
-              </div>
-            </section>
-          );
-        })}
+              ))}
+            </div>
+          ))}
       </div>
 
       <Dialog open={gallery} onOpenChange={setGallery}>

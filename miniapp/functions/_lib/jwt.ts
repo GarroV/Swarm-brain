@@ -69,10 +69,13 @@ export type SessionClaims = {
   // У старого формата его нет: null.
   authTime: number | null;
   legacy: boolean;
+  // Пройден ли второй шаг входа (палец, #955): метка `sf` ставится Pages Function после проверки
+  // ключа доступа и переживает продление. У сессии без метки — false.
+  secondStep: boolean;
 };
 
 export async function signJWT(
-  payload: { telegram_id: number; auth_time?: number },
+  payload: { telegram_id: number; auth_time?: number; second_step?: boolean },
   secret: string,
   expSeconds = SESSION_TTL_SEC,
 ): Promise<string> {
@@ -82,6 +85,8 @@ export async function signJWT(
     telegram_id: payload.telegram_id,
     pur: SESSION_PURPOSE,
     auth_time: payload.auth_time ?? now,
+    // Метка только когда шаг пройден: токен без неё байт в байт как до #955.
+    ...(payload.second_step ? { sf: true } : {}),
     exp: now + expSeconds,
   };
   const data = `${b64urlEncode(enc.encode(JSON.stringify(header)))}.${b64urlEncode(enc.encode(JSON.stringify(body)))}`;
@@ -102,7 +107,7 @@ export async function verifyJWT(token: string, secret: string): Promise<SessionC
     return null;
   }
   if (!valid) return null;
-  let payload: { telegram_id?: number; exp?: number; pur?: unknown; auth_time?: unknown };
+  let payload: { telegram_id?: number; exp?: number; pur?: unknown; auth_time?: unknown; sf?: unknown };
   try {
     payload = JSON.parse(new TextDecoder().decode(b64urlDecode(p)));
   } catch {
@@ -119,7 +124,7 @@ export async function verifyJWT(token: string, secret: string): Promise<SessionC
   }
   const authTime = !legacy && typeof payload.auth_time === "number" ? payload.auth_time : null;
   if (!legacy && authTime === null) return null;
-  return { telegram_id: payload.telegram_id, exp: payload.exp, authTime, legacy };
+  return { telegram_id: payload.telegram_id, exp: payload.exp, authTime, legacy, secondStep: payload.sf === true };
 }
 
 // Продлевается только настоящая сессия входа: она выдаётся на полный срок, и продление держит

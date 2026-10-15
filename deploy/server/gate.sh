@@ -2,21 +2,27 @@
 # Шлюз раскатки Swarm на своём сервере (GarroV/Swarm-brain #919).
 # Вызывается ТОЛЬКО принудительной командой ключа пользователя swarm-deploy:
 #   command="sudo /opt/swarm-deploy/gate.sh" в ~swarm-deploy/.ssh/authorized_keys
-# Что пришло после ssh — в SSH_ORIGINAL_COMMAND; разрешено ровно три действия:
+# Что пришло после ssh — в SSH_ORIGINAL_COMMAND; разрешено ровно четыре действия:
 #   functions                 — stdin: tar.gz каталога supabase/functions → в рантайм + перезапуск
 #   migrations-applied        — список применённых версий миграций
 #   migrate <версия>          — stdin: SQL миграции; накат одной транзакцией вместе с учётной записью
+#   recorder-upload <сборка>  — stdin: zip рекордера; заливка в Storage swarm_drive/recorder/, без перезаписи
 # Канон: GarroV/Swarm-brain deploy/server/gate.sh.
 set -Eeuo pipefail
 umask 077
 
-STACK=/srv/swarm/supabase
+# GATE_STACK / GATE_GW нужны тестам (scripts/test-gate.sh); на сервере sudo сбрасывает окружение
+# (env_reset, сохраняется только SSH_ORIGINAL_COMMAND), и действуют значения по умолчанию.
+STACK="${GATE_STACK:-/srv/swarm/supabase}"
+# Шлюз API (envoy), опубликован только на loopback хоста — тот же адрес, что у PROBE.
+GW="${GATE_GW:-http://127.0.0.1:8400}"
 FN="$STACK/volumes/functions"
 KEEP=/var/backups/swarm-functions
 DB=supabase-db
 RUNTIME=supabase-edge-functions
 PROBE=http://127.0.0.1:8400/functions/v1/swarm-recorder-version
 
+sha256_() { if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1" | cut -d' ' -f1; else shasum -a 256 "$1" | cut -d' ' -f1; fi; }
 die() { echo "gate: $*" >&2; exit 1; }
 psql_() { docker exec -i "$DB" psql -X -q -v ON_ERROR_STOP=1 -U supabase_admin -d postgres "$@"; }
 # Миграции — от роли postgres, как в облаке Supabase: иначе владельцем новых объектов станет supabase_admin.
@@ -71,16 +77,52 @@ case "$CMD" in
     V="${ARGV[1]:-}"; NAME="${ARGV[2]:-}"
     [[ "$V" =~ ^[0-9]{8,14}$ ]] || die "версия миграции должна быть цифрами: '$V'"
     [[ -z "$NAME" || "$NAME" =~ ^[a-z0-9_]+$ ]] || die "имя миграции: только a-z0-9_"
-    ensure_ledger
-    if [ -n "$(psql_ -tA -c "select 1 from supabase_migrations.schema_migrations where version='$V'")" ]; then
-      echo "миграция $V уже применена — пропускаю"; exit 0
-    fi
+    # SQL читается ПЕРВЫМ: `docker exec -i` в проверках ниже забирает stdin себе, и миграция,
+    # прочитанная после них, всегда пуста (13.10.2026 — первый настоящий накат через шлюз).
     TMP=$(mktemp); trap 'rm -f "$TMP"' EXIT
     head -c 10485760 > "$TMP"
     [ -s "$TMP" ] || die "пустая миграция"
+    ensure_ledger
+    if [ -n "$(psql_ -tA -c "select 1 from supabase_migrations.schema_migrations where version='$V'" </dev/null)" ]; then
+      echo "миграция $V уже применена — пропускаю"; exit 0
+    fi
     { cat "$TMP"; printf '\n;insert into supabase_migrations.schema_migrations(version, name) values (%s, %s);\n' "'$V'" "'$NAME'"; } \
       | psql_mig --single-transaction -f - || die "миграция $V не применилась — транзакция откатена"
     echo "миграция $V применена"
     ;;
-  *) die "неизвестная команда: '${CMD}'. Разрешено: functions | migrations-applied | migrate <версия> [имя]" ;;
+  recorder-upload)
+    B="${ARGV[1]:-}"
+    [[ "$B" =~ ^[0-9]{1,9}$ ]] || die "номер сборки — только цифры: '$B'"
+    NAME="SwarmRecorder-$B.zip"
+    # zip читается ПЕРВЫМ — по той же причине, что и миграция выше (`docker exec -i` съедает stdin).
+    # Читаем на байт больше потолка: упёршийся в него архив отвергаем, а не режем молча.
+    TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
+    head -c 104857601 > "$TMP/up.zip"
+    [ -s "$TMP/up.zip" ] || die "пустой архив"
+    [ "$(wc -c < "$TMP/up.zip")" -le 104857600 ] || die "архив больше 100 МБ"
+    [ "$(head -c 4 "$TMP/up.zip" | od -An -tx1 | tr -d ' \n')" = 504b0304 ] || die "это не zip (нет сигнатуры PK)"
+    SHA=$(sha256_ "$TMP/up.zip")
+    URL="$GW/storage/v1/object/public/swarm_drive/recorder/$NAME"
+    # Опубликованная сборка неизменна (#203): её сумма зашита в код. Уже есть — сверяем, не затираем.
+    CODE=$(curl -s -o "$TMP/old.zip" -w '%{http_code}' -m 300 "$URL") || die "хранилище не ответило"
+    case "$CODE" in
+      200)
+        [ "$(sha256_ "$TMP/old.zip")" = "$SHA" ] || die "$NAME уже лежит в хранилище и ОТЛИЧАЕТСЯ от присланного — не перезаписываю; подними номер сборки"
+        echo "$NAME уже загружен, содержимое совпадает"; echo "sha256 $SHA"; exit 0 ;;
+      400|404) ;;   # Storage отвечает 400 или 404 на отсутствующий объект
+      *) die "проверка наличия $NAME: HTTP $CODE" ;;
+    esac
+    # Ключ — из окружения стека на сервере; в аргументы и вывод не попадает (curl читает его из файла).
+    KEY=$(grep -m1 '^SERVICE_ROLE_KEY=' "$STACK/.env" | cut -d= -f2- | tr -d '"\r')
+    [ -n "$KEY" ] || die "SERVICE_ROLE_KEY не найден в окружении стека"
+    printf 'header = "authorization: Bearer %s"\n' "$KEY" > "$TMP/curl.cfg"
+    CODE=$(curl -s -o "$TMP/resp" -w '%{http_code}' -m 600 -K "$TMP/curl.cfg" -X POST \
+      -H 'content-type: application/zip' --data-binary "@$TMP/up.zip" \
+      "$GW/storage/v1/object/swarm_drive/recorder/$NAME") || die "заливка не дошла до хранилища"
+    [ "$CODE" = 200 ] || die "заливка $NAME: HTTP $CODE: $(head -c 300 "$TMP/resp")"
+    CODE=$(curl -s -o "$TMP/back.zip" -w '%{http_code}' -m 300 "$URL") || die "проверка после заливки не дошла"
+    [ "$CODE" = 200 ] && [ "$(sha256_ "$TMP/back.zip")" = "$SHA" ] || die "после заливки $NAME отдаётся не то (HTTP $CODE)"
+    echo "$NAME загружен"; echo "sha256 $SHA"
+    ;;
+  *) die "неизвестная команда: '${CMD}'. Разрешено: functions | migrations-applied | migrate <версия> [имя] | recorder-upload <сборка>" ;;
 esac

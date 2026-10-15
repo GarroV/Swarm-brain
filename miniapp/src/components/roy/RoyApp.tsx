@@ -4,7 +4,7 @@ import type { Me, Task } from "@/types";
 import { TaskModal } from "@/components/TaskModal";
 import { cn } from "@/lib/utils";
 import { getDeepLinkMeetingId, getDeepLinkTaskId } from "@/lib/telegram";
-import { fetchAgentMeetings, logout } from "@/lib/api";
+import { fetchAgentMeetings, fetchMeetings, logout } from "@/lib/api";
 import { OPEN_MEETING_EVENT } from "@/lib/single-tab";
 import { queryToState, stateToPath } from "@/lib/royUrl";
 import {
@@ -16,7 +16,7 @@ import {
   useRoyNav,
 } from "./nav";
 import type { Lens, SmartListId } from "@/lib/smartLists";
-import { Avatar, DetailPanelContext, NavHeader, ROY_TABS, RoyHeader, RoyTabBar } from "./ui";
+import { Avatar, DetailPanelContext, NavHeader, ROY_TABS, RoyHeader, RoyTabBar, SHELL_BAR_H } from "./ui";
 import { HeaderActions } from "./HeaderActions";
 import { PanelHostContext, SidePanelFrame } from "./SidePanel";
 import { initials } from "./dash/shared";
@@ -46,9 +46,11 @@ import { SettingsRoute } from "@/components/settings/SettingsDesk";
 import { AdminRoute } from "@/components/admin/AdminDesk";
 import { MeetAdminScreen } from "./screens/MeetAdminScreen";
 import { type RailId, RoyRail } from "./RoyRail";
+import { useOverdueCount } from "./useOverdueCount";
 import { NotificationsBell } from "./NotificationsBell";
 import { DeployNoticeBar, HeaderNotice } from "./DeployNoticeBar";
 import { AnswerModal } from "./AnswerModal";
+import { PasskeyStep } from "./PasskeyStep";
 
 // Каркас «Рой»: корневые разделы + push-стек.
 // МОБАЙЛ (решение владельца 2026-08-22, docs/decisions/2026-08-22-mobile-nav.md): нижний таб-бар
@@ -87,6 +89,8 @@ export function RoyApp({ me }: { me: Me | null }) {
   // эндпоинт /agent-meetings может быть недоступен, и это не повод ронять каркас (та же
   // намеренная деградация, что в AgentReviewQueue).
   const [reviewCount, setReviewCount] = useState(0);
+  // Мои просроченные — кружок на «Задачи» (issue #903); пересчёт при смене таба и правке задачи.
+  const overdueCount = useOverdueCount(me, `${tab}:${stack.length}:${tasksVersion}`);
   // Стек восстановлен из sessionStorage? До этого не персистим, иначе начальный [] затрёт сохранённый.
   const hydrated = useRef(false);
   // Состояние только что пришло ИЗ адреса (popstate или разбор при загрузке) — значит
@@ -146,12 +150,13 @@ export function RoyApp({ me }: { me: Me | null }) {
   // (разобрал очередь → вернулся на другой таб → счётчик обновится при следующем заходе).
   useEffect(() => {
     let alive = true;
-    fetchAgentMeetings("awaiting_review")
-      .then((list) => {
-        if (alive) setReviewCount(list.length);
-      })
-      .catch(() => {
-        if (alive) setReviewCount(0);
+    // Та же очередь, что у стикера «Вычитай встречи» на главной: черновики рекордера на
+    // вычитке + свои неподтверждённые встречи (#903). Упал один источник — считаем по другому.
+    Promise.allSettled([fetchAgentMeetings("awaiting_review"), fetchMeetings({ confirmed: false })])
+      .then(([review, pending]) => {
+        if (!alive) return;
+        const n = (r: PromiseSettledResult<unknown[]>) => (r.status === "fulfilled" ? r.value.length : 0);
+        setReviewCount(n(review) + n(pending));
       });
     return () => {
       alive = false;
@@ -366,6 +371,8 @@ export function RoyApp({ me }: { me: Me | null }) {
         {/* Плашка «скоро обновление»: на десктопе — в шапке экрана (HeaderNotice), здесь только
             мобайл и десктопные экраны без такой шапки. См. шапку DeployNoticeBar.tsx. */}
         <DeployNoticeBar />
+        {/* Второй шаг входа — палец (ключ доступа, #955): сам просит Touch ID после Google/Telegram. */}
+        <PasskeyStep me={me} />
         {me?.is_demo && (
           <div
             className="flex shrink-0 flex-wrap items-center justify-center gap-x-3 gap-y-1 bg-primary px-4 py-1.5 text-primary-foreground"
@@ -395,7 +402,7 @@ export function RoyApp({ me }: { me: Me | null }) {
             <RoyRail
               active={railActive}
               onSelect={railSelect}
-              badges={{ meetings: reviewCount }}
+              badges={{ meetings: reviewCount, tasks: overdueCount }}
             />
           )}
           <div ref={setPanelHost} className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
@@ -421,7 +428,7 @@ export function RoyApp({ me }: { me: Me | null }) {
                     заголовка вкладки (стенд). Мобайл — нижний таб-бар. */
                   }
                   {isDesktop && tab !== "search" && tab !== "sprints" && (
-                    <div className="flex shrink-0 items-center justify-between border-b border-line px-5 py-2">
+                    <div className="flex shrink-0 items-center justify-between border-b border-line px-5" style={{ height: SHELL_BAR_H }}>
                       <h1 className="font-semibold text-ink" style={{ fontSize: 16, letterSpacing: "-0.01em" }}>
                         {sectionTitle ? shellDt(sectionTitle[0], sectionTitle[1]) : null}
                       </h1>
@@ -452,7 +459,7 @@ export function RoyApp({ me }: { me: Me | null }) {
                     active={tab === "sprints" || tab === "market" ? "more" : tab}
                     onChange={(id) => setTab(id as RoyTab)}
                     className="lg:hidden"
-                    badges={{ cal: reviewCount }}
+                    badges={{ cal: reviewCount, task: overdueCount }}
                   />
                 </>
               )}
@@ -645,7 +652,7 @@ function Wrapped(
       {/* Десктоп: раздел из левой рейки — та же полоса заголовка, что у табов, без «Назад»
           (рейка всегда на экране, стенд). Мобайл — push-экран с «Назад». */}
       {isDesktop ? (
-        <div className="relative z-30 flex shrink-0 items-center justify-between border-b border-line px-5 py-2">
+        <div className="relative z-30 flex shrink-0 items-center justify-between border-b border-line px-5" style={{ height: SHELL_BAR_H }}>
           <h1 className="font-semibold text-ink" style={{ fontSize: 16, letterSpacing: "-0.01em" }}>{title}</h1>
           <HeaderNotice className="px-4" />
           <NotificationsBell />

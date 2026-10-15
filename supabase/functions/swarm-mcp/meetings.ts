@@ -4,6 +4,7 @@ import {
   type DraftMeetingRow,
   draftMeetingsOwnScopedFilter,
 } from "../_shared/meeting-access.ts";
+import { BOT_SLOT_COLUMNS, isMissedBotSlot, type SlotRow } from "../_shared/bot-slot.ts";
 import { publishDraftMeeting } from "../_shared/meeting-publish.ts";
 import { ADMIN_USER_ID, matchAssignee, resolveGroupId } from "./tasks/tools.ts";
 import { entryAccessError, type EntryAccessRow } from "../_shared/entries/access.ts";
@@ -64,7 +65,7 @@ export async function toolGetReviewQueue(args: Caller): Promise<string> {
   if (!groupId) return "Ошибка: пользователь не найден в системе.";
   // Тот же фильтр «свои», что у GET /agent-meetings: записывал ИЛИ совладелец (PR #508).
   const { data, error, count } = await supabase.from("meetings")
-    .select("id, title, source, started_at, draft_notes_md", { count: "exact" })
+    .select(`id, title, source, started_at, draft_notes_md, ${BOT_SLOT_COLUMNS}`, { count: "exact" })
     .eq("group_id", groupId)
     .eq("status", "awaiting_review")
     .or(draftMeetingsOwnScopedFilter(callerId))
@@ -74,7 +75,10 @@ export async function toolGetReviewQueue(args: Caller): Promise<string> {
     console.error("mcp review queue failed:", error);
     return "Ошибка: не удалось загрузить очередь вычитки.";
   }
-  return formatReviewQueue((data ?? []) as QueueRow[], count ?? null);
+  // Пустой слот бота (ждёт у двери, не впустили) в очереди не виден — как в GET /agent-meetings.
+  const rows = (data ?? []) as Array<QueueRow & SlotRow>;
+  const shown = rows.filter((r) => !isMissedBotSlot(r));
+  return formatReviewQueue(shown, count != null ? count - (rows.length - shown.length) : null);
 }
 
 export async function toolGetDraftMeeting(args: Caller & { meeting_id: string }): Promise<string> {
@@ -177,76 +181,4 @@ export async function toolExtractTasksFromMeeting(
   return formatProposedTasks(proposed, callerName);
 }
 
-const IDENTITY = { type: "number", description: "Заполняется из токена" };
-const MEETING_ID = { type: "string", description: "id черновика из get_review_queue" };
-
-export const MEETING_REVIEW_TOOL_DEFINITIONS = [
-  {
-    name: "get_review_queue",
-    description:
-      "Очередь вычитки: черновики встреч, которые записал ты и которые ещё не опубликованы в базу. У каждого печатается id. Чужие черновики не видны никому, включая владельца.",
-    inputSchema: { type: "object", properties: { requesting_user_id: IDENTITY } },
-  },
-  {
-    name: "get_draft_meeting",
-    description: "Открыть черновик встречи: название, время, участники, тезисы.",
-    inputSchema: {
-      type: "object",
-      properties: { meeting_id: MEETING_ID, requesting_user_id: IDENTITY },
-      required: ["meeting_id"],
-    },
-  },
-  {
-    name: "update_draft_meeting",
-    description:
-      "Поправить черновик до публикации: тезисы (notes, markdown целиком — заменяют прежние) и/или название. Правленые тезисы считаются вычитанными человеком.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        meeting_id: MEETING_ID,
-        notes: { type: "string", description: "Новые тезисы целиком (markdown)" },
-        title: { type: "string", description: "Новое название встречи" },
-        requesting_user_id: IDENTITY,
-      },
-      required: ["meeting_id"],
-    },
-  },
-  {
-    name: "publish_draft_meeting",
-    description:
-      "Опубликовать черновик в базу знаний (то же, что «Согласовать» в вебе). Если эта встреча уже лежит в базе, черновик привязывается к ней, а остаётся более полная версия. По умолчанию — в базу команды.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        meeting_id: MEETING_ID,
-        base: {
-          type: "string",
-          enum: ["team", "personal"],
-          description:
-            "team — база команды (по умолчанию), personal — личная. Встречу нескольких владельцев в личную нельзя; исключение — встреча 1-1 (ровно двое): тогда одна личная запись видна обоим",
-        },
-        countries: {
-          type: "array",
-          items: { type: "string" },
-          description:
-            "Рынки на английском (Serbia, Croatia…). Не передан — определит классификатор по тезисам. Пустой список — «Общее»",
-        },
-        requesting_user_id: IDENTITY,
-      },
-      required: ["meeting_id"],
-    },
-  },
-  {
-    name: "extract_tasks_from_meeting",
-    description:
-      "Предложить задачи по тезисам встречи — тем же экстрактором, что кнопка «Сгенерировать» в вебе. Ничего не создаёт: покажи список человеку и заведи согласованные через add_task. Источник — черновик (meeting_id) или запись в базе (entry_id).",
-    inputSchema: {
-      type: "object",
-      properties: {
-        meeting_id: { type: "string", description: "id черновика из get_review_queue" },
-        entry_id: { type: "string", description: "id записи-встречи в базе (из get_meetings / search_knowledge)" },
-        requesting_user_id: IDENTITY,
-      },
-    },
-  },
-];
+export { MEETING_REVIEW_TOOL_DEFINITIONS } from "./meetings-defs.ts";

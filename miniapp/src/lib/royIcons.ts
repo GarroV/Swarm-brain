@@ -77,6 +77,8 @@ export const ROY_ICON_PATHS = {
   image: "M3.5 4.5h13v11h-13zM3.5 13l3.8-3.8 3 3 2-2 4.2 4.2M12.8 7.8v.01",
   download: "M10 3.5v9M6.5 9l3.5 3.5L13.5 9M4 16.5h12",
   upload: "M10 12.5v-9M6.5 7L10 3.5 13.5 7M4 16.5h12",
+  // Выход из аккаунта: дверной проём и стрелка наружу (кнопка у профиля в рейке).
+  logout: "M8.5 3.5h-4v13h4M12.5 6.5L16 10l-3.5 3.5M16 10H8",
 } as const;
 
 export type RoyIconName = keyof typeof ROY_ICON_PATHS;

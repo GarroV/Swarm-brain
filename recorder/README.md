@@ -249,17 +249,16 @@ Edge-функция: `supabase/functions/swarm-recorder-setup` (публичны
 2. Закоммитить и смёржить в `main`. **Проверить, что собирается** (`./build-app.sh`).
 3. Поставить тег на этот коммит и запушить: `git tag recorder-build-3 && git push origin recorder-build-3`.
 4. **Залить готовый zip в Storage — раздача идёт ОТТУДА, не с GitHub** (release asset анонимно
-   отдаёт 404 — issue #91). **С 24.09.2026 это делает сам `recorder-release.yml`** (шаг «Upload zip
-   to Supabase Storage», ключ через Management API, в конце проверяет анонимный GET = 200). Руками —
-   только если шаг упал (локальному CLI может не хватить прав на ключи):
+   отдаёт 404 — issue #91). **С 13.10.2026 это делает сам `recorder-release.yml`** (шаг «Upload zip
+   to Storage»: команда `recorder-upload` шлюза раскатки на своём сервере, #919; ключ service-role
+   остаётся на сервере; существующий объект не перезаписывается; в конце анонимный GET с проверкой
+   sha256 = 200). Руками — только если шаг упал, тем же шлюзом (нужен ключ раскатки, см.
+   `docs/DEPLOY.md`):
    ```sh
-   KEY="$(supabase projects api-keys --project-ref vbqglndbxkpmreccpqmr -o json \
-     | python3 -c 'import sys,json;d=json.load(sys.stdin);ks=d["keys"] if isinstance(d,dict) else d;print(next(k["api_key"] for k in ks if k.get("id")=="service_role"))')"
-   curl -X POST "https://vbqglndbxkpmreccpqmr.supabase.co/storage/v1/object/swarm_drive/recorder/SwarmRecorder-3.zip" \
-     -H "authorization: Bearer $KEY" -H "content-type: application/zip" \
-     --data-binary @SwarmRecorder-3.zip
-   # проверить анонимно: curl -sS -o /dev/null -w '%{http_code}\n' \
-   #   https://vbqglndbxkpmreccpqmr.supabase.co/storage/v1/object/public/swarm_drive/recorder/SwarmRecorder-3.zip
+   . scripts/lib/swarm-server.sh
+   swarm_server recorder-upload 3 < recorder/SwarmRecorder-3.zip   # печатает sha256
+   # проверить анонимно: curl -sS -A swarm-check -o /dev/null -w '%{http_code}\n' \
+   #   https://api.swarm-team.app/storage/v1/object/public/swarm_drive/recorder/SwarmRecorder-3.zip
    ```
 5. Поднять номер и сумму в `supabase/functions/_shared/recorder-release.ts` **одним коммитом**:
    `RECORDER_LATEST_BUILD = 3`, `RECORDER_ASSET_SHA256` — из сводки прогона `recorder-release.yml`

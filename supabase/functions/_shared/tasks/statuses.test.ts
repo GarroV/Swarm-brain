@@ -49,12 +49,12 @@ Deno.test("CHECK в базе перечисляет ровно тот же на�
 });
 
 Deno.test("enum'ы MCP перечисляют ровно тот же набор", async () => {
-  const src = await Deno.readTextFile(`${ROOT}swarm-mcp/tasks/tools.ts`);
+  const src = await Deno.readTextFile(`${ROOT}swarm-mcp/tasks/tools-defs.ts`);
   const enums = [...src.matchAll(/enum:\s*\[([^\]]*"done"[^\]]*)\]/g)];
   assertEquals(
     enums.length > 0,
     true,
-    "не нашёл ни одного enum статусов в tools.ts",
+    "не нашёл ни одного enum статусов в tools-defs.ts",
   );
   for (const e of enums) {
     const список = e[1].split(",").map((s) => s.trim().replace(/^"|"$/g, ""))

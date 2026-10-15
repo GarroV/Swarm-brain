@@ -4,6 +4,7 @@ import { useDt } from "../nav";
 import { RoyIcon } from "../icons";
 import { DashBlock, Row } from "./shared";
 import { fetchTodayMeetings, openGoogleConnect, type TodayMeeting, type TodayMeetings } from "@/lib/api";
+import { recall, remember } from "@/lib/lastSeen";
 import { hasJoined, markJoined } from "@/lib/joinedCalls";
 
 // Право-ВЕРХ главного экрана: встречи из календаря на сегодня (issue #218).
@@ -206,9 +207,10 @@ export function MeetingsToday({ className, flat, first, flatBody }: {
 }) {
   const dt = useDt();
   const locale = dt("ru-RU", "en-US");
-  const [state, setState] = useState<{ data: TodayMeetings | null; loading: boolean; failed: boolean }>({
-    data: null, loading: true, failed: false,
-  });
+  // Повторный заход — сразу с прошлым списком созвонов, обновление в фоне (#906).
+  const [state, setState] = useState<{ data: TodayMeetings | null; loading: boolean; failed: boolean }>(() => ({
+    data: recall<TodayMeetings>("home:today"), loading: true, failed: false,
+  }));
   // Нажатия читаем ТОЛЬКО после монтирования: sessionStorage на сервере не существует, и
   // чтение прямо в рендере разошлось бы с серверной разметкой при гидрации.
   const [joinedIds, setJoinedIds] = useState<Set<string>>(new Set());
@@ -216,7 +218,7 @@ export function MeetingsToday({ className, flat, first, flatBody }: {
   const load = () => {
     setState((s) => ({ ...s, loading: true, failed: false }));
     fetchTodayMeetings()
-      .then((data) => setState({ data, loading: false, failed: false }))
+      .then((data) => setState({ data: remember("home:today", data), loading: false, failed: false }))
       .catch(() => setState({ data: null, loading: false, failed: true }));
   };
 
