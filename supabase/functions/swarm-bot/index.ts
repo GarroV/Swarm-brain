@@ -64,6 +64,7 @@ import { generatePersonalDigest, sendAllDigests } from "./handlers/digest.ts";
 import { sendDailyReport } from "./handlers/daily-report-send.ts";
 import { sendReviewReminders } from "./handlers/review-reminders-send.ts";
 import { sendTaskPings } from "./handlers/task-pings-send.ts";
+import { sendDueReminders } from "./handlers/task-due-reminders-send.ts";
 import { getHelpText, guideMenu, guideStep, helpKeyboard } from "./handlers/help.ts";
 import {
   buildRecorderSetupOneLiner,
@@ -421,7 +422,12 @@ Deno.serve(async (req: Request) => {
       console.error("telegram_outbox drain failed:", e);
     }
     const sent = await sendTaskPings();
-    return new Response(`OK: ${sent} pings sent, ${outboxSent} queued messages delivered`, { status: 200 });
+    // Напоминания о сроке за день — после ручных пингов: задача с пингом, сработавшим сегодня, их не получает.
+    const dueSent = await sendDueReminders();
+    return new Response(
+      `OK: ${sent} pings sent, ${dueSent} due reminders sent, ${outboxSent} queued messages delivered`,
+      { status: 200 },
+    );
   }
 
   if (body.feedback_retention_cron === true) {
