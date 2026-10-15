@@ -10,6 +10,7 @@ import { onlyLive } from "../../_shared/tasks/live.ts";
 import { externalFetch, VIA_TELEGRAM } from "../../_shared/external-fetch.ts";
 import { isSuperadmin, type MemberRow } from "../../_shared/users/admin-scope.ts";
 import { canActOnUser, canAddUsers, isEditableProfileField, type UserAction, type UsersActor } from "./users-scope.ts";
+import { escapeHtml } from "../../_shared/telegram-html.ts";
 
 const TELEGRAM_BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN")!;
 
@@ -95,7 +96,7 @@ export async function handleUsers(
       const p = profileMap[u.telegram_id];
       const fullName = [p?.first_name, p?.last_name].filter(Boolean).join(" ");
       const displayName = fullName || (u.username ? `@${u.username}` : `ID ${u.telegram_id}`);
-      return `• ${displayName}`;
+      return `• ${escapeHtml(displayName)}`;
     });
     if (pending.length) {
       lines.push("", `<i>Приглашены, ещё не вошли (${pending.length}):</i>`);
@@ -248,11 +249,11 @@ export async function showProfile(chatId: number, targetId: number, messageId?: 
   const markets = profile?.markets?.join(", ") || "—";
 
   const lines = [
-    `<b>👤 ${name}</b>`,
-    `🔖 @${profile?.username ?? user?.username ?? "—"} (${targetId})`,
-    `💼 ${profile?.role || "—"}`,
-    `🌍 ${markets}`,
-    profile?.email ? `📧 ${profile.email}` : "",
+    `<b>👤 ${escapeHtml(name)}</b>`,
+    `🔖 @${escapeHtml(profile?.username ?? user?.username ?? "—")} (${targetId})`,
+    `💼 ${escapeHtml(profile?.role || "—")}`,
+    `🌍 ${escapeHtml(markets)}`,
+    profile?.email ? `📧 ${escapeHtml(profile.email)}` : "",
   ].filter(Boolean).join("\n");
 
   const keyboard = [
@@ -297,11 +298,11 @@ export async function handleProfileTasks(chatId: number, targetId: number): Prom
     .slice(0, 15);
 
   if (!tasks.length) {
-    await sendMessage(chatId, `У <b>${searchName}</b> нет активных задач.`);
+    await sendMessage(chatId, `У <b>${escapeHtml(searchName)}</b> нет активных задач.`);
     return;
   }
 
-  await sendMessage(chatId, `<b>Задачи · ${searchName}:</b> ${tasks.length} шт.`);
+  await sendMessage(chatId, `<b>Задачи · ${escapeHtml(searchName)}:</b> ${tasks.length} шт.`);
   for (const task of tasks) {
     await sendTaskCard(chatId, task);
   }
@@ -454,10 +455,15 @@ export async function handleUserCallbacks(
       targetId,
     ).maybeSingle();
     const name = [profile?.first_name, profile?.last_name].filter(Boolean).join(" ") || `ID ${targetId}`;
-    await editInlineMessage(chatId, msgId, `Удалить <b>${name}</b> из базы?\n\nПользователь потеряет доступ к боту.`, [[
-      { text: "✅ Да, удалить", callback_data: `udelc_${targetId}` },
-      { text: "Отмена", callback_data: `pu_${targetId}` },
-    ]]);
+    await editInlineMessage(
+      chatId,
+      msgId,
+      `Удалить <b>${escapeHtml(name)}</b> из базы?\n\nПользователь потеряет доступ к боту.`,
+      [[
+        { text: "✅ Да, удалить", callback_data: `udelc_${targetId}` },
+        { text: "Отмена", callback_data: `pu_${targetId}` },
+      ]],
+    );
     return true;
   }
   if (data.startsWith("udelc_")) {
@@ -513,7 +519,7 @@ export async function handleUserCallbacks(
       ? (currentValue as string[]).join(", ")
       : (currentValue as string ?? "");
     await setSession(chatId, `profile_${targetId}_${field}`, undefined);
-    const hint = currentStr ? `\n\nСейчас: <i>${currentStr}</i>` : "";
+    const hint = currentStr ? `\n\nСейчас: <i>${escapeHtml(currentStr)}</i>` : "";
     await sendMessage(chatId, `Введи новое значение для <b>${label}</b>:${hint}`);
     return true;
   }

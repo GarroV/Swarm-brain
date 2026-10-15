@@ -14,6 +14,7 @@ import {
 import { FEEDBACK_CATEGORIES, feedbackCategoryLabel, isFeedbackCategory } from "../../_shared/feedback-categories.ts";
 import type { TgCallbackQuery } from "../lib/types.ts";
 import { externalFetch, VIA_TELEGRAM_FILE } from "../../_shared/external-fetch.ts";
+import { escapeHtml } from "../../_shared/telegram-html.ts";
 
 const TELEGRAM_BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN")!;
 const BOT_NAME = Deno.env.get("BOT_NAME") ?? "bot";
@@ -114,8 +115,8 @@ async function saveFeedback(
     minute: "2-digit",
   });
   const channelText = `<b>[${BOT_NAME}]</b> 🐛 ${feedbackCategoryLabel(category)} · ${
-    feedbackAuthor(username, telegramId)
-  } · ${date}\n\n${text}`;
+    escapeHtml(feedbackAuthor(username, telegramId))
+  } · ${date}\n\n${escapeHtml(text)}`;
   await postToChannel(channelId, channelText, screenshotUrl);
 }
 

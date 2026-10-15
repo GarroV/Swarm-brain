@@ -23,7 +23,7 @@ Deno.test("доска задач: линза и список из сохранё
   assertEquals(presenceSection("/", "?tab=task", "not json"), "tasks");
 });
 
-Deno.test("пульс: сразу на смене раздела и возврате к вводу, иначе раз в 30 с", () => {
+Deno.test("пульс: сразу на смене раздела и возврате к вводу, иначе раз в 15 с", () => {
   const t0 = 1_000_000;
   const memo = { section: "tasks", active: false, at: t0 };
   assertEquals(shouldPulse(null, "tasks", false, t0), true);

@@ -26,6 +26,7 @@ import {
 import { langCode, type LangVotePart, partsNeedingRetranscribe, resolveMeetingLang } from "./meeting-lang.ts";
 import { buildTezisyUserMessage, TEZISY_PROMPT } from "./tezisy-prompt.ts";
 import { glossaryWhisperHint } from "./glossary.ts";
+import { escapeHtml } from "./telegram-html.ts";
 import { useGlossaryHint } from "./bot-profile.ts";
 import { extractChatContent } from "./openai-chat.ts";
 import { buildSegments, type Segment, speakerLegend, type SpeakerSpan } from "./speakers.ts";
@@ -658,7 +659,7 @@ async function summarizeAndFinish(lease: ProcessingLease, m: MeetingRow, state: 
   }
 
   const webUrl = WEB_BASE_URL ? `${WEB_BASE_URL}/?meeting=${m.id}` : "";
-  const titleStr = finalTitle ? `: <b>${finalTitle}</b>` : "";
+  const titleStr = finalTitle ? `: <b>${escapeHtml(finalTitle)}</b>` : "";
   // Только факт «обработана и готова» (владелец 30.09.2026): приписка «Возьмёт любой из участников»
   // смысла для получателя не несла.
   const text = `📝 Встреча обработана и готова${titleStr}`;

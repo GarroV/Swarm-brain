@@ -685,8 +685,8 @@ export async function logout(): Promise<void> {
 }
 
 // ── Присутствие (#751) ───────────────────────────────────────────────────────
-// Пульс веба (components/PresencePulse.tsx): раздел и был ли ввод. На экран не выводится.
-// Свой fetch, а не apiFetch: пульс раз в 30 с не должен сбрасывать кэш чтения, будить плашку
+// Пульс веба (components/PresencePulse.tsx): раздел и был ли ввод. Свой fetch, а не apiFetch:
+// пульс раз в 15 с не должен сбрасывать кэш чтения, будить плашку
 // «нет связи», уводить на вход по 401 или включать заглушку работ по 503 — это фон, а не
 // действие человека. keepalive: запрос `away` на закрытии вкладки должен уйти и после выгрузки
 // страницы (sendBeacon не умеет заголовок tma, а в Telegram авторизация — именно он).
@@ -707,6 +707,34 @@ export async function sendPresence(ping: PresencePing): Promise<number> {
     body: JSON.stringify(ping),
   });
   return res.status;
+}
+
+/**
+ * Полоска «кто сейчас в SWARM» (components/presence/): анонимные звери онлайн-участников
+ * пространства. Опрашивается раз в 5 с (lib/presenceStripStore.ts) — по той же причине, что и
+ * пульс, свой fetch без кэша чтения и без редиректа на вход. Бросает Error с кодом статуса.
+ */
+export async function fetchPresenceStrip(): Promise<unknown> {
+  if (DEV_MODE) return mockPresenceStrip();
+  const res = await fetch(`${API_BASE}/presence/strip`, {
+    cache: "no-store",
+    credentials: "include",
+    headers: authHeaders(),
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json();
+}
+
+function mockPresenceStrip(): unknown {
+  const sections = ["tasks/mine/today", "meetings", "sprints", "market", "home", "tasks/team/all", "base"] as const;
+  const people = sections.map((section, i) => ({
+    key: `${i * 7}-${i % 5}`,
+    animal: i * 7,
+    style: i % 5,
+    section,
+    state: i % 3 === 2 ? "idle" : "active",
+  }));
+  return { window: Math.floor(Date.now() / (4 * 3600_000)), people };
 }
 
 // ── Встречи сегодня из календаря (issue #218) ────────────────────────────────
@@ -1375,10 +1403,10 @@ export async function fetchShortLinks(): Promise<ShortLink[]> {
   return apiFetch<ShortLink[]>("/short-links");
 }
 
-export async function createShortLink(url: string, meta: ShortLinkMeta): Promise<ShortLink> {
+export async function createShortLink(url: string, meta: ShortLinkMeta, code?: string): Promise<ShortLink> {
   if (DEV_MODE) {
     const l: ShortLink = {
-      code: Math.random().toString(36).slice(2, 8),
+      code: code?.trim() || Math.random().toString(36).slice(2, 8),
       url,
       title: meta.title.trim(),
       note: meta.note.trim() || null,
@@ -1392,7 +1420,10 @@ export async function createShortLink(url: string, meta: ShortLinkMeta): Promise
     MOCK_SHORT_LINKS = [l, ...MOCK_SHORT_LINKS];
     return l;
   }
-  return apiFetch<ShortLink>("/short-links", { method: "POST", body: JSON.stringify({ url, ...meta }) });
+  return apiFetch<ShortLink>("/short-links", {
+    method: "POST",
+    body: JSON.stringify({ url, ...meta, ...(code?.trim() ? { code: code.trim() } : {}) }),
+  });
 }
 
 export async function updateShortLink(code: string, meta: ShortLinkMeta): Promise<ShortLink> {

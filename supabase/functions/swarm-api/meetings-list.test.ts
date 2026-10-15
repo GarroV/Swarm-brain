@@ -11,6 +11,7 @@ import {
   LIGHT_PAGE_SIZE,
   LIGHT_TITLE_CHARS,
   parseMeetingsListParams,
+  quotePostgrestValue,
   toLightRow,
 } from "./meetings-list.ts";
 
@@ -189,4 +190,26 @@ Deno.test("GET /meetings: к entries — только через хелперы 
 Deno.test("GET /meetings: очередь вычитки не получает фильтров экрана (они только для списка)", async () => {
   const body = await meetingsRouteBody();
   assert(body.includes("if (!isReviewQueue) q = applyListFilters(q, lp);"));
+});
+
+Deno.test("поиск: кавычка, запятая и скобки остаются внутри значения, а не дописывают условие", () => {
+  const { client, calls } = recordingClient();
+  const params = { ...parse("light=1"), q: `",id.gt.0)` };
+  applyListFilters(buildEntriesQuery(client, "id", { groupId: "g", telegramId: 1 }) as never, params);
+  const search = calls.filter((c) => c.method === "or").map((c) => String(c.args[0])).find((o) =>
+    o.includes("metadata->>title.ilike.")
+  )!;
+  assert(search.includes(String.raw`"*\",id.gt.0)*"`), `значение не экранировано: ${search}`);
+});
+
+Deno.test("quotePostgrestValue: обычный запрос не меняется, обратная косая и кавычка экранируются", () => {
+  assertEquals(quotePostgrestValue("*польша*"), `"*польша*"`);
+  assertEquals(quotePostgrestValue(String.raw`a\"b`), String.raw`"a\\\"b"`);
+});
+
+Deno.test("даты from/to — только YYYY-MM-DD существующего дня, иначе фильтр не применяется", () => {
+  assertEquals(parse("from=2026-10-12&to=2026-10-13").from, "2026-10-12");
+  assertEquals(parse("from=2026-02-30").from, null);
+  assertEquals(parse("from=2026-10-12,id.gt.0").from, null);
+  assertEquals(parse("to=2026-10-13)").to, null);
 });
