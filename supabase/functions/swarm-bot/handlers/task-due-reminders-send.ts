@@ -3,6 +3,7 @@ import { notifyMessage } from "../lib/notify.ts";
 import { groupByRecipient, pingRecipients, pingSendingOpen, todayIn } from "./task-pings.ts";
 import {
   asPingRow,
+  dueReminderWindowOpen,
   type DueRow,
   formatDueReminders,
   isDueReminderDue,
@@ -17,11 +18,11 @@ const SELECT_DUE =
 // Со сроком на завтра бывает много задач (срок по умолчанию — завтра, и закрытые среди них тоже).
 const MAX_PER_TICK = 1000;
 
-// Крон (раз в час, после ручных пингов) → напоминает о сроке за день. До 9:00 по Москве молчит,
-// как и пинги. Закрытых отсекает `isDueReminderDue` — единственное место правила.
+// Крон (раз в час, после ручных пингов) → напоминает о сроке за день, только утром: с 9:00 до 13:00
+// по Москве (`dueReminderWindowOpen`). Закрытых отсекает `isDueReminderDue` — единственное место правила.
 // Возвращает число задач, по которым напоминание отработано (дошло всем).
 export async function sendDueReminders(now: Date = new Date()): Promise<number> {
-  if (!pingSendingOpen(now)) return 0;
+  if (!pingSendingOpen(now) || !dueReminderWindowOpen(now)) return 0;
   const today = todayIn(now);
   const tomorrow = addDays(today, 1);
   const { data, error } = await onlyLive(supabase.from("tasks").select(SELECT_DUE))

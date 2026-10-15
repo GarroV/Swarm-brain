@@ -3,6 +3,7 @@ import { assertEquals, assertStringIncludes } from "https://deno.land/std@0.224.
 import { FakeTime } from "jsr:@std/testing@1/time";
 import {
   asPingRow,
+  dueReminderWindowOpen,
   type DueRow,
   formatDueReminders,
   isDueReminderDue,
@@ -107,4 +108,13 @@ Deno.test("isDueReminderDue: задачу, заведённую в день на
   assertEquals(isDueReminderDue(row({ created_at: "2026-10-14T22:30:00Z" }), TODAY), false);
   assertEquals(isDueReminderDue(row({ created_at: "2026-10-14T21:30:00Z" }), TODAY), true);
   assertEquals(isDueReminderDue(row({ created_at: null }), TODAY), true);
+});
+
+Deno.test("dueReminderWindowOpen: только утро 9:00–13:00 по Москве", () => {
+  // Москва UTC+3: 06:00Z = 09:00, 09:59Z = 12:59, 10:00Z = 13:00, 16:00Z = 19:00, 05:59Z = 08:59.
+  assertEquals(dueReminderWindowOpen(new Date("2026-10-15T06:00:00Z")), true);
+  assertEquals(dueReminderWindowOpen(new Date("2026-10-15T09:59:00Z")), true);
+  assertEquals(dueReminderWindowOpen(new Date("2026-10-15T10:00:00Z")), false);
+  assertEquals(dueReminderWindowOpen(new Date("2026-10-15T16:00:00Z")), false);
+  assertEquals(dueReminderWindowOpen(new Date("2026-10-15T05:59:00Z")), false);
 });
