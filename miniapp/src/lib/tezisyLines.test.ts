@@ -1,6 +1,6 @@
 // deno test --allow-read miniapp/src/lib/tezisyLines.test.ts
 import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import { applyAskAnswer, findLineOf, insertAfter, linesToTezisy, tezisyToLines } from "./tezisyLines.ts";
+import { applyAskAnswer, clearedLines, findLineOf, insertAfter, linesToTezisy, replaceAllWithChar, replaceAllWithText, tezisyToLines } from "./tezisyLines.ts";
 
 const SAMPLE = "### Поставщики\n- Анна предложила сменить поставщика сыра\n- Срок — до 15.10\n\n" +
   "### Решения и договорённости\n- Боб готовит сравнение цен";
@@ -64,4 +64,18 @@ Deno.test("ответ на вопрос: вставка под пунктом, �
     "### Тема\n- первый факт\n- второй факт\n- соседний");
   assertEquals(linesToTezisy(applyAskAnswer(lines, -1, answer, "replace")),
     "### Тема\n- старый пункт\n- соседний\n- первый факт\n- второй факт");
+});
+
+Deno.test("выделено всё + вставка: старые тезисы заменяются вставленным, разобранным как тезисы", () => {
+  const next = replaceAllWithText("### Новая тема\n- первый\n\n- второй");
+  assertEquals(linesToTezisy(next), "### Новая тема\n- первый\n- второй");
+});
+
+Deno.test("выделено всё + вставка пустого текста: одна пустая строка-пункт", () => {
+  assertEquals(replaceAllWithText("  \n \n"), clearedLines());
+  assertEquals(clearedLines(), [{ kind: "bullet", text: "" }]);
+});
+
+Deno.test("выделено всё + символ: одна строка с этим символом", () => {
+  assertEquals(replaceAllWithChar("я"), [{ kind: "bullet", text: "я" }]);
 });
