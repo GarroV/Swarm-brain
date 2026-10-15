@@ -5,7 +5,6 @@
 // Настоящих имён у клиента нет: подсказка = псевдоним + раздел + состояние.
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { useLang } from "@/components/roy/nav";
-import { useIsDesktop } from "@/components/roy/useIsDesktop";
 import { cn } from "@/lib/utils";
 import {
   orderForStrip,
@@ -21,6 +20,21 @@ import { ensureNeonDefs, neonAvatarMarkup } from "./neonStyles";
 import { stripLabel } from "./strings";
 
 const SIZE = 29;
+// Пять кружков — только на широком окне: на 1280 px шапка «Главной» (поиск, «Настроить главную»,
+// карта проекта) уже не вмещает их, и правая кнопка уезжала за край.
+const WIDE_QUERY = "(min-width: 1440px)";
+
+function useIsWide(): boolean {
+  const [wide, setWide] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia(WIDE_QUERY);
+    const sync = () => setWide(mq.matches);
+    sync();
+    mq.addEventListener("change", sync);
+    return () => mq.removeEventListener("change", sync);
+  }, []);
+  return wide;
+}
 const OVERLAP = 6;
 
 type Tip = { text: string; left: number; top: number };
@@ -43,7 +57,7 @@ function Avatar({ person }: { person: StripPerson }) {
 
 export function PresenceStrip({ className }: { className?: string }) {
   const lang = useLang();
-  const isDesktop = useIsDesktop();
+  const isWide = useIsWide();
   const people = useSyncExternalStore(subscribeStrip, getStripSnapshot, getStripServerSnapshot);
   const [tip, setTip] = useState<Tip | null>(null);
 
@@ -65,7 +79,7 @@ export function PresenceStrip({ className }: { className?: string }) {
 
   if (people.length === 0) return null;
 
-  const { shown, rest } = splitVisible(orderForStrip(people), isDesktop ? STRIP_MAX_DESKTOP : STRIP_MAX_MOBILE);
+  const { shown, rest } = splitVisible(orderForStrip(people), isWide ? STRIP_MAX_DESKTOP : STRIP_MAX_MOBILE);
   const text = (p: StripPerson) => tooltipText(p, ANIMAL_NAMES[p.animal]?.[lang === "en" ? 1 : 0] ?? "?", lang);
 
   const show = (el: HTMLElement, p: StripPerson) => {
