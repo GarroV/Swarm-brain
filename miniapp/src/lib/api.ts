@@ -1375,10 +1375,10 @@ export async function fetchShortLinks(): Promise<ShortLink[]> {
   return apiFetch<ShortLink[]>("/short-links");
 }
 
-export async function createShortLink(url: string, meta: ShortLinkMeta): Promise<ShortLink> {
+export async function createShortLink(url: string, meta: ShortLinkMeta, code?: string): Promise<ShortLink> {
   if (DEV_MODE) {
     const l: ShortLink = {
-      code: Math.random().toString(36).slice(2, 8),
+      code: code?.trim() || Math.random().toString(36).slice(2, 8),
       url,
       title: meta.title.trim(),
       note: meta.note.trim() || null,
@@ -1392,7 +1392,10 @@ export async function createShortLink(url: string, meta: ShortLinkMeta): Promise
     MOCK_SHORT_LINKS = [l, ...MOCK_SHORT_LINKS];
     return l;
   }
-  return apiFetch<ShortLink>("/short-links", { method: "POST", body: JSON.stringify({ url, ...meta }) });
+  return apiFetch<ShortLink>("/short-links", {
+    method: "POST",
+    body: JSON.stringify({ url, ...meta, ...(code?.trim() ? { code: code.trim() } : {}) }),
+  });
 }
 
 export async function updateShortLink(code: string, meta: ShortLinkMeta): Promise<ShortLink> {
