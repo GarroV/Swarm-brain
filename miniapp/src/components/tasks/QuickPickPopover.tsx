@@ -84,6 +84,7 @@ export function QuickPickPopover({ icon, ariaLabel, options, value, onPick, filt
       {open && pos && createPortal(
         <div
           ref={popRef}
+          data-escape-layer=""
           onPointerDown={(e) => e.stopPropagation()}
           style={{ position: "fixed", left: pos.left, top: pos.top, width: W, maxHeight: H }}
           className="z-[100] flex flex-col overflow-hidden rounded-xl border border-line bg-card shadow-xl dark:backdrop-blur-lg"

@@ -138,6 +138,7 @@ export function RecurrencePicker({ value, due, anchorDom, onChange, variant }: P
       {open && pos && createPortal(
         <div
           ref={popRef}
+          data-escape-layer=""
           role="dialog"
           aria-label={view === "rule" ? dt("Правило повтора", "Repeat rule") : dt("Повтор", "Repeat")}
           onPointerDown={(e) => e.stopPropagation()}

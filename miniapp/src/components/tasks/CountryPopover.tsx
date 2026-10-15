@@ -141,6 +141,7 @@ export function CountryPopover({ value, codes, onChange, variant = "chip", label
       {open && pos && createPortal(
         <div
           ref={popRef}
+          data-escape-layer=""
           role="menu"
           onPointerDown={(e) => e.stopPropagation()}
           style={{ position: "fixed", left: pos.left, top: pos.top, width: W, maxHeight: H }}
