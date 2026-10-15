@@ -109,7 +109,8 @@ Deno.test("полоска: ответ не содержит telegram_id, имё�
     telegram_id: id,
     section: "tasks/mine/today",
     state: "active",
-    last_seen_at: fresh,
+    // Обработчик сверяет со своим Date.now(), а не с NOW теста: фиксированная метка протухала через окно онлайна.
+    last_seen_at: new Date().toISOString(),
   }));
   const supabase = {
     from: (table: string) => {

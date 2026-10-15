@@ -133,7 +133,19 @@ jobs:
       - uses: supabase/setup-cli@1dedf2c611547ede7232d26866dd3c56ab903bbb # v1
         with:
           version: 2.118.0
+      # Образы контура — в кеш (#980): public.ecr.aws режет скачивания с адресов раннеров.
+      # Ключ от версии CLI (она закрепляет версии образов), один на оба задания с базой.
+      - name: Версия CLI для ключа кеша образов
+        id: sbver
+        run: echo "v=$(supabase --version)" >> "$GITHUB_OUTPUT"
+      - name: Кеш образов Supabase
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ${{ runner.temp }}/supabase-images
+          key: supabase-images-${{ steps.sbver.outputs.v }}
       - name: Локальный контур Supabase
+        env:
+          SUPABASE_IMAGES_DIR: ${{ runner.temp }}/supabase-images
         run: ./scripts/ci-supabase-up
       # Области явно: `scripts/check` без аргумента гоняет ещё и бота, а бот проверяется
       # своим workflow (`bot.yml`, там же `npm ci --prefix bot`). Здесь node_modules бота
@@ -173,7 +185,19 @@ jobs:
       - uses: supabase/setup-cli@1dedf2c611547ede7232d26866dd3c56ab903bbb # v1
         with:
           version: 2.118.0
+      # Образы контура — в кеш (#980): public.ecr.aws режет скачивания с адресов раннеров.
+      # Ключ от версии CLI (она закрепляет версии образов), один на оба задания с базой.
+      - name: Версия CLI для ключа кеша образов
+        id: sbver
+        run: echo "v=$(supabase --version)" >> "$GITHUB_OUTPUT"
+      - name: Кеш образов Supabase
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ${{ runner.temp }}/supabase-images
+          key: supabase-images-${{ steps.sbver.outputs.v }}
       - name: Локальный контур Supabase
+        env:
+          SUPABASE_IMAGES_DIR: ${{ runner.temp }}/supabase-images
         run: ./scripts/ci-supabase-up
       - name: Гейт сервера scriba
         run: ./scripts/check server
