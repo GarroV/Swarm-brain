@@ -3,9 +3,9 @@ name: Плашка и заморозка (руками)
 # Кнопка для плашки «скоро обновление» и заморозки «идут работы».
 #
 # Зачем: обе живут строкой в app_settings на проде, а писать в прод-базу из рабочего окружения
-# нельзя — у CLI на личном токене нет права database_write, и расширять его не будем: токен
-# нужен другим проектам (решение владельца 2026-09-25). Здесь CLI ходит ключом из секретов
-# репозитория — тем же, что накатывает миграции (deploy-migrations.yml).
+# нельзя. С 16.10.2026 (#978; решение — docs/decisions/2026-10-16-maintenance-gate.md) кнопка ходит
+# на свой сервер ключом шлюза раскатки из секретов репозитория (SWARM_DEPLOY_SSH_KEY), в его команду
+# `maintenance` (deploy/server/gate.sh): SQL зашит на сервере, из CI уходят только числа и текст.
 #
 # Это ПРАВКА ПРОД-ДАННЫХ: жать только по «да» владельца на раскатку, как и любую раскатку.
 # Обе строки гаснут сами по сроку — забытая кнопка не оставит плашку на неделю.
@@ -52,15 +52,11 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-      - name: Облачной базы больше нет — честный отказ
-        # Прод с 13.10.2026 на своём сервере; supabase link в облачный проект писал в отключённую
-        # базу и заканчивался зелёным, ничего не сделав (#978). Шлюз раскатки (deploy/server/gate.sh)
-        # умеет только functions / migrations-applied / migrate / recorder-upload — команды
-        # «плашка/заморозка» в нём нет. Пока её не добавят на сервер, кнопка падает громко.
-        # Обход: ssh contabo, `select public.maintenance_announce(<lead>, <минут>, '', '')`.
-        run: |
-          echo "::error::Кнопка не подключена к серверу Swarm: шлюзу раскатки нужна команда для плашки и заморозки (#978). Обход: ssh contabo, select public.maintenance_announce(...) — см. docs/DEPLOY.md"
-          exit 1
+      - name: Ключ раскатки на свой сервер
+        uses: ./.github/actions/swarm-deploy-ssh
+        with:
+          ssh-key: ${{ secrets.SWARM_DEPLOY_SSH_KEY }}
+          known-hosts: ${{ secrets.SWARM_DEPLOY_KNOWN_HOSTS }}
       - name: Выполнить
         # Ввод — только через env, не подстановкой ${{ }} в текст скрипта: иначе текст плашки
         # исполнялся бы как shell.
@@ -78,9 +74,6 @@ jobs:
             notice-off)  ./scripts/deploy-notice.sh off ;;
             notice-show) ./scripts/deploy-notice.sh show ;;
             freeze|unfreeze|freeze-status)
-              if [ ! -x scripts/maintenance.sh ]; then
-                echo "::error::scripts/maintenance.sh нет в этой ветке — заморозка (#507) ещё не влита"; exit 2
-              fi
               case "$ACTION" in
                 # Одно нажатие: плашка сейчас → заморозка через LEAD_MIN → снятие по сроку сама.
                 # Тот же текст, что у плашки, — заглушке и колокольчику (оба языка).
