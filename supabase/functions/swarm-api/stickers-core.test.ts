@@ -22,6 +22,10 @@ Deno.test("ссылка: http(s) и путь внутри приложения �
   assert(!isSafeLink("javascript:alert(1)"));
   assert(!isSafeLink("data:text/html,x"));
   assert(!isSafeLink("//evil.example.com"));
+  // Браузер читает обратный слеш как прямой: `/\\host` уходит на чужой сайт.
+  assert(!isSafeLink("/\\evil.example.com"));
+  assert(!isSafeLink("/tasks\\x"));
+  assert(!isSafeLink("https://a.com\\@evil.example.com"));
   assert(!isSafeLink("https://a.com/ b"));
   assert(!isSafeLink("ftp://a.com"));
   assert(!isSafeLink(""));
