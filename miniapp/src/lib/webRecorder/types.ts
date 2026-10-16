@@ -83,6 +83,8 @@ export interface ChunkRec {
 export interface RecordingRec {
   /** Локальный идентификатор записи. */
   rid: string;
+  /** telegram_id владельца записи: чужую на общем устройстве не предлагаем и не шлём. */
+  ownerId: number;
   /** Идентификатор встречи на сервере; null, пока POST /meetings/record не прошёл. */
   serverId: string | null;
   startedAt: string;

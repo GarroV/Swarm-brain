@@ -1,6 +1,7 @@
 // Очередь отправки кусков и завершения записи: повтор с нарастающей паузой, ожидание сети.
 // Кусок удаляется из IndexedDB только после ответа сервера.
 import { ApiError, finishWebRecording, startWebRecording, uploadWebRecordingSegment } from "@/lib/api";
+import { classifyApiFailure } from "./logic";
 import * as store from "./store";
 import type { RecorderErrorCode, RecordingRec, SegmentRec } from "./types";
 
@@ -10,21 +11,15 @@ const RETRY_MAX_MS = 30_000;
 export interface UploaderHooks {
   /** Состояние очереди изменилось — перерисовать. */
   onChange(): void;
+  /** Встреча заведена на сервере: движок запоминает id в своей единственной записи. */
+  onServerId(id: string): void;
   /** Фатальная ошибка: досылать нечего или некуда. */
   onFatal(code: RecorderErrorCode): void;
 }
 
-/** Код 4xx, после которого повтор бессмыслен. null — сеть/5xx/заморозка, повторяем. */
+/** Что значит ошибка запроса для записи (точные коды из тела, см. logic.ts); null — повторяем. */
 export function fatalCodeOf(e: unknown): RecorderErrorCode | null {
-  if (!(e instanceof ApiError)) return null;
-  const code = (e.body as { code?: string } | null)?.code;
-  if (code === "demo_not_allowed") return "demo";
-  if (code === "too_many_open") return "too-many-open";
-  if (e.status === 409) return "finished";
-  if (e.status === 403 || e.status === 404) return "not-found";
-  if (e.status === 413) return "too-large";
-  if (e.status === 400 || e.status === 415) return "rejected";
-  return null;
+  return e instanceof ApiError ? classifyApiFailure(e.status, e.body) : null;
 }
 
 /** Пауза, которую просит сервер на заморозке (Retry-After), секунды; иначе null. */
@@ -83,7 +78,7 @@ export class Uploader {
     try {
       const created = await startWebRecording(this.rec.startedAt);
       this.serverId = created.id;
-      void store.putRecording({ ...this.rec, serverId: created.id });
+      this.hooks.onServerId(created.id);
       return true;
     } catch (e) {
       return this.handleFailure(e);
@@ -145,7 +140,7 @@ export class Uploader {
       this.summaryStatus = res.summary_status ?? null;
     } catch (e) {
       // 409 при завершении — сервер уже всё собрал (например, сторож брошенных записей).
-      if (!(e instanceof ApiError && e.status === 409)) return this.handleFailure(e);
+      if (fatalCodeOf(e) !== "finished") return this.handleFailure(e);
     }
     await store.deleteRecording(this.rec.rid);
     this.finishRequest = null;

@@ -1,6 +1,7 @@
 "use client";
 // Тонкая обвязка движка записи для React: один движок на открытый экран записи.
 import { useEffect, useState, useSyncExternalStore } from "react";
+import { useRoyNav } from "../nav";
 import { WebRecorder, type RecorderSnapshot } from "@/lib/webRecorder";
 
 /**
@@ -19,9 +20,13 @@ function devSegmentSeconds(): number | undefined {
 }
 
 export function useWebRecorder(): { engine: WebRecorder; snap: RecorderSnapshot } {
-  const [engine] = useState(() => new WebRecorder({ segmentSeconds: devSegmentSeconds() }));
+  const ownerId = useRoyNav().me?.telegram_id ?? null;
+  const [engine] = useState(() => new WebRecorder({ segmentSeconds: devSegmentSeconds(), ownerId }));
   const snap = useSyncExternalStore(engine.subscribe, engine.getSnapshot, engine.getSnapshot);
   // Экран закрыт — отпускаем микрофон; недосланное подберёт восстановление при следующем входе.
-  useEffect(() => () => engine.dispose(), [engine]);
+  useEffect(() => {
+    engine.attach();
+    return () => engine.dispose();
+  }, [engine]);
   return { engine, snap };
 }

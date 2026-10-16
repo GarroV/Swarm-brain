@@ -3,7 +3,7 @@
 // карточка на мобильном экране. Обе открывают один и тот же экран записи (RecordingOverlay);
 // при открытии экрана встреч проверяем, нет ли незавершённой записи после сбоя.
 import { useCallback, useEffect, useState } from "react";
-import { useDt } from "../nav";
+import { useDt, useRoyNav } from "../nav";
 import { RoyCard, SectionLabel } from "../ui";
 import { RoyIcon } from "../icons";
 import { ToolbarButton } from "@/components/tasks/table/Menu";
@@ -16,18 +16,20 @@ let offeredThisSession = false;
 function useRecordLauncher() {
   const [open, setOpen] = useState(false);
   const [recoverable, setRecoverable] = useState<RecoverableRecording | null>(null);
+  // Незавершённое предлагаем только владельцу: на общем устройстве чужая запись не наша.
+  const ownerId = useRoyNav().me?.telegram_id ?? null;
 
   useEffect(() => {
-    if (offeredThisSession) return;
+    if (offeredThisSession || ownerId === null) return;
     let alive = true;
-    void findRecoverable().then((found) => {
+    void findRecoverable(ownerId).then((found) => {
       if (!alive || !found) return;
       offeredThisSession = true;
       setRecoverable(found);
       setOpen(true);
     });
     return () => { alive = false; };
-  }, []);
+  }, [ownerId]);
 
   const close = useCallback(() => { setOpen(false); setRecoverable(null); }, []);
   const overlay = open ? <RecordingOverlay recoverable={recoverable} onClose={close} /> : null;

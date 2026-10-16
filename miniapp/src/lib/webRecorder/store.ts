@@ -117,3 +117,11 @@ export async function loadLeftovers(rid: string): Promise<SegmentRec[]> {
   });
   return [...closed, ...assembled].sort((a, b) => a.n - b.n);
 }
+
+/** Выход из аккаунта: на устройстве не остаётся ничьего звука. */
+export const clearAll = () =>
+  run([RECORDINGS, SEGMENTS, CHUNKS], "readwrite", (tx) => {
+    tx.objectStore(RECORDINGS).clear();
+    tx.objectStore(SEGMENTS).clear();
+    tx.objectStore(CHUNKS).clear();
+  });

@@ -28,9 +28,9 @@ function errorText(code: RecorderErrorCode, dt: Dt): string {
     case "mic-failed":
       return dt("Не удалось включить микрофон. Закройте другие приложения, которые его используют, и попробуйте снова.", "Couldn't start the microphone. Close other apps that use it and try again.");
     case "not-found":
-      return dt("Сервер не нашёл эту запись, досылать некуда. Запись на телефоне удалена.", "The server doesn't know this recording, so there's nowhere to send it. The local copy was removed.");
+      return dt("Сервер не нашёл эту запись или она не ваша — досылать некуда. Звук остался на телефоне: его можно закрыть до лучших времён или удалить.", "The server doesn't know this recording or it isn't yours, so there's nowhere to send it. The audio is still on the phone: keep it for later or delete it.");
     case "finished":
-      return dt("Эта запись уже завершена на сервере.", "This recording was already finished on the server.");
+      return dt("Эта запись уже завершена на сервере, новые части не принимаются. Звук остался на телефоне.", "This recording was already finished on the server and no longer accepts parts. The audio is still on the phone.");
     case "too-many-open":
       return dt(
         "У вас уже три незавершённые записи. Эта запись сохраняется на телефоне и не потеряется: закончите её, затем откройте «Записать встречу» и выберите «Загрузить и завершить» у старых записей.",
@@ -70,9 +70,12 @@ export function RecordingOverlay({ recoverable, onClose }: { recoverable: Recove
   const [confirming, setConfirming] = useState(false);
   const [offer, setOffer] = useState(recoverable);
   const [dismissedAt, setDismissedAt] = useState(0);
+  const [confirmDiscard, setConfirmDiscard] = useState(false);
   const s = snap.state;
   const isLive = s === "recording" || s === "interrupted";
-  const canClose = s === "idle" || s === "error" || s === "done";
+  const stuck = s === "stopping" && snap.error !== null; // досылать некуда: звук остаётся на телефоне
+  const canClose = s === "idle" || s === "error" || s === "done" || stuck;
+  const canDiscard = stuck && (snap.error === "finished" || snap.error === "not-found");
   const isDemo = useIsDemo();
   const supported = isRecordingSupported() && !isDemo;
 
@@ -197,7 +200,7 @@ export function RecordingOverlay({ recoverable, onClose }: { recoverable: Recove
 
           {s === "stopping" && (
             <>
-              <div className="roy-spin size-10 rounded-full border-2 border-line-2" style={{ borderTopColor: "var(--primary)" }} aria-hidden />
+              {!snap.error && <div className="roy-spin size-10 rounded-full border-2 border-line-2" style={{ borderTopColor: "var(--primary)" }} aria-hidden />}
               <h2 className="font-semibold" style={{ fontSize: 22 }}>{dt("Отправляем…", "Uploading…")}</h2>
               <p className="max-w-[340px] text-ink-soft" style={{ fontSize: 14, lineHeight: 1.5 }}>
                 {!snap.online
@@ -260,6 +263,23 @@ export function RecordingOverlay({ recoverable, onClose }: { recoverable: Recove
                 <RecButton className="flex-1" autoFocus onClick={() => setConfirming(false)}>{dt("Продолжить", "Keep going")}</RecButton>
                 <RecButton tone="danger" className="flex-1" onClick={stop}>{dt("Закончить", "End")}</RecButton>
               </div>
+            </div>
+          )}
+          {stuck && (
+            <div className="flex w-full max-w-[360px] flex-col gap-2.5">
+              <RecButton tone="primary" onClick={onClose}>{dt("Закрыть — запись останется на телефоне", "Close — the recording stays on the phone")}</RecButton>
+              {canDiscard && !confirmDiscard && (
+                <RecButton onClick={() => setConfirmDiscard(true)}>{dt("Удалить запись с телефона", "Delete the recording from the phone")}</RecButton>
+              )}
+              {canDiscard && confirmDiscard && (
+                <div role="group" aria-label={dt("Удалить безвозвратно?", "Delete permanently?")} className="flex flex-col items-center gap-2">
+                  <div className="font-semibold" style={{ fontSize: 15 }}>{dt("Звук пропадёт безвозвратно. Удалить?", "The audio will be lost for good. Delete?")}</div>
+                  <div className="flex w-full gap-2.5">
+                    <RecButton className="flex-1" onClick={() => setConfirmDiscard(false)}>{dt("Отмена", "Cancel")}</RecButton>
+                    <RecButton tone="danger" className="flex-1" onClick={() => { setConfirmDiscard(false); void engine.discardLocal(); }}>{dt("Удалить", "Delete")}</RecButton>
+                  </div>
+                </div>
+              )}
             </div>
           )}
           {s === "done" && <RecButton tone="primary" autoFocus className="w-full max-w-[360px] min-h-14" onClick={onClose}>{dt("Закрыть", "Close")}</RecButton>}

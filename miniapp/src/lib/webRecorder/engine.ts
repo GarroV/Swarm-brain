@@ -4,6 +4,7 @@
 //  - AudioContext создаётся и будится синхронно в нажатии, ДО await getUserMedia (иначе iOS оставит
 //    его спящим);
 //  - Wake Lock перезапрашивается при возврате на страницу; mute/unmute/ended трека — события.
+import { ownedRecordings, recordedSeconds } from "./logic";
 import * as store from "./store";
 import { Uploader, fatalCodeOf } from "./uploader";
 import {
@@ -27,6 +28,8 @@ const LEVEL_GAIN = 3;
 
 export interface EngineOptions {
   segmentSeconds?: number;
+  /** telegram_id текущего пользователя: запись привязывается к нему. Нет — записывать нельзя. */
+  ownerId: number | null;
 }
 
 export function isRecordingSupported(): boolean {
@@ -67,6 +70,9 @@ export class WebRecorder {
   private snap: RecorderSnapshot = { ...INITIAL, online: typeof navigator === "undefined" ? true : navigator.onLine };
   private listeners = new Set<Listener>();
   private readonly segmentSeconds: number;
+  private readonly ownerId: number | null;
+  private disposed = false;
+  private continuing = false;
 
   private rec: RecordingRec | null = null;
   private uploader: Uploader | null = null;
@@ -86,11 +92,19 @@ export class WebRecorder {
   private endedStartMs = 0;
   private gapMs = 0;
   private interruptions: Interruption[] = [];
-  private closing: Promise<void> | null = null;
+  /** Закрытие каждого куска идёт своим промисом: следующий кусок стартует, не дожидаясь предыдущего. */
+  private readonly closings = new Set<Promise<void>>();
+  private currentClosing: Promise<void> | null = null;
   private recorderErrors = 0;
 
-  constructor(opts: EngineOptions = {}) {
+  constructor(opts: EngineOptions) {
     this.segmentSeconds = opts.segmentSeconds ?? SEGMENT_SECONDS;
+    this.ownerId = opts.ownerId;
+  }
+
+  /** Экран смонтирован (в том числе повторно, StrictMode): движок снова живой. */
+  attach(): void {
+    this.disposed = false;
   }
 
   // ── Подписка для UI ─────────────────────────────────────────────────────────
@@ -135,14 +149,17 @@ export class WebRecorder {
 
   private async begin(): Promise<void> {
     if (!isRecordingSupported()) return this.fail("unsupported");
+    if (this.ownerId === null) return this.fail("unknown");
     try {
       await this.openMic();
     } catch (e) {
       return this.fail(micErrorCode(e));
     }
+    // Экран закрыли, пока шёл запрос разрешения: микрофон отпускаем, запись не начинаем.
+    if (this.disposed) { this.releaseHardware(); return; }
     this.mime = pickMime();
     this.startedMs = Date.now();
-    this.rec = { rid: newRid(), serverId: null, startedAt: new Date(this.startedMs).toISOString(), mime: this.mime, lastSeenMs: this.startedMs };
+    this.rec = { rid: newRid(), ownerId: this.ownerId, serverId: null, startedAt: new Date(this.startedMs).toISOString(), mime: this.mime, lastSeenMs: this.startedMs };
     void store.putRecording(this.rec);
     this.attachUploader(this.rec, 0);
     this.startSegment();
@@ -158,16 +175,27 @@ export class WebRecorder {
     this.segN = baseSegment;
     this.uploader = new Uploader(rec, {
       onChange: () => this.emit(),
-      onFatal: (code) => {
-        // Запись на устройстве продолжается, но досылать некуда — говорим об этом громко.
-        this.emit({ error: code });
-        if (code === "finished" || code === "not-found") void this.dropLocal();
-      },
+      onServerId: (id) => this.patchRec({ serverId: id }),
+      // Досылать некуда — говорим громко. Звук на устройстве НЕ стираем: удаляет только человек (discardLocal).
+      onFatal: (code) => this.emit({ error: code }),
     });
   }
 
-  private async dropLocal(): Promise<void> {
-    if (this.rec) await store.deleteRecording(this.rec.rid);
+  /** Единственная запись движка меняется только здесь: read-modify-write, без устаревших копий. */
+  private patchRec(patch: Partial<RecordingRec>): void {
+    if (!this.rec) return;
+    this.rec = { ...this.rec, ...patch };
+    void store.putRecording(this.rec);
+  }
+
+  /** Явный выбор человека: стереть неотправленную запись с устройства. */
+  async discardLocal(): Promise<void> {
+    const rid = this.rec?.rid;
+    this.teardown();
+    if (rid) await store.deleteRecording(rid);
+    this.rec = null;
+    this.uploader = null;
+    this.emit({ state: "idle", error: null, segmentsPending: 0 });
   }
 
   // Индикатор громкости. AudioContext заводится в start()/continueRecording() синхронно.
@@ -253,20 +281,22 @@ export class WebRecorder {
       const i = chunks.length;
       chunks.push(e.data);
       writes.push(store.putChunk({ rid: rec.rid, n, i, offset, mime, blob: e.data }));
-      this.rec = { ...rec, lastSeenMs: Date.now() };
-      void store.putRecording(this.rec);
+      this.patchRec({ lastSeenMs: Date.now() });
     });
     recorder.addEventListener("error", () => this.onRecorderError(recorder));
-    this.closing = new Promise<void>((resolve) => {
+    const closing = new Promise<void>((resolve) => {
       recorder.addEventListener("stop", () => {
         void this.closeSegment(rec.rid, n, offset, mime, chunks, writes).finally(resolve);
       });
     });
+    this.closings.add(closing);
+    void closing.finally(() => this.closings.delete(closing));
     try {
       recorder.start(TIMESLICE_MS);
     } catch {
       return this.fail("mic-failed");
     }
+    this.currentClosing = closing;
     this.recorder = recorder;
     this.segStartMs = Date.now();
   }
@@ -281,22 +311,27 @@ export class WebRecorder {
     this.uploader?.enqueue(seg);
   }
 
-  /** Закрывает текущий кусок; промис — когда он лёг в очередь. */
-  private async finishSegment(): Promise<void> {
+  /** Останавливает текущий кусок; закрытие (запись на диск, очередь) идёт в фоне — промис возвращается. */
+  private stopCurrent(): Promise<void> {
     const rec = this.recorder;
+    const closing = this.currentClosing ?? Promise.resolve();
     this.recorder = null;
+    this.currentClosing = null;
     if (rec && rec.state !== "inactive") {
       try { rec.stop(); } catch { /* уже остановлен */ }
     }
-    await this.closing;
-    this.closing = null;
+    return closing;
   }
 
+  private drainClosings(): Promise<unknown> {
+    return Promise.all([...this.closings]);
+  }
+
+  /** Как в пробе: следующий MediaRecorder стартует сразу после stop(), без паузы на запись предыдущего. */
   private rotateSegment(): void {
-    void this.finishSegment().then(() => {
-      const track = this.stream?.getAudioTracks()[0];
-      if (this.snap.state === "recording" && track?.readyState === "live") this.startSegment();
-    });
+    void this.stopCurrent();
+    const track = this.stream?.getAudioTracks()[0];
+    if (this.snap.state === "recording" && track?.readyState === "live") this.startSegment();
   }
 
   private onRecorderError(failed: MediaRecorder): void {
@@ -331,7 +366,7 @@ export class WebRecorder {
     // Таймер не гасим: часы идут, пока человек не нажмёт «Продолжить».
     this.analyser = null;
     this.emit({ state: "interrupted", muted: false });
-    void this.finishSegment();
+    void this.stopCurrent();
   }
 
   private readonly onVisibility = (): void => {
@@ -376,15 +411,20 @@ export class WebRecorder {
 
   /** После `interrupted`: нужно нажатие пользователя (getUserMedia + AudioContext). */
   continueRecording(): void {
-    if (this.snap.state !== "interrupted") return;
+    if (this.snap.state !== "interrupted" || this.continuing) return;
+    this.continuing = true;
     this.wakeAudioContext();
     void (async () => {
       try {
-        await this.openMic();
-      } catch (e) {
-        this.emit({ error: micErrorCode(e) });
-        return;
-      }
+        // Старый (умерший) поток отпускаем до нового запроса: два живых потока — два рекордера.
+        this.stream?.getTracks().forEach((t) => t.stop());
+        try {
+          await this.openMic();
+        } catch (e) {
+          this.emit({ error: micErrorCode(e) });
+          return;
+        }
+        if (this.disposed) { this.releaseHardware(); return; }
       const seconds = (Date.now() - this.endedStartMs) / 1000;
       this.gapMs += seconds * 1000;
       this.interruptions = [...this.interruptions, { atSec: (this.endedStartMs - this.startedMs) / 1000, seconds, kind: "ended" }];
@@ -392,6 +432,9 @@ export class WebRecorder {
       this.startSegment();
       void this.requestWakeLock();
       this.emit({ state: "recording", error: null, lastGapSec: seconds });
+      } finally {
+        this.continuing = false;
+      }
     })();
   }
 
@@ -402,14 +445,17 @@ export class WebRecorder {
     clearInterval(this.timer ?? undefined);
     this.timer = null;
     if (this.muteStartMs) this.onUnmute();
+    // Стоп из «прервалось»: пауза ещё идёт, и в записанное она не входит.
+    const ongoingGapStartMs = state === "interrupted" ? this.endedStartMs : 0;
     this.emit({ state: "stopping" });
-    await this.finishSegment();
+    void this.stopCurrent();
+    await this.drainClosings();
     const endedMs = Date.now();
     this.releaseHardware();
     this.detachPageListeners();
     this.uploader?.requestFinish(
       new Date(endedMs).toISOString(),
-      Math.max(0, (endedMs - this.startedMs - this.gapMs) / 1000),
+      recordedSeconds({ startedMs: this.startedMs, endedMs, gapMs: this.gapMs, ongoingGapStartMs }),
     );
     this.watchCompletion();
   }
@@ -446,10 +492,12 @@ export class WebRecorder {
 
   /** Экран закрыт: освобождаем микрофон. Если запись шла — остаток подберёт восстановление. */
   dispose(): void {
+    this.disposed = true;
     const active = this.snap.state === "recording" || this.snap.state === "interrupted" || this.snap.state === "stopping";
     if (!active) { this.teardown(); return; }
     // Закрываем кусок, чтобы он лёг на диск целым, и отпускаем микрофон.
-    void this.finishSegment().finally(() => this.teardown());
+    void this.stopCurrent();
+    void this.drainClosings().finally(() => this.teardown());
   }
 
   // ── Восстановление после сбоя ───────────────────────────────────────────────
@@ -457,8 +505,12 @@ export class WebRecorder {
   /** Дослать то, что осталось, и завершить. Движок переходит сразу в `stopping`. */
   async recover(info: RecoverableRecording): Promise<void> {
     if (this.snap.state !== "idle") return;
-    const known = (await store.listRecordings()).find((r) => r.rid === info.rid);
-    const rec: RecordingRec = known ?? { rid: info.rid, serverId: info.serverId, startedAt: info.startedAt, mime: "", lastSeenMs: Date.now() };
+    if (this.ownerId === null) return;
+    const mine = ownedRecordings(await store.listRecordings(), this.ownerId);
+    const known = mine.find((r) => r.rid === info.rid);
+    // Локальная запись обязана быть нашей; чужую не трогаем (серверная — только по id активной встречи автора).
+    if (!known && info.hasLocalData) return;
+    const rec: RecordingRec = known ?? { rid: info.rid, ownerId: this.ownerId, serverId: info.serverId, startedAt: info.startedAt, mime: "", lastSeenMs: Date.now() };
     this.rec = rec;
     this.attachUploader(rec, 0);
     window.addEventListener("online", this.onOnline);
@@ -478,9 +530,10 @@ export class WebRecorder {
  * Есть ли незавершённая запись: сначала то, что лежит на этом устройстве, потом то, что числится
  * на сервере. Любая ошибка (нет сети, хранилище закрыто) — «нет»: экран не должен падать.
  */
-export async function findRecoverable(): Promise<RecoverableRecording | null> {
+export async function findRecoverable(ownerId: number | null): Promise<RecoverableRecording | null> {
+  if (ownerId === null) return null;
   try {
-    const local = (await store.listRecordings()).sort((a, b) => b.lastSeenMs - a.lastSeenMs);
+    const local = ownedRecordings(await store.listRecordings(), ownerId).sort((a, b) => b.lastSeenMs - a.lastSeenMs);
     for (const r of local) {
       const leftovers = await store.loadLeftovers(r.rid);
       if (leftovers.length > 0 || r.serverId) {
