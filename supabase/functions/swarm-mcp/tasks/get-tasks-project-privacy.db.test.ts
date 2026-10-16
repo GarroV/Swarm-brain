@@ -31,7 +31,14 @@ Deno.test("get_tasks: задача закрытого проекта видна 
       .select("id").single();
     if (error) throw new Error(error.message);
     await sb.from("tasks").insert([
-      { title: "QA секретная задача", status: "open", group_id: WS, project_id: p.id, created_by: "qa", confirmed: true },
+      {
+        title: "QA секретная задача",
+        status: "open",
+        group_id: WS,
+        project_id: p.id,
+        created_by: "qa",
+        confirmed: true,
+      },
       { title: "QA общая задача", status: "open", group_id: WS, created_by: "qa", confirmed: true },
     ]);
 
