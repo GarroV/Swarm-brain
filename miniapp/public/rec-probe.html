@@ -48,10 +48,10 @@
 <main>
   <div class="card">
     <h1>Проверка записи встречи</h1>
-    <p class="muted">Ничего не отправляется на сервер, всё остаётся в этой вкладке.
+    <p class="muted">Звук остаётся в этой вкладке; разработчику уходит только текстовый журнал событий.
       Нажмите «Начать», запишите пару минут, затем по очереди: заблокируйте экран на 20 секунд,
       уйдите в другое приложение, позвоните себе. После каждого шага вернитесь сюда.
-      В конце нажмите «Скопировать журнал» и пришлите текст.</p>
+      В конце нажмите «Стоп».</p>
   </div>
 
   <div class="card">
@@ -99,6 +99,17 @@
     stopping: false, recording: false,
   };
   const logLines = [];
+  // Журнал (только события, без звука) уходит разработчику, чтобы не пересылать его руками.
+  const SESSION = Math.random().toString(36).slice(2, 8);
+  let sentCount = 0;
+  function flushLog() {
+    if (sentCount >= logLines.length) return;
+    const body = `${SESSION} ` + logLines.slice(sentCount).join("\n");
+    sentCount = logLines.length;
+    if (navigator.sendBeacon) navigator.sendBeacon("/rec-probe-log", body);
+    else fetch("/rec-probe-log", { method: "POST", body, keepalive: true }).catch(() => {});
+  }
+  setInterval(flushLog, 5000);
 
   function stamp() {
     const d = new Date();
@@ -349,6 +360,7 @@
     state.audioCtx?.close();
     state.wakeLock?.release().catch(() => {});
     setStatus("Остановлено");
+    setTimeout(flushLog, 1500);
     $("stop").disabled = true; $("resume").disabled = true;
   };
 
@@ -362,6 +374,7 @@
     const hidden = document.visibilityState === "hidden";
     log(hidden ? "Страница скрыта (экран заблокирован или ушли в другое приложение)" : "Страница снова видна",
         hidden ? "warn" : "ok");
+    if (hidden) flushLog();
     if (!hidden && state.recording) {
       const rs = state.recorder ? state.recorder.state : "нет";
       const ts = state.stream?.getAudioTracks()[0];
