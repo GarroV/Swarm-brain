@@ -346,3 +346,22 @@ Deno.test("privacyChangeVerdict: перенос под закрытую груп
   assertEquals(v({ parent_id: null, is_private: false }, ANNA), "ok");
   assertEquals(v({ parent_id: null, is_private: true }, ANNA), "forbidden");
 });
+
+Deno.test("privacyChangeVerdict: перенос между закрытыми ветками меняет круг видящих — нужен автор", () => {
+  // P — открытый проект Боба внутри закрытой группы Анны (видит только Анна).
+  const rows = [
+    { id: "annaPriv", parent_id: null, created_by: ANNA, is_private: true },
+    // Легаси-строка без автора: закрыта флагом, но видна всем (created_by = null не прячем).
+    { id: "orphanPriv", parent_id: null, created_by: null, is_private: true },
+  ];
+  const p = { parent_id: "annaPriv", created_by: BOB, is_private: false };
+  const verdict = privacyChangeVerdict({
+    row: p,
+    rows,
+    next: { parent_id: "orphanPriv", is_private: false },
+    viewerId: ANNA,
+    isAdmin: false,
+  });
+  // Итоговая «закрытость» та же, а видеть проект стали все — это открытие чужого проекта.
+  assertEquals(verdict, "forbidden");
+});

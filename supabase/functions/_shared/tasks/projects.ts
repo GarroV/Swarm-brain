@@ -136,6 +136,11 @@ export async function createProject(
   groupId: string,
   createdBy: number | null,
 ): Promise<Project> {
+  // Закрытая строка без автора видна всем (created_by = null не прячем, см. canViewProject) —
+  // такое «закрытие» ничего бы не закрыло. Закрытый проект создаётся только от имени человека.
+  if (input.is_private === true && createdBy === null) {
+    throw new Error("Закрытый проект создаётся только с автором");
+  }
   const parentId = input.parent_id ?? null;
   if (parentId !== null) {
     const all = await liveProjectRows(groupId);
@@ -251,8 +256,17 @@ export async function updateProject(
   // Право решено по снимку — и UPDATE применяется, только пока строка в том же состоянии
   // (условие в WHERE): если между проверкой и записью проект закрыли или передали, правка
   // не проскочит по устаревшему разрешению.
+  // Закрывают строку без автора (это может только админ) — закрывший становится её автором:
+  // иначе строка с `created_by = null` осталась бы видна всем и тумблер соврал бы.
+  if (fields.is_private === true && before.created_by === null && opts.viewerId === undefined) {
+    throw new ProjectAccessError("Only the project author or an admin can change its visibility");
+  }
+  const patch: Partial<ProjectInput> & { created_by?: number } =
+    fields.is_private === true && before.created_by === null && opts.viewerId !== undefined
+      ? { ...fields, created_by: opts.viewerId }
+      : fields;
   let upd = supabase.from("projects")
-    .update(fields)
+    .update(patch)
     .eq("id", id).eq("group_id", groupId).is("archived_at", null)
     .eq("is_private", before.is_private);
   upd = before.parent_id === null ? upd.is("parent_id", null) : upd.eq("parent_id", before.parent_id);

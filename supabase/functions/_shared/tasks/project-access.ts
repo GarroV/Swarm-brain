@@ -180,10 +180,15 @@ export function privacyChangeVerdict(input: {
     }
   }
   const togglesOwn = next.is_private !== row.is_private;
-  const effectiveChanges = isProjectPrivate(row, index) !==
+  // Перенос, при котором закрыта хотя бы одна из веток (до или после), меняет круг видящих,
+  // даже если итоговая «закрытость» та же: из закрытой группы одного человека в закрытую группу
+  // другого (или в легаси-строку без автора, видную всем). Поэтому сравнивается не флаг, а
+  // сам факт закрытой ветки по любую сторону переноса.
+  const reparented = next.parent_id !== row.parent_id;
+  const privateEitherSide = isProjectPrivate(row, index) ||
     isProjectPrivate({ ...row, ...next }, index);
   if (
-    (togglesOwn || effectiveChanges) &&
+    (togglesOwn || (reparented && privateEitherSide)) &&
     !canToggleProjectPrivacy(row, viewerId, isAdmin)
   ) return "forbidden";
   return "ok";

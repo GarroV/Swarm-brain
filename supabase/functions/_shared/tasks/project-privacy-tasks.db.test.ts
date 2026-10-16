@@ -21,6 +21,7 @@ for (const name of ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY"]) {
 
 const { getVisibleTask, listTasksWithTotal } = await import("./db.ts");
 const { createProject, ProjectAccessError, updateProject } = await import("./projects.ts");
+const { loadHiddenProjectIds } = await import("./project-visibility.ts");
 
 const WS = "t_pprivacy";
 const AUTHOR = 880000201;
@@ -238,6 +239,10 @@ Deno.test("проект без автора закрыть может тольк
     );
     const byAdmin = await updateProject(orphan, { is_private: true }, WS, { viewerId: MEMBER, isAdmin: true });
     assertEquals(byAdmin?.is_private, true);
+    // Закрывший становится автором: иначе строка без автора осталась бы видна всем, и закрытие
+    // ничего бы не закрыло.
+    assertEquals(byAdmin?.created_by, MEMBER);
+    assert((await loadHiddenProjectIds(WS, AUTHOR)).includes(orphan));
   } finally {
     await db.end();
   }
@@ -276,6 +281,16 @@ Deno.test("задача с проектом вне воркспейса не в�
     const member = await listTasksWithTotal({ viewerId: MEMBER, columns: "id, title, project_id" }, WS);
     assertEquals(titles(member.tasks), ["без проекта", "в открытом"]);
     assertEquals(await getVisibleTask(stray, MEMBER), null);
+  } finally {
+    await db.end();
+  }
+});
+
+Deno.test("закрытый проект без автора не создаётся", async () => {
+  const db = await connect();
+  try {
+    await seed(db);
+    await assertRejects(() => createProject({ name: "Ничей закрытый", is_private: true }, WS, null), Error, "автор");
   } finally {
     await db.end();
   }
