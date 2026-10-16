@@ -685,8 +685,15 @@ export async function fetchMe(): Promise<Me> {
 // /api/auth/logout напрямую, минуя прокси в swarm-api. Внутри Telegram Mini App
 // бессмысленно — там сессия определяется initData, а не cookie.
 export async function logout(): Promise<void> {
-  // На устройстве не остаётся неотправленного звука записей встреч этого пользователя.
-  await clearRecordingStore();
+  // Пока сессия жива, пробуем дослать неотправленные части записей встреч этого пользователя
+  // (до ~10 с). Недосланное остаётся в IndexedDB под его id и 3 дня хранится на устройстве.
+  try {
+    const me = await fetchMe();
+    // Динамический импорт: движок записи сам импортирует api, статический дал бы цикл.
+    await (await import("./webRecorder/flush")).flushOwnLeftovers(me.telegram_id);
+  } catch {
+    // Выходу из аккаунта это не мешает.
+  }
   await fetch(`${API_BASE}/auth/logout`, {
     method: "POST",
     credentials: "include",
@@ -4043,7 +4050,6 @@ let mockAutojoin = false;
 // Форма проверки живёт рядом с её текстом (autojoinNotice.ts), чтобы тест текста не тянул
 // весь клиент в граф (issue #383).
 import type { AutojoinCalendarCheck } from "./autojoinNotice";
-import { clearAll as clearRecordingStore } from "./webRecorder/store";
 export type { AutojoinCalendarCheck, AutojoinCalendarStatus } from "./autojoinNotice";
 export interface AutojoinState {
   enabled: boolean;

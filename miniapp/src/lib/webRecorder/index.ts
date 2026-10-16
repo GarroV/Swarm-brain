@@ -7,3 +7,4 @@ export type {
   RecorderState,
   RecoverableRecording,
 } from "./types";
+export { flushOwnLeftovers, purgeExpiredRecordings } from "./flush";

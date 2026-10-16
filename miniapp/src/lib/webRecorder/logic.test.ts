@@ -1,5 +1,5 @@
 import { assertEquals } from "jsr:@std/assert@1";
-import { classifyApiFailure, ownedRecordings, recordedSeconds } from "./logic.ts";
+import { classifyApiFailure, isExpiredRecording, ownedRecordings, recordedSeconds } from "./logic.ts";
 import type { RecordingRec } from "./types.ts";
 
 const rec = (rid: string, ownerId: number | undefined): RecordingRec =>
@@ -32,4 +32,16 @@ Deno.test("classifyApiFailure: фатально только точное имя
   assertEquals(classifyApiFailure(403, null), null);
   assertEquals(classifyApiFailure(401, { error: "unauthorized" }), null);
   assertEquals(classifyApiFailure(503, { code: "maintenance" }), null);
+});
+
+Deno.test("isExpiredRecording: старше 3 дней по последним данным — чистим, свежее — нет", () => {
+  const now = Date.parse("2026-10-20T12:00:00Z");
+  const day = 86_400_000;
+  const r = (lastSeenMs: number, startedAt = "2026-10-01T00:00:00Z") => ({ ...rec("x", 1), lastSeenMs, startedAt });
+  assertEquals(isExpiredRecording(r(now - 4 * day), now), true);
+  assertEquals(isExpiredRecording(r(now - 2 * day), now), false);
+  // Свежие данные важнее давнего начала: длинная запись не должна пропасть.
+  assertEquals(isExpiredRecording(r(now - day, "2026-10-01T00:00:00Z"), now), false);
+  // Нет lastSeen — судим по началу.
+  assertEquals(isExpiredRecording(r(0, "2026-10-01T00:00:00Z"), now), true);
 });

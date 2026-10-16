@@ -82,8 +82,12 @@ export const putSegment = (s: SegmentRec) =>
     tx.objectStore(CHUNKS).delete(IDBKeyRange.bound([s.rid, s.n, 0], [s.rid, s.n, Infinity]));
   });
 
+/** Часть принята сервером: стираем её и фрагменты (если часть собрана из них при восстановлении). */
 export const deleteSegment = (rid: string, n: number) =>
-  run([SEGMENTS], "readwrite", (tx) => { tx.objectStore(SEGMENTS).delete([rid, n]); });
+  run([SEGMENTS, CHUNKS], "readwrite", (tx) => {
+    tx.objectStore(SEGMENTS).delete([rid, n]);
+    tx.objectStore(CHUNKS).delete(IDBKeyRange.bound([rid, n, 0], [rid, n, Infinity]));
+  });
 
 export const deleteRecording = (rid: string) =>
   run([RECORDINGS, SEGMENTS, CHUNKS], "readwrite", (tx) => {
@@ -118,10 +122,3 @@ export async function loadLeftovers(rid: string): Promise<SegmentRec[]> {
   return [...closed, ...assembled].sort((a, b) => a.n - b.n);
 }
 
-/** Выход из аккаунта: на устройстве не остаётся ничьего звука. */
-export const clearAll = () =>
-  run([RECORDINGS, SEGMENTS, CHUNKS], "readwrite", (tx) => {
-    tx.objectStore(RECORDINGS).clear();
-    tx.objectStore(SEGMENTS).clear();
-    tx.objectStore(CHUNKS).clear();
-  });

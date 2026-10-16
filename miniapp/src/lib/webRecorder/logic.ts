@@ -39,3 +39,14 @@ export function classifyApiFailure(status: number, body: unknown): RecorderError
   if (typeof code === "string" && SEGMENT_REJECTED.has(code)) return "rejected";
   return null;
 }
+
+/** Сколько дней неотправленная запись живёт на устройстве, прежде чем её чистят сами. */
+export const LOCAL_RETENTION_DAYS = 3;
+const DAY_MS = 86_400_000;
+
+/** Запись старше срока хранения (по последним данным, а без них — по началу). Любого владельца. */
+export function isExpiredRecording(r: RecordingRec, nowMs: number, days: number = LOCAL_RETENTION_DAYS): boolean {
+  const startedMs = Date.parse(r.startedAt);
+  const last = Math.max(r.lastSeenMs || 0, Number.isNaN(startedMs) ? 0 : startedMs);
+  return last > 0 && nowMs - last > days * DAY_MS;
+}
