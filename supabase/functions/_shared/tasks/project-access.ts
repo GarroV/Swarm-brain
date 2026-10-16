@@ -124,7 +124,34 @@ export function visibleProjectNames(
   viewerId: number | undefined,
 ): string[] {
   const index = parentLookup(rows);
-  return rows.filter((p) => canViewProject(p, viewerId, index)).map((p) =>
-    p.name
-  );
+  return rows.filter((p) => canViewProject(p, viewerId, index)).map((p) => p.name);
+}
+
+// Проекты, которые зрителю НЕ видны, — тем же предикатом canViewProject. Нужен читателям
+// ЗАДАЧ: задача закрытого проекта видна только тому, кто видит сам проект (решение владельца
+// 16.10.2026, docs/decisions/2026-10-16-security-fixes.md). Список «скрытых», а не «видимых»:
+// задача без проекта видна всем, и фильтр выборки — «project_id пуст или не из этого списка».
+// `rows` — ВСЕ строки воркспейса, включая архивные: архивный закрытый проект свои задачи
+// прячет так же, как живой.
+export function hiddenProjectIds(
+  rows: Array<ProjectAccessRow & { id: string }>,
+  viewerId: number | undefined,
+): string[] {
+  const index = parentLookup(rows);
+  return rows.filter((p) => !canViewProject(p, viewerId, index)).map((p) => p.id);
+}
+
+// Кто может закрыть или открыть проект (тумблер-глаз): только его автор и админ (решение
+// владельца 16.10.2026, docs/decisions/2026-10-16-security-fixes.md). Остальные правки открытого
+// проекта по-прежнему доступны всем участникам (решение 2026-07-01) — сужен только тумблер.
+// Строка без автора (`created_by = null`, легаси) — только админ: «ничейную» строку закрыть
+// чужой рукой нельзя, а открыть её обратно было бы некому.
+export function canToggleProjectPrivacy(
+  row: Pick<ProjectAccessRow, "created_by">,
+  viewerId: number | undefined,
+  isAdmin: boolean,
+): boolean {
+  if (isAdmin) return true;
+  return viewerId !== undefined && row.created_by !== null &&
+    row.created_by === viewerId;
 }

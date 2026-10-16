@@ -8,8 +8,9 @@
 // (_shared/tasks/access.ts). RLS не авторизация — всё ходит service_role, поэтому промах в
 // проверке здесь сразу означает утечку задач чужого воркспейса.
 
+import { loadHiddenProjectIds } from "../../_shared/tasks/project-visibility.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { getTask, listTasks } from "../../_shared/tasks/db.ts";
+import { getVisibleTask, listTasks } from "../../_shared/tasks/db.ts";
 import { resolvePersonNames } from "../../_shared/users/display-name.ts";
 import { canAccessTask, taskAccessError } from "../../_shared/tasks/access.ts";
 import { computeFlowTimes, computeTaskStats, periodStartISO, type StatsTask } from "../../_shared/tasks/analytics.ts";
@@ -118,6 +119,7 @@ export async function toolGetTaskStats(args: {
     projectId,
     confirmed: true,
     limit: STATS_TASK_CAP,
+    viewerId: args.requesting_user_id,
   }, groupId);
 
   const stats = computeTaskStats(tasks as StatsTask[], { sinceISO });
@@ -153,7 +155,7 @@ export async function toolGetTaskStats(args: {
 }
 
 export async function toolGetTaskHistory(args: { task_id: string; requesting_user_id: number }): Promise<string> {
-  const task = await getTask(args.task_id);
+  const task = await getVisibleTask(args.task_id, args.requesting_user_id);
   const groupId = await resolveGroupId(args.requesting_user_id);
   if (!groupId) return `Задача ${args.task_id} не найдена.`;
   const denied = taskAccessError(args.task_id, task, groupId);
@@ -215,15 +217,18 @@ export async function toolGetRecentTaskChanges(
   // Доступ: журнал сам по себе не знает воркспейса — спрашиваем задачи.
   // archive-ok: журнал изменений: у архивной задачи тоже есть история, и «кто её убрал» — ровно то, что в нём ищут
   const { data: taskRows } = await supabase
-    .from("tasks").select("id, title, group_id")
+    .from("tasks").select("id, title, group_id, project_id")
     .in("id", [...new Set(raw.map((r) => r.task_id))]);
+  // Задачи невидимых зрителю проектов в ленту не попадают (решение владельца 16.10.2026).
+  const hiddenProjects = new Set(await loadHiddenProjectIds(groupId, args.requesting_user_id));
   const titleById = new Map<string, string>();
   for (
     const t of (taskRows ?? []) as Array<
-      { id: string; title: string; group_id: string | null }
+      { id: string; title: string; group_id: string | null; project_id: string | null }
     >
   ) {
     if (!canAccessTask(t, groupId)) continue;
+    if (t.project_id && hiddenProjects.has(t.project_id)) continue;
     titleById.set(t.id, t.title);
   }
 

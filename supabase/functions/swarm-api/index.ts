@@ -73,6 +73,8 @@ import {
   setTasksSprint,
   updateSprint,
 } from "../_shared/tasks/sprints.ts";
+import { taskVisibleByProject } from "../_shared/tasks/project-visibility.ts";
+import { ProjectAccessError } from "../_shared/tasks/projects.ts";
 import {
   canMutateProject,
   createProject,
@@ -1176,6 +1178,7 @@ async function routeRequest(req: Request): Promise<Response> {
           country,
           assigneeText,
           telegramId: mine ? telegram_id : undefined,
+          viewerId: telegram_id,
           limit,
           confirmed: confirmedFilter,
           sprintId,
@@ -1401,7 +1404,10 @@ async function routeRequest(req: Request): Promise<Response> {
 
     if (req.method === "GET") {
       const task = await getTask(taskId);
-      if (!task || task.group_id !== groupId) {
+      if (
+        !task || task.group_id !== groupId ||
+        !(await taskVisibleByProject(task, telegram_id))
+      ) {
         return apiErr(404, "Not found", origin);
       }
       const [fresh] = await withFreshAssignees([task]);
@@ -1417,7 +1423,10 @@ async function routeRequest(req: Request): Promise<Response> {
       }
 
       const task = await getTask(taskId);
-      if (!task || task.group_id !== groupId) {
+      if (
+        !task || task.group_id !== groupId ||
+        !(await taskVisibleByProject(task, telegram_id))
+      ) {
         return apiErr(404, "Not found", origin);
       }
 
@@ -1684,7 +1693,10 @@ async function routeRequest(req: Request): Promise<Response> {
 
     if (req.method === "DELETE") {
       const task = await getTask(taskId);
-      if (!task || task.group_id !== groupId) {
+      if (
+        !task || task.group_id !== groupId ||
+        !(await taskVisibleByProject(task, telegram_id))
+      ) {
         return apiErr(404, "Not found", origin);
       }
       try {
@@ -1969,8 +1981,12 @@ async function routeRequest(req: Request): Promise<Response> {
       try {
         updated = await updateProject(projectId, fields, groupId, {
           viewerId: telegram_id,
+          isAdmin,
         });
       } catch (e) {
+        if (e instanceof ProjectAccessError) {
+          return apiErr(403, e.message, origin);
+        }
         return apiErr(
           400,
           e instanceof Error ? e.message : "invalid parent",

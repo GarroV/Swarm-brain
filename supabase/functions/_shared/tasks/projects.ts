@@ -1,7 +1,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import type { Project, ProjectInput } from "./types.ts";
 import { type ProjectRef, validateParent } from "./project-nesting.ts";
-import { canViewProject, parentLookup, type ProjectAccessRow } from "./project-access.ts";
+import { canToggleProjectPrivacy, canViewProject, parentLookup, type ProjectAccessRow } from "./project-access.ts";
 import { projectEventRow, type ProjectHistoryRow, projectHistoryRowsFor } from "./project-history.ts";
 import { onlyLive } from "./live.ts";
 import {
@@ -185,11 +185,14 @@ export async function createProject(
 // Обновляет только проект своего воркспейса. Возвращает обновлённый или null (не найден/чужой/
 // не свой подпроект — намеренно не различаем 404 от «нет доступа», как getEntrySecure для
 // entries: не палим существование чужой строки).
+/** Отказ в праве, которое у зрителя есть на просмотр, но нет на это действие → 403. */
+export class ProjectAccessError extends Error {}
+
 export async function updateProject(
   id: string,
   fields: Partial<ProjectInput>,
   groupId: string,
-  opts: { viewerId?: number } = {},
+  opts: { viewerId?: number; isAdmin?: boolean } = {},
 ): Promise<Project | null> {
   // Признак группы спринта только снимается («В проекты»): поставить его существующему проекту
   // значило бы молча убрать проект с доски у всей команды.
@@ -217,10 +220,27 @@ export async function updateProject(
   // Снимок ДО правки — иначе журналу не с чем сравнивать, и в него пошли бы строки
   // «было X, стало X» на каждое поле формы, в которых настоящий переезд не найти.
   const before = await getProject(id, groupId);
-  const { data } = await supabase.from("projects")
+  if (!before) return null;
+  const togglesPrivacy = "is_private" in fields &&
+    fields.is_private !== before.is_private;
+  if (
+    togglesPrivacy &&
+    !canToggleProjectPrivacy(before, opts.viewerId, opts.isAdmin === true)
+  ) {
+    throw new ProjectAccessError(
+      "Only the project author or an admin can change its visibility",
+    );
+  }
+  // Право решено по снимку — и UPDATE применяется, только пока строка в том же состоянии
+  // (условие в WHERE): если между проверкой и записью проект закрыли или передали, правка
+  // не проскочит по устаревшему разрешению.
+  let upd = supabase.from("projects")
     .update(fields)
-    .eq("id", id).eq("group_id", groupId)
-    .select().maybeSingle();
+    .eq("id", id).eq("group_id", groupId).is("archived_at", null)
+    .eq("is_private", before.is_private);
+  upd = before.parent_id === null ? upd.is("parent_id", null) : upd.eq("parent_id", before.parent_id);
+  upd = before.created_by === null ? upd.is("created_by", null) : upd.eq("created_by", before.created_by);
+  const { data } = await upd.select().maybeSingle();
   const updated = (data as Project | null) ?? null;
   if (!updated) return null;
 

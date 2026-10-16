@@ -1,6 +1,8 @@
 import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import {
+  canToggleProjectPrivacy,
   canViewProject,
+  hiddenProjectIds,
   isProjectPrivate,
   parentLookup,
   pickProjectByName,
@@ -301,4 +303,24 @@ Deno.test("visibleProjectNames: подпроект закрытой группы
     },
   ];
   assertEquals(visibleProjectNames(rows, 7), []);
+});
+
+Deno.test("hiddenProjectIds: чужие закрытые строки и всё под чужой закрытой группой", () => {
+  const rows = [
+    { id: "pub", ...publicTop },
+    { id: "priv", ...privateTop },
+    { id: "kid", parent_id: "priv", created_by: ANNA, is_private: false },
+  ];
+  assertEquals(hiddenProjectIds(rows, ANNA).sort(), ["kid", "priv"]);
+  assertEquals(hiddenProjectIds(rows, BOB), []);
+  assertEquals(hiddenProjectIds(rows, undefined).sort(), ["kid", "priv"]);
+});
+
+Deno.test("canToggleProjectPrivacy: автор и админ — да, остальные и строка без автора — нет", () => {
+  assertEquals(canToggleProjectPrivacy({ created_by: BOB }, BOB, false), true);
+  assertEquals(canToggleProjectPrivacy({ created_by: BOB }, ANNA, false), false);
+  assertEquals(canToggleProjectPrivacy({ created_by: BOB }, ANNA, true), true);
+  assertEquals(canToggleProjectPrivacy({ created_by: null }, ANNA, false), false);
+  assertEquals(canToggleProjectPrivacy({ created_by: null }, undefined, false), false);
+  assertEquals(canToggleProjectPrivacy({ created_by: BOB }, undefined, false), false);
 });

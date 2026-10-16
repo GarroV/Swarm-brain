@@ -8,6 +8,7 @@ import { historyRowsFor, isJournaled, type TaskSnapshot } from "./history.ts";
 import { duplicateRecurClose, recurCloseNote } from "./recur-close.ts";
 import { ASSIGNEE_SCAN_LIMIT, narrowByAssignee } from "./assignee-filter.ts";
 import { archivePatch } from "./live.ts";
+import { loadHiddenProjectIds, taskVisibleByProject, visibleProjectFilter } from "./project-visibility.ts";
 
 const supabase = createClient(
   Deno.env.get("SUPABASE_URL")!,
@@ -74,11 +75,30 @@ export async function getTask(id: string): Promise<Task | null> {
   return data as Task | null;
 }
 
+/**
+ * Задача, если она видна зрителю: живая и не лежит в невидимом ему проекте (решение владельца
+ * 16.10.2026). Воркспейс вызывающий проверяет сам, как и после getTask.
+ */
+export async function getVisibleTask(
+  id: string,
+  viewerId: number | undefined,
+): Promise<Task | null> {
+  const task = await getTask(id);
+  if (!task) return null;
+  return (await taskVisibleByProject(task, viewerId)) ? task : null;
+}
+
 export async function listTasksWithTotal(filters: {
   status?: string;
   country?: string;
   period?: string;
   telegramId?: number;
+  /**
+   * Кто смотрит. Задачи проектов, которых зритель не видит (закрытый чужой проект), в выдачу
+   * не попадают — решение владельца 16.10.2026. Не передан — закрытые проекты скрыты целиком
+   * (fail-closed): лишнего не покажем, даже если вызывающий забыл про зрителя.
+   */
+  viewerId?: number;
   assigneeText?: string;
   limit?: number;
   // Какие колонки тянуть. По умолчанию "*" — так ходят бот и MCP: боту нужен description
@@ -157,6 +177,11 @@ export async function listTasksWithTotal(filters: {
   }
 
   if (groupId) q = q.eq("group_id", groupId);
+
+  const projectFilter = visibleProjectFilter(
+    await loadHiddenProjectIds(groupId, filters.viewerId),
+  );
+  if (projectFilter) q = q.or(projectFilter);
 
   const limit = filters.limit ?? 200;
   // Исполнитель фильтруется в JS (assignee-filter.ts), поэтому при нём база отдаёт широкий

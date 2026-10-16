@@ -102,7 +102,7 @@ export async function handleQuickCreateTask(
 
 // ── /tasks command ────────────────────────────────────────────────────────────
 
-export async function handleTasks(chatId: number, _userId: number, filter: string, groupId: string): Promise<void> {
+export async function handleTasks(chatId: number, userId: number, filter: string, groupId: string): Promise<void> {
   const sub = filter.trim().toLowerCase();
 
   if (!sub) {
@@ -121,7 +121,7 @@ export async function handleTasks(chatId: number, _userId: number, filter: strin
   }
 
   if (sub === "все" || sub === "all") {
-    const tasks = await dbListAllOpen(groupId);
+    const tasks = await dbListAllOpen(groupId, userId);
     if (!tasks.length) {
       await sendMessage(chatId, "Открытых задач нет.");
       return;
@@ -153,7 +153,7 @@ export async function handleTasks(chatId: number, _userId: number, filter: strin
   }
 
   // Search by person name
-  const tasks = await dbListTasks({ assignee: filter.trim(), limit: 200, groupId });
+  const tasks = await dbListTasks({ assignee: filter.trim(), limit: 200, groupId, viewerId: userId });
   if (!tasks.length) {
     await sendMessage(chatId, `Задач для <b>${escapeHtml(filter.trim())}</b> не найдено.`);
     return;
@@ -347,8 +347,8 @@ export async function handleTaskCallbacks(
     const displayName = profile ? [profile.first_name, profile.last_name].filter(Boolean).join(" ") : null;
 
     const [byId, byName] = await Promise.all([
-      dbListTasks({ telegramId: userId, groupId, limit: 50 }),
-      displayName ? dbListTasks({ assignee: displayName, groupId, limit: 50 }) : Promise.resolve([]),
+      dbListTasks({ telegramId: userId, groupId, viewerId: userId, limit: 50 }),
+      displayName ? dbListTasks({ assignee: displayName, groupId, viewerId: userId, limit: 50 }) : Promise.resolve([]),
     ]);
     const seen = new Set<string>();
     const merged = [...byId, ...byName].filter((t) => !seen.has(t.id) && seen.add(t.id));
@@ -382,7 +382,7 @@ export async function handleTaskCallbacks(
 
   // tk_all — "Для меня": team tasks (#all / no assignee) + tasks assigned to me
   if (data === "tk_all") {
-    const all = await dbListAllOpen(groupId);
+    const all = await dbListAllOpen(groupId, userId);
     const tasks = all.filter((t) =>
       !t.assignees?.length ||
       (t.tags ?? []).includes("#all") ||
@@ -410,7 +410,7 @@ export async function handleTaskCallbacks(
 
   // tk_team — all workspace tasks grouped by assignee
   if (data === "tk_team") {
-    const tasks = await dbListAllOpen(groupId);
+    const tasks = await dbListAllOpen(groupId, userId);
 
     if (!tasks.length) {
       await editInlineMessage(

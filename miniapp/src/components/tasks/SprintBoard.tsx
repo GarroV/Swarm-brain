@@ -86,6 +86,17 @@ function PrivacyToggle({ isPrivate, inherited, onToggle, compact, label }: {
       </span>
     );
   }
+  // Нет права переключать (не автор и не админ) — кнопки нет: открытый проект без значка,
+  // закрытый (его видит только автор, так что сюда почти не попадает) — меткой без нажатия.
+  if (!onToggle) {
+    if (!isPrivate) return null;
+    return (
+      <span className={`flex shrink-0 items-center gap-1 rounded-full bg-accent-soft px-1.5 py-0.5 text-accent-ink ${text} font-semibold`}>
+        <RoyIcon name="eyeOff" size={size} strokeWidth={2.2} />
+        <span>{label.closed}</span>
+      </span>
+    );
+  }
   return (
     <button
       type="button"
@@ -313,6 +324,10 @@ export function SprintBoard() {
   // из подпроектов, значит тогда он скрывается ото всех»). Закрытую строку видит только тот, кто
   // её закрыл — админского обхода нет (решение 2026-08-21). Закрытие ГРУППЫ уносит и её
   // подпроекты: наследование считает бэкенд (`_shared/tasks/project-access.ts`).
+  // Закрыть/открыть проект могут только его автор и админ (решение владельца 16.10.2026,
+  // docs/decisions/2026-10-16-security-fixes.md): остальным тумблер не показываем, сервер
+  // такое переключение всё равно отобьёт.
+  const canTogglePrivacy = (p: Project) => isAdmin || (me != null && p.created_by === me.telegram_id);
   async function toggleProjectPrivacy(id: string, current: boolean) {
     const next = !current;
     setProjects((prev) => prev.map((p) => (p.id === id ? { ...p, is_private: next } : p)));
@@ -579,7 +594,7 @@ export function SprintBoard() {
                 <div className="ml-auto flex items-center gap-0.5" onClick={(e) => e.stopPropagation()} onDoubleClick={(e) => e.stopPropagation()}>
                   <PrivacyToggle
                     isPrivate={sec.is_private}
-                    onToggle={() => toggleProjectPrivacy(sec.id, sec.is_private)}
+                    onToggle={canTogglePrivacy(sec) ? () => toggleProjectPrivacy(sec.id, sec.is_private) : undefined}
                     label={{
                       closed: dt("Только я", "Only me"),
                       open: dt("Виден всей команде — скрыть проект вместе с подпроектами", "Visible to the team — hide the project with its subprojects"),
@@ -644,7 +659,7 @@ export function SprintBoard() {
                             <PrivacyToggle compact
                               isPrivate={kid.is_private}
                               inherited={sec.is_private || undefined}
-                              onToggle={() => toggleProjectPrivacy(kid.id, kid.is_private)}
+                              onToggle={canTogglePrivacy(kid) ? () => toggleProjectPrivacy(kid.id, kid.is_private) : undefined}
                               label={{
                                 closed: dt("Только я", "Only me"),
                                 open: dt("Виден всей команде — скрыть подпроект", "Visible to the team — hide this subproject"),
