@@ -49,6 +49,7 @@ import {
   createTask,
   deleteTask,
   getTask,
+  getVisibleTaskInWorkspace,
   listTasksWithTotal,
   updateTask,
   TaskUserError,
@@ -186,7 +187,6 @@ import {
   maintenanceVerdict,
   readMaintenance,
 } from "../_shared/maintenance.ts";
-import { onlyLive } from "../_shared/tasks/live.ts";
 import { onlyLiveEntries } from "../_shared/entries/live.ts";
 import { archiveEntry } from "../_shared/entries/archive.ts";
 import { personName, resolvePersonNames } from "../_shared/users/display-name.ts";
@@ -1102,6 +1102,7 @@ async function routeRequest(req: Request): Promise<Response> {
     req,
     routePath,
     groupId,
+    telegram_id,
     origin,
     resolveNames,
   );
@@ -1310,13 +1311,10 @@ async function routeRequest(req: Request): Promise<Response> {
       }
       // parent_id при создании (подзадача): родитель того же воркспейса. Если задан — форсим project_linked.
       const parentId = (body.parent_id as string | null) ?? null;
-      if (parentId) {
-        const { data: par } = await onlyLive(supabase.from("tasks").select(
-          "id, project_id, group_id",
-        )).eq("id", parentId).maybeSingle();
-        if (!par || par.group_id !== groupId) {
-          return apiErr(400, "parent_id не найден в этом воркспейсе", origin);
-        }
+      // Родитель из невидимого вызывающему проекта — как несуществующий: иначе подзадача
+      // подтвердила бы чужую закрытую задачу и легла бы в её дерево.
+      if (parentId && !(await getVisibleTaskInWorkspace(parentId, groupId, telegram_id))) {
+        return apiErr(400, "parent_id не найден в этом воркспейсе", origin);
       }
 
       // IDOR-guard: meeting_id — это entry.id. Принимаем, только если эта запись видна
@@ -1544,10 +1542,8 @@ async function routeRequest(req: Request): Promise<Response> {
               origin,
             );
           }
-          const { data: par } = await onlyLive(supabase.from("tasks").select(
-            "id, group_id",
-          )).eq("id", rawParent).maybeSingle();
-          if (!par || par.group_id !== groupId) {
+          // Родитель — только видимая вызывающему задача этого воркспейса (как при создании).
+          if (!(await getVisibleTaskInWorkspace(rawParent, groupId, telegram_id))) {
             return apiErr(400, "parent_id не найден в этом воркспейсе", origin);
           }
           // цикл: rawParent не должен быть потомком текущей задачи (идём вверх по parent_id)
@@ -1830,11 +1826,11 @@ async function routeRequest(req: Request): Promise<Response> {
       if (!(await sprintInWorkspace(sprintId, groupId))) {
         return apiErr(404, "Not found", origin);
       }
-      const n = await setTasksSprint(taskIds, sprintId, groupId);
+      const n = await setTasksSprint(taskIds, sprintId, groupId, telegram_id);
       return json({ updated: n }, 200, origin);
     }
     if (req.method === "DELETE") {
-      const n = await setTasksSprint(taskIds, null, groupId);
+      const n = await setTasksSprint(taskIds, null, groupId, telegram_id);
       return json({ updated: n }, 200, origin);
     }
   }

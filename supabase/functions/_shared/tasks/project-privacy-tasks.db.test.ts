@@ -329,3 +329,23 @@ Deno.test("getVisibleProject: чужой закрытый проект — ка�
     await db.end();
   }
 });
+
+Deno.test("правка невидимого проекта отвечает как «не найден» — до проверки родителя", async () => {
+  const db = await connect();
+  try {
+    const s = await seed(db);
+    // Сам на себя родителем — validateParent отказал бы своим текстом и тем выдал бы, что
+    // проект существует. Для невидимого id ответ обязан совпадать с несуществующим.
+    assertEquals(await updateProject(s.closed, { parent_id: s.closed }, WS, { viewerId: MEMBER }), null);
+    assertEquals(await updateProject(s.subOfClosed, { parent_id: s.open }, WS, { viewerId: MEMBER }), null);
+    assertEquals(
+      await updateProject(crypto.randomUUID(), { parent_id: s.open }, WS, { viewerId: MEMBER }),
+      null,
+    );
+    const row = await db.queryObject<{ parent_id: string | null }>`
+      select parent_id from projects where id = ${s.subOfClosed}`;
+    assertEquals(row.rows[0].parent_id, s.closed);
+  } finally {
+    await db.end();
+  }
+});

@@ -20,6 +20,12 @@ export type ProjectVisibility = {
   hidden: string[];
   /** Все проекты области (с архивными). Задача с проектом вне этого списка не показывается. */
   known: Set<string>;
+  /**
+   * Имена скрытых проектов. Нужны там, где проект записан ИМЕНЕМ, а не id (итоги принятого
+   * спринта `stats.byProject`, замороженная строка состава). Видимый проект с тем же именем
+   * тоже спрячется — лишнего не покажем (fail-closed).
+   */
+  hiddenNames: Set<string>;
 };
 
 /**
@@ -33,17 +39,20 @@ export async function loadProjectVisibility(
   viewerId: number | undefined,
 ): Promise<ProjectVisibility> {
   // Архивные строки тоже: архивный закрытый проект прячет свои задачи так же, как живой.
-  let q = supabase.from("projects").select("id, parent_id, created_by, is_private");
+  let q = supabase.from("projects").select("id, name, parent_id, created_by, is_private");
   if (groupId) q = q.eq("group_id", groupId);
   const { data, error } = await q.limit(PROJECT_ROWS_CAP + 1);
   if (error) throw new Error(`project visibility: ${error.message}`);
-  const rows = (data ?? []) as Array<ProjectAccessRow & { id: string }>;
+  const rows = (data ?? []) as Array<ProjectAccessRow & { id: string; name: string }>;
   if (rows.length > PROJECT_ROWS_CAP) {
     throw new Error(`project visibility: больше ${PROJECT_ROWS_CAP} проектов — видимость не установить`);
   }
+  const hidden = hiddenProjectIds(rows, viewerId);
+  const hiddenSet = new Set(hidden);
   return {
-    hidden: hiddenProjectIds(rows, viewerId),
+    hidden,
     known: new Set(rows.map((r) => r.id)),
+    hiddenNames: new Set(rows.filter((r) => hiddenSet.has(r.id)).map((r) => r.name)),
   };
 }
 
@@ -76,12 +85,53 @@ export function dropUnknownProjects<T extends { project_id?: string | null }>(
   return rows.filter((t) => !t.project_id || known.has(t.project_id));
 }
 
+/** Виден ли зрителю проект задачи. Задача без проекта видна; проект вне области — нет. */
+export function projectVisible(
+  projectId: string | null | undefined,
+  visibility: ProjectVisibility,
+): boolean {
+  if (!projectId) return true;
+  return visibility.known.has(projectId) && !visibility.hidden.includes(projectId);
+}
+
+/**
+ * Добивка для выборок, которые идут мимо listTasks (свой порядок, свой набор колонок): из строк
+ * задач остаются только те, чей проект зритель видит. В выборке обязана быть колонка
+ * `project_id` — тип не даст её забыть.
+ */
+export async function keepVisibleTasks<T extends { project_id: string | null }>(
+  rows: T[],
+  groupId: string | undefined,
+  viewerId: number | undefined,
+): Promise<T[]> {
+  if (rows.every((r) => !r.project_id)) return rows;
+  const visibility = await loadProjectVisibility(groupId, viewerId);
+  return rows.filter((r) => projectVisible(r.project_id, visibility));
+}
+
+/**
+ * Задачи из списка id, которые зритель вправе трогать: живые, этого воркспейса и не из
+ * невидимого ему проекта. Для массовых записей по присланным id (состав спринта, вкладка
+ * доски): чужая или скрытая задача отсеивается молча, как чужой воркспейс.
+ */
+export async function visibleTaskIds(
+  ids: string[],
+  groupId: string,
+  viewerId: number | undefined,
+): Promise<string[]> {
+  if (ids.length === 0) return [];
+  const { data, error } = await supabase.from("tasks").select("id, project_id")
+    .in("id", ids).eq("group_id", groupId).is("archived_at", null);
+  if (error) throw new Error(`visible tasks: ${error.message}`);
+  const rows = (data ?? []) as Array<{ id: string; project_id: string | null }>;
+  return (await keepVisibleTasks(rows, groupId, viewerId)).map((r) => r.id);
+}
+
 /** Видна ли зрителю эта задача по её проекту. Задача без проекта видна всем в воркспейсе. */
 export async function taskVisibleByProject(
   task: { group_id?: string | null; project_id?: string | null },
   viewerId: number | undefined,
 ): Promise<boolean> {
   if (!task.project_id) return true;
-  const { hidden, known } = await loadProjectVisibility(task.group_id ?? undefined, viewerId);
-  return known.has(task.project_id) && !hidden.includes(task.project_id);
+  return projectVisible(task.project_id, await loadProjectVisibility(task.group_id ?? undefined, viewerId));
 }

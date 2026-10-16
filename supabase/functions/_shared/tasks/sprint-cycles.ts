@@ -3,6 +3,7 @@
 //
 // ⚠️ Таблица `sprints` — это вкладки доски проектов. Спринты живут в `sprint_cycles`.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { loadProjectVisibility } from "./project-visibility.ts";
 
 const supabase = createClient(
   Deno.env.get("SUPABASE_URL")!,
@@ -229,4 +230,31 @@ export async function startCycle(
     .select().maybeSingle();
   if (error?.code === "23505") throw new LiveCycleExistsError(ACTIVE_EXISTS);
   return (data as SprintCycle | null) ?? null;
+}
+
+/**
+ * Итоги принятого спринта для зрителя: из разбивки по проектам (`stats.byProject`) уходят
+ * проекты, которых он не видит (решение владельца 16.10.2026). Итоги записаны один раз на всю
+ * команду и держат проект ИМЕНЕМ — поэтому фильтр по именам скрытых проектов. Прочие цифры
+ * (процент плана, счётчики) общие и не трогаются: в них нет ни названий, ни задач.
+ */
+export async function redactCycleStats<T extends { stats: unknown }>(
+  cycles: T[],
+  groupId: string,
+  viewerId: number | undefined,
+): Promise<T[]> {
+  const withBreakdown = (c: T) =>
+    !!c.stats && typeof c.stats === "object" &&
+    Array.isArray((c.stats as { byProject?: unknown }).byProject);
+  if (!cycles.some(withBreakdown)) return cycles;
+  const { hiddenNames } = await loadProjectVisibility(groupId, viewerId);
+  if (hiddenNames.size === 0) return cycles;
+  return cycles.map((c) => {
+    if (!withBreakdown(c)) return c;
+    const stats = c.stats as { byProject: Array<{ name: string | null }> };
+    return {
+      ...c,
+      stats: { ...stats, byProject: stats.byProject.filter((p) => p.name === null || !hiddenNames.has(p.name)) },
+    };
+  });
 }

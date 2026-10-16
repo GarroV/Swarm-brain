@@ -2,7 +2,7 @@ import { ADMIN_USER_ID, isAdminUser, supabase } from "../lib/supabase.ts";
 import { buildKeyboard, editInlineMessage, sendInlineMessage, sendMessage } from "../lib/telegram.ts";
 import { notifyMessage } from "../lib/notify.ts";
 import { clearSession, setSession } from "../lib/storage.ts";
-import type { Task, TgCallbackQuery } from "../lib/types.ts";
+import type { TgCallbackQuery } from "../lib/types.ts";
 import { sendTaskCard } from "../tasks/index.ts";
 import { generateNameAliases } from "../lib/name-aliases.ts";
 import { assignUserToWorkspace } from "../lib/workspace.ts";
@@ -11,6 +11,8 @@ import { externalFetch, VIA_TELEGRAM } from "../../_shared/external-fetch.ts";
 import { isSuperadmin, type MemberRow } from "../../_shared/users/admin-scope.ts";
 import { canActOnUser, canAddUsers, isEditableProfileField, type UserAction, type UsersActor } from "./users-scope.ts";
 import { escapeHtml } from "../../_shared/telegram-html.ts";
+import { keepVisibleTasks } from "../../_shared/tasks/project-visibility.ts";
+import type { Task as SharedTask } from "../../_shared/tasks/types.ts";
 
 const TELEGRAM_BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN")!;
 
@@ -270,7 +272,14 @@ export async function showProfile(chatId: number, targetId: number, messageId?: 
     : await sendInlineMessage(chatId, lines, keyboard);
 }
 
-export async function handleProfileTasks(chatId: number, targetId: number): Promise<void> {
+// Задачи человека — только из пространства смотрящего и не из проектов, которых смотрящий не
+// видит (решение владельца 16.10.2026). До этого выборка шла по всем пространствам сразу.
+export async function handleProfileTasks(
+  chatId: number,
+  targetId: number,
+  groupId: string,
+  viewerId: number,
+): Promise<void> {
   const { data: profile } = await supabase
     .from("user_profiles").select("first_name, last_name").eq("telegram_id", targetId).maybeSingle();
   const { data: user } = await supabase
@@ -284,6 +293,7 @@ export async function handleProfileTasks(chatId: number, targetId: number): Prom
       .from("tasks")
       .select("*"),
   )
+    .eq("group_id", groupId)
     .not("status", "in", '("done","cancelled")')
     .order("due_date", { ascending: true });
 
@@ -293,8 +303,8 @@ export async function handleProfileTasks(chatId: number, targetId: number): Prom
   }
 
   const nameLower = searchName.toLowerCase();
-  const tasks = (allTasks ?? [])
-    .filter((t: Task) => t.assignees?.some((a: string) => a.toLowerCase().includes(nameLower)))
+  const tasks = (await keepVisibleTasks((allTasks ?? []) as SharedTask[], groupId, viewerId))
+    .filter((t) => t.assignees?.some((a: string) => a.toLowerCase().includes(nameLower)))
     .slice(0, 15);
 
   if (!tasks.length) {
@@ -490,7 +500,7 @@ export async function handleUserCallbacks(
   if (data.startsWith("ptasks_")) {
     const targetId = Number(data.replace("ptasks_", ""));
     if (!actor || !(await allowUserAction(chatId, actor, targetId, "view"))) return true;
-    await handleProfileTasks(chatId, targetId);
+    await handleProfileTasks(chatId, targetId, actor.groupId, actor.telegramId);
     return true;
   }
   if (data.startsWith("pu_")) {

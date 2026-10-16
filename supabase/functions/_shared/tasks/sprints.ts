@@ -1,5 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import type { Sprint, SprintInput, SprintKind } from "./types.ts";
+import { visibleTaskIds } from "./project-visibility.ts";
 
 const supabase = createClient(
   Deno.env.get("SUPABASE_URL")!,
@@ -76,16 +77,21 @@ export async function deleteSprint(
   return !!data;
 }
 
-// Привязывает задачи воркспейса к спринту (массовое назначение sprint_id).
+// Привязывает задачи воркспейса к спринту (массовое назначение sprint_id). Задачи проектов,
+// которых вызывающий не видит, отсеиваются молча, как чужой воркспейс (решение владельца
+// 16.10.2026): id приходят от клиента, и без отсева чужую закрытую задачу можно было бы двигать.
 export async function setTasksSprint(
   taskIds: string[],
   sprintId: string | null,
   groupId: string,
+  viewerId: number | undefined,
 ): Promise<number> {
   if (taskIds.length === 0) return 0;
+  const allowed = await visibleTaskIds(taskIds, groupId, viewerId);
+  if (allowed.length === 0) return 0;
   const { data } = await supabase.from("tasks")
     .update({ sprint_id: sprintId, updated_at: new Date().toISOString() })
-    .in("id", taskIds).eq("group_id", groupId)
+    .in("id", allowed).eq("group_id", groupId)
     .select("id");
   return (data ?? []).length;
 }

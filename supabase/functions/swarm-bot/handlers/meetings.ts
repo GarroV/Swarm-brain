@@ -18,6 +18,7 @@ import { onlyLiveEntries } from "../../_shared/entries/live.ts";
 import { escapeHtml, sanitizeModelHtml } from "../../_shared/telegram-html.ts";
 import { archiveEntry } from "../../_shared/entries/archive.ts";
 import { externalFetch, VIA_TELEGRAM, VIA_TELEGRAM_UPLOAD } from "../../_shared/external-fetch.ts";
+import { keepVisibleTasks } from "../../_shared/tasks/project-visibility.ts";
 
 const TELEGRAM_BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN")!;
 
@@ -346,10 +347,20 @@ export async function handleMeetingCallbacks(
 
     let tasksText = "";
     if (meetingId) {
-      const { data: tasks } = await onlyLive(supabase.from("tasks").select("title, assignees, due_date, status")).eq(
-        "meeting_id",
-        meetingId,
-      ).limit(8);
+      // Не из проекта, которого смотрящий не видит (решение владельца 16.10.2026): карточка
+      // встречи иначе показала бы название закрытой задачи. Воркспейс здесь уже проверен самой
+      // встречей (loadEntryForAction), поэтому отбор по group_id не добавлен — легаси-задачи
+      // без пространства из карточки не пропадут; проект чужого пространства всё равно отсеется.
+      const { data: rawTasks } = await onlyLive(
+        supabase.from("tasks").select("title, assignees, due_date, status, project_id"),
+      ).eq("meeting_id", meetingId).limit(8);
+      const tasks = await keepVisibleTasks(
+        (rawTasks ?? []) as Array<
+          { title: string; assignees: string[]; due_date: string | null; status: string; project_id: string | null }
+        >,
+        groupId,
+        userId,
+      );
       if (tasks?.length) {
         tasksText = "\n\n<b>✅ Задачи:</b>\n" +
           tasks.map((t: { title: string; assignees: string[]; due_date: string | null; status: string }) => {
@@ -505,11 +516,17 @@ export async function handleMeetingCallbacks(
     ).maybeSingle();
     const full = prof ? [prof.first_name, prof.last_name].filter(Boolean).join(" ") : "";
     const assigneeName = full || (au?.username ? `@${au.username}` : `ID ${targetTgId}`);
-    const { data: meetingTasks } = await onlyLive(supabase.from("tasks").select("id, assignees")).eq(
-      "meeting_id",
-      meetingId,
+    // id встречи пришёл из callback_data: правим только задачи своего пространства и не из
+    // проекта, которого человек не видит (решение владельца 16.10.2026).
+    const { data: rawMeetingTasks } = await onlyLive(
+      supabase.from("tasks").select("id, assignees, project_id"),
+    ).eq("meeting_id", meetingId).eq("group_id", groupId);
+    const meetingTasks = await keepVisibleTasks(
+      (rawMeetingTasks ?? []) as Array<{ id: string; assignees: string[]; project_id: string | null }>,
+      groupId,
+      userId,
     );
-    for (const t of (meetingTasks ?? []) as Array<{ id: string; assignees: string[] }>) {
+    for (const t of meetingTasks) {
       const existing = t.assignees ?? [];
       if (!existing.includes(assigneeName)) {
         // Статус здесь БОЛЬШЕ НЕ ТРОГАЕМ (05.09.2026). Раньше назначение исполнителя

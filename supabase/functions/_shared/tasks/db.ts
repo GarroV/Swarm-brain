@@ -93,6 +93,21 @@ export async function getVisibleTask(
   return (await taskVisibleByProject(task, viewerId)) ? task : null;
 }
 
+/**
+ * Задача этого воркспейса, если она видна зрителю (getVisibleTask + сверка воркспейса). Для
+ * путей, где id задачи приходит от клиента и сам по себе ничего не доказывает: родитель
+ * подзадачи, карточка в боте. Отказ — null, как «задачи нет».
+ */
+export async function getVisibleTaskInWorkspace(
+  id: string,
+  groupId: string,
+  viewerId: number | undefined,
+): Promise<Task | null> {
+  const task = await getTask(id);
+  if (!task || task.group_id !== groupId) return null;
+  return (await taskVisibleByProject(task, viewerId)) ? task : null;
+}
+
 export async function listTasksWithTotal(filters: {
   status?: string;
   country?: string;

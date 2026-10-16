@@ -58,7 +58,7 @@ export async function acceptCycle(
 
   // Снятые из идущего спринта входят в итоги (#576): плановые из них — невыполненной частью
   // плана, иначе снятие отстающих поднимало бы процент.
-  const { items, withdrawn } = await listComposition(id, groupId);
+  const { items, withdrawn } = await listComposition(id, groupId, "everyone");
   const stats = computeSprintStats(
     [...items, ...withdrawn].map((it): SprintItemView => ({
       in_plan: it.in_plan,

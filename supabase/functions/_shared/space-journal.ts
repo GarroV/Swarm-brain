@@ -13,6 +13,7 @@
 // deno-lint-ignore-file no-import-prefix
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { actorIds, displayActor } from "./journal-actors.ts";
+import { loadProjectVisibility, type ProjectVisibility, projectVisible } from "./tasks/project-visibility.ts";
 
 const supabase = createClient(
   Deno.env.get("SUPABASE_URL")!,
@@ -66,7 +67,10 @@ function since(days: number | null): string | null {
 }
 
 /**
- * Задачи пространства (видны любому участнику воркспейса — «личных» задач нет, решение 2026-10-09).
+ * Задачи пространства (видны любому участнику воркспейса — «личных» задач нет, решение 2026-10-09),
+ * КРОМЕ задач проектов, которых зритель не видит (решение владельца 16.10.2026): такая задача в
+ * список не попадает, а значит, и её события — порядок «сначала задачи, потом события» держит
+ * это правило для всех таблиц ленты разом.
  *
  * Задачи пространства — это состав его спринтов (`sprint_items`). НЕ проекты с
  * `projects.sprint_id = tabId`: так было, пока пространство и вкладка доски «Проекты» были одной
@@ -76,6 +80,7 @@ function since(days: number | null): string | null {
 async function spaceTasks(
   tabId: string,
   groupId: string,
+  visibility: ProjectVisibility,
 ): Promise<Map<string, string>> {
   const titles = new Map<string, string>();
   const { data: cycles, error: cyclesErr } = await supabase.from(
@@ -98,11 +103,12 @@ async function spaceTasks(
 
   // archive-ok: журнал пространства подписывает события, в том числе об архивной задаче
   const { data: tasks, error: tasksErr } = await supabase.from("tasks")
-    .select("id, title")
+    .select("id, title, project_id")
     .eq("group_id", groupId).in("id", taskIds)
     .limit(2000);
   if (tasksErr) console.error("[space-journal] tasks", tasksErr.message);
-  for (const t of (tasks ?? []) as { id: string; title: string }[]) {
+  for (const t of (tasks ?? []) as { id: string; title: string; project_id: string | null }[]) {
+    if (!projectVisible(t.project_id, visibility)) continue;
     titles.set(t.id, t.title);
   }
   return titles;
@@ -119,6 +125,8 @@ export const JOURNAL_PERIODS = Object.keys(PERIODS);
 export async function loadSpaceJournal(
   tabId: string,
   groupId: string,
+  /** Кто смотрит: задачи невидимых ему проектов в ленту не идут (без id — все закрытые). */
+  viewerId: number | undefined,
   days: string,
   resolveNames: (ids: number[]) => Promise<Map<number, string>>,
 ): Promise<JournalResult> {
@@ -135,7 +143,8 @@ export async function loadSpaceJournal(
     .maybeSingle();
   if (!tab) return { ok: false, status: 404, error: "Not found" };
 
-  const titles = await spaceTasks(tabId, groupId);
+  const visibility = await loadProjectVisibility(groupId, viewerId);
+  const titles = await spaceTasks(tabId, groupId, visibility);
   const taskIds = [...titles.keys()];
   const events: JournalEvent[] = [];
 
@@ -246,7 +255,7 @@ export async function loadSpaceJournal(
   if (cycleIds.length > 0) {
     const { data: items, error: itemsErr } = await supabase.from("sprint_items")
       .select(
-        "cycle_id, task_id, added_at, added_by, check_status, check_at, check_by, to_carry, carry_reason, carry_at, carry_by, removed_title, removed_at",
+        "cycle_id, task_id, added_at, added_by, check_status, check_at, check_by, to_carry, carry_reason, carry_at, carry_by, removed_title, removed_project_id, removed_at",
       )
       .in("cycle_id", cycleIds).limit(MAX_ROWS);
     if (itemsErr) console.error("[space-journal] items", itemsErr.message);
@@ -265,9 +274,12 @@ export async function loadSpaceJournal(
         carry_at: string | null;
         carry_by: string | null;
         removed_title: string | null;
+        removed_project_id: string | null;
         removed_at: string | null;
       }[]
     ) {
+      // Упоминание удалённой задачи невидимого проекта — тоже её след: имя не показываем.
+      if (!it.task_id && !projectVisible(it.removed_project_id, visibility)) continue;
       // Строка состава ведёт к задаче: нет её в списке задач пространства — событие в ленту
       // не идёт. Упоминание удалённой задачи (task_id уже null) показываем: пропажу из спринта
       // надо объяснить.

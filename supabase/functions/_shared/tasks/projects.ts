@@ -218,6 +218,11 @@ export async function updateProject(
     throw new Error("sprint_group можно только снять");
   }
   const all = await liveProjectRows(groupId);
+  // Видимость и право правки у проекта совпадают (см. canMutateProject) — по тем же строкам.
+  // Проверка ДО сверки родителя: иначе отказ validateParent своим текстом выдал бы, что чужой
+  // закрытый проект существует, а должен звучать как «не найден».
+  const self = all.find((r) => r.id === id);
+  if (!self || !canViewProject(self, opts.viewerId, parentLookup(all))) return null;
   if ("parent_id" in fields) {
     const v = validateParent({
       projectId: id,
@@ -228,9 +233,6 @@ export async function updateProject(
     const groupErr = parentForSprintGroup(fields.parent_id ?? null, all);
     if (groupErr) throw new Error(groupErr);
   }
-  // Видимость и право правки у проекта совпадают (см. canMutateProject) — по тем же строкам.
-  const self = all.find((r) => r.id === id);
-  if (!self || !canViewProject(self, opts.viewerId, parentLookup(all))) return null;
   // Снимок ДО правки — иначе журналу не с чем сравнивать, и в него пошли бы строки
   // «было X, стало X» на каждое поле формы, в которых настоящий переезд не найти.
   const before = await getProject(id, groupId);
