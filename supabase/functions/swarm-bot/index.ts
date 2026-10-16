@@ -15,6 +15,7 @@ import { drainTelegramOutbox, makeOutboxStore } from "../_shared/telegram-outbox
 import { sendTelegramCall } from "../_shared/notify-person.ts";
 import { checkRecordingWatchdog } from "./lib/recording-watchdog.ts";
 import { makeWatchdogStore } from "./lib/recording-watchdog-store.ts";
+import { notifiesRecorders } from "../_shared/web-recording.ts";
 import { sweepGhostMeetings } from "./lib/ghost-sweep.ts";
 import { makeGhostStore } from "./lib/ghost-sweep-store.ts";
 import { autoSyncProfile, clearSession, getSession, visibilityFilter } from "./lib/storage.ts";
@@ -222,6 +223,7 @@ async function sweepStuckMeetings(staleMinutes = 15): Promise<number> {
     id: string;
     title: string | null;
     recorders: Recorder[] | null;
+    source: string | null;
     last_progress_at: string | null;
     updated_at: string | null;
   };
@@ -232,7 +234,7 @@ async function sweepStuckMeetings(staleMinutes = 15): Promise<number> {
   const frozen = await processingFrozen(supabase);
   const { data: rows } = frozen ? { data: [] } : await supabase
     .from("meetings")
-    .select("id, title, recorders, last_progress_at, updated_at")
+    .select("id, title, recorders, source, last_progress_at, updated_at")
     .eq("summary_status", "processing");
   const note = "⚠️ Не удалось обработать запись встречи — обработка превысила лимит времени. " +
     "Попробуй записать заново (по возможности короче).";
@@ -244,6 +246,8 @@ async function sweepStuckMeetings(staleMinutes = 15): Promise<number> {
       .update({ summary_status: "failed", processing_lease: null, updated_at: new Date().toISOString() })
       .eq("id", m.id);
     swept++;
+    // Запись из браузера: сообщение людям без «да» владельца не уходит (notifiesRecorders).
+    if (!notifiesRecorders(m.source)) continue;
     for (const r of m.recorders ?? []) {
       if (!r || typeof r.telegram_id !== "number") continue;
       try {

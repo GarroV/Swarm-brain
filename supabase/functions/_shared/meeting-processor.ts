@@ -40,6 +40,7 @@ import { claimLeaseUntil } from "./meeting-lease.ts";
 import { isLeaseLost, LEASE_STALE_MS, ProcessingLease, rethrowIfLeaseLost } from "./meeting-processing-lease.ts";
 import { externalFetch } from "./external-fetch.ts";
 import { notifyPerson } from "./notify-person.ts";
+import { notifiesRecorders } from "./web-recording.ts";
 
 export type { Segment, SpeakerSpan };
 
@@ -145,6 +146,7 @@ interface MeetingRow {
   id: string;
   title: string | null;
   recorders: RecorderEntry[] | null;
+  source: string | null;
   claim_owner: number | null;
   mic_start_offset: number | null;
   summary_status: string | null;
@@ -456,6 +458,7 @@ async function markFailed(lease: ProcessingLease, m: MeetingRow, state: ProcessS
     updated_at: new Date().toISOString(),
   });
   if (!applied) return; // запись вытеснена — о чужой встрече её владельцу не пишем
+  if (!notifiesRecorders(m.source)) return; // запись из браузера: текст не одобрен владельцем
   const note =
     "⚠️ Не удалось обработать запись встречи — не получилось транскрибировать аудио. Попробуй записать заново.";
   for (const r of m.recorders ?? []) {
@@ -658,6 +661,9 @@ async function summarizeAndFinish(lease: ProcessingLease, m: MeetingRow, state: 
     return;
   }
 
+  // Запись из браузера: сообщение людям без «да» владельца не уходит (web-recording.notifiesRecorders).
+  if (!notifiesRecorders(m.source)) return;
+
   const webUrl = WEB_BASE_URL ? `${WEB_BASE_URL}/?meeting=${m.id}` : "";
   const titleStr = finalTitle ? `: <b>${escapeHtml(finalTitle)}</b>` : "";
   // Только факт «обработана и готова» (владелец 30.09.2026): приписка «Возьмёт любой из участников»
@@ -788,7 +794,7 @@ async function meetingStep(
   try {
     const { data } = await supabase
       .from("meetings")
-      .select("id, title, recorders, claim_owner, mic_start_offset, summary_status, process_state")
+      .select("id, title, recorders, source, claim_owner, mic_start_offset, summary_status, process_state")
       .eq("id", meetingId)
       .maybeSingle();
     const m = data as MeetingRow | null;
