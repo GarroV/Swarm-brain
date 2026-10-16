@@ -2,6 +2,7 @@
 // «призрак или бот ещё пишет» решает ghost-sweep.ts. Держит этот файл живой смоук
 // смоук сторожей в scripts/ (…-watchdog-smoke.ts) против настоящего Postgres, а не юнит-тест с подделкой.
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { finalizeWebRecording } from "../../_shared/web-recording.ts";
 import type { GhostCandidate, GhostStore } from "./ghost-sweep.ts";
 
 function must<T>(what: string, res: { data: T | null; error: { message: string } | null }): T | null {
@@ -25,7 +26,7 @@ function onlyEmpty(query: any): any {
 export function makeGhostStore(supabase: SupabaseClient): GhostStore {
   return {
     async ghostCandidates(cutoffIso) {
-      const res = await onlyEmpty(supabase.from("meetings").select("id, agent_last_seen_at")).lt(
+      const res = await onlyEmpty(supabase.from("meetings").select("id, agent_last_seen_at, source, updated_at")).lt(
         "created_at",
         cutoffIso,
       );
@@ -39,6 +40,10 @@ export function makeGhostStore(supabase: SupabaseClient): GhostStore {
         ),
       ).select("id");
       return ((must("mark meetings", res) ?? []) as unknown[]).length > 0;
+    },
+    async finalizeWebRecording(meetingId) {
+      const result = await finalizeWebRecording(supabase, meetingId);
+      return !result.already;
     },
   };
 }

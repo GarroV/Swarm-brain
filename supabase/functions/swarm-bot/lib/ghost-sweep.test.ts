@@ -6,6 +6,7 @@
 // ложный «жив» — брошенная встреча вечно висит «готовится». Поэтому тесты идут вперёд кода.
 import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import { botKeepsMeetingAlive, type GhostCandidate, type GhostStore, sweepGhostMeetings } from "./ghost-sweep.ts";
+import { WEB_RECORDER_SOURCE, WEB_STALE_MIN } from "../../_shared/web-recording.ts";
 import { AGENT_STALE_MIN } from "./recording-watchdog.ts";
 
 const NOW = Date.parse("2026-09-26T12:00:00Z");
@@ -13,18 +14,35 @@ const minutesAgo = (m: number) => new Date(NOW - m * 60_000).toISOString();
 const secondsAgo = (s: number) => new Date(NOW - s * 1000).toISOString();
 
 /** Пустая встреча; agent_last_seen_at — последний удар бота по ЭТОЙ встрече (D018), null — бот её не писал. */
-const meeting = (id: string, agent_last_seen_at: string | null): GhostCandidate => ({ id, agent_last_seen_at });
+const meeting = (id: string, agent_last_seen_at: string | null): GhostCandidate => ({
+  id,
+  agent_last_seen_at,
+  source: "desktop-agent",
+  updated_at: minutesAgo(60),
+});
+/** Запись из браузера: updated_at — последний принятый кусок. */
+const webMeeting = (id: string, updated_at: string | null): GhostCandidate => ({
+  id,
+  agent_last_seen_at: null,
+  source: WEB_RECORDER_SOURCE,
+  updated_at,
+});
 
 function harness(candidates: GhostCandidate[], changedMeanwhile: string[] = []) {
   const marked: string[] = [];
+  const finalized: string[] = [];
   const store: GhostStore = {
+    finalizeWebRecording: (id) => {
+      finalized.push(id);
+      return Promise.resolve(true);
+    },
     ghostCandidates: () => Promise.resolve(candidates),
     markGhostFailed: (id) => {
       marked.push(id);
       return Promise.resolve(!changedMeanwhile.includes(id));
     },
   };
-  return { store, marked };
+  return { store, marked, finalized };
 }
 
 Deno.test("длинная встреча бота со свежим heartbeat по ней — не призрак (#549)", async () => {
@@ -79,4 +97,41 @@ Deno.test("граница порога: та же, что у сторожа об
 Deno.test("удара не было или он нечитаем — встреча не считается живой", () => {
   assertEquals(botKeepsMeetingAlive(meeting("m", null), NOW), false);
   assertEquals(botKeepsMeetingAlive(meeting("m", "not-a-date"), NOW), false);
+});
+
+Deno.test("БЛОКИРУЮЩИЙ: запись из браузера со свежим куском — не призрак и не завершается", async () => {
+  const { store, marked, finalized } = harness([webMeeting("m-web", minutesAgo(WEB_STALE_MIN - 1))]);
+  assertEquals(await sweepGhostMeetings({ store, nowMs: NOW }), 0);
+  assertEquals(marked, []);
+  assertEquals(finalized, []);
+});
+
+Deno.test("запись из браузера без активности дольше порога — завершается, а не метится 'failed' вслепую", async () => {
+  const { store, marked, finalized } = harness([webMeeting("m-web", minutesAgo(WEB_STALE_MIN + 1))]);
+  assertEquals(await sweepGhostMeetings({ store, nowMs: NOW }), 1);
+  assertEquals(finalized, ["m-web"]);
+  assertEquals(marked, []);
+});
+
+Deno.test("запись из браузера без отметки активности считается брошенной", async () => {
+  const { store, finalized } = harness([webMeeting("m-web", null)]);
+  assertEquals(await sweepGhostMeetings({ store, nowMs: NOW }), 1);
+  assertEquals(finalized, ["m-web"]);
+});
+
+Deno.test("запись из браузера завершили рядом, пока шёл обход — не считается", async () => {
+  const { store, finalized } = harness([webMeeting("m-web", minutesAgo(WEB_STALE_MIN + 5))]);
+  store.finalizeWebRecording = () => Promise.resolve(false);
+  assertEquals(await sweepGhostMeetings({ store, nowMs: NOW }), 0);
+  assertEquals(finalized, []);
+});
+
+Deno.test("обычный призрак рядом с записью из браузера метится как раньше, завершать его не пытаются", async () => {
+  const { store, marked, finalized } = harness([
+    meeting("m-human", null),
+    webMeeting("m-web", minutesAgo(1)),
+  ]);
+  assertEquals(await sweepGhostMeetings({ store, nowMs: NOW }), 1);
+  assertEquals(marked, ["m-human"]);
+  assertEquals(finalized, []);
 });
