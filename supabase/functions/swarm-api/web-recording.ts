@@ -5,6 +5,7 @@
 //
 //   POST /meetings/record                      { "started_at"?: ISO, "title"?: string }
 //        201 { id, title, started_at }
+//        · 400 bad_request (в т.ч. тело JSON > 4096 байт) · 429 too_many_open (уже открыто 3 незавершённых записи)
 //   PUT  /meetings/record/:id/segments/:n?offset=<сек от начала записи, 0..86400, дробное>
 //        тело — аудио куска целиком, Content-Type audio/mp4 (→ .m4a) или audio/webm (→ .webm);
 //        n — 0..999; повтор того же n перезаписывает (идемпотентно)
@@ -43,6 +44,10 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const MAX_TITLE_LEN = 200;
 const DEFAULT_TITLE_NAME = "Офлайн-встреча";
 const INLINE_BUDGET_MS = 90_000;
+/** Тело JSON-запросов маршрутов — пара полей; больше не читаем. */
+const MAX_JSON_BYTES = 4096;
+/** Сколько незавершённых записей из браузера может висеть на человеке: каждая держит строку и куски в Storage. */
+export const MAX_OPEN_RECORDINGS = 3;
 
 declare const EdgeRuntime:
   | { waitUntil: (p: Promise<unknown>) => void }
@@ -65,6 +70,11 @@ const ERRORS = {
     status: 413,
     en: `Segment is larger than ${MAX_SEGMENT_BYTES / 1024 / 1024} MB`,
     ru: `Кусок больше ${MAX_SEGMENT_BYTES / 1024 / 1024} МБ`,
+  },
+  too_many_open: {
+    status: 429,
+    en: "Finish your other recordings first",
+    ru: "Сначала завершите другие записи",
   },
   unsupported_media: {
     status: 415,
@@ -98,7 +108,9 @@ function parseIso(raw: unknown): string | null {
 
 /** Тело запроса — необязательный JSON-объект; пустое тело = {}. null — тело есть, но не объект. */
 async function readOptionalBody(req: Request): Promise<Record<string, unknown> | null> {
-  const text = await req.text();
+  const raw = await readCapped(req, MAX_JSON_BYTES);
+  if (raw === null) return null;
+  const text = new TextDecoder().decode(raw);
   if (!text.trim()) return {};
   try {
     const parsed = JSON.parse(text);
@@ -117,6 +129,15 @@ async function startRecording(ctx: WebRecordingContext, req: Request): Promise<R
   if (body.title !== undefined && typeof body.title !== "string") return err("bad_request", ctx.origin);
   const title = ((body.title as string | undefined) ?? "").trim().slice(0, MAX_TITLE_LEN) ||
     defaultMeetingTitle(DEFAULT_TITLE_NAME, startedAt);
+
+  const { count, error: countErr } = await ctx.supabase.from("meetings")
+    .select("id", { count: "exact", head: true })
+    .eq("group_id", ctx.groupId)
+    .eq("source", WEB_RECORDER_SOURCE)
+    .eq("claim_owner", ctx.telegramId)
+    .is("summary_status", null);
+  if (countErr) return serverError(ctx.origin, "web recording count", countErr);
+  if ((count ?? 0) >= MAX_OPEN_RECORDINGS) return err("too_many_open", ctx.origin);
 
   const nowIso = new Date().toISOString();
   const { data, error } = await ctx.supabase.from("meetings").insert({
@@ -176,6 +197,31 @@ function extensionOf(contentType: string | null): SegmentExt | null {
   return null;
 }
 
+/** Тело запроса целиком, но не больше `max` байт: перебор — null, поток обрывается сразу. */
+export async function readCapped(req: Request, max: number): Promise<Uint8Array | null> {
+  if (!req.body) return new Uint8Array(0);
+  const reader = req.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > max) {
+      await reader.cancel().catch(() => {});
+      return null;
+    }
+    chunks.push(value);
+  }
+  const out = new Uint8Array(total);
+  let at = 0;
+  for (const c of chunks) {
+    out.set(c, at);
+    at += c.byteLength;
+  }
+  return out;
+}
+
 async function putSegment(
   ctx: WebRecordingContext,
   req: Request,
@@ -198,9 +244,10 @@ async function putSegment(
   // Отказ по заголовку — до чтения тела: гигабайт в память функции не пускаем.
   const declared = Number(req.headers.get("content-length"));
   if (Number.isFinite(declared) && declared > MAX_SEGMENT_BYTES) return err("segment_too_large", ctx.origin);
-  const bytes = new Uint8Array(await req.arrayBuffer());
+  // Content-Length может не быть (chunked) — тогда держит потолок при чтении потока, а не после.
+  const bytes = await readCapped(req, MAX_SEGMENT_BYTES);
+  if (bytes === null) return err("segment_too_large", ctx.origin);
   if (bytes.byteLength === 0) return err("empty_segment", ctx.origin);
-  if (bytes.byteLength > MAX_SEGMENT_BYTES) return err("segment_too_large", ctx.origin);
 
   const path = segmentPath(id, n, offset, ext);
   const { error: upErr } = await ctx.supabase.storage.from(BUCKET).upload(path, bytes, {

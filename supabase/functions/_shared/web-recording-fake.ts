@@ -23,10 +23,12 @@ class Query {
   private patch: Row | null = null;
   private inserted: Row | null = null;
   private wantRows = false;
+  private countOnly = false;
   constructor(private db: FakeSupabase) {}
 
-  select(_cols?: string) {
-    this.wantRows = true;
+  select(_cols?: string, opts?: { count?: string; head?: boolean }) {
+    if (opts?.head) this.countOnly = true;
+    else this.wantRows = true;
     return this;
   }
   insert(row: Row) {
@@ -67,9 +69,14 @@ class Query {
   single() {
     return this.maybeSingle();
   }
-  then<T>(resolve: (v: { data: Row[] | null; error: null }) => T) {
+  then<T>(resolve: (v: { data: Row[] | null; count: number | null; error: null }) => T) {
     const rows = this.run();
-    return Promise.resolve(resolve({ data: this.wantRows ? rows : null, error: null }));
+    // head:true — как в PostgREST: строк нет, есть только число подошедших.
+    return Promise.resolve(resolve({
+      data: this.wantRows ? rows : null,
+      count: this.countOnly ? rows.length : null,
+      error: null,
+    }));
   }
 }
 

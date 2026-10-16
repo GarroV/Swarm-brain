@@ -6,7 +6,7 @@ import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { fakeSupabase, type Row } from "../_shared/web-recording-fake.ts";
 import { MAX_SEGMENT_BYTES, WEB_RECORDER_SOURCE } from "../_shared/web-recording.ts";
-import { handleWebRecordingRoutes, type WebRecordingContext } from "./web-recording.ts";
+import { handleWebRecordingRoutes, MAX_OPEN_RECORDINGS, type WebRecordingContext } from "./web-recording.ts";
 
 const ID = "22222222-2222-4222-8222-222222222222";
 const ME = 100;
@@ -202,4 +202,60 @@ Deno.test("active: только своя незавершённая запись
   assertEquals(body, { recording: { id: ID, started_at: "2026-10-16T10:00:00.000Z", segments: [0, 1] } });
   const none = await call(ctx(db.client, { groupId: "ws2" }), new Request("http://localhost/meetings/record/active"));
   assertEquals(none.body, { recording: null });
+});
+
+Deno.test("БЛОКИРУЮЩИЙ: кусок потоком без Content-Length сверх потолка — 413, поток оборван, в Storage ничего", async () => {
+  const db = fakeSupabase({ meetings: [meetingRow()] });
+  let cancelled = false;
+  let sent = 0;
+  const chunk = new Uint8Array(1024 * 1024);
+  const stream = new ReadableStream<Uint8Array>({
+    pull(controller) {
+      sent++;
+      controller.enqueue(chunk);
+      if (sent > 200) controller.close(); // страховка теста: без обрыва поток дошёл бы до 200 МБ
+    },
+    cancel() {
+      cancelled = true;
+    },
+  });
+  const req = new Request(`http://localhost${SEG}`, {
+    method: "PUT",
+    body: stream,
+    headers: { "content-type": "audio/mp4" },
+    // @ts-ignore: duplex нужен для потокового тела, в типах Request его нет
+    duplex: "half",
+  });
+  assertEquals(req.headers.get("content-length"), null);
+  const { res, body } = await call(ctx(db.client), req);
+  assertEquals([res.status, body.code], [413, "segment_too_large"]);
+  assertEquals(cancelled, true);
+  assertEquals(sent <= MAX_SEGMENT_BYTES / chunk.byteLength + 2, true);
+  assertEquals(db.uploads, []);
+});
+
+Deno.test("тело JSON больше 4096 байт — 400, строка не заводится", async () => {
+  const db = fakeSupabase();
+  const { res, body } = await call(ctx(db.client), post("/meetings/record", { title: "x".repeat(5000) }));
+  assertEquals([res.status, body.code], [400, "bad_request"]);
+  assertEquals(db.meetings, []);
+});
+
+Deno.test("БЛОКИРУЮЩИЙ: четвёртая открытая запись — 429 too_many_open; завершённые, чужие и из другого воркспейса не считаются", async () => {
+  const open = (i: number) => meetingRow({ id: `open-${i}` });
+  const db = fakeSupabase({
+    meetings: [
+      ...Array.from({ length: MAX_OPEN_RECORDINGS - 1 }, (_, i) => open(i)),
+      meetingRow({ id: "done-1", summary_status: "done" }),
+      meetingRow({ id: "failed-1", summary_status: "failed" }),
+      meetingRow({ id: "alien", claim_owner: 999 }),
+      meetingRow({ id: "other-ws", group_id: "ws2" }),
+    ],
+  });
+  const before = db.meetings.length;
+  const third = await call(ctx(db.client), post("/meetings/record"));
+  assertEquals(third.res.status, 201); // открытых было 2 — третья проходит
+  const fourth = await call(ctx(db.client), post("/meetings/record"));
+  assertEquals([fourth.res.status, fourth.body.code], [429, "too_many_open"]);
+  assertEquals(db.meetings.length, before + 1);
 });
