@@ -222,6 +222,7 @@ async function sweepStuckMeetings(staleMinutes = 15): Promise<number> {
     id: string;
     title: string | null;
     recorders: Recorder[] | null;
+    source: string | null;
     last_progress_at: string | null;
     updated_at: string | null;
   };
@@ -232,7 +233,7 @@ async function sweepStuckMeetings(staleMinutes = 15): Promise<number> {
   const frozen = await processingFrozen(supabase);
   const { data: rows } = frozen ? { data: [] } : await supabase
     .from("meetings")
-    .select("id, title, recorders, last_progress_at, updated_at")
+    .select("id, title, recorders, source, last_progress_at, updated_at")
     .eq("summary_status", "processing");
   const note = "⚠️ Не удалось обработать запись встречи — обработка превысила лимит времени. " +
     "Попробуй записать заново (по возможности короче).";

@@ -139,6 +139,7 @@ import { handleAdminRoutes } from "./admin.ts";
 import { apiErr, corsHeaders, json, parseListLimit, routePathOf } from "./http.ts";
 import { errorDetail, INTERNAL_ERROR_MESSAGE, serverError, withErrorBoundary } from "./client-error.ts";
 import { handleMeetingInviteRoutes } from "./meeting-invites.ts";
+import { handleWebRecordingRoutes } from "./web-recording.ts";
 import { DEMO_GROUP_ID, isDemoSession } from "../_shared/demo-session.ts";
 import { DEMO_REQUESTS, englishDemoResponse } from "./demo-english.ts";
 import { handleIntegrationConnectRoutes, makeIntegrationsDeps } from "./integrations.ts";
@@ -958,6 +959,15 @@ async function routeRequest(req: Request): Promise<Response> {
     routePath,
   );
   if (inviteResp) return inviteResp;
+
+  // Запись встречи из браузера (офлайн-встречи): куски аудио → обработка встреч. Стоит до
+  // /meetings/:id, чтобы «record» не принялся за id встречи.
+  const webRecordingResp = await handleWebRecordingRoutes(
+    { supabase, telegramId: telegram_id, groupId, isDemo, origin },
+    req,
+    routePath,
+  );
+  if (webRecordingResp) return webRecordingResp;
 
   // Автозапуск бота по календарю (D021): человек включает и выключает его себе, рядом с календарём.
   const autojoinResp = await handleAutojoinRoutes(

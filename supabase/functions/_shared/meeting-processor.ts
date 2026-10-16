@@ -145,6 +145,7 @@ interface MeetingRow {
   id: string;
   title: string | null;
   recorders: RecorderEntry[] | null;
+  source: string | null;
   claim_owner: number | null;
   mic_start_offset: number | null;
   summary_status: string | null;
@@ -788,7 +789,7 @@ async function meetingStep(
   try {
     const { data } = await supabase
       .from("meetings")
-      .select("id, title, recorders, claim_owner, mic_start_offset, summary_status, process_state")
+      .select("id, title, recorders, source, claim_owner, mic_start_offset, summary_status, process_state")
       .eq("id", meetingId)
       .maybeSingle();
     const m = data as MeetingRow | null;
