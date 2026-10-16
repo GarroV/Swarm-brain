@@ -1,8 +1,9 @@
+import { loadProfileTasks } from "./profile-tasks.ts";
 import { ADMIN_USER_ID, isAdminUser, supabase } from "../lib/supabase.ts";
 import { buildKeyboard, editInlineMessage, sendInlineMessage, sendMessage } from "../lib/telegram.ts";
 import { notifyMessage } from "../lib/notify.ts";
 import { clearSession, setSession } from "../lib/storage.ts";
-import type { Task, TgCallbackQuery } from "../lib/types.ts";
+import type { TgCallbackQuery } from "../lib/types.ts";
 import { sendTaskCard } from "../tasks/index.ts";
 import { generateNameAliases } from "../lib/name-aliases.ts";
 import { assignUserToWorkspace } from "../lib/workspace.ts";
@@ -270,39 +271,26 @@ export async function showProfile(chatId: number, targetId: number, messageId?: 
     : await sendInlineMessage(chatId, lines, keyboard);
 }
 
-export async function handleProfileTasks(chatId: number, targetId: number): Promise<void> {
-  const { data: profile } = await supabase
-    .from("user_profiles").select("first_name, last_name").eq("telegram_id", targetId).maybeSingle();
-  const { data: user } = await supabase
-    .from("allowed_users").select("username").eq("telegram_id", targetId).maybeSingle();
-
-  const fullName = [profile?.first_name, profile?.last_name].filter(Boolean).join(" ");
-  const searchName = fullName || user?.username || String(targetId);
-
-  const { data: allTasks, error } = await onlyLive(
-    supabase
-      .from("tasks")
-      .select("*"),
-  )
-    .not("status", "in", '("done","cancelled")')
-    .order("due_date", { ascending: true });
-
-  if (error) {
-    await sendMessage(chatId, `Ошибка: ${error.message}`);
+export async function handleProfileTasks(chatId: number, targetId: number, groupId: string): Promise<void> {
+  let loaded;
+  try {
+    loaded = await loadProfileTasks(targetId, groupId);
+  } catch (e) {
+    console.error("[users] profile tasks:", e instanceof Error ? e.message : e);
+    await sendMessage(chatId, "Не удалось загрузить задачи. Попробуй ещё раз.");
     return;
   }
-
-  const nameLower = searchName.toLowerCase();
-  const tasks = (allTasks ?? [])
-    .filter((t: Task) => t.assignees?.some((a: string) => a.toLowerCase().includes(nameLower)))
-    .slice(0, 15);
-
+  if (!loaded) {
+    await sendMessage(chatId, NO_RIGHTS);
+    return;
+  }
+  const { name, tasks } = loaded;
   if (!tasks.length) {
-    await sendMessage(chatId, `У <b>${escapeHtml(searchName)}</b> нет активных задач.`);
+    await sendMessage(chatId, `У <b>${escapeHtml(name)}</b> нет активных задач.`);
     return;
   }
 
-  await sendMessage(chatId, `<b>Задачи · ${escapeHtml(searchName)}:</b> ${tasks.length} шт.`);
+  await sendMessage(chatId, `<b>Задачи · ${escapeHtml(name)}:</b> ${tasks.length} шт.`);
   for (const task of tasks) {
     await sendTaskCard(chatId, task);
   }
@@ -490,7 +478,7 @@ export async function handleUserCallbacks(
   if (data.startsWith("ptasks_")) {
     const targetId = Number(data.replace("ptasks_", ""));
     if (!actor || !(await allowUserAction(chatId, actor, targetId, "view"))) return true;
-    await handleProfileTasks(chatId, targetId);
+    await handleProfileTasks(chatId, targetId, groupId);
     return true;
   }
   if (data.startsWith("pu_")) {

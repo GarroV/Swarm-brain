@@ -180,7 +180,7 @@ export async function handleAddTask(chatId: number): Promise<void> {
 
 // ── smartTaskSearch ───────────────────────────────────────────────────────────
 
-export async function smartTaskSearch(chatId: number, question: string): Promise<boolean> {
+export async function smartTaskSearch(chatId: number, question: string, groupId: string): Promise<boolean> {
   if (!TASK_KEYWORDS.test(question)) return false;
 
   const raw = await chatComplete(
@@ -198,7 +198,9 @@ export async function smartTaskSearch(chatId: number, question: string): Promise
     period = p.period && p.period !== "null" ? p.period : null;
   } catch { /* ignore */ }
 
+  // Только текущее пространство: без него поиск шёл по задачам всех пространств.
   const tasks = await dbListTasks({
+    groupId,
     assignee: person ?? undefined,
     country: country ?? undefined,
     period: period ?? undefined,
