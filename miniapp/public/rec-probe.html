@@ -1,0 +1,405 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<title>Проверка записи</title>
+<!--
+  Временная проверочная страница записи встречи из браузера (задача «Запись встречи из
+  браузера»). Ничего не отправляет на сервер: пишет микрофон кусками, сама проверяет, что
+  каждый кусок читается отдельно, и ведёт журнал событий (блокировка экрана, звонок, уход
+  в другое приложение). Удаляется, когда экран записи будет готов.
+-->
+<style>
+  :root { --bg:#f6f5f2; --card:#fff; --fg:#1b1b1b; --muted:#6b6b6b; --line:#e4e2dc;
+          --accent:#d1452f; --ok:#2f7d4f; --warn:#b26a00; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#141414; --card:#1e1e1e; --fg:#f0f0f0; --muted:#9a9a9a; --line:#2e2e2e;
+            --accent:#ff6a52; --ok:#5cc489; --warn:#f0a840; }
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg);
+         font:16px/1.4 -apple-system, system-ui, sans-serif; padding:16px; }
+  main { max-width:560px; margin:0 auto; display:grid; gap:12px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:14px; }
+  h1 { font-size:20px; margin:0; }
+  .muted { color:var(--muted); font-size:14px; }
+  .timer { font:600 44px/1 ui-monospace, monospace; text-align:center; letter-spacing:1px; }
+  .meter { height:8px; background:var(--line); border-radius:4px; overflow:hidden; margin-top:10px; }
+  .meter > i { display:block; height:100%; width:0; background:var(--ok); transition:width .1s; }
+  .row { display:flex; gap:8px; flex-wrap:wrap; }
+  button { font:inherit; border:0; border-radius:12px; padding:12px 16px; cursor:pointer;
+           background:var(--line); color:var(--fg); flex:1; min-height:48px; }
+  button.primary { background:var(--accent); color:#fff; font-weight:600; }
+  button:disabled { opacity:.4; }
+  select { font:inherit; padding:8px; border-radius:8px; border:1px solid var(--line);
+           background:var(--card); color:var(--fg); }
+  .seg { display:flex; justify-content:space-between; align-items:center; gap:8px;
+         padding:8px 0; border-top:1px solid var(--line); font-size:14px; }
+  .seg:first-child { border-top:0; }
+  .ok { color:var(--ok); } .bad { color:var(--accent); } .warn { color:var(--warn); }
+  pre { white-space:pre-wrap; word-break:break-word; font:12px/1.45 ui-monospace, monospace;
+        margin:0; max-height:280px; overflow:auto; }
+  audio { width:100%; height:36px; }
+</style>
+</head>
+<body>
+<main>
+  <div class="card">
+    <h1>Проверка записи встречи</h1>
+    <p class="muted">Журнал событий и записанные куски уходят разработчику во временное хранилище (удаляется через 3 дня).
+      Нажмите «Начать», запишите пару минут, затем по очереди: заблокируйте экран на 20 секунд,
+      уйдите в другое приложение, позвоните себе. После каждого шага вернитесь сюда.
+      В конце нажмите «Стоп».</p>
+  </div>
+
+  <div class="card">
+    <div class="timer" id="timer">00:00</div>
+    <div class="meter"><i id="level"></i></div>
+    <p class="muted" id="status" style="text-align:center;margin:10px 0 0">Не записываем</p>
+  </div>
+
+  <div class="card row">
+    <label class="muted" style="flex-basis:100%">Длина куска
+      <select id="segLen">
+        <option value="30">30 секунд (быстрая проверка)</option>
+        <option value="60" selected>1 минута</option>
+        <option value="300">5 минут (как в продукте)</option>
+      </select>
+    </label>
+    <button class="primary" id="start">Начать</button>
+    <button id="resume" disabled>Продолжить</button>
+    <button id="stop" disabled>Стоп</button>
+  </div>
+
+  <div class="card">
+    <strong>Куски</strong>
+    <div id="segs" class="muted">Пока нет</div>
+  </div>
+
+  <div class="card">
+    <div class="row" style="margin-bottom:10px">
+      <strong style="flex:1;align-self:center">Журнал</strong>
+      <button id="copy" style="flex:0 0 auto">Скопировать журнал</button>
+    </div>
+    <pre id="log"></pre>
+  </div>
+</main>
+
+<script>
+(() => {
+  const MIME_CANDIDATES = ["audio/mp4", "audio/mp4;codecs=mp4a.40.2", "audio/webm;codecs=opus", "audio/webm"];
+  const TIMESLICE_MS = 5000;
+  const $ = (id) => document.getElementById(id);
+
+  const state = {
+    stream: null, recorder: null, mime: "", chunks: [], segIndex: 0, segTimer: null,
+    startedAt: 0, pausedMs: 0, pauseStartedAt: 0, wakeLock: null, audioCtx: null,
+    stopping: false, recording: false,
+  };
+  const logLines = [];
+  // Журнал (только события, без звука) уходит разработчику, чтобы не пересылать его руками.
+  const SESSION = Math.random().toString(36).slice(2, 8);
+  let sentCount = 0;
+  function flushLog() {
+    if (sentCount >= logLines.length) return;
+    const body = `${SESSION} ` + logLines.slice(sentCount).join("\n");
+    sentCount = logLines.length;
+    if (navigator.sendBeacon) navigator.sendBeacon("/rec-probe-log", body);
+    else fetch("/rec-probe-log", { method: "POST", body, keepalive: true }).catch(() => {});
+  }
+  setInterval(flushLog, 5000);
+
+  function stamp() {
+    const d = new Date();
+    return d.toTimeString().slice(0, 8) + "." + String(d.getMilliseconds()).padStart(3, "0");
+  }
+  function log(msg, cls) {
+    const line = `${stamp()}  ${msg}`;
+    logLines.push(line);
+    const el = document.createElement("div");
+    if (cls) el.className = cls;
+    el.textContent = line;
+    $("log").prepend(el);
+  }
+  function setStatus(text) { $("status").textContent = text; }
+
+  function env() {
+    const ua = navigator.userAgent;
+    const standalone = window.navigator.standalone === true ||
+      window.matchMedia("(display-mode: standalone)").matches;
+    log(`Браузер: ${ua}`);
+    log(`Режим: ${standalone ? "приложение с домашнего экрана" : "вкладка браузера"}`);
+    log(`MediaRecorder: ${typeof MediaRecorder !== "undefined" ? "есть" : "НЕТ"}, ` +
+        `Wake Lock: ${"wakeLock" in navigator ? "есть" : "НЕТ"}`);
+    if (typeof MediaRecorder !== "undefined") {
+      for (const m of MIME_CANDIDATES) log(`  формат ${m}: ${MediaRecorder.isTypeSupported(m) ? "да" : "нет"}`);
+    }
+  }
+
+  async function requestWakeLock() {
+    if (!("wakeLock" in navigator)) return;
+    try {
+      state.wakeLock = await navigator.wakeLock.request("screen");
+      log("Экран не гаснет (Wake Lock получен)", "ok");
+      state.wakeLock.addEventListener("release", () => log("Wake Lock снят", "warn"));
+    } catch (e) {
+      log(`Wake Lock не дали: ${e.name}: ${e.message}`, "bad");
+    }
+  }
+
+  function watchTrack(track) {
+    track.addEventListener("mute", () => { log("Микрофон заглушён (track mute)", "warn"); markPause(); });
+    track.addEventListener("unmute", () => { log("Микрофон снова слышит (track unmute)", "ok"); markResume(); });
+    track.addEventListener("ended", () => {
+      log("Микрофон отключён насовсем (track ended) — нужна кнопка «Продолжить»", "bad");
+      markPause();
+      finishSegment("микрофон отключён");
+      $("resume").disabled = false;
+      setStatus("Запись прервалась — нажмите «Продолжить»");
+    });
+  }
+
+  // iOS создаёт AudioContext «спящим», если это случилось не прямо в нажатии (после await
+  // разрешения микрофона нажатие уже «остыло»). Поэтому контекст заводится и будится
+  // синхронно в обработчике кнопки, до запроса микрофона.
+  function wakeAudioContext() {
+    try {
+      const Ctx = window.AudioContext || window.webkitAudioContext;
+      if (!state.audioCtx || state.audioCtx.state === "closed") state.audioCtx = new Ctx();
+      state.audioCtx.resume().catch(() => {});
+    } catch (e) {
+      log(`AudioContext не создан: ${e.message}`, "warn");
+    }
+  }
+
+  function startMeter(stream) {
+    try {
+      if (!state.audioCtx) wakeAudioContext();
+      log(`Индикатор громкости: AudioContext ${state.audioCtx.state}`, state.audioCtx.state === "running" ? "ok" : "warn");
+      state.audioCtx.onstatechange = () => log(`AudioContext → ${state.audioCtx.state}`);
+      const analyser = state.audioCtx.createAnalyser();
+      analyser.fftSize = 512;
+      state.audioCtx.createMediaStreamSource(stream).connect(analyser);
+      const buf = new Uint8Array(analyser.fftSize);
+      const tick = () => {
+        if (!state.recording) { $("level").style.width = "0"; return; }
+        analyser.getByteTimeDomainData(buf);
+        let peak = 0;
+        for (const v of buf) peak = Math.max(peak, Math.abs(v - 128));
+        $("level").style.width = Math.min(100, peak / 128 * 300) + "%";
+        requestAnimationFrame(tick);
+      };
+      tick();
+    } catch (e) {
+      log(`Индикатор громкости не запустился: ${e.message}`, "warn");
+    }
+  }
+
+  async function openMic() {
+    state.stream = await navigator.mediaDevices.getUserMedia({
+      audio: { echoCancellation: false, noiseSuppression: true, autoGainControl: true },
+    });
+    const track = state.stream.getAudioTracks()[0];
+    const s = track.getSettings ? track.getSettings() : {};
+    log(`Микрофон открыт: ${track.label || "без имени"}, ${s.sampleRate || "?"} Гц, ${s.channelCount || "?"} канал(а)`, "ok");
+    watchTrack(track);
+    startMeter(state.stream);
+  }
+
+  function pickMime() {
+    return MIME_CANDIDATES.find((m) => MediaRecorder.isTypeSupported(m)) || "";
+  }
+
+  function startSegment() {
+    const opts = state.mime ? { mimeType: state.mime, audioBitsPerSecond: 64000 } : {};
+    const rec = new MediaRecorder(state.stream, opts);
+    const index = ++state.segIndex;
+    const chunks = [];
+    const segStartedAt = Date.now();
+    rec.addEventListener("dataavailable", (e) => { if (e.data && e.data.size) chunks.push(e.data); });
+    rec.addEventListener("error", (e) => log(`Ошибка записи куска ${index}: ${e.error?.name || e.type}`, "bad"));
+    rec.addEventListener("stop", () => onSegmentStopped(index, chunks, rec.mimeType || state.mime, segStartedAt));
+    rec.start(TIMESLICE_MS);
+    state.recorder = rec;
+    log(`Кусок ${index}: начат (${rec.mimeType || "формат по умолчанию"})`);
+    const lenMs = Number($("segLen").value) * 1000;
+    clearTimeout(state.segTimer);
+    state.segTimer = setTimeout(() => rotateSegment(), lenMs);
+  }
+
+  function rotateSegment() {
+    if (!state.recording || state.stopping) return;
+    finishSegment("плановая смена куска");
+    if (state.stream && state.stream.getAudioTracks()[0]?.readyState === "live") startSegment();
+  }
+
+  function finishSegment(reason) {
+    clearTimeout(state.segTimer);
+    const rec = state.recorder;
+    if (rec && rec.state !== "inactive") {
+      log(`Кусок ${state.segIndex}: закрываем (${reason})`);
+      rec.stop();
+    }
+    state.recorder = null;
+  }
+
+  async function decodes(blob) {
+    try {
+      const Ctx = window.AudioContext || window.webkitAudioContext;
+      const ctx = new Ctx();
+      const audio = await ctx.decodeAudioData(await blob.arrayBuffer());
+      ctx.close();
+      return { ok: true, seconds: audio.duration };
+    } catch (e) {
+      return { ok: false, error: e.name || e.message || String(e) };
+    }
+  }
+
+  async function onSegmentStopped(index, chunks, mime, segStartedAt) {
+    const wallSec = (Date.now() - segStartedAt) / 1000;
+    if (!chunks.length) { log(`Кусок ${index}: ПУСТОЙ (данных не пришло)`, "bad"); return; }
+    const blob = new Blob(chunks, { type: mime });
+    const whole = await decodes(blob);
+    let lone = { ok: null };
+    if (chunks.length > 1) lone = await decodes(new Blob([chunks[1]], { type: mime }));
+    const sizeKb = Math.round(blob.size / 1024);
+    log(`Кусок ${index}: ${sizeKb} КБ, ${chunks.length} фрагм., по часам ${wallSec.toFixed(1)} с, ` +
+        (whole.ok ? `читается целиком: ${whole.seconds.toFixed(1)} с звука` : `НЕ читается: ${whole.error}`) +
+        (lone.ok === null ? "" : `; второй фрагмент отдельно: ${lone.ok ? "читается" : "не читается"}`),
+        whole.ok ? "ok" : "bad");
+    addSegmentRow(index, blob, whole, sizeKb, mime);
+    uploadSegment(index, blob, mime);
+  }
+
+  // Куски уходят во временное хранилище разработчика (отдельный воркер, хранит 3 дня).
+  const SINK_URL = "https://rec-probe-sink.vasiliy-garro.workers.dev/";
+  async function uploadSegment(index, blob, mime) {
+    const ext = mime.includes("webm") ? "webm" : "m4a";
+    try {
+      const res = await fetch(`${SINK_URL}?s=${SESSION}&n=${index}&ext=${ext}`, { method: "POST", body: blob });
+      log(`Кусок ${index}: ${res.ok ? "отправлен разработчику" : "НЕ отправлен, ответ " + res.status}`, res.ok ? "ok" : "bad");
+    } catch (e) {
+      log(`Кусок ${index}: НЕ отправлен (${e.message})`, "bad");
+    }
+  }
+
+  function addSegmentRow(index, blob, result, sizeKb, mime) {
+    const box = $("segs");
+    if (box.textContent === "Пока нет") { box.textContent = ""; box.className = ""; }
+    const row = document.createElement("div");
+    row.className = "seg";
+    const label = document.createElement("span");
+    label.className = result.ok ? "ok" : "bad";
+    label.textContent = `№${index} · ${sizeKb} КБ · ${result.ok ? result.seconds.toFixed(0) + " с" : "не читается"}`;
+    const audio = document.createElement("audio");
+    audio.controls = true;
+    audio.src = URL.createObjectURL(blob);
+    const share = document.createElement("button");
+    share.textContent = "Сохранить";
+    share.style.flex = "0 0 auto";
+    share.onclick = async () => {
+      const ext = mime.includes("webm") ? "webm" : "m4a";
+      const file = new File([blob], `segment-${index}.${ext}`, { type: mime });
+      try {
+        if (navigator.canShare && navigator.canShare({ files: [file] })) await navigator.share({ files: [file] });
+        else { const a = document.createElement("a"); a.href = audio.src; a.download = file.name; a.click(); }
+      } catch (e) { log(`Сохранение не удалось: ${e.message}`, "warn"); }
+    };
+    row.append(label, share);
+    box.append(row, audio);
+  }
+
+  function markPause() {
+    if (!state.pauseStartedAt) state.pauseStartedAt = Date.now();
+  }
+  function markResume() {
+    if (state.pauseStartedAt) {
+      const gap = Date.now() - state.pauseStartedAt;
+      state.pausedMs += gap;
+      log(`Пауза длилась ${(gap / 1000).toFixed(1)} с`);
+      state.pauseStartedAt = 0;
+    }
+  }
+
+  function tickTimer() {
+    if (!state.recording) return;
+    const now = state.pauseStartedAt || Date.now();
+    const sec = Math.floor((now - state.startedAt - state.pausedMs) / 1000);
+    const h = Math.floor(sec / 3600), m = Math.floor(sec / 60) % 60, s = sec % 60;
+    $("timer").textContent = (h ? h + ":" : "") + String(m).padStart(2, "0") + ":" + String(s).padStart(2, "0");
+    setTimeout(tickTimer, 500);
+  }
+
+  $("start").onclick = async () => {
+    wakeAudioContext();
+    try {
+      state.mime = pickMime();
+      log(`Выбран формат: ${state.mime || "по умолчанию браузера"}`);
+      await openMic();
+      state.recording = true;
+      state.startedAt = Date.now();
+      startSegment();
+      await requestWakeLock();
+      tickTimer();
+      setStatus("Идёт запись. Не блокируйте экран");
+      $("start").disabled = true; $("stop").disabled = false;
+    } catch (e) {
+      log(`Не удалось начать: ${e.name}: ${e.message}`, "bad");
+    }
+  };
+
+  $("resume").onclick = async () => {
+    wakeAudioContext();
+    try {
+      markResume();
+      await openMic();
+      startSegment();
+      await requestWakeLock();
+      setStatus("Идёт запись. Не блокируйте экран");
+      $("resume").disabled = true;
+      log("Запись продолжена после прерывания", "ok");
+    } catch (e) {
+      log(`Продолжить не удалось: ${e.name}: ${e.message}`, "bad");
+    }
+  };
+
+  $("stop").onclick = () => {
+    state.stopping = true;
+    finishSegment("нажали «Стоп»");
+    state.recording = false;
+    state.stream?.getTracks().forEach((t) => t.stop());
+    state.audioCtx?.close();
+    state.wakeLock?.release().catch(() => {});
+    setStatus("Остановлено");
+    setTimeout(flushLog, 1500);
+    $("stop").disabled = true; $("resume").disabled = true;
+  };
+
+  $("copy").onclick = async () => {
+    const text = logLines.join("\n");
+    try { await navigator.clipboard.writeText(text); log("Журнал скопирован", "ok"); }
+    catch { log("Скопировать не вышло — выделите текст журнала вручную", "warn"); }
+  };
+
+  document.addEventListener("visibilitychange", async () => {
+    const hidden = document.visibilityState === "hidden";
+    log(hidden ? "Страница скрыта (экран заблокирован или ушли в другое приложение)" : "Страница снова видна",
+        hidden ? "warn" : "ok");
+    if (hidden) flushLog();
+    if (!hidden && state.recording) {
+      const rs = state.recorder ? state.recorder.state : "нет";
+      const ts = state.stream?.getAudioTracks()[0];
+      log(`  состояние: запись=${rs}, микрофон=${ts ? ts.readyState + (ts.muted ? ", заглушён" : "") : "нет"}`);
+      if (!state.wakeLock || state.wakeLock.released) await requestWakeLock();
+    }
+  });
+  window.addEventListener("pagehide", (e) => log(`pagehide (persisted=${e.persisted})`, "warn"));
+  window.addEventListener("pageshow", (e) => log(`pageshow (persisted=${e.persisted})`));
+
+  env();
+})();
+</script>
+</body>
+</html>

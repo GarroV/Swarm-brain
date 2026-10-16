@@ -7,7 +7,7 @@ export function corsHeaders(origin: string): Record<string, string> {
   const allowOrigin = MINIAPP_ORIGIN === "*" ? "*" : origin === MINIAPP_ORIGIN ? origin : MINIAPP_ORIGIN;
   return {
     "Access-Control-Allow-Origin": allowOrigin,
-    "Access-Control-Allow-Methods": "GET, POST, PATCH, DELETE, OPTIONS",
+    "Access-Control-Allow-Methods": "GET, POST, PUT, PATCH, DELETE, OPTIONS",
     "Access-Control-Allow-Headers": "Content-Type, Authorization",
     // Без Expose-Headers браузер не отдаст JS ничего, кроме простых заголовков — на
     // cross-origin запросах X-Total-Count был бы виден в DevTools и невидим коду.

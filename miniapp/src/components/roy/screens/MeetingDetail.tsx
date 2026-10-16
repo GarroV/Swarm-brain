@@ -5,7 +5,7 @@ import { DetailPanelContext, NavHeader, Market, SectionLabel, Segmented, Storage
 import { DashTaskRow } from "../dash/shared";
 import { RoyIcon, type RoyIconName } from "../icons";
 import { deriveEntryTitle } from "../entry";
-import { sourceLabel } from "./RoyMeetingsScreen";
+import { localizeSource, sourceLabel } from "./RoyMeetingsScreen";
 import { TasksFromMeeting } from "../TasksFromMeeting";
 import { TezisyEditor } from "../tezisy/TezisyEditor";
 import { TezisyReader } from "../tezisy/TezisyReader";
@@ -249,7 +249,7 @@ export function MeetingDetail({ id }: { id: string }) {
             <div className="mb-2 flex flex-wrap items-center gap-2 pt-1">
               <span className="inline-flex items-center gap-1.5 font-semibold" style={{ fontSize: 12, color: "var(--meet-ink)", background: "var(--meet-soft)", borderRadius: 8, padding: "3px 9px" }}>
                 <RoyIcon name="meet" size={12} strokeWidth={1.9} />
-                {sourceLabel(e)}
+                {localizeSource(sourceLabel(e), dt)}
               </span>
               {confirmed && <StorageBadge isPrivate={e.is_private} />}
               {(e.countries ?? []).filter((c) => c !== "General").map((c) => <Market key={c} code={c} />)}
