@@ -15,7 +15,6 @@ import { drainTelegramOutbox, makeOutboxStore } from "../_shared/telegram-outbox
 import { sendTelegramCall } from "../_shared/notify-person.ts";
 import { checkRecordingWatchdog } from "./lib/recording-watchdog.ts";
 import { makeWatchdogStore } from "./lib/recording-watchdog-store.ts";
-import { notifiesRecorders } from "../_shared/web-recording.ts";
 import { sweepGhostMeetings } from "./lib/ghost-sweep.ts";
 import { makeGhostStore } from "./lib/ghost-sweep-store.ts";
 import { autoSyncProfile, clearSession, getSession, visibilityFilter } from "./lib/storage.ts";
@@ -246,8 +245,6 @@ async function sweepStuckMeetings(staleMinutes = 15): Promise<number> {
       .update({ summary_status: "failed", processing_lease: null, updated_at: new Date().toISOString() })
       .eq("id", m.id);
     swept++;
-    // Запись из браузера: сообщение людям без «да» владельца не уходит (notifiesRecorders).
-    if (!notifiesRecorders(m.source)) continue;
     for (const r of m.recorders ?? []) {
       if (!r || typeof r.telegram_id !== "number") continue;
       try {
