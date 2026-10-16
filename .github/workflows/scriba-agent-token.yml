@@ -40,7 +40,7 @@ jobs:
           # Строгие шаблоны — они же защищают SQL ниже от подстановки.
           [[ "$TOKEN_HASH" =~ ^[0-9a-f]{64}$ ]] || { echo "отказ: token_hash не sha256-hex (64 символа 0-9a-f)" >&2; exit 1; }
           [[ "$WORKSPACE" =~ ^[a-z0-9_-]{1,64}$ ]] || { echo "отказ: workspace не похож на id воркспейса" >&2; exit 1; }
-      - uses: supabase/setup-cli@1dedf2c611547ede7232d26866dd3c56ab903bbb # v1
+      - uses: supabase/setup-cli@45a513f8c64c0bc8e0e3dfe572b5c95be85f6359 # v1
         with:
           version: 2.118.0
       - name: Записать
