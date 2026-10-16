@@ -20,7 +20,9 @@ for (const name of ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY"]) {
 }
 
 const { getVisibleTask, listTasksWithTotal } = await import("./db.ts");
-const { createProject, ProjectAccessError, updateProject } = await import("./projects.ts");
+const { createProject, deleteProject, getVisibleProject, ProjectAccessError, updateProject } = await import(
+  "./projects.ts"
+);
 const { loadHiddenProjectIds } = await import("./project-visibility.ts");
 
 const WS = "t_pprivacy";
@@ -291,6 +293,38 @@ Deno.test("закрытый проект без автора не создаёт
   try {
     await seed(db);
     await assertRejects(() => createProject({ name: "Ничей закрытый", is_private: true }, WS, null), Error, "автор");
+  } finally {
+    await db.end();
+  }
+});
+
+Deno.test("архив группы не уносит чужой закрытый подпроект, которого архивирующий не видит", async () => {
+  const db = await connect();
+  try {
+    const s = await seed(db);
+    const OTHER_AUTHOR = 880000203;
+    const hiddenKid = (await db.queryObject<{ id: string }>`
+      insert into projects (group_id, name, created_by, is_private, parent_id)
+      values (${WS}, 'Чужой закрытый подпроект', ${OTHER_AUTHOR}, true, ${s.open}) returning id`).rows[0].id;
+    await assertRejects(() => deleteProject(s.open, WS, { viewerId: MEMBER }), ProjectAccessError);
+    const rows = await db.queryObject<{ id: string; archived_at: string | null }>`
+      select id, archived_at from projects where id in (${s.open}, ${hiddenKid})`;
+    assert(rows.rows.every((r) => r.archived_at === null));
+    // Автор подпроекта видит всё поддерево — и группу убрать может.
+    assert(await deleteProject(s.open, WS, { viewerId: OTHER_AUTHOR }));
+  } finally {
+    await db.end();
+  }
+});
+
+Deno.test("getVisibleProject: чужой закрытый проект — как несуществующий", async () => {
+  const db = await connect();
+  try {
+    const s = await seed(db);
+    assertEquals(await getVisibleProject(s.closed, WS, MEMBER), null);
+    assertEquals(await getVisibleProject(s.subOfClosed, WS, MEMBER), null);
+    assert(await getVisibleProject(s.open, WS, MEMBER));
+    assert(await getVisibleProject(s.closed, WS, AUTHOR));
   } finally {
     await db.end();
   }

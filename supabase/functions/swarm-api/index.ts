@@ -74,13 +74,12 @@ import {
   updateSprint,
 } from "../_shared/tasks/sprints.ts";
 import { taskVisibleByProject } from "../_shared/tasks/project-visibility.ts";
-import { ProjectAccessError } from "../_shared/tasks/projects.ts";
+import { getVisibleProject, ProjectAccessError } from "../_shared/tasks/projects.ts";
 import {
   canMutateProject,
   createProject,
   deleteProject,
   dissolveSprintGroup,
-  getProject,
   listProjects,
   projectInWorkspace,
   updateProject,
@@ -1897,7 +1896,7 @@ async function routeRequest(req: Request): Promise<Response> {
   }
 
   // Журнал проекта: что с ним делали и кто (issue #426). Доступ — та же видимость, что у самого
-  // проекта: `getProject` отдаёт null на чужой закрытый, и лента к нему не открывается.
+  // проекта: `canMutateProject` отвечает false на чужой закрытый, и лента к нему не открывается.
   const projectHistoryMatch = routePath.match(
     /^\/projects\/([^/]+)\/history$/,
   );
@@ -1949,7 +1948,9 @@ async function routeRequest(req: Request): Promise<Response> {
       }
       // Сроки сверяются с тем, что уже стоит у инициативы: в теле обычно приходит один конец,
       // и без текущего значения «перенести конец раньше старта» прошло бы молча.
-      const current = await getProject(projectId, groupId);
+      // Только видимый зрителю проект: иначе сверка сроков ниже отвечала бы по чужой закрытой строке.
+      const current = await getVisibleProject(projectId, groupId, telegram_id);
+      if (!current) return apiErr(404, "Not found", origin);
       const extra = parseProjectFields(body, current ?? {});
       if (extra.error) return apiErr(400, extra.error, origin);
 
@@ -1997,9 +1998,15 @@ async function routeRequest(req: Request): Promise<Response> {
       return json(updated, 200, origin);
     }
     if (req.method === "DELETE") {
-      const ok = await deleteProject(projectId, groupId, {
-        viewerId: telegram_id,
-      });
+      let ok;
+      try {
+        ok = await deleteProject(projectId, groupId, {
+          viewerId: telegram_id,
+        });
+      } catch (e) {
+        if (e instanceof ProjectAccessError) return apiErr(403, e.message, origin);
+        throw e;
+      }
       if (!ok) return apiErr(404, "Not found", origin);
       return json({ ok: true }, 200, origin);
     }

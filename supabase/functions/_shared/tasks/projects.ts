@@ -327,6 +327,18 @@ export async function updateProject(
 //
 // Тянем весь список воркспейса, а не одну строку: приватность подпроекта зависит от его группы,
 // и без неё предикат честно схлопнется в fail-closed (проектов единицы-десятки, см. listProjects).
+/** Проект, если он виден зрителю (тот же canViewProject, что у списка); иначе null. */
+export async function getVisibleProject(
+  id: string,
+  groupId: string,
+  viewerId: number | undefined,
+): Promise<Project | null> {
+  const all = await liveProjectRows(groupId);
+  const self = all.find((r) => r.id === id);
+  if (!self || !canViewProject(self, viewerId, parentLookup(all))) return null;
+  return await getProject(id, groupId);
+}
+
 export async function canMutateProject(
   id: string,
   groupId: string,
@@ -359,20 +371,39 @@ export async function deleteProject(
   groupId: string,
   opts: { viewerId?: number } = {},
 ): Promise<boolean> {
-  if (!(await canMutateProject(id, groupId, opts))) return false;
+  const all = await liveProjectRows(groupId);
+  const index = parentLookup(all);
+  const self = all.find((r) => r.id === id);
+  if (!self || !canViewProject(self, opts.viewerId, index)) return false;
+  // Поддерево уходит целиком, поэтому архивировать можно, только видя его целиком: чужой
+  // закрытый подпроект внутри открытой группы иначе исчез бы вместе с ней, хотя архивирующему
+  // он не виден и не принадлежит.
+  const kidRows = all.filter((r) => r.parent_id === id);
+  if (kidRows.some((k) => !canViewProject(k, opts.viewerId, index))) {
+    throw new ProjectAccessError("The project has subprojects you cannot see; only their authors can archive it");
+  }
   const archive = {
     archived_at: new Date().toISOString(),
     archived_by: opts.viewerId ?? null,
   };
-  const { data } = await supabase.from("projects")
+  // Право решено по снимку — UPDATE применяется, только пока строка в том же состоянии.
+  let upd = supabase.from("projects")
     .update(archive)
     .eq("id", id).eq("group_id", groupId).is("archived_at", null)
-    .select("id").maybeSingle();
+    .eq("is_private", self.is_private);
+  upd = self.parent_id === null ? upd.is("parent_id", null) : upd.eq("parent_id", self.parent_id);
+  upd = self.created_by === null ? upd.is("created_by", null) : upd.eq("created_by", self.created_by);
+  const { data } = await upd.select("id").maybeSingle();
   if (!data) return false;
-  const { data: kids } = await supabase.from("projects")
-    .update(archive)
-    .eq("group_id", groupId).eq("parent_id", id).is("archived_at", null)
-    .select("id");
+  // Только проверенные подпроекты, а не «все с этим родителем»: заведённый между проверкой и
+  // записью в архив не попадёт.
+  const { data: kids } = kidRows.length
+    ? await supabase.from("projects")
+      .update(archive)
+      .eq("group_id", groupId).eq("parent_id", id).is("archived_at", null)
+      .in("id", kidRows.map((k) => k.id))
+      .select("id")
+    : { data: [] };
 
   const kidIds = ((kids ?? []) as Array<{ id: string }>).map((k) => k.id);
   await writeHistory([
@@ -441,17 +472,19 @@ export async function dissolveSprintGroup(
         .select("task_id, old_value, new_value, created_at")
         .eq("field", "project").eq("new_value", id).in("task_id", ids)
       : Promise.resolve({ data: [], error: null }),
-    supabase.from("projects").select("id")
-      .eq("group_id", groupId).is("archived_at", null).neq("id", id),
+    liveProjectRows(groupId),
   ]);
   if (movesRes.error) throw new Error(movesRes.error.message);
-  if (liveRes.error) throw new Error(liveRes.error.message);
+  // Вернуть задачу можно только в проект, который распускающий видит: иначе он положил бы её
+  // в чужой закрытый проект (та же проверка, что у привязки задачи к проекту).
+  const liveIndex = parentLookup(liveRes);
+  const visibleLive = liveRes.filter((p) => p.id !== id && canViewProject(p, opts.viewerId, liveIndex));
   const targets = dissolveTargets({
     groupId: id,
     fallback: plan.moveTasksTo,
     tasks: rows,
     moves: (movesRes.data ?? []) as ProjectMove[],
-    liveProjectIds: new Set(((liveRes.data ?? []) as Array<{ id: string }>).map((p) => p.id)),
+    liveProjectIds: new Set(visibleLive.map((p) => p.id)),
   });
   for (const taskId of ids) {
     // Не `??`: null — законный ответ «вернуть без проекта», а не «ответа нет».
