@@ -61,6 +61,9 @@ Deno.test("ссылка в href: http(s) и путь внутри приложе
   assertEquals(safeStickerHref("javascript:alert(1)"), null);
   assertEquals(safeStickerHref("data:text/html,x"), null);
   assertEquals(safeStickerHref("//evil.example.com"), null);
+  // Браузер читает обратный слеш как прямой: `/\\host` уходит на чужой сайт.
+  assertEquals(safeStickerHref("/\\evil.example.com"), null);
+  assertEquals(safeStickerHref("https://a.com\\@evil.example.com"), null);
   assertEquals(safeStickerHref("https://a.com/ b"), null);
   assertEquals(safeStickerHref(null), null);
   assertEquals(safeStickerHref(""), null);

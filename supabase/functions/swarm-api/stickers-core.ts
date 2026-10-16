@@ -35,6 +35,8 @@ export type StickerInput = {
 export function isSafeLink(link: string): boolean {
   if (link.length === 0 || link.length > LINK_MAX || /\s/.test(link)) return false;
   if (link.startsWith("//")) return false;
+  // Обратный слеш браузер нормализует в прямой: `/\\host` — это `//host`, чужой сайт.
+  if (link.includes("\\")) return false;
   return /^(https?:\/\/\S+|\/\S*)$/.test(link);
 }
 
