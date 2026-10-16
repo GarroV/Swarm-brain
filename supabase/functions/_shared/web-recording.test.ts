@@ -7,7 +7,6 @@ import { fakeSupabase, type Row } from "./web-recording-fake.ts";
 import {
   buildWebParts,
   finalizeWebRecording,
-  notifiesRecorders,
   parseSegments,
   segmentPath,
   WEB_RECORDER_SOURCE,
@@ -108,10 +107,4 @@ Deno.test("finalize: список Storage длиннее страницы чит
   const files = Array.from({ length: 150 }, (_, i) => ({ name: `${String(i).padStart(3, "0")}-${i * 1000}.m4a` }));
   const db = fakeSupabase({ meetings: [webRow()], files });
   assertEquals(await finalizeWebRecording(db.client, ID), { parts: 150 });
-});
-
-Deno.test("notifiesRecorders: запись из браузера молчит, остальные — как раньше", () => {
-  assertEquals(notifiesRecorders(WEB_RECORDER_SOURCE), false);
-  assertEquals(notifiesRecorders("desktop-agent"), true);
-  assertEquals(notifiesRecorders(null), true);
 });

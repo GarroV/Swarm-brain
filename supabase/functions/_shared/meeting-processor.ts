@@ -40,7 +40,6 @@ import { claimLeaseUntil } from "./meeting-lease.ts";
 import { isLeaseLost, LEASE_STALE_MS, ProcessingLease, rethrowIfLeaseLost } from "./meeting-processing-lease.ts";
 import { externalFetch } from "./external-fetch.ts";
 import { notifyPerson } from "./notify-person.ts";
-import { notifiesRecorders } from "./web-recording.ts";
 
 export type { Segment, SpeakerSpan };
 
@@ -458,7 +457,6 @@ async function markFailed(lease: ProcessingLease, m: MeetingRow, state: ProcessS
     updated_at: new Date().toISOString(),
   });
   if (!applied) return; // запись вытеснена — о чужой встрече её владельцу не пишем
-  if (!notifiesRecorders(m.source)) return; // запись из браузера: текст не одобрен владельцем
   const note =
     "⚠️ Не удалось обработать запись встречи — не получилось транскрибировать аудио. Попробуй записать заново.";
   for (const r of m.recorders ?? []) {
@@ -660,9 +658,6 @@ async function summarizeAndFinish(lease: ProcessingLease, m: MeetingRow, state: 
     await requeueLost(supabase, m.id, state);
     return;
   }
-
-  // Запись из браузера: сообщение людям без «да» владельца не уходит (web-recording.notifiesRecorders).
-  if (!notifiesRecorders(m.source)) return;
 
   const webUrl = WEB_BASE_URL ? `${WEB_BASE_URL}/?meeting=${m.id}` : "";
   const titleStr = finalTitle ? `: <b>${escapeHtml(finalTitle)}</b>` : "";

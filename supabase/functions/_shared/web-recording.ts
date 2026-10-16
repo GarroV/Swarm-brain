@@ -22,15 +22,6 @@ export const WEB_STALE_MIN = 30;
 export const MAX_OFFSET_SEC = 86_400;
 const LIST_PAGE = 100;
 
-/**
- * Уходят ли людям сообщения («обработана», «не удалось», «зависла») по встрече этого источника.
- * Для записей из браузера — нет: владелец не одобрил текст и адресата (глобальное правило о
- * коммуникации с людьми); пока «да» нет, итог виден только на экране. Когда одобрит — убрать здесь.
- */
-export function notifiesRecorders(source: string | null | undefined): boolean {
-  return source !== WEB_RECORDER_SOURCE;
-}
-
 export type SegmentExt = "m4a" | "webm";
 
 /** Папка кусков записи в бакете. */
@@ -113,7 +104,7 @@ export type FinalizeResult =
  * Завершает запись из браузера: куски → process_state → summary_status='processing'.
  * Идемпотентна: условная UPDATE (только пока summary_status пуст и source — web-recorder) пропускает
  * ровно одного из двух одновременных вызовов (человек и сторож), второй получает { already: true }.
- * Ни одного куска — строка помечается 'failed' (сообщений нет, notifiesRecorders).
+ * Ни одного куска — строка помечается 'failed' (сообщение о сбое не уходит: обработки не было).
  */
 export async function finalizeWebRecording(
   supabase: SupabaseClient,
