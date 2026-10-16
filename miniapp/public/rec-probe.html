@@ -150,10 +150,24 @@
     });
   }
 
-  function startMeter(stream) {
+  // iOS создаёт AudioContext «спящим», если это случилось не прямо в нажатии (после await
+  // разрешения микрофона нажатие уже «остыло»). Поэтому контекст заводится и будится
+  // синхронно в обработчике кнопки, до запроса микрофона.
+  function wakeAudioContext() {
     try {
       const Ctx = window.AudioContext || window.webkitAudioContext;
-      state.audioCtx = new Ctx();
+      if (!state.audioCtx || state.audioCtx.state === "closed") state.audioCtx = new Ctx();
+      state.audioCtx.resume().catch(() => {});
+    } catch (e) {
+      log(`AudioContext не создан: ${e.message}`, "warn");
+    }
+  }
+
+  function startMeter(stream) {
+    try {
+      if (!state.audioCtx) wakeAudioContext();
+      log(`Индикатор громкости: AudioContext ${state.audioCtx.state}`, state.audioCtx.state === "running" ? "ok" : "warn");
+      state.audioCtx.onstatechange = () => log(`AudioContext → ${state.audioCtx.state}`);
       const analyser = state.audioCtx.createAnalyser();
       analyser.fftSize = 512;
       state.audioCtx.createMediaStreamSource(stream).connect(analyser);
@@ -295,6 +309,7 @@
   }
 
   $("start").onclick = async () => {
+    wakeAudioContext();
     try {
       state.mime = pickMime();
       log(`Выбран формат: ${state.mime || "по умолчанию браузера"}`);
@@ -312,6 +327,7 @@
   };
 
   $("resume").onclick = async () => {
+    wakeAudioContext();
     try {
       markResume();
       await openMic();
