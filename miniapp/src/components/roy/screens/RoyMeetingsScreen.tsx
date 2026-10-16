@@ -10,6 +10,7 @@ import { deriveEntryTitle, entryImporterName } from "../entry";
 import { deleteMeeting } from "@/lib/api";
 import { AgentReviewQueue } from "@/components/AgentReviewQueue";
 import { InviteBotCard } from "../InviteBotCard";
+import { RecordMeetingCard } from "../record/RecordMeeting";
 import { MeetingsDesk } from "./MeetingsDesk";
 import { useMeetingsList } from "./useMeetingsList";
 import { EMPTY_FILTERS } from "@/lib/meetingsFilters";
@@ -24,6 +25,16 @@ const SEGS = [
   { id: "confirmed", label: "Подтверждены", en: "Confirmed" },
 ];
 
+/** Запись из браузера (офлайн-встреча): `meetings.source`, см. docs/decisions/2026-10-16-web-recorder.md. */
+export const WEB_RECORDER_SOURCE = "web-recorder";
+// Ярлык — ключ фильтра «Источник» (как у остальных, русский); показывается через localizeSource.
+const OFFLINE_LABEL = "Офлайн-встреча";
+
+/** Ярлык источника на языке интерфейса: фильтры хранят русский ключ, глаз видит язык сессии. */
+export function localizeSource(label: string, dt: (ru: string, en: string) => string): string {
+  return label === OFFLINE_LABEL ? dt(label, "In-person") : label;
+}
+
 // Источник встречи для подписи. Запись рекордера и бота встреч различаются (#788): чьей записью
 // встреча легла в базу, говорит recorded_by — у черновика в строке, у записи базы в metadata.
 export function sourceLabel(x: {
@@ -34,6 +45,7 @@ export function sourceLabel(x: {
 }): string {
   if (x.source === "granola") return "Granola";
   if (x.source === "read_ai") return "Read.ai";
+  if (x.source === WEB_RECORDER_SOURCE) return OFFLINE_LABEL;
   const fromMeta = x.metadata?.recorded_by;
   const by = recordedByOf({
     source: x.source,
@@ -65,6 +77,7 @@ function ActionIcon({ name, label, color, onClick }: { name: RoyIconName; label:
 // 2026-08-22: «лаконичное логичное меню»). На десктопе действия остаются на виду: там мышь,
 // свайпать нечем.
 function MeetingCard({ e, onOpen, onRemove, mobile }: { e: Entry; onOpen: () => void; onRemove: () => void; mobile?: boolean }) {
+  const dt = useDt();
   const who = entryImporterName(e);
   const body = (
     <div className="relative">
@@ -79,7 +92,7 @@ function MeetingCard({ e, onOpen, onRemove, mobile }: { e: Entry; onOpen: () => 
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <span className="inline-flex items-center font-semibold" style={{ fontSize: 11, color: "var(--meet-ink)", background: "var(--meet-soft)", borderRadius: 7, padding: "1px 7px" }}>
-                {sourceLabel(e)}
+                {localizeSource(sourceLabel(e), dt)}
               </span>
               {isConfirmed(e) && <StorageBadge isPrivate={e.is_private} />}
               <Market code={e.countries?.[0]} />
@@ -165,7 +178,10 @@ export function RoyMeetingsScreen() {
           h1 и читался как отдельный экран без названия. */}
       <AgentReviewQueue onOpen={openReview} />
       <div className="px-5 pt-3">
-        <InviteBotCard />
+        <div className="space-y-2.5">
+          <RecordMeetingCard />
+          <InviteBotCard />
+        </div>
       </div>
       <div className="px-5 pb-3 pt-3">{segmented}</div>
       <div className="space-y-2.5 px-5 pb-28">
