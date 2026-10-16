@@ -80,7 +80,7 @@ import {
   dissolveSprintGroup,
   getProject,
   listProjects,
-  projectInWorkspace,
+  canViewProjectInWorkspace,
   updateProject,
 } from "../_shared/tasks/projects.ts";
 import { parseProjectFields } from "./project-fields.ts";
@@ -1300,7 +1300,10 @@ async function routeRequest(req: Request): Promise<Response> {
       }
 
       const projectId = (body.project_id as string | null) ?? null;
-      if (projectId && !(await projectInWorkspace(projectId, groupId))) {
+      if (
+        projectId &&
+        !(await canViewProjectInWorkspace(projectId, groupId, telegram_id))
+      ) {
         return apiErr(400, "project_id не найден в этом воркспейсе", origin);
       }
       // parent_id при создании (подзадача): родитель того же воркспейса. Если задан — форсим project_linked.
@@ -1498,10 +1501,12 @@ async function routeRequest(req: Request): Promise<Response> {
         fields.sprint_id = sid;
       }
 
-      // Привязка к проекту (с проверкой воркспейса; null — открепить).
+      // Привязка к проекту (воркспейс + видимость проекта вызывающему; null — открепить).
       if ("project_id" in body) {
         const pid = body.project_id as string | null;
-        if (pid && !(await projectInWorkspace(pid, groupId))) {
+        if (
+          pid && !(await canViewProjectInWorkspace(pid, groupId, telegram_id))
+        ) {
           return apiErr(400, "project_id не найден в этом воркспейсе", origin);
         }
         fields.project_id = pid;

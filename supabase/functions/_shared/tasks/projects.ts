@@ -345,15 +345,16 @@ export async function deleteProject(
   return true;
 }
 
-export async function projectInWorkspace(
+// Можно ли положить задачу в этот проект: проект живой, лежит в этом воркспейсе И виден
+// вызывающему (тот же предикат canViewProject, что у списка проектов). Одной принадлежности
+// воркспейсу мало: закрытая чужая строка в списках не отдаётся, и привязка к ней тоже не должна
+// проходить. Отказ для вызывающего одинаков — «нет» и «не твоё» не различаются.
+export async function canViewProjectInWorkspace(
   id: string,
   groupId: string,
+  viewerId: number | undefined,
 ): Promise<boolean> {
-  const { data } = await supabase
-    .from("projects").select("id").eq("id", id).eq("group_id", groupId)
-    .is("archived_at", null)
-    .maybeSingle();
-  return !!data;
+  return await canMutateProject(id, groupId, { viewerId });
 }
 
 /**
