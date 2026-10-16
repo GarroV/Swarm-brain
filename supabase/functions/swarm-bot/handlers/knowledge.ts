@@ -956,7 +956,7 @@ export async function handleAsk(chatId: number, question: string, userId: number
   // Skip if message starts with save intent — TASK_KEYWORDS may fire on submitted content, not user intent.
   const SAVE_INTENT = /^(добавь|сохрани|занеси|запомни|добавить)\b/i;
   if (!SAVE_INTENT.test(question) && TASK_KEYWORDS.test(question)) {
-    const handled = await smartTaskSearch(chatId, question);
+    const handled = await smartTaskSearch(chatId, question, groupId);
     if (handled) return;
   }
 
