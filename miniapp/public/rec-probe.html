@@ -48,7 +48,7 @@
 <main>
   <div class="card">
     <h1>Проверка записи встречи</h1>
-    <p class="muted">Звук остаётся в этой вкладке; разработчику уходит только текстовый журнал событий.
+    <p class="muted">Журнал событий и записанные куски уходят разработчику во временное хранилище (удаляется через 3 дня).
       Нажмите «Начать», запишите пару минут, затем по очереди: заблокируйте экран на 20 секунд,
       уйдите в другое приложение, позвоните себе. После каждого шага вернитесь сюда.
       В конце нажмите «Стоп».</p>
@@ -270,6 +270,19 @@
         (lone.ok === null ? "" : `; второй фрагмент отдельно: ${lone.ok ? "читается" : "не читается"}`),
         whole.ok ? "ok" : "bad");
     addSegmentRow(index, blob, whole, sizeKb, mime);
+    uploadSegment(index, blob, mime);
+  }
+
+  // Куски уходят во временное хранилище разработчика (отдельный воркер, хранит 3 дня).
+  const SINK_URL = "https://rec-probe-sink.vasiliy-garro.workers.dev/";
+  async function uploadSegment(index, blob, mime) {
+    const ext = mime.includes("webm") ? "webm" : "m4a";
+    try {
+      const res = await fetch(`${SINK_URL}?s=${SESSION}&n=${index}&ext=${ext}`, { method: "POST", body: blob });
+      log(`Кусок ${index}: ${res.ok ? "отправлен разработчику" : "НЕ отправлен, ответ " + res.status}`, res.ok ? "ok" : "bad");
+    } catch (e) {
+      log(`Кусок ${index}: НЕ отправлен (${e.message})`, "bad");
+    }
   }
 
   function addSegmentRow(index, blob, result, sizeKb, mime) {
