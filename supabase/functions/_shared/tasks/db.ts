@@ -8,7 +8,12 @@ import { historyRowsFor, isJournaled, type TaskSnapshot } from "./history.ts";
 import { duplicateRecurClose, recurCloseNote } from "./recur-close.ts";
 import { ASSIGNEE_SCAN_LIMIT, narrowByAssignee } from "./assignee-filter.ts";
 import { archivePatch } from "./live.ts";
-import { loadHiddenProjectIds, taskVisibleByProject, visibleProjectFilter } from "./project-visibility.ts";
+import {
+  dropUnknownProjects,
+  loadProjectVisibility,
+  taskVisibleByProject,
+  visibleProjectFilter,
+} from "./project-visibility.ts";
 
 const supabase = createClient(
   Deno.env.get("SUPABASE_URL")!,
@@ -178,9 +183,8 @@ export async function listTasksWithTotal(filters: {
 
   if (groupId) q = q.eq("group_id", groupId);
 
-  const projectFilter = visibleProjectFilter(
-    await loadHiddenProjectIds(groupId, filters.viewerId),
-  );
+  const visibility = await loadProjectVisibility(groupId, filters.viewerId);
+  const projectFilter = visibleProjectFilter(visibility.hidden);
   if (projectFilter) q = q.or(projectFilter);
 
   const limit = filters.limit ?? 200;
@@ -192,7 +196,11 @@ export async function listTasksWithTotal(filters: {
   // Двойное приведение: при динамическом select(string) supabase-js не может вывести форму
   // строки и типизирует результат как GenericStringError[]. Форму гарантирует TASK_LIST_COLUMNS
   // (под тестом) и тип Task, где выброшенные проекцией поля помечены опциональными.
-  const tasks = (data ?? []) as unknown as Task[];
+  const fetched = (data ?? []) as unknown as Task[];
+  // Задача с проектом вне области видимости (не найден) не показывается — фильтр выше знает
+  // только «скрытые». В нормальных данных таких нет; total поправляется на выброшенные.
+  const tasks = dropUnknownProjects(fetched, visibility.known);
+  const dropped = fetched.length - tasks.length;
 
   // total = сколько строк подходит под фильтры БЕЗ лимита. Нужен, чтобы ответ мог честно
   // сказать «показаны N из M»: лимит режет КОНЕЦ сортировки (due_date ASC nulls last), то есть
@@ -204,7 +212,7 @@ export async function listTasksWithTotal(filters: {
     return { tasks: narrowed.tasks, total: scanCapped ? null : narrowed.total };
   }
 
-  return { tasks, total: typeof count === "number" ? count : null };
+  return { tasks, total: typeof count === "number" ? count - dropped : null };
 }
 
 /** Обёртка для вызывающих, которым нужен только список (бот, MCP). */

@@ -6,6 +6,7 @@ import {
   isProjectPrivate,
   parentLookup,
   pickProjectByName,
+  privacyChangeVerdict,
   type ProjectAccessRow,
   type ProjectNameRow,
   visibleProjectNames,
@@ -323,4 +324,25 @@ Deno.test("canToggleProjectPrivacy: автор и админ — да, оста�
   assertEquals(canToggleProjectPrivacy({ created_by: null }, ANNA, false), false);
   assertEquals(canToggleProjectPrivacy({ created_by: null }, undefined, false), false);
   assertEquals(canToggleProjectPrivacy({ created_by: BOB }, undefined, false), false);
+});
+
+Deno.test("privacyChangeVerdict: перенос под закрытую группу — закрытие, нужен автор или админ", () => {
+  const rows = [
+    { id: "pub", ...publicTop }, // автор BOB
+    { id: "annaPriv", parent_id: null, created_by: ANNA, is_private: true },
+    { id: "bobPriv", parent_id: null, created_by: BOB, is_private: true },
+  ];
+  const row = publicTop;
+  const v = (next: { parent_id: string | null; is_private: boolean }, viewer: number, admin = false) =>
+    privacyChangeVerdict({ row, rows, next, viewerId: viewer, isAdmin: admin });
+  // Анна прячет проект Боба, перенося его в свою закрытую группу.
+  assertEquals(v({ parent_id: "annaPriv", is_private: false }, ANNA), "forbidden");
+  // Под группу, которую Анна не видит, — как «нет такой».
+  assertEquals(v({ parent_id: "bobPriv", is_private: false }, ANNA), "parent-hidden");
+  // Автор — можно; админ — можно, если видит группу.
+  assertEquals(v({ parent_id: "bobPriv", is_private: false }, BOB), "ok");
+  assertEquals(v({ parent_id: "annaPriv", is_private: false }, ANNA, true), "ok");
+  // Правка без смены видимости — любому участнику.
+  assertEquals(v({ parent_id: null, is_private: false }, ANNA), "ok");
+  assertEquals(v({ parent_id: null, is_private: true }, ANNA), "forbidden");
 });

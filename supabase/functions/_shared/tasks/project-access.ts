@@ -155,3 +155,36 @@ export function canToggleProjectPrivacy(
   return viewerId !== undefined && row.created_by !== null &&
     row.created_by === viewerId;
 }
+
+export type PrivacyChangeVerdict = "ok" | "parent-hidden" | "forbidden";
+
+// Правка проекта, которая меняет, КТО его видит, — то же закрытие/открытие, даже если тумблер
+// не тронут: перенос под закрытую группу прячет проект у всех, вынос из неё — открывает.
+// Поэтому право автора-или-админа спрашивается и на смену собственного флага, и на любую смену
+// итоговой приватности (isProjectPrivate до и после). Новый родитель обязан быть виден зрителю:
+// под невидимую группу не переносят и не создают — отказ неотличим от «такой группы нет».
+// `rows` — все живые строки воркспейса.
+export function privacyChangeVerdict(input: {
+  row: ProjectAccessRow;
+  rows: Array<ProjectAccessRow & { id: string }>;
+  next: { parent_id: string | null; is_private: boolean };
+  viewerId: number | undefined;
+  isAdmin: boolean;
+}): PrivacyChangeVerdict {
+  const { row, next, viewerId, isAdmin } = input;
+  const index = parentLookup(input.rows);
+  if (next.parent_id !== null && next.parent_id !== row.parent_id) {
+    const parent = index.get(next.parent_id);
+    if (!parent || !canViewProject(parent, viewerId, index)) {
+      return "parent-hidden";
+    }
+  }
+  const togglesOwn = next.is_private !== row.is_private;
+  const effectiveChanges = isProjectPrivate(row, index) !==
+    isProjectPrivate({ ...row, ...next }, index);
+  if (
+    (togglesOwn || effectiveChanges) &&
+    !canToggleProjectPrivacy(row, viewerId, isAdmin)
+  ) return "forbidden";
+  return "ok";
+}

@@ -15,23 +15,44 @@ const supabase = createClient(
 // Потолок строк проектов на воркспейс — тот же порядок, что у canMutateProject (единицы-десятки).
 const PROJECT_ROWS_CAP = 2000;
 
+export type ProjectVisibility = {
+  /** Проекты, задачи которых зрителю не показываются. Идут в фильтр выборки. */
+  hidden: string[];
+  /** Все проекты области (с архивными). Задача с проектом вне этого списка не показывается. */
+  known: Set<string>;
+};
+
 /**
- * id проектов, задачи которых зрителю не показываются. Без воркспейса — по всем проектам.
- * Сбой чтения — ошибка, а не пустой список: пустой список означал бы «показать всё».
+ * Видимость проектов области для зрителя. Без воркспейса — по всем проектам.
+ * Всё, что не удалось установить, — отказ, а не «показать»: сбой чтения и упор в потолок
+ * строк дают ошибку (иначе проекты за потолком не попали бы в скрытые), а проект, которого
+ * нет в списке (`known`), прячет свою задачу (taskVisibleByProject, dropUnknownProjects).
  */
+export async function loadProjectVisibility(
+  groupId: string | undefined,
+  viewerId: number | undefined,
+): Promise<ProjectVisibility> {
+  // Архивные строки тоже: архивный закрытый проект прячет свои задачи так же, как живой.
+  let q = supabase.from("projects").select("id, parent_id, created_by, is_private");
+  if (groupId) q = q.eq("group_id", groupId);
+  const { data, error } = await q.limit(PROJECT_ROWS_CAP + 1);
+  if (error) throw new Error(`project visibility: ${error.message}`);
+  const rows = (data ?? []) as Array<ProjectAccessRow & { id: string }>;
+  if (rows.length > PROJECT_ROWS_CAP) {
+    throw new Error(`project visibility: больше ${PROJECT_ROWS_CAP} проектов — видимость не установить`);
+  }
+  return {
+    hidden: hiddenProjectIds(rows, viewerId),
+    known: new Set(rows.map((r) => r.id)),
+  };
+}
+
+/** Только скрытые — для вызывающих, которым нужен фильтр выборки. */
 export async function loadHiddenProjectIds(
   groupId: string | undefined,
   viewerId: number | undefined,
 ): Promise<string[]> {
-  // Архивные строки тоже: архивный закрытый проект прячет свои задачи так же, как живой.
-  let q = supabase.from("projects").select("id, parent_id, created_by, is_private");
-  if (groupId) q = q.eq("group_id", groupId);
-  const { data, error } = await q.limit(PROJECT_ROWS_CAP);
-  if (error) throw new Error(`project visibility: ${error.message}`);
-  return hiddenProjectIds(
-    (data ?? []) as Array<ProjectAccessRow & { id: string }>,
-    viewerId,
-  );
+  return (await loadProjectVisibility(groupId, viewerId)).hidden;
 }
 
 /**
@@ -43,12 +64,24 @@ export function visibleProjectFilter(hidden: string[]): string | null {
   return `project_id.is.null,project_id.not.in.(${hidden.join(",")})`;
 }
 
+/**
+ * Добивка после выборки: задача, чей проект не найден в области (чужой воркспейс, сбитая
+ * ссылка), не показывается — фильтр выборки знает только «скрытые» и такую пропустил бы.
+ * Строки без колонки `project_id` в проекции не трогаются: по ним решить нечего.
+ */
+export function dropUnknownProjects<T extends { project_id?: string | null }>(
+  rows: T[],
+  known: Set<string>,
+): T[] {
+  return rows.filter((t) => !t.project_id || known.has(t.project_id));
+}
+
 /** Видна ли зрителю эта задача по её проекту. Задача без проекта видна всем в воркспейсе. */
 export async function taskVisibleByProject(
   task: { group_id?: string | null; project_id?: string | null },
   viewerId: number | undefined,
 ): Promise<boolean> {
   if (!task.project_id) return true;
-  const hidden = await loadHiddenProjectIds(task.group_id ?? undefined, viewerId);
-  return !hidden.includes(task.project_id);
+  const { hidden, known } = await loadProjectVisibility(task.group_id ?? undefined, viewerId);
+  return known.has(task.project_id) && !hidden.includes(task.project_id);
 }

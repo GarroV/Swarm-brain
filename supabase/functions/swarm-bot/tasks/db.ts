@@ -2,7 +2,11 @@ import { supabase } from "../lib/supabase.ts";
 import { createTask, deleteTask, getTask, listTasks, type RecurResult, updateTask } from "../../_shared/tasks/db.ts";
 import type { Task, TaskInput } from "../../_shared/tasks/types.ts";
 import { onlyLive } from "../../_shared/tasks/live.ts";
-import { loadHiddenProjectIds, visibleProjectFilter } from "../../_shared/tasks/project-visibility.ts";
+import {
+  dropUnknownProjects,
+  loadProjectVisibility,
+  visibleProjectFilter,
+} from "../../_shared/tasks/project-visibility.ts";
 
 export function dbGetTask(id: string): Promise<Task | null> {
   return getTask(id);
@@ -61,10 +65,11 @@ export async function dbListAllOpen(groupId?: string, viewerId?: number): Promis
     .order("assignees", { ascending: true });
   if (groupId) q = q.eq("group_id", groupId);
   // Задачи закрытых проектов — только тем, кто видит проект (тот же фильтр, что в listTasks).
-  const projectFilter = visibleProjectFilter(await loadHiddenProjectIds(groupId, viewerId));
+  const visibility = await loadProjectVisibility(groupId, viewerId);
+  const projectFilter = visibleProjectFilter(visibility.hidden);
   if (projectFilter) q = q.or(projectFilter);
   const { data } = await q.limit(200);
-  return (data ?? []) as Task[];
+  return dropUnknownProjects((data ?? []) as Task[], visibility.known);
 }
 
 export async function dbListToday(telegramId: number, groupId?: string): Promise<Task[]> {

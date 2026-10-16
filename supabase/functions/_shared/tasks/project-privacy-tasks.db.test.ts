@@ -20,7 +20,7 @@ for (const name of ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY"]) {
 }
 
 const { getVisibleTask, listTasksWithTotal } = await import("./db.ts");
-const { ProjectAccessError, updateProject } = await import("./projects.ts");
+const { createProject, ProjectAccessError, updateProject } = await import("./projects.ts");
 
 const WS = "t_pprivacy";
 const AUTHOR = 880000201;
@@ -189,6 +189,93 @@ Deno.test("тумблер приватности: участник не закр
       viewerId: AUTHOR,
     });
     assertEquals(byAuthor?.is_private, false);
+  } finally {
+    await db.end();
+  }
+});
+
+Deno.test("перенос под закрытую группу — тоже закрытие: участнику нельзя, автору можно", async () => {
+  const db = await connect();
+  try {
+    const s = await seed(db);
+    // Своя закрытая группа участника: перенос туда чужого открытого проекта спрятал бы его у всех.
+    const mine = (await db.queryObject<{ id: string }>`
+      insert into projects (group_id, name, created_by, is_private)
+      values (${WS}, 'Моя закрытая', ${MEMBER}, true) returning id`).rows[0].id;
+    await assertRejects(
+      () => updateProject(s.open, { parent_id: mine }, WS, { viewerId: MEMBER }),
+      ProjectAccessError,
+    );
+    const row = await db.queryObject<{ parent_id: string | null }>`
+      select parent_id from projects where id = ${s.open}`;
+    assertEquals(row.rows[0].parent_id, null);
+
+    // Под группу, которую зритель не видит, переносить нельзя вовсе.
+    await assertRejects(
+      () => updateProject(s.open, { parent_id: s.closed }, WS, { viewerId: MEMBER }),
+      Error,
+      "parent_id не найден",
+    );
+
+    // Автор своего проекта переносит его под свою закрытую группу.
+    const moved = await updateProject(s.open, { parent_id: s.closed }, WS, { viewerId: AUTHOR });
+    assertEquals(moved?.parent_id, s.closed);
+  } finally {
+    await db.end();
+  }
+});
+
+Deno.test("проект без автора закрыть может только админ", async () => {
+  const db = await connect();
+  try {
+    await seed(db);
+    const orphan = (await db.queryObject<{ id: string }>`
+      insert into projects (group_id, name, created_by, is_private)
+      values (${WS}, 'Ничейный', null, false) returning id`).rows[0].id;
+    await assertRejects(
+      () => updateProject(orphan, { is_private: true }, WS, { viewerId: MEMBER }),
+      ProjectAccessError,
+    );
+    const byAdmin = await updateProject(orphan, { is_private: true }, WS, { viewerId: MEMBER, isAdmin: true });
+    assertEquals(byAdmin?.is_private, true);
+  } finally {
+    await db.end();
+  }
+});
+
+Deno.test("подпроект нельзя создать под группой, которую создающий не видит", async () => {
+  const db = await connect();
+  try {
+    const s = await seed(db);
+    await assertRejects(
+      () => createProject({ name: "Внутрь чужой", parent_id: s.closed }, WS, MEMBER),
+      Error,
+      "parent_id не найден",
+    );
+  } finally {
+    await db.end();
+  }
+});
+
+Deno.test("задача с проектом вне воркспейса не видна — ни списком, ни поштучно", async () => {
+  const db = await connect();
+  try {
+    await seed(db);
+    const OTHER = "t_pprivacy_other";
+    await db.queryArray`delete from tasks where group_id = ${OTHER}`;
+    await db.queryArray`delete from projects where group_id = ${OTHER}`;
+    await db.queryArray`delete from workspaces where id = ${OTHER}`;
+    await db.queryArray`insert into workspaces (id, name) values (${OTHER}, 'Чужой')`;
+    const foreign = (await db.queryObject<{ id: string }>`
+      insert into projects (group_id, name, created_by, is_private)
+      values (${OTHER}, 'Чужой закрытый', ${AUTHOR}, true) returning id`).rows[0].id;
+    const stray = (await db.queryObject<{ id: string }>`
+      insert into tasks (title, status, group_id, project_id, created_by, confirmed)
+      values ('сбитая ссылка', 'open', ${WS}, ${foreign}, 'test', true) returning id`).rows[0].id;
+
+    const member = await listTasksWithTotal({ viewerId: MEMBER, columns: "id, title, project_id" }, WS);
+    assertEquals(titles(member.tasks), ["без проекта", "в открытом"]);
+    assertEquals(await getVisibleTask(stray, MEMBER), null);
   } finally {
     await db.end();
   }

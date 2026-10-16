@@ -8,7 +8,7 @@
 // (_shared/tasks/access.ts). RLS не авторизация — всё ходит service_role, поэтому промах в
 // проверке здесь сразу означает утечку задач чужого воркспейса.
 
-import { loadHiddenProjectIds } from "../../_shared/tasks/project-visibility.ts";
+import { loadProjectVisibility } from "../../_shared/tasks/project-visibility.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { getVisibleTask, listTasks } from "../../_shared/tasks/db.ts";
 import { resolvePersonNames } from "../../_shared/users/display-name.ts";
@@ -220,7 +220,8 @@ export async function toolGetRecentTaskChanges(
     .from("tasks").select("id, title, group_id, project_id")
     .in("id", [...new Set(raw.map((r) => r.task_id))]);
   // Задачи невидимых зрителю проектов в ленту не попадают (решение владельца 16.10.2026).
-  const hiddenProjects = new Set(await loadHiddenProjectIds(groupId, args.requesting_user_id));
+  const projects = await loadProjectVisibility(groupId, args.requesting_user_id);
+  const hiddenProjects = new Set(projects.hidden);
   const titleById = new Map<string, string>();
   for (
     const t of (taskRows ?? []) as Array<
@@ -228,7 +229,7 @@ export async function toolGetRecentTaskChanges(
     >
   ) {
     if (!canAccessTask(t, groupId)) continue;
-    if (t.project_id && hiddenProjects.has(t.project_id)) continue;
+    if (t.project_id && (hiddenProjects.has(t.project_id) || !projects.known.has(t.project_id))) continue;
     titleById.set(t.id, t.title);
   }
 

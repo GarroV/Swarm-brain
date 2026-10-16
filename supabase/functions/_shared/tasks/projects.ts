@@ -1,7 +1,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import type { Project, ProjectInput } from "./types.ts";
 import { type ProjectRef, validateParent } from "./project-nesting.ts";
-import { canToggleProjectPrivacy, canViewProject, parentLookup, type ProjectAccessRow } from "./project-access.ts";
+import { canViewProject, parentLookup, privacyChangeVerdict, type ProjectAccessRow } from "./project-access.ts";
 import { projectEventRow, type ProjectHistoryRow, projectHistoryRowsFor } from "./project-history.ts";
 import { onlyLive } from "./live.ts";
 import {
@@ -138,13 +138,12 @@ export async function createProject(
 ): Promise<Project> {
   const parentId = input.parent_id ?? null;
   if (parentId !== null) {
-    const { data: refs } = await supabase
-      .from("projects").select("id, parent_id, sprint_group").eq(
-        "group_id",
-        groupId,
-      )
-      .is("archived_at", null);
-    const all = (refs ?? []) as Array<ProjectRef & { sprint_group: boolean }>;
+    const all = await liveProjectRows(groupId);
+    // Под группу, которую создающий не видит, подпроект не создаётся: отказ — как «нет такой».
+    const parent = all.find((r) => r.id === parentId);
+    if (parent && !canViewProject(parent, createdBy ?? undefined, parentLookup(all))) {
+      throw new Error(PARENT_NOT_FOUND);
+    }
     const v = validateParent({ projectId: null, parentId, all });
     if (!v.ok) throw new Error(v.error);
     // Под группу спринта ничего не вешаем — ни новую группу, ни обычный подпроект: ребёнок
@@ -185,6 +184,20 @@ export async function createProject(
 // Обновляет только проект своего воркспейса. Возвращает обновлённый или null (не найден/чужой/
 // не свой подпроект — намеренно не различаем 404 от «нет доступа», как getEntrySecure для
 // entries: не палим существование чужой строки).
+const PARENT_NOT_FOUND = "parent_id не найден в этом воркспейсе";
+
+type LiveProjectRow = ProjectRef & ProjectAccessRow & { id: string; sprint_group: boolean };
+
+// Живые строки воркспейса для проверок вложенности и видимости. Сбой чтения — ошибка: пустой
+// список дал бы «родителя нет» и снял бы проверку видимости.
+async function liveProjectRows(groupId: string): Promise<LiveProjectRow[]> {
+  const { data, error } = await supabase
+    .from("projects").select("id, parent_id, sprint_group, created_by, is_private")
+    .eq("group_id", groupId).is("archived_at", null).limit(2000);
+  if (error) throw new Error(`projects read: ${error.message}`);
+  return (data ?? []) as LiveProjectRow[];
+}
+
 /** Отказ в праве, которое у зрителя есть на просмотр, но нет на это действие → 403. */
 export class ProjectAccessError extends Error {}
 
@@ -199,14 +212,8 @@ export async function updateProject(
   if (fields.sprint_group === true) {
     throw new Error("sprint_group можно только снять");
   }
+  const all = await liveProjectRows(groupId);
   if ("parent_id" in fields) {
-    const { data: refs } = await supabase
-      .from("projects").select("id, parent_id, sprint_group").eq(
-        "group_id",
-        groupId,
-      )
-      .is("archived_at", null);
-    const all = (refs ?? []) as Array<ProjectRef & { sprint_group: boolean }>;
     const v = validateParent({
       projectId: id,
       parentId: fields.parent_id ?? null,
@@ -216,17 +223,27 @@ export async function updateProject(
     const groupErr = parentForSprintGroup(fields.parent_id ?? null, all);
     if (groupErr) throw new Error(groupErr);
   }
-  if (!(await canMutateProject(id, groupId, opts))) return null;
+  // Видимость и право правки у проекта совпадают (см. canMutateProject) — по тем же строкам.
+  const self = all.find((r) => r.id === id);
+  if (!self || !canViewProject(self, opts.viewerId, parentLookup(all))) return null;
   // Снимок ДО правки — иначе журналу не с чем сравнивать, и в него пошли бы строки
   // «было X, стало X» на каждое поле формы, в которых настоящий переезд не найти.
   const before = await getProject(id, groupId);
   if (!before) return null;
-  const togglesPrivacy = "is_private" in fields &&
-    fields.is_private !== before.is_private;
-  if (
-    togglesPrivacy &&
-    !canToggleProjectPrivacy(before, opts.viewerId, opts.isAdmin === true)
-  ) {
+  // Закрыть/открыть проект — только автор и админ, и неважно, тумблером или переносом под
+  // закрытую группу / из неё (решение владельца 16.10.2026).
+  const verdict = privacyChangeVerdict({
+    row: before,
+    rows: all,
+    next: {
+      parent_id: "parent_id" in fields ? fields.parent_id ?? null : before.parent_id,
+      is_private: "is_private" in fields ? fields.is_private === true : before.is_private,
+    },
+    viewerId: opts.viewerId,
+    isAdmin: opts.isAdmin === true,
+  });
+  if (verdict === "parent-hidden") throw new Error(PARENT_NOT_FOUND);
+  if (verdict === "forbidden") {
     throw new ProjectAccessError(
       "Only the project author or an admin can change its visibility",
     );
