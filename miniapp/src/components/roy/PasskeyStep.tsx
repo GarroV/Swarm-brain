@@ -4,6 +4,8 @@
 // палец (в браузере с меткой) или сохранить новый (без метки). Без кнопки и без вопроса. Если окно
 // не открылось или его закрыли — одна тихая строка-ссылка, клик повторяет; за один вход авто-попытка
 // одна (lib/passkeyStep.ts). Логика выбора — там; здесь только браузерные вызовы.
+// Подтверждение не удалось (на устройстве нет ключа, окно отменено) — подсказка про «Добавить
+// устройство» в профиле другого устройства (решение 17.10.2026), а не тупик.
 import { useEffect, useRef, useState } from "react";
 import { browserSupportsWebAuthn, startAuthentication, startRegistration } from "@simplewebauthn/browser";
 import type { Me } from "@/types";
@@ -116,8 +118,8 @@ export function PasskeyStep({ me }: { me: Me | null }) {
         : (
           <>
             {dt(
-              "Подтвердите вход кодом из приложения-аутентификатора или попросите админа пространства сбросить вход. ",
-              "Confirm sign-in with your authenticator app code, or ask your workspace admin to reset sign-in. ",
+              "На этом устройстве нет ключа. Откройте профиль на устройстве, где ключ есть, и нажмите «Добавить устройство». ",
+              "There's no key on this device. Open your profile on a device that has one and tap “Add device”. ",
             )}
             {retry}
           </>

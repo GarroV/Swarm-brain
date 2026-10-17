@@ -18,6 +18,7 @@ import { STALE_DAYS } from "@/lib/integrationStatus";
 import { TelegramPanel } from "@/components/profile/TelegramPanel";
 import { NotificationSoundToggle } from "@/components/settings/NotificationSoundToggle";
 import { BackdropSection } from "@/components/profile/BackdropSection";
+import { PasskeysSection } from "@/components/profile/PasskeysSection";
 import { useDt, useIsDemo } from "@/components/roy/nav";
 import { SectionLabel } from "@/components/roy/ui";
 
@@ -871,6 +872,11 @@ export function SettingsScreen() {
         <Section icon="note" title="Фидбек">
           <FeedbackSection />
         </Section>
+        {isWebSession && me?.second_step?.applies && (
+          <Section icon="home" title={dt("Ключи входа", "Sign-in keys")}>
+            <PasskeysSection />
+          </Section>
+        )}
         {isWebSession && (
           <Section icon="home" title="Аккаунт">
             <AccountSection />
