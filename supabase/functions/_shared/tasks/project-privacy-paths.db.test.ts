@@ -4,7 +4,7 @@
 //
 // Почему на базе: каждый из этих путей ходит SERVICE_ROLE_KEY своей выборкой. Пропущенный фильтр
 // не падает — задача просто показывается или правится чужой рукой.
-import { assert, assertEquals } from "@std/assert";
+import { assert, assertEquals, assertRejects } from "@std/assert";
 import { Client } from "postgres";
 
 const DB_URL = Deno.env.get("SUPABASE_DB_URL") ??
@@ -189,6 +189,36 @@ Deno.test("итоги принятого спринта: ни имён, ни с�
     await db.queryArray`delete from sprint_items where cycle_id = ${s.acceptedId} and task_id = ${s.tClosed}`;
     const [plain] = await redactCycleStats([cycle], WS, MEMBER);
     assertEquals(plain.stats, cycle.stats);
+  } finally {
+    await db.end();
+  }
+});
+
+Deno.test("итоги принятого спринта: неизвестный проект и сбой чтения — не «показать всё»", async () => {
+  const db = await connect();
+  try {
+    const s = await seed(db);
+    // Автор видит все проекты пространства, но в спринте — задача с проектом чужого воркспейса
+    // (сбитая ссылка). Её проект не установить — итоги пересчитываются без неё.
+    const foreignProject = (await db.queryObject<{ id: string }>`
+      insert into projects (group_id, name, created_by, is_private)
+      values (${OTHER_WS}, 'Чужой', ${AUTHOR}, true) returning id`).rows[0].id;
+    const stray = (await db.queryObject<{ id: string }>`
+      insert into tasks (title, status, group_id, project_id, created_by, confirmed)
+      values ('сбитая ссылка', 'open', ${WS}, ${foreignProject}, 'test', true) returning id`).rows[0].id;
+    await db.queryArray`
+      insert into sprint_items (cycle_id, task_id, in_plan, frozen_at, frozen_title, frozen_status, frozen_project)
+      values (${s.acceptedId}, ${stray}, true, now(), 'сбитая ссылка', 'open', 'Чужой')`;
+    const row = await db.queryObject<{ id: string; status: string; stats: Record<string, unknown> }>`
+      select id, status, stats from sprint_cycles where id = ${s.acceptedId}`;
+    const cycle = row.rows[0];
+    const [forAuthor] = await redactCycleStats([cycle], WS, AUTHOR);
+    const names = (forAuthor.stats as { byProject: Array<{ name: string }> }).byProject.map((p) => p.name).sort();
+    assertEquals(names, ["Закрытый", "Открытый"]);
+    assert(forAuthor.stats !== cycle.stats, "итоги не пересчитаны — строка с неизвестным проектом посчитана");
+
+    // Сбой чтения состава — ошибка, а не записанные итоги целиком.
+    await assertRejects(() => redactCycleStats([{ ...cycle, id: "not-a-uuid" }], WS, MEMBER));
   } finally {
     await db.end();
   }

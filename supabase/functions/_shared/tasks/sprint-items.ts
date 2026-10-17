@@ -108,11 +108,14 @@ export async function listComposition(
   cycleId: string,
   groupId: string,
   viewer: SprintViewer,
-): Promise<{ items: SprintItem[]; withdrawn: SprintItem[] }> {
-  const all = await loadAllItems(cycleId, groupId, viewer);
+): Promise<{ items: SprintItem[]; withdrawn: SprintItem[]; hiddenCount: number }> {
+  const { items: all, hiddenCount } = await loadAllItems(cycleId, groupId, viewer);
   return {
     items: all.filter((i) => i.withdrawn_at == null),
     withdrawn: all.filter((i) => i.withdrawn_at != null),
+    // Сколько строк состава спрятано от зрителя (невидимый или неустановимый проект). Итоги
+    // принятого спринта по нему решают, можно ли отдать записанные цифры (redactCycleStats).
+    hiddenCount,
   };
 }
 
@@ -120,21 +123,25 @@ async function loadAllItems(
   cycleId: string,
   groupId: string,
   viewer: SprintViewer,
-): Promise<SprintItem[]> {
-  const { data: cycle } = await supabase.from("sprint_cycles")
+): Promise<{ items: SprintItem[]; hiddenCount: number }> {
+  // Сбой чтения — ошибка, а не пустой состав: пустой выглядел бы как «прятать нечего», и
+  // итоги принятого спринта ушли бы зрителю целиком (fail-closed).
+  const { data: cycle, error: cycleErr } = await supabase.from("sprint_cycles")
     .select("id").eq("id", cycleId).eq("group_id", groupId).maybeSingle();
-  if (!cycle) return [];
+  if (cycleErr) throw new Error(`sprint cycle: ${cycleErr.message}`);
+  if (!cycle) return { items: [], hiddenCount: 0 };
 
   // Поля перечислены прямо здесь одной строкой, а не вынесены в константу: клиент Supabase
   // разбирает список полей ТИПОМ на этапе компиляции, и как только строка становится
   // вычисляемой, ответ превращается в «неизвестно что» (TS2352).
-  const { data: rows } = await supabase.from("sprint_items")
+  const { data: rows, error: rowsErr } = await supabase.from("sprint_items")
     .select(
       "id, task_id, in_plan, added_at, frozen_at, frozen_title, frozen_status, frozen_assignees, frozen_project, frozen_completed_at, frozen_due_date, check_status, check_note, check_at, check_by, to_carry, carry_reason, carry_count, carried_manual, removed_title, removed_project_id, removed_at, withdrawn_at",
     )
     .eq("cycle_id", cycleId).order("added_at", { ascending: true });
+  if (rowsErr) throw new Error(`sprint items: ${rowsErr.message}`);
   const fetched = (rows ?? []) as Record<string, unknown>[];
-  if (fetched.length === 0) return [];
+  if (fetched.length === 0) return { items: [], hiddenCount: 0 };
   const items = viewer === "everyone"
     ? fetched
     : await dropHiddenItems(fetched, groupId, await loadProjectVisibility(groupId, viewer.viewerId));
@@ -156,52 +163,56 @@ async function loadAllItems(
   const projectNames = await loadProjectNames(items, live);
   const comments = await countComments(liveIds);
 
-  return items.map((r) => {
-    const t = r.task_id ? live.get(r.task_id as string) : undefined;
-    const frozen = !!r.frozen_at;
-    const removed = r.removed_at != null;
-    const projectId = (t?.project_id as string | null) ?? null;
+  const hiddenCount = fetched.length - items.length;
+  return {
+    hiddenCount,
+    items: items.map((r) => {
+      const t = r.task_id ? live.get(r.task_id as string) : undefined;
+      const frozen = !!r.frozen_at;
+      const removed = r.removed_at != null;
+      const projectId = (t?.project_id as string | null) ?? null;
 
-    const title = removed
-      ? (r.removed_title as string | null) ?? "(задача удалена)"
-      : frozen
-      ? (r.frozen_title as string)
-      : ((t?.title as string) ?? "(задача удалена)");
-
-    return {
-      id: r.id as string,
-      task_id: (r.task_id as string | null) ?? null,
-      in_plan: !!r.in_plan,
-      added_at: r.added_at as string,
-      title,
-      status: frozen ? (r.frozen_status as string) : ((t?.status as string) ?? "cancelled"),
-      assignees: frozen ? ((r.frozen_assignees as string[]) ?? []) : ((t?.assignees as string[]) ?? []),
-      project_id: projectId,
-      project: removed
-        ? null
+      const title = removed
+        ? (r.removed_title as string | null) ?? "(задача удалена)"
         : frozen
-        ? ((r.frozen_project as string | null) ?? null)
-        : (projectId ? projectNames.get(projectId) ?? null : null),
-      completed_at: frozen
-        ? ((r.frozen_completed_at as string | null) ?? null)
-        : ((t?.completed_at as string | null) ?? null),
-      due_date: frozen ? ((r.frozen_due_date as string | null) ?? null) : ((t?.due_date as string | null) ?? null),
-      frozen,
-      check_status: (r.check_status as CheckStatus | null) ?? null,
-      check_note: (r.check_note as string | null) ?? null,
-      check_at: (r.check_at as string | null) ?? null,
-      check_by: (r.check_by as string | null) ?? null,
-      to_carry: !!r.to_carry,
-      carry_reason: (r.carry_reason as string | null) ?? null,
-      carry_count: (r.carry_count as number | null) ?? 0,
-      carried_manual: (r.carried_manual as boolean | null) ?? null,
-      removed,
-      removed_at: (r.removed_at as string | null) ?? null,
-      withdrawn_at: (r.withdrawn_at as string | null) ?? null,
-      comment_count: frozen || removed ? 0 : comments.get(r.task_id as string) ?? 0,
-      link_count: frozen || removed ? 0 : ((t?.links as unknown[] | null) ?? []).length,
-    };
-  });
+        ? (r.frozen_title as string)
+        : ((t?.title as string) ?? "(задача удалена)");
+
+      return {
+        id: r.id as string,
+        task_id: (r.task_id as string | null) ?? null,
+        in_plan: !!r.in_plan,
+        added_at: r.added_at as string,
+        title,
+        status: frozen ? (r.frozen_status as string) : ((t?.status as string) ?? "cancelled"),
+        assignees: frozen ? ((r.frozen_assignees as string[]) ?? []) : ((t?.assignees as string[]) ?? []),
+        project_id: projectId,
+        project: removed
+          ? null
+          : frozen
+          ? ((r.frozen_project as string | null) ?? null)
+          : (projectId ? projectNames.get(projectId) ?? null : null),
+        completed_at: frozen
+          ? ((r.frozen_completed_at as string | null) ?? null)
+          : ((t?.completed_at as string | null) ?? null),
+        due_date: frozen ? ((r.frozen_due_date as string | null) ?? null) : ((t?.due_date as string | null) ?? null),
+        frozen,
+        check_status: (r.check_status as CheckStatus | null) ?? null,
+        check_note: (r.check_note as string | null) ?? null,
+        check_at: (r.check_at as string | null) ?? null,
+        check_by: (r.check_by as string | null) ?? null,
+        to_carry: !!r.to_carry,
+        carry_reason: (r.carry_reason as string | null) ?? null,
+        carry_count: (r.carry_count as number | null) ?? 0,
+        carried_manual: (r.carried_manual as boolean | null) ?? null,
+        removed,
+        removed_at: (r.removed_at as string | null) ?? null,
+        withdrawn_at: (r.withdrawn_at as string | null) ?? null,
+        comment_count: frozen || removed ? 0 : comments.get(r.task_id as string) ?? 0,
+        link_count: frozen || removed ? 0 : ((t?.links as unknown[] | null) ?? []).length,
+      };
+    }),
+  };
 }
 
 /**

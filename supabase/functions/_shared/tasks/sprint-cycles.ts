@@ -3,7 +3,6 @@
 //
 // ⚠️ Таблица `sprints` — это вкладки доски проектов. Спринты живут в `sprint_cycles`.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { loadProjectVisibility } from "./project-visibility.ts";
 import { listComposition, type SprintItem } from "./sprint-items.ts";
 import { computeSprintStats, type SprintItemView } from "./sprint-stats.ts";
 
@@ -248,18 +247,14 @@ export async function redactCycleStats<T extends { id: string; status: string; s
   groupId: string,
   viewerId: number | undefined,
 ): Promise<T[]> {
+  // Решение — по самому составу, а не по списку скрытых проектов: строка с проектом вне области
+  // (чужой воркспейс, сбитая ссылка) прячется, даже когда «скрытых» у зрителя нет. Сбой чтения
+  // состава — ошибка, а не записанные итоги (fail-closed).
   const accepted = (c: T) => c.status === "accepted" && !!c.stats && typeof c.stats === "object";
-  if (!cycles.some(accepted)) return cycles;
-  const { hidden } = await loadProjectVisibility(groupId, viewerId);
-  if (hidden.length === 0) return cycles;
   return await Promise.all(cycles.map(async (c) => {
     if (!accepted(c)) return c;
-    const [full, mine] = await Promise.all([
-      listComposition(c.id, groupId, "everyone"),
-      listComposition(c.id, groupId, { viewerId }),
-    ]);
-    const size = (x: typeof full) => x.items.length + x.withdrawn.length;
-    if (size(full) === size(mine)) return c;
+    const mine = await listComposition(c.id, groupId, { viewerId });
+    if (mine.hiddenCount === 0) return c;
     return { ...c, stats: computeSprintStats([...mine.items, ...mine.withdrawn].map(toStatsView)) };
   }));
 }
