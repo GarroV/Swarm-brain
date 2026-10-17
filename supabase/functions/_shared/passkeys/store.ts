@@ -15,6 +15,11 @@ export type StoredPasskey = {
 
 export type NewPasskey = Omit<StoredPasskey, "id"> & { name: string };
 
+/** Ключ для экрана профиля: без криптографии, только то, что человек узнает. */
+export type PasskeyInfo = { id: string; name: string; createdAt: string; lastUsedAt: string | null };
+
+export type DeviceLinkLimits = { ttlMs: number; maxPerWindow: number; windowMs: number };
+
 export interface PasskeyStore {
   /** Ключи человека. */
   listForPerson(telegramId: number): Promise<StoredPasskey[]>;
@@ -31,6 +36,22 @@ export interface PasskeyStore {
   touchPasskey(id: string, oldCount: number, newCount: number): Promise<boolean>;
   /** Снять все ключи человека (ручной сброс входа); возвращает сколько снято. */
   deleteForPerson(telegramId: number): Promise<number>;
+  /** Ключи человека для профиля: название устройства и даты, по дате создания. */
+  describeForPerson(telegramId: number): Promise<PasskeyInfo[]>;
+  /** Снять СВОЙ ключ: ключ чужой или его нет — false. */
+  deleteOwn(telegramId: number, id: string): Promise<boolean>;
+  /**
+   * Ссылка «Добавить устройство»: запомнить хеш токена, погасив прежние ссылки человека.
+   * Лимит выдачи исчерпан — false (ничего не записано).
+   */
+  issueDeviceLink(telegramId: number, tokenHash: string, limits: DeviceLinkLimits): Promise<boolean>;
+  /** Взвести на живой ссылке ЭТОГО человека вызов регистрации; ссылки нет, чужая, просрочена, погашена — false. */
+  armDeviceLink(telegramId: number, tokenHash: string, challenge: string, challengeTtlMs: number): Promise<boolean>;
+  /**
+   * Погасить ссылку ОДИН раз (условный UPDATE) и вернуть взведённый вызов. Ссылка чужая, просрочена,
+   * погашена, вызов не взведён или просрочен — null.
+   */
+  consumeDeviceLink(telegramId: number, tokenHash: string): Promise<string | null>;
 }
 
 type Row = {
@@ -128,6 +149,49 @@ export function supabaseStore(supabase: SupabaseClient): PasskeyStore {
         .select("id");
       if (error) fail("touch", error);
       return (data ?? []).length > 0;
+    },
+    async describeForPerson(telegramId) {
+      const { data, error } = await supabase.from("passkeys").select("id, name, created_at, last_used_at")
+        .eq("telegram_id", telegramId).order("created_at", { ascending: true });
+      if (error) fail("describe", error);
+      return ((data ?? []) as Array<{ id: string; name: string; created_at: string; last_used_at: string | null }>)
+        .map((r) => ({ id: r.id, name: r.name, createdAt: r.created_at, lastUsedAt: r.last_used_at }));
+    },
+    async deleteOwn(telegramId, id) {
+      const { data, error } = await supabase.from("passkeys").delete().eq("id", id).eq("telegram_id", telegramId)
+        .select("id");
+      if (error) fail("delete own", error);
+      return (data ?? []).length > 0;
+    },
+    async issueDeviceLink(telegramId, tokenHash, limits) {
+      // Лимит, гашение прежних и запись — одна функция базы под блокировкой строки человека.
+      const { data, error } = await supabase.rpc("passkey_device_link_issue", {
+        p_telegram_id: telegramId,
+        p_token_hash: tokenHash,
+        p_ttl_seconds: Math.round(limits.ttlMs / 1000),
+        p_max_per_window: limits.maxPerWindow,
+        p_window_seconds: Math.round(limits.windowMs / 1000),
+      });
+      if (error) fail("issue device link", error);
+      return data === true;
+    },
+    async armDeviceLink(telegramId, tokenHash, challenge, challengeTtlMs) {
+      const { data, error } = await supabase.rpc("passkey_device_link_arm", {
+        p_telegram_id: telegramId,
+        p_token_hash: tokenHash,
+        p_challenge: challenge,
+        p_challenge_ttl_seconds: Math.round(challengeTtlMs / 1000),
+      });
+      if (error) fail("arm device link", error);
+      return data === true;
+    },
+    async consumeDeviceLink(telegramId, tokenHash) {
+      const { data, error } = await supabase.rpc("passkey_device_link_consume", {
+        p_telegram_id: telegramId,
+        p_token_hash: tokenHash,
+      });
+      if (error) fail("consume device link", error);
+      return typeof data === "string" && data !== "" ? data : null;
     },
     async deleteForPerson(telegramId) {
       const { data, error } = await supabase.from("passkeys").delete().eq("telegram_id", telegramId).select("id");

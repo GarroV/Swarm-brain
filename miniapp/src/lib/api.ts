@@ -684,6 +684,25 @@ export async function logout(): Promise<void> {
   });
 }
 
+// ── Ключи входа в профиле (решение 17.10.2026, «Добавить устройство») ─────────────
+// can_manage — второй шаг пройден ключом в этой сессии: только тогда можно удалить ключ или выдать ссылку.
+
+export type MyPasskey = { id: string; name: string; created_at: string; last_used_at: string | null };
+
+export async function fetchMyPasskeys(): Promise<{ keys: MyPasskey[]; can_manage: boolean }> {
+  if (DEV_MODE) return { keys: [], can_manage: false };
+  return apiFetch("/me/passkeys");
+}
+
+export async function deleteMyPasskey(id: string): Promise<void> {
+  await apiFetch(`/me/passkeys/${encodeURIComponent(id)}`, { method: "DELETE" });
+}
+
+/** Одноразовая ссылка: токен приходит один раз, сервер хранит только его хеш. */
+export async function createDeviceLink(): Promise<{ token: string; expires_at: string }> {
+  return apiFetch("/me/passkeys/device-link", { method: "POST" });
+}
+
 // ── Присутствие (#751) ───────────────────────────────────────────────────────
 // Пульс веба (components/PresencePulse.tsx): раздел и был ли ввод. Свой fetch, а не apiFetch:
 // пульс раз в 15 с не должен сбрасывать кэш чтения, будить плашку
