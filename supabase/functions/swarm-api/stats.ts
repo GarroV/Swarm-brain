@@ -147,6 +147,7 @@ export async function handleStatsRoutes(
           columns: "status, created_at, completed_at, due_date, assignee_telegram_ids",
           confirmed: true,
           limit: TASK_LIMIT,
+          viewerId: telegramId,
         }, groupId),
         allRows<{ owner_id: number | null; added_by: number | null }>(
           "published",

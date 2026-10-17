@@ -1,3 +1,4 @@
+import { taskVisibleByProject } from "../_shared/tasks/project-visibility.ts";
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { json } from "./http.ts";
 import { importSigningKey, signFileToken } from "../_shared/files-token.ts";
@@ -42,6 +43,7 @@ const ERROR_TEXT: Record<NewFileError, string> = {
 type TaskRow = {
   id: string;
   group_id: string | null;
+  project_id: string | null;
   created_by_telegram_id: number | null;
 };
 type FileRow = {
@@ -99,10 +101,13 @@ export async function handleTaskFileRoutes(
 
   const { data: taskData } = await onlyLive(
     supabase.from("tasks")
-      .select("id, group_id, created_by_telegram_id"),
+      .select("id, group_id, project_id, created_by_telegram_id"),
   ).eq("id", m[1]).maybeSingle();
   const task = taskData as TaskRow | null;
-  if (!task || task.group_id !== groupId) {
+  if (
+    !task || task.group_id !== groupId ||
+    !(await taskVisibleByProject(task, telegramId))
+  ) {
     return json({ error: "Задача не найдена" }, 404, origin);
   }
   const limits = taskFileLimits((n) => Deno.env.get(n));

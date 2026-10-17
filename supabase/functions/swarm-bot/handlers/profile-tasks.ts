@@ -5,13 +5,19 @@
 // обязана состоять в этом пространстве — иначе ответ null, и бот говорит «нет прав».
 import { supabase } from "../lib/supabase.ts";
 import { onlyLive } from "../../_shared/tasks/live.ts";
+import { keepVisibleTasks } from "../../_shared/tasks/project-visibility.ts";
 import type { Task } from "../../_shared/tasks/types.ts";
 
 const PROFILE_TASKS_LIMIT = 15;
 
 export type ProfileTasks = { name: string; tasks: Task[] };
 
-export async function loadProfileTasks(targetId: number, groupId: string): Promise<ProfileTasks | null> {
+export async function loadProfileTasks(
+  targetId: number,
+  groupId: string,
+  /** Кто смотрит: задачи невидимых ему проектов не показываются (решение владельца 16.10.2026). */
+  viewerId: number,
+): Promise<ProfileTasks | null> {
   const { data: member, error: memberErr } = await supabase
     .from("allowed_users").select("username")
     .eq("telegram_id", targetId).eq("group_id", groupId)
@@ -31,7 +37,7 @@ export async function loadProfileTasks(targetId: number, groupId: string): Promi
   if (error) throw new Error(`profile tasks: ${error.message}`);
 
   const nameLower = name.toLowerCase();
-  const tasks = ((data ?? []) as Task[])
+  const tasks = (await keepVisibleTasks((data ?? []) as Task[], groupId, viewerId))
     .filter((t) => t.assignees?.some((a) => a.toLowerCase().includes(nameLower)))
     .slice(0, PROFILE_TASKS_LIMIT);
   return { name, tasks };
