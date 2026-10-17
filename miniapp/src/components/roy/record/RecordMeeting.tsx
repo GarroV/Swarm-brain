@@ -1,78 +1,45 @@
 "use client";
 // Точки входа в запись встречи из браузера: кнопка в панели «Встреч» (десктоп) и компактная
-// карточка на мобильном экране. Обе открывают один и тот же экран записи (RecordingOverlay);
-// при открытии экрана встреч проверяем, нет ли незавершённой записи после сбоя.
-import { useCallback, useEffect, useState } from "react";
-import { useDt, useRoyNav } from "../nav";
+// карточка на мобильном экране. Обе сразу начинают запись; о ходе говорит плавающий индикатор
+// (RecordingPill), запись живёт в RecorderProvider и не зависит от экрана.
+import { useDt } from "../nav";
 import { RoyCard, SectionLabel } from "../ui";
 import { RoyIcon } from "../icons";
 import { ToolbarButton } from "@/components/tasks/table/Menu";
-import { findRecoverable, type RecoverableRecording } from "@/lib/webRecorder";
-import { RecordingOverlay } from "./RecordingOverlay";
-
-/** Незавершённую запись предлагаем один раз за сессию вкладки: «Не сейчас» не должно возвращаться. */
-let offeredThisSession = false;
-
-function useRecordLauncher() {
-  const [open, setOpen] = useState(false);
-  const [recoverable, setRecoverable] = useState<RecoverableRecording | null>(null);
-  // Незавершённое предлагаем только владельцу: на общем устройстве чужая запись не наша.
-  const ownerId = useRoyNav().me?.telegram_id ?? null;
-
-  useEffect(() => {
-    if (offeredThisSession || ownerId === null) return;
-    let alive = true;
-    void findRecoverable(ownerId).then((found) => {
-      if (!alive || !found) return;
-      offeredThisSession = true;
-      setRecoverable(found);
-      setOpen(true);
-    });
-    return () => { alive = false; };
-  }, [ownerId]);
-
-  const close = useCallback(() => { setOpen(false); setRecoverable(null); }, []);
-  const overlay = open ? <RecordingOverlay recoverable={recoverable} onClose={close} /> : null;
-  return { setOpen, overlay };
-}
+import { useRecorder } from "./RecorderProvider";
 
 /** Десктоп: кнопка рядом с «Позвать бота». */
 export function RecordMeetingButton() {
   const dt = useDt();
-  const { setOpen, overlay } = useRecordLauncher();
+  const { start, busy } = useRecorder();
   return (
-    <>
-      <ToolbarButton onClick={() => setOpen(true)}>
-        <RoyIcon name="mic" size={13} />
-        {dt("Записать встречу", "Record meeting")}
-      </ToolbarButton>
-      {overlay}
-    </>
+    <ToolbarButton on={busy} disabled={busy} onClick={start}>
+      <RoyIcon name="mic" size={13} />
+      {busy ? dt("Идёт запись", "Recording") : dt("Записать встречу", "Record meeting")}
+    </ToolbarButton>
   );
 }
 
 /** Мобайл: карточка над приглашением бота. */
 export function RecordMeetingCard() {
   const dt = useDt();
-  const { setOpen, overlay } = useRecordLauncher();
+  const { start, busy } = useRecorder();
   return (
-    <>
-      <RoyCard className="px-3 py-2.5">
-        <SectionLabel className="!mb-1">{dt("Офлайн-встреча", "In-person meeting")}</SectionLabel>
-        <p className="mx-1 mb-2 text-ink-soft" style={{ fontSize: 12, lineHeight: 1.4 }}>
-          {dt("Положите телефон на стол экраном вверх — Swarm запишет разговор, экран не погаснет", "Put the phone on the table screen up — Swarm records the conversation, the screen stays on")}
-        </p>
-        <button
-          type="button"
-          onClick={() => setOpen(true)}
-          className="inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-full bg-primary px-4 font-semibold text-primary-foreground transition-opacity active:opacity-80"
-          style={{ fontSize: 13.5 }}
-        >
-          <RoyIcon name="mic" size={15} />
-          {dt("Записать встречу", "Record meeting")}
-        </button>
-      </RoyCard>
-      {overlay}
-    </>
+    <RoyCard className="px-3 py-2.5">
+      <SectionLabel className="!mb-1">{dt("Записать встречу", "Record a meeting")}</SectionLabel>
+      <p className="mx-1 mb-2 text-ink-soft" style={{ fontSize: 12, lineHeight: 1.4 }}>
+        {dt("Офлайн-встреча: положите телефон на стол, экран не гаснет", "In-person meeting: put the phone on the table, the screen stays on")}
+      </p>
+      <button
+        type="button"
+        onClick={start}
+        disabled={busy}
+        className="inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-full bg-primary px-4 font-semibold text-primary-foreground transition-opacity active:opacity-80 disabled:opacity-50"
+        style={{ fontSize: 13.5 }}
+      >
+        <RoyIcon name="mic" size={15} />
+        {busy ? dt("Идёт запись", "Recording") : dt("Записать встречу", "Record meeting")}
+      </button>
+    </RoyCard>
   );
 }

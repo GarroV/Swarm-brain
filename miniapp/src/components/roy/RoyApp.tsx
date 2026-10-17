@@ -6,6 +6,8 @@ import { cn } from "@/lib/utils";
 import { getDeepLinkMeetingId, getDeepLinkTaskId } from "@/lib/telegram";
 import { fetchAgentMeetings, fetchMeetings, logout } from "@/lib/api";
 import { purgeExpiredRecordings } from "@/lib/webRecorder";
+import { RecorderProvider } from "./record/RecorderProvider";
+import { RecordingPill } from "./record/RecordingPill";
 import { OPEN_MEETING_EVENT } from "@/lib/single-tab";
 import { queryToState, stateToPath } from "@/lib/royUrl";
 import {
@@ -370,6 +372,7 @@ export function RoyApp({ me }: { me: Me | null }) {
 
   return (
     <RoyNavContext.Provider value={nav}>
+      <RecorderProvider>
       <div className="roy-shell flex flex-col h-[100dvh] bg-background text-foreground">
         {/* Плашка «скоро обновление»: на десктопе — в шапке экрана (HeaderNotice), здесь только
             мобайл и десктопные экраны без такой шапки. См. шапку DeployNoticeBar.tsx. */}
@@ -506,6 +509,8 @@ export function RoyApp({ me }: { me: Me | null }) {
         /* На мобайле «?» была вторым FAB под «+» и спорила с главным действием экрана —
           фидбек переехал пунктом в «Ещё» (аудит мобилки 2026-08-22). */
       }
+      <RecordingPill />
+      </RecorderProvider>
     </RoyNavContext.Provider>
   );
 }

@@ -61,7 +61,7 @@ const newRid = () =>
 const INITIAL: RecorderSnapshot = {
   state: "idle", elapsedSec: 0, levels: [], segmentsUploaded: 0, segmentsPending: 0, segmentsFailed: 0,
   online: true, muted: false, wakeLock: false, interruptions: [], lastGapSec: null, error: null,
-  summaryStatus: null,
+  summaryStatus: null, meetingId: null,
 };
 
 type Listener = () => void;
@@ -127,6 +127,7 @@ export class WebRecorder {
       segmentsFailed: u?.failed ?? this.snap.segmentsFailed,
       interruptions: this.interruptions,
       wakeLock: !!this.wakeLock && !this.wakeLock.released,
+      meetingId: this.rec?.serverId ?? this.snap.meetingId,
       ...patch,
     };
     this.listeners.forEach((fn) => fn());

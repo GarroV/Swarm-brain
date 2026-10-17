@@ -58,6 +58,8 @@ export interface RecorderSnapshot {
   lastGapSec: number | null;
   error: RecorderErrorCode | null;
   summaryStatus: string | null;
+  /** Встреча на сервере (когда уже заведена) — по ней «Готово» ведёт на вычитку. */
+  meetingId: string | null;
 }
 
 /** Закрытый кусок: целый файл, который читается сам по себе. */
