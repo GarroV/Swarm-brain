@@ -162,20 +162,33 @@ Deno.test("состав спринта: задачи и имена невиди�
   }
 });
 
-Deno.test("итоги принятого спринта: разбивка не называет невидимый проект", async () => {
+Deno.test("итоги принятого спринта: ни имён, ни счёта задач невидимого проекта", async () => {
   const db = await connect();
   try {
     const s = await seed(db);
-    const row = await db.queryObject<{ stats: Record<string, unknown> }>`
-      select stats from sprint_cycles where id = ${s.acceptedId}`;
-    const cycle = { id: s.acceptedId, stats: row.rows[0].stats };
+    const row = await db.queryObject<{ id: string; status: string; stats: Record<string, unknown> }>`
+      select id, status, stats from sprint_cycles where id = ${s.acceptedId}`;
+    const cycle = row.rows[0];
+    type Stats = {
+      plan: number;
+      planDone: number;
+      planPercent: number;
+      byProject: Array<{ name: string }>;
+      byPerson: unknown[];
+    };
     const [forMember] = await redactCycleStats([cycle], WS, MEMBER);
-    const names = (forMember.stats as { byProject: Array<{ name: string }> }).byProject.map((p) => p.name);
-    assertEquals(names, ["Открытый"]);
-    // Остальные цифры итогов не трогаются: процент плана — общий для команды.
-    assertEquals((forMember.stats as { planPercent: number }).planPercent, 50);
+    const st = forMember.stats as Stats;
+    // Участник видит одну плановую задачу (выполненную) — итог считается по ней, а не по всему
+    // плану: иначе процент и счётчики выдавали бы, сколько в спринте скрытых задач.
+    assertEquals(st.byProject.map((p) => p.name), ["Открытый"]);
+    assertEquals([st.plan, st.planDone, st.planPercent], [1, 1, 100]);
+    // Кто видит всё — получает итоги как записаны при приёмке, без пересчёта.
     const [forAuthor] = await redactCycleStats([cycle], WS, AUTHOR);
-    assertEquals((forAuthor.stats as { byProject: unknown[] }).byProject.length, 2);
+    assertEquals(forAuthor.stats, cycle.stats);
+    // Спринт без скрытых строк не пересчитывается и у участника.
+    await db.queryArray`delete from sprint_items where cycle_id = ${s.acceptedId} and task_id = ${s.tClosed}`;
+    const [plain] = await redactCycleStats([cycle], WS, MEMBER);
+    assertEquals(plain.stats, cycle.stats);
   } finally {
     await db.end();
   }
@@ -226,8 +239,15 @@ Deno.test("журнал пространства: события задач не
       assert(!seen.has(hidden), `участник видит «${hidden}» в журнале`);
     }
 
+    // Процент приёмки в ленте — из итогов, пересчитанных по видимому составу (redactCycleStats):
+    // записанный процент считал и скрытые задачи.
+    const acceptedPercent = (r: typeof member) =>
+      r.ok ? r.events.find((e) => e.kind === "cycle_accepted")?.params?.percent : undefined;
+    assertEquals(acceptedPercent(member), 100);
+
     const author = await loadSpaceJournal(s.tabId, WS, AUTHOR, "all", noNames);
     assert(author.ok);
+    assertEquals(acceptedPercent(author), 50);
     const authorSeen = new Set(author.events.map((e) => e.task_title));
     assert(authorSeen.has("в закрытом"));
     assert(authorSeen.has("удалённая из закрытого"));

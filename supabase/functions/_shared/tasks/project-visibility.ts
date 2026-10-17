@@ -20,12 +20,6 @@ export type ProjectVisibility = {
   hidden: string[];
   /** Все проекты области (с архивными). Задача с проектом вне этого списка не показывается. */
   known: Set<string>;
-  /**
-   * Имена скрытых проектов. Нужны там, где проект записан ИМЕНЕМ, а не id (итоги принятого
-   * спринта `stats.byProject`, замороженная строка состава). Видимый проект с тем же именем
-   * тоже спрячется — лишнего не покажем (fail-closed).
-   */
-  hiddenNames: Set<string>;
 };
 
 /**
@@ -39,20 +33,17 @@ export async function loadProjectVisibility(
   viewerId: number | undefined,
 ): Promise<ProjectVisibility> {
   // Архивные строки тоже: архивный закрытый проект прячет свои задачи так же, как живой.
-  let q = supabase.from("projects").select("id, name, parent_id, created_by, is_private");
+  let q = supabase.from("projects").select("id, parent_id, created_by, is_private");
   if (groupId) q = q.eq("group_id", groupId);
   const { data, error } = await q.limit(PROJECT_ROWS_CAP + 1);
   if (error) throw new Error(`project visibility: ${error.message}`);
-  const rows = (data ?? []) as Array<ProjectAccessRow & { id: string; name: string }>;
+  const rows = (data ?? []) as Array<ProjectAccessRow & { id: string }>;
   if (rows.length > PROJECT_ROWS_CAP) {
     throw new Error(`project visibility: больше ${PROJECT_ROWS_CAP} проектов — видимость не установить`);
   }
-  const hidden = hiddenProjectIds(rows, viewerId);
-  const hiddenSet = new Set(hidden);
   return {
-    hidden,
+    hidden: hiddenProjectIds(rows, viewerId),
     known: new Set(rows.map((r) => r.id)),
-    hiddenNames: new Set(rows.filter((r) => hiddenSet.has(r.id)).map((r) => r.name)),
   };
 }
 

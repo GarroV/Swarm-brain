@@ -14,6 +14,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { actorIds, displayActor } from "./journal-actors.ts";
 import { loadProjectVisibility, type ProjectVisibility, projectVisible } from "./tasks/project-visibility.ts";
+import { redactCycleStats } from "./tasks/sprint-cycles.ts";
 
 const supabase = createClient(
   Deno.env.get("SUPABASE_URL")!,
@@ -213,10 +214,17 @@ export async function loadSpaceJournal(
     .select("id, name, status, started_at, accepted_at, accepted_by, stats")
     .eq("group_id", groupId).eq("tab_id", tabId);
   if (cycErr) console.error("[space-journal] cycles", cycErr.message);
+  // Процент приёмки — из итогов, видимых этому зрителю: записанные итоги считали весь план,
+  // включая задачи невидимых ему проектов (redactCycleStats пересчитывает по видимому составу).
+  const shownCycles = await redactCycleStats(
+    (cycles ?? []) as Array<{ id: string; status: string; stats: unknown }>,
+    groupId,
+    viewerId,
+  );
 
   const cycleNames = new Map<string, string>();
   for (
-    const c of (cycles ?? []) as {
+    const c of shownCycles as unknown as {
       id: string;
       name: string;
       started_at: string | null;

@@ -4,6 +4,8 @@
 // ⚠️ Таблица `sprints` — это вкладки доски проектов. Спринты живут в `sprint_cycles`.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { loadProjectVisibility } from "./project-visibility.ts";
+import { listComposition, type SprintItem } from "./sprint-items.ts";
+import { computeSprintStats, type SprintItemView } from "./sprint-stats.ts";
 
 const supabase = createClient(
   Deno.env.get("SUPABASE_URL")!,
@@ -233,28 +235,46 @@ export async function startCycle(
 }
 
 /**
- * Итоги принятого спринта для зрителя: из разбивки по проектам (`stats.byProject`) уходят
- * проекты, которых он не видит (решение владельца 16.10.2026). Итоги записаны один раз на всю
- * команду и держат проект ИМЕНЕМ — поэтому фильтр по именам скрытых проектов. Прочие цифры
- * (процент плана, счётчики) общие и не трогаются: в них нет ни названий, ни задач.
+ * Итоги принятого спринта для зрителя (решение владельца 16.10.2026: задачи закрытого проекта
+ * видит только тот, кто видит проект). Итоги записаны при приёмке один раз на всю команду — по
+ * полному плану, со счётчиками, процентом, разбивкой по людям, дням и проектам (именами). Если
+ * в спринте есть строки, которых зритель не видит, записанные итоги выдали бы скрытые задачи
+ * счётом и именем проекта, поэтому для него итоги пересчитываются по видимому ему составу
+ * (той же computeSprintStats, что у приёмки). Кто видит весь состав, получает записанные итоги
+ * как есть — у большинства спринтов ничего не меняется.
  */
-export async function redactCycleStats<T extends { stats: unknown }>(
+export async function redactCycleStats<T extends { id: string; status: string; stats: unknown }>(
   cycles: T[],
   groupId: string,
   viewerId: number | undefined,
 ): Promise<T[]> {
-  const withBreakdown = (c: T) =>
-    !!c.stats && typeof c.stats === "object" &&
-    Array.isArray((c.stats as { byProject?: unknown }).byProject);
-  if (!cycles.some(withBreakdown)) return cycles;
-  const { hiddenNames } = await loadProjectVisibility(groupId, viewerId);
-  if (hiddenNames.size === 0) return cycles;
-  return cycles.map((c) => {
-    if (!withBreakdown(c)) return c;
-    const stats = c.stats as { byProject: Array<{ name: string | null }> };
-    return {
-      ...c,
-      stats: { ...stats, byProject: stats.byProject.filter((p) => p.name === null || !hiddenNames.has(p.name)) },
-    };
-  });
+  const accepted = (c: T) => c.status === "accepted" && !!c.stats && typeof c.stats === "object";
+  if (!cycles.some(accepted)) return cycles;
+  const { hidden } = await loadProjectVisibility(groupId, viewerId);
+  if (hidden.length === 0) return cycles;
+  return await Promise.all(cycles.map(async (c) => {
+    if (!accepted(c)) return c;
+    const [full, mine] = await Promise.all([
+      listComposition(c.id, groupId, "everyone"),
+      listComposition(c.id, groupId, { viewerId }),
+    ]);
+    const size = (x: typeof full) => x.items.length + x.withdrawn.length;
+    if (size(full) === size(mine)) return c;
+    return { ...c, stats: computeSprintStats([...mine.items, ...mine.withdrawn].map(toStatsView)) };
+  }));
+}
+
+/** Строка состава → вход computeSprintStats (одна форма у приёмки и у пересчёта для зрителя). */
+export function toStatsView(it: SprintItem): SprintItemView {
+  return {
+    in_plan: it.in_plan,
+    status: it.status,
+    assignees: it.assignees,
+    project: it.project,
+    completed_at: it.completed_at,
+    check_status: it.check_status,
+    to_carry: it.to_carry,
+    removed_at: it.removed_at,
+    withdrawn_at: it.withdrawn_at,
+  };
 }
