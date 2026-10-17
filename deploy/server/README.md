@@ -8,11 +8,11 @@
 
 ## Что это
 
-Прод Swarm — self-hosted Supabase на VPS Contabo (`/srv/swarm/supabase`). Раскатке нужны четыре
-действия: выложить edge-функции, посмотреть, какие миграции применены, накатить миграцию, залить
-сборку рекордера в Storage. Шлюз —
+Прод Swarm — self-hosted Supabase на VPS Contabo (`/srv/swarm/supabase`). Раскатке нужны пять
+действий: выложить edge-функции, посмотреть, какие миграции применены, накатить миграцию, залить
+сборку рекордера в Storage, поставить или снять плашку и заморозку. Шлюз —
 это ssh-пользователь `swarm-deploy`, у ключа которого **нет оболочки**: что бы клиент ни передал,
-sshd запускает только `gate.sh`, а тот разрешает ровно четыре команды (всё остальное — отказ):
+sshd запускает только `gate.sh`, а тот разрешает ровно пять команд (всё остальное — отказ):
 
 | Команда (после `ssh swarm-deploy@host`) | stdin | Что делает |
 |---|---|---|
@@ -20,8 +20,13 @@ sshd запускает только `gate.sh`, а тот разрешает р�
 | `migrations-applied` | — | печатает применённые версии миграций, по одной в строке |
 | `migrate <версия> <имя>` | SQL файла миграции | накат одной транзакцией вместе с записью в `supabase_migrations.schema_migrations`; уже применённая — «пропускаю», код 0. Имя — `[a-z0-9_]` |
 | `recorder-upload <сборка>` | zip рекордера (≤ 100 МБ, начинается с `PK\x03\x04`) | кладёт в Storage `swarm_drive/recorder/SwarmRecorder-<сборка>.zip` через API-шлюз `127.0.0.1:8400` с service-role ключом из `/srv/swarm/supabase/.env` (ключ в аргументы и вывод не попадает), **без перезаписи**: объект уже есть и совпадает по sha256 — «уже загружен», код 0; отличается — отказ. Номер сборки — только цифры. Печатает `sha256`; после заливки сам перечитывает объект и сверяет сумму |
+| `maintenance announce <начало> <минут>` | необязательно: две строки своего текста — русский, английский (до 300 символов) | `public.maintenance_announce`: плашка, заморозка и уведомление в колокольчик одной транзакцией. Начало 0–1440, длительность 1–180 минут — только цифры |
+| `maintenance cancel` / `status` | — | `public.maintenance_cancel()` — снять заморозку и свою плашку; `status` — строки `maintenance`, `deploy_notice` и число встреч в обработке |
+| `maintenance notice <минут>` / `notice-off` / `notice-show` | для `notice` — те же две строки текста | плашка «скоро обновление» (строка `deploy_notice`, гаснет сама через 20 мин после срока), её снятие и показ |
 
-Клиентская сторона: `scripts/lib/swarm-server.sh` (`swarm_server <команда>`),
+Произвольного SQL шлюз не принимает: тексты запросов `maintenance` зашиты в `gate.sh`, аргументы — проверенные числа, текст уходит переменными psql. Telegram эта команда не трогает (только плашка в вебе и колокольчик). Решение — [docs/decisions/2026-10-16-maintenance-gate.md](../../docs/decisions/2026-10-16-maintenance-gate.md).
+
+Клиентская сторона: `scripts/lib/swarm-server.sh` (`swarm_server <команда>`), `scripts/maintenance.sh`, `scripts/deploy-notice.sh`, `notice.yml`,
 `scripts/deploy-window.sh go`, `scripts/migrate-server.sh`, `recorder-release.yml` (шаг заливки), composite-шаг
 `.github/actions/swarm-deploy-ssh` (ключ из секретов CI).
 

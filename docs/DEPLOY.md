@@ -14,7 +14,7 @@
 Contabo, self-hosted Supabase в `/srv/swarm/supabase` (issue #915; перестройка CI — #919).
 Облачных CLI (`supabase functions deploy`, `db push`, `link`) и Management API (`api.supabase.com`)
 в раскатке больше нет. Вместо них — **шлюз**: ssh-пользователь `swarm-deploy@95.111.249.216`, чей
-ключ умеет ровно четыре команды (`functions`, `migrations-applied`, `migrate`, `recorder-upload`). Как устроен и
+ключ умеет ровно пять команд (`functions`, `migrations-applied`, `migrate`, `recorder-upload`, `maintenance`). Как устроен и
 устанавливается шлюз — [deploy/server/README.md](../deploy/server/README.md); канон скрипта —
 `deploy/server/gate.sh`.
 
@@ -40,10 +40,10 @@ Contabo, self-hosted Supabase в `/srv/swarm/supabase` (issue #915; перест
 Нормальный путь отката — `git revert` и обычная раскатка. Миграции откатом не снимаются
 (см. ниже «Почему автоматика не накатывает миграции сама»).
 
-**Что ещё не переделано** (список — в issue #919): кнопки секретов и плашки/заморозки
-(`notice.yml`, `bot-webhook-secret.yml`, `scriba-agent-token.yml`, `files-signing-key.yml`,
+**Что ещё не переделано** (список — в issue #919): кнопки секретов
+(`bot-webhook-secret.yml`, `scriba-agent-token.yml`, `files-signing-key.yml`,
 `decimus-secrets.yml`, `seed-demo.yml`), `storage-migrate.yml`, а также
-`scripts/deploy-activity.sh`, `deploy-notice.sh`, `maintenance.sh`, `bot-webhook-secret.sh`,
+`scripts/deploy-activity.sh`, `bot-webhook-secret.sh`,
 `smoke.sh` по-прежнему адресованы облачному проекту. Ниже в этом файле всё, что говорит про
 `supabase functions deploy`, `db push`, `SUPABASE_ACCESS_TOKEN` и Management API, — история до
 13.10.2026, если не оговорено иначе.
@@ -150,9 +150,7 @@ make deploy            # сам проверит активность, раск�
 make notice-off        # снять объявление вручную, если раскатку отменили
 ```
 
-> **Не работает с 13.10.2026 (#978).** Прод переехал на свой сервер, а кнопка и скрипты `maintenance.sh` / `deploy-notice.sh` привязаны к отключённой облачной базе; шлюзу раскатки не хватает команды для плашки и заморозки. Кнопка теперь падает с понятной ошибкой вместо зелёного «ничего не сделала». Пока команды нет — на проде по ssh: `select public.maintenance_announce(<lead>, <минут>, '', '')` (снять — `select public.maintenance_cancel()`).
-
-**Без прав записи в базу — кнопка в Actions** «Плашка и заморозка (руками)» (`.github/workflows/notice.yml`). `make notice` пишет в базу личным токеном CLI, а у него права `database_write` нет, и расширять его не будем: токен нужен другим проектам (решение владельца 2026-09-25). Кнопка ходит в базу ключом из секретов репозитория, как накат миграций.
+**Без прав записи в базу — кнопка в Actions** «Плашка и заморозка (руками)» (`.github/workflows/notice.yml`). `make notice` пишет в базу личным токеном CLI, а у него права `database_write` нет, и расширять его не будем: токен нужен другим проектам (решение владельца 2026-09-25). С 16.10.2026 (#978) кнопка ходит на свой сервер ключом шлюза раскатки (`SWARM_DEPLOY_SSH_KEY`) в его команду `maintenance`: SQL зашит в `deploy/server/gate.sh`, числа проверяются там же (начало 0–1440 мин, длительность 1–180), текст — до 300 символов. Те же команды без CI: `make notice`, `make freeze`, `make freeze-status` (ключ — `~/Documents/workbench/private/swarm-deploy-key`). Решение — [decisions/2026-10-16-maintenance-gate.md](decisions/2026-10-16-maintenance-gate.md).
 
 ```bash
 gh workflow run notice.yml -f action=notice -f minutes=30 \

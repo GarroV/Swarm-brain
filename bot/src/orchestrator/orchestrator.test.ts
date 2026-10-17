@@ -176,6 +176,13 @@ const settle = async (): Promise<void> =>
     setTimeout(resolve, 0);
   });
 
+// Пропуск встречи от сервера (T165): без него контейнер не поднимается вовсе.
+const PASS = {
+  calendarKey: "evt-test:2026-09-28",
+  startsAt: "2026-09-28T10:00:00.000Z",
+  grantToken: "sgr_test-pass",
+} as const;
+
 describe("оркестратор", () => {
   let leaseDirectory: string;
   let engine: FakeEngine;
@@ -265,7 +272,7 @@ describe("оркестратор", () => {
 
   describe("startForMeeting", () => {
     it("поднимает контейнер с окружением встречи, меткой проекта, томом и поводком", async () => {
-      const id = await orchestrator.startForMeeting(MEET, "meet", 744);
+      const id = await orchestrator.startForMeeting(MEET, "meet", 744, PASS);
 
       expect(id).toBe("c1");
       const spec = engine.specs[0];
@@ -279,7 +286,7 @@ describe("оркестратор", () => {
         expect.arrayContaining([
           "SCRIBA_JOIN_URL=https://meet.google.com/abc-defg-hij?hl=en",
           "SCRIBA_ON_BEHALF_OF=744",
-          "SCRIBA_BOT_TOKEN=bot-token",
+          "SCRIBA_BOT_TOKEN=sgr_test-pass",
           "SCRIBA_RUN_ID=run-1",
           "SCRIBA_LEASE_DIR=/lease",
         ]),
@@ -295,6 +302,7 @@ describe("оркестратор", () => {
       await orchestrator.startForMeeting(MEET, "meet", 744, {
         id: "inv-1",
         joinUrl: MEET,
+        grantToken: "sgr_pass",
       });
 
       const spec = engine.specs[0];
@@ -304,8 +312,22 @@ describe("оркестратор", () => {
       expect(spec?.labels[LABEL.invite]).toBe("inv-1");
     });
 
-    it("без приглашения переменных и метки приглашения нет", async () => {
-      await orchestrator.startForMeeting(MEET, "meet", 744);
+    it("БЛОКИРУЮЩИЙ: нет пропуска от сервера — контейнер не поднимается, причина в журнале", async () => {
+      const { orchestrator: strict, lines } = withAlert();
+      try {
+        await expect(strict.startForMeeting(MEET, "meet", 744)).rejects.toThrow(/пропуск/);
+        await expect(
+          strict.startForMeeting(MEET, "meet", 744, { id: "inv-1", joinUrl: MEET }),
+        ).rejects.toThrow(/пропуск/);
+        expect(engine.specs).toEqual([]);
+        expect(lines.some((line) => line.includes("пропуск"))).toBe(true);
+      } finally {
+        strict.close();
+      }
+    });
+
+    it("календарный пропуск: переменных и метки приглашения нет", async () => {
+      await orchestrator.startForMeeting(MEET, "meet", 744, PASS);
 
       const spec = engine.specs[0];
       expect(spec?.env.some((line) => line.startsWith("SCRIBA_INVITE_"))).toBe(false);
@@ -317,6 +339,7 @@ describe("оркестратор", () => {
         calendarKey: "evt-1:2026-09-28",
         startsAt: "2026-09-28T10:00:00.000Z",
         title: "Качество агрегаторы",
+        grantToken: "sgr_pass",
       });
 
       const spec = engine.specs[0];
@@ -333,7 +356,7 @@ describe("оркестратор", () => {
     });
 
     it("ожидание выхода регистрируется ДО старта: авто-удалённый контейнер иначе потерял бы код", async () => {
-      await orchestrator.startForMeeting(MEET, "meet", 744);
+      await orchestrator.startForMeeting(MEET, "meet", 744, PASS);
 
       expect(engine.calls).toEqual(["create:c1", "wait:c1:next-exit", "start:c1"]);
     });
@@ -341,10 +364,10 @@ describe("оркестратор", () => {
     it("ручки смоука не перекрывают обязательные переменные", async () => {
       orchestrator = build({ SCRIBA_BOT_TOKEN: "stolen", SCRIBA_ALONE_MS: "5000" });
 
-      await orchestrator.startForMeeting(MEET, "meet", 744);
+      await orchestrator.startForMeeting(MEET, "meet", 744, PASS);
 
       const environment = engine.specs[0]?.env ?? [];
-      expect(environment).toContain("SCRIBA_BOT_TOKEN=bot-token");
+      expect(environment).toContain("SCRIBA_BOT_TOKEN=sgr_test-pass");
       expect(environment).not.toContain("SCRIBA_BOT_TOKEN=stolen");
       expect(environment).toContain("SCRIBA_ALONE_MS=5000");
     });
@@ -363,7 +386,7 @@ describe("оркестратор", () => {
     it("контейнер не стартовал — убран, а не брошен", async () => {
       engine.shouldFailStart = true;
 
-      await expect(orchestrator.startForMeeting(MEET, "meet", 744)).rejects.toThrow(
+      await expect(orchestrator.startForMeeting(MEET, "meet", 744, PASS)).rejects.toThrow(
         /не стартовал/u,
       );
       expect(engine.calls).toContain("remove:c1");
@@ -396,9 +419,9 @@ describe("оркестратор", () => {
         },
       });
 
-      await orchestrator.startForMeeting(MEET, "meet", 744);
-      await orchestrator.startForMeeting(MEET, "meet", 745);
-      await orchestrator.startForMeeting(MEET, "meet", 744);
+      await orchestrator.startForMeeting(MEET, "meet", 744, PASS);
+      await orchestrator.startForMeeting(MEET, "meet", 745, PASS);
+      await orchestrator.startForMeeting(MEET, "meet", 744, PASS);
 
       expect(engine.specs.map((spec) => spec.volume.name)).toEqual([
         "scriba-test-recordings-744",
@@ -410,10 +433,10 @@ describe("оркестратор", () => {
 
     it("потолок одновременных встреч: сверх него — громкий отказ, и контейнер не создаётся", async () => {
       orchestrator = build(undefined, { maxMeetings: 2 });
-      await orchestrator.startForMeeting(MEET, "meet", 744);
-      await orchestrator.startForMeeting(MEET, "meet", 745);
+      await orchestrator.startForMeeting(MEET, "meet", 744, PASS);
+      await orchestrator.startForMeeting(MEET, "meet", 745, PASS);
 
-      await expect(orchestrator.startForMeeting(MEET, "meet", 746)).rejects.toThrow(
+      await expect(orchestrator.startForMeeting(MEET, "meet", 746, PASS)).rejects.toThrow(
         /2 of 2 meeting slots/,
       );
       expect(engine.specs).toHaveLength(2);
@@ -423,9 +446,9 @@ describe("оркестратор", () => {
       orchestrator = build(undefined, { maxMeetings: 2 });
 
       const results = await Promise.allSettled([
-        orchestrator.startForMeeting(MEET, "meet", 744),
-        orchestrator.startForMeeting(MEET, "meet", 745),
-        orchestrator.startForMeeting(MEET, "meet", 746),
+        orchestrator.startForMeeting(MEET, "meet", 744, PASS),
+        orchestrator.startForMeeting(MEET, "meet", 745, PASS),
+        orchestrator.startForMeeting(MEET, "meet", 746, PASS),
       ]);
 
       expect(results.map((result) => result.status)).toEqual([
@@ -439,14 +462,16 @@ describe("оркестратор", () => {
     it("место освобождается, когда встреча кончилась или контейнер не стартовал", async () => {
       orchestrator = build(undefined, { maxMeetings: 1 });
       engine.shouldFailStart = true;
-      await expect(orchestrator.startForMeeting(MEET, "meet", 744)).rejects.toThrow(/не стартовал/);
+      await expect(orchestrator.startForMeeting(MEET, "meet", 744, PASS)).rejects.toThrow(
+        /не стартовал/,
+      );
       engine.shouldFailStart = false;
 
-      const id = await orchestrator.startForMeeting(MEET, "meet", 744);
+      const id = await orchestrator.startForMeeting(MEET, "meet", 744, PASS);
       engine.exit(id, 0);
       await orchestrator.whenExited(id);
 
-      await expect(orchestrator.startForMeeting(MEET, "meet", 745)).resolves.toBe("c3");
+      await expect(orchestrator.startForMeeting(MEET, "meet", 745, PASS)).resolves.toBe("c3");
     });
 
     it("подхваченные после перезапуска контейнеры занимают места под потолком", async () => {
@@ -456,19 +481,19 @@ describe("оркестратор", () => {
       orchestrator = build(undefined, { maxMeetings: 1 });
       await orchestrator.init();
 
-      await expect(orchestrator.startForMeeting(MEET, "meet", 745)).rejects.toThrow(/1 of 1/);
+      await expect(orchestrator.startForMeeting(MEET, "meet", 745, PASS)).rejects.toThrow(/1 of 1/);
     });
 
     it("контейнеру заданы потолки памяти, процессора и процессов", async () => {
       const limits = { memoryBytes: 512 * 1024 * 1024, nanoCpus: 1_500_000_000, pids: 300 };
       orchestrator = build(undefined, { limits });
-      await orchestrator.startForMeeting(MEET, "meet", 744);
+      await orchestrator.startForMeeting(MEET, "meet", 744, PASS);
 
       expect(engine.specs[0]?.limits).toEqual(limits);
     });
 
     it("по умолчанию потолки тоже есть — не «без ограничений»", async () => {
-      await orchestrator.startForMeeting(MEET, "meet", 744);
+      await orchestrator.startForMeeting(MEET, "meet", 744, PASS);
 
       const limits = engine.specs[0]?.limits;
       expect(limits?.memoryBytes).toBeGreaterThan(0);
@@ -477,7 +502,7 @@ describe("оркестратор", () => {
     });
 
     it("профиль seccomp едет в контейнер и разрешает песочнице Chromium её пространства имён", async () => {
-      await orchestrator.startForMeeting(MEET, "meet", 744);
+      await orchestrator.startForMeeting(MEET, "meet", 744, PASS);
 
       const profile = JSON.parse(engine.specs[0]?.seccompProfile ?? "{}") as {
         defaultAction?: string;
@@ -504,7 +529,7 @@ describe("оркестратор", () => {
         return Promise.resolve();
       });
       orchestrator = scene.orchestrator;
-      const id = await orchestrator.startForMeeting(MEET, "meet", 744);
+      const id = await orchestrator.startForMeeting(MEET, "meet", 744, PASS);
 
       engine.say(id, 'scriba-state {"audio":"silent","title":"Синк","platform":"kontur"}');
       engine.say(id, 'scriba-state {"audio":"back","title":"Синк","platform":"kontur"}');
@@ -520,14 +545,14 @@ describe("оркестратор", () => {
       orchestrator.close();
       const quiet = withAlert();
       orchestrator = quiet.orchestrator;
-      const first = await orchestrator.startForMeeting(MEET, "meet", 744);
+      const first = await orchestrator.startForMeeting(MEET, "meet", 744, PASS);
       engine.say(first, 'scriba-state {"audio":"silent"}');
       expect(quiet.lines.some((line) => line.includes("не настроено (канал FURCA)"))).toBe(true);
 
       orchestrator.close();
       const broken = withAlert(() => Promise.reject(new Error("канал FURCA ответил 503")));
       orchestrator = broken.orchestrator;
-      const second = await orchestrator.startForMeeting(MEET, "meet", 744);
+      const second = await orchestrator.startForMeeting(MEET, "meet", 744, PASS);
       engine.say(second, 'scriba-state {"audio":"silent"}');
       await settle();
       expect(broken.lines.some((line) => line.includes("НЕ ушло (канал FURCA ответил 503)"))).toBe(
@@ -538,7 +563,7 @@ describe("оркестратор", () => {
 
   describe("смерть контейнера", () => {
     it("штатный выход (0) — исход из журнала, нотисы нет", async () => {
-      const id = await orchestrator.startForMeeting(MEET, "meet", 744);
+      const id = await orchestrator.startForMeeting(MEET, "meet", 744, PASS);
       engine.say(id, 'scriba-state {"meetingId":"m-1"}');
       engine.say(id, 'scriba-state {"outcome":"recorded"}');
       engine.exit(id, 0);
@@ -549,7 +574,7 @@ describe("оркестратор", () => {
     });
 
     it("умер посреди встречи — container_died с meeting_id из журнала", async () => {
-      const id = await orchestrator.startForMeeting(MEET, "meet", 744);
+      const id = await orchestrator.startForMeeting(MEET, "meet", 744, PASS);
       engine.say(id, "[meet] клик: войти");
       engine.say(id, '[scriba] scriba-state {"meetingId":"m-9"}');
       engine.exit(id, 137);
@@ -598,7 +623,7 @@ describe("оркестратор", () => {
     });
 
     it("умер до claim — нотисе не к чему привязаться, но смерть зафиксирована", async () => {
-      const id = await orchestrator.startForMeeting(MEET, "meet", 744);
+      const id = await orchestrator.startForMeeting(MEET, "meet", 744, PASS);
       engine.exit(id, 1);
 
       expect(await orchestrator.whenExited(id)).toEqual({
@@ -610,7 +635,7 @@ describe("оркестратор", () => {
     });
 
     it("код выхода потерян — это смерть, а не штатный конец", async () => {
-      const id = await orchestrator.startForMeeting(MEET, "meet", 744);
+      const id = await orchestrator.startForMeeting(MEET, "meet", 744, PASS);
       engine.exit(id, null);
 
       const exit = await orchestrator.whenExited(id);
@@ -632,7 +657,7 @@ describe("оркестратор", () => {
           // журнал оркестратора в тестах не нужен
         },
       });
-      const id = await orchestrator.startForMeeting(MEET, "meet", 744);
+      const id = await orchestrator.startForMeeting(MEET, "meet", 744, PASS);
       engine.say(id, 'scriba-state {"meetingId":"m-1"}');
       engine.exit(id, 139);
 
@@ -643,7 +668,7 @@ describe("оркестратор", () => {
 
   describe("stop", () => {
     it("SIGTERM с запасом на выгрузку и ожидание выхода", async () => {
-      const id = await orchestrator.startForMeeting(MEET, "meet", 744);
+      const id = await orchestrator.startForMeeting(MEET, "meet", 744, PASS);
 
       await orchestrator.stop(id);
 
@@ -722,7 +747,7 @@ describe("оркестратор", () => {
 
     it("журнал не читается — контейнер всё равно под присмотром", async () => {
       engine.shouldFailLogs = true;
-      const id = await orchestrator.startForMeeting(MEET, "meet", 744);
+      const id = await orchestrator.startForMeeting(MEET, "meet", 744, PASS);
       await new Promise((resolve) => setTimeout(resolve, 5));
       engine.exit(id, 0);
 
@@ -732,7 +757,7 @@ describe("оркестратор", () => {
 
     it("ожидание выхода сорвалось — это смерть, а не тишина", async () => {
       engine.shouldFailWait = true;
-      const id = await orchestrator.startForMeeting(MEET, "meet", 744);
+      const id = await orchestrator.startForMeeting(MEET, "meet", 744, PASS);
 
       expect(await orchestrator.whenExited(id)).toMatchObject({ kind: "died", exitCode: null });
     });
@@ -784,7 +809,7 @@ describe("оркестратор", () => {
         }),
       });
 
-      await orchestrator.startForMeeting(MEET, "meet", 744);
+      await orchestrator.startForMeeting(MEET, "meet", 744, PASS);
 
       expect(spy).toHaveBeenCalled();
       spy.mockRestore();
@@ -793,7 +818,7 @@ describe("оркестратор", () => {
 
   describe("выход встречи наружу (T178)", () => {
     it("контейнер встаёт в свою сеть встречи и ходит только через прокси — браузер и node", async () => {
-      await orchestrator.startForMeeting(MEET, "meet", 744);
+      await orchestrator.startForMeeting(MEET, "meet", 744, PASS);
 
       const spec = engine.specs[0];
       expect(egress.calls).toEqual(["prepare:run-1"]);
@@ -811,7 +836,7 @@ describe("оркестратор", () => {
     it("ручки смоука не снимают прокси", async () => {
       orchestrator = build({ HTTPS_PROXY: "", SCRIBA_EGRESS_PROXY: "", NODE_USE_ENV_PROXY: "0" });
 
-      await orchestrator.startForMeeting(MEET, "meet", 744);
+      await orchestrator.startForMeeting(MEET, "meet", 744, PASS);
 
       expect(environmentOf(engine.specs[0])).toEqual(
         expect.arrayContaining([
@@ -827,26 +852,28 @@ describe("оркестратор", () => {
       orchestrator = build(undefined, { account, maxMeetings: 1 });
       egress.shouldFailPrepare = true;
 
-      await expect(orchestrator.startForMeeting(MEET, "meet", 744)).rejects.toThrow(/egress/u);
+      await expect(orchestrator.startForMeeting(MEET, "meet", 744, PASS)).rejects.toThrow(
+        /egress/u,
+      );
       expect(engine.specs).toEqual([]);
       expect(account.calls).toContain("release:run-1");
 
       egress.shouldFailPrepare = false;
-      await expect(orchestrator.startForMeeting(MEET, "meet", 744)).resolves.toBe("c1");
+      await expect(orchestrator.startForMeeting(MEET, "meet", 744, PASS)).resolves.toBe("c1");
     });
 
     it("контейнер не стартовал — сеть встречи убрана", async () => {
       engine.shouldFailStart = true;
 
-      await expect(orchestrator.startForMeeting(MEET, "meet", 744)).rejects.toThrow();
+      await expect(orchestrator.startForMeeting(MEET, "meet", 744, PASS)).rejects.toThrow();
       expect(egress.calls).toEqual(["prepare:run-1", "release:run-1"]);
     });
 
     it("встреча кончилась или контейнер умер — сеть встречи убрана", async () => {
-      const first = await orchestrator.startForMeeting(MEET, "meet", 744);
+      const first = await orchestrator.startForMeeting(MEET, "meet", 744, PASS);
       engine.exit(first, 0);
       await orchestrator.whenExited(first);
-      const second = await orchestrator.startForMeeting(MEET, "meet", 744);
+      const second = await orchestrator.startForMeeting(MEET, "meet", 744, PASS);
       engine.exit(second, 137);
       await orchestrator.whenExited(second);
 
@@ -855,7 +882,7 @@ describe("оркестратор", () => {
 
     it("сеть не убралась — это строка журнала, а не падение разбора выхода", async () => {
       egress.shouldFailRelease = true;
-      const id = await orchestrator.startForMeeting(MEET, "meet", 744);
+      const id = await orchestrator.startForMeeting(MEET, "meet", 744, PASS);
       engine.exit(id, 0);
 
       await expect(orchestrator.whenExited(id)).resolves.toMatchObject({ kind: "finished" });
@@ -887,7 +914,7 @@ describe("оркестратор", () => {
       const account = new FakeAccount();
       orchestrator = build(undefined, { account });
 
-      await orchestrator.startForMeeting(MEET, "meet", 744);
+      await orchestrator.startForMeeting(MEET, "meet", 744, PASS);
 
       const spec = engine.specs[0];
       expect(account.calls).toEqual(["prepare:run-1"]);
@@ -903,7 +930,7 @@ describe("оркестратор", () => {
       account.hasSignIn = false;
       orchestrator = build(undefined, { account });
 
-      await orchestrator.startForMeeting(MEET, "meet", 744);
+      await orchestrator.startForMeeting(MEET, "meet", 744, PASS);
 
       const spec = engine.specs[0];
       expect(spec?.accountState).toBeUndefined();
@@ -916,7 +943,7 @@ describe("оркестратор", () => {
       const account = new FakeAccount();
       orchestrator = build({ SCRIBA_GOOGLE_STATE: "/elsewhere.json" }, { account });
 
-      await orchestrator.startForMeeting(MEET, "meet", 744);
+      await orchestrator.startForMeeting(MEET, "meet", 744, PASS);
 
       expect(environmentOf(engine.specs[0])).toContain(
         `SCRIBA_GOOGLE_STATE=${ACCOUNT_STATE_TARGET}`,
@@ -929,18 +956,20 @@ describe("оркестратор", () => {
       account.shouldFail = true;
       orchestrator = build(undefined, { account, maxMeetings: 1 });
 
-      await expect(orchestrator.startForMeeting(MEET, "meet", 744)).rejects.toThrow(/sign-in/u);
+      await expect(orchestrator.startForMeeting(MEET, "meet", 744, PASS)).rejects.toThrow(
+        /sign-in/u,
+      );
       expect(engine.specs).toEqual([]);
 
       account.shouldFail = false;
-      await expect(orchestrator.startForMeeting(MEET, "meet", 744)).resolves.toBe("c1");
+      await expect(orchestrator.startForMeeting(MEET, "meet", 744, PASS)).resolves.toBe("c1");
     });
 
     it("контейнер закончил встречу — копия входа убрана", async () => {
       const account = new FakeAccount();
       orchestrator = build(undefined, { account });
 
-      const id = await orchestrator.startForMeeting(MEET, "meet", 744);
+      const id = await orchestrator.startForMeeting(MEET, "meet", 744, PASS);
       engine.exit(id, 0);
       await orchestrator.whenExited(id);
 
@@ -951,7 +980,7 @@ describe("оркестратор", () => {
       const account = new FakeAccount();
       orchestrator = build(undefined, { account });
 
-      const id = await orchestrator.startForMeeting(MEET, "meet", 744);
+      const id = await orchestrator.startForMeeting(MEET, "meet", 744, PASS);
       engine.exit(id, 137);
       await orchestrator.whenExited(id);
 
@@ -963,7 +992,7 @@ describe("оркестратор", () => {
       account.shouldFailRelease = true;
       orchestrator = build(undefined, { account });
 
-      const id = await orchestrator.startForMeeting(MEET, "meet", 744);
+      const id = await orchestrator.startForMeeting(MEET, "meet", 744, PASS);
       engine.exit(id, 0);
 
       expect(await orchestrator.whenExited(id)).toEqual({ kind: "finished", outcome: null });
@@ -974,7 +1003,7 @@ describe("оркестратор", () => {
       engine.shouldFailStart = true;
       orchestrator = build(undefined, { account });
 
-      await expect(orchestrator.startForMeeting(MEET, "meet", 744)).rejects.toThrow();
+      await expect(orchestrator.startForMeeting(MEET, "meet", 744, PASS)).rejects.toThrow();
 
       expect(account.calls).toEqual(["prepare:run-1", "release:run-1"]);
     });

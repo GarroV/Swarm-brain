@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Проверка команды recorder-upload шлюза раскатки (deploy/server/gate.sh, issue #919) без сервера:
+# Проверка команд recorder-upload и maintenance шлюза раскатки (deploy/server/gate.sh, issue #919) без сервера:
 # отказы до любого обращения к хранилищу и логика «не перезаписывать» на подставном curl.
 #   ./scripts/test-gate.sh           — прогнать проверки
 #   ./scripts/test-gate.sh porcha    — порча: ломаем шлюз и убеждаемся, что проверки краснеют
@@ -17,6 +17,9 @@ if [ "${1:-}" = "porcha" ]; then
     if GATE="$T/g.sh" "$0" >"$T/out" 2>&1; then echo "✘ порча «${name}»: проверки остались зелёными"; fail=1
     else echo "✔ порча «${name}»: проверки покраснели ($(grep -m1 '✘' "$T/out"))"; fi
   done <<'LIST'
+нет проверки начала~\[ "\$2" -ge "\$3" \] \&\& \[ "\$2" -le "\$4" \] || die~true
+нет проверки цифр в аргументе~\^\[0-9\]{1,4}\$~^.{1,12}$
+SQL не из переменных~select public.maintenance_announce(:lead, :dur, :'en', :'ru');~select public.maintenance_announce(${ARGV[2]}, ${ARGV[3]}, :'en', :'ru');
 нет проверки zip~= 504b0304 ] || die~= 504b0304 ] || true
 нет проверки цифр~\[0-9\]{1,9}~[0-9]{0,9}
 перезапись отличающегося~die "$NAME уже лежит~echo "$NAME уже лежит
@@ -43,6 +46,12 @@ if [ "$method" = POST ]; then echo "POST $name" >> "$STORE/calls"; cp "$data" "$
 if [ -f "$STORE/$name" ]; then cp "$STORE/$name" "$out"; printf 200; else : > "$out"; printf 404; fi
 STUB
 chmod +x "$T/bin/curl"
+# Подставной docker: пишет аргументы и stdin каждого вызова в $STORE/docker — по нему видно, что ушло в базу.
+cat > "$T/bin/docker" <<'STUB'
+#!/usr/bin/env bash
+{ echo "ARGS: $*"; cat; echo "---"; } >> "$STORE/docker"
+STUB
+chmod +x "$T/bin/docker"
 
 bad=0
 # run <stdin-файл> <команда...> → $RC, $OUT
@@ -54,7 +63,7 @@ run() {
 expect() { # expect <имя> <rc: 0|nz> <подстрока вывода>
   local ok=1
   if [ "$2" = 0 ]; then [ "$RC" = 0 ] || ok=0; else [ "$RC" != 0 ] || ok=0; fi
-  printf '%s' "$OUT" | grep -qF -- "$3" || ok=0
+  [ -z "$3" ] || printf '%s' "$OUT" | grep -qF -- "$3" || ok=0
   if [ "$ok" = 1 ]; then echo "✔ $1"; else echo "✘ $1 (код $RC, вывод: $OUT)"; bad=1; fi
 }
 
@@ -79,5 +88,39 @@ run "$T/good.zip" recorder-upload 7;              expect "повтор того 
 [ "$(grep -c POST "$T/store/calls")" = 1 ] && echo "✔ повтор не заливал второй раз" || { echo "✘ повтор залил снова"; bad=1; }
 run "$T/other.zip" recorder-upload 7;             expect "другое содержимое под тем же номером — отказ" nz "ОТЛИЧАЕТСЯ"
 cmp -s "$T/good.zip" "$T/store/SwarmRecorder-7.zip" && echo "✔ существующий объект не тронут" || { echo "✘ существующий объект перезаписан"; bad=1; }
+
+
+# ── maintenance: плашка и заморозка (#978) ────────────────────────────────────────────────────
+: > "$T/none"
+D="$T/store/docker"
+run "$T/none" maintenance;                              expect "maintenance без действия — отказ" nz "неизвестное действие"
+run "$T/none" maintenance drop;                         expect "неизвестное действие — отказ" nz "неизвестное действие"
+run "$T/none" maintenance announce "1;droptable" 5; expect "announce: SQL вместо числа — отказ" nz "целое число цифрами"
+run "$T/none" maintenance announce 1 "5;select1";      expect "announce: SQL в длительности — отказ" nz "целое число цифрами"
+run "$T/none" maintenance announce -1 5;                expect "announce: отрицательное начало — отказ" nz "целое число цифрами"
+run "$T/none" maintenance announce 1 0;                 expect "announce: нулевая длительность — отказ" nz "от 1 до 180"
+run "$T/none" maintenance announce 1 181;               expect "announce: длительность больше 180 — отказ" nz "от 1 до 180"
+run "$T/none" maintenance announce 1441 5;              expect "announce: начало дальше суток — отказ" nz "от 0 до 1440"
+run "$T/none" maintenance announce 1;                   expect "announce без длительности — отказ" nz "целое число цифрами"
+run "$T/none" maintenance announce 1 5 6;               expect "announce с лишним аргументом — отказ" nz "слишком много"
+run "$T/none" maintenance notice abc;                   expect "notice: не число — отказ" nz "целое число цифрами"
+run "$T/none" maintenance cancel x y z w;               expect "maintenance с пятью словами — отказ" nz "слишком много"
+[ ! -e "$D" ] && echo "✔ отказы не дошли до базы" || { echo "✘ отказ дошёл до базы: $(cat "$D")"; bad=1; }
+
+printf 'Работы с 23:00\nMaintenance at 23:00\n' > "$T/texts"
+run "$T/texts" maintenance announce 15 40;              expect "announce: принят" 0 ""
+grep -q -- '-v lead=15 -v dur=40' "$D" && echo "✔ в базу ушли проверенные числа" || { echo "✘ числа не дошли: $(cat "$D")"; bad=1; }
+grep -qF -- '-v ru=Работы с 23:00 -v en=Maintenance at 23:00' "$D" && echo "✔ тексты ушли переменными psql" || { echo "✘ тексты не дошли: $(cat "$D")"; bad=1; }
+grep -qF 'public.maintenance_announce(:lead, :dur' "$D" && echo "✔ SQL зашит в шлюз" || { echo "✘ SQL не тот"; bad=1; }
+printf "x'); drop table users; --\n" > "$T/evil"
+: > "$D"
+run "$T/evil" maintenance announce 0 1
+grep -q 'drop table users' "$D" && ! grep -v '^ARGS' "$D" | grep -q 'drop table users' \
+  && echo "✔ чужой текст не попал в тело SQL" || { echo "✘ чужой текст оказался в SQL: $(cat "$D")"; bad=1; }
+: > "$D"
+run "$T/none" maintenance cancel;                       expect "cancel: принят" 0 ""
+grep -qF 'maintenance_cancel()' "$D" && echo "✔ cancel зовёт maintenance_cancel" || { echo "✘ cancel не дошёл"; bad=1; }
+run "$T/none" maintenance status;                       expect "status: принят" 0 ""
+grep -qF "key = 'maintenance'" "$D" && echo "✔ status читает строку заморозки" || { echo "✘ status не дошёл"; bad=1; }
 
 exit $bad
