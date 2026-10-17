@@ -51,13 +51,24 @@ async function postJson(url: string, body: unknown): Promise<{ status: number; d
   return { status: res.status, data: await res.json().catch(() => ({})) as Record<string, unknown> };
 }
 
-/** Один проход: вызов → окно устройства → приём. Успех — null, иначе что показать. */
-async function enroll(token: string): Promise<EnrollFailure | null> {
+type Prepared = { options: CreationOptions; at: number };
+/** Вызов регистрации живёт 2 минуты на сервере; заготовку старше этого запрашиваем заново. */
+const PREPARED_FRESH_MS = 90 * 1000;
+
+/** Запросить вызов заранее: Safari открывает окно ключа только сразу по нажатию, без сети между ними. */
+async function prepare(token: string): Promise<Prepared | EnrollFailure> {
   const opts = await postJson("/api/auth/passkey/enroll-options", { token });
   if (opts.status !== 200 || !opts.data.options) return enrollFailure("options", opts.status);
+  return { options: opts.data.options as CreationOptions, at: Date.now() };
+}
+
+/** Один проход: (вызов, если заготовки нет) → окно устройства → приём. Успех — null, иначе что показать. */
+async function enroll(token: string, ready: Prepared | null): Promise<EnrollFailure | null> {
+  const prepared = ready && Date.now() - ready.at < PREPARED_FRESH_MS ? ready : await prepare(token);
+  if (typeof prepared === "string") return prepared;
   let credential: unknown;
   try {
-    credential = await startRegistration({ optionsJSON: opts.data.options as CreationOptions });
+    credential = await startRegistration({ optionsJSON: prepared.options });
   } catch (e: unknown) {
     return enrollFailure("device", 0, (e as { name?: string }).name);
   }
@@ -73,6 +84,18 @@ export default function AddDevicePage() {
   const dt = useDt();
   const [stage, setStage] = useState<Stage>("loading");
   const token = useRef<string | null>(null);
+  const prepared = useRef<Prepared | null>(null);
+
+  /** Заготовить вызов; ссылка уже недействительна — сказать сразу, не дожидаясь нажатия. */
+  async function warmUp(): Promise<void> {
+    if (!token.current) return;
+    const r = await prepare(token.current).catch(() => "failed" as const);
+    if (typeof r !== "string") prepared.current = r;
+    else if (r === "invalid") {
+      storage()?.removeItem(PENDING_KEY);
+      setStage("invalid");
+    }
+  }
 
   useEffect(() => {
     const store = storage();
@@ -91,7 +114,10 @@ export default function AddDevicePage() {
       .then((me) => {
         if (!me.second_step?.applies) setStage("not_applicable");
         else if (!browserSupportsWebAuthn()) setStage("unsupported");
-        else setStage("ready");
+        else {
+          setStage("ready");
+          void warmUp();
+        }
       })
       .catch((err: unknown) => {
         setStage((err as { status?: number }).status === 401 ? "login" : "failed");
@@ -101,9 +127,13 @@ export default function AddDevicePage() {
   async function save(): Promise<void> {
     if (!token.current) return;
     setStage("busy");
-    const failure = await enroll(token.current).catch(() => "failed" as const);
+    const ready = prepared.current;
+    prepared.current = null;
+    const failure = await enroll(token.current, ready).catch(() => "failed" as const);
     if (failure === null || failure === "invalid" || failure === "exists") storage()?.removeItem(PENDING_KEY);
     setStage(failure ?? "done");
+    // Окно закрыли — ссылка цела: заготовим вызов к следующему нажатию.
+    if (failure === "cancelled" || failure === "failed") void warmUp();
   }
 
   const text: Record<Stage, string> = {
