@@ -133,6 +133,7 @@ export function toolGetSprintJournal(args: Args): Promise<string> {
     const result = await loadSpaceJournal(
       space.id,
       m.groupId,
+      m.userId,
       days,
       (ids) => resolvePersonNames(supabase, ids),
     );
@@ -249,7 +250,7 @@ export function toolGetSprint(args: Args): Promise<string> {
   return withMember(args, async (m) => {
     const cycle = await loadCycle(m.groupId, args.sprint_id);
     if (typeof cycle === "string") return cycle;
-    const { items, withdrawn } = await listComposition(cycle.id, m.groupId);
+    const { items, withdrawn } = await listComposition(cycle.id, m.groupId, { viewerId: m.userId });
     const space = (await spaces(m.groupId)).find((s) => s.id === cycle.tab_id);
     // Снятые из идущего спринта (#576) в составе не показываются, но в итогах остаются:
     // плановые из них — невыполненной частью плана.
@@ -408,7 +409,7 @@ export function toolAddSprintTasks(args: Args): Promise<string> {
     if (ids.length > MAX_TASKS_PER_CALL) {
       return `Не больше ${MAX_TASKS_PER_CALL} задач за вызов.`;
     }
-    const added = await addItems(cycle.id, ids, m.groupId, String(m.userId));
+    const added = await addItems(cycle.id, ids, m.groupId, String(m.userId), m.userId);
     const skipped = ids.length - added;
     const kind = cycle.status === "draft" ? "в план" : "сверх плана (спринт уже идёт)";
     const why = skipped ? ` Пропущено ${skipped}: уже в составе или не из твоего воркспейса.` : "";
@@ -422,7 +423,7 @@ export function toolRemoveSprintTask(args: Args): Promise<string> {
     if (typeof cycle === "string") return cycle;
     const taskId = str(args.task_id);
     if (!taskId) return "Нужен task_id.";
-    const ok = await removeItem(cycle.id, taskId, m.groupId, String(m.userId));
+    const ok = await removeItem(cycle.id, taskId, m.groupId, String(m.userId), m.userId);
     return ok ? "✅ Задача убрана из состава." : "Задачи нет в составе, или спринт уже принят.";
   });
 }
@@ -462,6 +463,7 @@ export function toolMarkSprintTask(args: Args): Promise<string> {
         m.groupId,
         patch,
         String(m.userId),
+        m.userId,
       );
       // Короткое подтверждение: состав целиком — get_sprint.
       return item ? "✅ Отметка сохранена." : "Задачи нет в составе.";

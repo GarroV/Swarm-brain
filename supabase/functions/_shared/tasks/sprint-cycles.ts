@@ -3,6 +3,8 @@
 //
 // ⚠️ Таблица `sprints` — это вкладки доски проектов. Спринты живут в `sprint_cycles`.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { listComposition, type SprintItem } from "./sprint-items.ts";
+import { computeSprintStats, type SprintItemView } from "./sprint-stats.ts";
 
 const supabase = createClient(
   Deno.env.get("SUPABASE_URL")!,
@@ -229,4 +231,45 @@ export async function startCycle(
     .select().maybeSingle();
   if (error?.code === "23505") throw new LiveCycleExistsError(ACTIVE_EXISTS);
   return (data as SprintCycle | null) ?? null;
+}
+
+/**
+ * Итоги принятого спринта для зрителя (решение владельца 16.10.2026: задачи закрытого проекта
+ * видит только тот, кто видит проект). Итоги записаны при приёмке один раз на всю команду — по
+ * полному плану, со счётчиками, процентом, разбивкой по людям, дням и проектам (именами). Если
+ * в спринте есть строки, которых зритель не видит, записанные итоги выдали бы скрытые задачи
+ * счётом и именем проекта, поэтому для него итоги пересчитываются по видимому ему составу
+ * (той же computeSprintStats, что у приёмки). Кто видит весь состав, получает записанные итоги
+ * как есть — у большинства спринтов ничего не меняется.
+ */
+export async function redactCycleStats<T extends { id: string; status: string; stats: unknown }>(
+  cycles: T[],
+  groupId: string,
+  viewerId: number | undefined,
+): Promise<T[]> {
+  // Решение — по самому составу, а не по списку скрытых проектов: строка с проектом вне области
+  // (чужой воркспейс, сбитая ссылка) прячется, даже когда «скрытых» у зрителя нет. Сбой чтения
+  // состава — ошибка, а не записанные итоги (fail-closed).
+  const accepted = (c: T) => c.status === "accepted" && !!c.stats && typeof c.stats === "object";
+  return await Promise.all(cycles.map(async (c) => {
+    if (!accepted(c)) return c;
+    const mine = await listComposition(c.id, groupId, { viewerId });
+    if (mine.hiddenCount === 0) return c;
+    return { ...c, stats: computeSprintStats([...mine.items, ...mine.withdrawn].map(toStatsView)) };
+  }));
+}
+
+/** Строка состава → вход computeSprintStats (одна форма у приёмки и у пересчёта для зрителя). */
+export function toStatsView(it: SprintItem): SprintItemView {
+  return {
+    in_plan: it.in_plan,
+    status: it.status,
+    assignees: it.assignees,
+    project: it.project,
+    completed_at: it.completed_at,
+    check_status: it.check_status,
+    to_carry: it.to_carry,
+    removed_at: it.removed_at,
+    withdrawn_at: it.withdrawn_at,
+  };
 }

@@ -1,7 +1,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import type { Project, ProjectInput } from "./types.ts";
 import { type ProjectRef, validateParent } from "./project-nesting.ts";
-import { canViewProject, parentLookup, type ProjectAccessRow } from "./project-access.ts";
+import { canViewProject, parentLookup, privacyChangeVerdict, type ProjectAccessRow } from "./project-access.ts";
 import { projectEventRow, type ProjectHistoryRow, projectHistoryRowsFor } from "./project-history.ts";
 import { onlyLive } from "./live.ts";
 import {
@@ -136,15 +136,19 @@ export async function createProject(
   groupId: string,
   createdBy: number | null,
 ): Promise<Project> {
+  // Закрытая строка без автора видна всем (created_by = null не прячем, см. canViewProject) —
+  // такое «закрытие» ничего бы не закрыло. Закрытый проект создаётся только от имени человека.
+  if (input.is_private === true && createdBy === null) {
+    throw new Error("Закрытый проект создаётся только с автором");
+  }
   const parentId = input.parent_id ?? null;
   if (parentId !== null) {
-    const { data: refs } = await supabase
-      .from("projects").select("id, parent_id, sprint_group").eq(
-        "group_id",
-        groupId,
-      )
-      .is("archived_at", null);
-    const all = (refs ?? []) as Array<ProjectRef & { sprint_group: boolean }>;
+    const all = await liveProjectRows(groupId);
+    // Под группу, которую создающий не видит, подпроект не создаётся: отказ — как «нет такой».
+    const parent = all.find((r) => r.id === parentId);
+    if (parent && !canViewProject(parent, createdBy ?? undefined, parentLookup(all))) {
+      throw new Error(PARENT_NOT_FOUND);
+    }
     const v = validateParent({ projectId: null, parentId, all });
     if (!v.ok) throw new Error(v.error);
     // Под группу спринта ничего не вешаем — ни новую группу, ни обычный подпроект: ребёнок
@@ -185,25 +189,41 @@ export async function createProject(
 // Обновляет только проект своего воркспейса. Возвращает обновлённый или null (не найден/чужой/
 // не свой подпроект — намеренно не различаем 404 от «нет доступа», как getEntrySecure для
 // entries: не палим существование чужой строки).
+const PARENT_NOT_FOUND = "parent_id не найден в этом воркспейсе";
+
+type LiveProjectRow = ProjectRef & ProjectAccessRow & { id: string; sprint_group: boolean };
+
+// Живые строки воркспейса для проверок вложенности и видимости. Сбой чтения — ошибка: пустой
+// список дал бы «родителя нет» и снял бы проверку видимости.
+async function liveProjectRows(groupId: string): Promise<LiveProjectRow[]> {
+  const { data, error } = await supabase
+    .from("projects").select("id, parent_id, sprint_group, created_by, is_private")
+    .eq("group_id", groupId).is("archived_at", null).limit(2000);
+  if (error) throw new Error(`projects read: ${error.message}`);
+  return (data ?? []) as LiveProjectRow[];
+}
+
+/** Отказ в праве, которое у зрителя есть на просмотр, но нет на это действие → 403. */
+export class ProjectAccessError extends Error {}
+
 export async function updateProject(
   id: string,
   fields: Partial<ProjectInput>,
   groupId: string,
-  opts: { viewerId?: number } = {},
+  opts: { viewerId?: number; isAdmin?: boolean } = {},
 ): Promise<Project | null> {
   // Признак группы спринта только снимается («В проекты»): поставить его существующему проекту
   // значило бы молча убрать проект с доски у всей команды.
   if (fields.sprint_group === true) {
     throw new Error("sprint_group можно только снять");
   }
+  const all = await liveProjectRows(groupId);
+  // Видимость и право правки у проекта совпадают (см. canMutateProject) — по тем же строкам.
+  // Проверка ДО сверки родителя: иначе отказ validateParent своим текстом выдал бы, что чужой
+  // закрытый проект существует, а должен звучать как «не найден».
+  const self = all.find((r) => r.id === id);
+  if (!self || !canViewProject(self, opts.viewerId, parentLookup(all))) return null;
   if ("parent_id" in fields) {
-    const { data: refs } = await supabase
-      .from("projects").select("id, parent_id, sprint_group").eq(
-        "group_id",
-        groupId,
-      )
-      .is("archived_at", null);
-    const all = (refs ?? []) as Array<ProjectRef & { sprint_group: boolean }>;
     const v = validateParent({
       projectId: id,
       parentId: fields.parent_id ?? null,
@@ -213,14 +233,47 @@ export async function updateProject(
     const groupErr = parentForSprintGroup(fields.parent_id ?? null, all);
     if (groupErr) throw new Error(groupErr);
   }
-  if (!(await canMutateProject(id, groupId, opts))) return null;
   // Снимок ДО правки — иначе журналу не с чем сравнивать, и в него пошли бы строки
   // «было X, стало X» на каждое поле формы, в которых настоящий переезд не найти.
   const before = await getProject(id, groupId);
-  const { data } = await supabase.from("projects")
-    .update(fields)
-    .eq("id", id).eq("group_id", groupId)
-    .select().maybeSingle();
+  if (!before) return null;
+  // Закрыть/открыть проект — только автор и админ, и неважно, тумблером или переносом под
+  // закрытую группу / из неё (решение владельца 16.10.2026).
+  const verdict = privacyChangeVerdict({
+    row: before,
+    rows: all,
+    next: {
+      parent_id: "parent_id" in fields ? fields.parent_id ?? null : before.parent_id,
+      is_private: "is_private" in fields ? fields.is_private === true : before.is_private,
+    },
+    viewerId: opts.viewerId,
+    isAdmin: opts.isAdmin === true,
+  });
+  if (verdict === "parent-hidden") throw new Error(PARENT_NOT_FOUND);
+  if (verdict === "forbidden") {
+    throw new ProjectAccessError(
+      "Only the project author or an admin can change its visibility",
+    );
+  }
+  // Право решено по снимку — и UPDATE применяется, только пока строка в том же состоянии
+  // (условие в WHERE): если между проверкой и записью проект закрыли или передали, правка
+  // не проскочит по устаревшему разрешению.
+  // Закрывают строку без автора (это может только админ) — закрывший становится её автором:
+  // иначе строка с `created_by = null` осталась бы видна всем и тумблер соврал бы.
+  if (fields.is_private === true && before.created_by === null && opts.viewerId === undefined) {
+    throw new ProjectAccessError("Only the project author or an admin can change its visibility");
+  }
+  const patch: Partial<ProjectInput> & { created_by?: number } =
+    fields.is_private === true && before.created_by === null && opts.viewerId !== undefined
+      ? { ...fields, created_by: opts.viewerId }
+      : fields;
+  let upd = supabase.from("projects")
+    .update(patch)
+    .eq("id", id).eq("group_id", groupId).is("archived_at", null)
+    .eq("is_private", before.is_private);
+  upd = before.parent_id === null ? upd.is("parent_id", null) : upd.eq("parent_id", before.parent_id);
+  upd = before.created_by === null ? upd.is("created_by", null) : upd.eq("created_by", before.created_by);
+  const { data } = await upd.select().maybeSingle();
   const updated = (data as Project | null) ?? null;
   if (!updated) return null;
 
@@ -276,6 +329,18 @@ export async function updateProject(
 //
 // Тянем весь список воркспейса, а не одну строку: приватность подпроекта зависит от его группы,
 // и без неё предикат честно схлопнется в fail-closed (проектов единицы-десятки, см. listProjects).
+/** Проект, если он виден зрителю (тот же canViewProject, что у списка); иначе null. */
+export async function getVisibleProject(
+  id: string,
+  groupId: string,
+  viewerId: number | undefined,
+): Promise<Project | null> {
+  const all = await liveProjectRows(groupId);
+  const self = all.find((r) => r.id === id);
+  if (!self || !canViewProject(self, viewerId, parentLookup(all))) return null;
+  return await getProject(id, groupId);
+}
+
 export async function canMutateProject(
   id: string,
   groupId: string,
@@ -308,20 +373,39 @@ export async function deleteProject(
   groupId: string,
   opts: { viewerId?: number } = {},
 ): Promise<boolean> {
-  if (!(await canMutateProject(id, groupId, opts))) return false;
+  const all = await liveProjectRows(groupId);
+  const index = parentLookup(all);
+  const self = all.find((r) => r.id === id);
+  if (!self || !canViewProject(self, opts.viewerId, index)) return false;
+  // Поддерево уходит целиком, поэтому архивировать можно, только видя его целиком: чужой
+  // закрытый подпроект внутри открытой группы иначе исчез бы вместе с ней, хотя архивирующему
+  // он не виден и не принадлежит.
+  const kidRows = all.filter((r) => r.parent_id === id);
+  if (kidRows.some((k) => !canViewProject(k, opts.viewerId, index))) {
+    throw new ProjectAccessError("The project has subprojects you cannot see; only their authors can archive it");
+  }
   const archive = {
     archived_at: new Date().toISOString(),
     archived_by: opts.viewerId ?? null,
   };
-  const { data } = await supabase.from("projects")
+  // Право решено по снимку — UPDATE применяется, только пока строка в том же состоянии.
+  let upd = supabase.from("projects")
     .update(archive)
     .eq("id", id).eq("group_id", groupId).is("archived_at", null)
-    .select("id").maybeSingle();
+    .eq("is_private", self.is_private);
+  upd = self.parent_id === null ? upd.is("parent_id", null) : upd.eq("parent_id", self.parent_id);
+  upd = self.created_by === null ? upd.is("created_by", null) : upd.eq("created_by", self.created_by);
+  const { data } = await upd.select("id").maybeSingle();
   if (!data) return false;
-  const { data: kids } = await supabase.from("projects")
-    .update(archive)
-    .eq("group_id", groupId).eq("parent_id", id).is("archived_at", null)
-    .select("id");
+  // Только проверенные подпроекты, а не «все с этим родителем»: заведённый между проверкой и
+  // записью в архив не попадёт.
+  const { data: kids } = kidRows.length
+    ? await supabase.from("projects")
+      .update(archive)
+      .eq("group_id", groupId).eq("parent_id", id).is("archived_at", null)
+      .in("id", kidRows.map((k) => k.id))
+      .select("id")
+    : { data: [] };
 
   const kidIds = ((kids ?? []) as Array<{ id: string }>).map((k) => k.id);
   await writeHistory([
@@ -391,17 +475,19 @@ export async function dissolveSprintGroup(
         .select("task_id, old_value, new_value, created_at")
         .eq("field", "project").eq("new_value", id).in("task_id", ids)
       : Promise.resolve({ data: [], error: null }),
-    supabase.from("projects").select("id")
-      .eq("group_id", groupId).is("archived_at", null).neq("id", id),
+    liveProjectRows(groupId),
   ]);
   if (movesRes.error) throw new Error(movesRes.error.message);
-  if (liveRes.error) throw new Error(liveRes.error.message);
+  // Вернуть задачу можно только в проект, который распускающий видит: иначе он положил бы её
+  // в чужой закрытый проект (та же проверка, что у привязки задачи к проекту).
+  const liveIndex = parentLookup(liveRes);
+  const visibleLive = liveRes.filter((p) => p.id !== id && canViewProject(p, opts.viewerId, liveIndex));
   const targets = dissolveTargets({
     groupId: id,
     fallback: plan.moveTasksTo,
     tasks: rows,
     moves: (movesRes.data ?? []) as ProjectMove[],
-    liveProjectIds: new Set(((liveRes.data ?? []) as Array<{ id: string }>).map((p) => p.id)),
+    liveProjectIds: new Set(visibleLive.map((p) => p.id)),
   });
   for (const taskId of ids) {
     // Не `??`: null — законный ответ «вернуть без проекта», а не «ответа нет».

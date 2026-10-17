@@ -115,6 +115,7 @@ async function journal(tabId: string, days = "7") {
     req,
     `/spaces/${tabId}/journal`,
     WS,
+    undefined,
     "https://web.test",
     () => Promise.resolve(new Map()),
   );

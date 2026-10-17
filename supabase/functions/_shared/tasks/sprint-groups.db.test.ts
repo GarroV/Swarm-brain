@@ -233,3 +233,26 @@ Deno.test("распустить: задача возвращается, отку
     await db.end();
   }
 });
+
+Deno.test("распустить: задача не возвращается в проект, которого распускающий не видит", async () => {
+  const db = await connect();
+  try {
+    await seed(db);
+    const OWNER = 555102;
+    const parent = await createProject({ name: "Направление" }, WS, ACTOR);
+    // Закрытый проект другого человека: задача пришла оттуда, но вернуть её туда ACTOR не вправе.
+    const hidden = await createProject({ name: "Чужой закрытый" }, WS, OWNER);
+    await db.queryArray`update projects set is_private = true where id = ${hidden.id}`;
+    const group = await createProject({ name: "Связка", parent_id: parent.id, sprint_group: true }, WS, ACTOR);
+    const fromHidden = await addTask(db, "из закрытого", hidden.id);
+    await updateTask(fromHidden, { project_id: group.id }, { actorTelegramId: OWNER });
+
+    assertEquals(await dissolveSprintGroup(group.id, WS, { viewerId: ACTOR }), { moved: 1 });
+
+    const row = await db.queryObject<{ project_id: string | null }>`
+      select project_id from tasks where id = ${fromHidden}`;
+    assertEquals(row.rows[0].project_id, parent.id);
+  } finally {
+    await db.end();
+  }
+});
