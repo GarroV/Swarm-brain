@@ -92,3 +92,12 @@ if v_next_id is null then|if true then|supabase/functions/_shared/tasks/sprint-a
 # Ключи доступа (#955): уборка снимает ключ без входа 30 дней по last_used_at, у неиспользованного —
 # по created_at. Порча считает только от создания — недавно использованный старый ключ уехал бы зря.
 where coalesce(last_used_at, created_at) < now() - c_idle;|where created_at < now() - c_idle;|supabase/functions/_shared/passkeys/passkeys.db.test.ts|supabase/migrations/20261014130000_passkeys.sql
+# «Добавить устройство» (решение 17.10.2026): ссылка одноразовая, только своя, живая, лимит выдачи, новая гасит прежнюю, замок.
+and used_at is null and expires_at > now()|and expires_at > now()|supabase/functions/_shared/passkeys/device-links.db.test.ts|supabase/migrations/20261017120000_passkey_device_links.sql
+where token_hash = p_token_hash and telegram_id = p_telegram_id|where token_hash = p_token_hash|supabase/functions/_shared/passkeys/device-links.db.test.ts|supabase/migrations/20261017120000_passkey_device_links.sql
+and now() < expires_at|and true|supabase/functions/_shared/passkeys/device-links.db.test.ts|supabase/migrations/20261017120000_passkey_device_links.sql
+and challenge is not null and challenge_expires_at > now()|and challenge is not null|supabase/functions/_shared/passkeys/device-links.db.test.ts|supabase/migrations/20261017120000_passkey_device_links.sql
+if v_recent >= p_max_per_window then|if false then|supabase/functions/_shared/passkeys/device-links.db.test.ts|supabase/migrations/20261017120000_passkey_device_links.sql
+  where telegram_id = p_telegram_id and used_at is null;|  where false;|supabase/functions/_shared/passkeys/device-links.db.test.ts|supabase/migrations/20261017120000_passkey_device_links.sql
+  if not found then|  if false then|supabase/functions/_shared/passkeys/device-links.db.test.ts|supabase/migrations/20261017120000_passkey_device_links.sql
+revoke all on function public.passkey_device_link_consume(bigint, text) from public, anon, authenticated;|grant execute on function public.passkey_device_link_consume(bigint, text) to anon;|supabase/functions/_shared/passkeys/device-links.db.test.ts|supabase/migrations/20261017120000_passkey_device_links.sql

@@ -102,3 +102,39 @@ Deno.test("чужой origin — 403, неизвестная операция �
   assertEquals((await call(d, { op: "start", telegram_id: "1001", origin: ORIGIN })).status, 400);
   assertEquals((await call(d, { op: "start" }, { method: "GET" })).status, 405);
 });
+
+Deno.test("«Добавить устройство» через HTTP: ключ телефона по ссылке; кривой токен и повтор — отказ", async () => {
+  const { issueDeviceLink } = await import("../_shared/passkeys/device-link.ts");
+  const d = deps();
+  const mac = await SoftAuthenticator.create();
+  const s1 = await call(d, { op: "start", telegram_id: 1001, origin: ORIGIN });
+  const reg = await mac.register({ challenge: s1.body.options.challenge, origin: ORIGIN, rpID: "swarm-team.app" });
+  await call(d, { op: "finish", telegram_id: 1001, origin: ORIGIN, credential: reg });
+  const link = await issueDeviceLink(d, { telegramId: 1001, secondStepDone: true });
+  if (!link.ok) throw new Error("ссылка не выдана");
+
+  const bad = await call(d, { op: "enroll_start", telegram_id: 1001, origin: ORIGIN, token: "x".repeat(43) });
+  assertEquals([bad.status, bad.body], [410, { ok: false, reason: "invalid" }]);
+
+  const e1 = await call(d, { op: "enroll_start", telegram_id: 1001, origin: ORIGIN, token: link.token });
+  assertEquals(e1.status, 200);
+  const phone = await SoftAuthenticator.create();
+  const cred = await phone.register({ challenge: e1.body.options.challenge, origin: ORIGIN, rpID: "swarm-team.app" });
+  const f1 = await call(d, {
+    op: "enroll_finish",
+    telegram_id: 1001,
+    origin: ORIGIN,
+    token: link.token,
+    name: "Safari · iPhone",
+    credential: cred,
+  });
+  assertEquals([f1.status, f1.body], [200, { ok: true }]);
+  const again = await call(d, {
+    op: "enroll_finish",
+    telegram_id: 1001,
+    origin: ORIGIN,
+    token: link.token,
+    credential: cred,
+  });
+  assertEquals([again.status, again.body], [401, { ok: false, reason: "failed" }]);
+});

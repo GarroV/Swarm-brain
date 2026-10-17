@@ -1,7 +1,7 @@
 // Общее для Pages Functions второго шага входа (ключ доступа, #955): кто звонит и как говорить с
 // edge-функцией auth-passkey. Сессию человека проверяем ЗДЕСЬ (кука + живой GET /me), называем его
 // telegram_id функции и подписываем вызов HMAC на WEB_JWT_SECRET — как у auth-resolve.
-import { authTimeForRefresh, isRenewableSession, type SessionClaims, verifyJWT } from "./jwt";
+import { authTimeForRefresh, isRenewableSession, SESSION_TTL_SEC, type SessionClaims, signJWT, verifyJWT } from "./jwt";
 import { functionsBase, swarmApiUrl } from "./api-url";
 import { hmacSign, readCookie } from "./oauth-state";
 
@@ -62,3 +62,21 @@ export async function callPasskey(
 
 /** Кука сессии с отметкой «второй шаг пройден»: момент входа остаётся прежним. */
 export { authTimeForRefresh };
+
+/**
+ * Шаг пройден: ответ `body` с переизданной кукой roj_session того же человека — момент входа прежний
+ * («выйти везде» работает как раньше), метка `sf` стоит.
+ */
+export async function stepPassedResponse(session: PasskeySession, env: PasskeyEnv, body: unknown): Promise<Response> {
+  const jwt = await signJWT(
+    {
+      telegram_id: session.claims.telegram_id,
+      auth_time: authTimeForRefresh(session.claims),
+      second_step: true,
+    },
+    env.WEB_JWT_SECRET!,
+  );
+  const res = json(body, 200);
+  res.headers.append("Set-Cookie", `roj_session=${jwt}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=${SESSION_TTL_SEC}`);
+  return res;
+}

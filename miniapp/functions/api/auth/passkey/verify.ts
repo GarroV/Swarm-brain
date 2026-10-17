@@ -1,11 +1,10 @@
-import { SESSION_TTL_SEC, signJWT } from "../../../_lib/jwt";
 import {
-  authTimeForRefresh,
   callPasskey,
   isSameOrigin,
   jsonResponse,
   type PasskeyEnv,
   requireSession,
+  stepPassedResponse,
 } from "../../../_lib/passkey-call";
 
 // Cloudflare Pages Function: POST /api/auth/passkey/verify  { name?, credential }
@@ -32,15 +31,5 @@ export async function onRequestPost(ctx: Ctx): Promise<Response> {
   });
   if (r.body.ok !== true) return jsonResponse({ ok: false, reason: r.body.reason ?? "failed" }, r.status);
 
-  const jwt = await signJWT(
-    {
-      telegram_id: session.claims.telegram_id,
-      auth_time: authTimeForRefresh(session.claims),
-      second_step: true,
-    },
-    env.WEB_JWT_SECRET!,
-  );
-  const res = jsonResponse({ ok: true, mode: r.body.mode }, 200);
-  res.headers.append("Set-Cookie", `roj_session=${jwt}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=${SESSION_TTL_SEC}`);
-  return res;
+  return await stepPassedResponse(session, env, { ok: true, mode: r.body.mode });
 }

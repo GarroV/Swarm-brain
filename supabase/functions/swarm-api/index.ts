@@ -136,6 +136,8 @@ import {
   oneOnOnePartner,
 } from "../_shared/meeting-access.ts";
 import { handleAdminRoutes } from "./admin.ts";
+import { handleSelfPasskeyRoutes } from "./passkeys-self.ts";
+import { supabaseStore } from "../_shared/passkeys/store.ts";
 import { apiErr, corsHeaders, json, parseListLimit, routePathOf } from "./http.ts";
 import { errorDetail, INTERNAL_ERROR_MESSAGE, serverError, withErrorBoundary } from "./client-error.ts";
 import { handleMeetingInviteRoutes } from "./meeting-invites.ts";
@@ -744,6 +746,14 @@ async function routeRequest(req: Request): Promise<Response> {
     groupId,
   );
   if (adminResp) return adminResp;
+
+  // Свои ключи входа и ссылка «Добавить устройство» (решение 17.10.2026) — passkeys-self.ts.
+  const selfPasskeysResp = await handleSelfPasskeyRoutes(supabaseStore(supabase), req, routePath, {
+    telegramId: telegram_id,
+    secondStep,
+    origin,
+  });
+  if (selfPasskeysResp) return selfPasskeysResp;
 
   // GET /me
   if (req.method === "GET" && routePath === "/me") {
