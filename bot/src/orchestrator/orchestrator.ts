@@ -308,7 +308,8 @@ export class Orchestrator {
     target: MeetingTarget,
     onBehalfOf: number,
     runId: string,
-    basis: MeetingBasis | null,
+    basis: MeetingBasis,
+    grantToken: string,
     account: string | null,
     network: MeetingNetwork,
   ): string[] {
@@ -318,8 +319,8 @@ export class Orchestrator {
       [MEETING_ENV.onBehalfOf]: String(onBehalfOf),
       [MEETING_ENV.swarmUrl]: this.options.swarmUrl,
       // Пропуск встречи вместо общего токена агента (T165): контейнер действует только в
-      // границах своей встречи. Общий токен — лишь если сервер пропуска не выдал.
-      [MEETING_ENV.token]: basis?.grantToken ?? this.options.token,
+      // границах своей встречи. Без пропуска контейнер не поднимается (startForMeeting).
+      [MEETING_ENV.token]: grantToken,
       [MEETING_ENV.runId]: runId,
       [MEETING_ENV.version]: String(this.options.version),
       [MEETING_ENV.leaseDir]: LEASE_PATH,
@@ -335,7 +336,8 @@ export class Orchestrator {
     target: MeetingTarget,
     onBehalfOf: number,
     runId: string,
-    basis: MeetingBasis | null,
+    basis: MeetingBasis,
+    grantToken: string,
     account: string | null,
     network: MeetingNetwork,
   ): ContainerSpec {
@@ -343,7 +345,7 @@ export class Orchestrator {
       name: `${this.options.project}-meeting-${runId}`,
       image: this.options.image,
       command: CONTAINER_COMMAND,
-      env: this.environment(target, onBehalfOf, runId, basis, account, network),
+      env: this.environment(target, onBehalfOf, runId, basis, grantToken, account, network),
       labels: {
         [LABEL.project]: this.options.project,
         [LABEL.run]: runId,
@@ -566,6 +568,15 @@ export class Orchestrator {
     const known = parsePlatform(platform);
     const target: MeetingTarget = { joinUrl: joinUrlFor(known, joinUrl), platform: known };
     const person = validOnBehalfOf(onBehalfOf);
+    // Без пропуска встречи от сервера контейнер не поднимается: раньше вместо него в контейнер
+    // уходил общий токен агента — с правами шире одной встречи.
+    const grantToken = basis?.grantToken;
+    if (basis === null || grantToken === undefined || grantToken === "") {
+      const reason =
+        "сервер не выдал пропуск встречи — контейнер не запускаю (общий токен в контейнер не передаётся)";
+      this.log(`встреча за ${String(person)} не начата: ${reason}`);
+      throw new Error(reason);
+    }
     const runId = (this.options.newRunId ?? randomUUID)();
 
     this.reserveSlot();
@@ -578,10 +589,10 @@ export class Orchestrator {
         const network = await this.options.egress.prepare(runId);
         try {
           return await this.launch(
-            this.spec(target, person, runId, basis, account, network),
+            this.spec(target, person, runId, basis, grantToken, account, network),
             runId,
             person,
-            basis?.grantToken ?? this.options.token,
+            grantToken,
           );
         } catch (error) {
           await this.releaseEgress(runId);

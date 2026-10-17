@@ -10,6 +10,10 @@
 #   ./scripts/maintenance.sh unfreeze         — снять немедленно (или отменить плановую)
 #   ./scripts/maintenance.sh status           — что сейчас
 #
+# С 16.10.2026 (#978) скрипт говорит с прод-базой через команду `maintenance` шлюза раскатки
+# (deploy/server/gate.sh): SQL зашит на сервере, сюда уходят только проверенные числа и текст.
+# Канон решения: docs/decisions/2026-10-16-maintenance-gate.md.
+#
 # ⚠️ Это ПРАВКА ПРОД-ДАННЫХ и остановка работы команды — по правилу раскатки только по явному
 # «да» владельца (docs/decisions/2026-08-24-deploy-window.md).
 #
@@ -18,30 +22,17 @@
 # защита от неё — срок годности в самих данных, а не в чьей-то памяти.
 set -euo pipefail
 
-PROJECT_REF=vbqglndbxkpmreccpqmr
-KEY=maintenance
 MAX_MIN=180
 REPO_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 cd "$REPO_ROOT"
+# shellcheck source=lib/swarm-server.sh
+. "$REPO_ROOT/scripts/lib/swarm-server.sh"
 
 red()   { printf '\033[31m%s\033[0m\n' "$*"; }
 green() { printf '\033[32m%s\033[0m\n' "$*"; }
 
-if [ ! -s supabase/.temp/pooler-url ]; then
-  red "Этот worktree не привязан к проду."
-  echo "  Один раз здесь:  supabase link --project-ref $PROJECT_REF" >&2
-  exit 2
-fi
-
-q() {
-  local out
-  if ! out=$(supabase db query --linked "$1" 2>&1); then
-    red "Запрос к проду не прошёл:"
-    echo "$out" | sed 's/^/    /' >&2
-    return 1
-  fi
-  echo "$out"
-}
+# Текст — в одну строку каждый (шлюз читает ровно две строки: русский, английский).
+one_line() { printf '%s' "${1:-}" | tr '\r\n' '  '; }
 
 case "${1:-status}" in
   freeze)
@@ -55,23 +46,15 @@ case "${1:-status}" in
       red "Начало: через 0..1440 минут, а не «${LEAD}»."
       exit 2
     fi
-    # Всё — одной SQL-функцией (миграция 20260928200000, issue #609): плашка-предупреждение до
-    # начала, заморозка с начала, уведомление в колокольчик всем рабочим воркспейсам. Одна
-    # транзакция: заморозки без предупреждения или предупреждения без заморозки не бывает.
-    # Повтор — та же заморозка: уведомления обновляются на месте, дублей нет.
-    # Свой текст — только как SQL-строка с удвоенными кавычками (не длиннее 300 — режет функция).
-    sql_text() { local q="'" t="${1:0:300}"; printf '%s%s%s' "$q" "${t//$q/$q$q}" "$q"; }
-    OUT=$(q "select public.maintenance_announce($LEAD, $MIN, $(sql_text "${MSG_EN:-}"), $(sql_text "${MSG_RU:-}")) as res;") || {
-      red "Если выше «function public.maintenance_announce does not exist» — миграция 20260928200000 не накатана."
+    # Всё — одной SQL-функцией public.maintenance_announce (миграция 20260928200000, issue #609):
+    # плашка-предупреждение до начала, заморозка с начала, уведомление в колокольчик всем рабочим
+    # воркспейсам, одна транзакция. Повтор — та же заморозка: уведомления обновляются на месте.
+    # Свой текст — не длиннее 300 символов (режет шлюз и функция).
+    printf '%s\n%s\n' "$(one_line "${MSG_RU:-}")" "$(one_line "${MSG_EN:-}")" \
+      | swarm_server maintenance announce "$LEAD" "$MIN" || {
+      red "Заморозка не объявлена (см. вывод шлюза выше)."
       exit 1
     }
-    echo "$OUT" | python3 -c "
-import json, re, sys
-m = re.search(r'\{.*\}', sys.stdin.read(), re.S)
-res = (json.loads(m.group(0)).get('rows') or [{}])[0].get('res', {}) if m else {}
-res = json.loads(res) if isinstance(res, str) else (res or {})
-print(f\"Начало {res.get('starts_at')}, конец {res.get('until')}, уведомлено людей: {res.get('notified')}\")
-"
     if [ "$LEAD" -gt 0 ]; then
       green "Объявлено: плашка сейчас, заморозка через $LEAD мин на $MIN мин. Снимется сама по сроку."
     else
@@ -81,43 +64,14 @@ print(f\"Начало {res.get('starts_at')}, конец {res.get('until')}, у�
     ;;
 
   unfreeze)
-    q "select public.maintenance_cancel();" >/dev/null || {
-      red "Если выше «function public.maintenance_cancel does not exist» — миграция 20260928200000 не накатана."
-      exit 1
-    }
+    swarm_server maintenance cancel </dev/null || { red "Заморозка не снята (см. вывод шлюза выше)."; exit 1; }
     green "Заморозка снята (плановая — отменена). Уведомления в колокольчике помечены «отменено»."
     ;;
 
   status)
-    OUT=$(q "select value from app_settings where key = '$KEY';")
-    echo "$OUT" | python3 -c "
-import json, re, sys
-from datetime import datetime, timezone
-m = re.search(r'\{.*\}', sys.stdin.read(), re.S)
-rows = json.loads(m.group(0)).get('rows') if m else None
-if not rows:
-    print('Заморозки нет.')
-else:
-    v = rows[0]['value']
-    until, starts = v.get('until'), v.get('starts_at')
-    now = datetime.now(timezone.utc)
-    left = (datetime.fromisoformat(until) - now).total_seconds()
-    if left <= 0:
-        print(f'Срок истёк ({until}) — режим уже не действует, запись снять можно.')
-    elif starts and datetime.fromisoformat(starts) > now:
-        print(f'Запланировано: заморозка с {starts} до {until}, сейчас висит плашка-предупреждение.')
-    else:
-        print(f'Заморожено до {until}')
-"
-    # Во время заморозки обработка встреч стоит (решение 01.10.2026): видно, сколько записей
-    # принято и ждёт разморозки — после неё их подхватит первый тик meeting-process.
-    WAIT=$(q "select count(*) as n from meetings where summary_status = 'processing';")
-    echo "$WAIT" | python3 -c "
-import json, re, sys
-m = re.search(r'\{.*\}', sys.stdin.read(), re.S)
-rows = json.loads(m.group(0)).get('rows') if m else None
-print(f'Записей в обработке или в ожидании: {rows[0][\"n\"] if rows else \"?\"}')
-"
+    # Во время заморозки обработка встреч стоит (решение 01.10.2026): meetings_processing — сколько
+    # записей принято и ждёт разморозки, их подхватит первый тик meeting-process.
+    swarm_server maintenance status </dev/null
     ;;
 
   *) red "Использование: ./scripts/maintenance.sh [freeze [минут]|unfreeze|status]"; exit 2 ;;

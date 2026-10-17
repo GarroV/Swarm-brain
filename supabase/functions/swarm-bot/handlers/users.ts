@@ -1,3 +1,4 @@
+import { loadProfileTasks } from "./profile-tasks.ts";
 import { ADMIN_USER_ID, isAdminUser, supabase } from "../lib/supabase.ts";
 import { buildKeyboard, editInlineMessage, sendInlineMessage, sendMessage } from "../lib/telegram.ts";
 import { notifyMessage } from "../lib/notify.ts";
@@ -6,13 +7,10 @@ import type { TgCallbackQuery } from "../lib/types.ts";
 import { sendTaskCard } from "../tasks/index.ts";
 import { generateNameAliases } from "../lib/name-aliases.ts";
 import { assignUserToWorkspace } from "../lib/workspace.ts";
-import { onlyLive } from "../../_shared/tasks/live.ts";
 import { externalFetch, VIA_TELEGRAM } from "../../_shared/external-fetch.ts";
 import { isSuperadmin, type MemberRow } from "../../_shared/users/admin-scope.ts";
 import { canActOnUser, canAddUsers, isEditableProfileField, type UserAction, type UsersActor } from "./users-scope.ts";
 import { escapeHtml } from "../../_shared/telegram-html.ts";
-import { keepVisibleTasks } from "../../_shared/tasks/project-visibility.ts";
-import type { Task as SharedTask } from "../../_shared/tasks/types.ts";
 
 const TELEGRAM_BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN")!;
 
@@ -272,47 +270,32 @@ export async function showProfile(chatId: number, targetId: number, messageId?: 
     : await sendInlineMessage(chatId, lines, keyboard);
 }
 
-// Задачи человека — только из пространства смотрящего и не из проектов, которых смотрящий не
-// видит (решение владельца 16.10.2026). До этого выборка шла по всем пространствам сразу.
+// Задачи проектов, которых смотрящий не видит, не показываются (решение владельца 16.10.2026).
 export async function handleProfileTasks(
   chatId: number,
   targetId: number,
   groupId: string,
   viewerId: number,
 ): Promise<void> {
-  const { data: profile } = await supabase
-    .from("user_profiles").select("first_name, last_name").eq("telegram_id", targetId).maybeSingle();
-  const { data: user } = await supabase
-    .from("allowed_users").select("username").eq("telegram_id", targetId).maybeSingle();
-
-  const fullName = [profile?.first_name, profile?.last_name].filter(Boolean).join(" ");
-  const searchName = fullName || user?.username || String(targetId);
-
-  const { data: allTasks, error } = await onlyLive(
-    supabase
-      .from("tasks")
-      .select("*"),
-  )
-    .eq("group_id", groupId)
-    .not("status", "in", '("done","cancelled")')
-    .order("due_date", { ascending: true });
-
-  if (error) {
-    await sendMessage(chatId, `Ошибка: ${error.message}`);
+  let loaded;
+  try {
+    loaded = await loadProfileTasks(targetId, groupId, viewerId);
+  } catch (e) {
+    console.error("[users] profile tasks:", e instanceof Error ? e.message : e);
+    await sendMessage(chatId, "Не удалось загрузить задачи. Попробуй ещё раз.");
     return;
   }
-
-  const nameLower = searchName.toLowerCase();
-  const tasks = (await keepVisibleTasks((allTasks ?? []) as SharedTask[], groupId, viewerId))
-    .filter((t) => t.assignees?.some((a: string) => a.toLowerCase().includes(nameLower)))
-    .slice(0, 15);
-
+  if (!loaded) {
+    await sendMessage(chatId, NO_RIGHTS);
+    return;
+  }
+  const { name, tasks } = loaded;
   if (!tasks.length) {
-    await sendMessage(chatId, `У <b>${escapeHtml(searchName)}</b> нет активных задач.`);
+    await sendMessage(chatId, `У <b>${escapeHtml(name)}</b> нет активных задач.`);
     return;
   }
 
-  await sendMessage(chatId, `<b>Задачи · ${escapeHtml(searchName)}:</b> ${tasks.length} шт.`);
+  await sendMessage(chatId, `<b>Задачи · ${escapeHtml(name)}:</b> ${tasks.length} шт.`);
   for (const task of tasks) {
     await sendTaskCard(chatId, task);
   }
@@ -500,7 +483,7 @@ export async function handleUserCallbacks(
   if (data.startsWith("ptasks_")) {
     const targetId = Number(data.replace("ptasks_", ""));
     if (!actor || !(await allowUserAction(chatId, actor, targetId, "view"))) return true;
-    await handleProfileTasks(chatId, targetId, actor.groupId, actor.telegramId);
+    await handleProfileTasks(chatId, targetId, groupId, userId);
     return true;
   }
   if (data.startsWith("pu_")) {

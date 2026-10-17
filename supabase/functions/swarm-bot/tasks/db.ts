@@ -35,7 +35,8 @@ export function dbListTasks(opts: {
   status?: string;
   period?: string;
   limit?: number;
-  groupId?: string;
+  // Обязателен: выборка без пространства отдала бы задачи всех пространств.
+  groupId: string;
   /** Кто смотрит: задачи невидимых ему проектов не показываются (без зрителя — скрыты все закрытые). */
   viewerId?: number;
 }): Promise<Task[]> {
