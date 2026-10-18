@@ -1,5 +1,6 @@
+import { loadProjectVisibility } from "../../_shared/tasks/project-visibility.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { createTask, deleteTask, getTask, listTasksWithTotal, updateTask } from "../../_shared/tasks/db.ts";
+import { createTask, deleteTask, getVisibleTask, listTasksWithTotal, updateTask } from "../../_shared/tasks/db.ts";
 import { projectLabel, truncationNote, visibleProjectNameById } from "./task-list.ts";
 
 import {
@@ -175,8 +176,8 @@ async function matchProject(
 // ── Подзадачи (#478, #485) ────────────────────────────────────────────────────
 // Родителя проверяем тем же гардом, что любое чтение задачи: задачу чужого воркспейса нельзя ни
 // увидеть, ни подвесить под неё свою — отказ неотличим от «не найдена».
-async function loadParent(parentId: string, groupId: string): Promise<Task | string> {
-  const parent = await getTask(parentId);
+async function loadParent(parentId: string, groupId: string, viewerId: number): Promise<Task | string> {
+  const parent = await getVisibleTask(parentId, viewerId);
   const denied = taskAccessError(parentId, parent, groupId);
   return denied ?? parent!;
 }
@@ -280,7 +281,7 @@ export async function toolAddTask(args: {
   // Подзадача: живёт в проекте родителя и наследует его срок — как в вебе (TaskSubtasks.tsx).
   let parent: Task | null = null;
   if (args.parent_task_id) {
-    const loaded = await loadParent(args.parent_task_id, groupId);
+    const loaded = await loadParent(args.parent_task_id, groupId, args.requesting_user_id);
     if (typeof loaded === "string") return loaded;
     const err = subtaskLinkError(loaded, null, { groupId, childHasKids: false });
     if (err) return err;
@@ -390,7 +391,7 @@ export async function toolUpdateTask(args: {
   hidden_from_hub?: boolean;
   requesting_user_id: number;
 }): Promise<string> {
-  const task = await getTask(args.id);
+  const task = await getVisibleTask(args.id, args.requesting_user_id);
   const groupId = await resolveGroupId(args.requesting_user_id);
   if (!groupId) return `Задача ${args.id} не найдена.`;
   // Воркспейс — общим гардом (issue #45). Отказ неотличим от «не найдена».
@@ -497,7 +498,7 @@ export async function toolUpdateTask(args: {
     if (!args.parent_task_id) {
       fields.parent_id = null;
     } else {
-      const loaded = await loadParent(args.parent_task_id, groupId);
+      const loaded = await loadParent(args.parent_task_id, groupId, args.requesting_user_id);
       if (typeof loaded === "string") return loaded;
       const effProject = "project_id" in fields ? (fields.project_id as string | null) : task.project_id;
       const err = subtaskLinkError(loaded, { ...task, project_id: effProject }, {
@@ -519,7 +520,7 @@ export async function toolUpdateTask(args: {
 }
 
 export async function toolDeleteTask(args: { id: string; requesting_user_id: number }): Promise<string> {
-  const task = await getTask(args.id);
+  const task = await getVisibleTask(args.id, args.requesting_user_id);
   const groupId = await resolveGroupId(args.requesting_user_id);
   if (!groupId) return `Задача ${args.id} не найдена.`;
   const denied = taskAccessError(args.id, task, groupId);
@@ -585,6 +586,7 @@ export async function toolGetTasks(args: {
     projectId: projectMatch?.id,
     noProject: args.no_project === true,
     limit: GET_TASKS_LIMIT,
+    viewerId: args.requesting_user_id,
   }, groupId);
 
   if (!tasks.length) return "Задач не найдено.";
@@ -624,7 +626,7 @@ export async function commentTaskGuard(
   taskId: string,
   requestingUserId: number,
 ): Promise<{ ok: true; task: Task } | { ok: false; msg: string }> {
-  const task = await getTask(taskId);
+  const task = await getVisibleTask(taskId, requestingUserId);
   const groupId = await resolveGroupId(requestingUserId);
   if (!groupId) return { ok: false, msg: `Задача ${taskId} не найдена.` };
   // Доступ — воркспейс задачи. Отказ сведён к одному «не найдена» (issue #45): перебором id
@@ -768,15 +770,19 @@ export async function toolGetRecentComments(
   // Доступ считаем тем же каноническим правилом, что и поштучное чтение (воркспейс задачи).
   // archive-ok: журнал изменений: у архивной задачи тоже есть история, и «кто её убрал» — ровно то, что в нём ищут
   const { data: taskRows } = await supabase
-    .from("tasks").select("id, title, group_id")
+    .from("tasks").select("id, title, group_id, project_id")
     .in("id", [...new Set(raw.map((r) => r.task_id))]);
+  // Задачи невидимых зрителю проектов в ленту не попадают (решение владельца 16.10.2026).
+  const projects = await loadProjectVisibility(groupId, args.requesting_user_id);
+  const hiddenProjects = new Set(projects.hidden);
   const titleById = new Map<string, string>();
   for (
     const t of (taskRows ?? []) as Array<
-      { id: string; title: string; group_id: string | null }
+      { id: string; title: string; group_id: string | null; project_id: string | null }
     >
   ) {
     if (!canAccessTask(t, groupId)) continue;
+    if (t.project_id && (hiddenProjects.has(t.project_id) || !projects.known.has(t.project_id))) continue;
     titleById.set(t.id, t.title);
   }
 

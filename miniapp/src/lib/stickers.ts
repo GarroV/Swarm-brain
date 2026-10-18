@@ -54,11 +54,12 @@ export function orderStickers(list: readonly BoardSticker[], telegramId: number 
   );
 }
 
-/** Адрес для href: только http(s) и путь внутри приложения. Всё остальное (`javascript:`, `//host`) — null. */
+/** Адрес для href: только http(s) и путь внутри приложения. Всё остальное (`javascript:`, `//host`, обратный слеш) — null. */
 export function safeStickerHref(link: string | null | undefined): string | null {
   if (!link) return null;
   const v = link.trim();
-  if (/\s/.test(v) || v.startsWith("//")) return null;
+  // Обратный слеш браузер нормализует в прямой: `/\\host` — это `//host`, чужой сайт.
+  if (/\s/.test(v) || v.startsWith("//") || v.includes("\\")) return null;
   if (/^https?:\/\/\S+$/i.test(v)) return v;
   return v.startsWith("/") ? v : null;
 }

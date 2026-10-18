@@ -35,7 +35,7 @@ export type FinishResult =
 const NAME_MAX = 64;
 const enc = new TextEncoder();
 
-function fromBase64Url(text: string): Uint8Array<ArrayBuffer> {
+export function fromBase64Url(text: string): Uint8Array<ArrayBuffer> {
   const norm = text.replace(/-/g, "+").replace(/_/g, "/");
   const bin = atob(norm + "=".repeat((4 - (norm.length % 4)) % 4));
   const out = new Uint8Array(bin.length);
@@ -43,7 +43,7 @@ function fromBase64Url(text: string): Uint8Array<ArrayBuffer> {
   return out;
 }
 
-function toBase64Url(bytes: Uint8Array): string {
+export function toBase64Url(bytes: Uint8Array): string {
   let bin = "";
   for (const b of bytes) bin += String.fromCharCode(b);
   return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");

@@ -8,6 +8,12 @@ import { historyRowsFor, isJournaled, type TaskSnapshot } from "./history.ts";
 import { duplicateRecurClose, recurCloseNote } from "./recur-close.ts";
 import { ASSIGNEE_SCAN_LIMIT, narrowByAssignee } from "./assignee-filter.ts";
 import { archivePatch } from "./live.ts";
+import {
+  dropUnknownProjects,
+  loadProjectVisibility,
+  taskVisibleByProject,
+  visibleProjectFilter,
+} from "./project-visibility.ts";
 
 const supabase = createClient(
   Deno.env.get("SUPABASE_URL")!,
@@ -74,11 +80,45 @@ export async function getTask(id: string): Promise<Task | null> {
   return data as Task | null;
 }
 
+/**
+ * Задача, если она видна зрителю: живая и не лежит в невидимом ему проекте (решение владельца
+ * 16.10.2026). Воркспейс вызывающий проверяет сам, как и после getTask.
+ */
+export async function getVisibleTask(
+  id: string,
+  viewerId: number | undefined,
+): Promise<Task | null> {
+  const task = await getTask(id);
+  if (!task) return null;
+  return (await taskVisibleByProject(task, viewerId)) ? task : null;
+}
+
+/**
+ * Задача этого воркспейса, если она видна зрителю (getVisibleTask + сверка воркспейса). Для
+ * путей, где id задачи приходит от клиента и сам по себе ничего не доказывает: родитель
+ * подзадачи, карточка в боте. Отказ — null, как «задачи нет».
+ */
+export async function getVisibleTaskInWorkspace(
+  id: string,
+  groupId: string,
+  viewerId: number | undefined,
+): Promise<Task | null> {
+  const task = await getTask(id);
+  if (!task || task.group_id !== groupId) return null;
+  return (await taskVisibleByProject(task, viewerId)) ? task : null;
+}
+
 export async function listTasksWithTotal(filters: {
   status?: string;
   country?: string;
   period?: string;
   telegramId?: number;
+  /**
+   * Кто смотрит. Задачи проектов, которых зритель не видит (закрытый чужой проект), в выдачу
+   * не попадают — решение владельца 16.10.2026. Не передан — закрытые проекты скрыты целиком
+   * (fail-closed): лишнего не покажем, даже если вызывающий забыл про зрителя.
+   */
+  viewerId?: number;
   assigneeText?: string;
   limit?: number;
   // Какие колонки тянуть. По умолчанию "*" — так ходят бот и MCP: боту нужен description
@@ -158,6 +198,10 @@ export async function listTasksWithTotal(filters: {
 
   if (groupId) q = q.eq("group_id", groupId);
 
+  const visibility = await loadProjectVisibility(groupId, filters.viewerId);
+  const projectFilter = visibleProjectFilter(visibility.hidden);
+  if (projectFilter) q = q.or(projectFilter);
+
   const limit = filters.limit ?? 200;
   // Исполнитель фильтруется в JS (assignee-filter.ts), поэтому при нём база отдаёт широкий
   // срез, а лимит выдачи применяется уже после фильтра (issue #626).
@@ -167,7 +211,11 @@ export async function listTasksWithTotal(filters: {
   // Двойное приведение: при динамическом select(string) supabase-js не может вывести форму
   // строки и типизирует результат как GenericStringError[]. Форму гарантирует TASK_LIST_COLUMNS
   // (под тестом) и тип Task, где выброшенные проекцией поля помечены опциональными.
-  const tasks = (data ?? []) as unknown as Task[];
+  const fetched = (data ?? []) as unknown as Task[];
+  // Задача с проектом вне области видимости (не найден) не показывается — фильтр выше знает
+  // только «скрытые». В нормальных данных таких нет; total поправляется на выброшенные.
+  const tasks = dropUnknownProjects(fetched, visibility.known);
+  const dropped = fetched.length - tasks.length;
 
   // total = сколько строк подходит под фильтры БЕЗ лимита. Нужен, чтобы ответ мог честно
   // сказать «показаны N из M»: лимит режет КОНЕЦ сортировки (due_date ASC nulls last), то есть
@@ -179,7 +227,7 @@ export async function listTasksWithTotal(filters: {
     return { tasks: narrowed.tasks, total: scanCapped ? null : narrowed.total };
   }
 
-  return { tasks, total: typeof count === "number" ? count : null };
+  return { tasks, total: typeof count === "number" ? count - dropped : null };
 }
 
 /** Обёртка для вызывающих, которым нужен только список (бот, MCP). */

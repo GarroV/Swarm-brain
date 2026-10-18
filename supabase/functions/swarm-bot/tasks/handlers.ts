@@ -2,7 +2,18 @@ import { ADMIN_USER_ID, supabase } from "../lib/supabase.ts";
 import { chatComplete } from "../lib/openai.ts";
 import { editInlineMessage, sendInlineMessage, sendMessage } from "../lib/telegram.ts";
 import { clearSession, setSession } from "../lib/storage.ts";
-import { dbCreateTask, dbDeleteTask, dbGetTask, dbListAllOpen, dbListTasks, dbListToday, dbUpdateTask } from "./db.ts";
+import {
+  dbCreateTask,
+  dbDeleteTask,
+  dbGetTask,
+  dbListAllOpen,
+  dbListDone,
+  dbListForExport,
+  dbListTasks,
+  dbListToday,
+  dbUpdateTask,
+  type TaskScope,
+} from "./db.ts";
 import {
   buildDisplayNameMap,
   buildProfileMap,
@@ -14,7 +25,6 @@ import { formatTaskLine, sendTaskCard, STATUS_LABEL } from "./formatter.ts";
 import { normalizeExtractedDueDate, todayIso } from "../../_shared/llm-date.ts";
 import type { Task } from "./types.ts";
 import type { TgCallbackQuery } from "../lib/types.ts";
-import { onlyLive } from "../../_shared/tasks/live.ts";
 import { externalFetch, VIA_TELEGRAM_UPLOAD } from "../../_shared/external-fetch.ts";
 import { notifyMessage } from "../lib/notify.ts";
 import { escapeHtml } from "../../_shared/telegram-html.ts";
@@ -102,7 +112,7 @@ export async function handleQuickCreateTask(
 
 // ── /tasks command ────────────────────────────────────────────────────────────
 
-export async function handleTasks(chatId: number, _userId: number, filter: string, groupId: string): Promise<void> {
+export async function handleTasks(chatId: number, userId: number, filter: string, groupId: string): Promise<void> {
   const sub = filter.trim().toLowerCase();
 
   if (!sub) {
@@ -121,7 +131,7 @@ export async function handleTasks(chatId: number, _userId: number, filter: strin
   }
 
   if (sub === "все" || sub === "all") {
-    const tasks = await dbListAllOpen(groupId);
+    const tasks = await dbListAllOpen(groupId, userId);
     if (!tasks.length) {
       await sendMessage(chatId, "Открытых задач нет.");
       return;
@@ -153,7 +163,7 @@ export async function handleTasks(chatId: number, _userId: number, filter: strin
   }
 
   // Search by person name
-  const tasks = await dbListTasks({ assignee: filter.trim(), limit: 200, groupId });
+  const tasks = await dbListTasks({ assignee: filter.trim(), limit: 200, groupId, viewerId: userId });
   if (!tasks.length) {
     await sendMessage(chatId, `Задач для <b>${escapeHtml(filter.trim())}</b> не найдено.`);
     return;
@@ -180,7 +190,12 @@ export async function handleAddTask(chatId: number): Promise<void> {
 
 // ── smartTaskSearch ───────────────────────────────────────────────────────────
 
-export async function smartTaskSearch(chatId: number, question: string, groupId: string): Promise<boolean> {
+export async function smartTaskSearch(
+  chatId: number,
+  question: string,
+  groupId: string,
+  viewerId: number,
+): Promise<boolean> {
   if (!TASK_KEYWORDS.test(question)) return false;
 
   const raw = await chatComplete(
@@ -201,6 +216,8 @@ export async function smartTaskSearch(chatId: number, question: string, groupId:
   // Только текущее пространство: без него поиск шёл по задачам всех пространств.
   const tasks = await dbListTasks({
     groupId,
+    // Задачи проектов, которых спрашивающий не видит, в ответ не идут (решение 16.10.2026).
+    viewerId,
     assignee: person ?? undefined,
     country: country ?? undefined,
     period: period ?? undefined,
@@ -328,6 +345,8 @@ export async function handleTaskCallbacks(
   groupId: string,
 ): Promise<boolean> {
   const data = cb.data;
+  // Область для всех чтений и правок задачи по id из callback_data (см. TaskScope).
+  const scope: TaskScope = { groupId, viewerId: userId };
 
   // ── Interactive task browser: tk_ prefix ──────────────────────────────────
 
@@ -349,8 +368,8 @@ export async function handleTaskCallbacks(
     const displayName = profile ? [profile.first_name, profile.last_name].filter(Boolean).join(" ") : null;
 
     const [byId, byName] = await Promise.all([
-      dbListTasks({ telegramId: userId, groupId, limit: 50 }),
-      displayName ? dbListTasks({ assignee: displayName, groupId, limit: 50 }) : Promise.resolve([]),
+      dbListTasks({ telegramId: userId, groupId, viewerId: userId, limit: 50 }),
+      displayName ? dbListTasks({ assignee: displayName, groupId, viewerId: userId, limit: 50 }) : Promise.resolve([]),
     ]);
     const seen = new Set<string>();
     const merged = [...byId, ...byName].filter((t) => !seen.has(t.id) && seen.add(t.id));
@@ -384,7 +403,7 @@ export async function handleTaskCallbacks(
 
   // tk_all — "Для меня": team tasks (#all / no assignee) + tasks assigned to me
   if (data === "tk_all") {
-    const all = await dbListAllOpen(groupId);
+    const all = await dbListAllOpen(groupId, userId);
     const tasks = all.filter((t) =>
       !t.assignees?.length ||
       (t.tags ?? []).includes("#all") ||
@@ -412,7 +431,7 @@ export async function handleTaskCallbacks(
 
   // tk_team — all workspace tasks grouped by assignee
   if (data === "tk_team") {
-    const tasks = await dbListAllOpen(groupId);
+    const tasks = await dbListAllOpen(groupId, userId);
 
     if (!tasks.length) {
       await editInlineMessage(
@@ -501,7 +520,7 @@ export async function handleTaskCallbacks(
   // tk_t_{taskId} — task detail
   if (data.startsWith("tk_t_") && !data.startsWith("tk_st_")) {
     const taskId = data.replace("tk_t_", "");
-    const task = await dbGetTask(taskId);
+    const task = await dbGetTask(taskId, scope);
     if (!task) {
       await editInlineMessage(chatId, cb.message.message_id, "Задача не найдена.", [[{
         text: "🔙 Назад",
@@ -520,8 +539,8 @@ export async function handleTaskCallbacks(
     const lastUnderscore = rest.lastIndexOf("_");
     const taskId = rest.slice(0, lastUnderscore);
     const newStatus = rest.slice(lastUnderscore + 1);
-    await dbUpdateTask(taskId, { status: newStatus }, { actor: username, actorTelegramId: userId });
-    const task = await dbGetTask(taskId);
+    await dbUpdateTask(taskId, { status: newStatus }, { actor: username, actorTelegramId: userId }, scope);
+    const task = await dbGetTask(taskId, scope);
     if (!task) {
       await editInlineMessage(chatId, cb.message.message_id, "Задача не найдена.", [[{
         text: "🔙 Назад",
@@ -537,7 +556,7 @@ export async function handleTaskCallbacks(
   // tk_del_{taskId} — confirm delete
   if (data.startsWith("tk_del_") && !data.startsWith("tk_delc_")) {
     const taskId = data.replace("tk_del_", "");
-    const task = await dbGetTask(taskId);
+    const task = await dbGetTask(taskId, scope);
     const title = task?.title ?? taskId;
     await editInlineMessage(
       chatId,
@@ -554,11 +573,11 @@ export async function handleTaskCallbacks(
   // tk_delc_{taskId} — execute delete
   if (data.startsWith("tk_delc_")) {
     const taskId = data.replace("tk_delc_", "");
-    await dbDeleteTask(taskId, userId);
+    const deleted = await dbDeleteTask(taskId, scope);
     await editInlineMessage(
       chatId,
       cb.message.message_id,
-      "✅ Задача удалена.",
+      deleted ? "✅ Задача удалена." : "Задача не найдена.",
       [[{ text: "📌 Мои задачи", callback_data: "tk_mine" }]],
     );
     return true;
@@ -569,7 +588,7 @@ export async function handleTaskCallbacks(
   // /addtask: cancel → tacx_{taskId}
   if (data.startsWith("tacx_")) {
     const taskId = data.replace("tacx_", "");
-    await dbDeleteTask(taskId, userId);
+    await dbDeleteTask(taskId, scope);
     await clearSession(chatId);
     await sendMessage(chatId, "❌ Создание задачи отменено.");
     return true;
@@ -592,7 +611,11 @@ export async function handleTaskCallbacks(
         country = raw; // backwards compat with old buttons that stored name
       }
     }
-    await dbUpdateTask(taskId, { country }, { actor: username, actorTelegramId: userId });
+    if (!(await dbGetTask(taskId, scope))) {
+      await sendMessage(chatId, "Задача не найдена.");
+      return true;
+    }
+    await dbUpdateTask(taskId, { country }, { actor: username, actorTelegramId: userId }, scope);
     await setSession(chatId, "addtask_due", taskId);
     await sendMessage(chatId, `Дедлайн? (ДД.ММ.ГГГГ или «пропустить» — тогда завтра)`);
     return true;
@@ -601,12 +624,17 @@ export async function handleTaskCallbacks(
   // Task confirm → confirmed=true + broadcast: tc_{taskId}
   if (data.startsWith("tc_")) {
     const taskId = data.replace("tc_", "");
-    const task = await dbGetTask(taskId);
+    const task = await dbGetTask(taskId, scope);
     if (!task) {
       await sendMessage(chatId, "Задача не найдена.");
       return true;
     }
-    await dbUpdateTask(taskId, { confirmed: true, status: "open" }, { actor: username, actorTelegramId: userId });
+    await dbUpdateTask(
+      taskId,
+      { confirmed: true, status: "open" },
+      { actor: username, actorTelegramId: userId },
+      scope,
+    );
     await sendMessage(chatId, `✅ Подтверждено: <b>${escapeHtml(task.title)}</b>`);
     const confirmedTask = { ...task, confirmed: true, status: "open" };
     await broadcastTaskAssigned(confirmedTask, groupId);
@@ -616,7 +644,7 @@ export async function handleTaskCallbacks(
   // Rename task: tren_{taskId}
   if (data.startsWith("tren_")) {
     const taskId = data.replace("tren_", "");
-    const task = await dbGetTask(taskId);
+    const task = await dbGetTask(taskId, scope);
     await setSession(chatId, "task_rename", taskId);
     await sendMessage(chatId, `Новое название для:\n<i>${escapeHtml(task?.title ?? "")}</i>`);
     return true;
@@ -625,7 +653,7 @@ export async function handleTaskCallbacks(
   // Delete with confirmation: tdc_{taskId}
   if (data.startsWith("tdc_")) {
     const taskId = data.replace("tdc_", "");
-    const task = await dbGetTask(taskId);
+    const task = await dbGetTask(taskId, scope);
     await sendInlineMessage(chatId, `Удалить <b>${escapeHtml(task?.title ?? taskId)}</b>?`, [[
       { text: "✅ Да", callback_data: `tdconf_${taskId}` },
       { text: "Отмена", callback_data: `tdcanc_${taskId}` },
@@ -634,9 +662,12 @@ export async function handleTaskCallbacks(
   }
   if (data.startsWith("tdconf_")) {
     const taskId = data.replace("tdconf_", "");
-    const task = await dbGetTask(taskId);
-    await dbDeleteTask(taskId, userId);
-    await sendMessage(chatId, `🗑 Удалено: <b>${escapeHtml(task?.title ?? taskId)}</b>`);
+    const task = await dbGetTask(taskId, scope);
+    if (!task || !(await dbDeleteTask(taskId, scope))) {
+      await sendMessage(chatId, "Задача не найдена.");
+      return true;
+    }
+    await sendMessage(chatId, `🗑 Удалено: <b>${escapeHtml(task.title)}</b>`);
     return true;
   }
   if (data.startsWith("tdcanc_")) {
@@ -671,10 +702,14 @@ export async function handleTaskCallbacks(
     const sep = rest.indexOf(":");
     const taskId = rest.slice(0, sep);
     const country = rest.slice(sep + 1);
+    if (!(await dbGetTask(taskId, scope))) {
+      await sendMessage(chatId, "Задача не найдена.");
+      return true;
+    }
     await dbUpdateTask(taskId, { country: country === "none" ? null : country }, {
       actor: username,
       actorTelegramId: userId,
-    });
+    }, scope);
     await sendMessage(chatId, country === "none" ? "🌍 Страна убрана." : `🌍 Страна: <b>${country}</b>`);
     return true;
   }
@@ -685,14 +720,14 @@ export async function handleTaskCallbacks(
     const sep = rest.indexOf(":");
     const taskId = rest.slice(0, sep);
     const tag = rest.slice(sep + 1);
-    const task = await dbGetTask(taskId);
+    const task = await dbGetTask(taskId, scope);
     if (!task) {
       await sendMessage(chatId, "Задача не найдена.");
       return true;
     }
     const current = task.tags ?? [];
     const updated = current.includes(tag) ? current.filter((t) => t !== tag) : [...current, tag];
-    await dbUpdateTask(taskId, { tags: updated }, { actor: username, actorTelegramId: userId });
+    await dbUpdateTask(taskId, { tags: updated }, { actor: username, actorTelegramId: userId }, scope);
     await sendMessage(chatId, `🏷 Теги: <b>${escapeHtml(updated.join(", ")) || "нет"}</b>`);
     return true;
   }
@@ -738,10 +773,14 @@ export async function handleTaskCallbacks(
     const profiles = await getProfilesForPrompt();
     const profileMap = buildProfileMap(profiles);
     const name = profileMap[targetTgId] ?? `ID ${targetTgId}`;
+    if (!(await dbGetTask(taskId, scope))) {
+      await sendMessage(chatId, "Задача не найдена.");
+      return true;
+    }
     await dbUpdateTask(taskId, { assignees: [name], assignee_telegram_ids: [targetTgId], status: "open" }, {
       actor: username,
       actorTelegramId: userId,
-    });
+    }, scope);
     await sendMessage(chatId, `✅ Назначено: <b>${escapeHtml(name)}</b>`);
     return true;
   }
@@ -751,12 +790,17 @@ export async function handleTaskCallbacks(
     const parts = data.split("_");
     const taskId = parts[1];
     const newStatus = parts.slice(2).join("_");
-    const task = await dbGetTask(taskId);
+    const task = await dbGetTask(taskId, scope);
     if (!task) {
       await sendMessage(chatId, "Задача не найдена.");
       return true;
     }
-    const recur = await dbUpdateTask(taskId, { status: newStatus }, { actor: username, actorTelegramId: userId });
+    const recur = await dbUpdateTask(
+      taskId,
+      { status: newStatus },
+      { actor: username, actorTelegramId: userId },
+      scope,
+    );
     // Историю здесь БОЛЬШЕ НЕ ПИШЕМ: с issue #286 её пишет updateTask из единственной точки —
     // и для переката, и для обычной смены статуса. Прежняя вставка давала бы вторую строку на
     // то же событие, то есть удвоенную статистику перемещений по задачам из бота.
@@ -774,7 +818,7 @@ export async function handleTaskCallbacks(
 
   // Task list menu: tl_{type}
   if (data.startsWith("tl_")) {
-    await handleTaskListCallback(chatId, groupId, data.replace("tl_", ""));
+    await handleTaskListCallback(chatId, groupId, userId, data.replace("tl_", ""));
     return true;
   }
 
@@ -785,11 +829,10 @@ export async function handleTaskCallbacks(
 
 // Только задачи своего пространства: до 09.10.2026 списки держались на фильтре «не личная», а
 // пространство не проверяли вовсе — с уходом личных задач это открыло бы чужие пространства.
-async function handleTaskListCallback(chatId: number, groupId: string, type: string): Promise<void> {
+// Задачи невидимых человеку проектов (закрытый чужой проект) не показываются и не выгружаются.
+async function handleTaskListCallback(chatId: number, groupId: string, viewerId: number, type: string): Promise<void> {
   if (type === "done") {
-    const { data } = await onlyLive(supabase.from("tasks").select("*")).eq("group_id", groupId).eq("status", "done")
-      .order("updated_at", { ascending: false }).limit(15);
-    const tasks = (data ?? []) as Task[];
+    const tasks = await dbListDone(groupId, viewerId);
     if (!tasks.length) {
       await sendMessage(chatId, "Выполненных задач нет.");
       return;
@@ -797,16 +840,12 @@ async function handleTaskListCallback(chatId: number, groupId: string, type: str
     await sendMessage(chatId, `<b>✅ Выполненные: ${tasks.length}</b>`);
     for (const t of tasks) await sendTaskCard(chatId, t);
   } else if (type === "export") {
-    await handleTasksExport(chatId, groupId);
+    await handleTasksExport(chatId, groupId, viewerId);
   }
 }
 
-async function handleTasksExport(chatId: number, groupId: string): Promise<void> {
-  const { data } = await onlyLive(supabase.from("tasks").select("*")).eq("group_id", groupId)
-    .not("status", "in", '("draft")')
-    .order("due_date", { ascending: true })
-    .limit(500);
-  const tasks = (data ?? []) as Task[];
+async function handleTasksExport(chatId: number, groupId: string, viewerId: number): Promise<void> {
+  const tasks = await dbListForExport(groupId, viewerId);
   if (!tasks.length) {
     await sendMessage(chatId, "Задач для экспорта нет.");
     return;
@@ -851,6 +890,9 @@ export async function handleTaskSessionInput(
   context?: string,
   groupId?: string,
 ): Promise<boolean> {
+  // id задачи из сессии записан своим же callback-ом, но область проверяется и здесь: без
+  // пространства ("") задача не найдётся ни одна — fail-closed.
+  const scope: TaskScope = { groupId: groupId ?? "", viewerId: userId };
   // Rename task
   if (action === "task_rename" && context) {
     await clearSession(chatId);
@@ -860,7 +902,7 @@ export async function handleTaskSessionInput(
       await setSession(chatId, "task_rename", context);
       return true;
     }
-    await dbUpdateTask(context, { title: newTitle }, { actorTelegramId: userId });
+    await dbUpdateTask(context, { title: newTitle }, { actorTelegramId: userId }, scope);
     await sendMessage(chatId, `✏️ Название: <b>${escapeHtml(newTitle)}</b>`);
     return true;
   }
@@ -906,8 +948,13 @@ export async function handleTaskSessionInput(
     const taskId = context;
     if (["пропустить", "skip", "пропуск"].includes(text.trim().toLowerCase())) {
       const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().split("T")[0];
-      await dbUpdateTask(taskId, { due_date: tomorrow, status: "open", confirmed: true }, { actorTelegramId: userId });
-      const task = await dbGetTask(taskId);
+      await dbUpdateTask(
+        taskId,
+        { due_date: tomorrow, status: "open", confirmed: true },
+        { actorTelegramId: userId },
+        scope,
+      );
+      const task = await dbGetTask(taskId, scope);
       if (task) {
         await sendMessage(chatId, "✅ Задача создана!");
         await sendTaskCard(chatId, task);
@@ -925,8 +972,8 @@ export async function handleTaskSessionInput(
       await setSession(chatId, "addtask_due", taskId);
       return true;
     }
-    await dbUpdateTask(taskId, { due_date: due, status: "open", confirmed: true }, { actorTelegramId: userId });
-    const task = await dbGetTask(taskId);
+    await dbUpdateTask(taskId, { due_date: due, status: "open", confirmed: true }, { actorTelegramId: userId }, scope);
+    const task = await dbGetTask(taskId, scope);
     if (task) {
       await sendMessage(chatId, "✅ Задача создана!");
       await sendTaskCard(chatId, task);
@@ -939,7 +986,7 @@ export async function handleTaskSessionInput(
     await clearSession(chatId);
     const taskId = context;
     if (text.trim().toLowerCase() === "убрать") {
-      await dbUpdateTask(taskId, { due_date: null }, { actorTelegramId: userId });
+      await dbUpdateTask(taskId, { due_date: null }, { actorTelegramId: userId }, scope);
       await sendMessage(chatId, "📅 Дедлайн убран.");
       return true;
     }
@@ -954,7 +1001,7 @@ export async function handleTaskSessionInput(
       await setSession(chatId, "task_date", taskId);
       return true;
     }
-    await dbUpdateTask(taskId, { due_date: due }, { actorTelegramId: userId });
+    await dbUpdateTask(taskId, { due_date: due }, { actorTelegramId: userId }, scope);
     const dueFmt = new Date(due + "T12:00:00").toLocaleDateString("ru-RU", {
       day: "numeric",
       month: "long",

@@ -270,10 +270,16 @@ export async function showProfile(chatId: number, targetId: number, messageId?: 
     : await sendInlineMessage(chatId, lines, keyboard);
 }
 
-export async function handleProfileTasks(chatId: number, targetId: number, groupId: string): Promise<void> {
+// Задачи проектов, которых смотрящий не видит, не показываются (решение владельца 16.10.2026).
+export async function handleProfileTasks(
+  chatId: number,
+  targetId: number,
+  groupId: string,
+  viewerId: number,
+): Promise<void> {
   let loaded;
   try {
-    loaded = await loadProfileTasks(targetId, groupId);
+    loaded = await loadProfileTasks(targetId, groupId, viewerId);
   } catch (e) {
     console.error("[users] profile tasks:", e instanceof Error ? e.message : e);
     await sendMessage(chatId, "Не удалось загрузить задачи. Попробуй ещё раз.");
@@ -477,7 +483,7 @@ export async function handleUserCallbacks(
   if (data.startsWith("ptasks_")) {
     const targetId = Number(data.replace("ptasks_", ""));
     if (!actor || !(await allowUserAction(chatId, actor, targetId, "view"))) return true;
-    await handleProfileTasks(chatId, targetId, groupId);
+    await handleProfileTasks(chatId, targetId, groupId, userId);
     return true;
   }
   if (data.startsWith("pu_")) {

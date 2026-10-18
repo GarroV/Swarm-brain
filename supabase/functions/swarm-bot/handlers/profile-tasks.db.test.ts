@@ -59,7 +59,7 @@ Deno.test("задачи профиля — только текущего про�
   const db = await connect();
   try {
     await seed(db);
-    const loaded = await loadProfileTasks(TARGET, WS);
+    const loaded = await loadProfileTasks(TARGET, WS, TARGET);
     assertEquals(loaded?.name, "Тестовый Исполнитель");
     assertEquals(loaded?.tasks.map((t) => t.title), ["своя задача"]);
   } finally {
@@ -71,7 +71,7 @@ Deno.test("человек другого пространства — отказ
   const db = await connect();
   try {
     await seed(db);
-    assertEquals(await loadProfileTasks(OUTSIDER, WS), null);
+    assertEquals(await loadProfileTasks(OUTSIDER, WS, TARGET), null);
   } finally {
     await db.end();
   }

@@ -108,3 +108,41 @@ Deno.test("вызов auth-passkey подписан HMAC на тот же сек
   const { hmacSign } = await import("../../functions/_lib/oauth-state.ts");
   assertEquals(sig, await hmacSign(SECRET, raw));
 });
+
+// «Добавить устройство» (решение 17.10.2026): ключ телефона по ссылке засчитывает шаг ЭТОЙ сессии.
+import { onRequestPost as enrollOptions } from "../../functions/api/auth/passkey/enroll-options.ts";
+import { onRequestPost as enrollVerify } from "../../functions/api/auth/passkey/enroll-verify.ts";
+
+Deno.test("enroll-verify: ключ телефона принят — кука того же человека с меткой, токен ушёл в auth-passkey", async () => {
+  const calls = stubFetch({ status: 200 }, { status: 200, body: { ok: true } });
+  const body = { token: "t".repeat(43), name: "Safari · iPhone", credential: { id: "x" } };
+  const res = await enrollVerify({ request: await req("/api/auth/passkey/enroll-verify", body, { cookie: await session(42, 1_700_000_000) }), env });
+  assertEquals(res.status, 200);
+  const claims = await verifyJWT(sessionFrom(res)!, SECRET);
+  assertEquals([claims?.telegram_id, claims?.authTime, claims?.secondStep], [42, 1_700_000_000, true]);
+  const c = calls.find((x) => x.url.endsWith("/auth-passkey"))!;
+  assertEquals([c.body?.op, c.body?.telegram_id, c.body?.token, c.body?.origin], ["enroll_finish", 42, body.token, ORIGIN]);
+});
+
+Deno.test("enroll-verify: отказ auth-passkey — куки нет; без сессии и с чужим Origin — до звонка", async () => {
+  stubFetch({ status: 200 }, { status: 401, body: { ok: false, reason: "failed" } });
+  const body = { token: "t".repeat(43), credential: { id: "x" } };
+  const cookie = await session(42, 1_700_000_000);
+  const res = await enrollVerify({ request: await req("/api/auth/passkey/enroll-verify", body, { cookie }), env });
+  assertEquals([res.status, res.headers.get("Set-Cookie")], [401, null]);
+
+  const calls = stubFetch({ status: 200 }, { status: 200, body: { ok: true } });
+  assertEquals((await enrollVerify({ request: await req("/api/auth/passkey/enroll-verify", body, {}), env })).status, 401);
+  assertEquals((await enrollVerify({ request: await req("/api/auth/passkey/enroll-verify", body, { cookie, origin: "https://evil.example" }), env })).status, 403);
+  assertEquals(calls.length, 0);
+  assertEquals((await enrollVerify({ request: await req("/api/auth/passkey/enroll-verify", { credential: { id: "x" } }, { cookie }), env })).status, 400);
+  assertEquals(calls.some((c) => c.url.endsWith("/auth-passkey")), false);
+});
+
+Deno.test("enroll-options: человека называет кука, ответ auth-passkey проходит как есть, сессию не трогает", async () => {
+  const calls = stubFetch({ status: 200 }, { status: 410, body: { ok: false, reason: "invalid" } });
+  const res = await enrollOptions({ request: await req("/api/auth/passkey/enroll-options", { token: "t".repeat(43), telegram_id: 1 }, { cookie: await session(7, 1_700_000_000) }), env });
+  assertEquals([res.status, res.headers.get("Set-Cookie")], [410, null]);
+  const c = calls.find((x) => x.url.endsWith("/auth-passkey"))!;
+  assertEquals([c.body?.op, c.body?.telegram_id], ["enroll_start", 7]);
+});

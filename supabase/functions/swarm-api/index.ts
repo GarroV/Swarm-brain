@@ -49,6 +49,7 @@ import {
   createTask,
   deleteTask,
   getTask,
+  getVisibleTaskInWorkspace,
   listTasksWithTotal,
   updateTask,
   TaskUserError,
@@ -73,12 +74,13 @@ import {
   setTasksSprint,
   updateSprint,
 } from "../_shared/tasks/sprints.ts";
+import { taskVisibleByProject } from "../_shared/tasks/project-visibility.ts";
+import { getVisibleProject, ProjectAccessError } from "../_shared/tasks/projects.ts";
 import {
   canMutateProject,
   createProject,
   deleteProject,
   dissolveSprintGroup,
-  getProject,
   listProjects,
   canViewProjectInWorkspace,
   updateProject,
@@ -136,6 +138,8 @@ import {
   oneOnOnePartner,
 } from "../_shared/meeting-access.ts";
 import { handleAdminRoutes } from "./admin.ts";
+import { handleSelfPasskeyRoutes } from "./passkeys-self.ts";
+import { supabaseStore } from "../_shared/passkeys/store.ts";
 import { apiErr, corsHeaders, json, parseListLimit, routePathOf } from "./http.ts";
 import { errorDetail, INTERNAL_ERROR_MESSAGE, serverError, withErrorBoundary } from "./client-error.ts";
 import { handleMeetingInviteRoutes } from "./meeting-invites.ts";
@@ -186,7 +190,6 @@ import {
   maintenanceVerdict,
   readMaintenance,
 } from "../_shared/maintenance.ts";
-import { onlyLive } from "../_shared/tasks/live.ts";
 import { onlyLiveEntries } from "../_shared/entries/live.ts";
 import { archiveEntry } from "../_shared/entries/archive.ts";
 import { personName, resolvePersonNames } from "../_shared/users/display-name.ts";
@@ -745,6 +748,14 @@ async function routeRequest(req: Request): Promise<Response> {
   );
   if (adminResp) return adminResp;
 
+  // Свои ключи входа и ссылка «Добавить устройство» (решение 17.10.2026) — passkeys-self.ts.
+  const selfPasskeysResp = await handleSelfPasskeyRoutes(supabaseStore(supabase), req, routePath, {
+    telegramId: telegram_id,
+    secondStep,
+    origin,
+  });
+  if (selfPasskeysResp) return selfPasskeysResp;
+
   // GET /me
   if (req.method === "GET" && routePath === "/me") {
     const [{ data: profile }, { data: allowedUser }] = await Promise.all([
@@ -1111,6 +1122,7 @@ async function routeRequest(req: Request): Promise<Response> {
     req,
     routePath,
     groupId,
+    telegram_id,
     origin,
     resolveNames,
   );
@@ -1186,6 +1198,7 @@ async function routeRequest(req: Request): Promise<Response> {
           country,
           assigneeText,
           telegramId: mine ? telegram_id : undefined,
+          viewerId: telegram_id,
           limit,
           confirmed: confirmedFilter,
           sprintId,
@@ -1318,13 +1331,10 @@ async function routeRequest(req: Request): Promise<Response> {
       }
       // parent_id при создании (подзадача): родитель того же воркспейса. Если задан — форсим project_linked.
       const parentId = (body.parent_id as string | null) ?? null;
-      if (parentId) {
-        const { data: par } = await onlyLive(supabase.from("tasks").select(
-          "id, project_id, group_id",
-        )).eq("id", parentId).maybeSingle();
-        if (!par || par.group_id !== groupId) {
-          return apiErr(400, "parent_id не найден в этом воркспейсе", origin);
-        }
+      // Родитель из невидимого вызывающему проекта — как несуществующий: иначе подзадача
+      // подтвердила бы чужую закрытую задачу и легла бы в её дерево.
+      if (parentId && !(await getVisibleTaskInWorkspace(parentId, groupId, telegram_id))) {
+        return apiErr(400, "parent_id не найден в этом воркспейсе", origin);
       }
 
       // IDOR-guard: meeting_id — это entry.id. Принимаем, только если эта запись видна
@@ -1414,7 +1424,10 @@ async function routeRequest(req: Request): Promise<Response> {
 
     if (req.method === "GET") {
       const task = await getTask(taskId);
-      if (!task || task.group_id !== groupId) {
+      if (
+        !task || task.group_id !== groupId ||
+        !(await taskVisibleByProject(task, telegram_id))
+      ) {
         return apiErr(404, "Not found", origin);
       }
       const [fresh] = await withFreshAssignees([task]);
@@ -1430,7 +1443,10 @@ async function routeRequest(req: Request): Promise<Response> {
       }
 
       const task = await getTask(taskId);
-      if (!task || task.group_id !== groupId) {
+      if (
+        !task || task.group_id !== groupId ||
+        !(await taskVisibleByProject(task, telegram_id))
+      ) {
         return apiErr(404, "Not found", origin);
       }
 
@@ -1546,10 +1562,8 @@ async function routeRequest(req: Request): Promise<Response> {
               origin,
             );
           }
-          const { data: par } = await onlyLive(supabase.from("tasks").select(
-            "id, group_id",
-          )).eq("id", rawParent).maybeSingle();
-          if (!par || par.group_id !== groupId) {
+          // Родитель — только видимая вызывающему задача этого воркспейса (как при создании).
+          if (!(await getVisibleTaskInWorkspace(rawParent, groupId, telegram_id))) {
             return apiErr(400, "parent_id не найден в этом воркспейсе", origin);
           }
           // цикл: rawParent не должен быть потомком текущей задачи (идём вверх по parent_id)
@@ -1699,7 +1713,10 @@ async function routeRequest(req: Request): Promise<Response> {
 
     if (req.method === "DELETE") {
       const task = await getTask(taskId);
-      if (!task || task.group_id !== groupId) {
+      if (
+        !task || task.group_id !== groupId ||
+        !(await taskVisibleByProject(task, telegram_id))
+      ) {
         return apiErr(404, "Not found", origin);
       }
       try {
@@ -1829,11 +1846,11 @@ async function routeRequest(req: Request): Promise<Response> {
       if (!(await sprintInWorkspace(sprintId, groupId))) {
         return apiErr(404, "Not found", origin);
       }
-      const n = await setTasksSprint(taskIds, sprintId, groupId);
+      const n = await setTasksSprint(taskIds, sprintId, groupId, telegram_id);
       return json({ updated: n }, 200, origin);
     }
     if (req.method === "DELETE") {
-      const n = await setTasksSprint(taskIds, null, groupId);
+      const n = await setTasksSprint(taskIds, null, groupId, telegram_id);
       return json({ updated: n }, 200, origin);
     }
   }
@@ -1900,7 +1917,7 @@ async function routeRequest(req: Request): Promise<Response> {
   }
 
   // Журнал проекта: что с ним делали и кто (issue #426). Доступ — та же видимость, что у самого
-  // проекта: `getProject` отдаёт null на чужой закрытый, и лента к нему не открывается.
+  // проекта: `canMutateProject` отвечает false на чужой закрытый, и лента к нему не открывается.
   const projectHistoryMatch = routePath.match(
     /^\/projects\/([^/]+)\/history$/,
   );
@@ -1952,7 +1969,9 @@ async function routeRequest(req: Request): Promise<Response> {
       }
       // Сроки сверяются с тем, что уже стоит у инициативы: в теле обычно приходит один конец,
       // и без текущего значения «перенести конец раньше старта» прошло бы молча.
-      const current = await getProject(projectId, groupId);
+      // Только видимый зрителю проект: иначе сверка сроков ниже отвечала бы по чужой закрытой строке.
+      const current = await getVisibleProject(projectId, groupId, telegram_id);
+      if (!current) return apiErr(404, "Not found", origin);
       const extra = parseProjectFields(body, current ?? {});
       if (extra.error) return apiErr(400, extra.error, origin);
 
@@ -1984,8 +2003,12 @@ async function routeRequest(req: Request): Promise<Response> {
       try {
         updated = await updateProject(projectId, fields, groupId, {
           viewerId: telegram_id,
+          isAdmin,
         });
       } catch (e) {
+        if (e instanceof ProjectAccessError) {
+          return apiErr(403, e.message, origin);
+        }
         return apiErr(
           400,
           e instanceof Error ? e.message : "invalid parent",
@@ -1996,9 +2019,15 @@ async function routeRequest(req: Request): Promise<Response> {
       return json(updated, 200, origin);
     }
     if (req.method === "DELETE") {
-      const ok = await deleteProject(projectId, groupId, {
-        viewerId: telegram_id,
-      });
+      let ok;
+      try {
+        ok = await deleteProject(projectId, groupId, {
+          viewerId: telegram_id,
+        });
+      } catch (e) {
+        if (e instanceof ProjectAccessError) return apiErr(403, e.message, origin);
+        throw e;
+      }
       if (!ok) return apiErr(404, "Not found", origin);
       return json({ ok: true }, 200, origin);
     }

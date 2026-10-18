@@ -124,7 +124,72 @@ export function visibleProjectNames(
   viewerId: number | undefined,
 ): string[] {
   const index = parentLookup(rows);
-  return rows.filter((p) => canViewProject(p, viewerId, index)).map((p) =>
-    p.name
-  );
+  return rows.filter((p) => canViewProject(p, viewerId, index)).map((p) => p.name);
+}
+
+// Проекты, которые зрителю НЕ видны, — тем же предикатом canViewProject. Нужен читателям
+// ЗАДАЧ: задача закрытого проекта видна только тому, кто видит сам проект (решение владельца
+// 16.10.2026, docs/decisions/2026-10-16-security-fixes.md). Список «скрытых», а не «видимых»:
+// задача без проекта видна всем, и фильтр выборки — «project_id пуст или не из этого списка».
+// `rows` — ВСЕ строки воркспейса, включая архивные: архивный закрытый проект свои задачи
+// прячет так же, как живой.
+export function hiddenProjectIds(
+  rows: Array<ProjectAccessRow & { id: string }>,
+  viewerId: number | undefined,
+): string[] {
+  const index = parentLookup(rows);
+  return rows.filter((p) => !canViewProject(p, viewerId, index)).map((p) => p.id);
+}
+
+// Кто может закрыть или открыть проект (тумблер-глаз): только его автор и админ (решение
+// владельца 16.10.2026, docs/decisions/2026-10-16-security-fixes.md). Остальные правки открытого
+// проекта по-прежнему доступны всем участникам (решение 2026-07-01) — сужен только тумблер.
+// Строка без автора (`created_by = null`, легаси) — только админ: «ничейную» строку закрыть
+// чужой рукой нельзя, а открыть её обратно было бы некому.
+export function canToggleProjectPrivacy(
+  row: Pick<ProjectAccessRow, "created_by">,
+  viewerId: number | undefined,
+  isAdmin: boolean,
+): boolean {
+  if (isAdmin) return true;
+  return viewerId !== undefined && row.created_by !== null &&
+    row.created_by === viewerId;
+}
+
+export type PrivacyChangeVerdict = "ok" | "parent-hidden" | "forbidden";
+
+// Правка проекта, которая меняет, КТО его видит, — то же закрытие/открытие, даже если тумблер
+// не тронут: перенос под закрытую группу прячет проект у всех, вынос из неё — открывает.
+// Поэтому право автора-или-админа спрашивается и на смену собственного флага, и на любую смену
+// итоговой приватности (isProjectPrivate до и после). Новый родитель обязан быть виден зрителю:
+// под невидимую группу не переносят и не создают — отказ неотличим от «такой группы нет».
+// `rows` — все живые строки воркспейса.
+export function privacyChangeVerdict(input: {
+  row: ProjectAccessRow;
+  rows: Array<ProjectAccessRow & { id: string }>;
+  next: { parent_id: string | null; is_private: boolean };
+  viewerId: number | undefined;
+  isAdmin: boolean;
+}): PrivacyChangeVerdict {
+  const { row, next, viewerId, isAdmin } = input;
+  const index = parentLookup(input.rows);
+  if (next.parent_id !== null && next.parent_id !== row.parent_id) {
+    const parent = index.get(next.parent_id);
+    if (!parent || !canViewProject(parent, viewerId, index)) {
+      return "parent-hidden";
+    }
+  }
+  const togglesOwn = next.is_private !== row.is_private;
+  // Перенос, при котором закрыта хотя бы одна из веток (до или после), меняет круг видящих,
+  // даже если итоговая «закрытость» та же: из закрытой группы одного человека в закрытую группу
+  // другого (или в легаси-строку без автора, видную всем). Поэтому сравнивается не флаг, а
+  // сам факт закрытой ветки по любую сторону переноса.
+  const reparented = next.parent_id !== row.parent_id;
+  const privateEitherSide = isProjectPrivate(row, index) ||
+    isProjectPrivate({ ...row, ...next }, index);
+  if (
+    (togglesOwn || (reparented && privateEitherSide)) &&
+    !canToggleProjectPrivacy(row, viewerId, isAdmin)
+  ) return "forbidden";
+  return "ok";
 }

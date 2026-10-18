@@ -3,8 +3,11 @@
 // auth-resolve), плюс метка времени против повтора. Сессию человека проверяет Pages Function
 // (кука roj_session + GET /me) и называет его telegram_id; эта функция сессий не выдаёт —
 // она только говорит, прошёл ли шаг. Куку с отметкой «шаг пройден» ставит Pages.
+// Операции: start/finish — второй шаг; enroll_start/enroll_finish — ключ нового устройства по
+// ссылке «Добавить устройство» (ссылку выдаёт swarm-api, POST /me/passkeys/device-link).
 import { timingSafeEq } from "../_shared/timing-safe.ts";
 import { finishStep, startStep, type StepDeps } from "../_shared/passkeys/flow.ts";
+import { finishEnrollment, startEnrollment } from "../_shared/passkeys/device-link.ts";
 
 /** Запрос свежее этого — принимается; старше — повтор чужого вызова. */
 export const MAX_REQUEST_AGE_MS = 60 * 1000;
@@ -38,6 +41,7 @@ type Body = {
   origin?: unknown;
   name?: unknown;
   credential?: unknown;
+  token?: unknown;
 };
 
 export async function handlePasskeyRequest(req: Request, deps: HandlerDeps): Promise<Response> {
@@ -71,6 +75,23 @@ export async function handlePasskeyRequest(req: Request, deps: HandlerDeps): Pro
   if (body.op === "finish") {
     const r = await finishStep(deps, { telegramId, origin: body.origin, name: body.name, credential: body.credential });
     if (r.ok) return json({ ok: true, mode: r.mode });
+    return json({ ok: false, reason: r.reason }, r.reason === "failed" ? 401 : 403);
+  }
+  // «Добавить устройство» (решение 17.10.2026): телефон по одноразовой ссылке заводит свой ключ.
+  if (body.op === "enroll_start") {
+    const r = await startEnrollment(deps, { telegramId, origin: body.origin, userName, token: body.token });
+    if (r.ok) return json({ ok: true, options: r.options });
+    return json({ ok: false, reason: r.reason }, r.reason === "invalid" ? 410 : 403);
+  }
+  if (body.op === "enroll_finish") {
+    const r = await finishEnrollment(deps, {
+      telegramId,
+      origin: body.origin,
+      token: body.token,
+      name: body.name,
+      credential: body.credential,
+    });
+    if (r.ok) return json({ ok: true });
     return json({ ok: false, reason: r.reason }, r.reason === "failed" ? 401 : 403);
   }
   return json({ error: "bad op" }, 400);

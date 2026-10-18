@@ -10,6 +10,7 @@ export async function handleSpaceJournalRoutes(
   req: Request,
   routePath: string,
   groupId: string,
+  viewerId: number | undefined,
   origin: string,
   resolveNames: (ids: number[]) => Promise<Map<number, string>>,
 ): Promise<Response | null> {
@@ -17,6 +18,6 @@ export async function handleSpaceJournalRoutes(
   if (!match) return null;
   if (req.method !== "GET") return null;
   const days = new URL(req.url).searchParams.get("days") ?? "7";
-  const result = await loadSpaceJournal(match[1], groupId, days, resolveNames);
+  const result = await loadSpaceJournal(match[1], groupId, viewerId, days, resolveNames);
   return result.ok ? json({ events: result.events }, 200, origin) : apiErr(result.status, result.error, origin);
 }

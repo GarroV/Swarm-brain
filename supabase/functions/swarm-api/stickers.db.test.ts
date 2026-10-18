@@ -61,7 +61,16 @@ Deno.test("база отбивает опасную ссылку, чужой ц�
     await ok(null);
     await ok("https://example.com/a");
     await ok("/tasks");
-    for (const bad of ["javascript:alert(1)", "//evil.example.com", "https://a.com/ b", "ftp://a.com"]) {
+    for (
+      const bad of [
+        "javascript:alert(1)",
+        "//evil.example.com",
+        "https://a.com/ b",
+        "ftp://a.com",
+        "/\\evil.example.com",
+        "https://a.com\\@evil.example.com",
+      ]
+    ) {
       await assertRejects(() => ok(bad), Error, "", `ссылка ${bad} должна быть отбита`);
     }
     await assertRejects(() =>
