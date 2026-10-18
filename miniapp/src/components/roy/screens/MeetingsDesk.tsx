@@ -8,8 +8,9 @@ import { Menu, ToolbarButton, type MenuItem } from "@/components/tasks/table/Men
 import { useDt, useRoyNav } from "../nav";
 import { RoyIcon } from "../icons";
 import { deriveEntryTitle } from "../entry";
-import { sourceLabel } from "./RoyMeetingsScreen";
+import { localizeSource, sourceLabel } from "./RoyMeetingsScreen";
 import { InviteBotButton } from "../InviteBotCard";
+import { RecordMeetingButton } from "../record/RecordMeeting";
 import { useMeetingsList } from "./useMeetingsList";
 import {
   applyMeetingsFilter, EMPTY_FILTERS, isConfirmed, isFilterActive, loadSavedFilters, meetingDay, periodBounds,
@@ -121,7 +122,7 @@ export function MeetingsDesk() {
         </label>
         <Menu label={`${dt("Период", "Period")}: ${periodLabel(f.period, dt)}`} on={f.period !== "all"} items={periodItems} />
         <Menu label={f.sources.length ? `${dt("Источник", "Source")}: ${f.sources.length}` : dt("Источник", "Source")}
-          on={f.sources.length > 0} items={multi(sources, f.sources, "sources", (v) => v)} />
+          on={f.sources.length > 0} items={multi(sources, f.sources, "sources", (v) => localizeSource(v, dt))} />
         {markets.length > 0 && (
           <Menu label={f.countries.length ? `${dt("Страна", "Country")}: ${f.countries.map(countryCode).join(", ")}` : dt("Страна", "Country")}
             on={f.countries.length > 0} items={multi(markets, f.countries, "countries", (c) => `${countryCode(c)} · ${countryName(c)}`)} />
@@ -142,6 +143,7 @@ export function MeetingsDesk() {
         </span>
         {/* Позвать бота по ссылке (D017) — кнопкой с маленьким окном справа, а не карточкой над
             таблицей (владелец 30.09.2026: «окно сделать маленьким и аккуратным, где-то сбоку»). */}
+        <RecordMeetingButton />
         <InviteBotButton />
       </div>
 
@@ -275,7 +277,7 @@ function EntryRow({ e, tasks, state, onOpen }: { e: Entry; tasks: number; state:
       </div>
       <div className="px-2 text-ink-soft">{fmtDay(meetingDay(e), dt("ru-RU", "en-GB"))}</div>
       <div className="flex min-w-0 items-center gap-1 overflow-hidden px-2">
-        <Tag>{sourceLabel(e)}</Tag>
+        <Tag>{localizeSource(sourceLabel(e), dt)}</Tag>
         {(e.countries ?? []).slice(0, 3).map((c) => <Tag key={c} mono>{countryCode(c)}</Tag>)}
       </div>
       <div className="px-3 text-right font-mono text-ink-soft" style={{ fontSize: 12 }}>
@@ -294,7 +296,7 @@ function DraftRow({ m, onOpen }: { m: AgentMeeting; onOpen: () => void }) {
         <span className="truncate text-ink">{m.title ?? dt("Запись без названия", "Untitled recording")}</span>
       </div>
       <div className="px-2 text-ink-soft">{fmtDay(m.started_at, dt("ru-RU", "en-GB"))}</div>
-      <div className="px-2"><Tag>{sourceLabel(m)}</Tag></div>
+      <div className="px-2"><Tag>{localizeSource(sourceLabel(m), dt)}</Tag></div>
       <div className="px-3 text-right text-ink-mute">—</div>
     </RowShell>
   );

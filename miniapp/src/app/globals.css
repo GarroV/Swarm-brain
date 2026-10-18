@@ -407,3 +407,12 @@ html[data-backdrop="custom"] :is(.bg-popover, [data-slot="popover-content"], [da
   .presence-strip__dot { animation: none; transition: none; }
   .presence-strip__dot:hover, .presence-strip__dot:focus-visible { transform: none; }
 }
+
+/* Экран записи встречи из браузера: красная точка «дышит», пока идёт запись. Без движения при
+   «уменьшить движение» (общее правило выше гасит длительность, здесь — ещё и сам кадр). */
+@keyframes rec-breathe {
+  0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 color-mix(in srgb, var(--pri-high) 45%, transparent); }
+  50% { transform: scale(1.18); box-shadow: 0 0 0 7px color-mix(in srgb, var(--pri-high) 0%, transparent); }
+}
+.rec-dot { animation: rec-breathe 2.4s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { .rec-dot { animation: none; } }

@@ -595,6 +595,13 @@ async function sendRequest(url: string, init: RequestInit): Promise<Response> {
   return res;
 }
 
+/** 503 на заморозке несёт Retry-After: кладём в тело ошибки как retry_after_s, чтобы очередь записи его уважала. */
+function withRetryAfter(res: Response, body: unknown): unknown {
+  const sec = Number(res.headers.get("Retry-After"));
+  if (res.status !== 503 || !(sec > 0) || typeof body !== "object" || body === null) return body;
+  return { ...body, retry_after_s: sec };
+}
+
 async function apiFetchRaw<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await sendRequest(`${API_BASE}${path}`, {
     ...options,
@@ -617,7 +624,7 @@ async function apiFetchRaw<T>(path: string, options?: RequestInit): Promise<T> {
     const frozen = parseMaintenanceResponse(body);
     if (frozen) publishMaintenance(frozen);
   }
-  if (!res.ok) throw new ApiError(res.status, body.error ?? res.statusText, body);
+  if (!res.ok) throw new ApiError(res.status, body.error ?? res.statusText, withRetryAfter(res, body));
   return body as T;
 }
 
@@ -663,7 +670,7 @@ async function apiFetchNoContentTypeRaw<T>(
   });
   if (res.status === 204) return undefined as T;
   const body = await res.json().catch(() => ({ error: res.statusText }));
-  if (!res.ok) throw new ApiError(res.status, body.error ?? res.statusText, body);
+  if (!res.ok) throw new ApiError(res.status, body.error ?? res.statusText, withRetryAfter(res, body));
   return body as T;
 }
 
@@ -678,6 +685,15 @@ export async function fetchMe(): Promise<Me> {
 // /api/auth/logout напрямую, минуя прокси в swarm-api. Внутри Telegram Mini App
 // бессмысленно — там сессия определяется initData, а не cookie.
 export async function logout(): Promise<void> {
+  // Пока сессия жива, пробуем дослать неотправленные части записей встреч этого пользователя
+  // (до ~10 с). Недосланное остаётся в IndexedDB под его id и 3 дня хранится на устройстве.
+  try {
+    const me = await fetchMe();
+    // Динамический импорт: движок записи сам импортирует api, статический дал бы цикл.
+    await (await import("./webRecorder/flush")).flushOwnLeftovers(me.telegram_id);
+  } catch {
+    // Выходу из аккаунта это не мешает.
+  }
   await fetch(`${API_BASE}/auth/logout`, {
     method: "POST",
     credentials: "include",
@@ -3524,6 +3540,72 @@ export async function fetchMeeting(id: string): Promise<Entry> {
     return m;
   }
   return apiFetch<Entry>(`/meetings/${id}`);
+}
+
+// ── Запись встречи из браузера (офлайн-встречи; docs/decisions/2026-10-16-web-recorder.md) ──
+
+export type WebRecordingStart = { id: string; started_at: string };
+export type WebRecordingActive = { id: string; started_at: string; segments: number[] };
+export type WebRecordingFinish = { ok: boolean; summary_status?: string; already?: boolean };
+
+// Состояние моков DEV_MODE: показывает экрану записи сквозной путь без бэкенда.
+const MOCK_UPLOAD_DELAY_MS = 250;
+let mockWebRecording: WebRecordingActive | null = null;
+const mockPause = () => new Promise<void>((r) => setTimeout(r, MOCK_UPLOAD_DELAY_MS));
+
+export async function startWebRecording(startedAt: string): Promise<WebRecordingStart> {
+  if (DEV_MODE) {
+    await mockPause();
+    mockWebRecording = { id: `dev-rec-${Date.now()}`, started_at: startedAt, segments: [] };
+    return { id: mockWebRecording.id, started_at: startedAt };
+  }
+  return apiFetch<WebRecordingStart>("/meetings/record", {
+    method: "POST",
+    body: JSON.stringify({ started_at: startedAt }),
+  });
+}
+
+/** Кусок целиком (сырое аудио), идемпотентно по номеру. offsetSec — секунды от начала записи по часам. */
+export async function uploadWebRecordingSegment(
+  id: string,
+  n: number,
+  offsetSec: number,
+  blob: Blob,
+): Promise<void> {
+  if (DEV_MODE) {
+    await mockPause();
+    if (mockWebRecording?.id === id && !mockWebRecording.segments.includes(n)) mockWebRecording.segments.push(n);
+    return;
+  }
+  // Параметры кодека («;codecs=…») серверу не нужны: он различает только mp4 и webm.
+  const contentType = (blob.type || "audio/mp4").split(";")[0];
+  await apiFetchNoContentType<void>(
+    `/meetings/record/${encodeURIComponent(id)}/segments/${n}?offset=${offsetSec.toFixed(3)}`,
+    { method: "PUT", headers: { "Content-Type": contentType }, body: blob },
+  );
+}
+
+export async function finishWebRecording(
+  id: string,
+  body: { ended_at: string; recorded_seconds: number },
+): Promise<WebRecordingFinish> {
+  if (DEV_MODE) {
+    await mockPause();
+    mockWebRecording = null;
+    return { ok: true, summary_status: "processing" };
+  }
+  return apiFetch<WebRecordingFinish>(`/meetings/record/${encodeURIComponent(id)}/finish`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+/** Незавершённая запись автора; нет её (404 или null) — null. */
+export async function fetchActiveWebRecording(): Promise<WebRecordingActive | null> {
+  if (DEV_MODE) return mockWebRecording;
+  // Сервер отвечает 200 {recording: {...} | null} и никогда не 404.
+  const res = await apiFetch<{ recording: WebRecordingActive | null }>("/meetings/record/active");
+  return res.recording ?? null;
 }
 
 export async function patchMeeting(
