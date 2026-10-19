@@ -90,3 +90,12 @@ export function nextCycleDates(prev: CycleDates): NextCycleDates {
     check_date: check,
   };
 }
+
+/** Разница в календарных днях `to − from` (отрицательная, если `to` раньше). */
+export function daysBetween(from: string, to: string): number {
+  const a = parse(from, "дата");
+  const b = parse(to, "дата");
+  return Math.round(
+    (Date.UTC(b.y, b.m - 1, b.d) - Date.UTC(a.y, a.m - 1, a.d)) / 86_400_000,
+  );
+}
