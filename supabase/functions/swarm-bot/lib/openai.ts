@@ -15,7 +15,10 @@ export function getEmbedding(text: string, groupId: string | null | undefined): 
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${key.key}` },
       body: JSON.stringify({ model: "text-embedding-3-small", input: text.slice(0, 8000) }),
-    }, { ...VIA_OPENAI_EMBEDDING, usage: { purpose: "bot:embedding" } });
+    }, { ...VIA_OPENAI_EMBEDDING, usage: { purpose: "bot:embedding" } }).catch(async (e) => {
+      await key.noteError(); // таймаут/обрыв — мягкий сбой ключа
+      throw e;
+    });
     await key.noteResponse(res);
     const data = await res.json();
     if (!res.ok) throw new Error(data.error?.message ?? "OpenAI embeddings error");
@@ -45,7 +48,10 @@ export function chatComplete(
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${key.key}` },
       body: JSON.stringify(body),
-    }, { ...VIA_OPENAI_CHAT, usage: { purpose: "bot:chat" } });
+    }, { ...VIA_OPENAI_CHAT, usage: { purpose: "bot:chat" } }).catch(async (e) => {
+      await key.noteError(); // таймаут/обрыв — мягкий сбой ключа
+      throw e;
+    });
     await key.noteResponse(res);
     const data = await res.json();
     if (!res.ok) throw new Error(data.error?.message ?? "OpenAI error");

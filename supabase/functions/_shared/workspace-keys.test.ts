@@ -19,6 +19,7 @@ const SERVER_KEY = "sk-server-000000000000000000";
 const WS_KEY = "sk-workspace-1111111111111111";
 const ACTOR = 111;
 
+const noSend = () => Promise.resolve();
 const okFetch = (() => Promise.resolve(new Response("{}", { status: 200 }))) as typeof fetch;
 const statusFetch = (s: number) => (() => Promise.resolve(new Response("{}", { status: s }))) as typeof fetch;
 
@@ -160,6 +161,7 @@ Deno.test("keyStatus: без своего ключа — server и пустые 
       last_error_at: null,
       own_keys_enabled: true,
       server_key_available: true,
+      storage_available: true,
     });
   }));
 
@@ -274,4 +276,92 @@ Deno.test("resetKeyCache: с id сбрасывает только это про�
     await getOpenAIKey(db.client, "cee");
     await getOpenAIKey(db.client, "demo");
     assertEquals(db.reads.workspace_secrets, 5);
+  }));
+
+// ── Раскатка рядом с общим ключом: любое сочетание «секрет есть/нет, миграция есть/нет» не ломает команду ──
+
+Deno.test("раскатка: нет WORKSPACE_SECRETS_KEY — пространства без своего ключа работают на ключе сервера", () =>
+  withEnv({ ...BASE, WORKSPACE_SECRETS_KEY: undefined }, async () => {
+    const db = makeFakeDb();
+    assertEquals(await getOpenAIKey(db.client, "cee"), SERVER_KEY);
+    assertEquals((await resolveOpenAIKey(db.client, "cee")).source, "server");
+    const st = await keyStatus(db.client, "cee");
+    assertEquals(st.source, "server");
+    assertEquals(st.storage_available, false);
+  }));
+
+Deno.test("раскатка: нет WORKSPACE_SECRETS_KEY — ключ задать нельзя: понятный отказ, OpenAI не зовём, ничего не записано", () =>
+  withEnv({ ...BASE, WORKSPACE_SECRETS_KEY: undefined }, async () => {
+    const db = makeFakeDb();
+    let called = false;
+    const spy = (() => ((called = true), Promise.resolve(new Response("{}")))) as typeof fetch;
+    const e = await assertRejects(() => setOpenAIKey(db.client, "cee", WS_KEY, ACTOR, spy), WorkspaceKeyError);
+    assertEquals(e.code, "storage_unavailable");
+    assertEquals(e.status, 503);
+    assertEquals(called, false);
+    assertEquals(db.tables.workspace_secrets.length, 0);
+  }));
+
+Deno.test("раскатка: кривой WORKSPACE_SECRETS_KEY считается недоступным хранилищем, а не падением", () =>
+  withEnv({ ...BASE, WORKSPACE_SECRETS_KEY: "не-base64!!" }, async () => {
+    const db = makeFakeDb();
+    assertEquals(await getOpenAIKey(db.client, "cee"), SERVER_KEY);
+    assertEquals((await keyStatus(db.client, "cee")).storage_available, false);
+  }));
+
+Deno.test("раскатка: миграция не накатана (таблицы нет) — вызовы идут на ключе сервера, статус не падает", () =>
+  withEnv(BASE, async () => {
+    for (const code of ["42P01", "PGRST205"]) {
+      const db = makeFakeDb({}, { workspace_secrets: { code } });
+      assertEquals(await getOpenAIKey(db.client, "cee"), SERVER_KEY, code);
+      const st = await keyStatus(db.client, "cee");
+      assertEquals(st.source, "server", code);
+      assertEquals(st.storage_available, false, code);
+    }
+  }));
+
+Deno.test("раскатка: другая ошибка базы НЕ маскируется ключом сервера", () =>
+  withEnv(BASE, async () => {
+    const db = makeFakeDb({}, { workspace_secrets: { code: "57014" } });
+    await assertRejects(() => getOpenAIKey(db.client, "cee"));
+  }));
+
+Deno.test("раскатка по умолчанию: свой ключ действует у пространства, у остальных — ключ сервера", () =>
+  withEnv(BASE, async () => {
+    const db = makeFakeDb();
+    await setOpenAIKey(db.client, "cee", WS_KEY, ACTOR, okFetch);
+    assertEquals(await getOpenAIKey(db.client, "cee"), WS_KEY);
+    assertEquals(await getOpenAIKey(db.client, "demo"), SERVER_KEY);
+    assertEquals((await keyStatus(db.client, "demo")).own_keys_enabled, true);
+  }));
+
+// ── Сигнал о сбое: единая точка noteOpenAIResponse пишет исход и по ключу пространства, и по серверному ──
+
+const quotaRes = () => new Response(JSON.stringify({ error: { code: "insufficient_quota" } }), { status: 429 });
+
+Deno.test("noteOpenAIResponse: 429 с кодом квоты на КЛЮЧЕ СЕРВЕРА — тревога у пространства, где вызов упал", () =>
+  withEnv(BASE, async () => {
+    const db = makeFakeDb({ workspaces: [{ id: "cee", name: "IMF" }] });
+    const resolved = await resolveOpenAIKey(db.client, "cee");
+    await noteOpenAIResponse(db.client, "cee", resolved, quotaRes(), noSend);
+    const row = db.tables.ai_key_health[0];
+    assertEquals([row.group_id, row.source, row.failing, row.reason], ["cee", "server", true, "quota"]);
+  }));
+
+Deno.test("noteOpenAIResponse: успешный ответ после сбоя гасит тревогу; 400 её не гасит", () =>
+  withEnv(BASE, async () => {
+    const db = makeFakeDb({ workspaces: [{ id: "cee", name: "IMF" }] });
+    const resolved = await resolveOpenAIKey(db.client, "cee");
+    await noteOpenAIResponse(db.client, "cee", resolved, { status: 401 }, noSend);
+    await noteOpenAIResponse(db.client, "cee", resolved, { status: 400 }, noSend);
+    assertEquals(db.tables.ai_key_health[0].failing, true);
+    await noteOpenAIResponse(db.client, "cee", resolved, { status: 200 }, noSend);
+    assertEquals(db.tables.ai_key_health[0].failing, false);
+  }));
+
+Deno.test("noteOpenAIResponse: сбой записи состояния не роняет вызов", () =>
+  withEnv(BASE, async () => {
+    const db = makeFakeDb({}, { ai_key_health: { code: "42P01" } });
+    const resolved = await resolveOpenAIKey(db.client, "cee");
+    await noteOpenAIResponse(db.client, "cee", resolved, { status: 401 }, noSend); // не бросает
   }));

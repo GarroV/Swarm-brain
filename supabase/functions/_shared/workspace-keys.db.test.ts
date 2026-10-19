@@ -6,7 +6,7 @@ import { Client } from "postgres";
 
 const DB_URL = Deno.env.get("SUPABASE_DB_URL") ??
   "postgresql://postgres:postgres@127.0.0.1:54322/postgres";
-const TABLES = ["workspace_secrets", "master_admins"];
+const TABLES = ["workspace_secrets", "master_admins", "ai_key_health"];
 const FORBIDDEN_ROLES = ["anon", "authenticated"];
 const PRIVILEGES = ["SELECT", "INSERT", "UPDATE", "DELETE"];
 

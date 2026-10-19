@@ -40,7 +40,7 @@ import { claimLeaseUntil } from "./meeting-lease.ts";
 import { isLeaseLost, LEASE_STALE_MS, ProcessingLease, rethrowIfLeaseLost } from "./meeting-processing-lease.ts";
 import { externalFetch } from "./external-fetch.ts";
 import { notifyPerson } from "./notify-person.ts";
-import { noteOpenAIResponse, resolveOpenAIKey } from "./workspace-keys.ts";
+import { noteOpenAIFailure, noteOpenAIResponse, resolveOpenAIKey } from "./workspace-keys.ts";
 
 export type { Segment, SpeakerSpan };
 
@@ -170,16 +170,23 @@ async function openaiFetch(
   purpose?: string,
 ): Promise<Response> {
   const resolved = await resolveOpenAIKey(auth.supabase, auth.groupId);
-  const res = await externalFetch(url, {
-    ...init,
-    headers: { ...(init.headers as Record<string, string> | undefined), Authorization: `Bearer ${resolved.key}` },
-  }, {
-    service: "openai",
-    timeoutMs: MODEL_CALL_TIMEOUT_MS,
-    signal,
-    attempts,
-    usage: purpose ? { purpose } : undefined,
-  });
+  let res: Response;
+  try {
+    res = await externalFetch(url, {
+      ...init,
+      headers: { ...(init.headers as Record<string, string> | undefined), Authorization: `Bearer ${resolved.key}` },
+    }, {
+      service: "openai",
+      timeoutMs: MODEL_CALL_TIMEOUT_MS,
+      signal,
+      attempts,
+      usage: purpose ? { purpose } : undefined,
+    });
+  } catch (e) {
+    // Таймаут/обрыв — мягкий сбой ключа (тревога только если держится); отмена извне — не сбой OpenAI.
+    if (!signal?.aborted) await noteOpenAIFailure(auth.supabase, auth.groupId, resolved);
+    throw e;
+  }
   await noteOpenAIResponse(auth.supabase, auth.groupId, resolved, res);
   return res;
 }

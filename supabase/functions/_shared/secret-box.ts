@@ -40,6 +40,17 @@ function importKey(): Promise<CryptoKey> {
   return crypto.subtle.importKey("raw", bytes, "AES-GCM", false, ["encrypt", "decrypt"]);
 }
 
+/** Задан ли годный ключ шифрования (base64 от 32 байт). Без него секреты пространств недоступны. */
+export function secretsKeyConfigured(): boolean {
+  const raw = Deno.env.get(KEY_ENV);
+  if (!raw) return false;
+  try {
+    return fromBase64(raw.trim()).length === KEY_BYTES;
+  } catch {
+    return false;
+  }
+}
+
 /** Зашифровать `plain`; `aad` = `<group_id>:<kind>`. */
 export async function sealSecret(plain: string, aad: string): Promise<SealedSecret> {
   const key = await importKey();

@@ -1,5 +1,5 @@
 import { assert, assertEquals, assertNotEquals, assertRejects } from "jsr:@std/assert@1";
-import { openSecret, sealSecret } from "./secret-box.ts";
+import { openSecret, sealSecret, secretsKeyConfigured } from "./secret-box.ts";
 
 const GOOD_KEY = btoa(String.fromCharCode(...new Uint8Array(32).fill(7)));
 
@@ -67,4 +67,13 @@ Deno.test("secret-box: ключ не той длины или не base64 — о
   await withKey("%%% not base64 %%%", async () => {
     await assertRejects(() => sealSecret("x", "a:b"), Error, "не base64");
   });
+});
+
+Deno.test("secretsKeyConfigured: годный ключ — да; нет, пустой, не base64, не 32 байта — нет", async () => {
+  await withKey(GOOD_KEY, () => Promise.resolve(assertEquals(secretsKeyConfigured(), true)));
+  await withKey(`  ${GOOD_KEY}\n`, () => Promise.resolve(assertEquals(secretsKeyConfigured(), true)));
+  await withKey(undefined, () => Promise.resolve(assertEquals(secretsKeyConfigured(), false)));
+  await withKey("", () => Promise.resolve(assertEquals(secretsKeyConfigured(), false)));
+  await withKey("не-base64!!", () => Promise.resolve(assertEquals(secretsKeyConfigured(), false)));
+  await withKey(btoa("слишком коротко"), () => Promise.resolve(assertEquals(secretsKeyConfigured(), false)));
 });

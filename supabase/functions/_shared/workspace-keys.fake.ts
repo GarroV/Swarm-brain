@@ -15,9 +15,14 @@ const KEYS: Record<string, string[]> = {
   workspace_secrets: ["group_id", "kind"],
   master_admins: ["telegram_id"],
   workspaces: ["id"],
+  ai_key_health: ["group_id", "source"],
 };
 
-export function makeFakeDb(initial: Record<string, Row[]> = {}): FakeDb {
+export function makeFakeDb(
+  initial: Record<string, Row[]> = {},
+  /** Таблицы, на которые база отвечает ошибкой (например, миграция не накатана: 42P01). */
+  failing: Record<string, { code: string }> = {},
+): FakeDb {
   const tables: Record<string, Row[]> = {
     workspaces: [],
     workspace_secrets: [],
@@ -28,12 +33,14 @@ export function makeFakeDb(initial: Record<string, Row[]> = {}): FakeDb {
 
   const from = (table: string) => {
     const filters: Array<[string, unknown]> = [];
-    let op: "select" | "upsert" | "delete" | "update" = "select";
+    let op: "select" | "upsert" | "delete" | "update" | "insert" = "select";
     let payload: Row | null = null;
     let ignoreDuplicates = false;
+    let returning = false;
     const rows = () => tables[table] ?? (tables[table] = []);
     const match = (r: Row) => filters.every(([c, v]) => r[c] === v);
-    const run = (): { data: unknown; error: null } => {
+    const run = (): { data: unknown; error: { code: string } | null } => {
+      if (failing[table]) return { data: null, error: failing[table] };
       if (op === "select") {
         reads[table] = (reads[table] ?? 0) + 1;
         return { data: structuredClone(rows().filter(match)), error: null };
@@ -43,7 +50,12 @@ export function makeFakeDb(initial: Record<string, Row[]> = {}): FakeDb {
         return { data: null, error: null };
       }
       if (op === "update") {
+        const hit = rows().filter(match).map((r) => ({ ...r, ...payload! }));
         tables[table] = rows().map((r) => (match(r) ? { ...r, ...payload! } : r));
+        return { data: returning ? structuredClone(hit) : null, error: null };
+      }
+      if (op === "insert") {
+        rows().push({ ...payload! });
         return { data: null, error: null };
       }
       const keyCols = KEYS[table];
@@ -53,9 +65,10 @@ export function makeFakeDb(initial: Record<string, Row[]> = {}): FakeDb {
       return { data: null, error: null };
     };
     const b: Record<string, unknown> = {
-      select: () => b,
+      select: () => ((returning = true), b),
       order: () => b,
       eq: (c: string, v: unknown) => (filters.push([c, v]), b),
+      is: (c: string, v: unknown) => (filters.push([c, v]), b),
       upsert: (row: Row, opts?: { ignoreDuplicates?: boolean }) => {
         op = "upsert";
         payload = row;
@@ -63,6 +76,11 @@ export function makeFakeDb(initial: Record<string, Row[]> = {}): FakeDb {
         return b;
       },
       delete: () => (op = "delete", b),
+      insert: (row: Row) => {
+        op = "insert";
+        payload = row;
+        return b;
+      },
       update: (row: Row) => {
         op = "update";
         payload = row;
@@ -70,6 +88,7 @@ export function makeFakeDb(initial: Record<string, Row[]> = {}): FakeDb {
       },
       maybeSingle: () => {
         const r = run();
+        if (r.error) return Promise.resolve({ data: null, error: r.error });
         return Promise.resolve({ data: (r.data as Row[])[0] ?? null, error: null });
       },
       then: (res: (v: unknown) => unknown, rej?: (e: unknown) => unknown) => Promise.resolve(run()).then(res, rej),

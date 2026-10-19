@@ -179,3 +179,135 @@ Deno.test("openai-key: статус отдаёт режим сервера (вы
     Deno.env.delete("WORKSPACE_OWN_KEYS");
   }
 });
+
+// ── Видимость: раздел мастер-админа — только мастеру; ключ — админу СВОЕГО пространства (#233) ──
+
+Deno.test("видимость: участник (не админ) не видит и не меняет ничего из админки — 403 на каждом маршруте", async () => {
+  const db = setup();
+  for (
+    const [m, p, b] of [
+      ["GET", "/admin/workspaces/cee/openai-key", undefined],
+      ["PUT", "/admin/workspaces/cee/openai-key", { key: WS_KEY }],
+      ["DELETE", "/admin/workspaces/cee/openai-key", undefined],
+      ["GET", "/admin/master-admins", undefined],
+      ["GET", "/admin/ai-health", undefined],
+      ["PUT", "/admin/workspaces/cee/users/555/admin", { is_admin: true }],
+      ["POST", "/admin/workspaces", { id: "new", name: "New" }],
+    ] as Array<[string, string, unknown]>
+  ) {
+    const res = await call(db, m, p, NOBODY, false, "cee", b);
+    assertEquals(res.status, 403, `${m} ${p}`);
+    await res.body?.cancel();
+  }
+  assertEquals(db.tables.workspace_secrets.length, 0);
+});
+
+Deno.test("видимость: админ пространства не создаёт пространства, не видит мастер-админов и не назначает админов", async () => {
+  const db = setup();
+  for (
+    const [m, p, b] of [
+      ["POST", "/admin/workspaces", { id: "new", name: "New" }],
+      ["GET", "/admin/master-admins", undefined],
+      ["POST", "/admin/master-admins", { telegram_id: 777 }],
+      ["PUT", "/admin/workspaces/cee/users/555/admin", { is_admin: true }],
+    ] as Array<[string, string, unknown]>
+  ) {
+    const res = await call(db, m, p, ADMIN_CEE, true, "cee", b);
+    assertEquals(res.status, 403, `${m} ${p}`);
+    await res.body?.cancel();
+  }
+  assertEquals(db.tables.workspaces.length, 2);
+  assertEquals(db.tables.master_admins.length, 0);
+});
+
+Deno.test("мастер создаёт пространство и назначает/снимает его админа; пользователь из чужого пространства — 404", async () => {
+  const db = setup();
+  db.tables.allowed_users = [
+    { telegram_id: 555, group_id: "cee", is_admin: false },
+    { telegram_id: 556, group_id: "demo", is_admin: false },
+  ];
+  const created = await call(db, "POST", "/admin/workspaces", SUPER, true, "cee", { id: "new", name: "New" });
+  assertEquals(created.status, 201);
+  await created.body?.cancel();
+  assertEquals(db.tables.workspaces.length, 3);
+
+  const on = await call(db, "PUT", "/admin/workspaces/cee/users/555/admin", SUPER, true, "cee", { is_admin: true });
+  assertEquals(on.status, 200);
+  await on.body?.cancel();
+  assertEquals(db.tables.allowed_users[0].is_admin, true);
+
+  const off = await call(db, "PUT", "/admin/workspaces/cee/users/555/admin", SUPER, true, "cee", { is_admin: false });
+  await off.body?.cancel();
+  assertEquals(db.tables.allowed_users[0].is_admin, false);
+
+  const foreign = await call(db, "PUT", "/admin/workspaces/cee/users/556/admin", SUPER, true, "cee", {
+    is_admin: true,
+  });
+  assertEquals(foreign.status, 404);
+  await foreign.body?.cancel();
+  assertEquals(db.tables.allowed_users[1].is_admin, false);
+
+  const bad = await call(db, "PUT", "/admin/workspaces/cee/users/555/admin", SUPER, true, "cee", { is_admin: "yes" });
+  assertEquals(bad.status, 400);
+  await bad.body?.cancel();
+});
+
+Deno.test("ключ: админ чужого пространства ключ не задаёт (404); админ своего — задаёт", async () => {
+  const db = setup();
+  const foreign = await call(db, "PUT", "/admin/workspaces/cee/openai-key", ADMIN_CEE, true, "demo", { key: WS_KEY });
+  assertEquals(foreign.status, 404);
+  await foreign.body?.cancel();
+  assertEquals(db.tables.workspace_secrets.length, 0);
+  const ok = await call(db, "PUT", "/admin/workspaces/demo/openai-key", ADMIN_CEE, true, "demo", { key: WS_KEY });
+  assertEquals(ok.status, 200);
+  await ok.body?.cancel();
+});
+
+Deno.test("ключ без WORKSPACE_SECRETS_KEY: 503 storage_unavailable, статус честно говорит «хранилища нет»", async () => {
+  const db = setup();
+  Deno.env.delete("WORKSPACE_SECRETS_KEY");
+  const put = await call(db, "PUT", "/admin/workspaces/cee/openai-key", ADMIN_CEE, true, "cee", { key: WS_KEY });
+  assertEquals(put.status, 503);
+  assertEquals((await put.json()).code, "storage_unavailable");
+  const st = await (await call(db, "GET", "/admin/workspaces/cee/openai-key", ADMIN_CEE, true, "cee")).json();
+  assertEquals(st.storage_available, false);
+  assertEquals(db.tables.workspace_secrets.length, 0);
+});
+
+// ── Баннер сбоя ключа ────────────────────────────────────────────────────────
+
+Deno.test("ai-health: админ видит сбои и встало-в-обработке только своего пространства; мастер — всех", async () => {
+  const db = setup();
+  const old = new Date(Date.now() - 3 * 3_600_000).toISOString();
+  db.tables.ai_key_health = [
+    {
+      group_id: "cee",
+      source: "workspace",
+      failing: true,
+      reason: "rejected",
+      first_failure_at: old,
+      last_failure_at: old,
+    },
+    { group_id: "demo", source: "server", failing: true, reason: "quota", first_failure_at: old, last_failure_at: old },
+    { group_id: "", source: "server", failing: true, reason: "quota", first_failure_at: old, last_failure_at: old },
+  ];
+  db.tables.meetings = [
+    { group_id: "cee", summary_status: "processing", created_at: old, ended_at: old, last_progress_at: old },
+    {
+      group_id: "cee",
+      summary_status: "processing",
+      created_at: new Date().toISOString(),
+      ended_at: null,
+      last_progress_at: null,
+    },
+    { group_id: "demo", summary_status: "processing", created_at: old, ended_at: old, last_progress_at: old },
+  ];
+  const mine = await (await call(db, "GET", "/admin/ai-health", ADMIN_CEE, true, "cee")).json();
+  assertEquals(mine.issues.map((i: { group_id: string }) => i.group_id), ["cee"]);
+  assertEquals(mine.issues[0].workspace_name, "cee");
+  assertEquals(mine.stalled.map((s: { group_id: string; count: number }) => [s.group_id, s.count]), [["cee", 1]]);
+
+  const all = await (await call(db, "GET", "/admin/ai-health", SUPER, true, "cee")).json();
+  assertEquals(all.issues.map((i: { group_id: string }) => i.group_id).sort(), ["", "cee", "demo"]);
+  assertEquals(all.stalled.length, 2);
+});
