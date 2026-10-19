@@ -17,6 +17,19 @@ const btnPrimary =
 const btnGhost =
   "rounded-full border border-line px-3.5 py-2 font-semibold text-ink-soft transition-colors hover:text-ink disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]";
 
+// Что происходит с пространством, у которого нет своего ключа, — по режиму сервера, а не по
+// догадке веба: общий ключ может быть снят (этап переключения #233), ключи пространств — выключены.
+type Fallback = "server" | "none" | "off";
+function fallbackText(status: WorkspaceKeyStatus | null): [Fallback, string, string] {
+  if (status && !status.own_keys_enabled) {
+    return ["off", "Ключи пространств отключены на сервере — работает общий ключ сервера", "Workspace keys are turned off on the server — the shared server key is used"];
+  }
+  if (status && !status.server_key_available) {
+    return ["none", "Ключ не задан, общего ключа у сервера нет — функции с нейронкой не работают", "No key set and the server has no shared key — AI features do not work"];
+  }
+  return ["server", "Ключ не задан — работает общий ключ сервера", "No key set — the shared server key is used"];
+}
+
 const fmtDate = (iso: string | null) => (iso ? new Date(iso).toLocaleString() : "");
 
 export function WorkspaceKeyPanel({ wsId }: { wsId: string }) {
@@ -67,7 +80,9 @@ export function WorkspaceKeyPanel({ wsId }: { wsId: string }) {
   const remove = async () => {
     if (!(await confirm({
       title: dt("Убрать ключ пространства?", "Remove the workspace key?"),
-      description: dt("Дальше пространство будет работать на общем ключе сервера.", "From then on the workspace uses the shared server key."),
+      description: fallbackText(status)[0] === "server"
+        ? dt("Дальше пространство будет работать на общем ключе сервера.", "From then on the workspace uses the shared server key.")
+        : dt("Общего ключа у сервера нет: без своего ключа функции с нейронкой в этом пространстве перестанут работать.", "The server has no shared key: without its own key, AI features in this workspace will stop working."),
       confirmText: dt("Убрать ключ", "Remove key"),
     }))) return;
     setBusy(true); setError(null); setSaved(false);
@@ -82,6 +97,7 @@ export function WorkspaceKeyPanel({ wsId }: { wsId: string }) {
   };
 
   const own = status?.source === "workspace";
+  const keysOff = status?.own_keys_enabled === false;
 
   return (
     <section className="max-w-[720px] rounded-[10px] border border-line bg-surface px-3 py-3">
@@ -102,7 +118,7 @@ export function WorkspaceKeyPanel({ wsId }: { wsId: string }) {
           <p className="text-ink">
             {own
               ? dt(`Ключ задан · …${status.last4}`, `Key is set · …${status.last4}`)
-              : dt("Ключ не задан — работает общий ключ сервера", "No key set — the shared server key is used")}
+              : (([, ru, en]) => dt(ru, en))(fallbackText(status))}
           </p>
           {own && status.set_at && (
             <p className="text-ink-mute" style={{ fontSize: 12 }}>{dt("Задан", "Set")}: {fmtDate(status.set_at)}</p>
@@ -123,10 +139,10 @@ export function WorkspaceKeyPanel({ wsId }: { wsId: string }) {
         <input type="password" autoComplete="off" spellCheck={false} value={draft}
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={(e) => { if (e.key === "Enter") save(); }}
-          placeholder="sk-…" className={fieldCls} />
+          disabled={keysOff} placeholder="sk-…" className={fieldCls} />
       </label>
       <div className="mt-2 flex flex-wrap items-center gap-2">
-        <button type="button" onClick={save} disabled={busy || !draft.trim()} className={btnPrimary} style={{ fontSize: 13 }}>
+        <button type="button" onClick={save} disabled={busy || keysOff || !draft.trim()} className={btnPrimary} style={{ fontSize: 13 }}>
           {busy ? dt("Проверяю…", "Checking…") : dt("Сохранить", "Save")}
         </button>
         {own && (

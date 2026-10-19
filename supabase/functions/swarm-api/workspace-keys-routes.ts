@@ -13,6 +13,7 @@ import { serverError } from "./client-error.ts";
 import { apiErr, json } from "./http.ts";
 
 export type WorkspaceKeysDeps = { fetchImpl?: typeof fetch };
+type ResolveNames = (ids: number[]) => Promise<Map<number, string>>;
 
 const KEY_ROUTE = /^\/admin\/workspaces\/([^/]+)\/openai-key$/;
 const MASTER_ROUTE = /^\/admin\/master-admins(?:\/(\d+))?$/;
@@ -33,12 +34,13 @@ export async function handleWorkspaceKeysRoutes(
   actor: AdminActor,
   origin: string,
   deps: WorkspaceKeysDeps = {},
+  resolveNames: ResolveNames = () => Promise.resolve(new Map()),
 ): Promise<Response | null> {
   try {
     const keyMatch = routePath.match(KEY_ROUTE);
     if (keyMatch) return await handleKeyRoute(supabase, req, keyMatch[1], actor, origin, deps);
     const masterMatch = routePath.match(MASTER_ROUTE);
-    if (masterMatch) return await handleMasterRoute(supabase, req, masterMatch[1], actor, origin);
+    if (masterMatch) return await handleMasterRoute(supabase, req, masterMatch[1], actor, origin, resolveNames);
     return null;
   } catch (e) {
     return serverError(origin, "admin: workspace keys", e);
@@ -82,22 +84,29 @@ async function handleMasterRoute(
   idPart: string | undefined,
   actor: AdminActor,
   origin: string,
+  resolveNames: ResolveNames,
 ): Promise<Response | null> {
+  // Список с именами для экрана: имя — из профиля (resolveNames), без имени — null, веб покажет id.
+  const listWithNames = async () => {
+    const rows = await listMasterAdmins(supabase);
+    const names = await resolveNames(rows.map((r) => r.telegram_id));
+    return rows.map((r) => ({ ...r, name: names.get(r.telegram_id) ?? null }));
+  };
   const known = idPart === undefined ? ["GET", "POST"] : ["DELETE"];
   if (!known.includes(req.method)) return null;
   if (!isSuperadmin(actor)) return apiErr(403, "Forbidden", origin);
 
-  if (req.method === "GET") return json(await listMasterAdmins(supabase), 200, origin);
+  if (req.method === "GET") return json(await listWithNames(), 200, origin);
 
   if (req.method === "POST") {
     const body = await readBody(req);
     if (!body) return apiErr(400, "Invalid JSON", origin);
     const res = await addMasterAdmin(supabase, Number(body.telegram_id), actor.telegramId);
-    if (!res.ok) return apiErr(400, res.message, origin);
-    return json(await listMasterAdmins(supabase), 201, origin);
+    if (!res.ok) return apiErr(400, res.message, origin, res.reason);
+    return json(await listWithNames(), 201, origin);
   }
 
   const res = await removeMasterAdmin(supabase, Number(idPart));
-  if (!res.ok) return apiErr(res.reason === "not_found" ? 404 : 409, res.message, origin);
-  return json(await listMasterAdmins(supabase), 200, origin);
+  if (!res.ok) return apiErr(res.reason === "not_found" ? 404 : 409, res.message, origin, res.reason);
+  return json(await listWithNames(), 200, origin);
 }

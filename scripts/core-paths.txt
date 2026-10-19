@@ -86,6 +86,7 @@ supabase/functions/_shared/secret-box.ts|supabase/functions/_shared/secret-box.t
 supabase/functions/_shared/workspace-keys.ts|supabase/functions/_shared/workspace-keys.test.ts
 supabase/functions/_shared/users/master-admins.ts|supabase/functions/_shared/users/master-admins.test.ts
 supabase/functions/swarm-api/workspace-keys-routes.ts|supabase/functions/swarm-api/workspace-keys-routes.test.ts
+supabase/functions/swarm-api/model-usage.ts|supabase/functions/swarm-api/model-usage.test.ts
 # Второй шаг входа — палец (ключ доступа, #955). Ошибка не падает: чужой ключ подтверждает чужую
 # сессию, ответ с чужого сайта принимается, вызов срабатывает дважды, а замок обязательности
 # пропускает или запирает не тех. Ядро доступа, тесты — на настоящей криптографии.

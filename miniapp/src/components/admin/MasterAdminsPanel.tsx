@@ -1,6 +1,6 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
-import { addMasterAdmin, fetchMasterAdmins, removeMasterAdmin, type MasterAdmin } from "@/lib/api";
+import { ApiError, addMasterAdmin, fetchMasterAdmins, removeMasterAdmin, type MasterAdmin } from "@/lib/api";
 import { useDt } from "@/components/roy/nav";
 import { useConfirm } from "@/components/ui/confirm";
 
@@ -30,6 +30,16 @@ export function MasterAdminsPanel() {
   }, [dt]);
   useEffect(() => { load(); }, [load]);
 
+  // Серверные тексты русские; для человека — на его языке по машинному коду.
+  const explain = (e: unknown): string => {
+    const code = e instanceof ApiError ? (e.body as { code?: string } | null)?.code : undefined;
+    if (code === "invalid_id") return dt("Telegram ID — положительное число", "Telegram ID must be a positive number");
+    if (code === "builtin") return dt("Этого мастер-админа задаёт код, снять его из списка нельзя", "This master admin is set in code and cannot be removed from the list");
+    if (code === "last") return dt("Нельзя удалить последнего мастер-админа", "The last master admin cannot be removed");
+    if (code === "not_found") return dt("Такого мастер-админа нет", "No such master admin");
+    return e instanceof Error ? e.message : dt("Ошибка", "Error");
+  };
+
   const run = async (op: () => Promise<MasterAdmin[]>) => {
     setBusy(true); setError(null);
     try {
@@ -37,7 +47,7 @@ export function MasterAdminsPanel() {
       return true;
     } catch (e) {
       console.error("[MasterAdminsPanel] change", e);
-      setError(e instanceof Error ? e.message : dt("Ошибка", "Error"));
+      setError(explain(e));
       return false;
     } finally {
       setBusy(false);
@@ -56,7 +66,7 @@ export function MasterAdminsPanel() {
   const remove = async (row: MasterAdmin) => {
     if (!(await confirm({
       title: dt("Снять мастер-админа?", "Remove this master admin?"),
-      description: dt(`Пользователь ${row.telegram_id} потеряет доступ ко всем пространствам, кроме своего.`, `User ${row.telegram_id} will lose access to every workspace except their own.`),
+      description: dt(`${row.name ?? row.telegram_id} потеряет доступ ко всем пространствам, кроме своего.`, `${row.name ?? row.telegram_id} will lose access to every workspace except their own.`),
       confirmText: dt("Снять", "Remove"),
     }))) return;
     await run(() => removeMasterAdmin(row.telegram_id));
@@ -74,7 +84,8 @@ export function MasterAdminsPanel() {
         {(rows ?? []).map((r) => (
           <div key={r.telegram_id} className="flex items-center justify-between gap-2 rounded-[10px] bg-surface-2 px-2.5 py-1.5">
             <span className="min-w-0 truncate text-ink" style={{ fontSize: 13 }}>
-              <span className="font-mono">{r.telegram_id}</span>
+              {r.name && <span className="mr-2">{r.name}</span>}
+              <span className={r.name ? "font-mono text-ink-mute" : "font-mono"}>{r.telegram_id}</span>
               {r.builtin && <span className="ml-2 text-ink-mute" style={{ fontSize: 11.5 }}>{dt("задан в коде", "set in code")}</span>}
             </span>
             {!r.builtin && (

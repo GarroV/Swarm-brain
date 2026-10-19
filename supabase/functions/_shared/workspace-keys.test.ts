@@ -158,7 +158,31 @@ Deno.test("keyStatus: без своего ключа — server и пустые 
       set_by: null,
       last_error: null,
       last_error_at: null,
+      own_keys_enabled: true,
+      server_key_available: true,
     });
+  }));
+
+Deno.test("keyStatus: режим берётся от сервера — выключатель и наличие ключа сервера", () =>
+  withEnv({ ...BASE, WORKSPACE_OWN_KEYS: "off" }, async () => {
+    const off = await keyStatus(makeFakeDb().client, "cee");
+    assertEquals(off.own_keys_enabled, false);
+    assertEquals(off.server_key_available, true);
+  }).then(() =>
+    withEnv({ ...BASE, OPENAI_API_KEY: undefined }, async () => {
+      const none = await keyStatus(makeFakeDb().client, "cee");
+      assertEquals(none.own_keys_enabled, true);
+      assertEquals(none.server_key_available, false);
+    })
+  ));
+
+Deno.test("keyStatus: режим не выдаёт ни ключ сервера, ни ключ пространства", () =>
+  withEnv(BASE, async () => {
+    const db = makeFakeDb();
+    await setOpenAIKey(db.client, "cee", WS_KEY, 1, okFetch);
+    const text = JSON.stringify(await keyStatus(db.client, "cee"));
+    assert(!text.includes(WS_KEY));
+    assert(!text.includes(SERVER_KEY));
   }));
 
 Deno.test("getOpenAIKey: без пространства (null/undefined/пусто) → ключ сервера, в базу не ходит", () =>

@@ -25,6 +25,7 @@ async function call(
   isAdmin: boolean,
   groupId: string,
   body?: unknown,
+  names: (ids: number[]) => Promise<Map<number, string>> = noNames,
 ) {
   const res = await handleAdminRoutes(
     db.client,
@@ -36,7 +37,7 @@ async function call(
     tid,
     isAdmin,
     "*",
-    noNames,
+    names,
     groupId,
     { fetchImpl: okFetch },
   );
@@ -142,4 +143,39 @@ Deno.test("master-admins: суперадмин видит список, доба
   const del = await call(db, "DELETE", "/admin/master-admins/777", SUPER, true, "cee");
   assertEquals(del.status, 409); // единственная строка в таблице — последняя
   await del.body?.cancel();
+});
+
+Deno.test("master-admins: в списке имена из профилей, без имени — null; ошибки с машинным кодом", async () => {
+  const db = setup();
+  const names = (ids: number[]) => Promise.resolve(new Map(ids.filter((i) => i === SUPER).map((i) => [i, "Владелец"])));
+  const add = await call(db, "POST", "/admin/master-admins", SUPER, true, "cee", { telegram_id: 777 }, names);
+  const list = await add.json() as Array<{ telegram_id: number; name: string | null }>;
+  assertEquals(list.find((r) => r.telegram_id === SUPER)?.name, "Владелец");
+  assertEquals(list.find((r) => r.telegram_id === 777)?.name, null);
+
+  const bad = await call(db, "POST", "/admin/master-admins", SUPER, true, "cee", { telegram_id: -5 });
+  assertEquals(bad.status, 400);
+  assertEquals((await bad.json()).code, "invalid_id");
+  const builtin = await call(db, "DELETE", `/admin/master-admins/${SUPER}`, SUPER, true, "cee");
+  assertEquals((await builtin.json()).code, "builtin");
+  const missing = await call(db, "DELETE", "/admin/master-admins/999", SUPER, true, "cee");
+  assertEquals(missing.status, 404);
+  assertEquals((await missing.json()).code, "not_found");
+});
+
+Deno.test("openai-key: статус отдаёт режим сервера (выключатель, ключ сервера), но не ключи", async () => {
+  const db = setup();
+  Deno.env.set("OPENAI_API_KEY", "sk-server-3333333333333333");
+  try {
+    const on = await (await call(db, "GET", "/admin/workspaces/cee/openai-key", ADMIN_CEE, true, "cee")).text();
+    assertEquals(JSON.parse(on).own_keys_enabled, true);
+    assertEquals(JSON.parse(on).server_key_available, true);
+    assert(!on.includes("sk-server-3333333333333333"));
+    Deno.env.set("WORKSPACE_OWN_KEYS", "off");
+    const off = await (await call(db, "GET", "/admin/workspaces/cee/openai-key", ADMIN_CEE, true, "cee")).json();
+    assertEquals(off.own_keys_enabled, false);
+  } finally {
+    Deno.env.delete("OPENAI_API_KEY");
+    Deno.env.delete("WORKSPACE_OWN_KEYS");
+  }
 });

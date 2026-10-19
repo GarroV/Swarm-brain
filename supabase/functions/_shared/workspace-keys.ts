@@ -28,6 +28,10 @@ export type KeyStatus = {
   /** Когда OpenAI последний раз отказал этому ключу (401); очищается новым ключом. */
   last_error: string | null;
   last_error_at: string | null;
+  /** Режим сервера: `WORKSPACE_OWN_KEYS` не `off`. При `false` ключ пространства не используется. */
+  own_keys_enabled: boolean;
+  /** Есть ли у сервера общий ключ `OPENAI_API_KEY` — на него работает пространство без своего ключа. */
+  server_key_available: boolean;
 };
 
 export type OpenAIKeySource = "workspace" | "server";
@@ -163,8 +167,10 @@ export async function keyStatus(supabase: SupabaseClient, groupId: string): Prom
     set_by: null,
     last_error: null,
     last_error_at: null,
+    own_keys_enabled: ownKeysEnabled(),
+    server_key_available: Boolean(Deno.env.get("OPENAI_API_KEY")),
   };
-  if (!ownKeysEnabled()) return server;
+  if (!server.own_keys_enabled) return server;
   const { data, error } = await supabase
     .from("workspace_secrets")
     .select("last4, set_at, set_by, last_error, last_error_at")
@@ -181,6 +187,7 @@ export async function keyStatus(supabase: SupabaseClient, groupId: string): Prom
     last_error_at: string | null;
   };
   return {
+    ...server,
     source: "workspace",
     last4: row.last4,
     set_at: row.set_at,

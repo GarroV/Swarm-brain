@@ -11,6 +11,7 @@ import { countryCode, COUNTRY_NAMES } from "@/lib/countries";
 import { Segmented } from "@/components/roy/ui";
 import { RoyIcon } from "@/components/roy/icons";
 import { useDt, useRoyNav } from "@/components/roy/nav";
+import { ModelUsagePanel } from "@/components/admin/ModelUsagePanel";
 import { WorkspaceKeyPanel } from "@/components/admin/WorkspaceKeyPanel";
 import { MasterAdminsPanel } from "@/components/admin/MasterAdminsPanel";
 import { useConfirm } from "@/components/ui/confirm";
@@ -422,7 +423,7 @@ function WorkspaceMarkets({ ws, onUpdated }: { ws: AdminWorkspace; onUpdated: ()
 // ── Деталь воркспейса (переименование + табы) ─────────────────────────────────
 export function WorkspaceDetail({ ws, onBack, desk = false }: { ws: AdminWorkspace; onBack: () => void; desk?: boolean }) {
   const [workspace, setWorkspace] = useState(ws);
-  const [tab, setTab] = useState<"users" | "markets" | "key">("users");
+  const [tab, setTab] = useState<"users" | "markets" | "key" | "usage">("users");
   const dt = useDt();
   const [allWorkspaces, setAllWorkspaces] = useState<AdminWorkspace[]>([]);
   const [renaming, setRenaming] = useState(false);
@@ -466,15 +467,16 @@ export function WorkspaceDetail({ ws, onBack, desk = false }: { ws: AdminWorkspa
 
       <div className="px-4">
         <Segmented
-          items={[{ id: "users", label: "Пользователи" }, { id: "markets", label: "Рынки" }, { id: "key", label: dt("Ключ", "AI key") }]}
+          items={[{ id: "users", label: "Пользователи" }, { id: "markets", label: "Рынки" }, { id: "key", label: dt("Ключ", "AI key") }, { id: "usage", label: dt("Расход", "Spend") }]}
           value={tab}
-          onChange={(v) => setTab(v as "users" | "markets" | "key")}
+          onChange={(v) => setTab(v as "users" | "markets" | "key" | "usage")}
         />
       </div>
       <div className="mt-3 min-h-0 flex-1 overflow-y-auto px-4 pb-4">
         {tab === "users" && <WorkspaceUsers wsId={workspace.id} allWorkspaces={allWorkspaces} desk={desk} />}
         {tab === "markets" && <WorkspaceMarkets ws={workspace} onUpdated={() => setWorkspace((w) => ({ ...w }))} />}
         {tab === "key" && <WorkspaceKeyPanel wsId={workspace.id} />}
+        {tab === "usage" && <ModelUsagePanel workspaceId={workspace.id} />}
       </div>
     </div>
   );

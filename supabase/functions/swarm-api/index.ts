@@ -730,12 +730,12 @@ async function routeRequest(req: Request): Promise<Response> {
     });
   }
 
-  // Расход OpenAI (#311) — только суперадмин: деньги всей системы, а не воркспейса.
+  // Расход OpenAI (#311): мастер-админ — вся система или одно пространство; админ — своё (#233).
   const usageResp = await handleModelUsageRoutes(
     req,
     routePath,
     supabase,
-    isMaster,
+    { isMaster, isAdmin, groupId },
     origin,
   );
   if (usageResp) return usageResp;

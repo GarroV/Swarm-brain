@@ -70,7 +70,7 @@ export async function handleAdminRoutes(
   const actorName = async () => (await resolveNames([telegramId])).get(telegramId) ?? `#${telegramId}`;
 
   // Ключ к нейронке у пространства и мастер-админы (#233) — отдельный модуль, чтобы admin.ts не рос.
-  const keysResp = await handleWorkspaceKeysRoutes(supabase, req, routePath, actor, origin, deps);
+  const keysResp = await handleWorkspaceKeysRoutes(supabase, req, routePath, actor, origin, deps, resolveNames);
   if (keysResp) return keysResp;
 
   // GET /admin/review-counts — СВОДКА «сколько встреч на вычитке у каждого участника».

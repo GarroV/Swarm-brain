@@ -4002,10 +4002,14 @@ export type UsageCall = {
   audio_seconds: number;
 };
 
-/** Расход OpenAI за период (#311, #822), только суперадмину. `from`/`to` — «YYYY-MM-DD» включительно. */
-export async function fetchModelUsage(from: string, to: string): Promise<ModelUsage> {
+/**
+ * Расход OpenAI за период (#311, #822). `from`/`to` — «YYYY-MM-DD» включительно. Без `workspace` —
+ * вся система (только мастер-админу); с ним — одно пространство (админу пространства — своё, #233).
+ */
+export async function fetchModelUsage(from: string, to: string, workspace?: string): Promise<ModelUsage> {
   if (DEV_MODE) return mockModelUsage(from, to);
-  return apiFetch<ModelUsage>(`/admin/model-usage?from=${from}&to=${to}`);
+  const ws = workspace ? `&workspace=${encodeURIComponent(workspace)}` : "";
+  return apiFetch<ModelUsage>(`/admin/model-usage?from=${from}&to=${to}${ws}`);
 }
 
 /** Одноразовая ссылка на бота для привязки Telegram (#92); действует 15 минут. */
@@ -4411,10 +4415,15 @@ export type WorkspaceKeyStatus = {
   set_by: number | null;
   last_error: string | null;
   last_error_at: string | null;
+  /** Режим сервера: при `false` ключи пространств выключены и работает только общий ключ сервера. */
+  own_keys_enabled: boolean;
+  /** Есть ли у сервера общий ключ — на нём работает пространство без своего ключа. */
+  server_key_available: boolean;
 };
 
 const SERVER_KEY_STATUS: WorkspaceKeyStatus = {
   source: "server", last4: null, set_at: null, set_by: null, last_error: null, last_error_at: null,
+  own_keys_enabled: true, server_key_available: true,
 };
 
 export async function fetchWorkspaceKeyStatus(wsId: string): Promise<WorkspaceKeyStatus> {
@@ -4441,10 +4450,12 @@ export type MasterAdmin = {
   created_at: string | null;
   /** Константа в коде: снять нельзя. */
   builtin: boolean;
+  /** Имя из профиля; нет профиля — null, показываем id. */
+  name: string | null;
 };
 
 export async function fetchMasterAdmins(): Promise<MasterAdmin[]> {
-  if (DEV_MODE) return [{ telegram_id: 744230399, added_by: null, created_at: null, builtin: true }];
+  if (DEV_MODE) return [{ telegram_id: 744230399, added_by: null, created_at: null, builtin: true, name: "Owner" }];
   return apiFetch<MasterAdmin[]>("/admin/master-admins");
 }
 
