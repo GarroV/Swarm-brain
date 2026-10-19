@@ -5,6 +5,7 @@
 // _shared/model-usage-summary.ts.
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { apiErr, json } from "./http.ts";
+import { onlyLiveEntries } from "../_shared/entries/live.ts";
 import { canViewEntry, type EntryAccessRow } from "../_shared/entries/access.ts";
 import { serverError } from "./client-error.ts";
 import {
@@ -87,8 +88,10 @@ async function visibleTitles(
     const entryIds = [...new Set(meetings.map((m) => m.entry_id).filter((e): e is string => !!e))];
     const entries = new Map<string, EntryRow>();
     if (entryIds.length > 0) {
-      const { data: ed, error: ee } = await supabase.from("entries")
-        .select("id, is_private, owner_id, shared_with").in("id", entryIds);
+      // Архивная запись невидима везде (#569): названия её встречи тоже нет.
+      const { data: ed, error: ee } = await onlyLiveEntries(
+        supabase.from("entries").select("id, is_private, owner_id, shared_with"),
+      ).in("id", entryIds);
       if (ee) throw new Error(`entries: ${ee.message}`);
       for (const e of (ed ?? []) as EntryRow[]) entries.set(e.id, e);
     }
