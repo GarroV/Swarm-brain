@@ -15,6 +15,8 @@ import {
   failureNotice,
   HERE_KEY,
   shouldAutoStart,
+  STEP_DONE_EVENT,
+  STEP_REQUEST_EVENT,
   type StepNotice,
   stepPending,
   TRIED_KEY,
@@ -84,8 +86,10 @@ export function PasskeyStep({ me }: { me: Me | null }) {
     setNotice(null);
     try {
       const r = await runStep();
-      if (r.done) setDone(true);
-      else setNotice(r.notice ?? "enable_link");
+      if (r.done) {
+        setDone(true);
+        window.dispatchEvent(new Event(STEP_DONE_EVENT));
+      } else setNotice(r.notice ?? "enable_link");
     } finally {
       busy.current = false;
     }
@@ -102,6 +106,15 @@ export function PasskeyStep({ me }: { me: Me | null }) {
     }
     // attempt читает только ref-ы и localStorage: зависимость от него зациклила бы эффект.
   }, [pending]);
+
+  // Стикер-напоминание на главной (home/StickerBoard.tsx) просит ту же привязку — вызов один и тот же.
+  useEffect(() => {
+    if (!pending || done) return;
+    const onRequest = () => void attempt();
+    window.addEventListener(STEP_REQUEST_EVENT, onRequest);
+    return () => window.removeEventListener(STEP_REQUEST_EVENT, onRequest);
+    // attempt читает только ref-ы и localStorage: зависимость от него пересоздавала бы слушатель зря.
+  }, [pending, done]);
 
   if (!pending || done || !notice) return null;
   const retry = (
