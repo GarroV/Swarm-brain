@@ -15,7 +15,8 @@ import { openSecret, sealSecret, secretsKeyConfigured } from "./secret-box.ts";
 import { classifyResponse, recordOutcome, type SendText } from "./ai-health.ts";
 
 const KIND = "openai";
-const CACHE_TTL_MS = 60_000;
+/** Как долго держим расшифрованный ключ пространства в памяти (снятый/заменённый ключ живёт в других экземплярах не дольше). */
+export const CACHE_TTL_MS = 15_000;
 const VERIFY_TIMEOUT_MS = 10_000;
 const OPENAI_MODELS_URL = "https://api.openai.com/v1/models";
 const MIN_KEY_LENGTH = 20;

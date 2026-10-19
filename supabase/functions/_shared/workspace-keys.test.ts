@@ -1,6 +1,7 @@
 import { assert, assertEquals, assertRejects } from "jsr:@std/assert@1";
 import { makeFakeDb } from "./workspace-keys.fake.ts";
 import {
+  CACHE_TTL_MS,
   clearOpenAIKey,
   getOpenAIKey,
   keyStatus,
@@ -364,4 +365,22 @@ Deno.test("noteOpenAIResponse: сбой записи состояния не р�
     const db = makeFakeDb({}, { ai_key_health: { code: "42P01" } });
     const resolved = await resolveOpenAIKey(db.client, "cee");
     await noteOpenAIResponse(db.client, "cee", resolved, { status: 401 }, noSend); // не бросает
+  }));
+
+Deno.test("кэш ключа пространства живёт не дольше 15 с и действительно истекает", () =>
+  withEnv(BASE, async () => {
+    assertEquals(CACHE_TTL_MS, 15_000);
+    const db = makeFakeDb();
+    await getOpenAIKey(db.client, "cee");
+    const realNow = Date.now;
+    try {
+      Date.now = () => realNow() + CACHE_TTL_MS - 1000;
+      await getOpenAIKey(db.client, "cee");
+      assertEquals(db.reads.workspace_secrets, 1, "внутри срока — из кэша");
+      Date.now = () => realNow() + CACHE_TTL_MS + 1000;
+      await getOpenAIKey(db.client, "cee");
+      assertEquals(db.reads.workspace_secrets, 2, "после срока — снова в базу");
+    } finally {
+      Date.now = realNow;
+    }
   }));

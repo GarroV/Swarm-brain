@@ -311,3 +311,32 @@ Deno.test("ai-health: админ видит сбои и встало-в-обра
   assertEquals(all.issues.map((i: { group_id: string }) => i.group_id).sort(), ["", "cee", "demo"]);
   assertEquals(all.stalled.length, 2);
 });
+
+Deno.test("master-admins: выдача и снятие роли пишутся в журнал (кто, кому, когда); отказ не пишется", async () => {
+  const db = setup();
+  const lines: string[] = [];
+  const orig = console.log;
+  console.log = (m: unknown) => void lines.push(String(m));
+  try {
+    for (
+      const [m, p, b] of [
+        ["POST", "/admin/master-admins", { telegram_id: 777 }],
+        ["POST", "/admin/master-admins", { telegram_id: 778 }],
+        ["DELETE", "/admin/master-admins/777", undefined],
+        ["POST", "/admin/master-admins", { telegram_id: -1 }],
+        ["DELETE", "/admin/master-admins/999", undefined],
+      ] as Array<[string, string, unknown]>
+    ) {
+      await (await call(db, m, p, SUPER, true, "cee", b)).body?.cancel();
+    }
+  } finally {
+    console.log = orig;
+  }
+  const events = lines.map((l) => JSON.parse(l));
+  assertEquals(events.map((e) => [e.event, e.actor, e.target]), [
+    ["master_admin_added", SUPER, 777],
+    ["master_admin_added", SUPER, 778],
+    ["master_admin_removed", SUPER, 777],
+  ]);
+  assert(events.every((e) => !Number.isNaN(Date.parse(e.at))));
+});

@@ -12,6 +12,7 @@
 // гаснет первым успешным вызовом.
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { notifyPerson } from "./notify-person.ts";
+import { listMasterAdmins } from "./users/master-admins.ts";
 
 /** Сколько мягких сбоев подряд нужно для тревоги… */
 export const SOFT_MIN_FAILURES = 3;
@@ -130,6 +131,22 @@ export function alertText(workspaceName: string, lang: "ru" | "en"): string {
 
 // ── хранение ────────────────────────────────────────────────────────────────
 
+const SERVER_REASON_RU: Record<FailureReason, string> = {
+  rejected: "ключ отклонён",
+  quota: "закончились деньги или квота",
+  errors: "ошибки не проходят",
+};
+
+/** Письмо мастер-админам об общем ключе сервера (решение безопасности 19.10.2026: не админам пространств). */
+export function serverAlertText(reason: FailureReason): string {
+  return `Общий ключ нейросети перестал работать (${
+    SERVER_REASON_RU[reason]
+  }). Пространства без своего ключа сейчас без обработки.`;
+}
+
+/** Строка, на которой считается суточный кулдаун письма об общем ключе — одна на все пространства. */
+const SERVER_ALERT_GROUP = "";
+
 const healthy = new Map<string, number>(); // "group|source" → до какого момента считаем здоровым без проверки
 export function resetHealthCache(): void {
   healthy.clear();
@@ -178,10 +195,17 @@ export async function recordOutcome(supabase: SupabaseClient, args: RecordArgs):
   const { row, alertDue } = nextHealth(prev, outcome, now, groupId, source);
   const { error: upErr } = await supabase.from(TABLE).upsert(row, { onConflict: "group_id,source" });
   if (upErr) throw new Error(`ai-health: не записать (${upErr.code ?? "db"})`);
-  if (alertDue && groupId) await alertAdmins(supabase, row, prev, now, args.send ?? defaultSend(supabase));
+  // Ключ пространства — админам этого пространства (слать некому без пространства); общий ключ — мастерам.
+  if (alertDue && (groupId || source === "server")) {
+    await alertAdmins(supabase, row, prev, now, args.send ?? defaultSend(supabase));
+  }
 }
 
-/** Забрать право на письмо (сравнить-и-записать, чтобы два экземпляра не отправили дважды) и разослать. */
+/**
+ * Забрать право на письмо (сравнить-и-записать, чтобы два экземпляра не отправили дважды) и разослать.
+ * Ключ пространства: кулдаун на строке пространства, адресаты — его админы. Общий ключ: кулдаун
+ * один на ВСЕ пространства (общий сбой — одно письмо в сутки), адресаты — мастер-админы.
+ */
 async function alertAdmins(
   supabase: SupabaseClient,
   row: HealthRow,
@@ -189,21 +213,46 @@ async function alertAdmins(
   now: Date,
   send: SendText,
 ): Promise<void> {
-  const before = prev?.last_alert_at ?? null;
+  const isServer = row.source === "server";
+  const claimGroup = isServer ? SERVER_ALERT_GROUP : row.group_id;
+  let before: string | null;
+  if (isServer) {
+    // Общая строка кулдауна: заводим пустую, если ещё нет, и читаем актуальную метку.
+    await supabase.from(TABLE).upsert(blank(claimGroup, "server"), {
+      onConflict: "group_id,source",
+      ignoreDuplicates: true,
+    });
+    const { data } = await supabase.from(TABLE).select("last_alert_at").eq("group_id", claimGroup).eq(
+      "source",
+      "server",
+    )
+      .maybeSingle();
+    before = (data as { last_alert_at: string | null } | null)?.last_alert_at ?? null;
+    if (before && now.getTime() - new Date(before).getTime() < ALERT_COOLDOWN_MS) return;
+  } else {
+    before = prev?.last_alert_at ?? null;
+  }
   let claim = supabase.from(TABLE).update({ last_alert_at: now.toISOString() })
-    .eq("group_id", row.group_id).eq("source", row.source);
+    .eq("group_id", claimGroup).eq("source", row.source);
   claim = before === null ? claim.is("last_alert_at", null) : claim.eq("last_alert_at", before);
   const { data: claimed, error } = await claim.select("group_id");
   if (error || !claimed || claimed.length === 0) return;
 
-  const { data: ws } = await supabase.from("workspaces").select("name").eq("id", row.group_id).maybeSingle();
-  const name = (ws as { name?: string } | null)?.name ?? row.group_id;
-  const { data: admins } = await supabase.from("allowed_users").select("telegram_id")
-    .eq("group_id", row.group_id).eq("is_admin", true);
-  const ids = ((admins ?? []) as Array<{ telegram_id: number | null }>)
-    .map((a) => a.telegram_id).filter((id): id is number => typeof id === "number" && id > 0);
-  // Языка человека на сервере нет (он живёт в браузере) — русский по умолчанию; EN-текст готов в alertText.
-  const text = alertText(name, "ru");
+  let ids: number[];
+  let text: string;
+  if (isServer) {
+    ids = (await listMasterAdmins(supabase)).map((m) => m.telegram_id);
+    text = serverAlertText(row.reason ?? "errors");
+  } else {
+    const { data: ws } = await supabase.from("workspaces").select("name").eq("id", row.group_id).maybeSingle();
+    const name = (ws as { name?: string } | null)?.name ?? row.group_id;
+    const { data: admins } = await supabase.from("allowed_users").select("telegram_id")
+      .eq("group_id", row.group_id).eq("is_admin", true);
+    ids = ((admins ?? []) as Array<{ telegram_id: number | null }>)
+      .map((a) => a.telegram_id).filter((id): id is number => typeof id === "number" && id > 0);
+    // Языка человека на сервере нет (он живёт в браузере) — русский по умолчанию; EN-текст готов в alertText.
+    text = alertText(name, "ru");
+  }
   let delivered = 0;
   for (const id of ids) {
     try {
@@ -215,7 +264,7 @@ async function alertAdmins(
   }
   if (ids.length > 0 && delivered === 0) {
     // Никто не получил — право на письмо возвращаем, следующий сбой попробует снова.
-    await supabase.from(TABLE).update({ last_alert_at: before }).eq("group_id", row.group_id).eq("source", row.source);
+    await supabase.from(TABLE).update({ last_alert_at: before }).eq("group_id", claimGroup).eq("source", row.source);
   }
 }
 

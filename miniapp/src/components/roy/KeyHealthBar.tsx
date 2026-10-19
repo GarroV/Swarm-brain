@@ -40,6 +40,9 @@ export function KeyHealthBar() {
       : dt("нейросеть стабильно не отвечает", "the AI service keeps failing");
     return i.source === "server" ? `${base} ${dt("(общий ключ сервера)", "(shared server key)")}` : base;
   };
+  // Общий ключ — не у пространства: чинит его мастер-админ, он уже получил письмо. Админу пространства
+  // не предлагаем «обновить ключ» (его ключ тут ни при чём), только сообщаем.
+  const serverNote = dt("мастер-админ уже уведомлён", "the master admin has already been notified");
   const where = (name: string, id: string) => (id === "" ? dt("система", "system") : name);
   const openKey = (ws: string) => {
     if (ws) setAdminTarget({ ws, tab: "key" });
@@ -61,9 +64,13 @@ export function KeyHealthBar() {
       {health.issues.map((i) => (
         <p key={`${i.group_id}|${i.source}`} className="text-ink">
           <span className="font-semibold">{where(i.workspace_name, i.group_id)}</span>: {reasonText(i)}.{" "}
-          <button type="button" onClick={() => openKey(i.group_id)} className="font-semibold underline">
-            {i.group_id === "" ? dt("Открыть админку", "Open admin") : dt("Открыть экран ключа", "Open the key screen")}
-          </button>
+          {i.source === "server" ? (
+            <span>{serverNote}.</span>
+          ) : (
+            <button type="button" onClick={() => openKey(i.group_id)} className="font-semibold underline">
+              {dt("Открыть экран ключа", "Open the key screen")}
+            </button>
+          )}
         </p>
       ))}
       {health.stalled.map((s) => (

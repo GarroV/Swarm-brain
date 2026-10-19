@@ -90,6 +90,11 @@ async function handleKeyRoute(
   }
 }
 
+/** Журнал выдачи/снятия роли мастер-админа: кто, кому, когда — строка в логе функции (как у смены почты). */
+function logMasterChange(event: "master_admin_added" | "master_admin_removed", actor: number, target: number): void {
+  console.log(JSON.stringify({ event, actor, target, at: new Date().toISOString() }));
+}
+
 async function handleMasterRoute(
   supabase: SupabaseClient,
   req: Request,
@@ -115,11 +120,13 @@ async function handleMasterRoute(
     if (!body) return apiErr(400, "Invalid JSON", origin);
     const res = await addMasterAdmin(supabase, Number(body.telegram_id), actor.telegramId);
     if (!res.ok) return apiErr(400, res.message, origin, res.reason);
+    logMasterChange("master_admin_added", actor.telegramId, Number(body.telegram_id));
     return json(await listWithNames(), 201, origin);
   }
 
   const res = await removeMasterAdmin(supabase, Number(idPart));
   if (!res.ok) return apiErr(res.reason === "not_found" ? 404 : 409, res.message, origin, res.reason);
+  logMasterChange("master_admin_removed", actor.telegramId, Number(idPart));
   return json(await listWithNames(), 200, origin);
 }
 

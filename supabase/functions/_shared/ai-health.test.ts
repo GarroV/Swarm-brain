@@ -9,6 +9,7 @@ import {
   nextHealth,
   recordOutcome,
   resetHealthCache,
+  serverAlertText,
   SOFT_MIN_FAILURES,
   SOFT_MIN_SPAN_MS,
 } from "./ai-health.ts";
@@ -121,6 +122,7 @@ function setup() {
   sent.length = 0;
   return makeFakeDb({
     workspaces: [{ id: "cee", name: "IMF BD" }, { id: "demo", name: "Demo" }],
+    master_admins: [{ telegram_id: 900 }],
     allowed_users: [
       { telegram_id: 1, group_id: "cee", is_admin: true },
       { telegram_id: 2, group_id: "cee", is_admin: false },
@@ -148,30 +150,56 @@ Deno.test("recordOutcome: 401 → админам ЭТОГО пространст
   assertEquals(sent.length, 4, "через сутки — снова");
 });
 
-Deno.test("recordOutcome: ключ сервера — тревога тому пространству, где вызов упал; вызов без пространства — только запись", async () => {
+const MASTERS = [744230399, 900];
+const quota = { kind: "hard", reason: "quota" } as const;
+
+Deno.test("общий ключ сервера: письмо ТОЛЬКО мастер-админам, админам пространств — нет; текст с причиной", async () => {
   const db = setup();
-  await recordOutcome(db.client, {
-    groupId: "demo",
-    source: "server",
-    outcome: { kind: "hard", reason: "quota" },
-    send,
-    now: T0,
-  });
-  assertEquals(sent.map((s) => s.to), [4]);
-  await recordOutcome(db.client, {
-    groupId: "",
-    source: "server",
-    outcome: { kind: "hard", reason: "quota" },
-    send,
-    now: T0,
-  });
-  assertEquals(sent.length, 1, "без пространства адресатов нет");
+  await recordOutcome(db.client, { groupId: "demo", source: "server", outcome: quota, send, now: T0 });
+  assertEquals(sent.map((s) => s.to).sort(), MASTERS.slice().sort());
+  assert(!sent.some((s) => [1, 2, 3, 4].includes(s.to)), "админы пространств не получают");
   assertEquals(
-    db.tables.ai_key_health.find((r) => r.group_id === "")?.last_alert_at,
-    null,
-    "право на письмо не тратится",
+    sent[0].text,
+    "Общий ключ нейросети перестал работать (закончились деньги или квота). Пространства без своего ключа сейчас без обработки.",
   );
-  assertEquals(db.tables.ai_key_health.length, 2);
+  for (const [reason, label] of [["rejected", "ключ отклонён"], ["errors", "ошибки не проходят"]] as const) {
+    assertEquals(
+      serverAlertText(reason),
+      `Общий ключ нейросети перестал работать (${label}). Пространства без своего ключа сейчас без обработки.`,
+    );
+  }
+});
+
+Deno.test("общий ключ сервера: сбой в нескольких пространствах — одно письмо мастерам в сутки; вызов без пространства тоже будит мастера", async () => {
+  const db = setup();
+  await recordOutcome(db.client, { groupId: "cee", source: "server", outcome: quota, send, now: T0 });
+  await recordOutcome(db.client, { groupId: "demo", source: "server", outcome: quota, send, now: at(MIN) });
+  await recordOutcome(db.client, { groupId: "", source: "server", outcome: quota, send, now: at(2 * MIN) });
+  assertEquals(sent.length, MASTERS.length, "общий кулдаун на все пространства");
+  await recordOutcome(db.client, {
+    groupId: "cee",
+    source: "server",
+    outcome: quota,
+    send,
+    now: at(ALERT_COOLDOWN_MS + MIN),
+  });
+  assertEquals(sent.length, MASTERS.length * 2, "через сутки — снова");
+  assertEquals(db.tables.ai_key_health.filter((r) => r.source === "server").length, 3);
+});
+
+Deno.test("общий ключ сервера: мастерам не дошло — право на письмо возвращается", async () => {
+  const db = setup();
+  const failing = () => Promise.reject(new Error("telegram down"));
+  await recordOutcome(db.client, { groupId: "cee", source: "server", outcome: quota, send: failing, now: T0 });
+  await recordOutcome(db.client, { groupId: "cee", source: "server", outcome: quota, send, now: at(MIN) });
+  assertEquals(sent.length, MASTERS.length);
+});
+
+Deno.test("свой ключ пространства: письмо админам этого пространства, мастерам — нет", async () => {
+  const db = setup();
+  await recordOutcome(db.client, { groupId: "demo", source: "workspace", outcome: quota, send, now: T0 });
+  assertEquals(sent.map((s) => s.to), [4]);
+  assert(sent[0].text.startsWith("Ключ нейросети в пространстве «Demo»"));
 });
 
 Deno.test("recordOutcome: мягкие сбои тревожат только если держатся; успех гасит", async () => {
