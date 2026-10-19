@@ -42,7 +42,9 @@ import { serverError } from "./client-error.ts";
 const BUCKET = "meeting-audio";
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const MAX_TITLE_LEN = 200;
-const DEFAULT_TITLE_NAME = "Офлайн-встреча";
+// Заглушка до обработки. Префикс «Запись » — сигнал обработчику (meeting-processor) заменить
+// название на тему разговора: в списке должно быть видно, что записано (владелец 19.10.2026).
+const DEFAULT_TITLE_NAME = "Запись Swarm Brain";
 const INLINE_BUDGET_MS = 90_000;
 /** Тело JSON-запросов маршрутов — пара полей; больше не читаем. */
 const MAX_JSON_BYTES = 4096;
