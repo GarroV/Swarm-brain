@@ -41,8 +41,8 @@ Deno.test("имя ключа: браузер · система", () => {
   assertEquals(deviceName("curl"), "Browser");
 });
 
-Deno.test("осечка подтверждения (ключи есть) — строка про код или сброс, не про сохранение нового ключа", () => {
-  assertEquals(failureNotice("get"), "confirm_or_reset");
+Deno.test("осечка подтверждения — та же строка-ссылка, без отсылок к другому устройству", () => {
+  assertEquals(failureNotice("get"), "enable_link");
 });
 
 Deno.test("осечка первого сохранения — строка-ссылка «Включить вход по Touch ID»", () => {

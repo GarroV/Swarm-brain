@@ -30,7 +30,7 @@ type Deps = ReturnType<typeof setup>["deps"];
 /** Анна с ключом на Маке (первый вход): второй шаг на Маке пройден. */
 async function annaWithMac(deps: Deps) {
   const mac = await SoftAuthenticator.create();
-  const s = await startStep(deps, { telegramId: ANNA, origin: ORIGIN, userName: "anna" });
+  const s = await startStep(deps, { telegramId: ANNA, origin: ORIGIN, userName: "anna", here: false });
   assert(s.ok && s.mode === "create");
   const cred = await mac.register({ challenge: s.options.challenge as string, origin: ORIGIN, rpID: RP_ID });
   assert((await finishStep(deps, { telegramId: ANNA, origin: ORIGIN, name: "Chrome · Mac", credential: cred })).ok);
@@ -103,7 +103,7 @@ Deno.test("телефон по ссылке заводит свой ключ: pl
   assertEquals((await store.describeForPerson(ANNA)).map((k) => k.name), ["Chrome · Mac", "Safari · iPhone"]);
 
   // Дальше телефон подтверждает вход своим ключом обычным вторым шагом.
-  const g = await startStep(deps, { telegramId: ANNA, origin: ORIGIN, userName: "anna" });
+  const g = await startStep(deps, { telegramId: ANNA, origin: ORIGIN, userName: "anna", here: true });
   assert(g.ok && g.mode === "get");
   const asr = await phone.assert({ challenge: g.options.challenge as string, origin: ORIGIN, rpID: RP_ID });
   assertEquals(await finishStep(deps, { telegramId: ANNA, origin: ORIGIN, credential: asr }), {

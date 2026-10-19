@@ -125,7 +125,8 @@ export function NotificationsBell({ className }: { className?: string }) {
     // экрана, так полоска появляется везде без правки каждой шапки. Внешний div — раскладка
     // (className вызывающего), внутренний relative — якорь поповера, как было.
     <div className={cn("flex items-center gap-3", className)}>
-      <PresenceStrip />
+      {/* Отступ от колокольчика — примерно полкружка (владелец 19.10): полоска не липнет к нему. */}
+      <PresenceStrip className="mr-4" />
       <div className="relative">
       {open && (
         <>

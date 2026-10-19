@@ -27,12 +27,13 @@ const SEGS = [
 
 /** Запись из браузера (офлайн-встреча): `meetings.source`, см. docs/decisions/2026-10-16-web-recorder.md. */
 export const WEB_RECORDER_SOURCE = "web-recorder";
-// Ярлык — ключ фильтра «Источник» (как у остальных, русский); показывается через localizeSource.
-const OFFLINE_LABEL = "Офлайн-встреча";
+// Ярлык — ключ фильтра «Источник». Записано самим Swarm (владелец 19.10.2026: «должна будет в списке
+// отображаться как Swarm Brain» — видно, где записано); имя продукта одно на обоих языках.
+const WEB_RECORDER_LABEL = "Swarm Brain";
 
-/** Ярлык источника на языке интерфейса: фильтры хранят русский ключ, глаз видит язык сессии. */
+/** Ярлык источника на языке интерфейса: фильтры хранят ключ, глаз видит язык сессии. */
 export function localizeSource(label: string, dt: (ru: string, en: string) => string): string {
-  return label === OFFLINE_LABEL ? dt(label, "In-person") : label;
+  return label === "Встреча" ? dt(label, "Meeting") : label;
 }
 
 // Источник встречи для подписи. Запись рекордера и бота встреч различаются (#788): чьей записью
@@ -45,7 +46,7 @@ export function sourceLabel(x: {
 }): string {
   if (x.source === "granola") return "Granola";
   if (x.source === "read_ai") return "Read.ai";
-  if (x.source === WEB_RECORDER_SOURCE) return OFFLINE_LABEL;
+  if (x.source === WEB_RECORDER_SOURCE) return WEB_RECORDER_LABEL;
   const fromMeta = x.metadata?.recorded_by;
   const by = recordedByOf({
     source: x.source,

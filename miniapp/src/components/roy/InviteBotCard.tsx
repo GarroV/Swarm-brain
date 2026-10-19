@@ -205,9 +205,9 @@ export function InviteBotButton() {
   const label = s.isLive && s.invite ? inviteStatusLabel(s.invite.status, dt) : dt("Позвать бота", "Invite the bot");
   return (
     <span ref={ref} className="relative">
-      <ToolbarButton on={s.isLive} popup={{ open }} onClick={() => setOpen((v) => !v)}>
-        <RoyIcon name="meet" size={13} />
-        {label}
+      {/* Иконка с подсказкой при наведении (владелец 19.10.2026); статус идущего бота — в той же подсказке. */}
+      <ToolbarButton icon title={label} on={s.isLive} popup={{ open }} onClick={() => setOpen((v) => !v)}>
+        <RoyIcon name="meet" size={14} />
       </ToolbarButton>
       {open && (
         <div role="dialog" aria-label={dt("Позвать бота на созвон", "Invite the bot to a call")}

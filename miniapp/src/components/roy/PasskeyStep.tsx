@@ -4,8 +4,8 @@
 // палец (в браузере с меткой) или сохранить новый (без метки). Без кнопки и без вопроса. Если окно
 // не открылось или его закрыли — одна тихая строка-ссылка, клик повторяет; за один вход авто-попытка
 // одна (lib/passkeyStep.ts). Логика выбора — там; здесь только браузерные вызовы.
-// Подтверждение не удалось (на устройстве нет ключа, окно отменено) — подсказка про «Добавить
-// устройство» в профиле другого устройства (решение 17.10.2026), а не тупик.
+// Подтверждение не удалось (ключ из этого браузера удалили, окно отменено) — метка снимается, и
+// повтор сохраняет новый палец (решение 19.10.2026); QR и «другое устройство» не предлагаем.
 import { useEffect, useRef, useState } from "react";
 import { browserSupportsWebAuthn, startAuthentication, startRegistration } from "@simplewebauthn/browser";
 import type { Me } from "@/types";
@@ -54,7 +54,8 @@ class StepFailed extends Error {}
 
 /** Один проход: вызов → окно устройства → проверка. Режим (create/get) выбирает сервер по ключам человека. */
 async function runStep(): Promise<{ done: boolean; notice?: StepNotice }> {
-  const opts = await postJson("/api/auth/passkey/options", {});
+  // Метка «ключ есть здесь» решает режим: без неё сервер всегда просит сохранить палец (create).
+  const opts = await postJson("/api/auth/passkey/options", { here: readKey(HERE_KEY) === "1" });
   const mode = opts.data.mode as "create" | "get" | undefined;
   if (!opts.ok || !mode || !opts.data.options) return { done: false, notice: "enable_link" };
   try {
@@ -67,7 +68,8 @@ async function runStep(): Promise<{ done: boolean; notice?: StepNotice }> {
     return { done: true };
   } catch {
     // Закрыли окно, нет ключа на устройстве, браузер не дал открыть без жеста, сервер отказал.
-    // При подтверждении новый ключ НЕ создаём — это решает failureNotice.
+    // Подтверждение не вышло — метка устарела (ключ удалили): снимаем, следующий заход пойдёт как create.
+    if (mode === "get") writeKey(HERE_KEY, null);
     return { done: false, notice: failureNotice(mode) };
   }
 }
@@ -117,26 +119,11 @@ export function PasskeyStep({ me }: { me: Me | null }) {
   }, [pending, done]);
 
   if (!pending || done || !notice) return null;
-  const retry = (
-    <button type="button" onClick={() => void attempt()} className="underline underline-offset-2">
-      {notice === "enable_link"
-        ? dt("Включить вход по Touch ID в этом браузере", "Turn on Touch ID sign-in in this browser")
-        : dt("Повторить", "Try again")}
-    </button>
-  );
   return (
     <div className="shrink-0 px-4 py-1 text-center text-muted-foreground" style={{ fontSize: 12 }}>
-      {notice === "enable_link"
-        ? retry
-        : (
-          <>
-            {dt(
-              "На этом устройстве нет ключа. Откройте профиль на устройстве, где ключ есть, и нажмите «Добавить устройство». ",
-              "There's no key on this device. Open your profile on a device that has one and tap “Add device”. ",
-            )}
-            {retry}
-          </>
-        )}
+      <button type="button" onClick={() => void attempt()} className="underline underline-offset-2">
+        {dt("Включить вход по Touch ID в этом браузере", "Turn on Touch ID sign-in in this browser")}
+      </button>
     </div>
   );
 }

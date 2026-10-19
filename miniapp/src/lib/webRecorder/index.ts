@@ -8,3 +8,5 @@ export type {
   RecoverableRecording,
 } from "./types";
 export { flushOwnLeftovers, purgeExpiredRecordings } from "./flush";
+export { detectMicEnv, isMicDenial, isRetryableMicError, micSteps } from "./micHelp";
+export type { MicStep } from "./micHelp";

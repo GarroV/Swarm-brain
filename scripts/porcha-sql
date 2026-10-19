@@ -39,7 +39,13 @@ replay_after() {
   done
 }
 
-restore() { psql "$DB_URL" -q -v ON_ERROR_STOP=1 -f "$MIG" >/dev/null && replay_after "$MIG"; }
+# Порча может СОЗДАВАТЬ объекты (например таблицу porcha_no_rls): повторный накат исходника их не
+# убирает, и они оставались на общем стенде навсегда (issue #998). Всё с префиксом porcha_ — наше.
+drop_porcha_leftovers() {
+  psql "$DB_URL" -Atc "select format('drop table public.%I', tablename) from pg_tables where schemaname='public' and tablename like 'porcha\_%'" \
+    | psql "$DB_URL" -q -v ON_ERROR_STOP=1 >/dev/null
+}
+restore() { psql "$DB_URL" -q -v ON_ERROR_STOP=1 -f "$MIG" >/dev/null && replay_after "$MIG" && drop_porcha_leftovers; }
 
 while IFS='|' read -r FROM TO TEST MIG; do
   case "$FROM" in ''|\#*) continue ;; esac
