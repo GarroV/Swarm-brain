@@ -4419,11 +4419,13 @@ export type WorkspaceKeyStatus = {
   own_keys_enabled: boolean;
   /** Есть ли у сервера общий ключ — на нём работает пространство без своего ключа. */
   server_key_available: boolean;
+  /** Можно ли сохранить ключ пространства (на сервере задан `WORKSPACE_SECRETS_KEY`, миграция накатана). */
+  storage_available: boolean;
 };
 
 const SERVER_KEY_STATUS: WorkspaceKeyStatus = {
   source: "server", last4: null, set_at: null, set_by: null, last_error: null, last_error_at: null,
-  own_keys_enabled: true, server_key_available: true,
+  own_keys_enabled: true, server_key_available: true, storage_available: true,
 };
 
 export async function fetchWorkspaceKeyStatus(wsId: string): Promise<WorkspaceKeyStatus> {
@@ -4470,4 +4472,38 @@ export async function addMasterAdmin(telegramId: number): Promise<MasterAdmin[]>
 export async function removeMasterAdmin(telegramId: number): Promise<MasterAdmin[]> {
   if (DEV_MODE) return fetchMasterAdmins();
   return apiFetch<MasterAdmin[]>(`/admin/master-admins/${telegramId}`, { method: "DELETE" });
+}
+
+// ── Сбой ключа к нейронке: баннер админам (#233) ─────────────────────────────
+export type AiKeyIssue = {
+  group_id: string;
+  workspace_name: string;
+  /** Чей ключ обслуживал упавший вызов: ключ пространства или общий ключ сервера. */
+  source: "workspace" | "server";
+  /** rejected — ключ не принят; quota — кончились деньги или квота; errors — стабильные сбои. */
+  reason: "rejected" | "quota" | "errors";
+  since: string | null;
+  last_failure_at: string | null;
+};
+export type AiStalled = { group_id: string; workspace_name: string; count: number; oldest_at: string };
+export type AiHealth = { issues: AiKeyIssue[]; stalled: AiStalled[] };
+
+/** Что сломалось с нейронкой: админу — своё пространство, мастер-админу — все. Участникам — 403. */
+export async function fetchAiHealth(): Promise<AiHealth> {
+  if (DEV_MODE) {
+    return {
+      issues: [{ group_id: "cee", workspace_name: "IMF BD", source: "workspace", reason: "quota", since: new Date(Date.now() - 3_600_000).toISOString(), last_failure_at: new Date().toISOString() }],
+      stalled: [{ group_id: "cee", workspace_name: "IMF BD", count: 2, oldest_at: new Date(Date.now() - 2 * 3_600_000).toISOString() }],
+    };
+  }
+  return apiFetch<AiHealth>("/admin/ai-health");
+}
+
+/** Назначить или снять админа пространства — только мастер-админ. */
+export async function setWorkspaceAdmin(wsId: string, telegramId: number, isAdmin: boolean): Promise<void> {
+  if (DEV_MODE) return;
+  await apiFetch<{ ok: boolean }>(`/admin/workspaces/${encodeURIComponent(wsId)}/users/${telegramId}/admin`, {
+    method: "PUT",
+    body: JSON.stringify({ is_admin: isAdmin }),
+  });
 }

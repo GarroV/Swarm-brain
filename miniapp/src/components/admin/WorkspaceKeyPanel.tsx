@@ -57,6 +57,7 @@ export function WorkspaceKeyPanel({ wsId }: { wsId: string }) {
     const code = e instanceof ApiError ? (e.body as { code?: string } | null)?.code : undefined;
     if (code === "invalid_format") return dt("Ключ должен начинаться с «sk-» и не содержать пробелов.", 'The key must start with "sk-" and contain no spaces.');
     if (code === "rejected") return dt("OpenAI не принял этот ключ — проверьте его и введите заново.", "OpenAI rejected this key — check it and enter it again.");
+    if (code === "storage_unavailable") return dt("Хранилище ключей на сервере ещё не настроено. Обратитесь к мастер-админу.", "Key storage is not set up on the server yet. Please contact the master admin.");
     if (code === "unverifiable") return dt("Не удалось проверить ключ у OpenAI, ключ не сохранён. Попробуйте позже.", "Could not verify the key with OpenAI, so it was not saved. Please try again later.");
     return e instanceof Error ? e.message : dt("Ошибка", "Error");
   };
@@ -97,7 +98,9 @@ export function WorkspaceKeyPanel({ wsId }: { wsId: string }) {
   };
 
   const own = status?.source === "workspace";
-  const keysOff = status?.own_keys_enabled === false;
+  // Ключ нельзя ни сохранить, ни прочитать: выключено на сервере или нет секрета шифрования / миграции.
+  const noStorage = status?.storage_available === false;
+  const keysOff = status?.own_keys_enabled === false || noStorage;
 
   return (
     <section className="max-w-[720px] rounded-[10px] border border-line bg-surface px-3 py-3">
@@ -113,6 +116,11 @@ export function WorkspaceKeyPanel({ wsId }: { wsId: string }) {
         </p>
       )}
       {!status && !loadError && <div className="roy-shim mb-2" style={{ height: 34, borderRadius: 8 }} />}
+      {noStorage && (
+        <p role="status" className="mb-2 text-ink-soft" style={{ fontSize: 12.5 }}>
+          {dt("Хранение ключей на сервере ещё не настроено — задать ключ пока нельзя. Пространство работает на общем ключе сервера.", "Key storage is not set up on the server yet, so a key cannot be set. The workspace uses the shared server key.")}
+        </p>
+      )}
       {status && (
         <div className="mb-3 space-y-1" style={{ fontSize: 13 }}>
           <p className="text-ink">

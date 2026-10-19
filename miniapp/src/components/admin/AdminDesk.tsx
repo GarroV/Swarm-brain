@@ -3,11 +3,12 @@ import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
 import type { AdminWorkspace } from "@/types";
 import { broadcastMessage, fetchReviewCounts, type ReviewCount } from "@/lib/api";
-import { AdminScreen, WorkspaceDetail, WorkspaceList } from "@/components/AdminScreen";
+import { AdminScreen, useOpenFromTarget, WorkspaceDetail, WorkspaceList } from "@/components/AdminScreen";
 import { useConfirm } from "@/components/ui/confirm";
 import { useDt, useRoyNav } from "@/components/roy/nav";
 import { useIsDesktop } from "@/components/roy/useIsDesktop";
 import { MasterAdminsPanel } from "@/components/admin/MasterAdminsPanel";
+import { canSeeMasterSection } from "@/lib/adminAccess";
 import { ModelUsagePanel } from "@/components/admin/ModelUsagePanel";
 
 // «Админ» десктопа по стенду (docs/redesign/stand/js/screens-system.js → screenAdmin): вкладки
@@ -35,6 +36,8 @@ function AdminDesk() {
   const { me } = useRoyNav();
   const [tab, setTab] = useState<Tab>("ws");
   const [selected, setSelected] = useState<AdminWorkspace | null>(null);
+  const [initialTab, setInitialTab] = useState<"users" | "key">("users");
+  useOpenFromTarget((ws, t) => { setInitialTab(t); setSelected(ws); });
   const [reviews, setReviews] = useState<ReviewCount[] | null>(null);
 
   useEffect(() => {
@@ -45,7 +48,7 @@ function AdminDesk() {
   return (
     <div className="flex h-full flex-col overflow-hidden">
       <div role="tablist" className="flex shrink-0 items-end gap-5 overflow-x-auto border-b border-line px-5" style={{ height: 40 }}>
-        {TABS.filter(([id]) => !SUPERADMIN_TABS.includes(id) || me?.is_superadmin).map(([id, ru, en]) => (
+        {TABS.filter(([id]) => !SUPERADMIN_TABS.includes(id) || canSeeMasterSection(me)).map(([id, ru, en]) => (
           <button key={id} type="button" role="tab" aria-selected={tab === id}
             onClick={() => { setTab(id); if (id === "ws") setSelected(null); }}
             className={cn(
@@ -60,12 +63,12 @@ function AdminDesk() {
       </div>
       <div className="flex min-h-0 flex-1 flex-col overflow-auto">
         {tab === "ws" && (selected
-          ? <WorkspaceDetail ws={selected} onBack={() => setSelected(null)} desk />
+          ? <WorkspaceDetail ws={selected} onBack={() => setSelected(null)} desk initialTab={initialTab} />
           : <div className="p-4"><WorkspaceList onSelect={setSelected} /></div>)}
         {tab === "review" && <ReviewTable rows={reviews} total={queued} />}
         {tab === "broadcast" && <Broadcast />}
-        {tab === "usage" && me?.is_superadmin && <ModelUsagePanel />}
-        {tab === "masters" && me?.is_superadmin && <div className="p-4"><MasterAdminsPanel /></div>}
+        {tab === "usage" && canSeeMasterSection(me) && <ModelUsagePanel />}
+        {tab === "masters" && canSeeMasterSection(me) && <div className="p-4"><MasterAdminsPanel /></div>}
       </div>
     </div>
   );
