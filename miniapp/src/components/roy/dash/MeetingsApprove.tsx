@@ -1,6 +1,7 @@
 "use client";
 import { useRoyNav, useDt } from "../nav";
 import { RoyIcon } from "../icons";
+import { OnAirBadge } from "../record/OnAirBadge";
 import { Market } from "../ui";
 import { deriveEntryTitle } from "../entry";
 import { localizeSource, sourceLabel } from "../screens/RoyMeetingsScreen";
@@ -107,8 +108,9 @@ export function MeetingsApprove({ data, className }: { data: DashboardData; clas
                 <RoyIcon name="mic" size={17} />
               </span>
               <div className="min-w-0 flex-1">
-                <div className="truncate font-semibold text-ink" style={{ fontSize: 13.5, letterSpacing: "-0.01em" }}>
-                  {m.title ?? dt("Запись без названия", "Untitled recording")}
+                <div className="flex min-w-0 items-center gap-2 font-semibold text-ink" style={{ fontSize: 13.5, letterSpacing: "-0.01em" }}>
+                  <span className="truncate">{m.title ?? dt("Запись без названия", "Untitled recording")}</span>
+                  {m.recording_now === true && <OnAirBadge size={10} />}
                 </div>
                 <div className="mt-0.5 flex items-center gap-2">
                   <span

@@ -14,6 +14,7 @@ import { speakerLabelAt } from "@/lib/transcriptSpeaker";
 import { useConfirm } from "@/components/ui/confirm";
 import { hasSeveralOwners, canDeleteDraft, canHideDraft } from "@/lib/draftOwners";
 import { recordedByOf } from "@/lib/agentMeeting";
+import { OnAirBadge } from "@/components/roy/record/OnAirBadge";
 import { TasksFromMeeting } from "@/components/roy/TasksFromMeeting";
 
 type Props = { id: string; onClose: () => void; onChanged?: () => void };
@@ -227,6 +228,8 @@ export function MeetingReview({ id, onClose, onChanged }: Props) {
   const hasTranscript = segments.length > 0;
   // Пустая строка тезисов = НЕ готово (модель вернула пусто). Раньше `!== null` считал "" готовым → голый «—».
   const notesReady = !!meeting.draft_notes_md;
+  const recordingNow = !published && !notesReady && meeting.recording_now === true;
+  const recordedMin = Math.floor((meeting.recorded_seconds ?? 0) / 60);
   const summaryTerminal = meeting.summary_status === "done" || meeting.summary_status === "failed";
   // Транскрипт — инструмент вычитки: по нему сверяют тезисы. Встреча в базе его не показывает —
   // он дублирует тезисы (решение владельца 2026-09-25).
@@ -274,6 +277,13 @@ export function MeetingReview({ id, onClose, onChanged }: Props) {
           <span className="inline-flex items-center gap-1.5"><RoyIcon name="spark" size={13} strokeWidth={1.9} /> {reprocessing ? dt("Обрабатываю…", "Processing…") : dt("Переобработать", "Reprocess")}</span>
         </button>
       )}
+    </div>
+  ) : recordingNow ? (
+    <div className="mb-4 text-sm text-ink-soft">
+      <p className="inline-flex items-center gap-2 font-semibold text-ink">
+        <span className="rec-dot size-2 shrink-0 rounded-full" style={{ background: "var(--pri-high)" }} aria-hidden />
+        {recordedMin > 0 ? dt(`Идёт запись · ${recordedMin} мин`, `Recording · ${recordedMin} min`) : dt("Идёт запись", "Recording")}
+      </p>
     </div>
   ) : (
     <p className="mb-4 text-sm text-ink-soft">{dt("Готовим тезисы…", "Preparing the summary…")}</p>
@@ -339,7 +349,9 @@ export function MeetingReview({ id, onClose, onChanged }: Props) {
           </span>
           {published
             ? <span className="inline-flex items-center gap-1 font-semibold" style={{ fontSize: 12, color: "var(--status-done)" }}><RoyIcon name="check" size={12} strokeWidth={2.2} /> {dt("В базе", "In the base")}</span>
-            : <span className="inline-flex items-center gap-1 font-semibold" style={{ fontSize: 12, color: "var(--status-open)" }}><RoyIcon name="clock" size={12} strokeWidth={1.9} /> {dt("На вычитке", "In review")}</span>}
+            : recordingNow
+              ? <span className="inline-flex items-center gap-1 font-semibold" style={{ fontSize: 12, color: "var(--pri-high)" }}><RoyIcon name="mic" size={12} strokeWidth={1.9} /> {dt("Идёт запись", "Recording")}</span>
+              : <span className="inline-flex items-center gap-1 font-semibold" style={{ fontSize: 12, color: "var(--status-open)" }}><RoyIcon name="clock" size={12} strokeWidth={1.9} /> {dt("На вычитке", "In review")}</span>}
           {meeting.started_at && <span className="text-ink-mute" style={{ fontSize: 12 }}>{fmtDay(meeting.started_at, dt("ru-RU", "en-GB"))}</span>}
           {who && <span className="truncate text-ink-mute" style={{ fontSize: 12 }}>· {dt("записали", "recorded by")}: {who}</span>}
         </div>
@@ -360,8 +372,9 @@ export function MeetingReview({ id, onClose, onChanged }: Props) {
             </div>
           </div>
         ) : (
-          <h1 className="mb-3 font-bold text-ink" style={{ fontSize: 24, letterSpacing: "-0.02em", lineHeight: 1.2 }}>
-            {meeting.title ?? dt("Встреча", "Meeting")}
+          <h1 className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-1 font-bold text-ink" style={{ fontSize: 24, letterSpacing: "-0.02em", lineHeight: 1.2 }}>
+            <span className="min-w-0">{meeting.title ?? dt("Встреча", "Meeting")}</span>
+            {recordingNow && <OnAirBadge size={12} />}
           </h1>
         )}
 

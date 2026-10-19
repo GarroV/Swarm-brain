@@ -470,6 +470,11 @@ export type AgentMeeting = {
   // Чья запись в стенограмме (#788): bot — бот встреч, recorder — рекордер на Mac; null — ещё не
   // расшифровано. Подпись источника — через recordedByOf()/sourceLabel(), не напрямую.
   recorded_by?: "bot" | "recorder" | null;
+  // Бот встреч пишет встречу прямо сейчас (флаг + свежий удар по часам сервера, #1026): «Идёт
+  // запись» и плашка ON AIR вместо «Готовим тезисы…». Считает сервер (isBotRecordingNow), не клиент.
+  recording_now?: boolean;
+  // Секунды записи (heartbeat бота растит их по ходу встречи).
+  recorded_seconds?: number | null;
   // Кто завёл строку: у бота встреч — scriba-<сборка>.
   agent_version?: string | null;
   // Текст тезисов — только в ДЕТАЛИ. В списке вместо него признак наличия (issue #108).
