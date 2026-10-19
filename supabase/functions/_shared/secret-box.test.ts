@@ -75,5 +75,5 @@ Deno.test("secretsKeyConfigured: годный ключ — да; нет, пус�
   await withKey(undefined, () => Promise.resolve(assertEquals(secretsKeyConfigured(), false)));
   await withKey("", () => Promise.resolve(assertEquals(secretsKeyConfigured(), false)));
   await withKey("не-base64!!", () => Promise.resolve(assertEquals(secretsKeyConfigured(), false)));
-  await withKey(btoa("слишком коротко"), () => Promise.resolve(assertEquals(secretsKeyConfigured(), false)));
+  await withKey(btoa("too short"), () => Promise.resolve(assertEquals(secretsKeyConfigured(), false)));
 });
