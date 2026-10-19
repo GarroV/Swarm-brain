@@ -39,6 +39,7 @@ type Body = {
   ts?: unknown;
   telegram_id?: unknown;
   origin?: unknown;
+  here?: unknown;
   name?: unknown;
   credential?: unknown;
   token?: unknown;
@@ -68,7 +69,7 @@ export async function handlePasskeyRequest(req: Request, deps: HandlerDeps): Pro
   if (userName === null) return json({ ok: false, reason: "unknown_user" }, 403);
 
   if (body.op === "start") {
-    const r = await startStep(deps, { telegramId, origin: body.origin, userName });
+    const r = await startStep(deps, { telegramId, origin: body.origin, userName, here: body.here === true });
     if (r.ok) return json({ ok: true, mode: r.mode, options: r.options });
     return json({ ok: false, reason: r.reason }, r.reason === "throttled" ? 429 : 403);
   }
