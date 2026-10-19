@@ -1170,6 +1170,37 @@ export async function fetchTasksDelta(since: string): Promise<TasksDeltaResponse
   return apiFetch<TasksDeltaResponse>(`/tasks?${params.toString()}`);
 }
 
+/** Подсказки поиска слева (GET /search/quick): названия, без текстов. Права — как у списков. */
+export type QuickSearchResult = {
+  tasks: { id: string; title: string; status: string; due_date: string | null }[];
+  projects: { id: string; name: string; emoji: string | null }[];
+  meetings: { id: string; title: string; date: string | null }[];
+  notes: { id: string; title: string; date: string | null }[];
+};
+
+export async function fetchQuickSearch(q: string): Promise<QuickSearchResult> {
+  if (DEV_MODE) {
+    const needle = q.trim().toLowerCase();
+    const has = (s: string) => s.toLowerCase().includes(needle);
+    return {
+      tasks: mockTasks.filter((t) => has(t.title)).slice(0, 6).map((t) => ({
+        id: t.id,
+        title: t.title,
+        status: t.status,
+        due_date: t.due_date ?? null,
+      })),
+      projects: mockProjects.filter((p) => has(p.name)).slice(0, 6).map((p) => ({
+        id: p.id,
+        name: p.name,
+        emoji: p.emoji ?? null,
+      })),
+      meetings: [],
+      notes: [],
+    };
+  }
+  return apiFetch<QuickSearchResult>(`/search/quick?q=${encodeURIComponent(q)}`);
+}
+
 export async function fetchTask(id: string): Promise<Task> {
   if (DEV_MODE) {
     // Из mockTasks НАПРЯМУЮ, а не через fetchTasks(): списочный мок режет description под
