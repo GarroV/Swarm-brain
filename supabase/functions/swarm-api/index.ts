@@ -5,7 +5,13 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { verifyInitData } from "./auth.ts";
 import { isRenewableSession, isSessionRevoked, type SessionClaims, verifyJWT } from "../_shared/jwt.ts";
-import { isSecondStepRequired, parseSecondStepAudience, secondStepBlocks, secondStepState } from "../_shared/passkeys/second-step.ts";
+import {
+  isSecondStepRequired,
+  parseSecondStepAudience,
+  secondStepBlocks,
+  secondStepRequiredFrom,
+  secondStepState,
+} from "../_shared/passkeys/second-step.ts";
 import { logAccess, logLoginOnce } from "../_shared/access-events.ts";
 import {
   buildRecorderSetupOneLiner,
@@ -230,7 +236,9 @@ const ADMIN_USER_ID = 744230399; // см. lib/supabase.ts swarm-bot — един
 // Правило «это демо» — одно на все функции: _shared/demo-session.ts.
 const WEB_JWT_SECRET = Deno.env.get("WEB_JWT_SECRET"); // подпись веб-сессий (Login Widget, B+)
 // Замок «второй шаг входа обязателен» (палец, #955). По умолчанию выключен: шаг предлагается, но не требуется.
-const SECOND_STEP_REQUIRED = isSecondStepRequired(Deno.env.get("SECOND_STEP_REQUIRED"));
+// Значение: `1`/`true` — сразу; дата ISO (`2026-10-26`) — с 00:00 по Белграду; считается на каждый запрос.
+const SECOND_STEP_REQUIRED_ENV = Deno.env.get("SECOND_STEP_REQUIRED");
+const SECOND_STEP_REQUIRED_FROM = secondStepRequiredFrom(SECOND_STEP_REQUIRED_ENV);
 // Кому шаг применим (пилот): не задано — никому, `all` — всем, список telegram id — только им.
 const SECOND_STEP_AUDIENCE = parseSecondStepAudience(Deno.env.get("SECOND_STEP_AUDIENCE"));
 
@@ -671,7 +679,8 @@ async function routeRequest(req: Request): Promise<Response> {
   // SECOND_STEP_REQUIRED, по умолчанию выключен; аудитория — SECOND_STEP_AUDIENCE, по умолчанию никто.
   const secondStep = secondStepState(webSession, {
     isDemo,
-    required: SECOND_STEP_REQUIRED,
+    required: isSecondStepRequired(SECOND_STEP_REQUIRED_ENV),
+    requiredFrom: SECOND_STEP_REQUIRED_FROM,
     audience: SECOND_STEP_AUDIENCE,
   });
   if (secondStepBlocks(secondStep, req.method, routePath)) {
