@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+# Пересоздать общий тестовый стенд базы на MUSPELHEIM с нуля по миграциям main (issue #998).
+#
+#   scripts/stand-reset            — схема = миграции origin/main
+#   scripts/stand-reset --branch   — main + миграции этой ветки (то, чего нет в main)
+#
+# Когда: сторож (scripts/lib/stand-guard.sh) отказал — на стенде чужие следы или миграции ветки.
+# Стенд общий: пока идёт пересоздание (около минуты), прогон соседней сессии может упасть.
+# Что делает на сервере (C:\projects\swarm-test — наш клон, правок руками там нет):
+#   git reset --hard origin/main, убрать чужие файлы миграций, supabase db reset --local.
+# Не ходит в прод и ничего не публикует.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+REMOTE_HOST=${SWARM_TEST_HOST:-muspelheim}
+REMOTE_DIR='C:\projects\swarm-test'
+WITH_BRANCH=0
+case "${1:-}" in
+  '') ;;
+  --branch) WITH_BRANCH=1 ;;
+  *) echo "stand-reset: неизвестный аргумент «$1» (только --branch)" >&2; exit 2 ;;
+esac
+# shellcheck source=lib/stand-guard.sh
+. scripts/lib/stand-guard.sh
+
+git fetch -q origin main
+EXTRAS=()
+if [ "$WITH_BRANCH" -eq 1 ]; then
+  while IFS= read -r f; do EXTRAS+=("$f"); done < <(
+    comm -13 <(git ls-tree --name-only origin/main supabase/migrations/ | sort) \
+             <(ls supabase/migrations/*.sql | sort) | grep -v '/_')
+  echo "stand-reset: миграции ветки: ${EXTRAS[*]:-нет}" >&2
+fi
+
+echo "stand-reset: $REMOTE_HOST — клон к origin/main" >&2
+ssh "$REMOTE_HOST" "cd /d $REMOTE_DIR && git fetch -q origin && git reset -q --hard origin/main && git clean -fdq supabase/migrations"
+for f in ${EXTRAS[@]+"${EXTRAS[@]}"}; do
+  scp -q "$f" "$REMOTE_HOST:C:/projects/swarm-test/supabase/migrations/"
+done
+
+echo "stand-reset: supabase db reset (около минуты)" >&2
+ssh "$REMOTE_HOST" "cd /d $REMOTE_DIR && supabase db reset --local --no-seed" | tail -3
+
+# После сброса пусто там, что обычно наполняет pg_cron раз в полчаса (демо-воркспейс): тесты
+# рассчитывают, что он есть (admin-auth.db.test.ts).
+echo "select public.demo_reset();" | REMOTE_HOST=$REMOTE_HOST stand_ssh_psql >/dev/null \
+  || echo "stand-reset: demo_reset() не отработал — воркспейс demo появится по cron в :00/:30" >&2
+echo "stand-reset: готово. Проверка: scripts/with-local-db true" >&2
