@@ -4,7 +4,7 @@
 // loadLayout/saveLayout (пока localStorage устройства, в продукте — профиль пользователя).
 
 export const WIDGET_IDS = [
-  "calls", "top5", "board", "rs", "rko", "pz", "countries", "viol",
+  "calls", "top5", "board", "ratings", "pz", "countries", "viol",
   "sales", "insp", "myTasks", "teamTasks", "news", "latest",
 ] as const;
 export type WidgetId = (typeof WIDGET_IDS)[number];
@@ -12,16 +12,16 @@ export type WidgetWidth = "half" | "full";
 export type LayoutItem = { id: WidgetId; w: WidgetWidth };
 
 export const DEFAULT_WIDTH: Record<WidgetId, WidgetWidth> = {
-  calls: "half", top5: "half", board: "full", rs: "half", rko: "half", pz: "full",
+  calls: "half", top5: "half", board: "full", ratings: "half", pz: "full",
   countries: "full", viol: "half", sales: "half", insp: "half",
   myTasks: "full", teamTasks: "half", news: "half", latest: "half",
 };
 
-// Доска — первой (владелец 08.10.2026: «доску давай выше сделаем»). Под ней две колонки: слева РКО и
-// под ним РС, справа встречи и под ними задачи (владелец 13.10.2026). Половинки идут парами
-// «левая, правая» — см. halfColumns. «Топ-5 нарушений» — образец без источника: в каталоге есть,
-// по умолчанию на главную не ставим.
-const DEFAULT_ORDER: WidgetId[] = ["board", "rko", "calls", "rs", "top5", "pz", "countries"];
+// Доска — первой (владелец 08.10.2026: «доску давай выше сделаем»). Под ней две колонки: слева
+// «Рейтинги» (вкладки РС · РКО · Карты · Агрегаторы вместо прежних отдельных РС и РКО, 19.10.2026),
+// справа встречи, под ними задачи. Половинки идут парами «левая, правая» — см. halfColumns.
+// «Топ-5 нарушений» — образец без источника: в каталоге есть, по умолчанию на главную не ставим.
+const DEFAULT_ORDER: WidgetId[] = ["board", "ratings", "calls", "top5", "pz", "countries"];
 export const DEFAULT_LAYOUT: LayoutItem[] = DEFAULT_ORDER.map((id) => ({ id, w: DEFAULT_WIDTH[id] }));
 
 export type LayoutRun =
@@ -46,12 +46,25 @@ export function halfColumns(layout: LayoutItem[]): LayoutRun[] {
 
 const isWidgetId = (v: unknown): v is WidgetId => typeof v === "string" && (WIDGET_IDS as readonly string[]).includes(v);
 
-/** Разбор сохранённой раскладки. Неизвестные виджеты и дубли отбрасываются; мусор — null. */
+// Виджеты, слитые в один (19.10.2026): отдельные «РС» и «РКО» стали вкладками «Рейтингов».
+const LEGACY_IDS: Record<string, WidgetId> = { rs: "ratings", rko: "ratings" };
+
+/** Старые id в сохранённой раскладке → нынешние. Дубль, возникший от слияния, потом отбросит
+ *  parseLayout: остаётся первый, то есть «Рейтинги» встают на место первого из РС/РКО. */
+export function migrateLayoutIds(raw: unknown[]): unknown[] {
+  return raw.map((it) => {
+    const id = (it as { id?: unknown })?.id;
+    const next = typeof id === "string" ? LEGACY_IDS[id] : undefined;
+    return next ? { ...(it as object), id: next } : it;
+  });
+}
+
+/** Разбор сохранённой раскладки. Прежние id мигрируют, неизвестные виджеты и дубли отбрасываются; мусор — null. */
 export function parseLayout(raw: unknown): LayoutItem[] | null {
   if (!Array.isArray(raw)) return null;
   const seen = new Set<WidgetId>();
   const out: LayoutItem[] = [];
-  for (const it of raw) {
+  for (const it of migrateLayoutIds(raw)) {
     const id = (it as { id?: unknown })?.id;
     const w = (it as { w?: unknown })?.w;
     if (!isWidgetId(id) || seen.has(id)) continue;

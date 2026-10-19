@@ -45,7 +45,7 @@ export function SampleTag() {
   );
 }
 
-function Stat({ label, value, cls, note }: { label: string; value: ReactNode; cls?: string; note?: string }) {
+export function Stat({ label, value, cls, note }: { label: string; value: ReactNode; cls?: string; note?: string }) {
   return (
     <div className="flex min-w-0 flex-col gap-0.5 rounded-[10px] border border-line px-2.5 py-2">
       <span className="text-ink-mute" style={{ fontSize: 11, lineHeight: 1.3 }}>{label}</span>
@@ -125,7 +125,7 @@ function RatingChart({ id, kind, q, scope, bounds, months, grains, norm, normLab
   );
 }
 
-const card = "flex flex-col gap-3 rounded-[12px] border border-line bg-surface p-4";
+export const card = "flex flex-col gap-3 rounded-[12px] border border-line bg-surface p-4";
 /** Подпись под плашкой: две первые пиццерии списка или текст «нет». */
 const firstTwo = (list: Pizzeria[], show: (p: Pizzeria) => string, none: string) => list.slice(0, 2).map(show).join(", ") || none;
 
