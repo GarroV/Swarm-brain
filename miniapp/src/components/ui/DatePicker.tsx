@@ -128,7 +128,7 @@ export function DatePicker({ value, onChange, className = "", placeholder, varia
       </button>
 
       {open && pos && createPortal(
-        <div ref={popRef} style={{ position: "fixed", left: pos.left, top: pos.top, width: POPOVER_W }}
+        <div ref={popRef} data-escape-layer="" style={{ position: "fixed", left: pos.left, top: pos.top, width: POPOVER_W }}
           className="z-[100] rounded-xl border border-line bg-card shadow-xl p-2.5 dark:backdrop-blur-lg">
           <div className="flex gap-1.5 mb-2">
             {([[tx("Сегодня", "Today"), 0], [tx("Завтра", "Tomorrow"), 1], [tx("+неделя", "+week"), 7]] as const).map(([l, n]) => (

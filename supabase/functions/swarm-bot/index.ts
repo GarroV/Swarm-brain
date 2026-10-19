@@ -58,12 +58,14 @@ import {
   handleFeedbackSessionInput,
 } from "./handlers/feedback.ts";
 import { handleWorkspace } from "./handlers/workspace.ts";
+import { escapeHtml } from "../_shared/telegram-html.ts";
 import { handleForwardForTask, handleTaskComment } from "./tasks/forward-task.ts";
 import { handleSuperadmin, handleSuperadminCallbacks, handleSuperadminSession } from "./handlers/superadmin.ts";
 import { generatePersonalDigest, sendAllDigests } from "./handlers/digest.ts";
 import { sendDailyReport } from "./handlers/daily-report-send.ts";
 import { sendReviewReminders } from "./handlers/review-reminders-send.ts";
 import { sendTaskPings } from "./handlers/task-pings-send.ts";
+import { sendDueReminders } from "./handlers/task-due-reminders-send.ts";
 import { getHelpText, guideMenu, guideStep, helpKeyboard } from "./handlers/help.ts";
 import {
   buildRecorderSetupOneLiner,
@@ -220,6 +222,7 @@ async function sweepStuckMeetings(staleMinutes = 15): Promise<number> {
     id: string;
     title: string | null;
     recorders: Recorder[] | null;
+    source: string | null;
     last_progress_at: string | null;
     updated_at: string | null;
   };
@@ -230,7 +233,7 @@ async function sweepStuckMeetings(staleMinutes = 15): Promise<number> {
   const frozen = await processingFrozen(supabase);
   const { data: rows } = frozen ? { data: [] } : await supabase
     .from("meetings")
-    .select("id, title, recorders, last_progress_at, updated_at")
+    .select("id, title, recorders, source, last_progress_at, updated_at")
     .eq("summary_status", "processing");
   const note = "⚠️ Не удалось обработать запись встречи — обработка превысила лимит времени. " +
     "Попробуй записать заново (по возможности короче).";
@@ -421,7 +424,12 @@ Deno.serve(async (req: Request) => {
       console.error("telegram_outbox drain failed:", e);
     }
     const sent = await sendTaskPings();
-    return new Response(`OK: ${sent} pings sent, ${outboxSent} queued messages delivered`, { status: 200 });
+    // Напоминания о сроке за день — после ручных пингов: задача с пингом, сработавшим сегодня, их не получает.
+    const dueSent = await sendDueReminders();
+    return new Response(
+      `OK: ${sent} pings sent, ${dueSent} due reminders sent, ${outboxSent} queued messages delivered`,
+      { status: 200 },
+    );
   }
 
   if (body.feedback_retention_cron === true) {
@@ -814,10 +822,14 @@ Deno.serve(async (req: Request) => {
           });
           const src = m.source === "granola" ? "📓" : "📹";
           const owner = m.owner_id != null ? (nameById.get(m.owner_id) ?? "неизвестно") : null;
-          await sendInlineMessage(chatId, `${src} <b>${title}</b>\n📅 ${dateStr}${owner ? ` · 🧑 ${owner}` : ""}`, [[
-            { text: "🔍 Тезисы", callback_data: `mr_${m.id}` },
-            { text: "🗑", callback_data: `md_${m.id}` },
-          ]]);
+          await sendInlineMessage(
+            chatId,
+            `${src} <b>${escapeHtml(title)}</b>\n📅 ${dateStr}${owner ? ` · 🧑 ${escapeHtml(owner)}` : ""}`,
+            [[
+              { text: "🔍 Тезисы", callback_data: `mr_${m.id}` },
+              { text: "🗑", callback_data: `md_${m.id}` },
+            ]],
+          );
         }
       }
     } else if (command === "/granola") {
@@ -827,7 +839,7 @@ Deno.serve(async (req: Request) => {
       if (!service || !apiKey) {
         await sendMessage(chatId, "Использование: <code>/connect granola ВАШ_КЛЮЧ</code>");
       } else if (service.toLowerCase() !== "granola") {
-        await sendMessage(chatId, `Неизвестный сервис: <code>${service}</code>. Доступно: granola`);
+        await sendMessage(chatId, `Неизвестный сервис: <code>${escapeHtml(service)}</code>. Доступно: granola`);
       } else {
         await sendMessage(chatId, "Проверяю ключ...");
         const testRes = await externalFetch("https://public-api.granola.ai/v1/notes?limit=1", {
@@ -856,7 +868,7 @@ Deno.serve(async (req: Request) => {
         if (error) {
           await sendMessage(chatId, `Ошибка: ${error.message}`);
         } else {
-          await sendMessage(chatId, `✅ <b>${service}</b> отключена.`);
+          await sendMessage(chatId, `✅ <b>${escapeHtml(service)}</b> отключена.`);
         }
       }
     } else if (command === "/superadmin") {
@@ -1043,7 +1055,7 @@ Deno.serve(async (req: Request) => {
           "Без названия";
         const src = sourceLabel((lastMeeting as { source: string }).source);
         const freshness = hoursAgo < 24 ? `${hoursAgo} ч назад` : `${Math.round(hoursAgo / 24)} дн назад`;
-        statusMsg += `Последняя: <b>${title}</b> · ${src} · ${freshness}\n`;
+        statusMsg += `Последняя: <b>${escapeHtml(title)}</b> · ${src} · ${freshness}\n`;
       }
 
       statusMsg += `\n<b>✅ Задачи</b>\n`;
@@ -1052,7 +1064,10 @@ Deno.serve(async (req: Request) => {
 
       await sendMessage(chatId, statusMsg);
     } else {
-      await sendMessage(chatId, `Неизвестная команда: <code>${command}</code>\n\nИспользуй /help для списка команд.`);
+      await sendMessage(
+        chatId,
+        `Неизвестная команда: <code>${escapeHtml(command)}</code>\n\nИспользуй /help для списка команд.`,
+      );
     }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);

@@ -15,7 +15,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { AgentAuthError, verifyAgentToken } from "../_shared/agent-auth.ts";
 import { contextCountry, PREVIEW_LIMITS, tezisyPreview } from "../_shared/meeting-context.ts";
 import { entryVisibilityOr } from "../_shared/entries/access.ts";
-import { onlyLive } from "../_shared/tasks/live.ts";
+import { loadCountryTasks } from "../_shared/tasks/country-tasks.ts";
 import { onlyLiveEntries } from "../_shared/entries/live.ts";
 
 const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
@@ -109,20 +109,20 @@ Deno.serve(async (req: Request) => {
   // Задачи СТОРОНЫ (страны) текущего созвона — независимо от того, какая запись нашлась
   // для тезисов: «задачи и тезисы никак и не должны соприкасаться, это разные вещи»
   // (владелец 03.09.2026). Поэтому здесь нет ни meeting_id, ни ссылки на entry выше.
-  let tq = onlyLive(
-    supabase
-      .from("tasks")
-      .select("id, title, due_date, assignees, status"),
-  )
-    .eq("country", country)
-    .not("status", "in", `(${HIDDEN_TASK_STATUSES.join(",")})`)
-    .eq("confirmed", true)
-    .or(`is_private.eq.false,owner_id.eq.${viewerId}`)
-    .order("due_date", { ascending: true, nullsFirst: false })
-    .limit(TASK_LIMIT);
-  if (groupId) tq = tq.eq("group_id", groupId);
-  const { data: taskRows } = await tq;
-  type TaskRow = { id: string; title: string; due_date: string | null; assignees: string[] | null; status: string };
+  // Задачи невидимых смотрящему проектов (закрытый чужой проект) не показываются — решение
+  // владельца 16.10.2026; выборка и фильтр — в _shared/tasks/country-tasks.ts (под тестом).
+  // Сбой выборки — блок задач пустой (как и раньше при ошибке), а не 500 на весь контекст:
+  // тезисы прошлой встречи показать всё равно можно. Ошибка — в лог.
+  const taskRows = await loadCountryTasks({
+    groupId,
+    country,
+    viewerId,
+    hiddenStatuses: HIDDEN_TASK_STATUSES,
+    limit: TASK_LIMIT,
+  }).catch((e) => {
+    console.error("[meeting-context] country tasks:", e instanceof Error ? e.message : e);
+    return [];
+  });
 
   return json({
     country,
@@ -137,7 +137,7 @@ Deno.serve(async (req: Request) => {
       truncated: preview.truncated,
       limits: { full_chars: PREVIEW_LIMITS.fullChars },
     },
-    tasks: ((taskRows ?? []) as TaskRow[]).map((t) => ({
+    tasks: taskRows.map((t) => ({
       id: t.id,
       title: t.title,
       due_date: t.due_date,

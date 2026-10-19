@@ -7,6 +7,7 @@ import { StickerCard, stickerTransitionName } from "./StickerCard";
 import { StickerCreate } from "./StickerCreate";
 import { fmtDue, PAPER } from "./stickerUi";
 import { ackSticker, archiveSticker, fetchStickers, fetchTask } from "@/lib/api";
+import { recall, remember } from "@/lib/lastSeen";
 import { isHotDue, myAddressee, orderStickers, stickerProgress } from "@/lib/stickers";
 import { withViewTransition } from "@/lib/viewTransition";
 import { isOverdue } from "@/lib/smartLists";
@@ -31,7 +32,8 @@ export function BoardWidget({ data }: { data: DashboardData }) {
   const meId = me?.telegram_id ?? null;
   const isAdmin = !!me?.is_admin && !me?.is_demo;
 
-  const [stickers, setStickers] = useState<BoardSticker[] | null>(null);
+  // Повторный заход — сразу с прошлыми стикерами, обновление в фоне (#906).
+  const [stickers, setStickers] = useState<BoardSticker[] | null>(() => recall<BoardSticker[]>("home:stickers"));
   const [failed, setFailed] = useState(false);
   const [attempt, setAttempt] = useState(0);
   const [open, setOpen] = useState<string | null>(null);
@@ -43,7 +45,7 @@ export function BoardWidget({ data }: { data: DashboardData }) {
   useEffect(() => {
     let alive = true;
     fetchStickers()
-      .then((list) => { if (alive) { setStickers(list); setFailed(false); } })
+      .then((list) => { remember("home:stickers", list); if (alive) { setStickers(list); setFailed(false); } })
       .catch(() => { if (alive) setFailed(true); });
     return () => { alive = false; };
   }, [attempt, tasksVersion]);

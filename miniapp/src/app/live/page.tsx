@@ -147,7 +147,7 @@ export default function LivePage() {
         <div style={{ ...card, padding: 26, textAlign: "center", maxWidth: 420, margin: "60px auto" }}>
           <h2 style={{ margin: "0 0 8px", fontSize: 18 }}>Нужен вход</h2>
           <p style={{ color: "var(--ink-mute)", fontSize: 13.5, margin: "0 0 16px" }}>Чтобы открыть встречу и сохранять пометки.</p>
-          <a href={`/login?next=${next}`} style={{ ...btnStyle, textDecoration: "none", display: "inline-block" }}>Войти через Telegram</a>
+          <a href={`/login?next=${next}`} style={{ ...btnStyle, textDecoration: "none", display: "inline-block" }}>Войти</a>
         </div>
       </main>
     );

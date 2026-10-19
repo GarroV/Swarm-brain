@@ -12,9 +12,9 @@
 // импортируют по адресу, потому что карту собирает не тот бандлер, что раскатывает функции.
 // deno-lint-ignore-file no-import-prefix
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { computeSprintStats, type SprintItemView } from "./sprint-stats.ts";
+import { computeSprintStats } from "./sprint-stats.ts";
 import { nextCycleDates } from "./sprint-dates.ts";
-import { getCycle, type SprintCycle } from "./sprint-cycles.ts";
+import { getCycle, type SprintCycle, toStatsView } from "./sprint-cycles.ts";
 import { listComposition } from "./sprint-items.ts";
 
 const supabase = createClient(
@@ -58,19 +58,9 @@ export async function acceptCycle(
 
   // Снятые из идущего спринта входят в итоги (#576): плановые из них — невыполненной частью
   // плана, иначе снятие отстающих поднимало бы процент.
-  const { items, withdrawn } = await listComposition(id, groupId);
+  const { items, withdrawn } = await listComposition(id, groupId, "everyone");
   const stats = computeSprintStats(
-    [...items, ...withdrawn].map((it): SprintItemView => ({
-      in_plan: it.in_plan,
-      status: it.status,
-      assignees: it.assignees,
-      project: it.project,
-      completed_at: it.completed_at,
-      check_status: it.check_status,
-      to_carry: it.to_carry,
-      removed_at: it.removed_at,
-      withdrawn_at: it.withdrawn_at,
-    })),
+    [...items, ...withdrawn].map(toStatsView),
   );
 
   const next = nextCycleDates({

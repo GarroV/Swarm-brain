@@ -6,6 +6,7 @@ import {
   getCycle,
   listCycles,
   LiveCycleExistsError,
+  redactCycleStats,
   startCycle,
   UnknownTabError,
   updateCycle,
@@ -70,7 +71,7 @@ export async function handleSprintCycleRoutes(
       // пространств или потерявшие вкладку. Без параметра — все, как было до доски.
       const raw = url.searchParams.get("tab_id");
       const tabId = raw === null ? undefined : raw === "none" ? null : raw;
-      return json(await listCycles(groupId, tabId), 200, origin);
+      return json(await redactCycleStats(await listCycles(groupId, tabId), groupId, telegramId), 200, origin);
     }
     if (req.method === "POST") {
       const body = await readBody(req);
@@ -94,9 +95,6 @@ export async function handleSprintCycleRoutes(
         if (e instanceof UnknownTabError) {
           return apiErr(400, e.message, origin);
         }
-        if (e instanceof LiveCycleExistsError) {
-          return apiErr(409, e.message, origin);
-        }
         return serverError(origin, "sprint cycle create", e);
       }
     }
@@ -113,8 +111,9 @@ export async function handleSprintCycleRoutes(
       // а второй запрос стоил бы лишнего круга на каждом открытии.
       // Снятые из идущего спринта (#576) — отдельным списком: в составе их нет, но шапке
       // нужны плановые из них, чтобы процент считался от зафиксированного плана.
-      const { items, withdrawn } = await listComposition(id, groupId);
-      return json({ ...cycle, items, withdrawn }, 200, origin);
+      const { items, withdrawn } = await listComposition(id, groupId, { viewerId: telegramId });
+      const [shown] = await redactCycleStats([cycle], groupId, telegramId);
+      return json({ ...shown, items, withdrawn }, 200, origin);
     }
     if (req.method === "PATCH") {
       const body = await readBody(req);
@@ -151,17 +150,16 @@ export async function handleSprintCycleRoutes(
         return apiErr(404, "Пространство не найдено", origin);
       }
       if (updated === "tab_busy") {
-        // В пространстве может жить только один незакрытый спринт (частичный уникальный
-        // индекс). Молча оставить спринт на месте нельзя: человек увидит «сохранено» и не
+        // В пространстве может идти только один спринт (частичный уникальный индекс). Молча оставить спринт на месте нельзя: человек увидит «сохранено» и не
         // поймёт, почему ничего не переехало.
         return apiErr(
           409,
-          "В этом пространстве уже есть незакрытый спринт",
+          "В этом пространстве уже идёт спринт",
           origin,
         );
       }
       if (!updated) return apiErr(404, "Not found", origin);
-      return json(updated, 200, origin);
+      return json((await redactCycleStats([updated], groupId, telegramId))[0], 200, origin);
     }
     if (req.method === "DELETE") {
       // Под админом с 18.09.2026. Необратимым это действие быть перестало (архивация, #427),
@@ -177,9 +175,18 @@ export async function handleSprintCycleRoutes(
 
   const startMatch = routePath.match(/^\/sprint-cycles\/([^/]+)\/start$/);
   if (startMatch && req.method === "POST") {
-    const started = await startCycle(startMatch[1], groupId);
-    if (!started) return apiErr(404, "Not found или спринт уже начат", origin);
-    return json(started, 200, origin);
+    try {
+      const started = await startCycle(startMatch[1], groupId);
+      if (!started) {
+        return apiErr(404, "Not found или спринт уже начат", origin);
+      }
+      return json(started, 200, origin);
+    } catch (e) {
+      if (e instanceof LiveCycleExistsError) {
+        return apiErr(409, e.message, origin);
+      }
+      return serverError(origin, "sprint cycle start", e);
+    }
   }
 
   const acceptMatch = routePath.match(/^\/sprint-cycles\/([^/]+)\/accept$/);
@@ -192,7 +199,8 @@ export async function handleSprintCycleRoutes(
         summary: typeof body.summary === "string" ? body.summary : null,
       });
       if (!result) return apiErr(404, "Not found", origin);
-      return json(result, 200, origin);
+      const [shown] = await redactCycleStats([result.cycle], groupId, telegramId);
+      return json({ ...result, cycle: shown }, 200, origin);
     } catch (e) {
       if (e instanceof AcceptConflictError) {
         return apiErr(409, e.message, origin);
@@ -213,7 +221,7 @@ export async function handleSprintCycleRoutes(
     }
     // Сколько реально добавилось: чужие воркспейсы и уже добавленные отсеиваются молча.
     return json(
-      { added: await addItems(tasksMatch[1], taskIds, groupId, actor) },
+      { added: await addItems(tasksMatch[1], taskIds, groupId, actor, telegramId) },
       200,
       origin,
     );
@@ -260,7 +268,7 @@ export async function handleSprintCycleRoutes(
       }
 
       try {
-        const item = await updateItem(cycleId, taskId, groupId, patch, actor);
+        const item = await updateItem(cycleId, taskId, groupId, patch, actor, telegramId);
         if (!item) return apiErr(404, "Not found", origin);
         return json(item, 200, origin);
       } catch (e) {
@@ -272,7 +280,7 @@ export async function handleSprintCycleRoutes(
     }
 
     if (req.method === "DELETE") {
-      const ok = await removeItem(cycleId, taskId, groupId, actor);
+      const ok = await removeItem(cycleId, taskId, groupId, actor, telegramId);
       if (!ok) return apiErr(404, "Not found или спринт уже принят", origin);
       return new Response(null, { status: 204, headers: corsHeaders(origin) });
     }

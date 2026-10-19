@@ -16,7 +16,9 @@ import { ConnectorsSection } from "@/components/profile/ConnectorsSection";
 import { IntegrationStatusLine } from "@/components/profile/IntegrationStatusLine";
 import { STALE_DAYS } from "@/lib/integrationStatus";
 import { TelegramPanel } from "@/components/profile/TelegramPanel";
+import { NotificationSoundToggle } from "@/components/settings/NotificationSoundToggle";
 import { BackdropSection } from "@/components/profile/BackdropSection";
+import { PasskeysSection } from "@/components/profile/PasskeysSection";
 import { useDt, useIsDemo } from "@/components/roy/nav";
 import { SectionLabel } from "@/components/roy/ui";
 
@@ -529,7 +531,7 @@ export function AccountSection() {
   const [busy, setBusy] = useState(false);
 
   const handleLogout = async () => {
-    if (!(await confirm({ title: "Выйти из аккаунта?", description: "Сессия в браузере завершится. Войти снова — через Telegram, можно другим аккаунтом.", confirmText: "Выйти" }))) return;
+    if (!(await confirm({ title: "Выйти из аккаунта?", description: "Сессия в браузере завершится. Войти снова — через Google или Telegram, можно другим аккаунтом.", confirmText: "Выйти" }))) return;
     setBusy(true);
     try {
       await logout();
@@ -542,7 +544,7 @@ export function AccountSection() {
   return (
     <div className="space-y-2">
       <p className="text-xs text-muted-foreground">
-        Завершить сессию в браузере. После выхода — вход через Telegram (можно другим аккаунтом).
+        Завершить сессию в браузере. После выхода — вход через Google или Telegram (можно другим аккаунтом).
       </p>
       <Button size="sm" variant="outline" onClick={handleLogout} disabled={busy} className="w-full">
         {busy ? "Выхожу…" : "Выйти / сменить аккаунт"}
@@ -858,6 +860,9 @@ export function SettingsScreen() {
         <Section icon="spark" title={dt("Настройки фона", "Background")}>
           <BackdropSection />
         </Section>
+        <Section icon="bell" title={dt("Уведомления", "Notifications")}>
+          <NotificationSoundToggle />
+        </Section>
         <Section icon="note" title="Дайджест">
           <DigestSection isAdmin={!!me?.is_admin} />
         </Section>
@@ -867,6 +872,11 @@ export function SettingsScreen() {
         <Section icon="note" title="Фидбек">
           <FeedbackSection />
         </Section>
+        {isWebSession && me?.second_step?.applies && (
+          <Section icon="home" title={dt("Ключи входа", "Sign-in keys")}>
+            <PasskeysSection />
+          </Section>
+        )}
         {isWebSession && (
           <Section icon="home" title="Аккаунт">
             <AccountSection />

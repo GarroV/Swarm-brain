@@ -1,3 +1,4 @@
+import { taskVisibleByProject } from "../_shared/tasks/project-visibility.ts";
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { json } from "./http.ts";
 import { isCommentRecipient, type NotifiableTask, type SubscriptionState } from "../_shared/tasks/notify.ts";
@@ -16,10 +17,14 @@ import { setTaskSubscription } from "../_shared/tasks/subscription-store.ts";
 // issue #521), здесь только роуты: рукописных копий правила доступа к задачам в репозитории
 // нет намеренно (issue #45 — их было шесть, и они разошлись).
 
-type SubTaskRow = NotifiableTask & { id: string; group_id: string | null };
+type SubTaskRow = NotifiableTask & {
+  id: string;
+  group_id: string | null;
+  project_id: string | null;
+};
 
 // Select локальный (свой набор полей). Доступ — воркспейс задачи (решение 2026-10-09).
-const TASK_FIELDS = "id, group_id, assignee_telegram_ids, created_by_telegram_id";
+const TASK_FIELDS = "id, group_id, project_id, assignee_telegram_ids, created_by_telegram_id";
 
 type SubscriptionView = {
   /** null — явной строки нет, действует поведение по умолчанию */
@@ -81,7 +86,10 @@ export async function handleTaskSubscriptionRoutes(
   }
   const task = (data as SubTaskRow | null) ?? null;
   // 404 и на отсутствие, и на чужой воркспейс — не палим существование.
-  if (!task || task.group_id !== groupId) {
+  if (
+    !task || task.group_id !== groupId ||
+    !(await taskVisibleByProject(task, telegramId))
+  ) {
     return json({ error: "Задача не найдена" }, 404, origin);
   }
 

@@ -595,6 +595,13 @@ async function sendRequest(url: string, init: RequestInit): Promise<Response> {
   return res;
 }
 
+/** 503 на заморозке несёт Retry-After: кладём в тело ошибки как retry_after_s, чтобы очередь записи его уважала. */
+function withRetryAfter(res: Response, body: unknown): unknown {
+  const sec = Number(res.headers.get("Retry-After"));
+  if (res.status !== 503 || !(sec > 0) || typeof body !== "object" || body === null) return body;
+  return { ...body, retry_after_s: sec };
+}
+
 async function apiFetchRaw<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await sendRequest(`${API_BASE}${path}`, {
     ...options,
@@ -617,7 +624,7 @@ async function apiFetchRaw<T>(path: string, options?: RequestInit): Promise<T> {
     const frozen = parseMaintenanceResponse(body);
     if (frozen) publishMaintenance(frozen);
   }
-  if (!res.ok) throw new ApiError(res.status, body.error ?? res.statusText, body);
+  if (!res.ok) throw new ApiError(res.status, body.error ?? res.statusText, withRetryAfter(res, body));
   return body as T;
 }
 
@@ -663,7 +670,7 @@ async function apiFetchNoContentTypeRaw<T>(
   });
   if (res.status === 204) return undefined as T;
   const body = await res.json().catch(() => ({ error: res.statusText }));
-  if (!res.ok) throw new ApiError(res.status, body.error ?? res.statusText, body);
+  if (!res.ok) throw new ApiError(res.status, body.error ?? res.statusText, withRetryAfter(res, body));
   return body as T;
 }
 
@@ -678,15 +685,43 @@ export async function fetchMe(): Promise<Me> {
 // /api/auth/logout напрямую, минуя прокси в swarm-api. Внутри Telegram Mini App
 // бессмысленно — там сессия определяется initData, а не cookie.
 export async function logout(): Promise<void> {
+  // Пока сессия жива, пробуем дослать неотправленные части записей встреч этого пользователя
+  // (до ~10 с). Недосланное остаётся в IndexedDB под его id и 3 дня хранится на устройстве.
+  try {
+    const me = await fetchMe();
+    // Динамический импорт: движок записи сам импортирует api, статический дал бы цикл.
+    await (await import("./webRecorder/flush")).flushOwnLeftovers(me.telegram_id);
+  } catch {
+    // Выходу из аккаунта это не мешает.
+  }
   await fetch(`${API_BASE}/auth/logout`, {
     method: "POST",
     credentials: "include",
   });
 }
 
+// ── Ключи входа в профиле (решение 17.10.2026, «Добавить устройство») ─────────────
+// can_manage — второй шаг пройден ключом в этой сессии: только тогда можно удалить ключ или выдать ссылку.
+
+export type MyPasskey = { id: string; name: string; created_at: string; last_used_at: string | null };
+
+export async function fetchMyPasskeys(): Promise<{ keys: MyPasskey[]; can_manage: boolean }> {
+  if (DEV_MODE) return { keys: [], can_manage: false };
+  return apiFetch("/me/passkeys");
+}
+
+export async function deleteMyPasskey(id: string): Promise<void> {
+  await apiFetch(`/me/passkeys/${encodeURIComponent(id)}`, { method: "DELETE" });
+}
+
+/** Одноразовая ссылка: токен приходит один раз, сервер хранит только его хеш. */
+export async function createDeviceLink(): Promise<{ token: string; expires_at: string }> {
+  return apiFetch("/me/passkeys/device-link", { method: "POST" });
+}
+
 // ── Присутствие (#751) ───────────────────────────────────────────────────────
-// Пульс веба (components/PresencePulse.tsx): раздел и был ли ввод. На экран не выводится.
-// Свой fetch, а не apiFetch: пульс раз в 30 с не должен сбрасывать кэш чтения, будить плашку
+// Пульс веба (components/PresencePulse.tsx): раздел и был ли ввод. Свой fetch, а не apiFetch:
+// пульс раз в 15 с не должен сбрасывать кэш чтения, будить плашку
 // «нет связи», уводить на вход по 401 или включать заглушку работ по 503 — это фон, а не
 // действие человека. keepalive: запрос `away` на закрытии вкладки должен уйти и после выгрузки
 // страницы (sendBeacon не умеет заголовок tma, а в Telegram авторизация — именно он).
@@ -707,6 +742,34 @@ export async function sendPresence(ping: PresencePing): Promise<number> {
     body: JSON.stringify(ping),
   });
   return res.status;
+}
+
+/**
+ * Полоска «кто сейчас в SWARM» (components/presence/): анонимные звери онлайн-участников
+ * пространства. Опрашивается раз в 5 с (lib/presenceStripStore.ts) — по той же причине, что и
+ * пульс, свой fetch без кэша чтения и без редиректа на вход. Бросает Error с кодом статуса.
+ */
+export async function fetchPresenceStrip(): Promise<unknown> {
+  if (DEV_MODE) return mockPresenceStrip();
+  const res = await fetch(`${API_BASE}/presence/strip`, {
+    cache: "no-store",
+    credentials: "include",
+    headers: authHeaders(),
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json();
+}
+
+function mockPresenceStrip(): unknown {
+  const sections = ["tasks/mine/today", "meetings", "sprints", "market", "home", "tasks/team/all", "base"] as const;
+  const people = sections.map((section, i) => ({
+    key: `${i * 7}-${i % 5}`,
+    animal: i * 7,
+    style: i % 5,
+    section,
+    state: i % 3 === 2 ? "idle" : "active",
+  }));
+  return { window: Math.floor(Date.now() / (4 * 3600_000)), people };
 }
 
 // ── Встречи сегодня из календаря (issue #218) ────────────────────────────────
@@ -1375,10 +1438,10 @@ export async function fetchShortLinks(): Promise<ShortLink[]> {
   return apiFetch<ShortLink[]>("/short-links");
 }
 
-export async function createShortLink(url: string, meta: ShortLinkMeta): Promise<ShortLink> {
+export async function createShortLink(url: string, meta: ShortLinkMeta, code?: string): Promise<ShortLink> {
   if (DEV_MODE) {
     const l: ShortLink = {
-      code: Math.random().toString(36).slice(2, 8),
+      code: code?.trim() || Math.random().toString(36).slice(2, 8),
       url,
       title: meta.title.trim(),
       note: meta.note.trim() || null,
@@ -1392,7 +1455,10 @@ export async function createShortLink(url: string, meta: ShortLinkMeta): Promise
     MOCK_SHORT_LINKS = [l, ...MOCK_SHORT_LINKS];
     return l;
   }
-  return apiFetch<ShortLink>("/short-links", { method: "POST", body: JSON.stringify({ url, ...meta }) });
+  return apiFetch<ShortLink>("/short-links", {
+    method: "POST",
+    body: JSON.stringify({ url, ...meta, ...(code?.trim() ? { code: code.trim() } : {}) }),
+  });
 }
 
 export async function updateShortLink(code: string, meta: ShortLinkMeta): Promise<ShortLink> {
@@ -1562,9 +1628,39 @@ export async function fetchMarketCountries(): Promise<string[]> {
   return apiFetch<string[]>("/market/countries");
 }
 
+/** Страны с проработанной страницей (все разделы заполнены, авто-источники живы; правило — `_shared/market/readiness.ts`).
+ *  Отдельный путь, а не поле в `/market/countries`: веб и функции катятся в разное время. Старый сервер
+ *  отвечает 404 — тогда готовых нет, переключатель стран остаётся прежним. */
+export async function fetchMarketReady(): Promise<string[]> {
+  if (DEV_MODE) return [];
+  try {
+    const list = await apiFetch<unknown>("/market/ready");
+    return Array.isArray(list) ? list.filter((c): c is string => typeof c === "string") : [];
+  } catch (e) {
+    console.warn("[market] ready countries unavailable", e);
+    return [];
+  }
+}
+
 export async function fetchMarket(cc: string): Promise<MarketBundle> {
   if (DEV_MODE) return (await import("./marketDemo")).demolandBundle();
   return apiFetch<MarketBundle>(`/market/${cc}`);
+}
+
+/** Строка выручки Dodo, как её читает главная (подмножество `MarketBundle.dodo`). */
+export type MarketSalesRow = { month: string; revenue_eur: number | null; complete: boolean };
+
+/** Выручка Dodo по нескольким странам одним запросом (GET /market/sales, issue #906): без остального набора
+ *  страны. `denied` — страны вне allowed_markets. 404 = функции ещё старые (веб катится раньше) — зовущий
+ *  откатывается на `fetchMarket` по стране. */
+export async function fetchMarketSales(
+  ccs: string[],
+): Promise<{ sales: Record<string, MarketSalesRow[]>; denied: string[] }> {
+  if (DEV_MODE) {
+    const b = (await import("./marketDemo")).demolandBundle();
+    return { sales: Object.fromEntries(ccs.map((cc) => [cc, b.dodo ?? []])), denied: [] };
+  }
+  return apiFetch(`/market/sales?cc=${ccs.join(",")}`);
 }
 
 // ── Баллы РС и РКО по пиццериям (GET /quality — прокси к API Децимуса) ──────────
@@ -3444,6 +3540,72 @@ export async function fetchMeeting(id: string): Promise<Entry> {
     return m;
   }
   return apiFetch<Entry>(`/meetings/${id}`);
+}
+
+// ── Запись встречи из браузера (офлайн-встречи; docs/decisions/2026-10-16-web-recorder.md) ──
+
+export type WebRecordingStart = { id: string; started_at: string };
+export type WebRecordingActive = { id: string; started_at: string; segments: number[] };
+export type WebRecordingFinish = { ok: boolean; summary_status?: string; already?: boolean };
+
+// Состояние моков DEV_MODE: показывает экрану записи сквозной путь без бэкенда.
+const MOCK_UPLOAD_DELAY_MS = 250;
+let mockWebRecording: WebRecordingActive | null = null;
+const mockPause = () => new Promise<void>((r) => setTimeout(r, MOCK_UPLOAD_DELAY_MS));
+
+export async function startWebRecording(startedAt: string): Promise<WebRecordingStart> {
+  if (DEV_MODE) {
+    await mockPause();
+    mockWebRecording = { id: `dev-rec-${Date.now()}`, started_at: startedAt, segments: [] };
+    return { id: mockWebRecording.id, started_at: startedAt };
+  }
+  return apiFetch<WebRecordingStart>("/meetings/record", {
+    method: "POST",
+    body: JSON.stringify({ started_at: startedAt }),
+  });
+}
+
+/** Кусок целиком (сырое аудио), идемпотентно по номеру. offsetSec — секунды от начала записи по часам. */
+export async function uploadWebRecordingSegment(
+  id: string,
+  n: number,
+  offsetSec: number,
+  blob: Blob,
+): Promise<void> {
+  if (DEV_MODE) {
+    await mockPause();
+    if (mockWebRecording?.id === id && !mockWebRecording.segments.includes(n)) mockWebRecording.segments.push(n);
+    return;
+  }
+  // Параметры кодека («;codecs=…») серверу не нужны: он различает только mp4 и webm.
+  const contentType = (blob.type || "audio/mp4").split(";")[0];
+  await apiFetchNoContentType<void>(
+    `/meetings/record/${encodeURIComponent(id)}/segments/${n}?offset=${offsetSec.toFixed(3)}`,
+    { method: "PUT", headers: { "Content-Type": contentType }, body: blob },
+  );
+}
+
+export async function finishWebRecording(
+  id: string,
+  body: { ended_at: string; recorded_seconds: number },
+): Promise<WebRecordingFinish> {
+  if (DEV_MODE) {
+    await mockPause();
+    mockWebRecording = null;
+    return { ok: true, summary_status: "processing" };
+  }
+  return apiFetch<WebRecordingFinish>(`/meetings/record/${encodeURIComponent(id)}/finish`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+/** Незавершённая запись автора; нет её (404 или null) — null. */
+export async function fetchActiveWebRecording(): Promise<WebRecordingActive | null> {
+  if (DEV_MODE) return mockWebRecording;
+  // Сервер отвечает 200 {recording: {...} | null} и никогда не 404.
+  const res = await apiFetch<{ recording: WebRecordingActive | null }>("/meetings/record/active");
+  return res.recording ?? null;
 }
 
 export async function patchMeeting(

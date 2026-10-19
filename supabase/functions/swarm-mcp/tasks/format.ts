@@ -65,6 +65,18 @@ export function projectNotFoundMessage(name: string, available: string[]): strin
 }
 
 /**
+ * Отказ get_tasks, когда списка (личной метки) с таким именем нет у пользователя (issue #886).
+ * Раньше фильтр молча снимался и отдавалась вся доска: «показаны 30 из 237» читается как
+ * содержимое запрошенного списка. Отказ — как у `project`: со списком доступных имён.
+ */
+export function labelNotFoundMessage(name: string, available: string[]): string {
+  const head = `Список «${name}» не найден — фильтр НЕ применён, задачи не показаны.`;
+  const tail = "Свои списки с id — инструмент list_task_labels. Имя нужно точное (регистр не важен).";
+  if (!available.length) return `${head} У тебя пока нет списков. ${tail}`;
+  return `${head} Твои списки: ${available.join(", ")}. ${tail}`;
+}
+
+/**
  * Строка задачи в выдаче get_tasks. `confirmed: false` помечается явно: такая задача не видна
  * НИГДЕ в вебе (`fetchTasks` всегда просит `confirmed=true`), и без пометки агент видит «open»
  * и считает, что задача на доске (issue #201).

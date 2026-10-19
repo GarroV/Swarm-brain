@@ -2,6 +2,8 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { COUNTRY_PROMPT_RULE, normalizeCountries } from "../_shared/countries.ts";
 import { applyGeneralSentinel } from "../_shared/meta-extract.ts";
 import { buildTezisyUserMessage, TEZISY_PROMPT } from "../_shared/tezisy-prompt.ts";
+import { escapeHtml } from "../_shared/telegram-html.ts";
+import { UNTRUSTED_DATA_RULE, wrapUntrustedForModel } from "../_shared/untrusted-prompt.ts";
 import { findDuplicateMeeting, type MeetingAttendee } from "../_shared/meeting-dedup.ts";
 import { resolveWebhookGroupId } from "./workspace.ts";
 import { type KeyHandle, openAIKeyHandle } from "../_shared/workspace-keys.ts";
@@ -92,8 +94,9 @@ async function extractCountries(key: KeyHandle, text: string): Promise<string[]>
       key,
       'Извлеки страны/рынки из транскрипта встречи и верни JSON: {"countries":["Serbia","Bulgaria"]}.\n' +
         COUNTRY_PROMPT_RULE +
-        '\nКороткие официальные английские названия без "Republic of". Если стран нет — {"countries":[]}.',
-      text.slice(0, 4000),
+        '\nКороткие официальные английские названия без "Republic of". Если стран нет — {"countries":[]}.\n' +
+        UNTRUSTED_DATA_RULE,
+      wrapUntrustedForModel(text.slice(0, 4000)),
       true,
     );
     const parsed = JSON.parse(raw.replace(/```json\n?|\n?```/g, "").trim());
@@ -209,7 +212,7 @@ Deno.serve(async (req: Request) => {
     );
     if (!resolved.ok) {
       console.error("read-ai reject: воркспейс не определён", meetingId, "—", resolved.reason);
-      await sendTelegram(`⚠️ Read.ai: встреча «${title}» НЕ сохранена — ${resolved.reason}`);
+      await sendTelegram(`⚠️ Read.ai: встреча «${escapeHtml(title)}» НЕ сохранена — ${resolved.reason}`);
       return new Response(JSON.stringify({ ok: false, error: "workspace_unresolved", reason: resolved.reason }), {
         status: 422,
         headers: { "Content-Type": "application/json" },
@@ -291,9 +294,9 @@ Deno.serve(async (req: Request) => {
       .join(", ");
 
     let text = `📋 <b>Новая встреча получена</b>\n`;
-    text += `<b>${title}</b>${durationStr}\n`;
+    text += `<b>${escapeHtml(title)}</b>${durationStr}\n`;
     text += `📅 ${meetingDateStr}`;
-    if (participantsStr) text += `\n👥 ${participantsStr}`;
+    if (participantsStr) text += `\n👥 ${escapeHtml(participantsStr)}`;
     text += `\n\nПроверьте и подтвердите:`;
 
     await sendTelegramInline(text, [

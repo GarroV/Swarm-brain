@@ -167,6 +167,7 @@ export function PeoplePopover({
       {open && pos && host && createPortal(
         <div
           ref={popRef}
+          data-escape-layer=""
           role="dialog"
           aria-label={label}
           onPointerDown={(e) => e.stopPropagation()}

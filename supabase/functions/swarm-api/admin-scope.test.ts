@@ -3,6 +3,7 @@
 // `.from(t).select/update/…eq/is/ilike` фильтрует фикстуры, чтобы проверять ПОВЕДЕНИЕ
 // (что ушло в базу и что вернулось), а не порядок вызовов.
 import { assert, assertEquals } from "jsr:@std/assert@1";
+import { FakeTime } from "jsr:@std/testing@1/time";
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { handleAdminRoutes } from "./admin.ts";
 import { announceEmailChange, type EmailChangeEvent, emailChangeNoticeText } from "./admin-scope.ts";
@@ -289,6 +290,8 @@ Deno.test("суперадмин переносит участника из чу�
 // ── Рассылка ─────────────────────────────────────────────────────────────────
 
 Deno.test("рассылка админа уходит только его воркспейсу", async () => {
+  // Днём по Москве: в комендантский час (_shared/curfew.ts) рассылка ложится в очередь, а не уходит.
+  using _clock = new FakeTime(new Date("2026-10-14T09:00:00Z"));
   const db = makeDb();
   const prevToken = Deno.env.get("TELEGRAM_BOT_TOKEN");
   const realFetch = globalThis.fetch;

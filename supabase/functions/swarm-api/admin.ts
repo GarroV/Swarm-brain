@@ -19,6 +19,8 @@ import {
 } from "./admin-scope.ts";
 import { onlyLiveEntries } from "../_shared/entries/live.ts";
 import { notifyPerson } from "../_shared/notify-person.ts";
+import { handlePasskeyAdminRoutes } from "./passkey-admin.ts";
+import { supabaseStore } from "../_shared/passkeys/store.ts";
 import { serverError } from "./client-error.ts";
 import { apiErr, json } from "./http.ts";
 import { handleWorkspaceKeysRoutes, type WorkspaceKeysDeps } from "./workspace-keys-routes.ts";
@@ -325,6 +327,10 @@ export async function handleAdminRoutes(
       }
     }
   }
+
+  // DELETE /admin/workspaces/:wsId/users/:userId/passkeys — «Сбросить вход» (ключи доступа, #955)
+  const passkeyResp = await handlePasskeyAdminRoutes(supabase, supabaseStore(supabase), req, routePath, actor, origin);
+  if (passkeyResp) return passkeyResp;
 
   // DELETE /admin/workspaces/:wsId/users/:userId
   const wsUserMatch = routePath.match(

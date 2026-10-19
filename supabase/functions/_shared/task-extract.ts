@@ -2,6 +2,7 @@ import { normalizeExtractedDueDate, todayIso } from "./llm-date.ts";
 import { externalFetch, VIA_OPENAI_LONG } from "./external-fetch.ts";
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { openAIKeyHandle } from "./workspace-keys.ts";
+import { UNTRUSTED_DATA_RULE, wrapUntrustedForModel } from "./untrusted-prompt.ts";
 
 // Вынесено из swarm-api/index.ts без изменений (issue #514): тем же экстрактором теперь
 // пользуется MCP (extract_tasks_from_meeting), а копий промпта в проекте и так хватает.
@@ -45,7 +46,7 @@ export const EXTRACT_MODEL = "gpt-4o-mini";
 export const EXTRACT_MAX_TASKS = 10;
 
 export function extractPrompt(today: string): string {
-  return `Сегодня ${today}. Извлеки задачи из тезисов встречи. Верни JSON массив (только JSON, без markdown): [{"title":"короткая формулировка действия","description":"1 фраза контекста из обсуждения: зачем/какой ожидаемый результат/важная деталь. НЕ повторяй заголовок другими словами","assignee":"полное имя ответственного","due_date":"YYYY-MM-DD","country":"ISO-код рынка, например RS"}]. Бери только реальные поручения/действия с конкретным результатом. Если задач нет — пустой массив [].\nЕсли для поля (кроме title) в тексте нет данных — ставь JSON-литерал null БЕЗ кавычек. Строка "null" запрещена: это текст, а не пустое значение, и он попадает пользователю на экран.\ndue_date: год считай от сегодняшней даты. Если в тексте назван только день и месяц («до 17 августа») — подставь ближайший подходящий год, НИКОГДА не бери год из головы. Если срок не назван — null.`;
+  return `Сегодня ${today}. Извлеки задачи из тезисов встречи. Верни JSON массив (только JSON, без markdown): [{"title":"короткая формулировка действия","description":"1 фраза контекста из обсуждения: зачем/какой ожидаемый результат/важная деталь. НЕ повторяй заголовок другими словами","assignee":"полное имя ответственного","due_date":"YYYY-MM-DD","country":"ISO-код рынка, например RS"}]. Бери только реальные поручения/действия с конкретным результатом. Если задач нет — пустой массив [].\nЕсли для поля (кроме title) в тексте нет данных — ставь JSON-литерал null БЕЗ кавычек. Строка "null" запрещена: это текст, а не пустое значение, и он попадает пользователю на экран.\ndue_date: год считай от сегодняшней даты. Если в тексте назван только день и месяц («до 17 августа») — подставь ближайший подходящий год, НИКОГДА не бери год из головы. Если срок не назван — null.\n${UNTRUSTED_DATA_RULE}`;
 }
 
 export function extractRequestBody(
@@ -57,7 +58,7 @@ export function extractRequestBody(
     model: EXTRACT_MODEL,
     messages: [
       { role: "system", content: extractPrompt(today) },
-      { role: "user", content: text.slice(0, 8000) },
+      { role: "user", content: wrapUntrustedForModel(text.slice(0, 8000)) },
     ],
     max_tokens: 1200,
     ...(stream ? { stream: true } : {}),

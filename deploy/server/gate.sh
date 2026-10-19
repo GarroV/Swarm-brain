@@ -2,11 +2,14 @@
 # Шлюз раскатки Swarm на своём сервере (GarroV/Swarm-brain #919).
 # Вызывается ТОЛЬКО принудительной командой ключа пользователя swarm-deploy:
 #   command="sudo /opt/swarm-deploy/gate.sh" в ~swarm-deploy/.ssh/authorized_keys
-# Что пришло после ssh — в SSH_ORIGINAL_COMMAND; разрешено ровно четыре действия:
+# Что пришло после ssh — в SSH_ORIGINAL_COMMAND; разрешено ровно пять действий:
 #   functions                 — stdin: tar.gz каталога supabase/functions → в рантайм + перезапуск
 #   migrations-applied        — список применённых версий миграций
 #   migrate <версия>          — stdin: SQL миграции; накат одной транзакцией вместе с учётной записью
 #   recorder-upload <сборка>  — stdin: zip рекордера; заливка в Storage swarm_drive/recorder/, без перезаписи
+#   maintenance <действие> …  — плашка и заморозка (#978): announce <начало> <минут> | cancel | status |
+#                               notice <минут> | notice-off | notice-show; stdin (необязательно) — две строки
+#                               своего текста: русский, английский. SQL зашит здесь, аргументы — проверенные числа
 # Канон: GarroV/Swarm-brain deploy/server/gate.sh.
 set -Eeuo pipefail
 umask 077
@@ -40,8 +43,9 @@ SQL
 }
 
 read -r -a ARGV <<< "${SSH_ORIGINAL_COMMAND:-}"
-[ "${#ARGV[@]}" -le 3 ] || die "слишком много аргументов"
 CMD="${ARGV[0]:-}"
+MAXARGS=3; [ "$CMD" = maintenance ] && MAXARGS=4   # maintenance announce <начало> <минут>
+[ "${#ARGV[@]}" -le "$MAXARGS" ] || die "слишком много аргументов"
 logger -t swarm-deploy "команда: ${CMD} ${ARGV[1]:-}"
 
 case "$CMD" in
@@ -124,5 +128,70 @@ case "$CMD" in
     [ "$CODE" = 200 ] && [ "$(sha256_ "$TMP/back.zip")" = "$SHA" ] || die "после заливки $NAME отдаётся не то (HTTP $CODE)"
     echo "$NAME загружен"; echo "sha256 $SHA"
     ;;
-  *) die "неизвестная команда: '${CMD}'. Разрешено: functions | migrations-applied | migrate <версия> [имя] | recorder-upload <сборка>" ;;
+  maintenance)
+    ACT="${ARGV[1]:-}"
+    # Число — только цифры и в пределах: в SQL уходит значение, прошедшее проверку, а не строка клиента.
+    num() { # num <имя> <значение> <мин> <макс>
+      [[ "$2" =~ ^[0-9]{1,4}$ ]] || die "$1 — целое число цифрами, а не '$2'"
+      [ "$2" -ge "$3" ] && [ "$2" -le "$4" ] || die "$1: от $3 до $4, а не $2"
+    }
+    # Свой текст плашки: stdin, строка 1 — по-русски, строка 2 — по-английски; не длиннее 300 символов
+    # (столько же режет SQL-функция), без управляющих символов. В SQL попадает через переменные psql.
+    read_texts() {
+      local raw; raw=$(head -c 4096 || true)
+      RU=$(printf '%s\n' "$raw" | sed -n 1p | tr -d '\000-\037' | cut -c1-300)
+      EN=$(printf '%s\n' "$raw" | sed -n 2p | tr -d '\000-\037' | cut -c1-300)
+    }
+    case "$ACT" in
+      announce)
+        num "начало (минут до заморозки)" "${ARGV[2]:-}" 0 1440
+        num "длительность (минут)" "${ARGV[3]:-}" 1 180
+        read_texts
+        psql_ -tA -v lead="${ARGV[2]}" -v dur="${ARGV[3]}" -v ru="$RU" -v en="$EN" <<'SQL' || die "объявление не записалось"
+select public.maintenance_announce(:lead, :dur, :'en', :'ru');
+SQL
+        ;;
+      cancel)
+        psql_ -tA <<'SQL' || die "отмена не записалась"
+select public.maintenance_cancel();
+SQL
+        ;;
+      status)
+        psql_ -tA <<'SQL' || die "статус не прочитался"
+select 'now=' || now();
+select 'maintenance=' || coalesce((select value::text from public.app_settings where key = 'maintenance'), 'нет');
+select 'deploy_notice=' || coalesce((select value::text from public.app_settings where key = 'deploy_notice'), 'нет');
+select 'meetings_processing=' || count(*) from public.meetings where summary_status = 'processing';
+SQL
+        ;;
+      notice)
+        num "минут до обновления" "${ARGV[2]:-}" 0 1440
+        read_texts
+        # Плашка гаснет сама: until = момент обновления + 20 минут (как у scripts/deploy-notice.sh).
+        psql_ -tA -v lead="${ARGV[2]}" -v ru="$RU" -v en="$EN" <<'SQL' || die "плашка не записалась"
+insert into public.app_settings (key, value, updated_at)
+values ('deploy_notice', jsonb_strip_nulls(jsonb_build_object(
+  'at',    to_jsonb((now() + make_interval(mins => :lead))::timestamptz),
+  'until', to_jsonb((now() + make_interval(mins => :lead + 20))::timestamptz),
+  'ru',    nullif(:'ru'::text, ''),
+  'en',    nullif(:'en'::text, ''))), now())
+on conflict (key) do update set value = excluded.value, updated_at = now();
+select 'плашка записана';
+SQL
+        ;;
+      notice-off)
+        psql_ -tA <<'SQL' || die "плашка не снялась"
+delete from public.app_settings where key = 'deploy_notice';
+select 'плашка снята';
+SQL
+        ;;
+      notice-show)
+        psql_ -tA <<'SQL' || die "плашка не прочиталась"
+select 'deploy_notice=' || coalesce((select value::text from public.app_settings where key = 'deploy_notice'), 'нет');
+SQL
+        ;;
+      *) die "maintenance: неизвестное действие '${ACT}'. Разрешено: announce <начало> <минут> | cancel | status | notice <минут> | notice-off | notice-show" ;;
+    esac
+    ;;
+  *) die "неизвестная команда: '${CMD}'. Разрешено: functions | migrations-applied | migrate <версия> [имя] | recorder-upload <сборка> | maintenance <действие>" ;;
 esac

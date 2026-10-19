@@ -346,6 +346,17 @@ export type Me = {
   is_superadmin?: boolean;
   /** Задник веба (lib/backdrop.ts); null — по умолчанию. Нет поля — сервер до #backdrop. */
   ui_backdrop?: string | null;
+  /** Второй шаг входа — палец (ключ доступа, #955). Нет поля — сервер до #955. */
+  second_step?: {
+    /** Шаг применим к этой сессии (настоящий вход, не демо и не короткий токен). */
+    applies: boolean;
+    /** Пройден в этой сессии. */
+    done: boolean;
+    /** Включён ли замок обязательности (SECOND_STEP_REQUIRED в swarm-api). */
+    required: boolean;
+    /** Момент входа (секунды): по нему браузер помнит, что за этот вход уже пробовали. */
+    session: number | null;
+  };
 };
 
 export type AdminWorkspace = {

@@ -86,3 +86,13 @@ supabase/functions/_shared/secret-box.ts|supabase/functions/_shared/secret-box.t
 supabase/functions/_shared/workspace-keys.ts|supabase/functions/_shared/workspace-keys.test.ts
 supabase/functions/_shared/users/master-admins.ts|supabase/functions/_shared/users/master-admins.test.ts
 supabase/functions/swarm-api/workspace-keys-routes.ts|supabase/functions/swarm-api/workspace-keys-routes.test.ts
+# Второй шаг входа — палец (ключ доступа, #955). Ошибка не падает: чужой ключ подтверждает чужую
+# сессию, ответ с чужого сайта принимается, вызов срабатывает дважды, а замок обязательности
+# пропускает или запирает не тех. Ядро доступа, тесты — на настоящей криптографии.
+supabase/functions/_shared/passkeys/flow.ts|supabase/functions/_shared/passkeys/flow.test.ts
+supabase/functions/_shared/passkeys/rp.ts|supabase/functions/_shared/passkeys/rp.test.ts
+supabase/functions/_shared/passkeys/second-step.ts|supabase/functions/_shared/passkeys/second-step.test.ts
+supabase/functions/auth-passkey/handler.ts|supabase/functions/auth-passkey/handler.test.ts
+supabase/functions/swarm-api/passkey-admin.ts|supabase/functions/swarm-api/passkey-admin.test.ts
+supabase/functions/_shared/passkeys/device-link.ts|supabase/functions/_shared/passkeys/device-link.test.ts
+supabase/functions/swarm-api/passkeys-self.ts|supabase/functions/swarm-api/passkeys-self.test.ts

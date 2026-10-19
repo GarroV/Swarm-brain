@@ -15,8 +15,10 @@ import { buildEmbeddingInput, marketTagsFromInput } from "../../_shared/meta-ext
 import type { TgCallbackQuery } from "../lib/types.ts";
 import { onlyLive } from "../../_shared/tasks/live.ts";
 import { onlyLiveEntries } from "../../_shared/entries/live.ts";
+import { escapeHtml, sanitizeModelHtml } from "../../_shared/telegram-html.ts";
 import { archiveEntry } from "../../_shared/entries/archive.ts";
 import { externalFetch, VIA_TELEGRAM, VIA_TELEGRAM_UPLOAD } from "../../_shared/external-fetch.ts";
+import { keepVisibleTasks } from "../../_shared/tasks/project-visibility.ts";
 
 const TELEGRAM_BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN")!;
 
@@ -164,7 +166,7 @@ export async function handleMeetingCallback(
   );
 
   await setSession(chatId, `meeting_pending_${meetingId}`, JSON.stringify({ content: contentParts, title }));
-  await sendMessage(chatId, `<b>📋 ${title}</b>\n\n${gptResult}`);
+  await sendMessage(chatId, `<b>📋 ${escapeHtml(title)}</b>\n\n${sanitizeModelHtml(gptResult)}`);
   await sendInlineMessage(chatId, "Сохранить встречу в базу знаний?", [[
     { text: "💾 В базу", callback_data: `meeting_save_pub_${meetingId}` },
     { text: "🔒 В личное", callback_data: `meeting_save_priv_${meetingId}` },
@@ -244,7 +246,7 @@ export async function handleMeetingCallbacks(
       isPrivate ? userId : undefined,
     );
     const label = isPrivate ? "🔒 Встреча сохранена в личное хранилище" : "💾 Встреча сохранена в базу знаний";
-    await sendMessage(chatId, `${label}: <b>${title}</b>`);
+    await sendMessage(chatId, `${label}: <b>${escapeHtml(title)}</b>`);
     return true;
   }
 
@@ -278,7 +280,7 @@ export async function handleMeetingCallbacks(
       return true;
     }
 
-    await sendMessage(chatId, `🗑 Удалено: <b>${title}</b> и все связанные задачи.`);
+    await sendMessage(chatId, `🗑 Удалено: <b>${escapeHtml(title)}</b> и все связанные задачи.`);
     return true;
   }
   if (data.startsWith("rai_")) {
@@ -308,7 +310,7 @@ export async function handleMeetingCallbacks(
           });
           const duration = m.metadata?.duration ? ` · ${Math.round((m.metadata.duration as number) / 60)} мин` : "";
           const tags = (m.metadata?.tags as string[] | undefined)?.length
-            ? `\n🏷 ${(m.metadata.tags as string[]).join(", ")}`
+            ? `\n🏷 ${escapeHtml((m.metadata.tags as string[]).join(", "))}`
             : "";
           const meetingId = (m.metadata?.meeting_id as string | undefined) ?? m.id;
           const row1 = [{ text: "🔍 Подробнее", callback_data: `mr_${m.id}` }];
@@ -316,7 +318,7 @@ export async function handleMeetingCallbacks(
             { text: "🌍 Рынки", callback_data: `mctry_${m.id}` },
             { text: "👤 Участники", callback_data: `massign_${meetingId}` },
           ];
-          await sendInlineMessage(chatId, `📋 <b>${title}</b>\n📅 ${date}${duration}${tags}`, [row1, row2]);
+          await sendInlineMessage(chatId, `📋 <b>${escapeHtml(title)}</b>\n📅 ${date}${duration}${tags}`, [row1, row2]);
         }
       }
     } else if (sub === "import") {
@@ -345,30 +347,39 @@ export async function handleMeetingCallbacks(
     });
     const src = entry.source === "granola" ? "📓 Granola" : "📹 Read.ai";
 
-    const escHtml = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
     const summaryText = entry.summary
-      ? escHtml((entry.summary as string).slice(0, 2000))
+      ? escapeHtml((entry.summary as string).slice(0, 2000))
       : "<i>Тезисы не сгенерированы</i>";
 
     let tasksText = "";
     if (meetingId) {
-      const { data: tasks } = await onlyLive(supabase.from("tasks").select("title, assignees, due_date, status")).eq(
-        "meeting_id",
-        meetingId,
-      ).limit(8);
+      // Не из проекта, которого смотрящий не видит (решение владельца 16.10.2026): карточка
+      // встречи иначе показала бы название закрытой задачи. Воркспейс здесь уже проверен самой
+      // встречей (loadEntryForAction), поэтому отбор по group_id не добавлен — легаси-задачи
+      // без пространства из карточки не пропадут; проект чужого пространства всё равно отсеется.
+      const { data: rawTasks } = await onlyLive(
+        supabase.from("tasks").select("title, assignees, due_date, status, project_id"),
+      ).eq("meeting_id", meetingId).limit(8);
+      const tasks = await keepVisibleTasks(
+        (rawTasks ?? []) as Array<
+          { title: string; assignees: string[]; due_date: string | null; status: string; project_id: string | null }
+        >,
+        groupId,
+        userId,
+      );
       if (tasks?.length) {
         tasksText = "\n\n<b>✅ Задачи:</b>\n" +
           tasks.map((t: { title: string; assignees: string[]; due_date: string | null; status: string }) => {
             const who = t.assignees?.join(", ");
             const due = t.due_date ? ` · до ${t.due_date}` : "";
             const done = t.status === "done" ? " ✓" : "";
-            return `• ${t.title}${who ? ` (${who})` : ""}${due}${done}`;
+            return `• ${escapeHtml(t.title)}${who ? ` (${escapeHtml(who)})` : ""}${due}${done}`;
           }).join("\n");
       }
     }
 
-    const tagsLine = tags?.length ? `\n🏷 ${tags.join(", ")}` : "";
-    const header = `<b>${title}</b>\n${src} · <i>${dateStr}</i>${tagsLine}`;
+    const tagsLine = tags?.length ? `\n🏷 ${escapeHtml(tags.join(", "))}` : "";
+    const header = `<b>${escapeHtml(title)}</b>\n${src} · <i>${dateStr}</i>${tagsLine}`;
 
     const keyboard: Array<Array<{ text: string; callback_data: string }>> = [];
     keyboard.push([
@@ -511,11 +522,17 @@ export async function handleMeetingCallbacks(
     ).maybeSingle();
     const full = prof ? [prof.first_name, prof.last_name].filter(Boolean).join(" ") : "";
     const assigneeName = full || (au?.username ? `@${au.username}` : `ID ${targetTgId}`);
-    const { data: meetingTasks } = await onlyLive(supabase.from("tasks").select("id, assignees")).eq(
-      "meeting_id",
-      meetingId,
+    // id встречи пришёл из callback_data: правим только задачи своего пространства и не из
+    // проекта, которого человек не видит (решение владельца 16.10.2026).
+    const { data: rawMeetingTasks } = await onlyLive(
+      supabase.from("tasks").select("id, assignees, project_id"),
+    ).eq("meeting_id", meetingId).eq("group_id", groupId);
+    const meetingTasks = await keepVisibleTasks(
+      (rawMeetingTasks ?? []) as Array<{ id: string; assignees: string[]; project_id: string | null }>,
+      groupId,
+      userId,
     );
-    for (const t of (meetingTasks ?? []) as Array<{ id: string; assignees: string[] }>) {
+    for (const t of meetingTasks) {
       const existing = t.assignees ?? [];
       if (!existing.includes(assigneeName)) {
         // Статус здесь БОЛЬШЕ НЕ ТРОГАЕМ (05.09.2026). Раньше назначение исполнителя
@@ -525,7 +542,7 @@ export async function handleMeetingCallbacks(
         await supabase.from("tasks").update({ assignees: [...existing, assigneeName] }).eq("id", t.id);
       }
     }
-    await sendMessage(chatId, `✅ <b>${assigneeName}</b> добавлен(а) к задачам встречи.`);
+    await sendMessage(chatId, `✅ <b>${escapeHtml(assigneeName)}</b> добавлен(а) к задачам встречи.`);
     return true;
   }
   if (data.startsWith("mexp_")) {
@@ -610,7 +627,7 @@ export async function handleMeetingCallbacks(
     await editInlineMessage(
       chatId,
       cb.message.message_id,
-      `🌍 Рынки встречи: <b>${names.length ? names.join(", ") : "не заданы"}</b>${collapsedNote}`,
+      `🌍 Рынки встречи: <b>${names.length ? escapeHtml(names.join(", ")) : "не заданы"}</b>${collapsedNote}`,
       kb,
     );
     return true;
@@ -656,7 +673,7 @@ export async function handleMeetingCallbacks(
       owner_id: publisherId,
     }).eq("id", entryId).eq("group_id", groupId);
     const title = ((entry.metadata as Record<string, unknown>)?.title as string) ?? "Встреча";
-    await sendMessage(chatId, `✅ Встреча сохранена: <b>${title}</b>`);
+    await sendMessage(chatId, `✅ Встреча сохранена: <b>${escapeHtml(title)}</b>`);
     // Авто-извлечение задач из встречи УБРАНО 05.09.2026 (решение владельца: «раз бот —
     // удаляй все»). Бот клал такие задачи в статус `pending`, подтвердить их можно было
     // только карточкой в Telegram, а в вебе статус не показывался вовсе — так на проде
@@ -699,7 +716,7 @@ export async function handleMeetingSessionInput(
       await supabase.from("entries").update({
         metadata: { ...(entry.metadata as Record<string, unknown>), title: newTitle },
       }).eq("id", entryId).eq("group_id", groupId);
-      await sendMessage(chatId, `✅ Название: <b>${newTitle}</b>`, {
+      await sendMessage(chatId, `✅ Название: <b>${escapeHtml(newTitle)}</b>`, {
         inline_keyboard: [[
           { text: "✅ Сохранить", callback_data: `mc_${entryId}` },
           { text: "📅 Дата", callback_data: `med_${entryId}` },
@@ -785,12 +802,12 @@ export async function handleMeetingSessionInput(
     }
     const { error } = await supabase.from("entries").update(updates).eq("id", entryId).eq("group_id", groupId);
     if (error) {
-      await sendMessage(chatId, `Ошибка: ${error.message}`);
+      await sendMessage(chatId, `Ошибка: ${escapeHtml(error.message)}`);
       return true;
     }
 
-    const titleLine = newTitle ? `✅ Название: <b>${newTitle}</b>\n\n` : "";
-    await sendMessage(chatId, `${titleLine}✅ Тезисы обновлены.\n\n${newSummary.slice(0, 1400)}`, {
+    const titleLine = newTitle ? `✅ Название: <b>${escapeHtml(newTitle)}</b>\n\n` : "";
+    await sendMessage(chatId, `${titleLine}✅ Тезисы обновлены.\n\n${sanitizeModelHtml(newSummary.slice(0, 1400))}`, {
       inline_keyboard: [[{ text: "✅ Подтвердить встречу", callback_data: `mc_${entryId}` }]],
     });
     return true;
@@ -805,7 +822,7 @@ export async function handleMeetingSessionInput(
       await supabase.from("entries").update({
         metadata: { ...(entry.metadata as Record<string, unknown>), title: newTitle },
       }).eq("id", entryId).eq("group_id", groupId);
-      await sendMessage(chatId, `✅ Встреча переименована: <b>${newTitle}</b>`);
+      await sendMessage(chatId, `✅ Встреча переименована: <b>${escapeHtml(newTitle)}</b>`);
     }
     return true;
   }
@@ -832,7 +849,7 @@ export async function handleMeetingSessionInput(
           groupId,
         );
       }
-      await sendMessage(chatId, `🏷 Теги сохранены: <b>${rawTags.join(", ")}</b>`);
+      await sendMessage(chatId, `🏷 Теги сохранены: <b>${escapeHtml(rawTags.join(", "))}</b>`);
     }
     return true;
   }

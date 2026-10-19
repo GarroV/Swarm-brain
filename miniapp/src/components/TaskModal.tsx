@@ -34,6 +34,7 @@ import { useDt } from "@/components/roy/nav";
 import { useIsDesktop } from "@/components/roy/useIsDesktop";
 import { recurValueOf, type RecurValue } from "@/lib/recurrenceLabels";
 import { RecurrencePicker } from "@/components/tasks/RecurrencePicker";
+import { hasOpenEscapeLayer } from "@/lib/escapeLayer";
 import { buildProjectOptions } from "@/lib/projectPicker";
 import { isRawId } from "@/lib/displayFormat";
 
@@ -531,7 +532,18 @@ export function TaskModal({ task: taskOpened, open, onClose, onSaved, prefill, m
   });
 
   return (
-    <Dialog open={open} onOpenChange={(o) => !o && handleClose()}>
+    <Dialog
+      open={open}
+      onOpenChange={(o, details) => {
+        // Открыто меню выбора — Escape принадлежит ему, а не карточке (#881): отменяем закрытие,
+        // меню закроется своим обработчиком (Base UI зовёт этот раньше — меню ещё в DOM).
+        if (!o && details.reason === "escape-key" && hasOpenEscapeLayer(document)) {
+          details.cancel();
+          return;
+        }
+        if (!o) handleClose();
+      }}
+    >
       <DialogContent
         showCloseButton={false}
         overlayClassName={drawer ? "bg-[rgba(10,13,17,.12)]" : undefined}

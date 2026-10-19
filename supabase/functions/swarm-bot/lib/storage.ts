@@ -14,6 +14,7 @@ import { COUNTRY_PROMPT_RULE, ENTRY_TYPE_PROMPT_RULE, normalizeCountries } from 
 import { applyGeneralSentinel, specificCountries } from "../../_shared/meta-extract.ts";
 import { normalizeExtractedEventDate, todayIso } from "../../_shared/llm-date.ts";
 import { onlyLiveEntries } from "../../_shared/entries/live.ts";
+import { UNTRUSTED_DATA_RULE, wrapUntrustedForModel } from "../../_shared/untrusted-prompt.ts";
 
 export { visibilityFilter } from "./visibility.ts";
 
@@ -48,9 +49,14 @@ async function buildEntryIndex(
     COUNTRY_PROMPT_RULE + "\n" +
     ENTRY_TYPE_PROMPT_RULE + "\n" +
     "entry_date — дата события из текста (не сегодняшняя), null если нет. Год считай от сегодняшней даты: назван только день и месяц — бери ближайший подходящий год, НИКОГДА не из головы.\n" +
-    "keywords — 5-8 ключевых слов и синонимов для поиска через запятую.";
+    "keywords — 5-8 ключевых слов и синонимов для поиска через запятую.\n" +
+    UNTRUSTED_DATA_RULE;
   try {
-    const raw = await chatComplete(system, content.slice(0, 5000), { temperature: 0, json: true, groupId });
+    const raw = await chatComplete(system, wrapUntrustedForModel(content.slice(0, 5000)), {
+      temperature: 0,
+      json: true,
+      groupId,
+    });
     const parsed = JSON.parse(raw.replace(/```json\n?|\n?```/g, "").trim());
     return {
       summary: hasSummary ? existingSummary! : (typeof parsed.summary === "string" ? parsed.summary : null),
@@ -364,8 +370,9 @@ export async function generateSummary(text: string, groupId: string | undefined)
   if (text.length < 80) return null;
   try {
     return await chatComplete(
-      "Сделай краткие тезисы из текста. Только конкретные факты: имена, цифры, решения, даты. Без общих фраз. 3–7 пунктов. Маркированный список на русском.",
-      text.slice(0, 6000),
+      "Сделай краткие тезисы из текста. Только конкретные факты: имена, цифры, решения, даты. Без общих фраз. 3–7 пунктов. Маркированный список на русском.\n" +
+        UNTRUSTED_DATA_RULE,
+      wrapUntrustedForModel(text.slice(0, 6000)),
       { groupId },
     );
   } catch {

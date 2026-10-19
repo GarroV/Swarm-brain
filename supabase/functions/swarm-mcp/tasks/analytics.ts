@@ -8,8 +8,9 @@
 // (_shared/tasks/access.ts). RLS не авторизация — всё ходит service_role, поэтому промах в
 // проверке здесь сразу означает утечку задач чужого воркспейса.
 
+import { loadProjectVisibility } from "../../_shared/tasks/project-visibility.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { getTask, listTasks } from "../../_shared/tasks/db.ts";
+import { getVisibleTask, listTasks } from "../../_shared/tasks/db.ts";
 import { resolvePersonNames } from "../../_shared/users/display-name.ts";
 import { canAccessTask, taskAccessError } from "../../_shared/tasks/access.ts";
 import { computeFlowTimes, computeTaskStats, periodStartISO, type StatsTask } from "../../_shared/tasks/analytics.ts";
@@ -118,6 +119,7 @@ export async function toolGetTaskStats(args: {
     projectId,
     confirmed: true,
     limit: STATS_TASK_CAP,
+    viewerId: args.requesting_user_id,
   }, groupId);
 
   const stats = computeTaskStats(tasks as StatsTask[], { sinceISO });
@@ -153,7 +155,7 @@ export async function toolGetTaskStats(args: {
 }
 
 export async function toolGetTaskHistory(args: { task_id: string; requesting_user_id: number }): Promise<string> {
-  const task = await getTask(args.task_id);
+  const task = await getVisibleTask(args.task_id, args.requesting_user_id);
   const groupId = await resolveGroupId(args.requesting_user_id);
   if (!groupId) return `Задача ${args.task_id} не найдена.`;
   const denied = taskAccessError(args.task_id, task, groupId);
@@ -215,15 +217,19 @@ export async function toolGetRecentTaskChanges(
   // Доступ: журнал сам по себе не знает воркспейса — спрашиваем задачи.
   // archive-ok: журнал изменений: у архивной задачи тоже есть история, и «кто её убрал» — ровно то, что в нём ищут
   const { data: taskRows } = await supabase
-    .from("tasks").select("id, title, group_id")
+    .from("tasks").select("id, title, group_id, project_id")
     .in("id", [...new Set(raw.map((r) => r.task_id))]);
+  // Задачи невидимых зрителю проектов в ленту не попадают (решение владельца 16.10.2026).
+  const projects = await loadProjectVisibility(groupId, args.requesting_user_id);
+  const hiddenProjects = new Set(projects.hidden);
   const titleById = new Map<string, string>();
   for (
     const t of (taskRows ?? []) as Array<
-      { id: string; title: string; group_id: string | null }
+      { id: string; title: string; group_id: string | null; project_id: string | null }
     >
   ) {
     if (!canAccessTask(t, groupId)) continue;
+    if (t.project_id && (hiddenProjects.has(t.project_id) || !projects.known.has(t.project_id))) continue;
     titleById.set(t.id, t.title);
   }
 
@@ -243,70 +249,4 @@ export async function toolGetRecentTaskChanges(
   return formatRecentChanges(rows, { sinceISO, truncated });
 }
 
-export const ANALYTICS_TOOL_DEFINITIONS = [
-  {
-    name: "get_task_stats",
-    description:
-      "Статистика по задачам за период: создано/закрыто (с раскладкой по дням или месяцам), время от постановки до закрытия, время ожидания начала работы и время в работе по журналу, дисциплина сроков, кто сколько закрыл, что просрочено. Фильтры по исполнителю, проекту, рынку.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        period: {
-          type: "string",
-          enum: ["day", "week", "month", "quarter", "year"],
-          description: "Окно статистики, по умолчанию week",
-        },
-        since: {
-          type: "string",
-          description:
-            "Точная дата начала (ISO, 2026-09-01) — важнее period. Неразобранное значение = отказ, а не тихий дефолт",
-        },
-        assignee: { type: "string", description: "Имя исполнителя — считать только его задачи" },
-        project: { type: "string", description: "Имя проекта или подпроекта (точные имена — get_projects)" },
-        country: { type: "string", description: "Страна или рынок" },
-        requesting_user_id: {
-          type: "number",
-          description: "Твой Telegram user ID — обязателен для фильтрации по воркспейсу",
-        },
-      },
-      required: ["requesting_user_id"],
-    },
-  },
-  {
-    name: "get_task_history",
-    description:
-      "История одной задачи: что, когда и кем менялось — статус, срок, исполнитель, проект, спринт, приоритет. ID задачи печатает get_tasks.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        task_id: { type: "string", description: "ID задачи — полный uuid из строки задачи в get_tasks" },
-        requesting_user_id: { type: "number", description: "Твой Telegram user ID — обязателен для проверки доступа" },
-      },
-      required: ["task_id", "requesting_user_id"],
-    },
-  },
-  {
-    name: "get_recent_task_changes",
-    description:
-      "Все изменения по доступным задачам за период одной выдачей — «где, когда, куда передвинули». Сгруппировано по задаче, у каждой печатается id.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        since: {
-          type: "string",
-          description: "С какого момента (ISO). По умолчанию — неделя. Неразобранное значение = отказ",
-        },
-        limit: {
-          type: "number",
-          description:
-            "Сколько изменений показать: по умолчанию 100, максимум 400. Если больше — выдача честно скажет, что обрезана",
-        },
-        requesting_user_id: {
-          type: "number",
-          description: "Твой Telegram user ID — обязателен для фильтрации по воркспейсу",
-        },
-      },
-      required: ["requesting_user_id"],
-    },
-  },
-];
+export { ANALYTICS_TOOL_DEFINITIONS } from "./analytics-defs.ts";

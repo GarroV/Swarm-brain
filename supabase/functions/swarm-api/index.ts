@@ -5,6 +5,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { verifyInitData } from "./auth.ts";
 import { isRenewableSession, isSessionRevoked, type SessionClaims, verifyJWT } from "../_shared/jwt.ts";
+import { isSecondStepRequired, parseSecondStepAudience, secondStepBlocks, secondStepState } from "../_shared/passkeys/second-step.ts";
 import { logAccess, logLoginOnce } from "../_shared/access-events.ts";
 import {
   buildRecorderSetupOneLiner,
@@ -48,6 +49,7 @@ import {
   createTask,
   deleteTask,
   getTask,
+  getVisibleTaskInWorkspace,
   listTasksWithTotal,
   updateTask,
   TaskUserError,
@@ -72,14 +74,15 @@ import {
   setTasksSprint,
   updateSprint,
 } from "../_shared/tasks/sprints.ts";
+import { taskVisibleByProject } from "../_shared/tasks/project-visibility.ts";
+import { getVisibleProject, ProjectAccessError } from "../_shared/tasks/projects.ts";
 import {
   canMutateProject,
   createProject,
   deleteProject,
   dissolveSprintGroup,
-  getProject,
   listProjects,
-  projectInWorkspace,
+  canViewProjectInWorkspace,
   updateProject,
 } from "../_shared/tasks/projects.ts";
 import { parseProjectFields } from "./project-fields.ts";
@@ -116,6 +119,8 @@ import { publishDraftMeeting } from "../_shared/meeting-publish.ts";
 import { entryVisibilityOr } from "../_shared/entries/access.ts";
 import { mergeOwnLabels } from "../_shared/tasks/labels.ts";
 import { todayIso } from "../_shared/llm-date.ts";
+import { escapeHtml } from "../_shared/telegram-html.ts";
+import { UNTRUSTED_DATA_RULE, wrapUntrustedForModel } from "../_shared/untrusted-prompt.ts";
 import {
   callExtractor,
   EXTRACT_MAX_TASKS,
@@ -133,9 +138,12 @@ import {
   oneOnOnePartner,
 } from "../_shared/meeting-access.ts";
 import { handleAdminRoutes } from "./admin.ts";
+import { handleSelfPasskeyRoutes } from "./passkeys-self.ts";
+import { supabaseStore } from "../_shared/passkeys/store.ts";
 import { apiErr, corsHeaders, json, parseListLimit, routePathOf } from "./http.ts";
 import { errorDetail, INTERNAL_ERROR_MESSAGE, serverError, withErrorBoundary } from "./client-error.ts";
 import { handleMeetingInviteRoutes } from "./meeting-invites.ts";
+import { handleWebRecordingRoutes } from "./web-recording.ts";
 import { DEMO_GROUP_ID, isDemoSession } from "../_shared/demo-session.ts";
 import { DEMO_REQUESTS, englishDemoResponse } from "./demo-english.ts";
 import { handleIntegrationConnectRoutes, makeIntegrationsDeps } from "./integrations.ts";
@@ -183,7 +191,6 @@ import {
   maintenanceVerdict,
   readMaintenance,
 } from "../_shared/maintenance.ts";
-import { onlyLive } from "../_shared/tasks/live.ts";
 import { onlyLiveEntries } from "../_shared/entries/live.ts";
 import { archiveEntry } from "../_shared/entries/archive.ts";
 import { personName, resolvePersonNames } from "../_shared/users/display-name.ts";
@@ -223,6 +230,10 @@ const ADMIN_USER_ID = 744230399; // см. lib/supabase.ts swarm-bot — един
 // изолирована в синтетический воркспейс: не админ, не видит рабочие данные, не минтит токены.
 // Правило «это демо» — одно на все функции: _shared/demo-session.ts.
 const WEB_JWT_SECRET = Deno.env.get("WEB_JWT_SECRET"); // подпись веб-сессий (Login Widget, B+)
+// Замок «второй шаг входа обязателен» (палец, #955). По умолчанию выключен: шаг предлагается, но не требуется.
+const SECOND_STEP_REQUIRED = isSecondStepRequired(Deno.env.get("SECOND_STEP_REQUIRED"));
+// Кому шаг применим (пилот): не задано — никому, `all` — всем, список telegram id — только им.
+const SECOND_STEP_AUDIENCE = parseSecondStepAudience(Deno.env.get("SECOND_STEP_AUDIENCE"));
 
 const supabase = createClient(
   Deno.env.get("SUPABASE_URL")!,
@@ -661,6 +672,17 @@ async function routeRequest(req: Request): Promise<Response> {
   // Снимаем префикс функции (/functions/v1/swarm-api) — один, известный (#592).
   const routePath = routePathOf(url.pathname);
 
+  // Второй шаг входа (палец, #955): состояние идёт в /me, замок обязательности — переменная
+  // SECOND_STEP_REQUIRED, по умолчанию выключен; аудитория — SECOND_STEP_AUDIENCE, по умолчанию никто.
+  const secondStep = secondStepState(webSession, {
+    isDemo,
+    required: SECOND_STEP_REQUIRED,
+    audience: SECOND_STEP_AUDIENCE,
+  });
+  if (secondStepBlocks(secondStep, req.method, routePath)) {
+    return json({ error: "second_step_required" }, 403, origin);
+  }
+
   // Заморозка на время раскатки: изменения не принимаем, чтение оставляем (пустой экран
   // пугает сильнее честной плашки). Владелец проходит всегда — он катит и проверяет.
   // 503 + Retry-After: веб показывает заглушку и сохранить не даёт. Рекордер сюда пишет только
@@ -732,6 +754,14 @@ async function routeRequest(req: Request): Promise<Response> {
   );
   if (adminResp) return adminResp;
 
+  // Свои ключи входа и ссылка «Добавить устройство» (решение 17.10.2026) — passkeys-self.ts.
+  const selfPasskeysResp = await handleSelfPasskeyRoutes(supabaseStore(supabase), req, routePath, {
+    telegramId: telegram_id,
+    secondStep,
+    origin,
+  });
+  if (selfPasskeysResp) return selfPasskeysResp;
+
   // GET /me
   if (req.method === "GET" && routePath === "/me") {
     const [{ data: profile }, { data: allowedUser }] = await Promise.all([
@@ -775,6 +805,8 @@ async function routeRequest(req: Request): Promise<Response> {
         telegram_linked: telegram_id > 0 || Boolean(au?.telegram_chat_id),
         // Суперадмин — видит разделы всей системы (расход модели, #311).
         is_superadmin: isMaster,
+        // Второй шаг входа (палец, #955): веб по нему сам предлагает сохранить или подтвердить ключ.
+        second_step: secondStep,
       },
       200,
       origin,
@@ -945,6 +977,15 @@ async function routeRequest(req: Request): Promise<Response> {
   );
   if (inviteResp) return inviteResp;
 
+  // Запись встречи из браузера (офлайн-встречи): куски аудио → обработка встреч. Стоит до
+  // /meetings/:id, чтобы «record» не принялся за id встречи.
+  const webRecordingResp = await handleWebRecordingRoutes(
+    { supabase, telegramId: telegram_id, groupId, isDemo, origin },
+    req,
+    routePath,
+  );
+  if (webRecordingResp) return webRecordingResp;
+
   // Автозапуск бота по календарю (D021): человек включает и выключает его себе, рядом с календарём.
   const autojoinResp = await handleAutojoinRoutes(
     {
@@ -1053,6 +1094,7 @@ async function routeRequest(req: Request): Promise<Response> {
       isAdmin,
       isSuperadmin: isMaster,
       isDemo,
+      pseudonymSecret: WEB_JWT_SECRET,
     },
     origin,
   );
@@ -1086,6 +1128,7 @@ async function routeRequest(req: Request): Promise<Response> {
     req,
     routePath,
     groupId,
+    telegram_id,
     origin,
     resolveNames,
   );
@@ -1161,6 +1204,7 @@ async function routeRequest(req: Request): Promise<Response> {
           country,
           assigneeText,
           telegramId: mine ? telegram_id : undefined,
+          viewerId: telegram_id,
           limit,
           confirmed: confirmedFilter,
           sprintId,
@@ -1285,18 +1329,18 @@ async function routeRequest(req: Request): Promise<Response> {
       }
 
       const projectId = (body.project_id as string | null) ?? null;
-      if (projectId && !(await projectInWorkspace(projectId, groupId))) {
+      if (
+        projectId &&
+        !(await canViewProjectInWorkspace(projectId, groupId, telegram_id))
+      ) {
         return apiErr(400, "project_id не найден в этом воркспейсе", origin);
       }
       // parent_id при создании (подзадача): родитель того же воркспейса. Если задан — форсим project_linked.
       const parentId = (body.parent_id as string | null) ?? null;
-      if (parentId) {
-        const { data: par } = await onlyLive(supabase.from("tasks").select(
-          "id, project_id, group_id",
-        )).eq("id", parentId).maybeSingle();
-        if (!par || par.group_id !== groupId) {
-          return apiErr(400, "parent_id не найден в этом воркспейсе", origin);
-        }
+      // Родитель из невидимого вызывающему проекта — как несуществующий: иначе подзадача
+      // подтвердила бы чужую закрытую задачу и легла бы в её дерево.
+      if (parentId && !(await getVisibleTaskInWorkspace(parentId, groupId, telegram_id))) {
+        return apiErr(400, "parent_id не найден в этом воркспейсе", origin);
       }
 
       // IDOR-guard: meeting_id — это entry.id. Принимаем, только если эта запись видна
@@ -1386,7 +1430,10 @@ async function routeRequest(req: Request): Promise<Response> {
 
     if (req.method === "GET") {
       const task = await getTask(taskId);
-      if (!task || task.group_id !== groupId) {
+      if (
+        !task || task.group_id !== groupId ||
+        !(await taskVisibleByProject(task, telegram_id))
+      ) {
         return apiErr(404, "Not found", origin);
       }
       const [fresh] = await withFreshAssignees([task]);
@@ -1402,7 +1449,10 @@ async function routeRequest(req: Request): Promise<Response> {
       }
 
       const task = await getTask(taskId);
-      if (!task || task.group_id !== groupId) {
+      if (
+        !task || task.group_id !== groupId ||
+        !(await taskVisibleByProject(task, telegram_id))
+      ) {
         return apiErr(404, "Not found", origin);
       }
 
@@ -1483,10 +1533,12 @@ async function routeRequest(req: Request): Promise<Response> {
         fields.sprint_id = sid;
       }
 
-      // Привязка к проекту (с проверкой воркспейса; null — открепить).
+      // Привязка к проекту (воркспейс + видимость проекта вызывающему; null — открепить).
       if ("project_id" in body) {
         const pid = body.project_id as string | null;
-        if (pid && !(await projectInWorkspace(pid, groupId))) {
+        if (
+          pid && !(await canViewProjectInWorkspace(pid, groupId, telegram_id))
+        ) {
           return apiErr(400, "project_id не найден в этом воркспейсе", origin);
         }
         fields.project_id = pid;
@@ -1516,10 +1568,8 @@ async function routeRequest(req: Request): Promise<Response> {
               origin,
             );
           }
-          const { data: par } = await onlyLive(supabase.from("tasks").select(
-            "id, group_id",
-          )).eq("id", rawParent).maybeSingle();
-          if (!par || par.group_id !== groupId) {
+          // Родитель — только видимая вызывающему задача этого воркспейса (как при создании).
+          if (!(await getVisibleTaskInWorkspace(rawParent, groupId, telegram_id))) {
             return apiErr(400, "parent_id не найден в этом воркспейсе", origin);
           }
           // цикл: rawParent не должен быть потомком текущей задачи (идём вверх по parent_id)
@@ -1669,7 +1719,10 @@ async function routeRequest(req: Request): Promise<Response> {
 
     if (req.method === "DELETE") {
       const task = await getTask(taskId);
-      if (!task || task.group_id !== groupId) {
+      if (
+        !task || task.group_id !== groupId ||
+        !(await taskVisibleByProject(task, telegram_id))
+      ) {
         return apiErr(404, "Not found", origin);
       }
       try {
@@ -1799,11 +1852,11 @@ async function routeRequest(req: Request): Promise<Response> {
       if (!(await sprintInWorkspace(sprintId, groupId))) {
         return apiErr(404, "Not found", origin);
       }
-      const n = await setTasksSprint(taskIds, sprintId, groupId);
+      const n = await setTasksSprint(taskIds, sprintId, groupId, telegram_id);
       return json({ updated: n }, 200, origin);
     }
     if (req.method === "DELETE") {
-      const n = await setTasksSprint(taskIds, null, groupId);
+      const n = await setTasksSprint(taskIds, null, groupId, telegram_id);
       return json({ updated: n }, 200, origin);
     }
   }
@@ -1870,7 +1923,7 @@ async function routeRequest(req: Request): Promise<Response> {
   }
 
   // Журнал проекта: что с ним делали и кто (issue #426). Доступ — та же видимость, что у самого
-  // проекта: `getProject` отдаёт null на чужой закрытый, и лента к нему не открывается.
+  // проекта: `canMutateProject` отвечает false на чужой закрытый, и лента к нему не открывается.
   const projectHistoryMatch = routePath.match(
     /^\/projects\/([^/]+)\/history$/,
   );
@@ -1922,7 +1975,9 @@ async function routeRequest(req: Request): Promise<Response> {
       }
       // Сроки сверяются с тем, что уже стоит у инициативы: в теле обычно приходит один конец,
       // и без текущего значения «перенести конец раньше старта» прошло бы молча.
-      const current = await getProject(projectId, groupId);
+      // Только видимый зрителю проект: иначе сверка сроков ниже отвечала бы по чужой закрытой строке.
+      const current = await getVisibleProject(projectId, groupId, telegram_id);
+      if (!current) return apiErr(404, "Not found", origin);
       const extra = parseProjectFields(body, current ?? {});
       if (extra.error) return apiErr(400, extra.error, origin);
 
@@ -1954,8 +2009,12 @@ async function routeRequest(req: Request): Promise<Response> {
       try {
         updated = await updateProject(projectId, fields, groupId, {
           viewerId: telegram_id,
+          isAdmin,
         });
       } catch (e) {
+        if (e instanceof ProjectAccessError) {
+          return apiErr(403, e.message, origin);
+        }
         return apiErr(
           400,
           e instanceof Error ? e.message : "invalid parent",
@@ -1966,9 +2025,15 @@ async function routeRequest(req: Request): Promise<Response> {
       return json(updated, 200, origin);
     }
     if (req.method === "DELETE") {
-      const ok = await deleteProject(projectId, groupId, {
-        viewerId: telegram_id,
-      });
+      let ok;
+      try {
+        ok = await deleteProject(projectId, groupId, {
+          viewerId: telegram_id,
+        });
+      } catch (e) {
+        if (e instanceof ProjectAccessError) return apiErr(403, e.message, origin);
+        throw e;
+      }
       if (!ok) return apiErr(404, "Not found", origin);
       return json({ ok: true }, 200, origin);
     }
@@ -2242,11 +2307,11 @@ async function routeRequest(req: Request): Promise<Response> {
           messages: [
             {
               role: "system",
-              content: isDemo
+              content: (isDemo
                 ? "Make concise bullet points from the text. Only concrete facts: names, numbers, decisions, dates. 3–7 points. A bulleted list in English."
-                : "Сделай краткие тезисы из текста. Только конкретные факты: имена, цифры, решения, даты. 3–7 пунктов. Маркированный список на русском.",
+                : "Сделай краткие тезисы из текста. Только конкретные факты: имена, цифры, решения, даты. 3–7 пунктов. Маркированный список на русском.") + "\n" + UNTRUSTED_DATA_RULE,
             },
-            { role: "user", content: body.content.slice(0, 6000) },
+            { role: "user", content: wrapUntrustedForModel(body.content.slice(0, 6000)) },
           ],
           max_tokens: 500,
         }),
@@ -2397,15 +2462,15 @@ async function routeRequest(req: Request): Promise<Response> {
         messages: [
           {
             role: "system",
-            content: isDemo
+            content: (isDemo
               ? 'You are the Dodo CEE team assistant. Answer the question ONLY from the numbered sources, in English. Put a footnote [n] on every statement (you may use [1][3]).\nIMPORTANT: if the sources concern DIFFERENT meetings / topics / countries — do NOT glue them into one artificial paragraph and do NOT invent shared trends/conclusions («revenue drop», «overall we see…») that aren\'t in the sources. In that case give a SHORT list: one «- » point per meeting/topic with the key fact and a footnote [n]. If the question is narrow and the sources are on one topic — answer coherently in 2–4 sentences.\nDon\'t invent facts, numbers or generalizations. If there\'s little data — say so honestly. Return STRICTLY JSON: {"answer":"...","followups":["...","..."]}. In answer you may use line breaks and «- » points. followups — 2–3 short clarifying questions.'
-              : 'Ты — ассистент команды Dodo CEE. Отвечай на вопрос ТОЛЬКО на основе пронумерованных источников, по-русски. Ставь сноску [n] на каждое утверждение (можно [1][3]).\nВАЖНО: если источники относятся к РАЗНЫМ встречам / темам / странам — НЕ склеивай их в один искусственный абзац и НЕ выдумывай общие тренды/выводы («падение выручки», «в целом наблюдается…»), которых нет в источниках. В этом случае дай КОРОТКИЙ список: по одному пункту «- » на встречу/тему с ключевым фактом и сноской [n]. Если вопрос узкий и источники об одной теме — ответь связно в 2–4 предложения.\nНе выдумывай факты, цифры и обобщения. Если данных мало — скажи честно. Даты источников указаны в скобках — при вопросе о «последнем/недавнем» или если источники разных дат, предпочитай более свежие и называй даты. Верни СТРОГО JSON: {"answer":"...","followups":["...","..."]}. В answer можно использовать переносы строк и пункты «- ». followups — 2–3 коротких уточняющих вопроса.',
+              : 'Ты — ассистент команды Dodo CEE. Отвечай на вопрос ТОЛЬКО на основе пронумерованных источников, по-русски. Ставь сноску [n] на каждое утверждение (можно [1][3]).\nВАЖНО: если источники относятся к РАЗНЫМ встречам / темам / странам — НЕ склеивай их в один искусственный абзац и НЕ выдумывай общие тренды/выводы («падение выручки», «в целом наблюдается…»), которых нет в источниках. В этом случае дай КОРОТКИЙ список: по одному пункту «- » на встречу/тему с ключевым фактом и сноской [n]. Если вопрос узкий и источники об одной теме — ответь связно в 2–4 предложения.\nНе выдумывай факты, цифры и обобщения. Если данных мало — скажи честно. Даты источников указаны в скобках — при вопросе о «последнем/недавнем» или если источники разных дат, предпочитай более свежие и называй даты. Верни СТРОГО JSON: {"answer":"...","followups":["...","..."]}. В answer можно использовать переносы строк и пункты «- ». followups — 2–3 коротких уточняющих вопроса.') + "\n" + UNTRUSTED_DATA_RULE,
           },
           {
             role: "user",
             content: isDemo
-              ? `Question: ${q}\n\nSources:\n${ctx}`
-              : `Вопрос: ${q}\n\nИсточники:\n${ctx}`,
+              ? `Question: ${q}\n\nSources:\n${wrapUntrustedForModel(ctx)}`
+              : `Вопрос: ${q}\n\nИсточники:\n${wrapUntrustedForModel(ctx)}`,
           },
         ],
         max_tokens: 700,
@@ -3196,17 +3261,10 @@ async function routeRequest(req: Request): Promise<Response> {
   // «переподключить», `calendar_error`/пустой список → обычное пустое состояние. Молча
   // показать пустоту при отвалившейся интеграции нельзя — это урок #175.
   if (req.method === "GET" && routePath === "/calendar/today") {
-    // Пояс берём у клиента: сервер живёт в UTC и не знает, какие сутки у человека сейчас.
-    const cal = await todayCalendarEvents(
-      supabase,
-      telegram_id,
-      Number(url.searchParams.get("tz_offset") ?? "0"),
-    );
-    if (!cal.ok) {
-      return json({ meetings: [], reason: cal.reason }, 200, origin);
-    }
-    const items = cal.events;
-
+    // Присутствие рекордера читается ПАРАЛЛЕЛЬНО с обменом токена и запросом к Google: оно от них не
+    // зависит (раньше шло четвёртым последовательным шагом, issue #906). Запрос стартует сразу — билдер
+    // PostgREST ленивый, поэтому оборачиваем в async.
+    //
     // Где сидит сам человек: рекордер сообщает это в heartbeat. Панель по этим флагам
     // рисует `ON AIR` / `REC` вместо кнопки «Подключиться» — предлагать зайти туда, где
     // человек уже сидит, значит не понимать, что происходит (решение владельца 04.09.2026).
@@ -3214,12 +3272,26 @@ async function routeRequest(req: Request): Promise<Response> {
     // а миграции накатываются руками (scripts/deploy-window.sh их только показывает). Пока
     // колонок нет, PostgREST ответит ошибкой — тогда панель работает как до фичи, без ON AIR,
     // но ошибку не проглатываем молча: без записи в лог такой перекос порядка не заметить.
-    const { data: rec, error: recErr } = await supabase
-      .from("allowed_users")
-      .select(
-        "recorder_last_seen, recorder_last_recording, recorder_last_on_call, recorder_last_meeting_key",
-      )
-      .eq("telegram_id", telegram_id).maybeSingle();
+    const presenceQuery = (async () =>
+      await supabase
+        .from("allowed_users")
+        .select(
+          "recorder_last_seen, recorder_last_recording, recorder_last_on_call, recorder_last_meeting_key",
+        )
+        .eq("telegram_id", telegram_id).maybeSingle())();
+    // Пояс берём у клиента: сервер живёт в UTC и не знает, какие сутки у человека сейчас.
+    const [cal, { data: rec, error: recErr }] = await Promise.all([
+      todayCalendarEvents(
+        supabase,
+        telegram_id,
+        Number(url.searchParams.get("tz_offset") ?? "0"),
+      ),
+      presenceQuery,
+    ]);
+    if (!cal.ok) {
+      return json({ meetings: [], reason: cal.reason }, 200, origin);
+    }
+    const items = cal.events;
     if (recErr) {
       console.warn(
         "[calendar/today] присутствие рекордера не прочиталось:",
@@ -3377,11 +3449,11 @@ async function routeRequest(req: Request): Promise<Response> {
           messages: [
             {
               role: "system",
-              content: isDemo
+              content: (isDemo
                 ? "Make concise meeting bullet points. Only concrete facts: participants, decisions, actions. 3–7 points in English."
-                : "Сделай краткие тезисы встречи. Только конкретные факты: участники, решения, действия. 3–7 пунктов на русском.",
+                : "Сделай краткие тезисы встречи. Только конкретные факты: участники, решения, действия. 3–7 пунктов на русском.") + "\n" + UNTRUSTED_DATA_RULE,
             },
-            { role: "user", content: String(content).slice(0, 6000) },
+            { role: "user", content: wrapUntrustedForModel(String(content).slice(0, 6000)) },
           ],
           max_tokens: 500,
         }),
@@ -3481,11 +3553,11 @@ async function routeRequest(req: Request): Promise<Response> {
           messages: [
             {
               role: "system",
-              content: isDemo
+              content: (isDemo
                 ? "Make concise meeting bullet points. 3–7 points in English."
-                : "Сделай краткие тезисы встречи. 3–7 пунктов на русском.",
+                : "Сделай краткие тезисы встречи. 3–7 пунктов на русском.") + "\n" + UNTRUSTED_DATA_RULE,
             },
-            { role: "user", content: content.slice(0, 6000) },
+            { role: "user", content: wrapUntrustedForModel(content.slice(0, 6000)) },
           ],
           max_tokens: 500,
         }),
@@ -3667,7 +3739,7 @@ async function routeRequest(req: Request): Promise<Response> {
       const date = new Date().toLocaleDateString("ru-RU");
       const caption = `<b>[Веб]</b> 🐛 ${
         feedbackCategoryLabel(category)
-      } · @${username} · ${date}\n\n${text}`;
+      } · @${escapeHtml(username)} · ${date}\n\n${escapeHtml(text)}`;
       // Скрин — путь в приватном бакете: модуль отдаёт его Telegram подписанной ссылкой и проверяет ответ.
       await sendFeedbackPing(makeFeedbackPingDeps(supabase, BOT_TOKEN), {
         chatId: channelId,
@@ -3844,11 +3916,11 @@ async function routeRequest(req: Request): Promise<Response> {
         messages: [
           {
             role: "system",
-            content: isDemo
+            content: (isDemo
               ? `You are a team analyst. Compile a personal digest for ${periodLabel} for the employee (${contextLine}).\n\nKEY: group STRICTLY BY COUNTRY. Each record is tagged with its country at the start — [Country · date]. For EACH country that has records, make a separate block strictly in this format:\n## <Country>\n- point (what was discussed / done / a problem / a plan for this country) [N]\nAt the END of each point put a footnote [N] — the number of the source the fact came from (the number is given at the start of each record as «[источник N]»). Exactly ONE number per point — the record the fact came from.\n3–7 points per country — don't spare details: concrete facts, numbers, decisions, problems, plans, open questions. Do NOT mention countries with no records. Don't mix different countries in one block.\n\nNO DUPLICATES: use each record in EXACTLY ONE country block (per its tag) — do NOT repeat the same fact/point across countries.\n\nSTRICT: use ONLY facts from the records. Do NOT invent numbers, company names, people's NAMES, events, dates. If an owner/name isn't stated in a record, don't write it. Don't write intro paragraphs or conclusions — only country blocks. Reply in English.`
-              : `Ты аналитик команды. Составь персональный дайджест за ${periodLabel} для сотрудника (${contextLine}).\n\nГЛАВНОЕ: сгруппируй СТРОГО ПО СТРАНАМ. Каждая запись помечена страной в начале — [Страна · дата]. Для КАЖДОЙ страны, по которой есть записи, сделай отдельный блок строго в формате:\n## <Страна>\n- пункт (что обсуждали / сделали / проблема / план по этой стране) [N]\nВ КОНЦЕ каждого пункта ставь сноску [N] — номер источника, из которого взят факт (номер указан в начале каждой записи как «[источник N]»). Ровно ОДИН номер на пункт — та запись, откуда факт.\n3–7 пунктов на страну — не жалей деталей: конкретные факты, числа, решения, проблемы, планы, открытые вопросы. Страны без записей НЕ упоминай. Не смешивай разные страны в один блок.\n\nБЕЗ ДУБЛЕЙ: каждую запись используй РОВНО в ОДНОМ страновом блоке (по её метке) — НЕ повторяй один и тот же факт/пункт в разных странах.\n\nЖЁСТКО: используй ТОЛЬКО факты из записей. НЕ придумывай цифры, названия компаний, ИМЕНА людей, события, сроки. Если ответственный/имя не указаны в записи — не пиши их. Не пиши вводных абзацев и итогов — только блоки по странам. Отвечай на русском.`,
+              : `Ты аналитик команды. Составь персональный дайджест за ${periodLabel} для сотрудника (${contextLine}).\n\nГЛАВНОЕ: сгруппируй СТРОГО ПО СТРАНАМ. Каждая запись помечена страной в начале — [Страна · дата]. Для КАЖДОЙ страны, по которой есть записи, сделай отдельный блок строго в формате:\n## <Страна>\n- пункт (что обсуждали / сделали / проблема / план по этой стране) [N]\nВ КОНЦЕ каждого пункта ставь сноску [N] — номер источника, из которого взят факт (номер указан в начале каждой записи как «[источник N]»). Ровно ОДИН номер на пункт — та запись, откуда факт.\n3–7 пунктов на страну — не жалей деталей: конкретные факты, числа, решения, проблемы, планы, открытые вопросы. Страны без записей НЕ упоминай. Не смешивай разные страны в один блок.\n\nБЕЗ ДУБЛЕЙ: каждую запись используй РОВНО в ОДНОМ страновом блоке (по её метке) — НЕ повторяй один и тот же факт/пункт в разных странах.\n\nЖЁСТКО: используй ТОЛЬКО факты из записей. НЕ придумывай цифры, названия компаний, ИМЕНА людей, события, сроки. Если ответственный/имя не указаны в записи — не пиши их. Не пиши вводных абзацев и итогов — только блоки по странам. Отвечай на русском.`) + "\n" + UNTRUSTED_DATA_RULE,
           },
-          { role: "user", content: entriesText.slice(0, 13000) },
+          { role: "user", content: wrapUntrustedForModel(entriesText.slice(0, 13000)) },
         ],
         max_tokens: 2600,
       }),

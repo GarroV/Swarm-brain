@@ -1,8 +1,10 @@
 import { supabase } from "../lib/supabase.ts";
 import { chatComplete } from "../lib/openai.ts";
 import { sendMessage } from "../lib/telegram.ts";
+import { sanitizeModelHtml } from "../../_shared/telegram-html.ts";
+import { UNTRUSTED_DATA_RULE, wrapUntrustedForModel } from "../../_shared/untrusted-prompt.ts";
 import { notifyMessage } from "../lib/notify.ts";
-import { saveEntry } from "../lib/storage.ts";
+import { saveEntry, visibilityFilter } from "../lib/storage.ts";
 import { getUserGroupId } from "../lib/workspace.ts";
 import { onlyLiveEntries } from "../../_shared/entries/live.ts";
 
@@ -37,6 +39,8 @@ export async function generatePersonalDigest(
   )
     .gte("created_at", since)
     .eq("group_id", groupId)
+    // Только то, что этот человек и так видит: чужие личные записи в пересказ не попадают.
+    .or(visibilityFilter(userId))
     .not("source", "eq", "digest")
     .order("created_at", { ascending: false })
     .limit(50);
@@ -91,8 +95,9 @@ export async function generatePersonalDigest(
       `✅ Что сделано / решено\n` +
       `🔥 Проблемы и блокеры\n` +
       `📋 На следующий период\n\n` +
-      `Будь конкретным. Отвечай на русском.`,
-    entriesText.slice(0, 8000),
+      `Будь конкретным. Отвечай на русском.\n` +
+      UNTRUSTED_DATA_RULE,
+    wrapUntrustedForModel(entriesText.slice(0, 8000)),
     { groupId },
   );
 
@@ -104,9 +109,12 @@ export async function generatePersonalDigest(
     { period: periodLabel, days_back: daysBack, user_id: userId },
     undefined,
     groupId,
+    // Личная запись: дайджест пересказывает и личные записи этого человека.
+    true,
+    userId,
   );
 
-  let remaining = `<b>📊 Твой дайджест ${periodLabel}</b>\n\n${digest}`;
+  let remaining = `<b>📊 Твой дайджест ${periodLabel}</b>\n\n${sanitizeModelHtml(digest)}`;
   while (remaining.length > 0) {
     await say(remaining.slice(0, 4000));
     remaining = remaining.slice(4000);

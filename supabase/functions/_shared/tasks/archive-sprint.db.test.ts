@@ -204,3 +204,28 @@ Deno.test("перевзвод пинга очищает список тех, к�
     await db.end();
   }
 });
+
+Deno.test("перенос срока очищает список тех, кому дошло напоминание о сроке", async () => {
+  const db = await connect();
+  try {
+    const { projectId } = await seed(db);
+    const taskId = await addTask(db, projectId, "open", "со сроком");
+    await db.queryArray`
+      update tasks set due_date = current_date + 1, due_reminded_for = current_date + 1,
+        due_reminder_delivered_to = '{111}' where id = ${taskId}`;
+
+    // Тик дописал ещё одного получателя — срок не менялся, список не должен сбрасываться.
+    await db.queryArray`update tasks set due_reminder_delivered_to = '{111,333}' where id = ${taskId}`;
+    let r = await db.queryObject<{ p: string[] }>`
+      select due_reminder_delivered_to::text[] as p from tasks where id = ${taskId}`;
+    assertEquals(r.rows[0].p, ["111", "333"], "запись тика стёрла сама себя");
+
+    // Срок перенесли — за день до нового срока напомнят всем заново.
+    await db.queryArray`update tasks set due_date = current_date + 5 where id = ${taskId}`;
+    r = await db.queryObject<{ p: string[] }>`
+      select due_reminder_delivered_to::text[] as p from tasks where id = ${taskId}`;
+    assertEquals(r.rows[0].p, [], "перенесённый срок не должен считаться уже напомненным");
+  } finally {
+    await db.end();
+  }
+});

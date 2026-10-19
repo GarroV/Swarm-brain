@@ -5,7 +5,7 @@ import type { MaintenanceNotice } from "./maintenance";
 export type SwarmNotification = {
   id: string;
   /** maintenance — плановые работы (заморозка, issue #609): без задачи, содержимое в payload. */
-  type: "task_comment" | "task_reminder" | "maintenance";
+  type: "task_comment" | "task_reminder" | "task_due_soon" | "maintenance";
   task_id: string | null;
   task_title: string;
   comment_id: string | null;

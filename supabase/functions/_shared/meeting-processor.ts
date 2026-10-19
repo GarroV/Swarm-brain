@@ -26,6 +26,7 @@ import {
 import { langCode, type LangVotePart, partsNeedingRetranscribe, resolveMeetingLang } from "./meeting-lang.ts";
 import { buildTezisyUserMessage, TEZISY_PROMPT } from "./tezisy-prompt.ts";
 import { glossaryWhisperHint } from "./glossary.ts";
+import { escapeHtml } from "./telegram-html.ts";
 import { useGlossaryHint } from "./bot-profile.ts";
 import { extractChatContent } from "./openai-chat.ts";
 import { buildSegments, type Segment, speakerLegend, type SpeakerSpan } from "./speakers.ts";
@@ -145,6 +146,7 @@ interface MeetingRow {
   group_id: string | null;
   title: string | null;
   recorders: RecorderEntry[] | null;
+  source: string | null;
   claim_owner: number | null;
   mic_start_offset: number | null;
   summary_status: string | null;
@@ -682,7 +684,7 @@ async function summarizeAndFinish(lease: ProcessingLease, m: MeetingRow, state: 
   }
 
   const webUrl = WEB_BASE_URL ? `${WEB_BASE_URL}/?meeting=${m.id}` : "";
-  const titleStr = finalTitle ? `: <b>${finalTitle}</b>` : "";
+  const titleStr = finalTitle ? `: <b>${escapeHtml(finalTitle)}</b>` : "";
   // Только факт «обработана и готова» (владелец 30.09.2026): приписка «Возьмёт любой из участников»
   // смысла для получателя не несла.
   const text = `📝 Встреча обработана и готова${titleStr}`;
@@ -815,7 +817,7 @@ async function meetingStep(
   try {
     const { data } = await supabase
       .from("meetings")
-      .select("id, group_id, title, recorders, claim_owner, mic_start_offset, summary_status, process_state")
+      .select("id, group_id, title, recorders, source, claim_owner, mic_start_offset, summary_status, process_state")
       .eq("id", meetingId)
       .maybeSingle();
     const m = data as MeetingRow | null;

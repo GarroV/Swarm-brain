@@ -5,7 +5,8 @@ import type { Task, User } from "@/types";
 import type { TaskLabel } from "@/lib/api";
 import { RoyIcon } from "@/components/roy/icons";
 import { useDt } from "@/components/roy/nav";
-import { isDone, isOverdue } from "@/lib/smartLists";
+import { isDone, isOverdue, pendingPingDay } from "@/lib/smartLists";
+import { formatDay } from "@/lib/displayFormat";
 import { saveTaskPatch, TaskQuickActions, toggleLabelPatch } from "@/components/tasks/TaskQuickActions";
 import { COUNTRY_NAMES, countryName } from "@/lib/countries";
 import type { UpdateTaskInput } from "@/lib/api";
@@ -50,6 +51,9 @@ export function TaskTableRow({ task, order, now, users, markets, labels, project
   const done = isDone(task);
   const late = isOverdue(task, now);
   const inProgress = task.status === "in_progress";
+  // Ожидающий пинг — в своей колонке рядом со сроком: задача могла попасть в «Сегодня» из-за него,
+  // и далёкий срок один не объяснял бы, почему она здесь.
+  const ping = pendingPingDay(task);
   const who = task.assignee_telegram_ids?.[0];
   const whoName = who != null
     ? displayName(users.find((u) => u.telegram_id === who)?.name ?? task.assignees?.[0] ?? "")
@@ -91,6 +95,21 @@ export function TaskTableRow({ task, order, now, users, markets, labels, project
     due: (
       <div data-col="due" className={cn("px-2 font-mono", late ? "font-semibold text-pri-high" : "text-ink-soft")} style={{ fontSize: 12 }}>
         {task.due_date ? fmtDue(task.due_date, dt("ru", "en") === "en") : <span className="text-ink-mute">—</span>}
+      </div>
+    ),
+    ping: (
+      <div
+        data-col="ping"
+        title={ping ? dt("Напомним в этот день", "You'll be reminded on this day") : undefined}
+        className="flex items-center gap-1 px-2 font-mono"
+        style={{ fontSize: 12, color: ping ? "var(--accent-ink)" : undefined }}
+      >
+        {ping ? (
+          <>
+            <RoyIcon name="bell" size={12} strokeWidth={1.9} />
+            <span className="truncate">{formatDay(ping, dt("ru-RU", "en-GB"))}</span>
+          </>
+        ) : null}
       </div>
     ),
     // Быстрые действия — тихими иконками без рамок, как на стенде (визуальный шаг В3). Правило

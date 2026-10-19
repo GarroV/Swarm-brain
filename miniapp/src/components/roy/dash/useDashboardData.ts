@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRoyNav } from "../nav";
 import { fetchTasks, fetchMeetings, fetchEntries, fetchAgentMeetings } from "@/lib/api";
 import { splitByLens, groupMine, recentEntries } from "./myTasks";
+import { recall, remember } from "@/lib/lastSeen";
 import type { Task, Entry, AgentMeeting } from "@/types";
 
 // Единый источник данных desktop-главного экрана «Рой». Грузит tasks / meetings /
@@ -30,8 +31,10 @@ type Slice<T> = {
 
 // Один независимый кусок данных дашборда. Держит своё состояние, свой таймаут и свою
 // кнопку «повторить» — сосед по экрану на него не влияет.
-function useSlice<T>(load: () => Promise<T[]>, deps: unknown[]): Slice<T> {
-  const [list, setList] = useState<T[] | null>(null);
+// Стартует с последнего ответа по `key` (lib/lastSeen.ts): повторный заход на главную рисует
+// панель сразу, свежие данные приезжают поверх (#906).
+function useSlice<T>(key: string, load: () => Promise<T[]>, deps: unknown[]): Slice<T> {
+  const [list, setList] = useState<T[] | null>(() => recall<T[]>(key));
   const [failed, setFailed] = useState(false);
   const [attempt, setAttempt] = useState(0);
 
@@ -47,7 +50,7 @@ function useSlice<T>(load: () => Promise<T[]>, deps: unknown[]): Slice<T> {
     // отменённый fetch пришлось бы гнать заново, а данные уже в пути.
     const timer = setTimeout(() => { if (alive) setFailed(true); }, SLICE_TIMEOUT_MS);
     load()
-      .then((data) => { if (alive) { setList(data); setFailed(false); } })
+      .then((data) => { remember(key, data); if (alive) { setList(data); setFailed(false); } })
       .catch(() => { if (alive) setFailed(true); })
       .finally(() => clearTimeout(timer));
     return () => { alive = false; clearTimeout(timer); };
@@ -118,15 +121,15 @@ export function useDashboardData(): DashboardData {
 
   // tasksVersion в deps: после сохранения/удаления задачи в окне-редакторе списки задач на
   // главной («Мои»/«Команда») перезапрашиваются (общий рефреш без per-caller колбэков).
-  const tasks = useSlice<Task>(fetchTasks, [tasksVersion]);
+  const tasks = useSlice<Task>("home:tasks", fetchTasks, [tasksVersion]);
   // Главной нужны недавние встречи (лента за сутки, «последнее в базе», недавние) и заголовки
   // очереди — лёгкие строки, первые 50 по свежести; полный список встреч грузит экран «Встречи».
-  const meetings = useSlice<Entry>(() => fetchMeetings({ light: true, limit: 50 }), []);
-  const entries = useSlice<Entry>(fetchEntries, []);
+  const meetings = useSlice<Entry>("home:meetings", () => fetchMeetings({ light: true, limit: 50 }), []);
+  const entries = useSlice<Entry>("home:entries", fetchEntries, []);
   // Очередь «на согласовании» — ТОЛЬКО свои (даже у админа): чужое непубликованное приватно,
   // в него не лезем. Сводка по участникам — отдельный агрегированный счётчик в админ-панели.
-  const pending = useSlice<Entry>(() => fetchMeetings({ confirmed: false, light: true }), []);
-  const review = useSlice<AgentMeeting>(() => fetchAgentMeetings("awaiting_review"), []);
+  const pending = useSlice<Entry>("home:pending", () => fetchMeetings({ confirmed: false, light: true }), []);
+  const review = useSlice<AgentMeeting>("home:review", () => fetchAgentMeetings("awaiting_review"), []);
 
   const meId = me?.telegram_id ?? null;
 

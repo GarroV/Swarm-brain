@@ -126,7 +126,7 @@ Deno.test("authTimeForRefresh: продление не сдвигает моме
   const t = await signJWT({ telegram_id: 5, auth_time: 1_700_000_000 }, SECRET);
   const v = (await verifyJWT(t, SECRET))!;
   assertEquals(authTimeForRefresh(v), 1_700_000_000);
-  const legacy = { telegram_id: 5, exp: nowSec() + 7 * 86400, authTime: null, legacy: true };
+  const legacy = { telegram_id: 5, exp: nowSec() + 7 * 86400, authTime: null, legacy: true, secondStep: false };
   assertEquals(authTimeForRefresh(legacy) <= nowSec() + 7 * 86400 - SESSION_TTL_SEC, true);
 });
 
@@ -157,4 +157,22 @@ Deno.test("isRenewableSession: продлённая сессия (вход да�
   const longAgo = Math.floor(Date.now() / 1000) - 20 * 86400;
   const renewed = await verifyJWT(await signJWT({ telegram_id: 1, auth_time: longAgo }, SECRET), SECRET);
   assertEquals(isRenewableSession(renewed!), true);
+});
+
+Deno.test("второй шаг (#955): метка sf ставится только по запросу, читается и не подделывается", async () => {
+  const plain = await signJWT({ telegram_id: 5 }, SECRET);
+  assertEquals((await verifyJWT(plain, SECRET))?.secondStep, false);
+  assertEquals(JSON.parse(atob(plain.split(".")[1].replace(/-/g, "+").replace(/_/g, "/"))).sf, undefined);
+  const stepped = await signJWT({ telegram_id: 5, second_step: true }, SECRET);
+  assertEquals((await verifyJWT(stepped, SECRET))?.secondStep, true);
+  // Метка внутри подписанного тела: дописать её к чужому токену нельзя — подпись разойдётся.
+  const [h, , sig] = plain.split(".");
+  const forgedBody = btoa(
+    JSON.stringify({ telegram_id: 5, pur: "session", auth_time: nowSec(), exp: nowSec() + 3600, sf: true }),
+  )
+    .replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  assertEquals(await verifyJWT(`${h}.${forgedBody}.${sig}`, SECRET), null);
+  // Только честное true: строка "true" или 1 шагом не считаются.
+  const odd = await signRaw({ telegram_id: 5, pur: "session", auth_time: nowSec(), exp: nowSec() + 3600, sf: "true" });
+  assertEquals((await verifyJWT(odd, SECRET))?.secondStep, false);
 });

@@ -5,6 +5,8 @@ import { RoyIcon } from "./icons";
 import { cn } from "@/lib/utils";
 import { fetchNotifications, markNotificationsRead, fetchTask, type SwarmNotification } from "@/lib/api";
 import { publishNotice } from "@/lib/deployNotice";
+import { playChime, unreadObserver } from "@/lib/notificationSound";
+import { PresenceStrip } from "@/components/presence/PresenceStrip";
 import { freezeNoticeText, freezeWindow } from "@/lib/maintenance";
 
 // Колокольчик уведомлений: бейдж непрочитанных + поповер-лента, клик по строке открывает
@@ -48,6 +50,8 @@ export function NotificationsBell({ className }: { className?: string }) {
       if (!alive.current) return;
       setItems(res.items);
       setUnread(res.unread);
+      // Звук — только когда счётчик вырос по сравнению с прошлым опросом (не при первой загрузке).
+      if (unreadObserver.observe(res.unread)) playChime();
     } catch {
       // Тихо: колокольчик — фоновая поверхность, сеть моргнула → покажем на следующем тике.
     }
@@ -85,6 +89,7 @@ export function NotificationsBell({ className }: { className?: string }) {
     const now = new Date().toISOString();
     setItems((prev) => prev.map((n) => (n.read_at ? n : { ...n, read_at: now })));
     setUnread(0);
+    unreadObserver.observe(0);
     try {
       await markNotificationsRead();
     } catch {
@@ -98,6 +103,7 @@ export function NotificationsBell({ className }: { className?: string }) {
     if (!n.read_at) {
       setItems((prev) => prev.map((x) => (x.id === n.id ? { ...x, read_at: new Date().toISOString() } : x)));
       setUnread((u) => Math.max(0, u - 1));
+      unreadObserver.observe(Math.max(0, unread - 1));
       void markNotificationsRead([n.id]).catch(() => void load());
     }
     if (!n.task_id) return;
@@ -115,7 +121,12 @@ export function NotificationsBell({ className }: { className?: string }) {
   const locale = dt("ru-RU", "en-GB");
 
   return (
-    <div className={cn("relative", className)}>
+    // Полоска присутствия стоит слева от колокольчика: колокольчик рендерится в шапке каждого
+    // экрана, так полоска появляется везде без правки каждой шапки. Внешний div — раскладка
+    // (className вызывающего), внутренний relative — якорь поповера, как было.
+    <div className={cn("flex items-center gap-3", className)}>
+      <PresenceStrip />
+      <div className="relative">
       {open && (
         <>
           <button
@@ -198,10 +209,12 @@ export function NotificationsBell({ className }: { className?: string }) {
                         {/* У пинга нет автора и текста: событие системное, и «— : » выглядело бы поломкой. */}
                         {n.type === "maintenance" ? (
                           <MaintenanceLine n={n} dt={dt} locale={locale} />
-                        ) : n.type === "task_reminder" ? (
+                        ) : n.type === "task_reminder" || n.type === "task_due_soon" ? (
                           <span className="inline-flex items-center gap-1 font-semibold text-accent-ink">
                             <RoyIcon name="bell" size={11} />
-                            {dt("Напоминание, которое ты поставил", "The reminder you set")}
+                            {n.type === "task_due_soon"
+                              ? dt("Срок завтра", "Due tomorrow")
+                              : dt("Напоминание, которое ты поставил", "The reminder you set")}
                           </span>
                         ) : (
                           <>
@@ -227,7 +240,11 @@ export function NotificationsBell({ className }: { className?: string }) {
             : dt("Уведомления", "Notifications")
         }
         aria-expanded={open}
-        className="relative flex size-10 items-center justify-center rounded-full border border-line bg-surface shadow-[0_4px_14px_-8px_rgba(27,32,40,.25)] transition-colors hover:bg-surface-2 active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+        className={cn(
+          "relative flex size-10 items-center justify-center rounded-full border border-line bg-surface shadow-[0_4px_14px_-8px_rgba(27,32,40,.25)] transition-colors hover:bg-surface-2 active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]",
+          // Пульсирующее кольцо, пока есть непрочитанные (issue #803); без анимации при reduced-motion.
+          unread > 0 && "roy-bell-pulse",
+        )}
       >
         {/* Покачивание при непрочитанном (issue #609): раз в ~9 с, короткое — привлекает взгляд,
             но не дёргает постоянно. «Уменьшить движение» гасит его целиком (globals.css). */}
@@ -245,6 +262,7 @@ export function NotificationsBell({ className }: { className?: string }) {
           </span>
         )}
       </button>
+      </div>
     </div>
   );
 }

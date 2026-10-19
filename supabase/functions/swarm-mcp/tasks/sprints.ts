@@ -15,6 +15,7 @@
 // deno-lint-ignore-file no-import-prefix
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { createSprint, deleteSprint, listSprints, updateSprint } from "../../_shared/tasks/sprints.ts";
+import { createProject } from "../../_shared/tasks/projects.ts";
 import {
   createCycle,
   deleteCycle,
@@ -126,14 +127,19 @@ export function toolGetSprintJournal(args: Args): Promise<string> {
     const space = await loadSpace(m.groupId, args.space);
     if (typeof space === "string") return space;
     const days = str(args.days) ?? "7";
-    if (!JOURNAL_PERIODS.includes(days)) return `days: принимаются ${JOURNAL_PERIODS.join(", ")}.`;
+    if (!JOURNAL_PERIODS.includes(days)) {
+      return `days: принимаются ${JOURNAL_PERIODS.join(", ")}.`;
+    }
     const result = await loadSpaceJournal(
       space.id,
       m.groupId,
+      m.userId,
       days,
       (ids) => resolvePersonNames(supabase, ids),
     );
-    if (!result.ok) return result.status === 404 ? "Пространство не найдено." : result.error;
+    if (!result.ok) {
+      return result.status === 404 ? "Пространство не найдено." : result.error;
+    }
     return formatJournal(space.name, days, result.events);
   });
 }
@@ -158,6 +164,33 @@ export function toolCreateSprintSpace(args: Args): Promise<string> {
       kind: "space",
     }, m.groupId);
     return `✅ Пространство «${s.name}» создано (id: ${s.id}). Спринт в нём: create_sprint.`;
+  });
+}
+
+// Группа задач в пространстве спринтов (инициатива): то же, что «+ Группа» на экране спринтов.
+// Владелец 09.10.2026: «если надо новые инструменты - давай править и делать инструменты» — без
+// этого инструмента перенос плана из Notion упирался в группы, которых ещё нет.
+export function toolCreateSprintGroup(args: Args): Promise<string> {
+  return withMember(args, async (m) => {
+    const name = str(args.name);
+    if (!name) return "Нужно name — имя группы.";
+    const space = await loadSpace(m.groupId, args.space);
+    if (typeof space === "string") return space;
+    const { data: same } = await supabase.from("projects").select("id")
+      .eq("group_id", m.groupId).eq("sprint_id", space.id).eq(
+        "sprint_group",
+        true,
+      )
+      .is("archived_at", null).ilike("name", name).limit(1);
+    if (same?.length) {
+      return `Группа «${name}» в «${space.name}» уже есть (id: ${same[0].id}).`;
+    }
+    const g = await createProject(
+      { name, sprint_id: space.id, sprint_group: true, is_private: false },
+      m.groupId,
+      m.userId,
+    );
+    return `✅ Группа «${g.name}» создана в «${space.name}» (id: ${g.id}). Задачи в неё: add_task с project_name.`;
   });
 }
 
@@ -217,7 +250,7 @@ export function toolGetSprint(args: Args): Promise<string> {
   return withMember(args, async (m) => {
     const cycle = await loadCycle(m.groupId, args.sprint_id);
     if (typeof cycle === "string") return cycle;
-    const { items, withdrawn } = await listComposition(cycle.id, m.groupId);
+    const { items, withdrawn } = await listComposition(cycle.id, m.groupId, { viewerId: m.userId });
     const space = (await spaces(m.groupId)).find((s) => s.id === cycle.tab_id);
     // Снятые из идущего спринта (#576) в составе не показываются, но в итогах остаются:
     // плановые из них — невыполненной частью плана.
@@ -259,7 +292,7 @@ export function toolCreateSprint(args: Args): Promise<string> {
       );
       return `✅ Спринт «${c.name}» создан в «${space.name}» — планирование, сверка ${c.check_date} (id: ${c.id}). Состав: add_sprint_tasks, старт: start_sprint.`;
     } catch (e) {
-      if (e instanceof LiveCycleExistsError || e instanceof UnknownTabError) {
+      if (e instanceof UnknownTabError) {
         return `Не создан: ${e.message}`;
       }
       throw e;
@@ -298,10 +331,12 @@ export function toolUpdateSprint(args: Args): Promise<string> {
     if (start > end) return "start_date не может быть позже end_date.";
     const updated = await updateCycle(cycle.id, fields, m.groupId);
     if (updated === "tab_busy") {
-      return "В этом пространстве уже есть незакрытый спринт — перенос не сделан.";
+      return "В этом пространстве уже идёт спринт — перенос не сделан.";
     }
     if (updated === "tab_missing") return "Пространство не найдено.";
-    if (updated === "accepted_locked") return "Сроки принятого спринта не меняются.";
+    if (updated === "accepted_locked") {
+      return "Сроки принятого спринта не меняются.";
+    }
     if (!updated) return "Спринт не найден.";
     return `✅ Спринт обновлён.\n${
       formatCycles(
@@ -316,7 +351,13 @@ export function toolStartSprint(args: Args): Promise<string> {
   return withMember(args, async (m) => {
     const cycle = await loadCycle(m.groupId, args.sprint_id);
     if (typeof cycle === "string") return cycle;
-    const started = await startCycle(cycle.id, m.groupId);
+    let started;
+    try {
+      started = await startCycle(cycle.id, m.groupId);
+    } catch (e) {
+      if (e instanceof LiveCycleExistsError) return `Не начат: ${e.message}`;
+      throw e;
+    }
     if (!started) {
       return `Спринт «${cycle.name}» не в планировании — стартовать нечего.`;
     }
@@ -368,7 +409,7 @@ export function toolAddSprintTasks(args: Args): Promise<string> {
     if (ids.length > MAX_TASKS_PER_CALL) {
       return `Не больше ${MAX_TASKS_PER_CALL} задач за вызов.`;
     }
-    const added = await addItems(cycle.id, ids, m.groupId, String(m.userId));
+    const added = await addItems(cycle.id, ids, m.groupId, String(m.userId), m.userId);
     const skipped = ids.length - added;
     const kind = cycle.status === "draft" ? "в план" : "сверх плана (спринт уже идёт)";
     const why = skipped ? ` Пропущено ${skipped}: уже в составе или не из твоего воркспейса.` : "";
@@ -382,7 +423,7 @@ export function toolRemoveSprintTask(args: Args): Promise<string> {
     if (typeof cycle === "string") return cycle;
     const taskId = str(args.task_id);
     if (!taskId) return "Нужен task_id.";
-    const ok = await removeItem(cycle.id, taskId, m.groupId, String(m.userId));
+    const ok = await removeItem(cycle.id, taskId, m.groupId, String(m.userId), m.userId);
     return ok ? "✅ Задача убрана из состава." : "Задачи нет в составе, или спринт уже принят.";
   });
 }
@@ -422,6 +463,7 @@ export function toolMarkSprintTask(args: Args): Promise<string> {
         m.groupId,
         patch,
         String(m.userId),
+        m.userId,
       );
       // Короткое подтверждение: состав целиком — get_sprint.
       return item ? "✅ Отметка сохранена." : "Задачи нет в составе.";
@@ -432,210 +474,13 @@ export function toolMarkSprintTask(args: Args): Promise<string> {
   });
 }
 
-// ── Определения ───────────────────────────────────────────────────────────────
-
-const ME = {
-  type: "number",
-  description: "Твой Telegram user ID — обязателен для проверки доступа",
-};
-const SPRINT_ID = {
-  type: "string",
-  description: "id спринта из get_sprints / get_sprint_spaces",
-};
-const SPACE = {
-  type: "string",
-  description:
-    "Пространство спринтов: имя или id из get_sprint_spaces. Вкладки доски «Проекты» сюда не подходят — это другая сущность.",
-};
-const DATE = (what: string) => ({
-  type: "string",
-  description: `${what}, YYYY-MM-DD. Год — от текущей даты, не из головы`,
-});
-
-function tool(
-  name: string,
-  description: string,
-  properties: Record<string, unknown>,
-  required: string[] = [],
-) {
-  return {
-    name,
-    description,
-    inputSchema: {
-      type: "object",
-      properties: { ...properties, requesting_user_id: ME },
-      required: [...required, "requesting_user_id"],
-    },
-  };
-}
-
-export const SPRINT_TOOL_DEFINITIONS = [
-  tool(
-    "get_sprint_spaces",
-    "Пространства раздела «Спринты» (НЕ вкладки доски «Проекты»): id, живой спринт, сколько принято. Вызывай первым — имена пространств угадать нельзя.",
-    {},
-  ),
-  tool(
-    "create_sprint_space",
-    "Создать пространство спринтов. Может любой участник.",
-    {
-      name: { type: "string", description: "Имя пространства" },
-    },
-    ["name"],
-  ),
-  tool(
-    "rename_sprint_space",
-    "Переименовать пространство спринтов. Только админ.",
-    {
-      space: SPACE,
-      name: { type: "string", description: "Новое имя" },
-    },
-    ["space", "name"],
-  ),
-  tool(
-    "archive_sprint_space",
-    "Убрать пространство спринтов в архив (не удаление: спринты и состав сохраняются). Только админ.",
-    { space: SPACE },
-    ["space"],
-  ),
-  tool(
-    "get_sprints",
-    "Спринты: по пространству или все. По умолчанию без принятых.",
-    {
-      space: SPACE,
-      include_accepted: {
-        type: "boolean",
-        description: "true — показать и принятые (архив периодов)",
-      },
-    },
-  ),
-  tool(
-    "get_sprint_journal",
-    "Журнал пространства спринтов: правки и комментарии задач его спринтов, состав, сверка, старт и приёмка — новые сверху. Отвечает на «что было за неделю по спринту».",
-    {
-      space: SPACE,
-      days: { type: "string", enum: ["1", "3", "7", "all"], description: "Период в днях или all; по умолчанию 7" },
-    },
-    ["space"],
-  ),
-  tool(
-    "get_sprint",
-    "Спринт целиком: этап, даты, план/факт, сверка и состав по проектам с task_id.",
-    { sprint_id: SPRINT_ID },
-    ["sprint_id"],
-  ),
-  tool(
-    "create_sprint",
-    "Создать спринт в пространстве (этап «планирование»). В пространстве может быть только один незакрытый спринт.",
-    {
-      space: SPACE,
-      name: {
-        type: "string",
-        description: "Имя спринта, например «Спринт 24.09 — 07.10»",
-      },
-      start_date: DATE("Старт"),
-      end_date: DATE("Финал (приёмка)"),
-      check_date: DATE("Чекпоинт-сверка; по умолчанию шестой день от старта"),
-    },
-    ["space", "name", "start_date", "end_date"],
-  ),
-  tool(
-    "update_sprint",
-    "Изменить спринт: имя, даты, чекпоинт, итог, перенос в другое пространство.",
-    {
-      sprint_id: SPRINT_ID,
-      name: { type: "string" },
-      start_date: DATE("Старт"),
-      end_date: DATE("Финал"),
-      check_date: {
-        type: ["string", "null"],
-        description: "Чекпоинт YYYY-MM-DD или null — снять",
-      },
-      summary: {
-        type: ["string", "null"],
-        description: "Итог спринта текстом",
-      },
-      space: SPACE,
-    },
-    ["sprint_id"],
-  ),
-  tool(
-    "start_sprint",
-    "Начать спринт: планирование → идёт. Текущий состав становится планом, всё добавленное позже — «сверх плана».",
-    { sprint_id: SPRINT_ID },
-    ["sprint_id"],
-  ),
-  tool(
-    "accept_sprint",
-    "Финал — приёмка: фиксирует итоги, создаёт следующий спринт и переносит в него незакрытое.",
-    {
-      sprint_id: SPRINT_ID,
-      summary: {
-        type: "string",
-        description: "Итог спринта текстом (опционально)",
-      },
-    },
-    ["sprint_id"],
-  ),
-  tool("delete_sprint", "Убрать непринятый спринт в архив. Только админ.", {
-    sprint_id: SPRINT_ID,
-  }, ["sprint_id"]),
-  tool(
-    "add_sprint_tasks",
-    "Добавить задачи в состав спринта. До старта — в план, после — «сверх плана». Личные задачи в спринт не попадают.",
-    {
-      sprint_id: SPRINT_ID,
-      task_ids: {
-        type: "array",
-        items: { type: "string" },
-        description: "id задач из get_tasks (полные uuid)",
-      },
-    },
-    ["sprint_id", "task_ids"],
-  ),
-  tool(
-    "remove_sprint_task",
-    "Убрать задачу из состава спринта (сама задача остаётся).",
-    {
-      sprint_id: SPRINT_ID,
-      task_id: { type: "string", description: "task_id из get_sprint" },
-    },
-    ["sprint_id", "task_id"],
-  ),
-  tool(
-    "mark_sprint_task",
-    "Отметка по задаче в спринте: сверка на чекпоинте (идёт/риск/проблема + комментарий) и пометка «к переносу» с причиной.",
-    {
-      sprint_id: SPRINT_ID,
-      task_id: { type: "string", description: "task_id из get_sprint" },
-      check_status: {
-        type: ["string", "null"],
-        enum: ["ok", "risk", "problem", null],
-        description: "ok — идёт, risk — риск, problem — проблема, null — снять",
-      },
-      check_note: {
-        type: ["string", "null"],
-        description: "Комментарий к сверке",
-      },
-      to_carry: {
-        type: "boolean",
-        description: "true — пометить к переносу в следующий спринт",
-      },
-      carry_reason: {
-        type: ["string", "null"],
-        description: "Почему переносится",
-      },
-    },
-    ["sprint_id", "task_id"],
-  ),
-];
-
 type ToolFn = (args: Args) => Promise<string>;
 
 export const SPRINT_TOOLS: Record<string, ToolFn> = {
   get_sprint_journal: toolGetSprintJournal,
   get_sprint_spaces: toolGetSprintSpaces,
   create_sprint_space: toolCreateSprintSpace,
+  create_sprint_group: toolCreateSprintGroup,
   rename_sprint_space: toolRenameSprintSpace,
   archive_sprint_space: toolArchiveSprintSpace,
   get_sprints: toolGetSprints,
@@ -649,3 +494,5 @@ export const SPRINT_TOOLS: Record<string, ToolFn> = {
   remove_sprint_task: toolRemoveSprintTask,
   mark_sprint_task: toolMarkSprintTask,
 };
+
+export { SPRINT_TOOL_DEFINITIONS } from "./sprints-defs.ts";

@@ -1,16 +1,17 @@
+import { loadProfileTasks } from "./profile-tasks.ts";
 import { ADMIN_USER_ID, isAdminUser, isMasterUser, supabase } from "../lib/supabase.ts";
 import { buildKeyboard, editInlineMessage, sendInlineMessage, sendMessage } from "../lib/telegram.ts";
 import { notifyMessage } from "../lib/notify.ts";
 import { clearSession, setSession } from "../lib/storage.ts";
-import type { Task, TgCallbackQuery } from "../lib/types.ts";
+import type { TgCallbackQuery } from "../lib/types.ts";
 import { sendTaskCard } from "../tasks/index.ts";
 import { generateNameAliases } from "../lib/name-aliases.ts";
 import { assignUserToWorkspace } from "../lib/workspace.ts";
-import { onlyLive } from "../../_shared/tasks/live.ts";
 import { externalFetch, VIA_TELEGRAM } from "../../_shared/external-fetch.ts";
 import { isSuperadmin, type MemberRow } from "../../_shared/users/admin-scope.ts";
 import { withMasterFlag } from "../../_shared/users/master-admins.ts";
 import { canActOnUser, canAddUsers, isEditableProfileField, type UserAction, type UsersActor } from "./users-scope.ts";
+import { escapeHtml } from "../../_shared/telegram-html.ts";
 
 const TELEGRAM_BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN")!;
 
@@ -98,7 +99,7 @@ export async function handleUsers(
       const p = profileMap[u.telegram_id];
       const fullName = [p?.first_name, p?.last_name].filter(Boolean).join(" ");
       const displayName = fullName || (u.username ? `@${u.username}` : `ID ${u.telegram_id}`);
-      return `• ${displayName}`;
+      return `• ${escapeHtml(displayName)}`;
     });
     if (pending.length) {
       lines.push("", `<i>Приглашены, ещё не вошли (${pending.length}):</i>`);
@@ -251,11 +252,11 @@ export async function showProfile(chatId: number, targetId: number, messageId?: 
   const markets = profile?.markets?.join(", ") || "—";
 
   const lines = [
-    `<b>👤 ${name}</b>`,
-    `🔖 @${profile?.username ?? user?.username ?? "—"} (${targetId})`,
-    `💼 ${profile?.role || "—"}`,
-    `🌍 ${markets}`,
-    profile?.email ? `📧 ${profile.email}` : "",
+    `<b>👤 ${escapeHtml(name)}</b>`,
+    `🔖 @${escapeHtml(profile?.username ?? user?.username ?? "—")} (${targetId})`,
+    `💼 ${escapeHtml(profile?.role || "—")}`,
+    `🌍 ${escapeHtml(markets)}`,
+    profile?.email ? `📧 ${escapeHtml(profile.email)}` : "",
   ].filter(Boolean).join("\n");
 
   const keyboard = [
@@ -272,39 +273,32 @@ export async function showProfile(chatId: number, targetId: number, messageId?: 
     : await sendInlineMessage(chatId, lines, keyboard);
 }
 
-export async function handleProfileTasks(chatId: number, targetId: number): Promise<void> {
-  const { data: profile } = await supabase
-    .from("user_profiles").select("first_name, last_name").eq("telegram_id", targetId).maybeSingle();
-  const { data: user } = await supabase
-    .from("allowed_users").select("username").eq("telegram_id", targetId).maybeSingle();
-
-  const fullName = [profile?.first_name, profile?.last_name].filter(Boolean).join(" ");
-  const searchName = fullName || user?.username || String(targetId);
-
-  const { data: allTasks, error } = await onlyLive(
-    supabase
-      .from("tasks")
-      .select("*"),
-  )
-    .not("status", "in", '("done","cancelled")')
-    .order("due_date", { ascending: true });
-
-  if (error) {
-    await sendMessage(chatId, `Ошибка: ${error.message}`);
+// Задачи проектов, которых смотрящий не видит, не показываются (решение владельца 16.10.2026).
+export async function handleProfileTasks(
+  chatId: number,
+  targetId: number,
+  groupId: string,
+  viewerId: number,
+): Promise<void> {
+  let loaded;
+  try {
+    loaded = await loadProfileTasks(targetId, groupId, viewerId);
+  } catch (e) {
+    console.error("[users] profile tasks:", e instanceof Error ? e.message : e);
+    await sendMessage(chatId, "Не удалось загрузить задачи. Попробуй ещё раз.");
     return;
   }
-
-  const nameLower = searchName.toLowerCase();
-  const tasks = (allTasks ?? [])
-    .filter((t: Task) => t.assignees?.some((a: string) => a.toLowerCase().includes(nameLower)))
-    .slice(0, 15);
-
+  if (!loaded) {
+    await sendMessage(chatId, NO_RIGHTS);
+    return;
+  }
+  const { name, tasks } = loaded;
   if (!tasks.length) {
-    await sendMessage(chatId, `У <b>${searchName}</b> нет активных задач.`);
+    await sendMessage(chatId, `У <b>${escapeHtml(name)}</b> нет активных задач.`);
     return;
   }
 
-  await sendMessage(chatId, `<b>Задачи · ${searchName}:</b> ${tasks.length} шт.`);
+  await sendMessage(chatId, `<b>Задачи · ${escapeHtml(name)}:</b> ${tasks.length} шт.`);
   for (const task of tasks) {
     await sendTaskCard(chatId, task);
   }
@@ -457,10 +451,15 @@ export async function handleUserCallbacks(
       targetId,
     ).maybeSingle();
     const name = [profile?.first_name, profile?.last_name].filter(Boolean).join(" ") || `ID ${targetId}`;
-    await editInlineMessage(chatId, msgId, `Удалить <b>${name}</b> из базы?\n\nПользователь потеряет доступ к боту.`, [[
-      { text: "✅ Да, удалить", callback_data: `udelc_${targetId}` },
-      { text: "Отмена", callback_data: `pu_${targetId}` },
-    ]]);
+    await editInlineMessage(
+      chatId,
+      msgId,
+      `Удалить <b>${escapeHtml(name)}</b> из базы?\n\nПользователь потеряет доступ к боту.`,
+      [[
+        { text: "✅ Да, удалить", callback_data: `udelc_${targetId}` },
+        { text: "Отмена", callback_data: `pu_${targetId}` },
+      ]],
+    );
     return true;
   }
   if (data.startsWith("udelc_")) {
@@ -487,7 +486,7 @@ export async function handleUserCallbacks(
   if (data.startsWith("ptasks_")) {
     const targetId = Number(data.replace("ptasks_", ""));
     if (!actor || !(await allowUserAction(chatId, actor, targetId, "view"))) return true;
-    await handleProfileTasks(chatId, targetId);
+    await handleProfileTasks(chatId, targetId, groupId, userId);
     return true;
   }
   if (data.startsWith("pu_")) {
@@ -516,7 +515,7 @@ export async function handleUserCallbacks(
       ? (currentValue as string[]).join(", ")
       : (currentValue as string ?? "");
     await setSession(chatId, `profile_${targetId}_${field}`, undefined);
-    const hint = currentStr ? `\n\nСейчас: <i>${currentStr}</i>` : "";
+    const hint = currentStr ? `\n\nСейчас: <i>${escapeHtml(currentStr)}</i>` : "";
     await sendMessage(chatId, `Введи новое значение для <b>${label}</b>:${hint}`);
     return true;
   }

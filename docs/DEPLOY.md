@@ -14,7 +14,7 @@
 Contabo, self-hosted Supabase в `/srv/swarm/supabase` (issue #915; перестройка CI — #919).
 Облачных CLI (`supabase functions deploy`, `db push`, `link`) и Management API (`api.supabase.com`)
 в раскатке больше нет. Вместо них — **шлюз**: ssh-пользователь `swarm-deploy@95.111.249.216`, чей
-ключ умеет ровно четыре команды (`functions`, `migrations-applied`, `migrate`, `recorder-upload`). Как устроен и
+ключ умеет ровно пять команд (`functions`, `migrations-applied`, `migrate`, `recorder-upload`, `maintenance`). Как устроен и
 устанавливается шлюз — [deploy/server/README.md](../deploy/server/README.md); канон скрипта —
 `deploy/server/gate.sh`.
 
@@ -40,10 +40,10 @@ Contabo, self-hosted Supabase в `/srv/swarm/supabase` (issue #915; перест
 Нормальный путь отката — `git revert` и обычная раскатка. Миграции откатом не снимаются
 (см. ниже «Почему автоматика не накатывает миграции сама»).
 
-**Что ещё не переделано** (список — в issue #919): кнопки секретов и плашки/заморозки
-(`notice.yml`, `bot-webhook-secret.yml`, `scriba-agent-token.yml`, `files-signing-key.yml`,
+**Что ещё не переделано** (список — в issue #919): кнопки секретов
+(`bot-webhook-secret.yml`, `scriba-agent-token.yml`, `files-signing-key.yml`,
 `decimus-secrets.yml`, `seed-demo.yml`), `storage-migrate.yml`, а также
-`scripts/deploy-activity.sh`, `deploy-notice.sh`, `maintenance.sh`, `bot-webhook-secret.sh`,
+`scripts/deploy-activity.sh`, `bot-webhook-secret.sh`,
 `smoke.sh` по-прежнему адресованы облачному проекту. Ниже в этом файле всё, что говорит про
 `supabase functions deploy`, `db push`, `SUPABASE_ACCESS_TOKEN` и Management API, — история до
 13.10.2026, если не оговорено иначе.
@@ -59,7 +59,7 @@ Contabo, self-hosted Supabase в `/srv/swarm/supabase` (issue #915; перест
 
 **Тестовый стек на MUSPELHEIM** (с 25.09.2026, решение владельца: регулярные стенды — на сервере, на Маке только временные, канон `dotfiles/claude/decisions/2026-09-25-stendy-na-muspelheim.md`). На нём идут тесты базы всех сессий Swarm. `./scripts/with-local-db` сперва ищет стек на своей машине (так работает CI), а если его нет — поднимает туннель к серверу; `SWARM_TEST_STAND=local` отключает поход на сервер. Ключи стандартные для `supabase start`, поэтому порты 54320–54329 закрыты для входящих правилом брандмауэра «Swarm test stand: no external access» — стек доступен только через туннель. Запуск на сервере — без studio, аналитики, vector и pg_meta: для тестов не нужны, а ядра ели: `supabase start -x 'studio,logflare,vector,postgres-meta,imgproxy'` — в PowerShell список **в кавычках**, иначе он рассыпается на отдельные аргументы и исключение молча не срабатывает. Схема на сервере — миграции `main`; чтобы прогнать тесты на миграциях своей ветки: `./scripts/with-local-db sh -c 'supabase db reset --db-url "$SUPABASE_DB_URL"'` (стек общий — сбрасывая, сбрасываешь его всем сессиям, как и раньше с общим стеком на Маке). Хук `pre-push` на стенд не ходит (с 01.10.2026): тесты базы и порча — в CI на чистой базе, локально — `make test-db` / `./scripts/check`; где что гоняется — `docs/QUICK_REF.md`, раздел про единую команду проверок.
 
-**Контур в CI** поднимает `./scripts/ci-supabase-up`: только база, REST, auth, kong и хранилище (остальное исключено через `-x`), до трёх попыток с паузой. Миграции и seed накатывает сам запуск контура — `db reset` следом не нужен (он накатывал их второй раз, 28 с на задание, #826). Образы качаются с `public.ecr.aws`, а он режет анонимные скачивания с общих адресов раннеров (`toomanyrequests`) — 28.09.2026 так четырежды подряд упал гейт PR #484, не дойдя до кода. Версия Supabase CLI во всех workflow закреплена (`supabase/setup-cli`, `version: 2.118.0`): `latest` спрашивает GitHub API без токена и тоже ловит лимит. Обновлять версию — одной заменой во всех `.github/workflows/*.yml`.
+**Контур в CI** поднимает `./scripts/ci-supabase-up`: только база, REST, auth, kong и хранилище (остальное исключено через `-x`), до трёх попыток с паузой. Образы лежат в кеше `actions/cache` (ключ `supabase-images-<версия CLI>`, один на оба задания с базой; архив `docker save` в `SUPABASE_IMAGES_DIR`): при попадании `docker load` и ни одного скачивания, при промахе скачивание и сохранение архива (#980). CLI сам перебирает реестры `public.ecr.aws` → `ghcr.io` → Docker Hub; `SUPABASE_INTERNAL_IMAGE_REGISTRY` не задаём — любое значение отключает перебор. Отказ по лимиту печатается как «ЛИМИТ РЕЕСТРА ОБРАЗОВ», а не как падение тестов. Миграции и seed накатывает сам запуск контура — `db reset` следом не нужен (он накатывал их второй раз, 28 с на задание, #826). Образы качаются с `public.ecr.aws`, а он режет анонимные скачивания с общих адресов раннеров (`toomanyrequests`) — 28.09.2026 так четырежды подряд упал гейт PR #484, не дойдя до кода. Версия Supabase CLI во всех workflow закреплена (`supabase/setup-cli`, `version: 2.118.0`): `latest` спрашивает GitHub API без токена и тоже ловит лимит. Обновлять версию — одной заменой во всех `.github/workflows/*.yml`.
 
 Staging использует **демо-ключи** Supabase (ANON/SERVICE/JWT из `.env.example`) — ок, т.к. контур приватный (только tailnet, личное использование). Порты сдвинуты (kong `8020`, БД `5433`), чтобы не конфликтовать с n8n/template-postgres на MUSPELHEIM.
 
@@ -150,7 +150,7 @@ make deploy            # сам проверит активность, раск�
 make notice-off        # снять объявление вручную, если раскатку отменили
 ```
 
-**Без прав записи в базу — кнопка в Actions** «Плашка и заморозка (руками)» (`.github/workflows/notice.yml`). `make notice` пишет в базу личным токеном CLI, а у него права `database_write` нет, и расширять его не будем: токен нужен другим проектам (решение владельца 2026-09-25). Кнопка ходит в базу ключом из секретов репозитория, как накат миграций.
+**Без прав записи в базу — кнопка в Actions** «Плашка и заморозка (руками)» (`.github/workflows/notice.yml`). `make notice` пишет в базу личным токеном CLI, а у него права `database_write` нет, и расширять его не будем: токен нужен другим проектам (решение владельца 2026-09-25). С 16.10.2026 (#978) кнопка ходит на свой сервер ключом шлюза раскатки (`SWARM_DEPLOY_SSH_KEY`) в его команду `maintenance`: SQL зашит в `deploy/server/gate.sh`, числа проверяются там же (начало 0–1440 мин, длительность 1–180), текст — до 300 символов. Те же команды без CI: `make notice`, `make freeze`, `make freeze-status` (ключ — `~/Documents/workbench/private/swarm-deploy-key`). Решение — [decisions/2026-10-16-maintenance-gate.md](decisions/2026-10-16-maintenance-gate.md).
 
 ```bash
 gh workflow run notice.yml -f action=notice -f minutes=30 \
@@ -368,6 +368,34 @@ make unfreeze          # снять раньше срока; по сроку р�
 | `scripts/swarm-files.sh up` | Клон `origin/main`, сборка, запуск (порт только на localhost) |
 | `scripts/swarm-files.sh publish` | Путь `/swarm-files` на Funnel-порту 10000 — вход снаружи |
 | `scripts/swarm-files.sh status` / `logs` / `down` | Состояние и место на диске, журнал, погасить |
+
+## Резерв прода на MUSPELHEIM (с 14.10.2026)
+
+Решение владельца: «резерв это копия, которую можно поднять за минуту» ([decisions/2026-10-14-prod-reserve.md](decisions/2026-10-14-prod-reserve.md), #958).
+Рекордер и бот встреч `scriba` в резерв не входят: «главное чтобы сам сервис работал». Telegram-бот Swarm и MCP ходят через тот же `api.swarm-team.app` и переезжают вместе с сервисом.
+
+**Что это.** На MUSPELHEIM в `C:\projects\swarm-reserve` стоит тот же стек Supabase, что на VPS: те же compose-файлы из архива прода плюс `stack\docker-compose.reserve.yml`. У резерва свои имена контейнеров `swarm-reserve-*`, Caddy и туннель Cloudflare `swarm-reserve`. В холодном состоянии работают только база, Caddy и туннель: резерв ничего не запускает и не отправляет, а Caddy всегда отвечает Worker'у «флажка нет».
+
+**Как освежается.** Каждый день в 04:40 задача **Swarm Reserve Refresh** забирает с VPS:
+- архив стека: env, код функций, файлы storage;
+- список заданий cron;
+- свежий дамп базы.
+
+Дамп восстанавливается рядом со старой копией и подменяет её только после сверки. Ключ, которым MUSPELHEIM ходит на VPS, умеет только эти три выгрузки. Итог прогона — одна строка в `C:\backups\swarm-prod\last_refresh.txt`. Активный резерв не освежается.
+
+**Как переключить на резерв** (VPS лёг), на MUSPELHEIM:
+
+```
+powershell -File C:\projects\swarm-reserve\up.ps1 -Activate
+```
+
+Скрипт поднимает весь стек, ставит задания cron и кладёт флажок `state\active`. Worker `api.swarm-team.app` (`deploy/front`) раз в 30 с спрашивает резерв по `/__reserve/active` и, увидев флажок, шлёт туда весь трафик: веб, бот, MCP. Подъём из холодного состояния занимает меньше минуты, первый запрос к функциям — несколько секунд. Без `-Activate` стек поднимается только для проверки (`check.ps1`), и трафик прода туда не идёт.
+
+**Как вернуть.** `down.ps1` снимает флажок и ждёт минуту, пока все копии Worker'а увидят «флажка нет»: Worker меняет решение только по явному ответу резерва, сбой проверки его не меняет. Потом скрипт убирает задания и гасит всё, кроме базы, Caddy и туннеля. Данные, записанные на резерве, сами на VPS не уедут: перед `down.ps1` их надо перенести, иначе ночное обновление их затрёт.
+
+**Почему переключение ручное.** При автоматическом перескоке на сбое VPS обе базы принимали бы записи и молча разошлись бы.
+
+Устройство: `muspelheim-infra/swarm-reserve/`, сторона VPS — `vps-infra/projects/swarm-reserve/`.
 
 ## Команды (`make help`)
 - `make smoke-staging` / `make smoke-prod` — смоук edge-функций (`scripts/smoke.sh`, один и тот же набор проверок для любого контура).

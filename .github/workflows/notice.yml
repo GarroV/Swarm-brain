@@ -3,9 +3,9 @@ name: Плашка и заморозка (руками)
 # Кнопка для плашки «скоро обновление» и заморозки «идут работы».
 #
 # Зачем: обе живут строкой в app_settings на проде, а писать в прод-базу из рабочего окружения
-# нельзя — у CLI на личном токене нет права database_write, и расширять его не будем: токен
-# нужен другим проектам (решение владельца 2026-09-25). Здесь CLI ходит ключом из секретов
-# репозитория — тем же, что накатывает миграции (deploy-migrations.yml).
+# нельзя. С 16.10.2026 (#978; решение — docs/decisions/2026-10-16-maintenance-gate.md) кнопка ходит
+# на свой сервер ключом шлюза раскатки из секретов репозитория (SWARM_DEPLOY_SSH_KEY), в его команду
+# `maintenance` (deploy/server/gate.sh): SQL зашит на сервере, из CI уходят только числа и текст.
 #
 # Это ПРАВКА ПРОД-ДАННЫХ: жать только по «да» владельца на раскатку, как и любую раскатку.
 # Обе строки гаснут сами по сроку — забытая кнопка не оставит плашку на неделю.
@@ -52,20 +52,15 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-      - uses: supabase/setup-cli@1dedf2c611547ede7232d26866dd3c56ab903bbb # v1
+      - name: Ключ раскатки на свой сервер
+        uses: ./.github/actions/swarm-deploy-ssh
         with:
-          version: 2.118.0
-      - name: Привязать проект
-        env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
-        run: supabase link --project-ref vbqglndbxkpmreccpqmr
+          ssh-key: ${{ secrets.SWARM_DEPLOY_SSH_KEY }}
+          known-hosts: ${{ secrets.SWARM_DEPLOY_KNOWN_HOSTS }}
       - name: Выполнить
         # Ввод — только через env, не подстановкой ${{ }} в текст скрипта: иначе текст плашки
         # исполнялся бы как shell.
         env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
           ACTION: ${{ inputs.action }}
           MINUTES: ${{ inputs.minutes }}
           LEAD_MIN: ${{ inputs.lead }}
@@ -79,9 +74,6 @@ jobs:
             notice-off)  ./scripts/deploy-notice.sh off ;;
             notice-show) ./scripts/deploy-notice.sh show ;;
             freeze|unfreeze|freeze-status)
-              if [ ! -x scripts/maintenance.sh ]; then
-                echo "::error::scripts/maintenance.sh нет в этой ветке — заморозка (#507) ещё не влита"; exit 2
-              fi
               case "$ACTION" in
                 # Одно нажатие: плашка сейчас → заморозка через LEAD_MIN → снятие по сроку сама.
                 # Тот же текст, что у плашки, — заглушке и колокольчику (оба языка).

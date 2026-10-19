@@ -85,3 +85,22 @@ export function applyAskAnswerToText(md: string, fragment: string, answer: strin
   const lines = tezisyToLines(md);
   return linesToTezisy(applyAskAnswer(lines, findLineOf(lines, fragment), answer, mode));
 }
+
+/** Пустой редактор: одна пустая строка-пункт (в неё встаёт курсор после «Очистить всё»). */
+export function clearedLines(): TezisyLine[] {
+  return [{ kind: "bullet", text: "" }];
+}
+
+/**
+ * Что останется после вставки текста в режиме «выделено всё»: только вставленное, разобранное
+ * как тезисы. Пусто (одни пробелы) — как очистка.
+ */
+export function replaceAllWithText(text: string): TezisyLine[] {
+  const parsed = tezisyToLines(text).filter((l) => l.text);
+  return parsed.length ? parsed : clearedLines();
+}
+
+/** Печатный символ в режиме «выделено всё»: всё заменяется одной строкой с этим символом. */
+export function replaceAllWithChar(ch: string): TezisyLine[] {
+  return [{ kind: "bullet", text: ch.replace(/\n/g, " ") }];
+}

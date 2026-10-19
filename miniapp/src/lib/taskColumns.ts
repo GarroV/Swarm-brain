@@ -8,19 +8,19 @@
 // здесь — нижняя граница. Потянуть её вправо — строка станет шире окна и таблица прокрутится.
 // Колонка значков (срок/пинг/повтор/люди/рынок быстрыми действиями) переезжает целиком.
 
-export type MovableColumn = "due" | "actions" | "market" | "project" | "assignee" | "lists";
+export type MovableColumn = "due" | "ping" | "actions" | "market" | "project" | "assignee" | "lists";
 export type TaskColumn = "task" | MovableColumn;
 export type ResizableColumn = "task" | "project" | "assignee" | "lists";
 export type ColumnWidths = Record<ResizableColumn, number>;
 export type ColumnLayout = { widths: ColumnWidths; order: MovableColumn[] };
 
 export const RESIZABLE_COLUMNS: readonly ResizableColumn[] = ["task", "project", "assignee", "lists"];
-export const DEFAULT_ORDER: readonly MovableColumn[] = ["due", "actions", "market", "project", "assignee", "lists"];
+export const DEFAULT_ORDER: readonly MovableColumn[] = ["due", "ping", "actions", "market", "project", "assignee", "lists"];
 // На узкой десктопной раскладке (< 1100px) эти колонки прячутся.
 export const NARROW_HIDDEN_COLUMNS: readonly MovableColumn[] = ["project", "lists"];
 
 // Колонки без ручки ширины — их содержимое фиксировано по размеру.
-const FIXED_WIDTHS: Record<Exclude<MovableColumn, ResizableColumn>, number> = { due: 88, actions: 168, market: 64 };
+const FIXED_WIDTHS: Record<Exclude<MovableColumn, ResizableColumn>, number> = { due: 88, ping: 80, actions: 168, market: 64 };
 
 // «Проект» и «Списки» вдвое уже прежних процентов (18% и 14% от ~1400px): там длинное режется
 // многоточием, а место уходит названию задачи.
@@ -44,7 +44,8 @@ const isMovable = (v: unknown): v is MovableColumn => typeof v === "string" && (
 
 // Сохранённое приходит из localStorage — чужая, старая или битая форма молча даёт дефолт.
 // Неизвестные колонки (удалённые в новой версии) выбрасываются, дубли схлопываются, а колонки,
-// которых сохранённый порядок ещё не знал, встают в конец.
+// которых сохранённый порядок ещё не знал, встают на своё место по порядку по умолчанию — сразу
+// после предыдущей известной колонки («Пинг» — после «Срока»), а если её нет — в конец.
 export function resolveColumnLayout(saved: unknown): ColumnLayout {
   const src = saved && typeof saved === "object" ? (saved as Record<string, unknown>) : {};
   const w = src.widths && typeof src.widths === "object" ? (src.widths as Record<string, unknown>) : {};
@@ -54,7 +55,13 @@ export function resolveColumnLayout(saved: unknown): ColumnLayout {
     if (typeof v === "number" && Number.isFinite(v)) widths[col] = clampColumn(col, v);
   }
   const known = Array.isArray(src.order) ? [...new Set(src.order.filter(isMovable))] : [];
-  const order = [...known, ...DEFAULT_ORDER.filter((c) => !known.includes(c))];
+  const order = [...known];
+  DEFAULT_ORDER.forEach((c, i) => {
+    if (order.includes(c)) return;
+    const prev = DEFAULT_ORDER[i - 1];
+    const at = prev ? order.indexOf(prev) : -1;
+    order.splice(at >= 0 ? at + 1 : order.length, 0, c);
+  });
   return { widths, order };
 }
 

@@ -15,6 +15,7 @@ import {
   parseSaSession,
   visibleWorkspaces,
 } from "./superadmin-scope.ts";
+import { escapeHtml } from "../../_shared/telegram-html.ts";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -158,7 +159,7 @@ export async function handleSuperadminCallbacks(
         .from("allowed_users")
         .select("*", { count: "exact", head: true })
         .eq("group_id", wsId);
-      const msg = `📦 <b>${ws.name}</b>\nID: ${wsId}\nПользователей: ${count ?? 0}`;
+      const msg = `📦 <b>${escapeHtml(ws.name)}</b>\nID: ${wsId}\nПользователей: ${count ?? 0}`;
       await editInlineMessage(chatId, cb.message.message_id, msg, [
         [
           { text: "👥 Пользователи", callback_data: `sa_su_${wsId}` },
@@ -202,7 +203,7 @@ export async function handleSuperadminCallbacks(
         await editInlineMessage(
           chatId,
           cb.message.message_id,
-          `В спейсе ${wsName} нет пользователей.`,
+          `В спейсе ${escapeHtml(wsName)} нет пользователей.`,
           [
             [
               { text: "➕ Добавить", callback_data: `sa_add_${wsId}` },
@@ -232,7 +233,7 @@ export async function handleSuperadminCallbacks(
         { text: "🔙 К спейсу", callback_data: `sa_sp_${wsId}` },
       ]);
 
-      await editInlineMessage(chatId, cb.message.message_id, `👥 <b>Пользователи ${wsName}:</b>`, userRows);
+      await editInlineMessage(chatId, cb.message.message_id, `👥 <b>Пользователи ${escapeHtml(wsName)}:</b>`, userRows);
       return true;
     }
 
@@ -283,10 +284,10 @@ export async function handleSuperadminCallbacks(
       const wsName = ws?.name ?? wsId.toUpperCase();
       const roleLabel = uRow?.is_admin ? "👑 Администратор" : "Участник";
 
-      let msg = `👤 <b>${name}</b>`;
-      if (usernameStr) msg += `\n@${usernameStr}`;
+      let msg = `👤 <b>${escapeHtml(name)}</b>`;
+      if (usernameStr) msg += `\n@${escapeHtml(usernameStr)}`;
       msg += `\nID: ${tgId}`;
-      msg += `\nСпейс: ${wsName}`;
+      msg += `\nСпейс: ${escapeHtml(wsName)}`;
       msg += `\nРоль: ${roleLabel}`;
 
       // Перенос между спейсами — только суперадмину.
@@ -468,7 +469,7 @@ export async function handleSuperadminSession(
         await createWorkspace(wsId, name);
         await sendInlineMessage(
           chatId,
-          `✅ Спейс <b>${name}</b> (ID: ${wsId}) создан.`,
+          `✅ Спейс <b>${escapeHtml(name)}</b> (ID: ${wsId}) создан.`,
           [[{ text: "📋 Все спейсы", callback_data: "sa_spaces" }]],
         );
       } catch (err) {
@@ -500,7 +501,7 @@ export async function handleSuperadminSession(
       }
       await sendInlineMessage(
         chatId,
-        `✅ Переименовано в <b>${name}</b>.`,
+        `✅ Переименовано в <b>${escapeHtml(name)}</b>.`,
         [[{ text: "📦 К спейсу", callback_data: `sa_sp_${wsId}` }]],
       );
       return true;

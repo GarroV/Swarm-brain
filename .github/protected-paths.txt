@@ -29,6 +29,7 @@ miniapp/src/components/tasks/ProjectTree.tsx
 miniapp/src/components/tasks/ProjectsGrid.tsx
 supabase/functions/_shared/tasks/projects.ts
 supabase/functions/_shared/tasks/project-access.ts
+supabase/functions/_shared/tasks/project-visibility.ts
 supabase/functions/_shared/tasks/project-nesting.ts
 supabase/functions/swarm-api/project-fields.ts
 

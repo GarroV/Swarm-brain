@@ -14,6 +14,13 @@
 // deno-lint-ignore-file no-import-prefix
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { onlyLive } from "./live.ts";
+import {
+  loadProjectVisibility,
+  type ProjectVisibility,
+  projectVisible,
+  taskVisibleByProject,
+  visibleTaskIds,
+} from "./project-visibility.ts";
 
 const supabase = createClient(
   Deno.env.get("SUPABASE_URL")!,
@@ -71,14 +78,25 @@ export interface SprintItem {
 }
 
 /**
- * Состав спринта. Одинаков для всех участников воркспейса: «личных» задач нет
- * (решение 2026-10-09, docs/decisions/2026-10-09-tasks-no-private.md).
+ * Кто смотрит состав. Задачи закрытого проекта видит только тот, кто видит проект (решение
+ * владельца 16.10.2026, docs/decisions/2026-10-16-security-fixes.md), — поэтому зритель
+ * обязателен: `{ viewerId }` прячет невидимое ему (без id — все закрытые, fail-closed).
+ * `"everyone"` — полный состав без фильтра, только для приёмки: итоги одни на команду и
+ * считаются по всему плану, кто бы ни нажал кнопку (sprint-accept.ts). Наружу этот состав
+ * не отдаётся.
+ */
+export type SprintViewer = { viewerId: number | undefined } | "everyone";
+
+/**
+ * Состав спринта. «Личных» задач нет (решение 2026-10-09, docs/decisions/2026-10-09-tasks-no-private.md),
+ * но задачи закрытого проекта видны только тем, кто видит проект.
  */
 export async function listItems(
   cycleId: string,
   groupId: string,
+  viewer: SprintViewer,
 ): Promise<SprintItem[]> {
-  return (await listComposition(cycleId, groupId)).items;
+  return (await listComposition(cycleId, groupId, viewer)).items;
 }
 
 /**
@@ -89,32 +107,44 @@ export async function listItems(
 export async function listComposition(
   cycleId: string,
   groupId: string,
-): Promise<{ items: SprintItem[]; withdrawn: SprintItem[] }> {
-  const all = await loadAllItems(cycleId, groupId);
+  viewer: SprintViewer,
+): Promise<{ items: SprintItem[]; withdrawn: SprintItem[]; hiddenCount: number }> {
+  const { items: all, hiddenCount } = await loadAllItems(cycleId, groupId, viewer);
   return {
     items: all.filter((i) => i.withdrawn_at == null),
     withdrawn: all.filter((i) => i.withdrawn_at != null),
+    // Сколько строк состава спрятано от зрителя (невидимый или неустановимый проект). Итоги
+    // принятого спринта по нему решают, можно ли отдать записанные цифры (redactCycleStats).
+    hiddenCount,
   };
 }
 
 async function loadAllItems(
   cycleId: string,
   groupId: string,
-): Promise<SprintItem[]> {
-  const { data: cycle } = await supabase.from("sprint_cycles")
+  viewer: SprintViewer,
+): Promise<{ items: SprintItem[]; hiddenCount: number }> {
+  // Сбой чтения — ошибка, а не пустой состав: пустой выглядел бы как «прятать нечего», и
+  // итоги принятого спринта ушли бы зрителю целиком (fail-closed).
+  const { data: cycle, error: cycleErr } = await supabase.from("sprint_cycles")
     .select("id").eq("id", cycleId).eq("group_id", groupId).maybeSingle();
-  if (!cycle) return [];
+  if (cycleErr) throw new Error(`sprint cycle: ${cycleErr.message}`);
+  if (!cycle) return { items: [], hiddenCount: 0 };
 
   // Поля перечислены прямо здесь одной строкой, а не вынесены в константу: клиент Supabase
   // разбирает список полей ТИПОМ на этапе компиляции, и как только строка становится
   // вычисляемой, ответ превращается в «неизвестно что» (TS2352).
-  const { data: rows } = await supabase.from("sprint_items")
+  const { data: rows, error: rowsErr } = await supabase.from("sprint_items")
     .select(
       "id, task_id, in_plan, added_at, frozen_at, frozen_title, frozen_status, frozen_assignees, frozen_project, frozen_completed_at, frozen_due_date, check_status, check_note, check_at, check_by, to_carry, carry_reason, carry_count, carried_manual, removed_title, removed_project_id, removed_at, withdrawn_at",
     )
     .eq("cycle_id", cycleId).order("added_at", { ascending: true });
-  const items = (rows ?? []) as Record<string, unknown>[];
-  if (items.length === 0) return [];
+  if (rowsErr) throw new Error(`sprint items: ${rowsErr.message}`);
+  const fetched = (rows ?? []) as Record<string, unknown>[];
+  if (fetched.length === 0) return { items: [], hiddenCount: 0 };
+  const items = viewer === "everyone"
+    ? fetched
+    : await dropHiddenItems(fetched, groupId, await loadProjectVisibility(groupId, viewer.viewerId));
 
   const liveIds = items.filter((r) => !r.frozen_at && r.task_id).map((r) => r.task_id as string);
   const live = new Map<string, Record<string, unknown>>();
@@ -133,51 +163,90 @@ async function loadAllItems(
   const projectNames = await loadProjectNames(items, live);
   const comments = await countComments(liveIds);
 
-  return items.map((r) => {
-    const t = r.task_id ? live.get(r.task_id as string) : undefined;
-    const frozen = !!r.frozen_at;
-    const removed = r.removed_at != null;
-    const projectId = (t?.project_id as string | null) ?? null;
+  const hiddenCount = fetched.length - items.length;
+  return {
+    hiddenCount,
+    items: items.map((r) => {
+      const t = r.task_id ? live.get(r.task_id as string) : undefined;
+      const frozen = !!r.frozen_at;
+      const removed = r.removed_at != null;
+      const projectId = (t?.project_id as string | null) ?? null;
 
-    const title = removed
-      ? (r.removed_title as string | null) ?? "(задача удалена)"
-      : frozen
-      ? (r.frozen_title as string)
-      : ((t?.title as string) ?? "(задача удалена)");
-
-    return {
-      id: r.id as string,
-      task_id: (r.task_id as string | null) ?? null,
-      in_plan: !!r.in_plan,
-      added_at: r.added_at as string,
-      title,
-      status: frozen ? (r.frozen_status as string) : ((t?.status as string) ?? "cancelled"),
-      assignees: frozen ? ((r.frozen_assignees as string[]) ?? []) : ((t?.assignees as string[]) ?? []),
-      project_id: projectId,
-      project: removed
-        ? null
+      const title = removed
+        ? (r.removed_title as string | null) ?? "(задача удалена)"
         : frozen
-        ? ((r.frozen_project as string | null) ?? null)
-        : (projectId ? projectNames.get(projectId) ?? null : null),
-      completed_at: frozen
-        ? ((r.frozen_completed_at as string | null) ?? null)
-        : ((t?.completed_at as string | null) ?? null),
-      due_date: frozen ? ((r.frozen_due_date as string | null) ?? null) : ((t?.due_date as string | null) ?? null),
-      frozen,
-      check_status: (r.check_status as CheckStatus | null) ?? null,
-      check_note: (r.check_note as string | null) ?? null,
-      check_at: (r.check_at as string | null) ?? null,
-      check_by: (r.check_by as string | null) ?? null,
-      to_carry: !!r.to_carry,
-      carry_reason: (r.carry_reason as string | null) ?? null,
-      carry_count: (r.carry_count as number | null) ?? 0,
-      carried_manual: (r.carried_manual as boolean | null) ?? null,
-      removed,
-      removed_at: (r.removed_at as string | null) ?? null,
-      withdrawn_at: (r.withdrawn_at as string | null) ?? null,
-      comment_count: frozen || removed ? 0 : comments.get(r.task_id as string) ?? 0,
-      link_count: frozen || removed ? 0 : ((t?.links as unknown[] | null) ?? []).length,
-    };
+        ? (r.frozen_title as string)
+        : ((t?.title as string) ?? "(задача удалена)");
+
+      return {
+        id: r.id as string,
+        task_id: (r.task_id as string | null) ?? null,
+        in_plan: !!r.in_plan,
+        added_at: r.added_at as string,
+        title,
+        status: frozen ? (r.frozen_status as string) : ((t?.status as string) ?? "cancelled"),
+        assignees: frozen ? ((r.frozen_assignees as string[]) ?? []) : ((t?.assignees as string[]) ?? []),
+        project_id: projectId,
+        project: removed
+          ? null
+          : frozen
+          ? ((r.frozen_project as string | null) ?? null)
+          : (projectId ? projectNames.get(projectId) ?? null : null),
+        completed_at: frozen
+          ? ((r.frozen_completed_at as string | null) ?? null)
+          : ((t?.completed_at as string | null) ?? null),
+        due_date: frozen ? ((r.frozen_due_date as string | null) ?? null) : ((t?.due_date as string | null) ?? null),
+        frozen,
+        check_status: (r.check_status as CheckStatus | null) ?? null,
+        check_note: (r.check_note as string | null) ?? null,
+        check_at: (r.check_at as string | null) ?? null,
+        check_by: (r.check_by as string | null) ?? null,
+        to_carry: !!r.to_carry,
+        carry_reason: (r.carry_reason as string | null) ?? null,
+        carry_count: (r.carry_count as number | null) ?? 0,
+        carried_manual: (r.carried_manual as boolean | null) ?? null,
+        removed,
+        removed_at: (r.removed_at as string | null) ?? null,
+        withdrawn_at: (r.withdrawn_at as string | null) ?? null,
+        comment_count: frozen || removed ? 0 : comments.get(r.task_id as string) ?? 0,
+        link_count: frozen || removed ? 0 : ((t?.links as unknown[] | null) ?? []).length,
+      };
+    }),
+  };
+}
+
+/**
+ * Строки состава, чей проект зритель не видит, уходят целиком — с названием, отметками и
+ * упоминанием. Проект строки: у удалённой — `removed_project_id`, у остальных — текущий проект
+ * самой задачи (в том числе у замороженной: её `frozen_project` — только имя). Задача, которой
+ * уже нет в базе, проекта не даёт — строка видна, как задача без проекта.
+ */
+async function dropHiddenItems(
+  items: Record<string, unknown>[],
+  groupId: string,
+  visibility: ProjectVisibility,
+): Promise<Record<string, unknown>[]> {
+  const taskIds = [...new Set(items.filter((r) => r.task_id).map((r) => r.task_id as string))];
+  const projectOf = new Map<string, string | null>();
+  const foreign = new Set<string>();
+  if (taskIds.length > 0) {
+    // archive-ok: проект нужен и у архивной задачи — по нему решается, видна ли строка
+    const { data, error } = await supabase.from("tasks").select("id, project_id, group_id").in("id", taskIds);
+    if (error) throw new Error(`sprint items visibility: ${error.message}`);
+    for (const t of (data ?? []) as Array<{ id: string; project_id: string | null; group_id: string | null }>) {
+      // Задача чужого воркспейса в составе — сбитые данные; не показываем.
+      if (t.group_id !== groupId) foreign.add(t.id);
+      else projectOf.set(t.id, t.project_id);
+    }
+  }
+  return items.filter((r) => {
+    if (r.task_id && foreign.has(r.task_id as string)) return false;
+    const pid = r.removed_at != null
+      ? (r.removed_project_id as string | null) ?? null
+      : r.task_id
+      ? projectOf.get(r.task_id as string) ?? null
+      : null;
+    return projectVisible(pid, visibility);
   });
 }
 
@@ -218,12 +287,16 @@ async function loadProjectNames(
   return names;
 }
 
-/** Набор состава. Чужие воркспейсы и уже добавленные отсеиваются молча. */
+/**
+ * Набор состава. Чужие воркспейсы, задачи невидимых добавляющему проектов и уже добавленные
+ * отсеиваются молча.
+ */
 export async function addItems(
   cycleId: string,
   taskIds: string[],
   groupId: string,
   addedBy: string | null,
+  viewerId: number | undefined,
 ): Promise<number> {
   if (taskIds.length === 0) return 0;
   const { data: cycle } = await supabase.from("sprint_cycles")
@@ -231,11 +304,13 @@ export async function addItems(
     .maybeSingle();
   if (!cycle || (cycle as { status: string }).status === "accepted") return 0;
 
+  const visible = await visibleTaskIds(taskIds, groupId, viewerId);
+  if (visible.length === 0) return 0;
   const { data: tasks } = await onlyLive(
     supabase.from("tasks")
       .select("id, status"),
   )
-    .in("id", taskIds).eq("group_id", groupId);
+    .in("id", visible).eq("group_id", groupId);
   const allowed = (tasks ?? []) as { id: string; status: string }[];
   if (allowed.length === 0) return 0;
 
@@ -302,13 +377,15 @@ export async function removeItem(
   cycleId: string,
   taskId: string,
   groupId: string,
-  actor: string | null = null,
+  actor: string | null,
+  viewerId: number | undefined,
 ): Promise<boolean> {
   const { data: cycle } = await supabase.from("sprint_cycles")
     .select("id, status").eq("id", cycleId).eq("group_id", groupId)
     .maybeSingle();
   const status = (cycle as { status: string } | null)?.status;
   if (!cycle || status === "accepted") return false;
+  if (!(await itemTaskVisible(taskId, groupId, viewerId))) return false;
 
   if (status === "draft") {
     const { data } = await supabase.from("sprint_items")
@@ -347,6 +424,7 @@ export async function updateItem(
   groupId: string,
   patch: ItemPatch,
   actor: string | null,
+  viewerId: number | undefined,
 ): Promise<SprintItem | null> {
   const { data: cycle } = await supabase.from("sprint_cycles")
     .select("id, status").eq("id", cycleId).eq("group_id", groupId)
@@ -355,6 +433,8 @@ export async function updateItem(
   if ((cycle as { status: string }).status === "accepted") {
     throw new ItemLockedError("Спринт принят, отметки больше не меняются");
   }
+  // Невидимая задача — как несуществующая: отметку на ней не поставить и не снять.
+  if (!(await itemTaskVisible(taskId, groupId, viewerId))) return null;
 
   const now = new Date().toISOString();
   const fields: Record<string, unknown> = {};
@@ -382,6 +462,25 @@ export async function updateItem(
     .select("id").maybeSingle();
   if (!data) return null;
 
-  const items = await listItems(cycleId, groupId);
+  const items = await listItems(cycleId, groupId, { viewerId });
   return items.find((i) => i.task_id === taskId) ?? null;
+}
+
+/**
+ * Видна ли зрителю задача строки состава. Задача, которой в базе уже нет (или архивная), —
+ * решается по её проекту так же: архивная строка остаётся в составе.
+ */
+async function itemTaskVisible(
+  taskId: string,
+  groupId: string,
+  viewerId: number | undefined,
+): Promise<boolean> {
+  // archive-ok: снять или отметить можно и строку архивной задачи — видимость по её проекту
+  const { data, error } = await supabase.from("tasks").select("group_id, project_id").eq("id", taskId)
+    .maybeSingle();
+  if (error) throw new Error(`sprint item task: ${error.message}`);
+  if (!data) return true; // задачи нет — строке нечего прятать, дальше решит сам запрос по составу
+  const task = data as { group_id: string | null; project_id: string | null };
+  if (task.group_id !== groupId) return false;
+  return await taskVisibleByProject(task, viewerId);
 }
