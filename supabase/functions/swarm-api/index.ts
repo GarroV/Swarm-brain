@@ -735,7 +735,7 @@ async function routeRequest(req: Request): Promise<Response> {
     req,
     routePath,
     supabase,
-    { isMaster, isAdmin, groupId },
+    { isMaster, isAdmin, groupId, telegramId: telegram_id },
     origin,
   );
   if (usageResp) return usageResp;

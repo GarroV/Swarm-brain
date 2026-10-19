@@ -51,22 +51,22 @@ async function get(scope: UsageScope, extra = "") {
 
 Deno.test("model-usage: не админ — 403, и без параметра, и с чужим пространством", async () => {
   for (const extra of ["", "&workspace=cee"]) {
-    const res = await get({ isMaster: false, isAdmin: false, groupId: "cee" }, extra);
+    const res = await get({ isMaster: false, isAdmin: false, groupId: "cee", telegramId: 1 }, extra);
     assertEquals(res.status, 403);
     await res.body?.cancel();
   }
 });
 
 Deno.test("model-usage: админ пространства видит только своё; чужое пространство в параметре — 404", async () => {
-  const own = await get({ isMaster: false, isAdmin: true, groupId: "cee" });
+  const own = await get({ isMaster: false, isAdmin: true, groupId: "cee", telegramId: 1 });
   assertEquals(own.status, 200);
   assertEquals((await own.json()).total_usd, 3); // только cee: 1 + 2; demo (10) и без пространства (100) не попали
 
-  const other = await get({ isMaster: false, isAdmin: true, groupId: "cee" }, "&workspace=demo");
+  const other = await get({ isMaster: false, isAdmin: true, groupId: "cee", telegramId: 1 }, "&workspace=demo");
   assertEquals(other.status, 404);
   await other.body?.cancel();
 
-  const same = await get({ isMaster: false, isAdmin: true, groupId: "cee" }, "&workspace=cee");
+  const same = await get({ isMaster: false, isAdmin: true, groupId: "cee", telegramId: 1 }, "&workspace=cee");
   assertEquals(same.status, 200);
   await same.body?.cancel();
 });
@@ -77,7 +77,7 @@ Deno.test("model-usage: запрос админа всегда уходит в �
     new Request(URL_()),
     MODEL_USAGE_PATH,
     db.client,
-    { isMaster: false, isAdmin: true, groupId: "cee" },
+    { isMaster: false, isAdmin: true, groupId: "cee", telegramId: 1 },
     "*",
   );
   await res!.body?.cancel();
@@ -85,10 +85,10 @@ Deno.test("model-usage: запрос админа всегда уходит в �
 });
 
 Deno.test("model-usage: мастер-админ без параметра видит всё, с параметром — одно пространство", async () => {
-  const all = await get({ isMaster: true, isAdmin: true, groupId: "cee" });
+  const all = await get({ isMaster: true, isAdmin: true, groupId: "cee", telegramId: 1 });
   assertEquals((await all.json()).total_usd, 113); // cee + demo + строка без пространства
 
-  const demo = await get({ isMaster: true, isAdmin: true, groupId: "cee" }, "&workspace=demo");
+  const demo = await get({ isMaster: true, isAdmin: true, groupId: "cee", telegramId: 1 }, "&workspace=demo");
   assertEquals(demo.status, 200);
   assertEquals((await demo.json()).total_usd, 10);
 });

@@ -5,6 +5,7 @@
 // _shared/model-usage-summary.ts.
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { apiErr, json } from "./http.ts";
+import { canViewEntry, type EntryAccessRow } from "../_shared/entries/access.ts";
 import { serverError } from "./client-error.ts";
 import {
   inPeriod,
@@ -43,7 +44,7 @@ async function loadRows(
   return { rows, truncated: true };
 }
 
-export type UsageScope = { isMaster: boolean; isAdmin: boolean; groupId: string };
+export type UsageScope = { isMaster: boolean; isAdmin: boolean; groupId: string; telegramId: number };
 
 /** Чьи строки читать: null — все (мастер без фильтра); строка — одно пространство; Response — отказ. */
 function usageGroup(scope: UsageScope, requested: string | null, origin: string): string | null | Response {
@@ -53,6 +54,57 @@ function usageGroup(scope: UsageScope, requested: string | null, origin: string)
     return apiErr(404, "Workspace not found", origin);
   }
   return scope.groupId;
+}
+
+type MeetingRow = {
+  id: string;
+  title: string | null;
+  entry_id: string | null;
+  claim_owner: number | string | null;
+  recorders: Array<{ telegram_id?: number | string }> | null;
+};
+type EntryRow = EntryAccessRow & { id: string };
+
+/**
+ * Названия встреч, которые зритель вправе видеть. Расход (суммы) показывается всем админам по
+ * объёму, а НАЗВАНИЕ встречи — содержание: личная встреча видна только владельцу и тем, с кем
+ * разделена, без админского обхода (решение владельца 2026-08-07, #15). Правило — `canViewEntry`.
+ * Опубликованная встреча — по своей записи; черновик (записи ещё нет) — только тому, кто записывал
+ * или транскрибирует. Не прошла проверка или записи не нашли — `null` (fail-closed); строки расхода остаются.
+ */
+async function visibleTitles(
+  supabase: SupabaseClient,
+  ids: string[],
+  viewerId: number,
+): Promise<Map<string, string | null>> {
+  const titles = new Map<string, string | null>();
+  for (let i = 0; i < ids.length; i += TITLE_BATCH) {
+    const batch = ids.slice(i, i + TITLE_BATCH);
+    const { data, error } = await supabase.from("meetings")
+      .select("id, title, entry_id, claim_owner, recorders").in("id", batch);
+    if (error) throw new Error(`meetings: ${error.message}`);
+    const meetings = (data ?? []) as MeetingRow[];
+    const entryIds = [...new Set(meetings.map((m) => m.entry_id).filter((e): e is string => !!e))];
+    const entries = new Map<string, EntryRow>();
+    if (entryIds.length > 0) {
+      const { data: ed, error: ee } = await supabase.from("entries")
+        .select("id, is_private, owner_id, shared_with").in("id", entryIds);
+      if (ee) throw new Error(`entries: ${ee.message}`);
+      for (const e of (ed ?? []) as EntryRow[]) entries.set(e.id, e);
+    }
+    for (const m of meetings) {
+      let visible: boolean;
+      if (m.entry_id) {
+        const entry = entries.get(m.entry_id);
+        visible = !!entry && canViewEntry(entry, viewerId);
+      } else {
+        visible = Number(m.claim_owner) === viewerId ||
+          (m.recorders ?? []).some((r) => Number(r.telegram_id) === viewerId);
+      }
+      titles.set(m.id, visible ? m.title : null);
+    }
+  }
+  return titles;
 }
 
 export async function handleModelUsageRoutes(
@@ -80,15 +132,7 @@ export async function handleModelUsageRoutes(
     const summary = summarizeUsage(rows.filter((r) => inPeriod(r.created_at, period)));
     // Названия всех встреч периода: веб фильтрует и считает «самые дорогие» сам (#822).
     const ids = [...new Set(summary.cells.map((c) => c.meeting_id).filter((id): id is string => id !== null))];
-    const titles = new Map<string, string | null>();
-    for (let i = 0; i < ids.length; i += TITLE_BATCH) {
-      const { data, error } = await supabase.from("meetings").select("id, title").in(
-        "id",
-        ids.slice(i, i + TITLE_BATCH),
-      );
-      if (error) throw new Error(`meetings: ${error.message}`);
-      for (const m of (data ?? []) as Array<{ id: string; title: string | null }>) titles.set(m.id, m.title);
-    }
+    const titles = await visibleTitles(supabase, ids, scope.telegramId);
     return json(
       {
         from: period.from,
