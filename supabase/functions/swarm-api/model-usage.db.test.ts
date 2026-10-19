@@ -70,7 +70,8 @@ Deno.test("расход: название личной встречи не ух�
   const db = await connect();
   try {
     await cleanup(db);
-    await db.queryArray`insert into allowed_users (telegram_id, username, added_by) values (${OWNER}, ${TAG}, ${OWNER})`;
+    await db
+      .queryArray`insert into allowed_users (telegram_id, username, added_by) values (${OWNER}, ${TAG}, ${OWNER})`;
     const priv = await meetingWithEntry(db, "Личная: увольнение", true, [SHARED]);
     const open = await meetingWithEntry(db, "Общая встреча", false, []);
 
@@ -86,10 +87,18 @@ Deno.test("расход: название личной встречи не ух�
       assertEquals(body.total_usd, 3, "строки расхода остаются в сумме");
     }
 
-    assertEquals((await usageAs({ isMaster: false, isAdmin: true, groupId: TAG, telegramId: OWNER }))
-      .meeting_titles[priv], "Личная: увольнение", "владелец видит");
-    assertEquals((await usageAs({ isMaster: false, isAdmin: true, groupId: TAG, telegramId: SHARED }))
-      .meeting_titles[priv], "Личная: увольнение", "тот, с кем разделена, видит");
+    assertEquals(
+      (await usageAs({ isMaster: false, isAdmin: true, groupId: TAG, telegramId: OWNER }))
+        .meeting_titles[priv],
+      "Личная: увольнение",
+      "владелец видит",
+    );
+    assertEquals(
+      (await usageAs({ isMaster: false, isAdmin: true, groupId: TAG, telegramId: SHARED }))
+        .meeting_titles[priv],
+      "Личная: увольнение",
+      "тот, с кем разделена, видит",
+    );
   } finally {
     await cleanup(db);
     await db.end();
