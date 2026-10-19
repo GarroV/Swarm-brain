@@ -17,6 +17,9 @@ import { recordedByOf } from "@/lib/agentMeeting";
 import { OnAirBadge } from "@/components/roy/record/OnAirBadge";
 import { TasksFromMeeting } from "@/components/roy/TasksFromMeeting";
 
+// Как часто карточка с идущей записью перечитывает встречу (список опрашивается раз в 10 с).
+const LIVE_REFRESH_MS = 20_000;
+
 type Props = { id: string; onClose: () => void; onChanged?: () => void };
 
 // Вычитка встречи из рекордера. Выглядит как карточка встречи (MeetingDetail): чип источника,
@@ -93,6 +96,17 @@ export function MeetingReview({ id, onClose, onChanged }: Props) {
   }, [id]);
 
   useEffect(() => { load(); }, [load]);
+
+  // Пока идёт запись, карточка сама узнаёт о конце встречи: иначе «В ЭФИРЕ» висит до переоткрытия (#1026).
+  // Тихое обновление — без setLoading, чтобы карточка не мигала заглушкой.
+  const liveNow = meeting?.recording_now === true;
+  useEffect(() => {
+    if (!liveNow) return;
+    const timer = setInterval(() => {
+      fetchAgentMeeting(id).then((m) => setMeeting(m)).catch(() => { /* следующий тик повторит */ });
+    }, LIVE_REFRESH_MS);
+    return () => clearInterval(timer);
+  }, [id, liveNow]);
 
   // Живые пометки «на полях» из виджета рекордера — отдельным запросом (в GET /:id не входят).
   useEffect(() => {
@@ -372,9 +386,10 @@ export function MeetingReview({ id, onClose, onChanged }: Props) {
             </div>
           </div>
         ) : (
-          <h1 className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-1 font-bold text-ink" style={{ fontSize: 24, letterSpacing: "-0.02em", lineHeight: 1.2 }}>
-            <span className="min-w-0">{meeting.title ?? dt("Встреча", "Meeting")}</span>
-            {recordingNow && <OnAirBadge size={12} />}
+          <h1 className="mb-3 font-bold text-ink" style={{ fontSize: 24, letterSpacing: "-0.02em", lineHeight: 1.2 }}>
+            {meeting.title ?? dt("Встреча", "Meeting")}
+            {/* Плашка идёт сразу за последним словом названия, а не отдельной строкой. */}
+            {recordingNow && <span className="ml-2.5 inline-block align-middle" style={{ verticalAlign: "0.2em" }}><OnAirBadge size={12} /></span>}
           </h1>
         )}
 

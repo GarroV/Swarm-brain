@@ -3674,6 +3674,25 @@ export async function deleteMeeting(id: string): Promise<void> {
 
 let mockAgentMeetings: AgentMeeting[] = [
   {
+    // Встреча, которую бот пишет прямо сейчас: плашка «В ЭФИРЕ» и «Идёт запись · N мин» (#1026).
+    id: "am-live",
+    title: "Aggregators Club: September Results",
+    source: "desktop-agent",
+    identity_kind: "calendar",
+    started_at: "2026-06-15T12:00:00+03:00",
+    ended_at: null,
+    status: "awaiting_review",
+    agent_version: "scriba-3091",
+    recorded_seconds: 1320,
+    recording_now: true,
+    has_draft_notes: false,
+    draft_notes_md: null,
+    transcript: null,
+    recorders: [{ telegram_id: 744230399, role: "transcribe", claimed_at: "2026-06-15T11:58:00+03:00" }],
+    entry_id: null,
+    created_at: "2026-06-15T11:58:00+03:00",
+  },
+  {
     id: "am-1",
     title: "Синк по Болгарии",
     source: "desktop-agent",
