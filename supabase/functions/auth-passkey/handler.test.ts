@@ -81,7 +81,10 @@ Deno.test("полный проход через HTTP: сохранение, за
     { ok: true, mode: "create" },
   );
 
-  const s2 = await call(d, { op: "start", telegram_id: 1001, origin: ORIGIN });
+  // Без метки браузера — снова create; get только с here: true.
+  const noMark = await call(d, { op: "start", telegram_id: 1001, origin: ORIGIN });
+  assertEquals(noMark.body.mode, "create");
+  const s2 = await call(d, { op: "start", telegram_id: 1001, origin: ORIGIN, here: true });
   assertEquals(s2.body.mode, "get");
   const asr = await device.assert({ challenge: s2.body.options.challenge, origin: ORIGIN, rpID: "swarm-team.app" });
   assertEquals((await call(d, { op: "finish", telegram_id: 1001, origin: ORIGIN, credential: asr })).body, {

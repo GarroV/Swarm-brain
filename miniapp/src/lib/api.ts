@@ -1736,6 +1736,35 @@ function mockMaps(): MapsData {
   return { on: "2026-10-11", compare: "2026-09-11", countries, units, loaded_at: "2026-10-11T03:10:00Z" };
 }
 
+export interface AggregatorInfo { key: string; title: string; scale: number }
+export interface AggregatorScore { avg: number | null; scale: number; votes: number; pizzerias: number; delta: number | null }
+export interface AggregatorsCountry { cc: string; as_of: string | null; scores: Record<string, AggregatorScore> }
+export interface AggregatorsData {
+  on: string; compare: string | null; aggregators: AggregatorInfo[]; countries: AggregatorsCountry[]; loaded_at: string | null;
+}
+
+/** Оценки агрегаторов доставки по странам: сегодня против «30 дней назад». Шкалы у агрегаторов разные (5/10/100). Источник — Децимус, Swarm только читает. */
+export async function fetchAggregatorRatings(): Promise<AggregatorsData> {
+  if (DEV_MODE) return mockAggregators();
+  return apiFetch<AggregatorsData>("/quality/aggregators");
+}
+
+// Синтетика для DEV_MODE: у каждой страны свой набор агрегаторов (NG и PL — без Wolt/Glovo, PL — вовсе без), шкалы разные.
+function mockAggregators(): AggregatorsData {
+  const aggregators: AggregatorInfo[] = [
+    { key: "glovo", title: "Glovo", scale: 100 }, { key: "wolt", title: "Wolt", scale: 10 }, { key: "yandex_eda", title: "Yandex Eats", scale: 5 },
+  ];
+  const score = (avg: number, scale: number, votes: number, pizzerias: number, delta: number | null): AggregatorScore => ({ avg, scale, votes, pizzerias, delta });
+  const countries: AggregatorsCountry[] = [
+    { cc: "BG", as_of: "2026-10-18", scores: { glovo: score(91, 100, 1820, 6, 1.5), wolt: score(8.9, 10, 940, 5, -0.12) } },
+    { cc: "RS", as_of: "2026-10-18", scores: { wolt: score(9.1, 10, 1210, 2, 0.08), glovo: score(88, 100, 460, 2, -2) } },
+    { cc: "KZ", as_of: "2026-10-18", scores: { yandex_eda: score(4.71, 5, 3100, 2, 0.03), wolt: score(8.4, 10, 220, 1, null) } },
+    { cc: "NG", as_of: "2026-10-18", scores: {} },
+    { cc: "PL", as_of: "2026-10-18", scores: {} },
+  ];
+  return { on: "2026-10-19", compare: "2026-09-19", aggregators, countries, loaded_at: "2026-10-19T03:10:00Z" };
+}
+
 export interface InspectionPrev { id: string; date: string; score_pct: number; grade: string | null }
 export interface Inspection {
   id: string;

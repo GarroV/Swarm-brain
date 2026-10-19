@@ -8,14 +8,19 @@ import { RoyIcon } from "../icons";
 import { ToolbarButton } from "@/components/tasks/table/Menu";
 import { useRecorder } from "./RecorderProvider";
 
-/** Десктоп: кнопка рядом с «Позвать бота». */
+/** Десктоп: иконка рядом с «Позвать бота», подпись — подсказкой при наведении (владелец 19.10.2026). */
 export function RecordMeetingButton() {
   const dt = useDt();
   const { start, busy } = useRecorder();
   return (
-    <ToolbarButton on={busy} disabled={busy} onClick={start}>
-      <RoyIcon name="mic" size={13} />
-      {busy ? dt("Идёт запись", "Recording") : dt("Записать встречу", "Record meeting")}
+    <ToolbarButton
+      icon
+      on={busy}
+      disabled={busy}
+      onClick={start}
+      title={busy ? dt("Идёт запись", "Recording") : dt("Записать встречу", "Record meeting")}
+    >
+      <RoyIcon name="mic" size={14} />
     </ToolbarButton>
   );
 }

@@ -11,7 +11,8 @@ import { SalesWidget, TopTasksWidget } from "./MiscWidgets";
 import { InspectionsWidget } from "./InspectionsWidget";
 import type { TaskDraft } from "@/lib/homeInspections";
 import { BoardWidget } from "./StickerBoard";
-import { RkoWidget, RsWidget, SampleTag, ViolationsWidget } from "./QualityWidgets";
+import { SampleTag, ViolationsWidget } from "./QualityWidgets";
+import { RatingsWidget } from "./RatingsWidget";
 import { CountriesWidget, PizzeriasWidget } from "./TableWidgets";
 import { useCountrySales } from "./useCountrySales";
 import { useQuality, type QualityState } from "./useQuality";
@@ -35,8 +36,7 @@ const META: Record<WidgetId, Meta> = {
   calls: { title: ["Созвоны сегодня", "Today's calls"], hint: ["Встречи дня из календаря и кнопка «подключиться».", "Today's meetings from your calendar with a join button."], ownTitle: true },
   top5: { title: ["Ближайшие задачи", "Next tasks"], hint: ["Пять моих задач с ближайшим сроком.", "My five tasks with the nearest due date."], meta: ["топ-5 по сроку", "top 5 by due date"] },
   board: { title: ["Доска", "Board"], hint: ["Стикеры-задания (OKR, дайджест, вычитка) и объявления админа.", "Task stickers (OKRs, digest, review) and admin notices."], meta: ["что от тебя ждут", "what's expected of you"] },
-  rs: { title: ["Стандарты · РС", "Standards"], hint: ["Балл по волнам, критическая зона, обнуления, пиццерии без оценки.", "Score by wave, critical zone, zeroed and unrated pizzerias."], scoped: true, quality: true },
-  rko: { title: ["Клиентский опыт · РКО", "Customer experience"], hint: ["Балл по неделям, резкие падения, пиццерии ниже порога.", "Weekly score, sharp drops, pizzerias below threshold."], scoped: true, quality: true },
+  ratings: { title: ["Рейтинги", "Ratings"], hint: ["Вкладки РС, РКО, Карты, Агрегаторы: выбранные страны против среднего по IMF.", "Tabs for Standards, CX, Maps and Delivery apps: your countries against the IMF average."], scoped: true },
   pz: { title: ["Пиццерии", "Pizzerias"], hint: ["Все пиццерии подборки: РС, РКО, худшие сверху.", "Every pizzeria in your selection, worst first."], scoped: true, quality: true, meta: ["худшие сверху", "worst first"] },
   countries: { title: ["Мои страны", "My countries"], hint: ["Страны подборки: РС, РКО, Google и Яндекс со стрелкой изменения, продажи; клик раскрывает пиццерии страны.", "Selected countries: standards, CX, Google and Yandex with change arrows, sales; click to expand pizzerias."], scoped: true, quality: true },
   viol: { title: ["Топ-5 нарушений", "Top 5 violations"], hint: ["Самые частые нарушения стандартов в волне.", "Most frequent standards violations this wave."], scoped: true, sample: true },
@@ -95,8 +95,7 @@ export function HomeGrid({ data, onCreateTask, onCreateTaskFrom, editing, onEdit
       case "calls": return <MeetingsToday flat first flatBody="overflow-hidden rounded-[12px] border border-line bg-surface p-1.5" />;
       case "top5": return <TopTasksWidget data={data} onCreate={onCreateTask} />;
       case "board": return <BoardWidget data={data} />;
-      case "rs": return q && <RsWidget q={q} scope={scope} />;
-      case "rko": return q && <RkoWidget q={q} scope={scope} />;
+      case "ratings": return <RatingsWidget codes={codes} q={q} scope={scope} qualityGate={qualityGate(quality, id)} />;
       case "pz": return <PizzeriasWidget scope={scope} />;
       case "countries": return <CountriesWidget scope={mine} sales={sales} narrow={narrow} onNarrow={setNarrow} onMarket={() => setTab("market")} />;
       case "viol": return <ViolationsWidget scope={scope} />;

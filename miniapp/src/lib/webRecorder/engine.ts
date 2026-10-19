@@ -4,6 +4,7 @@
 //  - AudioContext создаётся и будится синхронно в нажатии, ДО await getUserMedia (иначе iOS оставит
 //    его спящим);
 //  - Wake Lock перезапрашивается при возврате на страницу; mute/unmute/ended трека — события.
+import { classifyMicDenial, type MicPermState } from "./micHelp";
 import { ownedRecordings, recordedSeconds } from "./logic";
 import * as store from "./store";
 import { Uploader, fatalCodeOf } from "./uploader";
@@ -46,9 +47,20 @@ function pickMime(): string {
   }
 }
 
-function micErrorCode(e: unknown): RecorderErrorCode {
+async function readMicPermission(): Promise<MicPermState> {
+  try {
+    const st = await navigator.permissions?.query({ name: "microphone" as PermissionName });
+    return st?.state;
+  } catch {
+    return undefined; // Safari < 16 / Firefox без имени «microphone»: остаётся общий отказ.
+  }
+}
+
+async function micErrorCode(e: unknown): Promise<RecorderErrorCode> {
   const name = e instanceof DOMException || e instanceof Error ? e.name : "";
-  if (name === "NotAllowedError" || name === "SecurityError") return "permission-denied";
+  if (name === "NotAllowedError" || name === "SecurityError") {
+    return classifyMicDenial(await readMicPermission(), e instanceof Error ? e.message : "");
+  }
   if (name === "NotFoundError" || name === "OverconstrainedError") return "no-mic";
   return "mic-failed";
 }
@@ -154,7 +166,7 @@ export class WebRecorder {
     try {
       await this.openMic();
     } catch (e) {
-      return this.fail(micErrorCode(e));
+      return this.fail(await micErrorCode(e));
     }
     // Экран закрыли, пока шёл запрос разрешения: микрофон отпускаем, запись не начинаем.
     if (this.disposed) { this.releaseHardware(); return; }
@@ -422,7 +434,7 @@ export class WebRecorder {
         try {
           await this.openMic();
         } catch (e) {
-          this.emit({ error: micErrorCode(e) });
+          this.emit({ error: await micErrorCode(e) });
           return;
         }
         if (this.disposed) { this.releaseHardware(); return; }
