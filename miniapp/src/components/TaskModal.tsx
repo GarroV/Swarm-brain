@@ -171,6 +171,24 @@ export function TaskModal({ task: taskOpened, open, onClose, onSaved, prefill, m
   // клике, и править его приходилось через щель. Запоминаем фактическую высоту перед
   // переключением и стартуем редактор с неё; ручной resize-y остаётся.
   const descReadRef = useRef<HTMLDivElement | null>(null);
+  // Название растёт по высоте под текст: длинный заголовок (часто из импорта) виден целиком,
+  // а не обрезан краем поля (владелец 19.10.2026: «просто обрезать это не вариант»).
+  // Высота подгоняется и при смене текста, и при смене ширины (панель открывается с анимацией,
+  // окно ресайзят) — поэтому следим за самим полем, а не только за значением.
+  const titleRef = useRef<HTMLTextAreaElement | null>(null);
+  const [titleEl, setTitleEl] = useState<HTMLTextAreaElement | null>(null);
+  useEffect(() => {
+    if (!titleEl) return;
+    const fit = () => {
+      titleEl.style.height = "auto";
+      // scrollHeight без рамки, а высота поля — с рамкой (border-box): добавляем её, иначе низ букв срезается.
+      titleEl.style.height = `${titleEl.scrollHeight + titleEl.offsetHeight - titleEl.clientHeight}px`;
+    };
+    fit();
+    const ro = new ResizeObserver(fit);
+    ro.observe(titleEl);
+    return () => ro.disconnect();
+  }, [titleEl, title]);
   const [descHeight, setDescHeight] = useState<number | null>(null);
   const startDescEdit = () => {
     const h = descReadRef.current?.offsetHeight;
@@ -636,12 +654,17 @@ export function TaskModal({ task: taskOpened, open, onClose, onSaved, prefill, m
           <div className="flex flex-col gap-3.5">
             <div data-card-block="title">
               <label htmlFor="modal-title" className="sr-only">{dt("Название", "Title")}</label>
-              <input
+              <textarea
                 id="modal-title"
-                className={`${fieldCls} font-semibold`}
-                style={{ fontSize: 16 }}
+                ref={(el) => { titleRef.current = el; setTitleEl(el); }}
+                rows={1}
+                className={`${fieldCls} resize-none overflow-hidden font-semibold`}
+                style={{ fontSize: 16, lineHeight: 1.35 }}
                 value={title}
-                onChange={(e) => setTitle(e.target.value)}
+                // Название — одна строка смысла: перевод строки из вставки становится пробелом,
+                // Enter строку не рвёт (как у прежнего однострочного поля).
+                onChange={(e) => setTitle(e.target.value.replace(/\s*\n\s*/g, " "))}
+                onKeyDown={(e) => { if (e.key === "Enter") e.preventDefault(); }}
                 placeholder={dt("Название задачи", "Task title")}
                 aria-required
               />
@@ -720,11 +743,11 @@ export function TaskModal({ task: taskOpened, open, onClose, onSaved, prefill, m
                       id="modal-project"
                       title={topProjectName ? `${dt("Проект", "Project")}: ${topProjectName}` : dt("Проект", "Project")}
                       aria-label={topProjectName ? `${dt("Проект", "Project")}: ${topProjectName}` : dt("Проект", "Project")}
-                      className={pillSegmentSelectCls(!!topProjectName)}
+                      className={cn(pillSegmentSelectCls(!!topProjectName), "h-auto max-w-full py-1")}
                     >
                       {/* Подпись считаем САМИ (base-ui Value в этой версии рисует сырое значение/UUID). */}
                       <RoyIcon name="board" size={14} strokeWidth={2} />
-                      {topProjectName && <span className="truncate" style={{ fontSize: 12.5 }}>{topProjectName}</span>}
+                      {topProjectName && <span className="min-w-0 whitespace-normal break-words text-left" style={{ fontSize: 12.5, lineHeight: 1.3 }}>{topProjectName}</span>}
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value={NONE}>{dt("Без проекта", "No project")}</SelectItem>
@@ -738,10 +761,10 @@ export function TaskModal({ task: taskOpened, open, onClose, onSaved, prefill, m
                       <SelectTrigger
                         title={subProjectName ? `${dt("Подпроект", "Subproject")}: ${subProjectName}` : dt("Подпроект", "Subproject")}
                         aria-label={subProjectName ? `${dt("Подпроект", "Subproject")}: ${subProjectName}` : dt("Подпроект", "Subproject")}
-                        className={pillSegmentSelectCls(!!subProjectName)}
+                        className={cn(pillSegmentSelectCls(!!subProjectName), "h-auto max-w-full py-1")}
                       >
                         <RoyIcon name="cright" size={13} strokeWidth={2} />
-                        {subProjectName && <span className="truncate" style={{ fontSize: 12.5 }}>{subProjectName}</span>}
+                        {subProjectName && <span className="min-w-0 whitespace-normal break-words text-left" style={{ fontSize: 12.5, lineHeight: 1.3 }}>{subProjectName}</span>}
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value={NONE}>{dt("Без подпроекта", "No subproject")}</SelectItem>
