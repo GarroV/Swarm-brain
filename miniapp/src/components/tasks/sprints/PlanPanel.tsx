@@ -318,6 +318,10 @@ function PlanRow(
   return (
     <>
       <div
+        // Открывается вся строка, как в списке спринта: клик мимо названия (точка статуса,
+        // отступ, плашки, исполнитель) раньше не делал ничего — владелец 20.10.2026: «при
+        // нажатии ничего не происходит». Кнопки внутри гасят всплытие сами.
+        onClick={() => onOpen(task)}
         draggable={draggable}
         onDragStart={draggable
           ? (e) => {
@@ -326,7 +330,7 @@ function PlanRow(
           }
           : undefined}
         className={cn(
-          "group/row flex items-center gap-2 py-[5px] pr-2 transition-colors hover:bg-surface-2",
+          "group/row flex cursor-pointer items-center gap-2 py-[5px] pr-2 transition-colors hover:bg-surface-2",
           draggable && "cursor-grab active:cursor-grabbing",
         )}
         style={{ paddingLeft: 30 + depth * 16 }}
@@ -339,7 +343,10 @@ function PlanRow(
         />
         <button
           type="button"
-          onClick={() => onOpen(task)}
+          onClick={(e) => {
+            e.stopPropagation();
+            onOpen(task);
+          }}
           className={cn(
             "min-w-0 flex-1 truncate text-left",
             node.closed ? "text-ink-mute line-through" : "text-ink",
@@ -367,7 +374,10 @@ function PlanRow(
           <button
             type="button"
             disabled={busy}
-            onClick={() => onTake?.(task.id)}
+            onClick={(e) => {
+              e.stopPropagation();
+              onTake?.(task.id);
+            }}
             title={dt("Взять в спринт", "Take into the sprint")}
             aria-label={dt("Взять в спринт", "Take into the sprint")}
             className="grid size-6 shrink-0 place-items-center rounded-full text-ink-mute transition-opacity hover:bg-primary/10 hover:text-primary disabled:opacity-40 lg:opacity-0 lg:group-hover/row:opacity-100 lg:focus-visible:opacity-100"
