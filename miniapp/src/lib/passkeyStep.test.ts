@@ -1,5 +1,5 @@
 import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import { failureNotice, deviceName, shouldAutoStart, stepPending } from "./passkeyStep.ts";
+import { deadlineLabel, failureNotice, deviceName, shouldAutoStart, stepPending, stepReminder } from "./passkeyStep.ts";
 import type { Me } from "@/types";
 
 const me = (over: Partial<Me> = {}, step: Partial<NonNullable<Me["second_step"]>> = {}): Me =>
@@ -47,4 +47,26 @@ Deno.test("осечка подтверждения — та же строка-с
 
 Deno.test("осечка первого сохранения — строка-ссылка «Включить вход по Touch ID»", () => {
   assertEquals(failureNotice("create"), "enable_link");
+});
+
+Deno.test("стикер-напоминание: нужен применимый непройденный шаг и дата; иначе его нет", () => {
+  const from = "2026-10-26";
+  assertEquals(stepReminder(me({}, { required_from: from })), { from, required: false });
+  assertEquals(stepReminder(me({}, { required_from: from, required: true })), { from, required: true });
+  assertEquals(stepReminder(me({}, { required_from: null })), null, "даты нет — не показываем");
+  assertEquals(stepReminder(me()), null, "сервер без поля — не показываем");
+  assertEquals(stepReminder(me({}, { required_from: "завтра" })), null);
+  assertEquals(stepReminder(me({}, { required_from: from, done: true })), null, "палец уже привязан");
+  assertEquals(stepReminder(me({}, { required_from: from, applies: false })), null);
+  assertEquals(stepReminder(me({ is_demo: true }, { required_from: from })), null);
+  assertEquals(stepReminder(null), null);
+});
+
+Deno.test("подпись срока: день недели и месяц по языку, пояс браузера сутки не сдвигает", () => {
+  assertEquals(deadlineLabel("2026-10-26", "ru"), "С понедельника, 26 октября");
+  assertEquals(deadlineLabel("2026-10-26", "en"), "From Monday, October 26");
+  assertEquals(deadlineLabel("2026-10-27", "ru"), "Со вторника, 27 октября");
+  assertEquals(deadlineLabel("2026-10-28", "ru"), "Со среды, 28 октября");
+  assertEquals(deadlineLabel("2026-10-25", "ru"), "С воскресенья, 25 октября");
+  assertEquals(deadlineLabel("nope", "ru"), "");
 });

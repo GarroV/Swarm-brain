@@ -352,8 +352,10 @@ export type Me = {
     applies: boolean;
     /** Пройден в этой сессии. */
     done: boolean;
-    /** Включён ли замок обязательности (SECOND_STEP_REQUIRED в swarm-api). */
+    /** Действует ли замок обязательности сейчас (SECOND_STEP_REQUIRED в swarm-api). */
     required: boolean;
+    /** Дата ISO, с которой замок начинает действовать; null/нет поля — даты нет (сервер до 19.10.2026). */
+    required_from?: string | null;
     /** Момент входа (секунды): по нему браузер помнит, что за этот вход уже пробовали. */
     session: number | null;
   };

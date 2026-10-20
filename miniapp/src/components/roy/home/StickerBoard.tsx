@@ -8,18 +8,20 @@ import { StickerCreate } from "./StickerCreate";
 import { fmtDue, PAPER } from "./stickerUi";
 import { ackSticker, archiveSticker, fetchStickers, fetchTask } from "@/lib/api";
 import { recall, remember } from "@/lib/lastSeen";
+import { deadlineLabel, deadlineShort, STEP_DONE_EVENT, STEP_REQUEST_EVENT, stepReminder } from "@/lib/passkeyStep";
 import { isHotDue, myAddressee, orderStickers, stickerProgress } from "@/lib/stickers";
 import { withViewTransition } from "@/lib/viewTransition";
 import { isOverdue } from "@/lib/smartLists";
 import type { BoardSticker } from "@/types";
 
-// Доска стикеров главной. Два живых стикера считаются на месте («Вычитай встречи», «Разбери
-// просрочку»), остальные — настоящие, с сервера (GET /stickers): задание или объявление от админа.
+// Доска стикеров главной. Три живых стикера считаются на месте («Вычитай встречи», «Разбери
+// просрочку», «Привяжите вход по Touch ID» — только тому, у кого второй шаг входа не пройден; закрыть
+// его нельзя, он гаснет сам после привязки), остальные — настоящие, с сервера (GET /stickers): задание или объявление от админа.
 
 const TILT = [-1.5, 1.2, -0.8, 1, -1.2];
 const FACE = "relative flex min-h-[190px] w-[200px] shrink-0 flex-col gap-2 rounded-[3px] p-4 text-left shadow-[0_8px_18px_rgba(0,0,0,.14)] transition-transform hover:-translate-y-0.5 hover:rotate-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ring)]";
 
-type LiveSticker = { key: string; tone: "blue" | "green"; kind: string; title: string; body: string; due: string; hot?: boolean; action: string; onClick: () => void };
+type LiveSticker = { key: string; tone: "blue" | "green" | "pink"; kind: string; title: string; body: string; due: string; hot?: boolean; action: string; onClick: () => void };
 
 function Tape() {
   return <i aria-hidden="true" className="absolute left-1/2 top-[-8px] h-4 w-16 -translate-x-1/2 rotate-[-2deg] bg-white/60" />;
@@ -41,6 +43,14 @@ export function BoardWidget({ data }: { data: DashboardData }) {
   // viewTransitionName, иначе одинаковые имена у двух элементов отменяют переход.
   const [morph, setMorph] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
+  // Палец привязан прямо сейчас: /me ещё старый, но напоминание уже не нужно.
+  const [stepDone, setStepDone] = useState(false);
+  useEffect(() => {
+    const onDone = () => setStepDone(true);
+    window.addEventListener(STEP_DONE_EVENT, onDone);
+    return () => window.removeEventListener(STEP_DONE_EVENT, onDone);
+  }, []);
+  const reminder = stepDone ? null : stepReminder(me);
 
   useEffect(() => {
     let alive = true;
@@ -57,6 +67,15 @@ export function BoardWidget({ data }: { data: DashboardData }) {
   const review = data.reviewCount + data.pendingMeetings;
   const overdue = data.mine.filter((t) => isOverdue(t)).length;
   const live: LiveSticker[] = [
+    ...(reminder ? [{
+      key: "touchid", tone: "pink" as const, kind: dt("Напоминание · вход", "Reminder · sign-in"),
+      title: dt("Привяжите вход по Touch ID", "Set up Touch ID sign-in"),
+      body: reminder.required
+        ? dt("Без него в Swarm не войти. Это займёт полминуты.", "You can't sign in to Swarm without it. It takes half a minute.")
+        : dt(`${deadlineLabel(reminder.from, "ru")}, без него в Swarm не войти. Это займёт полминуты.`, `${deadlineLabel(reminder.from, "en")}, you won't be able to sign in to Swarm without it. It takes half a minute.`),
+      due: deadlineShort(reminder.from, lang), hot: reminder.required, action: dt("Привязать", "Set up"),
+      onClick: () => window.dispatchEvent(new Event(STEP_REQUEST_EVENT)),
+    }] : []),
     ...(review > 0 ? [{ key: "review", tone: "blue" as const, kind: dt("Задание · сейчас", "Task · now"), title: dt("Вычитай встречи", "Review meetings"), body: dt(`${review} в очереди на вычитку.`, `${review} waiting for review.`), due: dt(`${review} в очереди`, `${review} queued`), action: dt("Вычитать", "Review"), onClick: () => setTab("cal") }] : []),
     ...(overdue > 0 ? [{ key: "overdue", tone: "green" as const, kind: dt("Задание · задачи", "Task · tasks"), title: dt("Разбери просрочку", "Clear overdue"), body: dt(`${overdue} задач со сроком в прошлом.`, `${overdue} tasks are past due.`), due: dt("сегодня", "today"), hot: true, action: dt("Открыть", "Open"), onClick: () => openTasks("mine", "all") }] : []),
   ];

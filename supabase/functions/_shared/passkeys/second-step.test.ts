@@ -1,5 +1,11 @@
 import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import { isSecondStepRequired, parseSecondStepAudience, secondStepBlocks, secondStepState } from "./second-step.ts";
+import {
+  isSecondStepRequired,
+  parseSecondStepAudience,
+  secondStepBlocks,
+  secondStepRequiredFrom,
+  secondStepState,
+} from "./second-step.ts";
 import type { SessionClaims } from "../jwt.ts";
 
 const FULL_TTL = 30 * 86400;
@@ -24,6 +30,7 @@ Deno.test("настоящий вход без метки: применим, не
     applies: true,
     done: false,
     required: false,
+    required_from: null,
     session: now,
   });
   assertEquals(secondStepState(login(true), { isDemo: false, required: false, audience: "all" }).done, true);
@@ -84,4 +91,82 @@ Deno.test("аудитория ограничивает применимость;
   assertEquals(secondStepBlocks(outside, "GET", "/tasks"), false);
   const inside = secondStepState(login(false), { ...base, audience: new Set([5]) });
   assertEquals(secondStepBlocks(inside, "GET", "/tasks"), true);
+});
+
+// Замок по дате: с 00:00 по Белграду. 26.10.2026 — зимнее время (CET, UTC+1; переход на него 25.10 в 03:00),
+// значит начало суток — 25.10 в 23:00 UTC.
+const MON_START = Date.parse("2026-10-25T23:00:00Z");
+
+Deno.test("замок по дате: до 00:00 по Белграду выключен, с 00:00 — включён (граница секунда в секунду)", () => {
+  const at = (ms: number) => new Date(ms);
+  assertEquals(isSecondStepRequired("2026-10-26", at(MON_START - 1)), false);
+  assertEquals(isSecondStepRequired("2026-10-26", at(MON_START)), true);
+  assertEquals(isSecondStepRequired("2026-10-26", at(MON_START + 7 * 86400_000)), true);
+});
+
+Deno.test("замок по дате в летнее время: начало суток по Белграду — UTC+2", () => {
+  const start = Date.parse("2026-07-14T22:00:00Z"); // 15.07 00:00 CEST
+  assertEquals(isSecondStepRequired("2026-07-15", new Date(start - 1)), false);
+  assertEquals(isSecondStepRequired("2026-07-15", new Date(start)), true);
+});
+
+Deno.test("формат замка: 1/true — сразу, дата ISO — по дате, пусто и мусор — выключен, битая дата — выключен", () => {
+  const now = new Date(MON_START);
+  assertEquals(isSecondStepRequired("1", now), true);
+  assertEquals(isSecondStepRequired("true", now), true);
+  assertEquals(isSecondStepRequired(" 2026-10-26 ", now), true);
+  for (
+    const bad of [
+      undefined,
+      "",
+      "  ",
+      "0",
+      "false",
+      "yes",
+      "2026-13-01",
+      "2026-02-30",
+      "26.10.2026",
+      "2026-10-26T00:00",
+      "2026-1-26",
+    ]
+  ) {
+    assertEquals(isSecondStepRequired(bad, new Date(MON_START + 400 * 86400_000)), false, String(bad));
+  }
+});
+
+Deno.test("required_from: дата только у формата с датой; остальное — null", () => {
+  assertEquals(secondStepRequiredFrom("2026-10-26"), "2026-10-26");
+  assertEquals(secondStepRequiredFrom(" 2026-10-26 "), "2026-10-26");
+  assertEquals(secondStepRequiredFrom("1"), null);
+  assertEquals(secondStepRequiredFrom("true"), null);
+  assertEquals(secondStepRequiredFrom(undefined), null);
+  assertEquals(secondStepRequiredFrom("2026-02-30"), null);
+});
+
+Deno.test("состояние отдаёт дату начала; required — вычисленное на сейчас", () => {
+  const before = secondStepState(login(false), {
+    isDemo: false,
+    required: isSecondStepRequired("2026-10-26", new Date(MON_START - 1)),
+    requiredFrom: secondStepRequiredFrom("2026-10-26"),
+    audience: "all",
+  });
+  assertEquals(before.required, false);
+  assertEquals(before.required_from, "2026-10-26");
+  assertEquals(secondStepBlocks(before, "GET", "/tasks"), false);
+  const after = secondStepState(login(false), {
+    isDemo: false,
+    required: isSecondStepRequired("2026-10-26", new Date(MON_START)),
+    requiredFrom: secondStepRequiredFrom("2026-10-26"),
+    audience: "all",
+  });
+  assertEquals(after.required, true);
+  assertEquals(secondStepBlocks(after, "GET", "/tasks"), true);
+});
+
+Deno.test("первая привязка под замком: человеку без ключа остаётся открытым /me — через него Pages-функции пускают к окну ключа", () => {
+  // Привязка идёт Pages-функциями /api/auth/passkey/* → auth-passkey по HMAC, мимо swarm-api; единственное,
+  // что они спрашивают у swarm-api под сессией человека, — GET /me (miniapp/functions/_lib/passkey-call.ts).
+  const locked = secondStepState(login(false), { isDemo: false, required: true, audience: "all" });
+  assertEquals(secondStepBlocks(locked, "GET", "/me"), false);
+  assertEquals(secondStepBlocks(locked, "POST", "/auth/revoke-sessions"), false);
 });
