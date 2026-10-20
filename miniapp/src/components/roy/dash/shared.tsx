@@ -10,7 +10,7 @@ import type { Task } from "@/types";
 import { formatDate, isRawId, uiLocale } from "@/lib/displayFormat";
 
 // Общий каркас панелей desktop-главного экрана «Рой». Вынесено из RoyDashboard,
-// чтобы пять панелей (PersonalTasks/SearchHero/Materials/MeetingsApprove/TeamTasks)
+// чтобы панели (PersonalTasks/Materials/MeetingsApprove/TeamTasks)
 // делили один скелет: шапка-кнопка → раскрытие во вкладку/экран, скролл-тело,
 // loading (roy-shim), empty- и failed-состояние. Flat, тонкие границы — без бенто-визуала.
 

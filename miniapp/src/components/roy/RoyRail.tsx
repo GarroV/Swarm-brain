@@ -1,6 +1,6 @@
 "use client";
 import { PILL_GROUP_CLS, pillSegmentCls } from "@/components/ui/PropertyPill";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { cn, displayName } from "@/lib/utils";
 import { fetchConfig, logout } from "@/lib/api";
 import { useConfirm } from "@/components/ui/confirm";
@@ -9,7 +9,7 @@ import { RoyIcon, type RoyIconName } from "./icons";
 import { initials } from "./dash/shared";
 import { useDt, useRoyNav } from "./nav";
 import { badgeLabel } from "@/lib/navBadges";
-import { saveRecent } from "./screens/SearchScreen";
+import { RailSearch } from "./RailSearch";
 import { FeedbackDialog } from "./FeedbackFab";
 import { readTheme, saveTheme, THEME_CHANGE_EVENT, THEME_IDS, type ThemeId } from "@/lib/theme";
 
@@ -169,54 +169,6 @@ export function RoyRail({
         <LogoutButton />
       </div>
     </nav>
-  );
-}
-
-// Поле поиска над разделами (стенд: .search в .nav; решение владельца 2026-09-25 — «наверху,
-// над столбцом вкладок надо добавить поле для поиска»). Enter задаёт вопрос базе — тот же
-// ответ со ссылками на источники, что и на экране поиска; ⌘K / Ctrl+K ставит фокус в поле.
-function RailSearch() {
-  const dt = useDt();
-  const { openAnswer } = useRoyNav();
-  const [q, setQ] = useState("");
-  const input = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
-        e.preventDefault();
-        input.current?.focus();
-        input.current?.select();
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, []);
-
-  const submit = () => {
-    const v = q.trim();
-    if (!v) return;
-    saveRecent(v);
-    openAnswer(v);
-    setQ("");
-    input.current?.blur();
-  };
-
-  return (
-    // В узкой рейке — пиктограмма; фокус (клик или ⌘K) раскрывает поле поверх экрана.
-    <form role="search" className="relative px-2 pt-2.5" onSubmit={(e) => { e.preventDefault(); submit(); }}>
-      <label title={dt("Поиск · ⌘K", "Search · ⌘K")}
-        className="group/rs flex h-[30px] items-center gap-2 rounded-[7px] border border-line-2 bg-surface px-2.5 text-ink-mute transition-colors hover:border-ink-mute/40 focus-within:border-primary max-[1099px]:justify-center max-[1099px]:px-0 max-[1099px]:focus-within:absolute max-[1099px]:focus-within:left-2 max-[1099px]:focus-within:z-50 max-[1099px]:focus-within:w-[260px] max-[1099px]:focus-within:justify-start max-[1099px]:focus-within:px-2.5 max-[1099px]:focus-within:shadow-lg">
-        <RoyIcon name="search" size={13} />
-        <input ref={input} value={q} onChange={(e) => setQ(e.target.value)}
-          onKeyDown={(e) => { if (e.key === "Escape") { setQ(""); e.currentTarget.blur(); } }}
-          placeholder={dt("Поиск", "Search")} aria-label={dt("Спросить базу", "Ask the knowledge base")}
-          className="min-w-0 flex-1 bg-transparent text-ink outline-none placeholder:text-ink-mute max-[1099px]:w-0 max-[1099px]:flex-none max-[1099px]:group-focus-within/rs:w-auto max-[1099px]:group-focus-within/rs:flex-1" style={{ fontSize: 12.5 }} />
-        {!q && (
-          <kbd className="max-[1099px]:hidden rounded-[4px] border border-line-2 border-b-2 px-1 font-mono text-ink-mute" style={{ fontSize: 10 }}>⌘K</kbd>
-        )}
-      </label>
-    </form>
   );
 }
 
