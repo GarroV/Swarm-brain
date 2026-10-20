@@ -198,6 +198,7 @@ export function PlanPanel(p: Props) {
           </label>
           {(people.names.length > 0 || people.hasUnassigned) && (
             <Menu
+              alignRight
               on={!!assignee}
               title={dt("Фильтр по исполнителю", "Filter by assignee")}
               label={assignee
