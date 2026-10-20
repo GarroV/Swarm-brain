@@ -25,18 +25,16 @@ import { blockText } from "./groupingText";
  *  Узкое окно (владелец 07.10.2026: название задачи «должно сокращаться в последнюю очередь»):
  *  ширину считает контейнер состава (`@container/sprint` в SprintsScreen), а не окно — открытая
  *  панель «План» тоже отнимает место. Уступают по очереди:
- *    < 860px — исполнитель сворачивается до аватарки (имя — в подсказке);
+ *    исполнитель — всегда только кружок (фото из Google или инициалы), имя в подсказке
+ *      (владелец 20.10.2026: колонка ~40px, место — названию задачи);
  *    < 720px — рынок прячется (он есть в карточке), сверка — до цветной точки (состояние в подсказке);
  *    < 480px (телефон) — строка в два этажа: название на всю ширину, под ним справа срок
  *      («дд.мм» без полей), сверка, исполнитель и кнопки хвоста — в одну строку им не хватало места.
  *  Срок и хвост с действиями остаются; название получает всё остальное. Столбцов всегда шесть:
  *  спрятанный рынок — нулевой ширины и невидимый, иначе ячейки строки съехали бы по сетке. */
 export const SPRINT_GRID =
-  "grid-cols-[minmax(0,1fr)_64px_56px_128px_168px_64px] @max-[860px]/sprint:grid-cols-[minmax(0,1fr)_64px_56px_128px_44px_56px] @max-[720px]/sprint:grid-cols-[minmax(0,1fr)_60px_0px_40px_44px_48px] @max-[480px]/sprint:grid-cols-[minmax(0,1fr)_40px_0px_40px_44px_96px]";
+  "grid-cols-[minmax(0,1fr)_60px_52px_112px_40px_64px] @max-[860px]/sprint:grid-cols-[minmax(0,1fr)_60px_52px_112px_40px_56px] @max-[720px]/sprint:grid-cols-[minmax(0,1fr)_56px_0px_40px_40px_48px] @max-[480px]/sprint:grid-cols-[minmax(0,1fr)_40px_0px_40px_40px_96px]";
 
-/** Ячейка, которая уходит первой на узком составе — исполнитель по имени. */
-export const NARROW_HIDE_NAME = "@max-[860px]/sprint:hidden";
-export const NARROW_INVISIBLE = "@max-[860px]/sprint:invisible";
 /** Ячейки, которые уходят второй ступенью: рынок целиком, подпись сверки. */
 export const TIGHT_HIDE = "@max-[720px]/sprint:hidden";
 export const TIGHT_INVISIBLE =
@@ -45,9 +43,10 @@ export const TIGHT_INVISIBLE =
  *  Шапка таблицы остаётся одним этажом: её подписи стоят над вторым этажом строк. */
 export const PHONE_TITLE =
   "@max-[480px]/sprint:col-span-6 @max-[480px]/sprint:pt-2";
-/** Исполнитель на узком составе уступает место кнопкам хвоста, пока на строку наведён курсор. */
+/** Кружок исполнителя уступает место кнопкам хвоста, пока на строку наведён курсор: им нужно
+ *  ~94px, а колонка хвоста уже, поэтому они заходят на колонку исполнителя. */
 export const HOVER_YIELD =
-  "lg:@max-[860px]/sprint:group-hover:invisible lg:@max-[860px]/sprint:group-focus-within:invisible";
+  "lg:group-hover:invisible lg:group-focus-within:invisible";
 export const PHONE_TIGHT = "@max-[480px]/sprint:px-0";
 export const PHONE_META =
   "@max-[480px]/sprint:col-start-2 @max-[480px]/sprint:px-0";
@@ -238,8 +237,8 @@ export function SprintRow(
         PHONE_ROW,
       )}
       style={{
-        minHeight: 38,
-        fontSize: 13.5,
+        minHeight: 42,
+        fontSize: 14.5,
       }}
     >
       {drag?.kind === "group" && (
@@ -291,8 +290,9 @@ export function SprintRow(
           title={item.status}
         />
         <span
+          title={item.title}
           className={cn(
-            "min-w-0 truncate",
+            "min-w-0 line-clamp-2 break-words leading-snug",
             item.removed
               ? "text-ink-mute line-through"
               : closed
@@ -445,37 +445,29 @@ export function SprintRow(
           HOVER_YIELD,
         )}
       >
-        {live && (
-          <>
-            {who
-              ? (
-                <span
-                  className="shrink-0"
-                  title={item.assignees.map(displayName).join(", ")}
-                >
-                  <AssigneeChip name={who} />
-                </span>
-              )
-              : null}
-            <span className={cn("min-w-0 truncate", who && NARROW_HIDE_NAME)}>
-              {who
-                ? displayName(who)
-                : <span className="text-ink-mute">—</span>}
-            </span>
-            {item.assignees.length > 1 && (
+        {live && who
+          ? (
+            <>
               <span
-                className={cn(
-                  "shrink-0 font-mono text-ink-mute",
-                  NARROW_HIDE_NAME,
-                )}
-                style={{ fontSize: 11 }}
-                title={item.assignees.join(", ")}
+                className="shrink-0"
+                title={item.assignees.map(displayName).join(", ")}
               >
-                +{item.assignees.length - 1}
+                <AssigneeChip name={who} size={26} />
               </span>
-            )}
-          </>
-        )}
+              {item.assignees.length > 1 && (
+                <span
+                  className="shrink-0 font-mono text-ink-mute"
+                  style={{ fontSize: 11 }}
+                  title={item.assignees.join(", ")}
+                >
+                  +{item.assignees.length - 1}
+                </span>
+              )}
+            </>
+          )
+          : live
+          ? <span className="text-ink-mute">—</span>
+          : null}
       </div>
 
       {
@@ -638,7 +630,7 @@ export function SubtaskLiteRow({ task, inSprint, onOpen }: {
         SPRINT_GRID,
         PHONE_ROW,
       )}
-      style={{ minHeight: 34, fontSize: 13 }}
+      style={{ minHeight: 36, fontSize: 14 }}
     >
       <div
         className={cn("flex min-w-0 items-center gap-2 px-3", PHONE_TITLE)}
@@ -653,8 +645,9 @@ export function SubtaskLiteRow({ task, inSprint, onOpen }: {
           title={task.status}
         />
         <span
+          title={task.title}
           className={cn(
-            "min-w-0 truncate",
+            "min-w-0 line-clamp-2 break-words leading-snug",
             closed ? "text-ink-mute line-through" : "text-ink-soft",
           )}
         >
@@ -685,11 +678,8 @@ export function SubtaskLiteRow({ task, inSprint, onOpen }: {
         {task.country ?? "—"}
       </div>
       <div />
-      <div
-        className="min-w-0 truncate px-2 text-ink-mute"
-        title={who ? displayName(who) : undefined}
-      >
-        {who ? displayName(who) : "—"}
+      <div className="flex min-w-0 items-center px-2 text-ink-mute">
+        {who ? <AssigneeChip name={who} size={24} /> : "—"}
       </div>
       <div />
     </div>

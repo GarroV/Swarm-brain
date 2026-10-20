@@ -57,7 +57,7 @@ import { splitMine } from "@/lib/sprintMine";
 import { SprintReport } from "@/components/tasks/SprintReport";
 import { TaskModal } from "@/components/TaskModal";
 import { RoyIcon } from "@/components/roy/icons";
-import { PILL_BTN } from "./sprints/atoms";
+import { AvatarDirectoryProvider, PILL_BTN } from "./sprints/atoms";
 import { useConfirm } from "@/components/ui/confirm";
 import { buildQuickAddInput } from "@/lib/quickAddTask";
 import { projectLabel } from "@/lib/sprintPlan";
@@ -971,6 +971,7 @@ export function SprintsScreen() {
     : "";
 
   return (
+    <AvatarDirectoryProvider users={users}>
     <div className="flex flex-col h-full min-h-0">
       {
         /* Заголовок раздела с вкладками (стенд): на десктопе шапку оболочки заменяет эта строка,
@@ -1246,7 +1247,7 @@ export function SprintsScreen() {
                 />
               )}
               {planColumn && (
-                <div className="min-h-0 w-[320px] shrink-0 xl:w-[360px]">
+                <div className="min-h-0 w-[340px] shrink-0 xl:w-[400px] min-[1700px]:w-[440px]">
                   {planPanel(() => setPlanOpen(false))}
                 </div>
               )}
@@ -1460,6 +1461,7 @@ export function SprintsScreen() {
       />
       {sprintGroups.dialogs}
     </div>
+    </AvatarDirectoryProvider>
   );
 }
 

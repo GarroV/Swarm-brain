@@ -11,7 +11,6 @@ import { useDt } from "@/components/roy/nav";
 import { fmtDay } from "./format";
 import { PILL_BTN } from "./atoms";
 import {
-  NARROW_INVISIBLE,
   PHONE_TIGHT,
   type RowDnd,
   type RowHandlers,
@@ -544,9 +543,12 @@ export function InitiativeList({
         <span className={cn("overflow-hidden px-2", TIGHT_INVISIBLE)}>
           {dt("Сверка", "Check")}
         </span>
-        <span className={cn("overflow-hidden px-2", NARROW_INVISIBLE)}>
-          {dt("Исполнитель", "Assignee")}
-        </span>
+        {/* Колонка исполнителя — только кружок: подпись в 40px не помещается, имя — в подсказке. */}
+        <span
+          className="overflow-hidden px-2"
+          title={dt("Исполнитель", "Assignee")}
+          aria-label={dt("Исполнитель", "Assignee")}
+        />
         <span />
       </div>
       {view && <DragGhost view={view} />}
