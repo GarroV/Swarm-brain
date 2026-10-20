@@ -40,7 +40,7 @@ import {
 } from "./entries-guard.ts";
 import { canChangeMeetingPrivacy } from "../_shared/entries/meeting-rights.ts";
 import type { SlotRow } from "../_shared/bot-slot.ts";
-import { isMissedBotSlot, toAgentListRow, toListRow } from "./meetings-payload.ts";
+import { isBotRecordingNow, isMissedBotSlot, toAgentListRow, toListRow } from "./meetings-payload.ts";
 import {
   applyListFilters,
   ENTRY_LIGHT_COLUMNS,
@@ -2944,8 +2944,11 @@ async function routeRequest(req: Request): Promise<Response> {
     const enrichedList = await withRecorderNames(shown);
     // Сколько черновиков подходит под фильтр БЕЗ лимита 50 (issue #112) — за вычетом спрятанных.
     const total = count != null ? count - (rows.length - shown.length) : null;
+    // recording_now — «Идёт запись» (#1026): свежесть удара решает сервер, клиент порог не знает.
+    const nowMs = Date.now();
+    const listRows = enrichedList.map((r) => ({ ...toAgentListRow(r), recording_now: isBotRecordingNow(r, nowMs) }));
     return json(
-      await withOneOnOne(enrichedList.map(toAgentListRow), telegram_id),
+      await withOneOnOne(listRows, telegram_id),
       200,
       origin,
       total != null ? { "X-Total-Count": String(total) } : undefined,
@@ -3157,6 +3160,7 @@ async function routeRequest(req: Request): Promise<Response> {
       return json(
         {
           ...withPair,
+          recording_now: isBotRecordingNow(meeting as SlotRow),
           in_base_duplicate: inBaseDuplicate,
         },
         200,

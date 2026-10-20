@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
+import { OnAirBadge } from "@/components/roy/record/OnAirBadge";
 import { cn } from "@/lib/utils";
 import type { AgentMeeting, Entry, Task } from "@/types";
 import { fetchAgentMeetings, fetchConfig, fetchTasks } from "@/lib/api";
@@ -294,6 +295,7 @@ function DraftRow({ m, onOpen }: { m: AgentMeeting; onOpen: () => void }) {
       <div className="flex min-w-0 items-center gap-2.5 px-3">
         <span className="size-[7px] shrink-0 rounded-full bg-status-open" />
         <span className="truncate text-ink">{m.title ?? dt("Запись без названия", "Untitled recording")}</span>
+        {m.recording_now === true && <OnAirBadge size={10} />}
       </div>
       <div className="px-2 text-ink-soft">{fmtDay(m.started_at, dt("ru-RU", "en-GB"))}</div>
       <div className="px-2"><Tag>{localizeSource(sourceLabel(m), dt)}</Tag></div>
