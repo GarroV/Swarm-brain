@@ -99,3 +99,6 @@ supabase/functions/swarm-api/passkey-admin.ts|supabase/functions/swarm-api/passk
 supabase/functions/_shared/passkeys/device-link.ts|supabase/functions/_shared/passkeys/device-link.test.ts
 supabase/functions/swarm-api/passkeys-self.ts|supabase/functions/swarm-api/passkeys-self.test.ts
 supabase/functions/_shared/stalled-meeting-alerts.ts|supabase/functions/_shared/stalled-meeting-alerts.test.ts
+# Правило размещения по сроку (19.10.2026): задача — в спринте своего срока; тексты комментариев из причин.
+supabase/functions/_shared/tasks/sprint-autoplace.ts|supabase/functions/_shared/tasks/sprint-autoplace.test.ts
+supabase/functions/_shared/tasks/sprint-reason-comment.ts|supabase/functions/_shared/tasks/sprint-reason-comment.test.ts

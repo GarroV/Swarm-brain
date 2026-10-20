@@ -14,7 +14,11 @@ import { speakerLabelAt } from "@/lib/transcriptSpeaker";
 import { useConfirm } from "@/components/ui/confirm";
 import { hasSeveralOwners, canDeleteDraft, canHideDraft } from "@/lib/draftOwners";
 import { recordedByOf } from "@/lib/agentMeeting";
+import { OnAirBadge } from "@/components/roy/record/OnAirBadge";
 import { TasksFromMeeting } from "@/components/roy/TasksFromMeeting";
+
+// Как часто карточка с идущей записью перечитывает встречу (список опрашивается раз в 10 с).
+const LIVE_REFRESH_MS = 20_000;
 
 type Props = { id: string; onClose: () => void; onChanged?: () => void };
 
@@ -92,6 +96,17 @@ export function MeetingReview({ id, onClose, onChanged }: Props) {
   }, [id]);
 
   useEffect(() => { load(); }, [load]);
+
+  // Пока идёт запись, карточка сама узнаёт о конце встречи: иначе «В ЭФИРЕ» висит до переоткрытия (#1026).
+  // Тихое обновление — без setLoading, чтобы карточка не мигала заглушкой.
+  const liveNow = meeting?.recording_now === true;
+  useEffect(() => {
+    if (!liveNow) return;
+    const timer = setInterval(() => {
+      fetchAgentMeeting(id).then((m) => setMeeting(m)).catch(() => { /* следующий тик повторит */ });
+    }, LIVE_REFRESH_MS);
+    return () => clearInterval(timer);
+  }, [id, liveNow]);
 
   // Живые пометки «на полях» из виджета рекордера — отдельным запросом (в GET /:id не входят).
   useEffect(() => {
@@ -227,6 +242,8 @@ export function MeetingReview({ id, onClose, onChanged }: Props) {
   const hasTranscript = segments.length > 0;
   // Пустая строка тезисов = НЕ готово (модель вернула пусто). Раньше `!== null` считал "" готовым → голый «—».
   const notesReady = !!meeting.draft_notes_md;
+  const recordingNow = !published && !notesReady && meeting.recording_now === true;
+  const recordedMin = Math.floor((meeting.recorded_seconds ?? 0) / 60);
   const summaryTerminal = meeting.summary_status === "done" || meeting.summary_status === "failed";
   // Транскрипт — инструмент вычитки: по нему сверяют тезисы. Встреча в базе его не показывает —
   // он дублирует тезисы (решение владельца 2026-09-25).
@@ -274,6 +291,13 @@ export function MeetingReview({ id, onClose, onChanged }: Props) {
           <span className="inline-flex items-center gap-1.5"><RoyIcon name="spark" size={13} strokeWidth={1.9} /> {reprocessing ? dt("Обрабатываю…", "Processing…") : dt("Переобработать", "Reprocess")}</span>
         </button>
       )}
+    </div>
+  ) : recordingNow ? (
+    <div className="mb-4 text-sm text-ink-soft">
+      <p className="inline-flex items-center gap-2 font-semibold text-ink">
+        <span className="rec-dot size-2 shrink-0 rounded-full" style={{ background: "var(--pri-high)" }} aria-hidden />
+        {recordedMin > 0 ? dt(`Идёт запись · ${recordedMin} мин`, `Recording · ${recordedMin} min`) : dt("Идёт запись", "Recording")}
+      </p>
     </div>
   ) : (
     <p className="mb-4 text-sm text-ink-soft">{dt("Готовим тезисы…", "Preparing the summary…")}</p>
@@ -339,7 +363,9 @@ export function MeetingReview({ id, onClose, onChanged }: Props) {
           </span>
           {published
             ? <span className="inline-flex items-center gap-1 font-semibold" style={{ fontSize: 12, color: "var(--status-done)" }}><RoyIcon name="check" size={12} strokeWidth={2.2} /> {dt("В базе", "In the base")}</span>
-            : <span className="inline-flex items-center gap-1 font-semibold" style={{ fontSize: 12, color: "var(--status-open)" }}><RoyIcon name="clock" size={12} strokeWidth={1.9} /> {dt("На вычитке", "In review")}</span>}
+            : recordingNow
+              ? <span className="inline-flex items-center gap-1 font-semibold" style={{ fontSize: 12, color: "var(--pri-high)" }}><RoyIcon name="mic" size={12} strokeWidth={1.9} /> {dt("Идёт запись", "Recording")}</span>
+              : <span className="inline-flex items-center gap-1 font-semibold" style={{ fontSize: 12, color: "var(--status-open)" }}><RoyIcon name="clock" size={12} strokeWidth={1.9} /> {dt("На вычитке", "In review")}</span>}
           {meeting.started_at && <span className="text-ink-mute" style={{ fontSize: 12 }}>{fmtDay(meeting.started_at, dt("ru-RU", "en-GB"))}</span>}
           {who && <span className="truncate text-ink-mute" style={{ fontSize: 12 }}>· {dt("записали", "recorded by")}: {who}</span>}
         </div>
@@ -362,6 +388,8 @@ export function MeetingReview({ id, onClose, onChanged }: Props) {
         ) : (
           <h1 className="mb-3 font-bold text-ink" style={{ fontSize: 24, letterSpacing: "-0.02em", lineHeight: 1.2 }}>
             {meeting.title ?? dt("Встреча", "Meeting")}
+            {/* Плашка идёт сразу за последним словом названия, а не отдельной строкой. */}
+            {recordingNow && <span className="ml-2.5 inline-block align-middle" style={{ verticalAlign: "0.2em" }}><OnAirBadge size={12} /></span>}
           </h1>
         )}
 

@@ -107,4 +107,4 @@ export function toAgentListRow<T extends AgentRow>(
 
 // ── Пустой слот бота встреч ───────────────────────────────────────────────────
 // Правило живёт в _shared/bot-slot.ts (его читают и счётчики вычитки, и MCP); здесь — реэкспорт.
-export { isMissedBotSlot } from "../_shared/bot-slot.ts";
+export { isBotRecordingNow, isMissedBotSlot } from "../_shared/bot-slot.ts";
