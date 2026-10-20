@@ -199,14 +199,38 @@ export function Meta({ children, className }: { children: ReactNode; className?:
   );
 }
 
-// ── Avatar (инициалы) ────────────────────────────────────────────────────────
-export function Avatar({ children, size = 32 }: { children: ReactNode; size?: number }) {
+// ── Avatar (картинка или инициалы) ───────────────────────────────────────────
+// src — фото из Google-входа (user_profiles.avatar_url). Битая или заблокированная ссылка не
+// оставляет пустого круга: onError откатывает к инициалам (children). Referer не шлём — хост
+// картинок Google отдаёт 403 части запросов с чужим Referer. Аватарки присутствия (звери-
+// псевдонимы, PresenceStrip) этим компонентом НЕ рисуются.
+// tone — классы фона и цвета инициалов вместо акцентных по умолчанию.
+export function Avatar(
+  { children, size = 32, src, tone }: { children: ReactNode; size?: number; src?: string | null; tone?: string },
+) {
+  const [failedSrc, setFailedSrc] = useState<string | null>(null);
+  const showImg = !!src && failedSrc !== src;
   return (
     <span
-      className="inline-flex items-center justify-center shrink-0 rounded-full bg-accent-soft text-accent-ink font-bold"
+      className={cn(
+        "inline-flex items-center justify-center shrink-0 overflow-hidden rounded-full font-bold",
+        tone ?? "bg-accent-soft text-accent-ink",
+      )}
       style={{ width: size, height: size, fontSize: Math.round(size * 0.37) }}
     >
-      {children}
+      {showImg
+        ? (
+          <img
+            src={src}
+            alt=""
+            referrerPolicy="no-referrer"
+            loading="lazy"
+            draggable={false}
+            onError={() => setFailedSrc(src)}
+            className="size-full object-cover"
+          />
+        )
+        : children}
     </span>
   );
 }

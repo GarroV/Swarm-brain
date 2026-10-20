@@ -277,6 +277,8 @@ export type Person = {
   name: string;
   email: string | null;
   telegram_id: number | null;
+  /** Фото из Google-входа; null — нет фото или нет аккаунта */
+  avatar_url?: string | null;
 };
 
 // Стикеры-задания на главной (GET /stickers). Зеркало ответа supabase/functions/swarm-api/stickers.ts.
@@ -328,6 +330,8 @@ export type User = {
   username: string | null;
   role: string | null;
   markets: string[];
+  /** Фото из Google-входа; null — нет */
+  avatar_url?: string | null;
 };
 
 export type Me = {

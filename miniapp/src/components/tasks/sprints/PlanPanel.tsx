@@ -136,12 +136,12 @@ export function PlanPanel(p: Props) {
     >
       <header className="shrink-0 border-b border-line px-3 pb-2.5 pt-2.5">
         <div className="flex items-center gap-2">
-          <h3 className="font-semibold text-ink" style={{ fontSize: 13.5 }}>
+          <h3 className="font-semibold text-ink" style={{ fontSize: 15 }}>
             {dt("План", "Plan")}
           </h3>
           <span
             className="min-w-0 truncate text-ink-mute"
-            style={{ fontSize: 12 }}
+            style={{ fontSize: 13 }}
           >
             {p.spaceName}
           </span>
@@ -160,7 +160,7 @@ export function PlanPanel(p: Props) {
           <ProgressBar percent={percent} className="flex-1" />
           <span
             className="shrink-0 font-mono text-ink-soft"
-            style={{ fontSize: 11.5 }}
+            style={{ fontSize: 12.5 }}
             title={assignee
               ? dt(
                 `Только задачи: ${
@@ -179,7 +179,7 @@ export function PlanPanel(p: Props) {
           </span>
         </div>
         <div className="mt-2 flex items-center gap-2">
-          <label className="flex h-[30px] min-w-0 flex-1 items-center gap-1.5 rounded-[7px] border border-line bg-background px-2 focus-within:border-accent-line">
+          <label className="flex h-[34px] min-w-0 flex-1 items-center gap-1.5 rounded-[7px] border border-line bg-background px-2 focus-within:border-accent-line">
             <RoyIcon
               name="search"
               size={12}
@@ -193,7 +193,7 @@ export function PlanPanel(p: Props) {
               }}
               placeholder={dt("Поиск по плану", "Search the plan")}
               className="min-w-0 flex-1 bg-transparent text-ink outline-none placeholder:text-ink-mute"
-              style={{ fontSize: 12.5 }}
+              style={{ fontSize: 13.5 }}
             />
           </label>
           {(people.names.length > 0 || people.hasUnassigned) && (
@@ -291,7 +291,7 @@ export function PlanPanel(p: Props) {
                   type="button"
                   onClick={() => toggle(g.project.id)}
                   aria-expanded={!isCollapsed}
-                  className="flex min-w-0 flex-1 items-center gap-2 px-3 py-2 text-left"
+                  className="flex min-w-0 flex-1 items-center gap-2 px-3 py-2.5 text-left"
                 >
                   <RoyIcon
                     name="cright"
@@ -304,7 +304,8 @@ export function PlanPanel(p: Props) {
                   />
                   <span
                     className="min-w-0 truncate font-semibold text-ink"
-                    style={{ fontSize: 12.5 }}
+                    style={{ fontSize: 14.5 }}
+                    title={g.project.name}
                   >
                     {g.project.name}
                   </span>
@@ -313,7 +314,7 @@ export function PlanPanel(p: Props) {
                       "ml-auto shrink-0 font-mono",
                       complete ? "text-status-done" : "text-ink-mute",
                     )}
-                    style={{ fontSize: 11 }}
+                    style={{ fontSize: 12 }}
                   >
                     {g.done}/{g.total}
                   </span>
@@ -378,7 +379,7 @@ export function PlanPanel(p: Props) {
                   {g.tasks.length === 0 && (
                     <p
                       className="px-3 pb-1.5 pl-[30px] text-ink-mute"
-                      style={{ fontSize: 12 }}
+                      style={{ fontSize: 13 }}
                     >
                       {hideDone && g.total > 0
                         ? dt("Всё сделано", "All done")
@@ -440,7 +441,7 @@ function PlanRow(
           }
           : undefined}
         className={cn(
-          "group/row flex cursor-pointer items-center gap-2 py-[5px] pr-2 transition-colors hover:bg-surface-2",
+          "group/row flex cursor-pointer items-center gap-2 py-[7px] pr-2 transition-colors hover:bg-surface-2",
           draggable && "cursor-grab active:cursor-grabbing",
         )}
         style={{ paddingLeft: 30 + depth * 16 }}
@@ -458,10 +459,10 @@ function PlanRow(
             onOpen(task);
           }}
           className={cn(
-            "min-w-0 flex-1 truncate text-left",
+            "min-w-0 flex-1 line-clamp-2 break-words text-left leading-snug",
             node.closed ? "text-ink-mute line-through" : "text-ink",
           )}
-          style={{ fontSize: 12.5 }}
+          style={{ fontSize: 14 }}
           title={task.title}
         >
           {task.title}
@@ -469,17 +470,24 @@ function PlanRow(
         {node.inSprint && (
           <span
             className="shrink-0 rounded-full bg-primary/10 px-1.5 py-px font-medium text-primary"
-            style={{ fontSize: 10.5 }}
+            style={{ fontSize: 11.5 }}
           >
             {dt("в спринте", "in sprint")}
           </span>
         )}
         {task.status === "cancelled" && (
-          <span className="shrink-0 text-ink-mute" style={{ fontSize: 10.5 }}>
+          <span className="shrink-0 text-ink-mute" style={{ fontSize: 11.5 }}>
             {dt("отменена", "cancelled")}
           </span>
         )}
-        <AssigneeChip name={assignee} />
+        <AssigneeChip name={assignee} size={24} />
+        {
+          /* Место под кнопку «взять» есть у каждой строки: иначе кружки исполнителей у задач
+            «в спринте» и у остальных стоят в разных колонках. */
+        }
+        {onTake && !takeable && (
+          <span aria-hidden="true" className="size-6 shrink-0" />
+        )}
         {takeable && (
           <button
             type="button"

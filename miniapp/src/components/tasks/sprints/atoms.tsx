@@ -5,6 +5,10 @@ import { RoyIcon } from "@/components/roy/icons";
 import { useDt } from "@/components/roy/nav";
 import { fmtDayShort, isOverdue } from "./format";
 import { avatarTone, initials } from "@/lib/people";
+import { createContext, useContext, useMemo } from "react";
+import type { ReactNode } from "react";
+import { Avatar } from "@/components/roy/ui";
+import type { User } from "@/types";
 
 // Мелкие детали доски инициатив: полоска прогресса, отметка сверки, «×N» переноса,
 // исполнитель, срок. Вынесены отдельно, потому что одни и те же метки стоят в четырёх
@@ -152,34 +156,63 @@ export function CarryReasonPrompt({ onClick }: { onClick: () => void }) {
   );
 }
 
+const AvatarDirectory = createContext<Map<string, string>>(new Map());
+
+const nameKey = (name: string) => name.trim().toLowerCase();
+
+/** Справочник «имя → фото из Google» для кружков исполнителей внутри экрана: имя в задаче —
+ *  строка, а фото лежит у человека, и тащить его пропом через каждую строку списка незачем. */
+export function AvatarDirectoryProvider({ users, children }: {
+  users: ReadonlyArray<Pick<User, "name" | "avatar_url">>;
+  children: ReactNode;
+}) {
+  const map = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const u of users) {
+      if (u.avatar_url) m.set(nameKey(u.name), u.avatar_url);
+    }
+    return m;
+  }, [users]);
+  return (
+    <AvatarDirectory.Provider value={map}>{children}</AvatarDirectory.Provider>
+  );
+}
+
 /**
  * Исполнитель кружком с инициалами. Полное имя в каждой строке — главный источник её длины
  * (внутри инициативы человек чаще всего один и тот же, и имя перестаёт нести информацию,
  * оставаясь шумом на 120 px). Само имя никуда не девается: оно в подсказке.
  *
+ * Если у человека есть фото из Google — кружок показывает его, при ошибке загрузки — инициалы.
+ *
  * Цвет кружка считается от имени, а не назначается: человек узнаёт свои задачи по пятну
  * раньше, чем читает буквы, и одинаковый серый у всех эту подсказку убивает.
  */
-export function AssigneeChip({ name }: { name: string | null }) {
+export function AssigneeChip(
+  { name, size = 22 }: { name: string | null; size?: number },
+) {
   const dt = useDt();
+  const photo = useContext(AvatarDirectory);
   if (!name) {
     return (
       <span
         title={dt("без исполнителя", "unassigned")}
-        className="grid size-5 shrink-0 place-items-center rounded-full border border-dashed border-line text-[9px] text-ink-soft/60"
+        className="grid shrink-0 place-items-center rounded-full border border-dashed border-line text-ink-soft/60"
+        style={{ width: size, height: size, fontSize: Math.round(size * 0.42) }}
       >
         ?
       </span>
     );
   }
   return (
-    <span
-      title={name}
-      className={`grid size-5 shrink-0 place-items-center rounded-full text-[9px] font-semibold ${
-        avatarTone(name)
-      }`}
-    >
-      {initials(name)}
+    <span title={name} className="inline-flex shrink-0">
+      <Avatar
+        size={size}
+        src={photo.get(nameKey(name))}
+        tone={avatarTone(name)}
+      >
+        {initials(name)}
+      </Avatar>
     </span>
   );
 }
