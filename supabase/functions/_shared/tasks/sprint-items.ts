@@ -14,6 +14,8 @@
 // deno-lint-ignore-file no-import-prefix
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { onlyLive } from "./live.ts";
+import { buildReasonComment, type ReasonField, type ReasonLang } from "./sprint-reason-comment.ts";
+import { postReasonComment } from "./sprint-reason-post.ts";
 import {
   loadProjectVisibility,
   type ProjectVisibility,
@@ -417,6 +419,10 @@ export class ItemLockedError extends Error {}
  * Принятый спринт не правится: его строки — снимок, по которому уже прочитан отчёт. Отказ
  * явный, а не тихое «ничего не обновилось»: человек должен понять, почему его отметка не
  * сохранилась.
+ *
+ * Причина переноса и заметка сверки, вписанные человеком, становятся комментарием в задаче от
+ * его имени (решение владельца 19.10.2026): тот же путь, что у обычного комментария, поэтому и
+ * уведомления стандартные. `lang` — язык метки комментария (язык автора; по умолчанию русский).
  */
 export async function updateItem(
   cycleId: string,
@@ -425,9 +431,10 @@ export async function updateItem(
   patch: ItemPatch,
   actor: string | null,
   viewerId: number | undefined,
+  lang: ReasonLang = "ru",
 ): Promise<SprintItem | null> {
   const { data: cycle } = await supabase.from("sprint_cycles")
-    .select("id, status").eq("id", cycleId).eq("group_id", groupId)
+    .select("id, name, status").eq("id", cycleId).eq("group_id", groupId)
     .maybeSingle();
   if (!cycle) return null;
   if ((cycle as { status: string }).status === "accepted") {
@@ -435,6 +442,14 @@ export async function updateItem(
   }
   // Невидимая задача — как несуществующая: отметку на ней не поставить и не снять.
   if (!(await itemTaskVisible(taskId, groupId, viewerId))) return null;
+
+  // Что стояло до правки: комментарий нужен только при изменении текста.
+  const { data: prevRow } = await supabase.from("sprint_items")
+    .select("check_status, check_note, carry_reason").eq("cycle_id", cycleId).eq("task_id", taskId)
+    .is("withdrawn_at", null).maybeSingle();
+  const prev = (prevRow ?? null) as
+    | { check_status: string | null; check_note: string | null; carry_reason: string | null }
+    | null;
 
   const now = new Date().toISOString();
   const fields: Record<string, unknown> = {};
@@ -448,6 +463,8 @@ export async function updateItem(
     fields.to_carry = patch.to_carry;
     fields.carry_at = patch.to_carry ? now : null;
     fields.carry_by = patch.to_carry ? actor : null;
+    // Любое действие человека над отметкой делает её человеческой: автоматика такую не снимет.
+    fields.carry_auto = false;
     // Пометку сняли — причина теряет смысл и не должна всплыть в следующем спринте.
     if (!patch.to_carry) fields.carry_reason = null;
   }
@@ -461,6 +478,23 @@ export async function updateItem(
     .is("withdrawn_at", null)
     .select("id").maybeSingle();
   if (!data) return null;
+
+  if (viewerId !== undefined) {
+    const written: Array<[ReasonField, string | null | undefined, string | null | undefined]> = [];
+    if ("check_note" in patch) written.push(["check_note", prev?.check_note, patch.check_note]);
+    if ("carry_reason" in patch && patch.to_carry !== false) {
+      written.push(["carry_reason", prev?.carry_reason, patch.carry_reason]);
+    }
+    const checkStatus = "check_status" in patch ? patch.check_status ?? null : prev?.check_status ?? null;
+    for (const [field, before, after] of written) {
+      const text = buildReasonComment(
+        { field, before: before ?? null, after: after ?? null, checkStatus },
+        (cycle as { name: string }).name,
+        lang,
+      );
+      if (text) await postReasonComment(taskId, viewerId, text);
+    }
+  }
 
   const items = await listItems(cycleId, groupId, { viewerId });
   return items.find((i) => i.task_id === taskId) ?? null;
