@@ -105,7 +105,16 @@ export function PlanPanel(p: Props) {
         assignee,
         users: p.users,
       }),
-    [p.tasks, p.projects, p.space, p.inSprint, query, hideDone, assignee, p.users],
+    [
+      p.tasks,
+      p.projects,
+      p.space,
+      p.inSprint,
+      query,
+      hideDone,
+      assignee,
+      p.users,
+    ],
   );
   const percent = plan.total > 0
     ? Math.round((plan.done / plan.total) * 100)
