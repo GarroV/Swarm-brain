@@ -157,6 +157,7 @@ import { handleAutojoinRoutes, makeAutojoinStore, makeCalendarCheck } from "./au
 import { handleTaskLabelRoutes } from "./task-labels.ts";
 import { handlePublicShortLink, handleShortLinkRoutes, isPublicShortLinkPath } from "./short-links.ts";
 import { handleStickerRoutes } from "./stickers.ts";
+import { handleQuickSearchRoutes } from "./quick-search.ts";
 import { handleTaskCommentRoutes } from "./task-comments.ts";
 import { handleTaskFileRoutes } from "./task-files.ts";
 import { FILES_BUCKET, FILES_UNAVAILABLE, filesStorage, signedFilesGetUrl } from "../_shared/swarm-files-storage.ts";
@@ -2340,6 +2341,15 @@ async function routeRequest(req: Request): Promise<Response> {
     if (error) return serverError(origin, "entries create", error);
     return json(entry, 201, origin);
   }
+
+  // Подсказки поиска слева (названия задач, проектов, встреч, заметок) — quick-search.ts.
+  // Стоит ДО /search: тот путь — точное совпадение, но так порядок очевиден.
+  const quickSearchResp = await handleQuickSearchRoutes(
+    { supabase, telegramId: telegram_id, groupId, origin },
+    req,
+    routePath,
+  );
+  if (quickSearchResp) return quickSearchResp;
 
   // ── GET /search ───────────────────────────────────────────────────────────────
   if (req.method === "GET" && routePath === "/search") {

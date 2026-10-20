@@ -90,6 +90,9 @@ supabase/functions/auth-passkey/handler.ts|supabase/functions/auth-passkey/handl
 supabase/functions/swarm-api/passkey-admin.ts|supabase/functions/swarm-api/passkey-admin.test.ts
 supabase/functions/_shared/passkeys/device-link.ts|supabase/functions/_shared/passkeys/device-link.test.ts
 supabase/functions/swarm-api/passkeys-self.ts|supabase/functions/swarm-api/passkeys-self.test.ts
+# Подсказки поиска слева: ошибка в правиле видимости не падает — в выпадающем списке молча
+# появляется название чужой приватной записи или задачи закрытого проекта.
+supabase/functions/swarm-api/quick-search.ts|supabase/functions/swarm-api/quick-search.db.test.ts
 # Правило размещения по сроку (19.10.2026): задача — в спринте своего срока; тексты комментариев из причин.
 supabase/functions/_shared/tasks/sprint-autoplace.ts|supabase/functions/_shared/tasks/sprint-autoplace.test.ts
 supabase/functions/_shared/tasks/sprint-reason-comment.ts|supabase/functions/_shared/tasks/sprint-reason-comment.test.ts
