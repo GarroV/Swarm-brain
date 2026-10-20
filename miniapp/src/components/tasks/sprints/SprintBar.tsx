@@ -178,34 +178,36 @@ export function SprintBar(p: SprintBarProps) {
       )}
       {d && (
         <span
-          className="mx-1 whitespace-nowrap font-mono text-ink-soft"
-          style={{ fontSize: 12 }}
-          title={d.status === "active" && left >= 0
-            ? dt(
-              `осталось ${left} дн.`,
-              left === 1 ? "1 day left" : `${left} days left`,
-            )
-            : undefined}
+          className="mx-1 whitespace-nowrap text-ink-soft"
+          style={{ fontSize: 12.5 }}
+          title={`${fmtRange(d.start_date, d.end_date)}${
+            d.status === "active" && left >= 0
+              ? ` · ${
+                dt(
+                  `осталось ${left} дн.`,
+                  left === 1 ? "1 day left" : `${left} days left`,
+                )
+              }`
+              : ""
+          }`}
         >
-          {fmtRange(d.start_date, d.end_date)}
-          {d.check_date && !accepted && (
-            <span className="text-ink-mute">
-              · {dt("сверка", "check")} {fmtDay(d.check_date)}
-            </span>
-          )}
           {
-            /* Сколько осталось — в подсказке: полоса одна строка, а в строку это не влезало.
-              Просрочка — вслух: это сигнал, а не справка. */
+            /* Даты периода уже в выборе спринта и в подсказке — в полосе только то, чего там нет.
+              Один шрифт с соседями: моноширинный здесь выбивался (владелец 20.10.2026). */
           }
+          {d.check_date && !accepted && (
+            <span>{dt("сверка", "check")} {fmtDay(d.check_date)}</span>
+          )}
+          {/* Просрочка — вслух: это сигнал, а не справка. */}
           {d.status === "active" && left < 0 && (
             <span className="text-pri-high">
-              {" · "}
+              {d.check_date && !accepted ? " · " : ""}
               {dt(`просрочен на ${-left} дн.`, `${-left} day(s) overdue`)}
             </span>
           )}
           {accepted && d.accepted_at && (
             <span className="text-ink-mute">
-              · {dt("принят", "accepted")} {fmtDay(d.accepted_at)}
+              {dt("принят", "accepted")} {fmtDay(d.accepted_at)}
             </span>
           )}
         </span>
@@ -311,9 +313,7 @@ export function SprintBar(p: SprintBarProps) {
               )}
               style={{ fontSize: 12.5 }}
             >
-              {over
-                ? dt("Спринт закончился — принять", "Sprint is over — accept")
-                : dt("Принять спринт", "Accept sprint")}
+              {dt("Принять спринт", "Accept sprint")}
             </button>
           )}
           {accepted && (
