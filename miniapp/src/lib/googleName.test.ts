@@ -50,3 +50,36 @@ Deno.test("зеркало hasCalendarScope совпадает с каноном"
     assertEquals(mirror.hasCalendarScope(g), canonScopes.hasCalendarScope(g), `разъезд на ${JSON.stringify(g)}`);
   }
 });
+
+Deno.test("зеркало normalizeAvatarUrl совпадает с каноном", () => {
+  const inputs = [
+    undefined, null, "", "   ",
+    "https://lh3.googleusercontent.com/a/ACg8ocK=s96-c",
+    "  https://lh3.googleusercontent.com/a/x  ",
+    "https://lh3.googleusercontent.com/a/\u0430",
+    "http://lh3.googleusercontent.com/a.png",
+    "https://evil.example.com/a.png",
+    "https://googleusercontent.com.evil.com/a.png",
+    "https://user:pw@lh3.googleusercontent.com/a.png",
+    "https://lh3.googleusercontent.com:8443/a.png",
+    "javascript:alert(1)",
+    "not a url",
+    `https://lh3.googleusercontent.com/${"a".repeat(500)}`,
+  ];
+  for (const u of inputs) {
+    assertEquals(mirror.normalizeAvatarUrl(u), canon.normalizeAvatarUrl(u), `разъезд normalizeAvatarUrl на ${JSON.stringify(u)}`);
+  }
+});
+
+Deno.test("зеркало avatarSigPayload совпадает с каноном по подписи", () => {
+  const pics = [undefined, null, "", "https://lh3.googleusercontent.com/a/x", "https://evil.example.com/a.png"];
+  for (const email of ["v.garro@dodobrands.io", "a@b.io"]) {
+    for (const pic of pics) {
+      assertEquals(
+        mirror.avatarSigPayload(email, pic),
+        canon.avatarSigPayload(email, pic),
+        `разъезд подписи аватарки на ${email} / ${JSON.stringify(pic)}`,
+      );
+    }
+  }
+});

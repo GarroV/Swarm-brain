@@ -929,7 +929,7 @@ async function routeRequest(req: Request): Promise<Response> {
     const ids = validUsers.map((u) => u.telegram_id);
     const { data: profiles } = await supabase
       .from("user_profiles")
-      .select("telegram_id, first_name, last_name, role, markets")
+      .select("telegram_id, first_name, last_name, role, markets, avatar_url")
       .in("telegram_id", ids);
 
     const profileMap = Object.fromEntries(
@@ -940,6 +940,7 @@ async function routeRequest(req: Request): Promise<Response> {
           last_name?: string;
           role?: string;
           markets?: string[];
+          avatar_url?: string | null;
         }> ?? []
       ).map((p) => [p.telegram_id, p]),
     );
@@ -956,6 +957,7 @@ async function routeRequest(req: Request): Promise<Response> {
         username: u.username ?? null,
         role: p?.role ?? null,
         markets: p?.markets ?? [],
+        avatar_url: p?.avatar_url ?? null,
       };
     });
 

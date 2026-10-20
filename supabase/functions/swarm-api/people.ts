@@ -28,6 +28,8 @@ export type PersonView = {
   email: string | null;
   /** null — человек без входа в Swarm */
   telegram_id: number | null;
+  /** Фото из Google-входа (user_profiles.avatar_url); null — нет аккаунта или фото */
+  avatar_url: string | null;
 };
 
 type SortablePerson = PersonView & { lastMetAt: string | null };
@@ -42,9 +44,27 @@ type PersonRow = {
 
 const PERSON_SELECT = "id, display_name, email, last_met_at, account:allowed_users(telegram_id)";
 
+async function loadAvatars(
+  supabase: SupabaseClient,
+  rawIds: ReadonlyArray<number | null | undefined>,
+): Promise<Map<number, string>> {
+  const ids = [...new Set(rawIds.filter((id): id is number => typeof id === "number"))];
+  const out = new Map<number, string>();
+  if (ids.length === 0) return out;
+  const { data, error } = await supabase.from("user_profiles").select("telegram_id, avatar_url").in("telegram_id", ids);
+  // Фото — украшение: без него список людей остаётся рабочим, поэтому ошибка не валит ответ.
+  if (error) console.error("[people avatars]", error.message);
+  for (const r of (data ?? []) as Array<{ telegram_id: number; avatar_url: string | null }>) {
+    if (r.avatar_url) out.set(r.telegram_id, r.avatar_url);
+  }
+  return out;
+}
+
 // Имя аккаунта берётся из профиля — оно меняется, а display_name записан один раз при заведении.
 async function toViews(supabase: SupabaseClient, rows: PersonRow[]): Promise<SortablePerson[]> {
-  const names = await resolvePersonNames(supabase, rows.map((r) => r.account?.telegram_id));
+  const tgIds = rows.map((r) => r.account?.telegram_id);
+  const names = await resolvePersonNames(supabase, tgIds);
+  const avatars = await loadAvatars(supabase, tgIds);
   return rows.map((r) => {
     const tg = r.account?.telegram_id ?? null;
     return {
@@ -52,6 +72,7 @@ async function toViews(supabase: SupabaseClient, rows: PersonRow[]): Promise<Sor
       name: (tg != null ? names.get(tg) : null) ?? r.display_name,
       email: r.email,
       telegram_id: tg,
+      avatar_url: tg != null ? (avatars.get(tg) ?? null) : null,
       lastMetAt: r.last_met_at,
     };
   });
