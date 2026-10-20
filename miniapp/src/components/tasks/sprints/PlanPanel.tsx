@@ -6,9 +6,16 @@
 // (на телефоне перетаскивания нет — только кнопка).
 //
 // Что входит в план и как считается — lib/sprintPlan.ts под тестами; здесь только вид.
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { Project, Task, User } from "@/types";
-import { buildPlan, canTake, type PlanTask } from "@/lib/sprintPlan";
+import {
+  buildPlan,
+  canTake,
+  PLAN_UNASSIGNED,
+  planPeople,
+  type PlanTask,
+} from "@/lib/sprintPlan";
+import { Menu, ToolbarButton } from "@/components/tasks/table/Menu";
 import { RoyIcon } from "@/components/roy/icons";
 import { useDt } from "@/components/roy/nav";
 import { cn } from "@/lib/utils";
@@ -17,6 +24,26 @@ import { useStoredFlag } from "./useStoredFlag";
 
 /** Тип данных перетаскивания «задача плана» — по нему список спринта узнаёт свой бросок. */
 export const PLAN_DRAG_MIME = "application/x-swarm-plan-task";
+
+const ASSIGNEE_KEY = "swarm.sprints.planAssignee";
+
+/** Выбранный в фильтре человек помнится между заходами (хранилища нет — живёт до перезагрузки). */
+function useStoredAssignee(): [string | null, (v: string | null) => void] {
+  const [value, setValue] = useState<string | null>(null);
+  useEffect(() => {
+    try {
+      setValue(localStorage.getItem(ASSIGNEE_KEY));
+    } catch { /* приватное окно: без запоминания */ }
+  }, []);
+  const set = (v: string | null) => {
+    setValue(v);
+    try {
+      if (v === null) localStorage.removeItem(ASSIGNEE_KEY);
+      else localStorage.setItem(ASSIGNEE_KEY, v);
+    } catch { /* не запомнили — не беда */ }
+  };
+  return [value, set];
+}
 
 const STATUS_TONE: Record<string, string> = {
   done: "bg-status-done",
@@ -54,19 +81,36 @@ export function PlanPanel(p: Props) {
     "swarm.sprints.planHideDone",
     false,
   );
+  const [savedAssignee, setAssignee] = useStoredAssignee();
+  const people = useMemo(
+    () => planPeople(p.tasks, p.projects, p.space, p.users),
+    [p.tasks, p.projects, p.space, p.users],
+  );
+  // Сохранённый человек мог уйти из плана (или сменили пространство) — тогда фильтра нет,
+  // а не пустой список без объяснения.
+  const assignee = savedAssignee === PLAN_UNASSIGNED
+    ? (people.hasUnassigned ? PLAN_UNASSIGNED : undefined)
+    : (savedAssignee && people.names.includes(savedAssignee)
+      ? savedAssignee
+      : undefined);
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
   // Группа с задачами удаляется вторым нажатием: первое только взводит. Пустая — сразу.
   const [arming, setArming] = useState<string | null>(null);
 
   const plan = useMemo(
     () =>
-      buildPlan(p.tasks, p.projects, p.space, p.inSprint, { query, hideDone }),
-    [p.tasks, p.projects, p.space, p.inSprint, query, hideDone],
+      buildPlan(p.tasks, p.projects, p.space, p.inSprint, {
+        query,
+        hideDone,
+        assignee,
+        users: p.users,
+      }),
+    [p.tasks, p.projects, p.space, p.inSprint, query, hideDone, assignee, p.users],
   );
   const percent = plan.total > 0
     ? Math.round((plan.done / plan.total) * 100)
     : 0;
-  const searching = query.trim().length > 0;
+  const searching = query.trim().length > 0 || !!assignee;
 
   const toggle = (id: string) =>
     setCollapsed((prev) => {
@@ -108,6 +152,16 @@ export function PlanPanel(p: Props) {
           <span
             className="shrink-0 font-mono text-ink-soft"
             style={{ fontSize: 11.5 }}
+            title={assignee
+              ? dt(
+                `Только задачи: ${
+                  assignee === PLAN_UNASSIGNED ? "без исполнителя" : assignee
+                }`,
+                `Only tasks of: ${
+                  assignee === PLAN_UNASSIGNED ? "unassigned" : assignee
+                }`,
+              )
+              : undefined}
           >
             {dt(
               `${plan.done} из ${plan.total}`,
@@ -116,7 +170,7 @@ export function PlanPanel(p: Props) {
           </span>
         </div>
         <div className="mt-2 flex items-center gap-2">
-          <label className="flex h-[28px] min-w-0 flex-1 items-center gap-1.5 rounded-[7px] border border-line bg-background px-2 focus-within:border-accent-line">
+          <label className="flex h-[30px] min-w-0 flex-1 items-center gap-1.5 rounded-[7px] border border-line bg-background px-2 focus-within:border-accent-line">
             <RoyIcon
               name="search"
               size={12}
@@ -133,18 +187,64 @@ export function PlanPanel(p: Props) {
               style={{ fontSize: 12.5 }}
             />
           </label>
-          <label
-            className="flex shrink-0 cursor-pointer select-none items-center gap-1.5 text-ink-soft"
-            style={{ fontSize: 12 }}
-          >
-            <input
-              type="checkbox"
-              checked={hideDone}
-              onChange={(e) => setHideDone(e.target.checked)}
-              className="accent-[var(--primary)]"
+          {(people.names.length > 0 || people.hasUnassigned) && (
+            <Menu
+              on={!!assignee}
+              title={dt("Фильтр по исполнителю", "Filter by assignee")}
+              label={assignee
+                ? (
+                  <span className="max-w-[96px] truncate">
+                    {assignee === PLAN_UNASSIGNED
+                      ? dt("Без исполнителя", "Unassigned")
+                      : assignee}
+                  </span>
+                )
+                : dt("Все люди", "Everyone")}
+              items={[
+                {
+                  key: "all",
+                  label: dt("Все люди", "Everyone"),
+                  on: !assignee,
+                  action: true,
+                  onPick: () => setAssignee(null),
+                },
+                ...people.names.map((n) => ({
+                  key: n,
+                  label: (
+                    <span className="flex items-center gap-2">
+                      <AssigneeChip name={n} />
+                      {n}
+                    </span>
+                  ),
+                  on: assignee === n,
+                  action: true,
+                  onPick: () => setAssignee(n),
+                })),
+                ...(people.hasUnassigned
+                  ? [{
+                    key: PLAN_UNASSIGNED,
+                    label: (
+                      <span className="flex items-center gap-2">
+                        <AssigneeChip name={null} />
+                        {dt("Без исполнителя", "Unassigned")}
+                      </span>
+                    ),
+                    on: assignee === PLAN_UNASSIGNED,
+                    action: true,
+                    onPick: () => setAssignee(PLAN_UNASSIGNED),
+                  }]
+                  : []),
+              ]}
             />
-            {dt("Скрыть готовые", "Hide done")}
-          </label>
+          )}
+          <ToolbarButton
+            icon
+            on={hideDone}
+            onClick={() => setHideDone(!hideDone)}
+            title={dt("Скрыть готовые", "Hide done")}
+          >
+            <RoyIcon name="check" size={13} strokeWidth={2.2} />
+          </ToolbarButton>
         </div>
         {p.onTake && p.canDrag && plan.available > 0 && (
           <p className="mt-2 text-ink-mute" style={{ fontSize: 11.5 }}>

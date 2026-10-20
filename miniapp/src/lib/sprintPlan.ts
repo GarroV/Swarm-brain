@@ -3,7 +3,7 @@
 // группы задач пространства → их задачи → подзадачи, сделанные и несделанные вместе.
 // Это источник набора спринта вместо плоского бэклога. Правило «что входит в план и как
 // считается» живёт здесь чистой функцией под тестами: экран только рисует.
-import type { Project, Task } from "@/types";
+import type { Project, Task, User } from "@/types";
 import { byNumberedName } from "@/lib/initiatives";
 
 /** Закрытые статусы — как в списке спринта: «готово» и «отменена». */
@@ -33,10 +33,60 @@ export type Plan = {
   available: number;
 };
 
+/** Значение фильтра «Без исполнителя» — не имя человека, чтобы не спутать с тёзкой. */
+export const PLAN_UNASSIGNED = "\u0000unassigned";
+
 export type PlanFilter = {
   query?: string;
   hideDone?: boolean;
+  /** Один исполнитель (имя) или PLAN_UNASSIGNED. Нужен `users` — имена по telegram_id. */
+  assignee?: string;
+  users?: readonly User[];
 };
+
+/** Исполнители задачи по именам: подписи из задачи плюс люди по telegram_id. */
+export function taskAssignees(
+  t: Task,
+  users: readonly User[] = [],
+): string[] {
+  const names = new Set<string>(t.assignees ?? []);
+  for (const u of users) {
+    if (t.assignee_telegram_ids?.includes(u.telegram_id)) names.add(u.name);
+  }
+  return [...names];
+}
+
+function byAssignee(t: Task, f: PlanFilter): boolean {
+  if (!f.assignee) return true;
+  const names = taskAssignees(t, f.users);
+  return f.assignee === PLAN_UNASSIGNED
+    ? names.length === 0
+    : names.includes(f.assignee);
+}
+
+/** Кто есть в плане пространства: имена исполнителей по алфавиту и есть ли задачи без исполнителя. */
+export function planPeople(
+  tasks: readonly Task[],
+  projects: readonly Project[],
+  space: string | null,
+  users: readonly User[] = [],
+): { names: string[]; hasUnassigned: boolean } {
+  const groups = new Set(planProjects(projects, space).map((p) => p.id));
+  const names = new Set<string>();
+  let hasUnassigned = false;
+  for (const t of tasks) {
+    if (!t.project_id || !groups.has(t.project_id) || t.status === "draft") {
+      continue;
+    }
+    const who = taskAssignees(t, users);
+    if (who.length === 0) hasUnassigned = true;
+    for (const n of who) names.add(n);
+  }
+  return {
+    names: [...names].sort((a, b) => a.localeCompare(b)),
+    hasUnassigned,
+  };
+}
 
 /** Группы плана: группы задач этого пространства верхнего уровня, по номеру в названии. */
 export function planProjects(
@@ -60,6 +110,7 @@ function byOpenThenCreated(a: PlanTask, b: PlanTask): number {
 
 function matches(t: PlanTask, f: PlanFilter): boolean {
   if (f.hideDone && t.closed) return false;
+  if (!byAssignee(t.task, f)) return false;
   const q = f.query?.trim().toLowerCase();
   return !q || t.task.title.toLowerCase().includes(q);
 }
@@ -121,13 +172,16 @@ export function buildPlan(
     list.push(t);
     byProject.set(t.project_id, list);
   }
-  const searching = !!filter.query?.trim();
+  const searching = !!filter.query?.trim() || !!filter.assignee;
   let done = 0;
   let total = 0;
   let available = 0;
   const out: PlanGroup[] = [];
   for (const project of groups) {
-    const own = byProject.get(project.id) ?? [];
+    // Фильтр по человеку меняет и счётчики («5 из 9» — его задачи); поиск и «скрыть готовые» — нет.
+    const own = (byProject.get(project.id) ?? []).filter((t) =>
+      byAssignee(t, filter)
+    );
     const closed = own.filter((t) => CLOSED.has(t.status)).length;
     done += closed;
     total += own.length;
