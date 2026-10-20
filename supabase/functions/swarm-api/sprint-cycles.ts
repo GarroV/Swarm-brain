@@ -21,6 +21,7 @@ import {
   updateItem,
 } from "../_shared/tasks/sprint-items.ts";
 import { AcceptConflictError, acceptCycle } from "../_shared/tasks/sprint-accept.ts";
+import { isDemoSession } from "../_shared/demo-session.ts";
 
 // Роуты /sprint-cycles — спринты (issue #267, доска инициатив #383-серия). Отдельным модулем,
 // а не в index.ts: тот уже 2400+ строк при нашем пределе 800 (issue #265).
@@ -268,7 +269,9 @@ export async function handleSprintCycleRoutes(
       }
 
       try {
-        const item = await updateItem(cycleId, taskId, groupId, patch, actor, telegramId);
+        // Метка комментария из причины — на языке автора; демо говорит по-английски (issue #459).
+        const lang = isDemoSession(telegramId) ? "en" : "ru";
+        const item = await updateItem(cycleId, taskId, groupId, patch, actor, telegramId, lang);
         if (!item) return apiErr(404, "Not found", origin);
         return json(item, 200, origin);
       } catch (e) {

@@ -97,8 +97,18 @@ export function errorText(code: RecorderErrorCode, dt: Dt): string {
       );
     case "permission-denied":
       return dt(
-        "Нет доступа к микрофону. Разрешите его для этого сайта в настройках браузера и попробуйте снова.",
-        "Microphone access is blocked. Allow it for this site in the browser settings and try again.",
+        "Нет доступа к микрофону. Разрешите его для этого сайта:",
+        "Microphone access is blocked. Allow it for this site:",
+      );
+    case "mic-blocked-site":
+      return dt(
+        "Доступ к микрофону для этого сайта заблокирован в браузере. Разрешите его:",
+        "Microphone access is blocked for this site in your browser. Allow it:",
+      );
+    case "mic-blocked-os":
+      return dt(
+        "Браузеру закрыт доступ к микрофону на уровне системы. Откройте его:",
+        "Your system is blocking the microphone for this browser. Turn it on:",
       );
     case "no-mic":
       return dt("Микрофон не найден. Подключите его и попробуйте снова.", "No microphone found. Plug one in and try again.");

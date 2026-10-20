@@ -4,7 +4,13 @@ import { cn, displayName } from "@/lib/utils";
 import type { CheckStatus, SprintCycleItem, Task } from "@/types";
 import { RoyIcon } from "@/components/roy/icons";
 import { useDt } from "@/components/roy/nav";
-import { AssigneeChip, CarryBadge, CarryFlag, CountChip } from "./atoms";
+import {
+  AssigneeChip,
+  CarryBadge,
+  CarryFlag,
+  CarryReasonPrompt,
+  CountChip,
+} from "./atoms";
 import { fmtDay, fmtDayShort, isOverdue } from "./format";
 import type { SubtaskBlock } from "@/lib/sprintGrouping";
 import { blockText } from "./groupingText";
@@ -361,6 +367,16 @@ export function SprintRow(
               </span>
             )}
             {item.to_carry && <CarryFlag reason={item.carry_reason} />}
+            {
+              /* Пустая причина переноса — приглашение вписать её (поле причины — под строкой). */
+            }
+            {item.to_carry && !needsNote && !closed && h.onNote &&
+              !(item.carry_reason ?? "").trim() && (
+              <CarryReasonPrompt
+                onClick={() =>
+                  document.getElementById(`sprint-note-${item.id}`)?.focus()}
+              />
+            )}
             <CarryBadge count={item.carry_count} reason={item.carry_reason} />
             <CountChip kind="comments" count={item.comment_count} />
             <CountChip kind="links" count={item.link_count} />
@@ -541,6 +557,7 @@ export function SprintRow(
           style={{ paddingLeft: TASK_INDENT + 20 }}
         >
           <input
+            id={`sprint-note-${item.id}`}
             value={noteValue}
             onClick={(e) => e.stopPropagation()}
             onChange={(e) => setNote(e.target.value)}

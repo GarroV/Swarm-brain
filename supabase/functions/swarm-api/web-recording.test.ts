@@ -160,7 +160,7 @@ Deno.test("старт: строка встречи с автором в recorder
   assertEquals(row.identity_kind, "manual");
   assertEquals((row.identity_key as string).startsWith("web:"), true);
   assertEquals(row.title, body.title);
-  assertEquals(String(row.title).startsWith("Офлайн-встреча"), true);
+  assertEquals(String(row.title).startsWith("Запись Swarm Brain"), true);
 });
 
 Deno.test("старт: своё название сохраняется, мусорное тело — 400", async () => {

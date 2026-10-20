@@ -1,7 +1,7 @@
 // Тесты до реализации. Даты спринта — ядро: ошибка молчит (спринт откроется не тем числом,
 // и это заметят через две недели), а сама арифметика дат в JS полна ловушек с часовым поясом.
 import { assertEquals, assertThrows } from "@std/assert";
-import { addDays, nextCycleDates, sprintNumber } from "./sprint-dates.ts";
+import { addDays, daysBetween, nextCycleDates, sprintNumber } from "./sprint-dates.ts";
 
 Deno.test("следующий спринт встык: старт на следующий день после конца прошлого", () => {
   const next = nextCycleDates({
@@ -118,4 +118,12 @@ Deno.test("негодная дата — отказ с внятной причи
     Error,
     "дата",
   );
+});
+
+Deno.test("daysBetween: разница в календарных днях, не зависит от часового пояса", () => {
+  assertEquals(daysBetween("2026-10-20", "2026-10-20"), 0);
+  assertEquals(daysBetween("2026-10-20", "2026-11-03"), 14);
+  assertEquals(daysBetween("2026-11-03", "2026-10-20"), -14);
+  // Переход на зимнее время (25.10.2026) день не съедает и не добавляет.
+  assertEquals(daysBetween("2026-10-24", "2026-10-26"), 2);
 });

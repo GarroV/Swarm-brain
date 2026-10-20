@@ -55,16 +55,17 @@ export function cleanDeviceName(raw: unknown): string {
 }
 
 /**
- * Выдать вызов. Правило владельца 14.10.2026 («в новом браузере палец без проверки не сохраняем»):
- *   • у человека НЕТ ключей (самый первый вход, или админ сбросил вход) — сохранить палец сам (create);
- *   • ключи ЕСТЬ — только подтверждение (get, с перечнем его ключей), независимо от того, какие
- *     метки помнит браузер: синхронизированный ключ (iCloud) подтянется, а нового не заводится.
- *     Не вышло — вход остаётся «без второго шага»; новый ключ под такой сессией не принимается.
- * Место для второй части (код из приложения-аутентификатора): отказ get отдаёт веб, он же покажет подсказку.
+ * Выдать вызов. Правило владельца 19.10.2026 («если там ещё нет Touch ID — логично запустить привязку»,
+ * пересмотр решения 14.10.2026): режим зависит от того, есть ли ключ В ЭТОМ браузере (`here` — метка
+ * `swarm.passkey.here`, которую шлёт веб):
+ *   • ключи у человека есть И браузер говорит «ключ здесь» — подтверждение (get, с перечнем ключей);
+ *   • иначе (ключей нет вовсе, или в этом браузере ключа нет) — сохранить палец сам (create), с
+ *     excludeCredentials = уже заведённые ключи, чтобы тот же датчик не завёл двойник.
+ * Новый браузер так не упирается в QR и «нет подходящих ключей» (docs/decisions/2026-10-19-passkey-new-browser-binds.md).
  */
 export async function startStep(
   deps: StepDeps,
-  input: { telegramId: number; origin: unknown; userName: string },
+  input: { telegramId: number; origin: unknown; userName: string; here: boolean },
 ): Promise<StartResult> {
   const now = deps.now ?? Date.now;
   const rp = relyingPartyFor(input.origin);
@@ -75,7 +76,7 @@ export async function startStep(
   if (issued >= MAX_CHALLENGES_PER_WINDOW) return { ok: false, reason: "throttled" };
 
   const keys = await deps.store.listForPerson(input.telegramId);
-  const confirm = keys.length > 0;
+  const confirm = keys.length > 0 && input.here === true;
   const descriptors = keys.map((k) => ({ id: k.credentialId, transports: k.transports }));
 
   if (confirm) {
@@ -102,6 +103,7 @@ export async function startStep(
       userVerification: "required",
     },
     preferredAuthenticatorType: "localDevice",
+    excludeCredentials: descriptors,
     timeout: CHALLENGE_TTL_MS,
   });
   await deps.store.putChallenge(input.telegramId, "register", options.challenge, now() + CHALLENGE_TTL_MS);
@@ -154,9 +156,6 @@ async function finishRegistration(
   });
   if (!verified.verified) return { ok: false, reason: "failed" };
   const cred = verified.registrationInfo.credential;
-  // Первый ключ — только человеку без ключей. Вызов выдавался, пока их не было, но с тех пор мог
-  // появиться ключ (другой браузер): тогда новый не принимаем — подтверждать надо уже сохранённым.
-  if ((await deps.store.listForPerson(input.telegramId)).length > 0) return { ok: false, reason: "failed" };
   // Номер уже занят — тот же ключ сохранён раньше (двойной клик): шаг всё равно пройден,
   // но ЧУЖОЙ ключ под своим именем так не присвоить: проверяем владельца.
   const stored = await deps.store.insertPasskey({

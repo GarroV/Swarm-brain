@@ -128,6 +128,31 @@ export function CarryFlag({ reason }: { reason?: string | null }) {
 }
 
 /**
+ * Приглашение вписать причину переноса: задача помечена «к переносу» (человеком или автоматикой по
+ * сроку), а причины ещё нет. Причину система не придумывает — её вписывает человек, и она
+ * становится комментарием в задаче (решение владельца 19.10.2026). Клик ведёт к полю причины.
+ */
+export function CarryReasonPrompt({ onClick }: { onClick: () => void }) {
+  const dt = useDt();
+  return (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation();
+        onClick();
+      }}
+      title={dt(
+        "Срок выходит за спринт: впишите, почему задача переносится",
+        "The due date is past this sprint: say why the task is carried over",
+      )}
+      className="shrink-0 whitespace-nowrap rounded-full border border-pri-high/50 bg-pri-high/10 px-1.5 py-0.5 text-[10px] font-semibold text-pri-high hover:bg-pri-high/15"
+    >
+      {dt("укажите причину переноса", "add a carry reason")}
+    </button>
+  );
+}
+
+/**
  * Исполнитель кружком с инициалами. Полное имя в каждой строке — главный источник её длины
  * (внутри инициативы человек чаще всего один и тот же, и имя перестаёт нести информацию,
  * оставаясь шумом на 120 px). Само имя никуда не девается: оно в подсказке.

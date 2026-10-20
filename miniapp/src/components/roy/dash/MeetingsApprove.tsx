@@ -1,6 +1,7 @@
 "use client";
 import { useRoyNav, useDt } from "../nav";
 import { RoyIcon } from "../icons";
+import { OnAirBadge } from "../record/OnAirBadge";
 import { Market } from "../ui";
 import { deriveEntryTitle } from "../entry";
 import { localizeSource, sourceLabel } from "../screens/RoyMeetingsScreen";
@@ -46,7 +47,7 @@ function MeetingRow({ e, onOpen }: { e: Entry; onOpen: () => void }) {
             </span>
           )}
           <span className="font-semibold" style={{ fontSize: 11, color: "var(--meet-ink)" }}>
-            {(() => { const s = sourceLabel(e); return localizeSource(dt(s, s === "Встреча" ? "Meeting" : s), dt); })()}
+            {localizeSource(sourceLabel(e), dt)}
           </span>
           <Market code={e.countries?.[0]} />
           {fmtDate(e.entry_date || e.created_at, dt("ru-RU", "en-US")) && (
@@ -107,8 +108,9 @@ export function MeetingsApprove({ data, className }: { data: DashboardData; clas
                 <RoyIcon name="mic" size={17} />
               </span>
               <div className="min-w-0 flex-1">
-                <div className="truncate font-semibold text-ink" style={{ fontSize: 13.5, letterSpacing: "-0.01em" }}>
-                  {m.title ?? dt("Запись без названия", "Untitled recording")}
+                <div className="flex min-w-0 items-center gap-2 font-semibold text-ink" style={{ fontSize: 13.5, letterSpacing: "-0.01em" }}>
+                  <span className="truncate">{m.title ?? dt("Запись без названия", "Untitled recording")}</span>
+                  {m.recording_now === true && <OnAirBadge size={10} />}
                 </div>
                 <div className="mt-0.5 flex items-center gap-2">
                   <span

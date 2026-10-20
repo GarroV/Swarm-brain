@@ -9,6 +9,8 @@ import { RoyIcon } from "../icons";
 import { cn } from "@/lib/utils";
 import { Banner, errorText, formatClock, formatSpan, LevelBars, RecButton } from "./RecordingParts";
 import { useRecorder } from "./RecorderProvider";
+import { MicHelp } from "./MicHelp";
+import { isMicDenial, isRetryableMicError } from "@/lib/webRecorder";
 
 const DONE_HIDE_MS = 7000;
 const STARTED_TOAST_MS = 3500;
@@ -160,10 +162,17 @@ export function RecordingPill() {
           )}
 
           {errCode && <Banner tone="bad">{errorText(errCode, dt)}</Banner>}
+          {isMicDenial(errCode) && <MicHelp code={errCode} />}
 
           {(stuck || failedStart) && (
             <div className="flex flex-col gap-2">
-              <RecButton tone="primary" className="min-h-11" onClick={() => { closePanel(); rec.dismiss(); }}>
+              {failedStart && isRetryableMicError(errCode) && (
+                // start() идёт синхронно из нажатия: AudioContext и getUserMedia обязаны стартовать в жесте.
+                <RecButton tone="primary" className="min-h-11" onClick={() => { setOpen(false); rec.start(); }}>
+                  {dt("Попробовать снова", "Try again")}
+                </RecButton>
+              )}
+              <RecButton tone={failedStart && isRetryableMicError(errCode) ? "quiet" : "primary"} className="min-h-11" onClick={() => { closePanel(); rec.dismiss(); }}>
                 {stuck ? dt("Закрыть — запись останется на телефоне", "Close — the recording stays on the phone") : dt("Закрыть", "Close")}
               </RecButton>
               {canDiscard && !confirmDiscard && <RecButton className="min-h-11" onClick={() => setConfirmDiscard(true)}>{dt("Удалить запись с телефона", "Delete the recording from the phone")}</RecButton>}

@@ -16,7 +16,12 @@ export type RecorderState =
 
 export type RecorderErrorCode =
   | "unsupported"
+  /** Отказ без уточнения (Permissions API нет или окно закрыли без выбора). */
   | "permission-denied"
+  /** Сайту запретили микрофон в настройках браузера. */
+  | "mic-blocked-site"
+  /** Браузеру закрыт микрофон на уровне системы (macOS/Windows/iOS). */
+  | "mic-blocked-os"
   | "no-mic"
   | "mic-failed"
   /** Сервер не знает эту запись или она чужая (404/403): досылать некуда. */

@@ -22,6 +22,8 @@ cd "$(dirname "$0")/.."
 # на сервер вовсе.
 REMOTE_HOST=${SWARM_TEST_HOST:-muspelheim}
 REMOTE_DIR='C:\projects\swarm-test'
+# shellcheck source=lib/stand-guard.sh
+. scripts/lib/stand-guard.sh
 
 status_env() {
   command -v supabase >/dev/null 2>&1 || return 1
@@ -54,6 +56,9 @@ listener() { # кто слушает :54322 на этой машине — пр�
 if ENV_OUT=$(status_env); then
   echo "with-local-db: тесты базы — контур Supabase на этой машине" >&2
 elif ENV_OUT=$(remote_env); then
+  # Схема общего стенда обязана совпадать с main (issue #998); отстающее докатывается, чужие следы —
+  # отказ. Команда при отказе НЕ выполняется: «тесты прошли на левой схеме» хуже красного.
+  stand_guard || exit 1
   echo "with-local-db: тесты базы — ОБЩИЙ стенд $REMOTE_HOST ($REMOTE_DIR) через 127.0.0.1:54322" \
     "[слушает: $(listener)]. Стенд один на все сессии: параллельный прогон соседа может окрасить" \
     "твои тесты, источник истины — CI" >&2

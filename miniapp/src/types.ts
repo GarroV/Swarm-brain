@@ -352,8 +352,10 @@ export type Me = {
     applies: boolean;
     /** Пройден в этой сессии. */
     done: boolean;
-    /** Включён ли замок обязательности (SECOND_STEP_REQUIRED в swarm-api). */
+    /** Действует ли замок обязательности сейчас (SECOND_STEP_REQUIRED в swarm-api). */
     required: boolean;
+    /** Дата ISO, с которой замок начинает действовать; null/нет поля — даты нет (сервер до 19.10.2026). */
+    required_from?: string | null;
     /** Момент входа (секунды): по нему браузер помнит, что за этот вход уже пробовали. */
     session: number | null;
   };
@@ -470,6 +472,11 @@ export type AgentMeeting = {
   // Чья запись в стенограмме (#788): bot — бот встреч, recorder — рекордер на Mac; null — ещё не
   // расшифровано. Подпись источника — через recordedByOf()/sourceLabel(), не напрямую.
   recorded_by?: "bot" | "recorder" | null;
+  // Бот встреч пишет встречу прямо сейчас (флаг + свежий удар по часам сервера, #1026): «Идёт
+  // запись» и плашка ON AIR вместо «Готовим тезисы…». Считает сервер (isBotRecordingNow), не клиент.
+  recording_now?: boolean;
+  // Секунды записи (heartbeat бота растит их по ходу встречи).
+  recorded_seconds?: number | null;
   // Кто завёл строку: у бота встреч — scriba-<сборка>.
   agent_version?: string | null;
   // Текст тезисов — только в ДЕТАЛИ. В списке вместо него признак наличия (issue #108).
