@@ -54,7 +54,7 @@ export function ToolbarButton({ on, children, onClick, title, disabled, popup, i
   );
 }
 
-export function Menu({ label, on, items, footer, trigger, title }: {
+export function Menu({ label, on, items, footer, trigger, title, alignRight }: {
   label: ReactNode;
   on?: boolean;
   items: MenuItem[];
@@ -62,6 +62,8 @@ export function Menu({ label, on, items, footer, trigger, title }: {
   /** Свой вид кнопки (выбор прямо в ячейке таблицы, стенд `cpick`); по умолчанию — кнопка панели. */
   trigger?: (p: { open: boolean; toggle: () => void }) => ReactNode;
   title?: string;
+  /** Раскрывать влево от правого края кнопки: кнопка у края контейнера с overflow-hidden (панель «План»). */
+  alignRight?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLSpanElement>(null);
@@ -112,7 +114,7 @@ export function Menu({ label, on, items, footer, trigger, title }: {
           role="menu"
           className={cn(
             "absolute z-50 flex max-h-[60vh] min-w-[200px] flex-col overflow-y-auto rounded-[10px] border border-line bg-[var(--popover)] p-1 shadow-[0_14px_36px_-12px_rgba(0,0,0,.35)]",
-            place?.right ? "right-0" : "left-0",
+            alignRight || place?.right ? "right-0" : "left-0",
             place?.up ? "bottom-full mb-1" : "top-full mt-1",
             !place && "invisible",
           )}

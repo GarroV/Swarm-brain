@@ -1270,89 +1270,106 @@ export function SprintsScreen() {
                   <div
                     {...planDropProps}
                     className={cn(
-                      "flex-1 min-w-0 overflow-auto transition-colors",
+                      "flex min-h-0 min-w-0 flex-1 flex-col transition-colors",
                       planDropCls,
                     )}
                   >
-                    {items.length === 0 ? emptyComposition : (
-                      <>
-                        {
-                          /* «Состав · N» и тихая группировка справа (стенд: `.shead`). Вне
+                    {items.length === 0
+                      ? (
+                        <div className="min-h-0 flex-1 overflow-auto">
+                          {emptyComposition}
+                        </div>
+                      )
+                      : (
+                        <>
+                          {
+                            /* «Состав · N» и тихая группировка справа (стенд: `.shead`). Вне
                             таблицы шириной 640px: на телефоне строка переносится, а не уезжает
-                            за край вместе с флажком «Мои задачи». */
-                        }
-                        <div className="mb-2 flex flex-wrap items-center gap-x-3 gap-y-2 px-0.5">
-                          <span
-                            className="font-semibold text-ink"
-                            style={{ fontSize: 13 }}
-                          >
-                            {dt("Состав", "Tasks")} ·{" "}
-                            <span className="font-mono">{items.length}</span>
-                          </span>
-                          {!accepted && !byPeople && (
-                            <button
-                              type="button"
-                              className={PILL_BTN}
-                              disabled={sprintGroups.grouping.busy}
-                              onClick={sprintGroups.grouping.onAddGroup}
+                            за край вместе с флажком «Мои задачи». Вне прокручиваемого списка:
+                            раньше строка была его первым ребёнком и на длинном составе уезжала
+                            вверх — переключатель группировки пропадал (владелец 20.10.2026:
+                            «где галочка про группировку? возвращай»). */
+                          }
+                          <div className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-2 px-0.5 pb-2">
+                            <span
+                              className="font-semibold text-ink"
+                              style={{ fontSize: 13 }}
                             >
-                              <RoyIcon name="plus" size={12} strokeWidth={2} />
-                              {dt("Добавить группу", "Add group")}
-                            </button>
-                          )}
-                          <GroupingToggle
-                            value={grouping}
-                            onChange={setGrouping}
-                          />
-                          <label
-                            className="flex shrink-0 cursor-pointer select-none items-center gap-1.5 text-ink-soft"
-                            style={{ fontSize: 12.5 }}
-                          >
-                            <input
-                              type="checkbox"
-                              checked={mineFirst}
-                              onChange={(e) => setMineFirst(e.target.checked)}
-                              className="accent-[var(--primary)]"
+                              {dt("Состав", "Tasks")} ·{" "}
+                              <span className="font-mono">{items.length}</span>
+                            </span>
+                            {!accepted && !byPeople && (
+                              <button
+                                type="button"
+                                className={PILL_BTN}
+                                disabled={sprintGroups.grouping.busy}
+                                onClick={sprintGroups.grouping.onAddGroup}
+                              >
+                                <RoyIcon
+                                  name="plus"
+                                  size={12}
+                                  strokeWidth={2}
+                                />
+                                {dt("Добавить группу", "Add group")}
+                              </button>
+                            )}
+                            <GroupingToggle
+                              value={grouping}
+                              onChange={setGrouping}
                             />
-                            {dt("Мои задачи", "My tasks")}
-                          </label>
-                        </div>
-                        {
-                          /* Контейнер состава: колонки уступают место названию по его ширине, а не по
+                            <label
+                              className="flex shrink-0 cursor-pointer select-none items-center gap-1.5 text-ink-soft"
+                              style={{ fontSize: 12.5 }}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={mineFirst}
+                                onChange={(e) => setMineFirst(e.target.checked)}
+                                className="accent-[var(--primary)]"
+                              />
+                              {dt("Мои задачи", "My tasks")}
+                            </label>
+                          </div>
+                          {
+                            /* Контейнер состава: колонки уступают место названию по его ширине, а не по
                             ширине окна (SPRINT_GRID в sprints/SprintRow.tsx). */
-                        }
-                        <div className="@container/sprint min-w-[320px]">
-                          {mineBoards
-                            ? (
-                              <>
-                                <SectionLabel
-                                  label={dt("Мои задачи", "My tasks")}
-                                  count={mineSplit.mine.length}
-                                />
-                                {mineSplit.mine.length === 0
-                                  ? (
-                                    <p
-                                      className="mb-4 px-0.5 text-ink-mute"
-                                      style={{ fontSize: 12.5 }}
-                                    >
-                                      {dt(
-                                        "На вас в этом спринте задач нет",
-                                        "No tasks on you in this sprint",
-                                      )}
-                                    </p>
-                                  )
-                                  : initiativeList(mineBoards.mine)}
-                                <SectionLabel
-                                  label={dt("Остальные", "Everyone else")}
-                                  count={mineSplit.others.length}
-                                />
-                                {initiativeList(mineBoards.others)}
-                              </>
-                            )
-                            : initiativeList(byPeople ? peopleBoard : board)}
-                        </div>
-                      </>
-                    )}
+                          }
+                          <div className="min-h-0 flex-1 overflow-auto">
+                            <div className="@container/sprint min-w-[320px]">
+                              {mineBoards
+                                ? (
+                                  <>
+                                    <SectionLabel
+                                      label={dt("Мои задачи", "My tasks")}
+                                      count={mineSplit.mine.length}
+                                    />
+                                    {mineSplit.mine.length === 0
+                                      ? (
+                                        <p
+                                          className="mb-4 px-0.5 text-ink-mute"
+                                          style={{ fontSize: 12.5 }}
+                                        >
+                                          {dt(
+                                            "На вас в этом спринте задач нет",
+                                            "No tasks on you in this sprint",
+                                          )}
+                                        </p>
+                                      )
+                                      : initiativeList(mineBoards.mine)}
+                                    <SectionLabel
+                                      label={dt("Остальные", "Everyone else")}
+                                      count={mineSplit.others.length}
+                                    />
+                                    {initiativeList(mineBoards.others)}
+                                  </>
+                                )
+                                : initiativeList(
+                                  byPeople ? peopleBoard : board,
+                                )}
+                            </div>
+                          </div>
+                        </>
+                      )}
                   </div>
                 )
                 : (
