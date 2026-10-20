@@ -34,7 +34,8 @@ const NO_FILTER: UsageFilter = { purpose: null, model: null };
 const TIME_FMT = new Intl.DateTimeFormat("ru-RU", { timeZone: "Europe/Belgrade", hour: "2-digit", minute: "2-digit" });
 const DAY_FMT = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Belgrade", year: "numeric", month: "2-digit", day: "2-digit" });
 
-export function ModelUsagePanel() {
+/** `workspaceId` — расход одного пространства (вкладка «Расход» в его карточке); без него — вся система. */
+export function ModelUsagePanel({ workspaceId }: { workspaceId?: string } = {}) {
   const dt = useDt();
   const lang = useLang();
   const [range, setRange] = useState<DateRange>(() => presetRange("month"));
@@ -47,11 +48,11 @@ export function ModelUsagePanel() {
     let alive = true;
     setData(null);
     setError(null);
-    fetchModelUsage(range.from, range.to)
+    fetchModelUsage(range.from, range.to, workspaceId)
       .then((d) => alive && setData(d))
       .catch((e) => alive && setError(e instanceof Error ? e.message : String(e)));
     return () => { alive = false; };
-  }, [range.from, range.to]);
+  }, [range.from, range.to, workspaceId]);
 
   const view = useMemo(
     () => (data?.cells ? usageView(data.cells, data.from, data.to, grain, filter) : null),

@@ -11,6 +11,7 @@ import {
 
 const SUPER = { telegramId: 744230399, groupId: "cee" };
 const ADMIN = { telegramId: 1001, groupId: "cee" };
+const MASTER_FROM_DATA = { telegramId: 555, groupId: "cee", isMaster: true }; // строка master_admins, не константа
 const memberCee = { telegram_id: 2001, group_id: "cee" };
 const memberOther = { telegram_id: 3001, group_id: "other" };
 const superRow = { telegram_id: 744230399, group_id: "cee" };
@@ -125,4 +126,27 @@ Deno.test("список воркспейсов: админу — только с
   const all = [{ id: "cee", name: "CEE" }, { id: "other", name: "Other" }];
   assertEquals(visibleWorkspaces(ADMIN, all).map((w) => w.id), ["cee"]);
   assertEquals(visibleWorkspaces(SUPER, all).map((w) => w.id), ["cee", "other"]);
+});
+
+Deno.test("мастер-админ из master_admins: перенос, создание и чужой воркспейс — как у суперадмина", () => {
+  assert(allow(MASTER_FROM_DATA, { kind: "create" }));
+  assert(allow(MASTER_FROM_DATA, { kind: "move", tgId: 3001, wsId: "cee" }, memberOther));
+  assert(allow(MASTER_FROM_DATA, { kind: "workspace", wsId: "other" }));
+  assertEquals(visibleWorkspaces(MASTER_FROM_DATA, [{ id: "cee" }, { id: "other" }]).length, 2);
+  // обычный админ тот же набор не получает
+  assert(!allow(ADMIN, { kind: "create" }));
+  assertEquals(visibleWorkspaces(ADMIN, [{ id: "cee" }, { id: "other" }]).length, 1);
+});
+
+Deno.test("мастер-админ из данных как цель: админ не убирает и не перетирает, мастер — может", () => {
+  const masterRow = { telegram_id: 555, group_id: "cee", is_master: true };
+  assert(!allow(ADMIN, { kind: "remove", tgId: 555, wsId: "cee" }, masterRow));
+  assert(!allow(ADMIN, { kind: "add", wsId: "cee", input: "555" }, masterRow));
+  assert(allow(MASTER_FROM_DATA, { kind: "remove", tgId: 555, wsId: "cee" }, masterRow));
+});
+
+Deno.test("аккаунт владельца: мастер из данных его не убирает и не перетирает", () => {
+  assert(!allow(MASTER_FROM_DATA, { kind: "remove", tgId: 744230399, wsId: "cee" }, superRow));
+  assert(!allow(MASTER_FROM_DATA, { kind: "add", wsId: "cee", input: "744230399" }, superRow));
+  assert(allow(SUPER, { kind: "add", wsId: "cee", input: "744230399" }, superRow));
 });

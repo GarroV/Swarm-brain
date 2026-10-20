@@ -15,7 +15,7 @@ import {
   upsertLocation,
 } from "../_shared/market/manual.ts";
 import { countryStatus, templateText } from "../_shared/market/template.ts";
-import { ADMIN_USER_ID } from "./tasks/tools.ts";
+import { masterAdminFlag } from "../_shared/users/master-admins.ts";
 
 const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
 
@@ -35,7 +35,10 @@ async function caller(telegramId: number): Promise<Caller> {
       "workspaces",
     )
     : null;
-  return { allowed: ws?.allowed_markets ?? null, isAdmin: telegramId === ADMIN_USER_ID || user?.is_admin === true };
+  return {
+    allowed: ws?.allowed_markets ?? null,
+    isAdmin: (await masterAdminFlag(supabase, telegramId)) || user?.is_admin === true,
+  };
 }
 
 /** Страна из аргументов, если вызывающий её видит; иначе — текст отказа. */

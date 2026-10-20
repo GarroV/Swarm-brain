@@ -4081,10 +4081,14 @@ export type UsageCall = {
   audio_seconds: number;
 };
 
-/** Расход OpenAI за период (#311, #822), только суперадмину. `from`/`to` — «YYYY-MM-DD» включительно. */
-export async function fetchModelUsage(from: string, to: string): Promise<ModelUsage> {
+/**
+ * Расход OpenAI за период (#311, #822). `from`/`to` — «YYYY-MM-DD» включительно. Без `workspace` —
+ * вся система (только мастер-админу); с ним — одно пространство (админу пространства — своё, #233).
+ */
+export async function fetchModelUsage(from: string, to: string, workspace?: string): Promise<ModelUsage> {
   if (DEV_MODE) return mockModelUsage(from, to);
-  return apiFetch<ModelUsage>(`/admin/model-usage?from=${from}&to=${to}`);
+  const ws = workspace ? `&workspace=${encodeURIComponent(workspace)}` : "";
+  return apiFetch<ModelUsage>(`/admin/model-usage?from=${from}&to=${to}${ws}`);
 }
 
 /** Одноразовая ссылка на бота для привязки Telegram (#92); действует 15 минут. */
@@ -4479,4 +4483,106 @@ function mockModelUsage(from: string, to: string): ModelUsage {
     from, to, truncated: false, total_usd: total, calls, unpriced_calls: 0, tokens: 0, audio_minutes: 0,
     by_purpose: [slice], by_model: [{ ...slice, key: "whisper-1" }], by_day, top_meetings: [], cells, recent, meeting_titles,
   };
+}
+
+// ── Ключ к нейронке пространства и мастер-админы (#233, этап 3) ──────────────
+// Ключ write-only: сервер отдаёт только статус (last4, когда задан, последняя ошибка), сам ключ — никогда.
+export type WorkspaceKeyStatus = {
+  source: "workspace" | "server";
+  last4: string | null;
+  set_at: string | null;
+  set_by: number | null;
+  last_error: string | null;
+  last_error_at: string | null;
+  /** Режим сервера: при `false` ключи пространств выключены и работает только общий ключ сервера. */
+  own_keys_enabled: boolean;
+  /** Есть ли у сервера общий ключ — на нём работает пространство без своего ключа. */
+  server_key_available: boolean;
+  /** Можно ли сохранить ключ пространства (на сервере задан `WORKSPACE_SECRETS_KEY`, миграция накатана). */
+  storage_available: boolean;
+};
+
+const SERVER_KEY_STATUS: WorkspaceKeyStatus = {
+  source: "server", last4: null, set_at: null, set_by: null, last_error: null, last_error_at: null,
+  own_keys_enabled: true, server_key_available: true, storage_available: true,
+};
+
+export async function fetchWorkspaceKeyStatus(wsId: string): Promise<WorkspaceKeyStatus> {
+  if (DEV_MODE) return SERVER_KEY_STATUS;
+  return apiFetch<WorkspaceKeyStatus>(`/admin/workspaces/${encodeURIComponent(wsId)}/openai-key`);
+}
+
+export async function setWorkspaceKey(wsId: string, key: string): Promise<WorkspaceKeyStatus> {
+  if (DEV_MODE) return { ...SERVER_KEY_STATUS, source: "workspace", last4: key.slice(-4), set_at: new Date().toISOString() };
+  return apiFetch<WorkspaceKeyStatus>(`/admin/workspaces/${encodeURIComponent(wsId)}/openai-key`, {
+    method: "PUT",
+    body: JSON.stringify({ key }),
+  });
+}
+
+export async function clearWorkspaceKey(wsId: string): Promise<WorkspaceKeyStatus> {
+  if (DEV_MODE) return SERVER_KEY_STATUS;
+  return apiFetch<WorkspaceKeyStatus>(`/admin/workspaces/${encodeURIComponent(wsId)}/openai-key`, { method: "DELETE" });
+}
+
+export type MasterAdmin = {
+  telegram_id: number;
+  added_by: number | null;
+  created_at: string | null;
+  /** Константа в коде: снять нельзя. */
+  builtin: boolean;
+  /** Имя из профиля; нет профиля — null, показываем id. */
+  name: string | null;
+};
+
+export async function fetchMasterAdmins(): Promise<MasterAdmin[]> {
+  if (DEV_MODE) return [{ telegram_id: 744230399, added_by: null, created_at: null, builtin: true, name: "Owner" }];
+  return apiFetch<MasterAdmin[]>("/admin/master-admins");
+}
+
+export async function addMasterAdmin(telegramId: number): Promise<MasterAdmin[]> {
+  if (DEV_MODE) return fetchMasterAdmins();
+  return apiFetch<MasterAdmin[]>("/admin/master-admins", {
+    method: "POST",
+    body: JSON.stringify({ telegram_id: telegramId }),
+  });
+}
+
+export async function removeMasterAdmin(telegramId: number): Promise<MasterAdmin[]> {
+  if (DEV_MODE) return fetchMasterAdmins();
+  return apiFetch<MasterAdmin[]>(`/admin/master-admins/${telegramId}`, { method: "DELETE" });
+}
+
+// ── Сбой ключа к нейронке: баннер админам (#233) ─────────────────────────────
+export type AiKeyIssue = {
+  group_id: string;
+  workspace_name: string;
+  /** Чей ключ обслуживал упавший вызов: ключ пространства или общий ключ сервера. */
+  source: "workspace" | "server";
+  /** rejected — ключ не принят; quota — кончились деньги или квота; errors — стабильные сбои. */
+  reason: "rejected" | "quota" | "errors";
+  since: string | null;
+  last_failure_at: string | null;
+};
+export type AiStalled = { group_id: string; workspace_name: string; count: number; oldest_at: string };
+export type AiHealth = { issues: AiKeyIssue[]; stalled: AiStalled[] };
+
+/** Что сломалось с нейронкой: админу — своё пространство, мастер-админу — все. Участникам — 403. */
+export async function fetchAiHealth(): Promise<AiHealth> {
+  if (DEV_MODE) {
+    return {
+      issues: [{ group_id: "cee", workspace_name: "IMF BD", source: "workspace", reason: "quota", since: new Date(Date.now() - 3_600_000).toISOString(), last_failure_at: new Date().toISOString() }],
+      stalled: [{ group_id: "cee", workspace_name: "IMF BD", count: 2, oldest_at: new Date(Date.now() - 2 * 3_600_000).toISOString() }],
+    };
+  }
+  return apiFetch<AiHealth>("/admin/ai-health");
+}
+
+/** Назначить или снять админа пространства — только мастер-админ. */
+export async function setWorkspaceAdmin(wsId: string, telegramId: number, isAdmin: boolean): Promise<void> {
+  if (DEV_MODE) return;
+  await apiFetch<{ ok: boolean }>(`/admin/workspaces/${encodeURIComponent(wsId)}/users/${telegramId}/admin`, {
+    method: "PUT",
+    body: JSON.stringify({ is_admin: isAdmin }),
+  });
 }

@@ -65,6 +65,7 @@ import { generatePersonalDigest, sendAllDigests } from "./handlers/digest.ts";
 import { sendDailyReport } from "./handlers/daily-report-send.ts";
 import { sendReviewReminders } from "./handlers/review-reminders-send.ts";
 import { sendTaskPings } from "./handlers/task-pings-send.ts";
+import { alertStalledMeetings } from "../_shared/stalled-meeting-alerts.ts";
 import { sendDueReminders } from "./handlers/task-due-reminders-send.ts";
 import { getHelpText, guideMenu, guideStep, helpKeyboard } from "./handlers/help.ts";
 import {
@@ -422,6 +423,12 @@ Deno.serve(async (req: Request) => {
       outboxSent = (await drainTelegramOutbox({ store: makeOutboxStore(supabase), send: sendTelegramCall })).sent;
     } catch (e) {
       console.error("telegram_outbox drain failed:", e);
+    }
+    // Застрявшая обработка встречи — тревога мастер-админу (#233); сбой не должен съесть пинги ниже.
+    try {
+      await alertStalledMeetings(supabase);
+    } catch (e) {
+      console.error("stalled meeting alerts failed:", e);
     }
     const sent = await sendTaskPings();
     // Напоминания о сроке за день — после ручных пингов: задача с пингом, сработавшим сегодня, их не получает.

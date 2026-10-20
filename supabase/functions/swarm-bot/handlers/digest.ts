@@ -98,6 +98,7 @@ export async function generatePersonalDigest(
       `Будь конкретным. Отвечай на русском.\n` +
       UNTRUSTED_DATA_RULE,
     wrapUntrustedForModel(entriesText.slice(0, 8000)),
+    { groupId },
   );
 
   const digestContent = `Дайджест за ${periodLabel} · ${userName || `ID ${userId}`}\n\n${digest}`;

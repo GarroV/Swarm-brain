@@ -4,13 +4,18 @@ import {
   fetchAdminWorkspaces, fetchAdminWorkspaceUsers,
   addUserToWorkspace, removeUserFromWorkspace, patchAdminWorkspace,
   createAdminWorkspace, broadcastMessage, patchAdminUser,
-  fetchReviewCounts, type ReviewCount,
+  fetchReviewCounts, type ReviewCount, setWorkspaceAdmin,
 } from "@/lib/api";
 import type { AdminWorkspace, AdminUser } from "@/types";
 import { countryCode, COUNTRY_NAMES } from "@/lib/countries";
 import { Segmented } from "@/components/roy/ui";
 import { RoyIcon } from "@/components/roy/icons";
-import { useDt } from "@/components/roy/nav";
+import { useDt, useRoyNav } from "@/components/roy/nav";
+import { ModelUsagePanel } from "@/components/admin/ModelUsagePanel";
+import { canCreateWorkspace, canSeeMasterSection, canSetWorkspaceAdmin } from "@/lib/adminAccess";
+import { takeAdminTarget } from "@/lib/adminTarget";
+import { WorkspaceKeyPanel } from "@/components/admin/WorkspaceKeyPanel";
+import { MasterAdminsPanel } from "@/components/admin/MasterAdminsPanel";
 import { useConfirm } from "@/components/ui/confirm";
 import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select";
 
@@ -25,6 +30,8 @@ function Lbl({ t }: { t: string }) {
 
 // ── Список воркспейсов + создание ─────────────────────────────────────────────
 export function WorkspaceList({ onSelect }: { onSelect: (ws: AdminWorkspace) => void }) {
+  // Пространства заводит только мастер-админ (решение 19.10.2026): админу пространства кнопки нет.
+  const { me } = useRoyNav();
   const [workspaces, setWorkspaces] = useState<AdminWorkspace[]>([]);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
@@ -65,7 +72,7 @@ export function WorkspaceList({ onSelect }: { onSelect: (ws: AdminWorkspace) => 
             <button onClick={() => { setCreating(false); setErr(null); }} className="rounded-full border border-line bg-surface px-3.5 py-2 font-semibold text-ink-soft transition-colors hover:bg-surface active:scale-[0.97]" style={{ fontSize: 13.5 }}>Отмена</button>
           </div>
         </div>
-      ) : (
+      ) : canCreateWorkspace(me) && (
         <button onClick={() => setCreating(true)} className="flex w-full items-center justify-center gap-1.5 rounded-full border border-dashed border-line-2 px-4 py-2.5 font-semibold text-ink-soft transition-colors hover:bg-surface-2 hover:text-ink active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]" style={{ fontSize: 13.5 }}>
           <RoyIcon name="plus" size={15} strokeWidth={2.2} /> Создать воркспейс
         </button>
@@ -102,6 +109,7 @@ function userRef(u: AdminUser): string {
 function WorkspaceUsers({ wsId, allWorkspaces, desk = false }: { wsId: string; allWorkspaces: AdminWorkspace[]; desk?: boolean }) {
   const confirm = useConfirm();
   const dt = useDt();
+  const isMaster = canSetWorkspaceAdmin(useRoyNav().me);
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [addInput, setAddInput] = useState("");
@@ -146,6 +154,26 @@ function WorkspaceUsers({ wsId, allWorkspaces, desk = false }: { wsId: string; a
   const handleRemove = async (u: AdminUser) => {
     if (!(await confirm({ title: "Удалить пользователя из воркспейса?", description: "Пользователь потеряет доступ к этому воркспейсу. Его можно будет добавить снова.", confirmText: "Удалить" }))) return;
     await removeUserFromWorkspace(wsId, userRef(u));
+    load();
+  };
+
+  // Назначить/снять админа пространства — только мастер-админ; сервер проверяет сам (403 остальным).
+  const handleAdminRole = async (u: AdminUser) => {
+    if (u.telegram_id == null) return;
+    const next = !u.is_admin;
+    if (!(await confirm({
+      title: next ? dt("Сделать админом пространства?", "Make a workspace admin?") : dt("Снять права админа?", "Remove admin rights?"),
+      description: next
+        ? dt("Админ сможет в этом пространстве добавлять людей, менять настройки и заводить ключ к нейронке.", "An admin can add people, change settings and set the AI key in this workspace.")
+        : dt("Человек останется в пространстве, но управлять им больше не сможет.", "The person stays in the workspace but can no longer manage it."),
+      confirmText: next ? dt("Сделать админом", "Make admin") : dt("Снять права", "Remove rights"),
+    }))) return;
+    try {
+      await setWorkspaceAdmin(wsId, u.telegram_id, next);
+    } catch (e) {
+      console.error("[WorkspaceUsers] admin role", e);
+      setErr(e instanceof Error ? e.message : dt("Не удалось сохранить", "Could not save"));
+    }
     load();
   };
 
@@ -333,6 +361,16 @@ function WorkspaceUsers({ wsId, allWorkspaces, desk = false }: { wsId: string; a
                     <textarea value={editNotes} onChange={(e) => setEditNotes(e.target.value)} rows={2} placeholder="Заметки админа…" className={`${fieldCls} resize-none`} />
                   </div>
                   )}
+                  {isMaster && !u.pending && u.telegram_id != null && (
+                    <div className="flex items-center justify-between gap-2 rounded-[10px] bg-surface-2 px-2.5 py-1.5">
+                      <span className="text-ink-soft" style={{ fontSize: 12 }}>
+                        {u.is_admin ? dt("Админ пространства", "Workspace admin") : dt("Участник", "Member")}
+                      </span>
+                      <button type="button" onClick={() => handleAdminRole(u)} className="font-semibold underline" style={{ fontSize: 12.5, color: "var(--accent-ink)" }}>
+                        {u.is_admin ? dt("Снять права админа", "Remove admin rights") : dt("Сделать админом", "Make admin")}
+                      </button>
+                    </div>
+                  )}
                   <div className="flex gap-2">
                     <button onClick={() => saveEdit(u)} disabled={savingEdit} className={`${btnPrimary} flex-1`} style={{ fontSize: 13 }}>{savingEdit ? dt("Сохраняю…", "Saving…") : u.pending ? dt("Привязать email", "Link email") : dt("Сохранить профиль", "Save profile")}</button>
                     <button onClick={() => setEditKey(null)} className="rounded-full border border-line bg-surface px-3 py-2 font-semibold text-ink-soft transition-colors hover:bg-surface-2 active:scale-[0.97]" style={{ fontSize: 13 }}>Отмена</button>
@@ -418,9 +456,10 @@ function WorkspaceMarkets({ ws, onUpdated }: { ws: AdminWorkspace; onUpdated: ()
 }
 
 // ── Деталь воркспейса (переименование + табы) ─────────────────────────────────
-export function WorkspaceDetail({ ws, onBack, desk = false }: { ws: AdminWorkspace; onBack: () => void; desk?: boolean }) {
+export function WorkspaceDetail({ ws, onBack, desk = false, initialTab = "users" }: { ws: AdminWorkspace; onBack: () => void; desk?: boolean; initialTab?: "users" | "key" }) {
   const [workspace, setWorkspace] = useState(ws);
-  const [tab, setTab] = useState<"users" | "markets">("users");
+  const [tab, setTab] = useState<"users" | "markets" | "key" | "usage">(initialTab);
+  const dt = useDt();
   const [allWorkspaces, setAllWorkspaces] = useState<AdminWorkspace[]>([]);
   const [renaming, setRenaming] = useState(false);
   const [nameDraft, setNameDraft] = useState(ws.name);
@@ -463,15 +502,16 @@ export function WorkspaceDetail({ ws, onBack, desk = false }: { ws: AdminWorkspa
 
       <div className="px-4">
         <Segmented
-          items={[{ id: "users", label: "Пользователи" }, { id: "markets", label: "Рынки" }]}
+          items={[{ id: "users", label: "Пользователи" }, { id: "markets", label: "Рынки" }, { id: "key", label: dt("Ключ", "AI key") }, { id: "usage", label: dt("Расход", "Spend") }]}
           value={tab}
-          onChange={(v) => setTab(v as "users" | "markets")}
+          onChange={(v) => setTab(v as "users" | "markets" | "key" | "usage")}
         />
       </div>
       <div className="mt-3 min-h-0 flex-1 overflow-y-auto px-4 pb-4">
-        {tab === "users"
-          ? <WorkspaceUsers wsId={workspace.id} allWorkspaces={allWorkspaces} desk={desk} />
-          : <WorkspaceMarkets ws={workspace} onUpdated={() => setWorkspace((w) => ({ ...w }))} />}
+        {tab === "users" && <WorkspaceUsers wsId={workspace.id} allWorkspaces={allWorkspaces} desk={desk} />}
+        {tab === "markets" && <WorkspaceMarkets ws={workspace} onUpdated={() => setWorkspace((w) => ({ ...w }))} />}
+        {tab === "key" && <WorkspaceKeyPanel wsId={workspace.id} />}
+        {tab === "usage" && <ModelUsagePanel workspaceId={workspace.id} />}
       </div>
     </div>
   );
@@ -551,21 +591,42 @@ function ReviewQueueBlock() {
   );
 }
 
+/**
+ * Открыть пространство сразу на нужной вкладке, если админку открыли с баннера сбоя ключа
+ * (`setAdminTarget`). Цель одноразовая; нет такого пространства в списке — остаётся обычный экран.
+ */
+export function useOpenFromTarget(onOpen: (ws: AdminWorkspace, tab: "key") => void) {
+  useEffect(() => {
+    const target = takeAdminTarget();
+    if (!target) return;
+    fetchAdminWorkspaces().then((list) => {
+      const ws = list.find((w) => w.id === target.ws);
+      if (ws) onOpen(ws, target.tab);
+    }).catch((e) => console.error("[admin] target", e));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- цель берётся один раз при монтировании
+  }, []);
+}
+
 export function AdminScreen() {
   const [selected, setSelected] = useState<AdminWorkspace | null>(null);
+  const [initialTab, setInitialTab] = useState<"users" | "key">("users");
+  const { me } = useRoyNav();
+  const dt = useDt();
+  useOpenFromTarget((ws, tab) => { setInitialTab(tab); setSelected(ws); });
 
-  if (selected) return <WorkspaceDetail ws={selected} onBack={() => setSelected(null)} />;
+  if (selected) return <WorkspaceDetail ws={selected} onBack={() => setSelected(null)} initialTab={initialTab} />;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="px-4 pt-5 pb-3">
-        <h1 className="font-bold text-ink" style={{ fontSize: 24, letterSpacing: "-0.02em" }}>Суперадмин</h1>
+        <h1 className="font-bold text-ink" style={{ fontSize: 24, letterSpacing: "-0.02em" }}>{me?.is_superadmin ? dt("Суперадмин", "Master admin") : dt("Админ", "Admin")}</h1>
         <p className="font-mono uppercase text-ink-mute" style={{ fontSize: 10.5, letterSpacing: "0.08em", marginTop: 2 }}>Воркспейсы · рынки · доступы · вычитка · рассылка</p>
       </div>
       <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 pb-4">
         <ReviewQueueBlock />
         <BroadcastBlock />
         <WorkspaceList onSelect={setSelected} />
+        {canSeeMasterSection(me) && <MasterAdminsPanel />}
       </div>
     </div>
   );

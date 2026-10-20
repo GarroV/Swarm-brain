@@ -6,10 +6,10 @@ import { escapeHtml } from "../_shared/telegram-html.ts";
 import { UNTRUSTED_DATA_RULE, wrapUntrustedForModel } from "../_shared/untrusted-prompt.ts";
 import { findDuplicateMeeting, type MeetingAttendee } from "../_shared/meeting-dedup.ts";
 import { resolveWebhookGroupId } from "./workspace.ts";
+import { type KeyHandle, openAIKeyHandle } from "../_shared/workspace-keys.ts";
 import { externalFetch, VIA_OPENAI_CHAT, VIA_OPENAI_EMBEDDING, VIA_TELEGRAM } from "../_shared/external-fetch.ts";
 
 const TELEGRAM_BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN")!;
-const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY")!;
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const WEBHOOK_SECRET = Deno.env.get("READ_AI_WEBHOOK_SECRET") ?? "";
@@ -58,21 +58,23 @@ async function sendTelegram(text: string): Promise<void> {
   }, VIA_TELEGRAM);
 }
 
-async function getEmbedding(text: string): Promise<number[]> {
+// Ключ — пространства встречи (#233): ручка создаётся там, где пространство уже определено.
+async function getEmbedding(key: KeyHandle, text: string): Promise<number[]> {
   const res = await externalFetch("https://api.openai.com/v1/embeddings", {
     method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${OPENAI_API_KEY}` },
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${key.key}` },
     body: JSON.stringify({ model: "text-embedding-3-small", input: text.slice(0, 8000) }),
   }, { ...VIA_OPENAI_EMBEDDING, usage: { purpose: "read-ai:embedding" } });
+  await key.noteResponse(res);
   const data = await res.json();
   if (!res.ok) throw new Error((data as { error?: { message?: string } }).error?.message ?? "OpenAI error");
   return (data as { data: Array<{ embedding: number[] }> }).data[0].embedding;
 }
 
-async function chatComplete(system: string, user: string, json = false): Promise<string> {
+async function chatComplete(key: KeyHandle, system: string, user: string, json = false): Promise<string> {
   const res = await externalFetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${OPENAI_API_KEY}` },
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${key.key}` },
     body: JSON.stringify({
       model: "gpt-4o-mini",
       messages: [{ role: "system", content: system }, { role: "user", content: user }],
@@ -80,14 +82,16 @@ async function chatComplete(system: string, user: string, json = false): Promise
       ...(json ? { response_format: { type: "json_object" } } : {}),
     }),
   }, { ...VIA_OPENAI_CHAT, usage: { purpose: "read-ai:chat" } });
+  await key.noteResponse(res);
   const data = await res.json();
   if (!res.ok) throw new Error((data as { error?: { message?: string } }).error?.message ?? "OpenAI error");
   return (data as { choices: Array<{ message: { content: string } }> }).choices[0].message.content;
 }
 
-async function extractCountries(text: string): Promise<string[]> {
+async function extractCountries(key: KeyHandle, text: string): Promise<string[]> {
   try {
     const raw = await chatComplete(
+      key,
       'Извлеки страны/рынки из транскрипта встречи и верни JSON: {"countries":["Serbia","Bulgaria"]}.\n' +
         COUNTRY_PROMPT_RULE +
         '\nКороткие официальные английские названия без "Republic of". Если стран нет — {"countries":[]}.\n' +
@@ -252,10 +256,11 @@ Deno.serve(async (req: Request) => {
     // больше нет (05.09.2026): оно писало их в статус `pending`, который не показывает ни
     // веб, ни рекордер, — то есть создавало задачи, невидимые всем. Задачи из встречи делает
     // человек кнопкой «Сгенерировать задачи» в вебе.
+    const aiKey = await openAIKeyHandle(supabase, groupId);
     const [tezises, embedding, countries] = await Promise.all([
-      chatComplete(TEZISY_PROMPT, buildTezisyUserMessage(tezisSource)),
-      getEmbedding(fullContent),
-      extractCountries(fullContent),
+      chatComplete(aiKey, TEZISY_PROMPT, buildTezisyUserMessage(tezisSource)),
+      getEmbedding(aiKey, fullContent),
+      extractCountries(aiKey, fullContent),
     ]);
 
     // Extract meeting date for display

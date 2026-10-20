@@ -30,7 +30,11 @@ type EntryIndex = {
 
 // Single GPT call that generates summary (if not provided) + countries + type + date + keywords.
 // existingSummary: pass when the caller already has a summary (e.g. Granola tezisy, voice transcript).
-async function buildEntryIndex(content: string, existingSummary?: string): Promise<EntryIndex> {
+async function buildEntryIndex(
+  content: string,
+  existingSummary: string | undefined,
+  groupId: string | undefined,
+): Promise<EntryIndex> {
   const hasSummary = Boolean(existingSummary?.trim());
   const schema = hasSummary
     ? '{"countries":["Spain","Bulgaria"],"entry_type":"meeting|note","entry_date":"YYYY-MM-DD или null","keywords":"слово1,слово2"}'
@@ -51,6 +55,7 @@ async function buildEntryIndex(content: string, existingSummary?: string): Promi
     const raw = await chatComplete(system, wrapUntrustedForModel(content.slice(0, 5000)), {
       temperature: 0,
       json: true,
+      groupId,
     });
     const parsed = JSON.parse(raw.replace(/```json\n?|\n?```/g, "").trim());
     return {
@@ -144,7 +149,7 @@ export async function saveEntry(
       );
       if (frag) {
         const merged = `${frag.content}\n\n${content}`;
-        const midx = await buildEntryIndex(merged);
+        const midx = await buildEntryIndex(merged, undefined, groupId);
         const msp = specificCountries(midx.countries);
         const mc = applyGeneralSentinel(midx.countries);
         const memb = await getEmbedding(
@@ -153,6 +158,7 @@ export async function saveEntry(
             msp.length ? `Страны: ${msp.join(", ")}` : "",
             midx.keywords ? `Ключевые слова: ${midx.keywords}` : "",
           ].filter(Boolean).join("\n").slice(0, 8000),
+          groupId,
         );
         await supabase.from("entries").update({
           content: merged,
@@ -173,7 +179,7 @@ export async function saveEntry(
   if (source === "note") {
     index = { summary: summary ?? null, countries: [], entry_type: "note", entry_date: null, keywords: "" };
   } else {
-    index = await buildEntryIndex(content, summary);
+    index = await buildEntryIndex(content, summary, groupId);
   }
 
   // Текст, присланный в бота (набранный/пересланный, source=telegram), — ВСЕГДА обычная запись,
@@ -195,7 +201,7 @@ export async function saveEntry(
     specific.length > 0 ? `Страны: ${specific.join(", ")}` : "",
     index.keywords ? `Ключевые слова: ${index.keywords}` : "",
   ].filter(Boolean);
-  const embedding = await getEmbedding(embeddingParts.join("\n").slice(0, 8000));
+  const embedding = await getEmbedding(embeddingParts.join("\n").slice(0, 8000), groupId);
 
   const { data, error } = await supabase.from("entries").insert({
     content,
@@ -284,7 +290,7 @@ export async function updateEntryContent(
   newContent: string,
   metadataPatch?: Record<string, unknown>,
 ): Promise<void> {
-  const index = await buildEntryIndex(newContent);
+  const index = await buildEntryIndex(newContent, undefined, groupId);
   const specific = specificCountries(index.countries);
   const countries = applyGeneralSentinel(index.countries);
   const embeddingParts = [
@@ -292,7 +298,7 @@ export async function updateEntryContent(
     specific.length > 0 ? `Страны: ${specific.join(", ")}` : "",
     index.keywords ? `Ключевые слова: ${index.keywords}` : "",
   ].filter(Boolean);
-  const embedding = await getEmbedding(embeddingParts.join("\n").slice(0, 8000));
+  const embedding = await getEmbedding(embeddingParts.join("\n").slice(0, 8000), groupId);
 
   const updates: Record<string, unknown> = {
     content: newContent,
@@ -360,13 +366,14 @@ export async function checkAllowed(userId: number, username?: string): Promise<b
   return false;
 }
 
-export async function generateSummary(text: string): Promise<string | null> {
+export async function generateSummary(text: string, groupId: string | undefined): Promise<string | null> {
   if (text.length < 80) return null;
   try {
     return await chatComplete(
       "Сделай краткие тезисы из текста. Только конкретные факты: имена, цифры, решения, даты. Без общих фраз. 3–7 пунктов. Маркированный список на русском.\n" +
         UNTRUSTED_DATA_RULE,
       wrapUntrustedForModel(text.slice(0, 6000)),
+      { groupId },
     );
   } catch {
     return null;

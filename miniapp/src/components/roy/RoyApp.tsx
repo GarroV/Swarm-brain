@@ -52,6 +52,7 @@ import { type RailId, RoyRail } from "./RoyRail";
 import { useOverdueCount } from "./useOverdueCount";
 import { NotificationsBell } from "./NotificationsBell";
 import { DeployNoticeBar, HeaderNotice } from "./DeployNoticeBar";
+import { KeyHealthBar } from "./KeyHealthBar";
 import { AnswerModal } from "./AnswerModal";
 import { PasskeyStep } from "./PasskeyStep";
 
@@ -377,6 +378,8 @@ export function RoyApp({ me }: { me: Me | null }) {
         {/* Плашка «скоро обновление»: на десктопе — в шапке экрана (HeaderNotice), здесь только
             мобайл и десктопные экраны без такой шапки. См. шапку DeployNoticeBar.tsx. */}
         <DeployNoticeBar />
+        {/* Сбой ключа к нейронке — только админам пространства и мастер-админу (#233). */}
+        <KeyHealthBar />
         {/* Второй шаг входа — палец (ключ доступа, #955): сам просит Touch ID после Google/Telegram. */}
         <PasskeyStep me={me} />
         {me?.is_demo && (

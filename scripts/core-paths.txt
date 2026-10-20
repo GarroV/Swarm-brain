@@ -80,6 +80,14 @@ supabase/functions/_shared/model-usage-summary.ts|supabase/functions/_shared/mod
 # Проверки Децимуса (блок 3): показываются и пересказываются Claude как факт; ошибка не падает —
 # она рисует плавающий процент или чужую страну вместо ошибки/404.
 supabase/functions/_shared/inspections-view.ts|supabase/functions/_shared/inspections-view.test.ts
+# Ключ пространства и мастер-админы (#233): ошибка здесь не падает — она молча расшифровывает
+# чужой секрет, отдаёт ключ наружу или даёт управление ключом чужому пространству.
+supabase/functions/_shared/secret-box.ts|supabase/functions/_shared/secret-box.test.ts
+supabase/functions/_shared/workspace-keys.ts|supabase/functions/_shared/workspace-keys.test.ts
+supabase/functions/_shared/ai-health.ts|supabase/functions/_shared/ai-health.test.ts
+supabase/functions/_shared/users/master-admins.ts|supabase/functions/_shared/users/master-admins.test.ts
+supabase/functions/swarm-api/workspace-keys-routes.ts|supabase/functions/swarm-api/workspace-keys-routes.test.ts
+supabase/functions/swarm-api/model-usage.ts|supabase/functions/swarm-api/model-usage.test.ts
 # Второй шаг входа — палец (ключ доступа, #955). Ошибка не падает: чужой ключ подтверждает чужую
 # сессию, ответ с чужого сайта принимается, вызов срабатывает дважды, а замок обязательности
 # пропускает или запирает не тех. Ядро доступа, тесты — на настоящей криптографии.
@@ -90,6 +98,7 @@ supabase/functions/auth-passkey/handler.ts|supabase/functions/auth-passkey/handl
 supabase/functions/swarm-api/passkey-admin.ts|supabase/functions/swarm-api/passkey-admin.test.ts
 supabase/functions/_shared/passkeys/device-link.ts|supabase/functions/_shared/passkeys/device-link.test.ts
 supabase/functions/swarm-api/passkeys-self.ts|supabase/functions/swarm-api/passkeys-self.test.ts
+supabase/functions/_shared/stalled-meeting-alerts.ts|supabase/functions/_shared/stalled-meeting-alerts.test.ts
 # Подсказки поиска слева: ошибка в правиле видимости не падает — в выпадающем списке молча
 # появляется название чужой приватной записи или задачи закрытого проекта.
 supabase/functions/swarm-api/quick-search.ts|supabase/functions/swarm-api/quick-search.db.test.ts

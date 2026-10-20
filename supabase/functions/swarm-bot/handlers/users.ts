@@ -1,5 +1,5 @@
 import { loadProfileTasks } from "./profile-tasks.ts";
-import { ADMIN_USER_ID, isAdminUser, supabase } from "../lib/supabase.ts";
+import { ADMIN_USER_ID, isAdminUser, isMasterUser, supabase } from "../lib/supabase.ts";
 import { buildKeyboard, editInlineMessage, sendInlineMessage, sendMessage } from "../lib/telegram.ts";
 import { notifyMessage } from "../lib/notify.ts";
 import { clearSession, setSession } from "../lib/storage.ts";
@@ -9,6 +9,7 @@ import { generateNameAliases } from "../lib/name-aliases.ts";
 import { assignUserToWorkspace } from "../lib/workspace.ts";
 import { externalFetch, VIA_TELEGRAM } from "../../_shared/external-fetch.ts";
 import { isSuperadmin, type MemberRow } from "../../_shared/users/admin-scope.ts";
+import { withMasterFlag } from "../../_shared/users/master-admins.ts";
 import { canActOnUser, canAddUsers, isEditableProfileField, type UserAction, type UsersActor } from "./users-scope.ts";
 import { escapeHtml } from "../../_shared/telegram-html.ts";
 
@@ -25,7 +26,8 @@ export const PROFILE_FIELDS: Record<string, string> = {
 const NO_RIGHTS = "Недостаточно прав для этого действия.";
 
 async function loadUsersActor(telegramId: number, groupId: string): Promise<UsersActor> {
-  return { telegramId, groupId, isAdmin: await isAdminUser(telegramId) };
+  // isMaster — мастер-админ по данным (#233): от него зависит объём (isSuperadmin).
+  return { telegramId, groupId, isAdmin: await isAdminUser(telegramId), isMaster: await isMasterUser(telegramId) };
 }
 
 /** Строка человека в воркспейсе действующего (суперадмину — любая). Ошибка чтения = нет прав. */
@@ -38,7 +40,8 @@ async function loadTargetRow(actor: UsersActor, targetId: number): Promise<Membe
     console.error("[users] target row:", error.message);
     return null;
   }
-  return ((data ?? [])[0] as MemberRow | undefined) ?? null;
+  // is_master — признак цели: админ воркспейса не правит аккаунт мастер-админа (fail-closed при сбое списка).
+  return await withMasterFlag(supabase, ((data ?? [])[0] as MemberRow | undefined) ?? null);
 }
 
 /** Проверка прав с ответом человеку; true — можно продолжать. */

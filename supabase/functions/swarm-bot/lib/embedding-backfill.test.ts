@@ -31,6 +31,7 @@ const row = (id: string, over: Partial<BackfillEntry> = {}): BackfillEntry => ({
   content: `содержимое ${id}`,
   summary: null,
   countries: null,
+  group_id: null,
   ...over,
 });
 
@@ -68,4 +69,14 @@ Deno.test("пустую запись не индексируем", async () => {
 Deno.test("текст: саммари важнее содержимого, страны — только конкретные", () => {
   assertEquals(backfillText(row("x", { summary: "кратко", countries: ["RS", "General"] })), "кратко\nСтраны: RS");
   assertEquals(backfillText(row("y")), "содержимое y");
+});
+
+Deno.test("эмбеддинг запрашивается ключом пространства записи", async () => {
+  const { store } = fakeStore([row("a", { group_id: "cee" }), row("b", { group_id: "demo" })]);
+  const asked: Array<string | null> = [];
+  await backfillMissingEmbeddings(store, (_text, groupId) => {
+    asked.push(groupId);
+    return Promise.resolve([0.1]);
+  });
+  assertEquals(asked, ["cee", "demo"]);
 });
