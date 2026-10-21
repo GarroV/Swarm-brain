@@ -536,10 +536,7 @@ export function InitiativeList({
           {dt("Задача", "Task")}
         </span>
         <span className={cn("px-2", PHONE_TIGHT)}>{dt("Срок", "Due")}</span>
-        {/* Подписи узких столбцов — невидимые, но на месте: display:none выбил бы ячейку из сетки. */}
-        <span className={cn("overflow-hidden px-2", TIGHT_INVISIBLE)}>
-          {dt("Рынок", "Market")}
-        </span>
+        {/* Подпись узкого столбца — невидимая, но на месте: display:none выбил бы ячейку из сетки. */}
         <span className={cn("overflow-hidden px-2", TIGHT_INVISIBLE)}>
           {dt("Сверка", "Check")}
         </span>
