@@ -27,7 +27,9 @@ RUNTIME=supabase-edge-functions
 PROBE="${GATE_PROBE:-http://127.0.0.1:8400/functions/v1/swarm-recorder-version}"
 PROBE_TRIES="${GATE_PROBE_TRIES:-60}"
 # Файлы compose проекта `swarm` на сервере; сервис рантайма функций в них называется functions.
-COMPOSE_FILES=(-f docker-compose.yml -f docker-compose.swarm.yml)
+# Пути абсолютные: `-f` считается от текущей папки (у шлюза это домашняя swarm-deploy), а не от
+# --project-directory — с относительными compose не находил файлы (21.10.2026).
+COMPOSE_FILES=(-f "$STACK/docker-compose.yml" -f "$STACK/docker-compose.swarm.yml")
 
 sha256_() { if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1" | cut -d' ' -f1; else shasum -a 256 "$1" | cut -d' ' -f1; fi; }
 die() { echo "gate: $*" >&2; exit 1; }
