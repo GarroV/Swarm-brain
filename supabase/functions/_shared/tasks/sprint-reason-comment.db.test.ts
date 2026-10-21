@@ -173,3 +173,30 @@ Deno.test("автоматика комментариев и уведомлени
     await db.end();
   }
 });
+
+Deno.test("сняли пометку переноса и поставили снова (человек или сдвиг срока): причина на месте, комментарий один", async () => {
+  const db = await connect();
+  try {
+    const { cycleId, taskId } = await seed(db);
+    const reasonOf = async () =>
+      (await db.queryObject<{ to_carry: boolean; carry_reason: string | null }>`
+        select to_carry, carry_reason from sprint_items where cycle_id = ${cycleId} and task_id = ${taskId}`).rows[0];
+
+    await updateItem(cycleId, taskId, WS, { to_carry: true, carry_reason: "ждём поставщика" }, String(ME), ME);
+    await updateItem(cycleId, taskId, WS, { to_carry: false }, String(ME), ME);
+    assertEquals(await reasonOf(), { to_carry: false, carry_reason: "ждём поставщика" });
+
+    // Человек ставит пометку снова.
+    await updateItem(cycleId, taskId, WS, { to_carry: true }, String(ME), ME);
+    assertEquals(await reasonOf(), { to_carry: true, carry_reason: "ждём поставщика" });
+
+    // Снова сняли, а пометку возвращает автоматика: срок за концом идущего спринта.
+    await updateItem(cycleId, taskId, WS, { to_carry: false }, String(ME), ME);
+    await db.queryArray`update tasks set due_date = current_date + 20 where id = ${taskId}`;
+    assertEquals(await reasonOf(), { to_carry: true, carry_reason: "ждём поставщика" });
+
+    assertEquals((await comments(db, taskId)).length, 1);
+  } finally {
+    await db.end();
+  }
+});

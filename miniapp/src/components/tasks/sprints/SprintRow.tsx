@@ -7,16 +7,16 @@ import { useDt } from "@/components/roy/nav";
 import {
   AssigneeChip,
   CarryBadge,
-  CarryFlag,
-  CarryReasonPrompt,
   CountChip,
+  NoteBadge,
+  NoteEditor,
 } from "./atoms";
 import { fmtDay, fmtDayShort, isOverdue } from "./format";
 import type { SubtaskBlock } from "@/lib/sprintGrouping";
 import { blockText } from "./groupingText";
 
 // Строка состава спринта — таблицей, в колонках стенда (screens-work.js → sprintTaskRow):
-// задача · срок · рынок · сверка · исполнитель. Быстрые действия («✓ выполнено», «→ перенести»)
+// задача · срок · сверка · исполнитель · хвост действий. Быстрые действия («✓ выполнено», «→ перенести»)
 // живут в хвосте строки и проявляются при наведении: строка спокойная, а ежедневный клик
 // по-прежнему один (#407).
 
@@ -27,22 +27,22 @@ import { blockText } from "./groupingText";
  *  панель «План» тоже отнимает место. Уступают по очереди:
  *    исполнитель — всегда только кружок (фото из Google или инициалы), имя в подсказке
  *      (владелец 20.10.2026: колонка ~40px, место — названию задачи);
- *    < 720px — рынок прячется (он есть в карточке), сверка — до цветной точки (состояние в подсказке);
+ *    < 720px — сверка до цветной точки (состояние в подсказке);
  *    < 480px (телефон) — строка в два этажа: название на всю ширину, под ним справа срок
  *      («дд.мм» без полей), сверка, исполнитель и кнопки хвоста — в одну строку им не хватало места.
- *  Срок и хвост с действиями остаются; название получает всё остальное. Столбцов всегда шесть:
- *  спрятанный рынок — нулевой ширины и невидимый, иначе ячейки строки съехали бы по сетке. */
+ *  Колонки: задача · срок · сверка · исполнитель · хвост. «Рынок» убран 21.10.2026 (он есть
+ *  в карточке задачи). Срок и хвост с действиями остаются; название получает всё остальное. */
 export const SPRINT_GRID =
-  "grid-cols-[minmax(0,1fr)_60px_52px_112px_40px_64px] @max-[860px]/sprint:grid-cols-[minmax(0,1fr)_60px_52px_112px_40px_56px] @max-[720px]/sprint:grid-cols-[minmax(0,1fr)_56px_0px_40px_40px_48px] @max-[480px]/sprint:grid-cols-[minmax(0,1fr)_40px_0px_40px_40px_96px]";
+  "grid-cols-[minmax(0,1fr)_60px_112px_40px_64px] @max-[860px]/sprint:grid-cols-[minmax(0,1fr)_60px_112px_40px_56px] @max-[720px]/sprint:grid-cols-[minmax(0,1fr)_56px_40px_40px_48px] @max-[480px]/sprint:grid-cols-[minmax(0,1fr)_40px_40px_40px_96px]";
 
-/** Ячейки, которые уходят второй ступенью: рынок целиком, подпись сверки. */
+/** Подпись сверки уходит второй ступенью. */
 export const TIGHT_HIDE = "@max-[720px]/sprint:hidden";
 export const TIGHT_INVISIBLE =
   "@max-[720px]/sprint:invisible @max-[720px]/sprint:px-0";
 /** Телефон: название — первым этажом на всю строку, остальное — вторым, с колонки срока.
  *  Шапка таблицы остаётся одним этажом: её подписи стоят над вторым этажом строк. */
 export const PHONE_TITLE =
-  "@max-[480px]/sprint:col-span-6 @max-[480px]/sprint:pt-2";
+  "@max-[480px]/sprint:col-span-5 @max-[480px]/sprint:pt-2";
 /** Кружок исполнителя уступает место кнопкам хвоста, пока на строку наведён курсор: им нужно
  *  ~94px, а колонка хвоста уже, поэтому они заходят на колонку исполнителя. */
 export const HOVER_YIELD =
@@ -96,8 +96,6 @@ export type RowHandlers = {
     item: SprintCycleItem,
     patch: { check_note?: string | null; carry_reason?: string | null },
   ) => void | Promise<void>;
-  /** Рынок живой задачи: в строке состава его нет, он берётся из самой задачи. */
-  marketOf?: (item: SprintCycleItem) => string | null;
   /** Родительская задача строки (#478): подзадача встаёт под родителя, если он тоже в составе. */
   parentOf?: (item: SprintCycleItem) => string | null;
   /** Открыть живую задачу по id — подзадачу вне строк группы и родителя из подписи «из «…»». */
@@ -196,16 +194,13 @@ export function SprintRow(
   const closed = CLOSED.has(item.status);
   const needsNote = item.check_status === "risk" ||
     item.check_status === "problem";
-  const noteField: "check_note" | "carry_reason" = needsNote
-    ? "check_note"
-    : "carry_reason";
-  const saved = (needsNote ? item.check_note : item.carry_reason) ?? "";
-  const [note, setNote] = useState<string | null>(null);
-  const noteValue = note ?? saved;
+  // Какая заметка сейчас открыта в редакторе под строкой: причина переноса или риск/проблема.
+  const [editing, setEditing] = useState<"carry_reason" | "check_note" | null>(
+    null,
+  );
   const live = !item.removed && !!item.task_id;
   const openable = !!h.onOpen && live;
   const late = !!item.due_date && !closed && isOverdue(item.due_date);
-  const market = live ? h.marketOf?.(item) ?? null : null;
   const who = item.assignees[0] ?? null;
   // Клик по кнопке не должен открывать карточку — иначе каждое быстрое действие
   // заканчивается всплывшей модалкой.
@@ -255,133 +250,193 @@ export function SprintRow(
         </span>
       )}
       <div
-        className={cn("flex min-w-0 items-center gap-2 px-3", PHONE_TITLE)}
+        className={cn(
+          "flex min-w-0 flex-col justify-center py-1.5 px-3",
+          PHONE_TITLE,
+        )}
         style={{ paddingLeft: depth ? SUBTASK_INDENT : TASK_INDENT }}
       >
-        {/* Место под стрелку есть у каждой строки — с подзадачами она там, без них пусто. */}
-        {kids
-          ? (
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                kids.onToggle();
-              }}
-              aria-expanded={kids.open}
-              aria-label={kids.open
-                ? dt("Свернуть подзадачи", "Collapse subtasks")
-                : dt("Показать подзадачи", "Show subtasks")}
-              className="flex w-3 shrink-0 items-center justify-center self-stretch text-ink-mute hover:text-ink"
-            >
-              <RoyIcon
-                name="cright"
-                size={9}
-                strokeWidth={2.6}
-                className={cn("transition-transform", kids.open && "rotate-90")}
-              />
-            </button>
-          )
-          : <span aria-hidden="true" className="w-3 shrink-0" />}
-        <span
-          className={cn(
-            "size-[7px] shrink-0 rounded-full",
-            STATUS_TONE[item.status] ?? "bg-status-open",
-          )}
-          title={item.status}
-        />
-        <span
-          title={item.title}
-          className={cn(
-            "min-w-0 line-clamp-2 break-words leading-snug",
-            item.removed
-              ? "text-ink-mute line-through"
-              : closed
-              ? "text-ink-mute line-through"
-              : "text-ink",
-          )}
-        >
-          {item.title}
-        </span>
-        {item.status === "cancelled" && !item.removed && (
-          <span className="shrink-0 text-ink-mute" style={{ fontSize: 11.5 }}>
-            {dt("отменена", "cancelled")}
-          </span>
-        )}
-        {kids && (
-          <span
-            className={cn(
-              "shrink-0 font-mono",
-              kids.done === kids.total ? "text-status-done" : "text-ink-mute",
-            )}
-            style={{ fontSize: 11.5 }}
-            title={dt("подзадачи: готово / всего", "subtasks: done / total")}
-          >
-            {kids.done}/{kids.total}
-          </span>
-        )}
-        {parent && (
-          h.onOpenTask
+        {/* Первый этаж — название целиком, без обрезки (владелец 21.10.2026). */}
+        <div className="flex min-w-0 items-start gap-2">
+          {/* Место под стрелку есть у каждой строки — с подзадачами она там, без них пусто. */}
+          {kids
             ? (
               <button
                 type="button"
                 onClick={(e) => {
                   e.stopPropagation();
-                  h.onOpenTask!(parent.id);
+                  kids.onToggle();
                 }}
-                className="min-w-0 max-w-[40%] shrink truncate text-ink-mute underline-offset-2 hover:text-ink hover:underline"
-                style={{ fontSize: 11.5 }}
+                aria-expanded={kids.open}
+                aria-label={kids.open
+                  ? dt("Свернуть подзадачи", "Collapse subtasks")
+                  : dt("Показать подзадачи", "Show subtasks")}
+                className="flex h-[1.375em] w-3 shrink-0 items-center justify-center text-ink-mute hover:text-ink"
               >
-                ↳ {dt("из", "of")} «{parent.title}»
+                <RoyIcon
+                  name="cright"
+                  size={9}
+                  strokeWidth={2.6}
+                  className={cn(
+                    "transition-transform",
+                    kids.open && "rotate-90",
+                  )}
+                />
               </button>
             )
-            : (
-              <span
-                className="min-w-0 max-w-[40%] shrink truncate text-ink-mute"
-                style={{ fontSize: 11.5 }}
-              >
-                ↳ {dt("из", "of")} «{parent.title}»
-              </span>
-            )
-        )}
-        {item.removed && (
+            : <span aria-hidden="true" className="w-3 shrink-0" />}
+          <span className="flex h-[1.375em] shrink-0 items-center">
+            <span
+              className={cn(
+                "size-[7px] rounded-full",
+                STATUS_TONE[item.status] ?? "bg-status-open",
+              )}
+              title={item.status}
+            />
+          </span>
           <span
-            className="shrink-0 whitespace-nowrap text-ink-mute"
-            style={{ fontSize: 11 }}
+            title={item.title}
+            className={cn(
+              "min-w-0 break-words leading-snug",
+              item.removed
+                ? "text-ink-mute line-through"
+                : closed
+                ? "text-ink-mute line-through"
+                : "text-ink",
+            )}
           >
-            {dt("удалена", "deleted")}
-            {item.removed_at ? ` ${fmtDay(item.removed_at)}` : ""}
+            {item.title}
           </span>
-        )}
-        {live && (
-          <span className="flex shrink-0 items-center gap-1.5">
-            {showExtra && !item.in_plan && (
-              <span
-                title={dt(
-                  "добавлено после старта спринта",
-                  "added after the sprint started",
-                )}
-                className="rounded-[5px] border border-line px-1.5 py-0.5 text-ink-mute"
-                style={{ fontSize: 10.5 }}
-              >
-                {dt("сверх плана", "extra")}
-              </span>
-            )}
-            {item.to_carry && <CarryFlag reason={item.carry_reason} />}
-            {
-              /* Пустая причина переноса — приглашение вписать её (поле причины — под строкой). */
-            }
-            {item.to_carry && !needsNote && !closed && h.onNote &&
-              !(item.carry_reason ?? "").trim() && (
-              <CarryReasonPrompt
-                onClick={() =>
-                  document.getElementById(`sprint-note-${item.id}`)?.focus()}
-              />
-            )}
-            <CarryBadge count={item.carry_count} reason={item.carry_reason} />
-            <CountChip kind="comments" count={item.comment_count} />
-            <CountChip kind="links" count={item.link_count} />
-          </span>
-        )}
+        </div>
+        {/* Второй этаж — мелкие метки под началом названия; этаж есть, только если есть метка. */}
+        {(() => {
+          const noteOpen = !!h.onNote && !closed && live;
+          const carryOn = live && item.to_carry;
+          const carryNote = (item.carry_reason ?? "").trim();
+          const checkOn = live && needsNote;
+          const flags = [
+            item.status === "cancelled" && !item.removed,
+            !!kids,
+            !!parent,
+            item.removed,
+            live && showExtra && !item.in_plan,
+            carryOn && (!closed || !!carryNote),
+            checkOn,
+            live && item.carry_count >= 2,
+            live && item.comment_count > 0,
+            live && item.link_count > 0,
+          ];
+          if (!flags.some(Boolean)) return null;
+          const meta = { fontSize: 11 } as const;
+          return (
+            <div
+              className="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-ink-mute"
+              style={{ paddingLeft: 12 + 8 + 7 + 8, ...meta }}
+            >
+              {item.status === "cancelled" && !item.removed && (
+                <span>{dt("отменена", "cancelled")}</span>
+              )}
+              {kids && (
+                <span
+                  className={cn(
+                    "font-mono",
+                    kids.done === kids.total
+                      ? "text-status-done"
+                      : "text-ink-mute",
+                  )}
+                  title={dt(
+                    "подзадачи: готово / всего",
+                    "subtasks: done / total",
+                  )}
+                >
+                  {kids.done}/{kids.total}
+                </span>
+              )}
+              {parent && (
+                h.onOpenTask
+                  ? (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        h.onOpenTask!(parent.id);
+                      }}
+                      className="min-w-0 max-w-full truncate underline-offset-2 hover:text-ink hover:underline"
+                    >
+                      ↳ {dt("из", "of")} «{parent.title}»
+                    </button>
+                  )
+                  : (
+                    <span className="min-w-0 max-w-full truncate">
+                      ↳ {dt("из", "of")} «{parent.title}»
+                    </span>
+                  )
+              )}
+              {item.removed && (
+                <span className="whitespace-nowrap">
+                  {dt("удалена", "deleted")}
+                  {item.removed_at ? ` ${fmtDay(item.removed_at)}` : ""}
+                </span>
+              )}
+              {live && showExtra && !item.in_plan && (
+                <span
+                  title={dt(
+                    "добавлено после старта спринта",
+                    "added after the sprint started",
+                  )}
+                  className="rounded-[5px] border border-line px-1.5 py-px"
+                  style={{ fontSize: 10.5 }}
+                >
+                  {dt("сверх плана", "extra")}
+                </span>
+              )}
+              {carryOn && (!closed || !!carryNote) && (
+                <NoteBadge
+                  label={dt("перенос", "carry")}
+                  note={item.carry_reason}
+                  emptyHint={dt("причина?", "reason?")}
+                  title={noteOpen
+                    ? dt(
+                      "Перенос: нажмите, чтобы вписать причину",
+                      "Carry-over: click to say why",
+                    )
+                    : dt("Перенос", "Carry-over")}
+                  onClick={noteOpen
+                    ? () => setEditing("carry_reason")
+                    : undefined}
+                />
+              )}
+              {checkOn && (
+                <NoteBadge
+                  label={item.check_status === "problem"
+                    ? dt("проблема", "problem")
+                    : dt("риск", "risk")}
+                  note={item.check_note}
+                  emptyHint={dt("что мешает?", "what blocks?")}
+                  title={noteOpen
+                    ? dt(
+                      "Нажмите, чтобы вписать, что именно мешает",
+                      "Click to say what exactly is blocking",
+                    )
+                    : dt("Что мешает", "What is blocking")}
+                  onClick={noteOpen
+                    ? () => setEditing("check_note")
+                    : undefined}
+                />
+              )}
+              {live && (
+                <>
+                  <CarryBadge
+                    count={item.carry_count}
+                    reason={item.carry_reason}
+                  />
+                  <CountChip kind="comments" count={item.comment_count} />
+                  <CountChip kind="links" count={item.link_count} />
+                </>
+              )}
+            </div>
+          );
+        })()}
       </div>
 
       <div
@@ -395,16 +450,6 @@ export function SprintRow(
         {item.due_date
           ? fmtDayShort(item.due_date)
           : <span className="text-ink-mute">—</span>}
-      </div>
-
-      <div
-        className={cn(
-          "min-w-0 overflow-hidden px-2 font-mono text-ink-soft",
-          TIGHT_INVISIBLE,
-        )}
-        style={{ fontSize: 12 }}
-      >
-        {market ?? <span className="text-ink-mute">—</span>}
       </div>
 
       <div className="min-w-0 px-2">
@@ -539,37 +584,31 @@ export function SprintRow(
       </div>
 
       {
-        /* Причину спрашиваем там же, где поставили отметку: «риск» без причины к следующей
-          встрече уже никто не помнит. Поле необязательное — принуждение даёт «нет времени»
-          вместо объяснения. */
+        /* Редактор заметки — только по клику на значок второго этажа: постоянного поля под строкой
+          нет (владелец 21.10.2026: «нет никакого отображения, что Enter сохранит»). Поле
+          необязательное — принуждение даёт «нет времени» вместо объяснения. */
       }
-      {h.onNote && !closed && live && (needsNote || item.to_carry) && (
+      {editing && h.onNote && !closed && live && (
         <div
           className="col-span-full px-3 pb-2"
           style={{ paddingLeft: TASK_INDENT + 20 }}
         >
-          <input
-            id={`sprint-note-${item.id}`}
-            value={noteValue}
-            onClick={(e) => e.stopPropagation()}
-            onChange={(e) => setNote(e.target.value)}
-            onBlur={() => {
-              const v = noteValue.trim();
-              setNote(null);
-              if (v === saved.trim()) return;
-              h.onNote!(item, { [noteField]: v || null });
-            }}
-            placeholder={needsNote
+          <NoteEditor
+            key={editing}
+            initial={(editing === "check_note"
+              ? item.check_note
+              : item.carry_reason) ?? ""}
+            placeholder={editing === "check_note"
               ? dt(
-                "что именно мешает (необязательно)",
-                "what exactly is blocking (optional)",
+                "Что именно мешает — Enter, чтобы сохранить",
+                "What exactly is blocking — Enter to save",
               )
               : dt(
-                "почему переносится (необязательно)",
-                "why it is carried over (optional)",
+                "Почему переносится — Enter, чтобы сохранить",
+                "Why it is carried over — Enter to save",
               )}
-            className="w-full rounded-[6px] border border-line bg-surface px-2 py-1 text-ink outline-none focus:border-accent-line"
-            style={{ fontSize: 12 }}
+            onSave={(v) => h.onNote!(item, { [editing]: v })}
+            onClose={() => setEditing(null)}
           />
         </div>
       )}
@@ -667,15 +706,6 @@ export function SubtaskLiteRow({ task, inSprint, onOpen }: {
         style={{ fontSize: 12 }}
       >
         {task.due_date ? fmtDayShort(task.due_date) : "—"}
-      </div>
-      <div
-        className={cn(
-          "min-w-0 overflow-hidden px-2 font-mono text-ink-mute",
-          TIGHT_INVISIBLE,
-        )}
-        style={{ fontSize: 12 }}
-      >
-        {task.country ?? "—"}
       </div>
       <div />
       <div className="flex min-w-0 items-center px-2 text-ink-mute">

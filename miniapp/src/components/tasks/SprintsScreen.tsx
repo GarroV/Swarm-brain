@@ -875,10 +875,6 @@ export function SprintsScreen() {
       noneLabel={byPeople ? dt("Без исполнителя", "Unassigned") : undefined}
       unchecked={unchecked}
       showExtra={plan.length > 0}
-      marketOf={(item) =>
-        item.frozen || !item.task_id
-          ? null
-          : tasks.find((t) => t.id === item.task_id)?.country ?? null}
       parentOf={(item) =>
         item.task_id
           ? tasks.find((t) => t.id === item.task_id)?.parent_id ?? null

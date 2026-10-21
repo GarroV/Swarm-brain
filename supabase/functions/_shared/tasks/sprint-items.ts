@@ -204,7 +204,8 @@ async function loadAllItems(
         check_at: (r.check_at as string | null) ?? null,
         check_by: (r.check_by as string | null) ?? null,
         to_carry: !!r.to_carry,
-        carry_reason: (r.carry_reason as string | null) ?? null,
+        // Причина переживает снятие пометки (чтобы вернуться при повторной), но видна только на пометке.
+        carry_reason: r.to_carry ? ((r.carry_reason as string | null) ?? null) : null,
         carry_count: (r.carry_count as number | null) ?? 0,
         carried_manual: (r.carried_manual as boolean | null) ?? null,
         removed,
@@ -465,8 +466,9 @@ export async function updateItem(
     fields.carry_by = patch.to_carry ? actor : null;
     // Любое действие человека над отметкой делает её человеческой: автоматика такую не снимет.
     fields.carry_auto = false;
-    // Пометку сняли — причина теряет смысл и не должна всплыть в следующем спринте.
-    if (!patch.to_carry) fields.carry_reason = null;
+    // Пометку сняли — причину НЕ стираем: сдвиг срока (или человек) поставит пометку снова, и
+    // прежняя причина должна оказаться на месте, а не просить вписать её заново (21.10.2026).
+    // Показывается она только при `to_carry` — см. разбор строк выше.
   }
   if ("carry_reason" in patch && patch.to_carry !== false) {
     fields.carry_reason = patch.carry_reason;

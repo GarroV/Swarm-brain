@@ -11,11 +11,14 @@
 //
 //   POST → 200 { ok: true, due: false } — не час снимка
 //          200 { ok: true, due: true, report: { people, ok, calendar_not_connected, calendar_token_dead,
-//                calendar_unavailable, failed, events } } — счётчики людей по итогу, events — встреч в снимке
+//                calendar_unavailable, failed, events }, avatars: { people, updated, unchanged, skipped, failed } | null }
+//          — счётчики людей по итогу, events — встреч в снимке; avatars — проход «фото из Google»
+//          (раз в сутки в 08 по Белграду или при force; null — не его час или проход упал)
 //   403 нет/не тот X-Cron-Secret (и CRON_SECRET не задан) · 405 не POST · 500 сбой чтения людей.
 //
 // Пишет: meeting_calendar_snapshot_runs, meeting_calendar_snapshot_events, meeting_calendar_misses
-// (причины уровня человека: календаря нет / доступ умер).
+// (причины уровня человека: календаря нет / доступ умер), user_profiles.avatar_url (фото из Google,
+// _shared/google-avatars.ts).
 //
 // Env: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, CRON_SECRET.
 // Деплой: supabase functions deploy meeting-calendar-snapshot --no-verify-jwt (cron хитит с секретом).
@@ -24,7 +27,8 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { accessToken, listEvents } from "../_shared/google-calendar.ts";
 import { makeMissStore } from "../_shared/calendar-miss-store.ts";
-import { snapshotDue } from "../_shared/calendar-snapshot.ts";
+import { SNAPSHOT_HOURS, snapshotDue, teamHour } from "../_shared/calendar-snapshot.ts";
+import { type AvatarDeps, fetchGooglePicture, syncAvatars } from "../_shared/google-avatars.ts";
 import { snapshotAll, type SnapshotDeps } from "./run.ts";
 
 const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
@@ -107,17 +111,65 @@ const deps: SnapshotDeps = {
   log: (line) => console.warn(line),
 };
 
+// Фото из Google (21.10.2026): раз в сутки, в первый час снимка (08 по Белграду) — отдельным
+// проходом по всем, у кого подключён календарь, а не только по людям с автозапуском. Ошибка
+// прохода не роняет снимок: фото — украшение, а снимок кормит «бот не пришёл».
+const avatarDeps: AvatarDeps = {
+  async people() {
+    const integ = (must(
+      "user_integrations",
+      await supabase.from("user_integrations").select("telegram_id, api_key").eq("service", "google_calendar"),
+    ) ?? []) as { telegram_id: number; api_key: string | null }[];
+    const ids = integ.map((r) => r.telegram_id);
+    const profiles = ids.length === 0 ? [] : (must(
+      "user_profiles",
+      await supabase.from("user_profiles").select("telegram_id, avatar_url").in("telegram_id", ids),
+    ) ?? []) as { telegram_id: number; avatar_url: string | null }[];
+    const current = new Map(profiles.map((p) => [p.telegram_id, p.avatar_url]));
+    return integ.filter((r) => !!r.api_key).map((r) => ({
+      telegramId: r.telegram_id,
+      refreshToken: r.api_key as string,
+      current: current.get(r.telegram_id) ?? null,
+    }));
+  },
+  accessToken,
+  fetchPicture: (token) => fetchGooglePicture(token),
+  async save(telegramId, avatarUrl) {
+    must(
+      "user_profiles",
+      await supabase.from("user_profiles").upsert({ telegram_id: telegramId, avatar_url: avatarUrl }, {
+        onConflict: "telegram_id",
+      }),
+    );
+  },
+  log: (line) => console.warn(line),
+};
+
+async function avatarPass(nowMs: number, force: boolean) {
+  if (!force && teamHour(nowMs) !== SNAPSHOT_HOURS[0]) return null;
+  try {
+    const report = await syncAvatars(avatarDeps);
+    console.log(`meeting-calendar-snapshot avatars: ${JSON.stringify(report)}`);
+    return report;
+  } catch (e) {
+    console.error(`meeting-calendar-snapshot avatars: ${e instanceof Error ? e.message : String(e)}`);
+    return null;
+  }
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method !== "POST") return json({ ok: false, error: "method not allowed" }, 405);
   if (!sameSecret(req.headers.get("X-Cron-Secret"))) return json({ ok: false, error: "forbidden" }, 403);
 
   const nowMs = Date.now();
-  if (!snapshotDue(nowMs) && !(await wantsForce(req))) return json({ ok: true, due: false });
+  const force = await wantsForce(req);
+  if (!snapshotDue(nowMs) && !force) return json({ ok: true, due: false });
   try {
     const report = await snapshotAll(deps, nowMs);
+    const avatars = await avatarPass(nowMs, force);
     console.log(`meeting-calendar-snapshot: ${JSON.stringify(report)}`);
     if (report.failed > 0) console.error(`meeting-calendar-snapshot: снимок не у всех (${report.failed})`);
-    return json({ ok: true, due: true, report });
+    return json({ ok: true, due: true, report, avatars });
   } catch (e) {
     console.error(`meeting-calendar-snapshot: ${e instanceof Error ? e.message : String(e)}`);
     return json({ ok: false, error: "calendar snapshot failed" }, 500);
