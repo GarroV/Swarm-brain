@@ -129,7 +129,7 @@ grep -qF "key = 'maintenance'" "$D" && echo "✔ status читает строк�
 : > "$T/store/swarm-recorder-version"   # проба рантайма отвечает 200
 : > "$D"
 run "$T/none" env-reload;                               expect "env-reload: принят, пробу дождался" 0 "functions.env перечитан"
-grep -qF 'compose -p swarm' "$D" && grep -qF 'docker-compose.swarm.yml' "$D" && grep -qF 'up -d --no-deps --force-recreate functions' "$D" \
+grep -qF 'compose -p swarm' "$D" && grep -qF -- "-f $T/stack/docker-compose.swarm.yml" "$D" && grep -qF 'up -d --no-deps --force-recreate functions' "$D" \
   && echo "✔ env-reload пересоздаёт сервис functions проекта swarm" || { echo "✘ env-reload не пересоздал: $(cat "$D")"; bad=1; }
 grep -q 'ARGS: restart' "$D" && { echo "✘ env-reload ограничился рестартом"; bad=1; } || echo "✔ env-reload без docker restart"
 rm "$T/store/swarm-recorder-version"
