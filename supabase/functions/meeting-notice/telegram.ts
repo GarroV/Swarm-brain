@@ -60,3 +60,15 @@ export function makeTelegramSender(config: TelegramSenderConfig): TelegramSender
   const call = makeTelegramCaller(config);
   return (chatId: number, text: string): Promise<void> => call("sendMessage", { chat_id: chatId, ...noticeBody(text) });
 }
+
+/**
+ * Часы для комендантского часа уведомлений. На проде — настоящее время. Подменить его можно ТОЛЬКО
+ * вместе с подменой базы Bot API (`TELEGRAM_API_BASE` — её задаёт один смоук блока): иначе забытая
+ * на проде переменная `SMOKE_NOW` сдвинула бы тишину 23:00–9:00 МСК. Смоук фиксирует «день»,
+ * чтобы не краснеть ночью, и отдельным экземпляром — «ночь», чтобы проверить очередь.
+ */
+export function noticeClock(env: { smokeNow?: string; apiBase?: string }): () => Date {
+  const fixed = env.apiBase && env.smokeNow ? new Date(env.smokeNow) : null;
+  if (fixed && Number.isNaN(fixed.getTime())) throw new Error(`SMOKE_NOW не дата: ${env.smokeNow}`);
+  return () => fixed ?? new Date();
+}
