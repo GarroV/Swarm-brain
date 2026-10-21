@@ -4,7 +4,7 @@
 // дороже всего: сообщение не дошло, а сервер отчитался «доставлено», и человек не узнал ни о
 // сбое записи, ни о том, что его не уведомили.
 import { assert, assertEquals, assertRejects } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import { makeTelegramSender } from "./telegram.ts";
+import { makeTelegramSender, noticeClock } from "./telegram.ts";
 
 const CONFIG = { botToken: "token-123", apiBase: "https://tg.test" };
 
@@ -79,4 +79,25 @@ Deno.test("сеть не отвечает — ошибка доходит до �
   });
   const error = await assertRejects(() => send(111, "текст"), Error);
   assert(error.message.includes("connection refused"), error.message);
+});
+
+Deno.test("noticeClock: без подмены базы API SMOKE_NOW игнорируется — на проде время настоящее", () => {
+  const before = Date.now();
+  const got = noticeClock({ smokeNow: "2020-01-01T00:00:00Z" })().getTime();
+  assert(got >= before);
+});
+
+Deno.test("noticeClock: вместе с подменой базы API время фиксируется", () => {
+  const clock = noticeClock({ smokeNow: "2026-01-01T12:00:00Z", apiBase: "http://127.0.0.1:1" });
+  assertEquals(clock().toISOString(), "2026-01-01T12:00:00.000Z");
+});
+
+Deno.test("noticeClock: мусор вместо даты — ошибка, а не тихое «сейчас»", () => {
+  let thrown = false;
+  try {
+    noticeClock({ smokeNow: "вчера", apiBase: "http://127.0.0.1:1" });
+  } catch {
+    thrown = true;
+  }
+  assert(thrown);
 });

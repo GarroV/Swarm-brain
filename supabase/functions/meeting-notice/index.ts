@@ -18,13 +18,15 @@
 //
 // Env: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, TELEGRAM_BOT_TOKEN,
 //      TELEGRAM_API_BASE (необязательная, по умолчанию https://api.telegram.org — подменяется
-//      только смоуком блока, чтобы прогон отказов не стучался в живой Telegram).
+//      только смоуком блока, чтобы прогон отказов не стучался в живой Telegram),
+//      SMOKE_NOW (необязательная, ISO-время для комендантского часа; действует только вместе с
+//      TELEGRAM_API_BASE — см. noticeClock).
 // Деплой: supabase functions deploy meeting-notice --no-verify-jwt (бот хитит с Bearer-токеном).
 //
 // URL-импорты — канон этого репозитория: функции деплоятся без карты импортов.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { handleNotice } from "./handle.ts";
-import { makeTelegramCaller, noticeBody } from "./telegram.ts";
+import { makeTelegramCaller, noticeBody, noticeClock } from "./telegram.ts";
 import { notifyPerson } from "../_shared/notify-person.ts";
 
 const supabase = createClient(
@@ -36,6 +38,10 @@ const callTelegram = makeTelegramCaller({
   botToken: Deno.env.get("TELEGRAM_BOT_TOKEN") ?? "",
   apiBase: Deno.env.get("TELEGRAM_API_BASE") ?? "https://api.telegram.org",
 });
+const now = noticeClock({
+  smokeNow: Deno.env.get("SMOKE_NOW"),
+  apiBase: Deno.env.get("TELEGRAM_API_BASE"),
+});
 
 // Уведомление об отказе записи — сообщение человеку по инициативе бота: в комендантский час
 // (23:00–9:00 МСК) оно ложится в `telegram_outbox` и уходит утром, а журнал считает его принятым.
@@ -45,7 +51,7 @@ const sendTelegram = async (chatId: number, text: string): Promise<void> => {
   await notifyPerson(
     supabase,
     { recipientId: chatId, kind: "meeting_notice", payload: noticeBody(text) },
-    new Date(),
+    now(),
     callTelegram,
   );
 };

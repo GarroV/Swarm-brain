@@ -28,6 +28,12 @@ import { fromFileUrl } from "@std/path";
 import { seedCalendarGrant, seedInviteGrant } from "./scriba-smoke-grants.ts";
 const PORT_FN = Number(Deno.env.get("SMOKE_PORT_FN") ?? 4340);
 const PORT_TG = Number(Deno.env.get("SMOKE_PORT_TG") ?? 4342);
+const PORT_FN_NIGHT = Number(Deno.env.get("SMOKE_PORT_FN_NIGHT") ?? 4344);
+// Время для комендантского часа (23:00–9:00 МСК): основной экземпляр функции живёт в «полдень»
+// независимо от часов CI, иначе ночью все сценарии «дошло до человека» краснеют (#1031) — сообщение
+// ложится в telegram_outbox. Второй экземпляр живёт в «ночи» и проверяет как раз очередь.
+const SMOKE_DAY = "2026-01-15T09:00:00Z"; // 12:00 МСК
+const SMOKE_NIGHT = "2026-01-15T21:30:00Z"; // 00:30 МСК
 
 const SUPABASE_URL = Deno.env.get("SMOKE_SUPABASE_URL") ?? "";
 const SERVICE_KEY = Deno.env.get("SMOKE_SERVICE_KEY") ?? "";
@@ -66,6 +72,7 @@ const M = {
   mixed: crypto.randomUUID(),
   stale: crypto.randomUUID(),
   account: crypto.randomUUID(),
+  night: crypto.randomUUID(),
 };
 
 async function sha256Hex(value: string): Promise<string> {
@@ -151,6 +158,7 @@ async function seed(): Promise<void> {
     meeting(M.mixed, WS, OWNER_ID, "Всё сразу"),
     meeting(M.stale, WS, OWNER_ID, "Упавшая отправка"),
     meeting(M.account, WS, OWNER_ID, "Созвон под аккаунтом бота"),
+    meeting(M.night, WS, OWNER_ID, "Ночной созвон"),
     ...FLOOD_MEETINGS.map((id, i) => meeting(id, WS, FLOOD_ID, `Поток ${i}`)),
   ]);
 }
@@ -158,6 +166,15 @@ async function seed(): Promise<void> {
 /** Уборка: встречи и люди прогона. Журнал уходит каскадом (удаления у service_role нет). */
 async function cleanup(): Promise<string[]> {
   const problems: string[] = [];
+  // Строки очереди ночного сценария: физического удаления у service_role нет — архивируем, чтобы
+  // разбор очереди их не отправил.
+  try {
+    await rest("PATCH", `telegram_outbox?recipient_id=eq.${OWNER_ID}`, {
+      archived_at: new Date().toISOString(),
+    });
+  } catch (e) {
+    problems.push(e instanceof Error ? e.message : String(e));
+  }
   const steps: [string, string][] = [
     [
       "DELETE",
@@ -270,7 +287,7 @@ function grantFor(person: number, body: unknown): Promise<string> {
 
 async function call(
   body: unknown,
-  opts: { token?: string; onBehalfOf?: number | string } = {},
+  opts: { token?: string; onBehalfOf?: number | string; port?: number } = {},
 ): Promise<{ status: number; body: Record<string, unknown> }> {
   const headers = new Headers({ "Content-Type": "application/json" });
   const token = opts.token ??
@@ -281,11 +298,14 @@ async function call(
   if (opts.onBehalfOf !== undefined) {
     headers.set("X-On-Behalf-Of", String(opts.onBehalfOf));
   }
-  const res = await fetch(`http://127.0.0.1:${PORT_FN}/meeting-notice`, {
-    method: "POST",
-    headers,
-    body: typeof body === "string" ? body : JSON.stringify(body),
-  });
+  const res = await fetch(
+    `http://127.0.0.1:${opts.port ?? PORT_FN}/meeting-notice`,
+    {
+      method: "POST",
+      headers,
+      body: typeof body === "string" ? body : JSON.stringify(body),
+    },
+  );
   let parsed: Record<string, unknown> = {};
   try {
     parsed = await res.json() as Record<string, unknown>;
@@ -714,6 +734,26 @@ async function staleScenario(): Promise<Outcome> {
   );
 }
 
+/** Комендантский час: ночью сообщение не уходит в Telegram, а ложится в telegram_outbox. */
+async function nightScenario(): Promise<Outcome> {
+  const before = inbox.length;
+  const { status } = await call(
+    { kind: "no_audio", meeting_id: M.night, lang: "ru" },
+    { onBehalfOf: OWNER_ID, port: PORT_FN_NIGHT },
+  );
+  const sent = inbox.length - before;
+  const queued = await rest(
+    "GET",
+    `telegram_outbox?select=id&recipient_id=eq.${OWNER_ID}&kind=eq.meeting_notice&archived_at=is.null`,
+  ) as unknown[];
+  return check(
+    "комендантский час · сообщение ложится в очередь, а не уходит",
+    status >= 200 && status < 300 && sent === 0 && queued.length === 1,
+    `HTTP ${status}, ушло в Telegram: ${sent}, в очереди: ${queued.length}`,
+    "ночью сообщение должно лечь в telegram_outbox и не уйти в Telegram",
+  );
+}
+
 async function runScenarios(): Promise<Outcome[]> {
   const behalf = { onBehalfOf: OWNER_ID };
   return [
@@ -725,6 +765,7 @@ async function runScenarios(): Promise<Outcome[]> {
     ...await blockedScenarios(),
     ...await floodScenarios(),
     await staleScenario(),
+    await nightScenario(),
     // Два языка — правило проекта. Всё выше прошло по-русски; здесь по-английски.
     await scenario("EN · дверь, первое уведомление", {
       kind: "door_waiting",
@@ -742,11 +783,11 @@ async function runScenarios(): Promise<Outcome[]> {
 
 // ── Запуск стенда ─────────────────────────────────────────────────────────────
 
-async function waitReady(deadlineMs: number): Promise<boolean> {
+async function waitReady(deadlineMs: number, port: number): Promise<boolean> {
   const until = Date.now() + deadlineMs;
   while (Date.now() < until) {
     try {
-      const res = await fetch(`http://127.0.0.1:${PORT_FN}/meeting-notice`, {
+      const res = await fetch(`http://127.0.0.1:${port}/meeting-notice`, {
         method: "GET",
       });
       await res.body?.cancel();
@@ -796,29 +837,36 @@ async function main(): Promise<void> {
   const fnPath = fromFileUrl(
     new URL("../supabase/functions/meeting-notice/index.ts", import.meta.url),
   );
-  const child = new Deno.Command("deno", {
-    args: ["run", "--allow-all", fnPath],
-    env: {
-      DENO_SERVE_ADDRESS: `tcp:127.0.0.1:${PORT_FN}`,
-      SUPABASE_URL,
-      SUPABASE_SERVICE_ROLE_KEY: SERVICE_KEY,
-      TELEGRAM_BOT_TOKEN: "smoke-telegram-token",
-      TELEGRAM_API_BASE: `http://127.0.0.1:${PORT_TG}`,
-    },
-    stdout: "inherit",
-    stderr: "inherit",
-  }).spawn();
+  const spawnFn = (port: number, now: string) =>
+    new Deno.Command("deno", {
+      args: ["run", "--allow-all", fnPath],
+      env: {
+        DENO_SERVE_ADDRESS: `tcp:127.0.0.1:${port}`,
+        SUPABASE_URL,
+        SUPABASE_SERVICE_ROLE_KEY: SERVICE_KEY,
+        TELEGRAM_BOT_TOKEN: "smoke-telegram-token",
+        TELEGRAM_API_BASE: `http://127.0.0.1:${PORT_TG}`,
+        SMOKE_NOW: now,
+      },
+      stdout: "inherit",
+      stderr: "inherit",
+    }).spawn();
+  const child = spawnFn(PORT_FN, SMOKE_DAY);
+  const childNight = spawnFn(PORT_FN_NIGHT, SMOKE_NIGHT);
 
   let outcomes: Outcome[] = [];
   let ready = false;
   let cleanupProblems: string[] = [];
   try {
     await seed();
-    ready = await waitReady(20_000);
+    ready = await waitReady(20_000, PORT_FN) &&
+      await waitReady(20_000, PORT_FN_NIGHT);
     if (ready) outcomes = await runScenarios();
   } finally {
     child.kill("SIGTERM");
+    childNight.kill("SIGTERM");
     await child.status;
+    await childNight.status;
     await tg.shutdown();
     cleanupProblems = await cleanup();
   }
