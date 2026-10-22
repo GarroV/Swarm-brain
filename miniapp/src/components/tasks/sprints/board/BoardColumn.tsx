@@ -8,13 +8,14 @@ import type {
 } from "@/types";
 import { fetchSprintCycle } from "@/lib/api";
 import { sprintKpi } from "@/lib/initiatives";
+import { buildLadder, kidsElsewhere } from "@/lib/sprintLadder";
 import { useDt } from "@/components/roy/nav";
 import { cn } from "@/lib/utils";
 import { ProgressBar, ProgressText } from "../atoms";
 import { fmtDay, fmtRange } from "../format";
 import { MovedSection } from "../SnapshotCard";
 import { BoardCard, Tag } from "./BoardCard";
-import type { BoardCtx } from "./boardCtx";
+import { type BoardCtx, type UnlinkZone } from "./boardCtx";
 import {
   dueCycle,
   groupItems,
@@ -23,11 +24,10 @@ import {
 } from "./boardModel";
 import { TaskMenu } from "./TaskMenu";
 
-// Колонка спринта на доске: идущий — шире и с прогрессом, запланированные — обычные, принятые —
-// свёрнутая полоска ~46px, которую раскрывает клик (владелец: «сокращался в полоску, и можно было
-// развернуть»). Состав принятого спринта приходит по запросу — на доске он не лежит.
-
-export const PAST_STRIP_W = 46;
+// Колонка спринта на доске: идущий — шире и с прогрессом, запланированные — обычные. Принятые
+// спринты в ряду колонок не показываются (владелец 22.10.2026: «законченные спринты сразу
+// изначально были спрятаны, чтобы не прятались за мастер-планом») — вход к ним «История
+// спринтов»; состав принятого спринта приходит по запросу (`PastBody`) — на доске он не лежит.
 
 export type ColumnDrop = {
   /** Сюда сейчас можно бросить то, что несут. */
@@ -42,14 +42,18 @@ export type ColumnDrop = {
 };
 
 function ItemCard(
-  { item, cycle, ctx }: {
+  { item, cycle, ctx, inColumn }: {
     item: SprintCycleItem;
     cycle: SprintCycle;
     ctx: BoardCtx;
+    /** Задачи, стоящие в этой колонке: от них зависит, где родитель. */
+    inColumn: ReadonlySet<string>;
   },
 ) {
   const dt = useDt();
   const plan = item.task_id ? ctx.planById.get(item.task_id) : undefined;
+  const parent = plan?.parent_id ? ctx.planById.get(plan.parent_id) : undefined;
+  const kids = plan ? ctx.kidsOf(plan.id) : [];
   const names = ctx.namesFor(item.task_id, item.assignees);
   const live = !!item.task_id && !item.frozen && !item.removed;
   const k = plan ? plan.cycle_ids.indexOf(cycle.id) + 1 : 0;
@@ -70,6 +74,16 @@ function ItemCard(
     <BoardCard
       title={item.title}
       closed={closed}
+      dnd={ctx.cardDnd(item.task_id, cycle.id)}
+      parentNote={parent && !inColumn.has(parent.id)
+        ? { title: parent.title, onOpen: () => ctx.openTask(parent.id) }
+        : undefined}
+      subtasks={kids.length > 0
+        ? {
+          done: kids.filter((x) => isClosedStatus(x.status)).length,
+          total: kids.length,
+        }
+        : undefined}
       mark={item.check_status}
       due={item.due_date ? { date: item.due_date, flag: dueFlag } : null}
       assignee={names[0] ?? null}
@@ -190,6 +204,72 @@ function CycleHeader(
   );
 }
 
+/** Родитель и его подзадачи лесенкой: отступ и линия слева; «+ ещё N в С6» — про подзадачи в других спринтах. */
+function Ladder(
+  { cycle, ctx, inColumn, root, kids }: {
+    cycle: SprintCycle;
+    ctx: BoardCtx;
+    inColumn: ReadonlySet<string>;
+    root: SprintCycleItem;
+    kids: SprintCycleItem[];
+  },
+) {
+  const dt = useDt();
+  const allKids = root.task_id ? ctx.kidsOf(root.task_id) : [];
+  const elsewhere = kidsElsewhere(allKids, cycle.id, inColumn, ctx.cycles);
+  return (
+    <>
+      <ItemCard item={root} cycle={cycle} ctx={ctx} inColumn={inColumn} />
+      {(kids.length > 0 || elsewhere.length > 0) && (
+        <div
+          className="ml-3 flex flex-col gap-1.5 border-l-2 border-line pl-2"
+          data-testid="ladder"
+        >
+          {kids.map((k) => (
+            <ItemCard
+              key={k.id}
+              item={k}
+              cycle={cycle}
+              ctx={ctx}
+              inColumn={inColumn}
+            />
+          ))}
+          {elsewhere.length > 0 && (
+            <div className="px-1 text-ink-mute" style={{ fontSize: 11.5 }}>
+              {elsewhere.map((e) =>
+                dt(`+ ещё ${e.n} в ${e.short}`, `+ ${e.n} more in ${e.short}`)
+              ).join(" · ")}
+            </div>
+          )}
+        </div>
+      )}
+    </>
+  );
+}
+
+/** Зона «Отвязать от «…»» внизу колонки: бросок сюда снимает родителя. */
+export function UnlinkDrop({ zone }: { zone: UnlinkZone }) {
+  const dt = useDt();
+  return (
+    <div
+      {...zone.handlers}
+      data-testid="unlink-zone"
+      className={cn(
+        "sticky bottom-0 mt-auto rounded-[9px] border-2 border-dashed px-2 py-2 text-center",
+        zone.over
+          ? "border-primary bg-accent-soft text-accent-ink"
+          : "border-line-2 bg-surface text-ink-soft",
+      )}
+      style={{ fontSize: 12.5 }}
+    >
+      {dt(
+        `Отвязать от «${zone.parentTitle}»`,
+        `Unlink from “${zone.parentTitle}”`,
+      )}
+    </div>
+  );
+}
+
 /** Колонка идущего или запланированного спринта. */
 export function SprintColumn({ entry, ctx, drop, onCloseSprint, busy }: {
   entry: SprintBoardCycle;
@@ -206,7 +286,24 @@ export function SprintColumn({ entry, ctx, drop, onCloseSprint, busy }: {
   const moved = entry.moved.filter((i) =>
     itemMatches(i, ctx.namesFor(i.task_id, i.assignees), ctx.filter)
   );
-  const groups = groupItems(visible);
+  const matches = new Set(visible.map((i) => i.id));
+  const inColumn = new Set(
+    entry.items.flatMap((
+      i,
+    ) => (i.task_id && !i.moved && !i.removed ? [i.task_id] : [])),
+  );
+  const parentOf = (taskId: string) =>
+    ctx.planById.get(taskId)?.parent_id ?? null;
+  const groups = groupItems(entry.items).map((g) => ({
+    name: g.name,
+    // Родитель остаётся, если подошла хотя бы одна подзадача: иначе найденная осталась бы без контекста.
+    ladder: buildLadder(g.items, parentOf).map((n) => ({
+      item: n.item,
+      kids: n.kids.filter((k) => matches.has(k.id)),
+      shown: matches.has(n.item.id) || n.kids.some((k) => matches.has(k.id)),
+    })).filter((n) => n.shown),
+  })).filter((g) => g.ladder.length > 0);
+  const unlink = ctx.unlinkZone(c.id);
   const filtering = !!ctx.filter.query.trim() || !!ctx.filter.person ||
     ctx.filter.attention;
   return (
@@ -229,7 +326,10 @@ export function SprintColumn({ entry, ctx, drop, onCloseSprint, busy }: {
         onClose={onCloseSprint ? () => onCloseSprint(c.id) : undefined}
         busy={busy}
       />
-      <div className="flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto p-2">
+      <div
+        data-board-scroll
+        className="flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto p-2"
+      >
         {groups.map((g) => (
           <div key={g.name ?? "__none"} className="flex flex-col gap-1.5">
             <div
@@ -238,8 +338,15 @@ export function SprintColumn({ entry, ctx, drop, onCloseSprint, busy }: {
             >
               {g.name ?? dt("Без группы", "No group")}
             </div>
-            {g.items.map((i) => (
-              <ItemCard key={i.id} item={i} cycle={c} ctx={ctx} />
+            {g.ladder.map(({ item, kids }) => (
+              <Ladder
+                key={item.id}
+                cycle={c}
+                ctx={ctx}
+                inColumn={inColumn}
+                root={item}
+                kids={kids}
+              />
             ))}
           </div>
         ))}
@@ -262,6 +369,7 @@ export function SprintColumn({ entry, ctx, drop, onCloseSprint, busy }: {
           onAddReason={(item) => ctx.addReason(c.id, item)}
           single
         />
+        {unlink && <UnlinkDrop zone={unlink} />}
       </div>
     </section>
   );
@@ -343,72 +451,5 @@ export function PastBody(
         </p>
       )}
     </div>
-  );
-}
-
-/** Принятый спринт: полоска ~46px; клик раскрывает, кнопка в шапке сворачивает. */
-export function PastColumn({ entry, ctx, open, onToggle }: {
-  entry: SprintBoardCycle;
-  ctx: BoardCtx;
-  open: boolean;
-  onToggle: () => void;
-}) {
-  const dt = useDt();
-  const c = entry.cycle;
-  const done = c.stats
-    ? `${c.stats.planDone} ${dt("из", "of")} ${c.stats.plan}`
-    : null;
-  if (!open) {
-    return (
-      <button
-        type="button"
-        onClick={onToggle}
-        aria-expanded={false}
-        aria-label={`${c.name}: ${dt("развернуть", "expand")}`}
-        data-testid="past-strip"
-        style={{ width: PAST_STRIP_W }}
-        className="flex h-full shrink-0 snap-start items-center justify-center rounded-[12px] border border-line bg-surface-2 text-ink-soft transition-colors hover:bg-surface hover:text-ink"
-      >
-        <span
-          className="rotate-180 whitespace-nowrap font-semibold [writing-mode:vertical-rl]"
-          style={{ fontSize: 12.5 }}
-        >
-          {c.name} · {dt("закрыт", "closed")}
-          {done ? ` · ${done}` : ""}
-        </span>
-      </button>
-    );
-  }
-  return (
-    <section
-      aria-label={c.name}
-      className="flex h-full min-h-0 w-[calc(100vw-3.5rem)] shrink-0 snap-start flex-col rounded-[12px] border border-line bg-surface-2 sm:w-[290px]"
-    >
-      <div className="shrink-0 border-b border-line px-3 pb-2 pt-2.5">
-        <div className="flex items-center gap-2">
-          <span className="font-semibold text-ink" style={{ fontSize: 14 }}>
-            {c.name}
-          </span>
-          <span className="text-[12px] text-ink-mute">
-            · {dt("закрыт", "closed")}
-            {c.accepted_at ? ` ${fmtDay(c.accepted_at)}` : ""}
-          </span>
-          <button
-            type="button"
-            onClick={onToggle}
-            aria-expanded
-            className="ml-auto rounded-[7px] px-2 py-1 text-ink-soft hover:bg-surface hover:text-ink"
-            style={{ fontSize: 12 }}
-          >
-            {dt("Свернуть", "Collapse")}
-          </button>
-        </div>
-        <div className="mt-0.5 text-ink-mute" style={{ fontSize: 12 }}>
-          {fmtRange(c.start_date, c.end_date)}
-          {done ? ` · ${dt("сделано", "done")} ${done}` : ""}
-        </div>
-      </div>
-      <PastBody cycle={c} ctx={ctx} />
-    </section>
   );
 }

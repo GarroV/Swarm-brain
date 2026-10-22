@@ -15,6 +15,7 @@ import type {
   GranolaNote,
   Integration,
   JournalEvent,
+  JourneyStep,
   MarketSuggestion,
   Me,
   MeetingLiveNote,
@@ -26,6 +27,7 @@ import type {
   SprintBoardData,
   SprintCycleDetail,
   SprintCycleItem,
+  SprintJourney,
   SprintStats,
   SprintKind,
   SprintStatus,
@@ -2816,7 +2818,7 @@ function mockJourney(taskId: string): SprintJourney {
       ? [{ id: "jc1", content: "Договор у юристов, ждём правки", added_by: "Аня", created_at: c.start_date + "T10:00:00Z" }]
       : [],
     move: r.moved
-      ? { toName: nameOfRow(r.moved.to_row), reason: r.moved.reason, by: r.moved.by === null ? null : String(r.moved.by), at: r.moved.at }
+      ? { toName: r.moved.to_row ? nameOfRow(r.moved.to_row) : null, reason: r.moved.reason, by: r.moved.by === null ? null : String(r.moved.by), at: r.moved.at }
       : null,
     planReason: null,
     outcome: r.moved
