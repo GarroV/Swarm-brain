@@ -78,6 +78,9 @@ import {
 import { SpaceSwitcher } from "@/components/tasks/sprints/SpaceSwitcher";
 import { SprintBar } from "@/components/tasks/sprints/SprintBar";
 import { SprintPulse } from "@/components/tasks/sprints/SprintPulse";
+import { MoveDialog } from "@/components/tasks/sprints/MoveDialog";
+import { ReasonDialog } from "@/components/tasks/sprints/ReasonDialog";
+import { MovedSection } from "@/components/tasks/sprints/SnapshotCard";
 import { useDragGroups } from "@/components/tasks/sprints/useDragGroups";
 import { NotificationsBell } from "@/components/roy/NotificationsBell";
 import { HeaderNotice } from "@/components/roy/DeployNoticeBar";
@@ -658,10 +661,22 @@ export function SprintsScreen() {
     }
   }
 
-  // «→» в строке: та же пометка «к переносу», что на сверке, — без захода на отдельный экран.
-  function toggleCarry(item: SprintCycleItem) {
-    return markItem(item, { to_carry: !item.to_carry });
-  }
+  // «→» в строке открывает окно переноса (22.10.2026): задача сразу уезжает в выбранный
+  // запланированный спринт, здесь остаётся снимок с причиной. Пометки «к переносу» больше нет.
+  const [moving, setMoving] = useState<SprintCycleItem | null>(null);
+  const [reasonFor, setReasonFor] = useState<SprintCycleItem | null>(null);
+  const moveTargets = useMemo(
+    () =>
+      spaceCycles.filter((c) => c.status === "draft")
+        .sort((a, b) => a.start_date.localeCompare(b.start_date)),
+    [spaceCycles],
+  );
+  const moved = detail?.moved ?? [];
+  const afterMove = useCallback(async () => {
+    if (!detail) return;
+    await reloadDetail(detail.id);
+    load();
+  }, [detail, reloadDetail, load]);
 
   async function markItem(
     item: SprintCycleItem,
@@ -896,7 +911,8 @@ export function SprintsScreen() {
         setAddingTo(projectId);
       }}
       onDone={accepted ? undefined : toggleDone}
-      onCarry={accepted ? undefined : toggleCarry}
+      // Переносят только из идущего спринта — так решает и база.
+      onMove={detail?.status === "active" ? setMoving : undefined}
       onCheck={accepted ? undefined : (item, status) =>
         markItem(item, {
           check_status: status,
@@ -914,6 +930,16 @@ export function SprintsScreen() {
           : undefined;
         if (live) setEditing(live);
       }}
+    />
+  );
+
+  // Снимки ушедших задач — под составом (решение 22.10.2026). Вписать причину можно, пока
+  // спринт не принят: принятый — слепок.
+  const movedSection = (
+    <MovedSection
+      items={moved}
+      users={users}
+      onAddReason={accepted ? undefined : setReasonFor}
     />
   );
 
@@ -1197,6 +1223,7 @@ export function SprintsScreen() {
                 kpi={kpi}
                 showUnchecked={unchecked}
                 extra={plan.length > 0 ? items.length - plan.length : 0}
+                moved={moved.length}
               />
             )}
 
@@ -1275,6 +1302,7 @@ export function SprintsScreen() {
                       ? (
                         <div className="min-h-0 flex-1 overflow-auto">
                           {emptyComposition}
+                          {movedSection}
                         </div>
                       )
                       : (
@@ -1363,6 +1391,7 @@ export function SprintsScreen() {
                                 : initiativeList(
                                   byPeople ? peopleBoard : board,
                                 )}
+                              {movedSection}
                             </div>
                           </div>
                         </>
@@ -1430,6 +1459,24 @@ export function SprintsScreen() {
           </div>,
           document.body,
         )}
+
+      {detail && (
+        <>
+          <MoveDialog
+            item={moving}
+            cycleId={detail.id}
+            cycles={moveTargets}
+            onClose={() => setMoving(null)}
+            onDone={afterMove}
+          />
+          <ReasonDialog
+            item={reasonFor}
+            cycleId={detail.id}
+            onClose={() => setReasonFor(null)}
+            onDone={afterMove}
+          />
+        </>
+      )}
 
       <AcceptDialog
         open={acceptOpen && !!detail}

@@ -118,6 +118,8 @@ export type SprintStats = {
    * посчитанных до #576, ключа нет.
    */
   withdrawn?: number;
+  /** Ушли переносом в другой спринт (снимки, 22.10.2026). У итогов, посчитанных раньше, ключа нет. */
+  moved?: number;
   check_ok: number;
   check_risk: number;
   check_problem: number;
@@ -189,10 +191,29 @@ export type SprintCycleItem = {
   /** Когда задачу сняли из идущего спринта (#576); в составе (`items`) всегда null. */
   withdrawn_at?: string | null;
   /**
+   * Задача ушла переносом (22.10.2026): строка — снимок на момент ухода (`title`, `status`,
+   * `due_date` тогдашние). В составе (`items`) всегда null; снимки — в `SprintCycleDetail.moved`.
+   */
+  moved?: SprintMovedInfo | null;
+  /**
    * Устарело (09.10.2026): приватных задач больше нет, сервер шлёт false или не шлёт вовсе.
    * Клиент поле не читает; оставлено необязательным, чтобы не сломаться о старый ответ.
    */
   hidden?: boolean;
+};
+
+/** Куда и почему ушла задача — зеркало `MovedInfo` из `_shared/tasks/sprint-items.ts`. */
+export type SprintMovedInfo = {
+  /** Спринт-цель; null — цель удалена («перенесена (спринт удалён)»). */
+  to_cycle_id: string | null;
+  to_cycle_name: string | null;
+  at: string;
+  /** Кто перенёс; null — автоматика (сменили срок в карточке). */
+  by: number | null;
+  /** Причина; null — ещё не вписали. */
+  reason: string | null;
+  /** Срок задачи сейчас («срок A → B»). */
+  due_now: string | null;
 };
 
 /** Событие журнала пространства: кто и что сделал. Пишется не в таблицу — собирается из
@@ -227,6 +248,8 @@ export type SprintCycleDetail = SprintCycle & {
    * знаменателе процента. Старый сервер поля не отдаёт — тогда считаем без них.
    */
   withdrawn?: SprintCycleItem[];
+  /** Ушли переносом (22.10.2026): блок «Ушли из спринта». Старый сервер поля не отдаёт. */
+  moved?: SprintCycleItem[];
 };
 
 export type Project = {

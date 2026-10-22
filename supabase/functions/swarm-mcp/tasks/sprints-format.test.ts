@@ -98,6 +98,7 @@ const item = (over: Partial<SprintItem>): SprintItem => ({
   removed: false,
   removed_at: null,
   withdrawn_at: null,
+  moved: null,
   comment_count: 0,
   link_count: 0,
   ...over,
@@ -136,6 +137,40 @@ Deno.test("formatSprint: снятая из идущего спринта зад�
   assertStringIncludes(text, "План: 1 из 2 (50%)");
   assertStringIncludes(text, "снято из плана: 1");
   assert(!text.includes("Снятая"), "в составе снятой задачи нет");
+});
+
+Deno.test("formatSprint: ушедшие переносом — отдельным списком с целью и причиной, вне плана (22.10.2026)", () => {
+  const items = [item({ task_id: "a", status: "done" })];
+  const moved = [
+    item({
+      task_id: "m1",
+      title: "Договор с юристами",
+      moved: {
+        to_cycle_id: "c2",
+        to_cycle_name: "Спринт 2",
+        at: "2026-10-22T10:00:00Z",
+        by: 1,
+        reason: "ждём юристов",
+        due_now: null,
+      },
+    }),
+    item({
+      task_id: "m2",
+      title: "Макет витрины",
+      moved: {
+        to_cycle_id: null,
+        to_cycle_name: null,
+        at: "2026-10-22T11:00:00Z",
+        by: null,
+        reason: null,
+        due_now: null,
+      },
+    }),
+  ];
+  const text = formatSprint(cycle, "Тестовое", items, computeSprintStats(items), moved);
+  assertStringIncludes(text, "Ушли из спринта (2):");
+  assertStringIncludes(text, "Договор с юристами → Спринт 2 · причина: ждём юристов");
+  assertStringIncludes(text, "Макет витрины → спринт удалён · причина не указана");
 });
 
 Deno.test("журнал пространства: время по Белграду, автор, задача; пусто — так и сказано (#485)", () => {

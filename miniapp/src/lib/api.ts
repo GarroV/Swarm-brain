@@ -360,6 +360,8 @@ let mockTasks: Task[] = [
     title: "Онбординг",
     project_id: "pr1",
     project_linked: true,
+    // Срок внутри идущего: окно переноса показывает «срок будет сорван» (22.10.2026).
+    due_date: mockDay(8),
   }),
   mkMock({
     id: "p_search",
@@ -2100,6 +2102,24 @@ let mockCycles: SprintCycle[] = [
     stats: MOCK_CYCLE_ACCEPTED_STATS,
     created_at: "2025-11-01T09:00:00.000Z",
   },
+  // Вторая цель окна переноса (22.10.2026): выбор между двумя запланированными.
+  {
+    id: "sc_next2",
+    group_id: "cee",
+    name: "Спринт 43",
+    start_date: mockDay(27),
+    end_date: mockDay(40),
+    tab_id: "sp1",
+    check_date: mockDay(33),
+    status: "draft",
+    created_by: null,
+    started_at: null,
+    accepted_at: null,
+    accepted_by: null,
+    summary: null,
+    stats: null,
+    created_at: "2025-11-01T09:00:00.000Z",
+  },
 ];
 
 // Состав живых спринтов держим ссылками на mockTasks — тогда перетаскивание карточки в канбане
@@ -2117,6 +2137,8 @@ type MockItemRow = {
   carried_manual?: boolean;
   carry_reason?: string | null;
   frozen?: boolean;
+  /** Снимок переноса (22.10.2026): куда ушла строка-цель, кто, когда, срок на момент ухода. */
+  moved?: { to_row: string | null; at: string; by: number | null; reason: string | null; due_before: string | null };
 };
 
 let mockCycleItems: Record<string, MockItemRow[]> = {
@@ -2129,8 +2151,26 @@ let mockCycleItems: Record<string, MockItemRow[]> = {
     // задачи вне спринта (подпись «из «…»»).
     { id: "si5", task_id: "p_s_hybrid", in_plan: true },
     { id: "si6", task_id: "p_s_heart", in_plan: true },
+    // Снимки «Ушли из спринта»: один перенесён человеком с причиной, второй — автоматикой по
+    // сроку, без причины (красный, «нажмите, чтобы вписать»).
+    {
+      id: "si7",
+      task_id: "p_rec",
+      in_plan: true,
+      moved: { to_row: "sn1", at: mockDay(-1) + "T10:00:00.000Z", by: 123456, reason: "Ждём железо", due_before: mockDay(5) },
+    },
+    {
+      id: "si8",
+      task_id: "p_b_csv",
+      in_plan: true,
+      moved: { to_row: "sn2", at: mockDay(0) + "T08:00:00.000Z", by: null, reason: null, due_before: mockDay(9) },
+    },
   ],
-  sc_draft: [],
+  sc_draft: [
+    { id: "sn1", task_id: "p_rec", in_plan: true, carry_count: 1 },
+    { id: "sn2", task_id: "p_b_csv", in_plan: true, carry_count: 1 },
+  ],
+  sc_next2: [],
 };
 
 /**
@@ -2265,6 +2305,17 @@ const MOCK_CYCLE_FROZEN: SprintCycleItem[] = [
   },
 ];
 
+/** Куда ушёл снимок: строка-цель → её спринт (как `loadMoveTargets` на сервере). */
+function mockMovedTo(rowId: string | null): { id: string; name: string } | null {
+  if (!rowId) return null;
+  for (const [cycleId, rows] of Object.entries(mockCycleItems)) {
+    if (!rows.some((r) => r.id === rowId)) continue;
+    const c = mockCycles.find((x) => x.id === cycleId);
+    return c ? { id: c.id, name: c.name } : null;
+  }
+  return null;
+}
+
 function mockItemsOf(cycleId: string): SprintCycleItem[] {
   if (cycleId === "sc_done") return MOCK_CYCLE_FROZEN;
   const projectName = (
@@ -2284,13 +2335,14 @@ function mockItemsOf(cycleId: string): SprintCycleItem[] {
       assignees: t.assignees,
       project_id: t.project_id,
       project: projectName(t.project_id),
-      due_date: t.due_date,
+      // У снимка переноса срок — тот, что был на момент ухода («срок A → B»).
+      due_date: row.moved ? row.moved.due_before : t.due_date,
       // Счётчики в моках выдуманы детерминированно: без них значки 💬/🔗 не увидеть в
       // локальном прогоне, а именно их и надо смотреть глазами.
       comment_count: t.id.length % 3,
       link_count: t.id.length % 2,
       completed_at: t.status === "done" ? new Date().toISOString() : null,
-      frozen: row.frozen ?? false,
+      frozen: row.moved ? true : row.frozen ?? false,
       carry_count: row.carry_count ?? 0,
       carried_manual: row.carried_manual ?? null,
       check_status: mockChecks[row.id]?.check_status ?? null,
@@ -2299,6 +2351,16 @@ function mockItemsOf(cycleId: string): SprintCycleItem[] {
       // Причина из окна сверки перекрывает ту, что приехала вместе с переносом.
       carry_reason: mockChecks[row.id]?.carry_reason ?? row.carry_reason ??
         null,
+      moved: row.moved
+        ? {
+          to_cycle_id: mockMovedTo(row.moved.to_row)?.id ?? null,
+          to_cycle_name: mockMovedTo(row.moved.to_row)?.name ?? null,
+          at: row.moved.at,
+          by: row.moved.by,
+          reason: row.moved.reason,
+          due_now: t.due_date,
+        }
+        : null,
     }];
   });
 }
@@ -2337,7 +2399,8 @@ export async function fetchSprintCycle(id: string): Promise<SprintCycleDetail> {
   if (DEV_MODE) {
     const c = mockCycles.find((x) => x.id === id);
     if (!c) throw new ApiError(404, "Not found");
-    return { ...c, items: mockItemsOf(id) };
+    const all = mockItemsOf(id);
+    return { ...c, items: all.filter((i) => !i.moved), moved: all.filter((i) => !!i.moved) };
   }
   return apiFetch<SprintCycleDetail>(`/sprint-cycles/${id}`);
 }
@@ -2582,6 +2645,76 @@ export async function patchSprintCycleItem(
     `/sprint-cycles/${cycleId}/tasks/${taskId}`,
     { method: "PATCH", body: JSON.stringify(patch) },
   );
+}
+
+/**
+ * Перенести задачу из идущего спринта в запланированный (22.10.2026): одно действие с
+ * обязательной причиной. `itemId` — `SprintCycleItem.id` (строка состава, не задача).
+ * `new_due` — новый срок задачи; не передан — срок не меняется. Отказ правила — 409 с текстом.
+ */
+export async function moveSprintTask(
+  cycleId: string,
+  itemId: string,
+  body: { target_cycle_id: string; reason: string; new_due?: string | null },
+): Promise<{ ok: true; target_item_id: string; revived: boolean }> {
+  if (DEV_MODE) {
+    const row = (mockCycleItems[cycleId] ?? []).find((r) => r.id === itemId);
+    if (!row) throw new ApiError(404, "Not found");
+    if (row.moved) throw new ApiError(409, "Задача уже перенесена");
+    if (!body.reason.trim()) throw new ApiError(400, "Нужна причина переноса");
+    const targetRow = { id: "sm" + Date.now(), task_id: row.task_id, in_plan: true, carry_count: (row.carry_count ?? 0) + 1 };
+    const task = mockTasks.find((t) => t.id === row.task_id);
+    mockCycleItems = {
+      ...mockCycleItems,
+      [cycleId]: (mockCycleItems[cycleId] ?? []).map((r) =>
+        r.id === itemId
+          ? {
+            ...r,
+            moved: {
+              to_row: targetRow.id,
+              at: new Date().toISOString(),
+              by: 123456,
+              reason: body.reason.trim(),
+              due_before: task?.due_date ?? null,
+            },
+          }
+          : r
+      ),
+      [body.target_cycle_id]: [...(mockCycleItems[body.target_cycle_id] ?? []), targetRow],
+    };
+    if (body.new_due) {
+      mockTasks = mockTasks.map((t) => (t.id === row.task_id ? { ...t, due_date: body.new_due ?? null } : t));
+    }
+    return { ok: true, target_item_id: targetRow.id, revived: false };
+  }
+  return apiFetch(`/sprint-cycles/${cycleId}/tasks/${itemId}/move`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+/** Вписать причину в снимок, у которого её нет (перенос по сроку из карточки) — один раз. */
+export async function setSprintMovedReason(
+  cycleId: string,
+  itemId: string,
+  reason: string,
+): Promise<void> {
+  if (DEV_MODE) {
+    const row = (mockCycleItems[cycleId] ?? []).find((r) => r.id === itemId);
+    if (!row?.moved) throw new ApiError(404, "Not found");
+    if (row.moved.reason) throw new ApiError(409, "Причина уже записана или задача не переносилась");
+    mockCycleItems = {
+      ...mockCycleItems,
+      [cycleId]: (mockCycleItems[cycleId] ?? []).map((r) =>
+        r.id === itemId && r.moved ? { ...r, moved: { ...r.moved, reason: reason.trim() } } : r
+      ),
+    };
+    return;
+  }
+  await apiFetch<void>(`/sprint-cycles/${cycleId}/tasks/${itemId}/moved-reason`, {
+    method: "POST",
+    body: JSON.stringify({ reason }),
+  });
 }
 
 /** Возвращает, сколько задач реально добавилось: приватные и уже добавленные сервер отсекает молча. */

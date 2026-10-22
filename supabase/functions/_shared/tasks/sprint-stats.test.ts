@@ -291,3 +291,21 @@ Deno.test("удалённая задача остаётся упоминание
   assertEquals(s.removed, 1);
   assertEquals(s.withdrawn, 0);
 });
+
+Deno.test("снимок перенесённой задачи не считается в плане, считается в «перенесено» (22.10.2026)", () => {
+  // Перенос — решение с причиной, а не «не сделано»: задача живёт в спринте-цели. Если снимок
+  // остался бы в знаменателе, один и тот же перенос дважды бил бы по проценту — здесь и в цели.
+  const s = computeSprintStats([
+    item({ status: "done", completed_at: "2026-10-21T09:00:00Z" }),
+    item({ status: "in_progress" }),
+    item({ status: "in_progress", moved_at: "2026-10-22T10:00:00Z" }),
+    item({ in_plan: false, status: "open", moved_at: "2026-10-22T11:00:00Z" }),
+  ]);
+  assertEquals(s.plan, 2);
+  assertEquals(s.planDone, 1);
+  assertEquals(s.planPercent, 50);
+  assertEquals(s.extra, 0);
+  assertEquals(s.moved, 2);
+  assertEquals(s.carried, 1, "в хвост приёмки снимок не едет — задача уже в цели");
+  assertEquals(s.byPerson, [{ name: "Марина", plan: 2, done: 1 }], "по людям снимок тоже не в счёт");
+});

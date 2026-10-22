@@ -45,17 +45,17 @@
 **Interfaces:**
 - Produces: колонки `sprint_items.moved_at timestamptz`, `moved_to uuid references sprint_items(id) on delete set null`, `moved_by text`, `plan_reason text`, `auto_extended boolean not null default false`; функция `public.sprint_move_task(p_item_id uuid, p_target_cycle_id uuid, p_reason text, p_new_due date, p_actor text) returns jsonb` → `{"source_item_id","target_item_id","revived":bool}`; внутренняя `public.sprint_move_task_internal(...)` с теми же аргументами, но разрешающая `p_reason is null` (для триггера). Сессионный флаг `set_config('swarm.sprint_moving','1',true)` на время смены срока — триггер срока его видит и молчит.
 
-- [ ] **Step 1: Тесты** (`Deno.test` по-русски):
+- [x] **Step 1: Тесты** (`Deno.test` по-русски):
   - «перенос: задача в цели, в источнике снимок с причиной» — после вызова: в цели строка `carried_from = источник`, `carry_count = источник+1`, `in_plan = true`; у источника `moved_at not null`, `moved_to = цель`, `carry_reason = 'ждём юристов'`, `frozen_title = tasks.title`.
   - «пустая причина — отказ» — `p_reason = '  '` → исключение с текстом `Нужна причина переноса`.
   - «выполненную/отменённую не переносим», «цель из другого пространства — отказ», «цель не черновик — отказ», «источник не в идущем — отказ».
   - «срок не трогается без новой даты» — `due_date` до и после равны; «новая дата меняет срок и не плодит строк» — ровно 2 строки задачи после вызова.
   - «повторный перенос той же строки — отказ `Задача уже перенесена`» (оживление снимка проверяет Task 2 через срок).
   - «приватную не переносим».
-- [ ] **Step 2:** `make test-db` (или `./scripts/check`) — новые тесты FAIL «function sprint_move_task does not exist».
-- [ ] **Step 3:** миграция: колонки, функции (`security invoker`, `search_path = public, pg_temp`, блокировка исходной строки `for update`, тексты отказов `using errcode = 'P0001'`), `revoke all on function … from public, anon, authenticated` (урок SECURITY DEFINER/PUBLIC — даже для invoker держим EXECUTE только у `service_role`).
-- [ ] **Step 4:** тесты PASS; порча: убрать проверку причины — тест «пустая причина» краснеет.
-- [ ] **Step 5:** commit `feat: перенос задачи между спринтами — функция базы`.
+- [x] **Step 2:** `make test-db` (или `./scripts/check`) — новые тесты FAIL «function sprint_move_task does not exist».
+- [x] **Step 3:** миграция: колонки, функции (`security invoker`, `search_path = public, pg_temp`, блокировка исходной строки `for update`, тексты отказов `using errcode = 'P0001'`), `revoke all on function … from public, anon, authenticated` (урок SECURITY DEFINER/PUBLIC — даже для invoker держим EXECUTE только у `service_role`).
+- [x] **Step 4:** тесты PASS; порча: убрать проверку причины — тест «пустая причина» краснеет.
+- [x] **Step 5:** commit `feat: перенос задачи между спринтами — функция базы`.
 
 ### Task 2: Триггер срока двигает, а не помечает; план не сносится
 
@@ -67,17 +67,17 @@
 - Consumes: `sprint_move_task_internal` (Task 1).
 - Produces: `planPlacement(input) → PlacementPlan` с полями `move: {targetCycleId} | null`, `extendTo: cycleId | null`, `revive: boolean` вместо `setCarry`/`clearCarry`.
 
-- [ ] **Step 1: Тесты** (обновить сцены, ожидания по спеке «Правила на граничные случаи»):
+- [x] **Step 1: Тесты** (обновить сцены, ожидания по спеке «Правила на граничные случаи»):
   - «срок за концом идущего, плана нет: задача в спринте срока, в идущем снимок без причины» (`moved_at not null`, `carry_reason is null`).
   - «срок за концом идущего, есть план до С6, срок в С8: план продлён строками С7–С8 с `auto_extended`, строка идущего живая».
   - «срок внутри плана: строки не трогаются».
   - «срок вернули в идущий: снимок ожил (`moved_at is null`), строка цели в черновике снята».
   - «флаг `swarm.sprint_moving` — триггер молчит».
   - «опечатка в сроке (через десять лет)» — как раньше: спринтов нет, задача не переехала, снимка нет.
-- [ ] **Step 2:** FAIL на старой функции.
-- [ ] **Step 3:** переписать функцию по правилам спеки; удаление строк в черновиках — только строк без `moved_at`, вне плана задачи и не `in_plan`-строк плана (строки плана не удаляются никогда триггером).
-- [ ] **Step 4:** PASS (`deno test …sprint-autoplace.test.ts` + `make test-db`); порча: вернуть удаление строк плана — «план не сносится» краснеет.
-- [ ] **Step 5:** commit `feat: смена срока переносит задачу и не сносит план`.
+- [x] **Step 2:** FAIL на старой функции.
+- [x] **Step 3:** переписать функцию по правилам спеки; удаление строк в черновиках — только строк без `moved_at`, вне плана задачи и не `in_plan`-строк плана (строки плана не удаляются никогда триггером).
+- [x] **Step 4:** PASS (`deno test …sprint-autoplace.test.ts` + `make test-db`); порча: вернуть удаление строк плана — «план не сносится» краснеет.
+- [x] **Step 5:** commit `feat: смена срока переносит задачу и не сносит план`.
 
 ### Task 3: Серверный слой переноса — TS, API, MCP, статистика
 
@@ -95,11 +95,11 @@
   - API: `POST /sprint-cycles/:id/tasks/:itemId/move` `{target_cycle_id, reason, new_due?}` → `{ok:true,target_item_id,revived}`; `POST /sprint-cycles/:id/tasks/:itemId/moved-reason` `{reason}`. Ошибки P0001 → 409 с текстом.
   - MCP `move_sprint_task` `{workspace, sprint_id, task_id, target_sprint_id, reason, new_due?}`.
   - `miniapp/src/lib/api.ts`: `moveSprintTask(cycleId, itemId, body)`, `setSprintMovedReason(cycleId, itemId, reason)`.
-- [ ] **Step 1:** тест статистики «снимок перенесённой не считается в плане, считается в moved»; db-тест «перенос через moveItem пишет один комментарий».
-- [ ] **Step 2:** FAIL.
-- [ ] **Step 3:** реализация; старый `PATCH {to_carry}` оставить рабочим (Review Focus 4).
-- [ ] **Step 4:** `deno check` swarm-api, swarm-mcp; тесты PASS; живой вызов роута на локальном контуре.
-- [ ] **Step 5:** commit `feat: перенос в API и MCP, снимки в составе спринта`.
+- [x] **Step 1:** тест статистики «снимок перенесённой не считается в плане, считается в moved»; db-тест «перенос через moveItem пишет один комментарий».
+- [x] **Step 2:** FAIL.
+- [x] **Step 3:** реализация; старый `PATCH {to_carry}` оставить рабочим (Review Focus 4).
+- [x] **Step 4:** `deno check` swarm-api, swarm-mcp; тесты PASS; живой вызов роута на локальном контуре.
+- [x] **Step 5:** commit `feat: перенос в API и MCP, снимки в составе спринта`.
 
 ### Task 4: «Список» — окно переноса и снимки
 
@@ -110,9 +110,9 @@
 **Interfaces:**
 - Consumes: `moveSprintTask`, `setSprintMovedReason`, `SprintItemView.moved`.
 - Produces: `MoveDialog({ item, cycles, onDone })` — цели: запланированные спринты пространства; поле причины (кнопка неактивна при пустом); блок срока: цель ≤ спринт срока → «Срок дд.мм не меняется»; иначе «Срок дд.мм будет сорван. Новый срок: [date = последний день цели]» (можно стереть). `SnapshotCard({ item })` — серая пунктирная: «перенесена → <спринт> · срок A → B», «Причина: «…» · кто · дата»; без причины — красное «причина не указана — нажмите, чтобы вписать» → `ReasonDialog`. Оба компонента переиспользует доска (этап 3).
-- [ ] **Step 1:** dev-сервер DEV_MODE (моки в `lib/api.ts` дополнить `moved`), прогон: «→» → окно, пустая причина — кнопка неактивна, перенос → строка ушла, снимок внизу; снимок без причины → окно → причина вписана.
-- [ ] **Step 2:** `npm run build`; снимки 1440 и 390, светлая/тёмная — в `/private/tmp/claude-501/sprint-move/`.
-- [ ] **Step 3:** доки: `docs/ARCHITECTURE.md` (флоу переноса, колонки, роуты, MCP), `docs/QUICK_REF.md`; commit `feat(miniapp): перенос из «Списка» с причиной один раз, снимки ушедших`.
+- [x] **Step 1:** dev-сервер DEV_MODE (моки в `lib/api.ts` дополнить `moved`), прогон: «→» → окно, пустая причина — кнопка неактивна, перенос → строка ушла, снимок внизу; снимок без причины → окно → причина вписана.
+- [x] **Step 2:** `npm run build`; снимки 1440 и 390, светлая/тёмная — в `/private/tmp/claude-501/sprint-move/`.
+- [x] **Step 3:** доки: `docs/ARCHITECTURE.md` (флоу переноса, колонки, роуты, MCP), `docs/QUICK_REF.md`; commit `feat(miniapp): перенос из «Списка» с причиной один раз, снимки ушедших`.
 - [ ] **Step 4:** PR этапа 1–2, CI зелёный, метка `deploy-window`; после раскатки — живая проверка на проде (перенос тестовой задачи в отдельном пространстве или наблюдение за триггером на реальной смене срока) и сверка строк.
 
 ## Этап 3: Доска спринтов

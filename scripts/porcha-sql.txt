@@ -104,10 +104,40 @@ if v_recent >= p_max_per_window then|if false then|supabase/functions/_shared/pa
 revoke all on function public.passkey_device_link_consume(bigint, text) from public, anon, authenticated;|grant execute on function public.passkey_device_link_consume(bigint, text) to anon;|supabase/functions/_shared/passkeys/device-links.db.test.ts|supabase/migrations/20261017120000_passkey_device_links.sql
 # Размещение по сроку (19.10.2026): идущий не теряет задачу, срок вернули — отметка автоматики снимается,
 # будущая строка не дублируется, предел автосоздания держит опечатку в сроке, приёмка везёт хвост в спринт срока.
-if p_due < v_active.start_date then|if false then|supabase/functions/_shared/tasks/sprint-autoplace.db.test.ts|supabase/migrations/20261019120000_sprint_autoplace.sql
-and coalesce(btrim(v_item.carry_reason), '') = '' then|then|supabase/functions/_shared/tasks/sprint-autoplace.db.test.ts|supabase/migrations/20261019120000_sprint_autoplace.sql
-if v_live and not v_item.to_carry then|if v_live then|supabase/functions/_shared/tasks/sprint-autoplace.db.test.ts|supabase/migrations/20261019120000_sprint_autoplace.sql
-and si.cycle_id <> v_target|and si.cycle_id = v_target|supabase/functions/_shared/tasks/sprint-autoplace.db.test.ts|supabase/migrations/20261019120000_sprint_autoplace.sql
+if p_due < v_active.start_date then|if false then|supabase/functions/_shared/tasks/sprint-autoplace.db.test.ts|supabase/migrations/20261022121000_sprint_autoplace_moves.sql
+and coalesce(btrim(v_item.carry_reason), '') = '' then|then|supabase/functions/_shared/tasks/sprint-autoplace.db.test.ts|supabase/migrations/20261022121000_sprint_autoplace_moves.sql
 if p_due - current_date > c_max_auto * c_sprint_days or v_needed > c_max_auto then|if false then|supabase/functions/_shared/tasks/sprint-autoplace.db.test.ts|supabase/migrations/20261019120000_sprint_autoplace.sql
 when (old.due_date is distinct from new.due_date)|when (true)|supabase/functions/_shared/tasks/sprint-autoplace.db.test.ts|supabase/migrations/20261019120000_sprint_autoplace.sql
 case when t.due_date > v_cycle.end_date|case when false|supabase/functions/_shared/tasks/sprint-autoplace.db.test.ts|supabase/migrations/20261019120000_sprint_autoplace.sql
+# Перенос между спринтами (22.10.2026): причина обязательна, строка под замком (двое не кладут задачу
+# в два спринта), снимок не переносится второй раз, цель только своего пространства, приватная не едет,
+# функцию зовёт только service_role.
+if nullif(btrim(p_reason), '') is null then|if false then|supabase/functions/_shared/tasks/sprint-move.db.test.ts|supabase/migrations/20261022120000_sprint_move.sql
+select * into v_src from public.sprint_items where id = p_item_id for update;|select * into v_src from public.sprint_items where id = p_item_id;|supabase/functions/_shared/tasks/sprint-move.db.test.ts|supabase/migrations/20261022120000_sprint_move.sql
+if v_src.moved_at is not null then|if false then|supabase/functions/_shared/tasks/sprint-move.db.test.ts|supabase/migrations/20261022120000_sprint_move.sql
+and tab_id is not distinct from v_cycle.tab_id|and true|supabase/functions/_shared/tasks/sprint-move.db.test.ts|supabase/migrations/20261022120000_sprint_move.sql
+if t.is_private then|if false then|supabase/functions/_shared/tasks/sprint-move.db.test.ts|supabase/migrations/20261022120000_sprint_move.sql
+revoke all on function public.sprint_move_task(uuid, uuid, text, date, text) from public, anon, authenticated;|grant execute on function public.sprint_move_task(uuid, uuid, text, date, text) to anon;|supabase/functions/_shared/tasks/sprint-move.db.test.ts|supabase/migrations/20261022120000_sprint_move.sql
+# Срок переносит задачу (22.10.2026): одна строка — переезд со снимком без причины (и снимок помнит срок
+# до смены), план на несколько спринтов не сносится и продлевается, срок вернули — снимок оживает, а строку
+# цели, стоявшую там по плану до переноса, не трогаем; смена срока самим переносом триггер не будит.
+if cardinality(v_drafts) = 1 then|if true then|supabase/functions/_shared/tasks/sprint-autoplace.db.test.ts|supabase/migrations/20261022121000_sprint_autoplace_moves.sql
+if v_target_st > v_plan_end then|if false then|supabase/functions/_shared/tasks/sprint-autoplace.db.test.ts|supabase/migrations/20261022121000_sprint_autoplace_moves.sql
+and si.carried_from = v_item.id|and true|supabase/functions/_shared/tasks/sprint-autoplace.db.test.ts|supabase/migrations/20261022121000_sprint_autoplace_moves.sql
+set moved_at = null, moved_to = null, moved_by = null, carry_reason = null,|set moved_by = null, carry_reason = null,|supabase/functions/_shared/tasks/sprint-autoplace.db.test.ts|supabase/migrations/20261022121000_sprint_autoplace_moves.sql
+if coalesce(current_setting('swarm.sprint_moving', true), '') = '1' then|if false then|supabase/functions/_shared/tasks/sprint-autoplace.db.test.ts|supabase/migrations/20261022121000_sprint_autoplace_moves.sql
+perform public.sprint_move_task_internal(v_item.id, v_target, null, null, null);|null;|supabase/functions/_shared/tasks/sprint-autoplace.db.test.ts|supabase/migrations/20261022121000_sprint_autoplace_moves.sql
+set frozen_due_date = old.due_date|set frozen_due_date = frozen_due_date|supabase/functions/_shared/tasks/sprint-autoplace.db.test.ts|supabase/migrations/20261022121000_sprint_autoplace_moves.sql
+carry_reason        = coalesce(v_reason, case when v_src.to_carry then nullif(btrim(v_src.carry_reason), '') end),|carry_reason        = v_reason,|supabase/functions/_shared/tasks/sprint-move.db.test.ts|supabase/migrations/20261022120000_sprint_move.sql
+# Ревью 22.10.2026: чужая причина после оживления снимка, порядок замков «задача → строка», наследство 19.10.
+moved_by = null, carry_reason = null,|moved_by = null,|supabase/functions/_shared/tasks/sprint-move.db.test.ts|supabase/migrations/20261022121000_sprint_autoplace_moves.sql
+case when v_src.to_carry then|case when true then|supabase/functions/_shared/tasks/sprint-move.db.test.ts|supabase/migrations/20261022120000_sprint_move.sql
+select * into t from public.tasks where id = v_task_id for update;|select * into t from public.tasks where id = v_task_id;|supabase/functions/_shared/tasks/sprint-move.db.test.ts|supabase/migrations/20261022120000_sprint_move.sql
+where si.to_carry and si.carry_auto|where si.to_carry|supabase/functions/_shared/tasks/sprint-legacy-carry.db.test.ts|supabase/migrations/20261022123000_sprint_legacy_carry.sql
+and t.archived_at is null and not t.is_private and t.status not in ('done', 'cancelled')|and true|supabase/functions/_shared/tasks/sprint-legacy-carry.db.test.ts|supabase/migrations/20261022123000_sprint_legacy_carry.sql
+and dc.status = 'draft' and dc.archived_at is null|and dc.archived_at is null|supabase/functions/_shared/tasks/sprint-legacy-carry.db.test.ts|supabase/migrations/20261022123000_sprint_legacy_carry.sql
+and d.added_by is null and d.carried_from is null|and d.carried_from is null|supabase/functions/_shared/tasks/sprint-legacy-carry.db.test.ts|supabase/migrations/20261022123000_sprint_legacy_carry.sql
+set carried_from = p.src_id,|set carried_from = carried_from,|supabase/functions/_shared/tasks/sprint-legacy-carry.db.test.ts|supabase/migrations/20261022123000_sprint_legacy_carry.sql
+revoke all on function public.sprint_convert_legacy_carry() from public, anon, authenticated;|grant execute on function public.sprint_convert_legacy_carry() to anon;|supabase/functions/_shared/tasks/sprint-legacy-carry.db.test.ts|supabase/migrations/20261022123000_sprint_legacy_carry.sql
+and left(tc.content, length(|and true or left(tc.content, length(|supabase/functions/_shared/tasks/sprint-legacy-carry.db.test.ts|supabase/migrations/20261022123000_sprint_legacy_carry.sql
+order by tc.created_at desc|order by tc.created_at asc|supabase/functions/_shared/tasks/sprint-legacy-carry.db.test.ts|supabase/migrations/20261022123000_sprint_legacy_carry.sql

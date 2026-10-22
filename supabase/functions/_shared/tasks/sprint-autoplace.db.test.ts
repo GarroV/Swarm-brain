@@ -34,7 +34,7 @@ interface Scene {
   withActive?: boolean;
   /** В каких спринтах стоит задача. */
   rows: Label[];
-  /** Состояние отметки переноса в идущем. */
+  /** Старая пометка «к переносу» в идущем (до уборки to_carry). */
   carry?: { to_carry: boolean; auto: boolean; reason: string | null };
   /** Срок ДО правки (дни от сегодня). */
   dueBefore?: number | null;
@@ -106,15 +106,30 @@ async function addTask(db: Client, b: Built, status: string, due: string | null)
   return r.rows[0].id;
 }
 
-async function placeRow(db: Client, cycleId: string, taskId: string, c?: Scene["carry"]) {
-  await db.queryArray`
+async function placeRow(db: Client, cycleId: string, taskId: string, c?: Scene["carry"]): Promise<string> {
+  const r = await db.queryObject<{ id: string }>`
     insert into sprint_items (cycle_id, task_id, in_plan, to_carry, carry_auto, carry_reason)
-    values (${cycleId}, ${taskId}, true, ${c?.to_carry ?? false}, ${c?.auto ?? false}, ${c?.reason ?? null})`;
+    values (${cycleId}, ${taskId}, true, ${c?.to_carry ?? false}, ${c?.auto ?? false}, ${c?.reason ?? null})
+    returning id`;
+  return r.rows[0].id;
+}
+
+interface ItemState {
+  in_plan: boolean;
+  to_carry: boolean;
+  carry_auto: boolean;
+  carry_reason: string | null;
+  auto_extended: boolean;
+  moved: boolean;
+  frozen_due_date: string | null;
 }
 
 interface State {
-  membership: Set<string>; // метки «A», «F1», «F2», «N0», «N1»…
-  items: Record<string, { in_plan: boolean; to_carry: boolean; carry_auto: boolean; carry_reason: string | null }>;
+  /** Живые строки (не сняты и не снимки): метки «A», «F1», «F2», «N0», «N1»… */
+  membership: Set<string>;
+  /** Где лежат снимки переноса. */
+  snapshots: Set<string>;
+  items: Record<string, ItemState>;
   created: Array<{ name: string; start_date: string; end_date: string; check_date: string; status: string }>;
 }
 
@@ -126,8 +141,12 @@ async function readState(db: Client, b: Built, taskId: string): Promise<State> {
     to_carry: boolean;
     carry_auto: boolean;
     carry_reason: string | null;
-  }>`select cycle_id, in_plan, to_carry, carry_auto, carry_reason from sprint_items
-      where task_id = ${taskId} and withdrawn_at is null`;
+    auto_extended: boolean;
+    moved: boolean;
+    frozen_due_date: string | null;
+  }>`select cycle_id, in_plan, to_carry, carry_auto, carry_reason, auto_extended, moved_at is not null as moved,
+            frozen_due_date::text
+       from sprint_items where task_id = ${taskId} and withdrawn_at is null`;
   const cyc = await db.queryObject<
     { id: string; name: string; start_date: string; end_date: string; check_date: string; status: string }
   >`select id, name, start_date::text, end_date::text, check_date::text, status from sprint_cycles
@@ -137,18 +156,14 @@ async function readState(db: Client, b: Built, taskId: string): Promise<State> {
   created.forEach((c, i) => labelOf.set(c.id, `N${i}`));
   const state: State = {
     membership: new Set(),
+    snapshots: new Set(),
     items: {},
     created: created.map(({ id: _id, ...rest }) => rest),
   };
-  for (const r of rows.rows) {
-    const label = labelOf.get(r.cycle_id)!;
-    state.membership.add(label);
-    state.items[label] = {
-      in_plan: r.in_plan,
-      to_carry: r.to_carry,
-      carry_auto: r.carry_auto,
-      carry_reason: r.carry_reason,
-    };
+  for (const { cycle_id, ...r } of rows.rows) {
+    const label = labelOf.get(cycle_id)!;
+    (r.moved ? state.snapshots : state.membership).add(label);
+    state.items[label] = r;
   }
   return state;
 }
@@ -163,17 +178,37 @@ function expectedState(b: Built, s: Scene) {
     due: closed ? null : abs(b.today, s.dueAfter),
     today: b.today,
     cycles,
-    inActive,
+    activeRow: inActive ? "live" : null,
     draftIds: s.rows.filter((l) => l !== "A").map((l) => b.cycles[l].id),
     carry: inActive ? (s.carry ?? { to_carry: false, auto: false, reason: null }) : null,
   });
-  const idToLabel = new Map(Object.entries(b.cycles).map(([l, c]) => [c.id, l]));
+  const label = (id: string) =>
+    id.startsWith("new:") ? `N${id.slice(4)}` : Object.entries(b.cycles).find(([, c]) => c.id === id)![0];
   const membership = new Set<string>(s.rows);
+  const snapshots = new Set<string>();
   if (plan.addToActive) membership.add("A");
-  for (const id of plan.removeDraftIds) membership.delete(idToLabel.get(id)!);
-  if (plan.targetId) membership.add(idToLabel.get(plan.targetId)!);
-  if (plan.create.length > 0) membership.add(`N${plan.create.length - 1}`);
-  return { plan, membership };
+  for (const id of plan.removeDraftIds) membership.delete(label(id));
+  if (plan.move) {
+    membership.delete(label(plan.move.from));
+    if (plan.move.snapshot) snapshots.add(label(plan.move.from));
+    membership.add(label(plan.move.targetCycleId));
+  }
+  const extended = new Set<string>();
+  if (plan.extendTo) {
+    const lastPlanEnd = s.rows.filter((l) => l !== "A").map((l) => b.cycles[l as Label].end_date).sort().at(-1)!;
+    const all = [
+      ...cycles.filter((c) => c.status === "draft").map((c) => ({ label: label(c.id), start: c.start_date })),
+      ...plan.create.map((c, i) => ({ label: `N${i}`, start: c.start_date })),
+    ];
+    const targetStart = all.find((c) => c.label === label(plan.extendTo!))!.start;
+    for (const c of all) {
+      if (c.start > lastPlanEnd && c.start <= targetStart) {
+        membership.add(c.label);
+        extended.add(c.label);
+      }
+    }
+  }
+  return { plan, membership, snapshots, extended };
 }
 
 async function runScene(name: string, s: Scene, via: "update" | "rpc" = "update") {
@@ -196,29 +231,32 @@ async function runScene(name: string, s: Scene, via: "update" | "rpc" = "update"
     }
 
     const got = await readState(db, b, taskId);
-    const { plan, membership } = expectedState(b, s);
+    const { plan, membership, snapshots, extended } = expectedState(b, s);
     assertEquals([...got.membership].sort(), [...membership].sort(), `${name}: в каких спринтах стоит задача`);
+    assertEquals([...got.snapshots].sort(), [...snapshots].sort(), `${name}: где снимки переноса`);
     assertEquals(
       got.created.map((c) => [c.name, c.start_date, c.end_date, c.check_date, c.status]),
       plan.create.map((c) => [c.name, c.start_date, c.end_date, c.check_date, "draft"]),
       `${name}: созданные спринты`,
     );
+    for (const l of snapshots) {
+      assertEquals(
+        got.items[l].carry_reason,
+        s.carry?.reason?.trim() || null,
+        `${name}: причину автоматика не придумывает`,
+      );
+      assertEquals(got.items[l].frozen_due_date, dueBefore, `${name}: снимок помнит срок до смены`);
+    }
+    for (const l of extended) assertEquals(got.items[l].auto_extended, true, `${name}: продление помечено`);
     const a = got.items["A"];
     const before = s.carry ?? { to_carry: false, auto: false, reason: null };
-    if (a && (s.withActive ?? true)) {
-      const wantCarry = plan.clearCarry ? false : plan.setCarry ? true : before.to_carry;
-      assertEquals(a.to_carry, wantCarry, `${name}: отметка переноса`);
-      assertEquals(a.carry_auto, plan.setCarry ? true : plan.clearCarry ? false : before.auto, `${name}: кто поставил`);
+    if (a && !snapshots.has("A") && (s.withActive ?? true)) {
+      assertEquals(a.to_carry, plan.clearCarry ? false : before.to_carry, `${name}: старая пометка переноса`);
+      assertEquals(a.carry_auto, plan.clearCarry ? false : before.auto, `${name}: кто поставил`);
       assertEquals(a.carry_reason, plan.clearCarry ? null : before.reason, `${name}: причину автоматика не пишет`);
     }
     if (plan.addToActive) assertEquals(got.items["A"].in_plan, false, `${name}: добавлено сверх плана`);
-    if (plan.targetId) {
-      const label = Object.entries(b.cycles).find(([, c]) => c.id === plan.targetId)![0];
-      if (!s.rows.includes(label as Label)) {
-        assertEquals(got.items[label].in_plan, true, `${name}: в план запланированного`);
-      }
-    }
-    return { db: null, got, plan, b, taskId };
+    return { got, plan, b, taskId };
   } finally {
     await db.end();
   }
@@ -228,17 +266,34 @@ Deno.test("срок внутри идущего: задача из будуще�
   await runScene("внутрь идущего", { rows: ["F1"], dueAfter: 3 });
 });
 
-Deno.test("срок за концом идущего: остаётся в нём с пометкой переноса и появляется в спринте срока", async () => {
-  const r = await runScene("за конец", { rows: ["A"], dueAfter: 25 });
-  assert(r.got.membership.has("A") && r.got.membership.has("F2"));
-  assertEquals(r.got.items["A"].to_carry, true);
-  assertEquals(r.got.items["A"].carry_auto, true);
+Deno.test("срок внутри идущего, у задачи план на два будущих: она в идущем, план не снесён", async () => {
+  const r = await runScene("план остаётся", { rows: ["F1", "F2"], dueAfter: 3 });
+  assertEquals([...r.got.membership].sort(), ["A", "F1", "F2"]);
+});
+
+Deno.test("срок за концом идущего, плана нет: задача в спринте срока, в идущем снимок без причины", async () => {
+  const r = await runScene("за конец", { rows: ["A"], dueBefore: 4, dueAfter: 25 });
+  assertEquals([...r.got.membership], ["F2"]);
+  assertEquals([...r.got.snapshots], ["A"]);
   assertEquals(r.got.items["A"].carry_reason, null, "причину автоматика не придумывает");
 });
 
-Deno.test("срок попал в ближайший будущий: идущий не теряет задачу, дубля в будущих нет", async () => {
-  const r = await runScene("в F1", { rows: ["A", "F2"], dueAfter: 12 });
-  assertEquals([...r.got.membership].sort(), ["A", "F1"]);
+Deno.test("срок за концом идущего, план до F1, срок дальше всех: план продлён с пометкой, идущий живой", async () => {
+  const r = await runScene("продление", { rows: ["A", "F1"], dueAfter: 50 });
+  assert(r.got.membership.has("A") && r.got.membership.has("F1") && r.got.membership.has("F2"));
+  assertEquals(r.got.items["F1"].auto_extended, false, "строку плана человек поставил сам");
+  assertEquals(r.got.items["F2"].auto_extended, true);
+  assertEquals(r.got.snapshots.size, 0, "задача продолжается, снимка нет");
+});
+
+Deno.test("срок внутри плана: строки не трогаются", async () => {
+  const r = await runScene("внутри плана", { rows: ["A", "F1", "F2"], dueAfter: 12 });
+  assertEquals([...r.got.membership].sort(), ["A", "F1", "F2"]);
+});
+
+Deno.test("срок попал в ближайший будущий, задача в дальнем: строка переставляется, дублей нет", async () => {
+  const r = await runScene("в F1", { rows: ["F2"], dueAfter: 12 });
+  assertEquals([...r.got.membership], ["F1"]);
 });
 
 Deno.test("срок дальше всех: создаются все промежуточные спринты, задача в последнем", async () => {
@@ -247,20 +302,19 @@ Deno.test("срок дальше всех: создаются все проме�
   assertEquals(r.got.created.every((c) => c.status === "draft"), true, "стартуют только люди");
 });
 
-Deno.test("опечатка в сроке (через десять лет): спринтов нет, задача не переехала, пометка в идущем есть", async () => {
+Deno.test("опечатка в сроке (через десять лет): спринтов нет, задача не переехала, снимка нет", async () => {
   const r = await runScene("2036", { rows: ["A"], dueAfter: 3650 });
   assertEquals(r.got.created.length, 0);
   assertEquals([...r.got.membership], ["A"]);
-  assertEquals(r.got.items["A"].to_carry, true);
+  assertEquals(r.got.snapshots.size, 0);
 });
 
-Deno.test("отметка переноса, поставленная человеком, при сдвиге срока за конец остаётся человеческой", async () => {
+Deno.test("причина старой пометки человека переходит в снимок, а не теряется", async () => {
   const r = await runScene("человеческая отметка", {
     rows: ["A"],
     carry: { to_carry: true, auto: false, reason: "решили сами" },
     dueAfter: 25,
   });
-  assertEquals(r.got.items["A"].carry_auto, false, "автоматика не присваивает чужую отметку");
   assertEquals(r.got.items["A"].carry_reason, "решили сами");
 });
 
@@ -270,24 +324,87 @@ Deno.test("повторное сохранение того же срока не
     const b = await build(db, true);
     const taskId = await addTask(db, b, "open", null);
     await placeRow(db, b.cycles.A.id, taskId);
+    await placeRow(db, b.cycles.F1.id, taskId);
     await db.queryArray`update tasks set due_date = ${addDays(b.today, 25)} where id = ${taskId}`;
     await db.queryArray`delete from sprint_items where cycle_id = ${b.cycles.F2.id} and task_id = ${taskId}`;
     // Тот же срок записан ещё раз (так делает любая правка карточки, шлющая срок целиком).
     await db.queryArray`update tasks set due_date = ${addDays(b.today, 25)} where id = ${taskId}`;
     const got = await readState(db, b, taskId);
-    assertEquals([...got.membership], ["A"], "смена срока — повод двигать задачу, а не повторная запись того же");
+    assertEquals(
+      [...got.membership].sort(),
+      ["A", "F1"],
+      "смена срока — повод двигать задачу, а не повторная запись того же",
+    );
   } finally {
     await db.end();
   }
 });
 
-Deno.test("срок вернули в идущий: отметка автоматики без причины снимается", async () => {
-  await runScene("вернули", {
-    rows: ["A", "F2"],
-    carry: { to_carry: true, auto: true, reason: null },
-    dueBefore: 25,
-    dueAfter: 4,
-  });
+Deno.test("срок вернули в идущий: снимок ожил, строка цели в черновике снята, дубля нет", async () => {
+  const db = await connect();
+  try {
+    const b = await build(db, true);
+    const taskId = await addTask(db, b, "open", addDays(b.today, 4));
+    await placeRow(db, b.cycles.A.id, taskId);
+    await db.queryArray`update tasks set due_date = ${addDays(b.today, 25)} where id = ${taskId}`;
+    const moved = await readState(db, b, taskId);
+    assertEquals([...moved.snapshots], ["A"]);
+    assertEquals([...moved.membership], ["F2"]);
+
+    await db.queryArray`update tasks set due_date = ${addDays(b.today, 4)} where id = ${taskId}`;
+    const got = await readState(db, b, taskId);
+    assertEquals([...got.membership], ["A"], "задача снова в идущем — той же строкой");
+    assertEquals(got.snapshots.size, 0, "снимок ожил");
+    const plan = planPlacement({
+      due: addDays(b.today, 4),
+      today: b.today,
+      cycles: Object.values(b.cycles),
+      activeRow: "snapshot",
+      draftIds: [b.cycles.F2.id],
+      snapshotTargetId: b.cycles.F2.id,
+      carry: null,
+    });
+    assertEquals([plan.revive, plan.removeDraftIds], [true, [b.cycles.F2.id]], "база и правило согласны");
+    const frozen = await db.queryObject<{ n: number }>`
+      select count(*)::int as n from sprint_items where task_id = ${taskId} and frozen_at is not null`;
+    assertEquals(frozen.rows[0].n, 0, "оживший — живая строка, а не замороженная");
+  } finally {
+    await db.end();
+  }
+});
+
+Deno.test("срок вернули, а в цели задача стояла по плану до переноса: цель остаётся", async () => {
+  const db = await connect();
+  try {
+    const b = await build(db, true);
+    const taskId = await addTask(db, b, "open", addDays(b.today, 4));
+    const src = await placeRow(db, b.cycles.A.id, taskId);
+    await placeRow(db, b.cycles.F2.id, taskId);
+    await db.queryArray`select public.sprint_move_task(${src}::uuid, ${b.cycles.F2.id}::uuid, 'ждём', null, '1')`;
+    await db.queryArray`update tasks set due_date = ${addDays(b.today, 3)} where id = ${taskId}`;
+    const got = await readState(db, b, taskId);
+    assertEquals([...got.membership].sort(), ["A", "F2"]);
+  } finally {
+    await db.end();
+  }
+});
+
+Deno.test("смена срока внутри переноса (флаг swarm.sprint_moving) — триггер молчит", async () => {
+  const db = await connect();
+  try {
+    const b = await build(db, true);
+    const taskId = await addTask(db, b, "open", addDays(b.today, 4));
+    await placeRow(db, b.cycles.A.id, taskId);
+    await db.queryArray`begin`;
+    await db.queryArray`select set_config('swarm.sprint_moving', '1', true)`;
+    await db.queryArray`update tasks set due_date = ${addDays(b.today, 25)} where id = ${taskId}`;
+    await db.queryArray`commit`;
+    const got = await readState(db, b, taskId);
+    assertEquals([...got.membership], ["A"]);
+    assertEquals(got.snapshots.size, 0);
+  } finally {
+    await db.end();
+  }
 });
 
 Deno.test("отметка человека и отметка с причиной при возврате срока остаются", async () => {
@@ -300,7 +417,16 @@ Deno.test("отметка человека и отметка с причиной
   assertEquals(r.got.items["A"].to_carry, true);
 });
 
-Deno.test("идущего спринта нет: срок переезжает между запланированными", async () => {
+Deno.test("старая отметка автоматики без причины при возврате срока снимается", async () => {
+  await runScene("вернули", {
+    rows: ["A", "F2"],
+    carry: { to_carry: true, auto: true, reason: null },
+    dueBefore: 25,
+    dueAfter: 4,
+  });
+});
+
+Deno.test("идущего спринта нет: строка переезжает между запланированными", async () => {
   await runScene("без идущего", { withActive: false, rows: ["F1"], dueAfter: 28 });
 });
 
@@ -315,7 +441,7 @@ Deno.test("срок сняли: ничего не происходит", async (
 
 Deno.test("перекат через task_apply_update (веб, бот, MCP) ловится тем же триггером", async () => {
   const r = await runScene("rpc", { rows: ["A"], dueAfter: 25 }, "rpc");
-  assertEquals(r.got.items["A"].to_carry, true);
+  assertEquals([...r.got.snapshots], ["A"]);
 });
 
 Deno.test("задача, которой в спринтах не было, не раскладывается, спринты не создаются", async () => {
@@ -335,7 +461,7 @@ Deno.test("задача, которой в спринтах не было, не 
 Deno.test("закрытая задача остаётся где была", async () => {
   const r = await runScene("закрытая", { rows: ["A"], status: "done", dueAfter: 80 });
   assertEquals([...r.got.membership], ["A"]);
-  assertEquals(r.got.items["A"].to_carry, false);
+  assertEquals(r.got.snapshots.size, 0);
 });
 
 Deno.test("снятая из идущего строка не оживает и не считается нахождением в спринте", async () => {
@@ -347,7 +473,8 @@ Deno.test("снятая из идущего строка не оживает и 
     await db.queryArray`update sprint_items set withdrawn_at = now() where task_id = ${taskId}`;
     await db.queryArray`update tasks set due_date = ${addDays(b.today, 25)} where id = ${taskId}`;
     const got = await readState(db, b, taskId);
-    assertEquals(got.membership.size, 0, "задача не в обороте: ни пометки, ни переезда");
+    assertEquals(got.membership.size, 0, "задача не в обороте: ни снимка, ни переезда");
+    assertEquals(got.snapshots.size, 0);
   } finally {
     await db.end();
   }

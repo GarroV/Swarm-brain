@@ -43,12 +43,14 @@ function Mark(
   );
 }
 
-export function SprintPulse({ kpi, showUnchecked, extra }: {
+export function SprintPulse({ kpi, showUnchecked, extra, moved = 0 }: {
   kpi: SprintKpi;
   /** «Не отмечено» — только с дня сверки (D013). */
   showUnchecked: boolean;
   /** Взято после старта — «сверх плана». */
   extra: number;
+  /** Ушли из спринта переносом — снимки (22.10.2026); пометки «к переносу» больше нет. */
+  moved?: number;
 }) {
   const dt = useDt();
   const work = Math.max(kpi.total - kpi.done, 0);
@@ -80,7 +82,7 @@ export function SprintPulse({ kpi, showUnchecked, extra }: {
       label={dt("без исполнителя", "unassigned")}
       value={kpi.unassigned}
     />,
-    <Mark key="c" label={dt("к переносу", "to carry")} value={kpi.toCarry} />,
+    <Mark key="c" label={dt("перенесено", "moved")} value={moved} />,
     <Mark key="e" label={dt("сверх плана", "extra")} value={extra} />,
     <Mark key="x" label={dt("отменено", "cancelled")} value={kpi.cancelled} />,
     <Mark key="d" label={dt("удалённых", "deleted")} value={kpi.removed} />,
@@ -92,7 +94,7 @@ export function SprintPulse({ kpi, showUnchecked, extra }: {
   ];
   const anyMark =
     kpi.checkProblem + kpi.checkRisk + (showUnchecked ? kpi.unchecked : 0) +
-        kpi.unassigned + kpi.toCarry + extra + kpi.cancelled + kpi.removed +
+        kpi.unassigned + moved + extra + kpi.cancelled + kpi.removed +
         kpi.withdrawn > 0;
 
   return (

@@ -85,16 +85,17 @@ const CHECK_TONE: Record<CheckStatus, string> = {
 export type RowHandlers = {
   onOpen?: (item: SprintCycleItem) => void;
   onDone?: (item: SprintCycleItem) => void | Promise<void>;
-  onCarry?: (item: SprintCycleItem) => void | Promise<void>;
+  /** «→»: открыть окно переноса (22.10.2026). Только у идущего спринта — переносят из него. */
+  onMove?: (item: SprintCycleItem) => void;
   onCheck?: (
     item: SprintCycleItem,
     status: CheckStatus | null,
   ) => void | Promise<void>;
-  /** Причина — отдельным обработчиком: у риска и проблемы это `check_note`, у переноса
-   *  `carry_reason`, и строка не должна знать, какое поле куда класть. */
+  /** Что мешает у риска и проблемы (`check_note`). Причину переноса строка больше не правит:
+   *  её спрашивает окно переноса, один раз (22.10.2026). */
   onNote?: (
     item: SprintCycleItem,
-    patch: { check_note?: string | null; carry_reason?: string | null },
+    patch: { check_note: string | null },
   ) => void | Promise<void>;
   /** Родительская задача строки (#478): подзадача встаёт под родителя, если он тоже в составе. */
   parentOf?: (item: SprintCycleItem) => string | null;
@@ -194,10 +195,8 @@ export function SprintRow(
   const closed = CLOSED.has(item.status);
   const needsNote = item.check_status === "risk" ||
     item.check_status === "problem";
-  // Какая заметка сейчас открыта в редакторе под строкой: причина переноса или риск/проблема.
-  const [editing, setEditing] = useState<"carry_reason" | "check_note" | null>(
-    null,
-  );
+  // Открыт ли под строкой редактор «что мешает» (риск/проблема).
+  const [editing, setEditing] = useState(false);
   const live = !item.removed && !!item.task_id;
   const openable = !!h.onOpen && live;
   const late = !!item.due_date && !closed && isOverdue(item.due_date);
@@ -311,8 +310,6 @@ export function SprintRow(
         {/* Второй этаж — мелкие метки под началом названия; этаж есть, только если есть метка. */}
         {(() => {
           const noteOpen = !!h.onNote && !closed && live;
-          const carryOn = live && item.to_carry;
-          const carryNote = (item.carry_reason ?? "").trim();
           const checkOn = live && needsNote;
           const flags = [
             item.status === "cancelled" && !item.removed,
@@ -320,7 +317,6 @@ export function SprintRow(
             !!parent,
             item.removed,
             live && showExtra && !item.in_plan,
-            carryOn && (!closed || !!carryNote),
             checkOn,
             live && item.carry_count >= 2,
             live && item.comment_count > 0,
@@ -390,22 +386,6 @@ export function SprintRow(
                   {dt("сверх плана", "extra")}
                 </span>
               )}
-              {carryOn && (!closed || !!carryNote) && (
-                <NoteBadge
-                  label={dt("перенос", "carry")}
-                  note={item.carry_reason}
-                  emptyHint={dt("причина?", "reason?")}
-                  title={noteOpen
-                    ? dt(
-                      "Перенос: нажмите, чтобы вписать причину",
-                      "Carry-over: click to say why",
-                    )
-                    : dt("Перенос", "Carry-over")}
-                  onClick={noteOpen
-                    ? () => setEditing("carry_reason")
-                    : undefined}
-                />
-              )}
               {checkOn && (
                 <NoteBadge
                   label={item.check_status === "problem"
@@ -419,9 +399,8 @@ export function SprintRow(
                       "Click to say what exactly is blocking",
                     )
                     : dt("Что мешает", "What is blocking")}
-                  onClick={noteOpen
-                    ? () => setEditing("check_note")
-                    : undefined}
+                  // Повторный клик по значку закрывает редактор без сохранения.
+                  onClick={noteOpen ? () => setEditing((e) => !e) : undefined}
                 />
               )}
               {live && (
@@ -541,18 +520,18 @@ export function SprintRow(
             ✓
           </button>
         )}
-        {live && h.onCarry && !closed && (
+        {live && h.onMove && !closed && (
           <button
             type="button"
-            onClick={act(h.onCarry)}
-            title={item.to_carry
-              ? dt("Снять пометку переноса", "Remove the carry mark")
-              : dt("Перенести в следующий спринт", "Carry to the next sprint")}
+            onClick={act(h.onMove)}
+            title={dt("Перенести в другой спринт…", "Move to another sprint…")}
+            aria-label={dt(
+              "Перенести в другой спринт",
+              "Move to another sprint",
+            )}
             className={cn(
               quiet,
-              item.to_carry
-                ? "border-pri-med/50 bg-pri-med/15 text-pri-med"
-                : "border-line bg-surface text-ink-soft hover:text-ink",
+              "border-line bg-surface text-ink-soft hover:text-ink",
             )}
           >
             →
@@ -588,27 +567,19 @@ export function SprintRow(
           нет (владелец 21.10.2026: «нет никакого отображения, что Enter сохранит»). Поле
           необязательное — принуждение даёт «нет времени» вместо объяснения. */
       }
-      {editing && h.onNote && !closed && live && (
+      {editing && needsNote && h.onNote && !closed && live && (
         <div
           className="col-span-full px-3 pb-2"
           style={{ paddingLeft: TASK_INDENT + 20 }}
         >
           <NoteEditor
-            key={editing}
-            initial={(editing === "check_note"
-              ? item.check_note
-              : item.carry_reason) ?? ""}
-            placeholder={editing === "check_note"
-              ? dt(
-                "Что именно мешает — Enter, чтобы сохранить",
-                "What exactly is blocking — Enter to save",
-              )
-              : dt(
-                "Почему переносится — Enter, чтобы сохранить",
-                "Why it is carried over — Enter to save",
-              )}
-            onSave={(v) => h.onNote!(item, { [editing]: v })}
-            onClose={() => setEditing(null)}
+            initial={item.check_note ?? ""}
+            placeholder={dt(
+              "Что именно мешает — Enter, чтобы сохранить",
+              "What exactly is blocking — Enter to save",
+            )}
+            onSave={(v) => h.onNote!(item, { check_note: v })}
+            onClose={() => setEditing(false)}
           />
         </div>
       )}
