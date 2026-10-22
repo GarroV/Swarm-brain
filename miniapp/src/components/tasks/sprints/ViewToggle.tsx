@@ -3,14 +3,13 @@ import { PILL_GROUP_CLS, pillSegmentCls } from "@/components/ui/PropertyPill";
 import { useEffect, useState } from "react";
 import { useDt } from "@/components/roy/nav";
 
-// Список, доска спринтов и «Статусы» (прежний канбан) — виды одного состава. Выбор запоминается у человека (решение
+// Список (+План) и доска спринтов — виды одного состава; «Статусы» (канбан) снят 22.10.2026. Выбор запоминается у человека (решение
 // владельца: «Список + канбан переключателем»): вид — это привычка смотреть, и сбрасывать
 // его на каждом заходе значит переключать вручную по десять раз в день.
 
 export type SprintView =
   | "list"
   | "board"
-  | "kanban"
   | "analytics"
   | "journal";
 
@@ -30,9 +29,11 @@ export function useSprintView(): [SprintView, (v: SprintView) => void] {
       // Снятые виды: «Сверка» (19.09.2026, отметки переехали в строку списка) и «Инициативы»
       // (19.09.2026, владелец: «вообще не ясно что это такое, надо убрать пункт»). У кого они
       // остались запомненными — открывается список, а не пустой экран.
-      if (saved === "check" || saved === "initiatives") setView("list");
-      else if (
-        saved === "list" || saved === "board" || saved === "kanban" ||
+      // «Статусы» (kanban) снят 22.10.2026 — тоже открывает список.
+      if (saved === "check" || saved === "initiatives" || saved === "kanban") {
+        setView("list");
+      } else if (
+        saved === "list" || saved === "board" ||
         saved === "analytics" || saved === "journal"
       ) {
         setView(saved);
