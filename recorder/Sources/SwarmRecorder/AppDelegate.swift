@@ -13,6 +13,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     private var statusItem: NSStatusItem!
     private let recorder = AudioRecorder()
     private let widget = RecorderWidget()
+    // Доска «Сегодня» (Bumblebee): свои файлы Board*.swift; путь записи встреч она не использует.
+    private lazy var board = BoardHub(config: { [weak self] in self?.configError == nil ? self?.config : nil })
 
     private var config: SwarmConfig?
     private var configError: String?
@@ -253,6 +255,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         setupPowerNotifications()
         startWatching()
         missed.start()
+        board.onSettingsChange = { [weak self] in self?.rebuildMenu() }
+        board.start()
 
         // Дозагрузка на старте: если в прошлый раз приложение закрыли/упало с висящими записями
         // в pending/, заливаем их сейчас (meetingId переиспользуется, claim не повторяем).
@@ -954,6 +958,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         } else {
             menu.addItem(NSMenuItem(title: "Вставить токен из буфера", action: #selector(pasteTokenTapped), keyEquivalent: ""))
         }
+        for item in board.menuItems() { menu.addItem(item) }
         // Бэкстоп: macOS-разрешение на запись системного звука можно открыть вручную в любой
         // момент (Core Audio process-tap при отказе иногда даёт тишину без ошибки → catch не сработает).
         menu.addItem(NSMenuItem(title: "Открыть настройки записи", action: #selector(openRecordingSettingsTapped), keyEquivalent: ""))
