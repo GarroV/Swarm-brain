@@ -5,6 +5,7 @@ import { canDeleteDraft, canHideDraft, hasSeveralOwners } from "@/lib/draftOwner
 import { groupNotesByAuthor } from "@/lib/meetingNotes";
 import { NavHeader, RoyCard, SectionLabel, Avatar, Segmented, TezisyBlocks, Participants } from "../ui";
 import { RoyIcon } from "../icons";
+import { ReprocessMenu } from "../ReprocessMenu";
 import { deriveEntryTitle, entryImporterName } from "../entry";
 import { hasDraftNotes } from "@/lib/agentMeeting";
 import {
@@ -736,33 +737,13 @@ function AgentMeetingDetail({
   const [saving, setSaving] = useState(false);
   const [copied, setCopied] = useState(false);
   const [reprocessing, setReprocessing] = useState(false);
-  const [reprocMenu, setReprocMenu] = useState(false);   // открыто меню-уточнение «Переобработать»
-  const [reprocNote, setReprocNote] = useState("");      // своё пожелание к переработке
-  const reprocRef = useRef<HTMLDivElement | null>(null); // обёртка «кнопка + меню» — для клика вне
-  useEffect(() => { setEditingTitle(false); setEditingNotes(false); setSaving(false); setCopied(false); setReprocessing(false); setReprocMenu(false); setReprocNote(""); }, [meeting.id]);
-
-  // Меню «Переобработать» закрывается кликом по свободному месту и Escape (паттерн как в
-  // CountryPopover/QuickPickPopover). Без этого меню висело, пока не выберешь пункт.
-  useEffect(() => {
-    if (!reprocMenu) return;
-    const onDown = (e: MouseEvent) => {
-      if (!reprocRef.current?.contains(e.target as Node)) setReprocMenu(false);
-    };
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setReprocMenu(false); };
-    document.addEventListener("mousedown", onDown);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onDown);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [reprocMenu]);
+  useEffect(() => { setEditingTitle(false); setEditingNotes(false); setSaving(false); setCopied(false); setReprocessing(false); }, [meeting.id]);
 
   // Переобработать тезисы текущим промптом (из сохранённого транскрипта, без ре-транскрибации).
   // note — необязательное пожелание («короче»/«подробнее»/«акцент на решениях»/свой текст),
   // уходит в промпт переработки как приоритетная инструкция.
   const reprocess = async (note?: string) => {
     if (reprocessing) return;
-    setReprocMenu(false);
     setReprocessing(true);
     try { apply(await resummarizeAgentMeeting(m.id, note)); toast(note ? "Тезисы перестроены по запросу" : "Тезисы переобработаны"); }
     catch { toast("Не удалось переобработать"); }
@@ -860,44 +841,7 @@ function AgentMeetingDetail({
 
   // Кнопка «Переобработать» переиспользуется в блоке тезисов И в терминальных состояниях
   // без тезисов (done с пустым draft_notes_md / failed) — иначе восстановление недостижимо.
-  // Пресеты уточнения к переработке — уходят в промпт как приоритетная инструкция.
-  const REPROC_PRESETS: Array<{ label: string; note: string }> = [
-    { label: "Короче", note: "Сделай тезисы короче: суть каждого вопроса — 1–2 ёмких пункта, лишние детали убери." },
-    { label: "Подробнее", note: "Сделай подробнее: больше конкретики и деталей по каждому вопросу." },
-    { label: "Акцент на решениях", note: "Сделай акцент на решениях и изменениях — что реально поменялось, о чём договорились." },
-  ];
-  const reprocessBtn = (
-    <div ref={reprocRef} className="relative inline-block">
-      <button
-        type="button"
-        onClick={() => setReprocMenu((v) => !v)}
-        disabled={reprocessing || !hasTranscript}
-        title="Переобработать тезисы (можно уточнить, что изменить)"
-        className="inline-flex items-center gap-1.5 rounded-full border border-line bg-surface font-semibold text-ink-soft transition-[transform,border-color] duration-150 hover:scale-[1.03] hover:border-line-2 active:scale-[0.97] disabled:opacity-50"
-        style={{ padding: "5px 11px", fontSize: 12 }}
-      >
-        <RoyIcon name="spark" size={13} strokeWidth={1.9} /> {reprocessing ? "Обрабатываю…" : "Переобработать"}
-      </button>
-      {reprocMenu && !reprocessing && (
-        <div className="absolute right-0 z-20 mt-1 w-64 space-y-1 rounded-[8px] border border-line bg-card p-2 shadow-lg dark:backdrop-blur-lg">
-          <p className="px-1 pb-1 text-[11px] text-ink-soft">Что поменять в тезисах?</p>
-          <button type="button" onClick={() => reprocess()} className="w-full rounded-md px-2 py-1.5 text-left text-xs text-ink hover:bg-surface-2">Просто пересобрать</button>
-          {REPROC_PRESETS.map((p) => (
-            <button key={p.label} type="button" onClick={() => reprocess(p.note)} className="w-full rounded-md px-2 py-1.5 text-left text-xs text-ink hover:bg-surface-2">{p.label}</button>
-          ))}
-          <div className="border-t border-line pt-1">
-            <input
-              value={reprocNote}
-              onChange={(e) => setReprocNote(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Enter" && reprocNote.trim()) reprocess(reprocNote.trim()); }}
-              placeholder="Своё пожелание, Enter"
-              className="w-full rounded-md border border-line bg-surface px-2 py-1.5 text-xs text-ink outline-none focus:border-primary/50"
-            />
-          </div>
-        </div>
-      )}
-    </div>
-  );
+  const reprocessBtn = <ReprocessMenu busy={reprocessing} disabled={!hasTranscript} onPick={reprocess} />;
 
   return (
     // Панель — flex-колонка во всю высоту: шапка фиксирована, контент скроллится в своём контейнере.

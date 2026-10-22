@@ -2660,7 +2660,13 @@ async function routeRequest(req: Request): Promise<Response> {
           origin,
         );
       }
-      const tezisi = await resummarizeFromTranscript(supabase, meetingRowId);
+      // note — необязательное пожелание к переработке (как у /agent-meetings/:id/resummarize).
+      let note = "";
+      try {
+        const b = await req.json() as { note?: unknown };
+        note = typeof b?.note === "string" ? b.note.slice(0, 500) : "";
+      } catch { /* тело необязательно */ }
+      const tezisi = await resummarizeFromTranscript(supabase, meetingRowId, note);
       // Освежаем эмбеддинг (контент изменился) — как при публикации. Не критично при сбое.
       const OPENAI_KEY = Deno.env.get("OPENAI_API_KEY")!;
       let embedding: number[] | null = null;

@@ -5,6 +5,7 @@ import { askMeeting, fetchAgentMeeting, fetchAgentMeetingNotes, patchAgentMeetin
 import type { AgentMeeting, MeetingLiveNote } from "@/types";
 import { DetailPanelContext, NavHeader, SectionLabel } from "@/components/roy/ui";
 import { RoyIcon, type RoyIconName } from "@/components/roy/icons";
+import { ReprocessMenu } from "@/components/roy/ReprocessMenu";
 import { TezisyEditor } from "@/components/roy/tezisy/TezisyEditor";
 import { TezisyReader } from "@/components/roy/tezisy/TezisyReader";
 import type { AskApply } from "@/components/roy/tezisy/AskPopover";
@@ -102,11 +103,11 @@ export function MeetingReview({ id, onClose, onChanged }: Props) {
     return () => { alive = false; };
   }, [id]);
 
-  const reprocess = async () => {
+  const reprocess = async (note?: string) => {
     if (reprocessing) return;
     setReprocessing(true);
     try {
-      const m = await resummarizeAgentMeeting(id);
+      const m = await resummarizeAgentMeeting(id, note);
       setMeeting(m);
       setDraft(m.draft_notes_md ?? "");
       onChanged?.();
@@ -248,12 +249,9 @@ export function MeetingReview({ id, onClose, onChanged }: Props) {
         <div className="mb-1.5 flex items-center justify-between gap-2">
           <span className="font-bold uppercase text-accent-ink" style={{ fontSize: 11, letterSpacing: "0.05em" }}>{dt("Кратко от ИИ", "AI summary")}</span>
           {!published && hasTranscript && (
-            <button type="button" onClick={reprocess} disabled={reprocessing}
-              title={dt("Пересобрать тезисы из транскрипта", "Rebuild the summary from the transcript")}
-              className="inline-flex items-center gap-1.5 rounded-full border border-accent-line bg-card/60 font-semibold text-accent-ink transition-transform active:scale-[0.97] disabled:opacity-50"
-              style={{ padding: "3px 9px", fontSize: 11 }}>
-              <RoyIcon name="spark" size={12} strokeWidth={1.9} /> {reprocessing ? dt("Обрабатываю…", "Processing…") : dt("Переобработать", "Reprocess")}
-            </button>
+            <ReprocessMenu busy={reprocessing} onPick={reprocess} iconSize={12}
+              buttonClassName="inline-flex items-center gap-1.5 rounded-full border border-accent-line bg-card/60 font-semibold text-accent-ink transition-transform active:scale-[0.97] disabled:opacity-50"
+              buttonStyle={{ padding: "3px 9px", fontSize: 11 }} />
           )}
         </div>
         <TezisyReader text={meeting.draft_notes_md ?? ""} copyMeta={{ title: meeting.title, date: meeting.started_at }}
@@ -270,9 +268,7 @@ export function MeetingReview({ id, onClose, onChanged }: Props) {
           : dt("Тезисы не сформированы — модель не нашла содержательных пунктов. Можно переобработать из транскрипта.", "No summary — the model found nothing substantial. You can reprocess it from the transcript.")}
       </p>
       {hasTranscript && (
-        <button onClick={reprocess} disabled={reprocessing} className={btnOutline} style={{ fontSize: 14 }}>
-          <span className="inline-flex items-center gap-1.5"><RoyIcon name="spark" size={13} strokeWidth={1.9} /> {reprocessing ? dt("Обрабатываю…", "Processing…") : dt("Переобработать", "Reprocess")}</span>
-        </button>
+        <ReprocessMenu busy={reprocessing} onPick={reprocess} buttonClassName={btnOutline} buttonStyle={{ fontSize: 14 }} />
       )}
     </div>
   ) : (
