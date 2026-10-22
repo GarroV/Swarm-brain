@@ -26,6 +26,7 @@ import { cn } from "@/lib/utils";
 import { MoveDialog } from "../MoveDialog";
 import { ReasonDialog } from "../ReasonDialog";
 import { useStoredFlag } from "../useStoredFlag";
+import { shiftBetweenDrafts } from "../shiftTask";
 import { BoardFilters } from "./BoardFilters";
 import { PastColumn, SprintColumn } from "./BoardColumn";
 import type { BoardCtx, DragPayload } from "./boardCtx";
@@ -309,21 +310,19 @@ export function SprintBoardView(
   // Не взялось в цель — возвращаем в прежний, чтобы задача не пропала из плана.
   const shift = useCallback(
     (taskId: string, fromCycleId: string, target: SprintCycle) =>
-      run(async () => {
-        await removeTaskFromSprintCycle(fromCycleId, taskId);
-        const added = await addTasksToSprintCycle(target.id, [taskId]).catch(
-          () => 0,
-        );
-        if (added < 1) {
-          await addTasksToSprintCycle(fromCycleId, [taskId]);
-          throw new Error(
+      run(
+        () =>
+          shiftBetweenDrafts(
+            taskId,
+            fromCycleId,
+            target.id,
             dt(
               "Не удалось переставить — задача осталась на месте",
               "Could not shift — the task stayed where it was",
             ),
-          );
-        }
-      }, dt("Не удалось переставить", "Could not shift")),
+          ),
+        dt("Не удалось переставить", "Could not shift"),
+      ),
     [run, dt],
   );
 

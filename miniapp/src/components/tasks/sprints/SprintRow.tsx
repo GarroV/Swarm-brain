@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
 import { cn, displayName } from "@/lib/utils";
-import type { CheckStatus, SprintCycleItem, Task } from "@/types";
+import type { CheckStatus, SprintCycle, SprintCycleItem, Task } from "@/types";
 import { RoyIcon } from "@/components/roy/icons";
 import { useDt } from "@/components/roy/nav";
 import {
@@ -14,11 +14,12 @@ import {
 import { fmtDay, fmtDayShort, isOverdue } from "./format";
 import type { SubtaskBlock } from "@/lib/sprintGrouping";
 import { blockText } from "./groupingText";
+import { TaskMenu, type TaskMenuActions } from "./board/TaskMenu";
 
 // Строка состава спринта — таблицей, в колонках стенда (screens-work.js → sprintTaskRow):
-// задача · срок · сверка · исполнитель · хвост действий. Быстрые действия («✓ выполнено», «→ перенести»)
-// живут в хвосте строки и проявляются при наведении: строка спокойная, а ежедневный клик
-// по-прежнему один (#407).
+// задача · срок · сверка · исполнитель · хвост действий. Быстрые действия — кружок статуса слева от
+// названия («выполнено») и «⋯» справа (перенос, сверка, снять, группировка) — видны всегда
+// (22.10.2026), а ежедневный клик по-прежнему один (#407).
 
 /** Колонки — одни на шапку и строки, иначе вертикаль рвётся между группами.
  *
@@ -43,10 +44,6 @@ export const TIGHT_INVISIBLE =
  *  Шапка таблицы остаётся одним этажом: её подписи стоят над вторым этажом строк. */
 export const PHONE_TITLE =
   "@max-[480px]/sprint:col-span-5 @max-[480px]/sprint:pt-2";
-/** Кружок исполнителя уступает место кнопкам хвоста, пока на строку наведён курсор: им нужно
- *  ~94px, а колонка хвоста уже, поэтому они заходят на колонку исполнителя. */
-export const HOVER_YIELD =
-  "lg:group-hover:invisible lg:group-focus-within:invisible";
 export const PHONE_TIGHT = "@max-[480px]/sprint:px-0";
 export const PHONE_META =
   "@max-[480px]/sprint:col-start-2 @max-[480px]/sprint:px-0";
@@ -85,8 +82,12 @@ const CHECK_TONE: Record<CheckStatus, string> = {
 export type RowHandlers = {
   onOpen?: (item: SprintCycleItem) => void;
   onDone?: (item: SprintCycleItem) => void | Promise<void>;
-  /** «→»: открыть окно переноса (22.10.2026). Только у идущего спринта — переносят из него. */
-  onMove?: (item: SprintCycleItem) => void;
+  /** Меню «⋯» строки (22.10.2026): те же пункты, что на доске спринтов. Нет — хвоста нет. */
+  menu?: {
+    cycle: SprintCycle;
+    cycles: readonly SprintCycle[];
+    actions: (item: SprintCycleItem) => TaskMenuActions;
+  };
   onCheck?: (
     item: SprintCycleItem,
     status: CheckStatus | null,
@@ -209,8 +210,6 @@ export function SprintRow(
       e.stopPropagation();
       fn?.(item);
     };
-  const quiet =
-    "rounded-[6px] border px-1.5 py-0.5 leading-none transition-colors";
 
   const drag = dnd?.state ?? null;
 
@@ -285,13 +284,46 @@ export function SprintRow(
             )
             : <span aria-hidden="true" className="w-3 shrink-0" />}
           <span className="flex h-[1.375em] shrink-0 items-center">
-            <span
-              className={cn(
-                "size-[7px] rounded-full",
-                STATUS_TONE[item.status] ?? "bg-status-open",
+            {live && h.onDone
+              ? (
+                <button
+                  type="button"
+                  onClick={act(h.onDone)}
+                  title={closed
+                    ? dt("Вернуть в работу", "Reopen")
+                    : dt("Выполнено", "Done")}
+                  aria-label={closed
+                    ? dt("Вернуть в работу", "Reopen")
+                    : dt("Отметить выполненной", "Mark as done")}
+                  aria-pressed={closed}
+                  className={cn(
+                    "-m-1 grid size-6 place-items-center rounded-full max-lg:-m-2 max-lg:size-8",
+                  )}
+                >
+                  <span
+                    className={cn(
+                      "grid size-[16px] place-items-center rounded-full border-[1.5px] leading-none transition-colors",
+                      closed
+                        ? "border-status-done bg-status-done text-white"
+                        : item.status === "in_progress"
+                        ? "border-status-prog hover:bg-status-prog/20"
+                        : "border-ink-mute hover:border-status-done hover:bg-status-done/15",
+                    )}
+                    style={{ fontSize: 10 }}
+                  >
+                    {closed ? "✓" : null}
+                  </span>
+                </button>
+              )
+              : (
+                <span
+                  className={cn(
+                    "size-[7px] rounded-full",
+                    STATUS_TONE[item.status] ?? "bg-status-open",
+                  )}
+                  title={item.status}
+                />
               )}
-              title={item.status}
-            />
           </span>
           <span
             title={item.title}
@@ -466,7 +498,6 @@ export function SprintRow(
       <div
         className={cn(
           "flex min-w-0 items-center gap-1.5 px-2 text-ink-soft",
-          HOVER_YIELD,
         )}
       >
         {live && who
@@ -495,70 +526,26 @@ export function SprintRow(
       </div>
 
       {
-        /* Хвост строки: быстрые действия. На компьютере — по наведению, на телефоне видны всегда.
-          Кнопкам нужно ~94px, а колонка на узком составе 48: они заходят на колонку исполнителя,
-          а его аватарка на это время прячется (HOVER_YIELD), чтобы не просвечивать между кнопками. */
+        /* Хвост строки: «⋯» виден всегда (владелец 22.10.2026: действия без наведения). Меню — то же,
+          что на доске спринтов; выполнено — кружок слева от названия. */
       }
       <div
-        className="flex items-center justify-end gap-1 pr-3 transition-opacity lg:opacity-0 lg:group-hover:opacity-100 lg:focus-within:opacity-100"
-        style={{ fontSize: 11 }}
+        className="flex items-center justify-end pr-3"
+        onClick={(e) => e.stopPropagation()}
       >
-        {live && h.onDone && (
-          <button
-            type="button"
-            onClick={act(h.onDone)}
-            title={closed
-              ? dt("Вернуть в работу", "Reopen")
-              : dt("Выполнено", "Done")}
-            className={cn(
-              quiet,
-              closed
-                ? "border-status-done/50 bg-status-done/15 text-status-done"
-                : "border-line bg-surface text-ink-soft hover:text-ink",
-            )}
-          >
-            ✓
-          </button>
-        )}
-        {live && h.onMove && !closed && (
-          <button
-            type="button"
-            onClick={act(h.onMove)}
-            title={dt("Перенести в другой спринт…", "Move to another sprint…")}
-            aria-label={dt(
-              "Перенести в другой спринт",
-              "Move to another sprint",
-            )}
-            className={cn(
-              quiet,
-              "border-line bg-surface text-ink-soft hover:text-ink",
-            )}
-          >
-            →
-          </button>
-        )}
-        {live && dnd?.onMenu && (
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              dnd.onMenu!();
+        {live && h.menu && item.task_id && (
+          <TaskMenu
+            title={item.title}
+            taskStatus={item.status}
+            item={item}
+            cycle={h.menu.cycle}
+            cycles={h.menu.cycles}
+            taskCycleIds={[]}
+            actions={{
+              ...h.menu.actions(item),
+              group: dnd?.onMenu,
             }}
-            title={dt(
-              "Сгруппировать с… / Сделать подзадачей…",
-              "Group with… / Make a subtask of…",
-            )}
-            aria-label={dt(
-              "Сгруппировать или сделать подзадачей",
-              "Group or make a subtask",
-            )}
-            className={cn(
-              quiet,
-              "border-line bg-surface text-ink-soft hover:text-ink",
-            )}
-          >
-            ⋯
-          </button>
+          />
         )}
       </div>
 

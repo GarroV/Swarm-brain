@@ -30,6 +30,8 @@ export type TaskMenuActions = {
   /** Взять из мастер-плана в спринт. */
   take: (target: SprintCycle) => void;
   remove: () => void;
+  /** «Сгруппировать с… / Сделать подзадачей…» — есть только у списка состава. */
+  group?: () => void;
 };
 
 type Entry =
@@ -215,6 +217,17 @@ export function TaskMenu(
       danger: true,
       label: dt("Убрать из спринта", "Remove from the sprint"),
       onPick: pick(actions.remove),
+    });
+  }
+  if (live && actions.group) {
+    add({
+      kind: "item",
+      key: "group",
+      label: dt(
+        "Сгруппировать с… / Сделать подзадачей…",
+        "Group with… / Make a subtask of…",
+      ),
+      onPick: pick(actions.group),
     });
   }
   if (entries.length > 0 && entries.at(-1)!.kind !== "sep") {

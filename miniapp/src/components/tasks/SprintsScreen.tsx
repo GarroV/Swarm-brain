@@ -79,6 +79,8 @@ import { SpaceSwitcher } from "@/components/tasks/sprints/SpaceSwitcher";
 import { SprintBar } from "@/components/tasks/sprints/SprintBar";
 import { SprintPulse } from "@/components/tasks/sprints/SprintPulse";
 import { MoveDialog } from "@/components/tasks/sprints/MoveDialog";
+import { shiftBetweenDrafts } from "@/components/tasks/sprints/shiftTask";
+import type { TaskMenuActions } from "@/components/tasks/sprints/board/TaskMenu";
 import { ReasonDialog } from "@/components/tasks/sprints/ReasonDialog";
 import { MovedSection } from "@/components/tasks/sprints/SnapshotCard";
 import { SprintBoardView } from "@/components/tasks/sprints/board/SprintBoardView";
@@ -668,9 +670,11 @@ export function SprintsScreen() {
     }
   }
 
-  // «→» в строке открывает окно переноса (22.10.2026): задача сразу уезжает в выбранный
+  // «Перенести в …» в меню «⋯» строки открывает окно переноса (22.10.2026): задача сразу уезжает в выбранный
   // запланированный спринт, здесь остаётся снимок с причиной. Пометки «к переносу» больше нет.
   const [moving, setMoving] = useState<SprintCycleItem | null>(null);
+  // Цель, выбранная пунктом меню «Перенести в …»: окно открывается сразу на ней.
+  const [moveTarget, setMoveTarget] = useState<SprintCycle | null>(null);
   const [reasonFor, setReasonFor] = useState<SprintCycleItem | null>(null);
   const moveTargets = useMemo(
     () =>
@@ -678,6 +682,45 @@ export function SprintsScreen() {
         .sort((a, b) => a.start_date.localeCompare(b.start_date)),
     [spaceCycles],
   );
+  /** Действия меню «⋯» строки списка: те же вызовы, что у доски спринтов (SprintBoardView). */
+  const rowMenuActions = (item: SprintCycleItem): TaskMenuActions => {
+    const taskId = item.task_id ?? "";
+    const cycleId = detail?.id ?? "";
+    const fail = (e: unknown, fallback: string) =>
+      setErr(e instanceof Error ? e.message : fallback);
+    return {
+      open: () => {
+        const live = tasks.find((t) => t.id === taskId);
+        if (live) setEditing(live);
+      },
+      check: (status) =>
+        void markItem(item, {
+          check_status: status,
+          ...(status === null ? { check_note: null } : {}),
+        }),
+      move: (target) => {
+        setMoveTarget(target);
+        setMoving(item);
+      },
+      shift: (target) =>
+        void shiftBetweenDrafts(
+          taskId,
+          cycleId,
+          target.id,
+          dt(
+            "Не удалось переставить — задача осталась на месте",
+            "Could not shift — the task stayed where it was",
+          ),
+        ).catch((e) => fail(e, dt("Не удалось переставить", "Could not shift")))
+          .finally(afterMove),
+      take: () => {},
+      remove: () =>
+        void removeTaskFromSprintCycle(cycleId, taskId)
+          .catch((e) => fail(e, dt("Не удалось убрать", "Could not remove")))
+          .finally(afterMove),
+    };
+  };
+
   const moved = detail?.moved ?? [];
   const afterMove = useCallback(async () => {
     if (!detail) return;
@@ -921,8 +964,11 @@ export function SprintsScreen() {
         setAddingTo(projectId);
       }}
       onDone={accepted ? undefined : toggleDone}
-      // Переносят только из идущего спринта — так решает и база.
-      onMove={detail?.status === "active" ? setMoving : undefined}
+      // Меню «⋯» строки — то же, что на доске спринтов. Переносят только из идущего спринта
+      // (так решает и база): пункт «Перенести в …» меню покажет только там.
+      menu={detail
+        ? { cycle: detail, cycles: spaceCycles, actions: rowMenuActions }
+        : undefined}
       onCheck={accepted ? undefined : (item, status) =>
         markItem(item, {
           check_status: status,
@@ -1498,8 +1544,11 @@ export function SprintsScreen() {
           <MoveDialog
             item={moving}
             cycleId={detail.id}
-            cycles={moveTargets}
-            onClose={() => setMoving(null)}
+            cycles={moveTarget ? [moveTarget] : moveTargets}
+            onClose={() => {
+              setMoving(null);
+              setMoveTarget(null);
+            }}
             onDone={afterMove}
           />
           <ReasonDialog
