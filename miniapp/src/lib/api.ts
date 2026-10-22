@@ -4093,9 +4093,12 @@ export async function resummarizeAgentMeeting(
 }
 
 // То же для УЖЕ опубликованной встречи (entry): пересобрать тезисы текущим промптом.
-export async function resummarizeMeetingEntry(id: string): Promise<Entry> {
+export async function resummarizeMeetingEntry(id: string, note?: string): Promise<Entry> {
   if (DEV_MODE) return fetchMeeting(id);
-  return apiFetch<Entry>(`/meetings/${id}/resummarize`, { method: "POST" });
+  return apiFetch<Entry>(`/meetings/${id}/resummarize`, {
+    method: "POST",
+    body: JSON.stringify(note?.trim() ? { note: note.trim() } : {}),
+  });
 }
 
 // Точечный вопрос по встрече: ответ по транскрипту пунктами «- …», в базу ничего не пишет

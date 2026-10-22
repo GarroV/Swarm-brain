@@ -4,6 +4,7 @@ import { useDt, useRoyNav } from "../nav";
 import { DetailPanelContext, NavHeader, Market, SectionLabel, Segmented, StorageBadge } from "../ui";
 import { DashTaskRow } from "../dash/shared";
 import { RoyIcon, type RoyIconName } from "../icons";
+import { ReprocessMenu } from "../ReprocessMenu";
 import { deriveEntryTitle } from "../entry";
 import { localizeSource, sourceLabel } from "./RoyMeetingsScreen";
 import { TasksFromMeeting } from "../TasksFromMeeting";
@@ -55,13 +56,13 @@ export function MeetingDetail({ id }: { id: string }) {
   const [allowedMarkets, setAllowedMarkets] = useState<string[]>([]);
 
   // Переобработать тезисы текущим ИИ-промптом из транскрипта (доступно для встреч рекордера).
-  const reprocess = async () => {
+  const reprocess = async (note?: string) => {
     if (reproc) return;
     setReproc(true);
     try {
-      const u = await resummarizeMeetingEntry(id);
+      const u = await resummarizeMeetingEntry(id, note);
       setE(u);
-      toast("Тезисы переобработаны");
+      toast(note ? "Тезисы перестроены по запросу" : "Тезисы переобработаны");
     } catch {
       toast("Не удалось переобработать");
     } finally {
@@ -207,16 +208,9 @@ export function MeetingDetail({ id }: { id: string }) {
                     Кратко от ИИ
                   </span>
                   {Boolean(e.metadata?.meeting_id) && (
-                    <button
-                      type="button"
-                      onClick={reprocess}
-                      disabled={reproc}
-                      title="Пересобрать тезисы текущим ИИ-промптом из транскрипта"
-                      className="inline-flex items-center gap-1.5 rounded-full border border-accent-line bg-card/60 font-semibold text-accent-ink transition-transform active:scale-[0.97] disabled:opacity-50"
-                      style={{ padding: "3px 9px", fontSize: 11 }}
-                    >
-                      <RoyIcon name="spark" size={12} strokeWidth={1.9} /> {reproc ? "Обрабатываю…" : "Переобработать"}
-                    </button>
+                    <ReprocessMenu busy={reproc} onPick={reprocess} iconSize={12}
+                      buttonClassName="inline-flex items-center gap-1.5 rounded-full border border-accent-line bg-card/60 font-semibold text-accent-ink transition-transform active:scale-[0.97] disabled:opacity-50"
+                      buttonStyle={{ padding: "3px 9px", fontSize: 11 }} />
                   )}
                 </div>
                 <TezisyReader text={e.summary} copyMeta={{ title: deriveEntryTitle(e), date: e.entry_date || e.created_at }}
