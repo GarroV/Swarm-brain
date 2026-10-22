@@ -10,7 +10,7 @@
 //        · 400 bad_date
 //   POST /tasks/voice  multipart: audio (m4a/webm/wav, ≤ 2 МБ), date, tz_offset, lang?
 //        201 { task: {id,title,description,country,due_date}, heard }
-//        · 400 bad_request|bad_date|bad_audio · 403 demo_not_allowed · 413 audio_too_large
+//        · 400 bad_request|bad_date|bad_audio · 411 length_required · 403 demo_not_allowed · 413 audio_too_large
 //        · 415 unsupported_media · 422 nothing_heard · 502 transcription_unavailable
 //        Задача создаётся сразу, на звонящего, confirmed, source = recorder_voice. Отмена — обычные
 //        DELETE /tasks/:id (архивация) и POST /tasks/:id/restore. Аудио нигде не хранится.
@@ -46,6 +46,7 @@ const ERRORS = {
     en: "Send multipart/form-data with an audio file",
     ru: "Нужен multipart/form-data с аудиофайлом",
   },
+  length_required: { status: 411, en: "Content-Length is required", ru: "Нужен заголовок Content-Length" },
   bad_date: { status: 400, en: "date must be YYYY-MM-DD", ru: "date — в формате YYYY-MM-DD" },
   bad_audio: { status: 400, en: "Audio file is missing or empty", ru: "Аудиофайла нет или он пустой" },
   demo_not_allowed: {
@@ -166,11 +167,12 @@ async function allowedMarketsOf(supabase: SupabaseClient, groupId: string): Prom
 async function handleVoice(ctx: BoardContext, req: Request): Promise<Response> {
   const { supabase, telegramId, groupId, isDemo, origin } = ctx;
   if (isDemo) return err("demo_not_allowed", origin);
-  // Размер проверяем ДО чтения тела: formData() втянул бы в память всё, что прислали.
-  const declared = Number(req.headers.get("content-length"));
-  if (Number.isFinite(declared) && declared > MAX_VOICE_BYTES + MULTIPART_OVERHEAD_BYTES) {
-    return err("audio_too_large", origin);
-  }
+  // Размер проверяем ДО чтения тела: formData() втянул бы в память всё, что прислали. Длина обязательна:
+  // рекордер всегда её шлёт, chunked без длины не принимаем.
+  const lengthHeader = req.headers.get("content-length");
+  const declared = lengthHeader !== null && /^\d+$/.test(lengthHeader.trim()) ? Number(lengthHeader) : NaN;
+  if (!Number.isFinite(declared)) return err("length_required", origin);
+  if (declared > MAX_VOICE_BYTES + MULTIPART_OVERHEAD_BYTES) return err("audio_too_large", origin);
   if (!(req.headers.get("content-type") ?? "").toLowerCase().startsWith("multipart/form-data")) {
     return err("bad_request", origin);
   }

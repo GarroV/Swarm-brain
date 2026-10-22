@@ -90,3 +90,14 @@ Deno.test("модель берётся из тела запроса: JSON и ф�
   assertEquals(requestModel({ body: form }), "whisper-1");
   assertEquals(requestModel({ body: "not json" }), null);
 });
+
+Deno.test("gpt-transcribe: секунды из usage {type:duration}, цена 0.0045/мин", () => {
+  const parsed = parseUsage("transcription", { text: "…", usage: { type: "duration", seconds: 3 } });
+  assertEquals(parsed.audioSeconds, 3);
+  assertEquals(
+    costUsd({ model: "gpt-transcribe", kind: "transcription", audioSeconds: parsed.audioSeconds }),
+    0.000225,
+  );
+  // токенный usage без type=duration секундами не считается
+  assertEquals(parseUsage("transcription", { text: "…", usage: { seconds: 3 } }).audioSeconds, null);
+});

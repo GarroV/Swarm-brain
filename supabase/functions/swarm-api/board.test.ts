@@ -18,10 +18,25 @@ const ctx = (over: Record<string, unknown> = {}) => ({
   ...over,
 });
 
-function voiceReq(file: File | null, headers: Record<string, string> = {}): Request {
+/** multipart-запрос с честным Content-Length, как у рекордера (new Request его сам не ставит). */
+async function multipartReq(form: FormData, headers: Record<string, string> = {}): Promise<Request> {
+  const packed = new Response(form);
+  const body = await packed.arrayBuffer();
+  return new Request("http://x/tasks/voice", {
+    method: "POST",
+    body,
+    headers: {
+      "content-type": packed.headers.get("content-type")!,
+      "content-length": String(body.byteLength),
+      ...headers,
+    },
+  });
+}
+
+function voiceReq(file: File | null, headers: Record<string, string> = {}): Promise<Request> {
   const form = new FormData();
   if (file) form.append("audio", file);
-  return new Request("http://x/tasks/voice", { method: "POST", body: form, headers });
+  return multipartReq(form, headers);
 }
 
 Deno.test("validDate: календарная дата проходит, остальное нет", () => {
@@ -57,7 +72,7 @@ async function code(res: Response | null): Promise<[number, string | undefined]>
 Deno.test("голос: демо закрыто", async () => {
   const res = await handleBoardRoutes(
     ctx({ isDemo: true }),
-    voiceReq(new File(["a"], "a.m4a", { type: "audio/mp4" })),
+    await voiceReq(new File(["a"], "a.m4a", { type: "audio/mp4" })),
     "/tasks/voice",
   );
   assertEquals(await code(res), [403, "demo_not_allowed"]);
@@ -66,18 +81,18 @@ Deno.test("голос: демо закрыто", async () => {
 Deno.test("голос: чужой тип, пустой файл, нет файла, слишком большой", async () => {
   const route = "/tasks/voice";
   assertEquals(
-    await code(await handleBoardRoutes(ctx(), voiceReq(new File(["a"], "a.png", { type: "image/png" })), route)),
+    await code(await handleBoardRoutes(ctx(), await voiceReq(new File(["a"], "a.png", { type: "image/png" })), route)),
     [415, "unsupported_media"],
   );
   assertEquals(
-    await code(await handleBoardRoutes(ctx(), voiceReq(new File([], "a.m4a", { type: "audio/mp4" })), route)),
+    await code(await handleBoardRoutes(ctx(), await voiceReq(new File([], "a.m4a", { type: "audio/mp4" })), route)),
     [400, "bad_audio"],
   );
-  assertEquals(await code(await handleBoardRoutes(ctx(), voiceReq(null), route)), [400, "bad_audio"]);
+  assertEquals(await code(await handleBoardRoutes(ctx(), await voiceReq(null), route)), [400, "bad_audio"]);
   const big = new File([new Uint8Array(MAX_VOICE_BYTES + 1)], "a.m4a", { type: "audio/mp4" });
-  assertEquals(await code(await handleBoardRoutes(ctx(), voiceReq(big), route)), [413, "audio_too_large"]);
+  assertEquals(await code(await handleBoardRoutes(ctx(), await voiceReq(big), route)), [413, "audio_too_large"]);
   // по заголовку отказ приходит до чтения тела
-  const declared = voiceReq(new File(["a"], "a.m4a", { type: "audio/mp4" }), {
+  const declared = await voiceReq(new File(["a"], "a.m4a", { type: "audio/mp4" }), {
     "content-length": String(MAX_VOICE_BYTES * 2),
   });
   assertEquals(await code(await handleBoardRoutes(ctx(), declared, route)), [413, "audio_too_large"]);
@@ -87,13 +102,13 @@ Deno.test("голос: не multipart и кривая дата", async () => {
   const json = new Request("http://x/tasks/voice", {
     method: "POST",
     body: "{}",
-    headers: { "content-type": "application/json" },
+    headers: { "content-type": "application/json", "content-length": "2" },
   });
   assertEquals(await code(await handleBoardRoutes(ctx(), json, "/tasks/voice")), [400, "bad_request"]);
   const form = new FormData();
   form.append("audio", new File(["a"], "a.m4a", { type: "audio/mp4" }));
   form.append("date", "завтра");
-  const bad = new Request("http://x/tasks/voice", { method: "POST", body: form });
+  const bad = await multipartReq(form);
   assertEquals(await code(await handleBoardRoutes(ctx(), bad, "/tasks/voice")), [400, "bad_date"]);
 });
 
@@ -108,4 +123,17 @@ Deno.test("чужие пути и методы", async () => {
     (await handleBoardRoutes(ctx(), new Request("http://x/board/today?date=bad"), "/board/today"))!.status,
     400,
   );
+});
+
+Deno.test("голос: без Content-Length или с нечисловым — 411 до чтения тела", async () => {
+  const noLen = new Request("http://x/tasks/voice", {
+    method: "POST",
+    body: new ReadableStream({ start: (c) => (c.enqueue(new Uint8Array([1])), c.close()) }),
+    headers: { "content-type": "multipart/form-data; boundary=x" },
+    // @ts-ignore duplex нужен для потокового тела
+    duplex: "half",
+  });
+  assertEquals(await code(await handleBoardRoutes(ctx(), noLen, "/tasks/voice")), [411, "length_required"]);
+  const junk = await voiceReq(new File(["a"], "a.m4a", { type: "audio/mp4" }), { "content-length": "abc" });
+  assertEquals(await code(await handleBoardRoutes(ctx(), junk, "/tasks/voice")), [411, "length_required"]);
 });

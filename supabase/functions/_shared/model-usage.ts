@@ -41,6 +41,7 @@ const PRICES: Record<string, { input?: number; cached?: number; output?: number;
   "gpt-4o": { input: 2.5, cached: 1.25, output: 10 },
   "text-embedding-3-small": { input: 0.02 },
   "whisper-1": { perMinute: 0.006 },
+  "gpt-transcribe": { perMinute: 0.0045 },
 };
 
 /** Цена модели; датированная версия («gpt-4o-mini-2024-07-18») — по базовой. */
@@ -105,7 +106,10 @@ export function parseUsage(kind: UsageKind, body: unknown): ParsedUsage {
     cachedTokens: num(promptDetails.cached_tokens),
     completionTokens: kind === "embedding" ? null : num(usage.completion_tokens) ?? num(usage.output_tokens),
     reasoningTokens: num(details.reasoning_tokens),
-    audioSeconds: kind === "transcription" ? num(b.duration) : null,
+    // whisper-1 (verbose_json) даёт duration; gpt-transcribe (json) — usage {type:"duration", seconds}.
+    audioSeconds: kind === "transcription"
+      ? num(b.duration) ?? (usage.type === "duration" ? num(usage.seconds) : null)
+      : null,
   };
 }
 
