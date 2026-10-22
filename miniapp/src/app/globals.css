@@ -14,6 +14,18 @@
    собранному CSS 25.09.2026), поэтому сам вариант переопределён явно. */
 @custom-variant lg (@media (width >= 45rem));
 
+/* «Узкая рейка» (RoyRail): пиктограммы 56px включаются И на окне уже 1100px, И вручную —
+   флагом data-collapsed="true" на <nav class="roy-rail"> (кнопка «Свернуть меню»). Один набор
+   `narrow:`-классов на оба случая, без дублирования разметки. */
+@custom-variant narrow {
+  @media (max-width: 1099px) {
+    @slot;
+  }
+  &:where([data-collapsed="true"], [data-collapsed="true"] *) {
+    @slot;
+  }
+}
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
