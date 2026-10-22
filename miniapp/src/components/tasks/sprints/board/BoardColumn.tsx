@@ -248,24 +248,32 @@ function Ladder(
 }
 
 /** Зона «Отвязать от «…»» внизу колонки: бросок сюда снимает родителя. */
-export function UnlinkDrop({ zone }: { zone: UnlinkZone }) {
+export function UnlinkDrop({ zone, bg = "bg-surface-2" }: {
+  zone: UnlinkZone;
+  /** Сплошной фон колонки: под зоной содержимое не просвечивает. */
+  bg?: string;
+}) {
   const dt = useDt();
   return (
     <div
-      {...zone.handlers}
-      data-testid="unlink-zone"
-      className={cn(
-        "sticky bottom-0 mt-auto rounded-[9px] border-2 border-dashed px-2 py-2 text-center",
-        zone.over
-          ? "border-primary bg-accent-soft text-accent-ink"
-          : "border-line-2 bg-surface text-ink-soft",
-      )}
-      style={{ fontSize: 12.5 }}
+      className={cn("sticky bottom-0 z-[2] mt-auto -mx-2 -mb-2 border-t border-line px-2 pb-2 pt-2", bg)}
     >
-      {dt(
-        `Отвязать от «${zone.parentTitle}»`,
-        `Unlink from “${zone.parentTitle}”`,
-      )}
+      <div
+        {...zone.handlers}
+        data-testid="unlink-zone"
+        className={cn(
+          "rounded-[9px] border-2 border-dashed px-2 py-2 text-center",
+          zone.over
+            ? "border-primary bg-accent-soft text-accent-ink"
+            : "border-line-2 bg-surface text-ink-soft",
+        )}
+        style={{ fontSize: 12.5 }}
+      >
+        {dt(
+          `Отвязать от «${zone.parentTitle}»`,
+          `Unlink from “${zone.parentTitle}”`,
+        )}
+      </div>
     </div>
   );
 }

@@ -358,7 +358,9 @@ export function useBoardDnd(
         )}
         style={{
           left: Math.min(pointer.x + 14, innerWidth - 296),
-          top: pointer.y + 16,
+          // над указателем: ниже стоит силуэт «↳ …», его подсказка не закрывает
+          top: Math.max(72, pointer.y - 16),
+          transform: "translateY(-100%)",
           fontSize: 12.5,
         }}
       >

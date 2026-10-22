@@ -237,8 +237,8 @@ export function MasterPlanColumn(
       group,
       tree: tree.filter((n) => isNew(n) !== taken),
     }))
-      // С поиском пустые группы прячутся; без него в «Не взяты» они видны — в них заводят задачу.
-      .filter((x) => x.tree.length > 0 || (!taken && !filtering));
+      // Пустые группы не показываем: «+» стоит у заголовка группы там, где у неё есть задачи.
+      .filter((x) => x.tree.length > 0);
   const notTaken = section(false);
   const inSprints = section(true);
   const count = (xs: typeof notTaken) =>
@@ -290,16 +290,14 @@ export function MasterPlanColumn(
               key: "new",
               title: dt("Не взяты", "Not taken"),
               list: notTaken,
-              add: true,
             },
             {
               key: "in",
               title: dt("В спринтах", "In sprints"),
               list: inSprints,
-              add: false,
             },
           ].map((sec) =>
-            sec.list.length === 0 && sec.key === "in" ? null : (
+            sec.list.length === 0 ? null : (
               <div
                 key={sec.key}
                 className="flex flex-col gap-1.5"
@@ -314,10 +312,21 @@ export function MasterPlanColumn(
                 {sec.list.map(({ group, tree }) => (
                   <div key={group.id} className="flex flex-col gap-1.5">
                     <div
-                      className="mx-1 mt-1.5 font-semibold uppercase tracking-[0.04em] text-ink-mute"
+                      className="mx-1 mt-1.5 flex items-center justify-between gap-2 font-semibold uppercase tracking-[0.04em] text-ink-mute"
                       style={{ fontSize: 11 }}
                     >
-                      {group.name}
+                      <span className="min-w-0 truncate">{group.name}</span>
+                      {!filtering && (
+                        <button
+                          type="button"
+                          onClick={() => onAddTask(group.id)}
+                          title={dt("Задача в план", "Task to the plan")}
+                          aria-label={dt("Задача в план", "Task to the plan")}
+                          className="grid h-5 w-5 shrink-0 place-items-center rounded-[6px] text-[15px] font-normal leading-none text-ink-mute transition-colors hover:bg-accent-soft hover:text-ink"
+                        >
+                          +
+                        </button>
+                      )}
                     </div>
                     {tree.map((n) => (
                       <PlanCard
@@ -327,20 +336,21 @@ export function MasterPlanColumn(
                         ctx={ctx}
                       />
                     ))}
-                    {sec.add && !filtering && (
-                      <button
-                        type="button"
-                        onClick={() => onAddTask(group.id)}
-                        className="rounded-[9px] border border-dashed border-line-2 px-2 py-1.5 text-center text-ink-mute transition-colors hover:border-accent-line hover:text-ink"
-                        style={{ fontSize: 12.5 }}
-                      >
-                        {dt("+ Задача в план", "+ Task to the plan")}
-                      </button>
-                    )}
                   </div>
                 ))}
               </div>
             )
+          )}
+          {notTaken.length === 0 && inSprints.length > 0 && !filtering && (
+            <p
+              className="px-2 py-2 text-center text-ink-mute"
+              style={{ fontSize: 12.5 }}
+            >
+              {dt(
+                "Все задачи разложены по спринтам",
+                "All tasks are placed in sprints",
+              )}
+            </p>
           )}
           {notTaken.length === 0 && inSprints.length === 0 && (
             <p
@@ -358,7 +368,7 @@ export function MasterPlanColumn(
                 )}
             </p>
           )}
-          {unlink && <UnlinkDrop zone={unlink} />}
+          {unlink && <UnlinkDrop zone={unlink} bg="bg-surface" />}
         </div>
       </section>
     </div>
