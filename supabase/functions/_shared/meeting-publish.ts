@@ -10,6 +10,7 @@ import { findDuplicateMeeting, type MeetingAttendee } from "./meeting-dedup.ts";
 import { arbitrateFullness, type TranscriptLike } from "./meeting-fullness.ts";
 import { type DraftMeetingRow, hasCoOwners, oneOnOnePartner } from "./meeting-access.ts";
 import { onlyLiveEntries } from "./entries/live.ts";
+import { openAIKeyHandle } from "./workspace-keys.ts";
 
 // Публикация черновика встречи (таблица meetings) в базу знаний (entries). Одна реализация
 // для веба (swarm-api POST /agent-meetings/:id/publish) и MCP (publish_draft_meeting, issue #513):
@@ -115,7 +116,8 @@ export async function publishDraftMeeting(
   // «предложила система, человек нажал Согласовать» — а 2 рынка в записи это кросс-маркет,
   // и она всплывала бы в дайджесте КАЖДОЙ из стран. Пустой список = «Общее», в базе это тег
   // General, а не отсутствие тега. Поля countries в теле нет (бот, старый клиент) → классификатор.
-  const OPENAI_KEY = Deno.env.get("OPENAI_API_KEY")!;
+  // Ключ — пространства встречи (#233); пока у него своего нет, ключ сервера.
+  const OPENAI_KEY = await openAIKeyHandle(supabase, opts.groupId);
   const countries = Array.isArray(opts.countries)
     ? marketTagsFromInput(opts.countries as string[])
     : applyGeneralSentinel(

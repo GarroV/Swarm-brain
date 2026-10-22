@@ -24,6 +24,7 @@ import {
   LiveCycleExistsError,
   type SprintCycle,
   startCycle,
+  toStatsView,
   UnknownTabError,
   updateCycle,
 } from "../../_shared/tasks/sprint-cycles.ts";
@@ -37,9 +38,10 @@ import {
   updateItem,
 } from "../../_shared/tasks/sprint-items.ts";
 import { AcceptConflictError, acceptCycle } from "../../_shared/tasks/sprint-accept.ts";
+import { itemIdFor, moveItem, MoveRefusedError } from "../../_shared/tasks/sprint-move.ts";
 import { computeSprintStats } from "../../_shared/tasks/sprint-stats.ts";
 import type { Sprint } from "../../_shared/tasks/types.ts";
-import { ADMIN_USER_ID } from "./tools.ts";
+import { masterAdminFlag } from "../../_shared/users/master-admins.ts";
 import { formatCycles, formatJournal, formatSpaces, formatSprint, isIsoDate, pickSpace } from "./sprints-format.ts";
 import { JOURNAL_PERIODS, loadSpaceJournal } from "../../_shared/space-journal.ts";
 import { resolvePersonNames } from "../../_shared/users/display-name.ts";
@@ -75,7 +77,7 @@ async function member(args: Args): Promise<Member | string> {
   return {
     userId,
     groupId: row.group_id,
-    isAdmin: userId === ADMIN_USER_ID || row.is_admin === true,
+    isAdmin: (await masterAdminFlag(supabase, userId)) || row.is_admin === true,
   };
 }
 
@@ -250,15 +252,17 @@ export function toolGetSprint(args: Args): Promise<string> {
   return withMember(args, async (m) => {
     const cycle = await loadCycle(m.groupId, args.sprint_id);
     if (typeof cycle === "string") return cycle;
-    const { items, withdrawn } = await listComposition(cycle.id, m.groupId, { viewerId: m.userId });
+    const { items, withdrawn, moved } = await listComposition(cycle.id, m.groupId, { viewerId: m.userId });
     const space = (await spaces(m.groupId)).find((s) => s.id === cycle.tab_id);
     // Снятые из идущего спринта (#576) в составе не показываются, но в итогах остаются:
-    // плановые из них — невыполненной частью плана.
+    // плановые из них — невыполненной частью плана. Ушедшие переносом — отдельным списком и
+    // цифрой «перенесено» (22.10.2026).
     return formatSprint(
       cycle,
       space?.name ?? null,
       items,
-      computeSprintStats([...items, ...withdrawn]),
+      computeSprintStats([...items, ...withdrawn, ...moved].map(toStatsView)),
+      moved,
     );
   });
 }
@@ -474,6 +478,42 @@ export function toolMarkSprintTask(args: Args): Promise<string> {
   });
 }
 
+/** Перенос задачи в другой спринт (22.10.2026): то же действие, что «→» в вебе, причина обязательна. */
+export function toolMoveSprintTask(args: Args): Promise<string> {
+  return withMember(args, async (m) => {
+    const cycle = await loadCycle(m.groupId, args.sprint_id);
+    if (typeof cycle === "string") return cycle;
+    const taskId = str(args.task_id);
+    if (!taskId) return "Нужен task_id.";
+    const target = str(args.target_sprint_id);
+    if (!target) return "Нужен target_sprint_id — запланированный спринт того же пространства (get_sprints).";
+    const reason = str(args.reason);
+    if (!reason) return "Нужна причина переноса (reason): почему не успели в этом спринте.";
+    const newDue = args.new_due === undefined || args.new_due === null ? null : args.new_due;
+    if (newDue !== null && !isIsoDate(newDue)) return "new_due: дата YYYY-MM-DD или null.";
+    const itemId = await itemIdFor(cycle.id, taskId);
+    if (!itemId) return "Задачи нет в составе этого спринта.";
+    try {
+      const moved = await moveItem({
+        groupId: m.groupId,
+        viewer: m.userId,
+        cycleId: cycle.id,
+        itemId,
+        targetCycleId: target,
+        reason,
+        newDue: newDue as string | null,
+      });
+      if (!moved) return "Задачи нет в составе этого спринта.";
+      return `✅ Задача перенесена${
+        newDue ? `, новый срок ${newDue}` : ", срок не менялся"
+      }. В «${cycle.name}» остался снимок с причиной.`;
+    } catch (e) {
+      if (e instanceof MoveRefusedError) return `Не перенесено: ${e.message}`;
+      throw e;
+    }
+  });
+}
+
 type ToolFn = (args: Args) => Promise<string>;
 
 export const SPRINT_TOOLS: Record<string, ToolFn> = {
@@ -493,6 +533,7 @@ export const SPRINT_TOOLS: Record<string, ToolFn> = {
   add_sprint_tasks: toolAddSprintTasks,
   remove_sprint_task: toolRemoveSprintTask,
   mark_sprint_task: toolMarkSprintTask,
+  move_sprint_task: toolMoveSprintTask,
 };
 
 export { SPRINT_TOOL_DEFINITIONS } from "./sprints-defs.ts";

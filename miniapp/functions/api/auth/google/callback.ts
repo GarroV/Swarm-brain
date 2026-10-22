@@ -1,5 +1,5 @@
 import { clearNonceCookie, hmacSign, OAUTH_NONCE_COOKIE, readCookie, verifyState } from "../../../_lib/oauth-state";
-import { type GoogleName, hasCalendarScope, nameSigPayload, normalizeName } from "../../../_lib/google-name";
+import { avatarSigPayload, type GoogleName, hasCalendarScope, nameSigPayload, normalizeAvatarUrl, normalizeName } from "../../../_lib/google-name";
 import { signJWT, SESSION_TTL_SEC, verifyJWT } from "../../../_lib/jwt";
 import { functionsBase, swarmApiUrl } from "../../../_lib/api-url";
 import { CALENDAR_REPAIR_COOKIE, calendarRepairCookie, needsCalendarRepair } from "../../../_lib/calendar-repair";
@@ -103,7 +103,7 @@ export async function onRequestGet(ctx: Ctx): Promise<Response> {
   });
   if (!uiRes.ok) return loginErr(origin, "userinfo");
   const ui = await uiRes.json() as {
-    email?: string; email_verified?: boolean | string; given_name?: string; family_name?: string;
+    email?: string; email_verified?: boolean | string; given_name?: string; family_name?: string; picture?: string;
   };
   const email = String(ui.email ?? "").toLowerCase().trim();
   const verified = ui.email_verified === true || ui.email_verified === "true";
@@ -115,10 +115,14 @@ export async function onRequestGet(ctx: Ctx): Promise<Response> {
   // user_profiles.first_name — источник дефолтного названия записи без календаря (#184).
   const name: GoogleName = { given: normalizeName(ui.given_name), family: normalizeName(ui.family_name) };
   const sig = await hmacSign(env.WEB_JWT_SECRET, nameSigPayload(email, name));
+  // Аватарка Google — отдельное подписанное поле avatar_sig: `sig` остаётся прежним, и вход живёт
+  // при любом порядке раскатки Pages и auth-resolve. Невалидный URL не отправляется вовсе.
+  const picture = normalizeAvatarUrl(ui.picture);
+  const avatar = picture ? { avatar_url: picture, avatar_sig: await hmacSign(env.WEB_JWT_SECRET, avatarSigPayload(email, picture)) } : {};
   const rRes = await fetch(`${functionsBase(env)}/auth-resolve`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ email, sig, given_name: name.given ?? "", family_name: name.family ?? "" }),
+    body: JSON.stringify({ email, sig, given_name: name.given ?? "", family_name: name.family ?? "", ...avatar }),
   });
   if (!rRes.ok) return loginErr(origin, "resolve");
   const r = await rRes.json() as { found?: boolean; telegram_id?: number | null; id?: number };

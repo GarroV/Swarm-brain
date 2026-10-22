@@ -22,6 +22,8 @@ if [ "${1:-}" = "porcha" ]; then
 SQL не из переменных~select public.maintenance_announce(:lead, :dur, :'en', :'ru');~select public.maintenance_announce(${ARGV[2]}, ${ARGV[3]}, :'en', :'ru');
 нет проверки zip~= 504b0304 ] || die~= 504b0304 ] || true
 нет проверки цифр~\[0-9\]{1,9}~[0-9]{0,9}
+env-reload без пересоздания~up -d --no-deps --force-recreate functions~restart supabase-edge-functions
+нет ожидания рантайма~wait_runtime || die "рантайм не ответил за \$((PROBE_TRIES \* 2)) секунд после пересоздания~true || die "рантайм не ответил за \$((PROBE_TRIES \* 2)) секунд после пересоздания
 перезапись отличающегося~die "$NAME уже лежит~echo "$NAME уже лежит
 LIST
   exit $fail
@@ -122,5 +124,18 @@ run "$T/none" maintenance cancel;                       expect "cancel: прин
 grep -qF 'maintenance_cancel()' "$D" && echo "✔ cancel зовёт maintenance_cancel" || { echo "✘ cancel не дошёл"; bad=1; }
 run "$T/none" maintenance status;                       expect "status: принят" 0 ""
 grep -qF "key = 'maintenance'" "$D" && echo "✔ status читает строку заморозки" || { echo "✘ status не дошёл"; bad=1; }
+
+# ── env-reload: пересоздание рантайма (#1032) ─────────────────────────────────────────────────
+: > "$T/store/swarm-recorder-version"   # проба рантайма отвечает 200
+: > "$D"
+run "$T/none" env-reload;                               expect "env-reload: принят, пробу дождался" 0 "functions.env перечитан"
+grep -qF 'compose -p swarm' "$D" && grep -qF -- "-f $T/stack/docker-compose.swarm.yml" "$D" && grep -qF 'up -d --no-deps --force-recreate functions' "$D" \
+  && echo "✔ env-reload пересоздаёт сервис functions проекта swarm" || { echo "✘ env-reload не пересоздал: $(cat "$D")"; bad=1; }
+grep -q 'ARGS: restart' "$D" && { echo "✘ env-reload ограничился рестартом"; bad=1; } || echo "✔ env-reload без docker restart"
+rm "$T/store/swarm-recorder-version"
+OUT=$(SSH_ORIGINAL_COMMAND="env-reload" PATH="$T/bin:$PATH" STORE="$T/store" GATE_STACK="$T/stack" GATE_GW=http://gw \
+  GATE_PROBE_TRIES=1 bash "$GATE" </dev/null 2>&1); RC=$?
+[ "$RC" != 0 ] && printf '%s' "$OUT" | grep -qF "рантайм не ответил" \
+  && echo "✔ env-reload: рантайм молчит — понятный отказ" || { echo "✘ env-reload не отказал при молчащем рантайме (код $RC: $OUT)"; bad=1; }
 
 exit $bad

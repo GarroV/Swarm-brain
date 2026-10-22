@@ -2,8 +2,9 @@
 # Шлюз раскатки Swarm на своём сервере (GarroV/Swarm-brain #919).
 # Вызывается ТОЛЬКО принудительной командой ключа пользователя swarm-deploy:
 #   command="sudo /opt/swarm-deploy/gate.sh" в ~swarm-deploy/.ssh/authorized_keys
-# Что пришло после ssh — в SSH_ORIGINAL_COMMAND; разрешено ровно пять действий:
-#   functions                 — stdin: tar.gz каталога supabase/functions → в рантайм + перезапуск
+# Что пришло после ssh — в SSH_ORIGINAL_COMMAND; разрешено ровно шесть действий:
+#   functions                 — stdin: tar.gz каталога supabase/functions → в рантайм + пересоздание контейнера
+#   env-reload                — пересоздать рантайм функций без выкладки кода: подхватить смену functions.env (#1032)
 #   migrations-applied        — список применённых версий миграций
 #   migrate <версия>          — stdin: SQL миграции; накат одной транзакцией вместе с учётной записью
 #   recorder-upload <сборка>  — stdin: zip рекордера; заливка в Storage swarm_drive/recorder/, без перезаписи
@@ -23,13 +24,35 @@ FN="$STACK/volumes/functions"
 KEEP=/var/backups/swarm-functions
 DB=supabase-db
 RUNTIME=supabase-edge-functions
-PROBE=http://127.0.0.1:8400/functions/v1/swarm-recorder-version
+PROBE="${GATE_PROBE:-http://127.0.0.1:8400/functions/v1/swarm-recorder-version}"
+PROBE_TRIES="${GATE_PROBE_TRIES:-60}"
+# Файлы compose проекта `swarm` на сервере; сервис рантайма функций в них называется functions.
+# Пути абсолютные: `-f` считается от текущей папки (у шлюза это домашняя swarm-deploy), а не от
+# --project-directory — с относительными compose не находил файлы (21.10.2026).
+COMPOSE_FILES=(-f "$STACK/docker-compose.yml" -f "$STACK/docker-compose.swarm.yml")
 
 sha256_() { if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1" | cut -d' ' -f1; else shasum -a 256 "$1" | cut -d' ' -f1; fi; }
 die() { echo "gate: $*" >&2; exit 1; }
 psql_() { docker exec -i "$DB" psql -X -q -v ON_ERROR_STOP=1 -U supabase_admin -d postgres "$@"; }
 # Миграции — от роли postgres, как в облаке Supabase: иначе владельцем новых объектов станет supabase_admin.
 psql_mig() { docker exec -i "$DB" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres "$@"; }
+
+# Пересоздание, а не `docker restart`: env_file (functions.env) читается только при создании контейнера,
+# поэтому после рестарта новые секреты рантайм не видит (20.10.2026 так не доехали SECOND_STEP_REQUIRED
+# и WORKSPACE_SECRETS_KEY, #1032). Тома — bind-mount с хоста, код функций при пересоздании не теряется.
+recreate_runtime() {
+  docker compose -p swarm --project-directory "$STACK" "${COMPOSE_FILES[@]}" \
+    up -d --no-deps --force-recreate functions >/dev/null
+}
+# Ждёт ответа рантайма на пробу: 0 — отвечает, 1 — нет за PROBE_TRIES*2 секунд.
+wait_runtime() {
+  local _
+  for _ in $(seq "$PROBE_TRIES"); do
+    [ "$(curl -s -o /dev/null -w '%{http_code}' -m 5 "$PROBE")" = 200 ] && return 0
+    sleep 2
+  done
+  return 1
+}
 
 ensure_ledger() {
   psql_ -tA >/dev/null <<'SQL'
@@ -66,12 +89,19 @@ case "$CMD" in
     rsync -a --delete --checksum --exclude '/main/' --exclude '/hello/' --exclude '/deno.jsonc' \
       --exclude '*.test.ts' "$TMP"/ "$FN"/
     chown -R garva:garva "$FN"; chmod -R u=rwX,go=rX "$FN"
-    docker restart "$RUNTIME" >/dev/null
-    for _ in $(seq 60); do
-      [ "$(curl -s -o /dev/null -w '%{http_code}' -m 5 "$PROBE")" = 200 ] && { echo "функции выложены, рантайм отвечает (копия до раскатки: functions-$STAMP.tgz)"; exit 0; }
-      sleep 2
-    done
-    die "рантайм не ответил за 2 минуты после перезапуска; откат: tar -xzf $KEEP/functions-$STAMP.tgz -C $FN && docker restart $RUNTIME"
+    if recreate_runtime; then RELOAD="контейнер пересоздан, functions.env перечитан"
+    else
+      echo "gate: ВНИМАНИЕ: пересоздать контейнер не вышло (compose), делаю docker restart — новые переменные functions.env рантайм НЕ увидит" >&2
+      docker restart "$RUNTIME" >/dev/null; RELOAD="только перезапуск, functions.env НЕ перечитан"
+    fi
+    wait_runtime && { echo "функции выложены, рантайм отвечает ($RELOAD; копия до раскатки: functions-$STAMP.tgz)"; exit 0; }
+    die "рантайм не ответил за $((PROBE_TRIES * 2)) секунд после перезапуска; откат: tar -xzf $KEEP/functions-$STAMP.tgz -C $FN && docker restart $RUNTIME"
+    ;;
+  env-reload)
+    # Код функций не трогаем: только новый контейнер с актуальным functions.env.
+    recreate_runtime || die "не удалось пересоздать сервис functions (compose проекта swarm в $STACK)"
+    wait_runtime || die "рантайм не ответил за $((PROBE_TRIES * 2)) секунд после пересоздания; смотреть: docker logs $RUNTIME"
+    echo "рантайм функций пересоздан и отвечает: functions.env перечитан"
     ;;
   migrations-applied)
     ensure_ledger
@@ -193,5 +223,5 @@ SQL
       *) die "maintenance: неизвестное действие '${ACT}'. Разрешено: announce <начало> <минут> | cancel | status | notice <минут> | notice-off | notice-show" ;;
     esac
     ;;
-  *) die "неизвестная команда: '${CMD}'. Разрешено: functions | migrations-applied | migrate <версия> [имя] | recorder-upload <сборка> | maintenance <действие>" ;;
+  *) die "неизвестная команда: '${CMD}'. Разрешено: functions | env-reload | migrations-applied | migrate <версия> [имя] | recorder-upload <сборка> | maintenance <действие>" ;;
 esac

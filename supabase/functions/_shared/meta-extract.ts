@@ -10,6 +10,7 @@
 import { COUNTRY_PROMPT_RULE, ENTRY_TYPE_PROMPT_RULE, normalizeCountries } from "./countries.ts";
 import { normalizeExtractedEventDate, todayIso } from "./llm-date.ts";
 import { externalFetch, VIA_OPENAI_CHAT, VIA_OPENAI_EMBEDDING } from "./external-fetch.ts";
+import { type KeyLike, keyOf, noteKeyResponse } from "./workspace-keys.ts";
 import { UNTRUSTED_DATA_RULE, wrapUntrustedForModel } from "./untrusted-prompt.ts";
 
 const OPENAI = "https://api.openai.com/v1";
@@ -89,13 +90,13 @@ export function parseEntryMeta(raw: string, today: string): EntryMeta {
 // Фейл-безопасно: при любой ошибке — пустые страны/note/null (вызывающий решает про General).
 export async function extractEntryMeta(
   content: string,
-  openaiKey: string,
+  openaiKey: KeyLike,
   today: string = todayIso(),
 ): Promise<EntryMeta> {
   try {
     const res = await externalFetch(`${OPENAI}/chat/completions`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${openaiKey}` },
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${keyOf(openaiKey)}` },
       body: JSON.stringify({
         model: "gpt-4o-mini",
         temperature: 0,
@@ -107,6 +108,7 @@ export async function extractEntryMeta(
         max_tokens: 200,
       }),
     }, { ...VIA_OPENAI_CHAT, usage: { purpose: "meta-extract:chat" } });
+    await noteKeyResponse(openaiKey, res);
     if (!res.ok) {
       console.error("extractEntryMeta: OpenAI ответил", res.status);
       return emptyMeta();
@@ -119,13 +121,14 @@ export async function extractEntryMeta(
 }
 
 // Эмбеддинг text-embedding-3-small. null при ошибке (вызывающий сам решает).
-export async function embed(text: string, openaiKey: string): Promise<number[] | null> {
+export async function embed(text: string, openaiKey: KeyLike): Promise<number[] | null> {
   try {
     const res = await externalFetch(`${OPENAI}/embeddings`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${openaiKey}` },
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${keyOf(openaiKey)}` },
       body: JSON.stringify({ model: "text-embedding-3-small", input: text.slice(0, 8000) }),
     }, { ...VIA_OPENAI_EMBEDDING, usage: { purpose: "meta-extract:embedding" } });
+    await noteKeyResponse(openaiKey, res);
     if (!res.ok) return null;
     return (await res.json()).data[0].embedding;
   } catch {

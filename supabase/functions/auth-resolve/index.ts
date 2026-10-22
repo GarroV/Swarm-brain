@@ -2,14 +2,26 @@
 // Аутентификация ВЫЗОВА (не пользователя): HMAC(email) на WEB_JWT_SECRET, общий с CF Pages.
 // Возвращает allowed_users по email (lower). Деплой: supabase functions deploy auth-resolve --no-verify-jwt
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { type GoogleName, nameSigPayload, profileNameUpdate } from "../_shared/google-profile.ts";
+import {
+  avatarUpdate,
+  type GoogleName,
+  nameSigPayload,
+  profileNameUpdate,
+  verifiedAvatar,
+} from "../_shared/google-profile.ts";
 
 const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
 const WEB_JWT_SECRET = Deno.env.get("WEB_JWT_SECRET") ?? "";
 const enc = new TextEncoder();
 
 async function hmacHex(data: string): Promise<string> {
-  const key = await crypto.subtle.importKey("raw", enc.encode(WEB_JWT_SECRET), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  const key = await crypto.subtle.importKey(
+    "raw",
+    enc.encode(WEB_JWT_SECRET),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
   const sig = new Uint8Array(await crypto.subtle.sign("HMAC", key, enc.encode(data)));
   return [...sig].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
@@ -26,8 +38,19 @@ function json(payload: unknown, status = 200): Response {
 Deno.serve(async (req: Request) => {
   if (req.method !== "POST") return json({ error: "method" }, 405);
   if (!WEB_JWT_SECRET) return json({ error: "not configured" }, 500);
-  let body: { email?: string; sig?: string; given_name?: string; family_name?: string };
-  try { body = await req.json(); } catch { return json({ error: "bad json" }, 400); }
+  let body: {
+    email?: string;
+    sig?: string;
+    given_name?: string;
+    family_name?: string;
+    avatar_url?: string;
+    avatar_sig?: string;
+  };
+  try {
+    body = await req.json();
+  } catch {
+    return json({ error: "bad json" }, 400);
+  }
   const email = (body.email ?? "").toLowerCase().trim();
   const sig = body.sig ?? "";
   if (!email || !sig) return json({ error: "bad request" }, 400);
@@ -40,6 +63,10 @@ Deno.serve(async (req: Request) => {
   const nameSigned = timingSafeEq(sig, await hmacHex(nameSigPayload(email, claimedName)));
   if (!nameSigned && !timingSafeEq(sig, await hmacHex(email))) return json({ error: "forbidden" }, 403);
   const trustedName: GoogleName = nameSigned ? claimedName : {};
+  // Аватарка — своё подписанное поле (avatar_sig над «avatar|email|url»): старый Pages его не шлёт,
+  // новый шлёт рядом с прежней sig, поэтому порядок раскатки не важен. Без валидной подписи или с
+  // чужим хостом/схемой — игнор, вход не страдает.
+  const trustedAvatar = await verifiedAvatar(email, body.avatar_url, body.avatar_sig, hmacHex);
 
   // email хранится в lower (бэкфилл + запись админкой); уникальный индекс по lower(email).
   const { data, error } = await supabase
@@ -87,12 +114,14 @@ Deno.serve(async (req: Request) => {
   // (#184) было нечего подставлять.
   if (telegramId != null) {
     const { data: prof } = await supabase
-      .from("user_profiles").select("first_name, last_name").eq("telegram_id", telegramId).maybeSingle();
-    const upd = profileNameUpdate(
-      prof as { first_name?: string | null; last_name?: string | null } | null,
-      trustedName,
-      email.split("@")[0],
-    );
+      .from("user_profiles").select("first_name, last_name, avatar_url").eq("telegram_id", telegramId).maybeSingle();
+    const profRow = prof as
+      | { first_name?: string | null; last_name?: string | null; avatar_url?: string | null }
+      | null;
+    const nameUpd = profileNameUpdate(profRow, trustedName, email.split("@")[0]);
+    // Фото, в отличие от имени, не ручное поле: обновляем при каждом входе, если изменилось.
+    const avatarUpd = avatarUpdate(profRow?.avatar_url, trustedAvatar);
+    const upd = nameUpd || avatarUpd ? { ...nameUpd, ...(avatarUpd ? { avatar_url: avatarUpd } : {}) } : null;
     if (upd) {
       const { error: profErr } = await supabase
         .from("user_profiles").upsert({ telegram_id: telegramId, ...upd }, { onConflict: "telegram_id" });

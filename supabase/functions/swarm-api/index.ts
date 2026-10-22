@@ -5,7 +5,13 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { verifyInitData } from "./auth.ts";
 import { isRenewableSession, isSessionRevoked, type SessionClaims, verifyJWT } from "../_shared/jwt.ts";
-import { isSecondStepRequired, parseSecondStepAudience, secondStepBlocks, secondStepState } from "../_shared/passkeys/second-step.ts";
+import {
+  isSecondStepRequired,
+  parseSecondStepAudience,
+  secondStepBlocks,
+  secondStepRequiredFrom,
+  secondStepState,
+} from "../_shared/passkeys/second-step.ts";
 import { logAccess, logLoginOnce } from "../_shared/access-events.ts";
 import {
   buildRecorderSetupOneLiner,
@@ -34,7 +40,7 @@ import {
 } from "./entries-guard.ts";
 import { canChangeMeetingPrivacy } from "../_shared/entries/meeting-rights.ts";
 import type { SlotRow } from "../_shared/bot-slot.ts";
-import { isMissedBotSlot, toAgentListRow, toListRow } from "./meetings-payload.ts";
+import { isBotRecordingNow, isMissedBotSlot, toAgentListRow, toListRow } from "./meetings-payload.ts";
 import {
   applyListFilters,
   ENTRY_LIGHT_COLUMNS,
@@ -151,6 +157,7 @@ import { handleAutojoinRoutes, makeAutojoinStore, makeCalendarCheck } from "./au
 import { handleTaskLabelRoutes } from "./task-labels.ts";
 import { handlePublicShortLink, handleShortLinkRoutes, isPublicShortLinkPath } from "./short-links.ts";
 import { handleStickerRoutes } from "./stickers.ts";
+import { handleQuickSearchRoutes } from "./quick-search.ts";
 import { handleTaskCommentRoutes } from "./task-comments.ts";
 import { handleTaskFileRoutes } from "./task-files.ts";
 import { FILES_BUCKET, FILES_UNAVAILABLE, filesStorage, signedFilesGetUrl } from "../_shared/swarm-files-storage.ts";
@@ -166,7 +173,8 @@ import { handleQualityRoutes } from "./quality.ts";
 import { handleInspectionRoutes } from "./inspections.ts";
 import { handleTelegramLinkRoutes } from "./telegram-link.ts";
 import { handleModelUsageRoutes } from "./model-usage.ts";
-import { SUPERADMIN_TELEGRAM_ID } from "../_shared/users/admin-scope.ts";
+import { openAIKeyHandle } from "../_shared/workspace-keys.ts";
+import { masterAdminFlag } from "../_shared/users/master-admins.ts";
 import { handleNotificationRoutes } from "./notifications.ts";
 import { handleTaskSubscriptionRoutes } from "./task-subscriptions.ts";
 import { handlePeopleRoutes, resolveTaskPeople } from "./people.ts";
@@ -230,7 +238,9 @@ const ADMIN_USER_ID = 744230399; // см. lib/supabase.ts swarm-bot — един
 // Правило «это демо» — одно на все функции: _shared/demo-session.ts.
 const WEB_JWT_SECRET = Deno.env.get("WEB_JWT_SECRET"); // подпись веб-сессий (Login Widget, B+)
 // Замок «второй шаг входа обязателен» (палец, #955). По умолчанию выключен: шаг предлагается, но не требуется.
-const SECOND_STEP_REQUIRED = isSecondStepRequired(Deno.env.get("SECOND_STEP_REQUIRED"));
+// Значение: `1`/`true` — сразу; дата ISO (`2026-10-26`) — с 00:00 по Белграду; считается на каждый запрос.
+const SECOND_STEP_REQUIRED_ENV = Deno.env.get("SECOND_STEP_REQUIRED");
+const SECOND_STEP_REQUIRED_FROM = secondStepRequiredFrom(SECOND_STEP_REQUIRED_ENV);
 // Кому шаг применим (пилот): не задано — никому, `all` — всем, список telegram id — только им.
 const SECOND_STEP_AUDIENCE = parseSecondStepAudience(Deno.env.get("SECOND_STEP_AUDIENCE"));
 
@@ -388,10 +398,11 @@ async function withFreshAssignees<
 //   {"type":"error","message":…} — модель оборвалась на середине; молча не глотаем
 async function streamExtractTasks(
   text: string,
+  groupId: string,
   origin: string,
 ): Promise<Response> {
   const today = todayIso();
-  const upstream = await callExtractor(text, today, true);
+  const upstream = await callExtractor({ supabase, groupId }, text, today, true);
   // Проверяем ДО того, как отдать 200: после начала потока сообщить об ошибке уже нечем.
   if (!upstream.ok || !upstream.body) {
     return apiErr(502, "Extractor unavailable", origin);
@@ -654,8 +665,11 @@ async function routeRequest(req: Request): Promise<Response> {
   if (!groupId) {
     return apiErr(403, "No workspace assigned", origin);
   }
+  // Мастер-админ (#233): константа ИЛИ строка master_admins — один раз на запрос. Права
+  // (все пространства, расход модели) решаются им; владелец заморозки (ADMIN_USER_ID ниже) — отдельно.
+  const isMaster = !isDemo && await masterAdminFlag(supabase, telegram_id);
   const isAdmin = !isDemo &&
-    (telegram_id === ADMIN_USER_ID ||
+    (isMaster ||
       (userRow as { is_admin?: boolean }).is_admin === true);
   // E-mail нужен очереди вычитки: причастность к встрече определяется по metadata.attendees.
   const userEmail = isDemo
@@ -671,7 +685,8 @@ async function routeRequest(req: Request): Promise<Response> {
   // SECOND_STEP_REQUIRED, по умолчанию выключен; аудитория — SECOND_STEP_AUDIENCE, по умолчанию никто.
   const secondStep = secondStepState(webSession, {
     isDemo,
-    required: SECOND_STEP_REQUIRED,
+    required: isSecondStepRequired(SECOND_STEP_REQUIRED_ENV),
+    requiredFrom: SECOND_STEP_REQUIRED_FROM,
     audience: SECOND_STEP_AUDIENCE,
   });
   if (secondStepBlocks(secondStep, req.method, routePath)) {
@@ -725,12 +740,12 @@ async function routeRequest(req: Request): Promise<Response> {
     });
   }
 
-  // Расход OpenAI (#311) — только суперадмин: деньги всей системы, а не воркспейса.
+  // Расход OpenAI (#311): мастер-админ — вся система или одно пространство; админ — своё (#233).
   const usageResp = await handleModelUsageRoutes(
     req,
     routePath,
     supabase,
-    !isDemo && telegram_id === SUPERADMIN_TELEGRAM_ID,
+    { isMaster, isAdmin, groupId, telegramId: telegram_id },
     origin,
   );
   if (usageResp) return usageResp;
@@ -745,6 +760,7 @@ async function routeRequest(req: Request): Promise<Response> {
     origin,
     resolveNames,
     groupId,
+    { isMaster },
   );
   if (adminResp) return adminResp;
 
@@ -798,7 +814,7 @@ async function routeRequest(req: Request): Promise<Response> {
         // Telegram привязан: номер и есть Telegram (> 0) или привязан из веба (#92).
         telegram_linked: telegram_id > 0 || Boolean(au?.telegram_chat_id),
         // Суперадмин — видит разделы всей системы (расход модели, #311).
-        is_superadmin: !isDemo && telegram_id === SUPERADMIN_TELEGRAM_ID,
+        is_superadmin: isMaster,
         // Второй шаг входа (палец, #955): веб по нему сам предлагает сохранить или подтвердить ключ.
         second_step: secondStep,
       },
@@ -913,7 +929,7 @@ async function routeRequest(req: Request): Promise<Response> {
     const ids = validUsers.map((u) => u.telegram_id);
     const { data: profiles } = await supabase
       .from("user_profiles")
-      .select("telegram_id, first_name, last_name, role, markets")
+      .select("telegram_id, first_name, last_name, role, markets, avatar_url")
       .in("telegram_id", ids);
 
     const profileMap = Object.fromEntries(
@@ -924,6 +940,7 @@ async function routeRequest(req: Request): Promise<Response> {
           last_name?: string;
           role?: string;
           markets?: string[];
+          avatar_url?: string | null;
         }> ?? []
       ).map((p) => [p.telegram_id, p]),
     );
@@ -940,6 +957,7 @@ async function routeRequest(req: Request): Promise<Response> {
         username: u.username ?? null,
         role: p?.role ?? null,
         markets: p?.markets ?? [],
+        avatar_url: p?.avatar_url ?? null,
       };
     });
 
@@ -1086,7 +1104,7 @@ async function routeRequest(req: Request): Promise<Response> {
       telegramId: telegram_id,
       groupId,
       isAdmin,
-      isSuperadmin: !isDemo && telegram_id === SUPERADMIN_TELEGRAM_ID,
+      isSuperadmin: isMaster,
       isDemo,
       pseudonymSecret: WEB_JWT_SECRET,
     },
@@ -2279,7 +2297,8 @@ async function routeRequest(req: Request): Promise<Response> {
     const addedBy = (profile as { first_name?: string } | null)?.first_name ||
       String(telegram_id);
 
-    const OPENAI_KEY = Deno.env.get("OPENAI_API_KEY")!;
+    // Ключ OpenAI — пространства вызывающего (#233); своего нет → ключ сервера.
+    const OPENAI_KEY = await openAIKeyHandle(supabase, groupId);
 
     // Ручная заметка из miniapp: эмбеддинг по контенту + страны/тип/дата через общее
     // COUNTRY_PROMPT_RULE (тот же извлекатель, что и в остальных путях ингеста).
@@ -2293,7 +2312,7 @@ async function routeRequest(req: Request): Promise<Response> {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${OPENAI_KEY}`,
+          Authorization: `Bearer ${OPENAI_KEY.key}`,
         },
         body: JSON.stringify({
           model: "gpt-4o-mini",
@@ -2310,6 +2329,7 @@ async function routeRequest(req: Request): Promise<Response> {
         }),
       }, { ...VIA_OPENAI_CHAT, usage: { purpose: "web:chat" } })
       : null;
+    if (summaryRes) await OPENAI_KEY.noteResponse(summaryRes);
     const summary = summaryRes?.ok
       ? (await summaryRes.json()).choices[0].message.content
       : null;
@@ -2332,22 +2352,33 @@ async function routeRequest(req: Request): Promise<Response> {
     return json(entry, 201, origin);
   }
 
+  // Подсказки поиска слева (названия задач, проектов, встреч, заметок) — quick-search.ts.
+  // Стоит ДО /search: тот путь — точное совпадение, но так порядок очевиден.
+  const quickSearchResp = await handleQuickSearchRoutes(
+    { supabase, telegramId: telegram_id, groupId, origin },
+    req,
+    routePath,
+  );
+  if (quickSearchResp) return quickSearchResp;
+
   // ── GET /search ───────────────────────────────────────────────────────────────
   if (req.method === "GET" && routePath === "/search") {
     const q = url.searchParams.get("q");
     if (!q?.trim()) return apiErr(400, "q required", origin);
-    const OPENAI_KEY = Deno.env.get("OPENAI_API_KEY")!;
+    // Ключ OpenAI — пространства вызывающего (#233); своего нет → ключ сервера.
+    const OPENAI_KEY = await openAIKeyHandle(supabase, groupId);
     const embRes = await externalFetch("https://api.openai.com/v1/embeddings", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${OPENAI_KEY}`,
+        Authorization: `Bearer ${OPENAI_KEY.key}`,
       },
       body: JSON.stringify({
         model: "text-embedding-3-small",
         input: q.slice(0, 8000),
       }),
     }, { ...VIA_OPENAI_EMBEDDING, usage: { purpose: "web:embedding" } });
+    await OPENAI_KEY.noteResponse(embRes);
     if (!embRes.ok) return apiErr(500, "Embedding failed", origin);
     const embedding: number[] = (await embRes.json()).data[0].embedding;
     try {
@@ -2375,19 +2406,21 @@ async function routeRequest(req: Request): Promise<Response> {
     }
     const q = (askBody.q ?? "").trim();
     if (!q) return apiErr(400, "q required", origin);
-    const OPENAI_KEY = Deno.env.get("OPENAI_API_KEY")!;
+    // Ключ OpenAI — пространства вызывающего (#233); своего нет → ключ сервера.
+    const OPENAI_KEY = await openAIKeyHandle(supabase, groupId);
     // 1) эмбеддинг запроса
     const embRes = await externalFetch("https://api.openai.com/v1/embeddings", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${OPENAI_KEY}`,
+        Authorization: `Bearer ${OPENAI_KEY.key}`,
       },
       body: JSON.stringify({
         model: "text-embedding-3-small",
         input: q.slice(0, 8000),
       }),
     }, { ...VIA_OPENAI_EMBEDDING, usage: { purpose: "web:embedding" } });
+    await OPENAI_KEY.noteResponse(embRes);
     if (!embRes.ok) return apiErr(500, "Embedding failed", origin);
     const embedding: number[] = (await embRes.json()).data[0].embedding;
     // 2) retrieve (воркспейс-изоляция и приватность — внутри matchEntries/RPC)
@@ -2442,7 +2475,7 @@ async function routeRequest(req: Request): Promise<Response> {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${OPENAI_KEY}`,
+        Authorization: `Bearer ${OPENAI_KEY.key}`,
       },
       body: JSON.stringify({
         model: "gpt-4o-mini",
@@ -2464,6 +2497,7 @@ async function routeRequest(req: Request): Promise<Response> {
         max_tokens: 700,
       }),
     }, { ...VIA_OPENAI_CHAT, usage: { purpose: "web:chat" } });
+    await OPENAI_KEY.noteResponse(askRes);
     if (!askRes.ok) {
       // деградация: вернуть источники без AI-ответа, экран покажет список
       return json(
@@ -2668,20 +2702,22 @@ async function routeRequest(req: Request): Promise<Response> {
       } catch { /* тело необязательно */ }
       const tezisi = await resummarizeFromTranscript(supabase, meetingRowId, note);
       // Освежаем эмбеддинг (контент изменился) — как при публикации. Не критично при сбое.
-      const OPENAI_KEY = Deno.env.get("OPENAI_API_KEY")!;
+      // Ключ OpenAI — пространства вызывающего (#233); своего нет → ключ сервера.
+    const OPENAI_KEY = await openAIKeyHandle(supabase, groupId);
       let embedding: number[] | null = null;
       try {
         const r = await externalFetch("https://api.openai.com/v1/embeddings", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            Authorization: `Bearer ${OPENAI_KEY}`,
+            Authorization: `Bearer ${OPENAI_KEY.key}`,
           },
           body: JSON.stringify({
             model: "text-embedding-3-small",
             input: tezisi.slice(0, 8000),
           }),
         }, { ...VIA_OPENAI_EMBEDDING, usage: { purpose: "web:embedding" } });
+        await OPENAI_KEY.noteResponse(r);
         if (r.ok) embedding = (await r.json()).data[0].embedding;
       } catch { /* эмбеддинг не критичен — текст обновим в любом случае */ }
       const upd: Record<string, unknown> = { summary: tezisi, content: tezisi };
@@ -2941,8 +2977,11 @@ async function routeRequest(req: Request): Promise<Response> {
     const enrichedList = await withRecorderNames(shown);
     // Сколько черновиков подходит под фильтр БЕЗ лимита 50 (issue #112) — за вычетом спрятанных.
     const total = count != null ? count - (rows.length - shown.length) : null;
+    // recording_now — «Идёт запись» (#1026): свежесть удара решает сервер, клиент порог не знает.
+    const nowMs = Date.now();
+    const listRows = enrichedList.map((r) => ({ ...toAgentListRow(r), recording_now: isBotRecordingNow(r, nowMs) }));
     return json(
-      await withOneOnOne(enrichedList.map(toAgentListRow), telegram_id),
+      await withOneOnOne(listRows, telegram_id),
       200,
       origin,
       total != null ? { "X-Total-Count": String(total) } : undefined,
@@ -3064,7 +3103,7 @@ async function routeRequest(req: Request): Promise<Response> {
         try {
           const meta = await extractEntryMeta(
             draftNotes,
-            Deno.env.get("OPENAI_API_KEY")!,
+            await openAIKeyHandle(supabase, groupId),
           );
           suggestion = pickSuggestedMarkets({
             title,
@@ -3154,6 +3193,7 @@ async function routeRequest(req: Request): Promise<Response> {
       return json(
         {
           ...withPair,
+          recording_now: isBotRecordingNow(meeting as SlotRow),
           in_base_duplicate: inBaseDuplicate,
         },
         200,
@@ -3422,7 +3462,8 @@ async function routeRequest(req: Request): Promise<Response> {
     if (!noteRes.ok) return apiErr(404, "Note not found", origin);
     const note = await noteRes.json() as Record<string, unknown>;
 
-    const OPENAI_KEY = Deno.env.get("OPENAI_API_KEY")!;
+    // Ключ OpenAI — пространства вызывающего (#233); своего нет → ключ сервера.
+    const OPENAI_KEY = await openAIKeyHandle(supabase, groupId);
     const content = [note.title, note.content ?? note.transcript ?? ""].filter(
       Boolean,
     ).join("\n\n");
@@ -3432,7 +3473,7 @@ async function routeRequest(req: Request): Promise<Response> {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${OPENAI_KEY}`,
+          Authorization: `Bearer ${OPENAI_KEY.key}`,
         },
         body: JSON.stringify({
           model: "gpt-4o-mini",
@@ -3449,6 +3490,7 @@ async function routeRequest(req: Request): Promise<Response> {
         }),
       }, { ...VIA_OPENAI_CHAT, usage: { purpose: "web:chat" } },
     );
+    await OPENAI_KEY.noteResponse(summaryRes);
     if (!summaryRes.ok) return apiErr(500, "GPT error", origin);
     const summary = (await summaryRes.json()).choices[0].message.content;
     return json({ summary }, 200, origin);
@@ -3522,7 +3564,8 @@ async function routeRequest(req: Request): Promise<Response> {
       "\n",
     ).trim();
 
-    const OPENAI_KEY = Deno.env.get("OPENAI_API_KEY")!;
+    // Ключ OpenAI — пространства вызывающего (#233); своего нет → ключ сервера.
+    const OPENAI_KEY = await openAIKeyHandle(supabase, groupId);
     // Granola-импорт из miniapp: раньше countries хардкодился [] (в отличие от бот-пути
     // Granola, который тегирует). Привязываем к рынкам через общее COUNTRY_PROMPT_RULE,
     // затем эмбеддим контент ВМЕСТЕ со странами.
@@ -3534,7 +3577,7 @@ async function routeRequest(req: Request): Promise<Response> {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${OPENAI_KEY}`,
+          Authorization: `Bearer ${OPENAI_KEY.key}`,
         },
         body: JSON.stringify({
           model: "gpt-4o-mini",
@@ -3551,6 +3594,7 @@ async function routeRequest(req: Request): Promise<Response> {
         }),
       }, { ...VIA_OPENAI_CHAT, usage: { purpose: "web:chat" } }),
     ]);
+    await OPENAI_KEY.noteResponse(summaryRes);
     const summary = summaryRes.ok
       ? (await summaryRes.json()).choices[0].message.content
       : null;
@@ -3890,12 +3934,13 @@ async function routeRequest(req: Request): Promise<Response> {
       role ? `Роль: ${role}` : "",
       userName ? `Имя: ${userName}` : "",
     ].filter(Boolean).join(" | ");
-    const OPENAI_KEY = Deno.env.get("OPENAI_API_KEY")!;
+    // Ключ OpenAI — пространства вызывающего (#233); своего нет → ключ сервера.
+    const OPENAI_KEY = await openAIKeyHandle(supabase, groupId);
     const gptRes = await externalFetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${OPENAI_KEY}`,
+        Authorization: `Bearer ${OPENAI_KEY.key}`,
       },
       body: JSON.stringify({
         model: "gpt-4o-mini",
@@ -3911,6 +3956,7 @@ async function routeRequest(req: Request): Promise<Response> {
         max_tokens: 2600,
       }),
     }, { ...VIA_OPENAI_CHAT, usage: { purpose: "web:chat" } });
+    await OPENAI_KEY.noteResponse(gptRes);
     if (!gptRes.ok) return apiErr(500, "GPT error", origin);
     const text = (await gptRes.json()).choices[0].message.content;
     return json({ text, sources }, 200, origin);
@@ -3931,12 +3977,12 @@ async function routeRequest(req: Request): Promise<Response> {
     // Потоковый режим — по Accept, а не по новому пути: контракт эндпоинта не меняется,
     // старый JSON-ответ продолжает работать для всех, кто про поток не знает.
     if ((req.headers.get("Accept") ?? "").includes("text/event-stream")) {
-      return await streamExtractTasks(body.text, origin);
+      return await streamExtractTasks(body.text, groupId, origin);
     }
 
     // Единый экстрактор (`extractTasks`, общий с MCP) — без дубля промпта. Отказ модели — 502,
     // как у потоковой ветки, а не пустой список: «задач нет» и «модель молчит» различаются (#374).
-    const result = await extractTasks(body.text);
+    const result = await extractTasks({ supabase, groupId }, body.text);
     if (!result.ok) {
       return json(EXTRACTOR_UNAVAILABLE, 502, origin);
     }

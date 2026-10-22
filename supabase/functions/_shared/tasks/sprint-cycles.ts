@@ -255,7 +255,7 @@ export async function redactCycleStats<T extends { id: string; status: string; s
     if (!accepted(c)) return c;
     const mine = await listComposition(c.id, groupId, { viewerId });
     if (mine.hiddenCount === 0) return c;
-    return { ...c, stats: computeSprintStats([...mine.items, ...mine.withdrawn].map(toStatsView)) };
+    return { ...c, stats: computeSprintStats([...mine.items, ...mine.withdrawn, ...mine.moved].map(toStatsView)) };
   }));
 }
 
@@ -271,5 +271,6 @@ export function toStatsView(it: SprintItem): SprintItemView {
     to_carry: it.to_carry,
     removed_at: it.removed_at,
     withdrawn_at: it.withdrawn_at,
+    moved_at: it.moved?.at ?? null,
   };
 }

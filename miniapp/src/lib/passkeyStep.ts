@@ -46,3 +46,43 @@ export type StepNotice = "enable_link";
 export function failureNotice(_mode: "create" | "get"): StepNotice {
   return "enable_link";
 }
+
+/** Стикер на главной просит запустить привязку (клик) — слушает PasskeyStep, у него вся браузерная часть. */
+export const STEP_REQUEST_EVENT = "swarm:passkey-step-request";
+/** Привязка прошла — стикер-напоминание гаснет, не дожидаясь перезагрузки /me. */
+export const STEP_DONE_EVENT = "swarm:passkey-step-done";
+
+/**
+ * Стикер-напоминание на главной: шаг применим и не пройден, а срок известен. Без даты (сервер её не
+ * отдал) стикер не показываем — нечем пугать (решение 19.10.2026). Не хранится в базе, только на экране.
+ */
+export function stepReminder(me: Me | null): { from: string; required: boolean } | null {
+  const s = stepPending(me);
+  if (!s || !s.required_from || !/^\d{4}-\d{2}-\d{2}$/.test(s.required_from)) return null;
+  return { from: s.required_from, required: s.required };
+}
+
+const RU_FROM_WEEKDAY = ["с воскресенья", "с понедельника", "со вторника", "со среды", "с четверга", "с пятницы", "с субботы"];
+
+/**
+ * «С понедельника, 26 октября» / «From Monday, October 26» по дате ISO. День недели и месяц считаем в UTC
+ * от полудня даты: пояс браузера не должен сдвинуть сутки.
+ */
+export function deadlineLabel(iso: string, lang: "ru" | "en"): string {
+  const d = new Date(`${iso}T12:00:00Z`);
+  if (Number.isNaN(d.getTime())) return "";
+  if (lang === "en") {
+    return `From ${new Intl.DateTimeFormat("en-US", { weekday: "long", month: "long", day: "numeric", timeZone: "UTC" }).format(d)}`;
+  }
+  const dayMonth = new Intl.DateTimeFormat("ru-RU", { day: "numeric", month: "long", timeZone: "UTC" }).format(d);
+  const label = `${RU_FROM_WEEKDAY[d.getUTCDay()]}, ${dayMonth}`;
+  return label.charAt(0).toUpperCase() + label.slice(1);
+}
+
+/** Короткая дата для плашки на стикере: «26 окт» / «Oct 26». */
+export function deadlineShort(iso: string, lang: "ru" | "en"): string {
+  const d = new Date(`${iso}T12:00:00Z`);
+  if (Number.isNaN(d.getTime())) return "";
+  return new Intl.DateTimeFormat(lang === "en" ? "en-US" : "ru-RU", { day: "numeric", month: "short", timeZone: "UTC" })
+    .format(d).replace(".", "");
+}

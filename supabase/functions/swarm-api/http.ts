@@ -35,8 +35,9 @@ export function json(
   });
 }
 
-export function apiErr(status: number, message: string, origin = ""): Response {
-  return json({ error: message }, status, origin);
+/** `code` — необязательная машинная причина (экран по ней показывает текст на своём языке). */
+export function apiErr(status: number, message: string, origin = "", code?: string): Response {
+  return json(code ? { error: message, code } : { error: message }, status, origin);
 }
 
 // ── Лимит списочных ответов ───────────────────────────────────────────────────

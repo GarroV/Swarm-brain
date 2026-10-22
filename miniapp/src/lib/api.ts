@@ -23,6 +23,7 @@ import type {
   ProjectLink,
   Sprint,
   SprintCycle,
+  SprintBoardData,
   SprintCycleDetail,
   SprintCycleItem,
   SprintStats,
@@ -360,6 +361,8 @@ let mockTasks: Task[] = [
     title: "Онбординг",
     project_id: "pr1",
     project_linked: true,
+    // Срок внутри идущего: окно переноса показывает «срок будет сорван» (22.10.2026).
+    due_date: mockDay(8),
   }),
   mkMock({
     id: "p_search",
@@ -1168,6 +1171,37 @@ export async function fetchTasksDelta(since: string): Promise<TasksDeltaResponse
   if (DEV_MODE) return { tasks: [], serverTime: new Date().toISOString(), truncated: false };
   const params = new URLSearchParams({ confirmed: "true", since });
   return apiFetch<TasksDeltaResponse>(`/tasks?${params.toString()}`);
+}
+
+/** Подсказки поиска слева (GET /search/quick): названия, без текстов. Права — как у списков. */
+export type QuickSearchResult = {
+  tasks: { id: string; title: string; status: string; due_date: string | null }[];
+  projects: { id: string; name: string; emoji: string | null }[];
+  meetings: { id: string; title: string; date: string | null }[];
+  notes: { id: string; title: string; date: string | null }[];
+};
+
+export async function fetchQuickSearch(q: string): Promise<QuickSearchResult> {
+  if (DEV_MODE) {
+    const needle = q.trim().toLowerCase();
+    const has = (s: string) => s.toLowerCase().includes(needle);
+    return {
+      tasks: mockTasks.filter((t) => has(t.title)).slice(0, 6).map((t) => ({
+        id: t.id,
+        title: t.title,
+        status: t.status,
+        due_date: t.due_date ?? null,
+      })),
+      projects: mockProjects.filter((p) => has(p.name)).slice(0, 6).map((p) => ({
+        id: p.id,
+        name: p.name,
+        emoji: p.emoji ?? null,
+      })),
+      meetings: [],
+      notes: [],
+    };
+  }
+  return apiFetch<QuickSearchResult>(`/search/quick?q=${encodeURIComponent(q)}`);
 }
 
 export async function fetchTask(id: string): Promise<Task> {
@@ -2069,6 +2103,24 @@ let mockCycles: SprintCycle[] = [
     stats: MOCK_CYCLE_ACCEPTED_STATS,
     created_at: "2025-11-01T09:00:00.000Z",
   },
+  // Вторая цель окна переноса (22.10.2026): выбор между двумя запланированными.
+  {
+    id: "sc_next2",
+    group_id: "cee",
+    name: "Спринт 43",
+    start_date: mockDay(27),
+    end_date: mockDay(40),
+    tab_id: "sp1",
+    check_date: mockDay(33),
+    status: "draft",
+    created_by: null,
+    started_at: null,
+    accepted_at: null,
+    accepted_by: null,
+    summary: null,
+    stats: null,
+    created_at: "2025-11-01T09:00:00.000Z",
+  },
 ];
 
 // Состав живых спринтов держим ссылками на mockTasks — тогда перетаскивание карточки в канбане
@@ -2086,6 +2138,8 @@ type MockItemRow = {
   carried_manual?: boolean;
   carry_reason?: string | null;
   frozen?: boolean;
+  /** Снимок переноса (22.10.2026): куда ушла строка-цель, кто, когда, срок на момент ухода. */
+  moved?: { to_row: string | null; at: string; by: number | null; reason: string | null; due_before: string | null };
 };
 
 let mockCycleItems: Record<string, MockItemRow[]> = {
@@ -2098,8 +2152,26 @@ let mockCycleItems: Record<string, MockItemRow[]> = {
     // задачи вне спринта (подпись «из «…»»).
     { id: "si5", task_id: "p_s_hybrid", in_plan: true },
     { id: "si6", task_id: "p_s_heart", in_plan: true },
+    // Снимки «Ушли из спринта»: один перенесён человеком с причиной, второй — автоматикой по
+    // сроку, без причины (красный, «нажмите, чтобы вписать»).
+    {
+      id: "si7",
+      task_id: "p_rec",
+      in_plan: true,
+      moved: { to_row: "sn1", at: mockDay(-1) + "T10:00:00.000Z", by: 123456, reason: "Ждём железо", due_before: mockDay(5) },
+    },
+    {
+      id: "si8",
+      task_id: "p_b_csv",
+      in_plan: true,
+      moved: { to_row: "sn2", at: mockDay(0) + "T08:00:00.000Z", by: null, reason: null, due_before: mockDay(9) },
+    },
   ],
-  sc_draft: [],
+  sc_draft: [
+    { id: "sn1", task_id: "p_rec", in_plan: true, carry_count: 1 },
+    { id: "sn2", task_id: "p_b_csv", in_plan: true, carry_count: 1 },
+  ],
+  sc_next2: [],
 };
 
 /**
@@ -2234,6 +2306,17 @@ const MOCK_CYCLE_FROZEN: SprintCycleItem[] = [
   },
 ];
 
+/** Куда ушёл снимок: строка-цель → её спринт (как `loadMoveTargets` на сервере). */
+function mockMovedTo(rowId: string | null): { id: string; name: string } | null {
+  if (!rowId) return null;
+  for (const [cycleId, rows] of Object.entries(mockCycleItems)) {
+    if (!rows.some((r) => r.id === rowId)) continue;
+    const c = mockCycles.find((x) => x.id === cycleId);
+    return c ? { id: c.id, name: c.name } : null;
+  }
+  return null;
+}
+
 function mockItemsOf(cycleId: string): SprintCycleItem[] {
   if (cycleId === "sc_done") return MOCK_CYCLE_FROZEN;
   const projectName = (
@@ -2253,13 +2336,14 @@ function mockItemsOf(cycleId: string): SprintCycleItem[] {
       assignees: t.assignees,
       project_id: t.project_id,
       project: projectName(t.project_id),
-      due_date: t.due_date,
+      // У снимка переноса срок — тот, что был на момент ухода («срок A → B»).
+      due_date: row.moved ? row.moved.due_before : t.due_date,
       // Счётчики в моках выдуманы детерминированно: без них значки 💬/🔗 не увидеть в
       // локальном прогоне, а именно их и надо смотреть глазами.
       comment_count: t.id.length % 3,
       link_count: t.id.length % 2,
       completed_at: t.status === "done" ? new Date().toISOString() : null,
-      frozen: row.frozen ?? false,
+      frozen: row.moved ? true : row.frozen ?? false,
       carry_count: row.carry_count ?? 0,
       carried_manual: row.carried_manual ?? null,
       check_status: mockChecks[row.id]?.check_status ?? null,
@@ -2268,6 +2352,16 @@ function mockItemsOf(cycleId: string): SprintCycleItem[] {
       // Причина из окна сверки перекрывает ту, что приехала вместе с переносом.
       carry_reason: mockChecks[row.id]?.carry_reason ?? row.carry_reason ??
         null,
+      moved: row.moved
+        ? {
+          to_cycle_id: mockMovedTo(row.moved.to_row)?.id ?? null,
+          to_cycle_name: mockMovedTo(row.moved.to_row)?.name ?? null,
+          at: row.moved.at,
+          by: row.moved.by,
+          reason: row.moved.reason,
+          due_now: t.due_date,
+        }
+        : null,
     }];
   });
 }
@@ -2306,9 +2400,59 @@ export async function fetchSprintCycle(id: string): Promise<SprintCycleDetail> {
   if (DEV_MODE) {
     const c = mockCycles.find((x) => x.id === id);
     if (!c) throw new ApiError(404, "Not found");
-    return { ...c, items: mockItemsOf(id) };
+    const all = mockItemsOf(id);
+    return { ...c, items: all.filter((i) => !i.moved), moved: all.filter((i) => !!i.moved) };
   }
   return apiFetch<SprintCycleDetail>(`/sprint-cycles/${id}`);
+}
+
+/**
+ * Доска спринтов пространства одним запросом: мастер-план и спринты слева направо. `tabId = null` —
+ * служебное «Без вкладки». Принятые спринты приходят без состава (`loaded: false`) — его берут
+ * `fetchSprintCycle` при раскрытии полоски.
+ */
+export async function fetchSprintBoard(tabId: string | null): Promise<SprintBoardData> {
+  if (DEV_MODE) return mockBoard(tabId);
+  return apiFetch<SprintBoardData>(`/sprint-cycles/board?tab=${tabId === null ? "none" : encodeURIComponent(tabId)}`);
+}
+
+/** Доска в DEV_MODE собирается из тех же моков, что «Список»: группы — проекты верхнего уровня пространства. */
+function mockBoard(tabId: string | null): SprintBoardData {
+  const cycles = mockCycles.filter((c) => c.tab_id === tabId)
+    .sort((a, b) => a.start_date.localeCompare(b.start_date));
+  const startOf = new Map(cycles.map((c) => [c.id, c.start_date]));
+  const spansOf = (taskId: string) =>
+    cycles.filter((c) => (mockCycleItems[c.id] ?? []).some((r) => r.task_id === taskId && !r.moved))
+      .sort((a, b) => (startOf.get(a.id)! < startOf.get(b.id)! ? -1 : 1)).map((c) => c.id);
+  const groupIds = tabId === "sp1" ? ["pr1", "pr1a", "pr1b"] : [];
+  return {
+    plan: {
+      groups: groupIds.flatMap((id) => {
+        const p = mockProjects.find((x) => x.id === id);
+        if (!p) return [];
+        return [{
+          id,
+          name: p.name,
+          tasks: mockTasks.filter((t) => t.project_id === id).map((t) => ({
+            id: t.id,
+            title: t.title,
+            status: t.status,
+            due_date: t.due_date ?? null,
+            assignees: t.assignees ?? [],
+            assignee_telegram_ids: t.assignee_telegram_ids ?? [],
+            parent_id: t.parent_id ?? null,
+            created_at: t.created_at,
+            cycle_ids: spansOf(t.id),
+          })),
+        }];
+      }),
+    },
+    cycles: cycles.map((cycle) => {
+      if (cycle.status === "accepted") return { cycle, items: [], moved: [], withdrawn: [], loaded: false };
+      const all = mockItemsOf(cycle.id);
+      return { cycle, items: all.filter((i) => !i.moved), moved: all.filter((i) => !!i.moved), withdrawn: [], loaded: true };
+    }),
+  };
 }
 
 export async function createSprintCycle(
@@ -2551,6 +2695,76 @@ export async function patchSprintCycleItem(
     `/sprint-cycles/${cycleId}/tasks/${taskId}`,
     { method: "PATCH", body: JSON.stringify(patch) },
   );
+}
+
+/**
+ * Перенести задачу из идущего спринта в запланированный (22.10.2026): одно действие с
+ * обязательной причиной. `itemId` — `SprintCycleItem.id` (строка состава, не задача).
+ * `new_due` — новый срок задачи; не передан — срок не меняется. Отказ правила — 409 с текстом.
+ */
+export async function moveSprintTask(
+  cycleId: string,
+  itemId: string,
+  body: { target_cycle_id: string; reason: string; new_due?: string | null },
+): Promise<{ ok: true; target_item_id: string; revived: boolean }> {
+  if (DEV_MODE) {
+    const row = (mockCycleItems[cycleId] ?? []).find((r) => r.id === itemId);
+    if (!row) throw new ApiError(404, "Not found");
+    if (row.moved) throw new ApiError(409, "Задача уже перенесена");
+    if (!body.reason.trim()) throw new ApiError(400, "Нужна причина переноса");
+    const targetRow = { id: "sm" + Date.now(), task_id: row.task_id, in_plan: true, carry_count: (row.carry_count ?? 0) + 1 };
+    const task = mockTasks.find((t) => t.id === row.task_id);
+    mockCycleItems = {
+      ...mockCycleItems,
+      [cycleId]: (mockCycleItems[cycleId] ?? []).map((r) =>
+        r.id === itemId
+          ? {
+            ...r,
+            moved: {
+              to_row: targetRow.id,
+              at: new Date().toISOString(),
+              by: 123456,
+              reason: body.reason.trim(),
+              due_before: task?.due_date ?? null,
+            },
+          }
+          : r
+      ),
+      [body.target_cycle_id]: [...(mockCycleItems[body.target_cycle_id] ?? []), targetRow],
+    };
+    if (body.new_due) {
+      mockTasks = mockTasks.map((t) => (t.id === row.task_id ? { ...t, due_date: body.new_due ?? null } : t));
+    }
+    return { ok: true, target_item_id: targetRow.id, revived: false };
+  }
+  return apiFetch(`/sprint-cycles/${cycleId}/tasks/${itemId}/move`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+/** Вписать причину в снимок, у которого её нет (перенос по сроку из карточки) — один раз. */
+export async function setSprintMovedReason(
+  cycleId: string,
+  itemId: string,
+  reason: string,
+): Promise<void> {
+  if (DEV_MODE) {
+    const row = (mockCycleItems[cycleId] ?? []).find((r) => r.id === itemId);
+    if (!row?.moved) throw new ApiError(404, "Not found");
+    if (row.moved.reason) throw new ApiError(409, "Причина уже записана или задача не переносилась");
+    mockCycleItems = {
+      ...mockCycleItems,
+      [cycleId]: (mockCycleItems[cycleId] ?? []).map((r) =>
+        r.id === itemId && r.moved ? { ...r, moved: { ...r.moved, reason: reason.trim() } } : r
+      ),
+    };
+    return;
+  }
+  await apiFetch<void>(`/sprint-cycles/${cycleId}/tasks/${itemId}/moved-reason`, {
+    method: "POST",
+    body: JSON.stringify({ reason }),
+  });
 }
 
 /** Возвращает, сколько задач реально добавилось: приватные и уже добавленные сервер отсекает молча. */
@@ -3703,6 +3917,25 @@ export async function deleteMeeting(id: string): Promise<void> {
 
 let mockAgentMeetings: AgentMeeting[] = [
   {
+    // Встреча, которую бот пишет прямо сейчас: плашка «В ЭФИРЕ» и «Идёт запись · N мин» (#1026).
+    id: "am-live",
+    title: "Aggregators Club: September Results",
+    source: "desktop-agent",
+    identity_kind: "calendar",
+    started_at: "2026-06-15T12:00:00+03:00",
+    ended_at: null,
+    status: "awaiting_review",
+    agent_version: "scriba-3091",
+    recorded_seconds: 1320,
+    recording_now: true,
+    has_draft_notes: false,
+    draft_notes_md: null,
+    transcript: null,
+    recorders: [{ telegram_id: 744230399, role: "transcribe", claimed_at: "2026-06-15T11:58:00+03:00" }],
+    entry_id: null,
+    created_at: "2026-06-15T11:58:00+03:00",
+  },
+  {
     id: "am-1",
     title: "Синк по Болгарии",
     source: "desktop-agent",
@@ -4034,10 +4267,14 @@ export type UsageCall = {
   audio_seconds: number;
 };
 
-/** Расход OpenAI за период (#311, #822), только суперадмину. `from`/`to` — «YYYY-MM-DD» включительно. */
-export async function fetchModelUsage(from: string, to: string): Promise<ModelUsage> {
+/**
+ * Расход OpenAI за период (#311, #822). `from`/`to` — «YYYY-MM-DD» включительно. Без `workspace` —
+ * вся система (только мастер-админу); с ним — одно пространство (админу пространства — своё, #233).
+ */
+export async function fetchModelUsage(from: string, to: string, workspace?: string): Promise<ModelUsage> {
   if (DEV_MODE) return mockModelUsage(from, to);
-  return apiFetch<ModelUsage>(`/admin/model-usage?from=${from}&to=${to}`);
+  const ws = workspace ? `&workspace=${encodeURIComponent(workspace)}` : "";
+  return apiFetch<ModelUsage>(`/admin/model-usage?from=${from}&to=${to}${ws}`);
 }
 
 /** Одноразовая ссылка на бота для привязки Telegram (#92); действует 15 минут. */
@@ -4432,4 +4669,106 @@ function mockModelUsage(from: string, to: string): ModelUsage {
     from, to, truncated: false, total_usd: total, calls, unpriced_calls: 0, tokens: 0, audio_minutes: 0,
     by_purpose: [slice], by_model: [{ ...slice, key: "whisper-1" }], by_day, top_meetings: [], cells, recent, meeting_titles,
   };
+}
+
+// ── Ключ к нейронке пространства и мастер-админы (#233, этап 3) ──────────────
+// Ключ write-only: сервер отдаёт только статус (last4, когда задан, последняя ошибка), сам ключ — никогда.
+export type WorkspaceKeyStatus = {
+  source: "workspace" | "server";
+  last4: string | null;
+  set_at: string | null;
+  set_by: number | null;
+  last_error: string | null;
+  last_error_at: string | null;
+  /** Режим сервера: при `false` ключи пространств выключены и работает только общий ключ сервера. */
+  own_keys_enabled: boolean;
+  /** Есть ли у сервера общий ключ — на нём работает пространство без своего ключа. */
+  server_key_available: boolean;
+  /** Можно ли сохранить ключ пространства (на сервере задан `WORKSPACE_SECRETS_KEY`, миграция накатана). */
+  storage_available: boolean;
+};
+
+const SERVER_KEY_STATUS: WorkspaceKeyStatus = {
+  source: "server", last4: null, set_at: null, set_by: null, last_error: null, last_error_at: null,
+  own_keys_enabled: true, server_key_available: true, storage_available: true,
+};
+
+export async function fetchWorkspaceKeyStatus(wsId: string): Promise<WorkspaceKeyStatus> {
+  if (DEV_MODE) return SERVER_KEY_STATUS;
+  return apiFetch<WorkspaceKeyStatus>(`/admin/workspaces/${encodeURIComponent(wsId)}/openai-key`);
+}
+
+export async function setWorkspaceKey(wsId: string, key: string): Promise<WorkspaceKeyStatus> {
+  if (DEV_MODE) return { ...SERVER_KEY_STATUS, source: "workspace", last4: key.slice(-4), set_at: new Date().toISOString() };
+  return apiFetch<WorkspaceKeyStatus>(`/admin/workspaces/${encodeURIComponent(wsId)}/openai-key`, {
+    method: "PUT",
+    body: JSON.stringify({ key }),
+  });
+}
+
+export async function clearWorkspaceKey(wsId: string): Promise<WorkspaceKeyStatus> {
+  if (DEV_MODE) return SERVER_KEY_STATUS;
+  return apiFetch<WorkspaceKeyStatus>(`/admin/workspaces/${encodeURIComponent(wsId)}/openai-key`, { method: "DELETE" });
+}
+
+export type MasterAdmin = {
+  telegram_id: number;
+  added_by: number | null;
+  created_at: string | null;
+  /** Константа в коде: снять нельзя. */
+  builtin: boolean;
+  /** Имя из профиля; нет профиля — null, показываем id. */
+  name: string | null;
+};
+
+export async function fetchMasterAdmins(): Promise<MasterAdmin[]> {
+  if (DEV_MODE) return [{ telegram_id: 744230399, added_by: null, created_at: null, builtin: true, name: "Owner" }];
+  return apiFetch<MasterAdmin[]>("/admin/master-admins");
+}
+
+export async function addMasterAdmin(telegramId: number): Promise<MasterAdmin[]> {
+  if (DEV_MODE) return fetchMasterAdmins();
+  return apiFetch<MasterAdmin[]>("/admin/master-admins", {
+    method: "POST",
+    body: JSON.stringify({ telegram_id: telegramId }),
+  });
+}
+
+export async function removeMasterAdmin(telegramId: number): Promise<MasterAdmin[]> {
+  if (DEV_MODE) return fetchMasterAdmins();
+  return apiFetch<MasterAdmin[]>(`/admin/master-admins/${telegramId}`, { method: "DELETE" });
+}
+
+// ── Сбой ключа к нейронке: баннер админам (#233) ─────────────────────────────
+export type AiKeyIssue = {
+  group_id: string;
+  workspace_name: string;
+  /** Чей ключ обслуживал упавший вызов: ключ пространства или общий ключ сервера. */
+  source: "workspace" | "server";
+  /** rejected — ключ не принят; quota — кончились деньги или квота; errors — стабильные сбои. */
+  reason: "rejected" | "quota" | "errors";
+  since: string | null;
+  last_failure_at: string | null;
+};
+export type AiStalled = { group_id: string; workspace_name: string; count: number; oldest_at: string };
+export type AiHealth = { issues: AiKeyIssue[]; stalled: AiStalled[] };
+
+/** Что сломалось с нейронкой: админу — своё пространство, мастер-админу — все. Участникам — 403. */
+export async function fetchAiHealth(): Promise<AiHealth> {
+  if (DEV_MODE) {
+    return {
+      issues: [{ group_id: "cee", workspace_name: "IMF BD", source: "workspace", reason: "quota", since: new Date(Date.now() - 3_600_000).toISOString(), last_failure_at: new Date().toISOString() }],
+      stalled: [{ group_id: "cee", workspace_name: "IMF BD", count: 2, oldest_at: new Date(Date.now() - 2 * 3_600_000).toISOString() }],
+    };
+  }
+  return apiFetch<AiHealth>("/admin/ai-health");
+}
+
+/** Назначить или снять админа пространства — только мастер-админ. */
+export async function setWorkspaceAdmin(wsId: string, telegramId: number, isAdmin: boolean): Promise<void> {
+  if (DEV_MODE) return;
+  await apiFetch<{ ok: boolean }>(`/admin/workspaces/${encodeURIComponent(wsId)}/users/${telegramId}/admin`, {
+    method: "PUT",
+    body: JSON.stringify({ is_admin: isAdmin }),
+  });
 }

@@ -118,6 +118,8 @@ export type SprintStats = {
    * посчитанных до #576, ключа нет.
    */
   withdrawn?: number;
+  /** Ушли переносом в другой спринт (снимки, 22.10.2026). У итогов, посчитанных раньше, ключа нет. */
+  moved?: number;
   check_ok: number;
   check_risk: number;
   check_problem: number;
@@ -189,10 +191,29 @@ export type SprintCycleItem = {
   /** Когда задачу сняли из идущего спринта (#576); в составе (`items`) всегда null. */
   withdrawn_at?: string | null;
   /**
+   * Задача ушла переносом (22.10.2026): строка — снимок на момент ухода (`title`, `status`,
+   * `due_date` тогдашние). В составе (`items`) всегда null; снимки — в `SprintCycleDetail.moved`.
+   */
+  moved?: SprintMovedInfo | null;
+  /**
    * Устарело (09.10.2026): приватных задач больше нет, сервер шлёт false или не шлёт вовсе.
    * Клиент поле не читает; оставлено необязательным, чтобы не сломаться о старый ответ.
    */
   hidden?: boolean;
+};
+
+/** Куда и почему ушла задача — зеркало `MovedInfo` из `_shared/tasks/sprint-items.ts`. */
+export type SprintMovedInfo = {
+  /** Спринт-цель; null — цель удалена («перенесена (спринт удалён)»). */
+  to_cycle_id: string | null;
+  to_cycle_name: string | null;
+  at: string;
+  /** Кто перенёс; null — автоматика (сменили срок в карточке). */
+  by: number | null;
+  /** Причина; null — ещё не вписали. */
+  reason: string | null;
+  /** Срок задачи сейчас («срок A → B»). */
+  due_now: string | null;
 };
 
 /** Событие журнала пространства: кто и что сделал. Пишется не в таблицу — собирается из
@@ -227,6 +248,45 @@ export type SprintCycleDetail = SprintCycle & {
    * знаменателе процента. Старый сервер поля не отдаёт — тогда считаем без них.
    */
   withdrawn?: SprintCycleItem[];
+  /** Ушли переносом (22.10.2026): блок «Ушли из спринта». Старый сервер поля не отдаёт. */
+  moved?: SprintCycleItem[];
+};
+
+/**
+ * Доска спринтов (22.10.2026): ответ GET /sprint-cycles/board — зеркало `BoardData` из
+ * `_shared/tasks/sprint-board-load.ts`. Мастер-план — группы пространства с их задачами; у каждой
+ * задачи `cycle_ids` — спринты, в которых она живёт (по порядку начала, снимки не считаются).
+ */
+export type BoardPlanTask = {
+  id: string;
+  title: string;
+  status: string;
+  due_date: string | null;
+  assignees: string[];
+  assignee_telegram_ids: number[];
+  /** Подзадача сидит под родителем той же группы; иначе — своей строкой. */
+  parent_id: string | null;
+  created_at: string;
+  cycle_ids: string[];
+};
+
+export type BoardPlanGroup = { id: string; name: string; tasks: BoardPlanTask[] };
+
+export type SprintBoardCycle = {
+  cycle: SprintCycle;
+  items: SprintCycleItem[];
+  /** Снимки ушедших переносом. */
+  moved: SprintCycleItem[];
+  /** Снятые из идущего спринта — нужны шапке для процента от плана старта. */
+  withdrawn: SprintCycleItem[];
+  /** false — состав не загружен (принятый спринт): итоги в `cycle.stats`, состав по запросу. */
+  loaded: boolean;
+};
+
+export type SprintBoardData = {
+  plan: { groups: BoardPlanGroup[] };
+  /** Спринты пространства слева направо по времени. */
+  cycles: SprintBoardCycle[];
 };
 
 export type Project = {
@@ -277,6 +337,8 @@ export type Person = {
   name: string;
   email: string | null;
   telegram_id: number | null;
+  /** Фото из Google-входа; null — нет фото или нет аккаунта */
+  avatar_url?: string | null;
 };
 
 // Стикеры-задания на главной (GET /stickers). Зеркало ответа supabase/functions/swarm-api/stickers.ts.
@@ -328,6 +390,8 @@ export type User = {
   username: string | null;
   role: string | null;
   markets: string[];
+  /** Фото из Google-входа; null — нет */
+  avatar_url?: string | null;
 };
 
 export type Me = {
@@ -352,8 +416,10 @@ export type Me = {
     applies: boolean;
     /** Пройден в этой сессии. */
     done: boolean;
-    /** Включён ли замок обязательности (SECOND_STEP_REQUIRED в swarm-api). */
+    /** Действует ли замок обязательности сейчас (SECOND_STEP_REQUIRED в swarm-api). */
     required: boolean;
+    /** Дата ISO, с которой замок начинает действовать; null/нет поля — даты нет (сервер до 19.10.2026). */
+    required_from?: string | null;
     /** Момент входа (секунды): по нему браузер помнит, что за этот вход уже пробовали. */
     session: number | null;
   };
@@ -470,6 +536,11 @@ export type AgentMeeting = {
   // Чья запись в стенограмме (#788): bot — бот встреч, recorder — рекордер на Mac; null — ещё не
   // расшифровано. Подпись источника — через recordedByOf()/sourceLabel(), не напрямую.
   recorded_by?: "bot" | "recorder" | null;
+  // Бот встреч пишет встречу прямо сейчас (флаг + свежий удар по часам сервера, #1026): «Идёт
+  // запись» и плашка ON AIR вместо «Готовим тезисы…». Считает сервер (isBotRecordingNow), не клиент.
+  recording_now?: boolean;
+  // Секунды записи (heartbeat бота растит их по ходу встречи).
+  recorded_seconds?: number | null;
   // Кто завёл строку: у бота встреч — scriba-<сборка>.
   agent_version?: string | null;
   // Текст тезисов — только в ДЕТАЛИ. В списке вместо него признак наличия (issue #108).

@@ -119,11 +119,19 @@ function itemLine(i: SprintItem): string {
   return `  • ${mark} ${i.title}${who}${due}${plan}${check}${carry}${removed} (task_id: ${i.task_id ?? "—"})`;
 }
 
+/** Снимок ушедшей переносом задачи (22.10.2026): куда и почему. */
+function movedLine(i: SprintItem): string {
+  const to = i.moved?.to_cycle_name ?? "спринт удалён";
+  const why = i.moved?.reason ? `причина: ${i.moved.reason}` : "причина не указана";
+  return `  • ${i.title} → ${to} · ${why} (task_id: ${i.task_id ?? "—"})`;
+}
+
 export function formatSprint(
   cycle: SprintCycle,
   spaceName: string | null,
   items: readonly SprintItem[],
   stats: SprintStats,
+  moved: readonly SprintItem[] = [],
 ): string {
   const head = [
     `Спринт «${cycle.name}» — ${STAGE[cycle.status] ?? cycle.status} (id: ${cycle.id})`,
@@ -133,11 +141,14 @@ export function formatSprint(
     (stats.cancelled ? ` · отменено: ${stats.cancelled}` : "") +
     // Итоги, посчитанные до #576, этого ключа не знают — нет цифры, нет и хвоста.
     (stats.withdrawn ? ` · снято из плана: ${stats.withdrawn} (в плане, не выполнены)` : ""),
+    // Итоги, посчитанные до 22.10.2026, ключа `moved` не знают.
+    stats.moved ? ` · перенесено в другие спринты: ${stats.moved}` : "",
     `Сверка: идёт ${stats.check_ok}, риск ${stats.check_risk}, проблема ${stats.check_problem}`,
   ];
   if (cycle.summary) head.push(`Итог: ${cycle.summary}`);
+  const gone = moved.length ? `\n\nУшли из спринта (${moved.length}):\n${moved.map(movedLine).join("\n")}` : "";
   if (items.length === 0) {
-    return `${head.join("\n")}\n\nСостав пуст. Добавить: add_sprint_tasks.`;
+    return `${head.join("\n")}\n\nСостав пуст. Добавить: add_sprint_tasks.${gone}`;
   }
 
   const byProject = new Map<string, SprintItem[]>();
@@ -146,7 +157,7 @@ export function formatSprint(
     byProject.set(key, [...(byProject.get(key) ?? []), i]);
   }
   const body = [...byProject.entries()].map(([p, list]) => `${p}:\n${list.map(itemLine).join("\n")}`);
-  return `${head.join("\n")}\n\nСостав (${items.length}):\n${body.join("\n")}`;
+  return `${head.join("\n")}\n\nСостав (${items.length}):\n${body.join("\n")}${gone}`;
 }
 
 /** Больше событий Claude в ответ не кладём: лента за всё время — сотни строк. */

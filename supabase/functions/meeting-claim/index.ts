@@ -1,5 +1,6 @@
 // ВСЕХ функциях); перевод на голые спецификаторы из import-map из ветки непроверяем. См. _shared/agent-auth.ts.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { openAIKeyHandle } from "../_shared/workspace-keys.ts";
 import { occupyPatch, refreshPatch } from "./claim-patch.ts";
 import {
   botJoinsOverShort,
@@ -50,7 +51,6 @@ import { externalFetch, VIA_OPENAI_EMBEDDING } from "../_shared/external-fetch.t
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY")!;
 
 // Отказ агенту без действующего приглашения — тот же текст, что в agent-scope.ts.
 const NO_INVITE = "service agent: a manual meeting needs a valid invite — the person pastes the call link in Swarm";
@@ -126,18 +126,21 @@ function fail(message: string, status = 400): Response {
   return json({ ok: false, error: message }, status);
 }
 
-async function getEmbedding(text: string): Promise<number[]> {
+// Ключ — пространства человека (#233): пока у него своего нет, ключ сервера.
+async function getEmbedding(groupId: string | null, text: string): Promise<number[]> {
+  const key = await openAIKeyHandle(supabase, groupId);
   const res = await externalFetch("https://api.openai.com/v1/embeddings", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${OPENAI_API_KEY}`,
+      Authorization: `Bearer ${key.key}`,
     },
     body: JSON.stringify({
       model: "text-embedding-3-small",
       input: text.slice(0, 8000),
     }),
   }, { ...VIA_OPENAI_EMBEDDING, usage: { purpose: "meeting-claim:embedding" } });
+  await key.noteResponse(res);
   const data = await res.json();
   if (!res.ok) {
     throw new Error(
@@ -608,7 +611,7 @@ async function savePersonalNotes(
 ): Promise<void> {
   const flat = notes.map((n) => `[${formatTs(n.ts)}] ${n.text}`).join("\n");
   const summary = `Личные пометки со встречи${title ? `: ${title}` : ""}`;
-  const embedding = await getEmbedding(flat);
+  const embedding = await getEmbedding(identity.groupId, flat);
   const nowIso = new Date().toISOString();
 
   const { data: existing } = await onlyLiveEntries(

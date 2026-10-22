@@ -186,7 +186,7 @@ export const SPRINT_TOOL_DEFINITIONS = [
   ),
   tool(
     "mark_sprint_task",
-    "Отметка по задаче в спринте: сверка на чекпоинте (идёт/риск/проблема + комментарий) и пометка «к переносу» с причиной.",
+    "Отметка по задаче в спринте: сверка на чекпоинте (идёт/риск/проблема + комментарий). Пометка «к переносу» — старый способ, перенос задачи теперь делает move_sprint_task.",
     {
       sprint_id: SPRINT_ID,
       task_id: { type: "string", description: "task_id из get_sprint" },
@@ -209,5 +209,23 @@ export const SPRINT_TOOL_DEFINITIONS = [
       },
     },
     ["sprint_id", "task_id"],
+  ),
+  tool(
+    "move_sprint_task",
+    "Перенести задачу из идущего спринта в запланированный того же пространства — сразу, а не на приёмке. Причина обязательна; в идущем остаётся снимок «перенесена → спринт · причина». Срок задачи не меняется, если не передать new_due.",
+    {
+      sprint_id: { ...SPRINT_ID, description: "id идущего спринта, из которого переносим" },
+      task_id: { type: "string", description: "task_id из get_sprint" },
+      target_sprint_id: {
+        type: "string",
+        description: "id запланированного спринта того же пространства (get_sprints)",
+      },
+      reason: { type: "string", description: "Почему не успели в этом спринте — уходит комментарием в задачу" },
+      new_due: {
+        type: ["string", "null"],
+        description: "Новый срок задачи, YYYY-MM-DD. Не передавать — срок остаётся прежним",
+      },
+    },
+    ["sprint_id", "task_id", "target_sprint_id", "reason"],
   ),
 ];

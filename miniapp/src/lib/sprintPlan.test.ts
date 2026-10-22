@@ -1,8 +1,14 @@
 // План пространства спринтов (решение 07.10.2026): что входит, как считается, как фильтруется.
 import { assertEquals } from "@std/assert";
-import { buildPlan, canTake, planProjects } from "./sprintPlan.ts";
+import {
+  buildPlan,
+  canTake,
+  PLAN_UNASSIGNED,
+  planPeople,
+  planProjects,
+} from "./sprintPlan.ts";
 import { splitMine } from "./sprintMine.ts";
-import type { Project, Task } from "../types.ts";
+import type { Project, Task, User } from "../types.ts";
 
 const SPACE = "space-q";
 
@@ -133,4 +139,51 @@ Deno.test("splitMine: своя — по telegram_id в исполнителях 
   assertEquals(mine.map((i) => i.task_id), ["a"]);
   assertEquals(others.map((i) => i.task_id), ["b", null]);
   assertEquals(splitMine(items, tasks, null).mine, []);
+});
+
+const USERS = [
+  { telegram_id: 1, name: "Аня" },
+  { telegram_id: 2, name: "Борис" },
+] as User[];
+
+Deno.test("buildPlan: фильтр по человеку оставляет его задачи и пересчитывает счётчики групп и плана", () => {
+  const projects = [group("g1", "1. Рейтинги"), group("g2", "2. Аудиты")];
+  const tasks = [
+    task("a1", "g1", { assignee_telegram_ids: [1], status: "done" }),
+    task("a2", "g1", { assignee_telegram_ids: [1] }),
+    task("b1", "g1", { assignee_telegram_ids: [2] }),
+    task("n1", "g2", { assignees: [] }),
+    task("kid", "g1", { assignees: ["Аня"] }),
+  ];
+  const plan = buildPlan(tasks, projects, SPACE, new Set(), {
+    assignee: "Аня",
+    users: USERS,
+  });
+  // g2 без задач Ани спрятана, как при поиске.
+  assertEquals(plan.groups.map((g) => g.project.id), ["g1"]);
+  assertEquals(plan.groups[0].tasks.map((t) => t.task.id).sort(), [
+    "a1",
+    "a2",
+    "kid",
+  ]);
+  assertEquals([plan.groups[0].done, plan.groups[0].total], [1, 3]);
+  assertEquals([plan.done, plan.total], [1, 3]);
+});
+
+Deno.test("buildPlan: «Без исполнителя» — только задачи без людей; planPeople перечисляет людей плана", () => {
+  const projects = [group("g1", "1. Рейтинги")];
+  const tasks = [
+    task("a", "g1", { assignee_telegram_ids: [2] }),
+    task("n", "g1"),
+    task("draft", "g1", { status: "draft", assignees: ["Призрак"] }),
+  ];
+  const plan = buildPlan(tasks, projects, SPACE, new Set(), {
+    assignee: PLAN_UNASSIGNED,
+    users: USERS,
+  });
+  assertEquals(plan.groups[0].tasks.map((t) => t.task.id), ["n"]);
+  assertEquals(planPeople(tasks, projects, SPACE, USERS), {
+    names: ["Борис"],
+    hasUnassigned: true,
+  });
 });

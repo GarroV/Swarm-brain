@@ -59,7 +59,7 @@ jobs:
     steps:
       # fetch-depth: 0 — нужны метка prod-deployed и история: без них не понять, какие edge-функции
       # изменились с прошлой раскатки (на shallow-клоне diff по метке невозможен).
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
       # Ключ шлюза раскатки нужен и для функций после мёржа, и для гейта миграций до него.

@@ -43,6 +43,22 @@ export function isMissedBotSlot(row: SlotRow, nowMs: number = Date.now()): boole
   const hasContent = row.recorded_by != null || row.entry_id != null || row.has_draft_notes === true;
   if (recorded || hasContent) return false;
   if (row.summary_status === "failed") return true;
-  const liveNow = row.agent_last_recording === true && isFreshBotBeat(row.agent_last_seen_at, nowMs);
-  return !liveNow;
+  return !isBotBeatLive(row, nowMs);
+}
+
+/** Бот пишет прямо сейчас по флагу и удару: agent_last_recording взведён И удар свежий. */
+function isBotBeatLive(row: SlotRow, nowMs: number): boolean {
+  return row.agent_last_recording === true && isFreshBotBeat(row.agent_last_seen_at, nowMs);
+}
+
+/**
+ * «Идёт запись» для экрана вычитки: строку заявил бот встреч, он пишет её сейчас (флаг + свежий
+ * удар), тезисов и сводки ещё нет. Решает сервер по своим часам — клиент порог не знает (#1026).
+ * Без summary_status и черновика тезисов: после конца записи строка уже «Готовим тезисы…»/готова.
+ */
+export function isBotRecordingNow(row: SlotRow, nowMs: number = Date.now()): boolean {
+  const byBot = typeof row.agent_version === "string" && row.agent_version.startsWith(`${BOT_PROFILE.name}-`);
+  if (!byBot) return false;
+  if (row.summary_status != null || row.has_draft_notes === true) return false;
+  return isBotBeatLive(row, nowMs);
 }

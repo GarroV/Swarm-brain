@@ -8,7 +8,7 @@
 
 import { withUsageLabel } from "./model-usage.ts";
 import { type SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { chatComplete, loadMeetingTextForModel } from "./meeting-processor.ts";
+import { chatComplete, loadMeetingGroupId, loadMeetingTextForModel } from "./meeting-processor.ts";
 import {
   NO_INVENTED_LINKS_RULE,
   NO_SUBSTITUTED_NAMES_RULE,
@@ -86,6 +86,7 @@ export async function answerMeetingQuestion(
 ): Promise<string> {
   const meetingText = await loadMeetingTextForModel(supabase, meetingId);
   if (meetingText === null) throw new MeetingAskError(400, "У встречи нет транскрипта — спросить не по чему");
+  const auth = { supabase, groupId: await loadMeetingGroupId(supabase, meetingId) };
   const raw = await withUsageLabel(
     { meetingId },
     () =>
@@ -93,6 +94,7 @@ export async function answerMeetingQuestion(
         temperature: 0.2,
         maxTokens: 1200,
         purpose: "meeting:ask",
+        auth,
       }),
   );
   const answer = normalizeAskAnswer(raw);

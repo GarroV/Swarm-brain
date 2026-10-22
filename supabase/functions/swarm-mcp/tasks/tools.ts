@@ -31,6 +31,7 @@ import {
   type RecentCommentRow,
 } from "./format.ts";
 import { notifyPerson } from "../../_shared/notify-person.ts";
+import { masterAdminFlag } from "../../_shared/users/master-admins.ts";
 import { escapeHtml } from "../../_shared/telegram-html.ts";
 
 // Оверсайт руководителя по ЗАДАЧАМ — осознанное решение владельца, см. docs/decisions/2026-08-21-admin-visibility.md.
@@ -257,7 +258,10 @@ export async function toolAddTask(args: {
   if (args.created_by_name?.trim()) {
     const found = await matchAssignee(args.created_by_name.trim());
     const target = found ? await loadTarget(found.telegram_id) : null;
-    const denial = onBehalfDenial(await loadCaller(callerId, groupId, ADMIN_USER_ID), target);
+    const denial = onBehalfDenial(
+      await loadCaller(callerId, groupId, ADMIN_USER_ID, await masterAdminFlag(supabase, callerId)),
+      target,
+    );
     if (denial) return denial;
     if (found && found.telegram_id !== callerId) creator = found;
   }

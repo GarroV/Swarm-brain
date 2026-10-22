@@ -61,7 +61,7 @@ async function searchCandidates(query: string, userId: number, groupId: string):
   };
 
   // 1. Семантика — только уверенные совпадения (порог 0.4, не 0.1).
-  const emb = await getEmbedding(query).catch(() => null);
+  const emb = await getEmbedding(query, groupId).catch(() => null);
   if (emb) {
     const vec = await matchEntries(supabase, emb, {
       groupId,
