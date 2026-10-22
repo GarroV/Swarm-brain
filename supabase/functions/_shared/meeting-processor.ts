@@ -162,7 +162,7 @@ interface MeetingRow {
 // вызова. 401 на ключе пространства фиксируется в базе (`reportKeyRejected`), на ключ сервера не уходим.
 export type ModelAuth = { supabase: SupabaseClient; groupId: string | null | undefined };
 
-async function openaiFetch(
+export async function openaiFetch(
   auth: ModelAuth,
   url: string,
   init: RequestInit,

@@ -139,6 +139,7 @@ claude mcp add supabase-swarm -- npx -y @supabase/mcp-server-supabase@0.12.0 \
 | Concern | Файлы | Детали |
 |---|---|---|
 | Все HTTP-эндпоинты (задачи/entries/встречи/поиск/дайджест) | `swarm-api/index.ts` | §swarm-api (канон эндпоинтов) |
+| 🧭 **Доска «Сегодня» рекордера и задача голосом** (Bumblebee, решение [2026-10-22](decisions/2026-10-22-bumblebee-hub.md)) — `GET /board/today` (мои задачи `due_date <= date` без done/cancelled/архива, просроченные сверху, до 200 + `tasks_total`; встречи дня — общая `loadTodayMeetings` с `GET /calendar/today`; `config` — размеры доски из `app_settings.recorder_board`, дефолты в коде) и `POST /tasks/voice` (multipart-аудио ≤ 2 МБ → `gpt-transcribe` с фолбэком на `whisper-1` → разбор полей моделью `EXTRACT_MODEL` → ЧИСТАЯ `normalizeVoiceTask`: срок не раньше сегодня иначе +1 день, страна только из `allowed_markets`; задача на звонящего, `source=recorder_voice`, `confirmed`; аудио нигде не хранится). Отмена — `DELETE /tasks/:id` + `POST /tasks/:id/restore` | `swarm-api/board.ts`, `swarm-api/today-meetings.ts`, `_shared/{voice-task,voice-task-llm,short-transcribe,board-config}.ts` | §swarm-api (эндпоинты), ядро для порчи — `voice-task.ts`, `board-config.ts` |
 | **Доступ к `entries`** (приватность+воркспейс) — НЕ грепать напрямую | `swarm-api/entries-guard.ts` | §Контроль доступа |
 | Ошибки API: что видит клиент при сбое (общий текст 5xx, подробность в лог) | `swarm-api/client-error.ts` (`withErrorBoundary`, `serverError`); детектор `swarm-api/no-raw-error.test.ts` | §swarm-api (Обработка ошибок) |
 | Админка (воркспейсы/бродкаст/профили) | `swarm-api/admin.ts`; границы (объём = свой воркспейс, у суперадмина — все; аккаунт суперадмина — только ему; уведомление о смене почты) — канон `_shared/users/admin-scope.ts` (веб — `swarm-api/admin-scope.ts`, бот `sa_*` — `swarm-bot/handlers/superadmin-scope.ts`, бот `/users` и кнопки профиля — `swarm-bot/handlers/users-scope.ts`) | §swarm-api, §Контроль доступа |
@@ -376,6 +377,7 @@ claude mcp add supabase-swarm -- npx -y @supabase/mcp-server-supabase@0.12.0 \
 | `granola_last_polled_at` | обновляется поллером |
 | `deploy_notice` | `{at, until, ru?, en?, kind?}` пока объявлено обновление (`kind:'freeze'` — плашка перед заморозкой); строки нет = объявления нет |
 | `maintenance` | `{id, starts_at, until, started_at, message_en, message_ru}` пока идут или запланированы работы (до `starts_at` не действует); строки нет = заморозки нет |
+| `recorder_board` | `{task_rows?, panel_width?, meetings_width?, notes_height?, refresh_seconds?}` — размеры доски «Сегодня» рекордера (по умолчанию 10 / 720 / 240 / 260 / 60); читает `GET /board/today`, неверное поле → дефолт этого поля, строки нет = дефолты (`_shared/board-config.ts`). Правка применяется у всех без новой сборки рекордера |
 
 ---
 
