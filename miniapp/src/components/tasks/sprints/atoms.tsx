@@ -5,7 +5,14 @@ import { RoyIcon } from "@/components/roy/icons";
 import { useDt } from "@/components/roy/nav";
 import { fmtDayShort, isOverdue } from "./format";
 import { avatarTone, initials } from "@/lib/people";
-import { createContext, useContext, useMemo, useState } from "react";
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { cn } from "@/lib/utils";
 import type { ReactNode } from "react";
 import { Avatar } from "@/components/roy/ui";
@@ -161,6 +168,8 @@ export function NoteBadge({ label, note, emptyHint, title, onClick }: {
     <button
       type="button"
       title={tip}
+      // Метка для NoteEditor: клик по значку — его собственный переключатель, а не «клик вне поля».
+      data-note-toggle=""
       onClick={(e) => {
         e.stopPropagation();
         onClick();
@@ -186,13 +195,27 @@ export function NoteEditor({ initial, placeholder, onSave, onClose }: {
 }) {
   const dt = useDt();
   const [value, setValue] = useState(initial);
+  const box = useRef<HTMLDivElement>(null);
   const save = () => {
     const v = value.trim();
     if (v !== initial.trim()) void onSave(v || null);
     onClose();
   };
+  // Клик вне поля закрывает редактор БЕЗ сохранения (владелец 22.10.2026): сохраняют только Enter
+  // и кнопка. Клик по значку заметки не считается «вне» — значок сам открывает и закрывает.
+  useEffect(() => {
+    const onDown = (e: PointerEvent) => {
+      const t = e.target as Element | null;
+      if (!t || box.current?.contains(t)) return;
+      if (t.closest("[data-note-toggle]")) return;
+      onClose();
+    };
+    document.addEventListener("pointerdown", onDown, true);
+    return () => document.removeEventListener("pointerdown", onDown, true);
+  }, [onClose]);
   return (
     <div
+      ref={box}
       className="flex items-center gap-2"
       onClick={(e) => e.stopPropagation()}
     >

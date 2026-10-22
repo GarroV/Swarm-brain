@@ -360,6 +360,8 @@ let mockTasks: Task[] = [
     title: "Онбординг",
     project_id: "pr1",
     project_linked: true,
+    // Срок внутри идущего: окно переноса показывает «срок будет сорван» (22.10.2026).
+    due_date: mockDay(8),
   }),
   mkMock({
     id: "p_search",
@@ -2100,32 +2102,15 @@ let mockCycles: SprintCycle[] = [
     stats: MOCK_CYCLE_ACCEPTED_STATS,
     created_at: "2025-11-01T09:00:00.000Z",
   },
-  // Запланированные — цели окна переноса (22.10.2026): без них «→» в DEV_MODE некуда вести.
-  {
-    id: "sc_next",
-    group_id: "cee",
-    name: "Спринт 42",
-    start_date: mockDay(12),
-    end_date: mockDay(25),
-    tab_id: "sp1",
-    check_date: mockDay(18),
-    status: "draft",
-    created_by: null,
-    started_at: null,
-    accepted_at: null,
-    accepted_by: null,
-    summary: null,
-    stats: null,
-    created_at: "2025-11-01T09:00:00.000Z",
-  },
+  // Вторая цель окна переноса (22.10.2026): выбор между двумя запланированными.
   {
     id: "sc_next2",
     group_id: "cee",
     name: "Спринт 43",
-    start_date: mockDay(26),
-    end_date: mockDay(39),
+    start_date: mockDay(27),
+    end_date: mockDay(40),
     tab_id: "sp1",
-    check_date: mockDay(32),
+    check_date: mockDay(33),
     status: "draft",
     created_by: null,
     started_at: null,
@@ -2181,7 +2166,7 @@ let mockCycleItems: Record<string, MockItemRow[]> = {
       moved: { to_row: "sn2", at: mockDay(0) + "T08:00:00.000Z", by: null, reason: null, due_before: mockDay(9) },
     },
   ],
-  sc_next: [
+  sc_draft: [
     { id: "sn1", task_id: "p_rec", in_plan: true, carry_count: 1 },
     { id: "sn2", task_id: "p_b_csv", in_plan: true, carry_count: 1 },
   ],
