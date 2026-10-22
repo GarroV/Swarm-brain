@@ -176,7 +176,7 @@ Deno.test("автоматика комментариев и уведомлени
   }
 });
 
-Deno.test("сняли пометку переноса и поставили снова (человек или сдвиг срока): причина на месте, комментарий один", async () => {
+Deno.test("сняли пометку переноса и поставили снова, потом сдвиг срока: причина на месте, комментарий один", async () => {
   const db = await connect();
   try {
     const { cycleId, taskId } = await seed(db);
@@ -192,9 +192,9 @@ Deno.test("сняли пометку переноса и поставили сн
     await updateItem(cycleId, taskId, WS, { to_carry: true }, String(ME), ME);
     assertEquals(await reasonOf(), { to_carry: true, carry_reason: "ждём поставщика" });
 
-    // Снова сняли, а задачу переносит автоматика (срок за концом идущего, 22.10.2026): вписанная
-    // причина переходит в снимок и не спрашивается второй раз.
-    await updateItem(cycleId, taskId, WS, { to_carry: false }, String(ME), ME);
+    // Пометка стоит, а задачу переносит автоматика (срок за концом идущего, 22.10.2026): вписанная
+    // причина переходит в снимок и не спрашивается второй раз. Снятая пометка причину не передаёт —
+    // это проверяет sprint-move.db.test.ts.
     await db.queryArray`update tasks set due_date = current_date + 20 where id = ${taskId}`;
     assertEquals(await reasonOf(), { to_carry: false, carry_reason: "ждём поставщика" });
     const snap = await db.queryObject<{ moved: boolean }>`

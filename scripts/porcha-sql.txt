@@ -124,8 +124,12 @@ revoke all on function public.sprint_move_task(uuid, uuid, text, date, text) fro
 if cardinality(v_drafts) = 1 then|if true then|supabase/functions/_shared/tasks/sprint-autoplace.db.test.ts|supabase/migrations/20261022121000_sprint_autoplace_moves.sql
 if v_target_st > v_plan_end then|if false then|supabase/functions/_shared/tasks/sprint-autoplace.db.test.ts|supabase/migrations/20261022121000_sprint_autoplace_moves.sql
 and si.carried_from = v_item.id|and true|supabase/functions/_shared/tasks/sprint-autoplace.db.test.ts|supabase/migrations/20261022121000_sprint_autoplace_moves.sql
-set moved_at = null, moved_to = null, moved_by = null,|set moved_by = null,|supabase/functions/_shared/tasks/sprint-autoplace.db.test.ts|supabase/migrations/20261022121000_sprint_autoplace_moves.sql
+set moved_at = null, moved_to = null, moved_by = null, carry_reason = null,|set moved_by = null, carry_reason = null,|supabase/functions/_shared/tasks/sprint-autoplace.db.test.ts|supabase/migrations/20261022121000_sprint_autoplace_moves.sql
 if coalesce(current_setting('swarm.sprint_moving', true), '') = '1' then|if false then|supabase/functions/_shared/tasks/sprint-autoplace.db.test.ts|supabase/migrations/20261022121000_sprint_autoplace_moves.sql
 perform public.sprint_move_task_internal(v_item.id, v_target, null, null, null);|null;|supabase/functions/_shared/tasks/sprint-autoplace.db.test.ts|supabase/migrations/20261022121000_sprint_autoplace_moves.sql
 set frozen_due_date = old.due_date|set frozen_due_date = frozen_due_date|supabase/functions/_shared/tasks/sprint-autoplace.db.test.ts|supabase/migrations/20261022121000_sprint_autoplace_moves.sql
-carry_reason        = coalesce(v_reason, nullif(btrim(carry_reason), '')),|carry_reason        = v_reason,|supabase/functions/_shared/tasks/sprint-autoplace.db.test.ts|supabase/migrations/20261022120000_sprint_move.sql
+carry_reason        = coalesce(v_reason, case when v_src.to_carry then nullif(btrim(v_src.carry_reason), '') end),|carry_reason        = v_reason,|supabase/functions/_shared/tasks/sprint-move.db.test.ts|supabase/migrations/20261022120000_sprint_move.sql
+# Ревью 22.10.2026: чужая причина после оживления снимка, порядок замков «задача → строка».
+moved_by = null, carry_reason = null,|moved_by = null,|supabase/functions/_shared/tasks/sprint-move.db.test.ts|supabase/migrations/20261022121000_sprint_autoplace_moves.sql
+case when v_src.to_carry then|case when true then|supabase/functions/_shared/tasks/sprint-move.db.test.ts|supabase/migrations/20261022120000_sprint_move.sql
+select * into t from public.tasks where id = v_task_id for update;|select * into t from public.tasks where id = v_task_id;|supabase/functions/_shared/tasks/sprint-move.db.test.ts|supabase/migrations/20261022120000_sprint_move.sql

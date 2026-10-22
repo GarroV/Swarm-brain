@@ -102,6 +102,8 @@ begin
           -- Срок вернули: снимок оживает той же строкой (уникальность спринт+задача не даёт
           -- завести вторую), а строка-цель, созданная этим переносом, лишняя. Строку, стоявшую
           -- в цели по плану ещё до переноса, не трогаем — у неё своя причина быть там.
+          -- Причина прошлого переноса уже лежит комментарием в задаче; в строке её не оставляем —
+          -- иначе следующий перенос получил бы её молча.
           delete from public.sprint_items si
            using public.sprint_cycles c
            where si.id = v_item.moved_to
@@ -109,7 +111,7 @@ begin
              and c.id = si.cycle_id
              and c.status = 'draft';
           update public.sprint_items
-             set moved_at = null, moved_to = null, moved_by = null,
+             set moved_at = null, moved_to = null, moved_by = null, carry_reason = null,
                  frozen_at = null, frozen_title = null, frozen_status = null, frozen_assignees = null,
                  frozen_project = null, frozen_completed_at = null, frozen_due_date = null
            where id = v_item.id;

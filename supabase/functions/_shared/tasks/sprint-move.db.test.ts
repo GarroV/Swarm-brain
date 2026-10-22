@@ -360,6 +360,72 @@ Deno.test("приёмка не везёт снимок перенесённой:
   });
 });
 
+Deno.test("ожил снимок — прошлая причина не переходит в следующий автоперенос (снимок снова красный)", async () => {
+  await withScene(async (db, s) => {
+    const taskId = await addTask(db, s, { due: addDays(s.today, 3) });
+    const src = await place(db, s.A, taskId);
+    const due = (d: string) => db.queryArray`update tasks set due_date = ${d}::date where id = ${taskId}`;
+    const srcRow = async () => (await rows(db, taskId)).find((x) => x.id === src)!;
+
+    // Автоматика увезла задачу в F1, человек вписал причину в снимок (setMovedReason).
+    await due(addDays(s.today, 12));
+    await db.queryArray`update sprint_items set carry_reason = 'ждём юристов' where id = ${src}`;
+    // Срок вернули — снимок ожил. Причина уже лежит комментарием в задаче: в строке её быть не должно.
+    await due(addDays(s.today, 4));
+    const revived = await srcRow();
+    assertEquals(revived.moved_at, null, "снимок ожил");
+    assertEquals(revived.carry_reason, null, "причина прошлого переноса стёрта при оживлении");
+
+    // Срок снова сдвинули — новый снимок без причины, а не с причиной прошлого раза.
+    await due(addDays(s.today, 12));
+    const again = await srcRow();
+    assert(again.moved_at !== null, "снова снимок");
+    assertEquals(again.carry_reason, null, "новый снимок красный — причину спросят заново");
+  });
+});
+
+Deno.test("перенос подставляет вписанную причину только при живой пометке «к переносу»", async () => {
+  await withScene(async (db, s) => {
+    const marked = await addTask(db, s, { due: addDays(s.today, 3) });
+    const unmarked = await addTask(db, s, { due: addDays(s.today, 3) });
+    const a = await place(db, s.A, marked);
+    const b = await place(db, s.A, unmarked);
+    await db.queryArray`update sprint_items set to_carry = true, carry_reason = 'ждём поставщика' where id = ${a}`;
+    await db.queryArray`update sprint_items set to_carry = false, carry_reason = 'старая причина' where id = ${b}`;
+    await db.queryArray`update tasks set due_date = ${addDays(s.today, 12)}::date where id in (${marked}, ${unmarked})`;
+    assertEquals((await rows(db, marked)).find((x) => x.id === a)!.carry_reason, "ждём поставщика");
+    assertEquals((await rows(db, unmarked)).find((x) => x.id === b)!.carry_reason, null);
+  });
+});
+
+Deno.test("перенос и смена срока в карточке одновременно: без взаимоблокировки, второй получает отказ", async () => {
+  const db = await connect();
+  const second = await connect();
+  try {
+    const s = await build(db);
+    const taskId = await addTask(db, s, { due: addDays(s.today, 3) });
+    const src = await place(db, s.A, taskId);
+
+    // Карточка: транзакция уже держит строку задачи (любая правка задачи)…
+    await db.queryArray`begin`;
+    await db.queryArray`update tasks set title = 'правка в карточке' where id = ${taskId}`;
+    // …в это время человек жмёт «Перенести». Порядок замков «задача → строка спринта» ставит его
+    // в очередь за карточкой, не давая взять строку спринта раньше.
+    const racing = move(second, src, s.F1, "второй").then(() => "прошёл", (e: Error) => e.message);
+    await new Promise((r) => setTimeout(r, 300));
+    // …и карточка меняет срок: триггер переносит задачу и берёт строку спринта.
+    await db.queryArray`update tasks set due_date = ${addDays(s.today, 26)}::date where id = ${taskId}`;
+    await db.queryArray`commit`;
+    const outcome = await racing;
+    assert(outcome.includes("Задача уже перенесена"), `второй получил: ${outcome}`);
+    const live = (await rows(db, taskId)).filter((x) => x.moved_at === null);
+    assertEquals(live.map((x) => x.cycle_id), [s.F2], "задача в одном спринте — в спринте срока");
+  } finally {
+    await second.end();
+    await db.end();
+  }
+});
+
 Deno.test("функции переноса вызывает только service_role", async () => {
   const db = await connect();
   try {

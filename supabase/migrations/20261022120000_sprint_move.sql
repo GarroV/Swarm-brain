@@ -63,11 +63,20 @@ declare
   v_target_item uuid;
   v_withdrawn   timestamptz;
   v_revived     boolean := false;
+  v_task_id     uuid;
 begin
+  -- Порядок замков: СНАЧАЛА задача, потом строка спринта — тот же, что у смены срока в карточке
+  -- (UPDATE tasks держит задачу, триггер срока берёт строку). Обратный порядок давал
+  -- взаимоблокировку «перенос ↔ смена срока» (тест в sprint-move.db.test.ts).
+  select task_id into v_task_id from public.sprint_items where id = p_item_id;
+  if v_task_id is null then
+    raise exception 'Строка спринта не найдена' using errcode = 'P0001';
+  end if;
+  select * into t from public.tasks where id = v_task_id for update;
   -- Блокировка исходной строки: двое одновременно переносят одну задачу — второй ждёт первого и
   -- видит уже снимок («Задача уже перенесена»), а не кладёт задачу во второй спринт.
   select * into v_src from public.sprint_items where id = p_item_id for update;
-  if not found or v_src.task_id is null then
+  if not found or v_src.task_id is distinct from v_task_id then
     raise exception 'Строка спринта не найдена' using errcode = 'P0001';
   end if;
   if v_src.moved_at is not null then
@@ -82,7 +91,6 @@ begin
     raise exception 'Перенести можно только из идущего спринта' using errcode = 'P0001';
   end if;
 
-  select * into t from public.tasks where id = v_src.task_id for update;
   if t.archived_at is not null then
     raise exception 'Задача в архиве' using errcode = 'P0001';
   end if;
@@ -124,13 +132,14 @@ begin
 
   -- Снимок: состояние на момент ухода. Имя инициативы не замораживаем — его даёт живая задача
   -- (sprint-items.ts), снимок бывает только у задачи, которая продолжает жить.
-  -- Уже вписанная человеком причина (старая пометка «к переносу»; снятие пометки причину не
-  -- стирало — решение 21.10.2026) подставляется и не спрашивается второй раз.
+  -- Причина живой пометки «к переносу» (старый путь до 22.10.2026) подставляется и не
+  -- спрашивается второй раз. Без пометки — нет: в строке может лежать причина снятой пометки или
+  -- прошлого переноса, и чужая причина молча легла бы в новый снимок.
   update public.sprint_items
      set moved_at            = now(),
          moved_to            = v_target_item,
          moved_by            = p_actor,
-         carry_reason        = coalesce(v_reason, nullif(btrim(carry_reason), '')),
+         carry_reason        = coalesce(v_reason, case when v_src.to_carry then nullif(btrim(v_src.carry_reason), '') end),
          to_carry            = false,
          carry_auto          = false,
          frozen_at           = now(),
