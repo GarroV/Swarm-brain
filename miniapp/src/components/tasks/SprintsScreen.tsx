@@ -11,7 +11,6 @@ import {
   acceptSprintCycle,
   addTasksToSprintCycle,
   createSprintCycle,
-  createTask,
   deleteSprintCycle,
   fetchProjects,
   fetchSprintCycle,
@@ -42,12 +41,6 @@ import {
   spaceProjects,
   sprintKpi,
 } from "@/lib/initiatives";
-import { KanbanColumn } from "@/components/tasks/TaskKanban";
-import type {
-  KanbanDrag,
-  KanbanHandlers,
-  KanbanQuickAdd,
-} from "@/components/tasks/TaskKanban";
 import {
   PLAN_DRAG_MIME,
   PlanPanel,
@@ -59,8 +52,6 @@ import { TaskModal } from "@/components/TaskModal";
 import { RoyIcon } from "@/components/roy/icons";
 import { AvatarDirectoryProvider, PILL_BTN } from "./sprints/atoms";
 import { useConfirm } from "@/components/ui/confirm";
-import { buildQuickAddInput } from "@/lib/quickAddTask";
-import { projectLabel } from "@/lib/sprintPlan";
 import { useDt, useRoyNav } from "@/components/roy/nav";
 import { cn } from "@/lib/utils";
 import { useIsDesktop } from "@/components/roy/useIsDesktop";
@@ -100,11 +91,6 @@ import { fmtDay } from "@/components/tasks/sprints/format";
 // ⚠️ Не путать с доской «Проекты» (SprintBoard.tsx): там таблица `sprints` = ВКЛАДКИ доски,
 // имя историческое. Спринты живут в `sprint_cycles` и ходят через /sprint-cycles.
 //
-// Канбан — общий (TaskKanban.tsx), но колонок три: «Бэклога» в спринте нет, его роль играет
-// пул слева. Карточки внутри колонки сгруппированы заголовками проектов — это группировка,
-// а не копии проектов (в отличие от доски, где у каждого проекта своя полоса колонок).
-
-const SPRINT_SECTION = "__sprint__"; // канбан спринта — одна секция, drop меняет только статус
 const CLOSED = new Set(["done", "cancelled"]);
 const DEFAULT_LENGTH_DAYS = 13; // двухнедельный спринт: старт + 13 = ровно 14 дней
 
@@ -123,47 +109,6 @@ function defaultCycleName(from: Date, to: Date): string {
   return `Спринт ${dm(from)} — ${dm(to)}`;
 }
 
-/**
- * Карточка принятого спринта — из клона (`frozen_*`), живой задачи за ней может уже не быть.
- * Канбан рисует `Task`, поэтому собираем задачу-пустышку: она только для чтения (readOnly),
- * ни перетащить, ни открыть её нельзя.
- */
-function frozenCard(item: SprintCycleItem): Task {
-  return {
-    id: item.id,
-    title: item.title,
-    description: null,
-    assignees: item.assignees,
-    assignee_telegram_ids: [],
-    due_date: null,
-    remind_date: null,
-    reminded_at: null,
-    tags: [],
-    country: null,
-    task_role: null,
-    priority: null,
-    source: "sprint_archive",
-    status: item.status,
-    created_at: item.added_at,
-    updated_at: null,
-    meeting_id: null,
-    url: null,
-    group_id: null,
-    created_by_name: null,
-    start_date: null,
-    timeline_position: null,
-    sprint_id: null,
-    label_ids: [],
-    project_id: item.project_id,
-    project_linked: false,
-    parent_id: null,
-    tree_x: null,
-    tree_y: null,
-    recur_freq: null,
-    recur_anchor_dom: null,
-  };
-}
-
 export function SprintsScreen() {
   const dt = useDt();
 
@@ -175,10 +120,10 @@ export function SprintsScreen() {
   const [view, setView] = useSprintView();
   const [grouping, setGrouping] = useSprintGrouping();
   // Вкладка «Спринт» возвращает тот вид состава, с которого ушли на «Аналитику»/«Журнал»:
-  // канбанщик не должен каждый раз переключаться обратно.
-  const [lastBoard, setLastBoard] = useState<"list" | "board" | "kanban">("list");
+  // человек не должен каждый раз переключаться обратно.
+  const [lastBoard, setLastBoard] = useState<"list" | "board">("list");
   useEffect(() => {
-    if (view === "list" || view === "board" || view === "kanban") setLastBoard(view);
+    if (view === "list" || view === "board") setLastBoard(view);
   }, [view]);
   // Доска спринтов: растёт ли поверх неё версия, когда экран меняет данные мимо доски (карточка
   // задачи, приёмка) — доска перечитывает себя по этому счётчику.
@@ -241,20 +186,8 @@ export function SprintsScreen() {
   const [creating, setCreating] = useState(false);
   const [form, setForm] = useState({ name: "", start_date: "", end_date: "" });
   const [editing, setEditing] = useState<Task | null>(null);
-  const [drag, setDrag] = useState<KanbanDrag>(null);
   const [reportOpen, setReportOpen] = useState(true);
-  const [quickAdd, setQuickAdd] = useState<KanbanQuickAdd>(null);
   const [acceptOpen, setAcceptOpen] = useState(false);
-
-  const COLUMNS = useMemo(() => [
-    { status: "open", label: dt("Открыто", "Open"), bar: "var(--ink-mute)" },
-    {
-      status: "in_progress",
-      label: dt("В работе", "In progress"),
-      bar: "var(--status-prog)",
-    },
-    { status: "done", label: dt("Готово", "Done"), bar: "var(--status-done)" },
-  ], [dt]);
 
   const load = useCallback(async () => {
     try {
@@ -336,30 +269,6 @@ export function SprintsScreen() {
     [items],
   );
 
-  // Карточки канбана: у живого спринта — те же строки, что на доске проектов (одна задача,
-  // одна правда), у принятого — клон из архива.
-  const { cards, groupLabels } = useMemo(() => {
-    const byId = new Map(tasks.map((t) => [t.id, t]));
-    const labels = new Map<string, string | null>();
-    const out: Task[] = [];
-    for (const it of items) {
-      const live = it.frozen || !it.task_id ? undefined : byId.get(it.task_id);
-      const card = live ?? frozenCard(it);
-      out.push(card);
-      const liveProject = live
-        ? projects.find((p) => p.id === live.project_id)
-        : undefined;
-      // Полная подпись «Группа › Подпроект»: у подпроектов бывают тёзки, а по голому имени
-      // не видно, к какой группе относится полоса (в пуле подпись такая же).
-      labels.set(
-        card.id,
-        it.project ??
-          (liveProject ? projectLabel(liveProject, projects) : null),
-      );
-    }
-    return { cards: out, groupLabels: labels };
-  }, [items, tasks, projects]);
-
   const plan = items.filter((i) => i.in_plan);
   // Цифры шапки и дерево доски считает lib/initiatives — то же правило, что у серверных
   // итогов. Считать их здесь значило бы завести второй ответ на вопрос «сколько сделано».
@@ -419,38 +328,6 @@ export function SprintsScreen() {
   // «Не отмечено» показываем с дня сверки (D013): до него молчание — норма, а не сигнал.
   // Само правило — в lib/initiatives (под тестами): в двух экранах «с какого дня» разъедется.
   const unchecked = checksDue(detail?.check_date ?? null);
-
-  async function applyDrop(taskId: string, _section: string, status: string) {
-    setTasks((prev) =>
-      prev.map((t) => (t.id === taskId ? { ...t, status } : t))
-    );
-    try {
-      await updateTask(taskId, { status });
-    } catch {
-      load();
-    }
-    reloadDetail(selectedId);
-  }
-
-  // «+» в колонке: задача создаётся и сразу попадает в спринт — иначе кнопка обещала бы
-  // добавление в спринт, а задача оказывалась бы только в общем списке.
-  async function addTaskToColumn(
-    _section: string,
-    status: string,
-    title: string,
-  ) {
-    setQuickAdd(null);
-    const input = buildQuickAddInput(title, me, { status });
-    if (!input || !detail) return;
-    try {
-      const created = await createTask(input);
-      setTasks((prev) => [created, ...prev]);
-      await addTasksToSprintCycle(detail.id, [created.id]);
-      await reloadDetail(detail.id);
-    } catch {
-      load();
-    }
-  }
 
   // Задача, созданная карточкой, сразу попадает в текущий спринт — иначе «+ задача» внутри
   // спринта завела бы её мимо него, в общий список.
@@ -757,16 +634,6 @@ export function SprintsScreen() {
     }
   }
 
-  const kanban: KanbanHandlers = {
-    drag,
-    onDragChange: setDrag,
-    onDropTask: applyDrop,
-    quickAdd,
-    onQuickAddChange: setQuickAdd,
-    onQuickAddSubmit: addTaskToColumn,
-    onOpenTask: (t) => setEditing(t),
-  };
-
   // Хвосты приёмки: незакрытое и не упоминание. Через useMemo, чтобы окно приёмки получало
   // один и тот же массив между рендерами — новый массив на каждый рендер оно читает как
   // изменение состава.
@@ -775,9 +642,7 @@ export function SprintsScreen() {
     [items],
   );
 
-  // Канбан — только на компьютере (D003), поэтому на телефоне список показывается всегда,
-  // независимо от запомненного вида.
-  const effectiveView = view === "kanban" && !isDesktop ? "list" : view;
+  const effectiveView = view;
   const showBoard = effectiveView === "board";
   // Доске спринтов тесно в потолке 1280px (RoyApp): колонки идут во всю ширину монитора.
   useWidePane(showBoard);
@@ -934,7 +799,8 @@ export function SprintsScreen() {
 
   const editable = !!detail && !accepted;
   const sprintTab = !showAnalytics && !showJournal;
-  const planColumn = isDesktop && planOpen && editable && sprintTab && !showBoard;
+  const planColumn = isDesktop && planOpen && editable && sprintTab &&
+    !showBoard;
 
   // Список состава: одна отрисовка и для всего состава, и для блоков «Мои / Остальные».
   const initiativeList = (b: typeof board) => (
@@ -1050,543 +916,516 @@ export function SprintsScreen() {
 
   return (
     <AvatarDirectoryProvider users={users}>
-    <div className="flex flex-col h-full min-h-0">
-      {
-        /* Заголовок раздела с вкладками (стенд): на десктопе шапку оболочки заменяет эта строка,
+      <div className="flex flex-col h-full min-h-0">
+        {
+          /* Заголовок раздела с вкладками (стенд): на десктопе шапку оболочки заменяет эта строка,
           на телефоне остаются одни вкладки. */
-      }
-      <div
-        className="flex shrink-0 items-stretch gap-5 border-b border-line px-4 lg:px-5"
-        style={{ minHeight: isDesktop ? SHELL_BAR_H : 44 }}
-      >
-        {isDesktop && (
-          <h1
-            className="self-center font-semibold text-ink"
-            style={{ fontSize: 16, letterSpacing: "-0.01em" }}
-          >
-            {dt("Спринты", "Sprints")}
-          </h1>
-        )}
-        <SprintTabs
-          value={view}
-          onChange={(v) => setView(v === "list" ? lastBoard : v)}
-        />
-        <HeaderNotice className="self-center" />
-        {isDesktop && <NotificationsBell className="ml-auto self-center" />}
-      </div>
-
-      <SprintBar
-        spaceMenu={
-          <SpaceSwitcher
-            spaces={spaces}
-            value={space}
-            showOrphans={hasOrphans}
-            counts={new Map(
-              [
-                ...spaces.map((s) =>
-                  [
-                    s.id as string | null,
-                    cycles.filter((c) => c.tab_id === s.id).length,
-                  ] as const
-                ),
-                [null, cycles.filter((c) => c.tab_id === null).length] as const,
-              ],
-            )}
-            canManage={isAdmin && editMode}
-            onChanged={load}
-            onChange={(id) => {
-              setSpace(id);
-              setSpacePicked(true);
-              setSelectedId(null);
-            }}
-          />
         }
-        live={live}
-        archive={archive}
-        selectedId={selectedId}
-        onSelect={setSelectedId}
-        detail={detail}
-        sprintTab={sprintTab}
-        view={effectiveView}
-        onView={setView}
-        kanbanDisabled={!isDesktop}
-        planOpen={isDesktop ? planOpen : planSheet}
-        onPlan={editable
-          ? () => (isDesktop ? setPlanOpen(!planOpen) : setPlanSheet(true))
-          : undefined}
-        editMode={editMode}
-        onEditMode={() => setEditMode((v) => !v)}
-        busy={busy}
-        // Пустое пространство правкой не защищаем: там нечего сломать, а спрятанная за
-        // тумблер первая кнопка превращает экран в тупик.
-        onNewSprint={editMode || spaceCycles.length === 0
-          ? newSprint
-          : undefined}
-        onRename={isAdmin && editMode && editable
-          ? () => setRenaming(detail!.name)
-          : undefined}
-        onEditDates={isAdmin && editMode && editable
-          ? () =>
-            setDates({
-              start_date: detail!.start_date,
-              end_date: detail!.end_date,
-            })
-          : undefined}
-        onDelete={isAdmin && editable ? removeCycle : undefined}
-        move={isAdmin && editMode && editable && spaces.length > 0
-          ? { spaces, onMove: moveCycle }
-          : undefined}
-        onStart={start}
-        onAccept={() => setAcceptOpen(true)}
-        reportOpen={reportOpen}
-        onReport={() => setReportOpen((v) => !v)}
-        renameField={renaming !== null && detail
-          ? (
-            <input
-              autoFocus
-              value={renaming}
-              disabled={busy}
-              onChange={(e) => setRenaming(e.target.value)}
-              onBlur={() => setRenaming(null)}
-              onKeyDown={async (e) => {
-                if (e.key === "Escape") setRenaming(null);
-                if (e.key === "Enter" && renaming.trim()) {
-                  await updateSprintCycle(detail.id, { name: renaming.trim() });
-                  setRenaming(null);
-                  await load();
-                }
+        <div
+          className="flex shrink-0 items-stretch gap-5 border-b border-line px-4 lg:px-5"
+          style={{ minHeight: isDesktop ? SHELL_BAR_H : 44 }}
+        >
+          {isDesktop && (
+            <h1
+              className="self-center font-semibold text-ink"
+              style={{ fontSize: 16, letterSpacing: "-0.01em" }}
+            >
+              {dt("Спринты", "Sprints")}
+            </h1>
+          )}
+          <SprintTabs
+            value={view}
+            onChange={(v) => setView(v === "list" ? lastBoard : v)}
+          />
+          <HeaderNotice className="self-center" />
+          {isDesktop && <NotificationsBell className="ml-auto self-center" />}
+        </div>
+
+        <SprintBar
+          spaceMenu={
+            <SpaceSwitcher
+              spaces={spaces}
+              value={space}
+              showOrphans={hasOrphans}
+              counts={new Map(
+                [
+                  ...spaces.map((s) =>
+                    [
+                      s.id as string | null,
+                      cycles.filter((c) => c.tab_id === s.id).length,
+                    ] as const
+                  ),
+                  [
+                    null,
+                    cycles.filter((c) => c.tab_id === null).length,
+                  ] as const,
+                ],
+              )}
+              canManage={isAdmin && editMode}
+              onChanged={load}
+              onChange={(id) => {
+                setSpace(id);
+                setSpacePicked(true);
+                setSelectedId(null);
               }}
-              className="h-[28px] w-56 rounded-[7px] border border-accent-line bg-surface px-2.5 font-semibold text-ink outline-none"
+            />
+          }
+          live={live}
+          archive={archive}
+          selectedId={selectedId}
+          onSelect={setSelectedId}
+          detail={detail}
+          sprintTab={sprintTab}
+          view={effectiveView}
+          onView={setView}
+          planOpen={isDesktop ? planOpen : planSheet}
+          onPlan={editable
+            ? () => (isDesktop ? setPlanOpen(!planOpen) : setPlanSheet(true))
+            : undefined}
+          editMode={editMode}
+          onEditMode={() => setEditMode((v) => !v)}
+          busy={busy}
+          // Пустое пространство правкой не защищаем: там нечего сломать, а спрятанная за
+          // тумблер первая кнопка превращает экран в тупик.
+          onNewSprint={editMode || spaceCycles.length === 0
+            ? newSprint
+            : undefined}
+          onRename={isAdmin && editMode && editable
+            ? () => setRenaming(detail!.name)
+            : undefined}
+          onEditDates={isAdmin && editMode && editable
+            ? () =>
+              setDates({
+                start_date: detail!.start_date,
+                end_date: detail!.end_date,
+              })
+            : undefined}
+          onDelete={isAdmin && editable ? removeCycle : undefined}
+          move={isAdmin && editMode && editable && spaces.length > 0
+            ? { spaces, onMove: moveCycle }
+            : undefined}
+          onStart={start}
+          onAccept={() => setAcceptOpen(true)}
+          reportOpen={reportOpen}
+          onReport={() => setReportOpen((v) => !v)}
+          renameField={renaming !== null && detail
+            ? (
+              <input
+                autoFocus
+                value={renaming}
+                disabled={busy}
+                onChange={(e) => setRenaming(e.target.value)}
+                onBlur={() => setRenaming(null)}
+                onKeyDown={async (e) => {
+                  if (e.key === "Escape") setRenaming(null);
+                  if (e.key === "Enter" && renaming.trim()) {
+                    await updateSprintCycle(detail.id, {
+                      name: renaming.trim(),
+                    });
+                    setRenaming(null);
+                    await load();
+                  }
+                }}
+                className="h-[28px] w-56 rounded-[7px] border border-accent-line bg-surface px-2.5 font-semibold text-ink outline-none"
+                style={{ fontSize: 12.5 }}
+              />
+            )
+            : undefined}
+        />
+
+        {dates && detail && (
+          <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-line bg-surface-2 px-4 pb-2 lg:px-5">
+            <span className="text-ink-soft" style={{ fontSize: 12.5 }}>
+              {dt("Сроки спринта", "Sprint dates")}
+            </span>
+            <input
+              type="date"
+              aria-label={dt("Начало", "Start")}
+              value={dates.start_date}
+              onChange={(e) =>
+                setDates({ ...dates, start_date: e.target.value })}
+              className="h-[28px] rounded-[7px] border border-line bg-surface px-2 text-ink outline-none focus:border-accent-line"
               style={{ fontSize: 12.5 }}
             />
-          )
-          : undefined}
-      />
+            <input
+              type="date"
+              aria-label={dt("Конец", "End")}
+              value={dates.end_date}
+              onChange={(e) => setDates({ ...dates, end_date: e.target.value })}
+              className="h-[28px] rounded-[7px] border border-line bg-surface px-2 text-ink outline-none focus:border-accent-line"
+              style={{ fontSize: 12.5 }}
+            />
+            <button
+              type="button"
+              onClick={saveDates}
+              disabled={busy || !dates.start_date || !dates.end_date}
+              className="h-[28px] rounded-full bg-primary px-3 font-semibold text-primary-foreground disabled:opacity-50"
+              style={{ fontSize: 12.5 }}
+            >
+              {dt("Сохранить", "Save")}
+            </button>
+            <button
+              type="button"
+              onClick={() => setDates(null)}
+              className="px-2 text-ink-soft hover:text-ink"
+              style={{ fontSize: 12.5 }}
+            >
+              {dt("Отмена", "Cancel")}
+            </button>
+          </div>
+        )}
 
-      {dates && detail && (
-        <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-line bg-surface-2 px-4 pb-2 lg:px-5">
-          <span className="text-ink-soft" style={{ fontSize: 12.5 }}>
-            {dt("Сроки спринта", "Sprint dates")}
-          </span>
-          <input
-            type="date"
-            aria-label={dt("Начало", "Start")}
-            value={dates.start_date}
-            onChange={(e) => setDates({ ...dates, start_date: e.target.value })}
-            className="h-[28px] rounded-[7px] border border-line bg-surface px-2 text-ink outline-none focus:border-accent-line"
-            style={{ fontSize: 12.5 }}
-          />
-          <input
-            type="date"
-            aria-label={dt("Конец", "End")}
-            value={dates.end_date}
-            onChange={(e) => setDates({ ...dates, end_date: e.target.value })}
-            className="h-[28px] rounded-[7px] border border-line bg-surface px-2 text-ink outline-none focus:border-accent-line"
-            style={{ fontSize: 12.5 }}
-          />
-          <button
-            type="button"
-            onClick={saveDates}
-            disabled={busy || !dates.start_date || !dates.end_date}
-            className="h-[28px] rounded-full bg-primary px-3 font-semibold text-primary-foreground disabled:opacity-50"
-            style={{ fontSize: 12.5 }}
-          >
-            {dt("Сохранить", "Save")}
-          </button>
-          <button
-            type="button"
-            onClick={() => setDates(null)}
-            className="px-2 text-ink-soft hover:text-ink"
-            style={{ fontSize: 12.5 }}
-          >
-            {dt("Отмена", "Cancel")}
-          </button>
-        </div>
-      )}
+        {creating && (
+          <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-line bg-surface-2 px-4 pb-2 lg:px-5">
+            <input
+              autoFocus
+              value={form.name}
+              onChange={(e) => setForm({ ...form, name: e.target.value })}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") submitCycle();
+                if (e.key === "Escape") setCreating(false);
+              }}
+              placeholder={dt("Название спринта", "Sprint name")}
+              className="h-[28px] w-52 rounded-[7px] border border-line bg-surface px-2.5 text-ink outline-none focus:border-accent-line"
+              style={{ fontSize: 12.5 }}
+            />
+            <input
+              type="date"
+              value={form.start_date}
+              onChange={(e) => setForm({ ...form, start_date: e.target.value })}
+              className="h-[28px] rounded-[7px] border border-line bg-surface px-2 text-ink outline-none focus:border-accent-line"
+              style={{ fontSize: 12.5 }}
+            />
+            <input
+              type="date"
+              value={form.end_date}
+              onChange={(e) => setForm({ ...form, end_date: e.target.value })}
+              className="h-[28px] rounded-[7px] border border-line bg-surface px-2 text-ink outline-none focus:border-accent-line"
+              style={{ fontSize: 12.5 }}
+            />
+            <button
+              type="button"
+              onClick={submitCycle}
+              disabled={busy}
+              className="h-[28px] rounded-full bg-primary px-3 font-semibold text-primary-foreground disabled:opacity-50"
+              style={{ fontSize: 12.5 }}
+            >
+              {busy ? dt("Создание…", "Creating…") : dt("Создать", "Create")}
+            </button>
+            <button
+              type="button"
+              onClick={() => setCreating(false)}
+              className="px-2 text-ink-soft hover:text-ink"
+              style={{ fontSize: 12.5 }}
+            >
+              {dt("Отмена", "Cancel")}
+            </button>
+          </div>
+        )}
 
-      {creating && (
-        <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-line bg-surface-2 px-4 pb-2 lg:px-5">
-          <input
-            autoFocus
-            value={form.name}
-            onChange={(e) => setForm({ ...form, name: e.target.value })}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") submitCycle();
-              if (e.key === "Escape") setCreating(false);
-            }}
-            placeholder={dt("Название спринта", "Sprint name")}
-            className="h-[28px] w-52 rounded-[7px] border border-line bg-surface px-2.5 text-ink outline-none focus:border-accent-line"
-            style={{ fontSize: 12.5 }}
-          />
-          <input
-            type="date"
-            value={form.start_date}
-            onChange={(e) => setForm({ ...form, start_date: e.target.value })}
-            className="h-[28px] rounded-[7px] border border-line bg-surface px-2 text-ink outline-none focus:border-accent-line"
-            style={{ fontSize: 12.5 }}
-          />
-          <input
-            type="date"
-            value={form.end_date}
-            onChange={(e) => setForm({ ...form, end_date: e.target.value })}
-            className="h-[28px] rounded-[7px] border border-line bg-surface px-2 text-ink outline-none focus:border-accent-line"
-            style={{ fontSize: 12.5 }}
-          />
-          <button
-            type="button"
-            onClick={submitCycle}
-            disabled={busy}
-            className="h-[28px] rounded-full bg-primary px-3 font-semibold text-primary-foreground disabled:opacity-50"
-            style={{ fontSize: 12.5 }}
-          >
-            {busy ? dt("Создание…", "Creating…") : dt("Создать", "Create")}
-          </button>
-          <button
-            type="button"
-            onClick={() => setCreating(false)}
-            className="px-2 text-ink-soft hover:text-ink"
-            style={{ fontSize: 12.5 }}
-          >
-            {dt("Отмена", "Cancel")}
-          </button>
-        </div>
-      )}
-
-      {err && (
-        <p className="mx-4 mt-2 rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-1.5 text-xs text-destructive lg:mx-5">
-          {err}
-        </p>
-      )}
-
-      {showBoard
-        ? (
-          <SprintBoardView
-            space={space}
-            users={users}
-            reloadKey={boardVersion}
-            canDrag={isDesktop}
-            onOpenTask={(taskId) => {
-              const t = tasks.find((x) => x.id === taskId);
-              if (t) setEditing(t);
-              else setErr(dt("Не удалось открыть задачу", "Could not open the task"));
-            }}
-            onAddTask={(groupId) => {
-              setAddIntoSprint(false);
-              setAddingTo(groupId);
-            }}
-            onCloseSprint={(id) => {
-              setSelectedId(id);
-              setAcceptOpen(true);
-            }}
-            onChanged={load}
-          />
-        )
-        : !detail
-        ? (
-          <p className="px-4 py-10 text-center text-sm text-ink-soft/70">
-            {spaceCycles.length === 0
-              ? dt(
-                "В этом пространстве спринтов пока нет. Создайте первый: меню спринта в полосе сверху → «＋ Новый спринт» — это может любой участник.",
-                "No sprints in this space yet. Create the first one: the sprint menu in the bar above → “＋ New sprint” — any participant can.",
-              )
-              : dt(
-                "Выберите спринт в полосе сверху.",
-                "Pick a sprint in the bar above.",
-              )}
+        {err && (
+          <p className="mx-4 mt-2 rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-1.5 text-xs text-destructive lg:mx-5">
+            {err}
           </p>
-        )
-        : (
-          <>
-            {sprintTab && (
-              <SprintPulse
-                kpi={kpi}
-                showUnchecked={unchecked}
-                extra={plan.length > 0 ? items.length - plan.length : 0}
-                moved={moved.length}
-              />
-            )}
+        )}
 
-            {accepted && sprintTab && (
-              <p
-                className="mx-4 mt-2.5 rounded-[8px] border border-dashed border-line px-3 py-2 text-ink-soft lg:mx-5"
-                style={{ fontSize: 12.5 }}
-              >
-                {dt(
-                  `Архив: карточки — слепок на момент приёмки ${
-                    detail.accepted_at ? fmtDay(detail.accepted_at) : ""
-                  }, изменить их нельзя.`,
-                  `Archive: cards are a snapshot taken at acceptance${
-                    detail.accepted_at
-                      ? ` on ${fmtDay(detail.accepted_at)}`
-                      : ""
-                  } and cannot be changed.`,
+        {showBoard
+          ? (
+            <SprintBoardView
+              space={space}
+              users={users}
+              reloadKey={boardVersion}
+              canDrag={isDesktop}
+              onOpenTask={(taskId) => {
+                const t = tasks.find((x) => x.id === taskId);
+                if (t) setEditing(t);
+                else {setErr(
+                    dt("Не удалось открыть задачу", "Could not open the task"),
+                  );}
+              }}
+              onAddTask={(groupId) => {
+                setAddIntoSprint(false);
+                setAddingTo(groupId);
+              }}
+              onCloseSprint={(id) => {
+                setSelectedId(id);
+                setAcceptOpen(true);
+              }}
+              onChanged={load}
+            />
+          )
+          : !detail
+          ? (
+            <p className="px-4 py-10 text-center text-sm text-ink-soft/70">
+              {spaceCycles.length === 0
+                ? dt(
+                  "В этом пространстве спринтов пока нет. Создайте первый: меню спринта в полосе сверху → «＋ Новый спринт» — это может любой участник.",
+                  "No sprints in this space yet. Create the first one: the sprint menu in the bar above → “＋ New sprint” — any participant can.",
+                )
+                : dt(
+                  "Выберите спринт в полосе сверху.",
+                  "Pick a sprint in the bar above.",
                 )}
-              </p>
-            )}
-
-            <div className="flex-1 min-h-0 flex gap-3 px-4 pb-4 pt-3 lg:px-5">
-              {
-                /* Пул — способ набрать состав, поэтому он нужен обоим видам; на телефоне его
-                нет (D003): выбор галочками в узкой колонке нечитаем. */
-              }
-              {accepted && reportOpen && (
-                <SprintReport
-                  cycle={detail}
-                  onSaveSummary={async (summary) => {
-                    try {
-                      await updateSprintCycle(detail.id, { summary });
-                      setErr(null);
-                      await load();
-                    } catch (e) {
-                      setErr(
-                        e instanceof Error ? e.message : dt(
-                          "Не удалось сохранить итог",
-                          "Failed to save the summary",
-                        ),
-                      );
-                    }
-                  }}
+            </p>
+          )
+          : (
+            <>
+              {sprintTab && (
+                <SprintPulse
+                  kpi={kpi}
+                  showUnchecked={unchecked}
+                  extra={plan.length > 0 ? items.length - plan.length : 0}
+                  moved={moved.length}
                 />
               )}
-              {planColumn && (
-                <div className="min-h-0 w-[340px] shrink-0 xl:w-[400px] min-[1700px]:w-[440px]">
-                  {planPanel(() => setPlanOpen(false))}
-                </div>
+
+              {accepted && sprintTab && (
+                <p
+                  className="mx-4 mt-2.5 rounded-[8px] border border-dashed border-line px-3 py-2 text-ink-soft lg:mx-5"
+                  style={{ fontSize: 12.5 }}
+                >
+                  {dt(
+                    `Архив: карточки — слепок на момент приёмки ${
+                      detail.accepted_at ? fmtDay(detail.accepted_at) : ""
+                    }, изменить их нельзя.`,
+                    `Archive: cards are a snapshot taken at acceptance${
+                      detail.accepted_at
+                        ? ` on ${fmtDay(detail.accepted_at)}`
+                        : ""
+                    } and cannot be changed.`,
+                  )}
+                </p>
               )}
-              {showJournal
-                ? <JournalScreen space={space} />
-                : showAnalytics
-                ? (
-                  <AnalyticsScreen
-                    cycles={spaceCycles}
-                    current={detail}
-                    projects={projects}
-                    tasks={spaceTasks}
-                    users={users}
-                    space={space}
-                    spaceName={spaces.find((s) => s.id === space)?.name ??
-                      dt("Без пространства", "No space")}
+
+              <div className="flex-1 min-h-0 flex gap-3 px-4 pb-4 pt-3 lg:px-5">
+                {
+                  /* Пул — способ набрать состав, поэтому он нужен обоим видам; на телефоне его
+                нет (D003): выбор галочками в узкой колонке нечитаем. */
+                }
+                {accepted && reportOpen && (
+                  <SprintReport
+                    cycle={detail}
+                    onSaveSummary={async (summary) => {
+                      try {
+                        await updateSprintCycle(detail.id, { summary });
+                        setErr(null);
+                        await load();
+                      } catch (e) {
+                        setErr(
+                          e instanceof Error ? e.message : dt(
+                            "Не удалось сохранить итог",
+                            "Failed to save the summary",
+                          ),
+                        );
+                      }
+                    }}
                   />
-                )
-                : showList
-                ? (
-                  <div
-                    {...planDropProps}
-                    className={cn(
-                      "flex min-h-0 min-w-0 flex-1 flex-col transition-colors",
-                      planDropCls,
-                    )}
-                  >
-                    {items.length === 0
-                      ? (
-                        <div className="min-h-0 flex-1 overflow-auto">
-                          {emptyComposition}
-                          {movedSection}
-                        </div>
-                      )
-                      : (
-                        <>
-                          {
-                            /* «Состав · N» и тихая группировка справа (стенд: `.shead`). Вне
+                )}
+                {planColumn && (
+                  <div className="min-h-0 w-[340px] shrink-0 xl:w-[400px] min-[1700px]:w-[440px]">
+                    {planPanel(() => setPlanOpen(false))}
+                  </div>
+                )}
+                {showJournal
+                  ? <JournalScreen space={space} />
+                  : showAnalytics
+                  ? (
+                    <AnalyticsScreen
+                      cycles={spaceCycles}
+                      current={detail}
+                      projects={projects}
+                      tasks={spaceTasks}
+                      users={users}
+                      space={space}
+                      spaceName={spaces.find((s) => s.id === space)?.name ??
+                        dt("Без пространства", "No space")}
+                    />
+                  )
+                  : (
+                    <div
+                      {...planDropProps}
+                      className={cn(
+                        "flex min-h-0 min-w-0 flex-1 flex-col transition-colors",
+                        planDropCls,
+                      )}
+                    >
+                      {items.length === 0
+                        ? (
+                          <div className="min-h-0 flex-1 overflow-auto">
+                            {emptyComposition}
+                            {movedSection}
+                          </div>
+                        )
+                        : (
+                          <>
+                            {
+                              /* «Состав · N» и тихая группировка справа (стенд: `.shead`). Вне
                             таблицы шириной 640px: на телефоне строка переносится, а не уезжает
                             за край вместе с флажком «Мои задачи». Вне прокручиваемого списка:
                             раньше строка была его первым ребёнком и на длинном составе уезжала
                             вверх — переключатель группировки пропадал (владелец 20.10.2026:
                             «где галочка про группировку? возвращай»). */
-                          }
-                          <div className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-2 px-0.5 pb-2">
-                            <span
-                              className="font-semibold text-ink"
-                              style={{ fontSize: 13 }}
-                            >
-                              {dt("Состав", "Tasks")} ·{" "}
-                              <span className="font-mono">{items.length}</span>
-                            </span>
-                            {!accepted && !byPeople && (
-                              <button
-                                type="button"
-                                className={PILL_BTN}
-                                disabled={sprintGroups.grouping.busy}
-                                onClick={sprintGroups.grouping.onAddGroup}
+                            }
+                            <div className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-2 px-0.5 pb-2">
+                              <span
+                                className="font-semibold text-ink"
+                                style={{ fontSize: 13 }}
                               >
-                                <RoyIcon
-                                  name="plus"
-                                  size={12}
-                                  strokeWidth={2}
-                                />
-                                {dt("Добавить группу", "Add group")}
-                              </button>
-                            )}
-                            <GroupingToggle
-                              value={grouping}
-                              onChange={setGrouping}
-                            />
-                            <label
-                              className="flex shrink-0 cursor-pointer select-none items-center gap-1.5 text-ink-soft"
-                              style={{ fontSize: 12.5 }}
-                            >
-                              <input
-                                type="checkbox"
-                                checked={mineFirst}
-                                onChange={(e) => setMineFirst(e.target.checked)}
-                                className="accent-[var(--primary)]"
+                                {dt("Состав", "Tasks")} ·{" "}
+                                <span className="font-mono">
+                                  {items.length}
+                                </span>
+                              </span>
+                              {!accepted && !byPeople && (
+                                <button
+                                  type="button"
+                                  className={PILL_BTN}
+                                  disabled={sprintGroups.grouping.busy}
+                                  onClick={sprintGroups.grouping.onAddGroup}
+                                >
+                                  <RoyIcon
+                                    name="plus"
+                                    size={12}
+                                    strokeWidth={2}
+                                  />
+                                  {dt("Добавить группу", "Add group")}
+                                </button>
+                              )}
+                              <GroupingToggle
+                                value={grouping}
+                                onChange={setGrouping}
                               />
-                              {dt("Мои задачи", "My tasks")}
-                            </label>
-                          </div>
-                          {
-                            /* Контейнер состава: колонки уступают место названию по его ширине, а не по
-                            ширине окна (SPRINT_GRID в sprints/SprintRow.tsx). */
-                          }
-                          <div className="min-h-0 flex-1 overflow-auto">
-                            <div className="@container/sprint min-w-[320px]">
-                              {mineBoards
-                                ? (
-                                  <>
-                                    <SectionLabel
-                                      label={dt("Мои задачи", "My tasks")}
-                                      count={mineSplit.mine.length}
-                                    />
-                                    {mineSplit.mine.length === 0
-                                      ? (
-                                        <p
-                                          className="mb-4 px-0.5 text-ink-mute"
-                                          style={{ fontSize: 12.5 }}
-                                        >
-                                          {dt(
-                                            "На вас в этом спринте задач нет",
-                                            "No tasks on you in this sprint",
-                                          )}
-                                        </p>
-                                      )
-                                      : initiativeList(mineBoards.mine)}
-                                    <SectionLabel
-                                      label={dt("Остальные", "Everyone else")}
-                                      count={mineSplit.others.length}
-                                    />
-                                    {initiativeList(mineBoards.others)}
-                                  </>
-                                )
-                                : initiativeList(
-                                  byPeople ? peopleBoard : board,
-                                )}
-                              {movedSection}
+                              <label
+                                className="flex shrink-0 cursor-pointer select-none items-center gap-1.5 text-ink-soft"
+                                style={{ fontSize: 12.5 }}
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={mineFirst}
+                                  onChange={(e) =>
+                                    setMineFirst(e.target.checked)}
+                                  className="accent-[var(--primary)]"
+                                />
+                                {dt("Мои задачи", "My tasks")}
+                              </label>
                             </div>
-                          </div>
-                        </>
-                      )}
-                  </div>
-                )
-                : (
-                  <div
-                    {...planDropProps}
-                    className={cn(
-                      "flex-1 min-w-0 flex gap-3 overflow-x-auto transition-colors",
-                      planDropCls,
-                    )}
-                  >
-                    {items.length === 0
-                      ? emptyComposition
-                      : COLUMNS.map((col) => (
-                        <KanbanColumn
-                          key={col.status}
-                          sectionId={SPRINT_SECTION}
-                          column={col}
-                          tasks={cards.filter((t) => (col.status === "done"
-                            ? CLOSED.has(t.status)
-                            : t.status === col.status)
-                          )}
-                          groupOf={(t) => groupLabels.get(t.id) ?? null}
-                          // «Готово» собирает оба закрытых статуса (процент считает их вместе,
-                          // спека §6), но «сделали» и «передумали» человеку надо различать (#299).
-                          badgeFor={(t) =>
-                            t.status === "cancelled"
-                              ? dt("Отменена", "Cancelled")
-                              : undefined}
-                          readOnly={accepted}
-                          onRemoveCard={accepted ? undefined : removeFromSprint}
-                          removeTitle={dt(
-                            "Убрать из спринта",
-                            "Remove from sprint",
-                          )}
-                          kanban={kanban}
-                        />
-                      ))}
-                  </div>
-                )}
-            </div>
+                            {
+                              /* Контейнер состава: колонки уступают место названию по его ширине, а не по
+                            ширине окна (SPRINT_GRID в sprints/SprintRow.tsx). */
+                            }
+                            <div className="min-h-0 flex-1 overflow-auto">
+                              <div className="@container/sprint min-w-[320px]">
+                                {mineBoards
+                                  ? (
+                                    <>
+                                      <SectionLabel
+                                        label={dt("Мои задачи", "My tasks")}
+                                        count={mineSplit.mine.length}
+                                      />
+                                      {mineSplit.mine.length === 0
+                                        ? (
+                                          <p
+                                            className="mb-4 px-0.5 text-ink-mute"
+                                            style={{ fontSize: 12.5 }}
+                                          >
+                                            {dt(
+                                              "На вас в этом спринте задач нет",
+                                              "No tasks on you in this sprint",
+                                            )}
+                                          </p>
+                                        )
+                                        : initiativeList(mineBoards.mine)}
+                                      <SectionLabel
+                                        label={dt("Остальные", "Everyone else")}
+                                        count={mineSplit.others.length}
+                                      />
+                                      {initiativeList(mineBoards.others)}
+                                    </>
+                                  )
+                                  : initiativeList(
+                                    byPeople ? peopleBoard : board,
+                                  )}
+                                {movedSection}
+                              </div>
+                            </div>
+                          </>
+                        )}
+                    </div>
+                  )}
+              </div>
+            </>
+          )}
+
+        {
+          /* План на телефоне — шторкой поверх экрана: колонке рядом со списком там нет места.
+          В body порталом: внутри экрана `fixed` привязывается к предку со скроллом и шторка
+          вырастает выше окна (замечание владельца 28.09.2026). Закрывается по клику вне и Esc. */
+        }
+        {planSheet && !isDesktop && editable &&
+          typeof document !== "undefined" &&
+          createPortal(
+            <div className="fixed inset-0 z-40 flex justify-end">
+              <button
+                type="button"
+                aria-label={dt("Закрыть", "Close")}
+                onClick={() => setPlanSheet(false)}
+                className="absolute inset-0 bg-ink/30 backdrop-blur-[1px]"
+              />
+              <aside className="relative flex h-full w-full max-w-[420px] flex-col bg-background p-2 shadow-xl">
+                {planPanel(() => setPlanSheet(false))}
+              </aside>
+            </div>,
+            document.body,
+          )}
+
+        {detail && (
+          <>
+            <MoveDialog
+              item={moving}
+              cycleId={detail.id}
+              cycles={moveTarget ? [moveTarget] : moveTargets}
+              onClose={() => {
+                setMoving(null);
+                setMoveTarget(null);
+              }}
+              onDone={afterMove}
+            />
+            <ReasonDialog
+              item={reasonFor}
+              cycleId={detail.id}
+              onClose={() => setReasonFor(null)}
+              onDone={afterMove}
+            />
           </>
         )}
 
-      {
-        /* План на телефоне — шторкой поверх экрана: колонке рядом со списком там нет места.
-          В body порталом: внутри экрана `fixed` привязывается к предку со скроллом и шторка
-          вырастает выше окна (замечание владельца 28.09.2026). Закрывается по клику вне и Esc. */
-      }
-      {planSheet && !isDesktop && editable && typeof document !== "undefined" &&
-        createPortal(
-          <div className="fixed inset-0 z-40 flex justify-end">
-            <button
-              type="button"
-              aria-label={dt("Закрыть", "Close")}
-              onClick={() => setPlanSheet(false)}
-              className="absolute inset-0 bg-ink/30 backdrop-blur-[1px]"
-            />
-            <aside className="relative flex h-full w-full max-w-[420px] flex-col bg-background p-2 shadow-xl">
-              {planPanel(() => setPlanSheet(false))}
-            </aside>
-          </div>,
-          document.body,
-        )}
+        <AcceptDialog
+          open={acceptOpen && !!detail && detail.id === selectedId}
+          cycleName={detail?.name ?? ""}
+          busy={busy}
+          carrying={carrying}
+          onCancel={() => setAcceptOpen(false)}
+          onAccept={submitAccept}
+        />
 
-      {detail && (
-        <>
-          <MoveDialog
-            item={moving}
-            cycleId={detail.id}
-            cycles={moveTarget ? [moveTarget] : moveTargets}
-            onClose={() => {
-              setMoving(null);
-              setMoveTarget(null);
-            }}
-            onDone={afterMove}
-          />
-          <ReasonDialog
-            item={reasonFor}
-            cycleId={detail.id}
-            onClose={() => setReasonFor(null)}
-            onDone={afterMove}
-          />
-        </>
-      )}
-
-      <AcceptDialog
-        open={acceptOpen && !!detail && detail.id === selectedId}
-        cycleName={detail?.name ?? ""}
-        busy={busy}
-        carrying={carrying}
-        onCancel={() => setAcceptOpen(false)}
-        onAccept={submitAccept}
-      />
-
-      <TaskModal
-        open={addingTo !== undefined}
-        projectId={addingTo ?? null}
-        onClose={() => setAddingTo(undefined)}
-        onSaved={onTaskCreated}
-      />
-      <TaskModal
-        task={editing ?? undefined}
-        open={!!editing}
-        onClose={() => setEditing(null)}
-        onSaved={() => {
-          load();
-          reloadDetail(selectedId);
-          setBoardVersion((v) => v + 1);
-        }}
-      />
-      {sprintGroups.dialogs}
-    </div>
+        <TaskModal
+          open={addingTo !== undefined}
+          projectId={addingTo ?? null}
+          onClose={() => setAddingTo(undefined)}
+          onSaved={onTaskCreated}
+        />
+        <TaskModal
+          task={editing ?? undefined}
+          open={!!editing}
+          onClose={() => setEditing(null)}
+          onSaved={() => {
+            load();
+            reloadDetail(selectedId);
+            setBoardVersion((v) => v + 1);
+          }}
+        />
+        {sprintGroups.dialogs}
+      </div>
     </AvatarDirectoryProvider>
   );
 }

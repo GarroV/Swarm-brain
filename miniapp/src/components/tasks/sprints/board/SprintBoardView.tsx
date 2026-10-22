@@ -22,6 +22,7 @@ import {
   updateTask,
 } from "@/lib/api";
 import { useDt } from "@/components/roy/nav";
+import { useIsDesktop } from "@/components/roy/useIsDesktop";
 import { cn } from "@/lib/utils";
 import { MoveDialog } from "../MoveDialog";
 import { ReasonDialog } from "../ReasonDialog";
@@ -422,6 +423,8 @@ export function SprintBoardView(
     };
   }
 
+  const isDesktop = useIsDesktop();
+
   if (!data) {
     return (
       <p
@@ -432,6 +435,19 @@ export function SprintBoardView(
       </p>
     );
   }
+
+  // Мастер-план на компьютере стоит рядом с полосой колонок, а не внутри неё: колонки при прокрутке
+  // обрезаются у её края, и скруглённые углы плана ничем не перекрыты.
+  const masterPlan = (
+    <MasterPlanColumn
+      groups={data.plan.groups}
+      cycles={cycles}
+      ctx={ctx}
+      hideDone={hideDone}
+      onHideDone={setHideDone}
+      onAddTask={onAddTask}
+    />
+  );
 
   return (
     <div className="flex min-h-0 flex-1 flex-col" data-testid="sprint-board">
@@ -448,61 +464,58 @@ export function SprintBoardView(
           {err ?? loadErr}
         </p>
       )}
-      <div
-        data-testid="board-scroll"
-        className="flex min-h-0 flex-1 snap-x snap-mandatory gap-3 overflow-x-auto overflow-y-hidden pb-3 lg:snap-none"
-      >
-        <MasterPlanColumn
-          groups={data.plan.groups}
-          cycles={cycles}
-          ctx={ctx}
-          hideDone={hideDone}
-          onHideDone={setHideDone}
-          onAddTask={onAddTask}
-        />
-        {data.cycles.map((entry) =>
-          entry.cycle.status === "accepted"
-            ? (
-              <PastColumn
-                key={entry.cycle.id}
-                entry={entry}
-                ctx={ctx}
-                open={openPast.has(entry.cycle.id)}
-                onToggle={() =>
-                  setOpenPast((prev) => {
-                    const next = new Set(prev);
-                    if (next.has(entry.cycle.id)) next.delete(entry.cycle.id);
-                    else next.add(entry.cycle.id);
-                    return next;
-                  })}
-              />
-            )
-            : (
-              <SprintColumn
-                key={entry.cycle.id}
-                entry={entry}
-                ctx={ctx}
-                busy={busy}
-                onCloseSprint={onCloseSprint}
-                drop={{
-                  valid: canDrop(entry.cycle),
-                  over: overId === entry.cycle.id,
-                  handlers: dropHandlers(entry.cycle),
-                }}
-              />
-            )
-        )}
-        <NewSprint
-          cycles={cycles}
-          space={space}
-          busy={busy}
-          onCreate={(input) =>
-            void run(
-              () =>
-                createSprintCycle(input),
-              dt("Не удалось создать спринт", "Could not create the sprint"),
-            )}
-        />
+      <div className="flex min-h-0 flex-1">
+        {isDesktop && masterPlan}
+        <div
+          data-testid="board-scroll"
+          className="flex min-h-0 min-w-0 flex-1 snap-x snap-mandatory gap-3 overflow-x-auto overflow-y-hidden pb-3 lg:snap-none"
+        >
+          {!isDesktop && masterPlan}
+          {data.cycles.map((entry) =>
+            entry.cycle.status === "accepted"
+              ? (
+                <PastColumn
+                  key={entry.cycle.id}
+                  entry={entry}
+                  ctx={ctx}
+                  open={openPast.has(entry.cycle.id)}
+                  onToggle={() =>
+                    setOpenPast((prev) => {
+                      const next = new Set(prev);
+                      if (next.has(entry.cycle.id)) {
+                        next.delete(entry.cycle.id);
+                      } else next.add(entry.cycle.id);
+                      return next;
+                    })}
+                />
+              )
+              : (
+                <SprintColumn
+                  key={entry.cycle.id}
+                  entry={entry}
+                  ctx={ctx}
+                  busy={busy}
+                  onCloseSprint={onCloseSprint}
+                  drop={{
+                    valid: canDrop(entry.cycle),
+                    over: overId === entry.cycle.id,
+                    handlers: dropHandlers(entry.cycle),
+                  }}
+                />
+              )
+          )}
+          <NewSprint
+            cycles={cycles}
+            space={space}
+            busy={busy}
+            onCreate={(input) =>
+              void run(
+                () =>
+                  createSprintCycle(input),
+                dt("Не удалось создать спринт", "Could not create the sprint"),
+              )}
+          />
+        </div>
       </div>
 
       <MoveDialog

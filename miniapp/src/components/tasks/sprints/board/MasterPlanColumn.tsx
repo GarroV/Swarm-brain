@@ -10,7 +10,10 @@ import { TaskMenu } from "./TaskMenu";
 
 // Мастер-план — левая колонка доски (решение владельца 22.10.2026: «мастер-план у нас держится,
 // никуда не уезжает, а все остальные столбцы можно сдвигать»). На компьютере закреплён
-// (`sticky left-0`) под прокручиваемыми колонками; на телефоне — первая из колонок по одной.
+// стоит вне прокрутки (SprintBoardView ставит её рядом с прокручиваемой полосой колонок), на
+// телефоне — первая из колонок по одной. Раньше была `sticky` с глухим фоном поверх колонок:
+// колонка спринта выходила вплотную к скруглённым углам, а в тёмной теме фон не совпадал с
+// подсвеченным фоном страницы. Теперь колонки просто обрезаются у края своей полосы.
 // Группы → задачи, у каждой полоска спринтов (закрашены её спринты, рамка — идущий).
 
 // Сколько принятых спринтов показывать в полоске: их со временем десятки, а задаче важны
@@ -153,6 +156,14 @@ function PlanCard({ node, nested, cycles, ctx }: {
   );
 }
 
+/** Склонение «задача» по числу: 1 задача, 2 задачи, 5 задач. */
+function tasksRu(n: number): string {
+  const m10 = n % 10, m100 = n % 100;
+  if (m10 === 1 && m100 !== 11) return "задача";
+  if (m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14)) return "задачи";
+  return "задач";
+}
+
 export function MasterPlanColumn(
   { groups, cycles, ctx, hideDone, onHideDone, onAddTask }: {
     groups: readonly BoardPlanGroup[];
@@ -180,7 +191,7 @@ export function MasterPlanColumn(
 
   return (
     <div
-      className="z-20 h-full shrink-0 snap-start bg-background pl-4 lg:sticky lg:left-0"
+      className="h-full shrink-0 snap-start pl-4 lg:pb-3 lg:pr-3"
       data-testid="master-plan"
     >
       <section
@@ -193,8 +204,12 @@ export function MasterPlanColumn(
               {dt("Мастер-план", "Master plan")}
             </span>
             <span className="text-[12px] text-ink-mute">
-              {dt("все задачи", "all tasks")} · {done} {dt("из", "of")}{" "}
-              {all.length}
+              {dt(
+                `${all.length} ${tasksRu(all.length)} · готово ${done}`,
+                `${all.length} ${
+                  all.length === 1 ? "task" : "tasks"
+                } · ${done} done`,
+              )}
             </span>
           </div>
           <label

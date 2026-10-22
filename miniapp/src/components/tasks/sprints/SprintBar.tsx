@@ -31,7 +31,6 @@ export type SprintBarProps = {
   sprintTab: boolean;
   view: SprintView;
   onView: (v: SprintView) => void;
-  kanbanDisabled: boolean;
   /** Панель «План» открыта (решение 07.10.2026: план пространства вместо бэклога). */
   planOpen: boolean;
   onPlan?: () => void;
@@ -218,49 +217,51 @@ export function SprintBar(p: SprintBarProps) {
 
       {p.sprintTab && d && (
         <>
-          {/* Вид запоминается у человека; канбан — только на компьютере (D003). */}
+          {
+            /* Одна пилюля «Список · План · Доска спринтов» (владелец 22.10.2026). «План» — часть
+              списка: виден и нажимается только в нём, на доске плана нет (там свой мастер-план). */
+          }
           <span className={PILL_GROUP_CLS}>
-            {(["list", "board", "kanban"] as const).map((v) => {
-              const off = v === "kanban" && p.kanbanDisabled;
-              const on = p.view === v;
-              return (
-                <button
-                  key={v}
-                  type="button"
-                  disabled={off}
-                  aria-pressed={on}
-                  onClick={() => p.onView(v)}
-                  title={off
-                    ? dt(
-                      "«Статусы» — только на компьютере",
-                      "“Statuses” is desktop only",
-                    )
-                    : undefined}
-                  className={cn(pillSegmentCls(on), "sm:min-h-[26px] px-3")}
-                  style={{ fontSize: 12.5 }}
-                >
-                  {v === "list"
-                    ? dt("Список", "List")
-                    : v === "board"
-                    ? dt("Доска спринтов", "Sprint board")
-                    : dt("Статусы", "Statuses")}
-                </button>
-              );
-            })}
-          </span>
-          {p.onPlan && !board && (
-            <ToolbarButton
-              on={p.planOpen}
-              onClick={p.onPlan}
-              title={dt(
-                "Весь план пространства: группы и задачи — отсюда задачи берут в спринт",
-                "The whole space plan: groups and tasks — tasks are taken into the sprint from here",
+            <button
+              type="button"
+              aria-pressed={p.view === "list"}
+              onClick={() => p.onView("list")}
+              className={cn(
+                pillSegmentCls(p.view === "list"),
+                "sm:min-h-[26px] px-3",
               )}
+              style={{ fontSize: 12.5 }}
             >
-              <RoyIcon name="board" size={12} strokeWidth={2} />
-              {dt("План", "Plan")}
-            </ToolbarButton>
-          )}
+              {dt("Список", "List")}
+            </button>
+            {p.onPlan && p.view === "list" && (
+              <button
+                type="button"
+                aria-pressed={p.planOpen}
+                onClick={p.onPlan}
+                title={dt(
+                  "Весь план пространства: группы и задачи — отсюда задачи берут в спринт",
+                  "The whole space plan: groups and tasks — tasks are taken into the sprint from here",
+                )}
+                className={cn(
+                  pillSegmentCls(p.planOpen),
+                  "sm:min-h-[26px] px-3",
+                )}
+                style={{ fontSize: 12.5 }}
+              >
+                {dt("План", "Plan")}
+              </button>
+            )}
+            <button
+              type="button"
+              aria-pressed={board}
+              onClick={() => p.onView("board")}
+              className={cn(pillSegmentCls(board), "sm:min-h-[26px] px-3")}
+              style={{ fontSize: 12.5 }}
+            >
+              {dt("Доска спринтов", "Sprint board")}
+            </button>
+          </span>
           {
             /* Режим правки: вне его доска только читается — никаких «+», «✎», «✕». Ежедневные
               отметки он НЕ прячет. */
