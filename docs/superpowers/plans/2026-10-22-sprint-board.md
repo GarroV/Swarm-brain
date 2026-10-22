@@ -45,17 +45,17 @@
 **Interfaces:**
 - Produces: колонки `sprint_items.moved_at timestamptz`, `moved_to uuid references sprint_items(id) on delete set null`, `moved_by text`, `plan_reason text`, `auto_extended boolean not null default false`; функция `public.sprint_move_task(p_item_id uuid, p_target_cycle_id uuid, p_reason text, p_new_due date, p_actor text) returns jsonb` → `{"source_item_id","target_item_id","revived":bool}`; внутренняя `public.sprint_move_task_internal(...)` с теми же аргументами, но разрешающая `p_reason is null` (для триггера). Сессионный флаг `set_config('swarm.sprint_moving','1',true)` на время смены срока — триггер срока его видит и молчит.
 
-- [ ] **Step 1: Тесты** (`Deno.test` по-русски):
+- [x] **Step 1: Тесты** (`Deno.test` по-русски):
   - «перенос: задача в цели, в источнике снимок с причиной» — после вызова: в цели строка `carried_from = источник`, `carry_count = источник+1`, `in_plan = true`; у источника `moved_at not null`, `moved_to = цель`, `carry_reason = 'ждём юристов'`, `frozen_title = tasks.title`.
   - «пустая причина — отказ» — `p_reason = '  '` → исключение с текстом `Нужна причина переноса`.
   - «выполненную/отменённую не переносим», «цель из другого пространства — отказ», «цель не черновик — отказ», «источник не в идущем — отказ».
   - «срок не трогается без новой даты» — `due_date` до и после равны; «новая дата меняет срок и не плодит строк» — ровно 2 строки задачи после вызова.
   - «повторный перенос той же строки — отказ `Задача уже перенесена`» (оживление снимка проверяет Task 2 через срок).
   - «приватную не переносим».
-- [ ] **Step 2:** `make test-db` (или `./scripts/check`) — новые тесты FAIL «function sprint_move_task does not exist».
-- [ ] **Step 3:** миграция: колонки, функции (`security invoker`, `search_path = public, pg_temp`, блокировка исходной строки `for update`, тексты отказов `using errcode = 'P0001'`), `revoke all on function … from public, anon, authenticated` (урок SECURITY DEFINER/PUBLIC — даже для invoker держим EXECUTE только у `service_role`).
-- [ ] **Step 4:** тесты PASS; порча: убрать проверку причины — тест «пустая причина» краснеет.
-- [ ] **Step 5:** commit `feat: перенос задачи между спринтами — функция базы`.
+- [x] **Step 2:** `make test-db` (или `./scripts/check`) — новые тесты FAIL «function sprint_move_task does not exist».
+- [x] **Step 3:** миграция: колонки, функции (`security invoker`, `search_path = public, pg_temp`, блокировка исходной строки `for update`, тексты отказов `using errcode = 'P0001'`), `revoke all on function … from public, anon, authenticated` (урок SECURITY DEFINER/PUBLIC — даже для invoker держим EXECUTE только у `service_role`).
+- [x] **Step 4:** тесты PASS; порча: убрать проверку причины — тест «пустая причина» краснеет.
+- [x] **Step 5:** commit `feat: перенос задачи между спринтами — функция базы`.
 
 ### Task 2: Триггер срока двигает, а не помечает; план не сносится
 

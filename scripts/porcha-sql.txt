@@ -111,3 +111,12 @@ and si.cycle_id <> v_target|and si.cycle_id = v_target|supabase/functions/_share
 if p_due - current_date > c_max_auto * c_sprint_days or v_needed > c_max_auto then|if false then|supabase/functions/_shared/tasks/sprint-autoplace.db.test.ts|supabase/migrations/20261019120000_sprint_autoplace.sql
 when (old.due_date is distinct from new.due_date)|when (true)|supabase/functions/_shared/tasks/sprint-autoplace.db.test.ts|supabase/migrations/20261019120000_sprint_autoplace.sql
 case when t.due_date > v_cycle.end_date|case when false|supabase/functions/_shared/tasks/sprint-autoplace.db.test.ts|supabase/migrations/20261019120000_sprint_autoplace.sql
+# Перенос между спринтами (22.10.2026): причина обязательна, строка под замком (двое не кладут задачу
+# в два спринта), снимок не переносится второй раз, цель только своего пространства, приватная не едет,
+# функцию зовёт только service_role.
+if nullif(btrim(p_reason), '') is null then|if false then|supabase/functions/_shared/tasks/sprint-move.db.test.ts|supabase/migrations/20261022120000_sprint_move.sql
+select * into v_src from public.sprint_items where id = p_item_id for update;|select * into v_src from public.sprint_items where id = p_item_id;|supabase/functions/_shared/tasks/sprint-move.db.test.ts|supabase/migrations/20261022120000_sprint_move.sql
+if v_src.moved_at is not null then|if false then|supabase/functions/_shared/tasks/sprint-move.db.test.ts|supabase/migrations/20261022120000_sprint_move.sql
+and tab_id is not distinct from v_cycle.tab_id|and true|supabase/functions/_shared/tasks/sprint-move.db.test.ts|supabase/migrations/20261022120000_sprint_move.sql
+if t.is_private then|if false then|supabase/functions/_shared/tasks/sprint-move.db.test.ts|supabase/migrations/20261022120000_sprint_move.sql
+revoke all on function public.sprint_move_task(uuid, uuid, text, date, text) from public, anon, authenticated;|grant execute on function public.sprint_move_task(uuid, uuid, text, date, text) to anon;|supabase/functions/_shared/tasks/sprint-move.db.test.ts|supabase/migrations/20261022120000_sprint_move.sql
