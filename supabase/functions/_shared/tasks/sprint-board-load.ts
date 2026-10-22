@@ -18,7 +18,7 @@ import { onlyLive } from "./live.ts";
 import { listProjects } from "./projects.ts";
 import { listCycles, redactCycleStats, type SprintCycle } from "./sprint-cycles.ts";
 import { listComposition, type SprintItem } from "./sprint-items.ts";
-import { buildPlanSpans, type PlanGroupView, type PlanTaskView, type SpanRow } from "./sprint-board.ts";
+import { buildPlanSpans, countMoves, type PlanGroupView, type PlanTaskView, type SpanRow } from "./sprint-board.ts";
 
 const supabase = createClient(
   Deno.env.get("SUPABASE_URL")!,
@@ -122,6 +122,7 @@ export async function loadBoard(groupId: string, tabId: string | null, viewerId:
       : []
   );
   const spans = buildPlanSpans(spanRows);
+  const moves = countMoves(spanRows);
 
   const byGroup = new Map<string, PlanTaskView[]>();
   for (const t of tasks) {
@@ -136,6 +137,7 @@ export async function loadBoard(groupId: string, tabId: string | null, viewerId:
       parent_id: t.parent_id,
       created_at: t.created_at,
       cycle_ids: spans.get(t.id) ?? [],
+      moves: moves.get(t.id) ?? 0,
     });
     byGroup.set(t.project_id, list);
   }

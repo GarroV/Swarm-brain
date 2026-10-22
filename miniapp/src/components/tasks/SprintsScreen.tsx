@@ -69,7 +69,8 @@ import {
 import { SpaceSwitcher } from "@/components/tasks/sprints/SpaceSwitcher";
 import { SprintBar } from "@/components/tasks/sprints/SprintBar";
 import { SprintPulse } from "@/components/tasks/sprints/SprintPulse";
-import { MoveDialog } from "@/components/tasks/sprints/MoveDialog";
+import { isClosedStatus } from "@/components/tasks/sprints/board/boardModel";
+import { useTaskDialogs } from "@/components/tasks/sprints/useTaskDialogs";
 import { shiftBetweenDrafts } from "@/components/tasks/sprints/shiftTask";
 import type { TaskMenuActions } from "@/components/tasks/sprints/board/TaskMenu";
 import { ReasonDialog } from "@/components/tasks/sprints/ReasonDialog";
@@ -549,17 +550,19 @@ export function SprintsScreen() {
 
   // «Перенести в …» в меню «⋯» строки открывает окно переноса (22.10.2026): задача сразу уезжает в выбранный
   // запланированный спринт, здесь остаётся снимок с причиной. Пометки «к переносу» больше нет.
-  const [moving, setMoving] = useState<SprintCycleItem | null>(null);
-  // Цель, выбранная пунктом меню «Перенести в …»: окно открывается сразу на ней.
-  const [moveTarget, setMoveTarget] = useState<SprintCycle | null>(null);
   const [reasonFor, setReasonFor] = useState<SprintCycleItem | null>(null);
-  const moveTargets = useMemo(
-    () =>
-      spaceCycles.filter((c) => c.status === "draft")
-        .sort((a, b) => a.start_date.localeCompare(b.start_date)),
-    [spaceCycles],
-  );
   /** Действия меню «⋯» строки списка: те же вызовы, что у доски спринтов (SprintBoardView). */
+  const taskRef = (item: SprintCycleItem) => ({
+    id: item.task_id ?? "",
+    title: item.title,
+    due: item.due_date,
+  });
+  // Подзадачи строки, которые поедут вместе с ней: незакрытые живые строки того же спринта.
+  const kidsOf = (item: SprintCycleItem): SprintCycleItem[] =>
+    (detail?.items ?? []).filter((i) =>
+      !!i.task_id && !i.moved && !i.removed && !isClosedStatus(i.status) &&
+      tasks.find((t) => t.id === i.task_id)?.parent_id === item.task_id
+    );
   const rowMenuActions = (item: SprintCycleItem): TaskMenuActions => {
     const taskId = item.task_id ?? "";
     const cycleId = detail?.id ?? "";
@@ -575,22 +578,13 @@ export function SprintsScreen() {
           check_status: status,
           ...(status === null ? { check_note: null } : {}),
         }),
-      move: (target) => {
-        setMoveTarget(target);
-        setMoving(item);
+      move: () => taskDialogs.openMove(item, cycleId, kidsOf(item)),
+      place: (mode) => {
+        if (mode === "take") return;
+        taskDialogs.openPlace(mode, taskRef(item), [cycleId], cycleId);
       },
-      shift: (target) =>
-        void shiftBetweenDrafts(
-          taskId,
-          cycleId,
-          target.id,
-          dt(
-            "Не удалось переставить — задача осталась на месте",
-            "Could not shift — the task stayed where it was",
-          ),
-        ).catch((e) => fail(e, dt("Не удалось переставить", "Could not shift")))
-          .finally(afterMove),
-      take: () => {},
+      span: () => taskDialogs.openSpan(taskRef(item)),
+      journey: () => taskDialogs.openJourney(taskRef(item)),
       remove: () =>
         void removeTaskFromSprintCycle(cycleId, taskId)
           .catch((e) => fail(e, dt("Не удалось убрать", "Could not remove")))
@@ -604,6 +598,28 @@ export function SprintsScreen() {
     await reloadDetail(detail.id);
     load();
   }, [detail, reloadDetail, load]);
+  const taskDialogs = useTaskDialogs({
+    cycles: spaceCycles,
+    onDone: afterMove,
+    onPlace: (_mode, taskId, fromCycleId, target) => {
+      if (!fromCycleId) return;
+      void shiftBetweenDrafts(
+        taskId,
+        fromCycleId,
+        target.id,
+        dt(
+          "Не удалось переставить — задача осталась на месте",
+          "Could not shift — the task stayed where it was",
+        ),
+      ).catch((e) =>
+        setErr(
+          e instanceof Error
+            ? e.message
+            : dt("Не удалось переставить", "Could not shift"),
+        )
+      ).finally(afterMove);
+    },
+  });
 
   async function markItem(
     item: SprintCycleItem,
@@ -1380,16 +1396,7 @@ export function SprintsScreen() {
 
         {detail && (
           <>
-            <MoveDialog
-              item={moving}
-              cycleId={detail.id}
-              cycles={moveTarget ? [moveTarget] : moveTargets}
-              onClose={() => {
-                setMoving(null);
-                setMoveTarget(null);
-              }}
-              onDone={afterMove}
-            />
+            {taskDialogs.node}
             <ReasonDialog
               item={reasonFor}
               cycleId={detail.id}

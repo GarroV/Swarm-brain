@@ -142,7 +142,7 @@
 
 ## Этап 4: Спринты задачи и ход задачи
 
-### Task 7: План работы задачи
+### Task 7: План работы задачи — сделано 23.10.2026
 
 **Files:**
 - Create: `supabase/migrations/20261023120000_sprint_task_span.sql`, `_shared/tasks/sprint-span.ts`, `miniapp/src/components/tasks/sprints/SpanDialog.tsx`
@@ -153,7 +153,7 @@
 - Produces: `public.sprint_set_task_span(p_task_id uuid, p_tab_id uuid, p_group_id text, p_from_cycle uuid, p_to_cycle uuid, p_reason text, p_actor text) returns jsonb` — добавляет строки `in_plan` в черновики отрезка, снимает строки черновиков вне отрезка (без `moved_at`), идущий и принятые не трогает; причина обязательна, если конец отрезка позже спринта срока или отрезок продлевает задачу из идущего за её последний спринт → `plan_reason` последней строки + комментарий. `POST /sprint-tasks/:taskId/span`; MCP `set_sprint_task_span`.
 - [ ] Тесты: «отрезок С4–С6 создаёт 2 строки в черновиках», «сужение снимает черновик, не трогает идущий», «после срока без причины — отказ `Нужна причина: работа после срока`», «с причиной — plan_reason и комментарий» → FAIL → миграция → PASS + порча → `SpanDialog` (плитки, 🏁, красная подсказка) → commit.
 
-### Task 8: Ход задачи
+### Task 8: Ход задачи — сделано 23.10.2026
 
 **Files:**
 - Create: `_shared/tasks/sprint-journey.ts`, `sprint-journey.test.ts`, `miniapp/src/components/tasks/sprints/JourneyDialog.tsx`

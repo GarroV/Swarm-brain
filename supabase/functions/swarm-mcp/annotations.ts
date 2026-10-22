@@ -90,6 +90,7 @@ export const TOOL_CLASSES: Record<string, ToolClass> = {
   delete_sprint: destructive(true),
   archive_sprint_space: destructive(true),
   remove_sprint_task: destructive(true),
+  set_sprint_task_span: destructive(true),
   accept_sprint: destructive(false),
   publish_draft_meeting: destructive(false),
 };

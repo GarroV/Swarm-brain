@@ -268,6 +268,8 @@ export type BoardPlanTask = {
   parent_id: string | null;
   created_at: string;
   cycle_ids: string[];
+  /** Сколько раз задачу переносили между спринтами. */
+  moves: number;
 };
 
 export type BoardPlanGroup = { id: string; name: string; tasks: BoardPlanTask[] };
@@ -281,6 +283,27 @@ export type SprintBoardCycle = {
   withdrawn: SprintCycleItem[];
   /** false — состав не загружен (принятый спринт): итоги в `cycle.stats`, состав по запросу. */
   loaded: boolean;
+};
+
+/** «Ход задачи» (GET /sprint-tasks/:id/journey): путь задачи по спринтам. */
+export type JourneyOutcome =
+  | { kind: "done"; at: string; onTime: boolean | null }
+  | { kind: "cancelled"; at: string | null }
+  | { kind: "moved" | "withdrawn" | "continued" | "inProgress" | "planned" | "open" };
+
+export type JourneyStep = {
+  cycle: { id: string; name: string; start_date: string; end_date: string; status: string };
+  dueIn: string | null;
+  dueOut: string | null;
+  comments: { id: string; content: string; added_by: string; created_at: string }[];
+  move: { toName: string | null; reason: string | null; by: string | null; at: string } | null;
+  planReason: string | null;
+  outcome: JourneyOutcome;
+};
+
+export type SprintJourney = {
+  summary: { sprints: number; moves: number; updates: number; daysInWork: number; lateDays: number | null };
+  steps: JourneyStep[];
 };
 
 export type SprintBoardData = {

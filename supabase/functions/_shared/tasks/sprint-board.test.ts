@@ -1,7 +1,7 @@
 // Тесты написаны до реализации: полоска «в каких спринтах задача» на мастер-плане — ядро доски.
 // Ошибка здесь молчит: закрашенный не тот спринт выглядит как правдоподобный план работы.
 import { assertEquals } from "@std/assert";
-import { buildPlanSpans, type SpanRow } from "./sprint-board.ts";
+import { buildPlanSpans, countMoves, type SpanRow } from "./sprint-board.ts";
 
 const row = (over: Partial<SpanRow> & { task_id: string; cycle_id: string }): SpanRow => ({
   start_date: "2026-10-01",
@@ -57,4 +57,15 @@ Deno.test("при равных датах порядок стабилен — п
     row({ task_id: "t1", cycle_id: "ca", start_date: "2026-10-20" }),
   ]);
   assertEquals(spans.get("t1"), ["ca", "cb"]);
+});
+
+Deno.test("переносы задачи считаются по снимкам, а не по живым строкам", () => {
+  const moves = countMoves([
+    row({ task_id: "t1", cycle_id: "c1", moved_at: "2026-10-25T10:00:00Z" }),
+    row({ task_id: "t1", cycle_id: "c2", moved_at: "2026-11-05T10:00:00Z" }),
+    row({ task_id: "t1", cycle_id: "c3" }),
+    row({ task_id: "t2", cycle_id: "c1" }),
+  ]);
+  assertEquals(moves.get("t1"), 2);
+  assertEquals(moves.has("t2"), false, "у задачи без переносов записи нет");
 });

@@ -23,6 +23,8 @@ import {
 import { AcceptConflictError, acceptCycle } from "../_shared/tasks/sprint-accept.ts";
 import { moveItem, MoveRefusedError, setMovedReason } from "../_shared/tasks/sprint-move.ts";
 import { loadBoard } from "../_shared/tasks/sprint-board-load.ts";
+import { setTaskSpan, SpanRefusedError } from "../_shared/tasks/sprint-span.ts";
+import { loadJourney } from "../_shared/tasks/sprint-journey-load.ts";
 import { isDemoSession } from "../_shared/demo-session.ts";
 
 // Роуты /sprint-cycles — спринты (issue #267, доска инициатив #383-серия). Отдельным модулем,
@@ -37,6 +39,8 @@ import { isDemoSession } from "../_shared/demo-session.ts";
 // только удаление спринта: оно необратимо и стирает историю периода.
 //
 // Возвращает null, если путь не про спринты (index.ts идёт дальше).
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function badDates(body: Record<string, unknown>): string | null {
   if (!body.name || typeof body.name !== "string") return "name is required";
@@ -301,6 +305,50 @@ export async function handleSprintCycleRoutes(
     } catch (e) {
       if (e instanceof MoveRefusedError) return apiErr(409, e.message, origin);
       return serverError(origin, "sprint moved reason", e);
+    }
+  }
+
+  // План работы задачи («Спринты задачи…», 22.10.2026): отрезок запланированных спринтов.
+  // Срок задачи не меняется; причина обязательна после срока и при продлении из идущего.
+  const spanMatch = routePath.match(/^\/sprint-tasks\/([^/]+)\/span$/);
+  if (spanMatch && req.method === "POST") {
+    if (!UUID_RE.test(spanMatch[1])) return apiErr(404, "Not found", origin);
+    const body = await readBody(req);
+    if (!body) return apiErr(400, "Invalid JSON", origin);
+    if (typeof body.from_cycle_id !== "string" || typeof body.to_cycle_id !== "string") {
+      return apiErr(400, "from_cycle_id и to_cycle_id обязательны", origin);
+    }
+    if (body.reason !== undefined && body.reason !== null && typeof body.reason !== "string") {
+      return apiErr(400, "reason: строка или null", origin);
+    }
+    try {
+      const done = await setTaskSpan({
+        groupId,
+        viewer: telegramId,
+        taskId: spanMatch[1],
+        fromCycleId: body.from_cycle_id,
+        toCycleId: body.to_cycle_id,
+        reason: (body.reason as string | null | undefined) ?? null,
+        lang: isDemoSession(telegramId) ? "en" : "ru",
+      });
+      if (!done) return apiErr(404, "Not found", origin);
+      return json({ ok: true, ...done }, 200, origin);
+    } catch (e) {
+      if (e instanceof SpanRefusedError) return apiErr(409, e.message, origin);
+      return serverError(origin, "sprint task span", e);
+    }
+  }
+
+  // Ход задачи по спринтам (22.10.2026): видимость — как у карточки задачи, чужая закрытая — 404.
+  const journeyMatch = routePath.match(/^\/sprint-tasks\/([^/]+)\/journey$/);
+  if (journeyMatch && req.method === "GET") {
+    if (!UUID_RE.test(journeyMatch[1])) return apiErr(404, "Not found", origin);
+    try {
+      const journey = await loadJourney(journeyMatch[1], groupId, telegramId);
+      if (!journey) return apiErr(404, "Not found", origin);
+      return json(journey, 200, origin);
+    } catch (e) {
+      return serverError(origin, "sprint task journey", e);
     }
   }
 

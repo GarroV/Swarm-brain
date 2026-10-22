@@ -1,11 +1,14 @@
 "use client";
 import type { BoardPlanGroup, BoardPlanTask, SprintCycle } from "@/types";
 import { byNumberedName } from "@/lib/initiatives";
+import { planLine } from "@/lib/sprintLabels";
+import { fmtDayShort } from "../format";
 import { useDt } from "@/components/roy/nav";
 import { cn } from "@/lib/utils";
 import { BoardCard } from "./BoardCard";
-import type { BoardCtx } from "./boardCtx";
-import { dueCycle, isClosedStatus, planTaskMatches } from "./boardModel";
+import { type BoardCtx, PLAN_COL } from "./boardCtx";
+import { UnlinkDrop } from "./BoardColumn";
+import { isClosedStatus, planTaskMatches } from "./boardModel";
 import { TaskMenu } from "./TaskMenu";
 
 // Мастер-план — левая колонка доски (решение владельца 22.10.2026: «мастер-план у нас держится,
@@ -14,13 +17,11 @@ import { TaskMenu } from "./TaskMenu";
 // телефоне — первая из колонок по одной. Раньше была `sticky` с глухим фоном поверх колонок:
 // колонка спринта выходила вплотную к скруглённым углам, а в тёмной теме фон не совпадал с
 // подсвеченным фоном страницы. Теперь колонки просто обрезаются у края своей полосы.
-// Группы → задачи, у каждой полоска спринтов (закрашены её спринты, рамка — идущий).
+// Два раздела: «Не взяты» (ни в одном незакрытом спринте) сверху и «В спринтах» ниже; внутри —
+// группы → задачи. Под задачей одна строка «С4 → С6 · 🏁 01.12» вместо полоски (решение
+// владельца 22.10.2026, п.14: «что будет, когда спринты перевалятся за десятку?»).
 
-// Сколько принятых спринтов показывать в полоске: их со временем десятки, а задаче важны
-// ближайшие. Принятый, в котором задача была, показывается всегда.
-const PAST_CELLS = 2;
-
-type Node = { task: BoardPlanTask; kids: Node[] };
+type Node = { task: BoardPlanTask; kids: Node[]; nestedUnder?: boolean };
 
 function byOpenThenCreated(a: Node, b: Node): number {
   const ca = isClosedStatus(a.task.status);
@@ -59,74 +60,96 @@ function filterTree(
   return out;
 }
 
-function Strip(
+/** Строка под задачей: отрезок незакрытых спринтов, срок, переносы. */
+function PlanLine(
   { task, cycles }: { task: BoardPlanTask; cycles: readonly SprintCycle[] },
 ) {
   const dt = useDt();
-  const past = cycles.filter((c) => c.status === "accepted");
-  const shownPast = new Set([
-    ...past.slice(-PAST_CELLS).map((c) => c.id),
-    ...past.filter((c) => task.cycle_ids.includes(c.id)).map((c) => c.id),
-  ]);
-  const cells = cycles.filter((c) =>
-    c.status !== "accepted" || shownPast.has(c.id)
-  );
-  if (cells.length === 0) return null;
-  const names = cycles.filter((c) => task.cycle_ids.includes(c.id)).map((c) =>
-    c.name
-  );
+  const line = planLine(task, cycles);
+  const closed = isClosedStatus(task.status);
+  if (line.kind === "none") {
+    if (closed) return null;
+    return (
+      <div
+        className="col-span-2 col-start-2 -mt-0.5 text-pri-med/90"
+        style={{ fontSize: 11.5 }}
+        data-testid="plan-line"
+      >
+        {dt("не в спринтах", "not in sprints")}
+      </div>
+    );
+  }
+  const names = cycles.filter((c) =>
+    c.status !== "accepted" && task.cycle_ids.includes(c.id)
+  ).map((c) => c.name).join(", ");
   return (
-    <span
-      className="inline-flex items-center gap-[2px]"
-      title={names.length > 0
-        ? names.join(", ")
-        : dt("ни в одном спринте", "in no sprint")}
-      data-testid="plan-strip"
+    <div
+      className="col-span-2 col-start-2 -mt-0.5 flex flex-wrap items-center gap-x-1.5 text-ink-soft"
+      style={{ fontSize: 11.5 }}
+      title={names}
+      data-testid="plan-line"
     >
-      {cells.map((c) => {
-        const on = task.cycle_ids.includes(c.id);
-        return (
-          <i
-            key={c.id}
-            className={cn(
-              "inline-block h-1.5 w-3.5 rounded-[2px]",
-              on
-                ? (c.status === "accepted"
-                  ? "bg-accent-ink/40"
-                  : "bg-accent-ink")
-                : "bg-line",
-              c.status === "active" &&
-                "outline-[1.5px] outline-offset-1 outline-primary",
-            )}
-          />
-        );
-      })}
-    </span>
+      <span className="font-medium tabular-nums">
+        {line.from}
+        {line.to ? ` → ${line.to}` : ""}
+      </span>
+      {line.due && (
+        <span
+          className={cn(
+            "whitespace-nowrap tabular-nums",
+            line.due.longer && !closed && "font-semibold text-pri-high",
+          )}
+        >
+          · 🏁 {fmtDayShort(line.due.date)}
+          {line.due.longer && !closed
+            ? ` · ${dt("план дольше срока", "plan runs past the deadline")}`
+            : ""}
+        </span>
+      )}
+      {task.moves > 0 && (
+        <span className="whitespace-nowrap text-pri-med">
+          · {dt(`перенос ×${task.moves}`, `moved ×${task.moves}`)}
+        </span>
+      )}
+    </div>
   );
 }
 
-function PlanCard({ node, nested, cycles, ctx }: {
+function PlanCard({ node, cycles, ctx }: {
   node: Node;
-  nested: boolean;
   cycles: readonly SprintCycle[];
   ctx: BoardCtx;
 }) {
+  const dt = useDt();
   const t = node.task;
   const closed = isClosedStatus(t.status);
   const names = ctx.namesFor(t.id, t.assignees);
   const payload = ctx.canDrag && !closed
     ? ({ kind: "plan", taskId: t.id } as const)
     : null;
+  const parent = t.parent_id ? ctx.planById.get(t.parent_id) : undefined;
+  const line = planLine(t, cycles);
+  const kids = ctx.kidsOf(t.id);
+  // Подзадачи, которых нет под этим родителем (отфильтрованы или в другой группе), — «+ ещё N».
+  const shownKids = new Set(node.kids.map((k) => k.task.id));
+  const hidden = kids.filter((k) => !shownKids.has(k.id)).length;
   return (
     <>
       <BoardCard
         title={t.title}
         closed={closed}
-        nested={nested}
-        strip={<Strip task={t} cycles={cycles} />}
-        due={t.due_date
-          ? { date: t.due_date, flag: !!dueCycle(cycles, t.due_date) }
-          : null}
+        dnd={ctx.cardDnd(t.id, PLAN_COL)}
+        plan={<PlanLine task={t} cycles={cycles} />}
+        subtasks={kids.length > 0
+          ? {
+            done: kids.filter((x) => isClosedStatus(x.status)).length,
+            total: kids.length,
+          }
+          : undefined}
+        parentNote={parent && !node.nestedUnder
+          ? { title: parent.title, onOpen: () => ctx.openTask(parent.id) }
+          : undefined}
+        due={line.kind === "none" && t.due_date ? { date: t.due_date } : null}
         assignee={names[0] ?? null}
         moreAssignees={Math.max(0, names.length - 1)}
         onToggleDone={() => ctx.toggleDone(t.id, t.status)}
@@ -149,9 +172,26 @@ function PlanCard({ node, nested, cycles, ctx }: {
           />
         }
       />
-      {node.kids.map((k) => (
-        <PlanCard key={k.task.id} node={k} nested cycles={cycles} ctx={ctx} />
-      ))}
+      {(node.kids.length > 0 || hidden > 0) && (
+        <div
+          className="ml-3 flex flex-col gap-1.5 border-l-2 border-line pl-2"
+          data-testid="ladder"
+        >
+          {node.kids.map((k) => (
+            <PlanCard
+              key={k.task.id}
+              node={{ ...k, nestedUnder: true }}
+              cycles={cycles}
+              ctx={ctx}
+            />
+          ))}
+          {hidden > 0 && (
+            <div className="px-1 text-ink-mute" style={{ fontSize: 11.5 }}>
+              {dt(`+ ещё ${hidden}`, `+ ${hidden} more`)}
+            </div>
+          )}
+        </div>
+      )}
     </>
   );
 }
@@ -182,12 +222,28 @@ export function MasterPlanColumn(
   const keep = (t: BoardPlanTask) =>
     planTaskMatches(t, ctx.namesFor(t.id, t.assignees), ctx.filter);
   const sorted = [...groups].sort((a, b) => byNumberedName(a.name, b.name));
-  const shown = sorted.map((g) => ({
+  const trees = sorted.map((g) => ({
     group: g,
     tree: filterTree(buildTree(g.tasks), keep, hideDone),
-  }))
-    // С поиском пустые группы прячутся; без него видны — в них заводят первую задачу.
-    .filter((x) => !filtering || x.tree.length > 0);
+  }));
+  // «Не взяты» — незакрытая задача без единого незакрытого спринта; всё остальное, включая
+  // готовые, — «В спринтах». Раздел определяет корень: подзадачи едут под родителем.
+  const isNew = (n: Node) =>
+    !isClosedStatus(n.task.status) && planLine(n.task, cycles).kind === "none";
+  const countTasks = (nodes: Node[]): number =>
+    nodes.reduce((n, x) => n + 1 + countTasks(x.kids), 0);
+  const section = (taken: boolean) =>
+    trees.map(({ group, tree }) => ({
+      group,
+      tree: tree.filter((n) => isNew(n) !== taken),
+    }))
+      // Пустые группы не показываем: «+» стоит у заголовка группы там, где у неё есть задачи.
+      .filter((x) => x.tree.length > 0);
+  const notTaken = section(false);
+  const inSprints = section(true);
+  const count = (xs: typeof notTaken) =>
+    xs.reduce((n, x) => n + countTasks(x.tree), 0);
+  const unlink = ctx.unlinkZone(PLAN_COL);
 
   return (
     <div
@@ -225,37 +281,78 @@ export function MasterPlanColumn(
             {dt("Скрыть готовые", "Hide done")}
           </label>
         </div>
-        <div className="flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto p-2">
-          {shown.map(({ group, tree }) => (
-            <div key={group.id} className="flex flex-col gap-1.5">
+        <div
+          data-board-scroll
+          className="flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto p-2"
+        >
+          {[
+            {
+              key: "new",
+              title: dt("Не взяты", "Not taken"),
+              list: notTaken,
+            },
+            {
+              key: "in",
+              title: dt("В спринтах", "In sprints"),
+              list: inSprints,
+            },
+          ].map((sec) =>
+            sec.list.length === 0 ? null : (
               <div
-                className="mx-1 mt-1.5 font-semibold uppercase tracking-[0.04em] text-ink-mute"
-                style={{ fontSize: 11 }}
+                key={sec.key}
+                className="flex flex-col gap-1.5"
+                data-testid={`plan-section-${sec.key}`}
               >
-                {group.name}
-              </div>
-              {tree.map((n) => (
-                <PlanCard
-                  key={n.task.id}
-                  node={n}
-                  nested={false}
-                  cycles={cycles}
-                  ctx={ctx}
-                />
-              ))}
-              {!filtering && (
-                <button
-                  type="button"
-                  onClick={() => onAddTask(group.id)}
-                  className="rounded-[9px] border border-dashed border-line-2 px-2 py-1.5 text-center text-ink-mute transition-colors hover:border-accent-line hover:text-ink"
+                <div
+                  className="sticky top-0 z-[1] -mx-2 border-b border-line bg-surface px-3 py-1 font-semibold text-ink"
                   style={{ fontSize: 12.5 }}
                 >
-                  {dt("+ Задача в план", "+ Task to the plan")}
-                </button>
+                  {sec.title} · {count(sec.list)}
+                </div>
+                {sec.list.map(({ group, tree }) => (
+                  <div key={group.id} className="flex flex-col gap-1.5">
+                    <div
+                      className="mx-1 mt-1.5 flex items-center justify-between gap-2 font-semibold uppercase tracking-[0.04em] text-ink-mute"
+                      style={{ fontSize: 11 }}
+                    >
+                      <span className="min-w-0 truncate">{group.name}</span>
+                      {!filtering && (
+                        <button
+                          type="button"
+                          onClick={() => onAddTask(group.id)}
+                          title={dt("Задача в план", "Task to the plan")}
+                          aria-label={dt("Задача в план", "Task to the plan")}
+                          className="grid h-5 w-5 shrink-0 place-items-center rounded-[6px] text-[15px] font-normal leading-none text-ink-mute transition-colors hover:bg-accent-soft hover:text-ink"
+                        >
+                          +
+                        </button>
+                      )}
+                    </div>
+                    {tree.map((n) => (
+                      <PlanCard
+                        key={n.task.id}
+                        node={n}
+                        cycles={cycles}
+                        ctx={ctx}
+                      />
+                    ))}
+                  </div>
+                ))}
+              </div>
+            )
+          )}
+          {notTaken.length === 0 && inSprints.length > 0 && !filtering && (
+            <p
+              className="px-2 py-2 text-center text-ink-mute"
+              style={{ fontSize: 12.5 }}
+            >
+              {dt(
+                "Все задачи разложены по спринтам",
+                "All tasks are placed in sprints",
               )}
-            </div>
-          ))}
-          {shown.length === 0 && (
+            </p>
+          )}
+          {notTaken.length === 0 && inSprints.length === 0 && (
             <p
               className="px-2 py-4 text-center text-ink-mute"
               style={{ fontSize: 12.5 }}
@@ -271,6 +368,7 @@ export function MasterPlanColumn(
                 )}
             </p>
           )}
+          {unlink && <UnlinkDrop zone={unlink} bg="bg-surface" />}
         </div>
       </section>
     </div>
