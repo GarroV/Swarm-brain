@@ -342,6 +342,24 @@ Deno.test("удалили спринт-цель — снимок остаётс�
   });
 });
 
+Deno.test("приёмка не везёт снимок перенесённой: задача остаётся в одном спринте", async () => {
+  await withScene(async (db, s) => {
+    const taskId = await addTask(db, s, { due: addDays(s.today, 4) });
+    const src = await place(db, s.A, taskId);
+    // Через спринт: старая приёмка повезла бы снимок в ближайший (F1) — вторая живая строка.
+    await move(db, src, s.F2, "ждём юристов");
+
+    await db.queryObject`
+      select public.accept_sprint_cycle(
+        ${s.A}::uuid, ${WS}, 'tester', null, '{}'::jsonb,
+        'запасной', (current_date + 40)::date, (current_date + 53)::date, (current_date + 46)::date)`;
+
+    const live = (await rows(db, taskId)).filter((x) => x.moved_at === null);
+    assertEquals(live.length, 1, "живая строка одна — в спринте-цели");
+    assertEquals(live[0].cycle_id, s.F2);
+  });
+});
+
 Deno.test("функции переноса вызывает только service_role", async () => {
   const db = await connect();
   try {
