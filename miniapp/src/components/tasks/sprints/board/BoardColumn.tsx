@@ -256,7 +256,10 @@ export function UnlinkDrop({ zone, bg = "bg-surface-2" }: {
   const dt = useDt();
   return (
     <div
-      className={cn("sticky bottom-0 z-[2] mt-auto -mx-2 -mb-2 border-t border-line px-2 pb-2 pt-2", bg)}
+      className={cn(
+        "sticky bottom-0 z-[2] mt-auto -mx-2 -mb-2 border-t border-line px-2 pb-2 pt-2",
+        bg,
+      )}
     >
       <div
         {...zone.handlers}
