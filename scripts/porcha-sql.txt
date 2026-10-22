@@ -129,7 +129,13 @@ if coalesce(current_setting('swarm.sprint_moving', true), '') = '1' then|if fals
 perform public.sprint_move_task_internal(v_item.id, v_target, null, null, null);|null;|supabase/functions/_shared/tasks/sprint-autoplace.db.test.ts|supabase/migrations/20261022121000_sprint_autoplace_moves.sql
 set frozen_due_date = old.due_date|set frozen_due_date = frozen_due_date|supabase/functions/_shared/tasks/sprint-autoplace.db.test.ts|supabase/migrations/20261022121000_sprint_autoplace_moves.sql
 carry_reason        = coalesce(v_reason, case when v_src.to_carry then nullif(btrim(v_src.carry_reason), '') end),|carry_reason        = v_reason,|supabase/functions/_shared/tasks/sprint-move.db.test.ts|supabase/migrations/20261022120000_sprint_move.sql
-# Ревью 22.10.2026: чужая причина после оживления снимка, порядок замков «задача → строка».
+# Ревью 22.10.2026: чужая причина после оживления снимка, порядок замков «задача → строка», наследство 19.10.
 moved_by = null, carry_reason = null,|moved_by = null,|supabase/functions/_shared/tasks/sprint-move.db.test.ts|supabase/migrations/20261022121000_sprint_autoplace_moves.sql
 case when v_src.to_carry then|case when true then|supabase/functions/_shared/tasks/sprint-move.db.test.ts|supabase/migrations/20261022120000_sprint_move.sql
 select * into t from public.tasks where id = v_task_id for update;|select * into t from public.tasks where id = v_task_id;|supabase/functions/_shared/tasks/sprint-move.db.test.ts|supabase/migrations/20261022120000_sprint_move.sql
+where si.to_carry and si.carry_auto|where si.to_carry|supabase/functions/_shared/tasks/sprint-legacy-carry.db.test.ts|supabase/migrations/20261022123000_sprint_legacy_carry.sql
+and t.archived_at is null and not t.is_private and t.status not in ('done', 'cancelled')|and true|supabase/functions/_shared/tasks/sprint-legacy-carry.db.test.ts|supabase/migrations/20261022123000_sprint_legacy_carry.sql
+and dc.status = 'draft' and dc.archived_at is null|and dc.archived_at is null|supabase/functions/_shared/tasks/sprint-legacy-carry.db.test.ts|supabase/migrations/20261022123000_sprint_legacy_carry.sql
+and d.added_by is null and d.carried_from is null|and d.carried_from is null|supabase/functions/_shared/tasks/sprint-legacy-carry.db.test.ts|supabase/migrations/20261022123000_sprint_legacy_carry.sql
+set carried_from = p.src_id,|set carried_from = carried_from,|supabase/functions/_shared/tasks/sprint-legacy-carry.db.test.ts|supabase/migrations/20261022123000_sprint_legacy_carry.sql
+revoke all on function public.sprint_convert_legacy_carry() from public, anon, authenticated;|grant execute on function public.sprint_convert_legacy_carry() to anon;|supabase/functions/_shared/tasks/sprint-legacy-carry.db.test.ts|supabase/migrations/20261022123000_sprint_legacy_carry.sql
