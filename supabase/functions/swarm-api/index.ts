@@ -168,6 +168,7 @@ import { externalFetch, VIA_GRANOLA, VIA_OPENAI_CHAT, VIA_OPENAI_EMBEDDING } fro
 import { handleSprintCycleRoutes } from "./sprint-cycles.ts";
 import { handleSpaceJournalRoutes } from "./space-journal.ts";
 import { handleTaskArchiveRoutes } from "./task-archive.ts";
+import { handleBoardRoutes } from "./board.ts";
 import { handleMarketRoutes } from "./market.ts";
 import { handleQualityRoutes } from "./quality.ts";
 import { handleInspectionRoutes } from "./inspections.ts";
@@ -185,12 +186,7 @@ import {
 } from "./public-roadmap.ts";
 // Календарь на сегодня для панели главной (issue #218): доступ к Google — общий модуль
 // (его же зовёт meeting-current), отбор событий дня и границы суток — чистая логика под тестами.
-import { todayCalendarEvents } from "../_shared/calendar-today.ts";
-import {
-  type RecorderPresence,
-  todayMeetings,
-} from "../_shared/meetings-today.ts";
-import { joinLink } from "../meeting-current/join-link.ts";
+import { loadTodayMeetings } from "./today-meetings.ts";
 import { isTaskStatus, taskStatusError } from "../_shared/tasks/statuses.ts";
 import {
   isActive as maintenanceActive,
@@ -1156,6 +1152,14 @@ async function routeRequest(req: Request): Promise<Response> {
 
   const archiveResp = await handleTaskArchiveRoutes(req, routePath, groupId, origin);
   if (archiveResp) return archiveResp;
+
+  // Доска «Сегодня» рекордера и задача голосом (/board/today, /tasks/voice) — до /tasks и /tasks/:id.
+  const boardResp = await handleBoardRoutes(
+    { supabase, telegramId: telegram_id, groupId, isDemo, origin },
+    req,
+    routePath,
+  );
+  if (boardResp) return boardResp;
 
   // «Анализ рынка» (/market/*): данные страны по allowed_markets, импорт и кандидаты — админу.
   const marketResp = await handleMarketRoutes(req, routePath, telegram_id, groupId, isAdmin, isDemo, origin);
@@ -3292,63 +3296,20 @@ async function routeRequest(req: Request): Promise<Response> {
   // «переподключить», `calendar_error`/пустой список → обычное пустое состояние. Молча
   // показать пустоту при отвалившейся интеграции нельзя — это урок #175.
   if (req.method === "GET" && routePath === "/calendar/today") {
-    // Присутствие рекордера читается ПАРАЛЛЕЛЬНО с обменом токена и запросом к Google: оно от них не
-    // зависит (раньше шло четвёртым последовательным шагом, issue #906). Запрос стартует сразу — билдер
-    // PostgREST ленивый, поэтому оборачиваем в async.
-    //
-    // Где сидит сам человек: рекордер сообщает это в heartbeat. Панель по этим флагам
-    // рисует `ON AIR` / `REC` вместо кнопки «Подключиться» — предлагать зайти туда, где
-    // человек уже сидит, значит не понимать, что происходит (решение владельца 04.09.2026).
-    // Код может приехать РАНЬШЕ миграции: ночная автоматика вливает PR и деплоит функции,
-    // а миграции накатываются руками (scripts/deploy-window.sh их только показывает). Пока
-    // колонок нет, PostgREST ответит ошибкой — тогда панель работает как до фичи, без ON AIR,
-    // но ошибку не проглатываем молча: без записи в лог такой перекос порядка не заметить.
-    const presenceQuery = (async () =>
-      await supabase
-        .from("allowed_users")
-        .select(
-          "recorder_last_seen, recorder_last_recording, recorder_last_on_call, recorder_last_meeting_key",
-        )
-        .eq("telegram_id", telegram_id).maybeSingle())();
-    // Пояс берём у клиента: сервер живёт в UTC и не знает, какие сутки у человека сейчас.
-    const [cal, { data: rec, error: recErr }] = await Promise.all([
-      todayCalendarEvents(
-        supabase,
-        telegram_id,
-        Number(url.searchParams.get("tz_offset") ?? "0"),
-      ),
-      presenceQuery,
-    ]);
-    if (!cal.ok) {
-      return json({ meetings: [], reason: cal.reason }, 200, origin);
-    }
-    const items = cal.events;
-    if (recErr) {
-      console.warn(
-        "[calendar/today] присутствие рекордера не прочиталось:",
-        recErr.message,
-      );
-    }
-    const r = rec as {
-      recorder_last_seen?: string | null;
-      recorder_last_recording?: boolean | null;
-      recorder_last_on_call?: boolean | null;
-      recorder_last_meeting_key?: string | null;
-    } | null;
-    const presence: RecorderPresence | null = r
-      ? {
-        meetingKey: r.recorder_last_meeting_key ?? null,
-        onCall: r.recorder_last_on_call === true,
-        recording: r.recorder_last_recording === true,
-        lastSeen: r.recorder_last_seen ?? null,
-      }
-      : null;
-
-    return json(
-      { meetings: todayMeetings(items, new Date(), joinLink, presence) },
-      200,
-      origin,
+    // Присутствие рекордера, пояс клиента и причины пустоты — в общей loadTodayMeetings
+    // (swarm-api/today-meetings.ts): её же зовёт GET /board/today. Где сидит сам человек, рекордер
+    // сообщает в heartbeat; панель по флагам рисует `ON AIR` / `REC` вместо кнопки «Подключиться»
+    // (решение владельца 04.09.2026). Код может приехать РАНЬШЕ миграции колонок присутствия —
+    // тогда панель работает без ON AIR, ошибка пишется в лог.
+    const today = await loadTodayMeetings(
+      supabase,
+      telegram_id,
+      Number(url.searchParams.get("tz_offset") ?? "0"),
     );
+    if (!today.ok) {
+      return json({ meetings: [], reason: today.reason }, 200, origin);
+    }
+    return json({ meetings: today.meetings }, 200, origin);
   }
 
   // ── GET /integrations ─────────────────────────────────────────────────────────
