@@ -53,7 +53,6 @@ export function SprintPulse({ kpi, showUnchecked, extra, moved = 0 }: {
   moved?: number;
 }) {
   const dt = useDt();
-  const work = Math.max(kpi.total - kpi.done, 0);
   const donePct = kpi.total ? (kpi.done / kpi.total) * 100 : 0;
   const marks = [
     <Mark
@@ -122,11 +121,11 @@ export function SprintPulse({ kpi, showUnchecked, extra, moved = 0 }: {
             style={{ width: `${100 - donePct}%` }}
           />
         </div>
-        <span className="hidden whitespace-nowrap text-ink-mute sm:inline">
-          {dt(`${work} в работе`, `${work} in progress`)}
-          {kpi.checkOk > 0 &&
-            dt(` · по плану ${kpi.checkOk}`, ` · on track ${kpi.checkOk}`)}
-        </span>
+        {kpi.checkOk > 0 && (
+          <span className="hidden whitespace-nowrap text-ink-mute sm:inline">
+            {dt(`по плану ${kpi.checkOk}`, `on track ${kpi.checkOk}`)}
+          </span>
+        )}
       </div>
       {anyMark && (
         <div className="mt-2 flex flex-wrap items-center gap-1.5">

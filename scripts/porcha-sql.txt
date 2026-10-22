@@ -141,3 +141,12 @@ set carried_from = p.src_id,|set carried_from = carried_from,|supabase/functions
 revoke all on function public.sprint_convert_legacy_carry() from public, anon, authenticated;|grant execute on function public.sprint_convert_legacy_carry() to anon;|supabase/functions/_shared/tasks/sprint-legacy-carry.db.test.ts|supabase/migrations/20261022123000_sprint_legacy_carry.sql
 and left(tc.content, length(|and true or left(tc.content, length(|supabase/functions/_shared/tasks/sprint-legacy-carry.db.test.ts|supabase/migrations/20261022123000_sprint_legacy_carry.sql
 order by tc.created_at desc|order by tc.created_at asc|supabase/functions/_shared/tasks/sprint-legacy-carry.db.test.ts|supabase/migrations/20261022123000_sprint_legacy_carry.sql
+# План работы задачи (22.10.2026, sprint_set_task_span): причина после срока и при продлении, прошлые спринты, чужое пространство, сужение, права.
+if t.due_date is not null and v_to.start_date > t.due_date then|if false then|supabase/functions/_shared/tasks/sprint-span.db.test.ts|supabase/migrations/20261023120000_sprint_task_span.sql
+and v_to.end_date > coalesce(v_last_end, v_active.end_date) then|and false then|supabase/functions/_shared/tasks/sprint-span.db.test.ts|supabase/migrations/20261023120000_sprint_task_span.sql
+if v_from.status = 'accepted' or v_to.status = 'accepted' then|if false then|supabase/functions/_shared/tasks/sprint-span.db.test.ts|supabase/migrations/20261023120000_sprint_task_span.sql
+if t.is_private then|if false then|supabase/functions/_shared/tasks/sprint-span.db.test.ts|supabase/migrations/20261023120000_sprint_task_span.sql
+or v_from.tab_id is distinct from p_tab_id or v_to.tab_id is distinct from p_tab_id then|then|supabase/functions/_shared/tasks/sprint-span.db.test.ts|supabase/migrations/20261023120000_sprint_task_span.sql
+(c.start_date < v_from.start_date or c.start_date > v_to.start_date)|(false)|supabase/functions/_shared/tasks/sprint-span.db.test.ts|supabase/migrations/20261023120000_sprint_task_span.sql
+if v_from.start_date > v_to.start_date then|if false then|supabase/functions/_shared/tasks/sprint-span.db.test.ts|supabase/migrations/20261023120000_sprint_task_span.sql
+revoke all on function public.sprint_set_task_span(uuid, uuid, text, uuid, uuid, text, text) from public, anon, authenticated;|grant execute on function public.sprint_set_task_span(uuid, uuid, text, uuid, uuid, text, text) to anon;|supabase/functions/_shared/tasks/sprint-span.db.test.ts|supabase/migrations/20261023120000_sprint_task_span.sql

@@ -37,6 +37,19 @@ export function buildPlanSpans(rows: readonly SpanRow[]): Map<string, string[]> 
   return out;
 }
 
+/**
+ * Сколько раз задачу переносили: снимков переноса у неё в спринтах пространства. Нужно строке
+ * «перенос ×N» под задачей мастер-плана. Задачи без переносов в карте нет.
+ */
+export function countMoves(rows: readonly SpanRow[]): Map<string, number> {
+  const out = new Map<string, number>();
+  for (const r of rows) {
+    if (r.moved_at == null) continue;
+    out.set(r.task_id, (out.get(r.task_id) ?? 0) + 1);
+  }
+  return out;
+}
+
 /** Задача мастер-плана: то, что нужно карточке и полоске. */
 export interface PlanTaskView {
   id: string;
@@ -51,6 +64,8 @@ export interface PlanTaskView {
   created_at: string;
   /** Спринты задачи по порядку начала (`buildPlanSpans`). */
   cycle_ids: string[];
+  /** Сколько раз задачу переносили между спринтами (`countMoves`). */
+  moves: number;
 }
 
 export interface PlanGroupView {
