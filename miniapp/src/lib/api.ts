@@ -23,6 +23,7 @@ import type {
   ProjectLink,
   Sprint,
   SprintCycle,
+  SprintBoardData,
   SprintCycleDetail,
   SprintCycleItem,
   SprintStats,
@@ -2403,6 +2404,55 @@ export async function fetchSprintCycle(id: string): Promise<SprintCycleDetail> {
     return { ...c, items: all.filter((i) => !i.moved), moved: all.filter((i) => !!i.moved) };
   }
   return apiFetch<SprintCycleDetail>(`/sprint-cycles/${id}`);
+}
+
+/**
+ * Доска спринтов пространства одним запросом: мастер-план и спринты слева направо. `tabId = null` —
+ * служебное «Без вкладки». Принятые спринты приходят без состава (`loaded: false`) — его берут
+ * `fetchSprintCycle` при раскрытии полоски.
+ */
+export async function fetchSprintBoard(tabId: string | null): Promise<SprintBoardData> {
+  if (DEV_MODE) return mockBoard(tabId);
+  return apiFetch<SprintBoardData>(`/sprint-cycles/board?tab=${tabId === null ? "none" : encodeURIComponent(tabId)}`);
+}
+
+/** Доска в DEV_MODE собирается из тех же моков, что «Список»: группы — проекты верхнего уровня пространства. */
+function mockBoard(tabId: string | null): SprintBoardData {
+  const cycles = mockCycles.filter((c) => c.tab_id === tabId)
+    .sort((a, b) => a.start_date.localeCompare(b.start_date));
+  const startOf = new Map(cycles.map((c) => [c.id, c.start_date]));
+  const spansOf = (taskId: string) =>
+    cycles.filter((c) => (mockCycleItems[c.id] ?? []).some((r) => r.task_id === taskId && !r.moved))
+      .sort((a, b) => (startOf.get(a.id)! < startOf.get(b.id)! ? -1 : 1)).map((c) => c.id);
+  const groupIds = tabId === "sp1" ? ["pr1", "pr1a", "pr1b"] : [];
+  return {
+    plan: {
+      groups: groupIds.flatMap((id) => {
+        const p = mockProjects.find((x) => x.id === id);
+        if (!p) return [];
+        return [{
+          id,
+          name: p.name,
+          tasks: mockTasks.filter((t) => t.project_id === id).map((t) => ({
+            id: t.id,
+            title: t.title,
+            status: t.status,
+            due_date: t.due_date ?? null,
+            assignees: t.assignees ?? [],
+            assignee_telegram_ids: t.assignee_telegram_ids ?? [],
+            parent_id: t.parent_id ?? null,
+            created_at: t.created_at,
+            cycle_ids: spansOf(t.id),
+          })),
+        }];
+      }),
+    },
+    cycles: cycles.map((cycle) => {
+      if (cycle.status === "accepted") return { cycle, items: [], moved: [], withdrawn: [], loaded: false };
+      const all = mockItemsOf(cycle.id);
+      return { cycle, items: all.filter((i) => !i.moved), moved: all.filter((i) => !!i.moved), withdrawn: [], loaded: true };
+    }),
+  };
 }
 
 export async function createSprintCycle(

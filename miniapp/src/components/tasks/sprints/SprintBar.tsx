@@ -134,6 +134,9 @@ export function SprintBar(p: SprintBarProps) {
       : []),
   ];
 
+  // Доска спринтов показывает все спринты сразу и сама несёт их действия (закрыть, новый), поэтому
+  // выбор одного спринта, его даты, «Начать/Принять» и режим правки в её полосе не нужны.
+  const board = p.sprintTab && p.view === "board";
   const left = d ? daysLeft(d.end_date) : 0;
   // «Принять» — действие раз в две недели и необратимое: пока спринт идёт, кнопка тихая и
   // разгорается, когда срок вышел (стенд: `over`).
@@ -161,7 +164,7 @@ export function SprintBar(p: SprintBarProps) {
   return (
     <div className="flex shrink-0 flex-wrap items-center gap-1.5 border-b border-line bg-surface-2 px-4 py-2 lg:px-5">
       {p.spaceMenu}
-      {p.renameField ?? (items.length > 0 && (
+      {!board && (p.renameField ?? (items.length > 0 && (
         <Menu
           label={d
             ? (
@@ -172,11 +175,11 @@ export function SprintBar(p: SprintBarProps) {
             : dt("Спринт", "Sprint")}
           items={items}
         />
-      ))}
-      {p.move && moveItems.length > 0 && (
+      )))}
+      {!board && p.move && moveItems.length > 0 && (
         <Menu label={dt("Перенести в…", "Move to…")} items={moveItems} />
       )}
-      {d && (
+      {d && !board && (
         <span
           className="mx-1 whitespace-nowrap text-ink-soft"
           style={{ fontSize: 12.5 }}
@@ -217,7 +220,7 @@ export function SprintBar(p: SprintBarProps) {
         <>
           {/* Вид запоминается у человека; канбан — только на компьютере (D003). */}
           <span className={PILL_GROUP_CLS}>
-            {(["list", "kanban"] as const).map((v) => {
+            {(["list", "board", "kanban"] as const).map((v) => {
               const off = v === "kanban" && p.kanbanDisabled;
               const on = p.view === v;
               return (
@@ -229,19 +232,23 @@ export function SprintBar(p: SprintBarProps) {
                   onClick={() => p.onView(v)}
                   title={off
                     ? dt(
-                      "Канбан — только на компьютере",
-                      "Kanban is desktop only",
+                      "«Статусы» — только на компьютере",
+                      "“Statuses” is desktop only",
                     )
                     : undefined}
                   className={cn(pillSegmentCls(on), "sm:min-h-[26px] px-3")}
                   style={{ fontSize: 12.5 }}
                 >
-                  {v === "list" ? dt("Список", "List") : dt("Канбан", "Kanban")}
+                  {v === "list"
+                    ? dt("Список", "List")
+                    : v === "board"
+                    ? dt("Доска спринтов", "Sprint board")
+                    : dt("Статусы", "Statuses")}
                 </button>
               );
             })}
           </span>
-          {p.onPlan && (
+          {p.onPlan && !board && (
             <ToolbarButton
               on={p.planOpen}
               onClick={p.onPlan}
@@ -258,17 +265,19 @@ export function SprintBar(p: SprintBarProps) {
             /* Режим правки: вне его доска только читается — никаких «+», «✎», «✕». Ежедневные
               отметки он НЕ прячет. */
           }
-          <ToolbarButton
-            on={p.editMode}
-            onClick={p.onEditMode}
-            title={dt(
-              "Показать кнопки правки: завести, переименовать, удалить",
-              "Show editing controls: create, rename, delete",
-            )}
-          >
-            <RoyIcon name="pencil" size={12} strokeWidth={2} />
-            {dt("Правка", "Edit")}
-          </ToolbarButton>
+          {!board && (
+            <ToolbarButton
+              on={p.editMode}
+              onClick={p.onEditMode}
+              title={dt(
+                "Показать кнопки правки: завести, переименовать, удалить",
+                "Show editing controls: create, rename, delete",
+              )}
+            >
+              <RoyIcon name="pencil" size={12} strokeWidth={2} />
+              {dt("Правка", "Edit")}
+            </ToolbarButton>
+          )}
         </>
       )}
       {!d && p.sprintTab && (
@@ -278,7 +287,7 @@ export function SprintBar(p: SprintBarProps) {
         </ToolbarButton>
       )}
 
-      {p.sprintTab && d && (
+      {p.sprintTab && d && !board && (
         <div className="ml-auto flex items-center gap-2">
           {d.status === "draft" && (
             <button

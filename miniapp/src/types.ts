@@ -252,6 +252,43 @@ export type SprintCycleDetail = SprintCycle & {
   moved?: SprintCycleItem[];
 };
 
+/**
+ * Доска спринтов (22.10.2026): ответ GET /sprint-cycles/board — зеркало `BoardData` из
+ * `_shared/tasks/sprint-board-load.ts`. Мастер-план — группы пространства с их задачами; у каждой
+ * задачи `cycle_ids` — спринты, в которых она живёт (по порядку начала, снимки не считаются).
+ */
+export type BoardPlanTask = {
+  id: string;
+  title: string;
+  status: string;
+  due_date: string | null;
+  assignees: string[];
+  assignee_telegram_ids: number[];
+  /** Подзадача сидит под родителем той же группы; иначе — своей строкой. */
+  parent_id: string | null;
+  created_at: string;
+  cycle_ids: string[];
+};
+
+export type BoardPlanGroup = { id: string; name: string; tasks: BoardPlanTask[] };
+
+export type SprintBoardCycle = {
+  cycle: SprintCycle;
+  items: SprintCycleItem[];
+  /** Снимки ушедших переносом. */
+  moved: SprintCycleItem[];
+  /** Снятые из идущего спринта — нужны шапке для процента от плана старта. */
+  withdrawn: SprintCycleItem[];
+  /** false — состав не загружен (принятый спринт): итоги в `cycle.stats`, состав по запросу. */
+  loaded: boolean;
+};
+
+export type SprintBoardData = {
+  plan: { groups: BoardPlanGroup[] };
+  /** Спринты пространства слева направо по времени. */
+  cycles: SprintBoardCycle[];
+};
+
 export type Project = {
   id: string;
   group_id: string;

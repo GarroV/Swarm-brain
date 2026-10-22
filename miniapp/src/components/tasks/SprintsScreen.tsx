@@ -79,8 +79,12 @@ import { SpaceSwitcher } from "@/components/tasks/sprints/SpaceSwitcher";
 import { SprintBar } from "@/components/tasks/sprints/SprintBar";
 import { SprintPulse } from "@/components/tasks/sprints/SprintPulse";
 import { MoveDialog } from "@/components/tasks/sprints/MoveDialog";
+import { shiftBetweenDrafts } from "@/components/tasks/sprints/shiftTask";
+import type { TaskMenuActions } from "@/components/tasks/sprints/board/TaskMenu";
 import { ReasonDialog } from "@/components/tasks/sprints/ReasonDialog";
 import { MovedSection } from "@/components/tasks/sprints/SnapshotCard";
+import { SprintBoardView } from "@/components/tasks/sprints/board/SprintBoardView";
+import { useWidePane } from "@/components/roy/WidePane";
 import { useDragGroups } from "@/components/tasks/sprints/useDragGroups";
 import { NotificationsBell } from "@/components/roy/NotificationsBell";
 import { HeaderNotice } from "@/components/roy/DeployNoticeBar";
@@ -172,10 +176,13 @@ export function SprintsScreen() {
   const [grouping, setGrouping] = useSprintGrouping();
   // Вкладка «Спринт» возвращает тот вид состава, с которого ушли на «Аналитику»/«Журнал»:
   // канбанщик не должен каждый раз переключаться обратно.
-  const [lastBoard, setLastBoard] = useState<"list" | "kanban">("list");
+  const [lastBoard, setLastBoard] = useState<"list" | "board" | "kanban">("list");
   useEffect(() => {
-    if (view === "list" || view === "kanban") setLastBoard(view);
+    if (view === "list" || view === "board" || view === "kanban") setLastBoard(view);
   }, [view]);
+  // Доска спринтов: растёт ли поверх неё версия, когда экран меняет данные мимо доски (карточка
+  // задачи, приёмка) — доска перечитывает себя по этому счётчику.
+  const [boardVersion, setBoardVersion] = useState(0);
 
   const [cycles, setCycles] = useState<SprintCycle[]>([]);
   const [spaces, setSpaces] = useState<Sprint[]>([]);
@@ -449,6 +456,7 @@ export function SprintsScreen() {
   // спринта завела бы её мимо него, в общий список.
   async function onTaskCreated(created?: Task) {
     load();
+    setBoardVersion((v) => v + 1);
     if (!created || !detail) {
       if (detail) reloadDetail(detail.id);
       return;
@@ -591,6 +599,7 @@ export function SprintsScreen() {
       }
       const result = await acceptSprintCycle(detail.id, { summary });
       setAcceptOpen(false);
+      setBoardVersion((v) => v + 1);
       await load();
       setSelectedId(result.next?.id ?? detail.id);
       setErr(
@@ -661,9 +670,11 @@ export function SprintsScreen() {
     }
   }
 
-  // «→» в строке открывает окно переноса (22.10.2026): задача сразу уезжает в выбранный
+  // «Перенести в …» в меню «⋯» строки открывает окно переноса (22.10.2026): задача сразу уезжает в выбранный
   // запланированный спринт, здесь остаётся снимок с причиной. Пометки «к переносу» больше нет.
   const [moving, setMoving] = useState<SprintCycleItem | null>(null);
+  // Цель, выбранная пунктом меню «Перенести в …»: окно открывается сразу на ней.
+  const [moveTarget, setMoveTarget] = useState<SprintCycle | null>(null);
   const [reasonFor, setReasonFor] = useState<SprintCycleItem | null>(null);
   const moveTargets = useMemo(
     () =>
@@ -671,6 +682,45 @@ export function SprintsScreen() {
         .sort((a, b) => a.start_date.localeCompare(b.start_date)),
     [spaceCycles],
   );
+  /** Действия меню «⋯» строки списка: те же вызовы, что у доски спринтов (SprintBoardView). */
+  const rowMenuActions = (item: SprintCycleItem): TaskMenuActions => {
+    const taskId = item.task_id ?? "";
+    const cycleId = detail?.id ?? "";
+    const fail = (e: unknown, fallback: string) =>
+      setErr(e instanceof Error ? e.message : fallback);
+    return {
+      open: () => {
+        const live = tasks.find((t) => t.id === taskId);
+        if (live) setEditing(live);
+      },
+      check: (status) =>
+        void markItem(item, {
+          check_status: status,
+          ...(status === null ? { check_note: null } : {}),
+        }),
+      move: (target) => {
+        setMoveTarget(target);
+        setMoving(item);
+      },
+      shift: (target) =>
+        void shiftBetweenDrafts(
+          taskId,
+          cycleId,
+          target.id,
+          dt(
+            "Не удалось переставить — задача осталась на месте",
+            "Could not shift — the task stayed where it was",
+          ),
+        ).catch((e) => fail(e, dt("Не удалось переставить", "Could not shift")))
+          .finally(afterMove),
+      take: () => {},
+      remove: () =>
+        void removeTaskFromSprintCycle(cycleId, taskId)
+          .catch((e) => fail(e, dt("Не удалось убрать", "Could not remove")))
+          .finally(afterMove),
+    };
+  };
+
   const moved = detail?.moved ?? [];
   const afterMove = useCallback(async () => {
     if (!detail) return;
@@ -728,6 +778,9 @@ export function SprintsScreen() {
   // Канбан — только на компьютере (D003), поэтому на телефоне список показывается всегда,
   // независимо от запомненного вида.
   const effectiveView = view === "kanban" && !isDesktop ? "list" : view;
+  const showBoard = effectiveView === "board";
+  // Доске спринтов тесно в потолке 1280px (RoyApp): колонки идут во всю ширину монитора.
+  useWidePane(showBoard);
   const showList = effectiveView === "list";
   const showAnalytics = effectiveView === "analytics";
   const showJournal = effectiveView === "journal";
@@ -881,7 +934,7 @@ export function SprintsScreen() {
 
   const editable = !!detail && !accepted;
   const sprintTab = !showAnalytics && !showJournal;
-  const planColumn = isDesktop && planOpen && editable && sprintTab;
+  const planColumn = isDesktop && planOpen && editable && sprintTab && !showBoard;
 
   // Список состава: одна отрисовка и для всего состава, и для блоков «Мои / Остальные».
   const initiativeList = (b: typeof board) => (
@@ -911,8 +964,11 @@ export function SprintsScreen() {
         setAddingTo(projectId);
       }}
       onDone={accepted ? undefined : toggleDone}
-      // Переносят только из идущего спринта — так решает и база.
-      onMove={detail?.status === "active" ? setMoving : undefined}
+      // Меню «⋯» строки — то же, что на доске спринтов. Переносят только из идущего спринта
+      // (так решает и база): пункт «Перенести в …» меню покажет только там.
+      menu={detail
+        ? { cycle: detail, cycles: spaceCycles, actions: rowMenuActions }
+        : undefined}
       onCheck={accepted ? undefined : (item, status) =>
         markItem(item, {
           check_status: status,
@@ -1051,7 +1107,7 @@ export function SprintsScreen() {
         onSelect={setSelectedId}
         detail={detail}
         sprintTab={sprintTab}
-        view={isDesktop ? view : "list"}
+        view={effectiveView}
         onView={setView}
         kanbanDisabled={!isDesktop}
         planOpen={isDesktop ? planOpen : planSheet}
@@ -1202,7 +1258,30 @@ export function SprintsScreen() {
         </p>
       )}
 
-      {!detail
+      {showBoard
+        ? (
+          <SprintBoardView
+            space={space}
+            users={users}
+            reloadKey={boardVersion}
+            canDrag={isDesktop}
+            onOpenTask={(taskId) => {
+              const t = tasks.find((x) => x.id === taskId);
+              if (t) setEditing(t);
+              else setErr(dt("Не удалось открыть задачу", "Could not open the task"));
+            }}
+            onAddTask={(groupId) => {
+              setAddIntoSprint(false);
+              setAddingTo(groupId);
+            }}
+            onCloseSprint={(id) => {
+              setSelectedId(id);
+              setAcceptOpen(true);
+            }}
+            onChanged={load}
+          />
+        )
+        : !detail
         ? (
           <p className="px-4 py-10 text-center text-sm text-ink-soft/70">
             {spaceCycles.length === 0
@@ -1465,8 +1544,11 @@ export function SprintsScreen() {
           <MoveDialog
             item={moving}
             cycleId={detail.id}
-            cycles={moveTargets}
-            onClose={() => setMoving(null)}
+            cycles={moveTarget ? [moveTarget] : moveTargets}
+            onClose={() => {
+              setMoving(null);
+              setMoveTarget(null);
+            }}
             onDone={afterMove}
           />
           <ReasonDialog
@@ -1479,7 +1561,7 @@ export function SprintsScreen() {
       )}
 
       <AcceptDialog
-        open={acceptOpen && !!detail}
+        open={acceptOpen && !!detail && detail.id === selectedId}
         cycleName={detail?.name ?? ""}
         busy={busy}
         carrying={carrying}
@@ -1500,6 +1582,7 @@ export function SprintsScreen() {
         onSaved={() => {
           load();
           reloadDetail(selectedId);
+          setBoardVersion((v) => v + 1);
         }}
       />
       {sprintGroups.dialogs}

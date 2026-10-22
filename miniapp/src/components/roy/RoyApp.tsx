@@ -22,6 +22,7 @@ import type { Lens, SmartListId } from "@/lib/smartLists";
 import { Avatar, DetailPanelContext, NavHeader, ROY_TABS, RoyHeader, RoyTabBar, SHELL_BAR_H } from "./ui";
 import { HeaderActions } from "./HeaderActions";
 import { PanelHostContext, SidePanelFrame } from "./SidePanel";
+import { WidePaneContext } from "./WidePane";
 import { initials } from "./dash/shared";
 import { DESKTOP_QUERY, useIsDesktop } from "./useIsDesktop";
 import { SearchScreen } from "./screens/SearchScreen";
@@ -79,6 +80,8 @@ export function RoyApp({ me }: { me: Me | null }) {
   const [stack, setStack] = useState<RoyRoute[]>([]);
   // Контейнер правой панели: SidePanel экранов вроде «Настроек» порталится сюда (PanelHostContext).
   const [panelHost, setPanelHost] = useState<HTMLElement | null>(null);
+  // Экран просит снять потолок ширины рабочей области (доска спринтов, WidePane).
+  const [widePane, setWidePane] = useState(false);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
   // Единое окно-редактор задачи (открывается по клику откуда угодно) + ревизия для рефреша списков.
   const [taskModalTask, setTaskModalTask] = useState<Task | null>(null);
@@ -416,6 +419,7 @@ export function RoyApp({ me }: { me: Me | null }) {
           )}
           <div ref={setPanelHost} className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
             <PanelHostContext.Provider value={panelHost}>
+            <WidePaneContext.Provider value={setWidePane}>
             <div
               className={cn(
                 "roy-pane relative mx-auto flex min-h-0 w-full flex-1 flex-col overflow-hidden lg:ml-0 min-[1497px]:border-r min-[1497px]:border-line",
@@ -426,7 +430,7 @@ export function RoyApp({ me }: { me: Me | null }) {
                 // Мобайл — узкая колонка по центру.
                 isDashboard
                   ? "max-w-[1280px]"
-                  : "max-w-[480px] lg:max-w-[1280px]",
+                  : cn("max-w-[480px]", widePane ? "lg:max-w-none" : "lg:max-w-[1280px]"),
               )}
             >
               {mainRoute ? <PushScreen route={mainRoute} /> : (
@@ -482,6 +486,7 @@ export function RoyApp({ me }: { me: Me | null }) {
                 </div>
               )}
             </div>
+            </WidePaneContext.Provider>
             </PanelHostContext.Provider>
             {panelMode && top && <DetailPanel route={top} depth={stack.length} section={sectionTitle ? shellDt(sectionTitle[0], sectionTitle[1]) : shellDt("Главная", "Home")} onClose={() => setStack([])} />}
             {

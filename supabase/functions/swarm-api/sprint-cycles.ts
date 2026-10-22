@@ -22,6 +22,7 @@ import {
 } from "../_shared/tasks/sprint-items.ts";
 import { AcceptConflictError, acceptCycle } from "../_shared/tasks/sprint-accept.ts";
 import { moveItem, MoveRefusedError, setMovedReason } from "../_shared/tasks/sprint-move.ts";
+import { loadBoard } from "../_shared/tasks/sprint-board-load.ts";
 import { isDemoSession } from "../_shared/demo-session.ts";
 
 // Роуты /sprint-cycles — спринты (issue #267, доска инициатив #383-серия). Отдельным модулем,
@@ -101,6 +102,19 @@ export async function handleSprintCycleRoutes(
       }
     }
     return null;
+  }
+
+  // Доска спринтов (22.10.2026): мастер-план и все спринты пространства одним ответом. Раньше
+  // `/:id`, иначе «board» уйдёт туда как id спринта.
+  if (routePath === "/sprint-cycles/board") {
+    if (req.method !== "GET") return null;
+    const tab = url.searchParams.get("tab");
+    if (!tab) return apiErr(400, "tab обязателен: id пространства или none", origin);
+    try {
+      return json(await loadBoard(groupId, tab === "none" ? null : tab, telegramId), 200, origin);
+    } catch (e) {
+      return serverError(origin, "sprint board", e);
+    }
   }
 
   const cycleMatch = routePath.match(/^\/sprint-cycles\/([^/]+)$/);
