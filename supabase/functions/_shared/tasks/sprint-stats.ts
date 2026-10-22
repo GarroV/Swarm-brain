@@ -25,6 +25,11 @@ export interface SprintItemView {
    * план зафиксирован на старте, и снятие не должно улучшать отчёт; сверх плана — не в счёт.
    */
   withdrawn_at?: string | null;
+  /**
+   * Задача ушла из спринта переносом (22.10.2026): строка — снимок. Не «не сделано»: задача живёт
+   * в спринте-цели, и снимок в знаменателе бил бы по проценту дважды — здесь и в цели.
+   */
+  moved_at?: string | null;
 }
 
 export interface PersonRow {
@@ -64,6 +69,11 @@ export interface SprintStats {
    * цифра — чтобы было видно, откуда взялся «недобор».
    */
   withdrawn: number;
+  /**
+   * Ушли переносом в другой спринт (снимки, 22.10.2026): вне плана, процента и хвоста. Итоги,
+   * записанные до этого дня, ключа не знают.
+   */
+  moved: number;
   check_ok: number;
   check_risk: number;
   check_problem: number;
@@ -79,7 +89,9 @@ export function computeSprintStats(
   // Упоминание удалённой задачи не считается нигде: самой задачи больше нет, а её строка
   // осталась только чтобы история спринта не рвалась.
   const removed = items.filter((i) => i.removed_at != null);
-  const present = items.filter((i) => i.removed_at == null);
+  // Снимок переноса — отдельная цифра «перенесено»: задача уже в другом спринте.
+  const moved = items.filter((i) => i.removed_at == null && i.moved_at != null);
+  const present = items.filter((i) => i.removed_at == null && i.moved_at == null);
 
   // Снятая из идущего спринта плановая задача — невыполненная часть плана, что бы с ней ни
   // случилось потом (#576): иначе «убрать отстающее» поднимало процент. Снятая сверх плана в
@@ -160,6 +172,7 @@ export function computeSprintStats(
     cancelled: live.filter((i) => i.status === "cancelled").length,
     removed: removed.length,
     withdrawn: withdrawn.length,
+    moved: moved.length,
     check_ok: checks("ok"),
     check_risk: checks("risk"),
     check_problem: checks("problem"),

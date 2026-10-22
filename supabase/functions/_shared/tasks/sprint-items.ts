@@ -72,11 +72,31 @@ export interface SprintItem {
    */
   withdrawn_at: string | null;
   /**
+   * Задача ушла из этого спринта переносом (22.10.2026): строка — снимок на момент ухода
+   * (`title`, `status`, `due_date` — тогдашние). Такие строки в состав не попадают — их отдаёт
+   * `listComposition().moved`. `null` — строка живая.
+   */
+  moved: MovedInfo | null;
+  /**
    * Сколько у задачи комментариев и ссылок. Не содержимое, а ЧИСЛО: в списке нужно понять,
    * где шло обсуждение и где лежит материал, не открывая карточку.
    */
   comment_count: number;
   link_count: number;
+}
+
+/** Куда и почему ушла задача — для снимка «перенесена → Спринт N · Причина · кто · когда». */
+export interface MovedInfo {
+  /** Спринт-цель; `null` — цель удалена или убрана в архив («перенесена (спринт удалён)»). */
+  to_cycle_id: string | null;
+  to_cycle_name: string | null;
+  at: string;
+  /** Telegram id того, кто перенёс; `null` — автоматика (сменили срок в карточке). */
+  by: number | null;
+  /** Причина ухода; `null` — её ещё не вписали (спросят один раз). */
+  reason: string | null;
+  /** Срок задачи сейчас — «срок A → B», где A — `due_date` снимка. */
+  due_now: string | null;
 }
 
 /**
@@ -110,11 +130,13 @@ export async function listComposition(
   cycleId: string,
   groupId: string,
   viewer: SprintViewer,
-): Promise<{ items: SprintItem[]; withdrawn: SprintItem[]; hiddenCount: number }> {
+): Promise<{ items: SprintItem[]; withdrawn: SprintItem[]; moved: SprintItem[]; hiddenCount: number }> {
   const { items: all, hiddenCount } = await loadAllItems(cycleId, groupId, viewer);
   return {
-    items: all.filter((i) => i.withdrawn_at == null),
-    withdrawn: all.filter((i) => i.withdrawn_at != null),
+    items: all.filter((i) => i.withdrawn_at == null && i.moved == null),
+    withdrawn: all.filter((i) => i.withdrawn_at != null && i.moved == null),
+    // Снимки ушедших переносом (22.10.2026): в составе их нет, в итогах — «перенесено».
+    moved: all.filter((i) => i.moved != null),
     // Сколько строк состава спрятано от зрителя (невидимый или неустановимый проект). Итоги
     // принятого спринта по нему решают, можно ли отдать записанные цифры (redactCycleStats).
     hiddenCount,
@@ -138,7 +160,7 @@ async function loadAllItems(
   // вычисляемой, ответ превращается в «неизвестно что» (TS2352).
   const { data: rows, error: rowsErr } = await supabase.from("sprint_items")
     .select(
-      "id, task_id, in_plan, added_at, frozen_at, frozen_title, frozen_status, frozen_assignees, frozen_project, frozen_completed_at, frozen_due_date, check_status, check_note, check_at, check_by, to_carry, carry_reason, carry_count, carried_manual, removed_title, removed_project_id, removed_at, withdrawn_at",
+      "id, task_id, in_plan, added_at, frozen_at, frozen_title, frozen_status, frozen_assignees, frozen_project, frozen_completed_at, frozen_due_date, check_status, check_note, check_at, check_by, to_carry, carry_reason, carry_count, carried_manual, removed_title, removed_project_id, removed_at, withdrawn_at, moved_at, moved_to, moved_by",
     )
     .eq("cycle_id", cycleId).order("added_at", { ascending: true });
   if (rowsErr) throw new Error(`sprint items: ${rowsErr.message}`);
@@ -149,13 +171,15 @@ async function loadAllItems(
     : await dropHiddenItems(fetched, groupId, await loadProjectVisibility(groupId, viewer.viewerId));
 
   const liveIds = items.filter((r) => !r.frozen_at && r.task_id).map((r) => r.task_id as string);
+  // У снимка переноса живая задача нужна ради нынешнего срока и имени инициативы.
+  const movedIds = items.filter((r) => r.moved_at && r.task_id).map((r) => r.task_id as string);
   const live = new Map<string, Record<string, unknown>>();
-  if (liveIds.length > 0) {
+  if (liveIds.length + movedIds.length > 0) {
     const { data: tasks } = await onlyLive(
       supabase.from("tasks").select(TASK_FIELDS),
     ).in(
       "id",
-      liveIds,
+      [...liveIds, ...movedIds],
     );
     for (const t of (tasks ?? []) as Record<string, unknown>[]) {
       live.set(t.id as string, t);
@@ -164,6 +188,7 @@ async function loadAllItems(
 
   const projectNames = await loadProjectNames(items, live);
   const comments = await countComments(liveIds);
+  const targets = await loadMoveTargets(items);
 
   const hiddenCount = fetched.length - items.length;
   return {
@@ -172,7 +197,9 @@ async function loadAllItems(
       const t = r.task_id ? live.get(r.task_id as string) : undefined;
       const frozen = !!r.frozen_at;
       const removed = r.removed_at != null;
+      const isMoved = r.moved_at != null;
       const projectId = (t?.project_id as string | null) ?? null;
+      const target = isMoved && r.moved_to ? targets.get(r.moved_to as string) ?? null : null;
 
       const title = removed
         ? (r.removed_title as string | null) ?? "(задача удалена)"
@@ -191,7 +218,7 @@ async function loadAllItems(
         project_id: projectId,
         project: removed
           ? null
-          : frozen
+          : frozen && !isMoved
           ? ((r.frozen_project as string | null) ?? null)
           : (projectId ? projectNames.get(projectId) ?? null : null),
         completed_at: frozen
@@ -211,6 +238,16 @@ async function loadAllItems(
         removed,
         removed_at: (r.removed_at as string | null) ?? null,
         withdrawn_at: (r.withdrawn_at as string | null) ?? null,
+        moved: isMoved
+          ? {
+            to_cycle_id: target?.id ?? null,
+            to_cycle_name: target?.name ?? null,
+            at: r.moved_at as string,
+            by: r.moved_by != null && /^\d+$/.test(String(r.moved_by)) ? Number(r.moved_by) : null,
+            reason: (r.carry_reason as string | null) ?? null,
+            due_now: (t?.due_date as string | null) ?? null,
+          }
+          : null,
         comment_count: frozen || removed ? 0 : comments.get(r.task_id as string) ?? 0,
         link_count: frozen || removed ? 0 : ((t?.links as unknown[] | null) ?? []).length,
       };
@@ -251,6 +288,32 @@ async function dropHiddenItems(
       : null;
     return projectVisible(pid, visibility);
   });
+}
+
+/**
+ * Спринты-цели переносов: строка `moved_to` → её спринт. Цель удалена или убрана в архив —
+ * в карте её нет, и снимок покажет «перенесена (спринт удалён)». Сбой чтения — ошибка: тихо
+ * пустая карта выдала бы живую цель за удалённую.
+ */
+async function loadMoveTargets(
+  items: Record<string, unknown>[],
+): Promise<Map<string, { id: string; name: string }>> {
+  const out = new Map<string, { id: string; name: string }>();
+  const rowIds = [...new Set(items.filter((r) => r.moved_at && r.moved_to).map((r) => r.moved_to as string))];
+  if (rowIds.length === 0) return out;
+  const { data: rows, error } = await supabase.from("sprint_items").select("id, cycle_id").in("id", rowIds);
+  if (error) throw new Error(`sprint move targets: ${error.message}`);
+  const cycleOf = new Map(((rows ?? []) as { id: string; cycle_id: string }[]).map((r) => [r.id, r.cycle_id]));
+  if (cycleOf.size === 0) return out;
+  const { data: cycles, error: cErr } = await supabase.from("sprint_cycles")
+    .select("id, name").in("id", [...new Set(cycleOf.values())]).is("archived_at", null);
+  if (cErr) throw new Error(`sprint move target cycles: ${cErr.message}`);
+  const names = new Map(((cycles ?? []) as { id: string; name: string }[]).map((c) => [c.id, c]));
+  for (const [rowId, cycleId] of cycleOf) {
+    const c = names.get(cycleId);
+    if (c) out.set(rowId, c);
+  }
+  return out;
 }
 
 /**
@@ -399,7 +462,8 @@ export async function removeItem(
 
   const { data } = await supabase.from("sprint_items")
     .update({ withdrawn_at: new Date().toISOString(), withdrawn_by: actor })
-    .eq("cycle_id", cycleId).eq("task_id", taskId).is("withdrawn_at", null)
+    // Снимок переноса не снимается: задача из спринта уже ушла, снимок — история.
+    .eq("cycle_id", cycleId).eq("task_id", taskId).is("withdrawn_at", null).is("moved_at", null)
     .select("id").maybeSingle();
   return !!data;
 }
@@ -447,7 +511,7 @@ export async function updateItem(
   // Что стояло до правки: комментарий нужен только при изменении текста.
   const { data: prevRow } = await supabase.from("sprint_items")
     .select("check_status, check_note, carry_reason").eq("cycle_id", cycleId).eq("task_id", taskId)
-    .is("withdrawn_at", null).maybeSingle();
+    .is("withdrawn_at", null).is("moved_at", null).maybeSingle();
   const prev = (prevRow ?? null) as
     | { check_status: string | null; check_note: string | null; carry_reason: string | null }
     | null;
@@ -475,9 +539,11 @@ export async function updateItem(
   }
   if (Object.keys(fields).length === 0) return null;
 
+  // Снимок переноса отметками не правится: задача из спринта ушла (причину в него вписывает
+  // `setMovedReason`, sprint-move.ts).
   const { data } = await supabase.from("sprint_items")
     .update(fields).eq("cycle_id", cycleId).eq("task_id", taskId)
-    .is("withdrawn_at", null)
+    .is("withdrawn_at", null).is("moved_at", null)
     .select("id").maybeSingle();
   if (!data) return null;
 
@@ -506,7 +572,7 @@ export async function updateItem(
  * Видна ли зрителю задача строки состава. Задача, которой в базе уже нет (или архивная), —
  * решается по её проекту так же: архивная строка остаётся в составе.
  */
-async function itemTaskVisible(
+export async function itemTaskVisible(
   taskId: string,
   groupId: string,
   viewerId: number | undefined,

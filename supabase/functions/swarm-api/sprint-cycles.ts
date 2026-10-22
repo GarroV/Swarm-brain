@@ -21,6 +21,7 @@ import {
   updateItem,
 } from "../_shared/tasks/sprint-items.ts";
 import { AcceptConflictError, acceptCycle } from "../_shared/tasks/sprint-accept.ts";
+import { moveItem, MoveRefusedError, setMovedReason } from "../_shared/tasks/sprint-move.ts";
 import { isDemoSession } from "../_shared/demo-session.ts";
 
 // Роуты /sprint-cycles — спринты (issue #267, доска инициатив #383-серия). Отдельным модулем,
@@ -112,9 +113,10 @@ export async function handleSprintCycleRoutes(
       // а второй запрос стоил бы лишнего круга на каждом открытии.
       // Снятые из идущего спринта (#576) — отдельным списком: в составе их нет, но шапке
       // нужны плановые из них, чтобы процент считался от зафиксированного плана.
-      const { items, withdrawn } = await listComposition(id, groupId, { viewerId: telegramId });
+      // Снимки ушедших переносом (22.10.2026) — тоже отдельно: блок «Ушли из спринта».
+      const { items, withdrawn, moved } = await listComposition(id, groupId, { viewerId: telegramId });
       const [shown] = await redactCycleStats([cycle], groupId, telegramId);
-      return json({ ...shown, items, withdrawn }, 200, origin);
+      return json({ ...shown, items, withdrawn, moved }, 200, origin);
     }
     if (req.method === "PATCH") {
       const body = await readBody(req);
@@ -226,6 +228,66 @@ export async function handleSprintCycleRoutes(
       200,
       origin,
     );
+  }
+
+  // Перенос задачи в другой спринт (22.10.2026): одно действие с обязательной причиной. Строка —
+  // по её id (`items[].id`), спринт в пути — тот, из которого переносят.
+  const moveMatch = routePath.match(/^\/sprint-cycles\/([^/]+)\/tasks\/([^/]+)\/move$/);
+  if (moveMatch && req.method === "POST") {
+    const body = await readBody(req);
+    if (!body) return apiErr(400, "Invalid JSON", origin);
+    if (typeof body.target_cycle_id !== "string" || !body.target_cycle_id) {
+      return apiErr(400, "target_cycle_id обязателен", origin);
+    }
+    if (typeof body.reason !== "string" || !body.reason.trim()) {
+      return apiErr(400, "Нужна причина переноса", origin);
+    }
+    const newDue = body.new_due ?? null;
+    if (newDue !== null && (typeof newDue !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(newDue))) {
+      return apiErr(400, "new_due: дата YYYY-MM-DD или null", origin);
+    }
+    try {
+      const moved = await moveItem({
+        groupId,
+        viewer: telegramId,
+        cycleId: moveMatch[1],
+        itemId: moveMatch[2],
+        targetCycleId: body.target_cycle_id,
+        reason: body.reason,
+        newDue: newDue as string | null,
+        lang: isDemoSession(telegramId) ? "en" : "ru",
+      });
+      if (!moved) return apiErr(404, "Not found", origin);
+      return json({ ok: true, target_item_id: moved.targetItemId, revived: moved.revived }, 200, origin);
+    } catch (e) {
+      if (e instanceof MoveRefusedError) return apiErr(409, e.message, origin);
+      return serverError(origin, "sprint item move", e);
+    }
+  }
+
+  // Причина в снимок, у которого её нет (перенос по сроку из карточки) — один раз.
+  const reasonMatch = routePath.match(/^\/sprint-cycles\/([^/]+)\/tasks\/([^/]+)\/moved-reason$/);
+  if (reasonMatch && req.method === "POST") {
+    const body = await readBody(req);
+    if (!body) return apiErr(400, "Invalid JSON", origin);
+    if (typeof body.reason !== "string" || !body.reason.trim()) {
+      return apiErr(400, "Нужна причина переноса", origin);
+    }
+    try {
+      const ok = await setMovedReason({
+        groupId,
+        viewer: telegramId,
+        cycleId: reasonMatch[1],
+        itemId: reasonMatch[2],
+        reason: body.reason,
+        lang: isDemoSession(telegramId) ? "en" : "ru",
+      });
+      if (!ok) return apiErr(409, "Причина уже записана или задача не переносилась", origin);
+      return json({ ok: true }, 200, origin);
+    } catch (e) {
+      if (e instanceof MoveRefusedError) return apiErr(409, e.message, origin);
+      return serverError(origin, "sprint moved reason", e);
+    }
   }
 
   const itemMatch = routePath.match(

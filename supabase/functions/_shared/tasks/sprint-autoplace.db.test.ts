@@ -242,7 +242,7 @@ async function runScene(name: string, s: Scene, via: "update" | "rpc" = "update"
     for (const l of snapshots) {
       assertEquals(
         got.items[l].carry_reason,
-        s.carry?.to_carry ? s.carry.reason : null,
+        s.carry?.reason?.trim() || null,
         `${name}: причину автоматика не придумывает`,
       );
       assertEquals(got.items[l].frozen_due_date, dueBefore, `${name}: снимок помнит срок до смены`);

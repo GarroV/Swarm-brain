@@ -124,12 +124,13 @@ begin
 
   -- Снимок: состояние на момент ухода. Имя инициативы не замораживаем — его даёт живая задача
   -- (sprint-items.ts), снимок бывает только у задачи, которая продолжает жить.
-  -- Уже вписанная человеком причина старой пометки «к переносу» подставляется, не теряется.
+  -- Уже вписанная человеком причина (старая пометка «к переносу»; снятие пометки причину не
+  -- стирало — решение 21.10.2026) подставляется и не спрашивается второй раз.
   update public.sprint_items
      set moved_at            = now(),
          moved_to            = v_target_item,
          moved_by            = p_actor,
-         carry_reason        = coalesce(v_reason, case when to_carry then nullif(btrim(carry_reason), '') end),
+         carry_reason        = coalesce(v_reason, nullif(btrim(carry_reason), '')),
          to_carry            = false,
          carry_auto          = false,
          frozen_at           = now(),

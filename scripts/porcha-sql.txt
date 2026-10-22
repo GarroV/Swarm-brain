@@ -128,3 +128,4 @@ set moved_at = null, moved_to = null, moved_by = null,|set moved_by = null,|supa
 if coalesce(current_setting('swarm.sprint_moving', true), '') = '1' then|if false then|supabase/functions/_shared/tasks/sprint-autoplace.db.test.ts|supabase/migrations/20261022121000_sprint_autoplace_moves.sql
 perform public.sprint_move_task_internal(v_item.id, v_target, null, null, null);|null;|supabase/functions/_shared/tasks/sprint-autoplace.db.test.ts|supabase/migrations/20261022121000_sprint_autoplace_moves.sql
 set frozen_due_date = old.due_date|set frozen_due_date = frozen_due_date|supabase/functions/_shared/tasks/sprint-autoplace.db.test.ts|supabase/migrations/20261022121000_sprint_autoplace_moves.sql
+carry_reason        = coalesce(v_reason, nullif(btrim(carry_reason), '')),|carry_reason        = v_reason,|supabase/functions/_shared/tasks/sprint-autoplace.db.test.ts|supabase/migrations/20261022120000_sprint_move.sql

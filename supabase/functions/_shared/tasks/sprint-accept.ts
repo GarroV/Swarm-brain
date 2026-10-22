@@ -58,9 +58,10 @@ export async function acceptCycle(
 
   // Снятые из идущего спринта входят в итоги (#576): плановые из них — невыполненной частью
   // плана, иначе снятие отстающих поднимало бы процент.
-  const { items, withdrawn } = await listComposition(id, groupId, "everyone");
+  // Снимки ушедших переносом (22.10.2026) — цифрой «перенесено», вне плана и процента.
+  const { items, withdrawn, moved } = await listComposition(id, groupId, "everyone");
   const stats = computeSprintStats(
-    [...items, ...withdrawn].map(toStatsView),
+    [...items, ...withdrawn, ...moved].map(toStatsView),
   );
 
   const next = nextCycleDates({

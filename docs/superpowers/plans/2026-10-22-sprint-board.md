@@ -95,11 +95,11 @@
   - API: `POST /sprint-cycles/:id/tasks/:itemId/move` `{target_cycle_id, reason, new_due?}` → `{ok:true,target_item_id,revived}`; `POST /sprint-cycles/:id/tasks/:itemId/moved-reason` `{reason}`. Ошибки P0001 → 409 с текстом.
   - MCP `move_sprint_task` `{workspace, sprint_id, task_id, target_sprint_id, reason, new_due?}`.
   - `miniapp/src/lib/api.ts`: `moveSprintTask(cycleId, itemId, body)`, `setSprintMovedReason(cycleId, itemId, reason)`.
-- [ ] **Step 1:** тест статистики «снимок перенесённой не считается в плане, считается в moved»; db-тест «перенос через moveItem пишет один комментарий».
-- [ ] **Step 2:** FAIL.
-- [ ] **Step 3:** реализация; старый `PATCH {to_carry}` оставить рабочим (Review Focus 4).
-- [ ] **Step 4:** `deno check` swarm-api, swarm-mcp; тесты PASS; живой вызов роута на локальном контуре.
-- [ ] **Step 5:** commit `feat: перенос в API и MCP, снимки в составе спринта`.
+- [x] **Step 1:** тест статистики «снимок перенесённой не считается в плане, считается в moved»; db-тест «перенос через moveItem пишет один комментарий».
+- [x] **Step 2:** FAIL.
+- [x] **Step 3:** реализация; старый `PATCH {to_carry}` оставить рабочим (Review Focus 4).
+- [x] **Step 4:** `deno check` swarm-api, swarm-mcp; тесты PASS; живой вызов роута на локальном контуре.
+- [x] **Step 5:** commit `feat: перенос в API и MCP, снимки в составе спринта`.
 
 ### Task 4: «Список» — окно переноса и снимки
 

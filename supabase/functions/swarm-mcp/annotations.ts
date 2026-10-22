@@ -76,6 +76,7 @@ export const TOOL_CLASSES: Record<string, ToolClass> = {
   start_sprint: write(false),
   add_sprint_tasks: write(true),
   mark_sprint_task: write(true),
+  move_sprint_task: write(false),
   market_set_block: write(true),
   market_set_company_year: write(true),
   market_upsert_location: write(true),

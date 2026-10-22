@@ -161,9 +161,11 @@ Deno.test("автоматика комментариев и уведомлени
     const { cycleId, taskId } = await seed(db);
     await db.queryArray`update sprint_items set to_carry = false, carry_auto = false where cycle_id = ${cycleId}`;
     await db.queryArray`update tasks set due_date = current_date + 20 where id = ${taskId}`;
-    const flag = await db.queryObject<{ to_carry: boolean; carry_auto: boolean; carry_reason: string | null }>`
-      select to_carry, carry_auto, carry_reason from sprint_items where cycle_id = ${cycleId} and task_id = ${taskId}`;
-    assertEquals(flag.rows[0], { to_carry: true, carry_auto: true, carry_reason: null });
+    // С 22.10.2026 сдвиг срока переносит задачу: в идущем остаётся снимок без причины.
+    const flag = await db.queryObject<{ moved: boolean; moved_by: string | null; carry_reason: string | null }>`
+      select moved_at is not null as moved, moved_by, carry_reason from sprint_items
+       where cycle_id = ${cycleId} and task_id = ${taskId}`;
+    assertEquals(flag.rows[0], { moved: true, moved_by: null, carry_reason: null });
     assertEquals((await comments(db, taskId)).length, 0);
     const notes = await db.queryObject<
       { n: number }
@@ -190,10 +192,14 @@ Deno.test("сняли пометку переноса и поставили сн
     await updateItem(cycleId, taskId, WS, { to_carry: true }, String(ME), ME);
     assertEquals(await reasonOf(), { to_carry: true, carry_reason: "ждём поставщика" });
 
-    // Снова сняли, а пометку возвращает автоматика: срок за концом идущего спринта.
+    // Снова сняли, а задачу переносит автоматика (срок за концом идущего, 22.10.2026): вписанная
+    // причина переходит в снимок и не спрашивается второй раз.
     await updateItem(cycleId, taskId, WS, { to_carry: false }, String(ME), ME);
     await db.queryArray`update tasks set due_date = current_date + 20 where id = ${taskId}`;
-    assertEquals(await reasonOf(), { to_carry: true, carry_reason: "ждём поставщика" });
+    assertEquals(await reasonOf(), { to_carry: false, carry_reason: "ждём поставщика" });
+    const snap = await db.queryObject<{ moved: boolean }>`
+      select moved_at is not null as moved from sprint_items where cycle_id = ${cycleId} and task_id = ${taskId}`;
+    assertEquals(snap.rows[0].moved, true);
 
     assertEquals((await comments(db, taskId)).length, 1);
   } finally {

@@ -32,12 +32,15 @@ const ME = "777101";
 async function reset(db: Client) {
   for (const ws of [WS, OTHER_WS]) {
     await db.queryArray`delete from task_history where group_id = ${ws}`;
+    await db.queryArray`delete from notifications where group_id = ${ws}`;
+    await db.queryArray`delete from task_comments where task_id in (select id from tasks where group_id = ${ws})`;
     await db
       .queryArray`delete from sprint_items where cycle_id in (select id from sprint_cycles where group_id = ${ws})`;
     await db.queryArray`delete from sprint_cycles where group_id = ${ws}`;
     await db.queryArray`delete from tasks where group_id = ${ws}`;
     await db.queryArray`delete from projects where group_id = ${ws}`;
     await db.queryArray`delete from sprints where group_id = ${ws}`;
+    await db.queryArray`delete from allowed_users where group_id = ${ws}`;
     await db.queryArray`delete from workspaces where id = ${ws}`;
     await db.queryArray`insert into workspaces (id, name) values (${ws}, 'Тестовый')`;
   }
@@ -352,4 +355,247 @@ Deno.test("функции переноса вызывает только service
   } finally {
     await db.end();
   }
+});
+
+// ── Серверный слой: moveItem / setMovedReason / состав / старый PATCH {to_carry} ─────────────
+// Модуль держит клиент базы на переменных окружения, поэтому грузится внутри теста: без них тест
+// падает с понятной причиной, а не пропускается.
+
+const VIEWER = 777101;
+
+async function serverLayer() {
+  for (const name of ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY"]) {
+    if (!Deno.env.get(name)) {
+      throw new Error(
+        `Не задана переменная ${name}. Прогоняй через ./scripts/with-local-db (или ./scripts/check): ` +
+          `пропустить этот тест нельзя — непроверенная проверка выглядит как проверенная.`,
+      );
+    }
+  }
+  // Тест не должен написать живому человеку: без токена отправка в бота падает внутри рассылки.
+  Deno.env.delete("TELEGRAM_BOT_TOKEN");
+  return {
+    ...(await import("./sprint-move.ts")),
+    ...(await import("./sprint-items.ts")),
+  };
+}
+
+async function member(db: Client) {
+  await db.queryArray`delete from allowed_users where telegram_id = ${VIEWER}`;
+  await db.queryArray`
+    insert into allowed_users (telegram_id, username, added_by, group_id) values (${VIEWER}, 'mover', 0, ${WS})`;
+}
+
+const commentsOf = async (db: Client, taskId: string) =>
+  (await db.queryObject<{ content: string }>`
+    select content from task_comments where task_id = ${taskId} order by created_at, id`).rows.map((r) => r.content);
+
+Deno.test("перенос через moveItem пишет один комментарий-причину и отдаёт строку цели", async () => {
+  const { moveItem } = await serverLayer();
+  await withScene(async (db, s) => {
+    await member(db);
+    const taskId = await addTask(db, s);
+    const src = await place(db, s.A, taskId);
+    const r = await moveItem({
+      groupId: WS,
+      viewer: VIEWER,
+      cycleId: s.A,
+      itemId: src,
+      targetCycleId: s.F1,
+      reason: "ждём юристов",
+      newDue: null,
+    });
+    const target = (await rows(db, taskId)).find((x) => x.cycle_id === s.F1)!;
+    assertEquals(r, { targetItemId: target.id, revived: false });
+    assertEquals(await commentsOf(db, taskId), ["Перенос (Спринт 4): ждём юристов"]);
+    await assertRejects(
+      () =>
+        moveItem({
+          groupId: WS,
+          viewer: VIEWER,
+          cycleId: s.A,
+          itemId: src,
+          targetCycleId: s.F2,
+          reason: "ещё раз",
+          newDue: null,
+        }),
+      Error,
+      "Задача уже перенесена",
+    );
+    assertEquals((await commentsOf(db, taskId)).length, 1, "отказ комментария не пишет");
+  });
+});
+
+Deno.test("moveItem: чужой воркспейс и строка не этого спринта — «не найдено», а не перенос", async () => {
+  const { moveItem } = await serverLayer();
+  await withScene(async (db, s) => {
+    await member(db);
+    const taskId = await addTask(db, s);
+    const src = await place(db, s.A, taskId);
+    const base = { viewer: VIEWER, itemId: src, targetCycleId: s.F1, reason: "причина", newDue: null };
+    assertEquals(await moveItem({ ...base, groupId: OTHER_WS, cycleId: s.A }), null);
+    assertEquals(await moveItem({ ...base, groupId: WS, cycleId: s.F2 }), null);
+    assertEquals((await rows(db, taskId)).length, 1);
+  });
+});
+
+Deno.test("состав: снимок отдельно от живых, с целью, причиной и сроком «было → стало»", async () => {
+  const { moveItem, listComposition } = await serverLayer();
+  await withScene(async (db, s) => {
+    await member(db);
+    const due = addDays(s.today, 4);
+    const taskId = await addTask(db, s, { due });
+    const src = await place(db, s.A, taskId);
+    const newDue = addDays(s.today, 22);
+    await moveItem({
+      groupId: WS,
+      viewer: VIEWER,
+      cycleId: s.A,
+      itemId: src,
+      targetCycleId: s.F1,
+      reason: "ждём юристов",
+      newDue,
+    });
+    const comp = await listComposition(s.A, WS, { viewerId: VIEWER });
+    assertEquals(comp.items.length, 0, "ушедшая задача не в составе");
+    assertEquals(comp.moved.length, 1);
+    const m = comp.moved[0];
+    assertEquals(m.due_date, due, "срок на момент ухода");
+    assertEquals(m.project, "Инициатива", "имя инициативы — от живой задачи");
+    assertEquals(m.moved?.to_cycle_id, s.F1);
+    assertEquals(m.moved?.to_cycle_name, "Спринт 5");
+    assertEquals(m.moved?.reason, "ждём юристов");
+    assertEquals(m.moved?.by, VIEWER);
+    assertEquals(m.moved?.due_now, newDue);
+    const target = await listComposition(s.F1, WS, { viewerId: VIEWER });
+    assertEquals(target.items.map((i) => i.task_id), [taskId]);
+
+    // Цель убрали в архив (так «удаляют» спринт) — снимок честно говорит «спринт удалён».
+    await db.queryArray`update sprint_cycles set archived_at = now() where id = ${s.F1}`;
+    const after = (await listComposition(s.A, WS, { viewerId: VIEWER })).moved[0];
+    assertEquals([after.moved?.to_cycle_id, after.moved?.to_cycle_name], [null, null]);
+  });
+});
+
+Deno.test("вписать причину в снимок без причины: один раз, с комментарием; повторно — отказ", async () => {
+  const { setMovedReason, listComposition } = await serverLayer();
+  await withScene(async (db, s) => {
+    await member(db);
+    const taskId = await addTask(db, s, { due: addDays(s.today, 4) });
+    await place(db, s.A, taskId);
+    await db.queryArray`update tasks set due_date = ${addDays(s.today, 25)} where id = ${taskId}`;
+    const snap = (await listComposition(s.A, WS, { viewerId: VIEWER })).moved[0];
+    assertEquals(snap.moved?.reason, null, "перенос по сроку — без причины");
+    assertEquals(snap.moved?.by, null);
+
+    assertEquals(
+      await setMovedReason({ groupId: WS, viewer: VIEWER, cycleId: s.A, itemId: snap.id, reason: "сдвинули запуск" }),
+      true,
+    );
+    assertEquals(await commentsOf(db, taskId), ["Перенос (Спринт 4): сдвинули запуск"]);
+    assertEquals(
+      await setMovedReason({ groupId: WS, viewer: VIEWER, cycleId: s.A, itemId: snap.id, reason: "другая" }),
+      false,
+      "уже записанную причину не переписываем",
+    );
+    assertEquals((await commentsOf(db, taskId)).length, 1);
+    const live = (await rows(db, taskId)).find((x) => x.cycle_id === s.F2)!;
+    assertEquals(
+      await setMovedReason({ groupId: WS, viewer: VIEWER, cycleId: s.F2, itemId: live.id, reason: "x" }),
+      false,
+      "живой строке причина ухода не пишется",
+    );
+  });
+});
+
+Deno.test("старый PATCH {to_carry:true} по-прежнему проходит (открытые вкладки, MCP)", async () => {
+  const { updateItem, listComposition } = await serverLayer();
+  await withScene(async (db, s) => {
+    await member(db);
+    const taskId = await addTask(db, s);
+    await place(db, s.A, taskId);
+    const item = await updateItem(
+      s.A,
+      taskId,
+      WS,
+      { to_carry: true, carry_reason: "по-старому" },
+      String(VIEWER),
+      VIEWER,
+    );
+    assertEquals(item?.to_carry, true);
+    assertEquals(item?.carry_reason, "по-старому");
+    const comp = await listComposition(s.A, WS, { viewerId: VIEWER });
+    assertEquals(comp.items.length, 1, "строка помечена старым способом, а не перенесена");
+    assertEquals(comp.moved.length, 0);
+  });
+});
+
+Deno.test("снимок не правится старым PATCH и не снимается из спринта", async () => {
+  const { moveItem, updateItem, removeItem } = await serverLayer();
+  await withScene(async (db, s) => {
+    await member(db);
+    const taskId = await addTask(db, s);
+    const src = await place(db, s.A, taskId);
+    await moveItem({
+      groupId: WS,
+      viewer: VIEWER,
+      cycleId: s.A,
+      itemId: src,
+      targetCycleId: s.F1,
+      reason: "r",
+      newDue: null,
+    });
+    assertEquals(await updateItem(s.A, taskId, WS, { check_status: "risk" }, String(VIEWER), VIEWER), null);
+    assertEquals(await removeItem(s.A, taskId, WS, String(VIEWER), VIEWER), false);
+    const snap = (await rows(db, taskId)).find((x) => x.cycle_id === s.A)!;
+    assert(snap.moved_at !== null);
+  });
+});
+
+Deno.test("роуты переноса: 200 с целью, пустая причина — 400, повтор — 409 с текстом, GET отдаёт moved", async () => {
+  await serverLayer();
+  const { handleSprintCycleRoutes } = await import("../../swarm-api/sprint-cycles.ts");
+  const call = async (method: string, path: string, body?: unknown) => {
+    const res = await handleSprintCycleRoutes(
+      new Request(`http://local/swarm-api${path}`, {
+        method,
+        headers: { "content-type": "application/json" },
+        body: body === undefined ? undefined : JSON.stringify(body),
+      }),
+      path,
+      VIEWER,
+      WS,
+      false,
+      "http://local",
+    );
+    if (!res) throw new Error(`роут не узнал ${method} ${path}`);
+    return { status: res.status, body: await res.json().catch(() => null) as Record<string, unknown> | null };
+  };
+  await withScene(async (db, s) => {
+    await member(db);
+    const taskId = await addTask(db, s, { due: addDays(s.today, 4) });
+    const src = await place(db, s.A, taskId);
+    const path = `/sprint-cycles/${s.A}/tasks/${src}/move`;
+
+    assertEquals((await call("POST", path, { target_cycle_id: s.F1, reason: "  " })).status, 400);
+    assertEquals((await call("POST", path, { target_cycle_id: s.F1, reason: "r", new_due: "завтра" })).status, 400);
+    const ok = await call("POST", path, { target_cycle_id: s.F1, reason: "ждём юристов" });
+    assertEquals(ok.status, 200);
+    assertEquals(ok.body?.ok, true);
+    assert(typeof ok.body?.target_item_id === "string");
+    const again = await call("POST", path, { target_cycle_id: s.F2, reason: "ещё" });
+    assertEquals([again.status, again.body?.error], [409, "Задача уже перенесена"]);
+
+    const cycle = await call("GET", `/sprint-cycles/${s.A}`);
+    assertEquals((cycle.body?.items as unknown[]).length, 0);
+    assertEquals((cycle.body?.moved as Array<{ task_id: string }>).map((m) => m.task_id), [taskId]);
+
+    const reason = await call("POST", `/sprint-cycles/${s.A}/tasks/${src}/moved-reason`, { reason: "другая" });
+    assertEquals(reason.status, 409, "причина уже записана — второй раз не спрашиваем и не переписываем");
+    const missing = await call("POST", `/sprint-cycles/${s.A}/tasks/00000000-0000-0000-0000-000000000000/move`, {
+      target_cycle_id: s.F1,
+      reason: "r",
+    });
+    assertEquals(missing.status, 404);
+  });
 });
