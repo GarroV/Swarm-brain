@@ -43,7 +43,9 @@ export function SnapshotCard({ item, users, onAddReason }: {
       className="rounded-[10px] border border-dashed border-line-2 bg-surface-2/60 px-3 py-2 text-ink-mute"
       style={{ fontSize: 12 }}
     >
-      <div className="truncate text-[13px] text-ink-soft">{item.title}</div>
+      <div className="whitespace-normal break-words text-[13px] text-ink-soft">
+        {item.title}
+      </div>
       <div className="mt-0.5 flex flex-wrap gap-x-1.5">
         <span>{where}</span>
         {dueText && (
@@ -84,12 +86,16 @@ export function SnapshotCard({ item, users, onAddReason }: {
 }
 
 /** Блок «Ушли из спринта» под составом: снимки по дате ухода, свежие сверху. */
-export function MovedSection({ items, users, onAddReason, className }: {
-  items: SprintCycleItem[];
-  users: ReadonlyArray<Pick<User, "telegram_id" | "name">>;
-  onAddReason?: (item: SprintCycleItem) => void;
-  className?: string;
-}) {
+export function MovedSection(
+  { items, users, onAddReason, className, single = false }: {
+    items: SprintCycleItem[];
+    users: ReadonlyArray<Pick<User, "telegram_id" | "name">>;
+    onAddReason?: (item: SprintCycleItem) => void;
+    className?: string;
+    /** Одной колонкой: блок стоит в узкой колонке доски, а не под составом «Списка». */
+    single?: boolean;
+  },
+) {
   const dt = useDt();
   if (items.length === 0) return null;
   const sorted = [...items].sort((a, b) =>
@@ -105,7 +111,7 @@ export function MovedSection({ items, users, onAddReason, className }: {
         <span className="font-mono">{items.length}</span>
         <span className="h-px flex-1 bg-line" />
       </div>
-      <div className="grid gap-1.5 sm:grid-cols-2">
+      <div className={cn("grid gap-1.5", !single && "sm:grid-cols-2")}>
         {sorted.map((it) => (
           <SnapshotCard
             key={it.id}

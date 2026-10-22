@@ -3,12 +3,13 @@ import { PILL_GROUP_CLS, pillSegmentCls } from "@/components/ui/PropertyPill";
 import { useEffect, useState } from "react";
 import { useDt } from "@/components/roy/nav";
 
-// Список и канбан — два вида одного состава. Выбор запоминается у человека (решение
+// Список, доска спринтов и «Статусы» (прежний канбан) — виды одного состава. Выбор запоминается у человека (решение
 // владельца: «Список + канбан переключателем»): вид — это привычка смотреть, и сбрасывать
 // его на каждом заходе значит переключать вручную по десять раз в день.
 
 export type SprintView =
   | "list"
+  | "board"
   | "kanban"
   | "analytics"
   | "journal";
@@ -31,7 +32,7 @@ export function useSprintView(): [SprintView, (v: SprintView) => void] {
       // остались запомненными — открывается список, а не пустой экран.
       if (saved === "check" || saved === "initiatives") setView("list");
       else if (
-        saved === "list" || saved === "kanban" ||
+        saved === "list" || saved === "board" || saved === "kanban" ||
         saved === "analytics" || saved === "journal"
       ) {
         setView(saved);
