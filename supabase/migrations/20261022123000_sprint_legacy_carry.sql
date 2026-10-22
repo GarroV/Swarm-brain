@@ -54,6 +54,17 @@ begin
            moved_by            = si.carry_by,
            to_carry            = false,
            carry_auto          = false,
+           -- Причину, которую уже вписали и которая ушла комментарием «Перенос (<спринт>): …»,
+           -- второй раз не спрашиваем: пометку могли снять и поставить заново, и поле опустело.
+           carry_reason        = coalesce(
+             nullif(btrim(si.carry_reason), ''),
+             (select nullif(btrim(substr(tc.content, length('Перенос (' || c.name || '):') + 1)), '')
+                from public.task_comments tc
+                join public.sprint_cycles c on c.id = si.cycle_id
+               where tc.task_id = p.task_id
+                 and left(tc.content, length('Перенос (' || c.name || '):')) = 'Перенос (' || c.name || '):'
+               order by tc.created_at desc
+               limit 1)),
            frozen_at           = coalesce(si.carry_at, now()),
            frozen_title        = t.title,
            frozen_status       = t.status,

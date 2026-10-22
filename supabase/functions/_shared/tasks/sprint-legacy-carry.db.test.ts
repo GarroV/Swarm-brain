@@ -150,6 +150,28 @@ Deno.test("старая авто-пометка с строкой в сприн�
   });
 });
 
+Deno.test("причина из комментария «Перенос (<этот спринт>): …» подставляется в снимок, чужой спринт — нет", async () => {
+  await withScene(async (db, s) => {
+    const taskId = await addTask(db, addDays(s.today, 15));
+    const { src } = await legacyPair(db, s, taskId);
+    const other = await addTask(db, addDays(s.today, 15));
+    const { src: otherSrc } = await legacyPair(db, s, other);
+    await db.queryArray`
+      insert into task_comments (task_id, content, added_by_telegram_id, created_at) values
+        (${taskId}, 'Перенос (Спринт 4): старая причина', 1, now() - interval '3 days'),
+        (${taskId}, 'встреча завтра', 1, now() - interval '2 days'),
+        (${taskId}, 'Перенос (Спринт 4): встреча перенеслась', 1, now() - interval '1 day'),
+        (${other}, 'Перенос (Спринт 3): из прошлого спринта', 1, now())`;
+
+    await convert(db);
+
+    const snap = (await rows(db, taskId)).find((x) => x.id === src)!;
+    assertEquals(snap.carry_reason, "встреча перенеслась", "последний комментарий переноса этого спринта");
+    const otherSnap = (await rows(db, other)).find((x) => x.id === otherSrc)!;
+    assertEquals(otherSnap.carry_reason, null, "причина другого спринта не подходит — снимок красный");
+  });
+});
+
 Deno.test("после преобразования срок вернули в идущий: снимок оживает, строки в запланированном нет", async () => {
   await withScene(async (db, s) => {
     const taskId = await addTask(db, addDays(s.today, 15));

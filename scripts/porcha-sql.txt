@@ -139,3 +139,5 @@ and dc.status = 'draft' and dc.archived_at is null|and dc.archived_at is null|su
 and d.added_by is null and d.carried_from is null|and d.carried_from is null|supabase/functions/_shared/tasks/sprint-legacy-carry.db.test.ts|supabase/migrations/20261022123000_sprint_legacy_carry.sql
 set carried_from = p.src_id,|set carried_from = carried_from,|supabase/functions/_shared/tasks/sprint-legacy-carry.db.test.ts|supabase/migrations/20261022123000_sprint_legacy_carry.sql
 revoke all on function public.sprint_convert_legacy_carry() from public, anon, authenticated;|grant execute on function public.sprint_convert_legacy_carry() to anon;|supabase/functions/_shared/tasks/sprint-legacy-carry.db.test.ts|supabase/migrations/20261022123000_sprint_legacy_carry.sql
+and left(tc.content, length(|and true or left(tc.content, length(|supabase/functions/_shared/tasks/sprint-legacy-carry.db.test.ts|supabase/migrations/20261022123000_sprint_legacy_carry.sql
+order by tc.created_at desc|order by tc.created_at asc|supabase/functions/_shared/tasks/sprint-legacy-carry.db.test.ts|supabase/migrations/20261022123000_sprint_legacy_carry.sql
