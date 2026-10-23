@@ -2,6 +2,7 @@
 import type { ReactNode } from "react";
 import { useDt } from "../nav";
 import { Delta, Stat, TONE_TEXT, card } from "./QualityWidgets";
+import { FILL, FILL_NOTE } from "./blockFill";
 import { useMaps } from "./useMaps";
 import { countryName } from "@/lib/countries";
 import { MAPS_LOW, mapsSummary, type MapsTotal } from "@/lib/homeMaps";
@@ -12,7 +13,7 @@ import type { MapsStat, MapsUnit } from "@/lib/api";
 // 30 дней назад», поэтому линейного графика нет.
 
 const NAMES_MAX = 3;
-const note = "rounded-[12px] border border-dashed border-line-2 px-4 py-6 text-center text-ink-mute";
+const note = `rounded-[12px] border border-dashed border-line-2 px-4 py-6 text-center text-ink-mute ${FILL_NOTE}`;
 const fmt = (v: number | null) => (v == null ? "—" : v.toFixed(2));
 
 /** Названия пиццерий в подписи плашки, если их немного; иначе только число. */
@@ -22,7 +23,7 @@ const names = (list: MapsUnit[], none: string) =>
 export function MapsTab({ codes }: { codes: string[] }) {
   const dt = useDt();
   const { data, loading, failed, retry } = useMaps();
-  if (loading) return <div className="roy-shim" style={{ height: 220, borderRadius: 12 }} />;
+  if (loading) return <div className={`roy-shim ${FILL}`} style={{ height: 220, borderRadius: 12 }} />;
   if (failed || !data) {
     return (
       <div className={note} style={{ fontSize: 13 }}>

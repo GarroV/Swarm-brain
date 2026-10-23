@@ -4,6 +4,7 @@ import { useDt } from "../nav";
 import { RkoWidget, RsWidget } from "./QualityWidgets";
 import { MapsTab } from "./MapsTab";
 import { AggregatorsTab } from "./AggregatorsTab";
+import { FILL } from "./blockFill";
 import type { CountryQuality, QualityModel } from "@/lib/homeQuality";
 
 // Единый блок «Рейтинги» (владелец 19.10.2026, docs/decisions/2026-10-19-home-ratings-tabs.md): вкладки
@@ -64,8 +65,8 @@ export function RatingsWidget({ codes, q, scope, qualityGate }: Props) {
   })();
 
   return (
-    <div className="flex flex-col gap-2">
-      <div className="flex">
+    <div className={`flex flex-col gap-2 ${FILL}`}>
+      <div className="flex shrink-0">
         <div role="tablist" aria-label={dt("Рейтинги", "Ratings")} onKeyDown={onKey}
           className="flex min-w-0 gap-1 overflow-x-auto rounded-[10px] border border-line bg-surface-2 p-0.5">
           {RATINGS_TABS.map((t) => (
@@ -79,9 +80,10 @@ export function RatingsWidget({ codes, q, scope, qualityGate }: Props) {
         </div>
       </div>
       {(tab === "maps" || tab === "aggregators") && (
-        <p className="text-ink-mute" style={{ fontSize: 11.5 }}>{dt("на сегодня, сравнение с 30 днями назад", "as of today, compared with 30 days ago")}</p>
+        <p className="shrink-0 text-ink-mute" style={{ fontSize: 11.5 }}>{dt("на сегодня, сравнение с 30 днями назад", "as of today, compared with 30 days ago")}</p>
       )}
-      <div role="tabpanel" id="ratings-panel" aria-labelledby={`ratings-tab-${tab}`} tabIndex={0}>{body}</div>
+      <div role="tabpanel" id="ratings-panel" aria-labelledby={`ratings-tab-${tab}`} tabIndex={0}
+        className="min-[1100px]:flex min-[1100px]:min-h-0 min-[1100px]:flex-1 min-[1100px]:flex-col">{body}</div>
     </div>
   );
 }

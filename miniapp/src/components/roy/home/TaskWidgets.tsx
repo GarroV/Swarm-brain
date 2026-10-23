@@ -7,6 +7,7 @@ import type { DashboardData } from "../dash/useDashboardData";
 import { HomeLabel } from "../dash/shared";
 import { HomeTaskTable } from "../dash/HomeTaskTable";
 import { useDt, useRoyNav } from "../nav";
+import { FILL, FILL_CARD, FILL_NOTE } from "./blockFill";
 
 // Таблицы «Мои задачи» и «Задачи команды» прежней главной (decisions/2026-09-24-home-by-stand.md) —
 // теперь виджеты каталога: кому они нужны, добавляет их на свою главную.
@@ -40,11 +41,11 @@ export function HomeTasksWidget({ data }: { data: DashboardData }) {
         empty={sections.length === 0}
         emptyTitle={dt("Задач на вас нет", "No tasks on you")}
         emptyHint={dt("Свободно — можно взять из общего списка", "You're free — pick one from the shared list")}>
-        <HomeTaskTable sections={sections} projectName={projectName} labelNames={labelNames} now={now} />
+        <HomeTaskTable sections={sections} projectName={projectName} labelNames={labelNames} now={now} className={FILL_CARD} />
       </TasksSlot>
       {more > 0 && (
         <button type="button" onClick={() => openTasks("mine", "all")}
-          className="mt-2 inline-flex min-h-6 items-center font-medium text-primary hover:underline" style={{ fontSize: 12 }}>
+          className="mt-2 inline-flex min-h-6 shrink-0 items-center font-medium text-primary hover:underline" style={{ fontSize: 12 }}>
           {dt(`Ещё ${more} в «Задачах»`, `${more} more in Tasks`)}
         </button>
       )}
@@ -67,11 +68,11 @@ export function TeamTasksWidget({ data }: { data: DashboardData }) {
         emptyHint={dt("У каждой общей задачи есть исполнитель", "Every shared task has an owner")}>
         <HomeTaskTable
           sections={[{ key: "team", label: "", tasks: team.slice(0, HOME_TEAM_LIMIT) }]}
-          projectName={projectName} labelNames={labelNames} showLabels={false} now={now} />
+          projectName={projectName} labelNames={labelNames} showLabels={false} now={now} className={FILL_CARD} />
       </TasksSlot>
       {team.length > 0 && (
         <button type="button" onClick={() => openTasks("team", "all")}
-          className="mt-2 inline-flex min-h-6 items-center font-medium text-primary hover:underline" style={{ fontSize: 12 }}>
+          className="mt-2 inline-flex min-h-6 shrink-0 items-center font-medium text-primary hover:underline" style={{ fontSize: 12 }}>
           {dt("все задачи команды", "all team tasks")}
         </button>
       )}
@@ -84,10 +85,10 @@ function TasksSlot({ loading, failed, retry, empty, emptyTitle, emptyHint, child
   emptyTitle: string; emptyHint: string; children: ReactNode;
 }) {
   const dt = useDt();
-  if (loading) return <div className="space-y-1.5">{[0, 1, 2].map((i) => <div key={i} className="roy-shim" style={{ height: 34, borderRadius: 8 }} />)}</div>;
+  if (loading) return <div className={`space-y-1.5 ${FILL}`}>{[0, 1, 2].map((i) => <div key={i} className="roy-shim" style={{ height: 34, borderRadius: 8 }} />)}</div>;
   if (failed) {
     return (
-      <div className="flex items-center gap-3 rounded-[10px] border border-line bg-surface px-4 py-3 text-ink-soft" style={{ fontSize: 13 }}>
+      <div className={`flex items-center gap-3 rounded-[10px] border border-line bg-surface px-4 py-3 text-ink-soft ${FILL_NOTE}`} style={{ fontSize: 13 }}>
         {dt("Не загрузилось", "Failed to load")}
         <button type="button" onClick={retry} className="font-medium text-primary hover:underline">{dt("Повторить", "Retry")}</button>
       </div>
@@ -95,7 +96,7 @@ function TasksSlot({ loading, failed, retry, empty, emptyTitle, emptyHint, child
   }
   if (empty) {
     return (
-      <div className="rounded-[10px] border border-line bg-surface px-4 py-5 text-center">
+      <div className={`rounded-[10px] border border-line bg-surface px-4 py-5 text-center ${FILL_NOTE} min-[1100px]:flex-col`}>
         <div className="font-medium text-ink" style={{ fontSize: 13.5 }}>{emptyTitle}</div>
         <div className="mt-0.5 text-ink-mute" style={{ fontSize: 12.5 }}>{emptyHint}</div>
       </div>

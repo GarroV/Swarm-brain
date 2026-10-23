@@ -3,6 +3,7 @@ import { Fragment, useMemo, useState } from "react";
 import { useDt } from "../nav";
 import { MiniSpark } from "./LineChart";
 import { Delta, TONE_CELL, tone } from "./QualityWidgets";
+import { FILL } from "./blockFill";
 import { fmtEur, type SalesState } from "./useCountrySales";
 import { useMaps } from "./useMaps";
 import { countryFlag, countryName } from "@/lib/countries";
@@ -15,7 +16,8 @@ import {
 // Таблицы главной: все пиццерии подборки и «Мои страны» («Куда смотреть» снят 11.10.2026).
 // Баллы — настоящие (GET /quality); тип проверки, отчёты гостей и собираемость сняты: источника нет.
 
-const card = "rounded-[12px] border border-line bg-surface";
+// Карточка таблицы — колонка блока: шапка/вкладки на месте, строки прокручиваются внутри (sticky th).
+const card = `flex flex-col rounded-[12px] border border-line bg-surface min-[1100px]:overflow-hidden ${FILL}`;
 const th = "sticky top-0 bg-surface px-2.5 py-2 text-left font-semibold uppercase text-ink-mute";
 const td = "border-t border-line px-2.5 py-2";
 
@@ -25,7 +27,7 @@ function Cell({ v, t, digits = 0 }: { v: number | null; t: ReturnType<typeof ton
 
 function Tabs<K extends string>({ tabs, value, onChange }: { tabs: Array<[K, string, number]>; value: K; onChange: (k: K) => void }) {
   return (
-    <div className="flex flex-wrap gap-1.5 px-3 pt-3" role="tablist">
+    <div className="flex shrink-0 flex-wrap gap-1.5 px-3 pt-3" role="tablist">
       {tabs.map(([k, label, n]) => (
         <button key={k} type="button" role="tab" aria-selected={value === k} onClick={() => onChange(k)}
           className={`rounded-full border px-2.5 py-1 font-medium transition-colors ${value === k ? "border-ink bg-ink text-background" : "border-line-2 text-ink-soft hover:border-accent-line hover:text-primary"}`}
@@ -61,7 +63,7 @@ export function PizzeriasWidget({ scope }: { scope: CountryQuality[] }) {
   return (
     <div className={card}>
       <Tabs tabs={tabs} value={f} onChange={setF} />
-      <div className="mt-2 max-h-[520px] overflow-auto">
+      <div className="mt-2 max-h-[520px] overflow-auto min-[1100px]:max-h-none min-[1100px]:min-h-0 min-[1100px]:flex-1">
         <table className="w-full border-collapse" style={{ fontSize: 12.5 }}>
           <thead style={{ fontSize: 10.5, letterSpacing: "0.06em" }}>
             <tr>
@@ -144,7 +146,7 @@ export function CountriesWidget({ scope, sales, narrow, onNarrow, onMarket }: {
   );
   return (
     <div className={card}>
-      <div className="overflow-auto">
+      <div className="overflow-auto min-[1100px]:min-h-0 min-[1100px]:flex-1">
         <table className="w-full border-collapse" style={{ fontSize: 12.5 }}>
           <thead style={{ fontSize: 10.5, letterSpacing: "0.06em" }}>
             <tr>
@@ -196,7 +198,7 @@ export function CountriesWidget({ scope, sales, narrow, onNarrow, onMarket }: {
           </tbody>
         </table>
       </div>
-      <div className="flex items-center justify-between gap-3 border-t border-line px-3 py-2" style={{ fontSize: 12 }}>
+      <div className="flex shrink-0 items-center justify-between gap-3 border-t border-line px-3 py-2" style={{ fontSize: 12 }}>
         <span className="text-ink-mute">
           {maps.failed
             ? <>{dt("Оценки карт не загрузились.", "Couldn't load map ratings.")}{" "}<button type="button" onClick={maps.retry} className="font-semibold text-primary hover:underline">{dt("Повторить", "Retry")}</button></>

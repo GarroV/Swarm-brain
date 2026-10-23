@@ -11,6 +11,7 @@ import {
   type CountryQuality, type Pizzeria, type QualityKind, type QualityModel,
 } from "@/lib/homeQuality";
 import { VIOLATIONS } from "@/lib/homeQualitySample";
+import { FILL_CARD } from "./blockFill";
 
 // Виджеты РС (стандарты) и РКО (клиентский опыт) по подборке стран. Баллы — настоящие, GET /quality
 // (модель — lib/homeQuality.ts). Метрики без источника (собираемость инспектором, отчёты гостей)
@@ -125,7 +126,7 @@ function RatingChart({ id, kind, q, scope, bounds, months, grains, norm, normLab
   );
 }
 
-export const card = "flex flex-col gap-3 rounded-[12px] border border-line bg-surface p-4";
+export const card = `flex flex-col gap-3 rounded-[12px] border border-line bg-surface p-4 min-[1100px]:[&>*]:shrink-0 ${FILL_CARD}`;
 /** Подпись под плашкой: две первые пиццерии списка или текст «нет». */
 const firstTwo = (list: Pizzeria[], show: (p: Pizzeria) => string, none: string) => list.slice(0, 2).map(show).join(", ") || none;
 
@@ -229,7 +230,7 @@ export function ViolationsWidget({ scope }: { scope: CountryQuality[] }) {
   const rows = VIOLATIONS.map(([ru, en, k]) => ({ name: dt(ru, en), count: Math.max(1, Math.round(n * k)) }));
   const top = Math.max(...rows.map((r) => r.count));
   return (
-    <div className="rounded-[12px] border border-line bg-surface p-4">
+    <div className={`rounded-[12px] border border-line bg-surface p-4 ${FILL_CARD}`}>
       {rows.map((r) => (
         <div key={r.name} className="grid grid-cols-[minmax(0,1fr)_120px_28px] items-center gap-3 py-1.5" style={{ fontSize: 12.5 }}>
           <span className="truncate text-ink">{r.name}</span>

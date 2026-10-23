@@ -9,10 +9,15 @@ import { toISO } from "@/lib/calendar";
 import { checkpointReminder, freshComments, hotTasks, type CheckpointReminder, type CycleWithItems } from "@/lib/homeNews";
 import { openSourceRoute, useDt, useRoyNav } from "../nav";
 import { DashBlock, HomeLabel } from "./shared";
+import { FILL, FILL_CARD } from "../home/blockFill";
 import type { DashboardData } from "./useDashboardData";
 
 // Правая колонка главной по стенду (screens-home.js → .news/.nw): короткие строки с точкой
 // состояния. Встречи дня — MeetingsToday; здесь «Новости» и «Последнее в базе».
+
+// Строки новостей лежат на подложке, как у соседних блоков главной: блок фиксированной высоты
+// без неё оставлял бы под короткой лентой голый фон.
+const NEWS_CARD = "rounded-[12px] border border-line bg-surface px-3 py-1.5";
 
 type NewsKind = "bad" | "warn" | "ok";
 
@@ -69,8 +74,9 @@ export function HomeNews({ data, now }: { data: DashboardData; now: Date }) {
   const quiet = !extra.comments.length && !hot.length && !reviews && !extra.checkpoint;
 
   return (
-    <section>
-      <HomeLabel>{dt("Новости", "News")}</HomeLabel>
+    <section className={`flex flex-col ${FILL}`}>
+      <HomeLabel first>{dt("Новости", "News")}</HomeLabel>
+      <div className={`${NEWS_CARD} ${FILL_CARD}`}>
       {quiet && <NewsRow kind="ok">{dt("Всё спокойно: горящих задач и вычитки нет", "All quiet: nothing urgent, nothing to review")}</NewsRow>}
       {extra.checkpoint && (
         <NewsRow kind="warn" onClick={() => setTab("sprints")}
@@ -106,6 +112,7 @@ export function HomeNews({ data, now }: { data: DashboardData; now: Date }) {
           {m.title ?? dt("Запись без названия", "Untitled recording")}
         </NewsRow>
       ))}
+      </div>
     </section>
   );
 }
@@ -163,6 +170,9 @@ export function LatestInBase({ data }: { data: DashboardData }) {
       onRetry={data.materialsState.retry}
       errorText={dt("Не загрузилось", "Failed to load")}
       retryText={dt("Повторить", "Retry")}
+      className={FILL}
+      flatBody={`${NEWS_CARD} ${FILL_CARD}`}
+      first
       empty={data.latest.length === 0}
       emptyText={dt("В базе пока пусто", "The base is empty so far")}
     >

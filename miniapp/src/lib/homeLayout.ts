@@ -12,36 +12,36 @@ export type WidgetWidth = "half" | "full";
 export type LayoutItem = { id: WidgetId; w: WidgetWidth };
 
 export const DEFAULT_WIDTH: Record<WidgetId, WidgetWidth> = {
-  calls: "half", top5: "half", board: "full", ratings: "half", pz: "full",
+  calls: "half", top5: "half", board: "full", ratings: "half", pz: "half",
   countries: "full", viol: "half", sales: "half", insp: "half",
   myTasks: "full", teamTasks: "half", news: "half", latest: "half",
 };
 
 // Доска — первой (владелец 08.10.2026: «доску давай выше сделаем»). Под ней две колонки: слева
 // «Рейтинги» (вкладки РС · РКО · Карты · Агрегаторы вместо прежних отдельных РС и РКО, 19.10.2026),
-// справа встречи, под ними задачи. Половинки идут парами «левая, правая» — см. halfColumns.
+// справа встречи, под ними задачи. Половинки идут парами «левая, правая» — см. layoutRows.
 // «Топ-5 нарушений» — образец без источника: в каталоге есть, по умолчанию на главную не ставим.
 const DEFAULT_ORDER: WidgetId[] = ["board", "ratings", "calls", "top5", "pz", "countries"];
 export const DEFAULT_LAYOUT: LayoutItem[] = DEFAULT_ORDER.map((id) => ({ id, w: DEFAULT_WIDTH[id] }));
 
-export type LayoutRun =
-  | { kind: "full"; item: LayoutItem; index: number }
-  | { kind: "halves"; left: { item: LayoutItem; index: number }[]; right: { item: LayoutItem; index: number }[] };
+export type LayoutCell = { item: LayoutItem; index: number };
+/** Строка главной: одна клетка — на всю ширину, две — пара половинок. */
+export type LayoutRow = LayoutCell[];
 
-/** Разбить раскладку на строки во всю ширину и прогоны половинок. Половинки прогона раскладываются
- *  по двум независимым колонкам — чётные по счёту влево, нечётные вправо, — чтобы высокий виджет
- *  не растягивал строку соседу. `index` — место в раскладке (для ↑↓ и порядка на узком экране). */
-export function halfColumns(layout: LayoutItem[]): LayoutRun[] {
-  const runs: LayoutRun[] = [];
+/** Разбить раскладку на строки (docs/decisions/2026-10-23-home-fixed-blocks.md): виджет «вся строка» —
+ *  строка сам по себе; половинки идут парами по порядку раскладки (левая, правая) и в паре равны по
+ *  высоте. Половинка без пары — последняя в прогоне перед «целым» виджетом или в конце — занимает всю
+ *  строку, дыры рядом не остаётся. `index` — место в раскладке (для ↑↓ и порядка на узком экране). */
+export function layoutRows(layout: LayoutItem[]): LayoutRow[] {
+  const rows: LayoutRow[] = [];
+  let open: LayoutCell[] | null = null;
   layout.forEach((item, index) => {
-    if (item.w === "full") { runs.push({ kind: "full", item, index }); return; }
-    const last = runs[runs.length - 1];
-    const run = last?.kind === "halves" ? last : { kind: "halves" as const, left: [], right: [] };
-    if (run !== last) runs.push(run);
-    const side = run.left.length === run.right.length ? run.left : run.right;
-    side.push({ item, index });
+    if (item.w === "full") { open = null; rows.push([{ item, index }]); return; }
+    if (open) { open.push({ item, index }); open = null; return; }
+    open = [{ item, index }];
+    rows.push(open);
   });
-  return runs;
+  return rows;
 }
 
 const isWidgetId = (v: unknown): v is WidgetId => typeof v === "string" && (WIDGET_IDS as readonly string[]).includes(v);

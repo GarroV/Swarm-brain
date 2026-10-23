@@ -1,6 +1,6 @@
 // Раскладка главной из виджетов: перестановка, ширина, скрытие, разбор сохранённого.
 import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import { addWidget, DEFAULT_LAYOUT, halfColumns, WIDGET_IDS, hideWidget, migrateLayoutIds, moveBefore, moveBy, parseLayout, toggleWidth } from "./homeLayout.ts";
+import { addWidget, DEFAULT_LAYOUT, layoutRows, WIDGET_IDS, hideWidget, migrateLayoutIds, moveBefore, moveBy, parseLayout, toggleWidth } from "./homeLayout.ts";
 
 Deno.test("parseLayout drops unknown widgets, duplicates and bad widths", () => {
   const got = parseLayout([{ id: "pz", w: "full" }, { id: "nope", w: "half" }, { id: "pz", w: "half" }, { id: "calls", w: "huge" }]);
@@ -44,12 +44,14 @@ Deno.test("default home: «Рейтинги» слева, встречи спр�
   const ids = DEFAULT_LAYOUT.map((x) => x.id) as string[];
   assertEquals(ids.includes("rs") || ids.includes("rko"), false);
   assertEquals(ids.filter((id) => id === "ratings").length, 1);
-  const runs = halfColumns(DEFAULT_LAYOUT);
-  assertEquals(runs[0].kind === "full" && runs[0].item.id, "board");
-  const halves = runs[1];
-  if (halves.kind !== "halves") throw new Error("второй прогон — половинки");
-  assertEquals(halves.left.map((x) => x.item.id), ["ratings", "top5"]);
-  assertEquals(halves.right.map((x) => x.item.id), ["calls"]);
+  const rows = layoutRows(DEFAULT_LAYOUT);
+  assertEquals(rows[1].map((x) => x.item.id), ["ratings", "calls"]);
+});
+
+Deno.test("default home: ровные пары — доска, «Рейтинги»+встречи, задачи+«Пиццерии», «Мои страны»", () => {
+  assertEquals(layoutRows(DEFAULT_LAYOUT).map((r) => r.map((x) => x.item.id)), [
+    ["board"], ["ratings", "calls"], ["top5", "pz"], ["countries"],
+  ]);
 });
 
 Deno.test("каталог: «Рейтинги» один раз, прежних РС и РКО в нём нет", () => {
@@ -75,13 +77,24 @@ Deno.test("миграция: один из двух, уже новая раск�
   assertEquals(migrateLayoutIds([{ id: "rs", w: "full" }, { id: "calls" }]), [{ id: "ratings", w: "full" }, { id: "calls" }]);
 });
 
-Deno.test("halfColumns: full row splits half runs, odd tail goes left, index is the layout position", () => {
-  const runs = halfColumns([
+Deno.test("layoutRows: пары по порядку, «вся строка» — отдельная строка, index — место в раскладке", () => {
+  const rows = layoutRows([
+    { id: "top5", w: "half" }, { id: "calls", w: "half" }, { id: "board", w: "full" }, { id: "ratings", w: "half" }, { id: "pz", w: "half" },
+  ]);
+  assertEquals(rows.map((r) => r.map((x) => [x.item.id, x.index])), [
+    [["top5", 0], ["calls", 1]], [["board", 2]], [["ratings", 3], ["pz", 4]],
+  ]);
+});
+
+Deno.test("layoutRows: одиночная половинка перед целым виджетом и в конце занимает строку одна", () => {
+  const rows = layoutRows([
     { id: "top5", w: "half" }, { id: "board", w: "full" }, { id: "ratings", w: "half" }, { id: "calls", w: "half" }, { id: "pz", w: "half" },
   ]);
-  assertEquals(runs.map((r) => r.kind), ["halves", "full", "halves"]);
-  const last = runs[2];
-  if (last.kind !== "halves") throw new Error("третий прогон — половинки");
-  assertEquals(last.left.map((x) => [x.item.id, x.index]), [["ratings", 2], ["pz", 4]]);
-  assertEquals(last.right.map((x) => [x.item.id, x.index]), [["calls", 3]]);
+  assertEquals(rows.map((r) => r.map((x) => x.item.id)), [["top5"], ["board"], ["ratings", "calls"], ["pz"]]);
+  assertEquals(layoutRows([]), []);
+});
+
+Deno.test("«Пиццерии» по умолчанию — половина строки", () => {
+  assertEquals(DEFAULT_LAYOUT.find((x) => x.id === "pz")?.w, "half");
+  assertEquals(addWidget([], "pz"), [{ id: "pz", w: "half" }]);
 });
