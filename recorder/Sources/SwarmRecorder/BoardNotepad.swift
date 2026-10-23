@@ -194,26 +194,58 @@ final class BoardNotepad: NSObject, NoteLineHost, NoteTableHost {
     /// вид); набор текста их не пересоздаёт. Блокнот дня короткий — так проще и без рассинхрона.
     private func rebuild(focus target: (index: Int, caret: Int?)?) {
         blocks = NoteBlocks.normalized(blocks)
-        blockViews.forEach { $0.removeFromSuperview() }
-        blockViews = blocks.enumerated().map { i, block in
-            let v: NSView
-            if case .table(let rows) = block {
-                let table = NoteTableView(rows: rows, taskTip: t("notes.toTask.tip"), removeTip: t("notes.table.remove"))
-                table.host = self
-                v = table
+        for v in stack.arrangedSubviews { stack.removeArrangedSubview(v); v.removeFromSuperview() }
+        blockViews = blocks.enumerated().map { i, block in makeView(i, block) }
+        // Чек-лист — карточка: название и пункты на подложке, пункты с отступом под названием.
+        let groups = NoteBlocks.checklistGroups(blocks)
+        var i = 0
+        while i < blockViews.count {
+            if let g = groups.first(where: { $0.lowerBound == i }) {
+                stack.addArrangedSubview(checklistCard(Array(blockViews[g]), titled: blocks[i].isTitle))
+                i = g.upperBound + 1
             } else {
-                let line = NoteLineView(block: block, taskTip: t("notes.toTask.tip"))
-                line.host = self
-                line.setPlaceholder(i == 0 && blocks == [.empty] ? t("notes.placeholder") : nil)
-                v = line
+                stack.addArrangedSubview(blockViews[i])
+                i += 1
             }
-            stack.addArrangedSubview(v)
-            v.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
-            return v
         }
+        for v in stack.arrangedSubviews { v.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true }
         guard let target, target.index < blockViews.count else { return }
         document.layoutSubtreeIfNeeded()
         focusBlock(target.index, caret: target.caret)
+    }
+
+    private func makeView(_ i: Int, _ block: NoteBlock) -> NSView {
+        if case .table(let rows) = block {
+            let table = NoteTableView(rows: rows, taskTip: t("notes.toTask.tip"), removeTip: t("notes.table.remove"))
+            table.host = self
+            return table
+        }
+        let line = NoteLineView(block: block, taskTip: t("notes.toTask.tip"))
+        line.host = self
+        if i == 0 && blocks == [.empty] { line.setPlaceholder(t("notes.placeholder")) }
+        if block == .title("") { line.setPlaceholder(t("notes.checklist.title")) }
+        return line
+    }
+
+    private static let cardIndent: CGFloat = 22
+
+    private func checklistCard(_ views: [NSView], titled: Bool) -> NSView {
+        let card = BoxView(fill: BoardTheme.fill, radius: 10)
+        let inner = boardStack(.vertical, spacing: 0)
+        card.addSubview(inner)
+        NSLayoutConstraint.activate([
+            inner.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 10),
+            inner.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -6),
+            inner.topAnchor.constraint(equalTo: card.topAnchor, constant: 6),
+            inner.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -6),
+        ])
+        for (n, v) in views.enumerated() {
+            let indent = titled && n > 0 ? Self.cardIndent : 0
+            let wrap = boardStack(.vertical, insets: NSEdgeInsets(top: 0, left: indent, bottom: 0, right: 0), views: [v])
+            inner.addArrangedSubview(wrap)
+        }
+        // Воздух вокруг карточки, чтобы она не слипалась с тезисами.
+        return boardStack(.vertical, insets: NSEdgeInsets(top: 4, left: 0, bottom: 4, right: 0), views: [card])
     }
 
     private func focusBlock(_ i: Int, caret: Int? = nil, atEnd: Bool = true) {
@@ -255,7 +287,10 @@ final class BoardNotepad: NSObject, NoteLineHost, NoteTableHost {
         }
         blocks[i] = line.block.withText(before)
         let next: NoteBlock
-        if case .check = line.block { next = .check(after, done: false) } else { next = .thesis(after) }
+        switch line.block {
+        case .check, .title: next = .check(after, done: false)   // под названием — первый пункт
+        default: next = .thesis(after)
+        }
         blocks.insert(next, at: i + 1)
         rebuild(focus: (i + 1, 0))
         changed()
@@ -263,12 +298,23 @@ final class BoardNotepad: NSObject, NoteLineHost, NoteTableHost {
 
     func lineBackspaceAtStart(_ line: NoteLineView) {
         guard let i = index(of: line) else { return }
-        // Пункт чек-листа сначала становится тезисом, и только потом сливается со строкой выше.
-        if case .check(let text, let done) = line.block {
-            blocks[i] = .thesis(text, done: done)
-            rebuild(focus: (i, 0))
+        // Пустой пункт чек-листа просто убирается, курсор — в конец строки выше.
+        if case .check("", _) = line.block, i > 0 {
+            blocks.remove(at: i)
+            rebuild(focus: (i - 1, nil))
             changed()
             return
+        }
+        // Непустой пункт и название сначала становятся тезисом, и только потом сливаются со строкой выше.
+        switch line.block {
+        case .check(let text, let done):
+            blocks[i] = .thesis(text, done: done)
+            rebuild(focus: (i, 0)); changed(); return
+        case .title(let text):
+            blocks[i] = .thesis(text)
+            rebuild(focus: (i, 0)); changed(); return
+        default:
+            break
         }
         guard i > 0 else { return }
         let text = line.block.text ?? ""
@@ -313,25 +359,40 @@ final class BoardNotepad: NSObject, NoteLineHost, NoteTableHost {
 
     // MARK: панель
 
-    /// Текущая строка становится тезисом / пунктом чек-листа (повторное нажатие на чек-листе —
-    /// обратно в тезис). На таблице — новая строка нужного вида под ней.
-    private func convertCurrent(toCheck: Bool) {
+    /// Кнопка тезиса: текущая строка (пункт, название) становится тезисом. На таблице — новый тезис под ней.
+    private func makeThesis() {
         let i = min(lastFocused, blocks.count - 1)
         guard let text = blocks[i].text else {
-            blocks.insert(toCheck ? .check("", done: false) : .empty, at: i + 1)
-            rebuild(focus: (i + 1, nil))
-            changed()
-            return
+            blocks.insert(.empty, at: i + 1)
+            rebuild(focus: (i + 1, nil)); changed(); return
         }
-        let done = blocks[i].isDone
-        if toCheck, case .check = blocks[i] { blocks[i] = .thesis(text, done: done) }
-        else { blocks[i] = toCheck ? .check(text, done: done) : .thesis(text, done: done) }
+        blocks[i] = .thesis(text, done: blocks[i].isDone)
         rebuild(focus: (i, nil))
         changed()
     }
 
-    @objc private func thesisTapped() { convertCurrent(toCheck: false) }
-    @objc private func checkTapped() { convertCurrent(toCheck: true) }
+    /// Кнопка чек-листа: строка становится названием чек-листа, под ней — первый пункт (курсор в
+    /// нём; на пустой строке — в названии). Внутри чек-листа — новый пункт под текущим. На
+    /// таблице — новый чек-лист под ней.
+    private func makeChecklist() {
+        let i = min(lastFocused, blocks.count - 1)
+        switch blocks[i] {
+        case .check, .title:
+            blocks.insert(.check("", done: false), at: i + 1)
+            rebuild(focus: (i + 1, nil))
+        case .table:
+            blocks.insert(contentsOf: [.title(""), .check("", done: false)], at: i + 1)
+            rebuild(focus: (i + 1, nil))
+        case .thesis(let text, _):
+            blocks[i] = .title(text)
+            blocks.insert(.check("", done: false), at: i + 1)
+            rebuild(focus: (text.isEmpty ? i : i + 1, nil))
+        }
+        changed()
+    }
+
+    @objc private func thesisTapped() { makeThesis() }
+    @objc private func checkTapped() { makeChecklist() }
 
     @objc private func tableTapped() {
         var i = min(lastFocused, blocks.count - 1)

@@ -8,6 +8,9 @@ public enum NoteBlock: Equatable, Codable {
     /// Тезис; клик по кружку отмечает его сделанным (зачёркнут), как пункт чек-листа.
     case thesis(String, done: Bool = false)
     case check(String, done: Bool)
+    /// Название чек-листа: строка без маркера над пунктами; вместе с идущими следом пунктами
+    /// рисуется одной карточкой (решение владельца 23.10.2026).
+    case title(String)
     case table([[String]])
 
     /// Пустой тезис — с него начинается чистый блокнот и каждая новая строка.
@@ -21,16 +24,18 @@ public enum NoteBlock: Equatable, Codable {
     /// Текст тезиса или пункта; у таблицы — nil.
     public var text: String? {
         switch self {
-        case .thesis(let t, _), .check(let t, _): return t
+        case .thesis(let t, _), .check(let t, _), .title(let t): return t
         case .table: return nil
         }
     }
+
+    public var isTitle: Bool { if case .title = self { return true }; return false }
 
     /// Отмечен ли тезис или пункт сделанным.
     public var isDone: Bool {
         switch self {
         case .thesis(_, let d), .check(_, let d): return d
-        case .table: return false
+        case .title, .table: return false
         }
     }
 
@@ -39,7 +44,7 @@ public enum NoteBlock: Equatable, Codable {
         switch self {
         case .thesis(let t, _): return .thesis(t, done: d)
         case .check(let t, _): return .check(t, done: d)
-        case .table: return self
+        case .title, .table: return self
         }
     }
 
@@ -47,6 +52,7 @@ public enum NoteBlock: Equatable, Codable {
     // (23.10.2026, несколько часов) писались синтезированным Codable — `{"thesis":{"_0":…}}`;
     // их тоже читаем, чтобы заметки не пропали.
     private enum Key: String, CodingKey { case kind, text, done, rows, thesis, check, table, _0 }
+    // «title» в файле — только в новом формате (`kind`), старых файлов с ним нет.
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: Key.self)
@@ -56,6 +62,7 @@ public enum NoteBlock: Equatable, Codable {
             switch kind {
             case "thesis": self = .thesis(text, done: done)
             case "check": self = .check(text, done: done)
+            case "title": self = .title(text)
             case "table": self = .table(try c.decode([[String]].self, forKey: .rows))
             default: throw DecodingError.dataCorruptedError(forKey: .kind, in: c, debugDescription: "блок \(kind)")
             }
@@ -80,6 +87,8 @@ public enum NoteBlock: Equatable, Codable {
             try c.encode("thesis", forKey: .kind); try c.encode(t, forKey: .text); try c.encode(d, forKey: .done)
         case .check(let t, let d):
             try c.encode("check", forKey: .kind); try c.encode(t, forKey: .text); try c.encode(d, forKey: .done)
+        case .title(let t):
+            try c.encode("title", forKey: .kind); try c.encode(t, forKey: .text)
         case .table(let rows):
             try c.encode("table", forKey: .kind); try c.encode(rows, forKey: .rows)
         }
@@ -90,6 +99,7 @@ public enum NoteBlock: Equatable, Codable {
         switch self {
         case .thesis(_, let done): return .thesis(t, done: done)
         case .check(_, let done): return .check(t, done: done)
+        case .title: return .title(t)
         case .table: return self
         }
     }
@@ -132,6 +142,26 @@ public enum NoteBlocks {
             return .thesis(body)
         }
         return normalized(blocks)
+    }
+
+    /// Карточки чек-листов: диапазоны индексов, которые рисуются одной карточкой. Карточка —
+    /// название с идущими за ним пунктами или подряд идущие пункты без названия.
+    public static func checklistGroups(_ blocks: [NoteBlock]) -> [ClosedRange<Int>] {
+        var groups: [ClosedRange<Int>] = []
+        var i = 0
+        while i < blocks.count {
+            let startsGroup: Bool
+            switch blocks[i] {
+            case .title, .check: startsGroup = true
+            default: startsGroup = false
+            }
+            guard startsGroup else { i += 1; continue }
+            var end = i
+            while end + 1 < blocks.count, case .check = blocks[end + 1] { end += 1 }
+            groups.append(i...end)
+            i = end + 1
+        }
+        return groups
     }
 
     /// Заголовок задачи из строки таблицы: непустые ячейки через « — ». nil — строка пустая.

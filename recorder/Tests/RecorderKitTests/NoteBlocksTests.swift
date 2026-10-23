@@ -27,6 +27,19 @@ final class NoteBlocksTests: XCTestCase {
         XCTAssertFalse(NoteBlock.table([[""]]).withDone(true).isDone)
     }
 
+    func testChecklistGroups() {
+        let b: [NoteBlock] = [.thesis("a"), .title("Покупки"), .check("x", done: false), .check("y", done: true),
+                              .thesis("b"), .check("z", done: false), .title("пусто"), .table([[""]])]
+        XCTAssertEqual(NoteBlocks.checklistGroups(b), [1...3, 5...5, 6...6])
+    }
+
+    func testTitleRoundTrip() throws {
+        let blocks: [NoteBlock] = [.title("Словения"), .check("Кассы", done: false)]
+        XCTAssertEqual(try NoteBlocks.decode(NoteBlocks.encode(blocks)), blocks)
+        XCTAssertEqual(NoteBlock.title("а").withText("б"), .title("б"))
+        XCTAssertFalse(NoteBlock.title("а").withDone(true).isDone)
+    }
+
     func testDecodeRejectsGarbage() {
         XCTAssertThrowsError(try NoteBlocks.decode(Data("{not json".utf8)))
     }

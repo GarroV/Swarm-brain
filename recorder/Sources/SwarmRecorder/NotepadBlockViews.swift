@@ -183,6 +183,8 @@ final class NoteLineView: HoverView, NSTextFieldDelegate {
             markerSlot.addArrangedSubview(c)
             check = c
             field.stringValue = t
+        case .title(let t):
+            field.stringValue = t   // название чек-листа — без маркера
         case .table:
             break
         }
@@ -192,8 +194,10 @@ final class NoteLineView: HoverView, NSTextFieldDelegate {
     /// Сделанное — бледное и зачёркнутое; правке не мешает: зачёркивание держится и при наборе.
     private func styleDone() {
         let done = block.isDone
+        var isTitle = false
+        if case .title = block { isTitle = true }
         let attrs: [NSAttributedString.Key: Any] = [
-            .font: BoardTheme.font(NotepadStyle.bodySize),
+            .font: BoardTheme.font(NotepadStyle.bodySize, isTitle ? .semibold : .regular),
             .foregroundColor: done ? BoardTheme.ink3 : BoardTheme.ink,
             .strikethroughStyle: done ? NSUnderlineStyle.single.rawValue : 0,
         ]
