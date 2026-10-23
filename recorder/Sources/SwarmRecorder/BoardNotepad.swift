@@ -16,7 +16,7 @@ private final class NotepadTextView: NSTextView {
     override func paste(_ sender: Any?) { pasteAsPlainText(sender) }
 }
 
-final class BoardNotepad: NSObject, NSTextViewDelegate {
+final class BoardNotepad: NSObject, NSTextViewDelegate, NSTextStorageDelegate, NSLayoutManagerDelegate {
     var lang: String { didSet { relabel() } }
     /// «→ В задачу»: заголовок будущей задачи.
     var onToTask: ((String) -> Void)?
@@ -25,26 +25,33 @@ final class BoardNotepad: NSObject, NSTextViewDelegate {
 
     private let textView: NotepadTextView
     private let scroll = NSScrollView()
-    private let header = boardLabel("", size: 10.5, weight: .semibold, color: BoardTheme.ink3)
     private var padHeight: NSLayoutConstraint!
-    private let toolbar = boardStack(.horizontal, spacing: 2)
+    // Вид — как у «Заметок»: текст лежит прямо на панели, без рамки; сверху капсула значков и
+    // дата последней правки. Пояснение «хранится только на этом Mac» — у замка рядом с датой.
+    private let toolbar = boardStack(.horizontal, spacing: 6)
+    private let toolCapsule = boardStack(.horizontal, spacing: 0)
     private let confirmRow = boardStack(.horizontal, spacing: 8)
     private let confirmLabel = boardLabel("", size: 12, color: BoardTheme.ink2)
     private var confirmYes: FlatButton!
     private var confirmNo: FlatButton!
     private var headingBtn: FlatButton!, bulletBtn: FlatButton!, numberBtn: FlatButton!
     private var checkBtn: FlatButton!, tableBtn: FlatButton!, clearBtn: FlatButton!, toTaskBtn: FlatButton!
-    private let footer = boardLabel("", size: 11, color: BoardTheme.ink3)
-    private let placeholder = boardLabel("", size: 13, color: BoardTheme.ink3)
+    private let stamp = boardLabel("", size: 11, color: BoardTheme.ink3)
+    private let lock = NSImageView()
+    private let footer = boardLabel("", size: 11, color: BoardTheme.amber)
+    private let placeholder = boardLabel("", size: BoardNotepad.bodySize, color: BoardTheme.ink3)
 
     private let fileURL: URL
     private var saveTimer: Timer?
     private var dirty = false
     private var applyingEdit = false
     private var footerResetTimer: Timer?
+    /// Когда текст правили последний раз: дата файла на диске, потом — момент сохранения.
+    private var editedAt: Date?
 
-    private static let bodySize: CGFloat = 13
-    private static let headingSize: CGFloat = 15
+    private static let bodySize: CGFloat = 14
+    private static let headingSize: CGFloat = 19
+    private static let textInset = NSSize(width: 2, height: 4)
 
     static var defaultFileURL: URL {
         FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
@@ -52,9 +59,20 @@ final class BoardNotepad: NSObject, NSTextViewDelegate {
             .appendingPathComponent("notepad.rtf")
     }
 
+    /// Высота строки задана жёстко, чтобы строки с маркерами из запасного шрифта не скакали.
+    private static func paragraphStyle(heading: Bool = false, indent: CGFloat = 0) -> NSParagraphStyle {
+        let p = NSMutableParagraphStyle()
+        let lineHeight = ((heading ? headingSize : bodySize) * 1.36).rounded()
+        p.minimumLineHeight = lineHeight
+        p.maximumLineHeight = lineHeight
+        p.paragraphSpacing = heading ? 6 : 1
+        p.paragraphSpacingBefore = heading ? 2 : 0
+        p.headIndent = indent
+        return p
+    }
+
     private var bodyAttributes: [NSAttributedString.Key: Any] {
-        let p = NSMutableParagraphStyle(); p.lineSpacing = 2
-        return [.font: BoardTheme.font(Self.bodySize), .foregroundColor: BoardTheme.ink, .paragraphStyle: p]
+        [.font: BoardTheme.font(Self.bodySize), .foregroundColor: BoardTheme.ink, .paragraphStyle: Self.paragraphStyle()]
     }
 
     init(lang: String, height: CGFloat, fileURL: URL = BoardNotepad.defaultFileURL) {
@@ -64,12 +82,15 @@ final class BoardNotepad: NSObject, NSTextViewDelegate {
         let storage = NSTextStorage()
         let layout = NSLayoutManager()
         storage.addLayoutManager(layout)
+        layout.usesFontLeading = false
         let container = NSTextContainer(size: NSSize(width: 400, height: CGFloat.greatestFiniteMagnitude))
         container.widthTracksTextView = true
         layout.addTextContainer(container)
         textView = NotepadTextView(frame: NSRect(x: 0, y: 0, width: 400, height: 100), textContainer: container)
         view = NSView()
         super.init()
+        storage.delegate = self
+        layout.delegate = self
         build(height: height)
         loadFromDisk()
         relabel()
@@ -94,7 +115,7 @@ final class BoardNotepad: NSObject, NSTextViewDelegate {
         textView.insertionPointColor = BoardTheme.amber
         textView.selectedTextAttributes = [.backgroundColor: BoardTheme.amber.withAlphaComponent(0.35)]
         textView.typingAttributes = bodyAttributes
-        textView.textContainerInset = NSSize(width: 4, height: 4)
+        textView.textContainerInset = Self.textInset
         textView.isVerticallyResizable = true
         textView.isHorizontallyResizable = false
         textView.autoresizingMask = [.width]
@@ -107,34 +128,43 @@ final class BoardNotepad: NSObject, NSTextViewDelegate {
         scroll.scrollerStyle = .overlay
         scroll.translatesAutoresizingMaskIntoConstraints = false
 
-        let pad = BoxView(fill: BoardTheme.padBg, radius: 10, border: BoardTheme.line)
+        let pad = NSView()
+        pad.translatesAutoresizingMaskIntoConstraints = false
         pad.addSubview(scroll)
         placeholder.translatesAutoresizingMaskIntoConstraints = false
         pad.addSubview(placeholder)
+        let caretX = Self.textInset.width + 5   // 5 — lineFragmentPadding контейнера
         NSLayoutConstraint.activate([
-            scroll.leadingAnchor.constraint(equalTo: pad.leadingAnchor, constant: 8),
-            scroll.trailingAnchor.constraint(equalTo: pad.trailingAnchor, constant: -8),
-            scroll.topAnchor.constraint(equalTo: pad.topAnchor, constant: 6),
-            scroll.bottomAnchor.constraint(equalTo: pad.bottomAnchor, constant: -6),
-            placeholder.leadingAnchor.constraint(equalTo: pad.leadingAnchor, constant: 16),
-            placeholder.topAnchor.constraint(equalTo: pad.topAnchor, constant: 12),
+            scroll.leadingAnchor.constraint(equalTo: pad.leadingAnchor),
+            scroll.trailingAnchor.constraint(equalTo: pad.trailingAnchor),
+            scroll.topAnchor.constraint(equalTo: pad.topAnchor),
+            scroll.bottomAnchor.constraint(equalTo: pad.bottomAnchor),
+            placeholder.leadingAnchor.constraint(equalTo: pad.leadingAnchor, constant: caretX),
+            placeholder.topAnchor.constraint(equalTo: pad.topAnchor, constant: Self.textInset.height + 1),
         ])
         padHeight = pad.heightAnchor.constraint(equalToConstant: height)
         padHeight.isActive = true
 
-        headingBtn = tool("H", #selector(headingTapped), bold: true)
-        bulletBtn = tool("•", #selector(bulletTapped))
-        numberBtn = tool("1.", #selector(numberedTapped))
-        checkBtn = tool("☐", #selector(checkTapped))
-        tableBtn = tool("▦", #selector(tableTapped))
-        clearBtn = FlatButton(title: "", fill: .clear, color: BoardTheme.ink2, size: 12, target: self, action: #selector(clearTapped))
-        toTaskBtn = FlatButton(title: "", fill: BoardTheme.amberSoft, hover: BoardTheme.amber.withAlphaComponent(0.28),
-                               color: BoardTheme.amber, size: 12, target: self, action: #selector(toTaskTapped))
-        let spacer = boardSpacer()
-        for v in [headingBtn!, bulletBtn!, numberBtn!, checkBtn!, tableBtn!, spacer, clearBtn!, toTaskBtn!] as [NSView] {
-            toolbar.addArrangedSubview(v)
-        }
-        toolbar.setCustomSpacing(8, after: clearBtn)
+        headingBtn = tool(nil, #selector(headingTapped))
+        bulletBtn = tool("list.bullet", #selector(bulletTapped))
+        numberBtn = tool("list.number", #selector(numberedTapped))
+        checkBtn = tool("checklist", #selector(checkTapped))
+        tableBtn = tool("tablecells", #selector(tableTapped))
+        let capsule = BoxView(fill: BoardTheme.fill, radius: 15, border: .clear)
+        for v in [headingBtn!, bulletBtn!, numberBtn!, checkBtn!, tableBtn!] { toolCapsule.addArrangedSubview(v) }
+        capsule.addSubview(toolCapsule)
+        NSLayoutConstraint.activate([
+            toolCapsule.leadingAnchor.constraint(equalTo: capsule.leadingAnchor, constant: 2),
+            toolCapsule.trailingAnchor.constraint(equalTo: capsule.trailingAnchor, constant: -2),
+            toolCapsule.topAnchor.constraint(equalTo: capsule.topAnchor, constant: 2),
+            toolCapsule.bottomAnchor.constraint(equalTo: capsule.bottomAnchor, constant: -2),
+        ])
+
+        clearBtn = FlatButton(title: "", fill: .clear, radius: 13, target: self, action: #selector(clearTapped))
+        clearBtn.setSymbol("trash", color: BoardTheme.ink3, pointSize: 12)
+        toTaskBtn = FlatButton(title: "", fill: .clear, hover: BoardTheme.amberSoft,
+                               color: BoardTheme.amber, size: 12, radius: 13, target: self, action: #selector(toTaskTapped))
+        for v in [capsule, boardSpacer(), clearBtn!, toTaskBtn!] as [NSView] { toolbar.addArrangedSubview(v) }
 
         confirmYes = FlatButton(title: "", fill: BoardTheme.rec.withAlphaComponent(0.85), hover: BoardTheme.rec,
                                 color: .white, size: 12, target: self, action: #selector(clearConfirmed))
@@ -144,13 +174,22 @@ final class BoardNotepad: NSObject, NSTextViewDelegate {
         confirmRow.addArrangedSubview(confirmNo)
         confirmRow.isHidden = true
 
-        let headRow = paddedRow(insets: NSEdgeInsets(top: 10, left: 14, bottom: 6, right: 14), views: [header])
-        let toolWrap = boardStack(.vertical, insets: NSEdgeInsets(top: 0, left: 10, bottom: 6, right: 10), views: [toolbar, confirmRow])
-        let padWrap = boardStack(.vertical, insets: NSEdgeInsets(top: 0, left: 12, bottom: 4, right: 12), views: [pad])
-        let footWrap = paddedRow(insets: NSEdgeInsets(top: 0, left: 14, bottom: 10, right: 14), views: [footer])
+        lock.image = NSImage(systemSymbolName: "lock.fill", accessibilityDescription: nil)?
+            .withSymbolConfiguration(.init(pointSize: 8.5, weight: .regular).applying(.init(paletteColors: [BoardTheme.ink3])))
+        lock.translatesAutoresizingMaskIntoConstraints = false
+        let (spaceL, spaceR) = (boardSpacer(), boardSpacer())
+        let stampRow = paddedRow(spacing: 4, insets: NSEdgeInsets(top: 2, left: 14, bottom: 4, right: 14),
+                                 views: [spaceL, stamp.hugText(), lock, spaceR])
+        spaceL.widthAnchor.constraint(equalTo: spaceR.widthAnchor).isActive = true
+        footer.isHidden = true
 
-        let root = boardStack(.vertical, views: [headRow, toolWrap, padWrap, footWrap])
-        for v in [headRow, toolWrap, padWrap, footWrap] { v.setContentHuggingPriority(.required, for: .vertical) }
+        let toolWrap = boardStack(.vertical, insets: NSEdgeInsets(top: 10, left: 12, bottom: 4, right: 12), views: [toolbar, confirmRow])
+        let stampWrap = stampRow
+        let padWrap = boardStack(.vertical, insets: NSEdgeInsets(top: 0, left: 14, bottom: 8, right: 14), views: [pad])
+        let footWrap = paddedRow(insets: NSEdgeInsets(top: 0, left: 16, bottom: 8, right: 16), views: [footer])
+
+        let root = boardStack(.vertical, views: [toolWrap, stampWrap, padWrap, footWrap])
+        for v in [toolWrap, stampWrap, padWrap, footWrap] { v.setContentHuggingPriority(.required, for: .vertical) }
         toolbar.setContentHuggingPriority(.defaultLow, for: .horizontal)
         view.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(root)
@@ -159,50 +198,126 @@ final class BoardNotepad: NSObject, NSTextViewDelegate {
             root.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             root.topAnchor.constraint(equalTo: view.topAnchor),
             root.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-            toolbar.widthAnchor.constraint(equalTo: toolWrap.widthAnchor, constant: -20),
-            confirmRow.widthAnchor.constraint(equalTo: toolWrap.widthAnchor, constant: -20),
-            pad.widthAnchor.constraint(equalTo: padWrap.widthAnchor, constant: -24),
+            toolbar.widthAnchor.constraint(equalTo: toolWrap.widthAnchor, constant: -24),
+            confirmRow.widthAnchor.constraint(equalTo: toolWrap.widthAnchor, constant: -24),
+            pad.widthAnchor.constraint(equalTo: padWrap.widthAnchor, constant: -28),
         ])
     }
 
-    private func tool(_ title: String, _ action: Selector, bold: Bool = false) -> FlatButton {
-        let b = FlatButton(title: title, fill: .clear, color: BoardTheme.ink2, size: 13,
-                           weight: bold ? .bold : .regular, radius: 6, target: self, action: action)
+    /// Значок панели. Без символа — «Aa» текстом, как кнопка стиля в «Заметках».
+    private func tool(_ symbol: String?, _ action: Selector) -> FlatButton {
+        let b = FlatButton(title: "", fill: .clear, radius: 13, target: self, action: action)
+        if let symbol {
+            b.setSymbol(symbol, color: BoardTheme.ink2)
+        } else {
+            b.setTitle("Aa", color: BoardTheme.ink2, size: 14, weight: .medium)
+        }
+        b.widthAnchor.constraint(equalToConstant: 30).isActive = true
+        b.heightAnchor.constraint(equalToConstant: 26).isActive = true
         return b
     }
 
     func setHeight(_ h: CGFloat) { padHeight.constant = h }
 
     func relabel() {
-        header.stringValue = BoardL10n.text("notes.header", lang: lang).uppercased()
         placeholder.stringValue = BoardL10n.text("notes.placeholder", lang: lang)
         headingBtn.toolTip = BoardL10n.text("notes.heading", lang: lang)
         bulletBtn.toolTip = BoardL10n.text("notes.bullets", lang: lang)
         numberBtn.toolTip = BoardL10n.text("notes.numbered", lang: lang)
         checkBtn.toolTip = BoardL10n.text("notes.check", lang: lang)
         tableBtn.toolTip = BoardL10n.text("notes.table", lang: lang)
-        clearBtn.setTitle(BoardL10n.text("notes.clear", lang: lang), color: BoardTheme.ink2, size: 12)
+        clearBtn.toolTip = BoardL10n.text("notes.clear", lang: lang)
         toTaskBtn.setTitle(BoardL10n.text("notes.toTask", lang: lang), color: BoardTheme.amber, size: 12)
         toTaskBtn.toolTip = BoardL10n.text("notes.toTask.tip", lang: lang)
         confirmLabel.stringValue = BoardL10n.text("notes.clear.ask", lang: lang)
         confirmYes.setTitle(BoardL10n.text("notes.clear.yes", lang: lang), color: .white, size: 12)
         confirmNo.setTitle(BoardL10n.text("notes.clear.no", lang: lang), color: BoardTheme.ink, size: 12)
-        resetFooter()
+        lock.toolTip = BoardL10n.text("notes.footer", lang: lang)
+        stamp.toolTip = lock.toolTip
+        updateStamp()
         updatePlaceholder()
     }
 
     private func updatePlaceholder() { placeholder.isHidden = textView.textStorage?.length ?? 0 > 0 }
 
-    private func resetFooter() {
-        footer.stringValue = BoardL10n.text("notes.footer", lang: lang)
-        footer.textColor = BoardTheme.ink3
+    private func updateStamp() {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: lang == "en" ? "en_GB" : "ru_RU")
+        f.dateStyle = .long
+        f.timeStyle = .short
+        f.doesRelativeDateFormatting = true
+        stamp.stringValue = f.string(from: editedAt ?? Date())
     }
 
     private func flashFooter(_ text: String) {
         footer.stringValue = text
-        footer.textColor = BoardTheme.amber
+        footer.isHidden = false
         footerResetTimer?.invalidate()
-        footerResetTimer = Timer.scheduledTimer(withTimeInterval: 3, repeats: false) { [weak self] _ in self?.resetFooter() }
+        footerResetTimer = Timer.scheduledTimer(withTimeInterval: 3, repeats: false) { [weak self] _ in self?.footer.isHidden = true }
+    }
+
+    // MARK: вид абзацев
+
+    /// Строка — по шрифту текста, а не по самому высокому глифу: «☐» приходит из запасного шрифта
+    /// Apple Symbols со своими подъёмом и интерлиньяжем, и без этого строки чек-листа скачут
+    /// относительно соседних (замер: 21,2 pt и базовая линия на 1 pt выше при норме 20).
+    func layoutManager(_ lm: NSLayoutManager, shouldSetLineFragmentRect lineRect: UnsafeMutablePointer<NSRect>,
+                       lineFragmentUsedRect usedRect: UnsafeMutablePointer<NSRect>, baselineOffset: UnsafeMutablePointer<CGFloat>,
+                       in container: NSTextContainer, forGlyphRange glyphRange: NSRange) -> Bool {
+        guard let storage = lm.textStorage, glyphRange.length > 0 else { return false }
+        let ns = storage.string as NSString
+        let chars = lm.characterRange(forGlyphRange: glyphRange, actualGlyphRange: nil)
+        let para = ns.paragraphRange(for: NSRange(location: chars.location, length: 0))
+        let markerLen = chars.location == para.location
+            ? NotepadMarkup.markerLength(ofLine: ns.substring(with: para).trimmingCharacters(in: .newlines)) : 0
+        let probe = min(chars.location + markerLen, max(NSMaxRange(chars) - 1, chars.location))
+        guard let font = storage.attribute(.font, at: probe, effectiveRange: nil) as? NSFont,
+              let style = storage.attribute(.paragraphStyle, at: probe, effectiveRange: nil) as? NSParagraphStyle,
+              style.textBlocks.isEmpty, style.maximumLineHeight > 0 else { return false }
+        let before = chars.location == para.location && chars.location > 0 ? style.paragraphSpacingBefore : 0
+        let after = NSMaxRange(chars) == NSMaxRange(para) && ns.substring(with: para).hasSuffix("\n") ? style.paragraphSpacing : 0
+        let height = before + style.maximumLineHeight + after
+        lineRect.pointee.size.height = height
+        usedRect.pointee.size.height = min(usedRect.pointee.height, height)
+        baselineOffset.pointee = before + (style.maximumLineHeight + font.descender).rounded()
+        return true
+    }
+
+    /// Списки с висячим отступом (перенос строки встаёт под текст, а не под маркер), маркер — тише
+    /// текста; у заголовка — воздух сверху и снизу. Стиль считается по тексту и шрифту абзаца, а не
+    /// хранится отдельно, поэтому старые файлы блокнота сами принимают новый вид при открытии.
+    func textStorage(_ storage: NSTextStorage, didProcessEditing editedMask: NSTextStorageEditActions,
+                     range editedRange: NSRange, changeInLength delta: Int) {
+        guard editedMask.contains(.editedCharacters) else { return }
+        restyle(storage, in: (storage.string as NSString).paragraphRange(for: editedRange))
+    }
+
+    private func restyle(_ storage: NSTextStorage, in range: NSRange) {
+        let ns = storage.string as NSString
+        var idx = range.location
+        while idx < NSMaxRange(range) || (idx == range.location && idx < ns.length) {
+            let para = ns.paragraphRange(for: NSRange(location: idx, length: 0))
+            restyleParagraph(storage, para, ns)
+            idx = max(NSMaxRange(para), idx + 1)
+        }
+    }
+
+    private func restyleParagraph(_ storage: NSTextStorage, _ para: NSRange, _ ns: NSString) {
+        guard para.length > 0 else { return }
+        let current = storage.attribute(.paragraphStyle, at: para.location, effectiveRange: nil) as? NSParagraphStyle
+        if let blocks = current?.textBlocks, !blocks.isEmpty { return }   // ячейка таблицы — свой стиль
+        let line = ns.substring(with: para).trimmingCharacters(in: .newlines)
+        let font = storage.attribute(.font, at: para.location, effectiveRange: nil) as? NSFont ?? BoardTheme.font(Self.bodySize)
+        let markerLen = NotepadMarkup.markerLength(ofLine: line)
+        let indent = markerLen > 0
+            ? ((line as NSString).substring(to: markerLen) as NSString).size(withAttributes: [.font: font]).width
+            : 0
+        let heading = font.pointSize > Self.bodySize + 0.5
+        storage.addAttribute(.paragraphStyle, value: Self.paragraphStyle(heading: heading, indent: indent), range: para)
+        storage.addAttribute(.foregroundColor, value: BoardTheme.ink, range: para)
+        if markerLen > 0 {
+            storage.addAttribute(.foregroundColor, value: BoardTheme.ink2, range: NSRange(location: para.location, length: markerLen))
+        }
     }
 
     // MARK: хранение
@@ -210,6 +325,7 @@ final class BoardNotepad: NSObject, NSTextViewDelegate {
     private func loadFromDisk() {
         let url = fileURL
         guard let data = try? Data(contentsOf: url) else { return }   // файла нет — чистый блокнот
+        editedAt = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
         do {
             let text = try NSAttributedString(data: data, options: [.documentType: NSAttributedString.DocumentType.rtf],
                                               documentAttributes: nil)
@@ -248,6 +364,8 @@ final class BoardNotepad: NSObject, NSTextViewDelegate {
             try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
             try data.write(to: url, options: .atomic)
             dirty = false
+            editedAt = Date()
+            updateStamp()
         } catch {
             NSLog("SwarmRecorder: блокнот доски не сохранился: \(error)")   // dirty остаётся — повторим при следующей правке
         }
@@ -314,6 +432,7 @@ final class BoardNotepad: NSObject, NSTextViewDelegate {
         let font = makeHeading ? BoardTheme.font(Self.headingSize, .bold) : BoardTheme.font(Self.bodySize)
         storage.beginEditing()
         storage.addAttribute(.font, value: font, range: para)
+        restyle(storage, in: para)
         storage.endEditing()
         textView.didChangeText()
         window?.makeFirstResponder(textView)
@@ -387,10 +506,11 @@ final class BoardNotepad: NSObject, NSTextViewDelegate {
                 let block = NSTextTableBlock(table: table, startingRow: r, rowSpan: 1, startingColumn: c, columnSpan: 1)
                 block.setBorderColor(NSColor(white: 1, alpha: 0.18))
                 block.setWidth(1, type: .absoluteValueType, for: .border)
-                block.setWidth(4, type: .absoluteValueType, for: .padding)
+                block.setWidth(5, type: .absoluteValueType, for: .padding)
                 block.setValue(100 / Double(columns), type: .percentageValueType, for: .width)
-                let style = NSMutableParagraphStyle()
-                if let base = body[.paragraphStyle] as? NSParagraphStyle { style.lineSpacing = base.lineSpacing }
+                let style = (body[.paragraphStyle] as? NSParagraphStyle)?.mutableCopy() as? NSMutableParagraphStyle
+                    ?? NSMutableParagraphStyle()
+                style.paragraphSpacing = 0
                 style.textBlocks = [block]
                 var attrs = body
                 attrs[.paragraphStyle] = style

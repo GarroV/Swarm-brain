@@ -89,7 +89,20 @@ final class FlatButton: NSButton {
         invalidateIntrinsicContentSize()
     }
 
+    /// Кнопка-значок: SF Symbol вместо текста, фиксированный квадрат `side`.
+    func setSymbol(_ name: String, color: NSColor, pointSize: CGFloat = 13, side: CGFloat = 26) {
+        title = ""
+        let conf = NSImage.SymbolConfiguration(pointSize: pointSize, weight: .regular)
+            .applying(.init(paletteColors: [color]))
+        image = NSImage(systemSymbolName: name, accessibilityDescription: nil)?.withSymbolConfiguration(conf)
+        imagePosition = .imageOnly
+        symbolSide = side
+        invalidateIntrinsicContentSize()
+    }
+    private var symbolSide: CGFloat?
+
     override var intrinsicContentSize: NSSize {
+        if let side = symbolSide { return NSSize(width: side, height: side) }
         let s = super.intrinsicContentSize
         return NSSize(width: s.width + 16, height: max(s.height, 26))
     }
