@@ -26,6 +26,16 @@ final class NotepadMarkupTests: XCTestCase {
         }
     }
 
+    func testAutoBulletOnlyOnEmptyLine() {
+        XCTAssertTrue(NotepadMarkup.autoBullet(line: "", typed: "О"))
+        XCTAssertTrue(NotepadMarkup.autoBullet(line: "", typed: "проверить Хорватию"))
+        XCTAssertFalse(NotepadMarkup.autoBullet(line: "Отпи", typed: "с"))
+        XCTAssertFalse(NotepadMarkup.autoBullet(line: "• ", typed: "О"))
+        for t in ["", " ", "\n", "-", "*", "[", "1"] {
+            XCTAssertFalse(NotepadMarkup.autoBullet(line: "", typed: t), "«\(t)» не должно получать маркер")
+        }
+    }
+
     func testContinuation() {
         XCTAssertEqual(NotepadMarkup.continuation(forLine: "• купить"), .insert("• "))
         XCTAssertEqual(NotepadMarkup.continuation(forLine: "☐ позвонить"), .insert("☐ "))

@@ -378,6 +378,12 @@ final class BoardNotepad: NSObject, NSTextViewDelegate, NSTextStorageDelegate, N
         let ns = tv.string as NSString
         let lineStart = ns.paragraphRange(for: NSRange(location: range.location, length: 0)).location
 
+        let para = ns.paragraphRange(for: NSRange(location: range.location, length: 0))
+        let currentLine = ns.substring(with: para).trimmingCharacters(in: .newlines)
+        if NotepadMarkup.autoBullet(line: currentLine, typed: text), !inTableOrHeading(at: range.location) {
+            replace(range, with: NotepadMarkup.bullet + text)
+            return false
+        }
         if text == " " {
             let typed = ns.substring(with: NSRange(location: lineStart, length: range.location - lineStart)) + " "
             guard let hit = NotepadMarkup.autoList(linePrefix: typed) else { return true }
@@ -411,6 +417,17 @@ final class BoardNotepad: NSObject, NSTextViewDelegate, NSTextStorageDelegate, N
         applyingEdit = true
         textView.insertText(string, replacementRange: range)
         applyingEdit = false
+    }
+
+    /// Ячейка таблицы или строка-заголовок: туда тезисный маркер сам не ставится.
+    private func inTableOrHeading(at location: Int) -> Bool {
+        guard let storage = textView.textStorage else { return false }
+        let attrs = location < storage.length ? storage.attributes(at: location, effectiveRange: nil)
+            : location > 0 ? storage.attributes(at: location - 1, effectiveRange: nil) : textView.typingAttributes
+        let typing = textView.typingAttributes
+        if let style = (typing[.paragraphStyle] ?? attrs[.paragraphStyle]) as? NSParagraphStyle, !style.textBlocks.isEmpty { return true }
+        if let f = typing[.font] as? NSFont, f.pointSize > Self.bodySize + 0.5 { return true }
+        return false
     }
 
     private func headingFont(at location: Int) -> Bool {

@@ -42,6 +42,16 @@ public enum NotepadMarkup {
         return nil
     }
 
+    /// Блокнот пишет тезисами (решение владельца 23.10.2026): первый символ на пустой строке
+    /// получает маркер «• » перед собой. Не трогаем то, с чего начинается свой список («-», «*»,
+    /// «[», цифра — их превратит `autoList`), пробелы и переводы строк.
+    public static func autoBullet(line: String, typed: String) -> Bool {
+        guard line.isEmpty, let first = typed.first else { return false }
+        if first.isWhitespace || first.isNewline { return false }
+        if "-*[".contains(first) || (first.isASCII && first.isNumber) { return false }
+        return true
+    }
+
     /// Вид списка, которым начинается строка целиком (маркер уже стоит).
     public static func kind(ofLine line: String) -> Kind? {
         if line.hasPrefix(bullet) { return .bullet }
