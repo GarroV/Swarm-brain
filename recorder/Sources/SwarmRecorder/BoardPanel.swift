@@ -195,7 +195,8 @@ final class BoardPanel: NSObject, NSWindowDelegate {
         w.titleVisibility = .hidden
         w.titlebarAppearsTransparent = true
         for b in [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton] { w.standardWindowButton(b)?.isHidden = true }
-        w.isOpaque = false
+        // Непрозрачное: сквозь доску не должны читаться окна под ней.
+        w.isOpaque = true
         w.backgroundColor = BoardTheme.panelBg
         w.appearance = NSAppearance(named: .darkAqua)
         // Обычное окно, а не плавающее: другие окна его перекрывают, вернуть — через Dock,

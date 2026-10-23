@@ -5,7 +5,7 @@ import RecorderKit
 // тот же язык, что у виджета записи и живых заметок (RoyArt.amber, MarkRenderer.graphite).
 
 enum BoardTheme {
-    static let panelBg = NSColor(srgbRed: 0.09, green: 0.075, blue: 0.05, alpha: 0.97)
+    static let panelBg = NSColor(srgbRed: 0.09, green: 0.075, blue: 0.05, alpha: 1)
     static let ink = NSColor(white: 1, alpha: 0.94)
     static let ink2 = NSColor(white: 1, alpha: 0.58)
     static let ink3 = NSColor(white: 1, alpha: 0.36)
