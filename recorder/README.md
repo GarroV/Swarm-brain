@@ -8,7 +8,7 @@
 > висит TCC-грант на запись системного звука, в папке лежат токен и неотправленные записи.
 > Канон решения — [../docs/decisions/2026-08-28-recorder-renamed-bumblebee.md](../docs/decisions/2026-08-28-recorder-renamed-bumblebee.md).
 
-Лёгкое меню-бар приложение: записывает звук онлайн-звонка → отправляет аудио в Swarm Brain
+Лёгкое приложение (значок в строке меню и, с 23.10.2026, в Dock и ⌘Tab — клик по значку в Dock открывает доску «Сегодня»): записывает звук онлайн-звонка → отправляет аудио в Swarm Brain
 (`meeting-claim` → `meeting-ingest`), где сервер транскрибирует (OpenAI) и делает тезисы.
 Контракт — `../transcribator/02-API-CONTRACT.md`, дизайн — `../transcribator/10-REVISED-DESIGN.md`.
 
@@ -116,10 +116,12 @@
 `AppDelegate.swift` — только проводка (`BoardHub`, пункты меню).
 
 - **Значок** — окно 44x44 со счётчиком открытых задач (при 0 числа нет). Тащится мышью, позиция запоминается
-  (`BoardPillOrigin`), по умолчанию — под меню-баром левее виджета записи. Клик открывает/закрывает панель.
-  Выключается настройкой «Показывать значок доски» в меню (по умолчанию включено); пункт «Доска «Сегодня»»
-  в меню открывает панель и без значка.
-- **Панель** — `NSPanel` без активации приложения, поверх окон, на всех рабочих столах. Ширина тянется мышью и
+  (`BoardPillOrigin`), по умолчанию — под меню-баром левее виджета записи. Клик поднимает панель, если она
+  закрыта или за другими окнами, и прячет, если она впереди. Значок не выключается (решение владельца
+  23.10.2026). Панель открывают ещё клик по значку в Dock и пункт «Доска «Сегодня»» в меню.
+- **Панель** — обычное окно (`.normal`, не плавающее): при открытии активирует приложение, другие окна её
+  перекрывают, вернуть — Dock, ⌘Tab или значок. Меню приложения — «Доска «Сегодня»» и «Выйти» без ⌘Q
+  (случайное ⌘Q не должно обрывать запись). Ширина тянется мышью и
   запоминается (`BoardPanelWidth`), иначе берётся `config.panel_width`. Слева плоский список задач (чекбокс
   зачёркивает строку, через ~1,8 с строка уходит и отправляется `PATCH done`; второй клик до этого отменяет
   без запроса; при ошибке строка возвращается), хвост «ещё N → открыть в Swarm». Справа встречи дня: прошедшие
@@ -151,7 +153,7 @@
 - **Вызовы** (все с web-JWT из `POST {IngestBase}/meeting-webtoken`, кэш 11 ч, один перевыпуск на 401, `swarm-api/…`):
   `GET board/today?date&tz_offset`, `POST tasks/voice` (multipart, `Content-Length` обязателен),
   `PATCH tasks/:id` (`{"status":"done"|"open"}`), `DELETE tasks/:id`, `POST tasks`, `GET me`, `GET config`.
-- **Настройки в UserDefaults:** `BoardShowPill`, `BoardShowMeetings`, `BoardPillOrigin`, `BoardPanelWidth`,
+- **Настройки в UserDefaults:** `BoardShowMeetings`, `BoardPillOrigin`, `BoardPanelWidth`,
   `BoardPanelTopLeft`.
 
 ## Статус
@@ -167,7 +169,7 @@ E2E доказан: `--selftest` прогоняет полный цикл (за�
 | `BrowserRoom.swift` / `MeetingIdentity.swift` (комната из URL → ключ дедупа) | Meet/Контур, иначе manual |
 | `AudioRecorder.swift` (две дорожки: ScreenCaptureKit + AVAudioRecorder → m4a) | прогнан в `--selftest` |
 | `Board*.swift`, `VoiceCapture.swift` (доска «Сегодня»: значок, панель, блокнот, голос, клиент `swarm-api`) | отдельные файлы; чистая логика — `RecorderKit/Board*.swift`, `NotepadMarkup.swift` (тесты `Board*Tests`, `NotepadMarkupTests`) |
-| `AppDelegate.swift` / `main.swift` (меню-бар, `--selftest`) | AppKit `NSStatusItem`, `LSUIElement` |
+| `AppDelegate.swift` / `main.swift` (меню-бар, `--selftest`) | AppKit `NSStatusItem`, `.regular` (значок в Dock) |
 
 ## Сборка — `build-app.sh` (полный Xcode не нужен)
 
@@ -175,7 +177,7 @@ E2E доказан: `--selftest` прогоняет полный цикл (за�
 
 1. `swift build -c release` — собирает бинарь.
 2. Сборка `.app`-бандла руками: `bumblebee.app/Contents/MacOS/` + сгенерённый `Info.plist`
-   (`io.dodobrands.swarmrecorder`, `LSMinimumSystemVersion=13.0`, `LSUIElement=YES`,
+   (`io.dodobrands.swarmrecorder`, `LSMinimumSystemVersion=13.0`, без `LSUIElement` (значок в Dock),
    `NSMicrophoneUsageDescription`, `NSAudioCaptureUsageDescription`, `NSAppleEventsUsageDescription`).
    Локальным macOS-Календарём **не пользуемся** (Google Calendar читаем на сервере, `meeting-current`) — TCC-ключей `NSCalendars*` нет (см.
    `Info-keys.plist`).
@@ -218,7 +220,7 @@ open bumblebee.app
 
 1. **Xcode → File → New → Project → macOS → App.** Name: `SwarmRecorder`, Interface: **AppKit (не SwiftUI)**, Language: Swift. Minimum Deployments: **macOS 13.0**.
 2. Удалить сгенерённые `AppDelegate.swift`/`main`/`MainMenu.xib`/`ViewController` и **перетащить файлы из `Sources/SwarmRecorder/`** в проект.
-3. **Info.plist** — те же ключи, что генерит `build-app.sh`: `LSUIElement=YES`, `NSMicrophoneUsageDescription`, `NSAudioCaptureUsageDescription`, `NSAppleEventsUsageDescription` (календарь не используется — `NSCalendars*` нет). Запись экрана/системного звука TCC-строки не требует, но требует разрешения в System Settings при первом запуске.
+3. **Info.plist** — те же ключи, что генерит `build-app.sh`: без `LSUIElement`, `NSMicrophoneUsageDescription`, `NSAudioCaptureUsageDescription`, `NSAppleEventsUsageDescription` (календарь не используется — `NSCalendars*` нет). Запись экрана/системного звука TCC-строки не требует, но требует разрешения в System Settings при первом запуске.
 4. **Signing & Capabilities:** для локального запуска хватит автоматической подписи Xcode (Team = твой Apple ID). App Sandbox можно **выключить** (ScreenCaptureKit + сеть проще без песочницы).
 5. Прописать конфиг (токен + URL) — см. ниже.
 6. **Run** (⌘R).

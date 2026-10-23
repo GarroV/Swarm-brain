@@ -170,6 +170,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     // музыку/видео звучит непрерывно и лимитом по тишине не ловится.
     private static let maxHardSeconds: TimeInterval = 4 * 60 * 60   // 4 часа
 
+    func applicationWillFinishLaunching(_ notification: Notification) { installMainMenu() }
+
+    /// Меню приложения в строке меню, пока bumblebee на переднем плане (оно в Dock с 23.10.2026).
+    /// «Выйти» — без ⌘Q: случайное ⌘Q в доске не должно обрывать запись встречи.
+    private func installMainMenu() {
+        let lang = BoardL10n.language()
+        let appMenu = NSMenu()
+        for item in board.menuItems() { appMenu.addItem(item) }
+        appMenu.addItem(.separator())
+        appMenu.addItem(NSMenuItem(title: BoardL10n.text("app.quit", lang: lang),
+                                   action: #selector(NSApplication.terminate(_:)), keyEquivalent: ""))
+        let root = NSMenuItem()
+        root.submenu = appMenu
+        let main = NSMenu()
+        main.addItem(root)
+        NSApp.mainMenu = main
+    }
+
+    /// Клик по значку в Dock открывает доску «Сегодня».
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        board.open()
+        return false
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Переезд под новое имя (bumblebee) — до всего остального: если хелпер стартовал,
         // приложение обязано выйти, свой бандл под собой не переименуешь. Он вернёт нас сам.
@@ -255,7 +279,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         setupPowerNotifications()
         startWatching()
         missed.start()
-        board.onSettingsChange = { [weak self] in self?.rebuildMenu() }
         board.start()
 
         // Дозагрузка на старте: если в прошлый раз приложение закрыли/упало с висящими записями

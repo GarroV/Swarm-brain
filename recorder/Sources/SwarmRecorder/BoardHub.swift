@@ -12,7 +12,6 @@ import RecorderKit
 // Все методы вызываются с главного потока; сетевые ответы возвращаются в `Task { @MainActor in … }`.
 final class BoardHub: NSObject {
     /// Ключи UserDefaults — UI-состояние, не config.json.
-    private static let showPillKey = "BoardShowPill"
     private static let showMeetingsKey = "BoardShowMeetings"
 
     private static let pillRefreshSeconds: TimeInterval = 300
@@ -22,7 +21,6 @@ final class BoardHub: NSObject {
     private static let messageSeconds: TimeInterval = 5
 
     /// Меню пересобирается, когда меняется то, что в нём видно (галочка «Показывать значок»).
-    var onSettingsChange: (() -> Void)?
 
     private let configProvider: () -> SwarmConfig?
     private let client = BoardClient()
@@ -62,10 +60,6 @@ final class BoardHub: NSObject {
     private var lang: String { BoardL10n.language() }
     private func text(_ key: String) -> String { BoardL10n.text(key, lang: lang) }
 
-    private var showPill: Bool {
-        get { UserDefaults.standard.object(forKey: Self.showPillKey) as? Bool ?? true }
-        set { UserDefaults.standard.set(newValue, forKey: Self.showPillKey) }
-    }
     private var showMeetings: Bool {
         get { UserDefaults.standard.object(forKey: Self.showMeetingsKey) as? Bool ?? true }
         set { UserDefaults.standard.set(newValue, forKey: Self.showMeetingsKey) }
@@ -79,7 +73,7 @@ final class BoardHub: NSObject {
         hotKey.register()
         pill.onClick = { [weak self] in self?.togglePanel() }
         pill.setTooltip(text("board.pill.tip"))
-        if showPill { pill.show() }
+        pill.show()   // значок не убирается (решение владельца 23.10.2026)
         pillTimer = Timer.scheduledTimer(withTimeInterval: Self.pillRefreshSeconds, repeats: true) { [weak self] _ in
             guard let self, self.panel?.isVisible != true else { return }
             self.refresh()
@@ -87,23 +81,17 @@ final class BoardHub: NSObject {
         refresh()
     }
 
-    /// Пункты для меню статус-бара: «Доска «Сегодня»» и «Показывать значок доски».
+    /// Пункт для меню статус-бара и меню приложения: «Доска «Сегодня»».
     func menuItems() -> [NSMenuItem] {
         let open = NSMenuItem(title: text("board.menu"), action: #selector(menuOpenTapped), keyEquivalent: "")
         open.target = self
-        let pillItem = NSMenuItem(title: text("board.menu.pill"), action: #selector(menuPillTapped), keyEquivalent: "")
-        pillItem.target = self
-        pillItem.state = showPill ? .on : .off
-        return [open, pillItem]
+        return [open]
     }
 
-    @objc private func menuOpenTapped() { openPanel(makeKey: true) }
+    @objc private func menuOpenTapped() { open() }
 
-    @objc private func menuPillTapped() {
-        showPill.toggle()
-        if showPill { pill.show() } else { pill.hide() }
-        onSettingsChange?()
-    }
+    /// Открыть доску на переднем плане (клик по значку в Dock, пункт меню).
+    func open() { openPanel(makeKey: true) }
 
     // MARK: панель
 
@@ -128,7 +116,8 @@ final class BoardHub: NSObject {
     }
 
     private func togglePanel() {
-        if panel?.isVisible == true { closePanel() } else { openPanel(makeKey: true) }
+        // Доска за другими окнами — клик по значку поднимает её, а не прячет.
+        if panel?.isFrontmost == true { closePanel() } else { openPanel(makeKey: true) }
     }
 
     private func openPanel(makeKey: Bool) {

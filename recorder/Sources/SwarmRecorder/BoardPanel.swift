@@ -52,7 +52,7 @@ final class BoardWindow: NSPanel {
     var onEscape: (() -> Bool)?
 
     override var canBecomeKey: Bool { true }
-    override var canBecomeMain: Bool { false }
+    override var canBecomeMain: Bool { true }
 
     override func sendEvent(_ event: NSEvent) {
         if event.type == .keyDown, event.keyCode == 53, onEscape?() == true { return }
@@ -189,7 +189,7 @@ final class BoardPanel: NSObject, NSWindowDelegate {
 
     private func buildWindow() {
         let w = BoardWindow(contentRect: NSRect(x: 0, y: 0, width: 720, height: 560),
-                            styleMask: [.titled, .resizable, .nonactivatingPanel, .fullSizeContentView],
+                            styleMask: [.titled, .resizable, .fullSizeContentView],
                             backing: .buffered, defer: false)
         w.titleVisibility = .hidden
         w.titlebarAppearsTransparent = true
@@ -197,10 +197,11 @@ final class BoardPanel: NSObject, NSWindowDelegate {
         w.isOpaque = false
         w.backgroundColor = BoardTheme.panelBg
         w.appearance = NSAppearance(named: .darkAqua)
-        w.isFloatingPanel = true
-        w.level = .floating
+        // Обычное окно, а не плавающее: другие окна его перекрывают, вернуть — через Dock,
+        // ⌘Tab или значок доски (решение владельца 23.10.2026).
+        w.isFloatingPanel = false
+        w.level = .normal
         w.hidesOnDeactivate = false
-        w.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         w.isMovableByWindowBackground = true
         w.isReleasedWhenClosed = false
         w.hasShadow = true
@@ -210,10 +211,15 @@ final class BoardPanel: NSObject, NSWindowDelegate {
     }
 
     var isVisible: Bool { window.isVisible }
+    var isFrontmost: Bool { window.isVisible && window.isKeyWindow }
 
     func show(makeKey: Bool) {
-        window.orderFrontRegardless()
-        if makeKey { window.makeKey() }
+        if makeKey {
+            NSApp.activate(ignoringOtherApps: true)
+            window.makeKeyAndOrderFront(nil)
+        } else {
+            window.orderFrontRegardless()
+        }
     }
 
     func hide() {
