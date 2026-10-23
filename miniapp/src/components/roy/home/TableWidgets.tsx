@@ -63,7 +63,7 @@ export function PizzeriasWidget({ scope }: { scope: CountryQuality[] }) {
   return (
     <div className={card}>
       <Tabs tabs={tabs} value={f} onChange={setF} />
-      <div className="mt-2 max-h-[520px] overflow-auto min-[1100px]:max-h-none min-[1100px]:min-h-0 min-[1100px]:flex-1">
+      <div className="mt-2 max-h-[520px] overflow-auto min-[1100px]:max-h-none min-[1100px]:min-h-0 min-[1100px]:flex-auto">
         <table className="w-full border-collapse" style={{ fontSize: 12.5 }}>
           <thead style={{ fontSize: 10.5, letterSpacing: "0.06em" }}>
             <tr>
@@ -146,7 +146,7 @@ export function CountriesWidget({ scope, sales, narrow, onNarrow, onMarket }: {
   );
   return (
     <div className={card}>
-      <div className="overflow-auto min-[1100px]:min-h-0 min-[1100px]:flex-1">
+      <div className="overflow-auto min-[1100px]:min-h-0 min-[1100px]:flex-auto">
         <table className="w-full border-collapse" style={{ fontSize: 12.5 }}>
           <thead style={{ fontSize: 10.5, letterSpacing: "0.06em" }}>
             <tr>

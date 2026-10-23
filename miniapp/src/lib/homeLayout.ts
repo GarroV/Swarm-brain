@@ -123,3 +123,44 @@ export function loadLayout(): LayoutItem[] {
 export function saveLayout(layout: LayoutItem[]): void {
   try { localStorage.setItem(LS_KEY, JSON.stringify(layout)); } catch { /* хранилище недоступно — раскладка живёт до перезагрузки */ }
 }
+
+// ── Высота блока на широком экране (от 1100 px; docs/decisions/2026-10-23-home-fixed-blocks.md) ──────
+// Единая высота для всех (660) перенесла пустоту внутрь коротких карточек, поэтому высота — по паре:
+//  fixed   — постоянная, под график (`ratings`): вкладки не двигают страницу;
+//  natural — короткий список: по содержимому, но не выше HOME_LIST_MAX, дальше прокрутка внутри;
+//  fill    — таблица: рядом с другим видом высоты строки не задаёт, а занимает высоту соседа и
+//            прокручивает строки внутри (не ниже HOME_FILL_MIN); одна на строке — по содержимому
+//            до HOME_FILL_MAX;
+//  auto    — по содержимому без предела (доска со стикерами).
+export type HeightKind = "fixed" | "natural" | "fill" | "auto";
+export const HOME_FIXED_HEIGHT = 660;
+export const HOME_LIST_MAX = 420;
+export const HOME_FILL_MIN = 360;
+export const HOME_FILL_MAX = 660;
+
+export const HEIGHT_KIND: Record<WidgetId, HeightKind> = {
+  ratings: "fixed",
+  calls: "natural", top5: "natural", news: "natural", latest: "natural", insp: "natural", sales: "natural", viol: "natural",
+  pz: "fill", countries: "fill", myTasks: "fill", teamTasks: "fill",
+  board: "auto",
+};
+
+/** Как клетка получает высоту: fixed — своя константа; capped — по содержимому до предела;
+ *  free — по высоте строки (её задал сосед); absolute — не участвует в высоте строки, лежит
+ *  внутри клетки (fill рядом с другим видом); fillCapped — fill без «ведущего» соседа, по содержимому
+ *  до предела; auto — как есть. */
+export type CellSizing = "fixed" | "capped" | "free" | "absolute" | "fillCapped" | "auto";
+
+/** Размеры клеток строки по видам высоты её виджетов. `minFill` — у строки с таблицей в паре есть
+ *  нижний предел высоты, чтобы пара не сжималась. */
+export function rowSizing(kinds: HeightKind[]): { cells: CellSizing[]; minFill: boolean } {
+  const hasFixed = kinds.includes("fixed");
+  const hasFlow = kinds.some((k) => k !== "fill");
+  const cells = kinds.map((k): CellSizing => {
+    if (k === "fixed") return "fixed";
+    if (k === "auto") return "auto";
+    if (k === "natural") return hasFixed ? "free" : "capped";
+    return hasFlow ? "absolute" : "fillCapped";
+  });
+  return { cells, minFill: kinds.includes("fill") && kinds.length > 1 };
+}

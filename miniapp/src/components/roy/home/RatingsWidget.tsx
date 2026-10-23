@@ -83,7 +83,7 @@ export function RatingsWidget({ codes, q, scope, qualityGate }: Props) {
         <p className="shrink-0 text-ink-mute" style={{ fontSize: 11.5 }}>{dt("на сегодня, сравнение с 30 днями назад", "as of today, compared with 30 days ago")}</p>
       )}
       <div role="tabpanel" id="ratings-panel" aria-labelledby={`ratings-tab-${tab}`} tabIndex={0}
-        className="min-[1100px]:flex min-[1100px]:min-h-0 min-[1100px]:flex-1 min-[1100px]:flex-col">{body}</div>
+        className="min-[1100px]:flex min-[1100px]:min-h-0 min-[1100px]:flex-auto min-[1100px]:flex-col">{body}</div>
     </div>
   );
 }

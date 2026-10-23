@@ -18,10 +18,12 @@ import { useCountrySales } from "./useCountrySales";
 import { useQuality, type QualityState } from "./useQuality";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { countryOf } from "@/lib/homeQuality";
-import { FILL, FILL_CARD, FILL_NOTE, HOME_BLOCK_HEIGHT } from "./blockFill";
+import { FILL, FILL_CARD, FILL_NOTE } from "./blockFill";
+import { DevMockupBar } from "./DevMockupBar";
+import { devLayout } from "@/lib/devMockup";
 import {
-  addWidget, DEFAULT_LAYOUT, hideWidget, layoutRows, loadLayout, moveBefore, moveBy, saveLayout, toggleWidth,
-  WIDGET_IDS, DEFAULT_WIDTH, type LayoutItem, type WidgetId,
+  addWidget, DEFAULT_LAYOUT, HEIGHT_KIND, HOME_FILL_MAX, HOME_FILL_MIN, HOME_FIXED_HEIGHT, HOME_LIST_MAX, hideWidget, layoutRows, rowSizing, loadLayout, moveBefore, moveBy, saveLayout, toggleWidth,
+  WIDGET_IDS, DEFAULT_WIDTH, type CellSizing, type LayoutItem, type WidgetId,
 } from "@/lib/homeLayout";
 
 // Главная из виджетов (decisions/2026-10-07-home-dashboard-direction.md). Каждый собирает её сам:
@@ -63,7 +65,7 @@ export function HomeGrid({ data, onCreateTask, onCreateTaskFrom, editing, onEdit
   const [narrow, setNarrow] = useState<string | null>(null);
 
   // Раскладка читается после монтирования: экспорт статический, на сборке localStorage нет.
-  useEffect(() => { setLayoutState(loadLayout()); }, []);
+  useEffect(() => { setLayoutState(devLayout() ?? loadLayout()); }, []);
   // Синхронизация с профилем прямо в рендере, а не в эффекте: эффект давал один кадр с пустыми странами
   // (и подсказкой «выберите страны») сразу после прихода me.
   const [seenMarkets, setSeenMarkets] = useState(me?.markets);
@@ -75,7 +77,8 @@ export function HomeGrid({ data, onCreateTask, onCreateTaskFrom, editing, onEdit
     return () => window.removeEventListener("keydown", onKey);
   }, [editing, gallery]);
 
-  const setLayout = (next: LayoutItem[]) => { setLayoutState(next); saveLayout(next); };
+  // Макет из ?layout= (только DEV_MODE) в localStorage не пишем.
+  const setLayout = (next: LayoutItem[]) => { setLayoutState(next); if (!devLayout()) saveLayout(next); };
   const codes = narrow && markets.includes(narrow) ? [narrow] : markets;
   const quality = useQuality();
   const q = quality.data;
@@ -114,11 +117,11 @@ export function HomeGrid({ data, onCreateTask, onCreateTaskFrom, editing, onEdit
     setDragId(null); setOverId(null);
   };
 
-  const widget = (it: LayoutItem, i: number) => {
+  const widget = (it: LayoutItem, i: number, sizing: CellSizing) => {
     const m = META[it.id];
     return (
       <section key={it.id} data-widget={it.id}
-        className={`relative min-w-0 rounded-[14px] transition-opacity ${it.id === "board" ? "" : FIXED_BLOCK} ${editing ? "cursor-grab outline-2 outline-offset-4 outline-dashed outline-line-2 hover:outline-accent-line" : ""} ${dragId === it.id ? "opacity-40" : ""} ${overId === it.id && dragId !== it.id ? "outline-primary" : ""}`}
+        className={`relative min-w-0 rounded-[14px] transition-opacity ${sizing === "auto" ? "" : `${BLOCK_COL} ${SIZING_CLASS[sizing]}`} ${editing ? "cursor-grab outline-2 outline-offset-4 outline-dashed outline-line-2 hover:outline-accent-line" : ""} ${dragId === it.id ? "opacity-40" : ""} ${overId === it.id && dragId !== it.id ? "outline-primary" : ""}`}
         draggable={editing}
         onDragStart={(e) => { setDragId(it.id); e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", it.id); }}
         onDragEnd={() => { setDragId(null); setOverId(null); }}
@@ -133,7 +136,7 @@ export function HomeGrid({ data, onCreateTask, onCreateTaskFrom, editing, onEdit
             <ToolBtn label={dt(`Скрыть «${m.title[0]}»`, `Hide “${m.title[1]}”`)} onClick={() => setLayout(hideWidget(layout, it.id))}>{dt("Скрыть ×", "Hide ×")}</ToolBtn>
           </div>
         )}
-        <div className={`${editing ? "pointer-events-none select-none" : ""} ${it.id === "board" ? "" : FILL_COL}`}>
+        <div className={`${editing ? "pointer-events-none select-none" : ""} ${sizing === "auto" ? "" : FILL_COL}`}>
           {!m.ownTitle && (
             <HomeLabel first action={undefined}>
               <span className="inline-flex items-center gap-2">{m.title[lang]}{m.meta && <span className="font-normal normal-case tracking-normal text-ink-mute">{m.meta[lang]}</span>}{m.sample && <SampleTag />}</span>
@@ -147,6 +150,7 @@ export function HomeGrid({ data, onCreateTask, onCreateTaskFrom, editing, onEdit
 
   return (
     <div className="min-w-0 pb-8">
+      <DevMockupBar />
       {narrow && !editing && <NarrowChip cc={narrow} onClear={() => setNarrow(null)} />}
 
       {editing && (
@@ -166,15 +170,21 @@ export function HomeGrid({ data, onCreateTask, onCreateTaskFrom, editing, onEdit
       )}
 
       {/* Строки раскладки (layoutRows): «вся строка» — одна, половинки — парой одной высоты, одиночная
-          половинка — на всю строку. От 1100 px у каждого блока (кроме доски) фиксированная высота,
-          поэтому пара ровная, а страница не двигается; уже — одна колонка в порядке раскладки. */}
-      <div className="flex flex-col gap-y-2 px-6 pt-1">
-        {layoutRows(layout).map((row) => (
-          <div key={row[0].item.id} className={`flex flex-col gap-y-2 ${row.length > 1 ? "min-[1100px]:grid min-[1100px]:grid-cols-2 min-[1100px]:gap-x-5" : ""}`}
-            style={{ "--home-block-h": `${HOME_BLOCK_HEIGHT}px` } as CSSProperties}>
-            {row.map(({ item, index }) => <div key={item.id} className="min-w-0">{widget(item, index)}</div>)}
-          </div>
-        ))}
+          половинка — на всю строку. От 1100 px высоту клетки раздаёт rowSizing по виду высоты виджета
+          (HEIGHT_KIND): страница не двигается, пара ровная, пустоты под карточкой нет; уже — одна
+          колонка в порядке раскладки. */}
+      <div className="flex flex-col gap-y-2 px-6 pt-1" style={HEIGHT_VARS}>
+        {layoutRows(layout).map((row) => {
+          const { cells, minFill } = rowSizing(row.map((c) => HEIGHT_KIND[c.item.id]));
+          return (
+            <div key={row[0].item.id}
+              className={`flex flex-col gap-y-2 ${row.length > 1 ? "min-[1100px]:grid min-[1100px]:grid-cols-2 min-[1100px]:gap-x-5" : ""} ${minFill ? "min-[1100px]:min-h-[var(--home-fill-min)]" : ""}`}>
+              {row.map(({ item, index }, c) => (
+                <div key={item.id} className={`min-w-0 ${cells[c] === "absolute" ? "min-[1100px]:relative" : ""}`}>{widget(item, index, cells[c])}</div>
+              ))}
+            </div>
+          );
+        })}
       </div>
 
       <Dialog open={gallery} onOpenChange={setGallery}>
@@ -203,10 +213,23 @@ export function HomeGrid({ data, onCreateTask, onCreateTaskFrom, editing, onEdit
   );
 }
 
-// Блок фиксированной высоты (blockFill.ts): секция — колонка заданной высоты, заголовок и тело внутри
-// неё. Ячейка сетки тянется на высоту пары, секция внутри неё — на всю ячейку.
-const FIXED_BLOCK = "min-[1100px]:flex min-[1100px]:h-[var(--home-block-h)] min-[1100px]:flex-col";
-const FILL_COL = "min-[1100px]:flex min-[1100px]:min-h-0 min-[1100px]:flex-1 min-[1100px]:flex-col";
+// Высота блока (blockFill.ts, rowSizing): секция — колонка, заголовок и тело внутри неё. Ячейка сетки
+// тянется на высоту пары, секция внутри — на всю ячейку (или лежит в ней absolute, если это таблица
+// рядом с другим видом высоты и высоту строки она не задаёт).
+const HEIGHT_VARS = {
+  "--home-fixed": `${HOME_FIXED_HEIGHT}px`, "--home-list-max": `${HOME_LIST_MAX}px`,
+  "--home-fill-min": `${HOME_FILL_MIN}px`, "--home-fill-max": `${HOME_FILL_MAX}px`,
+} as CSSProperties;
+const BLOCK_COL = "min-[1100px]:flex min-[1100px]:flex-col";
+const SIZING_CLASS: Record<CellSizing, string> = {
+  fixed: "min-[1100px]:h-[var(--home-fixed)]",
+  capped: "min-[1100px]:h-full min-[1100px]:max-h-[var(--home-list-max)]",
+  free: "min-[1100px]:h-full",
+  absolute: "min-[1100px]:absolute min-[1100px]:inset-0",
+  fillCapped: "min-[1100px]:h-full min-[1100px]:max-h-[var(--home-fill-max)]",
+  auto: "",
+};
+const FILL_COL = "min-[1100px]:flex min-[1100px]:min-h-0 min-[1100px]:flex-auto min-[1100px]:flex-col";
 
 const note = `rounded-[12px] border border-dashed border-line-2 px-4 py-6 text-center text-ink-mute ${FILL_NOTE}`;
 

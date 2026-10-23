@@ -1,6 +1,6 @@
 // Раскладка главной из виджетов: перестановка, ширина, скрытие, разбор сохранённого.
 import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import { addWidget, DEFAULT_LAYOUT, layoutRows, WIDGET_IDS, hideWidget, migrateLayoutIds, moveBefore, moveBy, parseLayout, toggleWidth } from "./homeLayout.ts";
+import { addWidget, DEFAULT_LAYOUT, HEIGHT_KIND, layoutRows, rowSizing, WIDGET_IDS, hideWidget, migrateLayoutIds, moveBefore, moveBy, parseLayout, toggleWidth } from "./homeLayout.ts";
 
 Deno.test("parseLayout drops unknown widgets, duplicates and bad widths", () => {
   const got = parseLayout([{ id: "pz", w: "full" }, { id: "nope", w: "half" }, { id: "pz", w: "half" }, { id: "calls", w: "huge" }]);
@@ -97,4 +97,24 @@ Deno.test("layoutRows: одиночная половинка перед целы
 Deno.test("«Пиццерии» по умолчанию — половина строки", () => {
   assertEquals(DEFAULT_LAYOUT.find((x) => x.id === "pz")?.w, "half");
   assertEquals(addWidget([], "pz"), [{ id: "pz", w: "half" }]);
+});
+
+Deno.test("rowSizing: fixed ведёт строку, natural подстраивается, fill в паре не задаёт высоту", () => {
+  assertEquals(rowSizing(["fixed", "natural"]), { cells: ["fixed", "free"], minFill: false });
+  assertEquals(rowSizing(["fixed", "fill"]), { cells: ["fixed", "absolute"], minFill: true });
+  assertEquals(rowSizing(["natural", "natural"]), { cells: ["capped", "capped"], minFill: false });
+  assertEquals(rowSizing(["natural", "fill"]), { cells: ["capped", "absolute"], minFill: true });
+  assertEquals(rowSizing(["auto", "fill"]), { cells: ["auto", "absolute"], minFill: true });
+});
+
+Deno.test("rowSizing: одна таблица или две таблицы — по содержимому до предела, одиночные виды как есть", () => {
+  assertEquals(rowSizing(["fill"]), { cells: ["fillCapped"], minFill: false });
+  assertEquals(rowSizing(["fill", "fill"]), { cells: ["fillCapped", "fillCapped"], minFill: true });
+  assertEquals(rowSizing(["natural"]), { cells: ["capped"], minFill: false });
+  assertEquals(rowSizing(["fixed"]), { cells: ["fixed"], minFill: false });
+  assertEquals(rowSizing(["auto"]), { cells: ["auto"], minFill: false });
+});
+
+Deno.test("HEIGHT_KIND: у каждого виджета каталога есть вид высоты", () => {
+  for (const id of WIDGET_IDS) assertEquals(["fixed", "natural", "fill", "auto"].includes(HEIGHT_KIND[id]), true);
 });
