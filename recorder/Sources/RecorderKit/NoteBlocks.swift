@@ -132,8 +132,9 @@ public enum NoteBlocks {
     /// пропадают: разделителем в новом блокноте служит сам блок.
     public static func migrate(plainText: String) -> [NoteBlock] {
         let blocks: [NoteBlock] = plainText.split(whereSeparator: \.isNewline).compactMap { raw in
-            let line = String(raw).trimmingCharacters(in: .whitespaces)
-            guard !line.isEmpty else { return nil }
+            // Маркер ищем до обрезки хвоста: у пустого пункта «• » пробел — часть маркера.
+            let line = String(String(raw).drop(while: { $0 == " " || $0 == "\t" }))
+            guard !line.trimmingCharacters(in: .whitespaces).isEmpty else { return nil }
             let done = line.hasPrefix(NotepadMarkup.checkDone)
             let body = String(line.dropFirst(NotepadMarkup.markerLength(ofLine: line)))
                 .trimmingCharacters(in: .whitespaces)
