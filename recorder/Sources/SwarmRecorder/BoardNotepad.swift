@@ -131,7 +131,8 @@ final class BoardNotepad: NSObject, NoteLineHost, NoteTableHost {
         confirmRow.isHidden = true
 
         lock.image = NSImage(systemSymbolName: "lock.fill", accessibilityDescription: nil)?
-            .withSymbolConfiguration(.init(pointSize: 8.5, weight: .regular).applying(.init(paletteColors: [BoardTheme.ink3])))
+            .withSymbolConfiguration(.init(pointSize: 8.5, weight: .regular))
+        lock.contentTintColor = BoardTheme.ink3
         lock.translatesAutoresizingMaskIntoConstraints = false
         let (spaceL, spaceR) = (boardSpacer(), boardSpacer())
         let stampRow = paddedRow(spacing: 4, insets: NSEdgeInsets(top: 2, left: 14, bottom: 6, right: 14),

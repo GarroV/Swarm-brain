@@ -3,26 +3,46 @@ import RecorderKit
 
 // Мелкие самодельные виджеты и палитра доски «Сегодня». Тёмная графитовая панель с янтарём —
 // тот же язык, что у виджета записи и живых заметок (RoyArt.amber, MarkRenderer.graphite).
+// Тема — системная (решение владельца 23.10.2026): каждый цвет динамический, пара тёмный/светлый.
+// Цвета слоёв (`layer.backgroundColor`) сами не перекрашиваются — виды ниже пересчитывают их в
+// `viewDidChangeEffectiveAppearance` через `LayerPaint`.
 
 enum BoardTheme {
-    static let panelBg = NSColor(srgbRed: 0.09, green: 0.075, blue: 0.05, alpha: 1)
-    static let ink = NSColor(white: 1, alpha: 0.94)
-    static let ink2 = NSColor(white: 1, alpha: 0.58)
-    static let ink3 = NSColor(white: 1, alpha: 0.36)
-    static let line = NSColor(white: 1, alpha: 0.09)
-    static let fill = NSColor(white: 1, alpha: 0.06)
-    static let fillHover = NSColor(white: 1, alpha: 0.11)
-    static let amber = RoyArt.amber
-    static let amberSoft = RoyArt.amber.withAlphaComponent(0.16)
+    private static func pair(dark: NSColor, light: NSColor) -> NSColor {
+        NSColor(name: nil) { $0.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? dark : light }
+    }
+    static let panelBg = pair(dark: NSColor(srgbRed: 0.09, green: 0.075, blue: 0.05, alpha: 1),
+                              light: NSColor(srgbRed: 0.985, green: 0.975, blue: 0.955, alpha: 1))
+    static let ink = pair(dark: NSColor(white: 1, alpha: 0.94), light: NSColor(white: 0, alpha: 0.86))
+    static let ink2 = pair(dark: NSColor(white: 1, alpha: 0.58), light: NSColor(white: 0, alpha: 0.56))
+    static let ink3 = pair(dark: NSColor(white: 1, alpha: 0.36), light: NSColor(white: 0, alpha: 0.36))
+    static let line = pair(dark: NSColor(white: 1, alpha: 0.09), light: NSColor(white: 0, alpha: 0.09))
+    static let cellLine = pair(dark: NSColor(white: 1, alpha: 0.16), light: NSColor(white: 0, alpha: 0.16))
+    static let fill = pair(dark: NSColor(white: 1, alpha: 0.06), light: NSColor(white: 0, alpha: 0.045))
+    static let fillHover = pair(dark: NSColor(white: 1, alpha: 0.11), light: NSColor(white: 0, alpha: 0.08))
+    /// Подсветка строки под мышью (начало градиента).
+    static let glow = pair(dark: NSColor(white: 1, alpha: 0.07), light: NSColor(white: 0, alpha: 0.05))
+    // Янтарь на светлом фоне темнее: исходный как текст на белом почти не читается.
+    static let amber = pair(dark: RoyArt.amber, light: NSColor(srgbRed: 0.74, green: 0.45, blue: 0.04, alpha: 1))
+    static let amberSoft = pair(dark: RoyArt.amber.withAlphaComponent(0.16), light: RoyArt.amber.withAlphaComponent(0.2))
     static let amberInk = NSColor(srgbRed: 0.10, green: 0.08, blue: 0.03, alpha: 1)
     static let rec = NSColor(srgbRed: 0.94, green: 0.31, blue: 0.24, alpha: 1)
     static let ok = NSColor(srgbRed: 0.44, green: 0.75, blue: 0.45, alpha: 1)
-    static let padBg = NSColor(white: 0, alpha: 0.22)
+    static let padBg = pair(dark: NSColor(white: 0, alpha: 0.22), light: NSColor(white: 0, alpha: 0.04))
 
     static func font(_ size: CGFloat, _ weight: NSFont.Weight = .regular) -> NSFont {
         .systemFont(ofSize: size, weight: weight)
     }
     static func mono(_ size: CGFloat) -> NSFont { .monospacedSystemFont(ofSize: size, weight: .regular) }
+}
+
+/// Цвет слоя в теме вида: динамический NSColor → CGColor под `effectiveAppearance` вида.
+enum LayerPaint {
+    static func cg(_ color: NSColor, in view: NSView) -> CGColor {
+        var out = color.cgColor
+        view.effectiveAppearance.performAsCurrentDrawingAppearance { out = color.cgColor }
+        return out
+    }
 }
 
 func boardLabel(_ text: String = "", size: CGFloat = 13, weight: NSFont.Weight = .regular,
@@ -71,7 +91,6 @@ final class FlatButton: NSButton {
         bezelStyle = .regularSquare
         wantsLayer = true
         layer?.cornerRadius = radius
-        layer?.backgroundColor = fill.cgColor
         self.target = target
         self.action = action
         setButtonType(.momentaryChange)
@@ -80,7 +99,12 @@ final class FlatButton: NSButton {
         setContentHuggingPriority(.required, for: .horizontal)
         setContentCompressionResistancePriority(.required, for: .horizontal)
         setTitle(title, color: color, size: size, weight: weight)
+        paint()
     }
+
+    private var hovered = false
+    private func paint() { layer?.backgroundColor = LayerPaint.cg(hovered ? hoverFill : normalFill, in: self) }
+    override func viewDidChangeEffectiveAppearance() { super.viewDidChangeEffectiveAppearance(); paint() }
     required init?(coder: NSCoder) { fatalError("init(coder:) не используется") }
 
     func setTitle(_ t: String, color: NSColor, size: CGFloat = 12.5, weight: NSFont.Weight = .regular) {
@@ -92,9 +116,13 @@ final class FlatButton: NSButton {
     /// Кнопка-значок: SF Symbol вместо текста, фиксированный квадрат `side`.
     func setSymbol(_ name: String, color: NSColor, pointSize: CGFloat = 13, side: CGFloat = 26) {
         title = ""
+        // Шаблон + contentTintColor: цвет значка перекрашивается вместе с темой (палитра в
+        // конфигурации символа запекается в момент создания).
         let conf = NSImage.SymbolConfiguration(pointSize: pointSize, weight: .regular)
-            .applying(.init(paletteColors: [color]))
-        image = NSImage(systemSymbolName: name, accessibilityDescription: nil)?.withSymbolConfiguration(conf)
+        let img = NSImage(systemSymbolName: name, accessibilityDescription: nil)?.withSymbolConfiguration(conf)
+        img?.isTemplate = true
+        image = img
+        contentTintColor = color
         imagePosition = .imageOnly
         symbolSide = side
         invalidateIntrinsicContentSize()
@@ -112,8 +140,8 @@ final class FlatButton: NSButton {
         let t = NSTrackingArea(rect: bounds, options: [.mouseEnteredAndExited, .activeAlways], owner: self, userInfo: nil)
         addTrackingArea(t); tracking = t
     }
-    override func mouseEntered(with event: NSEvent) { layer?.backgroundColor = hoverFill.cgColor }
-    override func mouseExited(with event: NSEvent) { layer?.backgroundColor = normalFill.cgColor }
+    override func mouseEntered(with event: NSEvent) { hovered = true; paint() }
+    override func mouseExited(with event: NSEvent) { hovered = false; paint() }
 }
 
 /// Чекбокс строки задачи: пустой квадрат / зелёный с галочкой.
@@ -178,23 +206,31 @@ final class RecDotView: NSView {
 
 /// Контейнер с подложкой и скруглением (карточки, колонки блокнота).
 final class BoxView: NSView {
+    private let fill: NSColor
+    private let border: NSColor?
+
     init(fill: NSColor, radius: CGFloat = 10, border: NSColor? = nil) {
+        self.fill = fill
+        self.border = border
         super.init(frame: .zero)
         wantsLayer = true
-        layer?.backgroundColor = fill.cgColor
         layer?.cornerRadius = radius
-        if let border { layer?.borderColor = border.cgColor; layer?.borderWidth = 1 }
+        if border != nil { layer?.borderWidth = 1 }
         translatesAutoresizingMaskIntoConstraints = false
+        paint()
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) не используется") }
+
+    private func paint() {
+        layer?.backgroundColor = LayerPaint.cg(fill, in: self)
+        if let border { layer?.borderColor = LayerPaint.cg(border, in: self) }
+    }
+    override func viewDidChangeEffectiveAppearance() { super.viewDidChangeEffectiveAppearance(); paint() }
 }
 
 /// Вертикальная разделительная/горизонтальная линия 1 pt.
 func boardDivider(vertical: Bool) -> NSView {
-    let v = NSView()
-    v.wantsLayer = true
-    v.layer?.backgroundColor = BoardTheme.line.cgColor
-    v.translatesAutoresizingMaskIntoConstraints = false
+    let v = BoxView(fill: BoardTheme.line, radius: 0)
     if vertical { v.widthAnchor.constraint(equalToConstant: 1).isActive = true }
     else { v.heightAnchor.constraint(equalToConstant: 1).isActive = true }
     return v

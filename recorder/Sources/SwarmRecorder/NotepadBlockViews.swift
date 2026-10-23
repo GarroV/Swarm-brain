@@ -81,19 +81,32 @@ final class ThesisDot: NSButton {
     }
 }
 
-/// Кнопка «→ В задачу», видна только при наведении на строку.
+/// Кнопка «→ В задачу», проявляется при наведении на строку. Место под неё есть всегда —
+/// прозрачность, а не `isHidden`: спрятанный вид стек выкидывает из раскладки, текст строки
+/// становится шире и переносится заново — строки «ездили» под мышью (владелец 23.10.2026).
 func notepadTaskArrow(target: AnyObject, action: Selector, tip: String) -> FlatButton {
     let b = FlatButton(title: "", fill: .clear, hover: BoardTheme.amberSoft, radius: 11, target: target, action: action)
     b.setSymbol("arrow.right", color: BoardTheme.amber, pointSize: 12, side: 22)
     b.toolTip = tip
-    b.isHidden = true
+    b.alphaValue = 0
     return b
 }
 
-/// Вид, у которого при наведении появляются свои кнопки.
+/// Показать/спрятать кнопку наведения плавно, не трогая раскладку.
+func setRevealed(_ v: NSView, _ on: Bool) {
+    NSAnimationContext.runAnimationGroup { ctx in
+        ctx.duration = 0.12
+        v.animator().alphaValue = on ? 1 : 0
+    }
+}
+
+/// Вид, у которого при наведении появляются свои кнопки и (если `glows`) мягкая подсветка:
+/// градиент слева направо, гаснущий к правому краю, со скруглением — видно, на какой строке мышь.
 class HoverView: NSView {
     var onHover: ((Bool) -> Void)?
+    var glows = false
     private var tracking: NSTrackingArea?
+    private var glowLayer: CAGradientLayer?
 
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
@@ -102,8 +115,46 @@ class HoverView: NSView {
                                owner: self, userInfo: nil)
         addTrackingArea(t); tracking = t
     }
-    override func mouseEntered(with event: NSEvent) { onHover?(true) }
-    override func mouseExited(with event: NSEvent) { onHover?(false) }
+    override func mouseEntered(with event: NSEvent) { onHover?(true); glow(true) }
+    override func mouseExited(with event: NSEvent) { onHover?(false); glow(false) }
+
+    private func glow(_ on: Bool) {
+        guard glows else { return }
+        wantsLayer = true
+        let g = glowLayer ?? {
+            let g = CAGradientLayer()
+            g.startPoint = CGPoint(x: 0, y: 0.5)
+            g.endPoint = CGPoint(x: 1, y: 0.5)
+            g.cornerRadius = 8
+            g.opacity = 0
+            layer?.insertSublayer(g, at: 0)
+            glowLayer = g
+            return g
+        }()
+        paintGlow()
+        g.frame = glowFrame
+        let a = CABasicAnimation(keyPath: "opacity")
+        a.fromValue = g.presentation()?.opacity ?? g.opacity
+        a.duration = 0.15
+        g.opacity = on ? 1 : 0
+        g.add(a, forKey: "fade")
+    }
+
+    private var glowFrame: CGRect { bounds.insetBy(dx: -6, dy: 0) }
+
+    private func paintGlow() {
+        let c = BoardTheme.glow
+        glowLayer?.colors = [LayerPaint.cg(c, in: self), LayerPaint.cg(c.withAlphaComponent(0), in: self)]
+        glowLayer?.locations = [0.35, 1]
+    }
+
+    override func layout() {
+        super.layout()
+        CATransaction.begin(); CATransaction.setDisableActions(true)
+        glowLayer?.frame = glowFrame
+        CATransaction.commit()
+    }
+    override func viewDidChangeEffectiveAppearance() { super.viewDidChangeEffectiveAppearance(); paintGlow() }
 }
 
 /// Команды строки, которые решает список целиком.
@@ -148,6 +199,7 @@ final class NoteLineView: HoverView, NSTextFieldDelegate {
             row.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -NotepadStyle.rowGap),
             arrow.widthAnchor.constraint(equalToConstant: 22),
         ])
+        glows = true
         onHover = { [weak self] inside in self?.showArrow(inside) }
         apply()
     }
@@ -220,12 +272,16 @@ final class NoteLineView: HoverView, NSTextFieldDelegate {
         editor.selectedRange = NSRange(location: min(caret ?? (atEnd ? len : 0), len), length: 0)
     }
 
+    private var arrowShown = false
     private func showArrow(_ inside: Bool) {
-        arrow.isHidden = !inside || text.trimmingCharacters(in: .whitespaces).isEmpty
+        let on = inside && !text.trimmingCharacters(in: .whitespaces).isEmpty
+        guard on != arrowShown else { return }
+        arrowShown = on
+        setRevealed(arrow, on)
     }
 
     @objc private func arrowTapped() {
-        guard let title = NotepadMarkup.taskTitle(from: text) else { return }
+        guard arrowShown, let title = NotepadMarkup.taskTitle(from: text) else { return }
         host?.lineToTask(title)
     }
 
@@ -344,7 +400,7 @@ final class NoteTableView: HoverView, NSTextFieldDelegate {
                 let f = notepadField(size: 13)
                 f.stringValue = c < row.count ? row[c] : ""
                 f.delegate = self
-                let box = BoxView(fill: .clear, radius: 0, border: NSColor(white: 1, alpha: 0.16))
+                let box = BoxView(fill: .clear, radius: 0, border: BoardTheme.cellLine)
                 box.addSubview(f)
                 let pad = NotepadStyle.cellPadding
                 NSLayoutConstraint.activate([
@@ -359,6 +415,7 @@ final class NoteTableView: HoverView, NSTextFieldDelegate {
             let arrow = notepadTaskArrow(target: self, action: #selector(arrowTapped(_:)), tip: taskTip)
             arrow.tag = r
             let line = HoverView()
+            line.glows = true
             line.translatesAutoresizingMaskIntoConstraints = false
             let stack = NSStackView(views: [cells, arrow])
             stack.orientation = .horizontal
@@ -375,7 +432,7 @@ final class NoteTableView: HoverView, NSTextFieldDelegate {
             ])
             line.onHover = { [weak self, weak arrow] inside in
                 guard let self, let arrow else { return }
-                arrow.isHidden = !inside || NoteBlocks.taskTitle(row: self.rows[arrow.tag]) == nil
+                setRevealed(arrow, inside && NoteBlocks.taskTitle(row: self.rows[arrow.tag]) != nil)
             }
             grid.addArrangedSubview(line)
             line.widthAnchor.constraint(equalTo: grid.widthAnchor).isActive = true
@@ -395,7 +452,7 @@ final class NoteTableView: HoverView, NSTextFieldDelegate {
         if changed { super.layout() }
     }
 
-    private func hideArrows() { arrows.forEach { $0.isHidden = true } }
+    private func hideArrows() { arrows.forEach { setRevealed($0, false) } }
 
     private func position(of field: NSTextField) -> (row: Int, col: Int)? {
         for (r, row) in fields.enumerated() { if let c = row.firstIndex(of: field) { return (r, c) } }
@@ -410,7 +467,7 @@ final class NoteTableView: HoverView, NSTextFieldDelegate {
     }
 
     @objc private func arrowTapped(_ sender: FlatButton) {
-        guard sender.tag < rows.count, let title = NoteBlocks.taskTitle(row: rows[sender.tag]) else { return }
+        guard sender.alphaValue > 0.5, sender.tag < rows.count, let title = NoteBlocks.taskTitle(row: rows[sender.tag]) else { return }
         host?.lineToTask(title)
     }
 

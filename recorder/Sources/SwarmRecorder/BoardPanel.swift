@@ -202,7 +202,7 @@ final class BoardPanel: NSObject, NSWindowDelegate {
         // Непрозрачное: сквозь доску не должны читаться окна под ней.
         w.isOpaque = true
         w.backgroundColor = BoardTheme.panelBg
-        w.appearance = NSAppearance(named: .darkAqua)
+        // Тема — системная: светлая или тёмная вслед за macOS (решение владельца 23.10.2026).
         // Обычное окно, а не плавающее: другие окна его перекрывают, вернуть — через Dock,
         // ⌘Tab или значок доски (решение владельца 23.10.2026).
         w.isFloatingPanel = false
@@ -553,7 +553,7 @@ final class BoardPanel: NSObject, NSWindowDelegate {
 
     private func chip(_ text: String) -> NSView {
         let l = boardLabel(text, size: 11.5, color: BoardTheme.ink2)
-        let box = BoxView(fill: NSColor(white: 1, alpha: 0.08), radius: 6)
+        let box = BoxView(fill: BoardTheme.fill, radius: 6)
         box.addSubview(l)
         NSLayoutConstraint.activate([
             l.leadingAnchor.constraint(equalTo: box.leadingAnchor, constant: 7),
