@@ -9,6 +9,24 @@ final class NoteBlocksTests: XCTestCase {
         XCTAssertEqual(try NoteBlocks.decode(NoteBlocks.encode(blocks)), blocks)
     }
 
+    func testRoundTripKeepsDoneThesis() throws {
+        let blocks: [NoteBlock] = [.thesis("Кассы Словении", done: true), .thesis("Открыто")]
+        XCTAssertEqual(try NoteBlocks.decode(NoteBlocks.encode(blocks)), blocks)
+    }
+
+    /// Файл первых часов 23.10.2026 (синтезированный Codable) читается без потерь.
+    func testDecodesFirstFileFormat() throws {
+        let old = #"{"blocks":[{"thesis":{"_0":"Кассы словении"}},{"check":{"_0":"Юрист","done":true}},{"table":{"_0":[["a","b"]]}}],"version":1}"#
+        XCTAssertEqual(try NoteBlocks.decode(Data(old.utf8)),
+                       [.thesis("Кассы словении"), .check("Юрист", done: true), .table([["a", "b"]])])
+    }
+
+    func testDoneToggleKeepsText() {
+        XCTAssertEqual(NoteBlock.thesis("а").withDone(true), .thesis("а", done: true))
+        XCTAssertEqual(NoteBlock.thesis("а", done: true).withText("б"), .thesis("б", done: true))
+        XCTAssertFalse(NoteBlock.table([[""]]).withDone(true).isDone)
+    }
+
     func testDecodeRejectsGarbage() {
         XCTAssertThrowsError(try NoteBlocks.decode(Data("{not json".utf8)))
     }

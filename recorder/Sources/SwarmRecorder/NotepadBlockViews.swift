@@ -42,22 +42,42 @@ func notepadField(size: CGFloat = NotepadStyle.bodySize) -> NSTextField {
     return f
 }
 
-/// Кружок тезиса — «радиокнопка» слева от строки, без действия.
-final class ThesisDot: NSView {
-    override init(frame: NSRect) {
-        super.init(frame: frame)
+/// Кружок тезиса — «радиокнопка» слева от строки: клик отмечает тезис сделанным (зелёный
+/// кружок с галочкой, текст зачёркнут), повторный — снимает отметку.
+final class ThesisDot: NSButton {
+    var isOn = false { didSet { needsDisplay = true } }
+
+    init(target: AnyObject?, action: Selector?) {
+        super.init(frame: NSRect(x: 0, y: 0, width: NotepadStyle.markerSide, height: NotepadStyle.markerSide))
+        isBordered = false
+        title = ""
+        setButtonType(.momentaryChange)
+        focusRingType = .none
+        self.target = target
+        self.action = action
         translatesAutoresizingMaskIntoConstraints = false
         widthAnchor.constraint(equalToConstant: NotepadStyle.markerSide).isActive = true
         heightAnchor.constraint(equalToConstant: NotepadStyle.markerSide).isActive = true
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) не используется") }
 
+    override var isFlipped: Bool { false }
+
     override func draw(_ dirtyRect: NSRect) {
-        let r = NSRect(x: 4, y: 4, width: 12, height: 12).insetBy(dx: 0.75, dy: 0.75)
-        let p = NSBezierPath(ovalIn: r)
-        p.lineWidth = 1.5
-        BoardTheme.ink3.setStroke()
-        p.stroke()
+        let r = NSRect(x: 3, y: 3, width: 14, height: 14)
+        if isOn {
+            BoardTheme.ok.setFill()
+            NSBezierPath(ovalIn: r).fill()
+            let tick = NSBezierPath()
+            tick.move(to: NSPoint(x: 6.5, y: 10)); tick.line(to: NSPoint(x: 9, y: 7.5)); tick.line(to: NSPoint(x: 13.5, y: 12.5))
+            NSColor(srgbRed: 0.07, green: 0.13, blue: 0.06, alpha: 1).setStroke()
+            tick.lineWidth = 1.8; tick.lineCapStyle = .round; tick.lineJoinStyle = .round; tick.stroke()
+        } else {
+            let p = NSBezierPath(ovalIn: r.insetBy(dx: 1.5, dy: 1.5))
+            p.lineWidth = 1.5
+            BoardTheme.ink3.setStroke()
+            p.stroke()
+        }
     }
 }
 
@@ -106,6 +126,7 @@ final class NoteLineView: HoverView, NSTextFieldDelegate {
     private let markerSlot = NSStackView()
     private var arrow: FlatButton!
     private var check: CheckBoxButton?
+    private var dot: ThesisDot?
 
     init(block: NoteBlock, taskTip: String) {
         self.block = block
@@ -148,12 +169,16 @@ final class NoteLineView: HoverView, NSTextFieldDelegate {
     private func apply() {
         markerSlot.arrangedSubviews.forEach { $0.removeFromSuperview() }
         check = nil
+        dot = nil
         switch block {
-        case .thesis(let t):
-            markerSlot.addArrangedSubview(ThesisDot())
+        case .thesis(let t, let done):
+            let d = ThesisDot(target: self, action: #selector(markerTapped))
+            d.isOn = done
+            markerSlot.addArrangedSubview(d)
+            dot = d
             field.stringValue = t
         case .check(let t, let done):
-            let c = CheckBoxButton(target: self, action: #selector(checkTapped))
+            let c = CheckBoxButton(target: self, action: #selector(markerTapped))
             c.isStruck = done
             markerSlot.addArrangedSubview(c)
             check = c
@@ -164,12 +189,17 @@ final class NoteLineView: HoverView, NSTextFieldDelegate {
         styleDone()
     }
 
+    /// Сделанное — бледное и зачёркнутое; правке не мешает: зачёркивание держится и при наборе.
     private func styleDone() {
-        guard case .check(_, let done) = block, done else {
-            field.textColor = BoardTheme.ink
-            return
-        }
-        field.textColor = BoardTheme.ink3
+        let done = block.isDone
+        let attrs: [NSAttributedString.Key: Any] = [
+            .font: BoardTheme.font(NotepadStyle.bodySize),
+            .foregroundColor: done ? BoardTheme.ink3 : BoardTheme.ink,
+            .strikethroughStyle: done ? NSUnderlineStyle.single.rawValue : 0,
+        ]
+        field.textColor = done ? BoardTheme.ink3 : BoardTheme.ink
+        field.attributedStringValue = NSAttributedString(string: field.stringValue, attributes: attrs)
+        (field.currentEditor() as? NSTextView)?.typingAttributes = attrs
     }
 
     func setPlaceholder(_ p: String?) {
@@ -195,10 +225,11 @@ final class NoteLineView: HoverView, NSTextFieldDelegate {
         host?.lineToTask(title)
     }
 
-    @objc private func checkTapped() {
-        guard case .check(let t, let done) = block else { return }
-        block = .check(text.isEmpty ? t : text, done: !done)
-        check?.isStruck = !done
+    /// Клик по кружку тезиса или квадрату пункта: отметить сделанным / снять отметку.
+    @objc private func markerTapped() {
+        block = block.withText(text).withDone(!block.isDone)
+        check?.isStruck = block.isDone
+        dot?.isOn = block.isDone
         styleDone()
         host?.lineChanged(self)
     }

@@ -264,8 +264,8 @@ final class BoardNotepad: NSObject, NoteLineHost, NoteTableHost {
     func lineBackspaceAtStart(_ line: NoteLineView) {
         guard let i = index(of: line) else { return }
         // Пункт чек-листа сначала становится тезисом, и только потом сливается со строкой выше.
-        if case .check(let text, _) = line.block {
-            blocks[i] = .thesis(text)
+        if case .check(let text, let done) = line.block {
+            blocks[i] = .thesis(text, done: done)
             rebuild(focus: (i, 0))
             changed()
             return
@@ -323,8 +323,9 @@ final class BoardNotepad: NSObject, NoteLineHost, NoteTableHost {
             changed()
             return
         }
-        if toCheck, case .check = blocks[i] { blocks[i] = .thesis(text) }
-        else { blocks[i] = toCheck ? .check(text, done: false) : .thesis(text) }
+        let done = blocks[i].isDone
+        if toCheck, case .check = blocks[i] { blocks[i] = .thesis(text, done: done) }
+        else { blocks[i] = toCheck ? .check(text, done: done) : .thesis(text, done: done) }
         rebuild(focus: (i, nil))
         changed()
     }

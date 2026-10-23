@@ -145,7 +145,11 @@ final class BoardPanel: NSObject, NSWindowDelegate {
     private let formWrap: NSStackView
     private var formMarkets: [String] = []
 
-    private let columns = boardStack(.horizontal)
+    /// Тело доски под шапкой: задачи, встречи и блокнот, разложенные по `BoardLayout`.
+    private let body = boardStack(.vertical)
+    private var arrangement: BoardArrangement?
+    /// Линия между встречами и соседом по столбцу — прячется вместе со встречами.
+    private var meetingsSeparator: NSView?
     private let tasksCol = boardStack(.vertical)
     private let tasksHeader = boardLabel("", size: 10.5, weight: .semibold, color: BoardTheme.ink3)
     private let tasksCount = boardLabel("", size: 11, color: BoardTheme.amber, mono: true).hugText()
@@ -175,8 +179,8 @@ final class BoardPanel: NSObject, NSWindowDelegate {
         notepad.view.translatesAutoresizingMaskIntoConstraints = false
         for v in [messageRow, voiceWrap, toastWrap, formWrap] { v.isHidden = true }
         let divider = boardDivider(vertical: false)
-        let divider2 = boardDivider(vertical: false)
-        for v in [headerBar!, divider, messageRow, voiceWrap, toastWrap, formWrap, columns, divider2, notepad.view] { root.addArrangedSubview(v) }
+        for v in [headerBar!, divider, messageRow, voiceWrap, toastWrap, formWrap, body] { root.addArrangedSubview(v) }
+        arrange(.stacked)
         guard let content = window.contentView else { return }
         content.addSubview(root)
         NSLayoutConstraint.activate([
@@ -394,15 +398,56 @@ final class BoardPanel: NSObject, NSWindowDelegate {
         meetingsWidth = meetingsCol.widthAnchor.constraint(equalToConstant: 240)
         meetingsWidth.isActive = true
         tasksCol.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        columns.alignment = .top
-        for v in [tasksCol, columnsDivider, meetingsCol] { columns.addArrangedSubview(v) }
         for v in [tasksCol, meetingsCol] as [NSView] { v.setContentHuggingPriority(.defaultLow, for: .vertical) }
         tasksCol.setHuggingPriority(.defaultLow, for: .vertical)
-        let minHeight = columns.heightAnchor.constraint(greaterThanOrEqualToConstant: 80)
-        minHeight.priority = .defaultHigh
-        minHeight.isActive = true
-        columnsDivider.heightAnchor.constraint(equalTo: columns.heightAnchor).isActive = true
     }
+
+    /// Раскладывает задачи, встречи и блокнот (решение владельца 23.10.2026): поровну — задачи |
+    /// встречи сверху и блокнот снизу; задач заметно больше — задачи столбцом слева, справа встречи
+    /// и блокнот; встреч заметно больше — блокнот столбцом слева, справа задачи и встречи.
+    /// Виды те же, меняется только то, в какой стек они вложены.
+    private func arrange(_ a: BoardArrangement) {
+        guard a != arrangement else { return }
+        arrangement = a
+        for v in body.arrangedSubviews { body.removeArrangedSubview(v); v.removeFromSuperview() }
+        for v in [tasksCol, meetingsCol, notepad.view, columnsDivider] { v.removeFromSuperview() }
+        switch a {
+        case .stacked:
+            meetingsWidth.isActive = true
+            let cols = boardStack(.horizontal, views: [tasksCol, columnsDivider, meetingsCol])
+            cols.alignment = .top
+            let minHeight = cols.heightAnchor.constraint(greaterThanOrEqualToConstant: 80)
+            minHeight.priority = .defaultHigh
+            minHeight.isActive = true
+            columnsDivider.heightAnchor.constraint(equalTo: cols.heightAnchor).isActive = true
+            let line = boardDivider(vertical: false)
+            meetingsSeparator = nil
+            for v in [cols, line, notepad.view] { body.addArrangedSubview(v) }
+        case .tasksColumn:
+            sideBySide(main: tasksCol, top: meetingsCol, bottom: notepad.view)
+        case .notesColumn:
+            sideBySide(main: notepad.view, top: tasksCol, bottom: meetingsCol)
+        }
+    }
+
+    /// Длинный столбец слева, справа два блока друг под другом.
+    private func sideBySide(main: NSView, top: NSView, bottom: NSView) {
+        meetingsWidth.isActive = false
+        let line = boardDivider(vertical: false)
+        meetingsSeparator = line
+        let right = boardStack(.vertical, views: [top, line, bottom])
+        let row = boardStack(.horizontal, views: [main, columnsDivider, right])
+        row.alignment = .top
+        main.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        NSLayoutConstraint.activate([
+            right.widthAnchor.constraint(equalTo: row.widthAnchor, multiplier: Self.sideShare),
+            columnsDivider.heightAnchor.constraint(equalTo: row.heightAnchor),
+        ])
+        body.addArrangedSubview(row)
+    }
+
+    /// Доля ширины правого столбца при раскладке столбцом.
+    private static let sideShare: CGFloat = 0.46
 
     private func pin(_ v: NSView, in container: NSView) {
         NSLayoutConstraint.activate([
@@ -441,8 +486,13 @@ final class BoardPanel: NSObject, NSWindowDelegate {
         renderMeetings(s)
 
         meetingsWidth.constant = CGFloat(s.config.meetingsWidth)
+        if s.loaded {
+            arrange(BoardLayout.arrangement(tasks: s.tasksTotal, meetings: s.meetings.count, showMeetings: s.showMeetings))
+        }
         meetingsCol.isHidden = !s.showMeetings
-        columnsDivider.isHidden = !s.showMeetings
+        meetingsSeparator?.isHidden = !s.showMeetings
+        // Вертикальная линия при раскладке столбцом отделяет столбцы, а не встречи — она нужна всегда.
+        columnsDivider.isHidden = arrangement == .stacked && !s.showMeetings
         fit()
     }
 

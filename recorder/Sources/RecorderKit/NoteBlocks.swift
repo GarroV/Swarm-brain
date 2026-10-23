@@ -5,7 +5,8 @@ import Foundation
 // стрелка «→ В задачу». Здесь только данные, без AppKit: формат файла, перенос старого
 // текстового блокнота и заголовок задачи из блока — под тестом.
 public enum NoteBlock: Equatable, Codable {
-    case thesis(String)
+    /// Тезис; клик по кружку отмечает его сделанным (зачёркнут), как пункт чек-листа.
+    case thesis(String, done: Bool = false)
     case check(String, done: Bool)
     case table([[String]])
 
@@ -20,15 +21,74 @@ public enum NoteBlock: Equatable, Codable {
     /// Текст тезиса или пункта; у таблицы — nil.
     public var text: String? {
         switch self {
-        case .thesis(let t), .check(let t, _): return t
+        case .thesis(let t, _), .check(let t, _): return t
         case .table: return nil
+        }
+    }
+
+    /// Отмечен ли тезис или пункт сделанным.
+    public var isDone: Bool {
+        switch self {
+        case .thesis(_, let d), .check(_, let d): return d
+        case .table: return false
+        }
+    }
+
+    /// Тот же блок с другой отметкой «сделано». Таблица не меняется.
+    public func withDone(_ d: Bool) -> NoteBlock {
+        switch self {
+        case .thesis(let t, _): return .thesis(t, done: d)
+        case .check(let t, _): return .check(t, done: d)
+        case .table: return self
+        }
+    }
+
+    // Формат файла: {"kind":"thesis"|"check"|"table","text":…,"done":…,"rows":…}. Первые файлы
+    // (23.10.2026, несколько часов) писались синтезированным Codable — `{"thesis":{"_0":…}}`;
+    // их тоже читаем, чтобы заметки не пропали.
+    private enum Key: String, CodingKey { case kind, text, done, rows, thesis, check, table, _0 }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: Key.self)
+        if let kind = try c.decodeIfPresent(String.self, forKey: .kind) {
+            let text = try c.decodeIfPresent(String.self, forKey: .text) ?? ""
+            let done = try c.decodeIfPresent(Bool.self, forKey: .done) ?? false
+            switch kind {
+            case "thesis": self = .thesis(text, done: done)
+            case "check": self = .check(text, done: done)
+            case "table": self = .table(try c.decode([[String]].self, forKey: .rows))
+            default: throw DecodingError.dataCorruptedError(forKey: .kind, in: c, debugDescription: "блок \(kind)")
+            }
+            return
+        }
+        if c.contains(.thesis) {
+            let n = try c.nestedContainer(keyedBy: Key.self, forKey: .thesis)
+            self = .thesis(try n.decode(String.self, forKey: ._0), done: try n.decodeIfPresent(Bool.self, forKey: .done) ?? false)
+        } else if c.contains(.check) {
+            let n = try c.nestedContainer(keyedBy: Key.self, forKey: .check)
+            self = .check(try n.decode(String.self, forKey: ._0), done: try n.decode(Bool.self, forKey: .done))
+        } else {
+            let n = try c.nestedContainer(keyedBy: Key.self, forKey: .table)
+            self = .table(try n.decode([[String]].self, forKey: ._0))
+        }
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: Key.self)
+        switch self {
+        case .thesis(let t, let d):
+            try c.encode("thesis", forKey: .kind); try c.encode(t, forKey: .text); try c.encode(d, forKey: .done)
+        case .check(let t, let d):
+            try c.encode("check", forKey: .kind); try c.encode(t, forKey: .text); try c.encode(d, forKey: .done)
+        case .table(let rows):
+            try c.encode("table", forKey: .kind); try c.encode(rows, forKey: .rows)
         }
     }
 
     /// Тот же текст в блоке другого вида (тезис ↔ пункт чек-листа). Таблица не меняется.
     public func withText(_ t: String) -> NoteBlock {
         switch self {
-        case .thesis: return .thesis(t)
+        case .thesis(_, let done): return .thesis(t, done: done)
         case .check(_, let done): return .check(t, done: done)
         case .table: return self
         }
