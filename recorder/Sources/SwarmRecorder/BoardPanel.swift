@@ -416,6 +416,16 @@ final class BoardPanel: NSObject, NSWindowDelegate {
     private func arrange(_ a: BoardArrangement) {
         guard a != arrangement else { return }
         arrangement = a
+        // Перекладка вынимает виды из окна, и поле, где человек печатает, теряет фокус: запоминаем
+        // поле и курсор, после перекладки возвращаем.
+        let editor = window.firstResponder as? NSTextView
+        let editing = editor?.delegate as? NSTextField
+        let caret = editor?.selectedRange()
+        defer {
+            if let f = editing, f.window != nil, window.makeFirstResponder(f), let r = caret {
+                f.currentEditor()?.selectedRange = r
+            }
+        }
         for v in body.arrangedSubviews { body.removeArrangedSubview(v); v.removeFromSuperview() }
         for v in [tasksCol, meetingsCol, notepad.view, columnsDivider] { v.removeFromSuperview() }
         switch a {

@@ -19,7 +19,9 @@ private final class NotepadDocument: NSView {
 }
 
 final class BoardNotepad: NSObject, NoteLineHost, NoteTableHost {
-    var lang: String { didSet { relabel(); rebuild(focus: nil) } }
+    /// Доска присваивает язык на каждом обновлении (раз в 10 с); пересборка строк убивает поле под
+    /// курсором, поэтому — только при настоящей смене языка (23.10.2026: «очень быстро пропадает фокус»).
+    var lang: String { didSet { guard lang != oldValue else { return }; relabel(); rebuild(focus: nil) } }
     /// «→ В задачу»: заголовок будущей задачи.
     var onToTask: ((String) -> Void)?
 
