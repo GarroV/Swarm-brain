@@ -149,6 +149,7 @@ final class BoardPanel: NSObject, NSWindowDelegate {
     private let tasksCol = boardStack(.vertical)
     private let tasksHeader = boardLabel("", size: 10.5, weight: .semibold, color: BoardTheme.ink3)
     private let tasksCount = boardLabel("", size: 11, color: BoardTheme.amber, mono: true).hugText()
+    private let addLabel = boardLabel("", size: 13, color: BoardTheme.ink2)
     private let taskRows = boardStack(.vertical)
     private let meetingsCol = boardStack(.vertical)
     private let meetingsHeader = boardLabel("", size: 10.5, weight: .semibold, color: BoardTheme.ink3)
@@ -293,16 +294,12 @@ final class BoardPanel: NSObject, NSWindowDelegate {
     private var headerBar: NSStackView!
 
     private func buildHeader() {
-        micButton = FlatButton(title: "", fill: BoardTheme.amber, hover: BoardTheme.amber.withAlphaComponent(0.85),
-                               color: BoardTheme.amberInk, size: 12.5, weight: .semibold, radius: 8,
-                               target: self, action: #selector(micTapped))
-        manualButton = FlatButton(title: "", target: self, action: #selector(manualTapped))
         gearButton = FlatButton(title: "⚙", fill: .clear, color: BoardTheme.ink2, size: 14, target: self, action: #selector(gearTapped))
         closeButton = FlatButton(title: "✕", fill: .clear, color: BoardTheme.ink2, size: 13, target: self, action: #selector(closeTapped))
         let spacer = boardSpacer()
         let titleStack = boardStack(.horizontal, spacing: 8, views: [titleLabel, dateLabel, offlineLabel])
         let headerRow = boardStack(.horizontal, spacing: 8,
-                                   views: [titleStack, spacer, micButton, manualButton, gearButton, closeButton])
+                                   views: [titleStack, spacer, gearButton, closeButton])
         headerRow.setCustomSpacing(4, after: gearButton)
         // Верхний отступ перекрывает невидимую полосу заголовка окна (~28 pt): кнопки под ней не получили бы клик.
         // Вертикальные отступы горизонтального стека AppKit игнорирует, поэтому строка лежит в вертикальной обёртке.
@@ -364,10 +361,32 @@ final class BoardPanel: NSObject, NSWindowDelegate {
         pin(col, in: formBox)
     }
 
+    /// Строка «Добавить задачу» в блоке задач: справа ＋ (форма руками) и микрофон (надиктовать).
+    /// Решение владельца 23.10.2026 — кнопки ввода живут в задачах, а не в шапке панели.
+    private func buildAddRow() -> NSView {
+        manualButton = FlatButton(title: "", fill: .clear, radius: 13, target: self, action: #selector(manualTapped))
+        manualButton.setSymbol("plus", color: BoardTheme.ink, pointSize: 13)
+        micButton = FlatButton(title: "", fill: BoardTheme.amber, hover: BoardTheme.amber.withAlphaComponent(0.85),
+                               radius: 13, target: self, action: #selector(micTapped))
+        micButton.setSymbol("mic.fill", color: BoardTheme.amberInk, pointSize: 12)
+        let box = BoxView(fill: BoardTheme.fill, radius: 9, border: .clear)
+        let row = boardStack(.horizontal, spacing: 6, views: [addLabel, boardSpacer(), manualButton, micButton])
+        row.alignment = .centerY
+        row.translatesAutoresizingMaskIntoConstraints = false
+        box.addSubview(row)
+        NSLayoutConstraint.activate([
+            row.leadingAnchor.constraint(equalTo: box.leadingAnchor, constant: 12),
+            row.trailingAnchor.constraint(equalTo: box.trailingAnchor, constant: -5),
+            row.topAnchor.constraint(equalTo: box.topAnchor, constant: 5),
+            row.bottomAnchor.constraint(equalTo: box.bottomAnchor, constant: -5),
+        ])
+        return boardStack(.vertical, insets: NSEdgeInsets(top: 0, left: 10, bottom: 6, right: 10), views: [box])
+    }
+
     private func buildColumns() {
         let tHead = paddedRow(spacing: 8, insets: NSEdgeInsets(top: 10, left: 14, bottom: 6, right: 14),
                                views: [tasksHeader, tasksCount])
-        tasksCol.addArrangedSubview(tHead); tasksCol.addArrangedSubview(taskRows)
+        tasksCol.addArrangedSubview(tHead); tasksCol.addArrangedSubview(buildAddRow()); tasksCol.addArrangedSubview(taskRows)
         let mHead = paddedRow(spacing: 8, insets: NSEdgeInsets(top: 10, left: 14, bottom: 6, right: 14),
                                views: [meetingsHeader, meetingsCount])
         meetingsCol.addArrangedSubview(mHead); meetingsCol.addArrangedSubview(meetingRows)
@@ -406,8 +425,9 @@ final class BoardPanel: NSObject, NSWindowDelegate {
         dateLabel.stringValue = BoardDay.headerDate(now: s.now, lang: s.lang)
         offlineLabel.stringValue = s.offline ? "· " + t("board.offline") : ""
         let hint = s.hotKeyHint ? "  ⌃⌥Space" : ""
-        micButton.setTitle("🎙 " + t("voice.button") + hint, color: BoardTheme.amberInk, size: 12.5, weight: .semibold)
-        manualButton.setTitle("＋ " + t("manual.button"), color: BoardTheme.ink)
+        addLabel.stringValue = t("tasks.add")
+        micButton.toolTip = t("voice.button") + hint
+        manualButton.toolTip = t("manual.button")
         closeButton.toolTip = t("board.close")
 
         messageLabel.stringValue = s.message ?? ""
