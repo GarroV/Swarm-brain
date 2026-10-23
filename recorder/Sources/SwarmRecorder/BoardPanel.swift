@@ -235,6 +235,13 @@ final class BoardPanel: NSObject, NSWindowDelegate {
 
     func focusFormTitle() { window.makeFirstResponder(formTitle) }
 
+    /// Форма из блокнота: название — текст строки, курсор в конце названия.
+    func prefillForm(title: String) {
+        formTitle.stringValue = title
+        window.makeFirstResponder(formTitle)
+        formTitle.currentEditor()?.selectedRange = NSRange(location: (title as NSString).length, length: 0)
+    }
+
     func windowDidMove(_ notification: Notification) {
         guard !programmaticFrame else { return }
         UserDefaults.standard.set(NSStringFromPoint(NSPoint(x: window.frame.minX, y: window.frame.maxY)), forKey: Self.originKey)

@@ -473,17 +473,12 @@ final class BoardHub: NSObject {
     }
 
     /// «→ В задачу» из блокнота: строка/выделение → задача на завтра, та же карточка с «Отменить».
+    /// «→» в блокноте не создаёт задачу сразу: открывает ту же форму, что «＋», с текстом строки
+    /// в названии — срок (по умолчанию завтра) и страну человек выбирает сам (решение владельца
+    /// 23.10.2026: «предлагать дату… и страну… это может быть достаточно критично»).
     private func createFromNote(_ title: String) {
-        guard let cfg = configProvider() else { setMessage("board.noToken"); return }
-        Task { @MainActor in
-            do {
-                let task = try await self.client.createManualTask(config: cfg, title: title, description: "",
-                                                                  country: nil, dueDate: BoardDay.tomorrow())
-                self.showCreated(task)
-                self.refresh()
-            } catch {
-                self.setMessage(self.failureKey(error))
-            }
-        }
+        guard configProvider() != nil else { setMessage("board.noToken"); return }
+        openForm()
+        panel?.prefillForm(title: title)
     }
 }
