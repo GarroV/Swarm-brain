@@ -1,16 +1,12 @@
 "use client";
-import {
-  type DragEvent,
-  useCallback,
-  useEffect,
-  useMemo,
-  useState,
-} from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   BoardPlanTask,
+  Project,
   SprintBoardData,
   SprintCycle,
   SprintCycleItem,
+  Task,
   User,
 } from "@/types";
 import {
@@ -21,15 +17,20 @@ import {
   removeTaskFromSprintCycle,
   updateTask,
 } from "@/lib/api";
+import type { ResolvedDrop } from "@/lib/sprintGrouping";
 import { useDt } from "@/components/roy/nav";
+import { useIsDesktop } from "@/components/roy/useIsDesktop";
 import { cn } from "@/lib/utils";
-import { MoveDialog } from "../MoveDialog";
 import { ReasonDialog } from "../ReasonDialog";
 import { useStoredFlag } from "../useStoredFlag";
+import { useDragGroups } from "../useDragGroups";
+import type { RowInfo } from "../useRowDrag";
+import { useTaskDialogs } from "../useTaskDialogs";
 import { shiftBetweenDrafts } from "../shiftTask";
 import { BoardFilters } from "./BoardFilters";
-import { PastColumn, SprintColumn } from "./BoardColumn";
-import type { BoardCtx, DragPayload } from "./boardCtx";
+import { SprintColumn } from "./BoardColumn";
+import type { BoardCtx } from "./boardCtx";
+import { useBoardDnd } from "./useBoardDnd";
 import {
   type BoardFilter,
   isClosedStatus,
@@ -48,9 +49,13 @@ import type { TaskMenuActions } from "./TaskMenu";
 // слева закреплённый мастер-план со всеми задачами пространства, справа спринты слева направо —
 // прошлые полосками, идущий, запланированные и «+ Спринт». Данные — одним запросом
 // GET /sprint-cycles/board. Действия — те же, что в «Списке»: перенос из идущего (окно с причиной),
-// «взять в спринт», сверка, снятие; перетаскивание повторяет пункты меню «⋯».
+// «взять в спринт», сверка, снятие; перетаскивание повторяет пункты меню «⋯». Принятые спринты в
+// ряду колонок не показываются (владелец 22.10.2026) — вход к ним «История спринтов». Подзадачи
+// лесенкой и связывание перетаскиванием — п.15 решения, жест в `useBoardDnd.tsx`.
 
-type Moving = { item: SprintCycleItem; cycleId: string; target: SprintCycle };
+/** «Отменить» после связывания, отвязки и перехода в группу: плашка внизу на шесть секунд. */
+type Undo = { message: string; restore: () => Promise<void> };
+const UNDO_MS = 6000;
 type ReasonFor = { item: SprintCycleItem; cycleId: string };
 
 const todayIso = () => new Date().toISOString().slice(0, 10);
@@ -195,12 +200,10 @@ export function SprintBoardView(
     "swarm.sprints.planHideDone",
     false,
   );
-  const [openPast, setOpenPast] = useState<ReadonlySet<string>>(new Set());
-  const [moving, setMoving] = useState<Moving | null>(null);
   const [reasonFor, setReasonFor] = useState<ReasonFor | null>(null);
   const [history, setHistory] = useState(false);
-  const [dragging, setDragging] = useState<DragPayload | null>(null);
-  const [overId, setOverId] = useState<string | null>(null);
+  const [undo, setUndo] = useState<Undo | null>(null);
+  const undoTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const reload = useCallback(async () => {
     try {
@@ -290,10 +293,66 @@ export function SprintBoardView(
     [reload, onChanged],
   );
 
+  const isClosed = (t: BoardPlanTask) => isClosedStatus(t.status);
+
+  const kidsMap = useMemo(() => {
+    const m = new Map<string, BoardPlanTask[]>();
+    for (const t of planById.values()) {
+      if (!t.parent_id) continue;
+      m.set(t.parent_id, [...(m.get(t.parent_id) ?? []), t]);
+    }
+    return m;
+  }, [planById]);
+  const kidsOf = useCallback(
+    (taskId: string): readonly BoardPlanTask[] => kidsMap.get(taskId) ?? [],
+    [kidsMap],
+  );
+  const groupOf = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const g of data?.plan.groups ?? []) {
+      for (const t of g.tasks) m.set(t.id, g.id);
+    }
+    return m;
+  }, [data]);
+
+  /** Задача для ядра группировки (lib/sprintGrouping.ts); `null` — её нет в мастер-плане. */
+  const rowInfo = useCallback((taskId: string): RowInfo | null => {
+    const t = planById.get(taskId);
+    if (!t) return null;
+    return {
+      taskId,
+      title: t.title,
+      projectId: groupOf.get(taskId) ?? null,
+      parentId: t.parent_id,
+      hasKids: kidsOf(taskId).length > 0,
+      isSubtask: t.parent_id !== null,
+    };
+  }, [planById, groupOf, kidsOf]);
+
+  /** Подзадачи колонки родителя: живые незакрытые строки того же спринта. */
+  const kidItems = useCallback(
+    (taskId: string, cycleId: string): SprintCycleItem[] => {
+      const ids = new Set(kidsOf(taskId).map((k) => k.id));
+      const entry = data?.cycles.find((c) => c.cycle.id === cycleId);
+      return (entry?.items ?? []).filter((i) =>
+        !!i.task_id && ids.has(i.task_id) && !i.moved && !i.removed &&
+        !isClosedStatus(i.status)
+      );
+    },
+    [data, kidsOf],
+  );
+
+  // Взять из мастер-плана: подзадачи колонки едут с родителем — открытые и ещё не стоящие ни в
+  // одном незакрытом спринте (те, что уже запланированы, не трогаем).
   const take = useCallback(
     (taskId: string, target: SprintCycle) =>
       run(async () => {
-        const added = await addTasksToSprintCycle(target.id, [taskId]);
+        const kids = kidsOf(taskId).filter((k) =>
+          !isClosed(k) && !k.cycle_ids.some((id) =>
+            cycles.find((c) => c.id === id)?.status !== "accepted"
+          )
+        ).map((k) => k.id);
+        const added = await addTasksToSprintCycle(target.id, [taskId, ...kids]);
         if (added < 1) {
           throw new Error(
             dt(
@@ -303,33 +362,175 @@ export function SprintBoardView(
           );
         }
       }, dt("Не удалось взять в спринт", "Could not take into the sprint")),
-    [run, dt],
+    [run, dt, kidsOf, cycles],
   );
 
   // Между запланированными — без причины (планирование, а не срыв): снять в одном, взять в другом.
-  // Не взялось в цель — возвращаем в прежний, чтобы задача не пропала из плана.
+  // Не взялось в цель — возвращаем в прежний, чтобы задача не пропала из плана. Подзадачи колонки
+  // переезжают за родителем.
   const shift = useCallback(
     (taskId: string, fromCycleId: string, target: SprintCycle) =>
       run(
-        () =>
-          shiftBetweenDrafts(
-            taskId,
-            fromCycleId,
-            target.id,
-            dt(
-              "Не удалось переставить — задача осталась на месте",
-              "Could not shift — the task stayed where it was",
-            ),
-          ),
+        async () => {
+          const failed = dt(
+            "Не удалось переставить — задача осталась на месте",
+            "Could not shift — the task stayed where it was",
+          );
+          await shiftBetweenDrafts(taskId, fromCycleId, target.id, failed);
+          for (const k of kidItems(taskId, fromCycleId)) {
+            await shiftBetweenDrafts(
+              k.task_id!,
+              fromCycleId,
+              target.id,
+              failed,
+            );
+          }
+        },
         dt("Не удалось переставить", "Could not shift"),
       ),
-    [run, dt],
+    [run, dt, kidItems],
   );
+
+  const afterDialog = useCallback(async () => {
+    await reload();
+    onChanged();
+  }, [reload, onChanged]);
+
+  const taskDialogs = useTaskDialogs({
+    cycles,
+    onDone: afterDialog,
+    onPlace: (mode, taskId, fromCycleId, target) => {
+      if (mode === "take") void take(taskId, target);
+      else if (fromCycleId) void shift(taskId, fromCycleId, target);
+    },
+  });
+
+  // ── Связывание: действия и «Отменить» ──────────────────────────────────────────────────────
+  // Ядро (useDragGroups → resolveDrop) решает и выполняет бросок; перед выполнением доска
+  // запоминает прежнее состояние затронутых задач — отмена возвращает parent_id и группу.
+  const showUndo = useCallback((next: Undo) => {
+    if (undoTimer.current) clearTimeout(undoTimer.current);
+    setUndo(next);
+    undoTimer.current = setTimeout(() => setUndo(null), UNDO_MS);
+  }, []);
+  useEffect(() => () => {
+    if (undoTimer.current) clearTimeout(undoTimer.current);
+  }, []);
+
+  const groupProjects = useMemo(
+    () =>
+      (data?.plan.groups ?? []).map((g) => ({
+        id: g.id,
+        name: g.name,
+        parent_id: null,
+        sprint_group: true,
+      })) as unknown as Project[],
+    [data],
+  );
+  // ядру нужны id, parent_id, project_id и название — всё это есть в мастер-плане
+  const planTasks = useMemo(
+    () =>
+      [...planById.values()].map((t) => ({
+        id: t.id,
+        title: t.title,
+        parent_id: t.parent_id,
+        project_id: groupOf.get(t.id) ?? null,
+      })) as unknown as Task[],
+    [planById, groupOf],
+  );
+
+  const onResolved = useCallback(
+    (dragged: RowInfo, action: ResolvedDrop) => {
+      if (action.kind !== "subtask" && action.kind !== "move") return;
+      const ids = [
+        dragged.taskId,
+        ...(action.kind === "move"
+          ? kidsOf(dragged.taskId).map((k) => k.id)
+          : []),
+      ];
+      const before = ids.flatMap((id) => {
+        const t = planById.get(id);
+        return t
+          ? [{
+            id,
+            parent_id: t.parent_id,
+            project_id: groupOf.get(id) ?? null,
+          }]
+          : [];
+      });
+      const title = dragged.title;
+      const message = action.kind === "subtask"
+        ? dt(
+          `«${title}» теперь подзадача «${
+            planById.get(action.parentTaskId)?.title ?? ""
+          }»`,
+          `“${title}” is now a subtask of “${
+            planById.get(action.parentTaskId)?.title ?? ""
+          }”`,
+        )
+        : dragged.parentId
+        ? dt(
+          `«${title}» отвязана от «${
+            planById.get(dragged.parentId)?.title ?? ""
+          }»`,
+          `“${title}” unlinked from “${
+            planById.get(dragged.parentId)?.title ?? ""
+          }”`,
+        )
+        : dt(
+          `«${title}» перенесена в группу «${
+            data?.plan.groups.find((g) => g.id === action.projectId)?.name ?? ""
+          }»`,
+          `“${title}” moved to the group “${
+            data?.plan.groups.find((g) => g.id === action.projectId)?.name ?? ""
+          }”`,
+        );
+      showUndo({
+        message,
+        restore: async () => {
+          for (const b of before) {
+            await updateTask(b.id, {
+              parent_id: b.parent_id,
+              project_id: b.project_id,
+            });
+          }
+        },
+      });
+    },
+    [planById, groupOf, kidsOf, data, dt, showUndo],
+  );
+
+  const { grouping, dialogs: groupDialogs } = useDragGroups({
+    projects: groupProjects,
+    tasks: planTasks,
+    space,
+    reload: afterDialog,
+    onError: setErr,
+    onResolved,
+  });
+
+  const dnd = useBoardDnd({
+    canDrag,
+    data,
+    cycles,
+    ctxPlan: { rowInfo, projects: groupProjects },
+    onDropCard: grouping.onDrop,
+    onTake: (taskId, target) => void take(taskId, target),
+    onShift: (taskId, from, target) => void shift(taskId, from, target),
+    onMove: (item, from, target) =>
+      taskDialogs.openMove(
+        item,
+        from,
+        kidItems(item.task_id ?? "", from),
+        target.id,
+      ),
+  });
 
   const ctx: BoardCtx = {
     users,
     cycles,
     planById,
+    kidsOf,
     filter,
     namesFor,
     openTask: onOpenTask,
@@ -342,85 +543,76 @@ export function SprintBoardView(
         dt("Не удалось отметить", "Could not mark"),
       );
     },
-    menuActions: (taskId, item, cycleId): TaskMenuActions => ({
-      open: () => onOpenTask(taskId),
-      check: (status) => {
-        if (!cycleId) return;
-        void run(
-          () =>
-            patchSprintCycleItem(cycleId, taskId, {
-              check_status: status,
-              ...(status === null ? { check_note: null } : {}),
-            }),
-          dt("Не удалось отметить", "Could not mark"),
-        );
-      },
-      move: (target) => item && cycleId && setMoving({ item, cycleId, target }),
-      shift: (target) => cycleId && void shift(taskId, cycleId, target),
-      take: (target) => void take(taskId, target),
-      remove: () => {
-        if (!cycleId) return;
-        void run(
-          () => removeTaskFromSprintCycle(cycleId, taskId),
-          dt("Не удалось убрать", "Could not remove"),
-        );
-      },
-    }),
+    menuActions: (taskId, item, cycleId): TaskMenuActions => {
+      const plan = planById.get(taskId);
+      const info = rowInfo(taskId);
+      const ref = {
+        id: taskId,
+        title: item?.title ?? plan?.title ?? "",
+        due: item?.due_date ?? plan?.due_date ?? null,
+      };
+      const parent = plan?.parent_id ? planById.get(plan.parent_id) : undefined;
+      return {
+        open: () => onOpenTask(taskId),
+        check: (status) => {
+          if (!cycleId) return;
+          void run(
+            () =>
+              patchSprintCycleItem(cycleId, taskId, {
+                check_status: status,
+                ...(status === null ? { check_note: null } : {}),
+              }),
+            dt("Не удалось отметить", "Could not mark"),
+          );
+        },
+        move: () =>
+          item && cycleId &&
+          taskDialogs.openMove(item, cycleId, kidItems(taskId, cycleId)),
+        place: (mode) =>
+          taskDialogs.openPlace(mode, ref, plan?.cycle_ids ?? [], cycleId),
+        span: () =>
+          taskDialogs.openSpan(
+            ref,
+            plan?.cycle_ids.filter((id) =>
+              cycles.find((c) => c.id === id)?.status !== "accepted"
+            ),
+          ),
+        journey: () => taskDialogs.openJourney(ref),
+        remove: () => {
+          if (!cycleId) return;
+          void run(
+            () => removeTaskFromSprintCycle(cycleId, taskId),
+            dt("Не удалось убрать", "Could not remove"),
+          );
+        },
+        group: info
+          ? () =>
+            grouping.onMenu(
+              info,
+              [...planById.keys()].flatMap((id) => {
+                const r = rowInfo(id);
+                return r ? [r] : [];
+              }),
+            )
+          : undefined,
+        unlink: info && parent
+          ? {
+            parentTitle: parent.title,
+            run: () =>
+              grouping.onDrop(
+                info,
+                { kind: "header", projectId: info.projectId },
+                "group",
+              ),
+          }
+          : undefined,
+      };
+    },
     addReason: (cycleId, item) => setReasonFor({ item, cycleId }),
-    dragging,
-    dragStart: (payload) => (e: DragEvent<HTMLElement>) => {
-      e.dataTransfer.effectAllowed = "move";
-      e.dataTransfer.setData("text/plain", payload.taskId);
-      setDragging(payload);
-    },
-    dragEnd: () => {
-      setDragging(null);
-      setOverId(null);
-    },
-    canDrag,
+    ...dnd.ctxPart,
   };
 
-  /** Можно ли бросить несомую карточку в этот спринт: те же правила, что в меню «⋯». */
-  function canDrop(c: SprintCycle): boolean {
-    if (!dragging || c.status === "accepted") return false;
-    if (dragging.kind === "plan") {
-      return !planById.get(dragging.taskId)?.cycle_ids.includes(c.id);
-    }
-    const from = cycles.find((x) => x.id === dragging.fromCycleId);
-    return c.id !== dragging.fromCycleId && c.status === "draft" && !!from &&
-      from.status !== "accepted";
-  }
-
-  function dropHandlers(c: SprintCycle) {
-    return {
-      onDragOver: (e: DragEvent<HTMLElement>) => {
-        if (!canDrop(c)) return;
-        e.preventDefault();
-        e.dataTransfer.dropEffect = "move";
-        if (overId !== c.id) setOverId(c.id);
-      },
-      onDragLeave: () => setOverId((cur) => (cur === c.id ? null : cur)),
-      onDrop: (e: DragEvent<HTMLElement>) => {
-        if (!dragging || !canDrop(c)) return;
-        e.preventDefault();
-        const payload = dragging;
-        setDragging(null);
-        setOverId(null);
-        if (payload.kind === "plan") {
-          void take(payload.taskId, c);
-          return;
-        }
-        const from = cycles.find((x) => x.id === payload.fromCycleId);
-        if (from?.status === "active") {
-          const item = data?.cycles.find((x) => x.cycle.id === from.id)?.items
-            .find((i) => i.id === payload.itemId);
-          if (item) setMoving({ item, cycleId: from.id, target: c });
-        } else {
-          void shift(payload.taskId, payload.fromCycleId, c);
-        }
-      },
-    };
-  }
+  const isDesktop = useIsDesktop();
 
   if (!data) {
     return (
@@ -433,51 +625,50 @@ export function SprintBoardView(
     );
   }
 
+  // Мастер-план на компьютере стоит рядом с полосой колонок, а не внутри неё: колонки при прокрутке
+  // обрезаются у её края, и скруглённые углы плана ничем не перекрыты.
+  const masterPlan = (
+    <MasterPlanColumn
+      groups={data.plan.groups}
+      cycles={cycles}
+      ctx={ctx}
+      hideDone={hideDone}
+      onHideDone={setHideDone}
+      onAddTask={onAddTask}
+    />
+  );
+
   return (
-    <div className="flex min-h-0 flex-1 flex-col" data-testid="sprint-board">
+    <div
+      className="relative flex min-h-0 flex-1 flex-col"
+      data-testid="sprint-board"
+    >
       <BoardFilters
         value={filter}
         onChange={setFilter}
         people={people}
         attentionCount={attentionCount}
-        onHistory={() =>
-          setHistory(true)}
+        onHistory={() => setHistory(true)}
       />
       {(err || loadErr) && (
         <p className="mx-4 mb-2 rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-1.5 text-xs text-destructive lg:mx-5">
           {err ?? loadErr}
         </p>
       )}
-      <div
-        data-testid="board-scroll"
-        className="flex min-h-0 flex-1 snap-x snap-mandatory gap-3 overflow-x-auto overflow-y-hidden pb-3 lg:snap-none"
-      >
-        <MasterPlanColumn
-          groups={data.plan.groups}
-          cycles={cycles}
-          ctx={ctx}
-          hideDone={hideDone}
-          onHideDone={setHideDone}
-          onAddTask={onAddTask}
-        />
-        {data.cycles.map((entry) =>
-          entry.cycle.status === "accepted"
-            ? (
-              <PastColumn
-                key={entry.cycle.id}
-                entry={entry}
-                ctx={ctx}
-                open={openPast.has(entry.cycle.id)}
-                onToggle={() =>
-                  setOpenPast((prev) => {
-                    const next = new Set(prev);
-                    if (next.has(entry.cycle.id)) next.delete(entry.cycle.id);
-                    else next.add(entry.cycle.id);
-                    return next;
-                  })}
-              />
-            )
-            : (
+      <div className="flex min-h-0 flex-1">
+        {isDesktop && masterPlan}
+        <div
+          data-testid="board-scroll"
+          className="flex min-h-0 min-w-0 flex-1 snap-x snap-mandatory gap-3 overflow-x-auto overflow-y-hidden pb-3 lg:snap-none"
+        >
+          {!isDesktop && masterPlan}
+          {
+            /* Принятые спринты в ряду не показываем: вход к ним — «История спринтов». */
+          }
+          {data.cycles.filter((entry) => entry.cycle.status !== "accepted").map(
+            (
+              entry,
+            ) => (
               <SprintColumn
                 key={entry.cycle.id}
                 entry={entry}
@@ -485,36 +676,50 @@ export function SprintBoardView(
                 busy={busy}
                 onCloseSprint={onCloseSprint}
                 drop={{
-                  valid: canDrop(entry.cycle),
-                  over: overId === entry.cycle.id,
-                  handlers: dropHandlers(entry.cycle),
+                  valid: dnd.canDrop(entry.cycle),
+                  over: dnd.overId === entry.cycle.id,
+                  handlers: dnd.dropHandlers(entry.cycle),
                 }}
               />
-            )
-        )}
-        <NewSprint
-          cycles={cycles}
-          space={space}
-          busy={busy}
-          onCreate={(input) =>
-            void run(
-              () =>
-                createSprintCycle(input),
-              dt("Не удалось создать спринт", "Could not create the sprint"),
-            )}
-        />
+            ),
+          )}
+          <NewSprint
+            cycles={cycles}
+            space={space}
+            busy={busy}
+            onCreate={(input) =>
+              void run(
+                () => createSprintCycle(input),
+                dt("Не удалось создать спринт", "Could not create the sprint"),
+              )}
+          />
+        </div>
       </div>
 
-      <MoveDialog
-        item={moving?.item ?? null}
-        cycleId={moving?.cycleId ?? ""}
-        cycles={moving ? [moving.target] : []}
-        onClose={() => setMoving(null)}
-        onDone={async () => {
-          await reload();
-          onChanged();
-        }}
-      />
+      {taskDialogs.node}
+      {groupDialogs}
+      {dnd.hint}
+      {undo && (
+        <div
+          role="status"
+          data-testid="undo-bar"
+          className="pointer-events-auto absolute bottom-4 left-1/2 z-[110] flex max-w-[calc(100%-2rem)] -translate-x-1/2 items-center gap-3 rounded-full border border-line bg-[var(--popover)] py-1.5 pl-4 pr-2 shadow-lg"
+          style={{ fontSize: 13 }}
+        >
+          <span className="min-w-0 truncate text-ink">{undo.message}</span>
+          <button
+            type="button"
+            onClick={() => {
+              const u = undo;
+              setUndo(null);
+              void run(u.restore, dt("Не удалось отменить", "Could not undo"));
+            }}
+            className="shrink-0 rounded-full px-3 py-1 font-semibold text-accent-ink hover:bg-accent-soft"
+          >
+            {dt("Отменить", "Undo")}
+          </button>
+        </div>
+      )}
       <ReasonDialog
         item={reasonFor?.item ?? null}
         cycleId={reasonFor?.cycleId ?? ""}

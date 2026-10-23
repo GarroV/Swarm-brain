@@ -67,12 +67,6 @@ const NEXT_CHECK: Record<string, CheckStatus | null> = {
   problem: null,
 };
 
-const STATUS_TONE: Record<string, string> = {
-  done: "bg-status-done",
-  in_progress: "bg-status-prog",
-  cancelled: "bg-ink-mute",
-};
-
 const CHECK_TONE: Record<CheckStatus, string> = {
   ok: "border-status-done/40 text-status-done",
   risk: "border-pri-med/50 bg-pri-med/10 text-pri-med",
@@ -305,8 +299,6 @@ export function SprintRow(
                       "grid size-[16px] place-items-center rounded-full border-[1.5px] leading-none transition-colors",
                       closed
                         ? "border-status-done bg-status-done text-white"
-                        : item.status === "in_progress"
-                        ? "border-status-prog hover:bg-status-prog/20"
                         : "border-ink-mute hover:border-status-done hover:bg-status-done/15",
                     )}
                     style={{ fontSize: 10 }}
@@ -315,15 +307,16 @@ export function SprintRow(
                   </span>
                 </button>
               )
-              : (
+              : closed
+              ? (
                 <span
-                  className={cn(
-                    "size-[7px] rounded-full",
-                    STATUS_TONE[item.status] ?? "bg-status-open",
-                  )}
-                  title={item.status}
-                />
-              )}
+                  className="grid size-[16px] place-items-center rounded-full border-[1.5px] border-status-done bg-status-done leading-none text-white"
+                  style={{ fontSize: 10 }}
+                >
+                  ✓
+                </span>
+              )
+              : <span className="size-[16px]" />}
           </span>
           <span
             title={item.title}
@@ -634,13 +627,6 @@ export function SubtaskLiteRow({ task, inSprint, onOpen }: {
         style={{ paddingLeft: SUBTASK_INDENT }}
       >
         <span aria-hidden="true" className="w-3 shrink-0" />
-        <span
-          className={cn(
-            "size-[6px] shrink-0 rounded-full",
-            STATUS_TONE[task.status] ?? "bg-status-open",
-          )}
-          title={task.status}
-        />
         <span
           title={task.title}
           className={cn(

@@ -39,6 +39,7 @@ import {
 } from "../../_shared/tasks/sprint-items.ts";
 import { AcceptConflictError, acceptCycle } from "../../_shared/tasks/sprint-accept.ts";
 import { itemIdFor, moveItem, MoveRefusedError } from "../../_shared/tasks/sprint-move.ts";
+import { setTaskSpan, SpanRefusedError } from "../../_shared/tasks/sprint-span.ts";
 import { computeSprintStats } from "../../_shared/tasks/sprint-stats.ts";
 import type { Sprint } from "../../_shared/tasks/types.ts";
 import { masterAdminFlag } from "../../_shared/users/master-admins.ts";
@@ -514,6 +515,33 @@ export function toolMoveSprintTask(args: Args): Promise<string> {
   });
 }
 
+/** План работы задачи на несколько спринтов подряд (22.10.2026): то же, что «Спринты задачи…» в вебе. */
+export function toolSetSprintTaskSpan(args: Args): Promise<string> {
+  return withMember(args, async (m) => {
+    const taskId = str(args.task_id);
+    if (!taskId) return "Нужен task_id.";
+    const from = await loadCycle(m.groupId, args.from_sprint_id);
+    if (typeof from === "string") return from;
+    const to = await loadCycle(m.groupId, args.to_sprint_id);
+    if (typeof to === "string") return to;
+    try {
+      const done = await setTaskSpan({
+        groupId: m.groupId,
+        viewer: m.userId,
+        taskId,
+        fromCycleId: from.id,
+        toCycleId: to.id,
+        reason: str(args.reason) ?? null,
+      });
+      if (!done) return "Задача не найдена или недоступна.";
+      return `✅ Задача ведётся в спринтах «${from.name}» — «${to.name}». Добавлено строк: ${done.added.length}, снято: ${done.removed.length}. Срок задачи не менялся.`;
+    } catch (e) {
+      if (e instanceof SpanRefusedError) return `Не сохранено: ${e.message}`;
+      throw e;
+    }
+  });
+}
+
 type ToolFn = (args: Args) => Promise<string>;
 
 export const SPRINT_TOOLS: Record<string, ToolFn> = {
@@ -534,6 +562,7 @@ export const SPRINT_TOOLS: Record<string, ToolFn> = {
   remove_sprint_task: toolRemoveSprintTask,
   mark_sprint_task: toolMarkSprintTask,
   move_sprint_task: toolMoveSprintTask,
+  set_sprint_task_span: toolSetSprintTaskSpan,
 };
 
 export { SPRINT_TOOL_DEFINITIONS } from "./sprints-defs.ts";

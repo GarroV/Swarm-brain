@@ -105,6 +105,8 @@ supabase/functions/swarm-api/quick-search.ts|supabase/functions/swarm-api/quick-
 # Правило размещения по сроку (19.10.2026): задача — в спринте своего срока; тексты комментариев из причин.
 supabase/functions/_shared/tasks/sprint-autoplace.ts|supabase/functions/_shared/tasks/sprint-autoplace.test.ts
 supabase/functions/_shared/tasks/sprint-reason-comment.ts|supabase/functions/_shared/tasks/sprint-reason-comment.test.ts
+# «Ход задачи» (22.10.2026): раскладка комментариев по окнам спринтов и срок на входе/выходе.
+supabase/functions/_shared/tasks/sprint-journey.ts|supabase/functions/_shared/tasks/sprint-journey.test.ts
 # Задача голосом из рекордера: модель раскладывает речь, а срок (не раньше сегодня, иначе +1 день)
 # и страна (только из рынков пространства) решаются здесь. Ошибка не падает — она кладёт в задачу
 # правдоподобный, но чужой срок или страну.

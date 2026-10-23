@@ -1,6 +1,6 @@
 "use client";
 import { PILL_GROUP_CLS, pillSegmentCls } from "@/components/ui/PropertyPill";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import { cn, displayName } from "@/lib/utils";
 import { fetchConfig, logout } from "@/lib/api";
 import { useConfirm } from "@/components/ui/confirm";
@@ -11,6 +11,7 @@ import { useDt, useRoyNav } from "./nav";
 import { badgeLabel } from "@/lib/navBadges";
 import { RailSearch } from "./RailSearch";
 import { FeedbackDialog } from "./FeedbackFab";
+import { readRailCollapsed, saveRailCollapsed, subscribeRailCollapsed } from "@/lib/railCollapse";
 import { readTheme, saveTheme, THEME_CHANGE_EVENT, THEME_IDS, type ThemeId } from "@/lib/theme";
 
 // Левая рейка десктопа — навигация нового вида (витрина, решение владельца 24.09.2026:
@@ -74,6 +75,9 @@ export function RoyRail({
   const { me } = useRoyNav();
   const dt = useDt();
   const [wsName, setWsName] = useState<string | null>(null);
+  // Рейка рисуется только после монтирования (isDesktop в RoyApp), поэтому сохранённый выбор
+  // читается сразу на первом рендере — без мигания широкой рейки и скачка ширины контента.
+  const collapsed = useSyncExternalStore(subscribeRailCollapsed, readRailCollapsed, () => false);
 
   // Подпись воркспейса под брендом (стенд: .ws-sub). Не пришло имя — подписи нет, рейка не ломается.
   useEffect(() => {
@@ -95,21 +99,20 @@ export function RoyRail({
         aria-current={on ? "page" : undefined}
         title={dt(item.label[0], item.label[1])}
         className={cn(
-          "relative flex h-[34px] w-full items-center gap-2.5 rounded-[8px] px-2.5 text-left max-[1099px]:justify-center max-[1099px]:px-0 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]",
+          "relative flex h-[34px] w-full items-center gap-2.5 rounded-[8px] px-2.5 text-left narrow:justify-center narrow:px-0 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]",
           on
             ? "bg-accent-soft font-semibold text-accent-ink shadow-[inset_2px_0_0_var(--primary),var(--glow-sm)]"
             : "text-ink-soft hover:bg-surface hover:text-ink",
         )}
         style={{ fontSize: 13.5 }}
       >
-        <RoyIcon name={item.icon} size={16} strokeWidth={1.7} />
-        <span className="min-w-0 flex-1 truncate max-[1099px]:hidden">{dt(item.label[0], item.label[1])}</span>
+        <RoyIcon name={item.icon} size={16} strokeWidth={1.7} className="narrow:size-[19px]" />
+        <span className="min-w-0 flex-1 truncate narrow:hidden">{dt(item.label[0], item.label[1])}</span>
         {badgeText && (
           // Красный кружок с числом, как на айфоне (владелец 12.10.2026, issue #903). В узкой
           // рейке — в углу пиктограммы.
           <span
-            className="inline-flex min-w-[17px] items-center justify-center rounded-full bg-destructive px-1 font-bold text-white max-[1099px]:absolute max-[1099px]:right-0.5 max-[1099px]:top-0"
-            style={{ fontSize: 10, height: 17, lineHeight: "17px" }}
+            className="inline-flex h-[17px] min-w-[17px] items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-bold leading-[17px] text-white narrow:absolute narrow:-top-px narrow:right-px narrow:h-[15px] narrow:min-w-[15px] narrow:px-[3px] narrow:text-[9px] narrow:leading-[15px]"
           >
             {badgeText}
           </span>
@@ -121,15 +124,19 @@ export function RoyRail({
   return (
     <nav
       aria-label={dt("Разделы", "Sections")}
+      data-collapsed={collapsed ? "true" : undefined}
       // Уже 1100px рейка сворачивается в пиктограммы (56px): десктопная раскладка тянется до
       // 720px, а 216px рейки на таком окне съели бы треть экрана. Подписи — в title.
-      className="roy-rail flex w-[216px] shrink-0 flex-col border-r border-line bg-surface-2 max-[1099px]:w-[56px]"
+      // То же включается вручную: кнопка «Свернуть меню» ставит data-collapsed, а вариант
+      // `narrow:` (globals.css) срабатывает и по ширине, и по флагу. Выбор — в localStorage
+      // (lib/railCollapse.ts).
+      className="roy-rail flex w-[216px] shrink-0 flex-col border-r border-line bg-surface-2 narrow:w-[56px]"
     >
-      <div className="flex shrink-0 items-center gap-2.5 border-b border-line px-4 max-[1099px]:justify-center max-[1099px]:px-0" style={{ height: SHELL_BAR_H }}>
+      <div className="flex shrink-0 items-center gap-2.5 border-b border-line px-4 narrow:justify-center narrow:px-0" style={{ height: SHELL_BAR_H }}>
         {/* Бренд-блок: знак — тот же файл, что фавикон (глитч-S, decisions/2026-10-14-logo-s.md), и имя капсом. */}
         {/* eslint-disable-next-line @next/next/no-img-element -- статичный SVG из app/icon.svg, оптимизатор не нужен */}
         <img src="/icon.svg" alt="" aria-hidden width={28} height={28} className="size-7 shrink-0" />
-        <span className="flex min-w-0 flex-col max-[1099px]:hidden">
+        <span className="flex min-w-0 flex-col narrow:hidden">
           {/* Полное имя продукта (решение владельца 2026-09-25: «тут надо сворм брейн»). */}
           <span className="truncate font-bold text-ink" style={{ fontSize: 13.5, letterSpacing: "0.04em" }}>
             SWARM BRAIN
@@ -140,25 +147,29 @@ export function RoyRail({
             </span>
           )}
         </span>
+        {/* «Свернуть» — в шапке справа от бренда, без отдельной строки. В узкой рейке шапка
+            занята знаком, там кнопка «Развернуть» стоит внизу (RailToggle в подвале). */}
+        {!collapsed && <RailToggle collapsed={false} className="ml-auto size-7 narrow:hidden" />}
       </div>
       <RailSearch />
       <div className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-2 py-2.5">
         {GROUPS.map((group, gi) => (
           <div key={gi} className="flex flex-col gap-0.5">
-            {gi > 0 && <div aria-hidden className="mx-2.5 my-1.5 h-px bg-line max-[1099px]:mx-1.5" />}
+            {gi > 0 && <div aria-hidden className="mx-2.5 my-1.5 h-px bg-line narrow:mx-1.5" />}
             {group.filter((i) => i.id !== "admin" || me?.is_admin).map(renderItem)}
           </div>
         ))}
       </div>
       {/* Тема пилюлей и инструменты пиктограммами — одним рядом, без подписи (владелец 02.10.2026). */}
-      <div className="flex items-center gap-1 border-t border-line px-2 py-2 max-[1099px]:flex-col max-[1099px]:gap-0.5">
+      <div className="flex items-center gap-1 border-t border-line px-2 py-2 narrow:flex-col narrow:gap-0.5">
+        {collapsed && <RailToggle collapsed className="h-[34px] w-full max-[1099px]:hidden" />}
         <ThemeSwitch />
         <FootTools items={FOOT} active={active} onSelect={onSelect} />
       </div>
-      <div className="flex items-center gap-2 border-t border-line px-3 py-2.5 max-[1099px]:flex-col max-[1099px]:justify-center max-[1099px]:gap-1 max-[1099px]:px-0"
+      <div className="flex items-center gap-2 border-t border-line px-3 py-2.5 narrow:flex-col narrow:justify-center narrow:gap-1 narrow:px-0"
         title={displayName(me?.name) || undefined}>
         <Avatar size={26}>{initials(me?.name)}</Avatar>
-        <div className="min-w-0 max-[1099px]:hidden">
+        <div className="min-w-0 narrow:hidden">
           <div className="truncate font-semibold text-ink" style={{ fontSize: 13 }}>
             {displayName(me?.name) || dt("Профиль", "Profile")}
           </div>
@@ -172,13 +183,26 @@ export function RoyRail({
   );
 }
 
+// Кнопка свернуть/развернуть: пиктограмма-шеврон, подпись в title и aria-label.
+function RailToggle({ collapsed, className }: { collapsed: boolean; className?: string }) {
+  const dt = useDt();
+  const label = collapsed ? dt("Развернуть меню", "Expand menu") : dt("Свернуть меню", "Collapse menu");
+  return (
+    <button type="button" onClick={() => saveRailCollapsed(!collapsed)} title={label} aria-label={label}
+      aria-expanded={!collapsed}
+      className={cn("grid shrink-0 place-items-center rounded-[7px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]", FOOT_IDLE, className)}>
+      <RoyIcon name={collapsed ? "cright" : "cleft"} size={17} strokeWidth={1.8} />
+    </button>
+  );
+}
+
 // Настройки, админка и фидбек — строкой пиктограмм под темой, тем же квадратом 28px, что и
 // кнопки темы (просьба владельца 01.10.2026: «сделай кнопки админки, настроек и фидбека
 // пиктограммами»). Подписи — в title и aria-label. В узкой рейке строка встаёт столбцом
 // кнопок во всю ширину, как остальные пункты. Фидбек здесь, а не плавающей кнопкой: в узкой
 // раскладке (720–1100px) кнопка в углу закрывала кнопки строк (найдено краулером на 800px).
 const FOOT_TOOL =
-  "grid size-[28px] place-items-center rounded-[7px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] max-[1099px]:h-[34px] max-[1099px]:w-full max-[1099px]:rounded-[8px]";
+  "grid size-[28px] place-items-center rounded-[7px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] narrow:h-[34px] narrow:w-full narrow:rounded-[8px]";
 const FOOT_IDLE = "text-ink-mute hover:bg-surface hover:text-ink";
 
 // Выход — явной кнопкой у профиля (владелец 14.10.2026: «как из сворма выйти? где кнопка»); раньше
@@ -206,7 +230,7 @@ function LogoutButton() {
   };
   return (
     <button type="button" onClick={onClick} disabled={busy} title={label} aria-label={label}
-      className={cn(FOOT_TOOL, FOOT_IDLE, "ml-auto shrink-0 max-[1099px]:ml-0")}>
+      className={cn(FOOT_TOOL, FOOT_IDLE, "ml-auto shrink-0 narrow:ml-0")}>
       <RoyIcon name="logout" size={15} strokeWidth={1.7} />
     </button>
   );
@@ -221,7 +245,7 @@ function FootTools({ items, active, onSelect }: {
   const [feedbackOpen, setFeedbackOpen] = useState(false);
   const feedback = dt("Фидбек", "Feedback");
   return (
-    <div className="ml-auto flex items-center gap-0.5 max-[1099px]:ml-0 max-[1099px]:flex-col">
+    <div className="ml-auto flex items-center gap-0.5 narrow:ml-0 narrow:flex-col">
       {items.map((item) => {
         const on = active === item.id;
         const label = dt(item.label[0], item.label[1]);
@@ -229,13 +253,13 @@ function FootTools({ items, active, onSelect }: {
           <button key={item.id} type="button" onClick={() => onSelect(item.id)}
             aria-current={on ? "page" : undefined} title={label} aria-label={label}
             className={cn(FOOT_TOOL, on ? "bg-accent-soft text-accent-ink" : FOOT_IDLE)}>
-            <RoyIcon name={item.icon} size={15} strokeWidth={1.7} />
+            <RoyIcon name={item.icon} size={15} strokeWidth={1.7} className="narrow:size-[17px]" />
           </button>
         );
       })}
       <button type="button" onClick={() => setFeedbackOpen(true)} title={feedback} aria-label={feedback}
         className={cn(FOOT_TOOL, FOOT_IDLE)}>
-        <RoyIcon name="feedback" size={15} strokeWidth={1.7} />
+        <RoyIcon name="feedback" size={15} strokeWidth={1.7} className="narrow:size-[17px]" />
       </button>
       <FeedbackDialog open={feedbackOpen} onOpenChange={setFeedbackOpen} />
     </div>
@@ -269,7 +293,7 @@ function ThemeSwitch() {
       <div role="radiogroup" aria-label={dt("Тема", "Theme")}
         // Мягкий сегмент, как статус в карточке задачи (владелец 05.10.2026: «не жёсткая граница,
         // а как бы мягкая… пространство переключателя единое»).
-        className={cn(PILL_GROUP_CLS, "max-[1099px]:hidden")}>
+        className={cn(PILL_GROUP_CLS, "narrow:hidden")}>
         {THEME_IDS.map((t) => (
           <button key={t} type="button" role="radio" aria-checked={theme === t}
             title={dt(...THEME_LABEL[t])} aria-label={dt(...THEME_LABEL[t])} onClick={() => pick(t)}
@@ -281,7 +305,7 @@ function ThemeSwitch() {
       <button type="button" onClick={() => pick(next)}
         title={`${dt("Тема", "Theme")}: ${dt(...THEME_LABEL[theme])}`}
         aria-label={`${dt("Тема", "Theme")}: ${dt(...THEME_LABEL[theme])}`}
-        className="hidden h-[34px] w-full items-center justify-center rounded-full text-ink-soft hover:bg-surface hover:text-ink max-[1099px]:flex focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]">
+        className="hidden h-[34px] w-full items-center justify-center rounded-full text-ink-soft hover:bg-surface hover:text-ink narrow:flex focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]">
         <RoyIcon name={THEME_ICON[theme]} size={16} strokeWidth={1.7} />
       </button>
     </>

@@ -15,6 +15,7 @@ import type {
   GranolaNote,
   Integration,
   JournalEvent,
+  JourneyStep,
   MarketSuggestion,
   Me,
   MeetingLiveNote,
@@ -26,6 +27,7 @@ import type {
   SprintBoardData,
   SprintCycleDetail,
   SprintCycleItem,
+  SprintJourney,
   SprintStats,
   SprintKind,
   SprintStatus,
@@ -2443,6 +2445,10 @@ function mockBoard(tabId: string | null): SprintBoardData {
             parent_id: t.parent_id ?? null,
             created_at: t.created_at,
             cycle_ids: spansOf(t.id),
+            moves: cycles.reduce(
+              (n, c) => n + (mockCycleItems[c.id] ?? []).filter((r) => r.task_id === t.id && !!r.moved).length,
+              0,
+            ),
           })),
         }];
       }),
@@ -2741,6 +2747,96 @@ export async function moveSprintTask(
     method: "POST",
     body: JSON.stringify(body),
   });
+}
+
+/**
+ * План работы задачи — «Спринты задачи…»: отрезок спринтов пространства «с … по …». Недостающие
+ * строки добавляются в запланированные, лишние там же снимаются; срок задачи не меняется. Причина
+ * нужна, если конец после срока или отрезок продлевает задачу из идущего (иначе 409 с текстом).
+ */
+export async function setSprintTaskSpan(
+  taskId: string,
+  body: { from_cycle_id: string; to_cycle_id: string; reason?: string | null },
+): Promise<{ ok: true; added: string[]; removed: string[] }> {
+  if (DEV_MODE) {
+    const from = mockCycles.find((c) => c.id === body.from_cycle_id);
+    const to = mockCycles.find((c) => c.id === body.to_cycle_id);
+    const task = mockTasks.find((t) => t.id === taskId);
+    if (!from || !to || !task) throw new ApiError(404, "Not found");
+    if (from.status === "accepted" || to.status === "accepted") {
+      throw new ApiError(409, "Прошлый спринт выбрать нельзя");
+    }
+    const space = mockCycles.filter((c) => c.tab_id === from.tab_id && c.status !== "accepted");
+    const inRange = (c: SprintCycle) => c.start_date >= from.start_date && c.start_date <= to.start_date;
+    const has = (c: SprintCycle) => (mockCycleItems[c.id] ?? []).some((r) => r.task_id === taskId && !r.moved);
+    const activeHas = space.some((c) => c.status === "active" && has(c));
+    const after = !!task.due_date && to.start_date > task.due_date;
+    const lastEnd = space.filter(has).map((c) => c.end_date).sort().at(-1) ?? "";
+    if (!has(to) && !body.reason?.trim()) {
+      if (after) throw new ApiError(409, "Нужна причина: работа после срока");
+      if (activeHas && to.end_date > lastEnd) {
+        throw new ApiError(409, "Нужна причина: задача продлевается за последний спринт");
+      }
+    }
+    const added: string[] = [];
+    const removed: string[] = [];
+    for (const c of space.filter((x) => x.status === "draft")) {
+      const rows = mockCycleItems[c.id] ?? [];
+      if (inRange(c) && !has(c)) {
+        mockCycleItems = { ...mockCycleItems, [c.id]: [...rows, { id: "sp" + c.id + taskId, task_id: taskId, in_plan: true }] };
+        added.push(c.id);
+      } else if (!inRange(c) && has(c)) {
+        mockCycleItems = { ...mockCycleItems, [c.id]: rows.filter((r) => r.task_id !== taskId) };
+        removed.push(c.id);
+      }
+    }
+    return { ok: true, added, removed };
+  }
+  return apiFetch<{ ok: true; added: string[]; removed: string[] }>(`/sprint-tasks/${taskId}/span`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+/** «Ход задачи»: итог и путь по спринтам. Видимость — как у карточки задачи (чужая закрытая — 404). */
+export async function fetchSprintJourney(taskId: string): Promise<SprintJourney> {
+  if (DEV_MODE) return mockJourney(taskId);
+  return apiFetch<SprintJourney>(`/sprint-tasks/${taskId}/journey`);
+}
+
+function mockJourney(taskId: string): SprintJourney {
+  const task = mockTasks.find((t) => t.id === taskId);
+  if (!task) throw new ApiError(404, "Not found");
+  const cycles = [...mockCycles].sort((a, b) => a.start_date.localeCompare(b.start_date));
+  const rows = cycles.flatMap((c) => (mockCycleItems[c.id] ?? []).filter((r) => r.task_id === taskId).map((r) => ({ c, r })));
+  const nameOfRow = (rowId: string) => cycles.find((c) => (mockCycleItems[c.id] ?? []).some((r) => r.id === rowId))?.name ?? null;
+  const steps = rows.map(({ c, r }, i): JourneyStep => ({
+    cycle: { id: c.id, name: c.name, start_date: c.start_date, end_date: c.end_date, status: c.status },
+    dueIn: task.due_date ?? null,
+    dueOut: r.moved?.due_before ?? task.due_date ?? null,
+    comments: i === 0
+      ? [{ id: "jc1", content: "Договор у юристов, ждём правки", added_by: "Аня", created_at: c.start_date + "T10:00:00Z" }]
+      : [],
+    move: r.moved
+      ? { toName: r.moved.to_row ? nameOfRow(r.moved.to_row) : null, reason: r.moved.reason, by: r.moved.by === null ? null : String(r.moved.by), at: r.moved.at }
+      : null,
+    planReason: null,
+    outcome: r.moved
+      ? { kind: "moved" }
+      : i < rows.length - 1
+      ? { kind: "continued" }
+      : { kind: c.status === "active" ? "inProgress" : c.status === "draft" ? "planned" : "open" },
+  }));
+  return {
+    summary: {
+      sprints: steps.length,
+      moves: steps.filter((s) => s.move).length,
+      updates: steps.reduce((n, s) => n + s.comments.length, 0),
+      daysInWork: 9,
+      lateDays: task.due_date ? 3 : null,
+    },
+    steps,
+  };
 }
 
 /** Вписать причину в снимок, у которого её нет (перенос по сроку из карточки) — один раз. */

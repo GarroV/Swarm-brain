@@ -10,6 +10,7 @@ import {
 import {
   type DropTarget,
   type HoverMode,
+  type ResolvedDrop,
   resolveDrop,
 } from "@/lib/sprintGrouping";
 import { useDt } from "@/components/roy/nav";
@@ -46,13 +47,15 @@ type Naming =
   | { kind: "new" };
 
 export function useDragGroups(
-  { projects, tasks, space, reload, onError }: {
+  { projects, tasks, space, reload, onError, onResolved }: {
     projects: Project[];
     tasks: Task[];
     /** Пространство экрана: группа без проекта встаёт в него, иначе её не видно в спринте. */
     space: string | null;
     reload: () => Promise<void>;
     onError: (message: string | null) => void;
+    /** Бросок решён и сейчас выполнится: доска запоминает прежнее состояние для «Отменить». */
+    onResolved?: (dragged: RowInfo, action: ResolvedDrop) => void;
   },
 ) {
   const dt = useDt();
@@ -102,6 +105,7 @@ export function useDragGroups(
       if (busy) return;
       const action = resolveDrop(dragged, target, mode, projects);
       if (action.kind === "none") return;
+      onResolved?.(dragged, action);
       if (action.kind === "create") {
         setNaming({
           kind: "create",
@@ -122,7 +126,7 @@ export function useDragGroups(
         })
       );
     },
-    [busy, moveWithKids, projects, run],
+    [busy, moveWithKids, onResolved, projects, run],
   );
 
   const submitName = async (name: string) => {

@@ -45,12 +45,6 @@ function useStoredAssignee(): [string | null, (v: string | null) => void] {
   return [value, set];
 }
 
-const STATUS_TONE: Record<string, string> = {
-  done: "bg-status-done",
-  in_progress: "bg-status-prog",
-  cancelled: "bg-ink-mute",
-};
-
 type Props = {
   tasks: readonly Task[];
   projects: readonly Project[];
@@ -446,12 +440,6 @@ function PlanRow(
         )}
         style={{ paddingLeft: 30 + depth * 16 }}
       >
-        <span
-          className={cn(
-            "size-[7px] shrink-0 rounded-full",
-            STATUS_TONE[task.status] ?? "bg-status-open",
-          )}
-        />
         <button
           type="button"
           onClick={(e) => {

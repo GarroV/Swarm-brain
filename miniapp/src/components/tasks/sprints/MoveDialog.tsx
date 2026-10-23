@@ -5,6 +5,7 @@ import type { SprintCycle, SprintCycleItem } from "@/types";
 import { moveSprintTask } from "@/lib/api";
 import { useDt } from "@/components/roy/nav";
 import { cn } from "@/lib/utils";
+import { cycleDates, cycleShort, dueCycleOf } from "@/lib/sprintLabels";
 import { fmtDayShort } from "./format";
 import { PILL_BTN } from "./atoms";
 
@@ -29,13 +30,17 @@ export function dueBroken(
 const todayIso = () => new Date().toISOString().slice(0, 10);
 
 export function MoveDialog(
-  { item, cycleId, cycles, onClose, onDone }: {
+  { item, cycleId, cycles, kids = [], initialTargetId, onClose, onDone }: {
     /** Строка идущего спринта; null — окно закрыто. */
     item: SprintCycleItem | null;
     /** Спринт, из которого переносим. */
     cycleId: string;
     /** Запланированные спринты пространства — возможные цели, по порядку. */
     cycles: SprintCycle[];
+    /** Незакрытые подзадачи этой задачи в том же спринте: едут вместе, если оставить галочку. */
+    kids?: SprintCycleItem[];
+    /** Цель, выбранная броском карточки: окно открывается сразу на ней. */
+    initialTargetId?: string | null;
     onClose: () => void;
     /** Перенос прошёл — перечитать состав. */
     onDone: () => void | Promise<void>;
@@ -46,20 +51,25 @@ export function MoveDialog(
   const [reason, setReason] = useState("");
   const [newDue, setNewDue] = useState("");
   const [busy, setBusy] = useState(false);
+  const [withKids, setWithKids] = useState(true);
   const [err, setErr] = useState<string | null>(null);
 
   const target = cycles.find((c) => c.id === targetId) ?? null;
   const due = item?.due_date ?? null;
+  const flagId = dueCycleOf(cycles, due)?.id;
   const broken = !!target && dueBroken(due, target, todayIso());
 
   // Каждое открытие — с чистого листа: ближайший запланированный спринт, пустая причина.
   useEffect(() => {
     if (!item) return;
-    setTargetId(cycles[0]?.id ?? null);
+    setTargetId(
+      cycles.find((c) => c.id === initialTargetId)?.id ?? cycles[0]?.id ?? null,
+    );
     setReason("");
+    setWithKids(true);
     setErr(null);
     setBusy(false);
-  }, [item, cycles]);
+  }, [item, cycles, initialTargetId]);
 
   // Новый срок по умолчанию — последний день цели, и только когда старый она срывает.
   useEffect(() => {
@@ -79,6 +89,15 @@ export function MoveDialog(
         reason: reason.trim(),
         new_due: broken && newDue ? newDue : null,
       });
+      // Подзадачи — тем же переносом с той же причиной; срок у них свой, его не трогаем.
+      if (withKids) {
+        for (const kid of kids) {
+          await moveSprintTask(cycleId, kid.id, {
+            target_cycle_id: target.id,
+            reason: reason.trim(),
+          });
+        }
+      }
       await onDone();
       onClose();
     } catch (e) {
@@ -136,6 +155,7 @@ export function MoveDialog(
                     key={c.id}
                     type="button"
                     role="radio"
+                    title={c.name}
                     aria-checked={c.id === targetId}
                     onClick={() => setTargetId(c.id)}
                     className={cn(
@@ -145,9 +165,10 @@ export function MoveDialog(
                         : "border-line text-ink-soft hover:text-ink",
                     )}
                   >
-                    {c.name}
+                    {c.id === flagId ? "🏁 " : ""}
+                    {cycleShort(c.name)}
                     <span className="ml-1.5 font-mono text-[11px] opacity-70">
-                      {fmtDayShort(c.start_date)}–{fmtDayShort(c.end_date)}
+                      {cycleDates(c)}
                     </span>
                   </button>
                 ))}
@@ -173,6 +194,21 @@ export function MoveDialog(
               className="resize-none rounded-[8px] border border-line bg-surface px-2.5 py-2 text-[13px] text-ink outline-none focus:border-accent-line"
             />
           </label>
+
+          {kids.length > 0 && (
+            <label className="flex cursor-pointer items-center gap-2 text-[12.5px] text-ink-soft">
+              <input
+                type="checkbox"
+                checked={withKids}
+                onChange={(e) => setWithKids(e.target.checked)}
+                className="accent-[var(--primary)]"
+              />
+              {dt(
+                `и незакрытые подзадачи этого спринта (${kids.length})`,
+                `and the open subtasks of this sprint (${kids.length})`,
+              )}
+            </label>
+          )}
 
           {due && target && (
             broken
