@@ -49,6 +49,9 @@ final class BoardNotepad: NSObject, NoteLineHost, NoteTableHost {
 
     private let fileURL: URL
     private var saveTimer: Timer?
+    private var sweepTimer: Timer?
+    /// Когда блокнот последний раз убирали от отмеченного (NoteSweep): в 9:00 нового дня.
+    static let sweptAtKey = "BoardNotepadSweptAt"
     private var dirty = false
     /// Когда блокнот правили последний раз: дата файла на диске, потом — момент сохранения.
     private var editedAt: Date?
@@ -68,8 +71,12 @@ final class BoardNotepad: NSObject, NoteLineHost, NoteTableHost {
         super.init()
         build(height: height)
         loadFromDisk()
+        sweepIfDue()
         relabel()
         rebuild(focus: nil)
+        let t = Timer(timeInterval: 60, repeats: true) { [weak self] _ in self?.sweepTick() }
+        RunLoop.main.add(t, forMode: .common)
+        sweepTimer = t
         NotificationCenter.default.addObserver(self, selector: #selector(flushNow),
                                                name: NSApplication.willTerminateNotification, object: nil)
     }
@@ -421,6 +428,33 @@ final class BoardNotepad: NSObject, NoteLineHost, NoteTableHost {
         changed()
         flush()
         clearCancelled()
+    }
+
+    // MARK: утренняя уборка
+
+    /// Убрать отмеченное, если наступила новая граница 9:00. Уборки ещё не было — отсчёт от
+    /// последней правки блокнота (отмеченное вчера уходит сегодня); пустой блокнот — от «сейчас».
+    /// true — блоки поменялись.
+    @discardableResult
+    private func sweepIfDue(now: Date = Date()) -> Bool {
+        let defaults = UserDefaults.standard
+        let last = (defaults.object(forKey: Self.sweptAtKey) as? Date) ?? editedAt
+        guard last != nil else { defaults.set(now, forKey: Self.sweptAtKey); return false }
+        guard NoteSweep.isDue(lastSweep: last, now: now) else { return false }
+        defaults.set(now, forKey: Self.sweptAtKey)
+        let swept = NoteSweep.removingDone(blocks)
+        guard swept != blocks else { return false }
+        blocks = swept
+        changed()
+        return true
+    }
+
+    /// Раз в минуту: подпись даты правки пересчитывается; пересборка строк сняла бы курсор, поэтому, пока человек печатает в
+    /// блокноте, уборка ждёт следующей минуты.
+    private func sweepTick() {
+        updateStamp()   // «Сегодня в 19:27» после полуночи должно стать «вчера»
+        if let editor = view.window?.firstResponder as? NSView, editor.isDescendant(of: view) { return }
+        if sweepIfDue() { rebuild(focus: nil) }
     }
 
     // MARK: хранение
