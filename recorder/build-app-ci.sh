@@ -53,7 +53,6 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundleShortVersionString</key><string>1.${BUILD}.0</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>LSMinimumSystemVersion</key><string>13.0</string>
-  <key>LSUIElement</key><true/>
   <key>NSMicrophoneUsageDescription</key><string>bumblebee записывает звук встречи, чтобы подготовить тезисы.</string>
   <key>NSAudioCaptureUsageDescription</key><string>bumblebee записывает системный звук встречи (собеседников), чтобы подготовить тезисы.</string>
   <key>NSAppleEventsUsageDescription</key><string>bumblebee читает URL активной вкладки браузера, чтобы определить комнату звонка (Meet/Контур) для дедупа встреч.</string>

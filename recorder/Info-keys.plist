@@ -6,9 +6,7 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-  <!-- Меню-бар приложение: без иконки в Dock и без главного окна -->
-  <key>LSUIElement</key>
-  <true/>
+  <!-- LSUIElement нет: с 23.10.2026 bumblebee — обычное приложение со значком в Dock и в ⌘Tab -->
 
   <!-- TCC usage descriptions (показываются в системном запросе разрешений) -->
   <key>NSMicrophoneUsageDescription</key>
