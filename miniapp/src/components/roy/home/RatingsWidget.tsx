@@ -64,9 +64,11 @@ export function RatingsWidget({ codes, q, scope, qualityGate }: Props) {
     return <AggregatorsTab codes={codes} />;
   })();
 
+  // Одна карточка (владелец 25.10.2026: «сделай вот эту часть полноценным блоком»): вкладки — шапка
+  // карточки, тело — под ними. Свою рамку и подложку тела вкладок здесь гасим, чтобы не было рамки в рамке.
   return (
-    <div className={`flex flex-col gap-2 ${FILL}`}>
-      <div className="flex shrink-0">
+    <div className={`flex flex-col overflow-hidden rounded-[12px] border border-line bg-surface ${FILL}`}>
+      <div className="flex shrink-0 flex-wrap items-center justify-between gap-x-3 gap-y-1 border-b border-line px-3 py-2">
         <div role="tablist" aria-label={dt("Рейтинги", "Ratings")} onKeyDown={onKey}
           className="flex min-w-0 gap-1 overflow-x-auto rounded-[10px] border border-line bg-surface-2 p-0.5">
           {RATINGS_TABS.map((t) => (
@@ -78,12 +80,12 @@ export function RatingsWidget({ codes, q, scope, qualityGate }: Props) {
             </button>
           ))}
         </div>
+        {(tab === "maps" || tab === "aggregators") && (
+          <p className="text-ink-mute" style={{ fontSize: 11.5 }}>{dt("на сегодня, сравнение с 30 днями назад", "as of today, compared with 30 days ago")}</p>
+        )}
       </div>
-      {(tab === "maps" || tab === "aggregators") && (
-        <p className="shrink-0 text-ink-mute" style={{ fontSize: 11.5 }}>{dt("на сегодня, сравнение с 30 днями назад", "as of today, compared with 30 days ago")}</p>
-      )}
       <div role="tabpanel" id="ratings-panel" aria-labelledby={`ratings-tab-${tab}`} tabIndex={0}
-        className="min-[1100px]:flex min-[1100px]:min-h-0 min-[1100px]:flex-auto min-[1100px]:flex-col">{body}</div>
+        className="flex min-h-0 flex-auto flex-col [&>*]:rounded-none [&>*]:border-0 [&>*]:bg-transparent">{body}</div>
     </div>
   );
 }
