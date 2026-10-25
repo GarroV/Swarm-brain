@@ -26,7 +26,17 @@ export const MOCKUP_SHAPES: Record<MockupFill, { meetings: number; tasks: number
 
 // Адрес читается при загрузке модуля: оболочка потом сама переписывает его на «/» (pushState) и параметры
 // пропали бы раньше, чем их спросят моки.
-const BOOT_SEARCH = DEV_MOCKUP && typeof window !== "undefined" ? window.location.search : "";
+// Выбор помнится в sessionStorage: после обновления вкладки адрес уже «/», а макет должен остаться.
+const BOOT_SEARCH = DEV_MOCKUP && typeof window !== "undefined" ? bootSearch() : "";
+
+function bootSearch(): string {
+  const KEY = "dev_mockup_search";
+  const q = window.location.search;
+  try {
+    if (q.includes("layout=") || q.includes("fill=")) { sessionStorage.setItem(KEY, q); return q; }
+    return sessionStorage.getItem(KEY) ?? "";
+  } catch { return q; }
+}
 
 export function mockupParams(): { layout: MockupLayout | null; fill: MockupFill | null } | null {
   if (!DEV_MOCKUP) return null;
