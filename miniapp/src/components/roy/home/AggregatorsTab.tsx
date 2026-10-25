@@ -1,6 +1,7 @@
 "use client";
 import { useDt } from "../nav";
 import { Delta, Stat, card } from "./QualityWidgets";
+import { FILL, FILL_NOTE } from "./blockFill";
 import { useAggregators } from "./useAggregators";
 import { countryName } from "@/lib/countries";
 import { aggregatorTotals, deltaDigits, scoreDigits } from "@/lib/homeAggregators";
@@ -9,13 +10,13 @@ import { aggregatorTotals, deltaDigits, scoreDigits } from "@/lib/homeAggregator
 // против среднего по IMF (всем странам ответа) и изменение за 30 дней. Шкалы разные (5/10/100):
 // оценки разных агрегаторов не смешиваются и всегда подписаны шкалой. Источник — GET /quality/aggregators.
 
-const note = "rounded-[12px] border border-dashed border-line-2 px-4 py-6 text-center text-ink-mute";
+const note = `rounded-[12px] border border-dashed border-line-2 px-4 py-6 text-center text-ink-mute ${FILL_NOTE}`;
 const num = (v: number | null, digits: number) => (v == null ? "—" : v.toFixed(digits));
 
 export function AggregatorsTab({ codes }: { codes: string[] }) {
   const dt = useDt();
   const { data, loading, failed, retry } = useAggregators();
-  if (loading) return <div className="roy-shim" style={{ height: 220, borderRadius: 12 }} />;
+  if (loading) return <div className={`roy-shim ${FILL}`} style={{ height: 220, borderRadius: 12 }} />;
   if (failed || !data) {
     return (
       <div className={note} style={{ fontSize: 13 }}>

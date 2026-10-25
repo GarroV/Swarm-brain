@@ -16,12 +16,14 @@ const COLS_NARROW = "minmax(0,1fr) 28% 84px 80px";
 
 const fmtDue = (iso: string, en: boolean) =>
   new Date(iso).toLocaleDateString(en ? "en-GB" : "ru-RU", { day: "numeric", month: "short" }).replace(".", "");
-export function HomeTaskTable({ sections, projectName, labelNames, showLabels = true, now }: {
+export function HomeTaskTable({ sections, projectName, labelNames, showLabels = true, now, className }: {
   sections: TaskSection[];
   projectName: (t: Task) => string | null;
   labelNames: (t: Task) => string;
   showLabels?: boolean;
   now: Date;
+  /** Подгонка под блок главной фиксированной высоты (home/blockFill.ts). */
+  className?: string;
 }) {
   const dt = useDt();
   const { openTask } = useRoyNav();
@@ -29,10 +31,10 @@ export function HomeTaskTable({ sections, projectName, labelNames, showLabels = 
   const en = dt("ru", "en") === "en";
 
   return (
-    <div role="table" className="overflow-hidden rounded-[10px] border border-line bg-surface shadow-[0_1px_1px_rgba(27,32,40,.03)]" style={{ fontSize: 13 }}>
+    <div role="table" className={cn("overflow-hidden rounded-[10px] border border-line bg-surface shadow-[0_1px_1px_rgba(27,32,40,.03)]", className)} style={{ fontSize: 13 }}>
       <div
         role="row"
-        className="grid items-center border-b border-line bg-surface-2 font-semibold uppercase text-ink-soft"
+        className="sticky top-0 z-[1] grid items-center border-b border-line bg-surface-2 font-semibold uppercase text-ink-soft"
         style={{ gridTemplateColumns: cols, height: 30, fontSize: 10.5, letterSpacing: "0.07em" }}
       >
         <span className="px-3">{dt("Задача", "Task")}</span>

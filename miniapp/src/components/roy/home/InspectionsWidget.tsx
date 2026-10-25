@@ -4,6 +4,7 @@ import { useDt } from "../nav";
 import { Delta } from "./QualityWidgets";
 import { GradeChip, InspectionPanel } from "./InspectionPanel";
 import { useInspections } from "./useInspections";
+import { FILL, FILL_CARD, FILL_NOTE } from "./blockFill";
 import type { Inspection } from "@/lib/api";
 import { countryFlag } from "@/lib/countries";
 import {
@@ -14,8 +15,8 @@ import {
 // класс, движение к прошлой проверке. Клик по строке — панель с зонами и нарушениями. Источник — Децимус
 // (GET /inspections); задача из проверки создаётся только кнопкой в панели.
 
-const card = "rounded-[12px] border border-line bg-surface";
-const note = "rounded-[12px] border border-dashed border-line-2 px-4 py-6 text-center text-ink-mute";
+const card = `rounded-[12px] border border-line bg-surface ${FILL_CARD}`;
+const note = `rounded-[12px] border border-dashed border-line-2 px-4 py-6 text-center text-ink-mute ${FILL_NOTE}`;
 
 export function InspectionsWidget({ codes, onCreateTask }: { codes: string[]; onCreateTask: (draft: TaskDraft) => void }) {
   const dt = useDt();
@@ -24,7 +25,7 @@ export function InspectionsWidget({ codes, onCreateTask }: { codes: string[]; on
   const [open, setOpen] = useState<Inspection | null>(null);
   const rows = useMemo(() => (data ? latestInspections(data.inspections, codes) : []), [data, codes]);
 
-  if (loading) return <div className="roy-shim" style={{ height: 220, borderRadius: 12 }} />;
+  if (loading) return <div className={`roy-shim ${FILL}`} style={{ height: 220, borderRadius: 12 }} />;
   if (failed || !data) {
     return (
       <div className={note} style={{ fontSize: 13 }}>

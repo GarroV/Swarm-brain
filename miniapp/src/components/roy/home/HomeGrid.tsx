@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
 import { useDt, useRoyNav } from "../nav";
 import { HomeLabel } from "../dash/shared";
 import type { DashboardData } from "../dash/useDashboardData";
@@ -18,9 +18,10 @@ import { useCountrySales } from "./useCountrySales";
 import { useQuality, type QualityState } from "./useQuality";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { countryOf } from "@/lib/homeQuality";
+import { FILL, FILL_CARD, FILL_NOTE } from "./blockFill";
 import {
-  addWidget, DEFAULT_LAYOUT, halfColumns, hideWidget, loadLayout, moveBefore, moveBy, saveLayout, toggleWidth,
-  WIDGET_IDS, DEFAULT_WIDTH, type LayoutItem, type WidgetId,
+  addWidget, DEFAULT_LAYOUT, HEIGHT_KIND, HOME_FILL_MAX, HOME_FILL_MIN, HOME_FIXED_HEIGHT, HOME_LIST_MAX, hideWidget, layoutRows, rowSizing, loadLayout, moveBefore, moveBy, saveLayout, toggleWidth,
+  WIDGET_IDS, DEFAULT_WIDTH, type CellSizing, type LayoutItem, type WidgetId,
 } from "@/lib/homeLayout";
 
 // Главная из виджетов (decisions/2026-10-07-home-dashboard-direction.md). Каждый собирает её сам:
@@ -74,6 +75,7 @@ export function HomeGrid({ data, onCreateTask, onCreateTaskFrom, editing, onEdit
     return () => window.removeEventListener("keydown", onKey);
   }, [editing, gallery]);
 
+  // Макет из ?layout= (только DEV_MODE) в localStorage не пишем.
   const setLayout = (next: LayoutItem[]) => { setLayoutState(next); saveLayout(next); };
   const codes = narrow && markets.includes(narrow) ? [narrow] : markets;
   const quality = useQuality();
@@ -85,14 +87,14 @@ export function HomeGrid({ data, onCreateTask, onCreateTaskFrom, editing, onEdit
   const body = (id: WidgetId): ReactNode => {
     // Пока профиль (me) не пришёл, страны неизвестны: подсказку «выберите страны» не показываем — она мигала
     // 0.3–1.5 с у людей с уже выбранными странами (issue #906). Тот же скелетон, что у загрузки баллов.
-    if (!me && META[id].scoped) return <div className="roy-shim" style={{ height: id === "countries" ? 160 : 220, borderRadius: 12 }} />;
+    if (!me && META[id].scoped) return <div className={`roy-shim ${FILL}`} style={{ height: id === "countries" ? 160 : 220, borderRadius: 12 }} />;
     if (!codes.length && META[id].scoped) {
       return <div className={note} style={{ fontSize: 13 }}>{dt("Выберите свои страны в «Настроить главную» — метрики считаются по ним", "Pick your countries in “Customize home” — metrics are scoped to them")}</div>;
     }
     const gate = META[id].quality ? qualityGate(quality, id) : null;
     if (gate) return gate;
     switch (id) {
-      case "calls": return <MeetingsToday flat first flatBody="overflow-hidden rounded-[12px] border border-line bg-surface p-1.5" />;
+      case "calls": return <MeetingsToday flat first className={FILL} flatBody={`rounded-[12px] border border-line bg-surface p-1.5 ${FILL_CARD}`} />;
       case "top5": return <TopTasksWidget data={data} onCreate={onCreateTask} />;
       case "board": return <BoardWidget data={data} />;
       case "ratings": return <RatingsWidget codes={codes} q={q} scope={scope} qualityGate={qualityGate(quality, id)} />;
@@ -113,11 +115,11 @@ export function HomeGrid({ data, onCreateTask, onCreateTaskFrom, editing, onEdit
     setDragId(null); setOverId(null);
   };
 
-  const widget = (it: LayoutItem, i: number) => {
+  const widget = (it: LayoutItem, i: number, sizing: CellSizing) => {
     const m = META[it.id];
     return (
       <section key={it.id} data-widget={it.id}
-        className={`relative min-w-0 rounded-[14px] transition-opacity ${editing ? "cursor-grab outline-2 outline-offset-4 outline-dashed outline-line-2 hover:outline-accent-line" : ""} ${dragId === it.id ? "opacity-40" : ""} ${overId === it.id && dragId !== it.id ? "outline-primary" : ""}`}
+        className={`relative min-w-0 rounded-[14px] transition-opacity ${sizing === "auto" ? "" : `${BLOCK_COL} ${SIZING_CLASS[sizing]}`} ${editing ? "cursor-grab outline-2 outline-offset-4 outline-dashed outline-line-2 hover:outline-accent-line" : ""} ${dragId === it.id ? "opacity-40" : ""} ${overId === it.id && dragId !== it.id ? "outline-primary" : ""}`}
         draggable={editing}
         onDragStart={(e) => { setDragId(it.id); e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", it.id); }}
         onDragEnd={() => { setDragId(null); setOverId(null); }}
@@ -132,7 +134,7 @@ export function HomeGrid({ data, onCreateTask, onCreateTaskFrom, editing, onEdit
             <ToolBtn label={dt(`Скрыть «${m.title[0]}»`, `Hide “${m.title[1]}”`)} onClick={() => setLayout(hideWidget(layout, it.id))}>{dt("Скрыть ×", "Hide ×")}</ToolBtn>
           </div>
         )}
-        <div className={editing ? "pointer-events-none select-none" : ""}>
+        <div className={`${editing ? "pointer-events-none select-none" : ""} ${sizing === "auto" ? "" : FILL_COL}`}>
           {!m.ownTitle && (
             <HomeLabel first action={undefined}>
               <span className="inline-flex items-center gap-2">{m.title[lang]}{m.meta && <span className="font-normal normal-case tracking-normal text-ink-mute">{m.meta[lang]}</span>}{m.sample && <SampleTag />}</span>
@@ -164,21 +166,22 @@ export function HomeGrid({ data, onCreateTask, onCreateTaskFrom, editing, onEdit
         </div>
       )}
 
-      {/* Строка во всю ширину — отдельно; половинки — две независимые колонки (halfColumns), чтобы
-          высокий виджет не растягивал строку соседу. На узком экране колонки растворяются
-          (display: contents), и порядок задаёт место в раскладке. */}
-      <div className="flex flex-col gap-y-2 px-6 pt-1">
-        {halfColumns(layout).map((run) => run.kind === "full"
-          ? <div key={run.item.id}>{widget(run.item, run.index)}</div>
-          : (
-            <div key={run.left[0].item.id} className="flex flex-col gap-y-2 min-[1100px]:grid min-[1100px]:grid-cols-2 min-[1100px]:items-start min-[1100px]:gap-x-5">
-              {[run.left, run.right].map((col, c) => (
-                <div key={c} className="contents min-[1100px]:flex min-[1100px]:min-w-0 min-[1100px]:flex-col min-[1100px]:gap-y-2">
-                  {col.map(({ item, index }) => <div key={item.id} className="min-w-0" style={{ order: index }}>{widget(item, index)}</div>)}
-                </div>
+      {/* Строки раскладки (layoutRows): «вся строка» — одна, половинки — парой одной высоты, одиночная
+          половинка — на всю строку. От 1100 px высоту клетки раздаёт rowSizing по виду высоты виджета
+          (HEIGHT_KIND): страница не двигается, пара ровная, пустоты под карточкой нет; уже — одна
+          колонка в порядке раскладки. */}
+      <div className="flex flex-col gap-y-2 px-6 pt-1" style={HEIGHT_VARS}>
+        {layoutRows(layout).map((row) => {
+          const { cells, minFill } = rowSizing(row.map((c) => HEIGHT_KIND[c.item.id]));
+          return (
+            <div key={row[0].item.id}
+              className={`flex flex-col gap-y-2 ${row.length > 1 ? "min-[1100px]:grid min-[1100px]:grid-cols-2 min-[1100px]:gap-x-5" : ""} ${minFill ? "min-[1100px]:min-h-[var(--home-fill-min)]" : ""}`}>
+              {row.map(({ item, index }, c) => (
+                <div key={item.id} className={`min-w-0 ${cells[c] === "absolute" ? "min-[1100px]:relative" : ""}`}>{widget(item, index, cells[c])}</div>
               ))}
             </div>
-          ))}
+          );
+        })}
       </div>
 
       <Dialog open={gallery} onOpenChange={setGallery}>
@@ -207,11 +210,29 @@ export function HomeGrid({ data, onCreateTask, onCreateTaskFrom, editing, onEdit
   );
 }
 
-const note = "rounded-[12px] border border-dashed border-line-2 px-4 py-6 text-center text-ink-mute";
+// Высота блока (blockFill.ts, rowSizing): секция — колонка, заголовок и тело внутри неё. Ячейка сетки
+// тянется на высоту пары, секция внутри — на всю ячейку (или лежит в ней absolute, если это таблица
+// рядом с другим видом высоты и высоту строки она не задаёт).
+const HEIGHT_VARS = {
+  "--home-fixed": `${HOME_FIXED_HEIGHT}px`, "--home-list-max": `${HOME_LIST_MAX}px`,
+  "--home-fill-min": `${HOME_FILL_MIN}px`, "--home-fill-max": `${HOME_FILL_MAX}px`,
+} as CSSProperties;
+const BLOCK_COL = "min-[1100px]:flex min-[1100px]:flex-col";
+const SIZING_CLASS: Record<CellSizing, string> = {
+  fixed: "min-[1100px]:h-[var(--home-fixed)]",
+  capped: "min-[1100px]:h-full min-[1100px]:max-h-[var(--home-list-max)]",
+  free: "min-[1100px]:h-full",
+  absolute: "min-[1100px]:absolute min-[1100px]:inset-0",
+  fillCapped: "min-[1100px]:h-full min-[1100px]:max-h-[var(--home-fill-max)]",
+  auto: "",
+};
+const FILL_COL = "min-[1100px]:flex min-[1100px]:min-h-0 min-[1100px]:flex-auto min-[1100px]:flex-col";
+
+const note = `rounded-[12px] border border-dashed border-line-2 px-4 py-6 text-center text-ink-mute ${FILL_NOTE}`;
 
 /** Состояние баллов вместо виджета: загрузка, ошибка с повтором, баллов ещё нет. null — рисуем виджет. */
 function qualityGate({ data, loading, failed, retry }: QualityState, id: WidgetId): ReactNode {
-  if (loading) return <div className="roy-shim" style={{ height: id === "countries" ? 160 : 220, borderRadius: 12 }} />;
+  if (loading) return <div className={`roy-shim ${FILL}`} style={{ height: id === "countries" ? 160 : 220, borderRadius: 12 }} />;
   if (failed || !data) return <QualityFailed onRetry={retry} />;
   // «Мои страны» без баллов всё равно полезны: в них продажи.
   if (!data.countries.length && id !== "countries") return <QualityEmpty />;

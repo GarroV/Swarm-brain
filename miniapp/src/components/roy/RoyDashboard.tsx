@@ -46,7 +46,8 @@ function HomeHeader({ editing, onEdit }: { editing: boolean; onEdit: () => void 
       <h1 className="leading-[1.1]" style={ROY_TYPE.pageTitle}>{dt("Главная", "Home")}</h1>
       {/* Плашка берёт всё свободное место между заголовком и кнопками и держит себя по центру. */}
       <HeaderNotice />
-      <div className="flex shrink-0 items-center gap-2">
+      {/* ml-auto: без плашки (обычный день) инструменты всё равно у правого края, а не у заголовка. */}
+      <div className="ml-auto flex shrink-0 items-center gap-2">
         {/* Настройка главной: виджеты и «Мои страны» (решение 07.10.2026). */}
         <button type="button" onClick={onEdit} disabled={editing} aria-pressed={editing}
           className="flex h-[32px] items-center gap-1.5 rounded-[8px] border border-line-2 bg-surface px-2.5 font-semibold text-ink-soft hover:border-accent-line hover:text-primary disabled:border-primary disabled:text-primary"

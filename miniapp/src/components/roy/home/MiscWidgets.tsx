@@ -6,6 +6,7 @@ import type { DashboardData } from "../dash/useDashboardData";
 import { AreaSpark } from "./LineChart";
 import { Delta } from "./QualityWidgets";
 import { fmtEur, type SalesState } from "./useCountrySales";
+import { FILL_CARD } from "./blockFill";
 import { isDone, isOverdue } from "@/lib/smartLists";
 import { countryFlag } from "@/lib/countries";
 
@@ -22,7 +23,7 @@ export function TopTasksWidget({ data, onCreate }: { data: DashboardData; onCrea
   const overdue = open.filter((t) => isOverdue(t)).length;
   const { loading, failed, retry } = data.tasksState;
   return (
-    <div className="rounded-[12px] border border-line bg-surface p-2">
+    <div className={`rounded-[12px] border border-line bg-surface p-2 ${FILL_CARD}`}>
       {loading && [0, 1, 2].map((i) => <div key={i} className="roy-shim m-1" style={{ height: 34, borderRadius: 8 }} />)}
       {failed && (
         <div className="px-3 py-3 text-ink-soft" style={{ fontSize: 13 }}>
@@ -56,7 +57,7 @@ export function SalesWidget({ codes, sales }: { codes: string[]; sales: SalesSta
   const series = months.map((m) => list.reduce((s, c) => s + (c.months.find((x) => x[0] === m)?.[1] ?? 0), 0));
   const lastMonth = months.at(-1);
   return (
-    <div className="rounded-[12px] border border-line bg-surface p-4">
+    <div className={`rounded-[12px] border border-line bg-surface p-4 ${FILL_CARD}`}>
       {sales.loading ? <div className="roy-shim" style={{ height: 90, borderRadius: 8 }} /> : (
         <>
           <div className="font-mono font-semibold text-ink" style={{ fontSize: 30, letterSpacing: "-0.02em" }}>{list.length ? fmtEur(total) : "—"}</div>
