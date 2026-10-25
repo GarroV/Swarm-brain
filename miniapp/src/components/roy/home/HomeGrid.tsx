@@ -19,8 +19,6 @@ import { useQuality, type QualityState } from "./useQuality";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { countryOf } from "@/lib/homeQuality";
 import { FILL, FILL_CARD, FILL_NOTE } from "./blockFill";
-import { DevMockupBar } from "./DevMockupBar";
-import { devLayout } from "@/lib/devMockup";
 import {
   addWidget, DEFAULT_LAYOUT, HEIGHT_KIND, HOME_FILL_MAX, HOME_FILL_MIN, HOME_FIXED_HEIGHT, HOME_LIST_MAX, hideWidget, layoutRows, rowSizing, loadLayout, moveBefore, moveBy, saveLayout, toggleWidth,
   WIDGET_IDS, DEFAULT_WIDTH, type CellSizing, type LayoutItem, type WidgetId,
@@ -65,7 +63,7 @@ export function HomeGrid({ data, onCreateTask, onCreateTaskFrom, editing, onEdit
   const [narrow, setNarrow] = useState<string | null>(null);
 
   // Раскладка читается после монтирования: экспорт статический, на сборке localStorage нет.
-  useEffect(() => { setLayoutState(devLayout() ?? loadLayout()); }, []);
+  useEffect(() => { setLayoutState(loadLayout()); }, []);
   // Синхронизация с профилем прямо в рендере, а не в эффекте: эффект давал один кадр с пустыми странами
   // (и подсказкой «выберите страны») сразу после прихода me.
   const [seenMarkets, setSeenMarkets] = useState(me?.markets);
@@ -78,7 +76,7 @@ export function HomeGrid({ data, onCreateTask, onCreateTaskFrom, editing, onEdit
   }, [editing, gallery]);
 
   // Макет из ?layout= (только DEV_MODE) в localStorage не пишем.
-  const setLayout = (next: LayoutItem[]) => { setLayoutState(next); if (!devLayout()) saveLayout(next); };
+  const setLayout = (next: LayoutItem[]) => { setLayoutState(next); saveLayout(next); };
   const codes = narrow && markets.includes(narrow) ? [narrow] : markets;
   const quality = useQuality();
   const q = quality.data;
@@ -150,7 +148,6 @@ export function HomeGrid({ data, onCreateTask, onCreateTaskFrom, editing, onEdit
 
   return (
     <div className="min-w-0 pb-8">
-      <DevMockupBar />
       {narrow && !editing && <NarrowChip cc={narrow} onClear={() => setNarrow(null)} />}
 
       {editing && (

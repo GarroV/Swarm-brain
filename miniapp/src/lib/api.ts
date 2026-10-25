@@ -1,5 +1,4 @@
 import { getInitData } from "./telegram";
-import { devShape, shapedNames } from "./devMockup";
 import { isNetworkFailure, reportConnection, reportUnauthorized } from "./connection";
 import type { TaskFile, TaskFileLimits } from "./taskFiles";
 import type { BackdropId } from "./backdrop";
@@ -207,18 +206,6 @@ function mockDay(daysFromToday: number): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${
     String(d.getDate()).padStart(2, "0")
   }`;
-}
-
-// Макет главной (lib/devMockup.ts): у меня остаётся нужное число открытых задач со сроком, остальные
-// такие же убираются; без параметров — как есть.
-function shapeMockTasks(all: Task[]): Task[] {
-  const shape = devShape();
-  if (!shape) return all;
-  let kept = 0;
-  return all.filter((t) => {
-    const mineOpen = t.assignee_telegram_ids?.includes(MOCK_ME.telegram_id) && t.due_date && t.status !== "done";
-    return !mineOpen || ++kept <= shape.tasks;
-  });
 }
 
 // Демо-фабрика задачи (моки DEV_MODE) — сокращает шум при наполнении дерева.
@@ -695,7 +682,7 @@ async function apiFetchNoContentTypeRaw<T>(
 // ── Tasks ─────────────────────────────────────────────────────────────────────
 
 export async function fetchMe(): Promise<Me> {
-  if (DEV_MODE) { const shape = devShape(); return shape ? { ...MOCK_ME, markets: shape.countries } : MOCK_ME; }
+  if (DEV_MODE) return MOCK_ME;
   return apiFetch<Me>("/me");
 }
 
@@ -820,17 +807,6 @@ export async function fetchTodayMeetings(): Promise<TodayMeetings> {
       d.setHours(h, m, 0, 0);
       return d.toISOString();
     };
-    const shape = devShape();
-    if (shape) {
-      // Макет главной (lib/devMockup.ts): нужное число встреч, первые две прошли, третья идёт.
-      return {
-        meetings: Array.from({ length: shape.meetings }, (_, i) => ({
-          id: `dm${i + 1}`, title: `Demo meeting ${i + 1}`, starts_at: at(8 + i, 0), ends_at: at(8 + i, 45),
-          join_url: i % 3 === 1 ? null : "https://meet.example/demo", is_now: i === 2, is_past: i < 2,
-          attendees: 2 + i, on_call: i === 2, recording: i === 2,
-        })),
-      };
-    }
     return {
       meetings: [
         {
@@ -1150,7 +1126,7 @@ export async function fetchTasks(
     ? { status: filters }
     : (filters ?? {});
   if (DEV_MODE) {
-    let r = shapeMockTasks(mockTasks);
+    let r = mockTasks;
     if (f.status) r = r.filter((t) => t.status === f.status);
     if (f.sprint_id) r = r.filter((t) => t.sprint_id === f.sprint_id);
     if (f.tags?.length) {
@@ -1768,10 +1744,10 @@ export async function fetchMapsRatings(): Promise<MapsData> {
 
 // Синтетика для DEV_MODE: страны и пиццерии те же, что в mockQuality; оценки детерминированы от индекса.
 function mockMaps(): MapsData {
-  const names: [string, string][] = shapedNames([
+  const names: [string, string][] = [
     ["BG", "Demo Sofia-1"], ["BG", "Demo Varna-1"], ["RS", "Demo Novi Sad-1"], ["RS", "Demo Belgrade-2"],
     ["PL", "Demo Krakow-1"], ["NG", "Demo Lagos-1"], ["NG", "Demo Abuja-3"], ["KZ", "Demo Almaty-1"], ["KZ", "Demo Astana-2"],
-  ]);
+  ];
   const units: MapsUnit[] = names.map(([cc, name], u) => {
     const avg = Math.round((3.4 + ((u * 7) % 15) / 10) * 100) / 100;
     return {
@@ -1915,11 +1891,11 @@ function mockQuality(kind: QualityKind): QualityData {
       return { start: iso(day(2026, m, first ? 1 : 16)), end: iso(day(2026, first ? m : m + 1, first ? 15 : 0)) };
     })
     : Array.from({ length: 12 }, (_, i) => ({ start: iso(day(2026, 6, 6 + i * 7)), end: iso(day(2026, 6, 12 + i * 7)) }));
-  const names: [string, string][] = shapedNames([
+  const names: [string, string][] = [
     ["BG", "Demo Sofia-1"], ["BG", "Demo Varna-1"], ["RS", "Demo Novi Sad-1"],
     ["RS", "Demo Belgrade-2"], ["PL", "Demo Krakow-1"], ["NG", "Demo Lagos-1"], ["NG", "Demo Abuja-3"],
     ["KZ", "Demo Almaty-1"], ["KZ", "Demo Astana-2"],
-  ]);
+  ];
   const base = kind === "rs" ? 84 : 90;
   return {
     kind,
