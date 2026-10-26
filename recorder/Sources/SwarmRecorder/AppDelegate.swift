@@ -1901,8 +1901,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                     endISO: req.endedAt ?? iso.string(from: Date()))
                 await UploadQueue.shared.drain(config: cfg)
                 await MainActor.run { self.notifyRecovered() }
+                try? FileManager.default.removeItem(at: dir)   // enqueue перенёс файлы → папка не нужна
+            } else {
+                // Сервер отложил (встречу держит другая запись — в т.ч. наша же прерванная сессия,
+                // чья аренда ещё не истекла). Аудио НЕ стираем: 26.10.2026 так пропали 13 минут
+                // планерки после принудительной остановки. Карантин в failed/ — разбор руками.
+                NSLog("SwarmRecorder: восстановление \(meta.base) отложено сервером — аудио в failed/")
+                await MainActor.run { self.quarantineOrRemove(dir: dir) }
             }
-            try? FileManager.default.removeItem(at: dir)   // enqueue перенёс файлы → папка не нужна
         } catch {
             NSLog("SwarmRecorder: восстановление \(meta.base) не удалось (\(error)) — оставляю для ретрая")
         }
