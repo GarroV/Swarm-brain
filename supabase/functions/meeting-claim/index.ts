@@ -18,16 +18,13 @@ import { CHALLENGER_ROLE } from "../meeting-ingest/challenge.ts";
 import { boundClaimSeconds, type MeetingClock } from "./claim-clock.ts";
 import { AgentAuthError, type AgentIdentity, resolveActingIdentity } from "../_shared/agent-auth.ts";
 import { defaultMeetingTitle, displayNameOf, isDefaultMeetingTitle } from "../_shared/meeting-title.ts";
-import {
-  ROSTER_TOLERANCE_MIN,
-  rosterMatchApplies,
-  sameMeetingByRoster,
-  scopeRoomKey,
-} from "../_shared/meeting-roster.ts";
+import { ROSTER_TOLERANCE_MIN, rosterMatchApplies, scopeRoomKey } from "../_shared/meeting-roster.ts";
+import { callRoomOfKey, callRoomOfUrl } from "../_shared/call-room.ts";
 import { accessToken, listEvents } from "../_shared/google-calendar.ts";
 import {
   type AgentScope,
   AgentScopeError,
+  calendarCallRoom,
   type CalendarSource,
   mayJoinExisting,
   resolveAgentScope,
@@ -318,6 +315,16 @@ async function emailOfUser(
   return ((data as { email?: string | null } | null)?.email ?? null);
 }
 
+/**
+ * Комната звонка заявки (ключ склейки). Комната — из ключа; календарь — из join_url клиента, а нет —
+ * из события в календаре человека. Всё best-effort: null означает «не склеиваем», claim не падает.
+ */
+async function callRoomOfClaim(body: ClaimBody, telegramId: number): Promise<string | null> {
+  if (body.identity_kind === "room") return callRoomOfKey(body.identity_kind, body.identity_key);
+  if (body.identity_kind !== "calendar") return null;
+  return callRoomOfUrl(body.join_url) ?? await calendarCallRoom(calendarSource, telegramId, body.identity_key);
+}
+
 type ExistingMeetingRow = HeldRow & { id: string };
 
 // Колонки строки встречи для арбитража: и найденной по составу, и по конфликту ключа.
@@ -338,17 +345,18 @@ type RosterCandidate = ExistingMeetingRow & {
  * — `kontur:<room>`. Уникальный индекс такую пару не видит, и claim открывал вторую встречу: два
  * аудио, ДВЕ транскрибации, два черновика (26.08 «IT+BD» — три записи в базе).
  *
- * Сопоставляем по времени + людям (`sameMeetingByRoster`); одного времени мало — в одну минуту
- * идут разные созвоны. Кандидатов ограничиваем днём и воркспейсом.
+ * Склеиваем по ССЫЛКЕ НА ЗВОНОК (`call_room`, решение владельца 26.10.2026): комната общая у всех
+ * участников, а время и состав дали ложную склейку двух разных созвонов. Окно по времени остаётся —
+ * личные комнаты переиспользуют подряд. Нет комнаты у заявки — не ищем вовсе.
  */
-async function findMeetingByRoster(
+async function findMeetingByRoom(
   groupId: string,
   body: ClaimBody,
-  myEmail: string | null,
+  callRoom: string | null,
   scopedKey: string,
   mayJoin: (row: RosterCandidate) => boolean,
 ): Promise<{ row: RosterCandidate; reason: string } | null> {
-  if (!body.started_at) return null;
+  if (!callRoom || !body.started_at) return null;
   const startMs = new Date(body.started_at).getTime();
   if (isNaN(startMs)) return null;
   const from = new Date(startMs - ROSTER_TOLERANCE_MIN * 60000).toISOString();
@@ -358,34 +366,17 @@ async function findMeetingByRoster(
     .from("meetings")
     .select(EXISTING_COLUMNS)
     .eq("group_id", groupId)
+    .eq("call_room", callRoom)
     .gte("started_at", from)
     .lte("started_at", to)
     .order("created_at", { ascending: true })
     .limit(20);
-  // Разные события календаря — разные встречи, состав тут ничего не решает (rosterMatchApplies).
-  const candidates = ((data ?? []) as RosterCandidate[]).filter((c) =>
-    c.identity_key !== scopedKey && rosterMatchApplies(body.identity_kind, c.identity_kind)
+  // Разные события календаря — разные встречи, даже если ссылка одна (rosterMatchApplies).
+  // Служебный агент не склеивается со встречей, в составе которой нет его человека (D016).
+  const found = ((data ?? []) as RosterCandidate[]).find((c) =>
+    c.identity_key !== scopedKey && rosterMatchApplies(body.identity_kind, c.identity_kind) && mayJoin(c)
   );
-  if (candidates.length === 0) return null;
-
-  const incoming = {
-    startedAt: body.started_at ?? null,
-    attendees: body.attendees ?? [],
-    ownerEmail: myEmail,
-  };
-  for (const c of candidates) {
-    // Служебный агент не склеивается со встречей, в составе которой нет его человека: иначе
-    // подставленный в тело состав открывал бы ему чужую встречу (D016).
-    if (!mayJoin(c)) continue;
-    const candEmail = await emailOfUser(c.claim_owner);
-    const verdict = sameMeetingByRoster(incoming, {
-      startedAt: c.started_at,
-      attendees: c.attendees ?? [],
-      ownerEmail: candEmail,
-    });
-    if (verdict.same) return { row: c, reason: verdict.reason };
-  }
-  return null;
+  return found ? { row: found, reason: callRoom } : null;
 }
 
 /**
@@ -782,6 +773,8 @@ Deno.serve(async (req: Request) => {
       .from("meetings")
       .insert({
         ...baseRow,
+        // Комната ручной встречи — чтобы запись по ссылке (room) склеилась с ней (по ссылке бота).
+        call_room: callRoomOfUrl(body.join_url),
         claim_owner: identity.telegramId,
         lease_expires_at: leaseIso,
       })
@@ -798,7 +791,7 @@ Deno.serve(async (req: Request) => {
     // calendar/room. Три пути, по возрастанию сложности:
     //   1) точный ключ — уникальный индекс meetings_identity_key_uq детерминированно разрешает гонку;
     //   2) та же встреча под ДРУГИМ ключом (участник с событием в календаре ⨯ участник по ссылке) —
-    //      сопоставление по времени и составу, иначе открывалась вторая встреча с отдельным аудио,
+    //      склейка по ссылке на звонок (call_room), иначе открывалась вторая встреча с отдельным аудио,
     //      отдельной транскрибацией и отдельным черновиком (issue #168);
     //   3) ничего не нашли — создаём новую.
     // Комнатный ключ сужаем до дня: у регулярной встречи ссылка одна на всю серию, а индекс
@@ -810,6 +803,7 @@ Deno.serve(async (req: Request) => {
       body.started_at ?? null,
     );
     const myEmail = await emailOfUser(identity.telegramId);
+    const callRoom = await callRoomOfClaim(body, identity.telegramId);
     const mayJoin = (
       row: {
         identity_key: string | null;
@@ -818,11 +812,11 @@ Deno.serve(async (req: Request) => {
       },
     ) => mayJoinExisting(identity, myEmail, row, scope);
 
-    // (2) до вставки: вдруг эта встреча уже открыта под другим ключом.
-    const joined = await findMeetingByRoster(
+    // (2) до вставки: вдруг эта встреча уже открыта под другим ключом — ищем по ссылке на звонок.
+    const joined = await findMeetingByRoom(
       identity.groupId,
       body,
-      myEmail,
+      callRoom,
       scopedKey,
       mayJoin,
     );
@@ -843,7 +837,7 @@ Deno.serve(async (req: Request) => {
       deferReason = res.deferReason;
       holderSeconds = res.heldSeconds;
       console.log(
-        `meeting-claim: склейка по составу ${meetingId} (${joined.reason}) — ключ ${scopedKey} присоединён к ${joined.row.identity_key}, решение ${decision}`,
+        `meeting-claim: склейка по ссылке ${meetingId} (${joined.reason}) — ключ ${scopedKey} присоединён к ${joined.row.identity_key}, решение ${decision}`,
       );
     } else {
       const { data: created, error: insErr } = await supabase
@@ -851,6 +845,7 @@ Deno.serve(async (req: Request) => {
         .insert({
           ...baseRow,
           identity_key: scopedKey,
+          call_room: callRoom,
           claim_owner: identity.telegramId,
           lease_expires_at: leaseIso,
         })
@@ -864,10 +859,10 @@ Deno.serve(async (req: Request) => {
         // Ищем ещё раз и, если нашлась строка, созданная РАНЬШЕ нашей, отдаём ей право, а свою
         // пустую (только что созданную, без транскрипта) убираем — иначе в базе останется дубль,
         // который потом придётся склеивать на публикации.
-        const rival = await findMeetingByRoster(
+        const rival = await findMeetingByRoom(
           identity.groupId,
           body,
-          myEmail,
+          callRoom,
           scopedKey,
           mayJoin,
         );

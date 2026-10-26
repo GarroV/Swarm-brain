@@ -2094,7 +2094,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 attendees: info.attendees.isEmpty ? nil : info.attendees,
                 agentVersion: "0.1.0",
                 micStartOffset: p.res.micStartOffset,
-                recordedSeconds: recordedSeconds
+                recordedSeconds: recordedSeconds,
+                joinUrl: info.joinURL?.absoluteString
             )
         } else {
             req = ClaimRequest(
