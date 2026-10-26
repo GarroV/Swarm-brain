@@ -37,8 +37,9 @@ export async function seedInviteGrant(
   seed: GrantSeed,
 ): Promise<{ token: string; inviteId: string; joinUrl: string }> {
   const now = Date.now();
-  const joinUrl = seed.joinUrl ??
-    `https://meet.google.com/grt-${crypto.randomUUID().slice(0, 8)}`;
+  // Код как у настоящего Meet (abc-defg-hij, только буквы): иначе сервер не узнает в ссылке
+  // комнату звонка и склейка по ссылке (call_room) в смоуке не сработает.
+  const joinUrl = seed.joinUrl ?? `https://meet.google.com/${meetCode()}`;
   const [invite] = await rest("POST", "meeting_invites", [{
     group_id: seed.groupId,
     invited_by: seed.telegramId,
@@ -162,4 +163,13 @@ export async function seedGrantForJob(
     expires_at: new Date(Date.now() + 60 * 60_000).toISOString(),
   }]);
   return token;
+}
+
+function meetCode(): string {
+  const letters = (n: number) =>
+    Array.from(
+      crypto.getRandomValues(new Uint8Array(n)),
+      (b) => String.fromCharCode(97 + (b % 26)),
+    ).join("");
+  return `${letters(3)}-${letters(4)}-${letters(3)}`;
 }
