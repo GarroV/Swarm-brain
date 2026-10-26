@@ -28,7 +28,7 @@ public enum BoardL10n {
 
     static let ru: [String: String] = [
         "board.title": "Сегодня",
-        "board.menu": "Доска «Сегодня»",
+        "board.menu": "Задачи и заметки",
         "app.quit": "Выйти из bumblebee",
         "board.pill.tip": "Доска «Сегодня»",
         "board.menu.widget": "Значок шмеля на экране",
@@ -99,7 +99,7 @@ public enum BoardL10n {
 
     static let en: [String: String] = [
         "board.title": "Today",
-        "board.menu": "Today board",
+        "board.menu": "Tasks and notes",
         "app.quit": "Quit bumblebee",
         "board.pill.tip": "Today board",
         "board.menu.widget": "Bumblebee icon on screen",

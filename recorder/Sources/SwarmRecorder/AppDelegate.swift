@@ -1012,10 +1012,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                         item.representedObject = m.key
                         menu.addItem(item)
                     }
-                    menu.addItem(NSMenuItem(title: "Не записывать", action: #selector(dismissMeetingTapped), keyEquivalent: ""))
                 } else if pendingMeeting != nil {
                     menu.addItem(NSMenuItem(title: "🔴 Записать встречу", action: #selector(recordMeetingTapped), keyEquivalent: "r"))
-                    menu.addItem(NSMenuItem(title: "Не записывать", action: #selector(dismissMeetingTapped), keyEquivalent: ""))
                 } else if callActive {
                     menu.addItem(NSMenuItem(title: "🔴 Записать звонок", action: #selector(recordCallTapped), keyEquivalent: "r"))
                     menu.addItem(NSMenuItem(title: "Не сейчас", action: #selector(dismissCallTapped), keyEquivalent: ""))
@@ -1033,12 +1031,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 let n = deferredMeetingIds.count
                 menu.addItem(NSMenuItem(title: "📦 Дослать мою запись\(n > 1 ? " (\(n))" : "")", action: #selector(resendDeferredTapped), keyEquivalent: ""))
             }
-            if let web = config?.webBaseURL, !web.isEmpty {
-                menu.addItem(NSMenuItem(title: "Открыть Рой", action: #selector(openWeb), keyEquivalent: ""))
-            }
-            // Доступно всегда: перевставить токен (напр. если протух → 401). Раньше пункт
-            // показывался только при отсутствии токена, и перевставить было неоткуда.
-            menu.addItem(NSMenuItem(title: "Обновить токен из буфера", action: #selector(pasteTokenTapped), keyEquivalent: ""))
+            // «Открыть Рой», «Обновить токен из буфера» и «Не записывать» убраны (владелец 26.10.2026):
+            // веб открывают закладкой, протухший токен лечится переустановкой, а «Не записывать»
+            // дублировал крестик капсулы. Вставка токена осталась там, где без неё не выйти:
+            // при протухшем токене и при первом запуске без токена.
         } else {
             menu.addItem(NSMenuItem(title: "Вставить токен из буфера", action: #selector(pasteTokenTapped), keyEquivalent: ""))
         }
@@ -1263,11 +1259,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         state = .idle
         rebuildMenu()
         beginRecording(identity: id)
-    }
-
-    @objc private func openWeb() {
-        guard let web = config?.webBaseURL, let url = URL(string: web) else { return }
-        NSWorkspace.shared.open(url)
     }
 
     // 401: подсказать получить новый токен из бота (команда /recordertoken), затем вставить.

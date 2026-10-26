@@ -83,11 +83,16 @@ final class BoardHub: NSObject {
         refresh()
     }
 
-    /// Пункты для меню статус-бара и меню приложения: «Доска «Сегодня»» и галочка «Значок шмеля на экране».
+    /// Пункты для меню статус-бара и меню приложения: «Задачи и заметки» и галочка «Значок шмеля на экране».
+    /// Язык — как у остального меню шмеля (оно пока только по-русски), а не язык системы, как у
+    /// панели: иначе в одном меню два языка (владелец 26.10.2026: «что такое Today board?»).
     func menuItems() -> [NSMenuItem] {
-        let open = NSMenuItem(title: text("board.menu"), action: #selector(menuOpenTapped), keyEquivalent: "")
+        let menuLang = "ru"
+        let open = NSMenuItem(title: BoardL10n.text("board.menu", lang: menuLang),
+                              action: #selector(menuOpenTapped), keyEquivalent: "")
         open.target = self
-        let widget = NSMenuItem(title: text("board.menu.widget"), action: #selector(menuWidgetTapped), keyEquivalent: "")
+        let widget = NSMenuItem(title: BoardL10n.text("board.menu.widget", lang: menuLang),
+                                action: #selector(menuWidgetTapped), keyEquivalent: "")
         widget.target = self
         widget.state = widgetShown ? .on : .off
         return [open, widget]
