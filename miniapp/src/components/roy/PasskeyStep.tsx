@@ -52,9 +52,15 @@ async function postJson(url: string, body: unknown): Promise<{ ok: boolean; data
 
 class StepFailed extends Error {}
 
+function previouslyRegistered(err: unknown): boolean {
+  if (!(err instanceof Error)) return false;
+  return (err as Error & { code?: string }).code === "ERROR_AUTHENTICATOR_PREVIOUSLY_REGISTERED"
+    || err.name === "InvalidStateError";
+}
+
 /** Один проход: вызов → окно устройства → проверка. Режим (create/get) выбирает сервер по ключам человека.
  *  Им же пользуется экран-замок SecondStepGate (шаг обязателен — внутрь без него не пускаем). */
-export async function runStep(): Promise<{ done: boolean; notice?: StepNotice }> {
+export async function runStep(retried = false): Promise<{ done: boolean; notice?: StepNotice }> {
   // Метка «ключ есть здесь» решает режим: без неё сервер всегда просит сохранить палец (create).
   const opts = await postJson("/api/auth/passkey/options", { here: readKey(HERE_KEY) === "1" });
   const mode = opts.data.mode as "create" | "get" | undefined;
@@ -67,7 +73,14 @@ export async function runStep(): Promise<{ done: boolean; notice?: StepNotice }>
     if (!res.ok) throw new StepFailed();
     writeKey(HERE_KEY, "1");
     return { done: true };
-  } catch {
+  } catch (err) {
+    // Метка потерялась, а ключ в этом браузере есть: браузер отказывается сохранять второй (excludeCredentials),
+    // и без этой ветки человек застревал навсегда — каждый заход снова create (26.10, коллега с двумя ключами).
+    // Ставим метку и сразу просим подтвердить; не вышло без жеста — следующий клик пойдёт как get.
+    if (mode === "create" && previouslyRegistered(err)) {
+      writeKey(HERE_KEY, "1");
+      return retried ? { done: false, notice: failureNotice("get") } : runStep(true);
+    }
     // Закрыли окно, нет ключа на устройстве, браузер не дал открыть без жеста, сервер отказал.
     // Подтверждение не вышло — метка устарела (ключ удалили): снимаем, следующий заход пойдёт как create.
     if (mode === "get") writeKey(HERE_KEY, null);

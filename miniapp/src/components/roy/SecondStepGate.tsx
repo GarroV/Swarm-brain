@@ -26,14 +26,13 @@ export function SecondStepGate({ me }: { me: Me }) {
     else setStage("failed");
   }
 
-  // Одна авто-попытка при открытии: в части браузеров окно без нажатия не откроется — тогда кнопка.
+  // Без авто-попытки: Safari не открывает окно без нажатия, сорванная попытка снимала метку «ключ здесь»,
+  // и следующий клик шёл как сохранение второго ключа — человек застревал (26.10). Только по кнопке.
   useEffect(() => {
     if (started.current) return;
     started.current = true;
-    if (!browserSupportsWebAuthn()) { setStage("unsupported"); return; }
-    void attempt();
-    // attempt читает только состояние на момент вызова: зависимость зациклила бы эффект.
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+    if (!browserSupportsWebAuthn()) setStage("unsupported");
+  }, []);
 
   const signOut = async () => { await logout(); window.location.href = "/login"; };
 
@@ -44,7 +43,7 @@ export function SecondStepGate({ me }: { me: Me }) {
         <p className="text-ink-soft" style={{ fontSize: 14, lineHeight: 1.5 }}>
           {stage === "unsupported"
             ? t("Этот браузер не умеет Touch ID. Откройте SWARM в Chrome или Safari.", "This browser doesn't support Touch ID. Open SWARM in Chrome or Safari.")
-            : t("Без второго шага SWARM не открывается. Приложите палец, когда браузер спросит.", "SWARM doesn't open without the second step. Use your fingerprint when the browser asks.")}
+            : t("Без второго шага SWARM не открывается. Нажмите кнопку и приложите палец.", "SWARM doesn't open without the second step. Press the button and use your fingerprint.")}
         </p>
         {stage === "failed" && (
           <p className="text-ink-mute" style={{ fontSize: 13 }}>{t("Не получилось. Нажмите ещё раз.", "That didn't work. Try again.")}</p>
