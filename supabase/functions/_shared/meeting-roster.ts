@@ -44,11 +44,11 @@ export type RosterSide = {
 export type RosterVerdict = {
   same: boolean;
   reason:
-    | "owner_in_roster"   // записавший одной стороны есть в списке участников другой
-    | "roster_overlap"    // сильное пересечение составов
-    | "no_time"           // время неизвестно — не сопоставляем
-    | "time_apart"        // встречи в разное время
-    | "no_signal";        // время близко, но подтверждения нет
+    | "owner_in_roster" // записавший одной стороны есть в списке участников другой
+    | "roster_overlap" // сильное пересечение составов
+    | "no_time" // время неизвестно — не сопоставляем
+    | "time_apart" // встречи в разное время
+    | "no_signal"; // время близко, но подтверждения нет
 };
 
 const norm = (s: string | null | undefined) => (s ?? "").trim().toLowerCase();
@@ -114,7 +114,7 @@ export function sameMeetingByRoster(inc: RosterSide, cand: RosterSide): RosterVe
 export function scopeRoomKey(kind: string, key: string, startedAt: string | null): string {
   if (kind !== "room") return key;
   const day = (startedAt ?? "").slice(0, 10);
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return key;   // времени нет — оставляем как есть
-  if (key.endsWith(`:${day}`)) return key;            // уже сужен (повторный claim той же записи)
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return key; // времени нет — оставляем как есть
+  if (key.endsWith(`:${day}`)) return key; // уже сужен (повторный claim той же записи)
   return `${key}:${day}`;
 }

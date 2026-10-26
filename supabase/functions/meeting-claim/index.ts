@@ -18,7 +18,12 @@ import { CHALLENGER_ROLE } from "../meeting-ingest/challenge.ts";
 import { boundClaimSeconds, type MeetingClock } from "./claim-clock.ts";
 import { AgentAuthError, type AgentIdentity, resolveActingIdentity } from "../_shared/agent-auth.ts";
 import { defaultMeetingTitle, displayNameOf, isDefaultMeetingTitle } from "../_shared/meeting-title.ts";
-import { ROSTER_TOLERANCE_MIN, rosterMatchApplies, sameMeetingByRoster, scopeRoomKey } from "../_shared/meeting-roster.ts";
+import {
+  ROSTER_TOLERANCE_MIN,
+  rosterMatchApplies,
+  sameMeetingByRoster,
+  scopeRoomKey,
+} from "../_shared/meeting-roster.ts";
 import { accessToken, listEvents } from "../_shared/google-calendar.ts";
 import {
   type AgentScope,
