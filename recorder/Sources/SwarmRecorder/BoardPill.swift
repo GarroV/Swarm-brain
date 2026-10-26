@@ -7,6 +7,8 @@ import RecorderKit
 // на сегодня (0 — без цифры). Клик открывает/закрывает доску.
 final class BoardPill {
     var onClick: (() -> Void)?
+    /// Значок перетащили: доска, развёрнутая из него, едет следом.
+    var onMoved: (() -> Void)?
 
     private static let size = NSSize(width: 44, height: 44)
     private static let originKey = "BoardPillOrigin"
@@ -18,6 +20,8 @@ final class BoardPill {
     private let view = PillView(frame: NSRect(origin: .zero, size: BoardPill.size))
 
     var isVisible: Bool { panel?.isVisible == true }
+    /// Где значок на экране — из этого угла разворачивается доска. nil — значок скрыт.
+    var frame: NSRect? { isVisible ? panel?.frame : nil }
 
     func setCount(_ n: Int) { view.count = n }
     func setTooltip(_ s: String) { view.toolTip = s }
@@ -44,7 +48,7 @@ final class BoardPill {
         p.isFloatingPanel = true
         p.contentView = view
         view.onClick = { [weak self] in self?.onClick?() }
-        view.onMoved = { [weak self] in self?.saveOrigin() }
+        view.onMoved = { [weak self] in self?.saveOrigin(); self?.onMoved?() }
         panel = p
     }
 
@@ -109,6 +113,7 @@ private final class PillView: NSView {
         if !dragged, hypot(dx, dy) < 3 { return }
         dragged = true
         window?.setFrameOrigin(NSPoint(x: downOrigin.x + dx, y: downOrigin.y + dy))
+        onMoved?()
     }
     override func mouseUp(with event: NSEvent) {
         if dragged { onMoved?() } else { onClick?() }

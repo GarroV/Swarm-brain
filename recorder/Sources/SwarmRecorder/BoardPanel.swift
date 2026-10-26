@@ -107,6 +107,15 @@ final class BoardPanel: NSObject, NSWindowDelegate {
     private var state: BoardViewState?
     private var lastConfigWidth: Int?
     private var programmaticFrame = false
+    /// Где значок шмеля: доска разворачивается из него и стоит рядом (решение владельца 26.10.2026).
+    /// nil — значок выключен в меню, доска — обычное окно на запомненном месте.
+    var anchor: (() -> NSRect?)?
+    private var morphing = false
+    private var rootLeading: NSLayoutConstraint!
+    private var rootTrailing: NSLayoutConstraint!
+    private var rootWidthLock: NSLayoutConstraint?
+    private static let morphSeconds: TimeInterval = 0.24
+    private static let anchorGap: CGFloat = 8
 
     // — вид —
     private let root = boardStack(.vertical)
@@ -183,11 +192,9 @@ final class BoardPanel: NSObject, NSWindowDelegate {
         arrange(.notesUnderTasks)
         guard let content = window.contentView else { return }
         content.addSubview(root)
-        NSLayoutConstraint.activate([
-            root.leadingAnchor.constraint(equalTo: content.leadingAnchor),
-            root.trailingAnchor.constraint(equalTo: content.trailingAnchor),
-            root.topAnchor.constraint(equalTo: content.topAnchor),
-        ])
+        rootLeading = root.leadingAnchor.constraint(equalTo: content.leadingAnchor)
+        rootTrailing = root.trailingAnchor.constraint(equalTo: content.trailingAnchor)
+        NSLayoutConstraint.activate([rootLeading, rootTrailing, root.topAnchor.constraint(equalTo: content.topAnchor)])
     }
 
     // MARK: окно
@@ -220,6 +227,9 @@ final class BoardPanel: NSObject, NSWindowDelegate {
     var isFrontmost: Bool { window.isVisible && window.isKeyWindow }
 
     func show(makeKey: Bool) {
+        let appearing = !window.isVisible
+        window.isMovableByWindowBackground = anchor?() == nil   // у значка доска стоит, двигают значок
+        if appearing, let pill = anchor?() { morphIn(from: pill) }
         if makeKey {
             NSApp.activate(ignoringOtherApps: true)
             window.makeKeyAndOrderFront(nil)
@@ -230,7 +240,110 @@ final class BoardPanel: NSObject, NSWindowDelegate {
 
     func hide() {
         notepad.flush()
-        window.orderOut(nil)
+        guard window.isVisible, !morphing, let pill = anchor?() else { window.orderOut(nil); return }
+        morphOut(into: pill)
+    }
+
+    /// Значок перетащили, пока доска открыта: доска встаёт к нему заново.
+    func followAnchor() {
+        guard window.isVisible, !morphing, let o = anchoredOrigin(size: window.frame.size) else { return }
+        programmaticFrame = true
+        window.setFrameOrigin(o)
+        programmaticFrame = false
+    }
+
+    // MARK: разворачивание из значка
+
+    /// Доска встаёт вплотную к значку, верхним краем вровень с ним, в сторону середины экрана.
+    private func anchoredOrigin(size: NSSize) -> NSPoint? {
+        guard let pill = anchor?() else { return nil }
+        let vf = NSScreen.screens.first(where: { $0.frame.intersects(pill) })?.visibleFrame
+            ?? NSScreen.main?.visibleFrame ?? pill
+        let x = growsLeft(pill, vf) ? pill.minX - Self.anchorGap - size.width : pill.maxX + Self.anchorGap
+        let y = pill.maxY - size.height
+        return NSPoint(x: min(max(x, vf.minX), max(vf.minX, vf.maxX - size.width)),
+                       y: min(max(y, vf.minY), max(vf.minY, vf.maxY - size.height)))
+    }
+
+    private func growsLeft(_ pill: NSRect, _ vf: NSRect) -> Bool { pill.midX > vf.midX }
+
+    /// Содержимое на время анимации — во всю конечную ширину, прижато к стороне значка: окно
+    /// растёт из угла и открывает его, а не пересобирает вёрстку на каждом кадре.
+    private func lockContent(width: CGFloat, toLeftEdge: Bool) {
+        rootWidthLock?.isActive = false
+        rootWidthLock = root.widthAnchor.constraint(equalToConstant: width)
+        rootWidthLock?.isActive = true
+        rootLeading.isActive = toLeftEdge
+        rootTrailing.isActive = !toLeftEdge
+    }
+
+    private func unlockContent() {
+        rootWidthLock?.isActive = false
+        rootWidthLock = nil
+        rootLeading.isActive = true
+        rootTrailing.isActive = true
+    }
+
+    /// Угол значка, из которого растёт окно: размер значка, у того угла итоговой рамки, что к значку.
+    private func seed(of final: NSRect, pill: NSRect) -> NSRect {
+        let vf = NSScreen.screens.first(where: { $0.frame.intersects(pill) })?.visibleFrame ?? final
+        let left = growsLeft(pill, vf)
+        return NSRect(x: left ? final.maxX - pill.width : final.minX, y: final.maxY - pill.height,
+                      width: pill.width, height: pill.height)
+    }
+
+    private func morphIn(from pill: NSRect) {
+        let final = window.frame
+        let vf = NSScreen.screens.first(where: { $0.frame.intersects(pill) })?.visibleFrame ?? final
+        morphing = true
+        lockContent(width: final.width, toLeftEdge: !growsLeft(pill, vf))
+        let savedMin = window.minSize
+        window.minSize = NSSize(width: 1, height: 1)
+        window.contentMinSize = NSSize(width: 1, height: 1)
+        programmaticFrame = true
+        window.alphaValue = 0
+        window.setFrame(seed(of: final, pill: pill), display: false)
+        NSAnimationContext.runAnimationGroup({ ctx in
+            ctx.duration = Self.morphSeconds
+            ctx.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            window.animator().setFrame(final, display: true)
+            window.animator().alphaValue = 1
+        }, completionHandler: { [weak self] in
+            guard let self else { return }
+            self.window.setFrame(final, display: true)
+            self.window.alphaValue = 1
+            self.window.minSize = savedMin
+            self.unlockContent()
+            self.programmaticFrame = false
+            self.morphing = false
+            self.fit()
+        })
+    }
+
+    private func morphOut(into pill: NSRect) {
+        let final = window.frame
+        let vf = NSScreen.screens.first(where: { $0.frame.intersects(pill) })?.visibleFrame ?? final
+        morphing = true
+        lockContent(width: final.width, toLeftEdge: !growsLeft(pill, vf))
+        let savedMin = window.minSize
+        window.minSize = NSSize(width: 1, height: 1)
+        window.contentMinSize = NSSize(width: 1, height: 1)
+        programmaticFrame = true
+        NSAnimationContext.runAnimationGroup({ ctx in
+            ctx.duration = Self.morphSeconds * 0.8
+            ctx.timingFunction = CAMediaTimingFunction(name: .easeIn)
+            window.animator().setFrame(seed(of: final, pill: pill), display: true)
+            window.animator().alphaValue = 0
+        }, completionHandler: { [weak self] in
+            guard let self else { return }
+            self.window.orderOut(nil)
+            self.window.setFrame(final, display: false)
+            self.window.alphaValue = 1
+            self.window.minSize = savedMin
+            self.unlockContent()
+            self.programmaticFrame = false
+            self.morphing = false
+        })
     }
 
     func focusFormTitle() { window.makeFirstResponder(formTitle) }
@@ -243,7 +356,7 @@ final class BoardPanel: NSObject, NSWindowDelegate {
     }
 
     func windowDidMove(_ notification: Notification) {
-        guard !programmaticFrame else { return }
+        guard !programmaticFrame, anchor?() == nil else { return }
         UserDefaults.standard.set(NSStringFromPoint(NSPoint(x: window.frame.minX, y: window.frame.maxY)), forKey: Self.originKey)
     }
 
@@ -265,7 +378,7 @@ final class BoardPanel: NSObject, NSWindowDelegate {
 
     /// Подгоняет высоту окна под содержимое (ширину задаёт человек), верхний левый угол не двигается.
     private func fit() {
-        guard let state else { return }
+        guard let state, !morphing else { return }
         root.layoutSubtreeIfNeeded()
         let height = ceil(root.fittingSize.height)
         let width = targetWidth(config: state.config)
@@ -275,8 +388,13 @@ final class BoardPanel: NSObject, NSWindowDelegate {
         // Человек тянул ширину — она его; иначе ширину ведёт сервер (`panel_width`) и правка доезжает без сборки.
         let serverChangedWidth = savedWidth == nil && lastConfigWidth != state.config.panelWidth
         let newWidth = window.isVisible && !serverChangedWidth ? current.width : frameSize.width
+        let size = NSSize(width: newWidth, height: frameSize.height)
         var origin = NSPoint(x: current.minX, y: current.maxY - frameSize.height)
-        if !window.isVisible { origin = startOrigin(size: NSSize(width: newWidth, height: frameSize.height)) }
+        if let anchored = anchoredOrigin(size: size) {
+            origin = anchored   // у значка: угол к значку держится, растёт в сторону от него
+        } else if !window.isVisible {
+            origin = startOrigin(size: size)
+        }
         programmaticFrame = true
         window.contentMinSize = NSSize(width: Self.minWidth, height: height)
         window.contentMaxSize = NSSize(width: Self.maxWidth, height: height)

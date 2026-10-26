@@ -72,8 +72,10 @@ final class BoardHub: NSObject {
         hotKey.onPress = { [weak self] in self?.hotKeyPressed() }
         hotKey.register()
         pill.onClick = { [weak self] in self?.togglePanel() }
+        pill.onMoved = { [weak self] in self?.panel?.followAnchor() }
         pill.setTooltip(text("board.pill.tip"))
-        pill.show()   // значок не убирается (решение владельца 23.10.2026)
+        // Значок можно выключить в меню шмеля (решение владельца 26.10.2026, заменило «неубираемый»).
+        if widgetShown { pill.show() }
         pillTimer = Timer.scheduledTimer(withTimeInterval: Self.pillRefreshSeconds, repeats: true) { [weak self] _ in
             guard let self, self.panel?.isVisible != true else { return }
             self.refresh()
@@ -81,11 +83,27 @@ final class BoardHub: NSObject {
         refresh()
     }
 
-    /// Пункт для меню статус-бара и меню приложения: «Доска «Сегодня»».
+    /// Пункты для меню статус-бара и меню приложения: «Доска «Сегодня»» и галочка «Значок шмеля на экране».
     func menuItems() -> [NSMenuItem] {
         let open = NSMenuItem(title: text("board.menu"), action: #selector(menuOpenTapped), keyEquivalent: "")
         open.target = self
-        return [open]
+        let widget = NSMenuItem(title: text("board.menu.widget"), action: #selector(menuWidgetTapped), keyEquivalent: "")
+        widget.target = self
+        widget.state = widgetShown ? .on : .off
+        return [open, widget]
+    }
+
+    static let widgetShownKey = "BoardWidgetShown"
+    private var widgetShown: Bool {
+        get { UserDefaults.standard.object(forKey: Self.widgetShownKey) as? Bool ?? true }
+        set { UserDefaults.standard.set(newValue, forKey: Self.widgetShownKey) }
+    }
+
+    @objc private func menuWidgetTapped(_ sender: NSMenuItem) {
+        widgetShown.toggle()
+        sender.state = widgetShown ? .on : .off
+        closePanel()
+        if widgetShown { pill.show() } else { pill.hide() }
     }
 
     @objc private func menuOpenTapped() { open() }
@@ -98,6 +116,7 @@ final class BoardHub: NSObject {
     private func ensurePanel() -> BoardPanel {
         if let panel { return panel }
         let p = BoardPanel(lang: lang, config: snapshot?.config ?? .defaults)
+        p.anchor = { [weak self] in self?.pill.frame }
         p.onClose = { [weak self] in self?.closePanel() }
         p.onVoiceToggle = { [weak self] in self?.voiceToggle() }
         p.onVoiceCancel = { [weak self] in self?.cancelVoice() }
