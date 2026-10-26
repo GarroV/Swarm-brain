@@ -39,21 +39,20 @@ Deno.test("календарь с комнатой и внешней систем
   assertEquals(rosterMatchApplies("calendar", null), true);
 });
 
-Deno.test("по ссылке клеит только участника: записавший одной стороны есть в составе другой", () => {
+Deno.test("по ссылке клеит участника: его e-mail есть в составе найденной встречи", () => {
   const cal = { ownerEmail: "v.garro@dodobrands.io", attendees: [{ email: "I.Ravilova@dodobrands.io" }] };
-  const room = { ownerEmail: "i.ravilova@dodobrands.io", attendees: [] };
-  assertEquals(mayGlueByRoom(room, cal), true);
-  assertEquals(mayGlueByRoom(cal, room), true);
+  assertEquals(mayGlueByRoom("i.ravilova@dodobrands.io", cal), true);
 });
 
 Deno.test("по ссылке не клеит постороннего, знающего ссылку", () => {
   const cal = { ownerEmail: "v.garro@dodobrands.io", attendees: [{ email: "i.ravilova@dodobrands.io" }] };
-  const stranger = { ownerEmail: "x@dodobrands.io", attendees: [] };
-  assertEquals(mayGlueByRoom(stranger, cal), false);
-  assertEquals(mayGlueByRoom({ ownerEmail: null, attendees: [] }, { ownerEmail: null, attendees: [] }), false);
+  assertEquals(mayGlueByRoom("x@dodobrands.io", cal), false);
+  assertEquals(mayGlueByRoom(null, cal), false);
 });
 
-Deno.test("по ссылке клеит две записи одного человека", () => {
-  const a = { ownerEmail: "v.garro@dodobrands.io", attendees: [] };
-  assertEquals(mayGlueByRoom(a, { ownerEmail: "V.Garro@dodobrands.io", attendees: null }), true);
+Deno.test("по ссылке не клеит к встрече без состава чужого человека", () => {
+  // Запись из комнаты состава не знает: встать в неё может только её же владелец.
+  const room = { ownerEmail: "i.ravilova@dodobrands.io", attendees: [] };
+  assertEquals(mayGlueByRoom("v.garro@dodobrands.io", room), false);
+  assertEquals(mayGlueByRoom("I.Ravilova@dodobrands.io", room), true);
 });

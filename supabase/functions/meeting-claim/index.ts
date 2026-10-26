@@ -381,10 +381,7 @@ async function findMeetingByRoom(
   for (const c of candidates) {
     const candEmail = await emailOfUser(c.claim_owner);
     if (
-      mayGlueByRoom(
-        { ownerEmail: myEmail, attendees: body.attendees ?? [] },
-        { ownerEmail: candEmail, attendees: c.attendees },
-      )
+      mayGlueByRoom(myEmail, { ownerEmail: candEmail, attendees: c.attendees })
     ) return { row: c, reason: callRoom };
   }
   return null;

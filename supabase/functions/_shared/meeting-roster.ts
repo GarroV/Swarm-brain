@@ -33,16 +33,16 @@ const norm = (e: string | null | undefined) => (e ?? "").trim().toLowerCase();
 
 /**
  * Ссылка решает, ЧТО это за встреча, а этот шаг — ВПРАВЕ ли заявитель в неё встать: ссылку можно
- * знать, не будучи участником. Пускаем, если записавший одной стороны есть в составе другой или
- * это один и тот же человек. Состав без записавшего (комната, ручная запись) пускает только с той
- * стороны, где состав есть.
+ * знать, не будучи участником. Опираемся только на то, что лежит на сервере: e-mail заявителя
+ * (из его учётной записи) есть в составе найденной встречи, или это его же встреча. Состав из тела
+ * заявки не учитываем — его присылает клиент. Цена: календарная заявка, пришедшая ПОСЛЕ записи
+ * из комнаты (у той состава нет), не склеится и откроет свою встречу — дубль лучше чужого доступа.
  */
-export function mayGlueByRoom(inc: ParticipantSide, cand: ParticipantSide): boolean {
-  const incOwner = norm(inc.ownerEmail), candOwner = norm(cand.ownerEmail);
-  if (incOwner && incOwner === candOwner) return true;
-  const has = (list: Attendee[] | null, email: string) =>
-    email !== "" && (list ?? []).some((a) => norm(a.email) === email);
-  return has(cand.attendees, incOwner) || has(inc.attendees, candOwner);
+export function mayGlueByRoom(myEmail: string | null, cand: ParticipantSide): boolean {
+  const me = norm(myEmail);
+  if (me === "") return false;
+  if (me === norm(cand.ownerEmail)) return true;
+  return (cand.attendees ?? []).some((a) => norm(a.email) === me);
 }
 
 /** Окно по времени для склейки по ссылке: рекордер стартует не ровно в :00, а личные комнаты переиспользуют подряд. */
