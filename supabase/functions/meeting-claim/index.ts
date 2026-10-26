@@ -18,7 +18,7 @@ import { CHALLENGER_ROLE } from "../meeting-ingest/challenge.ts";
 import { boundClaimSeconds, type MeetingClock } from "./claim-clock.ts";
 import { AgentAuthError, type AgentIdentity, resolveActingIdentity } from "../_shared/agent-auth.ts";
 import { defaultMeetingTitle, displayNameOf, isDefaultMeetingTitle } from "../_shared/meeting-title.ts";
-import { ROSTER_TOLERANCE_MIN, rosterMatchApplies, scopeRoomKey } from "../_shared/meeting-roster.ts";
+import { mayGlueByRoom, ROSTER_TOLERANCE_MIN, rosterMatchApplies, scopeRoomKey } from "../_shared/meeting-roster.ts";
 import { callRoomOfKey, callRoomOfUrl } from "../_shared/call-room.ts";
 import { accessToken, listEvents } from "../_shared/google-calendar.ts";
 import {
@@ -353,6 +353,7 @@ async function findMeetingByRoom(
   groupId: string,
   body: ClaimBody,
   callRoom: string | null,
+  myEmail: string | null,
   scopedKey: string,
   mayJoin: (row: RosterCandidate) => boolean,
 ): Promise<{ row: RosterCandidate; reason: string } | null> {
@@ -373,10 +374,20 @@ async function findMeetingByRoom(
     .limit(20);
   // Разные события календаря — разные встречи, даже если ссылка одна (rosterMatchApplies).
   // Служебный агент не склеивается со встречей, в составе которой нет его человека (D016).
-  const found = ((data ?? []) as RosterCandidate[]).find((c) =>
+  // Ссылку можно знать, не будучи участником: встаём, только если заявитель причастен (mayGlueByRoom).
+  const candidates = ((data ?? []) as RosterCandidate[]).filter((c) =>
     c.identity_key !== scopedKey && rosterMatchApplies(body.identity_kind, c.identity_kind) && mayJoin(c)
   );
-  return found ? { row: found, reason: callRoom } : null;
+  for (const c of candidates) {
+    const candEmail = await emailOfUser(c.claim_owner);
+    if (
+      mayGlueByRoom(
+        { ownerEmail: myEmail, attendees: body.attendees ?? [] },
+        { ownerEmail: candEmail, attendees: c.attendees },
+      )
+    ) return { row: c, reason: callRoom };
+  }
+  return null;
 }
 
 /**
@@ -773,8 +784,9 @@ Deno.serve(async (req: Request) => {
       .from("meetings")
       .insert({
         ...baseRow,
-        // Комната ручной встречи — чтобы запись по ссылке (room) склеилась с ней (по ссылке бота).
-        call_room: callRoomOfUrl(body.join_url),
+        // Комната ручной встречи — только по приглашению: там join_url сверен с приглашением
+        // (agent-scope). Ссылку из тела без приглашения не храним — по ней клеились бы чужие записи.
+        call_room: inviteId ? callRoomOfUrl(body.join_url) : null,
         claim_owner: identity.telegramId,
         lease_expires_at: leaseIso,
       })
@@ -817,6 +829,7 @@ Deno.serve(async (req: Request) => {
       identity.groupId,
       body,
       callRoom,
+      myEmail,
       scopedKey,
       mayJoin,
     );
@@ -863,6 +876,7 @@ Deno.serve(async (req: Request) => {
           identity.groupId,
           body,
           callRoom,
+          myEmail,
           scopedKey,
           mayJoin,
         );

@@ -24,6 +24,27 @@ export function rosterMatchApplies(incomingKind: string | null, candidateKind: s
   return !(incomingKind === "calendar" && candidateKind === "calendar");
 }
 
+export type Attendee = { name?: string; email?: string };
+
+/** Сторона склейки: кто её записал (claim_owner / заявитель) и кого она видит в составе. */
+export type ParticipantSide = { ownerEmail: string | null; attendees: Attendee[] | null };
+
+const norm = (e: string | null | undefined) => (e ?? "").trim().toLowerCase();
+
+/**
+ * Ссылка решает, ЧТО это за встреча, а этот шаг — ВПРАВЕ ли заявитель в неё встать: ссылку можно
+ * знать, не будучи участником. Пускаем, если записавший одной стороны есть в составе другой или
+ * это один и тот же человек. Состав без записавшего (комната, ручная запись) пускает только с той
+ * стороны, где состав есть.
+ */
+export function mayGlueByRoom(inc: ParticipantSide, cand: ParticipantSide): boolean {
+  const incOwner = norm(inc.ownerEmail), candOwner = norm(cand.ownerEmail);
+  if (incOwner && incOwner === candOwner) return true;
+  const has = (list: Attendee[] | null, email: string) =>
+    email !== "" && (list ?? []).some((a) => norm(a.email) === email);
+  return has(cand.attendees, incOwner) || has(inc.attendees, candOwner);
+}
+
 /** Окно по времени для склейки по ссылке: рекордер стартует не ровно в :00, а личные комнаты переиспользуют подряд. */
 export const ROSTER_TOLERANCE_MIN = 10;
 

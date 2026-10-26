@@ -1,7 +1,7 @@
 // Тесты правил склейки встреч для claim (issues #168, #181).
 // Запуск: deno test supabase/functions/_shared/meeting-roster.test.ts
 import { assertEquals } from "jsr:@std/assert@1";
-import { rosterMatchApplies, scopeRoomKey } from "./meeting-roster.ts";
+import { mayGlueByRoom, rosterMatchApplies, scopeRoomKey } from "./meeting-roster.ts";
 
 // ── Ключ комнаты сужается до дня (issue #181) ──────────────────────────────────
 
@@ -37,4 +37,23 @@ Deno.test("календарь с комнатой и внешней систем
   assertEquals(rosterMatchApplies("calendar", "external"), true);
   assertEquals(rosterMatchApplies("room", "room"), true);
   assertEquals(rosterMatchApplies("calendar", null), true);
+});
+
+Deno.test("по ссылке клеит только участника: записавший одной стороны есть в составе другой", () => {
+  const cal = { ownerEmail: "v.garro@dodobrands.io", attendees: [{ email: "I.Ravilova@dodobrands.io" }] };
+  const room = { ownerEmail: "i.ravilova@dodobrands.io", attendees: [] };
+  assertEquals(mayGlueByRoom(room, cal), true);
+  assertEquals(mayGlueByRoom(cal, room), true);
+});
+
+Deno.test("по ссылке не клеит постороннего, знающего ссылку", () => {
+  const cal = { ownerEmail: "v.garro@dodobrands.io", attendees: [{ email: "i.ravilova@dodobrands.io" }] };
+  const stranger = { ownerEmail: "x@dodobrands.io", attendees: [] };
+  assertEquals(mayGlueByRoom(stranger, cal), false);
+  assertEquals(mayGlueByRoom({ ownerEmail: null, attendees: [] }, { ownerEmail: null, attendees: [] }), false);
+});
+
+Deno.test("по ссылке клеит две записи одного человека", () => {
+  const a = { ownerEmail: "v.garro@dodobrands.io", attendees: [] };
+  assertEquals(mayGlueByRoom(a, { ownerEmail: "V.Garro@dodobrands.io", attendees: null }), true);
 });
