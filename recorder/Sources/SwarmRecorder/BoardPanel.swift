@@ -180,7 +180,7 @@ final class BoardPanel: NSObject, NSWindowDelegate {
         for v in [messageRow, voiceWrap, toastWrap, formWrap] { v.isHidden = true }
         let divider = boardDivider(vertical: false)
         for v in [headerBar!, divider, messageRow, voiceWrap, toastWrap, formWrap, body] { root.addArrangedSubview(v) }
-        arrange(.stacked)
+        arrange(.notesUnderTasks)
         guard let content = window.contentView else { return }
         content.addSubview(root)
         NSLayoutConstraint.activate([
@@ -428,43 +428,36 @@ final class BoardPanel: NSObject, NSWindowDelegate {
         }
         for v in body.arrangedSubviews { body.removeArrangedSubview(v); v.removeFromSuperview() }
         for v in [tasksCol, meetingsCol, notepad.view, columnsDivider] { v.removeFromSuperview() }
+        meetingsWidth.isActive = false
+        meetingsSeparator = nil
         switch a {
-        case .stacked:
-            meetingsWidth.isActive = true
-            let cols = boardStack(.horizontal, views: [tasksCol, columnsDivider, meetingsCol])
-            cols.alignment = .top
-            let minHeight = cols.heightAnchor.constraint(greaterThanOrEqualToConstant: 80)
-            minHeight.priority = .defaultHigh
-            minHeight.isActive = true
-            columnsDivider.heightAnchor.constraint(equalTo: cols.heightAnchor).isActive = true
-            let line = boardDivider(vertical: false)
-            meetingsSeparator = nil
-            for v in [cols, line, notepad.view] { body.addArrangedSubview(v) }
-        case .tasksColumn:
-            sideBySide(main: tasksCol, top: meetingsCol, bottom: notepad.view)
-        case .notesColumn:
-            sideBySide(main: notepad.view, top: tasksCol, bottom: meetingsCol)
+        case .tasksOnly:
+            notepad.setFillsColumn(false)
+            for v in [tasksCol, boardDivider(vertical: false), notepad.view] { body.addArrangedSubview(v) }
+        case .notesUnderTasks:
+            twoColumns(left: [tasksCol, boardDivider(vertical: false), notepad.view], right: [meetingsCol], notesLeft: true)
+        case .notesUnderMeetings:
+            twoColumns(left: [tasksCol], right: [meetingsCol, boardDivider(vertical: false), notepad.view], notesLeft: false)
         }
     }
 
-    /// Длинный столбец слева, справа два блока друг под другом.
-    private func sideBySide(main: NSView, top: NSView, bottom: NSView) {
-        meetingsWidth.isActive = false
-        let line = boardDivider(vertical: false)
-        meetingsSeparator = line
-        let right = boardStack(.vertical, views: [top, line, bottom])
-        let row = boardStack(.horizontal, views: [main, columnsDivider, right])
+    /// Задачи слева, встречи справа, пополам; блокнот в своём столбце тянется до низа доски.
+    private func twoColumns(left: [NSView], right: [NSView], notesLeft: Bool) {
+        notepad.setFillsColumn(true)
+        let l = boardStack(.vertical, views: left)
+        let r = boardStack(.vertical, views: right)
+        let row = boardStack(.horizontal, views: [l, columnsDivider, r])
         row.alignment = .top
-        main.setContentHuggingPriority(.defaultLow, for: .horizontal)
         NSLayoutConstraint.activate([
-            right.widthAnchor.constraint(equalTo: row.widthAnchor, multiplier: Self.sideShare),
+            r.widthAnchor.constraint(equalTo: row.widthAnchor, multiplier: Self.sideShare),
             columnsDivider.heightAnchor.constraint(equalTo: row.heightAnchor),
+            (notesLeft ? l : r).heightAnchor.constraint(equalTo: row.heightAnchor),
         ])
         body.addArrangedSubview(row)
     }
 
-    /// Доля ширины правого столбца при раскладке столбцом.
-    private static let sideShare: CGFloat = 0.46
+    /// Доля ширины правого столбца (встречи): пополам с задачами.
+    private static let sideShare: CGFloat = 0.5
 
     private func pin(_ v: NSView, in container: NSView) {
         NSLayoutConstraint.activate([
@@ -508,8 +501,7 @@ final class BoardPanel: NSObject, NSWindowDelegate {
         }
         meetingsCol.isHidden = !s.showMeetings
         meetingsSeparator?.isHidden = !s.showMeetings
-        // Вертикальная линия при раскладке столбцом отделяет столбцы, а не встречи — она нужна всегда.
-        columnsDivider.isHidden = arrangement == .stacked && !s.showMeetings
+        columnsDivider.isHidden = !s.showMeetings
         fit()
     }
 
@@ -643,16 +635,22 @@ final class BoardPanel: NSObject, NSWindowDelegate {
         let check = CheckBoxButton(target: self, action: #selector(checkTapped(_:)))
         check.identifier = NSUserInterfaceItemIdentifier(task.id)
         check.isStruck = struck
-        let label = boardLabel("", size: 13, color: struck ? BoardTheme.ink3 : BoardTheme.ink)
+        // Название целиком, в две строки — обрезанное в одну не читалось (владелец 26.10.2026).
+        let label = FitWidthLabel(wrappingLabelWithString: "")
+        label.maximumNumberOfLines = 2
+        label.lineBreakMode = .byTruncatingTail
+        label.cell?.truncatesLastVisibleLine = true
+        label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         label.attributedStringValue = NSAttributedString(string: task.title, attributes: [
             .font: BoardTheme.font(13),
             .foregroundColor: struck ? BoardTheme.ink3 : BoardTheme.ink,
             .strikethroughStyle: struck ? NSUnderlineStyle.single.rawValue : 0,
         ])
         label.toolTip = task.title
-        let row = boardStack(.horizontal, spacing: 10, insets: NSEdgeInsets(top: 0, left: 14, bottom: 0, right: 14),
+        let row = boardStack(.horizontal, spacing: 10, insets: NSEdgeInsets(top: 5, left: 14, bottom: 5, right: 14),
                              views: [check, label])
-        row.heightAnchor.constraint(equalToConstant: Self.rowHeight).isActive = true
+        row.alignment = .centerY
+        row.heightAnchor.constraint(greaterThanOrEqualToConstant: Self.rowHeight).isActive = true
         return row
     }
 
@@ -762,4 +760,16 @@ final class BoardPanel: NSObject, NSWindowDelegate {
     }
 
     @objc private func meetingsToggled() { onMeetingsToggle?(!(state?.showMeetings ?? true)) }
+}
+
+/// Многострочная подпись, которая сама узнаёт свою ширину: высота по переносу без заранее
+/// известной ширины столбца.
+final class FitWidthLabel: NSTextField {
+    override func layout() {
+        super.layout()
+        if abs(preferredMaxLayoutWidth - bounds.width) > 0.5 {
+            preferredMaxLayoutWidth = bounds.width
+            invalidateIntrinsicContentSize()
+        }
+    }
 }

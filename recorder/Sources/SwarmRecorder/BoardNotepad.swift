@@ -33,6 +33,8 @@ final class BoardNotepad: NSObject, NoteLineHost, NoteTableHost {
     private let document = NotepadDocument()
     private let scroll = NSScrollView()
     private var padHeight: NSLayoutConstraint!
+    /// Столбцом слева блокнот тянется на всю высоту доски, но не ниже заданной высоты.
+    private var padMinHeight: NSLayoutConstraint!
     private var lastFocused = 0
 
     // Шапка как у «Заметок»: капсула значков, корзина, под ними дата последней правки и замок
@@ -97,6 +99,9 @@ final class BoardNotepad: NSObject, NoteLineHost, NoteTableHost {
         document.onClickBelow = { [weak self] in self?.clickBelow() }
         scroll.documentView = document
         scroll.hasVerticalScroller = true
+        // При «показывать полосы прокрутки всегда» macOS подменяет overlay на дорожку — без
+        // автоскрытия у короткого блокнота висела пустая полоса справа (владелец 26.10.2026).
+        scroll.autohidesScrollers = true
         scroll.drawsBackground = false
         scroll.borderType = .noBorder
         scroll.scrollerStyle = .overlay
@@ -114,6 +119,8 @@ final class BoardNotepad: NSObject, NoteLineHost, NoteTableHost {
         ])
         padHeight = scroll.heightAnchor.constraint(equalToConstant: height)
         padHeight.isActive = true
+        padMinHeight = scroll.heightAnchor.constraint(greaterThanOrEqualToConstant: height)
+        scroll.setContentHuggingPriority(.init(1), for: .vertical)
 
         thesisBtn = tool("list.bullet", #selector(thesisTapped))
         checkBtn = tool("checklist", #selector(checkTapped))
@@ -174,7 +181,13 @@ final class BoardNotepad: NSObject, NoteLineHost, NoteTableHost {
         return b
     }
 
-    func setHeight(_ h: CGFloat) { padHeight.constant = h }
+    func setHeight(_ h: CGFloat) { padHeight.constant = h; padMinHeight.constant = h }
+
+    /// Блокнот столбцом: высота — по колонке, а не фиксированная.
+    func setFillsColumn(_ fills: Bool) {
+        padHeight.isActive = !fills
+        padMinHeight.isActive = fills
+    }
 
     func relabel() {
         thesisBtn.toolTip = t("notes.thesis")
