@@ -18,6 +18,8 @@ import { useDt } from "@/components/roy/nav";
 // исполнителя + название»; период длиннее — месячная сетка, из дня проваливаемся в его неделю.
 // Всё, что не влезло в показанные дни, называется числом в подписи.
 
+// «Сегодня» — залитая плашка: светлый синий текст не видно (владелец 26.10.2026).
+const TODAY_BADGE = "rounded-[5px] bg-primary px-1 text-primary-foreground";
 const DOW: [string, string][] = [["вс", "Sun"], ["пн", "Mon"], ["вт", "Tue"], ["ср", "Wed"], ["чт", "Thu"], ["пт", "Fri"], ["сб", "Sat"]];
 
 function dayOf(iso: string): Date {
@@ -65,7 +67,7 @@ export function TaskCalendar({ tasks, range, now, users, onOpen }: {
   };
   const dayHead = (d: string) => {
     const wd = dayOf(d).getDay();
-    return <b className={cn(d === today ? "text-primary" : "text-ink")}>{dt(DOW[wd][0], DOW[wd][1])} {dayOf(d).getDate()}</b>;
+    return <b className={cn(d === today ? TODAY_BADGE : "text-ink")}>{dt(DOW[wd][0], DOW[wd][1])} {dayOf(d).getDate()}</b>;
   };
   const column = (key: string, head: React.ReactNode, items: Task[], cls?: string) => (
     <div key={key} className={cn("flex min-w-0 flex-1 flex-col border-r border-line last:border-r-0", cls)}>
@@ -143,7 +145,7 @@ function MonthGrid({ days, layout, today, card, onDrill }: {
                   aria-label={dt(`Открыть неделю ${iso}`, `Open the week of ${iso}`)}
                   className="flex items-center justify-between rounded-[5px] px-1 text-left transition-colors enabled:hover:bg-surface-2"
                   style={{ fontSize: 12 }}>
-                  <b className={cn(iso === today ? "text-primary" : "text-ink")}>{dayOf(iso).getDate()}</b>
+                  <b className={cn(iso === today ? TODAY_BADGE : "text-ink")}>{dayOf(iso).getDate()}</b>
                   {items.length > 0 && <span className="font-mono text-ink-mute" style={{ fontSize: 11 }}>{items.length}</span>}
                 </button>
                 {items.slice(0, CELL_MAX).map((t) => card(t, true))}
