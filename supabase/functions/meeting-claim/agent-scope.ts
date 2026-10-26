@@ -32,6 +32,8 @@ import { CALENDAR_KEY, calendarKeyOf } from "../_shared/calendar-key.ts";
 import { acceptedBySelf } from "../_shared/calendar-attendance.ts";
 import { checkInviteForClaim, type InviteRow } from "../_shared/meeting-invite.ts";
 import { assertGrantClaim, GrantScopeError } from "../_shared/agent-grant.ts";
+import { callRoomOfUrl } from "../_shared/call-room.ts";
+import { conferenceCall } from "../meeting-current/join-link.ts";
 
 // Сборка календарного ключа — общая с meeting-current (_shared/calendar-key.ts); наружу
 // отдаётся и отсюда, чтобы у сверки и её тестов была одна точка входа.
@@ -116,6 +118,30 @@ async function loadCalendar(source: CalendarSource, telegramId: number, date: st
     MAX_EVENTS,
   );
   return events ? { events } : { failure: "unavailable" };
+}
+
+/**
+ * Комната звонка календарной встречи человека — для склейки по ссылке (meeting-claim), когда
+ * клиент не прислал join_url. Best-effort: любая неудача (нет календаря, токен, событие не нашлось,
+ * нет ссылки) — null, claim из-за этого не падает.
+ */
+export async function calendarCallRoom(
+  source: CalendarSource,
+  telegramId: number,
+  key: string,
+): Promise<string | null> {
+  try {
+    const date = DATE_SUFFIX.exec(key)?.[1];
+    if (!date) return null;
+    const loaded = await loadCalendar(source, telegramId, date);
+    if ("failure" in loaded) return null;
+    const event = loaded.events.find((ev) => calendarKeyOf(ev) === key);
+    const call = event ? conferenceCall(event) : null;
+    return call ? callRoomOfUrl(call.join_url) : null;
+  } catch (e) {
+    console.warn(`agent-scope: комната звонка ${key} не определена: ${e instanceof Error ? e.message : e}`);
+    return null;
+  }
 }
 
 function keysOf(events: GEvent[]): Set<string> {

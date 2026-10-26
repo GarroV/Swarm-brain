@@ -13,6 +13,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     private var statusItem: NSStatusItem!
     private let recorder = AudioRecorder()
     private let widget = RecorderWidget()
+    // Доска «Сегодня» (Bumblebee): свои файлы Board*.swift; путь записи встреч она не использует.
+    private lazy var board = BoardHub(config: { [weak self] in self?.configError == nil ? self?.config : nil })
 
     private var config: SwarmConfig?
     private var configError: String?
@@ -105,11 +107,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     private var presenceSent: PresenceBeacon.State?
     private var presenceSentAt: Date?
     private var callDismissedUntil: Date?
+    // Напоминание «Звонок идёт, но не записывается» (CallNudge, решение владельца 26.10.2026):
+    // когда начался текущий звонок (микрофон занят созвоном) и напоминали ли уже за этот звонок.
+    private var callStartedAt: Date?
+    private var callNudged = false
+    private static let nudgeCategory = "call-nudge"
+    private static let nudgeRecordAction = "call-nudge-record"
     // Последняя календарная встреча от сервера и когда она получена. Нужна, чтобы ручной старт
     // («Записать» в меню, ответ на подсказку о звонке) привязывался к идущей встрече, а не писал
     // её как manual мимо склейки с коллегами (решение владельца 18.09.2026, issue #379).
     // Живёт отдельно от pendingMeeting: то — предложение в капсуле, его можно закрыть крестиком.
-    private var lastCalendar: (info: MeetingIdentity.Info, at: Date)?
+    // Все созвоны ответа (D027) и кого уже пишут другие: при двух созвонах в одно время ручной
+    // старт выбирает тот, где человек сидит (26.10.2026), а не первый по рейтингу.
+    private var lastCalendar: (items: [MeetingIdentity.Info], recordedNow: [String], at: Date)?
     private var watchTimer: Timer?
     private var maintTimer: Timer?
     // Авто-стоп по концу звонка (per-process детект во время записи).
@@ -167,6 +177,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     // дорожек (issue #271), поэтому «не писать вечно» держит именно потолок: забытый старт под
     // музыку/видео звучит непрерывно и лимитом по тишине не ловится.
     private static let maxHardSeconds: TimeInterval = 4 * 60 * 60   // 4 часа
+
+    func applicationWillFinishLaunching(_ notification: Notification) { installMainMenu() }
+
+    /// Меню приложения в строке меню, пока bumblebee на переднем плане (оно в Dock с 23.10.2026).
+    /// «Выйти» — без ⌘Q: случайное ⌘Q в доске не должно обрывать запись встречи.
+    private func installMainMenu() {
+        let lang = BoardL10n.language()
+        let appMenu = NSMenu()
+        for item in board.menuItems() { appMenu.addItem(item) }
+        appMenu.addItem(.separator())
+        appMenu.addItem(NSMenuItem(title: BoardL10n.text("app.quit", lang: lang),
+                                   action: #selector(NSApplication.terminate(_:)), keyEquivalent: ""))
+        let root = NSMenuItem()
+        root.submenu = appMenu
+        let main = NSMenu()
+        main.addItem(root)
+        NSApp.mainMenu = main
+    }
+
+    /// Клик по значку в Dock открывает доску «Сегодня».
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        board.open()
+        return false
+    }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Переезд под новое имя (bumblebee) — до всего остального: если хелпер стартовал,
@@ -253,6 +287,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         setupPowerNotifications()
         startWatching()
         missed.start()
+        board.start()
 
         // Дозагрузка на старте: если в прошлый раз приложение закрыли/упало с висящими записями
         // в pending/, заливаем их сейчас (meetingId переиспользуется, claim не повторяем).
@@ -352,6 +387,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         center.requestAuthorization(options: [.alert, .sound]) { [weak self] _, _ in
             self?.refreshNotificationAuthorization()
         }
+        let lang = BoardL10n.language()
+        center.setNotificationCategories([UNNotificationCategory(
+            identifier: Self.nudgeCategory,
+            actions: [UNNotificationAction(identifier: Self.nudgeRecordAction,
+                                           title: BoardL10n.text("nudge.record", lang: lang), options: []),
+                      UNNotificationAction(identifier: "call-nudge-skip",
+                                           title: BoardL10n.text("nudge.skip", lang: lang), options: [])],
+            intentIdentifiers: [])])
     }
 
     // Текущий статус разрешения на уведомления. nil — ещё не спрашивали систему.
@@ -630,9 +673,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             let micOn = CallDetector.realCallActive()
             DispatchQueue.main.async { [weak self] in
                 self?.logTick(meetings: meetings, lookupOK: lookup != nil, micOn: micOn)
-                // Для ручного старта — первая из идущих (сервер отдаёт только созвоны, D026); при
-                // пересечении (D027) выбор делается в капсуле, а «Записать» из меню берёт первую.
-                if let m = meetings.first { self?.lastCalendar = (m, Date()) }
+                // Для ручного старта — все идущие (сервер отдаёт только созвоны, D026); при
+                // пересечении (D027) выбор делает manualStartIdentity, а не «первая из списка».
+                if !meetings.isEmpty {
+                    self?.lastCalendar = (meetings, lookup?.recordedNow ?? [], Date())
+                }
+                // До handleDetection: напоминание снимает крестик с созвона, и тот же тик
+                // снова покажет его в капсуле.
+                self?.nudgeIfUnrecorded(micOn: micOn, meetings: meetings,
+                                        recordedNow: lookup?.recordedNow ?? [])
                 self?.handleDetection(meetings: meetings, micActive: micOn,
                                       recordedNow: lookup?.recordedNow ?? [])
                 if let recordedNow = lookup?.recordedNow { self?.askIfBotRecords(recordedNow) }
@@ -738,8 +787,47 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     // `UNNotificationDefaultActionIdentifier` — то есть запись начиналась от клика по ЛЮБОМУ
     // уведомлению приложения, включая «нужен новый токен» и «звонок завершён, сохраняю».
     // Предложение записать теперь живёт только в капсуле, и решение принимается там.
+    // Исключение — кнопка «Записать» на напоминании «Звонок идёт, но не записывается» (CallNudge):
+    // там вопрос задан прямо, и ответ на него в самом уведомлении.
     func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse, withCompletionHandler completionHandler: @escaping () -> Void) {
+        if response.actionIdentifier == Self.nudgeRecordAction {
+            DispatchQueue.main.async { [weak self] in
+                guard let self, case .idle = self.state else { return }
+                self.acceptPrompt(source: "напоминание")
+            }
+        }
         completionHandler()
+    }
+
+    /// Звонок идёт 3 минуты, запись не включена, Скриба этот созвон не пишет → один раз за звонок
+    /// вернуть предложение в капсулу и показать уведомление с кнопкой «Записать» (CallNudge).
+    private func nudgeIfUnrecorded(micOn: Bool, meetings: [MeetingIdentity.Info], recordedNow: [String]) {
+        guard micOn else { callStartedAt = nil; callNudged = false; return }
+        let now = Date()
+        if callStartedAt == nil { callStartedAt = now }
+        guard case .idle = state,
+              CallNudge.isDue(callStartedAt: callStartedAt, now: now, isRecording: false,
+                              alreadyNudged: callNudged) else { return }
+        let calls = meetings.filter { $0.joinURL != nil }
+        let current = calls.count > 1 ? calls.first { MeetingIdentity.isCallOpen($0.joinURL) } : calls.first
+        callNudged = true
+        if CallNudge.isCoveredByBot(liveKeys: calls.map(\.key), currentKey: current?.key,
+                                    recordedNow: recordedNow) {
+            Diagnostics.shared.log("NUDGE звонок без записи, но его пишет Скриба — молчим")
+            return
+        }
+        Diagnostics.shared.log("NUDGE звонок идёт 3 мин без записи → \(current?.key ?? calls.first?.key ?? "без календаря")")
+        for m in calls { dismissedUntil.removeValue(forKey: m.key) }
+        if calls.isEmpty { callDismissedUntil = nil; callActive = true; rebuildMenu() }
+        let lang = BoardL10n.language()
+        let c = UNMutableNotificationContent()
+        c.title = BoardL10n.text("nudge.title", lang: lang)
+        c.body = (current ?? calls.first)?.title.map { "«\($0)». " } .map { $0 + BoardL10n.text("nudge.body", lang: lang) }
+            ?? BoardL10n.text("nudge.body", lang: lang)
+        c.sound = .default
+        c.categoryIdentifier = Self.nudgeCategory
+        UNUserNotificationCenter.current().add(UNNotificationRequest(
+            identifier: "call-nudge-\(Int(now.timeIntervalSince1970))", content: c, trigger: nil))
     }
 
     // ── UI ──────────────────────────────────────────────────────────────────────
@@ -924,10 +1012,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                         item.representedObject = m.key
                         menu.addItem(item)
                     }
-                    menu.addItem(NSMenuItem(title: "Не записывать", action: #selector(dismissMeetingTapped), keyEquivalent: ""))
                 } else if pendingMeeting != nil {
                     menu.addItem(NSMenuItem(title: "🔴 Записать встречу", action: #selector(recordMeetingTapped), keyEquivalent: "r"))
-                    menu.addItem(NSMenuItem(title: "Не записывать", action: #selector(dismissMeetingTapped), keyEquivalent: ""))
                 } else if callActive {
                     menu.addItem(NSMenuItem(title: "🔴 Записать звонок", action: #selector(recordCallTapped), keyEquivalent: "r"))
                     menu.addItem(NSMenuItem(title: "Не сейчас", action: #selector(dismissCallTapped), keyEquivalent: ""))
@@ -945,15 +1031,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 let n = deferredMeetingIds.count
                 menu.addItem(NSMenuItem(title: "📦 Дослать мою запись\(n > 1 ? " (\(n))" : "")", action: #selector(resendDeferredTapped), keyEquivalent: ""))
             }
-            if let web = config?.webBaseURL, !web.isEmpty {
-                menu.addItem(NSMenuItem(title: "Открыть Рой", action: #selector(openWeb), keyEquivalent: ""))
-            }
-            // Доступно всегда: перевставить токен (напр. если протух → 401). Раньше пункт
-            // показывался только при отсутствии токена, и перевставить было неоткуда.
-            menu.addItem(NSMenuItem(title: "Обновить токен из буфера", action: #selector(pasteTokenTapped), keyEquivalent: ""))
+            // «Открыть Рой», «Обновить токен из буфера» и «Не записывать» убраны (владелец 26.10.2026):
+            // веб открывают закладкой, протухший токен лечится переустановкой, а «Не записывать»
+            // дублировал крестик капсулы. Вставка токена осталась там, где без неё не выйти:
+            // при протухшем токене и при первом запуске без токена.
         } else {
             menu.addItem(NSMenuItem(title: "Вставить токен из буфера", action: #selector(pasteTokenTapped), keyEquivalent: ""))
         }
+        for item in board.menuItems() { menu.addItem(item) }
         // Бэкстоп: macOS-разрешение на запись системного звука можно открыть вручную в любой
         // момент (Core Audio process-tap при отказе иногда даёт тишину без ошибки → catch не сработает).
         menu.addItem(NSMenuItem(title: "Открыть настройки записи", action: #selector(openRecordingSettingsTapped), keyEquivalent: ""))
@@ -1176,11 +1261,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         beginRecording(identity: id)
     }
 
-    @objc private func openWeb() {
-        guard let web = config?.webBaseURL, let url = URL(string: web) else { return }
-        NSWorkspace.shared.open(url)
-    }
-
     // 401: подсказать получить новый токен из бота (команда /recordertoken), затем вставить.
     // Бот — Telegram, прямой deep-link в конфиге не хранится; ведём текстом к команде.
     @objc private func getNewTokenTapped() {
@@ -1283,12 +1363,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     // и склеивает запись с записями коллег об этой же встрече.
     private func manualStartIdentity() -> MeetingIdentity.Info? {
         let iso = ISO8601DateFormatter()
-        if let cal = lastCalendar,
-           StartIdentity.useCalendar(fetchedAt: cal.at,
-                                     start: cal.info.startISO.flatMap { iso.date(from: $0) },
-                                     end: cal.info.endISO.flatMap { iso.date(from: $0) },
-                                     now: Date()) {
-            return cal.info
+        if let cal = lastCalendar {
+            let now = Date()
+            let live = cal.items.filter {
+                StartIdentity.useCalendar(fetchedAt: cal.at,
+                                          start: $0.startISO.flatMap { iso.date(from: $0) },
+                                          end: $0.endISO.flatMap { iso.date(from: $0) },
+                                          now: now)
+            }
+            if let pick = MeetingChoice.manualPick(live, key: \.key,
+                                                   isOpen: { MeetingIdentity.isCallOpen($0.joinURL) },
+                                                   isRecordedByOthers: { cal.recordedNow.contains($0) }) {
+                if live.count > 1 {
+                    Diagnostics.shared.log("RECORD выбор из \(live.count) созвонов → \(pick.key)")
+                }
+                return pick
+            }
         }
         return MeetingIdentity.currentRoom()
     }
@@ -1346,7 +1436,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     private func acceptPrompt(source: String) {
         Diagnostics.shared.log("USER принял предложение записать (\(source))")
-        if let m = pendingMeeting {
+        if let m = MeetingChoice.manualPick(pendingMeetings, key: \.key,
+                                             isOpen: { MeetingIdentity.isCallOpen($0.joinURL) },
+                                             isRecordedByOthers: { _ in false }) {
             pendingMeetings = []
             beginRecording(identity: m)
         } else {
@@ -1873,8 +1965,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                     endISO: req.endedAt ?? iso.string(from: Date()))
                 await UploadQueue.shared.drain(config: cfg)
                 await MainActor.run { self.notifyRecovered() }
+                try? FileManager.default.removeItem(at: dir)   // enqueue перенёс файлы → папка не нужна
+            } else {
+                // Сервер отложил (встречу держит другая запись — в т.ч. наша же прерванная сессия,
+                // чья аренда ещё не истекла). Аудио НЕ стираем: 26.10.2026 так пропали 13 минут
+                // планерки после принудительной остановки. Карантин в failed/ — разбор руками.
+                NSLog("SwarmRecorder: восстановление \(meta.base) отложено сервером — аудио в failed/")
+                await MainActor.run { self.quarantineOrRemove(dir: dir) }
             }
-            try? FileManager.default.removeItem(at: dir)   // enqueue перенёс файлы → папка не нужна
         } catch {
             NSLog("SwarmRecorder: восстановление \(meta.base) не удалось (\(error)) — оставляю для ретрая")
         }
@@ -1987,7 +2085,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 attendees: info.attendees.isEmpty ? nil : info.attendees,
                 agentVersion: "0.1.0",
                 micStartOffset: p.res.micStartOffset,
-                recordedSeconds: recordedSeconds
+                recordedSeconds: recordedSeconds,
+                joinUrl: info.joinURL?.absoluteString
             )
         } else {
             req = ClaimRequest(

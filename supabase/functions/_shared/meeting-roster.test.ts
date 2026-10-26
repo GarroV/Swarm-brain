@@ -1,75 +1,7 @@
-// Тесты склейки встреч по составу для claim (issues #168, #181).
+// Тесты правил склейки встреч для claim (issues #168, #181).
 // Запуск: deno test supabase/functions/_shared/meeting-roster.test.ts
 import { assertEquals } from "jsr:@std/assert@1";
-import { sameMeetingByRoster, scopeRoomKey } from "./meeting-roster.ts";
-
-// Живой случай 26.08: «IT+BD» писали двое — у владельца событие в Google-календаре (18 участников),
-// у коллеги события нет, рекордер опознал только комнату Контур.Толк (ни названия, ни участников).
-const CALENDAR_SIDE = {
-  startedAt: "2026-08-26T12:00:00+00:00",
-  ownerEmail: "v.garro@dodobrands.io",
-  attendees: [
-    { email: "v.garro@dodobrands.io", name: "Vasiliy Garro" },
-    { email: "i.ravilova@dodobrands.io", name: "Indira Ravilova" },
-    { email: "s.artemov@dodobrands.io" },
-  ],
-};
-const ROOM_SIDE = {
-  startedAt: "2026-08-26T12:01:36+00:00",
-  ownerEmail: "I.Ravilova@dodobrands.io", // регистр не важен
-  attendees: [],
-};
-
-Deno.test("запись из комнаты и календарная — одна встреча: записавший есть в списке участников", () => {
-  assertEquals(sameMeetingByRoster(ROOM_SIDE, CALENDAR_SIDE), { same: true, reason: "owner_in_roster" });
-  // Симметрично: кто пришёл первым, тот и «входящая».
-  assertEquals(sameMeetingByRoster(CALENDAR_SIDE, ROOM_SIDE).same, true);
-});
-
-Deno.test("тот же человек, но другая встреча того же дня → НЕ склеиваем (окно времени)", () => {
-  const otherMeeting = { ...CALENDAR_SIDE, startedAt: "2026-08-26T08:00:00+00:00" };
-  assertEquals(sameMeetingByRoster(ROOM_SIDE, otherMeeting), { same: false, reason: "time_apart" });
-});
-
-Deno.test("записавшего нет в списке участников → нет сигнала, не склеиваем", () => {
-  const stranger = { ...ROOM_SIDE, ownerEmail: "someone.else@dodobrands.io" };
-  assertEquals(sameMeetingByRoster(stranger, CALENDAR_SIDE), { same: false, reason: "no_signal" });
-});
-
-Deno.test("сильное пересечение состава склеивает (две записи одного инвайта)", () => {
-  const a = {
-    startedAt: "2026-08-26T11:00:00+00:00",
-    ownerEmail: null,
-    attendees: [{ name: "Анна" }, { name: "Борис" }, { name: "Вера" }],
-  };
-  const b = {
-    startedAt: "2026-08-26T11:02:00+00:00",
-    ownerEmail: null,
-    attendees: [{ name: "Анна" }, { name: "Борис" }, { name: "Вера" }],
-  };
-  assertEquals(sameMeetingByRoster(a, b), { same: true, reason: "roster_overlap" });
-});
-
-Deno.test("разные встречи, делящие одного человека, НЕ склеиваются (кейс 1-1 ⨯ большой созвон)", () => {
-  const oneToOne = {
-    startedAt: "2026-06-19T08:00:00+00:00",
-    ownerEmail: null,
-    attendees: [{ name: "Maria" }, { name: "Anna" }],
-  };
-  const big = {
-    startedAt: "2026-06-19T08:05:00+00:00",
-    ownerEmail: null,
-    attendees: Array.from({ length: 14 }, (_, i) => ({ name: `Человек ${i}` })).concat([{ name: "Anna" }]),
-  };
-  assertEquals(sameMeetingByRoster(oneToOne, big), { same: false, reason: "no_signal" });
-});
-
-Deno.test("без времени хотя бы у одной стороны сопоставление не делаем", () => {
-  assertEquals(sameMeetingByRoster({ ...ROOM_SIDE, startedAt: null }, CALENDAR_SIDE), {
-    same: false,
-    reason: "no_time",
-  });
-});
+import { mayGlueByRoom, rosterMatchApplies, scopeRoomKey } from "./meeting-roster.ts";
 
 // ── Ключ комнаты сужается до дня (issue #181) ──────────────────────────────────
 
@@ -92,4 +24,35 @@ Deno.test("scopeRoomKey — календарь и manual не трогаем, п
   assertEquals(scopeRoomKey("manual", "manual:uuid-1", "2026-08-26T12:00:00+00:00"), "manual:uuid-1");
   assertEquals(scopeRoomKey("room", "kontur:x:2026-08-26", "2026-08-26T12:00:00+00:00"), "kontur:x:2026-08-26");
   assertEquals(scopeRoomKey("room", "kontur:x", null), "kontur:x");
+});
+
+// 26.10.2026: два разных события календаря в одно время с общим участником — разные встречи.
+Deno.test("два календарных ключа не склеиваются", () => {
+  assertEquals(rosterMatchApplies("calendar", "calendar"), false);
+});
+
+Deno.test("календарь с комнатой и внешней системой допускают склейку по ссылке", () => {
+  assertEquals(rosterMatchApplies("calendar", "room"), true);
+  assertEquals(rosterMatchApplies("room", "calendar"), true);
+  assertEquals(rosterMatchApplies("calendar", "external"), true);
+  assertEquals(rosterMatchApplies("room", "room"), true);
+  assertEquals(rosterMatchApplies("calendar", null), true);
+});
+
+Deno.test("по ссылке клеит участника: его e-mail есть в составе найденной встречи", () => {
+  const cal = { ownerEmail: "v.garro@dodobrands.io", attendees: [{ email: "I.Ravilova@dodobrands.io" }] };
+  assertEquals(mayGlueByRoom("i.ravilova@dodobrands.io", cal), true);
+});
+
+Deno.test("по ссылке не клеит постороннего, знающего ссылку", () => {
+  const cal = { ownerEmail: "v.garro@dodobrands.io", attendees: [{ email: "i.ravilova@dodobrands.io" }] };
+  assertEquals(mayGlueByRoom("x@dodobrands.io", cal), false);
+  assertEquals(mayGlueByRoom(null, cal), false);
+});
+
+Deno.test("по ссылке не клеит к встрече без состава чужого человека", () => {
+  // Запись из комнаты состава не знает: встать в неё может только её же владелец.
+  const room = { ownerEmail: "i.ravilova@dodobrands.io", attendees: [] };
+  assertEquals(mayGlueByRoom("v.garro@dodobrands.io", room), false);
+  assertEquals(mayGlueByRoom("I.Ravilova@dodobrands.io", room), true);
 });

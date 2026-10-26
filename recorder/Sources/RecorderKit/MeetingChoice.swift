@@ -29,6 +29,17 @@ public enum MeetingChoice {
         items.first { key($0) == chosenKey }
     }
 
+    /// Встреча для «Записать» из меню, когда созвонов несколько (26.10.2026: при двух созвонах в
+    /// одно время запись молча бралась к первому по рейтингу сервера, а не к тому, где человек
+    /// сидит). Порядок: созвон, чья вкладка открыта у человека → созвон, который ещё никто не
+    /// пишет → первый по рейтингу. `isOpen` зовётся, только если выбирать есть из чего.
+    public static func manualPick<T>(_ items: [T], key: (T) -> String, isOpen: (T) -> Bool,
+                                     isRecordedByOthers: (String) -> Bool) -> T? {
+        guard items.count > 1 else { return items.first }
+        if let open = items.first(where: isOpen) { return open }
+        return items.first { !isRecordedByOthers(key($0)) } ?? items.first
+    }
+
     /// Изменилось ли предложение — капсулу перерисовываем только тогда.
     public static func sameOffer<T>(_ a: [T], _ b: [T], key: (T) -> String) -> Bool {
         a.map(key) == b.map(key)

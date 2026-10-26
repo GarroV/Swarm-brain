@@ -398,10 +398,11 @@ if CommandLine.arguments.contains("--selftest-notes") {
 } else if CommandLine.arguments.contains("--selftest") {
     runSelfTest()   // не возвращается (RunLoop) до exit()
 } else {
-    // Меню-бар агент: без иконки в Dock, без главного окна.
+    // Обычное приложение со значком в Dock и в ⌘Tab (решение владельца 23.10.2026): клик по
+    // значку открывает доску «Сегодня». Меню в строке меню остаётся.
     let app = NSApplication.shared
     let delegate = AppDelegate()
     app.delegate = delegate
-    app.setActivationPolicy(.accessory)
+    app.setActivationPolicy(.regular)
     app.run()
 }

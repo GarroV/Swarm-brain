@@ -1,4 +1,4 @@
-// meeting-roster — «одна ли это встреча» для claim, когда ключи идентичности НЕ сравнимы.
+// meeting-roster — правила склейки встреч в claim, когда ключи идентичности НЕ сравнимы.
 //
 // Зачем: identity_key описывает не встречу, а то, КАК её увидел клиент. Участник с событием в
 // Google-календаре присылает `<event-id>:<дата>`, участник, пришедший по ссылке, — `kontur:<room>`
@@ -6,86 +6,47 @@
 // совпадают, уникальный индекс конфликта не видит, и claim открывает ВТОРУЮ встречу: два аудио,
 // две транскрибации (деньги), два черновика, два набора тезисов (issues #164, #168, #176).
 //
-// Как ключуют одну встречу ботовые системы (ресерч 2026-08-28, docs/research/…): ключ — комната
-// платформы (Vexa: platform + native_meeting_id; Attendee: нормализованный URL звонка), потому
-// что комната общая у всех участников. Нам этот ключ доступен не всегда, поэтому опираемся на
-// то, что есть у сервера: время + состав.
-//
-// Уклон в ТОЧНОСТЬ: ложная склейка сводит РАЗНЫЕ разговоры в одну запись и показывает человеку
-// чужой транскрипт — это хуже дубля. Поэтому одного пересечения по времени недостаточно никогда.
+// Сопоставление «та же встреча» идёт по ССЫЛКЕ НА ЗВОНОК (_shared/call-room.ts, колонка
+// meetings.call_room) — комната общая у всех участников. Время и состав встречи не решают
+// (26.10.2026 по ним склеились два разных созвона). Здесь остались окно по времени для личных
+// комнат, правило «календарь ⨯ календарь не склеиваем» и сужение ключа комнаты до дня.
 
-/** Окно пересечения по времени. Рекордер стартует не ровно в :00, Granola подключается позже. */
-export const ROSTER_TOLERANCE_MIN = 10;
+/**
+ * Применима ли склейка по ссылке к паре видов ключей. Два календарных ключа — это два события календаря: одно событие
+ * у всех приглашённых имеет один ключ, поэтому РАЗНЫЕ календарные ключи — разные встречи, и
+ * склеивать их нельзя даже при общей ссылке. 26.10.2026 так потерялась встреча: коллега сидела на своём
+ * созвоне, в то же время шёл созвон владельца, куда она тоже приглашена; её бота сервер приклеил
+ * к встрече владельца (её e-mail в составе) и ответил «уже пишет другой» — бот ушёл, не постучавшись.
+ * Склейка по ссылке остаётся для пар, где хотя бы одна сторона увидела встречу не из календаря
+ * (комната, внешняя система).
+ */
+export function rosterMatchApplies(incomingKind: string | null, candidateKind: string | null): boolean {
+  return !(incomingKind === "calendar" && candidateKind === "calendar");
+}
 
 export type Attendee = { name?: string; email?: string };
 
-export type RosterSide = {
-  /** ISO начала записи/встречи. Без него сопоставлять нечего. */
-  startedAt: string | null;
-  /** Участники, как их видит эта сторона (у записи из комнаты список пуст). */
-  attendees: Attendee[];
-  /** E-mail того, кто записывал эту сторону (клеймящий / claim_owner). */
-  ownerEmail?: string | null;
-};
+/** Сторона склейки: кто её записал (claim_owner / заявитель) и кого она видит в составе. */
+export type ParticipantSide = { ownerEmail: string | null; attendees: Attendee[] | null };
 
-export type RosterVerdict = {
-  same: boolean;
-  reason:
-    | "owner_in_roster"   // записавший одной стороны есть в списке участников другой
-    | "roster_overlap"    // сильное пересечение составов
-    | "no_time"           // время неизвестно — не сопоставляем
-    | "time_apart"        // встречи в разное время
-    | "no_signal";        // время близко, но подтверждения нет
-};
-
-const norm = (s: string | null | undefined) => (s ?? "").trim().toLowerCase();
-
-function emails(list: Attendee[]): Set<string> {
-  return new Set(list.map((a) => norm(a?.email)).filter(Boolean));
-}
-
-function people(list: Attendee[]): Set<string> {
-  return new Set(list.map((a) => norm(a?.email) || norm(a?.name)).filter(Boolean));
-}
-
-function minutesApart(a: string | null, b: string | null): number | null {
-  if (!a || !b) return null;
-  const ta = new Date(a).getTime(), tb = new Date(b).getTime();
-  if (isNaN(ta) || isNaN(tb)) return null;
-  return Math.abs(ta - tb) / 60000;
-}
+const norm = (e: string | null | undefined) => (e ?? "").trim().toLowerCase();
 
 /**
- * Одна ли это встреча. Требуется И близкое время, И подтверждающий сигнал по людям:
- *
- *   • записавший одной стороны есть в участниках другой — главный сигнал для записи из комнаты:
- *     у неё нет ни названия, ни списка участников, но сам человек в календарном списке есть
- *     (живой случай 26.08: коллега писала «IT+BD» через Контур.Толк, её e-mail есть в attendees
- *     календарной записи владельца);
- *   • сильное пересечение составов (≥2 человека И ≥ половины меньшего списка) — та же калибровка,
- *     что в дедупе записей: разные встречи делят одного-двух человек, дубли несут один инвайт.
- *
- * Одного времени НЕ достаточно: в 09:00 идут несколько разных созвонов (проверено на проде —
- * «Dodo Pizza Serbia» и «HU OPS standards» в одну минуту у разных людей).
+ * Ссылка решает, ЧТО это за встреча, а этот шаг — ВПРАВЕ ли заявитель в неё встать: ссылку можно
+ * знать, не будучи участником. Опираемся только на то, что лежит на сервере: e-mail заявителя
+ * (из его учётной записи) есть в составе найденной встречи, или это его же встреча. Состав из тела
+ * заявки не учитываем — его присылает клиент. Цена: календарная заявка, пришедшая ПОСЛЕ записи
+ * из комнаты (у той состава нет), не склеится и откроет свою встречу — дубль лучше чужого доступа.
  */
-export function sameMeetingByRoster(inc: RosterSide, cand: RosterSide): RosterVerdict {
-  const apart = minutesApart(inc.startedAt, cand.startedAt);
-  if (apart === null) return { same: false, reason: "no_time" };
-  if (apart > ROSTER_TOLERANCE_MIN) return { same: false, reason: "time_apart" };
-
-  const incOwner = norm(inc.ownerEmail);
-  const candOwner = norm(cand.ownerEmail);
-  if (incOwner && emails(cand.attendees).has(incOwner)) return { same: true, reason: "owner_in_roster" };
-  if (candOwner && emails(inc.attendees).has(candOwner)) return { same: true, reason: "owner_in_roster" };
-
-  const a = people(inc.attendees), b = people(cand.attendees);
-  let overlap = 0;
-  for (const p of a) if (b.has(p)) overlap++;
-  const small = Math.min(a.size, b.size);
-  if (overlap >= 2 && overlap >= Math.ceil(0.5 * small)) return { same: true, reason: "roster_overlap" };
-
-  return { same: false, reason: "no_signal" };
+export function mayGlueByRoom(myEmail: string | null, cand: ParticipantSide): boolean {
+  const me = norm(myEmail);
+  if (me === "") return false;
+  if (me === norm(cand.ownerEmail)) return true;
+  return (cand.attendees ?? []).some((a) => norm(a.email) === me);
 }
+
+/** Окно по времени для склейки по ссылке: рекордер стартует не ровно в :00, а личные комнаты переиспользуют подряд. */
+export const ROSTER_TOLERANCE_MIN = 10;
 
 /**
  * Ключ комнаты уникален только внутри ДНЯ: `kontur:<room>` / `meet:<code>` у регулярной встречи
@@ -101,7 +62,7 @@ export function sameMeetingByRoster(inc: RosterSide, cand: RosterSide): RosterVe
 export function scopeRoomKey(kind: string, key: string, startedAt: string | null): string {
   if (kind !== "room") return key;
   const day = (startedAt ?? "").slice(0, 10);
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return key;   // времени нет — оставляем как есть
-  if (key.endsWith(`:${day}`)) return key;            // уже сужен (повторный claim той же записи)
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return key; // времени нет — оставляем как есть
+  if (key.endsWith(`:${day}`)) return key; // уже сужен (повторный claim той же записи)
   return `${key}:${day}`;
 }
