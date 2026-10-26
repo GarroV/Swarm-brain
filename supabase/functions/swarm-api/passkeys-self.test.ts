@@ -7,9 +7,23 @@ import type { SecondStepState } from "../_shared/passkeys/second-step.ts";
 
 const ANNA = 11;
 const BORIS = 22;
-const DONE: SecondStepState = { applies: true, done: true, required: false, required_from: null, session: 1 };
+const DONE: SecondStepState = {
+  applies: true,
+  done: true,
+  required: false,
+  required_from: null,
+  session: 1,
+  exchanged: false,
+};
 const NOT_DONE: SecondStepState = { ...DONE, done: false };
-const NA: SecondStepState = { applies: false, done: false, required: false, required_from: null, session: null };
+const NA: SecondStepState = {
+  applies: false,
+  done: false,
+  required: false,
+  required_from: null,
+  session: null,
+  exchanged: false,
+};
 
 async function seeded() {
   const store = new MemoryStore();
