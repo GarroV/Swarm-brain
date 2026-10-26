@@ -232,9 +232,7 @@ async function cleanup(): Promise<string[]> {
         prefix: id,
         limit: 1000,
       });
-      const rows = res.ok
-        ? await res.json() as Array<{ name: string; id: string | null }>
-        : [];
+      const rows = res.ok ? await res.json() as Array<{ name: string; id: string | null }> : [];
       // Вложенные «папки» (id=null) раскрываем на один уровень — части лежат не глубже.
       const nested = await Promise.all(
         rows.filter((r) => r.id === null).map(async (dir) => {
@@ -263,9 +261,7 @@ async function cleanup(): Promise<string[]> {
   const steps: Array<[string, string]> = [
     ["DELETE", `meeting_agent_grants?group_id=eq.${WS}`],
     ["DELETE", `meeting_invites?group_id=eq.${WS}`],
-    ...(ids.length > 0
-      ? [["DELETE", `meetings?id=in.(${ids.join(",")})`] as [string, string]]
-      : []),
+    ...(ids.length > 0 ? [["DELETE", `meetings?id=in.(${ids.join(",")})`] as [string, string]] : []),
     ["DELETE", `service_agents?id=eq.${AGENT.id}`],
     ["DELETE", `allowed_users?telegram_id=eq.${OWNER}`],
     ["DELETE", `workspaces?id=eq.${WS}`],
@@ -301,6 +297,8 @@ async function post(
 // Бот за человека ходит пропуском своей встречи (T165): пропуск выдаётся к приглашению, первая
 // заявка привязывает его к встрече. Здесь — пропуск каждой встречи бота по её id.
 const grants = new Map<string, string>();
+// Ссылка на созвон встречи бота: рекордер (сборка 38+) присылает её же, и сервер клеит по ней.
+const joinUrls = new Map<string, string>();
 function botHeaders(meetingId: string): Record<string, string> {
   const grant = grants.get(meetingId);
   if (!grant) throw new Error(`нет пропуска бота на встречу ${meetingId}`);
@@ -339,13 +337,18 @@ async function botClaim(startedAt: string): Promise<string> {
   }
   createdMeetings.add(id);
   grants.set(id, token);
+  joinUrls.set(id, joinUrl);
   return id;
 }
 
-/** Рекордер заявляется на стопе: календарная встреча с человеком в составе и длительностью. */
+/**
+ * Рекордер заявляется на стопе: календарная встреча с человеком в составе, длительностью и ссылкой
+ * на созвон. Склейка с встречей бота — по ссылке (call_room), а не по составу и времени.
+ */
 async function recorderClaim(
   startedAt: string,
   seconds: number,
+  joinUrl: string | undefined,
 ): Promise<Json> {
   const res = await post(
     PORT_CLAIM,
@@ -361,6 +364,7 @@ async function recorderClaim(
       }],
       agent_version: "0.1.0",
       recorded_seconds: seconds,
+      join_url: joinUrl,
     }),
   );
   if (typeof res.body.meeting_id === "string") {
@@ -447,7 +451,7 @@ async function recorderWhileBotWrites(
   });
   const beat = await botBeat(id, true, 1200);
   const before = await held(id);
-  const claim = await recorderClaim(started, 600);
+  const claim = await recorderClaim(started, 600, joinUrls.get(id));
   const after = await held(id);
   const next = await botBeat(id, true, 1210);
   const ok = beat.status === 200 && before.agent_last_recording === true &&
@@ -469,9 +473,7 @@ async function ingest(
   who: "bot" | "rec",
   form: FormData,
 ): Promise<{ status: number; body: Json }> {
-  const headers = who === "bot"
-    ? botHeaders(String(form.get("meeting_id")))
-    : recHeaders;
+  const headers = who === "bot" ? botHeaders(String(form.get("meeting_id"))) : recHeaders;
   return await post(PORT_INGEST, headers, form);
 }
 
@@ -557,9 +559,7 @@ function expectOnly(
 ): void {
   const comp = composition(r);
   expect(
-    `${scenario}: стенограмма — только запись «${label}», ${
-      String(segments)
-    } сегментов, без примеси второй`,
+    `${scenario}: стенограмма — только запись «${label}», ${String(segments)} сегментов, без примеси второй`,
     r.summary_status === "done" && Object.keys(comp).length === 1 &&
       comp[label] === segments,
     `status=${String(r.summary_status)} состав=${JSON.stringify(comp)}`,
@@ -578,7 +578,7 @@ async function scenario(): Promise<void> {
   {
     const started = ago(20);
     const id = await botClaim(started);
-    const claim = await recorderClaim(started, 400);
+    const claim = await recorderClaim(started, 400, joinUrls.get(id));
     expect(
       "A: meeting-claim склеил запись рекордера со встречей бота, владелец тот же",
       claim.meeting_id === id && claim.decision === "transcribe" &&
@@ -613,7 +613,7 @@ async function scenario(): Promise<void> {
       ingestForm(id, "bot", [{ segments: 20 }, { segments: 20 }]),
     );
     await settle(id);
-    const claim = await recorderClaim(started, 400);
+    const claim = await recorderClaim(started, 400, joinUrls.get(id));
     expect(
       "B: claim рекордера — та же встреча",
       claim.meeting_id === id,
@@ -636,7 +636,7 @@ async function scenario(): Promise<void> {
     const id = await botClaim(started);
     await ingest("bot", ingestForm(id, "bot", [{ segments: 3 }]));
     await settle(id);
-    const claim = await recorderClaim(started, 1800);
+    const claim = await recorderClaim(started, 1800, joinUrls.get(id));
     expect(
       "C: claim рекордера — та же встреча, право у него",
       claim.meeting_id === id && claim.decision === "transcribe",
@@ -668,7 +668,7 @@ async function scenario(): Promise<void> {
       }]),
     );
     await sleep(1200);
-    const claim = await recorderClaim(started, 1800);
+    const claim = await recorderClaim(started, 1800, joinUrls.get(id));
     expect(
       "D: claim рекордера — та же встреча",
       claim.meeting_id === id,
@@ -701,7 +701,7 @@ async function scenario(): Promise<void> {
       }]),
     );
     await sleep(1200);
-    const claim = await recorderClaim(started, 400);
+    const claim = await recorderClaim(started, 400, joinUrls.get(id));
     expect(
       "E: claim рекордера — та же встреча",
       claim.meeting_id === id,
@@ -733,7 +733,7 @@ async function scenario(): Promise<void> {
       }]),
     );
     await sleep(1200);
-    const claim = await recorderClaim(started, 1800);
+    const claim = await recorderClaim(started, 1800, joinUrls.get(id));
     expect(
       "G: claim рекордера — та же встреча, право у него",
       claim.meeting_id === id && claim.decision === "transcribe",
@@ -828,9 +828,9 @@ async function scenario(): Promise<void> {
       "F: повтор выгрузки бота — already_processed, Whisper не звался, второго уведомления нет",
       again.body.summary_status === "already_processed" &&
         whisperCalls === before && inbox.length === notesBefore,
-      `${JSON.stringify(again.body)} whisper ${String(before)}→${
-        String(whisperCalls)
-      } tg ${String(notesBefore)}→${String(inbox.length)}`,
+      `${JSON.stringify(again.body)} whisper ${String(before)}→${String(whisperCalls)} tg ${String(notesBefore)}→${
+        String(inbox.length)
+      }`,
     );
     expectOnly("F (повтор)", r, "bot", 5);
   }
@@ -876,17 +876,13 @@ async function main(): Promise<void> {
   }
   for (const c of checks) {
     console.log(
-      `${c.ok ? "✔" : "✘"} ${c.name}${
-        c.ok || !c.detail ? "" : ` — ${c.detail}`
-      }`,
+      `${c.ok ? "✔" : "✘"} ${c.name}${c.ok || !c.detail ? "" : ` — ${c.detail}`}`,
     );
   }
   for (const p of cleanupProblems) console.log(`✘ уборка: ${p}`);
   const failed = checks.filter((c) => !c.ok).length + cleanupProblems.length;
   console.log(
-    failed === 0
-      ? `ЗЕЛЁНЫЙ: ${String(checks.length)} ожиданий`
-      : `КРАСНЫЙ: не сошлось ${String(failed)}`,
+    failed === 0 ? `ЗЕЛЁНЫЙ: ${String(checks.length)} ожиданий` : `КРАСНЫЙ: не сошлось ${String(failed)}`,
   );
   Deno.exit(failed === 0 ? 0 : 1);
 }
