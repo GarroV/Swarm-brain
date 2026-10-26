@@ -104,6 +104,13 @@ extension MeetingIdentity {
         return out.booleanValue
     }
 
+    // Открыта ли у человека вкладка этого созвона из календаря (ссылка → ключ комнаты → поиск по
+    // вкладкам всех запущенных браузеров). Нужна ручному старту, когда созвонов в одно время два.
+    static func isCallOpen(_ joinURL: URL?) -> Bool {
+        guard let joinURL, let room = parseRoom(joinURL.absoluteString) else { return false }
+        return roomPresence(key: room.key) == .open
+    }
+
     // Сегмент для поиска в URL: часть ключа после префикса ("meet:CODE" → "CODE"). Санитизируем —
     // только [A-Za-z0-9_-], иначе nil (не рискуем инъекцией в исходник AppleScript).
     private static func searchSeg(from key: String) -> String? {

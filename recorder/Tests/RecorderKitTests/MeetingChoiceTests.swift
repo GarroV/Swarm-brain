@@ -43,4 +43,25 @@ final class MeetingChoiceTests: XCTestCase {
         XCTAssertFalse(MeetingChoice.sameOffer(a, Array(a.reversed()), key: \.key))
         XCTAssertFalse(MeetingChoice.sameOffer(a, [a[0]], key: \.key))
     }
+    // «Записать» из меню при двух созвонах в одно время (26.10.2026).
+    private func manual(_ keys: [String], open: Set<String> = [], busy: Set<String> = []) -> String? {
+        MeetingChoice.manualPick(keys, key: { $0 }, isOpen: { open.contains($0) },
+                                 isRecordedByOthers: { busy.contains($0) })
+    }
+
+    func testManualPickTakesTheCallWhoseTabIsOpen() {
+        XCTAssertEqual(manual(["serbia", "design"], open: ["design"]), "design")
+        XCTAssertEqual(manual(["serbia", "design"], open: ["design"], busy: ["design"]), "design")
+    }
+
+    func testManualPickSkipsCallAlreadyRecordedByOthersWhenNoTabMatches() {
+        XCTAssertEqual(manual(["serbia", "design"], busy: ["serbia"]), "design")
+    }
+
+    func testManualPickFallsBackToServerOrder() {
+        XCTAssertEqual(manual(["serbia", "design"]), "serbia")
+        XCTAssertEqual(manual(["serbia", "design"], busy: ["serbia", "design"]), "serbia")
+        XCTAssertEqual(manual(["only"], busy: ["only"]), "only")
+        XCTAssertNil(manual([]))
+    }
 }

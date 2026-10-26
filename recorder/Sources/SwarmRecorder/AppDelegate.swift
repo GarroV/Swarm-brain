@@ -111,7 +111,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     // («Записать» в меню, ответ на подсказку о звонке) привязывался к идущей встрече, а не писал
     // её как manual мимо склейки с коллегами (решение владельца 18.09.2026, issue #379).
     // Живёт отдельно от pendingMeeting: то — предложение в капсуле, его можно закрыть крестиком.
-    private var lastCalendar: (info: MeetingIdentity.Info, at: Date)?
+    // Все созвоны ответа (D027) и кого уже пишут другие: при двух созвонах в одно время ручной
+    // старт выбирает тот, где человек сидит (26.10.2026), а не первый по рейтингу.
+    private var lastCalendar: (items: [MeetingIdentity.Info], recordedNow: [String], at: Date)?
     private var watchTimer: Timer?
     private var maintTimer: Timer?
     // Авто-стоп по концу звонка (per-process детект во время записи).
@@ -657,9 +659,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             let micOn = CallDetector.realCallActive()
             DispatchQueue.main.async { [weak self] in
                 self?.logTick(meetings: meetings, lookupOK: lookup != nil, micOn: micOn)
-                // Для ручного старта — первая из идущих (сервер отдаёт только созвоны, D026); при
-                // пересечении (D027) выбор делается в капсуле, а «Записать» из меню берёт первую.
-                if let m = meetings.first { self?.lastCalendar = (m, Date()) }
+                // Для ручного старта — все идущие (сервер отдаёт только созвоны, D026); при
+                // пересечении (D027) выбор делает manualStartIdentity, а не «первая из списка».
+                if !meetings.isEmpty {
+                    self?.lastCalendar = (meetings, lookup?.recordedNow ?? [], Date())
+                }
                 self?.handleDetection(meetings: meetings, micActive: micOn,
                                       recordedNow: lookup?.recordedNow ?? [])
                 if let recordedNow = lookup?.recordedNow { self?.askIfBotRecords(recordedNow) }
@@ -1311,12 +1315,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     // и склеивает запись с записями коллег об этой же встрече.
     private func manualStartIdentity() -> MeetingIdentity.Info? {
         let iso = ISO8601DateFormatter()
-        if let cal = lastCalendar,
-           StartIdentity.useCalendar(fetchedAt: cal.at,
-                                     start: cal.info.startISO.flatMap { iso.date(from: $0) },
-                                     end: cal.info.endISO.flatMap { iso.date(from: $0) },
-                                     now: Date()) {
-            return cal.info
+        if let cal = lastCalendar {
+            let now = Date()
+            let live = cal.items.filter {
+                StartIdentity.useCalendar(fetchedAt: cal.at,
+                                          start: $0.startISO.flatMap { iso.date(from: $0) },
+                                          end: $0.endISO.flatMap { iso.date(from: $0) },
+                                          now: now)
+            }
+            if let pick = MeetingChoice.manualPick(live, key: \.key,
+                                                   isOpen: { MeetingIdentity.isCallOpen($0.joinURL) },
+                                                   isRecordedByOthers: { cal.recordedNow.contains($0) }) {
+                if live.count > 1 {
+                    Diagnostics.shared.log("RECORD выбор из \(live.count) созвонов → \(pick.key)")
+                }
+                return pick
+            }
         }
         return MeetingIdentity.currentRoom()
     }
