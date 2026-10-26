@@ -6,6 +6,8 @@ import { getInitData } from "@/lib/telegram";
 import { subscribeUnauthorized } from "@/lib/connection";
 import type { Me } from "@/types";
 import { RoyApp } from "@/components/roy/RoyApp";
+import { SecondStepGate } from "@/components/roy/SecondStepGate";
+import { stepPending } from "@/lib/passkeyStep";
 
 let redirecting = false;
 
@@ -40,5 +42,7 @@ export default function Home() {
   // 401 от любого виджета посреди работы — тоже на вход, а не «Не загрузилось» (#467).
   useEffect(() => subscribeUnauthorized(goToLogin), []);
 
+  // Touch ID обязателен и не пройден — внутрь не пускаем: вместо приложения один экран (решение 26.10.2026).
+  if (me && stepPending(me)?.required) return <SecondStepGate me={me} />;
   return <RoyApp me={me} />;
 }

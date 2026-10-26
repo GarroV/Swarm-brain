@@ -68,18 +68,9 @@ import { sendTaskPings } from "./handlers/task-pings-send.ts";
 import { alertStalledMeetings } from "../_shared/stalled-meeting-alerts.ts";
 import { sendDueReminders } from "./handlers/task-due-reminders-send.ts";
 import { getHelpText, guideMenu, guideStep, helpKeyboard } from "./handlers/help.ts";
-import {
-  buildRecorderSetupOneLiner,
-  buildRecorderUpdateOneLiner,
-  buildSetupOneLiner,
-  hasActiveMcpToken,
-  hasActiveRecorderToken,
-  mintMcpToken,
-  mintRecorderToken,
-  revokeRecorderToken,
-} from "./lib/mcp-setup.ts";
+import { buildRecorderUpdateOneLiner, hasActiveRecorderToken, revokeRecorderToken } from "./lib/mcp-setup.ts";
 import type { TgCallbackQuery, TgMessage } from "./lib/types.ts";
-import { classifyRequest, isOwnPrivateChat } from "./lib/webhook-auth.ts";
+import { classifyRequest } from "./lib/webhook-auth.ts";
 import { processingFrozen } from "../_shared/processing-freeze.ts";
 import { backfillMissingEmbeddings } from "./lib/embedding-backfill.ts";
 import { makeBackfillStore } from "./lib/embedding-backfill-store.ts";
@@ -125,82 +116,19 @@ function bgRun(promise: Promise<void>, chatId: number): void {
   if (typeof EdgeRuntime !== "undefined") EdgeRuntime.waitUntil(safe);
 }
 
-// Токен даёт полный доступ к аккаунту, поэтому выдаётся только в личный чат владельца:
-// не в группу, где его прочтут все, и не в чужой чат.
-async function ensureOwnPrivateChat(chatId: number, userId: number): Promise<boolean> {
-  if (isOwnPrivateChat(chatId, userId)) return true;
+// Ключи Claude Desktop и bumblebee бот больше не выдаёт (решение владельца 26.10.2026,
+// docs/decisions/2026-10-26-second-step-hard-gate.md): только личный кабинет в вебе, то есть после
+// Touch ID. Иначе Telegram-аккаунта хватало, чтобы получить доступ к базе мимо второго шага.
+// Все прежние пути выдачи (/mytoken, /setup, /recordertoken и их кнопки перевыпуска) ведут сюда.
+// Уже выданные ключи работают как раньше; отзыв (/revoketoken, /revokerecordertoken) остался в боте.
+async function sendKeysInWeb(chatId: number): Promise<void> {
   await sendMessage(
     chatId,
-    "🔒 Токены выдаю только в личном чате со мной — напиши мне напрямую.\n" +
-      "<i>I only send tokens in a private chat — message me directly.</i>",
-  );
-  return false;
-}
-
-// Минтит и показывает новый MCP-токен (общий путь для /mytoken и подтверждённого перевыпуска).
-async function sendMyToken(chatId: number, userId: number): Promise<void> {
-  if (!(await ensureOwnPrivateChat(chatId, userId))) return;
-  const minted = await mintMcpToken(userId);
-  if (!minted) {
-    await sendMessage(chatId, "❌ Не удалось сгенерировать токен. Обратись к администратору.");
-    return;
-  }
-  await sendMessage(
-    chatId,
-    `🔑 <b>Твой токен для Claude Desktop</b>\n\n` +
-      `<code>${minted.token}</code>\n` +
-      `<i>👆 Нажми на токен — скопируется целиком.</i>\n\n` +
-      `Токен <b>бессрочный</b>. Сохрани — повторно не покажу. Потеряешь — запусти /mytoken снова (старый перестанет работать).\n\n` +
-      `Проще: /setup — подключит Claude Desktop автоматически, без ручной возни.\n\n` +
-      `Отозвать прямо сейчас: /revoketoken`,
-  );
-}
-
-// Минтит MCP-токен и присылает однострочник установки Claude Desktop (общий путь для /setup
-// и подтверждённого переподключения setup_reissue). Перевыпуск УБИВАЕТ старый токен — поэтому
-// /setup зовёт это молча только при ПЕРВОМ подключении (когда активного токена ещё нет).
-async function sendSetupOneLiner(chatId: number, userId: number): Promise<void> {
-  if (!(await ensureOwnPrivateChat(chatId, userId))) return;
-  const minted = await mintMcpToken(userId);
-  if (!minted) {
-    await sendMessage(chatId, "❌ Не удалось подготовить подключение. Попробуй позже или напиши администратору.");
-    return;
-  }
-  await sendMessage(
-    chatId,
-    `<b>🖥 Подключаем Claude Desktop за один шаг</b> (macOS)\n\n` +
-      `1️⃣ Открой приложение <b>Терминал</b>\n` +
-      `<i>(⌘+Пробел → набери «Терминал» → Enter)</i>\n\n` +
-      `2️⃣ Вставь эту команду (⌘+V) и нажми Enter:\n\n` +
-      `<code>${buildSetupOneLiner(minted.token)}</code>\n\n` +
-      `3️⃣ Подожди — скрипт сам поставит всё нужное и перезапустит Claude. Готово ✅\n\n` +
-      `<i>В команде твой личный токен (бессрочный). Никому не пересылай. Отозвать: /revoketoken.</i>\n\n` +
-      `Текст инструкций для проекта Claude → /claude`,
-  );
-}
-
-// Минтит токен рекордера и присылает готовый однострочник установки (общий путь для
-// /recordertoken и подтверждённого перевыпуска rtk_reissue). Мгновенный сетап как у /setup:
-// одна команда в Терминале — поставит и настроит рекордер сам.
-async function sendRecorderToken(chatId: number, userId: number): Promise<void> {
-  if (!(await ensureOwnPrivateChat(chatId, userId))) return;
-  const minted = await mintRecorderToken(userId);
-  if (!minted) {
-    await sendMessage(chatId, "❌ Не удалось сгенерировать токен bumblebee. Обратись к администратору.");
-    return;
-  }
-  const expStr = minted.expiresAt.toLocaleDateString("ru-RU", { day: "2-digit", month: "long", year: "numeric" });
-  await sendMessage(
-    chatId,
-    `<b>🎙 Подключаем bumblebee — запись встреч за один шаг</b> (macOS)\n\n` +
-      `Одна команда — скрипт сам поставит bumblebee, подпишет и пропишет токен. Пароль может спросить только установка Command Line Tools (если их ещё нет на маке).\n\n` +
-      `1️⃣ Открой приложение <b>Терминал</b>\n` +
-      `<i>(⌘+Пробел → набери «Терминал» → Enter)</i>\n\n` +
-      `2️⃣ Вставь эту команду (⌘+V) и нажми Enter:\n\n` +
-      `<code>${buildRecorderSetupOneLiner(minted.token)}</code>\n\n` +
-      `3️⃣ Приложение откроется само. Выдай разрешение: System Settings → Privacy → «Screen &amp; System Audio Recording» → включи bumblebee, затем ⌘Q и открой заново. Готово ✅\n\n` +
-      `Токен действует до <b>${expStr}</b>. Это <b>отдельный</b> токен — перевыпуск /mytoken для Claude Desktop его НЕ трогает. Никому не пересылай. Отозвать: /revokerecordertoken.\n\n` +
-      `<i>Вручную: вставь токен <code>${minted.token}</code> в bumblebee — иконка в меню-баре → «Вставить токен из буфера».</i>`,
+    `🔒 <b>Ключи для Claude Desktop и bumblebee теперь выдаются только в SWARM</b> — после входа с Touch ID.\n\n` +
+      `Открой ${WEB_BASE_URL} → Настройки (⚙ внизу слева) → «Claude Desktop» или «bumblebee».\n\n` +
+      `Уже выданные ключи продолжают работать.\n\n` +
+      `<i>Keys for Claude Desktop and bumblebee are now issued only in SWARM, after signing in with Touch ID: ` +
+      `${WEB_BASE_URL} → Settings → “Claude Desktop” or “bumblebee”. Keys you already have keep working.</i>`,
   );
 }
 
@@ -514,17 +442,17 @@ Deno.serve(async (req: Request) => {
 
     try {
       if (cb.data === "mtk_reissue") {
-        await sendMyToken(chatId, userId);
+        await sendKeysInWeb(chatId);
         return new Response("OK", { status: 200 });
       }
 
       if (cb.data === "setup_reissue") {
-        await sendSetupOneLiner(chatId, userId);
+        await sendKeysInWeb(chatId);
         return new Response("OK", { status: 200 });
       }
 
       if (cb.data === "rtk_reissue") {
-        await sendRecorderToken(chatId, userId);
+        await sendKeysInWeb(chatId);
         return new Response("OK", { status: 200 });
       }
 
@@ -894,40 +822,9 @@ Deno.serve(async (req: Request) => {
       } else {
         bgRun(sendDailyReport(), chatId);
       }
-    } else if (command === "/setup") {
-      // Уже подключён? НЕ перевыпускаем молча — новый токен убьёт рабочий config.json на
-      // другом Mac. Это была частая причина «токен протух»: повторный /setup рвал живое
-      // подключение. Просим подтверждение — как /mytoken и /recordertoken.
-      if (await hasActiveMcpToken(userId)) {
-        await sendInlineMessage(
-          chatId,
-          `🖥 <b>Claude Desktop уже подключён.</b>\n\n` +
-            `✅ Работает — <b>ничего делать не нужно</b>.\n\n` +
-            `⚠️ Claude пишет <b>«Invalid token»</b> / не видит базу, или ставишь на <b>новый Mac</b>? ` +
-            `Жми — переустановлю с новым токеном. Прежний Mac после этого перестанет видеть базу, пока не переустановишь и там.`,
-          [[{ text: "🔄 Всё равно переподключить", callback_data: "setup_reissue" }]],
-        );
-      } else {
-        await sendSetupOneLiner(chatId, userId);
-      }
-    } else if (command === "/mytoken") {
-      // Ручной токен (для тех, кто настраивает config сам). Авто-путь — /setup.
-      // Если живой токен уже есть — НЕ перевыпускаем молча (это убьёт рабочий config.json).
-      // Предупреждаем и просим явного подтверждения.
-      if (await hasActiveMcpToken(userId)) {
-        await sendInlineMessage(
-          chatId,
-          `🔑 <b>Токен в базе есть и активен.</b>\n\n` +
-            `✅ Claude отвечает по базе — ничего делать не нужно.\n\n` +
-            `⚠️ Claude пишет <b>«Invalid token»</b> / «токен протух» / не видит базу, или подключаешь <b>новое устройство</b>? ` +
-            `Значит в настройках Claude лежит <b>старый</b> токен. Жми кнопку — выдам свежий, вставь его в ` +
-            `claude.ai → Settings → Connectors → Bearer (или в config.json). На Mac проще — /setup.\n\n` +
-            `<i>Свежий токен убьёт старый — обнови его во всех местах, где вставлял.</i>`,
-          [[{ text: "🔄 Выдать свежий токен", callback_data: "mtk_reissue" }]],
-        );
-      } else {
-        await sendMyToken(chatId, userId);
-      }
+    } else if (command === "/setup" || command === "/mytoken") {
+      // Ключ Claude Desktop — только в вебе после Touch ID (решение 26.10.2026), см. sendKeysInWeb.
+      await sendKeysInWeb(chatId);
     } else if (command === "/revoketoken") {
       const { error: revErr } = await supabase
         .from("allowed_users")
@@ -963,7 +860,7 @@ Deno.serve(async (req: Request) => {
           [[{ text: "🔄 Всё-таки перевыпустить токен", callback_data: "rtk_reissue" }]],
         );
       } else {
-        await sendRecorderToken(chatId, userId);
+        await sendKeysInWeb(chatId);
       }
     } else if (command === "/revokerecordertoken") {
       // Отзыв гасит и перекрытие: команду зовут при утечке, «ещё сутки поработает» тут неуместно.

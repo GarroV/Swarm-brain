@@ -8,10 +8,13 @@
 import { isRenewableSession, type SessionClaims } from "../jwt.ts";
 
 export type SecondStepState = {
-  /** Шаг вообще применим: настоящий вход в веб (Google/Telegram), не демо, не Mini App, не короткий токен. */
+  /** Шаг вообще применим: веб-сессия, не демо, не Mini App. С 26.10.2026 — и короткая сессия из обмена токена. */
   applies: boolean;
   /** Пройден ли в этой сессии. */
   done: boolean;
+  /** Сессия из обмена личного токена (meeting-webtoken, без продления): пройти шаг она не может,
+   *  при включённом замке ей открыто только окно заметок рекордера (решение 26.10.2026). */
+  exchanged: boolean;
   /** Действует ли замок обязательности сейчас (вычислено на момент запроса). */
   required: boolean;
   /** Дата ISO, с которой замок начнёт действовать (если в SECOND_STEP_REQUIRED задана дата), иначе null. */
@@ -93,11 +96,11 @@ export function secondStepState(
   claims: SessionClaims | null,
   opts: { isDemo: boolean; required: boolean; requiredFrom?: string | null; audience: SecondStepAudience },
 ): SecondStepState {
-  const applies = claims !== null && !opts.isDemo && isRenewableSession(claims) &&
-    inAudience(opts.audience, claims.telegram_id);
+  const applies = claims !== null && !opts.isDemo && inAudience(opts.audience, claims.telegram_id);
   return {
     applies,
     done: applies && claims!.secondStep,
+    exchanged: claims !== null && !isRenewableSession(claims),
     required: opts.required,
     required_from: opts.requiredFrom ?? null,
     session: claims?.authTime ?? null,
@@ -107,9 +110,20 @@ export function secondStepState(
 /** Пути, открытые сессии без второго шага при включённом замке: нужно узнать состояние и выйти. */
 const OPEN_PATHS = new Set(["/me", "/auth/revoke-sessions", "/maintenance"]);
 
-/** Замок: включён, шаг применим и не пройден — всё, кроме открытых путей, закрыто. */
+/** Окно заметок рекордера (/live в WKWebView): встреча и её пометки — всё, что нужно сессии из обмена токена. */
+const RECORDER_NOTES_PATH = /^\/agent-meetings\/[^/]+(\/notes)?$/;
+
+function recorderNotesAllowed(method: string, routePath: string): boolean {
+  const m = RECORDER_NOTES_PATH.exec(routePath);
+  if (!m) return false;
+  return method === "GET" || (method === "POST" && m[1] === "/notes");
+}
+
+/** Замок: включён, шаг применим и не пройден — всё, кроме открытых путей, закрыто. Сессии из обмена
+ *  токена сверх того открыто окно заметок рекордера. */
 export function secondStepBlocks(state: SecondStepState, method: string, routePath: string): boolean {
   if (!state.required || !state.applies || state.done) return false;
   if (OPEN_PATHS.has(routePath) && (method === "GET" || routePath === "/auth/revoke-sessions")) return false;
+  if (state.exchanged && recorderNotesAllowed(method, routePath)) return false;
   return true;
 }
