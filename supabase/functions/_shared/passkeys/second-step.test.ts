@@ -29,6 +29,7 @@ Deno.test("настоящий вход без метки: применим, не
   assertEquals(secondStepState(login(false), { isDemo: false, required: false, audience: "all" }), {
     applies: true,
     done: false,
+    exchanged: false,
     required: false,
     required_from: null,
     session: now,
@@ -36,10 +37,40 @@ Deno.test("настоящий вход без метки: применим, не
   assertEquals(secondStepState(login(true), { isDemo: false, required: false, audience: "all" }).done, true);
 });
 
-Deno.test("демо, Mini App (нет сессии) и короткий токен веб-доступа — шаг не применим", () => {
+Deno.test("демо и Mini App (нет сессии) — шаг не применим", () => {
   assertEquals(secondStepState(login(false), { isDemo: true, required: true, audience: "all" }).applies, false);
   assertEquals(secondStepState(null, { isDemo: false, required: true, audience: "all" }).applies, false);
-  assertEquals(secondStepState(shortToken, { isDemo: false, required: true, audience: "all" }).applies, false);
+});
+
+// Решение 26.10.2026: сессия из обмена личного токена (meeting-webtoken, 12 ч) раньше шла мимо замка
+// и получала весь веб без Touch ID. Теперь шаг применим и к ней, а пройти его она не может (Pages
+// не ставит метку непродлеваемой сессии) — остаётся только окно заметок рекордера.
+Deno.test("короткий токен веб-доступа: шаг применим, помечен как обмен, не пройден", () => {
+  const st = secondStepState(shortToken, { isDemo: false, required: true, audience: "all" });
+  assertEquals(st.applies, true);
+  assertEquals(st.exchanged, true);
+  assertEquals(st.done, false);
+  assertEquals(secondStepState(login(false), { isDemo: false, required: true, audience: "all" }).exchanged, false);
+});
+
+Deno.test("замок включён: сессии из обмена токена открыто только окно заметок рекордера", () => {
+  const ex = secondStepState(shortToken, { isDemo: false, required: true, audience: "all" });
+  assertEquals(secondStepBlocks(ex, "GET", "/tasks"), true);
+  assertEquals(secondStepBlocks(ex, "GET", "/entries"), true);
+  assertEquals(secondStepBlocks(ex, "POST", "/mcp/token"), true);
+  assertEquals(secondStepBlocks(ex, "GET", "/agent-meetings"), true);
+  assertEquals(secondStepBlocks(ex, "PATCH", "/agent-meetings/m1"), true);
+  assertEquals(secondStepBlocks(ex, "GET", "/agent-meetings/m1/notes/x"), true);
+  assertEquals(secondStepBlocks(ex, "GET", "/agent-meetings/m1"), false);
+  assertEquals(secondStepBlocks(ex, "GET", "/agent-meetings/m1/notes"), false);
+  assertEquals(secondStepBlocks(ex, "POST", "/agent-meetings/m1/notes"), false);
+  assertEquals(secondStepBlocks(ex, "GET", "/me"), false);
+  // Обычному входу без Touch ID окно заметок не открыто — у него свой путь: пройти шаг.
+  const locked = secondStepState(login(false), { isDemo: false, required: true, audience: "all" });
+  assertEquals(secondStepBlocks(locked, "GET", "/agent-meetings/m1/notes"), true);
+  // Замок выключен — обмен работает как раньше.
+  const off = secondStepState(shortToken, { isDemo: false, required: false, audience: "all" });
+  assertEquals(secondStepBlocks(off, "GET", "/tasks"), false);
 });
 
 Deno.test("замок выключен по умолчанию: ничего не блокируется", () => {

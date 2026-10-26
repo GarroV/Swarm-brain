@@ -52,8 +52,9 @@ async function postJson(url: string, body: unknown): Promise<{ ok: boolean; data
 
 class StepFailed extends Error {}
 
-/** Один проход: вызов → окно устройства → проверка. Режим (create/get) выбирает сервер по ключам человека. */
-async function runStep(): Promise<{ done: boolean; notice?: StepNotice }> {
+/** Один проход: вызов → окно устройства → проверка. Режим (create/get) выбирает сервер по ключам человека.
+ *  Им же пользуется экран-замок SecondStepGate (шаг обязателен — внутрь без него не пускаем). */
+export async function runStep(): Promise<{ done: boolean; notice?: StepNotice }> {
   // Метка «ключ есть здесь» решает режим: без неё сервер всегда просит сохранить палец (create).
   const opts = await postJson("/api/auth/passkey/options", { here: readKey(HERE_KEY) === "1" });
   const mode = opts.data.mode as "create" | "get" | undefined;
