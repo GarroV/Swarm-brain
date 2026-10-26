@@ -1,7 +1,7 @@
 // Тесты склейки встреч по составу для claim (issues #168, #181).
 // Запуск: deno test supabase/functions/_shared/meeting-roster.test.ts
 import { assertEquals } from "jsr:@std/assert@1";
-import { sameMeetingByRoster, scopeRoomKey } from "./meeting-roster.ts";
+import { rosterMatchApplies, sameMeetingByRoster, scopeRoomKey } from "./meeting-roster.ts";
 
 // Живой случай 26.08: «IT+BD» писали двое — у владельца событие в Google-календаре (18 участников),
 // у коллеги события нет, рекордер опознал только комнату Контур.Толк (ни названия, ни участников).
@@ -92,4 +92,17 @@ Deno.test("scopeRoomKey — календарь и manual не трогаем, п
   assertEquals(scopeRoomKey("manual", "manual:uuid-1", "2026-08-26T12:00:00+00:00"), "manual:uuid-1");
   assertEquals(scopeRoomKey("room", "kontur:x:2026-08-26", "2026-08-26T12:00:00+00:00"), "kontur:x:2026-08-26");
   assertEquals(scopeRoomKey("room", "kontur:x", null), "kontur:x");
+});
+
+// 26.10.2026: два разных события календаря в одно время с общим участником — разные встречи.
+Deno.test("два календарных ключа по составу не склеиваются", () => {
+  assertEquals(rosterMatchApplies("calendar", "calendar"), false);
+});
+
+Deno.test("календарь с комнатой и внешней системой по составу склеиваются", () => {
+  assertEquals(rosterMatchApplies("calendar", "room"), true);
+  assertEquals(rosterMatchApplies("room", "calendar"), true);
+  assertEquals(rosterMatchApplies("calendar", "external"), true);
+  assertEquals(rosterMatchApplies("room", "room"), true);
+  assertEquals(rosterMatchApplies("calendar", null), true);
 });

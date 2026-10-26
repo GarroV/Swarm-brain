@@ -18,7 +18,7 @@ import { CHALLENGER_ROLE } from "../meeting-ingest/challenge.ts";
 import { boundClaimSeconds, type MeetingClock } from "./claim-clock.ts";
 import { AgentAuthError, type AgentIdentity, resolveActingIdentity } from "../_shared/agent-auth.ts";
 import { defaultMeetingTitle, displayNameOf, isDefaultMeetingTitle } from "../_shared/meeting-title.ts";
-import { ROSTER_TOLERANCE_MIN, sameMeetingByRoster, scopeRoomKey } from "../_shared/meeting-roster.ts";
+import { ROSTER_TOLERANCE_MIN, rosterMatchApplies, sameMeetingByRoster, scopeRoomKey } from "../_shared/meeting-roster.ts";
 import { accessToken, listEvents } from "../_shared/google-calendar.ts";
 import {
   type AgentScope,
@@ -317,9 +317,10 @@ type ExistingMeetingRow = HeldRow & { id: string };
 
 // Колонки строки встречи для арбитража: и найденной по составу, и по конфликту ключа.
 const EXISTING_COLUMNS =
-  "id, identity_key, started_at, attendees, claim_owner, recorded_seconds, transcript, notes_edited_at, status, created_at, lease_expires_at, agent_last_recording";
+  "id, identity_kind, identity_key, started_at, attendees, claim_owner, recorded_seconds, transcript, notes_edited_at, status, created_at, lease_expires_at, agent_last_recording";
 
 type RosterCandidate = ExistingMeetingRow & {
+  identity_kind: string | null;
   identity_key: string | null;
   started_at: string | null;
   attendees: Attendee[] | null;
@@ -356,7 +357,10 @@ async function findMeetingByRoster(
     .lte("started_at", to)
     .order("created_at", { ascending: true })
     .limit(20);
-  const candidates = ((data ?? []) as RosterCandidate[]).filter((c) => c.identity_key !== scopedKey);
+  // Разные события календаря — разные встречи, состав тут ничего не решает (rosterMatchApplies).
+  const candidates = ((data ?? []) as RosterCandidate[]).filter((c) =>
+    c.identity_key !== scopedKey && rosterMatchApplies(body.identity_kind, c.identity_kind)
+  );
   if (candidates.length === 0) return null;
 
   const incoming = {

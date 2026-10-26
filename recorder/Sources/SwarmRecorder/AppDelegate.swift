@@ -107,6 +107,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     private var presenceSent: PresenceBeacon.State?
     private var presenceSentAt: Date?
     private var callDismissedUntil: Date?
+    // Напоминание «Звонок идёт, но не записывается» (CallNudge, решение владельца 26.10.2026):
+    // когда начался текущий звонок (микрофон занят созвоном) и напоминали ли уже за этот звонок.
+    private var callStartedAt: Date?
+    private var callNudged = false
+    private static let nudgeCategory = "call-nudge"
+    private static let nudgeRecordAction = "call-nudge-record"
     // Последняя календарная встреча от сервера и когда она получена. Нужна, чтобы ручной старт
     // («Записать» в меню, ответ на подсказку о звонке) привязывался к идущей встрече, а не писал
     // её как manual мимо склейки с коллегами (решение владельца 18.09.2026, issue #379).
@@ -381,6 +387,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         center.requestAuthorization(options: [.alert, .sound]) { [weak self] _, _ in
             self?.refreshNotificationAuthorization()
         }
+        let lang = BoardL10n.language()
+        center.setNotificationCategories([UNNotificationCategory(
+            identifier: Self.nudgeCategory,
+            actions: [UNNotificationAction(identifier: Self.nudgeRecordAction,
+                                           title: BoardL10n.text("nudge.record", lang: lang), options: []),
+                      UNNotificationAction(identifier: "call-nudge-skip",
+                                           title: BoardL10n.text("nudge.skip", lang: lang), options: [])],
+            intentIdentifiers: [])])
     }
 
     // Текущий статус разрешения на уведомления. nil — ещё не спрашивали систему.
@@ -664,6 +678,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 if !meetings.isEmpty {
                     self?.lastCalendar = (meetings, lookup?.recordedNow ?? [], Date())
                 }
+                // До handleDetection: напоминание снимает крестик с созвона, и тот же тик
+                // снова покажет его в капсуле.
+                self?.nudgeIfUnrecorded(micOn: micOn, meetings: meetings,
+                                        recordedNow: lookup?.recordedNow ?? [])
                 self?.handleDetection(meetings: meetings, micActive: micOn,
                                       recordedNow: lookup?.recordedNow ?? [])
                 if let recordedNow = lookup?.recordedNow { self?.askIfBotRecords(recordedNow) }
@@ -769,8 +787,47 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     // `UNNotificationDefaultActionIdentifier` — то есть запись начиналась от клика по ЛЮБОМУ
     // уведомлению приложения, включая «нужен новый токен» и «звонок завершён, сохраняю».
     // Предложение записать теперь живёт только в капсуле, и решение принимается там.
+    // Исключение — кнопка «Записать» на напоминании «Звонок идёт, но не записывается» (CallNudge):
+    // там вопрос задан прямо, и ответ на него в самом уведомлении.
     func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse, withCompletionHandler completionHandler: @escaping () -> Void) {
+        if response.actionIdentifier == Self.nudgeRecordAction {
+            DispatchQueue.main.async { [weak self] in
+                guard let self, case .idle = self.state else { return }
+                self.acceptPrompt(source: "напоминание")
+            }
+        }
         completionHandler()
+    }
+
+    /// Звонок идёт 3 минуты, запись не включена, Скриба этот созвон не пишет → один раз за звонок
+    /// вернуть предложение в капсулу и показать уведомление с кнопкой «Записать» (CallNudge).
+    private func nudgeIfUnrecorded(micOn: Bool, meetings: [MeetingIdentity.Info], recordedNow: [String]) {
+        guard micOn else { callStartedAt = nil; callNudged = false; return }
+        let now = Date()
+        if callStartedAt == nil { callStartedAt = now }
+        guard case .idle = state,
+              CallNudge.isDue(callStartedAt: callStartedAt, now: now, isRecording: false,
+                              alreadyNudged: callNudged) else { return }
+        let calls = meetings.filter { $0.joinURL != nil }
+        let current = calls.count > 1 ? calls.first { MeetingIdentity.isCallOpen($0.joinURL) } : calls.first
+        callNudged = true
+        if CallNudge.isCoveredByBot(liveKeys: calls.map(\.key), currentKey: current?.key,
+                                    recordedNow: recordedNow) {
+            Diagnostics.shared.log("NUDGE звонок без записи, но его пишет Скриба — молчим")
+            return
+        }
+        Diagnostics.shared.log("NUDGE звонок идёт 3 мин без записи → \(current?.key ?? calls.first?.key ?? "без календаря")")
+        for m in calls { dismissedUntil.removeValue(forKey: m.key) }
+        if calls.isEmpty { callDismissedUntil = nil; callActive = true; rebuildMenu() }
+        let lang = BoardL10n.language()
+        let c = UNMutableNotificationContent()
+        c.title = BoardL10n.text("nudge.title", lang: lang)
+        c.body = (current ?? calls.first)?.title.map { "«\($0)». " } .map { $0 + BoardL10n.text("nudge.body", lang: lang) }
+            ?? BoardL10n.text("nudge.body", lang: lang)
+        c.sound = .default
+        c.categoryIdentifier = Self.nudgeCategory
+        UNUserNotificationCenter.current().add(UNNotificationRequest(
+            identifier: "call-nudge-\(Int(now.timeIntervalSince1970))", content: c, trigger: nil))
     }
 
     // ── UI ──────────────────────────────────────────────────────────────────────
@@ -1388,7 +1445,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     private func acceptPrompt(source: String) {
         Diagnostics.shared.log("USER принял предложение записать (\(source))")
-        if let m = pendingMeeting {
+        if let m = MeetingChoice.manualPick(pendingMeetings, key: \.key,
+                                             isOpen: { MeetingIdentity.isCallOpen($0.joinURL) },
+                                             isRecordedByOthers: { _ in false }) {
             pendingMeetings = []
             beginRecording(identity: m)
         } else {
