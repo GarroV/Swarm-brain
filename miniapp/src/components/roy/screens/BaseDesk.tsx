@@ -5,7 +5,8 @@ import type { Entry } from "@/types";
 import { fetchConfig, fetchEntriesWithTotal } from "@/lib/api";
 import { countryCode, countryName } from "@/lib/countries";
 import { Menu, ToolbarButton, type MenuItem } from "@/components/tasks/table/Menu";
-import { useDt, useRoyNav } from "../nav";
+import { useDt, useIsDemo, useRoyNav } from "../nav";
+import { useDemoQuestions } from "../DemoQuestions";
 import { RoyIcon } from "../icons";
 import { saveRecent } from "./SearchScreen";
 import { deriveEntryTitle, entryFacet, entryImporterName, entryPreview } from "../entry";
@@ -27,6 +28,8 @@ const COLS = "minmax(0,1fr) 96px 96px minmax(120px,16%) 88px";
 
 export function BaseDesk() {
   const dt = useDt();
+  const isDemo = useIsDemo();
+  const demoQuestions = useDemoQuestions();
   const { push, openAnswer, me } = useRoyNav();
   const [entries, setEntries] = useState<Entry[] | null>(null);
   const [total, setTotal] = useState<number | null>(null);
@@ -65,6 +68,12 @@ export function BaseDesk() {
     openAnswer(v);
   };
 
+  // Демо без модели (docs/decisions/2026-10-27-demo-no-model.md): вместо поля ввода — заготовленные вопросы.
+  const demoItems: MenuItem[] = demoQuestions.map((d) => ({
+    key: d.id, label: dt(d.question_ru, d.question), on: false, action: true,
+    onPick: () => { saveRecent(d.question); openAnswer(d.question); },
+  }));
+
   const countryItems: MenuItem[] = [
     { key: "all", label: dt("все", "all"), on: country == null, action: true, onPick: () => setCountry(null) },
     ...markets.map((c) => ({ key: c, label: `${countryCode(c)} · ${countryName(c)}`, on: country === c, action: true, onPick: () => setCountry(c) })),
@@ -99,6 +108,9 @@ export function BaseDesk() {
           <Menu label={`${dt("Страна", "Country")}: ${country ? countryCode(country) : dt("все", "all")}`} on={country != null} items={countryItems} />
         )}
         <ToolbarButton on={mineOnly} onClick={() => setMineOnly((v) => !v)}>{dt("Только мои", "Mine only")}</ToolbarButton>
+        {isDemo ? (
+          <Menu label={dt("Примеры вопросов", "Sample questions")} on={false} items={demoItems} />
+        ) : (
         <form role="search" onSubmit={(e) => { e.preventDefault(); ask(); }}>
           <label className="flex h-[30px] items-center gap-1.5 rounded-[7px] border border-line-2 bg-surface px-2.5 text-ink-mute focus-within:border-primary"
             title={dt("Enter — ответ по базе", "Enter — answer from the base")}>
@@ -113,6 +125,7 @@ export function BaseDesk() {
             />
           </label>
         </form>
+        )}
         <span className="ml-auto whitespace-nowrap text-ink-mute" style={{ fontSize: 12.5 }}>
           {dt("Записей", "Records")} <b className="text-ink">{rows.length}</b> {dt("из", "of")} {total ?? all.length}
         </span>

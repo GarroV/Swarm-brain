@@ -32,56 +32,87 @@ export type DemoQuestion = {
 
 const S = {
   ops: {
-    id: "d0000000-0000-4000-8000-000000000501", title: "Weekly ops sync", tag: "meet", entry_type: "meeting",
-    market: "PT", daysAgo: 2,
+    id: "d0000000-0000-4000-8000-000000000501",
+    title: "Weekly ops sync",
+    tag: "meet",
+    entry_type: "meeting",
+    market: "PT",
+    daysAgo: 2,
     snippet: {
       en: "Peak-hour ticket time is 6–7 minutes at Harbour Street, target is under 4. Milk steaming is the bottleneck.",
       ru: "В час пик чек делается 6–7 минут при цели меньше 4. Узкое место — взбивание молока.",
     },
   },
   release: {
-    id: "d0000000-0000-4000-8000-000000000502", title: "App release review", tag: "meet", entry_type: "meeting",
-    market: null, daysAgo: 1,
+    id: "d0000000-0000-4000-8000-000000000502",
+    title: "App release review",
+    tag: "meet",
+    entry_type: "meeting",
+    market: null,
+    daysAgo: 1,
     snippet: {
       en: "One-tap reorder: iOS done, Android in review. Release on Monday if refund tests pass.",
-      ru: "Повтор заказа в один тап: iOS готов, Android на проверке. Релиз в понедельник, если пройдут тесты возвратов.",
+      ru:
+        "Повтор заказа в один тап: iOS готов, Android на проверке. Релиз в понедельник, если пройдут тесты возвратов.",
     },
   },
   menu: {
-    id: "d0000000-0000-4000-8000-000000000503", title: "Autumn menu kick-off", tag: "meet", entry_type: "meeting",
-    market: "NL", daysAgo: 4,
+    id: "d0000000-0000-4000-8000-000000000503",
+    title: "Autumn menu kick-off",
+    tag: "meet",
+    entry_type: "meeting",
+    market: "NL",
+    daysAgo: 4,
     snippet: {
       en: "Four seasonal drinks, two pastries. Prices agreed; launch NL and DE first, other markets a week later.",
-      ru: "Четыре сезонных напитка и две выпечки. Цены согласованы; запуск сначала в NL и DE, остальные рынки неделей позже.",
+      ru:
+        "Четыре сезонных напитка и две выпечки. Цены согласованы; запуск сначала в NL и DE, остальные рынки неделей позже.",
     },
   },
   dairy: {
-    id: "d0000000-0000-4000-8000-000000000504", title: "Dairy supplier call", tag: "meet", entry_type: "meeting",
-    market: "ES", daysAgo: 6,
+    id: "d0000000-0000-4000-8000-000000000504",
+    title: "Dairy supplier call",
+    tag: "meet",
+    entry_type: "meeting",
+    market: "ES",
+    daysAgo: 6,
     snippet: {
       en: "Early-morning deliveries from next month, same price. Quarterly quality reports received.",
       ru: "Доставки рано утром со следующего месяца, по той же цене. Квартальные отчёты о качестве получены.",
     },
   },
   playbook: {
-    id: "d0000000-0000-4000-8000-000000000511", title: "Store opening playbook", tag: "note", entry_type: "note",
-    market: null, daysAgo: 12,
+    id: "d0000000-0000-4000-8000-000000000511",
+    title: "Store opening playbook",
+    tag: "note",
+    entry_type: "note",
+    market: null,
+    daysAgo: 12,
     snippet: {
       en: "Lease, permits and fit-out; equipment order 6 weeks before opening; hire and train the team 3 weeks before.",
-      ru: "Аренда, разрешения и отделка; заказ оборудования за 6 недель до открытия; найм и обучение команды за 3 недели.",
+      ru:
+        "Аренда, разрешения и отделка; заказ оборудования за 6 недель до открытия; найм и обучение команды за 3 недели.",
     },
   },
   layout: {
-    id: "d0000000-0000-4000-8000-000000000512", title: "Peak-hour station layout", tag: "note", entry_type: "note",
-    market: "PT", daysAgo: 9,
+    id: "d0000000-0000-4000-8000-000000000512",
+    title: "Peak-hour station layout",
+    tag: "note",
+    entry_type: "note",
+    market: "PT",
+    daysAgo: 9,
     snippet: {
       en: "Till, espresso, milk + hand-off — three stations. Milk fridge within one step of the steam wand.",
       ru: "Касса, эспрессо, молоко и выдача — три станции. Холодильник с молоком в одном шаге от парового крана.",
     },
   },
   voice: {
-    id: "d0000000-0000-4000-8000-000000000513", title: "Brand voice guide", tag: "note", entry_type: "note",
-    market: null, daysAgo: 20,
+    id: "d0000000-0000-4000-8000-000000000513",
+    title: "Brand voice guide",
+    tag: "note",
+    entry_type: "note",
+    market: null,
+    daysAgo: 20,
     snippet: {
       en: "Warm, short, neighbourly. Talk like the barista who knows your order.",
       ru: "Тёплый, короткий, по-соседски. Говорим как бариста, который знает ваш заказ.",
@@ -104,7 +135,10 @@ export const DEMO_QUESTIONS: readonly DemoQuestion[] = [
   },
   {
     id: "peak-hour",
-    question: { en: "Why is service slow at peak hour and what is the fix?", ru: "Почему в час пик обслуживание медленное и что делаем?" },
+    question: {
+      en: "Why is service slow at peak hour and what is the fix?",
+      ru: "Почему в час пик обслуживание медленное и что делаем?",
+    },
     answer: {
       en:
         "- Ticket time at Harbour Street is 6–7 minutes at peak against a target of under 4; milk steaming is the bottleneck [1].\n- First fix: move the milk fridge next to the bar [1].\n- The station layout note sets three stations (till, espresso, milk and hand-off), the fridge within one step of the steam wand, and cups pre-stacked by size before 8:00 [2].",

@@ -64,7 +64,16 @@ Deno.test("классификатор: каждый маршрут к модел
   for (const [method, path, action] of MODEL_ROUTES) {
     assertEquals(classifyDemoModelRoute(method, path), action, `${method} ${path}`);
   }
-  for (const [method, path] of [["GET", "/tasks"], ["POST", "/agent-meetings/abc/publish"], ["GET", "/meetings"], ["GET", "/search/quick"], ["GET", "/meetings/record/active"], ["PATCH", "/entries/abc"]]) {
+  for (
+    const [method, path] of [
+      ["GET", "/tasks"],
+      ["POST", "/agent-meetings/abc/publish"],
+      ["GET", "/meetings"],
+      ["GET", "/search/quick"],
+      ["GET", "/meetings/record/active"],
+      ["PATCH", "/entries/abc"],
+    ]
+  ) {
     assertEquals(classifyDemoModelRoute(method, path), null, `${method} ${path}`);
   }
 });
@@ -73,7 +82,9 @@ Deno.test("демо: на каждом маршруте к модели — но
   const seeded = DEMO_QUESTIONS[0].sources.map((s) => ({ id: s.id }));
   await withFetchSpy(async (calls) => {
     for (const [method, path, action] of MODEL_ROUTES) {
-      const url = `${BASE}${path}${path === "/search" ? "?q=" + encodeURIComponent(DEMO_QUESTIONS[0].question.en) : ""}`;
+      const url = `${BASE}${path}${
+        path === "/search" ? "?q=" + encodeURIComponent(DEMO_QUESTIONS[0].question.en) : ""
+      }`;
       const init: RequestInit = { method };
       if (method === "POST") init.body = JSON.stringify({ q: DEMO_QUESTIONS[0].question.en, text: "x" });
       const res = await withModelScope(async () => {
@@ -96,7 +107,11 @@ Deno.test("демо: на каждом маршруте к модели — но
 
 Deno.test("демо /ask: заготовленный вопрос → ответ и источники; чужой текст → подсказка без модели", async () => {
   const ask = (body: unknown) =>
-    handleDemoModelRoute({ supabase: fakeSupabase([]), origin: "" }, new Request(`${BASE}/ask`, { method: "POST", body: JSON.stringify(body) }), "/ask")
+    handleDemoModelRoute(
+      { supabase: fakeSupabase([]), origin: "" },
+      new Request(`${BASE}/ask`, { method: "POST", body: JSON.stringify(body) }),
+      "/ask",
+    )
       .then((r) => r!.json());
   const hit = await ask({ q: "what was decided about the app release" });
   assertEquals(hit.query, DEMO_QUESTIONS[0].question.en);
@@ -124,11 +139,18 @@ Deno.test("замок: externalFetch к OpenAI в демо-запросе не �
       assertEquals((await extractEntryMeta("текст", "sk-test")).countries, []);
     });
     assertEquals(calls, []);
-    // Контроль: без замка тот же вызов доходит до подменённой сети — замок не «залипает».
+    // Контроль: без замка тот же вызов доходит до fetch — замок не «залипает».
+    let reached = 0;
     await withModelScope(async () => {
-      await externalFetch("https://api.openai.com/v1/embeddings", { method: "POST", body: "{}" }, VIA_OPENAI_CHAT).catch(() => {});
+      await externalFetch("https://api.openai.com/v1/embeddings", { method: "POST", body: "{}" }, {
+        ...VIA_OPENAI_CHAT,
+        fetchFn: () => {
+          reached++;
+          return Promise.resolve(new Response("{}", { status: 200 }));
+        },
+      });
     });
-    assertEquals(calls.length, 1, "без замка вызов обязан дойти до fetch");
+    assertEquals(reached, 1, "без замка вызов обязан дойти до fetch");
   });
 });
 
@@ -144,12 +166,26 @@ Deno.test("замок: blockModelCalls вне withModelScope — ошибка, �
 
 Deno.test("роутер: замок и демо-обработчик стоят до первого маршрута к модели", async () => {
   const src = await Deno.readTextFile(`${HERE}index.ts`);
-  assert(/withModelScope\(\(\) => withErrorBoundary\(req, routeRequest\)\)/.test(src), "Deno.serve обязан идти через withModelScope");
+  assert(
+    /withModelScope\(\(\) => withErrorBoundary\(req, routeRequest\)\)/.test(src),
+    "Deno.serve обязан идти через withModelScope",
+  );
   const flag = src.indexOf("if (isDemo) {\n    DEMO_REQUESTS.add(req);");
-  assert(flag > 0 && src.slice(flag, flag + 400).includes("blockModelCalls()"), "замок встаёт сразу после опознания демо");
+  assert(
+    flag > 0 && src.slice(flag, flag + 400).includes("blockModelCalls()"),
+    "замок встаёт сразу после опознания демо",
+  );
   const gate = src.indexOf("handleDemoModelRoute({ supabase, origin }, req, routePath)");
   assert(gate > flag, "демо-обработчик подключён");
-  for (const marker of ['routePath === "/search"', 'routePath === "/ask"', 'routePath === "/digest"', 'routePath === "/tasks/extract"', 'routePath === "/entries"']) {
+  for (
+    const marker of [
+      'routePath === "/search"',
+      'routePath === "/ask"',
+      'routePath === "/digest"',
+      'routePath === "/tasks/extract"',
+      'routePath === "/entries"',
+    ]
+  ) {
     const at = src.indexOf(marker);
     assert(at > gate, `${marker} стоит раньше демо-обработчика`);
   }

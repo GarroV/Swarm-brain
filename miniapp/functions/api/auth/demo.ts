@@ -1,12 +1,17 @@
 import { signJWT } from "../../_lib/jwt";
 
 // Cloudflare Pages Function: GET /api/auth/demo?key=<DEMO_ACCESS_KEY>
-// Demo-вход по СЕКРЕТНОЙ ссылке — выдаёт сессию зашитого demo-юзера (не Telegram-логин).
+// Demo-вход по ссылке с ключом — выдаёт сессию зашитого demo-юзера (не Telegram-логин).
 // Заказчик открывает ссылку → httpOnly cookie с JWT → попадает в demo-воркспейс.
 //
-// Изоляция «нет дыр в рабочие» держится НЕ здесь, а в swarm-api (барьер isDemo):
-// эта сессия форсится в group_id='demo', не админ, не минтит токены. Здесь — только выдача
-// сессии по секрету. Секрет (DEMO_ACCESS_KEY) — высокоэнтропийный, в env CF Pages.
+// Ссылка ПУБЛИЧНАЯ НАМЕРЕННО (решение 27.10.2026, issue #604): она лежит в README, чтобы любой
+// мог зайти в витрину за десять секунд. DEMO_ACCESS_KEY здесь — не секрет, а адрес входа и
+// отсекатель случайных переходов; модель угроз такая: КАЖДЫЙ, у кого есть ссылка, — демо-юзер.
+// Поэтому всё, что демо-сессия может изменить, видно любому, а всё, что стоит денег, ей закрыто.
+//
+// Изоляция «нет дыр в рабочие» и «нет трат» держится НЕ здесь, а в swarm-api (барьер isDemo):
+// эта сессия форсится в group_id='demo', не админ, не минтит токены, не подключает интеграции и
+// не вызывает модель (docs/decisions/2026-10-27-demo-no-model.md). Здесь — только выдача сессии.
 // Тот же id, что DEMO_USER_ID в supabase/functions/_shared/demo-session.ts (сборки разные).
 export const DEMO_USER_ID = 900000001;
 const SESSION_MAX_AGE = 7 * 86400;
@@ -32,7 +37,7 @@ export async function onRequestGet(ctx: Ctx): Promise<Response> {
   }
   const url = new URL(request.url);
   const key = url.searchParams.get("key") ?? "";
-  // Секрет высокоэнтропийный → прямого сравнения достаточно (не подбирается по HTTP).
+  // Ключ высокоэнтропийный и всё равно публичный (README): сравнение отсекает случайные переходы, а не защищает данные.
   if (!key || key !== env.DEMO_ACCESS_KEY) {
     return new Response("Forbidden", { status: 403 });
   }

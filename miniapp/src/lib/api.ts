@@ -3729,6 +3729,17 @@ export async function ask(q: string): Promise<AskResult> {
   });
 }
 
+// Демо без модели (docs/decisions/2026-10-27-demo-no-model.md): вместо свободного вопроса —
+// заготовленные. Сервер отвечает на них через тот же ask(); список вопросов — GET /demo/questions.
+export type DemoQuestion = { id: string; question: string; question_ru: string };
+
+export async function fetchDemoQuestions(): Promise<DemoQuestion[]> {
+  if (DEV_MODE) {
+    return [{ id: "release", question: "What was decided about the app release?", question_ru: "Что решили по релизу приложения?" }];
+  }
+  return (await apiFetch<{ questions: DemoQuestion[] }>("/demo/questions")).questions;
+}
+
 export async function createEntry(input: CreateEntryInput): Promise<Entry> {
   if (DEV_MODE) {
     const e: Entry = {

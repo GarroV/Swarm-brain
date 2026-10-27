@@ -91,7 +91,11 @@ function askSources(sources: readonly DemoSource[], now: Date) {
 }
 
 const listQuestions = (ids: readonly string[]) =>
-  DEMO_QUESTIONS.filter((d) => ids.includes(d.id)).map((d) => ({ id: d.id, question: d.question.en, question_ru: d.question.ru }));
+  DEMO_QUESTIONS.filter((d) => ids.includes(d.id)).map((d) => ({
+    id: d.id,
+    question: d.question.en,
+    question_ru: d.question.ru,
+  }));
 
 export interface DemoModelContext {
   supabase: SupabaseClient;
@@ -115,11 +119,15 @@ export async function handleDemoModelRoute(
     case "questions":
       return json({ questions: listQuestions(DEMO_QUESTIONS.map((d) => d.id)) }, 200, ctx.origin);
     case "digest":
-      return json({
-        text: DEMO_DIGEST.text.en,
-        text_ru: DEMO_DIGEST.text.ru,
-        sources: askSources(DEMO_DIGEST.sources, now),
-      }, 200, ctx.origin);
+      return json(
+        {
+          text: DEMO_DIGEST.text.en,
+          text_ru: DEMO_DIGEST.text.ru,
+          sources: askSources(DEMO_DIGEST.sources, now),
+        },
+        200,
+        ctx.origin,
+      );
     case "ask": {
       let body: { q?: string; id?: string };
       try {
@@ -131,21 +139,29 @@ export async function handleDemoModelRoute(
       if (!q) return json({ error: "q required" }, 400, ctx.origin);
       const found = findDemoQuestion(q);
       if (!found) {
-        return json({
-          query: q,
-          answer: NOT_PRESET.en,
-          answer_ru: NOT_PRESET.ru,
-          sources: [],
-          followups: DEMO_QUESTIONS.map((d) => d.question.en),
-        }, 200, ctx.origin);
+        return json(
+          {
+            query: q,
+            answer: NOT_PRESET.en,
+            answer_ru: NOT_PRESET.ru,
+            sources: [],
+            followups: DEMO_QUESTIONS.map((d) => d.question.en),
+          },
+          200,
+          ctx.origin,
+        );
       }
-      return json({
-        query: found.question.en,
-        answer: found.answer.en,
-        answer_ru: found.answer.ru,
-        sources: askSources(found.sources, now),
-        followups: found.followups.flatMap((id) => DEMO_QUESTIONS.find((d) => d.id === id)?.question.en ?? []),
-      }, 200, ctx.origin);
+      return json(
+        {
+          query: found.question.en,
+          answer: found.answer.en,
+          answer_ru: found.answer.ru,
+          sources: askSources(found.sources, now),
+          followups: found.followups.flatMap((id) => DEMO_QUESTIONS.find((d) => d.id === id)?.question.en ?? []),
+        },
+        200,
+        ctx.origin,
+      );
     }
     case "search": {
       const found = findDemoQuestion(new URL(req.url).searchParams.get("q") ?? "");
