@@ -2,8 +2,8 @@ import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import {
   isSecondStepRequired,
   parseSecondStepAudience,
-  secondStepConfigWarnings,
   secondStepBlocks,
+  secondStepConfigWarnings,
   secondStepRequiredFrom,
   secondStepState,
 } from "./second-step.ts";
