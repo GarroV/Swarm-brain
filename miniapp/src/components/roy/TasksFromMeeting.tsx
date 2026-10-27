@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { useRoyNav, useDt } from "./nav";
 import { RoyIcon } from "./icons";
 import { createTask, extractTasksStreamed, fetchMe, fetchUsers } from "@/lib/api";
-import { effectiveAssigneeId, taskCountLabel } from "@/lib/proposedTasks";
+import { effectiveAssigneeId, meetingDefaultCountry, taskCountLabel } from "@/lib/proposedTasks";
 import type { Me, User } from "@/types";
 import { TaskModal } from "@/components/TaskModal";
 import { TasksHarvest, type DraftTask, type HarvestActions } from "./TasksHarvest";
@@ -19,8 +19,9 @@ import { TasksHarvest, type DraftTask, type HarvestActions } from "./TasksHarves
 // meetingId — entry.id для привязки задач (у agent-черновика записи ещё нет → undefined,
 // задачи создаются автономно). resetKey — id выбранной записи: при смене сбрасываем список.
 export function TasksFromMeeting({
-  text, meetingId, resetKey, onAdded,
-}: { text: string; meetingId?: string | null; resetKey: string; onAdded?: () => void }) {
+  text, meetingId, resetKey, onAdded, countries,
+}: { text: string; meetingId?: string | null; resetKey: string; onAdded?: () => void; countries?: string[] | null }) {
+  const defaultCountry = meetingDefaultCountry(countries);
   const { toast } = useRoyNav();
   const dt = useDt();
 
@@ -62,7 +63,7 @@ export function TasksFromMeeting({
     try {
       await extractTasksStreamed(text, (proposed) => {
         const key = `${Date.now()}-${seen++}`;
-        setTasks((prev) => [...(prev ?? []), { ...proposed, _key: key, _selected: true }]);
+        setTasks((prev) => [...(prev ?? []), { ...proposed, country: proposed.country ?? defaultCountry, _key: key, _selected: true }]);
       });
     } catch {
       toast(dt("Не удалось вычленить задачи", "Could not extract tasks"));

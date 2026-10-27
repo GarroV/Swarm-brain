@@ -185,7 +185,7 @@ export function MeetingDetail({ id }: { id: string }) {
                 или своя). Берём content||summary, чтобы блок не исчезал у встреч с пустым content. */}
             {(e.content || e.summary) && (
               <div className="mb-4">
-                <TasksFromMeeting text={e.content || e.summary || ""} meetingId={e.id} resetKey={e.id} onAdded={loadTasks} />
+                <TasksFromMeeting text={e.content || e.summary || ""} meetingId={e.id} resetKey={e.id} onAdded={loadTasks} countries={e.countries} />
                 {tasks.length > 0 && (
                   <div className="mt-2 space-y-1">
                     {tasks.map((t) => <DashTaskRow key={t.id} task={t} showAssignee />)}

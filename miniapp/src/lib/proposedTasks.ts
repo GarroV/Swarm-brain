@@ -141,3 +141,13 @@ export function taskCountLabel(n: number): string {
   if (mod10 >= 2 && mod10 <= 4) return `${n} задачи`;
   return `${n} задач`;
 }
+
+/**
+ * Страна задачи по умолчанию — страна встречи, если она у встречи ОДНА (General не в счёт).
+ * Модель ставит страну, только когда она названа в тексте, и задачи из встречи по Сербии
+ * уходили без страны (жалоба владельца 27.10.2026). Несколько стран — не угадываем.
+ */
+export function meetingDefaultCountry(countries: readonly string[] | null | undefined): string | null {
+  const real = (countries ?? []).filter((c) => c && c !== "General");
+  return real.length === 1 ? real[0] : null;
+}
