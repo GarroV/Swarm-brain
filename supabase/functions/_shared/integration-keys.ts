@@ -35,8 +35,11 @@ export async function sealIntegrationKey(plain: string, telegramId: number, serv
 /** Расшифровать значение колонки в точке использования; открытый (старый) ключ отдаёт как есть. */
 export async function openIntegrationKey(stored: string, telegramId: number, service: string): Promise<string> {
   if (!isSealedKey(stored)) return stored;
-  const [iv, ciphertext] = stored.slice(SEALED_PREFIX.length).split(":");
-  if (!iv || !ciphertext) throw new Error("ключ интеграции в базе повреждён: неверный формат");
+  const parts = stored.slice(SEALED_PREFIX.length).split(":");
+  if (parts.length !== 2 || !parts[0] || !parts[1]) {
+    throw new Error("ключ интеграции в базе повреждён: неверный формат");
+  }
+  const [iv, ciphertext] = parts;
   return await openSecret({ iv, ciphertext }, aadOf(telegramId, service));
 }
 
