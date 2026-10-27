@@ -801,6 +801,13 @@ Read.ai webhook → read-ai-webhook функция → сохраняет в ent
      (перезаявка с длительностью → при отказе остаётся в карантине, итог всегда озвучен).
      Смоук спасательного пути: SwarmRecorder --selftest-quarantine (живой прогон перезаявки —
      с SWARM_SELFTEST_URL/SWARM_SELFTEST_TOKEN/SWARM_SELFTEST_KEY).
+   • «Ни одна запись не теряется» (#1070, решение владельца 27.10.2026): в карантин `failed/` ведут
+     три пути — defer, постоянный 4xx заливки (`rejected`), исчерпанные 12 попыток (`exhausted`);
+     раньше два последних уходили в тихий dead-letter. Всё из карантина рекордер ОДИН раз шлёт на
+     сервер бэкапом (meeting-ingest, `backup_only=1`, `reason`; сервер не распознаёт, строку встречи
+     не трогает, держит 3 суток) и раз в 20 мин повторяет claim (автодосылка; `published` и постоянный
+     4xx — стоп). Локальная копия живёт те же 3 суток от конца встречи. Логика — `RecorderKit/BackupPolicy`,
+     жизненный цикл по шагам — recorder/README.md «Жизненный цикл записи».
 claimer → meeting-ingest: грузит АУДИО (части ≤15мин → Storage) → durable-обработка по куску
   (inline-проход в ingest + cron meeting-process, переживает wall-clock) → meetings.transcript
   → async GPT-тезисы → meetings.draft_notes_md (общий черновик, НЕ в базе знаний/поиске)
