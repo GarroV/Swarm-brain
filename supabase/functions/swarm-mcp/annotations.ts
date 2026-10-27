@@ -107,6 +107,11 @@ export function annotationsFor(name: string): ToolAnnotations | undefined {
   };
 }
 
+/** Вид инструмента; undefined — инструмент не классифицирован. */
+export function toolKind(name: string): ToolClass["kind"] | undefined {
+  return Object.hasOwn(TOOL_CLASSES, name) ? TOOL_CLASSES[name].kind : undefined;
+}
+
 /** Копия определения с annotations. Незнакомый инструмент получает самые осторожные: запись, разрушающая. */
 export function withAnnotations<T extends ToolDefinition>(tool: T): T & { annotations: ToolAnnotations } {
   return {

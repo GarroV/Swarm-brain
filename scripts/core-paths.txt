@@ -113,3 +113,9 @@ supabase/functions/_shared/tasks/sprint-journey.ts|supabase/functions/_shared/ta
 supabase/functions/_shared/voice-task.ts|supabase/functions/_shared/voice-task.test.ts
 # Размеры доски рекордера с сервера: неверное значение не должно ломать вёрстку у всех.
 supabase/functions/_shared/board-config.ts|supabase/functions/_shared/board-config.test.ts
+# Доступ MCP (#1083): срок токена, два шага подтверждения разрушающих вызовов, журнал. Ошибка не
+# падает — протухший ключ продолжает работать, подтверждение подходит к чужим аргументам, а журнал
+# молчит о правках.
+supabase/functions/swarm-mcp/token-state.ts|supabase/functions/swarm-mcp/token-state.test.ts
+supabase/functions/swarm-mcp/confirm.ts|supabase/functions/swarm-mcp/confirm.test.ts
+supabase/functions/swarm-mcp/journal.ts|supabase/functions/swarm-mcp/journal.test.ts
