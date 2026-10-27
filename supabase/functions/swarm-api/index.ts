@@ -3,7 +3,6 @@
 // файла ЦЕЛИКОМ, а переформатирование этого — ~700 строк дифа поверх параллельных веток. Новый код
 // роутера живёт в модулях рядом (task-labels.ts, meeting-invites.ts …), они по канону.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { verifyInitData } from "./auth.ts";
 import { isRenewableSession, isSessionRevoked, type SessionClaims, verifyJWT } from "../_shared/jwt.ts";
 import {
   isSecondStepRequired,
@@ -227,7 +226,6 @@ const TASKS_LIST_LIMIT = 2000;
 const FILE_SIGNED_TTL_SEC = 60;
 
 const BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN")!;
-const MAX_AGE = parseInt(Deno.env.get("INITDATA_MAX_AGE") ?? "86400", 10);
 const ADMIN_USER_ID = 744230399; // см. lib/supabase.ts swarm-bot — единый суперадмин
 // Demo-сессия для показа заказчику (секретная ссылка → JWT с этим telegram_id). Жёстко
 // изолирована в синтетический воркспейс: не админ, не видит рабочие данные, не минтит токены.
@@ -593,25 +591,15 @@ async function routeRequest(req: Request): Promise<Response> {
     );
   }
 
-  // ── Auth: два способа ─────────────────────────────────────────────────────
-  //   • Telegram Mini App:  Authorization: tma <initData>
-  //   • Веб (Login Widget):  Authorization: Bearer <JWT>  (вариант B+, проксируется CF Pages Function)
+  // ── Auth: веб-сессия ──────────────────────────────────────────────────────
+  //   Authorization: Bearer <JWT>  (вариант B+, проксируется CF Pages Function).
+  //   Любая другая схема — 401.
   const authHeader = req.headers.get("Authorization") ?? "";
   let telegram_id: number;
-  let language_code = "en";
   // Веб-сессия (Bearer). Сверяется с отзывом ниже, когда загружена строка allowed_users.
   let webSession: SessionClaims | null = null;
 
-  if (authHeader.startsWith("tma ")) {
-    const verified = await verifyInitData(
-      authHeader.slice(4).trim(),
-      BOT_TOKEN,
-      MAX_AGE,
-    );
-    if (!verified) return apiErr(401, "Unauthorized", origin);
-    telegram_id = verified.telegram_id;
-    language_code = verified.language_code;
-  } else if (authHeader.startsWith("Bearer ")) {
+  if (authHeader.startsWith("Bearer ")) {
     if (!WEB_JWT_SECRET) return apiErr(500, "Web auth not configured", origin);
     const verified = await verifyJWT(
       authHeader.slice(7).trim(),
@@ -801,7 +789,7 @@ async function routeRequest(req: Request): Promise<Response> {
         name,
         username,
         group_id: groupId,
-        language: language_code,
+        language: "en",
         role: p?.role ?? null,
         markets: p?.markets ?? [],
         ui_backdrop: p?.ui_backdrop ?? null,

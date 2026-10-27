@@ -1,6 +1,6 @@
 # Веб-интерфейс «Рой» — Архитектура
 
-> ⚠️ **Терминология (важно):** это **веб-интерфейс** — обычный сайт/PWA в браузере (`swarm-brain.pages.dev`), НЕ «Mini App». Вход как **Telegram Mini App внутри Telegram отключён** (~2026-07-15, коммит `53bd3ae` — бот ведёт на PWA). Слова «Mini App» ниже по тексту — это (а) историческое имя папки `miniapp/` и (б) спящий путь `initData`/`tma`, который ещё есть в коде, но точки входа не имеет (на удаление — см. `docs/BACKLOG.md`). **Живой вход — Telegram Login Widget → JWT-cookie в браузере.** Поверхностей у продукта три: веб-интерфейс, Telegram-бот, MCP.
+> ⚠️ **Терминология (важно):** это **веб-интерфейс** — обычный сайт/PWA в браузере (`swarm-brain.pages.dev`), НЕ «Mini App». Вход как **Telegram Mini App внутри Telegram снят** (~2026-07-15, коммит `53bd3ae` — бот ведёт на PWA; серверная ветка `tma` и клиентский код удалены). Слово «Mini App» ниже по тексту — историческое имя папки `miniapp/`. **Живой вход — Telegram Login Widget → JWT-cookie в браузере.** Поверхностей у продукта три: веб-интерфейс, Telegram-бот, MCP.
 >
 > Статус: фронтенд реализован (2026-06-01), в проде на Cloudflare Pages (авто-деплой с `main`).
 
@@ -9,12 +9,12 @@
 ## Реализованный стек
 
 ```
-Telegram Mini App (⚠️ СПЯЩИЙ — вход отключён; живой путь — Login Widget ниже)
+Браузер / PWA (Login Widget / Google → JWT-cookie → прокси Pages Function)
         │
-        │  Authorization: tma <initData>
+        │  Authorization: Bearer <JWT>
         ▼
 swarm-api  (Supabase Edge Function)
-        │  - верифицирует initData (Telegram HMAC)
+        │  - верифицирует JWT (HS256, WEB_JWT_SECRET)
         │  - резолвит telegram_id → group_id
         │  - REST CRUD для задач
         ▼
@@ -40,24 +40,23 @@ Supabase DB (service_role_key, фильтр по group_id)
 
 ---
 
-## Аутентификация — два контекста
+## Аутентификация
 
 | Контекст | Способ | Поток |
 |----------|--------|-------|
-| Telegram Mini App **(⚠️ СПЯЩИЙ — вход отключён)** | `Authorization: tma <initData>` | код остался, но точки входа нет (Mini App выключен ~2026-07-15); живой путь — только строка ниже |
 | Браузер / PWA (вариант B+) | httpOnly cookie `roj_session` (JWT) | `/login` → Telegram Login Widget → CF Function `auth/telegram` проверяет подпись → JWT в httpOnly cookie → прокси `/api/[[path]]` перекладывает cookie в `Authorization: Bearer` → swarm-api проверяет JWT |
 
-**Почему прокси (B+):** miniapp — статика на Cloudflare Pages (нет Next API routes/middleware). httpOnly-cookie недоступна JS (защита от XSS) и не уходит cross-origin на `*.supabase.co`, поэтому CF Pages Function `functions/api/[[path]].ts` форвардит запросы на swarm-api server-side, перекладывая cookie → `Bearer`. JWT: HS256, секрет `WEB_JWT_SECRET` (общий у CF и Supabase). Login Widget подписывает данные секретом `SHA256(bot_token)` (иначе, чем Mini App).
+**Почему прокси (B+):** miniapp — статика на Cloudflare Pages (нет Next API routes/middleware). httpOnly-cookie недоступна JS (защита от XSS) и не уходит cross-origin на `*.supabase.co`, поэтому CF Pages Function `functions/api/[[path]].ts` форвардит запросы на swarm-api server-side, перекладывая cookie → `Bearer`. JWT: HS256, секрет `WEB_JWT_SECRET` (общий у CF и Supabase). Login Widget подписывает данные секретом `SHA256(bot_token)`.
 
-Авторизация в обоих случаях одинакова: `telegram_id` → `allowed_users` → `group_id`. Виджет лишь подтверждает личность; доступ по-прежнему гейтится белым списком.
+Авторизация: `telegram_id` → `allowed_users` → `group_id`. Виджет лишь подтверждает личность; доступ по-прежнему гейтится белым списком.
 
 **Второй шаг входа — палец (ключ доступа, #955).** Первый шаг всегда Google/Telegram (страница `/login` не менялась). Сразу после него `PasskeyStep` (в каркасе `RoyApp`, над экранами) по `GET /api/me → second_step` сам открывает окно Touch ID на первой загрузке: режим выбирает сервер по ключам и метке браузера: подтверждает только там, где стоит `swarm.passkey.here` (веб шлёт `here`), иначе сохраняет палец — и в новом браузере тоже, даже если ключи есть в других (решение 19.10.2026, `docs/decisions/2026-10-19-passkey-new-browser-binds.md`); без кнопок. Не вышло сохранение — строка-ссылка «Включить вход по Touch ID в этом браузере» / «Turn on Touch ID sign-in in this browser»; не вышло подтверждение — метка снимается, и та же строка-ссылка запускает сохранение. «Добавить устройство» (решение 17.10.2026): в Настройках раздел «Ключи входа» (`components/profile/PasskeysSection.tsx`) — список ключей, удаление и одноразовая ссылка с QR (только если вход в этой сессии подтверждён ключом); телефон открывает `/add-device#t=…` (`app/add-device/page.tsx`, логика `lib/passkeyDevices.ts`) и сохраняет свой ключ (всё двуязычно через `useDt`), авто-попытка одна на вход. Показывается только тем, кому `second_step.applies` (пилот: аудитория — env `SECOND_STEP_AUDIENCE` в swarm-api, не задана — не показывается никому). Работу без пройденного шага блокирует замок — env `SECOND_STEP_REQUIRED` в swarm-api (значение `1` или дата ISO, с которой он действует; пока не задан, не блокирует). **Пока замок действует и шаг не пройден, `app/page.tsx` вместо приложения рисует экран `components/roy/SecondStepGate.tsx`** («Подтвердите вход по Touch ID» + «Выйти», окно Touch ID только по кнопке; ключ в браузере есть, а метки нет — `runStep` сам переходит с сохранения на подтверждение; [решение 26.10.2026](decisions/2026-10-26-second-step-hard-gate.md)); тихая строка `PasskeyStep` остаётся для режима, когда шаг не обязателен. Канон серверной части и открытых путей — ARCHITECTURE §Аутентификация п.4. **Стикер-напоминание** (решение 19.10.2026): тому, у кого шаг применим и не пройден, а сервер отдал `second_step.required_from`, на доске главной (`BoardWidget`, `home/StickerBoard.tsx`) показывается личный виртуальный стикер «Привяжите вход по Touch ID» / «Set up Touch ID sign-in» (тон pink, в базе нет, закрыть нельзя, ничего никому не отправляется); кнопка «Привязать» шлёт событие `swarm:passkey-step-request`, его слушает `PasskeyStep` и запускает ту же привязку, что строка-ссылка; после успеха `PasskeyStep` шлёт `swarm:passkey-step-done`, стикер гаснет (`lib/passkeyStep.ts`: `stepReminder`, `deadlineLabel`). Устройство, Pages Functions и правила — [ARCHITECTURE §Аутентификация п.4](ARCHITECTURE.md#swarm-api--бэкенд-веб-интерфейса).
 
-**`recorder_token` веб-интерфейс НЕ использует.** Персональный токен рекордера (`recorder_token_hash`; выдаётся в вебе → Настройки → bumblebee) — только для desktop-agent (`meeting-claim`/`meeting-ingest`, auth через `_shared/agent-auth.ts`). Веб-интерфейс ходит через браузерный JWT (`Bearer`) (спящий путь `tma`/`initData` — тоже не рекордерный токен) — никогда через токен рекордера.
+**`recorder_token` веб-интерфейс НЕ использует.** Персональный токен рекордера (`recorder_token_hash`; выдаётся в вебе → Настройки → bumblebee) — только для desktop-agent (`meeting-claim`/`meeting-ingest`, auth через `_shared/agent-auth.ts`). Веб-интерфейс ходит через браузерный JWT (`Bearer`) — никогда через токен рекордера.
 
 ## Безопасность
 
-- `group_id` берётся **только** из проверенной личности (initData/JWT → telegram_id → allowed_users). Из тела запроса не принимается.
+- `group_id` берётся **только** из проверенной личности (JWT → telegram_id → allowed_users). Из тела запроса не принимается.
 - Каждая операция с задачами скоупится по `group_id` — пользователь не может видеть или менять задачи другого воркспейса.
 - Задачи скрытыми не бывают (слой личных задач снят 09.10.2026, [decisions/2026-10-09-tasks-no-private.md](decisions/2026-10-09-tasks-no-private.md)): права на задачу — граница воркспейса, кому что показывать — линзы.
 - `service_role_key` только внутри swarm-api, фронтенду не передаётся.
@@ -71,7 +70,6 @@ Supabase DB (service_role_key, фильтр по group_id)
 |-----------|-------------|----------|
 | `TELEGRAM_BOT_TOKEN` | да | уже есть (Supabase + CF Pages) |
 | `MINIAPP_ORIGIN` | рекомендуется | CORS origin веб-интерфейса (напр. `https://swarm-brain.pages.dev`) |
-| `INITDATA_MAX_AGE` | нет | свежесть initData в секундах (дефолт 86400) |
 | `WEB_JWT_SECRET` | для веб-входа | подпись веб-сессий и вызовов `auth-passkey` (одинаковый в Supabase secrets и CF Pages env) |
 | `SWARM_API_URL` | CF Pages | цель прокси `functions/api/[[path]]` → swarm-api |
 | `NEXT_PUBLIC_BOT_USERNAME` | CF Pages build | username бота для Login Widget (`swarm_brain_bot`) |
@@ -97,7 +95,6 @@ supabase functions deploy swarm-api --no-verify-jwt
 ### Стек
 - Next.js 16, `output: 'export'`, TypeScript
 - Tailwind CSS v4 + shadcn/ui
-- `@twa-dev/sdk` → `Telegram.WebApp.initData`
 - Plain fetch + useEffect (поллинг 10 сек + visibilitychange)
 
 ### Ключевые файлы
@@ -110,7 +107,7 @@ supabase functions deploy swarm-api --no-verify-jwt
 | `src/lib/api.ts` | Все запросы к swarm-api + DEV_MODE mock (tasks, sprints, dependencies). **GET-ы проходят через дедупликацию** (`request-cache.ts`): одновременные одинаковые запросы делят один сетевой, повтор внутри 2.5 с берётся из памяти, любая мутация сбрасывает кэш. Общего слоя данных у экранов нет — каждый компонент грузит своё в `useEffect`, и одна ручка дёргалась 2–8 раз за открытие (issue #103) |
 | `src/lib/request-cache.ts` | Кэш/дедуп GET-запросов. **Только в памяти вкладки** — HTTP-кэш и Cache Storage не задействованы, запрет кэширования приватных ответов (issue #71) в силе. TTL (`REQUEST_CACHE_TTL_MS = 2500`) заведомо меньше самого частого поллинга (10 с), иначе кэш проглотил бы опрос и очередь вычитки замерла бы на экране. Ошибки не кэшируются. Тест: `deno test --allow-read miniapp/src/lib/request-cache.test.ts` |
 | `src/lib/lastSeen.ts` | **Последний удачный ответ блоков главной** (#906, 12.10.2026): `recall`/`remember` по ключу `home:*`. Повторный заход на главную рисует задачи, встречи, стикеры, РС/РКО, карты, проверки и выручку сразу с прошлых данных, свежие приезжают поверх в фоне (замер: `/quality` медиана 1,4 с, `/quality/maps` 2,4 с — Децимус). Только память вкладки, как `request-cache.ts` (#71): в `localStorage` приватное не кладём, первая загрузка вкладки по-прежнему ждёт сеть. Подключено в `useDashboardData` (`useSlice` с ключом), `home/useQuality`, `useMaps`, `useInspections`, `useCountrySales`, `dash/MeetingsToday`, `home/StickerBoard` |
-| `src/lib/telegram.ts` | getInitData, initApp |
+| `src/lib/deepLink.ts` | `getDeepLinkTaskId` / `getDeepLinkMeetingId` — deep-link из уведомлений (`?task=`, `?meeting=`) |
 | `src/lib/calendar.ts` | Календарные примитивы (RU и EN — `Lang`, язык берёт `useLang()` из `roy/nav.ts` по тому же правилу, что `useDt`: демо — английский; `monthName`/`monthShort`/`weekdays`, `fmtFull`/`fmtShort` и `rangeLabel` в `lib/dateRange.ts` принимают язык, без него — RU; до issue #625 даты в английском демо шли по-русски; тест `calendar.test.ts`; неделя с понедельника, ISO `YYYY-MM-DD`): `MONTHS`/`MONTHS_GEN`/`MONTHS_SHORT`/`WEEKDAYS`, `parseISO`/`toISO`, `fmtFull`/`fmtShort`, `addMonths`, `midnight`, `buildGrid` (сетка месяца). Жили внутри `DatePicker.tsx` — вынесены 2026-08-25, чтобы `RangePicker` рисовал ТУ ЖЕ сетку, а не её копию |
 | `src/lib/tasksView.ts` | Чтение и МИГРАЦИЯ сохранённого вида доски задач (`localStorage` `roy_tasks_view`): `migrateSavedView` переводит прежний `activeList: "done"` на «Все» + чип «Завершённые» (иначе у всей команды экран открылся бы пустым после раскатки issue #216), `savedStatuses` отличает «пустой набор выбран сознательно» от «ничего не сохранено». Вынесено из хука в `lib`, чтобы покрыть тестами (`tasksView.test.ts`) |
 | `src/lib/royIcons.ts` | Пути иконографики (`ROY_ICON_PATHS`, `RoyIconName`) — ДАННЫЕ, отделённые от рендера (`components/roy/icons.tsx`). Вынесены 03.09.2026: чистая логика в `lib/` типизирует имя иконки, не импортируя JSX-компонент, иначе `deno test` обрывался на type-check всего репозитория |
@@ -294,7 +291,7 @@ gridTemplateColumns: minmax(0,1fr)  344px
 ### Финальная проверка авторизации
 DEV_MODE проверяет только UI/логику. Реальную авторизацию проверяй **в браузере**
 (`swarm-brain.pages.dev` → Telegram Login Widget → JWT-cookie). Вход из Telegram
-(Mini App / `initData`) отключён — там проверять нечего.
+(Mini App) снят — там проверять нечего.
 
 ---
 

@@ -95,7 +95,6 @@ supabase secrets set MINIAPP_ORIGIN=<URL_минипрложения_или_*>
 | `OPENAI_API_KEY` | Ключ OpenAI | ✅ |
 | `CRON_SECRET` | Любая строка — защищает cron-эндпоинты | ✅ |
 | `MINIAPP_ORIGIN` | URL веб-интерфейса (для CORS). Используй `*` для начала | рекомендуется |
-| `INITDATA_MAX_AGE` | Срок жизни initData Telegram в секундах (по умолчанию 86400) | опционально |
 | `BOT_NAME` | Имя бота в подписи фидбека (по умолчанию `bot`) | опционально |
 
 `SUPABASE_URL` и `SUPABASE_SERVICE_ROLE_KEY` Edge Functions получают автоматически — вручную устанавливать не нужно.

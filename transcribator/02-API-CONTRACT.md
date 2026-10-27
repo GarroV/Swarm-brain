@@ -29,7 +29,6 @@ Authorization: Bearer <персональный smcp_-токен>
 Веб-сессия роя, как у остального `swarm-api`:
 
 ```
-Authorization: tma <initData>      # Telegram Mini App
 Authorization: Bearer <JWT>        # веб (Login Widget, httpOnly cookie, проксируется CF Pages Function)
 ```
 

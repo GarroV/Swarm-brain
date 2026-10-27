@@ -1,4 +1,3 @@
-import { getInitData } from "./telegram";
 import { isNetworkFailure, reportConnection, reportUnauthorized } from "./connection";
 import type { TaskFile, TaskFileLimits } from "./taskFiles";
 import type { BackdropId } from "./backdrop";
@@ -545,20 +544,14 @@ const mockGranolaUnprocessed: GranolaNote[] = [
 
 // ── Fetch helper ──────────────────────────────────────────────────────────────
 
-// База — same-origin прокси /api (CF Pages Function). В Telegram шлём initData
-// в Authorization: tma; в браузере — httpOnly cookie (credentials: include),
-// прокси перекладывает её в Bearer на сервере.
+// База — same-origin прокси /api (CF Pages Function). Сессия — httpOnly cookie
+// (credentials: include), прокси перекладывает её в Bearer на сервере.
 // Прямой адрес swarm-api из NEXT_PUBLIC_API_URL не берём: swarm-api пускает по CORS только
 // боевой адрес, поэтому на превью ветки (там в переменной остался прямой адрес) браузер резал
 // каждый запрос, экран показывал «Не загрузилось» и не уводил на вход. Относительный путь — можно,
 // но не «//host»: браузер читает его как адрес другого хоста, и сессия ушла бы туда.
 const envApi = process.env.NEXT_PUBLIC_API_URL ?? "";
 const API_BASE = /^\/(?![/\\])/.test(envApi) ? envApi : "/api";
-
-function authHeaders(): Record<string, string> {
-  const initData = getInitData();
-  return initData ? { Authorization: `tma ${initData}` } : {};
-}
 
 // Дедупликация одинаковых GET-ов (issue #103). Кэш ТОЛЬКО в памяти вкладки и только для
 // чтения; любая мутация его сбрасывает, чтобы экран не показал данные «на шаг назад».
@@ -616,7 +609,6 @@ async function apiFetchRaw<T>(path: string, options?: RequestInit): Promise<T> {
     credentials: "include",
     headers: {
       "Content-Type": "application/json",
-      ...authHeaders(),
       ...(options?.headers ?? {}),
     },
   });
@@ -669,7 +661,6 @@ async function apiFetchNoContentTypeRaw<T>(
     cache: "no-store",
     credentials: "include",
     headers: {
-      ...authHeaders(),
       ...(options?.headers ?? {}),
     },
   });
@@ -687,8 +678,7 @@ export async function fetchMe(): Promise<Me> {
 }
 
 // Гасит httpOnly-cookie roj_session (браузерная сессия). Обрабатывает CF-функция
-// /api/auth/logout напрямую, минуя прокси в swarm-api. Внутри Telegram Mini App
-// бессмысленно — там сессия определяется initData, а не cookie.
+// /api/auth/logout напрямую, минуя прокси в swarm-api.
 export async function logout(): Promise<void> {
   // Пока сессия жива, пробуем дослать неотправленные части записей встреч этого пользователя
   // (до ~10 с). Недосланное остаётся в IndexedDB под его id и 3 дня хранится на устройстве.
@@ -743,7 +733,7 @@ export async function sendPresence(ping: PresencePing): Promise<number> {
     keepalive: true,
     cache: "no-store",
     credentials: "include",
-    headers: { "Content-Type": "application/json", ...authHeaders() },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(ping),
   });
   return res.status;
@@ -759,7 +749,6 @@ export async function fetchPresenceStrip(): Promise<unknown> {
   const res = await fetch(`${API_BASE}/presence/strip`, {
     cache: "no-store",
     credentials: "include",
-    headers: authHeaders(),
   });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return res.json();
@@ -1585,7 +1574,6 @@ export async function extractTasksStreamed(
     headers: {
       "Content-Type": "application/json",
       Accept: "text/event-stream",
-      ...authHeaders(),
     },
     body: JSON.stringify({ text, save: false }),
   });
@@ -3601,7 +3589,7 @@ export async function apiFetchList<T>(
   const res = await fetch(`${API_BASE}${path}`, {
     cache: "no-store",
     credentials: "include",
-    headers: { "Content-Type": "application/json", ...authHeaders() },
+    headers: { "Content-Type": "application/json" },
   });
   const body = await res.json().catch(() => ({ error: res.statusText }));
   if (!res.ok) throw new ApiError(res.status, body.error ?? res.statusText, body);
@@ -3861,7 +3849,7 @@ export async function fetchMeetingsPage(query: MeetingsPageQuery): Promise<Meeti
   const res = await fetch(`${API_BASE}/meetings?${params}`, {
     cache: "no-store",
     credentials: "include",
-    headers: { "Content-Type": "application/json", ...authHeaders() },
+    headers: { "Content-Type": "application/json" },
   });
   const body = await res.json().catch(() => ({ error: res.statusText }));
   if (!res.ok) throw new ApiError(res.status, body.error ?? res.statusText, body);

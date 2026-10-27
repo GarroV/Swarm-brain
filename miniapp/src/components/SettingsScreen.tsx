@@ -8,7 +8,6 @@ import {
   fetchRecorderSetup, mintRecorderToken,
   fetchMcpSetup, mintMcpToken, fetchClaudeInstructions,
 } from "@/lib/api";
-import { getInitData } from "@/lib/telegram";
 import { countryCode } from "@/lib/countries";
 import type { Me, Integration, GranolaNote } from "@/types";
 import { ProfileHeader } from "@/components/profile/ProfileHeader";
@@ -825,8 +824,6 @@ export function SettingsScreen() {
   const [me, setMe] = useState<Me | null>(null);
   const [editing, setEditing] = useState(false);
   const dt = useDt();
-  // В браузере getInitData() пустой → показываем выход; внутри Telegram — нет.
-  const isWebSession = !getInitData();
 
   useEffect(() => { fetchMe().then(setMe).catch(() => {}); }, []);
 
@@ -872,16 +869,14 @@ export function SettingsScreen() {
         <Section icon="note" title="Фидбек">
           <FeedbackSection />
         </Section>
-        {isWebSession && me?.second_step?.applies && (
+        {me?.second_step?.applies && (
           <Section icon="home" title={dt("Ключи входа", "Sign-in keys")}>
             <PasskeysSection />
           </Section>
         )}
-        {isWebSession && (
-          <Section icon="home" title="Аккаунт">
-            <AccountSection />
-          </Section>
-        )}
+        <Section icon="home" title="Аккаунт">
+          <AccountSection />
+        </Section>
       </div>
     </div>
   );
