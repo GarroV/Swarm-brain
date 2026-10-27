@@ -172,7 +172,7 @@ export function RangePicker({ value, onChange, variant = "rail" }: Props) {
                     // Скругления только по краям диапазона — середина смыкается в сплошную ленту.
                     isEdge ? "bg-primary text-primary-foreground rounded-lg"
                       : isInside ? "bg-accent-soft text-accent-ink"
-                        : isToday ? "rounded-lg font-bold text-primary hover:bg-surface-2"
+                        : isToday ? "rounded-lg bg-accent-soft font-bold text-primary ring-2 ring-inset ring-primary hover:bg-surface-2"
                           : "rounded-lg text-ink hover:bg-surface-2",
                   )}>{d.getDate()}</button>
               );

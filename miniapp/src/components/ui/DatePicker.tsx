@@ -159,7 +159,7 @@ export function DatePicker({ value, onChange, className = "", placeholder, varia
                 <button key={i} type="button" onClick={() => pick(d)}
                   className={`h-8 rounded-lg text-[13px] font-medium transition-colors ${
                     isSel ? "bg-primary text-primary-foreground"
-                      : isToday ? "text-primary font-bold hover:bg-surface-2"
+                      : isToday ? "bg-accent-soft text-primary font-bold ring-2 ring-inset ring-primary hover:bg-surface-2"
                         : "text-ink hover:bg-surface-2"}`}>{d.getDate()}</button>
               );
             })}
