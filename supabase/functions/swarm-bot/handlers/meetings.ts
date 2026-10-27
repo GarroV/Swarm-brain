@@ -17,6 +17,8 @@ import { onlyLive } from "../../_shared/tasks/live.ts";
 import { onlyLiveEntries } from "../../_shared/entries/live.ts";
 import { escapeHtml, sanitizeModelHtml } from "../../_shared/telegram-html.ts";
 import { archiveEntry } from "../../_shared/entries/archive.ts";
+import { meetingConfirmPatch } from "../../_shared/entries/meeting-confirm.ts";
+import { type EditableEntryRow, isMeetingEntry } from "../../_shared/entries/entry-edit.ts";
 import { externalFetch, VIA_TELEGRAM, VIA_TELEGRAM_UPLOAD } from "../../_shared/external-fetch.ts";
 import { keepVisibleTasks } from "../../_shared/tasks/project-visibility.ts";
 
@@ -645,10 +647,20 @@ export async function handleMeetingCallbacks(
   if (data.startsWith("mc_")) {
     // Confirm meeting — жёсткий блок без рынков, затем publish + auto-extract tasks
     const entryId = data.replace("mc_", "");
-    const entry = await loadEntryForAction(entryId, groupId, userId, "metadata, content, countries", {
-      action: "edit",
-    });
-    if (!entry) {
+    const entry = await loadEntryForAction(
+      entryId,
+      groupId,
+      userId,
+      "metadata, content, countries, entry_type, source",
+      {
+        action: "edit",
+      },
+    );
+    // Согласовать можно только встречу: на заметку и другие записи кнопка не действует.
+    if (
+      !entry ||
+      !isMeetingEntry(entry as unknown as EditableEntryRow)
+    ) {
       await sendMessage(chatId, "Встреча не найдена.");
       return true;
     }
@@ -662,16 +674,10 @@ export async function handleMeetingCallbacks(
       );
       return true;
     }
-    // Publish: pending → workspace-visible. Снимаем приватность, но НЕ владельца: is_private
-    // отвечает за видимость, owner_id — за авторство (решение владельца 2026-08-22, «не должно
-    // быть ничьих»). Здесь стояло owner_id: null — тот же источник «ничьих» записей, что был в
-    // swarm-api; там поправлено 2026-08-22, а этот путь (согласование из бота) пропустили.
-    const publisherId = (entry as { owner_id?: number | null }).owner_id ?? userId;
-    await supabase.from("entries").update({
-      metadata: { ...(entry.metadata as Record<string, unknown>), confirmed: true },
-      is_private: false,
-      owner_id: publisherId,
-    }).eq("id", entryId).eq("group_id", groupId);
+    // Согласование меняет только признак confirmed: видимость, «разделено с» и владелец остаются
+    // как были (_shared/entries/meeting-confirm.ts); видимость меняется отдельным охраняемым путём.
+    await supabase.from("entries").update(meetingConfirmPatch(entry.metadata as Record<string, unknown>))
+      .eq("id", entryId).eq("group_id", groupId);
     const title = ((entry.metadata as Record<string, unknown>)?.title as string) ?? "Встреча";
     await sendMessage(chatId, `✅ Встреча сохранена: <b>${escapeHtml(title)}</b>`);
     // Авто-извлечение задач из встречи УБРАНО 05.09.2026 (решение владельца: «раз бот —

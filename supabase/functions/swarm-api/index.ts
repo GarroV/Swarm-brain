@@ -39,6 +39,7 @@ import {
   getMeetingSecure,
 } from "./entries-guard.ts";
 import { canChangeMeetingPrivacy } from "../_shared/entries/meeting-rights.ts";
+import { meetingConfirmPatch } from "../_shared/entries/meeting-confirm.ts";
 import type { SlotRow } from "../_shared/bot-slot.ts";
 import { isBotRecordingNow, isMissedBotSlot, toAgentListRow, toListRow } from "./meetings-payload.ts";
 import {
@@ -2751,6 +2752,7 @@ async function routeRequest(req: Request): Promise<Response> {
       const entry = await getEntrySecure(supabase, meetingNotesMatch[1], {
         groupId,
         telegramId: telegram_id,
+        requireMeeting: true,
       });
       // Все версии этой встречи: привязанные строки meetings + та, из которой запись создана
       // (entry_id проставляется при публикации, но metadata.meeting_id несёт исходную версию).
@@ -2835,6 +2837,7 @@ async function routeRequest(req: Request): Promise<Response> {
         const entry = await getEntrySecure(supabase, meetingId, {
           groupId,
           telegramId: telegram_id,
+          requireMeeting: true,
         });
         return json(entry, 200, origin);
       }
@@ -2856,24 +2859,12 @@ async function routeRequest(req: Request): Promise<Response> {
         }
         const fields: Record<string, unknown> = {};
         if ("confirmed" in body) {
-          fields.metadata = {
-            ...(entry.metadata as Record<string, unknown>),
-            confirmed: body.confirmed,
-          };
-          // Confirm = публикация: встреча становится видимой всему воркспейсу (is_private=false;
-          // ниже перезапишется, если пользователь выбрал «Личное»).
-          //
-          // Владельца при этом НЕ обнуляем. Раньше здесь стояло owner_id = null, и отсюда в базе
-          // 159 «ничьих» встреч — у записи не было автора, а несогласованная «ничья» встреча
-          // висела в очереди вычитки у всего воркспейса (issue #66). Решение владельца
-          // 2026-08-22: «не должно быть ничьих — вся информация принадлежит кому-то».
-          // Хозяин = тот, кто её принёс; если автор неизвестен (Read.ai пишет без владельца) —
-          // тот, кто согласовал: «сохранит тот, кто успеет».
-          // Видимость это не меняет: общую встречу по-прежнему видят все (is_private=false).
-          if (body.confirmed === true) {
-            fields.is_private = false;
-            fields.owner_id = entry.owner_id ?? telegram_id;
-          }
+          // Согласование меняет ТОЛЬКО признак metadata.confirmed: видимость, «разделено с» и
+          // владелец остаются как были (_shared/entries/meeting-confirm.ts). Видимость меняется
+          // отдельным полем is_private — ниже, под canChangeMeetingPrivacy.
+          fields.metadata = body.confirmed === true
+            ? meetingConfirmPatch(entry.metadata).metadata
+            : { ...(entry.metadata as Record<string, unknown>), confirmed: body.confirmed };
         }
         if ("summary" in body) fields.summary = body.summary;
         if ("content" in body && typeof body.content === "string") {
@@ -2903,12 +2894,11 @@ async function routeRequest(req: Request): Promise<Response> {
         ) {
           return apiErr(403, "Forbidden", origin);
         }
-        if (typeof body.is_private === "boolean") {
+        // Владельца не трогаем: is_private отвечает за ВИДИМОСТЬ, owner_id — за авторство; запись
+        // без владельца остаётся без владельца, кто бы её ни правил. Пишем только реальную смену
+        // (она уже прошла canChangeMeetingPrivacy выше).
+        if (typeof body.is_private === "boolean" && body.is_private !== entry.is_private) {
           fields.is_private = body.is_private;
-          // Владелец остаётся и у общей встречи: is_private отвечает за ВИДИМОСТЬ, owner_id —
-          // за авторство. Прежнее `: null` обнуляло хозяина при выборе «Общее» и было вторым
-          // источником «ничьих» записей (первый — блок confirmed выше, issue #66).
-          fields.owner_id = entry.owner_id ?? telegram_id;
         }
         // Рынки с экрана: marketTagsFromInput сохраняет сентинел General и применяет порог 2+.
         // Раньше здесь стоял голый normalizeCountries — он выбрасывал «General» как не-страну,
