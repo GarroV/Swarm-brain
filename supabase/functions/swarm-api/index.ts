@@ -198,6 +198,7 @@ import { onlyLiveEntries } from "../_shared/entries/live.ts";
 import { archiveEntry } from "../_shared/entries/archive.ts";
 import { personName, resolvePersonNames } from "../_shared/users/display-name.ts";
 import { toPublicUrl } from "../_shared/public-url.ts";
+import { creditedRecorderIds } from "./recorder-credit.ts";
 
 // Сколько задач отдаём вебу за раз. Дефолт движка (_shared/tasks/db.ts) — 200, и для БОТА он
 // верен: тот печатает список сообщением в чат, дампить туда базу нельзя. Для веба он смертелен —
@@ -282,14 +283,12 @@ export function resolveNames(ids: number[]): Promise<Map<number, string>> {
 
 // Прикрепляет к встрече(ам) человекочитаемые имена записавших: recorders[].telegram_id →
 // user_profiles, одним батч-резолвом на весь список. recorder_names — уникальные имена,
-// фолбэк «#id» для тех, кого нет в профилях. Источник «кто записал» — claim рекордера.
+// фолбэк «#id» для тех, кого нет в профилях. Источник «кто записал» — claim рекордера; в имена только
+// записавшие (recorder-credit.ts: transcribe или секунды > 0, #1070).
 async function withRecorderNames<T extends { recorders?: unknown }>(
   rows: T[],
 ): Promise<Array<T & { recorder_names: string[] }>> {
-  const idsOf = (r: T): number[] =>
-    ((r.recorders as Array<{ telegram_id?: number }> | null) ?? [])
-      .map((x) => x?.telegram_id)
-      .filter((n): n is number => typeof n === "number");
+  const idsOf = (r: T): number[] => creditedRecorderIds(r.recorders);
   const names = await resolveNames([...new Set(rows.flatMap(idsOf))]);
   return rows.map((r) => ({
     ...r,
