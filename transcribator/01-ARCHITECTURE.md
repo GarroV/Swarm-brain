@@ -30,7 +30,7 @@
 │  ├── swarm-bot       — уведомления, rai_saved (source-фильтр)               │
 │  └── PostgreSQL + pgvector: meetings (новая), entries, tasks, allowed_users │
 └────────────────────────────────────┬───────────────────────────────────────┘
-                                     │ веб-сессия роя (tma initData / JWT cookie)
+                                     │ веб-сессия роя (JWT cookie)
 ┌────────────────────────────────────▼───────────────────────────────────────┐
 │  miniapp (Next.js 16, Cloudflare Pages, swarm-brain.pages.dev)              │
 │  ├── AgentReviewQueue — очередь на вычитке (раздел «Встречи»)               │
@@ -161,7 +161,7 @@
 
 - **Аутентификация агента — `_shared/agent-auth.ts` (`verifyAgentToken`).** Персональный `smcp_`-токен в `Authorization: Bearer`; SHA-256-хэш сверяется с `allowed_users.claude_mcp_token_hash`; функция возвращает `{telegramId, groupId}`. Личность И `group_id` берутся ИЗ ТОКЕНА, не из payload — спуфинг невозможен. Это НЕ статический общий секрет; токен личный, с TTL 90 дней (механизм зеркалит swarm-mcp).
 - **`meeting-ingest`** дополнительно проверяет, что заливающий = `claim_owner` встречи (иначе 403).
-- **Аутентификация веба — веб-сессия роя в `swarm-api`:** `tma <initData>` (Telegram Mini App, `verifyInitData`) или `Bearer <JWT>` (httpOnly cookie, проксируется CF Pages Function). `group_id` и `is_admin` резолвятся из `allowed_users` по `telegram_id`. Доступ к встрече: запись видна записавшим (`recorders` содержит твой `telegram_id`) или админу; чужая встреча → 404.
+- **Аутентификация веба — веб-сессия роя в `swarm-api`:** `Bearer <JWT>` (httpOnly cookie, проксируется CF Pages Function). `group_id` и `is_admin` резолвятся из `allowed_users` по `telegram_id`. Доступ к встрече: запись видна записавшим (`recorders` содержит твой `telegram_id`) или админу; чужая встреча → 404.
 - **Изоляция `entries` — `swarm-api/entries-guard.ts`.** Прямые запросы к `entries` в эндпоинтах swarm-api запрещены: `getEntrySecure` / `buildEntriesQuery` применяют воркспейс-изоляцию (`group_id`) и приватность (`is_private=false OR owner_id=telegramId`); для мутаций — `requireOwner: true` (403 не-владельцу). Хендлеры обёрнуты в `withEntries` (ловит `EntryAccessError` → корректные 404/403).
 
 ## Сосуществование источников (переходный период)

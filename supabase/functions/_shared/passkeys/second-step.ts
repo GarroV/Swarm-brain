@@ -1,10 +1,10 @@
 // Состояние второго шага входа веб-сессии (палец, #955) и замок обязательности.
-// Замок включается переменной SECOND_STEP_REQUIRED в swarm-api и по умолчанию ВЫКЛЮЧЕН: шаг только
-// предлагается и отмечается в сессии (метка `sf` в JWT), работу он не блокирует. Значение: `1`/`true` —
-// замок действует сразу; дата ISO `2026-10-26` — с 00:00 по Белграду этой даты (решение владельца 19.10.2026,
-// docs/decisions/2026-10-19-search-and-2fa-deadline.md §2); пусто или иное — выключен. Код не меняется.
-// Пилот: аудиторию шага задаёт SECOND_STEP_AUDIENCE (пусто — никому, `all` — всем, список telegram id).
-// Замок действует только на тех, к кому шаг применим.
+// Замок задаёт переменная SECOND_STEP_REQUIRED в swarm-api; настройки читаются «замок включён, пока явно
+// не сказано обратное»: выключает его только `0`/`false`/`off`. Значение: дата ISO `2026-10-26` — с 00:00
+// по Белграду этой даты (решение владельца 19.10.2026, docs/decisions/2026-10-19-search-and-2fa-deadline.md §2);
+// `1`/`true`, не задано, пусто или непонятное — замок действует сразу. Код не меняется.
+// Аудиторию шага задаёт SECOND_STEP_AUDIENCE: список telegram id — только они, `none` — никто,
+// не задано, пусто, `all` или непонятное — все. Замок действует только на тех, к кому шаг применим.
 import { isRenewableSession, type SessionClaims } from "../jwt.ts";
 
 export type SecondStepState = {
@@ -63,27 +63,52 @@ function belgradeMidnightMs(date: string): number {
   return utcMidnight - zoneOffsetMs(utcMidnight - zoneOffsetMs(utcMidnight));
 }
 
-/** Действует ли замок на момент `now`: `1`/`true` — да; дата — с её полуночи по Белграду; иначе нет. */
-export function isSecondStepRequired(env: string | undefined, now: Date = new Date()): boolean {
-  const raw = (env ?? "").trim();
-  if (raw === "1" || raw === "true") return true;
-  const from = secondStepRequiredFrom(raw);
-  return from !== null && now.getTime() >= belgradeMidnightMs(from);
+const REQUIRED_OFF = new Set(["0", "false", "off"]);
+
+/** Значение SECOND_STEP_REQUIRED, которое не включает ничего особенного: не пусто, не 1/true, не выключатель, не дата. */
+function requiredUnrecognised(env: string | undefined): boolean {
+  const raw = (env ?? "").trim().toLowerCase();
+  return raw !== "" && raw !== "1" && raw !== "true" && !REQUIRED_OFF.has(raw) && secondStepRequiredFrom(raw) === null;
 }
 
-/** Кому применим шаг: никому (по умолчанию), всем или списку telegram id. */
+/** Действует ли замок на момент `now`: `0`/`false`/`off` — нет; дата — с её полуночи по Белграду;
+ *  всё остальное (`1`/`true`, не задано, пусто, непонятное) — да. */
+export function isSecondStepRequired(env: string | undefined, now: Date = new Date()): boolean {
+  const raw = (env ?? "").trim().toLowerCase();
+  if (REQUIRED_OFF.has(raw)) return false;
+  const from = secondStepRequiredFrom(raw);
+  return from === null || now.getTime() >= belgradeMidnightMs(from);
+}
+
+/** Кому применим шаг: никому, всем (по умолчанию) или списку telegram id. */
 export type SecondStepAudience = "none" | "all" | ReadonlySet<number>;
 
-/** Разбор SECOND_STEP_AUDIENCE: пусто → никому; `all` → всем; список id через запятую → только им. Не-числа отбрасываются. */
+/** Список id через запятую (пустые звенья терпим) или null, если есть хоть одно звено не из цифр или список пуст. */
+function parseAudienceIds(raw: string): Set<number> | null {
+  const parts = raw.split(",").map((part) => part.trim()).filter((part) => part !== "");
+  if (parts.length === 0 || !parts.every((part) => /^\d+$/.test(part))) return null;
+  return new Set(parts.map(Number));
+}
+
+function audienceUnrecognised(env: string | undefined): boolean {
+  const raw = (env ?? "").trim().toLowerCase();
+  return raw !== "" && raw !== "all" && raw !== "none" && parseAudienceIds(raw) === null;
+}
+
+/** Разбор SECOND_STEP_AUDIENCE: список id через запятую → только им; `none` → никому; не задано, пусто, `all`
+ *  и всё непонятное (в том числе список с не-числом) → всем. */
 export function parseSecondStepAudience(env: string | undefined): SecondStepAudience {
   const raw = (env ?? "").trim().toLowerCase();
-  if (raw === "all") return "all";
-  const ids = raw
-    .split(",")
-    .map((part) => part.trim())
-    .filter((part) => /^\d+$/.test(part))
-    .map(Number);
-  return ids.length > 0 ? new Set(ids) : "none";
+  if (raw === "none") return "none";
+  return parseAudienceIds(raw) ?? "all";
+}
+
+/** Строки-предупреждения для журнала при запуске: имя переменной и факт, что значение не распознано. Самих значений в них нет. */
+export function secondStepConfigWarnings(requiredEnv: string | undefined, audienceEnv: string | undefined): string[] {
+  const warnings: string[] = [];
+  if (requiredUnrecognised(requiredEnv)) warnings.push("SECOND_STEP_REQUIRED unrecognised, lock on");
+  if (audienceUnrecognised(audienceEnv)) warnings.push("SECOND_STEP_AUDIENCE unrecognised, lock on");
+  return warnings;
 }
 
 function inAudience(audience: SecondStepAudience, telegramId: number): boolean {

@@ -3,6 +3,7 @@ import {
   isSecondStepRequired,
   parseSecondStepAudience,
   secondStepBlocks,
+  secondStepConfigWarnings,
   secondStepRequiredFrom,
   secondStepState,
 } from "./second-step.ts";
@@ -73,16 +74,28 @@ Deno.test("замок включён: сессии из обмена токен�
   assertEquals(secondStepBlocks(off, "GET", "/tasks"), false);
 });
 
-Deno.test("замок выключен по умолчанию: ничего не блокируется", () => {
-  assertEquals(isSecondStepRequired(undefined), false);
-  assertEquals(isSecondStepRequired("0"), false);
-  assertEquals(isSecondStepRequired(""), false);
+Deno.test("замок выключен только явным 0/false/off (любой регистр, с пробелами): тогда ничего не блокируется", () => {
+  for (const off of ["0", "false", "off", " OFF ", "False", " 0 "]) {
+    assertEquals(isSecondStepRequired(off), false, off);
+  }
+  const st = secondStepState(login(false), {
+    isDemo: false,
+    required: isSecondStepRequired("0"),
+    audience: "all",
+  });
+  assertEquals(secondStepBlocks(st, "GET", "/tasks"), false);
+});
+
+Deno.test("замок включён, когда значение не задано, пусто или не распознано (непонятное значение = замок включён)", () => {
+  for (const on of [undefined, "", "  ", "yes", "no", "disabled", "2026-13-01", "26.10.2026", "2026-1-26"]) {
+    assertEquals(isSecondStepRequired(on), true, String(on));
+  }
   const st = secondStepState(login(false), {
     isDemo: false,
     required: isSecondStepRequired(undefined),
     audience: "all",
   });
-  assertEquals(secondStepBlocks(st, "GET", "/tasks"), false);
+  assertEquals(secondStepBlocks(st, "GET", "/tasks"), true);
 });
 
 Deno.test("замок включён: сессия без шага закрыта, кроме /me, выхода и заглушки работ; с шагом — открыта", () => {
@@ -100,17 +113,35 @@ Deno.test("замок включён: сессия без шага закрыт�
   assertEquals(secondStepBlocks(demo, "GET", "/tasks"), false);
 });
 
-Deno.test("аудитория: пусто и пробелы — никому; all — всем; список — только им; мусор не значит all", () => {
-  assertEquals(parseSecondStepAudience(undefined), "none");
-  assertEquals(parseSecondStepAudience(""), "none");
-  assertEquals(parseSecondStepAudience("   "), "none");
+Deno.test("аудитория: явный список — только они; none — никто; не задано, пусто, all и непонятное — все", () => {
+  assertEquals(parseSecondStepAudience("5, 744230399 ,7"), new Set([5, 744230399, 7]));
+  assertEquals(parseSecondStepAudience("5,"), new Set([5]));
+  assertEquals(parseSecondStepAudience("none"), "none");
+  assertEquals(parseSecondStepAudience(" NONE "), "none");
+  assertEquals(parseSecondStepAudience(undefined), "all");
+  assertEquals(parseSecondStepAudience(""), "all");
+  assertEquals(parseSecondStepAudience("   "), "all");
   assertEquals(parseSecondStepAudience("all"), "all");
   assertEquals(parseSecondStepAudience(" ALL "), "all");
-  assertEquals(parseSecondStepAudience("5, 744230399 ,7"), new Set([5, 744230399, 7]));
-  assertEquals(parseSecondStepAudience("abc,5,,x1,-3,1.5"), new Set([5]));
-  assertEquals(parseSecondStepAudience("abc,true,1"), new Set([1]));
-  assertEquals(parseSecondStepAudience("true"), "none");
-  assertEquals(parseSecondStepAudience("abc"), "none");
+  assertEquals(parseSecondStepAudience("abc"), "all");
+  assertEquals(parseSecondStepAudience("true"), "all");
+  assertEquals(parseSecondStepAudience("abc,5"), "all");
+  assertEquals(parseSecondStepAudience("5,-3"), "all");
+  assertEquals(parseSecondStepAudience("1.5"), "all");
+});
+
+Deno.test("предупреждения настроек: только для непустых нераспознанных значений, без самих значений", () => {
+  assertEquals(secondStepConfigWarnings(undefined, undefined), []);
+  assertEquals(secondStepConfigWarnings("", ""), []);
+  assertEquals(secondStepConfigWarnings("1", "all"), []);
+  assertEquals(secondStepConfigWarnings("off", "none"), []);
+  assertEquals(secondStepConfigWarnings("2026-10-26", "5,7"), []);
+  assertEquals(secondStepConfigWarnings("yes", "all"), ["SECOND_STEP_REQUIRED unrecognised, lock on"]);
+  assertEquals(secondStepConfigWarnings("1", "abc"), ["SECOND_STEP_AUDIENCE unrecognised, lock on"]);
+  assertEquals(secondStepConfigWarnings("2026-13-01", "5,x"), [
+    "SECOND_STEP_REQUIRED unrecognised, lock on",
+    "SECOND_STEP_AUDIENCE unrecognised, lock on",
+  ]);
 });
 
 Deno.test("аудитория ограничивает применимость; замок не трогает тех, кому шаг не применим", () => {
@@ -141,18 +172,20 @@ Deno.test("замок по дате в летнее время: начало с�
   assertEquals(isSecondStepRequired("2026-07-15", new Date(start)), true);
 });
 
-Deno.test("формат замка: 1/true — сразу, дата ISO — по дате, пусто и мусор — выключен, битая дата — выключен", () => {
+Deno.test("формат замка: 1/true — сразу, дата ISO — по дате, 0/false/off — выключен, пусто, мусор и битая дата — включён", () => {
   const now = new Date(MON_START);
   assertEquals(isSecondStepRequired("1", now), true);
   assertEquals(isSecondStepRequired("true", now), true);
   assertEquals(isSecondStepRequired(" 2026-10-26 ", now), true);
+  const later = new Date(MON_START + 400 * 86400_000);
+  for (const off of ["0", "false", "off"]) {
+    assertEquals(isSecondStepRequired(off, later), false, off);
+  }
   for (
     const bad of [
       undefined,
       "",
       "  ",
-      "0",
-      "false",
       "yes",
       "2026-13-01",
       "2026-02-30",
@@ -161,7 +194,7 @@ Deno.test("формат замка: 1/true — сразу, дата ISO — по
       "2026-1-26",
     ]
   ) {
-    assertEquals(isSecondStepRequired(bad, new Date(MON_START + 400 * 86400_000)), false, String(bad));
+    assertEquals(isSecondStepRequired(bad, new Date(MON_START - 400 * 86400_000)), true, String(bad));
   }
 });
 

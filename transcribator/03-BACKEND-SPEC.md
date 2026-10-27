@@ -10,7 +10,7 @@
 |---------|-----------|------------|
 | `meeting-claim` | desktop-agent (smcp-токен) | Регистрирует встречу/записавшего, выдаёт право транскрибации (`transcribe`/`defer`), сохраняет личные пометки как приватную entry |
 | `meeting-ingest` | desktop-agent (только claimer) | Принимает аудио (2 дорожки) → транскрипция → сведение → GPT-4o тезисы → `draft_notes_md` → уведомление; 202 + фон |
-| `swarm-api` (эндпоинты `/agent-meetings*`) | веб-сессия роя (initData / JWT) | Очередь вычитки, правка черновика, публикация (создание entry + извлечение задач) |
+| `swarm-api` (эндпоинты `/agent-meetings*`) | веб-сессия роя (JWT) | Очередь вычитки, правка черновика, публикация (создание entry + извлечение задач) |
 
 ## 1. Таблица `meetings` (миграция `20260612000000_meetings.sql`)
 
@@ -126,7 +126,7 @@
 
 ## 5. Вычитка и правка черновика (`swarm-api`)
 
-Аутентификация `swarm-api` — **веб-сессия роя**: `Authorization: tma <initData>` (Mini App) или `Authorization: Bearer <JWT>` (веб, httpOnly cookie через CF Pages Function). Не agent-токен. Воркспейс резолвится из `allowed_users.group_id`.
+Аутентификация `swarm-api` — **веб-сессия роя**: `Authorization: Bearer <JWT>` (веб, httpOnly cookie через CF Pages Function). Не agent-токен. Воркспейс резолвится из `allowed_users.group_id`.
 
 - `GET /agent-meetings?status=awaiting_review|in_base` — очередь вычитки / опубликованные. Видны записи своего воркспейса, где caller среди `recorders` (`q.contains("recorders", [{telegram_id}])`) или caller — админ. Поля: `id, title, source, identity_kind, started_at, ended_at, status, draft_notes_md, recorders, entry_id, created_at`. `status` по умолчанию `awaiting_review`.
 - `GET /agent-meetings/:id` — полный черновик (транскрипт + тезисы + участники). Доступ — только записавшие или админ; иначе `404`.

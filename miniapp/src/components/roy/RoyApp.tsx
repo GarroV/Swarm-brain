@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 import type { Me, Task } from "@/types";
 import { TaskModal } from "@/components/TaskModal";
 import { cn } from "@/lib/utils";
-import { getDeepLinkMeetingId, getDeepLinkTaskId } from "@/lib/telegram";
+import { getDeepLinkMeetingId, getDeepLinkTaskId } from "@/lib/deepLink";
 import { fetchAgentMeetings, fetchMeetings, logout } from "@/lib/api";
 import { purgeExpiredRecordings } from "@/lib/webRecorder";
 import { RecorderProvider } from "./record/RecorderProvider";

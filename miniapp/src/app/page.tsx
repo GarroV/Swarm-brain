@@ -2,7 +2,6 @@
 import { useEffect, useState } from "react";
 import { fetchMe } from "@/lib/api";
 import { applyBackdrop, readCachedBackdrop, resolveBackdrop } from "@/lib/backdrop";
-import { getInitData } from "@/lib/telegram";
 import { subscribeUnauthorized } from "@/lib/connection";
 import type { Me } from "@/types";
 import { RoyApp } from "@/components/roy/RoyApp";
@@ -14,7 +13,7 @@ let redirecting = false;
 /** На страницу входа, сохранив deep-link (?meeting=…): иначе после входа человек сядет на
  *  домашний экран вместо встречи из уведомления. Один раз — 401 приходят пачкой от виджетов. */
 function goToLogin(): void {
-  if (redirecting || getInitData() || typeof window === "undefined") return;
+  if (redirecting || typeof window === "undefined") return;
   redirecting = true;
   const next = window.location.pathname + window.location.search + window.location.hash;
   window.location.href = "/login?next=" + encodeURIComponent(next);

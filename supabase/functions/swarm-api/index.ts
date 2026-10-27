@@ -3,12 +3,12 @@
 // файла ЦЕЛИКОМ, а переформатирование этого — ~700 строк дифа поверх параллельных веток. Новый код
 // роутера живёт в модулях рядом (task-labels.ts, meeting-invites.ts …), они по канону.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { verifyInitData } from "./auth.ts";
 import { isRenewableSession, isSessionRevoked, type SessionClaims, verifyJWT } from "../_shared/jwt.ts";
 import {
   isSecondStepRequired,
   parseSecondStepAudience,
   secondStepBlocks,
+  secondStepConfigWarnings,
   secondStepRequiredFrom,
   secondStepState,
 } from "../_shared/passkeys/second-step.ts";
@@ -228,18 +228,22 @@ const TASKS_LIST_LIMIT = 2000;
 const FILE_SIGNED_TTL_SEC = 60;
 
 const BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN")!;
-const MAX_AGE = parseInt(Deno.env.get("INITDATA_MAX_AGE") ?? "86400", 10);
 const ADMIN_USER_ID = 744230399; // см. lib/supabase.ts swarm-bot — единый суперадмин
 // Demo-сессия для показа заказчику (секретная ссылка → JWT с этим telegram_id). Жёстко
 // изолирована в синтетический воркспейс: не админ, не видит рабочие данные, не минтит токены.
 // Правило «это демо» — одно на все функции: _shared/demo-session.ts.
 const WEB_JWT_SECRET = Deno.env.get("WEB_JWT_SECRET"); // подпись веб-сессий (Login Widget, B+)
-// Замок «второй шаг входа обязателен» (палец, #955). По умолчанию выключен: шаг предлагается, но не требуется.
-// Значение: `1`/`true` — сразу; дата ISO (`2026-10-26`) — с 00:00 по Белграду; считается на каждый запрос.
+// Замок «второй шаг входа обязателен» (палец, #955). Читается «включён, пока явно не выключен»: выключает
+// только `0`/`false`/`off`; дата ISO (`2026-10-26`) — с 00:00 по Белграду; всё прочее (в т.ч. не задано) — сразу.
+// Считается на каждый запрос.
 const SECOND_STEP_REQUIRED_ENV = Deno.env.get("SECOND_STEP_REQUIRED");
 const SECOND_STEP_REQUIRED_FROM = secondStepRequiredFrom(SECOND_STEP_REQUIRED_ENV);
-// Кому шаг применим (пилот): не задано — никому, `all` — всем, список telegram id — только им.
-const SECOND_STEP_AUDIENCE = parseSecondStepAudience(Deno.env.get("SECOND_STEP_AUDIENCE"));
+// Кому шаг применим: список telegram id — только им, `none` — никому, не задано/`all`/непонятное — всем.
+const SECOND_STEP_AUDIENCE_ENV = Deno.env.get("SECOND_STEP_AUDIENCE");
+const SECOND_STEP_AUDIENCE = parseSecondStepAudience(SECOND_STEP_AUDIENCE_ENV);
+for (const line of secondStepConfigWarnings(SECOND_STEP_REQUIRED_ENV, SECOND_STEP_AUDIENCE_ENV)) {
+  console.warn(line);
+}
 
 const supabase = createClient(
   Deno.env.get("SUPABASE_URL")!,
@@ -592,25 +596,15 @@ async function routeRequest(req: Request): Promise<Response> {
     );
   }
 
-  // ── Auth: два способа ─────────────────────────────────────────────────────
-  //   • Telegram Mini App:  Authorization: tma <initData>
-  //   • Веб (Login Widget):  Authorization: Bearer <JWT>  (вариант B+, проксируется CF Pages Function)
+  // ── Auth: веб-сессия ──────────────────────────────────────────────────────
+  //   Authorization: Bearer <JWT>  (вариант B+, проксируется CF Pages Function).
+  //   Любая другая схема — 401.
   const authHeader = req.headers.get("Authorization") ?? "";
   let telegram_id: number;
-  let language_code = "en";
   // Веб-сессия (Bearer). Сверяется с отзывом ниже, когда загружена строка allowed_users.
   let webSession: SessionClaims | null = null;
 
-  if (authHeader.startsWith("tma ")) {
-    const verified = await verifyInitData(
-      authHeader.slice(4).trim(),
-      BOT_TOKEN,
-      MAX_AGE,
-    );
-    if (!verified) return apiErr(401, "Unauthorized", origin);
-    telegram_id = verified.telegram_id;
-    language_code = verified.language_code;
-  } else if (authHeader.startsWith("Bearer ")) {
+  if (authHeader.startsWith("Bearer ")) {
     if (!WEB_JWT_SECRET) return apiErr(500, "Web auth not configured", origin);
     const verified = await verifyJWT(
       authHeader.slice(7).trim(),
@@ -677,7 +671,7 @@ async function routeRequest(req: Request): Promise<Response> {
   const routePath = routePathOf(url.pathname);
 
   // Второй шаг входа (палец, #955): состояние идёт в /me, замок обязательности — переменная
-  // SECOND_STEP_REQUIRED, по умолчанию выключен; аудитория — SECOND_STEP_AUDIENCE, по умолчанию никто.
+  // SECOND_STEP_REQUIRED (включён, пока явно не выключен); аудитория — SECOND_STEP_AUDIENCE (по умолчанию все).
   const secondStep = secondStepState(webSession, {
     isDemo,
     required: isSecondStepRequired(SECOND_STEP_REQUIRED_ENV),
@@ -800,7 +794,7 @@ async function routeRequest(req: Request): Promise<Response> {
         name,
         username,
         group_id: groupId,
-        language: language_code,
+        language: "en",
         role: p?.role ?? null,
         markets: p?.markets ?? [],
         ui_backdrop: p?.ui_backdrop ?? null,
