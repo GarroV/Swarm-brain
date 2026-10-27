@@ -364,7 +364,7 @@ claude mcp add supabase-swarm -- npx -y @supabase/mcp-server-supabase@0.12.0 \
 | `SUPABASE_SERVICE_ROLE_KEY` | да |
 | `DECIMUS_API_URL`, `DECIMUS_API_TOKEN` | нет (swarm-api, swarm-mcp; без них баллы РС/РКО, карты и проверки → «не загрузилось») |
 | `OPENAI_API_KEY` | да |
-| `WORKSPACE_SECRETS_KEY` | да для ключей пространств (#233): base64 от 32 байт, шифрует `workspace_secrets` (`_shared/secret-box.ts`) |
+| `WORKSPACE_SECRETS_KEY` | да для ключей пространств (#233) и ключей Granola в `user_integrations` (#585): base64 от 32 байт, шифрует `workspace_secrets` и `user_integrations.api_key` (`_shared/secret-box.ts`) |
 | `WORKSPACE_OWN_KEYS` | нет; `off` — выключатель: всегда ключ сервера `OPENAI_API_KEY` (`_shared/workspace-keys.ts`) |
 | `BOT_NAME` | нет (дефолт `"bot"`) |
 | `MCP_AUTH_REQUIRED` | устарела с 2026-09-30 — `swarm-mcp` без токена отказывает всегда (`auth.ts`) |

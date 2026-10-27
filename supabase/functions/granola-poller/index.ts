@@ -1,6 +1,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { externalFetch, VIA_GRANOLA } from "../_shared/external-fetch.ts";
 import { notifyPerson } from "../_shared/notify-person.ts";
+import { openIntegrationKey } from "../_shared/integration-keys.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -66,7 +67,10 @@ async function pollUser(integration: Integration): Promise<number> {
   const since = integration.last_polled_at ??
     new Date(Date.now() - 2 * 3_600_000).toISOString();
 
-  const allNotes = await fetchNotesSince(integration.api_key, since);
+  const allNotes = await fetchNotesSince(
+    await openIntegrationKey(integration.api_key, integration.telegram_id, "granola"),
+    since,
+  );
   if (!allNotes.length) return 0;
 
   const savedIds = await getSavedNoteIds(integration.telegram_id);

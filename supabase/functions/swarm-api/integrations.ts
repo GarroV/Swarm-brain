@@ -14,6 +14,7 @@
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeaders, json } from "./http.ts";
 import { externalFetch, VIA_GRANOLA } from "../_shared/external-fetch.ts";
+import { sealIntegrationKey } from "../_shared/integration-keys.ts";
 
 export const GOOGLE_CONNECT_PATH = "/google/connect-url";
 export const GRANOLA_PATH = "/integrations/granola";
@@ -56,7 +57,12 @@ export function makeIntegrationsDeps(
     },
     async saveGranolaKey(telegramId, key) {
       const { error } = await supabase.from("user_integrations").upsert(
-        { telegram_id: telegramId, service: "granola", api_key: key, skipped_note_ids: [] },
+        {
+          telegram_id: telegramId,
+          service: "granola",
+          api_key: await sealIntegrationKey(key, telegramId, "granola"),
+          skipped_note_ids: [],
+        },
         { onConflict: "telegram_id,service" },
       );
       if (error) throw new Error(`user_integrations upsert: ${error.message}`);
