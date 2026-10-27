@@ -17,6 +17,7 @@ import { hasSeveralOwners, canDeleteDraft, canHideDraft } from "@/lib/draftOwner
 import { recordedByOf } from "@/lib/agentMeeting";
 import { OnAirBadge } from "@/components/roy/record/OnAirBadge";
 import { TasksFromMeeting } from "@/components/roy/TasksFromMeeting";
+import { EditPencil } from "@/components/roy/EditPencil";
 
 // Как часто карточка с идущей записью перечитывает встречу (список опрашивается раз в 10 с).
 const LIVE_REFRESH_MS = 20_000;
@@ -60,6 +61,8 @@ function fmtDay(iso: string | null, locale: string): string {
   return isNaN(d.getTime()) ? "" : d.toLocaleDateString(locale, { day: "numeric", month: "short" });
 }
 
+const PUBLISH_LOCK_AFTER_EDIT_MS = 1500;
+
 export function MeetingReview({ id, onClose, onChanged }: Props) {
   const dt = useDt();
   const lang = useLang();
@@ -74,6 +77,10 @@ export function MeetingReview({ id, onClose, onChanged }: Props) {
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [publishing, setPublishing] = useState(false);
+  // После сохранения правки редактор закрывается, вёрстка прыгает, и на место нижней «Сохранить»
+  // встаёт кнопка публикации — второй клик уходил в неё (27.10.2026: владелец сохранил правку,
+  // через секунду встреча опубликовалась). Пока блок держится, публикация не нажимается.
+  const [publishLocked, setPublishLocked] = useState(false);
   const [reprocessing, setReprocessing] = useState(false);
   const [base, setBase] = useState<"workspace" | "personal">("workspace");
   const [view, setView] = useState<"tez" | "tasks" | "notes" | "tr">("tez");
@@ -138,6 +145,8 @@ export function MeetingReview({ id, onClose, onChanged }: Props) {
     try {
       const m = await patchAgentMeetingDraft(id, draft);
       setMeeting(m);
+      setPublishLocked(true);
+      setTimeout(() => setPublishLocked(false), PUBLISH_LOCK_AFTER_EDIT_MS);
       setEditing(false);
       onChanged?.();
     } finally { setSaving(false); }
@@ -152,6 +161,7 @@ export function MeetingReview({ id, onClose, onChanged }: Props) {
   };
 
   const handlePublish = async () => {
+    if (publishLocked) return;
     setPublishing(true);
     try {
       // Черновик нескольких владельцев — только в общую базу (сервер иначе ответит 409).
@@ -265,11 +275,17 @@ export function MeetingReview({ id, onClose, onChanged }: Props) {
       <div className="mb-4 px-4 py-3.5" style={{ background: "var(--accent-soft)", border: "1px solid var(--accent-line)", borderRadius: 10 }}>
         <div className="mb-1.5 flex items-center justify-between gap-2">
           <span className="font-bold uppercase text-accent-ink" style={{ fontSize: 11, letterSpacing: "0.05em" }}>{dt("Кратко от ИИ", "AI summary")}</span>
-          {!published && hasTranscript && (
-            <ReprocessMenu busy={reprocessing} onPick={reprocess} iconSize={12}
-              buttonClassName="inline-flex items-center gap-1.5 rounded-full border border-accent-line bg-card/60 font-semibold text-accent-ink transition-transform active:scale-[0.97] disabled:opacity-50"
-              buttonStyle={{ padding: "3px 9px", fontSize: 11 }} />
-          )}
+          <div className="flex items-center gap-1.5">
+            {!published && hasTranscript && (
+              <ReprocessMenu busy={reprocessing} onPick={reprocess} iconSize={12}
+                buttonClassName="inline-flex items-center gap-1.5 rounded-full border border-accent-line bg-card/60 font-semibold text-accent-ink transition-transform active:scale-[0.97] disabled:opacity-50"
+                buttonStyle={{ padding: "3px 9px", fontSize: 11 }} />
+            )}
+            {!published && (
+              <EditPencil label={dt("Править тезисы", "Edit summary")} size={26} tone="accent"
+                onClick={() => { setEditing(true); setView("tez"); }} />
+            )}
+          </div>
         </div>
         <TezisyReader text={meeting.draft_notes_md ?? ""} copyMeta={{ title: meeting.title, date: meeting.started_at }}
           ask={hasTranscript && !published ? askDraft : undefined} onApply={applyFromReading} />
@@ -384,6 +400,11 @@ export function MeetingReview({ id, onClose, onChanged }: Props) {
         ) : (
           <h1 className="mb-3 font-bold text-ink" style={{ fontSize: 24, letterSpacing: "-0.02em", lineHeight: 1.2 }}>
             {meeting.title ?? dt("Встреча", "Meeting")}
+            {canRename && !published && !editing && (
+              <span className="ml-1.5 inline-block align-middle" style={{ verticalAlign: "0.15em" }}>
+                <EditPencil label={dt("Изменить название", "Edit title")} onClick={() => { setTitleDraft(meeting.title ?? ""); setEditingTitle(true); }} />
+              </span>
+            )}
             {/* Плашка идёт сразу за последним словом названия, а не отдельной строкой. */}
             {recordingNow && <span className="ml-2.5 inline-block align-middle" style={{ verticalAlign: "0.2em" }}><OnAirBadge size={12} /></span>}
           </h1>
@@ -407,16 +428,17 @@ export function MeetingReview({ id, onClose, onChanged }: Props) {
                   ) : (
                     <BasePill value={base} onChange={setBase} />
                   )}
-                  <button type="button" onClick={handlePublish} disabled={publishing} aria-busy={publishing}
+                  <button type="button" onClick={handlePublish} disabled={publishing || publishLocked} aria-busy={publishing}
                     className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap h-10 rounded-full border border-transparent bg-primary px-3.5 lg:h-[30px] font-semibold text-primary-foreground transition-transform active:scale-[0.96] disabled:opacity-60"
                     style={{ fontSize: 12.5 }}>
                     {publishing ? <Spinner /> : <RoyIcon name="check" size={14} strokeWidth={2.2} />}
-                    {publishing ? dt("Сохраняю…", "Saving…") : dt("Сохранить", "Save")}
+                    {/* Не «Сохранить»: так же подписана кнопка правки тезисов, и после правки владелец вторым
+                        «Сохранить» отправил встречу в базу (27.10.2026). */}
+                    {publishing ? dt("Публикую…", "Publishing…") : dt("Опубликовать", "Publish")}
                   </button>
                 </>
               )}
-              {canRename && <Chip icon="pencil" label={dt("Название", "Title")} onClick={() => { setTitleDraft(meeting.title ?? ""); setEditingTitle(true); }} />}
-              {notesReady && <Chip icon="pencil" label={dt("Тезисы", "Summary")} onClick={() => { setEditing(true); setView("tez"); }} />}
+              {/* «Название» и «Тезисы» — карандашами у самого названия и в шапке тезисов (27.10.2026). */}
               {canDeleteDraft(meeting, me?.telegram_id) && !deleting && (
                 <button type="button" onClick={handleDelete} aria-label={dt("Удалить черновик", "Delete draft")} title={dt("Удалить черновик", "Delete draft")}
                   className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full transition-colors lg:h-[30px] lg:w-[30px] hover:bg-surface-2 active:scale-[0.94]"
