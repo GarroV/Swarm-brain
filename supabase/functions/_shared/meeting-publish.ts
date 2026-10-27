@@ -207,10 +207,8 @@ export async function publishDraftMeeting(
       ).eq("id", dup.id).single();
       const baseMeta = ((prevEntry as { metadata?: Record<string, unknown> } | null)
         ?.metadata ?? prevMeta) as Record<string, unknown>;
-      const newEmbedding = await embed(
-        buildEmbeddingInput(draft, countries),
-        OPENAI_KEY,
-      );
+      // Тот же вход, что у `embedding` выше (draft + countries) — второй вызов модели не нужен.
+      const newEmbedding = embedding;
       await supabase.from("entries").update({
         content: draft,
         summary: draft,
