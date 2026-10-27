@@ -9,6 +9,7 @@ import {
   holderHasVersion,
   holderSecondsCorrection,
   settleRecorders,
+  withRecorder,
 } from "./challenge.ts";
 import { CLAIM_LEASE_TTL_SEC } from "../_shared/meeting-lease.ts";
 
@@ -165,4 +166,36 @@ Deno.test("ЯДРО #1070: претендент с короткой выгруз
 Deno.test("#1070: держатель с секундами и без стенограммы защищён порогом, как раньше", () => {
   const held = row({ recorded_seconds: 60, transcript: null, summary_status: null, lease_expires_at: at(-20) });
   assertEquals(decideChallenge(held, 200, TAKER, NOW).kind, "refuse");
+});
+
+// ── Один transcribe в recorders (#1070, попутно) ─────────────────────────────────
+
+Deno.test("ЯДРО #1070: занятие брошенной встречи (никто не перехвачен) тоже снимает transcribe с прежнего держателя", () => {
+  // Лиз прежнего истёк, встречу занял новый: supersede не передаётся, а transcribe оставался у двоих.
+  const before = [
+    { telegram_id: HOLDER, claimed_at: at(170), role: "transcribe", recorded_seconds: 0 },
+    { telegram_id: TAKER, claimed_at: at(1), role: CHALLENGER_ROLE, recorded_seconds: 120 },
+  ];
+  const after = settleRecorders(before, TAKER, "transcribe", 120, null);
+  assertEquals(after.filter((r) => r.role === "transcribe").map((r) => r.telegram_id), [TAKER]);
+  assertEquals(after[0].role, "superseded");
+});
+
+Deno.test("ЯДРО #1070: claim нового держателя (withRecorder) тоже оставляет одного transcribe", () => {
+  const before = [
+    { telegram_id: HOLDER, claimed_at: at(170), role: "transcribe" },
+    { telegram_id: 300, claimed_at: at(100), role: "defer" },
+  ];
+  const mine = { telegram_id: TAKER, claimed_at: at(1), role: "transcribe", recorded_seconds: 60 };
+  assertEquals(withRecorder(before, mine, null), [
+    { telegram_id: HOLDER, claimed_at: at(170), role: "superseded" },
+    { telegram_id: 300, claimed_at: at(100), role: "defer" },
+    mine,
+  ]);
+  // Новый defer или претендент прежнего держателя не трогает.
+  const deferred = { telegram_id: TAKER, claimed_at: at(1), role: "defer" };
+  assertEquals(withRecorder(before, deferred, null)[0].role, "transcribe");
+  // Повторный claim того же человека обновляет его строку, а не дублирует.
+  const again = withRecorder(withRecorder(before, deferred, null), { ...deferred, role: "transcribe" }, null);
+  assertEquals(again.filter((r) => r.telegram_id === TAKER).length, 1);
 });

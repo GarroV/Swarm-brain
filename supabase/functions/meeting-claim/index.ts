@@ -14,7 +14,7 @@ import {
   readClaimSeconds,
 } from "./arbiter.ts";
 import { withGuards } from "./guard-query.ts";
-import { CHALLENGER_ROLE } from "../meeting-ingest/challenge.ts";
+import { CHALLENGER_ROLE, withRecorder } from "../meeting-ingest/challenge.ts";
 import { boundClaimSeconds, type MeetingClock } from "./claim-clock.ts";
 import { AgentAuthError, type AgentIdentity, resolveActingIdentity } from "../_shared/agent-auth.ts";
 import { defaultMeetingTitle, displayNameOf, isDefaultMeetingTitle } from "../_shared/meeting-title.ts";
@@ -223,8 +223,8 @@ interface RecorderEntry {
 // повтором (_shared/recorders-write.ts): роль challenger в списке даёт право выгрузки, и
 // одновременный claim или сверка претендента в meeting-ingest не должны её стирать.
 // Повторный claim того же человека ОБНОВЛЯЕТ его строку (роль могла смениться defer→transcribe),
-// а при перехвате прежний владелец переводится в superseded — иначе в массиве осталось бы два
-// «transcribe» и по нему нельзя было бы понять, чьё аудио реально в базе.
+// а новый transcribe переводит прежнего в superseded (challenge.ts withRecorder) — иначе в массиве
+// осталось бы два «transcribe» и по нему нельзя было бы понять, чьё аудио реально в базе.
 async function registerRecorder(
   meetingId: string,
   telegramId: number,
@@ -242,19 +242,12 @@ async function registerRecorder(
     ...(recordedSeconds !== undefined ? { recorded_seconds: recordedSeconds } : {}),
     ...(role === CHALLENGER_ROLE && micStartOffset !== undefined ? { mic_start_offset: micStartOffset } : {}),
   };
-  const ok = await updateRecorders(supabase, meetingId, (current) => {
-    const recorders = current as RecorderEntry[];
-    const next: RecorderEntry[] = recorders.map((r) =>
-      supersedeOwner != null && r.telegram_id === supersedeOwner &&
-        r.role === "transcribe"
-        ? { ...r, role: "superseded" as RecorderRole }
-        : r
-    );
-    const at = next.findIndex((r) => r.telegram_id === telegramId);
-    if (at >= 0) next[at] = { ...next[at], ...mine };
-    else next.push(mine);
-    return next;
-  }, { updated_at: nowIso });
+  const ok = await updateRecorders(
+    supabase,
+    meetingId,
+    (current) => withRecorder(current, mine, supersedeOwner ?? null) as RecorderEntry[],
+    { updated_at: nowIso },
+  );
   if (!ok) console.error(`meeting-claim: recorders ${meetingId} — ${telegramId} не вписан (список менялся)`);
   await refreshAttendees(meetingId, incomingAttendees, nowIso);
 }
