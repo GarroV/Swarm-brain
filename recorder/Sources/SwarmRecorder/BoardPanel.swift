@@ -44,6 +44,8 @@ struct BoardViewState {
     var hotKeyHint: Bool
     var today: String
     var now: Date
+    /// Экран страны созвона (issue #1072); `.none` — обычная доска.
+    var call: CallCountryView = .none
 }
 
 /// Окно панели: может стать ключевым (поля ввода), но не делает приложение активным; Esc и
@@ -93,6 +95,13 @@ final class BoardPanel: NSObject, NSWindowDelegate {
     var onUndo: (() -> Void)?
     var onClose: (() -> Void)?
     var onEscape: (() -> Bool)?
+    // — страна созвона —
+    var onCallYes: (() -> Void)?
+    var onCallOther: (() -> Void)?
+    var onCallNo: (() -> Void)?
+    var onCallChange: (() -> Void)?
+    var onCallPick: ((String) -> Void)?
+    var onCallPickCancel: (() -> Void)?
 
     let notepad: BoardNotepad
     private(set) var window: BoardWindow!
@@ -153,6 +162,15 @@ final class BoardPanel: NSObject, NSWindowDelegate {
     private var formCancel: FlatButton!
     private let formWrap: NSStackView
     private var formMarkets: [String] = []
+    private let callBox = BoxView(fill: BoardTheme.amberSoft, radius: 10, border: BoardTheme.amber.withAlphaComponent(0.4))
+    private let callLabel = boardLabel("", size: 13, weight: .semibold)
+    private let callPopup = NSPopUpButton(frame: .zero, pullsDown: false)
+    private var callYes: FlatButton!
+    private var callOther: FlatButton!
+    private var callNo: FlatButton!
+    private var callChange: FlatButton!
+    private let callWrap: NSStackView
+    private var callMarkets: [String] = []
 
     /// Тело доски под шапкой: задачи, встречи и блокнот, разложенные по `BoardLayout`.
     private let body = boardStack(.vertical)
@@ -178,17 +196,19 @@ final class BoardPanel: NSObject, NSWindowDelegate {
         voiceWrap = boardStack(.vertical, insets: NSEdgeInsets(top: 10, left: 12, bottom: 0, right: 12), views: [voiceBar])
         toastWrap = boardStack(.vertical, insets: NSEdgeInsets(top: 10, left: 12, bottom: 0, right: 12), views: [toastBox])
         formWrap = boardStack(.vertical, insets: NSEdgeInsets(top: 10, left: 12, bottom: 0, right: 12), views: [formBox])
+        callWrap = boardStack(.vertical, insets: NSEdgeInsets(top: 10, left: 12, bottom: 0, right: 12), views: [callBox])
         super.init()
         buildWindow()
         buildHeader()
         buildVoiceBar()
         buildToast()
         buildForm()
+        buildCall()
         buildColumns()
         notepad.view.translatesAutoresizingMaskIntoConstraints = false
-        for v in [messageRow, voiceWrap, toastWrap, formWrap] { v.isHidden = true }
+        for v in [messageRow, voiceWrap, toastWrap, formWrap, callWrap] { v.isHidden = true }
         let divider = boardDivider(vertical: false)
-        for v in [headerBar!, divider, messageRow, voiceWrap, toastWrap, formWrap, body] { root.addArrangedSubview(v) }
+        for v in [headerBar!, divider, messageRow, callWrap, voiceWrap, toastWrap, formWrap, body] { root.addArrangedSubview(v) }
         arrange(.notesUnderTasks)
         guard let content = window.contentView else { return }
         content.addSubview(root)
@@ -428,8 +448,11 @@ final class BoardPanel: NSObject, NSWindowDelegate {
         closeButton = FlatButton(title: "✕", fill: .clear, color: BoardTheme.ink2, size: 13, target: self, action: #selector(closeTapped))
         let spacer = boardSpacer()
         let titleStack = boardStack(.horizontal, spacing: 8, views: [titleLabel, dateLabel, offlineLabel])
+        callChange = FlatButton(title: "", fill: .clear, color: BoardTheme.amber, size: 12, radius: 6,
+                                target: self, action: #selector(callChangeTapped))
+        callChange.isHidden = true
         let headerRow = boardStack(.horizontal, spacing: 8,
-                                   views: [titleStack, spacer, gearButton, closeButton])
+                                   views: [titleStack, spacer, callChange, gearButton, closeButton])
         headerRow.setCustomSpacing(4, after: gearButton)
         // Верхний отступ перекрывает невидимую полосу заголовка окна (~28 pt): кнопки под ней не получили бы клик.
         // Вертикальные отступы горизонтального стека AppKit игнорирует, поэтому строка лежит в вертикальной обёртке.
@@ -489,6 +512,22 @@ final class BoardPanel: NSObject, NSWindowDelegate {
         col.translatesAutoresizingMaskIntoConstraints = false
         formBox.addSubview(col)
         pin(col, in: formBox)
+    }
+
+    /// Карточка страны созвона: вопрос «Это созвон по <стране>?» [Да] [Другая…] [Нет] или выбор страны.
+    private func buildCall() {
+        callYes = FlatButton(title: "", fill: BoardTheme.amber, hover: BoardTheme.amber.withAlphaComponent(0.85),
+                             color: BoardTheme.amberInk, size: 12, weight: .semibold, target: self, action: #selector(callYesTapped))
+        callOther = FlatButton(title: "", target: self, action: #selector(callOtherTapped))
+        callNo = FlatButton(title: "", target: self, action: #selector(callNoTapped))
+        callPopup.translatesAutoresizingMaskIntoConstraints = false
+        callPopup.font = BoardTheme.font(12.5)
+        let row = boardStack(.horizontal, spacing: 8, views: [callLabel, callPopup, boardSpacer(), callYes, callOther, callNo])
+        row.alignment = .centerY
+        let col = boardStack(.vertical, spacing: 6, insets: NSEdgeInsets(top: 10, left: 12, bottom: 10, right: 12), views: [row])
+        col.translatesAutoresizingMaskIntoConstraints = false
+        callBox.addSubview(col)
+        pin(col, in: callBox)
     }
 
     /// Строка «Добавить задачу» в блоке задач: справа ＋ (форма руками) и микрофон (надиктовать).
@@ -607,6 +646,7 @@ final class BoardPanel: NSObject, NSWindowDelegate {
         messageLabel.stringValue = s.message ?? ""
         messageRow.isHidden = s.message == nil
 
+        renderCall(s)
         renderVoice(s)
         renderToast(s)
         renderForm(s)
@@ -621,6 +661,49 @@ final class BoardPanel: NSObject, NSWindowDelegate {
         meetingsSeparator?.isHidden = !s.showMeetings
         columnsDivider.isHidden = !s.showMeetings
         fit()
+    }
+
+    /// Страна созвона: заголовок «Созвон · 🇷🇸 Сербия» и «Сменить страну»; вопрос или выбор — карточкой под шапкой.
+    /// Сам список задач страны подставляет хаб в `tasks`, здесь меняются только подписи.
+    private func renderCall(_ s: BoardViewState) {
+        func t(_ k: String) -> String { BoardL10n.text(k, lang: s.lang) }
+        callChange.isHidden = true
+        callWrap.isHidden = true
+        callPopup.isHidden = true
+        callNo.isHidden = true
+        callYes.isEnabled = true
+        if case .pick = s.call {} else { callMarkets = [] }
+        switch s.call {
+        case .none:
+            break
+        case .country(let code, _):
+            titleLabel.stringValue = BoardL10n.format("call.title", lang: s.lang, CallCountry.label(code, lang: s.lang))
+            callChange.setTitle(t("call.change"), color: BoardTheme.amber, size: 12)
+            callChange.isHidden = false
+        case .ask(let code):
+            callWrap.isHidden = false
+            callLabel.stringValue = BoardL10n.format("call.ask", lang: s.lang, CallCountry.label(code, lang: s.lang))
+            callYes.setTitle(t("call.yes"), color: BoardTheme.amberInk, size: 12, weight: .semibold)
+            callOther.setTitle(t("call.other"), color: BoardTheme.ink)
+            callNo.setTitle(t("call.no"), color: BoardTheme.ink)
+            callNo.isHidden = false
+        case .pick(let markets, let selected):
+            callWrap.isHidden = false
+            callLabel.stringValue = t("call.pick")
+            callYes.setTitle(t("call.pick.set"), color: BoardTheme.amberInk, size: 12, weight: .semibold)
+            callOther.setTitle(t("call.pick.cancel"), color: BoardTheme.ink)
+            callPopup.isHidden = false
+            if callMarkets != markets || callPopup.numberOfItems == 0 {
+                callMarkets = markets
+                callPopup.removeAllItems()
+                for code in markets {
+                    callPopup.addItem(withTitle: CallCountry.label(code, lang: s.lang))
+                    callPopup.lastItem?.representedObject = code
+                }
+                if let selected, let i = markets.firstIndex(of: selected) { callPopup.selectItem(at: i) }
+            }
+            callYes.isEnabled = !markets.isEmpty
+        }
     }
 
     private func renderVoice(_ s: BoardViewState) {
@@ -728,7 +811,9 @@ final class BoardPanel: NSObject, NSWindowDelegate {
 
     private func renderTasks(_ s: BoardViewState) {
         func t(_ k: String) -> String { BoardL10n.text(k, lang: s.lang) }
-        tasksHeader.stringValue = t("tasks.header").uppercased()
+        var isCountry = false
+        if case .country = s.call { isCountry = true }
+        tasksHeader.stringValue = t(isCountry ? "call.tasks.header" : "tasks.header").uppercased()
         tasksCount.stringValue = s.loaded ? " \(s.tasksTotal) " : ""
         for v in taskRows.arrangedSubviews { taskRows.removeArrangedSubview(v); v.removeFromSuperview() }
         let cut = BoardList.trim(s.tasks, rows: s.config.taskRows, total: s.tasksTotal)
@@ -737,7 +822,7 @@ final class BoardPanel: NSObject, NSWindowDelegate {
         }
         if s.loaded, cut.visible.isEmpty {
             let box = boardStack(.vertical, insets: NSEdgeInsets(top: 14, left: 14, bottom: 14, right: 14),
-                                 views: [boardLabel(t("tasks.empty"), size: 14, weight: .semibold)])
+                                 views: [boardLabel(t(isCountry ? "call.tasks.empty" : "tasks.empty"), size: 14, weight: .semibold)])
             taskRows.addArrangedSubview(box)
         }
         if cut.more > 0 {
@@ -845,6 +930,16 @@ final class BoardPanel: NSObject, NSWindowDelegate {
     @objc private func undoTapped() { onUndo?() }
     @objc private func moreTapped() { onOpenMore?() }
     @objc private func formCancelTapped() { onFormCancel?() }
+    @objc private func callOtherTapped() {
+        if case .pick? = state?.call { onCallPickCancel?() } else { onCallOther?() }
+    }
+    @objc private func callNoTapped() { onCallNo?() }
+    @objc private func callChangeTapped() { onCallChange?() }
+    @objc private func callYesTapped() {
+        if case .pick? = state?.call {
+            if let code = callPopup.selectedItem?.representedObject as? String { onCallPick?(code) }
+        } else { onCallYes?() }
+    }
 
     @objc private func checkTapped(_ sender: NSButton) {
         guard let id = sender.identifier?.rawValue else { return }
