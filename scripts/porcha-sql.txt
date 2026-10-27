@@ -26,7 +26,9 @@ delete from public.sprint_cycles      where group_id = c_ws;|perform 1;|supabase
 delete from public.user_integrations  where telegram_id = any (v_users);|perform 1;|supabase/functions/_shared/demo-reset.db.test.ts|supabase/migrations/20260928180000_demo_auto_reset.sql
 delete from public.user_integrations  where telegram_id = any (v_users);|delete from public.user_integrations where telegram_id = any (v_users) or telegram_id = 800000901;|supabase/functions/_shared/demo-reset.db.test.ts|supabase/migrations/20260928180000_demo_auto_reset.sql
 -- feedback не трогаем: «фидбек нужен конечно»|delete from public.feedback where telegram_id = any (v_users); --|supabase/functions/_shared/demo-reset.db.test.ts|supabase/migrations/20260928180000_demo_auto_reset.sql
-claude_mcp_token_hash = null, claude_mcp_token_expires_at = null,|claude_mcp_token_expires_at = null,|supabase/functions/_shared/demo-reset.db.test.ts|supabase/migrations/20260928180000_demo_auto_reset.sql
+# Токен MCP в сбросе демо гасит и триггер allowed_users_revoke_mcp_token (#1083): порча его
+# явного обнуления не краснеет — защита двойная. Ломаем соседнее условие, которое держит только сброс.
+recorder_token_hash = null, recorder_token_expires_at = null,|recorder_token_expires_at = null,|supabase/functions/_shared/demo-reset.db.test.ts|supabase/migrations/20260928180000_demo_auto_reset.sql
 revoke all on function public.demo_reset() from public, anon, authenticated;|grant execute on function public.demo_reset() to anon;|supabase/functions/_shared/demo-reset.db.test.ts|supabase/migrations/20260928180000_demo_auto_reset.sql
 # Расписание cron сюда не входит: порча меняет базу, а тест расписания читает сам файл миграции
 # (на контуре нет pg_cron, и зарегистрированной задачи в базе не бывает). Его порча проверена
