@@ -8,6 +8,7 @@ import {
   isSecondStepRequired,
   parseSecondStepAudience,
   secondStepBlocks,
+  secondStepConfigWarnings,
   secondStepRequiredFrom,
   secondStepState,
 } from "../_shared/passkeys/second-step.ts";
@@ -231,12 +232,17 @@ const ADMIN_USER_ID = 744230399; // см. lib/supabase.ts swarm-bot — един
 // изолирована в синтетический воркспейс: не админ, не видит рабочие данные, не минтит токены.
 // Правило «это демо» — одно на все функции: _shared/demo-session.ts.
 const WEB_JWT_SECRET = Deno.env.get("WEB_JWT_SECRET"); // подпись веб-сессий (Login Widget, B+)
-// Замок «второй шаг входа обязателен» (палец, #955). По умолчанию выключен: шаг предлагается, но не требуется.
-// Значение: `1`/`true` — сразу; дата ISO (`2026-10-26`) — с 00:00 по Белграду; считается на каждый запрос.
+// Замок «второй шаг входа обязателен» (палец, #955). Читается «включён, пока явно не выключен»: выключает
+// только `0`/`false`/`off`; дата ISO (`2026-10-26`) — с 00:00 по Белграду; всё прочее (в т.ч. не задано) — сразу.
+// Считается на каждый запрос.
 const SECOND_STEP_REQUIRED_ENV = Deno.env.get("SECOND_STEP_REQUIRED");
 const SECOND_STEP_REQUIRED_FROM = secondStepRequiredFrom(SECOND_STEP_REQUIRED_ENV);
-// Кому шаг применим (пилот): не задано — никому, `all` — всем, список telegram id — только им.
-const SECOND_STEP_AUDIENCE = parseSecondStepAudience(Deno.env.get("SECOND_STEP_AUDIENCE"));
+// Кому шаг применим: список telegram id — только им, `none` — никому, не задано/`all`/непонятное — всем.
+const SECOND_STEP_AUDIENCE_ENV = Deno.env.get("SECOND_STEP_AUDIENCE");
+const SECOND_STEP_AUDIENCE = parseSecondStepAudience(SECOND_STEP_AUDIENCE_ENV);
+for (const line of secondStepConfigWarnings(SECOND_STEP_REQUIRED_ENV, SECOND_STEP_AUDIENCE_ENV)) {
+  console.warn(line);
+}
 
 const supabase = createClient(
   Deno.env.get("SUPABASE_URL")!,
@@ -666,7 +672,7 @@ async function routeRequest(req: Request): Promise<Response> {
   const routePath = routePathOf(url.pathname);
 
   // Второй шаг входа (палец, #955): состояние идёт в /me, замок обязательности — переменная
-  // SECOND_STEP_REQUIRED, по умолчанию выключен; аудитория — SECOND_STEP_AUDIENCE, по умолчанию никто.
+  // SECOND_STEP_REQUIRED (включён, пока явно не выключен); аудитория — SECOND_STEP_AUDIENCE (по умолчанию все).
   const secondStep = secondStepState(webSession, {
     isDemo,
     required: isSecondStepRequired(SECOND_STEP_REQUIRED_ENV),
