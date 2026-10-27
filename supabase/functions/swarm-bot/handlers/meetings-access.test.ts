@@ -66,6 +66,14 @@ Deno.test("загрузчик действительно зовёт общий �
   assertEquals(src.includes('from "../../_shared/entries/meeting-rights.ts"'), true);
 });
 
+Deno.test("загрузчик отдаёт только встречи: заметка и файл — «не найдена» для любого действия бота", async () => {
+  const src = await Deno.readTextFile(`${HERE}meetings.ts`);
+  const start = src.indexOf("async function loadEntryForAction");
+  const body = src.slice(start, src.indexOf("\n}", start));
+  assertEquals(/"entry_type", "source"/.test(body), true, "загрузчик не читает entry_type/source");
+  assertEquals(/!isMeetingEntry\(/.test(body), true, "загрузчик не отсекает не-встречи");
+});
+
 // ── Права на правку и удаление (решение владельца 30.09.2026) ─────────────────
 // Видимость ещё не право: общую встречу видит весь воркспейс, а править её могут автор,
 // участники и админ, удалять — автор и админ (_shared/entries/meeting-rights.ts).

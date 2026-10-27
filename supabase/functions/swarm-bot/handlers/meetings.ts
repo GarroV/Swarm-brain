@@ -17,7 +17,7 @@ import { onlyLive } from "../../_shared/tasks/live.ts";
 import { onlyLiveEntries } from "../../_shared/entries/live.ts";
 import { escapeHtml, sanitizeModelHtml } from "../../_shared/telegram-html.ts";
 import { archiveEntry } from "../../_shared/entries/archive.ts";
-import { meetingConfirmPatch } from "../../_shared/entries/meeting-confirm.ts";
+import { type ConfirmableEntry, meetingConfirmPatch } from "../../_shared/entries/meeting-confirm.ts";
 import { type EditableEntryRow, isMeetingEntry } from "../../_shared/entries/entry-edit.ts";
 import { externalFetch, VIA_TELEGRAM, VIA_TELEGRAM_UPLOAD } from "../../_shared/external-fetch.ts";
 import { keepVisibleTasks } from "../../_shared/tasks/project-visibility.ts";
@@ -48,7 +48,7 @@ async function loadEntryForAction(
   // metadata нужна всегда: по ней (metadata.attendees) считается причастность к встрече.
   const select = [
     ...new Set(
-      [...columns.split(","), "metadata", "is_private", "owner_id", "shared_with", "group_id"]
+      [...columns.split(","), "metadata", "is_private", "owner_id", "shared_with", "group_id", "entry_type", "source"]
         .map((c) => c.trim()).filter(Boolean),
     ),
   ].join(", ");
@@ -67,7 +67,10 @@ async function loadEntryForAction(
     groupId,
     action,
   );
-  return denied ? null : (data as ActionEntry | null);
+  if (denied) return null;
+  // Любое действие бота над встречей — только над встречей: заметка или файл — «не найдена».
+  if (data && !isMeetingEntry(data as unknown as EditableEntryRow)) return null;
+  return data as ActionEntry | null;
 }
 
 export async function handleConnect(chatId: number): Promise<void> {
@@ -651,16 +654,12 @@ export async function handleMeetingCallbacks(
       entryId,
       groupId,
       userId,
-      "metadata, content, countries, entry_type, source",
+      "metadata, content, countries",
       {
         action: "edit",
       },
     );
-    // Согласовать можно только встречу: на заметку и другие записи кнопка не действует.
-    if (
-      !entry ||
-      !isMeetingEntry(entry as unknown as EditableEntryRow)
-    ) {
+    if (!entry) {
       await sendMessage(chatId, "Встреча не найдена.");
       return true;
     }
@@ -674,9 +673,13 @@ export async function handleMeetingCallbacks(
       );
       return true;
     }
-    // Согласование меняет только признак confirmed: видимость, «разделено с» и владелец остаются
-    // как были (_shared/entries/meeting-confirm.ts); видимость меняется отдельным охраняемым путём.
-    await supabase.from("entries").update(meetingConfirmPatch(entry.metadata as Record<string, unknown>))
+    // Согласование (_shared/entries/meeting-confirm.ts): confirmed=true; владелец — решение
+    // 22.08.2026 («ничьих быть не должно»), сужено: только первое согласование безвладельной
+    // встречи; личная встреча публикуется (как описано в BACKLOG), если согласует её владелец;
+    // для остальных видимость и shared_with не меняются.
+    const viewer = await loadMeetingViewer(userId);
+    await supabase.from("entries")
+      .update(meetingConfirmPatch(entry as unknown as ConfirmableEntry, viewer, { publishPrivate: true }))
       .eq("id", entryId).eq("group_id", groupId);
     const title = ((entry.metadata as Record<string, unknown>)?.title as string) ?? "Встреча";
     await sendMessage(chatId, `✅ Встреча сохранена: <b>${escapeHtml(title)}</b>`);

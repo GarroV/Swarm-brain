@@ -2859,12 +2859,16 @@ async function routeRequest(req: Request): Promise<Response> {
         }
         const fields: Record<string, unknown> = {};
         if ("confirmed" in body) {
-          // Согласование меняет ТОЛЬКО признак metadata.confirmed: видимость, «разделено с» и
-          // владелец остаются как были (_shared/entries/meeting-confirm.ts). Видимость меняется
-          // отдельным полем is_private — ниже, под canChangeMeetingPrivacy.
-          fields.metadata = body.confirmed === true
-            ? meetingConfirmPatch(entry.metadata).metadata
-            : { ...(entry.metadata as Record<string, unknown>), confirmed: body.confirmed };
+          // Согласование (_shared/entries/meeting-confirm.ts): confirmed=true; владелец — решение
+          // 22.08.2026 («ничьих быть не должно»), сужено: согласовавший (он уже прошёл право
+          // правки) становится владельцем только при ПЕРВОМ согласовании безвладельной встречи.
+          // is_private и shared_with не трогаются; видимость — только полем is_private ниже,
+          // под canChangeMeetingPrivacy.
+          if (body.confirmed === true) {
+            Object.assign(fields, meetingConfirmPatch(entry, { id: telegram_id, email: userEmail, isAdmin }));
+          } else {
+            fields.metadata = { ...(entry.metadata as Record<string, unknown>), confirmed: body.confirmed };
+          }
         }
         if ("summary" in body) fields.summary = body.summary;
         if ("content" in body && typeof body.content === "string") {
