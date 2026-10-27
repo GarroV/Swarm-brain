@@ -1,7 +1,7 @@
 import { assertEquals } from "jsr:@std/assert@1";
-import { classifyRequest, isOwnPrivateChat } from "./webhook-auth.ts";
+import { classifyRequest, isOwnPrivateChat, type WebhookAuthConfig } from "./webhook-auth.ts";
 
-const CFG = { cronSecret: "cron-s3cret", webhookSecret: "tg-s3cret", enforce: true };
+const CFG: WebhookAuthConfig = { cronSecret: "cron-s3cret", webhookSecret: "tg-s3cret" };
 
 function h(pairs: Record<string, string>): Headers {
   return new Headers(pairs);
@@ -26,23 +26,32 @@ Deno.test("cron: CRON_SECRET не задан → любой X-Cron-Secret отк
   assertEquals(classifyRequest(h({ "X-Cron-Secret": "x" }), cfg), "deny");
 });
 
-Deno.test("telegram: проверка включена, верный секрет → telegram", () => {
+Deno.test("telegram: верный секрет → telegram", () => {
   assertEquals(classifyRequest(h({ "X-Telegram-Bot-Api-Secret-Token": "tg-s3cret" }), CFG), "telegram");
 });
 
-Deno.test("telegram: проверка включена, секрета нет или он неверный → отказ", () => {
+Deno.test("telegram: секрета нет или он неверный → отказ", () => {
   assertEquals(classifyRequest(h({}), CFG), "deny");
   assertEquals(classifyRequest(h({ "X-Telegram-Bot-Api-Secret-Token": "nope" }), CFG), "deny");
 });
 
-Deno.test("telegram: проверка включена, но секрет не задан → отказ (fail-closed)", () => {
+Deno.test("telegram: секрет бота не задан → отказ (fail-closed)", () => {
   const cfg = { ...CFG, webhookSecret: "" };
   assertEquals(classifyRequest(h({ "X-Telegram-Bot-Api-Secret-Token": "" }), cfg), "deny");
 });
 
-Deno.test("telegram: проверка выключена → telegram (переходный режим до ENFORCE=1)", () => {
-  const cfg = { ...CFG, enforce: false };
-  assertEquals(classifyRequest(h({}), cfg), "telegram");
+Deno.test("telegram: проверка безусловная — старый флаг в настройках ничего не отключает", () => {
+  const legacy = { ...CFG, enforce: false } as WebhookAuthConfig;
+  assertEquals(classifyRequest(h({}), legacy), "deny");
+  assertEquals(classifyRequest(h({ "X-Telegram-Bot-Api-Secret-Token": "nope" }), legacy), "deny");
+  assertEquals(classifyRequest(h({ "X-Telegram-Bot-Api-Secret-Token": "tg-s3cret" }), legacy), "telegram");
+});
+
+Deno.test("telegram: секрет бота не задан → отказ любому апдейту, а cron с верным секретом проходит", () => {
+  const cfg = { ...CFG, webhookSecret: "" };
+  assertEquals(classifyRequest(h({}), cfg), "deny");
+  assertEquals(classifyRequest(h({ "X-Telegram-Bot-Api-Secret-Token": "anything" }), cfg), "deny");
+  assertEquals(classifyRequest(h({ "X-Cron-Secret": "cron-s3cret" }), cfg), "cron");
 });
 
 Deno.test("личный чат: chat.id совпадает с from.id → да", () => {

@@ -83,12 +83,13 @@ import { FUNCTIONS_BASE_URL } from "../_shared/public-url.ts";
 
 const TELEGRAM_BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN")!;
 const CRON_SECRET = Deno.env.get("CRON_SECRET") ?? "";
-// Секрет вебхука Telegram. Две переменные намеренно: значение и включение проверки.
-// Одной не обойтись — если начать отбивать апдейты раньше, чем Telegram узнает секрет
-// через setWebhook, бот перестанет отвечать людям. Порядок: задать SECRET → дёрнуть
-// set_webhook → убедиться, что апдейты идут → только потом ENFORCE=1.
+// Секрет вебхука Telegram: апдейт без него отклоняется всегда. Задан секрет → set_webhook
+// сообщает его Telegram (scripts/bot-webhook-secret.sh). Не задан — отклоняются все апдейты
+// (cron проходит по своему секрету, так что set_webhook остаётся доступен).
 const TELEGRAM_WEBHOOK_SECRET = Deno.env.get("TELEGRAM_WEBHOOK_SECRET") ?? "";
-const TELEGRAM_WEBHOOK_ENFORCE = Deno.env.get("TELEGRAM_WEBHOOK_ENFORCE") === "1";
+if (!TELEGRAM_WEBHOOK_SECRET) {
+  console.error("TELEGRAM_WEBHOOK_SECRET не задан: все апдейты Telegram отклоняются (401)");
+}
 // Эндпоинт MCP-сервера для ручного подключения (веб-коннектор claude.ai: URL + Bearer-токен).
 const SWARM_MCP_URL = `${FUNCTIONS_BASE_URL}/swarm-mcp`;
 
@@ -256,7 +257,6 @@ Deno.serve(async (req: Request) => {
   const source = classifyRequest(req.headers, {
     cronSecret: CRON_SECRET,
     webhookSecret: TELEGRAM_WEBHOOK_SECRET,
-    enforce: TELEGRAM_WEBHOOK_ENFORCE,
   });
   if (source === "deny") return new Response("Unauthorized", { status: 401 });
 
