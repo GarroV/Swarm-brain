@@ -2,15 +2,16 @@
 // видимость — только владельцу и только по просьбе вызывающего; shared_with не трогается.
 // Ядро прав — тесты до кода.
 import { assertEquals } from "jsr:@std/assert@1";
-import { meetingConfirmPatch } from "./meeting-confirm.ts";
+import { claimOwnerIfFree, meetingConfirmPatch } from "./meeting-confirm.ts";
+import { escapeLike } from "../users/membership.ts";
 
 const owned = { group_id: "cee", is_private: false, owner_id: 10, metadata: { confirmed: false } };
 const ownerless = { ...owned, owner_id: null };
 const caller = { id: 20 };
 
 Deno.test("согласование пишет metadata.confirmed и сохраняет остальную metadata", () => {
-  const patch = meetingConfirmPatch({ ...owned, metadata: { title: "T", confirmed: false } }, caller);
-  assertEquals(patch, { metadata: { title: "T", confirmed: true } });
+  const { metadata } = meetingConfirmPatch({ ...owned, metadata: { title: "T", confirmed: false } }, caller);
+  assertEquals({ title: metadata.title, confirmed: metadata.confirmed }, { title: "T", confirmed: true });
 });
 
 Deno.test("первое согласование безвладельной встречи: владелец — согласовавший", () => {
@@ -53,4 +54,31 @@ Deno.test("publishPrivate: встреча 1-1 (shared_with) не публику�
 
 Deno.test("publishPrivate: общая встреча остаётся как есть", () => {
   assertEquals(meetingConfirmPatch({ ...owned, owner_id: 20 }, caller, { publishPrivate: true }).is_private, undefined);
+});
+
+// «Первое согласование» не сбрасывается клиентом: отметка confirmed_at пишется только патчем
+// и переживает confirmed:false.
+Deno.test("согласование пишет серверную отметку confirmed_at", () => {
+  const at = meetingConfirmPatch(ownerless, caller).metadata.confirmed_at;
+  assertEquals(typeof at, "string");
+});
+
+Deno.test("снять и поставить согласование заново: владельца второй раз не назначает", () => {
+  const unconfirmedAfterFirst = { ...ownerless, metadata: { confirmed: false, confirmed_at: "2026-10-01T00:00:00Z" } };
+  const patch = meetingConfirmPatch(unconfirmedAfterFirst, caller);
+  assertEquals(patch.owner_id, undefined);
+  assertEquals(patch.metadata.confirmed_at, "2026-10-01T00:00:00Z");
+});
+
+Deno.test("claimOwnerIfFree: запись условная — owner_id IS NULL", async () => {
+  const calls: Array<[string, unknown[]]> = [];
+  const b: Record<string, unknown> = {};
+  for (const m of ["update", "eq", "is"]) b[m] = (...a: unknown[]) => (calls.push([m, a]), b);
+  b.then = (r: (v: unknown) => unknown) => Promise.resolve({ error: null }).then(r);
+  await claimOwnerIfFree({ from: () => b } as never, "e1", 20);
+  assertEquals(calls.some(([m, a]) => m === "is" && a[0] === "owner_id" && a[1] === null), true);
+});
+
+Deno.test("escapeLike: подстановочные символы имени теряют силу", () => {
+  assertEquals(escapeLike("a_b%c\\d"), "a\\_b\\%c\\\\d");
 });

@@ -12,6 +12,11 @@ import { type SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 export type AddUserResult = { status: "ok" | "bad_input" | "workspace_not_found" | "email_taken"; pending: boolean };
 
+/** Значение для ilike как точное имя: `%`, `_` и обратная косая теряют роль подстановки. */
+export function escapeLike(raw: string): string {
+  return raw.replace(/[\\%_]/g, (c) => `\\${c}`);
+}
+
 export function normalizeUsername(raw: string): string {
   return raw.replace(/^@/, "").trim().toLowerCase();
 }
@@ -23,7 +28,13 @@ function isUniqueViolation(err: unknown): boolean {
 
 export async function addUserToWorkspace(
   supabase: SupabaseClient,
-  opts: { telegramId?: number | null; username?: string | null; email?: string | null; workspaceId: string; addedBy: number },
+  opts: {
+    telegramId?: number | null;
+    username?: string | null;
+    email?: string | null;
+    workspaceId: string;
+    addedBy: number;
+  },
 ): Promise<AddUserResult> {
   const telegramId = opts.telegramId ?? null;
   const username = opts.username ? normalizeUsername(opts.username) : "";
@@ -43,7 +54,10 @@ export async function addUserToWorkspace(
       { telegram_id: telegramId, group_id: opts.workspaceId, added_by: opts.addedBy, ...(email ? { email } : {}) },
       { onConflict: "telegram_id" },
     );
-    if (error) { if (isUniqueViolation(error)) return { status: "email_taken", pending: false }; throw new Error(error.message); }
+    if (error) {
+      if (isUniqueViolation(error)) return { status: "email_taken", pending: false };
+      throw new Error(error.message);
+    }
     return { status: "ok", pending: false };
   }
 
@@ -61,23 +75,36 @@ export async function addUserToWorkspace(
     }
     const { error } = await supabase.from("allowed_users")
       .insert({ email, group_id: opts.workspaceId, added_by: opts.addedBy });
-    if (error) { if (isUniqueViolation(error)) return { status: "email_taken", pending: false }; throw new Error(error.message); }
+    if (error) {
+      if (isUniqueViolation(error)) return { status: "email_taken", pending: false };
+      throw new Error(error.message);
+    }
     return { status: "ok", pending: true };
   }
 
   // username: нет уникального индекса → onConflict нельзя, делаем find-or-insert без регистра.
   // limit(1)+maybeSingle: не падаем, если исторически образовались дубли (берём первую строку).
   const { data: existing, error: selErr } = await supabase
-    .from("allowed_users").select("id, telegram_id").ilike("username", username).limit(1).maybeSingle();
+    .from("allowed_users").select("id, telegram_id").ilike("username", escapeLike(username)).order("id").limit(1)
+    .maybeSingle();
   if (selErr) throw new Error(selErr.message);
   if (existing) {
     const row = existing as { id: string; telegram_id: number | null };
-    const { error } = await supabase.from("allowed_users").update({ group_id: opts.workspaceId, ...(email ? { email } : {}) }).eq("id", row.id);
-    if (error) { if (isUniqueViolation(error)) return { status: "email_taken", pending: false }; throw new Error(error.message); }
+    const { error } = await supabase.from("allowed_users").update({
+      group_id: opts.workspaceId,
+      ...(email ? { email } : {}),
+    }).eq("id", row.id);
+    if (error) {
+      if (isUniqueViolation(error)) return { status: "email_taken", pending: false };
+      throw new Error(error.message);
+    }
     return { status: "ok", pending: row.telegram_id == null };
   }
   const { error } = await supabase.from("allowed_users")
     .insert({ username, group_id: opts.workspaceId, added_by: opts.addedBy, ...(email ? { email } : {}) });
-  if (error) { if (isUniqueViolation(error)) return { status: "email_taken", pending: false }; throw new Error(error.message); }
+  if (error) {
+    if (isUniqueViolation(error)) return { status: "email_taken", pending: false };
+    throw new Error(error.message);
+  }
   return { status: "ok", pending: true };
 }

@@ -39,7 +39,7 @@ import {
   getMeetingSecure,
 } from "./entries-guard.ts";
 import { canChangeMeetingPrivacy } from "../_shared/entries/meeting-rights.ts";
-import { meetingConfirmPatch } from "../_shared/entries/meeting-confirm.ts";
+import { claimOwnerIfFree, meetingConfirmPatch } from "../_shared/entries/meeting-confirm.ts";
 import type { SlotRow } from "../_shared/bot-slot.ts";
 import { isBotRecordingNow, isMissedBotSlot, toAgentListRow, toListRow } from "./meetings-payload.ts";
 import {
@@ -2858,14 +2858,25 @@ async function routeRequest(req: Request): Promise<Response> {
           return apiErr(400, "Invalid JSON", origin);
         }
         const fields: Record<string, unknown> = {};
+        let ownerToClaim: number | undefined;
+        if ("confirmed" in body && typeof body.confirmed !== "boolean") {
+          return apiErr(400, "confirmed must be boolean", origin);
+        }
         if ("confirmed" in body) {
           // Согласование (_shared/entries/meeting-confirm.ts): confirmed=true; владелец — решение
           // 22.08.2026 («ничьих быть не должно»), сужено: согласовавший (он уже прошёл право
-          // правки) становится владельцем только при ПЕРВОМ согласовании безвладельной встречи.
+          // правки) становится владельцем только при ПЕРВОМ согласовании безвладельной встречи
+          // (серверная отметка metadata.confirmed_at; запись условная, owner_id IS NULL).
           // is_private и shared_with не трогаются; видимость — только полем is_private ниже,
           // под canChangeMeetingPrivacy.
           if (body.confirmed === true) {
-            Object.assign(fields, meetingConfirmPatch(entry, { id: telegram_id, email: userEmail, isAdmin }));
+            const { owner_id, ...confirmFields } = meetingConfirmPatch(entry, {
+              id: telegram_id,
+              email: userEmail,
+              isAdmin,
+            });
+            Object.assign(fields, confirmFields);
+            ownerToClaim = owner_id;
           } else {
             fields.metadata = { ...(entry.metadata as Record<string, unknown>), confirmed: body.confirmed };
           }
@@ -2911,6 +2922,7 @@ async function routeRequest(req: Request): Promise<Response> {
           fields.countries = marketTagsFromInput(body.countries as string[]);
         }
         await supabase.from("entries").update(fields).eq("id", entry.id);
+        if (ownerToClaim !== undefined) await claimOwnerIfFree(supabase, entry.id, ownerToClaim);
         const { data } = await onlyLiveEntries(supabase.from("entries").select(ENTRY_COLUMNS))
           .eq("id", entry.id).single();
         return json(data, 200, origin);

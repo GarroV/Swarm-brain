@@ -7,6 +7,7 @@ import type { TgCallbackQuery } from "../lib/types.ts";
 import { sendTaskCard } from "../tasks/index.ts";
 import { generateNameAliases } from "../lib/name-aliases.ts";
 import { assignUserToWorkspace } from "../lib/workspace.ts";
+import { escapeLike, normalizeUsername } from "../../_shared/users/membership.ts";
 import { externalFetch, VIA_TELEGRAM } from "../../_shared/external-fetch.ts";
 import { isSuperadmin, type MemberRow } from "../../_shared/users/admin-scope.ts";
 import { withMasterFlag } from "../../_shared/users/master-admins.ts";
@@ -59,7 +60,7 @@ async function loadAddTarget(targetArg: string): Promise<MemberRow | null | unde
   const q = supabase.from("allowed_users").select("telegram_id, group_id");
   const { data, error } = /^\d+$/.test(targetArg)
     ? await q.eq("telegram_id", Number(targetArg)).limit(1).maybeSingle()
-    : await q.ilike("username", targetArg.replace(/^@/, "").toLowerCase()).limit(1).maybeSingle();
+    : await q.ilike("username", escapeLike(normalizeUsername(targetArg))).order("id").limit(1).maybeSingle();
   if (error) {
     console.error("[users] add target row:", error.message);
     return undefined;

@@ -17,7 +17,7 @@ import { onlyLive } from "../../_shared/tasks/live.ts";
 import { onlyLiveEntries } from "../../_shared/entries/live.ts";
 import { escapeHtml, sanitizeModelHtml } from "../../_shared/telegram-html.ts";
 import { archiveEntry } from "../../_shared/entries/archive.ts";
-import { type ConfirmableEntry, meetingConfirmPatch } from "../../_shared/entries/meeting-confirm.ts";
+import { claimOwnerIfFree, type ConfirmableEntry, meetingConfirmPatch } from "../../_shared/entries/meeting-confirm.ts";
 import { type EditableEntryRow, isMeetingEntry } from "../../_shared/entries/entry-edit.ts";
 import { externalFetch, VIA_TELEGRAM, VIA_TELEGRAM_UPLOAD } from "../../_shared/external-fetch.ts";
 import { keepVisibleTasks } from "../../_shared/tasks/project-visibility.ts";
@@ -678,9 +678,13 @@ export async function handleMeetingCallbacks(
     // встречи; личная встреча публикуется (как описано в BACKLOG), если согласует её владелец;
     // для остальных видимость и shared_with не меняются.
     const viewer = await loadMeetingViewer(userId);
-    await supabase.from("entries")
-      .update(meetingConfirmPatch(entry as unknown as ConfirmableEntry, viewer, { publishPrivate: true }))
-      .eq("id", entryId).eq("group_id", groupId);
+    const { owner_id: ownerToClaim, ...confirmFields } = meetingConfirmPatch(
+      entry as unknown as ConfirmableEntry,
+      viewer,
+      { publishPrivate: true },
+    );
+    await supabase.from("entries").update(confirmFields).eq("id", entryId).eq("group_id", groupId);
+    if (ownerToClaim !== undefined) await claimOwnerIfFree(supabase, entryId, ownerToClaim);
     const title = ((entry.metadata as Record<string, unknown>)?.title as string) ?? "Встреча";
     await sendMessage(chatId, `✅ Встреча сохранена: <b>${escapeHtml(title)}</b>`);
     // Авто-извлечение задач из встречи УБРАНО 05.09.2026 (решение владельца: «раз бот —
@@ -841,13 +845,16 @@ export async function handleMeetingSessionInput(
     const rawTags = text.split(",").map((t) => t.trim()).filter(Boolean);
     const { data: found } = await onlyLiveEntries(
       supabase
-        .from("entries").select("id, metadata, is_private, owner_id, shared_with, group_id"),
+        .from("entries").select("id, metadata, is_private, owner_id, shared_with, group_id, entry_type, source"),
     )
       .eq("group_id", groupId)
       .or(`metadata->>meeting_id.eq.${meetingId},id.eq.${meetingId}`);
     // Теги — правка встречи: только те записи, которые нажавшему можно править.
     const viewer = found?.length ? await loadMeetingViewer(userId) : null;
-    const entries = (found ?? []).filter((e) => viewer && canActOnMeeting(e as MeetingRightsRow, viewer, "edit"));
+    const entries = (found ?? []).filter((e) =>
+      viewer && isMeetingEntry(e as unknown as EditableEntryRow) &&
+      canActOnMeeting(e as MeetingRightsRow, viewer, "edit")
+    );
     if (!entries.length) await sendMessage(chatId, "Встреча не найдена или править её нельзя.");
     else {
       for (const entry of entries as Array<{ id: string; metadata: Record<string, unknown> }>) {

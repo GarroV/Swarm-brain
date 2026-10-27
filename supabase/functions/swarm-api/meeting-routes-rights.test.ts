@@ -32,9 +32,12 @@ function meetingRouteProblems(src: string): string[] {
   // Согласование — только признак согласования: ни видимость, ни владелец (см. meeting-confirm.ts).
   if (!/meetingConfirmPatch\(/.test(patch)) problems.push("PATCH confirmed не через meetingConfirmPatch");
   const confirmBlock = patch.slice(patch.indexOf('"confirmed" in body'), patch.indexOf('"summary" in body'));
-  if (/is_private|owner_id|shared_with/.test(confirmBlock.replace(/\/\/.*$/gm, ""))) {
+  if (/is_private|shared_with|fields\.owner_id|owner_id:/.test(confirmBlock.replace(/\/\/.*$/gm, ""))) {
     problems.push("confirmed меняет видимость или владельца");
   }
+  // Владелец пишется условно (owner_id IS NULL) и только булевым confirmed.
+  if (!/claimOwnerIfFree\(/.test(patch)) problems.push("владелец при согласовании пишется не через claimOwnerIfFree");
+  if (!/typeof body\.confirmed !== "boolean"/.test(patch)) problems.push("confirmed принимается не только булевым");
   // Правка встречи никогда не назначает владельца: запись без владельца остаётся без владельца.
   if (/fields\.owner_id/.test(patch.replace(/\/\/.*$/gm, ""))) problems.push("PATCH назначает владельца встрече");
   // Права встречи — только на встречи: GET, notes и ask отдают 404 на не-встречу.
