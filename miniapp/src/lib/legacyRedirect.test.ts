@@ -1,6 +1,6 @@
 // Переезд на swarm-team.app (issue #753). Ошибка здесь молчаливая и бьёт по людям: переадресованный
 // /api/* роняет сохранения в открытой вкладке, задетое превью ветки пропадает, а «не боевой» новый
-// домен прячет вход через Google и Telegram.
+// домен прячет вход через Google.
 import { assertEquals } from "@std/assert";
 import { legacyRedirectTarget } from "../../functions/_middleware.ts";
 import { isProdHost } from "./prodHosts.ts";
@@ -39,5 +39,5 @@ Deno.test("демо-вход переезжает на новый хост це�
     "https://swarm-team.app/api/auth/demo?key=k",
   );
   assertEquals(legacyRedirectTarget("https://swarm-brain.pages.dev/api/auth/demo?key=k", false), null);
-  assertEquals(legacyRedirectTarget("https://swarm-brain.pages.dev/api/auth/telegram", true), null);
+  assertEquals(legacyRedirectTarget("https://swarm-brain.pages.dev/api/auth/google/callback", true), null);
 });

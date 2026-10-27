@@ -1,7 +1,7 @@
 import { signJWT } from "../../_lib/jwt";
 
 // Cloudflare Pages Function: GET /api/auth/demo?key=<DEMO_ACCESS_KEY>
-// Demo-вход по СЕКРЕТНОЙ ссылке — выдаёт сессию зашитого demo-юзера (не Telegram-логин).
+// Demo-вход по СЕКРЕТНОЙ ссылке — выдаёт сессию зашитого demo-юзера (не Google-логин).
 // Заказчик открывает ссылку → httpOnly cookie с JWT → попадает в demo-воркспейс.
 //
 // Изоляция «нет дыр в рабочие» держится НЕ здесь, а в swarm-api (барьер isDemo):
@@ -43,7 +43,7 @@ export async function onRequestGet(ctx: Ctx): Promise<Response> {
     headers: {
       Location: "/",
       // SameSite=None: кросс-сайт iframe иначе не получит сессию. Безопасно: demo-сессия
-      // изолирована в swarm-api. Реальный логин (telegram.ts) остаётся Lax.
+      // изолирована в swarm-api. Реальный логин (google/callback.ts) остаётся Lax.
       "Set-Cookie": demoSessionCookie(jwt, request.headers.get("Sec-Fetch-Dest")),
     },
   });

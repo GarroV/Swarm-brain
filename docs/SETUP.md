@@ -250,7 +250,7 @@ npm run build
 # Содержимое out/ → задеплоить на Cloudflare Pages или любой статик-хостинг
 ```
 
-3. ~~В @BotFather настрой Mini App `/newapp`~~ — **не нужно** (вход как Telegram Mini App отключён). Вместо этого пропиши домен деплоя в @BotFather `/setdomain` — это нужно для браузерного входа через Telegram Login Widget.
+3. ~~В @BotFather настрой Mini App `/newapp`~~ — **не нужно** (вход как Telegram Mini App отключён). Веб-вход — только Google (вход через Telegram Login Widget удалён 27.10.2026), `/setdomain` в @BotFather не нужен.
 
 4. Обнови `MINIAPP_ORIGIN` в secrets на реальный URL.
 
