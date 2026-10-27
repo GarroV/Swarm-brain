@@ -8,6 +8,7 @@ import {
   claimAction,
   decideHeld,
   deferReasonOf,
+  EMPTY_HOLDER_GRACE_SEC,
   type Guard,
   heldGuards,
   type HeldRow,
@@ -245,6 +246,8 @@ function emptyHolderRow(over: Partial<HeldRow> = {}): HeldRow {
     lease_expires_at: "2026-09-28T12:28:00.000Z",
     agent_last_recording: false,
     summary_status: null,
+    // Бот заявился 25 минут назад — льготный срок (EMPTY_HOLDER_GRACE_SEC, 20 мин) прошёл.
+    recorders: [{ telegram_id: BOT_OWNER, claimed_at: "2026-09-28T11:35:00.000Z", role: "transcribe" }],
     ...over,
   };
 }
@@ -285,4 +288,39 @@ Deno.test("ЯДРО #1070: «пустота» не распространяет�
 
 Deno.test("держатель с секундами по-прежнему защищён порогом 5 минут", () => {
   assertEquals(decideHeld(emptyHolderRow({ recorded_seconds: 60 }), 200, OTHER, NOW), "defer");
+});
+
+Deno.test("ЯДРО #1070: льготный срок — бот у двери или ждёт открытия комнаты ещё не «пустой»", () => {
+  // Бот заявился минуту назад: дверь (до 2 попыток) и ожидание открытия комнаты (до 10 минут)
+  // ещё идут, он вот-вот начнёт писать. Встречу у него не отбирают.
+  const fresh = emptyHolderRow({
+    recorders: [{ telegram_id: BOT_OWNER, claimed_at: "2026-09-28T11:59:00.000Z", role: "transcribe" }],
+  });
+  assertEquals(decideHeld(fresh, 120, OTHER, NOW), "defer");
+  assertEquals(decideHeld(fresh, 120, BOT_OWNER, NOW), "defer");
+  // Граница: ровно срок назад — уже пуст.
+  const edge = new Date(Date.parse(NOW) - EMPTY_HOLDER_GRACE_SEC * 1000).toISOString();
+  const atEdge = emptyHolderRow({ recorders: [{ telegram_id: BOT_OWNER, claimed_at: edge, role: "transcribe" }] });
+  assertEquals(decideHeld(atEdge, 120, OTHER, NOW), "takeover");
+});
+
+Deno.test("ЯДРО #1070: нет времени заявки держателя — пустым не считаем (прежнее поведение)", () => {
+  assertEquals(decideHeld(emptyHolderRow({ recorders: [] }), 120, OTHER, NOW), "defer");
+  assertEquals(decideHeld(emptyHolderRow({ recorders: null }), 120, OTHER, NOW), "defer");
+  // Запись другого человека в recorders времени держателя не подменяет.
+  const others = [{ telegram_id: OTHER, claimed_at: "2026-09-28T11:00:00.000Z", role: "defer" }];
+  assertEquals(decideHeld(emptyHolderRow({ recorders: others }), 120, OTHER, NOW), "defer");
+});
+
+Deno.test("ЯДРО #1070 (TOCTOU): UPDATE перехвата пустого держателя сверяет, что стенограммы и обработки так и нет", () => {
+  const read = emptyHolderRow();
+  const guards = heldGuards(read, NOW);
+  assertEquals(passes(read, guards), true);
+  assertEquals(passes({ ...read, transcript: { segments: [] } }, guards), false, "стенограмма появилась");
+  assertEquals(passes({ ...read, summary_status: "processing" }, guards), false, "обработка началась");
+  assertEquals(passes({ ...read, summary_status: "done" }, guards), false, "обработка закончилась");
+  assertEquals(passes({ ...read, summary_status: "failed" }, guards), true, "сбой — по-прежнему пусто");
+  // Держатель с версией этих условий не получает: решение по длине, стенограмма у него законна.
+  const withVersion = { ...read, recorded_seconds: 600, transcript: { segments: [{ end: 590 }] } };
+  assertEquals(passes(withVersion, heldGuards(withVersion, NOW)), true);
 });

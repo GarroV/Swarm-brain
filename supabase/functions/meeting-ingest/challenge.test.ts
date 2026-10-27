@@ -157,8 +157,17 @@ Deno.test("поправки нет: не держатель, не измерен
 
 Deno.test("ЯДРО #1070: претендент с короткой выгрузкой занимает встречу, где держатель пуст (бот не прошёл дверь)", () => {
   // Лиз бота ещё действует, секунд и стенограммы нет, не пишет: прежде короче 5 минут — отказ.
-  const emptyBot = row({ recorded_seconds: 0, transcript: null, summary_status: null, lease_expires_at: at(-20) });
+  const botClaim = (minutesAgo: number) => [{ telegram_id: HOLDER, claimed_at: at(minutesAgo), role: "transcribe" }];
+  const emptyBot = row({
+    recorded_seconds: 0,
+    transcript: null,
+    summary_status: null,
+    lease_expires_at: at(-20),
+    recorders: botClaim(25),
+  });
   assertEquals(decideChallenge(emptyBot, 90, TAKER, NOW), { kind: "takeover", seconds: 90 });
+  // Бот заявился минуту назад — ещё у двери, льготный срок не вышел: отказ, как раньше.
+  assertEquals(decideChallenge({ ...emptyBot, recorders: botClaim(1) }, 90, TAKER, NOW).kind, "refuse");
   // Измерить не удалось — по-прежнему отказ: занять встречу нечем.
   assertEquals(decideChallenge(emptyBot, null, TAKER, NOW).kind, "refuse");
 });

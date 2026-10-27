@@ -322,7 +322,7 @@ type ExistingMeetingRow = HeldRow & { id: string };
 
 // Колонки строки встречи для арбитража: и найденной по составу, и по конфликту ключа.
 const EXISTING_COLUMNS =
-  "id, identity_kind, identity_key, started_at, attendees, claim_owner, recorded_seconds, transcript, notes_edited_at, status, created_at, lease_expires_at, agent_last_recording, summary_status";
+  "id, identity_kind, identity_key, started_at, attendees, claim_owner, recorded_seconds, transcript, notes_edited_at, status, created_at, lease_expires_at, agent_last_recording, summary_status, recorders";
 
 type RosterCandidate = ExistingMeetingRow & {
   identity_kind: string | null;
