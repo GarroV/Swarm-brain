@@ -24,6 +24,7 @@ export type HarvestActions = {
   toggle: (key: string) => void;
   toggleAll: (next: boolean) => void;
   rename: (key: string, title: string) => void;
+  describe: (key: string, description: string | null) => void;
   remove: (key: string) => void;
   edit: (task: DraftTask) => void;
   addOwn: () => void;
@@ -45,6 +46,7 @@ type Props = {
 
 export function TasksHarvest({ tasks, users, meId, busy, streaming, actions }: Props) {
   const dt = useDt();
+  // Что правится прямо в строке: `<ключ задачи>:title` или `<ключ задачи>:desc`.
   const [editingKey, setEditingKey] = useState<string | null>(null);
 
   const selected = tasks.filter((t) => t._selected);
@@ -74,8 +76,8 @@ export function TasksHarvest({ tasks, users, meId, busy, streaming, actions }: P
               users={users}
               meId={meId}
               busy={busy}
-              editing={editingKey === task._key}
-              onStartEdit={() => setEditingKey(task._key)}
+              editing={editingKey?.startsWith(`${task._key}:`) ? (editingKey.endsWith(":desc") ? "desc" : "title") : null}
+              onStartEdit={(field) => setEditingKey(`${task._key}:${field}`)}
               onStopEdit={() => setEditingKey(null)}
               actions={actions}
             />
@@ -128,8 +130,8 @@ type RowProps = {
   users: User[];
   meId: number | null;
   busy: boolean;
-  editing: boolean;
-  onStartEdit: () => void;
+  editing: "title" | "desc" | null;
+  onStartEdit: (field: "title" | "desc") => void;
   onStopEdit: () => void;
   actions: HarvestActions;
 };
@@ -172,28 +174,63 @@ function HarvestRow({ task, users, meId, busy, editing, onStartEdit, onStopEdit,
         </button>
 
         <div className="min-w-0 flex-1">
-          {editing ? (
-            <TitleEditor
+          {editing === "title" ? (
+            <InlineEditor
               value={task.title}
-              onCommit={(next) => { actions.rename(task._key, next); onStopEdit(); }}
+              fontSize={13.5}
+              strong
+              onCommit={(next) => {
+                // Пустой заголовок задачу обессмысливает — считаем это отменой, а не стиранием.
+                if (next) actions.rename(task._key, next);
+                onStopEdit();
+              }}
               onCancel={onStopEdit}
             />
           ) : (
             <button
               type="button"
-              onClick={onStartEdit}
+              onClick={() => onStartEdit("title")}
               disabled={busy}
-              className="w-full rounded-[8px] px-1 py-0.5 text-left font-medium text-ink transition-colors hover:bg-surface-2"
+              title={dt("Нажмите, чтобы изменить", "Click to edit")}
+              className="w-full cursor-text rounded-[8px] px-1 py-0.5 text-left font-medium text-ink transition-colors hover:bg-surface-2"
               style={{ fontSize: 13.5, lineHeight: 1.35 }}
             >
               {task.title}
             </button>
           )}
 
-          {task.description && (
-            <p className="px-1 pt-1 text-ink-mute" style={{ fontSize: 12, lineHeight: 1.4 }}>
+          {/* Описание правится так же, как название, — кликом прямо в строке (владелец 27.10.2026:
+              «хочется нажать на тело задачи и быстренько отредактировать», без окна правки). */}
+          {editing === "desc" ? (
+            <div className="pt-1">
+              <InlineEditor
+                value={task.description ?? ""}
+                fontSize={12}
+                onCommit={(next) => { actions.describe(task._key, next || null); onStopEdit(); }}
+                onCancel={onStopEdit}
+              />
+            </div>
+          ) : task.description ? (
+            <button
+              type="button"
+              onClick={() => onStartEdit("desc")}
+              disabled={busy}
+              title={dt("Нажмите, чтобы изменить", "Click to edit")}
+              className="mt-0.5 w-full cursor-text rounded-[8px] px-1 py-0.5 text-left text-ink-mute transition-colors hover:bg-surface-2"
+              style={{ fontSize: 12, lineHeight: 1.4 }}
+            >
               {task.description}
-            </p>
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => onStartEdit("desc")}
+              disabled={busy}
+              className="mt-0.5 rounded-[8px] px-1 py-0.5 text-left text-ink-mute transition-colors hover:bg-surface-2 hover:text-ink-soft"
+              style={{ fontSize: 12 }}
+            >
+              {dt("+ описание", "+ description")}
+            </button>
           )}
 
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-1 pt-1.5 text-ink-mute" style={{ fontSize: 11.5 }}>
@@ -261,9 +298,16 @@ function HarvestRow({ task, users, meId, busy, editing, onStartEdit, onStopEdit,
   );
 }
 
-// Правка заголовка прямо в строке — самое частое действие на вычитке (переформулировать).
-// Остальные поля живут в TaskModal: дублировать его тут значило бы развести две формы задачи.
-function TitleEditor({ value, onCommit, onCancel }: { value: string; onCommit: (next: string) => void; onCancel: () => void }) {
+// Правка названия и описания прямо в строке — самое частое на вычитке (переформулировать,
+// дописать). Остальные поля живут в TaskModal: дублировать его тут значило бы развести две формы
+// задачи. Enter — сохранить, Shift+Enter — перенос строки, Esc — отмена, уход фокуса — сохранить.
+function InlineEditor({ value, onCommit, onCancel, fontSize, strong }: {
+  value: string;
+  onCommit: (next: string) => void;
+  onCancel: () => void;
+  fontSize: number;
+  strong?: boolean;
+}) {
   const ref = useRef<HTMLTextAreaElement>(null);
   const [draft, setDraft] = useState(value);
 
@@ -276,12 +320,7 @@ function TitleEditor({ value, onCommit, onCancel }: { value: string; onCommit: (
     el.style.height = `${el.scrollHeight}px`;
   }, []);
 
-  const commit = () => {
-    const next = draft.trim();
-    // Пустой заголовок задачу обессмысливает — считаем это отменой, а не стиранием названия.
-    if (next.length === 0) { onCancel(); return; }
-    onCommit(next);
-  };
+  const commit = () => onCommit(draft.trim());
 
   return (
     <textarea
@@ -300,8 +339,8 @@ function TitleEditor({ value, onCommit, onCancel }: { value: string; onCommit: (
         // всё окно разбора.
         if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); onCancel(); }
       }}
-      className="w-full resize-none rounded-[8px] border border-[var(--accent-ink)] bg-surface px-1.5 py-1 font-medium text-ink outline-none"
-      style={{ fontSize: 13.5, lineHeight: 1.35 }}
+      className={`w-full resize-none rounded-[8px] border border-[var(--accent-ink)] bg-surface px-1.5 py-1 text-ink outline-none ${strong ? "font-medium" : ""}`}
+      style={{ fontSize, lineHeight: 1.4 }}
     />
   );
 }

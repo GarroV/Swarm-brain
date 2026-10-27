@@ -131,6 +131,7 @@ export function TasksFromMeeting({
     toggle: (key) => setTasks((prev) => prev?.map((t) => (t._key === key ? { ...t, _selected: !t._selected } : t)) ?? null),
     toggleAll: (next) => setTasks((prev) => prev?.map((t) => ({ ...t, _selected: next })) ?? null),
     rename: (key, title) => setTasks((prev) => prev?.map((t) => (t._key === key ? { ...t, title } : t)) ?? null),
+    describe: (key, description) => setTasks((prev) => prev?.map((t) => (t._key === key ? { ...t, description } : t)) ?? null),
     remove: removeRow,
     edit: (task) => setEditing(task),
     addOwn: () => setEditing({ title: "", description: null, assignee: null, due_date: null, country: null, _key: `own-${Date.now()}`, _selected: true }),
