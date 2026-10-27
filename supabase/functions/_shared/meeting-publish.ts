@@ -32,6 +32,8 @@ export type PublishDraftOptions = {
   countries: unknown;
   /** Какие колонки entries вернуть (у веба — ENTRY_COLUMNS). */
   entryColumns: string;
+  /** Без модели: ни классификатора рынков, ни эмбеддинга (демо-сессия платить не должна). */
+  skipModel?: boolean;
 };
 
 export type PublishDraftResult =
@@ -121,9 +123,9 @@ export async function publishDraftMeeting(
   const countries = Array.isArray(opts.countries)
     ? marketTagsFromInput(opts.countries as string[])
     : applyGeneralSentinel(
-      (await extractEntryMeta(draft, OPENAI_KEY)).countries,
+      opts.skipModel ? [] : (await extractEntryMeta(draft, OPENAI_KEY)).countries,
     );
-  const embedding = await embed(
+  const embedding = opts.skipModel ? null : await embed(
     buildEmbeddingInput(draft, countries),
     OPENAI_KEY,
   );
@@ -205,10 +207,8 @@ export async function publishDraftMeeting(
       ).eq("id", dup.id).single();
       const baseMeta = ((prevEntry as { metadata?: Record<string, unknown> } | null)
         ?.metadata ?? prevMeta) as Record<string, unknown>;
-      const newEmbedding = await embed(
-        buildEmbeddingInput(draft, countries),
-        OPENAI_KEY,
-      );
+      // Тот же вход, что у `embedding` выше (draft + countries) — второй вызов модели не нужен.
+      const newEmbedding = embedding;
       await supabase.from("entries").update({
         content: draft,
         summary: draft,

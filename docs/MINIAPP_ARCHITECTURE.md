@@ -315,7 +315,7 @@ Push-стек управляется `RoyApp.tsx`: `push(route)` → `PushScreen
 
 | `view` | Параметры | Экран | Файл |
 |--------|-----------|-------|------|
-| `answer` | `{ query: string }` | RAG-ответ | `screens/AnswerScreen.tsx` |
+| `answer` | `{ query: string }` | RAG-ответ (в демо — заготовленный, без модели: чипы вопросов `roy/DemoQuestions.tsx` вместо поля ввода в «Поиске» и «Базе» мобайла и меню «Примеры вопросов» десктопной «Базы»; решение 27.10.2026) | `screens/AnswerScreen.tsx` |
 | `record` | `{ id: string }` | Детали записи агента | `screens/RecordDetail.tsx` |
 | `taskDetail` | `{ id: string }` | Детали задачи | `screens/TaskDetail.tsx` |
 | `newTask` | `{ id?: string }` | Создание/редактирование задачи | `screens/NewTask.tsx` |
