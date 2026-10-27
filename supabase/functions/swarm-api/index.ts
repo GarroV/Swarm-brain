@@ -152,6 +152,8 @@ import { handleMeetingInviteRoutes } from "./meeting-invites.ts";
 import { handleWebRecordingRoutes } from "./web-recording.ts";
 import { DEMO_GROUP_ID, isDemoSession } from "../_shared/demo-session.ts";
 import { DEMO_REQUESTS, englishDemoResponse } from "./demo-english.ts";
+import { handleDemoModelRoute } from "./demo-questions.ts";
+import { blockModelCalls, withModelScope } from "../_shared/model-scope.ts";
 import { handleIntegrationConnectRoutes, makeIntegrationsDeps } from "./integrations.ts";
 import { handleAutojoinRoutes, makeAutojoinStore, makeCalendarCheck } from "./autojoin.ts";
 import { handleTaskLabelRoutes } from "./task-labels.ts";
@@ -551,7 +553,7 @@ async function sprintInWorkspace(
 
 // Граница ошибок (issue #584): не пойманное в маршруте — 500 с общим текстом, подробность в лог.
 Deno.serve(async (req: Request) => {
-  const res = await withErrorBoundary(req, routeRequest);
+  const res = await withModelScope(() => withErrorBoundary(req, routeRequest));
   // Демо-витрина — по-английски и в отказах сервера (issue #605); рабочие сессии не трогаем.
   return DEMO_REQUESTS.has(req) ? await englishDemoResponse(res) : res;
 });
@@ -656,7 +658,12 @@ async function routeRequest(req: Request): Promise<Response> {
   // Группа форсится в 'demo' (НЕ из БД), админ-права запрещены. Барьер «нет дыр в рабочие»:
   // все data-запросы фильтруются по этому group_id, admin-роуты недоступны (isAdmin=false).
   const isDemo = isDemoSession(telegram_id);
-  if (isDemo) DEMO_REQUESTS.add(req);
+  if (isDemo) {
+    DEMO_REQUESTS.add(req);
+    // Демо не платит за модель (docs/decisions/2026-10-27-demo-no-model.md): нижний замок встаёт
+    // сразу после опознания личности, до любого маршрута.
+    blockModelCalls();
+  }
   const groupId = isDemo ? DEMO_GROUP_ID : (userRow as { group_id: string | null }).group_id;
   if (!groupId) {
     return apiErr(403, "No workspace assigned", origin);
@@ -687,6 +694,13 @@ async function routeRequest(req: Request): Promise<Response> {
   });
   if (secondStepBlocks(secondStep, req.method, routePath)) {
     return json({ error: "second_step_required" }, 403, origin);
+  }
+
+  // Демо без модели: ответ/поиск/дайджест — заготовленные, остальное, что зовёт модель, — отказ.
+  // Стоит раньше всех маршрутов, чтобы до OpenAI демо-запрос не дошёл ни одним путём.
+  if (isDemo) {
+    const demoModelResp = await handleDemoModelRoute({ supabase, origin }, req, routePath);
+    if (demoModelResp) return demoModelResp;
   }
 
   // Заморозка на время раскатки: изменения не принимаем, чтение оставляем (пустой экран
@@ -3103,7 +3117,7 @@ async function routeRequest(req: Request): Promise<Response> {
         notesMarkets: [],
       });
       const draftNotes = meeting.draft_notes_md as string | null;
-      if (!suggestion.source && draftNotes) {
+      if (!suggestion.source && draftNotes && !isDemo) {
         try {
           const meta = await extractEntryMeta(
             draftNotes,
@@ -3276,6 +3290,7 @@ async function routeRequest(req: Request): Promise<Response> {
         isPrivate,
         countries: body.countries,
         entryColumns: ENTRY_COLUMNS,
+        skipModel: isDemo,
       });
       return published.ok
         ? json(published.entry, published.status, origin)

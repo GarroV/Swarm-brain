@@ -32,6 +32,8 @@ export type PublishDraftOptions = {
   countries: unknown;
   /** Какие колонки entries вернуть (у веба — ENTRY_COLUMNS). */
   entryColumns: string;
+  /** Без модели: ни классификатора рынков, ни эмбеддинга (демо-сессия платить не должна). */
+  skipModel?: boolean;
 };
 
 export type PublishDraftResult =
@@ -121,9 +123,9 @@ export async function publishDraftMeeting(
   const countries = Array.isArray(opts.countries)
     ? marketTagsFromInput(opts.countries as string[])
     : applyGeneralSentinel(
-      (await extractEntryMeta(draft, OPENAI_KEY)).countries,
+      opts.skipModel ? [] : (await extractEntryMeta(draft, OPENAI_KEY)).countries,
     );
-  const embedding = await embed(
+  const embedding = opts.skipModel ? null : await embed(
     buildEmbeddingInput(draft, countries),
     OPENAI_KEY,
   );
