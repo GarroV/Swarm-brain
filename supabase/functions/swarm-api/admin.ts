@@ -9,6 +9,7 @@ import {
   canChangeAccountKeys,
   canManageMember,
   canManageWorkspace,
+  canSetLoginEmail,
   type EmailChangeEvent,
   isForeignEmailChange,
   isSuperadmin,
@@ -284,6 +285,10 @@ export async function handleAdminRoutes(
         if (!canManageMember(actor, existing)) {
           return apiErr(403, "This user belongs to another workspace", origin);
         }
+        // Почта входа — ключ веб-входа: у того, кто уже входил, её меняет он сам или суперадмин.
+        if (newEmail && newEmail !== normalizeEmail(existing.email) && !canSetLoginEmail(actor, existing)) {
+          return apiErr(403, "Forbidden", origin);
+        }
       }
 
       // Единый канон добавления (тот же, что у бота) — _shared/users/membership.ts.
@@ -477,6 +482,13 @@ export async function handleAdminRoutes(
     const target = await withMasterFlag(supabase, targetRow as MemberRow | null);
     if (!target || !canManageMember(actor, target)) return apiErr(404, "User not found", origin);
     if ("email" in body && !canChangeAccountKeys(actor, target)) {
+      return apiErr(403, "Forbidden", origin);
+    }
+    // Почта входа — ключ веб-входа: у того, кто уже входил, её меняет он сам или суперадмин.
+    if (
+      "email" in body && normalizeEmail(body.email) !== normalizeEmail(target.email) &&
+      !canSetLoginEmail(actor, target)
+    ) {
       return apiErr(403, "Forbidden", origin);
     }
 

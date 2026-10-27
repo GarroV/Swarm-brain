@@ -5,6 +5,7 @@ import {
   canChangeAccountKeys,
   canManageMember,
   canManageWorkspace,
+  canSetLoginEmail,
   isSuperadmin,
   SUPERADMIN_TELEGRAM_ID,
 } from "./admin-scope.ts";
@@ -58,4 +59,29 @@ Deno.test("аккаунт мастер-админа из данных (is_master
 Deno.test("обычный человек (is_master false или без признака): админ меняет, как раньше", () => {
   assertEquals(canChangeAccountKeys(ADMIN, { telegram_id: 20, group_id: "cee", is_master: false }), true);
   assertEquals(canChangeAccountKeys(ADMIN, { telegram_id: 20, group_id: "cee" }), true);
+});
+
+// Почта входа: ключ веб-входа (Google). Админ задаёт её только тому, кто ни разу не входил.
+Deno.test("canSetLoginEmail: ожидающее приглашение своего воркспейса — админ может", () => {
+  assert(canSetLoginEmail(ADMIN, { telegram_id: null, group_id: "cee" }));
+});
+
+Deno.test("canSetLoginEmail: приглашение чужого воркспейса — админ не может", () => {
+  assert(!canSetLoginEmail(ADMIN, { telegram_id: null, group_id: "other" }));
+});
+
+Deno.test("canSetLoginEmail: тот, кто уже входил, — админ воркспейса не может", () => {
+  assert(!canSetLoginEmail(ADMIN, { telegram_id: 2001, group_id: "cee" }));
+});
+
+Deno.test("canSetLoginEmail: человек сам себе — может", () => {
+  assert(canSetLoginEmail(ADMIN, { telegram_id: ADMIN.telegramId, group_id: "cee" }));
+});
+
+Deno.test("canSetLoginEmail: мастер-админ тому, кто уже входил, — может", () => {
+  assert(canSetLoginEmail(MASTER_FROM_DATA, { telegram_id: 2001, group_id: "other" }));
+});
+
+Deno.test("canSetLoginEmail: аккаунт владельца мастер-админ из данных не меняет", () => {
+  assert(!canSetLoginEmail(MASTER_FROM_DATA, { telegram_id: SUPERADMIN_TELEGRAM_ID, group_id: "cee" }));
 });
