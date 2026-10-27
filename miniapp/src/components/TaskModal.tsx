@@ -66,6 +66,11 @@ function assigneeTokenOf(task: Task | null | undefined): string {
   return task?.assignee_person_id ? PERSON_TOKEN + task.assignee_person_id : NONE;
 }
 
+function prefillAssigneeToken(prefill: TaskModalProps["prefill"]): string {
+  if (prefill?.assignee_telegram_id != null) return prefill.assignee_telegram_id.toString();
+  return prefill?.assignee_person_id ? PERSON_TOKEN + prefill.assignee_person_id : NONE;
+}
+
 // Токен исполнителя → поля запроса: аккаунт — по-старому, человек без входа — assignee_person_id.
 function assigneeFields(token: string): { assignee_telegram_id?: number | null; assignee_person_id?: string } {
   if (token === NONE) return { assignee_telegram_id: null };
@@ -94,7 +99,24 @@ interface TaskModalProps {
   onSaved: (created?: Task) => void;
   // Создание с префиллом (напр. задача из встречи): начальные значения формы. Игнорируются
   // в режиме правки (когда передан task). assignee не префиллим — GPT даёт имя, не telegram_id.
-  prefill?: { title?: string; description?: string | null; country?: string | null; due_date?: string | null };
+  prefill?: {
+    title?: string;
+    description?: string | null;
+    country?: string | null;
+    due_date?: string | null;
+    // Остальное — для черновика из разбора встречи: окно открывается с тем, что уже поправили.
+    assignee_telegram_id?: number | null;
+    assignee_person_id?: string | null;
+    coassignee_person_ids?: string[];
+    remind_date?: string | null;
+    task_role?: string | null;
+    label_ids?: string[];
+    project_id?: string | null;
+  };
+  /** Черновик вместо создания: «Готово» отдаёт поля сюда, задача в систему НЕ уходит. Разбор
+   *  задач из встречи создаёт их одной кнопкой «Добавить N задач» (владелец 27.10.2026: правка
+   *  через карандаш сразу отправляла задачу в систему). */
+  onDraft?: (fields: CreateTaskInput) => void;
   // Привязка создаваемой задачи к встрече-источнику (entry.id) → попадает в блок «Задачи из встречи».
   meetingId?: string | null;
   // Префилл проекта при создании (напр. из карточки/облака проекта). Игнорируется в режиме правки.
@@ -132,7 +154,7 @@ function TaskOrigin({ task }: { task: Task }) {
   );
 }
 
-export function TaskModal({ task: taskOpened, open, onClose, onSaved, prefill, meetingId, projectId }: TaskModalProps) {
+export function TaskModal({ task: taskOpened, open, onClose, onSaved, prefill, meetingId, projectId, onDraft }: TaskModalProps) {
   // Переход по связи родитель ↔ подзадача внутри той же карточки (владелец 01.10.2026: «вижу
   // подзадачу, но нельзя перейти. хотя интуитивно хочется кликнуть»). Карточка остаётся открытой,
   // в ней просто другая задача; закрыли или открыли другую снаружи — переход забывается.
@@ -261,17 +283,17 @@ export function TaskModal({ task: taskOpened, open, onClose, onSaved, prefill, m
     const initialDescription = task?.description ?? prefill?.description ?? "";
     const initialStatus = normStatus(task?.status);
     const initialDue = task?.due_date ?? prefill?.due_date ?? "";
-    const initialRemind = task?.remind_date ?? "";
+    const initialRemind = task?.remind_date ?? prefill?.remind_date ?? "";
     const initialRecur = task ? recurValueOf(task) : null;
     const initialCountry = task?.country ?? prefill?.country ?? "";
-    const initialRole = task?.task_role ?? NONE;
-    const cur = assigneeTokenOf(task);
-    const initialCo = task?.coassignee_person_ids ?? [];
-    const initialLabels = task?.label_ids ?? [];
+    const initialRole = task?.task_role ?? prefill?.task_role ?? NONE;
+    const cur = task ? assigneeTokenOf(task) : prefillAssigneeToken(prefill);
+    const initialCo = task?.coassignee_person_ids ?? prefill?.coassignee_person_ids ?? [];
+    const initialLabels = task?.label_ids ?? prefill?.label_ids ?? [];
     // Ссылок нет в списочной проекции: у недогруженной задачи здесь undefined, и пустой
     // список НЕ отправляется (isPartial глушит автосейв целиком — см. ниже).
     const initialLinks = task?.links ?? [];
-    const initialProject = task?.project_id ?? projectId ?? null;
+    const initialProject = task?.project_id ?? prefill?.project_id ?? projectId ?? null;
 
     setTitle(initialTitle);
     setStatus(initialStatus);
@@ -314,7 +336,8 @@ export function TaskModal({ task: taskOpened, open, onClose, onSaved, prefill, m
     fetchTaskLabels().then(setLabels).catch(() => {});
     fetchConfig().then((c) => setMarkets(c.allowed_markets ?? [])).catch(() => {});
     // Новая задача — по умолчанию исполнитель = текущий пользователь (обычно чаще правит своё же).
-    if (!task) {
+    // Черновик с уже выбранным исполнителем его сохраняет.
+    if (!task && prefillAssigneeToken(prefill) === NONE) {
       fetchMe().then((me) => setAssigneeId(me.telegram_id.toString())).catch(() => {});
     }
   }, [open, task, projectId]);
@@ -492,6 +515,11 @@ export function TaskModal({ task: taskOpened, open, onClose, onSaved, prefill, m
       };
       const fields: CreateTaskInput = { ...base, ...assigneeFields(assigneeId), project_id: selProject };
       if (coIds.length > 0) fields.coassignee_person_ids = coIds;
+      if (onDraft) {
+        onDraft({ ...fields, ...(labelIds.length > 0 ? { label_ids: labelIds } : {}) });
+        onClose();
+        return;
+      }
       if (meetingId) fields.meeting_id = meetingId;
       const created = await createTask(fields);
       // POST /tasks не принимает label_ids — вешаем метки вторым шагом.
@@ -947,7 +975,7 @@ export function TaskModal({ task: taskOpened, open, onClose, onSaved, prefill, m
               className="h-[30px] rounded-full bg-primary px-3.5 font-semibold text-primary-foreground transition-[transform,background-color] hover:bg-primary/90 active:scale-[0.97] disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
               style={{ fontSize: 12.5 }}
             >
-              {creating ? "Создание…" : "Создать"}
+              {onDraft ? "Готово" : creating ? "Создание…" : "Создать"}
             </button>
           </div>
         )}

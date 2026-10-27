@@ -41,10 +41,33 @@ Deno.test("groupByDue: секции в фиксированном порядке
     task({ id: "done", status: "done" }),
   ], NOW, 0);
   assertEquals(got.map((s) => s.key), ["today", "later", "done"]);
-  assertEquals(got[0].label, "Задачи сегодня");
+  assertEquals(got[0].label, "Актуальное");
 });
 
-Deno.test("groupByDue: просроченные и сегодняшние — одна секция «Задачи сегодня», просроченные сверху", () => {
+// 27.10.2026: «Актуальное» — просрочка, сегодня, завтра и задачи с пингом на сегодня/завтра.
+Deno.test("groupByDue: завтрашние и с пингом на сегодня/завтра — в «Актуальном», по порядку", () => {
+  const got = groupByDue([
+    task({ id: "ping-today", due_date: "2026-09-30", remind_date: "2026-09-24" }),
+    task({ id: "tomorrow", due_date: "2026-09-25" }),
+    task({ id: "ping-nodue", remind_date: "2026-09-25" }),
+    task({ id: "over", due_date: "2026-09-20" }),
+    task({ id: "today", due_date: NOW.toISOString() }),
+    task({ id: "later", due_date: "2026-09-26" }),
+    task({ id: "ping-later", due_date: "2026-10-01", remind_date: "2026-09-26" }),
+    task({ id: "ping-past", due_date: "2026-10-01", remind_date: "2026-09-23" }),
+  ], NOW, 0);
+  assertEquals(got.map((s) => s.key), ["today", "later"]);
+  assertEquals(got[0].tasks.map((t) => t.id), ["over", "today", "tomorrow", "ping-today", "ping-nodue"]);
+  assertEquals(got[0].late, 1);
+  assertEquals(got[1].tasks.map((t) => t.id), ["later", "ping-later", "ping-past"]);
+});
+
+Deno.test("groupByDue: сделанная задача с пингом сегодня в «Актуальное» не попадает", () => {
+  const got = groupByDue([task({ id: "d", status: "done", remind_date: "2026-09-24" })], NOW, 0);
+  assertEquals(got.map((s) => s.key), ["done"]);
+});
+
+Deno.test("groupByDue: просроченные и сегодняшние — одна секция «Актуальное», просроченные сверху", () => {
   const got = groupByDue([
     task({ id: "today", due_date: NOW.toISOString() }),
     task({ id: "over", due_date: "2026-09-20" }),

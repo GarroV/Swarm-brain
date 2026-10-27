@@ -1,6 +1,6 @@
 // Раннер тот же, что у quickAddTask.test.ts и edge-функций: deno test miniapp/src/lib/proposedTasks.test.ts
 import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import { effectiveAssigneeId, normalizeProposedTask, normalizeProposedTasks, resolveAssigneeId, taskCountLabel } from "./proposedTasks.ts";
+import { effectiveAssigneeId, meetingDefaultCountry, normalizeProposedTask, normalizeProposedTasks, resolveAssigneeId, taskCountLabel } from "./proposedTasks.ts";
 
 const USERS = [
   { telegram_id: 744230399, name: "Vasiliy Garro", username: "garro" },
@@ -138,4 +138,43 @@ Deno.test("ничья задача остаётся только когда пу
 Deno.test("личность публикующего неизвестна — поведение как раньше", () => {
   assertEquals(effectiveAssigneeId(null, USERS, null), null);
   assertEquals(effectiveAssigneeId("Мария Иванова", USERS, null), 100);
+});
+
+// 27.10.2026: задачи из встречи по Сербии уходили без страны — модель ставит её, только если
+// страна названа в тексте. У встречи одна страна → она и есть страна задачи по умолчанию.
+Deno.test("страна задачи по умолчанию — единственная страна встречи", () => {
+  assertEquals(meetingDefaultCountry(["RS"]), "RS");
+  assertEquals(meetingDefaultCountry(["RS", "General"]), "RS");
+});
+
+Deno.test("несколько стран или только General — страну не угадываем", () => {
+  assertEquals(meetingDefaultCountry(["RS", "ME"]), null);
+  assertEquals(meetingDefaultCountry(["General"]), null);
+  assertEquals(meetingDefaultCountry(null), null);
+});
+
+// 27.10.2026: модель пишет имя кириллицей, а в команде оно латиницей — задача уходила
+// «вместо «Василий»» на разбирающего. Скелет имени сводит написания вместе.
+Deno.test("кириллическое имя находит латинское в команде", () => {
+  const team = [
+    { telegram_id: 1, name: "Vasiliy Garro", username: null },
+    { telegram_id: 2, name: "Aleksandra Mironova", username: null },
+    { telegram_id: 3, name: "Yulia Volkova", username: null },
+  ];
+  assertEquals(resolveAssigneeId("Василий", team), 1);
+  assertEquals(resolveAssigneeId("Александра", team), 2);
+  assertEquals(resolveAssigneeId("Alexandra Mironova", team), 2);
+  assertEquals(resolveAssigneeId("Юля", team), 3);
+  assertEquals(resolveAssigneeId("Юлия", team), 3);
+});
+
+Deno.test("скелет не склеивает разные имена и не угадывает уменьшительные", () => {
+  const team = [
+    { telegram_id: 1, name: "Vasiliy Garro", username: null },
+    { telegram_id: 2, name: "Aleksandra Mironova", username: null },
+    { telegram_id: 4, name: "Aleksandr Petrov", username: null },
+  ];
+  assertEquals(resolveAssigneeId("Саша", team), null);
+  assertEquals(resolveAssigneeId("Анна", team), null);
+  assertEquals(resolveAssigneeId("Александр", team), 4);
 });

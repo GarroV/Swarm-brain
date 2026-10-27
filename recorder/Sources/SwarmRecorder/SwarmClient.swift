@@ -271,6 +271,35 @@ struct SwarmClient {
     private static let copyChunkBytes = 1 << 20
 
     func uploadAudio(meetingID: String, system: [AudioPart], mic: [AudioPart] = []) async throws -> IngestResponse {
+        let data = try await postIngest(meetingID: meetingID, system: system, mic: mic, extraFields: [])
+        return try decoder.decode(IngestResponse.self, from: data)
+    }
+
+    // POST /meeting-ingest с backup_only=1 — бэкап отклонённой/упавшей записи (#1070). Сервер его
+    // не распознаёт и строку встречи не трогает; хранит 3 суток, повтор от того же человека заменяет
+    // прежний. 403 (не участник) и 404 (встречи нет) — постоянные отказы, ретраить не надо.
+    func uploadBackup(
+        meetingID: String, system: [AudioPart], mic: [AudioPart],
+        reason: QuarantineReason, micStartOffset: Double?, recordedSeconds: Double?
+    ) async throws -> BackupResponse {
+        var extra: [(String, String)] = [("backup_only", "1"), ("reason", reason.rawValue)]
+        if let micStartOffset { extra.append(("mic_start_offset", "\(micStartOffset)")) }
+        if let recordedSeconds, recordedSeconds > 0 { extra.append(("recorded_seconds", "\(recordedSeconds)")) }
+        let data = try await postIngest(meetingID: meetingID, system: system, mic: mic, extraFields: extra)
+        let resp = try decoder.decode(BackupResponse.self, from: data)
+        // Старый сервер (до раскатки бэкапа) мог ответить 2xx на обычную выгрузку без этих полей —
+        // это не подтверждение бэкапа, считаем сбоем, а не успехом.
+        guard resp.ok == true, resp.backupId != nil else {
+            throw SwarmError.transport("backup not acknowledged by server")
+        }
+        return resp
+    }
+
+    // Общая сборка и отправка multipart-конверта meeting-ingest: обычная выгрузка и бэкап
+    // отличаются только дополнительными текстовыми полями. Возвращает тело 2xx-ответа.
+    private func postIngest(
+        meetingID: String, system: [AudioPart], mic: [AudioPart], extraFields: [(String, String)]
+    ) async throws -> Data {
         let boundary = "swarm-\(UUID().uuidString)"
         var req = URLRequest(url: url("/meeting-ingest"))
         req.httpMethod = "POST"
@@ -328,6 +357,7 @@ struct SwarmClient {
         }
 
         try textField("meeting_id", meetingID)
+        for (name, value) in extraFields { try textField(name, value) }
         // Манифест собираем ПОСЛЕ записи соответствующих файловых частей: порядок частей в
         // конверте не важен (сервер ищет файлы по name), а текстовые поля можно дописать в конец.
         let sysManifest = try appendTrack(prefix: "sys", parts: system)
@@ -345,7 +375,7 @@ struct SwarmClient {
         guard (200...299).contains(code) else {
             throw SwarmError.http(code, String(data: data, encoding: .utf8) ?? "", retryAfter: parseRetryAfter(resp))
         }
-        return try decoder.decode(IngestResponse.self, from: data)
+        return data
     }
 }
 

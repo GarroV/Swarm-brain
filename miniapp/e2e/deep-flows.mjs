@@ -140,7 +140,8 @@ async function fill(page, selector, value) {
   r.ok("встреча открывается", /Назад/.test(await bodyText(page)));
 
   const newTitle = "Q3 Kickoff " + stamp();
-  await clickText(page, "Название");
+  // Правка — карандашами у названия и в шапке тезисов (27.10.2026), не чипами в ряду действий.
+  await page.evaluate(() => document.querySelector('button[aria-label="Изменить название"]')?.click());
   await wait(700);
   await fill(page, 'input[class*="font-bold"]', newTitle);
   const savedT = await page.evaluate(() => {
@@ -153,7 +154,7 @@ async function fill(page, selector, value) {
   r.ok("название встречи сохраняется", savedT === "ok" && (await bodyText(page)).includes(newTitle), savedT);
 
   const newNotes = "Тезисы обновлены " + stamp();
-  await clickText(page, "Тезисы");
+  await page.evaluate(() => document.querySelector('button[aria-label="Править тезисы"]')?.click());
   await wait(800);
   const filledNotes = await fill(page, "textarea", newNotes);
   const savedN = await page.evaluate(() => {
@@ -204,7 +205,7 @@ async function fill(page, selector, value) {
     });
     await wait(1700);
     r.ok("правка тезисов на вычитке сохраняется", filled && saved === "ok" && (await bodyText(page)).includes(reviewNotes), saved);
-    r.ok("выбор хранилища у несогласованной встречи на месте", /В команду|В личное|Сохранить в базу/.test(await bodyText(page)));
+    r.ok("выбор хранилища у несогласованной встречи на месте", /В команду|В личное|Сохранить в базу|Опубликовать/.test(await bodyText(page)));
   }
 }
 

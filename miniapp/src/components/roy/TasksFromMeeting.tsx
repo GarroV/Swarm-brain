@@ -2,11 +2,11 @@
 import { useEffect, useState } from "react";
 import { useRoyNav, useDt } from "./nav";
 import { RoyIcon } from "./icons";
-import { createTask, extractTasksStreamed, fetchMe, fetchUsers } from "@/lib/api";
-import { effectiveAssigneeId, taskCountLabel } from "@/lib/proposedTasks";
+import { createTask, extractTasksStreamed, fetchMe, fetchUsers, updateTask, type CreateTaskInput } from "@/lib/api";
+import { meetingDefaultCountry, taskCountLabel } from "@/lib/proposedTasks";
 import type { Me, User } from "@/types";
 import { TaskModal } from "@/components/TaskModal";
-import { TasksHarvest, type DraftTask, type HarvestActions } from "./TasksHarvest";
+import { draftAssigneeId, TasksHarvest, type DraftTask, type HarvestActions } from "./TasksHarvest";
 
 // Генерация задач из встречи ПО ЯВНОМУ действию пользователя (кнопка), не автоматически.
 // Превью (POST /tasks/extract { save:false }) не создаёт ничего в базе — предложения живут
@@ -19,8 +19,9 @@ import { TasksHarvest, type DraftTask, type HarvestActions } from "./TasksHarves
 // meetingId — entry.id для привязки задач (у agent-черновика записи ещё нет → undefined,
 // задачи создаются автономно). resetKey — id выбранной записи: при смене сбрасываем список.
 export function TasksFromMeeting({
-  text, meetingId, resetKey, onAdded,
-}: { text: string; meetingId?: string | null; resetKey: string; onAdded?: () => void }) {
+  text, meetingId, resetKey, onAdded, countries,
+}: { text: string; meetingId?: string | null; resetKey: string; onAdded?: () => void; countries?: string[] | null }) {
+  const defaultCountry = meetingDefaultCountry(countries);
   const { toast } = useRoyNav();
   const dt = useDt();
 
@@ -62,7 +63,7 @@ export function TasksFromMeeting({
     try {
       await extractTasksStreamed(text, (proposed) => {
         const key = `${Date.now()}-${seen++}`;
-        setTasks((prev) => [...(prev ?? []), { ...proposed, _key: key, _selected: true }]);
+        setTasks((prev) => [...(prev ?? []), { ...proposed, country: proposed.country ?? defaultCountry, _key: key, _selected: true }]);
       });
     } catch {
       toast(dt("Не удалось вычленить задачи", "Could not extract tasks"));
@@ -77,12 +78,25 @@ export function TasksFromMeeting({
     setTasks((prev) => prev?.filter((t) => t._key !== key) ?? null);
   };
 
-  // Задача сохранена через TaskModal → убираем строку-предложение из списка (пустой «Своя»-ключ
-  // в списке отсутствует — filter просто ничего не найдёт) и уведомляем родителя.
-  const handleSaved = () => {
-    if (editing) removeRow(editing._key);
-    toast(dt("Задача добавлена", "Task added"));
-    onAdded?.();
+  // «Готово» в окне правки: строка обновляется в разборе (или «Своя» добавляется в него), в
+  // систему ничего не уходит — только общей кнопкой «Добавить N задач» (владелец 27.10.2026:
+  // «я ожидаю, что я здесь список поправлю, потом возьму кнопку сохранить, и он улетит»).
+  const handleDraft = (fields: CreateTaskInput) => {
+    if (!editing) return;
+    const row: DraftTask = {
+      ...editing,
+      title: fields.title,
+      description: fields.description ?? null,
+      due_date: fields.due_date ?? null,
+      country: fields.country ?? null,
+      assignee: users.find((u) => u.telegram_id === fields.assignee_telegram_id)?.name ?? null,
+      _fields: fields,
+      _selected: true,
+    };
+    setTasks((prev) => {
+      const list = prev ?? [];
+      return list.some((t) => t._key === row._key) ? list.map((t) => (t._key === row._key ? row : t)) : [...list, row];
+    });
   };
 
   // Массовое добавление: одна кнопка на все выбранные. Частичный сбой показываем честно —
@@ -96,20 +110,31 @@ export function TasksFromMeeting({
     // сказать в тосте, сколько задач ушло ничьими (имя в тезисах есть, а такого человека
     // в команде нет). Без этой строки «ничьи» задачи уезжают молча: тост говорит «Добавлено»,
     // а найти их потом негде — ровно так потерялись две задачи 28.08.2026.
-    const payloads = chosen.map((t) => ({ draft: t, assigneeId: effectiveAssigneeId(t.assignee, users, me?.telegram_id ?? null) }));
-    const results = await Promise.allSettled(payloads.map(({ draft, assigneeId }) => createTask({
-      title: draft.title,
-      description: draft.description,
-      country: draft.country,
-      due_date: draft.due_date,
-      assignee_telegram_id: assigneeId,
-      meeting_id: meetingId ?? null,
-    })));
+    const payloads = chosen.map((t) => ({ draft: t, assigneeId: draftAssigneeId(t, users, me?.telegram_id ?? null) }));
+    const results = await Promise.allSettled(payloads.map(async ({ draft, assigneeId }) => {
+      // Строка, доведённая в окне правки, уходит со всем, что там выставили.
+      if (draft._fields) {
+        const { label_ids: labelIds, ...fields } = draft._fields;
+        const created = await createTask({ ...fields, meeting_id: meetingId ?? null });
+        // POST /tasks не принимает label_ids — вешаем списки вторым шагом, как TaskModal.
+        if (labelIds?.length) await updateTask(created.id, { label_ids: labelIds });
+        return created;
+      }
+      return createTask({
+        title: draft.title,
+        description: draft.description,
+        country: draft.country,
+        due_date: draft.due_date,
+        assignee_telegram_id: assigneeId,
+        meeting_id: meetingId ?? null,
+      });
+    }));
     const addedKeys = new Set(chosen.filter((_, i) => results[i].status === "fulfilled").map((t) => t._key));
     setTasks((prev) => prev?.filter((t) => !addedKeys.has(t._key)) ?? null);
     setBusy(false);
 
-    const orphans = payloads.filter(({ draft, assigneeId }) => assigneeId == null && addedKeys.has(draft._key)).length;
+    const orphans = payloads.filter(({ draft, assigneeId }) =>
+      assigneeId == null && !draft._fields?.assignee_person_id && addedKeys.has(draft._key)).length;
     const orphanTail = orphans > 0
       ? dt(` · ${orphans} без исполнителя`, ` · ${orphans} unassigned`)
       : "";
@@ -130,6 +155,7 @@ export function TasksFromMeeting({
     toggle: (key) => setTasks((prev) => prev?.map((t) => (t._key === key ? { ...t, _selected: !t._selected } : t)) ?? null),
     toggleAll: (next) => setTasks((prev) => prev?.map((t) => ({ ...t, _selected: next })) ?? null),
     rename: (key, title) => setTasks((prev) => prev?.map((t) => (t._key === key ? { ...t, title } : t)) ?? null),
+    describe: (key, description) => setTasks((prev) => prev?.map((t) => (t._key === key ? { ...t, description } : t)) ?? null),
     remove: removeRow,
     edit: (task) => setEditing(task),
     addOwn: () => setEditing({ title: "", description: null, assignee: null, due_date: null, country: null, _key: `own-${Date.now()}`, _selected: true }),
@@ -195,10 +221,14 @@ export function TasksFromMeeting({
           description: editing.description,
           country: editing.country,
           due_date: editing.due_date,
+          // Исполнитель — тот, кто уже виден в строке разбора, а не «я» по умолчанию окна.
+          assignee_telegram_id: draftAssigneeId(editing, users, me?.telegram_id ?? null),
+          ...(editing._fields ?? {}),
         } : undefined}
         meetingId={meetingId ?? null}
         onClose={() => setEditing(null)}
-        onSaved={handleSaved}
+        onSaved={() => {}}
+        onDraft={handleDraft}
       />
     </div>
   );

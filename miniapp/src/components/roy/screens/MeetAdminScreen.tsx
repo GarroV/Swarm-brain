@@ -1308,7 +1308,7 @@ function ActionsPanel({
           из транскрипта (фолбэк), чтобы блок был доступен для ЛЮБОЙ встречи с содержанием. */}
       {item.kind === "entry" && !item.data.truncated && (
         <div className="mt-1 border-t border-line pt-3">
-          <TasksFromMeeting text={item.data.content} meetingId={item.data.id} resetKey={item.data.id} />
+          <TasksFromMeeting text={item.data.content} meetingId={item.data.id} resetKey={item.data.id} countries={item.data.countries} />
         </div>
       )}
       {item.kind === "agent" && agentTaskText.trim().length > 0 && (

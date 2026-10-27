@@ -23,6 +23,19 @@ public enum BoardRequests {
                query: [("date", date), ("tz_offset", String(tzOffset))])
     }
 
+    /// `GET /board/call?key=&title=` — страна созвона и задачи этой страны.
+    public static func callURL(ingestBase: String, key: String, title: String?) -> URL? {
+        var q = [("key", key)]
+        if let title, !title.isEmpty { q.append(("title", title)) }
+        return apiURL(ingestBase: ingestBase, path: "board/call", query: q)
+    }
+
+    /// Тело `PUT /board/call`: страна ISO или `null` (снять метку).
+    public static func callCountryBody(key: String, country: String?) -> Data? {
+        let obj: [String: Any] = ["key": key, "country": country.map { $0 as Any } ?? NSNull()]
+        return try? JSONSerialization.data(withJSONObject: obj)
+    }
+
     /// multipart/form-data: сначала текстовые поля, потом файл `audio`.
     public static func multipart(boundary: String, audio: Data, filename: String, mime: String,
                                  fields: [(String, String)]) -> Data {
