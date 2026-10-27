@@ -95,6 +95,19 @@ public enum BoardL10n {
         "form.cancel": "Отмена",
         "form.err.title": "Введите название",
         "form.err.create": "Не удалось создать задачу",
+        "call.title": "Созвон · %@",
+        "call.change": "Сменить страну",
+        "call.tasks.header": "Задачи страны",
+        "call.tasks.empty": "По этой стране открытых задач нет",
+        "call.ask": "Это созвон по %@?",
+        "call.yes": "Да",
+        "call.other": "Другая…",
+        "call.no": "Нет",
+        "call.pick": "Страна созвона",
+        "call.pick.set": "Отметить",
+        "call.pick.cancel": "Отмена",
+        "call.menu": "Отметить созвон страной…",
+        "call.err": "Не удалось сохранить страну — попробуйте ещё раз",
     ]
 
     static let en: [String: String] = [
@@ -166,5 +179,18 @@ public enum BoardL10n {
         "form.cancel": "Cancel",
         "form.err.title": "Enter a title",
         "form.err.create": "Could not create the task",
+        "call.title": "Call · %@",
+        "call.change": "Change country",
+        "call.tasks.header": "Country tasks",
+        "call.tasks.empty": "No open tasks for this country",
+        "call.ask": "Is this a call about %@?",
+        "call.yes": "Yes",
+        "call.other": "Other…",
+        "call.no": "No",
+        "call.pick": "Call country",
+        "call.pick.set": "Set",
+        "call.pick.cancel": "Cancel",
+        "call.menu": "Mark call with a country…",
+        "call.err": "Could not save the country — try again",
     ]
 }

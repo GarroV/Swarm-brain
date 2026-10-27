@@ -287,6 +287,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         setupPowerNotifications()
         startWatching()
         missed.start()
+        board.onMenuChange = { [weak self] in self?.rebuildMenu() }
         board.start()
 
         // Дозагрузка на старте: если в прошлый раз приложение закрыли/упало с висящими записями
@@ -685,6 +686,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 self?.handleDetection(meetings: meetings, micActive: micOn,
                                       recordedNow: lookup?.recordedNow ?? [])
                 if let recordedNow = lookup?.recordedNow { self?.askIfBotRecords(recordedNow) }
+                // Экран страны: созвон, где человек сидит (как в напоминании), — доске; конец звонка снимает режим.
+                let current = CallCountry.currentCall(meetings, hasLink: { $0.joinURL != nil },
+                                                      isOpen: { MeetingIdentity.isCallOpen($0.joinURL) })
+                self?.board.callTick(micOn: micOn, call: current.map { ($0.key, $0.title) })
                 // Присутствие обновляем ОТДЕЛЬНО от handleDetection: тот выходит по
                 // `guard case .idle`, а панели нужен сигнал и во время записи.
                 self?.pulsePresence(onCall: micOn, calendarKey: meetings.first?.key)
