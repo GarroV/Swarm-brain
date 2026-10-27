@@ -2,7 +2,7 @@
 // (anon/authenticated ничего не читают), срок хранения по умолчанию три дня, один живой бэкап на
 // (встреча, источник) и допустимые причины. Всё внутри транзакции с откатом.
 // Тест не умеет «пропускаться»: базы нет — прогон падает и говорит, что поднять.
-import { assert, assertEquals, assertRejects } from "@std/assert";
+import { assertEquals, assertRejects } from "@std/assert";
 import { Client } from "postgres";
 
 const DB_URL = Deno.env.get("SUPABASE_DB_URL") ??
@@ -88,8 +88,11 @@ Deno.test("бэкапы: один живой бэкап на (встреча, и
 
 Deno.test("бэкапы: неизвестная причина отбивается базой", async () => {
   await scenario(async (db) => {
+    await db.queryArray("savepoint bad_reason");
     await assertRejects(() => insert(db, "person:1", "whatever"), Error, "check");
+    await db.queryArray("rollback to savepoint bad_reason");
     await insert(db, "person:1", "deferred");
-    assert(true);
+    const n = await db.queryArray<[number]>(`select count(*)::int from ${TABLE} where meeting_id = '${MEETING}'`);
+    assertEquals(n.rows[0][0], 1);
   });
 });
