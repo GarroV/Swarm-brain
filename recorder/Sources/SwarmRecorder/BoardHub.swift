@@ -19,6 +19,7 @@ final class BoardHub: NSObject {
     private static let undoSeconds = 6
     private static let toastLingerSeconds = 4
     private static let messageSeconds: TimeInterval = 5
+    private static let countryTaskRows = 30
 
     /// Меню пересобирается, когда меняется то, что в нём видно (галочка «Показывать значок»).
 
@@ -51,6 +52,16 @@ final class BoardHub: NSObject {
     private var markets: [String]?
     private var pillTimer: Timer?
     private var panelTimer: Timer?
+
+    // Страна созвона (issue #1072): что знаем о созвоне, где человек сидит сейчас.
+    private static let declinedKey = "BoardCallCountryDeclined"
+    private var callTracker = CallCountryTracker()
+    private var currentCall: (key: String, title: String?)?
+    private var callInfo: CallCountryInfo?
+    private var callPicking = false
+    private var callBusy = false
+    /// Меню шмеля пересобирается, когда появляется или пропадает пункт «Отметить созвон страной…».
+    var onMenuChange: (() -> Void)?
 
     init(config: @escaping () -> SwarmConfig?) {
         configProvider = config
@@ -95,7 +106,15 @@ final class BoardHub: NSObject {
                                 action: #selector(menuWidgetTapped), keyEquivalent: "")
         widget.target = self
         widget.state = widgetShown ? .on : .off
-        return [open, widget]
+        var items = [open, widget]
+        // Пока идёт созвон без метки страны — отметить руками (если вопрос не всплыл или ответили «Нет»).
+        if currentCall != nil, callInfo?.country == nil {
+            let mark = NSMenuItem(title: BoardL10n.text("call.menu", lang: menuLang),
+                                  action: #selector(menuMarkCallTapped), keyEquivalent: "")
+            mark.target = self
+            items.insert(mark, at: 1)
+        }
+        return items
     }
 
     static let widgetShownKey = "BoardWidgetShown"
@@ -112,6 +131,8 @@ final class BoardHub: NSObject {
     }
 
     @objc private func menuOpenTapped() { open() }
+
+    @objc private func menuMarkCallTapped() { startPicking() }
 
     /// Открыть доску на переднем плане (клик по значку в Dock, пункт меню).
     func open() { openPanel(makeKey: true) }
@@ -134,6 +155,12 @@ final class BoardHub: NSObject {
         p.onMeetingsToggle = { [weak self] on in self?.showMeetings = on; self?.render() }
         p.onUndo = { [weak self] in self?.undoCreated() }
         p.onEscape = { [weak self] in self?.handleEscape() ?? false }
+        p.onCallYes = { [weak self] in self?.callAccept() }
+        p.onCallOther = { [weak self] in self?.startPicking() }
+        p.onCallNo = { [weak self] in self?.callDecline() }
+        p.onCallChange = { [weak self] in self?.startPicking() }
+        p.onCallPick = { [weak self] code in self?.callSet(code) }
+        p.onCallPickCancel = { [weak self] in self?.callPicking = false; self?.render() }
         p.notepad.onToTask = { [weak self] title in self?.createFromNote(title) }
         panel = p
         return p
@@ -171,6 +198,7 @@ final class BoardHub: NSObject {
 
     private func handleEscape() -> Bool {
         if case .recording = voiceState { cancelVoice(); return true }
+        if callPicking { callPicking = false; render(); return true }
         if form != nil { closeForm(); return true }
         return false
     }
@@ -225,12 +253,22 @@ final class BoardHub: NSObject {
             if configProvider() == nil { msg = text("board.noToken") }
             else if authFailed { msg = text("voice.err.auth") }
         }
+        var config = snap?.config ?? .defaults
+        var tasks = tracker.visible(snap?.tasks ?? [])
+        var tasksTotal = max((snap?.tasksTotal ?? 0) - tracker.inFlightCount, 0)
+        let call = callView
+        if case .country(_, let countryTasks) = call {
+            // Экран страны: вместо задач дня — все открытые задачи страны (владелец 27.10.2026).
+            tasks = tracker.visible(countryTasks)
+            tasksTotal = tasks.count
+            config.taskRows = max(config.taskRows, Self.countryTaskRows)
+        }
         let state = BoardViewState(
             lang: lang,
-            config: snap?.config ?? .defaults,
-            loaded: snap != nil,
-            tasks: tracker.visible(snap?.tasks ?? []),
-            tasksTotal: max((snap?.tasksTotal ?? 0) - tracker.inFlightCount, 0),
+            config: config,
+            loaded: snap != nil || callInfo != nil,
+            tasks: tasks,
+            tasksTotal: tasksTotal,
             struck: tracker.struckIDs,
             meetings: snap?.meetings ?? [],
             meetingsReason: snap?.meetingsReason,
@@ -242,7 +280,8 @@ final class BoardHub: NSObject {
             form: form,
             hotKeyHint: hotKey.isRegistered,
             today: BoardDay.today(),
-            now: Date())
+            now: Date(),
+            call: call)
         panel.render(state)
     }
 
@@ -294,6 +333,10 @@ final class BoardHub: NSObject {
                 try await self.client.setStatus(config: cfg, taskId: id, done: true)
                 self.tracker.finished(id)
                 self.doneIDs.insert(id)
+                if let info = self.callInfo {
+                    self.callInfo = CallCountryInfo(seriesKey: info.seriesKey, country: info.country, suggested: info.suggested,
+                                                    markets: info.markets, tasks: info.tasks.filter { $0.id != id })
+                }
                 if var snap = self.snapshot {
                     snap.tasks.removeAll { $0.id == id }
                     snap.tasksTotal = max(snap.tasksTotal - 1, snap.tasks.count)
@@ -319,6 +362,104 @@ final class BoardHub: NSObject {
         let base = configProvider()?.webBaseURL ?? WebBase.current
         guard let url = URL(string: base.isEmpty ? WebBase.current : base) else { return }
         NSWorkspace.shared.open(url)
+    }
+
+    // MARK: страна созвона
+
+    private var callView: CallCountryView {
+        guard currentCall != nil else { return .none }
+        if callPicking {
+            return .pick(markets: callInfo?.markets ?? markets ?? [], selected: callInfo?.country ?? callInfo?.suggested)
+        }
+        let declined = callInfo.map { declinedSeries().contains($0.seriesKey) } ?? false
+        return CallCountry.decide(callInfo, declined: declined)
+    }
+
+    private func declinedSeries() -> [String] {
+        UserDefaults.standard.stringArray(forKey: Self.declinedKey) ?? []
+    }
+
+    /// Раз в тик наблюдателя (~25 с) из AppDelegate: `micOn` — идёт реальный звонок, `call` — созвон из
+    /// календаря, где человек сидит (nil — неизвестен). Сервер зовём один раз на созвон; конец звонка
+    /// снимает режим страны.
+    func callTick(micOn: Bool, call: (key: String, title: String?)?) {
+        switch callTracker.tick(micOn: micOn, key: call?.key) {
+        case .none:
+            break
+        case .ended:
+            endCall()
+        case .fetch(let key):
+            currentCall = (key, call?.title)
+            callInfo = nil
+            callPicking = false
+            onMenuChange?()
+            fetchCall(key: key, title: call?.title)
+        }
+    }
+
+    private func endCall() {
+        currentCall = nil
+        callInfo = nil
+        callPicking = false
+        onMenuChange?()
+        render()
+    }
+
+    private func fetchCall(key: String, title: String?) {
+        guard let cfg = configProvider() else { callTracker.failed(key: key); return }
+        Task { @MainActor in
+            do {
+                let info = try await self.client.fetchCall(config: cfg, key: key, title: title)
+                guard self.currentCall?.key == key else { return }      // звонок успел закончиться или смениться
+                self.callInfo = info
+                self.onMenuChange?()
+                if self.callView != .none { self.openPanel(makeKey: false) } else { self.render() }
+            } catch {
+                self.callTracker.failed(key: key)       // нет связи/сервера — следующий тик попробует снова
+            }
+        }
+    }
+
+    private func startPicking() {
+        guard currentCall != nil else { return }
+        callPicking = true
+        openPanel(makeKey: true)
+        guard (callInfo?.markets ?? markets ?? []).isEmpty, let cfg = configProvider() else { return }
+        Task { @MainActor in
+            if let list = try? await self.client.markets(config: cfg) {
+                self.markets = list
+                self.render()
+            }
+        }
+    }
+
+    private func callAccept() {
+        guard case .ask(let code) = callView else { return }
+        callSet(code)
+    }
+
+    private func callDecline() {
+        guard let info = callInfo else { return }
+        UserDefaults.standard.set(CallCountry.remember(info.seriesKey, in: declinedSeries()), forKey: Self.declinedKey)
+        render()
+    }
+
+    private func callSet(_ code: String) {
+        guard let call = currentCall, !callBusy, let cfg = configProvider() else { return }
+        callBusy = true
+        Task { @MainActor in
+            defer { self.callBusy = false }
+            do {
+                let info = try await self.client.setCallCountry(config: cfg, key: call.key, country: code)
+                guard self.currentCall?.key == call.key else { return }
+                self.callInfo = info
+                self.callPicking = false
+                self.onMenuChange?()
+                self.render()
+            } catch {
+                self.setMessage("call.err")
+            }
+        }
     }
 
     // MARK: голос
