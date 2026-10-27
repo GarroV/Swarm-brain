@@ -14,6 +14,7 @@ const MEMBER_CEE = 2001;
 const MEMBER_OTHER = 3001; // чужой воркспейс
 const MASTER_CEE = 4001;
 const SUPER_LIKE_MASTER = 5005; // ещё один мастер-админ из данных (isMaster через deps) // мастер-админ из master_admins (не константа), состоит в cee
+const PENDING_CEE = "invitee"; // ожидающее приглашение (ещё не входил) в cee
 const PENDING_OTHER = "stranger"; // ожидающее приглашение в чужом воркспейсе
 
 type Row = Record<string, unknown>;
@@ -28,6 +29,7 @@ function fixtures(): Record<string, Row[]> {
       { id: 4, telegram_id: MEMBER_OTHER, group_id: "other", email: "o@x.io", username: "o", is_admin: false },
       { id: 6, telegram_id: MASTER_CEE, group_id: "cee", email: "mst@x.io", username: "mst", is_admin: true },
       { id: 5, telegram_id: null, group_id: "other", email: null, username: PENDING_OTHER, is_admin: false },
+      { id: 7, telegram_id: null, group_id: "cee", email: "inv@x.io", username: PENDING_CEE, is_admin: false },
     ],
     workspaces: [{ id: "cee", name: "CEE", allowed_markets: null }, {
       id: "other",
@@ -129,10 +131,33 @@ function callAsMaster(db: ReturnType<typeof makeDb>, actor: number, method: stri
 
 // ── PATCH /admin/users/:ref ──────────────────────────────────────────────────
 
-Deno.test("админ правит почту участника СВОЕГО воркспейса → 200, человеку уходит уведомление", async () => {
+Deno.test("админ правит почту участника, который уже входил → 403, в базу ничего не пишется", async () => {
   const db = makeDb();
   const a = captureAnnounce();
   const res = await call(db, ADMIN_CEE, "PATCH", `/admin/users/${MEMBER_CEE}`, { email: "New@X.io" }, a);
+  assertEquals(res!.status, 403);
+  assertEquals(db.writes, []);
+  assertEquals(a.events, []);
+});
+
+Deno.test("участник, который уже входил, меняет СВОЮ почту → 200", async () => {
+  const db = makeDb();
+  const res = await call(db, ADMIN_CEE, "PATCH", `/admin/users/${ADMIN_CEE}`, { email: "adm2@x.io" });
+  assertEquals(res!.status, 200);
+});
+
+Deno.test("админ задаёт почту ожидающему приглашению СВОЕГО воркспейса → 200", async () => {
+  const db = makeDb();
+  const res = await call(db, ADMIN_CEE, "PATCH", `/admin/users/${PENDING_CEE}`, { email: "New@X.io" });
+  assertEquals(res!.status, 200);
+  const au = db.writes.find((w) => w.table === "allowed_users" && w.op === "update");
+  assertEquals(au?.values, { email: "new@x.io" });
+});
+
+Deno.test("суперадмин правит почту участника, который уже входил → 200, человеку уходит уведомление", async () => {
+  const db = makeDb();
+  const a = captureAnnounce();
+  const res = await call(db, SUPER, "PATCH", `/admin/users/${MEMBER_CEE}`, { email: "New@X.io" }, a);
   assertEquals(res!.status, 200);
   const au = db.writes.find((w) => w.table === "allowed_users" && w.op === "update");
   assertEquals(au?.values, { email: "new@x.io" });
@@ -140,7 +165,7 @@ Deno.test("админ правит почту участника СВОЕГО в
   assertEquals(a.events[0].targetTelegramId, MEMBER_CEE);
   assertEquals(a.events[0].oldEmail, "m@x.io");
   assertEquals(a.events[0].newEmail, "new@x.io");
-  assertEquals(a.events[0].actorName, "Adm");
+  assertEquals(a.events[0].actorName, "Owner");
 });
 
 Deno.test("админ правит участника ЧУЖОГО воркспейса → 404, в базу ничего не пишется", async () => {
@@ -269,10 +294,36 @@ Deno.test("админ добавляет нового человека в сво
   assert(db.writes.some((w) => w.table === "allowed_users" && w.op === "insert"));
 });
 
-Deno.test("добавление, меняющее почту участника своего воркспейса, заметно человеку", async () => {
+Deno.test("админ через добавление меняет почту участника, который уже входил → 403", async () => {
+  const db = makeDb();
+  const res = await call(db, ADMIN_CEE, "POST", "/admin/workspaces/cee/users", {
+    telegram_id: MEMBER_CEE,
+    email: "m2@x.io",
+  });
+  assertEquals(res!.status, 403);
+  assertEquals(db.writes, []);
+});
+
+Deno.test("админ через добавление по username меняет почту участника, который уже входил → 403", async () => {
+  const db = makeDb();
+  const res = await call(db, ADMIN_CEE, "POST", "/admin/workspaces/cee/users", { username: "m", email: "m2@x.io" });
+  assertEquals(res!.status, 403);
+  assertEquals(db.writes, []);
+});
+
+Deno.test("админ через добавление задаёт почту ожидающему приглашению своего воркспейса → 200", async () => {
+  const db = makeDb();
+  const res = await call(db, ADMIN_CEE, "POST", "/admin/workspaces/cee/users", {
+    username: PENDING_CEE,
+    email: "i2@x.io",
+  });
+  assertEquals(res!.status, 200);
+});
+
+Deno.test("суперадмин через добавление меняет почту участника → 200, заметно человеку", async () => {
   const db = makeDb();
   const a = captureAnnounce();
-  const res = await call(db, ADMIN_CEE, "POST", "/admin/workspaces/cee/users", {
+  const res = await call(db, SUPER, "POST", "/admin/workspaces/cee/users", {
     telegram_id: MEMBER_CEE,
     email: "m2@x.io",
   }, a);

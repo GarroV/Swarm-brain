@@ -247,6 +247,7 @@ Deno.test("buildReviewQueueQuery — без email фильтруем тольк�
 
 const meeting = {
   ...baseEntry,
+  entry_type: "meeting",
   metadata: { attendees: [{ email: "participant@example.com" }] },
 };
 const meetingOpts = { groupId: "cee" };
@@ -317,7 +318,14 @@ Deno.test("getMeetingSecure — владелец удаляет свою вст�
 });
 
 // ── Встреча 1-1 на двоих (#641): одна личная запись, второй участник — в shared_with ─────────
-const oneOnOneEntry = { ...baseEntry, is_private: true, owner_id: 111, shared_with: [-37], metadata: {} };
+const oneOnOneEntry = {
+  ...baseEntry,
+  entry_type: "meeting",
+  is_private: true,
+  owner_id: 111,
+  shared_with: [-37],
+  metadata: {},
+};
 
 Deno.test("getEntrySecure: запись на двоих видит второй участник", async () => {
   const { client } = makeSupabase(oneOnOneEntry);
@@ -357,4 +365,36 @@ Deno.test("getMeetingSecure: второй участник правит встр
 
 Deno.test("ENTRY_COLUMNS выбирает shared_with — без неё второй участник получил бы отказ", () => {
   assertEquals(cols().includes("shared_with"), true);
+});
+
+// ── Права встречи — только на встречи (не на заметки и другие записи) ─────────────────────
+const publicNote = { ...baseEntry, entry_type: "note", source: "web", metadata: {} };
+
+Deno.test("getMeetingSecure: обычная запись — 404 даже для админа, права встречи на неё не действуют", async () => {
+  for (const action of ["edit", "delete"] as const) {
+    const { client } = makeSupabase(publicNote);
+    const err = await assertRejects(
+      () => getMeetingSecure(client, "e1", { groupId: "cee", telegramId: 999, isAdmin: true, action }),
+      EntryAccessError,
+    );
+    assertEquals(err.status, 404);
+  }
+});
+
+Deno.test("getEntrySecure requireMeeting: обычная запись — 404, встреча — отдаётся", async () => {
+  const { client } = makeSupabase(publicNote);
+  const err = await assertRejects(
+    () => getEntrySecure(client, "e1", { groupId: "cee", telegramId: 999, requireMeeting: true }),
+    EntryAccessError,
+  );
+  assertEquals(err.status, 404);
+  const ok = makeSupabase(meeting);
+  const got = await getEntrySecure(ok.client, "e1", { groupId: "cee", telegramId: 999, requireMeeting: true });
+  assertEquals(got.id, "e1");
+});
+
+Deno.test("getEntrySecure без requireMeeting: обычная запись отдаётся как раньше", async () => {
+  const { client } = makeSupabase(publicNote);
+  const got = await getEntrySecure(client, "e1", { groupId: "cee", telegramId: 999 });
+  assertEquals(got.id, "e1");
 });

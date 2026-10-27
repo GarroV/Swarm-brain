@@ -38,3 +38,20 @@ export function canAddUsers(actor: UsersActor): boolean {
 export function isEditableProfileField(fields: Record<string, string>, field: string): boolean {
   return Object.hasOwn(fields, field);
 }
+
+/**
+ * `/users add`: существующая строка по telegram_id/@username не создаётся заново, а ПЕРЕМЕЩАЕТСЯ в
+ * воркспейс действующего. Поэтому `target` — строка allowed_users, которую адресует команда в ЛЮБОМ
+ * воркспейсе (null — такой строки нет, создаётся приглашение). Админ воркспейса принимает только
+ * новых людей и своих; чужого воркспейса, владельца и мастер-админа — нет.
+ */
+export function canAddUserTarget(actor: UsersActor, target: MemberRow | null): boolean {
+  if (!canAddUsers(actor)) return false;
+  if (target == null) return true;
+  return canManageMember(actor, target) && canChangeAccountKeys(actor, target);
+}
+
+/** `/workspace` (список всех воркспейсов, создание, перенос между ними) — только суперадмин. */
+export function canUseWorkspaceCommand(actor: AdminActor): boolean {
+  return isSuperadmin(actor);
+}

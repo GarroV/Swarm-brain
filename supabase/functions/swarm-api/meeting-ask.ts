@@ -51,7 +51,7 @@ export async function handleMeetingAskRoutes(
     if (agentMatch) {
       meetingId = agentMatch[1];
     } else {
-      entry = await getEntrySecure(supabase, entryMatch![1], { groupId, telegramId });
+      entry = await getEntrySecure(supabase, entryMatch![1], { groupId, telegramId, requireMeeting: true });
       meetingId = (entry.metadata as { meeting_id?: string } | null)?.meeting_id ?? null;
     }
   } catch (e) {

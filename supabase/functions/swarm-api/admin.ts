@@ -1,7 +1,7 @@
 import { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { BOT_SLOT_COLUMNS, isMissedBotSlot, type SlotRow } from "../_shared/bot-slot.ts";
 import { normalizeCountries } from "../_shared/countries.ts";
-import { addUserToWorkspace, normalizeUsername } from "../_shared/users/membership.ts";
+import { addUserToWorkspace, escapeLike, normalizeUsername } from "../_shared/users/membership.ts";
 import { parseUserRef } from "../_shared/users/user-ref.ts";
 import {
   type AdminActor,
@@ -9,6 +9,7 @@ import {
   canChangeAccountKeys,
   canManageMember,
   canManageWorkspace,
+  canSetLoginEmail,
   type EmailChangeEvent,
   isForeignEmailChange,
   isSuperadmin,
@@ -284,6 +285,10 @@ export async function handleAdminRoutes(
         if (!canManageMember(actor, existing)) {
           return apiErr(403, "This user belongs to another workspace", origin);
         }
+        // Почта входа — ключ веб-входа: у того, кто уже входил, её меняет он сам или суперадмин.
+        if (newEmail && newEmail !== normalizeEmail(existing.email) && !canSetLoginEmail(actor, existing)) {
+          return apiErr(403, "Forbidden", origin);
+        }
       }
 
       // Единый канон добавления (тот же, что у бота) — _shared/users/membership.ts.
@@ -479,6 +484,13 @@ export async function handleAdminRoutes(
     if ("email" in body && !canChangeAccountKeys(actor, target)) {
       return apiErr(403, "Forbidden", origin);
     }
+    // Почта входа — ключ веб-входа: у того, кто уже входил, её меняет он сам или суперадмин.
+    if (
+      "email" in body && normalizeEmail(body.email) !== normalizeEmail(target.email) &&
+      !canSetLoginEmail(actor, target)
+    ) {
+      return apiErr(403, "Forbidden", origin);
+    }
 
     const fields: Record<string, unknown> = {
       telegram_id: targetId,
@@ -549,8 +561,9 @@ async function findAddTarget(
   let q;
   if (tid != null) q = supabase.from("allowed_users").select(cols).eq("telegram_id", tid);
   else if (!username && email) q = supabase.from("allowed_users").select(cols).eq("email", email);
-  else if (username) q = supabase.from("allowed_users").select(cols).ilike("username", username);
-  else return null;
+  else if (username) {
+    q = supabase.from("allowed_users").select(cols).ilike("username", escapeLike(username)).order("id");
+  } else return null;
   const { data, error } = await q.limit(1).maybeSingle();
   if (error) throw new Error(error.message);
   return (data as MemberRow | null) ?? null;

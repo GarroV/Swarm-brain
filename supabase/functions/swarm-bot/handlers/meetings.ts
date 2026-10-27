@@ -17,6 +17,8 @@ import { onlyLive } from "../../_shared/tasks/live.ts";
 import { onlyLiveEntries } from "../../_shared/entries/live.ts";
 import { escapeHtml, sanitizeModelHtml } from "../../_shared/telegram-html.ts";
 import { archiveEntry } from "../../_shared/entries/archive.ts";
+import { claimOwnerIfFree, type ConfirmableEntry, meetingConfirmPatch } from "../../_shared/entries/meeting-confirm.ts";
+import { type EditableEntryRow, isMeetingEntry } from "../../_shared/entries/entry-edit.ts";
 import { externalFetch, VIA_TELEGRAM, VIA_TELEGRAM_UPLOAD } from "../../_shared/external-fetch.ts";
 import { keepVisibleTasks } from "../../_shared/tasks/project-visibility.ts";
 
@@ -46,7 +48,7 @@ async function loadEntryForAction(
   // metadata нужна всегда: по ней (metadata.attendees) считается причастность к встрече.
   const select = [
     ...new Set(
-      [...columns.split(","), "metadata", "is_private", "owner_id", "shared_with", "group_id"]
+      [...columns.split(","), "metadata", "is_private", "owner_id", "shared_with", "group_id", "entry_type", "source"]
         .map((c) => c.trim()).filter(Boolean),
     ),
   ].join(", ");
@@ -65,7 +67,10 @@ async function loadEntryForAction(
     groupId,
     action,
   );
-  return denied ? null : (data as ActionEntry | null);
+  if (denied) return null;
+  // Любое действие бота над встречей — только над встречей: заметка или файл — «не найдена».
+  if (data && !isMeetingEntry(data as unknown as EditableEntryRow)) return null;
+  return data as ActionEntry | null;
 }
 
 export async function handleConnect(chatId: number): Promise<void> {
@@ -645,9 +650,15 @@ export async function handleMeetingCallbacks(
   if (data.startsWith("mc_")) {
     // Confirm meeting — жёсткий блок без рынков, затем publish + auto-extract tasks
     const entryId = data.replace("mc_", "");
-    const entry = await loadEntryForAction(entryId, groupId, userId, "metadata, content, countries", {
-      action: "edit",
-    });
+    const entry = await loadEntryForAction(
+      entryId,
+      groupId,
+      userId,
+      "metadata, content, countries",
+      {
+        action: "edit",
+      },
+    );
     if (!entry) {
       await sendMessage(chatId, "Встреча не найдена.");
       return true;
@@ -662,16 +673,18 @@ export async function handleMeetingCallbacks(
       );
       return true;
     }
-    // Publish: pending → workspace-visible. Снимаем приватность, но НЕ владельца: is_private
-    // отвечает за видимость, owner_id — за авторство (решение владельца 2026-08-22, «не должно
-    // быть ничьих»). Здесь стояло owner_id: null — тот же источник «ничьих» записей, что был в
-    // swarm-api; там поправлено 2026-08-22, а этот путь (согласование из бота) пропустили.
-    const publisherId = (entry as { owner_id?: number | null }).owner_id ?? userId;
-    await supabase.from("entries").update({
-      metadata: { ...(entry.metadata as Record<string, unknown>), confirmed: true },
-      is_private: false,
-      owner_id: publisherId,
-    }).eq("id", entryId).eq("group_id", groupId);
+    // Согласование (_shared/entries/meeting-confirm.ts): confirmed=true; владелец — решение
+    // 22.08.2026 («ничьих быть не должно»), сужено: только первое согласование безвладельной
+    // встречи; личная встреча публикуется (как описано в BACKLOG), если согласует её владелец;
+    // для остальных видимость и shared_with не меняются.
+    const viewer = await loadMeetingViewer(userId);
+    const { owner_id: ownerToClaim, ...confirmFields } = meetingConfirmPatch(
+      entry as unknown as ConfirmableEntry,
+      viewer,
+      { publishPrivate: true },
+    );
+    await supabase.from("entries").update(confirmFields).eq("id", entryId).eq("group_id", groupId);
+    if (ownerToClaim !== undefined) await claimOwnerIfFree(supabase, entryId, ownerToClaim);
     const title = ((entry.metadata as Record<string, unknown>)?.title as string) ?? "Встреча";
     await sendMessage(chatId, `✅ Встреча сохранена: <b>${escapeHtml(title)}</b>`);
     // Авто-извлечение задач из встречи УБРАНО 05.09.2026 (решение владельца: «раз бот —
@@ -832,13 +845,16 @@ export async function handleMeetingSessionInput(
     const rawTags = text.split(",").map((t) => t.trim()).filter(Boolean);
     const { data: found } = await onlyLiveEntries(
       supabase
-        .from("entries").select("id, metadata, is_private, owner_id, shared_with, group_id"),
+        .from("entries").select("id, metadata, is_private, owner_id, shared_with, group_id, entry_type, source"),
     )
       .eq("group_id", groupId)
       .or(`metadata->>meeting_id.eq.${meetingId},id.eq.${meetingId}`);
     // Теги — правка встречи: только те записи, которые нажавшему можно править.
     const viewer = found?.length ? await loadMeetingViewer(userId) : null;
-    const entries = (found ?? []).filter((e) => viewer && canActOnMeeting(e as MeetingRightsRow, viewer, "edit"));
+    const entries = (found ?? []).filter((e) =>
+      viewer && isMeetingEntry(e as unknown as EditableEntryRow) &&
+      canActOnMeeting(e as MeetingRightsRow, viewer, "edit")
+    );
     if (!entries.length) await sendMessage(chatId, "Встреча не найдена или править её нельзя.");
     else {
       for (const entry of entries as Array<{ id: string; metadata: Record<string, unknown> }>) {

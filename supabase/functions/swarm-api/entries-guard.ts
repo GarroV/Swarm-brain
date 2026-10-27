@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { canActOnMeeting, type MeetingAction } from "../_shared/entries/meeting-rights.ts";
+import { isMeetingEntry } from "../_shared/entries/entry-edit.ts";
 import { canMutateEntry, canViewEntry, entryVisibilityOr } from "../_shared/entries/access.ts";
 import { onlyLiveEntries } from "../_shared/entries/live.ts";
 
@@ -63,7 +64,8 @@ export class EntryAccessError extends Error {
  *   Layer 2 — visibility:           private entries are invisible to non-owners
  *   Layer 3 — ownership (opt-in):   only the owner can mutate (DELETE / PATCH)
  *
- * Throws EntryAccessError(404) if the entry doesn't exist or access is denied.
+ * Throws EntryAccessError(404) if the entry doesn't exist or access is denied
+ * (or, with requireMeeting, if it is not a meeting).
  * Throws EntryAccessError(403) if requireOwner=true and the caller is not the owner.
  *
  * Both 404 cases are intentionally indistinguishable to callers — leaking
@@ -76,7 +78,8 @@ export async function getEntrySecure(
     groupId,
     telegramId,
     requireOwner = false,
-  }: { groupId: string; telegramId: number; requireOwner?: boolean },
+    requireMeeting = false,
+  }: { groupId: string; telegramId: number; requireOwner?: boolean; requireMeeting?: boolean },
 ): Promise<EntryRow> {
   const { data } = await onlyLiveEntries(
     supabase
@@ -96,6 +99,12 @@ export async function getEntrySecure(
   // (см. canViewTask в swarm-api), не для записей/встреч.
   // Layer 2: visibility — личную видят владелец и те, с кем она разделена (1-1, #641).
   if (!canViewEntry(data, telegramId)) {
+    throw new EntryAccessError(404, "Not found");
+  }
+
+  // Маршруты /meetings/* работают только со встречами: заметка или файл на них — «нет такой»
+  // (404, неотличимо), чтобы права встречи не действовали на обычные записи.
+  if (requireMeeting && !isMeetingEntry(data)) {
     throw new EntryAccessError(404, "Not found");
   }
 
@@ -135,7 +144,7 @@ export async function getMeetingSecure(
   },
 ): Promise<EntryRow> {
   // Видимость и воркспейс — общим гардом (он же даёт неотличимый 404).
-  const entry = await getEntrySecure(supabase, id, { groupId, telegramId });
+  const entry = await getEntrySecure(supabase, id, { groupId, telegramId, requireMeeting: true });
   const viewer = { id: telegramId, email, isAdmin };
   if (!canActOnMeeting(entry, viewer, action)) {
     throw new EntryAccessError(403, "Forbidden");
