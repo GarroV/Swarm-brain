@@ -33,6 +33,10 @@ export interface HeldRow {
   status: string | null;
   lease_expires_at: string | null;
   agent_last_recording: boolean | null;
+  /** Нужен только правилу «пустой держатель»; у строки без колонки — как «обработки не было». */
+  summary_status?: string | null;
+  /** [{telegram_id, claimed_at, role}] — из него берётся время заявки держателя (льготный срок). */
+  recorders?: unknown;
 }
 
 /**
@@ -78,11 +82,60 @@ function isSubstantiallyLonger(candidate: number, held: number): boolean {
   return candidate >= held * TAKEOVER_MIN_RATIO && candidate >= held + TAKEOVER_MIN_EXTRA_SEC;
 }
 
+/**
+ * Льготный срок пустого держателя (#1070): сколько секунд после ЕГО заявки он ещё может начать
+ * писать. Бот заявляется до звонка, и у двери он живёт до: 2 попытки (BOT_PROFILE.door) и ожидание
+ * открытия комнаты до 10 минут (guestRoom.waitMinutes); пустым он выглядит и в норме. 20 минут
+ * покрывают всё это с запасом и короче лиза права (30 минут).
+ */
+export const EMPTY_HOLDER_GRACE_SEC = 20 * 60;
+
+/** Когда держатель (claim_owner) заявился в последний раз, мс; нет записи в recorders — null. */
+function holderClaimedAtMs(row: Pick<HeldRow, "claim_owner" | "recorders">): number | null {
+  if (!Array.isArray(row.recorders)) return null;
+  let latest: number | null = null;
+  for (const r of row.recorders as Array<{ telegram_id?: unknown; claimed_at?: unknown } | null>) {
+    if (r?.telegram_id !== row.claim_owner || typeof r.claimed_at !== "string") continue;
+    const ms = Date.parse(r.claimed_at);
+    if (Number.isFinite(ms) && (latest === null || ms > latest)) latest = ms;
+  }
+  return latest;
+}
+
+/** Нет ни секунд, ни стенограммы, ни обработки — «версии» держателя нет (без учёта срока). */
+function holdsNothing(row: Pick<HeldRow, "recorded_seconds" | "transcript" | "summary_status">): boolean {
+  if (heldSeconds(row) > 0) return false;
+  if (row.summary_status === "processing" || row.summary_status === "done") return false;
+  return (row.transcript?.segments ?? []).length === 0;
+}
+
+/**
+ * Держатель без ничего (#1070): ни секунд, ни стенограммы, запись не обрабатывается и не обработана,
+ * И его льготный срок от заявки вышел. Так выглядит бот, которого не пустили в звонок
+ * (`guest_access_closed`) или который умер до первого удара: заявился, взял лиз, записи нет. Такой
+ * держатель встречу не держит — пороги «заметно полнее» защищают чужой результат, а результата нет.
+ *
+ * Явного признака неудачи в строке встречи НЕТ: бот сообщает о `guest_access_closed` нотисой
+ * (журнал `meeting_notices`), а не полем `meetings`. Поэтому признак — время: нет времени заявки
+ * держателя в recorders — не считаем пустым (прежнее поведение). Истёкший лиз сюда не доходит:
+ * такая встреча свободна и занимается в claim/ingest без арбитража.
+ */
+export function isEmptyHolder(
+  row: Pick<HeldRow, "claim_owner" | "recorded_seconds" | "transcript" | "summary_status" | "recorders">,
+  nowIso: string,
+): boolean {
+  if (!holdsNothing(row)) return false;
+  const claimedAt = holderClaimedAtMs(row);
+  return claimedAt !== null && Date.parse(nowIso) - claimedAt >= EMPTY_HOLDER_GRACE_SEC * 1000;
+}
+
 export function decideHeld(row: HeldRow, candidate: number, ownerId: number, nowIso: string): HeldDecision {
   // Правленное человеком или опубликованное команде не трогает никто.
   if (isFrozen(row)) return "defer";
   const sameOwner = row.claim_owner === ownerId;
   if (botStillRecording(row, nowIso)) return sameOwner ? "reserve" : "defer";
+  // Пустой держатель уступает любой записи с секундами; сравнение с ним — пороги не нужны.
+  if (candidate > 0 && isEmptyHolder(row, nowIso)) return sameOwner ? "refresh" : "takeover";
   if (!(candidate > 0 && isSubstantiallyLonger(candidate, heldSeconds(row)))) return "defer";
   return sameOwner ? "refresh" : "takeover";
 }
@@ -104,7 +157,10 @@ export function decideHeld(row: HeldRow, candidate: number, ownerId: number, now
  */
 export type DeferReason = "published" | "recording" | "shorter" | "similar" | "race" | "unknown";
 
-/** Причина отказа для решения `defer` из decideHeld — в том же порядке проверок. */
+/**
+ * Причина отказа для решения `defer` из decideHeld — в том же порядке проверок. Пустой держатель
+ * до сюда не доходит при candidate > 0 (там takeover/refresh); при candidate <= 0 — `unknown`.
+ */
 export function deferReasonOf(row: HeldRow, candidate: number, nowIso: string): DeferReason {
   if (isFrozen(row)) return "published";
   if (botStillRecording(row, nowIso)) return "recording";
@@ -135,7 +191,8 @@ export type Guard =
   | { kind: "anyOf"; clauses: Guard[] };
 
 /**
- * Условия перехвата (refresh/takeover), которые UPDATE сверяет сам (разбор прав T155, MEDIUM):
+ * Условия перехвата (refresh/takeover), которые UPDATE сверяет сам (разбор прав T155, MEDIUM; для
+ * пустого держателя — ещё «стенограммы и обработки нет», #1070):
  *   • claim_owner прежний — никто не перехватил, пока мы считали;
  *   • recorded_seconds тот же, что прочитан, — иначе удар бота успел записать больше, и решение
  *     «заметно полнее» принято по устаревшей цифре;
@@ -160,6 +217,27 @@ export function heldGuards(row: HeldRow, nowIso: string): Guard[] {
     },
     { kind: "isNull", column: "notes_edited_at" },
     { kind: "neq", column: "status", value: PUBLISHED_STATUS },
+    // Решение «держатель пуст» (isEmptyHolder) принято по прочитанной строке: за время расчёта могла
+    // появиться стенограмма или начаться обработка — тогда перехват не ложится (#1070).
+    ...(holdsNothing(row) ? emptyHolderGuards() : []),
+  ];
+}
+
+function emptyHolderGuards(): Guard[] {
+  return [
+    { kind: "isNull", column: "transcript" },
+    {
+      kind: "anyOf",
+      clauses: [{ kind: "isNull", column: "summary_status" }, {
+        kind: "neq",
+        column: "summary_status",
+        value: "processing",
+      }],
+    },
+    {
+      kind: "anyOf",
+      clauses: [{ kind: "isNull", column: "summary_status" }, { kind: "neq", column: "summary_status", value: "done" }],
+    },
   ];
 }
 

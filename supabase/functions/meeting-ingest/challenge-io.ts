@@ -14,7 +14,7 @@ import { mp4DurationSec, trackCoverageSec } from "./audio-length.ts";
 import { type ChallengeRow, decideChallenge, holderHasVersion, settleRecorders } from "./challenge.ts";
 
 const CHALLENGE_COLUMNS =
-  "claim_owner, recorded_seconds, transcript, notes_edited_at, status, summary_status, lease_expires_at, agent_last_recording, started_at, created_at";
+  "claim_owner, recorded_seconds, transcript, notes_edited_at, status, summary_status, lease_expires_at, agent_last_recording, recorders, started_at, created_at";
 
 /** Сколько секунд записи покрыто звуком, по заголовкам частей (audio-length.ts); не измерено — null. */
 export async function measureUpload(parts: readonly InMemoryPart[]): Promise<number | null> {

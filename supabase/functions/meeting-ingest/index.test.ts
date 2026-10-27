@@ -82,9 +82,11 @@ async function call(
   meetingId: string,
   speakers?: string,
   token: string | null = TOKEN,
+  backupOnly = false,
 ): Promise<{ status: number; error?: string; summary_status?: string }> {
   const form = new FormData();
   form.set("meeting_id", meetingId);
+  if (backupOnly) form.set("backup_only", "1");
   if (speakers !== undefined) form.set("speakers", speakers);
   const headers = token ? { Authorization: `Bearer ${token}` } : undefined;
   globalThis.fetch = stubFetch;
@@ -133,4 +135,18 @@ Deno.test("meeting-ingest: своя встреча с валидным speakers 
   assertEquals([withSpeakers.status, withSpeakers.summary_status], [200, "skipped_human_edit"]);
   const withoutSpeakers = await call("m-mine");
   assertEquals([withoutSpeakers.status, withoutSpeakers.summary_status], [200, "skipped_human_edit"]);
+});
+
+// Серверный бэкап (#1070): ветка backup_only стоит сразу после проверки участника.
+Deno.test("meeting-ingest backup_only: чужая встреча → 403, несуществующая → 404, записей наружу нет", async () => {
+  assertEquals((await call("m-other", undefined, TOKEN, true)).status, 403);
+  assertEquals((await call("m-none", undefined, TOKEN, true)).status, 404);
+});
+
+Deno.test("meeting-ingest backup_only: замороженная встреча идёт в бэкап, а не отвечает skipped_human_edit", async () => {
+  // m-mine правлена человеком: обычная выгрузка получила бы 200 skipped_human_edit. Бэкап принимается
+  // и доходит до разбора частей — без аудио отвечает 400 про аудио, а не пропуском.
+  const r = await call("m-mine", undefined, TOKEN, true);
+  assertEquals(r.status, 400);
+  assertStringIncludes(r.error ?? "", "audio required");
 });
