@@ -39,10 +39,19 @@ import { canViewEntry, entryAccessError, type EntryAccessRow, entryVisibilityOr 
 import { markClientSeen } from "../_shared/client-seen.ts";
 import { withTokenIdentity } from "./identity.ts";
 import { TOOLS } from "./tool-definitions.ts";
-import { withAnnotations } from "./annotations.ts";
+import { toolKind, withAnnotations } from "./annotations.ts";
 import { negotiateProtocolVersion, SERVER_INSTRUCTIONS } from "./protocol.ts";
 import { wrapUntrusted } from "./untrusted.ts";
-import { authorizeToolCall, NO_WORKSPACE_MESSAGE, resolveCallerScope, withCallerIdentity } from "./auth.ts";
+import { CONFIRM_SECRET_ENV, confirmationChallenge, decideConfirmation, withConfirmationArgument } from "./confirm.ts";
+import { type JournalOutcome, recordToolCall } from "./journal.ts";
+import { checkTokenRow, type TokenRow } from "./token-state.ts";
+import {
+  AUTH_ERROR_CODE,
+  authorizeToolCall,
+  NO_WORKSPACE_MESSAGE,
+  resolveCallerScope,
+  withCallerIdentity,
+} from "./auth.ts";
 import {
   toolExtractTasksFromMeeting,
   toolGetDraftMeeting,
@@ -987,6 +996,7 @@ Deno.serve(async (req: Request) => {
   // из токена (правило и его тесты — auth.ts / auth.test.ts).
   let verifiedTelegramId: number | null = null;
   let tokenError: string | null = null; // заполняется, если Bearer передан, но не прошёл
+  let tokenHashHex: string | null = null; // для журнала: только хвост хэша, не токен
   const authHeader = req.headers.get("Authorization") ?? "";
 
   if (authHeader.startsWith("Bearer ")) {
@@ -1003,17 +1013,15 @@ Deno.serve(async (req: Request) => {
       .eq("claude_mcp_token_hash", hashHex)
       .maybeSingle();
 
-    if (tokenRow) {
-      const row = tokenRow as { telegram_id: number; claude_mcp_token_expires_at: string | null };
-      if (row.claude_mcp_token_expires_at && Date.parse(row.claude_mcp_token_expires_at) < Date.now()) {
-        tokenError = "Token expired — run /mytoken in the bot to get a fresh one";
-      } else {
-        verifiedTelegramId = row.telegram_id;
-        // Отметка «Claude Desktop жив» для карточки интеграции (#921); ошибка записи запрос не роняет.
-        await markClientSeen(supabase, row.telegram_id, "mcp");
-      }
+    // Срок и отзыв — на КАЖДЫЙ вызов (token-state.ts): протухший или отозванный токен не годен.
+    const check = checkTokenRow((tokenRow as TokenRow | null) ?? null, Date.now());
+    if (check.ok) {
+      verifiedTelegramId = check.telegramId;
+      tokenHashHex = hashHex;
+      // Отметка «Claude Desktop жив» для карточки интеграции (#921); ошибка записи запрос не роняет.
+      await markClientSeen(supabase, check.telegramId, "mcp");
     } else {
-      tokenError = "Invalid token — run /mytoken in the bot to get a fresh one";
+      tokenError = check.error;
     }
   }
 
@@ -1031,8 +1039,11 @@ Deno.serve(async (req: Request) => {
   }
 
   if (method === "tools/list") {
+    // Токен есть, но протух или отозван: хендшейк жив, инструментов нет — отказ с причиной
+    // придёт на tools/call (рушить хендшейк нельзя, коннектор отвалился бы молча).
+    if (tokenError) return ok(id, { tools: [] });
     // Личность — из токена: схемы не должны просить агента передавать её самому (issue #502).
-    return ok(id, { tools: TOOLS.map((tool) => withAnnotations(withTokenIdentity(tool))) });
+    return ok(id, { tools: TOOLS.map((tool) => withAnnotations(withConfirmationArgument(withTokenIdentity(tool)))) });
   }
 
   if (method === "tools/call") {
@@ -1049,7 +1060,26 @@ Deno.serve(async (req: Request) => {
     if (!auth.ok) return err(id, auth.code, auth.message);
 
     // Поля личности в аргументах всегда перетираются значением из токена.
-    const args = withCallerIdentity((params?.arguments ?? {}) as Record<string, unknown>, auth.telegramId);
+    let args = withCallerIdentity((params?.arguments ?? {}) as Record<string, unknown>, auth.telegramId);
+
+    // Разрушающий инструмент — в два шага (confirm.ts): без токена подтверждения не исполняется.
+    const journal = (outcome: JournalOutcome) =>
+      recordToolCall(supabase, { telegramId: auth.telegramId, tool: name, outcome, tokenHash: tokenHashHex });
+    if (toolKind(name) === "destructive") {
+      const decision = await decideConfirmation({
+        secret: Deno.env.get(CONFIRM_SECRET_ENV),
+        telegramId: auth.telegramId,
+        tool: name,
+        args,
+        nowSec: Math.floor(Date.now() / 1000),
+      });
+      if (decision.action === "challenge") return ok(id, confirmationChallenge(name, args, decision.token));
+      if (decision.action === "refuse") {
+        await journal("refused");
+        return err(id, AUTH_ERROR_CODE, decision.message);
+      }
+      args = decision.args;
+    }
 
     try {
       let result = "";
@@ -1243,8 +1273,10 @@ Deno.serve(async (req: Request) => {
       }
 
       // Каждый ответ — в блок недоверенных данных: текст людей есть почти в любом (untrusted.ts).
+      await journal("ok");
       return ok(id, textContent(wrapUntrusted(name, result)));
     } catch (e) {
+      await journal("error");
       return err(id, -32603, e instanceof Error ? e.message : String(e));
     }
   }

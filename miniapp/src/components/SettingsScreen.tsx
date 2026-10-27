@@ -720,7 +720,7 @@ export function RecorderSection() {
 
 // ── Claude Desktop section ──────────────────────────────────────────────────────
 // Зеркало бот-команды /setup: минт MCP-токена (Claude Desktop) + однострочник установки.
-// Токен отдельный от рекордера, бессрочный.
+// Токен отдельный от рекордера, живёт 30 дней.
 
 export function ClaudeDesktopSection() {
   const confirm = useConfirm();
@@ -778,7 +778,7 @@ export function ClaudeDesktopSection() {
   return (
     <div className="space-y-3">
       <p className="text-sm text-muted-foreground">
-        Claude Desktop получает доступ к базе знаний, встречам и задачам — ищет и отвечает по делу прямо на твоём Mac. Токен отдельный от bumblebee, бессрочный.
+        Claude Desktop получает доступ к базе знаний, встречам и задачам — ищет и отвечает по делу прямо на твоём Mac. Токен отдельный от bumblebee, живёт 30 дней — потом выпусти новый здесь же.
       </p>
 
       {active && !oneLiner && <IntegrationStatusLine active lastSeenAt={lastSeenAt} staleDays={STALE_DAYS.claude} />}

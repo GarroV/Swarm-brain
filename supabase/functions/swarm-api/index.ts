@@ -900,7 +900,7 @@ async function routeRequest(req: Request): Promise<Response> {
   }
 
   // POST /mcp/token — минт/перевыпуск MCP-токена → { oneLiner } (команда установки Claude Desktop).
-  // Токен бессрочный; доступно всем участникам.
+  // Токен живёт 30 дней (mcpTokenExpiry); доступно всем участникам.
   if (req.method === "POST" && routePath === "/mcp/token") {
     if (isDemo) {
       // Демо целиком на английском (#605): основной текст EN, русский — в error_ru, как у соседних отказов.
