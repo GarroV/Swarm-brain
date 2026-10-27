@@ -204,7 +204,7 @@ async function fill(page, selector, value) {
     });
     await wait(1700);
     r.ok("правка тезисов на вычитке сохраняется", filled && saved === "ok" && (await bodyText(page)).includes(reviewNotes), saved);
-    r.ok("выбор хранилища у несогласованной встречи на месте", /В команду|В личное|Сохранить в базу/.test(await bodyText(page)));
+    r.ok("выбор хранилища у несогласованной встречи на месте", /В команду|В личное|Сохранить в базу|Опубликовать/.test(await bodyText(page)));
   }
 }
 

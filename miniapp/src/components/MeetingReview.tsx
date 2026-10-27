@@ -411,7 +411,9 @@ export function MeetingReview({ id, onClose, onChanged }: Props) {
                     className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap h-10 rounded-full border border-transparent bg-primary px-3.5 lg:h-[30px] font-semibold text-primary-foreground transition-transform active:scale-[0.96] disabled:opacity-60"
                     style={{ fontSize: 12.5 }}>
                     {publishing ? <Spinner /> : <RoyIcon name="check" size={14} strokeWidth={2.2} />}
-                    {publishing ? dt("Сохраняю…", "Saving…") : dt("Сохранить", "Save")}
+                    {/* Не «Сохранить»: так же подписана кнопка правки тезисов, и после правки владелец вторым
+                        «Сохранить» отправил встречу в базу (27.10.2026). */}
+                    {publishing ? dt("Публикую…", "Publishing…") : dt("Опубликовать", "Publish")}
                   </button>
                 </>
               )}
