@@ -1,4 +1,5 @@
 import Foundation
+import RecorderKit
 
 // Сигналы жизненного цикла загрузки для UI (виджет/уведомления). Постятся из актора,
 // слушаются на .main (AppDelegate) — без протаскивания не-Sendable замыканий в актор.
@@ -9,19 +10,31 @@ extension Notification.Name {
     static let swarmMeetingDone = Notification.Name("SwarmMeetingDone")
 }
 
-// Очередь дозагрузки + ЛОКАЛЬНЫЙ БЭКАП записей на диске. Решает потерю данных:
-// файлы после claim переносятся в ~/Library/Application Support/SwarmRecorder/pending/<meetingId>/
-// с JSON-сайдкаром. Жизненный цикл бэкапа:
-//   1. uploaded=false → грузим (ретраи с бэкоффом; постоянный сбой/лимит → dead-letter failed/).
-//   2. после успешного 202 — НЕ удаляем (202 ≠ «обработано»): ставим uploaded=true, файлы остаются
-//      бэкапом на случай сбоя серверной обработки.
-//   3. опрос статуса (meeting-status): когда встреча ОПУБЛИКОВАНА в базу (status='in_base') —
-//      запись уже у команды/в личном, аудио больше не нужно → удаляем папку. (summary_status='done'
-//      бэкап НЕ удаляет — лишь гасит капсулу «в обработке»: пока вычитка не опубликована, держим
-//      аудио как страховку, чтобы можно было перетранскрибировать/переобработать.)
-//   4. 3-суточный потолок: всё (и pending/, и failed/) старше 3 суток сметается (sweepExpired) —
-//      диск не растёт, а неопубликованная/застрявшая запись живёт достаточно, чтобы её заметить.
-// Дрейн — на старте, после каждой записи и периодически. meetingId переиспользуется (НЕ перезаклейм).
+// Очередь дозагрузки + ЛОКАЛЬНЫЙ БЭКАП записей на диске. Принцип (решение владельца 27.10.2026,
+// issue #1070): всё, что рекордер записал, не теряется — между потерей записи и лишними токенами
+// выбираем токены. Файлы после claim переносятся в
+// ~/Library/Application Support/SwarmRecorder/pending/<meetingId>/ с JSON-сайдкаром.
+// Жизненный цикл записи:
+//   1. uploaded=false → грузим (ретраи с бэкоффом).
+//   2. Успех (202) — НЕ удаляем (202 ≠ «обработано»): uploaded=true, файлы остаются бэкапом.
+//      Опрос статуса (meeting-status): встреча ОПУБЛИКОВАНА (status='in_base') → удаляем папку.
+//      (summary_status='done' лишь гасит капсулу «в обработке».)
+//   3. КАРАНТИН failed/<meetingId>/ (deferred=true + quarantineReason) — сюда ведут три пути:
+//      сервер отдал транскрибацию другому (deferred), постоянный сбой заливки 4xx (rejected),
+//      исчерпаны 12 попыток (exhausted). Раньше два последних уходили в тихий dead-letter без
+//      возможности дослать. Из карантина запись видна в «Дослать мою запись» и вручную, и:
+//      • БЭКАП НА СЕРВЕР — один раз на запись: тот же meeting-ingest с backup_only=1 (сервер не
+//        распознаёт и строку встречи не трогает, хранит 3 суток). Успех → backupUploaded=true;
+//        временный сбой — повтор на следующих дрейнах до BackupPolicy.maxBackupAttempts;
+//        постоянный 4xx — backupGaveUp, больше не пробуем. Локальная копия не удаляется.
+//      • АВТОДОСЫЛКА — не чаще раза в 20 минут повторная заявка (claim) по claimRetry. Право
+//        получено → папка возвращается в pending/ и заливается как обычно; отказ «published» или
+//        постоянный 4xx — больше не пробуем; иначе повтор через интервал.
+//   4. 3-суточный потолок: всё (и pending/, и failed/) старше 3 суток (от конца встречи) сметается
+//      (sweepExpired) — диск не растёт. Сервер держит свою копию бэкапа столько же.
+// Решения («слать ли бэкап», «пора ли перезаявляться», «постоянный ли сбой») — чистая логика в
+// RecorderKit/BackupPolicy. Дрейн — на старте, после каждой записи и периодически.
+// meetingId переиспользуется (НЕ перезаклейм), кроме автодосылки/«Дослать» — там заявка повторяется.
 //
 // Сайдкар (meta.json) описывает один pending-аплоад. systemSegments вместо одиночного path:
 // системная дорожка может быть из нескольких файлов после пересборок тапа (см. SystemAudioCapturer),
@@ -44,6 +57,16 @@ struct PendingUpload: Codable {
     // owner» — право-то у другого участника. Поэтому для отклонённых записей храним заявку и
     // ПЕРЕЗАЯВЛЯЕМСЯ: арбитраж по длительности отдаст нам право, если наша запись действительно полнее.
     var claimRetry: ClaimRetry?
+    // Почему запись в карантине (QuarantineReason.rawValue) — уходит на сервер полем `reason` бэкапа.
+    var quarantineReason: String?
+    // Бэкап на сервер (#1070): залит один раз; временные сбои считаем, постоянный — закрывает попытки.
+    var backupUploaded: Bool?
+    var backupId: String?
+    var backupAttempts: Int?
+    var backupGaveUp: Bool?
+    // Автодосылка: когда в последний раз подавали claim (epoch, сек) и «больше не пробовать».
+    var lastReclaimAt: Double?
+    var reclaimStopped: Bool?
 
     struct ClaimRetry: Codable {
         let identityKind: String        // calendar | room | manual
@@ -106,11 +129,14 @@ actor UploadQueue {
         micURL: URL?,
         micStartOffset: Double?,
         startISO: String,
-        endISO: String
+        endISO: String,
+        claimRetry: PendingUpload.ClaimRetry? = nil
     ) throws {
+        // claimRetry нужен на случай, если заливка сорвётся и запись уйдёт в карантин: без него
+        // автодосылка и «Дослать» не знают, с чем перезаявиться (#1070).
         try stage(into: meetingDir(meetingId), meetingId: meetingId, systemSegments: systemSegments,
                   micURL: micURL, micStartOffset: micStartOffset,
-                  startISO: startISO, endISO: endISO, deferred: false)
+                  startISO: startISO, endISO: endISO, deferred: false, claimRetry: claimRetry)
     }
 
     // ── Карантин отклонённой записи ───────────────────────────────────────────
@@ -133,7 +159,8 @@ actor UploadQueue {
         try stage(into: deadLetterDir.appendingPathComponent(meetingId, isDirectory: true),
                   meetingId: meetingId, systemSegments: systemSegments,
                   micURL: micURL, micStartOffset: micStartOffset,
-                  startISO: startISO, endISO: endISO, deferred: true, claimRetry: claimRetry)
+                  startISO: startISO, endISO: endISO, deferred: true, claimRetry: claimRetry,
+                  quarantineReason: .deferred)
     }
 
     // Перенос файлов записи в папку очереди + сайдкар. Общая часть enqueue/quarantineDeferred:
@@ -147,7 +174,8 @@ actor UploadQueue {
         startISO: String,
         endISO: String,
         deferred: Bool,
-        claimRetry: PendingUpload.ClaimRetry? = nil
+        claimRetry: PendingUpload.ClaimRetry? = nil,
+        quarantineReason: QuarantineReason? = nil
     ) throws {
         try fm.createDirectory(at: dir, withIntermediateDirectories: true)
 
@@ -181,14 +209,18 @@ actor UploadQueue {
             attempts: 0,
             uploaded: false,
             deferred: deferred ? true : nil,
-            claimRetry: claimRetry
+            claimRetry: claimRetry,
+            quarantineReason: quarantineReason?.rawValue,
+            // Заявку только что подавали (она и привела сюда) — следующая не раньше интервала.
+            lastReclaimAt: quarantineReason == nil ? nil : Date().timeIntervalSince1970
         )
         try writeMetaAt(dir: dir, pending)
     }
 
     // Сколько отклонённых записей лежит в карантине и ещё не истекло — для пункта меню
     // «Дослать мою запись». Считаем по сайдкару, а не по имени папки: в failed/ попадают и
-    // записи, исчерпавшие ретраи (у них deferred не выставлен).
+    // записи с постоянным сбоем заливки и исчерпавшие ретраи — они тоже получают deferred=true
+    // (moveToQuarantine), так что досылаются так же, как отклонённые (#1070).
     func deferredIds() -> [String] {
         guard let entries = try? fm.contentsOfDirectory(at: deadLetterDir, includingPropertiesForKeys: nil) else { return [] }
         return entries.compactMap { entry in
@@ -217,24 +249,14 @@ actor UploadQueue {
     func resendDeferred(_ meetingId: String, config: SwarmConfig) async -> ResendOutcome {
         let src = deadLetterDir.appendingPathComponent(meetingId, isDirectory: true)
         guard let data = try? Data(contentsOf: src.appendingPathComponent("meta.json")),
-              var pending = try? JSONDecoder().decode(PendingUpload.self, from: data) else {
+              let pending = try? JSONDecoder().decode(PendingUpload.self, from: data) else {
             return .failed("сайдкар записи не читается")
         }
 
         var targetId = meetingId
         if let retry = pending.claimRetry {
-            let req = ClaimRequest(
-                identityKind: IdentityKind(rawValue: retry.identityKind) ?? .manual,
-                identityKey: retry.identityKey,
-                title: retry.title,
-                startedAt: retry.startedAt,
-                endedAt: retry.endedAt,
-                agentVersion: "0.1.0",
-                micStartOffset: pending.micStartOffset,
-                recordedSeconds: retry.recordedSeconds
-            )
             do {
-                let claim = try await SwarmClient(config: config).claim(req)
+                let claim = try await SwarmClient(config: config).claim(Self.claimRequest(retry, pending))
                 guard claim.shouldTranscribe else { return .stillDeferred(claim.heldByName) }
                 targetId = claim.meetingId
             } catch {
@@ -242,20 +264,40 @@ actor UploadQueue {
             }
         }
 
+        do { try returnToPending(from: src, pending: pending, targetId: targetId) }
+        catch { return .failed("возврат из карантина не удался: \(error)") }
+        await drain(config: config)
+        return .sent
+    }
+
+    private static func claimRequest(_ retry: PendingUpload.ClaimRetry, _ pending: PendingUpload) -> ClaimRequest {
+        ClaimRequest(
+            identityKind: IdentityKind(rawValue: retry.identityKind) ?? .manual,
+            identityKey: retry.identityKey,
+            title: retry.title,
+            startedAt: retry.startedAt,
+            endedAt: retry.endedAt,
+            agentVersion: "0.1.0",
+            micStartOffset: pending.micStartOffset,
+            recordedSeconds: retry.recordedSeconds
+        )
+    }
+
+    // Карантин → pending/ после полученного права. Сервер мог вернуть другой meetingId (напр. строку
+    // пересоздали) — идём с актуальным, иначе ingest ушёл бы по мёртвому id. Флаги бэкапа
+    // переносим: залитый бэкап не повторяем, если запись снова окажется в карантине.
+    private func returnToPending(from src: URL, pending: PendingUpload, targetId: String) throws {
         let dst = meetingDir(targetId)
         try? fm.createDirectory(at: rootDir, withIntermediateDirectories: true)
         try? fm.removeItem(at: dst)
-        do { try fm.moveItem(at: src, to: dst) }
-        catch { return .failed("возврат из карантина не удался: \(error)") }
-        // Сервер мог вернуть другой meetingId (напр. строку пересоздали) — идём с актуальным,
-        // иначе ingest ушёл бы по мёртвому id.
-        pending = PendingUpload(
+        try fm.moveItem(at: src, to: dst)
+        var next = PendingUpload(
             meetingId: targetId, systemSegments: pending.systemSegments, micPath: pending.micPath,
             micStartOffset: pending.micStartOffset, startISO: pending.startISO, endISO: pending.endISO,
-            attempts: 0, uploaded: false, deferred: nil, claimRetry: nil)
-        try? writeMeta(pending)
-        await drain(config: config)
-        return .sent
+            attempts: 0, uploaded: false, deferred: nil, claimRetry: pending.claimRetry)
+        next.backupUploaded = pending.backupUploaded
+        next.backupId = pending.backupId
+        try? writeMeta(next)
     }
 
     // ── Дрейн ───────────────────────────────────────────────────────────────
@@ -269,6 +311,10 @@ actor UploadQueue {
         // (1) Потолок бэкапа: всё старше `backupTTLSec` (= 3 суток) в pending/ и failed/ сметаем.
         sweepExpired()
 
+        // (1б) Автодосылка отклонённых: повторная заявка раз в 20 минут. Выигранные записи
+        // вернутся в pending/ и уйдут в заливку ниже, в этом же дрейне.
+        await reclaimQuarantined(config: config)
+
         // (2) Грузим ещё не залитые; залитые собираем для опроса статуса.
         var uploadedIds: [String] = []
         for var pending in loadAll() {
@@ -278,7 +324,7 @@ actor UploadQueue {
             }
             // attempts уже исчерпаны → dead-letter (на случай, если запись осталась с прошлого раза).
             if pending.attempts >= Self.maxAttempts {
-                moveToDeadLetter(pending.meetingId)
+                moveToQuarantine(pending.meetingId, reason: .exhausted)
                 continue
             }
             do {
@@ -289,20 +335,24 @@ actor UploadQueue {
                 uploadedIds.append(pending.meetingId)
                 // UI: запись принята сервером → «встреча пошла в обработку» (только на переходе false→true).
                 NotificationCenter.default.post(name: .swarmMeetingUploaded, object: nil, userInfo: ["id": pending.meetingId])
-            } catch let SwarmError.http(code, _, _) where !(500...599).contains(code) && code != 429 {
-                // Постоянный сбой (401/403/413/404 и т.п.) — повторять бессмысленно → dead-letter.
-                NSLog("SwarmRecorder: upload \(pending.meetingId) постоянный сбой HTTP \(code) → dead-letter")
-                moveToDeadLetter(pending.meetingId)
+            } catch let SwarmError.http(code, _, _) where BackupPolicy.isPermanentUploadFailure(httpStatus: code) {
+                // Постоянный сбой (401/403/413/404 и т.п.) — повторять заливку бессмысленно → карантин:
+                // запись видна в «Дослать», уедет бэкапом на сервер и будет перезаявляться.
+                NSLog("SwarmRecorder: upload \(pending.meetingId) постоянный сбой HTTP \(code) → карантин")
+                moveToQuarantine(pending.meetingId, reason: .rejected)
             } catch {
                 // Транзиентный сбой — увеличиваем счётчик, оставляем в очереди до следующего дрейна.
                 pending.attempts += 1
                 try? writeMeta(pending)
                 NSLog("SwarmRecorder: upload \(pending.meetingId) попытка \(pending.attempts) не удалась: \(error)")
                 if pending.attempts >= Self.maxAttempts {
-                    moveToDeadLetter(pending.meetingId)
+                    moveToQuarantine(pending.meetingId, reason: .exhausted)
                 }
             }
         }
+
+        // (2б) Бэкап на сервер всего, что в карантине (один раз на запись).
+        await backupQuarantined(config: config)
 
         // (3) Опрос статуса залитых. Два независимых события:
         //   • summary='done' → транскрипт готов: гасим капсулу «в обработке» (один раз), бэкап НЕ трогаем.
@@ -353,10 +403,13 @@ actor UploadQueue {
         return 0
     }
 
-    // Один аплоад: сегментируем дорожки из pending-файлов и шлём ingest с переиспользованием
-    // meetingId (claim НЕ повторяем). withRetry внутри SwarmClient покрывает короткие всплески.
-    private func upload(_ pending: PendingUpload, config: SwarmConfig) async throws {
-        let dir = meetingDir(pending.meetingId)
+    // Нарезка дорожек записи из папки очереди на части для multipart и подчистка временных файлов
+    // нарезки после отправки (оригиналы остаются — их судьбу решает drain). Общая часть основной
+    // заливки и бэкапа.
+    private func withParts<T>(
+        _ pending: PendingUpload, dir: URL,
+        send: (_ system: [AudioPart], _ mic: [AudioPart]) async throws -> T
+    ) async throws -> T {
         let systemSegs: [(url: URL, offset: Double)] = pending.systemSegments.map {
             (url: dir.appendingPathComponent($0.path), offset: $0.offset)
         }
@@ -370,17 +423,124 @@ actor UploadQueue {
             // здесь его НЕ прибавляем — иначе сдвиг учтётся дважды.
             micParts = try await Segmenter.segment(micURL, allowEmpty: true)
         }
-
-        let client = SwarmClient(config: config)
-        _ = try await withRetry { try await client.uploadAudio(meetingID: pending.meetingId, system: sysParts, mic: micParts) }
-
-        // Промежуточные файлы нарезки (если Segmenter их создал) — чистим, оригиналы удалит drain.
-        for p in sysParts where !systemSegs.contains(where: { $0.url == p.url }) {
-            try? fm.removeItem(at: p.url)
+        // Промежуточные файлы нарезки (если Segmenter их создал) — чистим при любом исходе.
+        defer {
+            for p in sysParts where !systemSegs.contains(where: { $0.url == p.url }) {
+                try? fm.removeItem(at: p.url)
+            }
+            for p in micParts {
+                let micURL = pending.micPath.map { dir.appendingPathComponent($0) }
+                if p.url != micURL { try? fm.removeItem(at: p.url) }
+            }
         }
-        for p in micParts {
-            let micURL = pending.micPath.map { dir.appendingPathComponent($0) }
-            if p.url != micURL { try? fm.removeItem(at: p.url) }
+        return try await send(sysParts, micParts)
+    }
+
+    // Один аплоад: шлём ingest с переиспользованием meetingId (claim НЕ повторяем).
+    // withRetry внутри покрывает короткие всплески.
+    private func upload(_ pending: PendingUpload, config: SwarmConfig) async throws {
+        let client = SwarmClient(config: config)
+        _ = try await withParts(pending, dir: meetingDir(pending.meetingId)) { sys, mic in
+            try await withRetry { try await client.uploadAudio(meetingID: pending.meetingId, system: sys, mic: mic) }
+        }
+    }
+
+    // ── Карантин: автодосылка и бэкап на сервер (#1070) ──────────────────────
+    private func quarantineDir(_ meetingId: String) -> URL {
+        deadLetterDir.appendingPathComponent(meetingId, isDirectory: true)
+    }
+
+    // Записи карантина с читаемым сайдкаром.
+    private func loadQuarantined() -> [PendingUpload] {
+        guard let entries = try? fm.contentsOfDirectory(at: deadLetterDir, includingPropertiesForKeys: nil) else { return [] }
+        return entries.compactMap { entry in
+            guard let data = try? Data(contentsOf: entry.appendingPathComponent("meta.json")) else { return nil }
+            return try? JSONDecoder().decode(PendingUpload.self, from: data)
+        }
+    }
+
+    // Возраст записи от конца встречи (как в sweepExpired) — для потолка 3 суток.
+    private func ageSeconds(_ p: PendingUpload) -> TimeInterval {
+        guard let end = ISO8601DateFormatter().date(from: p.endISO) else { return 0 }
+        return Date().timeIntervalSince(end)
+    }
+
+    // Запись сайдкара карантина, только если папка ещё там: во время сетевого await её могли
+    // забрать («Дослать») или смести — иначе writeMetaAt воскресил бы папку с одним meta.json.
+    private func updateQuarantineMeta(_ p: PendingUpload) {
+        let dir = quarantineDir(p.meetingId)
+        guard fm.fileExists(atPath: dir.path) else { return }
+        try? writeMetaAt(dir: dir, p)
+    }
+
+    // Повторная заявка для отклонённых записей: сервер мог освободить право (владелец прервал
+    // запись, лиз истёк, наша запись оказалась полнее). Отказ токенов не стоит.
+    private func reclaimQuarantined(config: SwarmConfig) async {
+        for var p in loadQuarantined() {
+            let now = Date()
+            guard let retry = p.claimRetry,
+                  BackupPolicy.shouldReclaim(
+                    hasClaimRetry: true, stopped: p.reclaimStopped ?? false,
+                    lastAttemptAt: p.lastReclaimAt.map { Date(timeIntervalSince1970: $0) },
+                    ageSeconds: ageSeconds(p), now: now)
+            else { continue }
+            // Время попытки пишем ДО запроса: оборванный запрос не должен превращаться в долбёжку.
+            p.lastReclaimAt = now.timeIntervalSince1970
+            updateQuarantineMeta(p)
+
+            let verdict: BackupPolicy.ReclaimVerdict
+            do {
+                let claim = try await SwarmClient(config: config).claim(Self.claimRequest(retry, p))
+                verdict = BackupPolicy.afterReclaim(shouldTranscribe: claim.shouldTranscribe, deferReason: claim.deferReason)
+                if verdict == .takeOver {
+                    do {
+                        try returnToPending(from: quarantineDir(p.meetingId), pending: p, targetId: claim.meetingId)
+                        NSLog("SwarmRecorder: автодосылка \(p.meetingId) — право получено, запись вернулась в очередь")
+                    } catch {
+                        NSLog("SwarmRecorder: автодосылка \(p.meetingId) — возврат из карантина не удался: \(error)")
+                    }
+                    continue
+                }
+                NSLog("SwarmRecorder: автодосылка \(p.meetingId) — отказ (\(claim.deferReason ?? "?")), \(verdict == .stop ? "больше не пробуем" : "повтор через 20 мин")")
+            } catch {
+                verdict = BackupPolicy.afterReclaimError(BackupPolicy.classify(httpStatus: (error as? SwarmError)?.httpStatus))
+                NSLog("SwarmRecorder: автодосылка \(p.meetingId) — заявка не прошла (\(error))")
+            }
+            if verdict == .stop {
+                p.reclaimStopped = true
+                updateQuarantineMeta(p)
+            }
+        }
+    }
+
+    // Бэкап исходников на сервер: каждая запись карантина уезжает один раз (backup_only=1).
+    // Локальная копия остаётся — она живёт свои 3 суток.
+    private func backupQuarantined(config: SwarmConfig) async {
+        for var p in loadQuarantined() {
+            guard BackupPolicy.shouldUploadBackup(
+                backupUploaded: p.backupUploaded ?? false, gaveUp: p.backupGaveUp ?? false,
+                attempts: p.backupAttempts ?? 0, ageSeconds: ageSeconds(p))
+            else { continue }
+            let reason = p.quarantineReason.flatMap(QuarantineReason.init(rawValue:)) ?? .other
+            let client = SwarmClient(config: config)
+            do {
+                let resp = try await withParts(p, dir: quarantineDir(p.meetingId)) { sys, mic in
+                    try await client.uploadBackup(
+                        meetingID: p.meetingId, system: sys, mic: mic, reason: reason,
+                        micStartOffset: p.micStartOffset, recordedSeconds: p.claimRetry?.recordedSeconds)
+                }
+                p.backupUploaded = true
+                p.backupId = resp.backupId
+                updateQuarantineMeta(p)
+                NSLog("SwarmRecorder: бэкап \(p.meetingId) (\(reason.rawValue)) принят сервером, id \(resp.backupId ?? "?")")
+            } catch {
+                let failure = BackupPolicy.classify(httpStatus: (error as? SwarmError)?.httpStatus)
+                let next = BackupPolicy.afterBackupFailure(failure, attempts: p.backupAttempts ?? 0)
+                p.backupAttempts = next.attempts
+                p.backupGaveUp = next.gaveUp
+                updateQuarantineMeta(p)
+                NSLog("SwarmRecorder: бэкап \(p.meetingId) не принят (\(error)) — попытка \(next.attempts), \(next.gaveUp ? "больше не пробуем" : "повтор на следующем дрейне")")
+            }
         }
     }
 
@@ -417,13 +577,21 @@ actor UploadQueue {
         }
     }
 
-    private func moveToDeadLetter(_ meetingId: String) {
+    // Из pending/ в карантин failed/ с причиной: запись остаётся видна в «Дослать», уезжает бэкапом
+    // на сервер и перезаявляется (раньше — тихий dead-letter без флага и без возврата).
+    private func moveToQuarantine(_ meetingId: String, reason: QuarantineReason) {
         let src = meetingDir(meetingId)
         guard fm.fileExists(atPath: src.path) else { return }
+        if var p = (try? Data(contentsOf: metaURL(meetingId))).flatMap({ try? JSONDecoder().decode(PendingUpload.self, from: $0) }) {
+            p.deferred = true
+            p.quarantineReason = reason.rawValue
+            p.lastReclaimAt = Date().timeIntervalSince1970
+            try? writeMeta(p)
+        }
         try? fm.createDirectory(at: deadLetterDir, withIntermediateDirectories: true)
-        let dst = deadLetterDir.appendingPathComponent(meetingId, isDirectory: true)
+        let dst = quarantineDir(meetingId)
         try? fm.removeItem(at: dst)
         do { try fm.moveItem(at: src, to: dst) }
-        catch { NSLog("SwarmRecorder: dead-letter \(meetingId) не удался: \(error)") }
+        catch { NSLog("SwarmRecorder: карантин \(meetingId) не удался: \(error)") }
     }
 }
