@@ -1342,6 +1342,7 @@ Telegram Mini App-вход **отключён** (~2026-07-15, коммит `53bd
 - **R-10** ✅ PWA: manifest + SW (кэширует только статику) + SVG-иконка. SW написан вручную (не `@serwist`).
 
 ### 🟡 R-5 — выбран вариант B+ (httpOnly cookie + same-origin прокси). Код готов.
+> ⚠️ История. С 27.10.2026 вход в веб только через Google (`docs/decisions/2026-10-27-google-only-login.md`): `auth/telegram.ts`, `TELEGRAM_BOT_TOKEN` и `NEXT_PUBLIC_BOT_USERNAME` в Pages больше не используются, схема `tma` снята.
 `output:"export"` не поддерживает Next API routes/middleware → реализовано через **Cloudflare Pages Functions**:
 - `miniapp/functions/api/auth/telegram.ts` — проверка подписи Login Widget → JWT в httpOnly cookie.
 - `miniapp/functions/api/[[path]].ts` — прокси `/api/*` → swarm-api; cookie→`Bearer` server-side (httpOnly недоступен JS и не уходит cross-origin — отсюда прокси).
