@@ -649,7 +649,7 @@ Cron `daily_report_cron` (pg_cron `daily-report`, **06:00 UTC ежедневно
 Telegram Mini App-вход **отключён** (~2026-07-15, коммит `53bd3ae` — бот ведёт на PWA `swarm-brain.pages.dev`). Живой вход в веб-интерфейс — **только** Telegram Login Widget → JWT-cookie в браузере. Но следы остались:
 
 - **[СДЕЛАНО 2026-07-18] Доки почищены** от вранья «веб = Telegram Mini App» в канон-файлах: `README.md`, `docs/ARCHITECTURE.md`, `docs/QUICK_REF.md`, `docs/MINIAPP_ARCHITECTURE.md`, `docs/SETUP.md`. Терминология: три поверхности — **веб-интерфейс, Telegram-бот, MCP** (+ SwarmRecorder как источник встреч). Историч. планы `docs/superpowers/plans/*`, `transcribator/*`, `docs/CHANGELOG.md` — архив, НЕ трогаем. Папка `miniapp/` — историческое имя каталога, остаётся.
-- **[СДЕЛАНО 2026-10-27, ветка `fix/auth-hardening`] Спящий код удалён** (нужен передеплой `swarm-api` + смоук браузерного входа):
+- **[СДЕЛАНО 2026-10-27] Спящий код удалён** (нужен передеплой `swarm-api` + смоук браузерного входа):
   - `swarm-api/auth.ts` — `verifyInitData()`; приём `Authorization: tma <initData>` в `swarm-api/index.ts`.
   - `miniapp/src/lib/telegram.ts` — `getInitData`; зависимость `@twa-dev/sdk`; ветка `!getInitData()` в `miniapp/src/app/page.tsx`.
   - env `INITDATA_MAX_AGE`, происхождение `MINIAPP_ORIGIN` (пересмотреть: origin теперь `swarm-brain.pages.dev`, не `t.me`).

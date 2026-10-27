@@ -1934,7 +1934,7 @@ supabase/functions/swarm-api/
 
 **Аутентификация (способы входа в веб, все резолвятся в `telegram_id`; в `swarm-api` принимается только `Authorization: Bearer <JWT>`, любая другая схема — 401):**
 
-1. **Telegram Mini App — снят.** Вход как Mini App выключен ~2026-07-15 (коммит `53bd3ae`, бот ведёт на PWA); серверная ветка `tma <initData>` и клиентский код удалены (`fix/auth-hardening`, октябрь 2026) — такой заголовок получает 401, как любая неизвестная схема.
+1. **Telegram Mini App — снят.** Вход как Mini App выключен ~2026-07-15 (коммит `53bd3ae`, бот ведёт на PWA); серверная ветка `tma <initData>` и клиентский код удалены (27.10.2026) — такой заголовок получает 401, как любая неизвестная схема.
 2. **Браузер (веб, R-5 вариант B+)** — `Authorization: Bearer <JWT>` (HS256, `WEB_JWT_SECRET`)
    - JWT выдаёт CF Pages Function `/api/auth/telegram` после проверки подписи Login Widget, кладёт в httpOnly-cookie `roj_session` (**30 дней, скользящее окно** — см. ниже)
    - Прокси `/api/[[path]].ts` перекладывает cookie → `Bearer` при форварде в swarm-api (httpOnly недоступен JS и не уходит cross-origin)
