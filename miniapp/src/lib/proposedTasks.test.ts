@@ -152,3 +152,29 @@ Deno.test("несколько стран или только General — стр�
   assertEquals(meetingDefaultCountry(["General"]), null);
   assertEquals(meetingDefaultCountry(null), null);
 });
+
+// 27.10.2026: модель пишет имя кириллицей, а в команде оно латиницей — задача уходила
+// «вместо «Василий»» на разбирающего. Скелет имени сводит написания вместе.
+Deno.test("кириллическое имя находит латинское в команде", () => {
+  const team = [
+    { telegram_id: 1, name: "Vasiliy Garro", username: null },
+    { telegram_id: 2, name: "Aleksandra Mironova", username: null },
+    { telegram_id: 3, name: "Yulia Volkova", username: null },
+  ];
+  assertEquals(resolveAssigneeId("Василий", team), 1);
+  assertEquals(resolveAssigneeId("Александра", team), 2);
+  assertEquals(resolveAssigneeId("Alexandra Mironova", team), 2);
+  assertEquals(resolveAssigneeId("Юля", team), 3);
+  assertEquals(resolveAssigneeId("Юлия", team), 3);
+});
+
+Deno.test("скелет не склеивает разные имена и не угадывает уменьшительные", () => {
+  const team = [
+    { telegram_id: 1, name: "Vasiliy Garro", username: null },
+    { telegram_id: 2, name: "Aleksandra Mironova", username: null },
+    { telegram_id: 4, name: "Aleksandr Petrov", username: null },
+  ];
+  assertEquals(resolveAssigneeId("Саша", team), null);
+  assertEquals(resolveAssigneeId("Анна", team), null);
+  assertEquals(resolveAssigneeId("Александр", team), 4);
+});

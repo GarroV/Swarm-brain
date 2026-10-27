@@ -79,6 +79,25 @@ function onlyOne(matches: AssigneeCandidate[]): number | null {
  * любому слову имени («Мария» → «Мария Иванова»). Неоднозначность («Пётр» при двух Петрах)
  * трактуется как промах: лучше «Не назначен», чем задача не на том человеке.
  */
+const CYR_TO_LAT: Record<string, string> = {
+  а: "a", б: "b", в: "v", г: "g", д: "d", е: "e", ж: "zh", з: "z", и: "i", й: "i", к: "k", л: "l",
+  м: "m", н: "n", о: "o", п: "p", р: "r", с: "s", т: "t", у: "u", ф: "f", х: "h", ц: "ts", ч: "ch",
+  ш: "sh", щ: "sch", ъ: "", ы: "y", ь: "", э: "e", ю: "iu", я: "ia",
+};
+
+/**
+ * Скелет имени, одинаковый у кириллицы и латиницы: модель пишет «Василий», а в команде
+ * «Vasiliy Garro» — без скелета задача уходила «вместо «Василий»» (владелец 27.10.2026). Разные
+ * латинские написания сводятся вместе: Vasiliy/Vasilii, Aleksandra/Alexandra, Yulia/Julia/Юля.
+ * Уменьшительные («Саша») не угадываются — это уже не написание, а другое имя.
+ */
+export function nameSkeleton(value: string): string {
+  const lat = norm(value).split("").map((ch) => CYR_TO_LAT[ch] ?? ch).join("");
+  return lat
+    .replace(/kh/g, "h").replace(/x/g, "ks").replace(/w/g, "v").replace(/[yj]/g, "i")
+    .replace(/(.)\1+/g, "$1");
+}
+
 export function resolveAssigneeId(
   assignee: string | null | undefined,
   users: readonly AssigneeCandidate[],
@@ -89,6 +108,9 @@ export function resolveAssigneeId(
 
   const byFullName = users.filter((u) => norm(u.name ?? "") === n);
   if (byFullName.length > 0) return onlyOne(byFullName);
+  const sk = nameSkeleton(needle);
+  const bySkeleton = users.filter((u) => nameSkeleton(u.name ?? "") === sk);
+  if (bySkeleton.length > 0) return onlyOne(bySkeleton);
 
   const handle = n.replace(/^@/, "");
   const byUsername = users.filter((u) => u.username && norm(u.username) === handle);
@@ -98,7 +120,8 @@ export function resolveAssigneeId(
   // а разбивать многословный ввод на слова — путь к ложным совпадениям по фамилии-омониму.
   if (n.includes(" ")) return null;
   const byToken = users.filter((u) => norm(u.name ?? "").split(" ").includes(n));
-  return onlyOne(byToken);
+  if (byToken.length > 0) return onlyOne(byToken);
+  return onlyOne(users.filter((u) => nameSkeleton(u.name ?? "").split(" ").includes(sk)));
 }
 
 /**

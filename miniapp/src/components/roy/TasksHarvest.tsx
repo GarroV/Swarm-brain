@@ -5,6 +5,7 @@ import { RoyIcon } from "./icons";
 import { countryCode, countryFlag } from "@/lib/countries";
 import { effectiveAssigneeId, resolveAssigneeId, taskCountLabel, type ProposedTask } from "@/lib/proposedTasks";
 import type { User } from "@/types";
+import type { CreateTaskInput } from "@/lib/api";
 import { formatDate } from "@/lib/displayFormat";
 
 // Разбор задач, предложенных из встречи, — прямо во вкладке «Задачи», под кнопкой
@@ -14,7 +15,9 @@ import { formatDate } from "@/lib/displayFormat";
 // экрана и анимаций больше нет. Каждая задача по-прежнему видна целиком, согласие — одной
 // кнопкой на выбранные.
 
-export type DraftTask = ProposedTask & { _key: string; _selected: boolean };
+// _fields — всё, что человек выставил в окне правки (исполнитель, пинг, списки…): строка остаётся
+// черновиком и уходит в систему только общей кнопкой «Добавить N задач».
+export type DraftTask = ProposedTask & { _key: string; _selected: boolean; _fields?: CreateTaskInput };
 
 function fmtDate(iso: string | null): string | null {
   return formatDate(iso, { day: "numeric", month: "short" });
@@ -123,6 +126,12 @@ export function TasksHarvest({ tasks, users, meId, busy, streaming, actions }: P
   );
 }
 
+/** Будущий исполнитель строки: выбранный в окне правки, иначе — как раньше, по имени из тезисов. */
+export function draftAssigneeId(task: DraftTask, users: User[], meId: number | null): number | null {
+  if (task._fields) return task._fields.assignee_telegram_id ?? null;
+  return effectiveAssigneeId(task.assignee, users, meId);
+}
+
 // ── Строка разбора ────────────────────────────────────────────────────────────
 
 type RowProps = {
@@ -140,11 +149,11 @@ function HarvestRow({ task, users, meId, busy, editing, onStartEdit, onStopEdit,
   const dt = useDt();
   // Тот же расчёт, что и при публикации: строка обязана показывать РЕАЛЬНОГО будущего
   // исполнителя, иначе человек соглашается не на то, что уедет в базу.
-  const assigneeId = effectiveAssigneeId(task.assignee, users, meId);
+  const assigneeId = draftAssigneeId(task, users, meId);
   // Имя в тезисах было, но такого человека в команде нет (или их двое) → по решению владельца
   // задача уходит на разбирающего. Исходное имя всё равно показываем: подмена ответственного
   // молча — это то же враньё интерфейса, от которого чинили пропажу задач.
-  const fellBackToMe = Boolean(task.assignee?.trim()) && resolveAssigneeId(task.assignee, users) == null;
+  const fellBackToMe = !task._fields && Boolean(task.assignee?.trim()) && resolveAssigneeId(task.assignee, users) == null;
   const matched = assigneeId ? users.find((u) => u.telegram_id === assigneeId) : undefined;
   const due = fmtDate(task.due_date);
 
@@ -247,6 +256,8 @@ function HarvestRow({ task, users, meId, busy, editing, onStartEdit, onStopEdit,
                       {matched.name} <span className="text-[var(--pri-high)]">·&nbsp;{dt(`вместо «${task.assignee}»`, `instead of “${task.assignee}”`)}</span>
                     </span>
                   : matched.name
+                : task._fields?.assignee_person_id
+                  ? dt("Исполнитель выбран в правке", "Assignee set in the editor")
                 : task.assignee
                   // Ни в команде, ни на кого перевесить (личность разбирающего неизвестна).
                   ? <span title={dt("Не найден в команде — задача создастся без исполнителя", "Not found in the team — the task will be created unassigned")}>
