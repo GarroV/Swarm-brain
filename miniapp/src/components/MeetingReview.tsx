@@ -60,6 +60,8 @@ function fmtDay(iso: string | null, locale: string): string {
   return isNaN(d.getTime()) ? "" : d.toLocaleDateString(locale, { day: "numeric", month: "short" });
 }
 
+const PUBLISH_LOCK_AFTER_EDIT_MS = 1500;
+
 export function MeetingReview({ id, onClose, onChanged }: Props) {
   const dt = useDt();
   const lang = useLang();
@@ -74,6 +76,10 @@ export function MeetingReview({ id, onClose, onChanged }: Props) {
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [publishing, setPublishing] = useState(false);
+  // После сохранения правки редактор закрывается, вёрстка прыгает, и на место нижней «Сохранить»
+  // встаёт кнопка публикации — второй клик уходил в неё (27.10.2026: владелец сохранил правку,
+  // через секунду встреча опубликовалась). Пока блок держится, публикация не нажимается.
+  const [publishLocked, setPublishLocked] = useState(false);
   const [reprocessing, setReprocessing] = useState(false);
   const [base, setBase] = useState<"workspace" | "personal">("workspace");
   const [view, setView] = useState<"tez" | "tasks" | "notes" | "tr">("tez");
@@ -138,6 +144,8 @@ export function MeetingReview({ id, onClose, onChanged }: Props) {
     try {
       const m = await patchAgentMeetingDraft(id, draft);
       setMeeting(m);
+      setPublishLocked(true);
+      setTimeout(() => setPublishLocked(false), PUBLISH_LOCK_AFTER_EDIT_MS);
       setEditing(false);
       onChanged?.();
     } finally { setSaving(false); }
@@ -152,6 +160,7 @@ export function MeetingReview({ id, onClose, onChanged }: Props) {
   };
 
   const handlePublish = async () => {
+    if (publishLocked) return;
     setPublishing(true);
     try {
       // Черновик нескольких владельцев — только в общую базу (сервер иначе ответит 409).
@@ -407,7 +416,7 @@ export function MeetingReview({ id, onClose, onChanged }: Props) {
                   ) : (
                     <BasePill value={base} onChange={setBase} />
                   )}
-                  <button type="button" onClick={handlePublish} disabled={publishing} aria-busy={publishing}
+                  <button type="button" onClick={handlePublish} disabled={publishing || publishLocked} aria-busy={publishing}
                     className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap h-10 rounded-full border border-transparent bg-primary px-3.5 lg:h-[30px] font-semibold text-primary-foreground transition-transform active:scale-[0.96] disabled:opacity-60"
                     style={{ fontSize: 12.5 }}>
                     {publishing ? <Spinner /> : <RoyIcon name="check" size={14} strokeWidth={2.2} />}
