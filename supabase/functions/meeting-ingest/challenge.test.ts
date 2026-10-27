@@ -151,3 +151,18 @@ Deno.test("поправки нет: не держатель, не измерен
   assertEquals(holderSecondsCorrection(own, HOLDER, ["agent:scriba-1"], 3600), null);
   assertEquals(holderSecondsCorrection({ ...own, agent_last_seen_at: at(3) }, HOLDER, null, 3600), null);
 });
+
+// ── Пустой держатель (#1070 п.3): ingest сходится с claim ────────────────────────
+
+Deno.test("ЯДРО #1070: претендент с короткой выгрузкой занимает встречу, где держатель пуст (бот не прошёл дверь)", () => {
+  // Лиз бота ещё действует, секунд и стенограммы нет, не пишет: прежде короче 5 минут — отказ.
+  const emptyBot = row({ recorded_seconds: 0, transcript: null, summary_status: null, lease_expires_at: at(-20) });
+  assertEquals(decideChallenge(emptyBot, 90, TAKER, NOW), { kind: "takeover", seconds: 90 });
+  // Измерить не удалось — по-прежнему отказ: занять встречу нечем.
+  assertEquals(decideChallenge(emptyBot, null, TAKER, NOW).kind, "refuse");
+});
+
+Deno.test("#1070: держатель с секундами и без стенограммы защищён порогом, как раньше", () => {
+  const held = row({ recorded_seconds: 60, transcript: null, summary_status: null, lease_expires_at: at(-20) });
+  assertEquals(decideChallenge(held, 200, TAKER, NOW).kind, "refuse");
+});

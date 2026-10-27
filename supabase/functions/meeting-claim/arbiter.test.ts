@@ -231,3 +231,58 @@ Deno.test("ЯДРО: бот поверх записи — только когд�
   assertEquals(botJoinsOverShort({ ...shortClipRow(), status: "in_base" }, true, 0, NOW), false, "опубликовано");
   assertEquals(botJoinsOverShort(liveBotRow(60), true, 0, NOW), false, "встречу уже пишет бот");
 });
+
+// ── Пустой держатель не держит встречу (#1070 п.3) ──────────────────────────────
+
+/** Бот заявился, его не пустили в звонок: лиз ещё действует, секунд и стенограммы нет, не пишет. */
+function emptyHolderRow(over: Partial<HeldRow> = {}): HeldRow {
+  return {
+    claim_owner: BOT_OWNER,
+    recorded_seconds: 0,
+    transcript: null,
+    notes_edited_at: null,
+    status: null,
+    lease_expires_at: "2026-09-28T12:28:00.000Z",
+    agent_last_recording: false,
+    summary_status: null,
+    ...over,
+  };
+}
+
+Deno.test("ЯДРО #1070: держатель без секунд и стенограммы не держит встречу — короткая запись ДРУГОГО занимает её (takeover)", () => {
+  // Прод 27.10: бот не прошёл дверь (guest_access_closed), 0 секунд — и запись короче 5 минут
+  // получала defer по порогу TAKEOVER_MIN_EXTRA_SEC.
+  assertEquals(decideHeld(emptyHolderRow(), 120, OTHER, NOW), "takeover");
+  assertEquals(decideHeld(emptyHolderRow(), 1, OTHER, NOW), "takeover");
+});
+
+Deno.test("ЯДРО #1070: пустой держатель и запись ТОГО ЖЕ человека — refresh", () => {
+  assertEquals(decideHeld(emptyHolderRow(), 120, BOT_OWNER, NOW), "refresh");
+  // Секунды в строке не заданы вовсе (null) — то же самое.
+  assertEquals(decideHeld(emptyHolderRow({ recorded_seconds: null }), 120, OTHER, NOW), "takeover");
+});
+
+Deno.test("ЯДРО #1070: заявка без секунд не занимает пустую встречу — сравнивать нечего", () => {
+  assertEquals(decideHeld(emptyHolderRow(), 0, OTHER, NOW), "defer");
+  assertEquals(deferReasonOf(emptyHolderRow(), 0, NOW), "unknown");
+});
+
+Deno.test("ЯДРО #1070: «пустота» не распространяется на живого или заморозившего держателя", () => {
+  // Бот пишет прямо сейчас (секунды ещё не набежали) — D020 в силе.
+  const writing = emptyHolderRow({ agent_last_recording: true });
+  assertEquals(decideHeld(writing, 120, OTHER, NOW), "defer");
+  assertEquals(decideHeld(writing, 120, BOT_OWNER, NOW), "reserve");
+  // Правленая и опубликованная встречи не трогаются, даже пустые.
+  assertEquals(decideHeld(emptyHolderRow({ notes_edited_at: NOW }), 120, OTHER, NOW), "defer");
+  assertEquals(decideHeld(emptyHolderRow({ status: "in_base" }), 120, OTHER, NOW), "defer");
+  // Запись держателя обрабатывается или обработана — у него есть версия, пусть секунд в строке и нет.
+  assertEquals(decideHeld(emptyHolderRow({ summary_status: "processing" }), 120, OTHER, NOW), "defer");
+  assertEquals(decideHeld(emptyHolderRow({ summary_status: "done" }), 120, OTHER, NOW), "defer");
+  // Есть стенограмма (старая строка без recorded_seconds) — держатель не пуст.
+  const withTranscript = emptyHolderRow({ recorded_seconds: null, transcript: { segments: [{ end: 90 }] } });
+  assertEquals(decideHeld(withTranscript, 120, OTHER, NOW), "defer");
+});
+
+Deno.test("держатель с секундами по-прежнему защищён порогом 5 минут", () => {
+  assertEquals(decideHeld(emptyHolderRow({ recorded_seconds: 60 }), 200, OTHER, NOW), "defer");
+});

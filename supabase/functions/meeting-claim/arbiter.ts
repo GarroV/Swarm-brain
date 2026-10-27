@@ -33,6 +33,8 @@ export interface HeldRow {
   status: string | null;
   lease_expires_at: string | null;
   agent_last_recording: boolean | null;
+  /** Нужен только правилу «пустой держатель»; у строки без колонки — как «обработки не было». */
+  summary_status?: string | null;
 }
 
 /**
@@ -78,11 +80,25 @@ function isSubstantiallyLonger(candidate: number, held: number): boolean {
   return candidate >= held * TAKEOVER_MIN_RATIO && candidate >= held + TAKEOVER_MIN_EXTRA_SEC;
 }
 
+/**
+ * Держатель без ничего (#1070): ни секунд, ни стенограммы, запись не обрабатывается и не обработана.
+ * Так выглядит бот, которого не пустили в звонок (`guest_access_closed`) или который умер до первого
+ * удара: заявился, взял лиз, записи нет. Такой держатель встречу не держит — пороги «заметно
+ * полнее» защищают чужой результат, а результата тут нет.
+ */
+export function isEmptyHolder(row: Pick<HeldRow, "recorded_seconds" | "transcript" | "summary_status">): boolean {
+  if (heldSeconds(row) > 0) return false;
+  if (row.summary_status === "processing" || row.summary_status === "done") return false;
+  return (row.transcript?.segments ?? []).length === 0;
+}
+
 export function decideHeld(row: HeldRow, candidate: number, ownerId: number, nowIso: string): HeldDecision {
   // Правленное человеком или опубликованное команде не трогает никто.
   if (isFrozen(row)) return "defer";
   const sameOwner = row.claim_owner === ownerId;
   if (botStillRecording(row, nowIso)) return sameOwner ? "reserve" : "defer";
+  // Пустой держатель уступает любой записи с секундами; сравнение с ним — пороги не нужны.
+  if (candidate > 0 && isEmptyHolder(row)) return sameOwner ? "refresh" : "takeover";
   if (!(candidate > 0 && isSubstantiallyLonger(candidate, heldSeconds(row)))) return "defer";
   return sameOwner ? "refresh" : "takeover";
 }
@@ -104,7 +120,10 @@ export function decideHeld(row: HeldRow, candidate: number, ownerId: number, now
  */
 export type DeferReason = "published" | "recording" | "shorter" | "similar" | "race" | "unknown";
 
-/** Причина отказа для решения `defer` из decideHeld — в том же порядке проверок. */
+/**
+ * Причина отказа для решения `defer` из decideHeld — в том же порядке проверок. Пустой держатель
+ * до сюда не доходит при candidate > 0 (там takeover/refresh); при candidate <= 0 — `unknown`.
+ */
 export function deferReasonOf(row: HeldRow, candidate: number, nowIso: string): DeferReason {
   if (isFrozen(row)) return "published";
   if (botStillRecording(row, nowIso)) return "recording";
