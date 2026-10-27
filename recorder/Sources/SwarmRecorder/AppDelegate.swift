@@ -1962,7 +1962,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 try await UploadQueue.shared.enqueue(
                     meetingId: claim.meetingId, systemSegments: segs, micURL: nil,
                     micStartOffset: nil, startISO: req.startedAt ?? meta.startISO,
-                    endISO: req.endedAt ?? iso.string(from: Date()))
+                    endISO: req.endedAt ?? iso.string(from: Date()),
+                    // Данные для перезаявки, если заливка сорвётся и запись уйдёт в карантин (#1070).
+                    claimRetry: PendingUpload.ClaimRetry(
+                        identityKind: req.identityKind.rawValue, identityKey: req.identityKey,
+                        title: req.title, startedAt: req.startedAt, endedAt: req.endedAt,
+                        recordedSeconds: nil))
                 await UploadQueue.shared.drain(config: cfg)
                 await MainActor.run { self.notifyRecovered() }
                 try? FileManager.default.removeItem(at: dir)   // enqueue перенёс файлы → папка не нужна
@@ -2105,6 +2110,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // Переехали ли файлы в очередь (pending/ или карантин failed/). Пока false — durable-папку
         // записи трогать нельзя: в ней лежит единственная копия аудио.
         var staged = true
+        // С чем перезаявляться на встречу, если запись уйдёт в карантин: отклонённая сервером или
+        // сорвавшаяся при заливке (4xx/исчерпанные попытки) — «Дослать» и автодосылка (#1070).
+        let claimRetry = PendingUpload.ClaimRetry(
+            identityKind: req.identityKind.rawValue,
+            identityKey: req.identityKey,
+            title: req.title,
+            startedAt: req.startedAt,
+            endedAt: req.endedAt,
+            recordedSeconds: recordedSeconds)
         do {
             // Claim (с ретраем). meetingId переиспользуется очередью при дозагрузке.
             let claim = try await withRetry { try await client.claim(req) }
@@ -2117,7 +2131,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                     micURL: p.res.mic,
                     micStartOffset: p.res.micStartOffset,
                     startISO: iso.string(from: p.started),
-                    endISO: iso.string(from: p.ended)
+                    endISO: iso.string(from: p.ended),
+                    claimRetry: claimRetry
                 )
                 // Принято в очередь → пойдёт в обработку. setState(.idle) ниже покажет капсулу
                 // «в обработке» (processingIds непуст); 202 из дрейна добавит уведомление.
@@ -2141,13 +2156,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                         micStartOffset: p.res.micStartOffset,
                         startISO: iso.string(from: p.started),
                         endISO: iso.string(from: p.ended),
-                        claimRetry: PendingUpload.ClaimRetry(
-                            identityKind: req.identityKind.rawValue,
-                            identityKey: req.identityKey,
-                            title: req.title,
-                            startedAt: req.startedAt,
-                            endedAt: req.endedAt,
-                            recordedSeconds: recordedSeconds)
+                        claimRetry: claimRetry
                     )
                     await MainActor.run {
                         self.notifyDeferred(holder: claim.heldByName, seconds: recordedSeconds,
