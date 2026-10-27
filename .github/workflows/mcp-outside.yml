@@ -1,0 +1,96 @@
+# Сторож «MCP снаружи» (#1082, по образцу GarroV/decimus mcp-outside.yml).
+#
+# Живёт в Actions, а не на площадке: проверка на площадке молчит ровно тогда, когда площадка
+# уснула или отвалилась от сети — то есть в единственном случае, ради которого сторож и нужен.
+# Проверяет путь снаружи без токена и без секретов (подробности ожиданий — scripts/mcp-outside.sh):
+# рукопожатие MCP отвечает, дверь на данные заперта, swarm-setup отдаёт установщик, а отпечаток
+# моста из /version совпадает с телом /bridge (иначе само-обновление моста у людей отвергает новую версию).
+#
+# Красный прогон сам никого не будит, поэтому вердикт доставляется задачей: провал открывает её,
+# возврат в зелёный закрывает. Задача уведомляет участников репозитория штатно, без секретов.
+#
+# Расход: репозиторий публичный, минуты Actions бесплатны; прогон — секунды.
+name: MCP снаружи
+
+on:
+  schedule:
+    - cron: "*/30 * * * *"
+  workflow_dispatch:
+    inputs:
+      porcha:
+        description: "Проверить самого сторожа: подменить адрес заведомо мёртвым и убедиться, что сигнал дошёл"
+        type: boolean
+        default: false
+
+# Наименьшие права по умолчанию: прогон читает репозиторий и больше ничего. Писать задачи
+# может только джоба `notify`, где нет ни checkout, ни чужого кода.
+permissions:
+  contents: read
+
+env:
+  # Заголовок — он же ключ поиска: задача у сторожа одна, вторую он не плодит.
+  ISSUE_TITLE: "MCP снаружи недоступен"
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Проверить дверь и установщик
+        env:
+          # Корень функций: переменная репозитория MCP_PUBLIC_URL, а без неё — публичный адрес API,
+          # уже стоящий в соседних воркфлоу. При проверке на порче подменяется заведомо мёртвым:
+          # так видно, что сторож умеет краснеть И что сигнал доходит, а не только что шаг отработал.
+          MCP_FUNCTIONS_URL: ${{ inputs.porcha && 'https://127.0.0.1:9' || vars.MCP_PUBLIC_URL || 'https://api.swarm-team.app/functions/v1' }}
+        run: ./scripts/mcp-outside.sh
+
+  # Задачи пишет отдельная джоба: результат пробы приходит через `needs`.
+  notify:
+    needs: check
+    if: always() && (needs.check.result == 'success' || needs.check.result == 'failure')
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - name: Открыть задачу, если путь оборван
+        if: needs.check.result == 'failure'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          # Без checkout нет git-каталога, по которому gh узнал бы репозиторий.
+          GH_REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          issue_no=$(gh issue list --state open --search "\"$ISSUE_TITLE\" in:title" --json number -q '.[0].number')
+          if [ -n "$issue_no" ]; then
+            gh issue comment "$issue_no" --body "Путь всё ещё оборван: $RUN_URL"
+            exit 0
+          fi
+          cat > /tmp/body.md <<BODY
+          Сторож не достучался до Swarm MCP снаружи. Прогон: $RUN_URL
+
+          Что именно не так — в логе шага «Проверить дверь и установщик». Сервер при этом
+          может быть здоров: сторож проверяет путь целиком (рукопожатие MCP, заперта ли дверь
+          на данные, отдаёт ли swarm-setup установщик и мост с совпадающим отпечатком).
+
+          Задача закроется сама, когда сторож снова станет зелёным.
+          BODY
+          gh issue create --title "$ISSUE_TITLE" --body-file /tmp/body.md
+
+      - name: Закрыть задачу, когда путь вернулся
+        if: needs.check.result == 'success'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          issue_no=$(gh issue list --state open --search "\"$ISSUE_TITLE\" in:title" --json number -q '.[0].number')
+          if [ -n "$issue_no" ]; then
+            gh issue close "$issue_no" --comment "Путь снаружи восстановлен, сторож зелёный."
+          fi

@@ -1,9 +1,10 @@
 import { assertEquals, assertStringIncludes } from "jsr:@std/assert@1";
-import { BRIDGE_SCRIPT, MERGE_FUNCTION, SETUP_SCRIPT } from "./script.ts";
+import { BRIDGE_SCRIPT, BRIDGE_VERSION, MERGE_FUNCTION, SETUP_SCRIPT, sha256Hex } from "./mcp-setup-script.ts";
+import { buildSetupOneLiner } from "./mcp-token.ts";
 
 // Тесты установщика Claude Desktop. Скрипт правит ЧУЖОЙ файл конфигурации пользователя, где уже
 // могут жить другие MCP-серверы, и рапортует об успехе — здесь закрыты три класса:
-//   1) мёрж — прогоняется НАСТОЯЩАЯ функция merge_config из script.ts (импортом, не копией:
+//   1) мёрж — прогоняется НАСТОЯЩАЯ функция merge_config из mcp-setup-script.ts (импортом, не копией:
 //      копия разошлась бы с оригиналом и тест бы врал);
 //   2) состав проверок — чтобы пробу токена нельзя было тихо удалить (issue #47: без неё
 //      установщик печатал «✅ Готово», а в Claude было «Server disconnected»);
@@ -263,4 +264,213 @@ Deno.test("мост: 200 без JSON-RPC в теле — error, а не мусо
 Deno.test("мост: уведомление (без id) остаётся молчаливым даже при сбое", async () => {
   const { out } = await runBridge(CLOUD_402, '{"jsonrpc":"2.0","method":"notifications/initialized"}\n');
   assertEquals(out, "");
+});
+
+// --- Мост: 401 (#1082) ---
+
+Deno.test("мост: HTTP 401 — error с тем же id и текстом «выпусти новый токен в Настройках»", async () => {
+  const { out } = await runBridge(() => new Response('{"message":"bad"}', { status: 401 }), REQ7);
+  const msg = JSON.parse(out.trim());
+  assertEquals(msg.id, 7);
+  assertStringIncludes(msg.error.message, "HTTP 401");
+  assertStringIncludes(msg.error.message, "issue a new one in Settings");
+  assertStringIncludes(msg.error.message, "выпусти новый в Настройках");
+});
+
+// --- Само-обновление моста (#1082, #951) ---
+// Живой прогон настоящего моста против фейкового swarm-setup: версия новее — файл подменяется
+// через mv (новый inode), отпечаток не сошёлся или версия не новее — файл не тронут.
+
+const NEWER_BRIDGE = BRIDGE_SCRIPT.replace(`BRIDGE_VERSION=${BRIDGE_VERSION}`, `BRIDGE_VERSION=${BRIDGE_VERSION + 1}`);
+
+async function runUpdate(
+  info: { version: number; sha256: string } | null,
+  body: string,
+): Promise<{ changed: boolean; text: string; inodeChanged: boolean; leftovers: string[] }> {
+  const dir = await Deno.makeTempDir();
+  const bridgePath = `${dir}/bridge.sh`;
+  await Deno.writeTextFile(bridgePath, BRIDGE_SCRIPT);
+  const inodeBefore = (await Deno.stat(bridgePath)).ino;
+  const server = Deno.serve({ port: 0, onListen() {}, hostname: "127.0.0.1" }, (req) => {
+    const path = new URL(req.url).pathname;
+    if (path.endsWith("/swarm-setup/version") && info) return new Response(JSON.stringify(info));
+    if (path.endsWith("/swarm-setup/bridge")) return new Response(body);
+    return new Response("{}", { status: 404 });
+  });
+  const port = (server.addr as Deno.NetAddr).port;
+  try {
+    const child = new Deno.Command("bash", {
+      args: [bridgePath],
+      env: { SWARM_MCP_URL: `http://127.0.0.1:${port}/swarm-mcp`, SWARM_MCP_AUTH: "Bearer t" },
+      stdin: "null",
+      stdout: "null",
+      stderr: "null",
+    }).output();
+    await child; // stdin закрыт — мост выходит, а обновление идёт в фоне: ждём его немного
+    let text = BRIDGE_SCRIPT;
+    for (let i = 0; i < 15; i++) {
+      text = await Deno.readTextFile(bridgePath);
+      if (text !== BRIDGE_SCRIPT) break;
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    const leftovers = [];
+    for await (const e of Deno.readDir(dir)) if (e.name.startsWith(".bridge-update")) leftovers.push(e.name);
+    return {
+      changed: text !== BRIDGE_SCRIPT,
+      text,
+      inodeChanged: (await Deno.stat(bridgePath)).ino !== inodeBefore,
+      leftovers,
+    };
+  } finally {
+    await server.shutdown();
+    await Deno.remove(dir, { recursive: true });
+  }
+}
+
+Deno.test("самообновление: версия новее и отпечаток сошёлся — файл подменён через mv (новый inode)", async () => {
+  const sha = await sha256Hex(NEWER_BRIDGE);
+  const r = await runUpdate({ version: BRIDGE_VERSION + 1, sha256: sha }, NEWER_BRIDGE);
+  assertEquals(r.changed, true);
+  assertEquals(r.text, NEWER_BRIDGE);
+  assertEquals(r.inodeChanged, true);
+  assertEquals(r.leftovers, []);
+});
+
+Deno.test("самообновление: отпечаток НЕ сошёлся — мост остаётся прежним, временный файл убран", async () => {
+  const r = await runUpdate({ version: BRIDGE_VERSION + 1, sha256: "0".repeat(64) }, NEWER_BRIDGE);
+  assertEquals(r.changed, false);
+  assertEquals(r.leftovers, []);
+});
+
+Deno.test("самообновление: версия не новее своей — ничего не качается и не меняется", async () => {
+  const sha = await sha256Hex(NEWER_BRIDGE);
+  const r = await runUpdate({ version: BRIDGE_VERSION, sha256: sha }, NEWER_BRIDGE);
+  assertEquals(r.changed, false);
+});
+
+Deno.test("самообновление: новый текст не проходит bash -n — мост не заменяется", async () => {
+  const broken = "if then fi (((\n";
+  const r = await runUpdate({ version: BRIDGE_VERSION + 1, sha256: await sha256Hex(broken) }, broken);
+  assertEquals(r.changed, false);
+});
+
+Deno.test("самообновление: сервер без /version — мост живёт как жил", async () => {
+  const r = await runUpdate(null, NEWER_BRIDGE);
+  assertEquals(r.changed, false);
+});
+
+Deno.test("версия моста поднимается вместе с текстом: пара «версия ↔ отпечаток» зафиксирована", async () => {
+  // Если тест упал — вы поменяли BRIDGE_SCRIPT. Поднимите BRIDGE_VERSION (иначе у людей мост не
+  // обновится, сервер отдаст ту же версию) и впишите сюда новую пару.
+  const PINNED = { version: 2, sha256: "59d5b370e5e2523894350da8d021ca87d61ea3cbf54c02d4c73c9c960c351344" };
+  assertEquals(BRIDGE_VERSION, PINNED.version, "версия моста сменилась — обновите PINNED в тесте");
+  assertEquals(
+    await sha256Hex(BRIDGE_SCRIPT),
+    PINNED.sha256,
+    "текст моста сменился — поднимите BRIDGE_VERSION и PINNED",
+  );
+});
+
+// --- Установщик (#951, #1082) ---
+
+Deno.test("установщик: мост пишется во временный файл и подменяется mv, а не cat > в тот же файл (#951)", () => {
+  const code = SETUP_SCRIPT.split("\n").filter((l) => !l.trim().startsWith("#")).join("\n");
+  assertStringIncludes(code, 'mv -f "$BRIDGE_TMP" "$BRIDGE"');
+  assertEquals(code.includes('cat > "$BRIDGE" '), false);
+  assertEquals(code.includes('cat > "$BRIDGE"<'), false);
+});
+
+Deno.test("установщик: тело моста в heredoc побайтно равно тому, что сервер отдаёт на /bridge", async () => {
+  const start = SETUP_SCRIPT.indexOf("<<'SWARM_BRIDGE_EOF'\n") + "<<'SWARM_BRIDGE_EOF'\n".length;
+  const end = SETUP_SCRIPT.indexOf("SWARM_BRIDGE_EOF\n", start);
+  assertEquals(SETUP_SCRIPT.slice(start, end), BRIDGE_SCRIPT);
+  // Отпечаток, который сверит само-обновление, совпадает с отпечатком файла, записанного установщиком.
+  assertEquals(await sha256Hex(SETUP_SCRIPT.slice(start, end)), await sha256Hex(BRIDGE_SCRIPT));
+});
+
+Deno.test("установщик и мост проходят bash -n", async () => {
+  for (const [name, text] of [["setup", SETUP_SCRIPT], ["bridge", BRIDGE_SCRIPT]]) {
+    const dir = await Deno.makeTempDir();
+    try {
+      await Deno.writeTextFile(`${dir}/${name}.sh`, text);
+      const { code, stderr } = await new Deno.Command("bash", { args: ["-n", `${dir}/${name}.sh`], stderr: "piped" })
+        .output();
+      assertEquals(code, 0, new TextDecoder().decode(stderr));
+    } finally {
+      await Deno.remove(dir, { recursive: true });
+    }
+  }
+});
+
+Deno.test("bash-скрипты: имена переменных только латиницей (кириллица проходит bash -n, но падает у человека)", () => {
+  for (const text of [SETUP_SCRIPT, BRIDGE_SCRIPT]) {
+    const bad = text.split("\n").filter((l) => /^\s*[A-Za-z_]*[А-Яа-яЁё]\w*=/.test(l));
+    assertEquals(bad, []);
+  }
+});
+
+Deno.test("установщик: Claude Code прописывается через claude mcp remove + add --transport http (user scope)", () => {
+  assertStringIncludes(SETUP_SCRIPT, "mcp remove swarm-brain --scope user");
+  assertStringIncludes(SETUP_SCRIPT, 'mcp add --transport http swarm-brain "$MCP_URL"');
+  assertStringIncludes(SETUP_SCRIPT, '--header "Authorization: Bearer $SWARM_TOKEN" --scope user');
+});
+
+Deno.test("команда установки: SHA-256 скрипта сверяется ДО запуска, токен — в окружении, не в аргументах", async () => {
+  const cmd = await buildSetupOneLiner("smcp_abc123");
+  const sha = await sha256Hex(SETUP_SCRIPT);
+  assertStringIncludes(cmd, `echo "${sha}  $f" | shasum -a 256 -c -`);
+  assertEquals(cmd.indexOf("shasum -a 256 -c") < cmd.indexOf("bash "), true);
+  assertEquals(cmd.indexOf("shasum -a 256 -c") < cmd.indexOf("SWARM_TOKEN="), true);
+  assertStringIncludes(cmd, "SWARM_TOKEN='smcp_abc123' bash \"$f\"");
+  // Слепого curl | bash больше нет.
+  assertEquals(/curl[^|]*\|\s*(SWARM_TOKEN=\S+\s+)?bash/.test(cmd), false);
+});
+
+// Полный прогон установщика в песочнице: домашняя папка во временной папке, фейковые claude/open/
+// pgrep/osascript в PATH (реальный Claude Desktop не трогаем), настоящий plutil, фейковый сервер.
+macOnly("установщик: прогон целиком — мост через mv, Desktop-конфиг, Claude Code зарегистрирован", async () => {
+  const home = await Deno.makeTempDir();
+  const fakeBin = `${home}/fakebin`;
+  await Deno.mkdir(fakeBin);
+  const callLog = `${home}/claude-calls.log`;
+  await Deno.writeTextFile(`${fakeBin}/claude`, `#!/bin/bash\nprintf '%s\\n' "$*" >> '${callLog}'\n`);
+  for (const n of ["open", "osascript"]) await Deno.writeTextFile(`${fakeBin}/${n}`, "#!/bin/bash\nexit 0\n");
+  await Deno.writeTextFile(`${fakeBin}/pgrep`, "#!/bin/bash\nexit 1\n");
+  for (const n of ["claude", "open", "osascript", "pgrep"]) await Deno.chmod(`${fakeBin}/${n}`, 0o755);
+  const server = Deno.serve(
+    { port: 0, onListen() {}, hostname: "127.0.0.1" },
+    () => new Response('{"jsonrpc":"2.0","id":1,"result":{"content":[]}}'),
+  );
+  const port = (server.addr as Deno.NetAddr).port;
+  try {
+    const script = SETUP_SCRIPT.replace(/^MCP_URL=".*"$/m, `MCP_URL="http://127.0.0.1:${port}/swarm-mcp"`);
+    await Deno.writeTextFile(`${home}/setup.sh`, script);
+    const { code, stdout, stderr } = await new Deno.Command("/bin/bash", {
+      args: [`${home}/setup.sh`],
+      env: { HOME: home, PATH: `${fakeBin}:/usr/bin:/bin`, SWARM_TOKEN: "smcp_testtoken" },
+      stdout: "piped",
+      stderr: "piped",
+    }).output();
+    const out = new TextDecoder().decode(stdout) + new TextDecoder().decode(stderr);
+    assertEquals(code, 0, out);
+    const bridge = `${home}/.swarm-brain/bin/swarm-mcp-bridge.sh`;
+    assertEquals(await Deno.readTextFile(bridge), BRIDGE_SCRIPT);
+    assertEquals((((await Deno.stat(bridge)).mode ?? 0) & 0o111) > 0, true);
+    for await (const e of Deno.readDir(`${home}/.swarm-brain/bin`)) {
+      assertEquals(e.name.startsWith(".bridge-install"), false, "остался временный файл установщика");
+    }
+    const cfg = JSON.parse(
+      await Deno.readTextFile(`${home}/Library/Application Support/Claude/claude_desktop_config.json`),
+    );
+    assertEquals(cfg.mcpServers["swarm-brain"].command, "/bin/bash");
+    const calls = (await Deno.readTextFile(callLog)).trim().split("\n");
+    assertEquals(calls[0], "mcp remove swarm-brain --scope user");
+    assertEquals(
+      calls[1],
+      `mcp add --transport http swarm-brain http://127.0.0.1:${port}/swarm-mcp --header Authorization: Bearer smcp_testtoken --scope user`,
+    );
+  } finally {
+    await server.shutdown();
+    await Deno.remove(home, { recursive: true });
+  }
 });
