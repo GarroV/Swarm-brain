@@ -40,21 +40,54 @@ export function dueBucket(task: Task, now: Date = new Date()): DueBucket {
 export type TaskSection = { key: string; label: string; tasks: Task[]; late?: number };
 
 // Секции по сроку в фиксированном порядке; пустые не показываются.
-// Просроченное и сегодняшнее — одна секция «Задачи сегодня», просроченные сверху (владелец
-// 13.10.2026: «просрочено заменим на "задачи сегодня"»); `late` — сколько в ней просроченных.
-// Главная («Мои задачи», homeTasks.ts) держит своё деление и этим не задета.
-const TODAY_LABEL: [string, string] = ["Задачи сегодня", "Today's tasks"];
+// Первая — «Актуальное» (владелец 27.10.2026: «не сегодня, а актуальное. В актуальном у нас
+// будет просрочка, задачи на сегодня, и задачи на завтрашний день»): просроченные сверху, потом
+// сегодня, завтра и задачи с ПИНГОМ на сегодня или завтра, даже если срок дальше или его нет
+// («задачи с пингом тоже отображались в ближайших задачах» — пинг стоял на сегодня, а задача
+// лежала в «Дальше»). До 27.10 секция звалась «Задачи сегодня» (13.10.2026). `late` — сколько
+// в ней просроченных. Главная («Мои задачи», homeTasks.ts) держит своё деление и этим не задета.
+const CURRENT_LABEL: [string, string] = ["Актуальное", "Current"];
+const DAY_MS = 86_400_000;
+
+// Пинг — дата без времени («2026-10-27»): читаем её как локальную дату, а не полночь UTC, иначе
+// западнее Гринвича пинг съезжал бы на вчера.
+function remindMidnight(task: Task): number | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(task.remind_date ?? "");
+  return m ? new Date(+m[1], +m[2] - 1, +m[3]).getTime() : null;
+}
+
+/** Место в «Актуальном»: 0 — просрочено, 1 — сегодня, 2 — завтра, 3 — только пинг; null — не там. */
+export function currentRank(task: Task, now: Date = new Date()): number | null {
+  if (isDone(task)) return null;
+  const today = midnight(now);
+  const tomorrow = today + DAY_MS;
+  const due = dueMidnight(task);
+  if (due != null && due < today) return 0;
+  if (due === today) return 1;
+  if (due != null && due <= tomorrow) return 2;
+  const ping = remindMidnight(task);
+  if (ping != null && ping >= today && ping <= tomorrow) return 3;
+  return null;
+}
 
 export function groupByDue(tasks: Task[], now: Date, lang: 0 | 1): TaskSection[] {
+  const current: Array<{ t: Task; r: number }> = [];
   const by = new Map<DueBucket, Task[]>();
   for (const t of tasks) {
+    const r = currentRank(t, now);
+    if (r != null) { current.push({ t, r }); continue; }
     const b = dueBucket(t, now);
     by.set(b, [...(by.get(b) ?? []), t]);
   }
-  const over = by.get("over") ?? [];
-  const today = [...over, ...(by.get("today") ?? [])];
-  const sections: TaskSection[] = today.length
-    ? [{ key: "today", label: TODAY_LABEL[lang], tasks: today, late: over.length }]
+  // Сортировка устойчивая: внутри одного места порядок списка сохраняется.
+  const ordered = [...current].sort((a, b) => a.r - b.r);
+  const sections: TaskSection[] = ordered.length
+    ? [{
+        key: "today",
+        label: CURRENT_LABEL[lang],
+        tasks: ordered.map((x) => x.t),
+        late: ordered.filter((x) => x.r === 0).length,
+      }]
     : [];
   return [
     ...sections,
