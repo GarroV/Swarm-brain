@@ -69,9 +69,44 @@ Deno.test("замок включён: сессии из обмена токен�
   // Обычному входу без Touch ID окно заметок не открыто — у него свой путь: пройти шаг.
   const locked = secondStepState(login(false), { isDemo: false, required: true, audience: "all" });
   assertEquals(secondStepBlocks(locked, "GET", "/agent-meetings/m1/notes"), true);
+  // Обычному входу без Touch ID доска шмеля тоже не открыта.
+  assertEquals(secondStepBlocks(locked, "GET", "/board/today"), true);
   // Замок выключен — обмен работает как раньше.
   const off = secondStepState(shortToken, { isDemo: false, required: false, audience: "all" });
   assertEquals(secondStepBlocks(off, "GET", "/tasks"), false);
+});
+
+// Решение 28.10.2026: доска шмеля (сегодня, экран страны, свои задачи) открыта сессии из обмена токена.
+Deno.test("замок включён: сессии из обмена токена открыта доска шмеля, и только её пути и методы", () => {
+  const ex = secondStepState(shortToken, { isDemo: false, required: true, audience: "all" });
+  for (
+    const [m, p] of [
+      ["GET", "/board/today"],
+      ["GET", "/board/call"],
+      ["PUT", "/board/call"],
+      ["POST", "/tasks"],
+      ["POST", "/tasks/voice"],
+      ["PATCH", "/tasks/t1"],
+      ["DELETE", "/tasks/t1"],
+      ["GET", "/config"],
+    ]
+  ) {
+    assertEquals(secondStepBlocks(ex, m, p), false, `${m} ${p}`);
+  }
+  for (
+    const [m, p] of [
+      ["GET", "/tasks"],
+      ["GET", "/tasks/t1"],
+      ["PATCH", "/tasks/t1/comments"],
+      ["DELETE", "/board/call"],
+      ["PUT", "/config"],
+      ["GET", "/board/today/x"],
+      ["POST", "/mcp/token"],
+      ["GET", "/admin/users"],
+    ]
+  ) {
+    assertEquals(secondStepBlocks(ex, m, p), true, `${m} ${p}`);
+  }
 });
 
 Deno.test("замок выключен только явным 0/false/off (любой регистр, с пробелами): тогда ничего не блокируется", () => {

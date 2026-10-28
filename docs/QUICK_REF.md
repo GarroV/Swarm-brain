@@ -39,7 +39,7 @@ make notice / freeze / freeze-status   # плашка и заморозка: к�
 # meeting-status — статус встреч пачкой (рекордер чистит локальный бэкап по done)
 # meeting-heartbeat — heartbeat рекордера и бота scriba → watchdog checkRecorderHealth (оборванная запись / истечение токена)
 # recorder-diag — журнал рекордера с машин команды → recorder_diagnostics (3 дня)
-# meeting-webtoken — обмен личного токена на web-JWT на 12 ч без продления (пометки рекордера, вход на превью); при замке второго шага открыто только окно заметок рекордера (docs/decisions/2026-10-26-second-step-hard-gate.md)
+# meeting-webtoken — обмен личного токена на web-JWT на 12 ч без продления (пометки рекордера, вход на превью); при замке второго шага открыты только окно заметок рекордера и доска шмеля (`secondStepBlocks`, docs/decisions/2026-10-26-second-step-hard-gate.md)
 # meeting-notice — уведомление владельцу встречи, что запись НЕ идёт (бот scriba: дверь, капча, нет звука, умер контейнер)
 # meeting-invite — оркестратор бота scriba забирает приглашения своего воркспейса (D017)
 # meeting-calendar — бот scriba сам по календарю: задания на встречи Meet людей с автозапуском (T100)
