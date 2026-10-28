@@ -40,7 +40,7 @@ export function RoyTasksScreen() {
   };
 
   const row = (t: Task) => (
-    <MobileTaskRow key={t.id} task={t} now={r.now} showAssignee={showAssignee} onToggle={() => r.toggle(t)} onRemove={() => remove(t)} />
+    <MobileTaskRow key={t.id} task={t} now={r.now} showAssignee={showAssignee} fading={r.fadingIds.has(t.id)} onToggle={() => r.toggle(t)} onRemove={() => remove(t)} />
   );
 
   return (

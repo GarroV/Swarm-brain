@@ -135,7 +135,7 @@ export function RoyRail({
       <div className="flex shrink-0 items-center gap-2.5 border-b border-line px-4 narrow:justify-center narrow:px-0" style={{ height: SHELL_BAR_H }}>
         {/* Бренд-блок: знак — тот же файл, что фавикон (глитч-S, decisions/2026-10-14-logo-s.md), и имя капсом. */}
         {/* eslint-disable-next-line @next/next/no-img-element -- статичный SVG из app/icon.svg, оптимизатор не нужен */}
-        <img src="/icon.svg" alt="" aria-hidden width={28} height={28} className="size-7 shrink-0" />
+        <img src="/icon.svg" alt="" aria-hidden width={28} height={28} className={cn("size-7 shrink-0", collapsed && "min-[1100px]:hidden")} />
         <span className="flex min-w-0 flex-col narrow:hidden">
           {/* Полное имя продукта (решение владельца 2026-09-25: «тут надо сворм брейн»). */}
           <span className="truncate font-bold text-ink" style={{ fontSize: 13.5, letterSpacing: "0.04em" }}>
@@ -147,9 +147,10 @@ export function RoyRail({
             </span>
           )}
         </span>
-        {/* «Свернуть» — в шапке справа от бренда, без отдельной строки. В узкой рейке шапка
-            занята знаком, там кнопка «Развернуть» стоит внизу (RailToggle в подвале). */}
-        {!collapsed && <RailToggle collapsed={false} className="ml-auto size-7 narrow:hidden" />}
+        {/* Одна кнопка свернуть/развернуть на одном месте — в шапке (отзыв 28.10.2026: «секунд 20
+            искала, как развернуть»). В развёрнутой рейке — справа от бренда, в свёрнутой вручную
+            занимает место знака. На окне уже 1100px рейка узкая сама, кнопки нет. */}
+        <RailToggle collapsed={collapsed} className="ml-auto size-7 max-[1099px]:hidden narrow:ml-0" />
       </div>
       <RailSearch />
       <div className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-2 py-2.5">
@@ -162,7 +163,6 @@ export function RoyRail({
       </div>
       {/* Тема пилюлей и инструменты пиктограммами — одним рядом, без подписи (владелец 02.10.2026). */}
       <div className="flex items-center gap-1 border-t border-line px-2 py-2 narrow:flex-col narrow:gap-0.5">
-        {collapsed && <RailToggle collapsed className="h-[34px] w-full max-[1099px]:hidden" />}
         <ThemeSwitch />
         <FootTools items={FOOT} active={active} onSelect={onSelect} />
       </div>
