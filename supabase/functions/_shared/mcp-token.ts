@@ -46,7 +46,7 @@ export async function mintMcpToken(
   return { token };
 }
 
-// Статус MCP-токена: активен ли + срок (expiresAt = null у токена без срока — такие остались только до миграции 20261027120000).
+// Статус MCP-токена: активен ли + срок (expiresAt = null у токена без срока — такие остались только до миграции 20261027120001).
 export async function getMcpTokenStatus(
   supabase: SupabaseClient,
   telegramId: number,
