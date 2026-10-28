@@ -205,6 +205,7 @@ export function TasksTable() {
                     labels={r.labels}
                     projectName={projectName(t.project_id)}
                     onOpen={() => setModalTask(t)}
+                    fading={r.fadingIds.has(t.id)}
                     onToggle={() => r.toggle(t)}
                     onPatch={(patch) => r.patchTask(t.id, patch)}
                     onChanged={r.reload}
