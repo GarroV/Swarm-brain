@@ -155,3 +155,15 @@ export function dueCycle<
   if (!due) return null;
   return cycles.find((c) => c.start_date <= due && due <= c.end_date) ?? null;
 }
+
+/**
+ * Клик пришёл в пустое место колонки, а не в карточку, меню или кнопку: цель клика — сам контейнер.
+ * Выделение текста (протянули мышью и отпустили над пустым местом) заведением задачи не считается.
+ * Перетаскивание сюда не доходит: у нативного dnd после броска `click` не приходит.
+ */
+export function isEmptyAreaClick(
+  e: { target: EventTarget; currentTarget: EventTarget },
+  selection: string = globalThis.getSelection?.()?.toString() ?? "",
+): boolean {
+  return e.target === e.currentTarget && selection.trim() === "";
+}

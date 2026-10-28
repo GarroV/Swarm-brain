@@ -184,7 +184,8 @@ export function SprintBoardView(
     reloadKey: number;
     canDrag: boolean;
     onOpenTask: (taskId: string) => void;
-    onAddTask: (groupId: string) => void;
+    /** Завести задачу стандартной карточкой; `cycleId` — спринт, в который она попадёт, без него — только в план. */
+    onAddTask: (groupId: string | null, cycleId?: string) => void;
     onCloseSprint: (cycleId: string) => void;
     /** Доска что-то изменила: остальной экран перечитывает свои данные. */
     onChanged: () => void;
@@ -634,7 +635,7 @@ export function SprintBoardView(
       ctx={ctx}
       hideDone={hideDone}
       onHideDone={setHideDone}
-      onAddTask={onAddTask}
+      onAddTask={(groupId) => onAddTask(groupId)}
     />
   );
 
@@ -675,6 +676,7 @@ export function SprintBoardView(
                 ctx={ctx}
                 busy={busy}
                 onCloseSprint={onCloseSprint}
+                onAddTask={(groupId) => onAddTask(groupId, entry.cycle.id)}
                 drop={{
                   valid: dnd.canDrop(entry.cycle),
                   over: dnd.overId === entry.cycle.id,
