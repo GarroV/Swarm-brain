@@ -1,6 +1,7 @@
 "use client";
 import type { Task } from "@/types";
 import { TaskRow } from "@/components/tasks/TaskRow";
+import { ROW_FADE_CLASS } from "@/lib/doneLinger";
 import { SwipeRow } from "./SwipeRow";
 import { useDt, useRoyNav } from "./nav";
 
@@ -14,16 +15,20 @@ export function MobileTaskRow({
   showAssignee,
   onToggle,
   onRemove,
+  fading,
 }: {
   task: Task;
   now?: Date;
   showAssignee?: boolean;
   onToggle: () => void;
   onRemove: () => void;
+  // Только что отмеченная кружком строка угасает перед уходом (lib/doneLinger.ts).
+  fading?: boolean;
 }) {
   const { push, openTask } = useRoyNav();
   const dt = useDt();
   return (
+    <div className={fading ? ROW_FADE_CLASS : undefined}>
     <SwipeRow
       onTap={() => openTask(task)}
       actions={[
@@ -35,5 +40,6 @@ export function MobileTaskRow({
         <TaskRow task={task} now={now} showAssignee={showAssignee} onToggle={onToggle} />
       </div>
     </SwipeRow>
+    </div>
   );
 }

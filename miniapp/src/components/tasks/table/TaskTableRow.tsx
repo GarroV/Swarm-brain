@@ -7,6 +7,7 @@ import { RoyIcon } from "@/components/roy/icons";
 import { useDt } from "@/components/roy/nav";
 import { isDone, isOverdue, pendingPingDay } from "@/lib/smartLists";
 import { formatDay } from "@/lib/displayFormat";
+import { ROW_FADE_CLASS } from "@/lib/doneLinger";
 import { saveTaskPatch, TaskQuickActions, toggleLabelPatch } from "@/components/tasks/TaskQuickActions";
 import { COUNTRY_NAMES, countryName } from "@/lib/countries";
 import type { UpdateTaskInput } from "@/lib/api";
@@ -30,7 +31,7 @@ export const NARROW_HIDDEN = "max-[1099px]:hidden";
 const fmtDue = (iso: string, en: boolean) =>
   new Date(iso).toLocaleDateString(en ? "en-GB" : "ru-RU", { day: "numeric", month: "short" }).replace(".", "");
 
-export function TaskTableRow({ task, order, now, users, markets, labels, projectName, onOpen, onToggle, onPatch, onChanged, depth = 0, progress }: {
+export function TaskTableRow({ task, order, now, users, markets, labels, projectName, onOpen, onToggle, onPatch, onChanged, depth = 0, progress, fading }: {
   task: Task;
   // Порядок колонок после «Задачи» — тот же, что в шапке (TaskTableHead).
   order: readonly MovableColumn[];
@@ -46,6 +47,8 @@ export function TaskTableRow({ task, order, now, users, markets, labels, project
   // Подзадача под родителем (#478) — отступ; у родителя — «X из Y» по подзадачам.
   depth?: 0 | 1;
   progress?: SubtaskProgress;
+  // Только что отмеченная кружком строка угасает перед уходом (lib/doneLinger.ts).
+  fading?: boolean;
 }) {
   const dt = useDt();
   const done = isDone(task);
@@ -159,7 +162,7 @@ export function TaskTableRow({ task, order, now, users, markets, labels, project
       tabIndex={0}
       onClick={onOpen}
       onKeyDown={(e) => { if (e.key === "Enter") onOpen(); }}
-      className={cn("group grid cursor-pointer items-center border-b border-line bg-surface transition-colors hover:bg-surface-2 focus-visible:bg-surface-2 focus-visible:outline-none", TASK_GRID)}
+      className={cn("group grid cursor-pointer items-center border-b border-line bg-surface transition-colors hover:bg-surface-2 focus-visible:bg-surface-2 focus-visible:outline-none", TASK_GRID, fading && ROW_FADE_CLASS)}
       style={{ minHeight: 34, fontSize: 13 }}
     >
       <div className="flex min-w-0 items-center gap-2.5 px-3 py-1" style={depth ? { paddingLeft: 38 } : undefined}>
