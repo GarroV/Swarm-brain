@@ -1,10 +1,11 @@
 "use client";
-import type { ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { RoyCard } from "../ui";
 import { RoyIcon, type RoyIconName } from "../icons";
 import { useRoyNav, useDt } from "../nav";
 import { TaskRow } from "@/components/tasks/TaskRow";
 import { isDone } from "@/lib/smartLists";
+import { DONE_FADE_MS, DONE_LINGER_MS, ROW_FADE_CLASS } from "@/lib/doneLinger";
 import { updateTask } from "@/lib/api";
 import type { Task } from "@/types";
 import { formatDate, isRawId, uiLocale } from "@/lib/displayFormat";
@@ -281,13 +282,47 @@ export function Row({ onClick, children }: { onClick: () => void; children: Reac
 export function DashTaskRow({ task, showAssignee = false }: { task: Task; showAssignee?: boolean }) {
   const { openTask, toast, bumpTasks } = useRoyNav();
   const dt = useDt();
+  // Отмеченная кружком строка не пропадает сразу (lib/doneLinger.ts): запись уходит на сервер
+  // тут же, а перечитывание панелей (bumpTasks, после него родитель уберёт строку) откладывается
+  // на DONE_LINGER_MS; повторное нажатие в эти секунды отменяет отметку.
+  const [marked, setMarked] = useState(false);
+  const [fading, setFading] = useState(false);
+  const timers = useRef<number[]>([]);
+  const stopTimers = () => { timers.current.forEach((h) => window.clearTimeout(h)); timers.current = []; };
+  // Уходим со страницы, пока строка стоит отмеченной: панели всё равно нужно перечитать.
+  const bumpRef = useRef(bumpTasks);
+  bumpRef.current = bumpTasks;
+  const pendingBump = useRef(false);
+  useEffect(() => () => { stopTimers(); if (pendingBump.current) bumpRef.current(); }, []);
+  const shown = marked ? { ...task, status: "done" } : task;
   const toggle = async () => {
-    try {
-      await updateTask(task.id, { status: isDone(task) ? "open" : "done" });
+    if (marked) {
+      stopTimers();
+      pendingBump.current = false;
+      setMarked(false);
+      setFading(false);
+      try {
+        await updateTask(task.id, { status: "open" });
+      } catch {
+        toast(dt("Не удалось обновить", "Couldn't update"));
+      }
       bumpTasks();
+      return;
+    }
+    const wasDone = isDone(task);
+    try {
+      await updateTask(task.id, { status: wasDone ? "open" : "done" });
     } catch {
       toast(dt("Не удалось обновить", "Couldn't update"));
+      return;
     }
+    if (wasDone) { bumpTasks(); return; }
+    setMarked(true);
+    pendingBump.current = true;
+    timers.current = [
+      window.setTimeout(() => setFading(true), DONE_LINGER_MS),
+      window.setTimeout(() => { pendingBump.current = false; bumpTasks(); }, DONE_LINGER_MS + DONE_FADE_MS),
+    ];
   };
   return (
     <div
@@ -295,9 +330,9 @@ export function DashTaskRow({ task, showAssignee = false }: { task: Task; showAs
       tabIndex={0}
       onClick={() => openTask(task)}
       onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openTask(task); } }}
-      className="cursor-pointer rounded-[8px] transition-colors hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+      className={`cursor-pointer rounded-[8px] transition-colors hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]${fading ? ` ${ROW_FADE_CLASS}` : ""}`}
     >
-      <TaskRow task={task} showAssignee={showAssignee} onToggle={toggle} />
+      <TaskRow task={shown} showAssignee={showAssignee} onToggle={toggle} />
     </div>
   );
 }
