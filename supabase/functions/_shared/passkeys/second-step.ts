@@ -144,11 +144,30 @@ function recorderNotesAllowed(method: string, routePath: string): boolean {
   return method === "GET" || (method === "POST" && m[1] === "/notes");
 }
 
+/** Доска шмеля (решение владельца 28.10.2026): «Сегодня», экран страны созвона, свои задачи и рынки
+ *  пространства. Touch ID рекордер пройти не может — его доказательство токен, выданный в вебе после шага. */
+const RECORDER_BOARD: ReadonlyArray<[method: string, path: RegExp]> = [
+  ["GET", /^\/board\/today$/],
+  ["GET", /^\/board\/call$/],
+  ["PUT", /^\/board\/call$/],
+  ["POST", /^\/tasks$/],
+  ["POST", /^\/tasks\/voice$/],
+  ["PATCH", /^\/tasks\/[^/]+$/],
+  ["DELETE", /^\/tasks\/[^/]+$/],
+  ["GET", /^\/config$/],
+];
+
+function recorderBoardAllowed(method: string, routePath: string): boolean {
+  return RECORDER_BOARD.some(([m, path]) => m === method && path.test(routePath));
+}
+
 /** Замок: включён, шаг применим и не пройден — всё, кроме открытых путей, закрыто. Сессии из обмена
- *  токена сверх того открыто окно заметок рекордера. */
+ *  токена сверх того открыты окно заметок рекордера и доска шмеля. */
 export function secondStepBlocks(state: SecondStepState, method: string, routePath: string): boolean {
   if (!state.required || !state.applies || state.done) return false;
   if (OPEN_PATHS.has(routePath) && (method === "GET" || routePath === "/auth/revoke-sessions")) return false;
-  if (state.exchanged && recorderNotesAllowed(method, routePath)) return false;
+  if (state.exchanged && (recorderNotesAllowed(method, routePath) || recorderBoardAllowed(method, routePath))) {
+    return false;
+  }
   return true;
 }
