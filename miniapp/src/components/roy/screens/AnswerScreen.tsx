@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import { useRoyNav, openSourceRoute } from "../nav";
+import { useDt, useRoyNav, openSourceRoute } from "../nav";
 import { NavHeader, SectionLabel, RoyCard, TypeTag, Market, Chip, type RoyTypeKey } from "../ui";
 import { RoyIcon } from "../icons";
 import { ask, type AskResult, type AskSource } from "@/lib/api";
@@ -32,11 +32,12 @@ function fmtShortDate(d?: string | null): string | null {
 }
 
 function Loading() {
+  const dt = useDt();
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-2 text-ink-soft" style={{ fontSize: 13.5 }}>
         <RoyIcon name="spark" size={16} className="text-primary roy-spin" />
-        Swarm ищет по базе, встречам и задачам…
+        {dt("Swarm ищет по базе, встречам и задачам…", "Swarm is searching the base, meetings and tasks…")}
       </div>
       <div className="roy-shim" style={{ height: 86, borderRadius: 10 }} />
       <div className="space-y-2.5">
@@ -52,6 +53,7 @@ function Loading() {
 // AnswerScreen (мобайл) и AnswerModal (десктоп, контекстное окно). Колбэки определяют,
 // куда вести уточнение/источник в каждом контексте.
 export function AnswerBody({ query, onFollowup, onOpenRecord }: { query: string; onFollowup: (q: string) => void; onOpenRecord: (source: AskSource) => void }) {
+  const dt = useDt();
   const [data, setData] = useState<AskResult | null>(null);
   const [err, setErr] = useState(false);
 
@@ -73,13 +75,13 @@ export function AnswerBody({ query, onFollowup, onOpenRecord }: { query: string;
       </RoyCard>
 
       {!data && !err && <Loading />}
-      {err && <div className="text-ink-soft text-sm py-8 text-center">Не удалось получить ответ. Попробуй ещё раз.</div>}
+      {err && <div className="text-ink-soft text-sm py-8 text-center">{dt("Не удалось получить ответ. Попробуй ещё раз.", "Could not get an answer. Try again.")}</div>}
 
       {data && (
         <>
           {data.answer && (
             <div className="mb-5">
-              <SectionLabel>Ответ</SectionLabel>
+              <SectionLabel>{dt("Ответ", "Answer")}</SectionLabel>
               <div className="px-4 py-4" style={{ background: "var(--accent-soft)", border: "1px solid var(--accent-line)", borderRadius: 10 }}>
                 <AnswerText text={data.answer} />
               </div>
@@ -88,7 +90,7 @@ export function AnswerBody({ query, onFollowup, onOpenRecord }: { query: string;
 
           {data.sources.length > 0 && (
             <div className="mb-5">
-              <SectionLabel>Источники</SectionLabel>
+              <SectionLabel>{dt("Источники", "Sources")}</SectionLabel>
               <div className="space-y-2.5">
                 {data.sources.map((s) => (
                   <button key={s.id} type="button" onClick={() => onOpenRecord(s)} className="w-full text-left transition-transform active:scale-[0.99]">
@@ -112,7 +114,7 @@ export function AnswerBody({ query, onFollowup, onOpenRecord }: { query: string;
 
           {data.followups.length > 0 && (
             <div>
-              <SectionLabel>Уточнить</SectionLabel>
+              <SectionLabel>{dt("Уточнить", "Follow-ups")}</SectionLabel>
               <div className="flex flex-wrap gap-2">
                 {data.followups.map((f) => (
                   <Chip key={f} onClick={() => onFollowup(f)}>{f}</Chip>
@@ -129,9 +131,10 @@ export function AnswerBody({ query, onFollowup, onOpenRecord }: { query: string;
 // Полноэкранный push-вариант (мобайл / стек).
 export function AnswerScreen({ query }: { query: string }) {
   const { pop, push } = useRoyNav();
+  const dt = useDt();
   return (
     <div className="flex flex-col h-full roy-pop">
-      <NavHeader onBack={pop} title="Ответ" />
+      <NavHeader onBack={pop} title={dt("Ответ", "Answer")} />
       <div className="flex-1 overflow-y-auto px-5 pb-24">
         <AnswerBody
           query={query}

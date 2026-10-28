@@ -3,7 +3,6 @@ import { useEffect, useState, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import { fetchMe } from "@/lib/api";
 import { countryCode } from "@/lib/countries";
-import { getInitData } from "@/lib/telegram";
 import type { Me } from "@/types";
 import {
   AccountSection, ClaudeDesktopSection, DigestSection, GoogleCalendarSection,
@@ -110,12 +109,9 @@ function ProfileTile({ me, open, onToggle }: { me: Me; open: Panel | null; onTog
           <Action on={open === "role"} onClick={() => onToggle("role")}>{dt("Изменить", "Edit")}</Action>
         </Line>
         {/* Строки «Telegram» здесь нет: подключение живёт в «Интеграциях» ниже, дубль путал (владелец 15.10.2026). */}
-        {/* В браузере initData пустой → показываем выход; внутри Telegram — нет. */}
-        {!getInitData() && (
-          <Line label={dt("Аккаунт", "Account")} value={dt("вход в этом браузере", "signed in in this browser")}>
-            <Action on={open === "account"} onClick={() => onToggle("account")}>{dt("Выйти", "Sign out")}</Action>
-          </Line>
-        )}
+        <Line label={dt("Аккаунт", "Account")} value={dt("вход в этом браузере", "signed in in this browser")}>
+          <Action on={open === "account"} onClick={() => onToggle("account")}>{dt("Выйти", "Sign out")}</Action>
+        </Line>
       </div>
     </Tile>
   );

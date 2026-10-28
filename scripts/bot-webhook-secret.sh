@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# Включить проверку секрета вебхука swarm-bot в проде — одним прогоном, в правильном порядке.
+# Выпустить (или перевыпустить) секрет вебхука swarm-bot в проде — одним прогоном, в правильном порядке.
 #
-# Порядок задан самим устройством бота (две переменные намеренно, см. ARCHITECTURE §env):
+# Бот отклоняет апдейты без верного секрета всегда (lib/webhook-auth.ts), поэтому порядок важен:
 #   1. TELEGRAM_WEBHOOK_SECRET — новое случайное значение;
 #   2. set_webhook — Telegram узнаёт секрет и начинает присылать его в заголовке;
-#   3. TELEGRAM_WEBHOOK_ENFORCE=1 — бот отбивает апдейты без секрета;
-#   4. проверка: запрос без секрета получает 401, а Telegram не жалуется на ошибки доставки.
-# Если отбивку включить раньше шага 2, бот перестанет отвечать людям.
+#   3. проверка: запрос без секрета получает 401, а Telegram не жалуется на ошибки доставки.
+# Между шагами 1 и 2 (несколько секунд) Telegram ещё шлёт прежний секрет и получает 401 —
+# он повторяет доставку, так что апдейты не теряются.
 #
 # set_webhook и webhook_info — cron-триггеры бота, им нужен X-Cron-Secret. Его значения в CI
 # нет, поэтому вызов идёт из самой базы через pg_net с теми же заголовками, что у задания
@@ -68,37 +68,33 @@ probe_code() {
   curl -s -o /dev/null -w '%{http_code}' -X POST "$BOT_URL" -H 'Content-Type: application/json' --data 'x'
 }
 
-echo "1/4 Новый TELEGRAM_WEBHOOK_SECRET"
+echo "1/3 Новый TELEGRAM_WEBHOOK_SECRET"
 SECRET=$(openssl rand -hex 32)
 [ -n "${GITHUB_ACTIONS:-}" ] && echo "::add-mask::$SECRET"
 supabase secrets set --project-ref "$PROJECT_REF" "TELEGRAM_WEBHOOK_SECRET=$SECRET" >/dev/null
 unset SECRET
 sleep "$SECRETS_SETTLE_SEC"
 
-echo "2/4 set_webhook — сообщить секрет Telegram"
+echo "2/3 set_webhook — сообщить секрет Telegram"
 RESP=$(bot_trigger set_webhook)
 if ! echo "$RESP" | grep -q '"ok":true'; then
   red "Telegram не принял setWebhook: $RESP"
-  red "Отбивку НЕ включаю — бот работает как раньше."
+  red "Telegram продолжит присылать прежний секрет — повтори прогон."
   exit 1
 fi
 green "   Telegram принял вебхук с секретом"
 
-echo "3/4 TELEGRAM_WEBHOOK_ENFORCE=1"
-supabase secrets set --project-ref "$PROJECT_REF" "TELEGRAM_WEBHOOK_ENFORCE=1" >/dev/null
-sleep "$SECRETS_SETTLE_SEC"
-
-echo "4/4 Проверка"
+echo "3/3 Проверка"
 CODE=$(probe_code)
 if [ "$CODE" != "401" ]; then
-  red "Запрос без секрета получил $CODE, ждали 401. Проверь, раскатан ли swarm-bot с ENFORCE."
+  red "Запрос без секрета получил $CODE, ждали 401. Проверь, раскатан ли swarm-bot."
   exit 1
 fi
 green "   Запрос без секрета: 401"
 INFO=$(bot_trigger webhook_info)
 echo "   webhook_info: $(echo "$INFO" | grep -o '"pending_update_count":[0-9]*' || true) $(echo "$INFO" | grep -o '"last_error_message":"[^"]*"' || true)"
 if echo "$INFO" | grep -q '"last_error_message":"[^"]*401'; then
-  red "Telegram получает 401 — секрет у него не тот. Откат: supabase secrets unset TELEGRAM_WEBHOOK_ENFORCE"
+  red "Telegram получает 401 — секрет у него не тот. Повтори прогон (шаг set_webhook)."
   exit 1
 fi
-green "Готово: бот принимает только апдейты с секретом. Напиши боту в Telegram — он должен ответить."
+green "Готово: секрет выпущен, бот принимает только апдейты с ним. Напиши боту в Telegram — он должен ответить."

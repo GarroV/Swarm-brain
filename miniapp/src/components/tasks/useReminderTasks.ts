@@ -13,6 +13,7 @@ import { migrateSavedView, savedStatuses, type SavedTasksView, type StoredTasksV
 import { useRoyNav } from "@/components/roy/nav";
 import { mergeTasksDelta } from "@/lib/tasksDelta";
 import { startVisiblePolling } from "@/lib/visiblePolling";
+import { DONE_FADE_MS, DONE_LINGER_MS, restoreLingering, revertLingering } from "@/lib/doneLinger";
 
 const POLL_MS = 10_000;
 // Запас на разбег часов клиента и сервера: since первой дельты берём от часов клиента (полный
@@ -199,6 +200,27 @@ export function useReminderTasks() {
     );
   }, [load, pollTasks, loadMeta]);
 
+  // Только что отмеченные кружком задачи (см. lib/doneLinger.ts): снимок «до отметки» держит строку
+  // в списке ~2 секунды, фаза fading — плавное угасание перед уходом.
+  const [lingering, setLingering] = useState<ReadonlyMap<string, { snapshot: Task; fading: boolean }>>(new Map());
+  const lingerTimers = useRef<Map<string, number[]>>(new Map());
+  const clearLinger = useCallback((id: string) => {
+    lingerTimers.current.get(id)?.forEach((h) => window.clearTimeout(h));
+    lingerTimers.current.delete(id);
+    setLingering((prev) => {
+      if (!prev.has(id)) return prev;
+      const next = new Map(prev);
+      next.delete(id);
+      return next;
+    });
+  }, []);
+  useEffect(() => {
+    const timers = lingerTimers.current;
+    return () => { timers.forEach((hs) => hs.forEach((h) => window.clearTimeout(h))); timers.clear(); };
+  }, []);
+  const lingeringSnapshots = useMemo(() => new Map([...lingering].map(([id, l]) => [id, l.snapshot])), [lingering]);
+  const fadingIds = useMemo(() => new Set([...lingering].filter(([, l]) => l.fading).map(([id]) => id)), [lingering]);
+
   // now фиксируем по данным, а не пересоздаём каждый рендер — иначе useMemo ниже (counts/visible/
   // группы) инвалидируются на каждый ввод/ховер. Меняется вместе с задачами (поллинг раз в 10с).
   const now = useMemo(() => new Date(), [tasks]);
@@ -217,11 +239,14 @@ export function useReminderTasks() {
   );
   // Текстовый поиск — на исходном списке, ДО линзы/группировки: и плоский visible, и все виды
   // группировки читают из queried, поэтому фильтр по тексту работает одинаково everywhere.
-  const queried = useMemo(() => list.filter(matchesQuery), [list, matchesQuery]);
+  const queried = useMemo(() => revertLingering(list, lingeringSnapshots).filter(matchesQuery), [list, lingeringSnapshots, matchesQuery]);
+  // Результат фильтров содержит снимки «до отметки» — возвращаем текущие (отмеченные) задачи,
+  // чтобы задержавшаяся строка нарисовалась выполненной.
+  const restore = useCallback((rows: Task[]) => restoreLingering(rows, list, lingeringSnapshots), [list, lingeringSnapshots]);
 
   const visible: Task[] = useMemo(
-    () => filterTasks(queried, activeList, effLens, me, now, range, statuses),
-    [queried, activeList, effLens, me, now, range, statuses],
+    () => restore(filterTasks(queried, activeList, effLens, me, now, range, statuses)),
+    [queried, activeList, effLens, me, now, range, statuses, restore],
   );
 
   // Персональные списки-метки: счётчики по всем меткам + задачи активной метки.
@@ -231,33 +256,53 @@ export function useReminderTasks() {
     return m;
   }, [labels, list, range, now]);
   const visibleByLabel: Task[] = useMemo(
-    () => (activeLabelId ? filterByLabel(queried, activeLabelId, range, now) : []),
-    [activeLabelId, queried, range, now],
+    () => (activeLabelId ? restore(filterByLabel(queried, activeLabelId, range, now)) : []),
+    [activeLabelId, queried, range, now, restore],
   );
 
   // Тумблер «По рынкам» (без «Все сотрудники»): группируем ТЕКУЩИЙ охват (Мои/Команда/Все) по
   // рынку. С «Все сотрудники» одновременно — см. nestedGroups ниже (вложенная группировка).
   const marketGroups: MarketGroup[] = useMemo(
-    () => (byMarket && !allStaff ? groupByMarket(queried, activeList, effLens, me, now, range, statuses) : []),
-    [byMarket, allStaff, activeList, queried, effLens, me, now, range, statuses],
+    () => (byMarket && !allStaff ? groupByMarket(queried, activeList, effLens, me, now, range, statuses).map((g) => ({ ...g, tasks: restore(g.tasks) })) : []),
+    [byMarket, allStaff, activeList, queried, effLens, me, now, range, statuses, restore],
   );
 
   // Тумблер «Все сотрудники» (админ) без «По рынкам»: группируем по исполнителю.
   const staffGroups: StaffGroup[] = useMemo(
-    () => (allStaff && !byMarket ? groupByAssignee(queried, activeList, effLens, me, now, range, statuses) : []),
-    [allStaff, byMarket, activeList, queried, effLens, me, now, range, statuses],
+    () => (allStaff && !byMarket ? groupByAssignee(queried, activeList, effLens, me, now, range, statuses).map((g) => ({ ...g, tasks: restore(g.tasks) })) : []),
+    [allStaff, byMarket, activeList, queried, effLens, me, now, range, statuses, restore],
   );
 
   // Оба тумблера разом: вложенная группировка — сотрудник → рынок (владелец: «группировка по
   // сотруднику, а под ней — по рынкам», задача попадает в оба измерения без конфликта).
   const nestedGroups: NestedStaffGroup[] = useMemo(
-    () => (allStaff && byMarket ? groupByAssigneeThenMarket(queried, activeList, effLens, me, now, range, statuses) : []),
-    [allStaff, byMarket, activeList, queried, effLens, me, now, range, statuses],
+    () => (allStaff && byMarket
+      ? groupByAssigneeThenMarket(queried, activeList, effLens, me, now, range, statuses).map((g) => ({
+        ...g, tasks: restore(g.tasks), marketGroups: g.marketGroups.map((m) => ({ ...m, tasks: restore(m.tasks) })),
+      }))
+      : []),
+    [allStaff, byMarket, activeList, queried, effLens, me, now, range, statuses, restore],
   );
 
   const toggle = useCallback(async (t: Task) => {
     const next = isDone(t) ? "open" : "done";
     markMutation();
+    if (next === "open") {
+      // Повторное нажатие, пока строка ещё стоит отмеченной, — отмена: статус возвращается.
+      clearLinger(t.id);
+    } else {
+      // Строка не пропадает сразу: стоит отмеченной DONE_LINGER_MS, потом угасает и уходит.
+      clearLinger(t.id);
+      setLingering((prev) => new Map(prev).set(t.id, { snapshot: t, fading: false }));
+      const fade = window.setTimeout(() => {
+        setLingering((prev) => {
+          const cur = prev.get(t.id);
+          return cur ? new Map(prev).set(t.id, { ...cur, fading: true }) : prev;
+        });
+      }, DONE_LINGER_MS);
+      const gone = window.setTimeout(() => clearLinger(t.id), DONE_LINGER_MS + DONE_FADE_MS);
+      lingerTimers.current.set(t.id, [fade, gone]);
+    }
     // updated_at патчим ВМЕСТЕ со статусом: с issue #216 закрытая задача живёт на оси времени
     // по дате закрытия, а `updated_at` — её прокси. Без этого только что отмеченная задача
     // исчезала из «Открыто» и не появлялась в «Сегодня + Готово» до следующего поллинга
@@ -267,9 +312,10 @@ export function useReminderTasks() {
     try {
       await updateTask(t.id, { status: next });
     } catch {
+      clearLinger(t.id);
       load();
     }
-  }, [load, markMutation]);
+  }, [load, markMutation, clearLinger]);
 
   const remove = useCallback(async (t: Task) => {
     markMutation();
@@ -324,6 +370,6 @@ export function useReminderTasks() {
     statuses, toggleStatus, statusCounts,
     counts, visible, marketGroups, staffGroups, nestedGroups, now,
     labels, activeLabelId, setActiveLabelId, labelCounts, visibleByLabel, reloadLabels,
-    toggle, remove, quickAdd, patchTask, reload,
+    fadingIds, toggle, remove, quickAdd, patchTask, reload,
   };
 }

@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
-import { useDt, useRoyNav } from "../nav";
+import { useDt, useIsDemo, useRoyNav } from "../nav";
+import { DemoQuestionChips } from "../DemoQuestions";
 import { RoyIcon } from "../icons";
 import { Avatar, NavHeader, SectionLabel, Chip, RoyCard, Market } from "../ui";
 import { RoyMark } from "../RoyMark";
@@ -37,6 +38,7 @@ function initials(name: string | undefined | null): string {
 
 export function SearchScreen({ onBack }: { onBack?: () => void }) {
   const dt = useDt();
+  const isDemo = useIsDemo();
   const { me, push, setTab, openAnswer } = useRoyNav();
   const [q, setQ] = useState("");
   const [recent, setRecent] = useState<string[]>([]);
@@ -96,7 +98,12 @@ export function SearchScreen({ onBack }: { onBack?: () => void }) {
         </div>
       )}
 
-      {/* поле поиска (герой) */}
+      {/* поле поиска (герой); в демо — заготовленные вопросы вместо свободного ввода */}
+      {isDemo ? (
+        <div className="px-5 pt-3">
+          <DemoQuestionChips onPick={go} />
+        </div>
+      ) : (
       <div className="px-5 pt-2">
         <form onSubmit={(e) => { e.preventDefault(); go(q); }}>
           <div className="flex items-center gap-2.5 bg-surface border border-line-2 focus-within:border-primary" style={{ borderRadius: 10, padding: "13px 15px" }}>
@@ -112,8 +119,9 @@ export function SearchScreen({ onBack }: { onBack?: () => void }) {
           </div>
         </form>
       </div>
+      )}
 
-      {recent.length > 0 && (
+      {!isDemo && recent.length > 0 && (
         <div className="px-5 pt-6">
           <SectionLabel>{dt("Недавнее", "Recent")}</SectionLabel>
           <div className="flex flex-wrap gap-2">

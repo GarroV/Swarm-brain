@@ -61,3 +61,17 @@ export function canChangeAccountKeys(
   if (target.is_master === true) return isSuperadmin(actor);
   return true;
 }
+
+/**
+ * Можно ли задать или сменить ПОЧТУ ВХОДА (allowed_users.email — ключ веб-входа через Google).
+ * Признак «уже входил» — telegram_id: у ожидающего приглашения он NULL, его присваивает первый
+ * вход (бот или auth-resolve). Правило:
+ *   • приглашение без входа — админ воркспейса или суперадмин (в объёме canManageMember);
+ *   • тот, кто уже входил, — только он сам или суперадмин (мастер-админ);
+ *   • аккаунты владельца и мастер-админа защищены общим canChangeAccountKeys.
+ */
+export function canSetLoginEmail(actor: AdminActor, target: MemberRow): boolean {
+  if (!canChangeAccountKeys(actor, target)) return false;
+  if (target.telegram_id == null) return canManageMember(actor, target);
+  return target.telegram_id === actor.telegramId || isSuperadmin(actor);
+}

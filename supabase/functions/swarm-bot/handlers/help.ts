@@ -56,7 +56,7 @@ const GUIDE_STEPS: readonly string[] = [
   "• /setup → бот пришлёт <b>одну строку</b> <code>curl … | bash</code> для Терминала (только macOS). Скрипт сам поставит и настроит Claude Desktop и перезапустит его.\n" +
   "• Открыть Терминал: ⌘+Пробел → «Терминал» → Enter → вставь строку (⌘V) → Enter.\n" +
   "• Затем в Claude: Projects → New Project → в поле Instructions вставь текст из /claude (в нём уже вшит твой Telegram ID).\n\n" +
-  "⚠️ Токен в строке — личный и <b>бессрочный</b>, никому не пересылай.\n" +
+  "⚠️ Токен в строке — личный, живёт 30 дней — никому не пересылай.\n" +
   "Вручную: /connect_claude · /mytoken (есть активный — бот предупредит) · /claude · /revoketoken — отозвать.",
 
   // 2️⃣ bumblebee — запись встреч (Mac)

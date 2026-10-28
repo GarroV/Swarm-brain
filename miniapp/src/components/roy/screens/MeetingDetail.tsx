@@ -16,6 +16,7 @@ import { askMeeting, fetchMeeting, patchMeeting, deleteMeeting, fetchTasks, resu
 import { countryCode } from "@/lib/countries";
 import type { Entry, Task } from "@/types";
 import { formatDate } from "@/lib/displayFormat";
+import { EditPencil } from "../EditPencil";
 
 function fmtDate(iso: string | null): string {
   return formatDate(iso, { day: "numeric", month: "long" }) ?? "";
@@ -185,7 +186,7 @@ export function MeetingDetail({ id }: { id: string }) {
                 или своя). Берём content||summary, чтобы блок не исчезал у встреч с пустым content. */}
             {(e.content || e.summary) && (
               <div className="mb-4">
-                <TasksFromMeeting text={e.content || e.summary || ""} meetingId={e.id} resetKey={e.id} onAdded={loadTasks} />
+                <TasksFromMeeting text={e.content || e.summary || ""} meetingId={e.id} resetKey={e.id} onAdded={loadTasks} countries={e.countries} />
                 {tasks.length > 0 && (
                   <div className="mt-2 space-y-1">
                     {tasks.map((t) => <DashTaskRow key={t.id} task={t} showAssignee />)}
@@ -207,11 +208,14 @@ export function MeetingDetail({ id }: { id: string }) {
                   <span className="font-bold uppercase text-accent-ink" style={{ fontSize: 11, letterSpacing: "0.05em" }}>
                     Кратко от ИИ
                   </span>
-                  {Boolean(e.metadata?.meeting_id) && (
-                    <ReprocessMenu busy={reproc} onPick={reprocess} iconSize={12}
-                      buttonClassName="inline-flex items-center gap-1.5 rounded-full border border-accent-line bg-card/60 font-semibold text-accent-ink transition-transform active:scale-[0.97] disabled:opacity-50"
-                      buttonStyle={{ padding: "3px 9px", fontSize: 11 }} />
-                  )}
+                  <div className="flex items-center gap-1.5">
+                    {Boolean(e.metadata?.meeting_id) && (
+                      <ReprocessMenu busy={reproc} onPick={reprocess} iconSize={12}
+                        buttonClassName="inline-flex items-center gap-1.5 rounded-full border border-accent-line bg-card/60 font-semibold text-accent-ink transition-transform active:scale-[0.97] disabled:opacity-50"
+                        buttonStyle={{ padding: "3px 9px", fontSize: 11 }} />
+                    )}
+                    <EditPencil label={dt("Править тезисы", "Edit summary")} size={26} tone="accent" onClick={startSummaryEdit} />
+                  </div>
                 </div>
                 <TezisyReader text={e.summary} copyMeta={{ title: deriveEntryTitle(e), date: e.entry_date || e.created_at }}
                   ask={askEntry} onApply={applyFromReading} />
@@ -271,13 +275,14 @@ export function MeetingDetail({ id }: { id: string }) {
             ) : (
               <h1 className="mb-3 font-bold text-ink" style={{ fontSize: 24, letterSpacing: "-0.02em", lineHeight: 1.2 }}>
                 {deriveEntryTitle(e)}
+                <span className="ml-1.5 inline-block align-middle" style={{ verticalAlign: "0.15em" }}>
+                  <EditPencil label={dt("Изменить название", "Edit title")} onClick={startTitleEdit} />
+                </span>
               </h1>
             )}
 
             {/* Видимая панель действий (раньше была спрятана в меню «...»). */}
             <div className="mb-4 flex flex-wrap gap-2">
-              <ActionChip icon="pencil" label="Название" onClick={startTitleEdit} />
-              <ActionChip icon="pencil" label="Тезисы" onClick={startSummaryEdit} />
               <ActionChip icon="globe" label="Страны" onClick={openCountriesEdit} />
               <ActionChip icon="trash" label="Удалить" onClick={del} danger />
             </div>

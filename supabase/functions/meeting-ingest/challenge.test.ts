@@ -9,6 +9,7 @@ import {
   holderHasVersion,
   holderSecondsCorrection,
   settleRecorders,
+  withRecorder,
 } from "./challenge.ts";
 import { CLAIM_LEASE_TTL_SEC } from "../_shared/meeting-lease.ts";
 
@@ -150,4 +151,60 @@ Deno.test("поправки нет: не держатель, не измерен
   assertEquals(holderSecondsCorrection({ ...own, recorded_seconds: null }, HOLDER, null, 3600), null);
   assertEquals(holderSecondsCorrection(own, HOLDER, ["agent:scriba-1"], 3600), null);
   assertEquals(holderSecondsCorrection({ ...own, agent_last_seen_at: at(3) }, HOLDER, null, 3600), null);
+});
+
+// ── Пустой держатель (#1070 п.3): ingest сходится с claim ────────────────────────
+
+Deno.test("ЯДРО #1070: претендент с короткой выгрузкой занимает встречу, где держатель пуст (бот не прошёл дверь)", () => {
+  // Лиз бота ещё действует, секунд и стенограммы нет, не пишет: прежде короче 5 минут — отказ.
+  const botClaim = (minutesAgo: number) => [{ telegram_id: HOLDER, claimed_at: at(minutesAgo), role: "transcribe" }];
+  const emptyBot = row({
+    recorded_seconds: 0,
+    transcript: null,
+    summary_status: null,
+    lease_expires_at: at(-20),
+    recorders: botClaim(25),
+  });
+  assertEquals(decideChallenge(emptyBot, 90, TAKER, NOW), { kind: "takeover", seconds: 90 });
+  // Бот заявился минуту назад — ещё у двери, льготный срок не вышел: отказ, как раньше.
+  assertEquals(decideChallenge({ ...emptyBot, recorders: botClaim(1) }, 90, TAKER, NOW).kind, "refuse");
+  // Измерить не удалось — по-прежнему отказ: занять встречу нечем.
+  assertEquals(decideChallenge(emptyBot, null, TAKER, NOW).kind, "refuse");
+});
+
+Deno.test("#1070: держатель с секундами и без стенограммы защищён порогом, как раньше", () => {
+  const held = row({ recorded_seconds: 60, transcript: null, summary_status: null, lease_expires_at: at(-20) });
+  assertEquals(decideChallenge(held, 200, TAKER, NOW).kind, "refuse");
+});
+
+// ── Один transcribe в recorders (#1070, попутно) ─────────────────────────────────
+
+Deno.test("ЯДРО #1070: занятие брошенной встречи (никто не перехвачен) тоже снимает transcribe с прежнего держателя", () => {
+  // Лиз прежнего истёк, встречу занял новый: supersede не передаётся, а transcribe оставался у двоих.
+  const before = [
+    { telegram_id: HOLDER, claimed_at: at(170), role: "transcribe", recorded_seconds: 0 },
+    { telegram_id: TAKER, claimed_at: at(1), role: CHALLENGER_ROLE, recorded_seconds: 120 },
+  ];
+  const after = settleRecorders(before, TAKER, "transcribe", 120, null);
+  assertEquals(after.filter((r) => r.role === "transcribe").map((r) => r.telegram_id), [TAKER]);
+  assertEquals(after[0].role, "superseded");
+});
+
+Deno.test("ЯДРО #1070: claim нового держателя (withRecorder) тоже оставляет одного transcribe", () => {
+  const before = [
+    { telegram_id: HOLDER, claimed_at: at(170), role: "transcribe" },
+    { telegram_id: 300, claimed_at: at(100), role: "defer" },
+  ];
+  const mine = { telegram_id: TAKER, claimed_at: at(1), role: "transcribe", recorded_seconds: 60 };
+  assertEquals(withRecorder(before, mine, null), [
+    { telegram_id: HOLDER, claimed_at: at(170), role: "superseded" },
+    { telegram_id: 300, claimed_at: at(100), role: "defer" },
+    mine,
+  ]);
+  // Новый defer или претендент прежнего держателя не трогает.
+  const deferred = { telegram_id: TAKER, claimed_at: at(1), role: "defer" };
+  assertEquals(withRecorder(before, deferred, null)[0].role, "transcribe");
+  // Повторный claim того же человека обновляет его строку, а не дублирует.
+  const again = withRecorder(withRecorder(before, deferred, null), { ...deferred, role: "transcribe" }, null);
+  assertEquals(again.filter((r) => r.telegram_id === TAKER).length, 1);
 });

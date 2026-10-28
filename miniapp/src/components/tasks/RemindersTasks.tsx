@@ -2,6 +2,7 @@
 import { useEffect, useState, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
 import { SmartListNav } from "./SmartListNav";
 import { TaskRow } from "./TaskRow";
+import { ROW_FADE_CLASS } from "@/lib/doneLinger";
 import { LensToggle } from "./LensToggle";
 import { TaskQuickActions } from "./TaskQuickActions";
 import { useReminderTasks } from "./useReminderTasks";
@@ -9,6 +10,7 @@ import { LabelEditor } from "./LabelEditor";
 import { SMART_LISTS, isOnlyDone } from "@/lib/smartLists";
 import { rangeLabel } from "@/lib/dateRange";
 import { useLang } from "@/components/roy/nav";
+import { cn } from "@/lib/utils";
 import { fetchUsers, fetchConfig, type TaskLabel } from "@/lib/api";
 import type { Task, User } from "@/types";
 import { TaskModal } from "@/components/TaskModal";
@@ -107,7 +109,7 @@ export function RemindersTasks() {
     <div
       key={t.id}
       onClick={() => setModalTask(t)}
-      className="group flex cursor-pointer border-b border-line transition-colors hover:bg-surface-2"
+      className={cn("group flex cursor-pointer border-b border-line transition-colors hover:bg-surface-2", r.fadingIds.has(t.id) && ROW_FADE_CLASS)}
     >
       <TaskRow task={t} now={r.now} showAssignee={showAssignee} onToggle={() => r.toggle(t)} trailing={rowTrailing(t)} labels={r.labels} />
     </div>

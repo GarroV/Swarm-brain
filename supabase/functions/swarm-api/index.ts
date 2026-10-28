@@ -3,12 +3,12 @@
 // файла ЦЕЛИКОМ, а переформатирование этого — ~700 строк дифа поверх параллельных веток. Новый код
 // роутера живёт в модулях рядом (task-labels.ts, meeting-invites.ts …), они по канону.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { verifyInitData } from "./auth.ts";
 import { isRenewableSession, isSessionRevoked, type SessionClaims, verifyJWT } from "../_shared/jwt.ts";
 import {
   isSecondStepRequired,
   parseSecondStepAudience,
   secondStepBlocks,
+  secondStepConfigWarnings,
   secondStepRequiredFrom,
   secondStepState,
 } from "../_shared/passkeys/second-step.ts";
@@ -39,6 +39,7 @@ import {
   getMeetingSecure,
 } from "./entries-guard.ts";
 import { canChangeMeetingPrivacy } from "../_shared/entries/meeting-rights.ts";
+import { claimOwnerIfFree, meetingConfirmPatch } from "../_shared/entries/meeting-confirm.ts";
 import type { SlotRow } from "../_shared/bot-slot.ts";
 import { isBotRecordingNow, isMissedBotSlot, toAgentListRow, toListRow } from "./meetings-payload.ts";
 import {
@@ -152,6 +153,8 @@ import { handleMeetingInviteRoutes } from "./meeting-invites.ts";
 import { handleWebRecordingRoutes } from "./web-recording.ts";
 import { DEMO_GROUP_ID, isDemoSession } from "../_shared/demo-session.ts";
 import { DEMO_REQUESTS, englishDemoResponse } from "./demo-english.ts";
+import { handleDemoModelRoute } from "./demo-questions.ts";
+import { blockModelCalls, withModelScope } from "../_shared/model-scope.ts";
 import { handleIntegrationConnectRoutes, makeIntegrationsDeps } from "./integrations.ts";
 import { handleAutojoinRoutes, makeAutojoinStore, makeCalendarCheck } from "./autojoin.ts";
 import { handleTaskLabelRoutes } from "./task-labels.ts";
@@ -198,6 +201,7 @@ import { onlyLiveEntries } from "../_shared/entries/live.ts";
 import { archiveEntry } from "../_shared/entries/archive.ts";
 import { personName, resolvePersonNames } from "../_shared/users/display-name.ts";
 import { toPublicUrl } from "../_shared/public-url.ts";
+import { creditedRecorderIds } from "./recorder-credit.ts";
 
 // Сколько задач отдаём вебу за раз. Дефолт движка (_shared/tasks/db.ts) — 200, и для БОТА он
 // верен: тот печатает список сообщением в чат, дампить туда базу нельзя. Для веба он смертелен —
@@ -227,18 +231,22 @@ const TASKS_LIST_LIMIT = 2000;
 const FILE_SIGNED_TTL_SEC = 60;
 
 const BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN")!;
-const MAX_AGE = parseInt(Deno.env.get("INITDATA_MAX_AGE") ?? "86400", 10);
 const ADMIN_USER_ID = 744230399; // см. lib/supabase.ts swarm-bot — единый суперадмин
 // Demo-сессия для показа заказчику (секретная ссылка → JWT с этим telegram_id). Жёстко
 // изолирована в синтетический воркспейс: не админ, не видит рабочие данные, не минтит токены.
 // Правило «это демо» — одно на все функции: _shared/demo-session.ts.
 const WEB_JWT_SECRET = Deno.env.get("WEB_JWT_SECRET"); // подпись веб-сессий (Login Widget, B+)
-// Замок «второй шаг входа обязателен» (палец, #955). По умолчанию выключен: шаг предлагается, но не требуется.
-// Значение: `1`/`true` — сразу; дата ISO (`2026-10-26`) — с 00:00 по Белграду; считается на каждый запрос.
+// Замок «второй шаг входа обязателен» (палец, #955). Читается «включён, пока явно не выключен»: выключает
+// только `0`/`false`/`off`; дата ISO (`2026-10-26`) — с 00:00 по Белграду; всё прочее (в т.ч. не задано) — сразу.
+// Считается на каждый запрос.
 const SECOND_STEP_REQUIRED_ENV = Deno.env.get("SECOND_STEP_REQUIRED");
 const SECOND_STEP_REQUIRED_FROM = secondStepRequiredFrom(SECOND_STEP_REQUIRED_ENV);
-// Кому шаг применим (пилот): не задано — никому, `all` — всем, список telegram id — только им.
-const SECOND_STEP_AUDIENCE = parseSecondStepAudience(Deno.env.get("SECOND_STEP_AUDIENCE"));
+// Кому шаг применим: список telegram id — только им, `none` — никому, не задано/`all`/непонятное — всем.
+const SECOND_STEP_AUDIENCE_ENV = Deno.env.get("SECOND_STEP_AUDIENCE");
+const SECOND_STEP_AUDIENCE = parseSecondStepAudience(SECOND_STEP_AUDIENCE_ENV);
+for (const line of secondStepConfigWarnings(SECOND_STEP_REQUIRED_ENV, SECOND_STEP_AUDIENCE_ENV)) {
+  console.warn(line);
+}
 
 const supabase = createClient(
   Deno.env.get("SUPABASE_URL")!,
@@ -282,14 +290,12 @@ export function resolveNames(ids: number[]): Promise<Map<number, string>> {
 
 // Прикрепляет к встрече(ам) человекочитаемые имена записавших: recorders[].telegram_id →
 // user_profiles, одним батч-резолвом на весь список. recorder_names — уникальные имена,
-// фолбэк «#id» для тех, кого нет в профилях. Источник «кто записал» — claim рекордера.
+// фолбэк «#id» для тех, кого нет в профилях. Источник «кто записал» — claim рекордера; в имена только
+// записавшие (recorder-credit.ts: transcribe или секунды > 0, #1070).
 async function withRecorderNames<T extends { recorders?: unknown }>(
   rows: T[],
 ): Promise<Array<T & { recorder_names: string[] }>> {
-  const idsOf = (r: T): number[] =>
-    ((r.recorders as Array<{ telegram_id?: number }> | null) ?? [])
-      .map((x) => x?.telegram_id)
-      .filter((n): n is number => typeof n === "number");
+  const idsOf = (r: T): number[] => creditedRecorderIds(r.recorders);
   const names = await resolveNames([...new Set(rows.flatMap(idsOf))]);
   return rows.map((r) => ({
     ...r,
@@ -551,7 +557,7 @@ async function sprintInWorkspace(
 
 // Граница ошибок (issue #584): не пойманное в маршруте — 500 с общим текстом, подробность в лог.
 Deno.serve(async (req: Request) => {
-  const res = await withErrorBoundary(req, routeRequest);
+  const res = await withModelScope(() => withErrorBoundary(req, routeRequest));
   // Демо-витрина — по-английски и в отказах сервера (issue #605); рабочие сессии не трогаем.
   return DEMO_REQUESTS.has(req) ? await englishDemoResponse(res) : res;
 });
@@ -593,25 +599,15 @@ async function routeRequest(req: Request): Promise<Response> {
     );
   }
 
-  // ── Auth: два способа ─────────────────────────────────────────────────────
-  //   • Telegram Mini App:  Authorization: tma <initData>
-  //   • Веб (Login Widget):  Authorization: Bearer <JWT>  (вариант B+, проксируется CF Pages Function)
+  // ── Auth: веб-сессия ──────────────────────────────────────────────────────
+  //   Authorization: Bearer <JWT>  (вариант B+, проксируется CF Pages Function).
+  //   Любая другая схема — 401.
   const authHeader = req.headers.get("Authorization") ?? "";
   let telegram_id: number;
-  let language_code = "en";
   // Веб-сессия (Bearer). Сверяется с отзывом ниже, когда загружена строка allowed_users.
   let webSession: SessionClaims | null = null;
 
-  if (authHeader.startsWith("tma ")) {
-    const verified = await verifyInitData(
-      authHeader.slice(4).trim(),
-      BOT_TOKEN,
-      MAX_AGE,
-    );
-    if (!verified) return apiErr(401, "Unauthorized", origin);
-    telegram_id = verified.telegram_id;
-    language_code = verified.language_code;
-  } else if (authHeader.startsWith("Bearer ")) {
+  if (authHeader.startsWith("Bearer ")) {
     if (!WEB_JWT_SECRET) return apiErr(500, "Web auth not configured", origin);
     const verified = await verifyJWT(
       authHeader.slice(7).trim(),
@@ -656,7 +652,12 @@ async function routeRequest(req: Request): Promise<Response> {
   // Группа форсится в 'demo' (НЕ из БД), админ-права запрещены. Барьер «нет дыр в рабочие»:
   // все data-запросы фильтруются по этому group_id, admin-роуты недоступны (isAdmin=false).
   const isDemo = isDemoSession(telegram_id);
-  if (isDemo) DEMO_REQUESTS.add(req);
+  if (isDemo) {
+    DEMO_REQUESTS.add(req);
+    // Демо не платит за модель (docs/decisions/2026-10-27-demo-no-model.md): нижний замок встаёт
+    // сразу после опознания личности, до любого маршрута.
+    blockModelCalls();
+  }
   const groupId = isDemo ? DEMO_GROUP_ID : (userRow as { group_id: string | null }).group_id;
   if (!groupId) {
     return apiErr(403, "No workspace assigned", origin);
@@ -678,7 +679,7 @@ async function routeRequest(req: Request): Promise<Response> {
   const routePath = routePathOf(url.pathname);
 
   // Второй шаг входа (палец, #955): состояние идёт в /me, замок обязательности — переменная
-  // SECOND_STEP_REQUIRED, по умолчанию выключен; аудитория — SECOND_STEP_AUDIENCE, по умолчанию никто.
+  // SECOND_STEP_REQUIRED (включён, пока явно не выключен); аудитория — SECOND_STEP_AUDIENCE (по умолчанию все).
   const secondStep = secondStepState(webSession, {
     isDemo,
     required: isSecondStepRequired(SECOND_STEP_REQUIRED_ENV),
@@ -687,6 +688,13 @@ async function routeRequest(req: Request): Promise<Response> {
   });
   if (secondStepBlocks(secondStep, req.method, routePath)) {
     return json({ error: "second_step_required" }, 403, origin);
+  }
+
+  // Демо без модели: ответ/поиск/дайджест — заготовленные, остальное, что зовёт модель, — отказ.
+  // Стоит раньше всех маршрутов, чтобы до OpenAI демо-запрос не дошёл ни одним путём.
+  if (isDemo) {
+    const demoModelResp = await handleDemoModelRoute({ supabase, origin }, req, routePath);
+    if (demoModelResp) return demoModelResp;
   }
 
   // Заморозка на время раскатки: изменения не принимаем, чтение оставляем (пустой экран
@@ -801,7 +809,7 @@ async function routeRequest(req: Request): Promise<Response> {
         name,
         username,
         group_id: groupId,
-        language: language_code,
+        language: "en",
         role: p?.role ?? null,
         markets: p?.markets ?? [],
         ui_backdrop: p?.ui_backdrop ?? null,
@@ -892,7 +900,7 @@ async function routeRequest(req: Request): Promise<Response> {
   }
 
   // POST /mcp/token — минт/перевыпуск MCP-токена → { oneLiner } (команда установки Claude Desktop).
-  // Токен бессрочный; доступно всем участникам.
+  // Токен живёт 30 дней (mcpTokenExpiry); доступно всем участникам.
   if (req.method === "POST" && routePath === "/mcp/token") {
     if (isDemo) {
       // Демо целиком на английском (#605): основной текст EN, русский — в error_ru, как у соседних отказов.
@@ -2751,6 +2759,7 @@ async function routeRequest(req: Request): Promise<Response> {
       const entry = await getEntrySecure(supabase, meetingNotesMatch[1], {
         groupId,
         telegramId: telegram_id,
+        requireMeeting: true,
       });
       // Все версии этой встречи: привязанные строки meetings + та, из которой запись создана
       // (entry_id проставляется при публикации, но metadata.meeting_id несёт исходную версию).
@@ -2835,6 +2844,7 @@ async function routeRequest(req: Request): Promise<Response> {
         const entry = await getEntrySecure(supabase, meetingId, {
           groupId,
           telegramId: telegram_id,
+          requireMeeting: true,
         });
         return json(entry, 200, origin);
       }
@@ -2855,24 +2865,27 @@ async function routeRequest(req: Request): Promise<Response> {
           return apiErr(400, "Invalid JSON", origin);
         }
         const fields: Record<string, unknown> = {};
+        let ownerToClaim: number | undefined;
+        if ("confirmed" in body && typeof body.confirmed !== "boolean") {
+          return apiErr(400, "confirmed must be boolean", origin);
+        }
         if ("confirmed" in body) {
-          fields.metadata = {
-            ...(entry.metadata as Record<string, unknown>),
-            confirmed: body.confirmed,
-          };
-          // Confirm = публикация: встреча становится видимой всему воркспейсу (is_private=false;
-          // ниже перезапишется, если пользователь выбрал «Личное»).
-          //
-          // Владельца при этом НЕ обнуляем. Раньше здесь стояло owner_id = null, и отсюда в базе
-          // 159 «ничьих» встреч — у записи не было автора, а несогласованная «ничья» встреча
-          // висела в очереди вычитки у всего воркспейса (issue #66). Решение владельца
-          // 2026-08-22: «не должно быть ничьих — вся информация принадлежит кому-то».
-          // Хозяин = тот, кто её принёс; если автор неизвестен (Read.ai пишет без владельца) —
-          // тот, кто согласовал: «сохранит тот, кто успеет».
-          // Видимость это не меняет: общую встречу по-прежнему видят все (is_private=false).
+          // Согласование (_shared/entries/meeting-confirm.ts): confirmed=true; владелец — решение
+          // 22.08.2026 («ничьих быть не должно»), сужено: согласовавший (он уже прошёл право
+          // правки) становится владельцем только при ПЕРВОМ согласовании безвладельной встречи
+          // (серверная отметка metadata.confirmed_at; запись условная, owner_id IS NULL).
+          // is_private и shared_with не трогаются; видимость — только полем is_private ниже,
+          // под canChangeMeetingPrivacy.
           if (body.confirmed === true) {
-            fields.is_private = false;
-            fields.owner_id = entry.owner_id ?? telegram_id;
+            const { owner_id, ...confirmFields } = meetingConfirmPatch(entry, {
+              id: telegram_id,
+              email: userEmail,
+              isAdmin,
+            });
+            Object.assign(fields, confirmFields);
+            ownerToClaim = owner_id;
+          } else {
+            fields.metadata = { ...(entry.metadata as Record<string, unknown>), confirmed: body.confirmed };
           }
         }
         if ("summary" in body) fields.summary = body.summary;
@@ -2903,12 +2916,11 @@ async function routeRequest(req: Request): Promise<Response> {
         ) {
           return apiErr(403, "Forbidden", origin);
         }
-        if (typeof body.is_private === "boolean") {
+        // Владельца не трогаем: is_private отвечает за ВИДИМОСТЬ, owner_id — за авторство; запись
+        // без владельца остаётся без владельца, кто бы её ни правил. Пишем только реальную смену
+        // (она уже прошла canChangeMeetingPrivacy выше).
+        if (typeof body.is_private === "boolean" && body.is_private !== entry.is_private) {
           fields.is_private = body.is_private;
-          // Владелец остаётся и у общей встречи: is_private отвечает за ВИДИМОСТЬ, owner_id —
-          // за авторство. Прежнее `: null` обнуляло хозяина при выборе «Общее» и было вторым
-          // источником «ничьих» записей (первый — блок confirmed выше, issue #66).
-          fields.owner_id = entry.owner_id ?? telegram_id;
         }
         // Рынки с экрана: marketTagsFromInput сохраняет сентинел General и применяет порог 2+.
         // Раньше здесь стоял голый normalizeCountries — он выбрасывал «General» как не-страну,
@@ -2917,6 +2929,7 @@ async function routeRequest(req: Request): Promise<Response> {
           fields.countries = marketTagsFromInput(body.countries as string[]);
         }
         await supabase.from("entries").update(fields).eq("id", entry.id);
+        if (ownerToClaim !== undefined) await claimOwnerIfFree(supabase, entry.id, ownerToClaim);
         const { data } = await onlyLiveEntries(supabase.from("entries").select(ENTRY_COLUMNS))
           .eq("id", entry.id).single();
         return json(data, 200, origin);
@@ -3103,7 +3116,7 @@ async function routeRequest(req: Request): Promise<Response> {
         notesMarkets: [],
       });
       const draftNotes = meeting.draft_notes_md as string | null;
-      if (!suggestion.source && draftNotes) {
+      if (!suggestion.source && draftNotes && !isDemo) {
         try {
           const meta = await extractEntryMeta(
             draftNotes,
@@ -3276,6 +3289,7 @@ async function routeRequest(req: Request): Promise<Response> {
         isPrivate,
         countries: body.countries,
         entryColumns: ENTRY_COLUMNS,
+        skipModel: isDemo,
       });
       return published.ok
         ? json(published.entry, published.status, origin)

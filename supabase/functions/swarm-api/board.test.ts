@@ -137,3 +137,90 @@ Deno.test("голос: без Content-Length или с нечисловым — 
   const junk = await voiceReq(new File(["a"], "a.m4a", { type: "audio/mp4" }), { "content-length": "abc" });
   assertEquals(await code(await handleBoardRoutes(ctx(), junk, "/tasks/voice")), [411, "length_required"]);
 });
+
+/** Заглушка клиента для /board/call: только workspaces.allowed_markets и calendar_series_country. */
+function callSupabase(opts: { markets: string[] | null; label?: string | null; writes?: unknown[] }) {
+  const chain = (table: string) => {
+    const q: Record<string, unknown> = {};
+    q.select = () => q;
+    q.eq = () => q;
+    q.delete = () => (opts.writes?.push({ delete: table }), q);
+    q.upsert = (row: unknown) => (opts.writes?.push({ upsert: row }), Promise.resolve({ error: null }));
+    q.maybeSingle = () =>
+      Promise.resolve({
+        data: table === "workspaces" ? { allowed_markets: opts.markets } : opts.label ? { country: opts.label } : null,
+        error: null,
+      });
+    q.then = (res: (v: unknown) => unknown) => res({ error: null });
+    return q;
+  };
+  return { from: chain } as unknown as SupabaseClient;
+}
+
+const callGet = (qs: string) => new Request(`http://x/board/call${qs}`);
+const callPut = (body: unknown) => new Request("http://x/board/call", { method: "PUT", body: JSON.stringify(body) });
+
+Deno.test("экран страны: демо закрыто, ключ обязателен, метод только GET/PUT", async () => {
+  assertEquals(await code(await handleBoardRoutes(ctx({ isDemo: true }), callGet("?key=a"), "/board/call")), [
+    403,
+    "demo_not_allowed",
+  ]);
+  assertEquals(await code(await handleBoardRoutes(ctx(), callGet(""), "/board/call")), [400, "bad_key"]);
+  assertEquals(await code(await handleBoardRoutes(ctx(), callGet("?key=%20"), "/board/call")), [400, "bad_key"]);
+  assertEquals(await code(await handleBoardRoutes(ctx(), callPut({ country: "RS" }), "/board/call")), [
+    400,
+    "bad_key",
+  ]);
+  assertEquals(
+    (await handleBoardRoutes(ctx(), new Request("http://x/board/call", { method: "POST" }), "/board/call"))!.status,
+    405,
+  );
+});
+
+Deno.test("экран страны: без метки — подсказка из названия и markets, задач нет", async () => {
+  const supabase = callSupabase({ markets: ["RS", "SI"] });
+  const res = await handleBoardRoutes(
+    ctx({ supabase }),
+    callGet(
+      "?key=abc@google.com:2026-10-26&title=%D0%A1%D0%B8%D0%BD%D0%BA%20%D0%BF%D0%BE%20%D0%A1%D0%BB%D0%BE%D0%B2%D0%B5%D0%BD%D0%B8%D0%B8",
+    ),
+    "/board/call",
+  );
+  assertEquals(res!.status, 200);
+  assertEquals(await res!.json(), {
+    series_key: "abc@google.com",
+    country: null,
+    suggested: "SI",
+    markets: ["RS", "SI"],
+    tasks: [],
+  });
+});
+
+Deno.test("экран страны PUT: страна вне markets и без поля — 400 bad_country, метка пишется только для своей страны", async () => {
+  const writes: unknown[] = [];
+  const supabase = callSupabase({ markets: ["RS"], label: "RS", writes });
+  assertEquals(
+    await code(
+      await handleBoardRoutes(ctx({ supabase }), callPut({ key: "a:2026-10-26", country: "PL" }), "/board/call"),
+    ),
+    [
+      400,
+      "bad_country",
+    ],
+  );
+  assertEquals(
+    await code(await handleBoardRoutes(ctx({ supabase }), callPut({ key: "a:2026-10-26" }), "/board/call")),
+    [
+      400,
+      "bad_country",
+    ],
+  );
+  assertEquals(writes, []); // отказ — до записи
+  // снятие метки: delete, ответ — вид без метки уже не нужен для проверки; важно, что запись ушла
+  await handleBoardRoutes(
+    ctx({ supabase: callSupabase({ markets: ["RS"], writes }) }),
+    callPut({ key: "a:2026-10-26", country: null }),
+    "/board/call",
+  );
+  assertEquals(writes, [{ delete: "calendar_series_country" }]);
+});

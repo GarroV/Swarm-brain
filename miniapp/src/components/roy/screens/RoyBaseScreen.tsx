@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
-import { useDt, useRoyNav } from "../nav";
+import { useDt, useIsDemo, useRoyNav } from "../nav";
+import { DemoQuestionChips } from "../DemoQuestions";
 import { RoyHeader, NavHeader, RoyCard, TypeTag, Market, Chip, FAB } from "../ui";
 import { RoyIcon } from "../icons";
 import { entryTagKey, entryFacet, deriveEntryTitle, entryPreview } from "../entry";
@@ -33,6 +34,7 @@ export function RoyBaseScreen({ onBack }: { onBack?: () => void }) {
 function BaseMobile({ onBack }: { onBack?: () => void }) {
   const { push, openAnswer } = useRoyNav();
   const dt = useDt();
+  const isDemo = useIsDemo();
   const [entries, setEntries] = useState<Entry[] | null>(null);
   // Сколько записей есть НА САМОМ ДЕЛЕ: сервер отдаёт заголовком X-Total-Count (issue #112).
   // null — счёт не пришёл, тогда про усечение молчим, а не выдумываем число.
@@ -57,6 +59,11 @@ function BaseMobile({ onBack }: { onBack?: () => void }) {
       {/* На мобайле экран открывается из «Ещё» (push) — нужна кнопка «Назад»; на десктопе это
           раздел (таб `book`), там прежняя шапка-заголовок. */}
       {onBack ? <NavHeader onBack={onBack} title={dt("База", "Knowledge base")} /> : <RoyHeader title={dt("База", "Knowledge base")} />}
+      {isDemo ? (
+        <div className="px-5 pb-1">
+          <DemoQuestionChips onPick={go} />
+        </div>
+      ) : (
       <div className="px-5">
         <form onSubmit={(e) => { e.preventDefault(); go(q); }}>
           <div className="flex items-center gap-2.5 rounded-[8px] border border-line-2 bg-surface px-4 py-3">
@@ -72,6 +79,7 @@ function BaseMobile({ onBack }: { onBack?: () => void }) {
           </div>
         </form>
       </div>
+      )}
       <div className="flex gap-2 overflow-x-auto px-5 py-3 [scrollbar-width:none]">
         {FILTERS.map((f) => (
           <Chip key={f.id} active={filter === f.id} onClick={() => setFilter(f.id)}>

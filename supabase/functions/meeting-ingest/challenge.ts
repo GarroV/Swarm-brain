@@ -109,15 +109,32 @@ export function settleRecorders(
   seconds: number | null,
   supersede: number | null,
 ): RecorderEntry[] {
-  return entries(recorders).map((r) => {
-    if (r.telegram_id === uploader) {
-      return { ...r, role: outcome, ...(seconds !== null ? { recorded_seconds: seconds } : {}) };
-    }
-    if (supersede !== null && r.telegram_id === supersede && r.role === "transcribe") {
-      return { ...r, role: "superseded" };
-    }
-    return r;
-  });
+  const list = entries(recorders).map((r) =>
+    r.telegram_id === uploader ? { ...r, role: outcome, ...(seconds !== null ? { recorded_seconds: seconds } : {}) } : r
+  );
+  return outcome === "transcribe" ? demoteOtherTranscribers(list, uploader, supersede) : list;
+}
+
+/**
+ * Один transcribe на встречу (#1070). Право транскрибации у одного человека; кто бы ни стал новым
+ * держателем — перехватом, занятием брошенной встречи по истёкшему лизу или сверкой претендента, —
+ * прежний transcribe становится superseded. Раньше superseded ставился только тому, кого перехватили
+ * (`supersede`), а занятие брошенной встречи оставляло двух transcribe и путало подпись «записали».
+ * `supersede` оставлен параметром для совместимости: теперь он лишь подмножество «всех остальных».
+ */
+function demoteOtherTranscribers(list: RecorderEntry[], holder: number, _supersede: number | null): RecorderEntry[] {
+  return list.map((r) => r.telegram_id !== holder && r.role === "transcribe" ? { ...r, role: "superseded" } : r);
+}
+
+/**
+ * Список `recorders` после claim: строка записавшего обновляется (или добавляется), а если он теперь
+ * transcribe — прежний transcribe другого человека становится superseded (см. demoteOtherTranscribers).
+ */
+export function withRecorder(recorders: unknown, mine: RecorderEntry, supersede: number | null): RecorderEntry[] {
+  const list = entries(recorders);
+  const at = list.findIndex((r) => r.telegram_id === mine.telegram_id);
+  const next = at >= 0 ? list.map((r, i) => (i === at ? { ...r, ...mine } : r)) : [...list, mine];
+  return mine.role === "transcribe" ? demoteOtherTranscribers(next, mine.telegram_id, supersede) : next;
 }
 
 /**

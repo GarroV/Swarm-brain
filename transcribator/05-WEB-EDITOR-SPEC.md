@@ -58,7 +58,6 @@ miniapp — это **single-page-приложение с навигацией ч
 Сервер `meeting-ingest` после генерации черновика шлёт записавшим уведомление с кнопкой «Открыть» (если задан секрет `WEB_BASE_URL=https://swarm-brain.pages.dev`), ведущей на конкретную встречу. Разбор ссылки — `getDeepLinkMeetingId()` в `src/lib/telegram.ts`:
 
 - **Браузер:** `?meeting=<id>` — читается из `window.location.search`.
-- **Telegram Mini App:** `startapp=meeting_<id>` приходит как `start_param` в `initDataUnsafe`; функция снимает префикс `meeting_` и возвращает id.
 
 В `page.tsx` при монтировании: если `getDeepLinkMeetingId()` вернул id — переключиться на раздел `meetings` и открыть `MeetingReview`. При закрытии вычитки (`closeReview`) query-параметр стирается через `window.history.replaceState`, чтобы ссылка не открывала встречу повторно.
 

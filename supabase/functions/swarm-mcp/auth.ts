@@ -12,7 +12,8 @@
 
 import { TOKEN_IDENTITY_FIELDS } from "./identity.ts";
 
-export const UNAUTHORIZED_MESSAGE = "Unauthorized — run /mytoken in the bot and add the token to the connector";
+export const UNAUTHORIZED_MESSAGE =
+  "Unauthorized — open Swarm in the browser → Settings → Claude Desktop, issue a token and add it to the connector";
 export const NO_WORKSPACE_MESSAGE = "No workspace — ask the Swarm owner to add you to a workspace";
 
 /** JSON-RPC код отказа в доступе (тот же, что и раньше, клиенты его уже знают). */

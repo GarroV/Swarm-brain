@@ -44,6 +44,25 @@ final class BoardClient: @unchecked Sendable {
         _ = try await send(config: config, method: "DELETE", url: url)
     }
 
+    // MARK: страна созвона
+
+    /// Страна серии, подсказка и задачи этой страны (`GET /board/call`).
+    func fetchCall(config: SwarmConfig, key: String, title: String?) async throws -> CallCountryInfo {
+        guard let url = BoardRequests.callURL(ingestBase: config.ingestBaseURL, key: key, title: title) else { throw BoardError.noConfig }
+        let (_, data) = try await send(config: config, method: "GET", url: url)
+        guard let info = CallCountryInfo.parse(data) else { throw BoardError.badResponse }
+        return info
+    }
+
+    /// Ставит (`country`) или снимает (nil) метку серии; ответ — как у GET, уже с задачами (`PUT /board/call`).
+    func setCallCountry(config: SwarmConfig, key: String, country: String?) async throws -> CallCountryInfo {
+        guard let url = BoardRequests.apiURL(ingestBase: config.ingestBaseURL, path: "board/call"),
+              let body = BoardRequests.callCountryBody(key: key, country: country) else { throw BoardError.noConfig }
+        let (_, data) = try await send(config: config, method: "PUT", url: url, body: body, contentType: "application/json")
+        guard let info = CallCountryInfo.parse(data) else { throw BoardError.badResponse }
+        return info
+    }
+
     // MARK: создание задач
 
     func createVoiceTask(config: SwarmConfig, audio: Data, now: Date = Date()) async throws -> CreatedTask {

@@ -17,6 +17,7 @@
 
 import { recordModelUsage, type UsageLabel } from "./model-usage.ts";
 import { parseOpenAiError, reportModelFailure } from "./model-health.ts";
+import { assertModelAllowed } from "./model-scope.ts";
 
 export const TELEGRAM_TIMEOUT_MS = 10_000; // sendMessage, правка сообщений, getMe, getFile
 export const TELEGRAM_UPLOAD_TIMEOUT_MS = 60_000; // sendDocument / sendPhoto с файлом
@@ -131,6 +132,8 @@ export async function externalFetch(
   const doFetch = opts.fetchFn ?? globalThis.fetch;
   const sleep = opts.sleepFn ?? abortableSleep;
   const target = `${method} ${redactUrl(url)}`;
+  // Демо-сессия не платит за модель ни при каких условиях: замок встаёт в swarm-api на запросе.
+  if (opts.service === "openai") assertModelAllowed(target);
 
   for (let attempt = 1;; attempt++) {
     opts.signal?.throwIfAborted();

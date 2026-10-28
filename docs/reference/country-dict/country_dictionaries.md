@@ -12,11 +12,11 @@
 ## 🇷🇸 RS · Сербия
 - **Гео/нация:** Сербия · сербский · серб · сербы · Србија · Srbija · српски · srpski · Srbin · Serbia · Serbian · Serbs · Сербиа · Србия · Serbien · Sırbistan
 - **Города:** Белград · Beograd · Belgrade · Нови Сад · Novi Sad
-- **Домены/тел:** dodopizza.rs · markting@dodopizza.rs · feedback@dodopizza.rs · menadzerbg1@gmail.com · +381
+- **Домены/тел:** dodopizza.rs · +381
 - **Вендоры:** Payten · AllSecure · allsecure.rs · PMN · Wildix · eFaktura
 - **Локальное:** динар · RSD · сербский производственный календарь · Wynx/Winx · Царице Милице · Булевар ослобођења · Дунавска
 - **Встречи:** Dodo Pizza Serbia · Serbia — Marketing · Финмодель Сербия · Питца линии Сербия · Новый договор Сербии · Royalty Fee Serbia
-- **Люди:** Виталий Суботко (опер.дир — Виталь/Виталик, v.subotko@dodopizza.rs) · Елизавета Новикова (маркетолог — Лиза) · Антон Нефедев (партнёр) · Наталья Нефедева (партнёр) · Ратмир Нефедев · Андрей Рассадин (терр.управляющий) · Ян Яриков (прораб) · Стефан Регодич (управляющий) · Зоран (агрегатор — Malinović)
+- **Люди:** Виталий Суботко (опер.дир — Виталь/Виталик) · Елизавета Новикова (маркетолог — Лиза) · Антон Нефедев (партнёр) · Наталья Нефедева (партнёр) · Ратмир Нефедев · Андрей Рассадин (терр.управляющий) · Ян Яриков (прораб) · Стефан Регодич (управляющий) · Зоран (агрегатор — Malinović)
 - **Пары:** Антон+Виталий · Виталий+Лиза · Виталий+Рассадин · Нефедев+Суботко · Антон+Наталья · Виталий+Ратмир
 - **noise:** Billbright 1/2 · Newside 1 · Бельград · Belgrat · Сереби · Фербии · Kifir · Wendy · Биллиан · focaccio
 
@@ -25,7 +25,7 @@
 ## 🇸🇮 SI · Словения
 - **Гео/нация:** Словения · словенский · словенец · Slovenija · slovenski · Slovenec · Slovenia · Slovenian · Slovene · Словениа · Слувения · Slowenien
 - **Города:** Любляна · Ljubljana · Копер · Koper · Крань · Kranj · Марибор · Maribor · Медводе · Medvode
-- **Домены/тел:** dodopizza.si · marketing@dodopizza.si · info@dodopizza.si · dodopizzaslovenia@gmail.com · pisarnakovac.si · +386
+- **Домены/тел:** dodopizza.si · pisarnakovac.si · +386
 - **Вендоры:** Radenska · Sixpayment · Pisarna Kovač
 - **Локальное:** poslovodja · Drinkit в Словении
 - **Встречи:** Slovenia marketing · Eka / Vasiliy · Словения Антон · Royalty Fee Slovenia
@@ -39,7 +39,7 @@
 ## 🇭🇷 HR · Хорватия
 - **Гео/нация:** Хорватия · хорватский · хорват · Hrvatska · hrvatski · Hrvat · Croatia · Croatian · Croat · Хрватска · Кроатия · Kroatien
 - **Города:** Загреб · Zagreb
-- **Домены/тел:** dodopizza.hr · mng.zagreb1.dodo@gmail.com · mng.zagreb2.dodo@gmail.com · +385
+- **Домены/тел:** dodopizza.hr · +385
 - **Вендоры:** KeyPro
 - **Юр./локальное:** Dodo Pizza Hrvatska · Tratinska · Тратинска · Maksimir · Максимир · Maksimirska
 - **Встречи:** Croatia — Arina / Vasiliy · Google Meet — Jurica / Vasiliy · Созвон с Борисом по Хорватии · Royalty Fee Croatia
@@ -52,7 +52,7 @@
 ## 🇲🇪 ME · Черногория
 - **Гео/нация:** Черногория · черногорский · черногорец · Crna Gora · Црна Гора · crnogorski · Crnogorac · Montenegro · Montenegrin · Монтенегро · Черна Гора · Montenegró
 - **Города:** Подгорица · Podgorica · Будва · Budva · Котор · Kotor · Улцин · Ulcinj · Херцег-Нови · Herceg Novi
-- **Домены/тел:** dodopizza.me · dodo-me.com · montenegrododo@gmail.com · manager.dodo.pod@gmail.com · navus.me · +382
+- **Домены/тел:** dodopizza.me · dodo-me.com · navus.me · +382
 - **Вендоры:** Navus · Навус
 - **Юр.:** DODO PIZZA Montenegro FOOD V. DOO · Bulevar Džordža Vašingtona
 - **Встречи:** Royalty Fee Montenegro · Итоги командировки Черногория
@@ -68,7 +68,7 @@
 - **Города:** Таллин · Tallinn · Тарту · Tartu · Пярну · Pärnu
 - **Домены/тел:** dodopizza.ee · +372
 - **Локальное:** Beach Grind · Beach Grind Combo · 10-летие Эстонии
-- **Люди ⚠️ тонко:** Андрей (партнёр — andrei@dodopizza.ee) · Elina Corkhill · Viktor · Kirill · Alina · Stiven · Vsevolod
+- **Люди ⚠️ тонко:** Андрей (партнёр) · Elina Corkhill · Viktor · Kirill · Alina · Stiven · Vsevolod
 - **Пары:** Андрей+Элина
 - **noise:** MiSento · Missente · Эстошка · Ливадия
 
@@ -77,7 +77,7 @@
 ## 🇱🇹 LT · Литва
 - **Гео/нация:** Литва · литовский · литовец · Lietuva · lietuvis · lietuviškas · Lithuania · Lithuanian · Литуания · Лиетува · Litauen
 - **Города:** Вильнюс · Vilnius · Каунас · Kaunas · Клайпеда · Klaipeda · Паневежис · Panevėžys
-- **Домены/тел:** dodopizza.lt · sm.vilnius1@dodopizza.lt · marketing@dodopizza.lt · supply@dodopizza.lt · +370
+- **Домены/тел:** dodopizza.lt · +370
 - **Локальное:** 10-летие Литвы · Super Trio Medium
 - **Люди ⚠️ тонко:** Костин (партнёр) · Настя (локализация обучения) · Тамара (закупки)
 - **noise:** Noeze · нойз · LIPA
@@ -87,7 +87,7 @@
 ## 🇵🇱 PL · Польша
 - **Гео/нация:** Польша · польский · поляк · Polska · polski · Polak · Poland · Polish · Poles · Полска · Поланд · Polen
 - **Города:** Варшава · Warszawa · Warsaw · WAW
-- **Домены/тел:** dodopizza.pl · marketing.waw@dodopizza.pl · rnd@dodopizza.pl · store.waw1..6.dodo@gmail.com · +48
+- **Домены/тел:** dodopizza.pl · +48
 - **Вендоры:** Żabka · Zabka · жабка · Funex
 - **Локальное:** злотый · PLN · zł · мука M2 · стрельчатая пицца
 - **Люди:** Roman Kofman (партнёр) · Артур (R&D) · Нелли Кушнирчук (упаковка/телеборды) · Алёна (маркетинг) · Анна
@@ -98,7 +98,7 @@
 ## 🇷🇴 RO · Румыния
 - **Гео/нация:** Румыния · румынский · румын · România · român · românesc · Romania · Romanian · Романия · Ромыния · Rumänien
 - **Города:** Бухарест · București · Bucharest · Брашов · Brașov · Кяжна · Chiajna · Яссы · Iași · Констанца · Крайова · Craiova · Питешти · Обор · Obor
-- **Домены/тел:** dodopizza.ro · feedback@dodopizza.ro · +40
+- **Домены/тел:** dodopizza.ro · +40
 - **Вендоры:** Jeri Pizza · Presto · Cristim · Кристим · Suga · Thalamian · Jumbo
 - **Локальное:** лей · RON · carbonara deluxe · below 50 lei
 - **Встречи:** Marketing Romania monthly · Предписания IMF
@@ -124,7 +124,7 @@
 ## 🇨🇾 CY · Кипр
 - **Гео/нация:** Кипр · кипрский · киприот · Κύπρος · Kypros · κυπριακός · Kıbrıs · Cyprus · Cypriot · Сайпрус · Кипрос · Zypern
 - **Города:** Лимассол · Лимасол · Limassol · Никосия · Nicosia
-- **Домены/тел:** dodopizza.com.cy · tm@dodopizza.com.cy · sm1.limassol@dodopizza.com.cy · sm1.nicosia@dodopizza.com.cy · +357
+- **Домены/тел:** dodopizza.com.cy · +357
 - **Локальное:** Трио комбо · греческий язык
 - **Люди ⚠️ тонко:** Ксения Забардаева (обучение, живёт на Кипре — Ксюта) · Никитин · D Musatov
 - **noise:** Кипсе
@@ -134,7 +134,7 @@
 ## 🇪🇸 ES · Испания
 - **Гео/нация:** Испания · испанский · испанец · España · Espana · español · Spain · Spanish · Spaniard · Эспания · Спейн · Spanien · Espagne
 - **Города:** Сабадель · Sabadell · Каталония · Catalonia · Catalunya · Барселона · Barcelona
-- **Домены/тел:** dodopizza.es · gerencia@dodopizza.es · marketing@dodopizza.es · supply@dodopizza.es · +34
+- **Домены/тел:** dodopizza.es · +34
 - **Вендоры:** Diario de Sabadell · Alier
 - **Локальное:** Don Bacon · Familiar Pizza · siesta · convenio · Dodo Kids ES · dodokids.io · Sabadell Spirit · эко-ставка · 13-я/14-я зарплата · Ronda de Zamenhof
 - **Встречи:** Catalonia // Weekly sync · Catalonia OPS monthly · Испанская зарплата и увольнения

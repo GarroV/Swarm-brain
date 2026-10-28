@@ -111,6 +111,13 @@ struct IngestResponse: Decodable {
     let error: String?
 }
 
+// Ответ meeting-ingest на backup_only=1: бэкап принят, живёт до expires_at (3 суток).
+struct BackupResponse: Decodable {
+    let ok: Bool?
+    let backupId: String?
+    let expiresAt: String?
+}
+
 // ── Контекст созвона «что было в прошлый раз» (issue #226) ───────────────────
 // Отдаёт функция meeting-context ДВЕ НЕЗАВИСИМЫЕ вещи: тезисы последней встречи с этой
 // стороной (страной) и задачи самой стороны. Они не связаны между собой — «задачи и тезисы

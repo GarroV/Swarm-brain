@@ -2,8 +2,9 @@
 // и swarm-api (веб «Настройки → Claude Desktop»). Функции принимают supabase-клиент.
 //
 // MCP-токен — для подключения Claude Desktop к базе знаний через swarm-mcp. Отдельный от
-// токена рекордера (recorder-token.ts). Бессрочный: expires_at = null (swarm-mcp трактует
-// null как «без срока»). Хранится только sha256-хэшем в allowed_users.claude_mcp_token_hash.
+// токена рекордера (recorder-token.ts). Живёт 30 дней (MCP_TOKEN_TTL_DAYS): expires_at пишется
+// при выпуске, swarm-mcp сверяет его на каждый вызов. Хранится только sha256-хэшем в
+// allowed_users.claude_mcp_token_hash. Гасит токен и триггер БД при смене воркспейса/роли.
 
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { type AccessContext, logAccess } from "./access-events.ts";
@@ -11,11 +12,20 @@ import { FUNCTIONS_BASE_URL } from "./public-url.ts";
 
 export const SETUP_URL = `${FUNCTIONS_BASE_URL}/swarm-setup`;
 
+/** Срок жизни MCP-токена (стандарт MCP-сервера: 30 дней). */
+export const MCP_TOKEN_TTL_DAYS = 30;
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** Момент истечения токена, выпущенного в `nowMs`. */
+export function mcpTokenExpiry(nowMs: number = Date.now()): string {
+  return new Date(nowMs + MCP_TOKEN_TTL_DAYS * DAY_MS).toISOString();
+}
+
 export interface MintedToken {
   token: string;
 }
 
-// Минтит новый бессрочный smcp_-токен, перезаписывая старый (старый сразу мёртв). null при ошибке.
+// Минтит новый smcp_-токен на 30 дней, перезаписывая старый (старый сразу мёртв). null при ошибке.
 export async function mintMcpToken(
   supabase: SupabaseClient,
   telegramId: number,
@@ -29,14 +39,14 @@ export async function mintMcpToken(
     .join("");
   const { error } = await supabase
     .from("allowed_users")
-    .update({ claude_mcp_token_hash: hashHex, claude_mcp_token_expires_at: null })
+    .update({ claude_mcp_token_hash: hashHex, claude_mcp_token_expires_at: mcpTokenExpiry() })
     .eq("telegram_id", telegramId);
   if (error) return null;
   await logAccess(supabase, telegramId, "mcp_token_issued", ctx);
   return { token };
 }
 
-// Статус MCP-токена: активен ли + срок (у бессрочного expiresAt = null).
+// Статус MCP-токена: активен ли + срок (expiresAt = null у токена без срока — такие остались только до миграции 20261027120001).
 export async function getMcpTokenStatus(
   supabase: SupabaseClient,
   telegramId: number,

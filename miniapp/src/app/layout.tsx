@@ -1,7 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Golos_Text, IBM_Plex_Mono } from "next/font/google";
 import "./globals.css";
-import { TelegramProvider } from "@/components/TelegramProvider";
 import { ServiceWorkerRegister } from "@/components/ServiceWorkerRegister";
 import { SingleTabGate } from "@/components/SingleTabGate";
 import { ConfirmProvider } from "@/components/ui/confirm";
@@ -55,11 +54,9 @@ export default function RootLayout({
         <ConnectionBanner />
         {/* Пульс присутствия (#751): ничего не рисует, видно только админу через GET /presence. */}
         <PresencePulse />
-        <TelegramProvider>
-          <ConfirmProvider>
-            <SingleTabGate>{children}</SingleTabGate>
-          </ConfirmProvider>
-        </TelegramProvider>
+        <ConfirmProvider>
+          <SingleTabGate>{children}</SingleTabGate>
+        </ConfirmProvider>
         <ServiceWorkerRegister />
       </body>
     </html>

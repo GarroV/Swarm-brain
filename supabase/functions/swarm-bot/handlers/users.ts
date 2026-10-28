@@ -7,10 +7,18 @@ import type { TgCallbackQuery } from "../lib/types.ts";
 import { sendTaskCard } from "../tasks/index.ts";
 import { generateNameAliases } from "../lib/name-aliases.ts";
 import { assignUserToWorkspace } from "../lib/workspace.ts";
+import { escapeLike, normalizeUsername } from "../../_shared/users/membership.ts";
 import { externalFetch, VIA_TELEGRAM } from "../../_shared/external-fetch.ts";
 import { isSuperadmin, type MemberRow } from "../../_shared/users/admin-scope.ts";
 import { withMasterFlag } from "../../_shared/users/master-admins.ts";
-import { canActOnUser, canAddUsers, isEditableProfileField, type UserAction, type UsersActor } from "./users-scope.ts";
+import {
+  canActOnUser,
+  canAddUsers,
+  canAddUserTarget,
+  isEditableProfileField,
+  type UserAction,
+  type UsersActor,
+} from "./users-scope.ts";
 import { escapeHtml } from "../../_shared/telegram-html.ts";
 
 const TELEGRAM_BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN")!;
@@ -42,6 +50,22 @@ async function loadTargetRow(actor: UsersActor, targetId: number): Promise<Membe
   }
   // is_master — признак цели: админ воркспейса не правит аккаунт мастер-админа (fail-closed при сбое списка).
   return await withMasterFlag(supabase, ((data ?? [])[0] as MemberRow | undefined) ?? null);
+}
+
+/**
+ * Строка, которую адресует `/users add` (по telegram_id или @username), в ЛЮБОМ воркспейсе: добавление
+ * существующего человека переносит его строку. Ошибка чтения = нет прав (undefined → отказ).
+ */
+async function loadAddTarget(targetArg: string): Promise<MemberRow | null | undefined> {
+  const q = supabase.from("allowed_users").select("telegram_id, group_id");
+  const { data, error } = /^\d+$/.test(targetArg)
+    ? await q.eq("telegram_id", Number(targetArg)).limit(1).maybeSingle()
+    : await q.ilike("username", escapeLike(normalizeUsername(targetArg))).order("id").limit(1).maybeSingle();
+  if (error) {
+    console.error("[users] add target row:", error.message);
+    return undefined;
+  }
+  return await withMasterFlag(supabase, (data as MemberRow | null) ?? null);
 }
 
 /** Проверка прав с ответом человеку; true — можно продолжать. */
@@ -136,6 +160,12 @@ export async function handleUsers(
     }
     if (!targetArg) {
       await sendMessage(chatId, "Использование: /users add [telegram_id или @username]");
+      return;
+    }
+    // Существующую строку команда ПЕРЕМЕЩАЕТ: чужого воркспейса, владельца и мастер-админа админ не берёт.
+    const addTarget = await loadAddTarget(targetArg);
+    if (addTarget === undefined || !canAddUserTarget(actor, addTarget)) {
+      await sendMessage(chatId, NO_RIGHTS);
       return;
     }
     // Единый путь для бота и веба — _shared/users/membership.ts (по id: move/insert; по @username:

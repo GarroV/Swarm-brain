@@ -1,4 +1,5 @@
-import { isAdminUser } from "../lib/supabase.ts";
+import { isMasterUser } from "../lib/supabase.ts";
+import { canUseWorkspaceCommand } from "./users-scope.ts";
 import { sendMessage } from "../lib/telegram.ts";
 import { assignUserToWorkspace, createWorkspace, listWorkspaces } from "../lib/workspace.ts";
 import { escapeHtml } from "../../_shared/telegram-html.ts";
@@ -8,8 +9,13 @@ export async function handleWorkspace(
   userId: number,
   argText: string,
 ): Promise<void> {
-  if (!(await isAdminUser(userId))) {
-    await sendMessage(chatId, "Недостаточно прав.");
+  // Все воркспейсы, создание и перенос между ними — только суперадмин (admin-scope.ts); админ
+  // воркспейса управляет людьми своего воркспейса через /users.
+  if (!canUseWorkspaceCommand({ telegramId: userId, groupId: "", isMaster: await isMasterUser(userId) })) {
+    await sendMessage(
+      chatId,
+      "Only the master admin can manage workspaces.\nУправлять воркспейсами может только мастер-админ.",
+    );
     return;
   }
 

@@ -1,6 +1,7 @@
 import { ADMIN_USER_ID, isMasterUser, supabase } from "../lib/supabase.ts";
 import { editInlineMessage, sendInlineMessage, sendMessage } from "../lib/telegram.ts";
 import { clearSession, setSession } from "../lib/storage.ts";
+import { escapeLike } from "../../_shared/users/membership.ts";
 import { assignUserToWorkspace, createWorkspace, listWorkspaces } from "../lib/workspace.ts";
 import type { TgCallbackQuery } from "../lib/types.ts";
 import { type AdminActor, isSuperadmin, type MemberRow } from "../../_shared/users/admin-scope.ts";
@@ -62,7 +63,7 @@ async function loadTarget(act: BotAdminAction): Promise<MemberRow | null> {
   const q = supabase.from("allowed_users").select("telegram_id, group_id");
   const { data, error } = "telegramId" in t
     ? await q.eq("telegram_id", t.telegramId).limit(1).maybeSingle()
-    : await q.ilike("username", t.username).limit(1).maybeSingle();
+    : await q.ilike("username", escapeLike(t.username)).order("id").limit(1).maybeSingle();
   if (error) throw new Error(error.message);
   return await withMasterFlag(supabase, (data as MemberRow | null) ?? null);
 }

@@ -6,6 +6,7 @@
 //     рассылка всем.
 //   • Админ (флаг allowed_users.is_admin) — только СВОЙ воркспейс (group_id из index.ts):
 //     его люди, его настройки, рассылка его команде. Чужой воркспейс для него не существует (404).
+//   • Почту входа тому, кто уже входил (telegram_id задан), меняет он сам или суперадмин; админ воркспейса задаёт её только ожидающему приглашению.
 //   • Аккаунт суперадмина (почта — ключ веб-входа, флаг админа) меняет только сам суперадмин.
 //   • Смена почты чужого аккаунта не проходит молча: человеку приходит сообщение в бота,
 //     в журнал функции пишется структурная строка (отдельной таблицы журнала нет).
@@ -15,6 +16,7 @@ import {
   canChangeAccountKeys,
   canManageMember,
   canManageWorkspace,
+  canSetLoginEmail,
   isSuperadmin,
   type MemberRow,
   SUPERADMIN_TELEGRAM_ID,
@@ -22,7 +24,14 @@ import {
 import { notifyPerson } from "../_shared/notify-person.ts";
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-export { canChangeAccountKeys, canManageMember, canManageWorkspace, isSuperadmin, SUPERADMIN_TELEGRAM_ID };
+export {
+  canChangeAccountKeys,
+  canManageMember,
+  canManageWorkspace,
+  canSetLoginEmail,
+  isSuperadmin,
+  SUPERADMIN_TELEGRAM_ID,
+};
 export type { AdminActor, MemberRow };
 
 /** Нормализация почты так же, как её хранит allowed_users (lower, пусто → null). */

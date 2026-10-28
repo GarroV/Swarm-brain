@@ -1,7 +1,6 @@
 // Cloudflare Pages Function: прокси /api/* → swarm-api (same-origin для фронта).
 // Ключ варианта B+: httpOnly-cookie roj_session недоступна JS и не уходит cross-origin,
 // поэтому здесь, на сервере, перекладываем её в Authorization: Bearer при форварде.
-// Telegram Mini App шлёт Authorization: tma <initData> — пробрасываем как есть.
 //
 // Здесь же живёт ПРОДЛЕНИЕ сессии (issue #50): раз в сутки активной работы cookie
 // переиздаётся с новым сроком, поэтому человек, который пользуется сервисом, не вылетает
@@ -27,15 +26,12 @@ export async function onRequest(ctx: Ctx): Promise<Response> {
   const target = `${swarmApiUrl(env)}/${path}${url.search}`;
 
   const headers = new Headers(request.headers);
-  const incomingAuth = headers.get("Authorization") ?? "";
   let sessionToken: string | null = null;
-  if (!incomingAuth.startsWith("tma ")) {
-    const cookie = request.headers.get("Cookie") ?? "";
-    const m = cookie.match(/(?:^|;\s*)roj_session=([^;]+)/);
-    if (m) {
-      sessionToken = m[1];
-      headers.set("Authorization", `Bearer ${sessionToken}`);
-    }
+  const cookie = request.headers.get("Cookie") ?? "";
+  const m = cookie.match(/(?:^|;\s*)roj_session=([^;]+)/);
+  if (m) {
+    sessionToken = m[1];
+    headers.set("Authorization", `Bearer ${sessionToken}`);
   }
   headers.delete("Cookie");
   headers.delete("Host");

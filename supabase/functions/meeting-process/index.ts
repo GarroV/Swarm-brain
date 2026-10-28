@@ -1,6 +1,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { AUDIO_BUCKET, LEASE_STALE_MS, runMeetingStep } from "../_shared/meeting-processor.ts";
 import { isPurgeMinute, purgeExpiredAudio } from "../_shared/meeting-audio-retention.ts";
+import { purgeExpiredBackups } from "../_shared/meeting-backup-retention.ts";
 import { holdWaitingMeetings, processingFrozen } from "../_shared/processing-freeze.ts";
 
 // meeting-process — cron-воркер durable-обработки встреч. Триггерится pg_cron каждую минуту
@@ -38,13 +39,22 @@ Deno.serve(async (req: Request) => {
   }
 
   const startedAt = Date.now();
-  // Раз в час — снести аудио старше недели. Сбой чистки не мешает обработке встреч.
+  // Раз в час — снести аудио старше недели и просроченные бэкапы. Сбой чистки не мешает обработке встреч.
   if (isPurgeMinute(new Date(startedAt))) {
     try {
       const removed = await purgeExpiredAudio(supabase, AUDIO_BUCKET);
       if (removed > 0) console.log(`meeting-process: удалено устаревшего аудио — ${removed}`);
     } catch (e) {
       console.error("meeting-process: чистка аудио не удалась:", e);
+    }
+    // Серверные бэкапы отклонённых записей: три дня, потом файлы уходят, строка остаётся (#1070).
+    try {
+      const { purged, failed } = await purgeExpiredBackups(supabase, new Date().toISOString());
+      if (purged > 0 || failed > 0) {
+        console.log(`meeting-process: бэкапы записей — убрано ${purged}, не удалось ${failed}`);
+      }
+    } catch (e) {
+      console.error("meeting-process: уборка бэкапов записей не удалась:", e);
     }
   }
   const staleIso = new Date(Date.now() - LEASE_STALE_MS).toISOString();

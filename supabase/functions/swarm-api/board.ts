@@ -15,7 +15,15 @@
 //        Задача создаётся сразу, на звонящего, confirmed, source = recorder_voice. Отмена — обычные
 //        DELETE /tasks/:id (архивация) и POST /tasks/:id/restore. Аудио нигде не хранится.
 //
-// Ошибки голоса: { error: <EN>, error_ru: <RU>, code } — рекордер показывает по коду.
+//   GET  /board/call?key=<identity_key>&title=<название>&date=&tz_offset=
+//        200 { series_key, country, suggested, markets, tasks: [{id,title,due_date,remind_date,status}] }
+//        · country — метка серии созвона (calendar_series_country), общая для всех; tasks — только при ней:
+//          мои (исполнитель или соисполнитель) живые задачи этой страны, порядок sortCallTasks, до BOARD_TASKS_LIMIT
+//        · suggested — страна из названия, только когда метки нет · 400 bad_key · 403 demo_not_allowed
+//   PUT  /board/call  { key, country: "RS" | null }  — поставить или снять метку серии; ответ как у GET
+//        · 400 bad_key|bad_country (страна вне allowed_markets) · 403 demo_not_allowed
+//
+// Ошибки голоса и экрана страны: { error: <EN>, error_ru: <RU>, code } — рекордер показывает по коду.
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { apiErr, json } from "./http.ts";
 import { serverError } from "./client-error.ts";
@@ -28,6 +36,7 @@ import { transcribeShortClip } from "../_shared/short-transcribe.ts";
 import { normalizeVoiceTask } from "../_shared/voice-task.ts";
 import { parseVoiceTask } from "../_shared/voice-task-llm.ts";
 import { resolvePersonNames } from "../_shared/users/display-name.ts";
+import { nextDay, seriesKeyOf, sortCallTasks, suggestCountryFromTitle } from "../_shared/calendar-series.ts";
 
 /** Сколько задач отдаём клиенту; обрезку до task_rows делает он, остаток считает tasks_total. */
 export const BOARD_TASKS_LIMIT = 200;
@@ -39,6 +48,8 @@ const SOURCE = "recorder_voice";
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const LANG_RE = /^[a-z]{2,3}$/;
 const TASK_COLUMNS = "id, title, due_date, status, created_at";
+const CALL_TASK_COLUMNS = "id, title, due_date, remind_date, status, created_at, country";
+const MAX_KEY_LENGTH = 512;
 
 const ERRORS = {
   bad_request: {
@@ -51,8 +62,14 @@ const ERRORS = {
   bad_audio: { status: 400, en: "Audio file is missing or empty", ru: "Аудиофайла нет или он пустой" },
   demo_not_allowed: {
     status: 403,
-    en: "Voice tasks are not available in the demo",
-    ru: "В демо голосовые задачи недоступны",
+    en: "Not available in the demo",
+    ru: "В демо недоступно",
+  },
+  bad_key: { status: 400, en: "key is required", ru: "Нужен key — ключ встречи" },
+  bad_country: {
+    status: 400,
+    en: "country must be one of the workspace markets or null",
+    ru: "country — один из рынков пространства или null",
   },
   audio_too_large: {
     status: 413,
@@ -250,6 +267,101 @@ async function handleVoice(ctx: BoardContext, req: Request): Promise<Response> {
   }
 }
 
+/** Метка серии и, если она есть, мои задачи этой страны; без метки — подсказка из названия. */
+async function buildCallView(
+  ctx: BoardContext,
+  seriesKey: string,
+  title: string,
+  today: string,
+): Promise<Record<string, unknown>> {
+  const { supabase, telegramId, groupId } = ctx;
+  const [markets, labelled] = await Promise.all([
+    allowedMarketsOf(supabase, groupId),
+    supabase.from("calendar_series_country").select("country").eq("group_id", groupId).eq("series_key", seriesKey)
+      .maybeSingle(),
+  ]);
+  if (labelled.error) throw new Error(`calendar_series_country: ${labelled.error.message}`);
+  const country = (labelled.data as { country: string } | null)?.country ?? null;
+  if (!country) {
+    return {
+      series_key: seriesKey,
+      country: null,
+      suggested: suggestCountryFromTitle(title, markets),
+      markets,
+      tasks: [],
+    };
+  }
+  // Видимость и «живые» — те же помощники, что у GET /tasks; исполнитель/соисполнитель — telegramId.
+  const listed = await listTasksWithTotal(
+    { columns: CALL_TASK_COLUMNS, telegramId, viewerId: telegramId, country, limit: BOARD_TASKS_LIMIT },
+    groupId,
+  );
+  // ilike по подстроке ловит и составную метку «RS,HR» — оставляем задачи, где страна названа точно.
+  const mine = listed.tasks.filter((t) => (t.country ?? "").toUpperCase().split(/[\s,;/]+/).includes(country));
+  const tasks = sortCallTasks(mine, today, nextDay(today)).map((t) => ({
+    id: t.id,
+    title: t.title,
+    due_date: t.due_date,
+    remind_date: t.remind_date ?? null,
+    status: t.status,
+  }));
+  return { series_key: seriesKey, country, suggested: null, markets, tasks };
+}
+
+async function handleCall(ctx: BoardContext, req: Request): Promise<Response> {
+  const { supabase, telegramId, groupId, isDemo, origin } = ctx;
+  if (isDemo) return err("demo_not_allowed", origin);
+  const url = new URL(req.url);
+  let key: unknown;
+  let title = url.searchParams.get("title") ?? "";
+  let setCountry: string | null | undefined;
+  if (req.method === "PUT") {
+    let body: Record<string, unknown>;
+    try {
+      body = await req.json();
+    } catch {
+      return err("bad_key", origin);
+    }
+    key = body?.key;
+    title = typeof body?.title === "string" ? body.title : title;
+    setCountry = body?.country === null ? null : typeof body?.country === "string" ? body.country : undefined;
+  } else {
+    key = url.searchParams.get("key");
+  }
+  if (typeof key !== "string" || !key.trim() || key.length > MAX_KEY_LENGTH) return err("bad_key", origin);
+  const seriesKey = seriesKeyOf(key.trim());
+  const dateParam = url.searchParams.get("date");
+  const date = validDate(dateParam);
+  if (dateParam && !date) return err("bad_date", origin);
+  const today = clientToday(date, url.searchParams.get("tz_offset"));
+
+  try {
+    if (setCountry !== undefined) {
+      if (setCountry === null) {
+        const { error } = await supabase.from("calendar_series_country").delete().eq("group_id", groupId)
+          .eq("series_key", seriesKey);
+        if (error) throw new Error(`calendar_series_country delete: ${error.message}`);
+      } else {
+        const iso = setCountry.trim().toUpperCase();
+        if (!(await allowedMarketsOf(supabase, groupId)).includes(iso)) return err("bad_country", origin);
+        const { error } = await supabase.from("calendar_series_country").upsert({
+          group_id: groupId,
+          series_key: seriesKey,
+          country: iso,
+          set_by: telegramId,
+          set_at: new Date().toISOString(),
+        }, { onConflict: "group_id,series_key" });
+        if (error) throw new Error(`calendar_series_country upsert: ${error.message}`);
+      }
+    } else if (req.method === "PUT") {
+      return err("bad_country", origin);
+    }
+    return json(await buildCallView(ctx, seriesKey, title, today), 200, origin);
+  } catch (e) {
+    return serverError(origin, "board call", e);
+  }
+}
+
 export async function handleBoardRoutes(
   ctx: BoardContext,
   req: Request,
@@ -258,6 +370,10 @@ export async function handleBoardRoutes(
   if (routePath === "/board/today") {
     if (req.method !== "GET") return apiErr(405, "Method not allowed", ctx.origin);
     return handleToday(ctx, new URL(req.url));
+  }
+  if (routePath === "/board/call") {
+    if (req.method !== "GET" && req.method !== "PUT") return apiErr(405, "Method not allowed", ctx.origin);
+    return await handleCall(ctx, req);
   }
   if (routePath === "/tasks/voice") {
     if (req.method !== "POST") return apiErr(405, "Method not allowed", ctx.origin);

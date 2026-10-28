@@ -3,7 +3,7 @@ import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react"
 import { cn } from "@/lib/utils";
 import { fetchQuickSearch, fetchTask, type QuickSearchResult } from "@/lib/api";
 import { RoyIcon } from "./icons";
-import { useDt, useRoyNav } from "./nav";
+import { useDt, useIsDemo, useRoyNav } from "./nav";
 import { saveRecent } from "./screens/SearchScreen";
 
 // Поле поиска над разделами (стенд: .search в .nav; решение владельца 2026-09-25 — «наверху,
@@ -50,6 +50,7 @@ function toOptions(r: QuickSearchResult): Option[] {
 
 export function RailSearch() {
   const dt = useDt();
+  const isDemo = useIsDemo();
   const { openAnswer, openTask, push, toast } = useRoyNav();
   const uid = useId();
   const listId = `${uid}-list`;
@@ -234,7 +235,7 @@ export function RailSearch() {
           <div className="flex items-center gap-1.5 border-t border-line px-3 py-1.5 text-ink-mute" style={{ fontSize: 11.5 }}>
             <kbd className="rounded-[4px] border border-line-2 border-b-2 px-1 font-mono" style={{ fontSize: 10 }}>Enter</kbd>
             <span className="min-w-0 truncate">
-              {activeOption ? dt("— открыть выбранное", "— open the selected") : dt("— спросить базу знаний", "— ask the knowledge base")}
+              {activeOption ? dt("— открыть выбранное", "— open the selected") : isDemo ? dt("— примеры вопросов", "— sample questions") : dt("— спросить базу знаний", "— ask the knowledge base")}
             </span>
           </div>
         </div>
