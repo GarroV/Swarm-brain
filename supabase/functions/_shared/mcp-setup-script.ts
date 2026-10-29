@@ -18,9 +18,21 @@
 // стриминга. swarm-mcp объявляет только `capabilities: { tools: {} }` и по своей инициативе
 // не шлёт ничего, поэтому сегодня это ничего не отнимает. Когда понадобится — issue #94
 // (полноценный клиент Streamable HTTP одним бинарником).
-import { FUNCTIONS_BASE_URL } from "../_shared/public-url.ts";
+import { FUNCTIONS_BASE_URL } from "./public-url.ts";
 
 const MCP_URL = `${FUNCTIONS_BASE_URL}/swarm-mcp`;
+
+// Версия моста. Мосты у людей обновляются сами при старте (update_self ниже): спрашивают у
+// swarm-setup/version номер и отпечаток, и если номер больше своего — тянут свежий текст.
+// ПРАВИЛО: тронул BRIDGE_SCRIPT — подними версию, иначе у людей мост не обновится (script.test.ts
+// держит пару «версия ↔ отпечаток» и краснеет, если текст сменился, а версия нет).
+export const BRIDGE_VERSION = 2;
+
+/** SHA-256 текста в hex — тот же отпечаток, что считает `shasum -a 256` у человека. */
+export async function sha256Hex(text: string): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
+  return Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, "0")).join("");
+}
 
 // Текст моста. Кладётся в ~/.swarm-brain/bin/swarm-mcp-bridge.sh, в конфиг Claude попадает как
 // `command: /bin/bash, args: [<путь>]`. Адрес и заголовок приходят из env — токен не светится
@@ -33,6 +45,7 @@ export const BRIDGE_SCRIPT = `#!/bin/bash
 # иначе висит до своего таймаута (30 минут). Поэтому сбой curl, не-2xx и ответ не в формате
 # JSON-RPC превращаются в JSON-RPC error с тем же id. Уведомления (без "id") остаются молчаливыми.
 set -u
+BRIDGE_VERSION=${BRIDGE_VERSION}
 URL="\${SWARM_MCP_URL:?}"
 AUTH="\${SWARM_MCP_AUTH:?}"
 MAX_TIME="\${SWARM_MCP_MAX_TIME:-120}"
@@ -61,6 +74,38 @@ server_message() {
   tr -d '\\000-\\037' < "$BODY" | sed -n 's/.*"message"[[:space:]]*:[[:space:]]*"\\([^"]*\\).*/\\1/p' | head -n 1 | cut -c1-200
 }
 
+# SHA-256 файла: shasum есть на любом маке, sha256sum — запасной путь для Linux.
+sha256_of() {
+  if command -v shasum >/dev/null 2>&1; then shasum -a 256 "$1" | cut -d' ' -f1; else sha256sum "$1" | cut -d' ' -f1; fi
+}
+
+# Самообновление при старте (#1082). Спрашиваем у сервера версию и отпечаток; если версия больше
+# своей — качаем новый текст во временный файл РЯДОМ, сверяем отпечаток, проверяем bash -n и
+# подменяем через mv (новый inode). Писать поверх запущенного файла нельзя: bash читает скрипт по
+# ходу выполнения, и все уже запущенные мосты зависают на новом тексте со старого смещения (#951).
+# Любой сбой — тихо остаёмся на текущей версии: связь с сервером важнее обновления.
+# Отпечаток защищает от битой загрузки, а не от подмены самого сервера (он отдаёт и текст, и отпечаток).
+update_self() {
+  base="\${URL%/swarm-mcp}"
+  [ "$base" != "$URL" ] || return 0
+  me="$0"
+  [ -f "$me" ] && [ -w "$me" ] || return 0
+  info="$(curl -sS --max-time 10 "$base/swarm-setup/version" 2>/dev/null)" || return 0
+  remote_ver="$(printf '%s' "$info" | sed -n 's/.*"version"[[:space:]]*:[[:space:]]*\\([0-9][0-9]*\\).*/\\1/p' | head -n 1)"
+  remote_sha="$(printf '%s' "$info" | sed -n 's/.*"sha256"[[:space:]]*:[[:space:]]*"\\([0-9a-f]\\{64\\}\\)".*/\\1/p' | head -n 1)"
+  [ -n "$remote_ver" ] && [ -n "$remote_sha" ] || return 0
+  [ "$remote_ver" -gt "$BRIDGE_VERSION" ] || return 0
+  tmp="$(mktemp "$(dirname "$me")/.bridge-update.XXXXXX")" || return 0
+  if curl -fsS --max-time 20 "$base/swarm-setup/bridge" -o "$tmp" 2>/dev/null \\
+     && [ "$(sha256_of "$tmp")" = "$remote_sha" ] && bash -n "$tmp" 2>/dev/null; then
+    chmod 755 "$tmp" && mv -f "$tmp" "$me" && return 0
+  fi
+  rm -f "$tmp"
+  return 0
+}
+# В фоне: старт моста не ждёт сети, а новая версия вступит в силу при следующем запуске.
+update_self </dev/null >/dev/null 2>&1 &
+
 emit_error() {
   id="$1"; rc="$2"; code="$3"
   if [ "$rc" != "0" ]; then
@@ -81,6 +126,11 @@ emit_error() {
   srv="$(server_message)"
   [ -n "$srv" ] && srv=" [$srv]"
   msg="Swarm MCP: $detail$srv. / Swarm MCP: $detail_ru."
+  # 401 — токен не принят (отозван, устарел, скопирован не целиком): человек должен увидеть причину
+  # прямо в Claude, а не «Server disconnected».
+  if [ "$rc" = "0" ] && [ "$code" = "401" ]; then
+    msg="$msg The token was rejected — issue a new one in Settings (web) and re-run the install command / Токен не принят — выпусти новый в Настройках (веб) и запусти команду установки заново."
+  fi
   # 402/404 или хост недоступен (curl 6 — DNS, 7 — соединение) = старый адрес после переезда.
   case "$rc:$code" in
     6:*|7:*|0:402|0:404)
@@ -140,7 +190,7 @@ export const MERGE_FUNCTION = `merge_config() {
 }`;
 
 export const SETUP_SCRIPT = `#!/bin/bash
-# Swarm Brain → Claude Desktop (macOS). Не запускай вручную — возьми команду в боте: /setup
+# Swarm Brain → Claude Desktop и Claude Code (macOS). Не запускай вручную — возьми команду в вебе: Настройки → Claude Desktop
 
 MCP_URL="${MCP_URL}"
 BIN_DIR="$HOME/.swarm-brain/bin"
@@ -188,10 +238,15 @@ esac
 # ── 1. Мост stdio ↔ HTTP (bash + curl, без Node) ──
 say "→ Ставлю мост к серверу…"
 mkdir -p "$BIN_DIR" || die "Не удалось создать $BIN_DIR"
-cat > "$BRIDGE" <<'SWARM_BRIDGE_EOF'
+# Пишем во временный файл рядом и подменяем через mv (#951): запись через \`cat >\` в тот же файл
+# ломала уже запущенные мосты — bash читает скрипт по ходу, и они зависали на новом тексте.
+BRIDGE_TMP="$(mktemp "$BIN_DIR/.bridge-install.XXXXXX")" || die "Не удалось создать временный файл в $BIN_DIR"
+trap 'rm -f "$BRIDGE_TMP"' EXIT
+cat > "$BRIDGE_TMP" <<'SWARM_BRIDGE_EOF'
 ${BRIDGE_SCRIPT}SWARM_BRIDGE_EOF
-chmod +x "$BRIDGE" || die "Не удалось сделать мост исполняемым ($BRIDGE)"
-bash -n "$BRIDGE" || die "Мост записался повреждённым — запусти команду снова."
+chmod 755 "$BRIDGE_TMP" || die "Не удалось сделать мост исполняемым ($BRIDGE_TMP)"
+bash -n "$BRIDGE_TMP" || die "Мост записался повреждённым — запусти команду снова."
+mv -f "$BRIDGE_TMP" "$BRIDGE" || die "Не удалось положить мост на место ($BRIDGE)"
 say "✓ Мост готов: $BRIDGE"
 
 # ── 2. Папка конфига + бэкап ──
@@ -213,6 +268,22 @@ elif [ "$MERGE_RC" -ne 0 ]; then
   die "Не удалось записать конфиг (код $MERGE_RC)."
 fi
 say "✓ Конфиг обновлён: swarm-brain добавлен (остальное не тронуто)"
+
+# ── 3б. Claude Code (если установлен): прямой HTTP, мост ему не нужен ──
+# Прежняя запись снимается перед добавлением — иначе add отказывает на уже занятом имени, и
+# повторный запуск не обновлял бы токен. Сбой здесь не фатален: Desktop уже настроен выше.
+# Токен попадает в аргументы claude на время одного вызова — штатного способа передать заголовок
+# иначе у CLI нет.
+CLAUDE_BIN="$(PATH="$PATH:$HOME/.local/bin:$HOME/.claude/local" command -v claude 2>/dev/null || true)"
+if [ -n "$CLAUDE_BIN" ]; then
+  "$CLAUDE_BIN" mcp remove swarm-brain --scope user >/dev/null 2>&1 || true
+  if "$CLAUDE_BIN" mcp add --transport http swarm-brain "$MCP_URL" \\
+      --header "Authorization: Bearer $SWARM_TOKEN" --scope user >/dev/null 2>&1; then
+    say "✓ Claude Code: сервер swarm-brain прописан"
+  else
+    say "⚠️  Claude Code найден, но прописать сервер не удалось — Claude Desktop настроен, об остальном скажи в боте."
+  fi
+fi
 
 # ── 4. Уборка прежней схемы (Node ставился только ради mcp-remote — больше не нужен) ──
 if [ -d "$LEGACY_NODE_DIR" ]; then

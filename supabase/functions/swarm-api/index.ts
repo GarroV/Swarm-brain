@@ -913,7 +913,7 @@ async function routeRequest(req: Request): Promise<Response> {
     }
     const minted = await mintMcpToken(supabase, telegram_id, { via: "web", req });
     if (!minted) return apiErr(500, "Не удалось создать токен", origin);
-    return json({ oneLiner: buildSetupOneLiner(minted.token) }, 200, origin);
+    return json({ oneLiner: await buildSetupOneLiner(minted.token) }, 200, origin);
   }
 
   // GET /users
