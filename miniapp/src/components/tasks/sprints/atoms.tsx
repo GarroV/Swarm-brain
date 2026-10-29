@@ -29,6 +29,33 @@ import type { User } from "@/types";
 export const PILL_BTN =
   "inline-flex h-[30px] shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border border-line-2 bg-surface px-3 text-[13px] font-medium text-ink-soft transition-colors hover:bg-surface-2 hover:text-ink active:scale-[0.97] disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]";
 
+/** Видимый «+ Задача» у заголовка группы и колонки (владелец 28.10.2026: «непонятно как добавлять
+ *  новые задачи … нужен явный видимый плюсик»). Не появляется по наведению: на телефоне наведения
+ *  нет, а на компьютере спрятанную кнопку не находят. Открывает стандартную карточку задачи. */
+export function AddTaskChip({ onClick, className = "" }: {
+  onClick: () => void;
+  className?: string;
+}) {
+  const dt = useDt();
+  const label = dt("Добавить задачу", "Add a task");
+  return (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation();
+        onClick();
+      }}
+      title={label}
+      aria-label={label}
+      data-testid="add-task"
+      className={`inline-flex h-6 shrink-0 items-center gap-1 whitespace-nowrap rounded-full px-2 text-[12px] font-medium normal-case tracking-normal text-ink-soft transition-colors hover:bg-accent-soft hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] ${className}`}
+    >
+      <RoyIcon name="plus" size={12} strokeWidth={2.2} />
+      {dt("Задача", "Task")}
+    </button>
+  );
+}
+
 /** Полоска выполнения. Пустой прогресс рисуем серой полосой, а не пустотой: иначе
  *  «ничего не сделано» и «не загрузилось» выглядят одинаково. */
 export function ProgressBar({ percent, className = "" }: {

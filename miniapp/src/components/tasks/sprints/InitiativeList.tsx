@@ -9,7 +9,7 @@ import { isBareDirection } from "@/lib/initiatives";
 import { RoyIcon } from "@/components/roy/icons";
 import { useDt } from "@/components/roy/nav";
 import { fmtDay } from "./format";
-import { PILL_BTN } from "./atoms";
+import { AddTaskChip, PILL_BTN } from "./atoms";
 import {
   PHONE_TIGHT,
   type RowDnd,
@@ -53,32 +53,6 @@ type SubCtx = {
 // Вид — таблица стенда (screens-work.js → sprintByInitiative): общая шапка колонок, над
 // группами подпись направления капсом, у инициативы одна строка-заголовок «имя · владелец ·
 // X из Y» без рамки вокруг (рамка в рамке делала экран тесным).
-
-/** Плюсик «добавить задачу» в шапке группы (владелец 07.10.2026: «небольшой плюсик … лаконично,
- *  спокойно, красиво»). Открывает СТАНДАРТНУЮ карточку задачи с уже проставленной группой
- *  (решение владельца 19.09.2026: «давай вызывать нашу стандартную менюшку»). На компьютере
- *  проявляется по наведению на шапку, на телефоне виден всегда. */
-function AddTaskButton({ projectId, onAdd }: {
-  projectId: string | null;
-  onAdd: (projectId: string | null) => void;
-}) {
-  const dt = useDt();
-  const label = dt("Добавить задачу", "Add a task");
-  return (
-    <button
-      type="button"
-      onClick={(e) => {
-        e.stopPropagation();
-        onAdd(projectId);
-      }}
-      title={label}
-      aria-label={label}
-      className="ml-1 grid size-6 shrink-0 place-items-center self-center rounded-full text-ink-mute transition-[opacity,colors] hover:bg-surface-2 hover:text-ink lg:opacity-0 lg:group-hover/head:opacity-100 lg:focus-visible:opacity-100"
-    >
-      <RoyIcon name="plus" size={13} strokeWidth={2.2} />
-    </button>
-  );
-}
 
 /** Кнопки заголовка группы спринта (решение 01.10.2026): имя, «В проекты» — снять признак и
  *  показать группу на доске «Проекты», «Распустить» — задачи в родителя, группа в архив. На
@@ -231,9 +205,10 @@ function Group(
           </span>
         </button>
         {onAdd && (
-          <AddTaskButton
-            projectId={addTo !== undefined ? addTo : node.project?.id ?? null}
-            onAdd={onAdd}
+          <AddTaskChip
+            className="ml-1 self-center"
+            onClick={() =>
+              onAdd(addTo !== undefined ? addTo : node.project?.id ?? null)}
           />
         )}
         {sprintGroup && dnd && (
@@ -276,8 +251,23 @@ function Group(
               style={{ paddingLeft: TASK_INDENT + 20, fontSize: 12.5 }}
             >
               {dt(
-                "Пусто — перетащите сюда задачи",
+                "Пусто — перетащите задачи",
                 "Empty — drag tasks here",
+              )}
+              {onAdd && (
+                <>
+                  {dt(" или ", " or ")}
+                  <button
+                    type="button"
+                    onClick={() =>
+                      onAdd(
+                        addTo !== undefined ? addTo : node.project?.id ?? null,
+                      )}
+                    className="font-medium text-accent-ink underline-offset-2 hover:underline"
+                  >
+                    {dt("добавьте новую", "add a new one")}
+                  </button>
+                </>
               )}
             </div>
           )}

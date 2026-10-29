@@ -150,6 +150,9 @@ export function SprintsScreen() {
   // Задача, заведённая плюсиком в группе СПРИНТА, сразу идёт в спринт; заведённая в группе
   // ПЛАНА — только в план: план шире спринта.
   const [addIntoSprint, setAddIntoSprint] = useState(true);
+  // Колонка доски, в которой завели задачу («+» или клик по пустому месту): туда она и идёт, а не
+  // в выбранный сверху спринт. null — действует addIntoSprint.
+  const [addCycleId, setAddCycleId] = useState<string | null>(null);
   // Режим правки прячет СТРУКТУРНЫЕ кнопки (завести пространство, переименовать, удалить,
   // новый спринт). Ежедневные отметки — «готово», «к переносу», «как идут дела» — и набор
   // состава («План», «+» в группе, решение 07.10.2026) остаются всегда: прятать их за тумблер
@@ -335,16 +338,13 @@ export function SprintsScreen() {
   async function onTaskCreated(created?: Task) {
     load();
     setBoardVersion((v) => v + 1);
-    if (!created || !detail) {
+    const target = addCycleId ?? (addIntoSprint ? detail?.id ?? null : null);
+    if (!created || !target) {
       if (detail) reloadDetail(detail.id);
       return;
     }
-    if (!addIntoSprint) {
-      await reloadDetail(detail.id);
-      return;
-    }
     try {
-      await addTasksToSprintCycle(detail.id, [created.id]);
+      await addTasksToSprintCycle(target, [created.id]);
     } catch (e) {
       // Задача создана и лежит в плане — говорим, что в спринт она не попала.
       setErr(
@@ -354,7 +354,9 @@ export function SprintsScreen() {
         ),
       );
     }
-    await reloadDetail(detail.id);
+    // Доска читала состав до добавления в спринт — перечитываем ещё раз.
+    setBoardVersion((v) => v + 1);
+    if (detail) await reloadDetail(detail.id);
   }
 
   async function addToSprint(taskIds: string[]) {
@@ -843,6 +845,7 @@ export function SprintsScreen() {
       // задачу «в человека» некуда.
       onAdd={accepted || byPeople ? undefined : (projectId) => {
         setAddIntoSprint(true);
+        setAddCycleId(null);
         setAddingTo(projectId);
       }}
       onDone={accepted ? undefined : toggleDone}
@@ -892,6 +895,7 @@ export function SprintsScreen() {
       onTake={editable ? (id) => addToSprint([id]) : undefined}
       onAdd={(projectId) => {
         setAddIntoSprint(false);
+        setAddCycleId(null);
         setAddingTo(projectId);
       }}
       onRemove={editable ? sprintGroups.grouping.onDissolve : undefined}
@@ -1159,8 +1163,9 @@ export function SprintsScreen() {
                     dt("Не удалось открыть задачу", "Could not open the task"),
                   );}
               }}
-              onAddTask={(groupId) => {
+              onAddTask={(groupId, cycleId) => {
                 setAddIntoSprint(false);
+                setAddCycleId(cycleId ?? null);
                 setAddingTo(groupId);
               }}
               onCloseSprint={(id) => {
