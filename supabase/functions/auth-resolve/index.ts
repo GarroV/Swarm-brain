@@ -2,6 +2,7 @@
 // Аутентификация ВЫЗОВА (не пользователя): HMAC(email) на WEB_JWT_SECRET, общий с CF Pages.
 // Возвращает allowed_users по email (lower). Деплой: supabase functions deploy auth-resolve --no-verify-jwt
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { findAllowedUserByEmail } from "../_shared/allowed-user-by-email.ts";
 import {
   avatarUpdate,
   type GoogleName,
@@ -68,15 +69,15 @@ Deno.serve(async (req: Request) => {
   // чужим хостом/схемой — игнор, вход не страдает.
   const trustedAvatar = await verifiedAvatar(email, body.avatar_url, body.avatar_sig, hmacHex);
 
-  // email хранится в lower (бэкфилл + запись админкой); уникальный индекс по lower(email).
-  const { data, error } = await supabase
-    .from("allowed_users")
-    .select("id, telegram_id, group_id")
-    .eq("email", email)
-    .maybeSingle();
-  if (error) return json({ error: "db" }, 500);
-  if (!data) return json({ found: false });
-  const row = data as { id: number; telegram_id: number | null; group_id: string | null };
+  // Регистронезависимо (индекс по lower(email)); строка с настоящим telegram_id остаётся его строкой.
+  let row;
+  try {
+    row = await findAllowedUserByEmail(supabase, email);
+  } catch (e) {
+    console.error("auth-resolve: поиск по email", (e as Error).message);
+    return json({ error: "db" }, 500);
+  }
+  if (!row) return json({ found: false });
 
   // email-only приглашение (админ добавил почту, без Telegram): у строки telegram_id=NULL.
   // Веб/апп всё идентифицирует по telegram_id, поэтому выдаём ДЕТЕРМИНИРОВАННУЮ синтетическую
