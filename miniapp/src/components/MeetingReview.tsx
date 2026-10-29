@@ -12,6 +12,8 @@ import type { AskApply } from "@/components/roy/tezisy/AskPopover";
 import { applyAskAnswerToText } from "@/lib/tezisyLines";
 import { useDt, useLang, useRoyNav } from "@/components/roy/nav";
 import { speakerLabelAt } from "@/lib/transcriptSpeaker";
+import { transcriptToText } from "@/lib/transcriptText";
+import { CopyButton } from "@/components/roy/CopyButton";
 import { useConfirm } from "@/components/ui/confirm";
 import { hasSeveralOwners, canDeleteDraft, canHideDraft } from "@/lib/draftOwners";
 import { recordedByOf } from "@/lib/agentMeeting";
@@ -333,7 +335,16 @@ export function MeetingReview({ id, onClose, onChanged }: Props) {
   const meName = meeting.recorder_names?.length === 1 ? meeting.recorder_names[0] : null;
   const transcriptBlock = showTranscript && (
     <div className="mb-4">
-      {!panel && <SectionLabel>{dt("Транскрипт", "Transcript")}</SectionLabel>}
+      <div className="mb-2 flex items-center justify-between gap-2">
+        {panel ? <span /> : <SectionLabel className="!mb-0">{dt("Транскрипт", "Transcript")}</SectionLabel>}
+        <CopyButton
+          title={dt("Скопировать весь транскрипт", "Copy the whole transcript")}
+          getText={() => transcriptToText(segments, {
+            speakerAt: (i) => speakerLabelAt(segments, i, { meName, lang }),
+            fmtTime: (sec) => fmtClock(meeting.started_at, sec, dt("ru-RU", "en-GB")),
+          })}
+        />
+      </div>
       <div className="space-y-1">
         {segments.map((sg, i) => {
           const speaker = speakerLabelAt(segments, i, { meName: meName, lang });
