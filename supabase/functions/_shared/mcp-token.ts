@@ -9,6 +9,7 @@
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { type AccessContext, logAccess } from "./access-events.ts";
 import { FUNCTIONS_BASE_URL } from "./public-url.ts";
+import { SETUP_SCRIPT, sha256Hex } from "./mcp-setup-script.ts";
 
 export const SETUP_URL = `${FUNCTIONS_BASE_URL}/swarm-setup`;
 
@@ -71,7 +72,11 @@ export async function hasActiveMcpToken(supabase: SupabaseClient, telegramId: nu
   return (await getMcpTokenStatus(supabase, telegramId)).active;
 }
 
-// Однострочник для Терминала с уже вшитым токеном (Claude Desktop).
-export function buildSetupOneLiner(token: string): string {
-  return `curl -fsSL ${SETUP_URL} | SWARM_TOKEN='${token}' bash`;
+// Однострочник для Терминала с уже вшитым токеном (Claude Desktop + Claude Code). Скрипт качается
+// во временный файл и запускается только после сверки SHA-256 (`shasum -a 256 -c`) — слепого
+// `curl | bash` нет. Токен — в окружении запуска, а не в аргументах скрипта.
+export async function buildSetupOneLiner(token: string): Promise<string> {
+  const sha = await sha256Hex(SETUP_SCRIPT);
+  return `f=$(mktemp) && curl -fsSL ${SETUP_URL} -o "$f" && echo "${sha}  $f" | shasum -a 256 -c - && ` +
+    `SWARM_TOKEN='${token}' bash "$f"; rm -f "$f"`;
 }

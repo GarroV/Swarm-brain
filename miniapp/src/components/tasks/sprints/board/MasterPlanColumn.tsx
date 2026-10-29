@@ -5,10 +5,15 @@ import { planLine } from "@/lib/sprintLabels";
 import { fmtDayShort } from "../format";
 import { useDt } from "@/components/roy/nav";
 import { cn } from "@/lib/utils";
+import { AddTaskChip } from "../atoms";
 import { BoardCard } from "./BoardCard";
 import { type BoardCtx, PLAN_COL } from "./boardCtx";
 import { UnlinkDrop } from "./BoardColumn";
-import { isClosedStatus, planTaskMatches } from "./boardModel";
+import {
+  isClosedStatus,
+  isEmptyAreaClick,
+  planTaskMatches,
+} from "./boardModel";
 import { TaskMenu } from "./TaskMenu";
 
 // Мастер-план — левая колонка доски (решение владельца 22.10.2026: «мастер-план у нас держится,
@@ -244,6 +249,9 @@ export function MasterPlanColumn(
   const count = (xs: typeof notTaken) =>
     xs.reduce((n, x) => n + countTasks(x.tree), 0);
   const unlink = ctx.unlinkZone(PLAN_COL);
+  // Клик по пустому месту заводит задачу, только если группа в пространстве одна: при нескольких
+  // непонятно, в какую из них, а в «никуда» план задачу не показывает.
+  const onlyGroup = groups.length === 1 ? groups[0].id : null;
 
   return (
     <div
@@ -284,6 +292,11 @@ export function MasterPlanColumn(
         <div
           data-board-scroll
           className="flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto p-2"
+          onClick={onlyGroup
+            ? (e) => {
+              if (isEmptyAreaClick(e)) onAddTask(onlyGroup);
+            }
+            : undefined}
         >
           {[
             {
@@ -316,17 +329,10 @@ export function MasterPlanColumn(
                       style={{ fontSize: 11 }}
                     >
                       <span className="min-w-0 truncate">{group.name}</span>
-                      {!filtering && (
-                        <button
-                          type="button"
-                          onClick={() => onAddTask(group.id)}
-                          title={dt("Задача в план", "Task to the plan")}
-                          aria-label={dt("Задача в план", "Task to the plan")}
-                          className="grid h-5 w-5 shrink-0 place-items-center rounded-[6px] text-[15px] font-normal leading-none text-ink-mute transition-colors hover:bg-accent-soft hover:text-ink"
-                        >
-                          +
-                        </button>
-                      )}
+                      <AddTaskChip
+                        onClick={() =>
+                          onAddTask(group.id)}
+                      />
                     </div>
                     {tree.map((n) => (
                       <PlanCard

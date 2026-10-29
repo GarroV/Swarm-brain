@@ -83,31 +83,23 @@ function routeFor(file) {
   return "/" + rel.replace(/\.html$/, "");
 }
 
-// Вход через Telegram грузит telegram-widget.js со стороннего домена и открывает попап
-// oauth.telegram.org (попап — отдельное окно, CSP его не ограничивает, но скрипт ограничивает).
-// Без этого источника блокирующая политика убила бы кнопку «Sign in with Telegram» — то есть
-// вход для всех, кто заходит не через Google. Поймано на странице логина: на главной этого
-// скрипта нет, и первая проверка (только «/») его не увидела.
-const TELEGRAM_LOGIN = "https://telegram.org";
-
 function csp(hashes) {
   return [
     "default-src 'self'",
-    `script-src 'self' ${TELEGRAM_LOGIN} ${hashes.join(" ")}`.trim(),
+    `script-src 'self' ${hashes.join(" ")}`.trim(),
     // style-src с 'unsafe-inline' осознанно: интерфейс широко использует style={{…}} (inline-
     // атрибуты), их хешировать нельзя. Скрипты при этом остаются под хешами — а именно они и
     // дают XSS-исполнение.
     "style-src 'self' 'unsafe-inline'",
-    "img-src 'self' data: blob: https://telegram.org",
+    "img-src 'self' data: blob:",
     "font-src 'self' data:",
-    `connect-src 'self' ${apiOrigin} ${TELEGRAM_LOGIN}`,
+    `connect-src 'self' ${apiOrigin}`,
     // blob: — декодер фото с айфона (heic-to) поднимает воркер из собственного Blob; чужой код так
     // не запустить — blob-URL создаёт только скрипт нашей же страницы.
     "worker-src 'self' blob:",
     "manifest-src 'self'",
-    // Виджет Telegram может рисовать iframe (oauth.telegram.org) — оставляем ему место.
     // PDF-редактор («Полезности») открывается окном с iframe — его адрес тоже здесь.
-    "frame-src 'self' https://oauth.telegram.org https://telegram.org https://swarm-pdf.pages.dev",
+    "frame-src 'self' https://swarm-pdf.pages.dev",
     `frame-ancestors ${EMBEDDERS.join(" ")}`,
     "base-uri 'self'",
     "object-src 'none'",

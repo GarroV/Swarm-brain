@@ -52,7 +52,7 @@ Granola и Read.ai — альтернативные источники встр�
 | Поверхность | Доступ | Бэкенд-функция |
 |-------------|--------|----------------|
 | Telegram-бот | команды и сообщения в чате | `swarm-bot` |
-| Веб-интерфейс «Рой» | браузер: Telegram Login Widget → JWT (вход как Telegram Mini App отключён) | `swarm-api` |
+| Веб-интерфейс «Рой» | браузер: Google Sign-In → JWT (вход как Telegram Mini App отключён) | `swarm-api` |
 | Claude Desktop (MCP) | токен + команда установки — **только веб → Настройки → Claude Desktop** (бот ключи не выдаёт, решение 26.10.2026) | `swarm-mcp` |
 | bumblebee | macOS меню-бар; установка — **только веб → Настройки → bumblebee** (бот ключи не выдаёт) | `meeting-claim`, `meeting-ingest`, `meeting-process` |
 | Granola | API-ключ на пользователя (`/connect granola`), часовой поллинг → единая приёмная встреч (`meetings`) | `swarm-bot` (`granola_poll`) |

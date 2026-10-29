@@ -3,6 +3,7 @@ import { useCallback, useContext, useEffect, useState } from "react";
 import { useDt, useRoyNav } from "../nav";
 import { DetailPanelContext, NavHeader, Market, SectionLabel, Segmented, StorageBadge } from "../ui";
 import { DashTaskRow } from "../dash/shared";
+import { CopyButton } from "@/components/roy/CopyButton";
 import { RoyIcon, type RoyIconName } from "../icons";
 import { ReprocessMenu } from "../ReprocessMenu";
 import { deriveEntryTitle } from "../entry";
@@ -230,7 +231,10 @@ export function MeetingDetail({ id }: { id: string }) {
   const tab = view === "tr" && !showTranscript ? "tez" : view;
   const transcriptBlock = showTranscript && e && (
     <>
-            <SectionLabel>Запись</SectionLabel>
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <SectionLabel className="!mb-0">Запись</SectionLabel>
+              <CopyButton title={dt("Скопировать запись", "Copy the recording text")} getText={() => e.content ?? ""} />
+            </div>
             <p className="whitespace-pre-wrap text-ink" style={{ fontSize: 14.5, lineHeight: 1.65 }}>
               {e.content}
             </p>

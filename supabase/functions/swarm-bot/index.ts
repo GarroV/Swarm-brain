@@ -79,6 +79,7 @@ import { onlyLive } from "../_shared/tasks/live.ts";
 import { onlyLiveEntries } from "../_shared/entries/live.ts";
 import { externalFetch, VIA_GRANOLA, VIA_TELEGRAM } from "../_shared/external-fetch.ts";
 import { WEB_BASE_URL } from "./lib/web-url.ts";
+import { sealIntegrationKey } from "../_shared/integration-keys.ts";
 import { FUNCTIONS_BASE_URL } from "../_shared/public-url.ts";
 
 const TELEGRAM_BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN")!;
@@ -783,14 +784,27 @@ Deno.serve(async (req: Request) => {
         if (!testRes.ok) {
           await sendMessage(chatId, "❌ Ключ не подошёл. Проверь правильность и попробуй снова.");
         } else {
-          await supabase.from("user_integrations").upsert(
-            { telegram_id: userId, service: "granola", api_key: apiKey, last_polled_at: new Date().toISOString() },
-            { onConflict: "telegram_id,service" },
-          );
-          await sendMessage(
-            chatId,
-            "✅ <b>Granola подключена!</b>\n\nТеперь новые встречи будут прилетать автоматически раз в час.\nИли используй /granola для ручного импорта.",
-          );
+          let sealed: string | null = null;
+          try {
+            sealed = await sealIntegrationKey(apiKey, userId, "granola");
+          } catch (err) {
+            console.error("granola key seal failed:", (err as Error).message);
+          }
+          if (!sealed) {
+            await sendMessage(
+              chatId,
+              "❌ Не удалось сохранить ключ: на сервере не настроено шифрование. Напиши администратору.",
+            );
+          } else {
+            await supabase.from("user_integrations").upsert(
+              { telegram_id: userId, service: "granola", api_key: sealed, last_polled_at: new Date().toISOString() },
+              { onConflict: "telegram_id,service" },
+            );
+            await sendMessage(
+              chatId,
+              "✅ <b>Granola подключена!</b>\n\nТеперь новые встречи будут прилетать автоматически раз в час.\nИли используй /granola для ручного импорта.",
+            );
+          }
         }
       }
     } else if (command === "/disconnect") {

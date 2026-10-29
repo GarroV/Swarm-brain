@@ -11,7 +11,7 @@ import { sprintKpi } from "@/lib/initiatives";
 import { buildLadder, kidsElsewhere } from "@/lib/sprintLadder";
 import { useDt } from "@/components/roy/nav";
 import { cn } from "@/lib/utils";
-import { ProgressBar, ProgressText } from "../atoms";
+import { AddTaskChip, ProgressBar, ProgressText } from "../atoms";
 import { fmtDay, fmtRange } from "../format";
 import { MovedSection } from "../SnapshotCard";
 import { BoardCard, Tag } from "./BoardCard";
@@ -20,6 +20,7 @@ import {
   dueCycle,
   groupItems,
   isClosedStatus,
+  isEmptyAreaClick,
   itemMatches,
 } from "./boardModel";
 import { TaskMenu } from "./TaskMenu";
@@ -282,13 +283,17 @@ export function UnlinkDrop({ zone, bg = "bg-surface-2" }: {
 }
 
 /** Колонка идущего или запланированного спринта. */
-export function SprintColumn({ entry, ctx, drop, onCloseSprint, busy }: {
-  entry: SprintBoardCycle;
-  ctx: BoardCtx;
-  drop: ColumnDrop;
-  onCloseSprint?: (cycleId: string) => void;
-  busy: boolean;
-}) {
+export function SprintColumn(
+  { entry, ctx, drop, onCloseSprint, onAddTask, busy }: {
+    entry: SprintBoardCycle;
+    ctx: BoardCtx;
+    drop: ColumnDrop;
+    onCloseSprint?: (cycleId: string) => void;
+    /** Завести задачу в этот спринт; groupId — группа (проект) или `null`, если без группы. */
+    onAddTask?: (groupId: string | null) => void;
+    busy: boolean;
+  },
+) {
   const dt = useDt();
   const c = entry.cycle;
   const visible = entry.items.filter((i) =>
@@ -307,6 +312,7 @@ export function SprintColumn({ entry, ctx, drop, onCloseSprint, busy }: {
     ctx.planById.get(taskId)?.parent_id ?? null;
   const groups = groupItems(entry.items).map((g) => ({
     name: g.name,
+    projectId: g.items[0]?.project_id ?? null,
     // Родитель остаётся, если подошла хотя бы одна подзадача: иначе найденная осталась бы без контекста.
     ladder: buildLadder(g.items, parentOf).map((n) => ({
       item: n.item,
@@ -317,6 +323,8 @@ export function SprintColumn({ entry, ctx, drop, onCloseSprint, busy }: {
   const unlink = ctx.unlinkZone(c.id);
   const filtering = !!ctx.filter.query.trim() || !!ctx.filter.person ||
     ctx.filter.attention;
+  // Клик по пустому месту колонки: группа — та, что в колонке единственная; иначе без группы.
+  const emptyClickGroup = groups.length === 1 ? groups[0].projectId : null;
   return (
     <section
       {...drop.handlers}
@@ -340,14 +348,24 @@ export function SprintColumn({ entry, ctx, drop, onCloseSprint, busy }: {
       <div
         data-board-scroll
         className="flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto p-2"
+        onClick={onAddTask
+          ? (e) => {
+            if (isEmptyAreaClick(e)) onAddTask(emptyClickGroup);
+          }
+          : undefined}
       >
         {groups.map((g) => (
           <div key={g.name ?? "__none"} className="flex flex-col gap-1.5">
             <div
-              className="mx-1 mt-1.5 font-semibold uppercase tracking-[0.04em] text-ink-mute"
+              className="mx-1 mt-1.5 flex items-center justify-between gap-2 font-semibold uppercase tracking-[0.04em] text-ink-mute"
               style={{ fontSize: 11 }}
             >
-              {g.name ?? dt("Без группы", "No group")}
+              <span className="min-w-0 truncate">
+                {g.name ?? dt("Без группы", "No group")}
+              </span>
+              {onAddTask && (
+                <AddTaskChip onClick={() => onAddTask(g.projectId)} />
+              )}
             </div>
             {g.ladder.map(({ item, kids }) => (
               <Ladder
@@ -372,6 +390,18 @@ export function SprintColumn({ entry, ctx, drop, onCloseSprint, busy }: {
                 "Пока пусто — возьмите задачи из мастер-плана",
                 "Empty so far — take tasks from the master plan",
               )}
+            {!filtering && onAddTask && (
+              <>
+                {dt(" или ", " or ")}
+                <button
+                  type="button"
+                  onClick={() => onAddTask(null)}
+                  className="font-medium text-accent-ink underline-offset-2 hover:underline"
+                >
+                  {dt("добавьте новую", "add a new one")}
+                </button>
+              </>
+            )}
           </p>
         )}
         <MovedSection
@@ -380,6 +410,12 @@ export function SprintColumn({ entry, ctx, drop, onCloseSprint, busy }: {
           onAddReason={(item) => ctx.addReason(c.id, item)}
           single
         />
+        {onAddTask && (
+          <AddTaskChip
+            className="mx-1 mb-1 self-start"
+            onClick={() => onAddTask(emptyClickGroup)}
+          />
+        )}
         {unlink && <UnlinkDrop zone={unlink} />}
       </div>
     </section>

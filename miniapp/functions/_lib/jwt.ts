@@ -154,34 +154,3 @@ export function isSessionRevoked(
   if (claims.authTime === null) return true;
   return claims.authTime * 1000 < revokedMs;
 }
-
-// Проверка подписи Telegram Login Widget. ВНИМАНИЕ: secret = SHA256(bot_token)
-// — иначе, чем у Mini App (там HMAC(token, "WebAppData")).
-export async function verifyTelegramWidget(
-  params: URLSearchParams,
-  botToken: string,
-  maxAgeSec = 86400,
-): Promise<{ telegram_id: number } | null> {
-  const hash = params.get("hash");
-  if (!hash) return null;
-  const pairs: string[] = [];
-  // ВАЖНО: в строку подписи входят ТОЛЬКО поля от Telegram. Наш собственный `next`
-  // (deep-link возврата, напр. с /live) Telegram не подписывал — включать его нельзя,
-  // иначе hash не сойдётся и будет «Invalid Telegram login» при входе с возвратом.
-  for (const [k, v] of params) if (k !== "hash" && k !== "next") pairs.push(`${k}=${v}`);
-  pairs.sort();
-  const dcs = pairs.join("\n");
-
-  const secret = await crypto.subtle.digest("SHA-256", enc.encode(botToken));
-  const key = await crypto.subtle.importKey("raw", secret, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
-  const sig = new Uint8Array(await crypto.subtle.sign("HMAC", key, enc.encode(dcs)));
-  const computed = [...sig].map((b) => b.toString(16).padStart(2, "0")).join("");
-  if (computed !== hash) return null;
-
-  const authDate = parseInt(params.get("auth_date") ?? "0", 10);
-  if (Date.now() / 1000 - authDate > maxAgeSec) return null;
-
-  const id = parseInt(params.get("id") ?? "", 10);
-  if (!id) return null;
-  return { telegram_id: id };
-}

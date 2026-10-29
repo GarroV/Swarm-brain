@@ -3,7 +3,7 @@ import { verifyJWT } from "../../../_lib/jwt";
 import { DEMO_USER_ID } from "../demo";
 
 // CF Pages Function: GET /api/auth/google/start?next=… → редирект на consent Google.
-// Живёт на домене pages.dev (как /api/auth/telegram), чтобы кука встала на нужный домен.
+// Живёт на домене pages.dev, чтобы кука встала на нужный домен.
 //   • flow=login (по умолчанию) — вход через Google.
 //   • flow=calendar — подключение Google-календаря к ТЕКУЩЕЙ сессии (кнопка в Настройках).
 //     До 2026-09-30 этот поток жил в edge-функции google-oauth на домене supabase.co.
