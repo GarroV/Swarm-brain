@@ -15,6 +15,8 @@ import { brokeMessage, decideNotice, describeGranolaFailure, recoveredMessage } 
 const GRANOLA_API = "https://public-api.granola.ai/v1";
 import { WEB_BASE_URL as WEB_URL } from "../lib/web-url.ts";
 import { escapeHtml, sanitizeModelHtml } from "../../_shared/telegram-html.ts";
+import { openIntegrationKey, sealLegacyKeys } from "../../_shared/integration-keys.ts";
+import { secretsKeyConfigured } from "../../_shared/secret-box.ts";
 
 // Единый промпт тезисов — общий канон из _shared/tezisy-prompt.ts (DRY с рекордером/read-ai),
 // чтобы тезисы выглядели одинаково независимо от точки входа.
@@ -35,7 +37,7 @@ async function getUserApiKey(telegramId: number): Promise<string | null> {
     .eq("telegram_id", telegramId)
     .eq("service", "granola")
     .maybeSingle();
-  return data?.api_key ?? null;
+  return data?.api_key ? await openIntegrationKey(data.api_key, telegramId, "granola") : null;
 }
 
 async function fetchGranolaNote(apiKey: string, noteId: string): Promise<Record<string, unknown> | null> {
@@ -400,7 +402,7 @@ export async function pollGranolaForUser(chatId: number, telegramId: number): Pr
 
   // Always look back 48h — deduplication via savedIds/skippedIds prevents re-showing processed notes
   const since = new Date(Date.now() - 48 * 3_600_000).toISOString();
-  const notes = await fetchNotesSince(integration.api_key, since);
+  const notes = await fetchNotesSince(await openIntegrationKey(integration.api_key, telegramId, "granola"), since);
   if (!notes.length) return 0;
 
   // archive-ok: архивная заметка Granola уже была импортирована — без неё удалённое вернулось бы «новым»
@@ -472,7 +474,10 @@ async function ingestNewGranolaNotesForUser(integration: {
   if (!groupId) return 0; // пользователь не привязан к воркспейсу — пропускаем
 
   const since = new Date(Date.now() - 48 * 3_600_000).toISOString();
-  const fetched = await fetchNotesChecked(integration.api_key, since);
+  const fetched = await fetchNotesChecked(
+    await openIntegrationKey(integration.api_key, integration.telegram_id, "granola"),
+    since,
+  );
   if (!fetched.ok) throw new GranolaUnavailable(fetched.error);
   const notes = fetched.notes;
   if (!notes.length) return 0;
@@ -558,6 +563,16 @@ async function ingestNewGranolaNotesForUser(integration: {
 // у всех подключённых пользователей. Заменяет standalone-функцию granola-poller, которая
 // только слала уведомление в Telegram и ничего не клала в БД.
 export async function ingestNewGranolaNotesAllUsers(): Promise<number> {
+  // Ключи, сохранённые до шифрования (#585), дошифровываем тем же часовым проходом: идемпотентно,
+  // без ключа шифрования не пытаемся (читать открытые ключи это не мешает).
+  if (secretsKeyConfigured()) {
+    try {
+      const r = await sealLegacyKeys(supabase, "granola");
+      if (r.sealed || r.failed) console.log(`granola keys sealed: ${r.sealed}, failed: ${r.failed}`);
+    } catch (err) {
+      console.error("granola keys seal pass:", (err as Error).message);
+    }
+  }
   const { data: integrations, error } = await supabase
     .from("user_integrations")
     .select("telegram_id, api_key, last_error, last_error_notified_at")

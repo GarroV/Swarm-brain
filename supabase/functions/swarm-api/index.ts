@@ -202,6 +202,7 @@ import { archiveEntry } from "../_shared/entries/archive.ts";
 import { personName, resolvePersonNames } from "../_shared/users/display-name.ts";
 import { toPublicUrl } from "../_shared/public-url.ts";
 import { creditedRecorderIds } from "./recorder-credit.ts";
+import { openIntegrationKey } from "../_shared/integration-keys.ts";
 
 // Сколько задач отдаём вебу за раз. Дефолт движка (_shared/tasks/db.ts) — 200, и для БОТА он
 // верен: тот печатает список сообщением в чат, дампить туда базу нельзя. Для веба он смертелен —
@@ -3383,7 +3384,7 @@ async function routeRequest(req: Request): Promise<Response> {
       {
         headers: {
           Authorization: `Bearer ${
-            (integration as { api_key: string }).api_key
+            await openIntegrationKey((integration as { api_key: string }).api_key, telegram_id, "granola")
           }`,
         },
       }, VIA_GRANOLA,
@@ -3429,7 +3430,7 @@ async function routeRequest(req: Request): Promise<Response> {
       {
         headers: {
           Authorization: `Bearer ${
-            (integration as { api_key: string }).api_key
+            await openIntegrationKey((integration as { api_key: string }).api_key, telegram_id, "granola")
           }`,
         },
       }, VIA_GRANOLA,
@@ -3497,7 +3498,7 @@ async function routeRequest(req: Request): Promise<Response> {
       {
         headers: {
           Authorization: `Bearer ${
-            (integration as { api_key: string }).api_key
+            await openIntegrationKey((integration as { api_key: string }).api_key, telegram_id, "granola")
           }`,
         },
       }, VIA_GRANOLA,

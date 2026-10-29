@@ -84,6 +84,9 @@ supabase/functions/_shared/inspections-view.ts|supabase/functions/_shared/inspec
 # чужой секрет, отдаёт ключ наружу или даёт управление ключом чужому пространству.
 supabase/functions/_shared/secret-box.ts|supabase/functions/_shared/secret-box.test.ts
 supabase/functions/_shared/workspace-keys.ts|supabase/functions/_shared/workspace-keys.test.ts
+# Ключи Granola людей в `user_integrations` (#585): ошибка не падает — ключ остаётся открытым текстом или
+# читается чужим.
+supabase/functions/_shared/integration-keys.ts|supabase/functions/_shared/integration-keys.test.ts
 supabase/functions/_shared/ai-health.ts|supabase/functions/_shared/ai-health.test.ts
 supabase/functions/_shared/users/master-admins.ts|supabase/functions/_shared/users/master-admins.test.ts
 supabase/functions/swarm-api/workspace-keys-routes.ts|supabase/functions/swarm-api/workspace-keys-routes.test.ts
