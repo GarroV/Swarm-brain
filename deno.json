@@ -2,6 +2,8 @@
   "imports": {
     "@modelcontextprotocol/sdk": "npm:@modelcontextprotocol/sdk@1.32.1",
     "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@2",
+    // esm.sh regenerates this helper at the same URL; use the same npm version in tests (#1104).
+    "https://esm.sh/tslib@2.8.1/denonext/tslib.mjs": "npm:tslib@2.8.1",
     // Зависимости тестов доски инициатив: линт запрещает inline-адрес в импорте, и это по делу —
     // версия, размазанная по файлам, обновляется в одном месте и забывается в трёх остальных.
     "@std/assert": "https://deno.land/std@0.224.0/assert/mod.ts",
