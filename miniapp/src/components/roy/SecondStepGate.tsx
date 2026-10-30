@@ -16,22 +16,31 @@ export function SecondStepGate({ me }: { me: Me }) {
   const t = (ru: string, enText: string) => (en ? enText : ru);
   const [stage, setStage] = useState<Stage>("idle");
   const started = useRef(false);
+  const busy = useRef(false);
 
-  async function attempt(): Promise<void> {
-    if (stage === "busy") return;
+  // auto — окно открыто без нажатия: осечка тихо возвращает кнопку, без строки «Не получилось».
+  async function attempt(auto = false): Promise<void> {
+    if (busy.current) return;
+    busy.current = true;
     setStage("busy");
-    const r = await runStep();
-    // Шаг пройден — кука сессии уже с отметкой; перезагрузка поднимает приложение с нуля.
-    if (r.done) window.location.reload();
-    else setStage("failed");
+    try {
+      const r = await runStep({ auto });
+      // Шаг пройден — кука сессии уже с отметкой; перезагрузка поднимает приложение с нуля.
+      if (r.done) window.location.reload();
+      else setStage(auto ? "idle" : "failed");
+    } finally {
+      busy.current = false;
+    }
   }
 
-  // Без авто-попытки: Safari не открывает окно без нажатия, сорванная попытка снимала метку «ключ здесь»,
-  // и следующий клик шёл как сохранение второго ключа — человек застревал (26.10). Только по кнопке.
+  // Окно Touch ID открывается само (28.10.2026: «зачем лишняя кнопка»). Safari без нажатия откажет —
+  // такая авто-осечка метку «ключ здесь» не снимает (runStep, auto) и тихо оставляет кнопку запасным путём;
+  // раньше сорванная попытка метку снимала, и следующий клик шёл как сохранение второго ключа (26.10).
   useEffect(() => {
     if (started.current) return;
     started.current = true;
     if (!browserSupportsWebAuthn()) setStage("unsupported");
+    else void attempt(true);
   }, []);
 
   const signOut = async () => { await logout(); window.location.href = "/login"; };
@@ -43,13 +52,13 @@ export function SecondStepGate({ me }: { me: Me }) {
         <p className="text-ink-soft" style={{ fontSize: 14, lineHeight: 1.5 }}>
           {stage === "unsupported"
             ? t("Этот браузер не умеет Touch ID. Откройте SWARM в Chrome или Safari.", "This browser doesn't support Touch ID. Open SWARM in Chrome or Safari.")
-            : t("Без второго шага SWARM не открывается. Нажмите кнопку и приложите палец.", "SWARM doesn't open without the second step. Press the button and use your fingerprint.")}
+            : t("Приложите палец — окно Touch ID откроется само. Не открылось — нажмите кнопку.", "Use your fingerprint — the Touch ID prompt opens by itself. If it doesn't, press the button.")}
         </p>
         {stage === "failed" && (
           <p className="text-ink-mute" style={{ fontSize: 13 }}>{t("Не получилось. Нажмите ещё раз.", "That didn't work. Try again.")}</p>
         )}
         {stage !== "unsupported" && (
-          <button type="button" onClick={() => void attempt()} disabled={stage === "busy"}
+          <button type="button" onClick={() => void attempt(false)} disabled={stage === "busy"}
             className="rounded-[10px] bg-primary px-4 py-2.5 font-semibold text-primary-foreground disabled:opacity-60" style={{ fontSize: 14 }}>
             {stage === "busy" ? t("Ждём Touch ID…", "Waiting for Touch ID…") : t("Подтвердить по Touch ID", "Confirm with Touch ID")}
           </button>

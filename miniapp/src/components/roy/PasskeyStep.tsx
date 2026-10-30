@@ -60,7 +60,11 @@ function previouslyRegistered(err: unknown): boolean {
 
 /** Один проход: вызов → окно устройства → проверка. Режим (create/get) выбирает сервер по ключам человека.
  *  Им же пользуется экран-замок SecondStepGate (шаг обязателен — внутрь без него не пускаем). */
-export async function runStep(retried = false): Promise<{ done: boolean; notice?: StepNotice }> {
+export async function runStep(
+  { retried = false, auto = false }: { retried?: boolean; auto?: boolean } = {},
+): Promise<{ done: boolean; notice?: StepNotice }> {
+  // auto — попытка без жеста человека (экран-замок открывает окно сам): отказ браузера не считается
+  // доказательством, что ключ удалён, и метку «ключ здесь» не снимает.
   // Метка «ключ есть здесь» решает режим: без неё сервер всегда просит сохранить палец (create).
   const opts = await postJson("/api/auth/passkey/options", { here: readKey(HERE_KEY) === "1" });
   const mode = opts.data.mode as "create" | "get" | undefined;
@@ -79,11 +83,11 @@ export async function runStep(retried = false): Promise<{ done: boolean; notice?
     // Ставим метку и сразу просим подтвердить; не вышло без жеста — следующий клик пойдёт как get.
     if (mode === "create" && previouslyRegistered(err)) {
       writeKey(HERE_KEY, "1");
-      return retried ? { done: false, notice: failureNotice("get") } : runStep(true);
+      return retried ? { done: false, notice: failureNotice("get") } : runStep({ retried: true, auto });
     }
     // Закрыли окно, нет ключа на устройстве, браузер не дал открыть без жеста, сервер отказал.
     // Подтверждение не вышло — метка устарела (ключ удалили): снимаем, следующий заход пойдёт как create.
-    if (mode === "get") writeKey(HERE_KEY, null);
+    if (mode === "get" && !auto) writeKey(HERE_KEY, null);
     return { done: false, notice: failureNotice(mode) };
   }
 }
