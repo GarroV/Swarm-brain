@@ -15,12 +15,16 @@ import {
   SESSION_TTL_SEC,
 } from "../_lib/jwt";
 import { swarmApiUrl } from "../_lib/api-url";
+import { mcpMutationAllowed } from "../_lib/mcp-oauth-proxy";
 
 type Env = { SWARM_API_URL?: string; WEB_JWT_SECRET?: string };
 type Ctx = { request: Request; env: Env };
 
 export async function onRequest(ctx: Ctx): Promise<Response> {
   const { request, env } = ctx;
+  if (!mcpMutationAllowed(request)) {
+    return Response.json({ error: "same_origin_required" }, { status: 403 });
+  }
   const url = new URL(request.url);
   const path = url.pathname.replace(/^\/api\//, "");
   const target = `${swarmApiUrl(env)}/${path}${url.search}`;

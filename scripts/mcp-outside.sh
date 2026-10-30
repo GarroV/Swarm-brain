@@ -2,13 +2,11 @@
 # Сторож «MCP снаружи» (#1082): путь до Swarm MCP целиком и снаружи, без токена и без секретов.
 # Зовёт .github/workflows/mcp-outside.yml; локально: MCP_FUNCTIONS_URL=https://…/functions/v1 scripts/mcp-outside.sh
 #
-# Здоровая картина СЕГОДНЯ (замерено 27.10.2026; поведение сервера не менялось):
-#   · initialize без токена  → HTTP 200 и serverInfo (рукопожатие работает и без токена);
+# Здоровая картина с OAuth (30.10.2026):
+#   · initialize без токена → HTTP 401 + WWW-Authenticate с resource_metadata;
 #   · tools/call без токена  → JSON-RPC error -32001 «Unauthorized», НЕ result (дверь на данные заперта);
 #   · GET swarm-setup        → HTTP 200 и bash-скрипт установщика;
 #   · GET swarm-setup/version и /bridge согласованы: sha256 из /version == sha256 тела /bridge.
-# Если сервер перейдёт на стандарт «без токена — HTTP 401 с resource_metadata» (mcp-server), ожидание
-# initialize поменять здесь и в docs/SETUP_CLAUDE_DESKTOP.md.
 #
 # Свой User-Agent: на стандартный curl/Python-urllib край Cloudflare может ответить 403 (проверка
 # браузера) — сторож краснел бы на исправной двери.
@@ -33,7 +31,7 @@ fail() {
 # $1 — метка, $2 — url, $3 — тело POST (пусто = GET). Результат: код в CODE, тело в $WORK/body.
 probe() {
   if [ -n "$3" ]; then
-    CODE="$(curl -sS --max-time 15 -A "$UA" -X POST "$2" -H 'Content-Type: application/json' -d "$3" -o "$WORK/body" -w '%{http_code}' 2>"$WORK/err")" \
+    CODE="$(curl -sS --max-time 15 -A "$UA" -X POST "$2" -H 'Content-Type: application/json' -d "$3" -D "$WORK/headers" -o "$WORK/body" -w '%{http_code}' 2>"$WORK/err")" \
       || fail "$1: адрес не ответил ($(head -c 120 "$WORK/err" | tr -d '\n'))"
   else
     CODE="$(curl -sS --max-time 15 -A "$UA" "$2" -o "$WORK/body" -w '%{http_code}' 2>"$WORK/err")" \
@@ -42,9 +40,9 @@ probe() {
 }
 
 probe "initialize" "$BASE/swarm-mcp" '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}'
-[ "$CODE" = "200" ] || fail "initialize без токена отвечает $CODE, а не 200"
-grep -q '"serverInfo"' "$WORK/body" || fail "initialize без токена вернул ответ без serverInfo"
-echo "рукопожатие отвечает (initialize без токена: $CODE, serverInfo есть)"
+[ "$CODE" = "401" ] || fail "initialize без токена отвечает $CODE, а не 401"
+grep -qi '^www-authenticate:.*resource_metadata=' "$WORK/headers" || fail "нет OAuth resource_metadata в WWW-Authenticate"
+echo "OAuth-вход обнаруживается (initialize без токена: $CODE)"
 
 probe "tools/call" "$BASE/swarm-mcp" '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"get_tasks","arguments":{}}}'
 grep -q '"error"' "$WORK/body" || fail "tools/call без токена не вернул отказ (HTTP $CODE) — дверь на данные открыта или сломана"

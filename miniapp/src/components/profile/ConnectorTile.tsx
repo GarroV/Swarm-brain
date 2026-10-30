@@ -2,6 +2,7 @@
 import { RoyIcon, type RoyIconName } from "@/components/roy/icons";
 import { useDt } from "@/components/roy/nav";
 import type { Connector, ConnectorId, ConnectorState } from "@/lib/connectors";
+import { mcpOAuthMessages } from "@/lib/mcp-oauth-messages";
 
 const ICON: Record<ConnectorId, RoyIconName> = {
   calendar: "cal",
@@ -10,6 +11,7 @@ const ICON: Record<ConnectorId, RoyIconName> = {
   telegram: "tg",
   granola: "note",
   claude: "spark",
+  chatgpt: "spark",
 };
 
 // Короткое имя — плитка узкая; полное живёт в заголовке раскрытой панели (ConnectorsSection).
@@ -20,6 +22,7 @@ const TITLE: Record<ConnectorId, string> = {
   telegram: "Telegram",
   granola: "Granola",
   claude: "Claude Desktop",
+  chatgpt: "ChatGPT",
 };
 
 // Внешний вид несёт СМЫСЛ, а не украшает: то, что требует действия, получает акцентную подложку
@@ -31,6 +34,7 @@ const SKIN: Record<ConnectorState, string> = {
   silent: "border-accent-line bg-surface",
   off: "border-line bg-surface",
   connected: "border-line bg-surface",
+  pending: "border-line bg-surface",
 };
 
 const DOT: Record<ConnectorState, string> = {
@@ -39,6 +43,7 @@ const DOT: Record<ConnectorState, string> = {
   silent: "bg-status-prog",
   off: "bg-line-2",
   connected: "bg-status-done",
+  pending: "bg-line-2",
 };
 
 function shortDate(iso: string | null): string {
@@ -56,6 +61,7 @@ export function ConnectorTile({ c, open, onToggle }: { c: Connector; open: boole
     // Бота не подключают, а включают: у него переключатель автозапуска, а не вход.
     c.id === "bot" ? (c.state === "connected" ? dt("Включён", "On") : dt("Выключен", "Off"))
     : c.state === "connected" ? dt("Подключён", "Connected")
+    : c.state === "pending" ? mcpOAuthMessages(dt("ru", "en")).awaiting
     : c.state === "expired" ? dt("Токен истёк", "Token expired")
     : c.state === "silent" ? dt("Не отвечает", "Not responding")
     : c.state === "expiring" ? dt(`Токен до ${shortDate(c.expiresAt)}`, `Token until ${shortDate(c.expiresAt)}`)

@@ -34,6 +34,11 @@ self.addEventListener("fetch", (event) => {
   // Backend-вызовы (приватные данные) — мимо кэша: и same-origin прокси /api/*, и прямой режим.
   if (url.pathname === "/api" || url.pathname.startsWith("/api/")) return;
   if (url.pathname.includes("/functions/v1/") || url.hostname.endsWith(".supabase.co")) return;
+  // OAuth — протокол входа, а не статика. Не сохраняем метаданные и личный запрос согласия,
+  // не подменяем их кэшем или главной страницей при обрыве сети.
+  if (url.pathname === "/oauth" || url.pathname.startsWith("/oauth/")) return;
+  if (url.pathname.startsWith("/.well-known/oauth-")) return;
+  if (url.searchParams.has("mcp_oauth")) return;
   // Короткие ссылки (/s/<code>) — переадресация на чужой адрес, кэшировать её нельзя: снятая
   // ссылка продолжила бы открываться у тех, кто уже ходил по ней.
   if (url.pathname.startsWith("/s/")) return;

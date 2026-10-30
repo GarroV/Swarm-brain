@@ -9,6 +9,7 @@ import {
   GranolaSection, ProfileSection, RecorderSection, SettingsScreen,
 } from "@/components/SettingsScreen";
 import { ConnectorsSection } from "@/components/profile/ConnectorsSection";
+import { ChatGptSection } from "@/components/ChatGptSection";
 import { TelegramPanel } from "@/components/profile/TelegramPanel";
 import { BackdropSection } from "@/components/profile/BackdropSection";
 import { NotificationSoundToggle } from "./NotificationSoundToggle";
@@ -81,7 +82,7 @@ function SettingsDesk() {
               <Tile title={dt("Интеграции", "Integrations")} className="col-span-3">
                 <ConnectorsSection me={me} dense panels={{
                   calendar: <GoogleCalendarSection />, recorder: <RecorderSection />, telegram: <TelegramPanel me={me} />,
-                  granola: <GranolaSection />, claude: <ClaudeDesktopSection />,
+                  granola: <GranolaSection />, claude: <ClaudeDesktopSection />, chatgpt: <ChatGptSection />,
                 }} />
               </Tile>
             </div>

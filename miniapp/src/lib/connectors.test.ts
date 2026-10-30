@@ -57,7 +57,7 @@ Deno.test("порядок постоянный: состояние не пере
     mcp: { active: true, expiresAt: null },
     botAutojoin: true,
   }));
-  assertEquals(fresh, ["granola", "recorder", "bot", "calendar", "telegram", "claude"]);
+  assertEquals(fresh, ["granola", "recorder", "bot", "calendar", "telegram", "claude", "chatgpt"]);
   assertEquals(mixed, fresh);
 });
 
@@ -67,7 +67,7 @@ Deno.test("сводка считает подключённые и требую�
     recorder: { active: true, expiresAt: inDays(-1) },
     telegramLinked: true,
   }));
-  assertEquals(connectorsSummary(list), { connected: 2, total: 5, attention: 1 });
+  assertEquals(connectorsSummary(list), { connected: 2, total: 6, attention: 1 });
 });
 
 Deno.test("expiring тоже требует внимания в сводке", () => {
@@ -113,4 +113,18 @@ Deno.test("истёкший токен остаётся expired, даже есл
 Deno.test("silent считается в «требуют внимания»", () => {
   const list = buildConnectors(input({ mcp: { active: true, expiresAt: null, lastSeenAt: null } }));
   assertEquals(connectorsSummary(list).attention, 1);
+});
+
+Deno.test("ChatGPT: выдача доступа без обращения — pending, не connected", () => {
+  assertEquals(stateOf(input({ chatgpt: { active: true, lastSeenAt: null, expiresAt: inDays(30) } }), "chatgpt"), "pending");
+  assertEquals(stateOf(input({ chatgpt: { active: true, lastSeenAt: NOW.toISOString(), expiresAt: inDays(30) } }), "chatgpt"), "connected");
+});
+
+Deno.test("ChatGPT и Claude: статусы независимы", () => {
+  const i = input({
+    mcp: { active: true, expiresAt: null },
+    chatgpt: { active: false, lastSeenAt: null, expiresAt: null },
+  });
+  assertEquals(stateOf(i, "claude"), "connected");
+  assertEquals(stateOf(i, "chatgpt"), "off");
 });

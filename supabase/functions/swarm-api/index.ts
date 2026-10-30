@@ -25,6 +25,7 @@ import {
   mintMcpToken,
 } from "../_shared/mcp-token.ts";
 import { buildClaudeProjectPrompt } from "../_shared/claude-project-prompt.ts";
+import { handleOAuthAccountRoute, oauthConfig } from "../_shared/mcp-oauth/index.ts";
 import {
   feedbackCategoryLabel,
   isFeedbackCategory,
@@ -743,6 +744,17 @@ async function routeRequest(req: Request): Promise<Response> {
     return json(maintenancePayload(freeze.state), 503, origin, {
       "Retry-After": String(freeze.retryAfterSec),
     });
+  }
+
+  // OAuth-согласие и приложения доступны только своей полной веб-сессии, после второго шага.
+  const oauthResp = await handleOAuthAccountRoute(supabase, req, routePath, {
+    telegramId: telegram_id, groupId, isDemo,
+    renewableSession: !!webSession && isRenewableSession(webSession),
+  }, oauthConfig());
+  if (oauthResp) {
+    const response = new Response(oauthResp.body, oauthResp);
+    for (const [key, value] of Object.entries(corsHeaders(origin))) response.headers.set(key, value);
+    return response;
   }
 
   // Расход OpenAI (#311): мастер-админ — вся система или одно пространство; админ — своё (#233).

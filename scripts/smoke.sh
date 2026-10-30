@@ -48,7 +48,7 @@ check "swarm-recorder-version (public)" 200 "$BASE/swarm-recorder-version"
 check "meeting-current фейк-токен → 401" 401 \
   -H "Authorization: Bearer smoke_fake_token" "$BASE/meeting-current"
 
-# 3. MCP strict: tools/call без токена обязан дать JSON-RPC-ошибку -32001 (Unauthorized) — HTTP 200.
+# 3. MCP OAuth: tools/call без токена даёт HTTP 401 и JSON-RPC-ошибку -32001 (Unauthorized).
 check_body "swarm-mcp без токена → JSON-RPC -32001" "-32001" \
   -X POST -H "Content-Type: application/json" \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"search_knowledge","arguments":{"query":"smoke"}}}' \
