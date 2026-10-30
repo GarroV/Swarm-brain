@@ -8,14 +8,14 @@ const messages = {
     "Choose where you use ChatGPT. You will need the server address below and your Swarm sign-in.",
   desktopTitle: "ChatGPT desktop app",
   desktopSteps: [
-    "In the ChatGPT app, open Settings → MCP servers → Add server. Name it SwarmBrain, choose Streamable HTTP and paste the server address below.",
+    "In the ChatGPT app, open Settings → MCP servers → Add server. Name it SwarmBrain, choose Streamable HTTP and paste the copied server address.",
     "Save the server and select Restart in its MCP settings. If Authenticate is shown, select it. The Swarm sign-in and consent screen may open in your browser; this does not require creating a separate web plugin.",
     "Sign in to Swarm and allow the connection. Return to the ChatGPT app, check the connection with /mcp and ask: “Show who I am in SwarmBrain”.",
   ],
   webTitle: "ChatGPT in a browser",
   steps: [
     "Open ChatGPT on the web. Open Plugins and choose Add custom MCP server. If your workspace shows Apps or Connectors instead, open its custom MCP server settings.",
-    "Name it SwarmBrain, paste the server address below and choose OAuth authentication. Create and install the connection.",
+    "Name it SwarmBrain, paste the copied server address and choose OAuth authentication. Create and install the connection.",
     "Sign in to Swarm. Check the application and workspace on the consent screen, then choose Allow access.",
     "Select SwarmBrain in a conversation and ask: “Show who I am in SwarmBrain”.",
   ],
