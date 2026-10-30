@@ -575,6 +575,9 @@ async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
   }
 }
 
+// MCP settings share session, connection reporting and cache invalidation with the rest of the app.
+export { apiFetch as mcpApiFetch };
+
 /**
  * Один выход в сеть для API. Сообщает шине связи, дошёл ли запрос до сервера (issue #467):
  * обрыв — плашка «нет связи» на весь экран вместо «Не загрузилось» в каждом виджете;

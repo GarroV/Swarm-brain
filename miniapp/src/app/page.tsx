@@ -7,6 +7,7 @@ import type { Me } from "@/types";
 import { RoyApp } from "@/components/roy/RoyApp";
 import { SecondStepGate } from "@/components/roy/SecondStepGate";
 import { stepPending } from "@/lib/passkeyStep";
+import { McpOAuthConsent } from "@/components/McpOAuthConsent";
 
 let redirecting = false;
 
@@ -21,8 +22,12 @@ function goToLogin(): void {
 
 export default function Home() {
   const [me, setMe] = useState<Me | null>(null);
+  const [oauthRequest, setOauthRequest] = useState<string | null>(null);
+  const [routeReady, setRouteReady] = useState(false);
 
   useEffect(() => {
+    setOauthRequest(new URLSearchParams(window.location.search).get("mcp_oauth"));
+    setRouteReady(true);
     fetchMe()
       .then((m) => {
         setMe(m);
@@ -41,7 +46,13 @@ export default function Home() {
   // 401 от любого виджета посреди работы — тоже на вход, а не «Не загрузилось» (#467).
   useEffect(() => subscribeUnauthorized(goToLogin), []);
 
+  // Read the consent deep link before mounting RoyApp: its navigation effects normalise the URL.
+  if (!routeReady) return <main aria-busy="true" className="min-h-dvh bg-background" />;
   // Touch ID обязателен и не пройден — внутрь не пускаем: вместо приложения один экран (решение 26.10.2026).
   if (me && stepPending(me)?.required) return <SecondStepGate me={me} />;
+  if (oauthRequest) {
+    if (!me) return <main aria-busy="true" className="min-h-dvh bg-background" />;
+    return <McpOAuthConsent requestId={oauthRequest} me={me} />;
+  }
   return <RoyApp me={me} />;
 }

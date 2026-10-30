@@ -45,6 +45,8 @@ import { wrapUntrusted } from "./untrusted.ts";
 import { CONFIRM_SECRET_ENV, confirmationChallenge, decideConfirmation, withConfirmationArgument } from "./confirm.ts";
 import { type JournalOutcome, recordToolCall } from "./journal.ts";
 import { checkTokenRow, type TokenRow } from "./token-state.ts";
+import { oauthConfig, resolveOAuthAccessToken } from "../_shared/mcp-oauth/index.ts";
+import { oauthUnauthorized } from "./http-auth.ts";
 import {
   AUTH_ERROR_CODE,
   authorizeToolCall,
@@ -965,16 +967,19 @@ Deno.serve(async (req: Request) => {
       headers: {
         "Access-Control-Allow-Origin": "*",
         "Access-Control-Allow-Methods": "POST, GET, OPTIONS",
-        "Access-Control-Allow-Headers": "Content-Type, Authorization",
+        "Access-Control-Allow-Headers": "Content-Type, Authorization, MCP-Protocol-Version, MCP-Session-Id",
       },
     });
   }
 
   if (req.method === "GET") {
-    return new Response(JSON.stringify({ name: "swarm-brain", version: "1.0.0", status: "ok" }), {
-      headers: { "Content-Type": "application/json" },
-    });
+    // No SSE channel: stateless Streamable HTTP permits 405 for GET. Unauthenticated clients discover OAuth.
+    if (!req.headers.get("Authorization")) {
+      return oauthUnauthorized(null, `${oauthConfig().issuer}/.well-known/oauth-protected-resource`);
+    }
+    return new Response(null, { status: 405, headers: { Allow: "POST, OPTIONS" } });
   }
+  if (req.method !== "POST") return new Response(null, { status: 405, headers: { Allow: "POST, OPTIONS" } });
 
   let body: { jsonrpc: string; method: string; params?: Record<string, unknown>; id: unknown };
   try {
@@ -987,8 +992,8 @@ Deno.serve(async (req: Request) => {
 
   // ── Auth: РАЗБОР токена, но БЕЗ отказа на хендшейке ─────────────────────────
   // Token → sha256 hex → lookup in allowed_users.claude_mcp_token_hash → telegram_id.
-  // ВАЖНО: протокольные методы (initialize / tools/list / notifications) отвечаем ВСЕГДА,
-  // независимо от токена. Иначе устаревший/неверный Bearer в коннекторе claude.ai роняет
+  // ВАЖНО: для прежнего smcp_-токена протокольные методы (initialize / tools/list / notifications)
+  // отвечают независимо от срока токена. Иначе устаревший Bearer в коннекторе claude.ai роняет
   // весь хендшейк (-32001 на initialize) — и коннектор молча «отваливается» целиком
   // (подтверждено репродукцией официальным MCP SDK: connect() падает на -32001).
   // Контроль доступа применяем точечно к tools/call — единственному методу, трогающему данные.
@@ -999,8 +1004,19 @@ Deno.serve(async (req: Request) => {
   let tokenHashHex: string | null = null; // для журнала: только хвост хэша, не токен
   const authHeader = req.headers.get("Authorization") ?? "";
 
-  if (authHeader.startsWith("Bearer ")) {
-    const token = authHeader.slice(7).trim();
+  // OAuth clients need a real 401 challenge to start or renew login. The installed Claude bridge
+  // still follows its established static-token handshake; the two credentials are independent.
+  const bearer = authHeader.match(/^Bearer\s+(\S+)$/i)?.[1];
+  if (!bearer || !bearer.startsWith("smcp_")) {
+    const config = oauthConfig();
+    const oauth = bearer ? await resolveOAuthAccessToken(supabase, bearer, config.resource) : null;
+    if (!oauth) return oauthUnauthorized(id, `${config.issuer}/.well-known/oauth-protected-resource`);
+    verifiedTelegramId = oauth.telegramId;
+    tokenHashHex = oauth.tokenHash;
+  }
+
+  if (bearer?.startsWith("smcp_")) {
+    const token = bearer;
     const encoder = new TextEncoder();
     const hashBuffer = await crypto.subtle.digest("SHA-256", encoder.encode(token));
     const hashHex = Array.from(new Uint8Array(hashBuffer))

@@ -12,6 +12,7 @@ import { countryCode } from "@/lib/countries";
 import type { Me, Integration, GranolaNote } from "@/types";
 import { ProfileHeader } from "@/components/profile/ProfileHeader";
 import { ConnectorsSection } from "@/components/profile/ConnectorsSection";
+import { ChatGptSection } from "@/components/ChatGptSection";
 import { IntegrationStatusLine } from "@/components/profile/IntegrationStatusLine";
 import { STALE_DAYS } from "@/lib/integrationStatus";
 import { TelegramPanel } from "@/components/profile/TelegramPanel";
@@ -846,6 +847,7 @@ export function SettingsScreen() {
                 telegram: <TelegramPanel me={me} />,
                 granola: <GranolaSection />,
                 claude: <ClaudeDesktopSection />,
+                chatgpt: <ChatGptSection />,
               }}
             />
           </>

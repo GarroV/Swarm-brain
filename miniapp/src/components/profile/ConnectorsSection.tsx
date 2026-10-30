@@ -7,6 +7,9 @@ import { useDt } from "@/components/roy/nav";
 import type { Me } from "@/types";
 import { ConnectorTile } from "./ConnectorTile";
 import { AutojoinToggle } from "./AutojoinToggle";
+import { fetchMcpConnections } from "@/lib/mcp-oauth-api";
+import { chatGptConnectionStatus, MCP_CONNECTIONS_CHANGED } from "@/lib/mcp-oauth";
+import { mcpOAuthMessages } from "@/lib/mcp-oauth-messages";
 
 const TITLE: Record<ConnectorId, [string, string]> = {
   calendar: ["Google Календарь", "Google Calendar"],
@@ -15,12 +18,14 @@ const TITLE: Record<ConnectorId, [string, string]> = {
   telegram: ["Telegram", "Telegram"],
   granola: ["Granola", "Granola"],
   claude: ["Claude Desktop", "Claude Desktop"],
+  chatgpt: ["ChatGPT", "ChatGPT"],
 };
 
 // Правая колонка десктопа: что это и зачем — человеческим языком, для того, кто видит интеграцию
 // впервые (владелец 30.09.2026: «информационный блок справа должен быть полезным и объясняющим»).
 // Абзацы — массивом: каждый отвечает на один вопрос (что это → что будет → что важно знать).
 const ABOUT: Record<ConnectorId, [string[], string[]]> = {
+  chatgpt: [mcpOAuthMessages("ru").about, mcpOAuthMessages("en").about],
   bot: [
     [
       "scriba — наш бот для встреч в Google Meet и Контур.Толке. Он сам заходит на ваши встречи и записывает их, вам ничего не нужно запускать.",
@@ -111,12 +116,14 @@ export function ConnectorsSection({ me, panels, dense = false }: { me: Me; panel
       fetchMcpSetup().catch(() => ({ active: false, expiresAt: null, lastSeenAt: undefined })),
       // В демо бот не ходит — карточки нет (botAutojoin: undefined).
       me.is_demo ? Promise.resolve(undefined) : fetchAutojoin().catch(() => false),
-    ]).then(([integrations, recorder, mcp, botAutojoin]) => {
+      me.is_demo ? Promise.resolve(null) : fetchMcpConnections().catch(() => null),
+    ]).then(([integrations, recorder, mcp, botAutojoin, oauth]) => {
       if (!alive) return;
       setInput({
         services: integrations.map((i) => i.service),
         recorder: { active: recorder.active, expiresAt: recorder.expiresAt, lastSeenAt: recorder.lastSeenAt },
         mcp: { active: mcp.active, expiresAt: mcp.expiresAt, lastSeenAt: mcp.lastSeenAt },
+        chatgpt: chatGptConnectionStatus(oauth?.connections ?? []),
         // Синтетическая личность (веб-вход по e-mail без Telegram) — отрицательный id,
         // см. auth-resolve. Для человека это и значит «Telegram не привязан».
         telegramLinked: me.telegram_id > 0,
@@ -125,6 +132,18 @@ export function ConnectorsSection({ me, panels, dense = false }: { me: Me; panel
       });
     });
     return () => { alive = false; };
+  }, [me.telegram_id, me.is_demo]);
+
+  useEffect(() => {
+    if (me.is_demo) return;
+    let alive = true;
+    const refresh = () => {
+      fetchMcpConnections().then((oauth) => {
+        if (alive) setInput((current) => current ? { ...current, chatgpt: chatGptConnectionStatus(oauth.connections) } : current);
+      }).catch(() => { /* Панель подключения показывает ошибку загрузки. */ });
+    };
+    window.addEventListener(MCP_CONNECTIONS_CHANGED, refresh);
+    return () => { alive = false; window.removeEventListener(MCP_CONNECTIONS_CHANGED, refresh); };
   }, [me.telegram_id, me.is_demo]);
 
   if (!input) return <p className="text-sm text-muted-foreground">{dt("Загрузка…", "Loading…")}</p>;

@@ -80,3 +80,21 @@ Deno.test("короткие ссылки /s/<code> идут мимо SW: сня�
 Deno.test("мутации API не трогаем в принципе", async () => {
   assertEquals(await swIntercepts(`${ORIGIN}/api/entries`, { method: "POST" }), false);
 });
+
+Deno.test("OAuth-переходы идут мимо SW: без кэша и офлайн-подмены страницы согласия", async () => {
+  for (const path of ["/oauth", "/oauth/authorize?client_id=example&state=unique", "/oauth/token", "/oauth/revoke"]) {
+    assertEquals(await swIntercepts(`${ORIGIN}${path}`, { mode: "navigate", destination: "document" }), false, path);
+  }
+});
+
+Deno.test("обнаружение OAuth не читает метаданные из кэша SW", async () => {
+  for (const path of ["/.well-known/oauth-authorization-server", "/.well-known/oauth-protected-resource", "/.well-known/oauth-protected-resource/mcp"]) {
+    assertEquals(await swIntercepts(`${ORIGIN}${path}`), false, path);
+  }
+});
+
+Deno.test("личный запрос согласия не кэшируется, обычная оболочка остаётся доступна офлайн", async () => {
+  assertEquals(await swIntercepts(`${ORIGIN}/?mcp_oauth=request-id`, { mode: "navigate", destination: "document" }), false);
+  assertEquals(await swIntercepts(`${ORIGIN}/?mcp_oauth=`, { mode: "navigate", destination: "document" }), false);
+  assertEquals(await swIntercepts(`${ORIGIN}/`, { mode: "navigate", destination: "document" }), true);
+});

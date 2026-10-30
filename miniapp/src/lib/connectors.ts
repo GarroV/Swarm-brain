@@ -11,14 +11,14 @@ import { integrationHealth, STALE_DAYS } from "./integrationStatus";
 /** Сколько дней до истечения токена считаются «скоро протухнет». */
 const EXPIRING_DAYS = 14;
 
-export type ConnectorId = "calendar" | "recorder" | "bot" | "telegram" | "granola" | "claude";
+export type ConnectorId = "calendar" | "recorder" | "bot" | "telegram" | "granola" | "claude" | "chatgpt";
 
 /**
  * `expired` намеренно отделён от `off`: протухший токен требует ПЕРЕподключения, а не первого
  * подключения. Слив их в одно состояние, мы показываем человеку «подключи» там, где сервис уже
  * настроен и просто отвалился — урок issue #175.
  */
-export type ConnectorState = "connected" | "expiring" | "expired" | "silent" | "off";
+export type ConnectorState = "connected" | "expiring" | "expired" | "silent" | "pending" | "off";
 // silent — токен действует, но клиент не обращался к серверу дольше порога или ни разу (issue #921):
 // «Подключён» тут было бы враньём, а «подключи» — тоже (токен уже выпущен, нужно перевыпустить команду).
 
@@ -41,6 +41,8 @@ export type ConnectorsInput = {
   services: string[];
   recorder: TokenStatus;
   mcp: TokenStatus;
+  /** OAuth ChatGPT отдельно от токена установленного Claude Desktop. */
+  chatgpt?: TokenStatus;
   telegramLinked: boolean;
   /**
    * Автозапуск бота встреч (scriba_autojoin): включён → connected, выключен → off. Не передан
@@ -52,7 +54,7 @@ export type ConnectorsInput = {
 
 // Порядок задал владелец 30.09.2026: верхний ряд — чем записывать и чем пополнять базу,
 // нижний — с чем Swarm связан. На десктопе это ровно два ряда по три.
-const BASE_ORDER: ConnectorId[] = ["granola", "recorder", "bot", "calendar", "telegram", "claude"];
+const BASE_ORDER: ConnectorId[] = ["granola", "recorder", "bot", "calendar", "telegram", "claude", "chatgpt"];
 
 
 function tokenState({ active, expiresAt, lastSeenAt }: TokenStatus, now: Date, staleDays: number): ConnectorState {
@@ -76,6 +78,11 @@ export function buildConnectors(input: ConnectorsInput): Connector[] {
     telegram: { id: "telegram", state: input.telegramLinked ? "connected" : "off", expiresAt: null },
     granola: { id: "granola", state: has("granola") ? "connected" : "off", expiresAt: null },
     claude: { id: "claude", state: tokenState(input.mcp, input.now, STALE_DAYS.claude), expiresAt: input.mcp.expiresAt },
+    chatgpt: {
+      id: "chatgpt",
+      state: !input.chatgpt?.active ? "off" : input.chatgpt.lastSeenAt ? "connected" : "pending",
+      expiresAt: input.chatgpt?.expiresAt ?? null,
+    },
   };
 
   const shown = input.botAutojoin === undefined ? BASE_ORDER.filter((id) => id !== "bot") : BASE_ORDER;
