@@ -5,7 +5,14 @@ const messages = {
     "ChatGPT uses your Swarm permissions. Other people's private records stay private.",
   ],
   introduction:
-    "Connect in ChatGPT on the web. You only need the server address and to sign in to Swarm.",
+    "Choose where you use ChatGPT. You will need the server address below and your Swarm sign-in.",
+  desktopTitle: "ChatGPT desktop app",
+  desktopSteps: [
+    "In the ChatGPT app, open Settings → MCP servers → Add server. Name it SwarmBrain, choose Streamable HTTP and paste the server address below.",
+    "Save the server and select Restart in its MCP settings. If Authenticate is shown, select it. The Swarm sign-in and consent screen may open in your browser; this does not require creating a separate web plugin.",
+    "Sign in to Swarm and allow the connection. Return to the ChatGPT app, check the connection with /mcp and ask: “Show who I am in SwarmBrain”.",
+  ],
+  webTitle: "ChatGPT in a browser",
   steps: [
     "Open ChatGPT on the web. Open Plugins and choose Add custom MCP server. If your workspace shows Apps or Connectors instead, open its custom MCP server settings.",
     "Name it SwarmBrain, paste the server address below and choose OAuth authentication. Create and install the connection.",
@@ -18,9 +25,11 @@ const messages = {
   copyAddress: "Copy address",
   copied: "Copied",
   copyFailed: "Copy failed. Select the address and copy it manually.",
-  openChatGpt: "Open ChatGPT",
-  connectedApps: "Connected MCP applications",
-  none: "No applications connected yet.",
+  openChatGpt: "Open ChatGPT in a browser",
+  connectedApps: "OAuth connections",
+  statusNote:
+    "The tile indicator shows the ChatGPT web connection. The list below shows applications authorised by signing in to Swarm. Local connections using a personal token are not listed here; check those in the client's MCP settings.",
+  none: "No OAuth connections yet.",
   loading: "Loading…",
   loadFailed: "Could not load connections. Try again.",
   retry: "Try again",

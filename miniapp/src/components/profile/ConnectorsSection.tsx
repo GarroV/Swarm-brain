@@ -173,8 +173,8 @@ export function ConnectorsSection({ me, panels, dense = false }: { me: Me; panel
   // Панель не выталкивает плитки вниз и не заставляет искать, что раскрылось.
   if (dense) {
     return (
-      <section className="grid gap-3" style={{ gridTemplateColumns: "minmax(0, 1fr) 320px" }}>
-        <div className="flex flex-col gap-2">
+      <section className="grid min-w-0 grid-cols-1 items-start gap-4 xl:grid-cols-[minmax(280px,0.8fr)_minmax(0,1.2fr)]">
+        <div className="flex min-w-0 flex-col gap-2">
           <div className="flex justify-end">{counter}</div>
           <div className="grid grid-cols-3 gap-2">
             {list.map((c) => (
@@ -182,7 +182,7 @@ export function ConnectorsSection({ me, panels, dense = false }: { me: Me; panel
             ))}
           </div>
         </div>
-        <aside aria-live="polite" className="rounded-[10px] border border-accent-line bg-surface px-4 py-3.5">
+        <aside aria-live="polite" className="min-w-0 rounded-[10px] border border-accent-line bg-surface px-4 py-3.5">
           <p className="mb-2 text-ink" style={{ fontSize: 15, fontWeight: 600 }}>{dt(...TITLE[selected])}</p>
           <div className="mb-3.5 flex flex-col gap-2 text-ink-soft" style={{ fontSize: 12.5, lineHeight: 1.5 }}>
             {ABOUT[selected][dt("ru", "en") === "ru" ? 0 : 1].map((para) => <p key={para}>{para}</p>)}

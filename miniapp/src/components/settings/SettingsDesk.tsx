@@ -16,6 +16,7 @@ import { NotificationSoundToggle } from "./NotificationSoundToggle";
 import { useDt } from "@/components/roy/nav";
 import { useIsDesktop } from "@/components/roy/useIsDesktop";
 import { SidePanel } from "@/components/roy/SidePanel";
+import { useWidePane } from "@/components/roy/WidePane";
 
 // «Настройки» десктопа — компактное бенто (решение владельца 2026-09-25: «сделать очень компактный
 // бенто, а не пытаться разнести все по всему экрану»): «Профиль» на две трети, рядом плитки «Фон» и
@@ -42,6 +43,7 @@ export function SettingsRoute() {
 }
 
 function SettingsDesk() {
+  useWidePane(true);
   const dt = useDt();
   const [me, setMe] = useState<Me | null>(null);
   const [failed, setFailed] = useState(false);
@@ -55,7 +57,7 @@ function SettingsDesk() {
 
   return (
     <div className="h-full overflow-auto">
-      <div className="flex flex-col gap-3 p-4" style={{ maxWidth: 880 }}>
+      <div className="flex min-w-0 flex-col gap-3 p-4">
         {failed && (
           <p className="text-ink-soft" style={{ fontSize: 13 }}>
             {dt("Профиль не загрузился — обновите страницу", "The profile failed to load — reload the page")}
@@ -64,7 +66,7 @@ function SettingsDesk() {
         {!failed && !me && <div className="roy-shim" style={{ height: 160, borderRadius: 10 }} />}
         {me && (
           <>
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid w-full max-w-[880px] grid-cols-3 gap-3">
               <ProfileTile me={me} open={panel} onToggle={toggle} />
               <div className="flex flex-col gap-3">
                 <Tile title={dt("Фон", "Background")}>
@@ -79,13 +81,13 @@ function SettingsDesk() {
               <Tile title={dt("Уведомления", "Notifications")} className="col-span-3">
                 <NotificationSoundToggle />
               </Tile>
-              <Tile title={dt("Интеграции", "Integrations")} className="col-span-3">
-                <ConnectorsSection me={me} dense panels={{
-                  calendar: <GoogleCalendarSection />, recorder: <RecorderSection />, telegram: <TelegramPanel me={me} />,
-                  granola: <GranolaSection />, claude: <ClaudeDesktopSection />, chatgpt: <ChatGptSection />,
-                }} />
-              </Tile>
             </div>
+            <Tile title={dt("Интеграции", "Integrations")}>
+              <ConnectorsSection me={me} dense panels={{
+                calendar: <GoogleCalendarSection />, recorder: <RecorderSection />, telegram: <TelegramPanel me={me} />,
+                granola: <GranolaSection />, claude: <ClaudeDesktopSection />, chatgpt: <ChatGptSection />,
+              }} />
+            </Tile>
             {panel && (
               <SidePanel title={dt(...PANEL_TITLE[panel])} onClose={() => setPanel(null)}>
                 <PanelBody panel={panel} me={me} onProfileSaved={(patch) => setMe({ ...me, ...patch })} />
