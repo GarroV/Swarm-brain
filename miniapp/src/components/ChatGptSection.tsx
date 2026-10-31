@@ -88,9 +88,6 @@ export function ChatGptSection() {
   return (
     <div className="space-y-3 text-sm">
       <p className="text-ink-soft">{t.introduction}</p>
-      <ol className="list-decimal space-y-2 pl-4 text-ink-soft">
-        {t.steps.map((step) => <li key={step}>{step}</li>)}
-      </ol>
       {data && (
         <div className="space-y-2">
           <label
@@ -111,15 +108,29 @@ export function ChatGptSection() {
           </Button>
         </div>
       )}
-      <p className="text-xs text-ink-mute">{t.workspaceNote}</p>
-      <a
-        href="https://chatgpt.com/"
-        target="_blank"
-        rel="noopener noreferrer"
-        className="inline-block text-primary underline underline-offset-4"
-      >
-        {t.openChatGpt}
-      </a>
+      <section className="space-y-2">
+        <h3 className="font-medium text-ink">{t.desktopTitle}</h3>
+        <ol className="list-decimal space-y-2 pl-4 text-ink-soft">
+          {t.desktopSteps.map((step) => <li key={step}>{step}</li>)}
+        </ol>
+      </section>
+      <details className="space-y-2 rounded-lg border border-line p-3">
+        <summary className="cursor-pointer font-medium text-ink">
+          {t.webTitle}
+        </summary>
+        <ol className="list-decimal space-y-2 pl-4 text-ink-soft">
+          {t.steps.map((step) => <li key={step}>{step}</li>)}
+        </ol>
+        <p className="text-xs text-ink-mute">{t.workspaceNote}</p>
+        <a
+          href="https://chatgpt.com/"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-block text-primary underline underline-offset-4"
+        >
+          {t.openChatGpt}
+        </a>
+      </details>
       <div className="space-y-2 border-t border-line pt-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h3 className="font-medium text-ink">{t.connectedApps}</h3>
@@ -133,6 +144,7 @@ export function ChatGptSection() {
             {t.refresh}
           </Button>
         </div>
+        <p className="text-xs text-ink-mute">{t.statusNote}</p>
         {loading && (
           <p role="status" className="text-xs text-ink-mute">{t.loading}</p>
         )}
