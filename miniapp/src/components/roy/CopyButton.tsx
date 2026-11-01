@@ -9,7 +9,7 @@ const FEEDBACK_MS = 2000;
 // Маленькая кнопка «Копировать» для длинного текста (транскрипт вычитки и записи). Текст берётся
 // в момент нажатия (`getText`): строить его при каждом рендере ради клика незачем. После успеха —
 // «Скопировано» на пару секунд; отказ буфера (не https, запрет браузера) показываем, а не глотаем.
-export function CopyButton({ getText, title }: { getText: () => string; title?: string }) {
+export function CopyButton({ getText, title, iconOnly = false }: { getText: () => string; title?: string; iconOnly?: boolean }) {
   const dt = useDt();
   const [state, setState] = useState<"idle" | "copied" | "failed">("idle");
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -37,13 +37,14 @@ export function CopyButton({ getText, title }: { getText: () => string; title?: 
     <button
       type="button"
       onClick={copy}
-      title={title}
+      title={state === "idle" ? title ?? label : label}
+      aria-label={state === "idle" ? title ?? label : label}
       aria-live="polite"
-      className="flex shrink-0 items-center gap-1 rounded-full border border-line px-2 font-medium text-ink-soft transition-colors hover:bg-surface-2 active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+      className={`flex shrink-0 items-center justify-center gap-1 rounded-full border border-line font-medium text-ink-soft transition-colors hover:bg-surface-2 active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] ${iconOnly ? "size-10 lg:size-[30px]" : "px-2"}`}
       style={{ fontSize: 11, minHeight: 24, ...(state === "failed" ? { color: "var(--pri-high)" } : null) }}
     >
-      <RoyIcon name={state === "copied" ? "check" : "copy"} size={12} strokeWidth={state === "copied" ? 2.1 : 1.7} className="shrink-0" />
-      {label}
+      <RoyIcon name={state === "copied" ? "check" : "copy"} size={iconOnly ? 15 : 12} strokeWidth={state === "copied" ? 2.1 : 1.7} className="shrink-0" />
+      <span className={iconOnly ? "sr-only" : undefined}>{label}</span>
     </button>
   );
 }

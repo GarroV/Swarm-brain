@@ -13,6 +13,7 @@ import { applyAskAnswerToText } from "@/lib/tezisyLines";
 import { useDt, useLang, useRoyNav } from "@/components/roy/nav";
 import { speakerLabelAt } from "@/lib/transcriptSpeaker";
 import { transcriptToText } from "@/lib/transcriptText";
+import { buildTezisyCopyText } from "@/lib/tezisyCopy";
 import { CopyButton } from "@/components/roy/CopyButton";
 import { useConfirm } from "@/components/ui/confirm";
 import { hasSeveralOwners, canDeleteDraft, canHideDraft } from "@/lib/draftOwners";
@@ -275,21 +276,26 @@ export function MeetingReview({ id, onClose, onChanged }: Props) {
         label={dt("Тезисы встречи", "Meeting summary")} ask={hasTranscript && !published ? askDraft : undefined} />
     ) : (
       <div className="mb-4 px-4 py-3.5" style={{ background: "var(--accent-soft)", border: "1px solid var(--accent-line)", borderRadius: 10 }}>
-        <div className="mb-1.5 flex items-center justify-between gap-2">
+        <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2">
           <span className="font-bold uppercase text-accent-ink" style={{ fontSize: 11, letterSpacing: "0.05em" }}>{dt("Кратко от ИИ", "AI summary")}</span>
-          <div className="flex items-center gap-1.5">
+          <div className="ml-auto flex items-center gap-1.5">
             {!published && hasTranscript && (
               <ReprocessMenu busy={reprocessing} onPick={reprocess} iconSize={12}
                 buttonClassName="inline-flex items-center gap-1.5 rounded-full border border-accent-line bg-card/60 font-semibold text-accent-ink transition-transform active:scale-[0.97] disabled:opacity-50"
                 buttonStyle={{ padding: "3px 9px", fontSize: 11 }} />
             )}
             {!published && (
-              <EditPencil label={dt("Править тезисы", "Edit summary")} size={26} tone="accent"
+              <EditPencil label={dt("Править тезисы", "Edit summary")} tone="accent"
                 onClick={() => { setEditing(true); setView("tez"); }} />
             )}
+            <CopyButton iconOnly title={dt("Скопировать тезисы", "Copy summary")}
+              getText={() => buildTezisyCopyText(meeting.draft_notes_md ?? "", { title: meeting.title, date: meeting.started_at }, {
+                notice: dt("Обработано с помощью AI", "Processed with AI"),
+                meeting: dt("Встреча", "Meeting"), locale: dt("ru-RU", "en-US"),
+              })} />
           </div>
         </div>
-        <TezisyReader text={meeting.draft_notes_md ?? ""} copyMeta={{ title: meeting.title, date: meeting.started_at }}
+        <TezisyReader text={meeting.draft_notes_md ?? ""}
           ask={hasTranscript && !published ? askDraft : undefined} onApply={applyFromReading} />
       </div>
     )
@@ -336,8 +342,8 @@ export function MeetingReview({ id, onClose, onChanged }: Props) {
   const transcriptBlock = showTranscript && (
     <div className="mb-4">
       <div className="mb-2 flex items-center justify-between gap-2">
-        {panel ? <span /> : <SectionLabel className="!mb-0">{dt("Транскрипт", "Transcript")}</SectionLabel>}
-        <CopyButton
+        <SectionLabel className="!mb-0">{dt("Транскрипт", "Transcript")}</SectionLabel>
+        <CopyButton iconOnly
           title={dt("Скопировать весь транскрипт", "Copy the whole transcript")}
           getText={() => transcriptToText(segments, {
             speakerAt: (i) => speakerLabelAt(segments, i, { meName, lang }),
