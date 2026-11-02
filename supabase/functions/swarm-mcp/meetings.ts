@@ -1,3 +1,4 @@
+import { meetingEntryIsLive } from "../_shared/meeting-entry-live.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import {
   canAccessDraftMeeting,
@@ -56,6 +57,7 @@ async function loadOwnDraft(
   ) {
     return { ok: false, msg: NOT_FOUND };
   }
+  if (!await meetingEntryIsLive(supabase, meeting)) return { ok: false, msg: NOT_FOUND };
   return { ok: true, meeting, groupId };
 }
 

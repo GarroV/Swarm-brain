@@ -1,3 +1,4 @@
+import { meetingEntryIsLive } from "../_shared/meeting-entry-live.ts";
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { apiErr, json } from "./http.ts";
 import { EntryAccessError, type EntryRow, getEntrySecure } from "./entries-guard.ts";
@@ -60,11 +61,13 @@ export async function handleMeetingAskRoutes(
   }
   if (!meetingId) return apiErr(400, "У записи нет транскрипта встречи — спросить не по чему", origin);
 
-  const { data: row } = await supabase.from("meetings").select("group_id, recorders, co_owners")
+  const { data: row } = await supabase.from("meetings").select("group_id, recorders, co_owners, entry_id")
     .eq("id", meetingId).maybeSingle();
   if (!canAskAboutMeeting(entry, row as DraftMeetingRow | null, telegramId, groupId)) {
     return apiErr(404, "Not found", origin);
   }
+
+  if (!row || !await meetingEntryIsLive(supabase, row)) return apiErr(404, "Not found", origin);
 
   try {
     const answer = await answerMeetingQuestion(supabase, meetingId, input);

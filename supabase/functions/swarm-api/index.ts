@@ -1,3 +1,4 @@
+import { meetingEntryIsLive } from "../_shared/meeting-entry-live.ts";
 // deno-fmt-ignore-file
 // Легаси-файл вне канона формата (решение D013): гейт `scripts/check` проверяет формат затронутого
 // файла ЦЕЛИКОМ, а переформатирование этого — ~700 строк дифа поверх параллельных веток. Новый код
@@ -2977,7 +2978,8 @@ async function routeRequest(req: Request): Promise<Response> {
     const status = url.searchParams.get("status") ?? "awaiting_review";
     let q = supabase.from("meetings")
       .select(
-        "id, title, source, identity_kind, started_at, ended_at, status, has_draft_notes, recorders, co_owners, attendees, entry_id, created_at, recorded_by, agent_version, recorded_seconds, summary_status, agent_last_seen_at, agent_last_recording",
+        "id, title, source, identity_kind, started_at, ended_at, status, has_draft_notes, recorders, co_owners, attendees, entry_id, created_at, recorded_by, agent_version, recorded_seconds, summary_status, agent_last_seen_at, agent_last_recording" +
+          (status === "in_base" ? ", published_entry:entries!entry_id!inner(id)" : ""),
         { count: "exact" },
       )
       .eq("group_id", groupId)
@@ -2993,6 +2995,7 @@ async function routeRequest(req: Request): Promise<Response> {
     // пригляд «у кого копится» — агрегат без контента GET /admin/review-counts.
     // Свои = записывал ИЛИ совладелец: участник встречи с аккаунтом SWARM (решение 2026-09-25).
     q = q.or(draftMeetingsOwnScopedFilter(telegram_id));
+    if (status === "in_base") q = q.is("published_entry.archived_at", null);
     const { data, error, count } = await q;
     if (error) return serverError(origin, "agent-meetings list", error);
     // has_draft_notes вместо draft_notes_md: список рисует название/дату/статус, а текст
@@ -3058,7 +3061,7 @@ async function routeRequest(req: Request): Promise<Response> {
       return apiErr(404, "Not found", origin);
     }
     // Сужение для компилятора: гард уже вернул 404 при meeting=null. Строка недостижима.
-    if (!meeting) return apiErr(404, "Not found", origin);
+    if (!meeting || !await meetingEntryIsLive(supabase, meeting)) return apiErr(404, "Not found", origin);
 
     // POST /:id/hide — скрыть черновик групповой встречи у себя (issue #818). Строка общая на
     // всех владельцев, поэтому не удаляем, а отмечаем смотрящего в hidden_for.
