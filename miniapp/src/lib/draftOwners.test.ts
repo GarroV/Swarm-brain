@@ -5,6 +5,13 @@ const draft = { recorders: [{ telegram_id: 1 }], co_owners: [2] };
 
 const solo = { recorders: [{ telegram_id: 1 }] };
 
+Deno.test("админ удаляет чужой и групповой черновик; сотрудник — нет", () => {
+  assertEquals(canDeleteDraft(draft, 3, true), true);
+  assertEquals(canDeleteDraft(solo, 3, true), true);
+  assertEquals(canDeleteDraft(draft, 3, false), false);
+  assertEquals(canDeleteDraft(draft, null, true), false);
+});
+
 Deno.test("удалить — только свою встречу с одним владельцем; групповую не стереть у всех (#818)", () => {
   assertEquals(canDeleteDraft(solo, 1), true);
   assertEquals(canDeleteDraft(solo, 2), false);

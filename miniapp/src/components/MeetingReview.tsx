@@ -176,13 +176,14 @@ export function MeetingReview({ id, onClose, onChanged }: Props) {
     } finally { setPublishing(false); }
   };
 
-  // Удалить черновик с вычитки. Право — только у записавшего (как в админке встреч): у
-  // совладельца черновика кнопки нет, сервер отбивает и сам.
+  // Админ удаляет любой черновик своего пространства, сотрудник — только свой одиночный.
   const handleDelete = async () => {
     if (!meeting) return;
     const ok = await confirm({
       title: dt(`Удалить черновик «${meeting.title ?? ""}»?`, `Delete the draft “${meeting.title ?? ""}”?`),
-      description: dt("Расшифровка и тезисы будут удалены без возможности восстановления.", "The transcript and summary will be deleted for good."),
+      description: me?.is_admin && hasSeveralOwners(meeting)
+        ? dt("Встреча, расшифровка и тезисы будут удалены у всех участников без возможности восстановления.", "The meeting, transcript and summary will be permanently deleted for all participants.")
+        : dt("Расшифровка и тезисы будут удалены без возможности восстановления.", "The transcript and summary will be deleted for good."),
       confirmText: dt("Удалить", "Delete"),
       cancelText: dt("Отмена", "Cancel"),
     });
@@ -456,7 +457,7 @@ export function MeetingReview({ id, onClose, onChanged }: Props) {
                 </>
               )}
               {/* «Название» и «Тезисы» — карандашами у самого названия и в шапке тезисов (27.10.2026). */}
-              {canDeleteDraft(meeting, me?.telegram_id) && !deleting && (
+              {canDeleteDraft(meeting, me?.telegram_id, me?.is_admin) && !deleting && (
                 <button type="button" onClick={handleDelete} aria-label={dt("Удалить черновик", "Delete draft")} title={dt("Удалить черновик", "Delete draft")}
                   className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full transition-colors lg:h-[30px] lg:w-[30px] hover:bg-surface-2 active:scale-[0.94]"
                   style={{ color: "var(--pri-high)" }}>

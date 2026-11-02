@@ -293,10 +293,26 @@ Deno.test("getMeetingSecure — админ удаляет общую встре�
   assertEquals(row.id, "e1");
 });
 
-Deno.test("getMeetingSecure — чужая личная встреча для админа 404, а не 403", async () => {
-  const { client } = makeSupabase({ ...meeting, is_private: true });
+Deno.test("getMeetingSecure — админ удаляет личную встречу, но не читает и не правит", async () => {
+  const privateMeeting = { ...meeting, is_private: true };
+  const { client } = makeSupabase(privateMeeting);
+  const row = await getMeetingSecure(client, "e1", {
+    ...meetingOpts,
+    telegramId: 333,
+    isAdmin: true,
+    action: "delete",
+  });
+  assertEquals(row.id, "e1");
+  for (const action of ["view", "edit"] as const) {
+    const err = await assertRejects(
+      () => getMeetingSecure(client, "e1", { ...meetingOpts, telegramId: 333, isAdmin: true, action }),
+      EntryAccessError,
+    );
+    assertEquals(err.status, 404);
+  }
+  const foreign = makeSupabase({ ...privateMeeting, group_id: "other" });
   const err = await assertRejects(
-    () => getMeetingSecure(client, "e1", { ...meetingOpts, telegramId: 333, isAdmin: true, action: "delete" }),
+    () => getMeetingSecure(foreign.client, "e1", { ...meetingOpts, telegramId: 333, isAdmin: true, action: "delete" }),
     EntryAccessError,
   );
   assertEquals(err.status, 404);

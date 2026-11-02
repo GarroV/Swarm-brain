@@ -21,6 +21,17 @@ const ADMIN = 744230399;
 
 const draft = { group_id: "cee", recorders: [{ telegram_id: RECORDER }] };
 
+Deno.test("админ удаляет чужой групповой черновик только своего пространства", () => {
+  const shared = { ...draft, co_owners: [OTHER] };
+  assertEquals(canDeleteDraftMeeting(shared, ADMIN, true, "cee"), true);
+  assertEquals(canDeleteDraftMeeting(draft, ADMIN, true, "cee"), true);
+  assertEquals(canDeleteDraftMeeting(shared, ADMIN, true, "other"), false);
+  assertEquals(canDeleteDraftMeeting(shared, ADMIN, true, null), false);
+  assertEquals(canDeleteDraftMeeting(null, ADMIN, true, "cee"), false);
+  assertEquals(canDeleteDraftMeeting(shared, OTHER, false, "cee"), false);
+  assertEquals(canAccessDraftMeeting(shared, ADMIN, true, "cee"), false);
+});
+
 Deno.test("записавший видит свой черновик", () => {
   assertEquals(canAccessDraftMeeting(draft, RECORDER, false, "cee"), true);
 });

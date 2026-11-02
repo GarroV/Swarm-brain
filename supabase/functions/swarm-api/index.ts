@@ -2948,7 +2948,7 @@ async function routeRequest(req: Request): Promise<Response> {
         return json(data, 200, origin);
       }
       if (req.method === "DELETE") {
-        // Удаляют владелец и админ; личную — только владелец.
+        // Админ удаляет любую встречу своего пространства, включая личную.
         const meeting = await getMeetingSecure(supabase, meetingId, {
           groupId,
           telegramId: telegram_id,
@@ -3043,9 +3043,12 @@ async function routeRequest(req: Request): Promise<Response> {
       mId,
     ).maybeSingle();
     const meeting = mRow as Record<string, unknown> | null;
-    // Черновик (в т.ч. правка, публикация, удаление) — только записавшему; админ НЕ исключение.
+    // Чтение/правка/публикация — по прежним правам. Для DELETE у админа
+    // отдельное право удаления любого черновика своего пространства.
+    const adminDelete = !!agentMeetingMatch && req.method === "DELETE" && isAdmin &&
+      canDeleteDraftMeeting(meeting as DraftMeetingRow | null, telegram_id, true, groupId);
     if (
-      !canAccessDraftMeeting(
+      !adminDelete && !canAccessDraftMeeting(
         meeting as DraftMeetingRow | null,
         telegram_id,
         isAdmin,
@@ -3270,18 +3273,21 @@ async function routeRequest(req: Request): Promise<Response> {
         return apiErr(409, "Уже в базе — удаляйте через раздел «База»", origin);
       }
       // Совладелец по приглашению черновик не удаляет — он общий (решение владельца 2026-09-25).
-      // Групповую встречу не удаляет никто: она стёрлась бы у всех — её скрывают у себя (#818).
-      if (canHideDraftMeeting(meeting as DraftMeetingRow, telegram_id)) {
+      // Сотрудник групповую встречу только скрывает (#818); админ может удалить у всех.
+      if (!isAdmin && canHideDraftMeeting(meeting as DraftMeetingRow, telegram_id)) {
         return apiErr(409, "This meeting has several owners — hide it for yourself instead", origin);
       }
-      if (!canDeleteDraftMeeting(meeting as DraftMeetingRow, telegram_id)) {
+      if (!canDeleteDraftMeeting(meeting as DraftMeetingRow, telegram_id, isAdmin, groupId)) {
         return apiErr(
           403,
           "Only the person who recorded this meeting can delete the draft",
           origin,
         );
       }
-      await supabase.from("meetings").delete().eq("id", mId);
+      const { data: deleted, error } = await supabase.from("meetings").delete()
+        .eq("id", mId).eq("group_id", groupId).select("id").maybeSingle();
+      if (error) return serverError(origin, "agent-meetings delete", error);
+      if (!deleted) return apiErr(404, "Not found", origin);
       return new Response(null, { status: 204, headers: corsHeaders(origin) });
     }
 

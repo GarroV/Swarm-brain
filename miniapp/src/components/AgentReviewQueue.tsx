@@ -24,7 +24,7 @@ function fmtDate(iso: string | null, locale: string): string {
 // (в т.ч. до деплоя эндпоинта /agent-meetings — тогда fetch падает и очередь
 // просто не показывается, остальное приложение работает). Это намеренная деградация.
 export function AgentReviewQueue({ onOpen }: Props) {
-  const { toast } = useRoyNav();
+  const { toast, me } = useRoyNav();
   const dt = useDt();
   // На мобайле действия строки — свайпом, как везде: «карандаш» тут вообще дублировал тап
   // (обе кнопки звали onOpen), а «корзина» стояла мелкой целью в 8px от него.
@@ -47,10 +47,10 @@ export function AgentReviewQueue({ onOpen }: Props) {
 
   // Групповую встречу не удаляем у всех, а скрываем у себя (issue #818).
   const remove = async (m: AgentMeeting) => {
-    const hide = canHideDraft(m);
+    const hide = !me?.is_admin && canHideDraft(m);
     const ask = hide
       ? { title: `Скрыть «${m.title ?? "Встреча"}» у себя?`, description: "Встреча пропадёт из вашей вычитки. У остальных участников она останется." }
-      : { title: `Удалить черновик «${m.title ?? "Встреча"}»?`, description: "Расшифровка и тезисы будут удалены без возможности восстановления." };
+      : { title: `Удалить черновик «${m.title ?? "Встреча"}»?`, description: me?.is_admin ? dt("Встреча, расшифровка и тезисы будут удалены у всех участников без возможности восстановления.", "The meeting, transcript and summary will be permanently deleted for all participants.") : "Расшифровка и тезисы будут удалены без возможности восстановления." };
     if (!(await confirm(ask))) return;
     setItems((prev) => prev.filter((x) => x.id !== m.id));
     try {
