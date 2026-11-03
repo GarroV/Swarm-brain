@@ -89,7 +89,6 @@ export function ChatGptSection() {
   return (
     <div className="space-y-3 text-sm">
       <ChatGptDesktopSetup />
-      <p className="text-ink-soft">{t.introduction}</p>
       <section className="space-y-2">
         <h3 className="font-medium text-ink">{t.chatNoteTitle}</h3>
         <p className="text-ink-soft">{t.chatNote}</p>
