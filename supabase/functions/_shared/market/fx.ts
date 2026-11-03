@@ -1,12 +1,10 @@
 // Курсы к евро от национальных банков для валют, которых нет у ЕЦБ (решение владельца, issue #1115).
 // Единственный модуль курсов: им пользуются и сборщик Dodo (scripts/market), и ручной ввод (manual.ts).
-// Все банки ниже котируют евро в своей валюте, поэтому курс — это просто курс EUR, «единиц валюты за 1 €»,
+// Банки, кроме ЦБ РФ, котируют евро в своей валюте, поэтому курс — это просто курс EUR, «единиц валюты за 1 €»,
 // в тех же единицах, что у ЕЦБ; кросса через доллар нет.
 //
-// Не подключены (проверено живым запросом 03.11.2026):
-//  - GEL — nbg.gov.ge за защитой от ботов (F5, JS-проверка), машинно не отдаёт;
-//  - KGS — nbkr.kg отдаёт в XML только курс на сегодня (daily.xml), архива по дате в машинном виде нет.
-// Для них курс не получен, и запись отказывает с причиной, а не пишет пустой евро.
+// GEL и KGS — кросс через рубль по курсам ЦБ РФ: nbg.gov.ge за защитой от ботов, nbkr.kg не даёт архива по дате.
+// Курс не получен — запись отказывает с причиной, а не пишет пустой евро.
 
 export type FxRate = {
   /** единиц валюты за 1 € */
@@ -66,15 +64,25 @@ export function parseNbrbDynamics(body: string): DayRate[] {
   }));
 }
 
-/** Курс EUR из XML <Valute>: НБМ (CharCode/Nominal/Value), НБТ (то же), ЦБАР (Valute Code="EUR", Nominal «1»). */
-export function parseValuteXml(xml: string, bank: string): number {
+/** Курс валюты `code` (по умолчанию EUR) из XML <Valute>: НБМ, НБТ, ЦБАР, ЦБ РФ (CharCode/Nominal/Value, десятичная запятая).
+ *  Возвращает цену одной единицы: Value / Nominal (у KGS в ЦБ РФ Nominal = 100). */
+export function parseValuteXml(xml: string, bank: string, code = "EUR"): number {
   const blocks = xml.match(/<Valute\b[\s\S]*?<\/Valute>/g) ?? [];
-  const eur = blocks.find((b) => /<CharCode>\s*EUR\s*<\/CharCode>/.test(b) || /<Valute[^>]*\bCode="EUR"/.test(b));
-  if (!eur) throw new FxError(`${bank}: в ответе нет евро`);
-  const value = /<Value>\s*([\d.,\s]+?)\s*<\/Value>/.exec(eur)?.[1];
-  const nominal = /<Nominal>\s*(\d+)[^<]*<\/Nominal>/.exec(eur)?.[1] ?? "1";
-  if (!value) throw new FxError(`${bank}: у евро нет значения курса`);
-  return round4(positive(Number(value.replace(/\s/g, "").replace(",", ".")), bank) / positive(Number(nominal), bank));
+  const hit = blocks.find((b) =>
+    new RegExp(`<CharCode>\\s*${code}\\s*</CharCode>`).test(b) || new RegExp(`<Valute[^>]*\\bCode="${code}"`).test(b)
+  );
+  if (!hit) throw new FxError(`${bank}: в ответе нет ${code}`);
+  const value = /<Value>\s*([\d.,\s]+?)\s*<\/Value>/.exec(hit)?.[1];
+  const nominal = /<Nominal>\s*(\d+)[^<]*<\/Nominal>/.exec(hit)?.[1] ?? "1";
+  if (!value) throw new FxError(`${bank}: у ${code} нет значения курса`);
+  return positive(Number(value.replace(/\s/g, "").replace(",", ".")), bank) / positive(Number(nominal), bank);
+}
+
+/** Кросс через рубль по одному дню ЦБ РФ: (EUR/RUB) / (CUR/RUB) — единиц валюты за 1 €. */
+export function parseCbrCross(xml: string, currency: string): number {
+  const eur = parseValuteXml(xml, "ЦБ РФ", "EUR");
+  const cur = parseValuteXml(xml, "ЦБ РФ", currency);
+  return round4(eur / cur);
 }
 
 /** ЦБ Армении, SOAP ExchangeRatesByDateRangeByISO: фильтр по ISO сервер игнорирует и отдаёт все валюты — берём строки EUR. */
@@ -97,6 +105,16 @@ export function parseCbaRange(xml: string): DayRate[] {
 
 const dmy = (iso: string) => `${iso.slice(8, 10)}.${iso.slice(5, 7)}.${iso.slice(0, 4)}`;
 
+/** НБГ закрыт защитой от ботов, НБКР не даёт архив по дате: берём ЦБ РФ, кросс через рубль (решение владельца, #1115). */
+const cbrBank = (cur: string): Bank => ({
+  name: `ЦБ РФ, кросс EUR/RUB и ${cur}/RUB`,
+  day: async (get, date) =>
+    parseCbrCross(
+      await get(`https://www.cbr.ru/scripts/XML_daily.asp?date_req=${dmy(date).replaceAll(".", "/")}`),
+      cur,
+    ),
+});
+
 const BANKS: Record<string, Bank> = {
   BYN: {
     name: "НБРБ",
@@ -117,6 +135,8 @@ const BANKS: Record<string, Bank> = {
     day: async (get, date) =>
       parseValuteXml(await get(`https://nbt.tj/en/kurs/export_xml.php?date=${date}&export=xmlout`), "НБТ"),
   },
+  GEL: cbrBank("GEL"),
+  KGS: cbrBank("KGS"),
   AMD: {
     name: "ЦБ Армении",
     range: async (get, from, to) =>
@@ -140,16 +160,9 @@ const BANKS: Record<string, Bank> = {
 /** Валюты, по которым есть национальный банк. */
 export const FX_CURRENCIES: readonly string[] = Object.keys(BANKS);
 
-/** Банк для сообщения об отказе: что делать, когда курса нет. */
+/** Сообщение об отказе для валюты без источника курса. */
 export function fxUnsupportedReason(currency: string): string {
-  const cur = currency.toUpperCase();
-  if (cur === "GEL") {
-    return "GEL: НБГ закрыт защитой от ботов и машинно курс не отдаёт — переведи в EUR сам и укажи курс в note";
-  }
-  if (cur === "KGS") {
-    return "KGS: НБКР отдаёт только курс на сегодня, архива по дате нет — переведи в EUR сам и укажи курс в note";
-  }
-  return `${cur}: курса национального банка нет в Swarm — переведи в EUR сам и укажи курс в note`;
+  return `${currency.toUpperCase()}: курса национального банка нет в Swarm — переведи в EUR сам и укажи курс в note`;
 }
 
 // ── Даты и усреднение ───────────────────────────────────────────────────────
@@ -230,7 +243,7 @@ export async function fxRate(
         // Последний опубликованный: идём от даты назад, пока банк не ответит.
         for (const d of wanted) {
           try {
-            return { rate: await bank.day!(get, d), bank: bank.name, days: 1, period };
+            return { rate: round4(await bank.day!(get, d)), bank: bank.name, days: 1, period };
           } catch { /* день без публикации — пробуем предыдущий */ }
         }
         throw new FxError(`${bank.name}: курса на ${first} и за неделю до него нет`);

@@ -17,7 +17,7 @@ const ecbMonth = (cur: string, month: string) =>
 
 const nbsMonth = (month: string) => `https://kurs.resenje.org/api/v1/currencies/eur/rates/${month}-01/count/31`;
 
-/** Не евро — месячный курс ЕЦБ (злотый, форинт и т. п.); динар — средний курс НБС, BYN/MDL/AMD/AZN/TJS — среднее дневных
+/** Не евро — месячный курс ЕЦБ (злотый, форинт и т. п.); динар — средний курс НБС, BYN/MDL/AMD/AZN/TJS — национальный банк, GEL/KGS — кросс по ЦБ РФ — среднее дневных
  *  курсов национального банка (`_shared/market/fx.ts`): у ЕЦБ их нет. В начале месяца курса за прошлый ещё может не быть
  *  (ЕЦБ отвечает 404): тогда евро остаётся пустым, а точки и дни всё равно сохраняются —
  *  иначе один неопубликованный курс выбрасывал бы весь недельный сбор. */
@@ -58,7 +58,7 @@ export const dodo: Adapter = {
   about: {
     url: "https://publicapi.dodois.io/<код страны>/api/v1/",
     what:
-      "пиццерии Dodo (unitinfo/all: адрес, координаты, BeginDateWork) и выручка по месяцам с числом пиццерий; курс к евро — ЕЦБ, для динара — НБС (kurs.resenje.org), для BYN, MDL, AMD, AZN, TJS — национальный банк (среднее дневных курсов за месяц)",
+      "пиццерии Dodo (unitinfo/all: адрес, координаты, BeginDateWork) и выручка по месяцам с числом пиццерий; курс к евро — ЕЦБ, для динара — НБС (kurs.resenje.org), для BYN, MDL, AMD, AZN, TJS — национальный банк, для GEL, KGS — кросс через рубль по ЦБ РФ (среднее дневных курсов за месяц)",
   },
   async collect(cfg, opts) {
     const started_at = new Date().toISOString();

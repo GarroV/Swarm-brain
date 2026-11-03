@@ -49,7 +49,7 @@ export const MARKET_TOOL_DEFINITIONS = [
   {
     name: "market_set_company_year",
     description:
-      "Выручка юрлица за год (раздел «Деньги»). Валюта EUR, BGN, HRK (фиксированный курс) или BYN, MDL, AMD, AZN, TJS " +
+      "Выручка юрлица за год (раздел «Деньги»). Валюта EUR, BGN, HRK (фиксированный курс) или BYN, MDL, AMD, AZN, TJS, GEL, KGS " +
       "(среднегодовой курс национального банка, он пишется в note) — пересчёт в евро сделает Swarm; курс не получен — отказ. Прибыль не вносится. Только админ.",
     inputSchema: schema({
       country: CC,
@@ -58,7 +58,7 @@ export const MARKET_TOOL_DEFINITIONS = [
       reg_id: str("Регистрационный номер (ЕИК, OIB, МБ…)"),
       year: numb("Год отчёта"),
       revenue: numb("Выручка от продаж, полной суммой (не в тысячах)"),
-      currency: str("EUR, BGN, HRK, BYN, MDL, AMD, AZN или TJS"),
+      currency: str("EUR, BGN, HRK, BYN, MDL, AMD, AZN, TJS, GEL или KGS"),
       employees: numb("Число сотрудников, если есть в отчёте"),
       source: SRC,
       note: str("Пометка: что именно за строка отчёта, консолидировано ли"),
@@ -100,13 +100,13 @@ export const MARKET_TOOL_DEFINITIONS = [
   {
     name: "market_set_price",
     description: "Цена позиции меню сети на дату (раздел цен у пицца-сетей). Валюта как у market_set_company_year; " +
-      "BYN, MDL, AMD, AZN, TJS — по курсу национального банка на seen_on, курс пишется в источник. Только админ.",
+      "BYN, MDL, AMD, AZN, TJS — по курсу национального банка, GEL, KGS — кросс через рубль по ЦБ РФ, на seen_on, курс пишется в источник. Только админ.",
     inputSchema: schema({
       country: CC,
       chain: str("Ключ сети"),
       item: str("Позиция, например Margherita"),
       price: numb("Цена"),
-      currency: str("EUR, BGN, HRK, BYN, MDL, AMD, AZN или TJS"),
+      currency: str("EUR, BGN, HRK, BYN, MDL, AMD, AZN, TJS, GEL или KGS"),
       size_cm: numb("Размер пиццы, см"),
       channel: str("Канал: delivery, pickup, restaurant"),
       item_type: str("Тип позиции"),
