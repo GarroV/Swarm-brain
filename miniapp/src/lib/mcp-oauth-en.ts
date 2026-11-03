@@ -6,26 +6,13 @@ const messages = {
   ],
   introduction:
     "Choose where you use ChatGPT. You will need the server address below and your Swarm sign-in.",
-  desktopTitle: "ChatGPT desktop app",
-  desktopSteps: [
-    "In the ChatGPT app, open Settings → MCP servers → Add server. Name it SwarmBrain, choose Streamable HTTP and paste the copied server address.",
-    "Save the server and select Restart in its MCP settings. If Authenticate is shown, select it. The Swarm sign-in and consent screen may open in your browser; this does not require creating a separate web plugin.",
-    "Sign in to Swarm and allow the connection. Return to the ChatGPT app, check the connection with /mcp and ask: “Show who I am in SwarmBrain”.",
-  ],
-  webTitle: "ChatGPT in a browser",
-  steps: [
-    "Open ChatGPT on the web. Open Plugins and choose Add custom MCP server. If your workspace shows Apps or Connectors instead, open its custom MCP server settings.",
-    "Name it SwarmBrain, paste the copied server address and choose OAuth authentication. Create and install the connection.",
-    "Sign in to Swarm. Check the application and workspace on the consent screen, then choose Allow access.",
-    "Select SwarmBrain in a conversation and ask: “Show who I am in SwarmBrain”.",
-  ],
-  workspaceNote:
-    "If adding a custom MCP server is unavailable, ask your ChatGPT workspace administrator to enable it or publish the connection for the team.",
+  chatNoteTitle: "Regular chats (Chat) and ChatGPT in a browser",
+  chatNote:
+    "In a corporate ChatGPT workspace, only the workspace admin can connect Swarm to regular chats: they add an MCP server with the address below and OAuth sign-in. After that, each employee signs in to Swarm once with their own account and sees only their own data.",
   serverAddress: "MCP server address",
   copyAddress: "Copy address",
   copied: "Copied",
   copyFailed: "Copy failed. Select the address and copy it manually.",
-  openChatGpt: "Open ChatGPT in a browser",
   connectedApps: "OAuth connections",
   statusNote:
     "The tile indicator includes the desktop bridge and ChatGPT web connections. Desktop access is managed above. The list below shows OAuth applications authorised by signing in to Swarm.",
@@ -69,7 +56,7 @@ const messages = {
     ariaLabel: "ChatGPT desktop bridge",
     heading: "Connect through Terminal · macOS",
     intro:
-      "The command installs the bridge and adds SwarmBrain to the ChatGPT desktop settings. No custom plugin is needed. Install the ChatGPT desktop app first.",
+      "The command installs the bridge and connects SwarmBrain to the ChatGPT desktop app on Mac. Swarm is available in the Work tab — the Chat | Work switch at the top of a new chat. It is not visible in Chat mode.",
     wait: "Please wait…",
     replaceCommand: "Replace installation command",
     getCommand: "Get installation command",
@@ -78,7 +65,7 @@ const messages = {
     copied: "Copied",
     copyCommand: "Copy command",
     afterInstall:
-      "After installation, quit and reopen ChatGPT. Check /mcp and ask SwarmBrain who you are.",
+      "After installation, quit and reopen ChatGPT. Start a new chat, switch to Work and ask: “Show who I am in SwarmBrain”.",
     lastRequest: (date: string) => `Last request: ${date}`,
     awaitingFirstRequest:
       "Credential issued; awaiting the first request from ChatGPT.",

@@ -428,6 +428,6 @@ claude mcp add supabase-swarm -- npx -y @supabase/mcp-server-supabase@0.12.0 \
 
 Личные настройки → ChatGPT → команда для Терминала macOS. Публичный скрипт —
 `swarm-setup/chatgpt`, API — `/mcp/desktop/setup` (GET), `/mcp/desktop/token` (POST/DELETE).
-Нативный CLI приложения пишет MCP-конфиг, мост и токен отдельны от Claude. Сначала
+Нативный CLI приложения пишет MCP-конфиг, мост и токен отдельны от Claude. Swarm виден только во вкладке Work (в Chat — нет); обычные чаты корпоративного ChatGPT подключает администратор пространства. Сначала
 миграция `20261103110000_chatgpt_desktop_token.sql`, затем функции и веб.
 [Решение](decisions/2026-11-03-chatgpt-terminal-bridge.md).
