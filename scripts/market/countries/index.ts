@@ -5,6 +5,12 @@ import { EE } from "./EE.ts";
 import { ES } from "./ES.ts";
 import { HR } from "./HR.ts";
 import { HU } from "./HU.ts";
+import { LV } from "./LV.ts";
+import { GE } from "./GE.ts";
+import { AM } from "./AM.ts";
+import { AZ } from "./AZ.ts";
+import { KG } from "./KG.ts";
+import { TJ } from "./TJ.ts";
 import { LT } from "./LT.ts";
 import { MD } from "./MD.ts";
 import { ME } from "./ME.ts";
@@ -29,4 +35,10 @@ export const COUNTRIES: Record<string, CountryConfig> = {
   LT,
   MD,
   PL,
+  LV,
+  GE,
+  AM,
+  AZ,
+  KG,
+  TJ,
 };

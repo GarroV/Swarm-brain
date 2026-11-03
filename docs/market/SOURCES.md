@@ -423,3 +423,141 @@
 | `subway` | Subway | sandwich | brand: Subway |
 | `starbucks` | Starbucks | coffee | brand: Starbucks |
 | `costa` | Costa Coffee | coffee | brand: Costa Coffee, Costa |
+
+## LV — LV
+
+| Что | Откуда | Что именно | Как | Частота | Сверено |
+|---|---|---|---|---|---|
+| Продажи Dodo | — | — (Dodo в Латвии нет: publicapi.dodois.io/lv отвечает 404 (проверено 03.11.2026)) | заблокирован | по запросу | — |
+| Точки | https://docs.overturemaps.org/guides/places/ | точки сетей из Overture Maps places (последний релиз, parquet в S3, через DuckDB): заведения общепита и пекарни страны в её bbox, без закрытых; сети из конфига — по бренду (osmBrands, допускается суффикс страны) или началу названия (osmNames), остальные сети находятся сами (бренд от 3 точек, без бренда от 5 точек в 3 населённых пунктах, не больше 40); точка — центр bbox объекта | авто, `overture` | раз в неделю | 2026-11-03 |
+
+Сети (по чему их ищет `osm-overpass`: тег brand или начало name; пусто — сети в OSM нет, точки из других источников):
+
+| Ключ | Сеть | Сегмент | Поиск в OSM |
+|---|---|---|---|
+| `dominos` | Domino's | pizza | brand: Domino's, Domino's Pizza |
+| `pizzahut` | Pizza Hut | pizza | brand: Pizza Hut |
+| `mcdonalds` | McDonald's | burger | brand: McDonald's, McDonalds |
+| `burgerking` | Burger King | burger | brand: Burger King |
+| `kfc` | KFC | chicken | brand: KFC |
+| `subway` | Subway | sandwich | brand: Subway |
+| `starbucks` | Starbucks | coffee | brand: Starbucks |
+| `costa` | Costa Coffee | coffee | brand: Costa Coffee, Costa |
+| `hesburger` | Hesburger | burger | brand: Hesburger |
+| `lido` | Lido | other | name: Lido |
+| `cili` | Čili Pizza | pizza | brand: Čili Pizza, Čili Pica |
+| `pica-lulu` | Pica Lulū | pizza | brand: Pica Lulū |
+
+## GE — GE
+
+| Что | Откуда | Что именно | Как | Частота | Сверено |
+|---|---|---|---|---|---|
+| Продажи Dodo | https://publicapi.dodois.io/ge/api/v1/ | пиццерии Dodo (unitinfo/all: адрес, координаты, BeginDateWork) и выручка по месяцам с числом пиццерий; курс к евро — ЕЦБ, для динара — НБС (kurs.resenje.org) | авто, `dodo-publicapi` | раз в неделю | — |
+| Точки | https://publicapi.dodois.io/ge/api/v1/ | сеть dodo: пиццерии Dodo (unitinfo/all: адрес, координаты, BeginDateWork) и выручка по месяцам с числом пиццерий; курс к евро — ЕЦБ, для динара — НБС (kurs.resenje.org) | авто, `dodo-publicapi` | раз в неделю | — |
+| Точки | https://docs.overturemaps.org/guides/places/ | точки сетей из Overture Maps places (последний релиз, parquet в S3, через DuckDB): заведения общепита и пекарни страны в её bbox, без закрытых; сети из конфига — по бренду (osmBrands, допускается суффикс страны) или началу названия (osmNames), остальные сети находятся сами (бренд от 3 точек, без бренда от 5 точек в 3 населённых пунктах, не больше 40); точка — центр bbox объекта | авто, `overture` | раз в неделю | 2026-11-03 |
+
+Сети (по чему их ищет `osm-overpass`: тег brand или начало name; пусто — сети в OSM нет, точки из других источников):
+
+| Ключ | Сеть | Сегмент | Поиск в OSM |
+|---|---|---|---|
+| `dodo` | Dodo Pizza | pizza | — |
+| `dominos` | Domino's | pizza | brand: Domino's, Domino's Pizza |
+| `pizzahut` | Pizza Hut | pizza | brand: Pizza Hut |
+| `mcdonalds` | McDonald's | burger | brand: McDonald's, McDonalds |
+| `burgerking` | Burger King | burger | brand: Burger King |
+| `kfc` | KFC | chicken | brand: KFC |
+| `subway` | Subway | sandwich | brand: Subway |
+| `starbucks` | Starbucks | coffee | brand: Starbucks |
+| `costa` | Costa Coffee | coffee | brand: Costa Coffee, Costa |
+| `wendys` | Wendy's | burger | brand: Wendy's |
+| `dunkin` | Dunkin' | coffee | brand: Dunkin', Dunkin' Donuts |
+| `papajohns` | Papa John's | pizza | brand: Papa John's, Papa Johns, Papa Johns Pizza |
+
+## AM — AM
+
+| Что | Откуда | Что именно | Как | Частота | Сверено |
+|---|---|---|---|---|---|
+| Продажи Dodo | https://publicapi.dodois.io/am/api/v1/ | пиццерии Dodo (unitinfo/all: адрес, координаты, BeginDateWork) и выручка по месяцам с числом пиццерий; курс к евро — ЕЦБ, для динара — НБС (kurs.resenje.org) | авто, `dodo-publicapi` | раз в неделю | — |
+| Точки | https://publicapi.dodois.io/am/api/v1/ | сеть dodo: пиццерии Dodo (unitinfo/all: адрес, координаты, BeginDateWork) и выручка по месяцам с числом пиццерий; курс к евро — ЕЦБ, для динара — НБС (kurs.resenje.org) | авто, `dodo-publicapi` | раз в неделю | — |
+| Точки | https://docs.overturemaps.org/guides/places/ | точки сетей из Overture Maps places (последний релиз, parquet в S3, через DuckDB): заведения общепита и пекарни страны в её bbox, без закрытых; сети из конфига — по бренду (osmBrands, допускается суффикс страны) или началу названия (osmNames), остальные сети находятся сами (бренд от 3 точек, без бренда от 5 точек в 3 населённых пунктах, не больше 40); точка — центр bbox объекта | авто, `overture` | раз в неделю | 2026-11-03 |
+
+Сети (по чему их ищет `osm-overpass`: тег brand или начало name; пусто — сети в OSM нет, точки из других источников):
+
+| Ключ | Сеть | Сегмент | Поиск в OSM |
+|---|---|---|---|
+| `dodo` | Dodo Pizza | pizza | — |
+| `dominos` | Domino's | pizza | brand: Domino's, Domino's Pizza |
+| `pizzahut` | Pizza Hut | pizza | brand: Pizza Hut |
+| `mcdonalds` | McDonald's | burger | brand: McDonald's, McDonalds |
+| `burgerking` | Burger King | burger | brand: Burger King |
+| `kfc` | KFC | chicken | brand: KFC |
+| `subway` | Subway | sandwich | brand: Subway |
+| `starbucks` | Starbucks | coffee | brand: Starbucks |
+| `costa` | Costa Coffee | coffee | brand: Costa Coffee, Costa |
+| `papajohns` | Papa John's | pizza | brand: Papa John's, Papa Johns, Papa Johns Pizza |
+| `tashir` | Tashir Pizza | pizza | brand: Tashir Pizza |
+
+## AZ — AZ
+
+| Что | Откуда | Что именно | Как | Частота | Сверено |
+|---|---|---|---|---|---|
+| Продажи Dodo | https://publicapi.dodois.io/az/api/v1/ | пиццерии Dodo (unitinfo/all: адрес, координаты, BeginDateWork) и выручка по месяцам с числом пиццерий; курс к евро — ЕЦБ, для динара — НБС (kurs.resenje.org) | авто, `dodo-publicapi` | раз в неделю | — |
+| Точки | https://publicapi.dodois.io/az/api/v1/ | сеть dodo: пиццерии Dodo (unitinfo/all: адрес, координаты, BeginDateWork) и выручка по месяцам с числом пиццерий; курс к евро — ЕЦБ, для динара — НБС (kurs.resenje.org) | авто, `dodo-publicapi` | раз в неделю | — |
+| Точки | https://docs.overturemaps.org/guides/places/ | точки сетей из Overture Maps places (последний релиз, parquet в S3, через DuckDB): заведения общепита и пекарни страны в её bbox, без закрытых; сети из конфига — по бренду (osmBrands, допускается суффикс страны) или началу названия (osmNames), остальные сети находятся сами (бренд от 3 точек, без бренда от 5 точек в 3 населённых пунктах, не больше 40); точка — центр bbox объекта | авто, `overture` | раз в неделю | 2026-11-03 |
+
+Сети (по чему их ищет `osm-overpass`: тег brand или начало name; пусто — сети в OSM нет, точки из других источников):
+
+| Ключ | Сеть | Сегмент | Поиск в OSM |
+|---|---|---|---|
+| `dodo` | Dodo Pizza | pizza | — |
+| `dominos` | Domino's | pizza | brand: Domino's, Domino's Pizza |
+| `pizzahut` | Pizza Hut | pizza | brand: Pizza Hut |
+| `mcdonalds` | McDonald's | burger | brand: McDonald's, McDonalds |
+| `burgerking` | Burger King | burger | brand: Burger King |
+| `kfc` | KFC | chicken | brand: KFC |
+| `subway` | Subway | sandwich | brand: Subway |
+| `starbucks` | Starbucks | coffee | brand: Starbucks |
+| `costa` | Costa Coffee | coffee | brand: Costa Coffee, Costa |
+| `papajohns` | Papa John's | pizza | brand: Papa John's, Papa Johns, Papa Johns Pizza |
+| `dunkin` | Dunkin' | coffee | brand: Dunkin', Dunkin' Donuts |
+| `wendys` | Wendy's | burger | brand: Wendy's |
+
+## KG — KG
+
+| Что | Откуда | Что именно | Как | Частота | Сверено |
+|---|---|---|---|---|---|
+| Продажи Dodo | https://publicapi.dodois.io/kg/api/v1/ | пиццерии Dodo (unitinfo/all: адрес, координаты, BeginDateWork) и выручка по месяцам с числом пиццерий; курс к евро — ЕЦБ, для динара — НБС (kurs.resenje.org) | авто, `dodo-publicapi` | раз в неделю | — |
+| Точки | https://publicapi.dodois.io/kg/api/v1/ | сеть dodo: пиццерии Dodo (unitinfo/all: адрес, координаты, BeginDateWork) и выручка по месяцам с числом пиццерий; курс к евро — ЕЦБ, для динара — НБС (kurs.resenje.org) | авто, `dodo-publicapi` | раз в неделю | — |
+| Точки | https://overpass-api.de/api/interpreter | точки сетей по тегу brand (osmBrands в конфиге) или по началу name среди заведений общепита (osmNames) из OpenStreetMap, координаты, адрес, дата открытия, если она есть в теге; город — из addr:city, а без него — ближайший place=city в пределах 15 км, нет города — ближайший place=town | авто, `osm-overpass` | раз в неделю | 2026-11-03 |
+
+Сети (по чему их ищет `osm-overpass`: тег brand или начало name; пусто — сети в OSM нет, точки из других источников):
+
+| Ключ | Сеть | Сегмент | Поиск в OSM |
+|---|---|---|---|
+| `dodo` | Dodo Pizza | pizza | — |
+| `kfc` | KFC | chicken | brand: KFC |
+| `papajohns` | Papa John's | pizza | brand: Papa John's, Papa Johns |
+| `imperiya-pizzy` | Империя Пиццы | pizza | brand: Империя Пиццы; name: Империя пиццы, Imperia Pizza |
+| `wok-lagman` | Wok Lagman | asian | name: Wok Lagman |
+| `begemot` | Бегемот | other | name: Бегемот, Begemot |
+| `mubarak` | Mubarak | other | name: Mubarak |
+| `navat` | Navat | other | name: Нават, Navat, Чайхана Нават, Чайхана Navat |
+| `coffee-like` | Coffee Like | coffee | name: Coffee Like, Кофе Лайк |
+
+## TJ — TJ
+
+| Что | Откуда | Что именно | Как | Частота | Сверено |
+|---|---|---|---|---|---|
+| Продажи Dodo | https://publicapi.dodois.io/tj/api/v1/ | пиццерии Dodo (unitinfo/all: адрес, координаты, BeginDateWork) и выручка по месяцам с числом пиццерий; курс к евро — ЕЦБ, для динара — НБС (kurs.resenje.org) | авто, `dodo-publicapi` | раз в неделю | — |
+| Точки | https://publicapi.dodois.io/tj/api/v1/ | сеть dodo: пиццерии Dodo (unitinfo/all: адрес, координаты, BeginDateWork) и выручка по месяцам с числом пиццерий; курс к евро — ЕЦБ, для динара — НБС (kurs.resenje.org) | авто, `dodo-publicapi` | раз в неделю | — |
+| Точки | https://overpass-api.de/api/interpreter | точки сетей по тегу brand (osmBrands в конфиге) или по началу name среди заведений общепита (osmNames) из OpenStreetMap, координаты, адрес, дата открытия, если она есть в теге; город — из addr:city, а без него — ближайший place=city в пределах 15 км, нет города — ближайший place=town | авто, `osm-overpass` | раз в неделю | 2026-11-03 |
+
+Сети (по чему их ищет `osm-overpass`: тег brand или начало name; пусто — сети в OSM нет, точки из других источников):
+
+| Ключ | Сеть | Сегмент | Поиск в OSM |
+|---|---|---|---|
+| `dodo` | Dodo Pizza | pizza | — |
+| `kfc` | KFC | chicken | brand: KFC |
+| `tajburger` | TajBurger | burger | name: TajBurger, Taj Burger |
+| `sfc` | Southern Fried Chicken | chicken | name: Southern Fried Chicken, SFC |
+| `shokoladnitsa` | Шоколадница | coffee | brand: Шоколадница; name: Шоколадница |

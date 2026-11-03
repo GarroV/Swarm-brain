@@ -59,7 +59,7 @@ function country(c: CountryConfig): string {
       : `${MODE[s.mode]}, \`${s.adapter}\``;
     out.push(
       `| ${FEED[s.feeds] ?? s.feeds} | ${
-        cell((s.url ?? a?.about.url)?.replace("<код страны>", c.dodoCode))
+        cell((s.url ?? a?.about.url)?.replace("<код страны>", c.dodoCode ?? ""))
       } | ${cell(what)}${s.reason ? ` (${cell(s.reason)})` : ""} | ${how} | ${
         CADENCE[s.cadence]
       } | ${cell(s.checked)} |`,

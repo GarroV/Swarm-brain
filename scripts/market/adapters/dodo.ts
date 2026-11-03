@@ -59,13 +59,21 @@ export const dodo: Adapter = {
   async collect(cfg, opts) {
     const started_at = new Date().toISOString();
     const base = { country: cfg.country, started_at, source: "dodo" as const };
+    const code = cfg.dodoCode;
+    if (!code) {
+      return {
+        ...base,
+        failed:
+          `у страны ${cfg.country} нет dodoCode: Dodo там не работает, источник dodo-publicapi в конфиге быть не должен`,
+      };
+    }
     try {
       const since = opts.since ??
         new Date(
           Date.parse(`${opts.today}T00:00:00Z`) - DEFAULT_DAYS * 86_400_000,
         ).toISOString().slice(0, 10);
       const units = parseDodoUnits(
-        await getJson(api(cfg.dodoCode, "unitinfo/all")),
+        await getJson(api(code, "unitinfo/all")),
       );
       const days = [];
       for (const date of daysBetween(since, opts.today)) {
@@ -73,7 +81,7 @@ export const dodo: Adapter = {
         const counts = parseCountBySource(
           await getJson(
             api(
-              cfg.dodoCode,
+              code,
               `orders/countBySource/${y}/${Number(m)}/${Number(d)}`,
             ),
           ),
@@ -81,7 +89,7 @@ export const dodo: Adapter = {
         days.push({ date, counts });
       }
       const revenue = parseFinancialMetrics(
-        await getJson(api(cfg.dodoCode, "FinancialMetrics")),
+        await getJson(api(code, "FinancialMetrics")),
       );
       const rates = revenue && revenue.currency !== "EUR"
         ? await monthRate(revenue.currency, revenue.month)
