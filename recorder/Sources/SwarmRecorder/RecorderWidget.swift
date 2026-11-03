@@ -75,8 +75,14 @@ final class RecorderWidget {
     // Баннер встречи шире: в нём название, время слота и кнопки. Ширину берём по контенту,
     // а не числом из головы — длинные названия и локали иначе обрезаются по-разному.
     private static let bannerMinSize = CGSize(width: 300, height: 84)
-    // Куда человек перетащил капсулу. UI-состояние, поэтому UserDefaults, а не config.json.
-    private static let originKey = "widget.origin"
+    // Куда человек перетащил капсулу — ПРАВЫЙ ВЕРХНИЙ угол (см. WidgetPlacement.origin).
+    // UI-состояние, поэтому UserDefaults, а не config.json. Прежний ключ "widget.origin"
+    // хранил левый нижний угол и накопил дрейф — не читаем его, чтобы капсула вернулась
+    // на дефолтное место у всех, у кого уползла.
+    private static let anchorKey = "widget.topRight"
+    // Окно двигает сам код (показ, переход капсула ↔ баннер) — такое движение не запоминаем:
+    // помнить надо только то, куда перетащил человек.
+    private var isMovingProgrammatically = false
 
     private var levelTimer: Timer?
     private var lastLevel: CGFloat = 0
@@ -620,20 +626,25 @@ final class RecorderWidget {
         let size = currentSize()
         if !p.isVisible {
             // Куда перетащили — там и появляется; кто не таскал — по дефолту WidgetPlacement.
-            let saved = Self.savedOrigin()
-            let origin = WidgetPlacement.origin(saved: saved, size: size, in: screen.visibleFrame)
+            let origin = WidgetPlacement.origin(savedTopRight: Self.savedAnchor(), size: size,
+                                                in: screen.visibleFrame)
+            isMovingProgrammatically = true
             p.setFrame(NSRect(origin: origin, size: size), display: true)
+            isMovingProgrammatically = false
         } else if p.frame.size != size {
             // Смена режима (баннер встречи ↔ капсула записи): окно ОДНО и то же, поэтому
             // не прыгаем на новую позицию, а плавно меняем ширину/высоту от правого-верхнего
             // угла — уведомление буквально вытекает из капсулы (просьба владельца 03.09.2026).
             let target = NSRect(origin: WidgetPlacement.morphOrigin(from: p.frame, to: size, in: screen.visibleFrame),
                                 size: size)
-            NSAnimationContext.runAnimationGroup { ctx in
+            isMovingProgrammatically = true
+            NSAnimationContext.runAnimationGroup({ ctx in
                 ctx.duration = Self.morphDuration
                 ctx.timingFunction = CAMediaTimingFunction(name: .easeOut)
                 p.animator().setFrame(target, display: true)
-            }
+            }, completionHandler: { [weak self] in
+                self?.isMovingProgrammatically = false
+            })
             // Содержимое нового режима проявляем, а не подменяем мгновенно: иначе текст
             // баннера возникает раньше, чем окно под него доехало.
             fadeInContent()
@@ -660,15 +671,16 @@ final class RecorderWidget {
     }
 
     // ── Память положения ─────────────────────────────────────────────────────────
-    private static func savedOrigin() -> CGPoint? {
-        guard let raw = UserDefaults.standard.string(forKey: originKey) else { return nil }
+    private static func savedAnchor() -> CGPoint? {
+        guard let raw = UserDefaults.standard.string(forKey: anchorKey) else { return nil }
         let p = NSPointFromString(raw)
         return p == .zero ? nil : p   // .zero — и «не задано», и разбор мусора
     }
 
     @objc private func panelDidMove() {
-        guard let p = panel, p.isVisible else { return }
-        UserDefaults.standard.set(NSStringFromPoint(p.frame.origin), forKey: Self.originKey)
+        guard let p = panel, p.isVisible, !isMovingProgrammatically else { return }
+        let anchor = NSPoint(x: p.frame.maxX, y: p.frame.maxY)
+        UserDefaults.standard.set(NSStringFromPoint(anchor), forKey: Self.anchorKey)
     }
 
     // ── Пульс индикатора записи ─────────────────────────────────────────────────

@@ -67,18 +67,28 @@ public enum WidgetPlacement {
     }
 
     /// Позиция при показе: сохранённая (втянутая в границы экрана), иначе дефолтная.
-    public static func origin(saved: CGPoint?, size: CGSize, in visibleFrame: CGRect,
+    ///
+    /// Сохраняется ПРАВЫЙ ВЕРХНИЙ угол окна, а не левый нижний (origin). Капсула (72 пт) и
+    /// баннер встречи (~300 пт) — одно окно разной ширины, растущее влево от правого края
+    /// (`morphOrigin`). Пока запоминался origin, баннер записывал свой левый край, а узкая
+    /// капсула потом вставала в него: каждый цикл «баннер → капсула» уводил окно на ширину
+    /// баннера влево, и за несколько дней оно доползало до середины экрана (03.11.2026,
+    /// замерено: сохранено x=709 на экране шириной 1710). Угол, от которого окно растёт, при
+    /// смене режима не двигается — дрейфовать нечему.
+    public static func origin(savedTopRight: CGPoint?, size: CGSize, in visibleFrame: CGRect,
                               rightInset: CGFloat = 18) -> CGPoint {
-        guard let saved else { return defaultOrigin(size: size, in: visibleFrame, rightInset: rightInset) }
+        guard let anchor = savedTopRight else {
+            return defaultOrigin(size: size, in: visibleFrame, rightInset: rightInset)
+        }
+        let wanted = CGPoint(x: anchor.x - size.width, y: anchor.y - size.height)
         // Монитор, на котором стояла капсула, могли отключить: координаты остались, экрана нет.
         // Такую позицию не «втягиваем» (капсула прилипла бы к случайному краю) — берём дефолт.
-        let savedFrame = CGRect(origin: saved, size: size)
-        guard savedFrame.intersects(visibleFrame) else {
+        guard CGRect(origin: wanted, size: size).intersects(visibleFrame) else {
             return defaultOrigin(size: size, in: visibleFrame, rightInset: rightInset)
         }
         return CGPoint(
-            x: min(max(saved.x, visibleFrame.minX), max(visibleFrame.minX, visibleFrame.maxX - size.width)),
-            y: min(max(saved.y, visibleFrame.minY), max(visibleFrame.minY, visibleFrame.maxY - size.height))
+            x: min(max(wanted.x, visibleFrame.minX), max(visibleFrame.minX, visibleFrame.maxX - size.width)),
+            y: min(max(wanted.y, visibleFrame.minY), max(visibleFrame.minY, visibleFrame.maxY - size.height))
         )
     }
 }
