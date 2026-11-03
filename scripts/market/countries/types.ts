@@ -31,9 +31,7 @@ export type CountryCompany = {
 };
 export type CountryConfig = {
   country: string;
-  /** Код страны в publicapi.dodois.io. Нет у стран, где Dodo не работает (LV): тогда в sources
-   *  нет строк dodo-publicapi, а адаптер при вызове без кода вернёт сбой, а не пустой успех. */
-  dodoCode?: string;
+  dodoCode: string;
   /** Валюта отчётности юрлиц, если не евро (RSD — курс НБС, остальные — ЕЦБ). */
   currency?: string;
   /** Письменность городов: «sr-Latn» — сербскую кириллицу из OSM переводить в латиницу. */

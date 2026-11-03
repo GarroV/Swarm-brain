@@ -5,7 +5,7 @@ export const COUNTRY_NAMES: Record<string, string> = {
   MD: "Молдова",  BY: "Беларусь",  TR: "Турция",    AZ: "Азербайджан",
   AM: "Армения",  GE: "Грузия",    TJ: "Таджикистан", KG: "Кыргызстан",
   MN: "Монголия", NG: "Нигерия",   MX: "Мексика",   ID: "Бали/Индонезия",
-  RU: "Россия",   UA: "Украина",   KZ: "Казахстан", LV: "Латвия",
+  RU: "Россия",   UA: "Украина",   KZ: "Казахстан",
 };
 
 export function countryName(code: string): string {

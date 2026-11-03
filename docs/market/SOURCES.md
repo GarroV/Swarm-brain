@@ -424,30 +424,6 @@
 | `starbucks` | Starbucks | coffee | brand: Starbucks |
 | `costa` | Costa Coffee | coffee | brand: Costa Coffee, Costa |
 
-## LV — LV
-
-| Что | Откуда | Что именно | Как | Частота | Сверено |
-|---|---|---|---|---|---|
-| Продажи Dodo | — | — (Dodo в Латвии нет: publicapi.dodois.io/lv отвечает 404 (проверено 03.11.2026)) | заблокирован | по запросу | — |
-| Точки | https://docs.overturemaps.org/guides/places/ | точки сетей из Overture Maps places (последний релиз, parquet в S3, через DuckDB): заведения общепита и пекарни страны в её bbox, без закрытых; сети из конфига — по бренду (osmBrands, допускается суффикс страны) или началу названия (osmNames), остальные сети находятся сами (бренд от 3 точек, без бренда от 5 точек в 3 населённых пунктах, не больше 40); точка — центр bbox объекта | авто, `overture` | раз в неделю | 2026-11-03 |
-
-Сети (по чему их ищет `osm-overpass`: тег brand или начало name; пусто — сети в OSM нет, точки из других источников):
-
-| Ключ | Сеть | Сегмент | Поиск в OSM |
-|---|---|---|---|
-| `dominos` | Domino's | pizza | brand: Domino's, Domino's Pizza |
-| `pizzahut` | Pizza Hut | pizza | brand: Pizza Hut |
-| `mcdonalds` | McDonald's | burger | brand: McDonald's, McDonalds |
-| `burgerking` | Burger King | burger | brand: Burger King |
-| `kfc` | KFC | chicken | brand: KFC |
-| `subway` | Subway | sandwich | brand: Subway |
-| `starbucks` | Starbucks | coffee | brand: Starbucks |
-| `costa` | Costa Coffee | coffee | brand: Costa Coffee, Costa |
-| `hesburger` | Hesburger | burger | brand: Hesburger |
-| `lido` | Lido | other | name: Lido |
-| `cili` | Čili Pizza | pizza | brand: Čili Pizza, Čili Pica |
-| `pica-lulu` | Pica Lulū | pizza | brand: Pica Lulū |
-
 ## GE — GE
 
 | Что | Откуда | Что именно | Как | Частота | Сверено |
