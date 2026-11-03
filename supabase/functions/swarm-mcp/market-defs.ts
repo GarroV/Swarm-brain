@@ -28,9 +28,16 @@ export const MARKET_TOOL_DEFINITIONS = [
   },
   {
     name: "market_get",
-    description: "Что записано по стране сейчас. section: chains, locations (фильтры chain, city), money, prices " +
+    description:
+      "Что записано по стране сейчас. section: chains, locations (фильтры chain, city), money, prices, facts (фильтр topic) " +
       "или имя блока ручной части (summary, events, ratings…). Перед правкой блока — прочитай его целиком.",
-    inputSchema: schema({ country: CC, section: str("Раздел или блок"), chain: str("Ключ сети"), city: str("Город") }, [
+    inputSchema: schema({
+      country: CC,
+      section: str("Раздел или блок"),
+      chain: str("Ключ сети"),
+      city: str("Город"),
+      topic: str("Тема фактов: market, delivery, timeline, deal, insight, commentary"),
+    }, [
       "country",
       "section",
     ]),
@@ -111,5 +118,18 @@ export const MARKET_TOOL_DEFINITIONS = [
       seen_on: str("Дата цены ГГГГ-ММ-ДД, по умолчанию сегодня"),
       source: SRC,
     }, ["country", "chain", "item", "price", "currency", "source"]),
+  },
+  {
+    name: "market_add_fact",
+    description: "Факт рынка с датой и источником: оборот рынка, доставка, сроки, сделки, выводы. Тот же текст в той " +
+      "же теме перезаписывается. Нужен для проработанной страницы страны. Только админ.",
+    inputSchema: schema({
+      country: CC,
+      topic: str("Тема: market, delivery, timeline, deal, insight или commentary"),
+      date: str("Дата или период: ГГГГ, ГГГГ-ММ или ГГГГ-ММ-ДД"),
+      text: str("Формулировка факта"),
+      value: str("Цифра или значение, как показать на плитке: «€1,2 млрд»"),
+      source: SRC,
+    }, ["country", "topic", "text", "source"]),
   },
 ];
