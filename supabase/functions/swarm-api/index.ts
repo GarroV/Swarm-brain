@@ -1,3 +1,4 @@
+import { handleChatGptDesktop } from "../_shared/chatgpt-desktop.ts";
 // deno-fmt-ignore-file
 // Легаси-файл вне канона формата (решение D013): гейт `scripts/check` проверяет формат затронутого
 // файла ЦЕЛИКОМ, а переформатирование этого — ~700 строк дифа поверх параллельных веток. Новый код
@@ -19,17 +20,10 @@ import {
   getRecorderTokenStatus,
   mintRecorderToken,
 } from "../_shared/recorder-token.ts";
-import {
-  buildSetupOneLiner,
-  getMcpTokenStatus,
-  mintMcpToken,
-} from "../_shared/mcp-token.ts";
+import { buildSetupOneLiner, getMcpTokenStatus, mintMcpToken } from "../_shared/mcp-token.ts";
 import { buildClaudeProjectPrompt } from "../_shared/claude-project-prompt.ts";
 import { handleOAuthAccountRoute, oauthConfig } from "../_shared/mcp-oauth/index.ts";
-import {
-  feedbackCategoryLabel,
-  isFeedbackCategory,
-} from "../_shared/feedback-categories.ts";
+import { feedbackCategoryLabel, isFeedbackCategory } from "../_shared/feedback-categories.ts";
 import {
   buildEntriesQuery,
   buildReviewQueueQuery,
@@ -59,8 +53,8 @@ import {
   getTask,
   getVisibleTaskInWorkspace,
   listTasksWithTotal,
-  updateTask,
   TaskUserError,
+  updateTask,
 } from "../_shared/tasks/db.ts";
 import {
   pickRecurExtras,
@@ -70,36 +64,22 @@ import {
 } from "../_shared/tasks/recurrence.ts";
 import { createJsonObjectScanner } from "../_shared/json-object-stream.ts";
 import { readOpenAiSseChunk } from "../_shared/openai-sse.ts";
-import type {
-  ProjectInput,
-  SprintInput,
-  TaskInput,
-} from "../_shared/tasks/types.ts";
-import {
-  createSprint,
-  deleteSprint,
-  listSprints,
-  setTasksSprint,
-  updateSprint,
-} from "../_shared/tasks/sprints.ts";
+import type { ProjectInput, SprintInput, TaskInput } from "../_shared/tasks/types.ts";
+import { createSprint, deleteSprint, listSprints, setTasksSprint, updateSprint } from "../_shared/tasks/sprints.ts";
 import { taskVisibleByProject } from "../_shared/tasks/project-visibility.ts";
 import { getVisibleProject, ProjectAccessError } from "../_shared/tasks/projects.ts";
 import {
   canMutateProject,
+  canViewProjectInWorkspace,
   createProject,
   deleteProject,
   dissolveSprintGroup,
   listProjects,
-  canViewProjectInWorkspace,
   updateProject,
 } from "../_shared/tasks/projects.ts";
 import { parseProjectFields } from "./project-fields.ts";
 import { parseLinks } from "../_shared/tasks/links.ts";
-import {
-  COUNTRY_NAMES,
-  detectQueryCountry,
-  normalizeCountries,
-} from "../_shared/countries.ts";
+import { COUNTRY_NAMES, detectQueryCountry, normalizeCountries } from "../_shared/countries.ts";
 import {
   applyGeneralSentinel,
   buildEmbeddingInput,
@@ -119,10 +99,7 @@ import {
 } from "../_shared/storage-files.ts";
 import { detectQuerySince } from "../_shared/query-time.ts";
 import { resummarizeFromTranscript } from "../_shared/meeting-processor.ts";
-import {
-  findDuplicateMeeting,
-  type MeetingAttendee,
-} from "../_shared/meeting-dedup.ts";
+import { findDuplicateMeeting, type MeetingAttendee } from "../_shared/meeting-dedup.ts";
 import { publishDraftMeeting } from "../_shared/meeting-publish.ts";
 import { entryVisibilityOr } from "../_shared/entries/access.ts";
 import { mergeOwnLabels } from "../_shared/tasks/labels.ts";
@@ -184,10 +161,7 @@ import { handleNotificationRoutes } from "./notifications.ts";
 import { handleTaskSubscriptionRoutes } from "./task-subscriptions.ts";
 import { handlePeopleRoutes, resolveTaskPeople } from "./people.ts";
 import { handlePresenceRoutes } from "./presence.ts";
-import {
-  handlePublicRoadmap,
-  isPublicRoadmapPath,
-} from "./public-roadmap.ts";
+import { handlePublicRoadmap, isPublicRoadmapPath } from "./public-roadmap.ts";
 // Календарь на сегодня для панели главной (issue #218): доступ к Google — общий модуль
 // (его же зовёт meeting-current), отбор событий дня и границы суток — чистая логика под тестами.
 import { loadTodayMeetings } from "./today-meetings.ts";
@@ -383,9 +357,7 @@ async function withFreshAssignees<
   return tasks.map((t) => {
     const tids = t.assignee_telegram_ids ?? [];
     if (tids.length === 0) return t;
-    const fresh = tids.map((id) => nameById.get(id)).filter((n): n is string =>
-      !!n
-    );
+    const fresh = tids.map((id) => nameById.get(id)).filter((n): n is string => !!n);
     return fresh.length === tids.length ? { ...t, assignees: fresh } : t;
   });
 }
@@ -493,9 +465,7 @@ function deriveEntryTitle(
     metadata: Record<string, unknown>;
   },
 ): string {
-  const metaTitle = typeof e.metadata?.title === "string"
-    ? (e.metadata.title as string).trim()
-    : "";
+  const metaTitle = typeof e.metadata?.title === "string" ? (e.metadata.title as string).trim() : "";
   if (metaTitle) return metaTitle;
   const base = (e.summary && e.summary.trim()) || e.content || "";
   const firstLine = base.split("\n").map((s) => s.trim()).find(Boolean) ?? "";
@@ -508,9 +478,7 @@ function entryTagKey(
   entryType: string,
   metadata: Record<string, unknown>,
 ): string {
-  const ft = typeof metadata?.file_type === "string"
-    ? (metadata.file_type as string)
-    : "";
+  const ft = typeof metadata?.file_type === "string" ? (metadata.file_type as string) : "";
   if (ft.includes("pdf")) return "pdf";
   switch (entryType) {
     case "transcript":
@@ -593,9 +561,7 @@ async function routeRequest(req: Request): Promise<Response> {
   ) {
     const st = await readMaintenance(supabase);
     return json(
-      st && maintenanceActive(st, new Date())
-        ? maintenancePayload(st)
-        : { maintenance: false },
+      st && maintenanceActive(st, new Date()) ? maintenancePayload(st) : { maintenance: false },
       200,
       origin,
     );
@@ -671,9 +637,7 @@ async function routeRequest(req: Request): Promise<Response> {
     (isMaster ||
       (userRow as { is_admin?: boolean }).is_admin === true);
   // E-mail нужен очереди вычитки: причастность к встрече определяется по metadata.attendees.
-  const userEmail = isDemo
-    ? null
-    : ((userRow as { email?: string | null }).email ?? null);
+  const userEmail = isDemo ? null : ((userRow as { email?: string | null }).email ?? null);
 
   // ── Routing ──────────────────────────────────────────────────────────────
   const url = new URL(req.url);
@@ -748,7 +712,9 @@ async function routeRequest(req: Request): Promise<Response> {
 
   // OAuth-согласие и приложения доступны только своей полной веб-сессии, после второго шага.
   const oauthResp = await handleOAuthAccountRoute(supabase, req, routePath, {
-    telegramId: telegram_id, groupId, isDemo,
+    telegramId: telegram_id,
+    groupId,
+    isDemo,
     renewableSession: !!webSession && isRenewableSession(webSession),
   }, oauthConfig());
   if (oauthResp) {
@@ -877,7 +843,11 @@ async function routeRequest(req: Request): Promise<Response> {
     if (isDemo) {
       // Демо целиком на английском (#605): основной текст EN, русский — в error_ru, как у соседних отказов.
       return json(
-        { error: "Tokens cannot be issued in the demo", error_ru: "В демо токены не выпускаются", code: "demo_not_allowed" },
+        {
+          error: "Tokens cannot be issued in the demo",
+          error_ru: "В демо токены не выпускаются",
+          code: "demo_not_allowed",
+        },
         403,
         origin,
       );
@@ -918,7 +888,11 @@ async function routeRequest(req: Request): Promise<Response> {
     if (isDemo) {
       // Демо целиком на английском (#605): основной текст EN, русский — в error_ru, как у соседних отказов.
       return json(
-        { error: "Tokens cannot be issued in the demo", error_ru: "В демо токены не выпускаются", code: "demo_not_allowed" },
+        {
+          error: "Tokens cannot be issued in the demo",
+          error_ru: "В демо токены не выпускаются",
+          code: "demo_not_allowed",
+        },
         403,
         origin,
       );
@@ -927,6 +901,15 @@ async function routeRequest(req: Request): Promise<Response> {
     if (!minted) return apiErr(500, "Не удалось создать токен", origin);
     return json({ oneLiner: await buildSetupOneLiner(minted.token) }, 200, origin);
   }
+
+  const desktopResponse = await handleChatGptDesktop(req, routePath, {
+    supabase,
+    telegramId: telegram_id,
+    isDemo,
+    renewableSession: !!webSession && isRenewableSession(webSession),
+    origin,
+  });
+  if (desktopResponse) return desktopResponse;
 
   // GET /users
   if (req.method === "GET" && routePath === "/users") {
@@ -1205,17 +1188,11 @@ async function routeRequest(req: Request): Promise<Response> {
         max: TASKS_LIST_LIMIT,
       });
       const confirmedParam = url.searchParams.get("confirmed");
-      const confirmedFilter = confirmedParam === "true"
-        ? true
-        : confirmedParam === "false"
-        ? false
-        : undefined;
+      const confirmedFilter = confirmedParam === "true" ? true : confirmedParam === "false" ? false : undefined;
       const sprintId = url.searchParams.get("sprint_id") ?? undefined;
       const projectId = url.searchParams.get("project_id") ?? undefined;
       const tagsParam = url.searchParams.get("tags");
-      const tags = tagsParam
-        ? tagsParam.split(",").map((t) => t.trim()).filter(Boolean)
-        : undefined;
+      const tags = tagsParam ? tagsParam.split(",").map((t) => t.trim()).filter(Boolean) : undefined;
       const startDateFrom = url.searchParams.get("start_date_from") ??
         undefined;
       const startDateTo = url.searchParams.get("start_date_to") ?? undefined;
@@ -1296,18 +1273,14 @@ async function routeRequest(req: Request): Promise<Response> {
       }
       const tasksWithCreator = (await withFreshAssignees(tasks)).map((t) => ({
         ...t,
-        created_by_name: t.created_by_telegram_id != null
-          ? (creatorMap.get(t.created_by_telegram_id) ?? null)
-          : null,
+        created_by_name: t.created_by_telegram_id != null ? (creatorMap.get(t.created_by_telegram_id) ?? null) : null,
       }));
 
       // X-Total-Count — сколько задач подходит под фильтры БЕЗ лимита. Заголовком, а не
       // конвертом: ответ остаётся голым массивом, поэтому бот и MCP не задеты. null приходит,
       // когда счётчик соврал бы (фильтр по имени исполнителя доклеивается в JS уже после
       // выборки) — тогда заголовок просто не ставим, а не подсовываем неверное число.
-      const totalHeader = total != null
-        ? { "X-Total-Count": String(total) }
-        : undefined;
+      const totalHeader = total != null ? { "X-Total-Count": String(total) } : undefined;
       if (since) {
         const delta: TasksDeltaResponse<typeof tasksWithCreator[number]> = {
           tasks: tasksWithCreator,
@@ -1418,9 +1391,7 @@ async function routeRequest(req: Request): Promise<Response> {
         description: (body.description as string | null) ?? null,
         country: (body.country as string | null) ?? null,
         task_role: (body.task_role as string | null) ?? null,
-        priority: ["high", "med", "low"].includes(body.priority as string)
-          ? (body.priority as string)
-          : null,
+        priority: ["high", "med", "low"].includes(body.priority as string) ? (body.priority as string) : null,
         due_date: dueDate,
         status: (body.status as string) ?? "open",
         source: "mini_app",
@@ -1439,9 +1410,7 @@ async function routeRequest(req: Request): Promise<Response> {
         parent_id: parentId,
         tree_x: typeof body.tree_x === "number" ? body.tree_x : null,
         tree_y: typeof body.tree_y === "number" ? body.tree_y : null,
-        timeline_position: typeof body.timeline_position === "number"
-          ? body.timeline_position
-          : null,
+        timeline_position: typeof body.timeline_position === "number" ? body.timeline_position : null,
         tags: Array.isArray(body.tags) ? (body.tags as string[]) : undefined,
         recur_freq: recur.recur_freq,
         recur_anchor_dom: recur.recur_anchor_dom,
@@ -1541,18 +1510,13 @@ async function routeRequest(req: Request): Promise<Response> {
       }
       if (Array.isArray(body.tags)) fields.tags = body.tags as string[];
       if (body.priority !== undefined) {
-        fields.priority =
-          ["high", "med", "low"].includes(body.priority as string)
-            ? (body.priority as string)
-            : null;
+        fields.priority = ["high", "med", "low"].includes(body.priority as string) ? (body.priority as string) : null;
       }
 
       // Персональные смарт-метки (списки): ставятся на любую задачу, но человек меняет только
       // СВОИ — чужие метки на задаче сохраняются (решение 2026-10-09).
       if (Array.isArray(body.label_ids)) {
-        const ids = (body.label_ids as unknown[]).filter((x): x is string =>
-          typeof x === "string"
-        );
+        const ids = (body.label_ids as unknown[]).filter((x): x is string => typeof x === "string");
         const merged = await mergeOwnLabels(supabase, telegram_id, task.label_ids ?? [], ids);
         if (!merged.ok) {
           if (merged.cause) console.error("task labels merge failed:", merged.cause);
@@ -1584,9 +1548,7 @@ async function routeRequest(req: Request): Promise<Response> {
       }
       // Связать/отвязать линией (drag-to-connect). Осмысленно только у задачи с проектом.
       if (typeof body.project_linked === "boolean") {
-        const effProject = "project_id" in fields
-          ? fields.project_id
-          : task.project_id;
+        const effProject = "project_id" in fields ? fields.project_id : task.project_id;
         if (!effProject && body.project_linked) {
           return apiErr(400, "project_linked требует project_id", origin);
         }
@@ -1615,9 +1577,8 @@ async function routeRequest(req: Request): Promise<Response> {
             "group_id",
             groupId,
           );
-          const { data: proj } = await (task.project_id
-            ? sibQ.eq("project_id", task.project_id)
-            : sibQ.is("project_id", null));
+          const { data: proj } =
+            await (task.project_id ? sibQ.eq("project_id", task.project_id) : sibQ.is("project_id", null));
           const parents = new Map(
             ((proj ?? []) as Array<{ id: string; parent_id: string | null }>)
               .map((t) => [t.id, t.parent_id]),
@@ -1645,9 +1606,7 @@ async function routeRequest(req: Request): Promise<Response> {
       if (typeof body.tree_y === "number") fields.tree_y = body.tree_y;
 
       // Валидация дат с учётом итогового состояния (новое значение или текущее)
-      const effStart = "start_date" in fields
-        ? fields.start_date
-        : task.start_date;
+      const effStart = "start_date" in fields ? fields.start_date : task.start_date;
       const effDue = "due_date" in fields ? fields.due_date : task.due_date;
       const dateErr = validateTaskDates(effStart, effDue);
       if (dateErr) return apiErr(400, dateErr, origin);
@@ -1675,9 +1634,7 @@ async function routeRequest(req: Request): Promise<Response> {
       }
       // Регулярная задача без срока не сможет посчитать следующий цикл и МОЛЧА перестанет
       // повторяться. Снять срок можно только вместе с цикличностью.
-      const effFreq = "recur_freq" in fields
-        ? fields.recur_freq
-        : task.recur_freq;
+      const effFreq = "recur_freq" in fields ? fields.recur_freq : task.recur_freq;
       if (effFreq && !effDue) {
         return apiErr(
           400,
@@ -1717,9 +1674,8 @@ async function routeRequest(req: Request): Promise<Response> {
             "group_id",
             groupId,
           );
-          const { data: proj } = await (task.project_id
-            ? sibQ.eq("project_id", task.project_id)
-            : sibQ.is("project_id", null));
+          const { data: proj } =
+            await (task.project_id ? sibQ.eq("project_id", task.project_id) : sibQ.is("project_id", null));
           const kids = new Map<string, string[]>();
           ((proj ?? []) as Array<{ id: string; parent_id: string | null }>)
             .forEach((t) => {
@@ -1882,9 +1838,7 @@ async function routeRequest(req: Request): Promise<Response> {
     } catch {
       return apiErr(400, "Invalid JSON", origin);
     }
-    const taskIds = Array.isArray(body.task_ids)
-      ? (body.task_ids as string[])
-      : [];
+    const taskIds = Array.isArray(body.task_ids) ? (body.task_ids as string[]) : [];
     if (req.method === "POST") {
       if (!(await sprintInWorkspace(sprintId, groupId))) {
         return apiErr(404, "Not found", origin);
@@ -1937,9 +1891,7 @@ async function routeRequest(req: Request): Promise<Response> {
         emoji: (body.emoji as string | null) ?? null,
         parent_id: (body.parent_id as string | null) ?? null,
         sprint_id: sprintId,
-        is_private: typeof body.is_private === "boolean"
-          ? body.is_private
-          : false,
+        is_private: typeof body.is_private === "boolean" ? body.is_private : false,
         sprint_group: body.sprint_group === true,
       };
       try {
@@ -2148,9 +2100,7 @@ async function routeRequest(req: Request): Promise<Response> {
     // 92 заметки видно, отдавалось 50 — 42 записи не существовало для человека, и экран об этом
     // молчал. Лимит здесь не поднимаем: сперва признак, пагинация отдельно (#104).
     // Ссылки на файлы наружу отдаём только через /api/file/<path> (публичные URL бакета убраны).
-    const rows = (data ?? []).map((r) =>
-      withNormalizedFileLink(r as unknown as Record<string, unknown>)
-    );
+    const rows = (data ?? []).map((r) => withNormalizedFileLink(r as unknown as Record<string, unknown>));
     return json(
       rows,
       200,
@@ -2346,7 +2296,8 @@ async function routeRequest(req: Request): Promise<Response> {
               role: "system",
               content: (isDemo
                 ? "Make concise bullet points from the text. Only concrete facts: names, numbers, decisions, dates. 3–7 points. A bulleted list in English."
-                : "Сделай краткие тезисы из текста. Только конкретные факты: имена, цифры, решения, даты. 3–7 пунктов. Маркированный список на русском.") + "\n" + UNTRUSTED_DATA_RULE,
+                : "Сделай краткие тезисы из текста. Только конкретные факты: имена, цифры, решения, даты. 3–7 пунктов. Маркированный список на русском.") +
+                "\n" + UNTRUSTED_DATA_RULE,
             },
             { role: "user", content: wrapUntrustedForModel(body.content.slice(0, 6000)) },
           ],
@@ -2355,9 +2306,7 @@ async function routeRequest(req: Request): Promise<Response> {
       }, { ...VIA_OPENAI_CHAT, usage: { purpose: "web:chat" } })
       : null;
     if (summaryRes) await OPENAI_KEY.noteResponse(summaryRes);
-    const summary = summaryRes?.ok
-      ? (await summaryRes.json()).choices[0].message.content
-      : null;
+    const summary = summaryRes?.ok ? (await summaryRes.json()).choices[0].message.content : null;
 
     const { data: entry, error } = await supabase.from("entries").insert({
       content: body.content,
@@ -2481,8 +2430,7 @@ async function routeRequest(req: Request): Promise<Response> {
       return json(
         {
           query: q,
-          answer:
-            "По базе, встречам и задачам ничего релевантного не нашлось. Попробуй переформулировать запрос.",
+          answer: "По базе, встречам и задачам ничего релевантного не нашлось. Попробуй переформулировать запрос.",
           sources: [],
           followups: [],
         },
@@ -2510,7 +2458,8 @@ async function routeRequest(req: Request): Promise<Response> {
             role: "system",
             content: (isDemo
               ? 'You are the Dodo CEE team assistant. Answer the question ONLY from the numbered sources, in English. Put a footnote [n] on every statement (you may use [1][3]).\nIMPORTANT: if the sources concern DIFFERENT meetings / topics / countries — do NOT glue them into one artificial paragraph and do NOT invent shared trends/conclusions («revenue drop», «overall we see…») that aren\'t in the sources. In that case give a SHORT list: one «- » point per meeting/topic with the key fact and a footnote [n]. If the question is narrow and the sources are on one topic — answer coherently in 2–4 sentences.\nDon\'t invent facts, numbers or generalizations. If there\'s little data — say so honestly. Return STRICTLY JSON: {"answer":"...","followups":["...","..."]}. In answer you may use line breaks and «- » points. followups — 2–3 short clarifying questions.'
-              : 'Ты — ассистент команды Dodo CEE. Отвечай на вопрос ТОЛЬКО на основе пронумерованных источников, по-русски. Ставь сноску [n] на каждое утверждение (можно [1][3]).\nВАЖНО: если источники относятся к РАЗНЫМ встречам / темам / странам — НЕ склеивай их в один искусственный абзац и НЕ выдумывай общие тренды/выводы («падение выручки», «в целом наблюдается…»), которых нет в источниках. В этом случае дай КОРОТКИЙ список: по одному пункту «- » на встречу/тему с ключевым фактом и сноской [n]. Если вопрос узкий и источники об одной теме — ответь связно в 2–4 предложения.\nНе выдумывай факты, цифры и обобщения. Если данных мало — скажи честно. Даты источников указаны в скобках — при вопросе о «последнем/недавнем» или если источники разных дат, предпочитай более свежие и называй даты. Верни СТРОГО JSON: {"answer":"...","followups":["...","..."]}. В answer можно использовать переносы строк и пункты «- ». followups — 2–3 коротких уточняющих вопроса.') + "\n" + UNTRUSTED_DATA_RULE,
+              : 'Ты — ассистент команды Dodo CEE. Отвечай на вопрос ТОЛЬКО на основе пронумерованных источников, по-русски. Ставь сноску [n] на каждое утверждение (можно [1][3]).\nВАЖНО: если источники относятся к РАЗНЫМ встречам / темам / странам — НЕ склеивай их в один искусственный абзац и НЕ выдумывай общие тренды/выводы («падение выручки», «в целом наблюдается…»), которых нет в источниках. В этом случае дай КОРОТКИЙ список: по одному пункту «- » на встречу/тему с ключевым фактом и сноской [n]. Если вопрос узкий и источники об одной теме — ответь связно в 2–4 предложения.\nНе выдумывай факты, цифры и обобщения. Если данных мало — скажи честно. Даты источников указаны в скобках — при вопросе о «последнем/недавнем» или если источники разных дат, предпочитай более свежие и называй даты. Верни СТРОГО JSON: {"answer":"...","followups":["...","..."]}. В answer можно использовать переносы строк и пункты «- ». followups — 2–3 коротких уточняющих вопроса.') +
+              "\n" + UNTRUSTED_DATA_RULE,
           },
           {
             role: "user",
@@ -2728,7 +2677,7 @@ async function routeRequest(req: Request): Promise<Response> {
       const tezisi = await resummarizeFromTranscript(supabase, meetingRowId, note);
       // Освежаем эмбеддинг (контент изменился) — как при публикации. Не критично при сбое.
       // Ключ OpenAI — пространства вызывающего (#233); своего нет → ключ сервера.
-    const OPENAI_KEY = await openAIKeyHandle(supabase, groupId);
+      const OPENAI_KEY = await openAIKeyHandle(supabase, groupId);
       let embedding: number[] | null = null;
       try {
         const r = await externalFetch("https://api.openai.com/v1/embeddings", {
@@ -2798,8 +2747,10 @@ async function routeRequest(req: Request): Promise<Response> {
           .select("id, meeting_id, offset_sec, text, author_id, created_at")
           .in("meeting_id", idList)
           .order("offset_sec", { ascending: true }),
-        onlyLiveEntries(supabase.from("entries")
-          .select("id, content, created_at, metadata"))
+        onlyLiveEntries(
+          supabase.from("entries")
+            .select("id, content, created_at, metadata"),
+        )
           .eq("group_id", groupId)
           .eq("owner_id", telegram_id)
           .eq("metadata->>kind", "personal_notes")
@@ -2809,9 +2760,7 @@ async function routeRequest(req: Request): Promise<Response> {
       const liveRows = (live ?? []) as Array<{ author_id: number | null }>;
       const names = await resolveNames([
         ...new Set(
-          liveRows.map((r) => r.author_id).filter((n): n is number =>
-            typeof n === "number"
-          ),
+          liveRows.map((r) => r.author_id).filter((n): n is number => typeof n === "number"),
         ),
       ]);
       return json(
@@ -2828,9 +2777,7 @@ async function routeRequest(req: Request): Promise<Response> {
             };
             return {
               ...row,
-              author_name: row.author_id != null
-                ? (names.get(row.author_id) ?? `#${row.author_id}`)
-                : null,
+              author_name: row.author_id != null ? (names.get(row.author_id) ?? `#${row.author_id}`) : null,
             };
           }),
           personal: ((personal ?? []) as Array<
@@ -3111,16 +3058,13 @@ async function routeRequest(req: Request): Promise<Response> {
         const ids = ((users ?? []) as Array<
           { telegram_id: number | null; email: string | null }
         >)
-          .filter((u) =>
-            u.telegram_id && emails.has((u.email ?? "").trim().toLowerCase())
-          )
+          .filter((u) => u.telegram_id && emails.has((u.email ?? "").trim().toLowerCase()))
           .map((u) => u.telegram_id as number);
         if (ids.length > 0) {
           const { data: profiles } = await supabase.from("user_profiles")
             .select("markets").in("telegram_id", ids);
-          participantMarkets =
-            ((profiles ?? []) as Array<{ markets: string[] | null }>)
-              .map((pr) => pr.markets ?? []).filter((m) => m.length > 0);
+          participantMarkets = ((profiles ?? []) as Array<{ markets: string[] | null }>)
+            .map((pr) => pr.markets ?? []).filter((m) => m.length > 0);
         }
       }
       let suggestion = pickSuggestedMarkets({
@@ -3390,24 +3334,24 @@ async function routeRequest(req: Request): Promise<Response> {
     const since = new Date(Date.now() - days * 86400000).toISOString();
 
     const granolaRes = await externalFetch(
-      `https://public-api.granola.ai/v1/notes?created_after=${
-        encodeURIComponent(since)
-      }&limit=50`,
+      `https://public-api.granola.ai/v1/notes?created_after=${encodeURIComponent(since)}&limit=50`,
       {
         headers: {
-          Authorization: `Bearer ${
-            await openIntegrationKey((integration as { api_key: string }).api_key, telegram_id, "granola")
-          }`,
+          Authorization: `Bearer ${await openIntegrationKey(
+            (integration as { api_key: string }).api_key,
+            telegram_id,
+            "granola",
+          )}`,
         },
-      }, VIA_GRANOLA,
+      },
+      VIA_GRANOLA,
     );
     if (!granolaRes.ok) return apiErr(502, "Granola API error", origin);
     const { notes } = await granolaRes.json() as {
       notes: Array<{ id: string }>;
     };
 
-    const skipped: string[] =
-      (integration as { skipped_note_ids: string[] }).skipped_note_ids ?? [];
+    const skipped: string[] = (integration as { skipped_note_ids: string[] }).skipped_note_ids ?? [];
     // archive-ok: архивная заметка Granola уже была импортирована — без неё удалённое вернулось бы «новым»
     const { data: imported } = await supabase.from("entries")
       .select("metadata").eq("group_id", groupId).eq(
@@ -3415,14 +3359,12 @@ async function routeRequest(req: Request): Promise<Response> {
         String(telegram_id),
       );
     const importedIds = new Set(
-      (imported ?? []).map((e: { metadata: Record<string, unknown> }) =>
-        e.metadata?.granola_note_id as string
-      ).filter(Boolean),
+      (imported ?? []).map((e: { metadata: Record<string, unknown> }) => e.metadata?.granola_note_id as string).filter(
+        Boolean,
+      ),
     );
 
-    const unprocessed = (notes ?? []).filter((n) =>
-      !skipped.includes(n.id) && !importedIds.has(n.id)
-    );
+    const unprocessed = (notes ?? []).filter((n) => !skipped.includes(n.id) && !importedIds.has(n.id));
     return json(unprocessed, 200, origin);
   }
 
@@ -3441,11 +3383,14 @@ async function routeRequest(req: Request): Promise<Response> {
       `https://public-api.granola.ai/v1/notes/${noteId}?include=transcript`,
       {
         headers: {
-          Authorization: `Bearer ${
-            await openIntegrationKey((integration as { api_key: string }).api_key, telegram_id, "granola")
-          }`,
+          Authorization: `Bearer ${await openIntegrationKey(
+            (integration as { api_key: string }).api_key,
+            telegram_id,
+            "granola",
+          )}`,
         },
-      }, VIA_GRANOLA,
+      },
+      VIA_GRANOLA,
     );
     if (!noteRes.ok) return apiErr(404, "Note not found", origin);
     const note = await noteRes.json() as Record<string, unknown>;
@@ -3470,13 +3415,15 @@ async function routeRequest(req: Request): Promise<Response> {
               role: "system",
               content: (isDemo
                 ? "Make concise meeting bullet points. Only concrete facts: participants, decisions, actions. 3–7 points in English."
-                : "Сделай краткие тезисы встречи. Только конкретные факты: участники, решения, действия. 3–7 пунктов на русском.") + "\n" + UNTRUSTED_DATA_RULE,
+                : "Сделай краткие тезисы встречи. Только конкретные факты: участники, решения, действия. 3–7 пунктов на русском.") +
+                "\n" + UNTRUSTED_DATA_RULE,
             },
             { role: "user", content: wrapUntrustedForModel(String(content).slice(0, 6000)) },
           ],
           max_tokens: 500,
         }),
-      }, { ...VIA_OPENAI_CHAT, usage: { purpose: "web:chat" } },
+      },
+      { ...VIA_OPENAI_CHAT, usage: { purpose: "web:chat" } },
     );
     await OPENAI_KEY.noteResponse(summaryRes);
     if (!summaryRes.ok) return apiErr(500, "GPT error", origin);
@@ -3509,11 +3456,14 @@ async function routeRequest(req: Request): Promise<Response> {
       `https://public-api.granola.ai/v1/notes/${noteId}?include=transcript`,
       {
         headers: {
-          Authorization: `Bearer ${
-            await openIntegrationKey((integration as { api_key: string }).api_key, telegram_id, "granola")
-          }`,
+          Authorization: `Bearer ${await openIntegrationKey(
+            (integration as { api_key: string }).api_key,
+            telegram_id,
+            "granola",
+          )}`,
         },
-      }, VIA_GRANOLA,
+      },
+      VIA_GRANOLA,
     );
     if (!noteRes.ok) return apiErr(404, "Note not found", origin);
     const note = await noteRes.json() as Record<string, unknown>;
@@ -3583,9 +3533,7 @@ async function routeRequest(req: Request): Promise<Response> {
       }, { ...VIA_OPENAI_CHAT, usage: { purpose: "web:chat" } }),
     ]);
     await OPENAI_KEY.noteResponse(summaryRes);
-    const summary = summaryRes.ok
-      ? (await summaryRes.json()).choices[0].message.content
-      : null;
+    const summary = summaryRes.ok ? (await summaryRes.json()).choices[0].message.content : null;
 
     const entryDate = ts ? ts.slice(0, 10) : null;
 
@@ -3601,8 +3549,7 @@ async function routeRequest(req: Request): Promise<Response> {
       viewerId: telegram_id,
     });
     if (dup) {
-      const current: string[] =
-        (integration as { skipped_note_ids?: string[] }).skipped_note_ids ?? [];
+      const current: string[] = (integration as { skipped_note_ids?: string[] }).skipped_note_ids ?? [];
       if (!current.includes(noteId)) {
         await supabase.from("user_integrations")
           .update({ skipped_note_ids: [...current, noteId] })
@@ -3642,8 +3589,7 @@ async function routeRequest(req: Request): Promise<Response> {
         "granola",
       ).maybeSingle();
     if (!integration) return apiErr(404, "Granola not connected", origin);
-    const current: string[] =
-      (integration as { skipped_note_ids: string[] }).skipped_note_ids ?? [];
+    const current: string[] = (integration as { skipped_note_ids: string[] }).skipped_note_ids ?? [];
     if (!current.includes(noteId)) {
       await supabase.from("user_integrations")
         .update({ skipped_note_ids: [...current, noteId] })
@@ -3756,9 +3702,9 @@ async function routeRequest(req: Request): Promise<Response> {
     const channelId = (channelRow as { value?: string } | null)?.value;
     if (channelId && feedbackRow && !isDemo) {
       const date = new Date().toLocaleDateString("ru-RU");
-      const caption = `<b>[Веб]</b> 🐛 ${
-        feedbackCategoryLabel(category)
-      } · @${escapeHtml(username)} · ${date}\n\n${escapeHtml(text)}`;
+      const caption = `<b>[Веб]</b> 🐛 ${feedbackCategoryLabel(category)} · @${escapeHtml(username)} · ${date}\n\n${
+        escapeHtml(text)
+      }`;
       // Скрин — путь в приватном бакете: модуль отдаёт его Telegram подписанной ссылкой и проверяет ответ.
       await sendFeedbackPing(makeFeedbackPingDeps(supabase, BOT_TOKEN), {
         chatId: channelId,
@@ -3795,9 +3741,7 @@ async function routeRequest(req: Request): Promise<Response> {
       role?: string;
       markets?: string[];
     } | null;
-    const userName = p
-      ? [p.first_name, p.last_name].filter(Boolean).join(" ")
-      : "";
+    const userName = p ? [p.first_name, p.last_name].filter(Boolean).join(" ") : "";
     const markets: string[] = p?.markets ?? [];
     const role: string = p?.role ?? "";
 
@@ -3818,9 +3762,7 @@ async function routeRequest(req: Request): Promise<Response> {
     );
     const countryVariants = [
       ...new Set(markets.flatMap((m) => {
-        const code = COUNTRY_NAMES[m]
-          ? m
-          : (NAME_TO_CODE[m.toLowerCase()] ?? m);
+        const code = COUNTRY_NAMES[m] ? m : (NAME_TO_CODE[m.toLowerCase()] ?? m);
         return [code, COUNTRY_NAMES[code] ?? m];
       })),
     ];
@@ -3840,10 +3782,12 @@ async function routeRequest(req: Request): Promise<Response> {
     }
 
     // Персональный дайджест — СТРОГО по странам пользователя (entries.countries ∩ markets).
-    let q = onlyLiveEntries(supabase.from("entries")
-      .select(
-        "id, summary, content, source, created_at, countries, metadata, entry_type",
-      ))
+    let q = onlyLiveEntries(
+      supabase.from("entries")
+        .select(
+          "id, summary, content, source, created_at, countries, metadata, entry_type",
+        ),
+    )
       .gte("created_at", since)
       .eq("group_id", groupId)
       .not("source", "eq", "digest")
@@ -3860,8 +3804,7 @@ async function routeRequest(req: Request): Promise<Response> {
     const { data: entriesRaw } = await q;
     // Пан-компанийный шум (не рыночная новость, давал «ахинею»): нет ни одной конкретной страны
     // ЛИБО охват >6 стран (широкое объявление на всю сеть). В персональный дайджест не берём.
-    const meaningfulCountries = (cs?: string[]): string[] =>
-      (cs ?? []).filter((c) => c !== "General");
+    const meaningfulCountries = (cs?: string[]): string[] => (cs ?? []).filter((c) => c !== "General");
     const entries = (entriesRaw ?? []).filter((e: { countries?: string[] }) => {
       const m = meaningfulCountries(e.countries);
       return m.length >= 1 && m.length <= 6;
@@ -3869,9 +3812,13 @@ async function routeRequest(req: Request): Promise<Response> {
 
     if (!entries?.length) {
       // Демо — всегда по-английски, и страны тоже (#52): витрина для заказчиков.
-      const names = markets.map((m) => isDemo ? englishCountry(COUNTRY_NAMES[m] ? m : (NAME_TO_CODE[m.toLowerCase()] ?? m)) : (COUNTRY_NAMES[m] ?? m)).join(", ");
+      const names = markets.map((m) =>
+        isDemo ? englishCountry(COUNTRY_NAMES[m] ? m : (NAME_TO_CODE[m.toLowerCase()] ?? m)) : (COUNTRY_NAMES[m] ?? m)
+      ).join(", ");
       const msg = scope === "markets"
-        ? (isDemo ? `No records for your countries (${names}) in this period.` : `За этот период нет записей по вашим странам (${names}).`)
+        ? (isDemo
+          ? `No records for your countries (${names}) in this period.`
+          : `За этот период нет записей по вашим странам (${names}).`)
         : (isDemo ? "No records in this period." : "За указанный период нет записей.");
       return json({ text: msg }, 200, origin);
     }
@@ -3896,9 +3843,9 @@ async function routeRequest(req: Request): Promise<Response> {
     };
     const entriesText = (entries as EntryRow[]).map((e, i) => {
       const date = new Date(e.created_at).toLocaleDateString("ru-RU");
-      return `[источник ${i + 1}] [${
-        entryCountryLabel(e.countries)
-      } · ${date}] ${(e.summary ?? e.content).slice(0, 500)}`;
+      return `[источник ${i + 1}] [${entryCountryLabel(e.countries)} · ${date}] ${
+        (e.summary ?? e.content).slice(0, 500)
+      }`;
     }).join("\n\n---\n\n");
     // Источники дайджеста (формат совместим с RAG /ask): клик по сноске [n] в пункте открывает
     // исходную запись. Порядок = нумерация «[источник N]» в тексте выше.
@@ -3937,7 +3884,8 @@ async function routeRequest(req: Request): Promise<Response> {
             role: "system",
             content: (isDemo
               ? `You are a team analyst. Compile a personal digest for ${periodLabel} for the employee (${contextLine}).\n\nKEY: group STRICTLY BY COUNTRY. Each record is tagged with its country at the start — [Country · date]. For EACH country that has records, make a separate block strictly in this format:\n## <Country>\n- point (what was discussed / done / a problem / a plan for this country) [N]\nAt the END of each point put a footnote [N] — the number of the source the fact came from (the number is given at the start of each record as «[источник N]»). Exactly ONE number per point — the record the fact came from.\n3–7 points per country — don't spare details: concrete facts, numbers, decisions, problems, plans, open questions. Do NOT mention countries with no records. Don't mix different countries in one block.\n\nNO DUPLICATES: use each record in EXACTLY ONE country block (per its tag) — do NOT repeat the same fact/point across countries.\n\nSTRICT: use ONLY facts from the records. Do NOT invent numbers, company names, people's NAMES, events, dates. If an owner/name isn't stated in a record, don't write it. Don't write intro paragraphs or conclusions — only country blocks. Reply in English.`
-              : `Ты аналитик команды. Составь персональный дайджест за ${periodLabel} для сотрудника (${contextLine}).\n\nГЛАВНОЕ: сгруппируй СТРОГО ПО СТРАНАМ. Каждая запись помечена страной в начале — [Страна · дата]. Для КАЖДОЙ страны, по которой есть записи, сделай отдельный блок строго в формате:\n## <Страна>\n- пункт (что обсуждали / сделали / проблема / план по этой стране) [N]\nВ КОНЦЕ каждого пункта ставь сноску [N] — номер источника, из которого взят факт (номер указан в начале каждой записи как «[источник N]»). Ровно ОДИН номер на пункт — та запись, откуда факт.\n3–7 пунктов на страну — не жалей деталей: конкретные факты, числа, решения, проблемы, планы, открытые вопросы. Страны без записей НЕ упоминай. Не смешивай разные страны в один блок.\n\nБЕЗ ДУБЛЕЙ: каждую запись используй РОВНО в ОДНОМ страновом блоке (по её метке) — НЕ повторяй один и тот же факт/пункт в разных странах.\n\nЖЁСТКО: используй ТОЛЬКО факты из записей. НЕ придумывай цифры, названия компаний, ИМЕНА людей, события, сроки. Если ответственный/имя не указаны в записи — не пиши их. Не пиши вводных абзацев и итогов — только блоки по странам. Отвечай на русском.`) + "\n" + UNTRUSTED_DATA_RULE,
+              : `Ты аналитик команды. Составь персональный дайджест за ${periodLabel} для сотрудника (${contextLine}).\n\nГЛАВНОЕ: сгруппируй СТРОГО ПО СТРАНАМ. Каждая запись помечена страной в начале — [Страна · дата]. Для КАЖДОЙ страны, по которой есть записи, сделай отдельный блок строго в формате:\n## <Страна>\n- пункт (что обсуждали / сделали / проблема / план по этой стране) [N]\nВ КОНЦЕ каждого пункта ставь сноску [N] — номер источника, из которого взят факт (номер указан в начале каждой записи как «[источник N]»). Ровно ОДИН номер на пункт — та запись, откуда факт.\n3–7 пунктов на страну — не жалей деталей: конкретные факты, числа, решения, проблемы, планы, открытые вопросы. Страны без записей НЕ упоминай. Не смешивай разные страны в один блок.\n\nБЕЗ ДУБЛЕЙ: каждую запись используй РОВНО в ОДНОМ страновом блоке (по её метке) — НЕ повторяй один и тот же факт/пункт в разных странах.\n\nЖЁСТКО: используй ТОЛЬКО факты из записей. НЕ придумывай цифры, названия компаний, ИМЕНА людей, события, сроки. Если ответственный/имя не указаны в записи — не пиши их. Не пиши вводных абзацев и итогов — только блоки по странам. Отвечай на русском.`) +
+              "\n" + UNTRUSTED_DATA_RULE,
           },
           { role: "user", content: wrapUntrustedForModel(entriesText.slice(0, 13000)) },
         ],

@@ -181,6 +181,9 @@ Deno.serve({ hostname: "0.0.0.0", port }, async (request) => {
         `${oauth}/functions/v1/swarm-oauth${url.pathname}${url.search}`,
       );
     }
+    if (url.pathname.startsWith("/functions/v1/swarm-setup")) {
+      return await proxy(request, `http://swarm-chatgpt-setup:8000${url.pathname}${url.search}`);
+    }
     if (url.pathname.startsWith("/functions/v1/swarm-mcp")) {
       return await proxy(request, `${mcp}${url.pathname}${url.search}`);
     }

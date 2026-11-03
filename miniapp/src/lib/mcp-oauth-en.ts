@@ -28,7 +28,7 @@ const messages = {
   openChatGpt: "Open ChatGPT in a browser",
   connectedApps: "OAuth connections",
   statusNote:
-    "The tile indicator shows the ChatGPT web connection. The list below shows applications authorised by signing in to Swarm. Local connections using a personal token are not listed here; check those in the client's MCP settings.",
+    "The tile indicator includes the desktop bridge and ChatGPT web connections. Desktop access is managed above. The list below shows OAuth applications authorised by signing in to Swarm.",
   none: "No OAuth connections yet.",
   loading: "Loading…",
   loadFailed: "Could not load connections. Try again.",
