@@ -27,6 +27,7 @@ export const MCP_CONNECTIONS_CHANGED = "swarm:mcp-connections-changed";
 export function chatGptConnectionStatus(
   connections: McpOAuthConnection[],
   now: Date = new Date(),
+  desktop?: { active: boolean; lastSeenAt: string | null; expiresAt: string | null } | null,
 ): {
   active: boolean;
   lastSeenAt: string | null;
@@ -35,6 +36,9 @@ export function chatGptConnectionStatus(
   const active = connections.filter((c) =>
     c.clientKind === "chatgpt" && Date.parse(c.expiresAt) > now.getTime()
   );
+  if (desktop?.active && desktop.expiresAt && Date.parse(desktop.expiresAt) > now.getTime()) {
+    active.push({ id: "desktop", clientKind: "chatgpt", clientName: "ChatGPT desktop", createdAt: "", lastSeenAt: desktop.lastSeenAt, expiresAt: desktop.expiresAt });
+  }
   const seen = active.map((c) => c.lastSeenAt).filter((v): v is string =>
     v !== null && Number.isFinite(Date.parse(v))
   );

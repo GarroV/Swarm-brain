@@ -28,7 +28,7 @@ const messages = {
   openChatGpt: "Open ChatGPT in a browser",
   connectedApps: "OAuth connections",
   statusNote:
-    "The tile indicator shows the ChatGPT web connection. The list below shows applications authorised by signing in to Swarm. Local connections using a personal token are not listed here; check those in the client's MCP settings.",
+    "The tile indicator includes the desktop bridge and ChatGPT web connections. Desktop access is managed above. The list below shows OAuth applications authorised by signing in to Swarm.",
   none: "No OAuth connections yet.",
   loading: "Loading…",
   loadFailed: "Could not load connections. Try again.",
@@ -65,5 +65,35 @@ const messages = {
   invalidRedirect:
     "The return address could not be opened. Start the connection again in the application.",
   back: "Back to Swarm",
+  desktopBridge: {
+    ariaLabel: "ChatGPT desktop bridge",
+    heading: "Connect through Terminal · macOS",
+    intro:
+      "The command installs the bridge and adds SwarmBrain to the ChatGPT desktop settings. No custom plugin is needed. Install the ChatGPT desktop app first.",
+    wait: "Please wait…",
+    replaceCommand: "Replace installation command",
+    getCommand: "Get installation command",
+    pasteHint:
+      "Open Terminal, paste the entire command and press Enter. It contains your personal credential; do not share it.",
+    copied: "Copied",
+    copyCommand: "Copy command",
+    afterInstall:
+      "After installation, quit and reopen ChatGPT. Check /mcp and ask SwarmBrain who you are.",
+    lastRequest: (date: string) => `Last request: ${date}`,
+    awaitingFirstRequest:
+      "Credential issued; awaiting the first request from ChatGPT.",
+    validity: "Access lasts 30 days. Claude uses a separate credential.",
+    disconnectButton: "Disconnect ChatGPT bridge",
+    actionFailed: "The action failed. Refresh the page and try again.",
+    replaceTitle: "Replace the ChatGPT credential?",
+    replaceConfirm: "Replace",
+    cancel: "Cancel",
+    replaceDescription:
+      "The previous ChatGPT credential will stop working. Claude and bumblebee stay connected.",
+    disconnectTitle: "Disconnect the ChatGPT bridge?",
+    disconnectConfirm: "Disconnect",
+    disconnectDescription:
+      "The local bridge will lose Swarm access. Claude and web connections stay active.",
+  },
 };
 export default messages;

@@ -7,8 +7,8 @@ useDefault = true
 
 [[rules]]
 id = "swarm-agent-token"
-description = "Токен Swarm (MCP / рекордер): smcp_ + 32 hex"
-regex = '''smcp_[0-9a-f]{32}'''
+description = "Токен Swarm (MCP / рекордер / ChatGPT): smcp_ + optional gpt_ + 32 hex"
+regex = '''smcp_(gpt_)?[0-9a-f]{32}'''
 keywords = ["smcp_"]
 
 # Публичные значения, известные всем: не секреты.

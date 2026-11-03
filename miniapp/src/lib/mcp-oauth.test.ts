@@ -71,3 +71,10 @@ Deno.test("OAuth redirects permit HTTPS and native loopback callbacks", () => {
     assertEquals(safeOAuthRedirect(url), false, url);
   }
 });
+
+Deno.test("desktop bridge contributes its own live status", () => {
+  const desktop = { active: true, lastSeenAt: now.toISOString(), expiresAt: "2026-11-29T12:00:00Z" };
+  assertEquals(chatGptConnectionStatus([], now, desktop), desktop);
+  assertEquals(chatGptConnectionStatus([], now, { ...desktop, active: false }).active, false);
+  assertEquals(chatGptConnectionStatus([], now, { ...desktop, expiresAt: "2026-10-29T12:00:00Z" }).active, false);
+});

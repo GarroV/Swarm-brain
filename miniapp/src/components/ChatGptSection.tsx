@@ -1,5 +1,6 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
+import { ChatGptDesktopSetup } from "./ChatGptDesktopSetup";
 import { Button } from "@/components/ui/button";
 import { useConfirm } from "@/components/ui/confirm";
 import { useIsDemo, useLang } from "@/components/roy/nav";
@@ -11,7 +12,7 @@ import {
 } from "@/lib/mcp-oauth";
 import { mcpOAuthMessages } from "@/lib/mcp-oauth-messages";
 
-/** Личное подключение ChatGPT: адрес вместо команды установки, собственные OAuth-согласия. */
+/** ChatGPT: терминальный мост с отдельным токеном и дополнительные OAuth-подключения. */
 export function ChatGptSection() {
   const lang = useLang();
   const t = mcpOAuthMessages(lang);
@@ -87,6 +88,7 @@ export function ChatGptSection() {
 
   return (
     <div className="space-y-3 text-sm">
+      <ChatGptDesktopSetup />
       <p className="text-ink-soft">{t.introduction}</p>
       {data && (
         <div className="space-y-2">

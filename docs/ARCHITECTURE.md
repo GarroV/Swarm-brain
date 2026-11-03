@@ -1794,6 +1794,20 @@ afconvert — лежат в `meeting-ingest/testdata/` и меряются та�
 
 ## MCP-аутентификация
 
+Терминальное подключение настольного ChatGPT: `ChatGptDesktopSetup` выдаёт одну команду
+через POST `/mcp/desktop/token`; GET `/mcp/desktop/setup` возвращает active/expiry/lastSeen,
+DELETE `/mcp/desktop/token` отзывает только локальный ChatGPT. Обработчик —
+`swarm-api/chatgpt-desktop.ts`, только полная собственная веб-сессия; демо запрещено.
+`swarm-setup/chatgpt` отдаёт `_shared/chatgpt-setup-script.ts`: проверенный SHA-256,
+родной CLI ChatGPT для TOML, отдельные launcher/bridge/token в `~/.swarm-brain/chatgpt/`.
+Поля `chatgpt_mcp_token_hash`, `chatgpt_mcp_token_expires_at`, `chatgpt_mcp_last_seen_at`
+отдельны от Claude/recorder/OAuth. Swarm MCP принимает оба семейства статических токенов,
+проверяет срок на каждом запросе и пишет lastSeen своего клиента; смена роли/пространства
+гасит ChatGPT hash триггером. Статус карточки учитывает локальный мост и веб-OAuth;
+явное `cache: no-store` обходит внутривкладочный requestCache для свежего lastSeen.
+[Решение и границы](decisions/2026-11-03-chatgpt-terminal-bridge.md). Пока подготовка.
+
+
 ChatGPT подключается через отдельный OAuth-доступ, управляемый в личных настройках.
 Справка разделяет десктопный клиент и веб; индикатор плитки относится к веб-подключению,
 список — к OAuth-доступам. Локальное подключение по личному токену проверяется в самом клиенте.

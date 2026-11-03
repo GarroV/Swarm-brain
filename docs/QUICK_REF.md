@@ -423,3 +423,11 @@ claude mcp add supabase-swarm -- npx -y @supabase/mcp-server-supabase@0.12.0 \
 - **Перед крупным мёржем или раз в квартал** — drift-аудит скиллом `keeping-docs-current` (`~/.claude/skills/keeping-docs-current/drift-audit.workflow.js`): перечисляет публичные поверхности из кода и диффает с доками.
 - **Один факт — одно место.** Инвентари (эндпоинты/env/таблицы/callbacks) — **канон в ARCHITECTURE**; QUICK_REF/SETUP только ссылаются или дают выжимку.
 - **ADR** на неочевидные решения — `docs/decisions/` (Context / Decision / Consequences), коротко.
+
+### ChatGPT: терминальный мост (подготовка 03.11.2026)
+
+Личные настройки → ChatGPT → команда для Терминала macOS. Публичный скрипт —
+`swarm-setup/chatgpt`, API — `/mcp/desktop/setup` (GET), `/mcp/desktop/token` (POST/DELETE).
+Нативный CLI приложения пишет MCP-конфиг, мост и токен отдельны от Claude. Сначала
+миграция `20261103110000_chatgpt_desktop_token.sql`, затем функции и веб.
+[Решение](decisions/2026-11-03-chatgpt-terminal-bridge.md).
