@@ -68,5 +68,36 @@ const messages: typeof en = {
   invalidRedirect:
     "Не удалось открыть адрес возврата. Начните подключение заново в приложении.",
   back: "Вернуться в Swarm",
+  desktopBridge: {
+    ariaLabel: "Мост для настольного ChatGPT",
+    heading: "Подключить через Терминал · macOS",
+    intro:
+      "Команда установит мост и добавит SwarmBrain в настройки настольного ChatGPT. Создавать плагин не нужно. Требуется установленное приложение ChatGPT.",
+    wait: "Подождите…",
+    replaceCommand: "Перевыпустить команду установки",
+    getCommand: "Получить команду установки",
+    pasteHint:
+      "Откройте Терминал, вставьте строку целиком и нажмите Enter. Команда содержит ваш личный доступ — не пересылайте её.",
+    copied: "Скопировано",
+    copyCommand: "Скопировать команду",
+    afterInstall:
+      "После установки полностью закройте и откройте ChatGPT. Проверьте /mcp и попросите SwarmBrain показать, кто вы.",
+    lastRequest: (date: string) => `Последнее обращение: ${date}`,
+    awaitingFirstRequest:
+      "Доступ выпущен; ожидается первое обращение из ChatGPT.",
+    validity: "Доступ действует 30 дней. Claude использует отдельный токен.",
+    disconnectButton: "Отключить мост ChatGPT",
+    actionFailed:
+      "Не удалось выполнить действие. Обновите страницу и попробуйте снова.",
+    replaceTitle: "Перевыпустить команду ChatGPT?",
+    replaceConfirm: "Перевыпустить",
+    cancel: "Отмена",
+    replaceDescription:
+      "Предыдущее подключение ChatGPT перестанет работать. Claude и bumblebee продолжат работать.",
+    disconnectTitle: "Отключить мост ChatGPT?",
+    disconnectConfirm: "Отключить",
+    disconnectDescription:
+      "Локальный мост потеряет доступ к Swarm. Claude и веб-подключения останутся активны.",
+  },
 };
 export default messages;
