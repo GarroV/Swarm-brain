@@ -54,9 +54,11 @@ async function cleanup(db: Client) {
 
 async function usageAs(scope: UsageScope) {
   const sb = createClient(API_URL, SERVICE_KEY);
-  const today = new Date().toISOString().slice(0, 10);
+  // Сервер режет период по дню Белграда, а строка пишется «сейчас»: берём вчера..завтра по UTC,
+  // иначе с 23:00 до 24:00 UTC (ночное окно раскатки) строка выпадает из «сегодня» и тест краснеет.
+  const day = (shift: number) => new Date(Date.now() + shift * 86_400_000).toISOString().slice(0, 10);
   const res = await handleModelUsageRoutes(
-    new Request(`https://x${MODEL_USAGE_PATH}?from=${today}&to=${today}&workspace=${TAG}`),
+    new Request(`https://x${MODEL_USAGE_PATH}?from=${day(-1)}&to=${day(1)}&workspace=${TAG}`),
     MODEL_USAGE_PATH,
     // deno-lint-ignore no-explicit-any
     sb as any,
