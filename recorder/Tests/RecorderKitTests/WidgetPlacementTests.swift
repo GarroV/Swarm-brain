@@ -18,7 +18,7 @@ final class WidgetPlacementTests: XCTestCase {
     // Прежнее требование «верх не выше 200 пунктов от края» (#197) этим и снято — оно
     // физически несовместимо с подъёмом, см. комментарий в WidgetPlacement.
     func testDefaultIsLiftedByTwoBannerHeights() {
-        let o = WidgetPlacement.origin(saved: nil, size: size, in: wideScreen)
+        let o = WidgetPlacement.origin(savedTopRight: nil, size: size, in: wideScreen)
 
         let withoutLift = wideScreen.maxY - wideScreen.height * WidgetPlacement.topFraction - size.height
         XCTAssertEqual(o.y, withoutLift + WidgetPlacement.defaultLift, accuracy: 0.5,
@@ -28,13 +28,13 @@ final class WidgetPlacementTests: XCTestCase {
     // На узком экране подъём законно срезается ограничителем сверху — но именно
     // ограничителем, а не «подъёма не было»: окно обязано встать вплотную к границе.
     func testLiftIsClampedByTheHeaderBandOnANarrowScreen() {
-        let o = WidgetPlacement.origin(saved: nil, size: size, in: screen)
+        let o = WidgetPlacement.origin(savedTopRight: nil, size: size, in: screen)
 
         XCTAssertEqual(o.y + size.height, screen.maxY - WidgetPlacement.headerBand, accuracy: 0.5)
     }
 
     func testDefaultStaysBelowTheMenuBarAndAboveTheDock() {
-        let o = WidgetPlacement.origin(saved: nil, size: size, in: screen)
+        let o = WidgetPlacement.origin(savedTopRight: nil, size: size, in: screen)
 
         // Под меню-бар не залезаем: подъём ограничен воздухом сверху.
         XCTAssertLessThanOrEqual(o.y + size.height, screen.maxY - WidgetPlacement.headerBand,
@@ -49,8 +49,8 @@ final class WidgetPlacementTests: XCTestCase {
     func testPillAndBannerShareTheSameTopLine() {
         let banner = CGSize(width: 300, height: 84)
 
-        let pillTop = WidgetPlacement.origin(saved: nil, size: size, in: screen).y + size.height
-        let bannerTop = WidgetPlacement.origin(saved: nil, size: banner, in: screen).y + banner.height
+        let pillTop = WidgetPlacement.origin(savedTopRight: nil, size: size, in: screen).y + size.height
+        let bannerTop = WidgetPlacement.origin(savedTopRight: nil, size: banner, in: screen).y + banner.height
 
         XCTAssertEqual(pillTop, bannerTop, accuracy: 0.5, "верх капсулы и баннера разъехался")
     }
@@ -59,14 +59,14 @@ final class WidgetPlacementTests: XCTestCase {
     func testLiftIsClampedOnAShortScreen() {
         let short = CGRect(x: 0, y: 0, width: 1280, height: 620)
 
-        let o = WidgetPlacement.origin(saved: nil, size: size, in: short)
+        let o = WidgetPlacement.origin(savedTopRight: nil, size: size, in: short)
 
         XCTAssertLessThanOrEqual(o.y + size.height, short.maxY - WidgetPlacement.headerBand)
         XCTAssertGreaterThanOrEqual(o.y, short.minY, "окно уехало за нижний край")
     }
 
     func testDefaultHugsTheRightEdge() {
-        let o = WidgetPlacement.origin(saved: nil, size: size, in: screen, rightInset: 18)
+        let o = WidgetPlacement.origin(savedTopRight: nil, size: size, in: screen, rightInset: 18)
 
         XCTAssertEqual(o.x, screen.maxX - size.width - 18, accuracy: 0.5)
     }
@@ -114,18 +114,38 @@ final class WidgetPlacementTests: XCTestCase {
     }
 
     func testSavedPositionWins() {
-        let saved = CGPoint(x: 300, y: 400)
+        let anchor = CGPoint(x: 372, y: 510)   // правый верхний угол перетащенной капсулы
 
-        let o = WidgetPlacement.origin(saved: saved, size: size, in: screen)
+        let o = WidgetPlacement.origin(savedTopRight: anchor, size: size, in: screen)
 
-        XCTAssertEqual(o, saved, "перетащенную позицию обязаны помнить")
+        XCTAssertEqual(o, CGPoint(x: anchor.x - size.width, y: anchor.y - size.height),
+                       "перетащенную позицию обязаны помнить")
+    }
+
+    func testBannerPillCyclesDoNotDriftWindowLeft() {
+        // Регресс 03.11.2026: капсула за несколько дней уползла с правого края в середину.
+        // Цикл: капсула → баннер (растёт влево) → запомнили → скрыли → снова капсула.
+        let banner = CGSize(width: 300, height: 102)
+        let start = WidgetPlacement.origin(savedTopRight: nil, size: size, in: screen)
+        var pill = CGRect(origin: start, size: size)
+
+        for _ in 0..<5 {
+            let bannerFrame = CGRect(origin: WidgetPlacement.morphOrigin(from: pill, to: banner, in: screen),
+                                     size: banner)
+            let anchor = CGPoint(x: bannerFrame.maxX, y: bannerFrame.maxY)   // что сохраняет окно
+            pill = CGRect(origin: WidgetPlacement.origin(savedTopRight: anchor, size: size, in: screen),
+                          size: size)
+        }
+
+        XCTAssertEqual(pill.origin.x, start.x, accuracy: 0.5, "капсула дрейфует влево")
+        XCTAssertEqual(pill.maxY, start.y + size.height, accuracy: 0.5, "капсула дрейфует по вертикали")
     }
 
     func testSavedPositionIsPulledBackOnScreen() {
         // Капсула была у правого края широкого монитора, монитор отключили.
-        let saved = CGPoint(x: 1420, y: 800)
+        let anchor = CGPoint(x: 1420 + size.width, y: 800 + size.height)
 
-        let o = WidgetPlacement.origin(saved: saved, size: size, in: screen)
+        let o = WidgetPlacement.origin(savedTopRight: anchor, size: size, in: screen)
 
         XCTAssertLessThanOrEqual(o.x + size.width, screen.maxX, "правый край за экраном")
         XCTAssertLessThanOrEqual(o.y + size.height, screen.maxY, "верх за экраном")
@@ -139,11 +159,11 @@ final class WidgetPlacementTests: XCTestCase {
         // Внешний монитор слева отключён — сохранённые координаты отрицательные и с текущим
         // экраном не пересекаются вообще. Капсула обязана вернуться на видимое место,
         // иначе человек решит, что приложение умерло.
-        let saved = CGPoint(x: -1900, y: 300)
+        let anchor = CGPoint(x: -1900 + size.width, y: 300 + size.height)
 
-        let o = WidgetPlacement.origin(saved: saved, size: size, in: screen)
+        let o = WidgetPlacement.origin(savedTopRight: anchor, size: size, in: screen)
 
-        XCTAssertEqual(o, WidgetPlacement.origin(saved: nil, size: size, in: screen))
-        XCTAssertNotEqual(o, saved, "капсула осталась за пределами экрана")
+        XCTAssertEqual(o, WidgetPlacement.origin(savedTopRight: nil, size: size, in: screen))
+        XCTAssertEqual(o.x, screen.maxX - size.width - 18, accuracy: 0.5, "капсула осталась за пределами экрана")
     }
 }
