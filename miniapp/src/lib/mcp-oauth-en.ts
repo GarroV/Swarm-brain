@@ -4,8 +4,6 @@ const messages = {
     "Connect Swarm to ChatGPT and work with your team's knowledge, meetings and tasks in a conversation.",
     "ChatGPT uses your Swarm permissions. Other people's private records stay private.",
   ],
-  introduction:
-    "Choose where you use ChatGPT. You will need the server address below and your Swarm sign-in.",
   chatNoteTitle: "Regular chats (Chat) and ChatGPT in a browser",
   chatNote:
     "In a corporate ChatGPT workspace, only the workspace admin can connect Swarm to regular chats: they add an MCP server with the address below and OAuth sign-in. After that, each employee signs in to Swarm once with their own account and sees only their own data.",
