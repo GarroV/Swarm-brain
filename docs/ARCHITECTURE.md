@@ -1797,7 +1797,7 @@ afconvert — лежат в `meeting-ingest/testdata/` и меряются та�
 Терминальное подключение настольного ChatGPT: `ChatGptDesktopSetup` выдаёт одну команду
 через POST `/mcp/desktop/token`; GET `/mcp/desktop/setup` возвращает active/expiry/lastSeen,
 DELETE `/mcp/desktop/token` отзывает только локальный ChatGPT. Обработчик —
-`_shared/chatgpt-desktop.ts`, только полная собственная веб-сессия; демо запрещено.
+`swarm-api/chatgpt-desktop.ts`, только полная собственная веб-сессия; демо запрещено.
 `swarm-setup/chatgpt` отдаёт `_shared/chatgpt-setup-script.ts`: проверенный SHA-256,
 родной CLI ChatGPT для TOML, отдельные launcher/bridge/token в `~/.swarm-brain/chatgpt/`.
 Поля `chatgpt_mcp_token_hash`, `chatgpt_mcp_token_expires_at`, `chatgpt_mcp_last_seen_at`

@@ -1,4 +1,4 @@
-import { handleChatGptDesktop } from "../_shared/chatgpt-desktop.ts";
+import { handleChatGptDesktop } from "./chatgpt-desktop.ts";
 // deno-fmt-ignore-file
 // Легаси-файл вне канона формата (решение D013): гейт `scripts/check` проверяет формат затронутого
 // файла ЦЕЛИКОМ, а переформатирование этого — ~700 строк дифа поверх параллельных веток. Новый код

@@ -24,7 +24,7 @@
 проверок входа, второго шага и обслуживания; демо и короткая сессия не допускаются.
 Серверные инструменты, область доступа и подтверждение опасных действий остаются общими.
 
-Реализация: `_shared/chatgpt-setup-script.ts`, `_shared/chatgpt-desktop.ts`,
+Реализация: `_shared/chatgpt-setup-script.ts`, `swarm-api/chatgpt-desktop.ts`,
 `swarm-setup/chatgpt`, `/mcp/desktop/{setup,token}`, `ChatGptDesktopSetup`.
 Требуется аддитивная миграция `20261103110000_chatgpt_desktop_token.sql` ДО обновления
 swarm-api/swarm-mcp/swarm-setup и веба. В этой подготовке прод не менялся.

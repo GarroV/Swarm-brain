@@ -1,7 +1,7 @@
 import { assertEquals, assertMatch } from "jsr:@std/assert@1";
 import { handleChatGptDesktop } from "./chatgpt-desktop.ts";
-import { buildChatGptSetupOneLiner, CHATGPT_SETUP_SCRIPT } from "./chatgpt-setup-script.ts";
-import { sha256Hex } from "./mcp-setup-script.ts";
+import { buildChatGptSetupOneLiner, CHATGPT_SETUP_SCRIPT } from "../_shared/chatgpt-setup-script.ts";
+import { sha256Hex } from "../_shared/mcp-setup-script.ts";
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 Deno.test("desktop credentials are independent, caller-scoped, hashed and revocable", async () => {

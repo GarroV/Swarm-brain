@@ -1,9 +1,9 @@
-import { logAccess } from "./access-events.ts";
+import { logAccess } from "../_shared/access-events.ts";
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { buildChatGptSetupOneLiner } from "./chatgpt-setup-script.ts";
-import { sha256Hex } from "./mcp-setup-script.ts";
-import { mcpTokenExpiry } from "./mcp-token.ts";
-import { apiErr, json } from "../swarm-api/http.ts";
+import { buildChatGptSetupOneLiner } from "../_shared/chatgpt-setup-script.ts";
+import { sha256Hex } from "../_shared/mcp-setup-script.ts";
+import { mcpTokenExpiry } from "../_shared/mcp-token.ts";
+import { apiErr, json } from "./http.ts";
 
 export async function handleChatGptDesktop(
   req: Request,
