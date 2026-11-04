@@ -1,4 +1,0 @@
-<?xml version="1.0" encoding="windows-1251"?><ValCurs Date="15.10.2026" name="Foreign Currency Market"><Valute ID="R01210"><NumCode>981</NumCode><CharCode>GEL</CharCode><Nominal>1</Nominal><Name>Лари</Name><Value>32,3020</Value><VunitRate>32,302</VunitRate></Valute>
-<Valute ID="R01239"><NumCode>978</NumCode><CharCode>EUR</CharCode><Nominal>1</Nominal><Name>Евро</Name><Value>93,9229</Value><VunitRate>93,9229</VunitRate></Valute>
-<Valute ID="R01370"><NumCode>417</NumCode><CharCode>KGS</CharCode><Nominal>100</Nominal><Name>Сомов</Name><Value>95,9974</Value><VunitRate>0,959974</VunitRate></Valute>
-</ValCurs>

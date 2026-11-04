@@ -78,11 +78,23 @@ export function parseValuteXml(xml: string, bank: string, code = "EUR"): number 
   return positive(Number(value.replace(/\s/g, "").replace(",", ".")), bank) / positive(Number(nominal), bank);
 }
 
-/** Кросс через рубль по одному дню ЦБ РФ: (EUR/RUB) / (CUR/RUB) — единиц валюты за 1 €. */
-export function parseCbrCross(xml: string, currency: string): number {
-  const eur = parseValuteXml(xml, "ЦБ РФ", "EUR");
-  const cur = parseValuteXml(xml, "ЦБ РФ", currency);
-  return round4(eur / cur);
+/** ЦБ РФ XML_dynamic: <Record Date="ДД.ММ.ГГГГ"><Nominal/><Value/> — рублей за одну единицу валюты по дням. */
+export function parseCbrDynamic(xml: string, code: string): DayRate[] {
+  const rows = xml.match(/<Record\b[\s\S]*?<\/Record>/g) ?? [];
+  if (!rows.length) throw new FxError(`ЦБ РФ: в ответе нет курсов ${code}`);
+  return rows.map((r) => {
+    const d = /Date="(\d{2})\.(\d{2})\.(\d{4})"/.exec(r);
+    if (!d) throw new FxError(`ЦБ РФ: у строки курса ${code} нет даты`);
+    const value = Number((/<Value>\s*([\d,.]+)\s*<\/Value>/.exec(r)?.[1] ?? "").replace(",", "."));
+    const nominal = Number(/<Nominal>\s*(\d+)\s*<\/Nominal>/.exec(r)?.[1] ?? 1);
+    return { date: `${d[3]}-${d[2]}-${d[1]}`, rate: positive(value, "ЦБ РФ") / positive(nominal, "ЦБ РФ") };
+  });
+}
+
+/** Кросс по дням, где ЦБ РФ опубликовал обе валюты: (EUR/RUB) / (CUR/RUB) — единиц валюты за 1 €. */
+export function cbrCrossRange(eur: DayRate[], cur: DayRate[]): DayRate[] {
+  const byDate = new Map(cur.map((r) => [r.date, r.rate]));
+  return eur.flatMap((e) => byDate.has(e.date) ? [{ date: e.date, rate: round4(e.rate / byDate.get(e.date)!) }] : []);
 }
 
 /** ЦБ Армении, SOAP ExchangeRatesByDateRangeByISO: фильтр по ISO сервер игнорирует и отдаёт все валюты — берём строки EUR. */
@@ -105,14 +117,22 @@ export function parseCbaRange(xml: string): DayRate[] {
 
 const dmy = (iso: string) => `${iso.slice(8, 10)}.${iso.slice(5, 7)}.${iso.slice(0, 4)}`;
 
-/** НБГ закрыт защитой от ботов, НБКР не даёт архив по дате: берём ЦБ РФ, кросс через рубль (решение владельца, #1115). */
+/** Коды валют ЦБ РФ для XML_dynamic (ряд по одной валюте за период одним запросом). */
+const CBR_IDS: Record<string, string> = { EUR: "R01239", GEL: "R01210", KGS: "R01370" };
+
+/** НБГ закрыт защитой от ботов, НБКР не даёт архив по дате: берём ЦБ РФ, кросс через рубль (решение владельца, #1115).
+ *  Ряд за период двумя запросами (EUR и валюта), а не 48 дневными: пачка дневных запросов к cbr.ru
+ *  срывалась («курс получен за 0 из 48 дней», 04.11.2026). */
 const cbrBank = (cur: string): Bank => ({
   name: `ЦБ РФ, кросс EUR/RUB и ${cur}/RUB`,
-  day: async (get, date) =>
-    parseCbrCross(
-      await get(`https://www.cbr.ru/scripts/XML_daily.asp?date_req=${dmy(date).replaceAll(".", "/")}`),
-      cur,
-    ),
+  range: async (get, from, to) => {
+    const url = (id: string) =>
+      `https://www.cbr.ru/scripts/XML_dynamic.asp?date_req1=${dmy(from).replaceAll(".", "/")}` +
+      `&date_req2=${dmy(to).replaceAll(".", "/")}&VAL_NM_RQ=${id}`;
+    const eur = parseCbrDynamic(await get(url(CBR_IDS.EUR)), "EUR");
+    const other = parseCbrDynamic(await get(url(CBR_IDS[cur])), cur);
+    return cbrCrossRange(eur, other);
+  },
 });
 
 const BANKS: Record<string, Bank> = {

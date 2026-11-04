@@ -1,11 +1,12 @@
 import { assert, assertEquals, assertRejects, assertThrows } from "@std/assert";
 import {
+  cbrCrossRange,
   FxError,
   type FxGet,
   fxNote,
   fxRate,
   parseCbaRange,
-  parseCbrCross,
+  parseCbrDynamic,
   parseNbrbDynamics,
   parseValuteXml,
   periodDates,
@@ -103,27 +104,42 @@ Deno.test("fxRate: bank down or mostly silent -> refusal with a reason, never a 
   await assertRejects(() => fxRate("BYN", "2026-09", broken, "2026-11-03"), FxError);
 });
 
-Deno.test("parseCbrCross: EUR/RUB over CUR/RUB, nominal of KGS (100) is honoured", () => {
-  const xml = fx("cbr-2026-10-15.xml");
-  assertEquals(parseCbrCross(xml, "GEL"), 2.9076); // 93.9229 / 32.3020
-  assertEquals(parseCbrCross(xml, "KGS"), 97.839); // 93.9229 / (95.9974 / 100)
+// Ряды ЦБ РФ XML_dynamic 28.12.2023–10.01.2024 (сняты 04.11.2026): EUR R01239, GEL R01210, KGS R01370 (Nominal 10).
+const cbrDyn = (id: string) => fx(`cbr-dynamic-${id}-2023-12-28.xml`);
+const cbrByUrl: FxGet = (url) => {
+  const id = /VAL_NM_RQ=(R\d+)/.exec(url)?.[1];
+  return id ? Promise.resolve(cbrDyn(id)) : Promise.reject(new Error(`unexpected ${url}`));
+};
+
+Deno.test("parseCbrDynamic + cbrCrossRange: EUR/RUB over CUR/RUB by day, nominal of KGS (10) is honoured", () => {
+  const eur = parseCbrDynamic(cbrDyn("R01239"), "EUR");
+  assertEquals(eur.length, 4);
+  assertEquals(cbrCrossRange(eur, parseCbrDynamic(cbrDyn("R01210"), "GEL"))[0], { date: "2023-12-28", rate: 2.9737 });
+  assertEquals(cbrCrossRange(eur, parseCbrDynamic(cbrDyn("R01370"), "KGS"))[0], { date: "2023-12-28", rate: 98.3876 });
 });
 
-Deno.test("parseCbrCross: broken CBR answer or missing currency is refused", () => {
-  const xml = fx("cbr-2026-10-15.xml");
-  assertThrows(() => parseCbrCross("<html>maintenance</html>", "GEL"), FxError);
-  assertThrows(() => parseCbrCross(xml, "AMD"), FxError);
-  assertThrows(() => parseCbrCross(xml.replace("<Value>93,9229</Value>", "<Value></Value>"), "GEL"), FxError);
-  assertThrows(() => parseCbrCross(xml.replace("<Nominal>100</Nominal>", "<Nominal>0</Nominal>"), "KGS"), FxError);
+Deno.test("parseCbrDynamic: broken CBR answer is refused; a day missing in one series is skipped", () => {
+  assertThrows(() => parseCbrDynamic("<html>maintenance</html>", "GEL"), FxError);
+  assertThrows(
+    () => parseCbrDynamic(cbrDyn("R01210").replace("<Value>34,0810</Value>", "<Value></Value>"), "GEL"),
+    FxError,
+  );
+  assertThrows(
+    () => parseCbrDynamic(cbrDyn("R01370").replace("<Nominal>10</Nominal>", "<Nominal>0</Nominal>"), "KGS"),
+    FxError,
+  );
+  const eur = parseCbrDynamic(cbrDyn("R01239"), "EUR");
+  assertEquals(cbrCrossRange(eur, parseCbrDynamic(cbrDyn("R01210"), "GEL").slice(1)).length, 3);
 });
 
-Deno.test("fxRate: GEL goes through the CBR cross and the source says so; CBR down -> refusal", async () => {
-  const ok: FxGet = (url) => {
-    assert(url.includes("date_req=15/10/2026"), url);
-    return Promise.resolve(fx("cbr-2026-10-15.xml"));
-  };
-  const r = await fxRate("GEL", "2026-10-15", ok);
-  assertEquals([r.rate, r.bank], [2.9076, "ЦБ РФ, кросс EUR/RUB и GEL/RUB"]);
+Deno.test("fxRate: GEL/KGS — two range requests to CBR (not one per day); day = last published; CBR down -> refusal", async () => {
+  const urls: string[] = [];
+  const spy: FxGet = (url, init) => (urls.push(url), cbrByUrl(url, init));
+  const day = await fxRate("GEL", "2024-01-05", spy, "2026-11-04");
+  assertEquals([day.rate, day.bank], [2.9784, "ЦБ РФ, кросс EUR/RUB и GEL/RUB"]); // 30.12.2023: 99.1919 / 33.3042
+  const year = await fxRate("GEL", "2024", spy, "2026-11-04");
+  assertEquals([year.rate, year.days], [2.943, 1]); // в фикстуре из 2024 года только 10.01
+  assertEquals(urls.length, 4);
   await assertRejects(
     () => fxRate("KGS", "2026-10", () => Promise.reject(new Error("timeout")), "2026-11-03"),
     FxError,
