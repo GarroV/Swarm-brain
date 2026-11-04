@@ -7,6 +7,7 @@ import type {
   OsmPoint,
 } from "../../../supabase/functions/market-ingest/types.ts";
 import type { CountryConfig } from "../countries/types.ts";
+import { distanceM } from "../../../supabase/functions/_shared/market/geo.ts";
 import { httpGet } from "../lib.ts";
 import type { Adapter } from "./types.ts";
 
@@ -33,6 +34,8 @@ export const MIN_UNBRANDED = 5;
 export const MIN_LOCALITIES = 3;
 export const MAX_DISCOVERED = 40;
 const MAX_KEY = 40;
+/** Overture держит одно заведение двумя записями (разные id, 0–25 м): на карте это одна точка. */
+export const DUPLICATE_M = 25;
 // Латиница и кириллица: в Беларуси Overture держит пиццерии как «Додо Пицца Беларусь».
 const DODO = /dodo\s*pizza|^dodo\b|додо\s*пицц|^додо(?!\p{L})/iu;
 
@@ -137,6 +140,17 @@ const toPoint = (row: PlaceRow, chain: string): OsmPoint => ({
 
 const isBranded = (g: PlaceRow[]) => g.some((r) => r.brand);
 
+/** Двойники одной сети ближе DUPLICATE_M склеиваются в первую запись — иначе точка считается дважды. */
+export function dropDuplicates(points: OsmPoint[]): OsmPoint[] {
+  const kept = new Map<string, OsmPoint[]>();
+  return points.filter((p) => {
+    const same = kept.get(p.chain) ?? [];
+    if (same.some((k) => distanceM(k, p) <= DUPLICATE_M)) return false;
+    kept.set(p.chain, [...same, p]);
+    return true;
+  });
+}
+
 /** Чистая функция без сети: строки Overture → точки сетей из конфига + найденные сети. */
 export function discover(
   rows: PlaceRow[],
@@ -191,7 +205,7 @@ export function discover(
     );
     for (const row of g) points.push(toPoint(row, key));
   }
-  return { points, chains };
+  return { points: dropDuplicates(points), chains };
 }
 
 /** Самый свежий релиз: префиксы release/YYYY-MM-DD.N/ из листинга бакета. */

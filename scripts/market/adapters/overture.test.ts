@@ -4,6 +4,7 @@ import type { CountryConfig } from "../countries/types.ts";
 import {
   classify,
   discover,
+  dropDuplicates,
   latestRelease,
   type PlaceRow,
 } from "./overture.ts";
@@ -31,6 +32,7 @@ const cfg = {
 } as unknown as CountryConfig;
 
 let n = 0;
+// Каждая строка — своё место (шаг ~110 м), иначе склейка двойников съест фикстуры.
 const row = (over: Partial<PlaceRow>): PlaceRow => ({
   id: `p${++n}`,
   name: null,
@@ -39,7 +41,7 @@ const row = (over: Partial<PlaceRow>): PlaceRow => ({
   category: "restaurant",
   locality: "Berlin",
   address: "Street 1",
-  lat: 52.5,
+  lat: 52.5 + n * 0.001,
   lng: 13.4,
   ...over,
 });
@@ -167,4 +169,23 @@ Deno.test("overture: a curly apostrophe and a brandless row still hit the config
   assertEquals(points.filter((p) => p.chain === "dominos").length, 2);
   assertEquals(chains.map((c) => c.name), ["Hesburger"]);
   assertEquals(points.filter((p) => p.chain === "hesburger").length, 3);
+});
+
+Deno.test("overture: one place listed twice (same chain, within 25 m) becomes one point", () => {
+  const p = (chain: string, lat: number, lng: number, id: string) => ({
+    chain,
+    name: chain,
+    lat,
+    lng,
+    city: null,
+    address: null,
+    osm_id: id,
+  });
+  const out = dropDuplicates([
+    p("costa", 52.2297, 21.0122, "a"),
+    p("costa", 52.22975, 21.01225, "b"), // ~7 м — двойник
+    p("costa", 52.2310, 21.0122, "c"), // ~145 м — другая точка
+    p("kfc", 52.2297, 21.0122, "d"), // другая сеть в том же месте
+  ]);
+  assertEquals(out.map((x) => x.osm_id), ["a", "c", "d"]);
 });
