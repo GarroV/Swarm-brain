@@ -82,6 +82,7 @@ export const TOOL_CLASSES: Record<string, ToolClass> = {
   market_upsert_location: write(true),
   market_upsert_chain: write(true),
   market_set_price: write(true),
+  market_add_fact: write(true),
   // Необратимое или убирающее: удаление, архив, снятие, приёмка спринта, публикация черновика.
   delete_entry: destructive(true),
   delete_task: destructive(true),

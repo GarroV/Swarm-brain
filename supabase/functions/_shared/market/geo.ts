@@ -14,51 +14,106 @@ export const MATCH_RADIUS_M = 150;
 
 export type MatchResult<E, P> = { matched: Array<{ existing: E; found: P }>; unmatched: P[]; missing: E[] };
 
-/** Сетка для поиска соседей: ячейка не меньше радиуса, так что пара всегда в соседних ячейках.
- *  Без неё сопоставление было «каждая с каждой» — на 8 тыс. точек Испании функция приёма упиралась
- *  в лимит процессорного времени (02.11.2026, HTTP 546). Рассчитана на широты до ~80°. */
-const cellDeg = (radiusM: number) => Math.max(0.01, radiusM / 30000);
-const cellOf = (p: GeoPoint, size: number) => [Math.floor(p.lat / size), Math.floor(p.lng / size)] as const;
-const cellKey = (chain: string, i: number, j: number) => `${chain}|${i}|${j}`;
+// Сетка для поиска соседей: перебор «каждая с каждой» на тысячах точек одной сети (Испания,
+// Польша) съедал лимит процессора функции (HTTP 546, #1108). Ячейка 0,01° (~1,1 км по широте);
+// запрос смотрит соседние ячейки в границах радиуса, так что результат тот же, что у перебора.
+const CELL_DEG = 0.01;
+const LNG_CELLS = Math.round(360 / CELL_DEG);
+/** Метров в градусе дуги на шаре EARTH_M, с запасом 2% против округления. */
+const M_PER_DEG = ((2 * Math.PI * EARTH_M) / 360) / 1.02;
+const MAX_SCAN_CELLS = 400;
+const latCell = (lat: number) => Math.floor(lat / CELL_DEG);
+const lngCell = (lng: number) => ((Math.floor(lng / CELL_DEG) % LNG_CELLS) + LNG_CELLS) % LNG_CELLS;
+const cellKey = (cx: number, cy: number) => cx * 100000 + cy;
 
-function gridOf<T extends { chain: string } & GeoPoint>(items: T[], size: number): Map<string, number[]> {
-  const grid = new Map<string, number[]>();
-  items.forEach((p, idx) => {
-    const [i, j] = cellOf(p, size);
-    const k = cellKey(p.chain, i, j);
-    const cell = grid.get(k);
-    if (cell) cell.push(idx);
-    else grid.set(k, [idx]);
-  });
-  return grid;
-}
+type IndexedRef = { chain: string; address?: string | null } & GeoPoint;
 
-/** Индексы точек сетки в окрестности p (той же сети), по возрастанию. */
-function nearIdx(grid: Map<string, number[]>, p: { chain: string } & GeoPoint, size: number): number[] {
-  const [i, j] = cellOf(p, size);
-  const out: number[] = [];
-  for (let di = -1; di <= 1; di++) {
-    for (let dj = -1; dj <= 1; dj++) out.push(...(grid.get(cellKey(p.chain, i + di, j + dj)) ?? []));
+/** Индекс опорных точек: кто в радиусе (сетка) и кто на той же улице (по ключу адреса).
+ *  Индексы возвращаются по возрастанию — порядок обхода как у полного перебора. */
+export class PlaceIndex<R extends IndexedRef> {
+  private readonly chains = new Map<string, {
+    all: number[];
+    cells: Map<number, number[]>;
+    streets: Map<string, number[]>;
+  }>();
+  constructor(readonly refs: R[]) {
+    refs.forEach((r, i) => {
+      let c = this.chains.get(r.chain);
+      if (!c) this.chains.set(r.chain, c = { all: [], cells: new Map(), streets: new Map() });
+      c.all.push(i);
+      if (Number.isFinite(r.lat) && Number.isFinite(r.lng)) {
+        const k = cellKey(lngCell(r.lng), latCell(r.lat));
+        const cell = c.cells.get(k);
+        if (cell) cell.push(i);
+        else c.cells.set(k, [i]);
+      }
+      const sk = streetKey(r.address);
+      if (sk !== null) {
+        const l = c.streets.get(sk);
+        if (l) l.push(i);
+        else c.streets.set(sk, [i]);
+      }
+    });
   }
-  return out.sort((a, b) => a - b);
+
+  /** Индексы точек той же сети, которые могут оказаться ближе radiusM (надмножество). */
+  private near(p: IndexedRef, radiusM: number): number[] {
+    const c = this.chains.get(p.chain);
+    if (!c) return [];
+    if (!Number.isFinite(p.lat) || !Number.isFinite(p.lng)) return [];
+    const dLat = radiusM / M_PER_DEG;
+    const cosLat = Math.cos(rad(Math.min(89.9, Math.abs(p.lat) + dLat)));
+    const dLng = dLat / Math.max(cosLat, 1e-6);
+    const y0 = latCell(p.lat - dLat), y1 = latCell(p.lat + dLat);
+    const x0 = Math.floor((p.lng - dLng) / CELL_DEG), x1 = Math.floor((p.lng + dLng) / CELL_DEG);
+    if ((x1 - x0 + 1) * (y1 - y0 + 1) > MAX_SCAN_CELLS) return c.all;
+    const out: number[] = [];
+    for (let x = x0; x <= x1; x++) {
+      const cx = ((x % LNG_CELLS) + LNG_CELLS) % LNG_CELLS;
+      for (let y = y0; y <= y1; y++) {
+        const cell = c.cells.get(cellKey(cx, y));
+        if (cell) out.push(...cell);
+      }
+    }
+    return out.sort((a, b) => a - b);
+  }
+
+  /** Те же точки, что нашёл бы `samePlace(p, refs, radiusM)`: ближе radiusM или та же улица в 5 км. */
+  has(p: IndexedRef, radiusM = MATCH_RADIUS_M): boolean {
+    for (const i of this.near(p, radiusM)) {
+      if (distanceM(this.refs[i], p) <= radiusM) return true;
+    }
+    const key = streetKey(p.address);
+    if (key === null) return false;
+    const same = this.chains.get(p.chain)?.streets.get(key);
+    return !!same?.some((i) => distanceM(this.refs[i], p) <= SAME_ADDRESS_RADIUS_M);
+  }
+
+  /** Индексы опорных точек ближе radiusM (по возрастанию). */
+  within(p: IndexedRef, radiusM: number): Array<{ i: number; d: number }> {
+    const out: Array<{ i: number; d: number }> = [];
+    for (const i of this.near(p, radiusM)) {
+      const d = distanceM(this.refs[i], p);
+      if (d <= radiusM) out.push({ i, d });
+    }
+    return out;
+  }
 }
 
 /** Пара — та же сеть и ближе radiusM. Жадно по возрастанию расстояния: одна точка базы
- *  сопоставляется не больше одного раза, иначе два соседних McDonald's слиплись бы в один. */
+ *  сопоставляется не больше одного раза, иначе два соседних McDonald's слиплись бы в один.
+ *  Кандидаты ищутся по сетке; порядок пар (расстояние, затем порядок existing и found) тот же,
+ *  что у полного перебора. */
 export function matchPoints<
   E extends { id: string; chain: string } & GeoPoint,
   P extends { chain: string } & GeoPoint,
 >(existing: E[], found: P[], radiusM = MATCH_RADIUS_M): MatchResult<E, P> {
-  const size = cellDeg(radiusM);
-  const grid = gridOf(found, size);
   const pairs: Array<{ e: number; f: number; d: number }> = [];
+  const index = new PlaceIndex(found);
   existing.forEach((e, ei) => {
-    for (const fi of nearIdx(grid, e, size)) {
-      const d = distanceM(e, found[fi]);
-      if (d <= radiusM) pairs.push({ e: ei, f: fi, d });
-    }
+    for (const { i: fi, d } of index.within(e, radiusM)) pairs.push({ e: ei, f: fi, d });
   });
-  pairs.sort((a, b) => a.d - b.d);
+  pairs.sort((a, b) => a.d - b.d || a.e - b.e || a.f - b.f);
   const usedE = new Set<number>(), usedF = new Set<number>();
   const matched: Array<{ existing: E; found: P }> = [];
   for (const p of pairs) {
@@ -87,31 +142,16 @@ export function streetKey(address: string | null | undefined): string | null {
   return /\d/.test(s) && /[a-z]{3}/.test(s) ? s : null;
 }
 
-type PlaceRef = { chain: string; address?: string | null } & GeoPoint;
-
-/** Проверка «та же точка той же сети» сразу для многих точек против одного набора refs:
- *  ближе radiusM — или тот же адрес (улица и дом) в пределах 5 км. Набор индексируется один раз. */
-export function placeMatcher(refs: PlaceRef[], radiusM = MATCH_RADIUS_M): (p: PlaceRef) => boolean {
-  const size = cellDeg(radiusM);
-  const grid = gridOf(refs, size);
-  const byStreet = new Map<string, PlaceRef[]>();
-  for (const r of refs) {
-    const k = streetKey(r.address);
-    if (k === null) continue;
-    const id = `${r.chain}|${k}`;
-    const list = byStreet.get(id);
-    if (list) list.push(r);
-    else byStreet.set(id, [r]);
-  }
-  return (p) => {
-    if (nearIdx(grid, p, size).some((i) => distanceM(refs[i], p) <= radiusM)) return true;
-    const key = streetKey(p.address);
-    return key !== null &&
-      (byStreet.get(`${p.chain}|${key}`) ?? []).some((r) => distanceM(r, p) <= SAME_ADDRESS_RADIUS_M);
-  };
-}
-
 /** Та же точка той же сети: ближе radiusM — или тот же адрес (улица и дом) в пределах 5 км. */
-export function samePlace(p: PlaceRef, refs: PlaceRef[], radiusM = MATCH_RADIUS_M): boolean {
-  return placeMatcher(refs, radiusM)(p);
+export function samePlace(
+  p: { chain: string; address?: string | null } & GeoPoint,
+  refs: Array<{ chain: string; address?: string | null } & GeoPoint>,
+  radiusM = MATCH_RADIUS_M,
+): boolean {
+  const key = streetKey(p.address);
+  return refs.some((r) => {
+    if (r.chain !== p.chain) return false;
+    const d = distanceM(r, p);
+    return d <= radiusM || (key !== null && d <= SAME_ADDRESS_RADIUS_M && streetKey(r.address) === key);
+  });
 }

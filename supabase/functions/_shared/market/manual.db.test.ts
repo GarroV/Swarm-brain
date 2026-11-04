@@ -3,7 +3,7 @@
 // Пропускаться тест не умеет: базы нет — прогон падает и говорит, что поднять.
 import { assert, assertEquals } from "@std/assert";
 import { createClient } from "@supabase/supabase-js";
-import { setBlock, setCompanyYear, setPrice, upsertChain, upsertLocation } from "./manual.ts";
+import { addFact, setBlock, setCompanyYear, setPrice, upsertChain, upsertLocation } from "./manual.ts";
 import { countryStatus } from "./template.ts";
 
 for (const name of ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY"]) {
@@ -17,7 +17,7 @@ async function wipe() {
   const { data: cos } = await sb.from("mkt_companies").select("id").eq("country", CC);
   const ids = (cos ?? []).map((r) => r.id);
   if (ids.length) await sb.from("mkt_financials").delete().in("company_id", ids);
-  for (const t of ["mkt_locations", "mkt_companies", "mkt_prices", "mkt_editorial", "mkt_sources"]) {
+  for (const t of ["mkt_locations", "mkt_companies", "mkt_prices", "mkt_facts", "mkt_editorial", "mkt_sources"]) {
     await sb.from(t).delete().eq("country", CC);
   }
   await sb.from("mkt_chains").delete().eq("country", CC);
@@ -174,6 +174,39 @@ Deno.test("price: converted to euro, same day overwrites, status counts it", asy
   assertEquals(b.before?.price_eur, 10);
   const status = await countryStatus(sb, CC);
   assert(status.includes("Цены: 1"), status);
+  await wipe();
+});
+
+Deno.test("fact: upsert by country+topic+text shows before/after, bad topic and date are refused", async () => {
+  await wipe();
+  const a = await addFact(sb, CC, {
+    topic: "market",
+    date: "2025",
+    text: "Оборот общепита",
+    value: "€1 млрд",
+    source: SRC,
+  });
+  assert(a.ok, JSON.stringify(a));
+  const b = await addFact(sb, CC, {
+    topic: "market",
+    date: "2025-06",
+    text: "Оборот общепита",
+    value: "€2 млрд",
+    source: SRC,
+  });
+  assert(b.ok);
+  assertEquals(b.before?.value, "€1 млрд");
+  assertEquals(b.after.value, "€2 млрд");
+  const { count } = await sb.from("mkt_facts").select("id", { count: "exact", head: true }).eq("country", CC);
+  assertEquals(count, 1);
+  const badTopic = await addFact(sb, CC, { topic: "gossip", text: "x", source: SRC });
+  assert(!badTopic.ok && badTopic.error.includes("topic"));
+  const badDate = await addFact(sb, CC, { topic: "deal", date: "2025-13", text: "x", source: SRC });
+  assert(!badDate.ok && badDate.error.includes("date"));
+  const noSrc = await addFact(sb, CC, { topic: "deal", text: "x", source: " " });
+  assert(!noSrc.ok && noSrc.error.includes("source"));
+  const { data: src } = await sb.from("mkt_sources").select("feeds").eq("country", CC).eq("feeds", "facts");
+  assertEquals(src?.length, 1);
   await wipe();
 });
 
