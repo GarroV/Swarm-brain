@@ -129,8 +129,19 @@ export const SECTIONS: readonly Section[] = [
         example: { chains: ["dodo", "dominos"], rows: [["Своя доставка", "да", "да"]] },
       },
       ratings: {
-        what: "оценки: chain, point, city, google (оценка), reviews (число отзывов), wolt",
-        example: [{ chain: "dodo", point: "Dodo Lozenets", city: "София", google: 4.6, reviews: 812, wolt: 9.2 }],
+        what:
+          "оценки: chain, point, city, google (0–5), reviews (число отзывов), wolt (0–10), glovo (% положительных, 0–100), bolt (0–5), yandex_eda (0–5); нужна хотя бы одна оценка, пустые поля — null; колонка в таблице появляется, если значение есть хотя бы в одной строке страны",
+        example: [{
+          chain: "dodo",
+          point: "Dodo Lozenets",
+          city: "София",
+          google: 4.6,
+          reviews: 812,
+          wolt: 9.2,
+          glovo: 94,
+          bolt: 4.5,
+          yandex_eda: null,
+        }],
       },
       dodo_monthly: {
         what: "продажи Dodo по месяцам из внутренней выгрузки: m (ГГГГ-ММ), usd, fx, eur, units, per",
