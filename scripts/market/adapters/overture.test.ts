@@ -90,6 +90,18 @@ Deno.test("overture: Dodo never becomes a discovered chain or a point", () => {
   assertEquals(chains, []);
 });
 
+Deno.test("overture: Cyrillic Dodo («Додо Пицца Беларусь») is skipped too", () => {
+  const { points, chains } = discover(
+    [
+      ...many(6, () => ({ brand: null, name: "Додо Пицца Беларусь" })),
+      ...many(6, () => ({ brand: "Додо", name: "Додо" })),
+    ],
+    cfg,
+  );
+  assertEquals(points, []);
+  assertEquals(chains, []);
+});
+
 Deno.test("overture: discovered key is unique against config keys, top 40 by count", () => {
   const rows = [
     ...many(3, () => ({ brand: "Dominos Fan Club" })),

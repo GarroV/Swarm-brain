@@ -33,7 +33,8 @@ export const MIN_UNBRANDED = 5;
 export const MIN_LOCALITIES = 3;
 export const MAX_DISCOVERED = 40;
 const MAX_KEY = 40;
-const DODO = /dodo\s*pizza|^dodo\b/i;
+// Латиница и кириллица: в Беларуси Overture держит пиццерии как «Додо Пицца Беларусь».
+const DODO = /dodo\s*pizza|^dodo\b|додо\s*пицц|^додо(?!\p{L})/iu;
 
 export type PlaceRow = {
   id: string;
