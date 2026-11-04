@@ -64,18 +64,40 @@ function summary(p: IngestPayload): string {
   return "";
 }
 
+/** Запись «запуск не удался» для источника, чья отправка не дошла до записи в журнал. */
+export function failureOf(
+  p: IngestPayload,
+  adapter: string,
+  e: unknown,
+): IngestPayload {
+  return {
+    country: p.country,
+    started_at: p.started_at,
+    source: p.source,
+    adapter,
+    failed: `отправка данных не удалась: ${String(e).slice(0, 300)}`,
+  };
+}
+
 async function runCountry(
   cfg: CountryConfig,
   args: { source?: string; since?: string; dry: boolean; today: string },
 ) {
   let failed = 0;
-  const send = async (p: IngestPayload) => {
+  const send = async (p: IngestPayload, adapter?: string) => {
     if (args.dry) return;
     try {
       console.log(`  → ${JSON.stringify(await postIngest(p))}`);
     } catch (e) {
       failed++;
       console.error(`  ✗ отправка: ${e}`);
+      // Функция могла умереть, не успев записать запуск (лимит процессорного времени, HTTP 546):
+      // без записи страна молча остаётся без свежести, и никто не видит почему (ES, PL, 2026-11).
+      if (adapter && !("failed" in p)) {
+        await postIngest(failureOf(p, adapter, e)).catch((e2) =>
+          console.error(`  ✗ запись сбоя: ${e2}`)
+        );
+      }
     }
   };
   const started_at = new Date().toISOString();
@@ -105,7 +127,7 @@ async function runCountry(
     });
     console.log(`${cfg.country} ${id}: ${summary(p)}`);
     if ("failed" in p) failed++;
-    await send(p);
+    await send(p, id);
   }
   return failed;
 }
