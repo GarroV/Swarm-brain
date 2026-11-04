@@ -17,7 +17,9 @@ async function wipe() {
   const { data: cos } = await sb.from("mkt_companies").select("id").eq("country", CC);
   const ids = (cos ?? []).map((r) => r.id);
   if (ids.length) await sb.from("mkt_financials").delete().in("company_id", ids);
-  for (const t of ["mkt_companies", "mkt_editorial", "mkt_sources"]) await sb.from(t).delete().eq("country", CC);
+  for (const t of ["mkt_companies", "mkt_facts", "mkt_editorial", "mkt_sources"]) {
+    await sb.from(t).delete().eq("country", CC);
+  }
   await sb.from("mkt_runs").delete().eq("country", CC);
   await sb.from("mkt_chains").delete().eq("country", CC);
   await sb.from("allowed_users").delete().in("telegram_id", [MEMBER, ADMIN]);
@@ -53,6 +55,17 @@ Deno.test("member reads an open country but cannot write; admin writes and the w
   assert(money.includes("Q Co") && money.includes("1000"), money);
   const { data: runs } = await sb.from("mkt_runs").select("source, stats").eq("country", CC);
   assertEquals(runs?.map((r) => [r.source, (r.stats as { by: number }).by]), [["mcp", ADMIN]]);
+  await wipe();
+});
+
+Deno.test("market_add_fact: admin only, readable through market_get facts", async () => {
+  await seed();
+  const FACT = { country: CC, topic: "timeline", date: "2025-03", text: "Выход на рынок", source: "https://x" };
+  assert((await call("market_add_fact", MEMBER, FACT)).includes("только админ"));
+  const done = await call("market_add_fact", ADMIN, FACT);
+  assert(done.startsWith("✅"), done);
+  const facts = await call("market_get", MEMBER, { country: CC, section: "facts", topic: "timeline" });
+  assert(facts.includes("Выход на рынок"), facts);
   await wipe();
 });
 
