@@ -157,7 +157,8 @@ export const SECTIONS: readonly Section[] = [
     id: "delivery",
     title: "Доставка и факты рынка",
     auto: "—",
-    manual: "market_set_block delivery_platforms / delivery_figures / market_facts",
+    manual:
+      "market_set_block delivery_platforms / delivery_figures / market_facts; market_add_fact — отдельный факт с темой (market, delivery, timeline, deal, insight, commentary), датой и источником",
     blocks: {
       delivery_platforms: {
         what: "платформы доставки: name, slot (цвет), note, years [{ year, revenue_eur }]",

@@ -7,6 +7,7 @@ import { allRows, must } from "../_shared/market/db.ts";
 import { canSeeCountry } from "../_shared/market/rules.ts";
 import { EDITORIAL_BLOCKS } from "../_shared/market/editorial.ts";
 import {
+  addFact,
   type Change,
   setBlock,
   setCompanyYear,
@@ -138,6 +139,11 @@ async function toolGet(args: Args): Promise<string> {
     const more = rows.length > GET_LIMIT ? `\n…больше ${GET_LIMIT} — сузь по chain или city` : "";
     return JSON.stringify(rows.slice(0, GET_LIMIT)) + more;
   }
+  if (section === "facts") {
+    let q = supabase.from("mkt_facts").select("topic, date, text, value, source").eq("country", c.cc);
+    if (typeof args.topic === "string" && args.topic) q = q.eq("topic", args.topic);
+    return JSON.stringify(await must<unknown[]>(q.order("topic").order("date").limit(GET_LIMIT), "facts"));
+  }
   if (section === "prices") {
     let q = supabase.from("mkt_prices").select("chain_key, item, size_cm, channel, price_eur, seen_on, source").eq(
       "country",
@@ -146,7 +152,9 @@ async function toolGet(args: Args): Promise<string> {
     if (chain) q = q.eq("chain_key", chain);
     return JSON.stringify(await must<unknown[]>(q.order("seen_on", { ascending: false }).limit(GET_LIMIT), "prices"));
   }
-  return `Ошибка: section — chains, locations, money, prices или блок: ${Object.keys(EDITORIAL_BLOCKS).join(", ")}`;
+  return `Ошибка: section — chains, locations, money, prices, facts или блок: ${
+    Object.keys(EDITORIAL_BLOCKS).join(", ")
+  }`;
 }
 
 // ── Запись ──────────────────────────────────────────────────────────────────
@@ -216,6 +224,16 @@ const toolSetPrice: ToolFn = (args) =>
       source: String(args.source ?? ""),
     }), `цена ${args.chain} ${args.item}`);
 
+const toolAddFact: ToolFn = (args) =>
+  answer(args, (cc) =>
+    addFact(supabase, cc, {
+      topic: String(args.topic ?? ""),
+      date: s(args.date),
+      text: String(args.text ?? ""),
+      value: s(args.value),
+      source: String(args.source ?? ""),
+    }), `факт ${args.topic}`);
+
 export const MARKET_TOOLS: Record<string, ToolFn> = {
   market_template: toolTemplate,
   market_status: toolStatus,
@@ -225,6 +243,7 @@ export const MARKET_TOOLS: Record<string, ToolFn> = {
   market_upsert_location: toolUpsertLocation,
   market_upsert_chain: toolUpsertChain,
   market_set_price: toolSetPrice,
+  market_add_fact: toolAddFact,
 };
 
 export { MARKET_TOOL_DEFINITIONS } from "./market-defs.ts";

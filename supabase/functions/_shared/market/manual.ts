@@ -365,6 +365,45 @@ export async function setPrice(
   return { ok: true, before, after };
 }
 
+// ── Факт рынка (раздел «Доставка и факты», сроки, сделки, выводы) ───────────
+
+export const FACT_TOPICS = ["market", "delivery", "timeline", "deal", "insight", "commentary"] as const;
+const PERIOD = /^\d{4}(-\d{2}(-\d{2})?)?$/;
+
+export type FactInput = { topic: string; date?: string; text: string; value?: string; source: string };
+type FactRow = { topic: string; date: string | null; text: string; value: string | null; source: string | null };
+
+/** Факт по (страна, тема, текст): тот же текст перезаписывает дату, значение и источник. */
+export async function addFact(sb: SupabaseClient, cc: string, input: FactInput): Promise<Change<FactRow>> {
+  const country = cc.toUpperCase();
+  const bad = baseCheck(country, input.source);
+  if (bad) return { ok: false, error: bad };
+  const topic = String(input.topic ?? "");
+  if (!(FACT_TOPICS as readonly string[]).includes(topic)) {
+    return { ok: false, error: `topic — ${FACT_TOPICS.join(", ")}` };
+  }
+  const factText = text(input.text);
+  if (!factText) return { ok: false, error: "text — формулировка факта" };
+  const date = text(input.date);
+  if (date !== null && !(PERIOD.test(date) && isPartialDate(date))) {
+    return { ok: false, error: "date — ГГГГ, ГГГГ-ММ или ГГГГ-ММ-ДД" };
+  }
+  const cols = "topic, date, text, value, source";
+  const before = await must<FactRow | null>(
+    sb.from("mkt_facts").select(cols).eq("country", country).eq("topic", topic).eq("text", factText).maybeSingle(),
+    "fact",
+  );
+  const after = await must<FactRow>(
+    sb.from("mkt_facts").upsert(
+      { country, topic, date, text: factText, value: text(input.value), source: input.source.trim() },
+      { onConflict: "country,topic,text" },
+    ).select(cols).single(),
+    "fact upsert",
+  );
+  await markManualFed(sb, country, ["facts"]);
+  return { ok: true, before, after };
+}
+
 // ── Блок ручной части (сводка, события, оценки, доставка…) ─────────────────
 
 export async function setBlock(
