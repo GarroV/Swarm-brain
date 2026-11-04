@@ -7,18 +7,18 @@ import {
   parseFinancialMetrics,
   parseNbsAverage,
 } from "../lib.ts";
+import { FX_CURRENCIES, fxNote, fxRate } from "../../../supabase/functions/_shared/market/fx.ts";
 import type { Adapter } from "./types.ts";
 
-const api = (cc: string, path: string) =>
-  `https://publicapi.dodois.io/${cc}/api/v1/${path}`;
+const api = (cc: string, path: string) => `https://publicapi.dodois.io/${cc}/api/v1/${path}`;
 const DEFAULT_DAYS = 8;
 const ecbMonth = (cur: string, month: string) =>
   `https://data-api.ecb.europa.eu/service/data/EXR/M.${cur}.EUR.SP00.A?format=jsondata&startPeriod=${month}&endPeriod=${month}`;
 
-const nbsMonth = (month: string) =>
-  `https://kurs.resenje.org/api/v1/currencies/eur/rates/${month}-01/count/31`;
+const nbsMonth = (month: string) => `https://kurs.resenje.org/api/v1/currencies/eur/rates/${month}-01/count/31`;
 
-/** Не евро — месячный курс ЕЦБ (леи и т. п.), динар — средний курс НБС: у ЕЦБ его нет. В начале месяца курса за прошлый ещё может не быть
+/** Не евро — месячный курс ЕЦБ (злотый, форинт и т. п.); динар — средний курс НБС, BYN/MDL/AMD/AZN/TJS — национальный банк, GEL/KGS — кросс по ЦБ РФ — среднее дневных
+ *  курсов национального банка (`_shared/market/fx.ts`): у ЕЦБ их нет. В начале месяца курса за прошлый ещё может не быть
  *  (ЕЦБ отвечает 404): тогда евро остаётся пустым, а точки и дни всё равно сохраняются —
  *  иначе один неопубликованный курс выбрасывал бы весь недельный сбор. */
 async function monthRate(
@@ -26,9 +26,13 @@ async function monthRate(
   month: string,
 ): Promise<Record<string, number> | undefined> {
   try {
-    const rate = currency === "RSD"
-      ? parseNbsAverage(await getJson(nbsMonth(month)), month)
-      : parseEcbSeries(await getJson(ecbMonth(currency, month)))[month];
+    let rate: number | null | undefined;
+    if (currency === "RSD") rate = parseNbsAverage(await getJson(nbsMonth(month)), month);
+    else if (FX_CURRENCIES.includes(currency)) {
+      const fx = await fxRate(currency, month);
+      console.log(`dodo: ${fxNote(currency, fx)}`);
+      rate = fx.rate;
+    } else rate = parseEcbSeries(await getJson(ecbMonth(currency, month)))[month];
     return rate ? { [currency]: rate } : undefined;
   } catch (e) {
     console.warn(
@@ -54,7 +58,7 @@ export const dodo: Adapter = {
   about: {
     url: "https://publicapi.dodois.io/<код страны>/api/v1/",
     what:
-      "пиццерии Dodo (unitinfo/all: адрес, координаты, BeginDateWork) и выручка по месяцам с числом пиццерий; курс к евро — ЕЦБ, для динара — НБС (kurs.resenje.org)",
+      "пиццерии Dodo (unitinfo/all: адрес, координаты, BeginDateWork) и выручка по месяцам с числом пиццерий; курс к евро — ЕЦБ, для динара — НБС (kurs.resenje.org), для BYN, MDL, AMD, AZN, TJS — национальный банк, для GEL, KGS — кросс через рубль по ЦБ РФ (среднее дневных курсов за месяц)",
   },
   async collect(cfg, opts) {
     const started_at = new Date().toISOString();
