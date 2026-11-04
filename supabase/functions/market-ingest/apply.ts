@@ -4,7 +4,7 @@
 // Линт просит короткое имя из карты импортов; см. пояснение в sprint-items.ts.
 // deno-lint-ignore-file no-import-prefix
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { matchPoints, samePlace } from "../_shared/market/geo.ts";
+import { matchPoints, PlaceIndex } from "../_shared/market/geo.ts";
 import { foldDailyOrders, isSuspiciousRun, shouldAutoClose, toEur } from "../_shared/market/rules.ts";
 import { allRows, ID_BATCH, locKey, must, recordRun } from "../_shared/market/db.ts";
 import { TRUSTED, type Verification } from "../_shared/market/types.ts";
@@ -278,10 +278,15 @@ async function applyMachine(
   // Одно место в OSM часто нарисовано дважды (узлом и контуром здания). Второй объект не находит
   // пары и раньше вставал отдельной точкой рядом с проверенной (Хорватия 02.10.2026: дубли в
   // 8–24 м от точек снимка). Такие «зеркала» — машинные строки без ручных правок — убираются.
-  const isMirror = (e: typeof all[number]) => isMachine(e) && samePlace(e, live.filter((x) => x.source_kind !== kind));
+  // Индексы строятся один раз: перебор «каждая с каждой» на тысячах точек валил функцию по
+  // лимиту процессора (546, #1108).
+  const otherLive = new PlaceIndex(live.filter((x) => x.source_kind !== kind));
+  const rejectedIdx = new PlaceIndex(rejected);
+  const pointsIdx = new PlaceIndex(points);
+  const isMirror = (e: typeof all[number]) => isMachine(e) && otherLive.has(e);
   // Машинная точка на месте отсеянного объекта (ложный brand, исключение в конфиге) — не точка
   // сети: убирается сразу. Если рядом есть и принятая точка той же сети, строку не трогаем.
-  const isWrong = (e: typeof all[number]) => isMachine(e) && samePlace(e, rejected) && !samePlace(e, points);
+  const isWrong = (e: typeof all[number]) => isMachine(e) && rejectedIdx.has(e) && !pointsIdx.has(e);
   const wrong = live.filter(isWrong).map((e) => e.id);
   const mirrors = [...live.filter(isMirror).map((e) => e.id), ...wrong];
   for (let i = 0; i < mirrors.length; i += ID_BATCH) {
@@ -290,7 +295,8 @@ async function applyMachine(
       "machine mirrors",
     );
   }
-  const r = matchPoints(live.filter((e) => !mirrors.includes(e.id)), points);
+  const gone = new Set(mirrors);
+  const r = matchPoints(live.filter((e) => !gone.has(e.id)), points);
   const seen = r.matched.map((m) => m.existing.id);
   for (let i = 0; i < seen.length; i += ID_BATCH) {
     await must(
@@ -301,13 +307,26 @@ async function applyMachine(
   }
   // Город источника дописывает пустое поле; известный город (из снимка, локатора, руки) не меняется.
   // Исключение — машинная точка («не проверено»): её город и есть город источника, он обновляется.
-  for (const m of r.matched.filter((m) => m.found.city)) {
-    const q = sb.from("mkt_locations").update({ city: m.found.city }).eq("id", m.existing.id);
-    await must(isMachine(m.existing) ? q : q.is("city", null), "machine city");
+  // Пачками по (город, машинная ли строка): одна точка — один запрос давали тысячи обращений за вызов.
+  const cityGroups = new Map<string, { city: string; machine: boolean; ids: string[] }>();
+  for (const m of r.matched) {
+    if (!m.found.city) continue;
+    const machine = isMachine(m.existing);
+    const gk = `${machine ? 1 : 0}|${m.found.city}`;
+    const g = cityGroups.get(gk) ?? { city: m.found.city, machine, ids: [] };
+    g.ids.push(m.existing.id);
+    cityGroups.set(gk, g);
+  }
+  for (const g of cityGroups.values()) {
+    for (let i = 0; i < g.ids.length; i += ID_BATCH) {
+      const q = sb.from("mkt_locations").update({ city: g.city }).in("id", g.ids.slice(i, i + ID_BATCH));
+      await must(g.machine ? q : q.is("city", null), "machine city");
+    }
   }
   // Вернувшаяся после автозакрытия точка открывается снова: закрытая машинная строка этого
   // источника, у которой в ответе нашлась пара. Закрытое руками (проверенное) остаётся закрытым.
-  const reopenIds = all.filter((e) => e.status === "closed" && isMachine(e) && samePlace(e, r.unmatched))
+  const unmatchedIdx = new PlaceIndex(r.unmatched);
+  const reopenIds = all.filter((e) => e.status === "closed" && isMachine(e) && unmatchedIdx.has(e))
     .map((e) => e.id);
   for (let i = 0; i < reopenIds.length; i += ID_BATCH) {
     await must(
@@ -327,7 +346,8 @@ async function applyMachine(
   const added = new Set<string>();
   // Находка рядом с уже известной точкой той же сети (в т.ч. закрытой) — второй объект того же
   // места, а не новая точка.
-  const fresh = r.unmatched.filter((f) => !samePlace(f, all));
+  const allIdx = new PlaceIndex(all);
+  const fresh = r.unmatched.filter((f) => !allIdx.has(f));
   const rows = fresh.map((f) => {
     const key = locKey(f.chain, f.lat, f.lng, f.address);
     added.add(key);
@@ -360,22 +380,32 @@ async function applyMachine(
   // Пропажа двигает только точки, которые привёл сам источник, — проверенные не трогаются.
   // Подозрительный прогон пропажу не считает вовсе.
   let closedAuto = 0;
+  // Пачками по одинаковому изменению (число недель, закрыть или нет): число запросов не растёт с числом точек.
+  const missGroups = new Map<number, { close: string[]; keep: string[] }>();
   for (const e of suspicious ? [] : r.missing.filter((m) => m.source_kind === kind)) {
     const weeks = e.missing_weeks + 1;
+    const g = missGroups.get(weeks) ?? { close: [], keep: [] };
     if (shouldAutoClose({ verification: e.verification, source_kind: e.source_kind, missing_weeks: weeks })) {
+      g.close.push(e.id);
+      closedAuto++;
+    } else g.keep.push(e.id);
+    missGroups.set(weeks, g);
+  }
+  for (const [weeks, g] of missGroups) {
+    for (let i = 0; i < g.close.length; i += ID_BATCH) {
       await must(
         sb.from("mkt_locations").update({
           missing_weeks: weeks,
           status: "closed",
           closed: today,
           verification_note: `пропала из ${SOURCE_TITLE[kind]} ${weeks} прогонов подряд`,
-        }).eq("id", e.id),
+        }).in("id", g.close.slice(i, i + ID_BATCH)),
         "machine close",
       );
-      closedAuto++;
-    } else {
+    }
+    for (let i = 0; i < g.keep.length; i += ID_BATCH) {
       await must(
-        sb.from("mkt_locations").update({ missing_weeks: weeks }).eq("id", e.id),
+        sb.from("mkt_locations").update({ missing_weeks: weeks }).in("id", g.keep.slice(i, i + ID_BATCH)),
         "machine missing",
       );
     }
