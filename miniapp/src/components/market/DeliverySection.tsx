@@ -85,23 +85,33 @@ export function DeliverySection({ bundle }: { bundle: MarketBundle }) {
       .map((c) => ({ big: c.head, text: c.more ? `${c.more}. ${c.text}` : c.text, href: firstUrl(c.source) }));
   }, [manual, ed.deliveryFigures, bundle.facts, now, ru]);
   const insights = useMemo(() => (manual ? [] : bundle.facts.filter((f) => f.topic === "insight" && !PROFIT.test(f.text))), [manual, bundle.facts]);
-  const platforms = ed.platforms;
-  if (!platforms.length && !figures.length && !insights.length) return null;
+  const platforms = ed.platforms.filter((p) => p.years.length > 0);
+  const undisclosed = ed.platforms.filter((p) => p.years.length === 0);
+  if (!ed.platforms.length && !figures.length && !insights.length) return null;
 
   const shown = allInsights ? insights : insights.slice(0, INSIGHTS);
   const lede = ed.texts.delivery ?? dt(
     "Площадки сами число заказов не публикуют. Цифры — из отчётности их местных юрлиц, публикаций и оценок; выручка площадки — это в основном комиссии, а не сумма заказов. Тексты — на языке источника.",
     "Platforms do not publish order counts. Figures come from their local entities' filings, press and estimates; platform revenue is mostly commissions, not order value.",
   );
-  const feeds: Array<"facts" | "editorial"> = platforms.length || manual ? ["editorial", "facts"] : ["facts"];
+  const feeds: Array<"facts" | "editorial"> = ed.platforms.length || manual ? ["editorial", "facts"] : ["facts"];
 
   return (
     <RefSection id="delivery" eyebrow={dt("Доставка", "Delivery")} title={ed.texts.delivery_title ?? dt("Рынок агрегаторов", "Delivery aggregator market")} lede={lede}>
       <div className="pgrid">
-        {platforms.length > 0 && (
+        {ed.platforms.length > 0 && (
           <div className="panel chartbox">
             <h3>{ed.texts.delivery_chart_title ?? dt("Выручка платформ, € млн", "Platform revenue, € m")}</h3>
-            <PlatformChart platforms={platforms} />
+            {platforms.length > 0 && <PlatformChart platforms={platforms} />}
+            {undisclosed.length > 0 && (
+              <ul className="small" style={{ margin: platforms.length ? "10px 0 0" : 0, paddingLeft: 18 }}>
+                {undisclosed.map((p) => (
+                  <li key={p.name}>
+                    <b>{p.name}</b>{p.note ? ` — ${p.note}` : ""} · {dt("выручка не раскрыта", "revenue not disclosed")}
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
         )}
         {figures.length > 0 && (

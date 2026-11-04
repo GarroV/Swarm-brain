@@ -184,7 +184,7 @@ export function parseEditorial(raw: unknown): Editorial {
       const name = str(r.name);
       if (!name) return null;
       const years = rows(r.years, (y) => (num(y.year) !== null && num(y.revenue_eur) !== null ? { year: y.year as number, revenue_eur: y.revenue_eur as number } : null));
-      return years.length ? { name, slot: num(r.slot) ?? 0, note: str(r.note), years } : null;
+      return { name, slot: num(r.slot) ?? 0, note: str(r.note), years };
     }),
     deliveryFigures: rows(e.delivery_figures, figure),
     marketFacts: rows(e.market_facts, figure),

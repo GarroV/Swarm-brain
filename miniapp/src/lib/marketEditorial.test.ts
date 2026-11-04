@@ -96,3 +96,14 @@ Deno.test("ratings: aggregator keys and aliases are read, null google kept, rows
   assertEquals([e.ratings[1].google, e.ratings[1].wolt], [null, 9.2]);
   assertEquals([e.ratings[2].glovo, e.ratings[2].bolt, e.ratings[2].yandex], [90, 4.3, 4.7]);
 });
+
+Deno.test("delivery platforms without revenue years are kept with empty years", () => {
+  const e = parseEditorial({
+    delivery_platforms: [
+      { name: "Glovo", slot: 1, note: "n", years: [] },
+      { name: "Yandex Eats", years: [{ year: 2024, revenue_eur: 5 }, { year: "x" }] },
+      { note: "no name", years: [] },
+    ],
+  });
+  assertEquals(e.platforms.map((p) => [p.name, p.years.length]), [["Glovo", 0], ["Yandex Eats", 1]]);
+});
