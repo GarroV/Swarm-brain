@@ -80,3 +80,19 @@ Deno.test("location dates from editorial override the collected opening date by 
   assertEquals(out[1], locs[1]);
   assertEquals(locs[0].opened, "2023-04-24");
 });
+
+Deno.test("ratings: aggregator keys and aliases are read, null google kept, rows without any rating dropped", () => {
+  const e = parseEditorial({
+    ratings: [
+      { chain: "dodo", point: "A", city: "X", google: 4.5, reviews: 10, wolt: 9, glovo_pct: 95, bolt_food: 4.4 },
+      { chain: "dominos", point: "B", city: "Y", google: null, wolt: 9.2 },
+      { chain: "dodo", point: "C", glovo: 90, bolt: 4.3, yandex_eda: 4.7 },
+      { chain: "dodo", point: "D", google: null, reviews: 5 },
+      { chain: "dodo", google: 4 },
+    ],
+  });
+  assertEquals(e.ratings.map((r) => r.point), ["A", "B", "C"]);
+  assertEquals([e.ratings[0].glovo, e.ratings[0].bolt, e.ratings[0].yandex], [95, 4.4, null]);
+  assertEquals([e.ratings[1].google, e.ratings[1].wolt], [null, 9.2]);
+  assertEquals([e.ratings[2].glovo, e.ratings[2].bolt, e.ratings[2].yandex], [90, 4.3, 4.7]);
+});

@@ -25,7 +25,17 @@ export type EdDodoMonth = { m: string; usd: number; fx: number; eur: number; uni
 export type EdDodoOps = { u: string; m: number; rev: number; agg: number; din: number; own: number; o: number; oagg: number; odin: number; oown: number };
 export type EdBasket = { col: string; one: number; two: number; promo: string };
 export type EdOpsModel = { chains: string[]; rows: string[][] };
-export type EdRating = { chain: string; point: string; city: string; google: number; reviews: number | null; wolt: number | null };
+export type EdRating = {
+  chain: string;
+  point: string;
+  city: string;
+  google: number | null;
+  reviews: number | null;
+  wolt: number | null;
+  glovo: number | null;
+  bolt: number | null;
+  yandex: number | null;
+};
 export type EdPlatform = { name: string; slot: number; note: string | null; years: Array<{ year: number; revenue_eur: number }> };
 export type EdFigure = { big: string; text: string; source: string | null };
 /** company — рег. номер или начало названия юрлица: для строки, у которой нет сети в справочнике. */
@@ -164,11 +174,12 @@ export function parseEditorial(raw: unknown): Editorial {
     }),
     basket: rows(e.basket, (r) => (str(r.col) && num(r.one) !== null ? { col: r.col as string, one: r.one as number, two: num(r.two) ?? 0, promo: str(r.promo) ?? "" } : null)),
     opsModel: parseOpsModel(e.ops_model),
-    ratings: rows(e.ratings, (r) =>
-      str(r.chain) && str(r.point) && num(r.google) !== null
-        ? { chain: r.chain as string, point: r.point as string, city: str(r.city) ?? "", google: r.google as number, reviews: num(r.reviews), wolt: num(r.wolt) }
-        : null
-    ),
+    ratings: rows(e.ratings, (r) => {
+      if (!str(r.chain) || !str(r.point)) return null;
+      const google = num(r.google), wolt = num(r.wolt), glovo = num(r.glovo) ?? num(r.glovo_pct), bolt = num(r.bolt) ?? num(r.bolt_food), yandex = num(r.yandex_eda);
+      if ([google, wolt, glovo, bolt, yandex].every((x) => x === null)) return null;
+      return { chain: r.chain as string, point: r.point as string, city: str(r.city) ?? "", google, reviews: num(r.reviews), wolt, glovo, bolt, yandex };
+    }),
     platforms: rows(e.delivery_platforms, (r) => {
       const name = str(r.name);
       if (!name) return null;
