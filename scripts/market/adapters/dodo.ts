@@ -67,6 +67,7 @@ export const dodo: Adapter = {
       const units = parseDodoUnits(
         await getJson(api(cfg.dodoCode, "unitinfo/all")),
         cfg.dodoNotOpened,
+        cfg.dodoCity,
       );
       const days = [];
       for (const date of daysBetween(since, opts.today)) {

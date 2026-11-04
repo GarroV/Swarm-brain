@@ -43,6 +43,8 @@ export type CountryConfig = {
    *  имя точки в API («Budapest-1») → причина. Точка встаёт со статусом `planned` и без даты открытия.
    *  Убрать запись, когда пиццерия откроется. */
   dodoNotOpened?: Record<string, string>;
+  /** Город пиццерии Dodo, когда API отдаёт неверный (`LocalityName`): имя точки → город. */
+  dodoCity?: Record<string, string>;
   /** Границы страны [запад, юг, восток, север] — для адаптера overture (фильтр по bbox). */
   bbox?: [number, number, number, number];
   /** Откуда карта точек: «osm» (Overpass, по умолчанию) или «overture» (Overture Maps —

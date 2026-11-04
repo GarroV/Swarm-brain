@@ -503,3 +503,11 @@ Deno.test("parseDodoUnits: a unit listed in dodoNotOpened is planned, without an
   assertEquals([t?.planned, t?.open, t?.opened], [true, false, null]);
   assertEquals(units.find((u) => u.name === "Tartu-1")?.planned, undefined);
 });
+
+Deno.test("parseDodoUnits: dodoCity overrides a wrong city from the API", () => {
+  const units = parseDodoUnits(JSON.parse(fixture("dodo-units.json")), {}, {
+    "Tartu-1": "Tartu linn",
+  });
+  assertEquals(units.find((u) => u.name === "Tartu-1")?.city, "Tartu linn");
+  assertEquals(units.find((u) => u.name === "Tallinn-1")?.city, "Tallinn");
+});

@@ -113,12 +113,16 @@ function openedDate(raw: string | null | undefined): string | null {
 export function parseDodoUnits(
   raw: RawUnit[],
   notOpened: Record<string, string> = {},
+  cityFix: Record<string, string> = {},
 ): DodoUnit[] {
-  return raw.filter((u) => u.Type === 1).map((u) =>
-    Object.hasOwn(notOpened, u.Name)
-      ? { ...unitOf(u), opened: null, open: false, planned: true }
-      : unitOf(u)
-  );
+  return raw.filter((u) => u.Type === 1).map((u) => {
+    const unit = Object.hasOwn(cityFix, u.Name)
+      ? { ...unitOf(u), city: cityFix[u.Name] }
+      : unitOf(u);
+    return Object.hasOwn(notOpened, u.Name)
+      ? { ...unit, opened: null, open: false, planned: true }
+      : unit;
+  });
 }
 
 function unitOf(u: RawUnit): DodoUnit {
