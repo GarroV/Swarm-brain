@@ -487,7 +487,7 @@ async function applyDodo(
           lat: u.lat,
           lng: u.lng,
           opened: u.opened,
-          status: u.open ? "open" : "closed",
+          status: u.planned ? "planned" : u.open ? "open" : "closed",
           source: "https://publicapi.dodois.io",
           source_kind: "dodo",
           verification: "internal",

@@ -110,8 +110,23 @@ function openedDate(raw: string | null | undefined): string | null {
 }
 
 /** Только пиццерии (Type=1); офисы и производства не точки рынка. */
-export function parseDodoUnits(raw: RawUnit[]): DodoUnit[] {
-  return raw.filter((u) => u.Type === 1).map((u) => ({
+export function parseDodoUnits(
+  raw: RawUnit[],
+  notOpened: Record<string, string> = {},
+  cityFix: Record<string, string> = {},
+): DodoUnit[] {
+  return raw.filter((u) => u.Type === 1).map((u) => {
+    const unit = Object.hasOwn(cityFix, u.Name)
+      ? { ...unitOf(u), city: cityFix[u.Name] }
+      : unitOf(u);
+    return Object.hasOwn(notOpened, u.Name)
+      ? { ...unit, opened: null, open: false, planned: true }
+      : unit;
+  });
+}
+
+function unitOf(u: RawUnit): DodoUnit {
+  return ({
     name: u.Name,
     city: u.AddressDetails?.LocalityName ?? null,
     address: u.AddressText ?? null,
@@ -120,7 +135,7 @@ export function parseDodoUnits(raw: RawUnit[]): DodoUnit[] {
     opened: openedDate(u.BeginDateWork),
     open: u.State === 1,
     organization: u.OrganizationName ?? null,
-  }));
+  });
 }
 
 const MONTHS = [
