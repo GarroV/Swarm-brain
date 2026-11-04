@@ -93,9 +93,17 @@ export function canAccessDraftMeeting(
  * Удалить черновик может только записавший (запустил бота или рекордер), не совладелец, — и только
  * когда владелец у встречи один. Черновик групповой встречи — одна строка на всех: удаление стирало
  * его у остальных (issue #818). Групповую встречу каждый скрывает у себя (`canHideDraftMeeting`).
+ * Администратор удаляет любой черновик, но только своего пространства (02.11.2026).
  */
-export function canDeleteDraftMeeting(meeting: DraftMeetingRow | null | undefined, viewerId: number): boolean {
-  return !!meeting && recorderIds(meeting).includes(viewerId) && !hasCoOwners(meeting);
+export function canDeleteDraftMeeting(
+  meeting: DraftMeetingRow | null | undefined,
+  viewerId: number,
+  isAdmin = false,
+  viewerGroupId?: string | null,
+): boolean {
+  if (!meeting) return false;
+  if (isAdmin) return !!viewerGroupId && meeting.group_id === viewerGroupId;
+  return recorderIds(meeting).includes(viewerId) && !hasCoOwners(meeting);
 }
 
 /** Скрыть черновик у себя — любой его владелец, когда владельцев больше одного (issue #818). */

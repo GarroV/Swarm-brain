@@ -1,4 +1,5 @@
 import { handleChatGptDesktop } from "./chatgpt-desktop.ts";
+import { meetingEntryIsLive } from "../_shared/meeting-entry-live.ts";
 // deno-fmt-ignore-file
 // Легаси-файл вне канона формата (решение D013): гейт `scripts/check` проверяет формат затронутого
 // файла ЦЕЛИКОМ, а переформатирование этого — ~700 строк дифа поверх параллельных веток. Новый код
@@ -2895,7 +2896,7 @@ async function routeRequest(req: Request): Promise<Response> {
         return json(data, 200, origin);
       }
       if (req.method === "DELETE") {
-        // Удаляют владелец и админ; личную — только владелец.
+        // Админ удаляет любую встречу своего пространства, включая личную.
         const meeting = await getMeetingSecure(supabase, meetingId, {
           groupId,
           telegramId: telegram_id,
@@ -2924,7 +2925,8 @@ async function routeRequest(req: Request): Promise<Response> {
     const status = url.searchParams.get("status") ?? "awaiting_review";
     let q = supabase.from("meetings")
       .select(
-        "id, title, source, identity_kind, started_at, ended_at, status, has_draft_notes, recorders, co_owners, attendees, entry_id, created_at, recorded_by, agent_version, recorded_seconds, summary_status, agent_last_seen_at, agent_last_recording",
+        "id, title, source, identity_kind, started_at, ended_at, status, has_draft_notes, recorders, co_owners, attendees, entry_id, created_at, recorded_by, agent_version, recorded_seconds, summary_status, agent_last_seen_at, agent_last_recording" +
+          (status === "in_base" ? ", published_entry:entries!entry_id!inner(id)" : ""),
         { count: "exact" },
       )
       .eq("group_id", groupId)
@@ -2940,6 +2942,7 @@ async function routeRequest(req: Request): Promise<Response> {
     // пригляд «у кого копится» — агрегат без контента GET /admin/review-counts.
     // Свои = записывал ИЛИ совладелец: участник встречи с аккаунтом SWARM (решение 2026-09-25).
     q = q.or(draftMeetingsOwnScopedFilter(telegram_id));
+    if (status === "in_base") q = q.is("published_entry.archived_at", null);
     const { data, error, count } = await q;
     if (error) return serverError(origin, "agent-meetings list", error);
     // has_draft_notes вместо draft_notes_md: список рисует название/дату/статус, а текст
@@ -2990,9 +2993,12 @@ async function routeRequest(req: Request): Promise<Response> {
       mId,
     ).maybeSingle();
     const meeting = mRow as Record<string, unknown> | null;
-    // Черновик (в т.ч. правка, публикация, удаление) — только записавшему; админ НЕ исключение.
+    // Чтение/правка/публикация — по прежним правам. Для DELETE у админа
+    // отдельное право удаления любого черновика своего пространства.
+    const adminDelete = !!agentMeetingMatch && req.method === "DELETE" && isAdmin &&
+      canDeleteDraftMeeting(meeting as DraftMeetingRow | null, telegram_id, true, groupId);
     if (
-      !canAccessDraftMeeting(
+      !adminDelete && !canAccessDraftMeeting(
         meeting as DraftMeetingRow | null,
         telegram_id,
         isAdmin,
@@ -3002,7 +3008,7 @@ async function routeRequest(req: Request): Promise<Response> {
       return apiErr(404, "Not found", origin);
     }
     // Сужение для компилятора: гард уже вернул 404 при meeting=null. Строка недостижима.
-    if (!meeting) return apiErr(404, "Not found", origin);
+    if (!meeting || !await meetingEntryIsLive(supabase, meeting)) return apiErr(404, "Not found", origin);
 
     // POST /:id/hide — скрыть черновик групповой встречи у себя (issue #818). Строка общая на
     // всех владельцев, поэтому не удаляем, а отмечаем смотрящего в hidden_for.
@@ -3214,18 +3220,21 @@ async function routeRequest(req: Request): Promise<Response> {
         return apiErr(409, "Уже в базе — удаляйте через раздел «База»", origin);
       }
       // Совладелец по приглашению черновик не удаляет — он общий (решение владельца 2026-09-25).
-      // Групповую встречу не удаляет никто: она стёрлась бы у всех — её скрывают у себя (#818).
-      if (canHideDraftMeeting(meeting as DraftMeetingRow, telegram_id)) {
+      // Сотрудник групповую встречу только скрывает (#818); админ может удалить у всех.
+      if (!isAdmin && canHideDraftMeeting(meeting as DraftMeetingRow, telegram_id)) {
         return apiErr(409, "This meeting has several owners — hide it for yourself instead", origin);
       }
-      if (!canDeleteDraftMeeting(meeting as DraftMeetingRow, telegram_id)) {
+      if (!canDeleteDraftMeeting(meeting as DraftMeetingRow, telegram_id, isAdmin, groupId)) {
         return apiErr(
           403,
           "Only the person who recorded this meeting can delete the draft",
           origin,
         );
       }
-      await supabase.from("meetings").delete().eq("id", mId);
+      const { data: deleted, error } = await supabase.from("meetings").delete()
+        .eq("id", mId).eq("group_id", groupId).select("id").maybeSingle();
+      if (error) return serverError(origin, "agent-meetings delete", error);
+      if (!deleted) return apiErr(404, "Not found", origin);
       return new Response(null, { status: 204, headers: corsHeaders(origin) });
     }
 

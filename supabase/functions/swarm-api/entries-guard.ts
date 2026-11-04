@@ -121,7 +121,7 @@ export async function getEntrySecure(
  *
  * Правило — `_shared/entries/meeting-rights.ts` (решение владельца 30.09.2026): общую встречу
  * правят владелец, участники (по e-mail из `metadata.attendees`) и админ, удаляют — владелец
- * и админ; личную — только владелец, без обхода для админа.
+ * и админ. С 02.11.2026 админ может удалить и личную встречу, не получая права её читать.
  *
  * Коды — как у getEntrySecure: 404, если встречи нет, она в чужом воркспейсе или невидима
  * (неотличимо); 403, если видна, но действие не разрешено.
@@ -143,6 +143,16 @@ export async function getMeetingSecure(
     action: MeetingAction;
   },
 ): Promise<EntryRow> {
+  // 02.11.2026: админ удаляет любую встречу своего пространства. Это право
+  // только DELETE: чтение, правка и смена приватности остаются по прежним правилам.
+  if (action === "delete" && isAdmin) {
+    const { data } = await onlyLiveEntries(supabase.from("entries").select(ENTRY_COLUMNS))
+      .eq("id", id).eq("group_id", groupId).eq("entry_type", "meeting").maybeSingle();
+    if (!data || !groupId || data.group_id !== groupId || data.entry_type !== "meeting") {
+      throw new EntryAccessError(404, "Not found");
+    }
+    return data as EntryRow;
+  }
   // Видимость и воркспейс — общим гардом (он же даёт неотличимый 404).
   const entry = await getEntrySecure(supabase, id, { groupId, telegramId, requireMeeting: true });
   const viewer = { id: telegramId, email, isAdmin };

@@ -1082,7 +1082,7 @@ function ActionsPanel({
   // Исключение — встреча 1-1 (#641): «Личное» сохранит одну запись, видную обоим.
   const oneOnOne = isAgent ? item.data.one_on_one ?? null : null;
   const sharedOwners = isAgent && hasSeveralOwners(item.data) && !oneOnOne;
-  const canReject = !isAgent || canDeleteDraft(item.data, me?.telegram_id) || canHideDraft(item.data);
+  const canReject = !isAgent || canDeleteDraft(item.data, me?.telegram_id, me?.is_admin) || canHideDraft(item.data);
   // Встреча уже согласована и лежит в базе (режим «Все встречи»). Решение по ней принято —
   // выбор хранилища и «Согласовать» бессмысленны (владелец 2026-08-21: «почему на уже
   // сохранённых встречах до сих пор доступен выбор сохранения в разные пространства?»).
@@ -1206,7 +1206,7 @@ function ActionsPanel({
   };
 
   const confirmLabel = confirmState === "busy" ? "…" : confirmState === "done" ? "Готово" : isAgent ? "Опубликовать" : "Согласовать";
-  const rejectLabel = rejectState === "busy" ? "…" : rejectState === "done" ? "Удалено" : "Отклонить";
+  const rejectLabel = rejectState === "busy" ? "…" : rejectState === "done" ? dt("Удалено", "Deleted") : me?.is_admin ? dt("Удалить", "Delete") : "Отклонить";
   const reclassLabel = reclassState === "busy" ? "…" : reclassState === "done" ? "В заметках" : "Не встреча → в заметки";
 
   return (
@@ -1341,7 +1341,7 @@ const MODE_SEGS = [
 ];
 
 export function MeetAdminScreen({ initialMode = "review" }: { initialMode?: "review" | "all" } = {}) {
-  const { pop, toast } = useRoyNav();
+  const { pop, toast, me } = useRoyNav();
   const dt = useDt();
   const confirm = useConfirm();
 
@@ -1574,14 +1574,14 @@ export function MeetAdminScreen({ initialMode = "review" }: { initialMode?: "rev
       await deleteMeeting(item.data.id);
       toast("Встреча удалена");
       await animateRemove(item.data.id);
-    } else if (canHideDraft(item.data)) {
+    } else if (!me?.is_admin && canHideDraft(item.data)) {
       // Групповая встреча — одна строка на всех: скрываем у себя, у остальных остаётся (#818).
       if (!(await confirm({ title: `Скрыть «${itemTitle(item)}» у себя?`, description: "Встреча пропадёт из вашей вычитки. У остальных участников она останется." }))) return;
       await hideAgentMeeting(item.data.id);
       toast("Встреча скрыта у вас");
       await animateRemove(item.data.id);
     } else {
-      if (!(await confirm({ title: `Удалить черновик «${itemTitle(item)}»?`, description: "Расшифровка и тезисы будут удалены без возможности восстановления." }))) return;
+      if (!(await confirm({ title: `Удалить черновик «${itemTitle(item)}»?`, description: me?.is_admin ? dt("Встреча, расшифровка и тезисы будут удалены у всех участников без возможности восстановления.", "The meeting, transcript and summary will be permanently deleted for all participants.") : "Расшифровка и тезисы будут удалены без возможности восстановления." }))) return;
       await deleteAgentMeeting(item.data.id);
       toast("Черновик удалён");
       await animateRemove(item.data.id);
