@@ -1,3 +1,4 @@
+import { CHATGPT_SETUP_SCRIPT } from "../_shared/chatgpt-setup-script.ts";
 // swarm-setup — отдаёт bash-скрипт авто-подключения Claude Desktop и Claude Code (macOS).
 // Запускается пользователем командой из веба (Настройки → Claude Desktop): скрипт скачивается во
 // временный файл, сверяется его SHA-256 (`shasum -a 256 -c`) и только потом запускается, токен — в
@@ -34,7 +35,7 @@ Deno.serve(async (req: Request) => {
       headers: { "Content-Type": "text/plain; charset=utf-8", ...NO_CACHE, ...CORS },
     });
   }
-  return new Response(SETUP_SCRIPT, {
+  return new Response(path.endsWith("/chatgpt") ? CHATGPT_SETUP_SCRIPT : SETUP_SCRIPT, {
     status: 200,
     headers: { "Content-Type": "text/plain; charset=utf-8", ...NO_CACHE, ...CORS },
   });

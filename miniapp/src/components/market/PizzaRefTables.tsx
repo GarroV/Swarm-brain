@@ -43,6 +43,8 @@ export function PizzaRatings({ ed, color, name }: Props) {
   const dt = useDt();
   const ru = useLang() === "ru";
   if (!ed.ratings.length) return null;
+  const has = (k: "glovo" | "bolt" | "yandex") => ed.ratings.some((r) => r[k] !== null);
+  const cell = (v: number | null) => (v === null ? "—" : dec(v, 1, ru));
   return (
     <>
       <div className="sec-head" style={{ marginTop: 12 }}>
@@ -59,6 +61,9 @@ export function PizzaRatings({ ed, color, name }: Props) {
               <th className="r">{dt("Отзывов", "Reviews")}</th>
               <th />
               <th className="r">{dt("Wolt, из 10", "Wolt, of 10")}</th>
+              {has("glovo") && <th className="r">{dt("Glovo, % 👍", "Glovo, % positive")}</th>}
+              {has("bolt") && <th className="r">{dt("Bolt, из 5", "Bolt, of 5")}</th>}
+              {has("yandex") && <th className="r">{dt("Яндекс Еда, из 5", "Yandex Eda, of 5")}</th>}
             </tr>
           </thead>
           <tbody>
@@ -66,10 +71,13 @@ export function PizzaRatings({ ed, color, name }: Props) {
               <tr key={`${r.chain}|${r.point}`}>
                 <td style={{ whiteSpace: "nowrap" }}><Sw color={color(r.chain)} inline />{name(r.chain)} {r.point}</td>
                 <td>{r.city}</td>
-                <td className="r"><b>{dec(r.google, 1, ru)}</b></td>
+                <td className="r"><b>{cell(r.google)}</b></td>
                 <td className="r">{r.reviews === null ? "—" : intFmt(r.reviews, ru)}</td>
-                <td style={{ minWidth: 120 }}><div className="hbar" style={{ width: barWidth(r.google), background: color(r.chain) }} /></td>
-                <td className="r">{r.wolt === null ? "—" : dec(r.wolt, 1, ru)}</td>
+                <td style={{ minWidth: 120 }}>{r.google !== null && <div className="hbar" style={{ width: barWidth(r.google), background: color(r.chain) }} />}</td>
+                <td className="r">{cell(r.wolt)}</td>
+                {has("glovo") && <td className="r">{r.glovo === null ? "—" : dec(r.glovo, 0, ru)}</td>}
+                {has("bolt") && <td className="r">{cell(r.bolt)}</td>}
+                {has("yandex") && <td className="r">{cell(r.yandex)}</td>}
               </tr>
             ))}
           </tbody>

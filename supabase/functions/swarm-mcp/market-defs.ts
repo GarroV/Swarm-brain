@@ -28,9 +28,16 @@ export const MARKET_TOOL_DEFINITIONS = [
   },
   {
     name: "market_get",
-    description: "Что записано по стране сейчас. section: chains, locations (фильтры chain, city), money, prices " +
+    description:
+      "Что записано по стране сейчас. section: chains, locations (фильтры chain, city), money, prices, facts (фильтр topic) " +
       "или имя блока ручной части (summary, events, ratings…). Перед правкой блока — прочитай его целиком.",
-    inputSchema: schema({ country: CC, section: str("Раздел или блок"), chain: str("Ключ сети"), city: str("Город") }, [
+    inputSchema: schema({
+      country: CC,
+      section: str("Раздел или блок"),
+      chain: str("Ключ сети"),
+      city: str("Город"),
+      topic: str("Тема фактов: market, delivery, timeline, deal, insight, commentary"),
+    }, [
       "country",
       "section",
     ]),
@@ -48,8 +55,9 @@ export const MARKET_TOOL_DEFINITIONS = [
   },
   {
     name: "market_set_company_year",
-    description: "Выручка юрлица за год (раздел «Деньги»). Валюта EUR или с фиксированным курсом (BGN, HRK) — " +
-      "пересчёт в евро сделает Swarm. Прибыль не вносится. Только админ.",
+    description:
+      "Выручка юрлица за год (раздел «Деньги»). Валюта EUR, BGN, HRK (фиксированный курс) или BYN, MDL, AMD, AZN, TJS, GEL, KGS " +
+      "(среднегодовой курс национального банка, он пишется в note) — пересчёт в евро сделает Swarm; курс не получен — отказ. Прибыль не вносится. Только админ.",
     inputSchema: schema({
       country: CC,
       chain: str("Ключ сети, если юрлицо — оператор сети"),
@@ -57,7 +65,7 @@ export const MARKET_TOOL_DEFINITIONS = [
       reg_id: str("Регистрационный номер (ЕИК, OIB, МБ…)"),
       year: numb("Год отчёта"),
       revenue: numb("Выручка от продаж, полной суммой (не в тысячах)"),
-      currency: str("EUR, BGN или HRK"),
+      currency: str("EUR, BGN, HRK, BYN, MDL, AMD, AZN, TJS, GEL или KGS"),
       employees: numb("Число сотрудников, если есть в отчёте"),
       source: SRC,
       note: str("Пометка: что именно за строка отчёта, консолидировано ли"),
@@ -98,18 +106,32 @@ export const MARKET_TOOL_DEFINITIONS = [
   },
   {
     name: "market_set_price",
-    description: "Цена позиции меню сети на дату (раздел цен у пицца-сетей). Только админ.",
+    description: "Цена позиции меню сети на дату (раздел цен у пицца-сетей). Валюта как у market_set_company_year; " +
+      "BYN, MDL, AMD, AZN, TJS — по курсу национального банка, GEL, KGS — кросс через рубль по ЦБ РФ, на seen_on, курс пишется в источник. Только админ.",
     inputSchema: schema({
       country: CC,
       chain: str("Ключ сети"),
       item: str("Позиция, например Margherita"),
       price: numb("Цена"),
-      currency: str("EUR, BGN или HRK"),
+      currency: str("EUR, BGN, HRK, BYN, MDL, AMD, AZN, TJS, GEL или KGS"),
       size_cm: numb("Размер пиццы, см"),
       channel: str("Канал: delivery, pickup, restaurant"),
       item_type: str("Тип позиции"),
       seen_on: str("Дата цены ГГГГ-ММ-ДД, по умолчанию сегодня"),
       source: SRC,
     }, ["country", "chain", "item", "price", "currency", "source"]),
+  },
+  {
+    name: "market_add_fact",
+    description: "Факт рынка с датой и источником: оборот рынка, доставка, сроки, сделки, выводы. Тот же текст в той " +
+      "же теме перезаписывается. Нужен для проработанной страницы страны. Только админ.",
+    inputSchema: schema({
+      country: CC,
+      topic: str("Тема: market, delivery, timeline, deal, insight или commentary"),
+      date: str("Дата или период: ГГГГ, ГГГГ-ММ или ГГГГ-ММ-ДД"),
+      text: str("Формулировка факта"),
+      value: str("Цифра или значение, как показать на плитке: «€1,2 млрд»"),
+      source: SRC,
+    }, ["country", "topic", "text", "source"]),
   },
 ];

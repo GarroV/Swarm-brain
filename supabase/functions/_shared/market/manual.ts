@@ -7,6 +7,7 @@
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { locKey, markManualFed, must } from "./db.ts";
 import { EDITORIAL_BLOCKS, type EditorialBlock, parseEditorial } from "./editorial.ts";
+import { FX_CURRENCIES, FxError, fxNote, type FxRate, fxRate } from "./fx.ts";
 
 export type Change<T> = { ok: true; before: T | null; after: T } | { ok: false; error: string };
 
@@ -14,13 +15,44 @@ const now = () => new Date().toISOString();
 const COUNTRY = /^[A-Z]{2}$/;
 const KEY = /^[a-z0-9][a-z0-9-]{0,39}$/;
 
-/** Фиксированные курсы к евро: валюты, привязанные к евро навсегда (лев, куна). Плавающий курс
- *  на дату отчёта модель не знает — такую сумму просим переводить в евро самому, с пометкой. */
+/** Фиксированные курсы к евро: валюты, привязанные к евро навсегда (лев, куна). Остальные валюты из `fx.ts`
+ *  (BYN, MDL, AMD, AZN, TJS) пересчитываются по курсу национального банка при записи; прочие — отказ с причиной. */
 export const FIXED_EUR_RATES: Readonly<Record<string, number>> = { EUR: 1, BGN: 1.95583, HRK: 7.5345 };
 
-export function toEur(amount: number, currency: string): number | null {
-  const rate = FIXED_EUR_RATES[currency.toUpperCase()];
-  return rate ? Math.round(amount / rate) : null;
+export type FxFetch = (currency: string, period: string) => Promise<FxRate>;
+type Eur = { ok: true; rate: number; note: string | null; convert: (amount: number) => number } | {
+  ok: false;
+  error: string;
+};
+
+/** Курс к евро для записи: фиксированный или курс банка на период («ГГГГ-ММ-ДД» для цены, «ГГГГ» для годовой выручки).
+ *  Курс не получен — отказ с причиной, пустой евро не пишем. */
+export async function eurRate(currency: unknown, period: string, fx: FxFetch = fxRate): Promise<Eur> {
+  const cur = String(currency ?? "").toUpperCase();
+  const fixed = FIXED_EUR_RATES[cur];
+  if (fixed) {
+    return {
+      ok: true,
+      rate: fixed,
+      note: fixed === 1 ? null : `по фиксированному курсу ${fixed}`,
+      convert: (a) => a / fixed,
+    };
+  }
+  if (!FX_CURRENCIES.includes(cur)) {
+    return {
+      ok: false,
+      error: `currency: ${
+        [...Object.keys(FIXED_EUR_RATES), ...FX_CURRENCIES].join(", ")
+      }; другую валюту переведи в EUR сам и укажи курс в note`,
+    };
+  }
+  try {
+    const r = await fx(cur, period);
+    return { ok: true, rate: r.rate, note: fxNote(cur, r), convert: (a) => a / r.rate };
+  } catch (e) {
+    if (e instanceof FxError) return { ok: false, error: `курс не получен, запись не сделана — ${e.message}` };
+    throw e;
+  }
 }
 
 const text = (v: unknown): string | null => (typeof v === "string" && v.trim() ? v.trim() : null);
@@ -98,6 +130,7 @@ export async function setCompanyYear(
   sb: SupabaseClient,
   cc: string,
   input: CompanyYearInput,
+  fx: FxFetch = fxRate,
 ): Promise<Change<FinRow & { company: string }>> {
   const country = cc.toUpperCase();
   const bad = baseCheck(country, input.source);
@@ -109,15 +142,9 @@ export async function setCompanyYear(
   }
   const revenue = num(input.revenue);
   if (revenue === null || revenue < 0) return { ok: false, error: "revenue — выручка числом, без пробелов" };
-  const revenue_eur = toEur(revenue, String(input.currency ?? ""));
-  if (revenue_eur === null) {
-    return {
-      ok: false,
-      error: `currency: с фиксированным курсом — ${
-        Object.keys(FIXED_EUR_RATES).join(", ")
-      }; другую валюту переведи в EUR сам и укажи курс в note`,
-    };
-  }
+  const eur = await eurRate(input.currency, String(year), fx);
+  if (!eur.ok) return { ok: false, error: eur.error };
+  const revenue_eur = Math.round(eur.convert(revenue));
   if (input.chain && !(await chainExists(sb, country, input.chain))) {
     return { ok: false, error: `сети «${input.chain}» в стране нет — сначала market_upsert_chain` };
   }
@@ -145,8 +172,7 @@ export async function setCompanyYear(
       .eq("year", year).maybeSingle(),
     "financials",
   );
-  const rate = FIXED_EUR_RATES[input.currency.toUpperCase()];
-  const conv = rate === 1 ? null : `${revenue.toLocaleString("ru-RU")} ${input.currency.toUpperCase()} по ${rate}`;
+  const conv = eur.note ? `${revenue.toLocaleString("ru-RU")} ${input.currency.toUpperCase()}, ${eur.note}` : null;
   const after = await must<FinRow>(
     sb.from("mkt_financials").upsert({
       company_id: company.id,
@@ -295,17 +321,22 @@ export type PriceInput = {
 };
 type PriceRow = { item: string; price_eur: number; size_cm: number | null; channel: string | null; seen_on: string };
 
-export async function setPrice(sb: SupabaseClient, cc: string, input: PriceInput): Promise<Change<PriceRow>> {
+export async function setPrice(
+  sb: SupabaseClient,
+  cc: string,
+  input: PriceInput,
+  fx: FxFetch = fxRate,
+): Promise<Change<PriceRow>> {
   const country = cc.toUpperCase();
   const bad = baseCheck(country, input.source);
   if (bad) return { ok: false, error: bad };
   if (!text(input.item)) return { ok: false, error: "item — позиция меню, например «Margherita»" };
   const price = num(input.price);
   if (price === null || price <= 0) return { ok: false, error: "price — цена числом" };
-  const rate = FIXED_EUR_RATES[String(input.currency ?? "").toUpperCase()];
-  if (!rate) return { ok: false, error: `currency — ${Object.keys(FIXED_EUR_RATES).join(", ")}` };
   const seen_on = input.seen_on ?? now().slice(0, 10);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(seen_on)) return { ok: false, error: "seen_on — ГГГГ-ММ-ДД" };
+  const eur = await eurRate(input.currency, seen_on, fx);
+  if (!eur.ok) return { ok: false, error: eur.error };
   if (!(await chainExists(sb, country, input.chain))) {
     return { ok: false, error: `сети «${input.chain}» в стране нет — сначала market_upsert_chain` };
   }
@@ -321,13 +352,55 @@ export async function setPrice(sb: SupabaseClient, cc: string, input: PriceInput
       chain_key: input.chain,
       ...key,
       item_type: text(input.item_type),
-      price_eur: Math.round((price / rate) * 100) / 100,
-      source: input.source.trim(),
+      price_eur: Math.round(eur.convert(price) * 100) / 100,
+      // Курс не у цены, а в источнике: отдельной колонки нет, на экране источник виден сразу.
+      source: [input.source.trim(), eur.note && input.currency.toUpperCase() !== "EUR" ? eur.note : null].filter(
+        Boolean,
+      ).join(" · "),
     }, { onConflict: "country,chain_key,item,size_cm,channel,seen_on" })
       .select("item, price_eur, size_cm, channel, seen_on").single(),
     "price upsert",
   );
   await markManualFed(sb, country, ["prices"]);
+  return { ok: true, before, after };
+}
+
+// ── Факт рынка (раздел «Доставка и факты», сроки, сделки, выводы) ───────────
+
+export const FACT_TOPICS = ["market", "delivery", "timeline", "deal", "insight", "commentary"] as const;
+const PERIOD = /^\d{4}(-\d{2}(-\d{2})?)?$/;
+
+export type FactInput = { topic: string; date?: string; text: string; value?: string; source: string };
+type FactRow = { topic: string; date: string | null; text: string; value: string | null; source: string | null };
+
+/** Факт по (страна, тема, текст): тот же текст перезаписывает дату, значение и источник. */
+export async function addFact(sb: SupabaseClient, cc: string, input: FactInput): Promise<Change<FactRow>> {
+  const country = cc.toUpperCase();
+  const bad = baseCheck(country, input.source);
+  if (bad) return { ok: false, error: bad };
+  const topic = String(input.topic ?? "");
+  if (!(FACT_TOPICS as readonly string[]).includes(topic)) {
+    return { ok: false, error: `topic — ${FACT_TOPICS.join(", ")}` };
+  }
+  const factText = text(input.text);
+  if (!factText) return { ok: false, error: "text — формулировка факта" };
+  const date = text(input.date);
+  if (date !== null && !(PERIOD.test(date) && isPartialDate(date))) {
+    return { ok: false, error: "date — ГГГГ, ГГГГ-ММ или ГГГГ-ММ-ДД" };
+  }
+  const cols = "topic, date, text, value, source";
+  const before = await must<FactRow | null>(
+    sb.from("mkt_facts").select(cols).eq("country", country).eq("topic", topic).eq("text", factText).maybeSingle(),
+    "fact",
+  );
+  const after = await must<FactRow>(
+    sb.from("mkt_facts").upsert(
+      { country, topic, date, text: factText, value: text(input.value), source: input.source.trim() },
+      { onConflict: "country,topic,text" },
+    ).select(cols).single(),
+    "fact upsert",
+  );
+  await markManualFed(sb, country, ["facts"]);
   return { ok: true, before, after };
 }
 

@@ -59,7 +59,7 @@ export function ConnectorTile({ c, open, onToggle }: { c: Connector; open: boole
   // «Не привязан» вместо «не подключён» — Telegram не подключают, к нему привязывают личность.
   const status =
     // Бота не подключают, а включают: у него переключатель автозапуска, а не вход.
-    c.id === "chatgpt" ? (c.state === "connected" ? dt("Веб подключён", "Web connected") : c.state === "pending" ? mcpOAuthMessages(dt("ru", "en")).awaiting : dt("Веб не подключён", "Web not connected"))
+    c.id === "chatgpt" ? (c.state === "connected" ? dt("Подключён", "Connected") : c.state === "pending" ? mcpOAuthMessages(dt("ru", "en")).awaiting : dt("Не подключён", "Not connected"))
     : c.id === "bot" ? (c.state === "connected" ? dt("Включён", "On") : dt("Выключен", "Off"))
     : c.state === "connected" ? dt("Подключён", "Connected")
     : c.state === "pending" ? mcpOAuthMessages(dt("ru", "en")).awaiting

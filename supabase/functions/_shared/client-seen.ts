@@ -7,11 +7,12 @@
 
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-export type SeenClient = "mcp" | "recorder";
+export type SeenClient = "mcp" | "recorder" | "chatgpt";
 
 export const CLIENT_SEEN_COLUMN: Record<SeenClient, string> = {
   mcp: "mcp_last_seen_at",
   recorder: "recorder_last_seen_at",
+  chatgpt: "chatgpt_mcp_last_seen_at",
 };
 
 export const CLIENT_SEEN_MIN_INTERVAL_MS = 10 * 60 * 1000;

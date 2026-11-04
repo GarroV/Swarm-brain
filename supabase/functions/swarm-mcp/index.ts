@@ -1025,19 +1025,30 @@ Deno.serve(async (req: Request) => {
 
     const { data: tokenRow } = await supabase
       .from("allowed_users")
-      .select("telegram_id, claude_mcp_token_expires_at")
-      .eq("claude_mcp_token_hash", hashHex)
+      .select(
+        "telegram_id, claude_mcp_token_hash, claude_mcp_token_expires_at, chatgpt_mcp_token_hash, chatgpt_mcp_token_expires_at",
+      )
+      .or(`claude_mcp_token_hash.eq.${hashHex},chatgpt_mcp_token_hash.eq.${hashHex}`)
       .maybeSingle();
 
     // Срок и отзыв — на КАЖДЫЙ вызов (token-state.ts): протухший или отозванный токен не годен.
-    const check = checkTokenRow((tokenRow as TokenRow | null) ?? null, Date.now());
+    const chatgptToken = tokenRow?.chatgpt_mcp_token_hash === hashHex;
+    const normalizedRow: TokenRow | null = tokenRow
+      ? {
+        telegram_id: tokenRow.telegram_id,
+        claude_mcp_token_expires_at: chatgptToken
+          ? tokenRow.chatgpt_mcp_token_expires_at
+          : tokenRow.claude_mcp_token_expires_at,
+      }
+      : null;
+    const check = checkTokenRow(normalizedRow, Date.now());
     if (check.ok) {
       verifiedTelegramId = check.telegramId;
       tokenHashHex = hashHex;
       // Отметка «Claude Desktop жив» для карточки интеграции (#921); ошибка записи запрос не роняет.
-      await markClientSeen(supabase, check.telegramId, "mcp");
+      await markClientSeen(supabase, check.telegramId, chatgptToken ? "chatgpt" : "mcp");
     } else {
-      tokenError = check.error;
+      tokenError = bearer.startsWith("smcp_gpt_") ? check.error.replaceAll("Claude Desktop", "ChatGPT") : check.error;
     }
   }
 

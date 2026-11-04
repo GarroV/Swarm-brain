@@ -1,3 +1,4 @@
+import { handleChatGptDesktop } from "./chatgpt-desktop.ts";
 import { meetingEntryIsLive } from "../_shared/meeting-entry-live.ts";
 // deno-fmt-ignore-file
 // Легаси-файл вне канона формата (решение D013): гейт `scripts/check` проверяет формат затронутого
@@ -901,6 +902,15 @@ async function routeRequest(req: Request): Promise<Response> {
     if (!minted) return apiErr(500, "Не удалось создать токен", origin);
     return json({ oneLiner: await buildSetupOneLiner(minted.token) }, 200, origin);
   }
+
+  const desktopResponse = await handleChatGptDesktop(req, routePath, {
+    supabase,
+    telegramId: telegram_id,
+    isDemo,
+    renewableSession: !!webSession && isRenewableSession(webSession),
+    origin,
+  });
+  if (desktopResponse) return desktopResponse;
 
   // GET /users
   if (req.method === "GET" && routePath === "/users") {

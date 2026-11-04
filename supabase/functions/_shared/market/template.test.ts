@@ -22,7 +22,15 @@ Deno.test("every template example is accepted by the block check", () => {
 Deno.test("template text names every section and the tools to fill them", () => {
   const t = templateText();
   for (const s of SECTIONS) assertEquals(t.includes(`[${s.id}]`), true, s.id);
-  for (const tool of ["market_set_block", "market_set_company_year", "market_upsert_location", "market_set_price"]) {
+  for (
+    const tool of [
+      "market_set_block",
+      "market_set_company_year",
+      "market_upsert_location",
+      "market_set_price",
+      "market_add_fact",
+    ]
+  ) {
     assertEquals(t.includes(tool), true, tool);
   }
 });

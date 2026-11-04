@@ -1,4 +1,5 @@
 "use client";
+import { fetchChatGptDesktop } from "@/lib/chatgpt-desktop";
 import { useEffect, useState, type ReactNode } from "react";
 import { fetchAutojoin, fetchIntegrations, fetchMcpSetup, fetchRecorderSetup, openGoogleConnect } from "@/lib/api";
 import { buildConnectors, connectorsSummary, type ConnectorId, type ConnectorsInput } from "@/lib/connectors";
@@ -117,13 +118,14 @@ export function ConnectorsSection({ me, panels, dense = false }: { me: Me; panel
       // В демо бот не ходит — карточки нет (botAutojoin: undefined).
       me.is_demo ? Promise.resolve(undefined) : fetchAutojoin().catch(() => false),
       me.is_demo ? Promise.resolve(null) : fetchMcpConnections().catch(() => null),
-    ]).then(([integrations, recorder, mcp, botAutojoin, oauth]) => {
+      me.is_demo ? Promise.resolve(null) : fetchChatGptDesktop().catch(() => null),
+    ]).then(([integrations, recorder, mcp, botAutojoin, oauth, desktop]) => {
       if (!alive) return;
       setInput({
         services: integrations.map((i) => i.service),
         recorder: { active: recorder.active, expiresAt: recorder.expiresAt, lastSeenAt: recorder.lastSeenAt },
         mcp: { active: mcp.active, expiresAt: mcp.expiresAt, lastSeenAt: mcp.lastSeenAt },
-        chatgpt: chatGptConnectionStatus(oauth?.connections ?? []),
+        chatgpt: chatGptConnectionStatus(oauth?.connections ?? [], new Date(), desktop),
         // Синтетическая личность (веб-вход по e-mail без Telegram) — отрицательный id,
         // см. auth-resolve. Для человека это и значит «Telegram не привязан».
         telegramLinked: me.telegram_id > 0,
@@ -138,8 +140,8 @@ export function ConnectorsSection({ me, panels, dense = false }: { me: Me; panel
     if (me.is_demo) return;
     let alive = true;
     const refresh = () => {
-      fetchMcpConnections().then((oauth) => {
-        if (alive) setInput((current) => current ? { ...current, chatgpt: chatGptConnectionStatus(oauth.connections) } : current);
+      Promise.all([fetchMcpConnections(), fetchChatGptDesktop().catch(() => null)]).then(([oauth, desktop]) => {
+        if (alive) setInput((current) => current ? { ...current, chatgpt: chatGptConnectionStatus(oauth.connections, new Date(), desktop) } : current);
       }).catch(() => { /* Панель подключения показывает ошибку загрузки. */ });
     };
     window.addEventListener(MCP_CONNECTIONS_CHANGED, refresh);

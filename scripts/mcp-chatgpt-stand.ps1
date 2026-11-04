@@ -164,6 +164,7 @@ function Start-Stand {
   Remove-StandContainer 'swarm-chatgpt-rest'
   Docker-Checked @('run', '-d', '--name', 'swarm-chatgpt-rest', '--network', $Network, '--restart', 'unless-stopped',
     '--env-file', $RestEnvFile, $RestImage) | Out-Null
+  Start-Deno 'swarm-chatgpt-setup' 'supabase/functions/swarm-setup/index.ts'
   Start-Deno 'swarm-chatgpt-api' 'supabase/functions/swarm-api/index.ts'
   Start-Deno 'swarm-chatgpt-oauth' 'supabase/functions/swarm-oauth/index.ts'
   Start-Deno 'swarm-chatgpt-mcp' 'supabase/functions/swarm-mcp/index.ts'

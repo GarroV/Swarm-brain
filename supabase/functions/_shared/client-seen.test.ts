@@ -51,3 +51,9 @@ Deno.test("ошибка записи и исключение не пробрас
   await markClientSeen(fakeSupabase({ error: { message: "boom" } }).client, 1, "mcp", NOW);
   await markClientSeen(fakeSupabase("throw").client, 1, "mcp", NOW);
 });
+
+Deno.test("ChatGPT bridge marks its own column", async () => {
+  const { client, calls } = fakeSupabase({ error: null });
+  await markClientSeen(client, 7, "chatgpt", NOW);
+  assertEquals(calls[0].patch, { chatgpt_mcp_last_seen_at: NOW.toISOString() });
+});

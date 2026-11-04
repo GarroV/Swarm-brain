@@ -7,8 +7,8 @@
 
 | Что | Откуда | Что именно | Как | Частота | Сверено |
 |---|---|---|---|---|---|
-| Продажи Dodo | https://publicapi.dodois.io/hr/api/v1/ | пиццерии Dodo (unitinfo/all: адрес, координаты, BeginDateWork) и выручка по месяцам с числом пиццерий; курс к евро — ЕЦБ, для динара — НБС (kurs.resenje.org) | авто, `dodo-publicapi` | раз в неделю | — |
-| Точки | https://publicapi.dodois.io/hr/api/v1/ | сеть dodo: пиццерии Dodo (unitinfo/all: адрес, координаты, BeginDateWork) и выручка по месяцам с числом пиццерий; курс к евро — ЕЦБ, для динара — НБС (kurs.resenje.org) | авто, `dodo-publicapi` | раз в неделю | — |
+| Продажи Dodo | https://publicapi.dodois.io/hr/api/v1/ | пиццерии Dodo (unitinfo/all: адрес, координаты, BeginDateWork) и выручка по месяцам с числом пиццерий; курс к евро — ЕЦБ, для динара — НБС (kurs.resenje.org), для BYN, MDL, AMD, AZN, TJS — национальный банк, для GEL, KGS — кросс через рубль по ЦБ РФ (среднее дневных курсов за месяц) | авто, `dodo-publicapi` | раз в неделю | — |
+| Точки | https://publicapi.dodois.io/hr/api/v1/ | сеть dodo: пиццерии Dodo (unitinfo/all: адрес, координаты, BeginDateWork) и выручка по месяцам с числом пиццерий; курс к евро — ЕЦБ, для динара — НБС (kurs.resenje.org), для BYN, MDL, AMD, AZN, TJS — национальный банк, для GEL, KGS — кросс через рубль по ЦБ РФ (среднее дневных курсов за месяц) | авто, `dodo-publicapi` | раз в неделю | — |
 | Точки | https://overpass-api.de/api/interpreter | точки сетей по тегу brand (osmBrands в конфиге) или по началу name среди заведений общепита (osmNames) из OpenStreetMap, координаты, адрес, дата открытия, если она есть в теге; город — из addr:city, а без него — ближайший place=city в пределах 15 км, нет города — ближайший place=town | авто, `osm-overpass` | раз в неделю | — |
 | Точки | снимок ручных источников (импорт в «Источниках и свежести») | локальные сети и пекарни с датами открытия: локаторы сетей, Wolt, пресса; дата — по посту сети, появлению в Wolt или первому отзыву, а не по дате статьи | вручную | по запросу | 2026-10-02 |
 | Выручки юрлиц | https://www.fina.hr (Info.BIZ), companywall.hr | выручка и сотрудники юрлиц из companies снимка; OIB — рег. номер (Fina Info.BIZ: вход по учётной записи, условия запрещают перепубликацию — обновление раз в год вручную) | вручную | по запросу | 2026-10-02 |
@@ -47,8 +47,8 @@
 
 | Что | Откуда | Что именно | Как | Частота | Сверено |
 |---|---|---|---|---|---|
-| Продажи Dodo | https://publicapi.dodois.io/ro/api/v1/ | пиццерии Dodo (unitinfo/all: адрес, координаты, BeginDateWork) и выручка по месяцам с числом пиццерий; курс к евро — ЕЦБ, для динара — НБС (kurs.resenje.org) | авто, `dodo-publicapi` | раз в неделю | — |
-| Точки | https://publicapi.dodois.io/ro/api/v1/ | сеть dodo: пиццерии Dodo (unitinfo/all: адрес, координаты, BeginDateWork) и выручка по месяцам с числом пиццерий; курс к евро — ЕЦБ, для динара — НБС (kurs.resenje.org) | авто, `dodo-publicapi` | раз в неделю | — |
+| Продажи Dodo | https://publicapi.dodois.io/ro/api/v1/ | пиццерии Dodo (unitinfo/all: адрес, координаты, BeginDateWork) и выручка по месяцам с числом пиццерий; курс к евро — ЕЦБ, для динара — НБС (kurs.resenje.org), для BYN, MDL, AMD, AZN, TJS — национальный банк, для GEL, KGS — кросс через рубль по ЦБ РФ (среднее дневных курсов за месяц) | авто, `dodo-publicapi` | раз в неделю | — |
+| Точки | https://publicapi.dodois.io/ro/api/v1/ | сеть dodo: пиццерии Dodo (unitinfo/all: адрес, координаты, BeginDateWork) и выручка по месяцам с числом пиццерий; курс к евро — ЕЦБ, для динара — НБС (kurs.resenje.org), для BYN, MDL, AMD, AZN, TJS — национальный банк, для GEL, KGS — кросс через рубль по ЦБ РФ (среднее дневных курсов за месяц) | авто, `dodo-publicapi` | раз в неделю | — |
 | Точки | https://overpass-api.de/api/interpreter | точки сетей по тегу brand (osmBrands в конфиге) или по началу name среди заведений общепита (osmNames) из OpenStreetMap, координаты, адрес, дата открытия, если она есть в теге; город — из addr:city, а без него — ближайший place=city в пределах 15 км, нет города — ближайший place=town | авто, `osm-overpass` | раз в неделю | — |
 | Выручки юрлиц | https://data.gov.ro (набор situatii financiare) | годовая отчётность юрлиц Румынии по CUI из companies: оборот и сотрудники; лей → евро по годовому курсу ЕЦБ | авто, `ro-datagov` | раз в год | — |
 | Цены | — | ещё не собирались | вручную | по запросу | — |
@@ -85,8 +85,8 @@
 
 | Что | Откуда | Что именно | Как | Частота | Сверено |
 |---|---|---|---|---|---|
-| Продажи Dodo | https://publicapi.dodois.io/ee/api/v1/ | пиццерии Dodo (unitinfo/all: адрес, координаты, BeginDateWork) и выручка по месяцам с числом пиццерий; курс к евро — ЕЦБ, для динара — НБС (kurs.resenje.org) | авто, `dodo-publicapi` | раз в неделю | — |
-| Точки | https://publicapi.dodois.io/ee/api/v1/ | сеть dodo: пиццерии Dodo (unitinfo/all: адрес, координаты, BeginDateWork) и выручка по месяцам с числом пиццерий; курс к евро — ЕЦБ, для динара — НБС (kurs.resenje.org) | авто, `dodo-publicapi` | раз в неделю | — |
+| Продажи Dodo | https://publicapi.dodois.io/ee/api/v1/ | пиццерии Dodo (unitinfo/all: адрес, координаты, BeginDateWork) и выручка по месяцам с числом пиццерий; курс к евро — ЕЦБ, для динара — НБС (kurs.resenje.org), для BYN, MDL, AMD, AZN, TJS — национальный банк, для GEL, KGS — кросс через рубль по ЦБ РФ (среднее дневных курсов за месяц) | авто, `dodo-publicapi` | раз в неделю | — |
+| Точки | https://publicapi.dodois.io/ee/api/v1/ | сеть dodo: пиццерии Dodo (unitinfo/all: адрес, координаты, BeginDateWork) и выручка по месяцам с числом пиццерий; курс к евро — ЕЦБ, для динара — НБС (kurs.resenje.org), для BYN, MDL, AMD, AZN, TJS — национальный банк, для GEL, KGS — кросс через рубль по ЦБ РФ (среднее дневных курсов за месяц) | авто, `dodo-publicapi` | раз в неделю | — |
 | Точки | https://overpass-api.de/api/interpreter | точки сетей по тегу brand (osmBrands в конфиге) или по началу name среди заведений общепита (osmNames) из OpenStreetMap, координаты, адрес, дата открытия, если она есть в теге; город — из addr:city, а без него — ближайший place=city в пределах 15 км, нет города — ближайший place=town | авто, `osm-overpass` | раз в неделю | — |
 | Выручки юрлиц | https://avaandmed.ariregister.rik.ee | годовые отчёты юрлиц Эстонии (открытые данные e-Äriregister): выручка и сотрудники по рег. коду из companies | авто, `ee-ariregister` | раз в месяц | — |
 | Цены | — | ещё не собирались | вручную | по запросу | — |
@@ -118,8 +118,8 @@
 
 | Что | Откуда | Что именно | Как | Частота | Сверено |
 |---|---|---|---|---|---|
-| Продажи Dodo | https://publicapi.dodois.io/rs/api/v1/ | пиццерии Dodo (unitinfo/all: адрес, координаты, BeginDateWork) и выручка по месяцам с числом пиццерий; курс к евро — ЕЦБ, для динара — НБС (kurs.resenje.org) | авто, `dodo-publicapi` | раз в неделю | — |
-| Точки | https://publicapi.dodois.io/rs/api/v1/ | сеть dodo: пиццерии Dodo (unitinfo/all: адрес, координаты, BeginDateWork) и выручка по месяцам с числом пиццерий; курс к евро — ЕЦБ, для динара — НБС (kurs.resenje.org) | авто, `dodo-publicapi` | раз в неделю | — |
+| Продажи Dodo | https://publicapi.dodois.io/rs/api/v1/ | пиццерии Dodo (unitinfo/all: адрес, координаты, BeginDateWork) и выручка по месяцам с числом пиццерий; курс к евро — ЕЦБ, для динара — НБС (kurs.resenje.org), для BYN, MDL, AMD, AZN, TJS — национальный банк, для GEL, KGS — кросс через рубль по ЦБ РФ (среднее дневных курсов за месяц) | авто, `dodo-publicapi` | раз в неделю | — |
+| Точки | https://publicapi.dodois.io/rs/api/v1/ | сеть dodo: пиццерии Dodo (unitinfo/all: адрес, координаты, BeginDateWork) и выручка по месяцам с числом пиццерий; курс к евро — ЕЦБ, для динара — НБС (kurs.resenje.org), для BYN, MDL, AMD, AZN, TJS — национальный банк, для GEL, KGS — кросс через рубль по ЦБ РФ (среднее дневных курсов за месяц) | авто, `dodo-publicapi` | раз в неделю | — |
 | Точки | https://overpass-api.de/api/interpreter | точки сетей по тегу brand (osmBrands в конфиге) или по началу name среди заведений общепита (osmNames) из OpenStreetMap, координаты, адрес, дата открытия, если она есть в теге; город — из addr:city, а без него — ближайший place=city в пределах 15 км, нет города — ближайший place=town | авто, `osm-overpass` | раз в неделю | 2026-10-02 |
 | Выручки юрлиц | https://www.companywall.<страна>/firma\|podjetje/<slug>/<id> (ссылки — в companies.url конфига) | общие доходы (Ukupni prihodi) — шире выручки от продаж; выручки от продаж (poslovni prihodi) есть только в APR (fin.apr.gov.rs) за капчей | авто, `companywall` | раз в год | 2026-10-02 |
 | Цены | Wolt (JSON меню по slug заведения, без входа) | ещё не собирались; кандидат в автоматический адаптер | вручную | по запросу | — |
@@ -160,8 +160,8 @@
 
 | Что | Откуда | Что именно | Как | Частота | Сверено |
 |---|---|---|---|---|---|
-| Продажи Dodo | https://publicapi.dodois.io/si/api/v1/ | пиццерии Dodo (unitinfo/all: адрес, координаты, BeginDateWork) и выручка по месяцам с числом пиццерий; курс к евро — ЕЦБ, для динара — НБС (kurs.resenje.org) | авто, `dodo-publicapi` | раз в неделю | — |
-| Точки | https://publicapi.dodois.io/si/api/v1/ | сеть dodo: пиццерии Dodo (unitinfo/all: адрес, координаты, BeginDateWork) и выручка по месяцам с числом пиццерий; курс к евро — ЕЦБ, для динара — НБС (kurs.resenje.org) | авто, `dodo-publicapi` | раз в неделю | — |
+| Продажи Dodo | https://publicapi.dodois.io/si/api/v1/ | пиццерии Dodo (unitinfo/all: адрес, координаты, BeginDateWork) и выручка по месяцам с числом пиццерий; курс к евро — ЕЦБ, для динара — НБС (kurs.resenje.org), для BYN, MDL, AMD, AZN, TJS — национальный банк, для GEL, KGS — кросс через рубль по ЦБ РФ (среднее дневных курсов за месяц) | авто, `dodo-publicapi` | раз в неделю | — |
+| Точки | https://publicapi.dodois.io/si/api/v1/ | сеть dodo: пиццерии Dodo (unitinfo/all: адрес, координаты, BeginDateWork) и выручка по месяцам с числом пиццерий; курс к евро — ЕЦБ, для динара — НБС (kurs.resenje.org), для BYN, MDL, AMD, AZN, TJS — национальный банк, для GEL, KGS — кросс через рубль по ЦБ РФ (среднее дневных курсов за месяц) | авто, `dodo-publicapi` | раз в неделю | — |
 | Точки | https://overpass-api.de/api/interpreter | точки сетей по тегу brand (osmBrands в конфиге) или по началу name среди заведений общепита (osmNames) из OpenStreetMap, координаты, адрес, дата открытия, если она есть в теге; город — из addr:city, а без него — ближайший place=city в пределах 15 км, нет города — ближайший place=town | авто, `osm-overpass` | раз в неделю | 2026-10-02 |
 | Выручки юрлиц | https://www.companywall.<страна>/firma\|podjetje/<slug>/<id> (ссылки — в companies.url конфига) | все доходы (Celotni prihodki, AJPES) — шире выручки от продаж; у McDonald's несколько франчайзи, юрлица сети нет | авто, `companywall` | раз в год | 2026-10-02 |
 | Цены | Wolt (JSON меню по slug заведения, без входа) | ещё не собирались; кандидат в автоматический адаптер | вручную | по запросу | — |
@@ -198,8 +198,8 @@
 
 | Что | Откуда | Что именно | Как | Частота | Сверено |
 |---|---|---|---|---|---|
-| Продажи Dodo | https://publicapi.dodois.io/me/api/v1/ | пиццерии Dodo (unitinfo/all: адрес, координаты, BeginDateWork) и выручка по месяцам с числом пиццерий; курс к евро — ЕЦБ, для динара — НБС (kurs.resenje.org) | авто, `dodo-publicapi` | раз в неделю | — |
-| Точки | https://publicapi.dodois.io/me/api/v1/ | сеть dodo: пиццерии Dodo (unitinfo/all: адрес, координаты, BeginDateWork) и выручка по месяцам с числом пиццерий; курс к евро — ЕЦБ, для динара — НБС (kurs.resenje.org) | авто, `dodo-publicapi` | раз в неделю | — |
+| Продажи Dodo | https://publicapi.dodois.io/me/api/v1/ | пиццерии Dodo (unitinfo/all: адрес, координаты, BeginDateWork) и выручка по месяцам с числом пиццерий; курс к евро — ЕЦБ, для динара — НБС (kurs.resenje.org), для BYN, MDL, AMD, AZN, TJS — национальный банк, для GEL, KGS — кросс через рубль по ЦБ РФ (среднее дневных курсов за месяц) | авто, `dodo-publicapi` | раз в неделю | — |
+| Точки | https://publicapi.dodois.io/me/api/v1/ | сеть dodo: пиццерии Dodo (unitinfo/all: адрес, координаты, BeginDateWork) и выручка по месяцам с числом пиццерий; курс к евро — ЕЦБ, для динара — НБС (kurs.resenje.org), для BYN, MDL, AMD, AZN, TJS — национальный банк, для GEL, KGS — кросс через рубль по ЦБ РФ (среднее дневных курсов за месяц) | авто, `dodo-publicapi` | раз в неделю | — |
 | Точки | https://overpass-api.de/api/interpreter | точки сетей по тегу brand (osmBrands в конфиге) или по началу name среди заведений общепита (osmNames) из OpenStreetMap, координаты, адрес, дата открытия, если она есть в теге; город — из addr:city, а без него — ближайший place=city в пределах 15 км, нет города — ближайший place=town | авто, `osm-overpass` | раз в неделю | 2026-10-03 |
 | Выручки юрлиц | https://www.companywall.<страна>/firma\|podjetje/<slug>/<id> (ссылки — в companies.url конфига) | все доходы (Ukupni prihodi, налоговая) — шире выручки от продаж; сотрудники только за последний год; у Pekara Montenegro много юрлиц | авто, `companywall` | раз в год | 2026-10-03 |
 | Цены | Wolt (JSON меню по slug заведения, без входа) | ещё не собирались; кандидат в автоматический адаптер | вручную | по запросу | — |
@@ -228,8 +228,8 @@
 
 | Что | Откуда | Что именно | Как | Частота | Сверено |
 |---|---|---|---|---|---|
-| Продажи Dodo | https://publicapi.dodois.io/bg/api/v1/ | пиццерии Dodo (unitinfo/all: адрес, координаты, BeginDateWork) и выручка по месяцам с числом пиццерий; курс к евро — ЕЦБ, для динара — НБС (kurs.resenje.org) | авто, `dodo-publicapi` | раз в неделю | — |
-| Точки | https://publicapi.dodois.io/bg/api/v1/ | сеть dodo: пиццерии Dodo (unitinfo/all: адрес, координаты, BeginDateWork) и выручка по месяцам с числом пиццерий; курс к евро — ЕЦБ, для динара — НБС (kurs.resenje.org) | авто, `dodo-publicapi` | раз в неделю | — |
+| Продажи Dodo | https://publicapi.dodois.io/bg/api/v1/ | пиццерии Dodo (unitinfo/all: адрес, координаты, BeginDateWork) и выручка по месяцам с числом пиццерий; курс к евро — ЕЦБ, для динара — НБС (kurs.resenje.org), для BYN, MDL, AMD, AZN, TJS — национальный банк, для GEL, KGS — кросс через рубль по ЦБ РФ (среднее дневных курсов за месяц) | авто, `dodo-publicapi` | раз в неделю | — |
+| Точки | https://publicapi.dodois.io/bg/api/v1/ | сеть dodo: пиццерии Dodo (unitinfo/all: адрес, координаты, BeginDateWork) и выручка по месяцам с числом пиццерий; курс к евро — ЕЦБ, для динара — НБС (kurs.resenje.org), для BYN, MDL, AMD, AZN, TJS — национальный банк, для GEL, KGS — кросс через рубль по ЦБ РФ (среднее дневных курсов за месяц) | авто, `dodo-publicapi` | раз в неделю | — |
 | Точки | https://overpass-api.de/api/interpreter | точки сетей по тегу brand (osmBrands в конфиге) или по началу name среди заведений общепита (osmNames) из OpenStreetMap, координаты, адрес, дата открытия, если она есть в теге; город — из addr:city, а без него — ближайший place=city в пределах 15 км, нет города — ближайший place=town | авто, `osm-overpass` | раз в неделю | 2026-10-03 |
 | Выручки юрлиц | Търговски регистър (portal.registryagency.bg) — годовые финансовые отчёты PDF | выручка из строки «Приходи от продажби»; публикуется подтверждённая (текстовый слой или совпадение с отчётом следующего года), левы → евро по 1,95583 | авто, `bg-registry` | раз в год | — |
 | Цены | Wolt / Glovo (JSON меню по slug заведения, без входа) | ещё не собирались; кандидат в автоматический адаптер | вручную | по запросу | — |
@@ -274,8 +274,8 @@
 
 | Что | Откуда | Что именно | Как | Частота | Сверено |
 |---|---|---|---|---|---|
-| Продажи Dodo | https://publicapi.dodois.io/by/api/v1/ | пиццерии Dodo (unitinfo/all: адрес, координаты, BeginDateWork) и выручка по месяцам с числом пиццерий; курс к евро — ЕЦБ, для динара — НБС (kurs.resenje.org) | авто, `dodo-publicapi` | раз в неделю | — |
-| Точки | https://publicapi.dodois.io/by/api/v1/ | сеть dodo: пиццерии Dodo (unitinfo/all: адрес, координаты, BeginDateWork) и выручка по месяцам с числом пиццерий; курс к евро — ЕЦБ, для динара — НБС (kurs.resenje.org) | авто, `dodo-publicapi` | раз в неделю | — |
+| Продажи Dodo | https://publicapi.dodois.io/by/api/v1/ | пиццерии Dodo (unitinfo/all: адрес, координаты, BeginDateWork) и выручка по месяцам с числом пиццерий; курс к евро — ЕЦБ, для динара — НБС (kurs.resenje.org), для BYN, MDL, AMD, AZN, TJS — национальный банк, для GEL, KGS — кросс через рубль по ЦБ РФ (среднее дневных курсов за месяц) | авто, `dodo-publicapi` | раз в неделю | — |
+| Точки | https://publicapi.dodois.io/by/api/v1/ | сеть dodo: пиццерии Dodo (unitinfo/all: адрес, координаты, BeginDateWork) и выручка по месяцам с числом пиццерий; курс к евро — ЕЦБ, для динара — НБС (kurs.resenje.org), для BYN, MDL, AMD, AZN, TJS — национальный банк, для GEL, KGS — кросс через рубль по ЦБ РФ (среднее дневных курсов за месяц) | авто, `dodo-publicapi` | раз в неделю | — |
 | Точки | https://docs.overturemaps.org/guides/places/ | точки сетей из Overture Maps places (последний релиз, parquet в S3, через DuckDB): заведения общепита и пекарни страны в её bbox, без закрытых; сети из конфига — по бренду (osmBrands, допускается суффикс страны) или началу названия (osmNames), остальные сети находятся сами (бренд от 3 точек, без бренда от 5 точек в 3 населённых пунктах, не больше 40); точка — центр bbox объекта | авто, `overture` | раз в неделю | 2026-10-11 |
 
 Сети (по чему их ищет `osm-overpass`: тег brand или начало name; пусто — сети в OSM нет, точки из других источников):
@@ -296,8 +296,8 @@
 
 | Что | Откуда | Что именно | Как | Частота | Сверено |
 |---|---|---|---|---|---|
-| Продажи Dodo | https://publicapi.dodois.io/cy/api/v1/ | пиццерии Dodo (unitinfo/all: адрес, координаты, BeginDateWork) и выручка по месяцам с числом пиццерий; курс к евро — ЕЦБ, для динара — НБС (kurs.resenje.org) | авто, `dodo-publicapi` | раз в неделю | — |
-| Точки | https://publicapi.dodois.io/cy/api/v1/ | сеть dodo: пиццерии Dodo (unitinfo/all: адрес, координаты, BeginDateWork) и выручка по месяцам с числом пиццерий; курс к евро — ЕЦБ, для динара — НБС (kurs.resenje.org) | авто, `dodo-publicapi` | раз в неделю | — |
+| Продажи Dodo | https://publicapi.dodois.io/cy/api/v1/ | пиццерии Dodo (unitinfo/all: адрес, координаты, BeginDateWork) и выручка по месяцам с числом пиццерий; курс к евро — ЕЦБ, для динара — НБС (kurs.resenje.org), для BYN, MDL, AMD, AZN, TJS — национальный банк, для GEL, KGS — кросс через рубль по ЦБ РФ (среднее дневных курсов за месяц) | авто, `dodo-publicapi` | раз в неделю | — |
+| Точки | https://publicapi.dodois.io/cy/api/v1/ | сеть dodo: пиццерии Dodo (unitinfo/all: адрес, координаты, BeginDateWork) и выручка по месяцам с числом пиццерий; курс к евро — ЕЦБ, для динара — НБС (kurs.resenje.org), для BYN, MDL, AMD, AZN, TJS — национальный банк, для GEL, KGS — кросс через рубль по ЦБ РФ (среднее дневных курсов за месяц) | авто, `dodo-publicapi` | раз в неделю | — |
 | Точки | https://docs.overturemaps.org/guides/places/ | точки сетей из Overture Maps places (последний релиз, parquet в S3, через DuckDB): заведения общепита и пекарни страны в её bbox, без закрытых; сети из конфига — по бренду (osmBrands, допускается суффикс страны) или началу названия (osmNames), остальные сети находятся сами (бренд от 3 точек, без бренда от 5 точек в 3 населённых пунктах, не больше 40); точка — центр bbox объекта | авто, `overture` | раз в неделю | 2026-10-11 |
 
 Сети (по чему их ищет `osm-overpass`: тег brand или начало name; пусто — сети в OSM нет, точки из других источников):
@@ -318,8 +318,8 @@
 
 | Что | Откуда | Что именно | Как | Частота | Сверено |
 |---|---|---|---|---|---|
-| Продажи Dodo | https://publicapi.dodois.io/es/api/v1/ | пиццерии Dodo (unitinfo/all: адрес, координаты, BeginDateWork) и выручка по месяцам с числом пиццерий; курс к евро — ЕЦБ, для динара — НБС (kurs.resenje.org) | авто, `dodo-publicapi` | раз в неделю | — |
-| Точки | https://publicapi.dodois.io/es/api/v1/ | сеть dodo: пиццерии Dodo (unitinfo/all: адрес, координаты, BeginDateWork) и выручка по месяцам с числом пиццерий; курс к евро — ЕЦБ, для динара — НБС (kurs.resenje.org) | авто, `dodo-publicapi` | раз в неделю | — |
+| Продажи Dodo | https://publicapi.dodois.io/es/api/v1/ | пиццерии Dodo (unitinfo/all: адрес, координаты, BeginDateWork) и выручка по месяцам с числом пиццерий; курс к евро — ЕЦБ, для динара — НБС (kurs.resenje.org), для BYN, MDL, AMD, AZN, TJS — национальный банк, для GEL, KGS — кросс через рубль по ЦБ РФ (среднее дневных курсов за месяц) | авто, `dodo-publicapi` | раз в неделю | — |
+| Точки | https://publicapi.dodois.io/es/api/v1/ | сеть dodo: пиццерии Dodo (unitinfo/all: адрес, координаты, BeginDateWork) и выручка по месяцам с числом пиццерий; курс к евро — ЕЦБ, для динара — НБС (kurs.resenje.org), для BYN, MDL, AMD, AZN, TJS — национальный банк, для GEL, KGS — кросс через рубль по ЦБ РФ (среднее дневных курсов за месяц) | авто, `dodo-publicapi` | раз в неделю | — |
 | Точки | https://docs.overturemaps.org/guides/places/ | точки сетей из Overture Maps places (последний релиз, parquet в S3, через DuckDB): заведения общепита и пекарни страны в её bbox, без закрытых; сети из конфига — по бренду (osmBrands, допускается суффикс страны) или началу названия (osmNames), остальные сети находятся сами (бренд от 3 точек, без бренда от 5 точек в 3 населённых пунктах, не больше 40); точка — центр bbox объекта | авто, `overture` | раз в неделю | 2026-10-11 |
 
 Сети (по чему их ищет `osm-overpass`: тег brand или начало name; пусто — сети в OSM нет, точки из других источников):
@@ -340,8 +340,8 @@
 
 | Что | Откуда | Что именно | Как | Частота | Сверено |
 |---|---|---|---|---|---|
-| Продажи Dodo | https://publicapi.dodois.io/hu/api/v1/ | пиццерии Dodo (unitinfo/all: адрес, координаты, BeginDateWork) и выручка по месяцам с числом пиццерий; курс к евро — ЕЦБ, для динара — НБС (kurs.resenje.org) | авто, `dodo-publicapi` | раз в неделю | — |
-| Точки | https://publicapi.dodois.io/hu/api/v1/ | сеть dodo: пиццерии Dodo (unitinfo/all: адрес, координаты, BeginDateWork) и выручка по месяцам с числом пиццерий; курс к евро — ЕЦБ, для динара — НБС (kurs.resenje.org) | авто, `dodo-publicapi` | раз в неделю | — |
+| Продажи Dodo | https://publicapi.dodois.io/hu/api/v1/ | пиццерии Dodo (unitinfo/all: адрес, координаты, BeginDateWork) и выручка по месяцам с числом пиццерий; курс к евро — ЕЦБ, для динара — НБС (kurs.resenje.org), для BYN, MDL, AMD, AZN, TJS — национальный банк, для GEL, KGS — кросс через рубль по ЦБ РФ (среднее дневных курсов за месяц) | авто, `dodo-publicapi` | раз в неделю | — |
+| Точки | https://publicapi.dodois.io/hu/api/v1/ | сеть dodo: пиццерии Dodo (unitinfo/all: адрес, координаты, BeginDateWork) и выручка по месяцам с числом пиццерий; курс к евро — ЕЦБ, для динара — НБС (kurs.resenje.org), для BYN, MDL, AMD, AZN, TJS — национальный банк, для GEL, KGS — кросс через рубль по ЦБ РФ (среднее дневных курсов за месяц) | авто, `dodo-publicapi` | раз в неделю | — |
 | Точки | https://docs.overturemaps.org/guides/places/ | точки сетей из Overture Maps places (последний релиз, parquet в S3, через DuckDB): заведения общепита и пекарни страны в её bbox, без закрытых; сети из конфига — по бренду (osmBrands, допускается суффикс страны) или началу названия (osmNames), остальные сети находятся сами (бренд от 3 точек, без бренда от 5 точек в 3 населённых пунктах, не больше 40); точка — центр bbox объекта | авто, `overture` | раз в неделю | 2026-10-11 |
 
 Сети (по чему их ищет `osm-overpass`: тег brand или начало name; пусто — сети в OSM нет, точки из других источников):
@@ -362,8 +362,8 @@
 
 | Что | Откуда | Что именно | Как | Частота | Сверено |
 |---|---|---|---|---|---|
-| Продажи Dodo | https://publicapi.dodois.io/lt/api/v1/ | пиццерии Dodo (unitinfo/all: адрес, координаты, BeginDateWork) и выручка по месяцам с числом пиццерий; курс к евро — ЕЦБ, для динара — НБС (kurs.resenje.org) | авто, `dodo-publicapi` | раз в неделю | — |
-| Точки | https://publicapi.dodois.io/lt/api/v1/ | сеть dodo: пиццерии Dodo (unitinfo/all: адрес, координаты, BeginDateWork) и выручка по месяцам с числом пиццерий; курс к евро — ЕЦБ, для динара — НБС (kurs.resenje.org) | авто, `dodo-publicapi` | раз в неделю | — |
+| Продажи Dodo | https://publicapi.dodois.io/lt/api/v1/ | пиццерии Dodo (unitinfo/all: адрес, координаты, BeginDateWork) и выручка по месяцам с числом пиццерий; курс к евро — ЕЦБ, для динара — НБС (kurs.resenje.org), для BYN, MDL, AMD, AZN, TJS — национальный банк, для GEL, KGS — кросс через рубль по ЦБ РФ (среднее дневных курсов за месяц) | авто, `dodo-publicapi` | раз в неделю | — |
+| Точки | https://publicapi.dodois.io/lt/api/v1/ | сеть dodo: пиццерии Dodo (unitinfo/all: адрес, координаты, BeginDateWork) и выручка по месяцам с числом пиццерий; курс к евро — ЕЦБ, для динара — НБС (kurs.resenje.org), для BYN, MDL, AMD, AZN, TJS — национальный банк, для GEL, KGS — кросс через рубль по ЦБ РФ (среднее дневных курсов за месяц) | авто, `dodo-publicapi` | раз в неделю | — |
 | Точки | https://docs.overturemaps.org/guides/places/ | точки сетей из Overture Maps places (последний релиз, parquet в S3, через DuckDB): заведения общепита и пекарни страны в её bbox, без закрытых; сети из конфига — по бренду (osmBrands, допускается суффикс страны) или началу названия (osmNames), остальные сети находятся сами (бренд от 3 точек, без бренда от 5 точек в 3 населённых пунктах, не больше 40); точка — центр bbox объекта | авто, `overture` | раз в неделю | 2026-10-11 |
 
 Сети (по чему их ищет `osm-overpass`: тег brand или начало name; пусто — сети в OSM нет, точки из других источников):
@@ -384,8 +384,8 @@
 
 | Что | Откуда | Что именно | Как | Частота | Сверено |
 |---|---|---|---|---|---|
-| Продажи Dodo | https://publicapi.dodois.io/md/api/v1/ | пиццерии Dodo (unitinfo/all: адрес, координаты, BeginDateWork) и выручка по месяцам с числом пиццерий; курс к евро — ЕЦБ, для динара — НБС (kurs.resenje.org) | авто, `dodo-publicapi` | раз в неделю | — |
-| Точки | https://publicapi.dodois.io/md/api/v1/ | сеть dodo: пиццерии Dodo (unitinfo/all: адрес, координаты, BeginDateWork) и выручка по месяцам с числом пиццерий; курс к евро — ЕЦБ, для динара — НБС (kurs.resenje.org) | авто, `dodo-publicapi` | раз в неделю | — |
+| Продажи Dodo | https://publicapi.dodois.io/md/api/v1/ | пиццерии Dodo (unitinfo/all: адрес, координаты, BeginDateWork) и выручка по месяцам с числом пиццерий; курс к евро — ЕЦБ, для динара — НБС (kurs.resenje.org), для BYN, MDL, AMD, AZN, TJS — национальный банк, для GEL, KGS — кросс через рубль по ЦБ РФ (среднее дневных курсов за месяц) | авто, `dodo-publicapi` | раз в неделю | — |
+| Точки | https://publicapi.dodois.io/md/api/v1/ | сеть dodo: пиццерии Dodo (unitinfo/all: адрес, координаты, BeginDateWork) и выручка по месяцам с числом пиццерий; курс к евро — ЕЦБ, для динара — НБС (kurs.resenje.org), для BYN, MDL, AMD, AZN, TJS — национальный банк, для GEL, KGS — кросс через рубль по ЦБ РФ (среднее дневных курсов за месяц) | авто, `dodo-publicapi` | раз в неделю | — |
 | Точки | https://docs.overturemaps.org/guides/places/ | точки сетей из Overture Maps places (последний релиз, parquet в S3, через DuckDB): заведения общепита и пекарни страны в её bbox, без закрытых; сети из конфига — по бренду (osmBrands, допускается суффикс страны) или началу названия (osmNames), остальные сети находятся сами (бренд от 3 точек, без бренда от 5 точек в 3 населённых пунктах, не больше 40); точка — центр bbox объекта | авто, `overture` | раз в неделю | 2026-10-11 |
 
 Сети (по чему их ищет `osm-overpass`: тег brand или начало name; пусто — сети в OSM нет, точки из других источников):
@@ -406,8 +406,8 @@
 
 | Что | Откуда | Что именно | Как | Частота | Сверено |
 |---|---|---|---|---|---|
-| Продажи Dodo | https://publicapi.dodois.io/pl/api/v1/ | пиццерии Dodo (unitinfo/all: адрес, координаты, BeginDateWork) и выручка по месяцам с числом пиццерий; курс к евро — ЕЦБ, для динара — НБС (kurs.resenje.org) | авто, `dodo-publicapi` | раз в неделю | — |
-| Точки | https://publicapi.dodois.io/pl/api/v1/ | сеть dodo: пиццерии Dodo (unitinfo/all: адрес, координаты, BeginDateWork) и выручка по месяцам с числом пиццерий; курс к евро — ЕЦБ, для динара — НБС (kurs.resenje.org) | авто, `dodo-publicapi` | раз в неделю | — |
+| Продажи Dodo | https://publicapi.dodois.io/pl/api/v1/ | пиццерии Dodo (unitinfo/all: адрес, координаты, BeginDateWork) и выручка по месяцам с числом пиццерий; курс к евро — ЕЦБ, для динара — НБС (kurs.resenje.org), для BYN, MDL, AMD, AZN, TJS — национальный банк, для GEL, KGS — кросс через рубль по ЦБ РФ (среднее дневных курсов за месяц) | авто, `dodo-publicapi` | раз в неделю | — |
+| Точки | https://publicapi.dodois.io/pl/api/v1/ | сеть dodo: пиццерии Dodo (unitinfo/all: адрес, координаты, BeginDateWork) и выручка по месяцам с числом пиццерий; курс к евро — ЕЦБ, для динара — НБС (kurs.resenje.org), для BYN, MDL, AMD, AZN, TJS — национальный банк, для GEL, KGS — кросс через рубль по ЦБ РФ (среднее дневных курсов за месяц) | авто, `dodo-publicapi` | раз в неделю | — |
 | Точки | https://docs.overturemaps.org/guides/places/ | точки сетей из Overture Maps places (последний релиз, parquet в S3, через DuckDB): заведения общепита и пекарни страны в её bbox, без закрытых; сети из конфига — по бренду (osmBrands, допускается суффикс страны) или началу названия (osmNames), остальные сети находятся сами (бренд от 3 точек, без бренда от 5 точек в 3 населённых пунктах, не больше 40); точка — центр bbox объекта | авто, `overture` | раз в неделю | 2026-10-11 |
 
 Сети (по чему их ищет `osm-overpass`: тег brand или начало name; пусто — сети в OSM нет, точки из других источников):
@@ -423,3 +423,117 @@
 | `subway` | Subway | sandwich | brand: Subway |
 | `starbucks` | Starbucks | coffee | brand: Starbucks |
 | `costa` | Costa Coffee | coffee | brand: Costa Coffee, Costa |
+
+## GE — GE
+
+| Что | Откуда | Что именно | Как | Частота | Сверено |
+|---|---|---|---|---|---|
+| Продажи Dodo | https://publicapi.dodois.io/ge/api/v1/ | пиццерии Dodo (unitinfo/all: адрес, координаты, BeginDateWork) и выручка по месяцам с числом пиццерий; курс к евро — ЕЦБ, для динара — НБС (kurs.resenje.org), для BYN, MDL, AMD, AZN, TJS — национальный банк, для GEL, KGS — кросс через рубль по ЦБ РФ (среднее дневных курсов за месяц) | авто, `dodo-publicapi` | раз в неделю | — |
+| Точки | https://publicapi.dodois.io/ge/api/v1/ | сеть dodo: пиццерии Dodo (unitinfo/all: адрес, координаты, BeginDateWork) и выручка по месяцам с числом пиццерий; курс к евро — ЕЦБ, для динара — НБС (kurs.resenje.org), для BYN, MDL, AMD, AZN, TJS — национальный банк, для GEL, KGS — кросс через рубль по ЦБ РФ (среднее дневных курсов за месяц) | авто, `dodo-publicapi` | раз в неделю | — |
+| Точки | https://docs.overturemaps.org/guides/places/ | точки сетей из Overture Maps places (последний релиз, parquet в S3, через DuckDB): заведения общепита и пекарни страны в её bbox, без закрытых; сети из конфига — по бренду (osmBrands, допускается суффикс страны) или началу названия (osmNames), остальные сети находятся сами (бренд от 3 точек, без бренда от 5 точек в 3 населённых пунктах, не больше 40); точка — центр bbox объекта | авто, `overture` | раз в неделю | 2026-11-03 |
+
+Сети (по чему их ищет `osm-overpass`: тег brand или начало name; пусто — сети в OSM нет, точки из других источников):
+
+| Ключ | Сеть | Сегмент | Поиск в OSM |
+|---|---|---|---|
+| `dodo` | Dodo Pizza | pizza | — |
+| `dominos` | Domino's | pizza | brand: Domino's, Domino's Pizza |
+| `pizzahut` | Pizza Hut | pizza | brand: Pizza Hut |
+| `mcdonalds` | McDonald's | burger | brand: McDonald's, McDonalds |
+| `burgerking` | Burger King | burger | brand: Burger King |
+| `kfc` | KFC | chicken | brand: KFC |
+| `subway` | Subway | sandwich | brand: Subway |
+| `starbucks` | Starbucks | coffee | brand: Starbucks |
+| `costa` | Costa Coffee | coffee | brand: Costa Coffee, Costa |
+| `wendys` | Wendy's | burger | brand: Wendy's |
+| `dunkin` | Dunkin' | coffee | brand: Dunkin', Dunkin' Donuts |
+| `papajohns` | Papa John's | pizza | brand: Papa John's, Papa Johns, Papa Johns Pizza |
+
+## AM — AM
+
+| Что | Откуда | Что именно | Как | Частота | Сверено |
+|---|---|---|---|---|---|
+| Продажи Dodo | https://publicapi.dodois.io/am/api/v1/ | пиццерии Dodo (unitinfo/all: адрес, координаты, BeginDateWork) и выручка по месяцам с числом пиццерий; курс к евро — ЕЦБ, для динара — НБС (kurs.resenje.org), для BYN, MDL, AMD, AZN, TJS — национальный банк, для GEL, KGS — кросс через рубль по ЦБ РФ (среднее дневных курсов за месяц) | авто, `dodo-publicapi` | раз в неделю | — |
+| Точки | https://publicapi.dodois.io/am/api/v1/ | сеть dodo: пиццерии Dodo (unitinfo/all: адрес, координаты, BeginDateWork) и выручка по месяцам с числом пиццерий; курс к евро — ЕЦБ, для динара — НБС (kurs.resenje.org), для BYN, MDL, AMD, AZN, TJS — национальный банк, для GEL, KGS — кросс через рубль по ЦБ РФ (среднее дневных курсов за месяц) | авто, `dodo-publicapi` | раз в неделю | — |
+| Точки | https://docs.overturemaps.org/guides/places/ | точки сетей из Overture Maps places (последний релиз, parquet в S3, через DuckDB): заведения общепита и пекарни страны в её bbox, без закрытых; сети из конфига — по бренду (osmBrands, допускается суффикс страны) или началу названия (osmNames), остальные сети находятся сами (бренд от 3 точек, без бренда от 5 точек в 3 населённых пунктах, не больше 40); точка — центр bbox объекта | авто, `overture` | раз в неделю | 2026-11-03 |
+
+Сети (по чему их ищет `osm-overpass`: тег brand или начало name; пусто — сети в OSM нет, точки из других источников):
+
+| Ключ | Сеть | Сегмент | Поиск в OSM |
+|---|---|---|---|
+| `dodo` | Dodo Pizza | pizza | — |
+| `dominos` | Domino's | pizza | brand: Domino's, Domino's Pizza |
+| `pizzahut` | Pizza Hut | pizza | brand: Pizza Hut |
+| `mcdonalds` | McDonald's | burger | brand: McDonald's, McDonalds |
+| `burgerking` | Burger King | burger | brand: Burger King |
+| `kfc` | KFC | chicken | brand: KFC |
+| `subway` | Subway | sandwich | brand: Subway |
+| `starbucks` | Starbucks | coffee | brand: Starbucks |
+| `costa` | Costa Coffee | coffee | brand: Costa Coffee, Costa |
+| `papajohns` | Papa John's | pizza | brand: Papa John's, Papa Johns, Papa Johns Pizza |
+| `tashir` | Tashir Pizza | pizza | brand: Tashir Pizza |
+
+## AZ — AZ
+
+| Что | Откуда | Что именно | Как | Частота | Сверено |
+|---|---|---|---|---|---|
+| Продажи Dodo | https://publicapi.dodois.io/az/api/v1/ | пиццерии Dodo (unitinfo/all: адрес, координаты, BeginDateWork) и выручка по месяцам с числом пиццерий; курс к евро — ЕЦБ, для динара — НБС (kurs.resenje.org), для BYN, MDL, AMD, AZN, TJS — национальный банк, для GEL, KGS — кросс через рубль по ЦБ РФ (среднее дневных курсов за месяц) | авто, `dodo-publicapi` | раз в неделю | — |
+| Точки | https://publicapi.dodois.io/az/api/v1/ | сеть dodo: пиццерии Dodo (unitinfo/all: адрес, координаты, BeginDateWork) и выручка по месяцам с числом пиццерий; курс к евро — ЕЦБ, для динара — НБС (kurs.resenje.org), для BYN, MDL, AMD, AZN, TJS — национальный банк, для GEL, KGS — кросс через рубль по ЦБ РФ (среднее дневных курсов за месяц) | авто, `dodo-publicapi` | раз в неделю | — |
+| Точки | https://docs.overturemaps.org/guides/places/ | точки сетей из Overture Maps places (последний релиз, parquet в S3, через DuckDB): заведения общепита и пекарни страны в её bbox, без закрытых; сети из конфига — по бренду (osmBrands, допускается суффикс страны) или началу названия (osmNames), остальные сети находятся сами (бренд от 3 точек, без бренда от 5 точек в 3 населённых пунктах, не больше 40); точка — центр bbox объекта | авто, `overture` | раз в неделю | 2026-11-03 |
+
+Сети (по чему их ищет `osm-overpass`: тег brand или начало name; пусто — сети в OSM нет, точки из других источников):
+
+| Ключ | Сеть | Сегмент | Поиск в OSM |
+|---|---|---|---|
+| `dodo` | Dodo Pizza | pizza | — |
+| `dominos` | Domino's | pizza | brand: Domino's, Domino's Pizza |
+| `pizzahut` | Pizza Hut | pizza | brand: Pizza Hut |
+| `mcdonalds` | McDonald's | burger | brand: McDonald's, McDonalds |
+| `burgerking` | Burger King | burger | brand: Burger King |
+| `kfc` | KFC | chicken | brand: KFC |
+| `subway` | Subway | sandwich | brand: Subway |
+| `starbucks` | Starbucks | coffee | brand: Starbucks |
+| `costa` | Costa Coffee | coffee | brand: Costa Coffee, Costa |
+| `papajohns` | Papa John's | pizza | brand: Papa John's, Papa Johns, Papa Johns Pizza |
+| `dunkin` | Dunkin' | coffee | brand: Dunkin', Dunkin' Donuts |
+| `wendys` | Wendy's | burger | brand: Wendy's |
+
+## KG — KG
+
+| Что | Откуда | Что именно | Как | Частота | Сверено |
+|---|---|---|---|---|---|
+| Продажи Dodo | https://publicapi.dodois.io/kg/api/v1/ | пиццерии Dodo (unitinfo/all: адрес, координаты, BeginDateWork) и выручка по месяцам с числом пиццерий; курс к евро — ЕЦБ, для динара — НБС (kurs.resenje.org), для BYN, MDL, AMD, AZN, TJS — национальный банк, для GEL, KGS — кросс через рубль по ЦБ РФ (среднее дневных курсов за месяц) | авто, `dodo-publicapi` | раз в неделю | — |
+| Точки | https://publicapi.dodois.io/kg/api/v1/ | сеть dodo: пиццерии Dodo (unitinfo/all: адрес, координаты, BeginDateWork) и выручка по месяцам с числом пиццерий; курс к евро — ЕЦБ, для динара — НБС (kurs.resenje.org), для BYN, MDL, AMD, AZN, TJS — национальный банк, для GEL, KGS — кросс через рубль по ЦБ РФ (среднее дневных курсов за месяц) | авто, `dodo-publicapi` | раз в неделю | — |
+| Точки | https://overpass-api.de/api/interpreter | точки сетей по тегу brand (osmBrands в конфиге) или по началу name среди заведений общепита (osmNames) из OpenStreetMap, координаты, адрес, дата открытия, если она есть в теге; город — из addr:city, а без него — ближайший place=city в пределах 15 км, нет города — ближайший place=town | авто, `osm-overpass` | раз в неделю | 2026-11-03 |
+
+Сети (по чему их ищет `osm-overpass`: тег brand или начало name; пусто — сети в OSM нет, точки из других источников):
+
+| Ключ | Сеть | Сегмент | Поиск в OSM |
+|---|---|---|---|
+| `dodo` | Dodo Pizza | pizza | — |
+| `kfc` | KFC | chicken | brand: KFC |
+| `papajohns` | Papa John's | pizza | brand: Papa John's, Papa Johns |
+| `imperiya-pizzy` | Империя Пиццы | pizza | brand: Империя Пиццы; name: Империя пиццы, Imperia Pizza |
+| `wok-lagman` | Wok Lagman | asian | name: Wok Lagman |
+| `begemot` | Бегемот | other | name: Бегемот, Begemot |
+| `mubarak` | Mubarak | other | name: Mubarak |
+| `navat` | Navat | other | name: Нават, Navat, Чайхана Нават, Чайхана Navat |
+| `coffee-like` | Coffee Like | coffee | name: Coffee Like, Кофе Лайк |
+
+## TJ — TJ
+
+| Что | Откуда | Что именно | Как | Частота | Сверено |
+|---|---|---|---|---|---|
+| Продажи Dodo | https://publicapi.dodois.io/tj/api/v1/ | пиццерии Dodo (unitinfo/all: адрес, координаты, BeginDateWork) и выручка по месяцам с числом пиццерий; курс к евро — ЕЦБ, для динара — НБС (kurs.resenje.org), для BYN, MDL, AMD, AZN, TJS — национальный банк, для GEL, KGS — кросс через рубль по ЦБ РФ (среднее дневных курсов за месяц) | авто, `dodo-publicapi` | раз в неделю | — |
+| Точки | https://publicapi.dodois.io/tj/api/v1/ | сеть dodo: пиццерии Dodo (unitinfo/all: адрес, координаты, BeginDateWork) и выручка по месяцам с числом пиццерий; курс к евро — ЕЦБ, для динара — НБС (kurs.resenje.org), для BYN, MDL, AMD, AZN, TJS — национальный банк, для GEL, KGS — кросс через рубль по ЦБ РФ (среднее дневных курсов за месяц) | авто, `dodo-publicapi` | раз в неделю | — |
+| Точки | https://overpass-api.de/api/interpreter | точки сетей по тегу brand (osmBrands в конфиге) или по началу name среди заведений общепита (osmNames) из OpenStreetMap, координаты, адрес, дата открытия, если она есть в теге; город — из addr:city, а без него — ближайший place=city в пределах 15 км, нет города — ближайший place=town | авто, `osm-overpass` | раз в неделю | 2026-11-03 |
+
+Сети (по чему их ищет `osm-overpass`: тег brand или начало name; пусто — сети в OSM нет, точки из других источников):
+
+| Ключ | Сеть | Сегмент | Поиск в OSM |
+|---|---|---|---|
+| `dodo` | Dodo Pizza | pizza | — |
+| `kfc` | KFC | chicken | brand: KFC |
+| `tajburger` | TajBurger | burger | name: TajBurger, Taj Burger |
+| `sfc` | Southern Fried Chicken | chicken | name: Southern Fried Chicken, SFC |
+| `shokoladnitsa` | Шоколадница | coffee | brand: Шоколадница; name: Шоколадница |

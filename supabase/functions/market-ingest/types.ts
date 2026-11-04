@@ -7,6 +7,8 @@ export type DodoUnit = {
   lng: number | null;
   opened: string | null;
   open: boolean;
+  /** Пиццерия ещё не открыта, хотя API Dodo отдаёт её работающей (конфиг страны `dodoNotOpened`). */
+  planned?: boolean;
   organization: string | null;
 };
 /** Машинные источники точек: OSM и Overture Maps (у Overture в osm_id лежит id места). */

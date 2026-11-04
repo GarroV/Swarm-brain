@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ValCurs Date="15.09.2026" name="Official exchange rate">
+  <Valute ID="47">
+    <NumCode>978</NumCode>
+    <CharCode>EUR</CharCode>
+    <Nominal>1</Nominal>
+    <Name>Euro</Name>
+    <Value>20.1111</Value>
+  </Valute><Valute ID="44">
+    <NumCode>840</NumCode>
+    <CharCode>USD</CharCode>
+    <Nominal>1</Nominal>
+    <Name>US Dollar</Name>
+    <Value>17.4258</Value>
+  </Valute></ValCurs>

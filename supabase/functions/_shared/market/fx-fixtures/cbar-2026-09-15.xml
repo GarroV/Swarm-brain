@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ValCurs Date="15.09.2026" Name="AZN məzənnələri" Description="Azərbaycan Respublikası Mərkəzi Bankının 15.09.2026 tarixdən etibarən xarici valyutaların və bank metallarının Azərbaycan manatına qarşı rəsmi məzənnələri bülleteni">
+
+    <ValType Type="Xarici valyutalar"><Valute Code="USD">
+
+
+
+
+
+                    
+                        <Nominal>1</Nominal>
+
+                        <Name>1 ABŞ dolları</Name>
+
+
+
+                        
+                    <Value>1.7</Value>
+                </Valute><Valute Code="EUR">
+
+
+
+
+
+                    
+                        <Nominal>1</Nominal>
+
+                        <Name>1 Avro</Name>
+
+
+
+                        
+                    <Value>1.9613</Value>
+                </Valute></ValType></ValCurs>

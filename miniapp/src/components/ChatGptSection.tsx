@@ -1,5 +1,6 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
+import { ChatGptDesktopSetup } from "./ChatGptDesktopSetup";
 import { Button } from "@/components/ui/button";
 import { useConfirm } from "@/components/ui/confirm";
 import { useIsDemo, useLang } from "@/components/roy/nav";
@@ -11,7 +12,7 @@ import {
 } from "@/lib/mcp-oauth";
 import { mcpOAuthMessages } from "@/lib/mcp-oauth-messages";
 
-/** Личное подключение ChatGPT: адрес вместо команды установки, собственные OAuth-согласия. */
+/** ChatGPT: терминальный мост с отдельным токеном и дополнительные OAuth-подключения. */
 export function ChatGptSection() {
   const lang = useLang();
   const t = mcpOAuthMessages(lang);
@@ -87,7 +88,11 @@ export function ChatGptSection() {
 
   return (
     <div className="space-y-3 text-sm">
-      <p className="text-ink-soft">{t.introduction}</p>
+      <ChatGptDesktopSetup />
+      <section className="space-y-2">
+        <h3 className="font-medium text-ink">{t.chatNoteTitle}</h3>
+        <p className="text-ink-soft">{t.chatNote}</p>
+      </section>
       {data && (
         <div className="space-y-2">
           <label
@@ -108,29 +113,6 @@ export function ChatGptSection() {
           </Button>
         </div>
       )}
-      <section className="space-y-2">
-        <h3 className="font-medium text-ink">{t.desktopTitle}</h3>
-        <ol className="list-decimal space-y-2 pl-4 text-ink-soft">
-          {t.desktopSteps.map((step) => <li key={step}>{step}</li>)}
-        </ol>
-      </section>
-      <details className="space-y-2 rounded-lg border border-line p-3">
-        <summary className="cursor-pointer font-medium text-ink">
-          {t.webTitle}
-        </summary>
-        <ol className="list-decimal space-y-2 pl-4 text-ink-soft">
-          {t.steps.map((step) => <li key={step}>{step}</li>)}
-        </ol>
-        <p className="text-xs text-ink-mute">{t.workspaceNote}</p>
-        <a
-          href="https://chatgpt.com/"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="inline-block text-primary underline underline-offset-4"
-        >
-          {t.openChatGpt}
-        </a>
-      </details>
       <div className="space-y-2 border-t border-line pt-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h3 className="font-medium text-ink">{t.connectedApps}</h3>

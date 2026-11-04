@@ -6,6 +6,10 @@ import type { CountryConfig } from "./types.ts";
 export const HU: CountryConfig = {
   country: "HU",
   dodoCode: "hu",
+  dodoNotOpened: {
+    "Budapest-1":
+      "не открыта (владелец 05.11.2026); API Dodo отдаёт State=1 и дату 2026-07-20",
+  },
   currency: "HUF",
   mapSource: "overture",
   bbox: [16.09, 45.74, 22.88, 48.57],

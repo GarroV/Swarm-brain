@@ -1,6 +1,6 @@
 import { assertEquals, assertRejects, assertThrows } from "@std/assert";
 import { httpGet } from "./lib.ts";
-import { dueAdapters, isDue } from "./run.ts";
+import { dueAdapters, failureOf, isDue } from "./run.ts";
 import { daysBetween } from "./adapters/dodo.ts";
 import { findEeLinks } from "./adapters/ee-ariregister.ts";
 import { overpassQuery } from "./adapters/osm.ts";
@@ -117,4 +117,16 @@ Deno.test("httpGet retries a busy server (429/504) with the given pauses, fails 
   } finally {
     globalThis.fetch = real;
   }
+});
+
+Deno.test("a send that died before the journal write becomes a failed run for that adapter", () => {
+  const f = failureOf(
+    { country: "ES", started_at: "2026-11-02T03:00:00Z", source: "overture", points: [] },
+    "overture",
+    new Error("ingest → HTTP 546"),
+  );
+  assertEquals(
+    [f.country, f.source, "adapter" in f && f.adapter, "failed" in f && f.failed.includes("HTTP 546")],
+    ["ES", "overture", "overture", true],
+  );
 });

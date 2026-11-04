@@ -563,6 +563,7 @@ function isRead(options?: RequestInit): boolean {
 }
 
 async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
+  if (isRead(options) && options?.cache === "no-store") return apiFetchRaw<T>(path, options);
   if (isRead(options)) {
     return requestCache.run(path, () => apiFetchRaw<T>(path, options));
   }

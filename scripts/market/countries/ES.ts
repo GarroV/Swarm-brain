@@ -6,6 +6,8 @@ import type { CountryConfig } from "./types.ts";
 export const ES: CountryConfig = {
   country: "ES",
   dodoCode: "es",
+  // API отдаёт LocalityName «L'Escala», хотя адрес — Terrassa (Carrer de la Torre, 31).
+  dodoCity: { "Terrassa-1": "Terrassa" },
   mapSource: "overture",
   bbox: [-18.17, 27.64, 4.34, 43.79],
   chains: [

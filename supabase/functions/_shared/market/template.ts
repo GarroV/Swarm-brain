@@ -129,8 +129,19 @@ export const SECTIONS: readonly Section[] = [
         example: { chains: ["dodo", "dominos"], rows: [["Своя доставка", "да", "да"]] },
       },
       ratings: {
-        what: "оценки: chain, point, city, google (оценка), reviews (число отзывов), wolt",
-        example: [{ chain: "dodo", point: "Dodo Lozenets", city: "София", google: 4.6, reviews: 812, wolt: 9.2 }],
+        what:
+          "оценки: chain, point, city, google (0–5), reviews (число отзывов), wolt (0–10), glovo (% положительных, 0–100), bolt (0–5), yandex_eda (0–5); нужна хотя бы одна оценка, пустые поля — null; колонка в таблице появляется, если значение есть хотя бы в одной строке страны",
+        example: [{
+          chain: "dodo",
+          point: "Dodo Lozenets",
+          city: "София",
+          google: 4.6,
+          reviews: 812,
+          wolt: 9.2,
+          glovo: 94,
+          bolt: 4.5,
+          yandex_eda: null,
+        }],
       },
       dodo_monthly: {
         what: "продажи Dodo по месяцам из внутренней выгрузки: m (ГГГГ-ММ), usd, fx, eur, units, per",
@@ -157,7 +168,8 @@ export const SECTIONS: readonly Section[] = [
     id: "delivery",
     title: "Доставка и факты рынка",
     auto: "—",
-    manual: "market_set_block delivery_platforms / delivery_figures / market_facts",
+    manual:
+      "market_set_block delivery_platforms / delivery_figures / market_facts; market_add_fact — отдельный факт с темой (market, delivery, timeline, deal, insight, commentary), датой и источником",
     blocks: {
       delivery_platforms: {
         what: "платформы доставки: name, slot (цвет), note, years [{ year, revenue_eur }]",
@@ -200,7 +212,8 @@ export function templateText(): string {
   return [
     "# Шаблон отчёта «Анализ рынка» по стране",
     "Правила: у каждой записи источник (ссылка на документ или «внутренняя выгрузка Dodo»); прибыль и убыток не вносятся; " +
-    "деньги — в евро или в валюте с фиксированным курсом (BGN, HRK), пересчёт сделает Swarm. Блок market_set_block " +
+    "деньги — в евро, в BGN, HRK (фиксированный курс) или в BYN, MDL, AMD, AZN, TJS, GEL, KGS (курс национального банка — на дату цены, " +
+    "среднегодовой для выручки; пересчёт и пометку курса сделает Swarm), прочие валюты переведи в евро сам. Блок market_set_block " +
     "заменяется целиком: сперва market_get, потом запись полного блока. Сборщики работают дальше и проверенное руками " +
     "не перетирают.",
     ...parts,
