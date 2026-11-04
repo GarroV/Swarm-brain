@@ -1,14 +1,10 @@
-import { AM } from "./AM.ts";
-import { AZ } from "./AZ.ts";
 import { BG } from "./BG.ts";
 import { BY } from "./BY.ts";
 import { CY } from "./CY.ts";
 import { EE } from "./EE.ts";
 import { ES } from "./ES.ts";
-import { GE } from "./GE.ts";
 import { HR } from "./HR.ts";
 import { HU } from "./HU.ts";
-import { KG } from "./KG.ts";
 import { LT } from "./LT.ts";
 import { MD } from "./MD.ts";
 import { ME } from "./ME.ts";
@@ -16,7 +12,6 @@ import { PL } from "./PL.ts";
 import { RO } from "./RO.ts";
 import { RS } from "./RS.ts";
 import { SI } from "./SI.ts";
-import { TJ } from "./TJ.ts";
 import type { CountryConfig } from "./types.ts";
 
 export const COUNTRIES: Record<string, CountryConfig> = {
@@ -34,9 +29,4 @@ export const COUNTRIES: Record<string, CountryConfig> = {
   LT,
   MD,
   PL,
-  AM,
-  AZ,
-  GE,
-  KG,
-  TJ,
 };
