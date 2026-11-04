@@ -39,6 +39,10 @@ export type CountryConfig = {
   /** Объекты OSM, подписанные именем сети, но ей не принадлежащие: id («node/1») → причина.
    *  Сборщик их не берёт, а машинную точку на их месте удаляет. */
   osmExclude?: Record<string, string>;
+  /** Пиццерии Dodo, которые API отдаёт работающими (State=1, BeginDateWork), но они ещё не открыты:
+   *  имя точки в API («Budapest-1») → причина. Точка встаёт со статусом `planned` и без даты открытия.
+   *  Убрать запись, когда пиццерия откроется. */
+  dodoNotOpened?: Record<string, string>;
   /** Границы страны [запад, юг, восток, север] — для адаптера overture (фильтр по bbox). */
   bbox?: [number, number, number, number];
   /** Откуда карта точек: «osm» (Overpass, по умолчанию) или «overture» (Overture Maps —

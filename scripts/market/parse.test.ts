@@ -494,3 +494,12 @@ Deno.test("parseOverpass: a bilingual place name keeps its first part, the full 
   }, { kfc: ["KFC"] });
   assertEquals(pts.map((p) => p.city), ["Koper", "Koper", "Ulcinj"]);
 });
+
+Deno.test("parseDodoUnits: a unit listed in dodoNotOpened is planned, without an opening date", () => {
+  const units = parseDodoUnits(JSON.parse(fixture("dodo-units.json")), {
+    "Tallinn-1": "ещё не открыта",
+  });
+  const t = units.find((u) => u.name === "Tallinn-1");
+  assertEquals([t?.planned, t?.open, t?.opened], [true, false, null]);
+  assertEquals(units.find((u) => u.name === "Tartu-1")?.planned, undefined);
+});

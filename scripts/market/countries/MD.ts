@@ -6,6 +6,10 @@ import type { CountryConfig } from "./types.ts";
 export const MD: CountryConfig = {
   country: "MD",
   dodoCode: "md",
+  dodoNotOpened: {
+    "Chisinau-1":
+      "не открыта (владелец 05.11.2026; в «Своде пиццерий» — проектирование); API Dodo отдаёт State=1 и дату 2025-08-29",
+  },
   currency: "MDL",
   mapSource: "overture",
   bbox: [26.62, 45.46, 30.13, 48.49],
