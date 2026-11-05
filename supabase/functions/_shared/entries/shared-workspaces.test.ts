@@ -4,7 +4,6 @@ import { assertEquals, assertRejects } from "jsr:@std/assert@1";
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import {
   attendeeEmails,
-  meetingPeopleIds,
   meetingVisibleGroupIds,
   shareMeetingsOfPerson,
   visibleGroupIdsForMeeting,
@@ -115,34 +114,21 @@ Deno.test("публикация: сбой allowed_users — только дом�
   assertEquals(await visibleGroupIdsForMeeting(db.client, "cee", [{ email: "x@y.io" }]), ["cee"]);
 });
 
-Deno.test("люди черновика: записавшие, держатель записи, совладельцы — без повторов и мусора", () => {
-  assertEquals(
-    meetingPeopleIds({
-      recorders: [{ telegram_id: 1 }, { telegram_id: "2" }, null, { telegram_id: 0 }],
-      claim_owner: 3,
-      co_owners: [1, "4", "x"],
-    }),
-    [1, 2, 3, 4],
-  );
-  assertEquals(meetingPeopleIds(null), []);
-});
-
-// Склейка общей встречи (решение 05.11.2026): запись человека из B лежит в строке `meetings`
-// пространства A. Его e-mail может не быть в календаре — пространство берётся по telegram_id.
-Deno.test("публикация склеенной встречи: пространство записавшего из B — по telegram_id", async () => {
-  const answers: Record<string, { data: unknown; error: unknown }> = {};
-  const db = fakeDb(answers);
-  answers.allowed_users = { data: [{ group_id: "world" }], error: null };
-  const got = await visibleGroupIdsForMeeting(db.client, "cee", [], { peopleIds: [222] });
+// Склейка общей встречи (решение 05.11.2026): пространство записавшего по telegram_id в признак
+// не идёт — в чужую строку можно было встать, зная только ключ. Публикующий (прошёл доступ) — идёт.
+Deno.test("публикация: пространство публикующего — в признак, база по telegram_id не читается", async () => {
+  const db = fakeDb({ allowed_users: { data: [], error: null } });
+  const got = await visibleGroupIdsForMeeting(db.client, "cee", [{ email: "a@b.io" }], { knownGroupIds: ["world"] });
   assertEquals(got, ["cee", "world"]);
-  const byId = db.calls.find((c) => c.table === "allowed_users" && c.method === "in");
-  assertEquals(byId?.args, ["telegram_id", [222]]);
+  assertEquals(
+    db.calls.some((c) => c.table === "allowed_users" && c.method === "in" && c.args[0] === "telegram_id"),
+    false,
+  );
 });
 
 Deno.test("публикация: сбой allowed_users — остаются домашнее и известное пространство публикующего", async () => {
   const db = fakeDb({ allowed_users: { data: null, error: { message: "boom" } } });
   const got = await visibleGroupIdsForMeeting(db.client, "cee", [{ email: "x@y.io" }], {
-    peopleIds: [222],
     knownGroupIds: ["world"],
   });
   assertEquals(got, ["cee", "world"]);

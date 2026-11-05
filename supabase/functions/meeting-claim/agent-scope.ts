@@ -298,3 +298,36 @@ export function mayJoinExisting(
   const me = normEmail(personEmail);
   return me !== null && roster.includes(me);
 }
+
+/**
+ * Может ли человек встать в строку `meetings` ДРУГОГО пространства (склейка общей встречи по
+ * ключу, решение 05.11.2026). Знать ключ — не значит участвовать: календарный ключ
+ * `<event>:<дата>` и комнатный ключ можно узнать, не будучи на встрече, а встав в строку,
+ * человек становится её владельцем и читает черновик.
+ *
+ * Своё пространство — как раньше (решает `mayJoinExisting`). Чужое — только календарная встреча
+ * и только подтверждённому участнику: его e-mail в составе строки ИЛИ ключ в его собственном
+ * календаре, если сервер его знает (`scope.calendarKeys`). Комнатные и ручные ключи пространства
+ * не пересекают никогда.
+ */
+export function mayJoinAcrossWorkspaces(
+  callerGroupId: string | null,
+  personEmail: string | null,
+  row: {
+    group_id?: string | null;
+    identity_kind?: string | null;
+    identity_key: string | null;
+    attendees: ScopeAttendee[] | null;
+  },
+  scope: AgentScope | null,
+): boolean {
+  if (!callerGroupId) return false;
+  if (row.group_id === callerGroupId) return true;
+  const key = row.identity_key ?? "";
+  if (keyShape(key) !== "calendar") return false;
+  if (row.identity_kind != null && row.identity_kind !== "calendar") return false;
+  if (scope?.calendarKeys.has(key)) return true;
+  const me = normEmail(personEmail);
+  if (me === null) return false;
+  return (row.attendees ?? []).some((a) => normEmail(a?.email) === me);
+}

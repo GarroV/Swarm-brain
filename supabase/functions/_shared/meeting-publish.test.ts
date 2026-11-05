@@ -163,3 +163,29 @@ Deno.test("склейка между пространствами: запись 
   assertEquals(dedupGroups.includes("cee"), true);
   assertEquals(dedupGroups.includes("world"), false);
 });
+
+Deno.test("склейка между пространствами: записавший из B не в составе — его пространство в признак НЕ идёт", async () => {
+  // В строку A он мог встать, только зная ключ (до проверки участия в meeting-claim).
+  const db = recordingDb({ 111: "cee", 222: "world" });
+  const meeting = {
+    id: "m1",
+    group_id: "cee",
+    status: "awaiting_review",
+    draft_notes_md: "Тезисы",
+    started_at: "2026-11-05T10:00:00Z",
+    identity_key: "evt:2026-11-05",
+    title: "Weekly sync",
+    recorders: [{ telegram_id: 111 }, { telegram_id: 222 }],
+    attendees: [{ name: "Ann", email: "ann@x.io" }],
+  };
+  const res = await publishDraftMeeting(db.client, meeting, {
+    ...opts,
+    groupId: "cee",
+    telegramId: 111,
+    isPrivate: false,
+    countries: [],
+    skipModel: true,
+  });
+  assertEquals(res.ok, true);
+  assertEquals(db.inserts.find((i) => i.table === "entries")?.row.visible_group_ids, ["cee"]);
+});

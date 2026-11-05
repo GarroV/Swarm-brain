@@ -13,10 +13,8 @@ import { onlyLiveEntries } from "./entries/live.ts";
 import {
   addVisibleGroups,
   attendeeEmails,
-  meetingPeopleIds,
   visibleGroupIdsForMeeting,
   workspacesOfEmails,
-  workspacesOfPeople,
 } from "./entries/shared-workspaces.ts";
 import { openAIKeyHandle } from "./workspace-keys.ts";
 
@@ -143,11 +141,10 @@ export async function publishDraftMeeting(
     OPENAI_KEY,
   );
 
-  // Пространства людей черновика и самого публикующего — в признак принадлежности записи.
-  const sharingExtra = {
-    peopleIds: meetingPeopleIds(meeting as Parameters<typeof meetingPeopleIds>[0]),
-    knownGroupIds: [opts.groupId],
-  };
+  // Пространство публикующего — в признак принадлежности записи (он прошёл доступ к черновику;
+  // из чужого пространства — только как участник по e-mail). Пространства записавших по
+  // telegram_id не берём: см. visibleGroupIdsForMeeting.
+  const sharingExtra = { knownGroupIds: [opts.groupId] };
 
   const startedAt = meeting.started_at as string | null;
   const entryDate = startedAt ? startedAt.split("T")[0] : null;
@@ -265,7 +262,6 @@ export async function publishDraftMeeting(
       if (shareRow) {
         const groups = [
           ...await workspacesOfEmails(supabase, attendeeEmails(mAttendees)),
-          ...await workspacesOfPeople(supabase, sharingExtra.peopleIds),
           ...sharingExtra.knownGroupIds,
         ];
         await addVisibleGroups(

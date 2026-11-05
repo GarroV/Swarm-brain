@@ -53,23 +53,50 @@ Deno.test("встречу писали двое — видит каждый из
 
 // Склейка общей встречи между пространствами (решение 05.11.2026): человек из пространства B
 // записал календарную встречу, ключ совпал — его запись встала в строку `meetings` пространства A.
-// Владельцы строки вычитывают её из своего пространства; посторонние из B — нет; у A всё как было.
-Deno.test("склейка между пространствами: записавший из B видит свой черновик в строке A", () => {
-  const merged = { group_id: "cee", recorders: [{ telegram_id: RECORDER }, { telegram_id: OTHER }] };
-  assertEquals(canAccessDraftMeeting(merged, OTHER, false, "world"), true);
+// Знать ключ — не значит участвовать: из B черновик открывает владелец строки, чей e-mail есть в
+// составе встречи. Без e-mail у вызывающего — только своё пространство. У A всё как было.
+const BOB = "bob@world.io";
+const mergedA = {
+  group_id: "cee",
+  recorders: [{ telegram_id: RECORDER }, { telegram_id: OTHER }],
+  attendees: [{ email: "ann@team.io" }, { email: "Bob@World.io" }],
+};
+
+Deno.test("склейка между пространствами: записавший из B в составе встречи видит свой черновик в строке A", () => {
+  assertEquals(canAccessDraftMeeting(mergedA, OTHER, false, "world", BOB), true);
+  assertEquals(canAccessDraftMeeting(mergedA, OTHER, false, "world", " BOB@world.io "), true);
 });
 
-Deno.test("склейка между пространствами: совладелец и держатель записи из B тоже видят", () => {
-  const coOwnedA = { group_id: "cee", recorders: [{ telegram_id: RECORDER }], co_owners: [OTHER] };
-  assertEquals(canAccessDraftMeeting(coOwnedA, OTHER, false, "world"), true);
-  const heldByB = { group_id: "cee", recorders: [{ telegram_id: RECORDER }], claim_owner: String(OTHER) };
-  assertEquals(canAccessDraftMeeting(heldByB, OTHER, false, "world"), true);
+Deno.test("склейка между пространствами: записавший из B НЕ в составе (знал ключ) — отказ", () => {
+  assertEquals(canAccessDraftMeeting(mergedA, OTHER, false, "world", "eve@world.io"), false);
+});
+
+Deno.test("склейка между пространствами: без e-mail смотрящего — только своё пространство", () => {
+  assertEquals(canAccessDraftMeeting(mergedA, OTHER, false, "world"), false);
+  assertEquals(canAccessDraftMeeting(mergedA, OTHER, false, "world", null), false);
+  assertEquals(canAccessDraftMeeting(mergedA, RECORDER, false, "cee"), true);
+});
+
+Deno.test("склейка между пространствами: совладелец и держатель записи из B в составе тоже видят", () => {
+  const coOwnedA = { ...mergedA, recorders: [{ telegram_id: RECORDER }], co_owners: [OTHER] };
+  assertEquals(canAccessDraftMeeting(coOwnedA, OTHER, false, "world", BOB), true);
+  const heldByB = { ...mergedA, recorders: [{ telegram_id: RECORDER }], claim_owner: String(OTHER) };
+  assertEquals(canAccessDraftMeeting(heldByB, OTHER, false, "world", BOB), true);
+});
+
+Deno.test("склейка между пространствами: в составе, но не владелец черновика — отказ", () => {
+  assertEquals(canAccessDraftMeeting(mergedA, 333, false, "world", BOB), false);
+});
+
+Deno.test("склейка между пространствами: переговорка с тем же адресом участником не считается", () => {
+  const room = { ...mergedA, attendees: [{ email: BOB, resource: true }] };
+  assertEquals(canAccessDraftMeeting(room, OTHER, false, "world", BOB), false);
 });
 
 Deno.test("склейка между пространствами: посторонний из B и админ B черновик не видят", () => {
-  const merged = { group_id: "cee", recorders: [{ telegram_id: RECORDER }, { telegram_id: OTHER }] };
-  assertEquals(canAccessDraftMeeting(merged, 333, false, "world"), false);
-  assertEquals(canAccessDraftMeeting(merged, ADMIN, true, "world"), false);
+  const merged = mergedA;
+  assertEquals(canAccessDraftMeeting(merged, 333, false, "world", "x@world.io"), false);
+  assertEquals(canAccessDraftMeeting(merged, ADMIN, true, "world", "admin@world.io"), false);
   // Удалить чужую склеенную строку админ B не может — только админ её пространства.
   assertEquals(canDeleteDraftMeeting(merged, ADMIN, true, "world"), false);
 });
@@ -84,6 +111,8 @@ Deno.test("склейка между пространствами: у людей
 Deno.test("без пространства смотрящего черновик закрыт даже записавшему (fail-closed)", () => {
   assertEquals(canAccessDraftMeeting(draft, RECORDER, false, null), false);
   assertEquals(canAccessDraftMeeting(draft, RECORDER, false, ""), false);
+  // Строка без пространства и смотрящий без пространства — не «одно и то же пространство».
+  assertEquals(canAccessDraftMeeting({ ...draft, group_id: null }, RECORDER, false, null), false);
 });
 
 Deno.test("нет записи или пустые recorders — доступа нет ни у кого (fail-closed)", () => {
@@ -110,8 +139,9 @@ Deno.test("совладелец (участник встречи из SWARM) в�
   assertEquals(canAccessDraftMeeting(coOwned, OTHER, false, "cee"), true);
   assertEquals(canAccessDraftMeeting(coOwned, 333, false, "cee"), false);
   assertEquals(canAccessDraftMeeting(coOwned, ADMIN, true, "cee"), false);
-  // Из другого пространства — тоже видит: склейка общей встречи (решение 05.11.2026).
-  assertEquals(canAccessDraftMeeting(coOwned, OTHER, false, "other"), true);
+  // Из другого пространства — только если его e-mail в составе встречи (решение 05.11.2026);
+  // у этой строки состава нет.
+  assertEquals(canAccessDraftMeeting(coOwned, OTHER, false, "other", BOB), false);
 });
 
 Deno.test("удалить можно только свою встречу с одним владельцем — групповую не стереть у всех (#818)", () => {

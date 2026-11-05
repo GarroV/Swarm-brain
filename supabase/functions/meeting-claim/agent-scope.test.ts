@@ -14,6 +14,7 @@ import {
   type CalendarSource,
   type InviteSource,
   keyShape,
+  mayJoinAcrossWorkspaces,
   mayJoinExisting,
   resolveAgentScope,
 } from "./agent-scope.ts";
@@ -405,4 +406,46 @@ Deno.test("люди присоединяются как раньше — све�
 Deno.test("БЛОКИРУЮЩИЙ: агент без контекста сверки не присоединяется никуда, кроме своего", () => {
   assertEquals(mayJoinExisting(bot, "person@team.io", { ...theirRoom, attendees: [] }, null), false);
   assertEquals(mayJoinExisting(bot, null, { ...theirRoom, claim_owner: PERSON }, null), true);
+});
+
+// ── Строка другого пространства (склейка общей встречи, решение 05.11.2026) ────────────────────
+// Знать ключ — не значит участвовать: встать в строку чужого пространства может только
+// подтверждённый участник календарной встречи. Комнатные и ручные ключи пространства не пересекают.
+const CAL_KEY = "evt123:2026-11-05";
+const rowA = {
+  group_id: "cee",
+  identity_kind: "calendar",
+  identity_key: CAL_KEY,
+  attendees: [{ email: "Ann@Team.io" }, { email: "bob@world.io" }],
+};
+
+Deno.test("чужое пространство: человек с ключом, но не в составе — отказ", () => {
+  assertEquals(mayJoinAcrossWorkspaces("world", "eve@world.io", rowA, null), false);
+  assertEquals(mayJoinAcrossWorkspaces("world", null, rowA, null), false, "без почты сверить нечем");
+});
+
+Deno.test("чужое пространство: участник по e-mail (без учёта регистра) — встаёт", () => {
+  assertEquals(mayJoinAcrossWorkspaces("world", " BOB@world.io ", rowA, null), true);
+  assertEquals(mayJoinAcrossWorkspaces("world", "ann@team.io", rowA, null), true);
+});
+
+Deno.test("чужое пространство: ключ в собственном календаре человека — встаёт", () => {
+  const scope = { attendees: [], calendarKeys: new Set([CAL_KEY]) };
+  assertEquals(mayJoinAcrossWorkspaces("world", "eve@world.io", rowA, scope), true);
+});
+
+Deno.test("чужое пространство: комнатный и ручной ключ — отказ даже участнику", () => {
+  const room = { ...rowA, identity_kind: "room", identity_key: "meet:abc-defg-hij:2026-11-05" };
+  assertEquals(mayJoinAcrossWorkspaces("world", "bob@world.io", room, null), false);
+  const manual = { ...rowA, identity_kind: "manual", identity_key: "manual-123" };
+  assertEquals(mayJoinAcrossWorkspaces("world", "bob@world.io", manual, null), false);
+  // Календарная форма ключа, но строка помечена комнатой — тоже отказ.
+  assertEquals(mayJoinAcrossWorkspaces("world", "bob@world.io", { ...rowA, identity_kind: "room" }, null), false);
+});
+
+Deno.test("своё пространство — как раньше, любой ключ; без пространства — отказ", () => {
+  const room = { ...rowA, identity_kind: "room", identity_key: "meet:abc-defg-hij:2026-11-05" };
+  assertEquals(mayJoinAcrossWorkspaces("cee", "eve@team.io", room, null), true);
+  assertEquals(mayJoinAcrossWorkspaces("cee", null, rowA, null), true);
+  assertEquals(mayJoinAcrossWorkspaces(null, "bob@world.io", rowA, null), false);
 });

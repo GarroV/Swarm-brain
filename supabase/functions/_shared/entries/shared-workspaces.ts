@@ -2,10 +2,9 @@
 // решения docs/decisions/2026-11-05-second-workspace.md.
 //
 // Правило одно: встреча видна в домашнем пространстве, в пространствах её участников, найденных
-// по e-mail в `allowed_users`, и в пространствах людей черновика (записавшие, держатель записи,
-// совладельцы — склейка общей встречи между пространствами). Чистая часть —
-// `meetingVisibleGroupIds` и `meetingPeopleIds`, ввод-вывод — `visibleGroupIdsForMeeting`. Их зовут
-// публикация (`meeting-publish.ts`) и Read.ai.
+// по e-mail в `allowed_users`, и в пространстве публикующего. Чистая часть —
+// `meetingVisibleGroupIds`, ввод-вывод — `visibleGroupIdsForMeeting`. Их зовут публикация
+// (`meeting-publish.ts`) и Read.ai.
 //
 // `shareMeetingsOfPerson` — для переезда человека (этап 3): его прошлые встречи получают новое
 // пространство в признак. Пока нигде не вызывается.
@@ -55,50 +54,14 @@ export async function workspacesOfEmails(
     .filter(isWorkspaceId);
 }
 
-/** Люди черновика `meetings`: записавшие, держатель записи и совладельцы — без повторов. */
-export function meetingPeopleIds(
-  meeting:
-    | {
-      recorders?: Array<{ telegram_id?: unknown } | null> | null;
-      claim_owner?: unknown;
-      co_owners?: unknown[] | null;
-    }
-    | null
-    | undefined,
-): number[] {
-  if (!meeting) return [];
-  const raw = [
-    ...(meeting.recorders ?? []).map((r) => r?.telegram_id),
-    meeting.claim_owner,
-    ...(meeting.co_owners ?? []),
-  ];
-  const ids = raw
-    .map((v) => (typeof v === "string" ? Number(v) : v))
-    .filter((n): n is number => typeof n === "number" && Number.isInteger(n) && n !== 0);
-  return [...new Set(ids)];
-}
-
-/** Пространства людей SWARM с этими telegram_id (`allowed_users`). Ошибка базы — бросает. */
-export async function workspacesOfPeople(
-  supabase: SupabaseClient,
-  telegramIds: number[],
-): Promise<string[]> {
-  if (telegramIds.length === 0) return [];
-  const { data, error } = await supabase.from("allowed_users").select("group_id").in("telegram_id", telegramIds);
-  if (error) throw new Error(`allowed_users by telegram_id: ${error.message}`);
-  return ((data ?? []) as Array<{ group_id: string | null }>)
-    .map((r) => r.group_id)
-    .filter(isWorkspaceId);
-}
-
 /**
- * Признак принадлежности для публикуемой встречи: домашнее ∪ пространства участников по e-mail
- * ∪ пространства людей черновика (`peopleIds`: записавшие, держатель записи, совладельцы) ∪
- * `knownGroupIds` — пространства, известные без базы (сессия публикующего).
+ * Признак принадлежности для публикуемой встречи: домашнее ∪ пространства участников по e-mail ∪
+ * `knownGroupIds` — пространства, известные без базы (сессия публикующего: он уже прошёл
+ * `canAccessDraftMeeting`, а из чужого пространства его пускает только e-mail в составе встречи).
  *
- * Люди черновика нужны из-за склейки общей встречи: календарный ключ одинаков у всех, и запись
- * человека из пространства B встаёт в строку `meetings` пространства A (meeting-claim). Без них
- * B не увидел бы опубликованную встречу, которую сам записал, если его e-mail нет в календаре.
+ * Пространства записавших по `telegram_id` НЕ берём намеренно: в строку другого пространства
+ * встать можно было, только зная ключ (до проверки участия в meeting-claim), — такой записавший
+ * открыл бы встречу всей своей команде. Подтверждённый участник и так найден по e-mail.
  *
  * Сбой чтения `allowed_users` не роняет публикацию: остаются домашнее и `knownGroupIds`
  * (fail-closed — недоделанный признак значит «не видно второй команде», а не «видно чужим»).
@@ -107,15 +70,12 @@ export async function visibleGroupIdsForMeeting(
   supabase: SupabaseClient,
   homeGroupId: string,
   attendees: unknown,
-  extra: { peopleIds?: number[]; knownGroupIds?: string[] } = {},
+  extra: { knownGroupIds?: string[] } = {},
 ): Promise<string[]> {
   const known = extra.knownGroupIds ?? [];
   try {
-    const [byEmail, byPerson] = await Promise.all([
-      workspacesOfEmails(supabase, attendeeEmails(attendees)),
-      workspacesOfPeople(supabase, extra.peopleIds ?? []),
-    ]);
-    return meetingVisibleGroupIds(homeGroupId, [...byEmail, ...byPerson, ...known]);
+    const byEmail = await workspacesOfEmails(supabase, attendeeEmails(attendees));
+    return meetingVisibleGroupIds(homeGroupId, [...byEmail, ...known]);
   } catch (e) {
     console.error("visibleGroupIdsForMeeting: только домашнее и известные —", e instanceof Error ? e.message : e);
     return meetingVisibleGroupIds(homeGroupId, known);

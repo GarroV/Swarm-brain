@@ -79,20 +79,32 @@ export function oneOnOnePartner(meeting: DraftMeetingRow, viewerId: number): num
  * Может ли `viewerId` открыть черновик. `isAdmin` принимается, чтобы вызывающему не приходилось
  * гадать, нужен ли он, — и намеренно НЕ влияет на результат: так видно, что оверсайт здесь
  * рассмотрен и отклонён, а не забыт.
+ *
+ * Своё пространство — владелец черновика (записавший, совладелец, держатель записи).
+ *
+ * Строка ДРУГОГО пространства (склейка общей встречи по календарному ключу, решение 05.11.2026) —
+ * владелец черновика И его e-mail в составе встречи (`attendees`). Знать ключ — не значит
+ * участвовать: встать в строку можно было, только зная ключ, а черновик — сырая запись чужого
+ * разговора. Вызывающий без e-mail смотрящего получает только своё пространство (fail-closed).
  */
 export function canAccessDraftMeeting(
   meeting: DraftMeetingRow | null | undefined,
   viewerId: number,
   _isAdmin: boolean,
   viewerGroupId: string | null | undefined,
+  viewerEmail?: string | null,
 ): boolean {
   if (!meeting || !viewerGroupId) return false;
-  // Пространство строки НЕ проверяем намеренно (решение 05.11.2026, этап 2 второго пространства):
-  // календарный ключ одинаков у всех участников, и запись человека из пространства B встаёт в
-  // строку `meetings` пространства A (meeting-claim, ключ уникален сам по себе). Это одна живая
-  // встреча; её владельцы — записавшие, совладельцы и держатель записи — вычитывают её, где бы ни
-  // лежала строка. Всем остальным черновик закрыт в любом пространстве.
-  return isDraftOwner(meeting, viewerId);
+  if (!isDraftOwner(meeting, viewerId)) return false;
+  if (meeting.group_id === viewerGroupId) return true;
+  return isCalendarAttendee(meeting, viewerEmail);
+}
+
+/** E-mail смотрящего есть в составе встречи (без учёта регистра; переговорки не в счёт). */
+function isCalendarAttendee(meeting: DraftMeetingRow, email: string | null | undefined): boolean {
+  const me = (email ?? "").trim().toLowerCase();
+  if (!me.includes("@")) return false;
+  return (meeting.attendees ?? []).some((a) => a != null && !isRoom(a) && (a.email ?? "").trim().toLowerCase() === me);
 }
 
 /** Записавший, совладелец или держатель записи (`claim_owner`) — владелец черновика. */

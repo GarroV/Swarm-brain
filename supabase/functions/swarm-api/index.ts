@@ -2930,7 +2930,7 @@ async function routeRequest(req: Request): Promise<Response> {
     const status = url.searchParams.get("status") ?? "awaiting_review";
     let q = supabase.from("meetings")
       .select(
-        "id, title, source, identity_kind, started_at, ended_at, status, has_draft_notes, recorders, co_owners, attendees, entry_id, created_at, recorded_by, agent_version, recorded_seconds, summary_status, agent_last_seen_at, agent_last_recording" +
+        "id, title, source, identity_kind, started_at, ended_at, status, has_draft_notes, recorders, co_owners, attendees, entry_id, created_at, recorded_by, agent_version, recorded_seconds, summary_status, agent_last_seen_at, agent_last_recording, group_id, claim_owner" +
           (status === "in_base" ? ", published_entry:entries!entry_id!inner(id)" : ""),
         { count: "exact" },
       )
@@ -2959,11 +2959,19 @@ async function routeRequest(req: Request): Promise<Response> {
     // Полный текст берёт деталь GET /agent-meetings/:id — она его и так до-загружает.
     // Пустые слоты бота встреч (заявился, записи нет) в черновики не попадают (#788): показ —
     // только пока бот пишет (agent_last_recording + свежий удар), см. _shared/bot-slot.ts.
-    const rows = (data ?? []) as Array<SlotRow & { recorders?: unknown }>;
+    // Строка другого пространства (склейка общей встречи) — только владельцу из состава встречи:
+    // то же правило, что у карточки (`canAccessDraftMeeting` с e-mail). Служебные колонки
+    // правила (`group_id`, `claim_owner`) в ответ не уходят.
+    const rows = ((data ?? []) as Array<SlotRow & { recorders?: unknown }>)
+      .filter((r) => canAccessDraftMeeting(r as DraftMeetingRow, telegram_id, isAdmin, groupId, userEmail))
+      .map(({ group_id: _g, claim_owner: _c, ...r }: Record<string, unknown>) =>
+        r as SlotRow & { recorders?: unknown }
+      );
+    const hiddenForeign = (data ?? []).length - rows.length;
     const shown = rows.filter((r) => !isMissedBotSlot(r));
     const enrichedList = await withRecorderNames(shown);
     // Сколько черновиков подходит под фильтр БЕЗ лимита 50 (issue #112) — за вычетом спрятанных.
-    const total = count != null ? count - (rows.length - shown.length) : null;
+    const total = count != null ? count - hiddenForeign - (rows.length - shown.length) : null;
     // recording_now — «Идёт запись» (#1026): свежесть удара решает сервер, клиент порог не знает.
     const nowMs = Date.now();
     const listRows = enrichedList.map((r) => ({ ...toAgentListRow(r), recording_now: isBotRecordingNow(r, nowMs) }));
@@ -3010,6 +3018,7 @@ async function routeRequest(req: Request): Promise<Response> {
         telegram_id,
         isAdmin,
         groupId,
+        userEmail,
       )
     ) {
       return apiErr(404, "Not found", origin);

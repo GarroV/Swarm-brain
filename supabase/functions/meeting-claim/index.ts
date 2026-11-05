@@ -26,6 +26,7 @@ import {
   AgentScopeError,
   calendarCallRoom,
   type CalendarSource,
+  mayJoinAcrossWorkspaces,
   mayJoinExisting,
   resolveAgentScope,
 } from "./agent-scope.ts";
@@ -322,9 +323,10 @@ type ExistingMeetingRow = HeldRow & { id: string };
 
 // Колонки строки встречи для арбитража: и найденной по составу, и по конфликту ключа.
 const EXISTING_COLUMNS =
-  "id, identity_kind, identity_key, started_at, attendees, claim_owner, recorded_seconds, transcript, notes_edited_at, status, created_at, lease_expires_at, agent_last_recording, summary_status, recorders";
+  "id, group_id, identity_kind, identity_key, started_at, attendees, claim_owner, recorded_seconds, transcript, notes_edited_at, status, created_at, lease_expires_at, agent_last_recording, summary_status, recorders";
 
 type RosterCandidate = ExistingMeetingRow & {
+  group_id: string | null;
   identity_kind: string | null;
   identity_key: string | null;
   started_at: string | null;
@@ -795,6 +797,9 @@ Deno.serve(async (req: Request) => {
     //      индекс по одному ключу, БЕЗ пространства, и это намеренно (решение 05.11.2026): календарный
     //      ключ одинаков у всех участников, поэтому запись человека из пространства B встаёт в строку
     //      пространства A. Это одна живая встреча — две строки дали бы обеим командам две копии.
+    //      Знать ключ — не значит участвовать: в строку ДРУГОГО пространства встаёт только
+    //      подтверждённый участник календарной встречи (`mayJoinAcrossWorkspaces`: e-mail в составе
+    //      строки или ключ в его календаре); комнатные и ручные ключи пространства не пересекают.
     //      Последствия закрыты: владельцы строки вычитывают её из своего пространства
     //      (canAccessDraftMeeting), публикация пишет в дом строки и добавляет пространства людей
     //      черновика в признак принадлежности (meeting-publish.ts);
@@ -812,13 +817,19 @@ Deno.serve(async (req: Request) => {
     );
     const myEmail = await emailOfUser(identity.telegramId);
     const callRoom = await callRoomOfClaim(body, identity.telegramId);
+    // Встать в чужую строку можно, только если и правило агента (D016), и правило пространств
+    // пускают: строка другого пространства — только подтверждённому участнику календарной встречи.
     const mayJoin = (
       row: {
+        group_id?: string | null;
+        identity_kind?: string | null;
         identity_key: string | null;
         claim_owner: number | null;
         attendees: Attendee[] | null;
       },
-    ) => mayJoinExisting(identity, myEmail, row, scope);
+    ) =>
+      mayJoinExisting(identity, myEmail, row, scope) &&
+      mayJoinAcrossWorkspaces(identity.groupId, myEmail, row, scope);
 
     // (2) до вставки: вдруг эта встреча уже открыта под другим ключом — ищем по ссылке на звонок.
     // Эта склейка остаётся в пределах своего пространства (findMeetingByRoom фильтрует group_id):
@@ -905,7 +916,8 @@ Deno.serve(async (req: Request) => {
       } else if (insErr && insErr.code === "23505") {
         // Встреча с этим ключом уже есть → решаем по тому же правилу, что и при склейке.
         // Ищем по ключу БЕЗ пространства намеренно: строка может быть из другого пространства
-        // (склейка общей встречи, решение 05.11.2026, см. путь 1 выше). Индекс не трогать.
+        // (склейка общей встречи, решение 05.11.2026, см. путь 1 выше). Индекс не трогать. Встать
+        // в чужую строку пускает только `mayJoin` (подтверждённое участие), иначе 403.
         const { data: existing } = await supabase
           .from("meetings")
           .select(EXISTING_COLUMNS)
@@ -914,11 +926,16 @@ Deno.serve(async (req: Request) => {
         if (!existing) return fail("claim conflict but meeting not found", 409);
         const row = existing as RosterCandidate;
         if (!mayJoin(row)) {
+          const crossWorkspace = row.group_id !== identity.groupId;
           console.warn(
-            `meeting-claim: служебный агент за ${identity.telegramId} — встреча ${row.id} вне состава`,
+            crossWorkspace
+              ? `meeting-claim: ${identity.telegramId} из ${identity.groupId} — встреча ${row.id} пространства ${row.group_id}, участие не подтверждено`
+              : `meeting-claim: служебный агент за ${identity.telegramId} — встреча ${row.id} вне состава`,
           );
           return fail(
-            "service agent: the person is not a participant of this meeting",
+            crossWorkspace
+              ? "the person is not a confirmed participant of this meeting"
+              : "service agent: the person is not a participant of this meeting",
             403,
           );
         }
