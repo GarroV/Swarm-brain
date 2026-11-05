@@ -1,5 +1,11 @@
 import { assertAlmostEquals, assertEquals } from "@std/assert";
-import { clearUnitSalesCache, loadUnitSales, mergeCountryMtd, parseDecimusSales } from "./unit-sales.ts";
+import {
+  clearUnitSalesCache,
+  loadUnitSales,
+  loadVisibleUnitSales,
+  mergeCountryMtd,
+  parseDecimusSales,
+} from "./unit-sales.ts";
 import { buildUnitSales } from "./unit-sales.ts";
 
 // Фикстура — ответ GET /api/v1/sales?countries=RS,SI&month=2026-11 из реального запроса к базе Децимуса
@@ -163,4 +169,28 @@ Deno.test("loadUnitSales: a currency without a rate only drops its own countries
     now: () => new Date("2026-11-06T10:00:00Z"),
   });
   assertEquals(Object.keys(r!.countries), ["SI"]);
+});
+
+Deno.test("loadVisibleUnitSales: Decimus is asked only for visible countries; demo and invisible-only requests never call it", async () => {
+  clearUnitSalesCache();
+  const asked: string[][] = [];
+  const deps = {
+    getSales: (ccs: string[]) => {
+      asked.push(ccs);
+      return Promise.resolve(REAL);
+    },
+    rateOf: () => Promise.resolve(1),
+    now: () => new Date("2026-11-06T10:00:00Z"),
+  };
+  const real = (cc: string) => cc !== "XD";
+  const demo = (cc: string) => cc === "XD";
+  // Настоящее пространство: демо-страна и чужое по видимости отсечены до запроса.
+  await loadVisibleUnitSales(["RS", "XD", "SI"], (c) => real(c) && c !== "SI", false, deps);
+  assertEquals(asked, [["RS"]]);
+  // Демо-пространство: ни при каких странах.
+  assertEquals(await loadVisibleUnitSales(["XD", "RS"], demo, true, deps), null);
+  assertEquals(await loadVisibleUnitSales(["RS"], real, true, deps), null);
+  // Ничего видимого — тоже без запроса.
+  assertEquals(await loadVisibleUnitSales(["RS"], () => false, false, deps), null);
+  assertEquals(asked.length, 1);
 });

@@ -5,6 +5,7 @@
 // а страна, у которой нет данных Децимуса, остаётся с выручкой публичного API (mtd.ts).
 import { decimusGet, DecimusNotConfigured } from "../decimus.ts";
 import { belgradeToday, type Mtd, todayRate } from "./mtd.ts";
+import { DEMO_COUNTRY } from "./rules.ts";
 
 export const UNIT_SALES_TTL_MS = 10 * 60_000;
 export const UNIT_SALES_TIMEOUT_MS = 5_000;
@@ -162,6 +163,22 @@ export async function loadUnitSales(ccs: string[], deps: Partial<UnitSalesDeps> 
   const value = await fetchUnitSales(ccs, d);
   cache.set(key, { at: nowMs, value });
   return value;
+}
+
+/**
+ * Гейт выручки пиццерий — тот же, что у баллов пиццерий из Децимуса (`/quality`): рейтинги общие для настоящих
+ * пространств (решение 05.11.2026, `allowed_markets` не режет), демо настоящих данных не видит. Поэтому в Децимус
+ * уходят только страны, прошедшие `visible` (canSeeCountry), без демо-страны; демо-пространство в Децимус не ходит
+ * вообще. Нет видимых стран → null без запроса, у страны остаётся публичный API.
+ */
+export function loadVisibleUnitSales(
+  ccs: string[],
+  visible: (cc: string) => boolean,
+  isDemo: boolean,
+  deps: Partial<UnitSalesDeps> = {},
+): Promise<UnitSales | null> {
+  if (isDemo) return Promise.resolve(null);
+  return loadUnitSales(ccs.filter((c) => visible(c) && c !== DEMO_COUNTRY), deps);
 }
 
 /** Для тестов. */

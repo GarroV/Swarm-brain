@@ -20,7 +20,7 @@ import {
   loadSales,
 } from "../_shared/market/db.ts";
 import { loadMtd } from "../_shared/market/mtd.ts";
-import { loadUnitSales, mergeCountryMtd } from "../_shared/market/unit-sales.ts";
+import { loadVisibleUnitSales, mergeCountryMtd } from "../_shared/market/unit-sales.ts";
 import { parseSalesCountries } from "../_shared/market/sales.ts";
 import { validateSnapshot } from "../_shared/market/snapshot.ts";
 
@@ -113,7 +113,7 @@ export async function handleMarketRoutes(
       const [sales, publicMtd, unitSales] = await Promise.all([
         loadSales(supabase, ok),
         loadMtd(live),
-        loadUnitSales(live),
+        loadVisibleUnitSales(ccs, visible, isDemo),
       ]);
       for (const c of ok) if (!(c in publicMtd)) publicMtd[c] = null;
       return json(
