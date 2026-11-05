@@ -113,6 +113,7 @@ async function seed(db: Client) {
     cycle: uid(),
     sprintItem: uid(),
     nMine: uid(),
+    nMineOnMixed: uid(),
     nColOnMoved: uid(),
     labelMine: uid(),
     labelCol: uid(),
@@ -181,7 +182,8 @@ async function seed(db: Client) {
   await db.queryArray`insert into project_history(project_id, group_id, field, changed_by)
     values (${id.pOwned}, ${A}, 'created', 'me')`;
   await db.queryArray`insert into notifications(id, recipient_telegram_id, group_id, task_id)
-    values (${id.nMine}, ${me}, ${A}, ${id.tMixed}), (${id.nColOnMoved}, ${col}, ${A}, ${id.tSolo})`;
+    values (${id.nMine}, ${me}, ${A}, null), (${id.nMineOnMixed}, ${me}, ${A}, ${id.tMixed}),
+           (${id.nColOnMoved}, ${col}, ${A}, ${id.tSolo})`;
 
   return { A, B, me, col, actor, meMail, id };
 }
@@ -405,7 +407,11 @@ Deno.test("переезд: личное едет, общее открывает�
     assertEquals([si.task_id, si.removed], [id.tInSprintProj, true], "строка спринта A не стала упоминанием");
 
     // Хвосты.
-    assertEquals([await g("notifications", id.nMine), await g("notifications", id.nColOnMoved)], [B, B]);
+    assertEquals(
+      [await g("notifications", id.nMine), await g("notifications", id.nColOnMoved), await g("notifications", id.nMineOnMixed)],
+      [B, B, A],
+      "едут: своё без задачи и о переехавшей задаче; о смешанной остаётся",
+    );
     assertEquals([await g("task_labels", id.labelMine), await g("task_labels", id.labelCol)], [B, A]);
     const hist = await one<Row>(
       db,
