@@ -29,17 +29,14 @@ export type WritebackVerdict =
  * процесс может написать что угодно, в том числе о собственном исходе. Доверенная сторона здесь
  * оркестратор, и он сверяет выгрузку с текущим файлом входа.
  *
- * Сохраняются только куки и `origins` доменов Google из списка; остальное отбрасывается.
+ * Сохраняются только куки и `origins` доменов google.com / youtube.com и их поддоменов
+ * (www, accounts, meet, myaccount, ogs — все они в живом входе); остальное отбрасывается.
  */
-const GOOGLE_HOSTS = new Set([
-  "google.com",
-  "accounts.google.com",
-  "meet.google.com",
-  "youtube.com",
-]);
+const GOOGLE_ROOT_DOMAINS = ["google.com", "youtube.com"] as const;
 
 /**
-Куки сессии Google: набор их имён у аккаунта не должен меняться от выгрузки к выгрузке.
+Куки сессии Google: все, что были в текущем входе, обязаны остаться в выгрузке (новые — можно:
+Google вправе добавить куку штатно, а пропажа сессионной значит, что вход не тот или неполный).
 */
 const SESSION_NAMES = new Set([
   "SID",
@@ -72,7 +69,8 @@ interface ParsedState {
 }
 
 function isGoogleHost(host: string): boolean {
-  return GOOGLE_HOSTS.has(host.replace(/^\./u, "").toLowerCase());
+  const bare = host.replace(/^\./u, "").toLowerCase();
+  return GOOGLE_ROOT_DOMAINS.some((root) => bare === root || bare.endsWith(`.${root}`));
 }
 
 function parseState(raw: string): ParsedState | null {
@@ -103,10 +101,8 @@ function originHost(origin: unknown): string {
   }
 }
 
-function sessionNames(cookies: readonly StoredCookie[]): string {
-  return [...new Set(cookies.filter((c) => SESSION_NAMES.has(c.name)).map((c) => c.name))]
-    .toSorted((a, b) => a.localeCompare(b))
-    .join(",");
+function sessionNames(cookies: readonly StoredCookie[]): ReadonlySet<string> {
+  return new Set(cookies.filter((c) => SESSION_NAMES.has(c.name)).map((c) => c.name));
 }
 
 function latestExpiry(cookies: readonly StoredCookie[]): number | null {
@@ -127,8 +123,9 @@ function sameAccountAndNotOlder(
   current: ParsedState,
   next: readonly StoredCookie[],
 ): string | null {
-  if (sessionNames(current.cookies) !== sessionNames(next)) {
-    return "набор сессионных кук отличается от текущего входа — возможна подмена аккаунта";
+  const kept = sessionNames(next);
+  if ([...sessionNames(current.cookies)].some((name) => !kept.has(name))) {
+    return "в выгрузке нет сессионной куки текущего входа — вход неполный или чужой";
   }
   const knownId = identifier(current.cookies);
   if (knownId !== undefined && knownId !== identifier(next)) {

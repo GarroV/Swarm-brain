@@ -154,7 +154,7 @@ describe("продление входа: защита замены", () => {
       expect(await readFile(stateFile, "utf8")).toBe(file(session("old", 100)));
     });
 
-    it("другой набор сессионных кук (другой аккаунт) — отказ без значений", async () => {
+    it("в выгрузке пропала сессионная кука текущего входа — отказ без значений", async () => {
       const before = file([...session("old", 100), cookie("HSID", "h", ".google.com", 100)]);
       await writeFile(stateFile, before);
 
@@ -165,9 +165,26 @@ describe("продление входа: защита замены", () => {
       });
 
       expect(result.written).toBe(false);
-      expect(JSON.stringify(result)).toMatch(/подмена аккаунта/u);
+      expect(JSON.stringify(result)).toMatch(/неполный или чужой/u);
       expect(JSON.stringify(result)).not.toContain("someone-else");
       expect(await readFile(stateFile, "utf8")).toBe(before);
+    });
+
+    it("новая сессионная кука в выгрузке и поддомены Google — принимается", async () => {
+      await writeFile(stateFile, file(session("old", 100)));
+
+      const raw = file([
+        ...session("new", 200),
+        cookie("HSID", "h", ".google.com", 200),
+        cookie("NID", "n", "www.google.com", 200),
+        cookie("OSID", "o", "myaccount.google.com", 200),
+      ]);
+      const result = await commitExport({ stateFile, raw, outcome: "recorded" });
+
+      expect(result.written).toBe(true);
+      const saved = await readFile(stateFile, "utf8");
+      expect(saved).toContain("www.google.com");
+      expect(saved).toContain("myaccount.google.com");
     });
 
     it("тот же набор кук, но другой идентификатор аккаунта — отказ", async () => {
