@@ -61,10 +61,10 @@ export function toEur(amount: number, currency: string, rates: Record<string, nu
   return r ? Math.round((amount / r) * 100) / 100 : null;
 }
 
-/** Данные рынка — страны, а не воркспейса: видно то, что есть в allowed_markets.
+/** Данные рынка — страны, а не воркспейса (решение 05.11.2026: рынок, рейтинги и проверки общие):
+ *  любой настоящий воркспейс видит все страны, allowed_markets сюда не входит.
  *  Демо видит только выдуманную XD, настоящие воркспейсы её не видят никогда. */
-export function canSeeCountry(cc: string, allowed: string[] | null, isDemo: boolean): boolean {
+export function canSeeCountry(cc: string, isDemo: boolean): boolean {
   const c = cc.toUpperCase();
-  if (isDemo) return c === DEMO_COUNTRY;
-  return c !== DEMO_COUNTRY && (allowed ?? []).map((a) => a.toUpperCase()).includes(c);
+  return isDemo ? c === DEMO_COUNTRY : c !== DEMO_COUNTRY;
 }

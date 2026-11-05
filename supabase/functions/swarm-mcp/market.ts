@@ -23,21 +23,14 @@ const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPAB
 type Args = Record<string, unknown> & { requesting_user_id: number };
 type ToolFn = (args: Args) => Promise<string>;
 
-type Caller = { allowed: string[] | null; isAdmin: boolean };
+type Caller = { isAdmin: boolean };
 
 async function caller(telegramId: number): Promise<Caller> {
-  const user = await must<{ group_id: string | null; is_admin: boolean | null } | null>(
-    supabase.from("allowed_users").select("group_id, is_admin").eq("telegram_id", telegramId).maybeSingle(),
+  const user = await must<{ is_admin: boolean | null } | null>(
+    supabase.from("allowed_users").select("is_admin").eq("telegram_id", telegramId).maybeSingle(),
     "allowed_users",
   );
-  const ws = user?.group_id
-    ? await must<{ allowed_markets: string[] | null } | null>(
-      supabase.from("workspaces").select("allowed_markets").eq("id", user.group_id).maybeSingle(),
-      "workspaces",
-    )
-    : null;
   return {
-    allowed: ws?.allowed_markets ?? null,
     isAdmin: (await masterAdminFlag(supabase, telegramId)) || user?.is_admin === true,
   };
 }
@@ -47,7 +40,7 @@ async function country(args: Args, write: boolean): Promise<{ cc: string } | { d
   const cc = String(args.country ?? "").trim().toUpperCase();
   if (!/^[A-Z]{2}$/.test(cc)) return { denied: "Ошибка: country — код страны из двух букв, например BG." };
   const who = await caller(args.requesting_user_id);
-  if (!canSeeCountry(cc, who.allowed, false)) return { denied: `Ошибка: страна ${cc} тебе не открыта.` };
+  if (!canSeeCountry(cc, false)) return { denied: `Ошибка: страна ${cc} тебе не открыта.` };
   if (write && !who.isAdmin) return { denied: "Ошибка: вносить данные рынка может только админ." };
   return { cc };
 }

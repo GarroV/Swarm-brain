@@ -1,4 +1,4 @@
-// «Анализ рынка»: доступ к стране — по allowed_markets воркспейса, XD — только демо;
+// «Анализ рынка»: настоящий воркспейс видит все страны (allowed_markets не режет), XD — только демо;
 // импорт снимка — только админ, битый снимок отклоняется с причинами. Настоящая база.
 import { assertEquals } from "@std/assert";
 import { createClient } from "@supabase/supabase-js";
@@ -28,21 +28,22 @@ const call = (path: string, opts: { demo?: boolean; admin?: boolean; method?: st
     new Request(ORIGIN + path, { method: opts.method ?? "GET", body: opts.body }),
     path,
     1,
-    opts.demo ? "demo" : WS,
     opts.admin ?? false,
     opts.demo ?? false,
     ORIGIN,
   );
 
-Deno.test("market access follows allowed_markets; XD only for demo", async () => {
+Deno.test("market access ignores allowed_markets; XD only for demo", async () => {
   await setup();
   assertEquals((await call("/market/QB"))!.status, 200);
   assertEquals((await call("/market/qb"))!.status, 200);
-  assertEquals((await call("/market/QC"))!.status, 403);
+  assertEquals((await call("/market/QC"))!.status, 200); // нет в allowed_markets, но рынок общий
   assertEquals((await call("/market/XD"))!.status, 403);
   assertEquals((await call("/market/XD", { demo: true }))!.status, 200);
   assertEquals((await call("/market/QB", { demo: true }))!.status, 403);
-  assertEquals(await (await call("/market/countries"))!.json(), ["QB"]);
+  const real: string[] = await (await call("/market/countries"))!.json();
+  assertEquals(["QB", "QC"].filter((c) => !real.includes(c)), []);
+  assertEquals(real.includes("XD"), false);
   assertEquals(await (await call("/market/countries", { demo: true }))!.json(), ["XD"]);
   await teardown();
 });

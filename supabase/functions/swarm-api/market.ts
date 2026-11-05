@@ -1,7 +1,7 @@
 // «Анализ рынка»: чтение данных страны и админ-действия (импорт снимка ручных источников,
 // очередь кандидатов от сборщиков). Решение 02.10.2026, спека 2026-10-02-market-analysis-design.
-// Данные — рынок страны, не воркспейса: видимость режет canSeeCountry по allowed_markets,
-// демо видит только выдуманную XD.
+// Данные — рынок страны, не воркспейса: видимость — canSeeCountry: настоящий воркспейс видит все
+// страны (решение 05.11.2026, allowed_markets тут не участвует), демо — только выдуманную XD.
 // Линт просит короткое имя из карты импортов; см. пояснение в sprint-items.ts.
 // deno-lint-ignore-file no-import-prefix
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
@@ -26,12 +26,6 @@ const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPAB
 const COUNTRY_ROUTE = /^\/market\/([A-Za-z]{2})(\/import|\/candidates|\/candidates\/accept-all)?$/;
 const DECIDE_ROUTE = /^\/market\/candidates\/([0-9a-f-]{36})\/(accept|reject)$/;
 
-async function allowedMarkets(groupId: string): Promise<string[] | null> {
-  const { data, error } = await supabase.from("workspaces").select("allowed_markets").eq("id", groupId).maybeSingle();
-  if (error) throw new Error(`allowed_markets: ${error.message}`);
-  return (data?.allowed_markets as string[] | null) ?? null;
-}
-
 async function decide(id: string, accept: boolean, telegramId: number, isAdmin: boolean, origin: string) {
   if (!isAdmin) return apiErr(403, "Forbidden", origin);
   const r = await decideCandidate(supabase, id, accept, telegramId);
@@ -51,7 +45,6 @@ export async function handleMarketRoutes(
   req: Request,
   routePath: string,
   telegramId: number,
-  groupId: string,
   isAdmin: boolean,
   isDemo: boolean,
   origin: string,
@@ -69,8 +62,7 @@ export async function handleMarketRoutes(
       return await decide(decision[1], decision[2] === "accept", telegramId, isAdmin, origin);
     }
 
-    const allowed = await allowedMarkets(groupId);
-    const visible = (cc: string) => canSeeCountry(cc, allowed, isDemo);
+    const visible = (cc: string) => canSeeCountry(cc, isDemo);
     if (routePath === "/market/countries" && req.method === "GET") {
       return json((await listCountriesWithData(supabase)).filter(visible), 200, origin);
     }
@@ -82,7 +74,7 @@ export async function handleMarketRoutes(
       return json(await listReadyCountries(supabase, shown), 200, origin);
     }
 
-    // Лёгкая выручка по странам для главной — те же allowed_markets/демо-правило, что у /market/:cc,
+    // Лёгкая выручка по странам для главной — то же демо-правило, что у /market/:cc,
     // но чужая страна не валит весь ответ, а попадает в `denied` (виджет рисует остальные).
     if (routePath === "/market/sales" && req.method === "GET") {
       const ccs = parseSalesCountries(new URL(req.url).searchParams.get("cc"));

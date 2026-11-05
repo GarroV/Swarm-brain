@@ -1,5 +1,5 @@
 // Доступ инструментов рынка в MCP на настоящей базе: читает тот, кому страна открыта,
-// пишет только админ, чужую страну не видно никому.
+// пишет только админ; видны все страны (allowed_markets не режет), кроме выдуманной XD.
 // Пропускаться тест не умеет: базы нет — прогон падает и говорит, что поднять.
 import { assert, assertEquals } from "@std/assert";
 import { createClient } from "@supabase/supabase-js";
@@ -69,10 +69,14 @@ Deno.test("market_add_fact: admin only, readable through market_get facts", asyn
   await wipe();
 });
 
-Deno.test("a country outside the workspace markets is closed even to its admin", async () => {
+Deno.test("a country outside the workspace markets is open; the fictional XD is closed even to an admin", async () => {
   await seed();
+  for (const tool of ["market_status", "market_get"]) {
+    const r = await call(tool, MEMBER, { country: "QZ", section: "events" });
+    assert(!r.includes("не открыта"), `${tool}: ${r}`);
+  }
   for (const tool of ["market_status", "market_get", "market_set_block"]) {
-    const r = await call(tool, ADMIN, { country: "QZ", section: "events", block: "events", payload: [], source: "x" });
+    const r = await call(tool, ADMIN, { country: "XD", section: "events", block: "events", payload: [], source: "x" });
     assert(r.includes("не открыта"), `${tool}: ${r}`);
   }
   await wipe();

@@ -1165,14 +1165,14 @@ async function routeRequest(req: Request): Promise<Response> {
   if (boardResp) return boardResp;
 
   // «Анализ рынка» (/market/*): данные страны по allowed_markets, импорт и кандидаты — админу.
-  const marketResp = await handleMarketRoutes(req, routePath, telegram_id, groupId, isAdmin, isDemo, origin);
+  const marketResp = await handleMarketRoutes(req, routePath, telegram_id, isAdmin, isDemo, origin);
   if (marketResp) return marketResp;
 
   // Баллы РС и РКО по пиццериям (/quality?kind=) — весь воркспейс, страны по allowed_markets.
-  const qualityResp = await handleQualityRoutes(req, routePath, groupId, isDemo, origin);
+  const qualityResp = await handleQualityRoutes(req, routePath, isDemo, origin);
   if (qualityResp) return qualityResp;
   // Проверки Децимуса (/inspections, /inspections/:id) — тот же прокси, страны по allowed_markets.
-  const inspectionsResp = await handleInspectionRoutes(req, routePath, groupId, isDemo, origin);
+  const inspectionsResp = await handleInspectionRoutes(req, routePath, isDemo, origin);
   if (inspectionsResp) return inspectionsResp;
 
   // GET /tasks or POST /tasks

@@ -61,13 +61,14 @@ Deno.test("toEur divides by units-per-euro; EUR passes through; unknown → null
   assertEquals(toEur(10, "XYZ", {}), null);
 });
 
-Deno.test("canSeeCountry: demo sees only XD, real workspace never XD", () => {
-  assert(canSeeCountry("XD", null, true));
-  assert(!canSeeCountry("HR", ["HR"], true));
-  assert(canSeeCountry("HR", ["HR", "RO"], false));
-  assert(!canSeeCountry("XD", ["XD"], false));
-  assert(!canSeeCountry("EE", null, false));
-  assert(canSeeCountry("hr", ["HR"], false));
+Deno.test("canSeeCountry: demo sees only XD, real workspace sees every country but XD", () => {
+  assert(canSeeCountry("XD", true));
+  assert(!canSeeCountry("HR", true));
+  assert(canSeeCountry("HR", false));
+  assert(canSeeCountry("EE", false));
+  assert(!canSeeCountry("XD", false));
+  assert(canSeeCountry("hr", false));
+  assert(!canSeeCountry("xd", false));
 });
 
 Deno.test("isSuspiciousRun: under 70% of the live machine rows is suspicious", () => {
