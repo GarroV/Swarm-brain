@@ -1,7 +1,7 @@
 import { isMasterUser } from "../lib/supabase.ts";
 import { canUseWorkspaceCommand } from "./users-scope.ts";
 import { sendMessage } from "../lib/telegram.ts";
-import { assignUserToWorkspace, createWorkspace, listWorkspaces } from "../lib/workspace.ts";
+import { assignUserToWorkspace, createWorkspace, listWorkspaces, MOVE_IN_WEB_ADMIN } from "../lib/workspace.ts";
 import { escapeHtml } from "../../_shared/telegram-html.ts";
 
 export async function handleWorkspace(
@@ -86,6 +86,8 @@ export async function handleWorkspace(
         );
       } else if (result === "not_found") {
         await sendMessage(chatId, "Пользователь не найден.");
+      } else if (result === "move_required") {
+        await sendMessage(chatId, MOVE_IN_WEB_ADMIN);
       } else {
         const label = sub === "move" ? "Перемещён" : "Добавлен";
         const who = telegramId ? `ID ${telegramId}` : `@${username}`;

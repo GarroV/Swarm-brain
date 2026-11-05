@@ -1,18 +1,36 @@
 // Канон добавления пользователя в воркспейс — ЕДИНАЯ логика для всех дверей (бот `/users add`,
 // бот-суперадмин, веб-админка). Эталон — поведение бота, проверенное в бою (2026-07-23):
-//   • по telegram_id: юзер уже есть → ПЕРЕМЕЩАЕМ (update group_id, upsert по уникальному
-//     telegram_id), иначе вставляем; идемпотентно.
-//   • по @username: ищем БЕЗ РЕГИСТРА; строка есть (реальный юзер ИЛИ ожидающая) → обновляем
-//     group_id; нет → вставляем ОЖИДАЮЩУЮ (telegram_id=NULL) — она привяжется к telegram_id при
-//     первом входе пользователя в бота (см. swarm-bot checkAllowed).
-//   • переезд в другой воркспейс сбрасывает is_admin: права админа выданы в прежнем
-//     воркспейсе и в новый не переходят. Повторное добавление в тот же — флаг не трогает.
+//   • по telegram_id: юзер уже есть (в этом воркспейсе или без воркспейса) → обновляем (upsert по
+//     уникальному telegram_id), иначе вставляем; идемпотентно.
+//   • по @username: ищем БЕЗ РЕГИСТРА; строка есть → обновляем group_id; нет → вставляем
+//     ОЖИДАЮЩУЮ (telegram_id=NULL) — она привяжется к telegram_id при первом входе пользователя в
+//     бота (см. swarm-bot checkAllowed).
+//   • человек С АККАУНТОМ (telegram_id есть) из другого воркспейса здесь НЕ переводится — отказ
+//     `move_required`: смена одной строки доступа оставила бы его записи, задачи и встречи в
+//     прежнем пространстве. Переезд с данными — одна функция базы `move_member_to_workspace`
+//     (swarm-api/member-move-routes.ts, этап 3 решения 2026-11-05-second-workspace).
+//   • ожидающая строка (telegram_id=NULL: данных у неё нет) переводится как раньше и сбрасывает
+//     is_admin: права админа выданы в прежнем воркспейсе. Повторное добавление в тот же — не трогает.
 //   • username нормализуем (strip `@`, lower) — чтобы `@User` и `@user` были одной записью.
 // Раньше было три расходящихся реализации (баг: веб по @username молча не добавлял, `/users add`
 // плодил дубли и не умел перемещать по id). Теперь одна.
 import { type SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-export type AddUserResult = { status: "ok" | "bad_input" | "workspace_not_found" | "email_taken"; pending: boolean };
+export type AddUserResult = {
+  status: "ok" | "bad_input" | "workspace_not_found" | "email_taken" | "move_required";
+  pending: boolean;
+};
+
+/**
+ * Существующая строка с аккаунтом в ДРУГОМ воркспейсе — простым добавлением не переводим (у неё
+ * есть данные). Строка без воркспейса или ожидающая (без telegram_id) — переводится.
+ */
+export function needsMemberMove(
+  prev: { telegram_id?: number | null; group_id: string | null } | null,
+  workspaceId: string,
+): boolean {
+  return !!prev && prev.telegram_id != null && prev.group_id != null && prev.group_id !== workspaceId;
+}
 
 /** Значение для ilike как точное имя: `%`, `_` и обратная косая теряют роль подстановки. */
 export function escapeLike(raw: string): string {
@@ -61,8 +79,11 @@ export async function addUserToWorkspace(
 
   if (telegramId != null) {
     const { data: prev, error: prevErr } = await supabase
-      .from("allowed_users").select("group_id").eq("telegram_id", telegramId).maybeSingle();
+      .from("allowed_users").select("telegram_id, group_id").eq("telegram_id", telegramId).maybeSingle();
     if (prevErr) throw new Error(prevErr.message);
+    if (needsMemberMove(prev as { telegram_id: number | null; group_id: string | null } | null, opts.workspaceId)) {
+      return { status: "move_required", pending: false };
+    }
     const { error } = await supabase.from("allowed_users").upsert(
       {
         telegram_id: telegramId,
@@ -88,6 +109,7 @@ export async function addUserToWorkspace(
     if (selErr) throw new Error(selErr.message);
     if (existing) {
       const row = existing as { id: string; telegram_id: number | null; group_id: string | null };
+      if (needsMemberMove(row, opts.workspaceId)) return { status: "move_required", pending: false };
       const { error } = await supabase.from("allowed_users")
         .update({ group_id: opts.workspaceId, ...resetAdminOnMove(row, opts.workspaceId) }).eq("id", row.id);
       if (error) throw new Error(error.message);
@@ -111,6 +133,7 @@ export async function addUserToWorkspace(
   if (selErr) throw new Error(selErr.message);
   if (existing) {
     const row = existing as { id: string; telegram_id: number | null; group_id: string | null };
+    if (needsMemberMove(row, opts.workspaceId)) return { status: "move_required", pending: false };
     const { error } = await supabase.from("allowed_users").update({
       group_id: opts.workspaceId,
       ...(email ? { email } : {}),

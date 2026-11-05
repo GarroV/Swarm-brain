@@ -6,8 +6,9 @@
 // `meetingVisibleGroupIds`, ввод-вывод — `visibleGroupIdsForMeeting`. Их зовут публикация
 // (`meeting-publish.ts`) и Read.ai.
 //
-// `shareMeetingsOfPerson` — для переезда человека (этап 3): его прошлые встречи получают новое
-// пространство в признак. Пока нигде не вызывается.
+// Переезд человека (этап 3) ставит признак его прошлым встречам в базе, в той же транзакции, что и
+// весь переезд, — функция `move_member_to_workspace` (миграция 20261105200000). Здесь его нет:
+// два места с одним правилом разъехались бы.
 //
 // Приватность это правило не трогает: личную встречу видят владелец и `shared_with`, где бы она
 // ни лежала (см. `workspace.ts`). Триггер в базе всё равно добавит домашнее и обрежет массив у
@@ -97,54 +98,4 @@ export async function addVisibleGroups(
   const { error } = await supabase.from("entries").update({ visible_group_ids: next }).eq("id", entry.id);
   if (error) throw new Error(`entries visible_group_ids: ${error.message}`);
   return true;
-}
-
-type ShareCandidate = { id: string; group_id: string | null; visible_group_ids: string[] | null };
-
-const SHARE_COLUMNS = "id, group_id, visible_group_ids";
-
-/**
- * Переезд человека (этап 3): его прошлые ОБЩИЕ встречи — где он владелец записи, участник по
- * e-mail или записавший/совладелец черновика — становятся видны в его новом пространстве.
- *
- * Личные встречи не трогаем: их и так видит только владелец/`shared_with`, а расширять круг
- * личной записи этот шаг не должен. Возвращает число изменённых записей.
- */
-export async function shareMeetingsOfPerson(
-  supabase: SupabaseClient,
-  { email, telegramId, toGroupId }: { email: string | null; telegramId: number | null; toGroupId: string },
-): Promise<number> {
-  if (!isWorkspaceId(toGroupId)) throw new Error(`shareMeetingsOfPerson: недопустимое пространство «${toGroupId}»`);
-  const mail = normalizeEmail(email);
-  const safeMail = /^[^\s,()"']+@[^\s,()"']+$/.test(mail) ? mail : "";
-  const id = typeof telegramId === "number" && Number.isInteger(telegramId) && telegramId !== 0 ? telegramId : null;
-  if (!safeMail && id === null) return 0;
-
-  // Записи из черновиков, которые человек записал или совладел (meetings.recorders/co_owners).
-  const linked = new Set<string>();
-  if (id !== null) {
-    const { data, error } = await supabase.from("meetings").select("entry_id")
-      .or(`recorders.cs.${JSON.stringify([{ telegram_id: id }])},co_owners.cs.{${id}}`)
-      .not("entry_id", "is", null);
-    if (error) throw new Error(`meetings by person: ${error.message}`);
-    for (const r of (data ?? []) as Array<{ entry_id: string | null }>) if (r.entry_id) linked.add(r.entry_id);
-  }
-
-  const conds: string[] = [];
-  if (id !== null) conds.push(`owner_id.eq.${id}`);
-  if (safeMail) conds.push(`metadata->attendees.cs.[{"email":"${safeMail}"}]`);
-  if (linked.size > 0) conds.push(`id.in.(${[...linked].join(",")})`);
-
-  // archive-ok: признак ставится и архивной встрече — иначе после восстановления её снова не видно
-  const { data, error } = await supabase.from("entries").select(SHARE_COLUMNS)
-    .eq("entry_type", "meeting")
-    .eq("is_private", false)
-    .or(conds.join(","));
-  if (error) throw new Error(`entries of person: ${error.message}`);
-
-  let changed = 0;
-  for (const row of (data ?? []) as ShareCandidate[]) {
-    if (await addVisibleGroups(supabase, row, [toGroupId])) changed++;
-  }
-  return changed;
 }

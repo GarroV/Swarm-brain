@@ -2,7 +2,7 @@ import { ADMIN_USER_ID, isMasterUser, supabase } from "../lib/supabase.ts";
 import { editInlineMessage, sendInlineMessage, sendMessage } from "../lib/telegram.ts";
 import { clearSession, setSession } from "../lib/storage.ts";
 import { escapeLike } from "../../_shared/users/membership.ts";
-import { assignUserToWorkspace, createWorkspace, listWorkspaces } from "../lib/workspace.ts";
+import { assignUserToWorkspace, createWorkspace, listWorkspaces, MOVE_IN_WEB_ADMIN } from "../lib/workspace.ts";
 import type { TgCallbackQuery } from "../lib/types.ts";
 import { type AdminActor, isSuperadmin, type MemberRow } from "../../_shared/users/admin-scope.ts";
 import { withMasterFlag } from "../../_shared/users/master-admins.ts";
@@ -331,6 +331,10 @@ export async function handleSuperadminCallbacks(
         await sendMessage(chatId, "Спейс не найден.");
         return true;
       }
+      if (result === "move_required") {
+        await sendMessage(chatId, MOVE_IN_WEB_ADMIN);
+        return true;
+      }
 
       const workspaces = await listWorkspaces();
       const ws = workspaces.find((w) => w.id === toWsId);
@@ -423,7 +427,7 @@ export async function handleSuperadminSession(
       const wsId = action.slice("sa_adduser_".length);
       const input = text.trim();
 
-      let result: "ok" | "not_found" | "workspace_not_found";
+      let result: "ok" | "not_found" | "workspace_not_found" | "move_required";
 
       // Единый путь: по числу — telegram_id, иначе — @username (канон _shared/users/membership.ts
       // сам нормализует @/регистр и резолвит существующего юзера или заводит ожидающую строку).
@@ -435,6 +439,10 @@ export async function handleSuperadminSession(
 
       if (result === "workspace_not_found") {
         await sendMessage(chatId, "Спейс не найден.");
+        return true;
+      }
+      if (result === "move_required") {
+        await sendMessage(chatId, MOVE_IN_WEB_ADMIN);
         return true;
       }
 

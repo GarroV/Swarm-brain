@@ -25,6 +25,7 @@ import { supabaseStore } from "../_shared/passkeys/store.ts";
 import { serverError } from "./client-error.ts";
 import { apiErr, json } from "./http.ts";
 import { handleWorkspaceKeysRoutes, type WorkspaceKeysDeps } from "./workspace-keys-routes.ts";
+import { handleMemberMoveRoutes } from "./member-move-routes.ts";
 import { targetIsMasterAdmin, withMasterFlag } from "../_shared/users/master-admins.ts";
 
 const ADMIN_TELEGRAM_ID = SUPERADMIN_TELEGRAM_ID;
@@ -73,6 +74,10 @@ export async function handleAdminRoutes(
   // Ключ к нейронке у пространства и мастер-админы (#233) — отдельный модуль, чтобы admin.ts не рос.
   const keysResp = await handleWorkspaceKeysRoutes(supabase, req, routePath, actor, origin, deps, resolveNames);
   if (keysResp) return keysResp;
+
+  // Переезд человека в другое пространство (этап 3, решение 2026-11-05) — отдельный модуль.
+  const moveResp = await handleMemberMoveRoutes(supabase, req, routePath, actor, origin, resolveNames);
+  if (moveResp) return moveResp;
 
   // GET /admin/review-counts — СВОДКА «сколько встреч на вычитке у каждого участника».
   // Только агрегат (имя + число), БЕЗ доступа к чужому контенту — для пригляда админа.
@@ -305,6 +310,16 @@ export async function handleAdminRoutes(
         }
         if (r.status === "bad_input") {
           return apiErr(400, "telegram_id or username required", origin);
+        }
+        if (r.status === "move_required") {
+          // Человек уже в другом пространстве: простое добавление перевело бы одну строку доступа
+          // без его данных. Переезд с данными — POST /admin/members/:id/move.
+          return apiErr(
+            409,
+            "This person belongs to another workspace — use the member move",
+            origin,
+            "member_move_required",
+          );
         }
         if (r.status === "email_taken") {
           return apiErr(
