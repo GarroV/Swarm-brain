@@ -8,7 +8,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { apiErr, corsHeaders, json } from "./http.ts";
 import { serverError } from "./client-error.ts";
-import { canSeeCountry, canWriteCountry } from "../_shared/market/rules.ts";
+import { canSeeCountry, canWriteCountry, DEMO_COUNTRY } from "../_shared/market/rules.ts";
 import {
   acceptAllNewLocations,
   decideCandidate,
@@ -19,6 +19,7 @@ import {
   loadCountry,
   loadSales,
 } from "../_shared/market/db.ts";
+import { loadMtd } from "../_shared/market/mtd.ts";
 import { parseSalesCountries } from "../_shared/market/sales.ts";
 import { validateSnapshot } from "../_shared/market/snapshot.ts";
 
@@ -103,7 +104,12 @@ export async function handleMarketRoutes(
       const ccs = parseSalesCountries(new URL(req.url).searchParams.get("cc"));
       if (!ccs) return apiErr(400, "cc: 1–30 comma-separated two-letter country codes", origin);
       const ok = ccs.filter(visible);
-      return json({ sales: await loadSales(supabase, ok), denied: ccs.filter((c) => !visible(c)) }, 200, origin);
+      // mtd — выручка с 1-го числа по сегодня (публичный API Dodo, кэш 10 мин); `sales` (закрытые месяцы) остаётся
+      // как откат. Демо-страна — не настоящий код Dodo: в API не ходим, mtd = null.
+      const live = ok.filter((c) => c !== DEMO_COUNTRY);
+      const [sales, mtd] = await Promise.all([loadSales(supabase, ok), loadMtd(live)]);
+      for (const c of ok) if (!(c in mtd)) mtd[c] = null;
+      return json({ sales, mtd, denied: ccs.filter((c) => !visible(c)) }, 200, origin);
     }
 
     const m = routePath.match(COUNTRY_ROUTE);

@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import { ApiError, fetchMarket, fetchMarketSales, type MarketSalesRow } from "@/lib/api";
+import { ApiError, fetchMarket, fetchMarketSales, type MarketMtd, type MarketSalesRow } from "@/lib/api";
 import { recall, remember } from "@/lib/lastSeen";
 
 // Выручка Dodo по странам подборки — НАСТОЯЩИЕ данные «Анализа рынка» (публичный API Dodo,
@@ -13,6 +13,8 @@ export type CountrySales = {
   last: number | null;
   /** изменение последнего закрытого месяца к предыдущему, % */
   deltaPct: number | null;
+  /** выручка с 1-го числа по сегодня (виджет «Мои страны»); null — сервер не смог посчитать: в таблице «—», не подмена закрытым месяцем */
+  mtd: MarketMtd | null;
 };
 
 /** €125к / €1.25м — короткая запись выручки. */
@@ -31,10 +33,10 @@ export function useCountrySales(codes: string[]): SalesState {
     const list = key ? key.split(",") : [];
     setState(recall<SalesState>(memo) ?? { byCc: {}, loading: true, failed: [] });
     loadSales(list)
-      .then(({ sales, failed }) => {
+      .then(({ sales, mtd, failed }) => {
         if (!alive) return;
         const byCc: Record<string, CountrySales> = {};
-        for (const [cc, rows] of Object.entries(sales)) byCc[cc] = toSales(cc, rows);
+        for (const [cc, rows] of Object.entries(sales)) byCc[cc] = toSales(cc, rows, mtd[cc] ?? null);
         setState(remember(memo, { byCc, loading: false, failed }));
       });
     return () => { alive = false; };
@@ -48,15 +50,15 @@ export function useCountrySales(codes: string[]): SalesState {
  * превью ветки против прода), откатываемся на прежний путь: полный набор по каждой стране. Порядок раскатки
  * поэтому неважен; убрать откат можно, когда /market/sales в проде.
  */
-async function loadSales(list: string[]): Promise<{ sales: Record<string, MarketSalesRow[]>; failed: string[] }> {
-  if (!list.length) return { sales: {}, failed: [] };
+async function loadSales(list: string[]): Promise<{ sales: Record<string, MarketSalesRow[]>; mtd: Record<string, MarketMtd | null>; failed: string[] }> {
+  if (!list.length) return { sales: {}, mtd: {}, failed: [] };
   try {
     const r = await fetchMarketSales(list);
-    return { sales: r.sales, failed: r.denied };
+    return { sales: r.sales, mtd: r.mtd ?? {}, failed: r.denied };
   } catch (e) {
     if (!(e instanceof ApiError && e.status === 404)) {
       console.warn("[home] sales", e);
-      return { sales: {}, failed: list };
+      return { sales: {}, mtd: {}, failed: list };
     }
   }
   const res = await Promise.allSettled(list.map((cc) => fetchMarket(cc).then((b) => b.dodo ?? [])));
@@ -66,15 +68,15 @@ async function loadSales(list: string[]): Promise<{ sales: Record<string, Market
     if (r.status === "fulfilled") sales[list[i]] = r.value;
     else { failed.push(list[i]); console.warn("[home] sales", list[i], r.reason); }
   });
-  return { sales, failed };
+  return { sales, mtd: {}, failed };
 }
 
-function toSales(cc: string, dodo: MarketSalesRow[]): CountrySales {
+function toSales(cc: string, dodo: MarketSalesRow[], mtd: MarketMtd | null): CountrySales {
   const months = dodo
     .filter((m) => m.complete && m.revenue_eur != null)
     .map((m) => [m.month.slice(0, 7), m.revenue_eur as number] as [string, number])
     .sort((a, b) => a[0].localeCompare(b[0]));
   const last = months.at(-1)?.[1] ?? null;
   const prev = months.at(-2)?.[1] ?? null;
-  return { cc, months, last, deltaPct: last != null && prev ? ((last - prev) / prev) * 100 : null };
+  return { cc, months, last, deltaPct: last != null && prev ? ((last - prev) / prev) * 100 : null, mtd };
 }

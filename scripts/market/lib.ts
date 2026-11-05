@@ -1,10 +1,6 @@
 // Общее для сборщиков «Анализа рынка»: HTTP с User-Agent, отправка в market-ingest, парсеры
 // открытых источников. Парсеры — чистые функции под тестами (scripts/market/parse.test.ts).
-import type {
-  DodoUnit,
-  IngestPayload,
-  OsmPoint,
-} from "../../supabase/functions/market-ingest/types.ts";
+import type { DodoUnit, IngestPayload, OsmPoint } from "../../supabase/functions/market-ingest/types.ts";
 import { distanceM } from "../../supabase/functions/_shared/market/geo.ts";
 
 export const UA = "swarm-market/1.0 (+https://github.com/GarroV/Swarm-brain)";
@@ -116,12 +112,8 @@ export function parseDodoUnits(
   cityFix: Record<string, string> = {},
 ): DodoUnit[] {
   return raw.filter((u) => u.Type === 1).map((u) => {
-    const unit = Object.hasOwn(cityFix, u.Name)
-      ? { ...unitOf(u), city: cityFix[u.Name] }
-      : unitOf(u);
-    return Object.hasOwn(notOpened, u.Name)
-      ? { ...unit, opened: null, open: false, planned: true }
-      : unit;
+    const unit = Object.hasOwn(cityFix, u.Name) ? { ...unitOf(u), city: cityFix[u.Name] } : unitOf(u);
+    return Object.hasOwn(notOpened, u.Name) ? { ...unit, opened: null, open: false, planned: true } : unit;
   });
 }
 
@@ -138,48 +130,7 @@ function unitOf(u: RawUnit): DodoUnit {
   });
 }
 
-const MONTHS = [
-  "January",
-  "February",
-  "March",
-  "April",
-  "May",
-  "June",
-  "July",
-  "August",
-  "September",
-  "October",
-  "November",
-  "December",
-];
-type FinMetrics = {
-  response?: {
-    currency?: string;
-    previous_month?: { revenue?: number; name?: string; year?: number };
-    working_pizzerias?: number;
-  };
-};
-export function parseFinancialMetrics(
-  j: FinMetrics,
-):
-  | {
-    month: string;
-    amount: number;
-    currency: string;
-    units: number | null;
-    rates?: Record<string, number>;
-  }
-  | null {
-  const pm = j.response?.previous_month;
-  const m = MONTHS.indexOf(pm?.name ?? "");
-  if (!pm || m < 0 || !pm.year || typeof pm.revenue !== "number") return null;
-  return {
-    month: `${pm.year}-${String(m + 1).padStart(2, "0")}`,
-    amount: pm.revenue,
-    currency: j.response?.currency ?? "EUR",
-    units: j.response?.working_pizzerias ?? null,
-  };
-}
+export { parseFinancialMetrics } from "../../supabase/functions/_shared/market/finmetrics.ts";
 
 type OverpassEl = {
   type: string;
@@ -284,13 +235,9 @@ export function parseOverpassAll(
     throw new Error(`overpass: ${j.remark.slice(0, 200)}`);
   }
   const byBrand = new Map(
-    Object.entries(brands).flatMap(([key, names]) =>
-      names.map((n) => [n.toLowerCase(), key])
-    ),
+    Object.entries(brands).flatMap(([key, names]) => names.map((n) => [n.toLowerCase(), key])),
   );
-  const prefixes = Object.entries(names).flatMap(([key, ns]) =>
-    ns.map((n) => [n.toLowerCase(), key] as const)
-  );
+  const prefixes = Object.entries(names).flatMap(([key, ns]) => ns.map((n) => [n.toLowerCase(), key] as const));
   const byName = (name: string | undefined) => {
     const n = (name ?? "").toLowerCase();
     return prefixes.find(([p]) => n === p || n.startsWith(`${p} `))?.[1];
@@ -384,32 +331,8 @@ export function parseNbsAverage(
   return Math.round(avg * 10_000) / 10_000;
 }
 
-type EcbJson = {
-  dataSets: Array<
-    {
-      series: Record<
-        string,
-        { observations: Record<string, [number | null, ...unknown[]]> }
-      >;
-    }
-  >;
-  structure: {
-    dimensions: { observation: Array<{ values: Array<{ id: string }> }> };
-  };
-};
-/** Ряд курсов ЕЦБ: период («2025» или «2026-09») → единиц валюты за 1 €. */
-export function parseEcbSeries(j: EcbJson): Record<string, number> {
-  const periods = j.structure.dimensions.observation[0]?.values ?? [];
-  const series = Object.values(j.dataSets[0]?.series ?? {})[0];
-  if (!series) return {};
-  return Object.fromEntries(
-    Object.entries(series.observations).flatMap(([i, [v]]) =>
-      typeof v === "number" && periods[Number(i)]
-        ? [[periods[Number(i)].id, v]]
-        : []
-    ),
-  );
-}
+import { type EcbJson, parseEcbSeries } from "../../supabase/functions/_shared/market/ecb.ts";
+export { parseEcbSeries };
 
 /** Среднегодовой курс ЕЦБ (EXR/A.<CUR>.EUR.SP00.A): год → единиц валюты за 1 €. */
 export function parseEcbAnnual(j: EcbJson): Record<number, number> {
