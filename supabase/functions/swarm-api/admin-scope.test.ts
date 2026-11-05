@@ -332,10 +332,14 @@ Deno.test("суперадмин через добавление меняет п�
   assertEquals(a.events[0].oldEmail, "m@x.io");
 });
 
-Deno.test("суперадмин переносит участника из чужого воркспейса → 200", async () => {
+Deno.test("суперадмин добавлением НЕ переносит участника из чужого воркспейса → 409, без записи", async () => {
+  // Перенос одной строки доступа оставил бы данные человека позади: переезд с данными —
+  // /admin/members/:id/move (этап 3 решения 2026-11-05-second-workspace).
   const db = makeDb();
   const res = await call(db, SUPER, "POST", "/admin/workspaces/cee/users", { telegram_id: MEMBER_OTHER });
-  assertEquals(res!.status, 200);
+  assertEquals(res!.status, 409);
+  assertEquals((await res!.json()).code, "member_move_required");
+  assertEquals(db.writes, []);
 });
 
 // ── Рассылка ─────────────────────────────────────────────────────────────────

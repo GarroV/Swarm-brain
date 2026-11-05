@@ -128,3 +128,6 @@ supabase/functions/_shared/entries/workspace.ts|supabase/functions/_shared/entri
 supabase/functions/_shared/entries/shared-workspaces.ts|supabase/functions/_shared/entries/shared-workspaces.test.ts
 supabase/functions/swarm-api/entries-guard.ts|supabase/functions/swarm-api/entries-guard.test.ts
 supabase/functions/read-ai-webhook/workspace.ts|supabase/functions/read-ai-webhook/workspace.test.ts
+# Переезд человека в другое пространство (этап 3): кто может переводить и что уходит в базу.
+# Правила по таблицам — в SQL, их держит порча базы (scripts/porcha-sql.txt).
+supabase/functions/swarm-api/member-move-routes.ts|supabase/functions/swarm-api/member-move-routes.test.ts

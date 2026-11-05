@@ -6,7 +6,7 @@ import { clearSession, setSession } from "../lib/storage.ts";
 import type { TgCallbackQuery } from "../lib/types.ts";
 import { sendTaskCard } from "../tasks/index.ts";
 import { generateNameAliases } from "../lib/name-aliases.ts";
-import { assignUserToWorkspace } from "../lib/workspace.ts";
+import { assignUserToWorkspace, MOVE_IN_WEB_ADMIN } from "../lib/workspace.ts";
 import { escapeLike, normalizeUsername } from "../../_shared/users/membership.ts";
 import { externalFetch, VIA_TELEGRAM } from "../../_shared/external-fetch.ts";
 import { isSuperadmin, type MemberRow } from "../../_shared/users/admin-scope.ts";
@@ -175,7 +175,11 @@ export async function handleUsers(
     if (result !== "ok") {
       await sendMessage(
         chatId,
-        result === "workspace_not_found" ? "Спейс не найден." : "Использование: /users add [telegram_id или @username]",
+        result === "workspace_not_found"
+          ? "Спейс не найден."
+          : result === "move_required"
+          ? MOVE_IN_WEB_ADMIN
+          : "Использование: /users add [telegram_id или @username]",
       );
       return;
     }

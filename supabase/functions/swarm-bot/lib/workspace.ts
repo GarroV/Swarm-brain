@@ -1,4 +1,4 @@
-import { supabase, ADMIN_USER_ID } from "./supabase.ts";
+import { ADMIN_USER_ID, supabase } from "./supabase.ts";
 import { addUserToWorkspace } from "../../_shared/users/membership.ts";
 
 export async function getUserGroupId(userId: number): Promise<string | null> {
@@ -85,13 +85,19 @@ export async function createWorkspace(id: string, name: string): Promise<void> {
   if (error) throw new Error(error.message);
 }
 
+// Человек с аккаунтом уже в другом пространстве: бот его не переводит — смена одной строки доступа
+// оставила бы его записи, задачи и встречи позади. Переезд с данными — только из веб-админки
+// (`move_member_to_workspace`, этап 3 решения 2026-11-05).
+export const MOVE_IN_WEB_ADMIN =
+  "Этот человек уже в другом пространстве. Перевод вместе с его записями, задачами и встречами — в веб-админке (переезд в другое пространство).";
+
 // Тонкая обёртка над каноном `_shared/users/membership.ts` (единая логика для бота и веба).
 // Сигнатуру и строковый результат сохраняем — существующие вызовы (superadmin/workspace) не трогаем.
 export async function assignUserToWorkspace(
   telegramId: number | null,
   username: string | null,
   workspaceId: string,
-): Promise<"ok" | "not_found" | "workspace_not_found"> {
+): Promise<"ok" | "not_found" | "workspace_not_found" | "move_required"> {
   const r = await addUserToWorkspace(supabase, { telegramId, username, workspaceId, addedBy: ADMIN_USER_ID });
   // email_taken недостижим (бот email не передаёт), но закрываем тип: маппим в not_found.
   return r.status === "bad_input" || r.status === "email_taken" ? "not_found" : r.status;
