@@ -14,11 +14,17 @@
 // недосмотр: личная запись видна только автору, руководителю в том числе нет
 // (docs/decisions/2026-08-21-admin-visibility.md, issue #15). Не добавлять параметр isAdmin
 // «для симметрии с задачами» — там оверсайт нужен по делу, здесь запрещён по делу.
+import { isEntryVisibleInWorkspace } from "./workspace.ts";
 
 export type EntryAccessRow = {
   is_private: boolean;
   owner_id: number | null;
   group_id?: string | null;
+  /**
+   * Где запись видна при чтении (`workspace.ts`): домашнее + пространства участников встречи.
+   * Не выбрали колонку — запись видна только дома (fail-closed).
+   */
+  visible_group_ids?: string[] | null;
   /**
    * С кем ещё разделена ЛИЧНАЯ запись (#641): встреча 1-1, опубликованная «в личное», — одна
    * запись на двоих. Владелец — опубликовавший, второй участник — здесь. У общей записи пусто.
@@ -85,8 +91,9 @@ export function entryAccessError(
   const notFound = `Запись ${id} не найдена.`;
   if (!entry) return notFound;
   // Воркспейс проверяем, только когда вызывающий его сообщил: неизвестный воркспейс не повод
-  // пропустить, но и не повод отказать в путях, где он не вычисляется.
-  if (viewerGroupId !== undefined && entry.group_id !== viewerGroupId) return notFound;
+  // пропустить, но и не повод отказать в путях, где он не вычисляется. Видна ли запись в
+  // пространстве зрителя — по признаку принадлежности (общая встреча видна обеим командам).
+  if (viewerGroupId !== undefined && !isEntryVisibleInWorkspace(entry, viewerGroupId)) return notFound;
   if (!canViewEntry(entry, viewerId)) return notFound;
   if (opts?.requireOwner && !canMutateEntry(entry, viewerId)) {
     return `Запрещено: менять и удалять запись может только её автор.`;

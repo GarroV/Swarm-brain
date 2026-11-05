@@ -7,6 +7,7 @@ import { notifyMessage } from "../lib/notify.ts";
 import { saveEntry, visibilityFilter } from "../lib/storage.ts";
 import { getUserGroupId } from "../lib/workspace.ts";
 import { onlyLiveEntries } from "../../_shared/entries/live.ts";
+import { visibleInWorkspace } from "../../_shared/entries/workspace.ts";
 
 export async function generatePersonalDigest(
   chatId: number,
@@ -33,12 +34,14 @@ export async function generatePersonalDigest(
 
   await say(`⏳ Генерирую твой дайджест за ${periodLabel}...`);
 
-  const { data: entries } = await onlyLiveEntries(
-    supabase.from("entries")
-      .select("summary, content, source, created_at"),
+  const { data: entries } = await visibleInWorkspace(
+    onlyLiveEntries(
+      supabase.from("entries")
+        .select("summary, content, source, created_at"),
+    ),
+    groupId,
   )
     .gte("created_at", since)
-    .eq("group_id", groupId)
     // Только то, что этот человек и так видит: чужие личные записи в пересказ не попадают.
     .or(visibilityFilter(userId))
     .not("source", "eq", "digest")

@@ -175,6 +175,7 @@ import {
   readMaintenance,
 } from "../_shared/maintenance.ts";
 import { onlyLiveEntries } from "../_shared/entries/live.ts";
+import { visibleInWorkspace } from "../_shared/entries/workspace.ts";
 import { archiveEntry } from "../_shared/entries/archive.ts";
 import { personName, resolvePersonNames } from "../_shared/users/display-name.ts";
 import { toPublicUrl } from "../_shared/public-url.ts";
@@ -2674,8 +2675,9 @@ async function routeRequest(req: Request): Promise<Response> {
       } catch { /* тело необязательно */ }
       const tezisi = await resummarizeFromTranscript(supabase, meetingRowId, note);
       // Освежаем эмбеддинг (контент изменился) — как при публикации. Не критично при сбое.
-      // Ключ OpenAI — пространства вызывающего (#233); своего нет → ключ сервера.
-      const OPENAI_KEY = await openAIKeyHandle(supabase, groupId);
+      // Ключ OpenAI — ДОМАШНЕГО пространства встречи (#233; общую встречу может пересобрать
+      // участник из другой команды, платит её дом); своего нет → ключ сервера.
+      const OPENAI_KEY = await openAIKeyHandle(supabase, entry.group_id ?? groupId);
       let embedding: number[] | null = null;
       try {
         const r = await externalFetch("https://api.openai.com/v1/embeddings", {
@@ -2723,11 +2725,14 @@ async function routeRequest(req: Request): Promise<Response> {
       });
       // Все версии этой встречи: привязанные строки meetings + та, из которой запись создана
       // (entry_id проставляется при публикации, но metadata.meeting_id несёт исходную версию).
+      // Пространство — ДОМАШНЕЕ встречи, а не смотрящего: у общей встречи версии и пометки
+      // лежат в её доме, и вторая команда иначе увидела бы пустую карточку.
+      const homeGroupId = entry.group_id ?? groupId;
       const { data: versions } = await supabase.from("meetings")
         .select(
           "id, claim_owner, source, identity_kind, started_at, recorded_seconds",
         )
-        .eq("group_id", groupId)
+        .eq("group_id", homeGroupId)
         .eq("entry_id", entry.id);
       const ids = new Set<string>(
         ((versions ?? []) as Array<{ id: string }>).map((v) => v.id),
@@ -2749,7 +2754,7 @@ async function routeRequest(req: Request): Promise<Response> {
           supabase.from("entries")
             .select("id, content, created_at, metadata"),
         )
-          .eq("group_id", groupId)
+          .eq("group_id", homeGroupId)
           .eq("owner_id", telegram_id)
           .eq("metadata->>kind", "personal_notes")
           .in("metadata->>meeting_id", idList),
@@ -2839,6 +2844,7 @@ async function routeRequest(req: Request): Promise<Response> {
               id: telegram_id,
               email: userEmail,
               isAdmin,
+              groupId,
             });
             Object.assign(fields, confirmFields);
             ownerToClaim = owner_id;
@@ -2870,6 +2876,8 @@ async function routeRequest(req: Request): Promise<Response> {
             id: telegram_id,
             email: userEmail,
             isAdmin,
+            // Права админа — только в домашнем пространстве встречи.
+            groupId,
           })
         ) {
           return apiErr(403, "Forbidden", origin);
@@ -2926,7 +2934,9 @@ async function routeRequest(req: Request): Promise<Response> {
           (status === "in_base" ? ", published_entry:entries!entry_id!inner(id)" : ""),
         { count: "exact" },
       )
-      .eq("group_id", groupId)
+      // Пространство строки не фильтруем намеренно (решение 05.11.2026): при склейке общей встречи
+      // запись человека из B лежит в строке `meetings` пространства A. Видимость держит фильтр
+      // «свои» ниже — чужой черновик он не пропускает ни в каком пространстве.
       .eq("status", status)
       .order("started_at", { ascending: false, nullsFirst: false })
       .limit(50);
@@ -3006,6 +3016,9 @@ async function routeRequest(req: Request): Promise<Response> {
     }
     // Сужение для компилятора: гард уже вернул 404 при meeting=null. Строка недостижима.
     if (!meeting || !await meetingEntryIsLive(supabase, meeting)) return apiErr(404, "Not found", origin);
+    // Домашнее пространство СТРОКИ: при склейке общей встречи владелец из пространства B открывает
+    // строку пространства A. Ключ OpenAI, дедуп, пометки и удаление — по дому строки, а не сессии.
+    const meetingGroupId = typeof meeting.group_id === "string" && meeting.group_id !== "" ? meeting.group_id : groupId;
 
     // POST /:id/hide — скрыть черновик групповой встречи у себя (issue #818). Строка общая на
     // всех владельцев, поэтому не удаляем, а отмечаем смотрящего в hidden_for.
@@ -3080,7 +3093,7 @@ async function routeRequest(req: Request): Promise<Response> {
         try {
           const meta = await extractEntryMeta(
             draftNotes,
-            await openAIKeyHandle(supabase, groupId),
+            await openAIKeyHandle(supabase, meetingGroupId),
           );
           suggestion = pickSuggestedMarkets({
             title,
@@ -3123,7 +3136,7 @@ async function routeRequest(req: Request): Promise<Response> {
       const { data, error } = await supabase.from("meeting_live_notes")
         .insert({
           meeting_id: mId,
-          group_id: groupId,
+          group_id: meetingGroupId,
           author_id: telegram_id,
           offset_sec: offsetSec,
           text: text.slice(0, 2000),
@@ -3148,7 +3161,7 @@ async function routeRequest(req: Request): Promise<Response> {
       if (meeting.status !== "in_base") {
         const startedAt = meeting.started_at as string | null;
         const dupNow = await findDuplicateMeeting(supabase, {
-          groupId,
+          groupId: meetingGroupId,
           entryDate: startedAt ? startedAt.split("T")[0] : null,
           startedAt,
           attendees: (meeting as { attendees?: MeetingAttendee[] }).attendees ??
@@ -3229,7 +3242,7 @@ async function routeRequest(req: Request): Promise<Response> {
         );
       }
       const { data: deleted, error } = await supabase.from("meetings").delete()
-        .eq("id", mId).eq("group_id", groupId).select("id").maybeSingle();
+        .eq("id", mId).eq("group_id", meetingGroupId).select("id").maybeSingle();
       if (error) return serverError(origin, "agent-meetings delete", error);
       if (!deleted) return apiErr(404, "Not found", origin);
       return new Response(null, { status: 204, headers: corsHeaders(origin) });
@@ -3788,14 +3801,17 @@ async function routeRequest(req: Request): Promise<Response> {
     }
 
     // Персональный дайджест — СТРОГО по странам пользователя (entries.countries ∩ markets).
-    let q = onlyLiveEntries(
-      supabase.from("entries")
-        .select(
-          "id, summary, content, source, created_at, countries, metadata, entry_type",
-        ),
+    // Пространство — по признаку принадлежности: общая встреча двух команд попадает в дайджест обеих.
+    let q = visibleInWorkspace(
+      onlyLiveEntries(
+        supabase.from("entries")
+          .select(
+            "id, summary, content, source, created_at, countries, metadata, entry_type",
+          ),
+      ),
+      groupId,
     )
       .gte("created_at", since)
-      .eq("group_id", groupId)
       .not("source", "eq", "digest")
       .or(entryVisibilityOr(telegram_id))
       .order("created_at", { ascending: false })

@@ -3,6 +3,7 @@ import { canActOnMeeting, type MeetingAction } from "../_shared/entries/meeting-
 import { isMeetingEntry } from "../_shared/entries/entry-edit.ts";
 import { canMutateEntry, canViewEntry, entryVisibilityOr } from "../_shared/entries/access.ts";
 import { onlyLiveEntries } from "../_shared/entries/live.ts";
+import { isEntryVisibleInWorkspace, visibleInWorkspace } from "../_shared/entries/workspace.ts";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -13,7 +14,7 @@ import { onlyLiveEntries } from "../_shared/entries/live.ts";
 // ответе они чистый балласт: на списке встреч это давало 6 МБ из 10 (issue #102), на одной
 // записи — 26 кБ на каждое открытие.
 export const ENTRY_COLUMNS =
-  "id,content,summary,added_by,source,metadata,countries,entry_type,entry_date,group_id,is_private,owner_id,shared_with,created_at,updated_at";
+  "id,content,summary,added_by,source,metadata,countries,entry_type,entry_date,group_id,visible_group_ids,is_private,owner_id,shared_with,created_at,updated_at";
 
 /**
  * То же, что ENTRY_COLUMNS, но для СПИСКОВ: вместо полных content/summary берутся
@@ -38,7 +39,10 @@ export type EntryRow = {
   countries: string[];
   entry_type: string;
   entry_date: string | null;
+  /** Домашнее пространство: по нему запись пишут и обрабатывают, админ правит и удаляет. */
   group_id: string | null;
+  /** Где запись видна при чтении (`_shared/entries/workspace.ts`); всегда содержит домашнее. */
+  visible_group_ids: string[];
   is_private: boolean;
   owner_id: number | null;
   /** С кем разделена личная запись (встреча 1-1, #641). У общей пусто. */
@@ -60,7 +64,8 @@ export class EntryAccessError extends Error {
 /**
  * Fetch a single entry with both security layers enforced:
  *
- *   Layer 1 — workspace isolation:  entry.group_id must match groupId
+ *   Layer 1 — workspace isolation:  entry visible in groupId (home group_id or
+ *                                   visible_group_ids — a meeting shared between teams)
  *   Layer 2 — visibility:           private entries are invisible to non-owners
  *   Layer 3 — ownership (opt-in):   only the owner can mutate (DELETE / PATCH)
  *
@@ -89,8 +94,9 @@ export async function getEntrySecure(
     .eq("id", id)
     .maybeSingle();
 
-  // Layer 1: workspace isolation — ВСЕГДА (кросс-воркспейс доступа нет).
-  if (!data || data.group_id !== groupId) {
+  // Layer 1: workspace isolation — ВСЕГДА. Запись видна в домашнем пространстве и в тех, что
+  // в её признаке принадлежности (общая встреча двух команд, `visible_group_ids`).
+  if (!data || !isEntryVisibleInWorkspace(data, groupId)) {
     throw new EntryAccessError(404, "Not found");
   }
 
@@ -125,6 +131,9 @@ export async function getEntrySecure(
  *
  * Коды — как у getEntrySecure: 404, если встречи нет, она в чужом воркспейсе или невидима
  * (неотличимо); 403, если видна, но действие не разрешено.
+ *
+ * Права админа — только в ДОМАШНЕМ пространстве встречи (`group_id`): общая встреча другой
+ * команды видна админу, но править и удалять её он не может.
  */
 export async function getMeetingSecure(
   supabase: SupabaseClient,
@@ -148,14 +157,15 @@ export async function getMeetingSecure(
   if (action === "delete" && isAdmin) {
     const { data } = await onlyLiveEntries(supabase.from("entries").select(ENTRY_COLUMNS))
       .eq("id", id).eq("group_id", groupId).eq("entry_type", "meeting").maybeSingle();
-    if (!data || !groupId || data.group_id !== groupId || data.entry_type !== "meeting") {
-      throw new EntryAccessError(404, "Not found");
+    if (data && groupId && data.group_id === groupId && data.entry_type === "meeting") {
+      return data as EntryRow;
     }
-    return data as EntryRow;
+    // Встреча не из ДОМАШНЕГО пространства админа (например, общая встреча другой команды):
+    // админского права здесь нет, остаются обычные правила — владелец удалить может.
   }
   // Видимость и воркспейс — общим гардом (он же даёт неотличимый 404).
   const entry = await getEntrySecure(supabase, id, { groupId, telegramId, requireMeeting: true });
-  const viewer = { id: telegramId, email, isAdmin };
+  const viewer = { id: telegramId, email, isAdmin, groupId };
   if (!canActOnMeeting(entry, viewer, action)) {
     throw new EntryAccessError(403, "Forbidden");
   }
@@ -182,12 +192,14 @@ export function buildEntriesQuery(
   // Считает ТОТ ЖЕ запрос, без второго round-trip: PostgREST возвращает число рядом с данными.
   opts?: { count?: "exact" },
 ) {
-  return onlyLiveEntries(
-    supabase
-      .from("entries")
-      .select(select, opts?.count ? { count: opts.count } : undefined),
+  return visibleInWorkspace(
+    onlyLiveEntries(
+      supabase
+        .from("entries")
+        .select(select, opts?.count ? { count: opts.count } : undefined),
+    ),
+    groupId,
   )
-    .eq("group_id", groupId)
     .or(entryVisibilityOr(telegramId));
 }
 
@@ -209,6 +221,9 @@ export function buildEntriesQuery(
  *
  * Нет e-mail у пользователя → остаётся только владение (fail-closed): лучше не показать свою
  * встречу, чем показать чужую.
+ *
+ * Пространство — по признаку принадлежности, как у списка: несогласованная встреча, которой уже
+ * проставлено пространство участника, видна ему на вычитке (причастность всё равно обязательна).
  */
 export function buildReviewQueueQuery(
   supabase: SupabaseClient,
@@ -226,11 +241,13 @@ export function buildReviewQueueQuery(
   // адреса (запятая или скобка сломали бы разбор всего условия .or()).
   const safeEmail = /^[^\s,()"']+@[^\s,()"']+$/.test(clean) ? clean : "";
   const cond = safeEmail ? `${mine},metadata->attendees.cs.[{"email":"${safeEmail}"}]` : mine;
-  return onlyLiveEntries(
-    supabase
-      .from("entries")
-      .select(select),
+  return visibleInWorkspace(
+    onlyLiveEntries(
+      supabase
+        .from("entries")
+        .select(select),
+    ),
+    groupId,
   )
-    .eq("group_id", groupId)
     .or(cond);
 }

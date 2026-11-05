@@ -113,7 +113,7 @@ Owner-approved: <чего именно попросил владелец, сво
 | **Очередь вычитки** (GET /meetings?confirmed=false) | `buildReviewQueueQuery(supabase, select, { groupId, telegramId, email })` — причастность (владелец ИЛИ участник встречи по e-mail), НЕ «раз не приватная, то всем» |
 
 Хелперы автоматически применяют два слоя защиты:
-1. **Воркспейс-изоляция** — `entry.group_id === groupId`
+1. **Воркспейс-изоляция** — запись видна в пространстве `groupId`: домашнее `group_id` или признак принадлежности `visible_group_ids` (общая встреча двух команд, `_shared/entries/workspace.ts`). Права админа на правку/удаление встречи — только в её домашнем пространстве
 2. **Приватность** — `is_private=false OR owner_id=telegramId`
 
 Для мутаций (PATCH, DELETE) передавать `requireOwner: true` — хелпер вернёт 403 если не владелец.

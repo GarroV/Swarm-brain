@@ -10,6 +10,14 @@ import { findDuplicateMeeting, type MeetingAttendee } from "./meeting-dedup.ts";
 import { arbitrateFullness, type TranscriptLike } from "./meeting-fullness.ts";
 import { type DraftMeetingRow, hasCoOwners, oneOnOnePartner } from "./meeting-access.ts";
 import { onlyLiveEntries } from "./entries/live.ts";
+import {
+  addVisibleGroups,
+  attendeeEmails,
+  meetingPeopleIds,
+  visibleGroupIdsForMeeting,
+  workspacesOfEmails,
+  workspacesOfPeople,
+} from "./entries/shared-workspaces.ts";
 import { openAIKeyHandle } from "./workspace-keys.ts";
 
 // Публикация черновика встречи (таблица meetings) в базу знаний (entries). Одна реализация
@@ -74,6 +82,11 @@ export async function publishDraftMeeting(
   // (GenericStringError). «*» для компилятора — строка без схемы, Record<string, any>;
   // в запрос уходит настоящий список колонок.
   const cols = opts.entryColumns as "*";
+  // Всё, что пишет публикация, — в ДОМАШНЕЕ пространство встречи (строка `meetings`), а не в
+  // пространство публикующего: при склейке общей встречи (календарный ключ один на всех) человек
+  // из B публикует строку пространства A. Дедуп, ключ OpenAI и запись в entries — по дому A;
+  // пространство B попадёт в признак принадлежности через людей черновика.
+  const homeGroupId = typeof meeting.group_id === "string" && meeting.group_id !== "" ? meeting.group_id : opts.groupId;
 
   // Кому видна запись — здесь, а не у вызывающего, чтобы правило действовало и для веба, и
   // для MCP (см. resolvePublishVisibility).
@@ -119,7 +132,7 @@ export async function publishDraftMeeting(
   // и она всплывала бы в дайджесте КАЖДОЙ из стран. Пустой список = «Общее», в базе это тег
   // General, а не отсутствие тега. Поля countries в теле нет (бот, старый клиент) → классификатор.
   // Ключ — пространства встречи (#233); пока у него своего нет, ключ сервера.
-  const OPENAI_KEY = await openAIKeyHandle(supabase, opts.groupId);
+  const OPENAI_KEY = await openAIKeyHandle(supabase, homeGroupId);
   const countries = Array.isArray(opts.countries)
     ? marketTagsFromInput(opts.countries as string[])
     : applyGeneralSentinel(
@@ -129,6 +142,12 @@ export async function publishDraftMeeting(
     buildEmbeddingInput(draft, countries),
     OPENAI_KEY,
   );
+
+  // Пространства людей черновика и самого публикующего — в признак принадлежности записи.
+  const sharingExtra = {
+    peopleIds: meetingPeopleIds(meeting as Parameters<typeof meetingPeopleIds>[0]),
+    knownGroupIds: [opts.groupId],
+  };
 
   const startedAt = meeting.started_at as string | null;
   const entryDate = startedAt ? startedAt.split("T")[0] : null;
@@ -140,7 +159,7 @@ export async function publishDraftMeeting(
   // meeting к ней и возвращаем её, а не плодим вторую. Чужие приватные записи игнорируем
   // (не привязываемся к ним и не раскрываем) — тогда публикуем как обычно.
   const dup = await findDuplicateMeeting(supabase, {
-    groupId: opts.groupId,
+    groupId: homeGroupId,
     entryDate,
     startedAt,
     attendees: mAttendees,
@@ -236,6 +255,29 @@ export async function publishDraftMeeting(
       );
     }
 
+    // Признак принадлежности: участники этой версии могли быть из другого пространства —
+    // добавляем их пространства к уже лежащей записи (объединение; дом не меняется). Сбой не
+    // роняет публикацию: запись остаётся видна там же, где была (fail-closed).
+    try {
+      const { data: shareRow } = await onlyLiveEntries(
+        supabase.from("entries").select("id, group_id, visible_group_ids"),
+      ).eq("id", dup.id).maybeSingle();
+      if (shareRow) {
+        const groups = [
+          ...await workspacesOfEmails(supabase, attendeeEmails(mAttendees)),
+          ...await workspacesOfPeople(supabase, sharingExtra.peopleIds),
+          ...sharingExtra.knownGroupIds,
+        ];
+        await addVisibleGroups(
+          supabase,
+          shareRow as { id: string; group_id: string | null; visible_group_ids: string[] | null },
+          groups,
+        );
+      }
+    } catch (e) {
+      console.error(`publish: признак принадлежности ${dup.id} не обновлён:`, e instanceof Error ? e.message : e);
+    }
+
     // archive-ok: запись-дубль только что найдена живой выборкой дедупа и обновлена — перечитываем её по id
     const { data: existing } = await supabase.from("entries").select(
       cols,
@@ -254,6 +296,10 @@ export async function publishDraftMeeting(
       },
     };
   }
+
+  // Где встреча видна: домашнее пространство публикующего ∪ пространства участников по e-mail
+  // (`_shared/entries/shared-workspaces.ts`). Приватность этим не расширяется.
+  const visibleGroupIds = await visibleGroupIdsForMeeting(supabase, homeGroupId, mAttendees, sharingExtra);
 
   const { data: created, error: insErr } = await supabase.from("entries")
     .insert({
@@ -278,7 +324,8 @@ export async function publishDraftMeeting(
       },
       countries,
       entry_date: entryDate,
-      group_id: opts.groupId,
+      group_id: homeGroupId,
+      visible_group_ids: visibleGroupIds,
       is_private: opts.isPrivate,
       // Встреча 1-1 «в личное» — одна запись на двоих: второй участник видит и правит её.
       shared_with: sharedWith,

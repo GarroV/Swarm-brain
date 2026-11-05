@@ -12,6 +12,7 @@ import { matchEntries } from "../../_shared/search.ts";
 
 import { normalizeFileLink } from "../../_shared/storage-links.ts";
 import { onlyLiveEntries } from "../../_shared/entries/live.ts";
+import { visibleInWorkspace } from "../../_shared/entries/workspace.ts";
 import { externalFetch, VIA_OPENAI_CHAT, VIA_TELEGRAM_UPLOAD } from "../../_shared/external-fetch.ts";
 
 // Ссылка на файл в сообщении бота ведёт в веб: там сессия человека и проверка доступа.
@@ -317,19 +318,23 @@ export async function executeTool(
         // e.g. "муравьев" → also search "муравь" to match "муравьи", "муравьям" etc.
         const searchTerms = [...new Set(words.flatMap((w) => w.length > 5 ? [w, w.slice(0, 5)] : [w]))];
         const kwPromise = searchTerms.length
-          ? onlyLiveEntries(supabase.from("entries").select("id, content, summary, source, metadata"))
+          ? visibleInWorkspace(
+            onlyLiveEntries(supabase.from("entries").select("id, content, summary, source, metadata")),
+            groupId,
+          )
             .or(searchTerms.map((w) => `source.ilike.%${w}%,content.ilike.%${w}%,summary.ilike.%${w}%`).join(","))
-            .eq("group_id", groupId)
             .or(visibilityFilter(userId || 0))
             .limit(5).then((r) => (r.data ?? []) as KbEntry[], () => [] as KbEntry[])
           : Promise.resolve([] as KbEntry[]);
 
         // Also search entries that have file_url in metadata matching the query
         const filePromise = words.length
-          ? onlyLiveEntries(supabase.from("entries").select("id, content, summary, source, metadata"))
+          ? visibleInWorkspace(
+            onlyLiveEntries(supabase.from("entries").select("id, content, summary, source, metadata")),
+            groupId,
+          )
             .or(words.map((w) => `metadata->>file_name.ilike.%${w}%`).join(","))
             .not("metadata->>file_url", "is", null)
-            .eq("group_id", groupId)
             .or(visibilityFilter(userId || 0))
             .limit(3).then((r) => (r.data ?? []) as KbEntry[], () => [] as KbEntry[])
           : Promise.resolve([] as KbEntry[]);
@@ -386,10 +391,12 @@ export async function executeTool(
             .catch(() => [] as KbEntry[]),
 
           searchTerms.length
-            ? onlyLiveEntries(supabase.from("entries").select("id, content, summary, source, metadata"))
+            ? visibleInWorkspace(
+              onlyLiveEntries(supabase.from("entries").select("id, content, summary, source, metadata")),
+              groupId,
+            )
               .eq("source", "note")
               .or(searchTerms.map((w) => `content.ilike.%${w}%,summary.ilike.%${w}%`).join(","))
-              .eq("group_id", groupId)
               .or(visibilityFilter(userId || 0))
               .limit(5).then((r) => (r.data ?? []) as KbEntry[], () => [] as KbEntry[])
             : Promise.resolve([] as KbEntry[]),
@@ -430,10 +437,12 @@ export async function executeTool(
             .catch(() => [] as KbEntry[]),
 
           searchTerms.length
-            ? onlyLiveEntries(supabase.from("entries").select("id, content, summary, source, metadata"))
+            ? visibleInWorkspace(
+              onlyLiveEntries(supabase.from("entries").select("id, content, summary, source, metadata")),
+              groupId,
+            )
               .eq("source", "link")
               .or(searchTerms.map((w) => `content.ilike.%${w}%,summary.ilike.%${w}%`).join(","))
-              .eq("group_id", groupId)
               .or(visibilityFilter(userId || 0))
               .limit(5).then((r) => (r.data ?? []) as KbEntry[], () => [] as KbEntry[])
             : Promise.resolve([] as KbEntry[]),
@@ -496,12 +505,14 @@ export async function executeTool(
 
           isGeneral
             // General: all recent entries regardless of country tagging
-            ? onlyLiveEntries(
-              supabase.from("entries")
-                .select("id, content, summary, source, entry_date, created_at, metadata"),
+            ? visibleInWorkspace(
+              onlyLiveEntries(
+                supabase.from("entries")
+                  .select("id, content, summary, source, entry_date, created_at, metadata"),
+              ),
+              groupId,
             )
               .gte("created_at", since)
-              .eq("group_id", groupId)
               .or(visibilityFilter(userId || 0))
               .not("source", "eq", "digest")
               .order("created_at", { ascending: false })
@@ -509,21 +520,26 @@ export async function executeTool(
               .then((r) => (r.data ?? []) as REntry[], () => [] as REntry[])
             : isoCode
             // Known country: filter by countries array (entries explicitly tagged with this country)
-            ? onlyLiveEntries(
-              supabase.from("entries")
-                .select("id, content, summary, source, entry_date, created_at, metadata"),
+            ? visibleInWorkspace(
+              onlyLiveEntries(
+                supabase.from("entries")
+                  .select("id, content, summary, source, entry_date, created_at, metadata"),
+              ),
+              groupId,
             )
               .gte("created_at", since)
               .contains("countries", [isoCode])
-              .eq("group_id", groupId)
               .or(visibilityFilter(userId || 0))
               .order("created_at", { ascending: false })
               .limit(20)
               .then((r) => (r.data ?? []) as REntry[], () => [] as REntry[])
             // Unknown country: fall back to ILIKE text search
-            : onlyLiveEntries(
-              supabase.from("entries")
-                .select("id, content, summary, source, entry_date, created_at, metadata"),
+            : visibleInWorkspace(
+              onlyLiveEntries(
+                supabase.from("entries")
+                  .select("id, content, summary, source, entry_date, created_at, metadata"),
+              ),
+              groupId,
             )
               .gte("created_at", since)
               // спецсимволы PostgREST (,()* и т.п.) в значении сломали бы .or() → чистим терм
@@ -531,7 +547,6 @@ export async function executeTool(
                 const c = country.replace(/[%_,()*:\\"]+/g, " ").trim();
                 return `metadata->>title.ilike.%${c}%,content.ilike.%${c}%,summary.ilike.%${c}%`;
               })())
-              .eq("group_id", groupId)
               .or(visibilityFilter(userId || 0))
               .order("created_at", { ascending: false })
               .limit(20)
@@ -544,11 +559,13 @@ export async function executeTool(
         // This prevents tangential CEE/general meetings from appearing in country-specific news.
         let vecEntries: REntry[] = [];
         if (vecIds.length) {
-          let vecQ = onlyLiveEntries(
-            supabase.from("entries")
-              .select("id, content, summary, source, entry_date, created_at, metadata"),
+          let vecQ = visibleInWorkspace(
+            onlyLiveEntries(
+              supabase.from("entries")
+                .select("id, content, summary, source, entry_date, created_at, metadata"),
+            ),
+            groupId,
           )
-            .eq("group_id", groupId)
             .or(visibilityFilter(userId || 0))
             .in("id", vecIds);
           if (isoCode) vecQ = vecQ.contains("countries", [isoCode]);
@@ -618,9 +635,11 @@ export async function executeTool(
 
         // Fallback: точное совпадение тега страны — свой воркспейс и видимые записи.
         if (!entries.length) {
-          const { data: exact } = await onlyLiveEntries(supabase.from("entries").select("id, content, summary, source"))
+          const { data: exact } = await visibleInWorkspace(
+            onlyLiveEntries(supabase.from("entries").select("id, content, summary, source")),
+            groupId,
+          )
             .contains("countries", [country])
-            .eq("group_id", groupId)
             .or(visibilityFilter(userId || 0))
             .order("created_at", { ascending: false }).limit(5);
           entries = (exact ?? []) as KbEntry[];
@@ -636,12 +655,15 @@ export async function executeTool(
       }
 
       case "get_countries_list": {
-        const { data } = await onlyLiveEntries(supabase.from("entries").select("countries")).not(
+        const { data } = await visibleInWorkspace(
+          onlyLiveEntries(supabase.from("entries").select("countries")),
+          groupId,
+        ).not(
           "countries",
           "eq",
           "{}",
         )
-          .eq("group_id", groupId).or(visibilityFilter(userId || 0));
+          .or(visibilityFilter(userId || 0));
         const count: Record<string, number> = {};
         for (const r of (data ?? []) as Array<{ countries: string[] }>) {
           for (const c of (r.countries ?? [])) count[c] = (count[c] ?? 0) + 1; // r is typed above
@@ -651,11 +673,14 @@ export async function executeTool(
       }
 
       case "get_digest": {
-        const { data } = await onlyLiveEntries(
-          supabase.from("entries")
-            .select("entry_type, source, summary, countries, entry_date, created_at"),
+        const { data } = await visibleInWorkspace(
+          onlyLiveEntries(
+            supabase.from("entries")
+              .select("entry_type, source, summary, countries, entry_date, created_at"),
+          ),
+          groupId,
         )
-          .eq("group_id", groupId).or(visibilityFilter(userId || 0))
+          .or(visibilityFilter(userId || 0))
           .order("created_at", { ascending: false }).limit(30);
         if (!data?.length) return "База знаний пустая.";
         type DRow = {
@@ -683,12 +708,15 @@ export async function executeTool(
       }
 
       case "get_entries_by_country": {
-        const { data } = await onlyLiveEntries(
-          supabase.from("entries")
-            .select("countries, source, summary, entry_date, created_at"),
+        const { data } = await visibleInWorkspace(
+          onlyLiveEntries(
+            supabase.from("entries")
+              .select("countries, source, summary, entry_date, created_at"),
+          ),
+          groupId,
         )
           .not("countries", "eq", "{}")
-          .eq("group_id", groupId).or(visibilityFilter(userId || 0))
+          .or(visibilityFilter(userId || 0))
           .order("created_at", { ascending: false }).limit(100);
         if (!data?.length) return "Нет записей с указанием стран.";
         type GRow = { countries: string[]; source: string; summary?: string; entry_date?: string; created_at: string };
@@ -705,12 +733,14 @@ export async function executeTool(
       case "get_recent_meetings": {
         const source = String(args.source ?? "").trim();
         const limit = Math.min(Number(args.limit ?? 10), 20);
-        let q = onlyLiveEntries(
-          supabase.from("entries")
-            .select("id, metadata, entry_date, created_at, source, content, summary, entry_type"),
+        let q = visibleInWorkspace(
+          onlyLiveEntries(
+            supabase.from("entries")
+              .select("id, metadata, entry_date, created_at, source, content, summary, entry_type"),
+          ),
+          groupId,
         )
           // Свой воркспейс; личные встречи — только свои.
-          .eq("group_id", groupId)
           .or(visibilityFilter(userId))
           .order("created_at", { ascending: false })
           .limit(limit);
@@ -787,11 +817,16 @@ export async function executeTool(
       case "update_entry": {
         const id = String(args.id ?? "");
         if (!id) return "Укажи id записи.";
-        const { data: existing } = await onlyLiveEntries(
-          supabase.from("entries")
-            .select("metadata, countries, entry_date, is_private, owner_id, group_id, entry_type, source"),
+        const { data: existing } = await visibleInWorkspace(
+          onlyLiveEntries(
+            supabase.from("entries")
+              .select(
+                "metadata, countries, entry_date, is_private, owner_id, group_id, visible_group_ids, entry_type, source",
+              ),
+          ),
+          groupId,
         )
-          .eq("id", id).eq("group_id", groupId).maybeSingle();
+          .eq("id", id).maybeSingle();
         // Воркспейс + права: встреча — по правам встречи, остальное — только автор
         // (_shared/entries/entry-edit.ts). Смена видимости — отдельное право.
         const changesPrivacy = typeof args.is_private === "boolean" && args.is_private !== existing?.is_private;
@@ -814,7 +849,10 @@ export async function executeTool(
           updates.owner_id = existing!.owner_id ?? userId;
         }
         if (!Object.keys(updates).length) return "Нечего обновлять — передай хотя бы одно поле.";
-        const { error } = await supabase.from("entries").update(updates).eq("id", id).eq("group_id", groupId);
+        // Права проверены выше; пишем по id в ДОМАШНЕМ пространстве записи — у общей встречи
+        // оно может быть не пространством зрителя.
+        const { error } = await supabase.from("entries").update(updates).eq("id", id)
+          .eq("group_id", existing!.group_id as string);
         if (error) return `Ошибка обновления: ${error.message}`;
         if (typeof args.is_private === "boolean") {
           return args.is_private
@@ -827,12 +865,14 @@ export async function executeTool(
 
       case "list_recent": {
         const limit = Math.min(Math.max(Number(args.limit ?? 5), 1), 15);
-        const { data, error } = await onlyLiveEntries(
-          supabase
-            .from("entries")
-            .select("id, summary, content, source, added_by, created_at, metadata"),
+        const { data, error } = await visibleInWorkspace(
+          onlyLiveEntries(
+            supabase
+              .from("entries")
+              .select("id, summary, content, source, added_by, created_at, metadata"),
+          ),
+          groupId,
         )
-          .eq("group_id", groupId)
           .or(visibilityFilter(userId || 0))
           .order("created_at", { ascending: false })
           .limit(limit);

@@ -112,3 +112,18 @@ Deno.test("фильтр видимости: мусор вместо id даёт 
   assertEquals(entryVisibilityOr("1),or(is_private.eq.true" as unknown as number), "is_private.eq.false");
   assertEquals(entryVisibilityOr(12.7), "is_private.eq.false,owner_id.eq.12,shared_with.cs.{12}");
 });
+
+// ── Общая встреча двух пространств (этап 2): видна по признаку принадлежности ───────────────
+Deno.test("общая встреча: зритель второго пространства видит, третьего — «не найдена»", () => {
+  const sharedAB = { ...общая, visible_group_ids: ["cee", "world"] };
+  assertEquals(entryAccessError("e-3", sharedAB, OTHER, "world"), null);
+  assertEquals(entryAccessError("e-3", sharedAB, OTHER, "other"), entryAccessError("e-3", null, OTHER, "other"));
+  // Колонку признака не выбрали — только домашнее (fail-closed).
+  assertEquals(entryAccessError("e-3", общая, OTHER, "world"), entryAccessError("e-3", null, OTHER, "world"));
+});
+
+Deno.test("общая ЛИЧНАЯ встреча: посторонний из второго пространства не видит", () => {
+  const privShared = { ...личная, visible_group_ids: ["cee", "world"] };
+  assertEquals(entryAccessError("e-4", privShared, OTHER, "world"), entryAccessError("e-4", null, OTHER, "world"));
+  assertEquals(entryAccessError("e-4", privShared, OWNER, "world"), null);
+});

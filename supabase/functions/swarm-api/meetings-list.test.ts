@@ -120,7 +120,7 @@ type Call = { method: string; args: unknown[] };
 function recordingClient(): { client: SupabaseClient; calls: Call[] } {
   const calls: Call[] = [];
   const builder: Record<string, unknown> = {};
-  for (const m of ["select", "eq", "is", "or", "order", "range", "limit"]) {
+  for (const m of ["select", "eq", "is", "or", "order", "range", "limit", "contains"]) {
     builder[m] = (...args: unknown[]) => {
       calls.push({ method: m, args });
       return builder;
@@ -145,7 +145,13 @@ Deno.test("фильтры экрана добавляются отдельным
   const ors = calls.filter((c) => c.method === "or").map((c) => String(c.args[0]));
   // privacy-условие из buildEntriesQuery стоит первым и не тронуто
   assert(ors[0].includes("is_private") && ors[0].includes("42"), `privacy-or потерян: ${ors[0]}`);
-  assertEquals(calls.some((c) => c.method === "eq" && c.args[0] === "group_id" && c.args[1] === "cee"), true);
+  // Пространство — по признаку принадлежности (общая встреча двух команд), не снимается фильтрами.
+  assertEquals(
+    calls.some((c) =>
+      c.method === "contains" && c.args[0] === "visible_group_ids" && JSON.stringify(c.args[1]) === '["cee"]'
+    ),
+    true,
+  );
   // дальше — условия экрана, каждое своим .or
   assert(ors.some((o) => o.includes("metadata->>title.ilike.") && o.includes("польша")));
   assert(

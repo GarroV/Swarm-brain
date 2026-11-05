@@ -17,6 +17,7 @@ import { contextCountry, PREVIEW_LIMITS, tezisyPreview } from "../_shared/meetin
 import { entryVisibilityOr } from "../_shared/entries/access.ts";
 import { loadCountryTasks } from "../_shared/tasks/country-tasks.ts";
 import { onlyLiveEntries } from "../_shared/entries/live.ts";
+import { visibleInWorkspace } from "../_shared/entries/workspace.ts";
 
 const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
 
@@ -88,7 +89,9 @@ Deno.serve(async (req: Request) => {
     .order("entry_date", { ascending: false, nullsFirst: false })
     .order("created_at", { ascending: false })
     .limit(1);
-  if (groupId) q = q.eq("group_id", groupId);
+  // Пространство — по признаку принадлежности (общая встреча двух команд видна обеим).
+  // Пространства нет — выборка пустая (раньше фильтр просто не ставился).
+  q = visibleInWorkspace(q, groupId);
   if (body.exclude_entry_id) q = q.neq("id", body.exclude_entry_id);
 
   const { data: rows, error } = await q;

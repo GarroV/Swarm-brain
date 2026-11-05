@@ -198,17 +198,21 @@ Deno.serve(async (req: Request) => {
     // поэтому их e-mail'ы ищутся в allowed_users. Никого не нашли → берём READAI_DEFAULT_GROUP_ID,
     // если он выставлен; нет ни того, ни другого → ОТКАЗ, а не «положим в дефолтный»: уехавшая
     // не туда встреча не падает и никем не замечается, а лежит в чужой команде со стенограммой.
+    // Владелец встречи в Read.ai (если сервис его прислал) — его пространство становится домашним
+    // при смешанном составе (общая встреча двух команд, этап 2 решения 2026-11-05).
+    const ownerEmail = String((payload.owner as { email?: unknown } | undefined)?.email ?? "").trim().toLowerCase();
     const participantEmails = [
       ...new Set(
-        participants.map((p) => String(p.email ?? "").trim().toLowerCase()).filter(Boolean),
+        [...participants.map((p) => String(p.email ?? "").trim().toLowerCase()), ownerEmail].filter(Boolean),
       ),
     ];
     const memberRows = participantEmails.length
-      ? (await supabase.from("allowed_users").select("group_id").in("email", participantEmails)).data
+      ? (await supabase.from("allowed_users").select("email, group_id").in("email", participantEmails)).data
       : [];
     const resolved = resolveWebhookGroupId(
-      ((memberRows ?? []) as Array<{ group_id: string | null }>).map((r) => r.group_id),
+      (memberRows ?? []) as Array<{ email: string | null; group_id: string | null }>,
       READAI_DEFAULT_GROUP_ID,
+      ownerEmail,
     );
     if (!resolved.ok) {
       console.error("read-ai reject: воркспейс не определён", meetingId, "—", resolved.reason);
@@ -219,6 +223,9 @@ Deno.serve(async (req: Request) => {
       });
     }
     const groupId = resolved.groupId;
+    // Где встреча видна: домашнее + пространства остальных участников. Дедуп, ключ OpenAI и
+    // всё остальное ниже — по домашнему.
+    const visibleGroupIds = resolved.visibleGroupIds;
 
     // Кросс-источниковый дедуп ДО дорогих LLM-вызовов (иначе на дубле
     // зря потратим токены и создадим задачи-сироты без записи). Встреча уже в базе → выходим.
@@ -281,6 +288,7 @@ Deno.serve(async (req: Request) => {
       entry_type: "meeting",
       entry_date: entryDateIso,
       group_id: groupId,
+      visible_group_ids: visibleGroupIds,
     }).select("id").single();
 
     const entryId = (savedEntry as { id: string } | null)?.id ?? meetingId;

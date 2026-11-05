@@ -36,7 +36,7 @@ const unowned: MeetingRightsRow = { ...shared, owner_id: null };
 const owner: MeetingViewer = { id: OWNER, email: "owner@example.com" };
 // Регистр и пробелы в e-mail пользователя не должны влиять на причастность.
 const participant: MeetingViewer = { id: PARTICIPANT, email: "  Participant@Example.com " };
-const admin: MeetingViewer = { id: ADMIN, email: "admin@example.com", isAdmin: true };
+const admin: MeetingViewer = { id: ADMIN, email: "admin@example.com", isAdmin: true, groupId: "cee" };
 const outsider: MeetingViewer = { id: OUTSIDER, email: "outsider@example.com" };
 
 type Row = [string, MeetingViewer, MeetingAction, boolean];
@@ -192,4 +192,34 @@ Deno.test("1-1 на двоих: участник воркспейса, адми�
 
 Deno.test("1-1 на двоих: партнёр из чужого воркспейса не видит", () => {
   assertEquals(meetingAccessError("m1", oneOnOne, partner, "other", "view"), "Встреча m1 не найдена.");
+});
+
+// ── Общая встреча двух пространств (этап 2): права админа — только в ДОМАШНЕМ ─────────────
+const sharedAB: MeetingRightsRow = { ...shared, group_id: "cee", visible_group_ids: ["cee", "world"] };
+
+Deno.test("общая встреча: админ второго пространства смотрит, но не правит и не удаляет", () => {
+  const foreignAdmin: MeetingViewer = { ...admin, groupId: "world" };
+  assertEquals(canActOnMeeting(sharedAB, foreignAdmin, "view"), true);
+  assertEquals(canActOnMeeting(sharedAB, foreignAdmin, "edit"), false);
+  assertEquals(canActOnMeeting(sharedAB, foreignAdmin, "delete"), false);
+  assertEquals(canChangeMeetingPrivacy(sharedAB, foreignAdmin), false);
+});
+
+Deno.test("общая встреча: админ без пространства прав админа не получает (fail-closed)", () => {
+  const noGroup: MeetingViewer = { id: ADMIN, isAdmin: true };
+  assertEquals(canActOnMeeting(sharedAB, noGroup, "edit"), false);
+});
+
+Deno.test("общая встреча: meetingAccessError — вторая команда видит, её админ не удаляет", () => {
+  assertEquals(meetingAccessError("m", sharedAB, { id: OUTSIDER }, "world", "view"), null);
+  assertEquals(meetingAccessError("m", sharedAB, { id: ADMIN, isAdmin: true }, "world", "delete") !== null, true);
+  // Домашний админ — как раньше, даже если вызывающий не положил groupId в viewer.
+  assertEquals(meetingAccessError("m", sharedAB, { id: ADMIN, isAdmin: true }, "cee", "delete"), null);
+  // Третье пространство встречу не видит вовсе — «не найдена».
+  assertEquals(meetingAccessError("m", sharedAB, { id: OUTSIDER }, "other", "view"), "Встреча m не найдена.");
+});
+
+Deno.test("общая встреча: личная с признаком {A,B} — посторонний из B не видит", () => {
+  const priv: MeetingRightsRow = { ...sharedAB, is_private: true, shared_with: [] };
+  assertEquals(meetingAccessError("m", priv, { id: OUTSIDER }, "world", "view"), "Встреча m не найдена.");
 });

@@ -122,3 +122,9 @@ supabase/functions/_shared/board-config.ts|supabase/functions/_shared/board-conf
 supabase/functions/swarm-mcp/token-state.ts|supabase/functions/swarm-mcp/token-state.test.ts
 supabase/functions/swarm-mcp/confirm.ts|supabase/functions/swarm-mcp/confirm.test.ts
 supabase/functions/swarm-mcp/journal.ts|supabase/functions/swarm-mcp/journal.test.ts
+# Общая встреча двух пространств (этап 2, решение 2026-11-05): где запись видна и кто ставит
+# признак. Ошибка молчит — встреча не видна второй команде или видна лишним.
+supabase/functions/_shared/entries/workspace.ts|supabase/functions/_shared/entries/shared-workspaces.test.ts
+supabase/functions/_shared/entries/shared-workspaces.ts|supabase/functions/_shared/entries/shared-workspaces.test.ts
+supabase/functions/swarm-api/entries-guard.ts|supabase/functions/swarm-api/entries-guard.test.ts
+supabase/functions/read-ai-webhook/workspace.ts|supabase/functions/read-ai-webhook/workspace.test.ts

@@ -66,10 +66,12 @@ export async function toolGetReviewQueue(args: Caller): Promise<string> {
   if (!callerId) return "Ошибка: личность не определена (нужен токен коннектора).";
   const groupId = await resolveGroupId(callerId);
   if (!groupId) return "Ошибка: пользователь не найден в системе.";
-  // Тот же фильтр «свои», что у GET /agent-meetings: записывал ИЛИ совладелец (PR #508).
+  // Тот же фильтр «свои», что у GET /agent-meetings: записывал, совладелец или держит запись.
+  // Пространство строки не фильтруем намеренно: при склейке общей встречи (календарный ключ один
+  // на всех) запись человека из B лежит в строке пространства A — она всё равно его (решение
+  // 05.11.2026). Чужих черновиков фильтр «свои» не пропускает ни в каком пространстве.
   const { data, error, count } = await supabase.from("meetings")
     .select(`id, title, source, started_at, draft_notes_md, ${BOT_SLOT_COLUMNS}`, { count: "exact" })
-    .eq("group_id", groupId)
     .eq("status", "awaiting_review")
     .or(draftMeetingsOwnScopedFilter(callerId))
     .order("started_at", { ascending: false, nullsFirst: false })
@@ -153,7 +155,7 @@ async function meetingText(
   if (!groupId) return { ok: false, msg: `Запись ${args.entry_id} не найдена.` };
   const { data } = await onlyLiveEntries(
     supabase.from("entries")
-      .select("id, summary, content, is_private, owner_id, shared_with, group_id"),
+      .select("id, summary, content, is_private, owner_id, shared_with, group_id, visible_group_ids"),
   ).eq("id", args.entry_id).maybeSingle();
   const row = data as (EntryAccessRow & { summary: string | null; content: string | null }) | null;
   const denied = entryAccessError(args.entry_id, row, callerId, groupId ?? null);

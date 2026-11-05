@@ -13,10 +13,15 @@ export function digestProblems(src: string): string[] {
   const end = src.indexOf("\nexport async function ", start + 1);
   const body = src.slice(start, end < 0 ? undefined : end);
   const problems: string[] = [];
-  const reads = body.match(/\.from\("entries"\)[\s\S]*?\.limit\(\d+\);/g) ?? [];
+  const reads = body.match(
+    /(?:visibleInWorkspace\(\s*onlyLiveEntries\(\s*)?(?:supabase\.)?from\("entries"\)[\s\S]*?\.limit\(\d+\);/g,
+  ) ?? [];
   if (reads.length === 0) problems.push("чтение записей не найдено — детектор устарел");
   for (const q of reads) {
-    if (!q.includes('.eq("group_id", groupId)')) problems.push("записи без воркспейса");
+    // Пространство — домашнее или по признаку принадлежности (общая встреча двух команд).
+    const scoped = q.includes('.eq("group_id", groupId)') ||
+      (/^visibleInWorkspace\(/.test(q) && /,\s*groupId,?\s*\)/.test(q));
+    if (!scoped) problems.push("записи без воркспейса");
     if (!/\.or\(visibilityFilter\(userId\)\)/.test(q)) problems.push("записи без фильтра личных");
   }
   const save = body.match(/saveEntry\(([\s\S]*?)\);/);

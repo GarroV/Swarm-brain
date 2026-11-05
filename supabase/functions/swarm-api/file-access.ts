@@ -11,6 +11,7 @@
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { canViewEntry } from "../_shared/entries/access.ts";
 import { onlyLiveEntries } from "../_shared/entries/live.ts";
+import { isEntryVisibleInWorkspace } from "../_shared/entries/workspace.ts";
 
 export type StorageOwnerKind = "entry" | "feedback";
 
@@ -20,6 +21,8 @@ export type StorageFileRow = {
   path: string;
   owner_kind: StorageOwnerKind;
   group_id: string | null;
+  /** Где видна запись-владелец (общая встреча двух команд); из реестра не берётся. */
+  visible_group_ids?: string[] | null;
   // Владелец записи (entries.owner_id) — для приватности вложения.
   owner_user_id: number | null;
   is_private: boolean;
@@ -61,8 +64,9 @@ export function decideFileAccess(
   if (row.owner_kind !== "entry") return DENY;
 
   // Вложение записи — те же два слоя, что у самой записи (entries-guard):
-  //   Layer 1 — воркспейс-изоляция: кросс-воркспейс доступа нет, даже к публичному файлу.
-  if (row.group_id !== req.groupId) return DENY;
+  //   Layer 1 — воркспейс-изоляция: файл виден там же, где запись-владелец (домашнее
+  //   пространство + признак принадлежности общей встречи), и больше нигде.
+  if (!isEntryVisibleInWorkspace(row, req.groupId)) return DENY;
   //   Layer 2 — приватность БЕЗ admin-байпаса: личное вложение видят владелец записи и те, с
   //   кем она разделена (1-1, #641) — то же правило, что у самой записи.
   const entry = { is_private: row.is_private, owner_id: row.owner_user_id, shared_with: row.shared_with };
@@ -109,13 +113,14 @@ export async function getFileSecure(
     const { data: entry } = await onlyLiveEntries(
       supabase
         .from("entries")
-        .select("group_id,owner_id,is_private,shared_with"),
+        .select("group_id,visible_group_ids,owner_id,is_private,shared_with"),
     )
       .eq("id", registry.entry_id)
       .maybeSingle();
     if (!entry) throw new FileAccessError(404, "Not found");
     const e = entry as {
       group_id: string | null;
+      visible_group_ids: string[] | null;
       owner_id: number | null;
       is_private: boolean;
       shared_with: number[] | null;
@@ -124,6 +129,7 @@ export async function getFileSecure(
       path: registry.path,
       owner_kind: "entry",
       group_id: e.group_id,
+      visible_group_ids: e.visible_group_ids,
       owner_user_id: e.owner_id,
       is_private: e.is_private,
       shared_with: e.shared_with,

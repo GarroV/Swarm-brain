@@ -6,6 +6,15 @@ import { assertEquals } from "jsr:@std/assert@1";
 
 const HERE = fromFileUrl(new URL(".", import.meta.url));
 
+/**
+ * Выборка ограничена пространством: домашним (`.eq("group_id", groupId)`) или по признаку
+ * принадлежности (`visibleInWorkspace(onlyLiveEntries(…), groupId)`, общая встреча двух команд).
+ */
+const scopedToWorkspace = (q: string) =>
+  q.includes('.eq("group_id", groupId)') || (/^visibleInWorkspace\(/.test(q) && /,\s*groupId,?\s*\)/.test(q));
+/** Выборка из entries вместе с обёрткой visibleInWorkspace, если она есть. */
+const ENTRY_READS = /(?:visibleInWorkspace\(\s*onlyLiveEntries\(\s*(?:supabase\s*)?)?\.from\("entries"\)[\s\S]*?;/g;
+
 function updateEntryProblems(src: string): string[] {
   const start = src.indexOf('case "update_entry": {');
   if (start < 0) throw new Error("инструмент update_entry не найден — детектор устарел");
@@ -17,8 +26,10 @@ function updateEntryProblems(src: string): string[] {
   if (guard < 0) problems.push("нет проверки прав entryEditError");
   if (guard >= 0 && write >= 0 && guard > write) problems.push("проверка прав после записи");
   if (!/if \(denied\) return denied;/.test(body)) problems.push("отказ не прерывает правку");
-  const reads = body.match(/\.from\("entries"\)[\s\S]*?;/g) ?? [];
-  if (reads.some((q) => !q.includes('.eq("group_id", groupId)'))) {
+  const reads = body.match(ENTRY_READS) ?? [];
+  // Чтение — по пространству зрителя (или признаку), запись — по домашнему пространству записи.
+  const homeWrite = (q: string) => q.includes('.eq("group_id", existing!.group_id');
+  if (reads.some((q) => !scopedToWorkspace(q) && !homeWrite(q))) {
     problems.push("запрос к entries без воркспейса");
   }
   if (!/changesPrivacy/.test(body)) problems.push("смена видимости без отдельного права");
@@ -36,7 +47,9 @@ function recentMeetingsProblems(src: string): string[] {
   if (start < 0) throw new Error("инструмент get_recent_meetings не найден — детектор устарел");
   const query = src.slice(start, src.indexOf("await q;", start));
   const problems: string[] = [];
-  if (!/\.eq\("group_id", groupId\)/.test(query)) problems.push("список без воркспейса");
+  if (!/\.eq\("group_id", groupId\)/.test(query) && !/visibleInWorkspace\([\s\S]*,\s*groupId,?\s*\)/.test(query)) {
+    problems.push("список без воркспейса");
+  }
   if (!/\.or\(visibilityFilter\(userId\)\)/.test(query)) problems.push("список без фильтра личных");
   return problems;
 }
@@ -70,9 +83,9 @@ function toolBody(src: string, name: string): string {
 function overviewProblems(src: string, name: string): string[] {
   const body = toolBody(src, name);
   const problems: string[] = [];
-  const reads = body.match(/\.from\("entries"\)[\s\S]*?;/g) ?? [];
+  const reads = body.match(ENTRY_READS) ?? [];
   for (const q of reads) {
-    if (!q.includes('.eq("group_id", groupId)')) problems.push(`${name}: запрос к entries без воркспейса`);
+    if (!scopedToWorkspace(q)) problems.push(`${name}: запрос к entries без воркспейса`);
     if (!/\.or\(visibilityFilter\(userId( \|\| 0)?\)\)/.test(q)) problems.push(`${name}: запрос без фильтра видимости`);
   }
   for (const call of body.match(/\.rpc\("match_entries", \{[\s\S]*?\}\)/g) ?? []) {
