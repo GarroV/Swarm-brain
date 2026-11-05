@@ -1115,6 +1115,7 @@ async function routeRequest(req: Request): Promise<Response> {
     req,
     routePath,
     telegram_id,
+    groupId,
     origin,
     resolveNames,
   );

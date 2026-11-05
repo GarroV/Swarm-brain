@@ -1,5 +1,6 @@
 // Лента уведомлений человека — одна выборка для колокольчика веба (swarm-api/notifications.ts)
-// и MCP (issue #518). Строго свои: фильтр по recipient_telegram_id.
+// и MCP (issue #518). Строго свои: фильтр по recipient_telegram_id и по воркспейсу читателя
+// (старые строки без group_id остаются видимы).
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 type Db = Pick<SupabaseClient, "from">;
@@ -38,6 +39,14 @@ export function feedLimit(raw: unknown): number {
 }
 
 /**
+ * Условие PostgREST `.or()`: уведомления воркспейса читателя плюс старые строки без group_id.
+ * Читатель без воркспейса видит только строки без group_id.
+ */
+export function feedGroupFilter(groupId: string | null): string {
+  return groupId ? `group_id.eq.${groupId},group_id.is.null` : "group_id.is.null";
+}
+
+/**
  * Строки ленты, новые сверху. Уведомление о задаче, которой больше нет (связь пуста), выпадает;
  * системные (без задачи) остаются.
  */
@@ -45,11 +54,13 @@ export async function loadNotificationFeed(
   db: Db,
   telegramId: number,
   limit: number,
+  groupId: string | null,
 ): Promise<{ ok: true; rows: NotificationRow[] } | { ok: false; cause: unknown }> {
   const { data, error } = await db
     .from("notifications")
     .select(SELECT_WITH_REFS)
     .eq("recipient_telegram_id", telegramId)
+    .or(feedGroupFilter(groupId))
     .order("created_at", { ascending: false })
     .limit(limit);
   if (error) return { ok: false, cause: error };
