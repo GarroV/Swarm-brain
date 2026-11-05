@@ -46,8 +46,10 @@ Deno.test("неизвестный или битый колбэк — unknown (з
 
 Deno.test("шаги сессии разбираются в действия", () => {
   assertEquals(parseSaSession("sa_adduser_cee", " @Newbie "), { kind: "add", wsId: "cee", input: "@Newbie" });
-  assertEquals(parseSaSession("sa_create_id", "x"), { kind: "create" });
-  assertEquals(parseSaSession("sa_create_name_new", "x"), { kind: "create" });
+  assertEquals(parseSaSession("sa_create_name", "World"), { kind: "create" });
+  // Прежние шаги с вводом слага убраны: слаг больше не вводится, устаревшая сессия не открывает создание.
+  assertEquals(parseSaSession("sa_create_id", "x"), { kind: "unknown" });
+  assertEquals(parseSaSession("sa_create_name_new", "x"), { kind: "unknown" });
   assertEquals(parseSaSession("sa_rename_cee", "x"), { kind: "workspace", wsId: "cee" });
   assertEquals(parseSaSession("sa_other", "x"), { kind: "unknown" });
 });

@@ -2,7 +2,8 @@ import { ADMIN_USER_ID, isMasterUser, supabase } from "../lib/supabase.ts";
 import { editInlineMessage, sendInlineMessage, sendMessage } from "../lib/telegram.ts";
 import { clearSession, setSession } from "../lib/storage.ts";
 import { escapeLike } from "../../_shared/users/membership.ts";
-import { assignUserToWorkspace, createWorkspace, listWorkspaces } from "../lib/workspace.ts";
+import { assignUserToWorkspace, createWorkspace, listWorkspaces, workspaceName } from "../lib/workspace.ts";
+import { validateWorkspaceName } from "../../_shared/workspaces.ts";
 import type { TgCallbackQuery } from "../lib/types.ts";
 import { type AdminActor, isSuperadmin, type MemberRow } from "../../_shared/users/admin-scope.ts";
 import { withMasterFlag } from "../../_shared/users/master-admins.ts";
@@ -75,10 +76,10 @@ async function gate(chatId: number, actor: AdminActor, act: BotAdminAction): Pro
   return false;
 }
 
-/** Главное меню: «Создать спейс» — только суперадмину. */
+/** Главное меню: «Создать пространство» — только суперадмину. */
 function mainMenu(actor: AdminActor): Array<Array<{ text: string; callback_data: string }>> {
-  const row = [{ text: "📋 Спейсы", callback_data: "sa_spaces" }];
-  if (isSuperadmin(actor)) row.push({ text: "➕ Создать спейс", callback_data: "sa_create" });
+  const row = [{ text: "📋 Пространства", callback_data: "sa_spaces" }];
+  if (isSuperadmin(actor)) row.push({ text: "➕ Создать пространство", callback_data: "sa_create" });
   return [row];
 }
 
@@ -119,8 +120,8 @@ export async function handleSuperadminCallbacks(
     if (data === "sa_spaces") {
       const workspaces = visibleWorkspaces(actor, await listWorkspaces());
       if (!workspaces.length) {
-        await editInlineMessage(chatId, cb.message.message_id, "📋 Нет ни одного спейса.", [[
-          { text: "➕ Создать спейс", callback_data: "sa_create" },
+        await editInlineMessage(chatId, cb.message.message_id, "📋 Нет ни одного пространства.", [[
+          { text: "➕ Создать пространство", callback_data: "sa_create" },
           { text: "🔙 Главная", callback_data: "sa_main" },
         ]]);
         return true;
@@ -136,14 +137,14 @@ export async function handleSuperadminCallbacks(
         rows.push([{ text: `${ws.name} (${count ?? 0} чел.)`, callback_data: `sa_sp_${ws.id}` }]);
       }
       rows.push([{ text: "🔙 Главная", callback_data: "sa_main" }]);
-      await editInlineMessage(chatId, cb.message.message_id, "📋 <b>Воркспейсы:</b>", rows);
+      await editInlineMessage(chatId, cb.message.message_id, "📋 <b>Пространства:</b>", rows);
       return true;
     }
 
     // sa_create — start create workspace flow
     if (data === "sa_create") {
-      await setSession(chatId, "sa_create_id");
-      await sendMessage(chatId, "Введи ID нового спейса (латиница, цифры, дефис — например: other):");
+      await setSession(chatId, "sa_create_name");
+      await sendMessage(chatId, "Введи название нового пространства (до 60 символов):");
       return true;
     }
 
@@ -153,21 +154,21 @@ export async function handleSuperadminCallbacks(
       const workspaces = await listWorkspaces();
       const ws = workspaces.find((w) => w.id === wsId);
       if (!ws) {
-        await sendMessage(chatId, "Спейс не найден.");
+        await sendMessage(chatId, "Пространство не найдено.");
         return true;
       }
       const { count } = await supabase
         .from("allowed_users")
         .select("*", { count: "exact", head: true })
         .eq("group_id", wsId);
-      const msg = `📦 <b>${escapeHtml(ws.name)}</b>\nID: ${wsId}\nПользователей: ${count ?? 0}`;
+      const msg = `📦 <b>${escapeHtml(ws.name)}</b>\nПользователей: ${count ?? 0}`;
       await editInlineMessage(chatId, cb.message.message_id, msg, [
         [
           { text: "👥 Пользователи", callback_data: `sa_su_${wsId}` },
           { text: "✏️ Переименовать", callback_data: `sa_ren_${wsId}` },
         ],
         [{ text: "➕ Добавить пользователя", callback_data: `sa_add_${wsId}` }],
-        [{ text: "🔙 К списку спейсов", callback_data: "sa_spaces" }],
+        [{ text: "🔙 К списку пространств", callback_data: "sa_spaces" }],
       ]);
       return true;
     }
@@ -177,7 +178,7 @@ export async function handleSuperadminCallbacks(
       const wsId = data.slice("sa_su_".length);
       const workspaces = await listWorkspaces();
       const ws = workspaces.find((w) => w.id === wsId);
-      const wsName = ws?.name ?? wsId.toUpperCase();
+      const wsName = ws?.name ?? "—";
 
       const { data: users } = await supabase
         .from("allowed_users")
@@ -204,11 +205,11 @@ export async function handleSuperadminCallbacks(
         await editInlineMessage(
           chatId,
           cb.message.message_id,
-          `В спейсе ${escapeHtml(wsName)} нет пользователей.`,
+          `В пространстве «${escapeHtml(wsName)}» нет пользователей.`,
           [
             [
               { text: "➕ Добавить", callback_data: `sa_add_${wsId}` },
-              { text: "🔙 К спейсу", callback_data: `sa_sp_${wsId}` },
+              { text: "🔙 К пространству", callback_data: `sa_sp_${wsId}` },
             ],
           ],
         );
@@ -231,7 +232,7 @@ export async function handleSuperadminCallbacks(
       );
       userRows.push([
         { text: "➕ Добавить", callback_data: `sa_add_${wsId}` },
-        { text: "🔙 К спейсу", callback_data: `sa_sp_${wsId}` },
+        { text: "🔙 К пространству", callback_data: `sa_sp_${wsId}` },
       ]);
 
       await editInlineMessage(chatId, cb.message.message_id, `👥 <b>Пользователи ${escapeHtml(wsName)}:</b>`, userRows);
@@ -282,18 +283,18 @@ export async function handleSuperadminCallbacks(
       const usernameStr = uRow?.username ?? (profile as { username?: string } | null)?.username ?? null;
       const workspaces = await listWorkspaces();
       const ws = workspaces.find((w) => w.id === wsId);
-      const wsName = ws?.name ?? wsId.toUpperCase();
+      const wsName = ws?.name ?? "—";
       const roleLabel = uRow?.is_admin ? "👑 Администратор" : "Участник";
 
       let msg = `👤 <b>${escapeHtml(name)}</b>`;
       if (usernameStr) msg += `\n@${escapeHtml(usernameStr)}`;
       msg += `\nID: ${tgId}`;
-      msg += `\nСпейс: ${escapeHtml(wsName)}`;
+      msg += `\nПространство: ${escapeHtml(wsName)}`;
       msg += `\nРоль: ${roleLabel}`;
 
-      // Перенос между спейсами — только суперадмину.
+      // Перенос между пространствами — только суперадмину.
       const keyboard: Array<Array<{ text: string; callback_data: string }>> = isSuperadmin(actor)
-        ? [[{ text: "🔄 Сменить спейс", callback_data: `sa_mv_${tgId}_${wsId}` }]]
+        ? [[{ text: "🔄 Сменить пространство", callback_data: `sa_mv_${tgId}_${wsId}` }]]
         : [];
       if (tgId !== ADMIN_USER_ID) {
         keyboard.push([{ text: "🚫 Удалить", callback_data: `sa_blk_${tgId}_${wsId}` }]);
@@ -328,13 +329,13 @@ export async function handleSuperadminCallbacks(
 
       const result = await assignUserToWorkspace(tgId, null, toWsId);
       if (result === "workspace_not_found") {
-        await sendMessage(chatId, "Спейс не найден.");
+        await sendMessage(chatId, "Пространство не найдено.");
         return true;
       }
 
       const workspaces = await listWorkspaces();
       const ws = workspaces.find((w) => w.id === toWsId);
-      const wsName = ws?.name ?? toWsId.toUpperCase();
+      const wsName = escapeHtml(ws?.name ?? "—");
 
       await editInlineMessage(
         chatId,
@@ -342,7 +343,7 @@ export async function handleSuperadminCallbacks(
         `✅ Пользователь перемещён в ${wsName}.`,
         [[
           { text: `👥 Пользователи ${wsName}`, callback_data: `sa_su_${toWsId}` },
-          { text: "📋 Спейсы", callback_data: "sa_spaces" },
+          { text: "📋 Пространства", callback_data: "sa_spaces" },
         ]],
       );
       return true;
@@ -371,7 +372,7 @@ export async function handleSuperadminCallbacks(
       await editInlineMessage(
         chatId,
         cb.message.message_id,
-        "✅ Пользователь удалён из спейса.",
+        "✅ Пользователь удалён из пространства.",
         [[{ text: "👥 Пользователи", callback_data: `sa_su_${wsId}` }]],
       );
       return true;
@@ -383,7 +384,9 @@ export async function handleSuperadminCallbacks(
       await setSession(chatId, `sa_adduser_${wsId}`);
       await sendMessage(
         chatId,
-        `Введи Telegram ID (цифры) или @username пользователя для добавления в спейс ${wsId}:`,
+        `Введи Telegram ID (цифры) или @username пользователя для добавления в пространство «${
+          escapeHtml(await workspaceName(wsId))
+        }»:`,
       );
       return true;
     }
@@ -392,7 +395,7 @@ export async function handleSuperadminCallbacks(
     if (data.startsWith("sa_ren_")) {
       const wsId = data.slice("sa_ren_".length);
       await setSession(chatId, `sa_rename_${wsId}`);
-      await sendMessage(chatId, `Введи новое название для спейса ${wsId}:`);
+      await sendMessage(chatId, `Введи новое название для пространства «${escapeHtml(await workspaceName(wsId))}»:`);
       return true;
     }
   } catch (err) {
@@ -434,52 +437,37 @@ export async function handleSuperadminSession(
       }
 
       if (result === "workspace_not_found") {
-        await sendMessage(chatId, "Спейс не найден.");
+        await sendMessage(chatId, "Пространство не найдено.");
         return true;
       }
 
       await sendInlineMessage(
         chatId,
-        `✅ Пользователь добавлен в спейс ${wsId}.`,
+        `✅ Пользователь добавлен в пространство «${escapeHtml(await workspaceName(wsId))}».`,
         [[{ text: "👥 Пользователи", callback_data: `sa_su_${wsId}` }]],
       );
       return true;
     }
 
-    // sa_create_id — received workspace ID input
-    if (action === "sa_create_id") {
-      const wsId = text.trim().toLowerCase().replace(/[^a-z0-9-]/g, "");
-      if (!wsId) {
-        await sendMessage(chatId, "ID не может быть пустым. Используй только латиницу, цифры и дефис.");
-        return true;
-      }
-      await setSession(chatId, `sa_create_name_${wsId}`);
-      await sendMessage(chatId, `ID: <code>${wsId}</code>\nТеперь введи отображаемое название спейса:`);
-      return true;
-    }
-
-    // sa_create_name_<wsId> — received workspace display name
-    if (action.startsWith("sa_create_name_")) {
-      const wsId = action.slice("sa_create_name_".length);
-      const name = text.trim();
-      if (!name) {
-        await sendMessage(chatId, "Название не может быть пустым.");
+    // sa_create_name — получено название нового пространства; слаг создаётся сам и не показывается
+    if (action === "sa_create_name") {
+      const checked = validateWorkspaceName(text);
+      if (!checked.ok) {
+        // Сессию в начале обработчика уже сняли — возвращаем, чтобы следующий ввод снова считался названием.
+        await setSession(chatId, "sa_create_name");
+        await sendMessage(chatId, "Название не может быть пустым и длиннее 60 символов. Введи другое:");
         return true;
       }
       try {
-        await createWorkspace(wsId, name);
+        await createWorkspace(checked.name);
         await sendInlineMessage(
           chatId,
-          `✅ Спейс <b>${escapeHtml(name)}</b> (ID: ${wsId}) создан.`,
-          [[{ text: "📋 Все спейсы", callback_data: "sa_spaces" }]],
+          `✅ Пространство <b>${escapeHtml(checked.name)}</b> создано.`,
+          [[{ text: "📋 Все пространства", callback_data: "sa_spaces" }]],
         );
       } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        if (msg.includes("23505") || /duplicate|unique/i.test(msg)) {
-          await sendMessage(chatId, "Спейс с таким ID уже существует.");
-        } else {
-          await sendMessage(chatId, `Ошибка: ${msg}`);
-        }
+        console.error("sa_create_name", err);
+        await sendMessage(chatId, "Не удалось создать пространство. Попробуй ещё раз.");
       }
       return true;
     }
@@ -487,11 +475,13 @@ export async function handleSuperadminSession(
     // sa_rename_<wsId> — received new workspace name
     if (action.startsWith("sa_rename_")) {
       const wsId = action.slice("sa_rename_".length);
-      const name = text.trim();
-      if (!name) {
-        await sendMessage(chatId, "Название не может быть пустым.");
+      const checked = validateWorkspaceName(text);
+      if (!checked.ok) {
+        await setSession(chatId, action);
+        await sendMessage(chatId, "Название не может быть пустым и длиннее 60 символов. Введи другое:");
         return true;
       }
+      const name = checked.name;
       const { error } = await supabase
         .from("workspaces")
         .update({ name })
@@ -503,7 +493,7 @@ export async function handleSuperadminSession(
       await sendInlineMessage(
         chatId,
         `✅ Переименовано в <b>${escapeHtml(name)}</b>.`,
-        [[{ text: "📦 К спейсу", callback_data: `sa_sp_${wsId}` }]],
+        [[{ text: "📦 К пространству", callback_data: `sa_sp_${wsId}` }]],
       );
       return true;
     }

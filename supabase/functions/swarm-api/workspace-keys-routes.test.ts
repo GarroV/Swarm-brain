@@ -304,7 +304,8 @@ Deno.test("ai-health: админ видит сбои и встало-в-обра
   ];
   const mine = await (await call(db, "GET", "/admin/ai-health", ADMIN_CEE, true, "cee")).json();
   assertEquals(mine.issues.map((i: { group_id: string }) => i.group_id), ["cee"]);
-  assertEquals(mine.issues[0].workspace_name, "cee");
+  // У пространства нет названия — слаг (`cee`) человеку не отдаём: экран подставит «пространство».
+  assertEquals(mine.issues[0].workspace_name, "");
   assertEquals(mine.stalled.map((s: { group_id: string; count: number }) => [s.group_id, s.count]), [["cee", 1]]);
 
   const all = await (await call(db, "GET", "/admin/ai-health", SUPER, true, "cee")).json();

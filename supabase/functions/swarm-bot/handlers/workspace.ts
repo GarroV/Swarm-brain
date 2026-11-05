@@ -1,7 +1,8 @@
 import { isMasterUser } from "../lib/supabase.ts";
 import { canUseWorkspaceCommand } from "./users-scope.ts";
 import { sendMessage } from "../lib/telegram.ts";
-import { assignUserToWorkspace, createWorkspace, listWorkspaces } from "../lib/workspace.ts";
+import { assignUserToWorkspace, createWorkspace, listWorkspaces, workspaceName } from "../lib/workspace.ts";
+import { validateWorkspaceName } from "../../_shared/workspaces.ts";
 import { escapeHtml } from "../../_shared/telegram-html.ts";
 
 export async function handleWorkspace(
@@ -14,7 +15,7 @@ export async function handleWorkspace(
   if (!canUseWorkspaceCommand({ telegramId: userId, groupId: "", isMaster: await isMasterUser(userId) })) {
     await sendMessage(
       chatId,
-      "Only the master admin can manage workspaces.\nУправлять воркспейсами может только мастер-админ.",
+      "Only the master admin can manage spaces.\nУправлять пространствами может только мастер-админ.",
     );
     return;
   }
@@ -25,36 +26,33 @@ export async function handleWorkspace(
   if (!sub || sub === "list") {
     const workspaces = await listWorkspaces();
     if (!workspaces.length) {
-      await sendMessage(chatId, "Воркспейсов нет.");
+      await sendMessage(chatId, "Пространств нет.");
       return;
     }
-    const lines = workspaces.map((w) => `• <code>${escapeHtml(w.id)}</code> — ${escapeHtml(w.name)}`).join("\n");
-    await sendMessage(chatId, `<b>Воркспейсы:</b>\n\n${lines}`);
+    const lines = workspaces.map((w) => `• <b>${escapeHtml(w.name)}</b> (<code>${escapeHtml(w.id)}</code>)`).join("\n");
+    await sendMessage(
+      chatId,
+      `<b>Пространства:</b>\n\n${lines}\n\n<i>Код в скобках нужен только командам add и move.</i>`,
+    );
     return;
   }
 
   if (sub === "create") {
-    // /workspace create cee CEE
-    const id = parts[1];
-    const name = parts.slice(2).join(" ");
-    if (!id || !name) {
+    // /workspace create World — слаг рождается сам и наружу не выходит
+    const checked = validateWorkspaceName(parts.slice(1).join(" "));
+    if (!checked.ok) {
       await sendMessage(
         chatId,
-        "Использование: <code>/workspace create &lt;id&gt; &lt;название&gt;</code>\nПример: <code>/workspace create other Other Markets</code>",
+        "Использование: <code>/workspace create &lt;название&gt;</code> (до 60 символов)\nПример: <code>/workspace create World</code>",
       );
       return;
     }
     try {
-      await createWorkspace(id, name);
-      await sendMessage(chatId, `✅ Воркспейс <code>${escapeHtml(id)}</code> — <b>${escapeHtml(name)}</b> создан.`);
+      await createWorkspace(checked.name);
+      await sendMessage(chatId, `✅ Пространство <b>${escapeHtml(checked.name)}</b> создано.`);
     } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      await sendMessage(
-        chatId,
-        (msg.includes("duplicate") || msg.includes("unique") || msg.includes("23505"))
-          ? `Воркспейс <code>${escapeHtml(id)}</code> уже существует.`
-          : `Ошибка: ${msg}`,
-      );
+      console.error("workspace create", e);
+      await sendMessage(chatId, "Не удалось создать пространство. Попробуйте ещё раз.");
     }
     return;
   }
@@ -82,7 +80,7 @@ export async function handleWorkspace(
       if (result === "workspace_not_found") {
         await sendMessage(
           chatId,
-          `Воркспейс <code>${escapeHtml(workspaceId)}</code> не найден. Создай через <code>/workspace create</code>.`,
+          `Пространство <code>${escapeHtml(workspaceId)}</code> не найдено. Список — <code>/workspace list</code>.`,
         );
       } else if (result === "not_found") {
         await sendMessage(chatId, "Пользователь не найден.");
@@ -91,7 +89,7 @@ export async function handleWorkspace(
         const who = telegramId ? `ID ${telegramId}` : `@${username}`;
         await sendMessage(
           chatId,
-          `✅ ${label}: ${escapeHtml(who)} → воркспейс <code>${escapeHtml(workspaceId)}</code>.`,
+          `✅ ${label}: ${escapeHtml(who)} → пространство «${escapeHtml(await workspaceName(workspaceId))}».`,
         );
       }
     } catch (e) {
@@ -103,6 +101,6 @@ export async function handleWorkspace(
 
   await sendMessage(
     chatId,
-    "Подкоманды: <code>/workspace list</code> · <code>/workspace create &lt;id&gt; &lt;название&gt;</code> · <code>/workspace add @user &lt;id&gt;</code> · <code>/workspace move @user &lt;id&gt;</code>",
+    "Подкоманды: <code>/workspace list</code> · <code>/workspace create &lt;название&gt;</code> · <code>/workspace add @user &lt;id&gt;</code> · <code>/workspace move @user &lt;id&gt;</code>",
   );
 }

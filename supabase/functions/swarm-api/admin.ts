@@ -1,6 +1,5 @@
 import { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { BOT_SLOT_COLUMNS, isMissedBotSlot, type SlotRow } from "../_shared/bot-slot.ts";
-import { normalizeCountries } from "../_shared/countries.ts";
 import { addUserToWorkspace, escapeLike, normalizeUsername } from "../_shared/users/membership.ts";
 import { parseUserRef } from "../_shared/users/user-ref.ts";
 import {
@@ -24,6 +23,7 @@ import { handlePasskeyAdminRoutes } from "./passkey-admin.ts";
 import { supabaseStore } from "../_shared/passkeys/store.ts";
 import { serverError } from "./client-error.ts";
 import { apiErr, json } from "./http.ts";
+import { handleWorkspacesRoutes } from "./workspaces-routes.ts";
 import { handleWorkspaceKeysRoutes, type WorkspaceKeysDeps } from "./workspace-keys-routes.ts";
 import { targetIsMasterAdmin, withMasterFlag } from "../_shared/users/master-admins.ts";
 
@@ -74,12 +74,20 @@ export async function handleAdminRoutes(
   const keysResp = await handleWorkspaceKeysRoutes(supabase, req, routePath, actor, origin, deps, resolveNames);
   if (keysResp) return keysResp;
 
+  // Создание, переименование и сводка пространств (этап 4 «Второго пространства») — отдельный модуль.
+  const spacesResp = await handleWorkspacesRoutes(supabase, req, routePath, actor, origin);
+  if (spacesResp) return spacesResp;
+
   // GET /admin/review-counts — СВОДКА «сколько встреч на вычитке у каждого участника».
   // Только агрегат (имя + число), БЕЗ доступа к чужому контенту — для пригляда админа.
   // Считаем по воркспейсу админа: непубликованные entry (Granola/Read.ai, confirmed null/false)
   // по владельцу + черновики рекордера (awaiting_review) по каждому записавшему.
+  // `?workspace=ID` — какое пространство смотреть (по умолчанию — своё); чужое админу недоступно (404),
+  // мастер-админ смотрит любое.
   if (req.method === "GET" && routePath === "/admin/review-counts") {
-    const groupId = actor.groupId;
+    const requested = new URL(req.url).searchParams.get("workspace");
+    if (requested && !canManageWorkspace(actor, requested)) return apiErr(404, "Workspace not found", origin);
+    const groupId = requested || actor.groupId;
     if (!groupId) return json([], 200, origin);
 
     const counts = await reviewCountsByMember(supabase, groupId);
@@ -121,38 +129,7 @@ export async function handleAdminRoutes(
     return json(result, 200, origin);
   }
 
-  // POST /admin/workspaces — создать воркспейс (id = slug, как в боте sa_create)
-  // Новый воркспейс — вне объёма любого админа, кроме суперадмина (как sa_create в боте).
-  if (req.method === "POST" && routePath === "/admin/workspaces") {
-    if (!isSuper) return apiErr(403, "Forbidden", origin);
-    let body: Record<string, unknown>;
-    try {
-      body = await req.json();
-    } catch {
-      return apiErr(400, "Invalid JSON", origin);
-    }
-    const id = String(body.id ?? "").trim().toLowerCase().replace(
-      /[^a-z0-9-]/g,
-      "",
-    );
-    const name = String(body.name ?? "").trim();
-    if (!id) return apiErr(400, "id обязателен (a-z, 0-9, -)", origin);
-    if (!name) return apiErr(400, "name обязателен", origin);
-    const { data: existing } = await supabase.from("workspaces").select("id")
-      .eq("id", id).maybeSingle();
-    if (existing) {
-      return apiErr(409, `Воркспейс «${id}» уже существует`, origin);
-    }
-    const { error } = await supabase.from("workspaces").insert({ id, name });
-    if (error) return serverFail(origin, "workspace create", error);
-    return json(
-      { id, name, allowed_markets: null, user_count: 0 },
-      201,
-      origin,
-    );
-  }
-
-  // POST /admin/broadcast — рассылка всем пользователям системы (как бот /broadcast, но superadmin-wide)
+  // POST /admin/broadcast — рассылка: пространству или (мастер-админу) всем пользователям системы
   if (req.method === "POST" && routePath === "/admin/broadcast") {
     let body: Record<string, unknown>;
     try {
@@ -165,14 +142,25 @@ export async function handleAdminRoutes(
     const botToken = Deno.env.get("TELEGRAM_BOT_TOKEN");
     if (!botToken) return apiErr(500, "Bot token не настроен", origin);
 
-    // Суперадмин — всем пользователям системы, админ — своей команде.
+    // Кому: `workspace` — id пространства или "all". Админ — только своя команда (чужое — 404);
+    // мастер-админ — выбранное пространство, а без поля или с "all" — всем пользователям системы
+    // (прежнее поведение: экран теперь всегда присылает поле явно, по умолчанию — выбранное пространство).
+    const target = body.workspace == null ? null : String(body.workspace);
+    const scopeGroup = target === null || target === "all" ? (isSuper ? null : actor.groupId) : target;
+    if (scopeGroup !== null && !canManageWorkspace(actor, scopeGroup)) {
+      return apiErr(404, "Workspace not found", origin);
+    }
+    if (scopeGroup !== null) {
+      const { data: exists } = await supabase.from("workspaces").select("id").eq("id", scopeGroup).maybeSingle();
+      if (!exists) return apiErr(404, "Workspace not found", origin);
+    }
     const usersQ = supabase
       .from("allowed_users").select("telegram_id").not(
         "telegram_id",
         "is",
         null,
       );
-    const { data: users } = isSuper ? await usersQ : await usersQ.eq("group_id", actor.groupId);
+    const { data: users } = scopeGroup === null ? await usersQ : await usersQ.eq("group_id", scopeGroup);
     const ids = [
       ...new Set(
         (users ?? []).map((u: Record<string, unknown>) => u.telegram_id as number),
@@ -370,37 +358,6 @@ export async function handleAdminRoutes(
       status: 204,
       headers: { "Access-Control-Allow-Origin": origin },
     });
-  }
-
-  // PATCH /admin/workspaces/:id
-  const wsPatchMatch = routePath.match(/^\/admin\/workspaces\/([^/]+)$/);
-  if (wsPatchMatch && req.method === "PATCH") {
-    const wsId = wsPatchMatch[1];
-    if (!canManageWorkspace(actor, wsId)) return apiErr(404, "Workspace not found", origin);
-    let body: Record<string, unknown>;
-    try {
-      body = await req.json();
-    } catch {
-      return apiErr(400, "Invalid JSON", origin);
-    }
-
-    const fields: Record<string, unknown> = {};
-    if ("name" in body && typeof body.name === "string") {
-      fields.name = body.name;
-    }
-    if ("allowed_markets" in body) {
-      fields.allowed_markets = body.allowed_markets === null
-        ? null
-        : normalizeCountries((body.allowed_markets as string[]) ?? []);
-    }
-    if (!Object.keys(fields).length) return json({ ok: true }, 200, origin);
-
-    await supabase.from("workspaces").update(fields).eq("id", wsId);
-    const { data } = await supabase.from("workspaces").select("*").eq(
-      "id",
-      wsId,
-    ).single();
-    return json(data, 200, origin);
   }
 
   // PATCH /admin/users/:ref — правка профиля пользователя (user_profiles).
