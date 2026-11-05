@@ -11,10 +11,11 @@ import {
 } from "../../_shared/tasks/recurrence.ts";
 import { commentDeleteDenial, validateCommentContent } from "../../_shared/tasks/comments.ts";
 import { afterTaskComment } from "../../_shared/tasks/comment-fanout.ts";
-import { personLabel, resolvePersonNames } from "../../_shared/users/display-name.ts";
+import { resolvePersonNames } from "../../_shared/users/display-name.ts";
 import { canAccessTask, taskAccessError } from "../../_shared/tasks/access.ts";
 import { mergeOwnLabels } from "../../_shared/tasks/labels.ts";
 import { subtaskLinkError } from "../../_shared/tasks/subtasks.ts";
+import { matchAssigneeInWorkspace } from "./assignee-match.ts";
 import { pingPatch } from "./ping.ts";
 import { loadCaller, loadTarget, onBehalfDenial, recordOnBehalf, shouldMuteCreator } from "./on-behalf.ts";
 import type { Task } from "../../_shared/tasks/types.ts";
@@ -108,48 +109,11 @@ export async function toolListTaskLabels(args: { requesting_user_id: number }): 
   return rows.map((r) => `• ${r.name} (id: ${r.id})`).join("\n");
 }
 
-export async function matchAssignee(name: string): Promise<{ telegram_id: number; display_name: string } | null> {
-  // username — в allowed_users (НЕ в user_profiles). Раньше селект username из user_profiles
-  // падал → data=null → matchAssignee всегда возвращал null (резолв исполнителя в MCP не работал).
-  const [{ data: profs }, { data: aus }] = await Promise.all([
-    supabase.from("user_profiles").select("telegram_id, first_name, last_name, email, name_aliases"),
-    supabase.from("allowed_users").select("telegram_id, username"),
-  ]);
-  if (!profs?.length) return null;
-  const uname = new Map<number, string>();
-  ((aus ?? []) as Array<{ telegram_id: number; username?: string | null }>).forEach((u) => {
-    if (u.username) uname.set(u.telegram_id, u.username);
-  });
-  const data = (profs as Array<
-    { telegram_id: number; first_name?: string; last_name?: string; email?: string; name_aliases?: string[] }
-  >)
-    .map((p) => ({ ...p, username: uname.get(p.telegram_id) }));
-  const lower = name.toLowerCase();
-  const match = (data as Array<{
-    telegram_id: number;
-    first_name?: string;
-    last_name?: string;
-    username?: string;
-    email?: string;
-    name_aliases?: string[];
-  }>).find((p) => {
-    const fullName = [p.first_name, p.last_name].filter(Boolean).join(" ").toLowerCase();
-    const uname = (p.username ?? "").toLowerCase();
-    const email = (p.email ?? "").toLowerCase();
-    const aliases = (p.name_aliases ?? []).map((a: string) => a.toLowerCase());
-    return (
-      fullName.includes(lower) || lower.includes(fullName) ||
-      uname.includes(lower) ||
-      (email.length > 0 && email.includes(lower)) ||
-      aliases.some((a) => a.includes(lower) || lower.includes(a))
-    );
-  });
-  if (!match) return null;
-  return {
-    telegram_id: match.telegram_id,
-    // username без «@», как было; дальше — e-mail, а не номер (#537).
-    display_name: personLabel(match, match.telegram_id, { usernamePrefix: "" }),
-  };
+export function matchAssignee(
+  name: string,
+  groupId: string | null,
+): Promise<{ telegram_id: number; display_name: string } | null> {
+  return matchAssigneeInWorkspace(supabase, name, groupId);
 }
 
 // Имя проекта/подпроекта доски → id, в пределах воркспейса (issue #28: MCP не умел класть
@@ -231,12 +195,18 @@ export async function toolAddTask(args: {
   mute_created_by?: boolean;
   requesting_user_id?: number;
 }): Promise<string> {
+  // Без воркспейса задачу не создаём: задача «ничья по воркспейсу» не видна никому, кроме
+  // таких же пользователей без воркспейса.
+  const groupId = args.requesting_user_id ? await resolveGroupId(args.requesting_user_id) : null;
+  if (!groupId || !args.requesting_user_id) return "Ошибка: пользователь не найден в системе.";
+  const callerId = args.requesting_user_id;
+
   const assignees: string[] = [];
   let assignee_telegram_ids: number[] = [];
   let matchWarning = "";
 
   if (args.assignee_name) {
-    const match = await matchAssignee(args.assignee_name);
+    const match = await matchAssignee(args.assignee_name, groupId);
     if (match) {
       assignees.push(match.display_name);
       assignee_telegram_ids = [match.telegram_id];
@@ -246,17 +216,11 @@ export async function toolAddTask(args: {
     }
   }
 
-  // Без воркспейса задачу не создаём: задача «ничья по воркспейсу» не видна никому, кроме
-  // таких же пользователей без воркспейса.
-  const groupId = args.requesting_user_id ? await resolveGroupId(args.requesting_user_id) : null;
-  if (!groupId || !args.requesting_user_id) return "Ошибка: пользователь не найден в системе.";
-  const callerId = args.requesting_user_id;
-
   // Создатель «от имени» — только админ, только свой воркспейс (on-behalf.ts). Проверка ДО
   // создания: отказ не должен оставлять задачу на вызывающем.
   let creator: { telegram_id: number; display_name: string } | null = null;
   if (args.created_by_name?.trim()) {
-    const found = await matchAssignee(args.created_by_name.trim());
+    const found = await matchAssignee(args.created_by_name.trim(), groupId);
     const target = found ? await loadTarget(found.telegram_id) : null;
     const denial = onBehalfDenial(
       await loadCaller(callerId, groupId, ADMIN_USER_ID, await masterAdminFlag(supabase, callerId)),
@@ -486,7 +450,7 @@ export async function toolUpdateTask(args: {
       fields.assignees = [];
       fields.assignee_telegram_ids = [];
     } else {
-      const match = await matchAssignee(args.assignee_name);
+      const match = await matchAssignee(args.assignee_name, groupId);
       if (match) {
         fields.assignees = [match.display_name];
         fields.assignee_telegram_ids = [match.telegram_id];
