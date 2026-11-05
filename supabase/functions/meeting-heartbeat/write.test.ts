@@ -126,9 +126,10 @@ Deno.test("БЛОКИРУЮЩИЙ (T165): бот не отмечает «пиш�
   assertEquals(buildHeartbeatWrites(unbound, { recording: false }, NOW).map((w) => w.table), ["service_agents"]);
 });
 
-Deno.test("БЛОКИРУЮЩИЙ: бот обновляет только встречу своего воркспейса, заявленную за того, за кого он пришёл", () => {
+Deno.test("БЛОКИРУЮЩИЙ: бот обновляет только встречу, заявленную за того, за кого он пришёл", () => {
   // Сверка владения — условия той же UPDATE, а не отдельное чтение: ни гонки, ни второго запроса.
-  // Не совпало ни одной строки (чужая встреча, чужой воркспейс, встречи нет) — отказ, а не тишина.
+  // Не совпало ни одной строки (чужая встреча, встречи нет) — отказ, а не тишина. Пространства
+  // строки в условии нет: при склейке общей встречи бот человека из B держит строку A (05.11.2026).
   const meeting = buildHeartbeatWrites(
     bot,
     { recording: false, meeting_id: MEETING_ID },
@@ -137,7 +138,6 @@ Deno.test("БЛОКИРУЮЩИЙ: бот обновляет только вст
   assertEquals(meeting.table, "meetings");
   assertEquals(meeting.match, {
     id: MEETING_ID,
-    group_id: "alpha",
     claim_owner: 111,
   });
   assertEquals(meeting.requireHit, true);

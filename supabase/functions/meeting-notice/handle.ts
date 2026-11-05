@@ -70,7 +70,9 @@ async function checkMeeting(deps: NoticeDeps, meetingId: string, identity: Agent
     return json({ ok: false, delivered: false, error: "meeting not found — claim it first" }, 404);
   }
   if (meeting.group_id !== identity.groupId) {
-    // Изоляция по воркспейсу — та же, что у остальных эндпоинтов.
+    // Изоляция по воркспейсу — та же, что у остальных эндпоинтов. Склеенная общая встреча (запись
+    // человека из B в строке A, решение 05.11.2026) сюда тоже попадает и уведомления НЕ получает
+    // намеренно: расширить, кому уходит сообщение, можно только по «да» владельца на условие.
     console.warn(`meeting-notice: встреча ${meetingId} из ${meeting.group_id}, агент действует в ${identity.groupId}`);
     return json({ ok: false, delivered: false, error: "meeting belongs to another workspace" }, 403);
   }

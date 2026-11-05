@@ -20,6 +20,8 @@
 
 export type DraftMeetingRow = {
   group_id?: string | null;
+  /** Кто держит запись сейчас (`meetings.claim_owner`); при claim он же вписывается в recorders. */
+  claim_owner?: number | string | null;
   recorders?: Array<{ telegram_id: number }> | null;
   co_owners?: number[] | null;
   /** Участники из календаря (`meetings.attendees`) — нужны, чтобы отличить 1-1 от встречи втроём. */
@@ -84,9 +86,18 @@ export function canAccessDraftMeeting(
   _isAdmin: boolean,
   viewerGroupId: string | null | undefined,
 ): boolean {
-  if (!meeting) return false;
-  if (!viewerGroupId || meeting.group_id !== viewerGroupId) return false;
-  return recorderIds(meeting).includes(viewerId) || (meeting.co_owners ?? []).includes(viewerId);
+  if (!meeting || !viewerGroupId) return false;
+  // Пространство строки НЕ проверяем намеренно (решение 05.11.2026, этап 2 второго пространства):
+  // календарный ключ одинаков у всех участников, и запись человека из пространства B встаёт в
+  // строку `meetings` пространства A (meeting-claim, ключ уникален сам по себе). Это одна живая
+  // встреча; её владельцы — записавшие, совладельцы и держатель записи — вычитывают её, где бы ни
+  // лежала строка. Всем остальным черновик закрыт в любом пространстве.
+  return isDraftOwner(meeting, viewerId);
+}
+
+/** Записавший, совладелец или держатель записи (`claim_owner`) — владелец черновика. */
+function isDraftOwner(meeting: DraftMeetingRow, viewerId: number): boolean {
+  return ownerIds(meeting).includes(viewerId) || toId(meeting.claim_owner) === viewerId;
 }
 
 /**
@@ -126,5 +137,5 @@ export function hasCoOwners(meeting: DraftMeetingRow): boolean {
 export function draftMeetingsOwnScopedFilter(viewerId: number): string {
   const id = Math.trunc(viewerId);
   const notHidden = `hidden_for.not.cs.{${id}}`;
-  return `and(recorders.cs.[{"telegram_id":${id}}],${notHidden}),and(co_owners.cs.{${id}},${notHidden})`;
+  return `and(recorders.cs.[{"telegram_id":${id}}],${notHidden}),and(co_owners.cs.{${id}},${notHidden}),and(claim_owner.eq.${id},${notHidden})`;
 }
