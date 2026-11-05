@@ -9,10 +9,6 @@ export type Mtd = {
   /** день, на который посчитано, YYYY-MM-DD (Белград) */
   as_of: string;
   revenue_eur: number;
-  /** прошлый месяц целиком, € */
-  prev_month_eur: number;
-  /** темп: средние сутки полных дней этого месяца против средних суток прошлого, %; null — 1-е число */
-  pace_pct: number | null;
 };
 
 export const MTD_TTL_MS = 10 * 60_000;
@@ -24,40 +20,21 @@ const DAY_FMT = new Intl.DateTimeFormat("en-CA", { timeZone: TZ, year: "numeric"
 /** Сегодняшняя дата по Белграду, YYYY-MM-DD. */
 export const belgradeToday = (now: Date = new Date()): string => DAY_FMT.format(now);
 
-const daysInMonth = (ym: string): number => {
-  const [y, m] = ym.split("-").map(Number);
-  return new Date(Date.UTC(y, m, 0)).getUTCDate();
-};
-
 const prevMonthOf = (today: string): string => {
   const [y, m] = today.split("-").map(Number);
   return m === 1 ? `${y - 1}-12` : `${y}-${String(m - 1).padStart(2, "0")}`;
 };
 
-/** Темп к прошлому месяцу, %. Полных дней нет (1-е число) или прошлый месяц пуст — null. */
-export function pacePct(
-  fullDaysRevenue: number,
-  dayOfMonth: number,
-  prevRevenue: number,
-  prevDays: number,
-): number | null {
-  const fullDays = dayOfMonth - 1;
-  if (fullDays < 1 || prevRevenue <= 0 || prevDays < 1) return null;
-  return ((fullDaysRevenue / fullDays) / (prevRevenue / prevDays) - 1) * 100;
-}
-
 /**
  * Чистый расчёт: разобранный текущий месяц + курс (единиц валюты за €) + сегодня по Белграду → Mtd.
+ * Темпа к прошлому месяцу нет намеренно: current_month_progressive_total у Dodo отстаёт от заказов, деление на дни даёт ложное падение.
  * null — Dodo ещё не переключил месяц (прошлый месяц в ответе не тот, что перед сегодняшним).
  */
 export function buildMtd(cm: CurrentMonth, rate: number, today: string): Mtd | null {
   if (cm.prevMonth !== prevMonthOf(today) || !(rate > 0)) return null;
-  const day = Number(today.slice(8, 10));
   return {
     as_of: today,
     revenue_eur: cm.mtd / rate,
-    prev_month_eur: cm.prevRevenue / rate,
-    pace_pct: pacePct(cm.fullDays, day, cm.prevRevenue, daysInMonth(cm.prevMonth)),
   };
 }
 

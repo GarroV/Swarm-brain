@@ -1678,8 +1678,8 @@ export async function fetchMarket(cc: string): Promise<MarketBundle> {
 /** Строка выручки Dodo, как её читает главная (подмножество `MarketBundle.dodo`). */
 export type MarketSalesRow = { month: string; revenue_eur: number | null; complete: boolean };
 
-/** Выручка с 1-го числа по сегодня (GET /market/sales → mtd); pace_pct — темп к прошлому месяцу, null — 1-е число. */
-export type MarketMtd = { as_of: string; revenue_eur: number; prev_month_eur: number; pace_pct: number | null };
+/** Выручка с 1-го числа по сегодня (GET /market/sales → mtd), как её отдаёт публичный API Dodo. */
+export type MarketMtd = { as_of: string; revenue_eur: number };
 
 /** Выручка Dodo по нескольким странам одним запросом (GET /market/sales, issue #906): без остального набора
  *  страны. `denied` — страны вне allowed_markets. 404 = функции ещё старые (веб катится раньше) — зовущий

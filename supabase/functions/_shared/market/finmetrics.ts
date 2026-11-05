@@ -21,7 +21,6 @@ export type FinMetrics = {
     currency?: string;
     previous_month?: { revenue?: number; name?: string; year?: number };
     current_month_progressive_total?: number;
-    today_progressive_total?: number;
     working_pizzerias?: number;
   };
 };
@@ -53,8 +52,6 @@ export type CurrentMonth = {
   currency: string;
   /** выручка с 1-го числа по сегодня включительно, в валюте */
   mtd: number;
-  /** то же без сегодняшнего (неполного) дня */
-  fullDays: number;
   /** прошлый месяц целиком, YYYY-MM и выручка в валюте */
   prevMonth: string;
   prevRevenue: number;
@@ -64,12 +61,11 @@ export type CurrentMonth = {
 export function parseCurrentMonth(j: FinMetrics): CurrentMonth | null {
   const prev = parseFinancialMetrics(j);
   const r = j.response;
-  const mtd = r?.current_month_progressive_total, today = r?.today_progressive_total;
-  if (!prev || typeof mtd !== "number" || typeof today !== "number") return null;
+  const mtd = r?.current_month_progressive_total;
+  if (!prev || typeof mtd !== "number") return null;
   return {
     currency: prev.currency,
     mtd,
-    fullDays: mtd - today,
     prevMonth: prev.month,
     prevRevenue: prev.amount,
   };

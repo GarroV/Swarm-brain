@@ -153,7 +153,7 @@ export function CountriesWidget({ scope, sales, narrow, onNarrow, onMarket }: {
               <th className={th}>{dt("Страна", "Country")}</th><th className={th}>{dt("Пицц.", "Pizz.")}</th>
               <th className={th}>{dt("РС", "Std")}</th><th className={th}>{dt("РКО", "CX")}</th>
               {mapHead("Google")}{mapHead(dt("Яндекс", "Yandex"))}
-              <th className={th} title={dt("Выручка Dodo с 1-го числа по сегодня, €; стрелка — темп к прошлому месяцу: средние сутки этого месяца против средних суток прошлого", "Dodo revenue from the 1st of the month to today, €; the arrow is the pace against last month: this month's average day against last month's average day")}>{dt("Продажи", "Sales")}</th>
+              <th className={th} title={dt("Выручка Dodo с 1-го числа текущего месяца, € — как её отдаёт публичный API Dodo", "Dodo revenue since the 1st of the current month, € — as reported by the public Dodo API")}>{dt("Продажи", "Sales")}</th>
             </tr>
           </thead>
           <tbody>
@@ -182,7 +182,6 @@ export function CountriesWidget({ scope, sales, narrow, onNarrow, onMarket }: {
                     <td className={`${td} whitespace-nowrap`}>{maps.loading ? "…" : <><MapCell s={m?.maps.yandex ?? null} /> <Delta v={m?.maps.yandex.delta ?? null} digits={2} small /></>}</td>
                     <td className={`${td} whitespace-nowrap font-mono text-ink`}>
                       {sales.loading ? "…" : s?.mtd ? fmtEur(s.mtd.revenue_eur) : "—"}
-                      {s?.mtd?.pace_pct != null && <span className={`ml-1.5 ${s.mtd.pace_pct >= 0 ? "text-[var(--status-done)]" : "text-[var(--pri-high)]"}`} style={{ fontSize: 11 }}>{pct(s.mtd.pace_pct)}</span>}
                     </td>
                   </tr>
                   {isOpen && <CountryPizzerias c={c} units={units} />}
