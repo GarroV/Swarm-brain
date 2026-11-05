@@ -30,16 +30,23 @@ import {
 // scoped — метрика считается по «Моим странам» (без них — подсказка выбрать); quality — на баллах
 // РС/РКО из GET /quality (загрузка, ошибка, «ещё не загружены»); sample — цифры для вида, плашка «образец».
 type Meta = {
-  title: [string, string]; hint: [string, string]; ownTitle?: boolean;
+  title: [string, string]; dated?: boolean; hint: [string, string]; ownTitle?: boolean;
   scoped?: boolean; quality?: boolean; sample?: boolean; meta?: [string, string];
 };
+// «5 ноября» / «5 November»: день и месяц словом, без года, по Белграду — подпись «Мои страны на …».
+const DAY_LABEL = [
+  new Intl.DateTimeFormat("ru-RU", { timeZone: "Europe/Belgrade", day: "numeric", month: "long" }),
+  new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/Belgrade", day: "numeric", month: "long" }),
+];
+const todayLabel = (lang: number): string => DAY_LABEL[lang].format(new Date());
+
 const META: Record<WidgetId, Meta> = {
   calls: { title: ["Созвоны сегодня", "Today's calls"], hint: ["Встречи дня из календаря и кнопка «подключиться».", "Today's meetings from your calendar with a join button."], ownTitle: true },
   top5: { title: ["Ближайшие задачи", "Next tasks"], hint: ["Пять моих задач с ближайшим сроком.", "My five tasks with the nearest due date."], meta: ["топ-5 по сроку", "top 5 by due date"] },
   board: { title: ["Доска", "Board"], hint: ["Стикеры-задания (OKR, дайджест, вычитка) и объявления админа.", "Task stickers (OKRs, digest, review) and admin notices."], meta: ["что от тебя ждут", "what's expected of you"] },
   ratings: { title: ["Рейтинги", "Ratings"], hint: ["Вкладки РС, РКО, Карты, Агрегаторы: выбранные страны против среднего по IMF.", "Tabs for Standards, CX, Maps and Delivery apps: your countries against the IMF average."], scoped: true },
   pz: { title: ["Пиццерии", "Pizzerias"], hint: ["Все пиццерии подборки: РС, РКО, худшие сверху.", "Every pizzeria in your selection, worst first."], scoped: true, quality: true, meta: ["худшие сверху", "worst first"] },
-  countries: { title: ["Мои страны", "My countries"], hint: ["Страны подборки: РС, РКО, Google и Яндекс со стрелкой изменения, продажи; клик раскрывает пиццерии страны.", "Selected countries: standards, CX, Google and Yandex with change arrows, sales; click to expand pizzerias."], scoped: true, quality: true },
+  countries: { title: ["Мои страны", "My countries"], hint: ["Страны подборки: РС, РКО, Google и Яндекс со стрелкой изменения, продажи; клик раскрывает пиццерии страны.", "Selected countries: standards, CX, Google and Yandex with change arrows, sales; click to expand pizzerias."], scoped: true, quality: true, dated: true },
   viol: { title: ["Топ-5 нарушений", "Top 5 violations"], hint: ["Самые частые нарушения стандартов в волне.", "Most frequent standards violations this wave."], scoped: true, sample: true },
   sales: { title: ["Продажи Dodo", "Dodo sales"], hint: ["Выручка моих стран по месяцам — данные «Анализа рынка».", "Monthly revenue of my countries from Market analysis."], meta: ["публичный API Dodo", "Dodo public API"] },
   insp: { title: ["Проверки", "Inspections"], hint: ["Последние проверки стандартов по странам подборки: балл, класс, движение к прошлой; клик — зоны и нарушения.", "Latest standards inspections in your countries: score, grade, change vs the previous one; click for zones and violations."], scoped: true, meta: ["Децимус, за 90 дней", "Decimus, 90 days"] },
@@ -137,7 +144,7 @@ export function HomeGrid({ data, onCreateTask, onCreateTaskFrom, editing, onEdit
         <div className={`${editing ? "pointer-events-none select-none" : ""} ${sizing === "auto" ? "" : FILL_COL}`}>
           {!m.ownTitle && (
             <HomeLabel first action={undefined}>
-              <span className="inline-flex items-center gap-2">{m.title[lang]}{m.meta && <span className="font-normal normal-case tracking-normal text-ink-mute">{m.meta[lang]}</span>}{m.sample && <SampleTag />}</span>
+              <span className="inline-flex items-center gap-2">{m.dated ? `${m.title[lang]} ${dt("на", "as of")} ${todayLabel(lang)}` : m.title[lang]}{m.meta && <span className="font-normal normal-case tracking-normal text-ink-mute">{m.meta[lang]}</span>}{m.sample && <SampleTag />}</span>
             </HomeLabel>
           )}
           {body(it.id)}
