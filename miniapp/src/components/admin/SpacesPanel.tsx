@@ -238,7 +238,7 @@ function SpaceDetail({ ws, desk, initialTab, homeId, onBack, allWorkspaces }: {
         {tab === "overview" && <WorkspaceOverview wsId={space.id} />}
         {tab === "users" && <WorkspaceUsers wsId={space.id} allWorkspaces={allWorkspaces} desk={desk} />}
         {tab === "review" && <WorkspaceReview wsId={space.id} />}
-        {tab === "broadcast" && <WorkspaceBroadcast ws={space} />}
+        {tab === "broadcast" && <WorkspaceBroadcast ws={space} allWorkspaces={allWorkspaces} />}
         {tab === "markets" && <WorkspaceMarkets ws={space} onUpdated={() => setSpace((w) => ({ ...w }))} />}
         {tab === "key" && <WorkspaceKeyPanel wsId={space.id} />}
         {tab === "usage" && <ModelUsagePanel workspaceId={space.id} />}

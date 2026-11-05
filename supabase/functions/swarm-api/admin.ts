@@ -44,6 +44,13 @@ function serverFail(origin: string, where: string, err: unknown): Response {
   return serverError(origin, `admin: ${where}`, err);
 }
 
+/** `workspaces` из тела рассылки: непустой список непустых строк без повторов (до 100), иначе null. */
+export function parseBroadcastTargets(raw: unknown): string[] | null {
+  if (!Array.isArray(raw) || raw.length === 0 || raw.length > 100) return null;
+  if (!raw.every((v) => typeof v === "string" && v.trim() !== "")) return null;
+  return [...new Set(raw.map((v) => (v as string).trim()))];
+}
+
 export async function handleAdminRoutes(
   supabase: SupabaseClient,
   req: Request,
@@ -129,7 +136,7 @@ export async function handleAdminRoutes(
     return json(result, 200, origin);
   }
 
-  // POST /admin/broadcast — рассылка: пространству или (мастер-админу) всем пользователям системы
+  // POST /admin/broadcast {text, workspaces:[id…]} — рассылка людям выбранных пространств
   if (req.method === "POST" && routePath === "/admin/broadcast") {
     let body: Record<string, unknown>;
     try {
@@ -142,25 +149,20 @@ export async function handleAdminRoutes(
     const botToken = Deno.env.get("TELEGRAM_BOT_TOKEN");
     if (!botToken) return apiErr(500, "Bot token не настроен", origin);
 
-    // Кому: `workspace` — id пространства или "all". Админ — только своя команда (чужое — 404);
-    // мастер-админ — выбранное пространство, а без поля или с "all" — всем пользователям системы
-    // (прежнее поведение: экран теперь всегда присылает поле явно, по умолчанию — выбранное пространство).
-    const target = body.workspace == null ? null : String(body.workspace);
-    const scopeGroup = target === null || target === "all" ? (isSuper ? null : actor.groupId) : target;
-    if (scopeGroup !== null && !canManageWorkspace(actor, scopeGroup)) {
+    // Кому: `workspaces` — список id пространств, явный выбор отправителя; значения по умолчанию и
+    // «всех сразу» нет. Пустой список или не строки — 400. Админ — только своё пространство (чужое
+    // — 404, как у остальных админских маршрутов); мастер-админ — любые существующие.
+    const picked = parseBroadcastTargets(body.workspaces);
+    if (!picked) return apiErr(400, "workspaces: choose at least one space", origin, "bad_input");
+    if (picked.some((id) => !canManageWorkspace(actor, id))) {
       return apiErr(404, "Workspace not found", origin);
     }
-    if (scopeGroup !== null) {
-      const { data: exists } = await supabase.from("workspaces").select("id").eq("id", scopeGroup).maybeSingle();
-      if (!exists) return apiErr(404, "Workspace not found", origin);
+    const { data: found } = await supabase.from("workspaces").select("id").in("id", picked);
+    if (((found ?? []) as unknown[]).length !== picked.length) {
+      return apiErr(404, "Workspace not found", origin);
     }
-    const usersQ = supabase
-      .from("allowed_users").select("telegram_id").not(
-        "telegram_id",
-        "is",
-        null,
-      );
-    const { data: users } = scopeGroup === null ? await usersQ : await usersQ.eq("group_id", scopeGroup);
+    const { data: users } = await supabase
+      .from("allowed_users").select("telegram_id").not("telegram_id", "is", null).in("group_id", picked);
     const ids = [
       ...new Set(
         (users ?? []).map((u: Record<string, unknown>) => u.telegram_id as number),

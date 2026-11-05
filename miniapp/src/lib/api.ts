@@ -4734,16 +4734,16 @@ export async function fetchWorkspaceStats(wsId: string): Promise<WorkspaceStats>
   return apiFetch<WorkspaceStats>(`/admin/workspaces/${encodeURIComponent(wsId)}/stats`);
 }
 
-// Рассылка в Telegram: `workspace` — id пространства или "all" (все пространства, только мастер-админу).
-// Возвращает счётчики доставки.
+// Рассылка в Telegram людям ВЫБРАННЫХ пространств: `workspaces` — явный непустой список id (значения по
+// умолчанию и «всем сразу» нет). Админ пространства передаёт только своё. Возвращает счётчики доставки.
 export async function broadcastMessage(
   text: string,
-  workspace: string,
+  workspaces: string[],
 ): Promise<{ sent: number; failed: number; total: number }> {
-  if (DEV_MODE) return { sent: 0, failed: 0, total: 0 };
+  if (DEV_MODE) return { sent: 3 * workspaces.length, failed: 0, total: 3 * workspaces.length };
   return apiFetch<{ sent: number; failed: number; total: number }>(
     "/admin/broadcast",
-    { method: "POST", body: JSON.stringify({ text, workspace }) },
+    { method: "POST", body: JSON.stringify({ text, workspaces }) },
   );
 }
 

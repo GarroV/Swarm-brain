@@ -271,28 +271,42 @@ Deno.test("очередь вычитки: админ с чужим простр�
   assertEquals((await get(SUPER, "cee", "world")).status, 200);
 });
 
-Deno.test("рассылка: админ не может адресовать чужое пространство или «всем»", async () => {
+Deno.test("рассылка: выборка получателей ограничена выбранными пространствами", async () => {
   Deno.env.set("TELEGRAM_BOT_TOKEN", "t");
-  for (const workspace of ["cee", "all"]) {
-    // получателей нет: проверяем границы выборки, а не отправку (в Telegram тест не ходит)
-    const db = makeDb((q) => q.table === "workspaces" ? { data: [{ id: workspace }] } : { data: [] });
-    const res = await call(db, "POST", "/admin/broadcast", ADMIN_WORLD, true, "world", { text: "hi", workspace });
-    // «all» для админа сводится к его пространству, чужой id — 404
-    if (workspace === "cee") assertEquals(res.status, 404);
-    const scoped = db.queries.filter((q) => q.table === "allowed_users");
-    for (const q of scoped) {
-      assert(
-        q.calls.some(([m, a]) => m === "eq" && a[0] === "group_id" && a[1] === "world"),
-        "рассылка админа вышла за его пространство",
-      );
-    }
+  const db = makeDb((q) => q.table === "workspaces" ? { data: [{ id: "world" }, { id: "cee" }] } : { data: [] });
+  const res = await call(db, "POST", "/admin/broadcast", SUPER, true, "cee", {
+    text: "hi",
+    workspaces: ["world", "cee"],
+  });
+  assertEquals(res.status, 200);
+  const reads = db.queries.filter((q) => q.table === "allowed_users");
+  assertEquals(reads.length, 1);
+  assert(
+    reads[0].calls.some(([m, a]) => m === "in" && a[0] === "group_id" && JSON.stringify(a[1]) === '["world","cee"]'),
+  );
+});
+
+Deno.test("рассылка: админ не может адресовать чужое пространство, «all» и поле workspace больше не принимаются", async () => {
+  Deno.env.set("TELEGRAM_BOT_TOKEN", "t");
+  const cases: Array<[unknown, number]> = [
+    [{ text: "hi", workspaces: ["cee"] }, 404],
+    [{ text: "hi", workspaces: ["world", "cee"] }, 404],
+    [{ text: "hi", workspaces: ["all"] }, 404],
+    [{ text: "hi", workspace: "world" }, 400],
+    [{ text: "hi", workspaces: [] }, 400],
+  ];
+  for (const [body, status] of cases) {
+    const db = makeDb((q) => q.table === "workspaces" ? { data: [{ id: "world" }] } : { data: [] });
+    const res = await call(db, "POST", "/admin/broadcast", ADMIN_WORLD, true, "world", body);
+    assertEquals(res.status, status, JSON.stringify(body));
+    assertEquals(db.queries.filter((q) => q.table === "allowed_users").length, 0, "получатели не читались");
   }
 });
 
 Deno.test("рассылка: мастер с несуществующим пространством — 404, никому не уходит", async () => {
   Deno.env.set("TELEGRAM_BOT_TOKEN", "t");
   const db = makeDb(() => ({ data: [] }));
-  const res = await call(db, "POST", "/admin/broadcast", SUPER, true, "cee", { text: "hi", workspace: "nope" });
+  const res = await call(db, "POST", "/admin/broadcast", SUPER, true, "cee", { text: "hi", workspaces: ["nope"] });
   assertEquals(res.status, 404);
   assertEquals(db.queries.filter((q) => q.table === "allowed_users").length, 0);
 });
