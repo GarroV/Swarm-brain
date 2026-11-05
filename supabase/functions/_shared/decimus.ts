@@ -1,9 +1,6 @@
-// Клиент API чтения Децимуса (GarroV/decimus#567): токен, таймаут, «не настроено», страны воркспейса.
+// Клиент API чтения Децимуса (GarroV/decimus#567): токен, таймаут, «не настроено».
 // Общий для swarm-api (/quality, /quality/maps, /inspections) и swarm-mcp (get_inspections). Данных
 // Децимуса Swarm не хранит и не пишет — только читает (решение владельца 08.10.2026).
-// Линт просит короткое имя из карты импортов; см. пояснение в swarm-api/sprint-items.ts.
-// deno-lint-ignore-file no-import-prefix
-import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 export const DECIMUS_TIMEOUT_MS = 10_000;
 
@@ -49,12 +46,4 @@ export function decimusPageUrl(path: string): string | null {
   const base = Deno.env.get("DECIMUS_API_URL");
   if (!base || !path.startsWith("/")) return null;
   return new URL(path, base).toString();
-}
-
-/** Страны воркспейса (allowed_markets, верхний регистр); null — без ограничения, [] — ни одной. */
-export async function workspaceCountries(supabase: SupabaseClient, groupId: string): Promise<string[] | null> {
-  const { data, error } = await supabase.from("workspaces").select("allowed_markets").eq("id", groupId).maybeSingle();
-  if (error) throw new Error(`allowed_markets: ${error.message}`);
-  const markets = (data?.allowed_markets as string[] | null) ?? null;
-  return markets ? markets.map((m) => m.trim().toUpperCase()) : null;
 }

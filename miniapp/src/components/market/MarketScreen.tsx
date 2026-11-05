@@ -1,7 +1,7 @@
 "use client";
 // «Анализ рынка» (EN Market analysis) — решение владельца 02.10.2026, спека
-// docs/superpowers/specs/2026-10-02-market-analysis-design.md. Страны — те, что видит
-// воркспейс (allowed_markets, у демо — только выдуманная Demoland), данные приходят одним
+// docs/superpowers/specs/2026-10-02-market-analysis-design.md. Страны — все реальные
+// (решение 05.11.2026: рынок общий, allowed_markets не режет; у демо — только выдуманная Demoland), данные приходят одним
 // ответом GET /market/:cc, каждая секция подписывает свой источник и его свежесть.
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { MarketBundle } from "@/types";

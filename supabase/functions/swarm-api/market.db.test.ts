@@ -1,4 +1,5 @@
-// «Анализ рынка»: доступ к стране — по allowed_markets воркспейса, XD — только демо;
+// «Анализ рынка»: настоящий воркспейс видит все страны (allowed_markets не режет), XD — только демо; запись и очередь — только в своих
+// allowed_markets;
 // импорт снимка — только админ, битый снимок отклоняется с причинами. Настоящая база.
 import { assertEquals } from "@std/assert";
 import { createClient } from "@supabase/supabase-js";
@@ -34,15 +35,17 @@ const call = (path: string, opts: { demo?: boolean; admin?: boolean; method?: st
     ORIGIN,
   );
 
-Deno.test("market access follows allowed_markets; XD only for demo", async () => {
+Deno.test("market access ignores allowed_markets; XD only for demo", async () => {
   await setup();
   assertEquals((await call("/market/QB"))!.status, 200);
   assertEquals((await call("/market/qb"))!.status, 200);
-  assertEquals((await call("/market/QC"))!.status, 403);
+  assertEquals((await call("/market/QC"))!.status, 200); // нет в allowed_markets, но рынок общий
   assertEquals((await call("/market/XD"))!.status, 403);
   assertEquals((await call("/market/XD", { demo: true }))!.status, 200);
   assertEquals((await call("/market/QB", { demo: true }))!.status, 403);
-  assertEquals(await (await call("/market/countries"))!.json(), ["QB"]);
+  const real: string[] = await (await call("/market/countries"))!.json();
+  assertEquals(["QB", "QC"].filter((c) => !real.includes(c)), []);
+  assertEquals(real.includes("XD"), false);
   assertEquals(await (await call("/market/countries", { demo: true }))!.json(), ["XD"]);
   await teardown();
 });
@@ -81,4 +84,26 @@ Deno.test("accept-all is admin-only and reports how many finds became points", a
 Deno.test("routes outside /market are not handled", async () => {
   assertEquals(await call("/tasks"), null);
   assertEquals(await call("/marketing"), null);
+});
+
+Deno.test("admin outside allowed_markets reads a country but cannot import, list or decide its candidates", async () => {
+  await setup();
+  const body = JSON.stringify({ locs: [] });
+  const { data: cand } = await sb.from("mkt_candidates")
+    .insert({ country: "QC", kind: "new_location", source: "t", payload: { key: "t-1" } }).select("id").single();
+  const id = cand!.id as string;
+  try {
+    assertEquals((await call("/market/QC", { admin: true }))!.status, 200);
+    assertEquals((await call("/market/QC/import", { method: "POST", body, admin: true }))!.status, 403);
+    assertEquals((await call("/market/QC/candidates", { admin: true }))!.status, 403);
+    assertEquals((await call("/market/QC/candidates/accept-all", { method: "POST", admin: true }))!.status, 403);
+    assertEquals((await call(`/market/candidates/${id}/reject`, { method: "POST", admin: true }))!.status, 403);
+    const { data: still } = await sb.from("mkt_candidates").select("status").eq("id", id).single();
+    assertEquals(still!.status, "pending");
+    // своя страна по-прежнему доступна админу
+    assertEquals((await call("/market/QB/candidates", { admin: true }))!.status, 200);
+  } finally {
+    await sb.from("mkt_candidates").delete().eq("id", id);
+    await teardown();
+  }
 });

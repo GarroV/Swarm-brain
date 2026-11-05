@@ -4,7 +4,7 @@
 // и текст ответа агенту. Читать — кто видит страну на вебе; писать — только админ.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { allRows, must } from "../_shared/market/db.ts";
-import { canSeeCountry } from "../_shared/market/rules.ts";
+import { canSeeCountry, canWriteCountry } from "../_shared/market/rules.ts";
 import { EDITORIAL_BLOCKS } from "../_shared/market/editorial.ts";
 import {
   addFact,
@@ -47,8 +47,12 @@ async function country(args: Args, write: boolean): Promise<{ cc: string } | { d
   const cc = String(args.country ?? "").trim().toUpperCase();
   if (!/^[A-Z]{2}$/.test(cc)) return { denied: "Ошибка: country — код страны из двух букв, например BG." };
   const who = await caller(args.requesting_user_id);
-  if (!canSeeCountry(cc, who.allowed, false)) return { denied: `Ошибка: страна ${cc} тебе не открыта.` };
+  if (!canSeeCountry(cc, false)) return { denied: `Ошибка: страна ${cc} тебе не открыта.` };
   if (write && !who.isAdmin) return { denied: "Ошибка: вносить данные рынка может только админ." };
+  // Запись остаётся в границах воркспейса: читать можно любую страну, вносить — только из allowed_markets.
+  if (write && !canWriteCountry(cc, who.allowed, false)) {
+    return { denied: `Ошибка: страна ${cc} тебе не открыта для записи.` };
+  }
   return { cc };
 }
 

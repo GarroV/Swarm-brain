@@ -1,13 +1,14 @@
 // «Анализ рынка»: чтение данных страны и админ-действия (импорт снимка ручных источников,
 // очередь кандидатов от сборщиков). Решение 02.10.2026, спека 2026-10-02-market-analysis-design.
-// Данные — рынок страны, не воркспейса: видимость режет canSeeCountry по allowed_markets,
-// демо видит только выдуманную XD.
+// Данные — рынок страны, не воркспейса: видимость — canSeeCountry: настоящий воркспейс видит все
+// страны (решение 05.11.2026), демо — только выдуманную XD. Запись (импорт, очередь кандидатов)
+// остаётся в границах allowed_markets воркспейса и требует админа: canWriteCountry.
 // Линт просит короткое имя из карты импортов; см. пояснение в sprint-items.ts.
 // deno-lint-ignore-file no-import-prefix
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { apiErr, corsHeaders, json } from "./http.ts";
 import { serverError } from "./client-error.ts";
-import { canSeeCountry } from "../_shared/market/rules.ts";
+import { canSeeCountry, canWriteCountry } from "../_shared/market/rules.ts";
 import {
   acceptAllNewLocations,
   decideCandidate,
@@ -32,8 +33,23 @@ async function allowedMarkets(groupId: string): Promise<string[] | null> {
   return (data?.allowed_markets as string[] | null) ?? null;
 }
 
-async function decide(id: string, accept: boolean, telegramId: number, isAdmin: boolean, origin: string) {
+async function decide(
+  id: string,
+  accept: boolean,
+  telegramId: number,
+  groupId: string,
+  isAdmin: boolean,
+  isDemo: boolean,
+  origin: string,
+) {
   if (!isAdmin) return apiErr(403, "Forbidden", origin);
+  // Страна берётся у самой находки, а не из запроса: чужую находку своим allowed_markets не решить.
+  const { data: cand, error } = await supabase.from("mkt_candidates").select("country").eq("id", id).maybeSingle();
+  if (error) throw new Error(`candidate: ${error.message}`);
+  if (!cand) return apiErr(404, "Not found", origin);
+  if (!canWriteCountry(cand.country as string, await allowedMarkets(groupId), isDemo)) {
+    return apiErr(403, "Forbidden", origin);
+  }
   const r = await decideCandidate(supabase, id, accept, telegramId);
   if (r === "not_found") return apiErr(404, "Not found", origin);
   if (r === "already") return apiErr(409, "Already decided", origin);
@@ -66,11 +82,10 @@ export async function handleMarketRoutes(
   try {
     const decision = routePath.match(DECIDE_ROUTE);
     if (decision && req.method === "POST") {
-      return await decide(decision[1], decision[2] === "accept", telegramId, isAdmin, origin);
+      return await decide(decision[1], decision[2] === "accept", telegramId, groupId, isAdmin, isDemo, origin);
     }
 
-    const allowed = await allowedMarkets(groupId);
-    const visible = (cc: string) => canSeeCountry(cc, allowed, isDemo);
+    const visible = (cc: string) => canSeeCountry(cc, isDemo);
     if (routePath === "/market/countries" && req.method === "GET") {
       return json((await listCountriesWithData(supabase)).filter(visible), 200, origin);
     }
@@ -82,7 +97,7 @@ export async function handleMarketRoutes(
       return json(await listReadyCountries(supabase, shown), 200, origin);
     }
 
-    // Лёгкая выручка по странам для главной — те же allowed_markets/демо-правило, что у /market/:cc,
+    // Лёгкая выручка по странам для главной — то же демо-правило, что у /market/:cc,
     // но чужая страна не валит весь ответ, а попадает в `denied` (виджет рисует остальные).
     if (routePath === "/market/sales" && req.method === "GET") {
       const ccs = parseSalesCountries(new URL(req.url).searchParams.get("cc"));
@@ -96,6 +111,8 @@ export async function handleMarketRoutes(
     const cc = m[1].toUpperCase();
     if (!visible(cc)) return apiErr(403, "Forbidden", origin);
     if (!m[2] && req.method === "GET") return json(await loadCountry(supabase, cc), 200, origin);
+    // Всё ниже — админские записи и очередь: поверх чтения нужна своя страна (canWriteCountry).
+    if (m[2] && !canWriteCountry(cc, await allowedMarkets(groupId), isDemo)) return apiErr(403, "Forbidden", origin);
     if (m[2] === "/candidates" && req.method === "GET") {
       if (!isAdmin) return apiErr(403, "Forbidden", origin);
       return json(await listCandidates(supabase, cc), 200, origin);
