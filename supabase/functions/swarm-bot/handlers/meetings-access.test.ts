@@ -70,7 +70,7 @@ Deno.test("загрузчик отдаёт только встречи: заме
   const src = await Deno.readTextFile(`${HERE}meetings.ts`);
   const start = src.indexOf("async function loadEntryForAction");
   const body = src.slice(start, src.indexOf("\n}", start));
-  assertEquals(/"entry_type", "source"/.test(body), true, "загрузчик не читает entry_type/source");
+  assertEquals(/"entry_type",\s*"source"/.test(body), true, "загрузчик не читает entry_type/source");
   assertEquals(/!isMeetingEntry\(/.test(body), true, "загрузчик не отсекает не-встречи");
 });
 
@@ -151,6 +151,11 @@ Deno.test("список сохранённых встреч фильтрует �
   const start = src.indexOf('if (sub === "saved")');
   if (start < 0) throw new Error("ветка rai_saved не найдена — детектор устарел");
   const query = src.slice(start, src.indexOf(".limit(", start));
-  assertEquals(/\.eq\("group_id", groupId\)/.test(query), true, "список не ограничен воркспейсом");
+  // Пространство — по признаку принадлежности: общая встреча двух команд видна обеим.
+  assertEquals(
+    /\.eq\("group_id", groupId\)/.test(query) || /visibleInWorkspace\([\s\S]*,\s*groupId,?\s*\)/.test(query),
+    true,
+    "список не ограничен воркспейсом",
+  );
   assertEquals(/\.or\(visibilityFilter\(userId\)\)/.test(query), true, "список показывает чужие личные встречи");
 });

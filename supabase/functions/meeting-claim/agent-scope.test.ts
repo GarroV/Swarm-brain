@@ -14,8 +14,10 @@ import {
   type CalendarSource,
   type InviteSource,
   keyShape,
+  mayJoinAcrossWorkspaces,
   mayJoinExisting,
   resolveAgentScope,
+  serverVerifiedCalendarKey,
 } from "./agent-scope.ts";
 
 const PERSON = 111;
@@ -405,4 +407,69 @@ Deno.test("люди присоединяются как раньше — све�
 Deno.test("БЛОКИРУЮЩИЙ: агент без контекста сверки не присоединяется никуда, кроме своего", () => {
   assertEquals(mayJoinExisting(bot, "person@team.io", { ...theirRoom, attendees: [] }, null), false);
   assertEquals(mayJoinExisting(bot, null, { ...theirRoom, claim_owner: PERSON }, null), true);
+});
+
+// ── Строка другого пространства (склейка общей встречи, решение 05.11.2026) ────────────────────
+// Ключ и состав встречи у рекордера присылает клиент — участия они не доказывают. Встать в строку
+// чужого пространства можно, только если участие подтвердил СЕРВЕР с обеих сторон: строка создана
+// с подтверждённым ключом (identity_verified) и тот же ключ сервер нашёл в календаре заявителя.
+const CAL_KEY = "evt123:2026-11-05";
+const verifiedA = {
+  group_id: "cee",
+  identity_kind: "calendar",
+  identity_key: CAL_KEY,
+  identity_verified: true,
+};
+const myCalendar = { attendees: [], calendarKeys: new Set([CAL_KEY]) };
+
+Deno.test("законная склейка: подтверждённая строка A и ключ в календаре заявителя из B — встаёт", () => {
+  assertEquals(mayJoinAcrossWorkspaces("world", verifiedA, myCalendar), true);
+});
+
+Deno.test("атака (а): рекордер из B знает ключ A — сервер участия не подтвердил, отказ", () => {
+  // У рекордера scope нет: ключ и состав (свой e-mail в нём) прислал клиент.
+  assertEquals(mayJoinAcrossWorkspaces("world", verifiedA, null), false);
+  // Служебный агент, чей календарь этого ключа не содержит, — тоже отказ.
+  assertEquals(mayJoinAcrossWorkspaces("world", verifiedA, noCalendar), false);
+});
+
+Deno.test("атака (б): строку с ключом A заранее создали в B без подтверждения — законный участник из A в неё не встаёт", () => {
+  const preCreatedInB = { ...verifiedA, group_id: "world", identity_verified: false };
+  assertEquals(mayJoinAcrossWorkspaces("cee", preCreatedInB, myCalendar), false);
+  // Признак не пришёл из базы (старая строка, колонку не выбрали) — тоже не подтверждено.
+  assertEquals(mayJoinAcrossWorkspaces("cee", { ...preCreatedInB, identity_verified: null }, myCalendar), false);
+});
+
+Deno.test("чужое пространство: комнатный и ручной ключ — отказ даже при подтверждении", () => {
+  const room = { ...verifiedA, identity_kind: "room", identity_key: "meet:abc-defg-hij:2026-11-05" };
+  const roomScope = { attendees: [], calendarKeys: new Set([room.identity_key]) };
+  assertEquals(mayJoinAcrossWorkspaces("world", room, roomScope), false);
+  const manual = { ...verifiedA, identity_kind: "manual", identity_key: "manual-123" };
+  assertEquals(
+    mayJoinAcrossWorkspaces("world", manual, { attendees: [], calendarKeys: new Set(["manual-123"]) }),
+    false,
+  );
+  // Календарная форма ключа, но строка помечена комнатой — отказ.
+  assertEquals(mayJoinAcrossWorkspaces("world", { ...verifiedA, identity_kind: "room" }, myCalendar), false);
+});
+
+Deno.test("своё пространство — как раньше, любой ключ и без подтверждения; без пространства — отказ", () => {
+  const room = {
+    ...verifiedA,
+    identity_kind: "room",
+    identity_key: "meet:abc-defg-hij:2026-11-05",
+    identity_verified: false,
+  };
+  assertEquals(mayJoinAcrossWorkspaces("cee", room, null), true);
+  assertEquals(mayJoinAcrossWorkspaces(null, verifiedA, myCalendar), false);
+});
+
+Deno.test("подтверждение ключа: только календарный ключ из календаря, прочитанного сервером", () => {
+  assertEquals(serverVerifiedCalendarKey(CAL_KEY, myCalendar), true);
+  assertEquals(serverVerifiedCalendarKey(CAL_KEY, null), false, "рекордер: календаря сервер не читал");
+  assertEquals(serverVerifiedCalendarKey(CAL_KEY, noCalendar), false);
+  assertEquals(
+    serverVerifiedCalendarKey("meet:abc-defg-hij", { attendees: [], calendarKeys: new Set(["meet:abc-defg-hij"]) }),
+    false,
+  );
 });

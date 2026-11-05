@@ -1,6 +1,7 @@
 // Пишет ли бот встречу прямо сейчас — одно правило для арбитра записей (meeting-claim/arbiter.ts)
 // и для «комната уже занята ботом» (_shared/manual-rooms.ts).
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { baseIdentityKey } from "./meeting-roster.ts";
 
 export interface BotRecordingRow {
   lease_expires_at: string | null;
@@ -30,7 +31,8 @@ export interface RecordedNowRow extends BotRecordingRow {
 export function recordedNowKeys(rows: readonly RecordedNowRow[], nowIso: string): string[] {
   const keys = new Set<string>();
   for (const r of rows) {
-    if (r.identity_key && botStillRecording(r, nowIso)) keys.add(r.identity_key);
+    // Без метки пространства: календарь человека знает встречу под общим ключом.
+    if (r.identity_key && botStillRecording(r, nowIso)) keys.add(baseIdentityKey(r.identity_key));
   }
   return [...keys];
 }

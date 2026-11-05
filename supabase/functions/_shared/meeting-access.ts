@@ -20,6 +20,10 @@
 
 export type DraftMeetingRow = {
   group_id?: string | null;
+  /** Кто держит запись сейчас (`meetings.claim_owner`); при claim он же вписывается в recorders. */
+  claim_owner?: number | string | null;
+  /** Ключ строки подтвердил сервер (календарь создателя; meeting-claim, миграция 20261105190000). */
+  identity_verified?: boolean | null;
   recorders?: Array<{ telegram_id: number }> | null;
   co_owners?: number[] | null;
   /** Участники из календаря (`meetings.attendees`) — нужны, чтобы отличить 1-1 от встречи втроём. */
@@ -77,16 +81,40 @@ export function oneOnOnePartner(meeting: DraftMeetingRow, viewerId: number): num
  * Может ли `viewerId` открыть черновик. `isAdmin` принимается, чтобы вызывающему не приходилось
  * гадать, нужен ли он, — и намеренно НЕ влияет на результат: так видно, что оверсайт здесь
  * рассмотрен и отклонён, а не забыт.
+ *
+ * Своё пространство — владелец черновика (записавший, совладелец, держатель записи).
+ *
+ * Строка ДРУГОГО пространства (склейка общей встречи по календарному ключу, решение 05.11.2026) —
+ * владелец черновика, строка с ключом, подтверждённым сервером (`identity_verified`), И его e-mail
+ * в составе встречи (`attendees`). Ключ и состав у рекордера присылает клиент, поэтому без
+ * подтверждения строки чужое пространство закрыто: строки, склеенные до этой проверки, и строки,
+ * созданные заранее под чужой ключ, не открываются. Без e-mail смотрящего — только своё
+ * пространство (fail-closed).
  */
 export function canAccessDraftMeeting(
   meeting: DraftMeetingRow | null | undefined,
   viewerId: number,
   _isAdmin: boolean,
   viewerGroupId: string | null | undefined,
+  viewerEmail?: string | null,
 ): boolean {
-  if (!meeting) return false;
-  if (!viewerGroupId || meeting.group_id !== viewerGroupId) return false;
-  return recorderIds(meeting).includes(viewerId) || (meeting.co_owners ?? []).includes(viewerId);
+  if (!meeting || !viewerGroupId) return false;
+  if (!isDraftOwner(meeting, viewerId)) return false;
+  if (meeting.group_id === viewerGroupId) return true;
+  if (meeting.identity_verified !== true) return false;
+  return isCalendarAttendee(meeting, viewerEmail);
+}
+
+/** E-mail смотрящего есть в составе встречи (без учёта регистра; переговорки не в счёт). */
+function isCalendarAttendee(meeting: DraftMeetingRow, email: string | null | undefined): boolean {
+  const me = (email ?? "").trim().toLowerCase();
+  if (!me.includes("@")) return false;
+  return (meeting.attendees ?? []).some((a) => a != null && !isRoom(a) && (a.email ?? "").trim().toLowerCase() === me);
+}
+
+/** Записавший, совладелец или держатель записи (`claim_owner`) — владелец черновика. */
+function isDraftOwner(meeting: DraftMeetingRow, viewerId: number): boolean {
+  return ownerIds(meeting).includes(viewerId) || toId(meeting.claim_owner) === viewerId;
 }
 
 /**
@@ -126,5 +154,5 @@ export function hasCoOwners(meeting: DraftMeetingRow): boolean {
 export function draftMeetingsOwnScopedFilter(viewerId: number): string {
   const id = Math.trunc(viewerId);
   const notHidden = `hidden_for.not.cs.{${id}}`;
-  return `and(recorders.cs.[{"telegram_id":${id}}],${notHidden}),and(co_owners.cs.{${id}},${notHidden})`;
+  return `and(recorders.cs.[{"telegram_id":${id}}],${notHidden}),and(co_owners.cs.{${id}},${notHidden}),and(claim_owner.eq.${id},${notHidden})`;
 }

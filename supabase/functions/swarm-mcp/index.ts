@@ -75,6 +75,7 @@ import {
 } from "../_shared/storage-files.ts";
 import { UNTRUSTED_DATA_RULE, wrapUntrustedForModel } from "../_shared/untrusted-prompt.ts";
 import { onlyLiveEntries } from "../_shared/entries/live.ts";
+import { visibleInWorkspace } from "../_shared/entries/workspace.ts";
 import { archiveEntry } from "../_shared/entries/archive.ts";
 
 // Адрес веба: ссылку на файл отдаём абсолютной — получатель ответа (Claude Desktop)
@@ -267,16 +268,18 @@ async function toolGetMeetings(args: { limit?: number; requesting_user_id?: numb
   const scope = await callerScope(args.requesting_user_id);
   if (!scope) return NO_WORKSPACE_MESSAGE;
 
-  const query = onlyLiveEntries(
-    supabase
-      .from("entries")
-      .select("content, metadata, created_at"),
+  const query = visibleInWorkspace(
+    onlyLiveEntries(
+      supabase
+        .from("entries")
+        .select("content, metadata, created_at"),
+    ),
+    scope.groupId,
   )
     .in("source", ALL_MEETING_SOURCES)
     // Приватность: чужие личные встречи невидимы. Только публичные ИЛИ свои приватные
     // (owner_id = вызывающий). Без admin-байпаса: приватное видит ТОЛЬКО владелец.
     .or(visibilityFilter(scope.userId))
-    .eq("group_id", scope.groupId)
     .order("created_at", { ascending: false })
     .limit(args.limit ?? 10);
   const { data, error } = await query;
@@ -417,13 +420,15 @@ async function toolGetEntry(args: { id: string; requesting_user_id?: number }): 
   const scope = await callerScope(args.requesting_user_id);
   if (!scope) return NO_WORKSPACE_MESSAGE;
 
-  const { data, error } = await onlyLiveEntries(
-    supabase
-      .from("entries")
-      .select("content, source, created_at, is_private, owner_id, shared_with"),
+  const { data, error } = await visibleInWorkspace(
+    onlyLiveEntries(
+      supabase
+        .from("entries")
+        .select("content, source, created_at, is_private, owner_id, shared_with"),
+    ),
+    scope.groupId,
   )
     .eq("id", args.id)
-    .eq("group_id", scope.groupId)
     .maybeSingle();
   if (error) return `Ошибка: ${error.message}`;
   if (!data) return "Запись не найдена.";
@@ -611,15 +616,17 @@ async function toolGetStorageStats(args: { requesting_user_id?: number } = {}): 
   const scope = await callerScope(args.requesting_user_id);
   if (!scope) return NO_WORKSPACE_MESSAGE;
 
-  const query = onlyLiveEntries(
-    supabase
-      .from("entries")
-      .select("entry_type, source, created_at, metadata"),
+  const query = visibleInWorkspace(
+    onlyLiveEntries(
+      supabase
+        .from("entries")
+        .select("entry_type, source, created_at, metadata"),
+    ),
+    scope.groupId,
   )
     // Статистика считает только видимые записи: чужие приватные не попадают в счётчики
     // (та же приватность, что в list_entries/get_meetings).
     .or(visibilityFilter(scope.userId))
-    .eq("group_id", scope.groupId)
     .order("created_at", { ascending: false })
     .limit(2000);
   const { data, error } = await query;
@@ -674,13 +681,15 @@ async function toolListEntries(
   const scope = await callerScope(args.requesting_user_id);
   if (!scope) return NO_WORKSPACE_MESSAGE;
 
-  let query = onlyLiveEntries(
-    supabase
-      .from("entries")
-      .select("id, source, entry_type, entry_date, created_at, summary, countries, metadata"),
+  let query = visibleInWorkspace(
+    onlyLiveEntries(
+      supabase
+        .from("entries")
+        .select("id, source, entry_type, entry_date, created_at, summary, countries, metadata"),
+    ),
+    scope.groupId,
   )
     .or(visibilityFilter(scope.userId))
-    .eq("group_id", scope.groupId)
     .order("created_at", { ascending: false })
     .limit(Math.min(args.limit ?? 20, 100));
 

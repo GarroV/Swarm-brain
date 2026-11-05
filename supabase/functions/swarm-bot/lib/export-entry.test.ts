@@ -15,7 +15,7 @@ function makeSupabase(single: unknown, list: unknown[]) {
       const chain: Call[] = [{ method: "from", args }];
       calls.push(chain);
       const b: Record<string, unknown> = {};
-      for (const m of ["select", "eq", "is", "or", "order", "limit"]) {
+      for (const m of ["select", "eq", "is", "or", "order", "limit", "contains"]) {
         b[m] = (...a: unknown[]) => {
           chain.push({ method: m, args: a });
           return b;
@@ -40,7 +40,8 @@ Deno.test("поиск записи: свой воркспейс и фильтр 
   const r = await loadEntryForExport(client, "e1", { groupId: "cee", userId: VIEWER });
   assertEquals(r, null);
   assertEquals(has(calls[0], "eq", "id", "e1"), true);
-  assertEquals(has(calls[0], "eq", "group_id", "cee"), true);
+  // Пространство — по признаку принадлежности: общая встреча двух команд выгружается обеим.
+  assertEquals(has(calls[0], "contains", "visible_group_ids", ["cee"]), true);
   assertEquals(has(calls[0], "or", vis), true, "нет фильтра личных");
 });
 
@@ -91,4 +92,19 @@ Deno.test("длинные тезисы предпочитаются коротк
   const { client } = makeSupabase(entry, []);
   const r = await loadEntryForExport(client, "e1", { groupId: "cee", userId: VIEWER });
   assertEquals(r?.fullContent, "long summary");
+});
+
+Deno.test("общая встреча другой команды: части ищутся в ДОМАШНЕМ пространстве записи", async () => {
+  const entry = {
+    content: "part 1",
+    summary: null,
+    metadata: { chunk_group_id: "g-1", chunk: 1, total_chunks: 2 },
+    source: "mcp",
+    created_at: "2026-09-01T00:00:00Z",
+    group_id: "cee",
+  };
+  const { client, calls } = makeSupabase(entry, [{ content: "part 1", metadata: { chunk: 1 } }]);
+  await loadEntryForExport(client, "e1", { groupId: "world", userId: VIEWER });
+  assertEquals(has(calls[0], "contains", "visible_group_ids", ["world"]), true);
+  assertEquals(has(calls[1], "eq", "group_id", "cee"), true, "части искались в пространстве зрителя");
 });

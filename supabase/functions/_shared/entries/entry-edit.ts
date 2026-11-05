@@ -8,6 +8,7 @@
 // Воркспейс обязателен: неизвестный воркспейс зрителя = отказ (fail-closed), в отличие от
 // `entryAccessError`, который без воркспейса его не проверяет.
 import { canViewEntry, entryAccessError } from "./access.ts";
+import { isEntryVisibleInWorkspace } from "./workspace.ts";
 import {
   canChangeMeetingPrivacy,
   meetingAccessError,
@@ -43,7 +44,9 @@ export function entryActionError(
   opts?: { changesPrivacy?: boolean },
 ): string | null {
   const notFound = `Запись ${id} не найдена.`;
-  if (!entry || !viewerGroupId || entry.group_id !== viewerGroupId) return notFound;
+  // Видна ли запись в пространстве зрителя — по признаку принадлежности (общая встреча видна
+  // обеим командам); права админа ниже действуют только в домашнем пространстве встречи.
+  if (!entry || !viewerGroupId || !isEntryVisibleInWorkspace(entry, viewerGroupId)) return notFound;
   // Невидимая запись неотличима от несуществующей — одним и тем же текстом.
   if (!canViewEntry(entry, viewer.id)) return notFound;
 
@@ -52,7 +55,10 @@ export function entryActionError(
   }
   const denied = meetingAccessError(id, entry, viewer, viewerGroupId, action);
   if (denied) return denied;
-  if (action === "edit" && opts?.changesPrivacy && !canChangeMeetingPrivacy(entry, viewer)) {
+  if (
+    action === "edit" && opts?.changesPrivacy &&
+    !canChangeMeetingPrivacy(entry, { ...viewer, groupId: viewerGroupId })
+  ) {
     return "Запрещено: переносить встречу между личным и общим могут только её автор и администратор.";
   }
   return null;

@@ -135,3 +135,14 @@ Deno.test("вложение личной встречи 1-1 видит втор�
   assertEquals(decideFileAccess(row, { groupId: "cee", telegramId: -37, isAdmin: false }).allowed, true);
   assertEquals(decideFileAccess(row, { groupId: "cee", telegramId: 999, isAdmin: true }).allowed, false);
 });
+
+// ── Общая встреча двух пространств (этап 2) ─────────────────────────────────────────────
+Deno.test("вложение общей встречи видно второй команде, третьей — нет", () => {
+  const row = { ...entryFile, group_id: "cee", visible_group_ids: ["cee", "world"], is_private: false };
+  assertEquals(decideFileAccess(row, { ...member, groupId: "world" }).allowed, true);
+  assertEquals(decideFileAccess(row, { ...member, groupId: "other" }).allowed, false);
+  assertEquals(
+    decideFileAccess({ ...row, is_private: true, owner_user_id: 111 }, { ...member, groupId: "world" }).allowed,
+    false,
+  );
+});

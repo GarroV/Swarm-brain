@@ -103,3 +103,14 @@ Deno.test("правка через entryActionError совпадает с entryE
     }
   }
 });
+
+// ── Общая встреча двух пространств (этап 2) ─────────────────────────────────────────────
+Deno.test("общая встреча: участник второго пространства правит, админ второго — не правит и не удаляет", () => {
+  const sharedAB = { ...meeting, visible_group_ids: ["cee", "world"] };
+  assertEquals(entryActionError("e", sharedAB, participant, "world", "edit"), null);
+  assertNotEquals(entryActionError("e", sharedAB, admin, "world", "edit"), null);
+  assertNotEquals(entryActionError("e", sharedAB, admin, "world", "delete"), null);
+  assertEquals(entryActionError("e", sharedAB, admin, "cee", "delete"), null);
+  // Не общая встреча чужого пространства — «не найдена», неотличимо.
+  assertEquals(entryActionError("e", meeting, participant, "world", "edit"), "Запись e не найдена.");
+});

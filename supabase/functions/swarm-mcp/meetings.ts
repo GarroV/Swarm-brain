@@ -50,10 +50,19 @@ async function loadOwnDraft(
   const groupId = await resolveGroupId(callerId);
   const { data } = await supabase.from("meetings").select("*").eq("id", meetingId).maybeSingle();
   const meeting = data as Record<string, unknown> | null;
+  // E-mail — для строки другого пространства (склейка общей встречи): её открывает только
+  // владелец из состава встречи. Нет e-mail — только своё пространство.
+  const email = meeting && meeting.group_id !== groupId ? await callerEmail(callerId) : null;
   // Один текст отказа на «нет такого» и «не твой»: иначе перебором id подтверждается чужой черновик.
   if (
     !meeting || !groupId ||
-    !canAccessDraftMeeting(meeting as DraftMeetingRow, callerId, await masterAdminFlag(supabase, callerId), groupId)
+    !canAccessDraftMeeting(
+      meeting as DraftMeetingRow,
+      callerId,
+      await masterAdminFlag(supabase, callerId),
+      groupId,
+      email,
+    )
   ) {
     return { ok: false, msg: NOT_FOUND };
   }
@@ -61,15 +70,25 @@ async function loadOwnDraft(
   return { ok: true, meeting, groupId };
 }
 
+async function callerEmail(callerId: number): Promise<string | null> {
+  const { data } = await supabase.from("allowed_users").select("email").eq("telegram_id", callerId).maybeSingle();
+  return (data as { email?: string | null } | null)?.email ?? null;
+}
+
 export async function toolGetReviewQueue(args: Caller): Promise<string> {
   const callerId = args.requesting_user_id;
   if (!callerId) return "Ошибка: личность не определена (нужен токен коннектора).";
   const groupId = await resolveGroupId(callerId);
   if (!groupId) return "Ошибка: пользователь не найден в системе.";
-  // Тот же фильтр «свои», что у GET /agent-meetings: записывал ИЛИ совладелец (PR #508).
+  // Тот же фильтр «свои», что у GET /agent-meetings: записывал, совладелец или держит запись.
+  // Пространство строки не фильтруем намеренно: при склейке общей встречи (календарный ключ один
+  // на всех) запись человека из B лежит в строке пространства A — она всё равно его (решение
+  // 05.11.2026). Чужих черновиков фильтр «свои» не пропускает ни в каком пространстве.
   const { data, error, count } = await supabase.from("meetings")
-    .select(`id, title, source, started_at, draft_notes_md, ${BOT_SLOT_COLUMNS}`, { count: "exact" })
-    .eq("group_id", groupId)
+    .select(
+      `id, title, source, started_at, draft_notes_md, group_id, recorders, co_owners, claim_owner, identity_verified, attendees, ${BOT_SLOT_COLUMNS}`,
+      { count: "exact" },
+    )
     .eq("status", "awaiting_review")
     .or(draftMeetingsOwnScopedFilter(callerId))
     .order("started_at", { ascending: false, nullsFirst: false })
@@ -79,9 +98,12 @@ export async function toolGetReviewQueue(args: Caller): Promise<string> {
     return "Ошибка: не удалось загрузить очередь вычитки.";
   }
   // Пустой слот бота (ждёт у двери, не впустили) в очереди не виден — как в GET /agent-meetings.
-  const rows = (data ?? []) as Array<QueueRow & SlotRow>;
+  // Строка другого пространства — только владельцу из состава встречи (как у loadOwnDraft).
+  const all = (data ?? []) as Array<QueueRow & SlotRow & DraftMeetingRow>;
+  const email = all.some((r) => r.group_id !== groupId) ? await callerEmail(callerId) : null;
+  const rows = all.filter((r) => canAccessDraftMeeting(r, callerId, false, groupId, email));
   const shown = rows.filter((r) => !isMissedBotSlot(r));
-  return formatReviewQueue(shown, count != null ? count - (rows.length - shown.length) : null);
+  return formatReviewQueue(shown, count != null ? count - (all.length - shown.length) : null);
 }
 
 export async function toolGetDraftMeeting(args: Caller & { meeting_id: string }): Promise<string> {
@@ -153,7 +175,7 @@ async function meetingText(
   if (!groupId) return { ok: false, msg: `Запись ${args.entry_id} не найдена.` };
   const { data } = await onlyLiveEntries(
     supabase.from("entries")
-      .select("id, summary, content, is_private, owner_id, shared_with, group_id"),
+      .select("id, summary, content, is_private, owner_id, shared_with, group_id, visible_group_ids"),
   ).eq("id", args.entry_id).maybeSingle();
   const row = data as (EntryAccessRow & { summary: string | null; content: string | null }) | null;
   const denied = entryAccessError(args.entry_id, row, callerId, groupId ?? null);

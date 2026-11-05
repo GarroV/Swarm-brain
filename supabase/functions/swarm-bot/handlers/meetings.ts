@@ -15,6 +15,7 @@ import { buildEmbeddingInput, marketTagsFromInput } from "../../_shared/meta-ext
 import type { TgCallbackQuery } from "../lib/types.ts";
 import { onlyLive } from "../../_shared/tasks/live.ts";
 import { onlyLiveEntries } from "../../_shared/entries/live.ts";
+import { visibleInWorkspace } from "../../_shared/entries/workspace.ts";
 import { escapeHtml, sanitizeModelHtml } from "../../_shared/telegram-html.ts";
 import { archiveEntry } from "../../_shared/entries/archive.ts";
 import { claimOwnerIfFree, type ConfirmableEntry, meetingConfirmPatch } from "../../_shared/entries/meeting-confirm.ts";
@@ -48,7 +49,17 @@ async function loadEntryForAction(
   // metadata нужна всегда: по ней (metadata.attendees) считается причастность к встрече.
   const select = [
     ...new Set(
-      [...columns.split(","), "metadata", "is_private", "owner_id", "shared_with", "group_id", "entry_type", "source"]
+      [
+        ...columns.split(","),
+        "metadata",
+        "is_private",
+        "owner_id",
+        "shared_with",
+        "group_id",
+        "visible_group_ids",
+        "entry_type",
+        "source",
+      ]
         .map((c) => c.trim()).filter(Boolean),
     ),
   ].join(", ");
@@ -68,6 +79,10 @@ async function loadEntryForAction(
     action,
   );
   if (denied) return null;
+  // Общая встреча другой команды (видна по `visible_group_ids`) в боте только смотрится: правки
+  // бота пишут `.eq("group_id", groupId)` пространства нажавшего, и для чужого дома тихо ничего
+  // бы не записали, сообщив «сохранено». Править её можно в вебе (fail-closed).
+  if (action !== "view" && (data as { group_id?: string | null } | null)?.group_id !== groupId) return null;
   // Любое действие бота над встречей — только над встречей: заметка или файл — «не найдена».
   if (data && !isMeetingEntry(data as unknown as EditableEntryRow)) return null;
   return data as ActionEntry | null;
@@ -291,11 +306,13 @@ export async function handleMeetingCallbacks(
   if (data.startsWith("rai_")) {
     const sub = data.replace("rai_", "");
     if (sub === "saved") {
-      const { data: meetings } = await onlyLiveEntries(
-        supabase
-          .from("entries").select("id, metadata, created_at, source, entry_type"),
+      const { data: meetings } = await visibleInWorkspace(
+        onlyLiveEntries(
+          supabase
+            .from("entries").select("id, metadata, created_at, source, entry_type"),
+        ),
+        groupId,
       )
-        .eq("group_id", groupId)
         // Личные встречи в списке — свои и разделённые со мной (правило видимости записей).
         .or(visibilityFilter(userId))
         .or("source.in.(read_ai,voice,desktop-agent),entry_type.in.(transcript,meeting)")
@@ -677,7 +694,7 @@ export async function handleMeetingCallbacks(
     // 22.08.2026 («ничьих быть не должно»), сужено: только первое согласование безвладельной
     // встречи; личная встреча публикуется (как описано в BACKLOG), если согласует её владелец;
     // для остальных видимость и shared_with не меняются.
-    const viewer = await loadMeetingViewer(userId);
+    const viewer = { ...(await loadMeetingViewer(userId)), groupId };
     const { owner_id: ownerToClaim, ...confirmFields } = meetingConfirmPatch(
       entry as unknown as ConfirmableEntry,
       viewer,
@@ -850,7 +867,8 @@ export async function handleMeetingSessionInput(
       .eq("group_id", groupId)
       .or(`metadata->>meeting_id.eq.${meetingId},id.eq.${meetingId}`);
     // Теги — правка встречи: только те записи, которые нажавшему можно править.
-    const viewer = found?.length ? await loadMeetingViewer(userId) : null;
+    // Пространство нажавшего — для прав админа (только в домашнем пространстве встречи).
+    const viewer = found?.length ? { ...(await loadMeetingViewer(userId)), groupId } : null;
     const entries = (found ?? []).filter((e) =>
       viewer && isMeetingEntry(e as unknown as EditableEntryRow) &&
       canActOnMeeting(e as MeetingRightsRow, viewer, "edit")

@@ -195,6 +195,17 @@ Deno.test("опоздавший удар отвечает stale и строку 
   assertEquals(tables.service_agents[0].last_version, 41);
 });
 
+// Склейка общей встречи между пространствами (решение 05.11.2026): календарный ключ один на всех,
+// и запись человека из другого пространства встаёт в строку «alpha». Его бот держит эту строку и
+// бьётся в неё как в свою; владение решает claim_owner, а не пространство строки.
+Deno.test("склейка между пространствами: бот держателя записи бьётся в строку чужого пространства", async () => {
+  const tables = freshTables();
+  tables.meetings[0].group_id = "beta";
+  const outcome = await runHeartbeat(beatWrites(T1, 40, 600), memoryStore(tables), T1);
+  assertEquals(outcome, "ok");
+  assertEquals(tables.meetings[0].agent_last_seen_at, T1);
+});
+
 Deno.test("удар по чужой встрече — missed, строка агента не освежена", async () => {
   const tables = freshTables();
   tables.meetings[0].claim_owner = 222; // право ушло рекордеру другого человека

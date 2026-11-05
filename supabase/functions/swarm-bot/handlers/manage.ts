@@ -70,7 +70,9 @@ async function searchCandidates(query: string, userId: number, groupId: string):
       queryText: query,
       country: detectQueryCountry(query),
     }).catch(() => []);
-    for (const e of vec) {
+    // Управление (правка/удаление) — только записями ДОМАШНЕГО пространства: общая встреча
+    // другой команды поиску видна, но getManageableEntry её всё равно не отдаст.
+    for (const e of vec.filter((v) => v.group_id === groupId)) {
       const title = titleOf(e.metadata, e.summary, e.content);
       add(e.id, title, e.entry_date ?? "", previewOf(title, e.summary, e.content), 1 + (e.similarity ?? 0));
     }

@@ -9,6 +9,7 @@
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { visibilityFilter } from "./visibility.ts";
 import { onlyLiveEntries } from "../../_shared/entries/live.ts";
+import { visibleInWorkspace } from "../../_shared/entries/workspace.ts";
 
 // Потолок частей одной записи: swarm-mcp режет текст на десятки частей, не на тысячи.
 const MAX_CHUNKS = 200;
@@ -19,6 +20,8 @@ export type ExportEntry = {
   metadata: Record<string, unknown> | null;
   source: string | null;
   created_at: string;
+  /** Домашнее пространство записи (у общей встречи — не обязательно пространство зрителя). */
+  group_id: string | null;
 };
 
 export async function loadEntryForExport(
@@ -26,13 +29,15 @@ export async function loadEntryForExport(
   entryId: string,
   { groupId, userId }: { groupId: string; userId: number },
 ): Promise<{ entry: ExportEntry; fullContent: string } | null> {
-  const { data } = await onlyLiveEntries(
-    supabase
-      .from("entries")
-      .select("content, summary, metadata, source, created_at"),
+  const { data } = await visibleInWorkspace(
+    onlyLiveEntries(
+      supabase
+        .from("entries")
+        .select("content, summary, metadata, source, created_at, group_id"),
+    ),
+    groupId,
   )
     .eq("id", entryId)
-    .eq("group_id", groupId)
     .or(visibilityFilter(userId))
     .maybeSingle();
   if (!data) return null;
@@ -49,7 +54,8 @@ export async function loadEntryForExport(
         .from("entries")
         .select("content, metadata"),
     )
-      .eq("group_id", groupId)
+      // Части лежат там же, где сама запись, — в её ДОМАШНЕМ пространстве.
+      .eq("group_id", entry.group_id ?? groupId)
       .eq("metadata->>chunk_group_id", chunkGroup)
       .or(visibilityFilter(userId))
       .order("created_at", { ascending: true })

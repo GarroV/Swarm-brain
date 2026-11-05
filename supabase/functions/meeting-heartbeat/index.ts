@@ -128,7 +128,7 @@ Deno.serve(async (req: Request) => {
     const meeting = writes.find((w) => w.table === "meetings");
     if (meeting) {
       const { data, error } = await supabase.from("meetings").select("recorders")
-        .eq("id", meeting.match.id).eq("group_id", meeting.match.group_id).maybeSingle();
+        .eq("id", meeting.match.id).maybeSingle();
       if (error) {
         console.error(`meeting-heartbeat: recorders: ${error.message}`);
         return json({ error: "update failed" }, 500);

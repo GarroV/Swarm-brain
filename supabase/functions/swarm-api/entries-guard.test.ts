@@ -19,7 +19,7 @@ function makeSupabase(singleData: unknown): {
 } {
   const calls: Call[] = [];
   const builder: Record<string, unknown> = {};
-  for (const m of ["select", "eq", "is", "or", "order", "limit"]) {
+  for (const m of ["select", "eq", "is", "or", "order", "limit", "contains"]) {
     builder[m] = (...args: unknown[]) => {
       calls.push({ method: m, args });
       return builder;
@@ -176,8 +176,11 @@ Deno.test("buildEntriesQuery — applies group isolation + visibility filter", (
   const { client, calls } = makeSupabase(null);
   buildEntriesQuery(client, "id, content", { groupId: "cee", telegramId: 111 });
 
-  const eq = calls.find((c) => c.method === "eq");
-  assertEquals(eq?.args, ["group_id", "cee"]);
+  // Пространство — по признаку принадлежности (общая встреча видна обеим командам), а не по
+  // домашнему group_id.
+  const contains = calls.find((c) => c.method === "contains");
+  assertEquals(contains?.args, ["visible_group_ids", ["cee"]]);
+  assertEquals(calls.some((c) => c.method === "eq" && c.args[0] === "group_id"), false);
 
   const or = calls.find((c) => c.method === "or");
   assertEquals(
@@ -413,4 +416,110 @@ Deno.test("getEntrySecure без requireMeeting: обычная запись о�
   const { client } = makeSupabase(publicNote);
   const got = await getEntrySecure(client, "e1", { groupId: "cee", telegramId: 999 });
   assertEquals(got.id, "e1");
+});
+
+// ── Общая встреча двух пространств (этап 2, docs/decisions/2026-11-05-second-workspace.md) ──
+// Встреча с домом в A и признаком {A,B} видна команде B. Не-общая встреча A и личная общая —
+// нет. Права админа — только в домашнем пространстве встречи.
+
+const sharedAB = { ...meeting, group_id: "cee", visible_group_ids: ["cee", "world"] };
+
+Deno.test("общая встреча: зритель из второго пространства её видит", async () => {
+  const { client } = makeSupabase(sharedAB);
+  const row = await getEntrySecure(client, "e1", { groupId: "world", telegramId: 555, requireMeeting: true });
+  assertEquals(row.id, "e1");
+});
+
+Deno.test("общая встреча: НЕ общая встреча чужого пространства — 404", async () => {
+  const { client } = makeSupabase({ ...meeting, group_id: "cee", visible_group_ids: ["cee"] });
+  const err = await assertRejects(
+    () => getEntrySecure(client, "e1", { groupId: "world", telegramId: 555 }),
+    EntryAccessError,
+  );
+  assertEquals(err.status, 404);
+});
+
+Deno.test("общая встреча: без выбранной колонки признака видна только дома (fail-closed)", async () => {
+  const { client } = makeSupabase({ ...meeting, group_id: "cee" });
+  const err = await assertRejects(
+    () => getEntrySecure(client, "e1", { groupId: "world", telegramId: 555 }),
+    EntryAccessError,
+  );
+  assertEquals(err.status, 404);
+});
+
+Deno.test("общая встреча: ЛИЧНАЯ с признаком {A,B} не видна постороннему из B", async () => {
+  const { client } = makeSupabase({ ...sharedAB, is_private: true, owner_id: 111, shared_with: [] });
+  const err = await assertRejects(
+    () => getEntrySecure(client, "e1", { groupId: "world", telegramId: 555 }),
+    EntryAccessError,
+  );
+  assertEquals(err.status, 404);
+});
+
+Deno.test("общая встреча: админ второго пространства не удаляет и не правит встречу с домом в первом", async () => {
+  const { client } = makeSupabase(sharedAB);
+  for (const action of ["delete", "edit"] as const) {
+    const err = await assertRejects(
+      () => getMeetingSecure(client, "e1", { groupId: "world", telegramId: 333, isAdmin: true, action }),
+      EntryAccessError,
+    );
+    assertEquals(err.status, 403, `админ чужого дома: ${action}`);
+  }
+  // Смотреть — может: встреча общая.
+  const row = await getMeetingSecure(client, "e1", {
+    groupId: "world",
+    telegramId: 333,
+    isAdmin: true,
+    action: "view",
+  });
+  assertEquals(row.id, "e1");
+});
+
+Deno.test("общая встреча: админ домашнего пространства удаляет как раньше", async () => {
+  const { client } = makeSupabase(sharedAB);
+  const row = await getMeetingSecure(client, "e1", {
+    groupId: "cee",
+    telegramId: 333,
+    isAdmin: true,
+    action: "delete",
+  });
+  assertEquals(row.id, "e1");
+});
+
+Deno.test("общая встреча: участник из второго пространства правит, владелец оттуда удаляет", async () => {
+  const { client } = makeSupabase(sharedAB);
+  const edit = await getMeetingSecure(client, "e1", {
+    groupId: "world",
+    telegramId: 222,
+    email: "participant@example.com",
+    action: "edit",
+  });
+  assertEquals(edit.id, "e1");
+  const del = await getMeetingSecure(client, "e1", {
+    groupId: "world",
+    telegramId: 111,
+    isAdmin: true,
+    action: "delete",
+  });
+  assertEquals(del.id, "e1");
+});
+
+Deno.test("очередь вычитки: пространство — по признаку принадлежности", () => {
+  const { client, calls } = makeSupabase(null);
+  buildReviewQueueQuery(client, "id", { groupId: "world", telegramId: 111, email: "a@b.c" });
+  assertEquals(calls.find((c) => c.method === "contains")?.args, ["visible_group_ids", ["world"]]);
+  assertEquals(calls.some((c) => c.method === "eq" && c.args[0] === "group_id"), false);
+});
+
+Deno.test("список: пустое или кривое пространство — пустая выборка, а не все записи", () => {
+  for (const bad of ["", "a,b", "x}"]) {
+    const { calls } = (() => {
+      const m = makeSupabase(null);
+      buildEntriesQuery(m.client, "id", { groupId: bad, telegramId: 111 });
+      return m;
+    })();
+    assertEquals(calls.some((c) => c.method === "contains"), false, `«${bad}» попал в фильтр`);
+    assertEquals(calls.some((c) => c.method === "is" && c.args[0] === "id" && c.args[1] === null), true);
+  }
 });
