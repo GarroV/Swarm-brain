@@ -553,3 +553,27 @@ Deno.test("сигнал по участнику требует близкого 
   });
   assertEquals(dup, null); // 4 часа разницы — человек просто есть в инвайте другой встречи
 });
+
+Deno.test("identity_key: метка пространства (#ws:) встречу не меняет — тот же ключ без метки → дубль", async () => {
+  // Своя строка пространства при неподтверждённой чужой (решение 05.11.2026) несёт ключ с меткой.
+  const rows = [{
+    id: "same",
+    source: "desktop-agent",
+    is_private: false,
+    owner_id: null,
+    content: "### Тема\n- пункт",
+    metadata: {
+      title: "Встреча",
+      identity_key: "eventA@google.com:2026-07-23",
+      attendees: [{ name: "Vasiliy Garro" }],
+    },
+  }];
+  const dup = await findDuplicateMeeting(mockSupabase(rows), {
+    groupId: "cee",
+    entryDate: "2026-07-23",
+    startedAt: "2026-07-23T08:00:00Z",
+    identityKey: "eventA@google.com:2026-07-23#ws:cee",
+    attendees: [{ name: "Vasiliy Garro" }],
+  });
+  assertEquals(dup?.id, "same");
+});

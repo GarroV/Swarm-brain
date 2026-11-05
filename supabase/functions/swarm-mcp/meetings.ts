@@ -86,7 +86,7 @@ export async function toolGetReviewQueue(args: Caller): Promise<string> {
   // 05.11.2026). Чужих черновиков фильтр «свои» не пропускает ни в каком пространстве.
   const { data, error, count } = await supabase.from("meetings")
     .select(
-      `id, title, source, started_at, draft_notes_md, group_id, recorders, co_owners, claim_owner, attendees, ${BOT_SLOT_COLUMNS}`,
+      `id, title, source, started_at, draft_notes_md, group_id, recorders, co_owners, claim_owner, identity_verified, attendees, ${BOT_SLOT_COLUMNS}`,
       { count: "exact" },
     )
     .eq("status", "awaiting_review")

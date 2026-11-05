@@ -300,34 +300,40 @@ export function mayJoinExisting(
 }
 
 /**
- * Может ли человек встать в строку `meetings` ДРУГОГО пространства (склейка общей встречи по
- * ключу, решение 05.11.2026). Знать ключ — не значит участвовать: календарный ключ
- * `<event>:<дата>` и комнатный ключ можно узнать, не будучи на встрече, а встав в строку,
- * человек становится её владельцем и читает черновик.
+ * Подтвердил ли сервер сам, что календарный ключ есть в календаре заявителя. Источник — только
+ * `scope.calendarKeys` из `resolveAgentScope` (служебный агент: календарь человека читает сервер).
+ * У рекордера ключ и состав присылает клиент — подтверждения нет (`scope = null`).
+ */
+export function serverVerifiedCalendarKey(key: string, scope: AgentScope | null): boolean {
+  return keyShape(key) === "calendar" && scope !== null && scope.calendarKeys.has(key);
+}
+
+/**
+ * Может ли заявитель встать в строку `meetings` ДРУГОГО пространства (склейка общей встречи по
+ * ключу, решение 05.11.2026). Знать ключ — не значит участвовать, а ключ и состав встречи у
+ * рекордера присылает клиент: свой e-mail в составе он впишет сам, а строку с чужим ключом может
+ * создать заранее, чтобы в неё легла чужая запись.
  *
- * Своё пространство — как раньше (решает `mayJoinExisting`). Чужое — только календарная встреча
- * и только подтверждённому участнику: его e-mail в составе строки ИЛИ ключ в его собственном
- * календаре, если сервер его знает (`scope.calendarKeys`). Комнатные и ручные ключи пространства
- * не пересекают никогда.
+ * Поэтому чужое пространство — только когда участие подтвердил СЕРВЕР с обеих сторон: строка
+ * создана с подтверждённым ключом (`identity_verified`) и тот же ключ сервер нашёл в календаре
+ * заявителя (`serverVerifiedCalendarKey`). Комнатные и ручные ключи пространства не пересекают.
+ * Своё пространство — как раньше (решает `mayJoinExisting`). Отказ здесь — не потеря записи:
+ * meeting-claim кладёт её в свою строку своего пространства (`workspaceScopedKey`).
  */
 export function mayJoinAcrossWorkspaces(
   callerGroupId: string | null,
-  personEmail: string | null,
   row: {
     group_id?: string | null;
     identity_kind?: string | null;
     identity_key: string | null;
-    attendees: ScopeAttendee[] | null;
+    identity_verified?: boolean | null;
   },
   scope: AgentScope | null,
 ): boolean {
   if (!callerGroupId) return false;
   if (row.group_id === callerGroupId) return true;
   const key = row.identity_key ?? "";
-  if (keyShape(key) !== "calendar") return false;
   if (row.identity_kind != null && row.identity_kind !== "calendar") return false;
-  if (scope?.calendarKeys.has(key)) return true;
-  const me = normEmail(personEmail);
-  if (me === null) return false;
-  return (row.attendees ?? []).some((a) => normEmail(a?.email) === me);
+  if (row.identity_verified !== true) return false;
+  return serverVerifiedCalendarKey(key, scope);
 }

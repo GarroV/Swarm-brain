@@ -12,11 +12,45 @@ const squash = (s: string) => s.replace(/\s+/g, " ");
 Deno.test("claim: встать в найденную строку пускают и правило агента, и правило пространств", () => {
   const src = squash(read("meeting-claim/index.ts"));
   assert(
-    /mayJoinExisting\(identity, myEmail, row, scope\) && mayJoinAcrossWorkspaces\(identity\.groupId, myEmail, row, scope\)/
-      .test(src),
+    /mayJoinExisting\(identity, myEmail, row, scope\) && mayJoinAcrossWorkspaces\(identity\.groupId, row, scope\)/.test(
+      src,
+    ),
     "mayJoin в meeting-claim не зовёт mayJoinAcrossWorkspaces — человек из другого пространства встанет в строку по одному ключу",
   );
-  assert(src.includes('"id, group_id, identity_kind'), "EXISTING_COLUMNS без group_id — правило пространств слепо");
+  assert(
+    src.includes('"id, group_id, identity_kind, identity_key, identity_verified,'),
+    "EXISTING_COLUMNS без group_id/identity_verified — правило пространств слепо",
+  );
+});
+
+Deno.test("claim: признак подтверждения ставит только сервер, из календаря по resolveAgentScope", () => {
+  const src = squash(read("meeting-claim/index.ts"));
+  assert(
+    src.includes("const identityVerified = serverVerifiedCalendarKey(scopedKey, scope);"),
+    "identity_verified считается не из серверного календаря",
+  );
+  assert(src.includes("identity_verified: identityVerified,"), "основная вставка строки без identity_verified");
+  assert(!/identity_verified:\s*body\./.test(src), "identity_verified берётся из тела запроса клиента");
+  assert(src.includes("if (hasWorkspaceTag(b.identity_key))"), "клиентский ключ с меткой пространства не отклоняется");
+});
+
+Deno.test("claim: неподтверждённая чужая строка — своя строка своего пространства, а не 403", () => {
+  const src = squash(read("meeting-claim/index.ts"));
+  assert(
+    src.includes(
+      "const crossRefused = keyRow.group_id !== identity.groupId && !mayJoinAcrossWorkspaces(identity.groupId, keyRow, scope);",
+    ),
+    "в ветке 23505 нет решения о чужой строке",
+  );
+  assert(
+    src.includes("const target = crossRefused ? await claimOwnWorkspaceRow(") &&
+      src.includes("workspaceScopedKey(scopedKey, identity.groupId)"),
+    "при отказе в чужой строке запись не кладётся в свою строку с ключом пространства",
+  );
+  assert(
+    src.includes("if (!found || found.group_id !== groupId)"),
+    "своя строка по ключу пространства не сверяется с пространством",
+  );
 });
 
 Deno.test("веб: список и карточка черновика проверяют доступ с e-mail смотрящего", () => {

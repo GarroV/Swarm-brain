@@ -17,3 +17,13 @@ Deno.test("recorded_now — только встречи, которые пишу
     ["live"],
   );
 });
+
+Deno.test("recorded_now — ключ своей строки пространства отдаётся без метки (#ws:)", () => {
+  assertEquals(
+    recordedNowKeys(
+      [{ identity_key: "evt:2026-11-05#ws:world", agent_last_recording: true, lease_expires_at: LIVE }],
+      NOW,
+    ),
+    ["evt:2026-11-05"],
+  );
+});

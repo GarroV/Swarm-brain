@@ -18,7 +18,14 @@ import { CHALLENGER_ROLE, withRecorder } from "../meeting-ingest/challenge.ts";
 import { boundClaimSeconds, type MeetingClock } from "./claim-clock.ts";
 import { AgentAuthError, type AgentIdentity, resolveActingIdentity } from "../_shared/agent-auth.ts";
 import { defaultMeetingTitle, displayNameOf, isDefaultMeetingTitle } from "../_shared/meeting-title.ts";
-import { mayGlueByRoom, ROSTER_TOLERANCE_MIN, rosterMatchApplies, scopeRoomKey } from "../_shared/meeting-roster.ts";
+import {
+  hasWorkspaceTag,
+  mayGlueByRoom,
+  ROSTER_TOLERANCE_MIN,
+  rosterMatchApplies,
+  scopeRoomKey,
+  workspaceScopedKey,
+} from "../_shared/meeting-roster.ts";
 import { callRoomOfKey, callRoomOfUrl } from "../_shared/call-room.ts";
 import { accessToken, listEvents } from "../_shared/google-calendar.ts";
 import {
@@ -29,6 +36,7 @@ import {
   mayJoinAcrossWorkspaces,
   mayJoinExisting,
   resolveAgentScope,
+  serverVerifiedCalendarKey,
 } from "./agent-scope.ts";
 import { attachInvite, consumeInvite, inviteSource, releaseInvite } from "./invites.ts";
 import { CLAIM_LEASE_TTL_SEC } from "../_shared/meeting-lease.ts";
@@ -166,6 +174,11 @@ function validate(raw: unknown): ClaimBody {
   }
   if (typeof b.identity_key !== "string" || b.identity_key.length === 0) {
     throw new Error("identity_key required");
+  }
+  // Метку пространства в ключе ставит только сервер (workspaceScopedKey): с ней из клиента можно
+  // было бы заранее занять строку чужого пространства.
+  if (hasWorkspaceTag(b.identity_key)) {
+    throw new Error("identity_key must not carry a workspace tag");
   }
 
   let notes: UserNote[] | undefined;
@@ -323,16 +336,43 @@ type ExistingMeetingRow = HeldRow & { id: string };
 
 // Колонки строки встречи для арбитража: и найденной по составу, и по конфликту ключа.
 const EXISTING_COLUMNS =
-  "id, group_id, identity_kind, identity_key, started_at, attendees, claim_owner, recorded_seconds, transcript, notes_edited_at, status, created_at, lease_expires_at, agent_last_recording, summary_status, recorders";
+  "id, group_id, identity_kind, identity_key, identity_verified, started_at, attendees, claim_owner, recorded_seconds, transcript, notes_edited_at, status, created_at, lease_expires_at, agent_last_recording, summary_status, recorders";
 
 type RosterCandidate = ExistingMeetingRow & {
   group_id: string | null;
+  identity_verified: boolean | null;
   identity_kind: string | null;
   identity_key: string | null;
   started_at: string | null;
   attendees: Attendee[] | null;
   created_at: string | null;
 };
+
+/**
+ * Своя строка своего пространства под суженным ключом (`workspaceScopedKey`): строка с общим ключом
+ * уже есть в другом пространстве, а встать в неё нельзя. Создаём; ключ занят — это строка того же
+ * пространства от прошлого claim, её и возвращаем. Метку пространства клиент поставить не может
+ * (validate), поэтому строка под этим ключом — только своего пространства; иное — отказ.
+ */
+async function claimOwnWorkspaceRow(
+  row: Record<string, unknown>,
+  ownKey: string,
+  groupId: string,
+  identityVerified: boolean,
+): Promise<{ created: string } | { existing: RosterCandidate } | { error: string; status: number }> {
+  const { data: created, error } = await supabase
+    .from("meetings")
+    .insert({ ...row, identity_key: ownKey, identity_verified: identityVerified })
+    .select("id")
+    .maybeSingle();
+  if (created) return { created: (created as { id: string }).id };
+  if (!error || error.code !== "23505") return { error: `create failed: ${error?.message ?? "unknown"}`, status: 500 };
+  const { data: existing } = await supabase.from("meetings").select(EXISTING_COLUMNS).eq("identity_key", ownKey)
+    .maybeSingle();
+  const found = existing as RosterCandidate | null;
+  if (!found || found.group_id !== groupId) return { error: "claim conflict but meeting not found", status: 409 };
+  return { existing: found };
+}
 
 /**
  * Та же встреча под ДРУГИМ ключом идентичности (issue #168). Ключ описывает не встречу, а то, как
@@ -797,12 +837,14 @@ Deno.serve(async (req: Request) => {
     //      индекс по одному ключу, БЕЗ пространства, и это намеренно (решение 05.11.2026): календарный
     //      ключ одинаков у всех участников, поэтому запись человека из пространства B встаёт в строку
     //      пространства A. Это одна живая встреча — две строки дали бы обеим командам две копии.
-    //      Знать ключ — не значит участвовать: в строку ДРУГОГО пространства встаёт только
-    //      подтверждённый участник календарной встречи (`mayJoinAcrossWorkspaces`: e-mail в составе
-    //      строки или ключ в его календаре); комнатные и ручные ключи пространства не пересекают.
-    //      Последствия закрыты: владельцы строки вычитывают её из своего пространства
-    //      (canAccessDraftMeeting), публикация пишет в дом строки и добавляет пространства людей
-    //      черновика в признак принадлежности (meeting-publish.ts);
+    //      Знать ключ — не значит участвовать, а ключ и состав рекордер присылает сам: в строку
+    //      ДРУГОГО пространства встаёт только тот, чьё участие подтвердил сервер с обеих сторон
+    //      (`mayJoinAcrossWorkspaces`: строка `identity_verified` и ключ в календаре заявителя по
+    //      `resolveAgentScope`). Не подтвердил — запись не теряется, а ложится в свою строку своего
+    //      пространства под суженным ключом (`workspaceScopedKey`, `<ключ>#ws:<пространство>`);
+    //      следующий claim того же пространства находит её по тому же ключу. Черновик чужой строки
+    //      открывает только владелец из её состава и только у подтверждённой строки
+    //      (canAccessDraftMeeting); публикация пишет в дом строки (meeting-publish.ts);
     //   2) та же встреча под ДРУГИМ ключом (участник с событием в календаре ⨯ участник по ссылке) —
     //      склейка по ссылке на звонок (call_room), иначе открывалась вторая встреча с отдельным аудио,
     //      отдельной транскрибацией и отдельным черновиком (issue #168);
@@ -818,18 +860,12 @@ Deno.serve(async (req: Request) => {
     const myEmail = await emailOfUser(identity.telegramId);
     const callRoom = await callRoomOfClaim(body, identity.telegramId);
     // Встать в чужую строку можно, только если и правило агента (D016), и правило пространств
-    // пускают: строка другого пространства — только подтверждённому участнику календарной встречи.
-    const mayJoin = (
-      row: {
-        group_id?: string | null;
-        identity_kind?: string | null;
-        identity_key: string | null;
-        claim_owner: number | null;
-        attendees: Attendee[] | null;
-      },
-    ) =>
+    // пускают: строка другого пространства — только при участии, подтверждённом сервером.
+    const mayJoin = (row: RosterCandidate) =>
       mayJoinExisting(identity, myEmail, row, scope) &&
-      mayJoinAcrossWorkspaces(identity.groupId, myEmail, row, scope);
+      mayJoinAcrossWorkspaces(identity.groupId, row, scope);
+    // Ключ подтверждён сервером (календарь создателя по resolveAgentScope) — признак строки.
+    const identityVerified = serverVerifiedCalendarKey(scopedKey, scope);
 
     // (2) до вставки: вдруг эта встреча уже открыта под другим ключом — ищем по ссылке на звонок.
     // Эта склейка остаётся в пределах своего пространства (findMeetingByRoom фильтрует group_id):
@@ -870,6 +906,7 @@ Deno.serve(async (req: Request) => {
           call_room: callRoom,
           claim_owner: identity.telegramId,
           lease_expires_at: leaseIso,
+          identity_verified: identityVerified,
         })
         .select("id")
         .maybeSingle();
@@ -916,44 +953,62 @@ Deno.serve(async (req: Request) => {
       } else if (insErr && insErr.code === "23505") {
         // Встреча с этим ключом уже есть → решаем по тому же правилу, что и при склейке.
         // Ищем по ключу БЕЗ пространства намеренно: строка может быть из другого пространства
-        // (склейка общей встречи, решение 05.11.2026, см. путь 1 выше). Индекс не трогать. Встать
-        // в чужую строку пускает только `mayJoin` (подтверждённое участие), иначе 403.
+        // (склейка общей встречи, решение 05.11.2026, см. путь 1 выше). Индекс не трогать.
         const { data: existing } = await supabase
           .from("meetings")
           .select(EXISTING_COLUMNS)
           .eq("identity_key", scopedKey)
           .single();
         if (!existing) return fail("claim conflict but meeting not found", 409);
-        const row = existing as RosterCandidate;
-        if (!mayJoin(row)) {
-          const crossWorkspace = row.group_id !== identity.groupId;
+        const keyRow = existing as RosterCandidate;
+        // Участие в строке другого пространства не подтверждено сервером — не 403: запись живая,
+        // теряться она не должна, кладём её в свою строку своего пространства.
+        const crossRefused = keyRow.group_id !== identity.groupId &&
+          !mayJoinAcrossWorkspaces(identity.groupId, keyRow, scope);
+        if (crossRefused) {
           console.warn(
-            crossWorkspace
-              ? `meeting-claim: ${identity.telegramId} из ${identity.groupId} — встреча ${row.id} пространства ${row.group_id}, участие не подтверждено`
-              : `meeting-claim: служебный агент за ${identity.telegramId} — встреча ${row.id} вне состава`,
-          );
-          return fail(
-            crossWorkspace
-              ? "the person is not a confirmed participant of this meeting"
-              : "service agent: the person is not a participant of this meeting",
-            403,
+            `meeting-claim: ${identity.telegramId} из ${identity.groupId} — встреча ${keyRow.id} пространства ${keyRow.group_id} не подтверждена, своя строка`,
           );
         }
-        meetingId = row.id;
-        const res = await resolveExisting(
-          row,
-          body,
-          identity,
-          nowIso,
-          leaseIso,
-        );
-        decision = res.decision;
-        recorderRole = res.recorderRole;
-        supersededOwner = res.supersededOwner;
-        heldBy = res.heldBy;
-        claimedSeconds = res.recordedSeconds;
-        deferReason = res.deferReason;
-        holderSeconds = res.heldSeconds;
+        const target = crossRefused
+          ? await claimOwnWorkspaceRow(
+            { ...baseRow, call_room: callRoom, claim_owner: identity.telegramId, lease_expires_at: leaseIso },
+            workspaceScopedKey(scopedKey, identity.groupId),
+            identity.groupId,
+            identityVerified,
+          )
+          : { existing: keyRow };
+        if ("error" in target) return fail(target.error, target.status);
+        if ("created" in target) {
+          meetingId = target.created;
+          decision = "transcribe";
+        } else {
+          const row = target.existing;
+          if (!mayJoin(row)) {
+            console.warn(
+              `meeting-claim: служебный агент за ${identity.telegramId} — встреча ${row.id} вне состава`,
+            );
+            return fail(
+              "service agent: the person is not a participant of this meeting",
+              403,
+            );
+          }
+          meetingId = row.id;
+          const res = await resolveExisting(
+            row,
+            body,
+            identity,
+            nowIso,
+            leaseIso,
+          );
+          decision = res.decision;
+          recorderRole = res.recorderRole;
+          supersededOwner = res.supersededOwner;
+          heldBy = res.heldBy;
+          claimedSeconds = res.recordedSeconds;
+          deferReason = res.deferReason;
+          holderSeconds = res.heldSeconds;
+        }
       } else {
         return fail(`create failed: ${insErr?.message ?? "unknown"}`, 500);
       }
