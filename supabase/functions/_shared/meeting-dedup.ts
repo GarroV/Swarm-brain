@@ -29,6 +29,7 @@ import { type SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { canViewEntry } from "./entries/access.ts";
 import { onlyLiveEntries } from "./entries/live.ts";
 import { matchesPublishVisibility } from "./meeting-publish-visibility.ts";
+import { baseIdentityKey } from "./meeting-roster.ts";
 
 const TOLERANCE_MIN = 5;
 // Окно для сигнала «публикующий есть в участниках кандидата»: шире базового (рекордер стартует
@@ -237,7 +238,8 @@ export async function findDuplicateMeeting(
   if (incAtt.length === 0 && isGenericTitle(inc.title) && !inc.viewerEmail) return null;
   const incSet = new Set(incAtt);
   const incMin = toMinutes(inc.startedAt);
-  const incKey = inc.identityKey || null;
+  // Метка пространства (`#ws:`, своя строка при неподтверждённой чужой) встречу не меняет.
+  const incKey = inc.identityKey ? baseIdentityKey(inc.identityKey) : null;
 
   const { data, error } = await onlyLiveEntries(
     supabase
@@ -304,7 +306,8 @@ export async function findDuplicateMeeting(
     // (регулярные командные созвоны — именно так слиплись 4 встречи IMF BD 23.07).
     // Ключи из разных пространств (`granola:` ↔ календарь ↔ `kontur:`) или из персональной
     // схемы гейтом НЕ разводятся: они не совпадут никогда и раньше глушили весь дедуп (#164).
-    const candKey = (c.metadata?.identity_key as string | undefined) || null;
+    const rawCandKey = (c.metadata?.identity_key as string | undefined) || null;
+    const candKey = rawCandKey ? baseIdentityKey(rawCandKey) : null;
     if (incKey && candKey && comparableKeys(incKey, candKey)) {
       if (incKey === candKey) return toMatch(c);
       continue;

@@ -66,3 +66,30 @@ export function scopeRoomKey(kind: string, key: string, startedAt: string | null
   if (key.endsWith(`:${day}`)) return key; // уже сужен (повторный claim той же записи)
   return `${key}:${day}`;
 }
+
+/**
+ * Ключ строки `meetings`, суженный до пространства: `<ключ>#ws:<пространство>`. Нужен, когда
+ * строка с общим ключом уже есть в ДРУГОМ пространстве, а встать в неё нельзя (участие не
+ * подтверждено сервером): запись не теряется, а ложится в свою строку своего пространства. Индекс
+ * уникален глобально — суффикс разводит строки, и следующий claim того же пространства находит
+ * эту строку по тому же суженному ключу.
+ *
+ * Метку ставит только СЕРВЕР: клиентский ключ с меткой отклоняется (`hasWorkspaceTag`), иначе
+ * можно было бы заранее занять ключ чужого пространства.
+ */
+export const WORKSPACE_KEY_TAG = "#ws:";
+
+export function workspaceScopedKey(key: string, groupId: string): string {
+  return `${baseIdentityKey(key)}${WORKSPACE_KEY_TAG}${groupId}`;
+}
+
+/** Есть ли у ключа метка пространства. */
+export function hasWorkspaceTag(key: string): boolean {
+  return key.includes(WORKSPACE_KEY_TAG);
+}
+
+/** Ключ без метки пространства — для сравнения одной и той же встречи. */
+export function baseIdentityKey(key: string): string {
+  const i = key.indexOf(WORKSPACE_KEY_TAG);
+  return i < 0 ? key : key.slice(0, i);
+}

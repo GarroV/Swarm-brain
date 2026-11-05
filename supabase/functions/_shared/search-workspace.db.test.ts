@@ -12,6 +12,8 @@ const WS = "t_search_ws";
 const OTHER_WS = "t_search_ws_other";
 const WORD = "qzxwsearchscope";
 const EMBEDDING = "[1,0,0]";
+/** Владелец личной общей встречи: entries.owner_id ссылается на allowed_users. */
+const OWNER_ID = 990_000_111;
 
 async function connect(): Promise<Client> {
   const client = new Client(DB_URL);
@@ -29,6 +31,9 @@ async function connect(): Promise<Client> {
 async function seed(db: Client) {
   for (const ws of [WS, OTHER_WS]) {
     await db.queryArray`delete from entries where group_id = ${ws}`;
+  }
+  await db.queryArray`delete from allowed_users where telegram_id = ${OWNER_ID}`;
+  for (const ws of [WS, OTHER_WS]) {
     await db.queryArray`delete from workspaces where id = ${ws}`;
     await db.queryArray`insert into workspaces (id, name) values (${ws}, ${ws})`;
     await db.queryArray`
@@ -90,11 +95,14 @@ const SHARED_WORD = "qzxwsharedscope";
 
 async function seedShared(db: Client) {
   await seed(db);
+  await db.queryArray`
+    insert into allowed_users (telegram_id, username, added_by, group_id)
+    values (${OWNER_ID}, 't_search_owner', 0, ${WS})`;
   const meeting = (title: string, visible: string[], isPrivate: boolean) =>
     db.queryArray`
       insert into entries (content, entry_type, source, added_by, is_private, owner_id, metadata, group_id,
         visible_group_ids, countries)
-      values (${`${SHARED_WORD} ${title}`}, 'meeting', 'test', 'test', ${isPrivate}, 111,
+      values (${`${SHARED_WORD} ${title}`}, 'meeting', 'test', 'test', ${isPrivate}, ${OWNER_ID},
         ${JSON.stringify({ title, confirmed: true })}::jsonb, ${WS}, ${visible}, array['RS'])`;
   await meeting("shared", [WS, OTHER_WS], false);
   await meeting("home-only", [WS], false);
@@ -116,7 +124,7 @@ Deno.test("общая встреча: вторая команда находит
     assertEquals(await sharedTitles(db, OTHER_WS, 999), ["shared"]);
     // Дома видно всё общее, а личную — только владельцу.
     assertEquals(await sharedTitles(db, WS, 999), ["home-only", "shared"]);
-    assertEquals(await sharedTitles(db, OTHER_WS, 111), ["private-shared", "shared"]);
+    assertEquals(await sharedTitles(db, OTHER_WS, OWNER_ID), ["private-shared", "shared"]);
   } finally {
     await db.end();
   }
