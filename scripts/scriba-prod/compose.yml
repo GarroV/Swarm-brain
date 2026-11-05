@@ -29,6 +29,9 @@ services:
       SCRIBA_LEASE_HOST_DIR: ${PROD_LEASE_DAEMON_DIR}
       # Вход бота в Google (T175) живёт у окна входа (scripts/scriba-login.sh).
       SCRIBA_GOOGLE_STATE_FILE: /run/scriba-account-src/google-state.json
+      # Продление входа (#1140): обновлённый вход возвращается в этот каталог (поэтому он смонтирован
+      # на запись), рядом лежат google-state.prev.json и login-status.json. Час ежедневной пробы — по Белграду.
+      SCRIBA_LOGIN_PROBE_HOUR: ${SCRIBA_LOGIN_PROBE_HOUR:-6}
       SCRIBA_ACCOUNT_COPIES_DIR: ${PROD_ACCOUNT_COPIES_DAEMON_DIR}
       # Журнал каждого запуска встречи (#832): контейнер встречи удаляется вместе со своим журналом.
       SCRIBA_RUN_LOG_DIR: /var/lib/scriba/runs
@@ -45,7 +48,8 @@ services:
       - type: bind
         source: ${PROD_ACCOUNT_DIR}
         target: /run/scriba-account-src
-        read_only: true
+        # На запись: оркестратор возвращает сюда продлённый вход (#1140). Контейнеры встреч этот
+        # каталог не видят — им едет копия одним файлом и свой каталог выгрузки.
       - type: bind
         source: ${PROD_STATE_DIR}/account-copies
         target: ${PROD_ACCOUNT_COPIES_DAEMON_DIR}
