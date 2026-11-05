@@ -23,6 +23,11 @@ export interface ContainerSpec {
    * Копия входа аккаунта бота (T175) — один файл хоста только на чтение. Нет — бот идёт гостем.
    */
   readonly accountState?: { readonly source: string; readonly target: string };
+  /**
+   * Каталог запуска на запись: сюда контейнер выгружает обновлённый вход (#1140). Свой у каждого
+   * запуска; есть только вместе с `accountState`.
+   */
+  readonly accountOutput?: { readonly source: string; readonly target: string };
   readonly shmBytes: number;
   /**
    * Потолки ресурсов хоста на одну встречу.

@@ -18,13 +18,27 @@
  *
  * Содержимое файла — доступ к чужому аккаунту. Оно не попадает ни в журнал, ни в текст ошибки.
  */
-import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 /**
 Куда копия входа монтируется внутри контейнера встречи.
 */
 export const ACCOUNT_STATE_TARGET = "/run/scriba-account/google-state.json";
+
+/**
+ * Куда контейнер кладёт обновлённый вход после встречи (#1140): каталог запуска, смонтированный
+ * на запись только в этот контейнер. Общий каталог для этого не годится по той же причине, что и
+ * у копий: он виден каждому контейнеру, и выгрузку соседа можно было бы подменить.
+ */
+export const ACCOUNT_OUTPUT_TARGET = "/run/scriba-account-out";
+export const ACCOUNT_OUTPUT_NAME = "google-state.json";
+const OUTPUT_SUFFIX = ".out";
+/**
+ * Каталог выгрузки открыт на запись любому пользователю контейнера: uid процесса встречи не
+ * обязан совпадать с uid оркестратора. Снаружи его закрывает каталог копий (0700).
+ */
+const OUTPUT_DIRECTORY_MODE = 0o777;
 
 /**
 Имя запуска — это имя файла копии, поэтому только безопасные символы.
@@ -67,6 +81,15 @@ export interface AccountCopies {
   prepare(runId: string): Promise<string | null>;
   release(runId: string): Promise<void>;
   /**
+   * Каталог выгрузки обновлённого входа для запуска: путь на хосте (монтируется в контейнер на
+   * запись). Зовётся только вместе с `prepare`, давшим копию.
+   */
+  prepareOutput(runId: string): Promise<string>;
+  /**
+   * Что контейнер выгрузил; `null` — ничего. Содержимое — доступ к аккаунту: не печатать.
+   */
+  readOutput(runId: string): Promise<string | null>;
+  /**
    * Убрать копии запусков, которых больше нет (оркестратор упал, не успев прибрать).
    */
   sweep(liveRunIds: ReadonlySet<string>): Promise<void>;
@@ -74,7 +97,7 @@ export interface AccountCopies {
 
 export interface FileAccountCopiesOptions {
   /**
-  Сохранённый вход (storageState). Читается, но не меняется.
+  Сохранённый вход (storageState). Читается при подготовке копии; меняется только продлением входа после встречи (`account-writeback.ts`).
   */
   readonly stateFile: string;
   /**
@@ -120,6 +143,10 @@ export class FileAccountCopies implements AccountCopies {
     return path.join(this.#options.copiesDirectory, `${validRunId(runId)}${COPY_SUFFIX}`);
   }
 
+  #outputDirectory(runId: string): string {
+    return path.join(this.#options.copiesDirectory, `${validRunId(runId)}${OUTPUT_SUFFIX}`);
+  }
+
   async prepare(runId: string): Promise<string | null> {
     const target = this.#copyPath(runId);
     let raw: string;
@@ -142,8 +169,27 @@ export class FileAccountCopies implements AccountCopies {
     return target;
   }
 
+  async prepareOutput(runId: string): Promise<string> {
+    const directory = this.#outputDirectory(runId);
+    await mkdir(this.#options.copiesDirectory, { recursive: true, mode: COPIES_DIRECTORY_MODE });
+    await mkdir(directory, { mode: OUTPUT_DIRECTORY_MODE });
+    // mkdir отдаёт права за вычетом umask — ставим явно.
+    await chmod(directory, OUTPUT_DIRECTORY_MODE);
+    return directory;
+  }
+
+  async readOutput(runId: string): Promise<string | null> {
+    try {
+      return await readFile(path.join(this.#outputDirectory(runId), ACCOUNT_OUTPUT_NAME), "utf8");
+    } catch (error) {
+      if (isNotFound(error)) return null;
+      throw error;
+    }
+  }
+
   async release(runId: string): Promise<void> {
     await rm(this.#copyPath(runId), { force: true });
+    await rm(this.#outputDirectory(runId), { force: true, recursive: true });
   }
 
   async sweep(liveRunIds: ReadonlySet<string>): Promise<void> {
@@ -155,10 +201,11 @@ export class FileAccountCopies implements AccountCopies {
       throw error;
     }
     for (const name of names) {
-      if (!name.endsWith(COPY_SUFFIX)) continue;
-      const runId = name.slice(0, -COPY_SUFFIX.length);
+      const suffix = [COPY_SUFFIX, OUTPUT_SUFFIX].find((item) => name.endsWith(item));
+      if (suffix === undefined) continue;
+      const runId = name.slice(0, -suffix.length);
       if (liveRunIds.has(runId)) continue;
-      await rm(path.join(this.#options.copiesDirectory, name), { force: true });
+      await rm(path.join(this.#options.copiesDirectory, name), { force: true, recursive: true });
       this.#options.log?.(`убрана копия входа запуска ${runId}: контейнера больше нет`);
     }
   }

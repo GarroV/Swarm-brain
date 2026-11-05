@@ -195,6 +195,7 @@ function adapterFor(
   return new MeetAdapter({
     browser,
     ...(config.accountStatePath !== null && { storageStatePath: config.accountStatePath }),
+    ...(config.accountOutputPath !== null && { exportStatePath: config.accountOutputPath }),
     log: (line) => {
       log(`meet: ${line}`);
     },

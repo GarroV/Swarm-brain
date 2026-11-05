@@ -28,7 +28,15 @@ import {
   validMaxMeetings,
 } from "../container/isolation.ts";
 import { EGRESS_PROXY_ENV } from "../container/browser.ts";
-import { ACCOUNT_STATE_TARGET, type AccountCopies } from "./account.ts";
+import {
+  ACCOUNT_OUTPUT_NAME,
+  ACCOUNT_OUTPUT_TARGET,
+  ACCOUNT_STATE_TARGET,
+  type AccountCopies,
+} from "./account.ts";
+import { commitExport } from "./account-writeback.ts";
+import { type LoginWatch, isProbeDue } from "./login-watch.ts";
+import { SerialQueue } from "./serial-queue.ts";
 import { isCalendarBasis, type MeetingBasis } from "./claim-request.ts";
 import { MEETING_ENV, type SupportedPlatform, parsePlatform } from "./config.ts";
 import { joinUrlFor } from "./join-url.ts";
@@ -65,6 +73,15 @@ export const LABEL = {
 // Node исполняет TypeScript снятием типов (strip-only): код бота пишется без синтаксиса, который
 // требует трансформации, — это держит `erasableSyntaxOnly` в tsconfig (T148).
 const CONTAINER_COMMAND = ["node", "/app/src/orchestrator/container-main.ts"];
+const PROBE_COMMAND = ["node", "/app/src/orchestrator/probe-main.ts"];
+const PROBE_PLATFORM = "meet";
+const PROBE_PERSON = 0;
+/**
+Выгрузка контейнера в его каталоге запуска, как её видит контейнер.
+*/
+const ACCOUNT_OUTPUT_FILE = `${ACCOUNT_OUTPUT_TARGET}/${ACCOUNT_OUTPUT_NAME}`;
+const PROBE_CHECK_MS = 10 * 60 * 1000;
+const DEFAULT_PROBE_HOUR = 6;
 const RECORDINGS_PATH = "/recordings";
 const LEASE_PATH = "/lease";
 const SHM_BYTES = 1024 * 1024 * 1024;
@@ -131,7 +148,36 @@ export interface OrchestratorOptions {
    * Не задан — тревога остаётся строкой журнала.
    */
   readonly alertOwner?: (text: string) => Promise<void>;
+  /**
+   * Продление входа аккаунта бота (#1140): выгрузка контейнера возвращается на место файла входа,
+   * раз в сутки идёт пробный заход, слетевший вход — состояние с тревогой владельцу. Нужен вместе
+   * с `account`; без него вход не продлевается, как до #1140.
+   */
+  readonly loginKeepalive?: {
+    /**
+    Файл входа, который заменяется выгрузкой (его каталог должен быть записываемым).
+    */
+    readonly stateFile: string;
+    readonly watch: LoginWatch;
+    /**
+    Час суток по Белграду для ежедневной пробы; по умолчанию 6.
+    */
+    readonly probeHour?: number;
+    readonly checkIntervalMs?: number;
+    readonly now?: () => number;
+  };
 }
+
+/**
+ * Что запуск делает со входом аккаунта бота (#1140): `probe` — пробный заход без встречи,
+ * `usesAccount` — шёл под входом и выгружает обновлённый.
+ */
+interface LoginUse {
+  readonly kind: "meeting" | "probe";
+  readonly usesAccount: boolean;
+}
+
+const MEETING_WITHOUT_LOGIN: LoginUse = { kind: "meeting", usesAccount: false };
 
 interface Managed {
   readonly id: ContainerId;
@@ -142,6 +188,14 @@ interface Managed {
    * и у подхваченных после перезапуска, общий токен.
    */
   readonly token: string;
+  /**
+  `probe` — пробный заход в Meet без встречи (#1140).
+  */
+  readonly kind: "meeting" | "probe";
+  /**
+  Запуск шёл под входом аккаунта бота и выгружает обновлённый.
+  */
+  readonly usesAccount: boolean;
   meetingId: string | null;
   outcome: string | null;
   readonly tail: string[];
@@ -212,6 +266,13 @@ export class Orchestrator {
   private leaseTimer: NodeJS.Timeout | undefined;
 
   private leaseSeq = 0;
+
+  private keepaliveTimer: NodeJS.Timeout | undefined;
+
+  private probing = false;
+
+  // Замены файла входа идут по одной: временный файл у них общий по имени.
+  private readonly writeQueue = new SerialQueue();
 
   private readonly log: (line: string) => void;
 
@@ -312,6 +373,7 @@ export class Orchestrator {
     grantToken: string,
     account: string | null,
     network: MeetingNetwork,
+    hasOutput: boolean,
   ): string[] {
     const own: Record<string, string> = {
       [MEETING_ENV.joinUrl]: target.joinUrl,
@@ -326,6 +388,7 @@ export class Orchestrator {
       [MEETING_ENV.leaseDir]: LEASE_PATH,
       ...basisEnvironment(basis),
       ...(account !== null && { [MEETING_ENV.accountState]: ACCOUNT_STATE_TARGET }),
+      ...(hasOutput && { [MEETING_ENV.accountOutput]: ACCOUNT_OUTPUT_FILE }),
       ...egressEnvironment(network),
     };
     const merged = { ...this.options.extraEnv, ...own };
@@ -340,12 +403,22 @@ export class Orchestrator {
     grantToken: string,
     account: string | null,
     network: MeetingNetwork,
+    output: string | null,
   ): ContainerSpec {
     return {
       name: `${this.options.project}-meeting-${runId}`,
       image: this.options.image,
       command: CONTAINER_COMMAND,
-      env: this.environment(target, onBehalfOf, runId, basis, grantToken, account, network),
+      env: this.environment(
+        target,
+        onBehalfOf,
+        runId,
+        basis,
+        grantToken,
+        account,
+        network,
+        output !== null,
+      ),
       labels: {
         [LABEL.project]: this.options.project,
         [LABEL.run]: runId,
@@ -356,6 +429,7 @@ export class Orchestrator {
       volume: { name: this.volumeFor(onBehalfOf), target: RECORDINGS_PATH },
       readOnlyBind: { source: this.options.leaseDirectory, target: LEASE_PATH },
       ...(account !== null && { accountState: { source: account, target: ACCOUNT_STATE_TARGET } }),
+      ...(output !== null && { accountOutput: { source: output, target: ACCOUNT_OUTPUT_TARGET } }),
       shmBytes: SHM_BYTES,
       limits: this.limits,
       seccompProfile: this.seccompProfile,
@@ -369,12 +443,15 @@ export class Orchestrator {
     onBehalfOf: number,
     exitCode: Promise<number | null>,
     token: string = this.options.token,
+    login: LoginUse = MEETING_WITHOUT_LOGIN,
   ): void {
     const managed: Managed = {
       id,
       runId,
       onBehalfOf,
       token,
+      kind: login.kind,
+      usesAccount: login.usesAccount,
       meetingId: null,
       outcome: null,
       tail: [],
@@ -455,6 +532,7 @@ export class Orchestrator {
         `встреча ${managed.meetingId ?? "не заявлена"}`,
     );
     this.options.runLogs?.prune();
+    await this.afterLoginRun(managed, code);
     await this.releaseAccount(managed.runId);
     await this.releaseEgress(managed.runId);
     if (code === 0) {
@@ -485,6 +563,129 @@ export class Orchestrator {
     }
   }
 
+  /**
+   * Каталог выгрузки обновлённого входа для запуска; `null` — продление не включено или запуск
+   * идёт без входа.
+   */
+  private async prepareOutput(runId: string, account: string | null): Promise<string | null> {
+    if (account === null || this.options.loginKeepalive === undefined) return null;
+    return (await this.options.account?.prepareOutput(runId)) ?? null;
+  }
+
+  /**
+   * Причина слетевшего входа из хвоста журнала контейнера («дверь: signin_required — …»): её
+   * вынес адаптер, оркестратору хватает пересказать.
+   */
+  private signinReason(managed: Managed): string {
+    const pattern = /signin_required — (.+)$/u;
+    for (const line of managed.tail.toReversed()) {
+      const reason = pattern.exec(line)?.[1];
+      if (reason !== undefined) return reason.trim();
+    }
+    return "Google просит вход";
+  }
+
+  private async replaceState(managed: Managed): Promise<boolean> {
+    const keepalive = this.options.loginKeepalive;
+    if (keepalive === undefined) return false;
+    const isStateReplaced = async (): Promise<boolean> => {
+      const raw = await this.options.account?.readOutput(managed.runId);
+      const result = await commitExport({
+        stateFile: keepalive.stateFile,
+        raw: raw ?? null,
+        outcome: managed.outcome,
+      });
+      if (result.written) {
+        this.log(
+          `вход аккаунта бота продлён выгрузкой запуска ${managed.runId} (${String(result.cookies)} кук)`,
+        );
+      } else {
+        this.log(`вход аккаунта бота не заменён (запуск ${managed.runId}): ${result.reason}`);
+      }
+      return result.written;
+    };
+    try {
+      return await this.writeQueue.run(isStateReplaced);
+    } catch (error) {
+      this.log(`ВХОД АККАУНТА БОТА НЕ ЗАМЕНЁН — сбой записи: ${describeError(error)}`);
+      return false;
+    }
+  }
+
+  /**
+   * Итог запуска для входа аккаунта бота: продлить файл входа и сообщить состоянию (`LoginWatch`).
+   * Идёт до уборки каталога выгрузки. Сбой здесь не мешает остальному разбору выхода.
+   */
+  private async afterLoginRun(managed: Managed, code: number | null): Promise<void> {
+    const keepalive = this.options.loginKeepalive;
+    if (managed.kind === "probe") this.probing = false;
+    if (keepalive === undefined || !managed.usesAccount) return;
+    const { watch } = keepalive;
+    try {
+      if (managed.outcome === "account_signin_required") {
+        await watch.signinRequired(this.signinReason(managed));
+        if (managed.kind === "probe") await watch.probeFinished();
+        return;
+      }
+      const isWritten = await this.replaceState(managed);
+      if (isWritten) {
+        await watch.accepted();
+        if (managed.kind === "probe") await watch.probeFinished();
+      } else if (managed.kind === "probe") {
+        await watch.probeCrashed(
+          `проба не принесла годного входа (код ${String(code)}, исход ${managed.outcome ?? "не назван"})`,
+        );
+      }
+    } catch (error) {
+      this.log(
+        `итог запуска ${managed.runId} для входа аккаунта не учтён: ${describeError(error)}`,
+      );
+    }
+  }
+
+  private async checkLogin(): Promise<void> {
+    const keepalive = this.options.loginKeepalive;
+    if (keepalive === undefined) return;
+    await keepalive.watch.tick();
+    const now = (keepalive.now ?? Date.now)();
+    if (isProbeDue(keepalive.watch.status, now, keepalive.probeHour ?? DEFAULT_PROBE_HOUR)) {
+      await this.runProbe();
+    }
+  }
+
+  private probeSpec(
+    runId: string,
+    account: string,
+    output: string,
+    network: MeetingNetwork,
+  ): ContainerSpec {
+    const environment: Record<string, string> = {
+      [MEETING_ENV.accountState]: ACCOUNT_STATE_TARGET,
+      [MEETING_ENV.accountOutput]: ACCOUNT_OUTPUT_FILE,
+      ...egressEnvironment(network),
+    };
+    return {
+      name: `${this.options.project}-probe-${runId}`,
+      image: this.options.image,
+      command: PROBE_COMMAND,
+      env: Object.entries(environment).map(([name, value]) => `${name}=${value}`),
+      labels: {
+        [LABEL.project]: this.options.project,
+        [LABEL.run]: runId,
+        [LABEL.onBehalfOf]: String(PROBE_PERSON),
+        [LABEL.platform]: PROBE_PLATFORM,
+      },
+      volume: { name: this.volumeFor(PROBE_PERSON), target: RECORDINGS_PATH },
+      readOnlyBind: { source: this.options.leaseDirectory, target: LEASE_PATH },
+      accountState: { source: account, target: ACCOUNT_STATE_TARGET },
+      accountOutput: { source: output, target: ACCOUNT_OUTPUT_TARGET },
+      shmBytes: SHM_BYTES,
+      limits: this.limits,
+      seccompProfile: this.seccompProfile,
+      network: network.network,
+    };
+  }
+
   private reserveSlot(): void {
     const busy = this.running.size + this.starting;
     if (busy >= this.maxMeetings) {
@@ -501,6 +702,7 @@ export class Orchestrator {
     runId: string,
     person: number,
     token: string,
+    login: LoginUse,
   ): Promise<ContainerId> {
     const { engine } = this.options;
     const id = await engine.create(spec);
@@ -514,7 +716,7 @@ export class Orchestrator {
       throw new Error(`контейнер встречи не стартовал: ${describeError(error)}`, { cause: error });
     }
     this.log(`контейнер ${id} поднят на встречу (запуск ${runId}, от имени ${String(person)})`);
-    this.track(id, runId, person, exited, token);
+    this.track(id, runId, person, exited, token, login);
     return id;
   }
 
@@ -549,6 +751,8 @@ export class Orchestrator {
   close(): void {
     clearInterval(this.leaseTimer);
     this.leaseTimer = undefined;
+    clearInterval(this.keepaliveTimer);
+    this.keepaliveTimer = undefined;
   }
 
   /**
@@ -586,13 +790,15 @@ export class Orchestrator {
       const account =
         known === "meet" ? ((await this.options.account?.prepare(runId)) ?? null) : null;
       try {
+        const output = await this.prepareOutput(runId, account);
         const network = await this.options.egress.prepare(runId);
         try {
           return await this.launch(
-            this.spec(target, person, runId, basis, grantToken, account, network),
+            this.spec(target, person, runId, basis, grantToken, account, network, output),
             runId,
             person,
             grantToken,
+            { kind: "meeting", usesAccount: account !== null },
           );
         } catch (error) {
           await this.releaseEgress(runId);
@@ -608,6 +814,80 @@ export class Orchestrator {
   }
 
   /**
+   * Пробный заход в Meet под входом бота: контейнер того же образа без встречи. Слот не крадёт:
+   * все места заняты — пробы нет, ближайшая проверка попробует снова. Возвращает, поднят ли
+   * контейнер.
+   */
+  async runProbe(): Promise<boolean> {
+    const keepalive = this.options.loginKeepalive;
+    const accounts = this.options.account;
+    if (keepalive === undefined || accounts === undefined || this.probing) return false;
+    if (this.running.size + this.starting >= this.maxMeetings) {
+      this.log("пробный заход во вход Google отложен: все места заняты встречами");
+      return false;
+    }
+    this.probing = true;
+    const runId = `probe-${randomUUID()}`;
+    this.starting += 1;
+    let hasLaunched = false;
+    try {
+      const account = await accounts.prepare(runId);
+      if (account === null) {
+        this.log("пробный заход не нужен: вход аккаунта бота не сохранён");
+        return false;
+      }
+      try {
+        const output = await accounts.prepareOutput(runId);
+        const network = await this.options.egress.prepare(runId);
+        try {
+          await this.launch(
+            this.probeSpec(runId, account, output, network),
+            runId,
+            PROBE_PERSON,
+            this.options.token,
+            { kind: "probe", usesAccount: true },
+          );
+          hasLaunched = true;
+          return true;
+        } catch (error) {
+          await this.releaseEgress(runId);
+          throw error;
+        }
+      } catch (error) {
+        await this.releaseAccount(runId);
+        throw error;
+      }
+    } catch (error) {
+      this.log(`пробный заход не начат: ${describeError(error)}`);
+      await keepalive.watch.probeCrashed(`проба не запустилась: ${describeError(error)}`);
+      return false;
+    } finally {
+      this.starting -= 1;
+      if (!hasLaunched) this.probing = false;
+    }
+  }
+
+  /**
+   * Запустить слежение за входом: состояние с диска, проверка сразу и далее каждые 10 минут —
+   * повтор тревоги, если пора, и пробный заход, если пора.
+   */
+  async startLoginKeepalive(): Promise<void> {
+    const keepalive = this.options.loginKeepalive;
+    if (keepalive === undefined) return;
+    await keepalive.watch.load();
+    const check = (): void => {
+      inBackground(
+        async () => this.checkLogin(),
+        (error) => {
+          this.log(`проверка входа Google сорвалась: ${describeError(error)}`);
+        },
+      );
+    };
+    check();
+    this.keepaliveTimer = setInterval(check, keepalive.checkIntervalMs ?? PROBE_CHECK_MS);
+  }
+
+  /**
    * Погасить контейнер встречи штатно: SIGTERM, процесс встречи выходит из звонка и
    * выгружает записанное; не уложился в срок — Docker добивает его сам.
    */
@@ -619,12 +899,11 @@ export class Orchestrator {
   }
 
   list(): ManagedMeeting[] {
-    return Array.from(this.running.values(), ({ id, runId, onBehalfOf, meetingId }) => ({
-      id,
-      runId,
-      onBehalfOf,
-      meetingId,
-    }));
+    const meetings: ManagedMeeting[] = [];
+    for (const { kind, id, runId, onBehalfOf, meetingId } of this.running.values()) {
+      if (kind === "meeting") meetings.push({ id, runId, onBehalfOf, meetingId });
+    }
+    return meetings;
   }
 
   /**

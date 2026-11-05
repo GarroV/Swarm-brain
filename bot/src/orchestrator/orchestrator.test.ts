@@ -2,7 +2,7 @@
  * Правила оркестратора на двойнике Docker: смерть видна, сирот не остаётся, чужое не
  * трогается, кривой запуск отвергается до подъёма контейнера.
  */
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -12,6 +12,7 @@ import { ACCOUNT_STATE_TARGET, type AccountCopies } from "./account.ts";
 import type { MeetingEgress, MeetingNetwork } from "./egress.ts";
 import type { ContainerEngine, ContainerSpec, EngineContainer } from "./engine.ts";
 import { readLease } from "./lease.ts";
+import { LoginWatch } from "./login-watch.ts";
 import type { Notice, NoticeResult } from "./notices.ts";
 import {
   LABEL,
@@ -54,12 +55,23 @@ class FakeAccount implements AccountCopies {
   hasSignIn = true;
   shouldFail = false;
   shouldFailRelease = false;
+  output: string | null = null;
 
   prepare(runId: string): Promise<string | null> {
     this.calls.push(`prepare:${runId}`);
     if (this.shouldFail)
       return Promise.reject(new Error("the bot's saved Google sign-in is damaged"));
     return Promise.resolve(this.hasSignIn ? `/copies/${runId}.json` : null);
+  }
+
+  prepareOutput(runId: string): Promise<string> {
+    this.calls.push(`prepareOutput:${runId}`);
+    return Promise.resolve(`/copies/${runId}.out`);
+  }
+
+  readOutput(runId: string): Promise<string | null> {
+    this.calls.push(`readOutput:${runId}`);
+    return Promise.resolve(this.output);
   }
 
   release(runId: string): Promise<void> {
@@ -194,7 +206,9 @@ describe("оркестратор", () => {
 
   function build(
     extraEnvironment?: Record<string, string>,
-    isolation: Partial<Pick<OrchestratorOptions, "maxMeetings" | "limits" | "account">> = {},
+    isolation: Partial<
+      Pick<OrchestratorOptions, "maxMeetings" | "limits" | "account" | "loginKeepalive">
+    > = {},
   ): Orchestrator {
     return new Orchestrator({
       egress,
@@ -1022,6 +1036,102 @@ describe("оркестратор", () => {
       await orchestrator.init();
 
       expect(account.calls).toEqual(["sweep:run-alive"]);
+    });
+  });
+  describe("продление входа аккаунта бота (#1140)", () => {
+    const VALID = JSON.stringify({
+      cookies: [{ name: "SID", value: "fresh", domain: ".google.com", path: "/" }],
+      origins: [],
+    });
+    const OLD = JSON.stringify({
+      cookies: [{ name: "SID", value: "old", domain: ".google.com", path: "/" }],
+      origins: [],
+    });
+    let account: FakeAccount;
+    let stateFile: string;
+    let sent: string[];
+    let watch: LoginWatch;
+
+    async function keepalive(): Promise<Orchestrator> {
+      account = new FakeAccount();
+      stateFile = path.join(leaseDirectory, "google-state.json");
+      await writeFile(stateFile, OLD);
+      sent = [];
+      watch = new LoginWatch({
+        file: path.join(leaseDirectory, "login-status.json"),
+        send: (text) => {
+          sent.push(text);
+          return Promise.resolve();
+        },
+        log: (): void => undefined,
+      });
+      return build(undefined, { account, loginKeepalive: { stateFile, watch } });
+    }
+
+    it("встреча кончилась, выгрузка годная — вход заменён, предыдущий рядом, тишина в канале", async () => {
+      orchestrator = await keepalive();
+      account.output = VALID;
+      const id = await orchestrator.startForMeeting(MEET, "meet", 744, PASS);
+      expect(engine.specs[0]?.accountOutput).toEqual({
+        source: "/copies/run-1.out",
+        target: "/run/scriba-account-out",
+      });
+      expect(environmentOf(engine.specs[0])).toContain(
+        "SCRIBA_GOOGLE_STATE_OUT=/run/scriba-account-out/google-state.json",
+      );
+
+      engine.say(id, 'scriba-state {"outcome":"door_timeout"}');
+      engine.exit(id, 0);
+      await orchestrator.whenExited(id);
+
+      expect(await readFile(stateFile, "utf8")).toBe(VALID);
+      expect(await readFile(path.join(leaseDirectory, "google-state.prev.json"), "utf8")).toBe(OLD);
+      expect(sent).toEqual([]);
+    });
+
+    it("signin_required — вход не заменяется, владельцу уходит одно сообщение", async () => {
+      orchestrator = await keepalive();
+      account.output = VALID;
+      const id = await orchestrator.startForMeeting(MEET, "meet", 744, PASS);
+
+      engine.say(id, "meet: дверь: signin_required — Google просит вход: «verify it's you»");
+      engine.say(id, 'scriba-state {"outcome":"account_signin_required"}');
+      engine.exit(id, 0);
+      await orchestrator.whenExited(id);
+
+      expect(await readFile(stateFile, "utf8")).toBe(OLD);
+      expect(sent).toHaveLength(1);
+      expect(sent[0]).toContain("Причина: Google просит вход: «verify it's you»");
+    });
+
+    it("проба: контейнер без встречи, удачная выгрузка продлевает вход и ничего не шлёт", async () => {
+      orchestrator = await keepalive();
+      account.output = VALID;
+
+      expect(await orchestrator.runProbe()).toBe(true);
+      expect(engine.specs[0]?.command).toEqual(["node", "/app/src/orchestrator/probe-main.ts"]);
+      expect(orchestrator.list()).toEqual([]);
+      engine.say("c1", 'scriba-state {"outcome":"probe_ok"}');
+      engine.exit("c1", 0);
+      await orchestrator.whenExited("c1");
+
+      expect(await readFile(stateFile, "utf8")).toBe(VALID);
+      expect(watch.status.lastOkAt).not.toBeNull();
+      expect(watch.status.lastProbeAt).not.toBeNull();
+      expect(sent).toEqual([]);
+    });
+
+    it("пробе не отдаём место встречи: все места заняты — пробы нет", async () => {
+      orchestrator = await keepalive();
+      orchestrator = build(undefined, {
+        account,
+        maxMeetings: 1,
+        loginKeepalive: { stateFile, watch },
+      });
+      await orchestrator.startForMeeting(MEET, "meet", 744, PASS);
+
+      expect(await orchestrator.runProbe()).toBe(false);
+      expect(engine.specs).toHaveLength(1);
     });
   });
 });

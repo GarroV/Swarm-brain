@@ -42,6 +42,8 @@ export default defineConfig({
         // Выгрузка входа аккаунта бота (T175): Chromium с профилем окна входа. Правило «есть ли
         // сессия» — в account.ts под тестами; саму выгрузку проверяет прогон окна входа.
         "src/orchestrator/login-export.ts",
+        // Пробный заход во вход (#1140): Chromium в контейнере; вердикт — в login-probe.ts под тестами.
+        "src/orchestrator/probe-main.ts",
         "src/orchestrator/docker-engine.ts",
         "src/orchestrator/smoke-orchestrator.ts",
         "src/orchestrator/smoke-notices.ts",
