@@ -77,6 +77,7 @@ import { makeBackfillStore } from "./lib/embedding-backfill-store.ts";
 import { getEmbedding } from "./lib/openai.ts";
 import { onlyLive } from "../_shared/tasks/live.ts";
 import { onlyLiveEntries } from "../_shared/entries/live.ts";
+import { visibleInWorkspace } from "../_shared/entries/workspace.ts";
 import { externalFetch, VIA_GRANOLA, VIA_TELEGRAM } from "../_shared/external-fetch.ts";
 import { WEB_BASE_URL } from "./lib/web-url.ts";
 import { sealIntegrationKey } from "../_shared/integration-keys.ts";
@@ -919,22 +920,27 @@ Deno.serve(async (req: Request) => {
       ] = await Promise.all([
         // Статистика — по ВСЕМ источникам встреч (вкл. опубликованные рекордерные `desktop-agent`);
         // pending-фильтр ниже — только внешние (рекордерные pending живут в таблице `meetings`).
-        onlyLiveEntries(supabase.from("entries").select("*", { count: "exact", head: true })).eq("group_id", groupId)
-          .in(
-            "source",
-            ALL_MEETING_SOURCES,
-          ),
-        onlyLiveEntries(supabase.from("entries").select("id, metadata, created_at")).eq("group_id", groupId).eq(
-          "source",
-          "read_ai",
-        ).eq(
-          "metadata->>confirmed",
-          "false",
-        ).order("created_at", { ascending: false }),
-        onlyLiveEntries(supabase.from("entries").select("metadata, created_at, source")).eq("group_id", groupId).in(
-          "source",
-          ALL_MEETING_SOURCES,
-        ).order("created_at", { ascending: false }).limit(1).maybeSingle(),
+        // Видимость — общим правилом: встречи, видимые в пространстве, без чужих личных.
+        visibleInWorkspace(
+          onlyLiveEntries(supabase.from("entries").select("*", { count: "exact", head: true })),
+          groupId,
+        )
+          .in("source", ALL_MEETING_SOURCES)
+          .or(visibilityFilter(userId)),
+        // Очередь подтверждения — по домашнему пространству, как `/meetings`, тоже без чужих личных.
+        onlyLiveEntries(supabase.from("entries").select("id, metadata, created_at"))
+          .eq("group_id", groupId)
+          .eq("source", "read_ai")
+          .eq("metadata->>confirmed", "false")
+          .or(visibilityFilter(userId))
+          .order("created_at", { ascending: false }),
+        visibleInWorkspace(
+          onlyLiveEntries(supabase.from("entries").select("metadata, created_at, source")),
+          groupId,
+        )
+          .in("source", ALL_MEETING_SOURCES)
+          .or(visibilityFilter(userId))
+          .order("created_at", { ascending: false }).limit(1).maybeSingle(),
         onlyLive(supabase.from("tasks").select("*", { count: "exact", head: true })).eq("group_id", groupId).eq(
           "status",
           "open",

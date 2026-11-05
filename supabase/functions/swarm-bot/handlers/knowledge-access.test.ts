@@ -99,7 +99,16 @@ function overviewProblems(src: string, name: string): string[] {
   return problems;
 }
 
-for (const name of ["get_digest", "get_countries_list", "get_entries_by_country", "search_by_country"]) {
+// list_meetings_by_country — тоже: чужая личная встреча в списке не появляется.
+for (
+  const name of [
+    "get_digest",
+    "get_countries_list",
+    "get_entries_by_country",
+    "search_by_country",
+    "list_meetings_by_country",
+  ]
+) {
   Deno.test(`${name} в боте: свой воркспейс и фильтр видимости`, async () => {
     const src = await Deno.readTextFile(`${HERE}knowledge.ts`);
     assertEquals(overviewProblems(src, name), []);

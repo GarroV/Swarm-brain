@@ -774,13 +774,17 @@ export async function executeTool(
 
       case "list_meetings_by_country": {
         const country = String(args.country ?? "").toLowerCase();
-        const { data } = await onlyLiveEntries(
-          supabase
-            .from("entries")
-            .select("id, metadata, entry_date, created_at, countries, summary, content"),
+        // Видимость — общим правилом: пространство по признаку, чужие личные не показываем.
+        const { data } = await visibleInWorkspace(
+          onlyLiveEntries(
+            supabase
+              .from("entries")
+              .select("id, metadata, entry_date, created_at, countries, summary, content"),
+          ),
+          groupId,
         )
           .or("entry_type.in.(transcript,meeting),source.in.(read_ai,granola,voice)")
-          .eq("group_id", groupId)
+          .or(visibilityFilter(userId || 0))
           .order("entry_date", { ascending: false, nullsFirst: false })
           .order("created_at", { ascending: false })
           .limit(100);
