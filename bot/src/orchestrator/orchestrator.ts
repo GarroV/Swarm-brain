@@ -600,7 +600,10 @@ export class Orchestrator {
           `вход аккаунта бота продлён выгрузкой запуска ${managed.runId} (${String(result.cookies)} кук)`,
         );
       } else {
-        this.log(`вход аккаунта бота не заменён (запуск ${managed.runId}): ${result.reason}`);
+        const alarm = result.reason.includes("подмена") ? "ВЫГРУЗКА ОТКЛОНЕНА: " : "";
+        this.log(
+          `${alarm}вход аккаунта бота не заменён (запуск ${managed.runId}): ${result.reason}`,
+        );
       }
       return result.written;
     };
