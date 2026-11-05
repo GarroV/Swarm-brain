@@ -78,7 +78,7 @@ async function foundBySearch(db: Client, id: string): Promise<Record<string, boo
     select count(*)::int as n from match_entries('[1,0,0]', 0.0, 50, ${OWNER}) where id = ${id}`;
   const hybrid = await db.queryObject<{ n: number }>`
     select count(*)::int as n from match_entries_hybrid('[1,0,0]', ${TOKEN}, 30, ${OWNER},
-      filter_since => '2000-01-01'::date) where id = ${id}`;
+      filter_group_id => ${WS}, filter_since => '2000-01-01'::date) where id = ${id}`;
   // Перегрузку без filter_since вызовом не различить (та же голова, остальные аргументы с дефолтами —
   // вызов неоднозначен), поэтому для неё проверяем текст: условие обязано стоять в ОБЕИХ ветках.
   const old = await db.queryObject<{ n: number }>`

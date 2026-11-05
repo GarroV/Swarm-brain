@@ -54,7 +54,7 @@ async function found(db: Client, id: string, viewer: number): Promise<Record<str
   // правила миграция меняет одинаково.
   const since = await db.queryObject<{ n: number }>`
     select count(*)::int as n from match_entries_hybrid('[1,0,0]', ${TOKEN}, 30, ${viewer},
-      filter_since => '2000-01-01'::date) where id = ${id}`;
+      filter_group_id => ${WS}, filter_since => '2000-01-01'::date) where id = ${id}`;
   return { match_entries: me.rows[0].n > 0, hybrid: since.rows[0].n > 0 };
 }
 
