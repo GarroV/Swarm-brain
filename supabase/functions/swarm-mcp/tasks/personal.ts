@@ -69,7 +69,12 @@ async function toolSetTaskSubscription(args: Args): Promise<string> {
 
 async function toolGetNotifications(args: Args): Promise<string> {
   const me = args.requesting_user_id;
-  const feed = await loadNotificationFeed(supabase, me, feedLimit(args.limit));
+  const feed = await loadNotificationFeed(
+    supabase,
+    me,
+    feedLimit(args.limit),
+    await resolveGroupId(me),
+  );
   if (!feed.ok) {
     console.error("notifications list failed:", feed.cause);
     return "Ошибка: не удалось загрузить уведомления.";

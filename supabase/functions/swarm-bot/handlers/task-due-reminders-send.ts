@@ -1,6 +1,6 @@
 import { supabase } from "../lib/supabase.ts";
 import { notifyMessage } from "../lib/notify.ts";
-import { groupByRecipient, pingRecipients, pingSendingOpen, todayIn } from "./task-pings.ts";
+import { groupByRecipient, pingRecipients, pingSendingOpen, scopePingRow, todayIn } from "./task-pings.ts";
 import {
   asPingRow,
   dueReminderWindowOpen,
@@ -11,10 +11,11 @@ import {
 } from "./task-due-reminders.ts";
 import { addDays } from "../../_shared/tasks/due.ts";
 import { onlyLive } from "../../_shared/tasks/live.ts";
+import { loadMembershipIndex } from "../../_shared/tasks/recipients-scope.ts";
 
 const WEB_BASE_URL = Deno.env.get("WEB_BASE_URL") ?? "";
 const SELECT_DUE =
-  "id, title, remind_date, reminded_at, due_date, status, assignee_telegram_ids, created_by_telegram_id, remind_set_by, archived_at, created_at, due_reminded_for, due_reminder_delivered_to";
+  "id, title, group_id, remind_date, reminded_at, due_date, status, assignee_telegram_ids, created_by_telegram_id, remind_set_by, archived_at, created_at, due_reminded_for, due_reminder_delivered_to";
 // Со сроком на завтра бывает много задач (срок по умолчанию — завтра, и закрытые среди них тоже).
 const MAX_PER_TICK = 1000;
 
@@ -34,8 +35,25 @@ export async function sendDueReminders(now: Date = new Date()): Promise<number> 
     return 0;
   }
 
-  const due = ((data ?? []) as DueRow[]).filter((r) => isDueReminderDue(r, today));
-  if (!due.length) return 0;
+  const dueAll = ((data ?? []) as DueRow[]).filter((r) => isDueReminderDue(r, today));
+  if (!dueAll.length) return 0;
+
+  // Получатели — только те, кто сейчас в воркспейсе задачи. Без ответа о членстве не шлём никому:
+  // срок не гасится, и следующий тик того же окна попробует снова.
+  let due: DueRow[];
+  try {
+    const isMember = await loadMembershipIndex(
+      supabase,
+      dueAll.map((r) => ({
+        groupId: r.group_id,
+        ids: [...(r.assignee_telegram_ids ?? []), r.created_by_telegram_id, r.remind_set_by],
+      })),
+    );
+    due = dueAll.map((r) => scopePingRow(r, (id) => isMember(r.group_id, id)));
+  } catch (e) {
+    console.error("[due-reminders] membership:", (e as Error).message);
+    return 0;
+  }
 
   const deliveredNow = new Map<string, number[]>();
   for (const [recipientId, rows] of groupByRecipient(due.map(asPingRow))) {
@@ -52,6 +70,7 @@ export async function sendDueReminders(now: Date = new Date()): Promise<number> 
     const { error: notifErr } = await supabase.from("notifications").insert(
       rows.map((r) => ({
         recipient_telegram_id: recipientId,
+        group_id: r.group_id ?? null,
         type: "task_due_soon",
         task_id: r.id,
         actor_telegram_id: null,

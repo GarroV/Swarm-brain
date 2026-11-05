@@ -7,14 +7,16 @@ import {
   pingRecipients,
   type PingRow,
   pingSendingOpen,
+  scopePingRow,
   settlePing,
   todayIn,
 } from "./task-pings.ts";
 import { onlyLive } from "../../_shared/tasks/live.ts";
+import { loadMembershipIndex } from "../../_shared/tasks/recipients-scope.ts";
 
 const WEB_BASE_URL = Deno.env.get("WEB_BASE_URL") ?? "";
 const SELECT_PING =
-  "id, title, remind_date, due_date, status, assignee_telegram_ids, created_by_telegram_id, remind_set_by, ping_delivered_to, archived_at";
+  "id, title, group_id, remind_date, due_date, status, assignee_telegram_ids, created_by_telegram_id, remind_set_by, ping_delivered_to, archived_at";
 // Разумный потолок на тик: пинги ставят руками, сотнями за раз они не наступают.
 const MAX_PER_TICK = 500;
 
@@ -37,8 +39,25 @@ export async function sendTaskPings(now: Date = new Date()): Promise<number> {
 
   // Статус фильтруем в коде: `isPingDue` — единственное место, где живёт правило «закрытую
   // задачу не пингуем» (оно же покрыто тестами), дублировать его в запросе нельзя — разойдётся.
-  const due = ((data ?? []) as PingRow[]).filter((r) => isPingDue(r, today));
-  if (!due.length) return 0;
+  const dueAll = ((data ?? []) as PingRow[]).filter((r) => isPingDue(r, today));
+  if (!dueAll.length) return 0;
+
+  // Получатели — только те, кто сейчас в воркспейсе задачи (люди переезжают, поля задачи — нет).
+  // Без ответа о членстве не шлём никому: пинг не гасится и уйдёт следующим тиком.
+  let due: PingRow[];
+  try {
+    const isMember = await loadMembershipIndex(
+      supabase,
+      dueAll.map((r) => ({
+        groupId: r.group_id,
+        ids: [...(r.assignee_telegram_ids ?? []), r.created_by_telegram_id, r.remind_set_by],
+      })),
+    );
+    due = dueAll.map((r) => scopePingRow(r, (id) => isMember(r.group_id, id)));
+  } catch (e) {
+    console.error("[task-pings] membership:", (e as Error).message);
+    return 0;
+  }
 
   const nowISO = now.toISOString();
   // Кому пинг дошёл на ЭТОМ тике — по задаче. Гасит задачу не «дошло хоть кому-то», а
@@ -64,6 +83,7 @@ export async function sendTaskPings(now: Date = new Date()): Promise<number> {
     const { error: notifErr } = await supabase.from("notifications").insert(
       rows.map((r) => ({
         recipient_telegram_id: recipientId,
+        group_id: r.group_id ?? null,
         type: "task_reminder",
         task_id: r.id,
         actor_telegram_id: null,

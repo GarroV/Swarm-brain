@@ -158,6 +158,7 @@ import { handleTelegramLinkRoutes } from "./telegram-link.ts";
 import { handleModelUsageRoutes } from "./model-usage.ts";
 import { openAIKeyHandle } from "../_shared/workspace-keys.ts";
 import { masterAdminFlag } from "../_shared/users/master-admins.ts";
+import { resolveAssigneeInWorkspace } from "./assignee.ts";
 import { handleNotificationRoutes } from "./notifications.ts";
 import { handleTaskSubscriptionRoutes } from "./task-subscriptions.ts";
 import { handlePeopleRoutes, resolveTaskPeople } from "./people.ts";
@@ -333,16 +334,11 @@ async function withImporterNames<
   });
 }
 
-async function resolveAssignee(
+function resolveAssignee(
   telegramId: number,
+  groupId: string,
 ): Promise<{ telegram_id: number; name: string } | null> {
-  const { data: au } = await supabase
-    .from("allowed_users").select("telegram_id").eq("telegram_id", telegramId)
-    .maybeSingle();
-  if (!au) return null; // не член воркспейса — не назначаем
-  const name = (await resolveNames([telegramId])).get(telegramId) ??
-    String(telegramId);
-  return { telegram_id: telegramId, name };
+  return resolveAssigneeInWorkspace(supabase, resolveNames, telegramId, groupId);
 }
 
 // Имена исполнителей денормализованы в tasks.assignees при создании задачи и со временем
@@ -1119,6 +1115,7 @@ async function routeRequest(req: Request): Promise<Response> {
     req,
     routePath,
     telegram_id,
+    groupId,
     origin,
     resolveNames,
   );
@@ -1307,7 +1304,7 @@ async function routeRequest(req: Request): Promise<Response> {
       let assignees: string[] = [];
       let assignee_telegram_ids: number[] = [];
       if (typeof body.assignee_telegram_id === "number") {
-        const resolved = await resolveAssignee(body.assignee_telegram_id);
+        const resolved = await resolveAssignee(body.assignee_telegram_id, groupId);
         if (resolved) {
           assignees = [resolved.name];
           assignee_telegram_ids = [resolved.telegram_id];
@@ -1650,7 +1647,7 @@ async function routeRequest(req: Request): Promise<Response> {
           fields.assignee_telegram_ids = [];
           fields.assignee_person_id = null; // «Общие» снимают и исполнителя без входа (#874)
         } else if (typeof body.assignee_telegram_id === "number") {
-          const resolved = await resolveAssignee(body.assignee_telegram_id);
+          const resolved = await resolveAssignee(body.assignee_telegram_id, groupId);
           if (resolved) {
             fields.assignees = [resolved.name];
             fields.assignee_telegram_ids = [resolved.telegram_id];

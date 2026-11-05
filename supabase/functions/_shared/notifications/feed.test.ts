@@ -1,5 +1,6 @@
 import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import { feedLimit, loadNotificationFeed, markNotificationsRead } from "./feed.ts";
+import { feedGroupFilter, feedLimit, loadNotificationFeed, markNotificationsRead } from "./feed.ts";
+import { memoryDb } from "../memory-db.fake.ts";
 
 type Call = [string, ...unknown[]];
 
@@ -7,7 +8,7 @@ type Call = [string, ...unknown[]];
 function fakeDb(result: { data: unknown; error: unknown }) {
   const calls: Call[] = [];
   const builder: Record<string, unknown> = {};
-  for (const m of ["select", "eq", "is", "in", "order", "limit", "update"]) {
+  for (const m of ["select", "eq", "is", "in", "or", "order", "limit", "update"]) {
     builder[m] = (...a: unknown[]) => {
       calls.push([m, ...a]);
       return builder;
@@ -45,7 +46,7 @@ const ROWS = [
 
 Deno.test("лента: строка без задачи выпадает, задачи и системные остаются", async () => {
   const { db, calls } = fakeDb({ data: ROWS, error: null });
-  const r = await loadNotificationFeed(db, 1, 30);
+  const r = await loadNotificationFeed(db, 1, 30, "ws");
   assertEquals(r.ok && r.rows.map((x) => x.id), ["task", "colleague-task", "system"]);
   assertEquals(calls.find((c) => c[0] === "eq"), ["eq", "recipient_telegram_id", 1]);
   assertEquals(calls.find((c) => c[0] === "limit"), ["limit", 30]);
@@ -53,7 +54,7 @@ Deno.test("лента: строка без задачи выпадает, зад
 
 Deno.test("лента: ошибка чтения не превращается в пустую ленту", async () => {
   const { db } = fakeDb({ data: null, error: { message: "boom" } });
-  const r = await loadNotificationFeed(db, 1, 30);
+  const r = await loadNotificationFeed(db, 1, 30, "ws");
   assertEquals(r.ok, false);
 });
 
@@ -91,4 +92,29 @@ Deno.test("лимит: дефолт, границы и мусор", () => {
   assertEquals(feedLimit(0), 1);
   assertEquals(feedLimit(500), 100);
   assertEquals(feedLimit(12.7), 12);
+});
+
+Deno.test("лента: уведомления своего воркспейса и старые без group_id видны, чужого воркспейса — нет", async () => {
+  const mk = (id: string, group_id: string | null) => ({
+    ...row(id, "comment", true),
+    recipient_telegram_id: 1,
+    group_id,
+  });
+  const { client } = memoryDb({
+    notifications: [mk("mine", "ws"), mk("legacy", null), mk("foreign", "other")],
+  });
+  const r = await loadNotificationFeed(client, 1, 30, "ws");
+  assertEquals(r.ok && r.rows.map((x) => x.id).sort(), ["legacy", "mine"]);
+});
+
+Deno.test("лента: читатель без воркспейса видит только старые строки без group_id", async () => {
+  const mk = (id: string, group_id: string | null) => ({
+    ...row(id, "comment", true),
+    recipient_telegram_id: 1,
+    group_id,
+  });
+  const { client } = memoryDb({ notifications: [mk("mine", "ws"), mk("legacy", null)] });
+  const r = await loadNotificationFeed(client, 1, 30, null);
+  assertEquals(r.ok && r.rows.map((x) => x.id), ["legacy"]);
+  assertEquals(feedGroupFilter(null), "group_id.is.null");
 });

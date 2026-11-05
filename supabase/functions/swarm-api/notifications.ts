@@ -74,6 +74,7 @@ export async function handleNotificationRoutes(
   req: Request,
   routePath: string,
   telegramId: number,
+  groupId: string,
   origin: string,
   resolveNames: (ids: number[]) => Promise<Map<number, string>>,
 ): Promise<Response | null> {
@@ -87,6 +88,7 @@ export async function handleNotificationRoutes(
       supabase,
       telegramId,
       feedLimit(new URL(req.url).searchParams.get("limit")),
+      groupId,
     );
     if (!feed.ok) {
       console.error("notifications list failed:", feed.cause);

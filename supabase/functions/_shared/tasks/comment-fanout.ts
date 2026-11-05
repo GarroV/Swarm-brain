@@ -7,6 +7,7 @@ import {
   type TaskSubscriber,
 } from "./notify.ts";
 import { notifyPerson } from "../notify-person.ts";
+import { onlyWorkspaceMembers } from "./recipients-scope.ts";
 
 // Что происходит ПОСЛЕ сохранения комментария к задаче: автор подписывается на задачу, а
 // причастные и подписчики получают уведомление (колокольчик + пуш в бота).
@@ -107,7 +108,18 @@ export async function notifyTaskComment(
   // Подписки — исключения из круга по умолчанию: добавляют непричастных (например, админа,
   // который ведёт людей и не может обходить карточки руками) и убирают отписавшихся.
   const subscribers = await loadSubscribers(supabase, task.id);
-  const recipients = commentRecipients(task, actorTelegramId, subscribers);
+  // Круг по умолчанию — чистая функция; кто из них сейчас в воркспейсе задачи — проверка здесь.
+  let recipients: number[];
+  try {
+    recipients = await onlyWorkspaceMembers(
+      supabase,
+      task.group_id,
+      commentRecipients(task, actorTelegramId, subscribers),
+    );
+  } catch (e) {
+    console.error("notification recipients scope failed:", e); // комментарий уже сохранён
+    return;
+  }
   if (recipients.length === 0) return;
 
   const { error } = await supabase.from("notifications").insert(

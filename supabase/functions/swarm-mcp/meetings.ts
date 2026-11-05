@@ -167,10 +167,8 @@ export async function toolExtractTasksFromMeeting(
 ): Promise<string> {
   const src = await meetingText(args);
   if (!src.ok) return src.msg;
-  const result = await extractTasks({
-    supabase,
-    groupId: args.requesting_user_id ? await resolveGroupId(args.requesting_user_id) : null,
-  }, src.text);
+  const groupId = args.requesting_user_id ? await resolveGroupId(args.requesting_user_id) : null;
+  const result = await extractTasks({ supabase, groupId }, src.text);
   // Модель недоступна — так и говорим: «задач нет» здесь было бы неправдой (issue #374).
   if (!result.ok) {
     return "Ошибка: модель разбора задач сейчас не ответила. Попробуй через минуту — задачи ещё не разобраны.";
@@ -178,7 +176,7 @@ export async function toolExtractTasksFromMeeting(
   const extracted = result.tasks.slice(0, EXTRACT_MAX_TASKS);
   const proposed: ProposedTask[] = await Promise.all(extracted.map(async (t) => ({
     ...t,
-    resolved_assignee: t.assignee ? (await matchAssignee(t.assignee))?.display_name ?? null : null,
+    resolved_assignee: t.assignee ? (await matchAssignee(t.assignee, groupId))?.display_name ?? null : null,
   })));
   const { data: me } = await supabase.from("user_profiles").select("first_name, last_name")
     .eq("telegram_id", args.requesting_user_id!).maybeSingle();

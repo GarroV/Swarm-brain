@@ -8,6 +8,7 @@ import {
   pingRecipients,
   type PingRow,
   pingSendingOpen,
+  scopePingRow,
   settlePing,
   todayIn,
 } from "./task-pings.ts";
@@ -148,4 +149,18 @@ Deno.test("pingSendingOpen: комендантский час 23:00–9:00 по 
   assertEquals(pingSendingOpen(new Date("2026-10-14T06:00:00Z")), true); // 09:00 Москва
   assertEquals(pingSendingOpen(new Date("2026-10-14T19:59:00Z")), true); // 22:59 Москва
   assertEquals(pingSendingOpen(new Date("2026-10-14T20:00:00Z")), false); // 23:00 Москва — час начался
+});
+
+Deno.test("scopePingRow: ушедший в другой воркспейс исполнитель не получает пинг и не держит задачу недоставленной", () => {
+  const scoped = scopePingRow(row({ assignee_telegram_ids: [111, 333] }), (id) => id !== 333);
+  assertEquals(pingRecipients(scoped), [111]);
+  // дошло единственному оставшемуся — пинг погашен, а не ждёт «потерянного» получателя
+  assertEquals(settlePing(scoped, [111], "2026-08-26").done, true);
+});
+
+Deno.test("scopePingRow: исполнители вышли — пинг возвращается тому, кто поставил, если он в воркспейсе", () => {
+  const scoped = scopePingRow(row({ assignee_telegram_ids: [333], remind_set_by: 444 }), (id) => id === 444);
+  assertEquals(pingRecipients(scoped), [444]);
+  const nobody = scopePingRow(row({ assignee_telegram_ids: [333], remind_set_by: 444 }), () => false);
+  assertEquals(pingRecipients(nobody), []);
 });
