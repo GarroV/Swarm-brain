@@ -4590,13 +4590,8 @@ export async function generateDigest(
 export async function fetchAdminWorkspaces(): Promise<AdminWorkspace[]> {
   if (DEV_MODE) {
     return [
-      { id: "cee", name: "CEE", allowed_markets: null, user_count: 3 },
-      {
-        id: "other",
-        name: "Other Markets",
-        allowed_markets: ["NG", "MX", "ID"],
-        user_count: 2,
-      },
+      { id: "cee", name: "Central East Europe", allowed_markets: null, user_count: 3 },
+      { id: "ws-k3m9x2qa", name: "World", allowed_markets: ["TR", "KG", "TJ", "MN", "NG", "ID", "AM", "AZ", "GE"], user_count: 2 },
     ];
   }
   return apiFetch<AdminWorkspace[]>("/admin/workspaces");
@@ -4688,39 +4683,129 @@ export async function patchAdminWorkspace(
   });
 }
 
-// Создать воркспейс (id = slug a-z0-9-, name — отображаемое). Фаза 2 бот-паритета.
+// Создать пространство: вводится только название; слаг рождается на сервере (ws-xxxxxxxx) и в
+// интерфейсе не показывается. Страны и админы (почта / @username / Telegram ID — только новые люди) — по желанию.
 export async function createAdminWorkspace(
-  id: string,
-  name: string,
+  input: { name: string; countries?: string[]; admins?: string[] },
 ): Promise<AdminWorkspace> {
-  if (DEV_MODE) return { id, name, allowed_markets: null, user_count: 0 };
+  if (DEV_MODE) {
+    return { id: `ws-mock${Date.now() % 100000}`, name: input.name, allowed_markets: input.countries?.length ? input.countries : null, user_count: input.admins?.length ?? 0 };
+  }
   return apiFetch<AdminWorkspace>("/admin/workspaces", {
     method: "POST",
-    body: JSON.stringify({ id, name }),
+    body: JSON.stringify(input),
   });
 }
 
-// Рассылка всем пользователям системы (Telegram). Возвращает счётчики доставки.
+/** Сводка по пространству — только счётчики (GET /admin/workspaces/:id/stats, workspaces-routes.ts). */
+export type WorkspaceStats = {
+  id: string;
+  name: string;
+  window_days: number;
+  people: { total: number; pending: number; admins: number; active: number };
+  meetings: { home: number; shared_in: number };
+  entries: number;
+  tasks_open: number;
+  model_spend_usd: number | null;
+  recorder_bot: { configured: boolean; active: boolean; last_seen_at: string | null };
+};
+
+export async function fetchWorkspaceStats(wsId: string): Promise<WorkspaceStats> {
+  if (DEV_MODE) {
+    const world = wsId !== "cee";
+    return {
+      id: wsId, name: world ? "World" : "Central East Europe", window_days: 30,
+      people: world ? { total: 2, pending: 1, admins: 1, active: 1 } : { total: 31, pending: 2, admins: 3, active: 24 },
+      meetings: world ? { home: 3, shared_in: 12 } : { home: 214, shared_in: 0 },
+      entries: world ? 9 : 640, tasks_open: world ? 4 : 158, model_spend_usd: world ? 3.42 : 128.9,
+      recorder_bot: world ? { configured: false, active: false, last_seen_at: null } : { configured: true, active: true, last_seen_at: new Date(Date.now() - 120_000).toISOString() },
+    };
+  }
+  return apiFetch<WorkspaceStats>(`/admin/workspaces/${encodeURIComponent(wsId)}/stats`);
+}
+
+// Рассылка в Telegram: `workspace` — id пространства или "all" (все пространства, только мастер-админу).
+// Возвращает счётчики доставки.
 export async function broadcastMessage(
   text: string,
+  workspace: string,
 ): Promise<{ sent: number; failed: number; total: number }> {
   if (DEV_MODE) return { sent: 0, failed: 0, total: 0 };
   return apiFetch<{ sent: number; failed: number; total: number }>(
     "/admin/broadcast",
-    { method: "POST", body: JSON.stringify({ text }) },
+    { method: "POST", body: JSON.stringify({ text, workspace }) },
   );
 }
 
 // Сводка для админа: сколько встреч на вычитке у каждого участника (агрегат, без контента).
 export type ReviewCount = { telegram_id: number; name: string; count: number };
-export async function fetchReviewCounts(): Promise<ReviewCount[]> {
+export async function fetchReviewCounts(workspace?: string): Promise<ReviewCount[]> {
   if (DEV_MODE) {
     return [
       { telegram_id: 900000101, name: "Анна Соколова", count: 3 },
       { telegram_id: 744230399, name: "Vasiliy Garro", count: 1 },
     ];
   }
-  return apiFetch<ReviewCount[]>("/admin/review-counts");
+  return apiFetch<ReviewCount[]>(`/admin/review-counts${workspace ? `?workspace=${encodeURIComponent(workspace)}` : ""}`);
+}
+
+// ── Перенос человека в другое пространство (мастер-админ) ─────────────────────
+// Контракт серверной части (GET move-preview / POST move) — один и тот же ответ, у POST + moved:true.
+export type MovePreview = {
+  person: { telegram_id: number; name: string; email: string | null };
+  from: { id: string; name: string };
+  to: { id: string; name: string };
+  counts: {
+    private_entries: number; entries: number; personal_notes: number; drafts: number; meetings_shared: number;
+    tasks: number; tasks_detached: number; projects: number; notifications: number; labels: number;
+    other: Record<string, number>;
+  };
+  tasks_mixed: Array<{ id: string; title: string }>;
+  tasks_detached: Array<{ id: string; title: string }>;
+  projects: Array<{ id: string; name: string }>;
+  tokens: { claude: boolean; chatgpt: boolean; oauth: number; recorder: boolean };
+  conflicts: string[];
+  can_execute: boolean;
+  moved?: boolean;
+};
+
+export async function fetchMovePreview(telegramId: number, to: string): Promise<MovePreview> {
+  if (DEV_MODE) return mockMovePreview(telegramId, to);
+  return apiFetch<MovePreview>(`/admin/members/${telegramId}/move-preview?to=${encodeURIComponent(to)}`, { cache: "no-store" });
+}
+
+/** `expected` — счётчики из показанного предпросмотра: изменились — сервер ответит 409. */
+export async function moveMember(
+  telegramId: number,
+  to: string,
+  expected: { tasks: number; entries: number },
+): Promise<MovePreview> {
+  if (DEV_MODE) return { ...mockMovePreview(telegramId, to), moved: true };
+  return apiFetch<MovePreview>(`/admin/members/${telegramId}/move`, {
+    method: "POST",
+    body: JSON.stringify({ to, expected }),
+  });
+}
+
+// Заглушка предпросмотра для DEV_MODE. Боб (345678) — случай «перенос невозможен», чтобы увидеть блокировку.
+function mockMovePreview(telegramId: number, to: string): MovePreview {
+  const blocked = telegramId === 345678;
+  const space = (id: string) => ({ id, name: id === "cee" ? "Central East Europe" : "World" });
+  return {
+    person: { telegram_id: telegramId, name: MOCK_USERS.find((u) => u.telegram_id === telegramId)?.name ?? "Alice Smith", email: "alice@example.com" },
+    from: space(to === "cee" ? "ws-k3m9x2qa" : "cee"),
+    to: space(to),
+    counts: {
+      private_entries: 4, entries: 17, personal_notes: 6, drafts: 2, meetings_shared: 9, tasks: 14, tasks_detached: 3,
+      projects: 2, notifications: 41, labels: 5, other: { sticker_addressees: 3, presence: 1 },
+    },
+    tasks_mixed: [{ id: "t1", title: "Prepare the Q4 market review" }, { id: "t2", title: "Align the TR pizzeria list" }],
+    tasks_detached: [{ id: "t3", title: "Roll out the checklist update" }],
+    projects: [{ id: "p1", name: "Market entry plan" }, { id: "p2", name: "Franchise onboarding" }],
+    tokens: { claude: true, chatgpt: false, oauth: 2, recorder: true },
+    conflicts: blocked ? ["The email is already used by another person in the target space"] : [],
+    can_execute: !blocked,
+  };
 }
 
 // Правка профиля пользователя (роль/рынки/имя/контакты) — user_profiles.

@@ -43,7 +43,7 @@ export function KeyHealthBar() {
   // Общий ключ — не у пространства: чинит его мастер-админ, он уже получил письмо. Админу пространства
   // не предлагаем «обновить ключ» (его ключ тут ни при чём), только сообщаем.
   const serverNote = dt("мастер-админ уже уведомлён", "the master admin has already been notified");
-  const where = (name: string, id: string) => (id === "" ? dt("система", "system") : name);
+  const where = (name: string, id: string) => (id === "" ? dt("система", "system") : name || dt("пространство", "space"));
   const openKey = (ws: string) => {
     if (ws) setAdminTarget({ ws, tab: "key" });
     push({ view: "admin" });

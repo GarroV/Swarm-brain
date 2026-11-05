@@ -143,7 +143,7 @@ export function StickerCreate({ onClose, onCreated }: { onClose: () => void; onC
           <legend className="px-1 font-medium" style={{ fontSize: 13 }}>{dt("Кому", "Addressees")}</legend>
           <label className="flex items-center gap-2" style={{ fontSize: 13 }}>
             <input type="checkbox" checked={all} onChange={(e) => setAll(e.target.checked)} />
-            {dt("Все в воркспейсе (у кого есть вход)", "Everyone in the workspace (with an account)")}
+            {dt("Все в пространстве (у кого есть вход)", "Everyone in the space (with an account)")}
           </label>
           {!all && (
             <>

@@ -118,8 +118,8 @@ export function MarketScreen() {
       <div className="p-5">
         <Empty
           text={dt(
-            "Для рынков вашего воркспейса данных пока нет. Страны подключаются конфигом сборщика.",
-            "No market data for your workspace's markets yet. Countries are added through the collector config.",
+            "Для рынков вашего пространства данных пока нет. Страны подключаются конфигом сборщика.",
+            "No market data for your space's markets yet. Countries are added through the collector config.",
           )}
         />
       </div>
