@@ -1678,15 +1678,22 @@ export async function fetchMarket(cc: string): Promise<MarketBundle> {
 /** Строка выручки Dodo, как её читает главная (подмножество `MarketBundle.dodo`). */
 export type MarketSalesRow = { month: string; revenue_eur: number | null; complete: boolean };
 
-/** Выручка с 1-го числа по сегодня (GET /market/sales → mtd), как её отдаёт публичный API Dodo. */
-export type MarketMtd = { as_of: string; revenue_eur: number };
+/** Выручка с 1-го числа по сегодня (GET /market/sales → mtd). `source`: сумма пиццерий из Dodo IS через Децимус
+ *  или публичный API Dodo (по стране, без разбивки); старые функции поля не отдают. */
+export type MarketMtd = { as_of: string; revenue_eur: number; source?: "decimus" | "dodo_public" };
+
+/** Выручка пиццерий с 1-го числа, € (GET /market/sales → unit_sales): ключ — код пиццерии (как `id` в /quality),
+ *  `loaded` — когда Децимус загрузил продажи страны (ISO UTC). Страны без данных Децимуса в нём нет. */
+export type MarketUnitSales = { month: string; loaded: Record<string, string>; units: Record<string, number> };
 
 /** Выручка Dodo по нескольким странам одним запросом (GET /market/sales, issue #906): без остального набора
  *  страны. `denied` — страны вне allowed_markets. 404 = функции ещё старые (веб катится раньше) — зовущий
  *  откатывается на `fetchMarket` по стране. */
 export async function fetchMarketSales(
   ccs: string[],
-): Promise<{ sales: Record<string, MarketSalesRow[]>; mtd?: Record<string, MarketMtd | null>; denied: string[] }> {
+): Promise<{
+  sales: Record<string, MarketSalesRow[]>; mtd?: Record<string, MarketMtd | null>; unit_sales?: MarketUnitSales | null; denied: string[];
+}> {
   if (DEV_MODE) {
     const b = (await import("./marketDemo")).demolandBundle();
     return { sales: Object.fromEntries(ccs.map((cc) => [cc, b.dodo ?? []])), denied: [] };

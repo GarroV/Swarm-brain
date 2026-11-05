@@ -20,6 +20,7 @@ import {
   loadSales,
 } from "../_shared/market/db.ts";
 import { loadMtd } from "../_shared/market/mtd.ts";
+import { loadUnitSales, mergeCountryMtd } from "../_shared/market/unit-sales.ts";
 import { parseSalesCountries } from "../_shared/market/sales.ts";
 import { validateSnapshot } from "../_shared/market/snapshot.ts";
 
@@ -104,12 +105,27 @@ export async function handleMarketRoutes(
       const ccs = parseSalesCountries(new URL(req.url).searchParams.get("cc"));
       if (!ccs) return apiErr(400, "cc: 1–30 comma-separated two-letter country codes", origin);
       const ok = ccs.filter(visible);
-      // mtd — выручка с 1-го числа по сегодня (публичный API Dodo, кэш 10 мин); `sales` (закрытые месяцы) остаётся
+      // mtd — выручка с 1-го числа по сегодня (публичный API Dodo или сумма пиццерий из Децимуса, кэш 10 мин); `sales` (закрытые месяцы) остаётся
       // как откат. Демо-страна — не настоящий код Dodo: в API не ходим, mtd = null.
       const live = ok.filter((c) => c !== DEMO_COUNTRY);
-      const [sales, mtd] = await Promise.all([loadSales(supabase, ok), loadMtd(live)]);
-      for (const c of ok) if (!(c in mtd)) mtd[c] = null;
-      return json({ sales, mtd, denied: ccs.filter((c) => !visible(c)) }, 200, origin);
+      // Выручка пиццерий — из Децимуса (Dodo IS); страна с его данными берёт сумму своих пиццерий, остальные —
+      // публичный API. Децимус не настроен или молчит → unit_sales = null, страны как раньше.
+      const [sales, publicMtd, unitSales] = await Promise.all([
+        loadSales(supabase, ok),
+        loadMtd(live),
+        loadUnitSales(live),
+      ]);
+      for (const c of ok) if (!(c in publicMtd)) publicMtd[c] = null;
+      return json(
+        {
+          sales,
+          mtd: mergeCountryMtd(publicMtd, unitSales),
+          unit_sales: unitSales && { month: unitSales.month, loaded: unitSales.loaded, units: unitSales.units },
+          denied: ccs.filter((c) => !visible(c)),
+        },
+        200,
+        origin,
+      );
     }
 
     const m = routePath.match(COUNTRY_ROUTE);

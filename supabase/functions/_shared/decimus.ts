@@ -29,13 +29,14 @@ function config(): { base: string; token: string } {
 export async function decimusGet(
   path: string,
   params: Record<string, string | null | undefined> = {},
+  timeoutMs: number = DECIMUS_TIMEOUT_MS,
 ): Promise<unknown> {
   const { base, token } = config();
   const url = new URL(path, base);
   for (const [k, v] of Object.entries(params)) if (v) url.searchParams.set(k, v);
   const res = await fetch(url, {
     headers: { Authorization: `Bearer ${token}` },
-    signal: AbortSignal.timeout(DECIMUS_TIMEOUT_MS),
+    signal: AbortSignal.timeout(timeoutMs),
   });
   if (!res.ok) throw new DecimusHttpError(res.status, (await res.text()).slice(0, 200));
   return await res.json();
