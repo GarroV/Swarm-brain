@@ -1,4 +1,4 @@
-import { ADMIN_USER_ID, supabase } from "../lib/supabase.ts";
+import { supabase } from "../lib/supabase.ts";
 import { chatComplete } from "../lib/openai.ts";
 import { editInlineMessage, sendInlineMessage, sendMessage } from "../lib/telegram.ts";
 import { clearSession, setSession } from "../lib/storage.ts";
@@ -28,11 +28,12 @@ import type { TgCallbackQuery } from "../lib/types.ts";
 import { externalFetch, VIA_TELEGRAM_UPLOAD } from "../../_shared/external-fetch.ts";
 import { notifyMessage } from "../lib/notify.ts";
 import { escapeHtml } from "../../_shared/telegram-html.ts";
+import { onlyWorkspaceMembers } from "../../_shared/tasks/recipients-scope.ts";
 
 const TELEGRAM_BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN")!;
 
 async function broadcastTaskAssigned(task: Task, groupId: string): Promise<void> {
-  const recipientIds: number[] = [...(task.assignee_telegram_ids ?? [])];
+  const recipientIds: number[] = await onlyWorkspaceMembers(supabase, groupId, task.assignee_telegram_ids ?? []);
 
   if ((task.tags ?? []).includes("#all")) {
     const { data } = await supabase
@@ -79,7 +80,7 @@ export async function handleQuickCreateTask(
   let note = "";
 
   if (cmd.assigneeMention) {
-    const matched = findUserByMention(cmd.assigneeMention, await getProfilesForPrompt());
+    const matched = findUserByMention(cmd.assigneeMention, await getProfilesForPrompt(groupId));
     if (matched) {
       assignees = [matched.name];
       assigneeTelegramIds = [matched.id];
@@ -745,17 +746,17 @@ export async function handleTaskCallbacks(
   // Earlier returns for tat_, tac_, tacx_ guarantee this only matches plain ta_
   if (data.startsWith("ta_")) {
     const taskId = data.replace("ta_", "");
-    const { data: allowedUsers } = await supabase.from("allowed_users").select("telegram_id, username");
+    // Кандидаты — только члены воркспейса задачи.
+    const { data: allowedUsers } = await supabase.from("allowed_users").select("telegram_id, username")
+      .eq("group_id", groupId);
     const seen = new Set<number>();
-    const allUsers = [
-      { telegram_id: ADMIN_USER_ID, username: null as string | null },
-      ...((allowedUsers ?? []) as Array<{ telegram_id: number | null; username: string | null }>),
-    ].filter((u): u is { telegram_id: number; username: string | null } => {
-      if (u.telegram_id == null) return false;
-      if (seen.has(u.telegram_id)) return false;
-      seen.add(u.telegram_id);
-      return true;
-    });
+    const allUsers = ((allowedUsers ?? []) as Array<{ telegram_id: number | null; username: string | null }>)
+      .filter((u): u is { telegram_id: number; username: string | null } => {
+        if (u.telegram_id == null) return false;
+        if (seen.has(u.telegram_id)) return false;
+        seen.add(u.telegram_id);
+        return true;
+      });
     const nameMap = await buildDisplayNameMap(allUsers.map((u) => u.telegram_id));
     const buttons = allUsers.map((u) => [{
       text: nameMap[u.telegram_id] || (u.username ? `@${u.username}` : `ID ${u.telegram_id}`),
@@ -771,13 +772,17 @@ export async function handleTaskCallbacks(
     const sep = rest.lastIndexOf("_");
     const taskId = rest.slice(0, sep);
     const targetTgId = Number(rest.slice(sep + 1));
-    const profiles = await getProfilesForPrompt();
-    const profileMap = buildProfileMap(profiles);
-    const name = profileMap[targetTgId] ?? `ID ${targetTgId}`;
     if (!(await dbGetTask(taskId, scope))) {
       await sendMessage(chatId, "Задача не найдена.");
       return true;
     }
+    // callback_data подделывается: назначить можно только члена воркспейса задачи.
+    if ((await onlyWorkspaceMembers(supabase, groupId, [targetTgId])).length === 0) {
+      await sendMessage(chatId, "Этого человека нет в вашем пространстве.");
+      return true;
+    }
+    const profileMap = buildProfileMap(await getProfilesForPrompt(groupId));
+    const name = profileMap[targetTgId] ?? `ID ${targetTgId}`;
     await dbUpdateTask(taskId, { assignees: [name], assignee_telegram_ids: [targetTgId], status: "open" }, {
       actor: username,
       actorTelegramId: userId,

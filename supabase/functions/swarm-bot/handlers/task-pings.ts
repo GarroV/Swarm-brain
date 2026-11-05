@@ -33,6 +33,8 @@ export interface PingRow {
   remind_set_by: number | null; // кто поставил пинг (может быть не создатель задачи)
   /** Кому пинг уже дошёл на прошлых тиках (#575): повторно им не шлём. */
   ping_delivered_to?: number[] | null;
+  /** Воркспейс задачи: получатели пинга обязаны состоять в нём на момент отправки. */
+  group_id?: string | null;
   /** Задача в архиве (#575) — пинг не шлём, хотя крон её и так отсекает запросом. */
   archived_at?: string | null;
 }
@@ -84,6 +86,20 @@ export function pingRecipients(row: PingRow): number[] {
   }
   // Демо-аккаунтам писать некуда (#675): задача демо гасится крону как «некому отправить».
   return out.filter((id) => !isDemoAccount(id));
+}
+
+/**
+ * Строка задачи только с теми людьми, что сейчас в её воркспейсе: ушедшие в другой воркспейс
+ * не получают пинг и не держат задачу «недоставленной» (settlePing считает по тому же кругу).
+ */
+export function scopePingRow<T extends PingRow>(row: T, isMember: (telegramId: number) => boolean): T {
+  const keep = (id: number | null) => (id && isMember(id) ? id : null);
+  return {
+    ...row,
+    assignee_telegram_ids: (row.assignee_telegram_ids ?? []).filter((id) => !!id && isMember(id)),
+    created_by_telegram_id: keep(row.created_by_telegram_id),
+    remind_set_by: keep(row.remind_set_by),
+  };
 }
 
 // Задача с несколькими исполнителями попадает каждому: пинг персональный, «кто-то другой

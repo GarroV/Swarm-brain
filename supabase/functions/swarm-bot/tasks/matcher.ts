@@ -10,15 +10,20 @@ export type UserProfile = {
   name_aliases: string[];
 };
 
-export async function getProfilesForPrompt(): Promise<UserProfile[]> {
+// Только люди воркспейса `groupId`: исполнителя подбирают среди своих. Без воркспейса — никого.
+export async function getProfilesForPrompt(groupId: string | null | undefined): Promise<UserProfile[]> {
+  if (!groupId) return [];
   // username — в allowed_users (НЕ в user_profiles). Селект username из user_profiles
   // падал на несуществующей колонке → data=null → пустой список → резолв исполнителей не работал.
-  const [{ data: profs }, { data: aus }] = await Promise.all([
-    supabase.from("user_profiles").select("telegram_id, first_name, last_name, role, markets, email, name_aliases"),
-    supabase.from("allowed_users").select("telegram_id, username"),
-  ]);
+  const { data: aus } = await supabase.from("allowed_users").select("telegram_id, username").eq("group_id", groupId);
+  const members = ((aus ?? []) as Array<{ telegram_id: number | null; username?: string | null }>)
+    .filter((u): u is { telegram_id: number; username?: string | null } => u.telegram_id != null);
+  if (!members.length) return [];
+  const { data: profs } = await supabase
+    .from("user_profiles").select("telegram_id, first_name, last_name, role, markets, email, name_aliases")
+    .in("telegram_id", members.map((m) => m.telegram_id));
   const uname = new Map<number, string>();
-  ((aus ?? []) as Array<{ telegram_id: number; username?: string | null }>).forEach((u) => {
+  members.forEach((u) => {
     if (u.username) uname.set(u.telegram_id, u.username);
   });
 
@@ -32,7 +37,8 @@ export async function getProfilesForPrompt(): Promise<UserProfile[]> {
     name_aliases?: string[];
   }) => ({
     id: p.telegram_id,
-    name: [p.first_name, p.last_name].filter(Boolean).join(" ") || (uname.get(p.telegram_id) ? `@${uname.get(p.telegram_id)}` : "") || String(p.telegram_id),
+    name: [p.first_name, p.last_name].filter(Boolean).join(" ") ||
+      (uname.get(p.telegram_id) ? `@${uname.get(p.telegram_id)}` : "") || String(p.telegram_id),
     username: uname.get(p.telegram_id) ?? null,
     role: p.role ?? null,
     markets: p.markets ?? [],
@@ -42,7 +48,7 @@ export async function getProfilesForPrompt(): Promise<UserProfile[]> {
 }
 
 export function buildProfileMap(profiles: UserProfile[]): Record<number, string> {
-  return Object.fromEntries(profiles.map(p => [p.id, p.name]));
+  return Object.fromEntries(profiles.map((p) => [p.id, p.name]));
 }
 
 export async function buildDisplayNameMap(telegramIds: number[]): Promise<Record<number, string>> {
@@ -57,7 +63,8 @@ export async function buildDisplayNameMap(telegramIds: number[]): Promise<Record
   });
   const map: Record<number, string> = {};
   for (const p of (profs ?? []) as Array<{ telegram_id: number; first_name?: string; last_name?: string }>) {
-    const name = [p.first_name, p.last_name].filter(Boolean).join(" ") || (uname.get(p.telegram_id) ? `@${uname.get(p.telegram_id)}` : null);
+    const name = [p.first_name, p.last_name].filter(Boolean).join(" ") ||
+      (uname.get(p.telegram_id) ? `@${uname.get(p.telegram_id)}` : null);
     if (name) map[p.telegram_id] = name;
   }
   return map;
@@ -81,29 +88,29 @@ export function resolveAssignees(
 ): { assignees: string[]; assignee_telegram_ids: number[] } {
   // 1. Explicit IDs from GPT
   if (extracted.assignee_ids?.length) {
-    const matched = profiles.filter(p => extracted.assignee_ids!.includes(p.id));
+    const matched = profiles.filter((p) => extracted.assignee_ids!.includes(p.id));
     if (matched.length) {
       return {
-        assignees: matched.map(p => p.name),
-        assignee_telegram_ids: matched.map(p => p.id),
+        assignees: matched.map((p) => p.name),
+        assignee_telegram_ids: matched.map((p) => p.id),
       };
     }
   }
 
   const country = extracted.country?.toLowerCase() ?? null;
   const matchesCountry = (p: UserProfile) =>
-    country !== null && p.markets.some(m =>
+    country !== null && p.markets.some((m) =>
       m.toLowerCase() === country ||
       m.toLowerCase().includes(country)
     );
 
   // 2. Role + country
   if (extracted.task_role && country) {
-    const matched = profiles.filter(p => p.role === extracted.task_role && matchesCountry(p));
+    const matched = profiles.filter((p) => p.role === extracted.task_role && matchesCountry(p));
     if (matched.length) {
       return {
-        assignees: matched.map(p => p.name),
-        assignee_telegram_ids: matched.map(p => p.id),
+        assignees: matched.map((p) => p.name),
+        assignee_telegram_ids: matched.map((p) => p.id),
       };
     }
   }
@@ -113,19 +120,19 @@ export function resolveAssignees(
     const matched = profiles.filter(matchesCountry);
     if (matched.length) {
       return {
-        assignees: matched.map(p => p.name),
-        assignee_telegram_ids: matched.map(p => p.id),
+        assignees: matched.map((p) => p.name),
+        assignee_telegram_ids: matched.map((p) => p.id),
       };
     }
   }
 
   // 4. Role only (no country)
   if (extracted.task_role) {
-    const matched = profiles.filter(p => p.role === extracted.task_role);
+    const matched = profiles.filter((p) => p.role === extracted.task_role);
     if (matched.length) {
       return {
-        assignees: matched.map(p => p.name),
-        assignee_telegram_ids: matched.map(p => p.id),
+        assignees: matched.map((p) => p.name),
+        assignee_telegram_ids: matched.map((p) => p.id),
       };
     }
   }
@@ -150,7 +157,7 @@ export function findUserByMention(
     // Username exact (with or without @)
     if (p.username && (p.username.toLowerCase() === m || p.username.toLowerCase() === m.replace(/^@/, ""))) return p;
     // Any alias exact
-    if (p.name_aliases.some(a => a.toLowerCase() === m)) return p;
+    if (p.name_aliases.some((a) => a.toLowerCase() === m)) return p;
   }
 
   // Partial / substring matches
@@ -167,10 +174,12 @@ export function findUserByMention(
       if (emailUser === m || m.includes(emailUser) || emailUser.includes(m)) return p;
     }
     // Any alias partial
-    if (p.name_aliases.some(a => {
-      const al = a.toLowerCase();
-      return al === m || m.includes(al) || al.includes(m);
-    })) return p;
+    if (
+      p.name_aliases.some((a) => {
+        const al = a.toLowerCase();
+        return al === m || m.includes(al) || al.includes(m);
+      })
+    ) return p;
   }
 
   return null;

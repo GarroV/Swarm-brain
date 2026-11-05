@@ -17,6 +17,7 @@ const CREATOR = 30;
 const ADMIN_SUB = 50; // руководитель, подписан явно
 const MEMBER_SUB = 60; // коллега, подписан явно
 const MUTED_ASSIGNEE = 70;
+const MOVED_ASSIGNEE = 80; // исполнитель, переехавший в другой воркспейс
 
 type Row = Record<string, unknown>;
 
@@ -25,9 +26,10 @@ function makeDb(subs: Row[]) {
     task_subscriptions: [...subs],
     notifications: [],
     telegram_outbox: [],
-    // Очередь запоминает пространство получателя (telegram-outbox.ts): все — в одном.
-    allowed_users: [ACTOR, ASSIGNEE, CREATOR, ADMIN_SUB, MEMBER_SUB, MUTED_ASSIGNEE]
-      .map((id) => ({ telegram_id: id, telegram_chat_id: null, group_id: "ws" })),
+    // Очередь запоминает пространство получателя (telegram-outbox.ts); рассылка оставляет только
+    // членов воркспейса задачи (recipients-scope.ts): все — в одном с задачей, MOVED_ASSIGNEE — в другом.
+    allowed_users: [ACTOR, ASSIGNEE, CREATOR, ADMIN_SUB, MEMBER_SUB, MUTED_ASSIGNEE, MOVED_ASSIGNEE]
+      .map((id) => ({ telegram_id: id, telegram_chat_id: null, group_id: id === MOVED_ASSIGNEE ? "other" : "cee" })),
   };
   const from = (table: string) => {
     const filters: Array<(r: Row) => boolean> = [];
@@ -134,8 +136,19 @@ Deno.test("комендантский час: пуши ложатся в telegra
     assertEquals(recipients, [ASSIGNEE, CREATOR, ADMIN_SUB, MEMBER_SUB]);
     assertEquals(tables.telegram_outbox.map((r) => r.recipient_id), recipients);
     assertEquals(tables.telegram_outbox.every((r) => r.kind === "task_comment" && r.method === "sendMessage"), true);
-    assertEquals(tables.telegram_outbox.every((r) => r.group_id === "ws"), true);
+    assertEquals(tables.telegram_outbox.every((r) => r.group_id === "cee"), true);
     const first = tables.telegram_outbox[0].payload as { chat_id: number; text: string; parse_mode: string };
     assertEquals([first.chat_id, first.parse_mode], [ASSIGNEE, "HTML"]);
+  });
+});
+
+Deno.test("исполнитель, переехавший в другой воркспейс, не получает ни строку ленты, ни пуш", async () => {
+  const { client, tables } = makeDb(SUBS);
+  await withPushSpy(async (pushes) => {
+    const task = input();
+    task.task.assignee_telegram_ids = [ASSIGNEE, MOVED_ASSIGNEE];
+    await afterTaskComment(client, task, DAY);
+    assertEquals(tables.notifications.map((n) => n.recipient_telegram_id), [ASSIGNEE, CREATOR, ADMIN_SUB, MEMBER_SUB]);
+    assertEquals(pushes.some((p) => p.chat_id === MOVED_ASSIGNEE), false);
   });
 });
