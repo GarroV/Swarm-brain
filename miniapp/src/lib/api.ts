@@ -4635,13 +4635,23 @@ export async function fetchAdminWorkspaceUsers(
   return apiFetch<AdminUser[]>(`/admin/workspaces/${wsId}/users`);
 }
 
-// Добавление/перемещение пользователя в воркспейс. API принимает либо telegram_id, либо
-// username (allowed_users.upsert по telegram_id/username реассайнит group_id → это же = «переместить»).
+// Добавление пользователя в воркспейс: telegram_id, e-mail или username. Человека с аккаунтом из
+// другого пространства сервер НЕ переводит: 409 `member_move_required` — переезд идёт через
+// MoveMemberDialog (`/admin/members/:id/move`).
 export async function addUserToWorkspace(
   wsId: string,
   ref: { telegramId?: number; username?: string; email?: string },
 ): Promise<void> {
-  if (DEV_MODE) return;
+  if (DEV_MODE) {
+    // Человек с аккаунтом в другом пространстве: настоящий сервер отказывает кодом member_move_required.
+    if (ref.telegramId === 789012) {
+      throw new ApiError(409, "This person belongs to another workspace — use the member move", {
+        error: "This person belongs to another workspace — use the member move",
+        code: "member_move_required",
+      });
+    }
+    return;
+  }
   const body = ref.telegramId != null
     ? { telegram_id: ref.telegramId }
     : ref.email
@@ -4751,8 +4761,11 @@ export async function fetchReviewCounts(workspace?: string): Promise<ReviewCount
 
 // ── Перенос человека в другое пространство (мастер-админ) ─────────────────────
 // Контракт серверной части (GET move-preview / POST move) — один и тот же ответ, у POST + moved:true.
+// Отказы — JSON `{error, code}` (ApiError.body): 404 person_not_found/workspace_not_found, 409
+// same_workspace/person_without_workspace, 403 owner_only/master_admin_only, 400 bad_input; 409
+// `conflicts` несёт `conflicts`, 409 `expected_mismatch` — свежие `counts`.
 export type MovePreview = {
-  person: { telegram_id: number; name: string; email: string | null };
+  person: { telegram_id: number; name: string | null; email: string | null };
   from: { id: string; name: string };
   to: { id: string; name: string };
   counts: {
@@ -4764,6 +4777,7 @@ export type MovePreview = {
   tasks_detached: Array<{ id: string; title: string }>;
   projects: Array<{ id: string; name: string }>;
   tokens: { claude: boolean; chatgpt: boolean; oauth: number; recorder: boolean };
+  /** Машинные строки `код:подробность` (сейчас `people_email_taken:<почта>`); текст — moveMessages.ts. */
   conflicts: string[];
   can_execute: boolean;
   moved?: boolean;
@@ -4780,14 +4794,17 @@ export async function moveMember(
   to: string,
   expected: { tasks: number; entries: number },
 ): Promise<MovePreview> {
-  if (DEV_MODE) return { ...mockMovePreview(telegramId, to), moved: true };
+  if (DEV_MODE) return mockMoveMember(telegramId, to, expected);
   return apiFetch<MovePreview>(`/admin/members/${telegramId}/move`, {
     method: "POST",
     body: JSON.stringify({ to, expected }),
   });
 }
 
-// Заглушка предпросмотра для DEV_MODE. Боб (345678) — случай «перенос невозможен», чтобы увидеть блокировку.
+// Заглушка предпросмотра для DEV_MODE, в форме настоящего ответа сервера. Боб (345678) — случай
+// «перенос невозможен» (занята почта), Алиса (789012) — «данные изменились между показом и нажатием»:
+// первое выполнение отвечает 409 expected_mismatch со свежими числами, повторное проходит.
+let mockMoveMismatchServed = false;
 function mockMovePreview(telegramId: number, to: string): MovePreview {
   const blocked = telegramId === 345678;
   const space = (id: string) => ({ id, name: id === "cee" ? "Central East Europe" : "World" });
@@ -4797,15 +4814,36 @@ function mockMovePreview(telegramId: number, to: string): MovePreview {
     to: space(to),
     counts: {
       private_entries: 4, entries: 17, personal_notes: 6, drafts: 2, meetings_shared: 9, tasks: 14, tasks_detached: 3,
-      projects: 2, notifications: 41, labels: 5, other: { sticker_addressees: 3, presence: 1 },
+      projects: 2, notifications: 41, labels: 5,
+      other: {
+        task_history: 52, task_files: 3, task_parent_links: 1, task_label_links: 2, sprint_items: 1, project_history: 7,
+        meeting_versions: 2, personal_notes_kept: 1, meeting_live_notes: 0, meeting_audio_backups: 0, people: 1,
+        presence: 1, short_links: 2, mcp_oauth_connections: 2,
+      },
     },
     tasks_mixed: [{ id: "t1", title: "Prepare the Q4 market review" }, { id: "t2", title: "Align the TR pizzeria list" }],
     tasks_detached: [{ id: "t3", title: "Roll out the checklist update" }],
     projects: [{ id: "p1", name: "Market entry plan" }, { id: "p2", name: "Franchise onboarding" }],
     tokens: { claude: true, chatgpt: false, oauth: 2, recorder: true },
-    conflicts: blocked ? ["The email is already used by another person in the target space"] : [],
+    conflicts: blocked ? ["people_email_taken:alice@example.com"] : [],
     can_execute: !blocked,
   };
+}
+
+function mockMoveMember(telegramId: number, to: string, expected: { tasks: number; entries: number }): MovePreview {
+  const preview = mockMovePreview(telegramId, to);
+  if (!preview.can_execute) {
+    throw new ApiError(409, "Move has conflicts", { error: "Move has conflicts", code: "conflicts", conflicts: preview.conflicts });
+  }
+  if (telegramId === 789012 && !mockMoveMismatchServed && expected.tasks === preview.counts.tasks) {
+    mockMoveMismatchServed = true;
+    throw new ApiError(409, "Data changed since the preview", {
+      error: "Data changed since the preview",
+      code: "expected_mismatch",
+      counts: { ...preview.counts, tasks: preview.counts.tasks + 1, notifications: preview.counts.notifications + 2 },
+    });
+  }
+  return { ...preview, moved: true };
 }
 
 // Правка профиля пользователя (роль/рынки/имя/контакты) — user_profiles.

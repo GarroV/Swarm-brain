@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
 import {
-  fetchAdminWorkspaceUsers, addUserToWorkspace, removeUserFromWorkspace, patchAdminUser, setWorkspaceAdmin,
+  ApiError, fetchAdminWorkspaceUsers, addUserToWorkspace, removeUserFromWorkspace, patchAdminUser, setWorkspaceAdmin,
 } from "@/lib/api";
 import type { AdminWorkspace, AdminUser } from "@/types";
 import { countryCode, COUNTRY_NAMES } from "@/lib/countries";
@@ -12,11 +12,21 @@ import { useConfirm } from "@/components/ui/confirm";
 import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select";
 import { btnPrimary, fieldCls, Lbl } from "@/components/admin/ui";
 import { MoveMemberDialog } from "@/components/admin/MoveMemberDialog";
+import { useSpacesText } from "@/components/admin/spacesText";
+import { bodyCode } from "@/lib/moveMessages";
 
 // Чем адресуется строка в админских маршрутах: реальный юзер — telegram_id, ОЖИДАЮЩЕЕ
 // приглашение (telegram_id=null) — username, а email-only приглашение — сам email.
 // Бэкенд различает три формы сам (_shared/users/user-ref.ts).
 const USER_COLS = "minmax(0,1.3fr) minmax(80px,0.6fr) minmax(70px,0.6fr) minmax(0,1fr) 300px";
+
+/** Человек, известный только по Telegram ID (ввели в «Добавить»): имя и почту диалог берёт из предпросмотра. */
+function personStub(telegramId: number): AdminUser {
+  return {
+    telegram_id: telegramId, name: String(telegramId), username: null, is_admin: false, role: null, markets: [],
+    first_name: null, last_name: null, email: null, phone: null, notes: null, created_at: "",
+  };
+}
 
 function userRef(u: AdminUser): string {
   return u.telegram_id != null ? String(u.telegram_id) : (u.username ?? u.email ?? "");
@@ -28,6 +38,7 @@ function userRef(u: AdminUser): string {
 export function WorkspaceUsers({ wsId, allWorkspaces, desk = false }: { wsId: string; allWorkspaces: AdminWorkspace[]; desk?: boolean }) {
   const confirm = useConfirm();
   const dt = useDt();
+  const t = useSpacesText();
   const isMaster = canSetWorkspaceAdmin(useRoyNav().me);
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [loading, setLoading] = useState(true);
@@ -64,7 +75,17 @@ export function WorkspaceUsers({ wsId, allWorkspaces, desk = false }: { wsId: st
       : { username: raw.replace(/^@/, "") };
     setAdding(true); setErr(null);
     try { await addUserToWorkspace(wsId, ref); setAddInput(""); load(); }
-    catch (e) { setErr(e instanceof Error ? e.message : "Не удалось добавить"); }
+    catch (e) {
+      // Человек с аккаунтом в другом пространстве: добавлением его не перевести (сервер: 409
+      // member_move_required) — ведём в «Перенести в…» с предпросмотром, а не показываем сырой текст.
+      if (e instanceof ApiError && bodyCode(e.body) === "member_move_required") {
+        const to = allWorkspaces.find((w) => w.id === wsId);
+        if (to && ref.telegramId != null) {
+          setNotice(null); setAddInput("");
+          setMoveTo({ user: personStub(ref.telegramId), to });
+        } else setErr(t("errAdminElsewhere"));
+      } else setErr(e instanceof Error ? e.message : dt("Не удалось добавить", "Could not add"));
+    }
     finally { setAdding(false); }
   };
 
