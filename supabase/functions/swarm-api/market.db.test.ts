@@ -1,4 +1,5 @@
-// «Анализ рынка»: настоящий воркспейс видит все страны (allowed_markets не режет), XD — только демо;
+// «Анализ рынка»: настоящий воркспейс видит все страны (allowed_markets не режет), XD — только демо; запись и очередь — только в своих
+// allowed_markets;
 // импорт снимка — только админ, битый снимок отклоняется с причинами. Настоящая база.
 import { assertEquals } from "@std/assert";
 import { createClient } from "@supabase/supabase-js";
@@ -28,6 +29,7 @@ const call = (path: string, opts: { demo?: boolean; admin?: boolean; method?: st
     new Request(ORIGIN + path, { method: opts.method ?? "GET", body: opts.body }),
     path,
     1,
+    opts.demo ? "demo" : WS,
     opts.admin ?? false,
     opts.demo ?? false,
     ORIGIN,
@@ -82,4 +84,26 @@ Deno.test("accept-all is admin-only and reports how many finds became points", a
 Deno.test("routes outside /market are not handled", async () => {
   assertEquals(await call("/tasks"), null);
   assertEquals(await call("/marketing"), null);
+});
+
+Deno.test("admin outside allowed_markets reads a country but cannot import, list or decide its candidates", async () => {
+  await setup();
+  const body = JSON.stringify({ locs: [] });
+  const { data: cand } = await sb.from("mkt_candidates")
+    .insert({ country: "QC", kind: "new_location", source: "t", payload: { key: "t-1" } }).select("id").single();
+  const id = cand!.id as string;
+  try {
+    assertEquals((await call("/market/QC", { admin: true }))!.status, 200);
+    assertEquals((await call("/market/QC/import", { method: "POST", body, admin: true }))!.status, 403);
+    assertEquals((await call("/market/QC/candidates", { admin: true }))!.status, 403);
+    assertEquals((await call("/market/QC/candidates/accept-all", { method: "POST", admin: true }))!.status, 403);
+    assertEquals((await call(`/market/candidates/${id}/reject`, { method: "POST", admin: true }))!.status, 403);
+    const { data: still } = await sb.from("mkt_candidates").select("status").eq("id", id).single();
+    assertEquals(still!.status, "pending");
+    // своя страна по-прежнему доступна админу
+    assertEquals((await call("/market/QB/candidates", { admin: true }))!.status, 200);
+  } finally {
+    await sb.from("mkt_candidates").delete().eq("id", id);
+    await teardown();
+  }
 });

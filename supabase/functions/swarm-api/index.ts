@@ -1165,7 +1165,7 @@ async function routeRequest(req: Request): Promise<Response> {
   if (boardResp) return boardResp;
 
   // «Анализ рынка» (/market/*): данные страны по allowed_markets, импорт и кандидаты — админу.
-  const marketResp = await handleMarketRoutes(req, routePath, telegram_id, isAdmin, isDemo, origin);
+  const marketResp = await handleMarketRoutes(req, routePath, telegram_id, groupId, isAdmin, isDemo, origin);
   if (marketResp) return marketResp;
 
   // Баллы РС и РКО по пиццериям (/quality?kind=) — весь воркспейс, страны по allowed_markets.

@@ -68,3 +68,12 @@ export function canSeeCountry(cc: string, isDemo: boolean): boolean {
   const c = cc.toUpperCase();
   return isDemo ? c === DEMO_COUNTRY : c !== DEMO_COUNTRY;
 }
+
+/** Запись данных рынка (импорт снимка, очередь кандидатов, ручной ввод) остаётся в границах
+ *  воркспейса: страна должна быть в allowed_markets, поверх проверки админа. Читать — шире
+ *  (canSeeCountry), писать — только своё. Демо пишет только в XD. */
+export function canWriteCountry(cc: string, allowed: string[] | null, isDemo: boolean): boolean {
+  const c = cc.toUpperCase();
+  if (isDemo) return c === DEMO_COUNTRY;
+  return c !== DEMO_COUNTRY && (allowed ?? []).map((a) => a.toUpperCase()).includes(c);
+}

@@ -1,6 +1,14 @@
 import { assert, assertEquals } from "@std/assert";
 import { distanceM, matchPoints } from "./geo.ts";
-import { canSeeCountry, type DayOrders, foldDailyOrders, isSuspiciousRun, shouldAutoClose, toEur } from "./rules.ts";
+import {
+  canSeeCountry,
+  canWriteCountry,
+  type DayOrders,
+  foldDailyOrders,
+  isSuspiciousRun,
+  shouldAutoClose,
+  toEur,
+} from "./rules.ts";
 
 Deno.test("distanceM: 0.001° of latitude is ~111 m", () => {
   const d = distanceM({ lat: 45.8, lng: 15.97 }, { lat: 45.801, lng: 15.97 });
@@ -59,6 +67,16 @@ Deno.test("toEur divides by units-per-euro; EUR passes through; unknown → null
   assertEquals(toEur(497, "RON", { RON: 4.97 }), 100);
   assertEquals(toEur(10, "EUR", {}), 10);
   assertEquals(toEur(10, "XYZ", {}), null);
+});
+
+Deno.test("canWriteCountry: writes stay inside allowed_markets, demo writes only XD", () => {
+  assert(canWriteCountry("HR", ["HR", "RO"], false));
+  assert(canWriteCountry("hr", ["HR"], false));
+  assert(!canWriteCountry("EE", ["HR"], false));
+  assert(!canWriteCountry("EE", null, false));
+  assert(!canWriteCountry("XD", ["XD"], false));
+  assert(canWriteCountry("XD", null, true));
+  assert(!canWriteCountry("HR", ["HR"], true));
 });
 
 Deno.test("canSeeCountry: demo sees only XD, real workspace sees every country but XD", () => {

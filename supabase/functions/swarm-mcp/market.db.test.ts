@@ -82,6 +82,17 @@ Deno.test("a country outside the workspace markets is open; the fictional XD is 
   await wipe();
 });
 
+Deno.test("an admin cannot write into a country outside allowed_markets, but can read it", async () => {
+  await seed();
+  const w = await call("market_set_company_year", ADMIN, { ...YEAR, country: "QZ" });
+  assert(w.includes("не открыта"), w);
+  const { count } = await sb.from("mkt_companies").select("id", { count: "exact", head: true }).eq("country", "QZ");
+  assertEquals(count, 0);
+  const r = await call("market_status", ADMIN, { country: "QZ" });
+  assert(!r.includes("не открыта"), r);
+  await wipe();
+});
+
 Deno.test("template is readable without a country", async () => {
   assert((await call("market_template", MEMBER, {})).includes("[money]"));
 });
