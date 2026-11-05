@@ -408,7 +408,11 @@ Deno.test("переезд: личное едет, общее открывает�
 
     // Хвосты.
     assertEquals(
-      [await g("notifications", id.nMine), await g("notifications", id.nColOnMoved), await g("notifications", id.nMineOnMixed)],
+      [
+        await g("notifications", id.nMine),
+        await g("notifications", id.nColOnMoved),
+        await g("notifications", id.nMineOnMixed),
+      ],
       [B, B, A],
       "едут: своё без задачи и о переехавшей задаче; о смешанной остаётся",
     );
