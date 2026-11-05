@@ -159,3 +159,21 @@ revoke all on function public.sprint_set_task_span(uuid, uuid, text, uuid, uuid,
 filter_group_id = any(e.visible_group_ids)|e.group_id = filter_group_id|supabase/functions/_shared/search-workspace.db.test.ts|supabase/migrations/20261105180000_entries_visible_group_ids.sql
 p_group_id = any(e.visible_group_ids)|e.group_id = p_group_id|supabase/functions/_shared/search-workspace.db.test.ts|supabase/migrations/20261105180000_entries_visible_group_ids.sql
 if new.entry_type is distinct from 'meeting' then|if false then|supabase/functions/_shared/search-workspace.db.test.ts|supabase/migrations/20261105180000_entries_visible_group_ids.sql
+# Переезд человека в другое пространство (миграция 20261105200000, этап 3). Каждое правило по
+# таблицам держится тестом на настоящей базе: обход отзыва токенов (узкий и снимаемый), смешанные
+# задачи и проекты остаются, общие встречи открываются, общий черновик не едет, чужие метки и
+# связь с родителем рвутся, updated_at не сдвигается, сверка с показанным и конфликт людей.
+current_setting('swarm.member_move', true) = new.telegram_id::text then|false then|supabase/functions/_shared/users/member-move.db.test.ts|supabase/migrations/20261105200000_member_move.sql
+current_setting('swarm.member_move', true) = new.telegram_id::text then|true then|supabase/functions/_shared/users/member-move.db.test.ts|supabase/migrations/20261105200000_member_move.sql
+  perform set_config('swarm.member_move', '', true);|  perform 1;|supabase/functions/_shared/users/member-move.db.test.ts|supabase/migrations/20261105200000_member_move.sql
+     and (t.created_by_telegram_id = any (v_others)|     and (false|supabase/functions/_shared/users/member-move.db.test.ts|supabase/migrations/20261105200000_member_move.sql
+     where exists (select 1 from public.tasks t where t.project_id = tr.id and not (t.id = any (v_tasks)))|     where false|supabase/functions/_shared/users/member-move.db.test.ts|supabase/migrations/20261105200000_member_move.sql
+                    where sc.group_id = v_from and t.project_id = tr.id)|                    where false)|supabase/functions/_shared/users/member-move.db.test.ts|supabase/migrations/20261105200000_member_move.sql
+                           where jsonb_typeof(a) = 'object' and lower(btrim(a->>'email')) = v_email))|                           where false))|supabase/functions/_shared/users/member-move.db.test.ts|supabase/migrations/20261105200000_member_move.sql
+        where (r->>'telegram_id') is distinct from p_telegram_id::text);|        where false);|supabase/functions/_shared/users/member-move.db.test.ts|supabase/migrations/20261105200000_member_move.sql
+            where not exists (select 1 from public.task_labels l where l.id = x.li and l.owner_id <> p_telegram_id)|            where true|supabase/functions/_shared/users/member-move.db.test.ts|supabase/migrations/20261105200000_member_move.sql
+         parent_id = case when t.parent_id = any (v_tasks) then t.parent_id end,|         parent_id = t.parent_id,|supabase/functions/_shared/users/member-move.db.test.ts|supabase/migrations/20261105200000_member_move.sql
+  when (coalesce(current_setting('swarm.keep_updated_at', true), '') <> 'on')|  when (true)|supabase/functions/_shared/users/member-move.db.test.ts|supabase/migrations/20261105200000_member_move.sql
+       (p_expected->>'tasks') is distinct from (v_counts->>'tasks')|       false|supabase/functions/_shared/users/member-move.db.test.ts|supabase/migrations/20261105200000_member_move.sql
+       and q.email in (v_email, v_pemail) and q.id is distinct from v_pid|       and false|supabase/functions/_shared/users/member-move.db.test.ts|supabase/migrations/20261105200000_member_move.sql
+revoke all on function public.move_member_to_workspace(bigint, text, bigint, boolean, jsonb) from public, anon, authenticated;|grant execute on function public.move_member_to_workspace(bigint, text, bigint, boolean, jsonb) to anon;|supabase/functions/_shared/users/member-move.db.test.ts|supabase/migrations/20261105200000_member_move.sql

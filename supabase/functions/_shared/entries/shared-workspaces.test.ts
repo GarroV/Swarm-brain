@@ -1,13 +1,8 @@
 // Признак принадлежности встречи — кто и что проставляет (этап 2 решения о втором пространстве).
 // Ядро доступа: ошибка здесь молчит — встреча либо не видна второй команде, либо видна лишним.
-import { assertEquals, assertRejects } from "jsr:@std/assert@1";
+import { assertEquals } from "jsr:@std/assert@1";
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
-import {
-  attendeeEmails,
-  meetingVisibleGroupIds,
-  shareMeetingsOfPerson,
-  visibleGroupIdsForMeeting,
-} from "./shared-workspaces.ts";
+import { attendeeEmails, meetingVisibleGroupIds, visibleGroupIdsForMeeting } from "./shared-workspaces.ts";
 import { isEntryVisibleInWorkspace, visibleInWorkspace } from "./workspace.ts";
 
 // ── Чистая часть ─────────────────────────────────────────────────────────────
@@ -132,39 +127,4 @@ Deno.test("публикация: сбой allowed_users — остаются д�
     knownGroupIds: ["world"],
   });
   assertEquals(got, ["cee", "world"]);
-});
-
-Deno.test("переезд: общие встречи человека получают новое пространство, лишние записи не трогаются", async () => {
-  const db = fakeDb({
-    meetings: { data: [{ entry_id: "e-rec" }], error: null },
-    entries: {
-      data: [
-        { id: "e-own", group_id: "cee", visible_group_ids: ["cee"] },
-        { id: "e-rec", group_id: "cee", visible_group_ids: ["cee"] },
-        { id: "e-done", group_id: "cee", visible_group_ids: ["cee", "world"] },
-      ],
-      error: null,
-    },
-  });
-  const changed = await shareMeetingsOfPerson(db.client, { email: "Me@X.io", telegramId: 42, toGroupId: "world" });
-  assertEquals(changed, 2);
-  assertEquals(db.updates, [
-    { id: "e-own", patch: { visible_group_ids: ["cee", "world"] } },
-    { id: "e-rec", patch: { visible_group_ids: ["cee", "world"] } },
-  ]);
-  // Кандидаты — только ОБЩИЕ встречи: личные круг не расширяют.
-  const entryFilters = db.calls.filter((c) => c.table === "entries" && c.method === "eq").map((c) => c.args);
-  assertEquals(entryFilters.some((a) => a[0] === "is_private" && a[1] === false), true);
-  assertEquals(entryFilters.some((a) => a[0] === "entry_type" && a[1] === "meeting"), true);
-  const or = String(db.calls.find((c) => c.table === "entries" && c.method === "or")?.args[0]);
-  assertEquals(or.includes("owner_id.eq.42"), true);
-  assertEquals(or.includes(`"email":"me@x.io"`), true);
-  assertEquals(or.includes("id.in.(e-rec)"), true);
-});
-
-Deno.test("переезд: без e-mail и id — ничего не трогаем; кривое пространство — отказ", async () => {
-  const db = fakeDb({});
-  assertEquals(await shareMeetingsOfPerson(db.client, { email: null, telegramId: null, toGroupId: "world" }), 0);
-  assertEquals(db.calls.length, 0);
-  await assertRejects(() => shareMeetingsOfPerson(db.client, { email: "a@b.c", telegramId: 1, toGroupId: "a,b" }));
 });

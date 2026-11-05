@@ -254,3 +254,21 @@ Deno.test("DELETE суперадмина запрещён", async () => {
   );
   assertEquals(res!.status, 400);
 });
+
+Deno.test("POST /admin/workspaces/:id/users — человек с аккаунтом из другого пространства: 409, без записи", async () => {
+  // Добавление перевело бы одну строку доступа без данных человека: переезд — /admin/members/:id/move.
+  const { client, calls } = makeSupabase({ data: { telegram_id: 1, group_id: "cee", email: null } });
+  const res = await handleAdminRoutes(
+    client,
+    new Request("https://x/admin", { method: "POST", body: JSON.stringify({ telegram_id: 1 }) }),
+    "/admin/workspaces/world/users",
+    744230399,
+    true,
+    "*",
+    () => Promise.resolve(new Map()),
+    "cee",
+  );
+  assertEquals(res!.status, 409);
+  assertEquals((await res!.json()).code, "member_move_required");
+  assertEquals(calls.some((c) => ["update", "upsert", "insert"].includes(c.method)), false);
+});
