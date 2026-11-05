@@ -2,6 +2,7 @@
 // Отдельным модулем без базы — это правило доступа, и его держат тесты и порча
 // (scripts/core-paths.txt).
 import { canViewEntry, type EntryAccessRow } from "../_shared/entries/access.ts";
+import { isEntryVisibleInWorkspace } from "../_shared/entries/workspace.ts";
 import { canAccessDraftMeeting, type DraftMeetingRow } from "../_shared/meeting-access.ts";
 
 /**
@@ -12,6 +13,9 @@ import { canAccessDraftMeeting, type DraftMeetingRow } from "../_shared/meeting-
  * (тем же правилом `canViewEntry`, что и сама видимость): у личной записи круг видящих и есть
  * круг участников — владелец и второй участник встречи 1-1. По общей записи остальные не
  * спрашивают: они видят тезисы, но не сырую запись.
+ *
+ * Пространство записи — по `visible_group_ids` (как у просмотра): во втором пространстве общей
+ * встречи действуют те же правила. Ключ модели для ответа — дома встречи (`answerMeetingQuestion`).
  */
 export function canAskAboutMeeting(
   entry: EntryAccessRow | null,
@@ -21,6 +25,8 @@ export function canAskAboutMeeting(
 ): boolean {
   if (!meeting) return false;
   if (canAccessDraftMeeting(meeting, viewerId, false, viewerGroupId)) return true;
-  if (!entry || meeting.group_id !== viewerGroupId) return false;
+  // Пространство — по признаку принадлежности записи, как у просмотра (общая встреча двух команд,
+  // решение 05.11.2026): кто видит запись во втором пространстве, спрашивает там на тех же правах.
+  if (!entry || !isEntryVisibleInWorkspace(entry, viewerGroupId)) return false;
   return entry.is_private && canViewEntry(entry, viewerId);
 }
