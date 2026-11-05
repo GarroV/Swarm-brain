@@ -70,7 +70,7 @@ export function parseSaSession(action: string, text: string): BotAdminAction {
     const wsId = action.slice("sa_adduser_".length);
     return wsId ? { kind: "add", wsId, input: text.trim() } : UNKNOWN;
   }
-  if (action === "sa_create_id" || action.startsWith("sa_create_name_")) return { kind: "create" };
+  if (action === "sa_create_name") return { kind: "create" };
   if (action.startsWith("sa_rename_")) {
     const wsId = action.slice("sa_rename_".length);
     return wsId ? { kind: "workspace", wsId } : UNKNOWN;

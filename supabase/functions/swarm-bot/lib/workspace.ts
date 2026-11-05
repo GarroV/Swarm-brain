@@ -1,5 +1,6 @@
 import { ADMIN_USER_ID, supabase } from "./supabase.ts";
 import { addUserToWorkspace } from "../../_shared/users/membership.ts";
+import { createWorkspace as createWorkspaceRow } from "../../_shared/workspaces.ts";
 
 export async function getUserGroupId(userId: number): Promise<string | null> {
   const { data } = await supabase
@@ -80,9 +81,16 @@ export async function listWorkspaces(): Promise<Array<{ id: string; name: string
   return (data ?? []) as Array<{ id: string; name: string }>;
 }
 
-export async function createWorkspace(id: string, name: string): Promise<void> {
-  const { error } = await supabase.from("workspaces").insert({ id, name });
-  if (error) throw new Error(error.message);
+/** Новое пространство по названию: слаг рождается в каноне (_shared/workspaces.ts) и человеку не показывается. */
+export async function createWorkspace(name: string): Promise<{ id: string; name: string }> {
+  const created = await createWorkspaceRow(supabase, { name });
+  return { id: created.id, name: created.name };
+}
+
+/** Название пространства для показа человеку; слаг (`workspaces.id`) наружу не выходит. */
+export async function workspaceName(id: string): Promise<string> {
+  const { data } = await supabase.from("workspaces").select("name").eq("id", id).maybeSingle();
+  return (data as { name?: string } | null)?.name ?? "—";
 }
 
 // Человек с аккаунтом уже в другом пространстве: бот его не переводит — смена одной строки доступа

@@ -66,7 +66,7 @@ export function MasterAdminsPanel() {
   const remove = async (row: MasterAdmin) => {
     if (!(await confirm({
       title: dt("Снять мастер-админа?", "Remove this master admin?"),
-      description: dt(`${row.name ?? row.telegram_id} потеряет доступ ко всем пространствам, кроме своего.`, `${row.name ?? row.telegram_id} will lose access to every workspace except their own.`),
+      description: dt(`${row.name ?? row.telegram_id} потеряет доступ ко всем пространствам, кроме своего.`, `${row.name ?? row.telegram_id} will lose access to every space except their own.`),
       confirmText: dt("Снять", "Remove"),
     }))) return;
     await run(() => removeMasterAdmin(row.telegram_id));
@@ -76,7 +76,7 @@ export function MasterAdminsPanel() {
     <section className="max-w-[720px] rounded-[10px] border border-line bg-surface px-3 py-3">
       <h3 className="font-semibold text-ink" style={{ fontSize: 14 }}>{dt("Мастер-админы", "Master admins")}</h3>
       <p className="mb-3 mt-0.5 text-ink-mute" style={{ fontSize: 12 }}>
-        {dt("Видят и настраивают все пространства, включая ключи и этот список.", "See and configure every workspace, including keys and this list.")}
+        {dt("Видят и настраивают все пространства, включая ключи и этот список.", "See and configure every space, including keys and this list.")}
       </p>
 
       {rows === null && <div className="roy-shim mb-2" style={{ height: 34, borderRadius: 8 }} />}

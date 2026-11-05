@@ -433,7 +433,7 @@ export function DigestSection({ isAdmin }: { isAdmin: boolean }) {
             {allCountries && <RoyIcon name="check" size={13} strokeWidth={2.4} />}
           </span>
           <span className="min-w-0">
-            <span className="block text-sm font-medium text-ink">Все страны воркспейса</span>
+            <span className="block text-sm font-medium text-ink">Все страны пространства</span>
             <span className="block text-xs text-ink-soft">По умолчанию дайджест — по вашим рынкам. Включите, чтобы видеть обзор по всем рынкам команды.</span>
           </span>
         </button>

@@ -138,7 +138,7 @@ async function handleHealthRoute(supabase: SupabaseClient, actor: AdminActor, or
   const names = new Map(((data ?? []) as Array<{ id: string; name: string | null }>).map((w) => [w.id, w.name]));
   const named = <T extends { group_id: string }>(r: T) => ({
     ...r,
-    workspace_name: names.get(r.group_id) ?? r.group_id,
+    workspace_name: names.get(r.group_id) ?? "",
   });
   return json({ issues: issues.map(named), stalled: stalled.map(named) }, 200, origin);
 }

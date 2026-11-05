@@ -22,7 +22,7 @@ const btnGhost =
 type Fallback = "server" | "none" | "off";
 function fallbackText(status: WorkspaceKeyStatus | null): [Fallback, string, string] {
   if (status && !status.own_keys_enabled) {
-    return ["off", "Ключи пространств отключены на сервере — работает общий ключ сервера", "Workspace keys are turned off on the server — the shared server key is used"];
+    return ["off", "Ключи пространств отключены на сервере — работает общий ключ сервера", "Space keys are turned off on the server — the shared server key is used"];
   }
   if (status && !status.server_key_available) {
     return ["none", "Ключ не задан, общего ключа у сервера нет — функции с нейронкой не работают", "No key set and the server has no shared key — AI features do not work"];
@@ -80,10 +80,10 @@ export function WorkspaceKeyPanel({ wsId }: { wsId: string }) {
 
   const remove = async () => {
     if (!(await confirm({
-      title: dt("Убрать ключ пространства?", "Remove the workspace key?"),
+      title: dt("Убрать ключ пространства?", "Remove the space key?"),
       description: fallbackText(status)[0] === "server"
-        ? dt("Дальше пространство будет работать на общем ключе сервера.", "From then on the workspace uses the shared server key.")
-        : dt("Общего ключа у сервера нет: без своего ключа функции с нейронкой в этом пространстве перестанут работать.", "The server has no shared key: without its own key, AI features in this workspace will stop working."),
+        ? dt("Дальше пространство будет работать на общем ключе сервера.", "From then on the space uses the shared server key.")
+        : dt("Общего ключа у сервера нет: без своего ключа функции с нейронкой в этом пространстве перестанут работать.", "The server has no shared key: without its own key, AI features in this space will stop working."),
       confirmText: dt("Убрать ключ", "Remove key"),
     }))) return;
     setBusy(true); setError(null); setSaved(false);
@@ -106,7 +106,7 @@ export function WorkspaceKeyPanel({ wsId }: { wsId: string }) {
     <section className="max-w-[720px] rounded-[10px] border border-line bg-surface px-3 py-3">
       <h3 className="font-semibold text-ink" style={{ fontSize: 14 }}>{dt("Ключ к нейронке", "AI model key")}</h3>
       <p className="mb-3 mt-0.5 text-ink-mute" style={{ fontSize: 12 }}>
-        {dt("Ключ OpenAI этого пространства. Хранится зашифрованным и после сохранения не показывается.", "This workspace's OpenAI key. Stored encrypted and never shown after saving.")}
+        {dt("Ключ OpenAI этого пространства. Хранится зашифрованным и после сохранения не показывается.", "This space's OpenAI key. Stored encrypted and never shown after saving.")}
       </p>
 
       {loadError && (
@@ -118,7 +118,7 @@ export function WorkspaceKeyPanel({ wsId }: { wsId: string }) {
       {!status && !loadError && <div className="roy-shim mb-2" style={{ height: 34, borderRadius: 8 }} />}
       {noStorage && (
         <p role="status" className="mb-2 text-ink-soft" style={{ fontSize: 12.5 }}>
-          {dt("Хранение ключей на сервере ещё не настроено — задать ключ пока нельзя. Пространство работает на общем ключе сервера.", "Key storage is not set up on the server yet, so a key cannot be set. The workspace uses the shared server key.")}
+          {dt("Хранение ключей на сервере ещё не настроено — задать ключ пока нельзя. Пространство работает на общем ключе сервера.", "Key storage is not set up on the server yet, so a key cannot be set. The space uses the shared server key.")}
         </p>
       )}
       {status && (

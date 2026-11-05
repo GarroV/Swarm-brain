@@ -344,8 +344,8 @@ Deno.test("суперадмин добавлением НЕ переносит �
 
 // ── Рассылка ─────────────────────────────────────────────────────────────────
 
-Deno.test("рассылка админа уходит только его воркспейсу", async () => {
-  // Днём по Москве: в комендантский час (_shared/curfew.ts) рассылка ложится в очередь, а не уходит.
+/** Рассылка с подменой Telegram: кому реально ушло. Днём по Москве — в комендантский час (_shared/curfew.ts) она легла бы в очередь. */
+async function broadcastTo(actor: number, body: unknown) {
   using _clock = new FakeTime(new Date("2026-10-14T09:00:00Z"));
   const db = makeDb();
   const prevToken = Deno.env.get("TELEGRAM_BOT_TOKEN");
@@ -357,14 +357,53 @@ Deno.test("рассылка админа уходит только его вор
     return Promise.resolve(new Response("{}", { status: 200 }));
   }) as typeof fetch;
   try {
-    const res = await call(db, ADMIN_CEE, "POST", "/admin/broadcast", { text: "hi" });
-    assertEquals(res!.status, 200);
-    assertEquals(sentTo.sort(), [ADMIN_CEE, MEMBER_CEE, MASTER_CEE].sort());
+    const res = await call(db, actor, "POST", "/admin/broadcast", body);
+    return { status: res!.status, sentTo: sentTo.sort((a, b) => a - b) };
   } finally {
     globalThis.fetch = realFetch;
     if (prevToken == null) Deno.env.delete("TELEGRAM_BOT_TOKEN");
     else Deno.env.set("TELEGRAM_BOT_TOKEN", prevToken);
   }
+}
+
+Deno.test("рассылка админа уходит только людям выбранного им своего воркспейса", async () => {
+  const r = await broadcastTo(ADMIN_CEE, { text: "hi", workspaces: ["cee"] });
+  assertEquals(r.status, 200);
+  assertEquals(r.sentTo, [ADMIN_CEE, MEMBER_CEE, MASTER_CEE].sort((a, b) => a - b));
+});
+
+Deno.test("рассылка админа с чужим воркспейсом в списке → 404, никому не ушло", async () => {
+  for (const workspaces of [["other"], ["cee", "other"]]) {
+    const r = await broadcastTo(ADMIN_CEE, { text: "hi", workspaces });
+    assertEquals(r.status, 404);
+    assertEquals(r.sentTo, []);
+  }
+});
+
+Deno.test("рассылка без выбора пространства → 400, никому не ушло (по умолчанию «всем» нет)", async () => {
+  for (
+    const body of [{ text: "hi" }, { text: "hi", workspaces: [] }, { text: "hi", workspaces: [5] }, {
+      text: "hi",
+      workspaces: "cee",
+    }]
+  ) {
+    for (const actor of [ADMIN_CEE, SUPER]) {
+      const r = await broadcastTo(actor, body);
+      assertEquals(r.status, 400, JSON.stringify(body));
+      assertEquals(r.sentTo, []);
+    }
+  }
+});
+
+Deno.test("рассылка мастера: ровно выбранные пространства, остальные не затронуты", async () => {
+  const other = await broadcastTo(SUPER, { text: "hi", workspaces: ["other"] });
+  assertEquals(other.status, 200);
+  assertEquals(other.sentTo, [MEMBER_OTHER]);
+  const both = await broadcastTo(SUPER, { text: "hi", workspaces: ["cee", "other", "cee"] });
+  assertEquals(both.sentTo, [ADMIN_CEE, MEMBER_CEE, MASTER_CEE, MEMBER_OTHER].sort((a, b) => a - b));
+  const ghost = await broadcastTo(SUPER, { text: "hi", workspaces: ["cee", "nope"] });
+  assertEquals(ghost.status, 404);
+  assertEquals(ghost.sentTo, []);
 });
 
 // ── Нет воркспейса у админа — закрыто по умолчанию ───────────────────────────
