@@ -1,7 +1,14 @@
 // Тесты правил склейки встреч для claim (issues #168, #181).
 // Запуск: deno test supabase/functions/_shared/meeting-roster.test.ts
 import { assertEquals } from "jsr:@std/assert@1";
-import { mayGlueByRoom, rosterMatchApplies, scopeRoomKey } from "./meeting-roster.ts";
+import {
+  baseIdentityKey,
+  hasWorkspaceTag,
+  mayGlueByRoom,
+  rosterMatchApplies,
+  scopeRoomKey,
+  workspaceScopedKey,
+} from "./meeting-roster.ts";
 
 // ── Ключ комнаты сужается до дня (issue #181) ──────────────────────────────────
 
@@ -55,4 +62,19 @@ Deno.test("по ссылке не клеит к встрече без соста
   const room = { ownerEmail: "i.ravilova@dodobrands.io", attendees: [] };
   assertEquals(mayGlueByRoom("v.garro@dodobrands.io", room), false);
   assertEquals(mayGlueByRoom("I.Ravilova@dodobrands.io", room), true);
+});
+
+// Своя строка пространства, когда строка с общим ключом в другом пространстве не подтверждена
+// (решение 05.11.2026): ключ сужается до пространства, повторный claim даёт тот же ключ.
+Deno.test("ключ пространства: суффикс метки, повтор даёт тот же ключ, база восстанавливается", () => {
+  const k = workspaceScopedKey("evt:2026-11-05", "world");
+  assertEquals(k, "evt:2026-11-05#ws:world");
+  assertEquals(workspaceScopedKey(k, "world"), k);
+  assertEquals(baseIdentityKey(k), "evt:2026-11-05");
+  assertEquals(baseIdentityKey("evt:2026-11-05"), "evt:2026-11-05");
+  assertEquals(hasWorkspaceTag(k), true);
+  assertEquals(hasWorkspaceTag("evt:2026-11-05"), false);
+  // Комнатный ключ: сначала день, потом метка — повторный claim снова находит ту же строку.
+  const room = workspaceScopedKey(scopeRoomKey("room", "kontur:abc", "2026-11-05T10:00:00Z"), "world");
+  assertEquals(room, "kontur:abc:2026-11-05#ws:world");
 });

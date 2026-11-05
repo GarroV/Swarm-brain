@@ -58,6 +58,7 @@ Deno.test("встречу писали двое — видит каждый из
 const BOB = "bob@world.io";
 const mergedA = {
   group_id: "cee",
+  identity_verified: true,
   recorders: [{ telegram_id: RECORDER }, { telegram_id: OTHER }],
   attendees: [{ email: "ann@team.io" }, { email: "Bob@World.io" }],
 };
@@ -65,6 +66,15 @@ const mergedA = {
 Deno.test("склейка между пространствами: записавший из B в составе встречи видит свой черновик в строке A", () => {
   assertEquals(canAccessDraftMeeting(mergedA, OTHER, false, "world", BOB), true);
   assertEquals(canAccessDraftMeeting(mergedA, OTHER, false, "world", " BOB@world.io "), true);
+});
+
+Deno.test("склейка между пространствами: строка не подтверждена сервером — отказ даже владельцу из состава", () => {
+  // Атака (а): человек из B сам вписал себя в состав и встал в строку A по ключу (до проверки).
+  // Атака (б): строку с ключом A заранее создали в B — у неё подтверждения нет.
+  assertEquals(canAccessDraftMeeting({ ...mergedA, identity_verified: false }, OTHER, false, "world", BOB), false);
+  assertEquals(canAccessDraftMeeting({ ...mergedA, identity_verified: undefined }, OTHER, false, "world", BOB), false);
+  // В своём пространстве подтверждение не нужно — как раньше.
+  assertEquals(canAccessDraftMeeting({ ...mergedA, identity_verified: false }, RECORDER, false, "cee"), true);
 });
 
 Deno.test("склейка между пространствами: записавший из B НЕ в составе (знал ключ) — отказ", () => {
