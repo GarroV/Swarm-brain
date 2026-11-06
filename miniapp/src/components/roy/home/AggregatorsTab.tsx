@@ -31,14 +31,14 @@ export function AggregatorsTab({ codes }: { codes: string[] }) {
   const rows = data.countries.filter((c) => codes.includes(c.cc) && Object.keys(c.scores).length);
   const title = new Map(data.aggregators.map((a) => [a.key, a]));
   return (
-    <div className={card}>
-      <div className="grid grid-cols-2 gap-2 min-[1400px]:grid-cols-3">
+    <div className={`${card} @container`}>
+      <div className="grid grid-cols-1 gap-2 @[320px]:grid-cols-2 @[500px]:grid-cols-3">
         {mine.map((a) => {
           const d = scoreDigits(a.scale);
           return (
             <Stat key={a.key} label={a.title}
-              value={<>{num(a.avg, d)}<small className="ml-0.5 font-medium text-ink-mute" style={{ fontSize: 12 }}>/{a.scale}</small>{" "}
-                <Delta v={a.delta} digits={deltaDigits(a.scale)} small /></>}
+              value={<span className="whitespace-nowrap" style={{ fontSize: "clamp(16px, 5.7cqi, 18px)" }}>{num(a.avg, d)}<small className="ml-0.5 font-medium text-ink-mute" style={{ fontSize: 12 }}>/{a.scale}</small>{" "}
+                <Delta v={a.delta} digits={deltaDigits(a.scale)} small /></span>}
               note={dt(`IMF ${num(imf.get(a.key)?.avg ?? null, d)} · ${a.pizzerias} пицц.`, `IMF ${num(imf.get(a.key)?.avg ?? null, d)} · ${a.pizzerias} pizzerias`)} />
           );
         })}
