@@ -4,12 +4,19 @@ import { EMPTY_FILTERS, isFilterActive, parseSavedFilters, type MeetingsFilterSt
 
 const filled: MeetingsFilterState = {
   query: "дизайн", period: "week", from: "", to: "",
-  countries: ["RS", "ID"], sources: ["Granola"], people: ["Indira Ravilova"],
+  countries: ["RS", "ID"], sources: ["granola"], people: ["Indira Ravilova"],
   storage: "personal", status: "confirmed",
 };
 
 Deno.test("сохранённый выбор восстанавливается целиком", () => {
   assertEquals(parseSavedFilters(JSON.stringify(filled)), filled);
+});
+
+Deno.test("старые ярлыки источников восстанавливают тот же выбор по стабильным ключам (#137)", () => {
+  const legacy = { ...filled, sources: ["Granola", "Read.ai", "Swarm Brain", "Встреча", "bumblebee", "scriba"] };
+  assertEquals(parseSavedFilters(JSON.stringify(legacy)).sources, [
+    "granola", "read_ai", "web-recorder", "meeting", "bumblebee", "scriba",
+  ]);
 });
 
 Deno.test("хранится пресет периода, а не его границы — «Неделя» не протухает", () => {

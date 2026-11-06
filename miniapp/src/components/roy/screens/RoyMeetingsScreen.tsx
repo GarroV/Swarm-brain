@@ -17,7 +17,7 @@ import { EMPTY_FILTERS } from "@/lib/meetingsFilters";
 import { useConfirm } from "@/components/ui/confirm";
 import type { Entry } from "@/types";
 import { formatDate } from "@/lib/displayFormat";
-import { recordedByOf } from "@/lib/agentMeeting";
+import { meetingSourceLabel } from "@/lib/sourceLabels";
 
 const SEGS = [
   { id: "all", label: "Все", en: "All" },
@@ -25,36 +25,6 @@ const SEGS = [
   { id: "confirmed", label: "Подтверждены", en: "Confirmed" },
 ];
 
-/** Запись из браузера (офлайн-встреча): `meetings.source`, см. docs/decisions/2026-10-16-web-recorder.md. */
-export const WEB_RECORDER_SOURCE = "web-recorder";
-// Ярлык — ключ фильтра «Источник». Записано самим Swarm (владелец 19.10.2026: «должна будет в списке
-// отображаться как Swarm Brain» — видно, где записано); имя продукта одно на обоих языках.
-const WEB_RECORDER_LABEL = "Swarm Brain";
-
-/** Ярлык источника на языке интерфейса: фильтры хранят ключ, глаз видит язык сессии. */
-export function localizeSource(label: string, dt: (ru: string, en: string) => string): string {
-  return label === "Встреча" ? dt(label, "Meeting") : label;
-}
-
-// Источник встречи для подписи. Запись рекордера и бота встреч различаются (#788): чьей записью
-// встреча легла в базу, говорит recorded_by — у черновика в строке, у записи базы в metadata.
-export function sourceLabel(x: {
-  source: string;
-  recorded_by?: string | null;
-  agent_version?: string | null;
-  metadata?: Record<string, unknown> | null;
-}): string {
-  if (x.source === "granola") return "Granola";
-  if (x.source === "read_ai") return "Read.ai";
-  if (x.source === WEB_RECORDER_SOURCE) return WEB_RECORDER_LABEL;
-  const fromMeta = x.metadata?.recorded_by;
-  const by = recordedByOf({
-    source: x.source,
-    recorded_by: x.recorded_by ?? (typeof fromMeta === "string" ? fromMeta : null),
-    agent_version: x.agent_version,
-  });
-  return by ?? "Встреча";
-}
 const isConfirmed = (e: Entry) => e.metadata?.confirmed === true;
 function fmtDate(iso: string | null): string | null {
   return formatDate(iso, { day: "numeric", month: "short" });
@@ -93,7 +63,7 @@ function MeetingCard({ e, onOpen, onRemove, mobile }: { e: Entry; onOpen: () => 
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <span className="inline-flex items-center font-semibold" style={{ fontSize: 11, color: "var(--meet-ink)", background: "var(--meet-soft)", borderRadius: 7, padding: "1px 7px" }}>
-                {localizeSource(sourceLabel(e), dt)}
+                {meetingSourceLabel(e, dt)}
               </span>
               {isConfirmed(e) && <StorageBadge isPrivate={e.is_private} />}
               <Market code={e.countries?.[0]} />
