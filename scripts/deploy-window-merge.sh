@@ -85,7 +85,7 @@ deploy_functions() {
   # двигает только сама раскатка).
   if [ "${DEPLOY_DRY:-0}" = "1" ]; then
     git fetch --tags --force -q origin main || true
-    ./scripts/deploy-window.sh plan || say "(план функций не собрался)"
+    ./scripts/deploy-window.sh plan || { say "(план функций не собрался)"; return 1; }
     return 0
   fi
 
@@ -125,10 +125,41 @@ if [ "$FORCE" != "1" ] && [ "$((10#$HOUR))" -lt 23 ] && [ "$((10#$HOUR))" -ge 7 
 fi
 say "Окно: $(now_local) — можно катить (dry-run=$DRY_RUN)"
 
-# ── Выбор PR ──────────────────────────────────────────────────────────────────
+# ── Незавершённая раскатка функций (#192) ──────────────────────────────────────
+MAIN_CURRENT=1
 git fetch -q --force origin "+refs/heads/main:refs/remotes/origin/main" 2>/dev/null \
-  || say "⚠ Не смог обновить origin/main — гейт миграций сравнит с тем, что есть локально."
-git fetch -q --force origin "+refs/tags/$PROD_TAG:refs/tags/$PROD_TAG" 2>/dev/null || true
+  || { MAIN_CURRENT=0; say "⚠ Не смог обновить origin/main — гейт миграций сравнит с тем, что есть локально."; }
+TAG_CURRENT=1
+git fetch -q --force origin "+refs/tags/$PROD_TAG:refs/tags/$PROD_TAG" 2>/dev/null || TAG_CURRENT=0
+
+# Только ночью: FORCE днём не заменяет ручную проверку активности. prod-deployed
+# остаётся указателем незавершённого пакета, даже когда его PR уже закрыт и метка снята.
+if [ "$((10#$HOUR))" -ge 23 ] || [ "$((10#$HOUR))" -lt 7 ]; then
+  if [ "$MAIN_CURRENT" != 1 ] || [ "$TAG_CURRENT" != 1 ]; then
+    say "Не удалось сверить незавершённую раскатку с origin — новые PR не выбираю."
+    exit 1
+  fi
+  drift=0
+  git diff --quiet "$PROD_TAG" origin/main -- supabase/functions/ || drift=$?
+  if [ "$drift" -gt 1 ]; then
+    say "Не удалось сравнить функции с prod-deployed — новые PR не выбираю."
+    exit 1
+  fi
+  if [ "$drift" = 1 ]; then
+    say "Сначала догоняю функции из main: prod-deployed отстаёт, даже если открытых PR нет."
+    if [ "$DRY_RUN" = 1 ]; then
+      DEPLOY_DRY=1 deploy_functions || exit 1
+    else
+      deploy_functions
+      if [ "$FUNCS_RESULT" != "раскатаны" ]; then
+        say "Догоняющая раскатка не завершилась; prod-deployed сохраняет пакет, новые PR не выбираю."
+        exit 1
+      fi
+    fi
+  fi
+fi
+
+# ── Выбор PR ──────────────────────────────────────────────────────────────────
 
 PRS="$(gh pr list --repo "$REPO" --label "$LABEL" --state open \
         --json number,title,mergeable,mergeStateStatus,createdAt \
