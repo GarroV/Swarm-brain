@@ -1,23 +1,26 @@
 "use client";
-import { useEffect, useState } from "react";
-import { fetchTasks } from "@/lib/api";
+import { useEffect, useMemo, useState } from "react";
+import { fetchTasks, fetchTasksDelta } from "@/lib/api";
 import { countMyOverdue } from "@/lib/navBadges";
+import { createOverdueTaskSource } from "@/lib/overdueTasks";
 import type { Me } from "@/types";
 
-// Число моих просроченных задач для кружка на «Задачи» (issue #903). Берёт тот же GET /tasks,
-// что и экраны задач (запросы склеивает request-cache, отдельного эндпоинта нет), и считает на
+// Число моих просроченных задач для кружка на «Задачи» (issue #903). Первый GET /tasks,
+// далее прежние триггеры догружают дельту; усечённая дельта — полный снимок (#492, часть).
+// Запросы склеивает существующий request-cache, отдельного эндпоинта нет. Считает на
 // клиенте через matchesLens/isOverdue — одно правило с доской. Обновляется по `refreshKey`
 // (смена таба, правка задачи) и при возврате на вкладку. Ошибку глотаем: бейдж — фон,
 // не повод ронять каркас (та же деградация, что у счётчика вычитки).
 export function useOverdueCount(me: Me | null, refreshKey: unknown): number {
   const [count, setCount] = useState(0);
+  const source = useMemo(() => createOverdueTaskSource({ full: fetchTasks, delta: fetchTasksDelta }), [me]);
   useEffect(() => {
     if (!me) return;
     let alive = true;
     const load = () => {
-      fetchTasks()
+      source.refresh()
         .then((tasks) => {
-          if (alive) setCount(countMyOverdue(tasks, me));
+          if (alive && tasks) setCount(countMyOverdue(tasks, me));
         })
         .catch((e) => console.warn("[useOverdueCount]", e));
     };
@@ -28,8 +31,9 @@ export function useOverdueCount(me: Me | null, refreshKey: unknown): number {
     document.addEventListener("visibilitychange", onVisible);
     return () => {
       alive = false;
+      source.cancelPending();
       document.removeEventListener("visibilitychange", onVisible);
     };
-  }, [me, refreshKey]);
+  }, [me, refreshKey, source]);
   return count;
 }
