@@ -69,6 +69,8 @@ export interface ExternalFetchOptions {
   sleepFn?: (ms: number, signal?: AbortSignal) => Promise<void>;
   /** Подпись вызова OpenAI для учёта расхода (`model-usage.ts`, #311): зачем и к чему. */
   usage?: UsageLabel;
+  /** Подмена записи расхода для проверки потокового ответа без БД/сети. */
+  recordUsageFn?: typeof recordModelUsage;
 }
 
 /** URL для лога: без query (там бывают ключи и запросы людей) и без токена бота в пути. */
@@ -162,7 +164,22 @@ export async function externalFetch(
     if (!canRetry) {
       if (opts.service === "openai") await noteModelOutcome(res, failure);
       if (failure) throw failure;
-      if (opts.service === "openai" && res?.ok) await recordModelUsage(url, init, res, opts.usage);
+      if (opts.service === "openai" && res?.ok) {
+        const work = (opts.recordUsageFn ?? recordModelUsage)(url, init, res, opts.usage)
+          .catch(() => {
+            console.error("[model-usage] accounting task failed");
+          });
+        if (res.headers.get("content-type")?.toLowerCase().includes("text/event-stream")) {
+          // Чтение usage ждёт финального кадра, но не должно задерживать первые дельты.
+          const runtime =
+            (globalThis as typeof globalThis & { EdgeRuntime?: { waitUntil(work: Promise<void>): void } }).EdgeRuntime;
+          try {
+            runtime?.waitUntil(work);
+          } catch {
+            console.warn("[model-usage] could not retain accounting task");
+          }
+        } else await work;
+      }
       return res as Response;
     }
     await res?.body?.cancel();

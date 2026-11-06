@@ -9,6 +9,7 @@
 // Учёт никогда не роняет вызов: сбой записи — строка в лог.
 import { AsyncLocalStorage } from "node:async_hooks";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { readOpenAiSseEvents } from "./openai-sse.ts";
 
 export type UsageKind = "chat" | "embedding" | "transcription" | "other";
 
@@ -155,6 +156,51 @@ function envInsert(): Insert | null {
   return insertRow;
 }
 
+/** Только модель и usage из SSE; текст дельт не накапливается. */
+async function responseUsageBody(res: Response): Promise<unknown> {
+  const copy = res.clone();
+  if (!res.headers.get("content-type")?.toLowerCase().includes("text/event-stream")) {
+    return await copy.json().catch(() => null);
+  }
+  const reader = copy.body?.getReader();
+  if (!reader) return null;
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let done = false;
+  let model: string | null = null;
+  let usage: Record<string, unknown> | null = null;
+  const consume = (text: string) => {
+    const next = readOpenAiSseEvents(buffer + text, done);
+    buffer = next.rest;
+    done = next.done;
+    for (const raw of next.frames) {
+      if (!raw || typeof raw !== "object" || Array.isArray(raw)) continue;
+      const frame = raw as Record<string, unknown>;
+      if (typeof frame.model === "string") model = frame.model;
+      if (frame.usage && typeof frame.usage === "object" && !Array.isArray(frame.usage)) {
+        usage = frame.usage as Record<string, unknown>;
+      }
+    }
+  };
+  try {
+    while (!done) {
+      const next = await reader.read();
+      if (next.done) {
+        consume(decoder.decode() + "\n\n");
+        break;
+      }
+      consume(decoder.decode(next.value, { stream: true }));
+    }
+  } catch {
+    // Прерванный поток может не содержать usage: оставляем null, не выдумываем нулевую цену.
+    console.warn("[model-usage] incomplete stream; usage may be unknown");
+  } finally {
+    if (done) void reader.cancel().catch(() => {});
+    reader.releaseLock();
+  }
+  return { model, usage };
+}
+
 /**
  * Записать расход удачного вызова. Ответ читается из копии — оригинал остаётся вызывающему.
  * Никогда не бросает: учёт не должен ронять работу.
@@ -169,7 +215,7 @@ export async function recordModelUsage(
   if (!insert) return;
   try {
     const kind = usageKind(url);
-    const body = await res.clone().json().catch(() => null);
+    const body = await responseUsageBody(res);
     const parsed = parseUsage(kind, body);
     const model = parsed.model ?? requestModel(init);
     const scoped = { ...usageScope.getStore(), ...label };

@@ -23,14 +23,17 @@ export type OpenAiSseChunk = {
  * `alreadyDone` — поток уже закончился раньше: тогда ничего не разбираем (хвост после `[DONE]`
  * протоколом не определён, и принимать его за содержимое ответа нельзя).
  */
-export function readOpenAiSseChunk(buffer: string, alreadyDone: boolean): OpenAiSseChunk {
-  if (alreadyDone) return { deltas: [], rest: "", done: true };
+export type OpenAiSseEvents = { frames: unknown[]; rest: string; done: boolean };
 
-  const deltas: string[] = [];
+/** JSON-кадры тем же разборщиком для текста и учёта usage. */
+export function readOpenAiSseEvents(buffer: string, alreadyDone: boolean): OpenAiSseEvents {
+  if (alreadyDone) return { frames: [], rest: "", done: true };
+
+  const frames: unknown[] = [];
   let done = false;
 
   // События разделены пустой строкой; последнее может быть недописано — оно уходит в rest.
-  const events = buffer.split("\n\n");
+  const events = buffer.replaceAll("\r\n", "\n").split("\n\n");
   const rest = events.pop() ?? "";
 
   for (const event of events) {
@@ -41,11 +44,10 @@ export function readOpenAiSseChunk(buffer: string, alreadyDone: boolean): OpenAi
       if (payload === "[DONE]") {
         done = true;
         // Ранний выход: всё, что после [DONE], к ответу отношения не имеет.
-        return { deltas, rest: "", done };
+        return { frames, rest: "", done };
       }
       try {
-        const content = JSON.parse(payload)?.choices?.[0]?.delta?.content;
-        if (typeof content === "string" && content.length > 0) deltas.push(content);
+        frames.push(JSON.parse(payload));
       } catch {
         // Битый кадр — пропускаем именно его, а не роняем весь разбор: одна кривая строка
         // не должна стоить человеку всех задач.
@@ -54,5 +56,15 @@ export function readOpenAiSseChunk(buffer: string, alreadyDone: boolean): OpenAi
     }
   }
 
+  return { frames, rest, done };
+}
+
+export function readOpenAiSseChunk(buffer: string, alreadyDone: boolean): OpenAiSseChunk {
+  const { frames, rest, done } = readOpenAiSseEvents(buffer, alreadyDone);
+  const deltas = frames.flatMap((frame) => {
+    const content = (frame as { choices?: Array<{ delta?: { content?: unknown } }> } | null)?.choices?.[0]?.delta
+      ?.content;
+    return typeof content === "string" && content.length > 0 ? [content] : [];
+  });
   return { deltas, rest, done };
 }
