@@ -1,5 +1,5 @@
 import { assertEquals } from "jsr:@std/assert";
-import { groupHome, hiddenCount, homeDateReason, homeTeam } from "./homeTasks.ts";
+import { groupHome, hiddenCount, homeDateReason, homeTeam, nextHomeTasks } from "./homeTasks.ts";
 import type { Task } from "../types.ts";
 
 const NOW = new Date(2026, 8, 24, 12, 0, 0); // 24.09.2026, полдень
@@ -20,6 +20,30 @@ function task(over: Partial<Task> & { id: string }): Task {
 
 const ru = (r: string) => r;
 const ids = (ts: Task[]) => ts.map((t) => t.id);
+
+Deno.test("nextHomeTasks: reminder without due date appears before a future deadline (#885)", () => {
+  const mine = [task({ id: "due", due_date: "2026-09-30" }), task({ id: "ping", remind_date: "2026-09-24" })];
+  assertEquals(ids(nextHomeTasks(mine, NOW)), ["ping", "due"]);
+  assertEquals(ids(mine), ["due", "ping"], "selection must not mutate the input");
+});
+
+Deno.test("nextHomeTasks: earliest due or future reminder; overdue first, closed and expired pings excluded (#885)", () => {
+  const mine = [
+    task({ id: "future", due_date: "2026-10-10" }),
+    task({ id: "ping", due_date: "2027-09-24", remind_date: "2026-09-24", reminded_at: "2026-09-24T00:00:00Z" }),
+    task({ id: "over", due_date: "2026-09-20", remind_date: "2026-09-24" }),
+    task({ id: "tomorrow", remind_date: "2026-09-25" }),
+    task({ id: "old", remind_date: "2026-09-20" }),
+    task({ id: "done", status: "done", remind_date: "2026-09-24" }),
+    task({ id: "cancelled", status: "cancelled", due_date: "2026-09-01" }),
+  ];
+  assertEquals(ids(nextHomeTasks(mine, NOW)), ["over", "ping", "tomorrow", "future"]);
+});
+
+Deno.test("nextHomeTasks: limit remains five and equal-date input order is stable", () => {
+  const mine = Array.from({ length: 7 }, (_, i) => task({ id: String(i), due_date: "2026-09-25" }));
+  assertEquals(ids(nextHomeTasks(mine, NOW)), ["0", "1", "2", "3", "4"]);
+});
 
 Deno.test("groupHome: секции по стенду в порядке Просрочено → Сегодня → Дальше → Без срока", () => {
   const s = groupHome([

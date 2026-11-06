@@ -50,6 +50,12 @@ export function homeDateReason(t: Task, now: Date): HomeDateReason | null {
 const byHomeDate = (now: Date) => (a: Task, b: Task) =>
   (homeDateReason(a, now)?.date ?? "9999").localeCompare(homeDateReason(b, now)?.date ?? "9999");
 
+/** Ближайшие задачи: тот же срок/пинг, что в таблице главной, просроченные первыми. */
+export function nextHomeTasks(mine: Task[], now: Date, limit = 5): Task[] {
+  return mine.filter((t) => !isDone(t) && homeDateReason(t, now) !== null)
+    .sort(byHomeDate(now)).slice(0, limit);
+}
+
 /**
  * «Мои задачи» главной: Просрочено · Сегодня · Дальше (ближайшие 6) · Без срока (4).
  * Секцию решает ближайшее из срока и пинга (homeDateReason), просрочка — только по сроку.

@@ -14,6 +14,8 @@ function fmtDue(iso: string | null, locale: string): string | null {
   return isNaN(d.getTime()) ? null : d.toLocaleDateString(locale, { day: "numeric", month: "short" });
 }
 
+export type TaskReminderHint = { date: string; label: string };
+
 type TaskRowProps = {
   task: Task;
   onToggle: () => void;
@@ -23,18 +25,21 @@ type TaskRowProps = {
   trailing?: ReactNode;
   /** Все метки воркспейса — из них показываем те, в чьих списках состоит задача (task.label_ids). */
   labels?: TaskLabel[];
+  /** Дата напоминания, из-за которой задача показана на текущей поверхности. */
+  reminder?: TaskReminderHint;
 };
 
 // Строка задачи в стиле macOS Reminders: крупный круглый чекбокс, заголовок, чипы (рынок/срок/важное),
 // аватар исполнителя. Непрозрачный фон — чтобы корректно работать внутри SwipeRow на мобайле.
-export function TaskRow({ task, onToggle, showAssignee = true, now = new Date(), trailing, labels = [] }: TaskRowProps) {
+export function TaskRow({ task, onToggle, showAssignee = true, now = new Date(), trailing, labels = [], reminder }: TaskRowProps) {
   const dt = useDt();
   const done = isDone(task);
   const overdue = isOverdue(task, now);
   const due = fmtDue(task.due_date, dt("ru-RU", "en-US"));
   // Пинг показываем, только пока он ЖДЁТ: отзвонивший (reminded_at) сгорел, и висящая
   // дата напоминания вводила бы в заблуждение — «напомнят», хотя уже напомнили.
-  const ping = done || task.reminded_at ? null : fmtDue(task.remind_date, dt("ru-RU", "en-US"));
+  // Исключение — дата, по которой поверхность отобрала задачу: это причина показа, не обещание отправки.
+  const ping = done ? null : fmtDue(reminder?.date ?? (task.reminded_at ? null : task.remind_date), dt("ru-RU", "en-US"));
   // Цикличность: показываем всегда, когда есть — по карточке должно быть видно, что
   // галочка не закроет задачу, а перенесёт её на следующий раз.
   const recur = recurrenceBadge(task, task.due_date, task.recur_anchor_dom);
@@ -100,7 +105,7 @@ export function TaskRow({ task, onToggle, showAssignee = true, now = new Date(),
             <span
               className="inline-flex items-center gap-1 font-semibold"
               style={{ fontSize: 10.5, color: "var(--accent-ink)", background: "var(--accent-soft)", borderRadius: 6, padding: "1px 6px" }}
-              title={dt("Напомним в этот день", "You'll be reminded on this day")}
+              title={reminder?.label ?? dt("Напомним в этот день", "You'll be reminded on this day")}
             >
               <RoyIcon name="bell" size={10} />
               {ping}
