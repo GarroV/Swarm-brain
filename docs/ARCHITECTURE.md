@@ -12,6 +12,8 @@
 
 ## Поверхности продукта
 
+Гейт размера исходников (#265) находится в `scripts/check-source-size.py`: один checker читает staged blobs в `.githooks/pre-commit`/`scripts/check`, а workflow `source-size.yml` проверяет итоговый HEAD относительно merge-base базовой ветки для всего PR. Учитываются исходники TS/JS, Python, shell (включая extensionless shebang), PowerShell, Swift, SQL, HTML/CSS/SCSS, YAML, Makefile и Dockerfile; лимит нового файла — 800 физических строк. `scripts/source-size-debt.json` фиксирует точные размеры существующих монолитов и сокращается вместе с ними: поднять число для разрешения роста нельзя. Проверка и Git-ошибки блокируют приёмку; `scripts/test-source-size.py` проверяет настоящий Git index, несколько коммитов PR, уменьшение долга и попытки обхода. Текущий реестр — технический долг, а не завершённый рефакторинг всех монолитов.
+
 Четыре пользовательские поверхности поверх одного бэкенда (Supabase Edge Functions + Postgres/pgvector + OpenAI):
 
 | Поверхность | Технология | Для чего | Бэкенд |

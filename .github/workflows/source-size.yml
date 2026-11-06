@@ -1,0 +1,32 @@
+name: Source size
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  source-size:
+    name: Размер исходников — без роста монолитов
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Git snapshot gate
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          if [ -n "$BASE_REF" ]; then
+            python3 scripts/check-source-size.py --base "origin/$BASE_REF"
+          else
+            python3 scripts/check-source-size.py --base HEAD^
+          fi
+      - name: Real Git fixtures
+        run: python3 scripts/test-source-size.py
+      - name: Mutation checks
+        run: python3 scripts/test-source-size.py porcha

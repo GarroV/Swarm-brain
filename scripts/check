@@ -250,6 +250,11 @@ need() { # need <инструмент> <имя проверки>
   failed+=("$2 (нет инструмента $1)")
   return 1
 }
+# Index/HEAD consistency here; the dedicated CI job also compares the whole PR
+# against its merge base, including commits already accepted by a local hook.
+if need python3 "размер исходников"; then
+  run "размер исходников" python3 scripts/check-source-size.py --staged
+fi
 if [[ "$scope" == "all" || "$scope" == "initiatives" ]]; then
   printf '\n──── доска инициатив (reports/check.json)\n'
   # Отдельным подпроцессом и без ловушки ERR: гейт доски сам разбирает коды возврата
