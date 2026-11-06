@@ -7,7 +7,7 @@ import type {
   OsmPoint,
 } from "../../../supabase/functions/market-ingest/types.ts";
 import type { CountryConfig } from "../countries/types.ts";
-import { distanceM } from "../../../supabase/functions/_shared/market/geo.ts";
+import { samePlace } from "../../../supabase/functions/_shared/market/geo.ts";
 import { httpGet } from "../lib.ts";
 import type { Adapter } from "./types.ts";
 
@@ -140,12 +140,13 @@ const toPoint = (row: PlaceRow, chain: string): OsmPoint => ({
 
 const isBranded = (g: PlaceRow[]) => g.some((r) => r.brand);
 
-/** Двойники одной сети ближе DUPLICATE_M склеиваются в первую запись — иначе точка считается дважды. */
+/** Двойники — по общему samePlace: ближе DUPLICATE_M или одинаковый адрес в пределах
+ *  канонического допуска 5 км. Иначе один магазин в текущем пакете считается дважды. */
 export function dropDuplicates(points: OsmPoint[]): OsmPoint[] {
   const kept = new Map<string, OsmPoint[]>();
   return points.filter((p) => {
     const same = kept.get(p.chain) ?? [];
-    if (same.some((k) => distanceM(k, p) <= DUPLICATE_M)) return false;
+    if (samePlace(p, same, DUPLICATE_M)) return false;
     kept.set(p.chain, [...same, p]);
     return true;
   });
