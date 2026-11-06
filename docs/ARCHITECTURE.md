@@ -1484,6 +1484,8 @@ Id живого приглашения веб помнит в `localStorage` (`s
 
 Юнит-проверки на двойнике Docker разделены по темам: `orchestrator-lifecycle.test.ts` — запуск, остановка, изоляция и сбои; `orchestrator.test.ts` — сценарии аккаунта. Общие doubles находятся в `bot/test-support/orchestrator.ts`; каждый тест создаёт свои экземпляры, общего изменяемого состояния нет.
 
+Тесты процесса встречи: `run-meeting.test.ts` и `run-meeting-admission.test.ts`; их per-instance fixture — `bot/test-support/run-meeting.ts`. HTTP-double клиента сохраняет реализацию в `swarm-client/testing/fake-swarm.ts`, а чистые контракты вынесены в соседний `fake-swarm-types.ts` с прежними type-экспортами.
+
 **Что это.** Долгоживущая служба рядом с Docker: на каждую встречу поднимает отдельный контейнер
 бота-участника, следит за ним и гасит после. Сам контейнер заявляет встречу, заходит в звонок,
 пишет звук, отдаёт запись в очередь выгрузки и в `meeting-ingest`. Входов два: **автозапуск по

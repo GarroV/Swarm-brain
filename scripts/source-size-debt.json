@@ -1,8 +1,6 @@
 {
   "bot/src/orchestrator/orchestrator.ts": 927,
-  "bot/src/orchestrator/run-meeting.test.ts": 828,
   "bot/src/orchestrator/smoke-orchestrator.ts": 902,
-  "bot/src/swarm-client/testing/fake-swarm.ts": 906,
   "miniapp/src/components/SettingsScreen.tsx": 885,
   "miniapp/src/components/TaskModal.tsx": 985,
   "miniapp/src/components/roy/screens/MeetAdminScreen.tsx": 1734,
