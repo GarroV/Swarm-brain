@@ -3,7 +3,7 @@
 # См. docs/DEPLOY.md.
 
 STAGING_FN := http://100.64.116.67:8020/functions/v1
-PROD_FN    := https://vbqglndbxkpmreccpqmr.supabase.co/functions/v1
+PROD_FN    := https://api.swarm-team.app/functions/v1
 MUSPEL     := muspelheim
 SB         := C:/projects/swarm-staging
 # Пароль staging-БД НЕ в git — читаем из ~/.swarm/staging_pgpw (git-ignored, вне репо).

@@ -101,3 +101,9 @@ docker restart supabase-edge-functions
 
 Обычный путь отката кода — `git revert` и раскатка как обычно. Миграции откатом шлюза не
 снимаются: транзакция откатывается только при сбое самого наката.
+
+## Main-router Edge Runtime
+
+Канон установленного app-router, provenance и порядок сравнения/обновления —
+[edge-runtime/README.md](edge-runtime/README.md) (#1129). Это отдельный host artifact;
+команда `functions` шлюза его не устанавливает.

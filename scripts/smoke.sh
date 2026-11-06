@@ -4,7 +4,7 @@
 #
 #   ./scripts/smoke.sh <FUNCTIONS_BASE_URL>
 #   ./scripts/smoke.sh http://100.64.116.67:8020/functions/v1      # staging (MUSPELHEIM, Tailscale)
-#   ./scripts/smoke.sh https://vbqglndbxkpmreccpqmr.supabase.co/functions/v1   # prod
+#   ./scripts/smoke.sh https://api.swarm-team.app/functions/v1   # prod
 #
 # Проверки — «дешёвые» и безопасные: без секретов и без мутаций.
 set -uo pipefail
