@@ -14,6 +14,7 @@
 // deno-lint-ignore-file no-import-prefix
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { onlyLive } from "./live.ts";
+import { isClosedStatus } from "./statuses.ts";
 import { buildReasonComment, type ReasonField, type ReasonLang } from "./sprint-reason-comment.ts";
 import { postReasonComment } from "./sprint-reason-post.ts";
 import {
@@ -198,6 +199,9 @@ async function loadAllItems(
       const frozen = !!r.frozen_at;
       const removed = r.removed_at != null;
       const isMoved = r.moved_at != null;
+      const status = frozen ? (r.frozen_status as string) : ((t?.status as string) ?? "cancelled");
+      // Closed tasks stay in the sprint: the carry intent is relevant only while open (#1159).
+      const toCarry = !!r.to_carry && !isClosedStatus(status);
       const projectId = (t?.project_id as string | null) ?? null;
       const target = isMoved && r.moved_to ? targets.get(r.moved_to as string) ?? null : null;
 
@@ -213,7 +217,7 @@ async function loadAllItems(
         in_plan: !!r.in_plan,
         added_at: r.added_at as string,
         title,
-        status: frozen ? (r.frozen_status as string) : ((t?.status as string) ?? "cancelled"),
+        status,
         assignees: frozen ? ((r.frozen_assignees as string[]) ?? []) : ((t?.assignees as string[]) ?? []),
         project_id: projectId,
         project: removed
@@ -230,9 +234,9 @@ async function loadAllItems(
         check_note: (r.check_note as string | null) ?? null,
         check_at: (r.check_at as string | null) ?? null,
         check_by: (r.check_by as string | null) ?? null,
-        to_carry: !!r.to_carry,
+        to_carry: toCarry,
         // Причина переживает снятие пометки (чтобы вернуться при повторной), но видна только на пометке.
-        carry_reason: r.to_carry ? ((r.carry_reason as string | null) ?? null) : null,
+        carry_reason: toCarry ? ((r.carry_reason as string | null) ?? null) : null,
         carry_count: (r.carry_count as number | null) ?? 0,
         carried_manual: (r.carried_manual as boolean | null) ?? null,
         removed,
