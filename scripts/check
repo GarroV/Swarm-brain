@@ -63,8 +63,23 @@ initiatives_gate() {
   FAILED=0
   ROWS=()
 
+  # JSON strings: quotes, backslashes and every shell-representable control character.
+  # Bash 3.2 builtins keep the report independent of a failed Deno or missing Node (#1105).
+  json_escape() {
+    local value="$1" char escaped n
+    value=${value//\\/\\\\}
+    value=${value//\"/\\\"}
+    for ((n=1; n<32; n++)); do
+      printf -v char '\\%03o' "$n"
+      printf -v char '%b' "$char"
+      printf -v escaped '\\u%04x' "$n"
+      value=${value//"$char"/"$escaped"}
+    done
+    printf '%s' "$value"
+  }
+
   row() { # роль статус выполнено пропущено подробность
-    ROWS+=("{\"role\":\"$1\",\"status\":\"$2\",\"executed\":$3,\"skipped\":$4,\"detail\":\"$5\"}")
+    ROWS+=("{\"role\":\"$(json_escape "$1")\",\"status\":\"$(json_escape "$2")\",\"executed\":$3,\"skipped\":$4,\"detail\":\"$(json_escape "$5")\"}")
     printf '%-16s %-8s %s\n' "$1" "$2" "$5"
     [ "$2" = fail ] && FAILED=1
     return 0
@@ -126,21 +141,21 @@ initiatives_gate() {
     row "границы" "empty" 0 0 "файлов фичи ещё нет"
   else
     out=$(deno_by_area fmt --check); st=$?; keep формат "$out"
-    row "формат" "$([ $st -eq 0 ] && echo pass || echo fail)" "$N" 0 "$(echo "$out" | tail -1 | tr -d '"' | tr '\n' ' ')"
+    row "формат" "$([ $st -eq 0 ] && echo pass || echo fail)" "$N" 0 "$(echo "$out" | tail -1 | tr '\n' ' ')"
 
     out=$(deno_by_area lint); st=$?; keep линт "$out"
-    row "линт" "$([ $st -eq 0 ] && echo pass || echo fail)" "$N" 0 "$(echo "$out" | tail -2 | tr -d '"' | tr '\n' ' ')"
+    row "линт" "$([ $st -eq 0 ] && echo pass || echo fail)" "$N" 0 "$(echo "$out" | tail -2 | tr '\n' ' ')"
 
     out=$(deno run -A scripts/check-graph.ts 2>&1); st=$?; keep граф "$out"
-    row "мёртвый-код" "$([ $st -eq 0 ] && echo pass || echo fail)" "$N" 0 "$(echo "$out" | grep -i 'мёртв' | tr -d '"' | tr '\n' ' ')"
-    row "границы" "$([ $st -eq 0 ] && echo pass || echo fail)" "$N" 0 "$(echo "$out" | grep -i 'границ' | tr -d '"' | tr '\n' ' ')"
+    row "мёртвый-код" "$([ $st -eq 0 ] && echo pass || echo fail)" "$N" 0 "$(echo "$out" | grep -i 'мёртв' | tr '\n' ' ')"
+    row "границы" "$([ $st -eq 0 ] && echo pass || echo fail)" "$N" 0 "$(echo "$out" | grep -i 'границ' | tr '\n' ' ')"
   fi
 
   # Типы: edge-функции (точки входа явно — без них deno check проверяет не всё) и веб.
   ENTRIES=()
   while IFS= read -r e; do ENTRIES+=("$e"); done < <(find supabase/functions -mindepth 2 -maxdepth 2 -name index.ts)
   out=$(deno check "${CFG[@]}" "${ENTRIES[@]}" 2>&1); st=$?; keep типы-функции "$out"
-  row "типы-функции" "$([ $st -eq 0 ] && echo pass || echo fail)" "${#ENTRIES[@]}" 0 "$(echo "$out" | tail -1 | tr -d '"' | tr '\n' ' ')"
+  row "типы-функции" "$([ $st -eq 0 ] && echo pass || echo fail)" "${#ENTRIES[@]}" 0 "$(echo "$out" | tail -1 | tr '\n' ' ')"
 
   # Без miniapp/node_modules `npx --no-install` молча берёт ГЛОБАЛЬНЫЙ tsc: типы зависимостей
   # не резолвятся, и проверка печатает ошибки в исходниках — то есть винит код, которого никто
@@ -153,7 +168,7 @@ initiatives_gate() {
     row "типы-веб" "fail" 0 0 "$out"
   else
     out=$(cd miniapp && npx --no-install tsc --noEmit 2>&1); st=$?; keep типы-веб "$out"
-    row "типы-веб" "$([ $st -eq 0 ] && echo pass || echo fail)" 1 0 "$(echo "$out" | tail -1 | tr -d '"' | tr '\n' ' ')"
+    row "типы-веб" "$([ $st -eq 0 ] && echo pass || echo fail)" 1 0 "$(echo "$out" | tail -1 | tr '\n' ' ')"
   fi
 
   # Тесты: машинный отчёт JUnit + покрытие. Пропущенный тест — падение (см. ниже).
@@ -185,7 +200,7 @@ initiatives_gate() {
   if [ -d reports/cov ]; then
     deno coverage --lcov --output=reports/cov.lcov reports/cov > /dev/null 2>&1
     out=$(scripts/gate-coverage.sh "$(cat scripts/coverage-floor.txt)" reports/cov.lcov 2>&1); st=$?
-    row "покрытие" "$([ $st -eq 0 ] && echo pass || echo fail)" 1 0 "$(echo "$out" | tail -1 | tr -d '"')"
+    row "покрытие" "$([ $st -eq 0 ] && echo pass || echo fail)" 1 0 "$(echo "$out" | tail -1)"
   else
     row "покрытие" "fail" 0 1 "нет данных покрытия"
   fi

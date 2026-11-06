@@ -61,6 +61,8 @@ jobs:
       # Хук pre-push: метка на уже опубликованном коммите не гоняет scripts/check (#943).
       - name: Хук pre-push — метка на опубликованном коммите + порча
         run: ./scripts/test-pre-push.sh && ./scripts/test-pre-push.sh porcha
+      - name: Отчёт проверок — JSON при успехе и ошибке Deno
+        run: python3 scripts/test-check-report.py
       - name: Шлюз раскатки — заливка рекордера + порча
         run: ./scripts/test-gate.sh && ./scripts/test-gate.sh porcha
 
