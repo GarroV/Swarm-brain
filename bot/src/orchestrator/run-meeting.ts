@@ -130,6 +130,11 @@ interface AudioWatchHooks {
 
 export interface MeetingRunOptions {
   readonly joinUrl: string;
+  /**
+   * Когда входить в комнату (ISO, `starts_at` календарного задания). Контейнер поднимается заранее —
+   * до этого момента бот ждёт, потом заходит. `undefined` — без ожидания (ручное приглашение).
+   */
+  readonly enterAt?: string;
   readonly displayName: string;
   readonly adapter: MeetingAdapter;
   readonly session: MeetingSession;
@@ -174,6 +179,7 @@ export type MeetingOutcome =
   | "guest_access_closed"
   | "door_timeout"
   | "captcha"
+  | "stopped_before_join"
   | "stopped_at_door"
   | "no_audio"
   | "nothing_recorded"
@@ -510,6 +516,26 @@ async function record(context: RunContext): Promise<MeetingOutcome> {
 }
 
 /**
+ * Дождаться начала встречи: заранее поднятый по календарю бот входит в комнату ровно в `enterAt`,
+ * а не раньше. Короткими отрезками, чтобы сигнал остановки не ждал начала. Возвращает `false`,
+ * если остановили до начала.
+ */
+async function isStartReached(context: RunContext): Promise<boolean> {
+  const { enterAt } = context.options;
+  if (enterAt === undefined) return true;
+  const startMs = Date.parse(enterAt);
+  if (context.now() < startMs) {
+    context.log(`жду начала встречи до ${new Date(startMs).toISOString().slice(11, 19)} UTC`);
+  }
+  while (!context.options.stop.aborted) {
+    const left = startMs - context.now();
+    if (left <= 0) return true;
+    await context.sleep(Math.min(left, context.timing.pollMs));
+  }
+  return false;
+}
+
+/**
  * Зайти в звонок. Сбой загрузки страницы — ещё попытка (до `JOIN_MAX_ATTEMPTS`), любой другой
  * сбой — сразу отказ. Нотиса `join_failed` уходит один раз, после последней неудачи.
  */
@@ -540,6 +566,13 @@ async function isJoined(context: RunContext): Promise<boolean> {
 }
 
 async function afterClaim(context: RunContext): Promise<MeetingOutcome> {
+  // Claim уже взят: он заводит строку встречи (нотисам нужен `meeting_id`) и отсекает `defer` до
+  // ожидания — бот, которому писать не нужно, не стоит зря. Лиз держится ударами heartbeat.
+  if (!(await isStartReached(context))) {
+    context.log("остановили до начала встречи — в звонок не заходим");
+    await leaveQuietly(context);
+    return "stopped_before_join";
+  }
   if (!(await isJoined(context))) return "join_failed";
 
   const door = await passDoor(context);

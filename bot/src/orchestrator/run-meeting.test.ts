@@ -26,6 +26,10 @@ interface World {
    */
   readonly finalSeconds: (number | null)[];
   now: number;
+  /**
+   * Часы теста в момент каждого вызова `join`.
+   */
+  readonly joinedAt: number[];
   readonly options: MeetingRunOptions;
   readonly stop: AbortController;
 }
@@ -83,6 +87,7 @@ function build(script: Script = {}): World {
     beats,
     finalSeconds,
     now: 0,
+    joinedAt: [],
     stop,
     options: {
       joinUrl: "https://meet.google.com/abc-defg-hij",
@@ -103,6 +108,7 @@ function build(script: Script = {}): World {
       adapter: {
         join: (url) => {
           calls.push(`join:${url}`);
+          world.joinedAt.push(world.now);
           const scripted = script.joinErrors;
           const failure =
             scripted === undefined
@@ -540,6 +546,65 @@ describe("громкие отказы", () => {
 
     expect(await runMeeting(world.options)).toBe("join_failed");
     expect(world.calls.filter((call) => call.startsWith("join:"))).toHaveLength(1);
+  });
+
+  it("календарное задание со starts_at в будущем → заход не раньше начала, строка в журнале", async () => {
+    const world = build();
+    const lines: string[] = [];
+    const options = {
+      ...world.options,
+      enterAt: new Date(62_000).toISOString(),
+      log: (line: string): void => {
+        lines.push(line);
+      },
+    };
+
+    expect(await runMeeting(options)).toBe("recorded");
+    expect(world.joinedAt).toHaveLength(1);
+    expect(world.joinedAt[0]).toBeGreaterThanOrEqual(62_000);
+    expect(lines).toContain("жду начала встречи до 00:01:02 UTC");
+  });
+
+  it("starts_at в прошлом → заход сразу, без ожидания", async () => {
+    const world = build();
+    world.now = 100_000;
+    const lines: string[] = [];
+    const options = {
+      ...world.options,
+      enterAt: new Date(10_000).toISOString(),
+      log: (line: string): void => {
+        lines.push(line);
+      },
+    };
+
+    expect(await runMeeting(options)).toBe("recorded");
+    expect(world.joinedAt).toEqual([100_000]);
+    expect(lines.some((line) => line.startsWith("жду начала"))).toBe(false);
+  });
+
+  it("ручное приглашение (без enterAt) → заход сразу", async () => {
+    const world = build();
+
+    expect(await runMeeting(world.options)).toBe("recorded");
+    expect(world.joinedAt).toEqual([0]);
+  });
+
+  it("остановили во время ожидания начала → нет захода, нет join_failed", async () => {
+    const world = build();
+    const options = {
+      ...world.options,
+      enterAt: new Date(600_000).toISOString(),
+      sleep: (ms: number): Promise<void> => {
+        world.now += ms;
+        world.stop.abort();
+        return Promise.resolve();
+      },
+    };
+
+    expect(await runMeeting(options)).toBe("stopped_before_join");
+    expect(world.joinedAt).toEqual([]);
+    expect(world.notices).toEqual([]);
+    expect(world.calls).toContain("leave");
   });
 
   it("запись не стартовала → no_audio, из звонка выходим", async () => {
