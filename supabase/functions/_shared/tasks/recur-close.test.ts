@@ -55,3 +55,31 @@ Deno.test("закрытий не было — не повтор", () => {
     null,
   );
 });
+
+Deno.test("часы базы впереди до 5 с — повтор не пропускает следующий цикл (#1013)", () => {
+  for (const age of [-1, -16, -4_999, -5_000, 0, RECUR_DUPLICATE_WINDOW_MS]) {
+    assertEquals(
+      duplicateRecurClose({ lastClose: close("2026-10-02", age), currentDue: "2026-10-02", nowMs: NOW }),
+      { from: "2026-10-01", to: "2026-10-02" },
+      `возраст закрытия ${age} мс`,
+    );
+  }
+});
+
+Deno.test("за пределами допуска часов и окна повтора — новый запрос (#1013)", () => {
+  for (const age of [-5_001, -60_000, RECUR_DUPLICATE_WINDOW_MS + 1]) {
+    assertEquals(
+      duplicateRecurClose({ lastClose: close("2026-10-02", age), currentDue: "2026-10-02", nowMs: NOW }),
+      null,
+      `возраст закрытия ${age} мс`,
+    );
+  }
+  assertEquals(
+    duplicateRecurClose({
+      lastClose: { note: recurCloseNote("2026-10-01", "2026-10-02"), created_at: "invalid" },
+      currentDue: "2026-10-02",
+      nowMs: NOW,
+    }),
+    null,
+  );
+});
