@@ -12,7 +12,7 @@ PRs and logs; private snapshots/plans use mode600. Never include failed meetings
 with unknown duration.
 
 Each of exactly four plan items has `meeting_id`, `row_hash`, `audio_hash`, `measured_seconds`.
-`row_hash` is `md5((to_jsonb(m) - 'recorded_seconds')::text)` from the measured snapshot;
+`row_hash` is `md5((to_jsonb(m) - 'recorded_seconds')::text)` from the measured snapshot (UTC session);
 `audio_hash` uses the same definition as `pg_temp.recorded_duration_audio_hash(process_state)`.
 It includes ordered object ids, versions, metadata and update times. A planner must compare the
 fetched byte size with the object metadata and verify unchanged fingerprints after measurement.

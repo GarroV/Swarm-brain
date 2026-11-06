@@ -3,7 +3,7 @@
 CREATE TEMP TABLE IF NOT EXISTS duration_repair_session (unused boolean) ON COMMIT DROP;
 
 CREATE OR REPLACE FUNCTION pg_temp.recorded_duration_audio_hash(state jsonb)
-RETURNS text LANGUAGE sql STABLE AS $$
+RETURNS text LANGUAGE sql STABLE SET TimeZone TO 'UTC' AS $$
   SELECT CASE WHEN count(*) > 0 AND count(o.id) = count(*) THEN
     md5(jsonb_agg(jsonb_build_object('id', o.id, 'version', o.version,
       'metadata', o.metadata, 'updated_at', o.updated_at) ORDER BY p.ordinality)::text)
@@ -14,7 +14,7 @@ RETURNS text LANGUAGE sql STABLE AS $$
 $$;
 
 CREATE OR REPLACE FUNCTION pg_temp.repair_recorded_durations(plan jsonb)
-RETURNS integer LANGUAGE plpgsql AS $$
+RETURNS integer LANGUAGE plpgsql SET TimeZone TO 'UTC' AS $$
 DECLARE
   changed integer;
   seconds_attnum smallint;

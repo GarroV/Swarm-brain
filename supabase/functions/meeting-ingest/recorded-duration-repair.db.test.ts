@@ -14,6 +14,7 @@ async function fixture(run: (db: Client, ids: string[], plan: Plan[]) => Promise
   await db.connect();
   try {
     await db.queryArray("begin");
+    await db.queryArray("set local timezone to 'UTC'");
     let sql = await Deno.readTextFile(SQL);
     if (Deno.env.get("DURATION_REPAIR_MUTANT") === "1") {
       assertEquals(sql.split(SNAPSHOT).length - 1, 2);
