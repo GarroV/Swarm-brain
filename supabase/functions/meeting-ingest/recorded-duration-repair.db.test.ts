@@ -1,6 +1,7 @@
 // One-off repair: real isolated Postgres, canonical media duration, no prod connection or messages.
 import { assert, assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import { Client } from "postgres";
+import { fromFileUrl } from "https://deno.land/std@0.224.0/path/mod.ts";
 import { measureUpload } from "./challenge-io.ts";
 import { m4aOf } from "./m4a-fixture.ts";
 import type { InMemoryPart } from "../_shared/meeting-processor.ts";
@@ -150,7 +151,7 @@ Deno.test("duration repair: RED check rejects removal of snapshot CAS", async ()
       "-A",
       "--filter",
       "duration repair: stale status rolls back all four",
-      new URL(import.meta.url).pathname,
+      fromFileUrl(import.meta.url),
     ],
     env: { DURATION_REPAIR_MUTANT: "1" },
     stdout: "piped",
