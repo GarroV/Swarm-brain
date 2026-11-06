@@ -94,6 +94,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
           BEFORE: ${{ steps.before.outputs.sha }}
+          FORCE: ${{ inputs.force && 'true' || 'false' }}
         run: |
           after=$(git ls-remote origin refs/heads/main | cut -f1)
           if [ "$after" = "$BEFORE" ]; then
@@ -106,4 +107,4 @@ jobs:
             exit 0
           fi
           echo "Влит один PR, в очереди ещё $left — ставлю следующий прогон."
-          gh workflow run deploy-window.yml --repo "$REPO" --ref main -f dry_run=false -f force=false
+          gh workflow run deploy-window.yml --repo "$REPO" --ref main -f dry_run=false -f force="$FORCE"
