@@ -28,6 +28,7 @@ public enum BoardL10n {
 
     static let ru: [String: String] = [
         "board.title": "Сегодня",
+        "audio.systemUnresponsive": "Служба звука macOS не отвечает",
         "board.menu": "Задачи и заметки",
         "app.quit": "Выйти из bumblebee",
         "board.pill.tip": "Доска «Сегодня»",
@@ -112,6 +113,7 @@ public enum BoardL10n {
 
     static let en: [String: String] = [
         "board.title": "Today",
+        "audio.systemUnresponsive": "The macOS audio service is not responding",
         "board.menu": "Tasks and notes",
         "app.quit": "Quit bumblebee",
         "board.pill.tip": "Today board",

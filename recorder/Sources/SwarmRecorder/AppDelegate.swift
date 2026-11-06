@@ -245,6 +245,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
         setupNotifications()
         setupPowerNotifications()
+        CallDetector.startMonitoring { [weak self] unavailable in
+            Diagnostics.shared.log(unavailable
+                ? "COREAUDIO no response after 1s; detector=unknown"
+                : "COREAUDIO response recovered")
+            self?.widget.setAudioSystemUnavailable(unavailable)
+        }
         startWatching()
         missed.start()
         board.onMenuChange = { [weak self] in self?.rebuildMenu() }
@@ -631,8 +637,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             let meetings = lookup?.meetings ?? []
             // Реальный созвон, а не просто занятый микрофон: фильтруем системные демоны
             // (CoreSpeech), иначе «звонок» виден всегда и сыпались бы ложные предложения записи.
-            let micOn = CallDetector.realCallActive()
+            let detectedCall = CallDetector.realCallActive()
             DispatchQueue.main.async { [weak self] in
+                guard let micOn = detectedCall else {
+                    self?.logTick(meetings: meetings, lookupOK: lookup != nil, micOn: nil)
+                    return // Unknown HAL state cannot drive call-detection actions.
+                }
                 self?.logTick(meetings: meetings, lookupOK: lookup != nil, micOn: micOn)
                 // Для ручного старта — все идущие (сервер отдаёт только созвоны, D026); при
                 // пересечении (D027) выбор делает manualStartIdentity, а не «первая из списка».
@@ -659,12 +669,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     // Строка журнала на каждый тик: по последней видно, когда процесс перестал жить, а по полям —
     // почему не появилось предложение записать (нет встречи / скрыта / микрофон свободен).
-    private func logTick(meetings: [MeetingIdentity.Info], lookupOK: Bool, micOn: Bool) {
+    private func logTick(meetings: [MeetingIdentity.Info], lookupOK: Bool, micOn: Bool?) {
         let cal = meetings.isEmpty
             ? (lookupOK ? "нет" : "запрос не прошёл")
             : meetings.map { "\($0.key)\(isMeetingDismissed($0.key) ? " (скрыта)" : "")" }.joined(separator: ",")
         let offer = pendingMeeting != nil ? "встреча" : (callActive ? "звонок" : "нет")
-        Diagnostics.shared.log("TICK state=\(state) mic=\(micOn ? "занят" : "свободен") cal=\(cal) предложение=\(offer) rss=\(Diagnostics.residentMB())MB")
+        let mic = micOn.map { $0 ? "занят" : "свободен" } ?? "неизвестно"
+        Diagnostics.shared.log("TICK state=\(state) mic=\(mic) cal=\(cal) предложение=\(offer) rss=\(Diagnostics.residentMB())MB")
         Diagnostics.shared.touchAlive()
     }
 
@@ -1601,12 +1612,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         let systemPeak = recorder.systemPeakSinceLastRead()
         let micPeak = micPeakSinceTick
         micPeakSinceTick = 0
-        var realCall = false
+        var realCall: Bool? = false // macOS <14 keeps the previous stop-rule behaviour.
         var micProcesses: [String] = []
         if #available(macOS 14.0, *) {
-            let info = CallDetector.othersUsingMicInfo()
-            realCall = !info.isEmpty
-            micProcesses = info.map { "\($0.pid):\($0.bundle)" }
+            let sample = CallDetector.snapshot()
+            realCall = sample?.active
+            micProcesses = sample?.processes.map { "\($0.pid):\($0.bundle)" } ?? ["unknown"]
         }
         var roomPresence: AutoStopRule.RoomPresence?
         if autoStopRule.callSeenDuringRec, let room = identity, room.kind == .room {

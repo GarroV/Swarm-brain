@@ -357,8 +357,7 @@ func runUpdateSelfTest(apply: Bool) {
 // This diagnostic-only mode lets the bundle check run without starting a recording.
 if let mode = CommandLine.arguments.first(where: { $0.hasPrefix("--selftest") }) {
     setvbuf(stdout, nil, _IOLBF, 0)
-    let hasMark = Bundle.main.url(forResource: "BeeMark", withExtension: "png")
-        .flatMap { NSImage(contentsOf: $0) } != nil
+    let hasMark = RoyArt.hasBundledMark
     if !hasMark {
         print("⚠️  BeeMark.png НЕ найден или не читается: значок будет ЗАПАСНОЙ, форма НЕ как в продукте.")
         print("    Проверять вид значка только из установленного бандла:")
@@ -384,6 +383,18 @@ if CommandLine.arguments.contains("--selftest-notes") {
                       seconds: keep ?? 20)
 } else if let ai = CommandLine.arguments.firstIndex(of: "--analyze") {
     runAnalyze(Array(CommandLine.arguments[(ai + 1)...]))
+} else if CommandLine.arguments.contains("--selftest-audio-health") {
+    // Actual AppKit warning rendering, without showing a window or reading audio/config.
+    NSApplication.shared.setActivationPolicy(.prohibited)
+    let widget = RecorderWidget()
+    widget.setAudioSystemUnavailable(true)
+    let expected = BoardL10n.text("audio.systemUnresponsive", lang: BoardL10n.language())
+    guard widget.audioSystemWarningText == expected else { print("SELFTEST_AUDIO_HEALTH failed=warning"); exit(1) }
+    print("SELFTEST_AUDIO_HEALTH warning=\(expected)")
+    widget.setAudioSystemUnavailable(false)
+    guard widget.audioSystemWarningText == nil else { print("SELFTEST_AUDIO_HEALTH failed=recovery"); exit(1) }
+    print("SELFTEST_AUDIO_HEALTH recovery=clear")
+    exit(0)
 } else if CommandLine.arguments.contains("--selftest-update") {
     runUpdateSelfTest(apply: CommandLine.arguments.contains("--apply"))   // не возвращается до exit()
 } else if CommandLine.arguments.contains("--selftest-pick") {

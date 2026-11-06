@@ -57,6 +57,21 @@ final class RecorderWidget {
     var contentAlpha: CGFloat { panel?.contentView?.alphaValue ?? -1 }
     private let recMark = NSImageView()
     private let micIndicator = NSImageView()
+    private var audioSystemUnavailable = false
+    var audioSystemWarningText: String? { micIndicator.image == nil ? nil : micIndicator.toolTip }
+
+    func setAudioSystemUnavailable(_ unavailable: Bool) {
+        audioSystemUnavailable = unavailable
+        refreshAudioHealth()
+    }
+
+    private func refreshAudioHealth() {
+        let warning = BoardL10n.text("audio.systemUnresponsive", lang: BoardL10n.language())
+        micIndicator.image = NSImage(systemSymbolName: audioSystemUnavailable ? "exclamationmark.triangle.fill" : "mic.fill",
+                                    accessibilityDescription: audioSystemUnavailable ? warning : "запись")
+        micIndicator.contentTintColor = audioSystemUnavailable ? .systemOrange : .systemRed
+        micIndicator.toolTip = audioSystemUnavailable ? warning : nil
+    }
     private let stopBtn = NSButton()
     private let recRow = NSStackView()
     private let micRow = NSStackView()  // микрофон + уровень (горизонтально, внутри вертикального recRow)
@@ -386,8 +401,7 @@ final class RecorderWidget {
         recMark.addGestureRecognizer(NSClickGestureRecognizer(target: self, action: #selector(toggleNotesAction)))
         recMark.toolTip = "Заметки встречи (свернуть/развернуть)"
 
-        micIndicator.image = NSImage(systemSymbolName: "mic.fill", accessibilityDescription: "запись")
-        micIndicator.contentTintColor = .systemRed
+        refreshAudioHealth()
         micIndicator.wantsLayer = true
         sizeIcon(micIndicator, 17)
 

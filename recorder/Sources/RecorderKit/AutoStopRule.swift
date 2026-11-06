@@ -30,7 +30,7 @@ public struct AutoStopRule {
     /// One five-second tick. `nil` room presence means this is not a room recording.
     /// Unknown browser reads neither add nor erase confirmed gone ticks, as before.
     public mutating func observe(elapsed: TimeInterval, systemPeak: Float, micPeak: Float,
-                                 realCall: Bool, roomPresence: RoomPresence?) -> StopReason? {
+                                 realCall: Bool?, roomPresence: RoomPresence?) -> StopReason? {
         let anyoneAudible = systemPeak >= Self.systemSilenceLevel || micPeak >= Self.micSilenceLevel
         // A single notification blip does not clear three minutes of silence.
         if !anyoneAudible {
@@ -70,6 +70,9 @@ public struct AutoStopRule {
         // The hard ceiling applies even while speech and the call detector are active.
         if elapsed >= Self.maxHardSeconds { return .hardLimit }
 
+        // An unanswered audio-service query is not evidence that the mic was released.
+        // Independent audio/room/hard-ceiling rules above still apply.
+        guard let realCall else { return nil }
         if realCall {
             callSeenDuringRec = true
             silentTicks = 0
