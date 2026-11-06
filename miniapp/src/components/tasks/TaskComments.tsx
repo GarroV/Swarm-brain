@@ -1,12 +1,12 @@
 "use client";
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
-import { useRoyNav, useDt } from "@/components/roy/nav";
+import { useRoyNav, useDt, useLang } from "@/components/roy/nav";
 import { RoyCard, SectionLabel } from "@/components/roy/ui";
 import { RoyIcon } from "@/components/roy/icons";
 import { fetchTaskComments, addTaskComment, deleteTaskComment, fetchTaskSubscription, setTaskSubscription, type TaskComment, type TaskSubscription } from "@/lib/api";
 import { displayName } from "@/lib/utils";
 import { linkify } from "@/lib/linkify";
-import { COMMENT_COLLAPSE_AT, COMMENT_MAX, COMMENT_WARN_LEFT, collapsePreview } from "@/lib/taskComments";
+import { COMMENT_COLLAPSE_AT, COMMENT_MAX, COMMENT_WARN_LEFT, TASK_COMMENTS_COPY, collapsePreview } from "@/lib/taskComments";
 import { formatDate } from "@/lib/displayFormat";
 
 // Потолок высоты поля ввода. До issue #445 поле было в одну строку с потолком 112px:
@@ -27,8 +27,7 @@ function fmtDate(iso: string | null): string {
 // Рендерится только внутри RoyApp → useRoyNav безопасен (как в TaskDetail).
 export function TaskComments({ taskId }: { taskId: string }) {
   const { toast, me } = useRoyNav();
-  // dt только для новых строк (подписка) — остальной текст файла пока русский,
-  // его переводит отдельная задача i18n, здесь её не тащим.
+  const copy = TASK_COMMENTS_COPY[useLang()];
   const dt = useDt();
   const [comments, setComments] = useState<TaskComment[]>([]);
   const [sub, setSub] = useState<TaskSubscription | null>(null);
@@ -58,7 +57,7 @@ export function TaskComments({ taskId }: { taskId: string }) {
         });
       })
       .catch(() => {
-        if (alive) toast("Не удалось загрузить комментарии");
+        if (alive) toast(copy.loadError);
       });
     return () => {
       alive = false;
@@ -146,7 +145,7 @@ export function TaskComments({ taskId }: { taskId: string }) {
     } catch {
       // Точечный откат по времени (не воскрешаем уже удалённые в гонке параллельных удалений).
       setComments((cs) => [...cs, removed].sort((a, b) => a.created_at.localeCompare(b.created_at)));
-      toast("Не удалось удалить");
+      toast(copy.removeError);
     }
   };
 
@@ -160,7 +159,7 @@ export function TaskComments({ taskId }: { taskId: string }) {
   return (
     <div className="mt-4">
       <div className="flex items-center justify-between gap-2">
-        <SectionLabel>Комментарии</SectionLabel>
+        <SectionLabel>{copy.heading}</SectionLabel>
         {sub && (
           <button
             type="button"
@@ -188,9 +187,9 @@ export function TaskComments({ taskId }: { taskId: string }) {
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={onKeyDown}
-          aria-label="Комментарий"
+          aria-label={copy.inputLabel}
           aria-invalid={tooLong}
-          placeholder="Написать апдейт…  (Enter — отправить)"
+          placeholder={copy.placeholder}
           rows={1}
           className="min-h-[38px] w-full resize-none overflow-y-auto rounded-[8px] border bg-surface px-3 py-2 text-ink outline-none transition-[border-color,box-shadow] focus:border-primary focus:ring-3 focus:ring-accent-soft placeholder:text-ink-mute"
           style={{
@@ -204,8 +203,8 @@ export function TaskComments({ taskId }: { taskId: string }) {
           type="button"
           onClick={() => void submitComment()}
           disabled={!draft.trim() || sending || tooLong}
-          aria-label="Отправить"
-          title="Отправить (Enter)"
+          aria-label={copy.send}
+          title={copy.sendHint}
           className="flex size-10 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground transition-transform active:scale-[0.94] disabled:opacity-40"
         >
           <RoyIcon name="arrow" size={16} strokeWidth={2.2} />
@@ -231,7 +230,7 @@ export function TaskComments({ taskId }: { taskId: string }) {
       )}
 
       {comments.length === 0 ? (
-        <p className="mt-2 text-ink-soft" style={{ fontSize: 12.5 }}>Пока нет комментариев.</p>
+        <p className="mt-2 text-ink-soft" style={{ fontSize: 12.5 }}>{copy.empty}</p>
       ) : (
         <div className="mt-2 flex flex-col gap-1.5">
           {[...comments].reverse().map((c) => {
@@ -245,7 +244,7 @@ export function TaskComments({ taskId }: { taskId: string }) {
                   <span className="flex items-center gap-2">
                     <span className="text-ink-mute" style={{ fontSize: 11.5 }}>{fmtDate(c.created_at)}</span>
                     {canDelete && (
-                      <button type="button" aria-label="Удалить комментарий" onClick={() => removeComment(c.id)} // Тач-цель 36x36 у крестика 13px: иконка мелкая, зона нажатия — нет.
+                      <button type="button" aria-label={copy.remove} onClick={() => removeComment(c.id)} // Тач-цель 36x36 у крестика 13px: иконка мелкая, зона нажатия — нет.
                         className="-m-2 inline-flex size-9 items-center justify-center p-2 text-ink-soft transition-colors hover:text-[var(--pri-high)]"
                       >
                         <RoyIcon name="x" size={13} strokeWidth={2} />
