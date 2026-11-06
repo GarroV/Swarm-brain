@@ -23,6 +23,25 @@ cd "$REPO_ROOT"
 die() { printf '\033[31m%s\033[0m\n' "$*" >&2; exit 1; }
 head_() { printf '\n\033[1m%s\033[0m\n' "$*"; }
 
+source_context() {
+  head_ "Исходник раскатки"
+  printf '  папка: %s\n  ветка: %s\n  HEAD: %s\n  метка: %s → HEAD\n' \
+    "$REPO_ROOT" "$(git symbolic-ref --short -q HEAD || printf detached)" "$(git rev-parse HEAD)" "$TAG"
+}
+
+# #124: имя папки/ветки не доказывает состав релиза. Разрешён чистый HEAD свежего
+# origin/main, в том числе detached SHA в отдельном worktree; основную копию не переключаем.
+published_source() {
+  [ -z "$(git status --porcelain)" ] || die "Исходник не подтверждён: рабочее дерево не чистое."
+  git fetch --quiet --no-tags origin refs/heads/main:refs/remotes/origin/main \
+    || die "Исходник не подтверждён: не удалось получить актуальный origin/main. Раскатки и сдвига метки нет."
+  local current approved
+  current=$(git rev-parse HEAD)
+  approved=$(git rev-parse --verify refs/remotes/origin/main)
+  [ "$current" = "$approved" ] \
+    || die "Исходник не подтверждён: HEAD=$current, актуальный origin/main=$approved. Раскатки и сдвига метки нет."
+}
+
 base_ref() {
   git rev-parse -q --verify "refs/tags/$TAG" >/dev/null \
     || die "Метки $TAG нет. Первый раз: ./scripts/deploy-window.sh init (ставит её на текущий HEAD)."
@@ -68,12 +87,16 @@ changed_functions() {
 
 case "${1:-plan}" in
   init)
+    source_context
+    published_source
     git tag -f "$TAG" HEAD >/dev/null
     git push -f origin "refs/tags/$TAG" >/dev/null 2>&1 || echo "(метка локальная — пуш не прошёл)"
     echo "Метка $TAG стоит на $(git rev-parse --short HEAD). Дальше: ./scripts/deploy-window.sh plan"
     ;;
 
   plan|go)
+    source_context
+    [ "${1:-plan}" != "go" ] || published_source
     BASE=$(base_ref)
     FUNCS=$(changed_functions "$BASE")
     WEB=$(git diff --name-only "$BASE"..HEAD -- miniapp/ | wc -l | tr -d ' ')

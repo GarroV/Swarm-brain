@@ -3,8 +3,9 @@
 # только другим общим модулем, обязана тянуть функции-потребители (issue #292).
 # Запуск: ./scripts/test-deploy-window.sh [путь к deploy-window.sh]
 set -euo pipefail
-SRC=$(cd "$(dirname "$0")" && pwd)/deploy-window.sh
-SRC=${1:-$SRC}
+TEST_DIR=$(cd "$(dirname "$0")" && pwd)
+SRC=${1:-$TEST_DIR/deploy-window.sh}
+SRC=$(cd "$(dirname "$SRC")" && pwd)/$(basename "$SRC")
 T=$(mktemp -d); trap 'rm -rf "$T"' EXIT
 eval "$(sed -n '/^changed_functions() {/,/^}/p' "$SRC")"
 cd "$T" && git init -q && git config user.email t@t && git config user.name t
@@ -22,3 +23,5 @@ if [ "$GOT" != "fn-a " ]; then
   exit 1
 fi
 echo "✔ транзитивный потребитель найден: ${GOT}"
+DEPLOY_SOURCE_SCRIPT="$SRC" python3 "$TEST_DIR/test-deploy-source.py"
+DEPLOY_SOURCE_SCRIPT="$SRC" python3 "$TEST_DIR/test-deploy-source.py" porcha
