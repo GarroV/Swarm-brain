@@ -29,11 +29,9 @@ import { useEffect, useState, useSyncExternalStore } from "react";
 import { RoyIcon } from "@/components/roy/icons";
 import { useDt, useRoyNav } from "@/components/roy/nav";
 import { useIsDesktop } from "@/components/roy/useIsDesktop";
-import { fetchNotifications } from "@/lib/api";
 import {
   lastNotice,
   noticeView,
-  publishNotice,
   subscribeNotice,
   type DeployNotice,
 } from "@/lib/deployNotice";
@@ -97,15 +95,7 @@ function useNoticePill() {
 
   useEffect(() => subscribeNotice(setNotice), []);
 
-  // Первое знание об объявлении: колокольчик мог ещё не успеть опросить ленту.
-  useEffect(() => {
-    if (lastNotice()) return;
-    let alive = true;
-    fetchNotifications()
-      .then((res) => { if (alive) publishNotice(res.notice ?? null); })
-      .catch(() => { /* тихо: плашка — не критичная поверхность, придёт со следующим тиком колокольчика */ });
-    return () => { alive = false; };
-  }, []);
+  // Первую загрузку и опрос ленты делает общий NotificationsProvider оболочки.
 
   useEffect(() => {
     const id = setInterval(() => setNow(new Date()), TICK_MS);

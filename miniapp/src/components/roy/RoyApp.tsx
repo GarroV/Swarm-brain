@@ -52,6 +52,7 @@ import { MeetAdminScreen } from "./screens/MeetAdminScreen";
 import { type RailId, RoyRail } from "./RoyRail";
 import { useOverdueCount } from "./useOverdueCount";
 import { NotificationsBell } from "./NotificationsBell";
+import { NotificationsProvider } from "./NotificationsProvider";
 import { DeployNoticeBar, HeaderNotice } from "./DeployNoticeBar";
 import { KeyHealthBar } from "./KeyHealthBar";
 import { AnswerModal } from "./AnswerModal";
@@ -376,6 +377,7 @@ export function RoyApp({ me }: { me: Me | null }) {
 
   return (
     <RoyNavContext.Provider value={nav}>
+      <NotificationsProvider>
       <RecorderProvider>
       <div className="roy-shell flex flex-col h-[100dvh] bg-background text-foreground">
         {/* Плашка «скоро обновление»: на десктопе — в шапке экрана (HeaderNotice), здесь только
@@ -519,6 +521,7 @@ export function RoyApp({ me }: { me: Me | null }) {
       }
       <RecordingPill />
       </RecorderProvider>
+      </NotificationsProvider>
     </RoyNavContext.Provider>
   );
 }
