@@ -1,5 +1,7 @@
 # Swarm Brain — Quick Reference
 
+**Закрытие issues (#1079):** [ISSUE_CLOSURE_CHECK.md](ISSUE_CLOSURE_CHECK.md) — read-only CI сверяет closing references всех новых main-коммитов; отдельный trigger после «Ночная раскатка» покрывает слияния через `GITHUB_TOKEN`. OPEN → красный, недоступные metadata/история → ошибка. Сам checker issues не закрывает и комментарии не пишет.
+
 **Размер исходников (#265):** `python3 scripts/check-source-size.py --staged` проверяет Git index в pre-commit и `scripts/check`; CI `source-size.yml` дополнительно сравнивает весь PR с merge-base. Новые исходники — не более 800 физических строк. Существующий долг — `scripts/source-size-debt.json`: рост запрещён; при уменьшении обновить точное число строк, при достижении 800 удалить запись. Реальные Git-фикстуры: `python3 scripts/test-source-size.py`. Реестр не разрешает добавлять новые монолиты.
 
 > Читай этот файл в начале сессии. За деталями — [ARCHITECTURE.md](ARCHITECTURE.md).
