@@ -41,9 +41,11 @@ report() {
   echo "   • $1" >&2
 }
 
+has_input=0
 has_update=0
 needs_check=0   # 1 — есть обновление, которому нужен гейт scripts/check
 while read -r _local_ref local_sha _remote_ref remote_sha; do
+  has_input=1
   [ "$local_sha" = "$ZERO" ] && continue          # удаление ветки — раскрывать нечего
   has_update=1
 
@@ -136,7 +138,11 @@ fi
 # Шаг 2 — единая команда прогона. Пушатся одни удаления веток — проверять нечего:
 # гейт на удаление висел минутами и не давал убрать пачку влитых веток (issue #664).
 if [ "$has_update" -eq 0 ]; then
-  echo "pre-push: только удаление веток — гейт не нужен"
+  if [ "$has_input" -eq 0 ]; then
+    echo "pre-push: нечего пушить — гейт не нужен"
+  else
+    echo "pre-push: только удаление веток — гейт не нужен"
+  fi
   exit 0
 fi
 

@@ -415,6 +415,17 @@ claude mcp add supabase-swarm -- npx -y @supabase/mcp-server-supabase@0.12.0 \
    и **`make porcha`** — ломает ядро и базу нарочно и убеждается, что тесты краснеют. Тесты ходят в настоящую базу, поэтому
    нужен стек Supabase: общий тестовый на MUSPELHEIM (туннель поднимает сама обёртка, она же печатает, на какой базе идут тесты); перед прогоном она же сверяет схему стенда с миграциями `main` (сторож `scripts/lib/stand-guard.sh`: отстаёт — докатывает, чужие следы или миграции ветки — отказ; вернуть к main — `scripts/stand-reset`, с миграциями ветки — `scripts/stand-reset --branch`); доступы подставляет `./scripts/with-local-db`, руками их задавать не нужно (подробности — `docs/DEPLOY.md` §Контуры).
    **Путь к файлу от `import.meta.url` — только `fromFileUrl(new URL(…, import.meta.url))`** (std/path; в `scripts/` — алиас `@std/path` из корневого `deno.json`) или сам объект `URL`. `.pathname` отдаёт percent-кодировку, и в рабочей копии с кириллицей в имени папки тесты падают `NotFound`, а в CI (путь латинский) это не видно (#469/#504/#524/#559). Сторож `_shared/file-url-path.guard.test.ts` валит прогон на любом `import.meta.url).pathname`, в том числе обёрнутом в `decodeURIComponent`.
+   `./scripts/check initiatives` сохраняет JUnit отдельно через `--junit-path`: файлы
+   `reports/tests-functions.junit.xml` и `reports/tests-web.junit.xml` содержат только XML.
+   Таблица покрытия и диагностика Deno остаются в `reports/tests.log`; коды завершения
+   тестов продолжают определять результат гейта. Регрессии JSON и JUnit проверяет
+   `python3 scripts/test-check-report.py`.
+   Отчёт `reports/check.json` сохраняет кавычки, обратные слеши и управляющие символы
+   диагностики в JSON-экранировании даже при ошибке Deno (#1105); полный исходный вывод
+   остаётся в `reports/*.txt`. Проверка отчёта без базы и сети: `python3 scripts/test-check-report.py`.
+   В `pre-push` пустой stdin означает «нечего пушить», а строки удаления — «только удаление
+   веток»; в обоих случаях гейт не нужен (#1001). Проверка: `./scripts/test-pre-push.sh`.
+
    **Где гоняются тесты базы (`*.db.test.ts`) и порча** (решение 01.10.2026, #595/#693): **источник истины — CI** (`ci.yml`, #826: два параллельных задания, у каждого своя чистая база от `scripts/ci-supabase-up` — «Гейт доски инициатив» (`scripts/check initiatives` + `make porcha`) и «Гейт сервера scriba» (`scripts/check server`); задание «Edge Functions» — только `deno check`, его тесты целиком входили в гейт доски). Хук `pre-push` их **не** гоняет — только `scripts/check fast` и сторож security-маркеров (он же держит рабочие html в корне репозитория, #465): общий стенд один на все сессии, параллельные прогоны валили друг другу пре-пуш не по коду, и пушили с `--no-verify`. Правишь SQL — локально `make test-db` (только тесты базы) или `./scripts/check` целиком; красное на общем стенде сверяй с CI, прежде чем чинить.
 
 ---

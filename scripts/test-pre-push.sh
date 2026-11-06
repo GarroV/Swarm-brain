@@ -46,4 +46,13 @@ hook refs/tags/unpublished-tag "$(git rev-parse unpublished-tag)"
 [ "$RAN" = 1 ] && ok "метка на неопубликованном коммите — гейт гоняется" || ko "метка на неопубликованном коммите"
 hook refs/heads/feat/x "$(git rev-parse HEAD)"
 [ "$RAN" = 1 ] && ok "ветка с новыми коммитами — гейт гоняется" || ko "ветка с новыми коммитами"
+
+# Empty stdin and deletions are different no-op pushes (#1001).
+rm -f "$T/check.log"
+OUT=$(bash "$HOOK" origin </dev/null 2>&1); RC=$?
+[ "$RC" = 0 ] && [ ! -e "$T/check.log" ] && [ "$OUT" = "pre-push: нечего пушить — гейт не нужен" ] \
+  && ok "пустой stdin — нечего пушить, гейт не запускался" || ko "пустой stdin: $OUT"
+OUT=$(printf '%s %s %s %s\n' refs/heads/gone "$ZERO" refs/heads/gone "$(git rev-parse HEAD)" | bash "$HOOK" origin 2>&1); RC=$?
+[ "$RC" = 0 ] && [ ! -e "$T/check.log" ] && [ "$OUT" = "pre-push: только удаление веток — гейт не нужен" ] \
+  && ok "удаление — точное сообщение, гейт не запускался" || ko "удаление: $OUT"
 exit $bad
