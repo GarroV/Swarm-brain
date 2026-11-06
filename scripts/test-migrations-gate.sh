@@ -58,6 +58,10 @@ run_cases() {
     git checkout -q -b pr-migr main
     echo "alter table a add column b int;" > supabase/migrations/20260927120000_b.sql
     echo "z" >> supabase/functions/x/index.ts; git add -A; git commit -qm migr
+    git checkout -q -b pr-duplicate main
+    echo "select 1;" > supabase/migrations/20260927120000_b.sql
+    echo "select 2;" > supabase/migrations/20260927120000_other.sql
+    git add -A; git commit -qm duplicate
     # PR, правящий уже существующую миграцию.
     git checkout -q -b pr-edit main
     echo "-- правка" >> supabase/migrations/20260901000000_a.sql; git commit -qam edit
@@ -82,9 +86,9 @@ run_cases() {
     # shellcheck source=lib/migrations-gate.sh
     . "$LIB"
     FAILS=0
-    applied_a=$'20260901000000'
-    applied_ab=$'20260901000000\n20260927120000'
-    applied_ac=$'20260901000000\n20260928000000'
+    applied_a=$'20260901000000\ta'
+    applied_ab=$'20260901000000\ta\n20260927120000\tb'
+    applied_ac=$'20260901000000\ta\n20260928000000\tc'
 
     MIGRATIONS_APPLIED="$applied_a"
     expect "PR без миграций — вливать"                    0 "миграций нет" pr_migrations_gate main pr-code prod-deployed
@@ -107,12 +111,22 @@ run_cases() {
     MIGRATIONS_APPLIED="$applied_a"
     expect "нет метки prod-deployed, а миграция есть — НЕ вливать" 3 "нет метки" pr_migrations_gate main pr-migr no-such-tag
     expect "голова PR не найдена — НЕ вливать"            3 "" pr_migrations_gate main no-such-branch prod-deployed
+    unset MIGRATIONS_APPLIED
+    # Старый протокол теряет имя; новый обязан его запросить и увидеть коллизию.
+    swarm_server() {
+      if [ "${2:-}" = names ]; then printf '20260901000000\ta\n20260927120000\t%s\n' "${mock_name:-other}";
+      else printf '20260901000000\n20260927120000\n'; fi
+    }
+    expect "чужое имя у применённого номера — НЕ вливать" 1 "other" pr_migrations_gate main pr-migr prod-deployed
+    mock_name=b
+    expect "два имени у одного локального номера — НЕ вливать" 1 "20260927120000" pr_migrations_gate main pr-duplicate prod-deployed
     exit "$FAILS"
   )
   FAILS=$((FAILS + $?))
 }
 
 echo "Гейт миграций ночной раскатки — $(basename "$LIB")"
+"$ROOT/scripts/test-migrate-names.sh" || FAILS=$((FAILS + 1))
 run_cases
 
 if [ "${1:-}" = "porcha" ]; then
@@ -120,7 +134,10 @@ if [ "${1:-}" = "porcha" ]; then
   echo "Порча: каждая испорченная копия обязана покраснеть"
   # описание | perl-подстановка. Каждая — отдельная дыра, которую гейт обязан ловить.
   MUTATIONS=(
-    'неприменённые считаются применёнными|s/if not m or m.group\(1\) not in done:/if False:/'
+    'неприменённые считаются применёнными|s/if version not in done:/if False:/'
+    'имя применённой миграции не сверяется|s/if version in done and done\[version\] != expected_name:/if False:/'
+    'два имени в ledger молча перезаписываются|s/if version in done and done\[version\] != name:/if False:/'
+    'локальные одинаковые номера пропускаются|s/if seen\[version\] != filename:/if False:/'
     'новые миграции PR не видны|s/--diff-filter=A "\$1\.\.\$2"/--diff-filter=X "\$1..\$2"/'
     'правка старых миграций не видна|s/--diff-filter=MDT/--diff-filter=X/'
     'миграции main не проверяются|s/main_new=\$\(added_migrations "\$base_tag" "\$main_ref"\) \|\| main_new=""/main_new=""/'

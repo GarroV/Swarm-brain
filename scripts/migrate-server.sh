@@ -4,7 +4,7 @@
 #   ./scripts/migrate-server.sh --dry-run   — показать, какие миграции не применены; ничего не менять
 #   ./scripts/migrate-server.sh             — накатить неприменённые по порядку версий
 #
-# Берёт файлы supabase/migrations/<версия>_<имя>.sql, сверяет версии с `migrations-applied` шлюза и
+# Берёт файлы supabase/migrations/<версия>_<имя>.sql, сверяет пары с `migrations-applied names` шлюза и
 # каждую неприменённую катит `swarm_server migrate <версия> <имя> < файл` (одна транзакция вместе с
 # учётной записью, повтор безопасен). Останавливается на первой ошибке: следующая миграция может
 # зависеть от упавшей. Файл без версии в имени (шаблон `_template_new_table.sql` — не миграция) в
@@ -15,8 +15,8 @@ set -euo pipefail
 
 REPO_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 cd "$REPO_ROOT"
-# shellcheck source=lib/swarm-server.sh
-. "$REPO_ROOT/scripts/lib/swarm-server.sh"
+# shellcheck source=lib/migrations-gate.sh
+. "$REPO_ROOT/scripts/lib/migrations-gate.sh"
 
 DRY=0
 case "${1:-}" in
@@ -26,18 +26,26 @@ case "${1:-}" in
 esac
 
 # Пустой ответ — не «всё применено»: в ledger сервера версии есть всегда.
-applied=$(swarm_server migrations-applied) || { echo "Не получил список применённых миграций с сервера — накат остановлен." >&2; exit 3; }
+applied=$(swarm_server migrations-applied names) || { echo "Не получил список применённых миграций с сервера — накат остановлен." >&2; exit 3; }
 [ -n "$(printf '%s' "$applied" | tr -d '[:space:]')" ] \
   || { echo "Сервер вернул пустой список применённых миграций — так не бывает, накат остановлен." >&2; exit 3; }
 
-pending=()
+files=""
 for f in supabase/migrations/[0-9]*_*.sql; do
-  base=$(basename "$f" .sql)
+  [ -f "$f" ] || continue
+  files+="$f"$'\n'
+done
+# Проверяем ВСЮ пачку до первой отправки SQL, включая уже применённые номера.
+plan=$(migration_plan "$files" "$applied") || { rc=$?; printf 'Накат остановлен: %s\n' "$plan" >&2; exit "$rc"; }
+pending=()
+while IFS= read -r file; do
+  [ -n "$file" ] || continue
+  f="supabase/migrations/$file"
+  base=${file%.sql}
   version=${base%%_*}
   name=${base#*_}
-  printf '%s\n' "$applied" | grep -qx -- "$version" && continue
   pending+=("$version $name $f")
-done
+done < <(printf '%s\n' "$plan")
 
 if [ "${#pending[@]}" -eq 0 ]; then
   echo "Неприменённых миграций нет."
