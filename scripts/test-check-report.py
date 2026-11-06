@@ -26,6 +26,7 @@ def check_report(status):
         for name in ("scripts", "bin", "miniapp/node_modules", "supabase/functions/example"):
             (fixture / name).mkdir(parents=True)
         shutil.copy2(ROOT / "scripts/check", fixture / "scripts/check")
+        shutil.copy2(ROOT / "scripts/check-source-size.py", fixture / "scripts/check-source-size.py")
         (fixture / "scripts/feature-paths.txt").write_text("supabase/functions/example/index.ts\n")
         (fixture / "scripts/coverage-floor.txt").write_text("0\n")
         (fixture / "supabase/functions/example/index.ts").write_text("export {};\n")
@@ -56,6 +57,9 @@ exit "$CHECK_STATUS"
 ''')
         env = dict(os.environ, SWARM_DB_ENV="1", CHECK_STATUS=str(status),
                    CHECK_DIAGNOSTIC=DIAGNOSTIC, PATH=str(fixture / "bin") + os.pathsep + os.environ["PATH"])
+        # The shared gate reads real staged blobs, including in this reporter fixture.
+        subprocess.run(["git", "init", "-q"], cwd=fixture, check=True)
+        subprocess.run(["git", "add", "."], cwd=fixture, check=True)
         result = subprocess.run(["bash", str(fixture / "scripts/check"), "initiatives"],
                                 env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
         assert result.returncode == status, result.stdout

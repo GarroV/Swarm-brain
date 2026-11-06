@@ -4,6 +4,9 @@
 # Обойти осознанно: git commit --no-verify
 set -euo pipefail
 
+# Inspect staged blobs, not the working tree: partial staging must not hide growth.
+python3 scripts/check-source-size.py --staged
+
 # ── Doc-drift reminder (мягкое, НЕ блокирует) ────────────────────────────────────
 # Правило (CLAUDE.md §2): доки — часть DoD, в ТОМ ЖЕ коммите. Менялся код в
 # supabase/functions/ или miniapp/src/, но docs/ARCHITECTURE.md / QUICK_REF.md не

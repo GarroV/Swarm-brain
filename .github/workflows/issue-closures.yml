@@ -1,0 +1,40 @@
+name: Issue closures
+
+on:
+  push:
+    branches: [main]
+  workflow_run:
+    workflows: [Ночная раскатка]
+    types: [completed]
+    branches: [main]
+  pull_request:
+    paths:
+      - scripts/check-issue-closures.py
+      - scripts/test-issue-closures.py
+      - .github/workflows/issue-closures.yml
+
+permissions:
+  contents: read
+  issues: read
+  pull-requests: read
+
+jobs:
+  issue-closures:
+    name: Закрытие issues — проверка без изменений
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ github.event_name == 'workflow_run' && 'main' || github.sha }}
+      - name: Real Git fixtures
+        run: python3 scripts/test-issue-closures.py
+      - name: Mutation checks
+        run: python3 scripts/test-issue-closures.py porcha
+      - name: Verify closing references in new main commits
+        if: github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/check-issue-closures.py --event "$GITHUB_EVENT_PATH"
