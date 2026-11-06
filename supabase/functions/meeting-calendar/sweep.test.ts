@@ -14,7 +14,7 @@ function meeting(): GEvent {
   return {
     id: "e",
     iCalUID: "u",
-    start: { dateTime: "2026-09-28T07:00:00Z" },
+    start: { dateTime: "2026-09-28T07:01:00Z" },
     end: { dateTime: "2026-09-28T07:30:00Z" },
     hangoutLink: MEET,
     organizer: { self: true }, // своя встреча без гостей — «да» (D024)
@@ -119,7 +119,7 @@ const PENDING_OF_1: FakeJob = {
   join_url: MEET,
   platform: "meet",
   title: null,
-  starts_at: "2026-09-28T07:00:00Z",
+  starts_at: "2026-09-28T07:01:00Z",
   ends_at: "2026-09-28T07:30:00Z",
   taken: false,
 };
