@@ -2724,6 +2724,7 @@ Next.js 16, `output: "export"` (статический HTML/CSS/JS в `miniapp/o
 экран ошибки. При недоступном storage автоматический reload запрещён. Build — встроенный
 `CF_PAGES_COMMIT_SHA` [Cloudflare Pages](https://developers.cloudflare.com/pages/configuration/build-configuration/#environment-variables) (локальная сборка без него использует `unstamped`);
 следующая сборка получает свою одну попытку. Регистрация и обновление PWA не меняются.
+Новые runtime/test модули включены в `scripts/feature-paths.txt` для обязательных fmt/lint.
 Тесты выполняют сам генерируемый inline-скрипт; браузерная проверка на Pages preview
 искусственно обрывает запрос реального чанка и проверяет одну перезагрузку и успешный повтор.
 

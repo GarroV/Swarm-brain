@@ -54,3 +54,7 @@ supabase/functions/_shared/model-usage.test.ts
 supabase/functions/_shared/model-usage-summary.ts
 supabase/functions/_shared/model-usage-summary.test.ts
 supabase/functions/swarm-api/model-usage.ts
+
+# Chunk-load recovery (#809): include the new runtime and regressions in format/lint.
+miniapp/src/lib/chunkRecovery.ts
+miniapp/src/lib/chunkRecovery.test.ts
