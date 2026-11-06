@@ -122,23 +122,24 @@ export async function writeRecorders(
 }
 
 /**
- * Опустить секунды встречи до измеренного — той же строкой, что прочитана: держатель прежний,
+ * Исправить отсутствующие/завышенные секунды встречи по измеренному — той же строкой, что прочитана: держатель прежний,
  * секунды не менялись, бот на встрече так и не появился.
  */
-export async function lowerHolderSeconds(
+export async function correctHolderSeconds(
   supabase: SupabaseClient,
   meetingId: string,
   uploader: number,
-  readSeconds: number,
+  readSeconds: number | null,
   measuredSec: number,
 ): Promise<void> {
-  const { data, error } = await supabase.from("meetings").update({ recorded_seconds: measuredSec })
-    .eq("id", meetingId).eq("claim_owner", uploader).eq("recorded_seconds", readSeconds)
-    .is("agent_last_seen_at", null).select("id");
+  const query = supabase.from("meetings").update({ recorded_seconds: measuredSec })
+    .eq("id", meetingId).eq("claim_owner", uploader);
+  const guarded = readSeconds === null ? query.is("recorded_seconds", null) : query.eq("recorded_seconds", readSeconds);
+  const { data, error } = await guarded.is("agent_last_seen_at", null).select("id");
   if (error) console.error(`meeting-ingest: секунды держателя ${meetingId}: ${error.message}`);
   else if ((data ?? []).length > 0) {
     console.log(
-      `meeting-ingest: ${meetingId} — секунды держателя ${Math.round(readSeconds)}→${
+      `meeting-ingest: ${meetingId} — секунды держателя ${readSeconds === null ? "null" : Math.round(readSeconds)}→${
         Math.round(measuredSec)
       } по измеренной выгрузке`,
     );

@@ -139,6 +139,14 @@ Deno.test("отказ: претендент — defer, секунды заявк
 
 const own = { claim_owner: HOLDER, recorded_seconds: 86_000, agent_last_seen_at: null };
 
+Deno.test("#121: нулевая длительность держателя заполняется по измеренной первой выгрузке", () => {
+  assertEquals(holderSecondsCorrection({ ...own, recorded_seconds: 0 }, HOLDER, null, 3600), 3600);
+});
+
+Deno.test("#121: отсутствующая длительность держателя заполняется по измеренной первой выгрузке", () => {
+  assertEquals(holderSecondsCorrection({ ...own, recorded_seconds: null }, HOLDER, null, 3600), 3600);
+});
+
 Deno.test("первая выгрузка держателя короче его заявки — секунды встречи опускаются до измеренного", () => {
   assertEquals(holderSecondsCorrection(own, HOLDER, null, 3600), 3600);
   assertEquals(holderSecondsCorrection(own, HOLDER, [], 3600), 3600);
@@ -148,7 +156,16 @@ Deno.test("поправки нет: не держатель, не измерен
   assertEquals(holderSecondsCorrection(own, TAKER, null, 3600), null);
   assertEquals(holderSecondsCorrection(own, HOLDER, null, null), null);
   assertEquals(holderSecondsCorrection({ ...own, recorded_seconds: 3000 }, HOLDER, null, 3600), null);
-  assertEquals(holderSecondsCorrection({ ...own, recorded_seconds: null }, HOLDER, null, 3600), null);
+  for (const measured of [0, -1, NaN, Infinity]) {
+    assertEquals(holderSecondsCorrection({ ...own, recorded_seconds: null }, HOLDER, null, measured), null);
+  }
+  for (const previous of [null, 0]) {
+    assertEquals(holderSecondsCorrection({ ...own, recorded_seconds: previous }, HOLDER, ["prior"], 3600), null);
+    assertEquals(
+      holderSecondsCorrection({ ...own, recorded_seconds: previous, agent_last_seen_at: at(3) }, HOLDER, null, 3600),
+      null,
+    );
+  }
   assertEquals(holderSecondsCorrection(own, HOLDER, ["agent:scriba-1"], 3600), null);
   assertEquals(holderSecondsCorrection({ ...own, agent_last_seen_at: at(3) }, HOLDER, null, 3600), null);
 });

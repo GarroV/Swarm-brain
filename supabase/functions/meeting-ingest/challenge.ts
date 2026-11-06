@@ -15,7 +15,7 @@
 //
 // Вторая половина — секунды держателя. У новой строки потолка нет (первый заявитель сам присылает
 // и начало, и секунды), и завышенная заявка закрывала бы встречу от перехвата. Первая выгрузка
-// держателя, измеренная короче его заявки, опускает секунды встречи до измеренного.
+// держателя заполняет отсутствующие/нулевые секунды или опускает завышенные до измеренного.
 
 import { CLAIM_LEASE_TTL_SEC } from "../_shared/meeting-lease.ts";
 import { decideHeld, type HeldRow } from "../meeting-claim/arbiter.ts";
@@ -138,8 +138,8 @@ export function withRecorder(recorders: unknown, mine: RecorderEntry, supersede:
 }
 
 /**
- * Секунды встречи после первой выгрузки держателя: заявленное больше измеренного — опускаем до
- * измеренного. Только первая выгрузка (у второй записи того же человека свои секунды, и строка
+ * Секунды встречи после первой выгрузки держателя: отсутствующее/нулевое заполняем,
+ * завышенное опускаем до измеренного. Только первая выгрузка (у второй записи того же человека свои секунды, и строка
  * хранит самую полную) и только без бота на встрече: секунды бота уже ограничены ударами
  * (meeting-heartbeat), а его выгрузка и запасная запись рекордера меряют разное. null — не трогать.
  */
@@ -157,7 +157,7 @@ export function mayCorrectHolderSeconds(
 ): boolean {
   if (row.claim_owner !== uploader || row.agent_last_seen_at !== null) return false;
   if (priorSources !== null && priorSources.length > 0) return false;
-  return row.recorded_seconds !== null;
+  return true;
 }
 
 export function holderSecondsCorrection(
@@ -166,6 +166,10 @@ export function holderSecondsCorrection(
   priorSources: readonly string[] | null,
   measuredSec: number | null,
 ): number | null {
-  if (!mayCorrectHolderSeconds(row, uploader, priorSources) || measuredSec === null) return null;
-  return row.recorded_seconds !== null && row.recorded_seconds > measuredSec ? measuredSec : null;
+  if (
+    !mayCorrectHolderSeconds(row, uploader, priorSources) || measuredSec === null ||
+    !Number.isFinite(measuredSec) || measuredSec <= 0
+  ) return null;
+  const previous = row.recorded_seconds;
+  return previous === null || previous <= 0 || previous > measuredSec ? measuredSec : null;
 }
