@@ -1,6 +1,6 @@
 // ВСЕХ функциях); перевод на голые спецификаторы из import-map из ветки непроверяем. См. _shared/agent-auth.ts.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { openAIKeyHandle } from "../_shared/workspace-keys.ts";
+import { openAIKeyHandle, usageOf } from "../_shared/workspace-keys.ts";
 import { occupyPatch, refreshPatch } from "./claim-patch.ts";
 import {
   botJoinsOverShort,
@@ -150,7 +150,7 @@ async function getEmbedding(groupId: string | null, text: string): Promise<numbe
       model: "text-embedding-3-small",
       input: text.slice(0, 8000),
     }),
-  }, { ...VIA_OPENAI_EMBEDDING, usage: { purpose: "meeting-claim:embedding" } });
+  }, { ...VIA_OPENAI_EMBEDDING, usage: usageOf(key, "meeting-claim:embedding") });
   await key.noteResponse(res);
   const data = await res.json();
   if (!res.ok) {

@@ -30,7 +30,7 @@ import {
   specificCountries,
 } from "../_shared/meta-extract.ts";
 import { matchEntries } from "../_shared/search.ts";
-import { openAIKeyHandle } from "../_shared/workspace-keys.ts";
+import { openAIKeyHandle, usageOf } from "../_shared/workspace-keys.ts";
 import { detectQuerySince } from "../_shared/query-time.ts";
 import { ALL_MEETING_SOURCES } from "../_shared/sources.ts";
 import { isFeedbackStatus } from "../_shared/feedback-categories.ts";
@@ -126,7 +126,7 @@ async function getEmbedding(groupId: string, text: string): Promise<number[]> {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${key.key}` },
     body: JSON.stringify({ model: "text-embedding-3-small", input: text.slice(0, 8000) }),
-  }, { ...VIA_OPENAI_EMBEDDING, usage: { purpose: "mcp:embedding" } });
+  }, { ...VIA_OPENAI_EMBEDDING, usage: usageOf(key, "mcp:embedding") });
   await key.noteResponse(res);
   const data = await res.json() as { data?: Array<{ embedding: number[] }>; error?: { message?: string } };
   if (!res.ok || !data.data?.[0]) {
@@ -171,7 +171,7 @@ async function chatComplete(
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${key.key}` },
     body: JSON.stringify(body),
-  }, { ...VIA_OPENAI_CHAT, usage: { purpose: "mcp:chat" } });
+  }, { ...VIA_OPENAI_CHAT, usage: usageOf(key, "mcp:chat") });
   await key.noteResponse(res);
   const data = await res.json() as { choices: Array<{ message: { content: string } }> };
   return data.choices[0].message.content;

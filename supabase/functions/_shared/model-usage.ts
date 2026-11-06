@@ -26,8 +26,17 @@ export interface UsageLabel {
 // без протаскивания id через каждую функцию. Подпись вызова (`opts.usage`) уточняет её поверх.
 const usageScope = new AsyncLocalStorage<UsageLabel>();
 
+/** Склейка подписей: пустое поле («не знаю») не затирает то, что уже задал обработчик выше. */
+function mergeLabels(...labels: Array<UsageLabel | undefined>): UsageLabel {
+  const out: Record<string, string> = {};
+  for (const l of labels) {
+    for (const [k, v] of Object.entries(l ?? {})) if (v) out[k] = v;
+  }
+  return out;
+}
+
 export function withUsageLabel<T>(label: UsageLabel, fn: () => Promise<T>): Promise<T> {
-  return usageScope.run({ ...usageScope.getStore(), ...label }, fn);
+  return usageScope.run(mergeLabels(usageScope.getStore(), label), fn);
 }
 
 // Цены, USD. Источник — прайс OpenAI на 02.10.2026; модель без цены честно даёт cost = null,
@@ -172,7 +181,7 @@ export async function recordModelUsage(
     const body = await res.clone().json().catch(() => null);
     const parsed = parseUsage(kind, body);
     const model = parsed.model ?? requestModel(init);
-    const scoped = { ...usageScope.getStore(), ...label };
+    const scoped = mergeLabels(usageScope.getStore(), label);
     const { error } = await insert({
       kind,
       model,

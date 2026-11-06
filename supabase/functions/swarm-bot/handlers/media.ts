@@ -1,7 +1,7 @@
 import { fileLink, generateSummary, registerUploadedFile, saveEntry, uploadToStorage } from "../lib/storage.ts"; // generateSummary used for multi-chunk docs only
 import { getTelegramFileUrl, sendMessage } from "../lib/telegram.ts";
 import { supabase } from "../lib/supabase.ts";
-import { openAIKeyHandle } from "../../_shared/workspace-keys.ts";
+import { openAIKeyHandle, usageOf } from "../../_shared/workspace-keys.ts";
 import { TgMessage } from "../lib/types.ts";
 import {
   dropConsecutiveRuns,
@@ -61,7 +61,7 @@ async function transcribeAudio(fileId: string, groupId: string): Promise<string>
     method: "POST",
     headers: { Authorization: `Bearer ${key.key}` },
     body: form,
-  }, { ...VIA_OPENAI_LONG, usage: { purpose: "bot:media:long" } });
+  }, { ...VIA_OPENAI_LONG, usage: usageOf(key, "bot:media:long") });
   await key.noteResponse(res);
   const data = await res.json();
   if (!res.ok) throw new Error(data.error?.message ?? "Whisper error");
@@ -99,7 +99,7 @@ async function describeImage(fileId: string, groupId: string): Promise<string> {
       }],
       max_tokens: 1000,
     }),
-  }, { ...VIA_OPENAI_CHAT, usage: { purpose: "bot:media:chat" } });
+  }, { ...VIA_OPENAI_CHAT, usage: usageOf(key, "bot:media:chat") });
   await key.noteResponse(res);
   const data = await res.json();
   if (!res.ok) throw new Error(data.error?.message ?? "Vision error");

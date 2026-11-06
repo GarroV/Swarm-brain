@@ -1,7 +1,7 @@
 import { normalizeExtractedDueDate, todayIso } from "./llm-date.ts";
 import { externalFetch, VIA_OPENAI_LONG } from "./external-fetch.ts";
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { openAIKeyHandle } from "./workspace-keys.ts";
+import { openAIKeyHandle, usageOf } from "./workspace-keys.ts";
 import { UNTRUSTED_DATA_RULE, wrapUntrustedForModel } from "./untrusted-prompt.ts";
 
 // Вынесено из swarm-api/index.ts без изменений (issue #514): тем же экстрактором теперь
@@ -84,7 +84,7 @@ export async function callExtractor(
       Authorization: `Bearer ${key.key}`,
     },
     body: extractRequestBody(text, today, stream),
-  }, { ...VIA_OPENAI_LONG, usage: { purpose: "task-extract:long" } });
+  }, { ...VIA_OPENAI_LONG, usage: usageOf(key, "task-extract:long") });
   await key.noteResponse(res);
   return res;
 }

@@ -12,6 +12,7 @@
 
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { openSecret, sealSecret, secretsKeyConfigured } from "./secret-box.ts";
+import type { UsageLabel } from "./model-usage.ts";
 import { classifyResponse, recordOutcome, type SendText } from "./ai-health.ts";
 
 const KIND = "openai";
@@ -195,6 +196,8 @@ export async function noteOpenAIFailure(
  */
 export type KeyHandle = {
   key: string;
+  /** Пространство, чей ключ взят, — попадает в строку расхода (`model_usage.group_id`); пусто — служебный вызов. */
+  groupId?: string | null;
   noteResponse(res: { status: number; clone?: () => Response }): Promise<void>;
   /** Вызов не дошёл до ответа (таймаут, обрыв): мягкий сбой ключа. */
   noteError(): Promise<void>;
@@ -209,10 +212,17 @@ export async function openAIKeyHandle(
   const resolved = await resolveOpenAIKey(supabase, groupId);
   return {
     key: resolved.key ?? "",
+    groupId,
     noteResponse: (res) => noteOpenAIResponse(supabase, groupId, resolved, res),
     noteError: () => noteOpenAIFailure(supabase, groupId, resolved),
   };
 }
+
+/** Подпись расхода вызова: зачем звали и в каком пространстве (голая строка-ключ — без пространства). */
+export const usageOf = (k: KeyLike, purpose: string): UsageLabel => ({
+  purpose,
+  groupId: typeof k === "string" ? undefined : k.groupId ?? undefined,
+});
 
 export const keyOf = (k: KeyLike): string => (typeof k === "string" ? k : k.key);
 export const noteKeyResponse = (k: KeyLike, res: { status: number; clone?: () => Response }): Promise<void> =>

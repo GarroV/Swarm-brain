@@ -2,7 +2,7 @@
 // но общий с дневным сводом и покрытый тестами.
 import { withRetry } from "./retry.ts";
 import { externalFetch, VIA_OPENAI_CHAT, VIA_OPENAI_EMBEDDING } from "../../_shared/external-fetch.ts";
-import { openAIKeyHandle } from "../../_shared/workspace-keys.ts";
+import { openAIKeyHandle, usageOf } from "../../_shared/workspace-keys.ts";
 import { supabase } from "./supabase.ts";
 
 // Ключ — пространства, для которого зовём модель (#233): своего нет → ключ сервера. `groupId`
@@ -15,7 +15,7 @@ export function getEmbedding(text: string, groupId: string | null | undefined): 
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${key.key}` },
       body: JSON.stringify({ model: "text-embedding-3-small", input: text.slice(0, 8000) }),
-    }, { ...VIA_OPENAI_EMBEDDING, usage: { purpose: "bot:embedding" } }).catch(async (e) => {
+    }, { ...VIA_OPENAI_EMBEDDING, usage: usageOf(key, "bot:embedding") }).catch(async (e) => {
       await key.noteError(); // таймаут/обрыв — мягкий сбой ключа
       throw e;
     });
@@ -48,7 +48,7 @@ export function chatComplete(
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${key.key}` },
       body: JSON.stringify(body),
-    }, { ...VIA_OPENAI_CHAT, usage: { purpose: "bot:chat" } }).catch(async (e) => {
+    }, { ...VIA_OPENAI_CHAT, usage: usageOf(key, "bot:chat") }).catch(async (e) => {
       await key.noteError(); // таймаут/обрыв — мягкий сбой ключа
       throw e;
     });

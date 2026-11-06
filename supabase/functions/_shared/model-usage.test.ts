@@ -1,5 +1,6 @@
 import { assertEquals } from "@std/assert";
-import { costUsd, parseUsage, requestModel } from "./model-usage.ts";
+import { costUsd, parseUsage, recordModelUsage, requestModel, withUsageLabel } from "./model-usage.ts";
+import { usageOf } from "./workspace-keys.ts";
 
 Deno.test("стоимость чата: вход и выход по своим ценам", () => {
   // gpt-4o-mini: $0.15 / 1M вход, $0.60 / 1M выход
@@ -100,4 +101,40 @@ Deno.test("gpt-transcribe: секунды из usage {type:duration}, цена 0
   );
   // токенный usage без type=duration секундами не считается
   assertEquals(parseUsage("transcription", { text: "…", usage: { seconds: 3 } }).audioSeconds, null);
+});
+
+// Расход пространства в админке был $0: ни один вызов не передавал пространство (group_id пуст у
+// всех строк), а чтение фильтрует по нему. Подпись с groupId обязана дойти до строки.
+const okResponse = () => new Response(JSON.stringify({ model: "gpt-4o-mini", usage: { prompt_tokens: 5 } }));
+
+Deno.test("подпись с groupId доходит до вставки; подпись без него пространство не затирает", async () => {
+  const rows: Record<string, unknown>[] = [];
+  const insert = (row: Record<string, unknown>) => {
+    rows.push(row);
+    return Promise.resolve({ error: null });
+  };
+  const url = "https://api.openai.com/v1/chat/completions";
+  await recordModelUsage(url, {}, okResponse(), { purpose: "web:chat", groupId: "cee" }, insert);
+  await withUsageLabel({ groupId: "scope-ws" }, () =>
+    // purpose без пространства (голый ключ) не стирает пространство обработчика выше
+    recordModelUsage(url, {}, okResponse(), { purpose: "mcp:chat", groupId: undefined }, insert));
+  await recordModelUsage(url, {}, okResponse(), { purpose: "service" }, insert);
+  assertEquals(rows.map((r) => [r.purpose, r.group_id]), [
+    ["web:chat", "cee"],
+    ["mcp:chat", "scope-ws"],
+    ["service", null],
+  ]);
+});
+
+Deno.test("usageOf: ручка ключа несёт пространство, строка-ключ — нет", () => {
+  assertEquals(
+    usageOf({
+      key: "k",
+      groupId: "cee",
+      noteResponse: () => Promise.resolve(),
+      noteError: () => Promise.resolve(),
+    }, "web:chat"),
+    { purpose: "web:chat", groupId: "cee" },
+  );
+  assertEquals(usageOf("sk-server", "web:chat"), { purpose: "web:chat", groupId: undefined });
 });

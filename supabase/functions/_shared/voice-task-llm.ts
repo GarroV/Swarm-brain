@@ -3,7 +3,7 @@
 // задачу, решает normalizeVoiceTask (voice-task.ts), здесь только вызов и разбор конверта.
 import { externalFetch, VIA_OPENAI_CHAT } from "./external-fetch.ts";
 import { EXTRACT_MODEL, type ExtractorAuth } from "./task-extract.ts";
-import { openAIKeyHandle } from "./workspace-keys.ts";
+import { openAIKeyHandle, usageOf } from "./workspace-keys.ts";
 import { VOICE_TASK_SCHEMA, voiceTaskPrompt } from "./voice-task.ts";
 import { wrapUntrustedForModel } from "./untrusted-prompt.ts";
 
@@ -44,7 +44,7 @@ export async function parseVoiceTask(
       response_format: { type: "json_schema", json_schema: VOICE_TASK_SCHEMA },
       max_tokens: 400,
     }),
-  }, { ...VIA_OPENAI_CHAT, usage: { purpose: "task:voice-parse" } });
+  }, { ...VIA_OPENAI_CHAT, usage: usageOf(key, "task:voice-parse") });
   await key.noteResponse(res);
   if (!res.ok) {
     console.error(`[voice-task] разбор: модель ответила ${res.status}`);
