@@ -8,6 +8,7 @@ import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { locKey, markManualFed, must } from "./db.ts";
 import { EDITORIAL_BLOCKS, type EditorialBlock, parseEditorial } from "./editorial.ts";
 import { FX_CURRENCIES, FxError, fxNote, type FxRate, fxRate } from "./fx.ts";
+import { PIZZA_TYPES } from "./price-types.ts";
 
 export type Change<T> = { ok: true; before: T | null; after: T } | { ok: false; error: string };
 
@@ -331,6 +332,9 @@ export async function setPrice(
   const bad = baseCheck(country, input.source);
   if (bad) return { ok: false, error: bad };
   if (!text(input.item)) return { ok: false, error: "item — позиция меню, например «Margherita»" };
+  if (!(PIZZA_TYPES as readonly unknown[]).includes(input.item_type)) {
+    return { ok: false, error: `item_type обязателен: ${PIZZA_TYPES.join(", ")}; другой тип экран не показывает` };
+  }
   const price = num(input.price);
   if (price === null || price <= 0) return { ok: false, error: "price — цена числом" };
   const seen_on = input.seen_on ?? now().slice(0, 10);

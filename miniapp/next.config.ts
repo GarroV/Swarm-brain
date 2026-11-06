@@ -1,8 +1,11 @@
 import type { NextConfig } from "next";
+import path from "node:path";
 
 const nextConfig: NextConfig = {
   output: "export",
   images: { unoptimized: true },
+  // Pure market contracts are shared with the server under supabase/functions/_shared.
+  turbopack: { root: path.resolve(__dirname, "..") },
 };
 
 // Локальный стенд: при заданном STAND_API запросы `/api/*` уходят на него (см.
