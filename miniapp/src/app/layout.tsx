@@ -6,6 +6,7 @@ import { SingleTabGate } from "@/components/SingleTabGate";
 import { ConfirmProvider } from "@/components/ui/confirm";
 import { BackdropLayer } from "@/components/roy/BackdropLayer";
 import { BACKDROP_SCRIPT } from "@/lib/backdrop";
+import { chunkRecoveryScript } from "@/lib/chunkRecovery";
 import { MaintenanceGate } from "@/components/MaintenanceGate";
 import { ConnectionBanner } from "@/components/ConnectionBanner";
 import { PresencePulse } from "@/components/PresencePulse";
@@ -46,7 +47,7 @@ export default function RootLayout({
     <html lang="ru" className={`${golos.variable} ${mono.variable}`} suppressHydrationWarning>
       <body className="bg-background text-foreground antialiased min-h-screen">
         {/* Один инлайн-скрипт (CSP): тема по системе + задник из кэша до первой отрисовки. */}
-        <script dangerouslySetInnerHTML={{ __html: `${THEME_SCRIPT};${BACKDROP_SCRIPT}` }} />
+        <script dangerouslySetInnerHTML={{ __html: `${chunkRecoveryScript(process.env.CF_PAGES_COMMIT_SHA ?? "unstamped")};${THEME_SCRIPT};${BACKDROP_SCRIPT}` }} />
         <BackdropLayer />
         {/* Заглушка работ — ВЫШЕ провайдеров: её должен увидеть и тот, у кого протухла
             сессия, иначе вместо «идут работы» он получит экран входа. */}
