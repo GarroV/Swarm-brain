@@ -61,6 +61,8 @@ jobs:
         run: ./scripts/test-deploy-window.sh
       - name: Цепочка раскатки — force и остановка + порча
         run: python3 scripts/test-deploy-chain.py && python3 scripts/test-deploy-chain.py porcha
+      - name: Догоняющая раскатка — до выбора PR
+        run: python3 scripts/test-deploy-catchup.py && python3 scripts/test-deploy-catchup.py porcha
       # Команда recorder-upload шлюза на подставном curl: отказы и «не перезаписывать» (#919).
       # Хук pre-push: метка на уже опубликованном коммите не гоняет scripts/check (#943).
       - name: Хук pre-push — метка на опубликованном коммите + порча
