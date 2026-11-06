@@ -142,14 +142,19 @@ const isBranded = (g: PlaceRow[]) => g.some((r) => r.brand);
 
 /** Двойники — по общему samePlace: ближе DUPLICATE_M или одинаковый адрес в пределах
  *  канонического допуска 5 км. Иначе один магазин в текущем пакете считается дважды. */
-export function dropDuplicates(points: OsmPoint[]): OsmPoint[] {
+function uniquePlaces<T>(items: T[], point: (item: T) => OsmPoint): T[] {
   const kept = new Map<string, OsmPoint[]>();
-  return points.filter((p) => {
+  return items.filter((item) => {
+    const p = point(item);
     const same = kept.get(p.chain) ?? [];
     if (samePlace(p, same, DUPLICATE_M)) return false;
     kept.set(p.chain, [...same, p]);
     return true;
   });
+}
+
+export function dropDuplicates(points: OsmPoint[]): OsmPoint[] {
+  return uniquePlaces(points, (p) => p);
 }
 
 /** Чистая функция без сети: строки Overture → точки сетей из конфига + найденные сети. */
@@ -181,18 +186,22 @@ export function discover(
     merged.set(nk, [...(merged.get(nk) ?? []), ...g]);
   }
   const found = [...merged.values()]
-    .filter((g) =>
-      isBranded(g) ? g.length >= MIN_BRANDED : (
+    .map((g) => ({
+      rows: uniquePlaces(g, (r) => toPoint(r, "discovery")),
+      branded: isBranded(g),
+    }))
+    .filter(({ rows: g, branded }) =>
+      branded ? g.length >= MIN_BRANDED : (
         g.length >= MIN_UNBRANDED &&
         new Set(g.map((r) => r.locality).filter(Boolean)).size >=
           MIN_LOCALITIES
       )
     )
-    .sort((a, b) => b.length - a.length)
+    .sort((a, b) => b.rows.length - a.rows.length)
     .slice(0, MAX_DISCOVERED);
   const taken = new Set(cfg.chains.map((c) => c.key));
   const chains: DiscoveredChain[] = [];
-  for (const g of found) {
+  for (const { rows: g } of found) {
     const name = mostFrequent(g.map((r) => (r.brand ?? r.name)!));
     const fallback = `chain-${
       (g[0].wikidata ?? norm(name)).toLowerCase().slice(0, 12)

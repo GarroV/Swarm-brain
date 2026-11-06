@@ -329,7 +329,7 @@
 | `dodo` | Dodo Pizza | pizza | — |
 | `dominos` | Domino's | pizza | brand: Domino's, Domino's Pizza |
 | `pizzahut` | Pizza Hut | pizza | brand: Pizza Hut |
-| `mcdonalds` | McDonald's | burger | brand: McDonald's, McDonalds |
+| `mcdonalds` | McDonald's | burger | brand: McDonald's, McDonalds, McCafé, McCafe |
 | `burgerking` | Burger King | burger | brand: Burger King |
 | `kfc` | KFC | chicken | brand: KFC |
 | `subway` | Subway | sandwich | brand: Subway |
@@ -351,7 +351,7 @@
 | `dodo` | Dodo Pizza | pizza | — |
 | `dominos` | Domino's | pizza | brand: Domino's, Domino's Pizza |
 | `pizzahut` | Pizza Hut | pizza | brand: Pizza Hut |
-| `mcdonalds` | McDonald's | burger | brand: McDonald's, McDonalds |
+| `mcdonalds` | McDonald's | burger | brand: McDonald's, McDonalds, McCafé, McCafe |
 | `burgerking` | Burger King | burger | brand: Burger King |
 | `kfc` | KFC | chicken | brand: KFC |
 | `subway` | Subway | sandwich | brand: Subway |
@@ -417,7 +417,7 @@
 | `dodo` | Dodo Pizza | pizza | — |
 | `dominos` | Domino's | pizza | brand: Domino's, Domino's Pizza |
 | `pizzahut` | Pizza Hut | pizza | brand: Pizza Hut |
-| `mcdonalds` | McDonald's | burger | brand: McDonald's, McDonalds |
+| `mcdonalds` | McDonald's | burger | brand: McDonald's, McDonalds, McCafé, McCafe |
 | `burgerking` | Burger King | burger | brand: Burger King |
 | `kfc` | KFC | chicken | brand: KFC |
 | `subway` | Subway | sandwich | brand: Subway |

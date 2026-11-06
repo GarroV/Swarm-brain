@@ -62,6 +62,9 @@ Deno.test("#896: migration folds known McCafé points, preserves distinct/histor
         const [chain, ext, lat, status, closed] of [
           ["mcdonalds", "known", 40, "open", null],
           ["mccafe", "duplicate", 40.00004, "open", null],
+          ["mccafe", "address-duplicate", 40.002, "open", null],
+          ["mccafe", "different-number", 40.003, "open", null],
+          ["mccafe", "manual", 40.00002, "open", null],
           ["mccafe", "distinct", 41, "open", null],
           ["mccafe", "history", 40.02, "closed", "2020-01"],
         ]
@@ -69,29 +72,39 @@ Deno.test("#896: migration folds known McCafé points, preserves distinct/histor
         await db
           .queryArray`insert into mkt_locations(country,chain_key,ext_key,name,address,lat,lng,status,closed,source_kind,verification)
           values (${cc},${chain},${ext},'Fixture',${
-          ext === "distinct" ? "Other 21" : "Street 1"
+          ext === "distinct"
+            ? "Other 21"
+            : ext === "address-duplicate"
+            ? "Ulica Street 1, Fixture"
+            : ext === "different-number"
+            ? "Street 2"
+            : "Street 1"
         },${lat},0,${status},${closed},'overture','unverified')`;
       }
     }
+    await db
+      .queryArray`update mkt_locations set source_kind='manual',verification='confirmed',verification_note='Keep this fixture' where ext_key='manual'`;
     await seed(db, "DE");
     await db.queryArray(migration);
     for (const cc of ["ES", "PL", "HU"]) {
       assertEquals(await count(db, "mkt_chains", cc, "mccafe"), 0);
       assertEquals(await count(db, "mkt_locations", cc, "mccafe"), 0);
-      assertEquals(await count(db, "mkt_locations", cc, "mcdonalds"), 3);
+      assertEquals(await count(db, "mkt_locations", cc, "mcdonalds"), 5);
       const { rows } = await db.queryObject<
         { ext_key: string; status: string; closed: string | null }
       >`select ext_key,status,closed from mkt_locations where country=${cc} order by ext_key`;
       assertEquals(rows, [
+        { ext_key: "different-number", status: "open", closed: null },
         { ext_key: "distinct", status: "open", closed: null },
         { ext_key: "history", status: "closed", closed: "2020-01" },
         { ext_key: "known", status: "open", closed: null },
+        { ext_key: "manual", status: "open", closed: null },
       ]);
     }
     assertEquals(await count(db, "mkt_chains", "DE", "mccafe"), 1);
     await db.queryArray(migration);
     for (const cc of ["ES", "PL", "HU"]) {
-      assertEquals(await count(db, "mkt_locations", cc, "mcdonalds"), 3);
+      assertEquals(await count(db, "mkt_locations", cc, "mcdonalds"), 5);
     }
   } finally {
     await db.queryArray("rollback");

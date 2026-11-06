@@ -101,6 +101,24 @@ Deno.test("#1113: same-address Overture rows do not inflate a chain's point coun
   ]);
 });
 
+Deno.test("#1113: duplicate rows do not satisfy the existing discovery thresholds", () => {
+  for (const branded of [true, false]) {
+    const { points, chains } = discover(
+      many(5, (i) => ({
+        brand: branded ? "Fixture Coffee" : null,
+        name: "Fixture Coffee",
+        lat: 52.5 + i * 0.000001,
+        lng: 13.4,
+        address: "Rynek 2",
+        locality: ["A", "B", "C"][i % 3],
+      })),
+      cfg,
+    );
+    assertEquals(chains, [], `branded=${branded}`);
+    assertEquals(points, [], `branded=${branded}`);
+  }
+});
+
 Deno.test("overture: a brand with a country suffix matches the config chain by prefix", () => {
   const { points, chains } = discover(
     [
