@@ -449,7 +449,7 @@ make unfreeze          # снять раньше срока; по сроку р�
 Устройство: `muspelheim-infra/swarm-reserve/`, сторона VPS — `vps-infra/projects/swarm-reserve/`.
 
 ## Команды (`make help`)
-- `make smoke-staging` / `make smoke-prod` — смоук edge-функций (`scripts/smoke.sh`, один и тот же набор проверок для любого контура).
+- `make smoke-staging` / `make smoke-prod` — смоук edge-функций (`scripts/smoke.sh`, один и тот же набор проверок для любого контура). `smoke-prod` проверяет текущий `https://api.swarm-team.app/functions/v1`, а не снятый облачный проект (#919).
 - `make staging-sync-functions` — tar `supabase/functions` → scp на MUSPELHEIM → распаковка в `volumes/functions/` → рестарт `supabase-edge-functions`.
 - `make staging-migrate FILE=…` — накатить SQL-файл на staging-БД (`ON_ERROR_STOP`).
 - `make staging-psql` — psql в staging-БД (стдин). `make staging-ps/-up/-down` — статус/подъём/останов стека.
