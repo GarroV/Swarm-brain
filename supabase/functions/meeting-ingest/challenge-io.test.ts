@@ -4,7 +4,7 @@
 import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import type { InMemoryPart } from "../_shared/meeting-processor.ts";
-import { lowerHolderSeconds, measureUpload, settleChallengeUpload } from "./challenge-io.ts";
+import { correctHolderSeconds, measureUpload, settleChallengeUpload } from "./challenge-io.ts";
 import { m4aOf, type Overrides } from "./m4a-fixture.ts";
 
 /** Часть .m4a длиной `seconds` по содержимому (m4a-fixture.ts) — звук серверу не нужен, нужна форма. */
@@ -192,7 +192,7 @@ Deno.test("встречи нет — 404, в базу ничего не пише
 
 Deno.test("ЯДРО: поправка секунд держателя — только при тех же держателе и секундах и без бота", async () => {
   const { client, calls } = fakeDb(null, [true]);
-  await lowerHolderSeconds(client, "m", HOLDER, 86_000, 600);
+  await correctHolderSeconds(client, "m", HOLDER, 86_000, 600);
   assertEquals(calls[0]?.patch, { recorded_seconds: 600 });
   assertEquals(calls[0]?.filters, [
     "id=eq.m",
@@ -200,4 +200,20 @@ Deno.test("ЯДРО: поправка секунд держателя — тол
     "recorded_seconds=eq.86000",
     "agent_last_seen_at=is.null",
   ]);
+});
+
+Deno.test("#121: missing/zero seconds are measured from media and written with nullable CAS", async () => {
+  const measured = await measureUpload([part(0, 3), part(5, 2), part(0, 3)]);
+  assertEquals(measured, 5, "gaps and duplicate tracks do not inflate duration");
+  for (const previous of [null, 0]) {
+    const { client, calls } = fakeDb(null, [true]);
+    await correctHolderSeconds(client, "m", HOLDER, previous, measured!);
+    assertEquals(calls[0]?.patch, { recorded_seconds: 5 });
+    assertEquals(calls[0]?.filters, [
+      "id=eq.m",
+      `claim_owner=eq.${HOLDER}`,
+      previous === null ? "recorded_seconds=is.null" : "recorded_seconds=eq.0",
+      "agent_last_seen_at=is.null",
+    ]);
+  }
 });

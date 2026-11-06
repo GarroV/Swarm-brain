@@ -1830,14 +1830,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // НЕ dropLast вслепую (терял финализированный хвост — инцидент 2026-07-21, seg10 был цел):
         // берём все существующие сегменты, читаемость проверяет AVAudioFile — активный на момент
         // краша файл без moov просто не откроется и отпадёт сам.
-        let segs: [(url: URL, offset: Double)] = sorted.map {
+        let recovered = RecoveredAudio.read(sorted.map {
             (url: dir.appendingPathComponent($0.path), offset: $0.offset)
-        }.filter { seg in
-            guard FileManager.default.fileExists(atPath: seg.url.path),
-                  ((try? seg.url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0) > 1024
-            else { return false }
-            return (try? AVAudioFile(forReading: seg.url)) != nil
-        }
+        })
+        let segs = recovered.segments
         // «Нечего спасать» по мете ≠ можно стирать: мета могла отстать от реальных файлов
         // (инцидент 2026-07-21 — в мете один sys0, на диске 11 валидных сегментов).
         guard !segs.isEmpty else { quarantineOrRemove(dir: dir); return }
@@ -1849,7 +1845,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             title: meta.title,   // пусто → сервер назовёт «участник — дата» (#184)
             startedAt: meta.calStartISO ?? meta.startISO,
             endedAt: meta.calEndISO ?? iso.string(from: Date()),
-            agentVersion: "0.1.0")
+            agentVersion: "0.1.0",
+            recordedSeconds: recovered.recordedSeconds)
         do {
             let claim = try await withRetry { try await client.claim(req) }
             if claim.shouldTranscribe {
@@ -1861,7 +1858,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                     claimRetry: PendingUpload.ClaimRetry(
                         identityKind: req.identityKind.rawValue, identityKey: req.identityKey,
                         title: req.title, startedAt: req.startedAt, endedAt: req.endedAt,
-                        recordedSeconds: nil))
+                        recordedSeconds: req.recordedSeconds))
                 await UploadQueue.shared.drain(config: cfg)
                 await MainActor.run { self.notifyRecovered() }
                 try? FileManager.default.removeItem(at: dir)   // enqueue перенёс файлы → папка не нужна

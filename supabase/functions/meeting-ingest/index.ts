@@ -9,7 +9,7 @@ import { readParts, type TrackParts } from "./parts.ts";
 import { handleBackupUpload } from "./backup.ts";
 import { decideUpload, uploadSource } from "./second-recording.ts";
 import { freshChallenge, holderSecondsCorrection, mayCorrectHolderSeconds } from "./challenge.ts";
-import { lowerHolderSeconds, measureUpload, type Rival, settleChallengeUpload } from "./challenge-io.ts";
+import { correctHolderSeconds, measureUpload, type Rival, settleChallengeUpload } from "./challenge-io.ts";
 import { claimLeaseUntil } from "../_shared/meeting-lease.ts";
 import { isFrozen } from "../_shared/meeting-frozen.ts";
 import { parseSpeakerTimeline, type SpeakerSpan, SpeakerTimelineError } from "../_shared/speakers.ts";
@@ -250,13 +250,12 @@ Deno.serve(async (req: Request) => {
   if (read instanceof Response) return read;
   const { systemParts, micParts } = read;
 
-  // Первая выгрузка держателя меряется: заявленные секунды больше измеренного — встреча получает
-  // измеренные (challenge.ts holderSecondsCorrection), иначе завышенная заявка первого заявителя
-  // закрывала бы встречу от перехвата более полной записью.
-  if (!challenge && m.recorded_seconds !== null && mayCorrectHolderSeconds(m, uploader, sources)) {
+  // Первая выгрузка держателя заполняет отсутствующие/нулевые секунды (#121) или уменьшает
+  // завышенные по измеренному аудио (challenge.ts holderSecondsCorrection).
+  if (!challenge && mayCorrectHolderSeconds(m, uploader, sources)) {
     const measured = await measureUpload([...systemParts, ...micParts]);
-    const lowered = holderSecondsCorrection(m, uploader, sources, measured);
-    if (lowered !== null) await lowerHolderSeconds(supabase, m.id, uploader, m.recorded_seconds, lowered);
+    const corrected = holderSecondsCorrection(m, uploader, sources, measured);
+    if (corrected !== null) await correctHolderSeconds(supabase, m.id, uploader, m.recorded_seconds, corrected);
   }
 
   // Кладём части в Storage и пишем манифест в process_state. Метим 'processing' ДО фоновой работы.
