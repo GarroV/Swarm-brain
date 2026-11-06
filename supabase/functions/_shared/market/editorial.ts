@@ -1,7 +1,8 @@
 // Ручная часть страны для «Анализа рынка» — блоки эталона, вписанные руками (см. миграцию
 // 20261003120000_market_editorial.sql). Здесь — только проверка при импорте: блок из списка,
-// форма верхнего уровня та, что ждёт экран, нет полей прибыли и размер разумный. Разбор
-// полей по одному делает экран (miniapp/src/lib/marketEditorial.ts) и пропускает кривое.
+// форма верхнего уровня та, что ждёт экран, нет полей прибыли и размер разумный.
+// editorial-write.ts проверяет потери по общему разборщику editorial-view.ts.
+import { editorialViewIssue } from "./editorial-write.ts";
 
 /** Блок → ожидаемая форма верхнего уровня. */
 export const EDITORIAL_BLOCKS = {
@@ -68,6 +69,11 @@ export function parseEditorial(raw: unknown, errors: string[]): Editorial {
     profitKeys(payload, `editorial.${block}`, bad);
     if (bad.length) {
       errors.push(`${bad[0]}: прибыль и убыток в разделе не показываются`);
+      continue;
+    }
+    const displayIssue = editorialViewIssue(block, payload);
+    if (displayIssue) {
+      errors.push(displayIssue);
       continue;
     }
     out[block as EditorialBlock] = payload;

@@ -2,6 +2,7 @@
 // грузят их, не втягивая в покрытие модули с логикой. Обработчики — в market.ts.
 
 import { EDITORIAL_BLOCKS } from "../_shared/market/editorial.ts";
+import { PIZZA_TYPES } from "../_shared/market/price-types.ts";
 
 const ME = { type: "number", description: "Твой Telegram user ID" };
 const CC = { type: "string", description: "Код страны, например BG, HR, RS" };
@@ -116,10 +117,10 @@ export const MARKET_TOOL_DEFINITIONS = [
       currency: str("EUR, BGN, HRK, BYN, MDL, AMD, AZN, TJS, GEL или KGS"),
       size_cm: numb("Размер пиццы, см"),
       channel: str("Канал: delivery, pickup, restaurant"),
-      item_type: str("Тип позиции"),
+      item_type: { type: "string", enum: PIZZA_TYPES, description: "Тип пиццы, который показывает таблица цен" },
       seen_on: str("Дата цены ГГГГ-ММ-ДД, по умолчанию сегодня"),
       source: SRC,
-    }, ["country", "chain", "item", "price", "currency", "source"]),
+    }, ["country", "chain", "item", "item_type", "price", "currency", "source"]),
   },
   {
     name: "market_add_fact",

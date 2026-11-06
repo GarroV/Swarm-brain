@@ -43,6 +43,14 @@ const loc = {
 };
 const base = { chains: [chain], locs: [loc] };
 
+Deno.test("#1132: a snapshot with a hidden editorial field is refused as a whole", () => {
+  const errors = errs(validateSnapshot({
+    ...base,
+    editorial: { pizza_table: [{ name: "Example", chain: "dominos", entry: 2015 }] },
+  }));
+  assertEquals(errors.some((e) => e.includes("editorial.pizza_table[0].entry")), true);
+});
+
 Deno.test("accepts the Croatia file format and maps short keys", () => {
   const s = ok(validateSnapshot(base));
   assertEquals(s.locations[0], {

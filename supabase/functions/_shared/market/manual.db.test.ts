@@ -133,8 +133,13 @@ Deno.test("block: replaced whole with the old content returned; wrong shape and 
   const shape = await setBlock(sb, CC, "events", { text: "not a list" }, SRC);
   const profit = await setBlock(sb, CC, "summary", [{ title: "x", net_profit: 5 }], SRC);
   const unknown = await setBlock(sb, CC, "nonsense", [], SRC);
+  const hidden = await setBlock(sb, CC, "events", [{ date: "2025", kind: "close", text: "hidden" }], SRC);
   assert(!shape.ok && !profit.ok && !unknown.ok);
   assert(!profit.ok && profit.error.includes("прибыль"));
+  assert(!hidden.ok && hidden.error.includes("events[0]"));
+  const { data: retained } = await sb.from("mkt_editorial").select("payload").eq("country", CC).eq("block", "events")
+    .single();
+  assertEquals(retained!.payload, [{ date: "2025-01", kind: "open", chain: "kfc", text: "b" }]);
 });
 
 Deno.test("chain: a new chain takes the next palette slot, an existing one keeps its slot", async () => {
@@ -154,7 +159,8 @@ Deno.test("price: converted to euro, same day overwrites, status counts it", asy
   await seedChain();
   const a = await setPrice(sb, CC, {
     chain: "kfc",
-    item: "Bucket",
+    item: "Margherita",
+    item_type: "margherita",
     price: 19.56,
     currency: "BGN",
     seen_on: "2026-10-01",
@@ -164,7 +170,8 @@ Deno.test("price: converted to euro, same day overwrites, status counts it", asy
   assertEquals(a.after.price_eur, 10);
   const b = await setPrice(sb, CC, {
     chain: "kfc",
-    item: "Bucket",
+    item: "Margherita",
+    item_type: "margherita",
     price: 11,
     currency: "EUR",
     seen_on: "2026-10-01",
@@ -174,6 +181,26 @@ Deno.test("price: converted to euro, same day overwrites, status counts it", asy
   assertEquals(b.before?.price_eur, 10);
   const status = await countryStatus(sb, CC);
   assert(status.includes("Цены: 1"), status);
+  await wipe();
+});
+
+Deno.test("#1132: unsupported pizza type does not create a hidden price", async () => {
+  await wipe();
+  await seedChain();
+  for (const item_type of [undefined, "pizza", "classic", "signature"]) {
+    const result = await setPrice(sb, CC, {
+      chain: "kfc",
+      item: "Example",
+      item_type,
+      price: 10,
+      currency: "EUR",
+      source: SRC,
+    });
+    assert(!result.ok && result.error.includes("item_type"));
+  }
+  const { count, error } = await sb.from("mkt_prices").select("id", { count: "exact", head: true }).eq("country", CC);
+  assertEquals(error, null);
+  assertEquals(count, 0);
   await wipe();
 });
 
