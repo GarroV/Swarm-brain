@@ -124,44 +124,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     private var maintTimer: Timer?
     // Авто-стоп по концу звонка (per-process детект во время записи).
     private var recWatchTimer: Timer?
-    private var callSeenDuringRec = false
-    private var silentTicks = 0
-    // «Разговор начался» — собеседников слышно 2 тика подряд. До этого правила (0) и (а) запись не
-    // останавливают: они про конец разговора, а до начала ловят ожидание в лобби (issue #379).
-    private var conversation = ConversationGate()
-    // Тики подряд, когда НИКТО не звучит: ни системная дорожка (собеседники), ни СВОЙ микрофон.
-    // Считается независимо от mic-детекта занятости: ловит конец БРАУЗЕРНОГО звонка (Google Meet /
-    // Контур.Толк во вкладке), где браузер держит микрофон непрерывно даже после выхода.
-    // Инцидент 2026-07-24: правило слушало ТОЛЬКО собеседников → монолог владельца (собеседники
-    // молча слушают) выглядел как «тишина» и рубил запись посреди созвона. Теперь «тихий тик» =
-    // тихи ОБЕ дорожки, и уровни берутся пиком за интервал (не точечным сэмплом раз в 5с).
-    private var systemSilentTicks = 0
-    // Порог «тишины» системной дорожки 0…1: ниже него считаем, что собеседников не слышно.
-    private static let systemSilenceLevel: Float = 0.02
-    // Порог «тишины» СВОЕГО микрофона 0…1 (currentMicLevel: averagePower, пол −50дБ). Выше
-    // системного: мик физически рядом и ловит фоновый шум комнаты; калибровка — по dbg-логу
-    // живого прогона (micPeak в тиках).
-    private static let micSilenceLevel: Float = 0.12
-    // Сколько тихих тиков (5с каждый) ОБЕИХ дорожек = конец звонка. 36 ≈ 3 мин непрерывной
-    // тишины — в живом созвоне такое почти не встречается; компромисс ради фикса runaway-записей.
-    private static let systemSilenceTicksToStop = 36
-    // Бэкстоп от «шумного мика»: фоновый шум комнаты (улица/вентилятор/клавиатура) может держать
-    // mic-пик выше порога и бесконечно отодвигать общий стоп по тишине. Отдельный счётчик ТОЛЬКО
-    // по системной дорожке: 15 мин без ЕДИНОГО звука собеседников (пиками за интервал) → звонка
-    // нет, мик не спасает. Сброс на ЛЮБОМ громком тике (без анти-блипа): тап пишет только процесс
-    // встречи, случайный «блип» там = реальный звук с той стороны.
-    private var systemOnlySilentTicks = 0
-    private static let systemOnlySilenceTicksToStop = 180   // 180 × 5с = 15 мин
-    // Пик своего микрофона между тиками recWatchTick: копится 1с-сэмплером micPeakTimer (у
-    // AVAudioRecorder метринг pull-based — колбэка нет, аккумулируем опросом), читается и
-    // сбрасывается в recWatchTick. Всё на main — без локов.
-    private var micPeakTimer: Timer?
+    // Pure per-recording stop state; thresholds and ordering live in RecorderKit.
+    private var autoStopRule = AutoStopRule()
+    // Mic peak accumulated by the one-second sampler between five-second ticks.
     private var micPeakSinceTick: Float = 0
-    // Тики подряд с ПОДТВЕРЖДЁННО закрытой вкладкой встречи (Meet/Контур) → быстрый конец созвона.
-    private var roomGoneTicks = 0
-    private static let roomGoneTicksToStop = 4   // 4 × 5с ≈ 20с закрытой вкладки → авто-стоп
-    // Не-тихие тики подряд: сброс счётчика тишины только при 2+ подряд (устойчивость к «блипам»).
-    private var loudStreak = 0
+    private var micPeakTimer: Timer?
     // Плановый конец встречи из Google Calendar (kind == .calendar) — сильный сигнал конца, как у
     // Granola. nil для room/manual. БОЛЬШЕ НЕ стоп-триггер (2026-07-29): календарный конец НЕ рубит
     // активный звонок (событие может быть заглушкой/не про этот созвон) — конец определяем только по
@@ -170,13 +137,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     // Тикает раз в 30 сек, пока идёт запись: обновляет ТОЛЬКО подпись у значка (счётчик
     // «49m left»). Полный rebuildMenu() тут не годится — он пересобирает всё меню целиком.
     private var statusTitleTimer: Timer?
-    // Дефолтный стоп: если активный созвон не детектится, запись не идёт дольше этого лимита.
-    // Бэкстоп от runaway-записи (когда детект созвона молчит — напр. ручной старт без звонка).
-    private static let maxNoCallSeconds: TimeInterval = 75 * 60   // 1ч15м
-    // Жёсткий потолок длительности записи. Лимит выше теперь требует ещё и ФАКТИЧЕСКОЙ тишины
-    // дорожек (issue #271), поэтому «не писать вечно» держит именно потолок: забытый старт под
-    // музыку/видео звучит непрерывно и лимитом по тишине не ловится.
-    private static let maxHardSeconds: TimeInterval = 4 * 60 * 60   // 4 часа
 
     func applicationWillFinishLaunching(_ notification: Notification) { installMainMenu() }
 
@@ -1573,13 +1533,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     // исключая нас). Как только конференц-приложение отпустило микрофон на ~15с подряд —
     // звонок завершён → останавливаем запись. Ловит и ранний конец (как Granola).
     private func startCallEndWatch() {
-        callSeenDuringRec = false
-        silentTicks = 0
-        conversation = ConversationGate()
-        systemSilentTicks = 0
-        systemOnlySilentTicks = 0
-        roomGoneTicks = 0
-        loudStreak = 0
+        autoStopRule = AutoStopRule()
         micPeakSinceTick = 0
         // Таймер планируем СТРОГО на main-run-loop. startCallEndWatch зовётся из Task без @MainActor
         // (после `await recorder.start()`) → на фоновом потоке. Timer.scheduledTimer там сел бы на
@@ -1647,109 +1601,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         let systemPeak = recorder.systemPeakSinceLastRead()
         let micPeak = micPeakSinceTick
         micPeakSinceTick = 0
-        let anyoneAudible = systemPeak >= Self.systemSilenceLevel || micPeak >= Self.micSilenceLevel
-        // Устойчивость к «блипам»: одиночный всплеск (уведомление, звук выхода из звонка) НЕ
-        // сбрасывает счётчик тишины — сброс только на 2 не-тихих тиках подряд. В живой речи
-        // пиковые тики идут подряд, так что сброс срабатывает надёжно.
-        if !anyoneAudible {
-            systemSilentTicks += 1; loudStreak = 0
-        } else {
-            loudStreak += 1
-            if loudStreak >= 2 { systemSilentTicks = 0 }
-        }
-        // Бэкстоп только по собеседникам (мик не участвует) — см. объявление счётчика.
-        conversation.observe(otherSideAudible: systemPeak >= Self.systemSilenceLevel)
-        if systemPeak < Self.systemSilenceLevel {
-            systemOnlySilentTicks += 1
-        } else {
-            systemOnlySilentTicks = 0
-        }
-
-        // Реальный созвон = кто-то, КРОМЕ нас и системных демонов (CoreSpeech), держит мик.
-        // На macOS <14 per-process детекта нет → realCall всегда false, работает только лимит ниже.
         var realCall = false
+        var micProcesses: [String] = []
         if #available(macOS 14.0, *) {
             let info = CallDetector.othersUsingMicInfo()
             realCall = !info.isEmpty
-            dbg("tick others=\(info.map { "\($0.pid):\($0.bundle)" }) seen=\(callSeenDuringRec) talk=\(conversation.isOpen) silent=\(silentTicks) sysPeak=\(String(format: "%.3f", systemPeak)) micPeak=\(String(format: "%.3f", micPeak)) sysSilent=\(systemSilentTicks) sysOnly=\(systemOnlySilentTicks) roomGone=\(roomGoneTicks) elapsed=\(Int(elapsed))s")
+            micProcesses = info.map { "\($0.pid):\($0.bundle)" }
         }
-
-        // (Сигнал вкладки) Быстрый конец БРАУЗЕРНОГО созвона: вкладка комнаты (Meet/Контур) закрыта
-        // /ушла ~20с подряд → «ты вышел». Прямее и быстрее «3 минут тишины». Только для room-встреч
-        // и когда созвон был замечен; ошибка чтения вкладок = «не уверены» (roomGone не копится, не стопаем).
-        if callSeenDuringRec, let room = identity, room.kind == .room {
+        var roomPresence: AutoStopRule.RoomPresence?
+        if autoStopRule.callSeenDuringRec, let room = identity, room.kind == .room {
             switch MeetingIdentity.roomPresence(key: room.key) {
-            case .open: roomGoneTicks = 0
-            case .gone: roomGoneTicks += 1
-            case .unknown: break
+            case .open: roomPresence = .open
+            case .gone: roomPresence = .gone
+            case .unknown: roomPresence = .unknown
             }
-            if roomGoneTicks >= Self.roomGoneTicksToStop {
-                autoStop(reason: "встреча закрыта")
-                return
-            }
-        } else {
-            roomGoneTicks = 0
         }
-
-        // (Календарь) Плановый конец из Google Calendar НЕ останавливает запись, пока идёт звук
-        // (решение владельца 2026-07-29). Причина: календарное событие может быть заглушкой / не про
-        // этот звонок (напр. личный созвон в другом браузере при рабочем событии в календаре), а живой
-        // диалог важнее расписания. Был баг: активный звонок рубился на `плановый конец + 30 мин`
-        // (scheduledOverrunCapSeconds) — ровно час записи вместо продолжения. Конец созвона определяем
-        // ТОЛЬКО по тишине дорожек: правила ниже (3 мин тишины / 15 мин без собеседника / закрытая
-        // вкладка / лимит без активного созвона). `scheduledEndAt` — больше не стоп-триггер.
-
-        // (0) Конец БРАУЗЕРНОГО звонка по тишине ОБЕИХ дорожек. Срабатывает ДАЖЕ когда
-        // mic-холдер (браузер) всё ещё держит мик — НЕ гейтим на realCall==false. Требуем, чтобы
-        // звонок хоть раз был замечен (callSeenDuringRec), чтобы не стопать «пустой» ручной старт,
-        // и чтобы разговор уже начался (conversation.isOpen): три минуты тишины в лобби до прихода
-        // собеседников — это ожидание, а не конец звонка (issue #379).
-        if callSeenDuringRec && conversation.isOpen && systemSilentTicks >= Self.systemSilenceTicksToStop {
-            autoStop(reason: "звонок завершён (тишина)")
-            return
-        }
-        // (0б) Бэкстоп: собеседников не слышно 15 мин подряд — стоп независимо от мика (шумный
-        // мик не должен держать запись вечно). Любой звук с той стороны сбрасывает счётчик.
-        if callSeenDuringRec && systemOnlySilentTicks >= Self.systemOnlySilenceTicksToStop {
-            autoStop(reason: "собеседников не слышно 15 мин")
-            return
-        }
-
-        // (0в) Жёсткий потолок длительности — работает всегда, даже при живом звуке и активном
-        // детекте. Это единственная защита от runaway-записи после того, как лимит (б) ниже стал
-        // требовать фактической тишины.
-        if elapsed >= Self.maxHardSeconds {
-            autoStop(reason: "потолок 4 ч — останавливаю запись")
-            return
-        }
-
-        if realCall {
-            callSeenDuringRec = true
-            silentTicks = 0
-            return
-        }
-
-        // Реального созвона сейчас нет — копим «тихие» тики (5с каждый).
-        silentTicks += 1
-        // (а) Созвон был и смолк ~15с → закончился → стоп. Только после начала разговора: переход
-        // из лобби в звонок (или из вкладки в приложение) может отпустить микрофон дольше 15 с
-        // (issue #379). До разговора запись держат бэкстопы (0б) и (б).
-        if callSeenDuringRec && conversation.isOpen && silentTicks >= 3 {
-            autoStop(reason: "звонок завершён")
-            return
-        }
-        // (б) Дефолтный стоп: за 1ч15м активный созвон так и не детектился (или давно смолк) →
-        // запись не должна тянуться дальше. Защита от runaway, когда детект молчит.
-        // Инцидент 2026-09-08 (issue #271): правило смотрело ТОЛЬКО на silentTicks — счётчик
-        // «никто другой не держит микрофон», то есть на ДЕТЕКТ, а не на звук. Детект был слеп всю
-        // запись (issue #270: others=[] в 899 тиках подряд), и живой громкий созвон (sysPeak
-        // 0.3–1.0 без единого тихого тика) оборвался ровно на 1ч15м. Поэтому лимит требует теперь
-        // и ФАКТИЧЕСКОЙ тишины обеих дорожек: пока кто-то звучит — пишем, от бесконечной записи
-        // держит потолок (0в) выше.
-        if elapsed >= Self.maxNoCallSeconds && silentTicks >= 3
-            && systemSilentTicks >= Self.systemSilenceTicksToStop {
-            autoStop(reason: "лимит 1ч15м без активного созвона")
-            return
+        let reason = autoStopRule.observe(elapsed: elapsed, systemPeak: systemPeak, micPeak: micPeak,
+                                          realCall: realCall, roomPresence: roomPresence)
+        dbg("tick others=\(micProcesses) seen=\(autoStopRule.callSeenDuringRec) talk=\(autoStopRule.conversation.isOpen) silent=\(autoStopRule.silentTicks) sysPeak=\(String(format: "%.3f", systemPeak)) micPeak=\(String(format: "%.3f", micPeak)) sysSilent=\(autoStopRule.systemSilentTicks) sysOnly=\(autoStopRule.systemOnlySilentTicks) roomGone=\(autoStopRule.roomGoneTicks) elapsed=\(Int(elapsed))s")
+        // Existing notification reasons stay byte-for-byte unchanged.
+        switch reason {
+        case .roomClosed: autoStop(reason: "встреча закрыта")
+        case .bothSidesSilent: autoStop(reason: "звонок завершён (тишина)")
+        case .otherSideSilent: autoStop(reason: "собеседников не слышно 15 мин")
+        case .hardLimit: autoStop(reason: "потолок 4 ч — останавливаю запись")
+        case .micReleased: autoStop(reason: "звонок завершён")
+        case .noCallLimit: autoStop(reason: "лимит 1ч15м без активного созвона")
+        case nil: break
         }
     }
 

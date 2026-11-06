@@ -241,17 +241,6 @@ func runWidgetSelfTest(pill: Bool, morph: Bool = false, seconds: Double) {
     let saved = UserDefaults.standard.string(forKey: savedKey)
     UserDefaults.standard.removeObject(forKey: savedKey)
 
-    // ЛОВУШКА, на которой я попался 03.09.2026: запущенный из папки сборки бинарь не видит
-    // BeeMark.png (ресурс кладёт только build-app.sh в бандл) и молча рисует ЗАПАСНОЙ глиф —
-    // предупреждение уходит в NSLog, то есть мимо глаз. В результате скриншот проверки
-    // показал владельцу «сломанную форму» шмеля, которой в продукте нет. Теперь режим
-    // самопроверки говорит об этом громко и в stdout, рядом с остальными замерами.
-    if Bundle.main.url(forResource: "BeeMark", withExtension: "png") == nil {
-        print("⚠️  BeeMark.png НЕ найден: значок будет ЗАПАСНОЙ, форма НЕ как в продукте.")
-        print("    Проверять вид значка только из установленного бандла:")
-        print("    /Applications/bumblebee.app/Contents/MacOS/SwarmRecorder --selftest-widget …")
-    }
-
     let widget = RecorderWidget()
     if pill {
         widget.showRecording(startedAt: Date())
@@ -362,6 +351,23 @@ func runUpdateSelfTest(apply: Bool) {
         exit(0)
     }
     RunLoop.main.run()
+}
+
+// Every selftest reports missing artwork before capture, network or UI work (#225).
+// This diagnostic-only mode lets the bundle check run without starting a recording.
+if let mode = CommandLine.arguments.first(where: { $0.hasPrefix("--selftest") }) {
+    setvbuf(stdout, nil, _IOLBF, 0)
+    let hasMark = Bundle.main.url(forResource: "BeeMark", withExtension: "png")
+        .flatMap { NSImage(contentsOf: $0) } != nil
+    if !hasMark {
+        print("⚠️  BeeMark.png НЕ найден или не читается: значок будет ЗАПАСНОЙ, форма НЕ как в продукте.")
+        print("    Проверять вид значка только из установленного бандла:")
+        print("    /Applications/bumblebee.app/Contents/MacOS/SwarmRecorder \(mode) …")
+    }
+    if mode == "--selftest-resources" {
+        print("SELFTEST_RESOURCES mark=\(hasMark ? "available" : "fallback")")
+        exit(0)
+    }
 }
 
 if CommandLine.arguments.contains("--selftest-notes") {
