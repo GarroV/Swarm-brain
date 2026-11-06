@@ -241,17 +241,6 @@ func runWidgetSelfTest(pill: Bool, morph: Bool = false, seconds: Double) {
     let saved = UserDefaults.standard.string(forKey: savedKey)
     UserDefaults.standard.removeObject(forKey: savedKey)
 
-    // ЛОВУШКА, на которой я попался 03.09.2026: запущенный из папки сборки бинарь не видит
-    // BeeMark.png (ресурс кладёт только build-app.sh в бандл) и молча рисует ЗАПАСНОЙ глиф —
-    // предупреждение уходит в NSLog, то есть мимо глаз. В результате скриншот проверки
-    // показал владельцу «сломанную форму» шмеля, которой в продукте нет. Теперь режим
-    // самопроверки говорит об этом громко и в stdout, рядом с остальными замерами.
-    if Bundle.main.url(forResource: "BeeMark", withExtension: "png") == nil {
-        print("⚠️  BeeMark.png НЕ найден: значок будет ЗАПАСНОЙ, форма НЕ как в продукте.")
-        print("    Проверять вид значка только из установленного бандла:")
-        print("    /Applications/bumblebee.app/Contents/MacOS/SwarmRecorder --selftest-widget …")
-    }
-
     let widget = RecorderWidget()
     if pill {
         widget.showRecording(startedAt: Date())
@@ -364,6 +353,22 @@ func runUpdateSelfTest(apply: Bool) {
     RunLoop.main.run()
 }
 
+// Every selftest reports missing artwork before capture, network or UI work (#225).
+// This diagnostic-only mode lets the bundle check run without starting a recording.
+if let mode = CommandLine.arguments.first(where: { $0.hasPrefix("--selftest") }) {
+    setvbuf(stdout, nil, _IOLBF, 0)
+    let hasMark = RoyArt.hasBundledMark
+    if !hasMark {
+        print("⚠️  BeeMark.png НЕ найден или не читается: значок будет ЗАПАСНОЙ, форма НЕ как в продукте.")
+        print("    Проверять вид значка только из установленного бандла:")
+        print("    /Applications/bumblebee.app/Contents/MacOS/SwarmRecorder \(mode) …")
+    }
+    if mode == "--selftest-resources" {
+        print("SELFTEST_RESOURCES mark=\(hasMark ? "available" : "fallback")")
+        exit(0)
+    }
+}
+
 if CommandLine.arguments.contains("--selftest-notes") {
     let keep = CommandLine.arguments.firstIndex(of: "--keep").flatMap { i -> Double? in
         i + 1 < CommandLine.arguments.count ? Double(CommandLine.arguments[i + 1]) : nil
@@ -378,6 +383,18 @@ if CommandLine.arguments.contains("--selftest-notes") {
                       seconds: keep ?? 20)
 } else if let ai = CommandLine.arguments.firstIndex(of: "--analyze") {
     runAnalyze(Array(CommandLine.arguments[(ai + 1)...]))
+} else if CommandLine.arguments.contains("--selftest-audio-health") {
+    // Actual AppKit warning rendering, without showing a window or reading audio/config.
+    NSApplication.shared.setActivationPolicy(.prohibited)
+    let widget = RecorderWidget()
+    widget.setAudioSystemUnavailable(true)
+    let expected = BoardL10n.text("audio.systemUnresponsive", lang: BoardL10n.language())
+    guard widget.audioSystemWarningText == expected else { print("SELFTEST_AUDIO_HEALTH failed=warning"); exit(1) }
+    print("SELFTEST_AUDIO_HEALTH warning=\(expected)")
+    widget.setAudioSystemUnavailable(false)
+    guard widget.audioSystemWarningText == nil else { print("SELFTEST_AUDIO_HEALTH failed=recovery"); exit(1) }
+    print("SELFTEST_AUDIO_HEALTH recovery=clear")
+    exit(0)
 } else if CommandLine.arguments.contains("--selftest-update") {
     runUpdateSelfTest(apply: CommandLine.arguments.contains("--apply"))   // не возвращается до exit()
 } else if CommandLine.arguments.contains("--selftest-pick") {

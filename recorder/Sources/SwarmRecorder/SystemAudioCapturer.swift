@@ -664,7 +664,7 @@ final class ProcessTapSystemRecorder: SystemAudioCapturer {
             // зажигаем ТОЛЬКО пассивный индикатор в панели — дёшево, можно чаще и раньше.
             let last = self.withIOLock { self.lastNonSilentUptime }
             let silentFor = ProcessInfo.processInfo.systemUptime - last
-            if silentFor >= Self.silenceRebuildSeconds, CallDetector.realCallActive() {
+            if silentFor >= Self.silenceRebuildSeconds, CallDetector.realCallActive() == true {
                 self.rebuildLocked(reason: "тишина \(Int(silentFor))с при активном созвоне")
                 if !self.stalledSignaled { self.stalledSignaled = true; self.onSystemStalled?(true) }
             }
@@ -673,7 +673,7 @@ final class ProcessTapSystemRecorder: SystemAudioCapturer {
             // пересборками из шага 2 — см. lastGenuineSoundUptime) и максимум один раз за запись.
             // К этому моменту self-heal (шаг 2) уже пытался пересобрать тап несколько раз (~50с /
             // 8с ≈ 6 попыток) — это не первая реакция, а действительно «сами не справились».
-            guard !self.notifiedThisRecording, CallDetector.realCallActive() else { return }
+            guard !self.notifiedThisRecording, CallDetector.realCallActive() == true else { return }
             let genuineSilentFor = ProcessInfo.processInfo.systemUptime - self.withIOLock { self.lastGenuineSoundUptime }
             if genuineSilentFor >= Self.notifySilenceSeconds {
                 self.notifiedThisRecording = true

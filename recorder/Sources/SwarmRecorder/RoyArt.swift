@@ -18,6 +18,9 @@ enum RoyArt {
         return img
     }()
 
+    // Selftests report the same resource decision that the renderer actually uses.
+    static var hasBundledMark: Bool { mark != nil }
+
     // Иконка для меню-бара. Покой — template (macOS красит сама под тему), запись — красная.
     static func menuBarImage(recording: Bool) -> NSImage {
         let img = MarkRenderer.glyphImage(mark, size: 18, color: recording ? .systemRed : .black)

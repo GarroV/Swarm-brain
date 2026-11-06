@@ -1,13 +1,47 @@
 import CoreAudio
 import Foundation
+import RecorderKit
 
 // Детект звонка по аудио без календаря.
-//   • isMicActive() — устройство ввода занято кем-либо (device-level). Годится, пока МЫ НЕ
+//   • isMicActiveBlocking() — устройство ввода занято кем-либо (device-level). Годится, пока МЫ НЕ
 //     пишем (idle): ловит старт звонка. Во время нашей записи бесполезно — мы сами держим мик.
-//   • othersUsingMic() — per-process (macOS 14.0+): какие ДРУГИЕ процессы держат вход, исключая
+//   • readProcessesBlocking() — per-process (macOS 14.0+): какие ДРУГИЕ процессы держат вход, исключая
 //     наш PID. Работает и во время записи → этим ловим конец звонка (список опустел). Без TCC.
 enum CallDetector {
-    static func isMicActive() -> Bool {
+    struct MicProcess: Sendable { let pid: pid_t; let bundle: String }
+    struct Snapshot: Sendable { let active: Bool; let processes: [MicProcess] }
+
+    // HAL can block forever while coreaudiod is unresponsive. Exactly one provider
+    // request may be in flight, even after its deadline. No caller waits for it.
+    private static let probe = NonBlockingProbe<Snapshot>(timeout: 1, refreshInterval: 1) {
+        if #available(macOS 14.0, *) {
+            let processes = readProcessesBlocking().map { MicProcess(pid: $0.pid, bundle: $0.bundle) }
+            return Snapshot(active: !processes.isEmpty, processes: processes)
+        }
+        return Snapshot(active: isMicActiveBlocking(), processes: [])
+    }
+    private static var pollTimer: DispatchSourceTimer?
+
+    static func startMonitoring(onUnavailable: @escaping @MainActor @Sendable (Bool) -> Void) {
+        probe.onAvailabilityChange { unavailable in
+            DispatchQueue.main.async { onUnavailable(unavailable) }
+        }
+        guard pollTimer == nil else { return }
+        let timer = DispatchSource.makeTimerSource(queue: DispatchQueue.global(qos: .utility))
+        timer.schedule(deadline: .now(), repeating: 1)
+        timer.setEventHandler { _ = probe.poll() }
+        pollTimer = timer
+        timer.resume()
+    }
+
+    static func snapshot() -> Snapshot? {
+        switch probe.poll() {
+        case .value(let value): return value
+        case .pending, .timedOut: return nil
+        }
+    }
+
+    private static func isMicActiveBlocking() -> Bool {
         var devID = AudioObjectID(0)
         var size = UInt32(MemoryLayout<AudioObjectID>.size)
         var devAddr = AudioObjectPropertyAddress(
@@ -36,20 +70,12 @@ enum CallDetector {
 
     // Активен ли РЕАЛЬНЫЙ созвон: кто-то, КРОМЕ нас и системных демонов, держит вход микрофона.
     // macOS 14+ — точный per-process детект; ниже — грубый device-level (там фильтра демонов нет).
-    static func realCallActive() -> Bool {
-        if #available(macOS 14.0, *) { return !othersUsingMicInfo().isEmpty }
-        return isMicActive()
-    }
-
-    // ── per-process детект входа (macOS 14.0+), исключая свой процесс ─────────────
-    @available(macOS 14.0, *)
-    static func othersUsingMic() -> [pid_t] {
-        othersUsingMicInfo().map { $0.pid }
-    }
+    // nil means unknown, never a confirmed "microphone released".
+    static func realCallActive() -> Bool? { snapshot()?.active }
 
     // То же + bundle id — для диагностики.
     @available(macOS 14.0, *)
-    static func othersUsingMicInfo() -> [(pid: pid_t, bundle: String)] {
+    private static func readProcessesBlocking() -> [(pid: pid_t, bundle: String)] {
         let me = ProcessInfo.processInfo.processIdentifier
         return processList().compactMap { obj -> (pid_t, String)? in
             guard let pid = readPID(obj), pid > 0, pid != me else { return nil }

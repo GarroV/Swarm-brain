@@ -19,6 +19,7 @@ final class VoiceCapture: NSObject {
 
     func start() async -> StartResult {
         guard !isRecording else { return .started }
+        Diagnostics.shared.log("VOICE start requested")
         switch AVCaptureDevice.authorizationStatus(for: .audio) {
         case .denied, .restricted:
             return .micDenied
@@ -40,6 +41,7 @@ final class VoiceCapture: NSObject {
             guard r.prepareToRecord(), r.record() else { return .failed }
             recorder = r
             fileURL = url
+            Diagnostics.shared.log("VOICE capture started")
             return .started
         } catch {
             NSLog("SwarmRecorder: голос — запись не началась: \(error)")
@@ -51,6 +53,7 @@ final class VoiceCapture: NSObject {
     func finish() -> (url: URL, duration: TimeInterval)? {
         guard let r = recorder, let url = fileURL else { return nil }
         let duration = r.currentTime
+        Diagnostics.shared.log("VOICE stop requested duration=\(Int(duration))s")
         r.stop()
         recorder = nil
         return (url, duration)
@@ -58,6 +61,7 @@ final class VoiceCapture: NSObject {
 
     /// Остановить и выбросить запись.
     func cancel() {
+        if recorder != nil { Diagnostics.shared.log("VOICE cancel requested") }
         recorder?.stop()
         recorder = nil
         discard()
