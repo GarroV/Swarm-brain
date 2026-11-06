@@ -21,6 +21,7 @@ import { SwarmHttpError } from "../swarm-client/errors.ts";
 import { inBackground } from "./background.ts";
 import type { Notice, NoticeResult, Notifier } from "./notices.ts";
 import { describeError } from "./describe-error.ts";
+import { isTransientLoadError, JOIN_MAX_ATTEMPTS, JOIN_RETRY_PAUSE_MS } from "./join-retry.ts";
 import { BOT_PROFILE } from "./profile.ts";
 import { type AudioAlert, QuietEndTimer, SilenceWatch } from "./audio-watch.ts";
 
@@ -129,6 +130,11 @@ interface AudioWatchHooks {
 
 export interface MeetingRunOptions {
   readonly joinUrl: string;
+  /**
+   * Когда входить в комнату (ISO, `starts_at` календарного задания). Контейнер поднимается заранее —
+   * до этого момента бот ждёт, потом заходит. `undefined` — без ожидания (ручное приглашение).
+   */
+  readonly enterAt?: string;
   readonly displayName: string;
   readonly adapter: MeetingAdapter;
   readonly session: MeetingSession;
@@ -173,6 +179,7 @@ export type MeetingOutcome =
   | "guest_access_closed"
   | "door_timeout"
   | "captcha"
+  | "stopped_before_join"
   | "stopped_at_door"
   | "no_audio"
   | "nothing_recorded"
@@ -508,19 +515,65 @@ async function record(context: RunContext): Promise<MeetingOutcome> {
   return hand(context, spans);
 }
 
-async function afterClaim(context: RunContext): Promise<MeetingOutcome> {
-  const { options } = context;
-  try {
-    await options.adapter.join(options.joinUrl, options.displayName);
-  } catch (error) {
-    await sendNotice(context, {
-      kind: "join_failed",
-      meetingId: context.meetingId,
-      detail: describeError(error),
-    });
-    await leaveQuietly(context);
-    return "join_failed";
+/**
+ * Дождаться начала встречи: заранее поднятый по календарю бот входит в комнату ровно в `enterAt`,
+ * а не раньше. Короткими отрезками, чтобы сигнал остановки не ждал начала. Возвращает `false`,
+ * если остановили до начала.
+ */
+async function isStartReached(context: RunContext): Promise<boolean> {
+  const { enterAt } = context.options;
+  if (enterAt === undefined) return true;
+  const startMs = Date.parse(enterAt);
+  if (context.now() < startMs) {
+    context.log(`жду начала встречи до ${new Date(startMs).toISOString().slice(11, 19)} UTC`);
   }
+  while (!context.options.stop.aborted) {
+    const left = startMs - context.now();
+    if (left <= 0) return true;
+    await context.sleep(Math.min(left, context.timing.pollMs));
+  }
+  return false;
+}
+
+/**
+ * Зайти в звонок. Сбой загрузки страницы — ещё попытка (до `JOIN_MAX_ATTEMPTS`), любой другой
+ * сбой — сразу отказ. Нотиса `join_failed` уходит один раз, после последней неудачи.
+ */
+async function isJoined(context: RunContext): Promise<boolean> {
+  const { options } = context;
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      await options.adapter.join(options.joinUrl, options.displayName);
+      return true;
+    } catch (error) {
+      const reason = describeError(error);
+      const isLastAttempt =
+        attempt >= JOIN_MAX_ATTEMPTS || !isTransientLoadError(reason) || options.stop.aborted;
+      if (isLastAttempt) {
+        await sendNotice(context, {
+          kind: "join_failed",
+          meetingId: context.meetingId,
+          detail: reason,
+        });
+        await leaveQuietly(context);
+        return false;
+      }
+      context.log(`заход: попытка ${String(attempt)} из ${String(JOIN_MAX_ATTEMPTS)} — ${reason}`);
+      await leaveQuietly(context);
+      await context.sleep(JOIN_RETRY_PAUSE_MS);
+    }
+  }
+}
+
+async function afterClaim(context: RunContext): Promise<MeetingOutcome> {
+  // Claim уже взят: он заводит строку встречи (нотисам нужен `meeting_id`) и отсекает `defer` до
+  // ожидания — бот, которому писать не нужно, не стоит зря. Лиз держится ударами heartbeat.
+  if (!(await isStartReached(context))) {
+    context.log("остановили до начала встречи — в звонок не заходим");
+    await leaveQuietly(context);
+    return "stopped_before_join";
+  }
+  if (!(await isJoined(context))) return "join_failed";
 
   const door = await passDoor(context);
   if (door !== "admitted") {

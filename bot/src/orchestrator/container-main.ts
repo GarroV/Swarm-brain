@@ -286,6 +286,7 @@ async function main(): Promise<number> {
   try {
     const outcome = await runMeeting({
       joinUrl: config.joinUrl,
+      ...(config.calendar !== null && { enterAt: config.calendar.startsAt }),
       displayName: config.displayName,
       adapter,
       session,

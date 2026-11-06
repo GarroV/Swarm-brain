@@ -26,6 +26,10 @@ interface World {
    */
   readonly finalSeconds: (number | null)[];
   now: number;
+  /**
+   * Часы теста в момент каждого вызова `join`.
+   */
+  readonly joinedAt: number[];
   readonly options: MeetingRunOptions;
   readonly stop: AbortController;
 }
@@ -42,6 +46,11 @@ interface Script {
   readonly alone?: readonly (boolean | null)[];
   readonly partsRecorded?: number;
   readonly joinError?: Error;
+  /**
+   * Что отвечает заход на каждую попытку по порядку (`null` — успех); последний ответ повторяется.
+   * Перекрывает `joinError`.
+   */
+  readonly joinErrors?: readonly (Error | null)[];
   readonly recorderError?: Error;
   readonly finishError?: Error;
   readonly shouldLeaveOnNotice?: boolean;
@@ -69,6 +78,7 @@ function build(script: Script = {}): World {
   const alone = script.alone ?? [true];
   let doorPolls = 0;
   let alonePolls = 0;
+  let joinAttempts = 0;
 
   const world: World = {
     calls,
@@ -77,6 +87,7 @@ function build(script: Script = {}): World {
     beats,
     finalSeconds,
     now: 0,
+    joinedAt: [],
     stop,
     options: {
       joinUrl: "https://meet.google.com/abc-defg-hij",
@@ -97,7 +108,14 @@ function build(script: Script = {}): World {
       adapter: {
         join: (url) => {
           calls.push(`join:${url}`);
-          return script.joinError ? Promise.reject(script.joinError) : Promise.resolve();
+          world.joinedAt.push(world.now);
+          const scripted = script.joinErrors;
+          const failure =
+            scripted === undefined
+              ? (script.joinError ?? null)
+              : (scripted[Math.min(joinAttempts, scripted.length - 1)] ?? null);
+          joinAttempts += 1;
+          return failure ? Promise.reject(failure) : Promise.resolve();
         },
         waitAdmitted: (timeoutMs) => {
           const answer = door[Math.min(doorPolls, door.length - 1)] ?? "timeout";
@@ -479,6 +497,114 @@ describe("громкие отказы", () => {
     expect(world.notices).toEqual([
       { kind: "join_failed", meetingId: "m-1", detail: "net::ERR_NAME_NOT_RESOLVED" },
     ]);
+  });
+
+  it("сбой загрузки страницы звонка → вторая попытка, нотисы нет, дальше запись", async () => {
+    const timeout = new Error(
+      "page.goto: Timeout 60000ms exceeded.\nCall log:\n  - navigating to https://meet.google.com/abc, waiting until domcontentloaded",
+    );
+    const world = build({ joinErrors: [timeout, null] });
+
+    expect(await runMeeting(world.options)).toBe("recorded");
+    expect(world.calls.filter((call) => call.startsWith("join:"))).toHaveLength(2);
+    expect(world.notices).toEqual([]);
+  });
+
+  it("три сбоя загрузки подряд → ровно одна нотиса join_failed после последней", async () => {
+    const world = build({ joinError: new Error("net::ERR_CONNECTION_RESET at https://meet") });
+    const lines: string[] = [];
+    const options = {
+      ...world.options,
+      log: (line: string): void => {
+        lines.push(line);
+      },
+    };
+
+    expect(await runMeeting(options)).toBe("join_failed");
+    expect(world.calls.filter((call) => call.startsWith("join:"))).toHaveLength(3);
+    expect(world.notices).toHaveLength(1);
+    expect(world.notices[0]).toMatchObject({ kind: "join_failed", meetingId: "m-1" });
+    expect(lines.filter((line) => line.startsWith("заход: попытка"))).toEqual([
+      "заход: попытка 1 из 3 — net::ERR_CONNECTION_RESET at https://meet",
+      "заход: попытка 2 из 3 — net::ERR_CONNECTION_RESET at https://meet",
+    ]);
+  });
+
+  it("отказ захода по существу → без повтора, сразу join_failed", async () => {
+    const world = build({
+      joinError: new Error("Комната закрыта для гостей — в звонок не входим"),
+    });
+
+    expect(await runMeeting(world.options)).toBe("join_failed");
+    expect(world.calls.filter((call) => call.startsWith("join:"))).toHaveLength(1);
+    expect(world.notices).toHaveLength(1);
+  });
+
+  it("остановили между попытками → повтора нет", async () => {
+    const world = build({ joinError: new Error("net::ERR_TIMED_OUT") });
+    world.stop.abort();
+
+    expect(await runMeeting(world.options)).toBe("join_failed");
+    expect(world.calls.filter((call) => call.startsWith("join:"))).toHaveLength(1);
+  });
+
+  it("календарное задание со starts_at в будущем → заход не раньше начала, строка в журнале", async () => {
+    const world = build();
+    const lines: string[] = [];
+    const options = {
+      ...world.options,
+      enterAt: new Date(62_000).toISOString(),
+      log: (line: string): void => {
+        lines.push(line);
+      },
+    };
+
+    expect(await runMeeting(options)).toBe("recorded");
+    expect(world.joinedAt).toHaveLength(1);
+    expect(world.joinedAt[0]).toBeGreaterThanOrEqual(62_000);
+    expect(lines).toContain("жду начала встречи до 00:01:02 UTC");
+  });
+
+  it("starts_at в прошлом → заход сразу, без ожидания", async () => {
+    const world = build();
+    world.now = 100_000;
+    const lines: string[] = [];
+    const options = {
+      ...world.options,
+      enterAt: new Date(10_000).toISOString(),
+      log: (line: string): void => {
+        lines.push(line);
+      },
+    };
+
+    expect(await runMeeting(options)).toBe("recorded");
+    expect(world.joinedAt).toEqual([100_000]);
+    expect(lines.some((line) => line.startsWith("жду начала"))).toBe(false);
+  });
+
+  it("ручное приглашение (без enterAt) → заход сразу", async () => {
+    const world = build();
+
+    expect(await runMeeting(world.options)).toBe("recorded");
+    expect(world.joinedAt).toEqual([0]);
+  });
+
+  it("остановили во время ожидания начала → нет захода, нет join_failed", async () => {
+    const world = build();
+    const options = {
+      ...world.options,
+      enterAt: new Date(600_000).toISOString(),
+      sleep: (ms: number): Promise<void> => {
+        world.now += ms;
+        world.stop.abort();
+        return Promise.resolve();
+      },
+    };
+
+    expect(await runMeeting(options)).toBe("stopped_before_join");
+    expect(world.joinedAt).toEqual([]);
+    expect(world.notices).toEqual([]);
+    expect(world.calls).toContain("leave");
   });
 
   it("запись не стартовала → no_audio, из звонка выходим", async () => {

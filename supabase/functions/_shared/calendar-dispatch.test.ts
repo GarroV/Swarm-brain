@@ -254,3 +254,11 @@ Deno.test("двойник с вписанным организатором не 
   assertEquals(real.jobs.length, 1);
   assertEquals(mergeDispatch([forged, real]).jobs.map((j) => j.invited_by), [2]);
 });
+
+Deno.test("запас на подъём контейнера: за 2 минуты до начала задание заводится, за 2,5 минуты — нет", () => {
+  assertEquals(DISPATCH_LEAD_MS, 2 * 60_000);
+  const startsIn = (seconds: number) => event({ start: { dateTime: new Date(NOW + seconds * 1000).toISOString() } });
+  assertEquals(plan([startsIn(150)]).jobs.length, 0);
+  assertEquals(plan([startsIn(119)]).jobs.length, 1);
+  assertEquals(plan([startsIn(0)]).jobs.length, 1);
+});
