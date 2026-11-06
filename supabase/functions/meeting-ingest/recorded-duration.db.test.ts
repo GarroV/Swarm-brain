@@ -29,9 +29,9 @@ Deno.test("#121: measured upload fills missing duration in a real DB without ove
        values($1::uuid,'desktop-agent','manual',$1::text,$2,$3,null)`,
       [id, holder, workspace],
     );
-    const read = async () =>
-      (await db.queryObject<{
-        recorded_seconds: number | null;
+    const read = async () => {
+      const row = (await db.queryObject<{
+        recorded_seconds: string | number | null;
         claim_owner: string;
         identity_key: string;
         status: string;
@@ -39,6 +39,9 @@ Deno.test("#121: measured upload fills missing duration in a real DB without ove
       }>("select recorded_seconds, claim_owner::text, identity_key, status, transcript from meetings where id=$1", [
         id,
       ])).rows[0];
+      // The postgres driver preserves SQL numeric values as strings; the metric is a number.
+      return { ...row, recorded_seconds: row.recorded_seconds === null ? null : Number(row.recorded_seconds) };
+    };
     const initial = await read();
     const parts = [{ offset: 0, blob: new Blob([m4aOf(3)]) }, { offset: 5, blob: new Blob([m4aOf(2)]) }];
     const measured = await measureUpload(parts as InMemoryPart[]);
