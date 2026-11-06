@@ -16,6 +16,32 @@ export const COMMENT_WARN_LEFT = 1_000;
 /** Длиннее этого комментарий в ленте сворачивается: иначе простыня хоронит соседние. */
 export const COMMENT_COLLAPSE_AT = 1_200;
 
+/** Shared task comment UI; language follows the existing demo-only language context. */
+export const TASK_COMMENTS_COPY = {
+  ru: {
+    heading: "Комментарии",
+    inputLabel: "Комментарий",
+    placeholder: "Написать апдейт…  (Enter — отправить)",
+    empty: "Пока нет комментариев.",
+    send: "Отправить",
+    sendHint: "Отправить (Enter)",
+    remove: "Удалить комментарий",
+    loadError: "Не удалось загрузить комментарии",
+    removeError: "Не удалось удалить",
+  },
+  en: {
+    heading: "Comments",
+    inputLabel: "Comment",
+    placeholder: "Write an update…  (Enter to send)",
+    empty: "No comments yet.",
+    send: "Send",
+    sendHint: "Send (Enter)",
+    remove: "Delete comment",
+    loadError: "Could not load comments",
+    removeError: "Could not delete",
+  },
+} as const;
+
 /**
  * Начало длинного комментария для свёрнутого вида. Режем по концу строки, если он близко
  * к порогу: обрыв посреди слова или ссылки читается как порча текста, а не как «свёрнуто».

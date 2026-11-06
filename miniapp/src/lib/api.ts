@@ -1,3 +1,13 @@
+import type {
+  MarketSalesRow, MarketMtd, MarketUnitSales,
+  MapsStat, MapsUnitStat, MapsCountry, MapsUnit, MapsData,
+  AggregatorInfo, AggregatorScore, AggregatorsCountry, AggregatorsData,
+} from "./marketTypes";
+export type {
+  MarketSalesRow, MarketMtd, MarketUnitSales,
+  MapsStat, MapsUnitStat, MapsCountry, MapsUnit, MapsData,
+  AggregatorInfo, AggregatorScore, AggregatorsCountry, AggregatorsData,
+} from "./marketTypes";
 import { isNetworkFailure, reportConnection, reportUnauthorized } from "./connection";
 import type { TaskFile, TaskFileLimits } from "./taskFiles";
 import type { BackdropId } from "./backdrop";
@@ -1675,17 +1685,6 @@ export async function fetchMarket(cc: string): Promise<MarketBundle> {
   return apiFetch<MarketBundle>(`/market/${cc}`);
 }
 
-/** Строка выручки Dodo, как её читает главная (подмножество `MarketBundle.dodo`). */
-export type MarketSalesRow = { month: string; revenue_eur: number | null; complete: boolean };
-
-/** Выручка с 1-го числа по сегодня (GET /market/sales → mtd). `source`: сумма пиццерий из Dodo IS через Децимус
- *  или публичный API Dodo (по стране, без разбивки); старые функции поля не отдают. */
-export type MarketMtd = { as_of: string; revenue_eur: number; source?: "decimus" | "dodo_public" };
-
-/** Выручка пиццерий с 1-го числа, € (GET /market/sales → unit_sales): ключ — код пиццерии (как `id` в /quality),
- *  `loaded` — когда Децимус загрузил продажи страны (ISO UTC). Страны без данных Децимуса в нём нет. */
-export type MarketUnitSales = { month: string; loaded: Record<string, string>; units: Record<string, number> };
-
 /** Выручка Dodo по нескольким странам одним запросом (GET /market/sales, issue #906): без остального набора
  *  страны. `denied` — страны вне allowed_markets. 404 = функции ещё старые (веб катится раньше) — зовущий
  *  откатывается на `fetchMarket` по стране. */
@@ -1727,17 +1726,6 @@ export async function fetchQuality(kind: QualityKind): Promise<QualityData> {
   return apiFetch<QualityData>(`/quality?kind=${kind}`);
 }
 
-export interface MapsStat { avg: number | null; reviews: number; branches: number; delta: number | null }
-export interface MapsUnitStat { avg: number | null; reviews: number; prev_avg: number | null }
-export interface MapsCountry { cc: string; as_of: string | null; maps: { google: MapsStat; yandex: MapsStat } }
-export interface MapsUnit {
-  id: string; name: string; cc: string; city: string | null;
-  maps: { google: MapsUnitStat | null; yandex: MapsUnitStat | null };
-}
-export interface MapsData {
-  on: string; compare: string | null; countries: MapsCountry[]; units: MapsUnit[]; loaded_at: string | null;
-}
-
 /** Рейтинги Google/Яндекс по странам и пиццериям: срез на сегодня против «30 дней назад». Источник — Децимус, Swarm только читает. */
 export async function fetchMapsRatings(): Promise<MapsData> {
   if (DEV_MODE) return mockMaps();
@@ -1772,13 +1760,6 @@ function mockMaps(): MapsData {
     return { cc, as_of: "2026-10-10", maps: { google: stat("google"), yandex: stat("yandex") } };
   });
   return { on: "2026-10-11", compare: "2026-09-11", countries, units, loaded_at: "2026-10-11T03:10:00Z" };
-}
-
-export interface AggregatorInfo { key: string; title: string; scale: number }
-export interface AggregatorScore { avg: number | null; scale: number; votes: number; pizzerias: number; delta: number | null }
-export interface AggregatorsCountry { cc: string; as_of: string | null; scores: Record<string, AggregatorScore> }
-export interface AggregatorsData {
-  on: string; compare: string | null; aggregators: AggregatorInfo[]; countries: AggregatorsCountry[]; loaded_at: string | null;
 }
 
 /** Оценки агрегаторов доставки по странам: сегодня против «30 дней назад». Шкалы у агрегаторов разные (5/10/100). Источник — Децимус, Swarm только читает. */
