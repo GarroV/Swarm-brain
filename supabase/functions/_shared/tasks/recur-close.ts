@@ -12,6 +12,10 @@
 /** Окно, в котором повторное «готово» считается повтором того же нажатия. */
 export const RECUR_DUPLICATE_WINDOW_MS = 60_000;
 
+// Журнал датирует база, запрос — процесс функции: небольшое опережение часов базы
+// не должно превращать двойной клик в пропуск следующего вхождения (#1013).
+const CLOCK_SKEW_MS = 5_000;
+
 /** Текст строки журнала о закрытии цикла. Формат читает parseRecurCloseNote — менять вместе. */
 export function recurCloseNote(from: string, to: string): string {
   return `цикл закрыт, следующий срок ${to} (было ${from})`;
@@ -46,5 +50,5 @@ export function duplicateRecurClose(args: {
   const at = Date.parse(args.lastClose.created_at);
   if (Number.isNaN(at)) return null;
   const age = args.nowMs - at;
-  return age >= 0 && age <= (args.windowMs ?? RECUR_DUPLICATE_WINDOW_MS) ? parsed : null;
+  return age >= -CLOCK_SKEW_MS && age <= (args.windowMs ?? RECUR_DUPLICATE_WINDOW_MS) ? parsed : null;
 }

@@ -225,6 +225,31 @@ Deno.test("F-018: повторное «готово» подряд не проп
   }
 });
 
+Deno.test("#1013: журнал на 16 мс впереди часов функции — один перекат", async () => {
+  const db = await connect();
+  const realNow = Date.now;
+  try {
+    await seed(db);
+    const today = todayInTz();
+    const id = await addTask(db, { due: today, freq: "daily" });
+    const next = nextOccurrence("daily", null, today, today)!;
+    await updateTask(id, { status: "done" }, { actorTelegramId: ACTOR });
+
+    // Фиксируем часы функции, чтобы тест не зависел от задержек базы/сети.
+    const now = realNow();
+    const ahead = new Date(now + 16).toISOString();
+    await db.queryArray`update task_history set created_at = ${ahead}::timestamptz where task_id = ${id}`;
+    Date.now = () => now;
+    const second = await updateTask(id, { status: "done" }, { actorTelegramId: ACTOR });
+    assertEquals(second?.recurred, { from: today, to: next });
+    assertEquals((await row(db, id)).due, next);
+    assertEquals(await historyCount(db, id), 1);
+  } finally {
+    Date.now = realNow;
+    await db.end();
+  }
+});
+
 Deno.test("F-018: два одновременных «готово» — один перекат", async () => {
   const db = await connect();
   try {
