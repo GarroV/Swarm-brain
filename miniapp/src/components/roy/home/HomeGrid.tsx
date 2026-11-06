@@ -8,6 +8,7 @@ import { HomeNews, LatestInBase } from "../dash/HomeSide";
 import { CountryEditor, NarrowChip } from "./CountryEditor";
 import { HomeTasksWidget, TeamTasksWidget } from "./TaskWidgets";
 import { SalesWidget, TopTasksWidget } from "./MiscWidgets";
+import { NEXT_TASK_TEXT } from "./nextTaskText";
 import { InspectionsWidget } from "./InspectionsWidget";
 import type { TaskDraft } from "@/lib/homeInspections";
 import { BoardWidget } from "./StickerBoard";
@@ -42,7 +43,7 @@ const todayLabel = (lang: number): string => DAY_LABEL[lang].format(new Date());
 
 const META: Record<WidgetId, Meta> = {
   calls: { title: ["Созвоны сегодня", "Today's calls"], hint: ["Встречи дня из календаря и кнопка «подключиться».", "Today's meetings from your calendar with a join button."], ownTitle: true },
-  top5: { title: ["Ближайшие задачи", "Next tasks"], hint: ["Пять моих задач с ближайшим сроком.", "My five tasks with the nearest due date."], meta: ["топ-5 по сроку", "top 5 by due date"] },
+  top5: { title: ["Ближайшие задачи", "Next tasks"], hint: NEXT_TASK_TEXT.hint, meta: NEXT_TASK_TEXT.meta },
   board: { title: ["Доска", "Board"], hint: ["Стикеры-задания (OKR, дайджест, вычитка) и объявления админа.", "Task stickers (OKRs, digest, review) and admin notices."], meta: ["что от тебя ждут", "what's expected of you"] },
   ratings: { title: ["Рейтинги", "Ratings"], hint: ["Вкладки РС, РКО, Карты, Агрегаторы: выбранные страны против среднего по IMF.", "Tabs for Standards, CX, Maps and Delivery apps: your countries against the IMF average."], scoped: true },
   pz: { title: ["Пиццерии", "Pizzerias"], hint: ["Все пиццерии подборки: РС, РКО, худшие сверху.", "Every pizzeria in your selection, worst first."], scoped: true, quality: true, meta: ["худшие сверху", "worst first"] },

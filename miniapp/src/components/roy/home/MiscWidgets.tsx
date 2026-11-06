@@ -9,17 +9,17 @@ import { fmtEur, type SalesState } from "./useCountrySales";
 import { FILL_CARD } from "./blockFill";
 import { isDone, isOverdue } from "@/lib/smartLists";
 import { countryFlag } from "@/lib/countries";
+import { homeDateReason, nextHomeTasks } from "@/lib/homeTasks";
+import { NEXT_TASK_TEXT } from "./nextTaskText";
 
 // Ближайшие задачи и продажи. Доска стикеров — StickerBoard.tsx.
-
-export const TOP_TASKS = 5;
 
 export function TopTasksWidget({ data, onCreate }: { data: DashboardData; onCreate: () => void }) {
   const dt = useDt();
   const { openTasks } = useRoyNav();
   const open = useMemo(() => data.mine.filter((t) => !isDone(t)), [data.mine]);
-  const top = useMemo(() => [...open].filter((t) => t.due_date)
-    .sort((a, b) => String(a.due_date).localeCompare(String(b.due_date))).slice(0, TOP_TASKS), [open]);
+  const now = useMemo(() => new Date(), [data.tasks]);
+  const top = useMemo(() => nextHomeTasks(open, now), [open, now]);
   const overdue = open.filter((t) => isOverdue(t)).length;
   const { loading, failed, retry } = data.tasksState;
   return (
@@ -30,12 +30,16 @@ export function TopTasksWidget({ data, onCreate }: { data: DashboardData; onCrea
           {dt("Не загрузилось", "Failed to load")} <button type="button" onClick={retry} className="font-medium text-primary hover:underline">{dt("Повторить", "Retry")}</button>
         </div>
       )}
-      {!loading && !failed && top.map((t) => <DashTaskRow key={t.id} task={t} />)}
+      {!loading && !failed && top.map((t) => {
+        const reason = homeDateReason(t, now);
+        return <DashTaskRow key={t.id} task={t} reminder={reason?.kind === "ping" ? { date: reason.date, label: dt(...NEXT_TASK_TEXT.reminderReason) } : undefined} />;
+      })}
       {!loading && !failed && !top.length && (
-        <div className="px-3 py-5 text-center text-ink-mute" style={{ fontSize: 13 }}>{dt("Задач со сроком на вас нет", "No tasks with a due date on you")}</div>
+        <div className="px-3 py-5 text-center text-ink-mute" style={{ fontSize: 13 }}>{dt(...NEXT_TASK_TEXT.empty)}</div>
       )}
-      <div className="mt-1 flex items-center justify-between border-t border-line px-2 pt-2" style={{ fontSize: 12 }}>
+      <div className="mt-1 flex flex-wrap items-center justify-between gap-2 border-t border-line px-2 pt-2" style={{ fontSize: 12 }}>
         <span className="text-ink-mute">
+          <span className="block">{dt(...NEXT_TASK_TEXT.order)}</span>
           {overdue > 0 && <b className="text-[var(--pri-high)]">{dt(`${overdue} просрочено`, `${overdue} overdue`)} · </b>}
           {dt(`всего открытых ${open.length}`, `${open.length} open`)}
         </span>

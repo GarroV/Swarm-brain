@@ -3,7 +3,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { RoyCard } from "../ui";
 import { RoyIcon, type RoyIconName } from "../icons";
 import { useRoyNav, useDt } from "../nav";
-import { TaskRow } from "@/components/tasks/TaskRow";
+import { TaskRow, type TaskReminderHint } from "@/components/tasks/TaskRow";
 import { isDone } from "@/lib/smartLists";
 import { DONE_FADE_MS, DONE_LINGER_MS, ROW_FADE_CLASS } from "@/lib/doneLinger";
 import { updateTask } from "@/lib/api";
@@ -279,7 +279,7 @@ export function Row({ onClick, children }: { onClick: () => void; children: Reac
 // дашборд ↔ доска. Кликабельный контейнер открывает задачу; чекбокс гасит всплытие
 // и переключает done (updateTask → bumpTasks обновляет панели). Не button — внутри
 // TaskRow уже есть button-чекбокс (вложенные button невалидны).
-export function DashTaskRow({ task, showAssignee = false }: { task: Task; showAssignee?: boolean }) {
+export function DashTaskRow({ task, showAssignee = false, reminder }: { task: Task; showAssignee?: boolean; reminder?: TaskReminderHint }) {
   const { openTask, toast, bumpTasks } = useRoyNav();
   const dt = useDt();
   // Отмеченная кружком строка не пропадает сразу (lib/doneLinger.ts): запись уходит на сервер
@@ -332,7 +332,7 @@ export function DashTaskRow({ task, showAssignee = false }: { task: Task; showAs
       onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openTask(task); } }}
       className={`cursor-pointer rounded-[8px] transition-colors hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]${fading ? ` ${ROW_FADE_CLASS}` : ""}`}
     >
-      <TaskRow task={shown} showAssignee={showAssignee} onToggle={toggle} />
+      <TaskRow task={shown} showAssignee={showAssignee} onToggle={toggle} reminder={reminder} />
     </div>
   );
 }
