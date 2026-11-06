@@ -31,6 +31,8 @@ def check_report(status):
         (fixture / "supabase/functions/example/index.ts").write_text("export {};\n")
         executable(fixture / "scripts/gate-coverage.sh", "#!/bin/sh\necho coverage\n")
         executable(fixture / "bin/npx", "#!/bin/sh\nexit 0\n")
+        # The report fixture isolates reporters from the real AST guard and its dependencies.
+        executable(fixture / "bin/node", '#!/bin/sh\nexit "$CHECK_STATUS"\n')
         executable(fixture / "bin/deno", '''#!/bin/sh
 case "$1" in
   test)
@@ -60,7 +62,8 @@ exit "$CHECK_STATUS"
         report = json.loads((fixture / "reports/check.json").read_text())
         assert report["failed"] == status, report
         roles = {row["role"]: row for row in report["roles"]}
-        assert len(roles) == 8, report
+        assert len(roles) == 9, report
+        assert roles["язык-веб"]["status"] == ("pass" if status == 0 else "fail"), roles["язык-веб"]
         for role in ("формат", "линт", "мёртвый-код", "границы", "типы-функции"):
             assert roles[role]["status"] == ("pass" if status == 0 else "fail"), roles[role]
             assert roles[role]["detail"] == DIAGNOSTIC + " ", repr(roles[role]["detail"])
