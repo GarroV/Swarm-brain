@@ -1,0 +1,2032 @@
+[
+  {
+    "file": "miniapp/src/components/AgentReviewQueue.tsx",
+    "context": "jsx-text",
+    "text": "На вычитке ·",
+    "count": 1,
+    "reason": "Унаследованный литерал AgentReviewQueue.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/AgentReviewQueue.tsx",
+    "context": "children",
+    "text": "Встреча без названия",
+    "count": 1,
+    "reason": "Унаследованный литерал AgentReviewQueue.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/AgentReviewQueue.tsx",
+    "context": "children",
+    "text": "· готовим тезисы…",
+    "count": 1,
+    "reason": "Унаследованный литерал AgentReviewQueue.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/AgentReviewQueue.tsx",
+    "context": "aria-label",
+    "text": "Изменить",
+    "count": 1,
+    "reason": "Унаследованный литерал AgentReviewQueue.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/AgentReviewQueue.tsx",
+    "context": "aria-label",
+    "text": "Удалить",
+    "count": 1,
+    "reason": "Унаследованный литерал AgentReviewQueue.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/ConnectionBanner.tsx",
+    "context": "jsx-text",
+    "text": "Check your network — data on screen may be out of date. · Нет связи с сервером с",
+    "count": 1,
+    "reason": "Унаследованный литерал ConnectionBanner.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/ConnectionBanner.tsx",
+    "context": "jsx-text",
+    "text": ". Проверьте соединение — данные на экране могут быть устаревшими.",
+    "count": 1,
+    "reason": "Унаследованный литерал ConnectionBanner.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/MaintenanceGate.tsx",
+    "context": "jsx-text",
+    "text": "min) · Режим работ включён для остальных — вы проходите",
+    "count": 1,
+    "reason": "Унаследованный литерал MaintenanceGate.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/MaintenanceGate.tsx",
+    "context": "jsx-text",
+    "text": "min · Вернёмся примерно через",
+    "count": 1,
+    "reason": "Унаследованный литерал MaintenanceGate.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/MaintenanceGate.tsx",
+    "context": "jsx-text",
+    "text": "мин",
+    "count": 1,
+    "reason": "Унаследованный литерал MaintenanceGate.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/MaintenanceGate.tsx",
+    "context": "jsx-text",
+    "text": "Refresh · Обновить",
+    "count": 1,
+    "reason": "Унаследованный литерал MaintenanceGate.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/SettingsScreen.tsx",
+    "context": "jsx-text",
+    "text": "Имя",
+    "count": 1,
+    "reason": "Унаследованный литерал SettingsScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/SettingsScreen.tsx",
+    "context": "jsx-text",
+    "text": "Роль",
+    "count": 1,
+    "reason": "Унаследованный литерал SettingsScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/SettingsScreen.tsx",
+    "context": "placeholder",
+    "text": "Выбрать роль",
+    "count": 1,
+    "reason": "Унаследованный литерал SettingsScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/SettingsScreen.tsx",
+    "context": "jsx-text",
+    "text": "Рынки",
+    "count": 1,
+    "reason": "Унаследованный литерал SettingsScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/SettingsScreen.tsx",
+    "context": "jsx-text",
+    "text": "Загрузка…",
+    "count": 5,
+    "reason": "Унаследованный литерал SettingsScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/SettingsScreen.tsx",
+    "context": "children",
+    "text": "Не сохранилось:",
+    "count": 1,
+    "reason": "Унаследованный литерал SettingsScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/SettingsScreen.tsx",
+    "context": "children",
+    "text": "Сохраняю…",
+    "count": 1,
+    "reason": "Унаследованный литерал SettingsScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/SettingsScreen.tsx",
+    "context": "children",
+    "text": "✓ Сохранено",
+    "count": 1,
+    "reason": "Унаследованный литерал SettingsScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/SettingsScreen.tsx",
+    "context": "children",
+    "text": "Роль и рынки сохраняются сразу",
+    "count": 1,
+    "reason": "Унаследованный литерал SettingsScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/SettingsScreen.tsx",
+    "context": "jsx-text",
+    "text": "Участники:",
+    "count": 1,
+    "reason": "Унаследованный литерал SettingsScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/SettingsScreen.tsx",
+    "context": "children",
+    "text": "Генерирую тезисы…",
+    "count": 1,
+    "reason": "Унаследованный литерал SettingsScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/SettingsScreen.tsx",
+    "context": "children",
+    "text": "Посмотреть тезисы (GPT)",
+    "count": 1,
+    "reason": "Унаследованный литерал SettingsScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/SettingsScreen.tsx",
+    "context": "jsx-text",
+    "text": "Тезисы",
+    "count": 1,
+    "reason": "Унаследованный литерал SettingsScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/SettingsScreen.tsx",
+    "context": "jsx-text",
+    "text": "Сохранить в базу (общее)",
+    "count": 1,
+    "reason": "Унаследованный литерал SettingsScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/SettingsScreen.tsx",
+    "context": "jsx-text",
+    "text": "Сохранить (личное 🔒)",
+    "count": 1,
+    "reason": "Унаследованный литерал SettingsScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/SettingsScreen.tsx",
+    "context": "jsx-text",
+    "text": "Пропустить",
+    "count": 1,
+    "reason": "Унаследованный литерал SettingsScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/SettingsScreen.tsx",
+    "context": "jsx-text",
+    "text": "Granola не подключена",
+    "count": 1,
+    "reason": "Унаследованный литерал SettingsScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/SettingsScreen.tsx",
+    "context": "jsx-text",
+    "text": "Подключить Granola",
+    "count": 1,
+    "reason": "Унаследованный литерал SettingsScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/SettingsScreen.tsx",
+    "context": "children",
+    "text": "Подключаю…",
+    "count": 1,
+    "reason": "Унаследованный литерал SettingsScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/SettingsScreen.tsx",
+    "context": "children",
+    "text": "Подключить",
+    "count": 1,
+    "reason": "Унаследованный литерал SettingsScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/SettingsScreen.tsx",
+    "context": "jsx-text",
+    "text": "Отмена",
+    "count": 1,
+    "reason": "Унаследованный литерал SettingsScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/SettingsScreen.tsx",
+    "context": "jsx-text",
+    "text": "Granola подключена",
+    "count": 1,
+    "reason": "Унаследованный литерал SettingsScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/SettingsScreen.tsx",
+    "context": "jsx-text",
+    "text": "Отключить",
+    "count": 2,
+    "reason": "Унаследованный литерал SettingsScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/SettingsScreen.tsx",
+    "context": "jsx-text",
+    "text": "Granola отвечает отказом",
+    "count": 1,
+    "reason": "Унаследованный литерал SettingsScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/SettingsScreen.tsx",
+    "context": "jsx-text",
+    "text": "— новые заметки не приходят. Проверь подписку и ключ Granola; если ключ сменился — отключи и подключи заново.",
+    "count": 1,
+    "reason": "Унаследованный литерал SettingsScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/SettingsScreen.tsx",
+    "context": "jsx-text",
+    "text": "Необработанные заметки",
+    "count": 1,
+    "reason": "Унаследованный литерал SettingsScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/SettingsScreen.tsx",
+    "context": "jsx-text",
+    "text": "Обновить",
+    "count": 1,
+    "reason": "Унаследованный литерал SettingsScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/SettingsScreen.tsx",
+    "context": "jsx-text",
+    "text": "Нет новых заметок",
+    "count": 1,
+    "reason": "Унаследованный литерал SettingsScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/SettingsScreen.tsx",
+    "context": "jsx-text",
+    "text": "Период:",
+    "count": 1,
+    "reason": "Унаследованный литерал SettingsScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/SettingsScreen.tsx",
+    "context": "jsx-text",
+    "text": "д",
+    "count": 1,
+    "reason": "Унаследованный литерал SettingsScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/SettingsScreen.tsx",
+    "context": "jsx-text",
+    "text": "Этот период используется для дайджеста на главной.",
+    "count": 1,
+    "reason": "Унаследованный литерал SettingsScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/SettingsScreen.tsx",
+    "context": "jsx-text",
+    "text": "Все страны пространства",
+    "count": 1,
+    "reason": "Унаследованный литерал SettingsScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/SettingsScreen.tsx",
+    "context": "jsx-text",
+    "text": "По умолчанию дайджест — по вашим рынкам. Включите, чтобы видеть обзор по всем рынкам команды.",
+    "count": 1,
+    "reason": "Унаследованный литерал SettingsScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/SettingsScreen.tsx",
+    "context": "children",
+    "text": "Генерирую (~10 сек)…",
+    "count": 1,
+    "reason": "Унаследованный литерал SettingsScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/SettingsScreen.tsx",
+    "context": "children",
+    "text": "Сгенерировать дайджест",
+    "count": 1,
+    "reason": "Унаследованный литерал SettingsScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/SettingsScreen.tsx",
+    "context": "jsx-text",
+    "text": "Личный файл (только я вижу)",
+    "count": 1,
+    "reason": "Унаследованный литерал SettingsScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/SettingsScreen.tsx",
+    "context": "children",
+    "text": "Загружаю…",
+    "count": 1,
+    "reason": "Унаследованный литерал SettingsScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/SettingsScreen.tsx",
+    "context": "children",
+    "text": "Загрузить",
+    "count": 1,
+    "reason": "Унаследованный литерал SettingsScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/SettingsScreen.tsx",
+    "context": "jsx-text",
+    "text": "✓ Файл загружен в базу знаний",
+    "count": 1,
+    "reason": "Унаследованный литерал SettingsScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/SettingsScreen.tsx",
+    "context": "jsx-text",
+    "text": "Завершить сессию в браузере. После выхода — вход через Google или Telegram (можно другим аккаунтом).",
+    "count": 1,
+    "reason": "Унаследованный литерал SettingsScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/SettingsScreen.tsx",
+    "context": "children",
+    "text": "Выхожу…",
+    "count": 1,
+    "reason": "Унаследованный литерал SettingsScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/SettingsScreen.tsx",
+    "context": "children",
+    "text": "Выйти / сменить аккаунт",
+    "count": 1,
+    "reason": "Унаследованный литерал SettingsScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/SettingsScreen.tsx",
+    "context": "jsx-text",
+    "text": "Подключи Google-календарь — bumblebee заранее предложит запись («встреча через N мин»), а тезисы получат название и участников. Доступ только на чтение событий.",
+    "count": 1,
+    "reason": "Унаследованный литерал SettingsScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/SettingsScreen.tsx",
+    "context": "jsx-text",
+    "text": "✓ Подключён",
+    "count": 1,
+    "reason": "Унаследованный литерал SettingsScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/SettingsScreen.tsx",
+    "context": "jsx-text",
+    "text": "Подключить Google-календарь",
+    "count": 1,
+    "reason": "Унаследованный литерал SettingsScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/SettingsScreen.tsx",
+    "context": "jsx-text",
+    "text": "bumblebee пишет звук созвона на Mac, сервер делает расшифровку и тезисы — готовая встреча приходит во «Встречи» сама. Токен bumblebee отдельный от Claude Desktop.",
+    "count": 1,
+    "reason": "Унаследованный литерал SettingsScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/SettingsScreen.tsx",
+    "context": "jsx-text",
+    "text": "Обновить bumblebee на этом маке — вставь в Терминал (токен менять не нужно):",
+    "count": 1,
+    "reason": "Унаследованный литерал SettingsScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/SettingsScreen.tsx",
+    "context": "children",
+    "text": "✓ Скопировано",
+    "count": 4,
+    "reason": "Унаследованный литерал SettingsScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/SettingsScreen.tsx",
+    "context": "children",
+    "text": "Скопировать команду обновления",
+    "count": 1,
+    "reason": "Унаследованный литерал SettingsScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/SettingsScreen.tsx",
+    "context": "children",
+    "text": "Готовлю…",
+    "count": 3,
+    "reason": "Унаследованный литерал SettingsScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/SettingsScreen.tsx",
+    "context": "children",
+    "text": "Перевыпустить токен (потерял / другой мак)",
+    "count": 1,
+    "reason": "Унаследованный литерал SettingsScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/SettingsScreen.tsx",
+    "context": "children",
+    "text": "Получить команду установки",
+    "count": 2,
+    "reason": "Унаследованный литерал SettingsScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/SettingsScreen.tsx",
+    "context": "jsx-text",
+    "text": "1. Открой Терминал (⌘+Пробел → «Терминал»), вставь строку и нажми Enter:",
+    "count": 2,
+    "reason": "Унаследованный литерал SettingsScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/SettingsScreen.tsx",
+    "context": "children",
+    "text": "Скопировать команду",
+    "count": 2,
+    "reason": "Унаследованный литерал SettingsScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/SettingsScreen.tsx",
+    "context": "jsx-text",
+    "text": "2. Скрипт поставит приложение и откроет его.",
+    "count": 1,
+    "reason": "Унаследованный литерал SettingsScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/SettingsScreen.tsx",
+    "context": "jsx-text",
+    "text": "3. Выдай разрешение:",
+    "count": 1,
+    "reason": "Унаследованный литерал SettingsScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/SettingsScreen.tsx",
+    "context": "jsx-text",
+    "text": "→ включи bumblebee → перезапусти (⌘Q и открой заново).",
+    "count": 1,
+    "reason": "Унаследованный литерал SettingsScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/SettingsScreen.tsx",
+    "context": "jsx-text",
+    "text": "Токен личный, никому не пересылай. Для авто-предложения записи нужен подключённый Google-календарь (секция выше).",
+    "count": 1,
+    "reason": "Унаследованный литерал SettingsScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/SettingsScreen.tsx",
+    "context": "jsx-text",
+    "text": "Claude Desktop получает доступ к базе знаний, встречам и задачам — ищет и отвечает по делу прямо на твоём Mac. Токен отдельный от bumblebee, живёт 30 дней — потом выпусти новый здесь же.",
+    "count": 1,
+    "reason": "Унаследованный литерал SettingsScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/SettingsScreen.tsx",
+    "context": "children",
+    "text": "Перевыпустить команду установки",
+    "count": 1,
+    "reason": "Унаследованный литерал SettingsScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/SettingsScreen.tsx",
+    "context": "jsx-text",
+    "text": "2. Скрипт пропишет коннектор и перезапустит Claude Desktop. Ничего скачивать не нужно — Node и npm больше не требуются.",
+    "count": 1,
+    "reason": "Унаследованный литерал SettingsScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/SettingsScreen.tsx",
+    "context": "jsx-text",
+    "text": "3. В Claude Desktop появится сервер",
+    "count": 1,
+    "reason": "Унаследованный литерал SettingsScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/SettingsScreen.tsx",
+    "context": "jsx-text",
+    "text": "с инструментами. Токен личный — никому не пересылай.",
+    "count": 1,
+    "reason": "Унаследованный литерал SettingsScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/SettingsScreen.tsx",
+    "context": "jsx-text",
+    "text": "После установки в Claude Desktop:",
+    "count": 1,
+    "reason": "Унаследованный литерал SettingsScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/SettingsScreen.tsx",
+    "context": "jsx-text",
+    "text": "→ вставь эти инструкции в поле",
+    "count": 1,
+    "reason": "Унаследованный литерал SettingsScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/SettingsScreen.tsx",
+    "context": "jsx-text",
+    "text": ". Claude будет искать и сохранять по правилам команды.",
+    "count": 1,
+    "reason": "Унаследованный литерал SettingsScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/SettingsScreen.tsx",
+    "context": "children",
+    "text": "Скопировать ещё раз",
+    "count": 1,
+    "reason": "Унаследованный литерал SettingsScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/SettingsScreen.tsx",
+    "context": "children",
+    "text": "Инструкции для проекта",
+    "count": 1,
+    "reason": "Унаследованный литерал SettingsScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/SettingsScreen.tsx",
+    "context": "jsx-text",
+    "text": "Настройки",
+    "count": 1,
+    "reason": "Унаследованный литерал SettingsScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/SettingsScreen.tsx",
+    "context": "title",
+    "text": "Дайджест",
+    "count": 1,
+    "reason": "Унаследованный литерал SettingsScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/SettingsScreen.tsx",
+    "context": "title",
+    "text": "Загрузить файл",
+    "count": 1,
+    "reason": "Унаследованный литерал SettingsScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/SettingsScreen.tsx",
+    "context": "title",
+    "text": "Фидбек",
+    "count": 1,
+    "reason": "Унаследованный литерал SettingsScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/SettingsScreen.tsx",
+    "context": "title",
+    "text": "Аккаунт",
+    "count": 1,
+    "reason": "Унаследованный литерал SettingsScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/TaskModal.tsx",
+    "context": "aria-label",
+    "text": "Удалить задачу",
+    "count": 1,
+    "reason": "Унаследованный литерал TaskModal.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/TaskModal.tsx",
+    "context": "title",
+    "text": "Удалить задачу",
+    "count": 1,
+    "reason": "Унаследованный литерал TaskModal.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/TaskModal.tsx",
+    "context": "aria-label",
+    "text": "Закрыть",
+    "count": 1,
+    "reason": "Унаследованный литерал TaskModal.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/TaskModal.tsx",
+    "context": "jsx-text",
+    "text": "Роль",
+    "count": 1,
+    "reason": "Унаследованный литерал TaskModal.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/TaskModal.tsx",
+    "context": "jsx-text",
+    "text": "Отмена",
+    "count": 1,
+    "reason": "Унаследованный литерал TaskModal.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/TaskModal.tsx",
+    "context": "children",
+    "text": "Готово",
+    "count": 1,
+    "reason": "Унаследованный литерал TaskModal.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/TaskModal.tsx",
+    "context": "children",
+    "text": "Создание…",
+    "count": 1,
+    "reason": "Унаследованный литерал TaskModal.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/TaskModal.tsx",
+    "context": "children",
+    "text": "Создать",
+    "count": 1,
+    "reason": "Унаследованный литерал TaskModal.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/TeamScreen.tsx",
+    "context": "jsx-text",
+    "text": "Загрузка…",
+    "count": 1,
+    "reason": "Унаследованный литерал TeamScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/TeamScreen.tsx",
+    "context": "jsx-text",
+    "text": "Нет участников",
+    "count": 1,
+    "reason": "Унаследованный литерал TeamScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/admin/WorkspaceMarkets.tsx",
+    "context": "jsx-text",
+    "text": "Пользователи видят все рынки из глобального списка.",
+    "count": 1,
+    "reason": "Унаследованный литерал WorkspaceMarkets.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/admin/WorkspaceMarkets.tsx",
+    "context": "children",
+    "text": "Сохраняю…",
+    "count": 1,
+    "reason": "Унаследованный литерал WorkspaceMarkets.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/admin/WorkspaceMarkets.tsx",
+    "context": "children",
+    "text": "✓ Сохранено",
+    "count": 1,
+    "reason": "Унаследованный литерал WorkspaceMarkets.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/admin/WorkspaceMarkets.tsx",
+    "context": "children",
+    "text": "Сохранить",
+    "count": 1,
+    "reason": "Унаследованный литерал WorkspaceMarkets.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/admin/WorkspaceUsers.tsx",
+    "context": "placeholder",
+    "text": "E-mail, @username или Telegram ID",
+    "count": 1,
+    "reason": "Унаследованный литерал WorkspaceUsers.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/admin/WorkspaceUsers.tsx",
+    "context": "aria-label",
+    "text": "Добавить пользователя",
+    "count": 1,
+    "reason": "Унаследованный литерал WorkspaceUsers.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/admin/WorkspaceUsers.tsx",
+    "context": "jsx-text",
+    "text": "Загрузка…",
+    "count": 1,
+    "reason": "Унаследованный литерал WorkspaceUsers.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/admin/WorkspaceUsers.tsx",
+    "context": "jsx-text",
+    "text": "ждёт входа",
+    "count": 1,
+    "reason": "Унаследованный литерал WorkspaceUsers.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/admin/WorkspaceUsers.tsx",
+    "context": "aria-label",
+    "text": "Удалить",
+    "count": 1,
+    "reason": "Унаследованный литерал WorkspaceUsers.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/admin/WorkspaceUsers.tsx",
+    "context": "placeholder",
+    "text": "Имя",
+    "count": 1,
+    "reason": "Унаследованный литерал WorkspaceUsers.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/admin/WorkspaceUsers.tsx",
+    "context": "placeholder",
+    "text": "Фамилия",
+    "count": 1,
+    "reason": "Унаследованный литерал WorkspaceUsers.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/admin/WorkspaceUsers.tsx",
+    "context": "placeholder",
+    "text": "напр. BD, Marketing",
+    "count": 1,
+    "reason": "Унаследованный литерал WorkspaceUsers.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/admin/WorkspaceUsers.tsx",
+    "context": "placeholder",
+    "text": "Заметки админа…",
+    "count": 1,
+    "reason": "Унаследованный литерал WorkspaceUsers.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/admin/WorkspaceUsers.tsx",
+    "context": "jsx-text",
+    "text": "Отмена",
+    "count": 1,
+    "reason": "Унаследованный литерал WorkspaceUsers.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/roy/AnswerModal.tsx",
+    "context": "jsx-text",
+    "text": "Не удалось загрузить запись.",
+    "count": 1,
+    "reason": "Унаследованный литерал AnswerModal.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/roy/AnswerModal.tsx",
+    "context": "jsx-text",
+    "text": "Загрузка…",
+    "count": 1,
+    "reason": "Унаследованный литерал AnswerModal.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/roy/AnswerModal.tsx",
+    "context": "aria-label",
+    "text": "Ответ",
+    "count": 1,
+    "reason": "Унаследованный литерал AnswerModal.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/roy/AnswerModal.tsx",
+    "context": "jsx-text",
+    "text": "Назад",
+    "count": 1,
+    "reason": "Унаследованный литерал AnswerModal.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/roy/AnswerModal.tsx",
+    "context": "jsx-text",
+    "text": "Ответ",
+    "count": 1,
+    "reason": "Унаследованный литерал AnswerModal.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/roy/AnswerModal.tsx",
+    "context": "aria-label",
+    "text": "Закрыть",
+    "count": 1,
+    "reason": "Унаследованный литерал AnswerModal.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/roy/FeedbackForm.tsx",
+    "context": "jsx-text",
+    "text": "Раздел",
+    "count": 1,
+    "reason": "Унаследованный литерал FeedbackForm.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/roy/FeedbackForm.tsx",
+    "context": "placeholder",
+    "text": "Опишите проблему или предложение…",
+    "count": 1,
+    "reason": "Унаследованный литерал FeedbackForm.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/roy/FeedbackForm.tsx",
+    "context": "jsx-text",
+    "text": "Скриншот (необязательно)",
+    "count": 1,
+    "reason": "Унаследованный литерал FeedbackForm.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/roy/FeedbackForm.tsx",
+    "context": "children",
+    "text": "Отправляю…",
+    "count": 1,
+    "reason": "Унаследованный литерал FeedbackForm.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/roy/FeedbackForm.tsx",
+    "context": "children",
+    "text": "✓ Отправлено",
+    "count": 1,
+    "reason": "Унаследованный литерал FeedbackForm.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/roy/FeedbackForm.tsx",
+    "context": "children",
+    "text": "Отправить",
+    "count": 1,
+    "reason": "Унаследованный литерал FeedbackForm.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/roy/MarketChips.tsx",
+    "context": "title",
+    "text": "Без конкретного рынка",
+    "count": 1,
+    "reason": "Унаследованный литерал MarketChips.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/roy/MarketChips.tsx",
+    "context": "jsx-text",
+    "text": "Общее",
+    "count": 1,
+    "reason": "Унаследованный литерал MarketChips.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/roy/RoyApp.tsx",
+    "context": "title",
+    "text": "Карта системы",
+    "count": 1,
+    "reason": "Унаследованный литерал RoyApp.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/roy/RoyApp.tsx",
+    "context": "title",
+    "text": "Карта системы Swarm Brain",
+    "count": 1,
+    "reason": "Унаследованный литерал RoyApp.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/roy/SecondStepGate.tsx",
+    "context": "children",
+    "text": "Подтвердите вход по Touch ID",
+    "count": 1,
+    "reason": "Унаследованный литерал SecondStepGate.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/roy/SecondStepGate.tsx",
+    "context": "children",
+    "text": "Этот браузер не умеет Touch ID. Откройте SWARM в Chrome или Safari.",
+    "count": 1,
+    "reason": "Унаследованный литерал SecondStepGate.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/roy/SecondStepGate.tsx",
+    "context": "children",
+    "text": "Приложите палец — окно Touch ID откроется само. Не открылось — нажмите кнопку.",
+    "count": 1,
+    "reason": "Унаследованный литерал SecondStepGate.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/roy/SecondStepGate.tsx",
+    "context": "children",
+    "text": "Не получилось. Нажмите ещё раз.",
+    "count": 1,
+    "reason": "Унаследованный литерал SecondStepGate.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/roy/SecondStepGate.tsx",
+    "context": "children",
+    "text": "Ждём Touch ID…",
+    "count": 1,
+    "reason": "Унаследованный литерал SecondStepGate.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/roy/SecondStepGate.tsx",
+    "context": "children",
+    "text": "Подтвердить по Touch ID",
+    "count": 1,
+    "reason": "Унаследованный литерал SecondStepGate.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/roy/SecondStepGate.tsx",
+    "context": "children",
+    "text": "Выйти",
+    "count": 1,
+    "reason": "Унаследованный литерал SecondStepGate.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/roy/dash/Materials.tsx",
+    "context": "title",
+    "text": "Добавлено за сутки",
+    "count": 1,
+    "reason": "Унаследованный литерал Materials.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/roy/dash/Materials.tsx",
+    "context": "jsx-text",
+    "text": "новых",
+    "count": 1,
+    "reason": "Унаследованный литерал Materials.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/roy/dash/shared.tsx",
+    "context": "aria-label",
+    "text": "Добавить",
+    "count": 1,
+    "reason": "Унаследованный литерал shared.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/roy/dash/shared.tsx",
+    "context": "title",
+    "text": "Добавить",
+    "count": 1,
+    "reason": "Унаследованный литерал shared.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/roy/dash/shared.tsx",
+    "context": "children",
+    "text": "Открыть",
+    "count": 2,
+    "reason": "Унаследованный литерал shared.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/roy/dash/shared.tsx",
+    "context": "children",
+    "text": "Не загрузилось",
+    "count": 1,
+    "reason": "Унаследованный литерал shared.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/roy/dash/shared.tsx",
+    "context": "children",
+    "text": "Повторить",
+    "count": 1,
+    "reason": "Унаследованный литерал shared.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/roy/screens/MeetAdminScreen.tsx",
+    "context": "jsx-text",
+    "text": "Всего:",
+    "count": 2,
+    "reason": "Унаследованный литерал MeetAdminScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/roy/screens/MeetAdminScreen.tsx",
+    "context": "title",
+    "text": "По странам",
+    "count": 1,
+    "reason": "Унаследованный литерал MeetAdminScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/roy/screens/MeetAdminScreen.tsx",
+    "context": "title",
+    "text": "Источники",
+    "count": 1,
+    "reason": "Унаследованный литерал MeetAdminScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/roy/screens/MeetAdminScreen.tsx",
+    "context": "jsx-text",
+    "text": "Найдено:",
+    "count": 1,
+    "reason": "Унаследованный литерал MeetAdminScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/roy/screens/MeetAdminScreen.tsx",
+    "context": "jsx-text",
+    "text": "из",
+    "count": 1,
+    "reason": "Унаследованный литерал MeetAdminScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/roy/screens/MeetAdminScreen.tsx",
+    "context": "jsx-text",
+    "text": "Сбросить",
+    "count": 1,
+    "reason": "Унаследованный литерал MeetAdminScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/roy/screens/MeetAdminScreen.tsx",
+    "context": "placeholder",
+    "text": "Поиск по названию…",
+    "count": 1,
+    "reason": "Унаследованный литерал MeetAdminScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/roy/screens/MeetAdminScreen.tsx",
+    "context": "title",
+    "text": "Период",
+    "count": 1,
+    "reason": "Унаследованный литерал MeetAdminScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/roy/screens/MeetAdminScreen.tsx",
+    "context": "title",
+    "text": "Страны",
+    "count": 1,
+    "reason": "Унаследованный литерал MeetAdminScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/roy/screens/MeetAdminScreen.tsx",
+    "context": "title",
+    "text": "Источник",
+    "count": 1,
+    "reason": "Унаследованный литерал MeetAdminScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/roy/screens/MeetAdminScreen.tsx",
+    "context": "title",
+    "text": "Кто добавил",
+    "count": 1,
+    "reason": "Унаследованный литерал MeetAdminScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/roy/screens/MeetAdminScreen.tsx",
+    "context": "title",
+    "text": "Хранилище",
+    "count": 1,
+    "reason": "Унаследованный литерал MeetAdminScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/roy/screens/MeetAdminScreen.tsx",
+    "context": "children",
+    "text": "Любое",
+    "count": 1,
+    "reason": "Унаследованный литерал MeetAdminScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/roy/screens/MeetAdminScreen.tsx",
+    "context": "children",
+    "text": "Общее",
+    "count": 1,
+    "reason": "Унаследованный литерал MeetAdminScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/roy/screens/MeetAdminScreen.tsx",
+    "context": "children",
+    "text": "Личное",
+    "count": 1,
+    "reason": "Унаследованный литерал MeetAdminScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/roy/screens/MeetAdminScreen.tsx",
+    "context": "title",
+    "text": "Статус",
+    "count": 1,
+    "reason": "Унаследованный литерал MeetAdminScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/roy/screens/MeetAdminScreen.tsx",
+    "context": "children",
+    "text": "Любой",
+    "count": 1,
+    "reason": "Унаследованный литерал MeetAdminScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/roy/screens/MeetAdminScreen.tsx",
+    "context": "children",
+    "text": "Согласовано",
+    "count": 1,
+    "reason": "Унаследованный литерал MeetAdminScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/roy/screens/MeetAdminScreen.tsx",
+    "context": "children",
+    "text": "На согласовании",
+    "count": 2,
+    "reason": "Унаследованный литерал MeetAdminScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/roy/screens/MeetAdminScreen.tsx",
+    "context": "children",
+    "text": "На вычитке",
+    "count": 1,
+    "reason": "Унаследованный литерал MeetAdminScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/roy/screens/MeetAdminScreen.tsx",
+    "context": "jsx-text",
+    "text": "Содержание",
+    "count": 1,
+    "reason": "Унаследованный литерал MeetAdminScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/roy/screens/MeetAdminScreen.tsx",
+    "context": "jsx-text",
+    "text": "Редактировать",
+    "count": 1,
+    "reason": "Унаследованный литерал MeetAdminScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/roy/screens/MeetAdminScreen.tsx",
+    "context": "children",
+    "text": "Сохранение…",
+    "count": 1,
+    "reason": "Унаследованный литерал MeetAdminScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/roy/screens/MeetAdminScreen.tsx",
+    "context": "children",
+    "text": "Сохранить",
+    "count": 1,
+    "reason": "Унаследованный литерал MeetAdminScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/roy/screens/MeetAdminScreen.tsx",
+    "context": "jsx-text",
+    "text": "Отмена",
+    "count": 1,
+    "reason": "Унаследованный литерал MeetAdminScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/roy/screens/MeetAdminScreen.tsx",
+    "context": "jsx-text",
+    "text": "Содержания нет.",
+    "count": 1,
+    "reason": "Унаследованный литерал MeetAdminScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/roy/screens/MeetAdminScreen.tsx",
+    "context": "aria-label",
+    "text": "Сохранить название",
+    "count": 2,
+    "reason": "Унаследованный литерал MeetAdminScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/roy/screens/MeetAdminScreen.tsx",
+    "context": "aria-label",
+    "text": "Отмена",
+    "count": 2,
+    "reason": "Унаследованный литерал MeetAdminScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/roy/screens/MeetAdminScreen.tsx",
+    "context": "aria-label",
+    "text": "Изменить название",
+    "count": 2,
+    "reason": "Унаследованный литерал MeetAdminScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/roy/screens/MeetAdminScreen.tsx",
+    "context": "jsx-text",
+    "text": "· Добавлено:",
+    "count": 2,
+    "reason": "Унаследованный литерал MeetAdminScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/roy/screens/MeetAdminScreen.tsx",
+    "context": "jsx-text",
+    "text": "Загружаем расшифровку…",
+    "count": 1,
+    "reason": "Унаследованный литерал MeetAdminScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/roy/screens/MeetAdminScreen.tsx",
+    "context": "jsx-text",
+    "text": "Саммари",
+    "count": 1,
+    "reason": "Унаследованный литерал MeetAdminScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/roy/screens/MeetAdminScreen.tsx",
+    "context": "jsx-text",
+    "text": "Заметки участников",
+    "count": 1,
+    "reason": "Унаследованный литерал MeetAdminScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/roy/screens/MeetAdminScreen.tsx",
+    "context": "children",
+    "text": "Мои личные пометки — видны только мне",
+    "count": 1,
+    "reason": "Унаследованный литерал MeetAdminScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/roy/screens/MeetAdminScreen.tsx",
+    "context": "jsx-text",
+    "text": "На вычитке",
+    "count": 1,
+    "reason": "Унаследованный литерал MeetAdminScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/roy/screens/MeetAdminScreen.tsx",
+    "context": "jsx-text",
+    "text": "Тезисы",
+    "count": 2,
+    "reason": "Унаследованный литерал MeetAdminScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/roy/screens/MeetAdminScreen.tsx",
+    "context": "jsx-text",
+    "text": "Править",
+    "count": 1,
+    "reason": "Унаследованный литерал MeetAdminScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/roy/screens/MeetAdminScreen.tsx",
+    "context": "children",
+    "text": "⚠️ Не удалось обработать запись. Переобработай из транскрипта ниже или переснимай.",
+    "count": 1,
+    "reason": "Унаследованный литерал MeetAdminScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/roy/screens/MeetAdminScreen.tsx",
+    "context": "children",
+    "text": "Тезисы не сформированы — модель не нашла содержательных пунктов. Можно переобработать из транскрипта ниже.",
+    "count": 1,
+    "reason": "Унаследованный литерал MeetAdminScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/roy/screens/MeetAdminScreen.tsx",
+    "context": "jsx-text",
+    "text": "Тезисы готовятся…",
+    "count": 1,
+    "reason": "Унаследованный литерал MeetAdminScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/roy/screens/MeetAdminScreen.tsx",
+    "context": "jsx-text",
+    "text": "Обработка затянулась — возможно, запись слишком длинная. Можно подождать ещё или переснять покороче.",
+    "count": 1,
+    "reason": "Унаследованный литерал MeetAdminScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/roy/screens/MeetAdminScreen.tsx",
+    "context": "jsx-text",
+    "text": "Пометки на полях",
+    "count": 1,
+    "reason": "Унаследованный литерал MeetAdminScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/roy/screens/MeetAdminScreen.tsx",
+    "context": "jsx-text",
+    "text": "Транскрипт",
+    "count": 1,
+    "reason": "Унаследованный литерал MeetAdminScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/roy/screens/MeetAdminScreen.tsx",
+    "context": "children",
+    "text": "Скопировано",
+    "count": 1,
+    "reason": "Унаследованный литерал MeetAdminScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/roy/screens/MeetAdminScreen.tsx",
+    "context": "children",
+    "text": "Копировать",
+    "count": 1,
+    "reason": "Унаследованный литерал MeetAdminScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/roy/screens/MeetAdminScreen.tsx",
+    "context": "children",
+    "text": "Рынки · сохраняю…",
+    "count": 1,
+    "reason": "Унаследованный литерал MeetAdminScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/roy/screens/MeetAdminScreen.tsx",
+    "context": "children",
+    "text": "Рынки",
+    "count": 1,
+    "reason": "Унаследованный литерал MeetAdminScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/roy/screens/MeetAdminScreen.tsx",
+    "context": "jsx-text",
+    "text": "Предложено",
+    "count": 1,
+    "reason": "Унаследованный литерал MeetAdminScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/roy/screens/MeetAdminScreen.tsx",
+    "context": "jsx-text",
+    "text": "— поправьте, если не так.",
+    "count": 1,
+    "reason": "Унаследованный литерал MeetAdminScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/roy/screens/MeetAdminScreen.tsx",
+    "context": "children",
+    "text": "Встреча в базе",
+    "count": 1,
+    "reason": "Унаследованный литерал MeetAdminScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/roy/screens/MeetAdminScreen.tsx",
+    "context": "children",
+    "text": "Решение",
+    "count": 1,
+    "reason": "Унаследованный литерал MeetAdminScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/roy/screens/MeetAdminScreen.tsx",
+    "context": "jsx-text",
+    "text": "Согласована ·",
+    "count": 1,
+    "reason": "Унаследованный литерал MeetAdminScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/roy/screens/MeetAdminScreen.tsx",
+    "context": "jsx-text",
+    "text": "«Опубликовать» — сохранит тезисы в базу команды или в личное хранилище. Название и тезисы можно поправить прямо здесь (карандаш у заголовка / «Править» у тезисов).",
+    "count": 1,
+    "reason": "Унаследованный литерал MeetAdminScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/roy/screens/MeetAdminScreen.tsx",
+    "context": "title",
+    "text": "Встречи",
+    "count": 1,
+    "reason": "Унаследованный литерал MeetAdminScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/roy/screens/MeetAdminScreen.tsx",
+    "context": "children",
+    "text": "Все встречи",
+    "count": 1,
+    "reason": "Унаследованный литерал MeetAdminScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/roy/screens/MeetAdminScreen.tsx",
+    "context": "children",
+    "text": "Требуют решения",
+    "count": 1,
+    "reason": "Унаследованный литерал MeetAdminScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/roy/screens/MeetAdminScreen.tsx",
+    "context": "children",
+    "text": "Встреч нет",
+    "count": 1,
+    "reason": "Унаследованный литерал MeetAdminScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/roy/screens/MeetAdminScreen.tsx",
+    "context": "children",
+    "text": "Всё согласовано",
+    "count": 1,
+    "reason": "Унаследованный литерал MeetAdminScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/roy/screens/MeetAdminScreen.tsx",
+    "context": "jsx-text",
+    "text": "Выберите встречу",
+    "count": 1,
+    "reason": "Унаследованный литерал MeetAdminScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/roy/screens/MeetAdminScreen.tsx",
+    "context": "jsx-text",
+    "text": "Выберите встречу для действий",
+    "count": 1,
+    "reason": "Унаследованный литерал MeetAdminScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/roy/screens/MeetingDetail.tsx",
+    "context": "jsx-text",
+    "text": "Кратко от ИИ",
+    "count": 1,
+    "reason": "Унаследованный литерал MeetingDetail.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/roy/screens/MeetingDetail.tsx",
+    "context": "jsx-text",
+    "text": "Запись",
+    "count": 1,
+    "reason": "Унаследованный литерал MeetingDetail.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/roy/screens/MeetingDetail.tsx",
+    "context": "title",
+    "text": "Встреча",
+    "count": 1,
+    "reason": "Унаследованный литерал MeetingDetail.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/roy/screens/MeetingDetail.tsx",
+    "context": "jsx-text",
+    "text": "Не удалось загрузить встречу.",
+    "count": 1,
+    "reason": "Унаследованный литерал MeetingDetail.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/roy/screens/MeetingDetail.tsx",
+    "context": "jsx-text",
+    "text": "Сохранить",
+    "count": 2,
+    "reason": "Унаследованный литерал MeetingDetail.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/roy/screens/MeetingDetail.tsx",
+    "context": "jsx-text",
+    "text": "Отмена",
+    "count": 2,
+    "reason": "Унаследованный литерал MeetingDetail.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/roy/screens/MeetingDetail.tsx",
+    "context": "jsx-text",
+    "text": "Страны встречи",
+    "count": 1,
+    "reason": "Унаследованный литерал MeetingDetail.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/roy/screens/MeetingDetail.tsx",
+    "context": "children",
+    "text": "Тезисы",
+    "count": 1,
+    "reason": "Унаследованный литерал MeetingDetail.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/roy/screens/MeetingDetail.tsx",
+    "context": "children",
+    "text": "Задачи",
+    "count": 1,
+    "reason": "Унаследованный литерал MeetingDetail.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/roy/screens/MeetingDetail.tsx",
+    "context": "children",
+    "text": "Транскрипт",
+    "count": 1,
+    "reason": "Унаследованный литерал MeetingDetail.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/roy/screens/MeetingDetail.tsx",
+    "context": "children",
+    "text": "Сохранить в личное",
+    "count": 1,
+    "reason": "Унаследованный литерал MeetingDetail.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/roy/screens/MeetingDetail.tsx",
+    "context": "children",
+    "text": "Сохранить в базу",
+    "count": 1,
+    "reason": "Унаследованный литерал MeetingDetail.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/roy/screens/NewEntry.tsx",
+    "context": "title",
+    "text": "Новая запись",
+    "count": 1,
+    "reason": "Унаследованный литерал NewEntry.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/roy/screens/NewEntry.tsx",
+    "context": "jsx-text",
+    "text": "Текст",
+    "count": 1,
+    "reason": "Унаследованный литерал NewEntry.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/roy/screens/NewEntry.tsx",
+    "context": "placeholder",
+    "text": "Вставь текст, заметку или транскрипт — ИИ сам сделает тезисы, тип и теги",
+    "count": 1,
+    "reason": "Унаследованный литерал NewEntry.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/roy/screens/NewEntry.tsx",
+    "context": "jsx-text",
+    "text": "Личная запись",
+    "count": 1,
+    "reason": "Унаследованный литерал NewEntry.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/roy/screens/NewEntry.tsx",
+    "context": "jsx-text",
+    "text": "Заголовок, тип (документ/заметка/транскрипт) и рынки определит ИИ из текста.",
+    "count": 1,
+    "reason": "Унаследованный литерал NewEntry.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/roy/screens/NewEntry.tsx",
+    "context": "jsx-text",
+    "text": "Сохранить",
+    "count": 1,
+    "reason": "Унаследованный литерал NewEntry.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/roy/screens/NewTask.tsx",
+    "context": "title",
+    "text": "Задача",
+    "count": 1,
+    "reason": "Унаследованный литерал NewTask.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/roy/screens/NewTask.tsx",
+    "context": "title",
+    "text": "Новая задача",
+    "count": 1,
+    "reason": "Унаследованный литерал NewTask.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/roy/screens/NewTask.tsx",
+    "context": "placeholder",
+    "text": "Что нужно сделать?",
+    "count": 1,
+    "reason": "Унаследованный литерал NewTask.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/roy/screens/NewTask.tsx",
+    "context": "placeholder",
+    "text": "Детали (необязательно)",
+    "count": 1,
+    "reason": "Унаследованный литерал NewTask.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/roy/screens/NewTask.tsx",
+    "context": "placeholder",
+    "text": "Срок",
+    "count": 1,
+    "reason": "Унаследованный литерал NewTask.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/roy/screens/NewTask.tsx",
+    "context": "children",
+    "text": "Сохранить",
+    "count": 1,
+    "reason": "Унаследованный литерал NewTask.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/roy/screens/NewTask.tsx",
+    "context": "children",
+    "text": "Создать задачу",
+    "count": 1,
+    "reason": "Унаследованный литерал NewTask.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/roy/screens/RecordDetail.tsx",
+    "context": "jsx-text",
+    "text": "Источник:",
+    "count": 1,
+    "reason": "Унаследованный литерал RecordDetail.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/roy/screens/RecordDetail.tsx",
+    "context": "jsx-text",
+    "text": "· добавил:",
+    "count": 1,
+    "reason": "Унаследованный литерал RecordDetail.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/roy/screens/RecordDetail.tsx",
+    "context": "children",
+    "text": "Скачать файл",
+    "count": 1,
+    "reason": "Унаследованный литерал RecordDetail.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/roy/screens/RecordDetail.tsx",
+    "context": "jsx-text",
+    "text": "Кратко от ИИ",
+    "count": 1,
+    "reason": "Унаследованный литерал RecordDetail.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/roy/screens/RecordDetail.tsx",
+    "context": "jsx-text",
+    "text": "Текст",
+    "count": 1,
+    "reason": "Унаследованный литерал RecordDetail.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/roy/screens/RecordDetail.tsx",
+    "context": "title",
+    "text": "Запись",
+    "count": 1,
+    "reason": "Унаследованный литерал RecordDetail.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/roy/screens/RecordDetail.tsx",
+    "context": "jsx-text",
+    "text": "Не удалось загрузить запись.",
+    "count": 1,
+    "reason": "Унаследованный литерал RecordDetail.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/roy/screens/RecordDetail.tsx",
+    "context": "children",
+    "text": "Создаём…",
+    "count": 1,
+    "reason": "Унаследованный литерал RecordDetail.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/roy/screens/RecordDetail.tsx",
+    "context": "children",
+    "text": "В задачу",
+    "count": 1,
+    "reason": "Унаследованный литерал RecordDetail.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/roy/screens/RoyBaseScreen.tsx",
+    "context": "placeholder",
+    "text": "Семантический поиск по базе",
+    "count": 1,
+    "reason": "Унаследованный литерал RoyBaseScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/roy/screens/RoyBaseScreen.tsx",
+    "context": "jsx-text",
+    "text": "Здесь пока пусто",
+    "count": 1,
+    "reason": "Унаследованный литерал RoyBaseScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/roy/screens/RoyTasksScreen.tsx",
+    "context": "children",
+    "text": "Пусто — всё разобрано",
+    "count": 1,
+    "reason": "Унаследованный литерал RoyTasksScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/roy/screens/RoyTasksScreen.tsx",
+    "context": "children",
+    "text": "Здесь пока пусто",
+    "count": 1,
+    "reason": "Унаследованный литерал RoyTasksScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/roy/screens/TaskDetail.tsx",
+    "context": "title",
+    "text": "Задача",
+    "count": 1,
+    "reason": "Унаследованный литерал TaskDetail.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/roy/screens/TaskDetail.tsx",
+    "context": "aria-label",
+    "text": "Действия",
+    "count": 1,
+    "reason": "Унаследованный литерал TaskDetail.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/roy/screens/TaskDetail.tsx",
+    "context": "aria-label",
+    "text": "Закрыть меню",
+    "count": 1,
+    "reason": "Унаследованный литерал TaskDetail.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/roy/screens/TaskDetail.tsx",
+    "context": "aria-label",
+    "text": "Изменить",
+    "count": 1,
+    "reason": "Унаследованный литерал TaskDetail.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/roy/screens/TaskDetail.tsx",
+    "context": "aria-label",
+    "text": "Удалить",
+    "count": 1,
+    "reason": "Унаследованный литерал TaskDetail.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/roy/screens/TaskDetail.tsx",
+    "context": "jsx-text",
+    "text": "Не удалось загрузить задачу.",
+    "count": 1,
+    "reason": "Унаследованный литерал TaskDetail.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/roy/screens/TaskDetail.tsx",
+    "context": "jsx-text",
+    "text": "Задача",
+    "count": 1,
+    "reason": "Унаследованный литерал TaskDetail.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/roy/screens/TaskDetail.tsx",
+    "context": "children",
+    "text": "Вернуть в работу",
+    "count": 1,
+    "reason": "Унаследованный литерал TaskDetail.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/roy/screens/TaskDetail.tsx",
+    "context": "children",
+    "text": "Готово",
+    "count": 1,
+    "reason": "Унаследованный литерал TaskDetail.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/roy/screens/TaskDetail.tsx",
+    "context": "jsx-text",
+    "text": "Описание",
+    "count": 1,
+    "reason": "Унаследованный литерал TaskDetail.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/roy/screens/TaskDetail.tsx",
+    "context": "jsx-text",
+    "text": "Связано из базы",
+    "count": 1,
+    "reason": "Унаследованный литерал TaskDetail.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/roy/ui.tsx",
+    "context": "jsx-text",
+    "text": "Участники (",
+    "count": 1,
+    "reason": "Унаследованный литерал ui.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/roy/ui.tsx",
+    "context": "children",
+    "text": "Личное",
+    "count": 1,
+    "reason": "Унаследованный литерал ui.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/roy/ui.tsx",
+    "context": "children",
+    "text": "Общее",
+    "count": 1,
+    "reason": "Унаследованный литерал ui.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/roy/ui.tsx",
+    "context": "jsx-text",
+    "text": "Назад",
+    "count": 1,
+    "reason": "Унаследованный литерал ui.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/tasks/LabelEditor.tsx",
+    "context": "children",
+    "text": "Список",
+    "count": 1,
+    "reason": "Унаследованный литерал LabelEditor.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/tasks/LabelEditor.tsx",
+    "context": "children",
+    "text": "Новый список",
+    "count": 1,
+    "reason": "Унаследованный литерал LabelEditor.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/tasks/LabelEditor.tsx",
+    "context": "placeholder",
+    "text": "Название (напр. Айти)",
+    "count": 1,
+    "reason": "Унаследованный литерал LabelEditor.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/tasks/LabelEditor.tsx",
+    "context": "jsx-text",
+    "text": "Удалить",
+    "count": 1,
+    "reason": "Унаследованный литерал LabelEditor.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/tasks/LabelEditor.tsx",
+    "context": "jsx-text",
+    "text": "Отмена",
+    "count": 1,
+    "reason": "Унаследованный литерал LabelEditor.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/tasks/LabelEditor.tsx",
+    "context": "jsx-text",
+    "text": "Сохранить",
+    "count": 1,
+    "reason": "Унаследованный литерал LabelEditor.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/tasks/PictogramPicker.tsx",
+    "context": "jsx-text",
+    "text": "Пусто",
+    "count": 1,
+    "reason": "Унаследованный литерал PictogramPicker.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/tasks/QuickPickPopover.tsx",
+    "context": "placeholder",
+    "text": "Поиск…",
+    "count": 1,
+    "reason": "Унаследованный литерал QuickPickPopover.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/tasks/QuickPickPopover.tsx",
+    "context": "jsx-text",
+    "text": "Ничего не найдено",
+    "count": 1,
+    "reason": "Унаследованный литерал QuickPickPopover.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/tasks/QuickPickPopover.tsx",
+    "context": "jsx-text",
+    "text": "Убрать",
+    "count": 1,
+    "reason": "Унаследованный литерал QuickPickPopover.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/tasks/RemindersTasks.tsx",
+    "context": "title",
+    "text": "Снять период",
+    "count": 1,
+    "reason": "Скрытый старый экран из исключений #735; перевод вне объёма сторожа."
+  },
+  {
+    "file": "miniapp/src/components/tasks/RemindersTasks.tsx",
+    "context": "jsx-text",
+    "text": "Новая задача",
+    "count": 1,
+    "reason": "Скрытый старый экран из исключений #735; перевод вне объёма сторожа."
+  },
+  {
+    "file": "miniapp/src/components/tasks/RemindersTasks.tsx",
+    "context": "children",
+    "text": "Пусто — всё разобрано",
+    "count": 1,
+    "reason": "Скрытый старый экран из исключений #735; перевод вне объёма сторожа."
+  },
+  {
+    "file": "miniapp/src/components/tasks/RemindersTasks.tsx",
+    "context": "children",
+    "text": "Здесь пока пусто",
+    "count": 1,
+    "reason": "Скрытый старый экран из исключений #735; перевод вне объёма сторожа."
+  },
+  {
+    "file": "miniapp/src/components/tasks/RemindersTasks.tsx",
+    "context": "placeholder",
+    "text": "Новое напоминание",
+    "count": 1,
+    "reason": "Скрытый старый экран из исключений #735; перевод вне объёма сторожа."
+  },
+  {
+    "file": "miniapp/src/components/tasks/SprintBoard.tsx",
+    "context": "jsx-text",
+    "text": "Загрузка…",
+    "count": 1,
+    "reason": "Защищённый раздел «Проекты» (.github/protected-paths.txt); #735 не разрешает менять его тексты."
+  },
+  {
+    "file": "miniapp/src/components/tasks/SprintBoard.tsx",
+    "context": "children",
+    "text": "Проектов пока нет. Выберите вкладку сверху (или создайте) и добавьте в неё проект.",
+    "count": 1,
+    "reason": "Защищённый раздел «Проекты» (.github/protected-paths.txt); #735 не разрешает менять его тексты."
+  },
+  {
+    "file": "miniapp/src/components/tasks/SprintBoard.tsx",
+    "context": "children",
+    "text": "В этой вкладке проектов пока нет. Добавьте проект кнопкой ниже и накидывайте в него задачи.",
+    "count": 1,
+    "reason": "Защищённый раздел «Проекты» (.github/protected-paths.txt); #735 не разрешает менять его тексты."
+  },
+  {
+    "file": "miniapp/src/components/tasks/SprintBoard.tsx",
+    "context": "placeholder",
+    "text": "Название проекта (напр. «Vibe Coding»)",
+    "count": 1,
+    "reason": "Защищённый раздел «Проекты» (.github/protected-paths.txt); #735 не разрешает менять его тексты."
+  },
+  {
+    "file": "miniapp/src/components/tasks/SprintBoard.tsx",
+    "context": "jsx-text",
+    "text": "Добавить",
+    "count": 1,
+    "reason": "Защищённый раздел «Проекты» (.github/protected-paths.txt); #735 не разрешает менять его тексты."
+  },
+  {
+    "file": "miniapp/src/components/tasks/SprintBoard.tsx",
+    "context": "jsx-text",
+    "text": "Отмена",
+    "count": 1,
+    "reason": "Защищённый раздел «Проекты» (.github/protected-paths.txt); #735 не разрешает менять его тексты."
+  },
+  {
+    "file": "miniapp/src/components/tasks/SprintBoard.tsx",
+    "context": "jsx-text",
+    "text": "Проект",
+    "count": 1,
+    "reason": "Защищённый раздел «Проекты» (.github/protected-paths.txt); #735 не разрешает менять его тексты."
+  },
+  {
+    "file": "miniapp/src/components/tasks/TaskComments.tsx",
+    "context": "jsx-text",
+    "text": "Комментарии",
+    "count": 1,
+    "reason": "Унаследованный литерал TaskComments.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/tasks/TaskComments.tsx",
+    "context": "aria-label",
+    "text": "Комментарий",
+    "count": 1,
+    "reason": "Унаследованный литерал TaskComments.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/tasks/TaskComments.tsx",
+    "context": "placeholder",
+    "text": "Написать апдейт… (Enter — отправить)",
+    "count": 1,
+    "reason": "Унаследованный литерал TaskComments.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/tasks/TaskComments.tsx",
+    "context": "aria-label",
+    "text": "Отправить",
+    "count": 1,
+    "reason": "Унаследованный литерал TaskComments.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/tasks/TaskComments.tsx",
+    "context": "title",
+    "text": "Отправить (Enter)",
+    "count": 1,
+    "reason": "Унаследованный литерал TaskComments.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/tasks/TaskComments.tsx",
+    "context": "jsx-text",
+    "text": "Пока нет комментариев.",
+    "count": 1,
+    "reason": "Унаследованный литерал TaskComments.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/tasks/TaskComments.tsx",
+    "context": "aria-label",
+    "text": "Удалить комментарий",
+    "count": 1,
+    "reason": "Унаследованный литерал TaskComments.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/tasks/TaskKanban.tsx",
+    "context": "placeholder",
+    "text": "Новая задача, Enter",
+    "count": 1,
+    "reason": "Унаследованный литерал TaskKanban.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
+  },
+  {
+    "file": "miniapp/src/components/tasks/TimelineView.tsx",
+    "context": "jsx-text",
+    "text": "Таймлайн",
+    "count": 1,
+    "reason": "Скрытый старый экран из исключений #735; перевод вне объёма сторожа."
+  },
+  {
+    "file": "miniapp/src/components/tasks/TimelineView.tsx",
+    "context": "children",
+    "text": "задача",
+    "count": 1,
+    "reason": "Скрытый старый экран из исключений #735; перевод вне объёма сторожа."
+  },
+  {
+    "file": "miniapp/src/components/tasks/TimelineView.tsx",
+    "context": "children",
+    "text": "задачи",
+    "count": 1,
+    "reason": "Скрытый старый экран из исключений #735; перевод вне объёма сторожа."
+  },
+  {
+    "file": "miniapp/src/components/tasks/TimelineView.tsx",
+    "context": "children",
+    "text": "задач",
+    "count": 1,
+    "reason": "Скрытый старый экран из исключений #735; перевод вне объёма сторожа."
+  },
+  {
+    "file": "miniapp/src/components/tasks/TimelineView.tsx",
+    "context": "jsx-text",
+    "text": "с датами · перетаскивай и тяни за края",
+    "count": 1,
+    "reason": "Скрытый старый экран из исключений #735; перевод вне объёма сторожа."
+  },
+  {
+    "file": "miniapp/src/components/tasks/TimelineView.tsx",
+    "context": "jsx-text",
+    "text": "Нет задач с датами",
+    "count": 1,
+    "reason": "Скрытый старый экран из исключений #735; перевод вне объёма сторожа."
+  },
+  {
+    "file": "miniapp/src/components/tasks/TimelineView.tsx",
+    "context": "jsx-text",
+    "text": "Открой задачу ниже и поставь срок — она появится на таймлайне.",
+    "count": 1,
+    "reason": "Скрытый старый экран из исключений #735; перевод вне объёма сторожа."
+  },
+  {
+    "file": "miniapp/src/components/tasks/TimelineView.tsx",
+    "context": "jsx-text",
+    "text": "Без срока ·",
+    "count": 1,
+    "reason": "Скрытый старый экран из исключений #735; перевод вне объёма сторожа."
+  },
+  {
+    "file": "miniapp/src/components/tasks/TimelineView.tsx",
+    "context": "jsx-text",
+    "text": "Не на таймлайне — нажми, чтобы открыть и поставить срок.",
+    "count": 1,
+    "reason": "Скрытый старый экран из исключений #735; перевод вне объёма сторожа."
+  }
+]
