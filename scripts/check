@@ -181,10 +181,11 @@ initiatives_gate() {
     row "покрытие" "skip" 0 0 "без тестов не считается"
   else
   rm -rf reports/cov
-  deno test -A --coverage=reports/cov --reporter=junit supabase/ files/ scripts/market/ \
-    > reports/tests-functions.junit.xml 2> reports/tests.log; st1=$?
-  deno test -A --no-check --coverage=reports/cov --reporter=junit \
-    miniapp/sw.test.ts miniapp/src/lib/ > reports/tests-web.junit.xml 2>> reports/tests.log; st2=$?
+  # Coverage summaries go to the human log; JUnit must contain only XML.
+  deno test -A --coverage=reports/cov --reporter=junit --junit-path=reports/tests-functions.junit.xml \
+    supabase/ files/ scripts/market/ > reports/tests.log 2>&1; st1=$?
+  deno test -A --no-check --coverage=reports/cov --reporter=junit --junit-path=reports/tests-web.junit.xml \
+    miniapp/sw.test.ts miniapp/src/lib/ >> reports/tests.log 2>&1; st2=$?
 
   count() { # файл атрибут — сумма по всем testsuite
     grep -o "$2=\"[0-9]*\"" "$1" 2>/dev/null | tr -dc '0-9\n' | awk '{s+=$1} END {print s+0}'

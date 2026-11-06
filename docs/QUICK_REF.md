@@ -415,6 +415,11 @@ claude mcp add supabase-swarm -- npx -y @supabase/mcp-server-supabase@0.12.0 \
    и **`make porcha`** — ломает ядро и базу нарочно и убеждается, что тесты краснеют. Тесты ходят в настоящую базу, поэтому
    нужен стек Supabase: общий тестовый на MUSPELHEIM (туннель поднимает сама обёртка, она же печатает, на какой базе идут тесты); перед прогоном она же сверяет схему стенда с миграциями `main` (сторож `scripts/lib/stand-guard.sh`: отстаёт — докатывает, чужие следы или миграции ветки — отказ; вернуть к main — `scripts/stand-reset`, с миграциями ветки — `scripts/stand-reset --branch`); доступы подставляет `./scripts/with-local-db`, руками их задавать не нужно (подробности — `docs/DEPLOY.md` §Контуры).
    **Путь к файлу от `import.meta.url` — только `fromFileUrl(new URL(…, import.meta.url))`** (std/path; в `scripts/` — алиас `@std/path` из корневого `deno.json`) или сам объект `URL`. `.pathname` отдаёт percent-кодировку, и в рабочей копии с кириллицей в имени папки тесты падают `NotFound`, а в CI (путь латинский) это не видно (#469/#504/#524/#559). Сторож `_shared/file-url-path.guard.test.ts` валит прогон на любом `import.meta.url).pathname`, в том числе обёрнутом в `decodeURIComponent`.
+   `./scripts/check initiatives` сохраняет JUnit отдельно через `--junit-path`: файлы
+   `reports/tests-functions.junit.xml` и `reports/tests-web.junit.xml` содержат только XML.
+   Таблица покрытия и диагностика Deno остаются в `reports/tests.log`; коды завершения
+   тестов продолжают определять результат гейта. Регрессии JSON и JUnit проверяет
+   `python3 scripts/test-check-report.py`.
    Отчёт `reports/check.json` сохраняет кавычки, обратные слеши и управляющие символы
    диагностики в JSON-экранировании даже при ошибке Deno (#1105); полный исходный вывод
    остаётся в `reports/*.txt`. Проверка отчёта без базы и сети: `python3 scripts/test-check-report.py`.

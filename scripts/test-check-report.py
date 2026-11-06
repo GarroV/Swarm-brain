@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-"""Run scripts/check in an isolated fixture; diagnostics must remain valid JSON (#1105)."""
+"""Run scripts/check in an isolated fixture; diagnostics must remain valid JSON/JUnit (#1105)."""
 import json
 import os
 from pathlib import Path
 import shutil
 import subprocess
 import tempfile
+import xml.etree.ElementTree as ET
 
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -34,7 +35,17 @@ def check_report(status):
 case "$1" in
   test)
     mkdir -p reports/cov
-    printf '<testsuite tests="1" skipped="0"></testsuite>\\n'
+    junit=''
+    for arg in "$@"; do
+      case "$arg" in --junit-path=*) junit="${arg#--junit-path=}" ;; esac
+    done
+    if [ -n "$junit" ]; then
+      printf '<testsuite tests="1" skipped="0"></testsuite>\\n' > "$junit"
+    else
+      printf '<testsuite tests="1" skipped="0"></testsuite>\\n'
+    fi
+    # Deno prints a coverage summary to stdout after its JUnit report.
+    printf '| File | Branch %% | Function %% | Line %% |\\n'
     exit 0 ;;
   coverage) exit 0 ;;
 esac
@@ -55,7 +66,10 @@ exit "$CHECK_STATUS"
             assert roles[role]["detail"] == DIAGNOSTIC + " ", repr(roles[role]["detail"])
         # Full diagnostics are retained separately, including their original control bytes.
         assert (fixture / "reports/типы-функции.txt").read_bytes() == (DIAGNOSTIC + "\n").encode()
-        print("✔ scripts/check: valid JSON, exact diagnostics, exit", status)
+        for name in ("tests-functions.junit.xml", "tests-web.junit.xml"):
+            ET.parse(fixture / "reports" / name)
+        assert "| File |" in (fixture / "reports/tests.log").read_text()
+        print("✔ scripts/check: valid JSON/JUnit, exact diagnostics, exit", status)
 
 
 if __name__ == "__main__":
