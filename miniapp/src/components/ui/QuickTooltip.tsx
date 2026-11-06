@@ -90,7 +90,7 @@ export function QuickTooltip({ label, children, disabled }: {
         showTimer.current = setTimeout(show, DELAY_MS);
       }}
       onPointerLeave={leave}
-      onFocus={() => { focused.current = true; if (!pointerFocus.current) show(); }}
+      onFocus={() => { focused.current = !pointerFocus.current; if (focused.current) show(); }}
       onBlur={() => { focused.current = false; if (!hovered.current) hide(); }}
       onPointerDown={() => { pointerFocus.current = true; hide(); }}
       onClickCapture={() => { pointerFocus.current = false; hide(); }}
