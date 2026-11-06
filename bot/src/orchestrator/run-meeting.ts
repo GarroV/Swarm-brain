@@ -21,6 +21,7 @@ import { SwarmHttpError } from "../swarm-client/errors.ts";
 import { inBackground } from "./background.ts";
 import type { Notice, NoticeResult, Notifier } from "./notices.ts";
 import { describeError } from "./describe-error.ts";
+import { isTransientLoadError, JOIN_MAX_ATTEMPTS, JOIN_RETRY_PAUSE_MS } from "./join-retry.ts";
 import { BOT_PROFILE } from "./profile.ts";
 import { type AudioAlert, QuietEndTimer, SilenceWatch } from "./audio-watch.ts";
 
@@ -508,19 +509,38 @@ async function record(context: RunContext): Promise<MeetingOutcome> {
   return hand(context, spans);
 }
 
-async function afterClaim(context: RunContext): Promise<MeetingOutcome> {
+/**
+ * Зайти в звонок. Сбой загрузки страницы — ещё попытка (до `JOIN_MAX_ATTEMPTS`), любой другой
+ * сбой — сразу отказ. Нотиса `join_failed` уходит один раз, после последней неудачи.
+ */
+async function isJoined(context: RunContext): Promise<boolean> {
   const { options } = context;
-  try {
-    await options.adapter.join(options.joinUrl, options.displayName);
-  } catch (error) {
-    await sendNotice(context, {
-      kind: "join_failed",
-      meetingId: context.meetingId,
-      detail: describeError(error),
-    });
-    await leaveQuietly(context);
-    return "join_failed";
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      await options.adapter.join(options.joinUrl, options.displayName);
+      return true;
+    } catch (error) {
+      const reason = describeError(error);
+      const isLastAttempt =
+        attempt >= JOIN_MAX_ATTEMPTS || !isTransientLoadError(reason) || options.stop.aborted;
+      if (isLastAttempt) {
+        await sendNotice(context, {
+          kind: "join_failed",
+          meetingId: context.meetingId,
+          detail: reason,
+        });
+        await leaveQuietly(context);
+        return false;
+      }
+      context.log(`заход: попытка ${String(attempt)} из ${String(JOIN_MAX_ATTEMPTS)} — ${reason}`);
+      await leaveQuietly(context);
+      await context.sleep(JOIN_RETRY_PAUSE_MS);
+    }
   }
+}
+
+async function afterClaim(context: RunContext): Promise<MeetingOutcome> {
+  if (!(await isJoined(context))) return "join_failed";
 
   const door = await passDoor(context);
   if (door !== "admitted") {

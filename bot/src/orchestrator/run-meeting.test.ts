@@ -42,6 +42,11 @@ interface Script {
   readonly alone?: readonly (boolean | null)[];
   readonly partsRecorded?: number;
   readonly joinError?: Error;
+  /**
+   * Что отвечает заход на каждую попытку по порядку (`null` — успех); последний ответ повторяется.
+   * Перекрывает `joinError`.
+   */
+  readonly joinErrors?: readonly (Error | null)[];
   readonly recorderError?: Error;
   readonly finishError?: Error;
   readonly shouldLeaveOnNotice?: boolean;
@@ -69,6 +74,7 @@ function build(script: Script = {}): World {
   const alone = script.alone ?? [true];
   let doorPolls = 0;
   let alonePolls = 0;
+  let joinAttempts = 0;
 
   const world: World = {
     calls,
@@ -97,7 +103,13 @@ function build(script: Script = {}): World {
       adapter: {
         join: (url) => {
           calls.push(`join:${url}`);
-          return script.joinError ? Promise.reject(script.joinError) : Promise.resolve();
+          const scripted = script.joinErrors;
+          const failure =
+            scripted === undefined
+              ? (script.joinError ?? null)
+              : (scripted[Math.min(joinAttempts, scripted.length - 1)] ?? null);
+          joinAttempts += 1;
+          return failure ? Promise.reject(failure) : Promise.resolve();
         },
         waitAdmitted: (timeoutMs) => {
           const answer = door[Math.min(doorPolls, door.length - 1)] ?? "timeout";
@@ -479,6 +491,55 @@ describe("громкие отказы", () => {
     expect(world.notices).toEqual([
       { kind: "join_failed", meetingId: "m-1", detail: "net::ERR_NAME_NOT_RESOLVED" },
     ]);
+  });
+
+  it("сбой загрузки страницы звонка → вторая попытка, нотисы нет, дальше запись", async () => {
+    const timeout = new Error(
+      "page.goto: Timeout 60000ms exceeded.\nCall log:\n  - navigating to https://meet.google.com/abc, waiting until domcontentloaded",
+    );
+    const world = build({ joinErrors: [timeout, null] });
+
+    expect(await runMeeting(world.options)).toBe("recorded");
+    expect(world.calls.filter((call) => call.startsWith("join:"))).toHaveLength(2);
+    expect(world.notices).toEqual([]);
+  });
+
+  it("три сбоя загрузки подряд → ровно одна нотиса join_failed после последней", async () => {
+    const world = build({ joinError: new Error("net::ERR_CONNECTION_RESET at https://meet") });
+    const lines: string[] = [];
+    const options = {
+      ...world.options,
+      log: (line: string): void => {
+        lines.push(line);
+      },
+    };
+
+    expect(await runMeeting(options)).toBe("join_failed");
+    expect(world.calls.filter((call) => call.startsWith("join:"))).toHaveLength(3);
+    expect(world.notices).toHaveLength(1);
+    expect(world.notices[0]).toMatchObject({ kind: "join_failed", meetingId: "m-1" });
+    expect(lines.filter((line) => line.startsWith("заход: попытка"))).toEqual([
+      "заход: попытка 1 из 3 — net::ERR_CONNECTION_RESET at https://meet",
+      "заход: попытка 2 из 3 — net::ERR_CONNECTION_RESET at https://meet",
+    ]);
+  });
+
+  it("отказ захода по существу → без повтора, сразу join_failed", async () => {
+    const world = build({
+      joinError: new Error("Комната закрыта для гостей — в звонок не входим"),
+    });
+
+    expect(await runMeeting(world.options)).toBe("join_failed");
+    expect(world.calls.filter((call) => call.startsWith("join:"))).toHaveLength(1);
+    expect(world.notices).toHaveLength(1);
+  });
+
+  it("остановили между попытками → повтора нет", async () => {
+    const world = build({ joinError: new Error("net::ERR_TIMED_OUT") });
+    world.stop.abort();
+
+    expect(await runMeeting(world.options)).toBe("join_failed");
+    expect(world.calls.filter((call) => call.startsWith("join:"))).toHaveLength(1);
   });
 
   it("запись не стартовала → no_audio, из звонка выходим", async () => {
