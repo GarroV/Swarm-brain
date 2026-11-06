@@ -162,6 +162,16 @@
   бота; заголовки не пишутся.
 - **`openaiFetch`** обработки встреч (`_shared/meeting-processor.ts`) — тонкая обёртка: срок
   `MODEL_CALL_TIMEOUT_MS` (180 с), 4 попытки, отмена лизом.
+- **Расход потокового ответа** (#864): `task-extract` запрашивает
+  `stream_options.include_usage`; `recordModelUsage` читает модель и usage из финальных SSE-кадров
+  копии ответа тем же разборщиком, что и текстовые дельты. Текст не накапливается, исходный поток
+  остаётся вызывающему. Учёт SSE удерживается через `EdgeRuntime.waitUntil`, поэтому первые
+  дельты не ждут конца ответа; обычный JSON сохраняет прежний порядок записи. При обрыве без
+  usage токены и цена остаются `null`, а не вымышленным нулём. Контракты:
+  [OpenAI include_usage](https://developers.openai.com/api/reference/resources/chat/subresources/completions/methods/create),
+  [Supabase background tasks](https://supabase.com/docs/guides/functions/background-tasks).
+  Регрессии `model-usage-stream.test.ts` и `external-fetch-stream.test.ts` проверяют настоящий
+  фрагментированный `ReadableStream`, финальные токены/цену и выдачу ответа до EOF без сети/БД.
 - **Google Calendar** (`_shared/google-calendar.ts`) — свой срок `GOOGLE_TIMEOUT_MS` (8 с) и одна
   попытка: два вызова подряд обязаны уложиться в ожидание оркестратора. Access-токен кэшируется в памяти
   изолята (ключ — sha-256 refresh-токена, срок `expires_in` − 5 мин, не дольше 50 мин; сбой обмена не

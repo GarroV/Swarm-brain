@@ -63,7 +63,7 @@ export function extractRequestBody(
       { role: "user", content: wrapUntrustedForModel(text.slice(0, 8000)) },
     ],
     max_tokens: 3000,
-    ...(stream ? { stream: true } : {}),
+    ...(stream ? { stream: true, stream_options: { include_usage: true } } : {}),
   });
 }
 
