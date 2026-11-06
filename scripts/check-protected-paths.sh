@@ -52,7 +52,10 @@ while IFS= read -r file; do
   case "$file" in
     supabase/migrations/*.sql)
       [ -f "$file" ] || continue
-      if grep -qiE '\b(public\.)?(projects|sprints)\b' "$file"; then
+      # Комментарий не меняет таблицу. Кавычки/тела функций сохраняем: внутри может быть SQL.
+      # Отдельное присваивание сохраняет ошибку разбора; pipe + grep -q терял бы её через SIGPIPE.
+      SQL=$(python3 scripts/strip-sql-comments.py < "$file")
+      if grep -qiE '\b(public\.)?(projects|sprints)\b' <<< "$SQL"; then
         HITS="$HITS$file (миграция трогает projects/sprints)"$'\n'
       fi
       ;;

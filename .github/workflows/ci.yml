@@ -37,6 +37,8 @@ jobs:
           fetch-depth: 0
       - name: Тронуто ли защищённое без разрешения
         run: ./scripts/check-protected-paths.sh origin/${{ github.base_ref }}
+      - name: Комментарии SQL не скрывают настоящие правки защищённых таблиц
+        run: python3 scripts/test-protected-paths.py && python3 scripts/test-protected-paths.py porcha
 
   deploy-scripts:
     name: Скрипты раскатки — гейт миграций + порча
