@@ -52,6 +52,105 @@ const row = (over: Partial<PlaceRow>): PlaceRow => ({
 const many = (k: number, over: (i: number) => Partial<PlaceRow>) =>
   Array.from({ length: k }, (_, i) => row(over(i)));
 
+Deno.test("#1134: eight unbranded generic coffee shops in three cities are not a chain", () => {
+  const rows = many(8, (i) => ({
+    name: "Кофейня",
+    locality: ["Minsk", "Lida", "Vitebsk"][i % 3],
+  }));
+  assertEquals(discover(rows, { ...cfg, country: "BY" }), {
+    points: [],
+    chains: [],
+  });
+});
+
+Deno.test("#1134: only the six specified generic words are excluded, using the existing normalization", () => {
+  for (
+    const name of [
+      "кофейня",
+      "пиццерия",
+      "кафе",
+      "столовая",
+      "pizzeria",
+      "kebab",
+    ]
+  ) {
+    const rows = many(8, (i) => ({
+      name: `  ${name.toUpperCase()}!  `,
+      locality: ["A", "B", "C"][i % 3],
+      wikidata: "Q_generic_without_brand",
+    }));
+    assertEquals(discover(rows, cfg), { points: [], chains: [] }, name);
+  }
+  for (
+    const name of [
+      "Кофейня Плюс",
+      "Pizzeria Gino",
+      "Bistro Lux",
+      "Kebab House",
+      "Cafe",
+      'Кондитерская фабрика ОАО "Красный пищевик"',
+      "Коммунарка",
+    ]
+  ) {
+    const result = discover(
+      many(5, (i) => ({ name, locality: ["A", "B", "C"][i % 3] })),
+      cfg,
+    );
+    assertEquals(result.chains.map((c) => c.name), [name]);
+    assertEquals(result.points.length, 5);
+  }
+});
+
+Deno.test("#1134: configured matches stay authoritative; unbranded generic rows cannot join branded groups", () => {
+  const explicit = discover([
+    row({ name: "Кофейня" }),
+    row({ name: "Кофейня", brand: "" }),
+    row({ name: "Кофейня", brand: "   " }),
+  ], {
+    ...cfg,
+    chains: [...cfg.chains, {
+      key: "configured",
+      name: "Known chain",
+      segment: "coffee",
+      osmNames: ["Кофейня"],
+    }],
+  });
+  assertEquals(explicit.chains, []);
+  assertEquals(explicit.points.map((p) => p.chain), [
+    "configured",
+    "configured",
+    "configured",
+  ]);
+  const mixed = discover([
+    ...many(3, () => ({ name: "Кофейня", brand: "Кофейня" })),
+    ...many(5, () => ({ name: "Кофейня", locality: "B" })),
+  ], cfg);
+  assertEquals(mixed.chains.map((c) => c.name), ["Кофейня"]);
+  assertEquals(mixed.points.length, 3);
+});
+
+Deno.test("#1134: empty and whitespace brands retain the existing no-fallback parser contract", () => {
+  const rows = [
+    ...many(
+      8,
+      (i) => ({
+        name: "Bistro Lux",
+        brand: "",
+        locality: ["A", "B", "C"][i % 3],
+      }),
+    ),
+    ...many(
+      8,
+      (i) => ({
+        name: "Bistro Lux",
+        brand: "   ",
+        locality: ["A", "B", "C"][i % 3],
+      }),
+    ),
+  ];
+  assertEquals(discover(rows, cfg), { points: [], chains: [] });
+});
+
 Deno.test("#896: McCafé spelling variants belong to McDonald's in ES, PL and HU", () => {
   for (const config of [ES, PL, HU]) {
     const { points, chains } = discover([

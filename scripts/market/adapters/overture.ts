@@ -55,6 +55,12 @@ const fold = (s: string) =>
   s.normalize("NFKD").replace(/\p{M}/gu, "").replace(/[’‘´`]/g, "'")
     .toLowerCase();
 const norm = (s: string) => fold(s).replace(/[^\p{L}\p{N}]+/gu, "");
+// #1134: an exact generic label is not a chain, regardless of venue/city count.
+// Check admission before merging, so unbranded generic rows cannot attach to a brand.
+// Explicit configured matches are resolved first and remain authoritative.
+const GENERIC_UNBRANDED_NAMES = new Set(
+  ["кофейня", "пиццерия", "кафе", "столовая", "pizzeria", "kebab"].map(norm),
+);
 const isLetter = (c: string | undefined) => !!c && /\p{L}/u.test(c);
 
 /** Начало строки совпало с образцом целым словом: «Domino's Pizza Deutschland» ~ «Domino's». */
@@ -173,10 +179,14 @@ export function discover(
       continue;
     }
     const label = row.brand ?? row.name;
-    if (!label || !norm(label)) continue;
+    if (!label) continue;
+    const normalized = norm(label);
+    if (
+      !normalized || (!row.brand && GENERIC_UNBRANDED_NAMES.has(normalized))
+    ) continue;
     const gk = row.wikidata
       ? `w:${row.wikidata}`
-      : `${row.brand ? "b" : "n"}:${norm(label)}`;
+      : `${row.brand ? "b" : "n"}:${normalized}`;
     groups.set(gk, [...(groups.get(gk) ?? []), row]);
   }
   // Одна сеть бывает в Overture под разными wikidata и без них — склеиваем по названию.
