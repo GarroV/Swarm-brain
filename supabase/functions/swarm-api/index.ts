@@ -1,3 +1,4 @@
+import { taskExtractionResponse } from "./task-extraction-response.ts";
 import { handleChatGptDesktop } from "./chatgpt-desktop.ts";
 import { meetingEntryIsLive } from "../_shared/meeting-entry-live.ts";
 // deno-fmt-ignore-file
@@ -63,8 +64,6 @@ import {
   recurrencePatchFor,
   resolveRecurrence,
 } from "../_shared/tasks/recurrence.ts";
-import { createJsonObjectScanner } from "../_shared/json-object-stream.ts";
-import { readOpenAiSseChunk } from "../_shared/openai-sse.ts";
 import type { ProjectInput, SprintInput, TaskInput } from "../_shared/tasks/types.ts";
 import { createSprint, deleteSprint, listSprints, setTasksSprint, updateSprint } from "../_shared/tasks/sprints.ts";
 import { taskVisibleByProject } from "../_shared/tasks/project-visibility.ts";
@@ -107,14 +106,7 @@ import { mergeOwnLabels } from "../_shared/tasks/labels.ts";
 import { todayIso } from "../_shared/llm-date.ts";
 import { escapeHtml } from "../_shared/telegram-html.ts";
 import { UNTRUSTED_DATA_RULE, wrapUntrustedForModel } from "../_shared/untrusted-prompt.ts";
-import {
-  callExtractor,
-  EXTRACT_MAX_TASKS,
-  type ExtractedTask,
-  EXTRACTOR_UNAVAILABLE,
-  extractTasks,
-  toExtractedTask,
-} from "../_shared/task-extract.ts";
+import { callExtractor, extractTasks } from "../_shared/task-extract.ts";
 import {
   canAccessDraftMeeting,
   canDeleteDraftMeeting,
@@ -127,7 +119,7 @@ import { handleAdminRoutes } from "./admin.ts";
 import { handleSelfPasskeyRoutes } from "./passkeys-self.ts";
 import { supabaseStore } from "../_shared/passkeys/store.ts";
 import { apiErr, corsHeaders, json, parseListLimit, routePathOf } from "./http.ts";
-import { errorDetail, INTERNAL_ERROR_MESSAGE, serverError, withErrorBoundary } from "./client-error.ts";
+import { serverError, withErrorBoundary } from "./client-error.ts";
 import { handleMeetingInviteRoutes } from "./meeting-invites.ts";
 import { handleWebRecordingRoutes } from "./web-recording.ts";
 import { DEMO_GROUP_ID, isDemoSession } from "../_shared/demo-session.ts";
@@ -357,101 +349,6 @@ async function withFreshAssignees<
     if (tids.length === 0) return t;
     const fresh = tids.map((id) => nameById.get(id)).filter((n): n is string => !!n);
     return fresh.length === tids.length ? { ...t, assignees: fresh } : t;
-  });
-}
-
-// Потоковое извлечение (SSE). Экран разбора открывается мгновенно и дописывает задачи по мере
-// готовности: замер по прод-логам показал, что 3–5 секунд ожидания — это целиком генерация
-// модели, а не инфраструктура (обычный вызов swarm-api укладывается в 200–600 мс). Ждать конца
-// значит держать человека перед пустым экраном всё это время; отдавать по объекту — показать
-// первую задачу примерно через секунду.
-//
-// Формат событий (по одному JSON на `data:`):
-//   {"type":"task","task":{…}}   — очередная готовая задача
-//   {"type":"done","count":N}    — поток закончился штатно
-//   {"type":"error","message":…} — модель оборвалась на середине; молча не глотаем
-async function streamExtractTasks(
-  text: string,
-  groupId: string,
-  origin: string,
-): Promise<Response> {
-  const today = todayIso();
-  const upstream = await callExtractor({ supabase, groupId }, text, today, true);
-  // Проверяем ДО того, как отдать 200: после начала потока сообщить об ошибке уже нечем.
-  if (!upstream.ok || !upstream.body) {
-    return apiErr(502, "Extractor unavailable", origin);
-  }
-
-  const encoder = new TextEncoder();
-  const body = new ReadableStream({
-    async start(controller) {
-      const send = (payload: unknown) =>
-        controller.enqueue(
-          encoder.encode(`data: ${JSON.stringify(payload)}\n\n`),
-        );
-      const scanner = createJsonObjectScanner();
-      const reader = upstream.body!.getReader();
-      const decoder = new TextDecoder();
-      let sseTail = "";
-      let count = 0;
-      // Модель что-то написала (хоть один непустой кусок текста). Нужно, чтобы отличить
-      // «задач в тезисах правда нет» от «мы не смогли разобрать ответ»: снаружи и то и другое
-      // выглядит как пустой список, но первое — правда, а второе — молчаливый сбой.
-      let sawContent = false;
-
-      try {
-        outer: while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          sseTail += decoder.decode(value, { stream: true });
-          // Разбор чужого протокола вынесен в _shared/openai-sse.ts и покрыт фикстурой:
-          // ошибка здесь означала бы молча пустой разбор у человека на экране.
-          const { deltas, rest, done: upstreamDone } = readOpenAiSseChunk(
-            sseTail,
-            false,
-          );
-          sseTail = rest;
-          for (const delta of deltas) {
-            sawContent = true;
-            for (const chunk of scanner.push(delta)) {
-              let task: ExtractedTask | null = null;
-              try {
-                task = toExtractedTask(JSON.parse(chunk), today);
-              } catch {
-                continue; // объект не собрался в валидный JSON — пропускаем именно его
-              }
-              if (!task) continue;
-              send({ type: "task", task });
-              if (++count >= EXTRACT_MAX_TASKS) break outer;
-            }
-          }
-          if (upstreamDone) break;
-        }
-        if (count === 0 && sawContent) {
-          // Ответ был, задач ноль — значит сломался разбор, а не встреча оказалась пустой.
-          // Честная ошибка вместо «Задач не найдено»: пусть человек нажмёт ещё раз и увидит
-          // причину, а не решит, что поручений в его встрече нет.
-          send({ type: "error", message: "Ответ модели не удалось разобрать" });
-        } else {
-          send({ type: "done", count });
-        }
-      } catch (e) {
-        console.error(`[swarm-api] tasks extract stream: ${errorDetail(e)}`);
-        send({ type: "error", message: INTERNAL_ERROR_MESSAGE });
-      } finally {
-        reader.cancel().catch(() => {});
-        controller.close();
-      }
-    },
-  });
-
-  return new Response(body, {
-    headers: {
-      ...corsHeaders(origin),
-      "Content-Type": "text/event-stream; charset=utf-8",
-      "Cache-Control": "no-cache, no-transform",
-      "X-Accel-Buffering": "no",
-    },
   });
 }
 
@@ -3944,25 +3841,16 @@ async function routeRequest(req: Request): Promise<Response> {
       return apiErr(400, "text required", origin);
     }
 
-    // Потоковый режим — по Accept, а не по новому пути: контракт эндпоинта не меняется,
-    // старый JSON-ответ продолжает работать для всех, кто про поток не знает.
-    if ((req.headers.get("Accept") ?? "").includes("text/event-stream")) {
-      return await streamExtractTasks(body.text, groupId, origin);
-    }
-
-    // Единый экстрактор (`extractTasks`, общий с MCP) — без дубля промпта. Отказ модели — 502,
-    // как у потоковой ветки, а не пустой список: «задач нет» и «модель молчит» различаются (#374).
-    const result = await extractTasks({ supabase, groupId }, body.text);
-    if (!result.ok) {
-      return json(EXTRACTOR_UNAVAILABLE, 502, origin);
-    }
-    const extracted = result.tasks;
-
-    // Только предложение, без записи в базу: в базу попадает лишь то, что человек выбрал на
-    // экране (решение 05.09.2026, issue #581). Прежний режим «создать до 10 задач сразу» снят —
-    // его никто не звал, а по умолчанию он писал в базу непроверенное GPT. Флаг `save` больше не
-    // читается: старый клиент с save:false получает тот же ответ.
-    return json(extracted.slice(0, 10).filter((t) => t.title), 200, origin);
+    // Same endpoint and proposal-only contract; no tasks are persisted here (#581).
+    const text = body.text;
+    const today = todayIso();
+    const mode = (req.headers.get("Accept") ?? "").includes("text/event-stream") ? "sse" : "json";
+    return await taskExtractionResponse(mode, {
+      origin,
+      today,
+      requestStream: () => callExtractor({ supabase, groupId }, text, today, true),
+      extractJson: () => extractTasks({ supabase, groupId }, text),
+    });
   }
 
   return apiErr(404, "Not found", origin);
