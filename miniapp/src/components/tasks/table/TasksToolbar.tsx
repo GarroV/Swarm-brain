@@ -9,6 +9,7 @@ import { useDt } from "@/components/roy/nav";
 import { RangePicker } from "@/components/ui/RangePicker";
 import type { useReminderTasks } from "@/components/tasks/useReminderTasks";
 import { Menu, ToolbarButton, type MenuItem } from "./Menu";
+import { QuickTooltipGroup } from "@/components/ui/QuickTooltip";
 
 // Панель фильтров задач — ОДНА строка (стенд: screens-tasks.js → tasksToolbar): чья работа
 // (переключатель), готовые (один тумблер), фильтры — меню, режимы вида — пиктограммы. Справа поиск, счётчик и «＋ Задача».
@@ -157,13 +158,13 @@ export function TasksToolbar({ r, s }: { r: ReturnType<typeof useReminderTasks>;
           </div>
         }
       />
-      <span className="inline-flex gap-1">
+      <QuickTooltipGroup><span className="inline-flex gap-1">
         {toggles.map((t) => (
-          <ToolbarButton key={t.key} icon on={t.on} onClick={t.onClick} title={t.label}>
+          <ToolbarButton key={t.key} icon quickHint on={t.on} onClick={t.onClick} title={t.label}>
             <RoyIcon name={t.icon} size={15} strokeWidth={1.8} />
           </ToolbarButton>
         ))}
-      </span>
+      </span></QuickTooltipGroup>
 
       <div className="ml-auto flex items-center gap-2.5">
         {/* Фильтр свёрнут в пиктограмму, пока пуст и не в фокусе: так панель влезает в одну

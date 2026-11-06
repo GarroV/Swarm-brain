@@ -2,6 +2,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import { RoyIcon } from "@/components/roy/icons";
+import { QuickTooltip } from "@/components/ui/QuickTooltip";
 
 // Кнопка-меню панели задач (стенд: `.drop` + `.dmenu`). Подсвечена, когда фильтр в ней
 // что-то сузил: суженный молча список человек ищет глазами и не находит.
@@ -18,10 +19,12 @@ export type MenuItem = {
   action?: boolean;
 };
 
-export function ToolbarButton({ on, children, onClick, title, disabled, popup, icon }: {
+export function ToolbarButton({ on, children, onClick, title, disabled, popup, icon, quickHint }: {
   on?: boolean;
   /** Кнопка-пиктограмма: квадратная, подпись — в title и aria-label, состояние — aria-pressed. */
   icon?: boolean;
+  /** Opt in to a 150 ms custom hint; other callers keep the native title. */
+  quickHint?: boolean;
   children: ReactNode;
   onClick?: () => void;
   title?: string;
@@ -29,11 +32,11 @@ export function ToolbarButton({ on, children, onClick, title, disabled, popup, i
   /** Кнопка открывает меню: состояние для экранного диктора (aria-haspopup/aria-expanded). */
   popup?: { open: boolean };
 }) {
-  return (
+  const button = (
     <button
       type="button"
       onClick={onClick}
-      title={title}
+      title={quickHint ? undefined : title}
       disabled={disabled}
       aria-haspopup={popup ? "menu" : undefined}
       aria-expanded={popup ? popup.open : undefined}
@@ -52,6 +55,7 @@ export function ToolbarButton({ on, children, onClick, title, disabled, popup, i
       {children}
     </button>
   );
+  return quickHint && title ? <QuickTooltip label={title} disabled={disabled}>{button}</QuickTooltip> : button;
 }
 
 export function Menu({ label, on, items, footer, trigger, title, alignRight }: {
