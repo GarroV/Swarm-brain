@@ -1,6 +1,9 @@
 // Разбор Overture без сети: строки-фикстуры вместо parquet из S3.
 import { assertEquals } from "@std/assert";
 import type { CountryConfig } from "../countries/types.ts";
+import { ES } from "../countries/ES.ts";
+import { PL } from "../countries/PL.ts";
+import { HU } from "../countries/HU.ts";
 import {
   classify,
   discover,
@@ -32,7 +35,8 @@ const cfg = {
 } as unknown as CountryConfig;
 
 let n = 0;
-// Каждая строка — своё место (шаг ~110 м), иначе склейка двойников съест фикстуры.
+// Каждая строка — своё место: свой адрес и шаг ~110 м, иначе каноническая склейка
+// по одному адресу справедливо посчитает несколько строк одним заведением.
 const row = (over: Partial<PlaceRow>): PlaceRow => ({
   id: `p${++n}`,
   name: null,
@@ -40,13 +44,80 @@ const row = (over: Partial<PlaceRow>): PlaceRow => ({
   wikidata: null,
   category: "restaurant",
   locality: "Berlin",
-  address: "Street 1",
+  address: `Street ${n}`,
   lat: 52.5 + n * 0.001,
   lng: 13.4,
   ...over,
 });
 const many = (k: number, over: (i: number) => Partial<PlaceRow>) =>
   Array.from({ length: k }, (_, i) => row(over(i)));
+
+Deno.test("#896: McCafé spelling variants belong to McDonald's in ES, PL and HU", () => {
+  for (const config of [ES, PL, HU]) {
+    const { points, chains } = discover([
+      row({ brand: "McCafé", name: "McCafé One", address: "Road 101" }),
+      row({ brand: "McCafe", name: "McCafe Two", address: "Road 102" }),
+      row({ brand: "McCafé", name: "McCafé Three", address: "Road 103" }),
+      row({ brand: null, name: "McCafé Four", address: "Road 104" }),
+      row({ brand: "McCafeX", name: "Unrelated", address: "Road 105" }),
+    ], config);
+    assertEquals(points.map((p) => p.chain), [
+      "mcdonalds",
+      "mcdonalds",
+      "mcdonalds",
+      "mcdonalds",
+    ], config.country);
+    assertEquals(chains, [], config.country);
+  }
+});
+
+Deno.test("#1113: same-address Overture rows do not inflate a chain's point count", () => {
+  const first = {
+    chain: "dominos",
+    name: "Domino's",
+    lat: 50.2943,
+    lng: 18.6658,
+    city: "Gliwice",
+    address: "Rynek 2",
+    osm_id: "first",
+  };
+  const result = dropDuplicates([
+    first,
+    {
+      ...first,
+      lat: 50.2958,
+      address: "Rynek 2, Gliwice",
+      osm_id: "duplicate",
+    },
+    { ...first, lat: 50.2978, address: "Rynek 3", osm_id: "different-address" },
+    { ...first, chain: "pizzahut", osm_id: "different-chain" },
+    { ...first, lat: 51.2943, osm_id: "different-city" },
+  ]);
+  assertEquals(result.map((p) => p.osm_id), [
+    "first",
+    "different-address",
+    "different-chain",
+    "different-city",
+  ]);
+});
+
+Deno.test("#1113: duplicate rows do not satisfy the existing discovery thresholds", () => {
+  for (const branded of [true, false]) {
+    const { points, chains } = discover(
+      many(5, (i) => ({
+        brand: branded ? "Fixture Coffee" : null,
+        name: "Fixture Coffee",
+        lat: 52.5 + i * 0.000001,
+        lng: 13.4,
+        address: "Rynek 2",
+        locality: ["A", "B", "C"][i % 3],
+      })),
+      cfg,
+    );
+    assertEquals(chains, [], `branded=${branded}`);
+    assertEquals(points, [], `branded=${branded}`);
+  }
+});
 
 Deno.test("overture: a brand with a country suffix matches the config chain by prefix", () => {
   const { points, chains } = discover(

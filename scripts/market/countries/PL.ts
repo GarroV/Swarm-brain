@@ -27,7 +27,7 @@ export const PL: CountryConfig = {
       key: "mcdonalds",
       name: "McDonald's",
       segment: "burger",
-      osmBrands: ["McDonald's", "McDonalds"],
+      osmBrands: ["McDonald's", "McDonalds", "McCafé", "McCafe"],
     },
     {
       key: "burgerking",
