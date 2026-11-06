@@ -21,10 +21,14 @@ declare
   actual_chain text;
   actual_points jsonb;
   removed integer;
+  caller_float_digits constant text := current_setting('extra_float_digits');
+  caller_lock_timeout constant text := current_setting('lock_timeout');
 begin
   perform set_config('lock_timeout', '5s', true);
   perform set_config('extra_float_digits', '3', true);
   if not exists (select 1 from public.mkt_chains where country=target_country and key=target_key) then
+    perform set_config('extra_float_digits', caller_float_digits, true);
+    perform set_config('lock_timeout', caller_lock_timeout, true);
     return;
   end if;
 
@@ -81,5 +85,9 @@ begin
   delete from public.mkt_chains where country=target_country and key=target_key and id=target_id;
   get diagnostics removed = row_count;
   if removed <> 1 then raise exception 'BY generic Overture chain identity changed'; end if;
+  -- Canonical CAS rendering and the bounded lock wait belong only to this repair.
+  -- An error is deliberately left to the caller's transaction/savepoint rollback.
+  perform set_config('extra_float_digits', caller_float_digits, true);
+  perform set_config('lock_timeout', caller_lock_timeout, true);
 end
 $migration$;

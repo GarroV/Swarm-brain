@@ -79,6 +79,8 @@ async function unrelated(db: Client) {
 Deno.test("#1134: cleanup removes exactly the eight captured BY rows and chain, preserves other data, and is idempotent", async () => {
   const db = await open();
   try {
+    // Supabase uses shortened float output; the migration must not change its caller's rendering.
+    await db.queryArray("set local extra_float_digits=0");
     await seed(db);
     await insert(db, "mkt_chains", {
       ...fixture.chain,
@@ -119,6 +121,48 @@ Deno.test("#1134: cleanup removes exactly the eight captured BY rows and chain, 
     const after = await snapshot(db);
     await db.queryArray(migration);
     assertEquals(await snapshot(db), after);
+  } finally {
+    await close(db);
+  }
+});
+
+for (const present of [false, true]) {
+  Deno.test(`#1134: cleanup restores caller settings when target is ${present ? "present" : "absent"}`, async () => {
+    const db = await open();
+    try {
+      await db.queryArray("set local extra_float_digits=0");
+      await db.queryArray("set local lock_timeout='37s'");
+      if (present) await seed(db);
+      const read = async () =>
+        (await db.queryObject<{ precision: string; timeout: string }>(
+          "select current_setting('extra_float_digits') as precision,current_setting('lock_timeout') as timeout",
+        )).rows[0];
+      const before = await read();
+      await db.queryArray(migration);
+      assertEquals(await read(), before);
+    } finally {
+      await close(db);
+    }
+  });
+}
+
+Deno.test("#1134: failed cleanup restores caller settings through savepoint rollback", async () => {
+  const db = await open();
+  try {
+    await db.queryArray("set local extra_float_digits=0");
+    await db.queryArray("set local lock_timeout='37s'");
+    await seed(db);
+    await db.queryArray`update mkt_chains set notes='curated control' where country='BY' and key=${key}`;
+    const read = async () =>
+      (await db.queryObject<{ precision: string; timeout: string }>(
+        "select current_setting('extra_float_digits') as precision,current_setting('lock_timeout') as timeout",
+      )).rows[0];
+    const before = await read();
+    await db.queryArray("savepoint cleanup_settings");
+    await assertRejects(() => db.queryArray(migration), Error, "BY generic");
+    await db.queryArray("rollback to savepoint cleanup_settings");
+    assertEquals(await read(), before);
+    assertEquals(await counts(db), { chains: 1, locations: 8 });
   } finally {
     await close(db);
   }
