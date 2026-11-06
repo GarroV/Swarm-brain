@@ -292,9 +292,9 @@ async function sceneSpeakerClasses(browser: Browser): Promise<void> {
   await scene.adapter.leave();
 }
 
-async function sceneAlone(browser: Browser): Promise<void> {
-  console.log("\n──── один в звонке: сторож дожидается порога и выходит");
-  const scene = await openScene(browser, "in-call-alone.html");
+async function sceneAlone(browser: Browser, fixture = "in-call-alone.html"): Promise<void> {
+  console.log(`\n──── один в звонке (${fixture}): сторож дожидается порога и выходит`);
+  const scene = await openScene(browser, fixture);
   equals(await scene.adapter.isAlone(), true, "бот в звонке один");
 
   const { watchAlone } = await import("./alone.ts");
@@ -402,6 +402,7 @@ async function main(): Promise<void> {
     await sceneInCall(browser);
     await sceneSpeakerClasses(browser);
     await sceneAlone(browser);
+    await sceneAlone(browser, "in-call-other-recorder.html");
     await sceneNoSignal(browser);
     await sceneAccount(browser);
   } finally {

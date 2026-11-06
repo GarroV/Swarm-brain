@@ -122,6 +122,72 @@ describe("countParticipants и isAloneSnapshot", () => {
     expect(isAloneSnapshot(state)).toBe(true);
   });
 
+  it.each([
+    "tl;dv AI Notetaker",
+    "tl;dv",
+    "Read.ai",
+    "Fireflies",
+    "Otter",
+    "read.ai meeting notes",
+    "Meeting Analytics from Read",
+    "Fireflies.ai Notetaker",
+    "Marissa’s Notetaker (Otter.ai)",
+    "Alex's AI Notetaker (Otter.ai)",
+  ])("другой рекордер %s не удерживает бота после ухода людей (#872)", (name) => {
+    const tiles = [
+      tile({ id: "self", name: "scriba", self: true }),
+      tile({ id: "recorder", name }),
+    ];
+    expect(isAloneSnapshot(snapshot(tiles, 2))).toBe(true);
+    expect(isAloneSnapshot(snapshot(tiles))).toBe(true);
+  });
+
+  it("из панели вычитает только известные видимые рекордеры, скрытого человека сохраняет", () => {
+    const state = snapshot(
+      [
+        tile({ id: "self", name: "scriba", self: true }),
+        tile({ id: "recorder", name: "tl;dv AI Notetaker" }),
+      ],
+      3,
+    );
+    expect(isAloneSnapshot(state)).toBe(false);
+  });
+
+  it("плитки одного рекордера не вычитаются дважды", () => {
+    const state = snapshot(
+      [
+        tile({ id: "self", name: "scriba", self: true }),
+        tile({ id: "recorder", name: "tl;dv AI Notetaker" }),
+        tile({ id: "recorder", name: "tl;dv AI Notetaker (Presenting)" }),
+      ],
+      3,
+    );
+    expect(isAloneSnapshot(state)).toBe(false);
+  });
+
+  it("видимый человек удерживает бота даже при отстающем счётчике панели", () => {
+    const state = snapshot(
+      [
+        tile({ id: "self", name: "scriba", self: true }),
+        tile({ id: "recorder", name: "tl;dv AI Notetaker" }),
+        tile({ id: "person", name: "Анна" }),
+      ],
+      2,
+    );
+    expect(isAloneSnapshot(state)).toBe(false);
+  });
+
+  it.each(["Otter Smith", "Anna from Read.ai", "Fireflies fan", "Otter.ai Solutions", null])(
+    "не объявляет человеком-ботом неизвестное имя %s",
+    (name) => {
+      const state = snapshot([
+        tile({ id: "self", name: "scriba", self: true }),
+        tile({ id: "person", name }),
+      ]);
+      expect(isAloneSnapshot(state)).toBe(false);
+    },
+  );
+
   it("сигнала нет вовсе — «не знаю», а не «один»: уйти по ошибке дороже, чем постоять", () => {
     expect(isAloneSnapshot(snapshot([]))).toBeNull();
     expect(countParticipants(snapshot([]))).toBeNull();
