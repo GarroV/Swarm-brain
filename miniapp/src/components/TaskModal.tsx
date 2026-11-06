@@ -28,6 +28,7 @@ import { RoyIcon, type RoyIconName } from "@/components/roy/icons";
 import { TaskComments } from "@/components/tasks/TaskComments";
 import { COUNTRY_NAMES, countryCode } from "@/lib/countries";
 import { CountryPopover } from "@/components/tasks/CountryPopover";
+import { TaskSprintField } from "@/components/tasks/TaskSprintField";
 import { PeoplePopover } from "@/components/tasks/PeoplePopover";
 import { linkify } from "@/lib/linkify";
 import { useDt } from "@/components/roy/nav";
@@ -803,6 +804,16 @@ export function TaskModal({ task: taskOpened, open, onClose, onSaved, prefill, m
                     </Select>
                   )}
                 </span>
+
+                {/* Спринт: где задача живёт сейчас и выбор другого — теми же правилами сервера, что у
+                    доски спринтов (TaskSprintField). Только у существующей задачи; у закрытой,
+                    отменённой и архивной поле прячется само. */}
+                {isEdit && task && (
+                  <TaskSprintField
+                    task={{ id: task.id, title: task.title, due_date: dueDate || null, status, archived_at: task.archived_at }}
+                    onChanged={() => onSaved()}
+                  />
+                )}
 
                 {/* Выбор страны — контекстное меню: чип-триггер + портал-поповер с сеткой флагов. */}
                 <CountryPopover
