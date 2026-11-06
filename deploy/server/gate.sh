@@ -104,10 +104,10 @@ case "$CMD" in
     echo "рантайм функций пересоздан и отвечает: functions.env перечитан"
     ;;
   migrations-applied)
-    ensure_ledger
     if [ "${ARGV[1]:-}" = names ]; then
       psql_ -tA -F $'\t' -c "select version, name from supabase_migrations.schema_migrations order by 1"
     else
+      ensure_ledger
       psql_ -tA -c "select version from supabase_migrations.schema_migrations order by 1"
     fi
     ;;

@@ -26,6 +26,7 @@ env-reload без пересоздания~up -d --no-deps --force-recreate func
 нет ожидания рантайма~wait_runtime || die "рантайм не ответил за \$((PROBE_TRIES \* 2)) секунд после пересоздания~true || die "рантайм не ответил за \$((PROBE_TRIES \* 2)) секунд после пересоздания
 перезапись отличающегося~die "$NAME уже лежит~echo "$NAME уже лежит
 пропуск чужого имени миграции~\[ "$APPLIED_NAME" = "$NAME" \] || die~true || die
+names инициализирует ledger вместо чистого SELECT~psql_ -tA -F~ensure_ledger; psql_ -tA -F
 LIST
   exit $fail
 fi
@@ -156,8 +157,11 @@ expect "без имени нельзя завести неподдающуюся
 run "$T/none" migrations-applied
 expect "старый список миграций остаётся списком версий" 0 "20261003130000"
 [[ "$OUT" != *original* ]] || { echo "✘ default migrations-applied изменил формат"; bad=1; }
+: > "$D"
 run "$T/none" migrations-applied names
 expect "новый список содержит номер и имя" 0 $'20261003130000\toriginal'
+if grep -qE 'create schema|grant usage|grant select' "$D"; then echo "✘ names исполнил DDL/GRANT вместо чистого чтения"; bad=1;
+else echo "✔ names — только SELECT существующего ledger"; fi
 run "$T/migration.sql" migrate 20261003130000 original
 expect "совпадающая пара — идемпотентный пропуск" 0 "уже применена"
 : > "$D"
