@@ -1,11 +1,10 @@
 "use client";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useRoyNav, useDt } from "./nav";
 import { RoyIcon } from "./icons";
 import { cn } from "@/lib/utils";
-import { fetchNotifications, markNotificationsRead, fetchTask, type SwarmNotification } from "@/lib/api";
-import { publishNotice } from "@/lib/deployNotice";
-import { playChime, unreadObserver } from "@/lib/notificationSound";
+import { fetchTask, type SwarmNotification } from "@/lib/api";
+import { useNotifications } from "./NotificationsProvider";
 import { PresenceStrip } from "@/components/presence/PresenceStrip";
 import { freezeNoticeText, freezeWindow } from "@/lib/maintenance";
 
@@ -13,9 +12,7 @@ import { freezeNoticeText, freezeWindow } from "@/lib/maintenance";
 // задачу. Поведение и оформление поповера — как у ProfileMenu (клик-вне, Esc, тот же попап),
 // чтобы в оболочке было два одинаковых угловых контрола, а не два разных.
 
-// Опрос вместо realtime: клиент не ходит в базу напрямую (RLS deny-all, см. CLAUDE.md),
-// поэтому подписки Supabase недоступны — только периодический запрос к swarm-api.
-const POLL_MS = 60_000;
+// Данные и опрос общие для всех экземпляров: NotificationsProvider в оболочке RoyApp.
 const BADGE_MAX = 9;
 
 function fmtWhen(iso: string, dt: (ru: string, en: string) => string): string {
@@ -36,41 +33,8 @@ export function NotificationsBell({ className }: { className?: string }) {
   const { openTask, toast } = useRoyNav();
   const dt = useDt();
   const [open, setOpen] = useState(false);
-  const [items, setItems] = useState<SwarmNotification[]>([]);
-  const [unread, setUnread] = useState(0);
+  const { items, unread, refresh: load, markRead } = useNotifications();
   const [loading, setLoading] = useState(false);
-  const alive = useRef(true);
-
-  const load = useCallback(async () => {
-    try {
-      const res = await fetchNotifications();
-      // Объявление о раскатке едет прицепом в этом же ответе — публикуем его для плашки
-      // (DeployNoticeBar), чтобы у неё не было своего поллинга той же ручки (issue #103).
-      publishNotice(res.notice ?? null);
-      if (!alive.current) return;
-      setItems(res.items);
-      setUnread(res.unread);
-      // Звук — только когда счётчик вырос по сравнению с прошлым опросом (не при первой загрузке).
-      if (unreadObserver.observe(res.unread)) playChime();
-    } catch {
-      // Тихо: колокольчик — фоновая поверхность, сеть моргнула → покажем на следующем тике.
-    }
-  }, []);
-
-  useEffect(() => {
-    alive.current = true;
-    void load();
-    // Пока вкладка скрыта, не опрашиваем: фоновые вкладки иначе держат постоянный трафик.
-    const tick = () => { if (document.visibilityState === "visible") void load(); };
-    const id = setInterval(tick, POLL_MS);
-    document.addEventListener("visibilitychange", tick);
-    return () => {
-      alive.current = false;
-      clearInterval(id);
-      document.removeEventListener("visibilitychange", tick);
-    };
-  }, [load]);
-
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false); };
@@ -86,26 +50,16 @@ export function NotificationsBell({ className }: { className?: string }) {
 
   const markAllRead = async () => {
     if (unread === 0) return;
-    const now = new Date().toISOString();
-    setItems((prev) => prev.map((n) => (n.read_at ? n : { ...n, read_at: now })));
-    setUnread(0);
-    unreadObserver.observe(0);
     try {
-      await markNotificationsRead();
+      await markRead();
     } catch {
       toast(dt("Не удалось отметить прочитанным", "Could not mark as read"));
-      void load();   // откатываемся к серверному состоянию, а не оставляем ложный ноль
     }
   };
 
   const openFromNotification = async (n: SwarmNotification) => {
     setOpen(false);
-    if (!n.read_at) {
-      setItems((prev) => prev.map((x) => (x.id === n.id ? { ...x, read_at: new Date().toISOString() } : x)));
-      setUnread((u) => Math.max(0, u - 1));
-      unreadObserver.observe(Math.max(0, unread - 1));
-      void markNotificationsRead([n.id]).catch(() => void load());
-    }
+    if (!n.read_at) void markRead([n.id]).catch(() => {});
     if (!n.task_id) return;
     setLoading(true);
     try {
