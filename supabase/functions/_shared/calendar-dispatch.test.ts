@@ -23,7 +23,7 @@ function at(offsetMin: number): string {
   return d.toISOString().replace("Z", "+03:00").replace(/\.\d{3}/, "");
 }
 
-function event(over: Partial<GEvent> = {}, startMin = 1, lengthMin = 30): GEvent {
+function event(over: Partial<GEvent> = {}, startMin = 0, lengthMin = 30): GEvent {
   return {
     id: "ev1",
     iCalUID: "uid1@google.com",
@@ -41,7 +41,7 @@ function event(over: Partial<GEvent> = {}, startMin = 1, lengthMin = 30): GEvent
 const plan = (events: GEvent[], manualRooms = new Set<string>()) =>
   planPersonDispatch(events, PERSON, NOW, manualRooms);
 
-Deno.test("встреча Meet, начинающаяся через минуту, — задание за владельца календаря", () => {
+Deno.test("встреча Meet, начинающаяся сейчас, — задание за владельца календаря", () => {
   const { jobs, skipped } = plan([event()]);
   assertEquals(skipped, []);
   assertEquals(jobs.length, 1);
@@ -50,14 +50,24 @@ Deno.test("встреча Meet, начинающаяся через минуту
   assertEquals(jobs[0].join_url, MEET);
   assertEquals(jobs[0].platform, "meet");
   assertEquals(jobs[0].title, "Weekly");
-  assertEquals(Date.parse(jobs[0].starts_at), NOW + 60_000);
-  assertEquals(Date.parse(jobs[0].ends_at), NOW + 31 * 60_000);
+  assertEquals(Date.parse(jobs[0].starts_at), NOW);
+  assertEquals(Date.parse(jobs[0].ends_at), NOW + 30 * 60_000);
 });
 
 Deno.test("окно: раньше чем за DISPATCH_LEAD_MS до начала бот не идёт, в пределах — идёт", () => {
   const leadMin = DISPATCH_LEAD_MS / 60_000;
   assertEquals(plan([event({}, leadMin + 1)]).jobs.length, 0);
   assertEquals(plan([event({}, leadMin)]).jobs.length, 1);
+});
+
+Deno.test("ровно ко времени (06.11.2026): до начала секунды — не идёт, в момент начала — идёт", () => {
+  assertEquals(DISPATCH_LEAD_MS, 0);
+  const startsIn = (seconds: number) =>
+    event({ start: { dateTime: new Date(NOW + seconds * 1000).toISOString() } });
+  assertEquals(plan([startsIn(30)]).jobs.length, 0);
+  assertEquals(plan([startsIn(1)]).jobs.length, 0);
+  assertEquals(plan([startsIn(0)]).jobs.length, 1);
+  assertEquals(plan([startsIn(-1)]).jobs.length, 1);
 });
 
 Deno.test("окно: опоздание больше DISPATCH_LATE_MS — не идёт; уже закончилась — не идёт", () => {
@@ -231,7 +241,7 @@ Deno.test("тот же организатор и комната, время не
   const b = planPersonDispatch(
     [event({ id: "e2", iCalUID: "other-uid", organizer: org("boss@x.io"), attendees: yes("b@x.io") }, 40, 30)],
     2,
-    NOW + 39 * 60_000,
+    NOW + 40 * 60_000,
     new Set(),
   );
   assertEquals(dropSameRoom([...a.jobs, ...b.jobs], new Map([...a.who!, ...b.who!])).length, 2);
