@@ -62,8 +62,7 @@ Deno.test("окно: раньше чем за DISPATCH_LEAD_MS до начала
 
 Deno.test("ровно ко времени (06.11.2026): до начала секунды — не идёт, в момент начала — идёт", () => {
   assertEquals(DISPATCH_LEAD_MS, 0);
-  const startsIn = (seconds: number) =>
-    event({ start: { dateTime: new Date(NOW + seconds * 1000).toISOString() } });
+  const startsIn = (seconds: number) => event({ start: { dateTime: new Date(NOW + seconds * 1000).toISOString() } });
   assertEquals(plan([startsIn(30)]).jobs.length, 0);
   assertEquals(plan([startsIn(1)]).jobs.length, 0);
   assertEquals(plan([startsIn(0)]).jobs.length, 1);
