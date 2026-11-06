@@ -77,7 +77,7 @@ async function ecbOrNbsRate(currency: string, today: string, getJson: MtdDeps["g
 }
 
 /** Курс «единиц валюты за 1 €» на сегодня: евро — 1, валюты национальных банков — fxRate, остальные — ЕЦБ/НБС. */
-async function todayRate(currency: string, today: string, deps: MtdDeps): Promise<number> {
+export async function todayRate(currency: string, today: string, deps: MtdDeps): Promise<number> {
   const cur = currency.toUpperCase();
   if (cur === "EUR") return 1;
   if (FX_CURRENCIES.includes(cur)) return (await fxRate(cur, today, deps.fxGet, today)).rate;

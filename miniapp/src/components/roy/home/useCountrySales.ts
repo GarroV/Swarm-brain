@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import { ApiError, fetchMarket, fetchMarketSales, type MarketMtd, type MarketSalesRow } from "@/lib/api";
 import { recall, remember } from "@/lib/lastSeen";
+import { NO_UNIT_SALES, toUnitSales, type UnitSalesState } from "@/lib/homeSales";
 
 // Выручка Dodo по странам подборки — НАСТОЯЩИЕ данные «Анализа рынка» (публичный API Dodo,
 // GET /market/sales — одним запросом на все страны, issue #906). Берём только закрытые месяцы: текущий неполный исказил бы сравнение.
@@ -17,10 +18,18 @@ export type CountrySales = {
   mtd: MarketMtd | null;
 };
 
-/** €125к / €1.25м — короткая запись выручки. */
-export const fmtEur = (v: number): string => (v >= 1e6 ? `€${(v / 1e6).toFixed(2)}м` : `€${(v / 1e3).toFixed(0)}к`);
+/** €125к / €1.25м — короткая запись выручки; до 10 тыс. — с десятой (пиццерии: €4.1к, а не «€4к»), до тысячи — целые евро. */
+export const fmtEur = (v: number): string => {
+  if (v >= 1e6) return `€${(v / 1e6).toFixed(2)}м`;
+  if (v >= 1e4) return `€${(v / 1e3).toFixed(0)}к`;
+  return v >= 1e3 ? `€${(v / 1e3).toFixed(1)}к` : `€${Math.round(v)}`;
+};
 
-export type SalesState = { byCc: Record<string, CountrySales>; loading: boolean; failed: string[] };
+export type SalesState = {
+  byCc: Record<string, CountrySales>; loading: boolean; failed: string[];
+  /** может отсутствовать в состоянии, запомненном прошлой версией */
+  unitSales?: UnitSalesState;
+};
 
 export function useCountrySales(codes: string[]): SalesState {
   const key = [...codes].sort().join(",");
@@ -33,11 +42,11 @@ export function useCountrySales(codes: string[]): SalesState {
     const list = key ? key.split(",") : [];
     setState(recall<SalesState>(memo) ?? { byCc: {}, loading: true, failed: [] });
     loadSales(list)
-      .then(({ sales, mtd, failed }) => {
+      .then(({ sales, mtd, failed, unitSales }) => {
         if (!alive) return;
         const byCc: Record<string, CountrySales> = {};
         for (const [cc, rows] of Object.entries(sales)) byCc[cc] = toSales(cc, rows, mtd[cc] ?? null);
-        setState(remember(memo, { byCc, loading: false, failed }));
+        setState(remember(memo, { byCc, loading: false, failed, unitSales }));
       });
     return () => { alive = false; };
   }, [key]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -50,15 +59,15 @@ export function useCountrySales(codes: string[]): SalesState {
  * превью ветки против прода), откатываемся на прежний путь: полный набор по каждой стране. Порядок раскатки
  * поэтому неважен; убрать откат можно, когда /market/sales в проде.
  */
-async function loadSales(list: string[]): Promise<{ sales: Record<string, MarketSalesRow[]>; mtd: Record<string, MarketMtd | null>; failed: string[] }> {
-  if (!list.length) return { sales: {}, mtd: {}, failed: [] };
+async function loadSales(list: string[]): Promise<{ sales: Record<string, MarketSalesRow[]>; mtd: Record<string, MarketMtd | null>; failed: string[]; unitSales: UnitSalesState }> {
+  if (!list.length) return { sales: {}, mtd: {}, failed: [], unitSales: NO_UNIT_SALES };
   try {
     const r = await fetchMarketSales(list);
-    return { sales: r.sales, mtd: r.mtd ?? {}, failed: r.denied };
+    return { sales: r.sales, mtd: r.mtd ?? {}, failed: r.denied, unitSales: toUnitSales(r.unit_sales) };
   } catch (e) {
     if (!(e instanceof ApiError && e.status === 404)) {
       console.warn("[home] sales", e);
-      return { sales: {}, mtd: {}, failed: list };
+      return { sales: {}, mtd: {}, failed: list, unitSales: NO_UNIT_SALES };
     }
   }
   const res = await Promise.allSettled(list.map((cc) => fetchMarket(cc).then((b) => b.dodo ?? [])));
@@ -68,7 +77,7 @@ async function loadSales(list: string[]): Promise<{ sales: Record<string, Market
     if (r.status === "fulfilled") sales[list[i]] = r.value;
     else { failed.push(list[i]); console.warn("[home] sales", list[i], r.reason); }
   });
-  return { sales, mtd: {}, failed };
+  return { sales, mtd: {}, failed, unitSales: NO_UNIT_SALES };
 }
 
 function toSales(cc: string, dodo: MarketSalesRow[], mtd: MarketMtd | null): CountrySales {

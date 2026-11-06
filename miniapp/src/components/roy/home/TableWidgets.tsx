@@ -8,6 +8,7 @@ import { fmtEur, type SalesState } from "./useCountrySales";
 import { useMaps } from "./useMaps";
 import { countryFlag, countryName } from "@/lib/countries";
 import { countryMaps, mapsByUnit, unitChange, type UnitMaps } from "@/lib/homeMaps";
+import { loadedLabel, unitRevenue } from "@/lib/homeSales";
 import {
   RKO_DROP, RKO_NORM, RKO_WARN, RS_CRIT, RS_DROP, RS_NORM, RS_WARN, selectionMean,
   type CountryQuality, type Pizzeria,
@@ -99,8 +100,24 @@ const chevron = (open: boolean) => (
   </svg>
 );
 
+/** Выручка пиццерии: цифра из Dodo IS (через Децимус) или «—» с пояснением, что данных нет; не оценка и не подмена. */
+function revenueCell(v: number | null, dt: (ru: string, en: string) => string) {
+  if (v == null) return <span className="text-ink-mute" title={dt("Нет данных Dodo IS по этой пиццерии", "No Dodo IS data for this pizzeria")}>—</span>;
+  return <span className="text-ink-soft">{fmtEur(v)}</span>;
+}
+
+/** Подсказка колонки «Продажи»: откуда цифры и на какое время загружены. */
+function salesHint(dt: (ru: string, en: string) => string, loaded: Record<string, string> | undefined): string {
+  const at = loadedLabel(loaded, dt("ru-RU", "en-GB"));
+  return dt(
+    `Выручка с 1-го числа текущего месяца, €. Для стран с подключённым Dodo IS — данные Dodo IS через DECIMUS, у страны сумма её пиццерий${at ? `; загружено: ${at}` : ""}. Для остальных стран — публичный API Dodo, только по стране, без разбивки по пиццериям.`,
+    `Revenue since the 1st of the current month, €. For countries with Dodo IS connected — Dodo IS data via DECIMUS, the country shows the sum of its pizzerias${at ? `; loaded: ${at}` : ""}. For other countries — the public Dodo API, country total only, no per-pizzeria breakdown.`,
+  );
+}
+
 /** Пиццерии раскрытой страны: РС, РКО и оценки карт со стрелкой изменения. Сначала худшие по РС. */
-function CountryPizzerias({ c, units }: { c: CountryQuality; units: Map<string, UnitMaps> }) {
+function CountryPizzerias({ c, units, sales }: { c: CountryQuality; units: Map<string, UnitMaps>; sales: SalesState }) {
+  const dt = useDt();
   const rows = [...c.pizzerias].sort((a, b) => (a.rs ?? 101) - (b.rs ?? 101) || a.name.localeCompare(b.name));
   return (
     <>
@@ -114,7 +131,9 @@ function CountryPizzerias({ c, units }: { c: CountryQuality; units: Map<string, 
             <td className={`${td} whitespace-nowrap`}><Cell v={p.rko} t={tone(p.rko, RKO_NORM, RKO_WARN)} digits={1} /> <Delta v={rkoChange(p)} small /></td>
             <td className={`${td} whitespace-nowrap`}><MapCell s={m?.google ?? null} /> <Delta v={unitChange(m?.google ?? null)} digits={2} small /></td>
             <td className={`${td} whitespace-nowrap`}><MapCell s={m?.yandex ?? null} /> <Delta v={unitChange(m?.yandex ?? null)} digits={2} small /></td>
-            <td className={td} />
+            <td className={`${td} whitespace-nowrap font-mono`}>
+              {sales.loading ? "…" : revenueCell(unitRevenue(sales.unitSales, p.key), dt)}
+            </td>
           </tr>
         );
       })}
@@ -153,7 +172,7 @@ export function CountriesWidget({ scope, sales, narrow, onNarrow, onMarket }: {
               <th className={th}>{dt("Страна", "Country")}</th><th className={th}>{dt("Пицц.", "Pizz.")}</th>
               <th className={th}>{dt("РС", "Std")}</th><th className={th}>{dt("РКО", "CX")}</th>
               {mapHead("Google")}{mapHead(dt("Яндекс", "Yandex"))}
-              <th className={th} title={dt("Выручка Dodo с 1-го числа текущего месяца, € — как её отдаёт публичный API Dodo", "Dodo revenue since the 1st of the current month, € — as reported by the public Dodo API")}>{dt("Продажи", "Sales")}</th>
+              <th className={th} title={salesHint(dt, sales.unitSales?.loaded)}>{dt("Продажи", "Sales")}</th>
             </tr>
           </thead>
           <tbody>
@@ -184,7 +203,7 @@ export function CountriesWidget({ scope, sales, narrow, onNarrow, onMarket }: {
                       {sales.loading ? "…" : s?.mtd ? fmtEur(s.mtd.revenue_eur) : "—"}
                     </td>
                   </tr>
-                  {isOpen && <CountryPizzerias c={c} units={units} />}
+                  {isOpen && <CountryPizzerias c={c} units={units} sales={sales} />}
                 </Fragment>
               );
             })}
