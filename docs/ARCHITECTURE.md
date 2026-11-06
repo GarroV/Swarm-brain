@@ -2711,6 +2711,23 @@ Next.js 16, `output: "export"` (статический HTML/CSS/JS в `miniapp/o
 
 ---
 
+### Восстановление после пропавшего чанка (#809)
+
+`miniapp/src/lib/chunkRecovery.ts` создаёт самодостаточный inline-скрипт для root layout,
+который устанавливается до гидрации. Он ловит `ChunkLoadError`, характерные ошибки
+динамического импорта (включая Turbopack) и сбой загрузки same-origin скрипта из
+`/_next/static/chunks/`. Ошибка bootstrap-чанка не требует работающего React boundary.
+Обычные ошибки JavaScript/API и сторонние скрипты остаются в прежней обработке Next.
+
+Перед единственным reload скрипт сохраняет метку `swarm.chunk-reload:<build>` в
+`sessionStorage`: повторная ошибка этой сборки в той же вкладке оставляет обычный
+экран ошибки. При недоступном storage автоматический reload запрещён. Build — встроенный
+`CF_PAGES_COMMIT_SHA` [Cloudflare Pages](https://developers.cloudflare.com/pages/configuration/build-configuration/#environment-variables) (локальная сборка без него использует `unstamped`);
+следующая сборка получает свою одну попытку. Регистрация и обновление PWA не меняются.
+Тесты выполняют сам генерируемый inline-скрипт; браузерная проверка на Pages preview
+искусственно обрывает запрос реального чанка и проверяет одну перезагрузку и успешный повтор.
+
+
 ## Деплой и разработка
 
 - Ветка: `main` → всегда разрабатывать здесь (дефолтная на GitHub)
