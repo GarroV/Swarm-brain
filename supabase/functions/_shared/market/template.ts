@@ -8,6 +8,8 @@
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { allRows, must } from "./db.ts";
 import type { EditorialBlock } from "./editorial.ts";
+import { EVENT_KINDS } from "./editorial-view.ts";
+import { PIZZA_TYPES } from "./price-types.ts";
 
 export type BlockSpec = { what: string; example: unknown };
 export type Section = {
@@ -82,7 +84,7 @@ export const SECTIONS: readonly Section[] = [
         example: [{ name: "Dodo Pizza Mall Sofia", opened: "2023-04-12", note: "пресс-релиз" }],
       },
       events: {
-        what: "события рынка: date, kind (open/close/entry/exit/deal), chain, text",
+        what: `события рынка: date (ГГГГ[-ММ[-ДД]]), kind (${EVENT_KINDS.join("/")}), chain, text; закрытие — exit`,
         example: [{ date: "2024-03", kind: "entry", chain: "popeyes", text: "Popeyes открыл первый ресторан" }],
       },
       growth: {
@@ -99,17 +101,20 @@ export const SECTIONS: readonly Section[] = [
     id: "pizza",
     title: "Пицца-сети: таблица, Dodo, цены, оценки",
     auto: "продажи и заказы Dodo — публичный API еженедельно",
-    manual: "market_set_price — цена позиции; market_set_block pizza_table / prices_cols / basket / ops_model / " +
+    manual:
+      `market_set_price — цена позиции, item_type обязателен (${
+        PIZZA_TYPES.join("/")
+      }); market_set_block pizza_table / prices_cols / basket / ops_model / ` +
       "ratings / dodo_monthly / dodo_ops",
     blocks: {
       pizza_table: {
         what:
-          "таблица пицца-сетей: name, chain, units, entry (год входа), rev { период: € }, per { период: € на точку }, lfl, note",
+          "таблица пицца-сетей: name, chain, units, entry (год входа строкой), rev { период: € }, per { период: € на точку }, lfl, note",
         example: [{
           name: "Domino's",
           chain: "dominos",
           units: 12,
-          entry: 2016,
+          entry: "2016",
           rev: { "2024": 9000000 },
           per: {},
           lfl: null,
@@ -148,10 +153,11 @@ export const SECTIONS: readonly Section[] = [
         example: [{ m: "2025-09", usd: 120000, fx: 0.86, eur: 103200, units: 4, per: 25800 }],
       },
       dodo_ops: {
-        what: "операции Dodo по каналам из выгрузки Dodo IS: m, u, rev, agg, din, own, o, oagg, odin, oown",
+        what:
+          "операции Dodo по каналам из выгрузки Dodo IS: m (номер месяца 1–12), u (имя/код пиццерии строкой), rev, agg, din, own, o, oagg, odin, oown",
         example: [{
-          m: "2025-09",
-          u: 4,
+          m: 9,
+          u: "Example-1",
           rev: 103200,
           agg: 30000,
           din: 20000,

@@ -3,8 +3,8 @@
 import type { MarketPrice } from "../types.ts";
 import type { EdPizzaRow, EdPriceCol } from "./marketEditorial.ts";
 
-export const PIZZA_TYPES = ["margherita", "pepperoni", "ham_mushroom", "premium"] as const;
-export type PizzaType = (typeof PIZZA_TYPES)[number];
+import { PIZZA_TYPES, type PizzaType } from "../../../supabase/functions/_shared/market/price-types";
+export { PIZZA_TYPES, type PizzaType };
 const TARGET_CM = 30;
 
 /** Канал из свободного текста источника: «own website (in-restaurant price)» → site. */
