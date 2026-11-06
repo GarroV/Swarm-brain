@@ -1,3 +1,5 @@
+import { normalizeSourceFilterKeys } from "./sourceLabels";
+
 // Форма фильтра «Все встречи», его дефолты и запоминание между заходами.
 //
 // Живёт в lib, а не рядом с экраном, по двум причинам: сюда не тянется ни один импорт
@@ -17,7 +19,7 @@ export type MeetingsFilterState = {
   to: string;
   /** Пусто = не фильтруем. Коды стран (ISO alpha-2). */
   countries: string[];
-  /** Пусто = не фильтруем. Человекочитаемые ярлыки источника (как в sourceLabel). */
+  /** Пусто = не фильтруем. Стабильные ключи источника (meetingSourceKey); старые ярлыки мигрируются при чтении. */
   sources: string[];
   /** Пусто = не фильтруем. Имена тех, кто принёс встречу. */
   people: string[];
@@ -72,7 +74,7 @@ export function parseSavedFilters(raw: string | null): MeetingsFilterState {
     from: str(o.from),
     to: str(o.to),
     countries: strList(o.countries),
-    sources: strList(o.sources),
+    sources: normalizeSourceFilterKeys(strList(o.sources)),
     people: strList(o.people),
     storage: pick(o.storage, STORAGES, "any"),
     status: pick(o.status, STATUSES, "any"),

@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import { useRoyNav } from "../nav";
+import { useRoyNav, useDt } from "../nav";
 import { NavHeader, TypeTag, Market, SectionLabel, TezisyBlocks, Participants } from "../ui";
 import type { Attendee } from "@/types";
 import { RoyIcon } from "../icons";
@@ -8,23 +8,16 @@ import { entryTagKey, deriveEntryTitle, isSearchIndexSummary, entryImporterName 
 import { fetchEntry, createTask } from "@/lib/api";
 import type { Entry } from "@/types";
 import { formatDate } from "@/lib/displayFormat";
-import { recordedByOf } from "@/lib/agentMeeting";
+import { entrySourceLabel } from "@/lib/sourceLabels";
 
 function fmtDate(iso: string | null): string {
   return formatDate(iso, { day: "numeric", month: "short", year: "numeric" }) ?? "";
 }
 
-// Человекочитаемый источник записи (обязательная пометка провенанса).
-const SOURCE_LABEL: Record<string, string> = {
-  granola: "Granola", read_ai: "Read.ai", "desktop-agent": "bumblebee", "swarm-recorder": "bumblebee",
-  telegram: "Бот (Telegram)", link: "Ссылка", note: "Заметка", pdf: "PDF", image: "Изображение",
-  claude_desktop: "Claude Desktop", manual: "Вручную", digest: "Дайджест",
-};
-function sourceLabel(s: string): string { return SOURCE_LABEL[s] ?? (s || "—"); }
-
 // Содержимое записи + обязательная строка источника. Переиспользуется push-экраном RecordDetail
 // и контекстным окном ответа (AnswerModal).
 export function RecordBody({ entry: e }: { entry: Entry }) {
+  const dt = useDt();
   const who = entryImporterName(e);
   const date = fmtDate(e.entry_date || e.created_at);
   // Участники из календаря — кладутся в metadata.attendees при публикации встречи рекордера.
@@ -48,7 +41,7 @@ export function RecordBody({ entry: e }: { entry: Entry }) {
       <div className="mb-3.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-ink-soft" style={{ fontSize: 12 }}>
         <span className="inline-flex items-center gap-1.5">
           <RoyIcon name="link" size={13} className="text-ink-mute" />
-          Источник: <span className="font-semibold text-ink">{recordedByOf({ source: e.source, recorded_by: typeof e.metadata?.recorded_by === "string" ? e.metadata.recorded_by : null }) ?? sourceLabel(e.source)}</span>
+          Источник: <span className="font-semibold text-ink">{entrySourceLabel(e, dt)}</span>
         </span>
         {who && <span>· добавил: <span className="font-semibold text-ink">{who}</span></span>}
       </div>

@@ -557,7 +557,7 @@ export type AgentMeeting = {
   // GET /agent-meetings (нужно, чтобы опознать пустой слот бота встреч, #788), и в детали.
   summary_status?: "processing" | "done" | "failed";
   // Чья запись в стенограмме (#788): bot — бот встреч, recorder — рекордер на Mac; null — ещё не
-  // расшифровано. Подпись источника — через recordedByOf()/sourceLabel(), не напрямую.
+  // расшифровано. Подпись источника — через recordedByOf()/meetingSourceLabel(), не напрямую.
   recorded_by?: "bot" | "recorder" | null;
   // Бот встреч пишет встречу прямо сейчас (флаг + свежий удар по часам сервера, #1026): «Идёт
   // запись» и плашка ON AIR вместо «Готовим тезисы…». Считает сервер (isBotRecordingNow), не клиент.

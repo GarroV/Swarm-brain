@@ -28,7 +28,7 @@ import {
   fetchMeetingNotes,
 } from "@/lib/api";
 import type { Entry, AgentMeeting, MarketSuggestion, TranscriptSegment, MeetingLiveNote, MeetingNotes } from "@/types";
-import { sourceLabel } from "./RoyMeetingsScreen";
+import { meetingSourceKey, meetingSourceLabel, sourceKeyLabel } from "@/lib/sourceLabels";
 import { countryCode } from "@/lib/countries";
 import { MarketChips } from "../MarketChips";
 import {
@@ -65,6 +65,7 @@ function CountsCard({ title, counts }: { title: string; counts: [string, number]
 
 // Правый сайдбар статистики «Все встречи»: По странам (рынки воркспейса, прочее → «Другие») + Источники.
 function MeetingsStats({ meetings, markets }: { meetings: Entry[]; markets: string[] | null }) {
+  const dt = useDt();
   const marketSet = new Set((markets ?? []).map(countryCode));
   const rawCountry = tally(meetings.flatMap((e) => (e.countries?.length ? e.countries.map(countryCode) : ["—"])));
   const countryCounts: [string, number][] = (() => {
@@ -79,7 +80,7 @@ function MeetingsStats({ meetings, markets }: { meetings: Entry[]; markets: stri
     if (other) out.push(["Другие", other]);
     return out;
   })();
-  const sourceCounts = tally(meetings.map((e) => sourceLabel(e)));
+  const sourceCounts = tally(meetings.map((e) => meetingSourceLabel(e, dt)));
   return (
     <div className="min-h-0 flex-1 overflow-y-auto p-3 space-y-3">
       <div className="px-1 text-ink-mute" style={{ fontSize: 12 }}>Всего: {meetings.length}</div>
@@ -137,6 +138,7 @@ function MeetingsFilters({
   value: MeetingsFilterState;
   onChange: (f: MeetingsFilterState) => void;
 }) {
+  const dt = useDt();
   const set = (patch: Partial<MeetingsFilterState>) => onChange({ ...value, ...patch });
   // Переключение элемента множественного фильтра (страна/источник/человек).
   const toggle = (key: "countries" | "sources" | "people", v: string) => {
@@ -154,7 +156,7 @@ function MeetingsFilters({
   const marketSet = new Set((markets ?? []).map(countryCode));
   const countryCounts = countBy((e) => (e.countries ?? []).map(countryCode))
     .filter(([c]) => marketSet.size === 0 || marketSet.has(c));
-  const sourceCounts = countBy((e) => [sourceLabel(e)]);
+  const sourceCounts = countBy((e) => [meetingSourceKey(e)]);
   const peopleCounts = countBy((e) => [personOf(e)]);
 
   const active = isFilterActive(value);
@@ -212,7 +214,7 @@ function MeetingsFilters({
       {sourceCounts.length > 1 && (
         <FilterGroup title="Источник">
           {sourceCounts.map(([src, n]) => (
-            <FilterChip key={src} label={src} count={n} active={value.sources.includes(src)}
+            <FilterChip key={src} label={sourceKeyLabel(src, dt)} count={n} active={value.sources.includes(src)}
               onClick={() => toggle("sources", src)} />
           ))}
         </FilterGroup>
@@ -276,8 +278,8 @@ function fmtDate(iso: string | null): string | null {
   return formatDate(iso, { day: "numeric", month: "short" });
 }
 
-function itemSource(it: MeetItem): string {
-  return sourceLabel(it.data);
+function itemSource(it: MeetItem, dt: (ru: string, en: string) => string): string {
+  return meetingSourceLabel(it.data, dt);
 }
 
 // Кто принёс запись: для entry — резолвнутое имя импортёра через общий хелпер (прячет системные
@@ -324,10 +326,11 @@ function ListRow({
   onClick: () => void;
   removing?: boolean;
 }) {
+  const dt = useDt();
   const isAgent = item.kind === "agent";
   const title = itemTitle(item);
   const date = fmtDate(itemDate(item));
-  const src = itemSource(item);
+  const src = itemSource(item, dt);
   // Согласованная встреча (в базе) — не показываем статус-бейдж «На согласовании» (важно в режиме
   // «Все встречи», где список включает уже опубликованные). Черновик агента всегда «На вычитке».
   const confirmedEntry = item.kind === "entry" && (item.data.metadata as Record<string, unknown> | undefined)?.confirmed === true;
@@ -517,8 +520,8 @@ function DetailPanel({
 }) {
   const title = itemTitle(item);
   const date = fmtDate(itemDate(item));
-  const src = itemSource(item);
   const dtPanel = useDt();
+  const src = itemSource(item, dtPanel);
   // Инлайн-правка названия встречи (карандаш у заголовка). Пишем в metadata.title (его и
   // предпочитает deriveEntryTitle). Сброс при смене выбранной записи.
   const [editingTitle, setEditingTitle] = useState(false);
@@ -1689,7 +1692,7 @@ export function MeetAdminScreen({ initialMode = "review" }: { initialMode?: "rev
                     {itemTitle(selected).slice(0, 2).toUpperCase()}
                   </Avatar>
                   <span className="text-ink-mute" style={{ fontSize: 11 }}>
-                    {itemSource(selected)} · {fmtDate(itemDate(selected)) ?? "—"}
+                    {itemSource(selected, dt)} · {fmtDate(itemDate(selected)) ?? "—"}
                     {itemRecorder(selected) && ` · ${itemRecorder(selected)}`}
                   </span>
                 </div>

@@ -4,7 +4,7 @@ import { RoyIcon } from "../icons";
 import { OnAirBadge } from "../record/OnAirBadge";
 import { Market } from "../ui";
 import { deriveEntryTitle } from "../entry";
-import { localizeSource, sourceLabel } from "../screens/RoyMeetingsScreen";
+import { meetingSourceLabel } from "@/lib/sourceLabels";
 import { DashBlock, Row, AccentBadge, SubHead, fmtDate } from "./shared";
 import type { DashboardData } from "./useDashboardData";
 import type { Entry } from "@/types";
@@ -47,7 +47,7 @@ function MeetingRow({ e, onOpen }: { e: Entry; onOpen: () => void }) {
             </span>
           )}
           <span className="font-semibold" style={{ fontSize: 11, color: "var(--meet-ink)" }}>
-            {localizeSource(sourceLabel(e), dt)}
+            {meetingSourceLabel(e, dt)}
           </span>
           <Market code={e.countries?.[0]} />
           {fmtDate(e.entry_date || e.created_at, dt("ru-RU", "en-US")) && (
