@@ -25,6 +25,8 @@ SQL не из переменных~select public.maintenance_announce(:lead, :du
 env-reload без пересоздания~up -d --no-deps --force-recreate functions~restart supabase-edge-functions
 нет ожидания рантайма~wait_runtime || die "рантайм не ответил за \$((PROBE_TRIES \* 2)) секунд после пересоздания~true || die "рантайм не ответил за \$((PROBE_TRIES \* 2)) секунд после пересоздания
 перезапись отличающегося~die "$NAME уже лежит~echo "$NAME уже лежит
+пропуск чужого имени миграции~\[ "$APPLIED_NAME" = "$NAME" \] || die~true || die
+names инициализирует ledger вместо чистого SELECT~psql_ -tA -F~ensure_ledger; psql_ -tA -F
 LIST
   exit $fail
 fi
@@ -52,6 +54,15 @@ chmod +x "$T/bin/curl"
 cat > "$T/bin/docker" <<'STUB'
 #!/usr/bin/env bash
 { echo "ARGS: $*"; cat; echo "---"; } >> "$STORE/docker"
+case "$*" in
+  *"select version, name from supabase_migrations.schema_migrations"*) cat "$STORE/ledger" ;;
+  *"select version from supabase_migrations.schema_migrations"*) cut -f1 "$STORE/ledger" ;;
+  *"where version='20261003130000'"*)
+    [ ! -f "$STORE/ledger-fail" ] || exit 1
+    if [ -s "$STORE/ledger" ]; then
+      case "$*" in *"select 1 from"*) echo 1 ;; *) printf 'applied:%s\n' "$(cut -f2 "$STORE/ledger")" ;; esac
+    fi ;;
+esac
 STUB
 chmod +x "$T/bin/docker"
 
@@ -137,5 +148,33 @@ OUT=$(SSH_ORIGINAL_COMMAND="env-reload" PATH="$T/bin:$PATH" STORE="$T/store" GAT
   GATE_PROBE_TRIES=1 bash "$GATE" </dev/null 2>&1); RC=$?
 [ "$RC" != 0 ] && printf '%s' "$OUT" | grep -qF "рантайм не ответил" \
   && echo "✔ env-reload: рантайм молчит — понятный отказ" || { echo "✘ env-reload не отказал при молчащем рантайме (код $RC: $OUT)"; bad=1; }
+
+# ── номер + имя миграции (#775), без настоящего SQL ──────────────────────────────────────────
+printf '20261003130000\toriginal\n' > "$T/store/ledger"
+printf 'select 42;\n' > "$T/migration.sql"
+run "$T/migration.sql" migrate 20261003140000
+expect "без имени нельзя завести неподдающуюся сверке строку ledger" nz "имя"
+run "$T/none" migrations-applied
+expect "старый список миграций остаётся списком версий" 0 "20261003130000"
+[[ "$OUT" != *original* ]] || { echo "✘ default migrations-applied изменил формат"; bad=1; }
+: > "$D"
+run "$T/none" migrations-applied names
+expect "новый список содержит номер и имя" 0 $'20261003130000\toriginal'
+if grep -qE 'create schema|grant usage|grant select' "$D"; then echo "✘ names исполнил DDL/GRANT вместо чистого чтения"; bad=1;
+else echo "✔ names — только SELECT существующего ledger"; fi
+run "$T/migration.sql" migrate 20261003130000 original
+expect "совпадающая пара — идемпотентный пропуск" 0 "уже применена"
+: > "$D"
+run "$T/migration.sql" migrate 20261003130000 collision
+expect "применён тот же номер с другим именем — отказ" nz "original"
+if grep -qF 'select 42;' "$D"; then echo "✘ коллизия дошла до SQL"; bad=1; else echo "✔ коллизия не исполнила SQL"; fi
+: > "$D"; : > "$T/store/ledger-fail"
+run "$T/migration.sql" migrate 20261003130000 original
+expect "не удалось прочитать имя — отказ до SQL" nz "миграц"
+if grep -qF 'select 42;' "$D"; then echo "✘ ошибка ledger дошла до SQL"; bad=1; else echo "✔ ошибка ledger не исполнила SQL"; fi
+rm "$T/store/ledger-fail"
+run "$T/migration.sql" migrate 20261003140000 next
+expect "новая версия — применяется" 0 "применена"
+grep -qF 'select 42;' "$D" && echo "✔ новая миграция дошла до транзакции" || { echo "✘ новая миграция потеряла SQL"; bad=1; }
 
 exit $bad

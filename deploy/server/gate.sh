@@ -5,7 +5,7 @@
 # Что пришло после ssh — в SSH_ORIGINAL_COMMAND; разрешено ровно шесть действий:
 #   functions                 — stdin: tar.gz каталога supabase/functions → в рантайм + пересоздание контейнера
 #   env-reload                — пересоздать рантайм функций без выкладки кода: подхватить смену functions.env (#1032)
-#   migrations-applied        — список применённых версий миграций
+#   migrations-applied [names] — версии; names добавляет имена ledger (TSV)
 #   migrate <версия>          — stdin: SQL миграции; накат одной транзакцией вместе с учётной записью
 #   recorder-upload <сборка>  — stdin: zip рекордера; заливка в Storage swarm_drive/recorder/, без перезаписи
 #   maintenance <действие> …  — плашка и заморозка (#978): announce <начало> <минут> | cancel | status |
@@ -104,20 +104,28 @@ case "$CMD" in
     echo "рантайм функций пересоздан и отвечает: functions.env перечитан"
     ;;
   migrations-applied)
-    ensure_ledger
-    psql_ -tA -c "select version from supabase_migrations.schema_migrations order by 1"
+    if [ "${ARGV[1]:-}" = names ]; then
+      psql_ -tA -F $'\t' -c "select version, name from supabase_migrations.schema_migrations order by 1"
+    else
+      ensure_ledger
+      psql_ -tA -c "select version from supabase_migrations.schema_migrations order by 1"
+    fi
     ;;
   migrate)
     V="${ARGV[1]:-}"; NAME="${ARGV[2]:-}"
     [[ "$V" =~ ^[0-9]{8,14}$ ]] || die "версия миграции должна быть цифрами: '$V'"
-    [[ -z "$NAME" || "$NAME" =~ ^[a-z0-9_]+$ ]] || die "имя миграции: только a-z0-9_"
+    [[ "$NAME" =~ ^[a-z0-9_]+$ ]] || die "имя миграции обязательно: только a-z0-9_"
     # SQL читается ПЕРВЫМ: `docker exec -i` в проверках ниже забирает stdin себе, и миграция,
     # прочитанная после них, всегда пуста (13.10.2026 — первый настоящий накат через шлюз).
     TMP=$(mktemp); trap 'rm -f "$TMP"' EXIT
     head -c 10485760 > "$TMP"
     [ -s "$TMP" ] || die "пустая миграция"
     ensure_ledger
-    if [ -n "$(psql_ -tA -c "select 1 from supabase_migrations.schema_migrations where version='$V'" </dev/null)" ]; then
+    APPLIED=$(psql_ -tA -c "select 'applied:' || coalesce(name, '') from supabase_migrations.schema_migrations where version='$V'" </dev/null) \
+      || die "не удалось проверить имя миграции $V — SQL не применялся"
+    if [ -n "$APPLIED" ]; then
+      APPLIED_NAME=${APPLIED#applied:}
+      [ "$APPLIED_NAME" = "$NAME" ] || die "конфликт миграции $V: в ledger имя $APPLIED_NAME, прислано $NAME — SQL не применялся"
       echo "миграция $V уже применена — пропускаю"; exit 0
     fi
     { cat "$TMP"; printf '\n;insert into supabase_migrations.schema_migrations(version, name) values (%s, %s);\n' "'$V'" "'$NAME'"; } \
@@ -223,5 +231,5 @@ SQL
       *) die "maintenance: неизвестное действие '${ACT}'. Разрешено: announce <начало> <минут> | cancel | status | notice <минут> | notice-off | notice-show" ;;
     esac
     ;;
-  *) die "неизвестная команда: '${CMD}'. Разрешено: functions | env-reload | migrations-applied | migrate <версия> [имя] | recorder-upload <сборка> | maintenance <действие>" ;;
+  *) die "неизвестная команда: '${CMD}'. Разрешено: functions | env-reload | migrations-applied | migrate <версия> <имя> | recorder-upload <сборка> | maintenance <действие>" ;;
 esac

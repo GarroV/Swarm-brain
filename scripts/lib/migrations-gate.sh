@@ -6,7 +6,7 @@
 # Зачем гейт (issue #509, #444, #557): функция или веб, которым нужна новая колонка, уехав раньше
 # схемы, отвечают 400 и кладут раздел у всей команды до утра, когда никто не смотрит.
 #
-# Спрашиваем шлюз на своём сервере (`swarm_server migrations-applied`, scripts/lib/swarm-server.sh),
+# Спрашиваем шлюз на своём сервере (`swarm_server migrations-applied names`, scripts/lib/swarm-server.sh),
 # а не базу: пароля базы в CI нет и не будет (решение 2026-08-28), есть только ключ шлюза, который
 # умеет ровно три команды. С 13.10.2026 прод — свой сервер; облачный Management API мёртв (#919).
 #
@@ -17,30 +17,68 @@ GATE_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$GATE_LIB_DIR/swarm-server.sh"
 GATE_MIGR_DIR="supabase/migrations/"
 
-# Какие из файлов НЕ применены, по списку применённых версий (по одной в строке).
-#   $1 — файлы миграций, по одному в строке;  $2 — применённые версии.
+# Общий preflight перед первой записью: ledger — строки «версия<TAB>имя».
+# 0 — план (имена неприменённых файлов), 2 — конфликт/несовместимый протокол, 3 — пустой ledger.
+migration_plan() {
+  printf '%s' "$2" | python3 -c '
+import re, sys
+
+def reject(message, code=2):
+    print(message)
+    sys.exit(code)
+
+done = {}
+for line in sys.stdin:
+    if not line.strip():
+        continue
+    fields = line.rstrip("\r\n").split("\t")
+    if len(fields) != 2 or not re.fullmatch(r"\d{8,14}", fields[0]) or not fields[1]:
+        reject("Шлюз не вернул номер и имя миграции. Сначала обновите шлюз: migrations-applied names.")
+    version, name = fields
+    if version in done and done[version] != name:
+        reject(f"Конфликт ledger: у версии {version} несколько имён.")
+    done[version] = name
+if not done:
+    reject("Сервер вернул пустой ledger миграций: проверить имена нечем.", 3)
+
+seen = {}
+missing = []
+for line in sys.argv[1].splitlines():
+    filename = line.strip().rsplit("/", 1)[-1]
+    if not filename or filename.startswith("_"):
+        continue
+    match = re.fullmatch(r"(\d{8,14})_(.+)\.sql", filename)
+    if not match:
+        reject(f"Нет корректного номера и имени миграции: {filename}")
+    version, expected_name = match.groups()
+    if version in seen:
+        if seen[version] != filename:
+            reject(f"Конфликт номера {version}: {seen[version]} и {filename}")
+        continue
+    seen[version] = filename
+    if version in done and done[version] != expected_name:
+        reject(f"Конфликт миграции {version}: в ledger имя {done[version]}, в файле {expected_name}.")
+    if version not in done:
+        missing.append(filename)
+print("\n".join(missing))
+' "$1"
+}
+
+# Какие из файлов НЕ применены по номеру и имени.
+#   $1 — файлы миграций, по одному в строке;  $2 — ledger «версия<TAB>имя».
 # Печатает неприменённые имена. Коды: 0 — всё применено (или файлов нет), 1 — есть неприменённые,
 # 3 — список применённых пуст (в ledger сервера они есть всегда: пустой ответ — это «проверить
 # нечем», а не «всё хорошо»).
 missing_migrations() {
-  local files="$1" applied="$2" pending
+  local files="$1" applied="$2" pending rc=0
   [ -n "$files" ] || return 0
   [ -n "$(printf '%s' "$applied" | tr -d '[:space:]')" ] || return 3
-  pending=$(printf '%s' "$applied" | python3 -c '
-import re, sys
-done = {l.strip() for l in sys.stdin if l.strip()}
-missing = []
-for line in sys.argv[1].splitlines():
-    name = line.strip().rsplit("/", 1)[-1]
-    # Шаблон новой таблицы — не миграция.
-    if not name or name.startswith("_"):
-        continue
-    m = re.match(r"(\d{8,14})_", name)
-    # Файл без версии в имени пропускать нельзя: молчаливый пропуск и есть та дыра, что чинится.
-    if not m or m.group(1) not in done:
-        missing.append(name)
-print("\n".join(missing))
-' "$files") || return 3
+  pending=$(migration_plan "$files" "$applied") || rc=$?
+  case "$rc" in
+    0) ;;
+    2) printf '%s\n' "$pending"; return 1 ;; # Доказанный конфликт нельзя обойти MIGRATIONS_OK.
+    *) printf '%s\n' "$pending" >&2; return 3 ;;
+  esac
   [ -z "$pending" ] && return 0
   printf '%s\n' "$pending"
   return 1
@@ -54,7 +92,7 @@ pending_migrations() {
   if [ -n "${MIGRATIONS_APPLIED+set}" ]; then
     applied="$MIGRATIONS_APPLIED"
   else
-    applied=$(swarm_server migrations-applied) || return 3
+    applied=$(swarm_server migrations-applied names) || return 3
   fi
   missing_migrations "$files" "$applied"
 }
