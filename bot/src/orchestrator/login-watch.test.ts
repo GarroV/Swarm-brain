@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -183,6 +183,37 @@ describe("LoginWatch — слетевший вход как состояние",
     const watch = watcher();
     await watch.load();
     expect(watch.status).toEqual(INITIAL_STATUS);
+  });
+
+  it("состояние не сохраняется на диск — строка в журнале, в памяти работает", async () => {
+    const blocker = path.join(directory, "not-a-dir");
+    await writeFile(blocker, "x");
+    const watch = new LoginWatch({
+      file: path.join(blocker, "login-status.json"),
+      log: (line) => {
+        lines.push(line);
+      },
+      now: () => now,
+    });
+    await watch.signinRequired("причина");
+    expect(watch.status.broken).toBe(true);
+    expect(lines.some((line) => line.includes("не сохранено"))).toBe(true);
+  });
+
+  it("файл состояния не той формы — строка в журнале и чистый старт", async () => {
+    await writeFile(file, JSON.stringify({ broken: "yes" }));
+    const watch = watcher();
+    await watch.load();
+    expect(watch.status).toEqual(INITIAL_STATUS);
+    expect(lines.some((line) => line.includes("повреждено"))).toBe(true);
+  });
+
+  it("файл состояния нечитаем (не ENOENT) — строка в журнале и чистый старт", async () => {
+    await mkdir(file);
+    const watch = watcher();
+    await watch.load();
+    expect(watch.status).toEqual(INITIAL_STATUS);
+    expect(lines.some((line) => line.includes("не прочитано"))).toBe(true);
   });
 
   it("проба упала один раз — тишина, дважды подряд — тревога", async () => {

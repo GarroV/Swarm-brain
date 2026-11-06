@@ -120,6 +120,28 @@ describe("FileAccountCopies — вход аккаунта бота в конте
   it("sweep без каталога копий — не ошибка", async () => {
     await expect(copies.sweep(new Set())).resolves.toBeUndefined();
   });
+  it("каталог выгрузки: свой у запуска, открыт на запись, читается; нет файла — null; release и sweep убирают", async () => {
+    const directory = await copies.prepareOutput("run-1");
+    const info = await stat(directory);
+    expect(info.mode & 0o777).toBe(0o777);
+    expect(await copies.readOutput("run-1")).toBeNull();
+
+    await writeFile(path.join(directory, "google-state.json"), SIGN_IN);
+    expect(await copies.readOutput("run-1")).toBe(SIGN_IN);
+
+    await copies.prepareOutput("run-2");
+    await copies.sweep(new Set(["run-2"]));
+    expect(await readdir(copiesDirectory)).toEqual(["run-2.out"]);
+
+    await copies.release("run-2");
+    expect(await readdir(copiesDirectory)).toEqual([]);
+  });
+
+  it("выгрузка нечитаема не из-за отсутствия — ошибка наружу", async () => {
+    const directory = await copies.prepareOutput("run-3");
+    await mkdir(path.join(directory, "google-state.json"));
+    await expect(copies.readOutput("run-3")).rejects.toThrow();
+  });
 });
 
 describe("hasGoogleSession — вошёл ли человек в окне входа", () => {

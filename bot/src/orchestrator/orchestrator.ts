@@ -585,9 +585,10 @@ export class Orchestrator {
     return "Google просит вход";
   }
 
-  private async replaceState(managed: Managed): Promise<boolean> {
-    const keepalive = this.options.loginKeepalive;
-    if (keepalive === undefined) return false;
+  private async replaceState(
+    managed: Managed,
+    keepalive: NonNullable<OrchestratorOptions["loginKeepalive"]>,
+  ): Promise<boolean> {
     const isStateReplaced = async (): Promise<boolean> => {
       const raw = await this.options.account?.readOutput(managed.runId);
       const result = await commitExport({
@@ -630,7 +631,7 @@ export class Orchestrator {
         if (managed.kind === "probe") await watch.probeFinished();
         return;
       }
-      const isWritten = await this.replaceState(managed);
+      const isWritten = await this.replaceState(managed, keepalive);
       if (isWritten) {
         await watch.accepted();
         if (managed.kind === "probe") await watch.probeFinished();

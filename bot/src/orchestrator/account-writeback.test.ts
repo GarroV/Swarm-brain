@@ -144,6 +144,21 @@ describe("продление входа: защита замены", () => {
       expect(after.origins.map((o) => o.origin)).toEqual(["https://meet.google.com"]);
     });
 
+    it("origin не разбирается как адрес — выбрасывается, остальное сохраняется", async () => {
+      await writeFile(stateFile, file(session("old", 100)));
+      const raw = file(session("fresh", 200), [
+        { origin: "не адрес" },
+        { origin: 42 },
+        { origin: "https://accounts.google.com" },
+      ]);
+
+      const result = await commitExport({ stateFile, raw, outcome: "recorded" });
+
+      expect(result.written).toBe(true);
+      const after = await saved();
+      expect(after.origins.map((o) => o.origin)).toEqual(["https://accounts.google.com"]);
+    });
+
     it("сессия есть только на чужом домене — вход не меняется", async () => {
       await writeFile(stateFile, file(session("old", 100)));
       const raw = file([cookie("SID", "fake", ".evil.example", 999)]);
