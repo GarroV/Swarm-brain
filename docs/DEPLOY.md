@@ -470,3 +470,10 @@ make unfreeze          # снять раньше срока; по сроку р�
 
 ## Не входит (YAGNI)
 CI/GitHub Actions (solo-dev); публичный вход для Telegram-webhook/CF на staging (Tailscale хватает); прод на MUSPELHEIM (только staging).
+
+## Main-router self-hosted runtime
+
+Точный установленный snapshot router и порядок его отдельного выпуска —
+[deploy/server/edge-runtime/README.md](../deploy/server/edge-runtime/README.md) (#1129).
+Штатная заливка функций его не заменяет. Host bundle и публичный smoke не являются
+standalone TypeScript typecheck; граница проверки описана в CHECKS.md рядом с snapshot.
