@@ -434,3 +434,12 @@ claude mcp add supabase-swarm -- npx -y @supabase/mcp-server-supabase@0.12.0 \
 Нативный CLI приложения пишет MCP-конфиг, мост и токен отдельны от Claude. Swarm виден только во вкладке Work (в Chat — нет); обычные чаты корпоративного ChatGPT подключает администратор пространства. Сначала
 миграция `20261103110000_chatgpt_desktop_token.sql`, затем функции и веб.
 [Решение](decisions/2026-11-03-chatgpt-terminal-bridge.md).
+
+### Отметка переноса закрытой задачи (#1159)
+
+Правило выдачи отметки и сохранения истории — [ARCHITECTURE.md](ARCHITECTURE.md).
+Проверка без базы и сети:
+
+```bash
+deno test -A supabase/functions/_shared/tasks/sprint-closed-carry.test.ts
+```
