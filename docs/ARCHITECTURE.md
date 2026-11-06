@@ -2711,6 +2711,17 @@ Next.js 16, `output: "export"` (статический HTML/CSS/JS в `miniapp/o
 
 ---
 
+### Одноразовое исправление исторической длительности (#121)
+
+`supabase/maintenance/recorded-duration-repair.sql` — session-local помощники, без автоматического
+запуска и постоянной миграции. Только отдельный private plan с фактическим измерением всех файлов
+каноническим `audio-length.ts`; данные в git не попадают. Применение требует отдельного разрешения.
+Четыре NULL/done строки сравниваются с полными row/audio fingerprints; ownership/source/status/
+аудиосостояние обязаны совпасть. Блокировки строк и метаданных аудио исключают гонку; при смене
+снимка — атомарный отказ. Меняется только `recorded_seconds`, прочие колонки проверяются после UPDATE.
+Подходящий UPDATE-trigger блокирует ремонт без отключения триггеров; отправки и обработка не вызываются.
+Процедура и isolated-DB RED/GREEN fixture описаны в `supabase/maintenance/README.md`.
+
 ### Восстановление после пропавшего чанка (#809)
 
 `miniapp/src/lib/chunkRecovery.ts` создаёт самодостаточный inline-скрипт для root layout,
