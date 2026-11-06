@@ -17,6 +17,20 @@ import type { MeetSnapshot } from "./types.ts";
 */
 const NAME_SUFFIX = /\((?:you|presenting|host)\)$/iu;
 
+// Имена из #872 и стандартные формы поставщиков (ссылки в docs/QUICK_REF.md).
+// Бренд внутри имени человека сам по себе не признак бота.
+const RECORDER_NAMES = new Set([
+  "tl;dv",
+  "tl;dv ai notetaker",
+  "read.ai",
+  "read.ai meeting notes",
+  "meeting analytics from read",
+  "fireflies",
+  "fireflies.ai notetaker",
+  "otter",
+]);
+const OTTER_NOTETAKER = /^.+['’]s (?:AI )?Notetaker \(Otter\.ai\)$/iu;
+
 export function normalizeParticipantName(raw: string | null): string | null {
   if (raw === null) return null;
   const name = raw.replaceAll(/\s+/gu, " ").trim().replace(NAME_SUFFIX, "").trim();
@@ -72,5 +86,19 @@ export function countParticipants(snapshot: MeetSnapshot): number | null {
 export function isAloneSnapshot(snapshot: MeetSnapshot): boolean | null {
   const count = countParticipants(snapshot);
   if (count === null) return null;
-  return count <= 1;
+  // В галерее видны не все: из полного числа панели вычитаем только доказанных рекордеров.
+  // Одна и та же плитка (в том числе показ экрана) не должна вычесть скрытого человека.
+  const recorders = new Set(
+    snapshot.tiles
+      .filter((tile) => {
+        if (tile.self) return false;
+        const name = normalizeParticipantName(tile.name);
+        return (
+          name !== null && (RECORDER_NAMES.has(name.toLowerCase()) || OTTER_NOTETAKER.test(name))
+        );
+      })
+      .map((tile) => tile.id),
+  );
+  const visibleCount = new Set(snapshot.tiles.map((tile) => tile.id)).size;
+  return Math.max(count, visibleCount) - recorders.size <= 1;
 }
