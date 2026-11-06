@@ -32,7 +32,7 @@ export function AggregatorsTab({ codes }: { codes: string[] }) {
   const title = new Map(data.aggregators.map((a) => [a.key, a]));
   return (
     <div className={`${card} @container`}>
-      <div className="grid grid-cols-2 gap-2 @[500px]:grid-cols-3">
+      <div className="grid grid-cols-1 gap-2 @[320px]:grid-cols-2 @[500px]:grid-cols-3">
         {mine.map((a) => {
           const d = scoreDigits(a.scale);
           return (
