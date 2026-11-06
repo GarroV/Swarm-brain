@@ -90,7 +90,7 @@ Deno.test("OAuth bounded reader rejects declared and streamed oversize bodies", 
   }
 });
 
-function registrationDb(found = true): OAuthDb {
+function registrationDb(found = true, redirect = "https://chatgpt.com/connector/oauth/qa"): OAuthDb {
   return {
     rpc: () => Promise.resolve({ data: true, error: null }),
     from: () => ({
@@ -103,7 +103,7 @@ function registrationDb(found = true): OAuthDb {
                 ? {
                   client_id: "test-client",
                   client_name: "Test",
-                  redirect_uris: ["https://chatgpt.com/connector/oauth/qa"],
+                  redirect_uris: [redirect],
                 }
                 : null,
             }),
@@ -171,4 +171,21 @@ Deno.test("OAuth authorize never redirects errors to an unknown client or unregi
     assertEquals(response.status, 400);
     assertEquals(response.headers.get("Location"), null);
   }
+});
+
+Deno.test("OAuth authorize never redirects to a registered callback that is outside the allowed list", async () => {
+  const callback = "https://attacker.example/callback";
+  const params = new URLSearchParams({
+    client_id: "test-client",
+    redirect_uri: callback,
+    scope: "mcp unexpected",
+    state: "expected-state",
+  });
+  const response = await handleOAuthPublicRequest(
+    registrationDb(true, callback),
+    new Request(`${config.issuer}/oauth/authorize?${params}`),
+    config,
+  );
+  assertEquals(response.status, 400);
+  assertEquals(response.headers.get("Location"), null);
 });
