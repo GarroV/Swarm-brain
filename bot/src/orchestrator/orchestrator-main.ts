@@ -30,6 +30,12 @@
  *                                 обязателен и SCRIBA_ACCOUNT_COPIES_DIR. Файла нет — гостем;
  *   SCRIBA_ACCOUNT_COPIES_DIR   — каталог копий входа, путь как у демона Docker (приём поводка):
  *                                 в контейнер монтируется своя копия одним файлом на чтение;
+ *   SCRIBA_LOGIN_PROBE_HOUR     — час суток по Белграду для ежедневного пробного захода в Meet под
+ *                                 входом бота (#1140), 0–23 (по умолчанию 6);
+ *   SCRIBA_LOGIN_STATUS_FILE    — файл состояния входа (слетел ли, когда слали тревогу, когда
+ *                                 была проба); по умолчанию `login-status.json` рядом с
+ *                                 SCRIBA_GOOGLE_STATE_FILE. Каталог файла входа должен быть
+ *                                 записываемым: туда возвращается продлённый вход;
  *   SCRIBA_EGRESS_EXTRA         — добавка к списку выхода контейнеров встреч наружу (T178), через
  *                                 запятую, только точные host:port. Всё остальное, кроме
  *                                 Google/Meet и SCRIBA_CONTAINER_SWARM_URL, закрыто;
@@ -45,6 +51,8 @@ import {
   DEFAULT_CONTAINER_LIMITS,
   DEFAULT_MAX_MEETINGS,
 } from "../container/isolation.ts";
+import path from "node:path";
+
 import { type AccountCopies, FileAccountCopies } from "./account.ts";
 import { DockerodeEngine } from "./docker-engine.ts";
 import { DockerMeetingEgress } from "./egress.ts";
@@ -53,6 +61,7 @@ import { inviteTriggerFor } from "./invite-service.ts";
 import { NoticeClient } from "./notice-client.ts";
 import { JournaledNotifier, type Notifier } from "./notices.ts";
 import { Orchestrator } from "./orchestrator.ts";
+import { LoginWatch } from "./login-watch.ts";
 import { channelAlert } from "./owner-alert.ts";
 import { RunLogs } from "./run-log.ts";
 
@@ -145,6 +154,32 @@ function ownerAlert(environment: Environment): ((text: string) => Promise<void>)
   return channelAlert({ url, secret });
 }
 
+const LAST_HOUR = 23;
+
+/**
+ * Продление входа и слежение за ним (#1140): включается вместе со входом аккаунта бота.
+ */
+function loginKeepalive(
+  environment: Environment,
+  alertOwner: ((text: string) => Promise<void>) | undefined,
+): NonNullable<ConstructorParameters<typeof Orchestrator>[0]["loginKeepalive"]> | undefined {
+  const stateFile = nonEmpty(environment.SCRIBA_GOOGLE_STATE_FILE);
+  if (stateFile === undefined) return undefined;
+  const probeHour = positive(environment, "SCRIBA_LOGIN_PROBE_HOUR", 6);
+  if (probeHour > LAST_HOUR) {
+    throw new Error(`SCRIBA_LOGIN_PROBE_HOUR — час 0–23, получено ${String(probeHour)}`);
+  }
+  const file =
+    nonEmpty(environment.SCRIBA_LOGIN_STATUS_FILE) ??
+    path.join(path.dirname(stateFile), "login-status.json");
+  const watch = new LoginWatch({
+    file,
+    log,
+    ...(alertOwner !== undefined && { send: alertOwner }),
+  });
+  return { stateFile, watch, probeHour };
+}
+
 async function main(environment: Environment): Promise<void> {
   const swarmUrl = required(environment, "SCRIBA_SWARM_URL");
   const token = required(environment, "SCRIBA_BOT_TOKEN");
@@ -155,6 +190,7 @@ async function main(environment: Environment): Promise<void> {
 
   const account = accountCopies(environment);
   const alertOwner = ownerAlert(environment);
+  const keepalive = loginKeepalive(environment, alertOwner);
   const runLogDirectory = nonEmpty(environment.SCRIBA_RUN_LOG_DIR);
   const runLogs =
     runLogDirectory === undefined ? undefined : new RunLogs({ directory: runLogDirectory, log });
@@ -191,6 +227,7 @@ async function main(environment: Environment): Promise<void> {
     ...(account !== undefined && { account }),
     ...(runLogs !== undefined && { runLogs }),
     ...(alertOwner !== undefined && { alertOwner }),
+    ...(account !== undefined && keepalive !== undefined && { loginKeepalive: keepalive }),
   });
   const intervalMs = positive(environment, "SCRIBA_INVITE_POLL_MS", 5000);
   const trigger = inviteTriggerFor({
@@ -218,6 +255,7 @@ async function main(environment: Environment): Promise<void> {
   });
 
   await orchestrator.init();
+  await orchestrator.startLoginKeepalive();
   trigger.start();
   calendar.start();
   log(

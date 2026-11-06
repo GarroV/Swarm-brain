@@ -90,6 +90,16 @@ export class DockerodeEngine implements ContainerEngine, EgressEngine {
                   ReadOnly: true,
                 },
               ]),
+          ...(spec.accountOutput === undefined
+            ? []
+            : [
+                {
+                  Type: "bind" as const,
+                  Source: spec.accountOutput.source,
+                  Target: spec.accountOutput.target,
+                  ReadOnly: false,
+                },
+              ]),
         ],
         // Сеть встречи — internal (T178): наружу только через egress-прокси.
         NetworkMode: spec.network,

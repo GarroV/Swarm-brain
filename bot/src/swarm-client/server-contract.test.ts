@@ -17,7 +17,11 @@ import { INGEST_FIELD, INGEST_PART_MAX_BYTES, PUBLISHED_STATUS } from "./contrac
 const read = (relative: string): string =>
   readFileSync(new URL(`../../../${relative}`, import.meta.url), "utf8");
 
-const ingest = read("supabase/functions/meeting-ingest/index.ts");
+// Разбор частей вынесен из index.ts в parts.ts — контракт держат оба файла вместе.
+const ingest = [
+  read("supabase/functions/meeting-ingest/index.ts"),
+  read("supabase/functions/meeting-ingest/parts.ts"),
+].join("\n");
 const claim = read("supabase/functions/meeting-claim/index.ts");
 const status = read("supabase/functions/meeting-status/index.ts");
 const heartbeat = read("supabase/functions/meeting-heartbeat/write.ts");
@@ -45,7 +49,7 @@ describe("meeting-ingest", () => {
 
   it("предел части — тот же, на который клиент проверяет её при укладке", () => {
     expect(ingest).toContain(
-      `const OPENAI_AUDIO_MAX_BYTES = ${String(INGEST_PART_MAX_BYTES / 1024 / 1024)} * 1024 * 1024`,
+      `OPENAI_AUDIO_MAX_BYTES = ${String(INGEST_PART_MAX_BYTES / 1024 / 1024)} * 1024 * 1024`,
     );
   });
 

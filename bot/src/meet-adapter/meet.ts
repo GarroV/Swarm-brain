@@ -11,6 +11,8 @@
  *    движение мыши — иначе кнопка «есть, но невидима», и адаптер решит, что он не в звонке;
  *  - имя вводится посимвольно, а не подстановкой значения: Meet слушает события ввода.
  */
+import { chmod } from "node:fs/promises";
+
 import type { Browser, BrowserContext, LaunchOptions, Locator, Page } from "playwright";
 
 import { chromiumLaunchOptions } from "../container/browser.ts";
@@ -35,6 +37,7 @@ import { pinMeetLocale } from "./url.ts";
 */
 const MEET_BROWSER_LANG = "en-US";
 
+const MEET_HOST = "meet.google.com";
 const DEFAULT_POLL_INTERVAL_MS = 1000;
 const NAVIGATION_TIMEOUT_MS = 60_000;
 const CONTROL_TIMEOUT_MS = 5000;
@@ -65,6 +68,12 @@ export interface MeetAdapterDependencies {
    * Содержимое файла адаптер не читает и не пишет в журнал: его открывает сам Chromium.
    */
   readonly storageStatePath?: string;
+  /**
+   * Куда выгрузить обновлённый вход перед закрытием контекста (#1140): Google во время встречи
+   * выдаёт свежие куки, и без выгрузки они пропадают с контейнером. Выгружается только если
+   * страница дала вердикт и ни один не был «вход слетел». Содержимое не логируется.
+   */
+  readonly exportStatePath?: string;
 }
 
 /**
@@ -93,6 +102,9 @@ export class MeetAdapter implements PlatformAdapter {
   #displayName: string | null = null;
   #speakerSignalReported = false;
   #aloneSignalReported = false;
+  // Google ответил по существу (дверь, лобби, звонок), и ни разу — «вход слетел».
+  #sawVerdict = false;
+  #signinRejected = false;
 
   constructor(dependencies: MeetAdapterDependencies) {
     this.#deps = dependencies;
@@ -185,6 +197,31 @@ export class MeetAdapter implements PlatformAdapter {
     }
   }
 
+  #noteVerdict(state: string): void {
+    if (state === "signin_required") this.#signinRejected = true;
+    else this.#sawVerdict = true;
+  }
+
+  /**
+   * Выгрузить вход перед закрытием контекста. Любой сбой — строка в журнале: продление входа не
+   * должно ронять уход со встречи.
+   */
+  async #exportState(context: BrowserContext): Promise<void> {
+    const target = this.#deps.exportStatePath;
+    if (target === undefined || !this.#isSignedIn) return;
+    if (this.#signinRejected || !this.#sawVerdict) {
+      this.#log("вход не выгружаем: Google не подтвердил его в этом запуске");
+      return;
+    }
+    try {
+      await context.storageState({ path: target });
+      await chmod(target, 0o600);
+      this.#log("обновлённый вход выгружен для оркестратора");
+    } catch (error) {
+      this.#log(`вход не выгружен: ${String(error)}`);
+    }
+  }
+
   get #isSignedIn(): boolean {
     return this.#deps.storageStatePath !== undefined;
   }
@@ -219,6 +256,7 @@ export class MeetAdapter implements PlatformAdapter {
     if (this.#isSignedIn) {
       // Слетевший вход — не повод стучаться гостем: вердикт вынесет waitAdmitted.
       const verdict = classifyAdmission(await this.#snapshot(), { isSignedIn: true });
+      this.#noteVerdict(verdict.state);
       if (verdict.state === "signin_required") {
         this.#log(`вход аккаунта не действует — в дверь не стучимся: ${verdict.reason}`);
         return;
@@ -246,8 +284,14 @@ export class MeetAdapter implements PlatformAdapter {
 
     while (Date.now() < deadline) {
       await this.#wakeUi();
-      const verdict = classifyAdmission(await this.#snapshot(), { isSignedIn: this.#isSignedIn });
+      const snapshot = await this.#snapshot();
+      const verdict = classifyAdmission(snapshot, { isSignedIn: this.#isSignedIn });
       lastReason = verdict.reason;
+      // Стоим у двери на странице Meet и вход не отвергнут — Google его принял. «Ждём» на чужой
+      // странице (ошибка сети, заглушка браузера) вердиктом не считается.
+      if (verdict.state !== "waiting" || snapshot.host === MEET_HOST) {
+        this.#noteVerdict(verdict.state);
+      }
 
       if (verdict.state !== "waiting") {
         this.#log(`дверь: ${verdict.state} — ${verdict.reason}`);
@@ -321,6 +365,7 @@ export class MeetAdapter implements PlatformAdapter {
       await page.close();
     }
 
+    if (context !== null) await this.#exportState(context);
     await context?.close();
     this.#log("вкладка и контекст браузера закрыты");
   }

@@ -10,6 +10,7 @@
     "src/kontur-adapter/smoke-kontur.ts",
     "src/orchestrator/container-main.ts",
     "src/orchestrator/login-export.ts",
+    "src/orchestrator/probe-main.ts",
     "src/orchestrator/orchestrator-main.ts",
     "src/orchestrator/smoke-orchestrator.ts",
     "src/orchestrator/smoke-pulse.ts"

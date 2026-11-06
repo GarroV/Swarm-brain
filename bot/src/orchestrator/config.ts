@@ -33,6 +33,7 @@ export const MEETING_ENV = {
   calendarStartsAt: "SCRIBA_CALENDAR_STARTS_AT",
   calendarTitle: "SCRIBA_CALENDAR_TITLE",
   accountState: "SCRIBA_GOOGLE_STATE",
+  accountOutput: "SCRIBA_GOOGLE_STATE_OUT",
 } as const;
 
 /**
@@ -66,6 +67,10 @@ export interface MeetingConfig {
    * Копия входа аккаунта бота (T175) внутри контейнера; `null` — бот идёт гостем.
    */
   readonly accountStatePath: string | null;
+  /**
+   * Файл, куда после встречи выгружается обновлённый вход (#1140); `null` — выгружать некуда.
+   */
+  readonly accountOutputPath: string | null;
   /**
    * Приглашение из веба (D017), по которому бот заявляет ручную встречу; `null` — запуск без
    * приглашения (сервер такую ручную заявку агента отвергнет).
@@ -209,6 +214,7 @@ export function readMeetingConfig(environment: Environment): MeetingConfig {
     timing: readTiming(environment),
     smokeMeetPage: text(environment, MEETING_ENV.smokeMeetPage),
     accountStatePath: text(environment, MEETING_ENV.accountState),
+    accountOutputPath: text(environment, MEETING_ENV.accountOutput),
     invite,
     calendar: readCalendar(environment, invite),
   };
