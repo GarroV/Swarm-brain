@@ -1,3 +1,23 @@
+import type { CreateTaskInput, UpdateTaskInput, TaskFilters, TaskLabel, TaskFilesList } from "./api-types/tasks";
+export type { CreateTaskInput, UpdateTaskInput, TaskFilters, TaskLabel, TaskFilesList } from "./api-types/tasks";
+import type { TaskComment, NotificationsResponse, TaskSubscription } from "./api-types/task-comments";
+export type { TaskComment, NotificationsResponse, TaskSubscription } from "./api-types/task-comments";
+import type { CreateEntryInput, UpdateEntryInput, QuickSearchResult, AskSource, AskResult, DemoQuestion } from "./api-types/knowledge";
+export type { CreateEntryInput, UpdateEntryInput, QuickSearchResult, AskSource, AskResult, DemoQuestion } from "./api-types/knowledge";
+import type { UpdateMeInput, PresencePing, PersonStats, PeopleStatsResponse } from "./api-types/people";
+export type { UpdateMeInput, PresencePing, PersonStats, PeopleStatsResponse } from "./api-types/people";
+import type { WorkspaceConfig, WorkspaceStats, ReviewCount, MovePreview } from "./api-types/workspaces";
+export type { WorkspaceConfig, WorkspaceStats, ReviewCount, MovePreview } from "./api-types/workspaces";
+import type { UpdateMeetingInput, TodayMeeting, TodayMeetings, MeetingsPageQuery, MeetingsPage, WebRecordingStart, WebRecordingActive, WebRecordingFinish, AutojoinState } from "./api-types/meetings";
+export type { UpdateMeetingInput, TodayMeeting, TodayMeetings, MeetingsPageQuery, MeetingsPage, WebRecordingStart, WebRecordingActive, WebRecordingFinish, AutojoinState } from "./api-types/meetings";
+import type { QualityKind, QualityPeriod, QualityUnit, QualityData, InspectionPrev, Inspection, InspectionsData, InspectionZone, InspectionFinding, InspectionDetail } from "./api-types/quality";
+export type { QualityKind, QualityPeriod, QualityUnit, QualityData, InspectionPrev, Inspection, InspectionsData, InspectionZone, InspectionFinding, InspectionDetail } from "./api-types/quality";
+import type { ShortLink, ShortLinkMeta } from "./api-types/short-links";
+export type { ShortLink, ShortLinkMeta } from "./api-types/short-links";
+import type { UsageSlice, ModelUsage, UsageCall } from "./api-types/model-usage";
+export type { UsageSlice, ModelUsage, UsageCall } from "./api-types/model-usage";
+import type { MockItemRow, AcceptResult, MockProjectMove } from "./api-types/sprints";
+export type { AcceptResult } from "./api-types/sprints";
 import type {
   MarketSalesRow, MarketMtd, MarketUnitSales,
   MapsStat, MapsUnitStat, MapsCountry, MapsUnit, MapsData,
@@ -10,43 +30,10 @@ export type {
 } from "./marketTypes";
 import { isNetworkFailure, reportConnection, reportUnauthorized } from "./connection";
 import type { TaskFile, TaskFileLimits } from "./taskFiles";
-import type { BackdropId } from "./backdrop";
+
 import type { UsageCell } from "./usageCube";
 import type { TasksDeltaResponse } from "./tasksDelta";
-import type {
-  AdminUser,
-  MarketBundle,
-  MarketCandidate,
-  AdminWorkspace,
-  AgentMeeting,
-  CheckStatus,
-  Entry,
-  GranolaNote,
-  Integration,
-  JournalEvent,
-  JourneyStep,
-  MarketSuggestion,
-  Me,
-  MeetingLiveNote,
-  MeetingNotes,
-  Project,
-  ProjectLink,
-  Sprint,
-  SprintCycle,
-  SprintBoardData,
-  SprintCycleDetail,
-  SprintCycleItem,
-  SprintJourney,
-  SprintStats,
-  SprintKind,
-  SprintStatus,
-  Task,
-  TaskLink,
-  Person,
-  User,
-  BoardSticker,
-  NewSticker,
-} from "@/types";
+import type { AdminUser, MarketBundle, MarketCandidate, AdminWorkspace, AgentMeeting, CheckStatus, Entry, GranolaNote, Integration, JournalEvent, JourneyStep, MarketSuggestion, Me, MeetingLiveNote, MeetingNotes, Project, ProjectLink, Sprint, SprintCycle, SprintBoardData, SprintCycleDetail, SprintCycleItem, SprintJourney, SprintStats, SprintKind, SprintStatus, Task, Person, User, BoardSticker, NewSticker } from "@/types";
 import { createRequestCache, REQUEST_CACHE_TTL_MS } from "./request-cache";
 import { normalizeProposedTasks, type ProposedTask } from "./proposedTasks";
 import type { DeployNotice } from "@/lib/deployNotice";
@@ -59,98 +46,10 @@ import {
   publishMaintenance,
 } from "@/lib/maintenance";
 
-export type CreateTaskInput = {
-  title: string;
-  description?: string | null;
-  status?: string;
-  due_date?: string | null;
-  /** Пинг: день напоминания. null — снять. Перенос взводит сгоревший пинг заново (делает API). */
-  remind_date?: string | null;
-  assignee_telegram_id?: number | null;
-  assignee_person_id?: string | null;
-  coassignee_person_ids?: string[];
-  country?: string | null;
-  task_role?: string | null;
-  priority?: string | null;
-  // Привязка к встрече (entry.id): задача попадает в блок «Задачи из встречи».
-  meeting_id?: string | null;
-  // Модуль задач (Рой):
-  start_date?: string | null;
-  sprint_id?: string | null;
-  tags?: string[];
-  timeline_position?: number | null;
-  label_ids?: string[];
-  project_id?: string | null;
-  parent_id?: string | null;
-  tree_x?: number | null;
-  tree_y?: number | null;
-  /**
-   * Цикличность: daily | weekly | monthly | yearly; null — снять (сервер обнулит и правило).
-   * Требует срока (API отобьёт без него).
-   */
-  recur_freq?: string | null;
-  /** Каждые N (1–99). Не прислали — сервер сохранит прежнее, пока частота та же. */
-  recur_interval?: number;
-  /** Только weekly: дни ISO 1=пн..7=вс; null — день недели срока. */
-  recur_weekdays?: number[] | null;
-  /** Только monthly: n-й (1–5) или последний (-1) день недели срока; null — по числу. */
-  recur_setpos?: number | null;
-  /**
-   * Ссылки задачи. ⚠️ Списочный ответ GET /tasks их НЕ отдаёт (TASK_LIST_COLUMNS) — задача из
-   * списка приходит с `links === undefined`. Слать это поле можно только с догруженной по id
-   * задачи, иначе пустой список затрёт реальные ссылки.
-   */
-  links?: TaskLink[];
-};
-
-export type UpdateTaskInput = Partial<CreateTaskInput> & {
-  status?: string;
-  project_linked?: boolean;
-};
-
-export type TaskFilters = {
-  status?: string;
-  sprint_id?: string;
-  tags?: string[];
-  label_id?: string;
-  start_date_from?: string;
-  start_date_to?: string;
-  due_date_from?: string;
-  due_date_to?: string;
-  mine?: boolean;
-  project_id?: string;
-};
-
-export type CreateEntryInput = {
-  content: string;
-  is_private?: boolean;
-};
-
-export type UpdateEntryInput = {
-  content?: string;
-  summary?: string | null;
-};
-
-export type UpdateMeetingInput = {
-  confirmed?: boolean;
-  summary?: string | null;
-  countries?: string[];
-  content?: string;
-  is_private?: boolean;
-  entry_type?: string;
-  title?: string;
-};
-
 // Предложенная задача из preview-извлечения (POST /tasks/extract { save:false }) —
 // ещё НЕ создана в базе; на экране ревью встреч пользователь правит/удаляет/добавляет к себе.
 // Форма и нормализация ответа модели живут в `lib/proposedTasks.ts` (там же тесты).
 export type { ProposedTask } from "./proposedTasks";
-
-export type UpdateMeInput = {
-  role?: string | null;
-  markets?: string[];
-  ui_backdrop?: BackdropId | null;
-};
 
 class ApiError extends Error {
   constructor(
@@ -728,14 +627,6 @@ export async function createDeviceLink(): Promise<{ token: string; expires_at: s
   return apiFetch("/me/passkeys/device-link", { method: "POST" });
 }
 
-// ── Присутствие (#751) ───────────────────────────────────────────────────────
-// Пульс веба (components/PresencePulse.tsx): раздел и был ли ввод. Свой fetch, а не apiFetch:
-// пульс раз в 15 с не должен сбрасывать кэш чтения, будить плашку
-// «нет связи», уводить на вход по 401 или включать заглушку работ по 503 — это фон, а не
-// действие человека. keepalive: запрос `away` на закрытии вкладки должен уйти и после выгрузки
-// страницы (sendBeacon не умеет заголовок tma, а в Telegram авторизация — именно он).
-export type PresencePing = { section: string; active: boolean; away?: boolean };
-
 /** Статус ответа: 204 — записано, 401 — не вошёл (пульс глохнет до перезагрузки). */
 export async function sendPresence(ping: PresencePing): Promise<number> {
   if (DEV_MODE) {
@@ -779,29 +670,6 @@ function mockPresenceStrip(): unknown {
   }));
   return { window: Math.floor(Date.now() / (4 * 3600_000)), people };
 }
-
-// ── Встречи сегодня из календаря (issue #218) ────────────────────────────────
-// Панель правой колонки главной. Календарь читает СЕРВЕР по OAuth-интеграции — у браузера
-// доступа к календарю нет. Пояс шлём свой: сервер живёт в UTC и не знает, какие у нас сутки.
-export type TodayMeeting = {
-  id: string;
-  title: string | null;
-  starts_at: string;
-  ends_at: string;
-  join_url: string | null;
-  is_now: boolean;
-  is_past: boolean;
-  attendees: number;
-  /** Ты сам в этом звонке прямо сейчас (сигнал рекордера) — строка показывает `ON AIR`. */
-  on_call: boolean;
-  /** …и рекордер его пишет — рядом с `ON AIR` встаёт `REC`. */
-  recording: boolean;
-};
-/** `reason` различает причины пустоты: панель по ним рисует РАЗНОЕ (кнопка vs пустое состояние). */
-export type TodayMeetings = {
-  meetings: TodayMeeting[];
-  reason?: "not_connected" | "token_expired" | "calendar_error";
-};
 
 export async function fetchTodayMeetings(): Promise<TodayMeetings> {
   if (DEV_MODE) {
@@ -855,12 +723,6 @@ export async function fetchTodayMeetings(): Promise<TodayMeetings> {
   // «насколько местное время впереди UTC» (Белград летом +120).
   const tz = -new Date().getTimezoneOffset();
   return apiFetch<TodayMeetings>(`/calendar/today?tz_offset=${tz}`);
-}
-
-export interface WorkspaceConfig {
-  allowed_markets: string[];
-  /** Имя воркспейса; null/нет — старый сервер или воркспейс без имени. */
-  workspace_name?: string | null;
 }
 
 export async function fetchConfig(): Promise<WorkspaceConfig> {
@@ -1069,32 +931,6 @@ export async function archiveSticker(id: string): Promise<void> {
   await apiFetch<unknown>(`/stickers/${id}/archive`, { method: "POST" });
 }
 
-// ── Статистика по людям (GET /stats/people) ─────────────────────────────────
-// Форма — зеркало `PersonStats` из supabase/functions/_shared/stats/people.ts.
-export type PersonStats = {
-  telegram_id: number;
-  name: string;
-  tasks: {
-    open: number;
-    inProgress: number;
-    overdue: number;
-    closed: number;
-    closedRecent: number;
-    onTimeRate: number | null;
-    onTimeBase: number;
-    avgCloseDays: number | null;
-  };
-  /** inReview — сколько встреч человека ждут вычитки; только число, содержимое черновиков не отдаётся. */
-  meetings: { published: number; inReview: number };
-  activity: { activeDays: number; strip: number[]; lastActiveAt: string | null };
-};
-export type PeopleStatsResponse = {
-  people: PersonStats[];
-  activityDays: number;
-  closedWindowDays: number;
-  tasksTruncated: boolean;
-};
-
 function mockPeopleStats(): PeopleStatsResponse {
   const people = MOCK_USERS.map((u, i): PersonStats => {
     const strip = Array.from({ length: 14 }, (_, d) => ((d * 7 + i * 3) % 5 === 0 ? 0 : (d + i) % 4));
@@ -1177,14 +1013,6 @@ export async function fetchTasksDelta(since: string): Promise<TasksDeltaResponse
   const params = new URLSearchParams({ confirmed: "true", since });
   return apiFetch<TasksDeltaResponse>(`/tasks?${params.toString()}`);
 }
-
-/** Подсказки поиска слева (GET /search/quick): названия, без текстов. Права — как у списков. */
-export type QuickSearchResult = {
-  tasks: { id: string; title: string; status: string; due_date: string | null }[];
-  projects: { id: string; name: string; emoji: string | null }[];
-  meetings: { id: string; title: string; date: string | null }[];
-  notes: { id: string; title: string; date: string | null }[];
-};
 
 export async function fetchQuickSearch(q: string): Promise<QuickSearchResult> {
   if (DEV_MODE) {
@@ -1370,16 +1198,6 @@ export async function restoreTask(id: string): Promise<void> {
   return apiFetch<void>(`/tasks/${id}/restore`, { method: "POST" });
 }
 
-// ── Персональные смарт-метки задач ──────────────────────────────────────────
-export type TaskLabel = {
-  id: string;
-  name: string;
-  icon: string;
-  color: string | null;
-  sort_order: number;
-  count: number;
-};
-
 let MOCK_LABELS: TaskLabel[] = [
   {
     id: "l-it",
@@ -1450,25 +1268,6 @@ export async function deleteTaskLabel(id: string): Promise<void> {
   }
   await apiFetch<void>(`/task-labels/${id}`, { method: "DELETE" });
 }
-
-// ── Сокращатель ссылок («Полезности») ──────────────────────────────────────────
-// Короткий адрес собирает экран: `${location.origin}/s/${code}` — переход обслуживает
-// Pages Function functions/s/[code].ts.
-export type ShortLink = {
-  code: string;
-  url: string;
-  title: string | null;
-  note: string | null;
-  owner_id: number;
-  owner_name: string;
-  /** Автор или админ — сервер решает, экран только прячет кнопки. */
-  can_manage: boolean;
-  clicks: number;
-  last_clicked_at: string | null;
-  created_at: string;
-};
-
-export type ShortLinkMeta = { title: string; note: string };
 
 let MOCK_SHORT_LINKS: ShortLink[] = [];
 
@@ -1700,26 +1499,6 @@ export async function fetchMarketSales(
   return apiFetch(`/market/sales?cc=${ccs.join(",")}`);
 }
 
-// ── Баллы РС и РКО по пиццериям (GET /quality — прокси к API Децимуса) ──────────
-export type QualityKind = "rs" | "rko";
-export interface QualityPeriod {
-  start: string; // ГГГГ-ММ-ДД: РС — 1-е или 16-е число, РКО — понедельник
-  end: string;
-}
-export interface QualityUnit {
-  id: string; // id пиццерии Dodo IS, 32 hex
-  name: string;
-  cc: string;
-  developer: string | null;
-  /** Выровнены по `periods`; null — в этот период балла нет. */
-  scores: (number | null)[];
-}
-export interface QualityData {
-  kind: QualityKind;
-  periods: QualityPeriod[]; // по возрастанию
-  units: QualityUnit[];
-}
-
 /** Баллы пиццерий по странам воркспейса. Источник — Децимус (GarroV/decimus#567), Swarm только читает. */
 export async function fetchQuality(kind: QualityKind): Promise<QualityData> {
   if (DEV_MODE) return mockQuality(kind);
@@ -1782,30 +1561,6 @@ function mockAggregators(): AggregatorsData {
     { cc: "PL", as_of: "2026-10-18", scores: {} },
   ];
   return { on: "2026-10-19", compare: "2026-09-19", aggregators, countries, loaded_at: "2026-10-19T03:10:00Z" };
-}
-
-export interface InspectionPrev { id: string; date: string; score_pct: number; grade: string | null }
-export interface Inspection {
-  id: string;
-  unit: { id: string; dodo_id: string | null; name: string; cc: string };
-  date: string; kind: string | null; score_pct: number; grade: string | null; path: string;
-  /** Ссылка на отчёт в Децимусе, собирает сервер; null — адрес Децимуса не настроен. */
-  report_url: string | null;
-  previous: InspectionPrev | null;
-}
-export interface InspectionsData { inspections: Inspection[]; truncated: boolean }
-/** Зона как её хранит движок Децимуса: доля, потеря и остаток — в процентных пунктах общей оценки. */
-export interface InspectionZone {
-  zone: string; title_ru: string | null; title_en: string | null;
-  share: number | null; loss: number | null; left: number | null; zeroed: boolean;
-}
-export interface InspectionFinding {
-  n: number; code: string; title_ru: string | null; title_en: string | null;
-  level: string; zone: string; text: string | null; repeat: boolean;
-}
-export interface InspectionDetail {
-  inspection: Inspection & { deductions: number; counts: Record<string, number>; zones: InspectionZone[] };
-  findings: InspectionFinding[];
 }
 
 /** Последние подтверждённые проверки Децимуса (по умолчанию 90 дней), новые первыми; Swarm только читает. */
@@ -2107,25 +1862,6 @@ let mockCycles: SprintCycle[] = [
     created_at: "2025-11-01T09:00:00.000Z",
   },
 ];
-
-// Состав живых спринтов держим ссылками на mockTasks — тогда перетаскивание карточки в канбане
-// меняет ту же строку, что видит доска проектов (в проде это и есть одна строка).
-/**
- * Строка состава в моках: хранится узко (связь + план), остальное собирается из живой задачи —
- * иначе демо показывало бы копию, разъехавшуюся с задачей. Поля переноса приходится хранить:
- * они принадлежат СОСТАВУ, а не задаче, и у задачи их взять неоткуда.
- */
-type MockItemRow = {
-  id: string;
-  task_id: string;
-  in_plan: boolean;
-  carry_count?: number;
-  carried_manual?: boolean;
-  carry_reason?: string | null;
-  frozen?: boolean;
-  /** Снимок переноса (22.10.2026): куда ушла строка-цель, кто, когда, срок на момент ухода. */
-  moved?: { to_row: string | null; at: string; by: number | null; reason: string | null; due_before: string | null };
-};
 
 let mockCycleItems: Record<string, MockItemRow[]> = {
   sc_active: [
@@ -2540,19 +2276,6 @@ export async function startSprintCycle(id: string): Promise<SprintCycle> {
     method: "POST",
   });
 }
-
-/**
- * Итог приёмки. Следующий спринт создаёт САМА приёмка одной транзакцией с переносом хвостов —
- * `next_cycle_id` из старой версии больше не передаётся и сервером игнорируется.
- */
-export type AcceptResult = {
-  cycle: SprintCycle;
-  next: SprintCycle | null;
-  frozen: number;
-  carried: number;
-  carried_manual: number;
-  carried_auto: number;
-};
 
 /** Приёмка: снимок состава, итоги, следующий спринт и перенос хвостов — всё или ничего. */
 export async function acceptSprintCycle(
@@ -3214,13 +2937,6 @@ export async function updateProject(
     body: JSON.stringify(fields),
   });
 }
-
-type MockProjectMove = {
-  task_id: string;
-  old_value: string | null;
-  new_value: string | null;
-  created_at: string;
-};
 const mockProjectMoves: MockProjectMove[] = [];
 
 /** Мок-зеркало `dissolveTargets` (_shared/tasks/sprint-groups.ts, там же тесты): куда вернуть
@@ -3280,26 +2996,10 @@ export async function deleteProject(id: string): Promise<void> {
   await apiFetch<{ ok: boolean }>(`/projects/${id}`, { method: "DELETE" });
 }
 
-// ── Task comments (апдейты) ─────────────────────────────────────────────────────
-export type TaskComment = {
-  id: string;
-  content: string;
-  author_name: string;
-  author_telegram_id: number | null;
-  created_at: string;
-};
-
 // Уведомление в колокольчике. Сейчас единственный тип — комментарий к задаче;
 // поле `type` заведено под назначения/смены статуса (беклог), UI на него уже смотрит.
 // Тип живёт отдельно (issue #383): чистые модули (homeNews) берут его, не таща в граф весь клиент.
 export type { SwarmNotification } from "./notificationTypes";
-
-export type NotificationsResponse = {
-  items: SwarmNotification[];
-  unread: number;
-  /** Объявление о раскатке — едет прицепом к ленте, отдельного поллинга нет. */
-  notice?: DeployNotice | null;
-};
 
 export async function fetchNotifications(
   limit = 30,
@@ -3447,11 +3147,6 @@ export async function deleteTaskComment(
   });
 }
 
-// ── Файлы к задаче (#638) ─────────────────────────────────────────────────────
-// Список и ссылки — через swarm-api (он проверяет доступ к задаче), байты — напрямую в хранилище
-// на MUSPELHEIM по подписанной ссылке. Загрузка — через XHR: у fetch нет прогресса отправки.
-export type TaskFilesList = { files: TaskFile[]; limits: TaskFileLimits; available: boolean };
-
 const DEV_FILE_LIMITS: TaskFileLimits = {
   maxBytes: 50 * 1024 * 1024,
   maxFiles: 10,
@@ -3527,15 +3222,6 @@ export async function removeTaskFile(taskId: string, fileId: string): Promise<vo
   }
   await apiFetch<{ ok: true }>(`/tasks/${taskId}/files/${fileId}`, { method: "DELETE" });
 }
-
-// ── Подписка на уведомления о комментариях к задаче (issue #82) ───────────────
-// `state` — явная строка (`subscribed`/`muted`) или null, если человек ничего не выбирал;
-// `notified` — придут ли уведомления сейчас (это и показывает тумблер).
-export type TaskSubscription = {
-  state: "subscribed" | "muted" | null;
-  reason: "comment" | "manual" | null;
-  notified: boolean;
-};
 
 let mockSubscription: TaskSubscription = {
   state: null,
@@ -3667,24 +3353,6 @@ export async function searchEntries(q: string): Promise<Entry[]> {
   return apiFetch<Entry[]>(`/search?q=${encodeURIComponent(q)}`);
 }
 
-export type AskSource = {
-  n: number;
-  id: string;
-  tag: string; // doc | mic | note | meet | pdf
-  entry_type: string;
-  title: string;
-  snippet: string;
-  market: string | null;
-  date: string | null; // entry_date (YYYY-MM-DD) — для показа и предпочтения свежих
-  similarity: number;
-};
-export type AskResult = {
-  query: string;
-  answer: string; // с inline-сносками [n]
-  sources: AskSource[];
-  followups: string[];
-};
-
 // RAG-ответ (экран Answer): POST /ask → синтез по найденным источникам.
 export async function ask(q: string): Promise<AskResult> {
   if (DEV_MODE) {
@@ -3711,10 +3379,6 @@ export async function ask(q: string): Promise<AskResult> {
     body: JSON.stringify({ q }),
   });
 }
-
-// Демо без модели (docs/decisions/2026-10-27-demo-no-model.md): вместо свободного вопроса —
-// заготовленные. Сервер отвечает на них через тот же ask(); список вопросов — GET /demo/questions.
-export type DemoQuestion = { id: string; question: string; question_ru: string };
 
 export async function fetchDemoQuestions(): Promise<DemoQuestion[]> {
   if (DEV_MODE) {
@@ -3809,26 +3473,6 @@ export async function fetchMeetings(
   return apiFetch<Entry[]>(`/meetings${qs ? `?${qs}` : ""}`);
 }
 
-/** Параметры страницы списка встреч (`GET /meetings?light=1`, swarm-api/meetings-list.ts). */
-export type MeetingsPageQuery = {
-  confirmed?: boolean;
-  limit?: number;
-  offset?: number;
-  q?: string;
-  /** День встречи YYYY-MM-DD, границы включительно. */
-  from?: string;
-  to?: string;
-  storage?: "shared" | "personal";
-};
-
-export type MeetingsPage = {
-  rows: Entry[];
-  /** Сколько строк подходит под запрос БЕЗ лимита (X-Total-Count). */
-  total: number | null;
-  /** Сколько встреч всего, без фильтров экрана (X-Unfiltered-Count). */
-  unfilteredTotal: number | null;
-};
-
 const headerCount = (res: Response, name: string): number | null => {
   const raw = res.headers.get(name);
   return raw != null && /^\d+$/.test(raw) ? Number(raw) : null;
@@ -3874,12 +3518,6 @@ export async function fetchMeeting(id: string): Promise<Entry> {
   }
   return apiFetch<Entry>(`/meetings/${id}`);
 }
-
-// ── Запись встречи из браузера (офлайн-встречи; docs/decisions/2026-10-16-web-recorder.md) ──
-
-export type WebRecordingStart = { id: string; started_at: string };
-export type WebRecordingActive = { id: string; started_at: string; segments: number[] };
-export type WebRecordingFinish = { ok: boolean; summary_status?: string; already?: boolean };
 
 // Состояние моков DEV_MODE: показывает экрану записи сквозной путь без бэкенда.
 const MOCK_UPLOAD_DELAY_MS = 250;
@@ -4324,39 +3962,6 @@ export async function fetchIntegrations(): Promise<Integration[]> {
   return apiFetch<Integration[]>("/integrations");
 }
 
-export type UsageSlice = { key: string; usd: number; calls: number; unpriced: number; tokens: number };
-export type ModelUsage = {
-  /** Период, дни по Белграду, обе границы включительно (#822). */
-  from: string;
-  to: string;
-  truncated: boolean;
-  total_usd: number;
-  calls: number;
-  unpriced_calls: number;
-  tokens: number;
-  audio_minutes: number;
-  by_purpose: UsageSlice[];
-  by_model: UsageSlice[];
-  by_day: Array<{ day: string; usd: number; calls: number }>;
-  top_meetings: Array<{ meeting_id: string; usd: number; calls: number; title: string | null }>;
-  /** Клетки день × назначение × модель × встреча (#822). Нет у функции до раскатки #836. */
-  cells?: UsageCell[];
-  /** Последние вызовы периода, новые сверху (до 300). */
-  recent?: UsageCall[];
-  /** Названия всех встреч из `cells`. */
-  meeting_titles?: Record<string, string | null>;
-};
-export type UsageCall = {
-  at: string;
-  purpose: string;
-  model: string;
-  meeting_id: string | null;
-  /** null — модель не в прайсе. */
-  usd: number | null;
-  tokens: number;
-  audio_seconds: number;
-};
-
 /**
  * Расход OpenAI за период (#311, #822). `from`/`to` — «YYYY-MM-DD» включительно. Без `workspace` —
  * вся система (только мастер-админу); с ним — одно пространство (админу пространства — своё, #233).
@@ -4429,10 +4034,6 @@ let mockAutojoin = false;
 // весь клиент в граф (issue #383).
 import type { AutojoinCalendarCheck } from "./autojoinNotice";
 export type { AutojoinCalendarCheck, AutojoinCalendarStatus } from "./autojoinNotice";
-export interface AutojoinState {
-  enabled: boolean;
-  calendar?: AutojoinCalendarCheck;
-}
 
 // Моки: статус календаря задаётся параметром адреса ?mock_calendar=<статус> или ключом localStorage
 // `mock_calendar` (адрес теряется при переходах) — чтобы снять каждое состояние плашки без живого Google.
@@ -4698,19 +4299,6 @@ export async function createAdminWorkspace(
   });
 }
 
-/** Сводка по пространству — только счётчики (GET /admin/workspaces/:id/stats, workspaces-routes.ts). */
-export type WorkspaceStats = {
-  id: string;
-  name: string;
-  window_days: number;
-  people: { total: number; pending: number; admins: number; active: number };
-  meetings: { home: number; shared_in: number };
-  entries: number;
-  tasks_open: number;
-  model_spend_usd: number | null;
-  recorder_bot: { configured: boolean; active: boolean; last_seen_at: string | null };
-};
-
 export async function fetchWorkspaceStats(wsId: string): Promise<WorkspaceStats> {
   if (DEV_MODE) {
     const world = wsId !== "cee";
@@ -4737,9 +4325,6 @@ export async function broadcastMessage(
     { method: "POST", body: JSON.stringify({ text, workspaces }) },
   );
 }
-
-// Сводка для админа: сколько встреч на вычитке у каждого участника (агрегат, без контента).
-export type ReviewCount = { telegram_id: number; name: string; count: number };
 export async function fetchReviewCounts(workspace?: string): Promise<ReviewCount[]> {
   if (DEV_MODE) {
     return [
@@ -4749,30 +4334,6 @@ export async function fetchReviewCounts(workspace?: string): Promise<ReviewCount
   }
   return apiFetch<ReviewCount[]>(`/admin/review-counts${workspace ? `?workspace=${encodeURIComponent(workspace)}` : ""}`);
 }
-
-// ── Перенос человека в другое пространство (мастер-админ) ─────────────────────
-// Контракт серверной части (GET move-preview / POST move) — один и тот же ответ, у POST + moved:true.
-// Отказы — JSON `{error, code}` (ApiError.body): 404 person_not_found/workspace_not_found, 409
-// same_workspace/person_without_workspace, 403 owner_only/master_admin_only, 400 bad_input; 409
-// `conflicts` несёт `conflicts`, 409 `expected_mismatch` — свежие `counts`.
-export type MovePreview = {
-  person: { telegram_id: number; name: string | null; email: string | null };
-  from: { id: string; name: string };
-  to: { id: string; name: string };
-  counts: {
-    private_entries: number; entries: number; personal_notes: number; drafts: number; meetings_shared: number;
-    tasks: number; tasks_detached: number; projects: number; notifications: number; labels: number;
-    other: Record<string, number>;
-  };
-  tasks_mixed: Array<{ id: string; title: string }>;
-  tasks_detached: Array<{ id: string; title: string }>;
-  projects: Array<{ id: string; name: string }>;
-  tokens: { claude: boolean; chatgpt: boolean; oauth: number; recorder: boolean };
-  /** Машинные строки `код:подробность` (сейчас `people_email_taken:<почта>`); текст — moveMessages.ts. */
-  conflicts: string[];
-  can_execute: boolean;
-  moved?: boolean;
-};
 
 export async function fetchMovePreview(telegramId: number, to: string): Promise<MovePreview> {
   if (DEV_MODE) return mockMovePreview(telegramId, to);
