@@ -19,6 +19,33 @@ import type { Entry, Task } from "@/types";
 import { formatDate } from "@/lib/displayFormat";
 import { EditPencil } from "../EditPencil";
 
+const MEETING_COPY = {
+  meeting: { ru: "Встреча", en: "Meeting" },
+  loadError: { ru: "Не удалось загрузить встречу.", en: "Could not load the meeting." },
+  aiSummary: { ru: "Кратко от ИИ", en: "AI summary" },
+  recording: { ru: "Запись", en: "Recording" },
+  save: { ru: "Сохранить", en: "Save" },
+  cancel: { ru: "Отмена", en: "Cancel" },
+  countries: { ru: "Страны", en: "Countries" },
+  remove: { ru: "Удалить", en: "Delete" },
+  meetingCountries: { ru: "Страны встречи", en: "Meeting countries" },
+  shared: { ru: "Общее", en: "Shared" },
+  personal: { ru: "Личное", en: "Personal" },
+  savePersonal: { ru: "Сохранить в личное", en: "Save to personal" },
+  saveBase: { ru: "Сохранить в базу", en: "Save to the knowledge base" },
+  reprocessedByRequest: { ru: "Тезисы перестроены по запросу", en: "Summary rebuilt as requested" },
+  reprocessed: { ru: "Тезисы переобработаны", en: "Summary reprocessed" },
+  reprocessFailed: { ru: "Не удалось переобработать", en: "Could not reprocess" },
+  savedPersonal: { ru: "Сохранено в личное", en: "Saved to personal" },
+  savedBase: { ru: "Сохранено в базу", en: "Saved to the knowledge base" },
+  failed: { ru: "Не удалось", en: "Failed" },
+  titleUpdated: { ru: "Название обновлено", en: "Title updated" },
+  summaryUpdated: { ru: "Тезисы обновлены", en: "Summary updated" },
+  countriesUpdated: { ru: "Страны обновлены", en: "Countries updated" },
+  removed: { ru: "Встреча удалена", en: "Meeting deleted" },
+  removeFailed: { ru: "Не удалось удалить", en: "Could not delete" },
+} as const;
+
 function fmtDate(iso: string | null): string {
   return formatDate(iso, { day: "numeric", month: "long" }) ?? "";
 }
@@ -43,6 +70,7 @@ export function MeetingDetail({ id }: { id: string }) {
   const { me, pop, toast, tasksVersion } = useRoyNav();
   const panel = useContext(DetailPanelContext);
   const dt = useDt();
+  const tx = (key: keyof typeof MEETING_COPY) => dt(MEETING_COPY[key].ru, MEETING_COPY[key].en);
   const [view, setView] = useState<"tez" | "tasks" | "tr">("tez");
   const [e, setE] = useState<Entry | null>(null);
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -64,9 +92,9 @@ export function MeetingDetail({ id }: { id: string }) {
     try {
       const u = await resummarizeMeetingEntry(id, note);
       setE(u);
-      toast(note ? "Тезисы перестроены по запросу" : "Тезисы переобработаны");
+      toast(note ? tx("reprocessedByRequest") : tx("reprocessed"));
     } catch {
-      toast("Не удалось переобработать");
+      toast(tx("reprocessFailed"));
     } finally {
       setReproc(false);
     }
@@ -97,10 +125,10 @@ export function MeetingDetail({ id }: { id: string }) {
     setBusy(true);
     try {
       await patchMeeting(id, { confirmed: true, is_private: storage === "personal" });
-      toast(storage === "personal" ? "Сохранено в личное" : "Сохранено в базу");
+      toast(storage === "personal" ? tx("savedPersonal") : tx("savedBase"));
       load();
     } catch {
-      toast("Не удалось");
+      toast(tx("failed"));
     }
     setBusy(false);
   };
@@ -118,9 +146,9 @@ export function MeetingDetail({ id }: { id: string }) {
       const u = await patchMeeting(id, { title: t });
       setE(u);
       setEditingTitle(false);
-      toast("Название обновлено");
+      toast(tx("titleUpdated"));
     } catch {
-      toast("Не удалось");
+      toast(tx("failed"));
     }
     setBusy(false);
   };
@@ -143,9 +171,9 @@ export function MeetingDetail({ id }: { id: string }) {
       const u = await patchMeeting(id, { summary: draft });
       setE(u);
       setEditing(false);
-      toast("Тезисы обновлены");
+      toast(tx("summaryUpdated"));
     } catch {
-      toast("Не удалось");
+      toast(tx("failed"));
     }
     setBusy(false);
   };
@@ -165,19 +193,19 @@ export function MeetingDetail({ id }: { id: string }) {
       const u = await patchMeeting(id, { countries: selCountries });
       setE(u);
       setEditingCountries(false);
-      toast("Страны обновлены");
+      toast(tx("countriesUpdated"));
     } catch {
-      toast("Не удалось");
+      toast(tx("failed"));
     }
     setBusy(false);
   };
   const del = async () => {
     try {
       await deleteMeeting(id);
-      toast("Встреча удалена");
+      toast(tx("removed"));
       pop();
     } catch {
-      toast("Не удалось удалить");
+      toast(tx("removeFailed"));
     }
   };
 
@@ -207,7 +235,7 @@ export function MeetingDetail({ id }: { id: string }) {
               <div className="mb-4 px-4 py-3.5" style={{ background: "var(--accent-soft)", border: "1px solid var(--accent-line)", borderRadius: 10 }}>
                 <div className="mb-1.5 flex items-center justify-between gap-2">
                   <span className="font-bold uppercase text-accent-ink" style={{ fontSize: 11, letterSpacing: "0.05em" }}>
-                    Кратко от ИИ
+                    {tx("aiSummary")}
                   </span>
                   <div className="flex items-center gap-1.5">
                     {Boolean(e.metadata?.meeting_id) && (
@@ -232,7 +260,7 @@ export function MeetingDetail({ id }: { id: string }) {
   const transcriptBlock = showTranscript && e && (
     <>
             <div className="mb-2 flex items-center justify-between gap-2">
-              <SectionLabel className="!mb-0">Запись</SectionLabel>
+              <SectionLabel className="!mb-0">{tx("recording")}</SectionLabel>
               <CopyButton title={dt("Скопировать запись", "Copy the recording text")} getText={() => e.content ?? ""} />
             </div>
             <p className="whitespace-pre-wrap text-ink" style={{ fontSize: 14.5, lineHeight: 1.65 }}>
@@ -243,9 +271,9 @@ export function MeetingDetail({ id }: { id: string }) {
 
   return (
     <div className="roy-pop flex h-full flex-col">
-      <NavHeader onBack={pop} title="Встреча" />
+      <NavHeader onBack={pop} title={tx("meeting")} />
       <div className="flex-1 overflow-y-auto px-5 pb-28">
-        {err && <div className="py-8 text-center text-sm text-ink-soft">Не удалось загрузить встречу.</div>}
+        {err && <div className="py-8 text-center text-sm text-ink-soft">{tx("loadError")}</div>}
         {e && (
           <>
             <div className="mb-2 flex flex-wrap items-center gap-2 pt-1">
@@ -272,8 +300,8 @@ export function MeetingDetail({ id }: { id: string }) {
                   style={{ fontSize: 20, letterSpacing: "-0.01em" }}
                 />
                 <div className="mt-2 flex gap-2">
-                  <button type="button" onClick={saveTitle} disabled={busy} className="flex-1 rounded-full bg-primary py-2.5 font-semibold text-primary-foreground disabled:opacity-60" style={{ fontSize: 14 }}>Сохранить</button>
-                  <button type="button" onClick={() => setEditingTitle(false)} className="rounded-full border border-line-2 px-4 py-2.5 font-semibold text-ink-soft" style={{ fontSize: 14 }}>Отмена</button>
+                  <button type="button" onClick={saveTitle} disabled={busy} className="flex-1 rounded-full bg-primary py-2.5 font-semibold text-primary-foreground disabled:opacity-60" style={{ fontSize: 14 }}>{tx("save")}</button>
+                  <button type="button" onClick={() => setEditingTitle(false)} className="rounded-full border border-line-2 px-4 py-2.5 font-semibold text-ink-soft" style={{ fontSize: 14 }}>{tx("cancel")}</button>
                 </div>
               </div>
             ) : (
@@ -287,13 +315,13 @@ export function MeetingDetail({ id }: { id: string }) {
 
             {/* Видимая панель действий (раньше была спрятана в меню «...»). */}
             <div className="mb-4 flex flex-wrap gap-2">
-              <ActionChip icon="globe" label="Страны" onClick={openCountriesEdit} />
-              <ActionChip icon="trash" label="Удалить" onClick={del} danger />
+              <ActionChip icon="globe" label={tx("countries")} onClick={openCountriesEdit} />
+              <ActionChip icon="trash" label={tx("remove")} onClick={del} danger />
             </div>
 
             {editingCountries && (
               <div className="mb-4 rounded-[10px] border border-line-2 bg-surface p-4">
-                <SectionLabel>Страны встречи</SectionLabel>
+                <SectionLabel>{tx("meetingCountries")}</SectionLabel>
                 <div className="mt-2 flex flex-wrap gap-1.5">
                   {allowedMarkets.map((code) => {
                     const on = selCountries.includes(code);
@@ -312,10 +340,10 @@ export function MeetingDetail({ id }: { id: string }) {
                 </div>
                 <div className="mt-3 flex gap-2">
                   <button type="button" onClick={saveCountries} disabled={busy} className="flex-1 rounded-full bg-primary py-2.5 font-semibold text-primary-foreground disabled:opacity-60" style={{ fontSize: 14 }}>
-                    Сохранить
+                    {tx("save")}
                   </button>
                   <button type="button" onClick={() => setEditingCountries(false)} className="rounded-full border border-line-2 px-4 py-2.5 font-semibold text-ink-soft" style={{ fontSize: 14 }}>
-                    Отмена
+                    {tx("cancel")}
                   </button>
                 </div>
               </div>
@@ -360,15 +388,15 @@ export function MeetingDetail({ id }: { id: string }) {
           <div className="mb-2.5">
             <Segmented
               items={[
-                { id: "shared", label: "Общее" },
-                { id: "personal", label: "Личное" },
+                { id: "shared", label: tx("shared") },
+                { id: "personal", label: tx("personal") },
               ]}
               value={storage}
               onChange={(s) => setStorage(s as "shared" | "personal")}
             />
           </div>
           <button type="button" onClick={confirm} disabled={busy} className="w-full rounded-full bg-primary py-3.5 font-semibold text-primary-foreground transition-transform active:scale-[0.99] disabled:opacity-60" style={{ fontSize: 15 }}>
-            {storage === "personal" ? "Сохранить в личное" : "Сохранить в базу"}
+            {storage === "personal" ? tx("savePersonal") : tx("saveBase")}
           </button>
         </div>
       )}
