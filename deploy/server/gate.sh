@@ -2,12 +2,15 @@
 # Шлюз раскатки Swarm на своём сервере (GarroV/Swarm-brain #919).
 # Вызывается ТОЛЬКО принудительной командой ключа пользователя swarm-deploy:
 #   command="sudo /opt/swarm-deploy/gate.sh" в ~swarm-deploy/.ssh/authorized_keys
-# Что пришло после ssh — в SSH_ORIGINAL_COMMAND; разрешено ровно шесть действий:
+# Что пришло после ssh — в SSH_ORIGINAL_COMMAND; разрешено ровно восемь действий:
 #   functions                 — stdin: tar.gz каталога supabase/functions → в рантайм + пересоздание контейнера
 #   env-reload                — пересоздать рантайм функций без выкладки кода: подхватить смену functions.env (#1032)
 #   migrations-applied [names] — версии; names добавляет имена ledger (TSV)
 #   migrate <версия>          — stdin: SQL миграции; накат одной транзакцией вместе с учётной записью
 #   recorder-upload <сборка>  — stdin: zip рекордера; заливка в Storage swarm_drive/recorder/, без перезаписи
+#   activity                  — кто сейчас в проде (без аргументов): запись/обработка встречи и правки людей
+#                               за 10 минут, только чтение; читает scripts/deploy-activity.sh
+#   demo-reset                — сбросить демо-воркспейс к эталону: select public.demo_reset(), без аргументов
 #   maintenance <действие> …  — плашка и заморозка (#978): announce <начало> <минут> | cancel | status |
 #                               notice <минут> | notice-off | notice-show; stdin (необязательно) — две строки
 #                               своего текста: русский, английский. SQL зашит здесь, аргументы — проверенные числа
@@ -132,6 +135,39 @@ case "$CMD" in
       | psql_mig --single-transaction -f - || die "миграция $V не применилась — транзакция откатена"
     echo "миграция $V применена"
     ;;
+  activity)
+    # Только чтение, окна зашиты: рекордер «жив» — heartbeat свежее 3 минут, «человек работал» — правка
+    # за 10 минут (те же значения, что были в scripts/deploy-activity.sh). Строки TSV:
+    #   recording<TAB>N | processing<TAB>N | person<TAB>кто<TAB>что<TAB>сколько<TAB>ЧЧ:ММ (Белград)
+    # Первые две строки есть всегда; ответ без них клиент считает «не смог проверить».
+    psql_ -tA -F $'\t' <<'SQL' || die "активность не прочиталась"
+select 'recording', count(*) from public.allowed_users
+  where recorder_last_recording is true and recorder_last_seen > now() - interval '3 minutes';
+select 'processing', count(*) from public.meetings where summary_status = 'processing';
+with w as (
+  select coalesce(assignee_telegram_ids[1], created_by_telegram_id) as uid, updated_at as ts, 'задачи' as what
+    from public.tasks where updated_at > now() - interval '10 minutes'
+  union all
+  select owner_id, created_at, 'записи' from public.entries
+   where created_at > now() - interval '10 minutes'
+  union all
+  select added_by_telegram_id, created_at, 'комментарии' from public.task_comments
+   where created_at > now() - interval '10 minutes'
+)
+select 'person',
+       replace(replace(coalesce(nullif(trim(p.first_name || ' ' || coalesce(p.last_name, '')), ''), w.uid::text, 'неизвестно'), E'\t', ' '), E'\n', ' '),
+       string_agg(distinct w.what, ', '),
+       count(*),
+       to_char(max(w.ts) at time zone 'Europe/Belgrade', 'HH24:MI')
+  from w left join public.user_profiles p on p.telegram_id = w.uid
+ group by w.uid, p.first_name, p.last_name order by max(w.ts) desc;
+SQL
+    ;;
+  demo-reset)
+    psql_ -tA <<'SQL' || die "демо не сбросилось"
+select public.demo_reset();
+SQL
+    ;;
   recorder-upload)
     B="${ARGV[1]:-}"
     [[ "$B" =~ ^[0-9]{1,9}$ ]] || die "номер сборки — только цифры: '$B'"
@@ -231,5 +267,5 @@ SQL
       *) die "maintenance: неизвестное действие '${ACT}'. Разрешено: announce <начало> <минут> | cancel | status | notice <минут> | notice-off | notice-show" ;;
     esac
     ;;
-  *) die "неизвестная команда: '${CMD}'. Разрешено: functions | env-reload | migrations-applied | migrate <версия> <имя> | recorder-upload <сборка> | maintenance <действие>" ;;
+  *) die "неизвестная команда: '${CMD}'. Разрешено: functions | env-reload | migrations-applied | migrate <версия> <имя> | recorder-upload <сборка> | activity | demo-reset | maintenance <действие>" ;;
 esac

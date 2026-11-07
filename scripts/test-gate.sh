@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Проверка команд recorder-upload и maintenance шлюза раскатки (deploy/server/gate.sh, issue #919) без сервера:
+# Проверка команд recorder-upload, maintenance, activity и demo-reset шлюза раскатки (deploy/server/gate.sh, issue #919) без сервера:
 # отказы до любого обращения к хранилищу и логика «не перезаписывать» на подставном curl.
 #   ./scripts/test-gate.sh           — прогнать проверки
 #   ./scripts/test-gate.sh porcha    — порча: ломаем шлюз и убеждаемся, что проверки краснеют
@@ -27,6 +27,9 @@ env-reload без пересоздания~up -d --no-deps --force-recreate func
 перезапись отличающегося~die "$NAME уже лежит~echo "$NAME уже лежит
 пропуск чужого имени миграции~\[ "$APPLIED_NAME" = "$NAME" \] || die~true || die
 names инициализирует ledger вместо чистого SELECT~psql_ -tA -F~ensure_ledger; psql_ -tA -F
+activity: окно людей шире~interval '10 minutes'~interval '10 days'
+activity: нет processing~select 'processing'~select 'procesing'
+demo-reset зовёт другое~select public.demo_reset();~select 1;
 LIST
   exit $fail
 fi
@@ -135,6 +138,20 @@ run "$T/none" maintenance cancel;                       expect "cancel: прин
 grep -qF 'maintenance_cancel()' "$D" && echo "✔ cancel зовёт maintenance_cancel" || { echo "✘ cancel не дошёл"; bad=1; }
 run "$T/none" maintenance status;                       expect "status: принят" 0 ""
 grep -qF "key = 'maintenance'" "$D" && echo "✔ status читает строку заморозки" || { echo "✘ status не дошёл"; bad=1; }
+
+# ── activity и demo-reset: без аргументов, SQL зашит ──────────────────────────────────────────
+: > "$D"
+run "$T/none" activity;                                 expect "activity: принят" 0 ""
+grep -qF "from public.meetings where summary_status = 'processing'" "$D" && grep -qF "select 'processing', count(*)" "$D" && grep -qF "select 'recording', count(*)" "$D" && grep -qF "interval '10 minutes'" "$D" && grep -qF "interval '3 minutes'" "$D" \
+  && echo "✔ activity читает встречи в работе и свежие правки (окна 3 и 10 минут)" || { echo "✘ activity не тот SQL: $(cat "$D")"; bad=1; }
+grep -qiE '\b(insert|update|delete|drop)\b +(into|from|table|public)' "$D" && { echo "✘ activity пишет в базу"; bad=1; } || echo "✔ activity только читает"
+run "$T/none" activity 1;                               expect "activity с аргументом — принят, аргумент в SQL не попал" 0 ""
+: > "$D"
+run "$T/none" demo-reset;                               expect "demo-reset: принят" 0 ""
+grep -qF 'select public.demo_reset();' "$D" && echo "✔ demo-reset зовёт public.demo_reset()" || { echo "✘ demo-reset не дошёл: $(cat "$D")"; bad=1; }
+: > "$D"
+run "$T/none" demo-reset "x;drop"
+grep -q 'drop' "$D" && { echo "✘ аргумент demo-reset попал в SQL"; bad=1; } || echo "✔ аргумент demo-reset в SQL не попал"
 
 # ── env-reload: пересоздание рантайма (#1032) ─────────────────────────────────────────────────
 : > "$T/store/swarm-recorder-version"   # проба рантайма отвечает 200
