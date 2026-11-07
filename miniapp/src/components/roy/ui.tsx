@@ -669,7 +669,10 @@ function PanelHeader({ panel, onBack, title, right }: { panel: DetailPanelCtx; o
   );
 }
 
+const NAV_HEADER_COPY = { back: { ru: "Назад", en: "Back" } } as const;
+
 export function NavHeader({ onBack, title, right, bell = true }: { onBack: () => void; title?: ReactNode; right?: ReactNode; bell?: boolean }) {
+  const dt = useDt();
   const panel = useContext(DetailPanelContext);
   if (panel) return <PanelHeader panel={panel} onBack={onBack} title={title} right={right} />;
   // relative z-30 — как у RoyHeader: окно колокольчика не должно уходить под карточки экрана.
@@ -683,7 +686,7 @@ export function NavHeader({ onBack, title, right, bell = true }: { onBack: () =>
         style={{ fontSize: 16, padding: "4px 8px 4px 0", minHeight: 44 }}
       >
         <RoyIcon name="cleft" size={20} strokeWidth={2.2} />
-        Назад
+        {dt(NAV_HEADER_COPY.back.ru, NAV_HEADER_COPY.back.en)}
       </button>
       <div className="flex-1 text-center font-semibold truncate" style={{ fontSize: 16, opacity: title ? 1 : 0 }}>
         {title}

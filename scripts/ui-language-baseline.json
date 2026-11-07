@@ -1393,55 +1393,6 @@
     "reason": "Унаследованный литерал NewEntry.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
   },
   {
-    "file": "miniapp/src/components/roy/screens/NewTask.tsx",
-    "context": "title",
-    "text": "Задача",
-    "count": 1,
-    "reason": "Унаследованный литерал NewTask.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
-  },
-  {
-    "file": "miniapp/src/components/roy/screens/NewTask.tsx",
-    "context": "title",
-    "text": "Новая задача",
-    "count": 1,
-    "reason": "Унаследованный литерал NewTask.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
-  },
-  {
-    "file": "miniapp/src/components/roy/screens/NewTask.tsx",
-    "context": "placeholder",
-    "text": "Что нужно сделать?",
-    "count": 1,
-    "reason": "Унаследованный литерал NewTask.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
-  },
-  {
-    "file": "miniapp/src/components/roy/screens/NewTask.tsx",
-    "context": "placeholder",
-    "text": "Детали (необязательно)",
-    "count": 1,
-    "reason": "Унаследованный литерал NewTask.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
-  },
-  {
-    "file": "miniapp/src/components/roy/screens/NewTask.tsx",
-    "context": "placeholder",
-    "text": "Срок",
-    "count": 1,
-    "reason": "Унаследованный литерал NewTask.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
-  },
-  {
-    "file": "miniapp/src/components/roy/screens/NewTask.tsx",
-    "context": "children",
-    "text": "Сохранить",
-    "count": 1,
-    "reason": "Унаследованный литерал NewTask.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
-  },
-  {
-    "file": "miniapp/src/components/roy/screens/NewTask.tsx",
-    "context": "children",
-    "text": "Создать задачу",
-    "count": 1,
-    "reason": "Унаследованный литерал NewTask.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
-  },
-  {
     "file": "miniapp/src/components/roy/screens/RecordDetail.tsx",
     "context": "jsx-text",
     "text": "Источник:",
@@ -1627,13 +1578,6 @@
     "file": "miniapp/src/components/roy/ui.tsx",
     "context": "children",
     "text": "Общее",
-    "count": 1,
-    "reason": "Унаследованный литерал ui.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
-  },
-  {
-    "file": "miniapp/src/components/roy/ui.tsx",
-    "context": "jsx-text",
-    "text": "Назад",
     "count": 1,
     "reason": "Унаследованный литерал ui.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
   },
