@@ -1414,83 +1414,6 @@
     "reason": "Унаследованный литерал RoyTasksScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
   },
   {
-    "file": "miniapp/src/components/roy/screens/TaskDetail.tsx",
-    "context": "title",
-    "text": "Задача",
-    "count": 1,
-    "reason": "Унаследованный литерал TaskDetail.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
-  },
-  {
-    "file": "miniapp/src/components/roy/screens/TaskDetail.tsx",
-    "context": "aria-label",
-    "text": "Действия",
-    "count": 1,
-    "reason": "Унаследованный литерал TaskDetail.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
-  },
-  {
-    "file": "miniapp/src/components/roy/screens/TaskDetail.tsx",
-    "context": "aria-label",
-    "text": "Закрыть меню",
-    "count": 1,
-    "reason": "Унаследованный литерал TaskDetail.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
-  },
-  {
-    "file": "miniapp/src/components/roy/screens/TaskDetail.tsx",
-    "context": "aria-label",
-    "text": "Изменить",
-    "count": 1,
-    "reason": "Унаследованный литерал TaskDetail.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
-  },
-  {
-    "file": "miniapp/src/components/roy/screens/TaskDetail.tsx",
-    "context": "aria-label",
-    "text": "Удалить",
-    "count": 1,
-    "reason": "Унаследованный литерал TaskDetail.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
-  },
-  {
-    "file": "miniapp/src/components/roy/screens/TaskDetail.tsx",
-    "context": "jsx-text",
-    "text": "Не удалось загрузить задачу.",
-    "count": 1,
-    "reason": "Унаследованный литерал TaskDetail.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
-  },
-  {
-    "file": "miniapp/src/components/roy/screens/TaskDetail.tsx",
-    "context": "jsx-text",
-    "text": "Задача",
-    "count": 1,
-    "reason": "Унаследованный литерал TaskDetail.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
-  },
-  {
-    "file": "miniapp/src/components/roy/screens/TaskDetail.tsx",
-    "context": "children",
-    "text": "Вернуть в работу",
-    "count": 1,
-    "reason": "Унаследованный литерал TaskDetail.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
-  },
-  {
-    "file": "miniapp/src/components/roy/screens/TaskDetail.tsx",
-    "context": "children",
-    "text": "Готово",
-    "count": 1,
-    "reason": "Унаследованный литерал TaskDetail.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
-  },
-  {
-    "file": "miniapp/src/components/roy/screens/TaskDetail.tsx",
-    "context": "jsx-text",
-    "text": "Описание",
-    "count": 1,
-    "reason": "Унаследованный литерал TaskDetail.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
-  },
-  {
-    "file": "miniapp/src/components/roy/screens/TaskDetail.tsx",
-    "context": "jsx-text",
-    "text": "Связано из базы",
-    "count": 1,
-    "reason": "Унаследованный литерал TaskDetail.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
-  },
-  {
     "file": "miniapp/src/components/roy/ui.tsx",
     "context": "jsx-text",
     "text": "Участники (",
@@ -1510,48 +1433,6 @@
     "text": "Общее",
     "count": 1,
     "reason": "Унаследованный литерал ui.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
-  },
-  {
-    "file": "miniapp/src/components/tasks/LabelEditor.tsx",
-    "context": "children",
-    "text": "Список",
-    "count": 1,
-    "reason": "Унаследованный литерал LabelEditor.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
-  },
-  {
-    "file": "miniapp/src/components/tasks/LabelEditor.tsx",
-    "context": "children",
-    "text": "Новый список",
-    "count": 1,
-    "reason": "Унаследованный литерал LabelEditor.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
-  },
-  {
-    "file": "miniapp/src/components/tasks/LabelEditor.tsx",
-    "context": "placeholder",
-    "text": "Название (напр. Айти)",
-    "count": 1,
-    "reason": "Унаследованный литерал LabelEditor.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
-  },
-  {
-    "file": "miniapp/src/components/tasks/LabelEditor.tsx",
-    "context": "jsx-text",
-    "text": "Удалить",
-    "count": 1,
-    "reason": "Унаследованный литерал LabelEditor.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
-  },
-  {
-    "file": "miniapp/src/components/tasks/LabelEditor.tsx",
-    "context": "jsx-text",
-    "text": "Отмена",
-    "count": 1,
-    "reason": "Унаследованный литерал LabelEditor.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
-  },
-  {
-    "file": "miniapp/src/components/tasks/LabelEditor.tsx",
-    "context": "jsx-text",
-    "text": "Сохранить",
-    "count": 1,
-    "reason": "Унаследованный литерал LabelEditor.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
   },
   {
     "file": "miniapp/src/components/tasks/PictogramPicker.tsx",
