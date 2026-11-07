@@ -62,6 +62,11 @@ const norm = (s: string) => fold(s).replace(/[^\p{L}\p{N}]+/gu, "");
 const GENERIC_UNBRANDED_NAMES = new Set(
   ["кофейня", "пиццерия", "кафе", "столовая", "pizzeria", "kebab"].map(norm),
 );
+// #1134: фирменные магазины производителя — не общепит. Категория Overture их не выдаёт
+// (всё то же casual_eatery), поэтому по названию: форма юрлица заглавными («ОАО», «ООО»…)
+// или «кондитерская фабрика»; прочее — явный список страны (`manufacturerShops`).
+const LEGAL_FORM = /(?:^|[^\p{L}])(?:ОАО|ЗАО|ООО|ОДО|АО)(?:[^\p{L}]|$)/u;
+const FACTORY = /кондитерск\p{L}*\s+фабрик/iu;
 const isLetter = (c: string | undefined) => !!c && /\p{L}/u.test(c);
 
 /** Начало строки совпало с образцом целым словом: «Domino's Pizza Deutschland» ~ «Domino's». */
@@ -81,6 +86,18 @@ function matchConfig(row: PlaceRow, cfg: CountryConfig): string | null {
     if (byBrand || byName) return ch.key;
   }
   return null;
+}
+
+function isManufacturerShop(row: PlaceRow, cfg: CountryConfig): boolean {
+  const listed = Object.keys(cfg.manufacturerShops ?? {}).map(norm).filter(
+    Boolean,
+  );
+  return [row.name, row.brand].some((label) =>
+    !!label && (
+      LEGAL_FORM.test(label) || FACTORY.test(label) ||
+      listed.some((m) => norm(label).includes(m))
+    )
+  );
 }
 
 const SEGMENT_BY_NAME: Array<[string, RegExp]> = [
@@ -212,6 +229,7 @@ export function discover(
       points.push(toPoint(row, key));
       continue;
     }
+    if (isManufacturerShop(row, cfg)) continue;
     const label = row.brand ?? row.name;
     if (!label) continue;
     const normalized = norm(label);
@@ -319,7 +337,7 @@ export const overture: Adapter = {
   about: {
     url: "https://docs.overturemaps.org/guides/places/",
     what:
-      "точки сетей из Overture Maps places (последний релиз, parquet в S3, через DuckDB): заведения общепита и пекарни страны в её bbox, без закрытых; сети из конфига — по бренду (osmBrands, допускается суффикс страны) или началу названия (osmNames), остальные сети находятся сами (бренд от 3 точек, без бренда от 5 точек в 3 населённых пунктах, не больше 40); точка — центр bbox объекта",
+      "точки сетей из Overture Maps places (последний релиз, parquet в S3, через DuckDB): заведения общепита и пекарни страны в её bbox, без закрытых; сети из конфига — по бренду (osmBrands, допускается суффикс страны) или началу названия (osmNames), остальные сети находятся сами (бренд от 3 точек, без бренда от 5 точек в 3 населённых пунктах, не больше 40; фирменные магазины производителей — по форме юрлица в названии и списку страны — не берутся); точка — центр bbox объекта",
   },
   async collect(cfg) {
     const started_at = new Date().toISOString();

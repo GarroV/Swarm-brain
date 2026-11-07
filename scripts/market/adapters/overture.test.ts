@@ -3,6 +3,7 @@ import { assertEquals } from "@std/assert";
 import type { CountryConfig } from "../countries/types.ts";
 import { ES } from "../countries/ES.ts";
 import { PL } from "../countries/PL.ts";
+import { BY } from "../countries/BY.ts";
 import { HU } from "../countries/HU.ts";
 import {
   classify,
@@ -88,8 +89,6 @@ Deno.test("#1134: only the six specified generic words are excluded, using the e
       "Bistro Lux",
       "Kebab House",
       "Cafe",
-      'Кондитерская фабрика ОАО "Красный пищевик"',
-      "Коммунарка",
     ]
   ) {
     const result = discover(
@@ -360,12 +359,129 @@ Deno.test("overture: one place listed twice (same chain, within 25 m) becomes on
   assertEquals(out.map((x) => x.osm_id), ["a", "c", "d"]);
 });
 
+// #1134, решение владельца 07.11.2026: «магазины кондитерских выкидываем» — фирменные
+// магазины производителей не сети общепита. Категория Overture не отличает их от кафе
+// (casual_eatery), поэтому правило по названию и явный список страны.
+Deno.test("#1134: a manufacturer's branded shops are not a discovered chain", () => {
+  for (
+    const name of [
+      'Кондитерская фабрика ОАО "Красный пищевик"',
+      'Кондитерская фабрика "Слодыч"',
+      'ООО "Нордар"',
+      "ЗАО Хлебозавод №5",
+    ]
+  ) {
+    for (const asBrand of [false, true]) {
+      const rows = many(5, (i) => ({
+        name,
+        brand: asBrand ? name : null,
+        category: "casual_eatery",
+        locality: ["A", "B", "C"][i % 3],
+      }));
+      assertEquals(discover(rows, cfg), { points: [], chains: [] }, name);
+    }
+  }
+});
+
+Deno.test("#1134: the country's explicit manufacturer list drops its shops, however the name is written", () => {
+  const withList = {
+    ...cfg,
+    manufacturerShops: { "Коммунарка": "кондитерская фабрика" },
+  } as CountryConfig;
+  const rows = [
+    ...many(
+      4,
+      (i) => ({ name: "Коммунарка", locality: ["A", "B", "C"][i % 3] }),
+    ),
+    ...many(3, () => ({ name: "Коммунарка", brand: "Коммунарка" })),
+    ...many(3, () => ({
+      name: 'Кофейня-фирменный магазин "Коммунарка"',
+      brand: "Коммунарка",
+    })),
+  ];
+  assertEquals(discover(rows, withList), { points: [], chains: [] });
+  // Без записи в конфиге страны правило само «Коммунарку» не угадывает.
+  assertEquals(discover(rows.slice(0, 7), cfg).chains.length, 1);
+});
+
+Deno.test("#1134: real bakeries and cafes stay, and a configured chain stays authoritative", () => {
+  const bakery = discover(
+    many(5, (i) => ({
+      name: "Пекарня Хлебница",
+      category: "bakery",
+      locality: ["A", "B", "C"][i % 3],
+    })),
+    cfg,
+  );
+  assertEquals(bakery.chains.map((c) => [c.name, c.bakery]), [
+    ["Пекарня Хлебница", true],
+  ]);
+  const cafe = discover(
+    many(
+      3,
+      () => ({ name: "Кофе Хаус", brand: "Кофе Хаус", category: "cafe" }),
+    ),
+    cfg,
+  );
+  assertEquals(cafe.chains.map((c) => c.name), ["Кофе Хаус"]);
+  const configured = discover(
+    [row({ name: 'ООО "Локальная сеть"' })],
+    {
+      ...cfg,
+      manufacturerShops: { "Локальная": "x" },
+      chains: [...cfg.chains, {
+        key: "kept",
+        name: "Kept",
+        segment: "other",
+        osmNames: ['ООО "Локальная'],
+      }],
+    } as CountryConfig,
+  );
+  assertEquals(configured.points.map((p) => p.chain), ["kept"]);
+});
+
+Deno.test("#1134: BY config names both known factory shop brands", () => {
+  const rows = [
+    ...many(
+      28,
+      (i) => ({
+        name: 'Кондитерская фабрика ОАО "Красный пищевик"',
+        brand: 'Кондитерская фабрика ОАО "Красный пищевик"',
+        locality: ["Мінск", "Барысаў"][i % 2],
+      }),
+    ),
+    ...many(4, () => ({ name: "Красный пищевик", locality: "Барысаў" })),
+    ...many(
+      12,
+      (i) => ({ name: "Коммунарка", locality: ["Барысаў", "Мінск"][i % 2] }),
+    ),
+    ...many(5, (i) => ({
+      name: "Пицца Темпо",
+      locality: ["Мінск", "Гомель", "Брэст"][i % 3],
+    })),
+  ];
+  const r = discover(rows, BY);
+  assertEquals(r.chains.map((c) => c.name), ["Пицца Темпо"]);
+  assertEquals(r.points.length, 5);
+});
+
 Deno.test("#1113: McCafé next to a McDonald's is one McDonald's point marked «with McCafé»", () => {
-  const mc = { brand: "McDonald's", address: "Calle Mayor 10", lat: 40.4, lng: -3.7 };
+  const mc = {
+    brand: "McDonald's",
+    address: "Calle Mayor 10",
+    lat: 40.4,
+    lng: -3.7,
+  };
   const { points } = discover([
     row({ ...mc, name: "McDonald's" }),
     row({ ...mc, brand: "McCafé", name: "McCafé", lat: 40.40035 }), // ~39 m away
-    row({ brand: "McDonald's", name: "McDonald's", address: "Calle Sol 5", lat: 40.5, lng: -3.6 }),
+    row({
+      brand: "McDonald's",
+      name: "McDonald's",
+      address: "Calle Sol 5",
+      lat: 40.5,
+      lng: -3.6,
+    }),
   ], ES);
   assertEquals(points.map((p) => [p.chain, p.name, p.format ?? null]), [
     ["mcdonalds", "McDonald's", "with McCafé"],
@@ -379,22 +495,58 @@ Deno.test("#1113: McCafé listed first still leaves the McDonald's row with the 
     row({ ...mc, brand: "McCafé", name: "McCafé" }),
     row({ ...mc, brand: "McDonald's", name: "McDonald's", lat: 40.40035 }),
   ], ES);
-  assertEquals(points.map((p) => [p.name, p.format]), [["McDonald's", "with McCafé"]]);
+  assertEquals(points.map((p) => [p.name, p.format]), [[
+    "McDonald's",
+    "with McCafé",
+  ]]);
 });
 
 Deno.test("#1113: a standalone McCafé stays a marked mcdonalds point", () => {
   const { points } = discover([
-    row({ brand: "McCafé", name: "McCafé", address: "Calle Luna 3", lat: 41, lng: -3 }),
+    row({
+      brand: "McCafé",
+      name: "McCafé",
+      address: "Calle Luna 3",
+      lat: 41,
+      lng: -3,
+    }),
   ], ES);
-  assertEquals(points.map((p) => [p.chain, p.format]), [["mcdonalds", "with McCafé"]]);
+  assertEquals(points.map((p) => [p.chain, p.format]), [[
+    "mcdonalds",
+    "with McCafé",
+  ]]);
 });
 
 Deno.test("#1113: a McCafé 40 m from a McDonald's with the address written differently merges; a conflicting house number does not", () => {
   const { points } = discover([
-    row({ brand: "McDonald's", name: "McDonald's", address: "Carrer Aragó, 207", lat: 41.4, lng: 2.1 }),
-    row({ brand: "McCafé", name: "McCafé", address: "Carrer d'Aragó, 207", lat: 41.40036, lng: 2.1 }),
-    row({ brand: "McDonald's", name: "McDonald's", address: "Calle Sol 5", lat: 40.5, lng: -3.6 }),
-    row({ brand: "McCafé", name: "McCafé", address: "Calle Luna 9", lat: 40.50036, lng: -3.6 }),
+    row({
+      brand: "McDonald's",
+      name: "McDonald's",
+      address: "Carrer Aragó, 207",
+      lat: 41.4,
+      lng: 2.1,
+    }),
+    row({
+      brand: "McCafé",
+      name: "McCafé",
+      address: "Carrer d'Aragó, 207",
+      lat: 41.40036,
+      lng: 2.1,
+    }),
+    row({
+      brand: "McDonald's",
+      name: "McDonald's",
+      address: "Calle Sol 5",
+      lat: 40.5,
+      lng: -3.6,
+    }),
+    row({
+      brand: "McCafé",
+      name: "McCafé",
+      address: "Calle Luna 9",
+      lat: 40.50036,
+      lng: -3.6,
+    }),
   ], ES);
   assertEquals(points.map((p) => [p.name, p.address, p.format ?? null]), [
     ["McDonald's", "Carrer Aragó, 207", "with McCafé"],
