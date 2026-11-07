@@ -140,19 +140,22 @@ case "$CMD" in
     # за 10 минут (те же значения, что были в scripts/deploy-activity.sh). Строки TSV:
     #   recording<TAB>N | processing<TAB>N | person<TAB>кто<TAB>что<TAB>сколько<TAB>ЧЧ:ММ (Белград)
     # Первые две строки есть всегда; ответ без них клиент считает «не смог проверить».
+    # Демо-воркспейс (id 'demo') исключён: его сбрасывает расписание каждый час в :30, и записи
+    # сброса выглядели бы как работающие люди.
     psql_ -tA -F $'\t' <<'SQL' || die "активность не прочиталась"
 select 'recording', count(*) from public.allowed_users
   where recorder_last_recording is true and recorder_last_seen > now() - interval '3 minutes';
 select 'processing', count(*) from public.meetings where summary_status = 'processing';
 with w as (
   select coalesce(assignee_telegram_ids[1], created_by_telegram_id) as uid, updated_at as ts, 'задачи' as what
-    from public.tasks where updated_at > now() - interval '10 minutes'
+    from public.tasks where updated_at > now() - interval '10 minutes' and group_id <> 'demo'
   union all
   select owner_id, created_at, 'записи' from public.entries
-   where created_at > now() - interval '10 minutes'
+   where created_at > now() - interval '10 minutes' and group_id <> 'demo'
   union all
-  select added_by_telegram_id, created_at, 'комментарии' from public.task_comments
-   where created_at > now() - interval '10 minutes'
+  select c.added_by_telegram_id, c.created_at, 'комментарии' from public.task_comments c
+    join public.tasks t on t.id = c.task_id
+   where c.created_at > now() - interval '10 minutes' and t.group_id <> 'demo'
 )
 select 'person',
        replace(replace(coalesce(nullif(trim(p.first_name || ' ' || coalesce(p.last_name, '')), ''), w.uid::text, 'неизвестно'), E'\t', ' '), E'\n', ' '),
