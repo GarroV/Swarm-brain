@@ -799,48 +799,6 @@
   },
   {
     "file": "miniapp/src/components/roy/screens/MeetAdminScreen.tsx",
-    "context": "jsx-text",
-    "text": "Содержание",
-    "count": 1,
-    "reason": "Унаследованный литерал MeetAdminScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
-  },
-  {
-    "file": "miniapp/src/components/roy/screens/MeetAdminScreen.tsx",
-    "context": "jsx-text",
-    "text": "Редактировать",
-    "count": 1,
-    "reason": "Унаследованный литерал MeetAdminScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
-  },
-  {
-    "file": "miniapp/src/components/roy/screens/MeetAdminScreen.tsx",
-    "context": "children",
-    "text": "Сохранение…",
-    "count": 1,
-    "reason": "Унаследованный литерал MeetAdminScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
-  },
-  {
-    "file": "miniapp/src/components/roy/screens/MeetAdminScreen.tsx",
-    "context": "children",
-    "text": "Сохранить",
-    "count": 1,
-    "reason": "Унаследованный литерал MeetAdminScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
-  },
-  {
-    "file": "miniapp/src/components/roy/screens/MeetAdminScreen.tsx",
-    "context": "jsx-text",
-    "text": "Отмена",
-    "count": 1,
-    "reason": "Унаследованный литерал MeetAdminScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
-  },
-  {
-    "file": "miniapp/src/components/roy/screens/MeetAdminScreen.tsx",
-    "context": "jsx-text",
-    "text": "Содержания нет.",
-    "count": 1,
-    "reason": "Унаследованный литерал MeetAdminScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
-  },
-  {
-    "file": "miniapp/src/components/roy/screens/MeetAdminScreen.tsx",
     "context": "aria-label",
     "text": "Сохранить название",
     "count": 2,
