@@ -28,6 +28,7 @@ SERVICE = re.compile(rb"  ([A-Za-z0-9][A-Za-z0-9_.-]*): *(?:#[^\r\n]*)?$")
 FIELD = re.compile(rb"    ([A-Za-z_][A-Za-z0-9_-]*):(?: |$)")
 ROOT_SERVICES = re.compile(rb"services: *(?:#[^\r\n]*)?$")
 MEMORY = re.compile(rb"([0-9]+)([bBkKmMgG]?)$")
+BLOCK_VALUE = re.compile(rb"(?:^|: +|- +)(?:![A-Za-z0-9_-]+ +)?[|>][0-9+-]*(?: *#.*)?$")
 
 
 class ConfigError(Exception):
@@ -36,6 +37,40 @@ class ConfigError(Exception):
 
 def body(line):
     return line.removesuffix(b"\n").removesuffix(b"\r")
+
+
+def require_closed_line(content):
+    """Fail closed on unsupported continuations before recognizing any YAML keys.
+
+    This is a lexical boundary, not a YAML parser: even valid multiline quoted,
+    flow or block values are refused. Escapes and doubled single quotes within
+    one physical line are supported; comments and quoted punctuation stay opaque.
+    """
+    quote, flow, i = None, [], 0
+    while i < len(content):
+        char = content[i]
+        if quote == 34 and char == 92:
+            i += 2
+            continue
+        if quote == 39 and char == 39 and content[i:i + 2] == b"''":
+            i += 2
+            continue
+        if quote is not None:
+            if char == quote:
+                quote = None
+        elif char == 35:
+            content = content[:i]
+            break
+        elif char in (34, 39):
+            quote = char
+        elif char in (91, 123):
+            flow.append(char)
+        elif char in (93, 125):
+            if not flow or flow.pop() != {93: 91, 125: 123}[char]:
+                raise ConfigError("ambiguous_structure")
+        i += 1
+    if quote is not None or flow or BLOCK_VALUE.search(content):
+        raise ConfigError("ambiguous_structure")
 
 
 def memory_bytes(value):
@@ -59,7 +94,13 @@ def scalar_parts(line):
     content = body(line)
     colon = content.index(b":")
     tail = content[colon + 1:]
-    value_part, marker, comment = tail.partition(b"#")
+    # A hash without preceding whitespace is part of a YAML plain scalar.
+    comment_at = re.search(rb"(?<= )#", tail)
+    if comment_at:
+        at = comment_at.start()
+        value_part, marker, comment = tail[:at], b"#", tail[at + 1:]
+    else:
+        value_part, marker, comment = tail, b"", b""
     value = value_part.strip(b" ")
     if not value:
         raise ConfigError("unsupported_memory_value")
@@ -93,6 +134,7 @@ def analyze(data):
     starts = []
     for i, line in enumerate(lines):
         content = body(line)
+        require_closed_line(content)
         if content.startswith(b"services:"):
             if not ROOT_SERVICES.fullmatch(content):
                 raise ConfigError("ambiguous_structure")

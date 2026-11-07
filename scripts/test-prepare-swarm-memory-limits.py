@@ -128,7 +128,8 @@ class MemoryPreparationTests(unittest.TestCase):
         self.assertNotIn(b"\n", candidate.replace(b"\r\n", b""))
 
     def test_comments_tags_non_target_and_nested_memory_names_preserved(self):
-        source = fixture().replace(b"  db:\n", b"  db: # retain header comment\n")
+        source = b"# comment about syntax: | and an unmatched ' quote\n" + fixture()
+        source = source.replace(b"  db:\n", b"  db: # retain header comment\n")
         source = source.replace(b"      SYNTHETIC_VALUE:", b"      mem_limit: not-a-service-cap\n      SYNTHETIC_VALUE:")
         source = source.replace(b"  studio:\n", b"  studio:\n    mem_limit: 9g # unrelated service\n")
         candidate, _ = memory.analyze(source)
@@ -170,6 +171,24 @@ class MemoryPreparationTests(unittest.TestCase):
             with self.assertRaisesRegex(memory.ConfigError, "^io_write$"):
                 memory.write_candidate(self.target, b"fixture")
         self.assertFalse(self.target.exists())
+
+    def test_multiline_opaque_values_cannot_hide_service_memory_fields(self):
+        command = b'    command: ["opaque", "value: with # punctuation"]\n'
+        for replacement in [
+            b'    command: "before\n    mem_limit: 1g\n      after"\n',
+            b"    command: 'before\n    mem_limit: 1g\n      after'\n",
+            b'    command: {opaque: before,\n    mem_limit: 1g\n      }\n',
+            b'    command: ["before\n    mem_limit: 1g\n      after"]\n',
+            b"    command: |\n      opaque content\n",
+        ]:
+            with self.subTest(form=replacement[:24]):
+                self.reject(fixture().replace(command, replacement), "ambiguous_structure")
+        self.reject(b'x-note: "before\n' + fixture() + b'after"\n', "ambiguous_structure")
+
+    def test_hash_without_separating_space_is_part_of_memory_value(self):
+        source = compliant().replace(b"    mem_limit: 2g\n", b"    mem_limit: 2g#not-comment\n", 1)
+        self.reject(source, "unsupported_memory_value")
+        self.assertEqual(self.cli(2, self.source)["error_type"], "unsupported_memory_value")
 
     def test_malformed_or_ambiguous_structures_make_no_candidate(self):
         cases = [
