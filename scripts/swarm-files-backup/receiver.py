@@ -146,7 +146,35 @@ def guard_progress(manifest, created, latest, previous):
             raise BackupError("source_regression")
 
 
-def cleanup_parts(directory):
+def recover_linked_publish(part, directory, info, limits, deadline):
+    # Only the two names our exclusive link-publish can create are recoverable.
+    matches = []
+    for candidate in directory.iterdir():
+        if not candidate.name.startswith(PREFIX) or not candidate.name.endswith(".zip"):
+            continue
+        try:
+            parse_name(candidate.name)
+        except BackupError:
+            continue
+        other = candidate.lstat()
+        if (other.st_dev, other.st_ino) == (info.st_dev, info.st_ino):
+            if (not stat.S_ISREG(other.st_mode) or other.st_uid != os.geteuid()
+                    or stat.S_IMODE(other.st_mode) != 0o600 or other.st_nlink != 2):
+                raise BackupError("invalid_partial")
+            matches.append(candidate)
+    if info.st_nlink != 2 or len(matches) != 1:
+        raise BackupError("invalid_partial")
+    final = matches[0]
+    verify_archive(final, limits, deadline=deadline)
+    for path in (part, final):
+        current = path.lstat()
+        if ((current.st_dev, current.st_ino) != (info.st_dev, info.st_ino)
+                or current.st_nlink != 2 or current.st_uid != os.geteuid()
+                or stat.S_IMODE(current.st_mode) != 0o600):
+            raise BackupError("invalid_partial")
+
+
+def cleanup_parts(directory, limits=Limits(), deadline=None, *, allow_publication=False):
     for item in directory.iterdir():
         if not item.name.startswith((".incoming-", ".state-")):
             continue
@@ -154,8 +182,12 @@ def cleanup_parts(directory):
             raise BackupError("unknown_partial")
         st = item.lstat()
         if (not stat.S_ISREG(st.st_mode) or st.st_uid != os.geteuid()
-                or stat.S_IMODE(st.st_mode) != 0o600 or st.st_nlink != 1):
+                or stat.S_IMODE(st.st_mode) != 0o600):
             raise BackupError("invalid_partial")
+        if st.st_nlink != 1:
+            if not allow_publication or not item.name.startswith(".incoming-"):
+                raise BackupError("invalid_partial")
+            recover_linked_publish(item, directory, st, limits, deadline)
         item.unlink()
     fsync_dir(directory)
 
@@ -168,8 +200,8 @@ def finish_prune(verified, name, tombstone):
 
 
 def recover(verified, limits, deadline, now):
-    cleanup_parts(verified)
-    cleanup_parts(verified.parent)
+    cleanup_parts(verified, limits, deadline, allow_publication=True)
+    cleanup_parts(verified.parent, limits, deadline)
     tombstones = list(verified.glob("*.zip.pruning.json"))
     if not tombstones:
         return

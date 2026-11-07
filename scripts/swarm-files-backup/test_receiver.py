@@ -309,6 +309,61 @@ class ReceiveEdgeTests(ReceiverFixture):
         self.assertFalse(list(verified.glob("*.pruning.json")))
         self.assertTrue((verified / new.name).exists())
 
+class PublishLinkRecoveryTests(ReceiverFixture):
+    def linked(self, *, third=False, own_final=True):
+        source = make_archive(self.root)
+        verified = receiver.private_dir(receiver.private_dir(self.store) / "verified")
+        part = verified / ".incoming-abcd1234.part"
+        part.write_bytes(source.read_bytes())
+        part.chmod(0o600)
+        final = verified / (source.name if own_final else "foreign.zip")
+        os.link(part, final)
+        if third:
+            os.link(part, self.root / "external-link")
+        return source, part, final
+
+    def test_retry_after_link_before_unlink_preserves_final_and_acks_exactly_once(self):
+        source, part, final = self.linked()
+        identity = final.stat()
+        client = FakeClient([source])
+        value = receiver.receive_one(client, self.store, source.name, now=self.now)
+        self.assertFalse(value["new"])
+        self.assertFalse(part.exists())
+        self.assertEqual(final.read_bytes(), source.read_bytes())
+        self.assertEqual((final.stat().st_ino, final.stat().st_mtime_ns),
+                         (identity.st_ino, identity.st_mtime_ns))
+        self.assertEqual(final.stat().st_nlink, 1)
+        self.assertEqual(client.calls, [("DELETE", source.name)])
+        self.assertTrue(final.with_name(final.name + ".verified.json").exists())
+
+    def test_foreign_or_third_links_are_never_removed(self):
+        for third, own_final in ((True, True), (False, False)):
+            with self.subTest(third=third), tempfile.TemporaryDirectory() as temporary:
+                original_root, original_store = self.root, self.store
+                self.root, self.store = Path(temporary), Path(temporary) / "store"
+                try:
+                    source, part, final = self.linked(third=third, own_final=own_final)
+                    client = FakeClient([source])
+                    with self.assertRaisesRegex(BackupError, "invalid_partial"):
+                        receiver.receive_one(client, self.store, source.name, now=self.now)
+                    self.assertTrue(part.exists())
+                    self.assertEqual(final.read_bytes(), source.read_bytes())
+                    self.assertEqual(client.calls, [])
+                finally:
+                    self.root, self.store = original_root, original_store
+
+    def test_linked_corrupt_final_is_preserved_without_ack(self):
+        source, part, final = self.linked()
+        with final.open("r+b") as stream:
+            stream.write(b"corrupt")
+        before = final.read_bytes()
+        client = FakeClient([source])
+        with self.assertRaises(BackupError):
+            receiver.receive_one(client, self.store, source.name, now=self.now)
+        self.assertEqual(final.read_bytes(), before)
+        self.assertTrue(part.exists())
+        self.assertEqual(client.calls, [])
+
 
 if __name__ == "__main__":
     unittest.main()
