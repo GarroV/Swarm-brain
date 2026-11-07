@@ -1197,6 +1197,8 @@ feedback/_feedback/2026-10-01_…_screenshot.png      ← скрины фидб�
 
 ### Файлы на MUSPELHEIM (`bucket='swarm-files'`)
 
+Независимая копия байтов на VPS (#652) описана в [files/BACKUP.md](../files/BACKUP.md): отдельный Taildrop sender/receiver/restore, собственные private snapshots и unit templates; исходное хранилище остаётся здесь. Код и synthetic CI не означают включённое расписание или проверенный live restore. Общий `vps-backup`/restic не меняется.
+
 Код — `_shared/swarm-files-storage.ts`; точка выбора одна — `uploadNewPrivateFile` (веб-аплоад,
 скрин фидбека, бот, MCP): есть `FILES_BASE_URL` + `FILES_SIGNING_KEY` → байты PUT-ом уходят в
 `swarm-files` по подписанной `put`-ссылке (`max` = размер файла), иначе — Storage, как раньше.
