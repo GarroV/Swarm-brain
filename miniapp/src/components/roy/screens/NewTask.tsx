@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState, type ReactNode } from "react";
-import { useRoyNav } from "../nav";
+import { useRoyNav, useDt } from "../nav";
+import { TaskHydrationNotice } from "@/components/tasks/taskModalPresentation";
 import { NavHeader, SectionLabel, Chip, Segmented } from "../ui";
 import { createTask, updateTask, fetchTask, fetchConfig, fetchUsers } from "@/lib/api";
 import { matchesLens, matchesList, DEFAULT_STATUSES } from "@/lib/smartLists";
@@ -25,11 +26,14 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
+const HYDRATION_COPY = { loading: { ru: "Загружаем задачу…", en: "Loading task…" } } as const;
+
 const inputCls = "w-full bg-surface border border-line-2 rounded-[8px] px-4 py-3 text-ink outline-none focus:border-primary";
 
 export function NewTask({ id }: { id?: string }) {
   const { me, pop, setTab, toast, openTasks } = useRoyNav();
   const editing = !!id;
+  const dt = useDt();
   const [title, setTitle] = useState("");
   const [desc, setDesc] = useState("");
   const [country, setCountry] = useState<string | null>(null);
@@ -41,6 +45,11 @@ export function NewTask({ id }: { id?: string }) {
   const [markets, setMarkets] = useState<string[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [saving, setSaving] = useState(false);
+  const [hydratedTaskId, setHydratedTaskId] = useState<string | null>(null);
+  const [hydrateFailed, setHydrateFailed] = useState(false);
+  const [hydrateAttempt, setHydrateAttempt] = useState(0);
+  // A new id is blocked immediately, before its loading effect runs.
+  const ready = !editing || hydratedTaskId === id;
 
   useEffect(() => {
     fetchConfig().then((c) => setMarkets(c.allowed_markets || [])).catch(() => {});
@@ -49,19 +58,31 @@ export function NewTask({ id }: { id?: string }) {
 
   useEffect(() => {
     if (!id) return;
+    let cancelled = false;
+    setHydratedTaskId(null);
+    setHydrateFailed(false);
     fetchTask(id)
       .then((t) => {
+        if (cancelled) return;
+        // The same full-task discriminator as TaskModal (#145): null is a valid
+        // empty description, but an omitted description is a list projection.
+        if (t.description === undefined) throw new Error("Incomplete task response");
         setTitle(t.title);
         setDesc(t.description ?? "");
         setCountry(t.country);
         setPriority(t.priority ?? "med");
         setDue(t.due_date ? t.due_date.slice(0, 10) : "");
         setAssignee(t.assignee_telegram_ids?.[0] ?? null);
+        setHydratedTaskId(id);
       })
-      .catch(() => {});
-  }, [id]);
+      .catch(() => { if (!cancelled) setHydrateFailed(true); });
+    return () => { cancelled = true; };
+  }, [id, hydrateAttempt]);
 
   const submit = async () => {
+    // Keep the write guard here as well as in the DOM: defaults must never replace
+    // the existing task while its initial GET is pending or has failed (#600).
+    if (!ready || saving) return;
     if (!title.trim()) {
       toast("Введите название");
       return;
@@ -106,6 +127,11 @@ export function NewTask({ id }: { id?: string }) {
     <div className="roy-pop flex h-full flex-col">
       <NavHeader onBack={pop} title={editing ? "Задача" : "Новая задача"} />
       <div className="flex-1 space-y-5 overflow-y-auto px-5 pb-28 pt-1">
+        {!ready && hydrateFailed && <TaskHydrationNotice setHydrateAttempt={setHydrateAttempt} />}
+        {!ready && !hydrateFailed && (
+          <div role="status" className="text-sm text-ink-soft">{dt(HYDRATION_COPY.loading.ru, HYDRATION_COPY.loading.en)}</div>
+        )}
+        <fieldset disabled={!ready} aria-busy={!ready && !hydrateFailed} className="m-0 min-w-0 space-y-5 border-0 p-0 disabled:opacity-60">
         <Field label="Название">
           <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Что нужно сделать?" className={inputCls} style={{ fontSize: 15 }} />
         </Field>
@@ -146,9 +172,10 @@ export function NewTask({ id }: { id?: string }) {
             </div>
           </Field>
         )}
+        </fieldset>
       </div>
       <div className="shrink-0 border-t border-line bg-background dark:bg-[var(--surface)] px-5 pt-3" style={{ paddingBottom: "max(16px, env(safe-area-inset-bottom))" }}>
-        <button type="button" onClick={submit} disabled={saving} className="w-full rounded-full bg-primary py-3.5 font-semibold text-primary-foreground transition-transform active:scale-[0.99] disabled:opacity-60" style={{ fontSize: 15 }}>
+        <button type="button" onClick={submit} disabled={saving || !ready} className="w-full rounded-full bg-primary py-3.5 font-semibold text-primary-foreground transition-transform active:scale-[0.99] disabled:opacity-60" style={{ fontSize: 15 }}>
           {editing ? "Сохранить" : "Создать задачу"}
         </button>
       </div>
