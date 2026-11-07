@@ -50,6 +50,15 @@ const TASK_MODAL_COPY = {
   done: { ru: "Готово", en: "Done" },
   creating: { ru: "Создание…", en: "Creating…" },
   create: { ru: "Создать", en: "Create" },
+  loadError: { ru: "Не загрузилось", en: "Could not load" },
+  loading: { ru: "Загружаем…", en: "Loading…" },
+  titleRequired: { ru: "Нужно название", en: "Title required" },
+  saving: { ru: "Сохранение…", en: "Saving…" },
+  saveError: { ru: "Не сохранилось", en: "Not saved" },
+  saved: { ru: "Сохранено", en: "Saved" },
+  createError: { ru: "Не удалось создать", en: "Could not create task" },
+  deleteError: { ru: "Не удалось удалить", en: "Could not delete task" },
+  deleteAction: { ru: "Удалить", en: "Delete" },
 } as const;
 const normStatus = (s?: string | null) => (s === "progress" ? "in_progress" : (s ?? "open"));
 
@@ -458,7 +467,7 @@ export function TaskModal({ task: taskOpened, open, onClose, onSaved, prefill, m
   // Создание новой задачи — единственная точка с явной кнопкой (в edit сохранение автоматом).
   const handleCreate = async () => {
     if (!title.trim()) {
-      setError("Нужно название");
+      setError(dt(TASK_MODAL_COPY.titleRequired.ru, TASK_MODAL_COPY.titleRequired.en));
       return;
     }
     setCreating(true);
@@ -491,7 +500,7 @@ export function TaskModal({ task: taskOpened, open, onClose, onSaved, prefill, m
       onSaved(created);
       onClose();
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Не удалось создать");
+      setError(err instanceof Error ? err.message : dt(TASK_MODAL_COPY.createError.ru, TASK_MODAL_COPY.createError.en));
     } finally {
       setCreating(false);
     }
@@ -499,7 +508,7 @@ export function TaskModal({ task: taskOpened, open, onClose, onSaved, prefill, m
 
   const handleDelete = async () => {
     if (!task) return;
-    if (!(await confirm({ title: `Удалить «${task.title}»?`, description: "Задача будет удалена без возможности восстановления." }))) return;
+    if (!(await confirm({ title: `${dt(TASK_MODAL_COPY.deleteAction.ru, TASK_MODAL_COPY.deleteAction.en)} «${task.title}»?`, description: "Задача будет удалена без возможности восстановления.", confirmText: dt(TASK_MODAL_COPY.deleteAction.ru, TASK_MODAL_COPY.deleteAction.en), cancelText: dt(TASK_MODAL_COPY.cancel.ru, TASK_MODAL_COPY.cancel.en) }))) return;
     setDeleting(true);
     setError(null);
     try {
@@ -507,7 +516,7 @@ export function TaskModal({ task: taskOpened, open, onClose, onSaved, prefill, m
       onSaved();
       onClose();
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Не удалось удалить");
+      setError(err instanceof Error ? err.message : dt(TASK_MODAL_COPY.deleteError.ru, TASK_MODAL_COPY.deleteError.en));
     } finally {
       setDeleting(false);
     }
@@ -515,17 +524,17 @@ export function TaskModal({ task: taskOpened, open, onClose, onSaved, prefill, m
 
   const titleMissing = isEdit && !title.trim();
   const saveHint = hydrateFailed
-    ? "Не загрузилось"
+    ? dt(TASK_MODAL_COPY.loadError.ru, TASK_MODAL_COPY.loadError.en)
     : isPartial
-    ? "Загружаем…"
+    ? dt(TASK_MODAL_COPY.loading.ru, TASK_MODAL_COPY.loading.en)
     : titleMissing
-    ? "Нужно название"
+    ? dt(TASK_MODAL_COPY.titleRequired.ru, TASK_MODAL_COPY.titleRequired.en)
     : saveState === "saving"
-      ? "Сохранение…"
+      ? dt(TASK_MODAL_COPY.saving.ru, TASK_MODAL_COPY.saving.en)
       : saveState === "error"
-        ? "Не сохранилось"
+        ? dt(TASK_MODAL_COPY.saveError.ru, TASK_MODAL_COPY.saveError.en)
         : saveState === "saved"
-          ? "Сохранено"
+          ? dt(TASK_MODAL_COPY.saved.ru, TASK_MODAL_COPY.saved.en)
           : "";
   const saveHintDanger = titleMissing || saveState === "error" || hydrateFailed;
 

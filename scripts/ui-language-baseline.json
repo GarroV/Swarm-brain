@@ -700,48 +700,6 @@
     "reason": "Унаследованный литерал WorkspaceUsers.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
   },
   {
-    "file": "miniapp/src/components/roy/FeedbackForm.tsx",
-    "context": "jsx-text",
-    "text": "Раздел",
-    "count": 1,
-    "reason": "Унаследованный литерал FeedbackForm.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
-  },
-  {
-    "file": "miniapp/src/components/roy/FeedbackForm.tsx",
-    "context": "placeholder",
-    "text": "Опишите проблему или предложение…",
-    "count": 1,
-    "reason": "Унаследованный литерал FeedbackForm.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
-  },
-  {
-    "file": "miniapp/src/components/roy/FeedbackForm.tsx",
-    "context": "jsx-text",
-    "text": "Скриншот (необязательно)",
-    "count": 1,
-    "reason": "Унаследованный литерал FeedbackForm.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
-  },
-  {
-    "file": "miniapp/src/components/roy/FeedbackForm.tsx",
-    "context": "children",
-    "text": "Отправляю…",
-    "count": 1,
-    "reason": "Унаследованный литерал FeedbackForm.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
-  },
-  {
-    "file": "miniapp/src/components/roy/FeedbackForm.tsx",
-    "context": "children",
-    "text": "✓ Отправлено",
-    "count": 1,
-    "reason": "Унаследованный литерал FeedbackForm.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
-  },
-  {
-    "file": "miniapp/src/components/roy/FeedbackForm.tsx",
-    "context": "children",
-    "text": "Отправить",
-    "count": 1,
-    "reason": "Унаследованный литерал FeedbackForm.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
-  },
-  {
     "file": "miniapp/src/components/roy/MarketChips.tsx",
     "context": "title",
     "text": "Без конкретного рынка",
