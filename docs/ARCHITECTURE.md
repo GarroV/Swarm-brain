@@ -1532,7 +1532,7 @@ orchestrator](furca/blocks/orchestrator.md).
 монтирует маршрут автозапуска. Карта и что осталось — [bot-boundary.md](furca/bot-boundary.md).
 
 **Автозапуск по календарю (служба, `calendar-trigger.ts`, T100).** Раз в `SCRIBA_CALENDAR_POLL_MS`
-(60 с) — `POST /meeting-calendar` токеном агента без `X-On-Behalf-Of` (`calendar-client.ts`, без
+(45 с) — `POST /meeting-calendar` токеном агента без `X-On-Behalf-Of` (`calendar-client.ts`, без
 повторов). Путь: событие в календаре человека с автозапуском → сервер заводит задание → служба
 `startForMeeting` от имени `invited_by`, контейнер получает `SCRIBA_CALENDAR_KEY` +
 `SCRIBA_CALENDAR_STARTS_AT` (+ `SCRIBA_CALENDAR_TITLE` — название события из задания), пропуск задания (`grant_token` → `SCRIBA_BOT_TOKEN`) и метку `scriba.calendar` → бот заявляет встречу
@@ -1596,7 +1596,7 @@ Heartbeat шлётся изнутри контейнера; финальный `
 **Окружение службы** (`orchestrator-main.ts`; кривое — отказ на старте с именем переменной):
 обязательные `SCRIBA_SWARM_URL`, `SCRIBA_BOT_TOKEN`, `SCRIBA_IMAGE`, `SCRIBA_LEASE_HOST_DIR` (каталог
 поводка на хосте); необязательные `SCRIBA_PROJECT` (по умолчанию `scriba`), `SCRIBA_BOT_VERSION`,
-`SCRIBA_INVITE_POLL_MS` (5000), `SCRIBA_CALENDAR_POLL_MS` (60000), `SCRIBA_CONTAINER_SWARM_URL` (адрес функций изнутри контейнера, по
+`SCRIBA_INVITE_POLL_MS` (5000), `SCRIBA_CALENDAR_POLL_MS` (45000), `SCRIBA_CONTAINER_SWARM_URL` (адрес функций изнутри контейнера, по
 умолчанию `SCRIBA_SWARM_URL`), `SCRIBA_CONTAINER_ENV` (JSON добавочного окружения контейнера — ручки
 смоука), `SCRIBA_MAX_MEETINGS` (4), `SCRIBA_CONTAINER_MEMORY_MB` (2048), `SCRIBA_CONTAINER_CPUS` (2),
 `SCRIBA_CONTAINER_PIDS` (1024) — потолки из строки «Изоляция контейнера»; ноль или мусор — отказ на старте;
