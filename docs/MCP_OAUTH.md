@@ -74,14 +74,25 @@ PKCE S256 связывает код с подключающим клиентом
 |---|---|
 | `GET /.well-known/oauth-authorization-server` | Issuer, endpoints, PKCE S256, DCR, grants |
 | `GET /.well-known/oauth-protected-resource` | Адрес MCP и issuer |
-| `POST /oauth/register` | Регистрация публичного OAuth-клиента без client secret |
-| `GET /oauth/authorize` | Проверка параметров, короткий запрос согласия, переход в Swarm |
+| `POST /oauth/register` | Регистрация публичного OAuth-клиента без client secret; адреса возврата только из списка (ниже) |
+| `GET /oauth/authorize` | Проверка параметров, короткий запрос согласия, переход в Swarm; при неизвестном клиенте или адресе вне списка — ошибка без перенаправления |
 | `POST /oauth/token` | Обмен кода либо refresh, новая пара токенов |
 | `POST /oauth/revoke` | Отзыв; неизвестный токен не раскрывается |
 
 Pages проксирует эти пути в `swarm-oauth`, используя `SWARM_API_URL` для выбора
 контура, и не передаёт пользовательскую cookie или Authorization. Redirect не следует
 на сервере. Секреты в ответах не кэшируются.
+
+**Разрешённые адреса возврата** (константы в `supabase/functions/_shared/mcp-oauth/rules.ts`,
+проверяются при регистрации и при авторизации): HTTPS без порта на хостах `chatgpt.com`,
+`chat.openai.com`, `claude.ai`, `claude.com` (точное совпадение хоста, без учётных данных и
+фрагмента); HTTP на loopback (`localhost`, `127.0.0.1`, `[::1]`, любой порт) для локальных
+клиентов. Список расширяется только осознанно, вместе с тестом `rules.test.ts`.
+
+**«Выйти везде»** (`POST /auth/revoke-sessions`) отключает и подключения нейросетей этого
+человека: отзываются его строки `mcp_oauth_connections`, а `mcp_oauth_resolve` не принимает
+подключение, созданное раньше `allowed_users.sessions_revoked_at` (миграция
+`20261106120000`, тест `_shared/mcp-oauth/sessions-revoked.db.test.ts`).
 
 ## Маршруты личной сессии
 

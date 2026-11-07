@@ -14,6 +14,7 @@ import {
   requireParam,
   sha256,
   validateRegistration,
+  validRedirectUri,
 } from "./rules.ts";
 
 interface RegisteredClient {
@@ -69,7 +70,10 @@ async function authorize(db: OAuthDb, req: Request, config: OAuthConfig): Promis
   ).maybeSingle();
   checkDb(error);
   const client = data as RegisteredClient | null;
-  if (!client || !client.redirect_uris.includes(redirectUri)) {
+  // Ошибки по адресу, который не зарегистрирован или не входит в список разрешённых, остаются
+  // локальными (без редиректа): RFC 6749 §4.1.2.1. Список проверяем и здесь — для клиентов,
+  // зарегистрированных до его введения.
+  if (!client || !client.redirect_uris.includes(redirectUri) || !validRedirectUri(redirectUri)) {
     throw new OAuthError("invalid_request", "Unknown client or callback URL");
   }
   // RFC 6749 §4.1.2.1: once the registered callback is trusted, finish failed

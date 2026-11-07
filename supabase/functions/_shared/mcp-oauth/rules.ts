@@ -14,6 +14,12 @@ export class OAuthError extends Error {
 
 const isControl = (char: string): boolean => char.charCodeAt(0) < 32 || char.charCodeAt(0) === 127;
 
+// Единый список адресов возврата, которые принимает регистрация клиентов: известные
+// клиенты по HTTPS (без порта) и loopback по HTTP для локальных клиентов (любой порт).
+export const CHATGPT_REDIRECT_HOSTS: readonly string[] = ["chatgpt.com", "chat.openai.com"];
+export const ALLOWED_HTTPS_REDIRECT_HOSTS: readonly string[] = [...CHATGPT_REDIRECT_HOSTS, "claude.ai", "claude.com"];
+export const ALLOWED_LOOPBACK_REDIRECT_HOSTS: readonly string[] = ["127.0.0.1", "localhost", "[::1]"];
+
 export function validRedirectUri(value: unknown): value is string {
   if (
     typeof value !== "string" || value.length > 2048 || value.includes("#") || /\s/.test(value) ||
@@ -22,8 +28,8 @@ export function validRedirectUri(value: unknown): value is string {
   try {
     const url = new URL(value);
     if (url.username || url.password || url.hash) return false;
-    return url.protocol === "https:" ||
-      (url.protocol === "http:" && ["127.0.0.1", "localhost", "[::1]"].includes(url.hostname));
+    if (url.protocol === "https:") return !url.port && ALLOWED_HTTPS_REDIRECT_HOSTS.includes(url.hostname);
+    return url.protocol === "http:" && ALLOWED_LOOPBACK_REDIRECT_HOSTS.includes(url.hostname);
   } catch {
     return false;
   }
@@ -48,7 +54,10 @@ export function validateRegistration(input: unknown): { clientName: string; redi
   if (
     !Array.isArray(redirects) || redirects.length < 1 || redirects.length > 10 || !redirects.every(validRedirectUri)
   ) {
-    throw new OAuthError("invalid_redirect_uri", "Register between one and ten HTTPS or loopback callback URLs");
+    throw new OAuthError(
+      "invalid_redirect_uri",
+      "Register between one and ten callback URLs of supported clients (HTTPS) or loopback addresses",
+    );
   }
   if (value.token_endpoint_auth_method !== undefined && value.token_endpoint_auth_method !== "none") {
     throw new OAuthError("invalid_client_metadata", "Only public clients using PKCE are supported");
@@ -79,7 +88,7 @@ export function validateRegistration(input: unknown): { clientName: string; redi
 export function clientKind(redirects: string[]): "chatgpt" | "other" {
   return redirects.some((uri) => {
       try {
-        return ["chatgpt.com", "chat.openai.com"].includes(new URL(uri).hostname);
+        return CHATGPT_REDIRECT_HOSTS.includes(new URL(uri).hostname);
       } catch {
         return false;
       }

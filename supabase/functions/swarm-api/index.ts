@@ -577,6 +577,16 @@ async function routeRequest(req: Request): Promise<Response> {
       console.error("revoke-sessions: не записал отметку отзыва", telegram_id, error.message);
       return apiErr(500, "Could not sign out everywhere", origin);
     }
+    // «Выйти везде» отключает и подключения нейросетей (OAuth) этого человека.
+    const revokedAt = new Date().toISOString();
+    const { error: oauthError } = await supabase.from("mcp_oauth_connections")
+      .update({ revoked_at: revokedAt })
+      .eq("telegram_id", telegram_id)
+      .is("revoked_at", null);
+    if (oauthError) {
+      console.error("revoke-sessions: не отозвал OAuth-подключения", telegram_id, oauthError.message);
+      return apiErr(500, "Could not sign out everywhere", origin);
+    }
     await logAccess(supabase, telegram_id, "sessions_revoked", { via: "web", req });
     return new Response(null, { status: 204, headers: corsHeaders(origin) });
   }
