@@ -137,7 +137,7 @@ recorder/                       # bumblebee — macOS меню-бар рекор
 
 ## Таблицы БД
 
-Краткий справочник (16 таблиц). Полная схема БД с ключевыми полями — **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** (раздел «Таблицы БД»), единственный источник истины.
+Краткий справочник (15 таблиц). Полная схема БД с ключевыми полями — **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** (раздел «Таблицы БД»), единственный источник истины.
 
 | Таблица | Назначение |
 |---------|-----------|
@@ -145,7 +145,6 @@ recorder/                       # bumblebee — macOS меню-бар рекор
 | `entries` | База знаний — все записи (встречи и заметки) |
 | `tasks` | Задачи команды + личные (Рой) |
 | `sprints` | Спринты (Рой) |
-| `task_dependencies` | Зависимости задач (Рой) |
 | `task_history` | История изменений задач |
 | `task_comments` | Комментарии-апдейты к задачам (веб + MCP) |
 | `meetings` | Swarm Meetings — источник истины о встрече рекордера (НЕ путать с `entries`) |
@@ -292,11 +291,11 @@ cd recorder && ./install.sh                                   # подробно
 
 ## Ключевые паттерны в коде
 
-**Сессии** (`storage.ts: setSession / getSession / clearSession`) — хранят состояние диалога в `app_settings`. Формат ключа: `session_{chatId}`. Поле `action` — текущий шаг (`waiting_add`, `granola_preview_{noteId}`, `meeting_rename_{id}` и т.п.), `context` — JSON с данными шага.
+**Состояние диалога бота** ([`lib/storage.ts`](supabase/functions/swarm-bot/lib/storage.ts): `setSession / getSession / clearSession`) — таблица `sessions`, одна строка на `chat_id` (TTL 30 минут). Поле `action` — текущий шаг (`waiting_add`, `granola_preview_{noteId}`, `meeting_rename_{id}` и т.п.), `context` — JSON с данными шага.
 
 **Visibility filter** (`storage.ts: visibilityFilter(userId)`) — строка для `.or()` Supabase: возвращает публичные записи + приватные только владельца.
 
-**Chunking** (`add_knowledge` в swarm-mcp) — тексты >3000 символов бьются на чанки с overlap 200 символов; связаны через `group_id`. Первый чанк хранит `summary` и `embedding`; остальные — только `content`.
+**Chunking** (`add_knowledge` в swarm-mcp) — тексты >3000 символов бьются на чанки с overlap 200 символов; связаны через `metadata.chunk_group_id`, а `group_id` задаёт воркспейс. Первый чанк хранит `summary` и `embedding`; остальные — только `content`.
 
 **bgRun** (`index.ts`) — обёртка для async-обработчиков: сразу возвращает 200 Telegram, продолжает работу через `EdgeRuntime.waitUntil`.
 
