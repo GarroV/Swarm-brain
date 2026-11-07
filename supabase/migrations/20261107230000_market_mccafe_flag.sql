@@ -1,10 +1,14 @@
--- #1113: McCafé is a marker on the McDonald's point («with McCafé» in mkt_locations.format), not a
--- second point. Data-only, atomic and idempotent (a second run finds nothing to change).
---   (a) an open machine McCafé next to an open machine McDonald's (<= 50 m, house numbers do not
---       disagree) is deleted and the McDonald's point gets the marker; every other McCafé-named
---       point of McDonald's gets the marker too;
---   (b) six exact duplicates named by the owner (same chain, same address, <= 50 m) lose the later row;
---       the earlier first_seen_at stays, on a tie the smaller id.
+-- #1113: McCafé next to a McDonald's is the marker «with McCafé» (mkt_locations.format) on the McDonald's
+-- point; a standalone McCafé is its own chain `mccafe`, in every country (owner decision 07.11.2026:
+-- «в литве раз маккафе это отдельно - значит и показывай отдельно. там где мак+маккафе - ставишь одну точку»).
+-- Data-only, atomic and idempotent (a second run finds nothing to change).
+--   (a) two exact McDonald's duplicates in ES (the ids were read from prod 07.11.2026): the later row goes,
+--       the earlier first_seen_at stays;
+--   (b) an open machine McCafé next to an open machine McDonald's (<= 50 m, house numbers do not disagree)
+--       is deleted and the McDonald's point gets the marker;
+--   (c) every other McCafé (named so, under mcdonalds or already under mccafe) lives in chain `mccafe`,
+--       created per country when missing, without the marker; nothing is deleted from them;
+--   (d) six exact duplicates of other chains named by the owner (same chain, same address, <= 50 m).
 -- Rows that ratings or candidates point at are never deleted: such a pair is skipped with a notice.
 do $migration$
 declare
@@ -14,6 +18,8 @@ declare
   pair record;
   target uuid;
   loser uuid;
+  moved integer := 0;
+  merged integer := 0;
 begin
   create or replace function pg_temp.swarm_mccafe_distance(a1 float8, o1 float8, a2 float8, o2 float8)
   returns float8 language sql immutable as $f$
@@ -50,10 +56,39 @@ begin
       or exists (select 1 from public.mkt_candidates where target_id = p)
   $f$;
 
-  -- (a) McCafé points of McDonald's: merge into the neighbouring McDonald's, else just mark.
+  -- (a) exact McDonald's duplicates in ES: both rows must still be untouched machine rows.
+  for dup in
+    select * from (values
+      ('0f6b4b2e-1835-4a09-a253-d0d2fb0bbaf3'::uuid, '32411021-436d-4a61-9f87-5f04b255331a'::uuid),
+      ('11da3296-f03e-498a-917d-fd74abb09ac4'::uuid, '61ae1156-5377-40cb-a435-8c5f14312fa7'::uuid)
+    ) as t(keeper, later)
+  loop
+    select a.id as keeper, b.id as later into pair
+    from public.mkt_locations a, public.mkt_locations b
+    where a.id = dup.keeper and b.id = dup.later
+      and a.country = 'ES' and b.country = 'ES' and a.chain_key = 'mcdonalds' and b.chain_key = 'mcdonalds'
+      and a.source_kind in ('osm','overture') and b.source_kind in ('osm','overture')
+      and a.verification = 'unverified' and b.verification = 'unverified'
+      and a.status = 'open' and b.status = 'open'
+      and pg_temp.swarm_mccafe_distance(a.lat, a.lng, b.lat, b.lng) <= 50;
+    if not found then continue; end if;
+    -- the earlier first_seen_at stays (the ids above are in that order; re-check it on prod data)
+    if (select first_seen_at from public.mkt_locations where id = dup.later)
+       < (select first_seen_at from public.mkt_locations where id = dup.keeper) then
+      raise notice 'duplicate % / % skipped: the order of first_seen_at changed', dup.keeper, dup.later;
+      continue;
+    end if;
+    if pg_temp.swarm_mccafe_referenced(dup.later) then
+      raise notice 'duplicate % skipped: the later row is referenced', dup.later;
+      continue;
+    end if;
+    delete from public.mkt_locations where id = dup.later;
+  end loop;
+
+  -- (b) + (c) McCafé points: merge into the neighbouring McDonald's, else live in chain mccafe.
   for cafe in
     select * from public.mkt_locations
-    where chain_key = 'mcdonalds' and pg_temp.swarm_mccafe_is_cafe(name)
+    where chain_key in ('mcdonalds', 'mccafe') and pg_temp.swarm_mccafe_is_cafe(name)
     order by id
   loop
     target := null;
@@ -78,12 +113,30 @@ begin
     if target is not null then
       update public.mkt_locations set format = marker where id = target and format is distinct from marker;
       delete from public.mkt_locations where id = cafe.id;
-    else
-      update public.mkt_locations set format = marker where id = cafe.id and format is null;
+      merged := merged + 1;
+    elsif cafe.chain_key = 'mcdonalds' then
+      -- Standalone: its own chain, no marker. The chain is created per country, after the last slot.
+      insert into public.mkt_chains (country, key, name, slot, segment)
+      select cafe.country, 'mccafe', 'McCafé', coalesce(max(slot), 0) + 1, 'coffee'
+      from public.mkt_chains where country = cafe.country
+      on conflict (country, key) do nothing;
+      update public.mkt_locations
+      set chain_key = 'mccafe',
+          ext_key = case
+            when ext_key like 'mcdonalds:%' and not exists (
+              select 1 from public.mkt_locations x
+              where x.country = cafe.country and x.ext_key = 'mccafe:' || substr(cafe.ext_key, 11))
+            then 'mccafe:' || substr(ext_key, 11) else ext_key end,
+          format = case when format = marker then null else format end
+      where id = cafe.id;
+      moved := moved + 1;
+    elsif cafe.format = marker then
+      update public.mkt_locations set format = null where id = cafe.id;
     end if;
   end loop;
+  raise notice 'McCafé: % merged into a McDonald''s point, % moved to chain mccafe', merged, moved;
 
-  -- (b) exact duplicates: the earlier first_seen_at stays.
+  -- (d) exact duplicates: the earlier first_seen_at stays.
   for dup in
     select * from (values
       ('ES','burgerking','CC Diversia - Av. de Bruselas, 21, 28108, Alcobendas, Madrid'),

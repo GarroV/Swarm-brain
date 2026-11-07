@@ -9,6 +9,11 @@ export const AZ: CountryConfig = {
   currency: "AZN",
   mapSource: "overture",
   bbox: [44.77, 38.39, 50.4, 41.91],
+  // Фирменные магазины производителей — не общепит (решение владельца 07.11.2026, #1134).
+  manufacturerShops: {
+    "Ramzioglu Paxlava": "фабрика пахлавы, фирменные магазины",
+    "Ruggi Sweets": "кондитерская фабрика, фирменные магазины",
+  },
   chains: [
     { key: "dodo", name: "Dodo Pizza", segment: "pizza" },
     {

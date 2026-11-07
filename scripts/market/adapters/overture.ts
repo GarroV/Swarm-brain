@@ -8,7 +8,10 @@ import {
   type OsmPoint,
 } from "../../../supabase/functions/market-ingest/types.ts";
 import type { CountryConfig } from "../countries/types.ts";
-import { distanceM, samePlace } from "../../../supabase/functions/_shared/market/geo.ts";
+import {
+  distanceM,
+  samePlace,
+} from "../../../supabase/functions/_shared/market/geo.ts";
 import { httpGet } from "../lib.ts";
 import type { Adapter } from "./types.ts";
 
@@ -154,9 +157,12 @@ function slug(name: string, taken: Set<string>, fallback: string): string {
 
 const isMcCafe = (row: PlaceRow) =>
   [row.name, row.brand].some((v) => !!v && /\bmccafe\b/.test(fold(v)));
+/** McCafé — отдельная сеть `mccafe` во всех странах (решение владельца 07.11.2026); в пару к McDonald's
+ *  её склеивает dropDuplicates. Это ключи общих сетей, а не записи конфига страны. */
+export const MCDONALDS = "mcdonalds";
+export const MCCAFE = "mccafe";
 
 const toPoint = (row: PlaceRow, chain: string): OsmPoint => ({
-  ...(isMcCafe(row) ? { format: FORMAT_WITH_MCCAFE } : {}),
   chain,
   name: row.name ?? row.brand ?? chain,
   lat: row.lat,
@@ -182,36 +188,27 @@ function uniquePlaces<T>(items: T[], point: (item: T) => OsmPoint): T[] {
 }
 
 /** McCafé сидит рядом с McDonald's, но не обязательно в тех же 25 м (на проде 25–50 м, адрес записан
- *  по-разному): пара «с пометкой / без» склеивается до 50 м, если номера домов не спорят (#1113). */
+ *  по-разному): пара склеивается до 50 м, если номера домов не спорят (#1113). */
 export const MCCAFE_PAIR_M = 50;
 const numbersOf = (a: string | null) => new Set(a?.match(/\d+/g) ?? []);
 const numbersConflict = (a: OsmPoint, b: OsmPoint) => {
   const x = numbersOf(a.address), y = numbersOf(b.address);
   return x.size > 0 && y.size > 0 && ![...x].some((n) => y.has(n));
 };
-const samePoint = (p: OsmPoint, k: OsmPoint) =>
-  samePlace(p, [k], DUPLICATE_M) ||
-  (!p.format !== !k.format && distanceM(p, k) <= MCCAFE_PAIR_M && !numbersConflict(p, k));
 
-/** Двойники точек схлопываются в одну. McCafé в одном месте с McDonald's — одна точка
- *  McDonald's с пометкой format (#1113): остаётся строка без McCafé в названии, пометка не теряется. */
+/** Двойники точек схлопываются в одну (внутри сети). McCafé в одном месте с McDonald's — одна точка
+ *  McDonald's с пометкой format (#1113); одинокий McCafé остаётся точкой своей сети `mccafe`. */
 export function dropDuplicates(points: OsmPoint[]): OsmPoint[] {
-  const out: OsmPoint[] = [];
-  const slots = new Map<string, number[]>();
-  for (const p of points) {
-    const mine = slots.get(p.chain) ?? [];
-    slots.set(p.chain, mine);
-    const at = mine.find((i) => samePoint(p, out[i]));
-    if (at === undefined) {
-      mine.push(out.push(p) - 1);
-      continue;
-    }
-    const k = out[at];
-    const format = k.format ?? p.format;
-    const base = k.format && !p.format ? p : k;
-    out[at] = format ? { ...base, format } : base;
-  }
-  return out;
+  const out = uniquePlaces(points, (p) => p).map((p) => ({ ...p }));
+  const burgers = out.filter((p) => p.chain === MCDONALDS);
+  return out.filter((p) => {
+    if (p.chain !== MCCAFE) return true;
+    const pair = burgers
+      .filter((b) => distanceM(p, b) <= MCCAFE_PAIR_M && !numbersConflict(p, b))
+      .sort((a, b) => distanceM(p, a) - distanceM(p, b))[0];
+    if (pair) pair.format = FORMAT_WITH_MCCAFE;
+    return !pair;
+  });
 }
 
 /** Чистая функция без сети: строки Overture → точки сетей из конфига + найденные сети. */
@@ -224,7 +221,7 @@ export function discover(
   for (const row of rows) {
     // Dodo приходит из публичного API Dodo, из карты его не берём.
     if (DODO.test(row.brand ?? "") || DODO.test(row.name ?? "")) continue;
-    const key = matchConfig(row, cfg);
+    const key = isMcCafe(row) ? MCCAFE : matchConfig(row, cfg);
     if (key) {
       points.push(toPoint(row, key));
       continue;
@@ -277,7 +274,12 @@ export function discover(
     );
     for (const row of g) points.push(toPoint(row, key));
   }
-  return { points: dropDuplicates(points), chains };
+  const kept = dropDuplicates(points);
+  // Одинокие McCafé — своя сеть; в конфиге страны её нет, поэтому заводим как найденную.
+  if (kept.some((p) => p.chain === MCCAFE) && !taken.has(MCCAFE)) {
+    chains.push({ key: MCCAFE, name: "McCafé", segment: "coffee" });
+  }
+  return { points: kept, chains };
 }
 
 /** Самый свежий релиз: префиксы release/YYYY-MM-DD.N/ из листинга бакета. */

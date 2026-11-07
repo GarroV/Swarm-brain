@@ -9,6 +9,11 @@ export const AM: CountryConfig = {
   currency: "AMD",
   mapSource: "overture",
   bbox: [43.45, 38.84, 46.63, 41.3],
+  // Фирменные магазины производителей — не общепит (решение владельца 07.11.2026, #1134).
+  manufacturerShops: {
+    "Grand Candy": "кондитерская фабрика, фирменные магазины",
+    "Marush Sweets Boutique": "кондитерский бутик производителя",
+  },
   chains: [
     { key: "dodo", name: "Dodo Pizza", segment: "pizza" },
     {
