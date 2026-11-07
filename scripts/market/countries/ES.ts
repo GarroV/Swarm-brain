@@ -28,7 +28,7 @@ export const ES: CountryConfig = {
       key: "mcdonalds",
       name: "McDonald's",
       segment: "burger",
-      osmBrands: ["McDonald's", "McDonalds", "McCafé", "McCafe"],
+      osmBrands: ["McDonald's", "McDonalds"],
     },
     {
       key: "burgerking",
@@ -59,6 +59,14 @@ export const ES: CountryConfig = {
       name: "Costa Coffee",
       segment: "coffee",
       osmBrands: ["Costa Coffee", "Costa"],
+    },
+    {
+      key: "llaollao",
+      name: "llaollao",
+      segment: "other",
+      // Одна сеть: Overture держит часть магазинов Испании под «llaollao Saudi Arabia» / «llaollao Taiwan»
+      // (бренды мастер-франшиз), отдельными «сетями» они не считаются.
+      osmBrands: ["llaollao"],
     },
   ],
   companies: [],

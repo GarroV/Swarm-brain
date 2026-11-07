@@ -215,7 +215,13 @@ export function datedShare(locs: Loc[], bakery: ReadonlySet<string>, year: numbe
  *  drive-thru, трасса (A1/A3/A4, «odmorište»), ТЦ (mall, centar, retail, park, food court…),
  *  иначе стрит. Нет ни формата, ни признака в названии — null. */
 export type FormatClass = "street" | "mall" | "drive" | "highway";
+/** Пометка «McCafé на точке McDonald's» в поле format (то же значение пишет сборщик, #1113): это не формат точки. */
+export const FORMAT_WITH_MCCAFE = "with McCafé";
+/** Подпись формата на экране: пометка McCafé двуязычна, остальное — текст источника как есть. */
+export const fmtFormat = (format: string, ru: boolean) =>
+  format === FORMAT_WITH_MCCAFE && ru ? "с McCafé" : format;
 export function formatClass(format: string | null, name = ""): FormatClass | null {
+  if (format === FORMAT_WITH_MCCAFE) format = null;
   const t = ` ${format ?? ""} ${name}`.toLowerCase();
   if (/drive/.test(t)) return "drive";
   if (/highway|motorway| a1\b| a3\b| a4\b|odmorište|autocesta/.test(t)) return "highway";

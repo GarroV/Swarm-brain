@@ -2,12 +2,16 @@
 // конфиге. Нужен там, где публичный Overpass не вытягивает страну целиком (Испания, Польша…).
 // Сверка 11.10.2026: чтение parquet из S3 под Deno работает, ~7–46 с на страну.
 import { DuckDBInstance } from "@duckdb/node-api";
-import type {
-  DiscoveredChain,
-  OsmPoint,
+import {
+  type DiscoveredChain,
+  FORMAT_WITH_MCCAFE,
+  type OsmPoint,
 } from "../../../supabase/functions/market-ingest/types.ts";
 import type { CountryConfig } from "../countries/types.ts";
-import { samePlace } from "../../../supabase/functions/_shared/market/geo.ts";
+import {
+  distanceM,
+  samePlace,
+} from "../../../supabase/functions/_shared/market/geo.ts";
 import { httpGet } from "../lib.ts";
 import type { Adapter } from "./types.ts";
 
@@ -61,6 +65,11 @@ const norm = (s: string) => fold(s).replace(/[^\p{L}\p{N}]+/gu, "");
 const GENERIC_UNBRANDED_NAMES = new Set(
   ["кофейня", "пиццерия", "кафе", "столовая", "pizzeria", "kebab"].map(norm),
 );
+// #1134: фирменные магазины производителя — не общепит. Категория Overture их не выдаёт
+// (всё то же casual_eatery), поэтому по названию: форма юрлица заглавными («ОАО», «ООО»…)
+// или «кондитерская фабрика»; прочее — явный список страны (`manufacturerShops`).
+const LEGAL_FORM = /(?:^|[^\p{L}])(?:ОАО|ЗАО|ООО|ОДО|АО)(?:[^\p{L}]|$)/u;
+const FACTORY = /кондитерск\p{L}*\s+фабрик/iu;
 const isLetter = (c: string | undefined) => !!c && /\p{L}/u.test(c);
 
 /** Начало строки совпало с образцом целым словом: «Domino's Pizza Deutschland» ~ «Domino's». */
@@ -80,6 +89,18 @@ function matchConfig(row: PlaceRow, cfg: CountryConfig): string | null {
     if (byBrand || byName) return ch.key;
   }
   return null;
+}
+
+function isManufacturerShop(row: PlaceRow, cfg: CountryConfig): boolean {
+  const listed = Object.keys(cfg.manufacturerShops ?? {}).map(norm).filter(
+    Boolean,
+  );
+  return [row.name, row.brand].some((label) =>
+    !!label && (
+      LEGAL_FORM.test(label) || FACTORY.test(label) ||
+      listed.some((m) => norm(label).includes(m))
+    )
+  );
 }
 
 const SEGMENT_BY_NAME: Array<[string, RegExp]> = [
@@ -134,6 +155,13 @@ function slug(name: string, taken: Set<string>, fallback: string): string {
   return key;
 }
 
+const isMcCafe = (row: PlaceRow) =>
+  [row.name, row.brand].some((v) => !!v && /\bmccafe\b/.test(fold(v)));
+/** McCafé — отдельная сеть `mccafe` во всех странах (решение владельца 07.11.2026); в пару к McDonald's
+ *  её склеивает dropDuplicates. Это ключи общих сетей, а не записи конфига страны. */
+export const MCDONALDS = "mcdonalds";
+export const MCCAFE = "mccafe";
+
 const toPoint = (row: PlaceRow, chain: string): OsmPoint => ({
   chain,
   name: row.name ?? row.brand ?? chain,
@@ -159,8 +187,28 @@ function uniquePlaces<T>(items: T[], point: (item: T) => OsmPoint): T[] {
   });
 }
 
+/** McCafé сидит рядом с McDonald's, но не обязательно в тех же 25 м (на проде 25–50 м, адрес записан
+ *  по-разному): пара склеивается до 50 м, если номера домов не спорят (#1113). */
+export const MCCAFE_PAIR_M = 50;
+const numbersOf = (a: string | null) => new Set(a?.match(/\d+/g) ?? []);
+const numbersConflict = (a: OsmPoint, b: OsmPoint) => {
+  const x = numbersOf(a.address), y = numbersOf(b.address);
+  return x.size > 0 && y.size > 0 && ![...x].some((n) => y.has(n));
+};
+
+/** Двойники точек схлопываются в одну (внутри сети). McCafé в одном месте с McDonald's — одна точка
+ *  McDonald's с пометкой format (#1113); одинокий McCafé остаётся точкой своей сети `mccafe`. */
 export function dropDuplicates(points: OsmPoint[]): OsmPoint[] {
-  return uniquePlaces(points, (p) => p);
+  const out = uniquePlaces(points, (p) => p).map((p) => ({ ...p }));
+  const burgers = out.filter((p) => p.chain === MCDONALDS);
+  return out.filter((p) => {
+    if (p.chain !== MCCAFE) return true;
+    const pair = burgers
+      .filter((b) => distanceM(p, b) <= MCCAFE_PAIR_M && !numbersConflict(p, b))
+      .sort((a, b) => distanceM(p, a) - distanceM(p, b))[0];
+    if (pair) pair.format = FORMAT_WITH_MCCAFE;
+    return !pair;
+  });
 }
 
 /** Чистая функция без сети: строки Overture → точки сетей из конфига + найденные сети. */
@@ -173,11 +221,12 @@ export function discover(
   for (const row of rows) {
     // Dodo приходит из публичного API Dodo, из карты его не берём.
     if (DODO.test(row.brand ?? "") || DODO.test(row.name ?? "")) continue;
-    const key = matchConfig(row, cfg);
+    const key = isMcCafe(row) ? MCCAFE : matchConfig(row, cfg);
     if (key) {
       points.push(toPoint(row, key));
       continue;
     }
+    if (isManufacturerShop(row, cfg)) continue;
     const label = row.brand ?? row.name;
     if (!label) continue;
     const normalized = norm(label);
@@ -225,7 +274,12 @@ export function discover(
     );
     for (const row of g) points.push(toPoint(row, key));
   }
-  return { points: dropDuplicates(points), chains };
+  const kept = dropDuplicates(points);
+  // Одинокие McCafé — своя сеть; в конфиге страны её нет, поэтому заводим как найденную.
+  if (kept.some((p) => p.chain === MCCAFE) && !taken.has(MCCAFE)) {
+    chains.push({ key: MCCAFE, name: "McCafé", segment: "coffee" });
+  }
+  return { points: kept, chains };
 }
 
 /** Самый свежий релиз: префиксы release/YYYY-MM-DD.N/ из листинга бакета. */
@@ -285,7 +339,7 @@ export const overture: Adapter = {
   about: {
     url: "https://docs.overturemaps.org/guides/places/",
     what:
-      "точки сетей из Overture Maps places (последний релиз, parquet в S3, через DuckDB): заведения общепита и пекарни страны в её bbox, без закрытых; сети из конфига — по бренду (osmBrands, допускается суффикс страны) или началу названия (osmNames), остальные сети находятся сами (бренд от 3 точек, без бренда от 5 точек в 3 населённых пунктах, не больше 40); точка — центр bbox объекта",
+      "точки сетей из Overture Maps places (последний релиз, parquet в S3, через DuckDB): заведения общепита и пекарни страны в её bbox, без закрытых; сети из конфига — по бренду (osmBrands, допускается суффикс страны) или началу названия (osmNames), остальные сети находятся сами (бренд от 3 точек, без бренда от 5 точек в 3 населённых пунктах, не больше 40; фирменные магазины производителей — по форме юрлица в названии и списку страны — не берутся); точка — центр bbox объекта",
   },
   async collect(cfg) {
     const started_at = new Date().toISOString();

@@ -2,6 +2,7 @@
 import { assertEquals } from "@std/assert";
 import { createClient } from "@supabase/supabase-js";
 import { applyIngest } from "./apply.ts";
+import type { OsmPoint } from "./types.ts";
 import { locKey } from "../_shared/market/db.ts";
 
 for (const n of ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY"]) {
@@ -378,6 +379,9 @@ const loc = (ext_key: string, lat: number, lng: number, extra: Record<string, un
   missing_weeks: 0,
   ...extra,
 });
+const formatOf = async (ext_key: string) =>
+  (await sb.from("mkt_locations").select("format").eq("country", CC).eq("ext_key", ext_key).single()).data?.format ??
+    null;
 const rowOf = async (ext_key: string) =>
   (await sb.from("mkt_locations").select("status, closed, missing_weeks, source, source_kind").eq("country", CC)
     .eq("ext_key", ext_key).single()).data;
@@ -424,6 +428,29 @@ Deno.test("overture: adds points as overture/unverified with discovered chains a
     },
   ]);
   assertEquals(stats.dropped_unknown_chain, 1);
+});
+
+Deno.test("overture: «with McCafé» is written on insert, set and cleared on a machine point; other formats stay", async () => {
+  await reset();
+  const mc = { ...pt("mc-a", 50.1, 10.1, "kfc"), format: "with McCafé" };
+  const run = (points: OsmPoint[]) =>
+    applyIngest(sb, { source: "overture", country: CC, started_at, chains: [], points }, "2026-10-12");
+  await run([mc, pt("plain", 50.5, 10.5, "kfc")]);
+  const ext = async (osm: string) =>
+    (await sb.from("mkt_locations").select("ext_key").eq("country", CC).eq(
+      "source",
+      `https://explore.overturemaps.org/?id=${osm}`,
+    )
+      .single()).data!.ext_key as string;
+  const [mcKey, plainKey] = [await ext("mc-a"), await ext("plain")];
+  assertEquals([await formatOf(mcKey), await formatOf(plainKey)], ["with McCafé", null]);
+  // the same place later without a McCafé: the marker goes away; a hand-written format is not touched
+  await sb.from("mkt_locations").update({ format: "drive-thru" }).eq("country", CC).eq("ext_key", plainKey);
+  await run([pt("mc-a", 50.1, 10.1, "kfc"), pt("plain", 50.5, 10.5, "kfc")]);
+  assertEquals([await formatOf(mcKey), await formatOf(plainKey)], [null, "drive-thru"]);
+  // and back: the marker is set on an existing machine point
+  await run([mc, pt("plain", 50.5, 10.5, "kfc")]);
+  assertEquals(await formatOf(mcKey), "with McCafé");
 });
 
 Deno.test("overture: a point missing 3 runs is closed with a date and no candidate; osm rows are not touched", async () => {

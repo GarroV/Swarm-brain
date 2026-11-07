@@ -13,6 +13,11 @@ export const MD: CountryConfig = {
   currency: "MDL",
   mapSource: "overture",
   bbox: [26.62, 45.46, 30.13, 48.49],
+  // Фирменные магазины производителей — не общепит (решение владельца 07.11.2026, #1134).
+  manufacturerShops: {
+    "Dulcinella":
+      "кондитерская фабрика, фирменные магазины (и «Dulcinella Moldova»)",
+  },
   chains: [
     { key: "dodo", name: "Dodo Pizza", segment: "pizza" },
     {

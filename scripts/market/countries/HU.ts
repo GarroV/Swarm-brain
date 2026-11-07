@@ -13,6 +13,10 @@ export const HU: CountryConfig = {
   currency: "HUF",
   mapSource: "overture",
   bbox: [16.09, 45.74, 22.88, 48.57],
+  // Фирменные магазины производителей — не общепит (решение владельца 07.11.2026, #1134).
+  manufacturerShops: {
+    "Lindt": "шоколадная фабрика, фирменные магазины",
+  },
   chains: [
     { key: "dodo", name: "Dodo Pizza", segment: "pizza" },
     {
@@ -31,7 +35,7 @@ export const HU: CountryConfig = {
       key: "mcdonalds",
       name: "McDonald's",
       segment: "burger",
-      osmBrands: ["McDonald's", "McDonalds", "McCafé", "McCafe"],
+      osmBrands: ["McDonald's", "McDonalds"],
     },
     {
       key: "burgerking",

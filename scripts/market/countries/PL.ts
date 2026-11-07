@@ -9,6 +9,12 @@ export const PL: CountryConfig = {
   currency: "PLN",
   mapSource: "overture",
   bbox: [14.12, 48.99, 24.14, 54.84],
+  // Фирменные магазины производителей — не общепит (решение владельца 07.11.2026, #1134).
+  manufacturerShops: {
+    "Pijalnia Czekolady E.Wedel": "фирменные шоколадные салоны фабрики Wedel",
+    "Lindt": "шоколадная фабрика, фирменные магазины",
+    "Karmello": "шоколадная мануфактура, фирменные магазины",
+  },
   chains: [
     { key: "dodo", name: "Dodo Pizza", segment: "pizza" },
     {
@@ -27,7 +33,7 @@ export const PL: CountryConfig = {
       key: "mcdonalds",
       name: "McDonald's",
       segment: "burger",
-      osmBrands: ["McDonald's", "McDonalds", "McCafé", "McCafe"],
+      osmBrands: ["McDonald's", "McDonalds"],
     },
     {
       key: "burgerking",
