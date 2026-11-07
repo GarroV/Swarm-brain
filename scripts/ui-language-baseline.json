@@ -756,48 +756,6 @@
     "reason": "Унаследованный литерал WorkspaceUsers.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
   },
   {
-    "file": "miniapp/src/components/roy/AnswerModal.tsx",
-    "context": "jsx-text",
-    "text": "Не удалось загрузить запись.",
-    "count": 1,
-    "reason": "Унаследованный литерал AnswerModal.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
-  },
-  {
-    "file": "miniapp/src/components/roy/AnswerModal.tsx",
-    "context": "jsx-text",
-    "text": "Загрузка…",
-    "count": 1,
-    "reason": "Унаследованный литерал AnswerModal.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
-  },
-  {
-    "file": "miniapp/src/components/roy/AnswerModal.tsx",
-    "context": "aria-label",
-    "text": "Ответ",
-    "count": 1,
-    "reason": "Унаследованный литерал AnswerModal.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
-  },
-  {
-    "file": "miniapp/src/components/roy/AnswerModal.tsx",
-    "context": "jsx-text",
-    "text": "Назад",
-    "count": 1,
-    "reason": "Унаследованный литерал AnswerModal.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
-  },
-  {
-    "file": "miniapp/src/components/roy/AnswerModal.tsx",
-    "context": "jsx-text",
-    "text": "Ответ",
-    "count": 1,
-    "reason": "Унаследованный литерал AnswerModal.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
-  },
-  {
-    "file": "miniapp/src/components/roy/AnswerModal.tsx",
-    "context": "aria-label",
-    "text": "Закрыть",
-    "count": 1,
-    "reason": "Унаследованный литерал AnswerModal.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
-  },
-  {
     "file": "miniapp/src/components/roy/FeedbackForm.tsx",
     "context": "jsx-text",
     "text": "Раздел",
@@ -1352,20 +1310,6 @@
   },
   {
     "file": "miniapp/src/components/roy/screens/NewEntry.tsx",
-    "context": "title",
-    "text": "Новая запись",
-    "count": 1,
-    "reason": "Унаследованный литерал NewEntry.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
-  },
-  {
-    "file": "miniapp/src/components/roy/screens/NewEntry.tsx",
-    "context": "jsx-text",
-    "text": "Текст",
-    "count": 1,
-    "reason": "Унаследованный литерал NewEntry.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
-  },
-  {
-    "file": "miniapp/src/components/roy/screens/NewEntry.tsx",
     "context": "placeholder",
     "text": "Вставь текст, заметку или транскрипт — ИИ сам сделает тезисы, тип и теги",
     "count": 1,
@@ -1374,21 +1318,7 @@
   {
     "file": "miniapp/src/components/roy/screens/NewEntry.tsx",
     "context": "jsx-text",
-    "text": "Личная запись",
-    "count": 1,
-    "reason": "Унаследованный литерал NewEntry.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
-  },
-  {
-    "file": "miniapp/src/components/roy/screens/NewEntry.tsx",
-    "context": "jsx-text",
     "text": "Заголовок, тип (документ/заметка/транскрипт) и рынки определит ИИ из текста.",
-    "count": 1,
-    "reason": "Унаследованный литерал NewEntry.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
-  },
-  {
-    "file": "miniapp/src/components/roy/screens/NewEntry.tsx",
-    "context": "jsx-text",
-    "text": "Сохранить",
     "count": 1,
     "reason": "Унаследованный литерал NewEntry.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
   },
