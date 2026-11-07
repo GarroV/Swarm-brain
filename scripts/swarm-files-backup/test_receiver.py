@@ -365,5 +365,16 @@ class PublishLinkRecoveryTests(ReceiverFixture):
         self.assertEqual(client.calls, [])
 
 
+class PathTreeReceiveTests(ReceiverFixture):
+    def test_unrestorable_file_ancestor_is_not_published_or_acked(self):
+        source = make_archive(self.root, {"a": b"one", "a/b": b"two"})
+        client = FakeClient([source])
+        with self.assertRaises(BackupError):
+            receiver.receive_one(client, self.store, source.name, now=self.now)
+        self.assertNotIn(("DELETE", source.name), client.calls)
+        self.assertFalse((self.store / "verified" / source.name).exists())
+        self.assertFalse((self.store / "last-success.json").exists())
+
+
 if __name__ == "__main__":
     unittest.main()

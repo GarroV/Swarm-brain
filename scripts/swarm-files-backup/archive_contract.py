@@ -111,6 +111,12 @@ def _manifest(raw, created, limits):
         total += entry["size_bytes"]
         if total > limits.max_total_bytes:
             raise BackupError("total_size_limit")
+    # A file cannot also be a directory needed by another entry. Check the complete
+    # casefold set so acceptance never depends on manifest ordering.
+    for path in seen:
+        parts = path.split("/")
+        if any("/".join(parts[:i]) in seen for i in range(1, len(parts))):
+            raise BackupError("path_ancestor_conflict")
     if total != m["total_bytes"]:
         raise BackupError("total_size_mismatch")
     return m

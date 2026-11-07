@@ -127,5 +127,19 @@ class AdditionalArchiveTests(ArchiveFixture):
             verify_archive(self.root / name)
 
 
+class PathTreeTests(ArchiveFixture):
+    def test_file_ancestor_conflicts_rejected_in_either_order_and_case(self):
+        for ancestor, child in (("a", "a/b"), ("A", "a/b")):
+            for reverse in (False, True):
+                with self.subTest(ancestor=ancestor, reverse=reverse):
+                    mutate = (lambda m: m["files"].reverse()) if reverse else None
+                    self.reject(files={ancestor: b"one", child: b"two"}, mutate=mutate)
+
+    def test_siblings_and_segment_boundaries_are_restorable(self):
+        path = make_archive(self.root, {"a/b": b"one", "a/c": b"two", "ab": b"three"})
+        manifest = verify_archive(path)
+        self.assertEqual(manifest["file_count"], 3)
+
+
 if __name__ == "__main__":
     unittest.main()
