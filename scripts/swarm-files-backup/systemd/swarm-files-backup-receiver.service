@@ -1,0 +1,22 @@
+[Unit]
+Description=Receive verified Swarm task-file snapshots from existing Taildrop
+After=tailscaled.service
+Requires=tailscaled.service
+
+[Service]
+Type=oneshot
+User=root
+UMask=0077
+ExecStartPre=/usr/bin/install -d -m0700 /var/backups/swarm-files/verified
+ExecStart=/usr/bin/python3 /opt/swarm-files-backup/receiver.py receive --store /var/backups/swarm-files --max-archive 268435456 --max-total 536870912 --max-count 10000 --timeout 120
+TimeoutStartSec=150
+Nice=15
+IOSchedulingClass=idle
+CPUQuota=50%
+MemoryMax=256M
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/var/backups/swarm-files
+RestrictAddressFamilies=AF_UNIX

@@ -1,0 +1,11 @@
+[Unit]
+Description=Poll own-prefix Swarm task-file snapshots
+
+[Timer]
+OnCalendar=hourly
+RandomizedDelaySec=120
+Persistent=true
+Unit=swarm-files-backup-receiver.service
+
+[Install]
+WantedBy=timers.target
