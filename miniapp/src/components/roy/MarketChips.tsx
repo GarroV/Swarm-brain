@@ -7,6 +7,12 @@
 // не страна, а явный сентинел «конкретного рынка нет»: включается вместо стран и сбрасывает их.
 import { countryCode, countryFlag, countryName } from "@/lib/countries";
 import { RoyIcon } from "@/components/roy/icons";
+import { useDt } from "./nav";
+
+const MARKET_CHIPS_COPY = {
+  general: { ru: "Общее", en: "General" },
+  noSpecificMarket: { ru: "Без конкретного рынка", en: "No specific market" },
+} as const;
 
 export function MarketChips({
   codes,
@@ -19,6 +25,7 @@ export function MarketChips({
   onChange: (next: string[]) => void;
   disabled?: boolean;
 }) {
+  const dt = useDt();
   const selected = value.map(countryCode);
   const isGeneral = selected.length === 0;
 
@@ -40,12 +47,12 @@ export function MarketChips({
         type="button"
         disabled={disabled}
         onClick={() => onChange([])}
-        title="Без конкретного рынка"
+        title={dt(MARKET_CHIPS_COPY.noSpecificMarket.ru, MARKET_CHIPS_COPY.noSpecificMarket.en)}
         className={chip(isGeneral)}
         style={{ fontSize: 12 }}
       >
         <RoyIcon name="globe" size={13} strokeWidth={1.9} />
-        Общее
+        {dt(MARKET_CHIPS_COPY.general.ru, MARKET_CHIPS_COPY.general.en)}
       </button>
       {codes.map((code) => (
         <button

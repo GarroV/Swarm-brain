@@ -11,13 +11,21 @@ import { useIsDesktop } from "../useIsDesktop";
 import { BaseDesk } from "./BaseDesk";
 import { formatDate } from "@/lib/displayFormat";
 
+const BASE_COPY = {
+  all: { ru: "Все", en: "All" },
+  note: { ru: "Заметки", en: "Notes" },
+  link: { ru: "Ссылки", en: "Links" },
+  file: { ru: "Файлы", en: "Files" },
+  empty: { ru: "Здесь пока пусто", en: "Nothing here yet" },
+} as const;
+
 // Встреч здесь нет (GET /entries отдаёт только entry_type='note'; встречи — свой таб).
 // Фильтры — по ФАСЕТУ заметки: заметки / ссылки / файлы.
 const FILTERS = [
-  { id: "all", label: "Все" },
-  { id: "note", label: "Заметки" },
-  { id: "link", label: "Ссылки" },
-  { id: "file", label: "Файлы" },
+  { id: "all", label: BASE_COPY.all },
+  { id: "note", label: BASE_COPY.note },
+  { id: "link", label: BASE_COPY.link },
+  { id: "file", label: BASE_COPY.file },
 ];
 
 function fmtDate(iso: string | null): string | null {
@@ -83,13 +91,13 @@ function BaseMobile({ onBack }: { onBack?: () => void }) {
       <div className="flex gap-2 overflow-x-auto px-5 py-3 [scrollbar-width:none]">
         {FILTERS.map((f) => (
           <Chip key={f.id} active={filter === f.id} onClick={() => setFilter(f.id)}>
-            {f.label}
+            {dt(f.label.ru, f.label.en)}
           </Chip>
         ))}
       </div>
       <div className="space-y-2.5 px-5 pb-28">
         {entries == null && [0, 1, 2].map((i) => <div key={i} className="roy-shim" style={{ height: 88, borderRadius: 10 }} />)}
-        {entries && items.length === 0 && <div className="py-10 text-center text-sm text-ink-soft">Здесь пока пусто</div>}
+        {entries && items.length === 0 && <div className="py-10 text-center text-sm text-ink-soft">{dt(BASE_COPY.empty.ru, BASE_COPY.empty.en)}</div>}
         {/* Честный признак усечения: экран не имеет права рисовать приехавший кусок как весь
             набор. Показываем только когда список реально обрезан — иначе это шум. */}
         {entries && total != null && entries.length < total && (

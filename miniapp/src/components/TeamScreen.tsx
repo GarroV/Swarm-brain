@@ -7,6 +7,12 @@ import { initials } from "@/components/roy/dash/shared";
 import { useIsDesktop } from "@/components/roy/useIsDesktop";
 import { TeamDesk } from "@/components/team/TeamDesk";
 import { isRawId } from "@/lib/displayFormat";
+import { useDt } from "@/components/roy/nav";
+
+const TEAM_COPY = {
+  loading: { ru: "Загрузка…", en: "Loading…" },
+  empty: { ru: "Нет участников", en: "No members" },
+} as const;
 
 const ROLE_LABELS: Record<string, string> = {
   marketing: "Marketing",
@@ -24,6 +30,7 @@ export function TeamScreen() {
 }
 
 function TeamList() {
+  const dt = useDt();
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -35,9 +42,9 @@ function TeamList() {
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="min-h-0 flex-1 space-y-2 overflow-y-auto px-4 pb-4 pt-4">
         {loading ? (
-          <p className="py-8 text-center text-sm text-ink-soft">Загрузка…</p>
+          <p className="py-8 text-center text-sm text-ink-soft">{dt(TEAM_COPY.loading.ru, TEAM_COPY.loading.en)}</p>
         ) : users.length === 0 ? (
-          <p className="py-8 text-center text-sm text-ink-soft">Нет участников</p>
+          <p className="py-8 text-center text-sm text-ink-soft">{dt(TEAM_COPY.empty.ru, TEAM_COPY.empty.en)}</p>
         ) : (
           users.map((u) => (
             <div key={u.telegram_id} className="flex items-center gap-3 rounded-[10px] border border-line bg-surface px-3 py-2.5">
