@@ -181,7 +181,7 @@ export async function openaiFetch(
       timeoutMs: MODEL_CALL_TIMEOUT_MS,
       signal,
       attempts,
-      usage: purpose ? { purpose } : undefined,
+      usage: { purpose, groupId: auth.groupId ?? undefined },
     });
   } catch (e) {
     // Таймаут/обрыв — мягкий сбой ключа (тревога только если держится); отмена извне — не сбой OpenAI.

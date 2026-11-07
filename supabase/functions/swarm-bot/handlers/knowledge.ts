@@ -2,7 +2,7 @@ import { loadMeetingViewer, supabase } from "../lib/supabase.ts";
 import { loadEntryForExport } from "../lib/export-entry.ts";
 import { type EditableEntryRow, entryEditError } from "../../_shared/entries/entry-edit.ts";
 import { chatComplete, getEmbedding } from "../lib/openai.ts";
-import { openAIKeyHandle } from "../../_shared/workspace-keys.ts";
+import { openAIKeyHandle, usageOf } from "../../_shared/workspace-keys.ts";
 import { getSession, saveEntry, setSession, visibilityFilter } from "../lib/storage.ts";
 import { sendMessage } from "../lib/telegram.ts";
 import type { KbEntry } from "../lib/types.ts";
@@ -1079,7 +1079,7 @@ export async function handleAsk(chatId: number, question: string, userId: number
         tool_choice: round === 0 ? "required" : "auto",
         max_tokens: 3500,
       }),
-    }, { ...VIA_OPENAI_CHAT, usage: { purpose: "bot:knowledge:chat" } });
+    }, { ...VIA_OPENAI_CHAT, usage: usageOf(aiKey, "bot:knowledge:chat") });
     await aiKey.noteResponse(res);
 
     if (!res.ok) {

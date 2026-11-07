@@ -6,7 +6,7 @@ import { escapeHtml } from "../_shared/telegram-html.ts";
 import { UNTRUSTED_DATA_RULE, wrapUntrustedForModel } from "../_shared/untrusted-prompt.ts";
 import { findDuplicateMeeting, type MeetingAttendee } from "../_shared/meeting-dedup.ts";
 import { resolveWebhookGroupId } from "./workspace.ts";
-import { type KeyHandle, openAIKeyHandle } from "../_shared/workspace-keys.ts";
+import { type KeyHandle, openAIKeyHandle, usageOf } from "../_shared/workspace-keys.ts";
 import { externalFetch, VIA_OPENAI_CHAT, VIA_OPENAI_EMBEDDING, VIA_TELEGRAM } from "../_shared/external-fetch.ts";
 
 const TELEGRAM_BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN")!;
@@ -64,7 +64,7 @@ async function getEmbedding(key: KeyHandle, text: string): Promise<number[]> {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${key.key}` },
     body: JSON.stringify({ model: "text-embedding-3-small", input: text.slice(0, 8000) }),
-  }, { ...VIA_OPENAI_EMBEDDING, usage: { purpose: "read-ai:embedding" } });
+  }, { ...VIA_OPENAI_EMBEDDING, usage: usageOf(key, "read-ai:embedding") });
   await key.noteResponse(res);
   const data = await res.json();
   if (!res.ok) throw new Error((data as { error?: { message?: string } }).error?.message ?? "OpenAI error");
@@ -81,7 +81,7 @@ async function chatComplete(key: KeyHandle, system: string, user: string, json =
       max_tokens: 2000,
       ...(json ? { response_format: { type: "json_object" } } : {}),
     }),
-  }, { ...VIA_OPENAI_CHAT, usage: { purpose: "read-ai:chat" } });
+  }, { ...VIA_OPENAI_CHAT, usage: usageOf(key, "read-ai:chat") });
   await key.noteResponse(res);
   const data = await res.json();
   if (!res.ok) throw new Error((data as { error?: { message?: string } }).error?.message ?? "OpenAI error");

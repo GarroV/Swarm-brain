@@ -10,7 +10,7 @@
 import { COUNTRY_PROMPT_RULE, ENTRY_TYPE_PROMPT_RULE, normalizeCountries } from "./countries.ts";
 import { normalizeExtractedEventDate, todayIso } from "./llm-date.ts";
 import { externalFetch, VIA_OPENAI_CHAT, VIA_OPENAI_EMBEDDING } from "./external-fetch.ts";
-import { type KeyLike, keyOf, noteKeyResponse } from "./workspace-keys.ts";
+import { type KeyLike, keyOf, noteKeyResponse, usageOf } from "./workspace-keys.ts";
 import { UNTRUSTED_DATA_RULE, wrapUntrustedForModel } from "./untrusted-prompt.ts";
 
 const OPENAI = "https://api.openai.com/v1";
@@ -107,7 +107,7 @@ export async function extractEntryMeta(
         ],
         max_tokens: 200,
       }),
-    }, { ...VIA_OPENAI_CHAT, usage: { purpose: "meta-extract:chat" } });
+    }, { ...VIA_OPENAI_CHAT, usage: usageOf(openaiKey, "meta-extract:chat") });
     await noteKeyResponse(openaiKey, res);
     if (!res.ok) {
       console.error("extractEntryMeta: OpenAI ответил", res.status);
@@ -127,7 +127,7 @@ export async function embed(text: string, openaiKey: KeyLike): Promise<number[] 
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${keyOf(openaiKey)}` },
       body: JSON.stringify({ model: "text-embedding-3-small", input: text.slice(0, 8000) }),
-    }, { ...VIA_OPENAI_EMBEDDING, usage: { purpose: "meta-extract:embedding" } });
+    }, { ...VIA_OPENAI_EMBEDDING, usage: usageOf(openaiKey, "meta-extract:embedding") });
     await noteKeyResponse(openaiKey, res);
     if (!res.ok) return null;
     return (await res.json()).data[0].embedding;

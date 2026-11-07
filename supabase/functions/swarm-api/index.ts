@@ -148,7 +148,7 @@ import { handleQualityRoutes } from "./quality.ts";
 import { handleInspectionRoutes } from "./inspections.ts";
 import { handleTelegramLinkRoutes } from "./telegram-link.ts";
 import { handleModelUsageRoutes } from "./model-usage.ts";
-import { openAIKeyHandle } from "../_shared/workspace-keys.ts";
+import { openAIKeyHandle, usageOf } from "../_shared/workspace-keys.ts";
 import { masterAdminFlag } from "../_shared/users/master-admins.ts";
 import { resolveAssigneeInWorkspace } from "./assignee.ts";
 import { handleNotificationRoutes } from "./notifications.ts";
@@ -2209,7 +2209,7 @@ async function routeRequest(req: Request): Promise<Response> {
           ],
           max_tokens: 500,
         }),
-      }, { ...VIA_OPENAI_CHAT, usage: { purpose: "web:chat" } })
+      }, { ...VIA_OPENAI_CHAT, usage: usageOf(OPENAI_KEY, "web:chat") })
       : null;
     if (summaryRes) await OPENAI_KEY.noteResponse(summaryRes);
     const summary = summaryRes?.ok ? (await summaryRes.json()).choices[0].message.content : null;
@@ -2257,7 +2257,7 @@ async function routeRequest(req: Request): Promise<Response> {
         model: "text-embedding-3-small",
         input: q.slice(0, 8000),
       }),
-    }, { ...VIA_OPENAI_EMBEDDING, usage: { purpose: "web:embedding" } });
+    }, { ...VIA_OPENAI_EMBEDDING, usage: usageOf(OPENAI_KEY, "web:embedding") });
     await OPENAI_KEY.noteResponse(embRes);
     if (!embRes.ok) return apiErr(500, "Embedding failed", origin);
     const embedding: number[] = (await embRes.json()).data[0].embedding;
@@ -2299,7 +2299,7 @@ async function routeRequest(req: Request): Promise<Response> {
         model: "text-embedding-3-small",
         input: q.slice(0, 8000),
       }),
-    }, { ...VIA_OPENAI_EMBEDDING, usage: { purpose: "web:embedding" } });
+    }, { ...VIA_OPENAI_EMBEDDING, usage: usageOf(OPENAI_KEY, "web:embedding") });
     await OPENAI_KEY.noteResponse(embRes);
     if (!embRes.ok) return apiErr(500, "Embedding failed", origin);
     const embedding: number[] = (await embRes.json()).data[0].embedding;
@@ -2379,7 +2379,7 @@ async function routeRequest(req: Request): Promise<Response> {
         ],
         max_tokens: 700,
       }),
-    }, { ...VIA_OPENAI_CHAT, usage: { purpose: "web:chat" } });
+    }, { ...VIA_OPENAI_CHAT, usage: usageOf(OPENAI_KEY, "web:chat") });
     await OPENAI_KEY.noteResponse(askRes);
     if (!askRes.ok) {
       // деградация: вернуть источники без AI-ответа, экран покажет список
@@ -2600,7 +2600,7 @@ async function routeRequest(req: Request): Promise<Response> {
             model: "text-embedding-3-small",
             input: tezisi.slice(0, 8000),
           }),
-        }, { ...VIA_OPENAI_EMBEDDING, usage: { purpose: "web:embedding" } });
+        }, { ...VIA_OPENAI_EMBEDDING, usage: usageOf(OPENAI_KEY, "web:embedding") });
         await OPENAI_KEY.noteResponse(r);
         if (r.ok) embedding = (await r.json()).data[0].embedding;
       } catch { /* эмбеддинг не критичен — текст обновим в любом случае */ }
@@ -3361,7 +3361,7 @@ async function routeRequest(req: Request): Promise<Response> {
           max_tokens: 500,
         }),
       },
-      { ...VIA_OPENAI_CHAT, usage: { purpose: "web:chat" } },
+      { ...VIA_OPENAI_CHAT, usage: usageOf(OPENAI_KEY, "web:chat") },
     );
     await OPENAI_KEY.noteResponse(summaryRes);
     if (!summaryRes.ok) return apiErr(500, "GPT error", origin);
@@ -3468,7 +3468,7 @@ async function routeRequest(req: Request): Promise<Response> {
           ],
           max_tokens: 500,
         }),
-      }, { ...VIA_OPENAI_CHAT, usage: { purpose: "web:chat" } }),
+      }, { ...VIA_OPENAI_CHAT, usage: usageOf(OPENAI_KEY, "web:chat") }),
     ]);
     await OPENAI_KEY.noteResponse(summaryRes);
     const summary = summaryRes.ok ? (await summaryRes.json()).choices[0].message.content : null;
@@ -3832,7 +3832,7 @@ async function routeRequest(req: Request): Promise<Response> {
         ],
         max_tokens: 2600,
       }),
-    }, { ...VIA_OPENAI_CHAT, usage: { purpose: "web:chat" } });
+    }, { ...VIA_OPENAI_CHAT, usage: usageOf(OPENAI_KEY, "web:chat") });
     await OPENAI_KEY.noteResponse(gptRes);
     if (!gptRes.ok) return apiErr(500, "GPT error", origin);
     const text = (await gptRes.json()).choices[0].message.content;
