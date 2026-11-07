@@ -182,7 +182,9 @@ function editor(initialId: string | null = "task-A") {
         tree,
         (node) =>
           node.type === "button" &&
-          ["Сохранить", "Создать задачу"].includes(String(node.props.children)),
+          ["Save", "Create task", "Сохранить", "Создать задачу"].includes(
+            String(node.props.children),
+          ),
       )!.props.onClick as () => Promise<void>)(),
     disabled: () =>
       find(tree, (node) => node.type === "fieldset")?.props.disabled === true,

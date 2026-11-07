@@ -11,10 +11,32 @@ import { displayName } from "@/lib/utils";
 import { DatePicker } from "@/components/ui/DatePicker";
 import type { User } from "@/types";
 
+const NEW_TASK_COPY = {
+  priorityHigh: { ru: "Высокий", en: "High" },
+  priorityMedium: { ru: "Средний", en: "Medium" },
+  priorityLow: { ru: "Низкий", en: "Low" },
+  titleRequired: { ru: "Введите название", en: "Enter a title" },
+  saved: { ru: "Сохранено", en: "Saved" },
+  created: { ru: "Задача создана", en: "Task created" },
+  saveError: { ru: "Не удалось сохранить", en: "Could not save" },
+  task: { ru: "Задача", en: "Task" },
+  newTask: { ru: "Новая задача", en: "New task" },
+  title: { ru: "Название", en: "Title" },
+  titlePlaceholder: { ru: "Что нужно сделать?", en: "What needs to be done?" },
+  description: { ru: "Описание", en: "Description" },
+  descriptionPlaceholder: { ru: "Детали (необязательно)", en: "Details (optional)" },
+  priority: { ru: "Приоритет", en: "Priority" },
+  market: { ru: "Рынок", en: "Market" },
+  due: { ru: "Срок", en: "Due date" },
+  assignee: { ru: "Исполнитель", en: "Assignee" },
+  save: { ru: "Сохранить", en: "Save" },
+  create: { ru: "Создать задачу", en: "Create task" },
+} as const;
+
 const PRI = [
-  { id: "high", label: "Высокий" },
-  { id: "med", label: "Средний" },
-  { id: "low", label: "Низкий" },
+  { id: "high", label: NEW_TASK_COPY.priorityHigh },
+  { id: "med", label: NEW_TASK_COPY.priorityMedium },
+  { id: "low", label: NEW_TASK_COPY.priorityLow },
 ];
 
 function Field({ label, children }: { label: string; children: ReactNode }) {
@@ -84,7 +106,7 @@ export function NewTask({ id }: { id?: string }) {
     // the existing task while its initial GET is pending or has failed (#600).
     if (!ready || saving) return;
     if (!title.trim()) {
-      toast("Введите название");
+      toast(dt(NEW_TASK_COPY.titleRequired.ru, NEW_TASK_COPY.titleRequired.en));
       return;
     }
     setSaving(true);
@@ -99,11 +121,11 @@ export function NewTask({ id }: { id?: string }) {
     try {
       if (editing) {
         await updateTask(id!, payload);
-        toast("Сохранено");
+        toast(dt(NEW_TASK_COPY.saved.ru, NEW_TASK_COPY.saved.en));
         pop();
       } else {
         const created = await createTask(payload);
-        toast("Задача создана");
+        toast(dt(NEW_TASK_COPY.created.ru, NEW_TASK_COPY.created.en));
         // Задача, не попадающая в активный вид списка, выглядела как потерянная: создал без
         // срока → вернулся в «Сегодня» → пусто. Проверяем тем же правилом, которым живёт список,
         // и при промахе открываем вид, где задача видна.
@@ -118,31 +140,31 @@ export function NewTask({ id }: { id?: string }) {
         else openTasks(lensOk ? lens : "all", "all");
       }
     } catch {
-      toast("Не удалось сохранить");
+      toast(dt(NEW_TASK_COPY.saveError.ru, NEW_TASK_COPY.saveError.en));
       setSaving(false);
     }
   };
 
   return (
     <div className="roy-pop flex h-full flex-col">
-      <NavHeader onBack={pop} title={editing ? "Задача" : "Новая задача"} />
+      <NavHeader onBack={pop} title={editing ? dt(NEW_TASK_COPY.task.ru, NEW_TASK_COPY.task.en) : dt(NEW_TASK_COPY.newTask.ru, NEW_TASK_COPY.newTask.en)} />
       <div className="flex-1 space-y-5 overflow-y-auto px-5 pb-28 pt-1">
         {!ready && hydrateFailed && <TaskHydrationNotice setHydrateAttempt={setHydrateAttempt} />}
         {!ready && !hydrateFailed && (
           <div role="status" className="text-sm text-ink-soft">{dt(HYDRATION_COPY.loading.ru, HYDRATION_COPY.loading.en)}</div>
         )}
         <fieldset disabled={!ready} aria-busy={!ready && !hydrateFailed} className="m-0 min-w-0 space-y-5 border-0 p-0 disabled:opacity-60">
-        <Field label="Название">
-          <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Что нужно сделать?" className={inputCls} style={{ fontSize: 15 }} />
+        <Field label={dt(NEW_TASK_COPY.title.ru, NEW_TASK_COPY.title.en)}>
+          <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder={dt(NEW_TASK_COPY.titlePlaceholder.ru, NEW_TASK_COPY.titlePlaceholder.en)} className={inputCls} style={{ fontSize: 15 }} />
         </Field>
-        <Field label="Описание">
-          <textarea value={desc} onChange={(e) => setDesc(e.target.value)} rows={3} placeholder="Детали (необязательно)" className={`${inputCls} resize-none`} style={{ fontSize: 15 }} />
+        <Field label={dt(NEW_TASK_COPY.description.ru, NEW_TASK_COPY.description.en)}>
+          <textarea value={desc} onChange={(e) => setDesc(e.target.value)} rows={3} placeholder={dt(NEW_TASK_COPY.descriptionPlaceholder.ru, NEW_TASK_COPY.descriptionPlaceholder.en)} className={`${inputCls} resize-none`} style={{ fontSize: 15 }} />
         </Field>
-        <Field label="Приоритет">
-          <Segmented items={PRI} value={priority} onChange={setPriority} />
+        <Field label={dt(NEW_TASK_COPY.priority.ru, NEW_TASK_COPY.priority.en)}>
+          <Segmented items={PRI.map(({ id, label }) => ({ id, label: dt(label.ru, label.en) }))} value={priority} onChange={setPriority} />
         </Field>
         {markets.length > 0 && (
-          <Field label="Рынок">
+          <Field label={dt(NEW_TASK_COPY.market.ru, NEW_TASK_COPY.market.en)}>
             <div className="flex flex-wrap gap-2">
               <Chip active={country === null} onClick={() => setCountry(null)}>
                 —
@@ -155,11 +177,11 @@ export function NewTask({ id }: { id?: string }) {
             </div>
           </Field>
         )}
-        <Field label="Срок">
-          <DatePicker value={due} onChange={setDue} className={inputCls} placeholder="Срок" />
+        <Field label={dt(NEW_TASK_COPY.due.ru, NEW_TASK_COPY.due.en)}>
+          <DatePicker value={due} onChange={setDue} className={inputCls} placeholder={dt(NEW_TASK_COPY.due.ru, NEW_TASK_COPY.due.en)} />
         </Field>
         {users.length > 0 && (
-          <Field label="Исполнитель">
+          <Field label={dt(NEW_TASK_COPY.assignee.ru, NEW_TASK_COPY.assignee.en)}>
             <div className="flex flex-wrap gap-2">
               <Chip active={assignee === null} onClick={() => setAssignee(null)}>
                 —
@@ -176,7 +198,7 @@ export function NewTask({ id }: { id?: string }) {
       </div>
       <div className="shrink-0 border-t border-line bg-background dark:bg-[var(--surface)] px-5 pt-3" style={{ paddingBottom: "max(16px, env(safe-area-inset-bottom))" }}>
         <button type="button" onClick={submit} disabled={saving || !ready} className="w-full rounded-full bg-primary py-3.5 font-semibold text-primary-foreground transition-transform active:scale-[0.99] disabled:opacity-60" style={{ fontSize: 15 }}>
-          {editing ? "Сохранить" : "Создать задачу"}
+          {editing ? dt(NEW_TASK_COPY.save.ru, NEW_TASK_COPY.save.en) : dt(NEW_TASK_COPY.create.ru, NEW_TASK_COPY.create.en)}
         </button>
       </div>
     </div>
