@@ -10,6 +10,16 @@ import type { Entry } from "@/types";
 import { formatDate } from "@/lib/displayFormat";
 import { entrySourceLabel } from "@/lib/sourceLabels";
 
+const RECORD_COPY = {
+  record: { ru: "Запись", en: "Record" },
+  loadError: { ru: "Не удалось загрузить запись.", en: "Could not load the record." },
+  source: { ru: "Источник", en: "Source" },
+  addedBy: { ru: "добавил", en: "Added by" },
+  download: { ru: "Скачать файл", en: "Download file" },
+  aiSummary: { ru: "Кратко от ИИ", en: "AI summary" },
+  text: { ru: "Текст", en: "Text" },
+} as const;
+
 function fmtDate(iso: string | null): string {
   return formatDate(iso, { day: "numeric", month: "short", year: "numeric" }) ?? "";
 }
@@ -18,6 +28,7 @@ function fmtDate(iso: string | null): string {
 // и контекстным окном ответа (AnswerModal).
 export function RecordBody({ entry: e }: { entry: Entry }) {
   const dt = useDt();
+  const tx = (key: keyof typeof RECORD_COPY) => dt(RECORD_COPY[key].ru, RECORD_COPY[key].en);
   const who = entryImporterName(e);
   const date = fmtDate(e.entry_date || e.created_at);
   // Участники из календаря — кладутся в metadata.attendees при публикации встречи рекордера.
@@ -41,9 +52,9 @@ export function RecordBody({ entry: e }: { entry: Entry }) {
       <div className="mb-3.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-ink-soft" style={{ fontSize: 12 }}>
         <span className="inline-flex items-center gap-1.5">
           <RoyIcon name="link" size={13} className="text-ink-mute" />
-          Источник: <span className="font-semibold text-ink">{entrySourceLabel(e, dt)}</span>
+          {tx("source")}: <span className="font-semibold text-ink">{entrySourceLabel(e, dt)}</span>
         </span>
-        {who && <span>· добавил: <span className="font-semibold text-ink">{who}</span></span>}
+        {who && <span>· {tx("addedBy")}: <span className="font-semibold text-ink">{who}</span></span>}
       </div>
       {fileHref && (
         <a
@@ -54,7 +65,7 @@ export function RecordBody({ entry: e }: { entry: Entry }) {
           style={{ background: "var(--accent-soft)", border: "1px solid var(--accent-line)", borderRadius: 8, fontSize: 13 }}
         >
           <RoyIcon name={entryTagKey(e) === "pdf" ? "pdf" : "doc"} size={15} className="shrink-0 text-accent-ink" />
-          <span className="truncate font-semibold">{fileName || "Скачать файл"}</span>
+          <span className="truncate font-semibold">{fileName || tx("download")}</span>
         </a>
       )}
       {attendees.length > 0 && (
@@ -64,11 +75,11 @@ export function RecordBody({ entry: e }: { entry: Entry }) {
       )}
       {e.summary && !isSearchIndexSummary(e) && (
         <div className="mb-4 px-4 py-3.5" style={{ background: "var(--accent-soft)", border: "1px solid var(--accent-line)", borderRadius: 10 }}>
-          <div className="mb-1.5 font-mono font-semibold uppercase text-accent-ink" style={{ fontSize: 10.5, letterSpacing: "0.08em" }}>Кратко от ИИ</div>
+          <div className="mb-1.5 font-mono font-semibold uppercase text-accent-ink" style={{ fontSize: 10.5, letterSpacing: "0.08em" }}>{tx("aiSummary")}</div>
           <TezisyBlocks text={e.summary} />
         </div>
       )}
-      <SectionLabel>Текст</SectionLabel>
+      <SectionLabel>{tx("text")}</SectionLabel>
       <p className="whitespace-pre-wrap text-ink" style={{ fontSize: 14.5, lineHeight: 1.65 }}>{e.content}</p>
     </>
   );
@@ -76,6 +87,8 @@ export function RecordBody({ entry: e }: { entry: Entry }) {
 
 export function RecordDetail({ id }: { id: string }) {
   const { pop, setTab, toast } = useRoyNav();
+  const dt = useDt();
+  const tx = (key: keyof typeof RECORD_COPY) => dt(RECORD_COPY[key].ru, RECORD_COPY[key].en);
   const [e, setE] = useState<Entry | null>(null);
   const [err, setErr] = useState(false);
   const [creating, setCreating] = useState(false);
@@ -101,9 +114,9 @@ export function RecordDetail({ id }: { id: string }) {
 
   return (
     <div className="roy-pop flex h-full flex-col">
-      <NavHeader onBack={pop} title="Запись" />
+      <NavHeader onBack={pop} title={tx("record")} />
       <div className="flex-1 overflow-y-auto px-5 pb-28">
-        {err && <div className="py-8 text-center text-sm text-ink-soft">Не удалось загрузить запись.</div>}
+        {err && <div className="py-8 text-center text-sm text-ink-soft">{tx("loadError")}</div>}
         {e && <RecordBody entry={e} />}
       </div>
       <div className="shrink-0 border-t border-line bg-background dark:bg-[var(--surface)] px-5 pt-3" style={{ paddingBottom: "max(16px, env(safe-area-inset-bottom))" }}>

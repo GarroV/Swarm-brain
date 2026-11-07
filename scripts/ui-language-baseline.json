@@ -1226,55 +1226,6 @@
   },
   {
     "file": "miniapp/src/components/roy/screens/MeetingDetail.tsx",
-    "context": "jsx-text",
-    "text": "Кратко от ИИ",
-    "count": 1,
-    "reason": "Унаследованный литерал MeetingDetail.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
-  },
-  {
-    "file": "miniapp/src/components/roy/screens/MeetingDetail.tsx",
-    "context": "jsx-text",
-    "text": "Запись",
-    "count": 1,
-    "reason": "Унаследованный литерал MeetingDetail.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
-  },
-  {
-    "file": "miniapp/src/components/roy/screens/MeetingDetail.tsx",
-    "context": "title",
-    "text": "Встреча",
-    "count": 1,
-    "reason": "Унаследованный литерал MeetingDetail.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
-  },
-  {
-    "file": "miniapp/src/components/roy/screens/MeetingDetail.tsx",
-    "context": "jsx-text",
-    "text": "Не удалось загрузить встречу.",
-    "count": 1,
-    "reason": "Унаследованный литерал MeetingDetail.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
-  },
-  {
-    "file": "miniapp/src/components/roy/screens/MeetingDetail.tsx",
-    "context": "jsx-text",
-    "text": "Сохранить",
-    "count": 2,
-    "reason": "Унаследованный литерал MeetingDetail.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
-  },
-  {
-    "file": "miniapp/src/components/roy/screens/MeetingDetail.tsx",
-    "context": "jsx-text",
-    "text": "Отмена",
-    "count": 2,
-    "reason": "Унаследованный литерал MeetingDetail.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
-  },
-  {
-    "file": "miniapp/src/components/roy/screens/MeetingDetail.tsx",
-    "context": "jsx-text",
-    "text": "Страны встречи",
-    "count": 1,
-    "reason": "Унаследованный литерал MeetingDetail.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
-  },
-  {
-    "file": "miniapp/src/components/roy/screens/MeetingDetail.tsx",
     "context": "children",
     "text": "Тезисы",
     "count": 1,
@@ -1295,20 +1246,6 @@
     "reason": "Унаследованный литерал MeetingDetail.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
   },
   {
-    "file": "miniapp/src/components/roy/screens/MeetingDetail.tsx",
-    "context": "children",
-    "text": "Сохранить в личное",
-    "count": 1,
-    "reason": "Унаследованный литерал MeetingDetail.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
-  },
-  {
-    "file": "miniapp/src/components/roy/screens/MeetingDetail.tsx",
-    "context": "children",
-    "text": "Сохранить в базу",
-    "count": 1,
-    "reason": "Унаследованный литерал MeetingDetail.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
-  },
-  {
     "file": "miniapp/src/components/roy/screens/NewEntry.tsx",
     "context": "placeholder",
     "text": "Вставь текст, заметку или транскрипт — ИИ сам сделает тезисы, тип и теги",
@@ -1321,55 +1258,6 @@
     "text": "Заголовок, тип (документ/заметка/транскрипт) и рынки определит ИИ из текста.",
     "count": 1,
     "reason": "Унаследованный литерал NewEntry.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
-  },
-  {
-    "file": "miniapp/src/components/roy/screens/RecordDetail.tsx",
-    "context": "jsx-text",
-    "text": "Источник:",
-    "count": 1,
-    "reason": "Унаследованный литерал RecordDetail.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
-  },
-  {
-    "file": "miniapp/src/components/roy/screens/RecordDetail.tsx",
-    "context": "jsx-text",
-    "text": "· добавил:",
-    "count": 1,
-    "reason": "Унаследованный литерал RecordDetail.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
-  },
-  {
-    "file": "miniapp/src/components/roy/screens/RecordDetail.tsx",
-    "context": "children",
-    "text": "Скачать файл",
-    "count": 1,
-    "reason": "Унаследованный литерал RecordDetail.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
-  },
-  {
-    "file": "miniapp/src/components/roy/screens/RecordDetail.tsx",
-    "context": "jsx-text",
-    "text": "Кратко от ИИ",
-    "count": 1,
-    "reason": "Унаследованный литерал RecordDetail.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
-  },
-  {
-    "file": "miniapp/src/components/roy/screens/RecordDetail.tsx",
-    "context": "jsx-text",
-    "text": "Текст",
-    "count": 1,
-    "reason": "Унаследованный литерал RecordDetail.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
-  },
-  {
-    "file": "miniapp/src/components/roy/screens/RecordDetail.tsx",
-    "context": "title",
-    "text": "Запись",
-    "count": 1,
-    "reason": "Унаследованный литерал RecordDetail.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
-  },
-  {
-    "file": "miniapp/src/components/roy/screens/RecordDetail.tsx",
-    "context": "jsx-text",
-    "text": "Не удалось загрузить запись.",
-    "count": 1,
-    "reason": "Унаследованный литерал RecordDetail.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
   },
   {
     "file": "miniapp/src/components/roy/screens/RecordDetail.tsx",
