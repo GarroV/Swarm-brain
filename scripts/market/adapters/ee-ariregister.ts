@@ -57,6 +57,11 @@ export const eeAriregister: Adapter = {
       const years = Object.keys(links.elements).map(Number).sort((a, b) =>
         b - a
       ).slice(0, YEARS_BACK);
+      if (reports.size > 0 && years.length === 0) {
+        throw new Error(
+          `ee-ariregister: matched_reports=${reports.size}; annual_archives=0`,
+        );
+      }
       const out = [];
       for (const y of years) {
         const picked: string[] = [];
