@@ -76,7 +76,9 @@
 | dodo | Dodo Pizza Lujerului SRL | 25834486 |
 | dodo | Dodo Pizza Coresi SRL | 22787860 |
 | mcdonalds | Premier Restaurants Romania SRL | 6205722 |
-| kfc | Sphera Franchise Group SA (holding) | 37586457 |
+| kfc | U.S. Food Network SA | 6645790 |
+| pizzahut | American Restaurant System SA | 6331682 |
+| — | Sphera Franchise Group SA (holding) | 37586457 |
 | dominos | Domino's Pizza Maxim SRL | 24335356 |
 | jerrys | Jerry's Pizza Est SRL | 10556918 |
 | jerrys | Jerry's Pizza Nord SRL | 14509340 |
