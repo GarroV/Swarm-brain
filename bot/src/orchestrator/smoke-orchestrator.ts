@@ -40,7 +40,8 @@ import { DockerMeetingEgress } from "./egress.ts";
 import { NoticeClient } from "./notice-client.ts";
 import { JournaledNotifier } from "./notices.ts";
 import { type ContainerId, LABEL, Orchestrator } from "./orchestrator.ts";
-import { type NoticeProxy, startNoticeProxy } from "./smoke-notices.ts";
+import { startNoticeProxy } from "./smoke-notices.ts";
+import type { Fake, Beat, Service } from "./smoke-orchestrator-types.ts";
 
 const ENGINE = new DockerodeEngine();
 const PROJECT = process.env.SCRIBA_SMOKE_PROJECT ?? "scriba-orchestrator";
@@ -184,13 +185,6 @@ async function waitMeetingId(orchestrator: Orchestrator, id: ContainerId): Promi
   return current() ?? "";
 }
 
-type Swarm = Awaited<ReturnType<typeof startFakeSwarm>>;
-
-/**
- * Двойник сервера целиком: `fake-swarm` за прокси, который сам отвечает на `/meeting-notice`.
- */
-type Fake = Swarm & { readonly noticeProxy: NoticeProxy };
-
 function noticesOf(fake: Fake, kind: string, meetingId?: string): Record<string, unknown>[] {
   return fake.noticeProxy.notices
     .filter(
@@ -200,10 +194,6 @@ function noticesOf(fake: Fake, kind: string, meetingId?: string): Record<string,
         (meetingId === undefined || notice.body.meeting_id === meetingId),
     )
     .map((notice) => notice.body);
-}
-
-interface Beat {
-  readonly recording: boolean;
 }
 
 function heartbeatsFor(fake: Fake, meetingKey: string | null): Beat[] {
@@ -558,13 +548,6 @@ async function ourLabels(): Promise<string[]> {
   return found.flatMap((info) =>
     Object.entries(info.Labels).map(([key, value]) => `${key}=${value}`),
   );
-}
-
-// ──── ручной запуск по приглашению (D017): настоящая служба orchestrator-main.ts дочерним процессом
-
-interface Service {
-  readonly lines: string[];
-  stop(): Promise<void>;
 }
 
 /**

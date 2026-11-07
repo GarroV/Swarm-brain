@@ -9,6 +9,7 @@ import { openAIKeyHandle } from "../../_shared/workspace-keys.ts";
 import { buildTezisyUserMessage, TEZISY_PROMPT } from "../../_shared/tezisy-prompt.ts";
 import { findDuplicateMeeting, type MeetingAttendee, parseMeetingContent } from "../../_shared/meeting-dedup.ts";
 import type { TgCallbackQuery } from "../lib/types.ts";
+import type { GranolaNote, GranolaPreviewCache, NotesResult, PreparedGranolaEntry } from "./granola-types.ts";
 import { externalFetch, VIA_GRANOLA } from "../../_shared/external-fetch.ts";
 import { brokeMessage, decideNotice, describeGranolaFailure, recoveredMessage } from "../lib/integration-health.ts";
 
@@ -21,14 +22,6 @@ import { secretsKeyConfigured } from "../../_shared/secret-box.ts";
 // Единый промпт тезисов — общий канон из _shared/tezisy-prompt.ts (DRY с рекордером/read-ai),
 // чтобы тезисы выглядели одинаково независимо от точки входа.
 const GRANOLA_TEZISY_PROMPT = TEZISY_PROMPT;
-
-type GranolaNote = {
-  id: string;
-  title: string;
-  created_at: string;
-  calendar_event?: { scheduled_start_time?: string; scheduled_end_time?: string };
-  attendees?: Array<{ name?: string; email?: string }>;
-};
 
 async function getUserApiKey(telegramId: number): Promise<string | null> {
   const { data } = await supabase
@@ -47,8 +40,6 @@ async function fetchGranolaNote(apiKey: string, noteId: string): Promise<Record<
   if (!res.ok) return null;
   return await res.json() as Record<string, unknown>;
 }
-
-type NotesResult = { ok: true; notes: GranolaNote[] } | { ok: false; error: string };
 
 /** Заметки с честным отказом (#175): сбой Granola — не пустой список, а причина. */
 async function fetchNotesChecked(apiKey: string, createdAfter: string): Promise<NotesResult> {
@@ -148,8 +139,6 @@ async function markSkipped(telegramId: number, noteId: string): Promise<void> {
     .eq("telegram_id", telegramId).eq("service", "granola");
 }
 
-type GranolaPreviewCache = { content: string; title: string; tezises: string };
-
 async function offerNextGranolaNote(chatId: number, telegramId: number): Promise<void> {
   const apiKey = await getUserApiKey(telegramId);
   if (!apiKey) return;
@@ -185,19 +174,6 @@ async function offerNextGranolaNote(chatId: number, telegramId: number): Promise
     { text: "🗑 Пропустить", callback_data: `gd_${note.id}` },
   ]]);
 }
-
-type PreparedGranolaEntry = {
-  title: string;
-  content: string;
-  tezises: string;
-  entryDate: string | null;
-  /** Время начала "HH:MM" (из строки "Дата: …, HH:MM" в контенте) — для дедупа. */
-  startTime: string | null;
-  /** Участники встречи (из строки "Участники: …") — для дедупа. */
-  attendees: MeetingAttendee[];
-  countries: string[];
-  embedding: number[];
-};
 
 // Собирает поля записи из заметки Granola (контент → тезисы → страны → эмбеддинг).
 // Возвращает null, если заметку не удалось получить. Общий код для ручного сохранения
