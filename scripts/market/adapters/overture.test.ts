@@ -359,3 +359,46 @@ Deno.test("overture: one place listed twice (same chain, within 25 m) becomes on
   ]);
   assertEquals(out.map((x) => x.osm_id), ["a", "c", "d"]);
 });
+
+Deno.test("#1113: McCafé next to a McDonald's is one McDonald's point marked «with McCafé»", () => {
+  const mc = { brand: "McDonald's", address: "Calle Mayor 10", lat: 40.4, lng: -3.7 };
+  const { points } = discover([
+    row({ ...mc, name: "McDonald's" }),
+    row({ ...mc, brand: "McCafé", name: "McCafé", lat: 40.40035 }), // ~39 m away
+    row({ brand: "McDonald's", name: "McDonald's", address: "Calle Sol 5", lat: 40.5, lng: -3.6 }),
+  ], ES);
+  assertEquals(points.map((p) => [p.chain, p.name, p.format ?? null]), [
+    ["mcdonalds", "McDonald's", "with McCafé"],
+    ["mcdonalds", "McDonald's", null],
+  ]);
+});
+
+Deno.test("#1113: McCafé listed first still leaves the McDonald's row with the marker", () => {
+  const mc = { address: "Calle Mayor 10", lat: 40.4, lng: -3.7 };
+  const { points } = discover([
+    row({ ...mc, brand: "McCafé", name: "McCafé" }),
+    row({ ...mc, brand: "McDonald's", name: "McDonald's", lat: 40.40035 }),
+  ], ES);
+  assertEquals(points.map((p) => [p.name, p.format]), [["McDonald's", "with McCafé"]]);
+});
+
+Deno.test("#1113: a standalone McCafé stays a marked mcdonalds point", () => {
+  const { points } = discover([
+    row({ brand: "McCafé", name: "McCafé", address: "Calle Luna 3", lat: 41, lng: -3 }),
+  ], ES);
+  assertEquals(points.map((p) => [p.chain, p.format]), [["mcdonalds", "with McCafé"]]);
+});
+
+Deno.test("#1113: a McCafé 40 m from a McDonald's with the address written differently merges; a conflicting house number does not", () => {
+  const { points } = discover([
+    row({ brand: "McDonald's", name: "McDonald's", address: "Carrer Aragó, 207", lat: 41.4, lng: 2.1 }),
+    row({ brand: "McCafé", name: "McCafé", address: "Carrer d'Aragó, 207", lat: 41.40036, lng: 2.1 }),
+    row({ brand: "McDonald's", name: "McDonald's", address: "Calle Sol 5", lat: 40.5, lng: -3.6 }),
+    row({ brand: "McCafé", name: "McCafé", address: "Calle Luna 9", lat: 40.50036, lng: -3.6 }),
+  ], ES);
+  assertEquals(points.map((p) => [p.name, p.address, p.format ?? null]), [
+    ["McDonald's", "Carrer Aragó, 207", "with McCafé"],
+    ["McDonald's", "Calle Sol 5", null],
+    ["McCafé", "Calle Luna 9", "with McCafé"],
+  ]);
+});

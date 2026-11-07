@@ -4,6 +4,7 @@
 // подсказке примечание проверяющего, источник — ссылка или начало строки источника.
 import { useMemo, useState } from "react";
 import type { MarketBundle, MarketLocation, MarketVerification } from "@/types";
+import { fmtFormat } from "@/lib/marketInsights";
 import { useDt, useLang } from "@/components/roy/nav";
 import { fmtDate, RefSection, useChainColor, useChainOrder } from "./ref";
 import { SourceCaption } from "./ui";
@@ -134,7 +135,7 @@ export function LocationRegistry({ bundle }: { bundle: MarketBundle }) {
                     <td className="num" style={{ whiteSpace: "nowrap" }}>{fmtDate(l.opened, ru)}{l.opened_estimated && <span className="muted"> ~</span>}</td>
                     <td><span className={`pill ${l.status}`}>{dt(...STATUS[l.status])}{l.closed ? ` ${fmtDate(l.closed, ru)}` : ""}</span></td>
                     <td><span className={`pill v-${l.verification}`} title={l.verification_note ?? ""}>{VLAB[l.verification] ? dt(...VLAB[l.verification]) : "—"}</span></td>
-                    <td className="muted">{l.format}</td>
+                    <td className="muted">{l.format && fmtFormat(l.format, ru)}</td>
                     <td>
                       {/^https?:/.test(src)
                         ? <a href={src.split(/[ ;(]/)[0]} target="_blank" rel="noopener noreferrer">{dt("ссылка", "link")}</a>

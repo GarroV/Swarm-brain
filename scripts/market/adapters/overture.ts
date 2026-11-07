@@ -2,12 +2,13 @@
 // конфиге. Нужен там, где публичный Overpass не вытягивает страну целиком (Испания, Польша…).
 // Сверка 11.10.2026: чтение parquet из S3 под Deno работает, ~7–46 с на страну.
 import { DuckDBInstance } from "@duckdb/node-api";
-import type {
-  DiscoveredChain,
-  OsmPoint,
+import {
+  type DiscoveredChain,
+  FORMAT_WITH_MCCAFE,
+  type OsmPoint,
 } from "../../../supabase/functions/market-ingest/types.ts";
 import type { CountryConfig } from "../countries/types.ts";
-import { samePlace } from "../../../supabase/functions/_shared/market/geo.ts";
+import { distanceM, samePlace } from "../../../supabase/functions/_shared/market/geo.ts";
 import { httpGet } from "../lib.ts";
 import type { Adapter } from "./types.ts";
 
@@ -134,7 +135,11 @@ function slug(name: string, taken: Set<string>, fallback: string): string {
   return key;
 }
 
+const isMcCafe = (row: PlaceRow) =>
+  [row.name, row.brand].some((v) => !!v && /\bmccafe\b/.test(fold(v)));
+
 const toPoint = (row: PlaceRow, chain: string): OsmPoint => ({
+  ...(isMcCafe(row) ? { format: FORMAT_WITH_MCCAFE } : {}),
   chain,
   name: row.name ?? row.brand ?? chain,
   lat: row.lat,
@@ -159,8 +164,37 @@ function uniquePlaces<T>(items: T[], point: (item: T) => OsmPoint): T[] {
   });
 }
 
+/** McCafé сидит рядом с McDonald's, но не обязательно в тех же 25 м (на проде 25–50 м, адрес записан
+ *  по-разному): пара «с пометкой / без» склеивается до 50 м, если номера домов не спорят (#1113). */
+export const MCCAFE_PAIR_M = 50;
+const numbersOf = (a: string | null) => new Set(a?.match(/\d+/g) ?? []);
+const numbersConflict = (a: OsmPoint, b: OsmPoint) => {
+  const x = numbersOf(a.address), y = numbersOf(b.address);
+  return x.size > 0 && y.size > 0 && ![...x].some((n) => y.has(n));
+};
+const samePoint = (p: OsmPoint, k: OsmPoint) =>
+  samePlace(p, [k], DUPLICATE_M) ||
+  (!p.format !== !k.format && distanceM(p, k) <= MCCAFE_PAIR_M && !numbersConflict(p, k));
+
+/** Двойники точек схлопываются в одну. McCafé в одном месте с McDonald's — одна точка
+ *  McDonald's с пометкой format (#1113): остаётся строка без McCafé в названии, пометка не теряется. */
 export function dropDuplicates(points: OsmPoint[]): OsmPoint[] {
-  return uniquePlaces(points, (p) => p);
+  const out: OsmPoint[] = [];
+  const slots = new Map<string, number[]>();
+  for (const p of points) {
+    const mine = slots.get(p.chain) ?? [];
+    slots.set(p.chain, mine);
+    const at = mine.find((i) => samePoint(p, out[i]));
+    if (at === undefined) {
+      mine.push(out.push(p) - 1);
+      continue;
+    }
+    const k = out[at];
+    const format = k.format ?? p.format;
+    const base = k.format && !p.format ? p : k;
+    out[at] = format ? { ...base, format } : base;
+  }
+  return out;
 }
 
 /** Чистая функция без сети: строки Overture → точки сетей из конфига + найденные сети. */
