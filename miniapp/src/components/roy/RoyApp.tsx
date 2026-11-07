@@ -465,7 +465,7 @@ export function RoyApp({ me }: { me: Me | null }) {
                     {tab === "projects" &&
                       (isDesktop ? <TasksScreen only="sprint" /> : <RoyProjectsScreen />)}
                     {tab === "sprints" && <TasksScreen only="sprints" />}
-                    {tab === "market" && <MarketScreen />}
+                    <KeptTab id="market" tab={tab} visited={visited}><MarketScreen /></KeptTab>
                     <KeptTab id="book" tab={tab} visited={visited}><RoyBaseScreen /></KeptTab>
                     <KeptTab id="cal" tab={tab} visited={visited}><RoyMeetingsScreen /></KeptTab>
                     {tab === "more" && <MoreScreen root />}
@@ -529,10 +529,11 @@ export function RoyApp({ me }: { me: Me | null }) {
 // Разделы, которые после первого открытия остаются смонтированными (скрыты, пока не выбраны):
 // переход между ними не перезапрашивает всё с нуля на глазах (решение владельца 2026-09-25 —
 // «при переключениях между вкладками долго грузятся другие вкладки каждый раз»). Свежесть —
-// через tasksVersion, как и раньше. «Проекты», «Спринты» и «Ещё» сюда не входят: доска проектов —
+// через tasksVersion, как и раньше; «Рынок» обновляется раз в неделю и после первого открытия не
+// перезапрашивает страну (#492). «Проекты», «Спринты» и «Ещё» сюда не входят: доска проектов —
 // защищённая поверхность, и у неё свои глобальные обработчики клавиш, которые в скрытом виде
 // продолжали бы ловить нажатия.
-const KEEP_ALIVE_TABS = new Set<RoyTab>(["search", "task", "book", "cal"]);
+const KEEP_ALIVE_TABS = new Set<RoyTab>(["search", "task", "book", "cal", "market"]);
 
 function useVisitedTabs(tab: RoyTab): Set<RoyTab> {
   const [visited, setVisited] = useState<Set<RoyTab>>(() => new Set([tab]));
