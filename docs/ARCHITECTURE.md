@@ -285,6 +285,7 @@ supabase/functions/swarm-bot/
 ├── index.ts                 # Entry point: роутинг команд, callback-ов, сессий
 ├── handlers/
 │   ├── granola.ts           # Granola: импорт/превью/сохранение встреч
+│   ├── granola-types.ts     # Чистые типы заметок, превью и подготовленной записи Granola
 │   ├── meetings.ts          # Read.ai + saved meetings: просмотр, подтверждение, редактирование
 │   ├── knowledge.ts         # /add, /ask — добавление и поиск по базе знаний
 │   ├── manage.ts            # Правка/удаление записей из чата (поиск→подтверждение→действие, kb*-коллбеки)
@@ -1488,6 +1489,8 @@ Id живого приглашения веб помнит в `localStorage` (`s
 ## Бот scriba: оркестратор встреч (`bot/src/orchestrator/`)
 
 Юнит-проверки на двойнике Docker разделены по темам: `orchestrator-lifecycle.test.ts` — запуск, остановка, изоляция и сбои; `orchestrator.test.ts` — сценарии аккаунта. Общие doubles находятся в `bot/test-support/orchestrator.ts`; каждый тест создаёт свои экземпляры, общего изменяемого состояния нет.
+
+Контракты жизненного цикла контейнеров — `orchestrator-lifecycle-types.ts`; прежние публичные type-экспорты доступны из `orchestrator.ts`. Типы doubles ручного смоука — `smoke-orchestrator-types.ts`; сценарии остаются в `smoke-orchestrator.ts`. Оба модуля содержат только типы.
 
 Тесты процесса встречи: `run-meeting.test.ts` и `run-meeting-admission.test.ts`; их per-instance fixture — `bot/test-support/run-meeting.ts`. HTTP-double клиента сохраняет реализацию в `swarm-client/testing/fake-swarm.ts`, а чистые контракты вынесены в соседний `fake-swarm-types.ts` с прежними type-экспортами.
 

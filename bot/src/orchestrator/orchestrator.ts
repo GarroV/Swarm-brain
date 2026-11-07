@@ -38,7 +38,7 @@ import { commitExport } from "./account-writeback.ts";
 import { type LoginWatch, isProbeDue } from "./login-watch.ts";
 import { SerialQueue } from "./serial-queue.ts";
 import { isCalendarBasis, type MeetingBasis } from "./claim-request.ts";
-import { MEETING_ENV, type SupportedPlatform, parsePlatform } from "./config.ts";
+import { MEETING_ENV, parsePlatform } from "./config.ts";
 import { joinUrlFor } from "./join-url.ts";
 import type { ContainerEngine, ContainerSpec, EngineContainer } from "./engine.ts";
 import { LEASE_WRITE_INTERVAL_MS, writeLease } from "./lease.ts";
@@ -49,17 +49,13 @@ import { type SilenceAlertInput, silenceAlertText } from "./owner-alert.ts";
 import { describeError } from "./describe-error.ts";
 import type { MeetingEgress, MeetingNetwork } from "./egress.ts";
 import type { RunLogs, RunLogWriter } from "./run-log.ts";
-
-// eslint-disable-next-line sonarjs/redundant-type-aliases -- имя из контракта блока (docs/furca/blocks/orchestrator.md)
-export type ContainerId = string;
-
-/**
-Куда и на какой площадке идёт контейнер встречи: ссылка уже проверена адаптером площадки.
-*/
-interface MeetingTarget {
-  readonly joinUrl: string;
-  readonly platform: SupportedPlatform;
-}
+import type {
+  ContainerId,
+  MeetingTarget,
+  ManagedMeeting,
+  ContainerExit,
+} from "./orchestrator-lifecycle-types.ts";
+export type { ContainerId, ManagedMeeting, ContainerExit } from "./orchestrator-lifecycle-types.ts";
 
 export const LABEL = {
   project: "scriba.project",
@@ -202,17 +198,6 @@ interface Managed {
   readonly journal: RunLogWriter | null;
   exited: Promise<void>;
 }
-
-export interface ManagedMeeting {
-  readonly id: ContainerId;
-  readonly runId: string;
-  readonly onBehalfOf: number;
-  readonly meetingId: string | null;
-}
-
-export type ContainerExit =
-  | { readonly kind: "finished"; readonly outcome: string | null }
-  | { readonly kind: "died"; readonly exitCode: number | null; readonly meetingId: string | null };
 
 /**
  * Переменные основания встречи для процесса в контейнере (`config.ts` читает их обратно).

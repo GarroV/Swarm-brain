@@ -1095,13 +1095,6 @@
     "file": "miniapp/src/components/roy/screens/MeetAdminScreen.tsx",
     "context": "children",
     "text": "На согласовании",
-    "count": 2,
-    "reason": "Унаследованный литерал MeetAdminScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
-  },
-  {
-    "file": "miniapp/src/components/roy/screens/MeetAdminScreen.tsx",
-    "context": "children",
-    "text": "На вычитке",
     "count": 1,
     "reason": "Унаследованный литерал MeetAdminScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
   },
