@@ -588,62 +588,6 @@
     "reason": "Унаследованный литерал SettingsScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
   },
   {
-    "file": "miniapp/src/components/TaskModal.tsx",
-    "context": "aria-label",
-    "text": "Удалить задачу",
-    "count": 1,
-    "reason": "Унаследованный литерал TaskModal.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
-  },
-  {
-    "file": "miniapp/src/components/TaskModal.tsx",
-    "context": "title",
-    "text": "Удалить задачу",
-    "count": 1,
-    "reason": "Унаследованный литерал TaskModal.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
-  },
-  {
-    "file": "miniapp/src/components/TaskModal.tsx",
-    "context": "aria-label",
-    "text": "Закрыть",
-    "count": 1,
-    "reason": "Унаследованный литерал TaskModal.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
-  },
-  {
-    "file": "miniapp/src/components/TaskModal.tsx",
-    "context": "jsx-text",
-    "text": "Роль",
-    "count": 1,
-    "reason": "Унаследованный литерал TaskModal.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
-  },
-  {
-    "file": "miniapp/src/components/TaskModal.tsx",
-    "context": "jsx-text",
-    "text": "Отмена",
-    "count": 1,
-    "reason": "Унаследованный литерал TaskModal.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
-  },
-  {
-    "file": "miniapp/src/components/TaskModal.tsx",
-    "context": "children",
-    "text": "Готово",
-    "count": 1,
-    "reason": "Унаследованный литерал TaskModal.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
-  },
-  {
-    "file": "miniapp/src/components/TaskModal.tsx",
-    "context": "children",
-    "text": "Создание…",
-    "count": 1,
-    "reason": "Унаследованный литерал TaskModal.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
-  },
-  {
-    "file": "miniapp/src/components/TaskModal.tsx",
-    "context": "children",
-    "text": "Создать",
-    "count": 1,
-    "reason": "Унаследованный литерал TaskModal.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
-  },
-  {
     "file": "miniapp/src/components/TeamScreen.tsx",
     "context": "jsx-text",
     "text": "Загрузка…",
