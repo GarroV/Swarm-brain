@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useRoyNav, useDt } from "../nav";
 import { NavHeader, RoyCard, PriDot, Market, AvatarStack, SectionLabel, IconBtn, TypeTag } from "../ui";
 import { RoyIcon } from "../icons";
@@ -85,13 +85,24 @@ export function TaskDetail({ id }: { id: string }) {
   const [meeting, setMeeting] = useState<Entry | null>(null);
   const [err, setErr] = useState(false);
   const [menu, setMenu] = useState(false);
+  const [statusPending, setStatusPending] = useState(false);
+  const [loadedGeneration, setLoadedGeneration] = useState<{ id: string } | null>(null);
+  // Object identity distinguishes loads even when navigation returns to the same id.
+  const currentLoad = useRef<{ id: string } | null>(null);
+  const statusOperation = useRef<symbol | null>(null);
 
   useEffect(() => {
+    const load = { id };
+    currentLoad.current = load;
+    statusOperation.current = null;
+    setStatusPending(false);
+    setLoadedGeneration(null);
     let alive = true;
     fetchTask(id)
       .then((x) => {
         if (!alive) return;
         setT(x);
+        setLoadedGeneration(load);
         if (x.meeting_id) {
           fetchMeeting(x.meeting_id)
             .then((m) => alive && setMeeting(m))
@@ -101,16 +112,34 @@ export function TaskDetail({ id }: { id: string }) {
       .catch(() => alive && setErr(true));
     return () => {
       alive = false;
+      if (currentLoad.current === load) {
+        currentLoad.current = null;
+        statusOperation.current = null;
+      }
     };
   }, [id]);
 
   const setStatus = async (s: string) => {
-    if (!t) return;
-    setT({ ...t, status: s });
+    const load = loadedGeneration;
+    if (!t || t.id !== id || load?.id !== id || load !== currentLoad.current || statusOperation.current) return;
+    const operation = Symbol();
+    const previousStatus = t.status;
+    // Lock synchronously: two click handlers can run before the disabled state renders.
+    statusOperation.current = operation;
+    setStatusPending(true);
+    setT((current) => current?.id === id ? { ...current, status: s } : current);
+    const isCurrent = () => currentLoad.current === load && statusOperation.current === operation;
     try {
       await updateTask(id, { status: s });
     } catch {
-      /* визуально оставляем выбранный; повторная загрузка экрана исправит */
+      if (isCurrent()) {
+        setT((current) => current?.id === id ? { ...current, status: previousStatus } : current);
+      }
+    } finally {
+      if (isCurrent()) {
+        statusOperation.current = null;
+        setStatusPending(false);
+      }
     }
   };
 
@@ -158,6 +187,8 @@ export function TaskDetail({ id }: { id: string }) {
             <button
               type="button"
               onClick={() => setStatus(isClosed(t) ? "open" : "done")}
+              disabled={statusPending || t.id !== id || !loadedGeneration || loadedGeneration !== currentLoad.current}
+              aria-busy={statusPending}
               className="flex w-full items-center justify-center gap-2 rounded-full py-2.5 text-sm font-semibold"
               style={isClosed(t)
                 ? { color: "var(--ink-soft)", background: "var(--surface-2)", border: "1px solid var(--line-2)" }
