@@ -6,6 +6,7 @@
 // (открытие карточки) и не съедается свайпом.
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { useDt } from "@/components/roy/nav";
 import { RoyIcon, type RoyIconName } from "@/components/roy/icons";
 
 export type PickOption = { id: string; label: string; sub?: string };
@@ -20,9 +21,15 @@ type Props = {
   clearable?: boolean;            // пункт «Убрать»
 };
 
+const PICK_COPY = {
+  noResults: { ru: "Ничего не найдено", en: "No results" },
+  clear: { ru: "Убрать", en: "Clear" },
+} as const;
+
 const W = 240, H = 320;
 
 export function QuickPickPopover({ icon, ariaLabel, options, value, onPick, filter, clearable }: Props) {
+  const dt = useDt();
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
   const [q, setQ] = useState("");
@@ -114,7 +121,7 @@ export function QuickPickPopover({ icon, ariaLabel, options, value, onPick, filt
               </button>
             ))}
             {shown.length === 0 && (
-              <div className="px-2.5 py-3 text-center text-ink-mute" style={{ fontSize: 12 }}>Ничего не найдено</div>
+              <div className="px-2.5 py-3 text-center text-ink-mute" style={{ fontSize: 12 }}>{dt(PICK_COPY.noResults.ru, PICK_COPY.noResults.en)}</div>
             )}
           </div>
           {clearable && value && (
@@ -124,7 +131,7 @@ export function QuickPickPopover({ icon, ariaLabel, options, value, onPick, filt
               className="shrink-0 border-t border-line py-1.5 text-center text-ink-soft transition-colors hover:text-destructive"
               style={{ fontSize: 12 }}
             >
-              Убрать
+              {dt(PICK_COPY.clear.ru, PICK_COPY.clear.en)}
             </button>
           )}
         </div>,

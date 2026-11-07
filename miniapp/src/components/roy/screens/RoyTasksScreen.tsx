@@ -13,6 +13,11 @@ import { rangeLabel } from "@/lib/dateRange";
 import { RangePicker } from "@/components/ui/RangePicker";
 import { StatusFilters } from "@/components/tasks/StatusFilters";
 
+const EMPTY_COPY = {
+  done: { ru: "Пусто — всё разобрано", en: "All clear — everything is taken care of" },
+  empty: { ru: "Здесь пока пусто", en: "Nothing here yet" },
+} as const;
+
 // Мобильный Reminders-вид задач: чипы смарт-списков + спокойный чек-лист со свайпом.
 export function RoyTasksScreen() {
   const { push, toast, openTask } = useRoyNav();
@@ -84,7 +89,7 @@ export function RoyTasksScreen() {
 
         {!r.loading && total === 0 && (
           <div className="py-10 text-center text-sm text-ink-soft">
-            {isOnlyDone(r.statuses) ? "Пусто — всё разобрано" : "Здесь пока пусто"}
+            {isOnlyDone(r.statuses) ? dt(EMPTY_COPY.done.ru, EMPTY_COPY.done.en) : dt(EMPTY_COPY.empty.ru, EMPTY_COPY.empty.en)}
           </div>
         )}
 

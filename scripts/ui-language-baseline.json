@@ -1169,20 +1169,6 @@
     "reason": "Унаследованный литерал RoyBaseScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
   },
   {
-    "file": "miniapp/src/components/roy/screens/RoyTasksScreen.tsx",
-    "context": "children",
-    "text": "Пусто — всё разобрано",
-    "count": 1,
-    "reason": "Унаследованный литерал RoyTasksScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
-  },
-  {
-    "file": "miniapp/src/components/roy/screens/RoyTasksScreen.tsx",
-    "context": "children",
-    "text": "Здесь пока пусто",
-    "count": 1,
-    "reason": "Унаследованный литерал RoyTasksScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
-  },
-  {
     "file": "miniapp/src/components/roy/ui.tsx",
     "context": "jsx-text",
     "text": "Участники (",
@@ -1214,20 +1200,6 @@
     "file": "miniapp/src/components/tasks/QuickPickPopover.tsx",
     "context": "placeholder",
     "text": "Поиск…",
-    "count": 1,
-    "reason": "Унаследованный литерал QuickPickPopover.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
-  },
-  {
-    "file": "miniapp/src/components/tasks/QuickPickPopover.tsx",
-    "context": "jsx-text",
-    "text": "Ничего не найдено",
-    "count": 1,
-    "reason": "Унаследованный литерал QuickPickPopover.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
-  },
-  {
-    "file": "miniapp/src/components/tasks/QuickPickPopover.tsx",
-    "context": "jsx-text",
-    "text": "Убрать",
     "count": 1,
     "reason": "Унаследованный литерал QuickPickPopover.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
   },
