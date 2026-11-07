@@ -2,7 +2,7 @@
   "bot/src/orchestrator/orchestrator.ts": 912,
   "bot/src/orchestrator/smoke-orchestrator.ts": 885,
   "miniapp/src/components/SettingsScreen.tsx": 885,
-  "miniapp/src/components/roy/screens/MeetAdminScreen.tsx": 1443,
+  "miniapp/src/components/roy/screens/MeetAdminScreen.tsx": 1335,
   "miniapp/src/components/tasks/SprintsScreen.tsx": 1457,
   "miniapp/src/lib/api.ts": 4426,
   "recorder/Sources/SwarmRecorder/AppDelegate.swift": 2096,

@@ -1,4 +1,5 @@
 "use client";
+import { ContentEditor } from "./ContentEditor";
 import { tally, CountsCard, StatChip, formatOffset, ListRow, type MeetItem } from "./meetAdminPresentation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRoyNav, useDt } from "../nav";
@@ -110,115 +111,6 @@ function itemRecorder(it: MeetItem): string | null {
   const names = it.data.recorder_names?.filter(Boolean) ?? [];
   return names.length ? names.join(", ") : null;
 }
-
-// ── Inline-редактор содержания (entry) ────────────────────────────────────────
-
-function ContentEditor({
-  entry,
-  onSaved,
-}: {
-  entry: Entry;
-  onSaved: (updated: Entry) => void;
-}) {
-  const { toast } = useRoyNav();
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState(entry.content);
-  const [saving, setSaving] = useState(false);
-
-  // Если выбрали другую запись — сбросить локальное состояние редактора.
-  useEffect(() => {
-    setEditing(false);
-    setDraft(entry.content);
-    setSaving(false);
-  }, [entry.id, entry.content]);
-
-  const startEdit = () => {
-    setDraft(entry.content);
-    setEditing(true);
-  };
-
-  const cancel = () => {
-    setDraft(entry.content);
-    setEditing(false);
-  };
-
-  const save = async () => {
-    if (saving) return;
-    setSaving(true);
-    try {
-      const updated = await patchMeeting(entry.id, { content: draft });
-      onSaved(updated);
-      setEditing(false);
-    } catch {
-      toast("Не удалось сохранить");
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const hasContent = Boolean(entry.content?.trim());
-
-  return (
-    <div>
-      <div className="flex items-center justify-between" style={{ margin: "0 4px 9px" }}>
-        <span className="font-bold uppercase text-ink-mute" style={{ fontSize: 12, letterSpacing: "0.05em" }}>
-          Содержание
-        </span>
-        {!editing && (
-          <button
-            type="button"
-            onClick={startEdit}
-            className="inline-flex items-center gap-1 bg-transparent border-0 font-semibold text-ink-soft transition-opacity hover:opacity-70"
-            style={{ fontSize: 11.5 }}
-          >
-            <RoyIcon name="pencil" size={13} strokeWidth={1.9} />
-            Редактировать
-          </button>
-        )}
-      </div>
-
-      {editing ? (
-        <div className="flex flex-col gap-2.5">
-          <textarea
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            disabled={saving}
-            className="w-full resize-y rounded-[8px] border border-line bg-surface text-ink leading-relaxed outline-none focus:border-[var(--accent-ink)] disabled:opacity-50"
-            style={{ fontSize: 13, padding: "10px 12px", minHeight: 220 }}
-          />
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              disabled={saving}
-              onClick={save}
-              className="inline-flex items-center gap-1.5 rounded-full border-0 font-semibold transition-opacity disabled:opacity-50"
-              style={{ padding: "8px 14px", fontSize: 13, background: "var(--accent-ink)", color: "var(--card)" }}
-            >
-              <RoyIcon name="check" size={14} strokeWidth={2.1} />
-              {saving ? "Сохранение…" : "Сохранить"}
-            </button>
-            <button
-              type="button"
-              disabled={saving}
-              onClick={cancel}
-              className="rounded-full border border-line bg-surface font-semibold text-ink-soft transition-opacity disabled:opacity-50"
-              style={{ padding: "7px 14px", fontSize: 13 }}
-            >
-              Отмена
-            </button>
-          </div>
-        </div>
-      ) : hasContent ? (
-        <p className="text-ink-soft leading-relaxed whitespace-pre-wrap" style={{ fontSize: 13 }}>
-          {entry.content.slice(0, 800)}{entry.content.length > 800 ? "…" : ""}
-        </p>
-      ) : (
-        <p className="text-ink-mute" style={{ fontSize: 13 }}>Содержания нет.</p>
-      )}
-    </div>
-  );
-}
-
 
 // ── Панель деталей (центр) ────────────────────────────────────────────────────
 
