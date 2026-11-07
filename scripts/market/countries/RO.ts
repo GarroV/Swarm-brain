@@ -66,10 +66,17 @@ export const RO: CountryConfig = {
       name: "Premier Restaurants Romania SRL",
       regId: "6205722",
     },
-    // Холдинг KFC/Pizza Hut: в реестре — его отдельная отчётность (сборы с дочерних), не выручка
-    // ресторанов. Операционные дочерние — кандидат на добавление после сверки CUI.
+    // Операторы ресторанов: CUI сверены с официальными условиями kfc.ro / pizzahut.ro.
+    { chain: "kfc", name: "U.S. Food Network SA", regId: "6645790" },
     {
-      chain: "kfc",
+      chain: "pizzahut",
+      name: "American Restaurant System SA",
+      regId: "6331682",
+    },
+    // Отдельная отчётность холдинга — сборы с дочерних, а не ресторанная выручка KFC.
+    // Имя сохраняется: config upsert обновляет существующую запись по country,name.
+    {
+      chain: null,
       name: "Sphera Franchise Group SA (holding)",
       regId: "37586457",
     },
