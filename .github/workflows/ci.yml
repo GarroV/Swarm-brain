@@ -69,6 +69,8 @@ jobs:
         run: ./scripts/test-pre-push.sh && ./scripts/test-pre-push.sh porcha
       - name: Отчёт проверок — JSON при успехе и ошибке Deno
         run: python3 scripts/test-check-report.py
+      - name: Подготовка лимитов памяти — автономные stdlib-фикстуры
+        run: python3 scripts/test-prepare-swarm-memory-limits.py
       - name: Шлюз раскатки — заливка рекордера + порча
         run: ./scripts/test-gate.sh && ./scripts/test-gate.sh porcha
 
