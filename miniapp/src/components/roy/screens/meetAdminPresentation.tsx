@@ -10,6 +10,15 @@ const ROW_STATUS_COPY = {
   pendingReview: { ru: "На согласовании", en: "Pending review" },
 } as const;
 
+export const MEET_DETAIL_COPY = {
+  saveTitle: { ru: "Сохранить название", en: "Save title" },
+  cancel: { ru: "Отмена", en: "Cancel" },
+  editTitle: { ru: "Изменить название", en: "Edit title" },
+  transcript: { ru: "Транскрипт", en: "Transcript" },
+  copy: { ru: "Копировать", en: "Copy" },
+  copied: { ru: "Скопировано", en: "Copied" },
+} as const;
+
 // Статистика по «Все встречи»: сортированный подсчёт (по убыванию).
 export function tally(keys: string[]): [string, number][] {
   const m = new Map<string, number>();

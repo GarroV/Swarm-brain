@@ -93,6 +93,12 @@ export function Market({ code }: { code?: string | null }) {
   );
 }
 
+const UI_COPY = {
+  participants: { ru: "Участники (", en: "Participants (" },
+  personal: { ru: "Личное", en: "Personal" },
+  shared: { ru: "Общее", en: "Shared" },
+} as const;
+
 // ── Участники встречи (из календаря) ─────────────────────────────────────────
 // Показывает имена (или email-фолбэк) участников. Это календарный список, НЕ диаризация
 // аудио — кто именно говорил, мы не различаем. Пусто → ничего не рендерим.
@@ -103,6 +109,7 @@ export function Market({ code }: { code?: string | null }) {
 // контейнере со своим overflow, absolute-поповер там обрезался бы.
 const PARTICIPANTS_POP_W = 288, PARTICIPANTS_POP_H = 320;
 export function Participants({ attendees }: { attendees?: Array<{ name?: string; email?: string }> | null }) {
+  const dt = useDt();
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
   const btnRef = useRef<HTMLButtonElement>(null);
@@ -158,7 +165,7 @@ export function Participants({ attendees }: { attendees?: Array<{ name?: string;
         style={{ fontSize: 12, padding: "3px 10px" }}
       >
         <RoyIcon name="team" size={13} strokeWidth={1.9} className="shrink-0 text-ink-mute" />
-        Участники ({names.length})
+        {dt(UI_COPY.participants.ru, UI_COPY.participants.en)}{names.length})
         <RoyIcon
           name="cright"
           size={12}
@@ -287,6 +294,7 @@ export const STATUS_META: Record<string, { color: string; label: string }> = {
 // Личное = замок в акцентном (янтарном) тоне; общее = «команда» в нейтральном.
 // Показывать только для ПОДТВЕРЖДЁННЫХ встреч: у «ожидающих» приватность ещё не выбрана.
 export function StorageBadge({ isPrivate }: { isPrivate: boolean }) {
+  const dt = useDt();
   const style: CSSProperties = isPrivate
     ? { color: "var(--accent-ink)", background: "var(--accent-soft)", border: "1px solid var(--accent-line)" }
     : { color: "var(--ink-soft)", background: "var(--surface-2)", border: "1px solid var(--line-2)" };
@@ -296,7 +304,7 @@ export function StorageBadge({ isPrivate }: { isPrivate: boolean }) {
       style={{ fontSize: 11, borderRadius: 7, padding: "1px 7px", ...style }}
     >
       <RoyIcon name={isPrivate ? "lock" : "team"} size={11} strokeWidth={1.9} />
-      {isPrivate ? "Личное" : "Общее"}
+      {isPrivate ? dt(UI_COPY.personal.ru, UI_COPY.personal.en) : dt(UI_COPY.shared.ru, UI_COPY.shared.en)}
     </span>
   );
 }
