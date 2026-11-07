@@ -1,27 +1,6 @@
 [
   {
     "file": "miniapp/src/components/AgentReviewQueue.tsx",
-    "context": "jsx-text",
-    "text": "На вычитке ·",
-    "count": 1,
-    "reason": "Унаследованный литерал AgentReviewQueue.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
-  },
-  {
-    "file": "miniapp/src/components/AgentReviewQueue.tsx",
-    "context": "children",
-    "text": "Встреча без названия",
-    "count": 1,
-    "reason": "Унаследованный литерал AgentReviewQueue.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
-  },
-  {
-    "file": "miniapp/src/components/AgentReviewQueue.tsx",
-    "context": "children",
-    "text": "· готовим тезисы…",
-    "count": 1,
-    "reason": "Унаследованный литерал AgentReviewQueue.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
-  },
-  {
-    "file": "miniapp/src/components/AgentReviewQueue.tsx",
     "context": "aria-label",
     "text": "Изменить",
     "count": 1,

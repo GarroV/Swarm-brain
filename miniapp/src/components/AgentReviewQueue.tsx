@@ -12,6 +12,12 @@ import { hasDraftNotes } from "@/lib/agentMeeting";
 
 type Props = { onOpen: (id: string) => void };
 
+const QUEUE_COPY = {
+  heading: { ru: "На вычитке ·", en: "Awaiting review ·" },
+  untitled: { ru: "Встреча без названия", en: "Untitled meeting" },
+  preparing: { ru: " · готовим тезисы…", en: " · preparing summary…" },
+} as const;
+
 // Дата в очереди печаталась ISO-срезом (2026-06-12), а в списке ниже — «12 июн.»: один экран
 // с двумя форматами. Формат один — как в остальных списках встреч.
 function fmtDate(iso: string | null, locale: string): string {
@@ -68,7 +74,7 @@ export function AgentReviewQueue({ onOpen }: Props) {
     <div className="shrink-0 px-4 pt-4 pb-2 border-b border-line">
       <div className="flex items-center gap-2 mb-2">
         <RoyIcon name="clock" size={16} strokeWidth={1.9} style={{ color: "var(--status-open)" }} />
-        <h2 className="text-sm font-semibold text-ink">На вычитке · {items.length}</h2>
+        <h2 className="text-sm font-semibold text-ink">{dt(QUEUE_COPY.heading.ru, QUEUE_COPY.heading.en)} {items.length}</h2>
       </div>
       <div className="space-y-2 max-h-[40vh] overflow-y-auto">
         {items.map((m) => {
@@ -77,13 +83,13 @@ export function AgentReviewQueue({ onOpen }: Props) {
               onClick={isDesktop ? () => onOpen(m.id) : undefined}
               className={`block w-full text-left p-3 rounded-lg border border-line bg-card transition-colors hover:bg-surface-2 ${isDesktop ? "pr-[84px]" : ""}`}
             >
-              <p className="text-sm font-medium leading-snug line-clamp-1 text-ink">{m.title ?? "Встреча без названия"}</p>
+              <p className="text-sm font-medium leading-snug line-clamp-1 text-ink">{m.title ?? dt(QUEUE_COPY.untitled.ru, QUEUE_COPY.untitled.en)}</p>
               <p className="text-xs text-ink-soft mt-0.5">
                 {/* Формат даты — общий («12 июн.»), признак готовности тезисов — hasDraftNotes из
                     main: списочный /agent-meetings больше не возвращает текст тезисов (#108),
                     поэтому проверять draft_notes_md напрямую нельзя. */}
                 {fmtDate(m.started_at ?? m.created_at, dt("ru-RU", "en-GB"))}
-                {hasDraftNotes(m) ? "" : " · готовим тезисы…"}
+                {hasDraftNotes(m) ? "" : dt(QUEUE_COPY.preparing.ru, QUEUE_COPY.preparing.en)}
               </p>
             </button>
           );
