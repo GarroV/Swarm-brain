@@ -43,11 +43,11 @@ export function AggregatorsTab({ codes }: { codes: string[] }) {
             <Stat key={a.key} label={a.title}
               value={<span className="whitespace-nowrap" style={{ fontSize: "clamp(16px, 5.7cqi, 18px)" }}>{num(a.avg, d)}<small className="ml-0.5 font-medium text-ink-mute" style={{ fontSize: 12 }}>/{a.scale}</small>{" "}
                 <Delta v={a.delta} digits={deltaDigits(a.scale)} small /></span>}
-              note={<>
+              note={<span className="block whitespace-normal">
                 {dt(COPY.imf.ru, COPY.imf.en)} {num(imf.get(a.key)?.avg ?? null, d)}{" "}
                 <Delta v={imf.get(a.key)?.delta ?? null} digits={deltaDigits(a.scale)} small />
                 {" · "}{a.pizzerias} {dt(COPY.pizzerias.ru, COPY.pizzerias.en)}
-              </>} />
+              </span>} />
           );
         })}
       </div>
