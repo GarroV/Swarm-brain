@@ -778,78 +778,8 @@
   },
   {
     "file": "miniapp/src/components/roy/screens/MeetAdminScreen.tsx",
-    "context": "jsx-text",
-    "text": "Всего:",
-    "count": 1,
-    "reason": "Унаследованный литерал MeetAdminScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
-  },
-  {
-    "file": "miniapp/src/components/roy/screens/MeetAdminScreen.tsx",
-    "context": "title",
-    "text": "По странам",
-    "count": 1,
-    "reason": "Унаследованный литерал MeetAdminScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
-  },
-  {
-    "file": "miniapp/src/components/roy/screens/MeetAdminScreen.tsx",
-    "context": "title",
-    "text": "Источники",
-    "count": 1,
-    "reason": "Унаследованный литерал MeetAdminScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
-  },
-  {
-    "file": "miniapp/src/components/roy/screens/MeetAdminScreen.tsx",
-    "context": "jsx-text",
-    "text": "· Добавлено:",
-    "count": 2,
-    "reason": "Унаследованный литерал MeetAdminScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
-  },
-  {
-    "file": "miniapp/src/components/roy/screens/MeetAdminScreen.tsx",
-    "context": "jsx-text",
-    "text": "Загружаем расшифровку…",
-    "count": 1,
-    "reason": "Унаследованный литерал MeetAdminScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
-  },
-  {
-    "file": "miniapp/src/components/roy/screens/MeetAdminScreen.tsx",
-    "context": "jsx-text",
-    "text": "Саммари",
-    "count": 1,
-    "reason": "Унаследованный литерал MeetAdminScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
-  },
-  {
-    "file": "miniapp/src/components/roy/screens/MeetAdminScreen.tsx",
-    "context": "jsx-text",
-    "text": "Заметки участников",
-    "count": 1,
-    "reason": "Унаследованный литерал MeetAdminScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
-  },
-  {
-    "file": "miniapp/src/components/roy/screens/MeetAdminScreen.tsx",
     "context": "children",
     "text": "Мои личные пометки — видны только мне",
-    "count": 1,
-    "reason": "Унаследованный литерал MeetAdminScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
-  },
-  {
-    "file": "miniapp/src/components/roy/screens/MeetAdminScreen.tsx",
-    "context": "jsx-text",
-    "text": "На вычитке",
-    "count": 1,
-    "reason": "Унаследованный литерал MeetAdminScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
-  },
-  {
-    "file": "miniapp/src/components/roy/screens/MeetAdminScreen.tsx",
-    "context": "jsx-text",
-    "text": "Тезисы",
-    "count": 2,
-    "reason": "Унаследованный литерал MeetAdminScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
-  },
-  {
-    "file": "miniapp/src/components/roy/screens/MeetAdminScreen.tsx",
-    "context": "jsx-text",
-    "text": "Править",
     "count": 1,
     "reason": "Унаследованный литерал MeetAdminScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
   },
@@ -883,13 +813,6 @@
   },
   {
     "file": "miniapp/src/components/roy/screens/MeetAdminScreen.tsx",
-    "context": "jsx-text",
-    "text": "Пометки на полях",
-    "count": 1,
-    "reason": "Унаследованный литерал MeetAdminScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
-  },
-  {
-    "file": "miniapp/src/components/roy/screens/MeetAdminScreen.tsx",
     "context": "children",
     "text": "Рынки · сохраняю…",
     "count": 1,
@@ -918,78 +841,8 @@
   },
   {
     "file": "miniapp/src/components/roy/screens/MeetAdminScreen.tsx",
-    "context": "children",
-    "text": "Встреча в базе",
-    "count": 1,
-    "reason": "Унаследованный литерал MeetAdminScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
-  },
-  {
-    "file": "miniapp/src/components/roy/screens/MeetAdminScreen.tsx",
-    "context": "children",
-    "text": "Решение",
-    "count": 1,
-    "reason": "Унаследованный литерал MeetAdminScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
-  },
-  {
-    "file": "miniapp/src/components/roy/screens/MeetAdminScreen.tsx",
-    "context": "jsx-text",
-    "text": "Согласована ·",
-    "count": 1,
-    "reason": "Унаследованный литерал MeetAdminScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
-  },
-  {
-    "file": "miniapp/src/components/roy/screens/MeetAdminScreen.tsx",
     "context": "jsx-text",
     "text": "«Опубликовать» — сохранит тезисы в базу команды или в личное хранилище. Название и тезисы можно поправить прямо здесь (карандаш у заголовка / «Править» у тезисов).",
-    "count": 1,
-    "reason": "Унаследованный литерал MeetAdminScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
-  },
-  {
-    "file": "miniapp/src/components/roy/screens/MeetAdminScreen.tsx",
-    "context": "title",
-    "text": "Встречи",
-    "count": 1,
-    "reason": "Унаследованный литерал MeetAdminScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
-  },
-  {
-    "file": "miniapp/src/components/roy/screens/MeetAdminScreen.tsx",
-    "context": "children",
-    "text": "Все встречи",
-    "count": 1,
-    "reason": "Унаследованный литерал MeetAdminScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
-  },
-  {
-    "file": "miniapp/src/components/roy/screens/MeetAdminScreen.tsx",
-    "context": "children",
-    "text": "Требуют решения",
-    "count": 1,
-    "reason": "Унаследованный литерал MeetAdminScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
-  },
-  {
-    "file": "miniapp/src/components/roy/screens/MeetAdminScreen.tsx",
-    "context": "children",
-    "text": "Встреч нет",
-    "count": 1,
-    "reason": "Унаследованный литерал MeetAdminScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
-  },
-  {
-    "file": "miniapp/src/components/roy/screens/MeetAdminScreen.tsx",
-    "context": "children",
-    "text": "Всё согласовано",
-    "count": 1,
-    "reason": "Унаследованный литерал MeetAdminScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
-  },
-  {
-    "file": "miniapp/src/components/roy/screens/MeetAdminScreen.tsx",
-    "context": "jsx-text",
-    "text": "Выберите встречу",
-    "count": 1,
-    "reason": "Унаследованный литерал MeetAdminScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
-  },
-  {
-    "file": "miniapp/src/components/roy/screens/MeetAdminScreen.tsx",
-    "context": "jsx-text",
-    "text": "Выберите встречу для действий",
     "count": 1,
     "reason": "Унаследованный литерал MeetAdminScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
   },

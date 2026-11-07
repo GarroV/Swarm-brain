@@ -56,15 +56,15 @@ function MeetingsStats({ meetings, markets }: { meetings: Entry[]; markets: stri
       else other += n;
     }
     out.sort((a, b) => b[1] - a[1]);
-    if (other) out.push(["Другие", other]);
+    if (other) out.push([dt(MEET_DETAIL_COPY.other.ru, MEET_DETAIL_COPY.other.en), other]);
     return out;
   })();
   const sourceCounts = tally(meetings.map((e) => meetingSourceLabel(e, dt)));
   return (
     <div className="min-h-0 flex-1 overflow-y-auto p-3 space-y-3">
-      <div className="px-1 text-ink-mute" style={{ fontSize: 12 }}>Всего: {meetings.length}</div>
-      <CountsCard title="По странам" counts={countryCounts} />
-      <CountsCard title="Источники" counts={sourceCounts} />
+      <div className="px-1 text-ink-mute" style={{ fontSize: 12 }}>{dt(MEET_DETAIL_COPY.totalPrefix.ru, MEET_DETAIL_COPY.totalPrefix.en)}{meetings.length}</div>
+      <CountsCard title={dt(MEET_DETAIL_COPY.byCountry.ru, MEET_DETAIL_COPY.byCountry.en)} counts={countryCounts} />
+      <CountsCard title={dt(MEET_DETAIL_COPY.sources.ru, MEET_DETAIL_COPY.sources.en)} counts={sourceCounts} />
     </div>
   );
 }
@@ -205,7 +205,7 @@ function DetailPanel({
             </span>
             {date && <span className="text-ink-mute" style={{ fontSize: 12 }}>{date}</span>}
             {itemRecorder(item) && (
-              <span className="text-ink-mute" style={{ fontSize: 12 }}>· Добавлено: {itemRecorder(item)}</span>
+              <span className="text-ink-mute" style={{ fontSize: 12 }}>{dtPanel(MEET_DETAIL_COPY.addedPrefix.ru, MEET_DETAIL_COPY.addedPrefix.en)}{itemRecorder(item)}</span>
             )}
             {e.countries?.[0] && (
               <span
@@ -221,12 +221,12 @@ function DetailPanel({
         {/* Пока идёт до-загрузка полного текста (issue #102) показываем плашку, а НЕ обрезок:
             урезанные тезисы и транскрипт выглядели бы как короткая, но полная встреча. */}
         {e.truncated ? (
-          <div className="text-ink-mute" style={{ fontSize: 13 }}>Загружаем расшифровку…</div>
+          <div className="text-ink-mute" style={{ fontSize: 13 }}>{dtPanel(MEET_DETAIL_COPY.loadingTranscript.ru, MEET_DETAIL_COPY.loadingTranscript.en)}</div>
         ) : (
           <>
             {e.summary && (
               <div>
-                <SectionLabel>Саммари</SectionLabel>
+                <SectionLabel>{dtPanel(MEET_DETAIL_COPY.entrySummary.ru, MEET_DETAIL_COPY.entrySummary.en)}</SectionLabel>
                 <TezisyBlocks text={e.summary} />
               </div>
             )}
@@ -240,7 +240,7 @@ function DetailPanel({
             подписаны автором; личные приватны — их видит только автор. */}
         {notes && (notes.live.length > 0 || notes.personal.length > 0) && (
           <div className="border-t border-line pt-3">
-            <SectionLabel>Заметки участников</SectionLabel>
+            <SectionLabel>{dtPanel(MEET_DETAIL_COPY.participantNotes.ru, MEET_DETAIL_COPY.participantNotes.en)}</SectionLabel>
             {notes.live.length > 0 && (
               <div className="mt-2 flex flex-col gap-2.5">
                 {groupNotesByAuthor(notes.live).map(([author, rows]) => (
@@ -485,7 +485,7 @@ function AgentMeetingDetail({
             className="inline-flex items-center font-semibold"
             style={{ fontSize: 11, color: "var(--status-open)", background: "color-mix(in srgb, var(--status-open) 10%, transparent)", borderRadius: 7, padding: "2px 8px" }}
           >
-            На вычитке
+            {dt(MEET_DETAIL_COPY.awaitingReview.ru, MEET_DETAIL_COPY.awaitingReview.en)}
           </span>
           <span
             className="inline-flex items-center font-semibold"
@@ -496,7 +496,7 @@ function AgentMeetingDetail({
           {date && <span className="text-ink-mute" style={{ fontSize: 12 }}>{date}</span>}
           {m.recorder_names && m.recorder_names.length > 0 && (
             <span className="text-ink-mute" style={{ fontSize: 12 }}>
-              · Добавлено: {m.recorder_names.join(", ")}
+              {dt(MEET_DETAIL_COPY.addedPrefix.ru, MEET_DETAIL_COPY.addedPrefix.en)}{m.recorder_names.join(", ")}
             </span>
           )}
         </div>
@@ -536,7 +536,7 @@ function AgentMeetingDetail({
         {hasDraftNotes(m) && m.draft_notes_md ? (
           <div>
             <div className={`${STICKY_HEAD} flex items-center justify-between gap-2`} style={STICKY_HEAD_BG}>
-              <SectionLabel className="!mb-0">Тезисы</SectionLabel>
+              <SectionLabel className="!mb-0">{dt(MEET_DETAIL_COPY.keyPoints.ru, MEET_DETAIL_COPY.keyPoints.en)}</SectionLabel>
               {!editingNotes && (
                 <div className="flex items-center gap-1.5">
                   {reprocessBtn}
@@ -546,7 +546,7 @@ function AgentMeetingDetail({
                     className="inline-flex items-center gap-1.5 rounded-full border border-line bg-surface font-semibold text-ink-soft transition-[transform,border-color] duration-150 hover:scale-[1.03] hover:border-line-2 active:scale-[0.97]"
                     style={{ padding: "5px 11px", fontSize: 12 }}
                   >
-                    <RoyIcon name="pencil" size={13} strokeWidth={1.9} /> Править
+                    <RoyIcon name="pencil" size={13} strokeWidth={1.9} />{" " + dt(MEET_DETAIL_COPY.editNotes.ru, MEET_DETAIL_COPY.editNotes.en)}
                   </button>
                 </div>
               )}
@@ -568,7 +568,7 @@ function AgentMeetingDetail({
           // и экран навсегда застревает на «готовятся…».
           <div>
             <div className={`${STICKY_HEAD} flex items-center justify-between gap-2`} style={STICKY_HEAD_BG}>
-              <SectionLabel className="!mb-0">Тезисы</SectionLabel>
+              <SectionLabel className="!mb-0">{dt(MEET_DETAIL_COPY.keyPoints.ru, MEET_DETAIL_COPY.keyPoints.en)}</SectionLabel>
               {hasTranscript && reprocessBtn}
             </div>
             <p className="text-ink-soft mt-1" style={{ fontSize: 13 }}>
@@ -591,7 +591,7 @@ function AgentMeetingDetail({
         {/* Пометки «на полях» из виджета рекордера — то, что владелец печатал по ходу встречи. */}
         {liveNotes.length > 0 && (
           <div className="border-t border-line pt-3">
-            <SectionLabel>Пометки на полях</SectionLabel>
+            <SectionLabel>{dt(MEET_DETAIL_COPY.marginNotes.ru, MEET_DETAIL_COPY.marginNotes.en)}</SectionLabel>
             <div className="mt-2 flex flex-col gap-1.5">
               {liveNotes.map((n) => (
                 <div key={n.id} className="flex items-start gap-2.5">
@@ -810,7 +810,7 @@ function ActionsPanel({
 
   return (
     <div className="flex flex-col gap-3 px-4 py-4">
-      <SectionLabel>{isConfirmed ? "Встреча в базе" : "Решение"}</SectionLabel>
+      <SectionLabel>{isConfirmed ? dt(MEET_DETAIL_COPY.meetingInBase.ru, MEET_DETAIL_COPY.meetingInBase.en) : dt(MEET_DETAIL_COPY.decision.ru, MEET_DETAIL_COPY.decision.en)}</SectionLabel>
 
       {isConfirmed ? (
         /* Решение уже принято: показываем, куда сохранена, без органов управления. */
@@ -819,7 +819,7 @@ function ActionsPanel({
           style={{ fontSize: 13 }}
         >
           <RoyIcon name="check" size={15} strokeWidth={2.1} style={{ color: "var(--status-done)" }} />
-          <span>Согласована · <span className="font-semibold text-ink">{savedTo}</span></span>
+          <span>{dt(MEET_DETAIL_COPY.confirmedPrefix.ru, MEET_DETAIL_COPY.confirmedPrefix.en)}<span className="font-semibold text-ink">{savedTo}</span></span>
         </div>
       ) : null}
 
@@ -935,8 +935,8 @@ function ActionsPanel({
 // Режимы левой колонки: «Ревью» — очередь на решение (черновики агента + неподтверждённые
 // встречи), «Все встречи» — весь доступный пользователю список (fetchMeetings, приватность на бэке).
 const MODE_SEGS = [
-  { id: "review", label: "Ревью" },
-  { id: "all", label: "Все встречи" },
+  { id: "review", label: MEET_DETAIL_COPY.reviewTab },
+  { id: "all", label: MEET_DETAIL_COPY.allMeetings },
 ];
 
 export function MeetAdminScreen({ initialMode = "review" }: { initialMode?: "review" | "all" } = {}) {
@@ -1201,7 +1201,7 @@ export function MeetAdminScreen({ initialMode = "review" }: { initialMode?: "rev
     // flex-1 + min-h-0 (а не h-full): надёжно занимает высоту flex-родителя без капризов
     // процентной высоты → внутренние overflow-y-auto колонки реально скроллятся.
     <div className="roy-pop flex min-h-0 flex-1 flex-col overflow-hidden">
-      <NavHeader onBack={pop} title="Встречи" />
+      <NavHeader onBack={pop} title={dt(MEET_DETAIL_COPY.meetings.ru, MEET_DETAIL_COPY.meetings.en)} />
 
       {/* ── Трёхколоночный master-detail ─────────────────────────────────────── */}
       <div className="flex min-h-0 flex-1 overflow-hidden">
@@ -1213,7 +1213,7 @@ export function MeetAdminScreen({ initialMode = "review" }: { initialMode?: "rev
         >
           {/* Переключатель: Ревью (очередь на решение) / Все встречи (весь доступный список). */}
           <div className="px-3 pt-3 pb-1">
-            <Segmented items={MODE_SEGS} value={mode} onChange={switchMode} />
+            <Segmented items={MODE_SEGS.map((s) => ({ ...s, label: dt(s.label.ru, s.label.en) }))} value={mode} onChange={switchMode} />
           </div>
           <div className="flex gap-2 px-3 py-2">
             <StatChip label={mode === "all" ? "всего встреч" : "требуют решения"} value={items.length} accent={mode !== "all"} />
@@ -1221,7 +1221,7 @@ export function MeetAdminScreen({ initialMode = "review" }: { initialMode?: "rev
 
           {/* Метка секции */}
           <div className="px-3 pb-1">
-            <SectionLabel>{mode === "all" ? "Все встречи" : "Требуют решения"}</SectionLabel>
+            <SectionLabel>{mode === "all" ? dt(MEET_DETAIL_COPY.allMeetings.ru, MEET_DETAIL_COPY.allMeetings.en) : dt(MEET_DETAIL_COPY.needsDecision.ru, MEET_DETAIL_COPY.needsDecision.en)}</SectionLabel>
           </div>
 
           {/* Список */}
@@ -1235,7 +1235,7 @@ export function MeetAdminScreen({ initialMode = "review" }: { initialMode?: "rev
             )}
             {!isLoading && items.length === 0 && (
               <div className="py-8 text-center text-ink-mute" style={{ fontSize: 13 }}>
-                {mode === "all" ? "Встреч нет" : "Всё согласовано"}
+                {mode === "all" ? dt(MEET_DETAIL_COPY.noMeetings.ru, MEET_DETAIL_COPY.noMeetings.en) : dt(MEET_DETAIL_COPY.allReviewed.ru, MEET_DETAIL_COPY.allReviewed.en)}
               </div>
             )}
             {items.map((item) => (
@@ -1269,7 +1269,7 @@ export function MeetAdminScreen({ initialMode = "review" }: { initialMode?: "rev
                   <RoyIcon name="meet" size={28} />
                 </div>
                 <p className="text-ink-mute font-medium" style={{ fontSize: 13 }}>
-                  Выберите встречу
+                  {dt(MEET_DETAIL_COPY.selectMeeting.ru, MEET_DETAIL_COPY.selectMeeting.en)}
                 </p>
               </div>
             </div>
@@ -1324,7 +1324,7 @@ export function MeetAdminScreen({ initialMode = "review" }: { initialMode?: "rev
           ) : (
             <div className="flex h-full items-center justify-center px-4">
               <p className="text-center text-ink-mute" style={{ fontSize: 12 }}>
-                Выберите встречу для действий
+                {dt(MEET_DETAIL_COPY.selectForActions.ru, MEET_DETAIL_COPY.selectForActions.en)}
               </p>
             </div>
           )}
