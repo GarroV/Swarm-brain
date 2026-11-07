@@ -134,7 +134,10 @@ async function pdfPages(pdf: Uint8Array): Promise<Page[]> {
 }
 
 /** Чтения всех отчётов компании за годы ≥ MIN_YEAR. Сбой одного файла не роняет остальные. */
-async function readCompany(eik: string): Promise<Reading[]> {
+export async function readCompany(
+  eik: string,
+  readPages: (pdf: Uint8Array) => Promise<Page[]> = pdfPages,
+): Promise<Reading[]> {
   const deed = await (await fetchRetry(
     `${API}/Deeds/${eik}`,
     "application/json",
@@ -144,22 +147,28 @@ async function readCompany(eik: string): Promise<Reading[]> {
   );
   const readings: Reading[] = [];
   const doneYears = new Set<number>();
+  let documentAttempts = 0, documentFailures = 0;
   for (const f of filings) {
     // По году бывает несколько файлов (отчёт, приложения): текстовое чтение их не требует.
     if (doneYears.has(f.year)) continue;
     await sleep(POLITE_MS);
+    documentAttempts++;
     try {
       const pdf = new Uint8Array(
         await (await fetchRetry(`${API}/Documents/${f.token}`)).arrayBuffer(),
       );
-      const rd = readIncomeStatement(await pdfPages(pdf), f.year);
+      const rd = readIncomeStatement(await readPages(pdf), f.year);
       if (rd) {
         readings.push(rd);
         if (!rd.ocr && rd.candidates.length === 1) doneYears.add(f.year);
       }
     } catch (e) {
+      documentFailures++;
       console.warn(`BG ${eik} ${f.year}: файл пропущен — ${e}`);
     }
+  }
+  if (documentAttempts > 0 && documentFailures === documentAttempts) {
+    throw new Error(`BG: all ${documentAttempts} document attempts failed`);
   }
   return readings;
 }
