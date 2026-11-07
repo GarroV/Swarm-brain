@@ -1,20 +1,29 @@
 // Execute the real legacy editor and save handler with controlled hooks/GET promises.
 // Like sw.test.ts, compile the actual source rather than a second implementation.
 import { assertEquals } from "@std/assert";
-import { createRequire } from "node:module";
+import { fileURLToPath } from "node:url";
 
-const require = createRequire(new URL("../../package.json", import.meta.url));
-const ts = require("typescript");
-const source = await Deno.readTextFile(
-  new URL("../components/roy/screens/NewTask.tsx", import.meta.url),
-);
-const compiled = ts.transpileModule(source, {
-  compilerOptions: {
-    module: ts.ModuleKind.CommonJS,
-    target: ts.ScriptTarget.ES2022,
-    jsx: ts.JsxEmit.ReactJSX,
-  },
-}).outputText;
+// TypeScript is a build tool, not application code. Keep its 200k lines outside
+// Deno's coverage process while executing the emitted real handler below.
+const compilation = await new Deno.Command("node", {
+  args: [
+    "-e",
+    `const {createRequire} = require("node:module");
+const fs = require("node:fs");
+const ts = createRequire(process.argv[1])("typescript");
+process.stdout.write(ts.transpileModule(fs.readFileSync(process.argv[2], "utf8"), {
+  compilerOptions: {module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX}
+}).outputText);`,
+    fileURLToPath(new URL("../../package.json", import.meta.url)),
+    fileURLToPath(
+      new URL("../components/roy/screens/NewTask.tsx", import.meta.url),
+    ),
+  ],
+}).output();
+if (!compilation.success) {
+  throw new Error("Could not compile the legacy editor test fixture");
+}
+const compiled = new TextDecoder().decode(compilation.stdout);
 
 type Node = { type: unknown; props: Record<string, unknown> };
 type Effect = { deps: unknown[]; cleanup?: () => void };
