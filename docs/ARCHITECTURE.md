@@ -16,6 +16,8 @@
 
 Закрытие issues (#1079) сверяет `scripts/check-issue-closures.py`: workflow `issue-closures.yml` читает metadata closing references всех новых main-коммитов, а `workflow_run` после «Ночная раскатка» покрывает слияния, чей `GITHUB_TOKEN` не создаёт push-workflow. Никакой записи issues или раскатки; OPEN даёт красный после ограниченного ожидания, ошибки Git/API не пропускаются. Синтаксис, диапазоны и ограничения — [ISSUE_CLOSURE_CHECK.md](ISSUE_CLOSURE_CHECK.md); реальные Git-фикстуры и порча — `scripts/test-issue-closures.py`.
 
+Чистое отображение карточек записей (`deriveEntryTitle`, `entryTagKey`) вынесено из роутера в `swarm-api/entry-presentation.ts`: заголовки и метки типов для списка и поиска не менялись; доступ к данным и маршруты остаются в `index.ts`.
+
 ## Поверхности продукта
 
 Четыре пользовательские поверхности поверх одного бэкенда (Supabase Edge Functions + Postgres/pgvector + OpenAI):
