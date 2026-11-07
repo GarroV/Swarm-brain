@@ -78,7 +78,9 @@ export function MarketScreen() {
   }, [reload]);
 
   useEffect(() => {
-    fetchMarketReady().then(setReady);
+    let alive = true;
+    fetchMarketReady().then((list) => { if (alive) setReady(list); });
+    return () => { alive = false; };
   }, [reload]);
 
   useEffect(() => {
