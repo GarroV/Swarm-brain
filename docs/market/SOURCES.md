@@ -276,7 +276,7 @@
 |---|---|---|---|---|---|
 | Продажи Dodo | https://publicapi.dodois.io/by/api/v1/ | пиццерии Dodo (unitinfo/all: адрес, координаты, BeginDateWork) и выручка по месяцам с числом пиццерий; курс к евро — ЕЦБ, для динара — НБС (kurs.resenje.org), для BYN, MDL, AMD, AZN, TJS — национальный банк, для GEL, KGS — кросс через рубль по ЦБ РФ (среднее дневных курсов за месяц) | авто, `dodo-publicapi` | раз в неделю | — |
 | Точки | https://publicapi.dodois.io/by/api/v1/ | сеть dodo: пиццерии Dodo (unitinfo/all: адрес, координаты, BeginDateWork) и выручка по месяцам с числом пиццерий; курс к евро — ЕЦБ, для динара — НБС (kurs.resenje.org), для BYN, MDL, AMD, AZN, TJS — национальный банк, для GEL, KGS — кросс через рубль по ЦБ РФ (среднее дневных курсов за месяц) | авто, `dodo-publicapi` | раз в неделю | — |
-| Точки | https://docs.overturemaps.org/guides/places/ | точки сетей из Overture Maps places (последний релиз, parquet в S3, через DuckDB): заведения общепита и пекарни страны в её bbox, без закрытых; сети из конфига — по бренду (osmBrands, допускается суффикс страны) или началу названия (osmNames), остальные сети находятся сами (бренд от 3 точек, без бренда от 5 точек в 3 населённых пунктах, не больше 40); точка — центр bbox объекта | авто, `overture` | раз в неделю | 2026-10-11 |
+| Точки | https://docs.overturemaps.org/guides/places/ | точки сетей из Overture Maps places (последний релиз, parquet в S3, через DuckDB): заведения общепита и пекарни страны в её bbox, без закрытых; сети из конфига — по бренду (osmBrands, допускается суффикс страны) или началу названия (osmNames), остальные сети находятся сами (бренд от 3 точек, без бренда от 5 точек в 3 населённых пунктах, не больше 40; фирменные магазины производителей — по форме юрлица в названии и списку страны — не берутся); точка — центр bbox объекта | авто, `overture` | раз в неделю | 2026-10-11 |
 
 Сети (по чему их ищет `osm-overpass`: тег brand или начало name; пусто — сети в OSM нет, точки из других источников):
 
@@ -298,7 +298,53 @@
 |---|---|---|---|---|---|
 | Продажи Dodo | https://publicapi.dodois.io/cy/api/v1/ | пиццерии Dodo (unitinfo/all: адрес, координаты, BeginDateWork) и выручка по месяцам с числом пиццерий; курс к евро — ЕЦБ, для динара — НБС (kurs.resenje.org), для BYN, MDL, AMD, AZN, TJS — национальный банк, для GEL, KGS — кросс через рубль по ЦБ РФ (среднее дневных курсов за месяц) | авто, `dodo-publicapi` | раз в неделю | — |
 | Точки | https://publicapi.dodois.io/cy/api/v1/ | сеть dodo: пиццерии Dodo (unitinfo/all: адрес, координаты, BeginDateWork) и выручка по месяцам с числом пиццерий; курс к евро — ЕЦБ, для динара — НБС (kurs.resenje.org), для BYN, MDL, AMD, AZN, TJS — национальный банк, для GEL, KGS — кросс через рубль по ЦБ РФ (среднее дневных курсов за месяц) | авто, `dodo-publicapi` | раз в неделю | — |
-| Точки | https://docs.overturemaps.org/guides/places/ | точки сетей из Overture Maps places (последний релиз, parquet в S3, через DuckDB): заведения общепита и пекарни страны в её bbox, без закрытых; сети из конфига — по бренду (osmBrands, допускается суффикс страны) или началу названия (osmNames), остальные сети находятся сами (бренд от 3 точек, без бренда от 5 точек в 3 населённых пунктах, не больше 40); точка — центр bbox объекта | авто, `overture` | раз в неделю | 2026-10-11 |
+| Точки | https://docs.overturemaps.org/guides/places/ | точки сетей из Overture Maps places (последний релиз, parquet в S3, через DuckDB): заведения общепита и пекарни страны в её bbox, без закрытых; сети из конфига — по бренду (osmBrands, допускается суффикс страны) или началу названия (osmNames), остальные сети находятся сами (бренд от 3 точек, без бренда от 5 точек в 3 населённых пунктах, не больше 40; фирменные магазины производителей — по форме юрлица в названии и списку страны — не берутся); точка — центр bbox объекта | авто, `overture` | раз в неделю | 2026-10-11 |
+
+Сети (по чему их ищет `osm-overpass`: тег brand или начало name; пусто — сети в OSM нет, точки из других источников):
+
+| Ключ | Сеть | Сегмент | Поиск в OSM |
+|---|---|---|---|
+| `dodo` | Dodo Pizza | pizza | — |
+| `dominos` | Domino's | pizza | brand: Domino's, Domino's Pizza |
+| `pizzahut` | Pizza Hut | pizza | brand: Pizza Hut |
+| `mcdonalds` | McDonald's | burger | brand: McDonald's, McDonalds |
+| `burgerking` | Burger King | burger | brand: Burger King |
+| `kfc` | KFC | chicken | brand: KFC |
+| `subway` | Subway | sandwich | brand: Subway |
+| `starbucks` | Starbucks | coffee | brand: Starbucks |
+| `costa` | Costa Coffee | coffee | brand: Costa Coffee, Costa |
+| `coffee-island` | Coffee Island | coffee | brand: Coffee Island |
+
+## ES — ES
+
+| Что | Откуда | Что именно | Как | Частота | Сверено |
+|---|---|---|---|---|---|
+| Продажи Dodo | https://publicapi.dodois.io/es/api/v1/ | пиццерии Dodo (unitinfo/all: адрес, координаты, BeginDateWork) и выручка по месяцам с числом пиццерий; курс к евро — ЕЦБ, для динара — НБС (kurs.resenje.org), для BYN, MDL, AMD, AZN, TJS — национальный банк, для GEL, KGS — кросс через рубль по ЦБ РФ (среднее дневных курсов за месяц) | авто, `dodo-publicapi` | раз в неделю | — |
+| Точки | https://publicapi.dodois.io/es/api/v1/ | сеть dodo: пиццерии Dodo (unitinfo/all: адрес, координаты, BeginDateWork) и выручка по месяцам с числом пиццерий; курс к евро — ЕЦБ, для динара — НБС (kurs.resenje.org), для BYN, MDL, AMD, AZN, TJS — национальный банк, для GEL, KGS — кросс через рубль по ЦБ РФ (среднее дневных курсов за месяц) | авто, `dodo-publicapi` | раз в неделю | — |
+| Точки | https://docs.overturemaps.org/guides/places/ | точки сетей из Overture Maps places (последний релиз, parquet в S3, через DuckDB): заведения общепита и пекарни страны в её bbox, без закрытых; сети из конфига — по бренду (osmBrands, допускается суффикс страны) или началу названия (osmNames), остальные сети находятся сами (бренд от 3 точек, без бренда от 5 точек в 3 населённых пунктах, не больше 40; фирменные магазины производителей — по форме юрлица в названии и списку страны — не берутся); точка — центр bbox объекта | авто, `overture` | раз в неделю | 2026-10-11 |
+
+Сети (по чему их ищет `osm-overpass`: тег brand или начало name; пусто — сети в OSM нет, точки из других источников):
+
+| Ключ | Сеть | Сегмент | Поиск в OSM |
+|---|---|---|---|
+| `dodo` | Dodo Pizza | pizza | — |
+| `dominos` | Domino's | pizza | brand: Domino's, Domino's Pizza |
+| `pizzahut` | Pizza Hut | pizza | brand: Pizza Hut |
+| `mcdonalds` | McDonald's | burger | brand: McDonald's, McDonalds |
+| `burgerking` | Burger King | burger | brand: Burger King |
+| `kfc` | KFC | chicken | brand: KFC |
+| `subway` | Subway | sandwich | brand: Subway |
+| `starbucks` | Starbucks | coffee | brand: Starbucks |
+| `costa` | Costa Coffee | coffee | brand: Costa Coffee, Costa |
+| `llaollao` | llaollao | other | brand: llaollao |
+
+## HU — HU
+
+| Что | Откуда | Что именно | Как | Частота | Сверено |
+|---|---|---|---|---|---|
+| Продажи Dodo | https://publicapi.dodois.io/hu/api/v1/ | пиццерии Dodo (unitinfo/all: адрес, координаты, BeginDateWork) и выручка по месяцам с числом пиццерий; курс к евро — ЕЦБ, для динара — НБС (kurs.resenje.org), для BYN, MDL, AMD, AZN, TJS — национальный банк, для GEL, KGS — кросс через рубль по ЦБ РФ (среднее дневных курсов за месяц) | авто, `dodo-publicapi` | раз в неделю | — |
+| Точки | https://publicapi.dodois.io/hu/api/v1/ | сеть dodo: пиццерии Dodo (unitinfo/all: адрес, координаты, BeginDateWork) и выручка по месяцам с числом пиццерий; курс к евро — ЕЦБ, для динара — НБС (kurs.resenje.org), для BYN, MDL, AMD, AZN, TJS — национальный банк, для GEL, KGS — кросс через рубль по ЦБ РФ (среднее дневных курсов за месяц) | авто, `dodo-publicapi` | раз в неделю | — |
+| Точки | https://docs.overturemaps.org/guides/places/ | точки сетей из Overture Maps places (последний релиз, parquet в S3, через DuckDB): заведения общепита и пекарни страны в её bbox, без закрытых; сети из конфига — по бренду (osmBrands, допускается суффикс страны) или началу названия (osmNames), остальные сети находятся сами (бренд от 3 точек, без бренда от 5 точек в 3 населённых пунктах, не больше 40; фирменные магазины производителей — по форме юрлица в названии и списку страны — не берутся); точка — центр bbox объекта | авто, `overture` | раз в неделю | 2026-10-11 |
 
 Сети (по чему их ищет `osm-overpass`: тег brand или начало name; пусто — сети в OSM нет, точки из других источников):
 
@@ -314,57 +360,13 @@
 | `starbucks` | Starbucks | coffee | brand: Starbucks |
 | `costa` | Costa Coffee | coffee | brand: Costa Coffee, Costa |
 
-## ES — ES
-
-| Что | Откуда | Что именно | Как | Частота | Сверено |
-|---|---|---|---|---|---|
-| Продажи Dodo | https://publicapi.dodois.io/es/api/v1/ | пиццерии Dodo (unitinfo/all: адрес, координаты, BeginDateWork) и выручка по месяцам с числом пиццерий; курс к евро — ЕЦБ, для динара — НБС (kurs.resenje.org), для BYN, MDL, AMD, AZN, TJS — национальный банк, для GEL, KGS — кросс через рубль по ЦБ РФ (среднее дневных курсов за месяц) | авто, `dodo-publicapi` | раз в неделю | — |
-| Точки | https://publicapi.dodois.io/es/api/v1/ | сеть dodo: пиццерии Dodo (unitinfo/all: адрес, координаты, BeginDateWork) и выручка по месяцам с числом пиццерий; курс к евро — ЕЦБ, для динара — НБС (kurs.resenje.org), для BYN, MDL, AMD, AZN, TJS — национальный банк, для GEL, KGS — кросс через рубль по ЦБ РФ (среднее дневных курсов за месяц) | авто, `dodo-publicapi` | раз в неделю | — |
-| Точки | https://docs.overturemaps.org/guides/places/ | точки сетей из Overture Maps places (последний релиз, parquet в S3, через DuckDB): заведения общепита и пекарни страны в её bbox, без закрытых; сети из конфига — по бренду (osmBrands, допускается суффикс страны) или началу названия (osmNames), остальные сети находятся сами (бренд от 3 точек, без бренда от 5 точек в 3 населённых пунктах, не больше 40); точка — центр bbox объекта | авто, `overture` | раз в неделю | 2026-10-11 |
-
-Сети (по чему их ищет `osm-overpass`: тег brand или начало name; пусто — сети в OSM нет, точки из других источников):
-
-| Ключ | Сеть | Сегмент | Поиск в OSM |
-|---|---|---|---|
-| `dodo` | Dodo Pizza | pizza | — |
-| `dominos` | Domino's | pizza | brand: Domino's, Domino's Pizza |
-| `pizzahut` | Pizza Hut | pizza | brand: Pizza Hut |
-| `mcdonalds` | McDonald's | burger | brand: McDonald's, McDonalds, McCafé, McCafe |
-| `burgerking` | Burger King | burger | brand: Burger King |
-| `kfc` | KFC | chicken | brand: KFC |
-| `subway` | Subway | sandwich | brand: Subway |
-| `starbucks` | Starbucks | coffee | brand: Starbucks |
-| `costa` | Costa Coffee | coffee | brand: Costa Coffee, Costa |
-
-## HU — HU
-
-| Что | Откуда | Что именно | Как | Частота | Сверено |
-|---|---|---|---|---|---|
-| Продажи Dodo | https://publicapi.dodois.io/hu/api/v1/ | пиццерии Dodo (unitinfo/all: адрес, координаты, BeginDateWork) и выручка по месяцам с числом пиццерий; курс к евро — ЕЦБ, для динара — НБС (kurs.resenje.org), для BYN, MDL, AMD, AZN, TJS — национальный банк, для GEL, KGS — кросс через рубль по ЦБ РФ (среднее дневных курсов за месяц) | авто, `dodo-publicapi` | раз в неделю | — |
-| Точки | https://publicapi.dodois.io/hu/api/v1/ | сеть dodo: пиццерии Dodo (unitinfo/all: адрес, координаты, BeginDateWork) и выручка по месяцам с числом пиццерий; курс к евро — ЕЦБ, для динара — НБС (kurs.resenje.org), для BYN, MDL, AMD, AZN, TJS — национальный банк, для GEL, KGS — кросс через рубль по ЦБ РФ (среднее дневных курсов за месяц) | авто, `dodo-publicapi` | раз в неделю | — |
-| Точки | https://docs.overturemaps.org/guides/places/ | точки сетей из Overture Maps places (последний релиз, parquet в S3, через DuckDB): заведения общепита и пекарни страны в её bbox, без закрытых; сети из конфига — по бренду (osmBrands, допускается суффикс страны) или началу названия (osmNames), остальные сети находятся сами (бренд от 3 точек, без бренда от 5 точек в 3 населённых пунктах, не больше 40); точка — центр bbox объекта | авто, `overture` | раз в неделю | 2026-10-11 |
-
-Сети (по чему их ищет `osm-overpass`: тег brand или начало name; пусто — сети в OSM нет, точки из других источников):
-
-| Ключ | Сеть | Сегмент | Поиск в OSM |
-|---|---|---|---|
-| `dodo` | Dodo Pizza | pizza | — |
-| `dominos` | Domino's | pizza | brand: Domino's, Domino's Pizza |
-| `pizzahut` | Pizza Hut | pizza | brand: Pizza Hut |
-| `mcdonalds` | McDonald's | burger | brand: McDonald's, McDonalds, McCafé, McCafe |
-| `burgerking` | Burger King | burger | brand: Burger King |
-| `kfc` | KFC | chicken | brand: KFC |
-| `subway` | Subway | sandwich | brand: Subway |
-| `starbucks` | Starbucks | coffee | brand: Starbucks |
-| `costa` | Costa Coffee | coffee | brand: Costa Coffee, Costa |
-
 ## LT — LT
 
 | Что | Откуда | Что именно | Как | Частота | Сверено |
 |---|---|---|---|---|---|
 | Продажи Dodo | https://publicapi.dodois.io/lt/api/v1/ | пиццерии Dodo (unitinfo/all: адрес, координаты, BeginDateWork) и выручка по месяцам с числом пиццерий; курс к евро — ЕЦБ, для динара — НБС (kurs.resenje.org), для BYN, MDL, AMD, AZN, TJS — национальный банк, для GEL, KGS — кросс через рубль по ЦБ РФ (среднее дневных курсов за месяц) | авто, `dodo-publicapi` | раз в неделю | — |
 | Точки | https://publicapi.dodois.io/lt/api/v1/ | сеть dodo: пиццерии Dodo (unitinfo/all: адрес, координаты, BeginDateWork) и выручка по месяцам с числом пиццерий; курс к евро — ЕЦБ, для динара — НБС (kurs.resenje.org), для BYN, MDL, AMD, AZN, TJS — национальный банк, для GEL, KGS — кросс через рубль по ЦБ РФ (среднее дневных курсов за месяц) | авто, `dodo-publicapi` | раз в неделю | — |
-| Точки | https://docs.overturemaps.org/guides/places/ | точки сетей из Overture Maps places (последний релиз, parquet в S3, через DuckDB): заведения общепита и пекарни страны в её bbox, без закрытых; сети из конфига — по бренду (osmBrands, допускается суффикс страны) или началу названия (osmNames), остальные сети находятся сами (бренд от 3 точек, без бренда от 5 точек в 3 населённых пунктах, не больше 40); точка — центр bbox объекта | авто, `overture` | раз в неделю | 2026-10-11 |
+| Точки | https://docs.overturemaps.org/guides/places/ | точки сетей из Overture Maps places (последний релиз, parquet в S3, через DuckDB): заведения общепита и пекарни страны в её bbox, без закрытых; сети из конфига — по бренду (osmBrands, допускается суффикс страны) или началу названия (osmNames), остальные сети находятся сами (бренд от 3 точек, без бренда от 5 точек в 3 населённых пунктах, не больше 40; фирменные магазины производителей — по форме юрлица в названии и списку страны — не берутся); точка — центр bbox объекта | авто, `overture` | раз в неделю | 2026-10-11 |
 
 Сети (по чему их ищет `osm-overpass`: тег brand или начало name; пусто — сети в OSM нет, точки из других источников):
 
@@ -386,7 +388,7 @@
 |---|---|---|---|---|---|
 | Продажи Dodo | https://publicapi.dodois.io/md/api/v1/ | пиццерии Dodo (unitinfo/all: адрес, координаты, BeginDateWork) и выручка по месяцам с числом пиццерий; курс к евро — ЕЦБ, для динара — НБС (kurs.resenje.org), для BYN, MDL, AMD, AZN, TJS — национальный банк, для GEL, KGS — кросс через рубль по ЦБ РФ (среднее дневных курсов за месяц) | авто, `dodo-publicapi` | раз в неделю | — |
 | Точки | https://publicapi.dodois.io/md/api/v1/ | сеть dodo: пиццерии Dodo (unitinfo/all: адрес, координаты, BeginDateWork) и выручка по месяцам с числом пиццерий; курс к евро — ЕЦБ, для динара — НБС (kurs.resenje.org), для BYN, MDL, AMD, AZN, TJS — национальный банк, для GEL, KGS — кросс через рубль по ЦБ РФ (среднее дневных курсов за месяц) | авто, `dodo-publicapi` | раз в неделю | — |
-| Точки | https://docs.overturemaps.org/guides/places/ | точки сетей из Overture Maps places (последний релиз, parquet в S3, через DuckDB): заведения общепита и пекарни страны в её bbox, без закрытых; сети из конфига — по бренду (osmBrands, допускается суффикс страны) или началу названия (osmNames), остальные сети находятся сами (бренд от 3 точек, без бренда от 5 точек в 3 населённых пунктах, не больше 40); точка — центр bbox объекта | авто, `overture` | раз в неделю | 2026-10-11 |
+| Точки | https://docs.overturemaps.org/guides/places/ | точки сетей из Overture Maps places (последний релиз, parquet в S3, через DuckDB): заведения общепита и пекарни страны в её bbox, без закрытых; сети из конфига — по бренду (osmBrands, допускается суффикс страны) или началу названия (osmNames), остальные сети находятся сами (бренд от 3 точек, без бренда от 5 точек в 3 населённых пунктах, не больше 40; фирменные магазины производителей — по форме юрлица в названии и списку страны — не берутся); точка — центр bbox объекта | авто, `overture` | раз в неделю | 2026-10-11 |
 
 Сети (по чему их ищет `osm-overpass`: тег brand или начало name; пусто — сети в OSM нет, точки из других источников):
 
@@ -408,7 +410,7 @@
 |---|---|---|---|---|---|
 | Продажи Dodo | https://publicapi.dodois.io/pl/api/v1/ | пиццерии Dodo (unitinfo/all: адрес, координаты, BeginDateWork) и выручка по месяцам с числом пиццерий; курс к евро — ЕЦБ, для динара — НБС (kurs.resenje.org), для BYN, MDL, AMD, AZN, TJS — национальный банк, для GEL, KGS — кросс через рубль по ЦБ РФ (среднее дневных курсов за месяц) | авто, `dodo-publicapi` | раз в неделю | — |
 | Точки | https://publicapi.dodois.io/pl/api/v1/ | сеть dodo: пиццерии Dodo (unitinfo/all: адрес, координаты, BeginDateWork) и выручка по месяцам с числом пиццерий; курс к евро — ЕЦБ, для динара — НБС (kurs.resenje.org), для BYN, MDL, AMD, AZN, TJS — национальный банк, для GEL, KGS — кросс через рубль по ЦБ РФ (среднее дневных курсов за месяц) | авто, `dodo-publicapi` | раз в неделю | — |
-| Точки | https://docs.overturemaps.org/guides/places/ | точки сетей из Overture Maps places (последний релиз, parquet в S3, через DuckDB): заведения общепита и пекарни страны в её bbox, без закрытых; сети из конфига — по бренду (osmBrands, допускается суффикс страны) или началу названия (osmNames), остальные сети находятся сами (бренд от 3 точек, без бренда от 5 точек в 3 населённых пунктах, не больше 40); точка — центр bbox объекта | авто, `overture` | раз в неделю | 2026-10-11 |
+| Точки | https://docs.overturemaps.org/guides/places/ | точки сетей из Overture Maps places (последний релиз, parquet в S3, через DuckDB): заведения общепита и пекарни страны в её bbox, без закрытых; сети из конфига — по бренду (osmBrands, допускается суффикс страны) или началу названия (osmNames), остальные сети находятся сами (бренд от 3 точек, без бренда от 5 точек в 3 населённых пунктах, не больше 40; фирменные магазины производителей — по форме юрлица в названии и списку страны — не берутся); точка — центр bbox объекта | авто, `overture` | раз в неделю | 2026-10-11 |
 
 Сети (по чему их ищет `osm-overpass`: тег brand или начало name; пусто — сети в OSM нет, точки из других источников):
 
@@ -417,7 +419,7 @@
 | `dodo` | Dodo Pizza | pizza | — |
 | `dominos` | Domino's | pizza | brand: Domino's, Domino's Pizza |
 | `pizzahut` | Pizza Hut | pizza | brand: Pizza Hut |
-| `mcdonalds` | McDonald's | burger | brand: McDonald's, McDonalds, McCafé, McCafe |
+| `mcdonalds` | McDonald's | burger | brand: McDonald's, McDonalds |
 | `burgerking` | Burger King | burger | brand: Burger King |
 | `kfc` | KFC | chicken | brand: KFC |
 | `subway` | Subway | sandwich | brand: Subway |
@@ -430,7 +432,7 @@
 |---|---|---|---|---|---|
 | Продажи Dodo | https://publicapi.dodois.io/ge/api/v1/ | пиццерии Dodo (unitinfo/all: адрес, координаты, BeginDateWork) и выручка по месяцам с числом пиццерий; курс к евро — ЕЦБ, для динара — НБС (kurs.resenje.org), для BYN, MDL, AMD, AZN, TJS — национальный банк, для GEL, KGS — кросс через рубль по ЦБ РФ (среднее дневных курсов за месяц) | авто, `dodo-publicapi` | раз в неделю | — |
 | Точки | https://publicapi.dodois.io/ge/api/v1/ | сеть dodo: пиццерии Dodo (unitinfo/all: адрес, координаты, BeginDateWork) и выручка по месяцам с числом пиццерий; курс к евро — ЕЦБ, для динара — НБС (kurs.resenje.org), для BYN, MDL, AMD, AZN, TJS — национальный банк, для GEL, KGS — кросс через рубль по ЦБ РФ (среднее дневных курсов за месяц) | авто, `dodo-publicapi` | раз в неделю | — |
-| Точки | https://docs.overturemaps.org/guides/places/ | точки сетей из Overture Maps places (последний релиз, parquet в S3, через DuckDB): заведения общепита и пекарни страны в её bbox, без закрытых; сети из конфига — по бренду (osmBrands, допускается суффикс страны) или началу названия (osmNames), остальные сети находятся сами (бренд от 3 точек, без бренда от 5 точек в 3 населённых пунктах, не больше 40); точка — центр bbox объекта | авто, `overture` | раз в неделю | 2026-11-03 |
+| Точки | https://docs.overturemaps.org/guides/places/ | точки сетей из Overture Maps places (последний релиз, parquet в S3, через DuckDB): заведения общепита и пекарни страны в её bbox, без закрытых; сети из конфига — по бренду (osmBrands, допускается суффикс страны) или началу названия (osmNames), остальные сети находятся сами (бренд от 3 точек, без бренда от 5 точек в 3 населённых пунктах, не больше 40; фирменные магазины производителей — по форме юрлица в названии и списку страны — не берутся); точка — центр bbox объекта | авто, `overture` | раз в неделю | 2026-11-03 |
 
 Сети (по чему их ищет `osm-overpass`: тег brand или начало name; пусто — сети в OSM нет, точки из других источников):
 
@@ -455,7 +457,7 @@
 |---|---|---|---|---|---|
 | Продажи Dodo | https://publicapi.dodois.io/am/api/v1/ | пиццерии Dodo (unitinfo/all: адрес, координаты, BeginDateWork) и выручка по месяцам с числом пиццерий; курс к евро — ЕЦБ, для динара — НБС (kurs.resenje.org), для BYN, MDL, AMD, AZN, TJS — национальный банк, для GEL, KGS — кросс через рубль по ЦБ РФ (среднее дневных курсов за месяц) | авто, `dodo-publicapi` | раз в неделю | — |
 | Точки | https://publicapi.dodois.io/am/api/v1/ | сеть dodo: пиццерии Dodo (unitinfo/all: адрес, координаты, BeginDateWork) и выручка по месяцам с числом пиццерий; курс к евро — ЕЦБ, для динара — НБС (kurs.resenje.org), для BYN, MDL, AMD, AZN, TJS — национальный банк, для GEL, KGS — кросс через рубль по ЦБ РФ (среднее дневных курсов за месяц) | авто, `dodo-publicapi` | раз в неделю | — |
-| Точки | https://docs.overturemaps.org/guides/places/ | точки сетей из Overture Maps places (последний релиз, parquet в S3, через DuckDB): заведения общепита и пекарни страны в её bbox, без закрытых; сети из конфига — по бренду (osmBrands, допускается суффикс страны) или началу названия (osmNames), остальные сети находятся сами (бренд от 3 точек, без бренда от 5 точек в 3 населённых пунктах, не больше 40); точка — центр bbox объекта | авто, `overture` | раз в неделю | 2026-11-03 |
+| Точки | https://docs.overturemaps.org/guides/places/ | точки сетей из Overture Maps places (последний релиз, parquet в S3, через DuckDB): заведения общепита и пекарни страны в её bbox, без закрытых; сети из конфига — по бренду (osmBrands, допускается суффикс страны) или началу названия (osmNames), остальные сети находятся сами (бренд от 3 точек, без бренда от 5 точек в 3 населённых пунктах, не больше 40; фирменные магазины производителей — по форме юрлица в названии и списку страны — не берутся); точка — центр bbox объекта | авто, `overture` | раз в неделю | 2026-11-03 |
 
 Сети (по чему их ищет `osm-overpass`: тег brand или начало name; пусто — сети в OSM нет, точки из других источников):
 
@@ -479,7 +481,7 @@
 |---|---|---|---|---|---|
 | Продажи Dodo | https://publicapi.dodois.io/az/api/v1/ | пиццерии Dodo (unitinfo/all: адрес, координаты, BeginDateWork) и выручка по месяцам с числом пиццерий; курс к евро — ЕЦБ, для динара — НБС (kurs.resenje.org), для BYN, MDL, AMD, AZN, TJS — национальный банк, для GEL, KGS — кросс через рубль по ЦБ РФ (среднее дневных курсов за месяц) | авто, `dodo-publicapi` | раз в неделю | — |
 | Точки | https://publicapi.dodois.io/az/api/v1/ | сеть dodo: пиццерии Dodo (unitinfo/all: адрес, координаты, BeginDateWork) и выручка по месяцам с числом пиццерий; курс к евро — ЕЦБ, для динара — НБС (kurs.resenje.org), для BYN, MDL, AMD, AZN, TJS — национальный банк, для GEL, KGS — кросс через рубль по ЦБ РФ (среднее дневных курсов за месяц) | авто, `dodo-publicapi` | раз в неделю | — |
-| Точки | https://docs.overturemaps.org/guides/places/ | точки сетей из Overture Maps places (последний релиз, parquet в S3, через DuckDB): заведения общепита и пекарни страны в её bbox, без закрытых; сети из конфига — по бренду (osmBrands, допускается суффикс страны) или началу названия (osmNames), остальные сети находятся сами (бренд от 3 точек, без бренда от 5 точек в 3 населённых пунктах, не больше 40); точка — центр bbox объекта | авто, `overture` | раз в неделю | 2026-11-03 |
+| Точки | https://docs.overturemaps.org/guides/places/ | точки сетей из Overture Maps places (последний релиз, parquet в S3, через DuckDB): заведения общепита и пекарни страны в её bbox, без закрытых; сети из конфига — по бренду (osmBrands, допускается суффикс страны) или началу названия (osmNames), остальные сети находятся сами (бренд от 3 точек, без бренда от 5 точек в 3 населённых пунктах, не больше 40; фирменные магазины производителей — по форме юрлица в названии и списку страны — не берутся); точка — центр bbox объекта | авто, `overture` | раз в неделю | 2026-11-03 |
 
 Сети (по чему их ищет `osm-overpass`: тег brand или начало name; пусто — сети в OSM нет, точки из других источников):
 

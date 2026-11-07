@@ -10,6 +10,7 @@ import {
   editorialEvent,
   events,
   eventsByYear,
+  fmtFormat,
   marksPerYear,
   refEvent,
   type RefEvent,
@@ -63,7 +64,7 @@ function LocTip({ l, chain, dt, ru }: { l: MarketLocation; chain: string; dt: Dt
           {l.closed ? `${l.status === "paused" ? dt(" с ", " since ") : " "}${fmtDate(l.closed, ru)}` : ""}
         </>
       )}
-      {l.format && <><br /><span className="k">{l.format}</span></>}
+      {l.format && <><br /><span className="k">{fmtFormat(l.format, ru)}</span></>}
     </>
   );
 }

@@ -8,7 +8,15 @@ import { matchPoints, PlaceIndex } from "../_shared/market/geo.ts";
 import { foldDailyOrders, isSuspiciousRun, shouldAutoClose, toEur } from "../_shared/market/rules.ts";
 import { allRows, ID_BATCH, locKey, must, recordRun } from "../_shared/market/db.ts";
 import { TRUSTED, type Verification } from "../_shared/market/types.ts";
-import type { DiscoveredChain, DodoUnit, IngestPayload, MachineSource, OsmPoint, RegistryYear } from "./types.ts";
+import {
+  type DiscoveredChain,
+  type DodoUnit,
+  FORMAT_WITH_MCCAFE,
+  type IngestPayload,
+  type MachineSource,
+  type OsmPoint,
+  type RegistryYear,
+} from "./types.ts";
 
 type Stats = Record<string, number>;
 const now = () => new Date().toISOString();
@@ -168,6 +176,7 @@ type ExistingLoc = {
   verification: Verification;
   source_kind: string;
   missing_weeks: number;
+  format?: string | null;
 };
 
 /** Находки «новая точка», висящие с прежних прогонов (очередь была до автоприёма; у Хорватии
@@ -259,7 +268,7 @@ async function applyMachine(
       (from, to) =>
         sb.from("mkt_locations")
           .select(
-            "id, chain_key, ext_key, lat, lng, address, status, verification, source_kind, missing_weeks",
+            "id, chain_key, ext_key, lat, lng, address, status, verification, source_kind, missing_weeks, format",
           )
           .eq("country", country).in("chain_key", chains)
           .order("id").range(from, to),
@@ -323,6 +332,20 @@ async function applyMachine(
       await must(g.machine ? q : q.is("city", null), "machine city");
     }
   }
+  // Пометка «с McCafé» (#1113) ставится и снимается только на машинной строке: чужой формат
+  // (снимок, рука) не затирается, а пометка без McCafé в ответе исчезает.
+  const markIds: string[] = [], unmarkIds: string[] = [];
+  for (const m of r.matched) {
+    if (!isMachine(m.existing)) continue;
+    if (m.found.format === FORMAT_WITH_MCCAFE) {
+      if (m.existing.format !== FORMAT_WITH_MCCAFE) markIds.push(m.existing.id);
+    } else if (m.existing.format === FORMAT_WITH_MCCAFE) unmarkIds.push(m.existing.id);
+  }
+  for (const [ids, format] of [[markIds, FORMAT_WITH_MCCAFE], [unmarkIds, null]] as const) {
+    for (let i = 0; i < ids.length; i += ID_BATCH) {
+      await must(sb.from("mkt_locations").update({ format }).in("id", ids.slice(i, i + ID_BATCH)), "machine format");
+    }
+  }
   // Вернувшаяся после автозакрытия точка открывается снова: закрытая машинная строка этого
   // источника, у которой в ответе нашлась пара. Закрытое руками (проверенное) остаётся закрытым.
   const unmatchedIdx = new PlaceIndex(r.unmatched);
@@ -360,6 +383,7 @@ async function applyMachine(
       address: f.address,
       lat: f.lat,
       lng: f.lng,
+      format: f.format ?? null,
       status: "open",
       source: sourceLink(kind, f.osm_id),
       source_kind: kind,

@@ -6,6 +6,7 @@ import { type PointerEvent, type ReactNode, useEffect, useMemo, useRef, useState
 import type { MarketLocation } from "@/types";
 import { makeVb, nearByChain, type ViewBox } from "@/lib/marketMap";
 import { project, type Shape } from "@/lib/marketView";
+import { fmtFormat } from "@/lib/marketInsights";
 import { useDt, useLang } from "@/components/roy/nav";
 import { CityLabels, MapBaseLayers, useElementWidth } from "./MapBase";
 import { drawHeat } from "./heat";
@@ -155,7 +156,7 @@ export function MapView({ shape, locs, col, chainName, bakery, mode, vb, setVb }
       {l.format && (
         <>
           <br />
-          <span className="k">{l.format}</span>
+          <span className="k">{fmtFormat(l.format, ru)}</span>
         </>
       )}
     </>

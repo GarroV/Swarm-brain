@@ -8,6 +8,11 @@ export const LT: CountryConfig = {
   dodoCode: "lt",
   mapSource: "overture",
   bbox: [20.92, 53.89, 26.8, 56.44],
+  // Фирменные магазины производителей — не общепит (решение владельца 07.11.2026, #1134).
+  manufacturerShops: {
+    "AJ Šokoladas": "шоколадная мануфактура, фирменные магазины",
+    "Ali šokoladinė": "шоколадная мануфактура, фирменные магазины",
+  },
   chains: [
     { key: "dodo", name: "Dodo Pizza", segment: "pizza" },
     {
