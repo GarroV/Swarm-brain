@@ -42,6 +42,7 @@ export const roDatagov: Adapter = {
       const cuis = new Set(cfg.companies.map((c) => c.regId));
       const thisYear = Number(opts.today.slice(0, 4));
       const out = [];
+      let missingPackages = 0, missingFx = 0;
       for (let y = thisYear - 1; y >= thisYear - YEARS_BACK; y--) {
         // Пакет года назван то с подчёркиванием, то без (situatii_financiare2023), а закрытый
         // дубль отвечает 403. Выгрузку публикуют с опозданием: нет пакета — год пропускаем.
@@ -49,6 +50,8 @@ export const roDatagov: Adapter = {
           .catch(() => getJson<Ckan>(CKAN + `situatii_financiare${y}`))
           .catch(() => null);
         if (!pkg || !rates[y]) {
+          missingPackages += Number(!pkg);
+          missingFx += Number(!rates[y]);
           console.warn(
             `RO ${y}: нет открытого пакета situatii_financiare или курса ЕЦБ — год пропущен`,
           );
@@ -68,6 +71,14 @@ export const roDatagov: Adapter = {
           }
           out.push(...parseRoBilant(picked, cuis, y, rates[y]));
         }
+      }
+      if (cfg.companies.length > 0 && out.length === 0) {
+        throw new Error(
+          `RO: no usable annual reports for ${cfg.companies.length} configured companies ` +
+            `(${thisYear - YEARS_BACK}-${
+              thisYear - 1
+            }; unavailable packages=${missingPackages}; missing annual ECB/FX rates=${missingFx})`,
+        );
       }
       return { ...base, years: out };
     } catch (e) {
