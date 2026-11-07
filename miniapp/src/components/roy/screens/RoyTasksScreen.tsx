@@ -81,7 +81,7 @@ export function RoyTasksScreen() {
       </div>
 
       <div className="px-5 pb-2 text-ink-mute" style={{ fontSize: 12.5 }}>
-        {activeDef.label} · {total}{r.range ? ` · ${rangeLabel(r.range, lang)}` : ""}
+        {dt(activeDef.label, activeDef.labelEn)} · {total}{r.range ? ` · ${rangeLabel(r.range, lang)}` : ""}
       </div>
 
       <div className="space-y-2.5 px-5 pb-28">

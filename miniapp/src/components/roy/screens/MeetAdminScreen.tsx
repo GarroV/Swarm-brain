@@ -1,5 +1,5 @@
 "use client";
-import { tally, CountsCard, StatChip, formatOffset, ListRow, type MeetItem } from "./meetAdminPresentation";
+import { MEET_DETAIL_COPY, tally, CountsCard, StatChip, formatOffset, ListRow, type MeetItem } from "./meetAdminPresentation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRoyNav, useDt } from "../nav";
 import { canDeleteDraft, canHideDraft, hasSeveralOwners } from "@/lib/draftOwners";
@@ -284,11 +284,11 @@ function DetailPanel({
                 className="min-w-0 flex-1 rounded-[10px] border border-line bg-surface px-3 py-2 font-bold text-ink outline-none focus:border-[var(--accent-ink)] disabled:opacity-50"
                 style={{ fontSize: 24, letterSpacing: "-0.02em" }}
               />
-              <button type="button" onClick={saveTitle} disabled={savingTitle} aria-label="Сохранить название"
+              <button type="button" onClick={saveTitle} disabled={savingTitle} aria-label={dtPanel(MEET_DETAIL_COPY.saveTitle.ru, MEET_DETAIL_COPY.saveTitle.en)}
                 className="inline-flex shrink-0 items-center justify-center rounded-full p-2.5 text-ink transition-opacity hover:opacity-70 disabled:opacity-50">
                 <RoyIcon name="check" size={18} strokeWidth={2} />
               </button>
-              <button type="button" onClick={() => setEditingTitle(false)} disabled={savingTitle} aria-label="Отмена"
+              <button type="button" onClick={() => setEditingTitle(false)} disabled={savingTitle} aria-label={dtPanel(MEET_DETAIL_COPY.cancel.ru, MEET_DETAIL_COPY.cancel.en)}
                 className="inline-flex shrink-0 items-center justify-center rounded-full p-2.5 text-ink-mute transition-opacity hover:opacity-70 disabled:opacity-50">
                 <RoyIcon name="x" size={18} strokeWidth={2} />
               </button>
@@ -298,7 +298,7 @@ function DetailPanel({
               <h2 className="flex-1 font-bold text-ink leading-tight" style={{ fontSize: 24, letterSpacing: "-0.02em" }}>
                 {title}
               </h2>
-              <button type="button" onClick={() => { setTitleDraft(title); setEditingTitle(true); }} aria-label="Изменить название"
+              <button type="button" onClick={() => { setTitleDraft(title); setEditingTitle(true); }} aria-label={dtPanel(MEET_DETAIL_COPY.editTitle.ru, MEET_DETAIL_COPY.editTitle.en)}
                 className="mt-1 inline-flex shrink-0 items-center justify-center rounded-full p-2 text-ink-mute transition-colors hover:bg-accent-soft hover:text-ink active:scale-[0.94]">
                 <RoyIcon name="pencil" size={18} strokeWidth={1.9} />
               </button>
@@ -565,10 +565,10 @@ function AgentMeetingDetail({
               className="min-w-0 flex-1 rounded-[10px] border border-line-2 bg-surface px-3 py-1.5 font-bold text-ink outline-none focus:border-primary disabled:opacity-50"
               style={{ fontSize: 24, letterSpacing: "-0.02em" }}
             />
-            <button type="button" onClick={saveTitle} disabled={saving} aria-label="Сохранить название" className="inline-flex items-center justify-center rounded-full bg-primary text-primary-foreground disabled:opacity-50" style={{ width: 32, height: 32 }}>
+            <button type="button" onClick={saveTitle} disabled={saving} aria-label={dt(MEET_DETAIL_COPY.saveTitle.ru, MEET_DETAIL_COPY.saveTitle.en)} className="inline-flex items-center justify-center rounded-full bg-primary text-primary-foreground disabled:opacity-50" style={{ width: 32, height: 32 }}>
               <RoyIcon name="check" size={16} strokeWidth={2.2} />
             </button>
-            <button type="button" onClick={() => setEditingTitle(false)} disabled={saving} aria-label="Отмена" className="inline-flex items-center justify-center rounded-full border border-line bg-surface text-ink-soft disabled:opacity-50" style={{ width: 32, height: 32 }}>
+            <button type="button" onClick={() => setEditingTitle(false)} disabled={saving} aria-label={dt(MEET_DETAIL_COPY.cancel.ru, MEET_DETAIL_COPY.cancel.en)} className="inline-flex items-center justify-center rounded-full border border-line bg-surface text-ink-soft disabled:opacity-50" style={{ width: 32, height: 32 }}>
               <RoyIcon name="x" size={15} strokeWidth={2} />
             </button>
           </div>
@@ -580,7 +580,7 @@ function AgentMeetingDetail({
             <button
               type="button"
               onClick={() => { setTitleDraft(m.title ?? ""); setEditingTitle(true); }}
-              aria-label="Изменить название"
+              aria-label={dt(MEET_DETAIL_COPY.editTitle.ru, MEET_DETAIL_COPY.editTitle.en)}
               className="mt-1 inline-flex shrink-0 items-center justify-center rounded-full text-ink-mute transition-colors hover:bg-surface-2 hover:text-ink"
               style={{ width: 30, height: 30 }}
             >
@@ -722,7 +722,7 @@ function AgentMeetingDetail({
         {hasTranscript && (
           <div className="border-t border-line pt-3">
             <div className={`${STICKY_HEAD} flex items-center justify-between gap-2`} style={STICKY_HEAD_BG}>
-              <SectionLabel className="!mb-0">Транскрипт</SectionLabel>
+              <SectionLabel className="!mb-0">{dt(MEET_DETAIL_COPY.transcript.ru, MEET_DETAIL_COPY.transcript.en)}</SectionLabel>
               <button
                 type="button"
                 onClick={copyTranscript}
@@ -730,7 +730,7 @@ function AgentMeetingDetail({
                 style={{ padding: "5px 11px", fontSize: 12 }}
               >
                 {copied && <RoyIcon name="check" size={13} strokeWidth={2.2} />}
-                {copied ? "Скопировано" : "Копировать"}
+                {copied ? dt(MEET_DETAIL_COPY.copied.ru, MEET_DETAIL_COPY.copied.en) : dt(MEET_DETAIL_COPY.copy.ru, MEET_DETAIL_COPY.copy.en)}
               </button>
             </div>
             <div className="mt-2 flex flex-col gap-1.5">
