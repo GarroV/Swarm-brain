@@ -567,20 +567,6 @@
     "reason": "Унаследованный литерал SettingsScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
   },
   {
-    "file": "miniapp/src/components/TeamScreen.tsx",
-    "context": "jsx-text",
-    "text": "Загрузка…",
-    "count": 1,
-    "reason": "Унаследованный литерал TeamScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
-  },
-  {
-    "file": "miniapp/src/components/TeamScreen.tsx",
-    "context": "jsx-text",
-    "text": "Нет участников",
-    "count": 1,
-    "reason": "Унаследованный литерал TeamScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
-  },
-  {
     "file": "miniapp/src/components/admin/WorkspaceMarkets.tsx",
     "context": "jsx-text",
     "text": "Пользователи видят все рынки из глобального списка.",
@@ -677,20 +663,6 @@
     "text": "Отмена",
     "count": 1,
     "reason": "Унаследованный литерал WorkspaceUsers.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
-  },
-  {
-    "file": "miniapp/src/components/roy/MarketChips.tsx",
-    "context": "title",
-    "text": "Без конкретного рынка",
-    "count": 1,
-    "reason": "Унаследованный литерал MarketChips.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
-  },
-  {
-    "file": "miniapp/src/components/roy/MarketChips.tsx",
-    "context": "jsx-text",
-    "text": "Общее",
-    "count": 1,
-    "reason": "Унаследованный литерал MarketChips.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
   },
   {
     "file": "miniapp/src/components/roy/RoyApp.tsx",
@@ -1116,13 +1088,6 @@
     "file": "miniapp/src/components/roy/screens/RoyBaseScreen.tsx",
     "context": "placeholder",
     "text": "Семантический поиск по базе",
-    "count": 1,
-    "reason": "Унаследованный литерал RoyBaseScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
-  },
-  {
-    "file": "miniapp/src/components/roy/screens/RoyBaseScreen.tsx",
-    "context": "jsx-text",
-    "text": "Здесь пока пусто",
     "count": 1,
     "reason": "Унаследованный литерал RoyBaseScreen.tsx на origin/main 39bac434; #735 ограничен сторожем новых строк, полный перевод отдельно (решение 2026-10-19)."
   },
