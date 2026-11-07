@@ -17,7 +17,7 @@
  *   SCRIBA_PROJECT              — имя стенда, метка контейнеров и томов (по умолчанию scriba);
  *   SCRIBA_BOT_VERSION          — номер сборки, уходит в heartbeat и заявку (по умолчанию 0);
  *   SCRIBA_INVITE_POLL_MS       — пауза между опросами приглашений (по умолчанию 5000);
- *   SCRIBA_CALENDAR_POLL_MS     — пауза между проходами по календарям (по умолчанию 60000);
+ *   SCRIBA_CALENDAR_POLL_MS     — пауза между проходами по календарям (по умолчанию 45000, #1000);
  *   SCRIBA_CONTAINER_SWARM_URL  — корень функций, каким его видит контейнер (по умолчанию
  *                                 SCRIBA_SWARM_URL; для стенда — host.docker.internal);
  *   SCRIBA_CONTAINER_ENV        — JSON-объект добавочного окружения контейнера (ручки смоука).
@@ -57,6 +57,7 @@ import { type AccountCopies, FileAccountCopies } from "./account.ts";
 import { DockerodeEngine } from "./docker-engine.ts";
 import { DockerMeetingEgress } from "./egress.ts";
 import { calendarTriggerFor } from "./calendar-service.ts";
+import { DEFAULT_INTERVAL_MS as CALENDAR_POLL_DEFAULT_MS } from "./calendar-trigger.ts";
 import { inviteTriggerFor } from "./invite-service.ts";
 import { NoticeClient } from "./notice-client.ts";
 import { JournaledNotifier, type Notifier } from "./notices.ts";
@@ -242,7 +243,7 @@ async function main(environment: Environment): Promise<void> {
     intervalMs,
   });
 
-  const calendarMs = positive(environment, "SCRIBA_CALENDAR_POLL_MS", 60_000);
+  const calendarMs = positive(environment, "SCRIBA_CALENDAR_POLL_MS", CALENDAR_POLL_DEFAULT_MS);
   const calendar = calendarTriggerFor({
     swarmUrl,
     token,
