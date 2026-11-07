@@ -303,4 +303,4 @@ cd recorder && ./install.sh                                   # подробно
 
 ## Настройка Claude Desktop
 
-См. [SETUP_CLAUDE_DESKTOP.md](./SETUP_CLAUDE_DESKTOP.md)
+См. [SETUP_CLAUDE_DESKTOP.md](./docs/SETUP_CLAUDE_DESKTOP.md)
