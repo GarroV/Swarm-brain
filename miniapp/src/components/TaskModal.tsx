@@ -42,6 +42,15 @@ const TASK_ROLES = [
   { value: "bd", label: "BD" },
   { value: "rnd", label: "R&D" },
 ];
+const TASK_MODAL_COPY = {
+  deleteTask: { ru: "Удалить задачу", en: "Delete task" },
+  close: { ru: "Закрыть", en: "Close" },
+  role: { ru: "Роль", en: "Role" },
+  cancel: { ru: "Отмена", en: "Cancel" },
+  done: { ru: "Готово", en: "Done" },
+  creating: { ru: "Создание…", en: "Creating…" },
+  create: { ru: "Создать", en: "Create" },
+} as const;
 const normStatus = (s?: string | null) => (s === "progress" ? "in_progress" : (s ?? "open"));
 
 // Исполнитель без входа в Swarm хранится в форме токеном «p:<person id>» (#874).
@@ -574,8 +583,8 @@ export function TaskModal({ task: taskOpened, open, onClose, onSaved, prefill, m
                 type="button"
                 onClick={handleDelete}
                 disabled={deleting}
-                aria-label="Удалить задачу"
-                title="Удалить задачу"
+                aria-label={dt(TASK_MODAL_COPY.deleteTask.ru, TASK_MODAL_COPY.deleteTask.en)}
+                title={dt(TASK_MODAL_COPY.deleteTask.ru, TASK_MODAL_COPY.deleteTask.en)}
                 // Тач-цель 40x40: на телефоне кнопка была 29x29 при норме 44 — и это удаление.
                 className="flex size-10 items-center justify-center rounded-full text-ink-soft transition-colors hover:bg-surface-2 hover:text-[var(--pri-high)] active:scale-[0.95] disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
               >
@@ -585,7 +594,7 @@ export function TaskModal({ task: taskOpened, open, onClose, onSaved, prefill, m
             <button
               type="button"
               onClick={handleClose}
-              aria-label="Закрыть"
+              aria-label={dt(TASK_MODAL_COPY.close.ru, TASK_MODAL_COPY.close.en)}
               className="flex size-10 items-center justify-center rounded-full text-ink-soft transition-colors hover:bg-surface-2 hover:text-ink active:scale-[0.95] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
             >
               <RoyIcon name="x" size={18} />
@@ -668,7 +677,7 @@ export function TaskModal({ task: taskOpened, open, onClose, onSaved, prefill, m
 
             {SHOW_TASK_ROLE && (
               <div>
-                <label htmlFor="modal-role" className={labelCls} style={{ fontSize: 12 }}>Роль</label>
+                <label htmlFor="modal-role" className={labelCls} style={{ fontSize: 12 }}>{dt(TASK_MODAL_COPY.role.ru, TASK_MODAL_COPY.role.en)}</label>
                 {/* Своё меню, а не нативный <select>: macOS раскрывает тот системным поверх интерфейса (#300). */}
                 <Select value={taskRole} onValueChange={(v) => setTaskRole(v ?? NONE)}>
                   <SelectTrigger id="modal-role" className={fieldCls}>
@@ -760,7 +769,7 @@ export function TaskModal({ task: taskOpened, open, onClose, onSaved, prefill, m
               className="h-[30px] rounded-full border border-line-2 bg-surface px-3 font-medium text-ink-soft transition-colors hover:bg-surface-2 hover:text-ink active:scale-[0.97] disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
               style={{ fontSize: 12.5 }}
             >
-              Отмена
+              {dt(TASK_MODAL_COPY.cancel.ru, TASK_MODAL_COPY.cancel.en)}
             </button>
             <button
               type="button"
@@ -769,7 +778,7 @@ export function TaskModal({ task: taskOpened, open, onClose, onSaved, prefill, m
               className="h-[30px] rounded-full bg-primary px-3.5 font-semibold text-primary-foreground transition-[transform,background-color] hover:bg-primary/90 active:scale-[0.97] disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
               style={{ fontSize: 12.5 }}
             >
-              {onDraft ? "Готово" : creating ? "Создание…" : "Создать"}
+              {onDraft ? dt(TASK_MODAL_COPY.done.ru, TASK_MODAL_COPY.done.en) : creating ? dt(TASK_MODAL_COPY.creating.ru, TASK_MODAL_COPY.creating.en) : dt(TASK_MODAL_COPY.create.ru, TASK_MODAL_COPY.create.en)}
             </button>
           </div>
         )}
