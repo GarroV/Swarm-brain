@@ -12,6 +12,10 @@ import { aggregatorTotals, deltaDigits, scoreDigits } from "@/lib/homeAggregator
 
 const note = `rounded-[12px] border border-dashed border-line-2 px-4 py-6 text-center text-ink-mute ${FILL_NOTE}`;
 const num = (v: number | null, digits: number) => (v == null ? "—" : v.toFixed(digits));
+const COPY = {
+  imf: { ru: "IMF", en: "IMF" },
+  pizzerias: { ru: "пицц.", en: "pizzerias" },
+} as const;
 
 export function AggregatorsTab({ codes }: { codes: string[] }) {
   const dt = useDt();
@@ -39,7 +43,11 @@ export function AggregatorsTab({ codes }: { codes: string[] }) {
             <Stat key={a.key} label={a.title}
               value={<span className="whitespace-nowrap" style={{ fontSize: "clamp(16px, 5.7cqi, 18px)" }}>{num(a.avg, d)}<small className="ml-0.5 font-medium text-ink-mute" style={{ fontSize: 12 }}>/{a.scale}</small>{" "}
                 <Delta v={a.delta} digits={deltaDigits(a.scale)} small /></span>}
-              note={dt(`IMF ${num(imf.get(a.key)?.avg ?? null, d)} · ${a.pizzerias} пицц.`, `IMF ${num(imf.get(a.key)?.avg ?? null, d)} · ${a.pizzerias} pizzerias`)} />
+              note={<span className="block whitespace-normal">
+                {dt(COPY.imf.ru, COPY.imf.en)} {num(imf.get(a.key)?.avg ?? null, d)}{" "}
+                <Delta v={imf.get(a.key)?.delta ?? null} digits={deltaDigits(a.scale)} small />
+                {" · "}{a.pizzerias} {dt(COPY.pizzerias.ru, COPY.pizzerias.en)}
+              </span>} />
           );
         })}
       </div>
