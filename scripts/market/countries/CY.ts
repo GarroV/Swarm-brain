@@ -8,6 +8,11 @@ export const CY: CountryConfig = {
   dodoCode: "cy",
   mapSource: "overture",
   bbox: [32.27, 34.63, 34.1, 35.19],
+  // Фирменные магазины производителей — не общепит (решение владельца 07.11.2026, #1134).
+  manufacturerShops: {
+    "Pralina Confectioneries": "кондитерская фабрика, фирменные магазины",
+    "Leonidas": "шоколадная фабрика, фирменные магазины",
+  },
   chains: [
     { key: "dodo", name: "Dodo Pizza", segment: "pizza" },
     {
@@ -57,6 +62,13 @@ export const CY: CountryConfig = {
       name: "Costa Coffee",
       segment: "coffee",
       osmBrands: ["Costa Coffee", "Costa"],
+    },
+    {
+      key: "coffee-island",
+      name: "Coffee Island",
+      segment: "coffee",
+      // Одна сеть: у части кипрских точек в названии стоит греческий адрес франшизы («Coffee Island Θεσσαλονίκη…»).
+      osmBrands: ["Coffee Island"],
     },
   ],
   companies: [],

@@ -5,6 +5,7 @@ import { ES } from "../countries/ES.ts";
 import { PL } from "../countries/PL.ts";
 import { BY } from "../countries/BY.ts";
 import { HU } from "../countries/HU.ts";
+import { COUNTRIES } from "../countries/index.ts";
 import {
   classify,
   discover,
@@ -150,8 +151,8 @@ Deno.test("#1134: empty and whitespace brands retain the existing no-fallback pa
   assertEquals(discover(rows, cfg), { points: [], chains: [] });
 });
 
-Deno.test("#896: McCafé spelling variants belong to McDonald's in ES, PL and HU", () => {
-  for (const config of [ES, PL, HU]) {
+Deno.test("#896: McCafé spelling variants are one standalone chain `mccafe` in every country", () => {
+  for (const config of [ES, PL, HU, BY, cfg]) {
     const { points, chains } = discover([
       row({ brand: "McCafé", name: "McCafé One", address: "Road 101" }),
       row({ brand: "McCafe", name: "McCafe Two", address: "Road 102" }),
@@ -159,13 +160,17 @@ Deno.test("#896: McCafé spelling variants belong to McDonald's in ES, PL and HU
       row({ brand: null, name: "McCafé Four", address: "Road 104" }),
       row({ brand: "McCafeX", name: "Unrelated", address: "Road 105" }),
     ], config);
-    assertEquals(points.map((p) => p.chain), [
-      "mcdonalds",
-      "mcdonalds",
-      "mcdonalds",
-      "mcdonalds",
+    assertEquals(points.map((p) => [p.chain, p.format ?? null]), [
+      ["mccafe", null],
+      ["mccafe", null],
+      ["mccafe", null],
+      ["mccafe", null],
     ], config.country);
-    assertEquals(chains, [], config.country);
+    assertEquals(
+      chains,
+      [{ key: "mccafe", name: "McCafé", segment: "coffee" }],
+      config.country,
+    );
   }
 });
 
@@ -463,4 +468,166 @@ Deno.test("#1134: BY config names both known factory shop brands", () => {
   const r = discover(rows, BY);
   assertEquals(r.chains.map((c) => c.name), ["Пицца Темпо"]);
   assertEquals(r.points.length, 5);
+});
+
+Deno.test("#1113: McCafé next to a McDonald's is one McDonald's point marked «with McCafé»", () => {
+  const mc = {
+    brand: "McDonald's",
+    address: "Calle Mayor 10",
+    lat: 40.4,
+    lng: -3.7,
+  };
+  const { points } = discover([
+    row({ ...mc, name: "McDonald's" }),
+    row({ ...mc, brand: "McCafé", name: "McCafé", lat: 40.40035 }), // ~39 m away
+    row({
+      brand: "McDonald's",
+      name: "McDonald's",
+      address: "Calle Sol 5",
+      lat: 40.5,
+      lng: -3.6,
+    }),
+  ], ES);
+  assertEquals(points.map((p) => [p.chain, p.name, p.format ?? null]), [
+    ["mcdonalds", "McDonald's", "with McCafé"],
+    ["mcdonalds", "McDonald's", null],
+  ]);
+});
+
+Deno.test("#1113: McCafé listed first still leaves the McDonald's row with the marker", () => {
+  const mc = { address: "Calle Mayor 10", lat: 40.4, lng: -3.7 };
+  const { points } = discover([
+    row({ ...mc, brand: "McCafé", name: "McCafé" }),
+    row({ ...mc, brand: "McDonald's", name: "McDonald's", lat: 40.40035 }),
+  ], ES);
+  assertEquals(points.map((p) => [p.name, p.format]), [[
+    "McDonald's",
+    "with McCafé",
+  ]]);
+});
+
+Deno.test("#1113: a standalone McCafé is its own chain mccafe, without the marker", () => {
+  const { points } = discover([
+    row({
+      brand: "McCafé",
+      name: "McCafé",
+      address: "Calle Luna 3",
+      lat: 41,
+      lng: -3,
+    }),
+  ], ES);
+  assertEquals(points.map((p) => [p.chain, p.format ?? null]), [[
+    "mccafe",
+    null,
+  ]]);
+});
+
+Deno.test("#1113: a McCafé 40 m from a McDonald's with the address written differently merges; a conflicting house number does not", () => {
+  const { points, chains } = discover([
+    row({
+      brand: "McDonald's",
+      name: "McDonald's",
+      address: "Carrer Aragó, 207",
+      lat: 41.4,
+      lng: 2.1,
+    }),
+    row({
+      brand: "McCafé",
+      name: "McCafé",
+      address: "Carrer d'Aragó, 207",
+      lat: 41.40036,
+      lng: 2.1,
+    }),
+    row({
+      brand: "McDonald's",
+      name: "McDonald's",
+      address: "Calle Sol 5",
+      lat: 40.5,
+      lng: -3.6,
+    }),
+    row({
+      brand: "McCafé",
+      name: "McCafé",
+      address: "Calle Luna 9",
+      lat: 40.50036,
+      lng: -3.6,
+    }),
+  ], ES);
+  assertEquals(chains.map((c) => c.key), ["mccafe"]);
+  assertEquals(points.map((p) => [p.chain, p.address, p.format ?? null]), [
+    ["mcdonalds", "Carrer Aragó, 207", "with McCafé"],
+    ["mcdonalds", "Calle Sol 5", null],
+    ["mccafe", "Calle Luna 9", null],
+  ]);
+});
+
+Deno.test("#1113: a pair leaves no mccafe chain behind; a configured mccafe chain is not announced again", () => {
+  const mc = { address: "Calle Mayor 10", lat: 40.4, lng: -3.7 };
+  const rows = [
+    row({ ...mc, brand: "McDonald's", name: "McDonald's" }),
+    row({ ...mc, brand: "McCafé", name: "McCafé", lat: 40.40035 }),
+  ];
+  assertEquals(discover(rows, ES).chains, []);
+  const withChain = {
+    ...ES,
+    chains: [...ES.chains, {
+      key: "mccafe",
+      name: "McCafé",
+      segment: "coffee",
+    }],
+  } as CountryConfig;
+  const lone = discover(
+    [row({
+      brand: "McCafé",
+      name: "McCafé",
+      address: "Calle Luna 3",
+      lat: 41,
+      lng: -3,
+    })],
+    withChain,
+  );
+  assertEquals([lone.points.map((p) => p.chain), lone.chains], [
+    ["mccafe"],
+    [],
+  ]);
+});
+
+Deno.test("#1134: the manufacturer shops listed per country are dropped, ice cream and bakeries stay", () => {
+  const listed: Record<string, string[]> = {
+    AM: ["Grand Candy", "Marush Sweets Boutique"],
+    MD: ["Dulcinella Moldova", "Dulcinella"],
+    PL: [
+      "Pijalnia Czekolady E.Wedel Rynek Główny Kraków",
+      "Lindt",
+      "Karmello Chocolatier",
+    ],
+    HU: ["Lindt"],
+    CY: ["Pralina Confectioneries", "Leonidas"],
+    AZ: ["Ramzioglu Paxlava", "Ruggi Sweets"],
+    LT: ["AJ Šokoladas", "Ali šokoladinė"],
+  };
+  const kept = [
+    "Häagen-Dazs",
+    "Grycan",
+    "Lody Bonano",
+    "llaollao",
+    "Cukiernia Sowa",
+  ];
+  for (const [country, names] of Object.entries(listed)) {
+    const rows = [...names, ...kept].flatMap((name) =>
+      Array.from(
+        { length: 3 },
+        (_, i) =>
+          row({
+            name,
+            brand: name,
+            address: `${name} ${i}`,
+            locality: `c${i}`,
+          }),
+      )
+    );
+    const found = discover(rows, COUNTRIES[country]).chains.map((c) => c.name)
+      .sort();
+    assertEquals(found, [...kept].sort(), country);
+  }
 });

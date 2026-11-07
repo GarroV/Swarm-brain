@@ -315,6 +315,7 @@
 | `subway` | Subway | sandwich | brand: Subway |
 | `starbucks` | Starbucks | coffee | brand: Starbucks |
 | `costa` | Costa Coffee | coffee | brand: Costa Coffee, Costa |
+| `coffee-island` | Coffee Island | coffee | brand: Coffee Island |
 
 ## ES — ES
 
@@ -331,12 +332,13 @@
 | `dodo` | Dodo Pizza | pizza | — |
 | `dominos` | Domino's | pizza | brand: Domino's, Domino's Pizza |
 | `pizzahut` | Pizza Hut | pizza | brand: Pizza Hut |
-| `mcdonalds` | McDonald's | burger | brand: McDonald's, McDonalds, McCafé, McCafe |
+| `mcdonalds` | McDonald's | burger | brand: McDonald's, McDonalds |
 | `burgerking` | Burger King | burger | brand: Burger King |
 | `kfc` | KFC | chicken | brand: KFC |
 | `subway` | Subway | sandwich | brand: Subway |
 | `starbucks` | Starbucks | coffee | brand: Starbucks |
 | `costa` | Costa Coffee | coffee | brand: Costa Coffee, Costa |
+| `llaollao` | llaollao | other | brand: llaollao |
 
 ## HU — HU
 
@@ -353,7 +355,7 @@
 | `dodo` | Dodo Pizza | pizza | — |
 | `dominos` | Domino's | pizza | brand: Domino's, Domino's Pizza |
 | `pizzahut` | Pizza Hut | pizza | brand: Pizza Hut |
-| `mcdonalds` | McDonald's | burger | brand: McDonald's, McDonalds, McCafé, McCafe |
+| `mcdonalds` | McDonald's | burger | brand: McDonald's, McDonalds |
 | `burgerking` | Burger King | burger | brand: Burger King |
 | `kfc` | KFC | chicken | brand: KFC |
 | `subway` | Subway | sandwich | brand: Subway |
@@ -419,7 +421,7 @@
 | `dodo` | Dodo Pizza | pizza | — |
 | `dominos` | Domino's | pizza | brand: Domino's, Domino's Pizza |
 | `pizzahut` | Pizza Hut | pizza | brand: Pizza Hut |
-| `mcdonalds` | McDonald's | burger | brand: McDonald's, McDonalds, McCafé, McCafe |
+| `mcdonalds` | McDonald's | burger | brand: McDonald's, McDonalds |
 | `burgerking` | Burger King | burger | brand: Burger King |
 | `kfc` | KFC | chicken | brand: KFC |
 | `subway` | Subway | sandwich | brand: Subway |

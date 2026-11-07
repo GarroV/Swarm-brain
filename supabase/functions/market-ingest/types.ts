@@ -24,7 +24,11 @@ export type OsmPoint = {
   city: string | null;
   address: string | null;
   osm_id: string;
+  /** Пометка точки (сейчас только «с McCafé», #1113). Не задана — формат точки не трогаем. */
+  format?: string | null;
 };
+/** McCafé — не сеть и не вторая точка McDonald's, а пометка на точке McDonald's (решение владельца 07.11.2026). */
+export const FORMAT_WITH_MCCAFE = "with McCafé";
 export type RegistryYear = {
   reg_id: string;
   year: number;

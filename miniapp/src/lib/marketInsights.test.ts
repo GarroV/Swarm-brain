@@ -1,5 +1,5 @@
 import { assertEquals } from "jsr:@std/assert@1";
-import { cagr, chainCities, editorialEvent, eventsByYear, growthSeries, marksPerYear, refEvent, timelineMarks, timeOf, cityShare, datedShare, dodoYoY, dropDeadChains, events, factCards, formatClass, fullOperatingMonths, fullOrderMonths, kpis, periods, prettyFigures, trend, userNote } from "./marketInsights.ts";
+import { cagr, chainCities, editorialEvent, eventsByYear, growthSeries, marksPerYear, refEvent, timelineMarks, timeOf, cityShare, datedShare, dodoYoY, dropDeadChains, events, factCards, fmtFormat, FORMAT_WITH_MCCAFE, formatClass, fullOperatingMonths, fullOrderMonths, kpis, periods, prettyFigures, trend, userNote } from "./marketInsights.ts";
 import type { MarketBundle, MarketChain, MarketFact, MarketLocation } from "../types.ts";
 
 const NOW = new Date("2026-10-02T12:00:00Z");
@@ -82,6 +82,11 @@ Deno.test("city share of dated openings in a period", () => {
   const locs = [loc("a", "2025", "open", null, "Zagreb"), loc("a", "2026", "open", null, "Split"), loc("a", "2026", "open", null, "Split"), loc("a", null, "open", null, "Zagreb")];
   assertEquals(cityShare(locs, new Set(), [2025, 2026], "Zagreb"), 33);
   assertEquals(cityShare(locs, new Set(), [2021, 2024], "Zagreb"), null);
+});
+
+Deno.test("#1113: the McCafé marker is not a format bucket and is shown in both languages", () => {
+  assertEquals([formatClass(FORMAT_WITH_MCCAFE), formatClass(FORMAT_WITH_MCCAFE, "McDonald's Dugopolje A1")], [null, "highway"]);
+  assertEquals([fmtFormat(FORMAT_WITH_MCCAFE, true), fmtFormat(FORMAT_WITH_MCCAFE, false), fmtFormat("drive-thru", true)], ["с McCafé", "with McCafé", "drive-thru"]);
 });
 
 Deno.test("format buckets from free text", () => {
