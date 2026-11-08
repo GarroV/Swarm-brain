@@ -67,8 +67,8 @@ export function RecorderAutostartToggle() {
       </div>
       <p className="text-xs text-muted-foreground">
         {dt(
-          "За 5 секунд до старта покажет отсчёт — запись можно отменить",
-          "Shows a 5-second countdown first — you can cancel",
+          "Когда вы подключились к созвону из календаря, запись начнётся после 5-секундного отсчёта — его можно отменить",
+          "When you join a call from your calendar, recording starts after a 5-second countdown — you can cancel it",
         )}
       </p>
       {hasCalendar === false && (
