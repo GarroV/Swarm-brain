@@ -15,6 +15,7 @@ import path from "node:path";
 
 import { type Browser, type BrowserContext, chromium } from "playwright";
 
+import { blockIncomingVideo, isAudioOnly } from "../container/audio-only.ts";
 import { monitorSourceName } from "../container/audio.ts";
 import { readSettings } from "../container/environment.ts";
 import { SILENCE_MAX_VOLUME_DB, parseVolumeDetect } from "../container/loudness.ts";
@@ -173,12 +174,24 @@ function smokeRoute(config: MeetingConfig): ((context: BrowserContext) => Promis
 /**
 Адаптер площадки встречи: у каждой площадки свой, контракт у всех один.
 */
+function contextPreparation(
+  config: MeetingConfig,
+): ((context: BrowserContext) => Promise<void>) | null {
+  const smoke = smokeRoute(config);
+  if (!isAudioOnly()) return smoke;
+  return async (context): Promise<void> => {
+    log("режим «только звук» (SCRIBA_AUDIO_ONLY): входящее видео отключено");
+    await context.addInitScript(blockIncomingVideo);
+    await smoke?.(context);
+  };
+}
+
 function adapterFor(
   config: MeetingConfig,
   browser: Browser,
   stop: AbortSignal,
 ): MeetAdapter | KonturAdapter {
-  const prepareContext = smokeRoute(config);
+  const prepareContext = contextPreparation(config);
   if (config.platform === "kontur") {
     log("вход в Контур.Толк — гостем, без микрофона и камеры");
     return new KonturAdapter({

@@ -1600,6 +1600,7 @@ Heartbeat шлётся изнутри контейнера; финальный `
 умолчанию `SCRIBA_SWARM_URL`), `SCRIBA_CONTAINER_ENV` (JSON добавочного окружения контейнера — ручки
 смоука), `SCRIBA_MAX_MEETINGS` (4), `SCRIBA_CONTAINER_MEMORY_MB` (2048), `SCRIBA_CONTAINER_CPUS` (2),
 `SCRIBA_CONTAINER_PIDS` (1024) — потолки из строки «Изоляция контейнера»; ноль или мусор — отказ на старте;
+`SCRIBA_AUDIO_ONLY` (`1`/`true`, по умолчанию выключено; #1049): контейнеры встреч не принимают входящее видео (`blockIncomingVideo` в `bot/src/container/audio-only.ts` — видео-трансиверы `RTCPeerConnection` в `inactive`, звук не тронут) и стартуют Chromium с `--disable-gpu`, `--force-device-scale-factor=1`, `--disable-background-networking` без `--disable-dev-shm-usage` (контейнеру и так дан `/dev/shm` 1 ГиБ — общая память рендереров остаётся в ОЗУ, а не уходит в `/tmp` на диск). Служба пробрасывает переменную в контейнеры сама; до живой проверки на настоящей встрече не включать. Замер до/после — `scripts/scriba-meeting-stats.sh`;
 `SCRIBA_GOOGLE_STATE_FILE` + `SCRIBA_ACCOUNT_COPIES_DIR` (вход аккаунта бота, только парой — см. ниже); при заданном входе включается продление (#1140): `SCRIBA_LOGIN_PROBE_HOUR` (час ежедневной пробы по Белграду, 0–23, по умолчанию 6) и `SCRIBA_LOGIN_STATUS_FILE` (состояние входа; по умолчанию `login-status.json` рядом с файлом входа) — см. «Продление входа»;
 `SCRIBA_EGRESS_EXTRA` (добавка к списку выхода встреч наружу — через запятую, только точные `host:port`;
 нужна, если живой встрече не хватило хоста: его имя стоит в строке `egress deny` журнала прокси);

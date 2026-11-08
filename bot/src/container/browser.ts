@@ -11,6 +11,8 @@
  * здесь только окружение.
  */
 
+import { AUDIO_ONLY_ARGS, isAudioOnly } from "./audio-only.ts";
+
 export const MUTE_AUDIO_ARG = "--mute-audio";
 export const NO_SANDBOX_ARG = "--no-sandbox";
 
@@ -75,6 +77,9 @@ export function chromiumLaunchOptions(input: ChromiumLaunchInput = {}): Chromium
     );
   }
 
+  const environment = input.environment ?? process.env;
+  const isAudioOnlyMode = isAudioOnly(environment);
+
   return {
     headless: false,
     chromiumSandbox: true,
@@ -85,8 +90,10 @@ export function chromiumLaunchOptions(input: ChromiumLaunchInput = {}): Chromium
       // Жать «играть» в звонке некому: бот заходит без человека.
       "--autoplay-policy=no-user-gesture-required",
       // /dev/shm в контейнере по умолчанию 64 МБ — Chromium на этом падает посреди встречи.
-      "--disable-dev-shm-usage",
-      ...egressArguments((input.environment ?? process.env)[EGRESS_PROXY_ENV]),
+      // Контейнеры оркестратора получают 1 ГиБ, и в режиме «только звук» флаг снят: общая
+      // память рендереров остаётся в ОЗУ, а не уходит в /tmp на диск слоя (audio-only.ts).
+      ...(isAudioOnlyMode ? AUDIO_ONLY_ARGS : ["--disable-dev-shm-usage"]),
+      ...egressArguments(environment[EGRESS_PROXY_ENV]),
       ...extra,
     ],
   };
