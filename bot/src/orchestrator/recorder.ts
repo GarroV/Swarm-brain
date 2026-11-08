@@ -16,8 +16,9 @@ import path from "node:path";
 
 import { buildRecordArguments } from "../container/segments.ts";
 import { inBackground } from "./background.ts";
-import { PartStager } from "./parts.ts";
+import { PartStager, type SegmentEntry } from "./parts.ts";
 import type { MeetingRecorder } from "./run-meeting.ts";
+import { trimPart } from "./silence-trim.ts";
 
 const STARTUP_GRACE_MS = 2000;
 const STAGE_POLL_MS = 10_000;
@@ -31,6 +32,23 @@ export interface FfmpegRecorderOptions {
   readonly segmentSeconds: number;
   readonly onPart: (part: Blob, offset: number) => Promise<void>;
   readonly log: (line: string) => void;
+}
+
+interface UploadItem {
+  readonly file: string;
+  readonly offset: number;
+}
+
+/**
+ * Что отдавать вместо одной закрытой части: речевые блоки с `offset` на шкале записи (#869) или
+ * сама часть, если резать нечего или анализ не удался — речь ради экономии не теряем.
+ */
+interface UploadPlan {
+  readonly items: readonly UploadItem[];
+  /**
+   * Сколько блоков уже в очереди: повтор после сбоя продолжает с первого неотданного.
+   */
+  staged: number;
 }
 
 async function readOrNull(file: string): Promise<string | null> {
@@ -54,6 +72,8 @@ export class FfmpegRecorder implements MeetingRecorder {
 
   private readonly listPath: string;
 
+  private readonly plans = new Map<string, UploadPlan>();
+
   private readonly options: FfmpegRecorderOptions;
 
   constructor(options: FfmpegRecorderOptions) {
@@ -61,13 +81,48 @@ export class FfmpegRecorder implements MeetingRecorder {
     this.listPath = path.join(options.directory, "parts.csv");
     this.stager = new PartStager({
       readList: async () => readOrNull(this.listPath),
-      stage: async (entry) => {
-        const file = path.join(options.directory, entry.file);
-        await options.onPart(await openAsBlob(file), entry.start);
-        // Часть скопирована в очередь — второй экземпляр на томе не нужен.
-        await rm(file, { force: true });
-      },
+      stage: async (entry) => this.stagePart(entry),
     });
+  }
+
+  private async planUpload(entry: SegmentEntry): Promise<UploadPlan> {
+    const file = path.join(this.options.directory, entry.file);
+    let trimmed = null;
+    try {
+      trimmed = await trimPart(file);
+    } catch (error) {
+      this.options.log(
+        `обрезка тишины ${entry.file} не удалась, часть уйдёт целиком: ${String(error)}`,
+      );
+    }
+    if (trimmed === null) return { items: [{ file, offset: entry.start }], staged: 0 };
+    const kept = trimmed.reduce((sum, block) => sum + block.duration, 0);
+    this.options.log(
+      `${entry.file}: речи ${kept.toFixed(0)} с в ${String(trimmed.length)} блоках, тишина не выгружается`,
+    );
+    return {
+      items: trimmed.map((block) => ({ file: block.file, offset: entry.start + block.offset })),
+      staged: 0,
+    };
+  }
+
+  private async stagePart(entry: SegmentEntry): Promise<void> {
+    let plan = this.plans.get(entry.file);
+    if (plan === undefined) {
+      plan = await this.planUpload(entry);
+      this.plans.set(entry.file, plan);
+    }
+    for (const item of plan.items.slice(plan.staged)) {
+      await this.options.onPart(await openAsBlob(item.file), item.offset);
+      plan.staged += 1;
+    }
+    // Всё скопировано в очередь — вторые экземпляры на томе не нужны.
+    await Promise.all(
+      [path.join(this.options.directory, entry.file), ...plan.items.map((item) => item.file)].map(
+        async (file) => rm(file, { force: true }),
+      ),
+    );
+    this.plans.delete(entry.file);
   }
 
   async start(): Promise<void> {
