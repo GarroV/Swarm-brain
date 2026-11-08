@@ -75,7 +75,7 @@ const MOCK_ME: Me = {
   role: "bd",
   markets: ["KZ", "PL"],
   is_admin: true,
-  is_superadmin: true, recorder_auto_start: false,
+  is_superadmin: true, recorder_auto_start: true,
 };
 
 const MOCK_USERS: User[] = [

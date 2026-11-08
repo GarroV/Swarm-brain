@@ -650,8 +650,8 @@ async function routeRequest(req: Request): Promise<Response> {
         role: p?.role ?? null,
         markets: p?.markets ?? [],
         ui_backdrop: p?.ui_backdrop ?? null,
-        // Рекордер сам начинает запись по календарю (#219); нет профиля — выключено.
-        recorder_auto_start: p?.recorder_auto_start === true,
+        // Рекордер сам начинает запись по календарю (#219); по умолчанию включено (решение 18.09.2026).
+        recorder_auto_start: p?.recorder_auto_start !== false,
         is_admin: isAdmin,
         is_demo: isDemo,
         // Telegram привязан: номер и есть Telegram (> 0) или привязан из веба (#92).

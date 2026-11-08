@@ -321,13 +321,13 @@ Deno.test("встречу уже пишет бот — ключ в recorded_now,
   }
 });
 
-Deno.test("auto_start: по умолчанию false; в профиле включено — true; в каждом ответе человеку (#219)", async () => {
+Deno.test("auto_start: по умолчанию true; выключено в профиле — false; в каждом ответе человеку (#219)", async () => {
   try {
-    assertEquals((await call()).body.auto_start, false, "нет строки профиля");
-    profileRow = { recorder_auto_start: true };
-    assertEquals((await call()).body.auto_start, true, "встречи нет");
+    assertEquals((await call()).body.auto_start, true, "нет строки профиля — по умолчанию включено");
+    profileRow = { recorder_auto_start: false };
+    assertEquals((await call()).body.auto_start, false, "встречи нет");
     googleConnected = false;
-    assertEquals((await call()).body.auto_start, true, "календарь не подключён");
+    assertEquals((await call()).body.auto_start, false, "календарь не подключён");
   } finally {
     profileRow = null;
     googleConnected = true;
@@ -347,4 +347,31 @@ Deno.test("auto_start: сбой чтения профиля — false, эндп�
     console.error = orig;
     profileRow = null;
   }
+});
+
+async function post(body: unknown, token: string | null = TOKEN): Promise<{ status: number; body: Answer }> {
+  const headers: Record<string, string> = { "content-type": "application/json" };
+  if (token) headers.Authorization = `Bearer ${token}`;
+  globalThis.fetch = stubFetch;
+  try {
+    const res = await handler!(
+      new Request("https://stub.invalid/meeting-current/auto-start", {
+        method: "POST",
+        headers,
+        body: typeof body === "string" ? body : JSON.stringify(body),
+      }),
+    );
+    return { status: res.status, body: await res.json() };
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+}
+
+Deno.test("POST /auto-start: boolean сохраняется и возвращается; не boolean — 400; без токена — 401 (#219)", async () => {
+  assertEquals(await post({ auto_start: false }), { status: 200, body: { auto_start: false } });
+  assertEquals((await post({ auto_start: true })).body.auto_start, true);
+  for (const bad of [{ auto_start: "true" }, { auto_start: 1 }, {}, "not json"]) {
+    assertEquals((await post(bad)).status, 400, JSON.stringify(bad));
+  }
+  assertEquals((await post({ auto_start: true }, null)).status, 401);
 });

@@ -6,8 +6,9 @@ import { useDt } from "@/components/roy/nav";
 
 /**
  * Авто-старт записи рекордером по календарю (#219): `user_profiles.recorder_auto_start`
- * (GET/PATCH /me), по умолчанию выключено — включение осознанное. Рекордер читает флаг из
- * meeting-current и перед стартом показывает 5-секундный отсчёт с отменой.
+ * (GET/PATCH /me), по умолчанию ВКЛЮЧЕНО (решение 18.09.2026: плановый созвон стартует сам, как у
+ * Granola). Рекордер читает флаг из meeting-current и перед стартом показывает 5-секундный отсчёт с
+ * отменой; то же значение переключается из меню рекордера (POST meeting-current/auto-start).
  * Без Google-календаря рекордеру неоткуда узнать о встречах — говорим об этом прямо, с кнопкой
  * подключения, а не оставляем переключатель, который молча ничего не делает. В демо записи нет.
  */
@@ -26,7 +27,7 @@ export function RecorderAutostartToggle() {
       .then(([me, integrations]) => {
         if (!alive) return;
         setDemo(me.is_demo === true);
-        setEnabled(me.recorder_auto_start === true);
+        setEnabled(me.recorder_auto_start !== false);
         // Список не загрузился — не пугаем «нужен календарь» по неизвестному.
         setHasCalendar(integrations ? integrations.some((i) => i.service === "google_calendar") : null);
       })

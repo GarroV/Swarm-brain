@@ -17,7 +17,7 @@ import { calendarKeyOf } from "../_shared/calendar-key.ts";
 import { accessToken, listEvents } from "../_shared/google-calendar.ts";
 // «Эту встречу уже пишут» (issue #821) — то же правило живой записи, что у арбитра записей.
 import { loadRecordedNow } from "../_shared/bot-recording.ts";
-import { loadAutoStart } from "./auto-start.ts";
+import { isAutoStartWrite, loadAutoStart, parseAutoStartBody, saveAutoStart } from "./auto-start.ts";
 
 const supabase = createClient(
   Deno.env.get("SUPABASE_URL")!,
@@ -76,6 +76,17 @@ Deno.serve(async (req: Request) => {
   } catch (e) {
     if (e instanceof AgentAuthError) return json({ error: e.message }, 401);
     throw e;
+  }
+
+  // Запись флага из меню рекордера (#219): тот же агентский токен, что у GET. Бот настройку
+  // человека не меняет. Единственный источник — сервер, локальной копии у рекордера нет.
+  if (isAutoStartWrite(req.method, new URL(req.url).pathname)) {
+    if (identity.kind === "bot") return json({ error: "Forbidden" }, 403);
+    const parsed = parseAutoStartBody(await req.json().catch(() => null));
+    if (!parsed.ok) return json({ error: parsed.error }, 400);
+    const failure = await saveAutoStart(supabase, identity.telegramId, parsed.value);
+    if (failure) return json({ error: failure }, 500);
+    return json({ auto_start: parsed.value });
   }
 
   // Бот видит только событие своего пропуска (T165): пропуск задания — это событие и ничего
