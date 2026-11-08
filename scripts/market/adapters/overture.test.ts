@@ -6,13 +6,7 @@ import { PL } from "../countries/PL.ts";
 import { BY } from "../countries/BY.ts";
 import { HU } from "../countries/HU.ts";
 import { COUNTRIES } from "../countries/index.ts";
-import {
-  classify,
-  discover,
-  dropDuplicates,
-  latestRelease,
-  type PlaceRow,
-} from "./overture.ts";
+import { classify, discover, dropDuplicates, latestRelease, type PlaceRow } from "./overture.ts";
 
 const cfg = {
   country: "DE",
@@ -51,8 +45,7 @@ const row = (over: Partial<PlaceRow>): PlaceRow => ({
   lng: 13.4,
   ...over,
 });
-const many = (k: number, over: (i: number) => Partial<PlaceRow>) =>
-  Array.from({ length: k }, (_, i) => row(over(i)));
+const many = (k: number, over: (i: number) => Partial<PlaceRow>) => Array.from({ length: k }, (_, i) => row(over(i)));
 
 Deno.test("#1134: eight unbranded generic coffee shops in three cities are not a chain", () => {
   const rows = many(8, (i) => ({
@@ -630,4 +623,22 @@ Deno.test("#1134: the manufacturer shops listed per country are dropped, ice cre
       .sort();
     assertEquals(found, [...kept].sort(), country);
   }
+});
+
+Deno.test("dropDuplicates merges one address written with and without a trailing dot (HU Budaörsi út 112)", () => {
+  const p = (osm_id: string, lat: number, lng: number, address: string) => ({
+    chain: "mcdonalds",
+    name: "McDonald's",
+    lat,
+    lng,
+    city: "Budapest",
+    address,
+    osm_id,
+  });
+  const out = dropDuplicates([
+    p("a", 47.4653, 19.0139, "Budaörsi út 112."),
+    p("b", 47.4650, 19.0134, "Budaörsi út 112"),
+    p("c", 47.4650, 19.0134, "Budaörsi út 114"),
+  ]);
+  assertEquals(out.map((x) => x.osm_id), ["a", "c"]);
 });
