@@ -125,7 +125,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     private lazy var calendarAutoStart = CalendarAutoStartController(
         widget: widget, isRecording: { [unowned self] in isRecording }, canShow: { [unowned self] in configError == nil },
         start: { [unowned self] m in pendingMeetings = []; beginRecording(identity: m) },
-        resync: { [unowned self] in syncWidget() })
+        resync: { [unowned self] in rebuildMenu() }, client: { [unowned self] in config.map(SwarmClient.init(config:)) })
     private var maintTimer: Timer?
     // Авто-стоп по концу звонка (per-process детект во время записи).
     private var recWatchTimer: Timer?
@@ -636,9 +636,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             // (CoreSpeech), иначе «звонок» виден всегда и сыпались бы ложные предложения записи.
             let detectedCall = CallDetector.realCallActive()
             DispatchQueue.main.async { [weak self] in
-                // Авто-старт не зависит от детекта звонка (#270), поэтому раньше guard ниже. Нет
-                // ответа сервера — снимка нет, отсчёт гасится (отказ в сторону «не писать»).
-                self?.calendarAutoStart.update(lookup.map { .init(meetings: $0.meetings, recordedNow: $0.recordedNow, enabled: $0.autoStart) })
+                // Авто-старт: календарь + сигнал звонка капсулы; нет ответа сервера — отсчёт гасится.
+                self?.calendarAutoStart.update(lookup, callActive: detectedCall ?? false)
                 guard let micOn = detectedCall else {
                     self?.logTick(meetings: meetings, lookupOK: lookup != nil, micOn: nil)
                     return // Unknown HAL state cannot drive call-detection actions.
@@ -1008,6 +1007,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         } else {
             menu.addItem(NSMenuItem(title: "Вставить токен из буфера", action: #selector(pasteTokenTapped), keyEquivalent: ""))
         }
+        if let item = calendarAutoStart.menuItem() { menu.addItem(item) }
         for item in board.menuItems() { menu.addItem(item) }
         // Бэкстоп: macOS-разрешение на запись системного звука можно открыть вручную в любой
         // момент (Core Audio process-tap при отказе иногда даёт тишину без ошибки → catch не сработает).
