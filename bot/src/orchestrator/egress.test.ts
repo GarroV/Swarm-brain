@@ -132,12 +132,50 @@ describe("сеть встречи и egress-прокси", () => {
 
   it("прокси со старым списком или остановленный — убирается и поднимается новый", async () => {
     const engine = new FakeEgressEngine();
-    await egressOn(engine, "https://old.supabase.co").egress.prepare("r1");
+    const old = egressOn(engine, "https://old.supabase.co").egress;
+    await old.prepare("r1");
+    await old.release("r1");
     const { egress, lines } = egressOn(engine);
     await egress.prepare("r2");
     expect(engine.calls).toContain("remove:p1");
     expect(engine.calls).toContain("createProxy:p2");
     expect(lines[0]).toMatch(/убираю egress-прокси p1/u);
+  });
+
+  it("идёт встреча — прокси со старым списком не трогают, одна строка в журнал", async () => {
+    const engine = new FakeEgressEngine();
+    await egressOn(engine, "https://old.supabase.co").egress.prepare("r1");
+    const { egress, lines } = egressOn(engine);
+    await egress.prepare("r2");
+    expect(engine.calls).not.toContain("remove:p1");
+    expect(engine.calls).not.toContain("createProxy:p2");
+    expect(engine.calls).toContain("connect:stand-meeting-r2:p1:egress");
+    expect(lines).toEqual([
+      "egress-прокси p1 со старым списком оставлен: идут встречи (1); заменю, когда их не будет",
+    ]);
+  });
+
+  it("идёт встреча, но прокси остановлен — убирается и поднимается новый", async () => {
+    const engine = new FakeEgressEngine();
+    await egressOn(engine, "https://old.supabase.co").egress.prepare("r1");
+    engine.containers = engine.containers.map((c) => ({ ...c, running: false }));
+    await egressOn(engine).egress.prepare("r2");
+    expect(engine.calls).toContain("remove:p1");
+    expect(engine.calls).toContain("createProxy:p2");
+  });
+
+  it("встреч не осталось — прокси со старым списком заменяется на следующем запуске", async () => {
+    const engine = new FakeEgressEngine();
+    const old = egressOn(engine, "https://old.supabase.co").egress;
+    await old.prepare("r1");
+    const { egress } = egressOn(engine);
+    await egress.prepare("r2");
+    expect(engine.calls).not.toContain("remove:p1");
+    await old.release("r1");
+    await egress.release("r2");
+    await egress.prepare("r3");
+    expect(engine.calls).toContain("remove:p1");
+    expect(engine.calls).toContain("createProxy:p2");
   });
 
   it("прокси не стартовал — убран, запуск встречи получает громкий отказ", async () => {

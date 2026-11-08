@@ -13,12 +13,14 @@
  * `egress-proxy-main.ts`), помечен `scriba.egress-of`, а не `scriba.project`: разбор сирот
  * оркестратора его не трогает. Состав окружения прокси записан меткой — сменился адрес Swarm
  * или добавка, и прокси пересоздаётся, а живые сети встреч подключаются к новому на старте.
+ * Но не под идущими встречами: пересоздание рвёт их медиа-туннели, поэтому прокси со старым
+ * списком живёт, пока у стенда есть сеть встречи, и заменяется на первом запуске в тишине (#866).
  */
 import { createHash } from "node:crypto";
 
 import type { ContainerLimits } from "../container/isolation.ts";
 import { describeError } from "./describe-error.ts";
-import type { EgressEngine } from "./engine.ts";
+import type { EgressEngine, EngineContainer } from "./engine.ts";
 
 export const EGRESS_LABEL = "scriba.egress-of";
 const RUN_LABEL = "scriba.run";
@@ -125,6 +127,23 @@ export class DockerMeetingEgress implements MeetingEgress {
     return next;
   }
 
+  /**
+   * Работающий прокси со старым списком, если под ним идут встречи, иначе `undefined`.
+   * Идущая встреча — её сеть у стенда; сеть заводится после выдачи прокси, а сам прокси
+   * со своим списком (текущим для этого экземпляра) заменять не придётся.
+   */
+  private async staleInUse(found: readonly EngineContainer[]): Promise<string | undefined> {
+    const { engine, project, log } = this.options;
+    const running = found.find((container) => container.running);
+    if (running === undefined) return undefined;
+    const networks = await engine.listNetworksByLabel(EGRESS_LABEL, project);
+    if (networks.length === 0) return undefined;
+    log(
+      `egress-прокси ${running.id} со старым списком оставлен: идут встречи (${String(networks.length)}); заменю, когда их не будет`,
+    );
+    return running.id;
+  }
+
   private async findOrCreateProxy(): Promise<string> {
     const { engine, project } = this.options;
     const found = await engine.listByLabel(EGRESS_LABEL, project);
@@ -132,6 +151,8 @@ export class DockerMeetingEgress implements MeetingEgress {
       (container) => container.running && container.labels[CONFIG_LABEL] === this.config,
     );
     if (current !== undefined) return current.id;
+    const keep = await this.staleInUse(found);
+    if (keep !== undefined) return keep;
     for (const stale of found) {
       this.options.log(`убираю egress-прокси ${stale.id}: остановлен или со старым списком`);
       await engine.remove(stale.id);
