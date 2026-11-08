@@ -94,5 +94,13 @@ jobs:
       - if: steps.detect.outputs.skip != 'true'
         run: npm ci --prefix bot
 
+      # Тест обрезки тишины (#869) генерирует звук и режет его настоящим ffmpeg — на раннере
+      # его нет (прогон без него падал `spawnSync ffmpeg ENOENT`). В образе бота он уже есть.
+      - if: steps.detect.outputs.skip != 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+          ffmpeg -version | head -1
+
       - if: steps.detect.outputs.skip != 'true'
         run: scripts/check bot
