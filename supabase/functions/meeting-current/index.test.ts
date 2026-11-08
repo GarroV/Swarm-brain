@@ -21,6 +21,8 @@ let tokenExchangeOk = true;
 let calendarItems: unknown[] | null = [];
 // Встречи, которые «сейчас пишутся» (issue #821): то, что база отдаёт на запрос recorded_now.
 let recordingRows: unknown[] = [];
+// Профиль человека (#219): строка user_profiles или null (нет строки) / "error" (сбой чтения).
+let profileRow: { recorder_auto_start: boolean } | null | "error" = null;
 
 const json = (body: unknown, status = 200) =>
   Promise.resolve(
@@ -48,6 +50,9 @@ const stubFetch = ((input: Request | URL | string) => {
       recorder_token_prev_hash: null,
       recorder_token_prev_expires_at: null,
     });
+  }
+  if (url.includes("/rest/v1/user_profiles")) {
+    return profileRow === "error" ? json({ message: "boom" }, 500) : json(profileRow);
   }
   if (url.includes("/rest/v1/meetings")) {
     return json(recordingRows);
@@ -117,6 +122,7 @@ interface Answer {
   meeting?: Meeting | null;
   reason?: string;
   error?: string;
+  auto_start?: boolean;
 }
 
 async function call(
@@ -312,5 +318,33 @@ Deno.test("встречу уже пишет бот — ключ в recorded_now,
   } finally {
     recordingRows = [];
     googleConnected = true;
+  }
+});
+
+Deno.test("auto_start: по умолчанию false; в профиле включено — true; в каждом ответе человеку (#219)", async () => {
+  try {
+    assertEquals((await call()).body.auto_start, false, "нет строки профиля");
+    profileRow = { recorder_auto_start: true };
+    assertEquals((await call()).body.auto_start, true, "встречи нет");
+    googleConnected = false;
+    assertEquals((await call()).body.auto_start, true, "календарь не подключён");
+  } finally {
+    profileRow = null;
+    googleConnected = true;
+  }
+});
+
+Deno.test("auto_start: сбой чтения профиля — false, эндпоинт отвечает штатно (#219)", async () => {
+  profileRow = "error";
+  const orig = console.error;
+  console.error = () => {};
+  try {
+    const { status, body } = await call();
+    assertEquals(status, 200);
+    assertEquals(body.auto_start, false);
+    assertEquals(body.reason, "no_ongoing_event");
+  } finally {
+    console.error = orig;
+    profileRow = null;
   }
 });

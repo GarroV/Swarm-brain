@@ -8,6 +8,7 @@ import { useDt } from "@/components/roy/nav";
 import type { Me } from "@/types";
 import { ConnectorTile } from "./ConnectorTile";
 import { AutojoinToggle } from "./AutojoinToggle";
+import { RecorderAutostartToggle } from "./RecorderAutostartToggle";
 import { fetchMcpConnections } from "@/lib/mcp-oauth-api";
 import { chatGptConnectionStatus, MCP_CONNECTIONS_CHANGED } from "@/lib/mcp-oauth";
 import { mcpOAuthMessages } from "@/lib/mcp-oauth-messages";
@@ -158,7 +159,10 @@ export function ConnectorsSection({ me, panels, dense = false }: { me: Me; panel
   const panelOf = (id: ConnectorId) =>
     id === "bot"
       ? <BotPanel hasCalendar={hasCalendar} on={input.botAutojoin === true} onChange={setBotAutojoin} />
-      : panels[id];
+      : id === "recorder"
+        // Авто-старт записи (#219) — настройка рекордера, поэтому над его установкой.
+        ? <div className="flex flex-col gap-3"><RecorderAutostartToggle />{panels[id]}</div>
+        : panels[id];
   const toggle = (id: ConnectorId) => setOpen(open === id ? null : id);
   // Справа всегда что-то выбрано: по умолчанию scriba, в демо (где его нет) — первая плитка.
   const selected: ConnectorId = open ?? (list.some((c) => c.id === "bot") ? "bot" : list[0].id);

@@ -17,6 +17,7 @@ import { calendarKeyOf } from "../_shared/calendar-key.ts";
 import { accessToken, listEvents } from "../_shared/google-calendar.ts";
 // «Эту встречу уже пишут» (issue #821) — то же правило живой записи, что у арбитра записей.
 import { loadRecordedNow } from "../_shared/bot-recording.ts";
+import { loadAutoStart } from "./auto-start.ts";
 
 const supabase = createClient(
   Deno.env.get("SUPABASE_URL")!,
@@ -45,7 +46,7 @@ function meetingOf(ev: GEvent, link: ConferenceCall | ConferenceInfo) {
 }
 
 // «Встречи нет» и почему. Оба поля: `meetings` — новый рекордер (D027), `meeting` — раскатанный.
-// `extra` — `recorded_now` для рекордера человека (issue #821).
+// `extra` — `recorded_now` и `auto_start` для рекордера человека (issue #821, #219).
 function none(reason: string, extra: Record<string, unknown> = {}): Response {
   return json({ meetings: [], meeting: null, reason, ...extra });
 }
@@ -90,6 +91,8 @@ Deno.serve(async (req: Request) => {
   // в том числе без календаря: бота на звонок могли позвать руками.
   const { data: who } = await supabase.from("allowed_users").select("email")
     .eq("telegram_id", identity.telegramId).maybeSingle();
+  // `auto_start` (#219) — настройка человека «рекордер сам начинает запись по календарю»; тоже в
+  // каждом ответе человеку, в том числе без календаря. Ошибка чтения флага эндпоинт не валит.
   const recordedNow = {
     recorded_now: await loadRecordedNow(
       supabase,
@@ -97,6 +100,7 @@ Deno.serve(async (req: Request) => {
       (who as { email?: string | null } | null)?.email ?? null,
       new Date().toISOString(),
     ),
+    auto_start: await loadAutoStart(supabase, identity.telegramId),
   };
 
   const { data } = await supabase.from("user_integrations")

@@ -4,6 +4,7 @@ export type UpdateMeInput = {
   role?: string | null;
   markets?: string[];
   ui_backdrop?: BackdropId | null;
+  recorder_auto_start?: boolean;
 };
 
 // ── Присутствие (#751) ───────────────────────────────────────────────────────
