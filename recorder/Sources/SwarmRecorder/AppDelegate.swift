@@ -121,6 +121,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     // старт выбирает тот, где человек сидит (26.10.2026), а не первый по рейтингу.
     private var lastCalendar: (items: [MeetingIdentity.Info], recordedNow: [String], at: Date)?
     private var watchTimer: Timer?
+    // Авто-старт по календарю (#219): отсчёт и решение — CalendarAutoStartController.
+    private lazy var calendarAutoStart = CalendarAutoStartController(
+        widget: widget, isRecording: { [unowned self] in isRecording }, canShow: { [unowned self] in configError == nil },
+        start: { [unowned self] m in pendingMeetings = []; beginRecording(identity: m) },
+        resync: { [unowned self] in syncWidget() })
     private var maintTimer: Timer?
     // Авто-стоп по концу звонка (per-process детект во время записи).
     private var recWatchTimer: Timer?
@@ -210,6 +215,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             self?.stopTapped()
         }
         widget.onRecord = { [weak self] in self?.widgetRecord() }
+        widget.onCancelAutoStart = { [weak self] in self?.calendarAutoStart.cancel() }
         widget.onJoin = { [weak self] in self?.widgetJoin() }
         widget.onJoinChoice = { [weak self] key in self?.joinChosen(key) }
         widget.onRecordChoice = { [weak self] key in self?.recordChosen(key) }
@@ -616,15 +622,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
     }
 
-    private func infoAlert(_ title: String, _ text: String) {
-        let a = NSAlert()
-        a.messageText = title
-        a.informativeText = text
-        a.addButton(withTitle: "OK")
-        NSApp.activate(ignoringOtherApps: true)
-        a.runModal()
-    }
-
     @objc private func watchTick() {
         guard let cfg = config, configError == nil else { return }
         Task {
@@ -639,6 +636,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             // (CoreSpeech), иначе «звонок» виден всегда и сыпались бы ложные предложения записи.
             let detectedCall = CallDetector.realCallActive()
             DispatchQueue.main.async { [weak self] in
+                // Авто-старт не зависит от детекта звонка (#270), поэтому раньше guard ниже. Нет
+                // ответа сервера — снимка нет, отсчёт гасится (отказ в сторону «не писать»).
+                self?.calendarAutoStart.update(lookup.map { .init(meetings: $0.meetings, recordedNow: $0.recordedNow, enabled: $0.autoStart) })
                 guard let micOn = detectedCall else {
                     self?.logTick(meetings: meetings, lookupOK: lookup != nil, micOn: nil)
                     return // Unknown HAL state cannot drive call-detection actions.
@@ -809,14 +809,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     // ── UI ──────────────────────────────────────────────────────────────────────
     private var isRecording: Bool { if case .recording = state { return true }; return false }
 
-    // Сетевой/транспортный сбой → состояние .offline (а не общая ошибка): URLError (нет связи,
-    // таймаут) или SwarmError.transport (мы не дошли до HTTP-ответа).
-    private func isOfflineError(_ error: Error) -> Bool {
-        if error is URLError { return true }
-        if case SwarmError.transport = error { return true }
-        return false
-    }
-
     // Состояния с собственным UI «путь в Settings/сеть + Повторить» (отдельно от idle/recording).
     private func isPermissionOrOfflineError(_ s: State) -> Bool {
         switch s {
@@ -831,7 +823,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         if let e = configError { return "⚠️ \(e)" }
         switch state {
         case .idle:
-            if pendingMeetings.count > 1 { return "Встречи в одно время: \(pendingMeetings.count)" }
+            if let a = calendarAutoStart.shown {
+                widget.showAutoStart(title: a.title, remaining: a.remaining, lang: BoardL10n.language())
+            } else if pendingMeetings.count > 1 { return "Встречи в одно время: \(pendingMeetings.count)" }
             if let m = pendingMeeting { return "Встреча \(meetingWhen(m)): «\(m.title ?? "")»" }
             if callActive { return "Идёт звонок" }
             if queuedCount > 0 { return "bumblebee готов · \(queuedCount) в очереди" }
