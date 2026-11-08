@@ -131,3 +131,28 @@ export function invitePlatformLabel(platform: InvitePlatform): string {
   if (platform === "kontur") return "Kontur.Talk";
   return "Zoom";
 }
+
+/**
+ * Ссылка на площадку, куда бот умеет войти (Google Meet, Контур.Толк) — для кнопки «Позвать бота»
+ * в «Встречах сегодня», где ссылка приходит из календаря, а не вставляется руками. Зеркало
+ * серверного `parseInviteLink` + `BOT_PLATFORMS` (`_shared/meeting-invite.ts`): https, хост
+ * целиком или по метке домена (не суффиксом строки — `evilktalk.ru` не наш), у ссылки есть
+ * комната. Сервер всё равно перепроверит; здесь решается только «рисовать ли кнопку», поэтому
+ * Zoom и незнакомые хосты — false, а не ошибка после клика.
+ */
+export function canInviteBot(joinUrl: string | null | undefined): boolean {
+  if (!joinUrl) return false;
+  let url: URL;
+  try {
+    url = new URL(joinUrl.trim());
+  } catch {
+    return false;
+  }
+  if (url.protocol !== "https:" || url.username !== "" || url.password !== "") return false;
+  if (url.pathname.replace(/\/+$/, "") === "") return false;
+  const host = url.hostname;
+  const under = (domain: string) => host === domain || host.endsWith(`.${domain}`);
+  const labels = host.split(".");
+  const kontur = labels.length === 3 && labels[0] === "talk" && labels[1] === "kontur";
+  return under("meet.google.com") || under("ktalk.ru") || kontur;
+}
