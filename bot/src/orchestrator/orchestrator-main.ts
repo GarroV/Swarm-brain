@@ -20,7 +20,10 @@
  *   SCRIBA_CALENDAR_POLL_MS     — пауза между проходами по календарям (по умолчанию 45000, #1000);
  *   SCRIBA_CONTAINER_SWARM_URL  — корень функций, каким его видит контейнер (по умолчанию
  *                                 SCRIBA_SWARM_URL; для стенда — host.docker.internal);
- *   SCRIBA_CONTAINER_ENV        — JSON-объект добавочного окружения контейнера (ручки смоука).
+ *   SCRIBA_CONTAINER_ENV        — JSON-объект добавочного окружения контейнера (ручки смоука);
+ *   SCRIBA_AUDIO_ONLY           — «1»/«true»: контейнеры встреч не принимают входящее видео и
+ *                                 стартуют Chromium с флагами экономии CPU (#1049); по умолчанию
+ *                                 выключено, едет в контейнер как есть;
  *   SCRIBA_MAX_MEETINGS         — потолок одновременных встреч (по умолчанию 4); сверх него —
  *                                 громкий отказ человеку, контейнер не поднимается;
  *   SCRIBA_CONTAINER_MEMORY_MB  — потолок памяти контейнера встречи, МБ (по умолчанию 2048);
@@ -46,6 +49,7 @@
  * Кривое окружение — отказ на старте с именем переменной: служба, которая «работает» и никого
  * не зовёт, — ровно та тишина, против которой она заведена.
  */
+import { AUDIO_ONLY_ENV, isAudioOnly } from "../container/audio-only.ts";
 import {
   type ContainerLimits,
   DEFAULT_CONTAINER_LIMITS,
@@ -95,12 +99,16 @@ function positive(environment: Environment, name: string, fallback: number): num
 
 function extraEnvironment(environment: Environment): Record<string, string> {
   const raw = environment.SCRIBA_CONTAINER_ENV?.trim() ?? "";
-  if (raw === "") return {};
+  const audioOnly = isAudioOnly(environment) ? { [AUDIO_ONLY_ENV]: "1" } : {};
+  if (raw === "") return audioOnly;
   const parsed: unknown = JSON.parse(raw);
   if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
     throw new Error("SCRIBA_CONTAINER_ENV должен быть JSON-объектом");
   }
-  return Object.fromEntries(Object.entries(parsed).map(([key, value]) => [key, String(value)]));
+  return {
+    ...Object.fromEntries(Object.entries(parsed).map(([key, value]) => [key, String(value)])),
+    ...audioOnly,
+  };
 }
 
 const MIB = 1024 * 1024;
