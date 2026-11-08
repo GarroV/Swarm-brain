@@ -12,84 +12,39 @@
 #   0 — чисто, никого нет
 #   1 — люди работали только что (предупреждение: решает человек)
 #   2 — СТОП: идёт запись или обработка встречи (данные встречи важнее любой раскатки)
-#   3 — НЕ СМОГ ПРОВЕРИТЬ (нет привязки к проду, запрос не прошёл). Тоже блокирует, но это
-#       ДРУГОЕ: раскатка не отменяется «потому что идёт запись» — про запись ничего не известно.
-#       Разделено 21.09.2026: в CI привязки нет никогда (прод-ключ там не держим, решение
-#       2026-08-28), и кнопка раскатки падала с текстом «идёт запись или обработка встречи» —
-#       человек читал это как «подожди, коллега пишет встречу» и ждал пустоты.
+#   3 — НЕ СМОГ ПРОВЕРИТЬ (нет ключа шлюза, ssh не дозвонился, ответ нечитаем). Тоже блокирует,
+#       но это ДРУГОЕ: раскатка не отменяется «потому что идёт запись» — про запись ничего не
+#       известно. Разделено 21.09.2026: кнопка раскатки падала с текстом «идёт запись или обработка
+#       встречи» — человек читал это как «подожди, коллега пишет встречу» и ждал пустоты.
 set -euo pipefail
 
-WRITE_WINDOW_MIN=${WRITE_WINDOW_MIN:-10}   # «человек только что работал»
-RECORDER_FRESH_MIN=${RECORDER_FRESH_MIN:-3} # heartbeat свежее этого = рекордер жив
-
-PROJECT_REF=vbqglndbxkpmreccpqmr
+# Читает прод через шлюз на своём сервере: `swarm_server activity` (deploy/server/gate.sh, #919).
+# Окна зашиты в шлюз: рекордер жив — heartbeat свежее 3 минут, «человек работал» — правка за 10 минут.
 REPO_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 cd "$REPO_ROOT"
+# shellcheck source=lib/swarm-server.sh
+. "$REPO_ROOT/scripts/lib/swarm-server.sh"
 
 head_() { printf '\n\033[1m%s\033[0m\n' "$*"; }
 red()   { printf '\033[31m%s\033[0m\n' "$*"; }
 green() { printf '\033[32m%s\033[0m\n' "$*"; }
 
-# `--linked` ходит в прод через локальный кэш привязки (supabase/.temp/*, gitignored): там же
-# лежит IPv4-адрес пулера, без которого CLI пытается подключиться по IPv6 и падает. Кэш
-# подделывать нельзя — получается «привязка», которая не работает, что хуже отсутствия.
-# Поэтому: нет привязки → отказ с готовой командой (fail-closed), а не тихий проход.
-if [ ! -s supabase/.temp/pooler-url ]; then
-  red "Этот worktree не привязан к проду, проверить активность нечем."
-  echo "  Один раз здесь:  supabase link --project-ref $PROJECT_REF" >&2
-  echo "  Либо запускай проверку из главной папки репозитория — она привязана." >&2
-  echo "  В CI привязки нет и не будет (прод-ключ в секретах публичного репозитория не держим," >&2
-  echo "  решение 2026-08-28) — там активность проверяет человек до нажатия кнопки." >&2
-  exit 3
-fi
-
-# stderr НЕ глушим: с `set -e` упавший запрос давал бы пустой вывод и код 1 — сбой, который
-# выглядит как «просто ничего не нашлось». Проверено на себе.
-# Сообщение о сбое — в stderr: q() зовут через $(…), и stdout ушёл бы в переменную молча.
-q() {
-  local out
-  if ! out=$(supabase db query --linked "$1" 2>&1); then
-    red "Запрос к проду не прошёл:" >&2
-    echo "$out" | sed 's/^/    /' >&2
-    return 1
-  fi
-  echo "$out"
-}
-
-# Запрос не прошёл = проверка не состоялась → код 3, а не 1 (issues #437, #438). Голое
-# `X=$(q …)` под `set -e` роняло скрипт кодом 1 — «люди работают», который обходится FORCE=1.
-not_checked() {
-  red "Проверка не выполнилась — состояние прода неизвестно. Не катим." >&2
+# Запрос не прошёл = проверка не состоялась → код 3, а не 1 (issues #437, #438). stderr шлюза НЕ
+# глушим: сбой, который выглядит как «просто ничего не нашлось», хуже громкого. Ответ без строк
+# recording/processing — тоже «не смог проверить», а не «чисто» (fail-closed).
+ACT=$(swarm_server activity) || {
+  red "Запрос к проду не прошёл (шлюз activity). Не катим: состояние прода неизвестно." >&2
   exit 3
 }
+RECORDING=$(printf '%s\n' "$ACT" | awk -F'\t' '$1=="recording"{print $2; exit}')
+PROCESSING=$(printf '%s\n' "$ACT" | awk -F'\t' '$1=="processing"{print $2; exit}')
+case "$RECORDING" in ''|*[!0-9]*) red "Не удалось прочитать состояние прода. Не катим: непонятное состояние — не «чисто»." >&2; exit 3 ;; esac
+case "$PROCESSING" in ''|*[!0-9]*) red "Не удалось прочитать состояние прода. Не катим: непонятное состояние — не «чисто»." >&2; exit 3 ;; esac
 
 # ── 1. Запись/обработка встречи — жёсткий стоп ────────────────────────────────
-# recorder_last_recording + recorder_last_seen пишет meeting-heartbeat (allowed_users).
 # Признак незавершённой обработки — summary_status = 'processing' (durable-обработка по кускам,
 # миграция 20260626120000). ⚠️ НЕ `meetings.status`: там живут in_base/awaiting_review — это
 # состояния вычитки, и предикат «status not in (done,error)» давал 144 из 144 строк.
-REC_JSON=$(q "
-select
-  (select count(*) from allowed_users
-    where recorder_last_recording is true
-      and recorder_last_seen > now() - interval '$RECORDER_FRESH_MIN minutes') as recording,
-  (select count(*) from meetings where summary_status = 'processing') as processing;
-") || not_checked
-# Не смогли прочитать ответ — считаем, что встреча ИДЁТ: непонятное состояние прода не повод
-# катить (fail-closed). Иначе упавший запрос молча читался бы как «чисто».
-read -r RECORDING PROCESSING < <(echo "$REC_JSON" | python3 -c "
-import json, re, sys
-m = re.search(r'\{.*\}', sys.stdin.read(), re.S)
-if not m:
-    print('СБОЙ СБОЙ'); sys.exit(0)
-r = json.loads(m.group(0))['rows'][0]
-print(r['recording'], r['processing'])
-")
-if [ "$RECORDING" = "СБОЙ" ]; then
-  red "Не удалось прочитать состояние прода (supabase db query). Не катим: непонятное состояние — не «чисто»."
-  exit 3
-fi
-
 head_ "Встречи"
 if [ "$RECORDING" != "0" ] || [ "$PROCESSING" != "0" ]; then
   [ "$RECORDING" != "0" ] && red "  ⛔ идёт запись: рекордеров в записи — $RECORDING"
@@ -100,44 +55,20 @@ fi
 green "  чисто: записи нет, обработка пуста"
 
 # ── 2. Люди — предупреждение ──────────────────────────────────────────────────
-head_ "Люди за последние $WRITE_WINDOW_MIN мин"
-PEOPLE_JSON=$(q "
-with w as (
-  select coalesce(assignee_telegram_ids[1], created_by_telegram_id) as uid, updated_at as ts, 'задачи' as what
-    from tasks where updated_at > now() - interval '$WRITE_WINDOW_MIN minutes'
-  union all
-  select owner_id, created_at, 'записи' from entries
-   where created_at > now() - interval '$WRITE_WINDOW_MIN minutes'
-  union all
-  select added_by_telegram_id, created_at, 'комментарии' from task_comments
-   where created_at > now() - interval '$WRITE_WINDOW_MIN minutes'
-)
-select coalesce(nullif(trim(p.first_name || ' ' || coalesce(p.last_name, '')), ''), w.uid::text, 'неизвестно') as who,
-       string_agg(distinct w.what, ', ') as what,
-       count(*) as n,
-       to_char(max(w.ts) at time zone 'Europe/Belgrade', 'HH24:MI') as last_seen
-  from w left join user_profiles p on p.telegram_id = w.uid
- group by 1 order by max(w.ts) desc;
-") || not_checked
-
-# Отчёт печатает python, а «есть ли кто» отдаёт кодом возврата: разбирать stdout шелла ради
-# одного числа — источник тихих ошибок.
-if echo "$PEOPLE_JSON" | python3 -c "
-import json, re, sys
-m = re.search(r'\{.*\}', sys.stdin.read(), re.S)
-if not m:
-    print('  не удалось прочитать ответ базы — считаю, что люди ЕСТЬ (безопасный дефолт)')
-    sys.exit(1)
-rows = json.loads(m.group(0)).get('rows') or []
-for r in rows:
-    print(f\"  · {r['who'].strip()} — {r['what']} ({r['n']}), последняя правка {r['last_seen']}\")
-if not rows:
-    print('  никого')
-sys.exit(1 if rows else 0)
-"; then
+head_ "Люди за последние 10 мин"
+# Строка person — пять полей: person, кто, что, сколько, ЧЧ:ММ. Иное число полей — повреждённый
+# ответ: считаем, что люди ЕСТЬ (безопасный дефолт), а не «никого».
+BAD=$(printf '%s\n' "$ACT" | awk -F'\t' '$1=="person" && NF!=5 {n++} END{print n+0}')
+PEOPLE=$(printf '%s\n' "$ACT" | awk -F'\t' '$1=="person" && NF==5 {printf "  · %s — %s (%s), последняя правка %s\n", $2, $3, $4, $5}')
+if [ "$BAD" != "0" ]; then
+  echo "  не удалось прочитать часть ответа базы — считаю, что люди ЕСТЬ (безопасный дефолт)"
+fi
+if [ -z "$PEOPLE" ] && [ "$BAD" = "0" ]; then
+  echo "  никого"
   head_ "Чисто — можно катить"
   exit 0
 fi
+[ -z "$PEOPLE" ] || printf '%s\n' "$PEOPLE"
 
 red "Кто-то работает прямо сейчас — раскатка перезагрузит им страницу."
 exit 1
