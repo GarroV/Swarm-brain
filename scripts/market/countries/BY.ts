@@ -65,6 +65,29 @@ export const BY: CountryConfig = {
       segment: "coffee",
       osmBrands: ["Costa Coffee", "Costa"],
     },
+    // Один бренд под несколькими подписями в Overture (#1113): без записи каждая заводилась своей сетью.
+    {
+      key: "kofe-saund",
+      name: "Кофе Саунд",
+      segment: "coffee",
+      osmBrands: ["Кофе Саунд", 'Сеть кофеен "Кофе Саунд"'],
+      osmNames: ['Кофейня "Кофе Саунд"'],
+    },
+    {
+      key: "garage",
+      name: "Garage",
+      segment: "coffee",
+      osmBrands: ["Garage"],
+      osmNames: ["Гараж"],
+    },
+    {
+      // Бренд в Overture записан с турецким названием города, заведения называются «Terra Pizza».
+      key: "terra-pizza",
+      name: "Terra Pizza",
+      segment: "pizza",
+      osmBrands: ["Terra pizza İskenderun"],
+      osmNames: ["Terra Pizza"],
+    },
   ],
   companies: [],
   sources: [

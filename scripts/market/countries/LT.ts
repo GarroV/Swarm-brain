@@ -63,6 +63,13 @@ export const LT: CountryConfig = {
       segment: "coffee",
       osmBrands: ["Costa Coffee", "Costa"],
     },
+    // Одна сеть под тремя подписями в Overture (#1113): «Čili Pizza», «Čili Pizza Lietuva», «Čili Pica».
+    {
+      key: "cili-pizza-lietuva",
+      name: "Čili Pizza",
+      segment: "pizza",
+      osmBrands: ["Čili Pizza Lietuva", "Čili Pizza", "Čili Pica"],
+    },
   ],
   companies: [],
   sources: [
