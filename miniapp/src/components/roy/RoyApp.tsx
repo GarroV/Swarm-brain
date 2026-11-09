@@ -4,7 +4,7 @@ import type { Me, Task } from "@/types";
 import { TaskModal } from "@/components/TaskModal";
 import { cn } from "@/lib/utils";
 import { getDeepLinkMeetingId, getDeepLinkTaskId } from "@/lib/deepLink";
-import { fetchAgentMeetings, fetchMeetings, logout } from "@/lib/api";
+import { fetchAgentMeetings, fetchMeetings, logout, subscribeDataRevalidated } from "@/lib/api";
 import { purgeExpiredRecordings } from "@/lib/webRecorder";
 import { RecorderProvider } from "./record/RecorderProvider";
 import { RecordingPill } from "./record/RecordingPill";
@@ -87,6 +87,14 @@ export function RoyApp({ me }: { me: Me | null }) {
   // Единое окно-редактор задачи (открывается по клику откуда угодно) + ревизия для рефреша списков.
   const [taskModalTask, setTaskModalTask] = useState<Task | null>(null);
   const [tasksVersion, setTasksVersion] = useState(0);
+  // Кэш данных (#492) отдал устаревшее и в фоне получил другое: разделы, что грузят при монтировании
+  // и не смотрят на tasksVersion (Проекты, Спринты), перемонтируются по этому ключу; остальные
+  // перечитывают данные по tasksVersion — теперь уже из свежего кэша, без сети.
+  const [dataEpoch, setDataEpoch] = useState(0);
+  useEffect(() => subscribeDataRevalidated(() => {
+    setDataEpoch((v) => v + 1);
+    setTasksVersion((v) => v + 1);
+  }), []);
   // Контекстное окно ответа (десктоп). На мобайле openAnswer уходит в push (см. ниже).
   const [answerQuery, setAnswerQuery] = useState<string | null>(null);
   // Стартовая линза доски задач при входе из панелей дашборда (Мои/Команда). null = дефолт.
@@ -463,8 +471,8 @@ export function RoyApp({ me }: { me: Me | null }) {
                       мобильный экран — отдельный: список проектов → задачи внутри. */
                     }
                     {tab === "projects" &&
-                      (isDesktop ? <TasksScreen only="sprint" /> : <RoyProjectsScreen />)}
-                    {tab === "sprints" && <TasksScreen only="sprints" />}
+                      (isDesktop ? <TasksScreen key={dataEpoch} only="sprint" /> : <RoyProjectsScreen key={dataEpoch} />)}
+                    {tab === "sprints" && <TasksScreen key={dataEpoch} only="sprints" />}
                     <KeptTab id="market" tab={tab} visited={visited}><MarketScreen /></KeptTab>
                     <KeptTab id="book" tab={tab} visited={visited}><RoyBaseScreen /></KeptTab>
                     <KeptTab id="cal" tab={tab} visited={visited}><RoyMeetingsScreen /></KeptTab>
