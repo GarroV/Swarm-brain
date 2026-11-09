@@ -100,6 +100,7 @@ claude mcp add supabase-swarm -- npx -y @supabase/mcp-server-supabase@0.12.0 \
 - Конфиг живёт **только в дашборде CF** (в репо нет `wrangler` и нет workflow ДЛЯ ДЕПЛОЯ — git-интеграция собирает сама). `.github/workflows/` в репозитории есть, но это только проверки и сборка рекордера — см. §CI ниже.
 - **Нюанс URL:** CF Pages срезает `.html` → `/foo.html` отдаёт 308 на `/foo` (напр. `/system-map.html` → `/system-map`). Ссылки лучше без `.html`.
 - **Экран показывает старые данные после сохранения?** Проверь, не кэшируется ли вызов: приватный API (`/api/*`) обязан идти мимо SW — правило в `miniapp/public/sw.js`, тест `deno test --allow-read miniapp/sw.test.ts` (issue #71).
+- **Живая проверка в DEV_MODE показывает старый код?** С `NEXT_PUBLIC_DEV_MODE=true` service worker не ставится вовсе, а оставшийся от прежних сессий на том же origin (`localhost:<порт>`) воркер и его кэш `ServiceWorkerRegister.tsx` сам снимает и один раз перезагружает страницу — руками сносить не нужно (issue #128). На проде переменной нет, воркер работает как прежде. Если вручную сносите — `navigator.serviceWorker.getRegistrations()` + `caches.keys()`.
 - **«В проде старая версия»?** Это НЕ деплой (он работает), а залипший клиентский **service worker / PWA-кэш** → ⌘⇧R / Unregister SW / перезапуск PWA. См. `BACKLOG.md` → «Веб (miniapp): деплой РАБОТАЕТ».
 
 ### CI / GitHub Actions — что робот делает и чего НЕ делает
