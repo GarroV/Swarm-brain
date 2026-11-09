@@ -6,6 +6,8 @@ import { DashBlock, Row } from "./shared";
 import { fetchTodayMeetings, openGoogleConnect, type TodayMeeting, type TodayMeetings } from "@/lib/api";
 import { recall, remember } from "@/lib/lastSeen";
 import { hasJoined, markJoined } from "@/lib/joinedCalls";
+import { canInviteBot } from "@/lib/meetingInvite";
+import { InviteBotInline } from "./InviteBotInline";
 
 // Право-ВЕРХ главного экрана: встречи из календаря на сегодня (issue #218).
 // Решение владельца 03.09.2026: «справа вместо задач команды мы делаем модуль "встречи
@@ -109,6 +111,8 @@ function MeetingRow({ m, dt, locale, joined, onJoined }: {
       </div>
       {/* Кнопка «Подключиться» — то самое «быстрый переход во встречу». Нет ссылки → нет
           кнопки: пустая кнопка обещает действие, которого не будет. */}
+      <div className="flex shrink-0 items-center gap-1.5">
+      {showInviteBot(m, onAir) && <InviteBotInline meetingId={m.id} joinUrl={m.join_url as string} />}
       {m.join_url && (!m.is_past || onAir) && (
         <button
           type="button"
@@ -125,9 +129,16 @@ function MeetingRow({ m, dt, locale, joined, onJoined }: {
           {onAir ? dt("Вернуться", "Back") : dt("Подключиться", "Join")}
         </button>
       )}
+      </div>
     </Row>
   );
 }
+
+// «Позвать бота» — вторая точка входа к D017 (issue #636): ссылка у встречи уже есть, вставлять
+// её в InviteBotCard руками незачем. Не рисуем, если площадку бот не знает (Zoom), встреча
+// прошла (затянувшийся созвон с `onAir` — ещё живой) или её уже пишут (`REC`: бот не нужен).
+const showInviteBot = (m: TodayMeeting, onAir: boolean) =>
+  canInviteBot(m.join_url) && (!m.is_past || onAir) && !m.recording;
 
 // Строка главной по стенду (screens-extra.js → calendarList, .cev): время моноширинным,
 // название, «Перейти»/«Подключиться» справа; под ними — участники и состояние. Кнопки нет,
@@ -157,6 +168,8 @@ function FlatMeetingRow({ m, dt, locale, joined, onJoined }: {
         {m.title ?? dt("Без названия", "Untitled")}
       </b>
       {m.join_url && (!m.is_past || onAir) ? (
+        <div className="flex items-center gap-1.5">
+        {showInviteBot(m, onAir) && <InviteBotInline meetingId={m.id} joinUrl={m.join_url} />}
         <button type="button" onClick={join}
           className={live && !onAir
             ? "rounded-full bg-primary px-2.5 py-1 font-semibold text-primary-foreground transition-colors hover:bg-primary/90"
@@ -164,6 +177,7 @@ function FlatMeetingRow({ m, dt, locale, joined, onJoined }: {
           style={{ fontSize: 11.5 }}>
           {onAir ? dt("Вернуться", "Back") : live ? dt("Подключиться", "Join") : dt("Перейти", "Open")}
         </button>
+        </div>
       ) : <span />}
       <div className="col-start-2 col-end-4 flex flex-wrap items-center gap-1.5 text-ink-mute" style={{ fontSize: 11.5 }}>
         <span>{slot(m, locale)}</span>
