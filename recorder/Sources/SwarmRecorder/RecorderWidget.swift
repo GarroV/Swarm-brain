@@ -21,8 +21,6 @@ final class RecorderWidget {
     // «Подключиться» на баннере встречи — открыть звонок И включить запись (референс Granola).
     var onJoin: (() -> Void)?
     var onDismiss: (() -> Void)?
-    // «Отменить» на отсчёте авто-старта (#219): пропустить эту встречу.
-    var onCancelAutoStart: (() -> Void)?
     // Выбор из пересекающихся созвонов (D027): ключ выбранной встречи, а не номер строки.
     var onJoinChoice: ((String) -> Void)?
     var onRecordChoice: ((String) -> Void)?
@@ -112,12 +110,15 @@ final class RecorderWidget {
     // Баннер встречи (состояние «встреча — записать?»): название, время слота, две кнопки.
     // Решение владельца 02.09.2026 (#193): «лаконичнее, аккуратнее, мягче + кнопка перехода
     // на встречу». Референс — баннер Granola.
-    private let bannerAccent = NSView()
+    let bannerAccent = NSView()
     private let bannerTitle = NSTextField(labelWithString: "")
     private let bannerSubtitle = NSTextField(labelWithString: "")
     private let bannerJoin = NSButton()
     private let bannerRecord = NSButton()
-    private let bannerCancel = NSButton()
+    private let bannerNotNow = NSButton()   // «Не сейчас» — только в напоминании о записи (#219)
+    /// Капсула в режиме напоминания о записи: акцентная обводка и пульс (RecorderWidgetPulse).
+    /// Ставит showPending/showChoice до показа, сбрасывает hideChoice.
+    var reminderStyle = false
     private let bannerClose = NSButton()
     private let bannerButtons = NSStackView()
     private let botKeep = NSButton()
@@ -165,7 +166,9 @@ final class RecorderWidget {
     /// Баннер встречи. `notice` — что читает человек (RecorderKit/MeetingNotice),
     /// `canJoin` — есть ли ссылка на звонок (нет → кнопки «Подключиться» тоже нет).
     /// `missed` — кнопка «Позвать бота» этого созвона (D031), nil — кнопки нет.
-    func showPending(notice: MeetingNotice, canJoin: Bool, missed: MissedCapsule? = nil) {
+    /// `reminder` — идёт реальный созвон, а запись не включена (CallReminder, решение 09.11.2026):
+    /// заметный режим, «Подключиться» нет (человек уже в звонке), «Записать» главная, есть «Не сейчас».
+    func showPending(notice: MeetingNotice, canJoin: Bool, missed: MissedCapsule? = nil, reminder: Bool = false) {
         ensurePanel()
         setBotButtons(visible: false)
         stopLevelMeter()
@@ -173,14 +176,16 @@ final class RecorderWidget {
         hideChoice()
         bannerTitle.stringValue = notice.title
         bannerTitle.toolTip = notice.title          // название целиком, если обрезалось
-        setSubtitle(notice.subtitle, lines: 1)
+        setSubtitle(reminder ? BoardL10n.text("reminder.subtitle", lang: BoardL10n.language()) : notice.subtitle, lines: 1)
         bannerSubtitle.toolTip = nil
-        bannerJoin.isHidden = !canJoin
+        bannerJoin.isHidden = !canJoin || reminder
         bannerRecord.isHidden = false
+        bannerNotNow.isHidden = !reminder
         bannerClose.isHidden = false
         bannerClose.toolTip = "Не записывать эту встречу"
+        reminderStyle = reminder
         // Единственное действие обязано выглядеть главным: нет ссылки — «Записать» заливаем.
-        paint(bannerRecord, filled: !canJoin)
+        paint(bannerRecord, filled: !canJoin || reminder)
         configInvite(bannerInvite, missed)
         configFailure(missedFailure, missed)
         showBanner()
@@ -188,7 +193,7 @@ final class RecorderWidget {
 
     /// Выбор из пересекающихся созвонов (D027) в той же капсуле: заголовок, по строке на созвон;
     /// у строки, куда бота можно позвать, — своя кнопка «Позвать бота» (D031).
-    func showChoice(_ choices: [Choice]) {
+    func showChoice(_ choices: [Choice], reminder: Bool = false) {
         ensurePanel()
         setBotButtons(visible: false)
         stopLevelMeter()
@@ -196,15 +201,16 @@ final class RecorderWidget {
         shownChoiceMissed = choices.map(\.missed)
         bannerTitle.stringValue = "Встречи в одно время"
         bannerTitle.toolTip = nil
-        setSubtitle("Выбери, куда подключиться", lines: 1)
+        setSubtitle(reminder ? BoardL10n.text("reminder.subtitle", lang: BoardL10n.language()) : "Выбери, куда подключиться", lines: 1)
+        reminderStyle = reminder
         bannerSubtitle.toolTip = nil
         choiceStack.setViews(choices.enumerated().map { choiceRow($0.element, index: $0.offset) }, in: .top)
         shownChoiceKeys = choices.map(\.key)
         choiceStack.isHidden = false
         bannerButtons.isHidden = true
         bannerClose.isHidden = false
-        bannerClose.toolTip = "Не записывать эти встречи"
-        bannerCancel.isHidden = true
+        bannerClose.toolTip = reminder ? BoardL10n.text("reminder.notNow", lang: BoardL10n.language()) : "Не записывать эти встречи"
+        bannerNotNow.isHidden = true
         missedFailure.isHidden = true
         showBanner()
     }
@@ -236,32 +242,9 @@ final class RecorderWidget {
         }
     }
 
-    /// Отсчёт авто-старта записи (#219): название встречи, «Запись начнётся через N с» и заметная
-    /// кнопка «Отменить». Возвращает false, если капсула не показалась: отсчёт — единственный
-    /// механизм отказа, без него запись не стартует.
-    @discardableResult
-    func showAutoStart(title: String, remaining: Int, lang: String) -> Bool {
-        ensurePanel()
-        setBotButtons(visible: false)
-        stopLevelMeter()
-        shownMissed = nil
-        hideChoice()
-        bannerTitle.stringValue = title
-        bannerTitle.toolTip = title
-        setSubtitle(BoardL10n.format("autostart.countdown", lang: lang, remaining), lines: 1)
-        bannerSubtitle.toolTip = nil
-        bannerJoin.isHidden = true
-        bannerRecord.isHidden = true
-        bannerInvite.isHidden = true
-        bannerCancel.isHidden = false
-        bannerClose.isHidden = true
-        missedFailure.isHidden = true
-        showBanner()
-        return panel?.isVisible ?? false
-    }
-
     private func hideChoice() {
-        bannerCancel.isHidden = true
+        bannerNotNow.isHidden = true
+        reminderStyle = false
         choiceStack.isHidden = true
         choiceStack.setViews([], in: .top)
         shownChoiceKeys = []
@@ -536,11 +519,12 @@ final class RecorderWidget {
         // чтобы не бежать в календарь. Поэтому она залита янтарём, а «Записать» — вторичная.
         textButton(bannerJoin, title: "Подключиться", filled: true, action: #selector(joinAction))
         bannerJoin.toolTip = "Откроет звонок и включит запись"
-        textButton(bannerRecord, title: "Записать", filled: false, action: #selector(recordAction))
-        textButton(bannerCancel, title: BoardL10n.text("autostart.cancel", lang: BoardL10n.language()),
-                   filled: true, action: #selector(cancelAutoStartAction))
-        bannerCancel.setAccessibilityIdentifier("autostart.cancel")
-        bannerCancel.isHidden = true
+        textButton(bannerRecord, title: BoardL10n.text("nudge.record", lang: BoardL10n.language()), filled: false,
+                   action: #selector(recordAction))
+        textButton(bannerNotNow, title: BoardL10n.text("reminder.notNow", lang: BoardL10n.language()),
+                   filled: false, action: #selector(dismissAction))
+        bannerNotNow.setAccessibilityIdentifier("reminder.notNow")
+        bannerNotNow.isHidden = true
         iconButton(bannerClose, symbol: "xmark", color: NSColor(white: 1, alpha: 0.5), action: #selector(dismissAction))
         sizeIcon(bannerClose, 11)
         bannerClose.toolTip = "Не записывать эту встречу"
@@ -560,7 +544,7 @@ final class RecorderWidget {
         botStop.setAccessibilityIdentifier("bot.stop")
         botKeep.isHidden = true
         botStop.isHidden = true
-        bannerButtons.setViews([bannerJoin, bannerRecord, bannerCancel, bannerInvite, botKeep, botStop], in: .leading)
+        bannerButtons.setViews([bannerJoin, bannerRecord, bannerNotNow, bannerInvite, botKeep, botStop], in: .leading)
         styleFailure(missedFailure)
         missedFailure.setAccessibilityIdentifier("missed.failure")
         missedFailure.isHidden = true
@@ -610,7 +594,6 @@ final class RecorderWidget {
     }
 
     @objc private func joinAction() { onJoin?() }
-    @objc private func cancelAutoStartAction() { onCancelAutoStart?() }
     @objc private func joinChoiceAction(_ sender: NSButton) {
         guard shownChoiceKeys.indices.contains(sender.tag) else { return }
         onJoinChoice?(shownChoiceKeys[sender.tag])
@@ -671,6 +654,7 @@ final class RecorderWidget {
 
     private func present() {
         guard let p = panel, let screen = NSScreen.main else { return }
+        applyReminderStyle(reminderStyle && !bannerRow.isHidden)
         let size = currentSize()
         if !p.isVisible {
             // Куда перетащили — там и появляется; кто не таскал — по дефолту WidgetPlacement.

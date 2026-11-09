@@ -155,9 +155,6 @@ struct SwarmClient {
         /// Ключи встреч человека, которые прямо сейчас уже пишет бот (или чужой рекордер), —
         /// по ним «Записать» не предлагаем (issue #821). Старый сервер поля не шлёт → пусто.
         var recordedNow: [String] = []
-        /// Настройка человека «авто-старт записи по календарю» (#219), источник истины — сервер.
-        /// nil — поля нет (старый сервер): пункт меню прячем, авто-старта нет.
-        var autoStart: Bool?
         /// Лучший из созвонов — там, где нужен один (конец записи по календарю, присутствие).
         var meeting: MeetingIdentity.Info? { meetings.first }
     }
@@ -176,7 +173,7 @@ struct SwarmClient {
             let endedAt: String?
             let joinUrl: String?
         }
-        struct Resp: Decodable { let meetings: [M]?; let meeting: M?; let reason: String?; let recordedNow: [String]?; let autoStart: Bool? }
+        struct Resp: Decodable { let meetings: [M]?; let meeting: M?; let reason: String?; let recordedNow: [String]? }
         let r = try decoder.decode(Resp.self, from: data)
         let dead = (r.reason == "token_refresh_failed")
         // Новый сервер — список; раскатанный до D027 — одно поле.
@@ -188,21 +185,7 @@ struct SwarmClient {
                                         joinURL: join)
         }
         return MeetingLookup(meetings: meetings, tokenDead: dead && meetings.isEmpty,
-                             recordedNow: r.recordedNow ?? [], autoStart: r.autoStart)
-    }
-
-    // POST /meeting-current/auto-start {auto_start} → {auto_start} — тумблер авто-старта из меню
-    // (#219). Возвращает значение, которое записал сервер; nil — не вышло (локальной копии нет).
-    func setAutoStart(_ on: Bool) async -> Bool? {
-        var req = URLRequest(url: url("/meeting-current/auto-start"))
-        req.httpMethod = "POST"
-        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        authed(&req)
-        req.httpBody = try? JSONSerialization.data(withJSONObject: ["auto_start": on])
-        struct Resp: Decodable { let autoStart: Bool? }
-        guard let (data, resp) = try? await Self.session.data(for: req),
-              (200...299).contains((resp as? HTTPURLResponse)?.statusCode ?? 0) else { return nil }
-        return (try? decoder.decode(Resp.self, from: data))?.autoStart
+                             recordedNow: r.recordedNow ?? [])
     }
 
     // GET /meeting-missed — встречи, на которые бот не пошёл или не дошёл (T162, D022). Сервер в
