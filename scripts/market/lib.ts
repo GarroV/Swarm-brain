@@ -223,6 +223,10 @@ export function parseOverpass(
   return parseOverpassAll(j, brands, names, opts).points;
 }
 
+/** Детская площадка внутри ресторана («McDonald's PlayPlace») — деталь здания, а не заведение. */
+export const isPlayground = (t: Record<string, string> | undefined) =>
+  !!t && (t.leisure === "playground" || /\bplay\s?-?place\b/i.test(t.name ?? ""));
+
 /** Точки сетей и отсеянные объекты: ложный тег brand и исключённые в конфиге. Отсеянные уходят
  *  на сервер отдельно — машинная точка на их месте удаляется, а не ждёт три недели пропажи. */
 export function parseOverpassAll(
@@ -308,7 +312,7 @@ export function parseOverpassAll(
         city: cityOf(e.tags?.["addr:city"], lat, lng),
         address: street || null,
         osm_id,
-        why: opts.exclude?.[osm_id] ?? (wrongBrand ? "brand" : null),
+        why: opts.exclude?.[osm_id] ?? (wrongBrand ? "brand" : isPlayground(e.tags) ? "playground" : null),
       }];
     },
   );

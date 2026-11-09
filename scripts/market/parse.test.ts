@@ -10,15 +10,9 @@ import {
   parseOverpassAll,
   srLatin,
 } from "./lib.ts";
-import {
-  parseCompanyWall,
-  parseEeElements,
-  parseEeReports,
-  parseRoBilant,
-} from "./registry.ts";
+import { parseCompanyWall, parseEeElements, parseEeReports, parseRoBilant } from "./registry.ts";
 
-const fixture = (name: string) =>
-  Deno.readTextFileSync(new URL(`./fixtures/${name}`, import.meta.url));
+const fixture = (name: string) => Deno.readTextFileSync(new URL(`./fixtures/${name}`, import.meta.url));
 
 Deno.test("parseCountBySource maps Dodo channels to stable keys and drops zeros and total", () => {
   assertEquals(
@@ -97,8 +91,7 @@ Deno.test("parseOverpass refuses a timed-out answer instead of returning a parti
   assertThrows(
     () =>
       parseOverpass({
-        remark:
-          'runtime error: Query timed out in "query" at line 3 after 181 seconds.',
+        remark: 'runtime error: Query timed out in "query" at line 3 after 181 seconds.',
         elements: [],
       }, { kfc: ["KFC"] }),
     Error,
@@ -510,4 +503,21 @@ Deno.test("parseDodoUnits: dodoCity overrides a wrong city from the API", () => 
   });
   assertEquals(units.find((u) => u.name === "Tartu-1")?.city, "Tartu linn");
   assertEquals(units.find((u) => u.name === "Tallinn-1")?.city, "Tallinn");
+});
+
+Deno.test("parseOverpassAll rejects a PlayPlace (a playground inside a restaurant), the restaurant stays", () => {
+  const n = (id: number, tags: Record<string, string>) => ({ type: "node", id, lat: 44.44, lon: 26.08, tags });
+  const r = parseOverpassAll(
+    {
+      elements: [
+        n(1, { brand: "McDonald's", name: "McDonald's", amenity: "fast_food" }),
+        n(2, { brand: "McDonald's", name: "McDonald's PlayPlace" }),
+        n(3, { brand: "McDonald's", name: "McDonald's Play Place" }),
+        n(4, { brand: "McDonald's", name: "McDonald's", leisure: "playground" }),
+      ],
+    },
+    { mcdonalds: ["McDonald's"] },
+  );
+  assertEquals(r.points.map((p) => p.osm_id), ["node/1"]);
+  assertEquals(r.rejected.map((p) => p.osm_id), ["node/2", "node/3", "node/4"]);
 });
