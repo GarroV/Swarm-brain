@@ -1,6 +1,6 @@
 "use client";
-import { useEffect, useState } from "react";
-import { useDt } from "../nav";
+import { Fragment, useEffect, useState, type ReactNode } from "react";
+import { useDt, useRoyNav } from "../nav";
 import { RoyIcon } from "../icons";
 import { DashBlock, Row } from "./shared";
 import { fetchTodayMeetings, openGoogleConnect, type TodayMeeting, type TodayMeetings } from "@/lib/api";
@@ -8,6 +8,8 @@ import { recall, remember } from "@/lib/lastSeen";
 import { hasJoined, markJoined } from "@/lib/joinedCalls";
 import { canInviteBot } from "@/lib/meetingInvite";
 import { InviteBotInline } from "./InviteBotInline";
+import { minutesUntil, nextJoinable, nowLineIndex, reviewDraftFor } from "@/lib/homeMeetings";
+import type { AgentMeeting } from "@/types";
 
 // Право-ВЕРХ главного экрана: встречи из календаря на сегодня (issue #218).
 // Решение владельца 03.09.2026: «справа вместо задач команды мы делаем модуль "встречи
@@ -140,52 +142,98 @@ function MeetingRow({ m, dt, locale, joined, onJoined }: {
 const showInviteBot = (m: TodayMeeting, onAir: boolean) =>
   canInviteBot(m.join_url) && (!m.is_past || onAir) && !m.recording;
 
-// Строка главной по стенду (screens-extra.js → calendarList, .cev): время моноширинным,
-// название, «Перейти»/«Подключиться» справа; под ними — участники и состояние. Кнопки нет,
-// если нет ссылки: пустая кнопка «Перейти» хуже отсутствующей.
-function FlatMeetingRow({ m, dt, locale, joined, onJoined }: {
+// Строка «Ближайших встреч» главной (экран «А», 09.11.2026): время моноширинным · точка-статус ·
+// название · подпись; справа «Подключиться» у ближайшей, «Вычитать» у записанной встречи, ждущей вычитки.
+// Кнопки нет, если нет ссылки: пустая кнопка «Перейти» хуже отсутствующей.
+const DOT = (m: TodayMeeting, live: boolean) => (live ? "var(--primary)" : m.is_past ? "var(--status-done)" : "var(--meet-ink)");
+
+function Amber({ children }: { children: ReactNode }) {
+  return <span className="font-semibold" style={{ color: "var(--pri-med)" }}>{children}</span>;
+}
+
+/** «через 2 ч 20 мин» / «через 35 мин» / "in 2 h 20 min". */
+function untilText(min: number, dt: (ru: string, en: string) => string): string {
+  const h = Math.floor(min / 60);
+  const m = min % 60;
+  const ru = h ? `через ${h} ч${m ? ` ${m} мин` : ""}` : `через ${m} мин`;
+  const en = h ? `in ${h} h${m ? ` ${m} min` : ""}` : `in ${m} min`;
+  return dt(ru, en);
+}
+
+function FlatMeetingRow({ m, dt, locale, joined, onJoined, now, primary, draft, onReview }: {
   m: TodayMeeting;
   dt: (ru: string, en: string) => string;
   locale: string;
   joined: boolean;
   onJoined: (m: TodayMeeting) => void;
+  now: number;
+  /** Ближайшая встреча со ссылкой: ей достаётся главная кнопка. */
+  primary: boolean;
+  /** Запись рекордера, ждущая вычитки (lib/homeMeetings.reviewDraftFor). */
+  draft: AgentMeeting | null;
+  onReview: (d: AgentMeeting) => void;
 }) {
   const onAir = m.on_call || joined;
   const live = m.is_now || onAir;
-  const dim = m.is_past && !onAir;
+  const dim = m.is_past && !onAir && !draft;
   const join = () => {
     if (!m.join_url) return;
     window.open(m.join_url, "_blank", "noopener");
     onJoined(m);
   };
   const time = new Intl.DateTimeFormat(locale, { hour: "2-digit", minute: "2-digit" }).format(new Date(m.starts_at));
+  const until = minutesUntil(m, now);
+  const people = m.attendees > 0 ? (m.attendees === 1 ? "1:1" : `${m.attendees} ${dt("участников", "attendees")}`) : null;
+  const canJoin = Boolean(m.join_url) && (!m.is_past || onAir);
   return (
-    // Идущая встреча — полосой на всю строку (стенд .cev.now): день читается одним взглядом.
-    <div className={`-mx-2 grid items-center gap-x-2.5 gap-y-0.5 border-b border-line px-2 py-2 last:border-b-0 ${live ? "rounded-[8px] bg-accent-soft" : ""}`}
-      style={{ gridTemplateColumns: "auto minmax(0,1fr) auto", opacity: dim ? 0.55 : 1 }}>
-      <span className="font-mono font-semibold" style={{ fontSize: 12, color: live ? "var(--accent-ink)" : "var(--primary)" }}>{time}</span>
-      <b className="truncate font-semibold text-ink" style={{ fontSize: 13 }} title={m.title ?? undefined}>
-        {m.title ?? dt("Без названия", "Untitled")}
-      </b>
-      {m.join_url && (!m.is_past || onAir) ? (
-        <div className="flex items-center gap-1.5">
-        {showInviteBot(m, onAir) && <InviteBotInline meetingId={m.id} joinUrl={m.join_url} />}
-        <button type="button" onClick={join}
-          className={live && !onAir
-            ? "rounded-full bg-primary px-2.5 py-1 font-semibold text-primary-foreground transition-colors hover:bg-primary/90"
-            : "rounded-full border border-line-2 bg-surface px-2.5 py-1 font-medium text-ink-soft transition-colors hover:text-ink"}
-          style={{ fontSize: 11.5 }}>
-          {onAir ? dt("Вернуться", "Back") : live ? dt("Подключиться", "Join") : dt("Перейти", "Open")}
-        </button>
+    <div className={`-mx-2 grid items-center gap-x-3 border-b border-line px-2 py-2.5 last:border-b-0 ${live ? "rounded-[8px] bg-accent-soft" : ""}`}
+      style={{ gridTemplateColumns: "auto auto minmax(0,1fr) auto", opacity: dim ? 0.6 : 1 }}>
+      <span className="font-mono font-medium text-ink-soft" style={{ fontSize: 12.5 }}>{time}</span>
+      <span aria-hidden="true" className="inline-block rounded-full" style={{ width: 7, height: 7, background: DOT(m, live) }} />
+      <div className="min-w-0">
+        <b className="block truncate font-semibold text-ink" style={{ fontSize: 13.5 }} title={m.title ?? undefined}>
+          {m.title ?? dt("Без названия", "Untitled")}
+        </b>
+        <div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-ink-mute" style={{ fontSize: 11.5 }}>
+          {draft ? <><span>{dt("записана", "recorded")}</span><span>·</span><Amber>{dt("ждёт вычитки", "awaiting review")}</Amber></>
+            : m.is_past && !onAir ? <span>{dt("прошла", "finished")}</span>
+            : live ? <span className="font-semibold" style={{ color: "var(--accent-ink)" }}>{dt("идёт сейчас", "happening now")}</span>
+            : until != null ? <span>{untilText(until, dt)}</span> : null}
+          {people && !draft && <span>· {people}</span>}
+          {onAir && <Chip text="ON AIR" tone="air" />}
+          {m.recording && <Chip text="REC" tone="rec" />}
         </div>
-      ) : <span />}
-      <div className="col-start-2 col-end-4 flex flex-wrap items-center gap-1.5 text-ink-mute" style={{ fontSize: 11.5 }}>
-        <span>{slot(m, locale)}</span>
-        {m.attendees > 0 && <span>· {m.attendees === 1 ? "1:1" : `${m.attendees} ${dt("уч.", "ppl")}`}</span>}
-        {onAir && <Chip text="ON AIR" tone="air" />}
-        {m.recording && <Chip text="REC" tone="rec" />}
-        {m.is_now && !onAir && <span className="font-semibold" style={{ color: "var(--accent-ink)" }}>{dt("идёт сейчас", "happening now")}</span>}
       </div>
+      <div className="flex items-center gap-1.5">
+        {draft && (
+          <button type="button" onClick={() => onReview(draft)}
+            className="rounded-[8px] border bg-transparent px-2.5 py-1 font-semibold transition-colors hover:bg-surface-2"
+            style={{ fontSize: 11.5, borderColor: "var(--pri-med)", color: "var(--pri-med)" }}>
+            {dt("Вычитать", "Review")}
+          </button>
+        )}
+        {canJoin && showInviteBot(m, onAir) && <InviteBotInline meetingId={m.id} joinUrl={m.join_url as string} />}
+        {canJoin && (
+          <button type="button" onClick={join}
+            className={(primary || live) && !onAir
+              ? "rounded-[8px] bg-primary px-3 py-1 font-semibold text-primary-foreground transition-colors hover:bg-primary/90"
+              : "rounded-[8px] border border-line-2 bg-surface px-2.5 py-1 font-medium text-ink-soft transition-colors hover:text-ink"}
+            style={{ fontSize: 11.5 }}>
+            {onAir ? dt("Вернуться", "Back") : primary || live ? dt("Подключиться", "Join") : dt("Перейти", "Open")}
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** Линия «сейчас» между прошедшими и будущими встречами (циан, время слева). */
+function NowLine({ now, locale }: { now: number; locale: string }) {
+  const t = new Intl.DateTimeFormat(locale, { hour: "2-digit", minute: "2-digit" }).format(new Date(now));
+  return (
+    <div role="separator" className="-mx-2 flex items-center gap-2.5 px-2 py-0.5">
+      <span className="font-mono font-semibold text-primary" style={{ fontSize: 11 }}>{t}</span>
+      <span className="h-px flex-1 bg-primary" />
     </div>
   );
 }
@@ -211,8 +259,10 @@ function CalNote({ title, hint, action }: { title: string; hint: string; action?
   );
 }
 
-export function MeetingsToday({ className, flat, first, flatBody }: {
+export function MeetingsToday({ className, flat, first, flatBody, drafts = [] }: {
   className?: string;
+  /** Черновики рекордера (на вычитке): у встречи с такой записью — «Вычитать». Только плоский вид. */
+  drafts?: AgentMeeting[];
   /** Подложка тела плоского вида (виджет главной). */
   flatBody?: string;
   /** Вид главной по стенду — надпись вместо карточки. */
@@ -220,7 +270,11 @@ export function MeetingsToday({ className, flat, first, flatBody }: {
   first?: boolean;
 }) {
   const dt = useDt();
+  const { setTab, push } = useRoyNav();
   const locale = dt("ru-RU", "en-US");
+  // «Сейчас» для линии и подписи «через …»: обновляется раз в минуту, а не только с загрузкой данных.
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => { const t = setInterval(() => setNow(Date.now()), 60_000); return () => clearInterval(t); }, []);
   // Повторный заход — сразу с прошлым списком созвонов, обновление в фоне (#906).
   const [state, setState] = useState<{ data: TodayMeetings | null; loading: boolean; failed: boolean }>(() => ({
     data: recall<TodayMeetings>("home:today"), loading: true, failed: false,
@@ -247,6 +301,9 @@ export function MeetingsToday({ className, flat, first, flatBody }: {
   }, []);
 
   const meetings = state.data?.meetings ?? [];
+  const lineAt = flat ? nowLineIndex(meetings) : null;
+  const primaryId = flat ? nextJoinable(meetings)?.id : undefined;
+  const dayLabel = new Intl.DateTimeFormat(locale, { weekday: "short", day: "numeric", month: "long" }).format(new Date(now));
 
   useEffect(() => {
     setJoinedIds(new Set(meetings.filter((m) => hasJoined(m.id, m.ends_at)).map((m) => m.id)));
@@ -266,7 +323,9 @@ export function MeetingsToday({ className, flat, first, flatBody }: {
 
   return (
     <DashBlock
-      title={dt("Встречи сегодня", "Meetings today")}
+      title={flat ? dt("Ближайшие встречи", "Upcoming meetings") : dt("Встречи сегодня", "Meetings today")}
+      onHead={flat ? () => setTab("cal") : undefined}
+      headAction={flat ? dt("Все встречи →", "All meetings →") : undefined}
       icon="cal"
       tint="var(--meet-ink)"
       loading={state.loading && !state.data}
@@ -298,9 +357,17 @@ export function MeetingsToday({ className, flat, first, flatBody }: {
             ? <CalNote title={dt("Календарь не ответил", "Calendar did not respond")} hint={dt("Попробуйте обновить страницу позже", "Try reloading later")} />
             : <CalNote title={dt("Сегодня встреч нет", "No meetings today")} hint={dt("Календарь подключён — день свободен", "Calendar connected — the day is free")} />
         ) : (
-          meetings.map((m) => (
-            <FlatMeetingRow key={m.id} m={m} dt={dt} locale={locale} joined={joinedIds.has(m.id)} onJoined={markLocal} />
-          ))
+          <>
+            <div className="pb-1 text-ink-mute" style={{ fontSize: 11.5 }}>{dt("Сегодня", "Today")}, {dayLabel}</div>
+            {meetings.map((m, i) => (
+              <Fragment key={m.id}>
+                {i === lineAt && <NowLine now={now} locale={locale} />}
+                <FlatMeetingRow m={m} dt={dt} locale={locale} joined={joinedIds.has(m.id)} onJoined={markLocal}
+                  now={now} primary={m.id === primaryId} draft={reviewDraftFor(m, drafts)}
+                  onReview={(d) => push({ view: "meetingReview", params: { id: d.id } })} />
+              </Fragment>
+            ))}
+          </>
         )
       ) : needsCalendar ? (
         <div className="py-6 text-center">
