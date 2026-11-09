@@ -1,6 +1,6 @@
 "use client";
-import { useMemo } from "react";
-import { useDt, useRoyNav } from "../nav";
+import { useEffect, useMemo, useState } from "react";
+import { useDt } from "../nav";
 import { DashTaskRow } from "../dash/shared";
 import type { DashboardData } from "../dash/useDashboardData";
 import { AreaSpark } from "./LineChart";
@@ -11,17 +11,22 @@ import { isDone, isOverdue } from "@/lib/smartLists";
 import { countryFlag } from "@/lib/countries";
 import { homeDateReason, nextHomeTasks } from "@/lib/homeTasks";
 import { NEXT_TASK_TEXT } from "./nextTaskText";
+import { NextTaskRow } from "./NextTaskRow";
+import { fetchProjects } from "@/lib/api";
+import type { Project } from "@/types";
 
 // Ближайшие задачи и продажи. Доска стикеров — StickerBoard.tsx.
 
 export function TopTasksWidget({ data, onCreate }: { data: DashboardData; onCreate: () => void }) {
   const dt = useDt();
-  const { openTasks } = useRoyNav();
   const open = useMemo(() => data.mine.filter((t) => !isDone(t)), [data.mine]);
   const now = useMemo(() => new Date(), [data.tasks]);
   const top = useMemo(() => nextHomeTasks(open, now), [open, now]);
   const overdue = open.filter((t) => isOverdue(t)).length;
   const { loading, failed, retry } = data.tasksState;
+  // Названия проектов — подпись под задачей. Не пришли — подписи нет, строки те же.
+  const [projects, setProjects] = useState<Project[]>([]);
+  useEffect(() => { fetchProjects().then(setProjects).catch((e) => console.warn("[home] projects", e)); }, []);
   return (
     <div className={`rounded-[12px] border border-line bg-surface p-2 ${FILL_CARD}`}>
       {loading && [0, 1, 2].map((i) => <div key={i} className="roy-shim m-1" style={{ height: 34, borderRadius: 8 }} />)}
@@ -32,7 +37,8 @@ export function TopTasksWidget({ data, onCreate }: { data: DashboardData; onCrea
       )}
       {!loading && !failed && top.map((t) => {
         const reason = homeDateReason(t, now);
-        return <DashTaskRow key={t.id} task={t} reminder={reason?.kind === "ping" ? { date: reason.date, label: dt(...NEXT_TASK_TEXT.reminderReason) } : undefined} />;
+        const project = projects.find((p) => p.id === t.project_id)?.name ?? null;
+        return <DashTaskRow key={t.id} task={t} render={(shown, onToggle) => <NextTaskRow task={shown} project={project} reason={reason} now={now} onToggle={onToggle} />} />;
       })}
       {!loading && !failed && !top.length && (
         <div className="px-3 py-5 text-center text-ink-mute" style={{ fontSize: 13 }}>{dt(...NEXT_TASK_TEXT.empty)}</div>
@@ -45,7 +51,6 @@ export function TopTasksWidget({ data, onCreate }: { data: DashboardData; onCrea
         </span>
         <span className="flex gap-3">
           <button type="button" onClick={onCreate} className="font-medium text-primary hover:underline">{dt("+ задача", "+ task")}</button>
-          <button type="button" onClick={() => openTasks("mine", "all")} className="font-medium text-primary hover:underline">{dt("Все →", "All →")}</button>
         </span>
       </div>
     </div>
