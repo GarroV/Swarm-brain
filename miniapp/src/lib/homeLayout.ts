@@ -17,11 +17,11 @@ export const DEFAULT_WIDTH: Record<WidgetId, WidgetWidth> = {
   myTasks: "full", teamTasks: "half", news: "half", latest: "half",
 };
 
-// Доска — первой (владелец 08.10.2026: «доску давай выше сделаем»). Под ней две колонки: слева
-// «Рейтинги» (вкладки РС · РКО · Карты · Агрегаторы вместо прежних отдельных РС и РКО, 19.10.2026),
-// справа встречи, под ними задачи. Половинки идут парами «левая, правая» — см. layoutRows.
-// «Топ-5 нарушений» — образец без источника: в каталоге есть, по умолчанию на главную не ставим.
-const DEFAULT_ORDER: WidgetId[] = ["board", "ratings", "calls", "top5", "pz", "countries"];
+// Экран «А» (владелец 09.11.2026, docs/decisions/2026-11-09-redesign-content-not-layout.md): сверху
+// стикеры доски, под ними ближайшие встречи и ближайшие задачи двумя половинами, ниже на всю строку
+// «Мои страны». «Рейтинги» и «Пиццерии» остаются в каталоге «Настроить главную», но по умолчанию
+// не стоят. «Топ-5 нарушений» — образец без источника: тоже только каталог.
+const DEFAULT_ORDER: WidgetId[] = ["board", "calls", "top5", "countries"];
 export const DEFAULT_LAYOUT: LayoutItem[] = DEFAULT_ORDER.map((id) => ({ id, w: DEFAULT_WIDTH[id] }));
 
 export type LayoutCell = { item: LayoutItem; index: number };
@@ -108,9 +108,10 @@ export function addWidget(layout: LayoutItem[], id: WidgetId): LayoutItem[] {
   return [...layout, { id, w: DEFAULT_WIDTH[id] }];
 }
 
-// v3 — колонки РКО/РС и встречи/задачи (13.10.2026); v2 — подъём доски наверх. Сохранённая прежняя
-// версия держала бы старый порядок, и смена умолчания не была бы видна.
-const LS_KEY = "roy_home_layout_v3";
+// v4 — экран «А» (09.11.2026): раскладка по умолчанию сменилась, сохранённые раскладки сбрасываются
+// осознанно — новая главная доходит до всех. v3 — колонки РКО/РС и встречи/задачи (13.10.2026); v2 —
+// подъём доски наверх. Сохранённая прежняя версия держала бы старый порядок.
+const LS_KEY = "roy_home_layout_v4";
 
 export function loadLayout(): LayoutItem[] {
   try {

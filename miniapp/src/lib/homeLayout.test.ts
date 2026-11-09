@@ -1,6 +1,6 @@
 // Раскладка главной из виджетов: перестановка, ширина, скрытие, разбор сохранённого.
 import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import { addWidget, DEFAULT_LAYOUT, HEIGHT_KIND, layoutRows, rowSizing, WIDGET_IDS, hideWidget, migrateLayoutIds, moveBefore, moveBy, parseLayout, toggleWidth } from "./homeLayout.ts";
+import { addWidget, DEFAULT_LAYOUT, DEFAULT_WIDTH, HEIGHT_KIND, layoutRows, rowSizing, WIDGET_IDS, hideWidget, migrateLayoutIds, moveBefore, moveBy, parseLayout, toggleWidth } from "./homeLayout.ts";
 
 Deno.test("parseLayout drops unknown widgets, duplicates and bad widths", () => {
   const got = parseLayout([{ id: "pz", w: "full" }, { id: "nope", w: "half" }, { id: "pz", w: "half" }, { id: "calls", w: "huge" }]);
@@ -40,18 +40,19 @@ Deno.test("sample violations widget is in the catalog but not on the default hom
   assertEquals(addWidget(DEFAULT_LAYOUT, "viol").at(-1), { id: "viol", w: "half" });
 });
 
-Deno.test("default home: «Рейтинги» слева, встречи справа, вместо отдельных РС и РКО", () => {
+Deno.test("default home (экран «А»): «Рейтинги» и «Пиццерии» не стоят, но остаются в каталоге", () => {
   const ids = DEFAULT_LAYOUT.map((x) => x.id) as string[];
   assertEquals(ids.includes("rs") || ids.includes("rko"), false);
-  assertEquals(ids.filter((id) => id === "ratings").length, 1);
-  const rows = layoutRows(DEFAULT_LAYOUT);
-  assertEquals(rows[1].map((x) => x.item.id), ["ratings", "calls"]);
+  assertEquals(ids.includes("ratings") || ids.includes("pz"), false);
+  assertEquals(WIDGET_IDS.includes("ratings") && WIDGET_IDS.includes("pz"), true);
+  assertEquals(addWidget(DEFAULT_LAYOUT, "ratings").at(-1), { id: "ratings", w: "half" });
 });
 
-Deno.test("default home: ровные пары — доска, «Рейтинги»+встречи, задачи+«Пиццерии», «Мои страны»", () => {
+Deno.test("default home (экран «А»): доска, встречи+задачи парой, «Мои страны» на всю строку", () => {
   assertEquals(layoutRows(DEFAULT_LAYOUT).map((r) => r.map((x) => x.item.id)), [
-    ["board"], ["ratings", "calls"], ["top5", "pz"], ["countries"],
+    ["board"], ["calls", "top5"], ["countries"],
   ]);
+  assertEquals(DEFAULT_LAYOUT.map((x) => x.w), ["full", "half", "half", "full"]);
 });
 
 Deno.test("каталог: «Рейтинги» один раз, прежних РС и РКО в нём нет", () => {
@@ -94,8 +95,8 @@ Deno.test("layoutRows: одиночная половинка перед целы
   assertEquals(layoutRows([]), []);
 });
 
-Deno.test("«Пиццерии» по умолчанию — половина строки", () => {
-  assertEquals(DEFAULT_LAYOUT.find((x) => x.id === "pz")?.w, "half");
+Deno.test("«Пиццерии» при добавлении из каталога — половина строки", () => {
+  assertEquals(DEFAULT_WIDTH.pz, "half");
   assertEquals(addWidget([], "pz"), [{ id: "pz", w: "half" }]);
 });
 
