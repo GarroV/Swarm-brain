@@ -52,6 +52,20 @@ export type SprintBarProps = {
   renameField?: ReactNode;
 };
 
+// Принятые — группами по году начала, свежие сверху (в каждой группе тоже свежие сверху).
+function archiveByYear(archive: SprintCycle[]): [string, SprintCycle[]][] {
+  const byYear = new Map<string, SprintCycle[]>();
+  for (
+    const c of [...archive].sort((a, b) =>
+      b.start_date.localeCompare(a.start_date)
+    )
+  ) {
+    const y = c.start_date.slice(0, 4);
+    byYear.set(y, [...(byYear.get(y) ?? []), c]);
+  }
+  return [...byYear.entries()];
+}
+
 export function SprintBar(p: SprintBarProps) {
   const dt = useDt();
   const d = p.detail;
@@ -76,8 +90,9 @@ export function SprintBar(p: SprintBarProps) {
       action: true,
       onPick: () => p.onSelect(c.id),
     })),
-    ...[...p.archive].sort((a, b) => b.start_date.localeCompare(a.start_date))
-      .map((c) => ({
+    ...archiveByYear(p.archive).flatMap(([year, cycles]) => [
+      { key: `__year_${year}`, label: year, heading: true, onPick: () => {} },
+      ...cycles.map((c) => ({
         key: c.id,
         label: (
           <>
@@ -91,6 +106,7 @@ export function SprintBar(p: SprintBarProps) {
         action: true,
         onPick: () => p.onSelect(c.id),
       })),
+    ]),
     ...(p.onNewSprint
       ? [{
         key: "__new__",
