@@ -138,8 +138,8 @@ Deno.test("период фильтрует: старое событие в «з�
   try {
     const { tabId, projectId, cycleId } = await seed(db);
     const task = await db.queryObject<{ id: string }>`
-      insert into tasks (title, status, group_id, project_id, created_by)
-      values ('Задача', 'open', ${WS}, ${projectId}, 'test') returning id`;
+      insert into tasks (title, status, group_id, project_id)
+      values ('Задача', 'open', ${WS}, ${projectId}) returning id`;
     await intoSprint(db, cycleId, task.rows[0].id);
     await db.queryArray`
       insert into task_history (task_id, field, old_value, new_value, changed_by, group_id, created_at)
@@ -167,11 +167,11 @@ Deno.test("задачи пространства — состав его спр�
   try {
     const { tabId, projectId, cycleId } = await seed(db);
     const inSprint = await db.queryObject<{ id: string }>`
-      insert into tasks (title, status, group_id, project_id, created_by)
-      values ('В спринте', 'open', ${WS}, ${projectId}, 'test') returning id`;
+      insert into tasks (title, status, group_id, project_id)
+      values ('В спринте', 'open', ${WS}, ${projectId}) returning id`;
     const onBoardOnly = await db.queryObject<{ id: string }>`
-      insert into tasks (title, status, group_id, project_id, created_by)
-      values ('Только на доске', 'open', ${WS}, ${projectId}, 'test') returning id`;
+      insert into tasks (title, status, group_id, project_id)
+      values ('Только на доске', 'open', ${WS}, ${projectId}) returning id`;
     await intoSprint(db, cycleId, inSprint.rows[0].id);
     for (const id of [inSprint.rows[0].id, onBoardOnly.rows[0].id]) {
       await db.queryArray`
@@ -214,8 +214,8 @@ Deno.test("события спринта и его состава попадаю
   try {
     const { tabId, projectId } = await seed(db);
     const task = await db.queryObject<{ id: string }>`
-      insert into tasks (title, status, group_id, project_id, created_by)
-      values ('Задача спринта', 'open', ${WS}, ${projectId}, 'test') returning id`;
+      insert into tasks (title, status, group_id, project_id)
+      values ('Задача спринта', 'open', ${WS}, ${projectId}) returning id`;
     const cycle = await db.queryObject<{ id: string }>`
       insert into sprint_cycles (group_id, tab_id, name, start_date, end_date, status, started_at)
       values (${WS}, ${tabId}, 'Спринт 1', current_date - 7, current_date + 6, 'active', now())
@@ -248,8 +248,8 @@ Deno.test("удалённая задача объясняется в ленте,
   try {
     const { tabId, projectId } = await seed(db);
     const task = await db.queryObject<{ id: string }>`
-      insert into tasks (title, status, group_id, project_id, created_by)
-      values ('Исчезнувшая', 'open', ${WS}, ${projectId}, 'test') returning id`;
+      insert into tasks (title, status, group_id, project_id)
+      values ('Исчезнувшая', 'open', ${WS}, ${projectId}) returning id`;
     const cycle = await db.queryObject<{ id: string }>`
       insert into sprint_cycles (group_id, tab_id, name, start_date, end_date, status)
       values (${WS}, ${tabId}, 'Спринт 1', current_date - 7, current_date + 6, 'active')

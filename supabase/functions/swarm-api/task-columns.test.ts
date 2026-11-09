@@ -14,7 +14,6 @@ Deno.test("не тянет ничего из того, что списки не 
       "url",
       "tags",
       "task_role",
-      "created_by",
       "group_id",
       "confirmed",
       "owner_id",

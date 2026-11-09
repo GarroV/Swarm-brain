@@ -54,8 +54,8 @@ async function addTask(
   title: string,
 ) {
   const r = await db.queryObject<{ id: string }>`
-    insert into tasks (title, status, group_id, project_id, created_by)
-    values (${title}, ${status}, ${WS}, ${projectId}, 'test')
+    insert into tasks (title, status, group_id, project_id)
+    values (${title}, ${status}, ${WS}, ${projectId})
     returning id`;
   return r.rows[0].id;
 }
