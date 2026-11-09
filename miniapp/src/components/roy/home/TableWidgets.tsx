@@ -22,6 +22,28 @@ const card = `flex flex-col rounded-[12px] border border-line bg-surface min-[11
 const th = "sticky top-0 bg-surface px-2.5 py-2 text-left font-semibold uppercase text-ink-mute";
 const td = "border-t border-line px-2.5 py-2";
 
+// «Мои страны» (экран «А»): число моноширинным справа, изменение мелко рядом — зелёный ▲ / красный ▼ / серый 0.
+// Цвет самого числа — только у тревожных значений (ниже нормы — янтарь, критично — красный).
+const NUM_TONE: Record<ReturnType<typeof tone>, string> = { good: "text-ink", "": "text-ink-mute", warn: "text-[var(--pri-med)]", bad: "text-[var(--pri-high)]" };
+const thR = `${th} text-right`;
+const tdR = `${td} whitespace-nowrap text-right`;
+
+function Num({ v, digits = 1, t = "good", change, changeDigits = digits }: { v: number | null; digits?: number; t?: ReturnType<typeof tone>; change?: number | null; changeDigits?: number }) {
+  const dt = useDt();
+  const loc = dt("ru-RU", "en-US");
+  const fmt = (x: number, d: number) => x.toLocaleString(loc, { minimumFractionDigits: d, maximumFractionDigits: d });
+  const rounded = change == null ? null : Math.round(change * 10 ** changeDigits) / 10 ** changeDigits;
+  const cls = rounded == null ? "" : rounded > 0 ? "text-[var(--status-done)]" : rounded < 0 ? "text-[var(--pri-high)]" : "text-ink-mute";
+  return (
+    <span className="font-mono">
+      <span className={NUM_TONE[t]} style={{ fontSize: 13 }}>{v == null ? "—" : fmt(v, digits)}</span>
+      {rounded != null && (
+        <span className={`ml-1.5 ${cls}`} style={{ fontSize: 11 }}>{rounded > 0 ? "▲" : rounded < 0 ? "▼" : ""}{fmt(Math.abs(rounded), changeDigits)}</span>
+      )}
+    </span>
+  );
+}
+
 function Cell({ v, t, digits = 0 }: { v: number | null; t: ReturnType<typeof tone>; digits?: number }) {
   return <span className={`inline-block min-w-[38px] rounded-[6px] px-1.5 py-0.5 text-center font-mono ${TONE_CELL[t]}`} style={{ fontSize: 12 }}>{v == null ? "—" : v.toFixed(digits)}</span>;
 }
@@ -89,9 +111,8 @@ export function PizzeriasWidget({ scope }: { scope: CountryQuality[] }) {
   );
 }
 
-function MapCell({ s, digits = 2 }: { s: { avg: number | null } | null; digits?: number }) {
-  if (s?.avg == null) return <span className="text-ink-mute">—</span>;
-  return <span className="font-mono text-ink">{s.avg.toFixed(digits)}<span className="text-[#E8A400]"> ★</span></span>;
+function MapCell({ s, change, digits = 1 }: { s: { avg: number | null } | null; change?: number | null; digits?: number }) {
+  return <Num v={s?.avg ?? null} digits={digits} change={change} changeDigits={digits === 1 ? 1 : 2} />;
 }
 
 const chevron = (open: boolean) => (
@@ -127,11 +148,11 @@ function CountryPizzerias({ c, units, sales }: { c: CountryQuality; units: Map<s
           <tr key={p.key} className="bg-surface-2" style={{ fontSize: 12 }}>
             <td className={`${td} pl-8`}><span className="text-ink">{p.name}</span></td>
             <td className={td} />
-            <td className={`${td} whitespace-nowrap`}><Cell v={p.rs} t={tone(p.rs, RS_NORM, RS_CRIT)} /> <Delta v={rsChange(p)} digits={0} small /></td>
-            <td className={`${td} whitespace-nowrap`}><Cell v={p.rko} t={tone(p.rko, RKO_NORM, RKO_WARN)} digits={1} /> <Delta v={rkoChange(p)} small /></td>
-            <td className={`${td} whitespace-nowrap`}><MapCell s={m?.google ?? null} /> <Delta v={unitChange(m?.google ?? null)} digits={2} small /></td>
-            <td className={`${td} whitespace-nowrap`}><MapCell s={m?.yandex ?? null} /> <Delta v={unitChange(m?.yandex ?? null)} digits={2} small /></td>
-            <td className={`${td} whitespace-nowrap font-mono`}>
+            <td className={tdR}><Num v={p.rs} digits={0} t={tone(p.rs, RS_NORM, RS_CRIT)} change={rsChange(p)} /></td>
+            <td className={tdR}><Num v={p.rko} digits={1} t={tone(p.rko, RKO_NORM, RKO_WARN)} change={rkoChange(p)} /></td>
+            <td className={tdR}><MapCell s={m?.google ?? null} digits={2} change={unitChange(m?.google ?? null)} /></td>
+            <td className={tdR}><MapCell s={m?.yandex ?? null} digits={2} change={unitChange(m?.yandex ?? null)} /></td>
+            <td className={`${tdR} font-mono`}>
               {sales.loading ? "…" : revenueCell(unitRevenue(sales.unitSales, p.key), dt)}
             </td>
           </tr>
@@ -145,8 +166,8 @@ function CountryPizzerias({ c, units, sales }: { c: CountryQuality; units: Map<s
 // «Мои страны» (владелец 11.10.2026): у РС и РКО страны — стрелка к прошлому периоду, рядом оценки
 // Google и Яндекса за 30 дней (бывший виджет «Карты и отзывы»); строка страны раскрывается в её
 // пиццерии с теми же колонками. Сузить главную до страны — отдельной кнопкой в строке.
-export function CountriesWidget({ scope, sales, narrow, onNarrow, onMarket }: {
-  scope: CountryQuality[]; sales: SalesState; narrow: string | null; onNarrow: (cc: string | null) => void; onMarket: () => void;
+export function CountriesWidget({ scope, sales, narrow, onNarrow }: {
+  scope: CountryQuality[]; sales: SalesState; narrow: string | null; onNarrow: (cc: string | null) => void;
 }) {
   const dt = useDt();
   const maps = useMaps();
@@ -161,7 +182,7 @@ export function CountriesWidget({ scope, sales, narrow, onNarrow, onMarket }: {
   const pct = (v: number | null) => (v == null ? "—" : `${v > 0 ? "+" : ""}${v.toFixed(1)}%`);
   const change = (v: number | null, prev: number | null) => (v == null || prev == null ? null : v - prev);
   const mapHead = (name: string) => (
-    <th className={th} title={dt("Средняя оценка на картах и изменение за 30 дней", "Average map rating and 30-day change")}>{name}</th>
+    <th className={thR} title={dt("Средняя оценка на картах и изменение за 30 дней", "Average map rating and 30-day change")}>{name}</th>
   );
   return (
     <div className={card}>
@@ -169,10 +190,10 @@ export function CountriesWidget({ scope, sales, narrow, onNarrow, onMarket }: {
         <table className="w-full border-collapse" style={{ fontSize: 12.5 }}>
           <thead style={{ fontSize: 10.5, letterSpacing: "0.06em" }}>
             <tr>
-              <th className={th}>{dt("Страна", "Country")}</th><th className={th}>{dt("Пицц.", "Pizz.")}</th>
-              <th className={th}>{dt("РС", "Std")}</th><th className={th}>{dt("РКО", "CX")}</th>
+              <th className={th}>{dt("Страна", "Country")}</th><th className={thR}>{dt("Пицц.", "Pizz.")}</th>
+              <th className={thR}>{dt("РС", "Std")}</th><th className={thR}>{dt("РКО", "CX")}</th>
               {mapHead("Google")}{mapHead(dt("Яндекс", "Yandex"))}
-              <th className={th} title={salesHint(dt, sales.unitSales?.loaded)}>{dt("Продажи", "Sales")}</th>
+              <th className={thR} title={salesHint(dt, sales.unitSales?.loaded)}>{dt("Продажи", "Sales")}</th>
             </tr>
           </thead>
           <tbody>
@@ -194,12 +215,12 @@ export function CountriesWidget({ scope, sales, narrow, onNarrow, onMarket }: {
                         {narrow === c.cc ? dt("все", "all") : dt("только", "only")}
                       </button>
                     </td>
-                    <td className={`${td} font-mono text-ink-soft`}>{c.pizzerias.length}</td>
-                    <td className={`${td} whitespace-nowrap`}><Cell v={c.rs} t={tone(c.rs, RS_NORM, RS_WARN)} digits={1} /> <Delta v={change(c.rs, c.rsPrev)} small /></td>
-                    <td className={`${td} whitespace-nowrap`}><Cell v={c.rko} t={tone(c.rko, RKO_NORM, RKO_WARN)} digits={1} /> <Delta v={change(c.rko, c.rkoPrev)} small /></td>
-                    <td className={`${td} whitespace-nowrap`}>{maps.loading ? "…" : <><MapCell s={m?.maps.google ?? null} /> <Delta v={m?.maps.google.delta ?? null} digits={2} small /></>}</td>
-                    <td className={`${td} whitespace-nowrap`}>{maps.loading ? "…" : <><MapCell s={m?.maps.yandex ?? null} /> <Delta v={m?.maps.yandex.delta ?? null} digits={2} small /></>}</td>
-                    <td className={`${td} whitespace-nowrap font-mono text-ink`}>
+                    <td className={`${tdR} font-mono text-ink-soft`}>{c.pizzerias.length}</td>
+                    <td className={tdR}><Num v={c.rs} t={tone(c.rs, RS_NORM, RS_WARN)} change={change(c.rs, c.rsPrev)} /></td>
+                    <td className={tdR}><Num v={c.rko} digits={1} t={tone(c.rko, RKO_NORM, RKO_WARN)} change={change(c.rko, c.rkoPrev)} /></td>
+                    <td className={tdR}>{maps.loading ? "…" : <MapCell s={m?.maps.google ?? null} change={m?.maps.google.delta ?? null} />}</td>
+                    <td className={tdR}>{maps.loading ? "…" : <MapCell s={m?.maps.yandex ?? null} change={m?.maps.yandex.delta ?? null} />}</td>
+                    <td className={`${tdR} font-mono text-ink`}>
                       {sales.loading ? "…" : s?.mtd ? fmtEur(s.mtd.revenue_eur) : "—"}
                     </td>
                   </tr>
@@ -208,9 +229,9 @@ export function CountriesWidget({ scope, sales, narrow, onNarrow, onMarket }: {
               );
             })}
             <tr className="bg-surface-2 font-semibold">
-              <td className={td}>Σ {dt("по подборке", "selection")}</td><td className={`${td} font-mono`}>{n}</td>
-              <td className={`${td} font-mono`}>{selectionMean(scope, (p) => p.rs)?.toFixed(1) ?? "—"}</td>
-              <td className={`${td} font-mono`}>{selectionMean(scope, (p) => p.rko)?.toFixed(1) ?? "—"}</td>
+              <td className={td}>Σ {dt("по подборке", "selection")}</td><td className={`${tdR} font-mono`}>{n}</td>
+              <td className={`${tdR} font-mono`}>{selectionMean(scope, (p) => p.rs)?.toFixed(1) ?? "—"}</td>
+              <td className={`${tdR} font-mono`}>{selectionMean(scope, (p) => p.rko)?.toFixed(1) ?? "—"}</td>
               <td className={td} /><td className={td} /><td className={td} />
             </tr>
           </tbody>
@@ -222,7 +243,6 @@ export function CountriesWidget({ scope, sales, narrow, onNarrow, onMarket }: {
             ? <>{dt("Оценки карт не загрузились.", "Couldn't load map ratings.")}{" "}<button type="button" onClick={maps.retry} className="font-semibold text-primary hover:underline">{dt("Повторить", "Retry")}</button></>
             : dt("Клик по стране — её пиццерии; карты — изменение за 30 дней", "Click a country for its pizzerias; maps show the 30-day change")}
         </span>
-        <button type="button" onClick={onMarket} className="shrink-0 font-medium text-primary hover:underline">{dt("Анализ рынка →", "Market analysis →")}</button>
       </div>
     </div>
   );
