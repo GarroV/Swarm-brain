@@ -270,9 +270,13 @@ export async function installMobileFixture(page) {
         units: [],
         loaded_at: null,
       };
+    } else if (/^\/api\/sprint-tasks\/[^/]+\/journey$/.test(p)) {
+      // Карточка задачи (TaskModal) грузит «Ход задачи» и список спринтов сразу при открытии.
+      data = { summary: { sprints: 0, moves: 0, updates: 0, daysInWork: 0, lateDays: null }, steps: [] };
     } else if (
       [
         "/api/task-labels",
+        "/api/sprint-cycles",
         "/api/stickers",
         "/api/sprints",
         "/api/integrations",
