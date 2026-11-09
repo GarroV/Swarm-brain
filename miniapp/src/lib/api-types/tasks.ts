@@ -52,6 +52,8 @@ export type UpdateTaskInput = Partial<CreateTaskInput> & {
 
 export type TaskFilters = {
   status?: string;
+  /** Любой из статусов — фильтрует сервер (`?statuses=`, issue #111), а не клиент. */
+  statuses?: readonly string[];
   sprint_id?: string;
   tags?: string[];
   label_id?: string;
