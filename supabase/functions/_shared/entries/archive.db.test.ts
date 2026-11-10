@@ -64,8 +64,8 @@ async function withMeeting(fn: (db: Client, id: string) => Promise<void>): Promi
       returning id`;
     const id = ins.rows[0].id;
     await db.queryArray`
-      insert into tasks (title, status, group_id, meeting_id, created_by)
-      values ('из веба', 'open', ${WS}, ${id}, 'test'), ('из бота', 'open', ${WS}, ${SOURCE_MEETING}, 'test')`;
+      insert into tasks (title, status, group_id, meeting_id)
+      values ('из веба', 'open', ${WS}, ${id}), ('из бота', 'open', ${WS}, ${SOURCE_MEETING})`;
     await fn(db, id);
   } finally {
     await clean(db);

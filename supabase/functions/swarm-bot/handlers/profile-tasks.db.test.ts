@@ -50,9 +50,9 @@ async function seed(db: Client) {
     insert into user_profiles (telegram_id, first_name, last_name)
     values (${TARGET}, 'Тестовый', 'Исполнитель'), (${OUTSIDER}, 'Чужой', 'Человек')`;
   await db.queryArray`
-    insert into tasks (title, status, group_id, created_by, confirmed, assignees) values
-      ('своя задача', 'open', ${WS}, 'test', true, array['Тестовый Исполнитель']),
-      ('задача другого пространства', 'open', ${OTHER_WS}, 'test', true, array['Тестовый Исполнитель'])`;
+    insert into tasks (title, status, group_id, confirmed, assignees) values
+      ('своя задача', 'open', ${WS}, true, array['Тестовый Исполнитель']),
+      ('задача другого пространства', 'open', ${OTHER_WS}, true, array['Тестовый Исполнитель'])`;
 }
 
 Deno.test("задачи профиля — только текущего пространства", async () => {
