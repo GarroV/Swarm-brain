@@ -1,6 +1,6 @@
 // Раскладка главной из виджетов: перестановка, ширина, скрытие, разбор сохранённого.
 import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import { addWidget, DEFAULT_LAYOUT, DEFAULT_WIDTH, HEIGHT_KIND, layoutRows, rowSizing, WIDGET_IDS, hideWidget, migrateLayoutIds, moveBefore, moveBy, parseLayout, toggleWidth } from "./homeLayout.ts";
+import { addWidget, DEFAULT_LAYOUT, DEFAULT_WIDTH, defaultLayout, LEGACY_LAYOUT, HEIGHT_KIND, layoutRows, rowSizing, WIDGET_IDS, hideWidget, migrateLayoutIds, moveBefore, moveBy, parseLayout, toggleWidth } from "./homeLayout.ts";
 
 Deno.test("parseLayout drops unknown widgets, duplicates and bad widths", () => {
   const got = parseLayout([{ id: "pz", w: "full" }, { id: "nope", w: "half" }, { id: "pz", w: "half" }, { id: "calls", w: "huge" }]);
@@ -118,4 +118,12 @@ Deno.test("rowSizing: одна таблица или две таблицы — �
 
 Deno.test("HEIGHT_KIND: у каждого виджета каталога есть вид высоты", () => {
   for (const id of WIDGET_IDS) assertEquals(["fixed", "natural", "fill", "auto"].includes(HEIGHT_KIND[id]), true);
+});
+
+Deno.test("без флага главная прежняя: доска, «Рейтинги»+встречи, задачи+«Пиццерии», «Мои страны»", () => {
+  assertEquals(layoutRows(LEGACY_LAYOUT).map((r) => r.map((x) => x.item.id)), [
+    ["board"], ["ratings", "calls"], ["top5", "pz"], ["countries"],
+  ]);
+  assertEquals(defaultLayout(false), LEGACY_LAYOUT);
+  assertEquals(defaultLayout(true), DEFAULT_LAYOUT);
 });

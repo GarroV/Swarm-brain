@@ -18,9 +18,9 @@ import {
 // Баллы — настоящие (GET /quality); тип проверки, отчёты гостей и собираемость сняты: источника нет.
 
 // Карточка таблицы — колонка блока: шапка/вкладки на месте, строки прокручиваются внутри (sticky th).
-const card = `flex flex-col rounded-[12px] border border-line bg-surface min-[1100px]:overflow-hidden ${FILL}`;
-const th = "sticky top-0 bg-surface px-2.5 py-2 text-left font-semibold uppercase text-ink-mute";
-const td = "border-t border-line px-2.5 py-2";
+export const card = `flex flex-col rounded-[12px] border border-line bg-surface min-[1100px]:overflow-hidden ${FILL}`;
+export const th = "sticky top-0 bg-surface px-2.5 py-2 text-left font-semibold uppercase text-ink-mute";
+export const td = "border-t border-line px-2.5 py-2";
 
 // «Мои страны» (экран «А»): число моноширинным справа, изменение мелко рядом — зелёный ▲ / красный ▼ / серый 0.
 // Цвет самого числа — только у тревожных значений (ниже нормы — янтарь, критично — красный).
@@ -44,7 +44,7 @@ function Num({ v, digits = 1, t = "good", change, changeDigits = digits }: { v: 
   );
 }
 
-function Cell({ v, t, digits = 0 }: { v: number | null; t: ReturnType<typeof tone>; digits?: number }) {
+export function Cell({ v, t, digits = 0 }: { v: number | null; t: ReturnType<typeof tone>; digits?: number }) {
   return <span className={`inline-block min-w-[38px] rounded-[6px] px-1.5 py-0.5 text-center font-mono ${TONE_CELL[t]}`} style={{ fontSize: 12 }}>{v == null ? "—" : v.toFixed(digits)}</span>;
 }
 
@@ -63,8 +63,8 @@ function Tabs<K extends string>({ tabs, value, onChange }: { tabs: Array<[K, str
 }
 
 type PzFilter = "all" | "crit" | "rko" | "drop" | "missed";
-const rsChange = (p: Pizzeria) => (p.rs != null && p.rsPrev != null ? p.rs - p.rsPrev : null);
-const rkoChange = (p: Pizzeria) => (p.rko != null && p.rkoPrev != null ? p.rko - p.rkoPrev : null);
+export const rsChange = (p: Pizzeria) => (p.rs != null && p.rsPrev != null ? p.rs - p.rsPrev : null);
+export const rkoChange = (p: Pizzeria) => (p.rko != null && p.rkoPrev != null ? p.rko - p.rkoPrev : null);
 const PZ_FILTERS: Record<PzFilter, (p: Pizzeria) => boolean> = {
   all: () => true,
   crit: (p) => p.rs != null && p.rs < RS_CRIT,
@@ -115,20 +115,20 @@ function MapCell({ s, change, digits = 1 }: { s: { avg: number | null } | null; 
   return <Num v={s?.avg ?? null} digits={digits} change={change} changeDigits={digits === 1 ? 1 : 2} />;
 }
 
-const chevron = (open: boolean) => (
+export const chevron = (open: boolean) => (
   <svg aria-hidden width="12" height="12" viewBox="0 0 12 12" className={`mr-1 inline-block shrink-0 text-ink-mute transition-transform ${open ? "rotate-90" : ""}`}>
     <path d="M4 2.5 7.5 6 4 9.5" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
   </svg>
 );
 
 /** Выручка пиццерии: цифра из Dodo IS (через Децимус) или «—» с пояснением, что данных нет; не оценка и не подмена. */
-function revenueCell(v: number | null, dt: (ru: string, en: string) => string) {
+export function revenueCell(v: number | null, dt: (ru: string, en: string) => string) {
   if (v == null) return <span className="text-ink-mute" title={dt("Нет данных Dodo IS по этой пиццерии", "No Dodo IS data for this pizzeria")}>—</span>;
   return <span className="text-ink-soft">{fmtEur(v)}</span>;
 }
 
 /** Подсказка колонки «Продажи»: откуда цифры и на какое время загружены. */
-function salesHint(dt: (ru: string, en: string) => string, loaded: Record<string, string> | undefined): string {
+export function salesHint(dt: (ru: string, en: string) => string, loaded: Record<string, string> | undefined): string {
   const at = loadedLabel(loaded, dt("ru-RU", "en-GB"));
   return dt(
     `Выручка с 1-го числа текущего месяца, €. Для стран с подключённым Dodo IS — данные Dodo IS через DECIMUS, у страны сумма её пиццерий${at ? `; загружено: ${at}` : ""}. Для остальных стран — публичный API Dodo, только по стране, без разбивки по пиццериям.`,

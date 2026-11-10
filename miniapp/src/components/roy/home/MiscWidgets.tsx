@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
-import { useDt } from "../nav";
+import { useDt, useRoyNav } from "../nav";
 import { DashTaskRow } from "../dash/shared";
 import type { DashboardData } from "../dash/useDashboardData";
 import { AreaSpark } from "./LineChart";
@@ -17,8 +17,10 @@ import type { Project } from "@/types";
 
 // Ближайшие задачи и продажи. Доска стикеров — StickerBoard.tsx.
 
-export function TopTasksWidget({ data, onCreate }: { data: DashboardData; onCreate: () => void }) {
+// legacy — главная без флага экрана «А» (lib/homeFlag.ts): прежняя строка DashTaskRow и «Все →» внизу, без запроса проектов.
+export function TopTasksWidget({ data, onCreate, legacy = false }: { data: DashboardData; onCreate: () => void; legacy?: boolean }) {
   const dt = useDt();
+  const { openTasks } = useRoyNav();
   const open = useMemo(() => data.mine.filter((t) => !isDone(t)), [data.mine]);
   const now = useMemo(() => new Date(), [data.tasks]);
   const top = useMemo(() => nextHomeTasks(open, now), [open, now]);
@@ -26,7 +28,10 @@ export function TopTasksWidget({ data, onCreate }: { data: DashboardData; onCrea
   const { loading, failed, retry } = data.tasksState;
   // Названия проектов — подпись под задачей. Не пришли — подписи нет, строки те же.
   const [projects, setProjects] = useState<Project[]>([]);
-  useEffect(() => { fetchProjects().then(setProjects).catch((e) => console.warn("[home] projects", e)); }, []);
+  useEffect(() => {
+    if (legacy) return;
+    fetchProjects().then(setProjects).catch((e) => console.warn("[home] projects", e));
+  }, [legacy]);
   return (
     <div className={`rounded-[12px] border border-line bg-surface p-2 ${FILL_CARD}`}>
       {loading && [0, 1, 2].map((i) => <div key={i} className="roy-shim m-1" style={{ height: 34, borderRadius: 8 }} />)}
@@ -37,6 +42,7 @@ export function TopTasksWidget({ data, onCreate }: { data: DashboardData; onCrea
       )}
       {!loading && !failed && top.map((t) => {
         const reason = homeDateReason(t, now);
+        if (legacy) return <DashTaskRow key={t.id} task={t} reminder={reason?.kind === "ping" ? { date: reason.date, label: dt(...NEXT_TASK_TEXT.reminderReason) } : undefined} />;
         const project = projects.find((p) => p.id === t.project_id)?.name ?? null;
         return <DashTaskRow key={t.id} task={t} render={(shown, onToggle) => <NextTaskRow task={shown} project={project} reason={reason} now={now} onToggle={onToggle} />} />;
       })}
@@ -51,6 +57,7 @@ export function TopTasksWidget({ data, onCreate }: { data: DashboardData; onCrea
         </span>
         <span className="flex gap-3">
           <button type="button" onClick={onCreate} className="font-medium text-primary hover:underline">{dt("+ задача", "+ task")}</button>
+          {legacy && <button type="button" onClick={() => openTasks("mine", "all")} className="font-medium text-primary hover:underline">{dt("Все →", "All →")}</button>}
         </span>
       </div>
     </div>
