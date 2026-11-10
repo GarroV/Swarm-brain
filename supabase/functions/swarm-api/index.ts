@@ -163,7 +163,7 @@ import { handlePublicRoadmap, isPublicRoadmapPath } from "./public-roadmap.ts";
 // Календарь на сегодня для панели главной (issue #218): доступ к Google — общий модуль
 // (его же зовёт meeting-current), отбор событий дня и границы суток — чистая логика под тестами.
 import { loadTodayMeetings } from "./today-meetings.ts";
-import { isTaskStatus, taskStatusError } from "../_shared/tasks/statuses.ts";
+import { isTaskStatus, parseStatusesParam, taskStatusError } from "../_shared/tasks/statuses.ts";
 import {
   isActive as maintenanceActive,
   maintenancePayload,
@@ -1043,6 +1043,8 @@ async function routeRequest(req: Request): Promise<Response> {
   if (routePath === "/tasks") {
     if (req.method === "GET") {
       const status = url.searchParams.get("status") ?? undefined;
+      const { statuses, error: statusesError } = parseStatusesParam(url.searchParams.get("statuses"));
+      if (statusesError) return apiErr(400, statusesError, origin);
       const countryFilter = parseCountryFilter(url.searchParams.get("country"));
       if (!countryFilter.ok) return apiErr(400, countryFilter.error, origin);
       const assigneeText = url.searchParams.get("assignee") ?? undefined;
@@ -1078,6 +1080,7 @@ async function routeRequest(req: Request): Promise<Response> {
           columns: since ? deltaColumns(TASK_LIST_COLUMNS) : TASK_LIST_COLUMNS,
           updatedAfter: since ?? undefined,
           status,
+          statuses,
           countries: countryFilter.countries,
           assigneeText,
           telegramId: mine ? telegram_id : undefined,
@@ -1094,9 +1097,7 @@ async function routeRequest(req: Request): Promise<Response> {
         },
         groupId,
       );
-      // Упёрлись в лимит — значит часть задач в ответ НЕ попала, и клиент об этом не узнает
-      // (ответ — голый массив, признака усечения в нём нет). Пока #112 не сделает усечение
-      // громким для пользователя, оставляем след в логах: увидим до того, как заметит команда.
+      // Упёрлись в лимит — часть задач не попала в ответ, клиент не узнает (голый массив): след в логах (#112).
       if (tasks.length >= limit) {
         console.warn(
           `[tasks] список упёрся в лимит ${limit} — часть задач не попала в ответ (issue #111/#112)`,
@@ -1345,9 +1346,7 @@ async function routeRequest(req: Request): Promise<Response> {
         }
       }
       Object.assign(fields, countriesFields(body));
-      if (body.task_role !== undefined) {
-        fields.task_role = body.task_role as string | null;
-      }
+      if (body.task_role !== undefined) fields.task_role = body.task_role as string | null;
       if ("due_date" in body) fields.due_date = body.due_date as string | null;
       // Пинг: перенос ВЗВОДИТ его заново (reminded_at = null) — иначе уже сработавший пинг,
       // передвинутый на новую дату, молча не пришёл бы: крон берёт только неотправленные.

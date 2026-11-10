@@ -10,6 +10,8 @@ import {
   completionPatch,
   hidesClosedByDefault,
   isTaskStatus,
+  OPEN_STATUSES,
+  parseStatusesParam,
   shouldCascadeClose,
   TASK_STATUSES,
   taskStatusError,
@@ -147,4 +149,30 @@ Deno.test("shouldCascadeClose: только переход открытая → 
   assertEquals(shouldCascadeClose("done", "done", false), false);
   assertEquals(shouldCascadeClose("open", "in_progress", false), false);
   assertEquals(shouldCascadeClose("open", "done", true), false);
+});
+
+Deno.test("statuses: явный список статусов отменяет «закрытые прячем» (#111)", () => {
+  assertEquals(hidesClosedByDefault({ statuses: ["done"] }), false);
+  assertEquals(hidesClosedByDefault({ statuses: ["open", "backlog"] }), false);
+  // Пустой список — фильтра нет, правило по умолчанию действует.
+  assertEquals(hidesClosedByDefault({ statuses: [] }), true);
+});
+
+Deno.test("parseStatusesParam: список, пробелы, дубли; пусто — без фильтра", () => {
+  assertEquals(parseStatusesParam(null), {});
+  assertEquals(parseStatusesParam(""), {});
+  assertEquals(parseStatusesParam(" , "), {});
+  assertEquals(parseStatusesParam("open, in_progress,open"), {
+    statuses: ["open", "in_progress"],
+  });
+});
+
+Deno.test("parseStatusesParam: незнакомый статус — отказ, а не пустая выдача", () => {
+  const r = parseStatusesParam("open,pending");
+  assertEquals(r.statuses, undefined);
+  assertEquals(r.error, taskStatusError("pending"));
+});
+
+Deno.test("OPEN_STATUSES = все статусы, кроме done и cancelled", () => {
+  assertEquals([...OPEN_STATUSES].sort(), ["backlog", "in_progress", "open"]);
 });

@@ -24,9 +24,7 @@ export function isTaskStatus(v: unknown): v is TaskStatus {
 
 /** Текст отказа для API: называет и что пришло, и что принимается. */
 export function taskStatusError(v: unknown): string {
-  return `Недопустимый статус задачи: ${JSON.stringify(v)}. Принимаются: ${
-    TASK_STATUSES.join(", ")
-  }.`;
+  return `Недопустимый статус задачи: ${JSON.stringify(v)}. Принимаются: ${TASK_STATUSES.join(", ")}.`;
 }
 
 /** Статусы, означающие, что работа над задачей закончена. */
@@ -94,7 +92,30 @@ export function hidesClosedByDefault(filters: {
   confirmed?: boolean;
   dueToday?: boolean;
   status?: string;
+  statuses?: readonly string[];
 }): boolean {
   return filters.confirmed === undefined && !filters.dueToday &&
-    !filters.status;
+    !filters.status && !filters.statuses?.length;
 }
+
+/**
+ * Разбор `?statuses=open,in_progress` (issue #111): список статусов через запятую → массив для
+ * `listTasksWithTotal({ statuses })`. Нет параметра или он пуст — `undefined` (фильтра нет).
+ * Незнакомый статус — отказ с текстом для 400, а не молчаливо пустая выдача: клиент с опечаткой
+ * иначе получил бы «задач нет», неотличимое от правды (тот же класс дефекта, что #208 и #304).
+ */
+export function parseStatusesParam(
+  raw: string | null,
+): { statuses?: TaskStatus[]; error?: string } {
+  if (raw === null) return {};
+  const parts = [...new Set(raw.split(",").map((s) => s.trim()).filter(Boolean))];
+  if (parts.length === 0) return {};
+  const bad = parts.find((s) => !isTaskStatus(s));
+  if (bad !== undefined) return { error: taskStatusError(bad) };
+  return { statuses: parts as TaskStatus[] };
+}
+
+/** Незакрытые статусы: всё, что не `done`/`cancelled` (для экранов, которым закрытые не нужны). */
+export const OPEN_STATUSES: readonly TaskStatus[] = TASK_STATUSES.filter(
+  (s) => !isClosedStatus(s),
+);
