@@ -4,6 +4,8 @@
 // Правило этого файла: ответ обязан говорить, ЧТО получилось, а не «✅ готово». Молчаливый
 // успех дороже ошибки — агент докладывает владельцу неправду и уходит дальше (issue #201).
 
+import { taskCountriesText } from "../../_shared/tasks/countries.ts";
+
 export type ProjectTreeRow = {
   id: string;
   name: string;
@@ -96,6 +98,7 @@ export function formatTaskLine(t: {
   remind_date?: string | null;
   reminded_at?: string | null;
   country?: string | null;
+  countries?: string[] | null;
   confirmed?: boolean;
   /** Подзадача (#478): родитель — названием, если он в той же выдаче, иначе id. */
   parent_id?: string | null;
@@ -112,7 +115,7 @@ export function formatTaskLine(t: {
   const due = t.due_date ? ` | дедлайн: ${t.due_date}` : "";
   // Без пометки «отправлен» агент принял бы сгоревший пинг за ещё ждущий.
   const ping = t.remind_date ? ` | пинг: ${t.remind_date}${t.reminded_at ? " (отправлен)" : ""}` : "";
-  const country = t.country ? ` | ${t.country}` : "";
+  const country = taskCountriesText(t) ? ` | ${taskCountriesText(t)}` : "";
   const pending = t.confirmed === false ? " ⏳ на проверке (в вебе не видна)" : "";
   const parent = t.parent_id
     ? `\n  ↳ подзадача задачи ${t.parent_title ? `«${t.parent_title}» (id: ${t.parent_id})` : t.parent_id}`

@@ -120,6 +120,7 @@ function mount() {
       },
     },
     "@/components/tasks/TaskComments": { TaskComments: "TaskComments" },
+    "@/components/tasks/TaskMarkets": { TaskMarkets: "TaskMarkets" },
     "@/components/tasks/TaskFiles": { TaskFiles: "TaskFiles" },
     "@/lib/utils": { displayName: (x) => x },
     "@/lib/displayFormat": { formatDate: () => "01 Jan" },

@@ -52,11 +52,13 @@ import { TASK_LIST_COLUMNS } from "./task-columns.ts";
 import { deltaColumns, parseSince, type TasksDeltaResponse } from "./tasks-delta.ts";
 import { resolveDigestScope } from "./digest-scope.ts";
 import {
+  countriesFields,
   createTask,
   deleteTask,
   getTask,
   getVisibleTaskInWorkspace,
   listTasksWithTotal,
+  parseCountryFilter,
   TaskUserError,
   updateTask,
 } from "../_shared/tasks/db.ts";
@@ -1041,7 +1043,8 @@ async function routeRequest(req: Request): Promise<Response> {
   if (routePath === "/tasks") {
     if (req.method === "GET") {
       const status = url.searchParams.get("status") ?? undefined;
-      const country = url.searchParams.get("country") ?? undefined;
+      const countryFilter = parseCountryFilter(url.searchParams.get("country"));
+      if (!countryFilter.ok) return apiErr(400, countryFilter.error, origin);
       const assigneeText = url.searchParams.get("assignee") ?? undefined;
       const mine = url.searchParams.get("mine") === "true";
       const limit = parseListLimit(url.searchParams.get("limit"), {
@@ -1054,8 +1057,7 @@ async function routeRequest(req: Request): Promise<Response> {
       const projectId = url.searchParams.get("project_id") ?? undefined;
       const tagsParam = url.searchParams.get("tags");
       const tags = tagsParam ? tagsParam.split(",").map((t) => t.trim()).filter(Boolean) : undefined;
-      const startDateFrom = url.searchParams.get("start_date_from") ??
-        undefined;
+      const startDateFrom = url.searchParams.get("start_date_from") ?? undefined;
       const startDateTo = url.searchParams.get("start_date_to") ?? undefined;
       const dueDateFrom = url.searchParams.get("due_date_from") ?? undefined;
       const dueDateTo = url.searchParams.get("due_date_to") ?? undefined;
@@ -1076,7 +1078,7 @@ async function routeRequest(req: Request): Promise<Response> {
           columns: since ? deltaColumns(TASK_LIST_COLUMNS) : TASK_LIST_COLUMNS,
           updatedAfter: since ?? undefined,
           status,
-          country,
+          countries: countryFilter.countries,
           assigneeText,
           telegramId: mine ? telegram_id : undefined,
           viewerId: telegram_id,
@@ -1250,7 +1252,7 @@ async function routeRequest(req: Request): Promise<Response> {
         title: body.title as string,
         links,
         description: (body.description as string | null) ?? null,
-        country: (body.country as string | null) ?? null,
+        ...countriesFields(body),
         task_role: (body.task_role as string | null) ?? null,
         priority: ["high", "med", "low"].includes(body.priority as string) ? (body.priority as string) : null,
         due_date: dueDate,
@@ -1342,9 +1344,7 @@ async function routeRequest(req: Request): Promise<Response> {
           );
         }
       }
-      if (body.country !== undefined) {
-        fields.country = body.country as string | null;
-      }
+      Object.assign(fields, countriesFields(body));
       if (body.task_role !== undefined) {
         fields.task_role = body.task_role as string | null;
       }

@@ -8,6 +8,7 @@ import {
   updateTask,
 } from "../../_shared/tasks/db.ts";
 import type { Task, TaskInput } from "../../_shared/tasks/types.ts";
+import { parseCountryFilter } from "../../_shared/tasks/countries.ts";
 import { onlyLive } from "../../_shared/tasks/live.ts";
 import {
   dropUnknownProjects,
@@ -40,9 +41,12 @@ export function dbListTasks(opts: {
   /** Кто смотрит: задачи невидимых ему проектов не показываются (без зрителя — скрыты все закрытые). */
   viewerId?: number;
 }): Promise<Task[]> {
+  // Страна из вопроса (её достаёт модель): неизвестная ничего не находила и раньше — пустой список.
+  const countryFilter = parseCountryFilter(opts.country);
+  if (!countryFilter.ok) return Promise.resolve([]);
   return listTasks({
     status: opts.status,
-    country: opts.country,
+    countries: countryFilter.countries,
     period: opts.period,
     telegramId: opts.telegramId,
     viewerId: opts.viewerId,

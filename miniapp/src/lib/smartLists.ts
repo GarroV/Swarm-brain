@@ -4,7 +4,7 @@
 
 import type { Task, Me } from "@/types";
 import type { RoyIconName } from "@/lib/royIcons";
-import { countryCode } from "@/lib/countries";
+import { taskCountryCodes } from "@/lib/countries";
 import { inRange, dayOf, rangeIncludesDay, type DateRange } from "@/lib/dateRange";
 import { toISO } from "@/lib/calendar";
 
@@ -301,7 +301,7 @@ function bucketByMarket(inScope: Task[]): MarketGroup[] {
   for (const t of inScope) {
     // Нормализуем страну к ISO-коду (countryCode): иначе «SI» и «Словения» (или «RS»/«Сербия»)
     // попадают в РАЗНЫЕ группы — один рынок задваивается. Код объединяет любые формы записи.
-    const key = t.country && t.country !== "—" ? countryCode(t.country) : null;
+    const key = taskCountryCodes(t)[0] ?? null; // несколько стран — по первой, чтобы строка не дублировалась
     const bucket = map.get(key);
     if (bucket) bucket.push(t);
     else map.set(key, [t]);

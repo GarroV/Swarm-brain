@@ -20,7 +20,7 @@ export const DEFAULT_ORDER: readonly MovableColumn[] = ["due", "ping", "actions"
 export const NARROW_HIDDEN_COLUMNS: readonly MovableColumn[] = ["project", "lists"];
 
 // Колонки без ручки ширины — их содержимое фиксировано по размеру.
-const FIXED_WIDTHS: Record<Exclude<MovableColumn, ResizableColumn>, number> = { due: 88, ping: 80, actions: 168, market: 64 };
+const FIXED_WIDTHS: Record<Exclude<MovableColumn, ResizableColumn>, number> = { due: 88, ping: 80, actions: 168, market: 88 };
 
 // «Проект» и «Списки» вдвое уже прежних процентов (18% и 14% от ~1400px): там длинное режется
 // многоточием, а место уходит названию задачи.

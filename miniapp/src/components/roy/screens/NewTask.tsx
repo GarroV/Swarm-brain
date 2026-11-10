@@ -9,6 +9,8 @@ import { tomorrowLocalISO } from "@/lib/dateRange";
 import { readSavedTasksView } from "@/components/tasks/useReminderTasks";
 import { displayName } from "@/lib/utils";
 import { DatePicker } from "@/components/ui/DatePicker";
+import { CountryPopover } from "@/components/tasks/CountryPopover";
+import { taskCountryCodes } from "@/lib/countries";
 import type { User } from "@/types";
 
 const NEW_TASK_COPY = {
@@ -58,7 +60,7 @@ export function NewTask({ id }: { id?: string }) {
   const dt = useDt();
   const [title, setTitle] = useState("");
   const [desc, setDesc] = useState("");
-  const [country, setCountry] = useState<string | null>(null);
+  const [countries, setCountries] = useState<string[]>([]);
   const [priority, setPriority] = useState("med");
   // Срок обязателен и по умолчанию завтрашний (решение владельца 21.09.2026): пустое поле
   // рождало задачу без срока, а такая не попадала ни в «Сегодня», ни в «Ближайшие» (#440).
@@ -91,7 +93,7 @@ export function NewTask({ id }: { id?: string }) {
         if (t.description === undefined) throw new Error("Incomplete task response");
         setTitle(t.title);
         setDesc(t.description ?? "");
-        setCountry(t.country);
+        setCountries(taskCountryCodes(t));
         setPriority(t.priority ?? "med");
         setDue(t.due_date ? t.due_date.slice(0, 10) : "");
         setAssignee(t.assignee_telegram_ids?.[0] ?? null);
@@ -113,7 +115,7 @@ export function NewTask({ id }: { id?: string }) {
     const payload = {
       title: title.trim(),
       description: desc.trim() || null,
-      country,
+      countries,
       priority,
       due_date: due || tomorrowLocalISO(),
       assignee_telegram_id: assignee,
@@ -165,16 +167,7 @@ export function NewTask({ id }: { id?: string }) {
         </Field>
         {markets.length > 0 && (
           <Field label={dt(NEW_TASK_COPY.market.ru, NEW_TASK_COPY.market.en)}>
-            <div className="flex flex-wrap gap-2">
-              <Chip active={country === null} onClick={() => setCountry(null)}>
-                —
-              </Chip>
-              {markets.map((m) => (
-                <Chip key={m} active={country === m} onClick={() => setCountry(m)}>
-                  {m}
-                </Chip>
-              ))}
-            </div>
+            <CountryPopover value={countries} codes={markets} onChange={setCountries} />
           </Field>
         )}
         <Field label={dt(NEW_TASK_COPY.due.ru, NEW_TASK_COPY.due.en)}>

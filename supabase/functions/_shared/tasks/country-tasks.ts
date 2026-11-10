@@ -34,7 +34,7 @@ export async function loadCountryTasks(opts: {
   let q = onlyLive(
     supabase.from("tasks").select("id, title, due_date, assignees, status, project_id"),
   )
-    .eq("country", opts.country)
+    .overlaps("countries", [opts.country]) // любая из стран задачи (#1262)
     .not("status", "in", `(${opts.hiddenStatuses.join(",")})`)
     .eq("confirmed", true)
     .or(`is_private.eq.false,owner_id.eq.${opts.viewerId}`)

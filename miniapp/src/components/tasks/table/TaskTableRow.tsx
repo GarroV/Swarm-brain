@@ -9,7 +9,7 @@ import { isDone, isOverdue, pendingPingDay } from "@/lib/smartLists";
 import { formatDay } from "@/lib/displayFormat";
 import { ROW_FADE_CLASS } from "@/lib/doneLinger";
 import { saveTaskPatch, TaskQuickActions, toggleLabelPatch } from "@/components/tasks/TaskQuickActions";
-import { COUNTRY_NAMES, countryName } from "@/lib/countries";
+import { COUNTRY_NAMES, countriesLabel, countriesPatch, countriesTitle, countryName, taskCountryCodes, toggleCountry } from "@/lib/countries";
 import type { UpdateTaskInput } from "@/lib/api";
 import { Menu, type MenuItem } from "./Menu";
 import type { SubtaskProgress } from "@/lib/subtasks";
@@ -72,12 +72,15 @@ export function TaskTableRow({ task, order, now, users, markets, labels, project
   // Выбор прямо в ячейке (стенд: cpick) — рынок, исполнитель, списки. Правила те же, что у
   // быстрых действий: рынки воркспейса, списки — только метки.
   const codes = markets.length ? [...markets] : Object.keys(COUNTRY_NAMES);
-  if (task.country && !codes.includes(task.country)) codes.push(task.country);
+  const taskCodes = taskCountryCodes(task);
+  for (const c of taskCodes) if (!codes.includes(c)) codes.push(c); // легаси вне рынков воркспейса не теряем
+  const setCountries = (cs: string[]) => commit({ countries: cs }, countriesPatch(cs));
+  // Несколько стран: пункты — флажки (меню остаётся открытым), «без рынка» — действие и закрывает.
   const marketItems: MenuItem[] = [
-    { key: "", label: dt("— без рынка", "— no market"), on: !task.country, action: true, onPick: () => commit({ country: null }, { country: null }) },
+    { key: "", label: dt("— без рынка", "— no market"), on: taskCodes.length === 0, action: true, onPick: () => setCountries([]) },
     ...codes.map((c) => ({
-      key: c, label: <><span className="mr-1.5 font-mono text-ink-mute">{c}</span>{countryName(c)}</>, on: task.country === c, action: true,
-      onPick: () => commit({ country: c }, { country: c }),
+      key: c, label: <><span className="mr-1.5 font-mono text-ink-mute">{c}</span>{countryName(c)}</>, on: taskCodes.includes(c),
+      onPick: () => setCountries(toggleCountry(taskCodes, c)),
     })),
   ];
   const whoItems: MenuItem[] = [
@@ -128,8 +131,8 @@ export function TaskTableRow({ task, order, now, users, markets, labels, project
       </div>
     ),
     market: (
-      <CellPick col="market" title={task.country ? `${dt("Рынок", "Market")}: ${countryName(task.country)}` : dt("Рынок не указан", "No market")} items={marketItems}>
-        <span className="font-mono text-ink-soft" style={{ fontSize: 12 }}>{task.country ?? <span className="text-ink-mute">—</span>}</span>
+      <CellPick col="market" title={taskCodes.length ? `${dt("Рынок", "Market")}: ${countriesTitle(taskCodes)}` : dt("Рынок не указан", "No market")} items={marketItems}>
+        <span className="truncate font-mono text-ink-soft" style={{ fontSize: 12 }}>{taskCodes.length ? countriesLabel(taskCodes) : <span className="text-ink-mute">—</span>}</span>
       </CellPick>
     ),
     project: (

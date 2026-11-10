@@ -142,6 +142,8 @@ function editor(initialId: string | null = "task-A") {
     "@/components/tasks/useReminderTasks": { readSavedTasksView: () => null },
     "@/lib/utils": { displayName: (name: string) => name },
     "@/components/ui/DatePicker": { DatePicker: "DatePicker" },
+    "@/components/tasks/CountryPopover": { CountryPopover: "CountryPopover" },
+    "@/lib/countries": { taskCountryCodes: (t: { countries?: string[]; country?: string | null }) => t.countries ?? (t.country ? [t.country] : []) },
   };
   const module = {
     exports: {} as { NewTask?: (props: { id?: string }) => unknown },
@@ -243,7 +245,7 @@ Deno.test("legacy mobile edit: hydrated save retains every existing payload fiel
     payload: {
       title: "Only the title changes",
       description: "Keep existing description",
-      country: "RS",
+      countries: ["RS"],
       priority: "high",
       due_date: "2099-02-12",
       assignee_telegram_id: 123,
@@ -285,7 +287,7 @@ Deno.test("legacy mobile create: no hydration GET and original create payload", 
   assertEquals(view.creates, [{
     title: "New task",
     description: null,
-    country: null,
+    countries: [],
     priority: "med",
     due_date: "2099-01-02",
     assignee_telegram_id: null,

@@ -2,7 +2,8 @@
 import type { MouseEvent, ReactNode } from "react";
 import type { Task } from "@/types";
 import type { TaskLabel } from "@/lib/api";
-import { PriDot, Market } from "@/components/roy/ui";
+import { PriDot } from "@/components/roy/ui";
+import { TaskMarkets } from "@/components/tasks/TaskMarkets";
 import { RoyIcon, type RoyIconName } from "@/components/roy/icons";
 import { useDt } from "@/components/roy/nav";
 import { isDone, isOverdue } from "@/lib/smartLists";
@@ -133,7 +134,7 @@ export function TaskRow({ task, onToggle, showAssignee = true, now = new Date(),
               <RoyIcon name="meet" size={10} /> {dt("Встреча", "Meeting")}
             </span>
           )}
-          <Market code={task.country} />
+          <TaskMarkets task={task} />
           {/* Списки задачи (личные смарт-метки) — как выбранные на карточке. */}
           {taskLabels.map((l) => (
             <span key={l.id} className="inline-flex items-center gap-1 font-semibold" style={{ fontSize: 10.5, borderRadius: 6, padding: "1px 6px", color: l.color ?? "var(--ink-soft)", background: l.color ? `color-mix(in srgb, ${l.color} 14%, transparent)` : "var(--surface-2)", border: `1px solid ${l.color ? `color-mix(in srgb, ${l.color} 35%, transparent)` : "var(--line-2)"}` }}>

@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useRoyNav, useDt } from "../nav";
+import { TaskMarkets } from "@/components/tasks/TaskMarkets";
 import { NavHeader, RoyCard, PriDot, Market, AvatarStack, SectionLabel, IconBtn, TypeTag } from "../ui";
 import { RoyIcon } from "../icons";
 import { entryTagKey, deriveEntryTitle } from "../entry";
@@ -179,7 +180,7 @@ export function TaskDetail({ id }: { id: string }) {
                 <RoyIcon name="task" size={12} strokeWidth={1.9} />
                 {dt(TASK_DETAIL_COPY.task.ru, TASK_DETAIL_COPY.task.en)}
               </span>
-              <Market code={t.country} />
+              <TaskMarkets task={t} />
             </div>
             <h1 className="mb-4 font-bold text-ink" style={{ fontSize: 24, letterSpacing: "-0.02em", lineHeight: 1.2 }}>
               {t.title}

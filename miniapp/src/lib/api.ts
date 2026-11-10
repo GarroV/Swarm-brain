@@ -125,7 +125,7 @@ function mkMock(o: Partial<Task> & { id: string; title: string }): Task {
     remind_date: o.remind_date ?? null,
     reminded_at: o.reminded_at ?? null,
     tags: o.tags ?? [],
-    country: o.country ?? null,
+    country: o.country ?? o.countries?.[0] ?? null, countries: o.countries ?? (o.country ? [o.country] : []),
     task_role: o.task_role ?? null,
     priority: o.priority ?? null,
     source: "mini_app",
@@ -159,7 +159,7 @@ let mockTasks: Task[] = [
     description: "Collect metrics and draft slides",
     due_date: mockDay(0),
     remind_date: mockDay(7),
-    country: "KZ",
+    countries: ["KZ", "PL"],
     task_role: "bd",
     priority: "high",
   }),
@@ -188,7 +188,7 @@ let mockTasks: Task[] = [
   mkMock({
     id: "4",
     title: "Kazakhstan pricing review",
-    country: "KZ",
+    countries: ["KZ", "RS"],
     assignees: ["Dev User"],
     assignee_telegram_ids: [123456],
     due_date: mockDay(2),
@@ -197,7 +197,7 @@ let mockTasks: Task[] = [
   mkMock({
     id: "5",
     title: "Poland launch checklist",
-    country: "PL",
+    countries: ["PL", "KZ", "RS", "ME"],
     assignees: ["Alice Smith"],
     assignee_telegram_ids: [789012],
     due_date: mockDay(9),
@@ -1061,7 +1061,7 @@ export async function createTask(input: CreateTaskInput): Promise<Task> {
       remind_date: input.remind_date ?? null,
       reminded_at: null,
       tags: input.tags ?? [],
-      country: input.country ?? null,
+      country: input.countries?.[0] ?? input.country ?? null, countries: input.countries ?? (input.country ? [input.country] : []),
       task_role: input.task_role ?? null,
       priority: input.priority ?? null,
       source: "mini_app",
@@ -1113,7 +1113,7 @@ export async function updateTask(
     }
     if (fields.status !== undefined) task.status = fields.status;
     if (fields.due_date !== undefined) task.due_date = fields.due_date ?? null;
-    if (fields.country !== undefined) task.country = fields.country ?? null;
+    if (fields.countries !== undefined || fields.country !== undefined) { const cs = fields.countries ?? (fields.country ? [fields.country] : []); task.countries = cs; task.country = cs[0] ?? null; }
     if (fields.task_role !== undefined) {
       task.task_role = fields.task_role ?? null;
     }
