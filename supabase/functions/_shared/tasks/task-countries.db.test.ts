@@ -219,7 +219,7 @@ Deno.test("фильтр: задача подходит, если ЛЮБАЯ из
 
     assertEquals(await titles(["HU"], MEMBER), ["hu", "hu+rs"]);
     assertEquals(await titles(["RS"], MEMBER), ["hu+rs", "rs+me"]); // закрытый проект не виден
-    assertEquals(await titles(["RS"], AUTHOR), ["hu+rs", "rs+me", "rs в закрытом"]);
+    assertEquals(await titles(["RS"], AUTHOR), ["hu+rs", "rs в закрытом", "rs+me"]);
     assertEquals(await titles(["HU", "ME"], MEMBER), ["hu", "hu+rs", "rs+me"]); // «любая из»
     assertEquals(await titles(["NL"], MEMBER), []);
     // Без фильтра выдача прежняя — видимость от стран не зависит.

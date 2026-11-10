@@ -131,6 +131,7 @@ drop table _task_country_alias;
 
 alter table public.tasks add constraint tasks_countries_iso2 check (
   array_position(countries, null) is null
+  and array_position(countries, '') is null
   and array_to_string(countries, ',') ~ '^([A-Z]{2}(,[A-Z]{2})*)?$'
 );
 
