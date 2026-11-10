@@ -17,6 +17,8 @@ export type MenuItem = {
   onPick: () => void;
   // Пункт-действие (не фильтр): закрывает меню и не несёт галочки.
   action?: boolean;
+  // Заголовок группы (напр. год в архиве): не кнопка, onPick не вызывается.
+  heading?: boolean;
 };
 
 export function ToolbarButton({ on, children, onClick, title, disabled, popup, icon, quickHint }: {
@@ -124,7 +126,16 @@ export function Menu({ label, on, items, footer, trigger, title, alignRight }: {
           )}
           style={place ? { maxHeight: place.maxH } : undefined}
         >
-          {items.map((it) => (
+          {items.map((it) => it.heading ? (
+            <div
+              key={it.key}
+              role="presentation"
+              className="px-2.5 pb-0.5 pt-2 font-semibold uppercase tracking-wide text-ink-mute"
+              style={{ fontSize: 11 }}
+            >
+              {it.label}
+            </div>
+          ) : (
             <button
               key={it.key}
               type="button"
