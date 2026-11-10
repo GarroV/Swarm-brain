@@ -17,12 +17,19 @@ export const DEFAULT_WIDTH: Record<WidgetId, WidgetWidth> = {
   myTasks: "full", teamTasks: "half", news: "half", latest: "half",
 };
 
-// Доска — первой (владелец 08.10.2026: «доску давай выше сделаем»). Под ней две колонки: слева
-// «Рейтинги» (вкладки РС · РКО · Карты · Агрегаторы вместо прежних отдельных РС и РКО, 19.10.2026),
-// справа встречи, под ними задачи. Половинки идут парами «левая, правая» — см. layoutRows.
-// «Топ-5 нарушений» — образец без источника: в каталоге есть, по умолчанию на главную не ставим.
-const DEFAULT_ORDER: WidgetId[] = ["board", "ratings", "calls", "top5", "pz", "countries"];
+// Экран «А» (владелец 09.11.2026, docs/decisions/2026-11-09-redesign-content-not-layout.md): сверху
+// стикеры доски, под ними ближайшие встречи и ближайшие задачи двумя половинами, ниже на всю строку
+// «Мои страны». «Рейтинги» и «Пиццерии» остаются в каталоге «Настроить главную», но по умолчанию
+// не стоят. «Топ-5 нарушений» — образец без источника: тоже только каталог.
+const DEFAULT_ORDER: WidgetId[] = ["board", "calls", "top5", "countries"];
 export const DEFAULT_LAYOUT: LayoutItem[] = DEFAULT_ORDER.map((id) => ({ id, w: DEFAULT_WIDTH[id] }));
+
+// Прежняя раскладка (как на main до экрана «А»): её видят все, у кого флаг lib/homeFlag.ts выключен.
+// Доска — первой (владелец 08.10.2026), под ней «Рейтинги» слева и встречи справа, ниже задачи и «Пиццерии».
+const LEGACY_ORDER: WidgetId[] = ["board", "ratings", "calls", "top5", "pz", "countries"];
+export const LEGACY_LAYOUT: LayoutItem[] = LEGACY_ORDER.map((id) => ({ id, w: DEFAULT_WIDTH[id] }));
+/** Раскладка по умолчанию для варианта главной: экран «А» (флаг включён) или прежняя. */
+export const defaultLayout = (a: boolean): LayoutItem[] => (a ? DEFAULT_LAYOUT : LEGACY_LAYOUT);
 
 export type LayoutCell = { item: LayoutItem; index: number };
 /** Строка главной: одна клетка — на всю ширину, две — пара половинок. */
@@ -108,20 +115,23 @@ export function addWidget(layout: LayoutItem[], id: WidgetId): LayoutItem[] {
   return [...layout, { id, w: DEFAULT_WIDTH[id] }];
 }
 
-// v3 — колонки РКО/РС и встречи/задачи (13.10.2026); v2 — подъём доски наверх. Сохранённая прежняя
-// версия держала бы старый порядок, и смена умолчания не была бы видна.
-const LS_KEY = "roy_home_layout_v3";
+// v4 — экран «А» (09.11.2026): раскладка по умолчанию сменилась, поэтому свой ключ — сохранённая прежняя
+// версия держала бы старый порядок. v3 — прежняя главная (колонки РКО/РС и встречи/задачи, 13.10.2026; v2 —
+// подъём доски наверх): её ключ остаётся у всех, у кого флаг экрана «А» выключен, и не пересекается с v4.
+const LS_KEY_A = "roy_home_layout_v4";
+const LS_KEY_LEGACY = "roy_home_layout_v3";
+const lsKey = (a: boolean): string => (a ? LS_KEY_A : LS_KEY_LEGACY);
 
-export function loadLayout(): LayoutItem[] {
+export function loadLayout(a: boolean): LayoutItem[] {
   try {
-    const parsed = parseLayout(JSON.parse(localStorage.getItem(LS_KEY) ?? "null"));
+    const parsed = parseLayout(JSON.parse(localStorage.getItem(lsKey(a)) ?? "null"));
     if (parsed) return parsed;
   } catch { /* приватное окно или битое значение — раскладка по умолчанию */ }
-  return DEFAULT_LAYOUT;
+  return defaultLayout(a);
 }
 
-export function saveLayout(layout: LayoutItem[]): void {
-  try { localStorage.setItem(LS_KEY, JSON.stringify(layout)); } catch { /* хранилище недоступно — раскладка живёт до перезагрузки */ }
+export function saveLayout(layout: LayoutItem[], a: boolean): void {
+  try { localStorage.setItem(lsKey(a), JSON.stringify(layout)); } catch { /* хранилище недоступно — раскладка живёт до перезагрузки */ }
 }
 
 // ── Высота блока на широком экране (от 1100 px; docs/decisions/2026-10-23-home-fixed-blocks.md) ──────
