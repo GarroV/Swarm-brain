@@ -20,7 +20,7 @@ const row = (over: Partial<PlaceRow>): PlaceRow => ({
   name: null,
   brand: null,
   wikidata: null,
-  category: "restaurant",
+  category: "fast_food_restaurant",
   locality: "Warszawa",
   address: `Street ${n}`,
   lat: 52.0 + n * 0.01,
@@ -125,7 +125,6 @@ Deno.test("#1113 CY: one brand written with different suffixes is one discovered
       name: "Kawacom's Ipanema Espresso",
       brand,
       locality: `City${k % 3}`,
-      category: "cafe",
     });
   const rows = [
     ...[0, 1, 2].map((k) =>
@@ -225,17 +224,6 @@ Deno.test("#1113 config: scattered spellings of one brand land on one configured
   const by = discover(
     [
       row({
-        name: 'Сеть кофеен "Кофе Саунд"',
-        brand: 'Сеть кофеен "Кофе Саунд"',
-        locality: "Мінск",
-      }),
-      row({ name: "Кофе Саунд", brand: null, locality: "Мінск" }),
-      row({
-        name: 'Кофейня "Кофе Саунд" Рафиева',
-        brand: null,
-        locality: "Мінск",
-      }),
-      row({
         name: "Terra Pizza",
         brand: "Terra pizza İskenderun",
         locality: "Мінск",
@@ -245,18 +233,10 @@ Deno.test("#1113 config: scattered spellings of one brand land on one configured
         brand: "Terra pizza İskenderun",
         locality: "Мінск",
       }),
-      row({
-        name: "Garage Food and Coffee",
-        brand: "Garage",
-        locality: "Мінск",
-      }),
-      row({ name: "Гараж", brand: null, locality: "Мінск" }),
     ],
     BY,
   );
-  assertEquals(chainsOf(by, "kofe-saund").length, 3);
   assertEquals(chainsOf(by, "terra-pizza").length, 2);
-  assertEquals(chainsOf(by, "garage").length, 2);
   assertEquals(by.chains, []);
   const lt = discover(
     [
@@ -271,24 +251,6 @@ Deno.test("#1113 config: scattered spellings of one brand land on one configured
     LT,
   );
   assertEquals(chainsOf(lt, "cili-pizza-lietuva").length, 3);
-  const cy = discover(
-    [
-      row({
-        name: "Mikel Coffee Company",
-        brand: "Mikel Coffee Company Cyprus",
-        locality: "a",
-      }),
-      row({
-        name: "Mikel Nicosia Central",
-        brand: "Mikel Larnaca",
-        locality: "b",
-      }),
-      row({ name: "Mikel", brand: null, locality: "c", lng: 33.4, lat: 34.9 }),
-      row({ name: "Mikelangelo coffee square", brand: null, locality: "d" }),
-    ],
-    { ...CY, excludeAreas: [] },
-  );
-  assertEquals(chainsOf(cy, "mikel").length, 3);
 });
 
 Deno.test("nameFitsBrand: only a same-kind or look-alike name contradicts the brand", () => {
@@ -322,4 +284,38 @@ Deno.test("inRing: point inside / outside a ring", () => {
   assertEquals(inRing(2, 2, ring), true);
   assertEquals(inRing(5, 2, ring), false);
   assertEquals(inRing(2, -1, ring), false);
+});
+
+Deno.test("fast food only (10.11): discovery skips coffee, bakery, asian and plain restaurants, keeps fast food, has no cap, hand config stays", () => {
+  const venue = (brand: string, category: string) =>
+    [0, 1, 2].map((k) =>
+      row({ name: brand, brand, category, locality: `City${k}` })
+    );
+  const rows = [
+    ...venue("Pizza Hut Express", "pizza_restaurant"),
+    ...venue("Burger Hub", "burger_restaurant"),
+    ...venue("Kebab Palace", "restaurant"),
+    ...venue("Local QSR", "fast_food_restaurant"),
+    ...venue("Cafe Aroma", "cafe"),
+    ...venue("Bakery Gold", "bakery"),
+    ...venue("Sushi Wok House", "restaurant"),
+    ...venue("Trattoria Roma", "restaurant"),
+    ...venue("Zorba", "restaurant"),
+    ...Array.from({ length: 50 }, (_, i) => venue(`Burger Num${i}x`, "burger_restaurant")).flat(),
+  ];
+  const r = discover(rows, { ...PL, chains: [] });
+  const names = r.chains.map((c) => c.name);
+  for (const keep of ["Pizza Hut Express", "Burger Hub", "Kebab Palace", "Local QSR"]) {
+    assertEquals(names.includes(keep), true, keep);
+  }
+  for (const drop of ["Cafe Aroma", "Bakery Gold", "Sushi Wok House", "Trattoria Roma", "Zorba"]) {
+    assertEquals(names.includes(drop), false, drop);
+  }
+  assertEquals(r.chains.length, 54);
+  // Сеть из конфига страны (например Costa, сегмент coffee) остаётся при любом сегменте.
+  const costa = discover(
+    venue("Costa Coffee", "coffee_shop"),
+    PL,
+  );
+  assertEquals(costa.points.length > 0 && costa.chains.length === 0, true);
 });

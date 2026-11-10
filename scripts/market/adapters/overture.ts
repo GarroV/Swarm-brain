@@ -43,7 +43,22 @@ const CATEGORIES = [
 export const MIN_BRANDED = 3;
 export const MIN_UNBRANDED = 5;
 export const MIN_LOCALITIES = 3;
-export const MAX_DISCOVERED = 40;
+/** Автопоиск находит только фастфуд-сети (решение владельца 10.11.2026): пицца, бургеры, курица, сэндвичи,
+ *  гриль/кебаб, плюс заведения категории Overture fast_food_restaurant. Кофе, пекарни, азиатская кухня и
+ *  «просто ресторан» сюда не попадают — их заводят вручную в countries/*.ts, по запросу. */
+export const FASTFOOD_SEGMENTS = new Set([
+  "pizza",
+  "burger",
+  "chicken",
+  "sandwich",
+  "grill",
+]);
+export function isFastFood(segment: string, categories: string[]): boolean {
+  if (FASTFOOD_SEGMENTS.has(segment)) return true;
+  if (segment !== "other") return false;
+  return categories.filter((c) => c === "fast_food_restaurant").length * 2 >
+    categories.length;
+}
 const MAX_KEY = 40;
 /** Overture держит одно заведение двумя записями (разные id, 0–25 м): на карте это одна точка. */
 export const DUPLICATE_M = 25;
@@ -301,21 +316,18 @@ export function discover(
           MIN_LOCALITIES
       )
     )
-    .sort((a, b) => b.rows.length - a.rows.length)
-    .slice(0, MAX_DISCOVERED);
+    .sort((a, b) => b.rows.length - a.rows.length);
   const taken = new Set(cfg.chains.map((c) => c.key));
   const chains: DiscoveredChain[] = [];
   for (const { rows: g, name } of found) {
+    const categories = g.map((r) => r.category ?? "");
+    const segment = classify(name, categories);
+    if (!isFastFood(segment, categories)) continue;
     const fallback = `chain-${
       (g[0].wikidata ?? norm(name)).toLowerCase().slice(0, 12)
     }`;
     const key = slug(name, taken, fallback);
-    const segment = classify(name, g.map((r) => r.category ?? ""));
-    chains.push(
-      segment === "bakery"
-        ? { key, name, segment, bakery: true }
-        : { key, name, segment },
-    );
+    chains.push({ key, name, segment });
     for (const row of g) points.push(toPoint(row, key));
   }
   const kept = dropDuplicates(points);

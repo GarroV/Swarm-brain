@@ -116,18 +116,6 @@ export const CY: CountryConfig = {
       // Одна сеть: у части кипрских точек в названии стоит греческий адрес франшизы («Coffee Island Θεσσαλονίκη…»).
       osmBrands: ["Coffee Island"],
     },
-    {
-      // Overture держит сеть под двумя брендами («Mikel Larnaca», «Mikel Coffee Company Cyprus»).
-      key: "mikel",
-      name: "Mikel Coffee",
-      segment: "coffee",
-      osmBrands: [
-        "Mikel Coffee Company",
-        "Mikel Larnaca",
-        "Mikel Coffee",
-        "Mikel",
-      ],
-    },
   ],
   companies: [],
   sources: [

@@ -293,8 +293,6 @@
 | `subway` | Subway | sandwich | brand: Subway |
 | `starbucks` | Starbucks | coffee | brand: Starbucks |
 | `costa` | Costa Coffee | coffee | brand: Costa Coffee, Costa |
-| `kofe-saund` | Кофе Саунд | coffee | brand: Кофе Саунд, Сеть кофеен "Кофе Саунд"; name: Кофейня "Кофе Саунд" |
-| `garage` | Garage | coffee | brand: Garage; name: Гараж |
 | `terra-pizza` | Terra Pizza | pizza | brand: Terra pizza İskenderun; name: Terra Pizza |
 
 ## CY — CY
@@ -319,7 +317,6 @@
 | `starbucks` | Starbucks | coffee | brand: Starbucks |
 | `costa` | Costa Coffee | coffee | brand: Costa Coffee, Costa |
 | `coffee-island` | Coffee Island | coffee | brand: Coffee Island |
-| `mikel` | Mikel Coffee | coffee | brand: Mikel Coffee Company, Mikel Larnaca, Mikel Coffee, Mikel |
 
 ## ES — ES
 
