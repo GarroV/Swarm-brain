@@ -34,15 +34,17 @@ final class RecorderNotices {
     /// Показать карточку. Тот же `id` заменяет прежнюю (повтор не плодит копий).
     /// `lifetime` nil — висит, пока не закроют: так у карточек, на которые надо отреагировать.
     func post(id: String, title: String, body: String = "",
-              lifetime: TimeInterval? = NoticeStack.defaultLifetime, actions: [Action] = []) {
+              lifetime: TimeInterval? = NoticeStack.defaultLifetime, actions: [Action] = [],
+              isVertical: Bool = false) {
         guard Thread.isMainThread else {
-            DispatchQueue.main.async { self.post(id: id, title: title, body: body, lifetime: lifetime, actions: actions) }
+            DispatchQueue.main.async { self.post(id: id, title: title, body: body, lifetime: lifetime, actions: actions, isVertical: isVertical) }
             return
         }
         let specs = actions.enumerated().map { RecorderNotice.Action(id: String($0.offset), title: $0.element.title,
                                                                       isPrimary: $0.element.isPrimary) }
         self.actions[id] = Dictionary(uniqueKeysWithValues: actions.enumerated().map { (String($0.offset), $0.element) })
-        stack.post(RecorderNotice(id: id, title: title, body: body, actions: specs, lifetime: lifetime), now: Date())
+        stack.post(RecorderNotice(id: id, title: title, body: body, actions: specs, lifetime: lifetime,
+                                isVertical: isVertical), now: Date())
         Diagnostics.shared.log("NOTICE «\(title)»")
         refresh()
     }
@@ -146,7 +148,8 @@ final class RecorderNotices {
         if !n.body.isEmpty { rows.append(label(n.body, size: 11, weight: .regular, alpha: 0.7, wrapping: true)) }
         if !n.actions.isEmpty {
             let buttons = NSStackView(views: n.actions.map { button(for: n, $0) })
-            buttons.orientation = .horizontal
+            buttons.orientation = n.isVertical ? .vertical : .horizontal
+            buttons.alignment = .leading
             buttons.spacing = 6
             rows.append(buttons)
         }
@@ -220,7 +223,9 @@ final class RecorderNotices {
         b.translatesAutoresizingMaskIntoConstraints = false
         b.heightAnchor.constraint(equalToConstant: 24).isActive = true
         let w = (a.title as NSString).size(withAttributes: [.font: b.font ?? .systemFont(ofSize: 11)]).width
-        b.widthAnchor.constraint(equalToConstant: ceil(w) + 22).isActive = true
+        b.widthAnchor.constraint(equalToConstant: min(ceil(w) + 22, Self.textWidth)).isActive = true
+        b.lineBreakMode = .byTruncatingTail
+        b.toolTip = a.title
         return b
     }
 

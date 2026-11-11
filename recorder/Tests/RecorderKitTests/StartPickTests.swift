@@ -70,7 +70,8 @@ final class StartPickTests: XCTestCase {
     }
 
     func testДругойЗвонокЕстьВсегда() {
-        for (bin, bleft) in [(none, none), (["cal:a"], none), (none, ["cal:a"])] as [(Set<String>, Set<String>)] {
+        let cases: [(Set<String>, Set<String>)] = [(none, none), (["cal:a"], none), (none, ["cal:a"])]
+        for (bin, bleft) in cases {
             XCTAssertEqual(StartPick.options(live: [a, b], botIn: bin, botLeft: bleft).filter { $0.kind == .other }.count, 1)
         }
     }

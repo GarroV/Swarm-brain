@@ -15,7 +15,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // Доска «Сегодня» (Bumblebee): свои файлы Board*.swift; путь записи встреч она не использует.
     private lazy var board = BoardHub(config: { [weak self] in self?.configError == nil ? self?.config : nil })
 
-    private var config: SwarmConfig?
+    var config: SwarmConfig?
     private var configError: String?
     // Пропуски бота (T162, D022, D025): «бот не пришёл на встречу» + «Позвать бота» — в капсуле и в меню.
     private lazy var missed = MissedMeetingsWatcher(
@@ -37,17 +37,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var state: State = .idle
     // Последнее действие записи — чтобы «Повторить» после сбоя разрешений повторило именно его
     // (встреча из календаря / звонок / ручной старт), а не угадывало контекст заново.
-    private var lastRecordIdentity: MeetingIdentity.Info?
+    var lastRecordIdentity: MeetingIdentity.Info?
     private var sysURL: URL?
     private var micURL: URL?
     // Чекпоинты (crash-safe): durable-папка текущей записи, индекс след. sys-сегмента, тик-счётчик ротации.
-    private var currentRecDir: URL?
-    private var currentRecBase: String?
+    var currentRecDir: URL?
+    var currentRecBase: String?
     private var nextSysIndex = 1
     private var recTickCount = 0
     private static let rotateEveryTicks = 60   // 60 × 5с = 5 мин между чекпоинт-ротациями системной дорожки
-    private var recordStartedAt: Date?
-    private var identity: MeetingIdentity.Info?
+    var recordStartedAt: Date?
+    var identity: MeetingIdentity.Info?
     // Сколько записей ждёт дозагрузки (UploadQueue) — показываем «N в очереди» в меню.
     private var queuedCount = 0
     // Записи, отклонённые сервером (decision=defer) и лежащие в карантине failed/ — их можно
@@ -98,6 +98,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // в какой записи уже спросили (её recordStartedAt) и висит ли вопрос в капсуле сейчас.
     private var botPromptAskedFor: Date?
     private var botPromptShown = false
+    // Выбор встречи на старте (#1278, StartPick): бот пишет события человека, пересечения событий —
+    // рекордер не угадывает, а спрашивает. `botNow` — что бот пишет сейчас (recordedNow последнего
+    // ответа), `botSeen` — что он писал за время работы рекордера: «был и пропал» = бот вышел.
+    var botNow = Set<String>()
+    var botSeen = Set<String>()
+    struct PickSession {
+        let events: [MeetingIdentity.Info]
+        let options: [StartPick.Option]
+        var answer: StartPick.Option?
+    }
+    var pickSession: PickSession?
+    static let pickNoticeId = "start-pick"
     // Маяк присутствия для панели «Встречи сегодня» (issue #218): что мы уже рассказали
     // серверу и когда. Логика «пора или нет» — RecorderKit.PresenceBeacon.
     private var presenceSent: PresenceBeacon.State?
@@ -114,10 +126,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // Живёт отдельно от pendingMeeting: то — предложение в капсуле, его можно закрыть крестиком.
     // Все созвоны ответа (D027) и кого уже пишут другие: при двух созвонах в одно время ручной
     // старт выбирает тот, где человек сидит (26.10.2026), а не первый по рейтингу.
-    private var lastCalendar: (items: [MeetingIdentity.Info], recordedNow: [String], at: Date)?
+    var lastCalendar: (items: [MeetingIdentity.Info], recordedNow: [String], at: Date)?
     private var watchTimer: Timer?
     // Напоминание о записи по календарю (#219, решение 09.11.2026): сама запись не стартует.
-    private let reminder = CallReminderTracker()
+    let reminder = CallReminderTracker()
     private var maintTimer: Timer?
     // Авто-стоп по концу звонка (per-process детект во время записи).
     private var recWatchTimer: Timer?
@@ -130,7 +142,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // Granola. nil для room/manual. БОЛЬШЕ НЕ стоп-триггер (2026-07-29): календарный конец НЕ рубит
     // активный звонок (событие может быть заглушкой/не про этот созвон) — конец определяем только по
     // тишине дорожек (см. recWatchTick). Оставлен присвоенным для контекста/логов.
-    private var scheduledEndAt: Date?
+    var scheduledEndAt: Date?
     // Тикает раз в 30 сек, пока идёт запись: обновляет ТОЛЬКО подпись у значка (счётчик
     // «49m left»). Полный rebuildMenu() тут не годится — он пересобирает всё меню целиком.
     private var statusTitleTimer: Timer?
@@ -592,9 +604,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 }
                 self?.logTick(meetings: meetings, lookupOK: lookup != nil, micOn: micOn)
                 // Для ручного старта — все идущие (сервер отдаёт только созвоны, D026); при
-                // пересечении (D027) выбор делает manualStartIdentity, а не «первая из списка».
+                // пересечении (D027) выбор делает startPicking (карточка), а не «первая из списка».
                 if !meetings.isEmpty {
                     self?.lastCalendar = (meetings, lookup?.recordedNow ?? [], Date())
+                }
+                if let lookup {
+                    self?.botNow = Set(lookup.recordedNow)
+                    self?.botSeen.formUnion(lookup.recordedNow)
                 }
                 // До handleDetection: напоминание снимает крестик с созвона, и тот же тик
                 // снова покажет его в капсуле.
@@ -739,7 +755,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     // ── UI ──────────────────────────────────────────────────────────────────────
-    private var isRecording: Bool { if case .recording = state { return true }; return false }
+    var isRecording: Bool { if case .recording = state { return true }; return false }
 
     // Состояния с собственным UI «путь в Settings/сеть + Повторить» (отдельно от idle/recording).
     private func isPermissionOrOfflineError(_ s: State) -> Bool {
@@ -799,7 +815,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // Подпись у значка: «что пишется прямо сейчас» (референс Granola, решение владельца
     // 2026-08-28 — docs/decisions/2026-08-28-status-bar-on-air.md). В покое подписи нет,
     // остаётся один глиф. Логика и её проверки — RecorderKit.StatusBarTitle.
-    private func refreshStatusTitle() {
+    func refreshStatusTitle() {
         guard let button = statusItem.button else { return }
         let text = titleSuppressed
             ? nil
@@ -847,7 +863,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    private func rebuildMenu() {
+    func rebuildMenu() {
         if let button = statusItem.button {
             button.image = RoyArt.menuBarImage(recording: isRecording)
             button.toolTip = tooltipText()
@@ -1164,7 +1180,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    private func notifyResendOutcome(sent: Int, refused: String?, error: String?) {
+    func notifyResendOutcome(sent: Int, refused: String?, error: String?) {
         let title: String, body: String
         if sent > 0 {
             title = "Запись отправлена"
@@ -1211,35 +1227,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     // ── Запись ───────────────────────────────────────────────────────────────────
-    // Идентичность для старта «руками»: календарь (если он свежий и слот идёт) → комната → manual.
-    // Порядок тот же, что у сервера: календарь богаче комнаты (название, участники, границы слота)
-    // и склеивает запись с записями коллег об этой же встрече.
-    private func manualStartIdentity() -> MeetingIdentity.Info? {
-        let iso = ISO8601DateFormatter()
-        if let cal = lastCalendar {
-            let now = Date()
-            let live = cal.items.filter {
-                StartIdentity.useCalendar(fetchedAt: cal.at,
-                                          start: $0.startISO.flatMap { iso.date(from: $0) },
-                                          end: $0.endISO.flatMap { iso.date(from: $0) },
-                                          now: now)
-            }
-            if let pick = MeetingChoice.manualPick(live, key: \.key,
-                                                   isOpen: { MeetingIdentity.isCallOpen($0.joinURL) },
-                                                   isRecordedByOthers: { cal.recordedNow.contains($0) }) {
-                if live.count > 1 {
-                    Diagnostics.shared.log("RECORD выбор из \(live.count) созвонов → \(pick.key)")
-                }
-                return pick
-            }
-        }
-        return MeetingIdentity.currentRoom()
-    }
-
     @objc private func recordTapped() { recordManually(source: "меню") }
     private func recordManually(source: String) {
         Diagnostics.shared.log("USER «Записать» (\(source))")
-        beginRecording(identity: manualStartIdentity())
+        startPicking(live: liveCalendarEvents())
     }
     @objc private func recordMeetingTapped() { acceptPrompt(source: "меню") }
     @objc private func recordCallTapped() { acceptPrompt(source: "меню") }
@@ -1289,15 +1280,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func acceptPrompt(source: String) {
         Diagnostics.shared.log("USER принял предложение записать (\(source))")
-        if let m = MeetingChoice.manualPick(pendingMeetings, key: \.key,
-                                             isOpen: { MeetingIdentity.isCallOpen($0.joinURL) },
-                                             isRecordedByOthers: { _ in false }) {
-            pendingMeetings = []
-            beginRecording(identity: m)
-        } else {
-            callActive = false
-            beginRecording(identity: manualStartIdentity())
-        }
+        let offers = pendingMeetings
+        if offers.isEmpty { callActive = false }
+        // К предложениям капсулы добавляем только события, которые пишет/писал бот: капсула их не
+        // показывает, а для выбора («Продолжение: …») они нужны.
+        let botKeys = botNow.union(botSeen)
+        let offered = Set(offers.map(\.key))
+        let botEvents = liveCalendarEvents().filter { botKeys.contains($0.key) && !offered.contains($0.key) }
+        startPicking(live: offers.isEmpty ? liveCalendarEvents() : offers + botEvents)
     }
 
     @objc private func dismissMeetingTapped() {
@@ -1317,7 +1307,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         rebuildMenu()
     }
 
-    private func beginRecording(identity id: MeetingIdentity.Info?) {
+    func beginRecording(identity id: MeetingIdentity.Info?, pick: PickSession? = nil) {
         Diagnostics.shared.log("RECORD begin, ключ=\(id?.key ?? "ручная")")
         guard config != nil else { return }
         if case .recording = state { return }
@@ -1351,6 +1341,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 sysURL = sys; micURL = mic
                 recordStartedAt = startedAt
                 identity = id
+                pickSession = pick
+                if pick != nil {
+                    // Бота о продолжении уже спросила карточка выбора — второй вопрос не нужен.
+                    botPromptAskedFor = startedAt
+                    showPickCard()
+                } else {
+                    RecorderNotices.shared.dismiss(id: Self.pickNoticeId)
+                }
                 currentRecDir = recDir; currentRecBase = base; nextSysIndex = 1; recTickCount = 0
                 writeRecordingMeta(dir: recDir, base: base, startedAt: startedAt, identity: id)
                 // Плановый конец из Google Calendar → авто-стоп по нему. Если старт уже календарный —
@@ -1409,7 +1407,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // Контекст созвона для панели заметок (issue #226). Ошибки глотаем намеренно: это
     // справка, а не часть записи — падать или ретраить из-за неё нельзя.
-    private func loadMeetingContext(title: String?) {
+    func loadMeetingContext(title: String?) {
         guard let cfg = config else { return }
         Task.detached { [weak self] in
             guard self != nil else { return }
@@ -1531,7 +1529,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     /// Сколько висит карточка с длинным текстом: прочитать успеть надо.
-    private static let longNoticeSeconds: TimeInterval = 45
+    static let longNoticeSeconds: TimeInterval = 45
 
     // Диагностика авто-стопа и записи — в общий постоянный журнал (Diagnostics.swift, issue #468).
     // Раньше писалось в /tmp/swarm-calldetect.log, который стирался перезагрузкой.
@@ -1585,7 +1583,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // stop→claim→flush (инцидент 2026-07-15: раньше панель висела, пока стоп зависал в HAL).
         // Буфер пометок сохраняется в LiveNotesPanel и уйдёт во flush(), когда появится meetingId.
         Task { @MainActor in LiveNotesPanel.shared.hide() }
-        let info = identity
+        // Выбор встречи: нет ответа → своя ручная встреча (StartPick.resolution), к событию не липнем.
+        var info = identity
+        if let session = pickSession, case .manual = StartPick.resolution(for: session.answer) { info = nil }
+        pickSession = nil
+        RecorderNotices.shared.dismiss(id: Self.pickNoticeId)
         let started = recordStartedAt ?? Date()
         // Метку конца фиксируем СИНХРОННО, до Task: в сон-кейсе (willSleep→autoStop) Task резюмится
         // на ПРОБУЖДЕНИИ, и Date() внутри него дал бы время wake → endedAt раздулся бы на весь сон
@@ -1609,7 +1611,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if let info { dismissedUntil[info.key] = Date().addingTimeInterval(recordedSuppressSeconds) }
             identity = nil
             let captured = PendingSend(res: res, identity: info, started: started,
-                                       ended: ended, manualKey: "manual:\(UUID().uuidString)")
+                                       ended: ended, manualKey: StartPick.manualKey())
             pendingSend = captured
             await performSend(captured)
         }
@@ -1673,7 +1675,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // Атомарно пишет meta.json папки записи: идентичность (для claim при восстановлении) + список
     // системных сегментов. Вызывается на старте и после каждой чекпоинт-ротации.
-    private func writeRecordingMeta(dir: URL, base: String, startedAt: Date, identity id: MeetingIdentity.Info?) {
+    func writeRecordingMeta(dir: URL, base: String, startedAt: Date, identity id: MeetingIdentity.Info?) {
         let iso = ISO8601DateFormatter()
         let segs = recorder.currentSystemSegments().map {
             RecordingMeta.Seg(path: $0.url.lastPathComponent, offset: $0.offset)
@@ -1774,53 +1776,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    // Запись отклонена сервером (транскрибирует другой участник). Раньше этот исход был НЕОТЛИЧИМ
-    // от успеха: файлы стирались, индикатор гас, показывалось штатное «сохраняю встречу».
-    // Теперь говорим прямо — пока аудио ещё живо в карантине и решение можно откатить.
-    //
-    // ⚠️ Текст ИНФОРМИРУЕТ, а не просит решать (issue #274, фидбек владельца 09.09.2026).
-    // Прежняя формулировка — «твоя запись сохранена, если она полнее, дошли её» — перекладывала
-    // на человека выбор, которого он сделать не может: длительности чужой записи он не видит,
-    // сервер этот выбор уже сделал сам по порогам (TAKEOVER_MIN_RATIO/EXTRA_SEC в meeting-claim),
-    // а повторная заявка уходит с ТЕМИ ЖЕ секундами и получает тот же отказ. В состоянии
-    // published (встречу правил человек или её опубликовали) досылание не сработает вообще
-    // никогда. Поэтому текст разведён по причине отказа, которую теперь присылает сервер.
-    private func notifyDeferred(holder: String?, seconds: Double, heldSeconds: Double?, reason: String?) {
-        let who = holder.map { "@\($0)" } ?? "коллега"
-        let mine = Self.humanDuration(seconds)
-        let title: String, body: String
-
-        switch reason {
-        case "published":
-            // Перехват запрещён навсегда — предлагать что-либо сделать было бы ложью.
-            title = "Встреча уже собрана"
-            body = "Эту встречу записал и уже опубликовал \(who) — твоя запись (\(mine)) не нужна. Копия хранится 3 суток и удалится сама."
-        case "shorter":
-            // Держатель ДЛИННЕЕ — называем обе длительности, решение сервера видно из чисел.
-            let theirs = heldSeconds.map { Self.humanDuration($0) }
-            title = "Запись обрабатывает \(who)"
-            body = theirs.map {
-                "В обработку пошла запись \(who) — \($0) против твоих \(mine). Делать ничего не нужно, тезисы придут всем. Твоя копия хранится 3 суток."
-            } ?? "В обработку пошла запись \(who), она полнее твоей (\(mine)). Делать ничего не нужно, тезисы придут всем. Твоя копия хранится 3 суток."
-        case "similar":
-            // Наша запись НЕ короче, но разница не дотянула до порогов перехвата. Числа тут
-            // показывать обязательно с объяснением: «взяли 36 мин вместо твоих 38» без причины
-            // читается как ошибка, хотя это защита от перетранскрибации почти одинаковых записей.
-            title = "Запись обрабатывает \(who)"
-            let theirsSimilar = heldSeconds.map { Self.humanDuration($0) }
-            body = theirsSimilar.map {
-                "Записи практически совпали: твоя \(mine), в обработке \($0) у \(who). Право осталось у того, кто заявился первым — перезапускать обработку из-за такой разницы смысла нет. Твоя копия хранится 3 суток."
-            } ?? "Записи практически совпали по длительности (твоя \(mine)) — обрабатывается запись \(who), заявившаяся первой. Твоя копия хранится 3 суток."
-        default:
-            // race / unknown / старый сервер без причины — общий honest-текст без просьб.
-            title = "Запись обрабатывает \(who)"
-            body = "Эту встречу обрабатывает \(who) — двойная транскрибация не нужна. Твоя запись (\(mine)) хранится 3 суток на случай сбоя."
-        }
-
-        RecorderNotices.shared.post(id: "deferred-\(Int(Date().timeIntervalSince1970))", title: title, body: body,
-                                    lifetime: Self.longNoticeSeconds)
-    }
-
     // Длительность по-человечески: «2 ч 26 мин» / «3 мин 16 с». Нужна в тексте про отклонённую
     // запись — «2ч26м против 3 минут» сразу объясняет, почему это важно.
     static func humanDuration(_ seconds: Double) -> String {
@@ -1848,8 +1803,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // отдаёт транскрибацию более полной записи, и календарные startISO/endISO (плановые, у всех
         // участников одинаковые) для этого сравнения бесполезны.
         let recordedSeconds = max(0, p.ended.timeIntervalSince(p.started))
+        // Переименование = своя встреча (#1278): новое название при старой календарной привязке уезжало
+        // в чужую встречу. Привязку снимаем, ключ — тот же стабильный manual этой записи.
+        var identity = p.identity
+        if let i = identity, StartPick.detachesOnRename(kind: i.kind.rawValue, identityTitle: i.title,
+                                                         override: titleOverride) {
+            Diagnostics.shared.log("RENAME «\(i.title ?? "—")» → «\(titleOverride ?? "")»: запись отвязана от \(i.key), своя ручная встреча")
+            identity = nil
+        }
         let req: ClaimRequest
-        if let info = p.identity {
+        if let info = identity {
             req = ClaimRequest(
                 identityKind: info.kind,
                 identityKey: info.key,
@@ -1927,9 +1890,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         endISO: iso.string(from: p.ended),
                         claimRetry: claimRetry
                     )
+                    let claimedTitle = req.title, claimedKind = req.identityKind, mid = claim.meetingId
                     await MainActor.run {
-                        self.notifyDeferred(holder: claim.heldByName, seconds: recordedSeconds,
-                                            heldSeconds: claim.heldSeconds, reason: claim.deferReason)
+                        // Чужая встреча (календарь/комната, держит другой человек) → карточка с «Это моя
+                        // встреча» (#1278). Свой manual-ключ чужим быть не может.
+                        if let who = claim.heldByName, claimedKind != .manual {
+                            self.notifyDeferredIntoOthers(meetingId: mid, title: claimedTitle, holder: who,
+                                                          seconds: recordedSeconds)
+                        } else {
+                            self.notifyDeferred(holder: claim.heldByName, seconds: recordedSeconds,
+                                                heldSeconds: claim.heldSeconds, reason: claim.deferReason)
+                        }
                     }
                 } catch {
                     staged = false
@@ -1966,7 +1937,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     // Подтянуть счётчик очереди и перерисовать меню (вызывать с любого потока).
-    private func refreshQueueBadge() async {
+    func refreshQueueBadge() async {
         let n = await UploadQueue.shared.pendingCount()
         let deferred = await UploadQueue.shared.deferredIds()
         await MainActor.run { self.queuedCount = n; self.deferredMeetingIds = deferred; self.rebuildMenu() }
