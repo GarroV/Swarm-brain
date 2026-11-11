@@ -230,9 +230,17 @@
   --glow-md: 0 0 14px rgba(0, 229, 255, 0.45), 0 0 34px rgba(0, 229, 255, 0.16);
 }
 
+/* Полосы прокрутки в цвет темы (владелец 10.11.2026: «уродские скролл бары по всему интерфейсу»).
+   Без color-scheme браузер рисовал системные СВЕТЛЫЕ полосы и на тёмной теме. color-scheme заодно
+   красит нативные поля даты/селекты; scrollbar-color — тонкий бегунок цвета линии на прозрачной дорожке. */
+:root { color-scheme: light; }
+.dark { color-scheme: dark; }
+
 @layer base {
   * {
     @apply border-border outline-ring/50;
+    scrollbar-width: thin;
+    scrollbar-color: var(--line-2) transparent;
   }
   body {
     @apply bg-background text-foreground;
