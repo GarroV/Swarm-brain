@@ -22,6 +22,7 @@ import { DeliverySection } from "./DeliverySection";
 import { PizzaSection } from "./PizzaSection";
 import { Empty } from "./ui";
 import { MarketHeader } from "./MarketHeader";
+import { CountryPicker } from "./CountryPicker";
 import { ExportButtons } from "./ExportButtons";
 import { TipProvider } from "./ref";
 import { mktMono, mktSans } from "./fonts";
@@ -134,26 +135,7 @@ export function MarketScreen() {
         <div className="mkt-wrap">
           <div data-export="skip" style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", gap: 8 }}>
             {(countries?.length ?? 0) > 1
-              ? (
-                <div className="seg" role="group" aria-label={dt("Страна", "Country")}>
-                  {(countries ?? []).map((c) => {
-                    const isReady = ready.includes(c);
-                    return (
-                      <button
-                        key={c}
-                        type="button"
-                        className={isReady ? "ready" : undefined}
-                        title={isReady ? dt("Страница проработана: все разделы заполнены, данные обновляются сами", "Page complete: all sections filled, data updates automatically") : undefined}
-                        aria-pressed={c === cc}
-                        onClick={() => pick(c)}
-                      >
-                        {label(c)}
-                        {isReady && <span className="auto">{dt("● готово", "● ready")}</span>}
-                      </button>
-                    );
-                  })}
-                </div>
-              )
+              ? <CountryPicker countries={countries ?? []} value={cc} ready={ready} label={label} onPick={pick} />
               : <span />}
             {bundle && <ExportButtons country={bundle.country} name={countryName(bundle.country) || bundle.country} />}
           </div>
