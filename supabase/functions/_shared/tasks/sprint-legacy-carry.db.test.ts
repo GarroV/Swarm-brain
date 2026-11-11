@@ -68,8 +68,8 @@ async function build(db: Client): Promise<Scene> {
 
 async function addTask(db: Client, due: string, status = "open"): Promise<string> {
   return (await db.queryObject<{ id: string }>`
-    insert into tasks (title, status, group_id, created_by, due_date)
-    values ('задача из старой автоматики', ${status}, ${WS}, 'test', ${due}) returning id`).rows[0].id;
+    insert into tasks (title, status, group_id, due_date)
+    values ('задача из старой автоматики', ${status}, ${WS}, ${due}) returning id`).rows[0].id;
 }
 
 /** Пара ровно как оставлял старый триггер: пометка без причины в идущем + строка в спринте срока. */

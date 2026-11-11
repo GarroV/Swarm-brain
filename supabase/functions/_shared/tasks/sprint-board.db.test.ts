@@ -94,8 +94,8 @@ async function build(db: Client): Promise<Scene> {
 
   const task = async (title: string, projectId: string, status = "open", archived = false) =>
     (await db.queryObject<{ id: string }>`
-      insert into tasks (title, status, group_id, project_id, created_by, confirmed, archived_at)
-      values (${title}, ${status}, ${WS}, ${projectId}, 'test', true, ${archived ? new Date().toISOString() : null})
+      insert into tasks (title, status, group_id, project_id, confirmed, archived_at)
+      values (${title}, ${status}, ${WS}, ${projectId}, true, ${archived ? new Date().toISOString() : null})
       returning id`).rows[0].id;
   const tLive = await task("живая в двух спринтах", open);
   const tMoved = await task("перенесена из идущего", open);

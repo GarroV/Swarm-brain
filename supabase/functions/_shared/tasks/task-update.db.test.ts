@@ -57,8 +57,8 @@ async function addTask(
   opts: { due?: string; freq?: string } = {},
 ): Promise<string> {
   const r = await db.queryObject<{ id: string }>`
-    insert into tasks (title, status, group_id, created_by, due_date, recur_freq)
-    values ('Задача', 'open', ${WS}, 'test', ${opts.due ?? null}, ${opts.freq ?? null})
+    insert into tasks (title, status, group_id, due_date, recur_freq)
+    values ('Задача', 'open', ${WS}, ${opts.due ?? null}, ${opts.freq ?? null})
     returning id`;
   return r.rows[0].id;
 }

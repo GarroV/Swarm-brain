@@ -71,8 +71,8 @@ async function seed(db: Client) {
     tab.rows[0].id
   }, ${CYCLE}, current_date - 5, current_date + 8, current_date + 1, 'active') returning id`;
   const task = await db.queryObject<{ id: string }>`
-    insert into tasks (title, status, group_id, project_id, created_by, assignee_telegram_ids)
-    values ('задача', 'open', ${WS}, ${project.rows[0].id}, 'test', ${[ASSIGNEE]}) returning id`;
+    insert into tasks (title, status, group_id, project_id, assignee_telegram_ids)
+    values ('задача', 'open', ${WS}, ${project.rows[0].id}, ${[ASSIGNEE]}) returning id`;
   await db.queryArray`
     insert into sprint_items (cycle_id, task_id, in_plan, to_carry, carry_auto)
     values (${cycle.rows[0].id}, ${task.rows[0].id}, true, true, true)`;

@@ -1,5 +1,5 @@
 import { assertEquals } from "@std/assert";
-import { distanceM, MATCH_RADIUS_M, matchPoints, PlaceIndex, samePlace } from "./geo.ts";
+import { distanceM, dropAddresslessTwins, MATCH_RADIUS_M, matchPoints, PlaceIndex, samePlace } from "./geo.ts";
 
 const ref = {
   chain: "dominos",
@@ -101,4 +101,25 @@ Deno.test("PlaceIndex: same street within 5 km found though outside the grid nei
   assertEquals(idx.has({ chain: "a", lat: 45.84, lng: 15.97, address: "Ulica kneza Mislava 1" }), true);
   assertEquals(idx.has({ chain: "a", lat: 45.84, lng: 15.97, address: "Kneza Mislava 3" }), false);
   assertEquals(idx.has({ chain: "a", lat: Number.NaN, lng: 15.97, address: null }), false);
+});
+
+Deno.test("dropAddresslessTwins: an addressless point within 35 m of its chain's point is one place mapped twice", () => {
+  const at = (id: string, dLat: number, address: string | null, chain = "mcdonalds") => ({
+    id,
+    chain,
+    lat: 44.4444 + dLat,
+    lng: 26.0366,
+    address,
+  });
+  const kept = (pts: ReturnType<typeof at>[]) => dropAddresslessTwins(pts).map((p) => p.id);
+  // Кластер из трёх (ресторан с адресом + два безадресных узла): остаётся один.
+  assertEquals(kept([at("bare1", 0.00005, null), at("addr", 0, "Șoseaua Virtuții 27B"), at("bare2", -0.00008, "  ")]), [
+    "addr",
+  ]);
+  // Без адреса у обеих — остаётся первая.
+  assertEquals(kept([at("a", 0, null), at("b", 0.0002, null)]), ["a"]);
+  // Дальше 35 м, другая сеть, обе с адресами — не двойники.
+  assertEquals(kept([at("addr", 0, "A 1"), at("far", 0.0005, null)]), ["addr", "far"]);
+  assertEquals(kept([at("addr", 0, "A 1"), at("kfc", 0.00005, null, "kfc")]), ["addr", "kfc"]);
+  assertEquals(kept([at("n1", 0, "A 1"), at("n2", 0.00005, "A 3")]), ["n1", "n2"]);
 });

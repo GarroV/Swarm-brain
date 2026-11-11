@@ -1,6 +1,7 @@
 // deno test --allow-read miniapp/src/lib/meetingInvite.test.ts
 import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import {
+  canInviteBot,
   inviteErrorText,
   isFinalStatus,
   type MeetingInvite,
@@ -68,4 +69,26 @@ Deno.test("коллега уже позвал бота в этот звонок 
   assertEquals(en === general, false);
   assertEquals(en.includes("colleague"), true);
   assertEquals(ru.includes("коллега"), true);
+});
+
+Deno.test("canInviteBot: Meet и Контур.Толк — да, Zoom и чужие хосты — нет", () => {
+  for (const ok of [
+    "https://meet.google.com/abc-defg-hij",
+    "https://meet.google.com/abc-defg-hij?authuser=1",
+    "https://company.ktalk.ru/room1",
+    "https://talk.kontur.ru/room1",
+  ]) assertEquals(canInviteBot(ok), true, ok);
+  for (const bad of [
+    "https://us02web.zoom.us/j/123",
+    "https://evilktalk.ru/room1",
+    "https://talk.kontur.ru.evil.com/room1",
+    "https://meet.google.com.evil.com/abc",
+    "http://meet.google.com/abc-defg-hij",
+    "https://meet.google.com/",
+    "https://user:pw@meet.google.com/abc",
+    "не ссылка",
+    "",
+    null,
+    undefined,
+  ]) assertEquals(canInviteBot(bad), false, String(bad));
 });

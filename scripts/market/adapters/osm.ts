@@ -1,14 +1,14 @@
 // OpenStreetMap через Overpass: новые точки сетей встают на карту сами как «не проверено»,
 // подтверждённого не трогают. Запрос по тегу brand в границах страны — тяжёлый запрос по
 // всем заведениям Overpass не тянет (сверка 02.10.2026).
+import { dropAddresslessTwins } from "../../../supabase/functions/_shared/market/geo.ts";
 import { httpGet, parseOverpassAll, srLatin } from "../lib.ts";
 import type { Adapter } from "./types.ts";
 
 const OVERPASS = "https://overpass-api.de/api/interpreter";
 // Публичный Overpass отвечает 504/429 по несколько минут подряд (02.10.2026 — трижды за вечер).
 const OVERPASS_RETRY_MS = [60_000, 180_000, 300_000];
-const esc = (s: string) =>
-  s.replace(/[\\^$.*+?()[\]{}|]/g, "\\$&").replace(/"/g, '\\"');
+const esc = (s: string) => s.replace(/[\\^$.*+?()[\]{}|]/g, "\\$&").replace(/"/g, '\\"');
 
 /** names — начала тега name для сетей без тега brand: ищутся только среди заведений общепита и
  *  пекарен, иначе запрос по всей стране Overpass не вытягивает. */
@@ -36,7 +36,7 @@ export const osm: Adapter = {
   about: {
     url: "https://overpass-api.de/api/interpreter",
     what:
-      "точки сетей по тегу brand (osmBrands в конфиге) или по началу name среди заведений общепита (osmNames) из OpenStreetMap, координаты, адрес, дата открытия, если она есть в теге; город — из addr:city, а без него — ближайший place=city в пределах 15 км, нет города — ближайший place=town",
+      "точки сетей по тегу brand (osmBrands в конфиге) или по началу name среди заведений общепита (osmNames) из OpenStreetMap, координаты, адрес, дата открытия, если она есть в теге; город — из addr:city, а без него — ближайший place=city в пределах 15 км, нет города — ближайший place=town; детская площадка «PlayPlace» не точка, безадресный двойник в 35 м от точки той же сети отбрасывается",
   },
   async collect(cfg) {
     const started_at = new Date().toISOString();
@@ -60,9 +60,7 @@ export const osm: Adapter = {
       const r = await httpGet(OVERPASS, {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: `data=${
-          encodeURIComponent(overpassQuery(cfg.country, all, allNames))
-        }`,
+        body: `data=${encodeURIComponent(overpassQuery(cfg.country, all, allNames))}`,
       }, OVERPASS_RETRY_MS);
       const { points, rejected } = parseOverpassAll(
         await r.json(),
@@ -73,7 +71,8 @@ export const osm: Adapter = {
           exclude: cfg.osmExclude,
         },
       );
-      return { ...base, points, rejected };
+      // Узел и здание одного заведения дают две точки: безадресная в 35 м от соседа — двойник.
+      return { ...base, points: dropAddresslessTwins(points), rejected };
     } catch (e) {
       return { ...base, failed: String(e) };
     }
