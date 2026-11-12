@@ -202,7 +202,7 @@ function SummaryBlock({ summary, onSave }: {
         )
         : summary
         ? <p className="whitespace-pre-wrap text-xs leading-relaxed text-ink-soft">{summary}</p>
-        : <p className="text-xs text-ink-mute">{dt("Итог не записан.", "No summary yet.")}</p>}
+        : <p className="text-xs text-ink-soft">{dt("Итог не записан.", "No summary yet.")}</p>}
     </div>
   );
 }

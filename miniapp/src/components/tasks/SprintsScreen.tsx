@@ -1346,7 +1346,7 @@ export function SprintsScreen() {
                                       {mineSplit.mine.length === 0
                                         ? (
                                           <p
-                                            className="mb-4 px-0.5 text-ink-mute"
+                                            className="mb-4 px-0.5 text-ink-soft"
                                             style={{ fontSize: 12.5 }}
                                           >
                                             {dt(
@@ -1446,7 +1446,7 @@ export function SprintsScreen() {
 function SectionLabel({ label, count }: { label: string; count: number }) {
   return (
     <div
-      className="mb-1.5 mt-1 flex items-center gap-2 px-0.5 font-semibold uppercase tracking-[0.06em] text-ink-mute"
+      className="mb-1.5 mt-1 flex items-center gap-2 px-0.5 font-semibold uppercase tracking-[0.06em] text-ink-soft"
       style={{ fontSize: 11 }}
     >
       {label}

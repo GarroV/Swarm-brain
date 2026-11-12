@@ -131,7 +131,7 @@ export function MoveDialog(
               ? dt(`Перенести в ${target.name}`, `Move to ${target.name}`)
               : dt("Перенести в другой спринт", "Move to another sprint")}
           </DialogPrimitive.Title>
-          <p className="-mt-2 truncate text-[12.5px] text-ink-mute">
+          <p className="-mt-2 truncate text-[12.5px] text-ink-soft">
             «{item.title}»
           </p>
 
@@ -232,14 +232,14 @@ export function MoveDialog(
                       <button
                         type="button"
                         onClick={() => setNewDue("")}
-                        className="text-[12px] text-ink-mute underline-offset-2 hover:text-ink hover:underline"
+                        className="text-[12px] text-ink-soft underline-offset-2 hover:text-ink hover:underline"
                       >
                         {dt("стереть", "clear")}
                       </button>
                     )}
                   </label>
                   {!newDue && (
-                    <span className="text-[11.5px] text-ink-mute">
+                    <span className="text-[11.5px] text-ink-soft">
                       {dt(
                         "Срок не изменится — задача останется просроченной.",
                         "The deadline stays — the task remains overdue.",

@@ -67,7 +67,7 @@ function Step({ step }: { step: JourneyStep }) {
         <b className="text-[13px] text-ink" title={step.cycle.name}>
           {cycleShort(step.cycle.name)}
         </b>
-        <span className="font-mono text-[11.5px] text-ink-mute">
+        <span className="font-mono text-[11.5px] text-ink-soft">
           {cycleDates(step.cycle)}
         </span>
         <span
@@ -115,7 +115,7 @@ function Step({ step }: { step: JourneyStep }) {
         <ul className="mt-0.5 flex flex-col gap-1 border-l-2 border-line pl-2.5">
           {step.comments.map((c) => (
             <li key={c.id} className="text-[12px] text-ink-soft">
-              <span className="text-ink-mute">
+              <span className="text-ink-soft">
                 {c.added_by} · {fmtDayShort(c.created_at)}
               </span>
               <div className="line-clamp-3 whitespace-pre-wrap break-words text-ink">
@@ -189,12 +189,12 @@ export function JourneyDialog(
           >
             {dt("Ход задачи", "Task journey")}
           </DialogPrimitive.Title>
-          <p className="-mt-2 truncate text-[12.5px] text-ink-mute">
+          <p className="-mt-2 truncate text-[12.5px] text-ink-soft">
             «{task.title}»
           </p>
 
           {data === null && (
-            <p className="text-[12.5px] text-ink-mute" role="status">
+            <p className="text-[12.5px] text-ink-soft" role="status">
               {dt("Загрузка…", "Loading…")}
             </p>
           )}

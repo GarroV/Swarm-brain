@@ -47,7 +47,7 @@ export function TargetDialog(
               ? dt("Взять в спринт", "Take into a sprint")
               : dt("Переставить в спринт", "Shift to a sprint")}
           </DialogPrimitive.Title>
-          <p className="-mt-2 truncate text-[12.5px] text-ink-mute">
+          <p className="-mt-2 truncate text-[12.5px] text-ink-soft">
             «{title}»
           </p>
           {cycles.length === 0

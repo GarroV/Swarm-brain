@@ -298,7 +298,7 @@ export function SprintRow(
                     className={cn(
                       "grid size-[16px] place-items-center rounded-full border-[1.5px] leading-none transition-colors",
                       closed
-                        ? "border-status-done bg-status-done text-white"
+                        ? "border-status-done bg-status-done text-white dark:text-surface"
                         : "border-ink-mute hover:border-status-done hover:bg-status-done/15",
                     )}
                     style={{ fontSize: 10 }}
@@ -310,7 +310,7 @@ export function SprintRow(
               : closed
               ? (
                 <span
-                  className="grid size-[16px] place-items-center rounded-full border-[1.5px] border-status-done bg-status-done leading-none text-white"
+                  className="grid size-[16px] place-items-center rounded-full border-[1.5px] border-status-done bg-status-done leading-none text-white dark:text-surface"
                   style={{ fontSize: 10 }}
                 >
                   ✓
@@ -351,7 +351,7 @@ export function SprintRow(
           const meta = { fontSize: 11 } as const;
           return (
             <div
-              className="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-ink-mute"
+              className="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-ink-soft"
               style={{ paddingLeft: 12 + 8 + 7 + 8, ...meta }}
             >
               {item.status === "cancelled" && !item.removed && (
@@ -363,7 +363,7 @@ export function SprintRow(
                     "font-mono",
                     kids.done === kids.total
                       ? "text-status-done"
-                      : "text-ink-mute",
+                      : "text-ink-soft",
                   )}
                   title={dt(
                     "подзадачи: готово / всего",
@@ -504,7 +504,7 @@ export function SprintRow(
               </span>
               {item.assignees.length > 1 && (
                 <span
-                  className="shrink-0 font-mono text-ink-mute"
+                  className="shrink-0 font-mono text-ink-soft"
                   style={{ fontSize: 11 }}
                   title={item.assignees.join(", ")}
                 >
@@ -637,7 +637,7 @@ export function SubtaskLiteRow({ task, inSprint, onOpen }: {
           {task.title}
         </span>
         <span
-          className="shrink-0 rounded-full border border-dashed border-line px-1.5 py-0.5 text-ink-mute"
+          className="shrink-0 rounded-full border border-dashed border-line px-1.5 py-0.5 text-ink-soft"
           style={{ fontSize: 10.5 }}
         >
           {inSprint
@@ -646,13 +646,13 @@ export function SubtaskLiteRow({ task, inSprint, onOpen }: {
         </span>
       </div>
       <div
-        className={cn("px-2 font-mono text-ink-mute", PHONE_META)}
+        className={cn("px-2 font-mono text-ink-soft", PHONE_META)}
         style={{ fontSize: 12 }}
       >
         {task.due_date ? fmtDayShort(task.due_date) : "—"}
       </div>
       <div />
-      <div className="flex min-w-0 items-center px-2 text-ink-mute">
+      <div className="flex min-w-0 items-center px-2 text-ink-soft">
         {who ? <AssigneeChip name={who} size={24} /> : "—"}
       </div>
       <div />

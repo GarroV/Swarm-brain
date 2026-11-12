@@ -104,7 +104,7 @@ export function PickTargetDialog(
                   >
                     <span className="block truncate">{r.title}</span>
                     {block && (
-                      <span className="block truncate text-[11.5px] text-ink-mute">
+                      <span className="block truncate text-[11.5px] text-ink-soft">
                         {blockText(dt, block, r.title)}
                       </span>
                     )}

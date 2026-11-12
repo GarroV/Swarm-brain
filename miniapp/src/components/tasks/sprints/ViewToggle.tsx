@@ -1,4 +1,5 @@
 "use client";
+import { cn } from "@/lib/utils";
 import { PILL_GROUP_CLS, pillSegmentCls } from "@/components/ui/PropertyPill";
 import { useEffect, useState } from "react";
 import { useDt } from "@/components/roy/nav";
@@ -147,7 +148,7 @@ export function GroupingToggle(
       className="ml-auto flex items-center gap-2.5"
       style={{ fontSize: 12 }}
     >
-      <span className="text-ink-mute">{dt("группировать", "group")}</span>
+      <span className="text-ink-soft">{dt("группировать", "group")}</span>
       <span className={PILL_GROUP_CLS}>
         {opts.map((o) => (
           <button
@@ -155,7 +156,7 @@ export function GroupingToggle(
             type="button"
             onClick={() => onChange(o.id)}
             aria-pressed={value === o.id}
-            className={pillSegmentCls(value === o.id)}
+            className={cn(pillSegmentCls(value === o.id), value !== o.id && "text-ink-soft")}
             style={{ fontSize: 12.5 }}
           >
             {o.label}
