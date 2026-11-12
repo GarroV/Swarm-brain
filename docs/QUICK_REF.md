@@ -336,6 +336,7 @@ claude mcp add supabase-swarm -- npx -y @supabase/mcp-server-supabase@0.12.0 \
 | Авто-сетап Claude Desktop (команду выдаёт только веб → Настройки → Claude Desktop; бот `/setup` отсылает туда) | `_shared/mcp-setup-script.ts` (`SETUP_SCRIPT` + `BRIDGE_SCRIPT` + `BRIDGE_VERSION` + `MERGE_FUNCTION`), `_shared/mcp-token.ts` (`buildSetupOneLiner` — команда с SHA-256), `swarm-bot/lib/mcp-setup.ts` | §swarm-mcp; мост `bash`+`curl` вместо Node/mcp-remote (#47), тесты `deno test --allow-read --allow-write --allow-run --allow-net --allow-env supabase/functions/_shared/mcp-setup-script.test.ts` |
 | Подключение Claude — оба пути (Desktop + веб-коннектор claude.ai) | веб `SettingsScreen.tsx` → `POST /mcp/token` (единственная выдача, под замком второго шага), `swarm-bot/index.ts` (`/connect_claude`; `/setup`, `/mytoken` → `sendKeysInWeb`), `_shared/mcp-token.ts` | §MCP-аутентификация |
 | Промт-инструкции для проекта Claude Desktop (поле Instructions) | единый источник `_shared/claude-project-prompt.ts` → бот `/claude` + swarm-api `GET /mcp/instructions` (кнопка в вебе `SettingsScreen.tsx` `ClaudeDesktopSection`) | §swarm-api |
+| 🧭 Цветовая схема веба (меню «Оформление»: шестерёнка рядом с переключателем режима в рейке и пункт в «Настройках»; 10 схем + «Swarm» по умолчанию) | список, кэш и скрипт первой отрисовки `miniapp/src/lib/scheme.ts` (зеркало `UI_SCHEMES` в `swarm-api/me-fields.ts`), применение `applyScheme` в `lib/theme.ts`, значения `miniapp/src/app/schemes.css` (`[data-scheme="x"]` светлая, `.dark[data-scheme="x"]` тёмная), шрифты `app/layout.tsx` (`--f-*`, `preload:false`), меню `roy/SchemeDialog.tsx`, хранение `user_profiles.ui_scheme` через `GET/PATCH /me` + localStorage `swarm-scheme` | [MINIAPP_ARCHITECTURE](MINIAPP_ARCHITECTURE.md) §Цветовые схемы · [decisions/2026-11-12-color-themes.md](decisions/2026-11-12-color-themes.md) |
 | 🧭 Фон веба («Настройки фона»: галактика / без фона / точки / сияние / своя картинка) | список и кэш `miniapp/src/lib/backdrop.ts`, своя картинка — `lib/backdropImage.ts` (форматы, HEIC) + `lib/backdropStore.ts` (IndexedDB) (зеркало `UI_BACKDROPS` в `swarm-api/index.ts`), слой `roy/BackdropLayer.tsx`, выбор `profile/BackdropSection.tsx` (пункт «Настройки фона» в «Настройках»), хранение `user_profiles.ui_backdrop` через `GET/PATCH /me` | [MINIAPP_ARCHITECTURE](MINIAPP_ARCHITECTURE.md) §Задник |
 | 🔍 «Токен протух» / `Invalid token` (диагностика) | токен живёт **30 дней** (с 27.10.2026) и гаснет при смене воркспейса или роли; `Invalid token` чаще — рассинхрон клиента. `_shared/mcp-token.ts`, `swarm-mcp/index.ts` (разбор токена перед `initialize`) + `swarm-mcp/auth.ts`, БД `allowed_users.claude_mcp_token_hash`. Проверка: `has_token=true`, `expires_at` в будущем → чинить клиента (перевыпуск в вебе → Настройки → Claude Desktop) | §MCP-аутентификация |
 | Установка рекордера (команда из веб → Настройки → bumblebee; бот `/recordertoken` ключ не выдаёт) — **ПРЕДсобранный .app, без Xcode/CLT** (issue #19): скачать release-asset → снять карантин → per-machine cert (штатные openssl/security) → codesign → /Applications | `swarm-recorder-setup/script.ts`, сборка в CI `recorder/build-app-ci.sh` + `.github/workflows/recorder-release.yml`, `swarm-bot/lib/mcp-setup.ts` | recorder/README.md |
@@ -430,6 +431,21 @@ claude mcp add supabase-swarm -- npx -y @supabase/mcp-server-supabase@0.12.0 \
 служебные props не проверяются; переменные и тексты из API этим узким гейтом не
 разрешаются и не переводятся. Он входит в `scripts/check fast` и `initiatives`
 (роль `язык-веб` в JSON). Нужен `npm ci --prefix miniapp`, новых зависимостей нет.
+
+**Сторож цветов веба (цветовые схемы, 12.11.2026).** `python3 scripts/check-theme-colors.py`
+падает, если в `miniapp/src` (кроме `globals.css`/`schemes.css` и тестов) появился жёстко вписанный
+цвет: hex, `rgb()/hsl()/oklch()` с числами (кроме тёмного нейтрального с альфой — тени и затемнение),
+палитровые классы Tailwind (`bg-red-500`, `text-white`, `ring-black`; `bg|ring|border|shadow-black/NN` можно),
+именованные цвета в свойствах цвета. Цвет берётся из токена: Tailwind-класс (`bg-surface`, `text-ink`) или
+`var(--ink)`; текст на сплошной заливке — `--on-primary` / `--on-solid`; затемнение — `--scrim*`. Исключения —
+файлами, с причиной и потолком числа находок, в `scripts/theme-colors-allow.json` (потолок только вниз: убрали
+цвета — гейт просит опустить). Входит в `scripts/check fast` и `initiatives` (роль `цвета-веб`) и в CI вместе с
+`python3 scripts/test-theme-colors.py` (временное дерево: чистое проходит, каждый вид нарушения падает с причиной).
+Контраст схем — `miniapp/src/lib/schemes.test.ts` (4,5 : 1, 20 пар на каждую схему и режим, «Swarm» не входит — #1285).
+Визуальный обход всех схем и режимов, 1440×900, одна команда: `make themes-walk` (сам собирает miniapp с
+`NEXT_PUBLIC_DEV_MODE=true`, снимает 9 экранов × все сочетания в `reports/themes-live` или `THEMES_LIVE_OUT=путь`,
+пишет контактный лист `index.html` и листы по схемам `_sheets/`; `SWARM_E2E_URL=…` — на уже запущенный стенд без
+сборки; `THEMES_ONLY=nuar,terminal`, `THEMES_SCREENS=home,tasks` — подмножество).
 
 Замер исходной базы `39bac434`: **313 вхождений, 290 сочетаний файл/поверхность/текст
 в 32 компонентах**. Старые места перечислены точно, с количеством и причиной, в
