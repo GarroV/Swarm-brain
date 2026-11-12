@@ -46,7 +46,7 @@ export function PickTargetDialog(
       }}
     >
       <DialogPrimitive.Portal>
-        <DialogPrimitive.Backdrop className="fixed inset-0 z-[100] bg-black/45 supports-backdrop-filter:backdrop-blur-[2px]" />
+        <DialogPrimitive.Backdrop className="fixed inset-0 z-[100] bg-[var(--scrim)] supports-backdrop-filter:backdrop-blur-[2px]" />
         <DialogPrimitive.Popup
           aria-labelledby="pick-target-title"
           finalFocus={() => !picked.current}

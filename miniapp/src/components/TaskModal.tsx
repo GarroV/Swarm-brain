@@ -565,7 +565,7 @@ export function TaskModal({ task: taskOpened, open, onClose, onSaved, prefill, m
     >
       <DialogContent
         showCloseButton={false}
-        overlayClassName={drawer ? "bg-[rgba(10,13,17,.12)]" : undefined}
+        overlayClassName={drawer ? "bg-[var(--scrim-drawer)]" : undefined}
         className={cn("gap-0 rounded-[14px] border border-line bg-[var(--popover)] p-0 sm:max-w-2xl", drawer && DRAWER_CLS)}
         {...sections.dropProps}
       >

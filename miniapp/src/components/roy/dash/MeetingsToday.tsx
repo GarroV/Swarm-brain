@@ -44,7 +44,7 @@ function Chip({ text, tone }: { text: string; tone: "air" | "rec" }) {
         // в тёмной теме он светло-оранжевый и текст на нём пропадает, а --surface там
         // полупрозрачный. У REC фон одинаков в обеих темах, поэтому белый текст уместен.
         background: tone === "air" ? "var(--accent-soft)" : "var(--pri-high)",
-        color: tone === "air" ? "var(--accent-ink)" : "#fff",
+        color: tone === "air" ? "var(--accent-ink)" : "var(--on-solid)",
       }}
     >
       {text}
@@ -125,7 +125,7 @@ function MeetingRow({ m, dt, locale, joined, onJoined }: {
             // Ты уже в звонке → звать «Подключиться» бессмысленно, но путь назад нужен:
             // вкладку легко закрыть случайно. Поэтому кнопка остаётся, но становится тихой.
             background: m.is_now && !onAir ? "var(--accent-ink)" : "var(--surface-2)",
-            color: m.is_now && !onAir ? "#fff" : "var(--ink-soft)",
+            color: m.is_now && !onAir ? "var(--on-solid)" : "var(--ink-soft)",
           }}
         >
           {onAir ? dt("Вернуться", "Back") : dt("Подключиться", "Join")}
@@ -383,7 +383,7 @@ export function MeetingsToday({ className, flat, first, flatBody, drafts = [] }:
             type="button"
             onClick={connectCalendar}
             className="mt-3 inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 font-semibold"
-            style={{ fontSize: 12, background: "var(--accent-ink)", color: "#fff" }}
+            style={{ fontSize: 12, background: "var(--accent-ink)", color: "var(--on-solid)" }}
           >
             <RoyIcon name="cal" size={13} strokeWidth={2} />
             {reason === "token_expired"

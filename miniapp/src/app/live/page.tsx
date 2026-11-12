@@ -161,7 +161,7 @@ export default function LivePage() {
       {/* шапка встречи */}
       <header style={{ ...card, borderColor: "color-mix(in srgb, var(--primary) 30%, transparent)", display: "flex", alignItems: "center", gap: 12, padding: "13px 16px", marginBottom: 14 }}>
         {phase === "capture"
-          ? <span style={{ display: "flex", alignItems: "center", gap: 7, ...MONO, fontSize: 11, letterSpacing: ".1em", color: "#ff6b5e", fontWeight: 600 }}><span style={{ width: 9, height: 9, borderRadius: "50%", background: "#ff6b5e", animation: "rlPulse 1.6s infinite" }} />{real ? "ВСТРЕЧА" : "REC"}</span>
+          ? <span style={{ display: "flex", alignItems: "center", gap: 7, ...MONO, fontSize: 11, letterSpacing: ".1em", color: "var(--pri-high)", fontWeight: 600 }}><span style={{ width: 9, height: 9, borderRadius: "50%", background: "var(--pri-high)", animation: "rlPulse 1.6s infinite" }} />{real ? "ВСТРЕЧА" : "REC"}</span>
           : <span style={{ ...MONO, fontSize: 11, letterSpacing: ".1em", color: "var(--status-done)", fontWeight: 600 }}>✓ ГОТОВО</span>}
         <span style={{ flex: 1, minWidth: 0, fontWeight: 600, fontSize: 14, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{real ? title : "Discovery: практика «1 управляющий»"}</span>
         <span style={{ ...MONO, fontSize: 12, color: "var(--ink-soft)" }}>{fmt(elapsed)}</span>
@@ -220,7 +220,7 @@ export default function LivePage() {
         </section>
       )}
 
-      <style>{`@keyframes rlPulse{0%{box-shadow:0 0 0 0 rgba(255,107,94,.5)}70%{box-shadow:0 0 0 8px rgba(255,107,94,0)}100%{box-shadow:0 0 0 0 rgba(255,107,94,0)}}`}</style>
+      <style>{`@keyframes rlPulse{0%{box-shadow:0 0 0 0 color-mix(in srgb,var(--pri-high) 50%,transparent)}70%{box-shadow:0 0 0 8px color-mix(in srgb,var(--pri-high) 0%,transparent)}100%{box-shadow:0 0 0 0 color-mix(in srgb,var(--pri-high) 0%,transparent)}}`}</style>
     </main>
   );
 }
@@ -281,6 +281,6 @@ function DemoResult({ notesBySection, inline }: { notesBySection: Note[][]; inli
 }
 
 const wrapStyle: CSSProperties = { minHeight: "100dvh", color: "var(--ink)", padding: "20px 16px 64px", maxWidth: 920, margin: "0 auto" };
-const btnStyle: CSSProperties = { border: "none", borderRadius: 9, padding: "10px 14px", cursor: "pointer", fontWeight: 700, fontSize: 13, whiteSpace: "nowrap", background: "linear-gradient(180deg, color-mix(in srgb, var(--primary) 80%, white), var(--primary))", color: "#1a1305" };
+const btnStyle: CSSProperties = { border: "none", borderRadius: 9, padding: "10px 14px", cursor: "pointer", fontWeight: 700, fontSize: 13, whiteSpace: "nowrap", background: "linear-gradient(180deg, color-mix(in srgb, var(--primary) 80%, var(--primary-foreground)), var(--primary))", color: "var(--primary-foreground)" };
 const btnGhost: CSSProperties = { border: "1px solid var(--line)", borderRadius: 9, padding: "9px 14px", cursor: "pointer", fontWeight: 600, fontSize: 13, background: "transparent", color: "var(--ink-soft)" };
 function legendBar(c: string): CSSProperties { return { display: "inline-block", width: 22, height: 0, borderTop: `3px solid ${c}`, verticalAlign: "middle", marginRight: 7, borderRadius: 2 }; }

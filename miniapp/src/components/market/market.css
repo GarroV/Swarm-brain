@@ -30,15 +30,15 @@
 .mkt .muted{color:var(--muted)}
 .mkt .mono{font-family:var(--f-mono)}
 .mkt .num{font-variant-numeric:tabular-nums}
-.mkt header{position:relative;overflow:hidden;display:flex;flex-direction:column;gap:14px;background:var(--accent);color:#fff;border-radius:20px;padding:28px 32px 32px}
+.mkt header{position:relative;overflow:hidden;display:flex;flex-direction:column;gap:14px;background:var(--accent);color:var(--on-primary);border-radius:20px;padding:28px 32px 32px}
 .mkt header .ov1{position:absolute;width:520px;height:520px;border-radius:50%;background:var(--purple-dark);right:-160px;top:-260px;opacity:.9}
 .mkt header .ov2{position:absolute;width:300px;height:300px;border-radius:50%;background:var(--orange);right:60px;bottom:-200px;opacity:.75}
 .mkt header>*:not(.ov1):not(.ov2){position:relative}
-.mkt header .brand{font-weight:800;font-size:13px;letter-spacing:.2em;color:#fff}
+.mkt header .brand{font-weight:800;font-size:13px;letter-spacing:.2em;color:var(--on-primary)}
 .mkt header .eyebrow{color:var(--orange)}
-.mkt header h1{color:#fff;font-size:clamp(28px,4.4vw,48px);max-width:18ch}
-.mkt header .lede{color:rgba(255,255,255,.88)}
-.mkt header .meta{color:rgba(255,255,255,.75)}
+.mkt header h1{color:var(--on-primary);font-size:clamp(28px,4.4vw,48px);max-width:18ch}
+.mkt header .lede{color:color-mix(in srgb,var(--on-primary) 88%,transparent)}
+.mkt header .meta{color:color-mix(in srgb,var(--on-primary) 75%,transparent)}
 @media (max-width:600px){.mkt header{padding:22px 20px 26px} .mkt header .ov2{width:180px;height:180px;right:-60px;bottom:-120px;opacity:.6} .mkt header .ov1{width:300px;height:300px;right:-150px;top:-170px}}
 .mkt .meta{display:flex;flex-wrap:wrap;gap:8px 20px;font-size:13px;color:var(--muted)}
 .mkt section{display:flex;flex-direction:column;gap:16px}
@@ -63,7 +63,7 @@
 .mkt button,.mkt .btn{font:inherit;font-size:13px;color:var(--ink);background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:5px 10px;cursor:pointer;line-height:1.3}
 .mkt button:hover{border-color:var(--accent)}
 .mkt button:focus-visible,.mkt input:focus-visible,.mkt select:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-.mkt button[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:#fff}
+.mkt button[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:var(--on-primary)}
 .mkt .zoombtns button{width:32px;height:32px;padding:0;font-size:18px}
 .mkt .side{display:flex;flex-direction:column;gap:18px;padding:16px}
 .mkt .ctl{display:flex;flex-direction:column;gap:8px}
@@ -186,3 +186,25 @@
 .mkt .best{background:var(--accent-soft);font-weight:600}
 .mkt .small{font-size:12px;color:var(--muted)}
 @media (prefers-reduced-motion:reduce){.mkt *{transition:none!important;animation:none!important}}
+
+/* ── Цветовая схема оформления (data-scheme на <html>, docs/decisions/2026-11-12-color-themes.md) ──
+   Блоки .mkt выше — палитра «Swarm»: они остаются как были. У цветной схемы поверхность, текст, линии,
+   акцент и статусы отчёта берут токены схемы. Имена .mkt (--surface, --ink, --line, --accent…)
+   затеняют глобальные, поэтому значения берутся из несовпадающих по имени токенов (--card,
+   --foreground, --muted-foreground, --input, --primary, --sidebar-*, --status-done…).
+   НЕ меняются: серии графиков (--s0…--s8) и шкала тепла (--heat0…3) — категориальная палитра данных,
+   которая читается на любом фоне; оранжевый акцент --orange используется только в «Swarm». */
+html[data-scheme] .mkt{
+  --bg:var(--background); --surface:var(--card); --ink:var(--foreground);
+  --ink2:color-mix(in srgb,var(--foreground) 78%,var(--muted-foreground)); --muted:var(--muted-foreground);
+  --line:var(--input); --line2:var(--sidebar-border);
+  --accent:var(--primary); --accent-soft:var(--sidebar-accent);
+  --purple-dark:color-mix(in srgb,var(--primary) 72%,var(--on-solid)); --purple-deep:color-mix(in srgb,var(--primary) 50%,var(--on-solid));
+  --orange:var(--on-primary); --orange-soft:var(--sidebar-accent);
+  --sea:var(--sidebar); --land:var(--card); --land2:var(--secondary); --land2-line:var(--input); --border:var(--input);
+  --good:var(--status-done); --warn:var(--pri-med); --bad:var(--pri-high); --teal:var(--status-prog);
+}
+html[data-scheme].dark .mkt header,html[data-scheme] .mkt header{background:var(--accent)}
+html[data-scheme] .mkt header .ov1{background:var(--purple-dark);opacity:.55}
+html[data-scheme] .mkt header .ov2{background:var(--on-primary);opacity:.14}
+html[data-scheme] .mkt header .eyebrow{color:color-mix(in srgb,var(--on-primary) 82%,transparent)}

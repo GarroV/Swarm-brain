@@ -220,7 +220,7 @@ export function RecordingPill() {
         )}
         {s === "interrupted" && (
           <button type="button" onClick={rec.continueRecording}
-            className="mr-1 min-h-9 rounded-full px-3 font-semibold text-white" style={{ fontSize: 12.5, background: "var(--pri-med)" }}>
+            className="mr-1 min-h-9 rounded-full px-3 font-semibold text-[var(--on-solid)]" style={{ fontSize: 12.5, background: "var(--pri-med)" }}>
             {dt("Продолжить", "Continue")}
           </button>
         )}

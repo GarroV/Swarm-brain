@@ -638,7 +638,7 @@ export function FAB({ onClick, className, "aria-label": ariaLabel = "Созда�
       // верхнего края и съедал по ним тап и свайп (аудит мобилки 2026-08-24). Отступ снизу
       // считается от таб-бара (69px) плюс безопасная зона.
       className={cn(
-        "fixed z-20 flex items-center justify-center rounded-full bg-primary text-primary-foreground border-0 shadow-[0_10px_24px_-6px_rgba(31,78,156,.45)]",
+        "fixed z-20 flex items-center justify-center rounded-full bg-primary text-primary-foreground border-0 shadow-[0_10px_24px_-6px_color-mix(in_srgb,var(--primary)_45%,transparent)]",
         TAP,
         className,
       )}
@@ -740,7 +740,7 @@ export function RoyTabBar({ active, onChange, className, badges }: { active: str
                   с первого экрана, поэтому о нём должно быть видно, не заходя внутрь. */}
               {!!badges?.[t.id] && (
                 <span
-                  className="absolute -right-2 -top-1 inline-flex items-center justify-center rounded-full bg-destructive font-bold text-white"
+                  className="absolute -right-2 -top-1 inline-flex items-center justify-center rounded-full bg-destructive font-bold text-[var(--on-solid)]"
                   style={{ minWidth: 16, height: 16, fontSize: 10, padding: "0 4px" }}
                 >
                   {badges[t.id] > 9 ? "9+" : badges[t.id]}

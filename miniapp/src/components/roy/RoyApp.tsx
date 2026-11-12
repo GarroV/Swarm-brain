@@ -405,7 +405,7 @@ export function RoyApp({ me }: { me: Me | null }) {
                   window.location.href = "/login";
                 }
               }}
-              className="rounded-full bg-white/20 px-3 py-0.5 font-semibold transition-colors hover:bg-white/30"
+              className="rounded-full bg-[color-mix(in_srgb,currentColor_20%,transparent)] px-3 py-0.5 font-semibold transition-colors hover:bg-[color-mix(in_srgb,currentColor_30%,transparent)]"
             >
               Exit demo
             </button>
