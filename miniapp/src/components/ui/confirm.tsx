@@ -80,7 +80,7 @@ export function ConfirmProvider({ children }: { children: React.ReactNode }) {
         }}
       >
         <DialogPrimitive.Portal>
-          <DialogPrimitive.Backdrop className="fixed inset-0 z-[100] bg-black/45 duration-150 supports-backdrop-filter:backdrop-blur-[2px] data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0 motion-reduce:animate-none" />
+          <DialogPrimitive.Backdrop className="fixed inset-0 z-[100] bg-[var(--scrim)] duration-150 supports-backdrop-filter:backdrop-blur-[2px] data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0 motion-reduce:animate-none" />
           <DialogPrimitive.Popup
             initialFocus={cancelRef}
             aria-labelledby="confirm-title"
@@ -129,7 +129,7 @@ export function ConfirmProvider({ children }: { children: React.ReactNode }) {
                     className={cn(
                       "h-11 rounded-full text-[15px] font-semibold",
                       tone === "danger" &&
-                        "bg-destructive text-white hover:bg-destructive/90 dark:bg-destructive dark:text-white dark:hover:bg-destructive/90",
+                        "bg-destructive text-[var(--on-solid)] hover:bg-destructive/90 dark:bg-destructive dark:text-[var(--on-solid)] dark:hover:bg-destructive/90",
                     )}
                     onClick={() => settle(true)}
                   >

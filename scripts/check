@@ -177,6 +177,12 @@ initiatives_gate() {
   keep язык-веб "$out"
   row "язык-веб" "$([ $st -eq 0 ] && echo pass || echo fail)" 1 0 "$(echo "$out" | tail -2 | tr '\n' ' ')"
 
+  # Жёстко вписанные цвета в miniapp/src: цвет вне токенов не перекрасится цветовой схемой (12.11.2026).
+  # Сам гейт и его проверка на плохом входе (временное дерево): scripts/test-theme-colors.py.
+  out=$({ python3 scripts/check-theme-colors.py && python3 scripts/test-theme-colors.py; } 2>&1); st=$?
+  keep цвета-веб "$out"
+  row "цвета-веб" "$([ $st -eq 0 ] && echo pass || echo fail)" 1 0 "$(echo "$out" | tail -1 | tr '\n' ' ')"
+
   # Тесты: машинный отчёт JUnit + покрытие. Пропущенный тест — падение (см. ниже).
   # Два прогона, как их гоняет сам проект: функции с проверкой типов, веб без неё
   # (`--no-check`). Это не наша уступка: тесты веба сегодня не проходят type-check, потому

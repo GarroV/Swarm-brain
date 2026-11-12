@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { useDt, useRoyNav } from "../nav";
 import { fetchConfig, patchMe } from "@/lib/api";
 import { countryFlag, countryName } from "@/lib/countries";
+import { marketChips, OUTSIDE_MARKET_HINT } from "@/lib/marketChips";
 
 // Подборка «Мои страны» — часть настройки главной (решение владельца 07.10.2026: «настройки стран
 // в настройки главной давай запихнем»). Это те же рынки, что в профиле и в охвате дайджеста
@@ -34,13 +35,14 @@ export function CountryEditor({ markets, onMarkets }: { markets: string[]; onMar
     <div className="flex flex-wrap items-center gap-1.5">
       <span className="mr-1 font-semibold text-ink" style={{ fontSize: 12.5 }}>{dt("Мои страны:", "My countries:")}</span>
       {allowed == null && <span className="roy-shim inline-block h-7 w-48 rounded-full" />}
-      {(allowed ?? []).map((cc) => {
+      {marketChips(allowed ?? [], allowed ? markets : []).map(({ code: cc, outside }) => {
         const on = markets.includes(cc);
         return (
           <button key={cc} type="button" onClick={() => void toggle(cc)} aria-pressed={on}
-            className={`rounded-full border px-2.5 py-1 transition-colors ${on ? "border-primary bg-primary font-semibold text-primary-foreground" : "border-line-2 text-ink-mute hover:border-accent-line hover:text-ink"}`}
+            title={outside ? dt(...OUTSIDE_MARKET_HINT) : undefined}
+            className={`rounded-full border px-2.5 py-1 transition-colors ${outside ? "border-dashed opacity-70 " : ""}${on ? "border-primary bg-primary font-semibold text-primary-foreground" : "border-line-2 text-ink-mute hover:border-accent-line hover:text-ink"}`}
             style={{ fontSize: 12 }}>
-            {countryFlag(cc)} {dt(countryName(cc), cc)}
+            {countryFlag(cc)} {dt(countryName(cc), cc)}{outside ? " ⚠" : ""}
           </button>
         );
       })}

@@ -27,7 +27,7 @@ export interface BackdropOption {
 }
 
 export const BACKDROP_OPTIONS: readonly BackdropOption[] = [
-  { id: "galaxy", ru: "Галактика", en: "Galaxy", hintRu: "В тёмной теме; в светлой — чистый фон", hintEn: "Dark theme; plain in light" },
+  { id: "galaxy", ru: "Галактика", en: "Galaxy", hintRu: "В тёмной теме «Swarm»; иначе — чистый фон", hintEn: "In the dark “Swarm” theme; plain otherwise" },
   { id: "none", ru: "Без фона", en: "None", hintRu: "Чистый цвет темы", hintEn: "Plain background" },
   { id: "dots", ru: "Точки", en: "Dots", hintRu: "Тихая сетка точек", hintEn: "Quiet dot grid" },
   { id: "aurora", ru: "Сияние", en: "Aurora", hintRu: "Мягкий цветной свет по краям", hintEn: "Soft colour glow at the edges" },

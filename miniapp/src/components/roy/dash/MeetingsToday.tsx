@@ -44,7 +44,7 @@ function Chip({ text, tone }: { text: string; tone: "air" | "rec" }) {
         // в тёмной теме он светло-оранжевый и текст на нём пропадает, а --surface там
         // полупрозрачный. У REC фон одинаков в обеих темах, поэтому белый текст уместен.
         background: tone === "air" ? "var(--accent-soft)" : "var(--pri-high)",
-        color: tone === "air" ? "var(--accent-ink)" : "#fff",
+        color: tone === "air" ? "var(--accent-ink)" : "var(--on-solid)",
       }}
     >
       {text}
@@ -125,7 +125,7 @@ function MeetingRow({ m, dt, locale, joined, onJoined }: {
             // Ты уже в звонке → звать «Подключиться» бессмысленно, но путь назад нужен:
             // вкладку легко закрыть случайно. Поэтому кнопка остаётся, но становится тихой.
             background: m.is_now && !onAir ? "var(--accent-ink)" : "var(--surface-2)",
-            color: m.is_now && !onAir ? "#fff" : "var(--ink-soft)",
+            color: m.is_now && !onAir ? "var(--on-solid)" : "var(--ink-soft)",
           }}
         >
           {onAir ? dt("Вернуться", "Back") : dt("Подключиться", "Join")}
@@ -238,57 +238,6 @@ function NowLine({ now, locale }: { now: number; locale: string }) {
   );
 }
 
-// Прежняя строка главной (как на main до экрана «А»; пока флаг lib/homeFlag.ts выключен).
-// Строка главной по стенду (screens-extra.js → calendarList, .cev): время моноширинным,
-// название, «Перейти»/«Подключиться» справа; под ними — участники и состояние. Кнопки нет,
-// если нет ссылки: пустая кнопка «Перейти» хуже отсутствующей.
-function LegacyFlatMeetingRow({ m, dt, locale, joined, onJoined }: {
-  m: TodayMeeting;
-  dt: (ru: string, en: string) => string;
-  locale: string;
-  joined: boolean;
-  onJoined: (m: TodayMeeting) => void;
-}) {
-  const onAir = m.on_call || joined;
-  const live = m.is_now || onAir;
-  const dim = m.is_past && !onAir;
-  const join = () => {
-    if (!m.join_url) return;
-    window.open(m.join_url, "_blank", "noopener");
-    onJoined(m);
-  };
-  const time = new Intl.DateTimeFormat(locale, { hour: "2-digit", minute: "2-digit" }).format(new Date(m.starts_at));
-  return (
-    // Идущая встреча — полосой на всю строку (стенд .cev.now): день читается одним взглядом.
-    <div className={`-mx-2 grid items-center gap-x-2.5 gap-y-0.5 border-b border-line px-2 py-2 last:border-b-0 ${live ? "rounded-[8px] bg-accent-soft" : ""}`}
-      style={{ gridTemplateColumns: "auto minmax(0,1fr) auto", opacity: dim ? 0.55 : 1 }}>
-      <span className="font-mono font-semibold" style={{ fontSize: 12, color: live ? "var(--accent-ink)" : "var(--primary)" }}>{time}</span>
-      <b className="truncate font-semibold text-ink" style={{ fontSize: 13 }} title={m.title ?? undefined}>
-        {m.title ?? dt("Без названия", "Untitled")}
-      </b>
-      {m.join_url && (!m.is_past || onAir) ? (
-        <div className="flex items-center gap-1.5">
-        {showInviteBot(m, onAir) && <InviteBotInline meetingId={m.id} joinUrl={m.join_url} />}
-        <button type="button" onClick={join}
-          className={live && !onAir
-            ? "rounded-full bg-primary px-2.5 py-1 font-semibold text-primary-foreground transition-colors hover:bg-primary/90"
-            : "rounded-full border border-line-2 bg-surface px-2.5 py-1 font-medium text-ink-soft transition-colors hover:text-ink"}
-          style={{ fontSize: 11.5 }}>
-          {onAir ? dt("Вернуться", "Back") : live ? dt("Подключиться", "Join") : dt("Перейти", "Open")}
-        </button>
-        </div>
-      ) : <span />}
-      <div className="col-start-2 col-end-4 flex flex-wrap items-center gap-1.5 text-ink-mute" style={{ fontSize: 11.5 }}>
-        <span>{slot(m, locale)}</span>
-        {m.attendees > 0 && <span>· {m.attendees === 1 ? "1:1" : `${m.attendees} ${dt("уч.", "ppl")}`}</span>}
-        {onAir && <Chip text="ON AIR" tone="air" />}
-        {m.recording && <Chip text="REC" tone="rec" />}
-        {m.is_now && !onAir && <span className="font-semibold" style={{ color: "var(--accent-ink)" }}>{dt("идёт сейчас", "happening now")}</span>}
-      </div>
-    </div>
-  );
-}
-
 // Пустое и «нет доступа» — словом и дорогой (стенд .cnone): пустой список при отвалившемся
 // календаре читался бы как «встреч сегодня нет», а это неправда.
 // Кнопка сразу ведёт в Google — тем же openGoogleConnect, что плитка календаря в настройках.
@@ -310,10 +259,8 @@ function CalNote({ title, hint, action }: { title: string; hint: string; action?
   );
 }
 
-export function MeetingsToday({ className, flat, first, flatBody, drafts = [], legacy = false }: {
+export function MeetingsToday({ className, flat, first, flatBody, drafts = [] }: {
   className?: string;
-  /** Прежний вид плоского блока (главная без флага экрана «А»): «Встречи сегодня», прежние строки, без линии «сейчас». */
-  legacy?: boolean;
   /** Черновики рекордера (на вычитке): у встречи с такой записью — «Вычитать». Только плоский вид. */
   drafts?: AgentMeeting[];
   /** Подложка тела плоского вида (виджет главной). */
@@ -328,10 +275,9 @@ export function MeetingsToday({ className, flat, first, flatBody, drafts = [], l
   // «Сейчас» для линии и подписи «через …»: обновляется раз в минуту, а не только с загрузкой данных.
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
-    if (legacy) return;
     const t = setInterval(() => setNow(Date.now()), 60_000);
     return () => clearInterval(t);
-  }, [legacy]);
+  }, []);
   // Повторный заход — сразу с прошлым списком созвонов, обновление в фоне (#906).
   const [state, setState] = useState<{ data: TodayMeetings | null; loading: boolean; failed: boolean }>(() => ({
     data: recall<TodayMeetings>("home:today"), loading: true, failed: false,
@@ -358,9 +304,8 @@ export function MeetingsToday({ className, flat, first, flatBody, drafts = [], l
   }, []);
 
   const meetings = state.data?.meetings ?? [];
-  const modern = flat && !legacy;
-  const lineAt = modern ? nowLineIndex(meetings) : null;
-  const primaryId = modern ? nextJoinable(meetings)?.id : undefined;
+  const lineAt = flat ? nowLineIndex(meetings) : null;
+  const primaryId = flat ? nextJoinable(meetings)?.id : undefined;
   const dayLabel = new Intl.DateTimeFormat(locale, { weekday: "short", day: "numeric", month: "long" }).format(new Date(now));
 
   useEffect(() => {
@@ -381,9 +326,9 @@ export function MeetingsToday({ className, flat, first, flatBody, drafts = [], l
 
   return (
     <DashBlock
-      title={modern ? dt("Ближайшие встречи", "Upcoming meetings") : dt("Встречи сегодня", "Meetings today")}
-      onHead={modern ? () => setTab("cal") : undefined}
-      headAction={modern ? dt("Все встречи →", "All meetings →") : undefined}
+      title={flat ? dt("Ближайшие встречи", "Upcoming meetings") : dt("Встречи сегодня", "Meetings today")}
+      onHead={flat ? () => setTab("cal") : undefined}
+      headAction={flat ? dt("Все встречи →", "All meetings →") : undefined}
       icon="cal"
       tint="var(--meet-ink)"
       loading={state.loading && !state.data}
@@ -414,10 +359,6 @@ export function MeetingsToday({ className, flat, first, flatBody, drafts = [], l
           reason === "calendar_error"
             ? <CalNote title={dt("Календарь не ответил", "Calendar did not respond")} hint={dt("Попробуйте обновить страницу позже", "Try reloading later")} />
             : <CalNote title={dt("Сегодня встреч нет", "No meetings today")} hint={dt("Календарь подключён — день свободен", "Calendar connected — the day is free")} />
-        ) : legacy ? (
-          meetings.map((m) => (
-            <LegacyFlatMeetingRow key={m.id} m={m} dt={dt} locale={locale} joined={joinedIds.has(m.id)} onJoined={markLocal} />
-          ))
         ) : (
           <>
             <div className="pb-1 text-ink-mute" style={{ fontSize: 11.5 }}>{dt("Сегодня", "Today")}, {dayLabel}</div>
@@ -442,7 +383,7 @@ export function MeetingsToday({ className, flat, first, flatBody, drafts = [], l
             type="button"
             onClick={connectCalendar}
             className="mt-3 inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 font-semibold"
-            style={{ fontSize: 12, background: "var(--accent-ink)", color: "#fff" }}
+            style={{ fontSize: 12, background: "var(--accent-ink)", color: "var(--on-solid)" }}
           >
             <RoyIcon name="cal" size={13} strokeWidth={2} />
             {reason === "token_expired"

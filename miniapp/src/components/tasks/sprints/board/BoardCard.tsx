@@ -98,7 +98,7 @@ export function BoardCard({
             >
               <span
                 className={cn(
-                  "grid h-4 w-4 place-items-center rounded-full border-[1.6px] text-[10px] leading-none text-white transition-colors",
+                  "grid h-4 w-4 place-items-center rounded-full border-[1.6px] text-[10px] leading-none text-[var(--on-solid)] transition-colors",
                   closed
                     ? "border-status-done bg-status-done"
                     : "border-line-2 bg-surface hover:border-status-done",

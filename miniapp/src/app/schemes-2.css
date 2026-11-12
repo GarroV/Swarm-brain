@@ -1,0 +1,703 @@
+/* Цветовые схемы, часть 2 (Лагуна … Швейцарка и копия «Swarm» для превью плитки). Продолжение schemes.css:
+   файл разрезан только из-за лимита размера исходника (800 строк); правила и порядок те же. */
+
+/* ── Лагуна (laguna) ── */
+[data-scheme="laguna"] {
+  --background: #EDF6F4;
+  --surface: #FFFFFF;
+  --surface-2: #E0EEEB;
+  --sidebar: #E3F0ED;
+  --ink: #0D2B2E;
+  --ink-soft: #38565A;
+  --ink-mute: #587479;
+  --line: #CFE3DF;
+  --line-2: #B3D0CA;
+  --primary: #0F766E;
+  --primary-foreground: #FFFFFF;
+  --accent-soft: #D3EFEA;
+  --accent-ink: #0B5750;
+  --accent-line: #9ED4CB;
+  --pri-high: #C0392B;
+  --pri-med: #8F5B00;
+  --status-done: #2F7D32;
+  --tag-mic: #5B4FD0;
+  /* выводятся по правилам tokens.md */
+  --card: var(--surface);
+  --popover: var(--surface);
+  --foreground: var(--ink);
+  --card-foreground: var(--ink);
+  --popover-foreground: var(--ink);
+  --secondary-foreground: var(--ink);
+  --secondary: var(--surface-2);
+  --muted: var(--surface-2);
+  --muted-foreground: var(--ink-soft);
+  --border: var(--line);
+  --input: var(--line-2);
+  --accent: var(--accent-soft);
+  --accent-foreground: var(--accent-ink);
+  --ring: var(--primary);
+  --destructive: var(--pri-high);
+  --sidebar-foreground: var(--ink);
+  --sidebar-primary: var(--primary);
+  --sidebar-primary-foreground: var(--primary-foreground);
+  --sidebar-accent: var(--accent-soft);
+  --sidebar-accent-foreground: var(--accent-ink);
+  --sidebar-border: var(--line);
+  --sidebar-ring: var(--primary);
+  --chart-1: var(--primary);
+  --chart-2: var(--tag-mic);
+  --chart-3: var(--status-done);
+  --chart-4: var(--pri-med);
+  --chart-5: var(--pri-high);
+  --status-prog: var(--primary);
+  --status-open: var(--line-2);
+  --pri-low: var(--line-2);
+  --tag-note: var(--pri-med);
+  --tag-meet: var(--status-done);
+  --meet-ink: var(--status-done);
+  --tag-pdf: var(--pri-high);
+  --tag-doc: var(--ink-soft);
+  --tag-link: var(--accent-ink);
+  --meet-soft: var(--accent-soft);
+  --glow-sm: 0 0 0 transparent;
+  --glow-md: 0 0 0 transparent;
+  /* текст на сплошной заливке: под --primary и под красный/зелёный/янтарь/--accent-ink (светлее из фона и карточки, не прозрачный) */
+  --on-primary: var(--primary-foreground);
+  --on-solid: #FFFFFF;
+  color-scheme: light;
+  --radius: 14px;
+  --font-display: var(--f-manrope), "Golos Text", system-ui, sans-serif;
+}
+
+.dark[data-scheme="laguna"] {
+  --background: #071E22;
+  --surface: #0C2A2F;
+  --surface-2: #11363C;
+  --sidebar: #09252A;
+  --ink: #E3F6F3;
+  --ink-soft: #9CC3C0;
+  --ink-mute: #82ABA8;
+  --line: #174248;
+  --line-2: #235A62;
+  --primary: #2DD4BF;
+  --primary-foreground: #032A27;
+  --accent-soft: #0F3D40;
+  --accent-ink: #7CF0DF;
+  --accent-line: #1C6B68;
+  --pri-high: #FF7A6B;
+  --pri-med: #F0B64A;
+  --status-done: #7BD66E;
+  --tag-mic: #A99BFF;
+  /* выводятся по правилам tokens.md */
+  --card: var(--surface);
+  --popover: var(--surface);
+  --foreground: var(--ink);
+  --card-foreground: var(--ink);
+  --popover-foreground: var(--ink);
+  --secondary-foreground: var(--ink);
+  --secondary: var(--surface-2);
+  --muted: var(--surface-2);
+  --muted-foreground: var(--ink-soft);
+  --border: var(--line);
+  --input: var(--line-2);
+  --accent: var(--accent-soft);
+  --accent-foreground: var(--accent-ink);
+  --ring: var(--primary);
+  --destructive: var(--pri-high);
+  --sidebar-foreground: var(--ink);
+  --sidebar-primary: var(--primary);
+  --sidebar-primary-foreground: var(--primary-foreground);
+  --sidebar-accent: var(--accent-soft);
+  --sidebar-accent-foreground: var(--accent-ink);
+  --sidebar-border: var(--line);
+  --sidebar-ring: var(--primary);
+  --chart-1: var(--primary);
+  --chart-2: var(--tag-mic);
+  --chart-3: var(--status-done);
+  --chart-4: var(--pri-med);
+  --chart-5: var(--pri-high);
+  --status-prog: var(--primary);
+  --status-open: var(--line-2);
+  --pri-low: var(--line-2);
+  --tag-note: var(--pri-med);
+  --tag-meet: var(--status-done);
+  --meet-ink: var(--status-done);
+  --tag-pdf: var(--pri-high);
+  --tag-doc: var(--ink-soft);
+  --tag-link: var(--accent-ink);
+  --meet-soft: var(--accent-soft);
+  --glow-sm: 0 0 0 transparent;
+  --glow-md: 0 0 0 transparent;
+  /* текст на сплошной заливке: под --primary и под красный/зелёный/янтарь/--accent-ink (светлее из фона и карточки, не прозрачный) */
+  --on-primary: var(--primary-foreground);
+  --on-solid: #071E22;
+  color-scheme: dark;
+}
+
+html[data-scheme="laguna"][data-backdrop="custom"] {
+  --backdrop-dim: #EDF6F4;
+  --glass-pane: rgb(237 246 244 / 0.5);
+  --glass-rail: rgb(227 240 237 / 0.44);
+  --background: rgb(237 246 244 / 0.55);
+  --surface: rgb(255 255 255 / 0.66);
+  --surface-2: rgb(224 238 235 / 0.5);
+  --card: rgb(255 255 255 / 0.78);
+  --popover: rgb(255 255 255 / 0.9);
+  --line: rgb(13 43 46 / 0.08);
+  --ink-mute: #587479;
+}
+
+html.dark[data-scheme="laguna"][data-backdrop="custom"] {
+  --backdrop-dim: #071E22;
+  --glass-pane: rgb(7 30 34 / 0.5);
+  --glass-rail: rgb(9 37 42 / 0.44);
+  --background: rgb(7 30 34 / 0.55);
+  --surface: rgb(12 42 47 / 0.66);
+  --surface-2: rgb(17 54 60 / 0.5);
+  --card: rgb(12 42 47 / 0.78);
+  --popover: rgb(12 42 47 / 0.9);
+  --line: rgb(227 246 243 / 0.08);
+  --ink-mute: #82ABA8;
+}
+
+
+/* ── Сумерки (sumerki) ── */
+[data-scheme="sumerki"] {
+  --background: #F5F2FC;
+  --surface: #FFFFFF;
+  --surface-2: #ECE7F8;
+  --sidebar: #EFEBFA;
+  --ink: #1D1538;
+  --ink-soft: #4B4270;
+  --ink-mute: #685F8E;
+  --line: #DFD8F1;
+  --line-2: #C8BEE4;
+  --primary: #5B3DEC;
+  --primary-foreground: #FFFFFF;
+  --accent-soft: #E7E0FD;
+  --accent-ink: #3F24B5;
+  --accent-line: #C3B5F7;
+  --pri-high: #C42B45;
+  --pri-med: #8F5B00;
+  --status-done: #1E7F55;
+  --tag-mic: #9A3DB8;
+  /* выводятся по правилам tokens.md */
+  --card: var(--surface);
+  --popover: var(--surface);
+  --foreground: var(--ink);
+  --card-foreground: var(--ink);
+  --popover-foreground: var(--ink);
+  --secondary-foreground: var(--ink);
+  --secondary: var(--surface-2);
+  --muted: var(--surface-2);
+  --muted-foreground: var(--ink-soft);
+  --border: var(--line);
+  --input: var(--line-2);
+  --accent: var(--accent-soft);
+  --accent-foreground: var(--accent-ink);
+  --ring: var(--primary);
+  --destructive: var(--pri-high);
+  --sidebar-foreground: var(--ink);
+  --sidebar-primary: var(--primary);
+  --sidebar-primary-foreground: var(--primary-foreground);
+  --sidebar-accent: var(--accent-soft);
+  --sidebar-accent-foreground: var(--accent-ink);
+  --sidebar-border: var(--line);
+  --sidebar-ring: var(--primary);
+  --chart-1: var(--primary);
+  --chart-2: var(--tag-mic);
+  --chart-3: var(--status-done);
+  --chart-4: var(--pri-med);
+  --chart-5: var(--pri-high);
+  --status-prog: var(--primary);
+  --status-open: var(--line-2);
+  --pri-low: var(--line-2);
+  --tag-note: var(--pri-med);
+  --tag-meet: var(--status-done);
+  --meet-ink: var(--status-done);
+  --tag-pdf: var(--pri-high);
+  --tag-doc: var(--ink-soft);
+  --tag-link: var(--accent-ink);
+  --meet-soft: var(--accent-soft);
+  --glow-sm: 0 0 0 transparent;
+  --glow-md: 0 0 0 transparent;
+  /* текст на сплошной заливке: под --primary и под красный/зелёный/янтарь/--accent-ink (светлее из фона и карточки, не прозрачный) */
+  --on-primary: var(--primary-foreground);
+  --on-solid: #FFFFFF;
+  color-scheme: light;
+  --radius: 12px;
+  --font-display: var(--f-sora), "Golos Text", system-ui, sans-serif;
+}
+
+.dark[data-scheme="sumerki"] {
+  --background: #130F24;
+  --surface: #1B1634;
+  --surface-2: #241D45;
+  --sidebar: #161130;
+  --ink: #EEEAFB;
+  --ink-soft: #B2A9D6;
+  --ink-mute: #9189BA;
+  --line: #2C2552;
+  --line-2: #3F3572;
+  --primary: #A78BFA;
+  --primary-foreground: #1A0F3D;
+  --accent-soft: #2A2056;
+  --accent-ink: #CDBDFF;
+  --accent-line: #4C3F94;
+  --pri-high: #FF7B8A;
+  --pri-med: #F2B84B;
+  --status-done: #62D6A0;
+  --tag-mic: #E79BE8;
+  /* выводятся по правилам tokens.md */
+  --card: var(--surface);
+  --popover: var(--surface);
+  --foreground: var(--ink);
+  --card-foreground: var(--ink);
+  --popover-foreground: var(--ink);
+  --secondary-foreground: var(--ink);
+  --secondary: var(--surface-2);
+  --muted: var(--surface-2);
+  --muted-foreground: var(--ink-soft);
+  --border: var(--line);
+  --input: var(--line-2);
+  --accent: var(--accent-soft);
+  --accent-foreground: var(--accent-ink);
+  --ring: var(--primary);
+  --destructive: var(--pri-high);
+  --sidebar-foreground: var(--ink);
+  --sidebar-primary: var(--primary);
+  --sidebar-primary-foreground: var(--primary-foreground);
+  --sidebar-accent: var(--accent-soft);
+  --sidebar-accent-foreground: var(--accent-ink);
+  --sidebar-border: var(--line);
+  --sidebar-ring: var(--primary);
+  --chart-1: var(--primary);
+  --chart-2: var(--tag-mic);
+  --chart-3: var(--status-done);
+  --chart-4: var(--pri-med);
+  --chart-5: var(--pri-high);
+  --status-prog: var(--primary);
+  --status-open: var(--line-2);
+  --pri-low: var(--line-2);
+  --tag-note: var(--pri-med);
+  --tag-meet: var(--status-done);
+  --meet-ink: var(--status-done);
+  --tag-pdf: var(--pri-high);
+  --tag-doc: var(--ink-soft);
+  --tag-link: var(--accent-ink);
+  --meet-soft: var(--accent-soft);
+  --glow-sm: 0 0 0 transparent;
+  --glow-md: 0 0 0 transparent;
+  /* текст на сплошной заливке: под --primary и под красный/зелёный/янтарь/--accent-ink (светлее из фона и карточки, не прозрачный) */
+  --on-primary: var(--primary-foreground);
+  --on-solid: #130F24;
+  color-scheme: dark;
+}
+
+html[data-scheme="sumerki"][data-backdrop="custom"] {
+  --backdrop-dim: #F5F2FC;
+  --glass-pane: rgb(245 242 252 / 0.5);
+  --glass-rail: rgb(239 235 250 / 0.44);
+  --background: rgb(245 242 252 / 0.55);
+  --surface: rgb(255 255 255 / 0.66);
+  --surface-2: rgb(236 231 248 / 0.5);
+  --card: rgb(255 255 255 / 0.78);
+  --popover: rgb(255 255 255 / 0.9);
+  --line: rgb(29 21 56 / 0.08);
+  --ink-mute: #685F8E;
+}
+
+html.dark[data-scheme="sumerki"][data-backdrop="custom"] {
+  --backdrop-dim: #130F24;
+  --glass-pane: rgb(19 15 36 / 0.5);
+  --glass-rail: rgb(22 17 48 / 0.44);
+  --background: rgb(19 15 36 / 0.55);
+  --surface: rgb(27 22 52 / 0.66);
+  --surface-2: rgb(36 29 69 / 0.5);
+  --card: rgb(27 22 52 / 0.78);
+  --popover: rgb(27 22 52 / 0.9);
+  --line: rgb(238 234 251 / 0.08);
+  --ink-mute: #9189BA;
+}
+
+
+/* ── Терминал (terminal) ── */
+[data-scheme="terminal"] {
+  --background: #0A0A0A;
+  --surface: #0F0F0F;
+  --surface-2: #171717;
+  --sidebar: #0A0A0A;
+  --ink: #E0E0E0;
+  --ink-soft: #A8A8A8;
+  --ink-mute: #8A8A8A;
+  --line: #2A2A2A;
+  --line-2: #4A4A4A;
+  --primary: #E0E0E0;
+  --primary-foreground: #0A0A0A;
+  --accent-soft: #1F1F1F;
+  --accent-ink: #FFFFFF;
+  --accent-line: #6A6A6A;
+  --pri-high: #FF5F56;
+  --pri-med: #FFBD2E;
+  --status-done: #5CD66E;
+  --tag-mic: #BD93F9;
+  /* выводятся по правилам tokens.md */
+  --card: var(--surface);
+  --popover: var(--surface);
+  --foreground: var(--ink);
+  --card-foreground: var(--ink);
+  --popover-foreground: var(--ink);
+  --secondary-foreground: var(--ink);
+  --secondary: var(--surface-2);
+  --muted: var(--surface-2);
+  --muted-foreground: var(--ink-soft);
+  --border: var(--line);
+  --input: var(--line-2);
+  --accent: var(--accent-soft);
+  --accent-foreground: var(--accent-ink);
+  --ring: var(--primary);
+  --destructive: var(--pri-high);
+  --sidebar-foreground: var(--ink);
+  --sidebar-primary: var(--primary);
+  --sidebar-primary-foreground: var(--primary-foreground);
+  --sidebar-accent: var(--accent-soft);
+  --sidebar-accent-foreground: var(--accent-ink);
+  --sidebar-border: var(--line);
+  --sidebar-ring: var(--primary);
+  --chart-1: var(--accent-ink);
+  --chart-2: var(--tag-mic);
+  --chart-3: var(--status-done);
+  --chart-4: var(--pri-med);
+  --chart-5: var(--pri-high);
+  --status-prog: var(--primary);
+  --status-open: var(--line-2);
+  --pri-low: var(--line-2);
+  --tag-note: var(--pri-med);
+  --tag-meet: var(--status-done);
+  --meet-ink: var(--status-done);
+  --tag-pdf: var(--pri-high);
+  --tag-doc: var(--ink-soft);
+  --tag-link: var(--accent-ink);
+  --meet-soft: var(--accent-soft);
+  --glow-sm: 0 0 0 transparent;
+  --glow-md: 0 0 0 transparent;
+  /* текст на сплошной заливке: под --primary и под красный/зелёный/янтарь/--accent-ink (светлее из фона и карточки, не прозрачный) */
+  --on-primary: var(--primary-foreground);
+  --on-solid: #0A0A0A;
+  color-scheme: dark;
+  --radius: 0px;
+  --font-sans: var(--font-geist-mono), ui-monospace, Menlo, monospace;
+  --font-display: var(--font-geist-mono), ui-monospace, Menlo, monospace;
+}
+
+html[data-scheme="terminal"][data-backdrop="custom"] {
+  --backdrop-dim: #0A0A0A;
+  --glass-pane: rgb(10 10 10 / 0.5);
+  --glass-rail: rgb(10 10 10 / 0.44);
+  --background: rgb(10 10 10 / 0.55);
+  --surface: rgb(15 15 15 / 0.66);
+  --surface-2: rgb(23 23 23 / 0.5);
+  --card: rgb(15 15 15 / 0.78);
+  --popover: rgb(15 15 15 / 0.9);
+  --line: rgb(224 224 224 / 0.08);
+  --ink-mute: #8A8A8A;
+}
+
+
+/* ── Блюпринт (blyuprint) ── */
+[data-scheme="blyuprint"] {
+  --background: #0B2A5B;
+  --surface: #0F3270;
+  --surface-2: #143B82;
+  --sidebar: #092350;
+  --ink: #EAF2FF;
+  --ink-soft: #B7CCEE;
+  --ink-mute: #93AEDB;
+  --line: #2A5399;
+  --line-2: #4170C0;
+  --primary: #FFFFFF;
+  --primary-foreground: #0B2A5B;
+  --accent-soft: #1B4797;
+  --accent-ink: #CFE4FF;
+  --accent-line: #5E8DDC;
+  --pri-high: #FF8A80;
+  --pri-med: #FFD166;
+  --status-done: #7EE0A8;
+  --tag-mic: #C3B2FF;
+  /* выводятся по правилам tokens.md */
+  --card: var(--surface);
+  --popover: var(--surface);
+  --foreground: var(--ink);
+  --card-foreground: var(--ink);
+  --popover-foreground: var(--ink);
+  --secondary-foreground: var(--ink);
+  --secondary: var(--surface-2);
+  --muted: var(--surface-2);
+  --muted-foreground: var(--ink-soft);
+  --border: var(--line);
+  --input: var(--line-2);
+  --accent: var(--accent-soft);
+  --accent-foreground: var(--accent-ink);
+  --ring: var(--primary);
+  --destructive: var(--pri-high);
+  --sidebar-foreground: var(--ink);
+  --sidebar-primary: var(--primary);
+  --sidebar-primary-foreground: var(--primary-foreground);
+  --sidebar-accent: var(--accent-soft);
+  --sidebar-accent-foreground: var(--accent-ink);
+  --sidebar-border: var(--line);
+  --sidebar-ring: var(--primary);
+  --chart-1: var(--accent-ink);
+  --chart-2: var(--tag-mic);
+  --chart-3: var(--status-done);
+  --chart-4: var(--pri-med);
+  --chart-5: var(--pri-high);
+  --status-prog: var(--primary);
+  --status-open: var(--line-2);
+  --pri-low: var(--line-2);
+  --tag-note: var(--pri-med);
+  --tag-meet: var(--status-done);
+  --meet-ink: var(--status-done);
+  --tag-pdf: var(--pri-high);
+  --tag-doc: var(--ink-soft);
+  --tag-link: var(--accent-ink);
+  --meet-soft: var(--accent-soft);
+  --glow-sm: 0 0 0 transparent;
+  --glow-md: 0 0 0 transparent;
+  /* текст на сплошной заливке: под --primary и под красный/зелёный/янтарь/--accent-ink (светлее из фона и карточки, не прозрачный) */
+  --on-primary: var(--primary-foreground);
+  --on-solid: #0B2A5B;
+  color-scheme: dark;
+  --radius: 2px;
+  --font-sans: var(--f-plex-sans), "Golos Text", system-ui, sans-serif;
+  --font-display: var(--font-geist-mono), ui-monospace, Menlo, monospace;
+}
+
+html[data-scheme="blyuprint"][data-backdrop="custom"] {
+  --backdrop-dim: #0B2A5B;
+  --glass-pane: rgb(11 42 91 / 0.5);
+  --glass-rail: rgb(9 35 80 / 0.44);
+  --background: rgb(11 42 91 / 0.55);
+  --surface: rgb(15 50 112 / 0.66);
+  --surface-2: rgb(20 59 130 / 0.5);
+  --card: rgb(15 50 112 / 0.78);
+  --popover: rgb(15 50 112 / 0.9);
+  --line: rgb(234 242 255 / 0.08);
+  --ink-mute: #93AEDB;
+}
+
+
+/* ── Швейцарка (shveyc) ── */
+[data-scheme="shveyc"] {
+  --background: #F7F7F5;
+  --surface: #FFFFFF;
+  --surface-2: #EFEFEC;
+  --sidebar: #F7F7F5;
+  --ink: #0A0A0A;
+  --ink-soft: #3F3F3F;
+  --ink-mute: #636363;
+  --line: #DADAD6;
+  --line-2: #0A0A0A;
+  --primary: #0A0A0A;
+  --primary-foreground: #FFFFFF;
+  --accent-soft: #E4E4DF;
+  --accent-ink: #0A0A0A;
+  --accent-line: #0A0A0A;
+  --pri-high: #D32F2F;
+  --pri-med: #946000;
+  --status-done: #1B7A3E;
+  --tag-mic: #5B3DEC;
+  /* выводятся по правилам tokens.md */
+  --card: var(--surface);
+  --popover: var(--surface);
+  --foreground: var(--ink);
+  --card-foreground: var(--ink);
+  --popover-foreground: var(--ink);
+  --secondary-foreground: var(--ink);
+  --secondary: var(--surface-2);
+  --muted: var(--surface-2);
+  --muted-foreground: var(--ink-soft);
+  --border: var(--line);
+  --input: var(--line-2);
+  --accent: var(--accent-soft);
+  --accent-foreground: var(--accent-ink);
+  --ring: var(--primary);
+  --destructive: var(--pri-high);
+  --sidebar-foreground: var(--ink);
+  --sidebar-primary: var(--primary);
+  --sidebar-primary-foreground: var(--primary-foreground);
+  --sidebar-accent: var(--accent-soft);
+  --sidebar-accent-foreground: var(--accent-ink);
+  --sidebar-border: var(--line);
+  --sidebar-ring: var(--primary);
+  --chart-1: var(--accent-ink);
+  --chart-2: var(--tag-mic);
+  --chart-3: var(--status-done);
+  --chart-4: var(--pri-med);
+  --chart-5: var(--pri-high);
+  --status-prog: var(--primary);
+  --status-open: var(--line-2);
+  --pri-low: var(--line-2);
+  --tag-note: var(--pri-med);
+  --tag-meet: var(--status-done);
+  --meet-ink: var(--status-done);
+  --tag-pdf: var(--pri-high);
+  --tag-doc: var(--ink-soft);
+  --tag-link: var(--accent-ink);
+  --meet-soft: var(--accent-soft);
+  --glow-sm: 0 0 0 transparent;
+  --glow-md: 0 0 0 transparent;
+  /* текст на сплошной заливке: под --primary и под красный/зелёный/янтарь/--accent-ink (светлее из фона и карточки, не прозрачный) */
+  --on-primary: var(--primary-foreground);
+  --on-solid: #FFFFFF;
+  color-scheme: light;
+  --radius: 0px;
+  --font-sans: var(--f-inter-tight), "Golos Text", system-ui, sans-serif;
+  --font-display: var(--f-inter-tight), "Golos Text", system-ui, sans-serif;
+}
+
+html[data-scheme="shveyc"][data-backdrop="custom"] {
+  --backdrop-dim: #F7F7F5;
+  --glass-pane: rgb(247 247 245 / 0.5);
+  --glass-rail: rgb(247 247 245 / 0.44);
+  --background: rgb(247 247 245 / 0.55);
+  --surface: rgb(255 255 255 / 0.66);
+  --surface-2: rgb(239 239 236 / 0.5);
+  --card: rgb(255 255 255 / 0.78);
+  --popover: rgb(255 255 255 / 0.9);
+  --line: rgb(10 10 10 / 0.08);
+  --ink-mute: #636363;
+}
+
+
+/* ── Swarm (прежняя тема) ──
+   Только для мини-превью плитки «Swarm» в меню «Оформление»: на <html> атрибута у неё нет, действуют
+   :root и .dark из globals.css. Блоки — копия их значений; расхождение ловит schemes.test.ts. */
+[data-scheme="swarm"] {
+  --glow-sm: 0 0 0 transparent;
+  --glow-md: 0 0 0 transparent;
+  --on-primary: #FFFFFF;
+  --on-solid: #FFFFFF;
+  --scrim: rgb(0 0 0 / 0.45);
+  --scrim-sheet: rgb(0 0 0 / 0.4);
+  --scrim-faint: rgb(0 0 0 / 0.3);
+  --scrim-dialog: rgb(10 13 17 / 0.5);
+  --scrim-drawer: rgb(10 13 17 / 0.12);
+  --shadow-dialog: 0 22px 70px rgb(10 13 17 / 0.3);
+  --background: #FFFFFF;             
+  --foreground: #1B2028;
+  --card: #FFFFFF;
+  --card-foreground: #1B2028;
+  --popover: #FFFFFF;
+  --popover-foreground: #1B2028;
+  --primary: #1F4E9C;                 
+  --primary-foreground: #FFFFFF;
+  --secondary: #F7F9FB;
+  --secondary-foreground: #1B2028;
+  --muted: #F7F9FB;
+  --muted-foreground: #5C6672;
+  --accent: #E8EEF8;                  
+  --accent-foreground: #1F4E9C;       
+  --destructive: #C53030;
+  --border: #ECEFF3;                  
+  --input: #DCE1E7;                   
+  --ring: #1F4E9C;
+  --chart-1: #1F4E9C;                 
+  --chart-2: #5B3DEC;                 
+  --chart-3: #1E8E5E;                 
+  --chart-4: #B26B00;                 
+  --chart-5: #C53030;                 
+  --radius: 0.5rem;
+  --sidebar: #F7F9FB;
+  --sidebar-foreground: #1B2028;
+  --sidebar-primary: #1F4E9C;
+  --sidebar-primary-foreground: #FFFFFF;
+  --sidebar-accent: #E8EEF8;
+  --sidebar-accent-foreground: #1F4E9C;
+  --sidebar-border: #ECEFF3;
+  --sidebar-ring: #1F4E9C;
+  --surface: #FFFFFF;
+  --surface-2: #F7F9FB;
+  --ink: #1B2028;
+  --ink-soft: #5C6672;
+  --ink-mute: #8A929D;
+  --line: #ECEFF3;
+  --line-2: #DCE1E7;
+  --accent-soft: #E8EEF8;
+  --accent-ink: #1F4E9C;
+  --accent-line: #C9D9F0;
+  --status-open: #B8C0C9;            
+  --status-prog: #1F4E9C;            
+  --status-done: #1E8E5E;
+  --pri-high: #C53030;
+  --pri-med: #B26B00;
+  --pri-low: #B8C0C9;
+  --meet-soft: #E6F4EE;
+  --meet-ink: #1E8E5E;
+  --tag-doc: #5C6672;
+  --tag-mic: #5B3DEC;
+  --tag-note: #B26B00;
+  --tag-meet: #1E8E5E;
+  --tag-pdf: #C53030;
+  --tag-link: #1F6F8B;
+}
+
+.dark[data-scheme="swarm"] {
+  --background: #070A10;              
+  --foreground: #EAF2FF;
+  --card: #0D1220;
+  --card-foreground: #EAF2FF;
+  --popover: #131A2E;
+  --popover-foreground: #EAF2FF;
+  --primary: #00E5FF;                  
+  --primary-foreground: #04121A;      
+  --secondary: #131A2E;
+  --secondary-foreground: #EAF2FF;
+  --muted: #131A2E;
+  --muted-foreground: #93A4C3;
+  --accent: #0A2230;
+  --accent-foreground: #5CEBFF;
+  --destructive: #E05252;
+  --border: #1E2A45;
+  --input: #2A3A5C;
+  --ring: #00E5FF;
+  --chart-1: #00E5FF;
+  --chart-2: #8F7BF5;
+  --chart-3: #4CB88A;
+  --chart-4: #E0A03A;
+  --chart-5: #E05252;
+  --sidebar: #0B0F1A;
+  --sidebar-foreground: #EAF2FF;
+  --sidebar-primary: #00E5FF;
+  --sidebar-primary-foreground: #04121A;
+  --sidebar-accent: #0A2230;
+  --sidebar-accent-foreground: #5CEBFF;
+  --sidebar-border: #1E2A45;
+  --sidebar-ring: #00E5FF;
+  --surface: #0D1220;
+  --surface-2: #131A2E;
+  --ink: #EAF2FF;
+  --ink-soft: #93A4C3;
+  --ink-mute: #7084AD;
+  --line: #1E2A45;
+  --line-2: #2A3A5C;
+  --accent-soft: #0A2230;
+  --accent-ink: #5CEBFF;
+  --accent-line: #134A5C;
+  --status-open: #5A6472;
+  --status-prog: #6FA0F0;
+  --status-done: #4CB88A;
+  --pri-high: #E05252;
+  --pri-med: #E0A03A;
+  --pri-low: #5A6472;
+  --meet-soft: #15271F;
+  --meet-ink: #4CB88A;
+  --tag-doc: #A8B2C0;
+  --tag-mic: #8F7BF5;
+  --tag-note: #E0A03A;
+  --tag-meet: #4CB88A;
+  --tag-pdf: #E05252;
+  --tag-link: #5BB0C9;
+  --glow-sm: 0 0 10px rgba(0, 229, 255, 0.55), 0 0 22px rgba(0, 229, 255, 0.2);
+  --glow-md: 0 0 14px rgba(0, 229, 255, 0.45), 0 0 34px rgba(0, 229, 255, 0.16);
+}
