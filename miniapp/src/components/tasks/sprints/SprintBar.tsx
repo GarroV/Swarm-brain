@@ -151,7 +151,7 @@ export function SprintBar(p: SprintBarProps) {
 
   // Доска спринтов показывает все спринты сразу и сама несёт их действия (закрыть, новый), поэтому
   // выбор одного спринта, его даты, «Начать/Принять» и режим правки в её полосе не нужны.
-  const board = p.sprintTab && p.view === "board";
+  const board = p.sprintTab && (p.view === "board" || p.view === "timeline");
   const left = d ? daysLeft(d.end_date) : 0;
   // «Принять» — действие раз в две недели и необратимое: пока спринт идёт, кнопка тихая и
   // разгорается, когда срок вышел (стенд: `over`).
@@ -270,9 +270,12 @@ export function SprintBar(p: SprintBarProps) {
             )}
             <button
               type="button"
-              aria-pressed={board}
+              aria-pressed={p.view === "board"}
               onClick={() => p.onView("board")}
-              className={cn(pillSegmentCls(board), "sm:min-h-[26px] px-3")}
+              className={cn(
+                pillSegmentCls(p.view === "board"),
+                "sm:min-h-[26px] px-3",
+              )}
               style={{ fontSize: 12.5 }}
             >
               {dt("Доска спринтов", "Sprint board")}
