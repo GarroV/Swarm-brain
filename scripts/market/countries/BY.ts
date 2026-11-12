@@ -65,6 +65,14 @@ export const BY: CountryConfig = {
       segment: "coffee",
       osmBrands: ["Costa Coffee", "Costa"],
     },
+    {
+      // Бренд в Overture записан с турецким названием города, заведения называются «Terra Pizza».
+      key: "terra-pizza",
+      name: "Terra Pizza",
+      segment: "pizza",
+      osmBrands: ["Terra pizza İskenderun"],
+      osmNames: ["Terra Pizza"],
+    },
   ],
   companies: [],
   sources: [

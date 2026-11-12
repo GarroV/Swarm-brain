@@ -13,6 +13,13 @@ import {
   samePlace,
 } from "../../../supabase/functions/_shared/market/geo.ts";
 import { httpGet } from "../lib.ts";
+import {
+  clusterByRoot,
+  clusterName,
+  inRing,
+  nameFitsBrand,
+  tokens,
+} from "./overture-names.ts";
 import type { Adapter } from "./types.ts";
 
 const BUCKET = "overturemaps-us-west-2";
@@ -36,7 +43,22 @@ const CATEGORIES = [
 export const MIN_BRANDED = 3;
 export const MIN_UNBRANDED = 5;
 export const MIN_LOCALITIES = 3;
-export const MAX_DISCOVERED = 40;
+/** Автопоиск находит только фастфуд-сети (решение владельца 10.11.2026): пицца, бургеры, курица, сэндвичи,
+ *  гриль/кебаб, плюс заведения категории Overture fast_food_restaurant. Кофе, пекарни, азиатская кухня и
+ *  «просто ресторан» сюда не попадают — их заводят вручную в countries/*.ts, по запросу. */
+export const FASTFOOD_SEGMENTS = new Set([
+  "pizza",
+  "burger",
+  "chicken",
+  "sandwich",
+  "grill",
+]);
+export function isFastFood(segment: string, categories: string[]): boolean {
+  if (FASTFOOD_SEGMENTS.has(segment)) return true;
+  if (segment !== "other") return false;
+  return categories.filter((c) => c === "fast_food_restaurant").length * 2 >
+    categories.length;
+}
 const MAX_KEY = 40;
 /** Overture держит одно заведение двумя записями (разные id, 0–25 м): на карте это одна точка. */
 export const DUPLICATE_M = 25;
@@ -78,7 +100,14 @@ function startsWithWord(value: string, prefix: string): boolean {
   return !!p && v.startsWith(p) && !isLetter(v[p.length]);
 }
 
-function matchConfig(row: PlaceRow, cfg: CountryConfig): string | null {
+const FOREIGN = Symbol("foreign");
+
+/** Ключ сети из конфига или null. Сеть, найденная только по бренду, при названии, не имеющем с брендом
+ *  ничего общего, — чужое заведение с приписанным брендом (FOREIGN, #1113). */
+function matchConfig(
+  row: PlaceRow,
+  cfg: CountryConfig,
+): string | typeof FOREIGN | null {
   for (const ch of cfg.chains) {
     const byBrand = row.brand &&
       ch.osmBrands?.some((b) => startsWithWord(row.brand!, b));
@@ -86,7 +115,8 @@ function matchConfig(row: PlaceRow, cfg: CountryConfig): string | null {
       [...(ch.osmNames ?? []), ...(ch.osmBrands ?? [])].some((n) =>
         startsWithWord(row.name!, n)
       );
-    if (byBrand || byName) return ch.key;
+    if (byName) return ch.key;
+    if (byBrand) return nameFitsBrand(row.name, row.brand!) ? ch.key : FOREIGN;
   }
   return null;
 }
@@ -211,6 +241,9 @@ export function dropDuplicates(points: OsmPoint[]): OsmPoint[] {
   });
 }
 
+const inExcludedArea = (row: PlaceRow, cfg: CountryConfig) =>
+  (cfg.excludeAreas ?? []).some((a) => inRing(row.lng, row.lat, a.ring));
+
 /** Чистая функция без сети: строки Overture → точки сетей из конфига + найденные сети. */
 export function discover(
   rows: PlaceRow[],
@@ -218,10 +251,15 @@ export function discover(
 ): { points: OsmPoint[]; chains: DiscoveredChain[] } {
   const points: OsmPoint[] = [];
   const groups = new Map<string, PlaceRow[]>();
-  for (const row of rows) {
+  for (const raw of rows) {
+    // Заведения на территории из excludeAreas страны не берём (север Кипра, #1113).
+    if (inExcludedArea(raw, cfg)) continue;
+    const row = raw;
     // Dodo приходит из публичного API Dodo, из карты его не берём.
     if (DODO.test(row.brand ?? "") || DODO.test(row.name ?? "")) continue;
     const key = isMcCafe(row) ? MCCAFE : matchConfig(row, cfg);
+    // Бренд сети из конфига, приписанный чужому заведению («Pizza Dominium» под «Domino's Pizza»): не берём.
+    if (key === FOREIGN) continue;
     if (key) {
       points.push(toPoint(row, key));
       continue;
@@ -244,11 +282,33 @@ export function discover(
     const nk = norm(mostFrequent(g.map((r) => (r.brand ?? r.name)!)));
     merged.set(nk, [...(merged.get(nk) ?? []), ...g]);
   }
-  const found = [...merged.values()]
-    .map((g) => ({
-      rows: uniquePlaces(g, (r) => toPoint(r, "discovery")),
-      branded: isBranded(g),
-    }))
+  // …и под подписями с хвостом («Nravizza» / «Nravizza Pizza», «Kawacom's … Kiti» / «… Lakatamias»):
+  // кластер по общему началу подписи. До этого такая сеть заводилась двумя-тремя ключами (#1113).
+  const mergedGroups = [...merged.values()];
+  const labelOf = (g: PlaceRow[]) =>
+    mostFrequent(g.map((r) => (r.brand ?? r.name)!));
+  // Склейка по общему началу — только когда в кластере есть группа с брендом: названия без бренда друг с
+  // другом («Taverna …», «Kavinė …») склеивать нельзя, это виды заведений, а не сети.
+  const clusters = clusterByRoot(mergedGroups.map((g) => tokens(labelOf(g))))
+    .flatMap((idx) =>
+      idx.some((i) => isBranded(mergedGroups[i]))
+        ? [idx.map((i) => mergedGroups[i])]
+        : idx.map((i) => [mergedGroups[i]])
+    );
+  const found = clusters
+    .map((cluster) => {
+      const g = uniquePlaces(cluster.flat(), (r) => toPoint(r, "discovery"));
+      const counts = new Map<string, number>();
+      for (const r of g) {
+        const l = (r.brand ?? r.name)!;
+        counts.set(l, (counts.get(l) ?? 0) + 1);
+      }
+      return {
+        rows: g,
+        branded: isBranded(g),
+        name: clusterName([...counts.keys()], [...counts.values()]),
+      };
+    })
     .filter(({ rows: g, branded }) =>
       branded ? g.length >= MIN_BRANDED : (
         g.length >= MIN_UNBRANDED &&
@@ -256,22 +316,18 @@ export function discover(
           MIN_LOCALITIES
       )
     )
-    .sort((a, b) => b.rows.length - a.rows.length)
-    .slice(0, MAX_DISCOVERED);
+    .sort((a, b) => b.rows.length - a.rows.length);
   const taken = new Set(cfg.chains.map((c) => c.key));
   const chains: DiscoveredChain[] = [];
-  for (const { rows: g } of found) {
-    const name = mostFrequent(g.map((r) => (r.brand ?? r.name)!));
+  for (const { rows: g, name } of found) {
+    const categories = g.map((r) => r.category ?? "");
+    const segment = classify(name, categories);
+    if (!isFastFood(segment, categories)) continue;
     const fallback = `chain-${
       (g[0].wikidata ?? norm(name)).toLowerCase().slice(0, 12)
     }`;
     const key = slug(name, taken, fallback);
-    const segment = classify(name, g.map((r) => r.category ?? ""));
-    chains.push(
-      segment === "bakery"
-        ? { key, name, segment, bakery: true }
-        : { key, name, segment },
-    );
+    chains.push({ key, name, segment });
     for (const row of g) points.push(toPoint(row, key));
   }
   const kept = dropDuplicates(points);
@@ -339,7 +395,7 @@ export const overture: Adapter = {
   about: {
     url: "https://docs.overturemaps.org/guides/places/",
     what:
-      "точки сетей из Overture Maps places (последний релиз, parquet в S3, через DuckDB): заведения общепита и пекарни страны в её bbox, без закрытых; сети из конфига — по бренду (osmBrands, допускается суффикс страны) или началу названия (osmNames), остальные сети находятся сами (бренд от 3 точек, без бренда от 5 точек в 3 населённых пунктах, не больше 40; фирменные магазины производителей — по форме юрлица в названии и списку страны — не берутся); точка — центр bbox объекта",
+      "точки сетей из Overture Maps places (последний релиз, parquet в S3, через DuckDB): заведения общепита и пекарни страны в её bbox, без закрытых; сети из конфига — по бренду (osmBrands, допускается суффикс страны) или началу названия (osmNames), остальные сети находятся сами (бренд от 3 точек, без бренда от 5 точек в 3 населённых пунктах, не больше 40; подписи одного бренда с разным хвостом склеиваются в одну сеть; фирменные магазины производителей — по форме юрлица в названии и списку страны — не берутся); заведение с брендом сети, но чужим названием («Pizza Dominium» под «Domino's Pizza») и заведения в excludeAreas страны (север Кипра) не берутся; точка — центр bbox объекта",
   },
   async collect(cfg) {
     const started_at = new Date().toISOString();
