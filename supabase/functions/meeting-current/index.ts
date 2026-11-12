@@ -16,7 +16,7 @@ import { calendarKeyOf } from "../_shared/calendar-key.ts";
 // «Встречи сегодня», issue #218). Здесь своей копии больше нет.
 import { accessToken, listEvents } from "../_shared/google-calendar.ts";
 // «Эту встречу уже пишут» (issue #821) — то же правило живой записи, что у арбитра записей.
-import { loadRecordedNow } from "../_shared/bot-recording.ts";
+import { loadBotTouched, loadRecordedNow } from "../_shared/bot-recording.ts";
 import { isAutoStartWrite, loadAutoStart, parseAutoStartBody, saveAutoStart } from "./auto-start.ts";
 
 const supabase = createClient(
@@ -104,13 +104,14 @@ Deno.serve(async (req: Request) => {
     .eq("telegram_id", identity.telegramId).maybeSingle();
   // `auto_start` (#219) — настройка человека «рекордер сам начинает запись по календарю»; тоже в
   // каждом ответе человеку, в том числе без календаря. Ошибка чтения флага эндпоинт не валит.
-  const recordedNow = {
-    recorded_now: await loadRecordedNow(
-      supabase,
-      identity.telegramId,
-      (who as { email?: string | null } | null)?.email ?? null,
-      new Date().toISOString(),
-    ),
+  const whoEmail = (who as { email?: string | null } | null)?.email ?? null;
+  const nowIso = new Date().toISOString();
+  // Боту эти списки не отдаются: его пропуск открывает одно событие, а не встречи человека.
+  const recordedNow = identity.kind === "bot" ? {} : {
+    recorded_now: await loadRecordedNow(supabase, identity.telegramId, whoEmail, nowIso),
+    // Встречи, на которые бот приходил/приходит, пишет он или нет (#1278): рекордеру — чтобы не
+    // привязывать звонок человека к встрече, где бот стоит у двери.
+    bot_touched: await loadBotTouched(supabase, identity.telegramId, whoEmail, nowIso),
     auto_start: await loadAutoStart(supabase, identity.telegramId),
   };
 

@@ -101,6 +101,13 @@ final class LiveNotesPanel: NSObject, NSTextFieldDelegate {
         return editedTitle
     }
 
+    /// Название после выбора встречи в карточке (#1278): запись шла без привязки, поле было пустым.
+    /// Если человек уже вписал своё — не затираем.
+    func setChosenTitle(_ title: String?) {
+        guard editedTitle == nil, (titleField?.stringValue ?? "").trimmingCharacters(in: .whitespaces).isEmpty else { return }
+        titleField?.stringValue = (title ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     func hide() { stopTimers(); panel?.orderOut(nil) }
 
     // Свернуть блокнот в пилюлю — по клику на марке ИЛИ когда пользователь ушёл в другую программу.

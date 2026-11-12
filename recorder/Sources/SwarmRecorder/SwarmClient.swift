@@ -155,6 +155,9 @@ struct SwarmClient {
         /// Ключи встреч человека, которые прямо сейчас уже пишет бот (или чужой рекордер), —
         /// по ним «Записать» не предлагаем (issue #821). Старый сервер поля не шлёт → пусто.
         var recordedNow: [String] = []
+        /// Ключи встреч, на которые бот приходил/приходит, пишет он или нет (`bot_touched`, #1278):
+        /// у двери, закрытая комната. Старый сервер поля не шлёт → пусто.
+        var botTouched: [String] = []
         /// Лучший из созвонов — там, где нужен один (конец записи по календарю, присутствие).
         var meeting: MeetingIdentity.Info? { meetings.first }
     }
@@ -173,7 +176,7 @@ struct SwarmClient {
             let endedAt: String?
             let joinUrl: String?
         }
-        struct Resp: Decodable { let meetings: [M]?; let meeting: M?; let reason: String?; let recordedNow: [String]? }
+        struct Resp: Decodable { let meetings: [M]?; let meeting: M?; let reason: String?; let recordedNow: [String]?; let botTouched: [String]? }
         let r = try decoder.decode(Resp.self, from: data)
         let dead = (r.reason == "token_refresh_failed")
         // Новый сервер — список; раскатанный до D027 — одно поле.
@@ -185,7 +188,7 @@ struct SwarmClient {
                                         joinURL: join)
         }
         return MeetingLookup(meetings: meetings, tokenDead: dead && meetings.isEmpty,
-                             recordedNow: r.recordedNow ?? [])
+                             recordedNow: r.recordedNow ?? [], botTouched: r.botTouched ?? [])
     }
 
     // GET /meeting-missed — встречи, на которые бот не пошёл или не дошёл (T162, D022). Сервер в
