@@ -35,6 +35,8 @@ function fakeSource(
     autojoinPeople: () => Promise.resolve([1]),
     manualRooms: () => Promise.resolve(new Set<string>()),
     workspaceMembers: () => Promise.resolve([]),
+    existingJobKeys: (_g, keys) =>
+      Promise.resolve(new Set(keys.filter((k) => table.some((t) => t.calendar_key === k)))),
     refreshToken: (id) => Promise.resolve(over.tokens ? (over.tokens[id] ?? null) : "r"),
     accessToken: () => Promise.resolve({ ok: true, token: "a" }),
     listEvents: () => Promise.resolve([meeting()]),
@@ -190,4 +192,28 @@ Deno.test("БЛОКИРУЮЩИЙ: в задание идут получател
   await sweep(source, AGENT, NOW);
   assertEquals(inserted.length, 1);
   assertEquals(inserted[0].notice_recipients, [30, 40]);
+});
+
+Deno.test("получатели считаются один раз: на следующем проходе календари участников не читаются", async () => {
+  let membersReads = 0;
+  const { source, inserted } = fakeSource({
+    listEvents: () =>
+      Promise.resolve([{
+        ...meeting(),
+        attendees: [{ email: "me@x.io", self: true, responseStatus: "accepted" }, {
+          email: "b@x.io",
+          responseStatus: "accepted",
+        }],
+      }]),
+    workspaceMembers: () => {
+      membersReads++;
+      return Promise.resolve([{ telegram_id: 2, email: "b@x.io" }]);
+    },
+    // Бот не забирает задание: оно остаётся в окне, как при долгом ожидании начала.
+    takeJobs: () => Promise.resolve([]),
+  });
+  await sweep(source, AGENT, NOW);
+  await sweep(source, AGENT, NOW + 60_000);
+  assertEquals(membersReads, 1);
+  assertEquals(inserted.length, 1);
 });

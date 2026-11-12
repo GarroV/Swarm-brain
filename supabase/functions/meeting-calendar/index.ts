@@ -89,6 +89,12 @@ const source: SweepSource = {
     fail("allowed_users members", error);
     return (data ?? []) as Array<{ telegram_id: number | null; email: string | null }>;
   },
+  async existingJobKeys(groupId, keys) {
+    const { data, error } = await supabase.from("meeting_calendar_jobs")
+      .select("calendar_key").eq("group_id", groupId).in("calendar_key", [...keys]);
+    fail("meeting_calendar_jobs existing", error);
+    return new Set(((data ?? []) as Array<{ calendar_key: string }>).map((r) => r.calendar_key));
+  },
   async insertJobs(groupId, jobs) {
     // Служебные поля отбора (почты) в строку не идут; `notice_recipients` посчитан в sweep.ts.
     const rows = jobs.map(({ accepted_emails: _a, attendee_emails: _e, notice_recipients, ...job }) => ({

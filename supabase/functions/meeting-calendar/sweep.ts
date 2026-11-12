@@ -33,6 +33,8 @@ export interface SweepSource {
   listEvents(token: string, timeMin: string, timeMax: string, maxResults: number): Promise<GEvent[] | null>;
   /** Участники воркспейса с почтой — для получателей нотис бота (notice-recipients.ts). */
   workspaceMembers(groupId: string): Promise<NoticeMember[]>;
+  /** Ключи встреч из `keys`, на которые задание в воркспейсе уже заведено. */
+  existingJobKeys(groupId: string, keys: readonly string[]): Promise<ReadonlySet<string>>;
   /** Завести задания; уже заведённые на ту же встречу воркспейса не трогаются. */
   insertJobs(groupId: string, jobs: DispatchJob[]): Promise<void>;
   /** Погасить незабранные задания воркспейса тех, кого нет в `people` (выключили автозапуск). */
@@ -133,8 +135,14 @@ export async function sweep(
   // согласие, согласие — флаг сейчас. Гасим ДО вставки: иначе задание выключившего держало бы
   // ключ встречи, и коллега с той же встречей остался бы без бота (вставка по ключу молчит).
   await source.dropPendingJobsExcept(agent.groupId, people);
-  if (merged.jobs.length > 0) {
-    await source.insertJobs(agent.groupId, await withNoticeRecipients(source, agent.groupId, merged.jobs));
+  // Получателей считаем только для новых заданий: заведённое вставка всё равно не тронет, а
+  // календари участников на каждом проходе — лишние запросы в Google, пока встреча в окне.
+  const existing = merged.jobs.length > 0
+    ? await source.existingJobKeys(agent.groupId, merged.jobs.map((j) => j.calendar_key))
+    : new Set<string>();
+  const fresh = merged.jobs.filter((j) => !existing.has(j.calendar_key));
+  if (fresh.length > 0) {
+    await source.insertJobs(agent.groupId, await withNoticeRecipients(source, agent.groupId, fresh));
   }
   // Проход идёт секунды (календари в Google), за них человек мог выключить — перечитываем
   // согласие перед самым забором. Остаётся окно между этим чтением и UPDATE забора — миллисекунды.
