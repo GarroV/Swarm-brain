@@ -15,6 +15,9 @@
 // meeting-claim/agent-scope.ts). Задание пропуском в ручную встречу не является. Пропуск не выдался —
 // задания возвращаются в очередь.
 //
+// Вместе с заданием сохраняется `notice_recipients` — участники из Swarm, принявшие встречу: им
+// meeting-notice тоже шлёт нотисы бота (решение 12.11.2026). Миграцию с колонкой катить ДО функции.
+//
 // Всё, на что бот не пойдёт, возвращается в `skipped` с причиной — громко (D015):
 //   calendar_not_connected · calendar_token_dead · calendar_unavailable — у человека (ключа нет);
 //   no_conference_link · unsupported_platform · unrecognized_link · declined · not_accepted ·
@@ -45,6 +48,7 @@ import { recordSweepMisses } from "./missed.ts";
 import { makeMissStore } from "../_shared/calendar-miss-store.ts";
 import { mintGrants } from "../_shared/agent-grant.ts";
 import { loadCoveredRooms } from "../_shared/manual-rooms.ts";
+import { coOwnersFromAttendees } from "../_shared/meeting-owners.ts";
 
 const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
 
@@ -81,8 +85,27 @@ const source: SweepSource = {
   accessToken,
   listEvents,
   async insertJobs(groupId, jobs) {
+    // Получатели нотис бота — принявшие встречу (accepted) участники из Swarm (решение 12.11.2026):
+    // почты из события → люди воркспейса, как meeting-claim считает co_owners. Не прочиталось —
+    // пусто, нотиса уйдёт одному запустившему: лучше меньше адресатов, чем лишний.
+    let members: Array<{ telegram_id: number | null; email: string | null }> = [];
+    if (jobs.some((j) => (j.accepted_emails ?? []).length > 0)) {
+      const { data, error: usersErr } = await supabase.from("allowed_users")
+        .select("telegram_id, email").eq("group_id", groupId);
+      if (usersErr) console.error(`meeting-calendar: участники воркспейса не прочитаны: ${usersErr.message}`);
+      else members = (data ?? []) as typeof members;
+    }
+    const rows = jobs.map(({ accepted_emails, ...job }) => ({
+      ...job,
+      group_id: groupId,
+      notice_recipients: coOwnersFromAttendees(
+        (accepted_emails ?? []).map((email) => ({ email })),
+        members,
+        [job.invited_by],
+      ),
+    }));
     const { error } = await supabase.from("meeting_calendar_jobs")
-      .upsert(jobs.map((j) => ({ ...j, group_id: groupId })), {
+      .upsert(rows, {
         onConflict: "group_id,calendar_key",
         ignoreDuplicates: true,
       });

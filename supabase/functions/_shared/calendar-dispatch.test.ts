@@ -262,3 +262,66 @@ Deno.test("запас на подъём контейнера: за 2 минут�
   assertEquals(plan([startsIn(119)]).jobs.length, 1);
   assertEquals(plan([startsIn(0)]).jobs.length, 1);
 });
+
+// ── Кому уходят нотисы бота: только принявшие встречу (решение 12.11.2026) ──────
+
+const guestOf = (email: string, responseStatus: string) => ({ email, responseStatus });
+
+Deno.test("БЛОКИРУЮЩИЙ: в получатели нотис идут только принявшие — не ответил, «может быть», отклонил не попадают", () => {
+  const { jobs } = plan([
+    event({
+      organizer: org("boss@x.io"),
+      attendees: [
+        { email: "me@x.io", self: true, responseStatus: "accepted" },
+        guestOf("yes@x.io", "accepted"),
+        guestOf("silent@x.io", "needsAction"),
+        guestOf("maybe@x.io", "tentative"),
+        guestOf("no@x.io", "declined"),
+        guestOf("YES2@x.io", "accepted"),
+      ],
+    }),
+  ]);
+  assertEquals(jobs[0].accepted_emails, ["me@x.io", "yes2@x.io", "yes@x.io"]);
+});
+
+Deno.test("организатор своей встречи без гостей — принявший сам; организатор-«может быть» нет", () => {
+  assertEquals(plan([event({ organizer: { self: true, email: "Me@x.io" } })]).jobs[0].accepted_emails, ["me@x.io"]);
+});
+
+Deno.test("БЛОКИРУЮЩИЙ: два человека с автозапуском на одну встречу — принявшие обоих сохраняются в одном задании", () => {
+  const a = planPersonDispatch(
+    [event({
+      organizer: org("boss@x.io"),
+      attendees: [{ email: "a@x.io", self: true, responseStatus: "accepted" }, guestOf("c@x.io", "accepted")],
+    })],
+    1,
+    NOW,
+    new Set(),
+  );
+  const b = planPersonDispatch(
+    [event({
+      organizer: org("boss@x.io"),
+      attendees: [{ email: "b@x.io", self: true, responseStatus: "accepted" }, guestOf("c@x.io", "accepted")],
+    })],
+    2,
+    NOW,
+    new Set(),
+  );
+  const merged = mergeDispatch([a, b]).jobs;
+  assertEquals(merged.length, 1);
+  assertEquals(merged[0].invited_by, 1);
+  assertEquals(merged[0].accepted_emails, ["a@x.io", "b@x.io", "c@x.io"]);
+});
+
+Deno.test("БЛОКИРУЮЩИЙ: событие, отброшенное как «одна комната — один бот», не теряет принявших", () => {
+  const a = planPersonDispatch([event({ organizer: org("boss@x.io"), attendees: yes("a@x.io") })], 1, NOW, new Set());
+  const b = planPersonDispatch(
+    [event({ id: "e2", iCalUID: "other-uid", organizer: org("boss@x.io"), attendees: yes("b@x.io") })],
+    2,
+    NOW,
+    new Set(),
+  );
+  const merged = mergeDispatch([a, b]).jobs;
+  assertEquals(merged.map((j) => j.invited_by), [1]);
+  assertEquals(merged[0].accepted_emails, ["a@x.io", "b@x.io"]);
+});

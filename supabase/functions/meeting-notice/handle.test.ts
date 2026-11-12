@@ -32,6 +32,8 @@ type Row = Record<string, unknown>;
 interface Store {
   meetings: Row[];
   meeting_notices: Row[];
+  /** Задания календаря: `notice_recipients` — принявшие встречу, которым тоже уходят нотисы бота. */
+  meeting_calendar_jobs: Row[];
   /** Что ответит функция резерва. По умолчанию — занять слот с номером 1. */
   reserve?: (args: Row) => { data: unknown; error: { code: string; message: string } | null };
   /** С какими аргументами звали резерв. */
@@ -42,6 +44,8 @@ interface Store {
   writes: string[];
   /** Ломает чтение участников воркспейса. */
   failAllowedUsersRead?: boolean;
+  /** Ломает чтение задания календаря. */
+  failJobsRead?: boolean;
 }
 
 function newStore(): Store {
@@ -53,6 +57,7 @@ function newStore(): Store {
       { id: OWN_OTHER, title: "Another meeting", group_id: "alpha", claim_owner: OWNER.telegram_id },
     ],
     meeting_notices: [],
+    meeting_calendar_jobs: [],
     reserveCalls: [],
     allowedUsers: [],
     writes: [],
@@ -62,7 +67,7 @@ function newStore(): Store {
 type Filter = (row: Row) => boolean;
 
 /** Минимальный построитель запроса поверх массива: eq/neq/gte, select, insert, update. */
-function tableQuery(store: Store, table: "meetings" | "meeting_notices") {
+function tableQuery(store: Store, table: "meetings" | "meeting_notices" | "meeting_calendar_jobs") {
   const filters: Filter[] = [];
   let pending: { insert?: Row; update?: Row } = {};
   const rows = () => store[table].filter((r) => filters.every((f) => f(r)));
@@ -78,7 +83,10 @@ function tableQuery(store: Store, table: "meetings" | "meeting_notices") {
     eq: (c: string, v: unknown) => (filters.push((r) => r[c] === v), q),
     neq: (c: string, v: unknown) => (filters.push((r) => r[c] !== v), q),
     gte: (c: string, v: string) => (filters.push((r) => String(r[c]) >= v), q),
-    maybeSingle: () => Promise.resolve({ data: rows()[0] ?? null, error: null }),
+    maybeSingle: () =>
+      store.failJobsRead && table === "meeting_calendar_jobs"
+        ? Promise.resolve({ data: null, error: { message: "boom" } })
+        : Promise.resolve({ data: rows()[0] ?? null, error: null }),
     insert: (row: Row) => ((pending = { insert: row }), store.writes.push(table), q),
     update: (patch: Row) => ((pending = { update: patch }), store.writes.push(table), q),
     single: () => {
@@ -129,7 +137,9 @@ async function makeSupabase(store: Store = newStore()): Promise<SupabaseClient> 
       return Promise.resolve({ data: { id, attempt: 1 }, error: null });
     },
     from(table: string) {
-      if (table === "meetings" || table === "meeting_notices") return tableQuery(store, table);
+      if (table === "meetings" || table === "meeting_notices" || table === "meeting_calendar_jobs") {
+        return tableQuery(store, table);
+      }
       let byToken: string | null = null;
       let byId: number | null = null;
       let byAgentId: string | null = null;
@@ -475,9 +485,17 @@ Deno.test("не POST — 405 с объяснением", async () => {
 
 const CO_MEETING = "9f0c6b1e-8a2d-4c3f-9b7e-1d2a3c4b5e6f";
 
-/** Встреча MEETING с участниками из Swarm: 222 и 333 — обычные, -5 — веб без Telegram, 999 — чужой воркспейс. */
-function withParticipants(store: Store, coOwners: number[]): Store {
-  store.meetings[0].co_owners = coOwners;
+/**
+ * Календарное задание встречи MEETING (ключ из пропуска бота — в поддельной базе он «other@google.com:…»): `accepted` — принявшие встречу,
+ * которых посчитал meeting-calendar. 222 и 333 — участники воркспейса, -5 — веб без Telegram,
+ * 999 — другой воркспейс, 404 — нет в allowed_users.
+ */
+function withParticipants(store: Store, accepted: number[]): Store {
+  store.meeting_calendar_jobs = [{
+    group_id: "alpha",
+    calendar_key: "other@google.com:2026-09-23",
+    notice_recipients: accepted,
+  }];
   store.allowedUsers = [
     { telegram_id: OWNER.telegram_id, group_id: "alpha" },
     { telegram_id: 222, group_id: "alpha" },
@@ -489,8 +507,8 @@ function withParticipants(store: Store, coOwners: number[]): Store {
 
 const chatIds = (sent: Sent[]) => sent.map((m) => m.chatId).sort((a, b) => a - b);
 
-Deno.test("БЛОКИРУЮЩИЙ: встречная нотиса уходит запустившему и всем участникам из co_owners, без дублей и служебных id", async () => {
-  // 111 (запустивший) в co_owners — дубль; -5 — веб без Telegram; 999 — другой воркспейс; 404 — нет в allowed_users.
+Deno.test("БЛОКИРУЮЩИЙ: встречная нотиса уходит запустившему и принявшим встречу (notice_recipients), без дублей и служебных id", async () => {
+  // 111 (запустивший) в списке — дубль; -5 — веб без Telegram; 999 — другой воркспейс; 404 — нет в allowed_users.
   const store = withParticipants(newStore(), [222, 333, 111, 222, -5, 999, 404]);
   const { deps, sent } = makeDeps(await makeSupabase(store));
   const res = await handleNotice(asBot({ kind: "guest_access_closed", meeting_id: MEETING }), deps);
@@ -574,6 +592,33 @@ Deno.test("участников не прочитать — нотиса ухо�
   assertEquals(chatIds(sent), [111]);
 });
 
+Deno.test("БЛОКИРУЮЩИЙ: участник с co_owners, но без принятия (его нет в notice_recipients) нотису не получает", async () => {
+  const store = withParticipants(newStore(), [222]);
+  // 333 — в co_owners встречи (он в приглашении), но встречу не принял: needsAction/tentative/declined.
+  store.meetings[0].co_owners = [222, 333];
+  const { deps, sent } = makeDeps(await makeSupabase(store));
+  await handleNotice(asBot({ kind: "no_audio", meeting_id: MEETING }), deps);
+  assertEquals(chatIds(sent), [111, 222]);
+});
+
+Deno.test("запрос человека (не бота) и встреча без задания — только запустившему, задание не читается", async () => {
+  const store = withParticipants(newStore(), [222, 333]);
+  store.failJobsRead = true;
+  const { deps, sent } = makeDeps(await makeSupabase(store));
+  const res = await handleNotice(request({ kind: "no_audio", meeting_id: MEETING }, { token: HUMAN_TOKEN }), deps);
+  assertEquals(res.status, 200);
+  assertEquals(chatIds(sent), [111]);
+});
+
+Deno.test("задание не прочитать — нотиса уходит одному запустившему", async () => {
+  const store = withParticipants(newStore(), [222, 333]);
+  store.failJobsRead = true;
+  const { deps, sent } = makeDeps(await makeSupabase(store));
+  const res = await handleNotice(asBot({ kind: "no_audio", meeting_id: MEETING }), deps);
+  assertEquals(res.status, 200);
+  assertEquals(chatIds(sent), [111]);
+});
+
 Deno.test("до-встречный отказ — только запустившему, со-участники не читаются", async () => {
   const store = withParticipants(newStore(), [222, 333]);
   const { deps, sent } = makeDeps(await makeSupabase(store));
@@ -581,7 +626,7 @@ Deno.test("до-встречный отказ — только запустив�
   assertEquals(chatIds(sent), [111]);
 });
 
-Deno.test("guest_access_waiting — встречная нотиса: у каждого получателя свой {title}, имя бота и срок ожидания", async () => {
+Deno.test("guest_access_waiting — встречная нотиса: у каждого получателя название встречи, имя бота подставлено", async () => {
   const store = withParticipants(newStore(), [222]);
   const { deps, sent } = makeDeps(await makeSupabase(store));
   const res = await handleNotice(asBot({ kind: "guest_access_waiting", meeting_id: MEETING, lang: "ru" }), deps);

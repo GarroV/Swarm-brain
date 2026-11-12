@@ -45,10 +45,9 @@ interface MeetingRow {
   title: string | null;
   group_id: string | null;
   claim_owner: number | null;
-  co_owners: number[] | null;
 }
 
-type Checked = { title: string | null; coOwners: number[] } | Response;
+type Checked = { title: string | null } | Response;
 
 /**
  * Встречный отказ: встреча обязана существовать, быть из воркспейса агента и принадлежать тому,
@@ -58,7 +57,7 @@ type Checked = { title: string | null; coOwners: number[] } | Response;
 async function checkMeeting(deps: NoticeDeps, meetingId: string, identity: AgentIdentity): Promise<Checked> {
   const { data, error } = await deps.supabase
     .from("meetings")
-    .select("title, group_id, claim_owner, co_owners")
+    .select("title, group_id, claim_owner")
     .eq("id", meetingId)
     .maybeSingle();
   if (error) {
@@ -85,33 +84,48 @@ async function checkMeeting(deps: NoticeDeps, meetingId: string, identity: Agent
     );
     return json({ ok: false, delivered: false, error: "the person is not the owner of this meeting" }, 403);
   }
-  return { title: meeting.title, coOwners: meeting.co_owners ?? [] };
+  return { title: meeting.title };
 }
 
 /**
- * Со-получатели встречного уведомления (решение 12.11.2026): остальные участники встречи, у
- * которых есть вход в Swarm, — `meetings.co_owners`, их заполняет meeting-claim ДО захода бота.
- * Список берётся ТОЛЬКО из строки встречи на сервере, не из тела запроса. Отрицательный id — веб-
- * пользователь без Telegram, написать ему нечем. Каждый обязан существовать в `allowed_users`
- * воркспейса встречи (журнал ссылается на эту таблицу). Не прочиталось — уведомление уйдёт одному
- * запустившему, как раньше: ошибка пишется громко, но доставку ему не роняет.
+ * Со-получатели встречного уведомления (решение 12.11.2026): участники из Swarm, которые ПРИНЯЛИ
+ * встречу в календаре («Все, кто окнул встречу, те получают»). Принятие видно только в Google-
+ * событии при обходе календаря, поэтому список (`notice_recipients`) считает meeting-calendar и
+ * хранит в задании; здесь он читается по ключу пропуска бота — на сервере, не из тела запроса.
+ * Встреча по ручному приглашению (пропуск `invite`) и запрос от человека — только запустившему.
+ * Отрицательный id — веб-пользователь без Telegram, написать нечем. Каждый обязан существовать в
+ * `allowed_users` воркспейса встречи (журнал ссылается на эту таблицу). Не прочиталось — уведомление
+ * уйдёт одному запустившему, как раньше: ошибка пишется громко, но доставку ему не роняет.
  */
-async function coRecipients(
-  deps: NoticeDeps,
-  groupId: string,
-  coOwners: number[],
-  launcherId: number,
-): Promise<number[]> {
-  const candidates = [...new Set(coOwners.filter((id) => Number.isInteger(id) && id > 0 && id !== launcherId))];
+async function coRecipients(deps: NoticeDeps, identity: AgentIdentity): Promise<number[]> {
+  const grant = identity.grant;
+  if (identity.kind !== "bot" || identity.groupId === null) return [];
+  if (!grant || grant.basis !== "calendar" || !grant.calendarKey) return [];
+  const job = await deps.supabase
+    .from("meeting_calendar_jobs")
+    .select("notice_recipients")
+    .eq("group_id", identity.groupId)
+    .eq("calendar_key", grant.calendarKey)
+    .maybeSingle();
+  if (job.error) {
+    console.error(
+      `meeting-notice: получателей задания не прочитать, уведомление уйдёт одному запустившему: ${job.error.message}`,
+    );
+    return [];
+  }
+  const accepted = (job.data as { notice_recipients: number[] | null } | null)?.notice_recipients ?? [];
+  const candidates = [
+    ...new Set(accepted.map(Number).filter((id) => Number.isInteger(id) && id > 0 && id !== identity.telegramId)),
+  ];
   if (candidates.length === 0) return [];
   const { data, error } = await deps.supabase
     .from("allowed_users")
     .select("telegram_id")
-    .eq("group_id", groupId)
+    .eq("group_id", identity.groupId)
     .in("telegram_id", candidates);
   if (error) {
     console.error(
-      `meeting-notice: участников встречи не прочитать, уведомление уйдёт одному запустившему: ${error.message}`,
+      `meeting-notice: участников воркспейса не прочитать, уведомление уйдёт одному запустившему: ${error.message}`,
     );
     return [];
   }
@@ -227,20 +241,16 @@ export async function handleNotice(req: Request, deps: NoticeDeps): Promise<Resp
   if (granted instanceof Response) return granted;
 
   let title = granted.title;
-  let coOwners: number[] = [];
   if (notice.scope.type === "meeting") {
     const checked = await checkMeeting(deps, notice.scope.meetingId, identity);
     if (checked instanceof Response) return checked;
     title = checked.title;
-    coOwners = checked.coOwners;
   }
 
-  // Встречное уведомление видят все участники встречи, а не только тот, от чьего имени бот. Ничего,
+  // Встречное уведомление видят все, кто принял встречу, а не только тот, от чьего имени бот. Ничего,
   // кроме строк журнала `meeting_notices` и очереди Telegram, это не трогает: другие встречи
   // получателей, их записи и claims остаются как были (встречи самостоятельны).
-  const coIds = notice.scope.type === "meeting" && coOwners.length > 0 && identity.groupId !== null
-    ? await coRecipients(deps, identity.groupId, coOwners, identity.telegramId)
-    : [];
+  const coIds = notice.scope.type === "meeting" ? await coRecipients(deps, identity) : [];
   const coDelivery = Promise.all(coIds.map((id) => deliverToCoRecipient(deps, notice, title, id)));
 
   const own = await deliverToLauncher(deps, notice, title, identity.telegramId);

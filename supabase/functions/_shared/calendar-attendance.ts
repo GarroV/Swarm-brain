@@ -12,6 +12,24 @@
 // «организатор» нет: есть ответ — решает он.
 import type { GEvent } from "../meeting-current/select.ts";
 
+/**
+ * Почты тех, кто принял встречу в этом событии: гости с ответом accepted, плюс организатор своей
+ * встречи, если он считается «да» (`acceptedBySelf`). Решение владельца 12.11.2026: нотисы бота о
+ * провале записи получают только принявшие — не ответивший, «может быть», отклонивший и не
+ * участник их не видят. Статус чужого ответа есть только в событии запустившего (а у людей с
+ * автозапуском — в их собственных событиях), в `meetings.attendees` его нет.
+ */
+export function acceptedEmails(ev: Pick<GEvent, "attendees" | "organizer">): string[] {
+  const out = new Set<string>();
+  for (const a of ev.attendees ?? []) {
+    const email = (a.email ?? "").trim().toLowerCase();
+    if (a.responseStatus === "accepted" && email) out.add(email);
+  }
+  const organizer = (ev.organizer?.email ?? "").trim().toLowerCase();
+  if (organizer && ev.organizer?.self === true && acceptedBySelf(ev)) out.add(organizer);
+  return [...out].sort();
+}
+
 export function acceptedBySelf(ev: Pick<GEvent, "attendees" | "organizer">): boolean {
   const self = (ev.attendees ?? []).find((a) => a.self === true);
   if (self?.responseStatus !== undefined) return self.responseStatus === "accepted";

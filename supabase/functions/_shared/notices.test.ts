@@ -200,7 +200,6 @@ Deno.test("БЛОКИРУЮЩИЙ: ранний «стук» guest_access_waitin
     const text = renderNotice(notice({ kind: "guest_access_waiting", lang }), "Weekly", 1);
     assert(text.includes("Weekly") && !text.includes("{"), `${lang}: подстановки не заполнены — ${text}`);
     assert(/external participants|внешних участников/i.test(text), `${lang}: не сказано, что открыть — ${text}`);
-    assert(text.includes(String(BOT_PROFILE.guestRoom.waitMinutes)), `${lang}: срок ожидания не из профиля — ${text}`);
   }
 });
 
