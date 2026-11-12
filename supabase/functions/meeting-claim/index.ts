@@ -16,6 +16,7 @@ import {
 import { deferLogSuffix, withGuards } from "./guard-query.ts";
 import { CHALLENGER_ROLE, withRecorder } from "../meeting-ingest/challenge.ts";
 import { boundClaimSeconds, type MeetingClock } from "./claim-clock.ts";
+import { doorFailure } from "./door-failure.ts";
 import { AgentAuthError, type AgentIdentity, resolveActingIdentity } from "../_shared/agent-auth.ts";
 import { defaultMeetingTitle, displayNameOf, isDefaultMeetingTitle } from "../_shared/meeting-title.ts";
 import {
@@ -51,9 +52,7 @@ import { externalFetch, VIA_OPENAI_EMBEDDING } from "../_shared/external-fetch.t
 // meeting-claim — шаг ДО транскрибации (см. transcribator/10-REVISED-DESIGN.md §4, §7.1).
 // Записывают все участники; перед запуском Whisper каждый делает claim по ключу встречи.
 // Транскрибирует ОДИН — тот, чья запись ПОЛНЕЕ (decision=transcribe), остальные — defer.
-// Здесь же: регистрируем записавшего и сохраняем его личные пометки как приватную entry.
-//
-// Почему не «кто первый, того и тапки» (было до 17.08.2026): claim подаётся в момент ОСТАНОВКИ
+// Здесь же: регистрируем записавшего и сохраняем его личные пометки как приватную entry. Почему не «кто первый, того и тапки» (было до 17.08.2026): claim подаётся в момент ОСТАНОВКИ
 // записи, поэтому «первый заявившийся» = тот, кто раньше нажал стоп = владелец САМОЙ КОРОТКОЙ
 // записи. Инцидент (встреча 251cd245-d6be-4abf-ba47-9755885eb05b): коллега остановила запись на
 // 3-й минуте при переходе в другой Google Meet и забрала право; полная запись на 2ч26м пришла
@@ -514,7 +513,7 @@ async function resolveExisting(
     };
   }
 
-  const verdict = decideHeld(row, candidate, identity.telegramId, nowIso);
+  const verdict = decideHeld(row, candidate, identity.telegramId, nowIso, await doorFailure(supabase, row, candidate));
   if (verdict === "defer") {
     return {
       decision: "defer",

@@ -103,7 +103,7 @@ function holderClaimedAtMs(row: Pick<HeldRow, "claim_owner" | "recorders">): num
 }
 
 /** Нет ни секунд, ни стенограммы, ни обработки — «версии» держателя нет (без учёта срока). */
-function holdsNothing(row: Pick<HeldRow, "recorded_seconds" | "transcript" | "summary_status">): boolean {
+export function holdsNothing(row: Pick<HeldRow, "recorded_seconds" | "transcript" | "summary_status">): boolean {
   if (heldSeconds(row) > 0) return false;
   if (row.summary_status === "processing" || row.summary_status === "done") return false;
   return (row.transcript?.segments ?? []).length === 0;
@@ -123,19 +123,31 @@ function holdsNothing(row: Pick<HeldRow, "recorded_seconds" | "transcript" | "su
 export function isEmptyHolder(
   row: Pick<HeldRow, "claim_owner" | "recorded_seconds" | "transcript" | "summary_status" | "recorders">,
   nowIso: string,
+  doorFailedAtMs: number | null = null,
 ): boolean {
   if (!holdsNothing(row)) return false;
   const claimedAt = holderClaimedAtMs(row);
-  return claimedAt !== null && Date.parse(nowIso) - claimedAt >= EMPTY_HOLDER_GRACE_SEC * 1000;
+  if (claimedAt === null) return false;
+  // Бот сам сказал нотисой, что не вошёл (журнал, door-failure.ts), — и это случилось ПОСЛЕ последней
+  // заявки держателя: ждать льготный срок нечего. Нотиса старше заявки — бот заявился заново, она
+  // не про эту попытку, и действует обычный срок.
+  if (doorFailedAtMs !== null && doorFailedAtMs >= claimedAt) return true;
+  return Date.parse(nowIso) - claimedAt >= EMPTY_HOLDER_GRACE_SEC * 1000;
 }
 
-export function decideHeld(row: HeldRow, candidate: number, ownerId: number, nowIso: string): HeldDecision {
+export function decideHeld(
+  row: HeldRow,
+  candidate: number,
+  ownerId: number,
+  nowIso: string,
+  doorFailedAtMs: number | null = null,
+): HeldDecision {
   // Правленное человеком или опубликованное команде не трогает никто.
   if (isFrozen(row)) return "defer";
   const sameOwner = row.claim_owner === ownerId;
   if (botStillRecording(row, nowIso)) return sameOwner ? "reserve" : "defer";
   // Пустой держатель уступает любой записи с секундами; сравнение с ним — пороги не нужны.
-  if (candidate > 0 && isEmptyHolder(row, nowIso)) return sameOwner ? "refresh" : "takeover";
+  if (candidate > 0 && isEmptyHolder(row, nowIso, doorFailedAtMs)) return sameOwner ? "refresh" : "takeover";
   if (!(candidate > 0 && isSubstantiallyLonger(candidate, heldSeconds(row)))) return "defer";
   return sameOwner ? "refresh" : "takeover";
 }
