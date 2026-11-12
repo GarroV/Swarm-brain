@@ -70,10 +70,8 @@ export const NOTICE_TEXTS: Record<NoticeTextKey, Record<NoticeLang, string>> = {
   // всем, кто принял встречу, — кто в звонке, тот и откроет доступ. Коротко: что не так и что сделать.
   // Итоговое guest_access_closed придёт, только если не открыли.
   guest_access_waiting: {
-    en:
-      "<b>{title}</b>: {bot} can't join this Kontur.Talk meeting — it isn't open to external participants. Please make the meeting public (open to external participants) and {bot} will come in and record.",
-    ru:
-      "«<b>{title}</b>»: {bot} не может зайти в эту встречу Контур.Толка — она закрыта для внешних участников. Сделайте встречу открытой (публичной) для внешних участников, и {bot} зайдёт и запишет.",
+    en: "{bot} can't join the Kontur.Talk meeting <b>{title}</b>: it is closed to external participants.",
+    ru: "{bot} не может зайти во встречу Контур.Толка «<b>{title}</b>»: она закрыта для внешних участников.",
   },
   // Страница прямо говорит, что встречи нет: неверный код или встреча уже закончилась.
   meeting_unavailable: {
