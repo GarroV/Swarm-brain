@@ -618,7 +618,7 @@ export function SprintBoardView(
   if (!data) {
     return (
       <p
-        className="px-5 py-10 text-center text-sm text-ink-soft/70"
+        className="px-5 py-10 text-center text-sm text-ink-soft"
         role={loadErr ? "alert" : "status"}
       >
         {loadErr ?? dt("Загрузка доски…", "Loading the board…")}

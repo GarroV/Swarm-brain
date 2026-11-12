@@ -67,7 +67,7 @@ export function SnapshotCard({ item, users, onAddReason }: {
             <button
               type="button"
               onClick={() => onAddReason(item)}
-              className="font-semibold text-pri-high underline-offset-2 hover:underline"
+              className="text-left font-semibold text-pri-high underline-offset-2 hover:underline"
             >
               {dt(
                 "причина не указана — нажмите, чтобы вписать",
