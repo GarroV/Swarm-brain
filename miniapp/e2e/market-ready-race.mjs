@@ -155,13 +155,14 @@ function mount() {
       freshness.props.onChanged();
     },
     marked() {
-      const button =
-        nodes(tree, (n) => n.type === "button" && n.key === "XD")[0];
+      // Выбор страны — отдельный CountryPicker (дочерний вид здесь — фикстура):
+      // проверяем, что экран отдаёт ему XD и текущий список готовых.
+      const picker = nodes(tree, (n) => n.type === "CountryPicker")[0];
       assert.ok(
-        button,
+        picker && picker.props.countries.includes("XD"),
         "actual country switcher must render the synthetic XD country",
       );
-      return button.props.title !== undefined;
+      return picker.props.ready.includes("XD");
     },
   };
 }

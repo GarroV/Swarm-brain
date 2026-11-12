@@ -70,3 +70,16 @@ Deno.test("not ready: fresh auto source but any section empty (BG-like: no edito
 Deno.test("not ready: all sections filled but an auto source is stale", () => {
   assertEquals(isCountryReady([src("osm", "auto", "2026-09-20T00:00:00Z")], [], FULL, NOW), false);
 });
+
+Deno.test("cadence sets the stale threshold: monthly/yearly 38 days, weekly and unknown 8", () => {
+  const at = (cadence: string | undefined, iso: string) => ({ adapter: "a", mode: "auto", last_ok_at: iso, cadence });
+  const d20 = "2026-09-20T00:00:00Z";
+  const d40 = "2026-08-31T00:00:00Z";
+  const d9 = "2026-10-01T00:00:00Z";
+  assertEquals(isCountryReady([at("monthly", d20)], [], FULL, NOW), true);
+  assertEquals(isCountryReady([at("yearly", d20)], [], FULL, NOW), true);
+  assertEquals(isCountryReady([at("monthly", d40)], [], FULL, NOW), false);
+  assertEquals(isCountryReady([at("weekly", d9)], [], FULL, NOW), false);
+  assertEquals(isCountryReady([at(undefined, d9)], [], FULL, NOW), false);
+  assertEquals(isCountryReady([at("weekly", "2026-10-02T00:00:00Z")], [], FULL, NOW), true);
+});
