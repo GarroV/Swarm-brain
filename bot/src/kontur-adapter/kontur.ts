@@ -16,7 +16,7 @@
 import type { Browser, BrowserContext, LaunchOptions, Locator, Page } from "playwright";
 
 import { chromiumLaunchOptions } from "../container/browser.ts";
-import type { AdmissionOutcome, PlatformAdapter } from "../meet-adapter/types.ts";
+import type { AdmissionOutcome, JoinHooks, PlatformAdapter } from "../meet-adapter/types.ts";
 import {
   CONTINUE_SELECTORS,
   JOIN_SELECTORS,
@@ -114,6 +114,10 @@ export class KonturAdapter implements PlatformAdapter {
   Комната так и не открылась для гостей — причина для журнала; `null` — открылась.
   */
   #closedReason: string | null = null;
+  /**
+  Хуки текущего входа (`join`): процесс встречи узнаёт о закрытой комнате сразу.
+  */
+  #joinHooks: JoinHooks | null = null;
   /**
   Последний шаг входа (представиться / присоединиться) и когда он сделан — чтобы не повторять.
   */
@@ -222,6 +226,7 @@ export class KonturAdapter implements PlatformAdapter {
       }
       if (!isClosedReported) {
         isClosedReported = true;
+        await this.#announceClosedRoom();
         this.#log(
           `${verdict.reason} — ждём, пока её откроют: до ${String(waitMs / 1000)} с, ` +
             `перезагрузка раз в ${String(reloadMs / 1000)} с`,
@@ -244,6 +249,18 @@ export class KonturAdapter implements PlatformAdapter {
     }
     this.#log("остановлены, пока ждали открытия комнаты");
     return null;
+  }
+
+  /**
+   * Сказать процессу встречи, что комната закрыта, — пока ещё ждём. Сбой хука (отправка нотисы)
+   * вход не рушит: журнал запишет, ожидание продолжится.
+   */
+  async #announceClosedRoom(): Promise<void> {
+    try {
+      await this.#joinHooks?.onGuestRoomClosed?.();
+    } catch (error) {
+      this.#log(`хук закрытой комнаты упал: ${String(error)}`);
+    }
   }
 
   async #introduce(displayName: string): Promise<void> {
@@ -313,9 +330,10 @@ export class KonturAdapter implements PlatformAdapter {
     }
   }
 
-  async join(url: string, displayName: string): Promise<void> {
+  async join(url: string, displayName: string, hooks?: JoinHooks): Promise<void> {
     const target = checkKonturUrl(url);
     this.#displayName = displayName;
+    this.#joinHooks = hooks ?? null;
     this.#closedReason = null;
     this.#lastStep = null;
 

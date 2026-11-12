@@ -36,6 +36,12 @@ interface Store {
   reserve?: (args: Row) => { data: unknown; error: { code: string; message: string } | null };
   /** С какими аргументами звали резерв. */
   reserveCalls: Row[];
+  /** Участники воркспейсов (`allowed_users`): из них сервер выбирает со-получателей. */
+  allowedUsers: Row[];
+  /** Какие таблицы записывали (insert/update) — «встречи самостоятельны» проверяется по этому списку. */
+  writes: string[];
+  /** Ломает чтение участников воркспейса. */
+  failAllowedUsersRead?: boolean;
 }
 
 function newStore(): Store {
@@ -48,6 +54,8 @@ function newStore(): Store {
     ],
     meeting_notices: [],
     reserveCalls: [],
+    allowedUsers: [],
+    writes: [],
   };
 }
 
@@ -71,8 +79,8 @@ function tableQuery(store: Store, table: "meetings" | "meeting_notices") {
     neq: (c: string, v: unknown) => (filters.push((r) => r[c] !== v), q),
     gte: (c: string, v: string) => (filters.push((r) => String(r[c]) >= v), q),
     maybeSingle: () => Promise.resolve({ data: rows()[0] ?? null, error: null }),
-    insert: (row: Row) => ((pending = { insert: row }), q),
-    update: (patch: Row) => ((pending = { update: patch }), q),
+    insert: (row: Row) => ((pending = { insert: row }), store.writes.push(table), q),
+    update: (patch: Row) => ((pending = { update: patch }), store.writes.push(table), q),
     single: () => {
       const row = pending.insert!;
       const clash = store.meeting_notices.some((r) =>
@@ -125,6 +133,8 @@ async function makeSupabase(store: Store = newStore()): Promise<SupabaseClient> 
       let byToken: string | null = null;
       let byId: number | null = null;
       let byAgentId: string | null = null;
+      let groupEq: string | null = null;
+      let inIds: number[] | null = null;
       const builder: Record<string, unknown> = {
         select: () => builder,
         or: (expr: string) => {
@@ -135,8 +145,22 @@ async function makeSupabase(store: Store = newStore()): Promise<SupabaseClient> 
           if (column === "token_hash") byToken = String(value);
           if (column === "telegram_id") byId = Number(value);
           if (column === "id") byAgentId = String(value);
+          if (column === "group_id") groupEq = String(value);
           return builder;
         },
+        in: (_column: string, values: number[]) => {
+          inIds = values;
+          return builder;
+        },
+        // Чтение списка участников (`.in`) — единственный запрос к allowed_users, который ждут без maybeSingle.
+        then: (ok: (v: unknown) => unknown, bad: (e: unknown) => unknown) =>
+          Promise.resolve().then(() => {
+            if (store.failAllowedUsersRead) return { data: null, error: { message: "boom" } };
+            const rows = store.allowedUsers.filter((u) =>
+              (inIds === null || inIds.includes(Number(u.telegram_id))) && (groupEq === null || u.group_id === groupEq)
+            );
+            return { data: rows, error: null };
+          }).then(ok, bad),
         maybeSingle: async () => {
           let data: Row | null = null;
           if (table === "meeting_agent_grants") {
@@ -445,4 +469,175 @@ Deno.test("не POST — 405 с объяснением", async () => {
   const { deps } = makeDeps(await makeSupabase());
   const res = await handleNotice(request({ kind: "no_audio" }, { method: "GET", onBehalfOf: OWNER.telegram_id }), deps);
   assertEquals(res.status, 405);
+});
+
+// ── Встречные нотисы — всем участникам встречи (решение 12.11.2026) ────────────
+
+const CO_MEETING = "9f0c6b1e-8a2d-4c3f-9b7e-1d2a3c4b5e6f";
+
+/** Встреча MEETING с участниками из Swarm: 222 и 333 — обычные, -5 — веб без Telegram, 999 — чужой воркспейс. */
+function withParticipants(store: Store, coOwners: number[]): Store {
+  store.meetings[0].co_owners = coOwners;
+  store.allowedUsers = [
+    { telegram_id: OWNER.telegram_id, group_id: "alpha" },
+    { telegram_id: 222, group_id: "alpha" },
+    { telegram_id: 333, group_id: "alpha" },
+    { telegram_id: 999, group_id: "beta" },
+  ];
+  return store;
+}
+
+const chatIds = (sent: Sent[]) => sent.map((m) => m.chatId).sort((a, b) => a - b);
+
+Deno.test("БЛОКИРУЮЩИЙ: встречная нотиса уходит запустившему и всем участникам из co_owners, без дублей и служебных id", async () => {
+  // 111 (запустивший) в co_owners — дубль; -5 — веб без Telegram; 999 — другой воркспейс; 404 — нет в allowed_users.
+  const store = withParticipants(newStore(), [222, 333, 111, 222, -5, 999, 404]);
+  const { deps, sent } = makeDeps(await makeSupabase(store));
+  const res = await handleNotice(asBot({ kind: "guest_access_closed", meeting_id: MEETING }), deps);
+  assertEquals(res.status, 200);
+  assertEquals(chatIds(sent), [111, 222, 333], "нотиса ушла не всем участникам или ушла лишним");
+  assertEquals(store.reserveCalls.map((c) => c.p_recipient).sort(), [111, 222, 333], "потолки считаются на каждого");
+});
+
+Deno.test("встречная нотиса: у каждого получателя свой слот в журнале и свой номер отправки", async () => {
+  const store = withParticipants(newStore(), [222]);
+  store.reserve = (args) => {
+    const attempt = args.p_recipient === 222 ? 2 : 1;
+    const id = store.meeting_notices.length + 1;
+    store.meeting_notices.push({ id, status: "sending", ...args });
+    return { data: { id, attempt }, error: null };
+  };
+  const { deps, sent } = makeDeps(await makeSupabase(store));
+  const body = await payload(await handleNotice(asBot({ kind: "door_waiting", meeting_id: MEETING }), deps));
+  // Бот получает расписание по номеру ЗАПУСТИВШЕГО: число и номера со-получателей решение «уходить» не меняют.
+  assertEquals([body.attempt, body.should_leave], [1, false]);
+  const last = sent.find((m) => m.chatId === 222)!;
+  assert(last.text.includes("last reminder"), `со-участнику с номером 2 ушёл не последний текст: ${last.text}`);
+  assert(!sent.find((m) => m.chatId === 111)!.text.includes("last reminder"));
+});
+
+Deno.test("БЛОКИРУЮЩИЙ: недоставка участнику не роняет доставку запустившему и не даёт боту 502", async () => {
+  const store = withParticipants(newStore(), [222, 333]);
+  const base = makeDeps(await makeSupabase(store));
+  const sent: number[] = [];
+  const deps = {
+    ...base.deps,
+    sendTelegram: (chatId: number, _text: string) => {
+      if (chatId === 222) return Promise.reject(new Error("Forbidden: bot was blocked by the user"));
+      sent.push(chatId);
+      return Promise.resolve();
+    },
+  };
+  const res = await handleNotice(asBot({ kind: "no_audio", meeting_id: MEETING }), deps);
+  assertEquals(res.status, 200, "чужая недоставка дала боту ложный сбой");
+  assertEquals(sent.sort(), [111, 333]);
+  const byRecipient = (id: number) => store.meeting_notices.find((r) => r.recipient_id === id || r.p_recipient === id)!;
+  assertEquals(byRecipient(222).status, "failed", "недоставленному слот не освобождён");
+  assertEquals(byRecipient(333).status, "sent");
+});
+
+Deno.test("БЛОКИРУЮЩИЙ: потолок у участника не мешает запустившему и не меняет ответ боту", async () => {
+  const store = withParticipants(newStore(), [222]);
+  store.reserve = (args) => {
+    if (args.p_recipient === 222) return { data: { refused: "daily notice limit reached" }, error: null };
+    const id = store.meeting_notices.length + 1;
+    store.meeting_notices.push({ id, status: "sending", ...args });
+    return { data: { id, attempt: 1 }, error: null };
+  };
+  const { deps, sent } = makeDeps(await makeSupabase(store));
+  const res = await handleNotice(asBot({ kind: "no_audio", meeting_id: MEETING }), deps);
+  assertEquals(res.status, 200);
+  assertEquals(chatIds(sent), [111]);
+});
+
+Deno.test("отказ базы запустившему — 409 боту, но участникам нотиса всё равно уходит (у них свой счёт)", async () => {
+  const store = withParticipants(newStore(), [222]);
+  store.reserve = (args) => {
+    if (args.p_recipient === OWNER.telegram_id) return { data: { refused: "already notified" }, error: null };
+    const id = store.meeting_notices.length + 1;
+    store.meeting_notices.push({ id, status: "sending", ...args });
+    return { data: { id, attempt: 1 }, error: null };
+  };
+  const { deps, sent } = makeDeps(await makeSupabase(store));
+  const res = await handleNotice(asBot({ kind: "no_audio", meeting_id: MEETING }), deps);
+  assertEquals(res.status, 409);
+  assertEquals((await payload(res)).should_leave, true);
+  assertEquals(chatIds(sent), [222]);
+});
+
+Deno.test("участников не прочитать — нотиса уходит одному запустившему, как раньше", async () => {
+  const store = withParticipants(newStore(), [222, 333]);
+  store.failAllowedUsersRead = true;
+  const { deps, sent } = makeDeps(await makeSupabase(store));
+  const res = await handleNotice(asBot({ kind: "no_audio", meeting_id: MEETING }), deps);
+  assertEquals(res.status, 200);
+  assertEquals(chatIds(sent), [111]);
+});
+
+Deno.test("до-встречный отказ — только запустившему, со-участники не читаются", async () => {
+  const store = withParticipants(newStore(), [222, 333]);
+  const { deps, sent } = makeDeps(await makeSupabase(store));
+  await handleNotice(asBot({ kind: "no_owner", meeting_key: KEY }, grantToken(null, KEY)), deps);
+  assertEquals(chatIds(sent), [111]);
+});
+
+Deno.test("guest_access_waiting — встречная нотиса: у каждого получателя свой {title}, имя бота и срок ожидания", async () => {
+  const store = withParticipants(newStore(), [222]);
+  const { deps, sent } = makeDeps(await makeSupabase(store));
+  const res = await handleNotice(asBot({ kind: "guest_access_waiting", meeting_id: MEETING, lang: "ru" }), deps);
+  assertEquals(res.status, 200);
+  assertEquals(chatIds(sent), [111, 222]);
+  for (const m of sent) {
+    assert(m.text.includes("Weekly sync") && !m.text.includes("{"), m.text);
+  }
+  // Ранний «стук» — не отказ: бот остаётся ждать открытия комнаты, а не уходит.
+  assertEquals((await payload(res)).should_leave, false);
+});
+
+Deno.test("БЛОКИРУЮЩИЙ: встречи самостоятельны — нотиса по X пишет только в журнал; Y со-участника и её адресаты не тронуты", async () => {
+  const store = withParticipants(newStore(), [222, 333]);
+  // Y — параллельная встреча участника 333: свой владелец, свои записавшие, свои со-владельцы.
+  store.meetings.push({
+    id: CO_MEETING,
+    title: "Own call of 333",
+    group_id: "alpha",
+    claim_owner: 333,
+    recorders: [{ telegram_id: 333 }],
+    co_owners: [444],
+    process_state: "recording",
+  });
+  const before = JSON.parse(JSON.stringify(store.meetings.slice(1)));
+  const { deps, sent } = makeDeps(await makeSupabase(store));
+  await handleNotice(asBot({ kind: "door_waiting", meeting_id: MEETING }), deps);
+  assertEquals(chatIds(sent), [111, 222, 333]);
+  assertEquals(
+    [...new Set(store.writes)],
+    ["meeting_notices"],
+    "нотиса записала что-то кроме журнала нотис — например, чужую встречу",
+  );
+  assertEquals(store.meetings.slice(1), before, "строки других встреч изменились");
+  assert(!sent.some((m) => m.chatId === 444), "адресаты Y попали в рассылку по X");
+  assert(
+    store.meeting_notices.every((r) => (r.meeting_id ?? r.p_meeting_id) === MEETING),
+    "в журнал по X попала запись о другой встрече",
+  );
+});
+
+Deno.test("БЛОКИРУЮЩИЙ: нотиса по Y не меняет получателей нотис по X, и наоборот", async () => {
+  const store = withParticipants(newStore(), [222]);
+  store.meetings.push({
+    id: CO_MEETING,
+    title: "Own call of 222",
+    group_id: "alpha",
+    claim_owner: 222,
+    co_owners: [333],
+  });
+  // У Y свои участники (222 владелец, 333 со-владелец): адресатов X они не расширяют.
+  const x = makeDeps(await makeSupabase(store));
+  await handleNotice(asBot({ kind: "no_audio", meeting_id: MEETING }), x.deps);
+  assertEquals(chatIds(x.sent), [111, 222]);
+  assertEquals(
+    store.reserveCalls.filter((c) => c.p_meeting_id === MEETING).map((c) => c.p_recipient).sort(),
+    [111, 222],
+  );
 });

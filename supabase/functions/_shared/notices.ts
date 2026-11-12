@@ -28,6 +28,9 @@ export const NOTICE_KINDS = [
   // ждёт до BOT_PROFILE.guestRoom.waitMinutes, потом уходит — вместо того чтобы стоять у двери,
   // которую никто не откроет, до потолка сигналов двери.
   "guest_access_closed",
+  // Тот же случай, но СРАЗУ, как бот увидел закрытую комнату (не после ожидания): «стук» — чтобы
+  // кто-то из участников успел открыть доступ гостям, пока бот ещё ждёт. Один раз за встречу.
+  "guest_access_waiting",
   // Страница прямо говорит, что встречи нет: код неверный или встреча закончилась.
   "meeting_unavailable",
   // Бот идёт под своим аккаунтом Google (T175), а Google вместо встречи просит войти или
@@ -202,12 +205,16 @@ export interface NoticeSchedule {
 
 /**
  * Расписание после отправки номер `attempt`. Дверь: после первого — ждать повтора, после
- * последнего — уходить. Остальные отказы терминальные: ждать нечего, бот уходит сразу.
+ * последнего — уходить. «Стук» guest_access_waiting — не уходить. Остальные отказы терминальные:
+ * ждать нечего, бот уходит сразу.
  */
 export function scheduleAfter(kind: NoticeKind, attempt: number): NoticeSchedule {
   if (kind === "door_waiting" && attempt < DOOR_MAX_ATTEMPTS) {
     return { shouldLeave: false, nextReminderInSeconds: DOOR_REPEAT_SECONDS };
   }
+  // «Стук» в закрытую комнату — не отказ, а просьба: бот остаётся ждать, уйдёт он с итоговым
+  // guest_access_closed.
+  if (kind === "guest_access_waiting") return { shouldLeave: false, nextReminderInSeconds: null };
   return { shouldLeave: true, nextReminderInSeconds: null };
 }
 

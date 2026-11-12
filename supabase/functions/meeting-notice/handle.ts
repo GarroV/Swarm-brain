@@ -45,9 +45,10 @@ interface MeetingRow {
   title: string | null;
   group_id: string | null;
   claim_owner: number | null;
+  co_owners: number[] | null;
 }
 
-type Checked = { title: string | null } | Response;
+type Checked = { title: string | null; coOwners: number[] } | Response;
 
 /**
  * Встречный отказ: встреча обязана существовать, быть из воркспейса агента и принадлежать тому,
@@ -57,7 +58,7 @@ type Checked = { title: string | null } | Response;
 async function checkMeeting(deps: NoticeDeps, meetingId: string, identity: AgentIdentity): Promise<Checked> {
   const { data, error } = await deps.supabase
     .from("meetings")
-    .select("title, group_id, claim_owner")
+    .select("title, group_id, claim_owner, co_owners")
     .eq("id", meetingId)
     .maybeSingle();
   if (error) {
@@ -84,7 +85,38 @@ async function checkMeeting(deps: NoticeDeps, meetingId: string, identity: Agent
     );
     return json({ ok: false, delivered: false, error: "the person is not the owner of this meeting" }, 403);
   }
-  return { title: meeting.title };
+  return { title: meeting.title, coOwners: meeting.co_owners ?? [] };
+}
+
+/**
+ * Со-получатели встречного уведомления (решение 12.11.2026): остальные участники встречи, у
+ * которых есть вход в Swarm, — `meetings.co_owners`, их заполняет meeting-claim ДО захода бота.
+ * Список берётся ТОЛЬКО из строки встречи на сервере, не из тела запроса. Отрицательный id — веб-
+ * пользователь без Telegram, написать ему нечем. Каждый обязан существовать в `allowed_users`
+ * воркспейса встречи (журнал ссылается на эту таблицу). Не прочиталось — уведомление уйдёт одному
+ * запустившему, как раньше: ошибка пишется громко, но доставку ему не роняет.
+ */
+async function coRecipients(
+  deps: NoticeDeps,
+  groupId: string,
+  coOwners: number[],
+  launcherId: number,
+): Promise<number[]> {
+  const candidates = [...new Set(coOwners.filter((id) => Number.isInteger(id) && id > 0 && id !== launcherId))];
+  if (candidates.length === 0) return [];
+  const { data, error } = await deps.supabase
+    .from("allowed_users")
+    .select("telegram_id")
+    .eq("group_id", groupId)
+    .in("telegram_id", candidates);
+  if (error) {
+    console.error(
+      `meeting-notice: участников встречи не прочитать, уведомление уйдёт одному запустившему: ${error.message}`,
+    );
+    return [];
+  }
+  const known = new Set((data as Array<{ telegram_id: number }> | null ?? []).map((r) => Number(r.telegram_id)));
+  return candidates.filter((id) => known.has(id));
 }
 
 /** Postgres: нарушение уникальности — страховочный индекс журнала поймал одинаковый кортеж. */
@@ -195,24 +227,49 @@ export async function handleNotice(req: Request, deps: NoticeDeps): Promise<Resp
   if (granted instanceof Response) return granted;
 
   let title = granted.title;
+  let coOwners: number[] = [];
   if (notice.scope.type === "meeting") {
     const checked = await checkMeeting(deps, notice.scope.meetingId, identity);
     if (checked instanceof Response) return checked;
     title = checked.title;
+    coOwners = checked.coOwners;
   }
 
-  const slot = await reserve(deps, notice, identity.telegramId);
+  // Встречное уведомление видят все участники встречи, а не только тот, от чьего имени бот. Ничего,
+  // кроме строк журнала `meeting_notices` и очереди Telegram, это не трогает: другие встречи
+  // получателей, их записи и claims остаются как были (встречи самостоятельны).
+  const coIds = notice.scope.type === "meeting" && coOwners.length > 0 && identity.groupId !== null
+    ? await coRecipients(deps, identity.groupId, coOwners, identity.telegramId)
+    : [];
+  const coDelivery = Promise.all(coIds.map((id) => deliverToCoRecipient(deps, notice, title, id)));
+
+  const own = await deliverToLauncher(deps, notice, title, identity.telegramId);
+  await coDelivery;
+  return own;
+}
+
+/**
+ * Запустившему: отказ или недоставка видны боту (409 с `should_leave` / 502), расписание — по ЕГО
+ * номеру отправки. Решение «уходить» от числа со-получателей не зависит.
+ */
+async function deliverToLauncher(
+  deps: NoticeDeps,
+  notice: ParsedNotice,
+  title: string | null,
+  recipientId: number,
+): Promise<Response> {
+  const slot = await reserve(deps, notice, recipientId);
   if (slot instanceof Response) return slot;
   const journalId = slot.id;
   const schedule = scheduleAfter(notice.kind, slot.attempt);
 
   try {
-    await deps.sendTelegram(identity.telegramId, renderNotice(notice, title, slot.attempt));
+    await deps.sendTelegram(recipientId, renderNotice(notice, title, slot.attempt));
   } catch (e) {
     // Самое дорогое место блока: если проглотить ошибку доставки и вернуть 200, то отказ,
     // ради громкости которого всё и строилось, станет молчаливым — причём дважды.
     const reason = e instanceof Error ? e.message : String(e);
-    console.error(`meeting-notice: уведомление «${notice.kind}» НЕ доставлено ${identity.telegramId}: ${reason}`);
+    console.error(`meeting-notice: уведомление «${notice.kind}» НЕ доставлено ${recipientId}: ${reason}`);
     // Номер освобождается: сбой Telegram не должен съесть единственный повтор.
     const freed = await markStatus(deps, journalId, "failed");
     return json({ ok: false, delivered: false, retry_allowed: freed, error: `notice not delivered: ${reason}` }, 502);
@@ -222,9 +279,7 @@ export async function handleNotice(req: Request, deps: NoticeDeps): Promise<Resp
   // сообщения это не даст, а человек своё уже получил. Громко в лог, вызывающему — успех.
   await markStatus(deps, journalId, "sent");
   console.log(
-    `meeting-notice: «${notice.kind}» (отправка ${slot.attempt}) доставлено ${identity.telegramId} по ${
-      describe(notice)
-    }`,
+    `meeting-notice: «${notice.kind}» (отправка ${slot.attempt}) доставлено ${recipientId} по ${describe(notice)}`,
   );
   return json({
     ok: true,
@@ -233,4 +288,36 @@ export async function handleNotice(req: Request, deps: NoticeDeps): Promise<Resp
     should_leave: schedule.shouldLeave,
     next_reminder_in_s: schedule.nextReminderInSeconds,
   });
+}
+
+/**
+ * Со-участнику: свой слот в журнале и свои потолки (номер отправки, суточный счёт — на человека).
+ * Всё, что пошло не так, — только в лог: боту отвечает запустивший, и чужой сбой (потолок, закрытый
+ * чат, Telegram) не должен ни ронять его доставку, ни давать боту ложный 502. Не бросает никогда.
+ */
+async function deliverToCoRecipient(
+  deps: NoticeDeps,
+  notice: ParsedNotice,
+  title: string | null,
+  recipientId: number,
+): Promise<void> {
+  try {
+    const slot = await reserve(deps, notice, recipientId);
+    if (slot instanceof Response) {
+      console.warn(`meeting-notice: «${notice.kind}» участнику ${recipientId} не отправлено: слот не выдан`);
+      return;
+    }
+    try {
+      await deps.sendTelegram(recipientId, renderNotice(notice, title, slot.attempt));
+    } catch (e) {
+      const reason = e instanceof Error ? e.message : String(e);
+      console.error(`meeting-notice: «${notice.kind}» участнику ${recipientId} НЕ доставлено: ${reason}`);
+      await markStatus(deps, slot.id, "failed");
+      return;
+    }
+    await markStatus(deps, slot.id, "sent");
+    console.log(`meeting-notice: «${notice.kind}» (отправка ${slot.attempt}) доставлено участнику ${recipientId}`);
+  } catch (e) {
+    console.error(`meeting-notice: участнику ${recipientId} — сбой ${e instanceof Error ? e.message : String(e)}`);
+  }
 }

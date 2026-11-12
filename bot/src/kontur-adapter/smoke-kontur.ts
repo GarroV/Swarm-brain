@@ -96,8 +96,19 @@ async function sceneClosed(browser: Browser): Promise<void> {
   console.log("\n──── комната закрыта для гостей и не открывается → guest_access_closed");
   const scene = newScene(browser, SHORT_ROOM);
   const started = Date.now();
-  await scene.adapter.join(`${ROOM}?scene=closed`, GUEST_NAME);
+  const knock: { atMs: number | null } = { atMs: null };
+  await scene.adapter.join(`${ROOM}?scene=closed`, GUEST_NAME, {
+    onGuestRoomClosed: () => {
+      knock.atMs = Date.now() - started;
+      return Promise.resolve();
+    },
+  });
   const tookMs = Date.now() - started;
+  check(
+    knock.atMs !== null && knock.atMs < 2000,
+    "«стук» ушёл сразу, а не после ожидания",
+    `через ${String(knock.atMs)} мс`,
+  );
   check(tookMs >= 3000 && tookMs < 9000, "ждали окно ожидания, не дольше", `${String(tookMs)} мс`);
   check(
     (await loadsOf(scene)) >= 4,

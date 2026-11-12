@@ -48,6 +48,11 @@ export interface Script {
   readonly recorderError?: Error;
   readonly finishError?: Error;
   readonly shouldLeaveOnNotice?: boolean;
+  /**
+   * Комната Толка закрыта для гостей: заход зовёт хук `onGuestRoomClosed` до своего завершения,
+   * как это делает адаптер, пока ждёт открытия.
+   */
+  readonly guestRoomClosedOnJoin?: boolean;
   readonly stopAfterPolls?: number;
   readonly heartbeatError?: Error;
 }
@@ -100,8 +105,9 @@ export function build(script: Script = {}): World {
         calls.push(`report:${id}`);
       },
       adapter: {
-        join: (url) => {
+        join: async (url, _displayName, hooks) => {
           calls.push(`join:${url}`);
+          if (script.guestRoomClosedOnJoin === true) await hooks?.onGuestRoomClosed?.();
           world.joinedAt.push(world.now);
           const scripted = script.joinErrors;
           const failure =

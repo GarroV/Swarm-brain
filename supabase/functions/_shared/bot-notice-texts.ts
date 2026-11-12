@@ -66,6 +66,15 @@ export const NOTICE_TEXTS: Record<NoticeTextKey, Record<NoticeLang, string>> = {
     ru:
       "«<b>{title}</b>»: {bot} не смог зайти в комнату Контур.Толка: она закрыта для внешних участников (гостей). {bot} прождал {guest_wait} минут, пока её откроют, и ушёл. Чтобы записать встречу, включите доступ для внешних участников в настройках комнаты и позовите {bot} снова. Если доступ уже включён — проверьте ссылку: Контур.Толк показывает ту же страницу и для несуществующей комнаты. Запись вестись не будет.",
   },
+  // Контур.Толк, комната закрыта для гостей: ранний «стук» в тот момент, когда бот это увидел.
+  // Бот ещё ждёт (guest_wait минут) — у участников есть время открыть доступ. Итоговое
+  // guest_access_closed придёт, только если не открыли.
+  guest_access_waiting: {
+    en:
+      "<b>{title}</b>: {bot} is at the Kontur.Talk door, but the room is closed to external participants (guests). Please turn on access for external participants in the room settings — {bot} will keep checking for {guest_wait} minutes and join as soon as it opens; otherwise it will leave without recording.",
+    ru:
+      "«<b>{title}</b>»: {bot} у двери Контур.Толка, но комната закрыта для внешних участников (гостей). Включите доступ для внешних участников в настройках комнаты — {bot} будет проверять {guest_wait} минут и зайдёт, как только откроют; иначе он уйдёт без записи.",
+  },
   // Страница прямо говорит, что встречи нет: неверный код или встреча уже закончилась.
   meeting_unavailable: {
     en:
