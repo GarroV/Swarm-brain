@@ -106,7 +106,8 @@ Deno.serve(async (req: Request) => {
   // каждом ответе человеку, в том числе без календаря. Ошибка чтения флага эндпоинт не валит.
   const whoEmail = (who as { email?: string | null } | null)?.email ?? null;
   const nowIso = new Date().toISOString();
-  const recordedNow = {
+  // Боту эти списки не отдаются: его пропуск открывает одно событие, а не встречи человека.
+  const recordedNow = identity.kind === "bot" ? {} : {
     recorded_now: await loadRecordedNow(supabase, identity.telegramId, whoEmail, nowIso),
     // Встречи, на которые бот приходил/приходит, пишет он или нет (#1278): рекордеру — чтобы не
     // привязывать звонок человека к встрече, где бот стоит у двери.
