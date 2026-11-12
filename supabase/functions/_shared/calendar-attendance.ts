@@ -30,6 +30,16 @@ export function acceptedEmails(ev: Pick<GEvent, "attendees" | "organizer">): str
   return [...out].sort();
 }
 
+/** Почты всех гостей события (нижний регистр): кандидаты в получатели нотис бота. */
+export function attendeeEmails(ev: Pick<GEvent, "attendees">): string[] {
+  const out = new Set<string>();
+  for (const a of ev.attendees ?? []) {
+    const email = (a.email ?? "").trim().toLowerCase();
+    if (email) out.add(email);
+  }
+  return [...out].sort();
+}
+
 export function acceptedBySelf(ev: Pick<GEvent, "attendees" | "organizer">): boolean {
   const self = (ev.attendees ?? []).find((a) => a.self === true);
   if (self?.responseStatus !== undefined) return self.responseStatus === "accepted";

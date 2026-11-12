@@ -14,7 +14,7 @@ import type { GEvent } from "../meeting-current/select.ts";
 import { conferenceInfo } from "../meeting-current/join-link.ts";
 import type { ConferencePlatform } from "../meeting-current/join-link.ts";
 import { calendarKeyOf } from "./calendar-key.ts";
-import { acceptedBySelf, acceptedEmails } from "./calendar-attendance.ts";
+import { acceptedBySelf, acceptedEmails, attendeeEmails } from "./calendar-attendance.ts";
 import { botJoinsPlatform, parseInviteLink } from "./meeting-invite.ts";
 import { BOT_PROFILE } from "./bot-profile.ts";
 
@@ -45,6 +45,10 @@ export interface DispatchJob {
    * пишется, сервер превращает его в `notice_recipients` (meeting-calendar/index.ts).
    */
   accepted_emails?: string[];
+  /** Почты всех гостей того же события: кандидаты в получатели нотис (проверка — notice-recipients.ts). */
+  attendee_emails?: string[];
+  /** Получатели нотис кроме запустившего (telegram_id): считает sweep.ts, в строку задания идёт как есть. */
+  notice_recipients?: number[];
 }
 
 export type SkipReason =
@@ -175,6 +179,7 @@ export function planPersonDispatch(
       title,
       ...span,
       accepted_emails: acceptedEmails(ev),
+      attendee_emails: attendeeEmails(ev),
     });
   }
   return { jobs, skipped, who };
@@ -240,7 +245,11 @@ export function dropSameRoom(jobs: readonly DispatchJob[], who: ReadonlyMap<stri
     }
     // Отброшенное событие — та же встреча (один организатор, комната, время): принявшие по нему
     // не теряются, а переходят в оставшееся задание.
-    kept[kept.indexOf(twin)] = { ...twin, accepted_emails: unionEmails(twin.accepted_emails, job.accepted_emails) };
+    kept[kept.indexOf(twin)] = {
+      ...twin,
+      accepted_emails: unionEmails(twin.accepted_emails, job.accepted_emails),
+      attendee_emails: unionEmails(twin.attendee_emails, job.attendee_emails),
+    };
   }
   return kept;
 }
@@ -261,6 +270,7 @@ export function mergeDispatch(plans: DispatchPlan[]): DispatchPlan {
         byKey.set(job.calendar_key, {
           ...existing,
           accepted_emails: unionEmails(existing.accepted_emails, job.accepted_emails),
+          attendee_emails: unionEmails(existing.attendee_emails, job.attendee_emails),
         });
         continue;
       }

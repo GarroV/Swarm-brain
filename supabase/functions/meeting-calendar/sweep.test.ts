@@ -34,6 +34,7 @@ function fakeSource(
   const source: SweepSource = {
     autojoinPeople: () => Promise.resolve([1]),
     manualRooms: () => Promise.resolve(new Set<string>()),
+    workspaceMembers: () => Promise.resolve([]),
     refreshToken: (id) => Promise.resolve(over.tokens ? (over.tokens[id] ?? null) : "r"),
     accessToken: () => Promise.resolve({ ok: true, token: "a" }),
     listEvents: () => Promise.resolve([meeting()]),
@@ -155,4 +156,38 @@ Deno.test("забранное задание выключение не трог�
   const result = await sweep(source, AGENT, NOW);
   assertEquals(result.jobs, []);
   assertEquals(table.length, 1);
+});
+
+Deno.test("БЛОКИРУЮЩИЙ: в задание идут получатели нотис — принявшие по своему календарю; подделка в событии запустившего не проходит", async () => {
+  const launcher: GEvent = {
+    ...meeting(),
+    organizer: { email: "boss@x.io" },
+    attendees: [
+      { email: "me@x.io", self: true, responseStatus: "accepted" },
+      { email: "forged@x.io", responseStatus: "accepted" }, // календарь подключён, у себя не принял
+      { email: "real@x.io", responseStatus: "needsAction" }, // календарь подключён, у себя принял
+      { email: "nocal@x.io", responseStatus: "accepted" }, // календаря нет — верим событию
+    ],
+  };
+  const mine = (response: string): GEvent => ({
+    ...meeting(),
+    organizer: { email: "boss@x.io" },
+    attendees: [{ email: "x@x.io", self: true, responseStatus: response }],
+  });
+  const { source, inserted } = fakeSource({
+    tokens: { 1: "r1", 20: "r20", 30: "r30" },
+    workspaceMembers: () =>
+      Promise.resolve([
+        { telegram_id: 1, email: "me@x.io" },
+        { telegram_id: 20, email: "forged@x.io" },
+        { telegram_id: 30, email: "real@x.io" },
+        { telegram_id: 40, email: "nocal@x.io" },
+      ]),
+    accessToken: (refresh: string) => Promise.resolve({ ok: true, token: refresh }),
+    listEvents: (token: string) =>
+      Promise.resolve(token === "r1" ? [launcher] : token === "r20" ? [mine("needsAction")] : [mine("accepted")]),
+  });
+  await sweep(source, AGENT, NOW);
+  assertEquals(inserted.length, 1);
+  assertEquals(inserted[0].notice_recipients, [30, 40]);
 });
