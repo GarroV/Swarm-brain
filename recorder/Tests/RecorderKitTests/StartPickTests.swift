@@ -31,6 +31,13 @@ final class StartPickTests: XCTestCase {
         XCTAssertTrue(StartPick.needsPick(live: [a], botIn: none, botLeft: ["cal:a"]))
     }
 
+    // 12.11.2026: бот у двери (не пишет) — в recorded_now его нет, но звонок человека не должен
+    // молча стать его встречей. Без `botTouched` эта проверка вернула бы false (старое поведение).
+    func testОдноСобытиеУКоторогоБотСтоитУДвериСпрашивает() {
+        XCTAssertTrue(StartPick.needsPick(live: [a], botIn: none, botLeft: none, botTouched: ["cal:a"]))
+        XCTAssertFalse(StartPick.needsPick(live: [a], botIn: none, botLeft: none, botTouched: ["cal:zzz"]))
+    }
+
     func testНетСобытийСпрашиватьНеОЧем() {
         XCTAssertFalse(StartPick.needsPick(live: [], botIn: ["cal:a"], botLeft: none))
     }
@@ -56,6 +63,19 @@ final class StartPickTests: XCTestCase {
     func testОдноСобытиеБотВоВстречеДругойЗвонокПервыйИПродолжениеЕсть() {
         let o = StartPick.options(live: [a], botIn: ["cal:a"], botLeft: none)
         XCTAssertEqual(kinds(o), [.other, .continuation])
+    }
+
+    func testБотУДвериДругойЗвонокПервыйПродолжениеНиже() {
+        let o = StartPick.options(live: [a], botIn: none, botLeft: none, botTouched: ["cal:a"])
+        XCTAssertEqual(kinds(o), [.other, .continuation])
+        XCTAssertEqual(o.last?.key, "cal:a")
+    }
+
+    func testБотУДвериБезОтветаЭтоManual() {
+        let o = StartPick.options(live: [a], botIn: none, botLeft: none, botTouched: ["cal:a"])
+        XCTAssertEqual(o.first?.kind, .other)
+        XCTAssertEqual(StartPick.resolution(for: nil), .manual)
+        XCTAssertEqual(StartPick.resolution(for: o.first), .manual)
     }
 
     func testБотВышелПоОдномуИВоВторомЕщёЕстьДругойЗвонокПервый() {

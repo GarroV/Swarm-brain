@@ -103,6 +103,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // ответа), `botSeen` — что он писал за время работы рекордера: «был и пропал» = бот вышел.
     var botNow = Set<String>()
     var botSeen = Set<String>()
+    // `bot_touched` последнего ответа: бот приходил (у двери, ушёл ни с чем), пишет или нет (12.11.2026).
+    var botTouched = Set<String>()
     struct PickSession {
         let events: [MeetingIdentity.Info]
         let options: [StartPick.Option]
@@ -608,10 +610,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 if !meetings.isEmpty {
                     self?.lastCalendar = (meetings, lookup?.recordedNow ?? [], Date())
                 }
-                if let lookup {
-                    self?.botNow = Set(lookup.recordedNow)
-                    self?.botSeen.formUnion(lookup.recordedNow)
-                }
+                if let lookup { self?.noteBotSignals(lookup) }
                 // До handleDetection: напоминание снимает крестик с созвона, и тот же тик
                 // снова покажет его в капсуле.
                 self?.nudgeIfUnrecorded(micOn: micOn, meetings: meetings,
@@ -1284,7 +1283,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if offers.isEmpty { callActive = false }
         // К предложениям капсулы добавляем только события, которые пишет/писал бот: капсула их не
         // показывает, а для выбора («Продолжение: …») они нужны.
-        let botKeys = botNow.union(botSeen)
+        let botKeys = botNow.union(botSeen).union(botTouched)
         let offered = Set(offers.map(\.key))
         let botEvents = liveCalendarEvents().filter { botKeys.contains($0.key) && !offered.contains($0.key) }
         startPicking(live: offers.isEmpty ? liveCalendarEvents() : offers + botEvents)

@@ -25,13 +25,20 @@ extension AppDelegate {
     func startPicking(live: [MeetingIdentity.Info]) {
         let events = live.map { StartPick.Event(key: $0.key, title: $0.title) }
         let botLeft = botSeen.subtracting(botNow)
-        guard StartPick.needsPick(live: events, botIn: botNow, botLeft: botLeft) else {
+        guard StartPick.needsPick(live: events, botIn: botNow, botLeft: botLeft, botTouched: botTouched) else {
             beginRecording(identity: live.first ?? MeetingIdentity.currentRoom())
             return
         }
-        let options = StartPick.options(live: events, botIn: botNow, botLeft: botLeft)
-        Diagnostics.shared.log("RECORD выбор из \(live.count) событий, бот: пишет=\(botNow.count) вышел=\(botLeft.count) → спрашиваем")
+        let options = StartPick.options(live: events, botIn: botNow, botLeft: botLeft, botTouched: botTouched)
+        Diagnostics.shared.log("RECORD выбор из \(live.count) событий, бот: пишет=\(botNow.count) вышел=\(botLeft.count) приходил=\(botTouched.count) → спрашиваем")
         beginRecording(identity: nil, pick: PickSession(events: live, options: options, answer: nil))
+    }
+
+    // Сигналы о боте из ответа `meeting-current`: что пишет сейчас, писал и пропал, приходил (#1278).
+    func noteBotSignals(_ lookup: SwarmClient.MeetingLookup) {
+        botNow = Set(lookup.recordedNow)
+        botSeen.formUnion(lookup.recordedNow)
+        botTouched = Set(lookup.botTouched)
     }
 
     func showPickCard() {
