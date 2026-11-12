@@ -94,7 +94,7 @@ export function FeedbackForm({ onDone }: Props) {
         {file && <p className="truncate text-xs text-ink-soft">📎 {file.name}</p>}
       </div>
 
-      {error && <p className="text-xs text-red-500">{error}</p>}
+      {error && <p className="text-xs text-destructive">{error}</p>}
 
       <Button onClick={handleSend} disabled={sending || !text.trim()} className="w-full">
         {sending ? dt(FEEDBACK_COPY.sending.ru, FEEDBACK_COPY.sending.en) : sent ? dt(FEEDBACK_COPY.sent.ru, FEEDBACK_COPY.sent.en) : dt(FEEDBACK_COPY.send.ru, FEEDBACK_COPY.send.en)}

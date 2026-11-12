@@ -32,7 +32,7 @@ export function NextTaskRow({ task, project, reason, now, onToggle }: Props) {
         onClick={(e: MouseEvent) => { e.stopPropagation(); onToggle(); }}
         className="relative flex shrink-0 items-center justify-center rounded-[6px] border-2 transition-colors after:absolute after:-inset-3 after:content-['']"
         style={{ width: 18, height: 18, borderColor: done ? "var(--status-done)" : "var(--line-2)", background: done ? "var(--status-done)" : "transparent" }}>
-        {done && <RoyIcon name="check" size={11} strokeWidth={2.4} className="text-white" />}
+        {done && <RoyIcon name="check" size={11} strokeWidth={2.4} className="text-[var(--on-solid)]" />}
       </button>
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">

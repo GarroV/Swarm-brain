@@ -18,7 +18,7 @@ import { IntegrationStatusLine } from "@/components/profile/IntegrationStatusLin
 import { STALE_DAYS } from "@/lib/integrationStatus";
 import { TelegramPanel } from "@/components/profile/TelegramPanel";
 import { NotificationSoundToggle } from "@/components/settings/NotificationSoundToggle";
-import { BackdropSection } from "@/components/profile/BackdropSection";
+import { AppearanceSection, BackdropSection } from "@/components/profile/BackdropSection";
 import { PasskeysSection } from "@/components/profile/PasskeysSection";
 import { useDt, useIsDemo } from "@/components/roy/nav";
 import { SectionLabel } from "@/components/roy/ui";
@@ -855,7 +855,7 @@ export function SettingsScreen() {
           <p className="text-sm text-muted-foreground">Загрузка…</p>
         )}
 
-        <SectionLabel className="pt-1">Настройки</SectionLabel>
+        <SectionLabel className="pt-1">Настройки</SectionLabel><AppearanceSection />
         <Section icon="spark" title={dt("Настройки фона", "Background")}>
           <BackdropSection />
         </Section>

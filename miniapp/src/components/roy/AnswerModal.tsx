@@ -59,7 +59,7 @@ export function AnswerModal({ query, onClose }: { query: string; onClose: () => 
 
   if (typeof document === "undefined") return null;
   return createPortal(
-    <div className="fixed inset-0 z-[70] flex items-stretch justify-center bg-black/40 sm:items-start sm:p-6 sm:pt-[6vh]" onClick={onClose}>
+    <div className="fixed inset-0 z-[70] flex items-stretch justify-center bg-[var(--scrim-sheet)] sm:items-start sm:p-6 sm:pt-[6vh]" onClick={onClose}>
       <div
         role="dialog"
         aria-label={dt(ANSWER_MODAL_COPY.answer.ru, ANSWER_MODAL_COPY.answer.en)}

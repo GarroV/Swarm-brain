@@ -98,7 +98,7 @@ export function CountryMenu({ value, onChange, mine }: { value: string[]; onChan
                 className="flex w-full items-center gap-2 rounded-[8px] px-2 py-1.5 text-left transition-colors enabled:hover:bg-surface-2 disabled:opacity-40">
                 <span className={`grid size-4 shrink-0 place-items-center rounded-[5px] border ${on ? "border-transparent" : "border-line-2"}`}
                   style={on ? { background: SERIES_COLORS[at] } : undefined}>
-                  {on && <RoyIcon name="check" size={10} strokeWidth={3} className="text-white" />}
+                  {on && <RoyIcon name="check" size={10} strokeWidth={3} className="text-[var(--on-solid)]" />}
                 </span>
                 <span style={{ fontSize: 14 }}>{countryFlag(cc)}</span>
                 <span className="min-w-0 flex-1 truncate text-ink" style={{ fontSize: 12.5 }}>{dt(countryName(cc), cc)}</span>

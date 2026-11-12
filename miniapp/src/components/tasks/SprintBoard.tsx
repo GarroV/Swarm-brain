@@ -26,7 +26,7 @@ import type { KanbanColumnDef, KanbanDrag, KanbanHandlers } from "@/components/t
 // задачи, видимые в разделе «Задачи» наравне со всеми, а не отдельная сущность.
 const COLUMNS = [
   { status: "backlog", label: "Бэклог задач", bar: "var(--status-open)" },
-  { status: "open", label: "Открыто", bar: "#8C8475" },
+  { status: "open", label: "Открыто", bar: "var(--ink-mute)" },
   { status: "in_progress", label: "В работе", bar: "var(--status-prog)" },
   { status: "done", label: "Готово", bar: "var(--status-done)" },
 ] as const;

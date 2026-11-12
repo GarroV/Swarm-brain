@@ -289,10 +289,10 @@ export function TimelineView() {
                       onPointerCancel={onPointerCancel}
                     className="absolute left-0 top-0 bottom-0 w-2 rounded-l-[10px] cursor-ew-resize opacity-0 group-hover:opacity-100 bg-black/15"
                   />
-                  {pri && <span className="shrink-0 rounded-full ring-2 ring-white/70" style={{ width: 8, height: 8, background: PRI_COLOR[pri] }} />}
-                  <span className="truncate font-semibold text-white" style={{ fontSize: 12.5 }}>{t.title}</span>
+                  {pri && <span className="shrink-0 rounded-full ring-2 ring-[color-mix(in_srgb,var(--on-solid)_70%,transparent)]" style={{ width: 8, height: 8, background: PRI_COLOR[pri] }} />}
+                  <span className="truncate font-semibold text-[var(--on-solid)]" style={{ fontSize: 12.5 }}>{t.title}</span>
                   {t.assignees.length > 0 && (
-                    <span className="ml-auto inline-flex shrink-0 items-center justify-center rounded-full bg-white/25 font-bold text-white"
+                    <span className="ml-auto inline-flex shrink-0 items-center justify-center rounded-full bg-[color-mix(in_srgb,var(--on-solid)_25%,transparent)] font-bold text-[var(--on-solid)]"
                       style={{ width: 20, height: 20, fontSize: 9.5 }}>
                       {initials(t.assignees)}
                     </span>
