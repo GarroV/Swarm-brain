@@ -112,7 +112,11 @@ export function JournalScreen({ space }: { space: string | null }) {
             type="button"
             aria-pressed={days === p}
             onClick={() => setDays(p)}
-            className={cn(pillSegmentCls(days === p), !(days === p) && "text-ink-soft", "px-3")}
+            className={cn(
+              pillSegmentCls(days === p),
+              !(days === p) && "text-ink-soft",
+              "px-3",
+            )}
             style={{ fontSize: 12.5 }}
           >
             {labels[p]}

@@ -156,7 +156,10 @@ export function GroupingToggle(
             type="button"
             onClick={() => onChange(o.id)}
             aria-pressed={value === o.id}
-            className={cn(pillSegmentCls(value === o.id), value !== o.id && "text-ink-soft")}
+            className={cn(
+              pillSegmentCls(value === o.id),
+              value !== o.id && "text-ink-soft",
+            )}
             style={{ fontSize: 12.5 }}
           >
             {o.label}

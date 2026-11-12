@@ -36,7 +36,9 @@ function Table(
   // Числовой столбец (счёт, доля, дни) — по правому краю и цифрами одной ширины: на широком
   // экране колонки разъезжаются, и левые числа теряют связь со своим заголовком.
   const numeric = head.map((_, j) =>
-    rows.every((r) => r[j] === null || r[j] === "" || NUM_CELL.test(String(r[j])))
+    rows.every((r) =>
+      r[j] === null || r[j] === "" || NUM_CELL.test(String(r[j]))
+    )
   );
   return (
     <section className="space-y-1.5">
