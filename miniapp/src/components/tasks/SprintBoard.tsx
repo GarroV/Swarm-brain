@@ -17,6 +17,7 @@ import { useConfirm } from "@/components/ui/confirm";
 import { useDt, useRoyNav } from "@/components/roy/nav";
 import { KanbanColumn, TaskKanban } from "@/components/tasks/TaskKanban";
 import { useProjectDnd } from "@/components/tasks/projectDnd";
+import { isBacklogStatus, isWorkStatus } from "@/lib/boardStatus";
 import { planAppend, planReorder, sortByPosition } from "@/lib/projectOrder";
 import type { DropTarget, PositionChange } from "@/lib/projectOrder";
 import type { KanbanColumnDef, KanbanDrag, KanbanHandlers } from "@/components/tasks/TaskKanban";
@@ -33,7 +34,6 @@ const COLUMNS = [
 
 // Рабочие колонки пространства подпроекта (без бэклога — бэклог общий на проект, слева).
 const WORK_COLUMNS = COLUMNS.filter((c) => c.status !== "backlog");
-const isBacklogStatus = (s: string) => s !== "open" && s !== "in_progress" && s !== "done";
 
 /** Сводка справки «О проекте»: число задач по колонкам доски — те же статусы, что видно глазом. */
 function statusCounts(list: Task[], dt: (ru: string, en: string) => string) {
@@ -652,7 +652,7 @@ export function SprintBoard() {
                           ) : (
                             <span className="text-xs font-bold text-ink">{kid.name}</span>
                           )}
-                          <span className="text-[11px] text-ink-soft">{kidTasks.filter((t) => !isBacklogStatus(t.status)).length}</span>
+                          <span className="text-[11px] text-ink-soft">{kidTasks.filter((t) => isWorkStatus(t.status)).length}</span>
                           <div className="ml-auto flex items-center gap-0.5" onClick={(e) => e.stopPropagation()}>
                             {/* Тумблер подпроекта. Закрытая ГРУППА уже закрыла его — тогда вместо кнопки
                                 метка: нажатие ничего бы не поменяло, а обещать обратное нечестно. */}
