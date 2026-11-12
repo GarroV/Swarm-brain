@@ -4,7 +4,7 @@
 // deno-lint-ignore-file no-import-prefix
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import type { Snapshot } from "./types.ts";
-import { readyCountries, STALE_DAYS } from "./readiness.ts";
+import { readyCountries, STALE_DAYS_SLOW } from "./readiness.ts";
 import { groupSales, type SalesRow } from "./sales.ts";
 
 const slug = (s: string | null): string =>
@@ -324,7 +324,7 @@ export async function listCountriesWithData(sb: SupabaseClient): Promise<string[
 /** Коды стран из `countries`, чья страница проработана и данные обновляются сами (`readiness.ts`). */
 export async function listReadyCountries(sb: SupabaseClient, countries: string[]): Promise<string[]> {
   if (!countries.length) return [];
-  const since = new Date(Date.now() - 4 * STALE_DAYS * 86_400_000).toISOString();
+  const since = new Date(Date.now() - 2 * STALE_DAYS_SLOW * 86_400_000).toISOString();
   // Только колонка country (и company_id), без N+1 по странам: один запрос на раздел.
   const countriesOf = async (table: string) =>
     new Set(
@@ -334,8 +334,8 @@ export async function listReadyCountries(sb: SupabaseClient, countries: string[]
       )).map((r) => r.country),
     );
   const [sources, runs, editorial, prices, facts, companies, financials] = await Promise.all([
-    must<Array<{ country: string; adapter: string; mode: string; last_ok_at: string | null }>>(
-      sb.from("mkt_sources").select("country, adapter, mode, last_ok_at").in("country", countries),
+    must<Array<{ country: string; adapter: string; mode: string; cadence: string; last_ok_at: string | null }>>(
+      sb.from("mkt_sources").select("country, adapter, mode, cadence, last_ok_at").in("country", countries),
       "ready sources",
     ),
     allRows<{ country: string; source: string; status: string; finished_at: string }>(

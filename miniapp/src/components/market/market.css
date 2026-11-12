@@ -69,12 +69,24 @@
 .mkt .ctl{display:flex;flex-direction:column;gap:8px}
 .mkt .ctl>label,.mkt .ctl>.lbl{font-size:11px;font-family:var(--f-mono);letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
 .mkt .seg{display:flex;flex-wrap:wrap;gap:4px}
-.mkt .seg button.ready{border:2px solid var(--accent);padding:4px 9px}
-.mkt .seg button .auto{margin-left:6px;font-family:var(--f-mono);font-size:10px;letter-spacing:.04em;color:var(--accent)}
-.mkt .seg button[aria-pressed="true"] .auto{color:inherit}
-.mkt .exportbar{display:flex;gap:2px;margin-left:auto}
-.mkt .exportbar button{display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;padding:0;background:transparent;border-color:transparent;color:var(--muted)}
-.mkt .exportbar button:hover{color:var(--ink);border-color:var(--line)}
+.mkt .cpick{position:relative;max-width:100%}
+.mkt .cpick-btn{display:inline-flex;align-items:center;gap:8px;min-height:36px;padding:6px 10px 6px 12px;font-weight:600;max-width:100%}
+.mkt .cpick-btn[aria-expanded="true"]{border-color:var(--accent)}
+.mkt .cpick-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.mkt .cpick-dot{width:8px;height:8px;border-radius:50%;background:var(--accent);flex:none}
+.mkt .cpick-chev{flex:none;color:var(--muted)}
+.mkt .cpick-pop{position:absolute;z-index:40;top:calc(100% + 4px);left:0;width:max-content;min-width:min(260px,calc(100vw - 40px));max-width:calc(100vw - 40px);background:var(--surface);border:1px solid var(--line);border-radius:8px;box-shadow:0 6px 24px rgba(0,0,0,.14);overflow:hidden}
+.mkt .cpick-list{display:flex;flex-direction:column;max-height:min(60vh,420px);overflow-y:auto;padding:4px}
+.mkt .cpick-opt{display:flex;align-items:center;gap:10px;width:100%;text-align:left;border-color:transparent;background:transparent;padding:7px 10px;border-radius:6px}
+.mkt .cpick-opt:hover,.mkt .cpick-opt:focus-visible{background:var(--accent-soft);border-color:transparent}
+.mkt .cpick-opt[aria-selected="true"]{font-weight:600}
+.mkt .cpick-opt .cpick-name{flex:1}
+.mkt .cpick-ready{font-family:var(--f-mono);font-size:10px;letter-spacing:.04em;color:var(--accent);text-transform:uppercase}
+.mkt .cpick-check{color:var(--accent);flex:none}
+.mkt .cpick-hint{width:0;min-width:100%;margin:0;padding:8px 12px;border-top:1px solid var(--line2);font-size:11.5px;color:var(--muted);line-height:1.4}
+.mkt .exportbar{display:flex;gap:6px;margin-left:auto}
+.mkt .exportbar button{display:inline-flex;align-items:center;justify-content:center;gap:7px;height:36px;padding:0 12px;font-weight:600;font-size:13px;color:var(--ink2)}
+.mkt .exportbar button:hover,.mkt .exportbar button:focus-visible{color:var(--ink);border-color:var(--accent)}
 .mkt .yearrow{display:flex;align-items:center;gap:10px}
 .mkt .yearrow input{flex:1;accent-color:var(--accent)}
 .mkt .yearrow output{font-family:var(--f-disp);font-size:22px;font-variant-numeric:tabular-nums;min-width:3ch}

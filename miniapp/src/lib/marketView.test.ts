@@ -45,11 +45,11 @@ Deno.test("revenue per unit is not shown when most of the chain's units have no 
   assertEquals(revenuePerUnit({ revenue_eur: 800, year: 2023 }, [undated, ...locs.slice(3), locs[3]]), 267);
 });
 
-const src = (adapter: string, mode: "auto" | "manual", last_ok_at: string | null): MarketSource => ({
+const src = (adapter: string, mode: "auto" | "manual", last_ok_at: string | null, cadence: MarketSource["cadence"] = "weekly"): MarketSource => ({
   adapter,
   chain_key: "",
   feeds: "locations",
-  cadence: "weekly",
+  cadence,
   mode,
   reason: null,
   last_ok_at,
@@ -76,6 +76,21 @@ Deno.test("freshness: last run failed or older than 8 days is bad; manual never 
     ["fail", 5, true, "boom"],
     ["man", null, false, null],
   ]);
+});
+
+Deno.test("freshness: monthly/yearly sources stay fine up to 38 days, weekly is bad after 8", () => {
+  const now = new Date("2026-10-10T00:00:00Z");
+  const f = freshness(
+    [
+      src("m20", "auto", "2026-09-20T00:00:00Z", "monthly"),
+      src("m40", "auto", "2026-08-31T00:00:00Z", "monthly"),
+      src("y20", "auto", "2026-09-20T00:00:00Z", "yearly"),
+      src("w9", "auto", "2026-10-01T00:00:00Z", "weekly"),
+    ],
+    [],
+    now,
+  );
+  assertEquals(f.map((x) => [x.adapter, x.daysAgo, x.bad]), [["m20", 20, false], ["m40", 40, true], ["y20", 20, false], ["w9", 9, true]]);
 });
 
 Deno.test("collection date is the latest successful automatic run; manual sources and no runs give none", () => {
