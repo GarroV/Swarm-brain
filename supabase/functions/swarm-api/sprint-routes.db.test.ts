@@ -388,8 +388,8 @@ Deno.test("задача коллеги в составе видна целико
     const project = await db.queryObject<{ id: string }>`
       insert into projects (group_id, name) values (${WS}, 'Инициатива') returning id`;
     const task = await db.queryObject<{ id: string }>`
-      insert into tasks (title, status, group_id, project_id, created_by, created_by_telegram_id)
-      values ('Дело коллеги', 'open', ${WS}, ${project.rows[0].id}, 'test', ${SOMEONE_ELSE})
+      insert into tasks (title, status, group_id, project_id, created_by_telegram_id)
+      values ('Дело коллеги', 'open', ${WS}, ${project.rows[0].id}, ${SOMEONE_ELSE})
       returning id`;
     const cycle = await db.queryObject<{ id: string }>`
       insert into sprint_cycles (group_id, tab_id, name, start_date, end_date, status)
@@ -419,8 +419,8 @@ Deno.test("отметка сверки сохраняется, а на прин�
   try {
     const { tabId } = await seed(db);
     const task = await db.queryObject<{ id: string }>`
-      insert into tasks (title, status, group_id, created_by)
-      values ('Задача', 'open', ${WS}, 'test') returning id`;
+      insert into tasks (title, status, group_id)
+      values ('Задача', 'open', ${WS}) returning id`;
     const cycle = await db.queryObject<{ id: string }>`
       insert into sprint_cycles (group_id, tab_id, name, start_date, end_date, status)
       values (${WS}, ${tabId}, 'Спринт 1', current_date - 13, current_date, 'active')
@@ -500,8 +500,8 @@ Deno.test("снятая пометка «к переносу» уносит с �
   try {
     const { tabId } = await seed(db);
     const task = await db.queryObject<{ id: string }>`
-      insert into tasks (title, status, group_id, created_by)
-      values ('Задача', 'open', ${WS}, 'test') returning id`;
+      insert into tasks (title, status, group_id)
+      values ('Задача', 'open', ${WS}) returning id`;
     const cycle = await db.queryObject<{ id: string }>`
       insert into sprint_cycles (group_id, tab_id, name, start_date, end_date, status)
       values (${WS}, ${tabId}, 'Спринт 1', current_date - 13, current_date, 'active')
@@ -570,8 +570,8 @@ Deno.test("снятая из идущего спринта плановая за
     const { tabId } = await seed(db);
     const mk = async (title: string, status: string) =>
       (await db.queryObject<{ id: string }>`
-        insert into tasks (title, status, group_id, created_by)
-        values (${title}, ${status}, ${WS}, 'test') returning id`).rows[0].id;
+        insert into tasks (title, status, group_id)
+        values (${title}, ${status}, ${WS}) returning id`).rows[0].id;
     const done = await mk("Сделана", "done");
     const lagging = await mk("Отстаёт", "open");
     const cycle = (await db.queryObject<{ id: string }>`
@@ -638,8 +638,8 @@ Deno.test("снять и вернуть в идущий спринт — зад�
   try {
     const { tabId } = await seed(db);
     const task = (await db.queryObject<{ id: string }>`
-      insert into tasks (title, status, group_id, created_by)
-      values ('Задача', 'open', ${WS}, 'test') returning id`).rows[0].id;
+      insert into tasks (title, status, group_id)
+      values ('Задача', 'open', ${WS}) returning id`).rows[0].id;
     const cycle = (await db.queryObject<{ id: string }>`
       insert into sprint_cycles (group_id, tab_id, name, start_date, end_date, status)
       values (${WS}, ${tabId}, 'Спринт 1', current_date - 13, current_date, 'active')
@@ -674,8 +674,8 @@ Deno.test("в черновике убранная задача удаляетс�
   try {
     const { tabId } = await seed(db);
     const task = (await db.queryObject<{ id: string }>`
-      insert into tasks (title, status, group_id, created_by)
-      values ('Задача', 'open', ${WS}, 'test') returning id`).rows[0].id;
+      insert into tasks (title, status, group_id)
+      values ('Задача', 'open', ${WS}) returning id`).rows[0].id;
     const cycle = (await db.queryObject<{ id: string }>`
       insert into sprint_cycles (group_id, tab_id, name, start_date, end_date, status)
       values (${WS}, ${tabId}, 'Спринт 1', current_date, current_date + 13, 'draft')

@@ -88,42 +88,29 @@ Granola и Read.ai — альтернативные источники встр�
 
 ```
 supabase/
-├── functions/
-│   ├── swarm-bot/              # Telegram-бот (основной)
-│   │   ├── index.ts            # Роутинг: сообщения, callback-кнопки, cron-триггеры
-│   │   ├── lib/
-│   │   │   ├── supabase.ts     # Supabase клиент + ADMIN_USER_ID
-│   │   │   ├── telegram.ts     # sendMessage, sendInlineMessage, buildKeyboard
-│   │   │   ├── openai.ts       # getEmbedding, chatComplete, transcribeAudio
-│   │   │   ├── storage.ts      # saveEntry, getSession, setSession, visibilityFilter
-│   │   │   ├── readai.ts       # Read.ai OAuth токены
-│   │   │   └── types.ts        # TgMessage, TgCallbackQuery, KbEntry
-│   │   ├── handlers/
-│   │   │   ├── knowledge.ts    # /add, /ask + AI поиск с tool-calling
-│   │   │   ├── media.ts        # Голос (Whisper), файлы, фото (Vision), URL
-│   │   │   ├── meetings.ts     # /meetings — инбокс для Read.ai и Granola
-│   │   │   ├── granola.ts      # /granola — ручной импорт + tezises preview
-│   │   │   ├── users.ts        # /users — управление командой и профилями
-│   │   │   ├── digest.ts       # Еженедельный дайджест
-│   │   │   └── help.ts         # Текст /help
-│   │   └── tasks/
-│   │       ├── index.ts        # /tasks, /addtask, smartTaskSearch
-│   │       ├── handlers.ts     # Callback-обработчики задач
-│   │       ├── db.ts           # CRUD задач
-│   │       ├── formatter.ts    # Форматирование вывода задач
-│   │       ├── matcher.ts      # TASK_KEYWORDS regex
-│   │       ├── types.ts        # Task types
-│   │       └── tools.ts        # MCP-совместимые инструменты задач
-│   ├── swarm-mcp/              # MCP-сервер для Claude Desktop (JSON-RPC)
+├── functions/                  # Edge Functions (по папке на функцию), общий код — _shared/
+│   ├── swarm-bot/              # Telegram-бот (основной); файлы — ARCHITECTURE «swarm-bot — структура файлов»
+│   ├── swarm-mcp/              # MCP-сервер для Claude Desktop / claude.ai / ChatGPT (JSON-RPC)
+│   ├── swarm-oauth/            # OAuth для MCP: регистрация клиента, PKCE, обмен и отзыв токенов
+│   ├── swarm-setup/            # Скрипт установки Claude Desktop (публичный GET)
 │   ├── swarm-api/              # REST API для веб-интерфейса (поверх той же логики, что и бот)
+│   ├── auth-resolve/           # Веб-вход: verified e-mail Google → строка allowed_users (вызов подписан HMAC, от CF Pages)
+│   ├── auth-passkey/           # Веб-вход: второй шаг — ключ доступа (WebAuthn)
+│   ├── google-oauth/           # Привязка Google Календаря для рекордера
+│   ├── swarm-recorder-setup/   # Установщик bumblebee (публичный GET)
+│   ├── swarm-recorder-version/ # Последний build рекордера + URL для автообновления
 │   ├── meeting-claim/          # Рекордер: claim/lease встречи до транскрибации
 │   ├── meeting-ingest/         # Рекордер: приём аудио → Storage → durable-обработка
-│   ├── meeting-process/        # Рекордер: cron durable-обработки (транскрибация по кускам + тезисы)
-│   ├── meeting-heartbeat/      # Рекордер: heartbeat-мониторинг (watchdog checkRecorderHealth в swarm-bot)
+│   ├── meeting-process/        # Cron durable-обработки (транскрибация по кускам + тезисы)
+│   ├── meeting-status/ meeting-current/ meeting-context/ meeting-heartbeat/ recorder-diag/ meeting-webtoken/
+│   │                           # Рекордер: статус встреч, «что идёт сейчас», контекст прошлой встречи, heartbeat, журнал, обмен токена рекордера на веб-сессию
+│   ├── meeting-invite/ meeting-calendar/ meeting-calendar-snapshot/ meeting-missed/ meeting-notice/
+│   │                           # Бот встреч scriba: приглашения, автозапуск по календарю, снимок календаря, пропуски, уведомления об отказе
+│   ├── market-ingest/          # Приём данных сборщиков «Анализа рынка» (GitHub Actions)
 │   ├── granola-poller/         # LEGACY: standalone-поллер, выведен из крона. Поллинг Granola — внутри swarm-bot (ingestNewGranolaNotesAllUsers)
 │   ├── read-ai-auth/           # OAuth2 Read.ai (выключена, READ_AI_AUTH_ENABLED off → 403)
 │   ├── read-ai-webhook/        # Вебхук Read.ai (отключается, READ_AI_ENABLED off)
-│   └── _shared/                # общий код: sources (реестр источников), mcp-token, recorder-token, meeting-processor, meeting-dedup, tasks, search, countries
+│   └── _shared/                # общий код: tasks/, entries/, users/, market/, sources (реестр источников), mcp-token, recorder-token, meeting-processor, meeting-dedup, search, countries и др.
 └── migrations/                 # ВСЯ схема: 00000000_initial_schema.sql + инкрементальные. Старт с нуля — supabase db reset (или db push)
 
 miniapp/                        # Веб-интерфейс «Рой» (Next.js 16 → статический экспорт → Cloudflare Pages; имя папки историческое — это обычный сайт/PWA, НЕ Telegram Mini App)
@@ -137,25 +124,25 @@ recorder/                       # bumblebee — macOS меню-бар рекор
 
 ## Таблицы БД
 
-Краткий справочник (15 таблиц). Полная схема БД с ключевыми полями — **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** (раздел «Таблицы БД»), единственный источник истины.
+В схеме `public` около 70 таблиц (72 по миграциям на 09.11.2026; список собирается из `supabase/migrations/`). Полный справочник с ключевыми полями — **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** (раздел «Таблицы БД»), единственный источник истины; здесь только опорные:
 
 | Таблица | Назначение |
 |---------|-----------|
-| `workspaces` | Воркспейсы (тенанты) |
-| `entries` | База знаний — все записи (встречи и заметки) |
-| `tasks` | Задачи команды + личные (Рой) |
-| `sprints` | Спринты (Рой) |
-| `task_history` | История изменений задач |
-| `task_comments` | Комментарии-апдейты к задачам (веб + MCP) |
-| `meetings` | Swarm Meetings — источник истины о встрече рекордера (НЕ путать с `entries`) |
+| `workspaces` | Воркспейсы (тенанты); `id` — постоянный слаг, не название |
+| `entries` | База знаний — все записи (встречи и заметки); архив вместо удаления |
+| `tasks` | Задачи команды (слой личных задач снят 09.10.2026) |
+| `projects`, `sprints` | Доска «Проекты» и её пространства (`sprints.kind`: `board_tab` / `space`) |
+| `sprint_cycles`, `sprint_items` | Спринты: период с приёмкой и замороженный снимок состава |
+| `task_history`, `task_comments`, `task_files`, `task_labels` | Журнал, комментарии, файлы и личные метки задач |
+| `meetings` | Swarm Meetings — источник истины о встрече рекордера/бота (НЕ путать с `entries`) |
+| `allowed_users`, `user_profiles` | Белый список людей (почта, `telegram_id`, токены MCP/рекордера) и их профили |
+| `user_integrations`, `oauth_tokens`, `oauth_state` | Ключи и токены интеграций (Granola, Google Календарь, Read.ai) |
 | `sessions` | Состояние диалога бота (TTL 30 мин) |
-| `allowed_users` | Белый список Telegram-аккаунтов + токены MCP/рекордера |
-| `user_profiles` | Профили: имя, роль, рынки, контакты, алиасы |
-| `user_integrations` | API-ключи интеграций (Granola) |
-| `app_settings` | Глобальные настройки |
-| `oauth_tokens` | OAuth токены интеграций (Read.ai) |
-| `oauth_state` | Временный PKCE state для OAuth |
-| `feedback` | Фидбек пользователей |
+| `mkt_*` | «Анализ рынка» — данные по странам |
+| `mcp_oauth_*` | OAuth для MCP (ChatGPT), см. [docs/MCP_OAUTH.md](docs/MCP_OAUTH.md) |
+| `app_settings` | Глобальные настройки (плашка работ, заморозка и др.) |
+
+Таблицы `task_dependencies` (снесена 12.08.2026) и «зависимости задач» больше нет.
 
 ---
 
@@ -199,41 +186,31 @@ recorder/                       # bumblebee — macOS меню-бар рекор
 - `/tasks` — активные задачи; `/tasks [имя]` / `/tasks [страна]` — фильтры
 - `/addtask` — пошаговое создание; **свободным текстом** — «добавь/создай/поставь [кому] задачу: …» (`parseCreateTaskCommand`, создаёт сразу, отделено от поиска)
 - Статусы: `open → in_progress → done / cancelled`, просроченные помечаются
-- **Из встречи** — по кнопке «Сгенерировать задачи» на экране вычитки (preview → добавить, привязка `meeting_id`); авто-извлечение из транскрипта в боте (`analyzeAndCreateTasks`)
+- **Из встречи** — по кнопке «Сгенерировать задачи» на экране вычитки (preview → добавить, привязка `meeting_id`; `POST /tasks/extract`, MCP `extract_tasks_from_meeting`). Автоизвлечение в боте (`analyzeAndCreateTasks`) удалено 05.09.2026
 - Смарт-поиск: если вопрос содержит TASK_KEYWORDS — сначала ищет в задачах
 
 ### Роли пользователей и назначение задач
 
-Профили имеют роли: `marketing`, `bd` (бизнес + операционка), `rnd` (продукт).
-При извлечении задач из транскрипта GPT определяет исполнителя по каскаду:
-имя/email/псевдоним → роль+страна → только страна → общий пул.
-Несколько исполнителей в стране — задача назначается всем. Редактируется через админку профилей.
+Профили имеют роли: `marketing`, `bd` (бизнес + операционка), `rnd` (продукт) — это пометка профиля и задачи (`tasks.task_role`), а не правило назначения.
+При извлечении задач из тезисов (`_shared/task-extract.ts`) модель называет исполнителя полным именем; сервер сверяет его с людьми воркспейса (имя / псевдоним / e-mail, `matchAssignee`). Не нашли или не назвали — задача уходит на того, кто её забирает ([решение 28.08.2026](docs/decisions/2026-08-28-assignee-falls-back-to-author.md)). Каскад «роль+страна → страна → общий пул» удалён.
 
 ### MCP-сервер (Claude Desktop + claude.ai + ChatGPT)
 
 **ChatGPT — на проде с 30.10.2026:** карточка в личных настройках, OAuth-вход через сайт и отдельный отзыв доступа. Проверен вызов MCP из облака OpenAI; создание коннектора в браузерном ChatGPT ещё не проверено. [Инструкция и устройство](docs/MCP_OAUTH.md).
 Два пути подключения (инструкция в боте — `/connect_claude`): **(A) Claude Desktop на Mac** — веб → Настройки → Claude Desktop выдаёт one-liner для терминала (ставит мост и пишет `config.json`); **(B) claude.ai в браузере** — токен `smcp_…` из той же команды вставляется вручную в Settings → Connectors (URL `swarm-mcp` + Bearer). С 26.10.2026 ключи выдаёт только веб (после Touch ID); `/setup`, `/mytoken` в боте отсылают туда. Токен живёт **30 дней** (и гаснет при смене пространства или роли); `Invalid token` чаще = рассинхрон (клиент шлёт старый токен), а не срок. Перевыпуск убивает старый токен и рвёт рабочее подключение — в вебе кнопка так и подписана («Перевыпустить команду установки»). Хелперы токена — `_shared/mcp-token.ts` (бот и веб — тонкие двери).
 
-| Инструмент | Описание |
+Сейчас в `swarm-mcp` **68 инструментов**. Полная таблица с поведением каждого — единственный источник истины: [docs/ARCHITECTURE.md → swarm-mcp](docs/ARCHITECTURE.md) (раздел «Инструменты (tools) swarm-mcp»); классификация чтение / запись / удаление — `TOOL_CLASSES` в `supabase/functions/swarm-mcp/annotations.ts`. Группы:
+
+| Группа | Инструменты |
 |---|---|
-| `search_knowledge` | Семантический поиск (vector + keyword + file) |
-| `add_knowledge` | Добавить запись; `is_private` + `owner_telegram_id` для личного |
-| `get_entry` | Полный текст записи по ID |
-| `list_entries` | Список с фильтрами: source, entry_type, date, has_file |
-| `delete_entry` | Удалить запись + файл из Storage |
-| `update_entry` | Обновить content/summary/title/date/file |
-| `upload_file` | Загрузить файл в Storage (base64, до ~4MB) |
-| `get_storage_stats` | Статистика базы |
-| `get_tasks` | Задачи с фильтрами: assignee, country, status, period, label, project, no_project (задачи вне проектов); в строке — id и проект, при усечении «показаны N из M» |
-| `add_task` / `update_task` / `delete_task` | CRUD задач |
-| `get_meetings` | Последние встречи из Read.ai |
-| `whoami` | Кто вызывающий по токену: имя, внутренний ID, воркспейс |
-| `get_users` | Команда с профилями (включая владельца), фильтр по market |
-| `get_task_comments` | Комментарии-апдейты к задаче по её ID |
-| `add_task_comment` | Добавить комментарий-апдейт к задаче от своего лица |
-| `delete_task_comment` | Удалить свой комментарий к задаче |
-| `get_review_queue` / `get_draft_meeting` / `update_draft_meeting` / `publish_draft_meeting` | Вычитка черновиков встреч: очередь, черновик, правка, публикация |
-| `extract_tasks_from_meeting` | Предложения задач по тезисам встречи (ничего не создаёт) |
+| База знаний | `search_knowledge`, `add_knowledge`, `get_entry`, `list_entries`, `update_entry`, `reindex_entry`, `delete_entry`, `upload_file`, `get_storage_stats` |
+| Встречи | `get_meetings` (последние встречи базы знаний любого источника), `get_today_meetings` (календарь на сегодня), `get_review_queue`, `get_draft_meeting`, `update_draft_meeting`, `publish_draft_meeting`, `extract_tasks_from_meeting` |
+| Задачи | `get_tasks`, `add_task`, `update_task`, `delete_task`, `get_projects`, `get_task_stats`, `get_task_history`, `get_recent_task_changes`, `set_task_subscription` |
+| Комментарии и метки | `get_task_comments`, `get_recent_comments`, `add_task_comment`, `delete_task_comment`, `list_task_labels`, `create_task_label`, `rename_task_label`, `delete_task_label` |
+| Спринты | `get_sprints`, `get_sprint`, `create_sprint`, `update_sprint`, `start_sprint`, `accept_sprint`, `delete_sprint`, `get_sprint_journal`, `get_sprint_spaces`, `create_sprint_space`, `create_sprint_group`, `rename_sprint_space`, `archive_sprint_space`, `add_sprint_tasks`, `move_sprint_task`, `remove_sprint_task`, `mark_sprint_task`, `set_sprint_task_span` |
+| Люди и уведомления | `whoami`, `get_users`, `get_notifications`, `mark_notifications_read`, `get_feedback`, `resolve_feedback` (последние два — только владелец) |
+| Анализ рынка | `market_template`, `market_status`, `market_get`, `market_set_block`, `market_set_company_year`, `market_upsert_location`, `market_upsert_chain`, `market_set_price`, `market_add_fact` |
+| Проверки Децимуса | `get_inspections`, `get_inspection` |
 
 ### Веб-интерфейс «Рой»
 
@@ -241,11 +218,11 @@ recorder/                       # bumblebee — macOS меню-бар рекор
 
 - **Стек:** Next.js 16 + React 19 + Tailwind + shadcn; статический экспорт, хостинг — Cloudflare Pages (`swarm-team.app`)
 - **Бэкенд:** edge-функция `swarm-api` — REST поверх той же бизнес-логики, что и бот (новой логики нет, только маршруты)
-- **Вход:** в браузере — Telegram Login Widget → JWT в httpOnly-cookie. Схему `tma` (вход как Telegram Mini App) `swarm-api` не принимает: любой заголовок `Authorization`, кроме `Bearer`, получает 401.
+- **Вход:** только Google (решение 27.10.2026; Telegram Login Widget удалён) → JWT в httpOnly-cookie; второй шаг — ключ доступа (Touch ID / WebAuthn). Почта человека должна быть в `allowed_users`. Схему `tma` (вход как Telegram Mini App) `swarm-api` не принимает: любой заголовок `Authorization`, кроме `Bearer`, получает 401. Подробнее — [ARCHITECTURE → swarm-api](docs/ARCHITECTURE.md) и [решение](docs/decisions/2026-10-27-google-only-login.md).
 - **Экраны:** поиск + AI-ответ (RAG со сносками), доска задач (десктоп — виды Список / Таймлайн / Спринт / Граф; линзы Мои / Команда / Все; для админа — «Все сотрудники» с группировкой по исполнителю), база знаний, встречи + вычитка и публикация. Адаптив: мобайл — таб-бар, десктоп — бенто-дашборд
 - **Настройки** («Ещё»): профиль/рынки, Granola, Google-календарь, дайджест, загрузка файла, фидбек, **bumblebee** и **Claude Desktop** — установка из веба (единственное место выдачи ключей Claude и bumblebee)
 - **Админка** (для админов): воркспейсы (создать/переименовать), пользователи (добавить/переместить/удалить, правка профилей), broadcast, сводка «на вычитке по участникам» — паритет с бот-суперадмином
-- **Админ = суперадмин:** `isAdmin = зашитый ADMIN_USER_ID ИЛИ флаг allowed_users.is_admin` (мультиадмин); админ видит все данные воркспейса
+- **Админ = суперадмин:** `isAdmin = зашитый ADMIN_USER_ID ИЛИ флаг allowed_users.is_admin` (мультиадмин). Объём админа — **его воркспейс**; личные записи и встречи других людей админ **не видит** (обхода нет, решение 07.08.2026), общие встречи может править и удалять. Правила доступа — одна таблица в [ARCHITECTURE → Контроль доступа](docs/ARCHITECTURE.md)
 - **Приватность («Рой»):** приватные задачи и записи видны только владельцу — командный бот их не показывает; страны отображаются короткими ISO-кодами (GE / TR / …)
 - Детали — `docs/ARCHITECTURE.md` (swarm-api + miniapp), `docs/MINIAPP_ARCHITECTURE.md`
 
@@ -263,6 +240,8 @@ recorder/                       # bumblebee — macOS меню-бар рекор
 ---
 
 ## Деплой
+
+**Прод — свой сервер (VPS Contabo, self-hosted Supabase) с 13.10.2026; раскатка — `make deploy` через шлюз, только по «да» владельца и в ночное окно** — [docs/DEPLOY.md](docs/DEPLOY.md). Команды `supabase functions deploy` ниже — для поднятия **нового** окружения с нуля (облачного прод-проекта больше нет).
 
 ```bash
 # Edge Functions — всегда с --no-verify-jwt, иначе Telegram/клиент получает 401
@@ -283,7 +262,7 @@ cd miniapp && npm run build                                   # → miniapp/out/
 cd recorder && ./install.sh                                   # подробности в recorder/README.md
 ```
 
-В копи-паст примерах (URL вида `https://<YOUR_PROJECT_REF>.supabase.co/...`) подставляй свой project-ref. Прод-реф Dodo Brands — `vbqglndbxkpmreccpqmr`.
+В копи-паст примерах (URL вида `https://<YOUR_PROJECT_REF>.supabase.co/...`) подставляй свой project-ref. Прежний облачный прод-проект (`vbqglndbxkpmreccpqmr`) выведен из эксплуатации 13.10.2026 (удаление — [решение](docs/decisions/2026-10-13-cloud-teardown.md)) — не использовать; адрес прода — `SWARM_PUBLIC_URL` (ARCHITECTURE → Переменные окружения).
 
 Рабочая ветка: **`main`** (дефолтная на GitHub; переименована из `sandbox_vas` 2026-07-25).
 
@@ -295,7 +274,7 @@ cd recorder && ./install.sh                                   # подробно
 
 **Visibility filter** (`storage.ts: visibilityFilter(userId)`) — строка для `.or()` Supabase: возвращает публичные записи + приватные только владельца.
 
-**Chunking** (`add_knowledge` в swarm-mcp) — тексты >3000 символов бьются на чанки с overlap 200 символов; связаны через `metadata.chunk_group_id`, а `group_id` задаёт воркспейс. Первый чанк хранит `summary` и `embedding`; остальные — только `content`.
+**Chunking** (`add_knowledge` в swarm-mcp, `CHUNK = 3000`, `OVERLAP = 200`) — тексты >3000 символов бьются на чанки с overlap 200 символов; связаны через `metadata.chunk_group_id`, а колонка `group_id` — воркспейс, не чанки. Первый чанк хранит `summary` и `embedding`; остальные — только `content`.
 
 **bgRun** (`index.ts`) — обёртка для async-обработчиков: сразу возвращает 200 Telegram, продолжает работу через `EdgeRuntime.waitUntil`.
 

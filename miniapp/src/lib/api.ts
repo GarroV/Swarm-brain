@@ -962,7 +962,7 @@ export async function fetchTasks(
     : (filters ?? {});
   if (DEV_MODE) {
     let r = mockTasks;
-    if (f.status) r = r.filter((t) => t.status === f.status);
+    if (f.status || f.statuses?.length) r = r.filter((t) => t.status === f.status || f.statuses?.includes(t.status));
     if (f.sprint_id) r = r.filter((t) => t.sprint_id === f.sprint_id);
     if (f.tags?.length) {
       r = r.filter((t) => f.tags!.some((tag) => (t.tags ?? []).includes(tag)));
@@ -981,6 +981,7 @@ export async function fetchTasks(
   }
   const params = new URLSearchParams();
   if (f.status) params.set("status", f.status);
+  if (f.statuses?.length) params.set("statuses", f.statuses.join(","));
   if (f.sprint_id) params.set("sprint_id", f.sprint_id);
   if (f.tags?.length) params.set("tags", f.tags.join(","));
   if (f.label_id) params.set("label_id", f.label_id);
@@ -990,10 +991,8 @@ export async function fetchTasks(
   if (f.due_date_from) params.set("due_date_from", f.due_date_from);
   if (f.due_date_to) params.set("due_date_to", f.due_date_to);
   if (f.mine) params.set("mine", "true");
-  // Все экраны задач Роя фильтруют статусы НА КЛИЕНТЕ (смарт-листы, колонка «Готово» в спринте,
-  // таймлайн). Без confirmed-фильтра бэкенд по умолчанию исключает done/cancelled/draft
-  // (см. _shared/tasks/db.ts) → список «Готово» всегда пуст. confirmed=true отдаёт ВСЕ
-  // подтверждённые задачи (включая done), а статус уже фильтруется на клиенте.
+  // Без `statuses` статусы фильтрует клиент: confirmed=true отдаёт ВСЕ подтверждённые, включая done (без него
+  // сервер прячет done/cancelled/draft). Экранам без «Готово» — `statuses: OPEN_STATUSES`, фильтр на сервере (#111).
   params.set("confirmed", "true");
   const qs = params.toString();
   return apiFetch<Task[]>(`/tasks${qs ? `?${qs}` : ""}`);

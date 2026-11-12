@@ -104,8 +104,8 @@ async function addTask(
   opts: { status?: string; due?: string | null; isPrivate?: boolean; archived?: boolean } = {},
 ): Promise<string> {
   const r = await db.queryObject<{ id: string }>`
-    insert into tasks (title, status, group_id, project_id, created_by, due_date, is_private, archived_at)
-    values ('задача про юристов', ${opts.status ?? "open"}, ${WS}, ${s.projectId}, 'test',
+    insert into tasks (title, status, group_id, project_id, due_date, is_private, archived_at)
+    values ('задача про юристов', ${opts.status ?? "open"}, ${WS}, ${s.projectId},
             ${opts.due ?? null}, ${opts.isPrivate ?? false}, ${opts.archived ? new Date().toISOString() : null})
     returning id`;
   return r.rows[0].id;

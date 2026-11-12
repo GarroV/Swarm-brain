@@ -33,6 +33,8 @@ import {
 type Meta = {
   title: [string, string]; dated?: boolean; hint: [string, string]; ownTitle?: boolean;
   scoped?: boolean; quality?: boolean; sample?: boolean; meta?: [string, string];
+  /** Ссылка в шапке блока справа: «Все задачи →», «Анализ рынка →». */
+  link?: { text: [string, string]; go: "tasks" | "market" };
 };
 // «5 ноября» / «5 November»: день и месяц словом, без года, по Белграду — подпись «Мои страны на …».
 const DAY_LABEL = [
@@ -42,12 +44,12 @@ const DAY_LABEL = [
 const todayLabel = (lang: number): string => DAY_LABEL[lang].format(new Date());
 
 const META: Record<WidgetId, Meta> = {
-  calls: { title: ["Созвоны сегодня", "Today's calls"], hint: ["Встречи дня из календаря и кнопка «подключиться».", "Today's meetings from your calendar with a join button."], ownTitle: true },
-  top5: { title: ["Ближайшие задачи", "Next tasks"], hint: NEXT_TASK_TEXT.hint, meta: NEXT_TASK_TEXT.meta },
+  calls: { title: ["Ближайшие встречи", "Upcoming meetings"], hint: ["Встречи дня из календаря: линия «сейчас», «Подключиться» у ближайшей, «Вычитать» у записанной встречи.", "Today's meetings from your calendar: a “now” line, Join on the next one, Review on a recorded meeting."], ownTitle: true },
+  top5: { title: ["Ближайшие задачи", "Upcoming tasks"], hint: NEXT_TASK_TEXT.hint, meta: NEXT_TASK_TEXT.meta, link: { text: ["Все задачи →", "All tasks →"], go: "tasks" } },
   board: { title: ["Доска", "Board"], hint: ["Стикеры-задания (OKR, дайджест, вычитка) и объявления админа.", "Task stickers (OKRs, digest, review) and admin notices."], meta: ["что от тебя ждут", "what's expected of you"] },
   ratings: { title: ["Рейтинги", "Ratings"], hint: ["Вкладки РС, РКО, Карты, Агрегаторы: выбранные страны против среднего по IMF.", "Tabs for Standards, CX, Maps and Delivery apps: your countries against the IMF average."], scoped: true },
   pz: { title: ["Пиццерии", "Pizzerias"], hint: ["Все пиццерии подборки: РС, РКО, худшие сверху.", "Every pizzeria in your selection, worst first."], scoped: true, quality: true, meta: ["худшие сверху", "worst first"] },
-  countries: { title: ["Мои страны", "My countries"], hint: ["Страны подборки: РС, РКО, Google и Яндекс со стрелкой изменения, продажи; клик раскрывает пиццерии страны.", "Selected countries: standards, CX, Google and Yandex with change arrows, sales; click to expand pizzerias."], scoped: true, quality: true, dated: true },
+  countries: { title: ["Мои страны", "My countries"], hint: ["Страны подборки: РС, РКО, Google и Яндекс со стрелкой изменения, продажи; клик раскрывает пиццерии страны.", "Selected countries: standards, CX, Google and Yandex with change arrows, sales; click to expand pizzerias."], scoped: true, quality: true, dated: true, link: { text: ["Анализ рынка →", "Market analysis →"], go: "market" } },
   viol: { title: ["Топ-5 нарушений", "Top 5 violations"], hint: ["Самые частые нарушения стандартов в волне.", "Most frequent standards violations this wave."], scoped: true, sample: true },
   sales: { title: ["Продажи Dodo", "Dodo sales"], hint: ["Выручка моих стран по месяцам — данные «Анализа рынка».", "Monthly revenue of my countries from Market analysis."], meta: ["публичный API Dodo", "Dodo public API"] },
   insp: { title: ["Проверки", "Inspections"], hint: ["Последние проверки стандартов по странам подборки: балл, класс, движение к прошлой; клик — зоны и нарушения.", "Latest standards inspections in your countries: score, grade, change vs the previous one; click for zones and violations."], scoped: true, meta: ["Децимус, за 90 дней", "Decimus, 90 days"] },
@@ -62,7 +64,7 @@ type Props = { data: DashboardData; onCreateTask: () => void; onCreateTaskFrom: 
 export function HomeGrid({ data, onCreateTask, onCreateTaskFrom, editing, onEditing: setEditing }: Props) {
   const dt = useDt();
   const lang = dt("ru", "en") === "en" ? 1 : 0;
-  const { me, setTab } = useRoyNav();
+  const { me, setTab, openTasks } = useRoyNav();
   const [layout, setLayoutState] = useState<LayoutItem[]>(DEFAULT_LAYOUT);
   const [gallery, setGallery] = useState(false);
   const [dragId, setDragId] = useState<WidgetId | null>(null);
@@ -102,12 +104,12 @@ export function HomeGrid({ data, onCreateTask, onCreateTaskFrom, editing, onEdit
     const gate = META[id].quality ? qualityGate(quality, id) : null;
     if (gate) return gate;
     switch (id) {
-      case "calls": return <MeetingsToday flat first className={FILL} flatBody={`rounded-[12px] border border-line bg-surface p-1.5 ${FILL_CARD}`} />;
+      case "calls": return <MeetingsToday flat first drafts={data.reviewList} className={FILL} flatBody={`rounded-[12px] border border-line bg-surface p-1.5 ${FILL_CARD}`} />;
       case "top5": return <TopTasksWidget data={data} onCreate={onCreateTask} />;
       case "board": return <BoardWidget data={data} />;
       case "ratings": return <RatingsWidget codes={codes} q={q} scope={scope} qualityGate={qualityGate(quality, id)} />;
       case "pz": return <PizzeriasWidget scope={scope} />;
-      case "countries": return <CountriesWidget scope={mine} sales={sales} narrow={narrow} onNarrow={setNarrow} onMarket={() => setTab("market")} />;
+      case "countries": return <CountriesWidget scope={mine} sales={sales} narrow={narrow} onNarrow={setNarrow} />;
       case "viol": return <ViolationsWidget scope={scope} />;
       case "sales": return <SalesWidget codes={codes} sales={sales} />;
       case "insp": return <InspectionsWidget codes={codes} onCreateTask={onCreateTaskFrom} />;
@@ -144,7 +146,7 @@ export function HomeGrid({ data, onCreateTask, onCreateTaskFrom, editing, onEdit
         )}
         <div className={`${editing ? "pointer-events-none select-none" : ""} ${sizing === "auto" ? "" : FILL_COL}`}>
           {!m.ownTitle && (
-            <HomeLabel first action={undefined}>
+            <HomeLabel first action={m.link ? { text: m.link.text[lang], onClick: () => (m.link!.go === "tasks" ? openTasks("mine", "all") : setTab("market")) } : undefined}>
               <span className="inline-flex items-center gap-2">{m.dated ? `${m.title[lang]} ${dt("на", "as of")} ${todayLabel(lang)}` : m.title[lang]}{m.meta && <span className="font-normal normal-case tracking-normal text-ink-mute">{m.meta[lang]}</span>}{m.sample && <SampleTag />}</span>
             </HomeLabel>
           )}

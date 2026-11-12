@@ -95,3 +95,16 @@ export function hiddenCount(mine: Task[], sections: TaskSection[], now: Date): n
 export function homeTeam(team: Task[], now: Date): Task[] {
   return team.filter((t) => dueBucket(t, now) !== "done").sort(byDue);
 }
+
+export type HomeDueInfo = { tone: "over" | "today" | "later"; days: number };
+
+/** Срок строки «Ближайших задач»: насколько просрочено (days < 0), сегодня или сколько дней осталось.
+ *  `today` — локальный день «YYYY-MM-DD» (dayOf(now)); считаем по календарным дням, не по часам. */
+export function homeDueInfo(reason: HomeDateReason, today: string): HomeDueInfo {
+  const ms = (d: string) => Date.UTC(+d.slice(0, 4), +d.slice(5, 7) - 1, +d.slice(8, 10));
+  const days = Math.round((ms(reason.date) - ms(today)) / 86_400_000);
+  return { tone: days < 0 ? "over" : days === 0 ? "today" : "later", days };
+}
+
+/** Локальный календарный день «YYYY-MM-DD» — для homeDueInfo. */
+export const homeToday = (now: Date): string => dayOf(now);

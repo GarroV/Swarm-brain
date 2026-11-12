@@ -76,8 +76,8 @@ async function seed(db: Client): Promise<Seeded> {
       .rows[0].id;
   const task = async (title: string, projectId: string | null) =>
     (await db.queryObject<{ id: string }>`
-      insert into tasks (title, status, group_id, project_id, created_by, confirmed)
-      values (${title}, 'open', ${WS}, ${projectId}, 'test', true) returning id`)
+      insert into tasks (title, status, group_id, project_id, confirmed)
+      values (${title}, 'open', ${WS}, ${projectId}, true) returning id`)
       .rows[0].id;
 
   const open = await project("Открытый", false);
@@ -277,8 +277,8 @@ Deno.test("задача с проектом вне воркспейса не в�
       insert into projects (group_id, name, created_by, is_private)
       values (${OTHER}, 'Чужой закрытый', ${AUTHOR}, true) returning id`).rows[0].id;
     const stray = (await db.queryObject<{ id: string }>`
-      insert into tasks (title, status, group_id, project_id, created_by, confirmed)
-      values ('сбитая ссылка', 'open', ${WS}, ${foreign}, 'test', true) returning id`).rows[0].id;
+      insert into tasks (title, status, group_id, project_id, confirmed)
+      values ('сбитая ссылка', 'open', ${WS}, ${foreign}, true) returning id`).rows[0].id;
 
     const member = await listTasksWithTotal({ viewerId: MEMBER, columns: "id, title, project_id" }, WS);
     assertEquals(titles(member.tasks), ["без проекта", "в открытом"]);
