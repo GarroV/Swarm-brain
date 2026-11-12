@@ -13,7 +13,7 @@ import {
   heldSeconds,
   readClaimSeconds,
 } from "./arbiter.ts";
-import { withGuards } from "./guard-query.ts";
+import { deferLogSuffix, withGuards } from "./guard-query.ts";
 import { CHALLENGER_ROLE, withRecorder } from "../meeting-ingest/challenge.ts";
 import { boundClaimSeconds, type MeetingClock } from "./claim-clock.ts";
 import { AgentAuthError, type AgentIdentity, resolveActingIdentity } from "../_shared/agent-auth.ts";
@@ -1021,7 +1021,7 @@ Deno.serve(async (req: Request) => {
   console.log(
     `meeting-claim: ${decision} ${meetingId} kind=${body.identity_kind} sec=${
       Math.round(claimedSeconds ?? 0)
-    } by=${identity.telegramId} heldBy=${heldBy ?? "—"}`,
+    } by=${identity.telegramId} heldBy=${heldBy ?? "—"}${deferLogSuffix(decision, deferReason, holderSeconds)}`,
   );
 
   await registerRecorder(

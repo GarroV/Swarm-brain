@@ -3,6 +3,7 @@
 // станет стенограммой встречи, которую команда читает как факт.
 import { assertEquals, assertThrows } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import {
+  approxBounds,
   botJoinsOverShort,
   botStillRecording,
   claimAction,
@@ -110,6 +111,11 @@ function passes(held: HeldRow, guards: Guard[]): boolean {
     switch (g.kind) {
       case "eq":
         return row[g.column] === g.value;
+      case "approx": {
+        const v = row[g.column];
+        const { lo, hi } = approxBounds(g.value);
+        return typeof v === "number" && v >= lo && v <= hi;
+      }
       case "isNull":
         return row[g.column] === null;
       case "neq":
@@ -138,6 +144,19 @@ Deno.test("ЯДРО (TOCTOU): перехват сверяет в UPDATE, что 
   const unset = { ...read, recorded_seconds: null };
   assertEquals(passes(unset, heldGuards(unset, NOW)), true);
   assertEquals(passes({ ...unset, recorded_seconds: 30 }, heldGuards(unset, NOW)), false);
+});
+
+Deno.test("ЯДРО #1271: секунды, прочитанные с округлением до 15 цифр, всё равно совпадают с хранимыми", () => {
+  // Прод-Postgres с extra_float_digits = 0: хранится 424.5334759950638, PostgREST отдаёт 424.533475995064.
+  // Точное равенство не срабатывало никогда, и refresh того же владельца вечно уходил в defer/race.
+  const stored = { ...liveBotRow(424.5334759950638), agent_last_recording: false };
+  const read = { ...stored, recorded_seconds: 424.533475995064 };
+  assertEquals(passes(stored, heldGuards(read, NOW)), true, "округление чтения не мешает UPDATE");
+  assertEquals(
+    passes({ ...stored, recorded_seconds: 424.6 }, heldGuards(read, NOW)),
+    false,
+    "реальный прирост ловится",
+  );
 });
 
 Deno.test("ЯДРО (TOCTOU): перехват сверяет в UPDATE, что бот не начал писать, пока claim считал", () => {
