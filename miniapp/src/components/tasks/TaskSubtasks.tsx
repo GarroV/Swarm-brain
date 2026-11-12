@@ -223,7 +223,7 @@ export function TaskSubtasks({ task, s, onOpenTask, action }: {
               onClick={() => s.toggle(k)}
               className={cn(
                 "flex size-[16px] shrink-0 items-center justify-center rounded-full border-[1.6px]",
-                done ? "border-status-done bg-status-done text-white" : "border-ink-mute hover:border-primary",
+                done ? "border-status-done bg-status-done text-[var(--on-solid)]" : "border-ink-mute hover:border-primary",
               )}
             >
               {done && <RoyIcon name="check" size={10} strokeWidth={2.6} />}

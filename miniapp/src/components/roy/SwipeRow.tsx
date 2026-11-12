@@ -90,7 +90,7 @@ export function SwipeRow({ children, actions, onTap }: { children: ReactNode; ac
               setDx(0);
               a.onClick();
             }}
-            className="flex items-center justify-center text-white transition-transform active:scale-[0.94]"
+            className="flex items-center justify-center text-[var(--on-solid)] transition-transform active:scale-[0.94]"
             style={{ width: ACTION_W, background: a.color }}
           >
             <RoyIcon name={a.icon} size={22} strokeWidth={1.9} />

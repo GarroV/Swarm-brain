@@ -298,7 +298,7 @@ export function SprintRow(
                     className={cn(
                       "grid size-[16px] place-items-center rounded-full border-[1.5px] leading-none transition-colors",
                       closed
-                        ? "border-status-done bg-status-done text-white"
+                        ? "border-status-done bg-status-done text-[var(--on-solid)]"
                         : "border-ink-mute hover:border-status-done hover:bg-status-done/15",
                     )}
                     style={{ fontSize: 10 }}
@@ -310,7 +310,7 @@ export function SprintRow(
               : closed
               ? (
                 <span
-                  className="grid size-[16px] place-items-center rounded-full border-[1.5px] border-status-done bg-status-done leading-none text-white"
+                  className="grid size-[16px] place-items-center rounded-full border-[1.5px] border-status-done bg-status-done leading-none text-[var(--on-solid)]"
                   style={{ fontSize: 10 }}
                 >
                   ✓

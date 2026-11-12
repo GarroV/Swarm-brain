@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { CUSTOM_BACKDROP_EVENT } from "@/lib/backdrop";
 import { type CustomBackdrop, loadCustomBackdrop } from "@/lib/backdropStore";
 import { useBackdrop } from "@/lib/useBackdrop";
+import { useScheme } from "@/lib/useScheme";
 import { GalaxyBackground } from "./GalaxyBackground";
 
 // Слой фона ПОЗАДИ интерфейса (fixed, -z-10, pointer-events:none). Что рисовать — выбор
@@ -10,7 +11,10 @@ import { GalaxyBackground } from "./GalaxyBackground";
 // по атрибуту `data-backdrop` на <html>.
 export function BackdropLayer() {
   const id = useBackdrop();
-  if (id === "galaxy") return <GalaxyBackground />;
+  const scheme = useScheme();
+  // Галактика — картина тёмной темы «Swarm» (тёмно-синий космос): на цветных схемах она перекрыла бы
+  // их фон чужим синим, поэтому там «Галактика» = чистый цвет схемы (как в светлой теме).
+  if (id === "galaxy") return scheme === "swarm" ? <GalaxyBackground /> : null;
   if (id === "custom") return <CustomImageLayer />;
   if (id === "dots" || id === "aurora") {
     return <div aria-hidden className={`roy-backdrop roy-backdrop-${id}`} />;

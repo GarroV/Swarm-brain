@@ -31,7 +31,8 @@
   --color-foreground: var(--foreground);
   --font-sans: var(--font-sans);
   --font-mono: var(--font-geist-mono);
-  --font-heading: var(--font-sans);
+  /* --font-display ставит цветовая схема (schemes.css); без неё — тот же шрифт, что у текста. */
+  --font-heading: var(--font-display, var(--font-sans));
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -110,6 +111,18 @@
   /* «Нет свечения» — прозрачная тень, а не none: токен входит в составные box-shadow (рейка). */
   --glow-sm: 0 0 0 transparent;
   --glow-md: 0 0 0 transparent;
+  /* Текст и значки на сплошной заливке (кнопка «в цвет акцента», статусный кружок-галочка). У «Swarm» —
+     белый, как было; цветовые схемы задают свою пару (schemes.css): --on-primary под --primary,
+     --on-solid под красный/зелёный/янтарь и --accent-ink. Не токены цвета схемы — служебные. */
+  --on-primary: #FFFFFF;
+  --on-solid: #FFFFFF;
+  /* Затемнение под модальными окнами и шторками — нейтральное, одно на все схемы. */
+  --scrim: rgb(0 0 0 / 0.45);
+  --scrim-sheet: rgb(0 0 0 / 0.4);
+  --scrim-faint: rgb(0 0 0 / 0.3);
+  --scrim-dialog: rgb(10 13 17 / 0.5);
+  --scrim-drawer: rgb(10 13 17 / 0.12);
+  --shadow-dialog: 0 22px 70px rgb(10 13 17 / 0.3);
   --background: #FFFFFF;             /* витрина: белый фон (владелец 24.09.2026) */
   --foreground: #1B2028;
   --card: #FFFFFF;
@@ -248,6 +261,10 @@
   html {
     @apply font-sans;
   }
+  /* Заголовки берут шрифт схемы (--font-display); у «Swarm» он равен шрифту текста. */
+  h1, h2, h3, h4 {
+    font-family: var(--font-display, var(--font-sans));
+  }
   /* Под задником (BackdropLayer, fixed -z-10) html держит цвет фона темы как фоллбэк
      (до/без canvas), а body и оболочка приложения становятся прозрачными — см. блок «Задник». */
   html { background-color: var(--background); }
@@ -256,8 +273,9 @@
 /* ── Задник (lib/backdrop.ts, выбор пользователя; data-backdrop на <html>) ──────────────
    Прозрачными делаем ТОЛЬКО body и оболочку (.roy-shell): карточки, рейка, панели остаются
    непрозрачными — задник виден в просветах, а не под текстом. Галактика рисуется лишь в тёмной
-   теме, поэтому в светлой body не прозрачнеет и фон остаётся чистым. */
-html.dark[data-backdrop="galaxy"] :is(body, .roy-shell),
+   теме схемы «Swarm» (у цветных схем data-scheme на <html>), поэтому в остальных случаях body не
+   прозрачнеет и фон остаётся чистым. */
+html.dark:not([data-scheme])[data-backdrop="galaxy"] :is(body, .roy-shell),
 html[data-backdrop="dots"] :is(body, .roy-shell),
 html[data-backdrop="aurora"] :is(body, .roy-shell),
 html[data-backdrop="custom"] :is(body, .roy-shell) {
