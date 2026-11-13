@@ -43,6 +43,19 @@ function fake(tables: Record<string, Row[]>, files: Map<string, Blob>, onUpload?
       order: (c: string) => ((order = c), q),
       limit: (n: number) => ((limit = n), q),
       update: (p: Row) => ((patch = p), q),
+      upsert: (
+        row: Row,
+      ) => (rows.some((r) => r.id === row.id) ||
+        rows.push({
+          status: "awaiting_review",
+          notes_edited_at: null,
+          summary_status: null,
+          gen: null,
+          sources: null,
+          first_segment: null,
+          ...row,
+        }),
+        q),
       maybeSingle: () => {
         const r = run();
         return Promise.resolve({ data: (r.data as Row[])[0] ? { ...(r.data as Row[])[0] } : null, error: null });
@@ -145,17 +158,59 @@ Deno.test("ЯДРО: непокрытая копия того же челове�
   assertEquals(typeof backupRow(w, "b1").used_at, "string");
 });
 
-Deno.test("ЯДРО: копия чужого человека не вливается — needs_review, остаётся неразобранной (resolved_at пуст)", async () => {
+Deno.test("ЯДРО: копия чужого человека становится ОТДЕЛЬНОЙ встречей этого человека, чужая встреча не тронута", async () => {
+  const w = world();
+  w.meeting("m1", { claim_owner: 9, recorded_seconds: 4867, sources: ["person:9"], title: "November Marketers" });
+  w.backup("b1", "m1", { recorded_seconds: 630, group_id: "cee" });
+  const before = JSON.stringify(meetingRow(w, "m1"));
+  const r = await resolveBackups(w.client(), NOW);
+  assertEquals([r.ownMeetings, r.review], [1, 0]);
+  assertEquals(JSON.stringify(meetingRow(w, "m1")), before, "чужая встреча изменилась");
+  const created = w.tables.meetings.filter((m) => m.id !== "m1");
+  assertEquals(created.length, 1);
+  const n = created[0] as Record<string, unknown>;
+  assertEquals([n.claim_owner, n.identity_kind, n.identity_key, n.group_id], [7, "manual", `manual:${n.id}`, "cee"]);
+  assertEquals(n.title, "November Marketers — отдельная запись / separate recording");
+  assertEquals([n.summary_status, n.recorded_seconds, n.source], ["processing", 630, "desktop-agent"]);
+  const state = n.process_state as {
+    challenge?: unknown;
+    source: string;
+    owner: number;
+    parts: Array<{ path: string }>;
+  };
+  assertEquals([state.challenge, state.source, state.owner], [undefined, "person:7", 7]);
+  for (const p of state.parts) assert(w.files.has(p.path), `часть ${p.path} не в хранилище встречи`);
+  assertEquals(backupRow(w, "b1").resolution, "ingested");
+  assert(String(backupRow(w, "b1").resolution_note).includes(String(n.id)));
+  assert(backupRow(w, "b1").resolved_at !== null);
+});
+
+Deno.test("ЯДРО: повторный проход не создаёт вторую встречу (копия помечена; и без пометки — тот же id)", async () => {
+  const w = world();
+  w.meeting("m1", { claim_owner: 9, sources: ["person:9"] });
+  w.backup("b1", "m1");
+  await resolveBackups(w.client(), NOW);
+  await resolveBackups(w.client(), NOW);
+  assertEquals(w.tables.meetings.length, 2);
+  // Сбой между созданием встречи и пометкой копии: пометка слетела, встреча уже принята в работу.
+  const gen = meetingRow(w, "b1").gen;
+  Object.assign(backupRow(w, "b1"), { resolution: null, resolved_at: null, resolution_note: null });
+  await resolveBackups(w.client(), NOW);
+  assertEquals(meetingRow(w, "b1").gen, gen, "идущая обработка перезаписана вторым приёмом того же аудио");
+  assertEquals(w.tables.meetings.length, 2);
+  assertEquals(backupRow(w, "b1").resolution, "ingested");
+});
+
+Deno.test("ЯДРО: копию чужого человека без файлов на отдельную встречу не собрать — needs_review, неразобранной", async () => {
   const w = world();
   w.meeting("m1", { claim_owner: 9, recorded_seconds: 4867, sources: ["person:9"] });
-  w.backup("b1", "m1", { recorded_seconds: 630, expires_at: ago(10) });
+  w.backup("b1", "m1", { recorded_seconds: 630, purged_at: ago(1) });
   const r = await resolveBackups(w.client(), NOW);
   assertEquals(r.review, 1);
   assertEquals(backupRow(w, "b1").resolution, "needs_review");
   assertEquals(backupRow(w, "b1").resolved_at, null);
-  assertEquals(meetingRow(w, "m1").summary_status, "done");
+  assertEquals(w.tables.meetings.length, 1);
   assertEquals(await countNeedsReview(w.client()), 1);
-  // По сроку такую копию не убирает уборка: meeting-backup-retention.test.ts.
 });
 
 Deno.test("за проход вливается не больше INGEST_PER_PASS копий, остальные ждут", async () => {

@@ -10,8 +10,11 @@
 //   • запись встречи короче копии, а копия того же человека, что держит встречу → `ingest`: копия
 //     идёт второй записью и сравнивается по объёму распознанного (старая стенограмма не теряется,
 //     если полнее она);
-//   • копия чужого человека (мог быть другой звонок), встреча заморожена, файлов уже нет, держателя
-//     нет → `review`: видно в базе и в журнале, не вычищается;
+//   • копия человека, который встречу НЕ держит (мог быть другой звонок — прод 11.11), → `own_meeting`:
+//     отдельная встреча этого человека. В чужую встречу не вливается никогда, чужую не трогаем
+//     (решение владельца 12.11.2026: записи на параллельных встречах самостоятельны);
+//   • файлов уже нет, держателя нет, встреча того же человека заморожена → `review`: видно в базе и
+//     в журнале, не вычищается;
 //   • встреча ещё обрабатывается или копия слишком свежая → `wait`.
 // Заморозка (правка человеком/публикация) проверяется ПОСЛЕ покрытия: полная опубликованная запись
 // копию покрывает, а вот вливать в замороженную встречу автоматика не может.
@@ -60,6 +63,7 @@ export type BackupVerdict =
   | { action: "covered"; note: string }
   | { action: "covered_elsewhere"; note: string; meetingId: string }
   | { action: "ingest"; note: string; mode: "challenge" | "process" }
+  | { action: "own_meeting"; note: string }
   | { action: "wait"; note: string }
   | { action: "review"; note: string };
 
@@ -71,6 +75,17 @@ export interface DecideInput {
 }
 
 const sec = (n: number) => `${Math.round(n)} с`;
+
+const OWN_MEETING_MARK = "отдельная запись / separate recording";
+const MAX_TITLE_LEN = 200;
+
+/** Название своей встречи для копии чужого человека: название встречи-источника + пометка на двух языках. */
+export function separateRecordingTitle(sourceTitle: string | null | undefined): string {
+  const base = (sourceTitle ?? "").trim();
+  if (base === "") return "Отдельная запись / Separate recording";
+  const suffix = ` — ${OWN_MEETING_MARK}`;
+  return `${base.slice(0, MAX_TITLE_LEN - suffix.length)}${suffix}`;
+}
 
 function coveredByMeeting(b: BackupFacts, m: BackupMeetingFacts): boolean {
   const sameHuman = m.claimOwner === b.uploader || (m.sources?.includes(b.source) ?? false);
@@ -112,10 +127,14 @@ export function decideBackup({ backup: b, meeting: m, ownMeetings, nowMs }: Deci
   if (b.filesPurged) return { action: "review", note: "записи не нашлось, а файлы копии уже убраны" };
   if (m.claimOwner === null) return { action: "review", note: "у встречи нет держателя права" };
   if (m.claimOwner !== b.uploader) {
+    // Источник копии уже принят этой встречей: запись человека лежит там (право перешло к другому
+    // участнику), своя встреча стала бы дублем.
+    if (m.sources?.includes(b.source)) {
+      return { action: "review", note: `запись этого человека уже принята встречей, а держит её ${m.claimOwner}` };
+    }
     return {
-      action: "review",
-      note:
-        `встречу держит другой человек (${m.claimOwner}): копия могла быть другого звонка, автоматически не вливается`,
+      action: "own_meeting",
+      note: `встречу держит другой человек (${m.claimOwner}): копия — отдельная встреча этого человека`,
     };
   }
   if (m.frozen) return { action: "review", note: "встречу правили или опубликовали: автоматика её не трогает" };

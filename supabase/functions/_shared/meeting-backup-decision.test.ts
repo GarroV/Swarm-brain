@@ -9,6 +9,7 @@ import {
   decideBackup,
   type OwnMeetingFacts,
   RESOLVE_GRACE_MS,
+  separateRecordingTitle,
   WAIT_LIMIT_MS,
 } from "./meeting-backup-decision.ts";
 
@@ -56,11 +57,30 @@ Deno.test("ЯДРО: запись встречи короче копии — н�
   if (v.action === "ingest") assertEquals(v.mode, "challenge");
 });
 
-Deno.test("ЯДРО: запись другого человека длиннее копии НЕ покрывает её — это мог быть другой звонок (прод 11.11: 4867 с против 630 с)", () => {
+Deno.test("ЯДРО: запись другого человека длиннее копии НЕ покрывает её и НЕ вливается в чужую встречу — своя отдельная встреча (прод 11.11: 4867 с против 630 с)", () => {
   const v = decide(
     backup({ uploader: 7, source: "person:7", recordedSeconds: 630 }),
     meeting({ claimOwner: 9, sources: ["person:9", "agent:scriba:9"], recordedSeconds: 4867 }),
   );
+  assertEquals(v.action, "own_meeting");
+});
+
+Deno.test("ЯДРО: чужая встреча правлена/опубликована или ещё обрабатывается — копия всё равно своя встреча, чужую не трогаем", () => {
+  for (
+    const over of [{ frozen: true }, { summaryStatus: "processing" }, { summaryStatus: null, hasTranscript: false }]
+  ) {
+    const v = decide(backup({ recordedSeconds: 630 }), meeting({ claimOwner: 9, sources: ["person:9"], ...over }));
+    assertEquals(v.action, "own_meeting", JSON.stringify(over));
+  }
+});
+
+Deno.test("ЯДРО: у копии чужого человека нет файлов — своей встречи не из чего собрать, на разбор", () => {
+  const v = decide(backup({ filesPurged: true }), meeting({ claimOwner: 9, sources: ["person:9"] }));
+  assertEquals(v.action, "review");
+});
+
+Deno.test("ЯДРО: источник копии уже принят этой встречей, а держатель другой — запись там, дубля не заводим, на разбор", () => {
+  const v = decide(backup({ recordedSeconds: 7000 }), meeting({ claimOwner: 9, sources: ["person:9", "person:7"] }));
   assertEquals(v.action, "review");
 });
 
@@ -80,7 +100,7 @@ Deno.test("ЯДРО: своя встреча другой длины не счи
     meeting({ claimOwner: 9, sources: ["person:9"] }),
     [own({ recordedSeconds: 1200 })],
   );
-  assertEquals(v.action, "review");
+  assertEquals(v.action, "own_meeting");
 });
 
 Deno.test("ЯДРО: своя встреча, созданная ДО копии, не покрывает её", () => {
@@ -89,7 +109,7 @@ Deno.test("ЯДРО: своя встреча, созданная ДО копии
     meeting({ claimOwner: 9, sources: ["person:9"] }),
     [own({ recordedSeconds: 630, createdAt: ago(9 * H) })],
   );
-  assertEquals(v.action, "review");
+  assertEquals(v.action, "own_meeting");
 });
 
 Deno.test("ЯДРО: своя встреча с провальной обработкой (failed) не покрывает копию", () => {
@@ -98,7 +118,7 @@ Deno.test("ЯДРО: своя встреча с провальной обраб�
     meeting({ claimOwner: 9, sources: ["person:9"] }),
     [own({ recordedSeconds: 630, summaryStatus: "failed" })],
   );
-  assertEquals(v.action, "review");
+  assertEquals(v.action, "own_meeting");
 });
 
 Deno.test("ЯДРО: у копии неизвестная длительность — покрытие по длине не выводится", () => {
@@ -149,4 +169,14 @@ Deno.test("копия моложе льготы — не трогаем: рек�
 
 Deno.test("встреча без держателя права — на разбор", () => {
   assertEquals(decide(backup(), meeting({ claimOwner: null, recordedSeconds: 420, sources: null })).action, "review");
+});
+
+Deno.test("название своей встречи — из встречи-источника с пометкой «отдельная запись» на двух языках; без названия — только пометка", () => {
+  assertEquals(
+    separateRecordingTitle("November Marketers"),
+    "November Marketers — отдельная запись / separate recording",
+  );
+  assertEquals(separateRecordingTitle("  "), "Отдельная запись / Separate recording");
+  assertEquals(separateRecordingTitle(null), "Отдельная запись / Separate recording");
+  assertEquals(separateRecordingTitle("x".repeat(300)).length <= 200, true);
 });
