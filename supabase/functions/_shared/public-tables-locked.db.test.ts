@@ -38,6 +38,26 @@ export async function assertPublicTableContracts(query: TableQuery = rows): Prom
     where n.nspname = 'public' and c.relkind in ('r', 'p') and not c.relrowsecurity
     order by 1`);
   assertEquals(open, [], `таблицы public без RLS — включи тем же файлом миграции: ${open.join(", ")}`);
+  // New tables follow _template_new_table.sql. Append-only/retained-job contracts need less.
+  const missing = await query(`
+    select c.relname || ':' || required.privilege as name
+    from pg_class c join pg_namespace n on n.oid = c.relnamespace
+    cross join lateral unnest(case c.relname
+      when 'member_moves' then array['SELECT','INSERT']
+      when 'master_admin_events' then array['SELECT','INSERT']
+      when 'meeting_notices' then array['SELECT','INSERT','UPDATE']
+      when 'telegram_outbox' then array['SELECT','INSERT','UPDATE']
+      when 'draft_meeting_deletions' then array['SELECT','INSERT','UPDATE']
+      else array['SELECT','INSERT','UPDATE','DELETE']
+    end) as required(privilege)
+    where n.nspname = 'public' and c.relkind in ('r', 'p')
+      and not has_table_privilege('service_role', c.oid, required.privilege)
+    order by 1`);
+  assertEquals(
+    missing,
+    [],
+    `таблицы public без нужных DML-grants service_role — добавь явный GRANT в миграции: ${missing.join(", ")}`,
+  );
 }
 
 Deno.test("public: у каждой таблицы включён RLS", () => assertPublicTableContracts());
@@ -71,21 +91,6 @@ async function asService<T>(db: Client, fn: () => Promise<T>): Promise<T> {
   }
 }
 
-Deno.test("public: новые таблицы требуют явных DML-grants service_role", async () => {
-  await inTransaction(async (db, table) => {
-    await db.queryArray(`create table public.${table} (id integer)`);
-    await db.queryArray(`alter table public.${table} enable row level security`);
-    const permissions = await db.queryObject<{ privilege: string; allowed: boolean }>(`
-      select privilege, has_table_privilege('service_role', 'public.${table}', privilege) as allowed
-      from unnest(array['SELECT','INSERT','UPDATE','DELETE']) as privilege`);
-    assertEquals(permissions.rows.map((p) => p.allowed), [false, false, false, false]);
-    const error = await assertRejects(() => asService(db, () => db.queryArray(`select * from public.${table}`)));
-    assertEquals((error as { fields?: { code?: string } }).fields?.code, "42501");
-    const restored = await db.queryObject<{ name: string }>`select current_user as name`;
-    assertEquals(restored.rows[0].name, "postgres", "ошибка RPC не должна оставлять роль или aborted transaction");
-  });
-});
-
 Deno.test("public: сторож замечает потерю DML-grants при включённом RLS", async () => {
   await inTransaction(async (db, table) => {
     const template = (await Deno.readTextFile(new URL("../../migrations/_template_new_table.sql", import.meta.url)))
@@ -114,6 +119,10 @@ Deno.test("public: сторож замечает потерю DML-grants при 
       select has_table_privilege('service_role', 'public.${table}', privilege) as allowed
       from unnest(array['SELECT','INSERT','UPDATE','DELETE']) as privilege`);
     assertEquals(missing.rows.map((p) => p.allowed), [false, false, false, false]);
+    const denied = await assertRejects(() => asService(db, () => db.queryArray(`select * from public.${table}`)));
+    assertEquals((denied as { fields?: { code?: string } }).fields?.code, "42501");
+    const restored = await db.queryObject<{ name: string }>`select current_user as name`;
+    assertEquals(restored.rows[0].name, "postgres", "ошибка SQL не должна оставлять роль или aborted transaction");
     const error = await assertRejects(() => assertPublicTableContracts(query), Error);
     for (const privilege of ["SELECT", "INSERT", "UPDATE", "DELETE"]) {
       assertStringIncludes(error.message, `${table}:${privilege}`);
