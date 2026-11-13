@@ -73,11 +73,16 @@ Deno.test("новая длинная запись того же источник
   );
 });
 
-Deno.test("длину нечем сравнить — безопасная сторона: вторая запись, а не молчаливая потеря", () => {
+Deno.test("конец стенограммы неизвестен, аудио настоящее — безопасная сторона: вторая запись, а не молчаливая потеря", () => {
   const base = { summaryStatus: "done", sources: [PERSON], hasTranscript: true, incoming: PERSON };
-  assertEquals(decideUpload({ ...base, incomingSeconds: null, transcriptSeconds: 425 }), "challenge");
   assertEquals(decideUpload({ ...base, incomingSeconds: 425, transcriptSeconds: null }), "challenge");
-  assertEquals(decideUpload({ ...base }), "challenge");
+  assertEquals(decideUpload({ ...base, incomingSeconds: 425 }), "challenge");
+});
+
+Deno.test("аудио не измерено (не разбираемый AAC) — как раньше, повтор", () => {
+  const base = { summaryStatus: "done", sources: [PERSON], hasTranscript: true, incoming: PERSON };
+  assertEquals(decideUpload({ ...base, incomingSeconds: null, transcriptSeconds: 425 }), "already_processed");
+  assertEquals(decideUpload({ ...base }), "already_processed");
 });
 
 Deno.test("новая запись: заметно длиннее стенограммы; ретрай с хвостом тишины и короче — повтор", () => {

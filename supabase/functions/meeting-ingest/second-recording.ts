@@ -85,12 +85,14 @@ export function decideUpload(ctx: UploadContext): UploadDecision {
     // запись (одно аудио ушло бы в Whisper дважды). Поведение ровно прежнее.
     if (ctx.sources === null) return "already_processed";
     if (seen) {
-      // Готовая встреча: повтор выгрузки или новая запись того же источника (#1271). Нечем
-      // сравнить — безопасная сторона: вторая запись, её увидит арбитр, а не молчаливая потеря.
+      // Готовая встреча: повтор выгрузки или новая запись того же источника (#1271). Аудио, которое
+      // сервер не смог измерить, — не запись, которую клиенты льют (оба пишут разбираемый AAC в
+      // MP4): как и прежде, это повтор. Стенограмму нечем измерить, а аудио настоящее — безопасная
+      // сторона: вторая запись, её увидит арбитр, а не молчаливая потеря.
       if (ctx.summaryStatus === "done") {
         const { incomingSeconds: inc, transcriptSeconds: tr } = ctx;
-        const known = typeof inc === "number" && typeof tr === "number";
-        return known && !isNewRecording(inc, tr) ? "already_processed" : "challenge";
+        if (typeof inc !== "number") return "already_processed";
+        return typeof tr === "number" && !isNewRecording(inc, tr) ? "already_processed" : "challenge";
       }
       return "already_processed";
     }
