@@ -15,6 +15,10 @@
 // meeting-claim/agent-scope.ts). Задание пропуском в ручную встречу не является. Пропуск не выдался —
 // задания возвращаются в очередь.
 //
+// Вместе с заданием сохраняется `notice_recipients` — участники из Swarm, принявшие встречу (у кого
+// подключён календарь — по их собственному календарю, у остальных — по ответу в событии запустившего,
+// _shared/notice-recipients.ts): им meeting-notice тоже шлёт нотисы бота (решение 12.11.2026). Миграцию с колонкой катить ДО функции.
+//
 // Всё, на что бот не пойдёт, возвращается в `skipped` с причиной — громко (D015):
 //   calendar_not_connected · calendar_token_dead · calendar_unavailable — у человека (ключа нет);
 //   no_conference_link · unsupported_platform · unrecognized_link · declined · not_accepted ·
@@ -80,9 +84,26 @@ const source: SweepSource = {
   },
   accessToken,
   listEvents,
+  async workspaceMembers(groupId) {
+    const { data, error } = await supabase.from("allowed_users").select("telegram_id, email").eq("group_id", groupId);
+    fail("allowed_users members", error);
+    return (data ?? []) as Array<{ telegram_id: number | null; email: string | null }>;
+  },
+  async existingJobKeys(groupId, keys) {
+    const { data, error } = await supabase.from("meeting_calendar_jobs")
+      .select("calendar_key").eq("group_id", groupId).in("calendar_key", [...keys]);
+    fail("meeting_calendar_jobs existing", error);
+    return new Set(((data ?? []) as Array<{ calendar_key: string }>).map((r) => r.calendar_key));
+  },
   async insertJobs(groupId, jobs) {
+    // Служебные поля отбора (почты) в строку не идут; `notice_recipients` посчитан в sweep.ts.
+    const rows = jobs.map(({ accepted_emails: _a, attendee_emails: _e, notice_recipients, ...job }) => ({
+      ...job,
+      group_id: groupId,
+      notice_recipients: notice_recipients ?? [],
+    }));
     const { error } = await supabase.from("meeting_calendar_jobs")
-      .upsert(jobs.map((j) => ({ ...j, group_id: groupId })), {
+      .upsert(rows, {
         onConflict: "group_id,calendar_key",
         ignoreDuplicates: true,
       });

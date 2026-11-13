@@ -30,8 +30,20 @@ export type AdmissionOutcome =
   | "timeout"
   | "captcha";
 
+/**
+ * События входа, о которых процесс встречи должен узнать сразу, а не когда `join` вернётся:
+ * вход Толка в закрытую комнату длится минуты, и человеку надо сказать об этом, пока бот ждёт.
+ */
+export interface JoinHooks {
+  /**
+   * Комната закрыта для гостей — вызывается один раз, при первом таком виде страницы. Адаптер ждёт его
+   * завершения; сбой хука вход не роняет.
+   */
+  readonly onGuestRoomClosed?: () => Promise<void>;
+}
+
 export interface PlatformAdapter {
-  join(url: string, displayName: string): Promise<void>;
+  join(url: string, displayName: string, hooks?: JoinHooks): Promise<void>;
   waitAdmitted(timeoutMs: number): Promise<AdmissionOutcome>;
   activeSpeaker(): Promise<string | null>;
   isAlone(): Promise<boolean>;

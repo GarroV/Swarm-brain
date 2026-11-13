@@ -52,6 +52,20 @@ export type SprintBarProps = {
   renameField?: ReactNode;
 };
 
+// Принятые — группами по году начала, свежие сверху (в каждой группе тоже свежие сверху).
+function archiveByYear(archive: SprintCycle[]): [string, SprintCycle[]][] {
+  const byYear = new Map<string, SprintCycle[]>();
+  for (
+    const c of [...archive].sort((a, b) =>
+      b.start_date.localeCompare(a.start_date)
+    )
+  ) {
+    const y = c.start_date.slice(0, 4);
+    byYear.set(y, [...(byYear.get(y) ?? []), c]);
+  }
+  return [...byYear.entries()];
+}
+
 export function SprintBar(p: SprintBarProps) {
   const dt = useDt();
   const d = p.detail;
@@ -76,8 +90,9 @@ export function SprintBar(p: SprintBarProps) {
       action: true,
       onPick: () => p.onSelect(c.id),
     })),
-    ...[...p.archive].sort((a, b) => b.start_date.localeCompare(a.start_date))
-      .map((c) => ({
+    ...archiveByYear(p.archive).flatMap(([year, cycles]) => [
+      { key: `__year_${year}`, label: year, heading: true, onPick: () => {} },
+      ...cycles.map((c) => ({
         key: c.id,
         label: (
           <>
@@ -91,6 +106,7 @@ export function SprintBar(p: SprintBarProps) {
         action: true,
         onPick: () => p.onSelect(c.id),
       })),
+    ]),
     ...(p.onNewSprint
       ? [{
         key: "__new__",
@@ -135,7 +151,7 @@ export function SprintBar(p: SprintBarProps) {
 
   // Доска спринтов показывает все спринты сразу и сама несёт их действия (закрыть, новый), поэтому
   // выбор одного спринта, его даты, «Начать/Принять» и режим правки в её полосе не нужны.
-  const board = p.sprintTab && p.view === "board";
+  const board = p.sprintTab && (p.view === "board" || p.view === "timeline");
   const left = d ? daysLeft(d.end_date) : 0;
   // «Принять» — действие раз в две недели и необратимое: пока спринт идёт, кнопка тихая и
   // разгорается, когда срок вышел (стенд: `over`).
@@ -254,9 +270,12 @@ export function SprintBar(p: SprintBarProps) {
             )}
             <button
               type="button"
-              aria-pressed={board}
+              aria-pressed={p.view === "board"}
               onClick={() => p.onView("board")}
-              className={cn(pillSegmentCls(board), "sm:min-h-[26px] px-3")}
+              className={cn(
+                pillSegmentCls(p.view === "board"),
+                "sm:min-h-[26px] px-3",
+              )}
               style={{ fontSize: 12.5 }}
             >
               {dt("Доска спринтов", "Sprint board")}

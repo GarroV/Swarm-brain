@@ -186,8 +186,8 @@ async function seedOther(db: Client) {
     insert into projects (group_id, name, goal, sprint_id)
     values (${OTHER}, 'Рабочий проект', 'настоящая цель', ${tab.rows[0].id}) returning id`;
   const task = await db.queryObject<{ id: string }>`
-    insert into tasks (title, status, group_id, project_id, created_by)
-    values ('Рабочая задача', 'open', ${OTHER}, ${project.rows[0].id}, 'test') returning id`;
+    insert into tasks (title, status, group_id, project_id)
+    values ('Рабочая задача', 'open', ${OTHER}, ${project.rows[0].id}) returning id`;
   const taskId = task.rows[0].id;
   const cycle = await db.queryObject<{ id: string }>`
     insert into sprint_cycles (group_id, tab_id, name, start_date, end_date, check_date, status)
@@ -252,7 +252,7 @@ async function breakDemo(db: Client) {
   await db
     .queryArray`update tasks set status = 'done', title = 'hacked' where group_id = ${DEMO} and title = 'Launch the autumn menu'`;
   const t = await db.queryObject<{ id: string }>`
-    insert into tasks (title, status, group_id, created_by) values ('visitor task', 'open', ${DEMO}, 'demo') returning id`;
+    insert into tasks (title, status, group_id) values ('visitor task', 'open', ${DEMO}) returning id`;
   const c = await db.queryObject<{ id: string }>`
     insert into task_comments (task_id, content, added_by_telegram_id) values (${
     t.rows[0].id

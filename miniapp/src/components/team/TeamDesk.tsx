@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { Task, User } from "@/types";
 import { fetchTasks, fetchUsers } from "@/lib/api";
 import { countryCode } from "@/lib/countries";
-import { isDone, isOverdue } from "@/lib/smartLists";
+import { isDone, isOverdue, OPEN_STATUSES } from "@/lib/smartLists";
 import { ToolbarButton } from "@/components/tasks/table/Menu";
 import { Avatar } from "@/components/roy/ui";
 import { initials } from "@/components/roy/dash/shared";
@@ -31,7 +31,7 @@ export function TeamDesk() {
     fetchUsers().then(setUsers).catch((e) => { console.error("[TeamDesk] users", e); setFailed(true); setUsers([]); });
   }, []);
   useEffect(() => {
-    fetchTasks().then(setTasks).catch((e) => console.warn("[TeamDesk] tasks", e));
+    fetchTasks({ statuses: OPEN_STATUSES }).then(setTasks).catch((e) => console.warn("[TeamDesk] tasks", e));
   }, [tasksVersion]);
 
   const load = useMemo(() => {

@@ -47,7 +47,7 @@ export function SearchScreen({ onBack }: { onBack?: () => void }) {
 
   useEffect(() => {
     setRecent(loadRecent());
-    fetchTasks().then(setTasks).catch(() => setTasks([]));
+    fetchTasks({ statuses: ["in_progress"] }).then(setTasks).catch(() => setTasks([]));
     fetchMeetings({ light: true, limit: 50 }).then(setMeetings).catch(() => setMeetings([]));
   }, []);
 

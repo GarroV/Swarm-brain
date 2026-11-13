@@ -113,6 +113,11 @@ export function revenuePerUnit(fin: Pick<MarketFinancial, "revenue_eur" | "year"
 }
 
 export const STALE_DAYS = 8;
+/** Месячные и годовые источники collector гоняет только в 1–7 числа месяца: порог 38 дней, не 8.
+ *  Зеркало `staleDays` в supabase/functions/_shared/market/readiness.ts — меняешь здесь, меняй там. */
+export const STALE_DAYS_SLOW = 38;
+export const staleDays = (cadence: string | null | undefined): number =>
+  cadence === "monthly" || cadence === "yearly" ? STALE_DAYS_SLOW : STALE_DAYS;
 export type Freshness = { adapter: string; feeds: string; mode: string; reason: string | null; lastOk: string | null; daysAgo: number | null; lastError: string | null; bad: boolean };
 
 /** Дата актуальной сборки страны для шапки: последний успешный запуск автоматического источника.
@@ -126,7 +131,7 @@ export function lastCollected(sources: MarketSource[]): string | null {
 }
 
 /** Свежесть каждого источника: последний успешный запуск и последняя ошибка, если она позже.
- *  Плохо — авто-источник, который упал последним прогоном или молчит дольше недели с запасом. */
+ *  Плохо — авто-источник, который упал последним прогоном или молчит дольше порога своей периодичности (`staleDays`). */
 export function freshness(sources: MarketSource[], runs: MarketRun[], now: Date): Freshness[] {
   return sources.map((s) => {
     const last = runs.filter((r) => r.source === s.adapter).sort((a, b) => b.finished_at.localeCompare(a.finished_at))[0];
@@ -141,7 +146,7 @@ export function freshness(sources: MarketSource[], runs: MarketRun[], now: Date)
       lastOk: s.last_ok_at,
       daysAgo,
       lastError: failedLast ? last.error : null,
-      bad: auto && (failedLast || daysAgo === null || daysAgo > STALE_DAYS),
+      bad: auto && (failedLast || daysAgo === null || daysAgo > staleDays(s.cadence)),
     };
   });
 }

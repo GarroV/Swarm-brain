@@ -78,7 +78,7 @@ export function SpaceCreate({ onCreated, onCancel }: { onCreated: (ws: AdminWork
                 return (
                   <button key={code} type="button" onClick={() => toggle(code)} aria-pressed={on}
                     className="rounded-full border px-2.5 py-1 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
-                    style={{ fontSize: 11, ...(on ? { background: "var(--primary)", color: "#fff", borderColor: "var(--primary)" } : { color: "var(--ink-soft)", borderColor: "var(--line-2)" }) }}>
+                    style={{ fontSize: 11, ...(on ? { background: "var(--primary)", color: "var(--on-primary)", borderColor: "var(--primary)" } : { color: "var(--ink-soft)", borderColor: "var(--line-2)" }) }}>
                     {countryCode(code)}
                   </button>
                 );

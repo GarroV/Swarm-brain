@@ -15,6 +15,7 @@ type MeetingNoticeKind =
   | "meeting_unavailable"
   | "account_signin_required"
   | "guest_access_closed"
+  | "guest_access_waiting"
   | "captcha"
   | "no_audio"
   | "recording_lost"

@@ -77,8 +77,8 @@ async function addProject(
 
 async function addTask(db: Client, title: string, projectId?: string) {
   const r = await db.queryObject<{ id: string }>`
-    insert into tasks (title, status, group_id, project_id, created_by)
-    values (${title}, 'open', ${WS}, ${projectId ?? null}, 'test')
+    insert into tasks (title, status, group_id, project_id)
+    values (${title}, 'open', ${WS}, ${projectId ?? null})
     returning id`;
   return r.rows[0].id;
 }

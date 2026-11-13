@@ -2,7 +2,7 @@
 // Каркас эталона для блоков «Анализа рынка»: секция с надзаголовком и подзаголовком,
 // всплывающая подсказка, цвета сетей по слотам и даты в формате эталона. Разметка и классы —
 // из хорватского отчёта (стили в market.css, всё внутри корня .mkt).
-import { createContext, type PointerEvent, type ReactNode, useCallback, useContext, useMemo, useRef, useState } from "react";
+import { createContext, type PointerEvent, type ReactNode, useCallback, useContext, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { MarketBundle } from "@/types";
 import { chainOrder, chainSlots } from "@/lib/marketMap";
 import { type Editorial, parseEditorial } from "@/lib/marketEditorial";
@@ -97,6 +97,13 @@ export function TipProvider({ children }: { children: ReactNode }) {
     setPos({ x, y });
   }, []);
   const hide = useCallback(() => setContent(null), []);
+  // Ширина подсказки известна только после вывода: подвинуть, если она вылезла за правый край окна.
+  useLayoutEffect(() => {
+    const r = box.current?.getBoundingClientRect();
+    if (!r || content === null) return;
+    const over = r.right - (innerWidth - 8);
+    if (over > 0) setPos((p) => ({ ...p, x: Math.max(8, p.x - over) }));
+  }, [content, pos.x, pos.y]);
   const api = useMemo(() => ({ show, hide }), [show, hide]);
   return (
     <TipContext.Provider value={api}>

@@ -49,7 +49,7 @@ export function Toggle({ on, onChange, asVisual, color = "var(--accent-ink)", ar
       <span
         className="absolute rounded-full transition-[transform,background-color]"
         style={{
-          background: on ? "#fff" : "var(--ink-mute)",
+          background: on ? "var(--on-solid)" : "var(--ink-mute)",
           width: knob,
           height: knob,
           left: 2,

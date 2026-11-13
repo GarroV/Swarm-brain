@@ -14,6 +14,7 @@ import { TelegramPanel } from "@/components/profile/TelegramPanel";
 import { BackdropSection } from "@/components/profile/BackdropSection";
 import { NotificationSoundToggle } from "./NotificationSoundToggle";
 import { useDt } from "@/components/roy/nav";
+import { SchemeDialog } from "@/components/roy/SchemeDialog";
 import { useIsDesktop } from "@/components/roy/useIsDesktop";
 import { SidePanel } from "@/components/roy/SidePanel";
 import { useWidePane } from "@/components/roy/WidePane";
@@ -69,6 +70,7 @@ function SettingsDesk() {
             <div className="grid w-full max-w-[880px] grid-cols-3 gap-3">
               <ProfileTile me={me} open={panel} onToggle={toggle} />
               <div className="flex flex-col gap-3">
+                <AppearanceTile />
                 <Tile title={dt("Фон", "Background")}>
                   <Hint>{dt("картинка за экранами — видите только вы", "the image behind screens — yours only")}</Hint>
                   <Action on={panel === "backdrop"} onClick={() => toggle("backdrop")}>{dt("Настроить", "Set up")}</Action>
@@ -135,6 +137,19 @@ function Tile({ title, className, children }: { title: string; className?: strin
       <h3 className="mb-1.5 uppercase text-ink-mute" style={{ fontSize: 10.5, letterSpacing: "0.1em", fontWeight: 600 }}>{title}</h3>
       {children}
     </section>
+  );
+}
+
+/** «Оформление»: режим и цветовая схема (то же меню, что шестерёнка в рейке; на мобайле рейки нет). */
+function AppearanceTile() {
+  const dt = useDt();
+  const [open, setOpen] = useState(false);
+  return (
+    <Tile title={dt("Оформление", "Appearance")}>
+      <Hint>{dt("цветовая схема и режим интерфейса", "colour scheme and interface mode")}</Hint>
+      <Action on={open} onClick={() => setOpen(true)}>{dt("Настроить", "Set up")}</Action>
+      <SchemeDialog open={open} onOpenChange={setOpen} />
+    </Tile>
   );
 }
 

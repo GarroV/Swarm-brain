@@ -14,7 +14,7 @@
  * Все зависимости — параметры: браузер, сервер, ffmpeg и часы подменяются в тестах, поэтому
  * правила проверяются за миллисекунды, а не прогоном живой встречи.
  */
-import type { AdmissionOutcome } from "../meet-adapter/types.ts";
+import type { AdmissionOutcome, JoinHooks } from "../meet-adapter/types.ts";
 import { AloneTimer } from "../meet-adapter/alone.ts";
 import type { ClaimDecision, SpeakerSpan } from "../swarm-client/contract.ts";
 import { SwarmHttpError } from "../swarm-client/errors.ts";
@@ -29,7 +29,7 @@ import { type AudioAlert, QuietEndTimer, SilenceWatch } from "./audio-watch.ts";
  * Адаптер площадки в том объёме, который нужен процессу встречи.
  */
 interface MeetingAdapter {
-  join(url: string, displayName: string): Promise<void>;
+  join(url: string, displayName: string, hooks?: JoinHooks): Promise<void>;
   waitAdmitted(timeoutMs: number): Promise<AdmissionOutcome>;
   /**
    * Тристатный опрос: `null` — сигнала об участниках нет (не путать с «один»).
@@ -543,7 +543,13 @@ async function isJoined(context: RunContext): Promise<boolean> {
   const { options } = context;
   for (let attempt = 1; ; attempt += 1) {
     try {
-      await options.adapter.join(options.joinUrl, options.displayName);
+      await options.adapter.join(options.joinUrl, options.displayName, {
+        // Толк, комната закрыта: бот ждёт минуты. «Стук» уходит сразу, а не после ожидания, —
+        // пока бот у двери, кто-то из участников ещё успеет открыть доступ гостям.
+        onGuestRoomClosed: async () => {
+          await sendNotice(context, { kind: "guest_access_waiting", meetingId: context.meetingId });
+        },
+      });
       return true;
     } catch (error) {
       const reason = describeError(error);

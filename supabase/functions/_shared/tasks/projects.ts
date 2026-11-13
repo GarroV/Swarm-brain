@@ -12,6 +12,7 @@ import {
   withoutSprintGroups,
 } from "./sprint-groups.ts";
 import { updateTask } from "./db.ts";
+import { countProjectTasks } from "./project-counts.ts";
 
 const supabase = createClient(
   Deno.env.get("SUPABASE_URL")!,
@@ -38,7 +39,7 @@ export type ProjectWithCounts = Project & {
   backlog_count: number;
 };
 
-// Проекты воркспейса + счётчики: всего задач в проекте и из них в бэклоге (project_linked=false).
+// Проекты воркспейса + счётчики: всего задач в проекте и из них в бэклоге (status='backlog', как колонка «Бэклог задач» на доске; #1272).
 // Счётчики считают все живые задачи воркспейса: «личных» задач нет (решение 2026-10-09).
 export async function listProjects(
   groupId: string,
@@ -83,21 +84,14 @@ export async function listProjects(
   // Считаем задачи по проектам одним запросом (без N+1).
   const tasksQuery = onlyLive(
     supabase
-      .from("tasks").select("project_id, project_linked"),
+      .from("tasks").select("project_id, status"),
   )
     .eq("group_id", groupId)
     .in("project_id", list.map((p) => p.id));
   const { data: tasks } = await tasksQuery;
-  const counts = new Map<string, { total: number; backlog: number }>();
-  ((tasks ?? []) as Array<
-    { project_id: string | null; project_linked: boolean }
-  >).forEach((t) => {
-    if (!t.project_id) return;
-    const c = counts.get(t.project_id) ?? { total: 0, backlog: 0 };
-    c.total += 1;
-    if (!t.project_linked) c.backlog += 1;
-    counts.set(t.project_id, c);
-  });
+  const counts = countProjectTasks(
+    (tasks ?? []) as Array<{ project_id: string | null; status: string }>,
+  );
   return list.map((p) => ({
     ...p,
     task_count: counts.get(p.id)?.total ?? 0,

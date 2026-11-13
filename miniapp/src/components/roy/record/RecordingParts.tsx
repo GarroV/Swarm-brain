@@ -38,7 +38,7 @@ export function LevelBars({ levels, muted, label, heightClass = "h-28" }: { leve
       role="img"
       aria-label={label}
       className={cn("relative flex w-full items-center gap-[3px]", heightClass)}
-      style={{ maskImage: "linear-gradient(90deg, transparent 0%, #000 30%)", WebkitMaskImage: "linear-gradient(90deg, transparent 0%, #000 30%)" }}
+      style={{ maskImage: "linear-gradient(90deg, transparent 0%, black 30%)", WebkitMaskImage: "linear-gradient(90deg, transparent 0%, black 30%)" }}
     >
       {muted ? (
         <div className="w-full border-t-2 border-dashed border-line-2" />
@@ -65,7 +65,7 @@ export function LevelBars({ levels, muted, label, heightClass = "h-28" }: { leve
 type BtnTone = "primary" | "danger" | "quiet";
 const TONE: Record<BtnTone, string> = {
   primary: "bg-primary text-primary-foreground",
-  danger: "text-white",
+  danger: "text-[var(--on-solid)]",
   quiet: "border border-line-2 bg-surface text-ink",
 };
 

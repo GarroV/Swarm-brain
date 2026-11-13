@@ -268,6 +268,7 @@ open bumblebee.app
   (состояние, микрофон, встреча, предложение, память), `LAUNCH … прошлая сессия: …` на старте, `STATE`,
   `EXIT clean: …`. Те же строки сами уезжают на сервер (`recorder-diag` → `recorder_diagnostics`) — у людей
   файлы просить не нужно.
+- **Итог каждого claim** (#1271): строка `SwarmRecorder: claim <id> — decision=… deferReason=… heldSec=… sentSec=…` (пишет `SwarmClient.claim`, поэтому покрывает заявку после «Стоп», восстановление, перезаявку перед выгрузкой и автодосылку). По ней видно, почему вторая запись не пошла в базу (`race`, `similar`, `shorter`, `published`).
 - **Автозапуск:** приложение, установленное в `/Applications`, само ставит LaunchAgent
   `~/Library/LaunchAgents/io.dodobrands.swarmrecorder.plist`: старт при входе в систему, подъём после
   падения, но не после «Выйти». Экземпляр, открытый руками, передаёт эстафету launchd и перезапускается

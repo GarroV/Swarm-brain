@@ -92,3 +92,93 @@ Deno.test("invalidate во время полёта: следующий вызо�
   assertEquals(await second, "новое");
   assertEquals(calls, 2);
 });
+
+// ── stale-while-revalidate (issue #492) ──────────────────────────────────────────────────────
+const SWR = { freshMs: 20_000, maxStaleMs: 600_000 };
+
+Deno.test("swr: в свежем окне повтор берётся из памяти без сети", async () => {
+  const c = clock(); const cache = createRequestCache({ ttlMs: 2500, now: c.now });
+  let calls = 0;
+  const f = () => { calls++; return Promise.resolve(`v${calls}`); };
+  assertEquals(await cache.run("/tasks", f, SWR), "v1");
+  c.advance(19_000);
+  assertEquals(await cache.run("/tasks", f, SWR), "v1");
+  assertEquals(calls, 1);
+});
+
+Deno.test("swr: после свежего окна отдаётся старое сразу, а в фоне идёт перечитывание и оповещает об изменении", async () => {
+  const c = clock(); const cache = createRequestCache({ ttlMs: 2500, now: c.now });
+  const changed: string[] = [];
+  cache.subscribe((k) => changed.push(k));
+  let n = 0;
+  const f = () => Promise.resolve([`v${++n}`]);
+  await cache.run("/tasks", f, SWR);
+  c.advance(30_000);
+  assertEquals(await cache.run("/tasks", f, SWR), ["v1"]); // старое — без ожидания
+  await Promise.resolve(); await Promise.resolve();
+  assertEquals(n, 2);
+  assertEquals(changed, ["/tasks"]);
+  assertEquals(await cache.run("/tasks", f, SWR), ["v2"]); // свежее уже в кэше, сети нет
+  assertEquals(n, 2);
+});
+
+Deno.test("swr: если фоновое перечитывание вернуло то же самое, подписчиков не дёргаем", async () => {
+  const c = clock(); const cache = createRequestCache({ ttlMs: 2500, now: c.now });
+  let notified = 0;
+  cache.subscribe(() => notified++);
+  const f = () => Promise.resolve({ a: 1 });
+  await cache.run("/tasks", f, SWR);
+  c.advance(30_000);
+  await cache.run("/tasks", f, SWR);
+  await Promise.resolve(); await Promise.resolve();
+  assertEquals(notified, 0);
+});
+
+Deno.test("swr: старше maxStaleMs — запрос с ожиданием, устаревшее не отдаётся", async () => {
+  const c = clock(); const cache = createRequestCache({ ttlMs: 2500, now: c.now });
+  let n = 0;
+  const f = () => Promise.resolve(`v${++n}`);
+  await cache.run("/tasks", f, SWR);
+  c.advance(601_000);
+  assertEquals(await cache.run("/tasks", f, SWR), "v2");
+});
+
+Deno.test("swr: invalidate выбрасывает данные и перечитывание в полёте не возвращает их в кэш", async () => {
+  const c = clock(); const cache = createRequestCache({ ttlMs: 2500, now: c.now });
+  const d = deferred<string>();
+  let n = 0;
+  const f = () => (++n === 2 ? d.promise : Promise.resolve(`v${n}`));
+  await cache.run("/tasks", f, SWR);
+  c.advance(30_000);
+  await cache.run("/tasks", f, SWR); // запустило фоновое перечитывание (n=2)
+  cache.invalidate(); // например, выход или смена пространства
+  d.resolve("чужие-старые");
+  await Promise.resolve(); await Promise.resolve();
+  assertEquals(await cache.run("/tasks", f, SWR), "v3"); // пошли в сеть, а не в память
+});
+
+Deno.test("swr: ошибка фонового перечитывания не роняет вызов и не стирает старые данные", async () => {
+  const c = clock(); const cache = createRequestCache({ ttlMs: 2500, now: c.now });
+  let n = 0;
+  const f = () => (++n === 2 ? Promise.reject(new Error("offline")) : Promise.resolve(`v${n}`));
+  await cache.run("/tasks", f, SWR);
+  c.advance(30_000);
+  const origWarn = console.warn; console.warn = () => {};
+  try {
+    assertEquals(await cache.run("/tasks", f, SWR), "v1");
+    await Promise.resolve(); await Promise.resolve();
+    assertEquals(await cache.run("/tasks", f, SWR), "v1"); // снова старое + новая попытка (n=3)
+    await Promise.resolve(); await Promise.resolve();
+    assertEquals(await cache.run("/tasks", f, SWR), "v3");
+  } finally { console.warn = origWarn; }
+});
+
+Deno.test("swr: invalidate(true) оповещает подписчиков — экраны перечитают данные после смены личности", () => {
+  const cache = createRequestCache({ ttlMs: 2500 });
+  const seen: string[] = [];
+  cache.subscribe((k) => seen.push(k));
+  cache.invalidate();
+  assertEquals(seen, []);
+  cache.invalidate(true);
+  assertEquals(seen, ["*"]);
+});

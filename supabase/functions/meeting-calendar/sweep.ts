@@ -16,6 +16,7 @@ import {
   mergeDispatch,
   planPersonDispatch,
 } from "../_shared/calendar-dispatch.ts";
+import { type CalendarAccess, type NoticeMember, resolveNoticeRecipients } from "../_shared/notice-recipients.ts";
 
 /** Задание, как его получает оркестратор. */
 export interface TakenJob extends DispatchJob {
@@ -30,6 +31,10 @@ export interface SweepSource {
   refreshToken(telegramId: number): Promise<string | null>;
   accessToken(refresh: string): Promise<TokenResult>;
   listEvents(token: string, timeMin: string, timeMax: string, maxResults: number): Promise<GEvent[] | null>;
+  /** Участники воркспейса с почтой — для получателей нотис бота (notice-recipients.ts). */
+  workspaceMembers(groupId: string): Promise<NoticeMember[]>;
+  /** Ключи встреч из `keys`, на которые задание в воркспейсе уже заведено. */
+  existingJobKeys(groupId: string, keys: readonly string[]): Promise<ReadonlySet<string>>;
   /** Завести задания; уже заведённые на ту же встречу воркспейса не трогаются. */
   insertJobs(groupId: string, jobs: DispatchJob[]): Promise<void>;
   /** Погасить незабранные задания воркспейса тех, кого нет в `people` (выключили автозапуск). */
@@ -71,6 +76,48 @@ async function personPlan(
   return planPersonDispatch(events, person, nowMs, manualRooms);
 }
 
+/**
+ * Свой календарь участника на окно встречи — для проверки «принял» (notice-recipients.ts).
+ * `null` — календаря у человека нет; исключение — не удалось прочитать (человек нотису не получит).
+ */
+function calendarsOf(source: SweepSource): CalendarAccess {
+  return {
+    async ownEvents(telegramId, job) {
+      const refresh = await source.refreshToken(telegramId);
+      if (!refresh) return null;
+      const tok = await source.accessToken(refresh);
+      if (!tok.ok) throw new Error(tok.deadGrant ? "токен календаря мёртв" : "Google не выдал токен");
+      const events = await source.listEvents(tok.token, job.starts_at, job.ends_at, MAX_EVENTS);
+      if (events === null) throw new Error("Google не отдал события");
+      return events;
+    },
+  };
+}
+
+/**
+ * Получатели нотис бота (кроме запустившего) — принявшие встречу участники из Swarm, по каждому
+ * заданию. Не прочиталось — пусто: нотиса уйдёт одному запустившему, а задание заведётся как обычно.
+ */
+async function withNoticeRecipients(
+  source: SweepSource,
+  groupId: string,
+  jobs: DispatchJob[],
+): Promise<DispatchJob[]> {
+  if (!jobs.some((j) => (j.attendee_emails ?? []).length > 0)) return jobs;
+  let members: NoticeMember[];
+  try {
+    members = await source.workspaceMembers(groupId);
+  } catch (e) {
+    console.error(`meeting-calendar: участники воркспейса не прочитаны: ${e instanceof Error ? e.message : String(e)}`);
+    return jobs;
+  }
+  const calendars = calendarsOf(source);
+  return await Promise.all(jobs.map(async (job) => ({
+    ...job,
+    notice_recipients: await resolveNoticeRecipients(job, members, calendars, (l) => console.warn(l)),
+  })));
+}
+
 export async function sweep(
   source: SweepSource,
   agent: { agentId: string; groupId: string },
@@ -88,7 +135,15 @@ export async function sweep(
   // согласие, согласие — флаг сейчас. Гасим ДО вставки: иначе задание выключившего держало бы
   // ключ встречи, и коллега с той же встречей остался бы без бота (вставка по ключу молчит).
   await source.dropPendingJobsExcept(agent.groupId, people);
-  if (merged.jobs.length > 0) await source.insertJobs(agent.groupId, merged.jobs);
+  // Получателей считаем только для новых заданий: заведённое вставка всё равно не тронет, а
+  // календари участников на каждом проходе — лишние запросы в Google, пока встреча в окне.
+  const existing = merged.jobs.length > 0
+    ? await source.existingJobKeys(agent.groupId, merged.jobs.map((j) => j.calendar_key))
+    : new Set<string>();
+  const fresh = merged.jobs.filter((j) => !existing.has(j.calendar_key));
+  if (fresh.length > 0) {
+    await source.insertJobs(agent.groupId, await withNoticeRecipients(source, agent.groupId, fresh));
+  }
   // Проход идёт секунды (календари в Google), за них человек мог выключить — перечитываем
   // согласие перед самым забором. Остаётся окно между этим чтением и UPDATE забора — миллисекунды.
   const current = await source.autojoinPeople(agent.groupId);
