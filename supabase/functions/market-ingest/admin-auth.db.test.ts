@@ -15,7 +15,7 @@ const sb = createClient(
 );
 
 const MEMBER = 990_101, ADMIN = 990_102, EXPIRED = 990_103;
-const WS = "demo";
+const WS = "qa-market-admin-auth-1014";
 const tok = (id: number) => `smcp_test${id}`;
 
 Deno.test("only an admin's live MCP token decides; member, expired, recorder and unknown tokens do not", async () => {
