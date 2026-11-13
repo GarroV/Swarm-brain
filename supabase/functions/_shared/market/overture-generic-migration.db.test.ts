@@ -1,7 +1,7 @@
 import { assertEquals, assertRejects } from "@std/assert";
 import { Client } from "postgres";
 
-// Миграция 20261113120000 добавила в mkt_chains колонку hidden_at, а проверка снимка в этой (уже накатанной на проде)
+// Миграция 20261113130000 добавила в mkt_chains колонку hidden_at, а проверка снимка в этой (уже накатанной на проде)
 // миграции хэширует всю строку: в тесте колонка вычитается так же, как updated_at.
 const hideHiddenAt = (sql: string) => {
   const patched = sql.replace("(to_jsonb(c)-'updated_at')", "(to_jsonb(c)-array['updated_at','hidden_at'])");
