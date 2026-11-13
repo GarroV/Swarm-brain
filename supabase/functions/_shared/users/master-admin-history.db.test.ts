@@ -15,10 +15,24 @@ Deno.test("master admin journal: atomic role changes, denied/no-op cases and app
     await db.queryArray("begin");
     await db.queryArray("select pg_advisory_xact_lock(hashtext('master-admin-history-test'))");
     await db.queryArray`delete from public.master_admins where telegram_id=any(${[FIRST, SECOND, FAILED]})`;
-    const change = async (target: number, action: string) =>
-      (await db.queryObject<{ result: { ok: boolean; changed?: boolean; reason?: string } }>`
-        select public.change_master_admin_role(${target}, ${OWNER}, ${action}, ${OWNER}) as result
-      `).rows[0].result;
+    const change = async (target: number, action: string) => {
+      // Exercise the actual invoker role, not postgres's ownership bypass. Each failed
+      // statement must restore the transaction/role without masking its original error.
+      await db.queryArray("savepoint role_call");
+      try {
+        await db.queryArray("set local role service_role");
+        const result = (await db.queryObject<{ result: { ok: boolean; changed?: boolean; reason?: string } }>`
+          select public.change_master_admin_role(${target}, ${OWNER}, ${action}, ${OWNER}) as result
+        `).rows[0].result;
+        await db.queryArray("reset role");
+        await db.queryArray("release savepoint role_call");
+        return result;
+      } catch (error) {
+        await db.queryArray("rollback to savepoint role_call");
+        await db.queryArray("release savepoint role_call");
+        throw error;
+      }
+    };
     assertEquals(await change(FIRST, "added"), { ok: true, changed: true });
     assertEquals(await change(SECOND, "added"), { ok: true, changed: true });
     assertEquals(await change(FIRST, "removed"), { ok: true, changed: true });
