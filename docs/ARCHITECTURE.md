@@ -741,7 +741,7 @@ content + [existingSummary?]
 /granola → выбор периода → список заметок (gp_/gd_)
          → [gp_] генерация тезисов → показ тезисов
          → [gedit_] инструкция пользователя → GPT переписывает → показ обновлённых тезисов
-         → [gc_/gcp_] сохранение в entries (общее/личное)
+         → [gc_/gcp_] сохранение черновика в meetings, status=awaiting_review
          → [gd_] пропустить (запись в skipped_note_ids)
 ```
 
@@ -749,16 +749,28 @@ content + [existingSummary?]
 ```
 hourly cron → swarm-bot { granola_poll:true } → ingestNewGranolaNotesAllUsers (handlers/granola.ts)
                                                  → backfillMissingEmbeddings (lib/embedding-backfill.ts, #373)
-  → для каждой новой заметки (дедуп по granola_note_id + skipped, окно 48ч, ≤10/прогон;
+  → для каждой новой заметки (дедуп по granola_note_id + skipped, окно 48ч, ≤6/прогон;
       + кросс-источниковый дедуп перед insert — см. §Дедуп встреч):
-      тезисы (GPT) + эмбеддинг → insert в entries (source=granola, entry_type=meeting, confirmed=FALSE)
-  → встреча сразу видна в вебе «на согласовании» (GET /meetings?confirmed=false)
-  → Telegram: те же кнопки ревью что у Read.ai [✅ Сохранить mc_ / ✏️ Название met_ / 📅 Дата med_ / 🗑 Удалить md_]
-  → подтверждение в вебе (PATCH confirmed:true) ИЛИ в Telegram (mc_) — единый флоу meetings.ts
+      тезисы (GPT) + эмбеддинг → insert в meetings (source=granola, status=awaiting_review)
+  → встреча видна записавшему в очереди GET /agent-meetings
+  → существующее уведомление Granola ведёт в веб-очередь вычитки
+  → публикация общим POST /agent-meetings/:id/publish → entries
 ```
 > Принцип: «всё что в Telegram, то и в вебе». Старая standalone-функция `granola-poller`
 > (только слала уведомление, ничего не клала в БД) **выведена из крона** этим флоу.
-> Ручной `/granola` (ниже) сохраняет сразу `confirmed:true` — это явное действие пользователя.
+
+Метаданные Granola (#180): `handlers/granola-identity.ts` сохраняет структурные `attendees`
+(имена с исходным регистром и e-mail) из полного ответа заметки. Они проходят через новый
+кэш предпросмотра и оба пути импорта в `meetings.attendees`; публикация переносит их в
+`entries.metadata.attendees`. Структурный пустой массив остаётся пустым. Дата и время берутся
+из `calendar_event.scheduled_start_time`, сохраняя момент события с часовым поясом;
+`entryDate`/`startTime` для дедупа считаются в UTC. Разбор отформатированных строк «Дата» и
+«Участники» остаётся только для старых заметок/кэшей без структурных полей. Новых уведомлений
+или изменений их текстов и условий этот путь не добавляет.
+
+Кэш со старой датой без часового пояса не переинтерпретирует её как структурный момент;
+авто-импорт без календарного начала сохраняет точный `created_at` (включая секунды) из списка
+Granola, прежде чем использовать текстовый fallback.
 
 ### Read.ai (автоматически)
 ```
