@@ -44,7 +44,11 @@ export const TOOLS = [
       type: "object",
       properties: {
         assignee: { type: "string", description: "Имя исполнителя" },
-        country: { type: "string", description: "Страна или рынок" },
+        country: {
+          type: "string",
+          description: "Страна ISO-кодом (HU); несколько через запятую — задачи любой из них",
+        },
+        countries: { type: "array", items: { type: "string" }, description: 'То же списком: ["HU","RS"]' },
         status: { type: "string", enum: ["backlog", "open", "in_progress", "done", "cancelled"] },
         period: { type: "string", enum: ["week"], description: "Задачи на этой неделе" },
         label: { type: "string", description: "Имя личной смарт-метки для фильтра" },

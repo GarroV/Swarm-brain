@@ -22,7 +22,10 @@ export type Task = {
   remind_date: string | null;
   reminded_at: string | null;
   tags?: string[];
+  /** Первая из `countries` (серверное зеркало до снятия колонки, #1262). Читать — `taskCountryCodes`. */
   country: string | null;
+  /** ISO-коды стран задачи; нет поля — строка до раскатки #1262, тогда читается `country`. */
+  countries?: string[];
   task_role?: string | null;
   priority: string | null;
   source?: string;

@@ -8,6 +8,9 @@ import { historyRowsFor, isJournaled, type TaskSnapshot } from "./history.ts";
 import { duplicateRecurClose, recurCloseNote } from "./recur-close.ts";
 import { ASSIGNEE_SCAN_LIMIT, narrowByAssignee } from "./assignee-filter.ts";
 import { archivePatch } from "./live.ts";
+import { mirrorCountry, parseTaskCountries } from "./countries.ts";
+
+export { countriesFields, parseCountryFilter } from "./countries.ts";
 import {
   dropUnknownProjects,
   loadProjectVisibility,
@@ -24,6 +27,7 @@ export async function createTask(
   input: TaskInput,
   groupId?: string,
 ): Promise<Task> {
+  const countries = resolveCountries(input);
   const { data, error } = await supabase.from("tasks").insert({
     title: input.title,
     description: input.description ?? null,
@@ -39,7 +43,8 @@ export async function createTask(
     remind_date: input.remind_date ?? null,
     remind_set_by: input.remind_date ? (input.remind_set_by ?? input.created_by_telegram_id ?? null) : null,
     tags: input.tags ?? [],
-    country: input.country ?? null,
+    countries,
+    country: mirrorCountry(countries),
     task_role: input.task_role ?? null,
     priority: input.priority ?? null,
     source: input.source ?? "manual",
@@ -112,7 +117,8 @@ export async function listTasksWithTotal(filters: {
   status?: string;
   /** Любой из статусов (`status in (…)`), issue #111. Явный список отменяет «закрытые прячем». */
   statuses?: readonly string[];
-  country?: string;
+  /** ISO-коды (уже приведённые вызывающим, см. `parseTaskCountries`): ЛЮБАЯ из стран задачи. */
+  countries?: string[];
   period?: string;
   telegramId?: number;
   /**
@@ -166,7 +172,7 @@ export async function listTasksWithTotal(filters: {
 
   if (filters.status) q = q.eq("status", filters.status);
   if (filters.statuses?.length) q = q.in("status", [...filters.statuses]);
-  if (filters.country) q = q.ilike("country", `%${filters.country}%`);
+  if (filters.countries && filters.countries.length > 0) q = q.overlaps("countries", filters.countries);
   if (filters.createdBy !== undefined) {
     q = q.eq("created_by_telegram_id", filters.createdBy);
   }
@@ -279,9 +285,27 @@ class TaskUpdateConflict extends Error {}
  * swarm-api отдаёт её клиенту со своим статусом, а не общим «Something went wrong» (#584).
  */
 export class TaskUserError extends Error {
-  constructor(message: string, readonly status: 404 | 409) {
+  constructor(message: string, readonly status: 400 | 404 | 409) {
     super(message);
   }
+}
+
+/** Страны из ввода создания; неизвестное — 400 с текстом для человека, а не молчаливый пропуск. */
+function resolveCountries(input: { country?: string | null; countries?: string[] }): string[] {
+  const parsed = parseTaskCountries(input.countries !== undefined ? input.countries : input.country);
+  if (!parsed.ok) throw new TaskUserError(parsed.error, 400);
+  return parsed.countries;
+}
+
+/**
+ * Патч со странами: `countries` (или старый `country`) → оба поля сразу, `country` — зеркало
+ * первой страны. Вызывается ДО расчёта журнала и ожиданий строки, иначе они не увидели бы
+ * вторую колонку. Нет ни одного из ключей — патч не трогаем.
+ */
+function withCountries<T extends { country?: string | null; countries?: string[] }>(fields: T): T {
+  if (!("countries" in fields) && !("country" in fields)) return fields;
+  const countries = resolveCountries("countries" in fields ? { countries: fields.countries ?? [] } : fields);
+  return { ...fields, countries, country: mirrorCountry(countries) };
 }
 
 /** Сколько раз пересчитываем патч, если строку изменили одновременно с нами. */
@@ -297,9 +321,10 @@ const MAX_CONFLICT_RETRIES = 3;
  */
 export async function updateTask(
   id: string,
-  fields: UpdateFields,
+  rawFields: UpdateFields,
   opts: UpdateOpts = {},
 ): Promise<RecurResult | null> {
+  const fields = withCountries(rawFields);
   for (let attempt = 1;; attempt++) {
     try {
       return await updateTaskOnce(id, fields, opts);
