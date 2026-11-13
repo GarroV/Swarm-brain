@@ -31,13 +31,6 @@ export function weightedCounts(values: Counts): Counts {
   return [...counts].sort((a, b) => b[1] - a[1]);
 }
 
-/** Same stable source grouping as the existing meetingSourceKey on the list surface. */
-export function facetSourceKey(source: string, recordedBy: unknown): string {
-  if (["granola", "read_ai", "web-recorder"].includes(source)) return source;
-  if (source === "desktop-agent" || source === "swarm-recorder") return recordedBy === "bot" ? "scriba" : "bumblebee";
-  return "meeting";
-}
-
 export function importerDisplayName(row: { importer_name?: string | null; added_by?: string | null }): string {
   if (row.importer_name) return row.importer_name;
   const name = (row.added_by ?? "").trim();

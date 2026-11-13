@@ -1,13 +1,18 @@
 import { reviewQueueEmail } from "./entries-guard.ts";
 import type { MeetingAttributionRow, MeetingsRouteContext } from "./meetings-routes.ts";
-import {
-  facetSourceKey,
-  importerDisplayName,
-  type RawMeetingFacets,
-  weightedCounts,
-} from "../_shared/meeting-list-facets.ts";
+import { importerDisplayName, type RawMeetingFacets, weightedCounts } from "../_shared/meeting-list-facets.ts";
 import { apiErr, json } from "./http.ts";
 import { serverError } from "./client-error.ts";
+import { BOT_MEETING_SOURCE_KEY } from "../_shared/bot-profile.ts";
+
+/** Same stable source grouping as the existing meetingSourceKey on the list surface. */
+export function facetSourceKey(source: string, recordedBy: unknown): string {
+  if (["granola", "read_ai", "web-recorder"].includes(source)) return source;
+  if (source === "desktop-agent" || source === "swarm-recorder") {
+    return recordedBy === "bot" ? BOT_MEETING_SOURCE_KEY : "bumblebee";
+  }
+  return "meeting";
+}
 
 type NamedGroup = MeetingAttributionRow & { added_by: string; weight: number };
 /** Authoritative union snapshot; pending keeps its distinct existing owner/attendee predicate. */

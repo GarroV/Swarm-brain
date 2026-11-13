@@ -2876,6 +2876,8 @@ Next.js 16, `output: "export"` (статический HTML/CSS/JS в `miniapp/o
 `buildEntriesQuery` (общая/своя/разделённая), pending — owner/attendee из `buildReviewQueueQuery`. Атрибуция использует прежний порядок metadata → owner → recorders
 и тот же резолвер имён. Несогласованная очередь и confirmed считаются в едином SQL snapshot: публикация
 между независимыми GET не удваивает счётчик. Клиент не суммирует отдельно загруженную очередь.
+Стабильный ключ источника бота берётся из `BOT_MEETING_SOURCE_KEY` в профиле бота,
+отдельно от его отображаемого имени; существующие ключи фильтра не меняются.
 
 `GET /meetings` сохраняет legacy offset и сообщает поддержку keyset заголовком
 `X-Meeting-Keyset: 1`. Новый `cursor` содержит последние **серверные** `created_at` и `id`;

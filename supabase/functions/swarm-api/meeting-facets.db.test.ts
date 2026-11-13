@@ -12,6 +12,11 @@ Deno.test("meeting facets: complete totals beyond 200, exact privacy/workspace/l
       "insert into public.workspaces(id,name) values ('qa-facets-104','QA facets'),('qa-foreign-104','QA foreign')",
     );
     await db.queryArray(
+      `insert into public.allowed_users(telegram_id,username,added_by,group_id) values
+      (990104001,'facets-viewer-104',0,'qa-facets-104'),
+      (990104002,'facets-owner-104',0,'qa-facets-104')`,
+    );
+    await db.queryArray(
       `insert into public.entries(content,summary,entry_type,source,added_by,group_id,metadata,countries,owner_id,is_private)
       select 'Synthetic meeting '||n,'Synthetic','meeting','granola','Fixture Human','qa-facets-104',
       '{"confirmed":true}'::jsonb, array['RS','BG'],990104001,false from generate_series(1,235) n`,

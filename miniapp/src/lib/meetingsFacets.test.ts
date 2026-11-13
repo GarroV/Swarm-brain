@@ -7,10 +7,8 @@ import {
   meetingFacetView,
   normalizeMeetingFacets,
 } from "./meetingsFacets.ts";
-import {
-  facetSourceKey,
-  importerDisplayName,
-} from "../../../supabase/functions/_shared/meeting-list-facets.ts";
+import { importerDisplayName } from "../../../supabase/functions/_shared/meeting-list-facets.ts";
+import { facetSourceKey } from "../../../supabase/functions/swarm-api/meeting-facets.ts";
 import { meetingSourceKey } from "./sourceLabels.ts";
 
 Deno.test("meeting facet presentation: complete aggregate normalizes country aliases without page rows", () => {
