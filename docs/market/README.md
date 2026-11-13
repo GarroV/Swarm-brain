@@ -182,7 +182,7 @@ Paxlava, Ruggi Sweets), LT (AJ Šokoladas, Ali šokoladinė). Такие зав�
   [decisions/2026-11-10-market-fastfood-only.md](../decisions/2026-11-10-market-fastfood-only.md).
 - **Скрытие сети — `mkt_chains.hidden_at`.** Сеть вне объёма (раньше найдена
   автоматически, теперь нет) не удаляется, а скрывается: колонка `hidden_at` (миграция
-  `20261113120000_market_chains_hidden_at.sql`) не пуста — сеть и её точки, цены и
+  `20261113130000_market_chains_hidden_at.sql`) не пуста — сеть и её точки, цены и
   юрлица не попадают в отчёт и мини-апп (`loadCountry`), в MCP `market_get` (`chains`,
   `locations`, `prices`, `money`), в счётчики `market_status` и в список стран. Правило
   одно: каждое чтение для показа берёт сети с `hidden_at is null`, а точки, цены и юрлица —
