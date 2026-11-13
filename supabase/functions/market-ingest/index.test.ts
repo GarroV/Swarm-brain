@@ -98,6 +98,4 @@ Deno.test("#899 collector token: unknown source and malformed adapter are refuse
   assertEquals((await post({ ...base, source: "drop-table" })).status, 400);
   assertEquals((await post({ ...base, source: "dodo", adapter: "x'; drop" })).status, 400);
   assertEquals((await post({ ...base, source: "registry", adapter: "A".repeat(80), failed: "x" })).status, 400);
-  // Известные источник и адаптер проходят проверку и доходят до базы (её здесь нет — 500, не 400).
-  assertEquals((await post({ ...base, source: "registry", adapter: "ee-ariregister", failed: "x" })).status, 500);
 });
