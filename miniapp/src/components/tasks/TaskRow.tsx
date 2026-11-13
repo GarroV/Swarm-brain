@@ -72,7 +72,7 @@ export function TaskRow({ task, onToggle, showAssignee = true, now = new Date(),
           background: done ? "var(--status-done)" : "transparent",
         }}
       >
-        {done && <RoyIcon name="check" size={11} strokeWidth={2.4} className="text-white" />}
+        {done && <RoyIcon name="check" size={11} strokeWidth={2.4} className="text-[var(--on-solid)]" />}
       </button>
 
       <div className="min-w-0 flex-1">

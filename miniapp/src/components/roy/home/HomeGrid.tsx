@@ -15,15 +15,13 @@ import { BoardWidget } from "./StickerBoard";
 import { SampleTag, ViolationsWidget } from "./QualityWidgets";
 import { RatingsWidget } from "./RatingsWidget";
 import { CountriesWidget, PizzeriasWidget } from "./TableWidgets";
-import { LegacyCountriesWidget } from "./LegacyCountriesWidget";
-import { isHomeAEnabled, LOAD_SEARCH } from "@/lib/homeFlag";
 import { useCountrySales } from "./useCountrySales";
 import { useQuality, type QualityState } from "./useQuality";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { countryOf } from "@/lib/homeQuality";
 import { FILL, FILL_CARD, FILL_NOTE } from "./blockFill";
 import {
-  addWidget, defaultLayout, HEIGHT_KIND, HOME_FILL_MAX, HOME_FILL_MIN, HOME_FIXED_HEIGHT, HOME_LIST_MAX, hideWidget, layoutRows, rowSizing, loadLayout, moveBefore, moveBy, saveLayout, toggleWidth,
+  addWidget, DEFAULT_LAYOUT, HEIGHT_KIND, HOME_FILL_MAX, HOME_FILL_MIN, HOME_FIXED_HEIGHT, HOME_LIST_MAX, hideWidget, layoutRows, rowSizing, loadLayout, moveBefore, moveBy, saveLayout, toggleWidth,
   WIDGET_IDS, DEFAULT_WIDTH, type CellSizing, type LayoutItem, type WidgetId,
 } from "@/lib/homeLayout";
 
@@ -44,15 +42,6 @@ const DAY_LABEL = [
   new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/Belgrade", day: "numeric", month: "long" }),
 ];
 const todayLabel = (lang: number): string => DAY_LABEL[lang].format(new Date());
-
-// Прежний вид трёх виджетов экрана «А» (как на main): заголовок, подсказка и ссылка в шапке.
-// Действует, пока флаг lib/homeFlag.ts выключен; поля поверх META.
-const LEGACY_META: Partial<Record<WidgetId, Partial<Meta>>> = {
-  calls: { title: ["Созвоны сегодня", "Today's calls"], hint: ["Встречи дня из календаря и кнопка «подключиться».", "Today's meetings from your calendar with a join button."] },
-  top5: { title: ["Ближайшие задачи", "Next tasks"], link: undefined },
-  countries: { link: undefined },
-};
-const metaOf = (id: WidgetId, a: boolean): Meta => (a ? META[id] : { ...META[id], ...LEGACY_META[id] });
 
 const META: Record<WidgetId, Meta> = {
   calls: { title: ["Ближайшие встречи", "Upcoming meetings"], hint: ["Встречи дня из календаря: линия «сейчас», «Подключиться» у ближайшей, «Вычитать» у записанной встречи.", "Today's meetings from your calendar: a “now” line, Join on the next one, Review on a recorded meeting."], ownTitle: true },
@@ -76,13 +65,7 @@ export function HomeGrid({ data, onCreateTask, onCreateTaskFrom, editing, onEdit
   const dt = useDt();
   const lang = dt("ru", "en") === "en" ? 1 : 0;
   const { me, setTab, openTasks } = useRoyNav();
-  // Экран «А» — только владельцу (флаг) или по ?home=a; ?home=old выключает. Адрес приложение переписывает при
-  // первой смене экрана, поэтому берём снимок на загрузке (LOAD_SEARCH) и ставим после монтирования: экспорт
-  // статический, на сборке адреса нет.
-  const [search, setSearch] = useState("");
-  useEffect(() => { setSearch(LOAD_SEARCH); }, []);
-  const homeA = isHomeAEnabled(me, search);
-  const [layout, setLayoutState] = useState<LayoutItem[]>(defaultLayout(homeA));
+  const [layout, setLayoutState] = useState<LayoutItem[]>(DEFAULT_LAYOUT);
   const [gallery, setGallery] = useState(false);
   const [dragId, setDragId] = useState<WidgetId | null>(null);
   const [overId, setOverId] = useState<WidgetId | null>(null);
@@ -90,7 +73,7 @@ export function HomeGrid({ data, onCreateTask, onCreateTaskFrom, editing, onEdit
   const [narrow, setNarrow] = useState<string | null>(null);
 
   // Раскладка читается после монтирования: экспорт статический, на сборке localStorage нет.
-  useEffect(() => { setLayoutState(loadLayout(homeA)); }, [homeA]);
+  useEffect(() => { setLayoutState(loadLayout()); }, []);
   // Синхронизация с профилем прямо в рендере, а не в эффекте: эффект давал один кадр с пустыми странами
   // (и подсказкой «выберите страны») сразу после прихода me.
   const [seenMarkets, setSeenMarkets] = useState(me?.markets);
@@ -103,7 +86,7 @@ export function HomeGrid({ data, onCreateTask, onCreateTaskFrom, editing, onEdit
   }, [editing, gallery]);
 
   // Макет из ?layout= (только DEV_MODE) в localStorage не пишем.
-  const setLayout = (next: LayoutItem[]) => { setLayoutState(next); saveLayout(next, homeA); };
+  const setLayout = (next: LayoutItem[]) => { setLayoutState(next); saveLayout(next); };
   const codes = narrow && markets.includes(narrow) ? [narrow] : markets;
   const quality = useQuality();
   const q = quality.data;
@@ -114,21 +97,19 @@ export function HomeGrid({ data, onCreateTask, onCreateTaskFrom, editing, onEdit
   const body = (id: WidgetId): ReactNode => {
     // Пока профиль (me) не пришёл, страны неизвестны: подсказку «выберите страны» не показываем — она мигала
     // 0.3–1.5 с у людей с уже выбранными странами (issue #906). Тот же скелетон, что у загрузки баллов.
-    if (!me && metaOf(id, homeA).scoped) return <div className={`roy-shim ${FILL}`} style={{ height: id === "countries" ? 160 : 220, borderRadius: 12 }} />;
-    if (!codes.length && metaOf(id, homeA).scoped) {
+    if (!me && META[id].scoped) return <div className={`roy-shim ${FILL}`} style={{ height: id === "countries" ? 160 : 220, borderRadius: 12 }} />;
+    if (!codes.length && META[id].scoped) {
       return <div className={note} style={{ fontSize: 13 }}>{dt("Выберите свои страны в «Настроить главную» — метрики считаются по ним", "Pick your countries in “Customize home” — metrics are scoped to them")}</div>;
     }
-    const gate = metaOf(id, homeA).quality ? qualityGate(quality, id) : null;
+    const gate = META[id].quality ? qualityGate(quality, id) : null;
     if (gate) return gate;
     switch (id) {
-      case "calls": return <MeetingsToday flat first legacy={!homeA} drafts={data.reviewList} className={FILL} flatBody={`rounded-[12px] border border-line bg-surface p-1.5 ${FILL_CARD}`} />;
-      case "top5": return <TopTasksWidget data={data} onCreate={onCreateTask} legacy={!homeA} />;
+      case "calls": return <MeetingsToday flat first drafts={data.reviewList} className={FILL} flatBody={`rounded-[12px] border border-line bg-surface p-1.5 ${FILL_CARD}`} />;
+      case "top5": return <TopTasksWidget data={data} onCreate={onCreateTask} />;
       case "board": return <BoardWidget data={data} />;
       case "ratings": return <RatingsWidget codes={codes} q={q} scope={scope} qualityGate={qualityGate(quality, id)} />;
       case "pz": return <PizzeriasWidget scope={scope} />;
-      case "countries": return homeA
-        ? <CountriesWidget scope={mine} sales={sales} narrow={narrow} onNarrow={setNarrow} />
-        : <LegacyCountriesWidget scope={mine} sales={sales} narrow={narrow} onNarrow={setNarrow} onMarket={() => setTab("market")} />;
+      case "countries": return <CountriesWidget scope={mine} sales={sales} narrow={narrow} onNarrow={setNarrow} />;
       case "viol": return <ViolationsWidget scope={scope} />;
       case "sales": return <SalesWidget codes={codes} sales={sales} />;
       case "insp": return <InspectionsWidget codes={codes} onCreateTask={onCreateTaskFrom} />;
@@ -145,7 +126,7 @@ export function HomeGrid({ data, onCreateTask, onCreateTaskFrom, editing, onEdit
   };
 
   const widget = (it: LayoutItem, i: number, sizing: CellSizing) => {
-    const m = metaOf(it.id, homeA);
+    const m = META[it.id];
     return (
       <section key={it.id} data-widget={it.id}
         className={`relative min-w-0 rounded-[14px] transition-opacity ${sizing === "auto" ? "" : `${BLOCK_COL} ${SIZING_CLASS[sizing]}`} ${editing ? "cursor-grab outline-2 outline-offset-4 outline-dashed outline-line-2 hover:outline-accent-line" : ""} ${dragId === it.id ? "opacity-40" : ""} ${overId === it.id && dragId !== it.id ? "outline-primary" : ""}`}
@@ -185,7 +166,7 @@ export function HomeGrid({ data, onCreateTask, onCreateTaskFrom, editing, onEdit
           <div className="text-ink"><b>{dt("Настройка главной.", "Customizing home.")}</b> {dt("Перетащите виджеты за ⠿, меняйте ширину, скрывайте лишнее. Раскладка — только ваша.", "Drag widgets by ⠿, change width, hide what you don't need. The layout is yours only.")}</div>
           <div className="flex flex-wrap gap-2">
             <button type="button" onClick={() => setGallery(true)} className="rounded-[8px] border border-line-2 bg-surface px-3 py-1.5 font-semibold">{dt("+ Добавить виджет", "+ Add widget")}</button>
-            <button type="button" onClick={() => setLayout(defaultLayout(homeA))} className="rounded-[8px] border border-line-2 bg-surface px-3 py-1.5 font-semibold">{dt("Как было по умолчанию", "Reset to default")}</button>
+            <button type="button" onClick={() => setLayout(DEFAULT_LAYOUT)} className="rounded-[8px] border border-line-2 bg-surface px-3 py-1.5 font-semibold">{dt("Как было по умолчанию", "Reset to default")}</button>
             <button type="button" onClick={() => setEditing(false)} className="rounded-[8px] bg-primary px-3 py-1.5 font-semibold text-primary-foreground">{dt("Готово", "Done")}</button>
           </div>
           </div>
@@ -221,8 +202,8 @@ export function HomeGrid({ data, onCreateTask, onCreateTaskFrom, editing, onEdit
               const on = layout.some((x) => x.id === id);
               return (
                 <div key={id} className={`flex flex-col gap-1.5 rounded-[10px] border border-line-2 p-3 ${on ? "opacity-55" : ""}`}>
-                  <b className="text-ink" style={{ fontSize: 14 }}>{metaOf(id, homeA).title[lang]}</b>
-                  <p className="flex-1 text-ink-soft" style={{ fontSize: 12, lineHeight: 1.4 }}>{metaOf(id, homeA).hint[lang]}</p>
+                  <b className="text-ink" style={{ fontSize: 14 }}>{META[id].title[lang]}</b>
+                  <p className="flex-1 text-ink-soft" style={{ fontSize: 12, lineHeight: 1.4 }}>{META[id].hint[lang]}</p>
                   <div className="flex items-center justify-between gap-2 text-ink-mute" style={{ fontSize: 11 }}>
                     <span>{DEFAULT_WIDTH[id] === "full" ? dt("на всю строку", "full row") : dt("½ строки", "½ row")}</span>
                     {on ? <span>{dt("уже на главной", "already on home")}</span> : (

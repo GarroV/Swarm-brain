@@ -38,7 +38,7 @@ const row = (over: Partial<PlaceRow>): PlaceRow => ({
   name: null,
   brand: null,
   wikidata: null,
-  category: "restaurant",
+  category: "fast_food_restaurant",
   locality: "Berlin",
   address: `Street ${n}`,
   lat: 52.5 + n * 0.001,
@@ -78,11 +78,9 @@ Deno.test("#1134: only the six specified generic words are excluded, using the e
   }
   for (
     const name of [
-      "Кофейня Плюс",
       "Pizzeria Gino",
       "Bistro Lux",
       "Kebab House",
-      "Cafe",
     ]
   ) {
     const result = discover(
@@ -91,6 +89,17 @@ Deno.test("#1134: only the six specified generic words are excluded, using the e
     );
     assertEquals(result.chains.map((c) => c.name), [name]);
     assertEquals(result.points.length, 5);
+  }
+  // Кофейни — не фастфуд (решение владельца 10.11.2026): автопоиск их не заводит.
+  for (const name of ["Кофейня Плюс", "Cafe"]) {
+    assertEquals(
+      discover(
+        many(5, (i) => ({ name, locality: ["A", "B", "C"][i % 3] })),
+        cfg,
+      ).chains,
+      [],
+      name,
+    );
   }
 });
 
@@ -115,10 +124,10 @@ Deno.test("#1134: configured matches stay authoritative; unbranded generic rows 
     "configured",
   ]);
   const mixed = discover([
-    ...many(3, () => ({ name: "Кофейня", brand: "Кофейня" })),
-    ...many(5, () => ({ name: "Кофейня", locality: "B" })),
+    ...many(3, () => ({ name: "Kebab", brand: "Kebab" })),
+    ...many(5, () => ({ name: "Kebab", locality: "B" })),
   ], cfg);
-  assertEquals(mixed.chains.map((c) => c.name), ["Кофейня"]);
+  assertEquals(mixed.chains.map((c) => c.name), ["Kebab"]);
   assertEquals(mixed.points.length, 3);
 });
 
@@ -271,7 +280,7 @@ Deno.test("overture: Cyrillic Dodo («Додо Пицца Беларусь») is
   assertEquals(chains, []);
 });
 
-Deno.test("overture: discovered key is unique against config keys, top 40 by count", () => {
+Deno.test("overture: discovered key is unique against config keys, and there is no cap on the number of chains", () => {
   const rows = [
     ...many(3, () => ({ brand: "Dominos Fan Club" })),
     ...Array.from(
@@ -283,7 +292,7 @@ Deno.test("overture: discovered key is unique against config keys, top 40 by cou
     ...cfg,
     chains: [...cfg.chains, { key: "brand-44", name: "x", segment: "other" }],
   });
-  assertEquals(chains.length, 40);
+  assertEquals(chains.length, 46);
   assertEquals(chains[0].name, "Brand 44");
   assertEquals(chains[0].key, "brand-44-2");
 });
@@ -302,14 +311,7 @@ Deno.test("overture: segment comes from the name first, then from the majority c
     many(3, () => ({ brand: "Piekarnia Sweet", category: "bakery" })),
     cfg,
   );
-  assertEquals(chains, [
-    {
-      key: "piekarnia-sweet",
-      name: "Piekarnia Sweet",
-      segment: "bakery",
-      bakery: true,
-    },
-  ]);
+  assertEquals(chains, []);
 });
 
 Deno.test("overture: latest release is the max date, then the max suffix", () => {
@@ -402,7 +404,7 @@ Deno.test("#1134: the country's explicit manufacturer list drops its shops, howe
   assertEquals(discover(rows.slice(0, 7), cfg).chains.length, 1);
 });
 
-Deno.test("#1134: real bakeries and cafes stay, and a configured chain stays authoritative", () => {
+Deno.test("#1134: bakeries and cafes are not discovered (fast food only, 10.11), and a configured chain stays authoritative", () => {
   const bakery = discover(
     many(5, (i) => ({
       name: "Пекарня Хлебница",
@@ -411,9 +413,7 @@ Deno.test("#1134: real bakeries and cafes stay, and a configured chain stays aut
     })),
     cfg,
   );
-  assertEquals(bakery.chains.map((c) => [c.name, c.bakery]), [
-    ["Пекарня Хлебница", true],
-  ]);
+  assertEquals(bakery.chains, []);
   const cafe = discover(
     many(
       3,
@@ -421,7 +421,7 @@ Deno.test("#1134: real bakeries and cafes stay, and a configured chain stays aut
     ),
     cfg,
   );
-  assertEquals(cafe.chains.map((c) => c.name), ["Кофе Хаус"]);
+  assertEquals(cafe.chains, []);
   const configured = discover(
     [row({ name: 'ООО "Локальная сеть"' })],
     {
@@ -585,7 +585,7 @@ Deno.test("#1113: a pair leaves no mccafe chain behind; a configured mccafe chai
   ]);
 });
 
-Deno.test("#1134: the manufacturer shops listed per country are dropped, ice cream and bakeries stay", () => {
+Deno.test("#1134: the manufacturer shops listed per country are dropped, ice cream stays", () => {
   const listed: Record<string, string[]> = {
     AM: ["Grand Candy", "Marush Sweets Boutique"],
     MD: ["Dulcinella Moldova", "Dulcinella"],
@@ -604,7 +604,6 @@ Deno.test("#1134: the manufacturer shops listed per country are dropped, ice cre
     "Grycan",
     "Lody Bonano",
     "llaollao",
-    "Cukiernia Sowa",
   ];
   for (const [country, names] of Object.entries(listed)) {
     const rows = [...names, ...kept].flatMap((name) =>

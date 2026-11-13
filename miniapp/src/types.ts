@@ -436,6 +436,8 @@ export type Me = {
   is_superadmin?: boolean;
   /** Задник веба (lib/backdrop.ts); null — по умолчанию. Нет поля — сервер до #backdrop. */
   ui_backdrop?: string | null;
+  /** Цветовая схема веба (lib/scheme.ts); null — по умолчанию (swarm). Нет поля — сервер до #ui_scheme. */
+  ui_scheme?: string | null;
   /** Второй шаг входа — палец (ключ доступа, #955). Нет поля — сервер до #955. */
   second_step?: {
     /** Шаг применим к этой сессии (настоящий вход, не демо и не короткий токен). */

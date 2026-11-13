@@ -2,6 +2,8 @@
 import { useEffect, useState } from "react";
 import { fetchMe } from "@/lib/api";
 import { applyBackdrop, readCachedBackdrop, resolveBackdrop } from "@/lib/backdrop";
+import { readCachedScheme, resolveScheme } from "@/lib/scheme";
+import { applyScheme, syncBrowserChrome } from "@/lib/theme";
 import { subscribeUnauthorized } from "@/lib/connection";
 import type { Me } from "@/types";
 import { RoyApp } from "@/components/roy/RoyApp";
@@ -28,6 +30,7 @@ export default function Home() {
   useEffect(() => {
     setOauthRequest(new URLSearchParams(window.location.search).get("mcp_oauth"));
     setRouteReady(true);
+    syncBrowserChrome(); // цвет шапки браузера под схему из кэша (скрипт layout ставит её до гидратации)
     fetchMe()
       .then((m) => {
         setMe(m);
@@ -35,6 +38,11 @@ export default function Home() {
         if ("ui_backdrop" in m) {
           const id = resolveBackdrop(m.ui_backdrop);
           if (id !== readCachedBackdrop()) applyBackdrop(id);
+        }
+        // Цветовая схема — оттуда же: едет между устройствами, кэш вкладки нужен лишь первой отрисовке.
+        if ("ui_scheme" in m) {
+          const scheme = resolveScheme(m.ui_scheme);
+          if (scheme !== readCachedScheme()) applyScheme(scheme);
         }
       })
       .catch((err: unknown) => {

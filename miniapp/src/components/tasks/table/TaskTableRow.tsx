@@ -178,7 +178,7 @@ export function TaskTableRow({ task, order, now, users, markets, labels, project
           {/* Стенд: в покое — точка статуса; галочка-кружок проявляется при наведении и фокусе,
               чтобы закрытие задачи оставалось в один клик (визуальный шаг В2). */}
           {done ? (
-            <span className="flex size-[17px] items-center justify-center rounded-full bg-status-done text-white">
+            <span className="flex size-[17px] items-center justify-center rounded-full bg-status-done text-[var(--on-solid)]">
               <RoyIcon name="check" size={11} strokeWidth={2.6} />
             </span>
           ) : (

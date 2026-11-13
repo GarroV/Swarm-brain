@@ -347,7 +347,7 @@ function ProjectTreeInner({ project, onBack }: Props) {
       <button onClick={onBack} className="absolute left-3 top-3 z-20 flex items-center gap-1 rounded-full bg-surface border border-line px-3 py-1.5 text-xs font-semibold text-ink-soft hover:bg-surface-2">
         <RoyIcon name="cleft" size={14} /> {dt("Проекты", "Projects")}
       </button>
-      <button onClick={() => setCreating(true)} className="absolute right-3 top-3 z-20 flex items-center gap-1 rounded-full bg-primary px-3 py-1.5 text-xs font-semibold text-white active:scale-95">
+      <button onClick={() => setCreating(true)} className="absolute right-3 top-3 z-20 flex items-center gap-1 rounded-full bg-primary px-3 py-1.5 text-xs font-semibold text-[var(--on-primary)] active:scale-95">
         <RoyIcon name="plus" size={14} /> {dt("Идея", "Idea")}
       </button>
 

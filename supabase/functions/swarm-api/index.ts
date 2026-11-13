@@ -1,4 +1,4 @@
-import { parseMePatch } from "./me-fields.ts";
+import { meUiPrefs, parseMePatch } from "./me-fields.ts";
 import { deriveEntryTitle, entryTagKey } from "./entry-presentation.ts";
 import { taskExtractionResponse } from "./task-extraction-response.ts";
 import { handleChatGptDesktop } from "./chatgpt-desktop.ts";
@@ -618,7 +618,7 @@ async function routeRequest(req: Request): Promise<Response> {
   if (req.method === "GET" && routePath === "/me") {
     const [{ data: profile }, { data: allowedUser }] = await Promise.all([
       supabase.from("user_profiles").select(
-        "first_name, last_name, role, markets, ui_backdrop, recorder_auto_start",
+        "first_name, last_name, role, markets, ui_backdrop, ui_scheme, recorder_auto_start",
       ).eq("telegram_id", telegram_id).maybeSingle(),
       supabase.from("allowed_users").select("username, email, telegram_chat_id").eq(
         "telegram_id",
@@ -651,7 +651,7 @@ async function routeRequest(req: Request): Promise<Response> {
         language: "en",
         role: p?.role ?? null,
         markets: p?.markets ?? [],
-        ui_backdrop: p?.ui_backdrop ?? null,
+        ...meUiPrefs(p),
         // Рекордер сам начинает запись по календарю (#219); по умолчанию включено (решение 18.09.2026).
         recorder_auto_start: p?.recorder_auto_start !== false,
         is_admin: isAdmin,

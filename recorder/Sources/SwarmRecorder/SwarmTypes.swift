@@ -100,6 +100,14 @@ struct ClaimResponse: Decodable {
     let deferReason: String?    // "published" | "shorter" | "race" | "unknown"
 
     var shouldTranscribe: Bool { decision == "transcribe" }
+
+    /// Строка журнала «чем кончился claim» (#1271): решение, причина отказа и секунды держателя.
+    /// Без неё «пишем второй раз, а в базу не идёт» видно только в логах сервера.
+    func logLine(sent: Double?) -> String {
+        let held = heldSeconds.map { String(format: "%.0f", $0) } ?? "—"
+        let mine = sent.map { String(format: "%.0f", $0) } ?? "—"
+        return "SwarmRecorder: claim \(meetingId) — decision=\(decision) deferReason=\(deferReason ?? "—") heldSec=\(held) sentSec=\(mine)"
+    }
 }
 
 // ── Контракт meeting-ingest (§7.2): multipart audio ─────────────────────────────

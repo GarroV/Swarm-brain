@@ -291,7 +291,7 @@ export function WorkspaceUsers({ wsId, allWorkspaces, desk = false }: { wsId: st
                         const on = editMarkets.includes(code);
                         return (
                           <button key={code} onClick={() => toggleMarket(code)} className="rounded-full border px-2.5 py-1 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
-                            style={{ fontSize: 11, ...(on ? { background: "var(--primary)", color: "#fff", borderColor: "var(--primary)" } : { color: "var(--ink-soft)", borderColor: "var(--line-2)" }) }}>
+                            style={{ fontSize: 11, ...(on ? { background: "var(--primary)", color: "var(--on-primary)", borderColor: "var(--primary)" } : { color: "var(--ink-soft)", borderColor: "var(--line-2)" }) }}>
                             {countryCode(code)}
                           </button>
                         );
