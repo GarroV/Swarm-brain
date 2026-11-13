@@ -7,6 +7,7 @@ import {
   type BackupFacts,
   type BackupMeetingFacts,
   decideBackup,
+  mayRecordNow,
   type OwnMeetingFacts,
   RESOLVE_GRACE_MS,
   separateRecordingTitle,
@@ -25,6 +26,7 @@ const backup = (over: Partial<BackupFacts> = {}): BackupFacts => ({
   recordedSeconds: 6100,
   createdAt: ago(5 * H),
   filesPurged: false,
+  reason: "deferred",
   ...over,
 });
 const meeting = (over: Partial<BackupMeetingFacts> = {}): BackupMeetingFacts => ({
@@ -44,8 +46,8 @@ const own = (over: Partial<OwnMeetingFacts> = {}): OwnMeetingFacts => ({
   createdAt: ago(3 * H),
   ...over,
 });
-const decide = (b: BackupFacts, m: BackupMeetingFacts, o: OwnMeetingFacts[] = []) =>
-  decideBackup({ backup: b, meeting: m, ownMeetings: o, nowMs: NOW });
+const decide = (b: BackupFacts, m: BackupMeetingFacts, o: OwnMeetingFacts[] = [], uploaderMayRecord = true) =>
+  decideBackup({ backup: b, meeting: m, ownMeetings: o, nowMs: NOW, uploaderMayRecord });
 
 Deno.test("ЯДРО: встреча получила полную запись того же человека, она не короче копии — копия покрыта (прод 09.11: 6526 с против 6100 с)", () => {
   assertEquals(decide(backup(), meeting()).action, "covered");
@@ -179,4 +181,44 @@ Deno.test("название своей встречи — из встречи-и
   assertEquals(separateRecordingTitle("  "), "Отдельная запись / Separate recording");
   assertEquals(separateRecordingTitle(null), "Отдельная запись / Separate recording");
   assertEquals(separateRecordingTitle("x".repeat(300)).length <= 200, true);
+});
+
+const foreign = () => meeting({ claimOwner: 9, sources: ["person:9"] });
+
+Deno.test("БЕЗОПАСНОСТЬ: своей встречей становится только копия с причиной «отложено» (deferred); отказ по праву и прочее — на разбор", () => {
+  for (const reason of ["rejected", "exhausted", "other"]) {
+    assertEquals(decide(backup({ reason }), foreign()).action, "review", reason);
+  }
+  assertEquals(decide(backup({ reason: "deferred" }), foreign()).action, "own_meeting");
+});
+
+Deno.test("БЕЗОПАСНОСТЬ: загрузивший больше не допущен к записи (убран/перенесён/нет токена рекордера) — своей встречи нет, на разбор", () => {
+  assertEquals(decide(backup(), foreign(), [], false).action, "review");
+  assertEquals(decide(backup(), foreign(), [], true).action, "own_meeting");
+});
+
+const tokenRow = (over: Record<string, unknown> = {}) => ({
+  group_id: "cee",
+  recorder_token_hash: "h",
+  recorder_token_expires_at: null,
+  recorder_token_prev_hash: null,
+  recorder_token_prev_expires_at: null,
+  ...over,
+});
+
+Deno.test("БЕЗОПАСНОСТЬ: допуск — строка человека есть, пространство то же, действующий токен рекордера", () => {
+  assertEquals(mayRecordNow(tokenRow(), "cee", NOW), true);
+  assertEquals(mayRecordNow(null, "cee", NOW), false); // удалён
+  assertEquals(mayRecordNow(tokenRow({ group_id: "other" }), "cee", NOW), false); // перенесён
+  assertEquals(mayRecordNow(tokenRow(), null, NOW), false); // пространство копии неизвестно
+  assertEquals(mayRecordNow(tokenRow({ recorder_token_hash: null }), "cee", NOW), false); // рекордер не подключён
+  assertEquals(mayRecordNow(tokenRow({ recorder_token_expires_at: ago(H) }), "cee", NOW), false); // истёк
+  assertEquals(
+    mayRecordNow(
+      tokenRow({ recorder_token_hash: null, recorder_token_prev_hash: "p", recorder_token_prev_expires_at: ago(-H) }),
+      "cee",
+      NOW,
+    ),
+    true,
+  ); // перекрытие при перевыпуске
 });

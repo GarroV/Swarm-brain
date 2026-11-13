@@ -79,7 +79,18 @@ function fake(tables: Record<string, Row[]>, files: Map<string, Blob>, onUpload?
 
 function world() {
   const files = new Map<string, Blob>();
-  const tables: Record<string, Row[]> = { meeting_audio_backups: [], meetings: [] };
+  const tables: Record<string, Row[]> = {
+    meeting_audio_backups: [],
+    meetings: [],
+    allowed_users: [{
+      telegram_id: 7,
+      group_id: "cee",
+      recorder_token_hash: "h",
+      recorder_token_expires_at: null,
+      recorder_token_prev_hash: null,
+      recorder_token_prev_expires_at: null,
+    }],
+  };
   const meeting = (id: string, over: Row = {}) => {
     tables.meetings.push({
       id,
@@ -116,6 +127,8 @@ function world() {
       purged_at: null,
       resolution: null,
       resolved_at: null,
+      reason: "deferred",
+      group_id: "cee",
       ...over,
     });
   };
@@ -161,7 +174,7 @@ Deno.test("ЯДРО: непокрытая копия того же челове�
 Deno.test("ЯДРО: копия чужого человека становится ОТДЕЛЬНОЙ встречей этого человека, чужая встреча не тронута", async () => {
   const w = world();
   w.meeting("m1", { claim_owner: 9, recorded_seconds: 4867, sources: ["person:9"], title: "November Marketers" });
-  w.backup("b1", "m1", { recorded_seconds: 630, group_id: "cee" });
+  w.backup("b1", "m1", { recorded_seconds: 630 });
   const before = JSON.stringify(meetingRow(w, "m1"));
   const r = await resolveBackups(w.client(), NOW);
   assertEquals([r.ownMeetings, r.review], [1, 0]);
@@ -169,7 +182,7 @@ Deno.test("ЯДРО: копия чужого человека становитс
   const created = w.tables.meetings.filter((m) => m.id !== "m1");
   assertEquals(created.length, 1);
   const n = created[0] as Record<string, unknown>;
-  assertEquals([n.claim_owner, n.identity_kind, n.identity_key, n.group_id], [7, "manual", `manual:${n.id}`, "cee"]);
+  assertEquals([n.claim_owner, n.identity_kind, n.identity_key, n.group_id], [7, "manual", "manual:b1", "cee"]);
   assertEquals(n.title, "November Marketers — отдельная запись / separate recording");
   assertEquals([n.summary_status, n.recorded_seconds, n.source], ["processing", 630, "desktop-agent"]);
   const state = n.process_state as {
@@ -182,6 +195,7 @@ Deno.test("ЯДРО: копия чужого человека становитс
   for (const p of state.parts) assert(w.files.has(p.path), `часть ${p.path} не в хранилище встречи`);
   assertEquals(backupRow(w, "b1").resolution, "ingested");
   assert(String(backupRow(w, "b1").resolution_note).includes(String(n.id)));
+  assert(n.id !== "m1" && n.id !== "b1", "id своей встречи выводится из пары (встреча, источник)");
   assert(backupRow(w, "b1").resolved_at !== null);
 });
 
@@ -193,10 +207,11 @@ Deno.test("ЯДРО: повторный проход не создаёт вто�
   await resolveBackups(w.client(), NOW);
   assertEquals(w.tables.meetings.length, 2);
   // Сбой между созданием встречи и пометкой копии: пометка слетела, встреча уже принята в работу.
-  const gen = meetingRow(w, "b1").gen;
+  const ownId = String(w.tables.meetings.find((m) => m.id !== "m1")!.id);
+  const gen = meetingRow(w, ownId).gen;
   Object.assign(backupRow(w, "b1"), { resolution: null, resolved_at: null, resolution_note: null });
   await resolveBackups(w.client(), NOW);
-  assertEquals(meetingRow(w, "b1").gen, gen, "идущая обработка перезаписана вторым приёмом того же аудио");
+  assertEquals(meetingRow(w, ownId).gen, gen, "идущая обработка перезаписана вторым приёмом того же аудио");
   assertEquals(w.tables.meetings.length, 2);
   assertEquals(backupRow(w, "b1").resolution, "ingested");
 });
@@ -263,4 +278,72 @@ Deno.test("ЯДРО: встреча сменилась, пока копия за
   assertEquals(backupRow(w, "b1").resolution, null);
   assertEquals(meetingRow(w, "m1").process_state, undefined, "чужое состояние встречи затёрто");
   assertEquals(w.files.size, before, "залитые во встречу части не убраны");
+});
+
+Deno.test("БЕЗОПАСНОСТЬ: копия с причиной «отказ по праву» (rejected/exhausted/other) своей встречей не становится — needs_review", async () => {
+  for (const reason of ["rejected", "exhausted", "other"]) {
+    const w = world();
+    w.meeting("m1", { claim_owner: 9, sources: ["person:9"] });
+    w.backup("b1", "m1", { reason });
+    const r = await resolveBackups(w.client(), NOW);
+    assertEquals([r.review, r.ownMeetings, w.tables.meetings.length], [1, 0, 1], reason);
+    assertEquals(backupRow(w, "b1").resolution, "needs_review");
+  }
+});
+
+Deno.test("БЕЗОПАСНОСТЬ: перед созданием встречи допуск проверяется заново — убранный, перенесённый, без токена рекордера — needs_review", async () => {
+  const cases: Array<[string, (w: ReturnType<typeof world>) => void]> = [
+    ["удалён", (w) => w.tables.allowed_users.splice(0)],
+    ["перенесён", (w) => (w.tables.allowed_users[0].group_id = "other")],
+    ["нет токена", (w) => (w.tables.allowed_users[0].recorder_token_hash = null)],
+  ];
+  for (const [name, breakIt] of cases) {
+    const w = world();
+    w.meeting("m1", { claim_owner: 9, sources: ["person:9"] });
+    w.backup("b1", "m1");
+    breakIt(w);
+    const r = await resolveBackups(w.client(), NOW);
+    assertEquals([r.review, r.ownMeetings, w.tables.meetings.length], [1, 0, 1], name);
+  }
+});
+
+Deno.test("БЕЗОПАСНОСТЬ: вторая копия той же пары (встреча, источник) не создаёт вторую встречу — вливается в созданную", async () => {
+  const w = world();
+  w.meeting("m1", { claim_owner: 9, sources: ["person:9"] });
+  w.backup("b1", "m1", { recorded_seconds: 630 });
+  await resolveBackups(w.client(), NOW);
+  const own = w.tables.meetings.find((m) => m.id !== "m1")!;
+  // Встреча обработана; затем рекордер выгрузил новую, более длинную копию той же пары.
+  Object.assign(own, {
+    summary_status: "done",
+    first_segment: { text: "x" },
+    recorded_seconds: 630,
+    sources: ["person:7"],
+  });
+  w.backup("b2", "m1", { recorded_seconds: 1800, created_at: ago(4) });
+  const r = await resolveBackups(w.client(), NOW);
+  assertEquals(w.tables.meetings.length, 2, "создана вторая своя встреча");
+  assertEquals(r.ingested, 1);
+  assertEquals(own.summary_status, "processing");
+  assertEquals((own.process_state as { challenge: { priorStatus: string } }).challenge, { priorStatus: "done" });
+  assertEquals(backupRow(w, "b2").resolution, "ingested");
+});
+
+Deno.test("БЕЗОПАСНОСТЬ: вторая копия той же пары, а своя встреча правлена человеком — needs_review, второй встречи нет", async () => {
+  const w = world();
+  w.meeting("m1", { claim_owner: 9, sources: ["person:9"] });
+  w.backup("b1", "m1", { recorded_seconds: 630 });
+  await resolveBackups(w.client(), NOW);
+  const own = w.tables.meetings.find((m) => m.id !== "m1")!;
+  Object.assign(own, {
+    summary_status: "done",
+    first_segment: { text: "x" },
+    notes_edited_at: ago(1),
+    recorded_seconds: 100,
+    sources: ["person:7"],
+  });
+  w.backup("b2", "m1", { recorded_seconds: 1800, created_at: ago(4) });
+  const r = await resolveBackups(w.client(), NOW);
+  assertEquals([w.tables.meetings.length, r.review], [2, 1]);
+  assertEquals(backupRow(w, "b2").resolution, "needs_review");
 });

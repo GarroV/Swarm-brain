@@ -37,6 +37,8 @@ export interface BackupFacts {
   createdAt: string;
   /** Файлы копии уже убраны из хранилища (влить нечего). */
   filesPurged: boolean;
+  /** Почему копия появилась: deferred | rejected | exhausted | other (meeting-ingest/backup.ts). */
+  reason: string;
 }
 
 export interface BackupMeetingFacts {
@@ -72,9 +74,36 @@ export interface DecideInput {
   meeting: BackupMeetingFacts;
   ownMeetings: readonly OwnMeetingFacts[];
   nowMs: number;
+  /** Загрузивший и сейчас допущен к записи (mayRecordNow): проверяется заново при разборе. */
+  uploaderMayRecord: boolean;
 }
 
 const sec = (n: number) => `${Math.round(n)} с`;
+
+/** Единственная причина копии, при которой она может стать своей встречей: сервер сказал «встречу держит другой». */
+export const OWN_MEETING_REASON = "deferred";
+
+export interface RecorderAdmissionRow {
+  group_id: string | null;
+  recorder_token_hash: string | null;
+  recorder_token_expires_at: string | null;
+  recorder_token_prev_hash: string | null;
+  recorder_token_prev_expires_at: string | null;
+}
+
+const alive = (hash: string | null, expiresAt: string | null, nowMs: number) =>
+  hash !== null && (expiresAt === null || Date.parse(expiresAt) > nowMs);
+
+/**
+ * Допуск человека к записи сейчас — то же, чего требует дверь `agent-auth` (строка в allowed_users,
+ * действующий токен рекордера, в том числе предыдущий на время перекрытия) плюс пространство копии:
+ * перенесённый в другое пространство своей встречи в старом не заводит.
+ */
+export function mayRecordNow(row: RecorderAdmissionRow | null, backupGroupId: string | null, nowMs: number): boolean {
+  if (row === null || backupGroupId === null || row.group_id !== backupGroupId) return false;
+  return alive(row.recorder_token_hash, row.recorder_token_expires_at, nowMs) ||
+    alive(row.recorder_token_prev_hash, row.recorder_token_prev_expires_at, nowMs);
+}
 
 const OWN_MEETING_MARK = "отдельная запись / separate recording";
 const MAX_TITLE_LEN = 200;
@@ -105,7 +134,9 @@ function sameAudioElsewhere(b: BackupFacts, own: readonly OwnMeetingFacts[]): Ow
   ) ?? null;
 }
 
-export function decideBackup({ backup: b, meeting: m, ownMeetings, nowMs }: DecideInput): BackupVerdict {
+export function decideBackup(
+  { backup: b, meeting: m, ownMeetings, nowMs, uploaderMayRecord }: DecideInput,
+): BackupVerdict {
   const age = nowMs - Date.parse(b.createdAt);
   if (age < RESOLVE_GRACE_MS) return { action: "wait", note: "копия свежая: рекордер ещё может досылать сам" };
 
@@ -131,6 +162,17 @@ export function decideBackup({ backup: b, meeting: m, ownMeetings, nowMs }: Deci
     // участнику), своя встреча стала бы дублем.
     if (m.sources?.includes(b.source)) {
       return { action: "review", note: `запись этого человека уже принята встречей, а держит её ${m.claimOwner}` };
+    }
+    // Отдельная встреча не должна обходить отказ, из-за которого копия появилась: только «отложено»
+    // (встречу держал другой). Отказ по праву, исчерпанные попытки и неизвестное — на человека.
+    if (b.reason !== OWN_MEETING_REASON) {
+      return { action: "review", note: `причина копии «${b.reason}»: своей встречей автоматически не становится` };
+    }
+    if (!uploaderMayRecord) {
+      return {
+        action: "review",
+        note: "загрузивший больше не допущен к записи: своей встречи автоматически не заводим",
+      };
     }
     return {
       action: "own_meeting",
