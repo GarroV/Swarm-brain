@@ -1,7 +1,7 @@
 // Что делает meeting-ingest с выгрузкой, когда у встречи уже есть запись (T156): бот scriba и
 // рекордер bumblebee ОДНОГО человека пишут одну встречу, claim_owner у обоих один, выгружают оба.
 import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import { decideUpload, uploadSource } from "./second-recording.ts";
+import { decideUpload, isNewRecording, transcriptEndSec, uploadSource } from "./second-recording.ts";
 
 const ME = 7;
 const OTHER = 8;
@@ -36,13 +36,64 @@ Deno.test("первая выгрузка встречи — обычная об�
   );
 });
 
-Deno.test("повтор той же выгрузки, пока она обрабатывается или готова, — второй обработки нет", () => {
-  for (const summaryStatus of ["processing", "done"]) {
-    assertEquals(
-      decideUpload({ summaryStatus, sources: [BOT], hasTranscript: summaryStatus === "done", incoming: BOT }),
-      "already_processed",
-    );
-  }
+Deno.test("повтор той же выгрузки, пока она обрабатывается, — второй обработки нет", () => {
+  assertEquals(
+    decideUpload({ summaryStatus: "processing", sources: [BOT], hasTranscript: false, incoming: BOT }),
+    "already_processed",
+  );
+});
+
+Deno.test("повтор той же выгрузки к готовой встрече (длина как в стенограмме) — второй обработки нет", () => {
+  assertEquals(
+    decideUpload({
+      summaryStatus: "done",
+      sources: [BOT],
+      hasTranscript: true,
+      incoming: BOT,
+      incomingSeconds: 2520,
+      transcriptSeconds: 2504,
+    }),
+    "already_processed",
+  );
+});
+
+Deno.test("новая длинная запись того же источника к готовой встрече — вторая запись, а не повтор (#1271)", () => {
+  // Живой случай: рекордер выгрузил 6526 с после первой записи на 425 с; ответ already_processed
+  // терял её молча, а рекордер помечал выгруженной.
+  assertEquals(
+    decideUpload({
+      summaryStatus: "done",
+      sources: [PERSON],
+      hasTranscript: true,
+      incoming: PERSON,
+      incomingSeconds: 6526,
+      transcriptSeconds: 425,
+    }),
+    "challenge",
+  );
+});
+
+Deno.test("длину нечем сравнить — безопасная сторона: вторая запись, а не молчаливая потеря", () => {
+  const base = { summaryStatus: "done", sources: [PERSON], hasTranscript: true, incoming: PERSON };
+  assertEquals(decideUpload({ ...base, incomingSeconds: null, transcriptSeconds: 425 }), "challenge");
+  assertEquals(decideUpload({ ...base, incomingSeconds: 425, transcriptSeconds: null }), "challenge");
+  assertEquals(decideUpload({ ...base }), "challenge");
+});
+
+Deno.test("новая запись: заметно длиннее стенограммы; ретрай с хвостом тишины и короче — повтор", () => {
+  assertEquals(isNewRecording(2520, 2504), false); // тот же файл
+  assertEquals(isNewRecording(2504 + 60, 2504), false); // хвост тишины после последней реплики
+  assertEquals(isNewRecording(1000, 2504), false); // короче текущей: арбитр её всё равно не возьмёт
+  assertEquals(isNewRecording(3500, 2504), true);
+  assertEquals(isNewRecording(300, 100), true); // короткие: порог по абсолютному запасу, не по доле
+  assertEquals(isNewRecording(150, 100), false);
+});
+
+Deno.test("конец стенограммы — максимум end по сегментам; пусто или мусор — null", () => {
+  assertEquals(transcriptEndSec({ segments: [{ end: 3 }, { end: 2504.2 }, { end: 10 }] } as never), 2504.2);
+  assertEquals(transcriptEndSec(null), null);
+  assertEquals(transcriptEndSec({ segments: [] } as never), null);
+  assertEquals(transcriptEndSec({ segments: [{ end: "x" }, {}] } as never), null);
 });
 
 Deno.test("состояние старой формы (источник не записан) — как раньше, already_processed", () => {
@@ -73,7 +124,14 @@ Deno.test("вторая запись другого источника к гот
 Deno.test("источник, уже бывший у встречи, не становится претендентом повторно", () => {
   // Очередь отработала: у встречи побывали обе записи; поздний ретрай первой — не новая запись.
   assertEquals(
-    decideUpload({ summaryStatus: "done", sources: [BOT, PERSON], hasTranscript: true, incoming: BOT }),
+    decideUpload({
+      summaryStatus: "done",
+      sources: [BOT, PERSON],
+      hasTranscript: true,
+      incoming: BOT,
+      incomingSeconds: 1800,
+      transcriptSeconds: 1790,
+    }),
     "already_processed",
   );
 });
