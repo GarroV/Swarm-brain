@@ -26,7 +26,10 @@ const OK_RESULT = {
   moved: false,
 };
 
-function fakeDb(answer: (args: Record<string, unknown>) => Record<string, unknown>) {
+function fakeDb(
+  answer: (args: Record<string, unknown>) => Record<string, unknown>,
+  account: { id: string; telegram_id: number | null } | null = null,
+) {
   const rpcCalls: RpcCall[] = [];
   const client = {
     rpc(fn: string, args: Record<string, unknown>) {
@@ -34,6 +37,15 @@ function fakeDb(answer: (args: Record<string, unknown>) => Record<string, unknow
       return Promise.resolve({ data: answer(args), error: null });
     },
     from(table: string) {
+      if (table === "allowed_users") {
+        return {
+          select: () => ({
+            eq: (_col: string, id: string) => ({
+              maybeSingle: () => Promise.resolve({ data: account?.id === id ? account : null, error: null }),
+            }),
+          }),
+        };
+      }
       if (table !== "workspaces") throw new Error(`unexpected table ${table}`);
       return {
         select: () => ({
@@ -173,4 +185,45 @@ Deno.test("разбор: id, expected и отказы базы", () => {
   ]);
   assertEquals(moveErrorStatus(undefined), null);
   assertEquals(moveErrorStatus("something_new")?.status, 500);
+});
+
+Deno.test("переезд: приглашение без входа адресуется account ID, Telegram ID остаётся null", async () => {
+  const account = { id: "1014", telegram_id: null };
+  const db = fakeDb(
+    () => ({ ...OK_RESULT, person: { account_id: account.id, telegram_id: null, email: "pending@x.io" } }),
+    account,
+  );
+  const r = await call(db, "GET", `/admin/member-accounts/${account.id}/move-preview?to=world`, MASTER, {
+    isMaster: true,
+  });
+  assertEquals(r.status, 200);
+  assertEquals(r.body.person, { account_id: account.id, telegram_id: null, name: null, email: "pending@x.io" });
+  assertEquals(db.rpcCalls, [{
+    fn: "move_member_account_to_workspace",
+    args: { p_account_id: account.id, p_to: "world", p_actor: MASTER, p_dry_run: true, p_expected: null },
+  }]);
+});
+
+Deno.test("переезд: account ID выполняет тот же подтверждённый перенос для приглашения", async () => {
+  const account = { id: "1014", telegram_id: null };
+  const db = fakeDb(
+    () => ({ ...OK_RESULT, person: { account_id: account.id, telegram_id: null, email: "pending@x.io" }, moved: true }),
+    account,
+  );
+  const r = await call(db, "POST", `/admin/member-accounts/${account.id}/move`, MASTER, {
+    isMaster: true,
+    body: { to: "world", expected: { tasks: 2, entries: 1 } },
+  });
+  assertEquals(r.status, 200);
+  assertEquals(r.body.moved, true);
+  assertEquals(db.rpcCalls[0], {
+    fn: "move_member_account_to_workspace",
+    args: {
+      p_account_id: account.id,
+      p_to: "world",
+      p_actor: MASTER,
+      p_dry_run: false,
+      p_expected: { tasks: 2, entries: 1 },
+    },
+  });
 });
