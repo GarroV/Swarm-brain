@@ -79,7 +79,7 @@ export function StickerCreate({ onClose, onCreated }: { onClose: () => void; onC
   const seg = (on: boolean) => `flex-1 rounded-md px-3 py-1.5 font-medium transition-colors ${on ? "bg-primary text-primary-foreground" : "text-ink-soft hover:bg-surface-2"}`;
 
   return createPortal(
-    <div className="fixed inset-0 z-[90] grid place-items-center bg-black/40 p-4" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+    <div className="fixed inset-0 z-[90] grid place-items-center bg-[var(--scrim-sheet)] p-4" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <form
         ref={ref}
         role="dialog"

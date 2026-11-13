@@ -1,5 +1,5 @@
 import { assertEquals } from "jsr:@std/assert";
-import { groupHome, hiddenCount, homeDateReason, homeTeam, nextHomeTasks } from "./homeTasks.ts";
+import { groupHome, hiddenCount, homeDateReason, homeDueInfo, homeTeam, nextHomeTasks } from "./homeTasks.ts";
 import type { Task } from "../types.ts";
 
 const NOW = new Date(2026, 8, 24, 12, 0, 0); // 24.09.2026, полдень
@@ -126,4 +126,11 @@ Deno.test("homeDateReason: строка знает, что её подняло �
   assertEquals(homeDateReason(task({ id: "a", due_date: "2027-01-01", remind_date: "2026-09-24" }), NOW), { kind: "ping", date: "2026-09-24" });
   assertEquals(homeDateReason(task({ id: "b", due_date: "2026-09-25", remind_date: "2026-09-29" }), NOW), { kind: "due", date: "2026-09-25" });
   assertEquals(homeDateReason(task({ id: "c", remind_date: "2026-09-20" }), NOW), null);
+});
+
+Deno.test("homeDueInfo: просрочено, сегодня и дальше считаются по календарным дням", () => {
+  assertEquals(homeDueInfo({ kind: "due", date: "2026-11-06" }, "2026-11-09"), { tone: "over", days: -3 });
+  assertEquals(homeDueInfo({ kind: "due", date: "2026-11-09" }, "2026-11-09"), { tone: "today", days: 0 });
+  assertEquals(homeDueInfo({ kind: "ping", date: "2026-11-10" }, "2026-11-09"), { tone: "later", days: 1 });
+  assertEquals(homeDueInfo({ kind: "due", date: "2026-12-01" }, "2026-11-30"), { tone: "later", days: 1 });
 });

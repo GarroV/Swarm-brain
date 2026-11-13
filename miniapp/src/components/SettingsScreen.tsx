@@ -9,6 +9,7 @@ import {
   fetchMcpSetup, mintMcpToken, fetchClaudeInstructions,
 } from "@/lib/api";
 import { countryCode } from "@/lib/countries";
+import { marketChips, OUTSIDE_MARKET_HINT } from "@/lib/marketChips";
 import type { Me, Integration, GranolaNote } from "@/types";
 import { ProfileHeader } from "@/components/profile/ProfileHeader";
 import { ConnectorsSection } from "@/components/profile/ConnectorsSection";
@@ -17,7 +18,7 @@ import { IntegrationStatusLine } from "@/components/profile/IntegrationStatusLin
 import { STALE_DAYS } from "@/lib/integrationStatus";
 import { TelegramPanel } from "@/components/profile/TelegramPanel";
 import { NotificationSoundToggle } from "@/components/settings/NotificationSoundToggle";
-import { BackdropSection } from "@/components/profile/BackdropSection";
+import { AppearanceSection, BackdropSection } from "@/components/profile/BackdropSection";
 import { PasskeysSection } from "@/components/profile/PasskeysSection";
 import { useDt, useIsDemo } from "@/components/roy/nav";
 import { SectionLabel } from "@/components/roy/ui";
@@ -33,16 +34,14 @@ import { useConfirm } from "@/components/ui/confirm";
 import { RoyIcon, type RoyIconName } from "@/components/roy/icons";
 
 // ── Profile section ───────────────────────────────────────────────────────────
-
 export function ProfileSection({ me, onSaved }: { me: Me; onSaved?: (patch: Pick<Me, "role" | "markets">) => void }) {
   const [role, setRole] = useState<string | null>(me.role);
+  const dt = useDt();
   const [markets, setMarkets] = useState<string[]>(me.markets);
   const [allowedMarkets, setAllowedMarkets] = useState<string[]>([]);
   const [marketsLoading, setMarketsLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(false);
+  const [saving, setSaving] = useState(false), [saved, setSaved] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
-
   useEffect(() => {
     fetchConfig()
       .then(c => setAllowedMarkets(c.allowed_markets))
@@ -108,13 +107,14 @@ export function ProfileSection({ me, onSaved }: { me: Me; onSaved?: (patch: Pick
           <p className="text-xs text-muted-foreground mt-2">Загрузка…</p>
         ) : (
           <div className="mt-1.5 flex flex-wrap gap-1.5">
-            {allowedMarkets.map((code) => (
+            {marketChips(allowedMarkets, markets).map(({ code, outside }) => (
               <button
                 key={code}
                 onClick={() => toggleMarket(code)}
-                className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${markets.includes(code) ? "bg-primary text-primary-foreground border-primary" : "text-muted-foreground border-border"}`}
+                title={outside ? dt(...OUTSIDE_MARKET_HINT) : undefined}
+                className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${markets.includes(code) ? "bg-primary text-primary-foreground border-primary" : "text-muted-foreground border-border"} ${outside ? "border-dashed opacity-70" : ""}`}
               >
-                {countryCode(code)}
+                {countryCode(code)}{outside ? " ⚠" : ""}
               </button>
             ))}
           </div>
@@ -855,7 +855,7 @@ export function SettingsScreen() {
           <p className="text-sm text-muted-foreground">Загрузка…</p>
         )}
 
-        <SectionLabel className="pt-1">Настройки</SectionLabel>
+        <SectionLabel className="pt-1">Настройки</SectionLabel><AppearanceSection />
         <Section icon="spark" title={dt("Настройки фона", "Background")}>
           <BackdropSection />
         </Section>

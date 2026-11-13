@@ -44,8 +44,8 @@ async function seed(db: Client) {
 
 async function addTask(db: Client, ws: string, title: string, updatedAt: string) {
   const r = await db.queryObject<{ id: string }>`
-    insert into tasks (title, status, group_id, created_by, confirmed, updated_at)
-    values (${title}, 'open', ${ws}, 'test', true, ${updatedAt})
+    insert into tasks (title, status, group_id, confirmed, updated_at)
+    values (${title}, 'open', ${ws}, true, ${updatedAt})
     returning id`;
   return r.rows[0].id;
 }

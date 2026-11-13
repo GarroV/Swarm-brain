@@ -64,8 +64,8 @@ async function seed(db: Client) {
     opts: { project?: string; ws?: string; status?: string; archived?: boolean } = {},
   ) =>
     await db.queryArray`
-      insert into tasks (title, status, group_id, project_id, created_by, confirmed, archived_at)
-      values (${title}, ${opts.status ?? "open"}, ${opts.ws ?? WS}, ${opts.project ?? null}, 'test', true,
+      insert into tasks (title, status, group_id, project_id, confirmed, archived_at)
+      values (${title}, ${opts.status ?? "open"}, ${opts.ws ?? WS}, ${opts.project ?? null}, true,
               ${opts.archived ? new Date() : null})`;
   await task("Zebra задача в открытом", { project: open });
   await task("Zebra задача в закрытом", { project: secret });

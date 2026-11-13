@@ -28,7 +28,7 @@ export function SidePanelFrame({ label, onClose, children }: { label: string; on
   return (
     <>
       <button type="button" aria-label={dt("Закрыть панель", "Close the panel")} onClick={onClose}
-        className="absolute inset-0 z-40 cursor-default bg-[rgba(10,13,17,.12)]" />
+        className="absolute inset-0 z-40 cursor-default bg-[var(--scrim-drawer)]" />
       <aside aria-label={label}
         className="roy-pop absolute inset-y-0 right-0 z-40 flex w-[560px] max-w-[96vw] flex-col overflow-hidden border-l border-line bg-background shadow-[-12px_0_40px_rgba(10,13,17,.12)] min-[1560px]:w-[640px]">
         {children}

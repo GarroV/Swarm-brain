@@ -10,7 +10,7 @@ SB         := C:/projects/swarm-staging
 # Инициализация (демо-дефолт Supabase для приватного staging): см. docs/DEPLOY.md.
 STAGING_PGPW := $(shell cat $(HOME)/.swarm/staging_pgpw 2>/dev/null)
 
-.PHONY: help smoke-staging smoke-prod staging-sync-functions staging-migrate staging-psql staging-ps staging-up staging-down deploy-plan deploy migrate-plan migrate who notice notice-off freeze unfreeze freeze-status
+.PHONY: themes-walk help smoke-staging smoke-prod staging-sync-functions staging-migrate staging-psql staging-ps staging-up staging-down deploy-plan deploy migrate-plan migrate who notice notice-off freeze unfreeze freeze-status
 
 check: ## Единый прогон проверок доски инициатив (формат, линт, типы, тесты, покрытие, мёртвый код, границы)
 	@./scripts/check
@@ -20,6 +20,9 @@ check: ## Единый прогон проверок доски инициати
 # окрасить твой; источник истины — CI. Обёртка печатает, на какой базе идут тесты.
 test-db: ## Тесты базы (*.db.test.ts) — на контуре, который выберет scripts/with-local-db
 	@./scripts/with-local-db sh -c 'deno test -A $$(find supabase/functions files -name "*.db.test.ts" | sort)'
+
+themes-walk: ## Визуальный обход цветовых схем: ключевые экраны во всех схемах и режимах → reports/themes-live (или THEMES_LIVE_OUT=путь)
+	@node miniapp/e2e/themes-walk.mjs
 
 porcha: ## Порча: ломаем ядро нарочно и убеждаемся, что тесты краснеют (код + база)
 	@./scripts/with-local-db ./scripts/porcha

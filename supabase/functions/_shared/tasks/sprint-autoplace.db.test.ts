@@ -101,8 +101,8 @@ const abs = (t: string, v: number | string | null) => v === null ? null : typeof
 
 async function addTask(db: Client, b: Built, status: string, due: string | null) {
   const r = await db.queryObject<{ id: string }>`
-    insert into tasks (title, status, group_id, project_id, created_by, due_date)
-    values ('задача', ${status}, ${WS}, ${b.projectId}, 'test', ${due}) returning id`;
+    insert into tasks (title, status, group_id, project_id, due_date)
+    values ('задача', ${status}, ${WS}, ${b.projectId}, ${due}) returning id`;
   return r.rows[0].id;
 }
 

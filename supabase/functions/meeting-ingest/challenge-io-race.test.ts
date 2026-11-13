@@ -43,6 +43,8 @@ function statefulDb(row: Row, afterFirstRead: (row: Row) => void) {
             return chain;
           },
           neq: (c: string, v: unknown) => (conds.push(() => row[c] !== v), chain),
+          gte: (c: string, v: number) => (conds.push(() => Number(row[c]) >= v), chain),
+          lte: (c: string, v: number) => (conds.push(() => Number(row[c]) <= v), chain),
           is: (c: string, _v: null) => (conds.push(() => row[c] === null || row[c] === undefined), chain),
           or: (_f: string) => chain,
           select: () => {

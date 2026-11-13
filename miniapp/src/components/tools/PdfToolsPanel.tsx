@@ -66,7 +66,7 @@ export function PdfToolsPanel() {
           src={toolUrl(t.slug)}
           aria-label={dt(t.label[0], t.label[1])}
           allow="clipboard-read; clipboard-write; local-fonts"
-          className="h-[calc(100dvh-260px)] min-h-[560px] w-full rounded-b-[12px] border-0 border-t border-line bg-white"
+          className="h-[calc(100dvh-260px)] min-h-[560px] w-full rounded-b-[12px] border-0 border-t border-line bg-surface"
         />
       ))}
     </div>

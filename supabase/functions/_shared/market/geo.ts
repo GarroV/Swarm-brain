@@ -155,3 +155,24 @@ export function samePlace(
     return d <= radiusM || (key !== null && d <= SAME_ADDRESS_RADIUS_M && streetKey(r.address) === key);
   });
 }
+
+/** Один объект, нанесённый на карту дважды (узел и здание): точка без адреса в пределах radiusM от точки
+ *  той же сети, которая осталась, — двойник. Остаётся точка с адресом; без адреса у обеих — первая. Две точки
+ *  с адресами сюда не попадают: это может быть соседний магазин, их различает samePlace. */
+export const ADDRESSLESS_TWIN_M = 35;
+export function dropAddresslessTwins<P extends { chain: string; address?: string | null } & GeoPoint>(
+  points: P[],
+  radiusM = ADDRESSLESS_TWIN_M,
+): P[] {
+  const addressed = points.filter((p) => !!p.address?.trim());
+  const index = new PlaceIndex(addressed);
+  const keptBare: P[] = [];
+  const dropped = new Set<P>();
+  for (const p of points) {
+    if (p.address?.trim()) continue;
+    // p без адреса: samePlace и PlaceIndex.has сводятся к «та же сеть и ближе radiusM».
+    if (index.has(p, radiusM) || samePlace(p, keptBare, radiusM)) dropped.add(p);
+    else keptBare.push(p);
+  }
+  return points.filter((p) => !dropped.has(p));
+}

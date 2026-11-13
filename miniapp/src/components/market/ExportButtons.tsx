@@ -5,6 +5,7 @@
 import { useState } from "react";
 import { FileCode, FileText } from "lucide-react";
 import { useDt } from "@/components/roy/nav";
+import { useTip } from "./ref";
 
 /** Шрифты эталона — той же ссылкой, что в хорватском отчёте; без сети файл падает на системный шрифт. */
 const FONTS = "https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap";
@@ -123,11 +124,24 @@ function printHtml(html: string) {
 
 export function ExportButtons({ country, name }: { country: string; name: string }) {
   const dt = useDt();
+  const tip = useTip();
   const [failed, setFailed] = useState(false);
   const title = dt(`Рынок QSR · ${name}`, `QSR market · ${name}`);
   const file = `market-${country}-${new Date().toISOString().slice(0, 10)}`;
   const htmlLabel = dt("Скачать HTML", "Download HTML");
   const pdfLabel = dt("Скачать PDF", "Download PDF");
+  const htmlTip = dt("Скачать страницу одним HTML-файлом", "Download the page as one HTML file");
+  const pdfTip = dt("Скачать PDF (A4)", "Download PDF (A4)");
+  // Мгновенная подсказка общей `.tip` раздела (она вне .mkt-wrap и в файл не попадает); с клавиатуры — под кнопкой.
+  const hint = (text: string) => ({
+    onPointerEnter: (e: React.PointerEvent) => tip.show(<span style={{ whiteSpace: "nowrap" }}>{text}</span>, e.nativeEvent),
+    onPointerLeave: tip.hide,
+    onFocus: (e: React.FocusEvent<HTMLElement>) => {
+      const r = e.currentTarget.getBoundingClientRect();
+      if (e.currentTarget.matches(":focus-visible")) tip.show(<span style={{ whiteSpace: "nowrap" }}>{text}</span>, { clientX: r.left, clientY: r.bottom });
+    },
+    onBlur: tip.hide,
+  });
   const run = (kind: "html" | "pdf") => {
     try {
       const html = snapshot(title);
@@ -141,11 +155,13 @@ export function ExportButtons({ country, name }: { country: string; name: string
   };
   return (
     <div className="exportbar" data-export="skip" role="group" aria-label={dt("Скачать", "Download")}>
-      <button type="button" onClick={() => run("html")} aria-label={htmlLabel} title={htmlLabel}>
-        <FileCode size={16} aria-hidden="true" />
+      <button type="button" onClick={() => run("html")} aria-label={htmlLabel} {...hint(htmlTip)}>
+        <FileCode size={18} aria-hidden="true" />
+        <span aria-hidden="true">HTML</span>
       </button>
-      <button type="button" onClick={() => run("pdf")} aria-label={pdfLabel} title={pdfLabel}>
-        <FileText size={16} aria-hidden="true" />
+      <button type="button" onClick={() => run("pdf")} aria-label={pdfLabel} {...hint(pdfTip)}>
+        <FileText size={18} aria-hidden="true" />
+        <span aria-hidden="true">PDF</span>
       </button>
       {failed && <span className="small" role="alert">{dt("Не получилось собрать файл.", "Could not build the file.")}</span>}
     </div>

@@ -1,3 +1,4 @@
+import { meUiPrefs, parseMePatch } from "./me-fields.ts";
 import { deriveEntryTitle, entryTagKey } from "./entry-presentation.ts";
 import { taskExtractionResponse } from "./task-extraction-response.ts";
 import { handleChatGptDesktop } from "./chatgpt-desktop.ts";
@@ -80,7 +81,7 @@ import {
 } from "../_shared/tasks/projects.ts";
 import { parseProjectFields } from "./project-fields.ts";
 import { parseLinks } from "../_shared/tasks/links.ts";
-import { COUNTRY_NAMES, detectQueryCountry, normalizeCountries } from "../_shared/countries.ts";
+import { COUNTRY_NAMES, detectQueryCountry } from "../_shared/countries.ts";
 import {
   applyGeneralSentinel,
   buildEmbeddingInput,
@@ -160,7 +161,7 @@ import { handlePublicRoadmap, isPublicRoadmapPath } from "./public-roadmap.ts";
 // Календарь на сегодня для панели главной (issue #218): доступ к Google — общий модуль
 // (его же зовёт meeting-current), отбор событий дня и границы суток — чистая логика под тестами.
 import { loadTodayMeetings } from "./today-meetings.ts";
-import { isTaskStatus, taskStatusError } from "../_shared/tasks/statuses.ts";
+import { isTaskStatus, parseStatusesParam, taskStatusError } from "../_shared/tasks/statuses.ts";
 import {
   isActive as maintenanceActive,
   maintenancePayload,
@@ -185,17 +186,6 @@ import { openIntegrationKey } from "../_shared/integration-keys.ts";
 // 2000 — не «навсегда», а окно: на проде ~1.1 кБ на задачу, то есть 2000 задач ≈ 2.2 МБ, и это
 // уже путь, которым /meetings дорос до 10 МБ (#102). Настоящий фикс — серверная фильтрация
 // статусов вместо клиентской (#111), громкое усечение — #112. Пока держим breadcrumb в логах.
-// Задники веба (PATCH /me ui_backdrop). Зеркало `miniapp/src/lib/backdrop.ts` — добавляя вариант,
-// правь оба места; null = «по умолчанию».
-// "custom" — своя картинка; сама картинка живёт в IndexedDB браузера, на сервер не уходит.
-const UI_BACKDROPS: readonly string[] = [
-  "galaxy",
-  "none",
-  "dots",
-  "aurora",
-  "custom",
-];
-
 const TASKS_LIST_LIMIT = 2000;
 
 // TTL signed-URL для приватных файлов (swarm_private): достаточно, чтобы браузер/Telegram
@@ -626,7 +616,7 @@ async function routeRequest(req: Request): Promise<Response> {
   if (req.method === "GET" && routePath === "/me") {
     const [{ data: profile }, { data: allowedUser }] = await Promise.all([
       supabase.from("user_profiles").select(
-        "first_name, last_name, role, markets, ui_backdrop",
+        "first_name, last_name, role, markets, ui_backdrop, ui_scheme, recorder_auto_start",
       ).eq("telegram_id", telegram_id).maybeSingle(),
       supabase.from("allowed_users").select("username, email, telegram_chat_id").eq(
         "telegram_id",
@@ -639,6 +629,7 @@ async function routeRequest(req: Request): Promise<Response> {
       role?: string;
       markets?: string[];
       ui_backdrop?: string | null;
+      recorder_auto_start?: boolean | null;
     } | null;
     const au = allowedUser as
       | { username?: string | null; email?: string | null; telegram_chat_id?: number | null }
@@ -658,7 +649,9 @@ async function routeRequest(req: Request): Promise<Response> {
         language: "en",
         role: p?.role ?? null,
         markets: p?.markets ?? [],
-        ui_backdrop: p?.ui_backdrop ?? null,
+        ...meUiPrefs(p),
+        // Рекордер сам начинает запись по календарю (#219); по умолчанию включено (решение 18.09.2026).
+        recorder_auto_start: p?.recorder_auto_start !== false,
         is_admin: isAdmin,
         is_demo: isDemo,
         // Telegram привязан: номер и есть Telegram (> 0) или привязан из веба (#92).
@@ -1048,6 +1041,8 @@ async function routeRequest(req: Request): Promise<Response> {
   if (routePath === "/tasks") {
     if (req.method === "GET") {
       const status = url.searchParams.get("status") ?? undefined;
+      const { statuses, error: statusesError } = parseStatusesParam(url.searchParams.get("statuses"));
+      if (statusesError) return apiErr(400, statusesError, origin);
       const country = url.searchParams.get("country") ?? undefined;
       const assigneeText = url.searchParams.get("assignee") ?? undefined;
       const mine = url.searchParams.get("mine") === "true";
@@ -1061,8 +1056,7 @@ async function routeRequest(req: Request): Promise<Response> {
       const projectId = url.searchParams.get("project_id") ?? undefined;
       const tagsParam = url.searchParams.get("tags");
       const tags = tagsParam ? tagsParam.split(",").map((t) => t.trim()).filter(Boolean) : undefined;
-      const startDateFrom = url.searchParams.get("start_date_from") ??
-        undefined;
+      const startDateFrom = url.searchParams.get("start_date_from") ?? undefined;
       const startDateTo = url.searchParams.get("start_date_to") ?? undefined;
       const dueDateFrom = url.searchParams.get("due_date_from") ?? undefined;
       const dueDateTo = url.searchParams.get("due_date_to") ?? undefined;
@@ -1083,6 +1077,7 @@ async function routeRequest(req: Request): Promise<Response> {
           columns: since ? deltaColumns(TASK_LIST_COLUMNS) : TASK_LIST_COLUMNS,
           updatedAfter: since ?? undefined,
           status,
+          statuses,
           country,
           assigneeText,
           telegramId: mine ? telegram_id : undefined,
@@ -1099,9 +1094,7 @@ async function routeRequest(req: Request): Promise<Response> {
         },
         groupId,
       );
-      // Упёрлись в лимит — значит часть задач в ответ НЕ попала, и клиент об этом не узнает
-      // (ответ — голый массив, признака усечения в нём нет). Пока #112 не сделает усечение
-      // громким для пользователя, оставляем след в логах: увидим до того, как заметит команда.
+      // Упёрлись в лимит — часть задач не попала в ответ, клиент не узнает (голый массив): след в логах (#112).
       if (tasks.length >= limit) {
         console.warn(
           `[tasks] список упёрся в лимит ${limit} — часть задач не попала в ответ (issue #111/#112)`,
@@ -1905,18 +1898,9 @@ async function routeRequest(req: Request): Promise<Response> {
     } catch {
       return apiErr(400, "Invalid JSON", origin);
     }
-    const fields: Record<string, unknown> = {};
-    if ("role" in body) fields.role = body.role ?? null;
-    if ("markets" in body && Array.isArray(body.markets)) {
-      fields.markets = normalizeCountries(body.markets as string[]);
-    }
-    if ("ui_backdrop" in body) {
-      const b = body.ui_backdrop;
-      if (b !== null && !UI_BACKDROPS.includes(b as string)) {
-        return apiErr(400, "Unknown ui_backdrop", origin);
-      }
-      fields.ui_backdrop = b;
-    }
+    const parsed = parseMePatch(body);
+    if ("error" in parsed) return apiErr(400, parsed.error, origin);
+    const fields = parsed.fields;
     if (Object.keys(fields).length === 0) {
       return new Response(null, { status: 204, headers: corsHeaders(origin) });
     }

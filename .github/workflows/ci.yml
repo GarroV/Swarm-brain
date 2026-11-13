@@ -63,6 +63,8 @@ jobs:
         run: python3 scripts/test-deploy-chain.py && python3 scripts/test-deploy-chain.py porcha
       - name: Догоняющая раскатка — до выбора PR
         run: python3 scripts/test-deploy-catchup.py && python3 scripts/test-deploy-catchup.py porcha
+      - name: Ночная раскатка — PR с правкой workflow пропускается, неудача функций объяснена + порча
+        run: python3 scripts/test-deploy-workflow-skip.py && python3 scripts/test-deploy-workflow-skip.py porcha
       # Команда recorder-upload шлюза на подставном curl: отказы и «не перезаписывать» (#919).
       # Хук pre-push: метка на уже опубликованном коммите не гоняет scripts/check (#943).
       - name: Хук pre-push — метка на опубликованном коммите + порча
@@ -73,6 +75,8 @@ jobs:
         run: python3 scripts/test-prepare-swarm-memory-limits.py
       - name: Шлюз раскатки — заливка рекордера + порча
         run: ./scripts/test-gate.sh && ./scripts/test-gate.sh porcha
+      - name: Цвета в интерфейсе — гейт на настоящем коде + проверка на плохом входе
+        run: python3 scripts/check-theme-colors.py && python3 scripts/test-theme-colors.py
 
   edge:
     name: Edge Functions (Deno) — типы

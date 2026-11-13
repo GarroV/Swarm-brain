@@ -79,8 +79,8 @@ async function seed(db: Client): Promise<Seeded> {
       values (${WS}, ${name}, ${AUTHOR}, ${priv}, ${parent}) returning id`).rows[0].id;
   const task = async (title: string, projectId: string | null, ws = WS) =>
     (await db.queryObject<{ id: string }>`
-      insert into tasks (title, status, group_id, project_id, created_by, confirmed, country, meeting_id)
-      values (${title}, 'open', ${ws}, ${projectId}, 'test', true, 'RS', null) returning id`).rows[0].id;
+      insert into tasks (title, status, group_id, project_id, confirmed, country, meeting_id)
+      values (${title}, 'open', ${ws}, ${projectId}, true, 'RS', null) returning id`).rows[0].id;
 
   const open = await project("Открытый", false);
   const closed = await project("Закрытый", true);
@@ -204,8 +204,8 @@ Deno.test("итоги принятого спринта: неизвестный 
       insert into projects (group_id, name, created_by, is_private)
       values (${OTHER_WS}, 'Чужой', ${AUTHOR}, true) returning id`).rows[0].id;
     const stray = (await db.queryObject<{ id: string }>`
-      insert into tasks (title, status, group_id, project_id, created_by, confirmed)
-      values ('сбитая ссылка', 'open', ${WS}, ${foreignProject}, 'test', true) returning id`).rows[0].id;
+      insert into tasks (title, status, group_id, project_id, confirmed)
+      values ('сбитая ссылка', 'open', ${WS}, ${foreignProject}, true) returning id`).rows[0].id;
     await db.queryArray`
       insert into sprint_items (cycle_id, task_id, in_plan, frozen_at, frozen_title, frozen_status, frozen_project)
       values (${s.acceptedId}, ${stray}, true, now(), 'сбитая ссылка', 'open', 'Чужой')`;

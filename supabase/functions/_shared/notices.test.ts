@@ -64,7 +64,7 @@ Deno.test("БЛОКИРУЮЩИЙ: после повтора у двери — �
 });
 
 Deno.test("терминальные отказы велят уйти сразу и повтора не обещают", () => {
-  for (const kind of NOTICE_KINDS.filter((k) => k !== "door_waiting")) {
+  for (const kind of NOTICE_KINDS.filter((k) => k !== "door_waiting" && k !== "guest_access_waiting")) {
     assertEquals(scheduleAfter(kind, 1), { shouldLeave: true, nextReminderInSeconds: null }, kind);
   }
 });
@@ -189,6 +189,17 @@ Deno.test("БЛОКИРУЮЩИЙ: текст «комната закрыта д
       text.includes(String(BOT_PROFILE.guestRoom.waitMinutes)),
       `${lang}: время ожидания не подставилось из профиля (${BOT_PROFILE.guestRoom.waitMinutes} мин) — ${text}`,
     );
+  }
+});
+
+Deno.test("БЛОКИРУЮЩИЙ: ранний «стук» guest_access_waiting — встречный вид, просит открыть доступ, бота не прогоняет", () => {
+  const parsed = notice({ kind: "guest_access_waiting" });
+  assertEquals(parsed.scope.type, "meeting");
+  assertEquals(scheduleAfter("guest_access_waiting", 1), { shouldLeave: false, nextReminderInSeconds: null });
+  for (const lang of NOTICE_LANGS) {
+    const text = renderNotice(notice({ kind: "guest_access_waiting", lang }), "Weekly", 1);
+    assert(text.includes("Weekly") && !text.includes("{"), `${lang}: подстановки не заполнены — ${text}`);
+    assert(/external participants|внешних участников/i.test(text), `${lang}: не сказано, что открыть — ${text}`);
   }
 });
 

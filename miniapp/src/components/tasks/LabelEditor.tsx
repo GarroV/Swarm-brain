@@ -52,7 +52,7 @@ export function LabelEditor({ label, open, onClose, onSaved }: Props) {
   };
 
   return (
-    <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/30 p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-[120] flex items-center justify-center bg-[var(--scrim-faint)] p-4" onClick={onClose}>
       <div className="w-full max-w-[360px] rounded-2xl border border-line bg-card p-4 shadow-xl" onClick={(e) => e.stopPropagation()}>
         <h2 className="mb-3 font-bold text-accent-ink" style={{ fontSize: 16 }}>{editing ? dt(LABEL_EDITOR_COPY.list.ru, LABEL_EDITOR_COPY.list.en) : dt(LABEL_EDITOR_COPY.newList.ru, LABEL_EDITOR_COPY.newList.en)}</h2>
         <input

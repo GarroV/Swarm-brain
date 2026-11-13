@@ -11,9 +11,36 @@ import { useEffect } from "react";
 // доезжает в пределах окна, а трафик это один условный GET небольшого файла.
 const UPDATE_CHECK_MS = 10 * 60 * 1000;
 
+// DEV_MODE — локальная разработка и живая проверка (моки, npm run dev / локальная сборка).
+// Service worker там вреден: cache-first для _next-статики отдаёт прошлый бандл, и проверка
+// молча гоняет старый код (issue #128). Поэтому в DEV_MODE воркер не ставим, а прежний
+// (оставшийся от раньше открытого прода/сборки на том же origin) снимаем вместе с кэшем.
+// На проде NEXT_PUBLIC_DEV_MODE не выставлен — поведение воркера там не меняется.
+const DEV_MODE = process.env.NEXT_PUBLIC_DEV_MODE === "true";
+
+/** Снести воркеры и кэши; true — если страница была под контролем воркера (бандл мог быть старым). */
+async function purgeServiceWorker(): Promise<boolean> {
+  const wasControlled = !!navigator.serviceWorker.controller;
+  const regs = await navigator.serviceWorker.getRegistrations();
+  await Promise.all(regs.map((r) => r.unregister()));
+  if ("caches" in window) {
+    const keys = await caches.keys();
+    await Promise.all(keys.map((k) => caches.delete(k)));
+  }
+  return wasControlled;
+}
+
 export function ServiceWorkerRegister() {
   useEffect(() => {
     if (!("serviceWorker" in navigator)) return;
+
+    if (DEV_MODE) {
+      // Страница уже загружена из кэша воркера — один раз перезагружаем, уже без него.
+      purgeServiceWorker()
+        .then((wasControlled) => { if (wasControlled) window.location.reload(); })
+        .catch(() => { /* не критично: максимум остаётся старое поведение */ });
+      return;
+    }
 
     let refreshing = false;
     const hadController = !!navigator.serviceWorker.controller;

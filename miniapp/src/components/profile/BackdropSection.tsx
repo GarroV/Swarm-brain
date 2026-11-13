@@ -7,6 +7,7 @@ import { CustomBackdropPanel } from "./CustomBackdropPanel";
 import { useBackdrop } from "@/lib/useBackdrop";
 import { useDt } from "@/components/roy/nav";
 import { RoyIcon } from "@/components/roy/icons";
+import { SchemeDialog } from "@/components/roy/SchemeDialog";
 
 // Выбор задника — личная настройка (docs/decisions/2026-09-24-backdrop.md). Применяется сразу в
 // этой вкладке, в профиль уходит следом: так выбор едет на другие устройства.
@@ -118,6 +119,25 @@ export function BackdropSection() {
           )}
         </p>
       )}
+    </div>
+  );
+}
+
+/** «Оформление»: цветовая схема и режим — то же меню, что шестерёнка в рейке (на мобайле рейки нет). */
+export function AppearanceSection() {
+  const dt = useDt();
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="border border-line rounded-[10px] overflow-hidden bg-surface">
+      <button type="button" onClick={() => setOpen(true)} aria-haspopup="dialog"
+        className="w-full flex items-center justify-between px-4 py-3 bg-surface-2 text-sm font-semibold text-ink transition-colors hover:bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]">
+        <span className="flex items-center gap-2.5">
+          <RoyIcon name="gear" size={16} strokeWidth={1.9} className="text-ink-soft" />
+          {dt("Оформление", "Appearance")}
+        </span>
+        <RoyIcon name="cright" size={15} strokeWidth={2} className="text-ink-soft" />
+      </button>
+      <SchemeDialog open={open} onOpenChange={setOpen} />
     </div>
   );
 }
