@@ -46,11 +46,17 @@ async function seed(db: Client) {
   return { a, b, account: account.id, person: person.id, solo, mixed, colleague, label };
 }
 
-async function move(db: Client, f: Awaited<ReturnType<typeof seed>>, dry: boolean, expected: unknown = null) {
+async function move(
+  db: Client,
+  f: Awaited<ReturnType<typeof seed>>,
+  dry: boolean,
+  expected: unknown = null,
+  identity: unknown = { telegram_id: null },
+) {
   const r = await one<{ result: Row }>(
     db,
-    `select move_member_account_to_workspace($1, $2, $3, $4, $5::jsonb) as result`,
-    [f.account, f.b, f.colleague, dry, expected === null ? null : JSON.stringify(expected)],
+    `select move_member_account_to_workspace($1, $2, $3, $4, $5::jsonb, $6::jsonb) as result`,
+    [f.account, f.b, f.colleague, dry, expected === null ? null : JSON.stringify(expected), JSON.stringify(identity)],
   );
   return r.result;
 }
@@ -117,5 +123,68 @@ Deno.test("переезд приглашения: изменившийся previ
     assertEquals(await one(db, `select count(*)::int as count from member_moves where account_id = $1`, [f.account]), {
       count: 0,
     });
+  });
+});
+
+Deno.test("переезд по account: неверные ссылки и прежнее пространство не меняют данные", async () => {
+  await fixture(async (db, f) => {
+    const check = async (id: string | null, to: string | null) => {
+      const r = await one<{ result: Row }>(
+        db,
+        `select move_member_account_to_workspace($1::bigint, $2::text, $3::bigint, false, null, '{"telegram_id":null}'::jsonb) as result`,
+        [id, to, f.colleague],
+      );
+      return r.result.error;
+    };
+    assertEquals(await check(null, f.b), "bad_input");
+    assertEquals(await check(f.account, null), "bad_input");
+    assertEquals(await check("-1", f.b), "person_not_found");
+    assertEquals(await check(f.account, f.a), "same_workspace");
+    assertEquals(await one(db, `select group_id from allowed_users where id = $1`, [f.account]), { group_id: f.a });
+    assertEquals(await one(db, `select count(*)::int as count from member_moves where account_id = $1`, [f.account]), {
+      count: 0,
+    });
+  });
+});
+
+Deno.test("переезд по account: обязательный снимок identity не допускает пропуск или неверную форму", async () => {
+  await fixture(async (db, f) => {
+    for (const identity of [null, {}, [], true, { telegram_id: "42" }, { telegram_id: 1.5 }, { telegram_id: 1e30 }]) {
+      const r = await move(db, f, true, null, identity);
+      assertEquals(r.error, "bad_input");
+    }
+    const omitted = await one<{ result: Row }>(
+      db,
+      `select move_member_account_to_workspace($1, $2, $3, true, null) as result`,
+      [f.account, f.b, f.colleague],
+    );
+    assertEquals(omitted.result.error, "bad_input");
+    assertEquals(await one(db, `select group_id from allowed_users where id = $1`, [f.account]), { group_id: f.a });
+  });
+});
+
+Deno.test("переезд по account: вход после lookup отклоняет старый снимок до preview и записи; свежий снимок работает", async () => {
+  await fixture(async (db, f) => {
+    const previous = { telegram_id: null };
+    const preview = await move(db, f, true, null, previous);
+    const counts = preview.counts as Row;
+    const expected = { tasks: counts.tasks, entries: counts.entries };
+    const freshId = f.colleague - 100;
+    await db.queryArray`update allowed_users set telegram_id = ${freshId} where id = ${f.account}`;
+    for (const dry of [true, false]) {
+      const r = await move(db, f, dry, dry ? null : expected, previous);
+      assertEquals(r, { error: "identity_changed" });
+    }
+    assertEquals(await one(db, `select group_id, telegram_id::text from allowed_users where id = $1`, [f.account]), {
+      group_id: f.a,
+      telegram_id: String(freshId),
+    });
+    assertEquals(await one(db, `select group_id from people where id = $1`, [f.person]), { group_id: f.a });
+    assertEquals(await one(db, `select group_id from tasks where id = $1`, [f.solo]), { group_id: f.a });
+    assertEquals(await one(db, `select count(*)::int as count from member_moves where account_id = $1`, [f.account]), {
+      count: 0,
+    });
+    const moved = await move(db, f, false, expected, { telegram_id: freshId });
+    assertEquals([moved.error, moved.moved], [undefined, true]);
   });
 });

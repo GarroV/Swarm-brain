@@ -3,7 +3,7 @@
 import { assertEquals } from "jsr:@std/assert@1";
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { handleAdminRoutes } from "./admin.ts";
-import { moveErrorStatus, parseExpected, parseTelegramId } from "./member-move-routes.ts";
+import { moveErrorStatus, parseAccountId, parseExpected, parseTelegramId } from "./member-move-routes.ts";
 
 const OWNER = 744230399;
 const MASTER = 555;
@@ -200,7 +200,14 @@ Deno.test("переезд: приглашение без входа адресу
   assertEquals(r.body.person, { account_id: account.id, telegram_id: null, name: null, email: "pending@x.io" });
   assertEquals(db.rpcCalls, [{
     fn: "move_member_account_to_workspace",
-    args: { p_account_id: account.id, p_to: "world", p_actor: MASTER, p_dry_run: true, p_expected: null },
+    args: {
+      p_account_id: account.id,
+      p_to: "world",
+      p_actor: MASTER,
+      p_dry_run: true,
+      p_expected: null,
+      p_expected_identity: { telegram_id: null },
+    },
   }]);
 });
 
@@ -224,6 +231,63 @@ Deno.test("переезд: account ID выполняет тот же подтв�
       p_actor: MASTER,
       p_dry_run: false,
       p_expected: { tasks: 2, entries: 1 },
+      p_expected_identity: { telegram_id: null },
     },
   });
+});
+
+Deno.test("переезд: account ID сохраняет bigint и отбрасывает неверные ссылки", () => {
+  for (const id of ["1", "9007199254740993", "9223372036854775807"]) assertEquals(parseAccountId(id), id);
+  for (const id of ["", "0", "-1", "01", "1e3", "1.5", "9223372036854775808", "1\n"]) {
+    assertEquals(parseAccountId(id), null);
+  }
+});
+
+Deno.test("переезд: account-route сохраняет прежний master и owner guards", async () => {
+  const account = { id: "1014", telegram_id: OWNER };
+  const db = fakeDb(() => OK_RESULT, account);
+  const member = await call(db, "GET", `/admin/member-accounts/${account.id}/move-preview?to=world`, ADMIN_CEE);
+  const owner = await call(db, "POST", `/admin/member-accounts/${account.id}/move`, MASTER, {
+    isMaster: true,
+    body: { to: "world", expected: { tasks: 2, entries: 1 } },
+  });
+  assertEquals([member.status, member.body.code], [403, "master_admin_only"]);
+  assertEquals([owner.status, owner.body.code], [403, "owner_only"]);
+  assertEquals(db.rpcCalls, []);
+});
+
+Deno.test("переезд: неизвестный или некорректный account не вызывает функцию переноса", async () => {
+  const db = fakeDb(() => OK_RESULT);
+  for (const id of ["999", "0", "1e3"]) {
+    const r = await call(db, "GET", `/admin/member-accounts/${id}/move-preview?to=world`, MASTER, { isMaster: true });
+    assertEquals([r.status, r.body.code], [404, "person_not_found"]);
+  }
+  assertEquals(db.rpcCalls, []);
+});
+
+Deno.test("переезд по account: снимок берётся из lookup, клиент не подменяет его", async () => {
+  const account = { id: "1014", telegram_id: null };
+  const db = fakeDb(() => ({ ...OK_RESULT, moved: true }), account);
+  const r = await call(db, "POST", `/admin/member-accounts/${account.id}/move`, MASTER, {
+    isMaster: true,
+    body: {
+      to: "world",
+      expected: { tasks: 2, entries: 1, telegram_id: OWNER },
+      p_expected_identity: { telegram_id: OWNER },
+    },
+  });
+  assertEquals(r.status, 200);
+  assertEquals(db.rpcCalls[0].args.p_expected_identity, { telegram_id: null });
+  assertEquals(db.rpcCalls[0].args.p_expected, { tasks: 2, entries: 1 });
+});
+
+Deno.test("переезд по account: смена identity возвращает 409 без данных человека", async () => {
+  const account = { id: "1014", telegram_id: null };
+  const db = fakeDb(() => ({ error: "identity_changed" }), account);
+  const r = await call(db, "POST", `/admin/member-accounts/${account.id}/move`, MASTER, {
+    isMaster: true,
+    body: { to: "world", expected: { tasks: 2, entries: 1 } },
+  });
+  assertEquals(r.status, 409);
+  assertEquals(r.body, { error: "Data changed since the preview", code: "identity_changed" });
 });
