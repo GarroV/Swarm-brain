@@ -83,3 +83,21 @@ Deno.test("admin actions need an admin's MCP token: the collector token is refus
   assertEquals(bad.status, 400);
   assert(Array.isArray((await bad.json()).details));
 });
+
+Deno.test("#899 collector token: unknown source and malformed adapter are refused before the base", async () => {
+  const post = (body: unknown) =>
+    handleIngest(
+      new Request("http://x", {
+        method: "POST",
+        headers: { authorization: "Bearer t0ken" },
+        body: JSON.stringify(body),
+      }),
+      "t0ken",
+    );
+  const base = { country: "HR", started_at: "2026-11-13T00:00:00Z" };
+  assertEquals((await post({ ...base, source: "drop-table" })).status, 400);
+  assertEquals((await post({ ...base, source: "dodo", adapter: "x'; drop" })).status, 400);
+  assertEquals((await post({ ...base, source: "registry", adapter: "A".repeat(80), failed: "x" })).status, 400);
+  // Известные источник и адаптер проходят проверку и доходят до базы (её здесь нет — 500, не 400).
+  assertEquals((await post({ ...base, source: "registry", adapter: "ee-ariregister", failed: "x" })).status, 500);
+});
