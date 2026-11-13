@@ -237,7 +237,7 @@ func runWidgetSelfTest(pill: Bool, morph: Bool = false, seconds: Double) {
 
     // Дефолт считается от чистого состояния: если окно раньше перетаскивали, сохранённая
     // позиция победила бы и мы проверили бы не то, что видит новый человек.
-    let savedKey = "widget.origin"
+    let savedKey = "widget.inset"
     let saved = UserDefaults.standard.string(forKey: savedKey)
     UserDefaults.standard.removeObject(forKey: savedKey)
 

@@ -90,14 +90,12 @@ final class RecorderWidget {
     // Баннер встречи шире: в нём название, время слота и кнопки. Ширину берём по контенту,
     // а не числом из головы — длинные названия и локали иначе обрезаются по-разному.
     private static let bannerMinSize = CGSize(width: 300, height: 84)
-    // Куда человек перетащил капсулу — ПРАВЫЙ ВЕРХНИЙ угол (см. WidgetPlacement.origin).
-    // UI-состояние, поэтому UserDefaults, а не config.json. Прежний ключ "widget.origin"
-    // хранил левый нижний угол и накопил дрейф — не читаем его, чтобы капсула вернулась
-    // на дефолтное место у всех, у кого уползла.
-    private static let anchorKey = "widget.topRight"
-    // Окно двигает сам код (показ, переход капсула ↔ баннер) — такое движение не запоминаем:
-    // помнить надо только то, куда перетащил человек.
-    private var isMovingProgrammatically = false
+    // Куда человек перетащил капсулу — отступ правого верхнего угла от правого верхнего угла
+    // экрана (WidgetInset, см. WidgetPlacement). UI-состояние, поэтому UserDefaults, а не
+    // config.json. Прежние ключи ("widget.origin" — левый нижний угол, "widget.topRight" —
+    // абсолютный правый верхний) не читаем: в абсолютных координатах место на другом
+    // мониторе оказывалось посреди экрана (06.11.2026).
+    private static let insetKey = "widget.inset"
 
     private var levelTimer: Timer?
     private var lastLevel: CGFloat = 0
@@ -378,7 +376,7 @@ final class RecorderWidget {
     // ── Построение ───────────────────────────────────────────────────────────────
     private func ensurePanel() {
         if panel != nil { return }
-        let p = NSPanel(contentRect: NSRect(origin: .zero, size: Self.pillSize),
+        let p = WidgetPanel(contentRect: NSRect(origin: .zero, size: Self.pillSize),
                         styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         p.isFloatingPanel = true
         p.level = .floating
@@ -474,9 +472,10 @@ final class RecorderWidget {
         ])
         p.contentView = card
         panel = p
-        // Капсула таскается за фон (isMovableByWindowBackground) — ловим конец перетаскивания.
-        NotificationCenter.default.addObserver(self, selector: #selector(panelDidMove),
-                                               name: NSWindow.didMoveNotification, object: p)
+        // Капсула таскается за фон (isMovableByWindowBackground). Место запоминаем ТОЛЬКО когда
+        // человек отпустил мышь после настоящего перетаскивания (WidgetPanel); didMove не слушаем —
+        // его шлёт и macOS при смене мониторов.
+        p.onDragEnd = { [weak self] in self?.rememberPlace() }
     }
 
     // ── Баннер встречи ──────────────────────────────────────────────────────────
@@ -640,25 +639,20 @@ final class RecorderWidget {
         let size = currentSize()
         if !p.isVisible {
             // Куда перетащили — там и появляется; кто не таскал — по дефолту WidgetPlacement.
-            let origin = WidgetPlacement.origin(savedTopRight: Self.savedAnchor(), size: size,
+            let origin = WidgetPlacement.origin(savedInset: Self.savedInset(), size: size,
                                                 in: screen.visibleFrame)
-            isMovingProgrammatically = true
             p.setFrame(NSRect(origin: origin, size: size), display: true)
-            isMovingProgrammatically = false
         } else if p.frame.size != size {
             // Смена режима (баннер встречи ↔ капсула записи): окно ОДНО и то же, поэтому
             // не прыгаем на новую позицию, а плавно меняем ширину/высоту от правого-верхнего
             // угла — уведомление буквально вытекает из капсулы (просьба владельца 03.09.2026).
             let target = NSRect(origin: WidgetPlacement.morphOrigin(from: p.frame, to: size, in: screen.visibleFrame),
                                 size: size)
-            isMovingProgrammatically = true
-            NSAnimationContext.runAnimationGroup({ ctx in
+            NSAnimationContext.runAnimationGroup { ctx in
                 ctx.duration = Self.morphDuration
                 ctx.timingFunction = CAMediaTimingFunction(name: .easeOut)
                 p.animator().setFrame(target, display: true)
-            }, completionHandler: { [weak self] in
-                self?.isMovingProgrammatically = false
-            })
+            }
             // Содержимое нового режима проявляем, а не подменяем мгновенно: иначе текст
             // баннера возникает раньше, чем окно под него доехало.
             fadeInContent()
@@ -685,16 +679,18 @@ final class RecorderWidget {
     }
 
     // ── Память положения ─────────────────────────────────────────────────────────
-    private static func savedAnchor() -> CGPoint? {
-        guard let raw = UserDefaults.standard.string(forKey: anchorKey) else { return nil }
-        let p = NSPointFromString(raw)
-        return p == .zero ? nil : p   // .zero — и «не задано», и разбор мусора
+    private static func savedInset() -> WidgetInset? {
+        guard let raw = UserDefaults.standard.string(forKey: insetKey) else { return nil }
+        return WidgetInset(stored: raw)   // мусор → nil → дефолтное место
     }
 
-    @objc private func panelDidMove() {
-        guard let p = panel, p.isVisible, !isMovingProgrammatically else { return }
-        let anchor = NSPoint(x: p.frame.maxX, y: p.frame.maxY)
-        UserDefaults.standard.set(NSStringFromPoint(anchor), forKey: Self.anchorKey)
+    // Вызывается только после перетаскивания мышкой (WidgetPanel.onDragEnd).
+    private func rememberPlace() {
+        guard let p = panel, p.isVisible,
+              let screen = p.screen ?? NSScreen.main else { return }
+        let inset = WidgetPlacement.inset(of: p.frame, in: screen.visibleFrame)
+        UserDefaults.standard.set(inset.stored, forKey: Self.insetKey)
+        Diagnostics.shared.log("WIDGET moved by drag → right=\(Int(inset.right)) top=\(Int(inset.top)) (от правого верхнего угла экрана)")
     }
 
     // ── Пульс индикатора записи ─────────────────────────────────────────────────
