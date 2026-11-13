@@ -11,14 +11,14 @@ import {
   tooShortReason,
 } from "./audio-part-guard.ts";
 
-function box(type: string, body: Uint8Array): Uint8Array {
+function box(type: string, body: Uint8Array): Uint8Array<ArrayBuffer> {
   const out = new Uint8Array(8 + body.length);
   new DataView(out.buffer).setUint32(0, out.length);
   out.set(new TextEncoder().encode(type), 4);
   out.set(body, 8);
   return out;
 }
-function mvhd(version: 0 | 1, timescale: number, duration: number): Uint8Array {
+function mvhd(version: 0 | 1, timescale: number, duration: number): Uint8Array<ArrayBuffer> {
   const body = new Uint8Array(version === 1 ? 36 : 28);
   const v = new DataView(body.buffer);
   v.setUint8(0, version);
