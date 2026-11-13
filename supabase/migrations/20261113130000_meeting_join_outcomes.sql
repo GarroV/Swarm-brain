@@ -21,9 +21,9 @@
 -- не раз в минуту опроса).
 --
 -- Обратимость: только добавляет таблицу; старый код о ней не знает. Откат —
--- `drop table public.scriba_join_outcomes;` после того, как код перестанет её писать.
+-- `drop table public.meeting_join_outcomes;` после того, как код перестанет её писать.
 
-create table if not exists public.scriba_join_outcomes (
+create table if not exists public.meeting_join_outcomes (
   id           bigint generated always as identity primary key,
   occurred_at  timestamptz not null default now(),
   group_id     text not null references public.workspaces(id),
@@ -42,18 +42,18 @@ create table if not exists public.scriba_join_outcomes (
   source       text not null check (source in ('notice', 'calendar')),
   outcome_key  text not null,
   detail       text,
-  constraint scriba_join_outcomes_one unique (invited_by, outcome_key, outcome)
+  constraint meeting_join_outcomes_one unique (invited_by, outcome_key, outcome)
 );
 
-comment on table public.scriba_join_outcomes is
+comment on table public.meeting_join_outcomes is
   'Исходы заходов бота scriba (#1244): не впустили / упал / календарь не ответил / не пойдёт и почему. Пишет сервер (meeting-notice, meeting-calendar).';
-comment on column public.scriba_join_outcomes.outcome_key is
+comment on column public.meeting_join_outcomes.outcome_key is
   'Ключ повтора: id встречи, ключ события календаря или person:<час UTC> у причин уровня человека.';
 
-create index if not exists scriba_join_outcomes_time_idx
-  on public.scriba_join_outcomes (occurred_at desc);
+create index if not exists meeting_join_outcomes_time_idx
+  on public.meeting_join_outcomes (occurred_at desc);
 
 -- Data API: явный грант service_role (см. supabase/migrations/_template_new_table.sql).
-grant select, insert, update, delete on public.scriba_join_outcomes to service_role;
-revoke all on public.scriba_join_outcomes from anon, authenticated;
-alter table public.scriba_join_outcomes enable row level security;
+grant select, insert, update, delete on public.meeting_join_outcomes to service_role;
+revoke all on public.meeting_join_outcomes from anon, authenticated;
+alter table public.meeting_join_outcomes enable row level security;

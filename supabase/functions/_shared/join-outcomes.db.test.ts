@@ -7,7 +7,7 @@ import { JOIN_OUTCOMES } from "./join-outcomes.ts";
 
 const DB_URL = Deno.env.get("SUPABASE_DB_URL") ??
   "postgresql://postgres:postgres@127.0.0.1:54322/postgres";
-const TABLE = "public.scriba_join_outcomes";
+const TABLE = "public.meeting_join_outcomes";
 const USER_ID = 9990013;
 const GROUP = "outcomes-test";
 

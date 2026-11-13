@@ -2,13 +2,7 @@
 // строкой, и что сбой записи не бросает.
 import { assertEquals } from "@std/assert";
 import { NOTICE_KINDS } from "./notices.ts";
-import {
-  JOIN_OUTCOMES,
-  outcomeOfNotice,
-  type OutcomeRecord,
-  outcomesFromSkips,
-  recordOutcomes,
-} from "./join-outcomes.ts";
+import { JOIN_OUTCOMES, outcomeOfNotice, type OutcomeRecord, recordOutcomes } from "./join-outcomes.ts";
 
 Deno.test("исходы: каждый вид нотисы либо несёт известный исход, либо промежуточный", () => {
   for (const kind of NOTICE_KINDS) {
@@ -22,17 +16,6 @@ Deno.test("исходы: «жду у двери» — исход только к
   assertEquals(outcomeOfNotice("door_waiting", true), "door_timeout");
   assertEquals(outcomeOfNotice("door_denied", false), "door_denied");
   assertEquals(outcomeOfNotice("guest_access_waiting", true), null);
-});
-
-Deno.test("исходы: «не пойдёт» календаря — ключ события, а у причин человека — час", () => {
-  const rows = outcomesFromSkips("g", [
-    { invited_by: 7, calendar_key: "k:2026-11-13", title: null, reason: "declined" },
-    { invited_by: 7, calendar_key: null, title: null, reason: "calendar_unavailable" },
-  ], Date.parse("2026-11-13T13:24:10Z"));
-  assertEquals(rows.map((r) => [r.outcome, r.outcome_key, r.source]), [
-    ["declined", "k:2026-11-13", "calendar"],
-    ["calendar_unavailable", "person:2026-11-13T13", "calendar"],
-  ]);
 });
 
 Deno.test("исходы: сбой записи не бросает, а пишется в лог", async () => {

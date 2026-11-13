@@ -48,7 +48,8 @@ import { sweep, type SweepSource, type TakenJob } from "./sweep.ts";
 import { recordSweepMisses } from "./missed.ts";
 import { makeMissStore } from "../_shared/calendar-miss-store.ts";
 import { mintGrants } from "../_shared/agent-grant.ts";
-import { makeOutcomeStore, outcomesFromSkips, recordOutcomes } from "../_shared/join-outcomes.ts";
+import { makeOutcomeStore, recordOutcomes } from "../_shared/join-outcomes.ts";
+import { outcomesFromSkips } from "./outcomes.ts";
 import { loadCoveredRooms } from "../_shared/manual-rooms.ts";
 
 const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);

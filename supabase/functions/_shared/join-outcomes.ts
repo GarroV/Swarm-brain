@@ -1,13 +1,12 @@
-// Исходы заходов бота встреч scriba (issue #1244): чистая часть — какие исходы бывают, как из
-// нотисы и из «не пойдёт» календаря получается строка, и запись в таблицу scriba_join_outcomes
-// (канон схемы — migrations/20261113130000_scriba_join_outcomes.sql). Решений о людях здесь нет:
+// Исходы заходов бота встреч (issue #1244): чистая часть — какие исходы бывают, как из
+// нотисы и из «не пойдёт» календаря получается строка, и запись в таблицу meeting_join_outcomes
+// (канон схемы — migrations/20261113130000_meeting_join_outcomes.sql). Решений о людях здесь нет:
 // запись молчаливая для человека, ничего не отправляет.
 //
 // Пишет сервер там, где исход и так приходит: meeting-notice (нотиса бота) и meeting-calendar
 // (опрос календаря). Сбой записи не роняет вызывающего: нотиса и задания боту важнее учёта, а
 // потерянная строка видна в логе функции.
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
-import type { DispatchSkip, SkipReason } from "./calendar-dispatch.ts";
 import type { NoticeKind } from "./notices.ts";
 
 /** Исходы из нотис контейнера. */
@@ -27,7 +26,7 @@ export const NOTICE_OUTCOMES = [
   "join_failed",
 ] as const;
 
-/** Исходы из «не пойдёт» на опросе календаря — те же слова, что SkipReason. */
+/** Исходы из «не пойдёт» на опросе календаря — те же слова, что причины пропуска (meeting-calendar/outcomes.ts). */
 export const SKIP_OUTCOMES = [
   "unsupported_platform",
   "unrecognized_link",
@@ -37,7 +36,7 @@ export const SKIP_OUTCOMES = [
   "calendar_not_connected",
   "calendar_token_dead",
   "calendar_unavailable",
-] as const satisfies readonly SkipReason[];
+] as const;
 
 export type JoinOutcome = (typeof NOTICE_OUTCOMES)[number] | (typeof SKIP_OUTCOMES)[number];
 
@@ -82,25 +81,6 @@ export function outcomeOfNotice(kind: NoticeKind, shouldLeave: boolean): JoinOut
   return NOTICE_TO_OUTCOME[kind];
 }
 
-/** Строки исходов по «не пойдёт» опроса календаря. Причины уровня человека — раз в час. */
-export function outcomesFromSkips(
-  groupId: string,
-  skipped: readonly DispatchSkip[],
-  nowMs: number,
-): OutcomeRecord[] {
-  const hour = new Date(nowMs).toISOString().slice(0, 13);
-  return skipped.map((s) => ({
-    group_id: groupId,
-    invited_by: s.invited_by,
-    meeting_id: null,
-    calendar_key: s.calendar_key,
-    outcome: s.reason,
-    source: "calendar" as const,
-    outcome_key: s.calendar_key ?? `person:${hour}`,
-    detail: null,
-  }));
-}
-
 export interface OutcomeStore {
   /** Записать исходы; уже записанные (человек + ключ + исход) не трогаются. Бросает при сбое базы. */
   record(rows: readonly OutcomeRecord[]): Promise<void>;
@@ -110,11 +90,11 @@ export function makeOutcomeStore(supabase: SupabaseClient): OutcomeStore {
   return {
     async record(rows) {
       if (rows.length === 0) return;
-      const { error } = await supabase.from("scriba_join_outcomes").upsert(
+      const { error } = await supabase.from("meeting_join_outcomes").upsert(
         [...rows],
         { onConflict: "invited_by,outcome_key,outcome", ignoreDuplicates: true },
       );
-      if (error) throw new Error(`scriba_join_outcomes insert: ${error.message}`);
+      if (error) throw new Error(`meeting_join_outcomes insert: ${error.message}`);
     },
   };
 }
