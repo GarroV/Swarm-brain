@@ -65,6 +65,12 @@ export const PL: CountryConfig = {
       segment: "coffee",
       osmBrands: ["Costa Coffee", "Costa"],
     },
+    // Известные фастфуд-сети, которые автопоиск не находит (категория restaurant или нет бренда) —
+    // решение владельца 10.11.2026.
+    { key: "da-grasso", name: "Da Grasso", segment: "pizza", osmBrands: ["Da Grasso"], osmNames: ["Da Grasso"] },
+    { key: "pasibus", name: "Pasibus", segment: "burger", osmBrands: ["Pasibus"], osmNames: ["Pasibus"] },
+    { key: "gruby-benek", name: "Gruby Benek", segment: "other", osmNames: ["Gruby Benek", "Pizzeria Gruby Benek"] },
+    { key: "kebab-king", name: "Kebab King", segment: "grill", osmNames: ["Kebab King"] },
   ],
   companies: [],
   sources: [
