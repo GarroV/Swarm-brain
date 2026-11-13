@@ -1,7 +1,7 @@
 // ⚠️ Поля, помеченные , СПИСОЧНЫЙ GET /tasks не отдаёт (проекция TASK_LIST_COLUMNS,
 // issue #116): вес строки задачи — во многом имена 35 полей JSON, 1146 Б против 583 Б.
 //  здесь значит «не загружено», а не «пусто» — пусто это .
-// Полную задачу даёт fetchTask(id); детальные экраны (TaskDetail, NewTask) так и делают.
+// Полную задачу даёт fetchTask(id); маршруты taskDetail/newTask (TaskRoute) и NotificationsBell так и делают.
 // Редактор получает объект ИЗ СПИСКА, поэтому у него отдельная защита: пока
 // , запись заблокирована (см. isPartial в TaskModal) — иначе
 // автосейв отправил бы  и стёр реальный текст.
@@ -22,7 +22,10 @@ export type Task = {
   remind_date: string | null;
   reminded_at: string | null;
   tags?: string[];
+  /** Первая из `countries` (серверное зеркало до снятия колонки, #1262). Читать — `taskCountryCodes`. */
   country: string | null;
+  /** ISO-коды стран задачи; нет поля — строка до раскатки #1262, тогда читается `country`. */
+  countries?: string[];
   task_role?: string | null;
   priority: string | null;
   source?: string;

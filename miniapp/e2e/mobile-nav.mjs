@@ -87,6 +87,24 @@ await section("Блок 1", async () => {
     await tap(page, 120, y2);
     const closed = (await stableRows(page)).every((x) => /translateX\(0px\)/.test(x.dx) || !x.dx);
     r.ok("тап при открытой шторке закрывает её, а не открывает задачу", closed && !(await dialogOpen(page)));
+
+    // «Изменить» в шторке ведёт в ТО ЖЕ окно TaskModal, что и тап по строке (#600), а не в отдельную форму.
+    await swipe(page, 320, y2, -130, 0);
+    const editPoint = await page.evaluate(() => {
+      const b = [...document.querySelectorAll("button")].find((x) => x.getAttribute("aria-label") === "Изменить" || x.innerText.trim() === "Изменить");
+      if (!b || !b.getBoundingClientRect().width) return null;
+      const bb = b.getBoundingClientRect();
+      return { x: bb.left + bb.width / 2, y: bb.top + bb.height / 2 };
+    });
+    if (editPoint) await tap(page, editPoint.x, editPoint.y);
+    await wait(900);
+    const editor = await page.evaluate(() => {
+      const dlg = [...document.querySelectorAll('[role="dialog"]')].find((e) => e.getBoundingClientRect().width > 0);
+      return { dialog: !!dlg, heading: dlg?.querySelector("h2")?.innerText, title: dlg?.querySelector("textarea#modal-title")?.value };
+    });
+    r.ok("«Изменить» в шторке открывает окно TaskModal, а не отдельную форму", !!editPoint && editor.dialog && editor.heading === "Изменить задачу" && !!editor.title, JSON.stringify(editor));
+    await page.keyboard.press("Escape");
+    await wait(700);
   } else {
     for (const label of ["вертикальный свайп скроллит и НЕ открывает задачу", "кнопка «+» не уезжает вверх при скролле списка", "тап по строке открывает карточку задачи", "горизонтальный свайп открывает шторку действий", "горизонтальный свайп НЕ открывает задачу", "тап при открытой шторке закрывает её, а не открывает задачу"]) r.ok(label, false, "нет доступной строки для жеста");
   }
@@ -289,10 +307,10 @@ await section("Блок 5", async () => {
   await touchControl(page, { selector: 'button[aria-label="Создать"]' });
   await wait(1400);
   const name = "Смоук новой задачи";
-  const titleInput = await page.$('input[placeholder="Что нужно сделать?"]');
+  const titleInput = await page.$('textarea#modal-title');
   if (titleInput) { await titleInput.focus(); await page.keyboard.type(name); }
   await wait(500);
-  const createClicked = await clickText(page, "Создать задачу");
+  const createClicked = await touchControl(page, { selector: '[role="dialog"] button', text: "Создать" });
   await waitFor(page, () => document.body.innerText.includes("Смоук новой задачи"));
   const tomorrow = await page.evaluate(() => { const d = new Date(); d.setDate(d.getDate() + 1); return [d.getFullYear(), String(d.getMonth() + 1).padStart(2, "0"), String(d.getDate()).padStart(2, "0")].join("-"); });
   const createdRequest = [...fixtures].flatMap((f) => f.requests).find((q) => q.method === "POST" && q.path === "/api/tasks" && q.body.title === name);

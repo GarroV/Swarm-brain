@@ -701,7 +701,7 @@ export function SprintsScreen() {
   /* Пустой спринт объясняет ровно следующее действие: «наберите из пула» не говорит, ЧЕМ
      набирают, и человек упирается в экран (владелец 09.09.2026). */
   const emptyComposition = (
-    <div className="py-10 text-sm text-ink-soft/80 space-y-1.5">
+    <div className="py-10 text-sm text-ink-soft space-y-1.5">
       <p className="font-semibold text-ink">
         {dt("В спринте пока нет задач", "The sprint is empty")}
       </p>
@@ -1179,7 +1179,7 @@ export function SprintsScreen() {
           )
           : !detail
           ? (
-            <p className="px-4 py-10 text-center text-sm text-ink-soft/70">
+            <p className="px-4 py-10 text-center text-sm text-ink-soft">
               {spaceCycles.length === 0
                 ? dt(
                   "В этом пространстве спринтов пока нет. Создайте первый: меню спринта в полосе сверху → «＋ Новый спринт» — это может любой участник.",
@@ -1348,7 +1348,7 @@ export function SprintsScreen() {
                                       {mineSplit.mine.length === 0
                                         ? (
                                           <p
-                                            className="mb-4 px-0.5 text-ink-mute"
+                                            className="mb-4 px-0.5 text-ink-soft"
                                             style={{ fontSize: 12.5 }}
                                           >
                                             {dt(

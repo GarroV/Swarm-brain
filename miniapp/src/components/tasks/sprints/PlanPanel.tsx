@@ -134,7 +134,7 @@ export function PlanPanel(p: Props) {
             {dt("План", "Plan")}
           </h3>
           <span
-            className="min-w-0 truncate text-ink-mute"
+            className="min-w-0 truncate text-ink-soft"
             style={{ fontSize: 13 }}
           >
             {p.spaceName}
@@ -251,7 +251,7 @@ export function PlanPanel(p: Props) {
           </ToolbarButton>
         </div>
         {p.onTake && p.canDrag && plan.available > 0 && (
-          <p className="mt-2 text-ink-mute" style={{ fontSize: 11.5 }}>
+          <p className="mt-2 text-ink-soft" style={{ fontSize: 11.5 }}>
             {dt(
               "Перетащите задачу на список спринта или нажмите →",
               "Drag a task onto the sprint list or press →",
@@ -263,7 +263,7 @@ export function PlanPanel(p: Props) {
       <div className="min-h-0 flex-1 overflow-y-auto pb-2">
         {plan.groups.length === 0 && (
           <p
-            className="px-3 py-6 text-center text-ink-mute"
+            className="px-3 py-6 text-center text-ink-soft"
             style={{ fontSize: 12.5 }}
           >
             {searching ? dt("Ничего не нашлось", "Nothing found") : dt(
@@ -372,7 +372,7 @@ export function PlanPanel(p: Props) {
                 <div className="pb-1.5">
                   {g.tasks.length === 0 && (
                     <p
-                      className="px-3 pb-1.5 pl-[30px] text-ink-mute"
+                      className="px-3 pb-1.5 pl-[30px] text-ink-soft"
                       style={{ fontSize: 13 }}
                     >
                       {hideDone && g.total > 0
@@ -464,7 +464,7 @@ function PlanRow(
           </span>
         )}
         {task.status === "cancelled" && (
-          <span className="shrink-0 text-ink-mute" style={{ fontSize: 11.5 }}>
+          <span className="shrink-0 text-ink-soft" style={{ fontSize: 11.5 }}>
             {dt("отменена", "cancelled")}
           </span>
         )}

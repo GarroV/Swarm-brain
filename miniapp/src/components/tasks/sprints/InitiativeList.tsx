@@ -191,14 +191,14 @@ function Group(
             </span>
             {sub && (
               <span
-                className="shrink-0 truncate text-ink-mute"
+                className="shrink-0 truncate text-ink-soft"
                 style={{ fontSize: 12 }}
               >
                 {sub}
               </span>
             )}
             {due && (
-              <span className="shrink-0 text-ink-mute" style={{ fontSize: 12 }}>
+              <span className="shrink-0 text-ink-soft" style={{ fontSize: 12 }}>
                 · {dt("до", "due")} {fmtDay(due)}
               </span>
             )}
@@ -235,7 +235,7 @@ function Group(
               "shrink-0 font-mono",
               total > 0 && done === total
                 ? "text-status-done"
-                : "text-ink-mute",
+                : "text-ink-soft",
             )}
             style={{ fontSize: 12 }}
           >
@@ -247,7 +247,7 @@ function Group(
         <div>
           {node.items.length === 0 && (
             <div
-              className="px-3 py-2 text-ink-mute"
+              className="px-3 py-2 text-ink-soft"
               style={{ paddingLeft: TASK_INDENT + 20, fontSize: 12.5 }}
             >
               {dt(
@@ -513,7 +513,7 @@ export function InitiativeList({
         // px-1 — тот же отступ, что у строк ниже: без него шапка шире строк, и столбцы
         // разъезжались (владелец 05.10.2026: «шапка не бьётся со столбами»).
         className={cn(
-          "sticky top-0 z-10 grid items-center rounded-t-[10px] border-b border-line bg-surface-2 px-1 font-semibold uppercase text-ink-mute",
+          "sticky top-0 z-10 grid items-center rounded-t-[10px] border-b border-line bg-surface-2 px-1 font-semibold uppercase text-ink-soft",
           SPRINT_GRID,
         )}
         style={{
@@ -566,7 +566,7 @@ export function InitiativeList({
               <div
                 {...dnd?.header(dir.project?.id ?? null).bind}
                 className={cn(
-                  "rounded-[6px] px-3 pb-1 pt-4 font-semibold uppercase text-ink-mute",
+                  "rounded-[6px] px-3 pb-1 pt-4 font-semibold uppercase text-ink-soft",
                   dnd?.header(dir.project?.id ?? null).over &&
                     "bg-primary/8 text-primary",
                 )}
@@ -605,7 +605,7 @@ export function InitiativeList({
           <div
             {...dnd.header(null).bind}
             className={cn(
-              "mx-2 mt-3 rounded-[8px] border border-dashed border-line px-3 py-2.5 text-center text-ink-mute transition-colors",
+              "mx-2 mt-3 rounded-[8px] border border-dashed border-line px-3 py-2.5 text-center text-ink-soft transition-colors",
               dnd.header(null).over &&
                 "border-primary/70 bg-primary/8 text-primary",
             )}

@@ -293,11 +293,11 @@ async function buildCallView(
   }
   // Видимость и «живые» — те же помощники, что у GET /tasks; исполнитель/соисполнитель — telegramId.
   const listed = await listTasksWithTotal(
-    { columns: CALL_TASK_COLUMNS, telegramId, viewerId: telegramId, country, limit: BOARD_TASKS_LIMIT },
+    { columns: CALL_TASK_COLUMNS, telegramId, viewerId: telegramId, countries: [country], limit: BOARD_TASKS_LIMIT },
     groupId,
   );
-  // ilike по подстроке ловит и составную метку «RS,HR» — оставляем задачи, где страна названа точно.
-  const mine = listed.tasks.filter((t) => (t.country ?? "").toUpperCase().split(/[\s,;/]+/).includes(country));
+  // Список стран задачи (#1262): совпадение «любая из» уже сделано в запросе, пересечение точное.
+  const mine = listed.tasks;
   const tasks = sortCallTasks(mine, today, nextDay(today)).map((t) => ({
     id: t.id,
     title: t.title,

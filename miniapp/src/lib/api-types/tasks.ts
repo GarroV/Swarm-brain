@@ -11,7 +11,10 @@ export type CreateTaskInput = {
   assignee_telegram_id?: number | null;
   assignee_person_id?: string | null;
   coassignee_person_ids?: string[];
+  /** Старый одиночный ввод; для нескольких стран — `countries` (приоритетнее). */
   country?: string | null;
+  /** ISO-коды стран задачи (в PATCH — полный новый список, [] — убрать). */
+  countries?: string[];
   task_role?: string | null;
   priority?: string | null;
   // Привязка к встрече (entry.id): задача попадает в блок «Задачи из встречи».

@@ -1,7 +1,6 @@
 import AppKit
 import Foundation
 import RecorderKit
-import UserNotifications
 
 // Режим --selftest-missed: живая проверка «бот не пришёл на встречу» (T162, D025) против стенда,
 // мимо рабочей установки человека. Конфиг рекордера (токен, прод-адрес) НЕ читается: адрес и токен —
@@ -16,7 +15,7 @@ import UserNotifications
 //                                      вызовом, что и кнопка (если нажать руками нечем)
 // Кнопку капсулы жмут снаружи через System Events (AX): у кнопок есть идентификаторы
 // missed.invite / banner.close, у текста отказа — missed.failure. Запускать из собранного .app со СВОИМ
-// bundle id — иначе капсула и уведомления смешаются с рабочим bumblebee.
+// bundle id — иначе капсула смешается с рабочим bumblebee.
 // Каждое изменение печатается строкой `missed:` в stdout — по ним и сверяется прогон.
 final class MissedSelfTest: NSObject {
     private let watcher: MissedMeetingsWatcher
@@ -55,28 +54,11 @@ final class MissedSelfTest: NSObject {
     }
 
     func start() {
-        if Bundle.main.bundleIdentifier == nil {
-            print("missed: ⚠️ запущено не из бандла — проверка системных уведомлений пропущена")
-        }
         probe = SelfTestProbe(widget: widget, tag: "missed")
         probe?.start()
         watcher.start()
         watcher.pollNow()
         changed()
-        reportDelivered()
-    }
-
-    /// Штатных баннеров пропуска быть не должно (D025): раз в 15 с печатаем, что лежит в Центре
-    /// уведомлений от этого бандла, — ожидается 0.
-    private func reportDelivered() {
-        guard Bundle.main.bundleIdentifier != nil else { return }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 15) { [weak self] in
-            UNUserNotificationCenter.current().getDeliveredNotifications { list in
-                let rows = list.map { "[\($0.request.identifier)] «\($0.request.content.title)»" }
-                print("missed: в Центре уведомлений \(list.count)\(rows.isEmpty ? "" : ": " + rows.joined(separator: "; "))")
-            }
-            self?.reportDelivered()
-        }
     }
 
     private func changed() {

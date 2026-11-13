@@ -180,7 +180,7 @@ export function SpanDialog(
           >
             {dt("Спринты задачи", "Sprints of the task")}
           </DialogPrimitive.Title>
-          <p className="-mt-2 truncate text-[12.5px] text-ink-mute">
+          <p className="-mt-2 truncate text-[12.5px] text-ink-soft">
             «{task.title}»
           </p>
           <p className="text-[12.5px] text-ink-soft">
@@ -197,7 +197,7 @@ export function SpanDialog(
 
           {live === null && !err
             ? (
-              <p className="text-[12.5px] text-ink-mute" role="status">
+              <p className="text-[12.5px] text-ink-soft" role="status">
                 {dt("Загрузка…", "Loading…")}
               </p>
             )
@@ -255,7 +255,7 @@ export function SpanDialog(
           )}
           {active && first && last && first.start_date > active.start_date &&
             inActive && (
-            <p className="text-[12px] text-ink-mute">
+            <p className="text-[12px] text-ink-soft">
               {dt(
                 "Идущий спринт план не трогает — задача в нём остаётся.",
                 "The running sprint is left as is — the task stays in it.",

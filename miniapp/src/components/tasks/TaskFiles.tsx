@@ -4,11 +4,11 @@ import { useDt } from "@/components/roy/nav";
 import { RoyIcon, type RoyIconName } from "@/components/roy/icons";
 import { cn } from "@/lib/utils";
 import { fileExt, fileKind, formatSize, type FileKind, type TaskFile } from "@/lib/taskFiles";
-import { CardIconBar, CardSectionHeader, CardSectionMenu, MenuTitle } from "@/components/tasks/CardSectionMenu";
-import { useTaskFiles, type TaskFilesState, type Uploading } from "@/components/tasks/useTaskFiles";
+import { CardSectionHeader, CardSectionMenu, MenuTitle } from "@/components/tasks/CardSectionMenu";
+import type { TaskFilesState, Uploading } from "@/components/tasks/useTaskFiles";
 
 // Файлы к задаче (#638, решение владельца 2026-09-30: «не забудь проработать визуал. это важно»).
-// Блок живёт в карточке задачи (TaskModal и экран TaskDetail) рядом с подзадачами и комментариями.
+// Блок живёт в карточке задачи (TaskModal) рядом с подзадачами и комментариями.
 // Лимит показывается честно, до выбора файла: «до 50 МБ · до 10 файлов» — цифры приходят с сервера,
 // и отказ по размеру или типу звучит сразу, а не после минуты загрузки. Байты лежат на MUSPELHEIM:
 // если он недоступен, блок говорит об этом, а не делает вид, что файлов нет.
@@ -186,25 +186,6 @@ export function TaskFilesSection({ f, action }: { f: TaskFilesState; action?: Re
           </div>
         </div>
       )}
-    </div>
-  );
-}
-
-/** Самостоятельный блок «Файлы» — для экрана TaskDetail, где нет общей строки пиктограмм. */
-export function TaskFiles({ taskId, taskCreatorId }: { taskId: string; taskCreatorId: number | null }) {
-  const dt = useDt();
-  const f = useTaskFiles(taskId, taskCreatorId);
-  return (
-    <div className="relative" {...f.dropProps}>
-      <FileInput f={f} />
-      {f.empty
-        ? (
-          <CardIconBar label={dt("Добавить к задаче", "Add to the task")}>
-            <FilesMenu f={f} />
-          </CardIconBar>
-        )
-        : <TaskFilesSection f={f} action={<FilesMenu f={f} variant="plus" />} />}
-      <FileDropOverlay show={f.dragging} />
     </div>
   );
 }

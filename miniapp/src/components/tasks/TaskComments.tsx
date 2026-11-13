@@ -23,8 +23,9 @@ function fmtDate(iso: string | null): string {
 }
 
 // Лента комментариев/истории задачи + добавление. Самодостаточна (грузит по taskId).
-// Используется в TaskModal (правка задачи) и на экране TaskDetail — один источник UI (DRY).
-// Рендерится только внутри RoyApp → useRoyNav безопасен (как в TaskDetail).
+// Используется в TaskModal (правка задачи) — один источник UI. Отдельного экрана задачи (TaskDetail)
+// больше нет (#600).
+// Рендерится только внутри RoyApp → useRoyNav безопасен.
 export function TaskComments({ taskId }: { taskId: string }) {
   const { toast, me } = useRoyNav();
   const copy = TASK_COMMENTS_COPY[useLang()];

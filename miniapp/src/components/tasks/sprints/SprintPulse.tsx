@@ -108,7 +108,7 @@ export function SprintPulse({ kpi, showUnchecked, extra, moved = 0 }: {
         >
           {dt(`${kpi.done} из ${kpi.total}`, `${kpi.done} of ${kpi.total}`)}
         </b>
-        <span className="whitespace-nowrap text-ink-mute">
+        <span className="whitespace-nowrap text-ink-soft">
           {dt(`сделано · ${kpi.percent}%`, `done · ${kpi.percent}%`)}
         </span>
         <div className="flex h-[5px] min-w-[80px] flex-1 overflow-hidden rounded-full bg-line">
@@ -122,14 +122,14 @@ export function SprintPulse({ kpi, showUnchecked, extra, moved = 0 }: {
           />
         </div>
         {kpi.checkOk > 0 && (
-          <span className="hidden whitespace-nowrap text-ink-mute sm:inline">
+          <span className="hidden whitespace-nowrap text-ink-soft sm:inline">
             {dt(`по плану ${kpi.checkOk}`, `on track ${kpi.checkOk}`)}
           </span>
         )}
       </div>
       {anyMark && (
         <div className="mt-2 flex flex-wrap items-center gap-1.5">
-          <span className="mr-0.5 text-ink-mute" style={{ fontSize: 12 }}>
+          <span className="mr-0.5 text-ink-soft" style={{ fontSize: 12 }}>
             {dt("требуют внимания:", "need attention:")}
           </span>
           {marks}

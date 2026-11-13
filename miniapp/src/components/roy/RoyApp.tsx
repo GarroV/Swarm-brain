@@ -31,10 +31,9 @@ import { RecordDetail } from "./screens/RecordDetail";
 import { RoyTasksScreen } from "./screens/RoyTasksScreen";
 import { RoyProjectsScreen } from "./screens/RoyProjectsScreen";
 import { ProjectTasksScreen } from "./screens/ProjectTasksScreen";
-import { TaskDetail } from "./screens/TaskDetail";
+import { TaskRoute } from "./screens/TaskRoute";
 import { StatsDesk } from "@/components/stats/StatsDesk";
 import { ToolsDesk } from "@/components/tools/ToolsDesk";
-import { NewTask } from "./screens/NewTask";
 import { RoyBaseScreen } from "./screens/RoyBaseScreen";
 import { NewEntry } from "./screens/NewEntry";
 import { RoyMeetingsScreen } from "./screens/RoyMeetingsScreen";
@@ -580,8 +579,9 @@ function PushScreen({ route }: { route: RoyRoute }) {
     return <AnswerScreen query={route.params.query} />;
   }
   if (route.view === "record") return <RecordDetail id={route.params.id} />;
-  if (route.view === "taskDetail") return <TaskDetail id={route.params.id} />;
-  if (route.view === "newTask") return <NewTask id={route.params?.id} />;
+  // Оба маршрута — только вход в единый редактор TaskModal (#600), отдельных экранов задачи нет.
+  if (route.view === "taskDetail") return <TaskRoute id={route.params.id} />;
+  if (route.view === "newTask") return <TaskRoute id={route.params?.id} />;
   if (route.view === "newEntry") return <NewEntry />;
   if (route.view === "meetingDetail") {
     return <MeetingDetail id={route.params.id} />;

@@ -83,7 +83,7 @@ export function SprintBar(p: SprintBarProps) {
       key: c.id,
       label: (
         <>
-          {c.name} <span className="text-ink-mute">· {stLabel(c)}</span>
+          {c.name} <span className="text-ink-soft">· {stLabel(c)}</span>
         </>
       ),
       on: c.id === p.selectedId,
@@ -97,7 +97,7 @@ export function SprintBar(p: SprintBarProps) {
         label: (
           <>
             {c.name}{" "}
-            <span className="text-ink-mute">
+            <span className="text-ink-soft">
               · {fmtRange(c.start_date, c.end_date)}
             </span>
           </>
@@ -184,7 +184,7 @@ export function SprintBar(p: SprintBarProps) {
           label={d
             ? (
               <span className="text-ink">
-                {d.name} <span className="text-ink-mute">· {stLabel(d)}</span>
+                {d.name} <span className="text-ink-soft">· {stLabel(d)}</span>
               </span>
             )
             : dt("Спринт", "Sprint")}
@@ -224,7 +224,7 @@ export function SprintBar(p: SprintBarProps) {
             </span>
           )}
           {accepted && d.accepted_at && (
-            <span className="text-ink-mute">
+            <span className="text-ink-soft">
               {dt("принят", "accepted")} {fmtDay(d.accepted_at)}
             </span>
           )}
@@ -244,6 +244,7 @@ export function SprintBar(p: SprintBarProps) {
               onClick={() => p.onView("list")}
               className={cn(
                 pillSegmentCls(p.view === "list"),
+                p.view !== "list" && "text-ink-soft",
                 "sm:min-h-[26px] px-3",
               )}
               style={{ fontSize: 12.5 }}
@@ -261,6 +262,7 @@ export function SprintBar(p: SprintBarProps) {
                 )}
                 className={cn(
                   pillSegmentCls(p.planOpen),
+                  !p.planOpen && "text-ink-soft",
                   "sm:min-h-[26px] px-3",
                 )}
                 style={{ fontSize: 12.5 }}
@@ -274,6 +276,7 @@ export function SprintBar(p: SprintBarProps) {
               onClick={() => p.onView("board")}
               className={cn(
                 pillSegmentCls(p.view === "board"),
+                p.view !== "board" && "text-ink-soft",
                 "sm:min-h-[26px] px-3",
               )}
               style={{ fontSize: 12.5 }}
