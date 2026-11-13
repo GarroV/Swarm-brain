@@ -142,6 +142,7 @@ with config_chains(country, key) as (
       where e.country = c.country and e.payload::text like '%"' || c.key || '"%'
     )
     and c.hidden_at is null
+    and c.segment not in ('pizza', 'burger', 'chicken', 'sandwich', 'grill')  -- фастфуд не скрываем (13.11): это местные игроки и ключи-дубли брендов с их точками
 )
 select o.country,
        count(distinct o.key) as chains,
@@ -283,6 +284,7 @@ group by 1 order by 1;
 --       where e.country = c.country and e.payload::text like '%"' || c.key || '"%'
 --     )
 --     and c.hidden_at is null
+--     and c.segment not in ('pizza', 'burger', 'chicken', 'sandwich', 'grill')  -- фастфуд не скрываем (13.11): это местные игроки и ключи-дубли брендов с их точками
 -- )
 -- update public.mkt_chains c
 -- set hidden_at = now()
