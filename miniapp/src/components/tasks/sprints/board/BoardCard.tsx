@@ -100,7 +100,7 @@ export function BoardCard({
                 className={cn(
                   "grid h-4 w-4 place-items-center rounded-full border-[1.6px] text-[10px] leading-none text-[var(--on-solid)] transition-colors",
                   closed
-                    ? "border-status-done bg-status-done"
+                    ? "border-status-done bg-status-done dark:text-surface"
                     : "border-line-2 bg-surface hover:border-status-done",
                 )}
               >
@@ -126,7 +126,7 @@ export function BoardCard({
           <button
             type="button"
             onClick={parentNote.onOpen}
-            className="col-span-2 col-start-2 -mt-0.5 truncate text-left text-ink-mute hover:text-ink hover:underline"
+            className="col-span-2 col-start-2 -mt-0.5 truncate text-left text-ink-soft hover:text-ink hover:underline"
             style={{ fontSize: 11.5 }}
             title={parentNote.title}
           >
@@ -135,7 +135,7 @@ export function BoardCard({
         )}
         {plan}
         <div
-          className="col-span-2 col-start-2 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-ink-mute empty:hidden"
+          className="col-span-2 col-start-2 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-ink-soft empty:hidden"
           style={{ fontSize: 11.5 }}
         >
           {due && (

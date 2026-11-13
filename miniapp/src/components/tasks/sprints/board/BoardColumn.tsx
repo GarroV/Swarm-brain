@@ -164,14 +164,14 @@ function CycleHeader(
   const live = c.status === "active";
   return (
     <div className="shrink-0 border-b border-line px-3 pb-2 pt-2.5">
-      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+      <div className="flex min-h-7 flex-wrap items-center gap-x-2 gap-y-1">
         <span className="font-semibold text-ink" style={{ fontSize: 14 }}>
           {c.name}
         </span>
         <span
           className={cn(
             "text-[12px]",
-            live ? "text-accent-ink" : "text-ink-mute",
+            live ? "text-accent-ink" : "text-ink-soft",
           )}
         >
           {live ? dt("· идёт", "· running") : dt("· запланирован", "· planned")}
@@ -188,7 +188,7 @@ function CycleHeader(
           </button>
         )}
       </div>
-      <div className="mt-0.5 text-ink-mute" style={{ fontSize: 12 }}>
+      <div className="mt-0.5 text-ink-soft" style={{ fontSize: 12 }}>
         {fmtRange(c.start_date, c.end_date)}
         {c.check_date && live
           ? ` · ${dt("сверка", "check")} ${fmtDay(c.check_date)}`
@@ -200,7 +200,8 @@ function CycleHeader(
           </>
         )}
       </div>
-      {live && <ProgressBar percent={kpi.percent} className="mt-1.5" />}
+      {/* Полоска у каждой колонки, не только у идущей: иначе группы в соседних колонках начинаются на разной высоте. */}
+      <ProgressBar percent={kpi.percent} className="mt-1.5" />
     </div>
   );
 }
@@ -236,7 +237,7 @@ function Ladder(
             />
           ))}
           {elsewhere.length > 0 && (
-            <div className="px-1 text-ink-mute" style={{ fontSize: 11.5 }}>
+            <div className="px-1 text-ink-soft" style={{ fontSize: 11.5 }}>
               {elsewhere.map((e) =>
                 dt(`+ ещё ${e.n} в ${e.short}`, `+ ${e.n} more in ${e.short}`)
               ).join(" · ")}
@@ -357,7 +358,7 @@ export function SprintColumn(
         {groups.map((g) => (
           <div key={g.name ?? "__none"} className="flex flex-col gap-1.5">
             <div
-              className="mx-1 mt-1.5 flex items-center justify-between gap-2 font-semibold uppercase tracking-[0.04em] text-ink-mute"
+              className="mx-1 mt-1.5 flex items-center justify-between gap-2 font-semibold uppercase tracking-[0.04em] text-ink-soft"
               style={{ fontSize: 11 }}
             >
               <span className="min-w-0 truncate">
@@ -381,7 +382,7 @@ export function SprintColumn(
         ))}
         {groups.length === 0 && moved.length === 0 && (
           <p
-            className="px-2 py-4 text-center text-ink-mute"
+            className="px-2 py-4 text-center text-ink-soft"
             style={{ fontSize: 12.5 }}
           >
             {filtering
@@ -441,7 +442,7 @@ export function PastBody(
   }, [cycle.id]);
   if (detail === null) {
     return (
-      <p className="p-3 text-ink-mute" style={{ fontSize: 12.5 }}>
+      <p className="p-3 text-ink-soft" style={{ fontSize: 12.5 }}>
         {dt("Загрузка…", "Loading…")}
       </p>
     );
@@ -482,7 +483,7 @@ export function PastBody(
             {i.title}
           </div>
           {!isClosedStatus(i.status) && i.carry_reason && (
-            <div className="text-ink-mute">
+            <div className="text-ink-soft">
               {dt("Причина", "Reason")}: «{i.carry_reason}»
             </div>
           )}
@@ -491,7 +492,7 @@ export function PastBody(
       <MovedSection items={moved} users={ctx.users} single />
       {visible.length === 0 && moved.length === 0 && (
         <p
-          className="px-2 py-3 text-center text-ink-mute"
+          className="px-2 py-3 text-center text-ink-soft"
           style={{ fontSize: 12.5 }}
         >
           {dt("Ничего не найдено", "Nothing found")}

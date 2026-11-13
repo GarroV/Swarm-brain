@@ -18,7 +18,7 @@ function Row({ label, value, hint }: { label: string; value: string; hint?: stri
     <div className="flex items-baseline gap-2">
       <span className="text-xs text-ink-soft">{label}</span>
       <span className="ml-auto text-sm font-semibold text-ink">{value}</span>
-      {hint && <span className="text-[11px] text-ink-soft/70">{hint}</span>}
+      {hint && <span className="text-[11px] text-ink-soft">{hint}</span>}
     </div>
   );
 }
@@ -61,7 +61,7 @@ export function SprintReport({ cycle, onSaveSummary }: {
 
       {!s ? (
         // Спринт принят до появления расчёта итогов — честнее сказать, чем показать нули.
-        <p className="p-3 text-xs text-ink-soft/80">
+        <p className="p-3 text-xs text-ink-soft">
           {dt("Итоги этого спринта не считались — он принят до появления отчёта.",
             "No results were computed for this sprint — it was accepted before the report existed.")}
         </p>
@@ -94,7 +94,7 @@ export function SprintReport({ cycle, onSaveSummary }: {
 
           {s.byPerson.length > 0 && (
             <div className="border-t border-line pt-2">
-              <p className="mb-1.5 text-[10px] font-bold uppercase tracking-wide text-ink-soft/80">
+              <p className="mb-1.5 text-[10px] font-bold uppercase tracking-wide text-ink-soft">
                 {dt("Кто сколько закрыл", "Closed by person")}
               </p>
               <Bars rows={s.byPerson.map((r) => ({ label: r.name, done: r.done, total: r.plan }))} />
@@ -103,7 +103,7 @@ export function SprintReport({ cycle, onSaveSummary }: {
 
           {s.byProject.length > 0 && (
             <div className="border-t border-line pt-2">
-              <p className="mb-1.5 text-[10px] font-bold uppercase tracking-wide text-ink-soft/80">
+              <p className="mb-1.5 text-[10px] font-bold uppercase tracking-wide text-ink-soft">
                 {dt("По проектам", "By project")}
               </p>
               <Bars rows={s.byProject.map((r) => ({
@@ -114,7 +114,7 @@ export function SprintReport({ cycle, onSaveSummary }: {
 
           {s.byDay.length > 0 && (
             <div className="border-t border-line pt-2">
-              <p className="mb-1.5 text-[10px] font-bold uppercase tracking-wide text-ink-soft/80">
+              <p className="mb-1.5 text-[10px] font-bold uppercase tracking-wide text-ink-soft">
                 {dt("Закрытия по дням", "Closed per day")}
               </p>
               {/* Столбики нормируются по самому урожайному дню — иначе на 1-2 закрытиях в день
@@ -161,7 +161,7 @@ function SummaryBlock({ summary, onSave }: {
   return (
     <div className="border-t border-line pt-2">
       <div className="mb-1 flex items-center gap-2">
-        <p className="text-[10px] font-bold uppercase tracking-wide text-ink-soft/80">
+        <p className="text-[10px] font-bold uppercase tracking-wide text-ink-soft">
           {dt("Итог словами", "Summary")}
         </p>
         {onSave && draft === null && (
@@ -202,7 +202,7 @@ function SummaryBlock({ summary, onSave }: {
         )
         : summary
         ? <p className="whitespace-pre-wrap text-xs leading-relaxed text-ink-soft">{summary}</p>
-        : <p className="text-xs text-ink-mute">{dt("Итог не записан.", "No summary yet.")}</p>}
+        : <p className="text-xs text-ink-soft">{dt("Итог не записан.", "No summary yet.")}</p>}
     </div>
   );
 }

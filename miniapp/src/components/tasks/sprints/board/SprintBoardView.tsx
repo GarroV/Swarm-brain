@@ -157,7 +157,7 @@ function NewSprint({ cycles, space, busy, onCreate }: {
               setForm(draft());
               setOpen(true);
             }}
-            className="w-[calc(100vw-3.5rem)] rounded-[12px] border border-dashed border-line-2 px-3 py-3 text-ink-mute transition-colors hover:border-accent-line hover:text-ink sm:w-[160px]"
+            className="w-[calc(100vw-3.5rem)] rounded-[12px] border border-dashed border-line-2 px-3 py-3 text-ink-soft transition-colors hover:border-accent-line hover:text-ink sm:w-[160px]"
             style={{ fontSize: 13 }}
           >
             {dt("+ Спринт", "+ Sprint")}
@@ -618,7 +618,7 @@ export function SprintBoardView(
   if (!data) {
     return (
       <p
-        className="px-5 py-10 text-center text-sm text-ink-soft/70"
+        className="px-5 py-10 text-center text-sm text-ink-soft"
         role={loadErr ? "alert" : "status"}
       >
         {loadErr ?? dt("Загрузка доски…", "Loading the board…")}
