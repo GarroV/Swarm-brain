@@ -263,6 +263,49 @@ describe("очередь выгрузки", () => {
     expect(await readdir(path.join(root, "pending"))).toHaveLength(0);
   });
 
+  it("недоставленная запись по сроку не удаляется — о ней кричит событие stale, один раз", async () => {
+    const events: string[] = [];
+    const queue = new UploadQueue({ root, client: clientFor(fake) });
+    await queue.stagePart("m-1", part("единственная копия аудио"), 0);
+    await queue.seal("m-1", []);
+    fake.failNext(1, 503);
+    await queue.drain();
+
+    const later = new UploadQueue({
+      root,
+      client: clientFor(fake),
+      backupTtlMs: 1000,
+      now: () => Date.now() + 10 * 24 * 60 * 60 * 1000,
+      onEvent: (event) => {
+        events.push(`${event.kind}:${event.meetingId}`);
+      },
+    });
+    await expect(later.sweepExpired()).resolves.toEqual([]);
+    await later.sweepExpired();
+
+    expect(await readdir(path.join(root, "pending"))).toHaveLength(1);
+    expect(events).toEqual(["stale:m-1"]);
+  });
+
+  it("dead-letter по сроку не удаляется: аудио там тоже недоставлено", async () => {
+    const queue = new UploadQueue({ root, client: clientFor(fake), maxAttempts: 1 });
+    await queue.stagePart("m-1", part("часть"), 0);
+    await queue.seal("m-1", []);
+    fake.failNext(1, 503);
+    const first = await queue.drain();
+    expect(first.deadLettered).toEqual(["m-1"]);
+
+    const later = new UploadQueue({
+      root,
+      client: clientFor(fake),
+      backupTtlMs: 1000,
+      now: () => Date.now() + 10 * 24 * 60 * 60 * 1000,
+    });
+    await expect(later.sweepExpired()).resolves.toEqual([]);
+
+    expect(await readdir(path.join(root, "failed"))).toHaveLength(1);
+  });
+
   it("посторонние файлы и битые ссылки в каталоге очереди не мешают", async () => {
     const queue = new UploadQueue({ root, client: clientFor(fake) });
     await queue.stagePart("m-1", part("часть"), 0);
