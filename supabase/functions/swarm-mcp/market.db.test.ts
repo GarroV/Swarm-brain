@@ -69,6 +69,8 @@ Deno.test("a hidden chain (hidden_at) is absent from market_get chains/locations
       chain_key: key,
       name: `${key} point`,
       ext_key: `${key}:1`,
+      lat: 45.8,
+      lng: 15.9,
       status: "open",
       source_kind: "osm",
     });
