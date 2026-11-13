@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useDt } from "./nav";
 import { RoyIcon } from "./icons";
-import { countryCode, countryFlag } from "@/lib/countries";
+import { countriesLabel, parseCountryList } from "@/lib/countries";
 import { effectiveAssigneeId, resolveAssigneeId, taskCountLabel, type ProposedTask } from "@/lib/proposedTasks";
 import type { User } from "@/types";
 import type { CreateTaskInput } from "@/lib/api";
@@ -276,7 +276,7 @@ function HarvestRow({ task, users, meId, busy, editing, onStartEdit, onStopEdit,
                 className="inline-flex items-center gap-1 font-semibold text-ink-soft bg-surface-2 border border-line-2"
                 style={{ borderRadius: 6, padding: "1px 6px", fontSize: 10.5 }}
               >
-                {countryFlag(task.country)} {countryCode(task.country)}
+                {countriesLabel(parseCountryList(task.country))}
               </span>
             )}
           </div>

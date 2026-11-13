@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import { cn } from "@/lib/utils";
 import type { Project, Task, User } from "@/types";
 import { fetchConfig, fetchProjects, fetchUsers, type TaskLabel } from "@/lib/api";
-import { countryName } from "@/lib/countries";
+import { taskCountryCodes } from "@/lib/countries";
 import { groupByDue, groupByPerson, type TaskSection } from "@/lib/taskTable";
 import { isAssignedTo } from "@/lib/smartLists";
 import { nestSubtasks, progressByParent } from "@/lib/subtasks";
@@ -33,7 +33,8 @@ export function TasksTable() {
   const [modalTask, setModalTask] = useState<Task | "new" | null>(null);
   const [labelEditor, setLabelEditor] = useState<TaskLabel | "new" | null>(null);
   const [assignee, setAssignee] = useState<number | null>(null);
-  const [market, setMarket] = useState<string | null>(null);
+  // Фильтр по рынкам — несколько стран: задача подходит, если ЛЮБАЯ её страна выбрана (#1262).
+  const [market, setMarket] = useState<string[]>([]);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [calView, setCalView] = useState(false);
   const [users, setUsers] = useState<User[]>([]);
@@ -59,7 +60,7 @@ export function TasksTable() {
   const list = useMemo(
     () => scope.filter((t) =>
       (assignee == null || isAssignedTo(t, assignee)) &&
-      (market == null || t.country === market)),
+      (market.length === 0 || taskCountryCodes(t).some((c) => market.includes(c)))),
     [scope, assignee, market],
   );
 
@@ -68,10 +69,11 @@ export function TasksTable() {
     if (staffView) return groupByPerson(list, users, r.now, dt("не назначен", "unassigned"));
     if (r.byMarket) {
       const by = new Map<string, Task[]>();
-      for (const t of list) by.set(t.country ?? "", [...(by.get(t.country ?? "") ?? []), t]);
+      // Задача с несколькими странами стоит в секции ПЕРВОЙ из них — иначе строки дублировались бы.
+      for (const t of list) { const k = taskCountryCodes(t)[0] ?? ""; by.set(k, [...(by.get(k) ?? []), t]); }
       return [...by.keys()].sort().map((k) => ({
         key: k || "none",
-        label: k ? countryName(k) : dt("Без рынка", "No market"),
+        label: k || dt("Без рынка", "No market"),
         tasks: by.get(k)!,
       }));
     }
@@ -95,10 +97,10 @@ export function TasksTable() {
       return next;
     });
 
-  const filtered = assignee != null || market != null || !!r.query || !!r.range || !!r.activeLabelId || activeList === "recurring";
+  const filtered = assignee != null || market.length > 0 || !!r.query || !!r.range || !!r.activeLabelId || activeList === "recurring";
   const resetFilters = () => {
     setAssignee(null);
-    setMarket(null);
+    setMarket([]);
     r.setQuery("");
     r.setRange(null);
     r.setActiveLabelId(null);

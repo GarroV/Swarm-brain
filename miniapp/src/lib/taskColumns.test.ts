@@ -43,9 +43,9 @@ Deno.test("перестановка ставит колонку на место 
 
 Deno.test("сетка идёт за порядком, а на узкой раскладке — без «Проекта» и «Списков»", () => {
   const l = { ...defaultLayout(), order: moveColumn(DEFAULT_ORDER, "assignee", "due") };
-  assertEquals(gridTemplate(l, false), "minmax(260px,1fr) 160px 88px 80px 168px 64px 128px 104px");
-  assertEquals(gridTemplate(l, true), "minmax(260px,1fr) 160px 88px 80px 168px 64px");
-  assertEquals(gridMinWidth(l, true), 260 + 160 + 88 + 80 + 168 + 64);
+  assertEquals(gridTemplate(l, false), "minmax(260px,1fr) 160px 88px 80px 168px 88px 128px 104px");
+  assertEquals(gridTemplate(l, true), "minmax(260px,1fr) 160px 88px 80px 168px 88px");
+  assertEquals(gridMinWidth(l, true), 260 + 160 + 88 + 80 + 168 + 88);
 });
 
 Deno.test("дефолт распознаётся, любая правка — нет", () => {

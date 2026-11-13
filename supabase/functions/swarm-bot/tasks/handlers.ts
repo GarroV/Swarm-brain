@@ -21,7 +21,7 @@ import {
   getAllUniqueMarkets,
   getProfilesForPrompt,
 } from "./matcher.ts";
-import { formatTaskLine, sendTaskCard, STATUS_LABEL } from "./formatter.ts";
+import { formatTaskLine, sendTaskCard, STATUS_LABEL, taskCountriesText } from "./formatter.ts";
 import { normalizeExtractedDueDate, todayIso } from "../../_shared/llm-date.ts";
 import type { Task } from "./types.ts";
 import type { TgCallbackQuery } from "../lib/types.ts";
@@ -51,7 +51,7 @@ async function broadcastTaskAssigned(task: Task, groupId: string): Promise<void>
   const due = task.due_date
     ? ` · до ${new Date(task.due_date + "T12:00:00").toLocaleDateString("ru-RU", { day: "numeric", month: "long" })}`
     : "";
-  const country = task.country ? ` · ${task.country}` : "";
+  const country = taskCountriesText(task) ? ` · ${taskCountriesText(task)}` : "";
   const text = `📋 Тебе назначена задача: <b>${escapeHtml(task.title)}</b>${country}${due}`;
 
   // Уведомление по инициативе бота: в комендантский час (23:00–9:00 МСК) ждёт утра в `telegram_outbox`.
@@ -230,7 +230,7 @@ export async function smartTaskSearch(
   const lines = tasks.map((t) => {
     const who = t.assignees?.join(", ") || "—";
     const due = t.due_date ? ` · до ${t.due_date}` : "";
-    const c = t.country ? ` · ${t.country}` : "";
+    const c = taskCountriesText(t) ? ` · ${taskCountriesText(t)}` : "";
     return `• ${escapeHtml(t.title)} (${escapeHtml(who)}${due}${c})`;
   }).join("\n");
 
@@ -862,7 +862,7 @@ async function handleTasksExport(chatId: number, groupId: string, viewerId: numb
     lines.push([
       t.title,
       (t.assignees ?? []).join("; "),
-      t.country ?? "",
+      taskCountriesText(t, ", "),
       t.due_date ?? "",
       t.status,
       t.source ?? "",

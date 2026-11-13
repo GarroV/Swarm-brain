@@ -47,3 +47,41 @@ export function countryFlag(value: string): string {
   const A = 0x1f1e6;
   return String.fromCodePoint(A + code.charCodeAt(0) - 65, A + code.charCodeAt(1) - 65);
 }
+
+// ── Несколько стран у задачи (issue #1262) ───────────────────────────────────────────────
+// У задачи список ISO-кодов `countries`; `country` — серверное зеркало первой страны. Строка,
+// пришедшая без `countries` (кэш до раскатки, узкая проекция), читается по старому `country`.
+export type CountriesCarrier = { countries?: readonly string[] | null; country?: string | null };
+
+/** Строка стран («HU», «Сербия», «RS, HU» — так хранили и так присылает разбор встречи) → коды без повторов. */
+export function parseCountryList(raw: string | null | undefined): string[] {
+  const codes = (raw ?? "").split(/[,;/]/).map((x) => x.trim()).filter((x) => x && x !== "—").map(countryCode);
+  return codes.filter((c, i) => codes.indexOf(c) === i);
+}
+
+/** Коды стран задачи. Пустой список `countries` — «без страны», а не повод лезть в `country`. */
+export function taskCountryCodes(t: CountriesCarrier): string[] {
+  return t.countries ? [...t.countries] : parseCountryList(t.country);
+}
+
+/** Коды через « · »; больше трёх — первые два и «+N»: «HU · RS +2». */
+export function countriesLabel(codes: readonly string[], maxShown = 3): string {
+  if (codes.length <= maxShown) return codes.join(" · ");
+  return `${codes.slice(0, maxShown - 1).join(" · ")} +${codes.length - (maxShown - 1)}`;
+}
+
+/** Код добавить в список или убрать, если он там уже есть (регистр кода не важен). */
+export function toggleCountry(codes: readonly string[], code: string): string[] {
+  const norm = countryCode(code);
+  return codes.some((c) => countryCode(c) === norm) ? codes.filter((c) => countryCode(c) !== norm) : [...codes, norm];
+}
+
+/** Подсказка/доступное имя: «HU, RS» → «Венгрия, Сербия». */
+export function countriesTitle(codes: readonly string[]): string {
+  return codes.map(countryName).join(", ");
+}
+
+/** Что слать и что писать в строку локально, когда список стран задачи поменялся. */
+export function countriesPatch(codes: readonly string[]): { countries: string[]; country: string | null } {
+  return { countries: [...codes], country: codes[0] ?? null };
+}
