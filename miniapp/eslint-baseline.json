@@ -1,0 +1,1040 @@
+[
+  {
+    "file": "e2e/aggregator-imf-delta.mjs",
+    "rule": "@next/next/no-assign-module-variable",
+    "message": "Do not assign to the variable `module`. See: https://nextjs.org/docs/messages/no-assign-module-variable",
+    "count": 1
+  },
+  {
+    "file": "e2e/market-ready-race.mjs",
+    "rule": "@next/next/no-assign-module-variable",
+    "message": "Do not assign to the variable `module`. See: https://nextjs.org/docs/messages/no-assign-module-variable",
+    "count": 1
+  },
+  {
+    "file": "e2e/market-ready-race.mjs",
+    "rule": "@typescript-eslint/no-unused-vars",
+    "message": "'countryGets' is assigned a value but never used.",
+    "count": 1
+  },
+  {
+    "file": "e2e/meeting-filter-copy.mjs",
+    "rule": "@next/next/no-assign-module-variable",
+    "message": "Do not assign to the variable `module`. See: https://nextjs.org/docs/messages/no-assign-module-variable",
+    "count": 1
+  },
+  {
+    "file": "e2e/mobile-nav.mjs",
+    "rule": "@typescript-eslint/no-unused-expressions",
+    "message": "Expected an assignment or function call and instead saw an expression.",
+    "count": 1
+  },
+  {
+    "file": "src/app/add-device/page.tsx",
+    "rule": "react-hooks/refs",
+    "message": "Error: Cannot access refs during render",
+    "count": 2
+  },
+  {
+    "file": "src/app/live/page.tsx",
+    "rule": "react-hooks/set-state-in-effect",
+    "message": "Error: Calling setState synchronously within an effect can trigger cascading renders",
+    "count": 1
+  },
+  {
+    "file": "src/app/login/page.tsx",
+    "rule": "react-hooks/set-state-in-effect",
+    "message": "Error: Calling setState synchronously within an effect can trigger cascading renders",
+    "count": 1
+  },
+  {
+    "file": "src/app/page.tsx",
+    "rule": "react-hooks/set-state-in-effect",
+    "message": "Error: Calling setState synchronously within an effect can trigger cascading renders",
+    "count": 1
+  },
+  {
+    "file": "src/components/AgentReviewQueue.tsx",
+    "rule": "react-hooks/set-state-in-effect",
+    "message": "Error: Calling setState synchronously within an effect can trigger cascading renders",
+    "count": 1
+  },
+  {
+    "file": "src/components/ChatGptSection.tsx",
+    "rule": "react-hooks/purity",
+    "message": "Error: Cannot call impure function during render",
+    "count": 1
+  },
+  {
+    "file": "src/components/ChatGptSection.tsx",
+    "rule": "react-hooks/set-state-in-effect",
+    "message": "Error: Calling setState synchronously within an effect can trigger cascading renders",
+    "count": 1
+  },
+  {
+    "file": "src/components/MaintenanceGate.tsx",
+    "rule": "react-hooks/set-state-in-effect",
+    "message": "Error: Calling setState synchronously within an effect can trigger cascading renders",
+    "count": 1
+  },
+  {
+    "file": "src/components/McpOAuthConsent.tsx",
+    "rule": "@next/next/no-html-link-for-pages",
+    "message": "Do not use an `<a>` element to navigate to `/`. Use `<Link />` from `next/link` instead. See: https://nextjs.org/docs/messages/no-html-link-for-pages",
+    "count": 1
+  },
+  {
+    "file": "src/components/McpOAuthConsent.tsx",
+    "rule": "react-hooks/set-state-in-effect",
+    "message": "Error: Calling setState synchronously within an effect can trigger cascading renders",
+    "count": 1
+  },
+  {
+    "file": "src/components/MeetingReview.tsx",
+    "rule": "react-hooks/set-state-in-effect",
+    "message": "Error: Calling setState synchronously within an effect can trigger cascading renders",
+    "count": 1
+  },
+  {
+    "file": "src/components/SettingsScreen.tsx",
+    "rule": "@typescript-eslint/no-unused-vars",
+    "message": "'Badge' is defined but never used.",
+    "count": 1
+  },
+  {
+    "file": "src/components/SettingsScreen.tsx",
+    "rule": "react-hooks/set-state-in-effect",
+    "message": "Error: Calling setState synchronously within an effect can trigger cascading renders",
+    "count": 2
+  },
+  {
+    "file": "src/components/SingleTabGate.tsx",
+    "rule": "react-hooks/set-state-in-effect",
+    "message": "Error: Calling setState synchronously within an effect can trigger cascading renders",
+    "count": 1
+  },
+  {
+    "file": "src/components/TaskModal.tsx",
+    "rule": "@typescript-eslint/no-unused-vars",
+    "message": "'displayName' is defined but never used.",
+    "count": 1
+  },
+  {
+    "file": "src/components/TaskModal.tsx",
+    "rule": "react-hooks/exhaustive-deps",
+    "message": "React Hook useEffect has a missing dependency: 'prefill'. Either include it or remove the dependency array.",
+    "count": 1
+  },
+  {
+    "file": "src/components/TaskModal.tsx",
+    "rule": "react-hooks/immutability",
+    "message": "Error: This value cannot be modified",
+    "count": 1
+  },
+  {
+    "file": "src/components/TaskModal.tsx",
+    "rule": "react-hooks/set-state-in-effect",
+    "message": "Error: Calling setState synchronously within an effect can trigger cascading renders",
+    "count": 4
+  },
+  {
+    "file": "src/components/admin/ModelUsagePanel.tsx",
+    "rule": "react-hooks/set-state-in-effect",
+    "message": "Error: Calling setState synchronously within an effect can trigger cascading renders",
+    "count": 1
+  },
+  {
+    "file": "src/components/admin/MoveMemberDialog.tsx",
+    "rule": "react-hooks/set-state-in-effect",
+    "message": "Error: Calling setState synchronously within an effect can trigger cascading renders",
+    "count": 1
+  },
+  {
+    "file": "src/components/admin/SpacesPanel.tsx",
+    "rule": "react-hooks/set-state-in-effect",
+    "message": "Error: Calling setState synchronously within an effect can trigger cascading renders",
+    "count": 2
+  },
+  {
+    "file": "src/components/admin/WorkspaceKeyPanel.tsx",
+    "rule": "react-hooks/set-state-in-effect",
+    "message": "Error: Calling setState synchronously within an effect can trigger cascading renders",
+    "count": 1
+  },
+  {
+    "file": "src/components/admin/WorkspaceMarkets.tsx",
+    "rule": "@typescript-eslint/no-unused-vars",
+    "message": "'useDt' is defined but never used.",
+    "count": 1
+  },
+  {
+    "file": "src/components/admin/WorkspaceOverview.tsx",
+    "rule": "react-hooks/set-state-in-effect",
+    "message": "Error: Calling setState synchronously within an effect can trigger cascading renders",
+    "count": 1
+  },
+  {
+    "file": "src/components/admin/WorkspaceReview.tsx",
+    "rule": "react-hooks/set-state-in-effect",
+    "message": "Error: Calling setState synchronously within an effect can trigger cascading renders",
+    "count": 1
+  },
+  {
+    "file": "src/components/admin/WorkspaceUsers.tsx",
+    "rule": "react-hooks/set-state-in-effect",
+    "message": "Error: Calling setState synchronously within an effect can trigger cascading renders",
+    "count": 1
+  },
+  {
+    "file": "src/components/market/MarketMap.tsx",
+    "rule": "react-hooks/set-state-in-effect",
+    "message": "Error: Calling setState synchronously within an effect can trigger cascading renders",
+    "count": 1
+  },
+  {
+    "file": "src/components/market/MarketScreen.tsx",
+    "rule": "react-hooks/set-state-in-effect",
+    "message": "Error: Calling setState synchronously within an effect can trigger cascading renders",
+    "count": 2
+  },
+  {
+    "file": "src/components/market/MoneySection.tsx",
+    "rule": "react-hooks/preserve-manual-memoization",
+    "message": "Compilation Skipped: Existing memoization could not be preserved",
+    "count": 3
+  },
+  {
+    "file": "src/components/presence/PresenceStrip.tsx",
+    "rule": "react-hooks/set-state-in-effect",
+    "message": "Error: Calling setState synchronously within an effect can trigger cascading renders",
+    "count": 1
+  },
+  {
+    "file": "src/components/profile/BackdropSection.tsx",
+    "rule": "react-hooks/set-state-in-effect",
+    "message": "Error: Calling setState synchronously within an effect can trigger cascading renders",
+    "count": 1
+  },
+  {
+    "file": "src/components/profile/CustomBackdropPanel.tsx",
+    "rule": "react-hooks/set-state-in-effect",
+    "message": "Error: Calling setState synchronously within an effect can trigger cascading renders",
+    "count": 1
+  },
+  {
+    "file": "src/components/profile/PasskeysSection.tsx",
+    "rule": "react-hooks/set-state-in-effect",
+    "message": "Error: Calling setState synchronously within an effect can trigger cascading renders",
+    "count": 1
+  },
+  {
+    "file": "src/components/roy/AnswerModal.tsx",
+    "rule": "react-hooks/set-state-in-effect",
+    "message": "Error: Calling setState synchronously within an effect can trigger cascading renders",
+    "count": 2
+  },
+  {
+    "file": "src/components/roy/BackdropLayer.tsx",
+    "rule": "react-hooks/refs",
+    "message": "Error: Cannot access refs during render",
+    "count": 1
+  },
+  {
+    "file": "src/components/roy/InviteBotCard.tsx",
+    "rule": "react-hooks/set-state-in-effect",
+    "message": "Error: Calling setState synchronously within an effect can trigger cascading renders",
+    "count": 1
+  },
+  {
+    "file": "src/components/roy/PasskeyStep.tsx",
+    "rule": "react-hooks/set-state-in-effect",
+    "message": "Error: Calling setState synchronously within an effect can trigger cascading renders",
+    "count": 1
+  },
+  {
+    "file": "src/components/roy/RailSearch.tsx",
+    "rule": "react-hooks/set-state-in-effect",
+    "message": "Error: Calling setState synchronously within an effect can trigger cascading renders",
+    "count": 1
+  },
+  {
+    "file": "src/components/roy/RoyApp.tsx",
+    "rule": "@typescript-eslint/no-unused-vars",
+    "message": "'ROY_TABS' is defined but never used.",
+    "count": 1
+  },
+  {
+    "file": "src/components/roy/RoyApp.tsx",
+    "rule": "react-hooks/set-state-in-effect",
+    "message": "Error: Calling setState synchronously within an effect can trigger cascading renders",
+    "count": 2
+  },
+  {
+    "file": "src/components/roy/SecondStepGate.tsx",
+    "rule": "react-hooks/set-state-in-effect",
+    "message": "Error: Calling setState synchronously within an effect can trigger cascading renders",
+    "count": 1
+  },
+  {
+    "file": "src/components/roy/SwipeRow.tsx",
+    "rule": "react-hooks/refs",
+    "message": "Error: Cannot access refs during render",
+    "count": 3
+  },
+  {
+    "file": "src/components/roy/TasksFromMeeting.tsx",
+    "rule": "react-hooks/set-state-in-effect",
+    "message": "Error: Calling setState synchronously within an effect can trigger cascading renders",
+    "count": 1
+  },
+  {
+    "file": "src/components/roy/dash/Materials.tsx",
+    "rule": "react-hooks/purity",
+    "message": "Error: Cannot call impure function during render",
+    "count": 1
+  },
+  {
+    "file": "src/components/roy/dash/MeetingsToday.tsx",
+    "rule": "react-hooks/set-state-in-effect",
+    "message": "Error: Calling setState synchronously within an effect can trigger cascading renders",
+    "count": 2
+  },
+  {
+    "file": "src/components/roy/dash/PersonalDigest.tsx",
+    "rule": "react-hooks/exhaustive-deps",
+    "message": "React Hook useCallback has a missing dependency: 'dt'. Either include it or remove the dependency array.",
+    "count": 1
+  },
+  {
+    "file": "src/components/roy/dash/PersonalDigest.tsx",
+    "rule": "react-hooks/set-state-in-effect",
+    "message": "Error: Calling setState synchronously within an effect can trigger cascading renders",
+    "count": 1
+  },
+  {
+    "file": "src/components/roy/dash/PersonalTasks.tsx",
+    "rule": "@typescript-eslint/no-unused-vars",
+    "message": "'week' is assigned a value but never used.",
+    "count": 1
+  },
+  {
+    "file": "src/components/roy/dash/myTasks.ts",
+    "rule": "@typescript-eslint/no-unused-vars",
+    "message": "'norm' is assigned a value but never used.",
+    "count": 1
+  },
+  {
+    "file": "src/components/roy/dash/shared.tsx",
+    "rule": "react-hooks/refs",
+    "message": "Error: Cannot access refs during render",
+    "count": 2
+  },
+  {
+    "file": "src/components/roy/dash/useDashboardData.ts",
+    "rule": "react-hooks/purity",
+    "message": "Error: Cannot call impure function during render",
+    "count": 1
+  },
+  {
+    "file": "src/components/roy/home/ChartControls.tsx",
+    "rule": "react-hooks/set-state-in-effect",
+    "message": "Error: Calling setState synchronously within an effect can trigger cascading renders",
+    "count": 2
+  },
+  {
+    "file": "src/components/roy/home/HomeGrid.tsx",
+    "rule": "react-hooks/exhaustive-deps",
+    "message": "React Hook useEffect has a missing dependency: 'setEditing'. Either include it or remove the dependency array. If 'setEditing' changes too often, find the parent component that defines it and wrap that definition in useCallback.",
+    "count": 1
+  },
+  {
+    "file": "src/components/roy/home/HomeGrid.tsx",
+    "rule": "react-hooks/set-state-in-effect",
+    "message": "Error: Calling setState synchronously within an effect can trigger cascading renders",
+    "count": 1
+  },
+  {
+    "file": "src/components/roy/home/HomeGrid.tsx",
+    "rule": "react-hooks/use-memo",
+    "message": "Error: Expected the dependency list to be an array of simple expressions (e.g. `x`, `x.y.z`, `x?.y?.z`)",
+    "count": 1
+  },
+  {
+    "file": "src/components/roy/home/MiscWidgets.tsx",
+    "rule": "react-hooks/exhaustive-deps",
+    "message": "React Hook useMemo has an unnecessary dependency: 'data.tasks'. Either exclude it or remove the dependency array.",
+    "count": 1
+  },
+  {
+    "file": "src/components/roy/home/RatingsWidget.tsx",
+    "rule": "react-hooks/set-state-in-effect",
+    "message": "Error: Calling setState synchronously within an effect can trigger cascading renders",
+    "count": 1
+  },
+  {
+    "file": "src/components/roy/home/TableWidgets.tsx",
+    "rule": "@typescript-eslint/no-unused-vars",
+    "message": "'pct' is assigned a value but never used.",
+    "count": 1
+  },
+  {
+    "file": "src/components/roy/home/TaskWidgets.tsx",
+    "rule": "@typescript-eslint/no-unused-vars",
+    "message": "'HomeLabel' is defined but never used.",
+    "count": 1
+  },
+  {
+    "file": "src/components/roy/home/TaskWidgets.tsx",
+    "rule": "react-hooks/exhaustive-deps",
+    "message": "React Hook useMemo has an unnecessary dependency: 'data.tasks'. Either exclude it or remove the dependency array.",
+    "count": 2
+  },
+  {
+    "file": "src/components/roy/home/useAggregators.ts",
+    "rule": "react-hooks/set-state-in-effect",
+    "message": "Error: Calling setState synchronously within an effect can trigger cascading renders",
+    "count": 1
+  },
+  {
+    "file": "src/components/roy/home/useCountrySales.ts",
+    "rule": "react-hooks/set-state-in-effect",
+    "message": "Error: Calling setState synchronously within an effect can trigger cascading renders",
+    "count": 1
+  },
+  {
+    "file": "src/components/roy/home/useInspections.ts",
+    "rule": "react-hooks/set-state-in-effect",
+    "message": "Error: Calling setState synchronously within an effect can trigger cascading renders",
+    "count": 1
+  },
+  {
+    "file": "src/components/roy/home/useMaps.ts",
+    "rule": "react-hooks/set-state-in-effect",
+    "message": "Error: Calling setState synchronously within an effect can trigger cascading renders",
+    "count": 1
+  },
+  {
+    "file": "src/components/roy/home/useQuality.ts",
+    "rule": "react-hooks/set-state-in-effect",
+    "message": "Error: Calling setState synchronously within an effect can trigger cascading renders",
+    "count": 1
+  },
+  {
+    "file": "src/components/roy/record/MicHelp.tsx",
+    "rule": "react-hooks/set-state-in-effect",
+    "message": "Error: Calling setState synchronously within an effect can trigger cascading renders",
+    "count": 1
+  },
+  {
+    "file": "src/components/roy/record/RecorderProvider.tsx",
+    "rule": "@typescript-eslint/no-unused-vars",
+    "message": "'useCallback' is defined but never used.",
+    "count": 1
+  },
+  {
+    "file": "src/components/roy/record/RecorderProvider.tsx",
+    "rule": "react-hooks/refs",
+    "message": "Error: Cannot access refs during render",
+    "count": 1
+  },
+  {
+    "file": "src/components/roy/record/RecorderProvider.tsx",
+    "rule": "react-hooks/set-state-in-effect",
+    "message": "Error: Calling setState synchronously within an effect can trigger cascading renders",
+    "count": 1
+  },
+  {
+    "file": "src/components/roy/record/RecordingPill.tsx",
+    "rule": "react-hooks/set-state-in-effect",
+    "message": "Error: Calling setState synchronously within an effect can trigger cascading renders",
+    "count": 3
+  },
+  {
+    "file": "src/components/roy/screens/AnswerScreen.tsx",
+    "rule": "react-hooks/set-state-in-effect",
+    "message": "Error: Calling setState synchronously within an effect can trigger cascading renders",
+    "count": 1
+  },
+  {
+    "file": "src/components/roy/screens/BaseDesk.tsx",
+    "rule": "react-hooks/exhaustive-deps",
+    "message": "The 'all' logical expression could make the dependencies of useMemo Hook (at line 55) change on every render. To fix this, wrap the initialization of 'all' in its own useMemo() Hook.",
+    "count": 1
+  },
+  {
+    "file": "src/components/roy/screens/ContentEditor.tsx",
+    "rule": "react-hooks/set-state-in-effect",
+    "message": "Error: Calling setState synchronously within an effect can trigger cascading renders",
+    "count": 1
+  },
+  {
+    "file": "src/components/roy/screens/MeetAdminScreen.tsx",
+    "rule": "@typescript-eslint/no-unused-vars",
+    "message": "'RoyCard' is defined but never used.",
+    "count": 1
+  },
+  {
+    "file": "src/components/roy/screens/MeetAdminScreen.tsx",
+    "rule": "@typescript-eslint/no-unused-vars",
+    "message": "'isConfirmed' is defined but never used.",
+    "count": 1
+  },
+  {
+    "file": "src/components/roy/screens/MeetAdminScreen.tsx",
+    "rule": "react-hooks/exhaustive-deps",
+    "message": "React Hook useEffect has a missing dependency: 'm'. Either include it or remove the dependency array.",
+    "count": 1
+  },
+  {
+    "file": "src/components/roy/screens/MeetAdminScreen.tsx",
+    "rule": "react-hooks/set-state-in-effect",
+    "message": "Error: Calling setState synchronously within an effect can trigger cascading renders",
+    "count": 8
+  },
+  {
+    "file": "src/components/roy/screens/MeetingDetail.tsx",
+    "rule": "react-hooks/exhaustive-deps",
+    "message": "React Hook useCallback has an unnecessary dependency: 'tasksVersion'. Either exclude it or remove the dependency array.",
+    "count": 1
+  },
+  {
+    "file": "src/components/roy/screens/RoyTasksScreen.tsx",
+    "rule": "@typescript-eslint/no-unused-vars",
+    "message": "'openTask' is assigned a value but never used.",
+    "count": 1
+  },
+  {
+    "file": "src/components/roy/screens/SearchScreen.tsx",
+    "rule": "react-hooks/set-state-in-effect",
+    "message": "Error: Calling setState synchronously within an effect can trigger cascading renders",
+    "count": 1
+  },
+  {
+    "file": "src/components/roy/screens/TaskRoute.tsx",
+    "rule": "react-hooks/set-state-in-effect",
+    "message": "Error: Calling setState synchronously within an effect can trigger cascading renders",
+    "count": 1
+  },
+  {
+    "file": "src/components/roy/screens/useMeetingsList.ts",
+    "rule": "react-hooks/set-state-in-effect",
+    "message": "Error: Calling setState synchronously within an effect can trigger cascading renders",
+    "count": 2
+  },
+  {
+    "file": "src/components/roy/ui.tsx",
+    "rule": "@next/next/no-img-element",
+    "message": "Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` or a custom image loader to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element",
+    "count": 1
+  },
+  {
+    "file": "src/components/roy/useOverdueCount.ts",
+    "rule": "react-hooks/exhaustive-deps",
+    "message": "React Hook useMemo has an unnecessary dependency: 'me'. Either exclude it or remove the dependency array.",
+    "count": 1
+  },
+  {
+    "file": "src/components/settings/NotificationSoundToggle.tsx",
+    "rule": "react-hooks/set-state-in-effect",
+    "message": "Error: Calling setState synchronously within an effect can trigger cascading renders",
+    "count": 1
+  },
+  {
+    "file": "src/components/tasks/LabelEditor.tsx",
+    "rule": "react-hooks/set-state-in-effect",
+    "message": "Error: Calling setState synchronously within an effect can trigger cascading renders",
+    "count": 1
+  },
+  {
+    "file": "src/components/tasks/PeoplePopover.tsx",
+    "rule": "react-hooks/set-state-in-effect",
+    "message": "Error: Calling setState synchronously within an effect can trigger cascading renders",
+    "count": 1
+  },
+  {
+    "file": "src/components/tasks/ProjectTree.tsx",
+    "rule": "react-hooks/exhaustive-deps",
+    "message": "React Hook useCallback has a missing dependency: 'multiSelected'. Either include it or remove the dependency array.",
+    "count": 1
+  },
+  {
+    "file": "src/components/tasks/ProjectTree.tsx",
+    "rule": "react-hooks/exhaustive-deps",
+    "message": "React Hook useCallback has missing dependencies: 'multiSelected' and 'rf'. Either include them or remove the dependency array.",
+    "count": 1
+  },
+  {
+    "file": "src/components/tasks/ProjectTree.tsx",
+    "rule": "react-hooks/immutability",
+    "message": "Error: Cannot access variable before it is declared",
+    "count": 1
+  },
+  {
+    "file": "src/components/tasks/ProjectTree.tsx",
+    "rule": "react-hooks/set-state-in-effect",
+    "message": "Error: Calling setState synchronously within an effect can trigger cascading renders",
+    "count": 1
+  },
+  {
+    "file": "src/components/tasks/ProjectsGrid.tsx",
+    "rule": "react-hooks/set-state-in-effect",
+    "message": "Error: Calling setState synchronously within an effect can trigger cascading renders",
+    "count": 1
+  },
+  {
+    "file": "src/components/tasks/QuickPickPopover.tsx",
+    "rule": "react-hooks/set-state-in-effect",
+    "message": "Error: Calling setState synchronously within an effect can trigger cascading renders",
+    "count": 1
+  },
+  {
+    "file": "src/components/tasks/SprintBoard.tsx",
+    "rule": "react-hooks/set-state-in-effect",
+    "message": "Error: Calling setState synchronously within an effect can trigger cascading renders",
+    "count": 1
+  },
+  {
+    "file": "src/components/tasks/SprintsScreen.tsx",
+    "rule": "@typescript-eslint/no-unused-vars",
+    "message": "'liveCycle' is assigned a value but never used.",
+    "count": 1
+  },
+  {
+    "file": "src/components/tasks/SprintsScreen.tsx",
+    "rule": "@typescript-eslint/no-unused-vars",
+    "message": "'removeFromSprint' is defined but never used.",
+    "count": 1
+  },
+  {
+    "file": "src/components/tasks/SprintsScreen.tsx",
+    "rule": "@typescript-eslint/no-unused-vars",
+    "message": "'saveInitiative' is defined but never used.",
+    "count": 1
+  },
+  {
+    "file": "src/components/tasks/SprintsScreen.tsx",
+    "rule": "@typescript-eslint/no-unused-vars",
+    "message": "'showList' is assigned a value but never used.",
+    "count": 1
+  },
+  {
+    "file": "src/components/tasks/SprintsScreen.tsx",
+    "rule": "react-hooks/exhaustive-deps",
+    "message": "The 'items' logical expression could make the dependencies of useMemo Hook (at line 262) change on every render. To fix this, wrap the initialization of 'items' in its own useMemo() Hook.",
+    "count": 1
+  },
+  {
+    "file": "src/components/tasks/SprintsScreen.tsx",
+    "rule": "react-hooks/exhaustive-deps",
+    "message": "The 'items' logical expression could make the dependencies of useMemo Hook (at line 270) change on every render. To fix this, wrap the initialization of 'items' in its own useMemo() Hook.",
+    "count": 1
+  },
+  {
+    "file": "src/components/tasks/SprintsScreen.tsx",
+    "rule": "react-hooks/exhaustive-deps",
+    "message": "The 'items' logical expression could make the dependencies of useMemo Hook (at line 288) change on every render. To fix this, wrap the initialization of 'items' in its own useMemo() Hook.",
+    "count": 1
+  },
+  {
+    "file": "src/components/tasks/SprintsScreen.tsx",
+    "rule": "react-hooks/exhaustive-deps",
+    "message": "The 'items' logical expression could make the dependencies of useMemo Hook (at line 293) change on every render. To fix this, wrap the initialization of 'items' in its own useMemo() Hook.",
+    "count": 1
+  },
+  {
+    "file": "src/components/tasks/SprintsScreen.tsx",
+    "rule": "react-hooks/exhaustive-deps",
+    "message": "The 'items' logical expression could make the dependencies of useMemo Hook (at line 299) change on every render. To fix this, wrap the initialization of 'items' in its own useMemo() Hook.",
+    "count": 1
+  },
+  {
+    "file": "src/components/tasks/SprintsScreen.tsx",
+    "rule": "react-hooks/exhaustive-deps",
+    "message": "The 'items' logical expression could make the dependencies of useMemo Hook (at line 649) change on every render. To fix this, wrap the initialization of 'items' in its own useMemo() Hook.",
+    "count": 1
+  },
+  {
+    "file": "src/components/tasks/SprintsScreen.tsx",
+    "rule": "react-hooks/set-state-in-effect",
+    "message": "Error: Calling setState synchronously within an effect can trigger cascading renders",
+    "count": 5
+  },
+  {
+    "file": "src/components/tasks/TaskComments.tsx",
+    "rule": "react-hooks/exhaustive-deps",
+    "message": "React Hook useEffect has missing dependencies: 'copy.loadError' and 'toast'. Either include them or remove the dependency array.",
+    "count": 1
+  },
+  {
+    "file": "src/components/tasks/TaskFiles.tsx",
+    "rule": "react-hooks/refs",
+    "message": "Error: Cannot access refs during render",
+    "count": 6
+  },
+  {
+    "file": "src/components/tasks/TaskKanban.tsx",
+    "rule": "react-hooks/refs",
+    "message": "Error: Cannot access refs during render",
+    "count": 3
+  },
+  {
+    "file": "src/components/tasks/TaskSprintField.tsx",
+    "rule": "react-hooks/set-state-in-effect",
+    "message": "Error: Calling setState synchronously within an effect can trigger cascading renders",
+    "count": 1
+  },
+  {
+    "file": "src/components/tasks/TimelineView.tsx",
+    "rule": "react-hooks/refs",
+    "message": "Error: Cannot access refs during render",
+    "count": 1
+  },
+  {
+    "file": "src/components/tasks/TimelineView.tsx",
+    "rule": "react-hooks/set-state-in-effect",
+    "message": "Error: Calling setState synchronously within an effect can trigger cascading renders",
+    "count": 1
+  },
+  {
+    "file": "src/components/tasks/sprints/AcceptDialog.tsx",
+    "rule": "react-hooks/refs",
+    "message": "Error: Cannot access refs during render",
+    "count": 1
+  },
+  {
+    "file": "src/components/tasks/sprints/AcceptDialog.tsx",
+    "rule": "react-hooks/set-state-in-effect",
+    "message": "Error: Calling setState synchronously within an effect can trigger cascading renders",
+    "count": 1
+  },
+  {
+    "file": "src/components/tasks/sprints/GroupNameDialog.tsx",
+    "rule": "react-hooks/set-state-in-effect",
+    "message": "Error: Calling setState synchronously within an effect can trigger cascading renders",
+    "count": 1
+  },
+  {
+    "file": "src/components/tasks/sprints/InitiativeList.tsx",
+    "rule": "react-hooks/set-state-in-effect",
+    "message": "Error: Calling setState synchronously within an effect can trigger cascading renders",
+    "count": 1
+  },
+  {
+    "file": "src/components/tasks/sprints/JournalScreen.tsx",
+    "rule": "react-hooks/exhaustive-deps",
+    "message": "React Hook useEffect has a missing dependency: 'dt'. Either include it or remove the dependency array.",
+    "count": 1
+  },
+  {
+    "file": "src/components/tasks/sprints/JournalScreen.tsx",
+    "rule": "react-hooks/refs",
+    "message": "Error: Cannot access refs during render",
+    "count": 1
+  },
+  {
+    "file": "src/components/tasks/sprints/JournalScreen.tsx",
+    "rule": "react-hooks/set-state-in-effect",
+    "message": "Error: Calling setState synchronously within an effect can trigger cascading renders",
+    "count": 1
+  },
+  {
+    "file": "src/components/tasks/sprints/JourneyDialog.tsx",
+    "rule": "react-hooks/set-state-in-effect",
+    "message": "Error: Calling setState synchronously within an effect can trigger cascading renders",
+    "count": 1
+  },
+  {
+    "file": "src/components/tasks/sprints/MoveDialog.tsx",
+    "rule": "react-hooks/set-state-in-effect",
+    "message": "Error: Calling setState synchronously within an effect can trigger cascading renders",
+    "count": 2
+  },
+  {
+    "file": "src/components/tasks/sprints/PickTargetDialog.tsx",
+    "rule": "react-hooks/set-state-in-effect",
+    "message": "Error: Calling setState synchronously within an effect can trigger cascading renders",
+    "count": 1
+  },
+  {
+    "file": "src/components/tasks/sprints/PlanPanel.tsx",
+    "rule": "react-hooks/set-state-in-effect",
+    "message": "Error: Calling setState synchronously within an effect can trigger cascading renders",
+    "count": 1
+  },
+  {
+    "file": "src/components/tasks/sprints/ReasonDialog.tsx",
+    "rule": "react-hooks/set-state-in-effect",
+    "message": "Error: Calling setState synchronously within an effect can trigger cascading renders",
+    "count": 1
+  },
+  {
+    "file": "src/components/tasks/sprints/SpanDialog.tsx",
+    "rule": "react-hooks/set-state-in-effect",
+    "message": "Error: Calling setState synchronously within an effect can trigger cascading renders",
+    "count": 2
+  },
+  {
+    "file": "src/components/tasks/sprints/ViewToggle.tsx",
+    "rule": "react-hooks/set-state-in-effect",
+    "message": "Error: Calling setState synchronously within an effect can trigger cascading renders",
+    "count": 2
+  },
+  {
+    "file": "src/components/tasks/sprints/board/SprintBoardView.tsx",
+    "rule": "react-hooks/set-state-in-effect",
+    "message": "Error: Calling setState synchronously within an effect can trigger cascading renders",
+    "count": 1
+  },
+  {
+    "file": "src/components/tasks/sprints/board/TaskMenu.tsx",
+    "rule": "react-hooks/set-state-in-effect",
+    "message": "Error: Calling setState synchronously within an effect can trigger cascading renders",
+    "count": 1
+  },
+  {
+    "file": "src/components/tasks/sprints/timeline/TimelineView.tsx",
+    "rule": "react-hooks/set-state-in-effect",
+    "message": "Error: Calling setState synchronously within an effect can trigger cascading renders",
+    "count": 1
+  },
+  {
+    "file": "src/components/tasks/sprints/useRowDrag.ts",
+    "rule": "react-hooks/immutability",
+    "message": "Error: Cannot access variable before it is declared",
+    "count": 1
+  },
+  {
+    "file": "src/components/tasks/sprints/useRowDrag.ts",
+    "rule": "react-hooks/refs",
+    "message": "Error: Cannot access refs during render",
+    "count": 1
+  },
+  {
+    "file": "src/components/tasks/sprints/useStoredFlag.ts",
+    "rule": "react-hooks/set-state-in-effect",
+    "message": "Error: Calling setState synchronously within an effect can trigger cascading renders",
+    "count": 1
+  },
+  {
+    "file": "src/components/tasks/table/Menu.tsx",
+    "rule": "react-hooks/set-state-in-effect",
+    "message": "Error: Calling setState synchronously within an effect can trigger cascading renders",
+    "count": 1
+  },
+  {
+    "file": "src/components/tasks/table/TaskCalendar.tsx",
+    "rule": "react-hooks/set-state-in-effect",
+    "message": "Error: Calling setState synchronously within an effect can trigger cascading renders",
+    "count": 1
+  },
+  {
+    "file": "src/components/tasks/table/TasksTable.tsx",
+    "rule": "@typescript-eslint/no-unused-vars",
+    "message": "'cn' is defined but never used.",
+    "count": 1
+  },
+  {
+    "file": "src/components/tasks/table/useColumnLayout.ts",
+    "rule": "react-hooks/set-state-in-effect",
+    "message": "Error: Calling setState synchronously within an effect can trigger cascading renders",
+    "count": 1
+  },
+  {
+    "file": "src/components/tasks/taskModalPresentation.tsx",
+    "rule": "@typescript-eslint/no-unused-vars",
+    "message": "'PropertyPillBody' is defined but never used.",
+    "count": 1
+  },
+  {
+    "file": "src/components/tasks/useReminderTasks.ts",
+    "rule": "@typescript-eslint/no-unused-vars",
+    "message": "'DEFAULT_STATUSES' is defined but never used.",
+    "count": 1
+  },
+  {
+    "file": "src/components/tasks/useReminderTasks.ts",
+    "rule": "@typescript-eslint/no-unused-vars",
+    "message": "'STATUS_FILTERS' is defined but never used.",
+    "count": 1
+  },
+  {
+    "file": "src/components/tasks/useReminderTasks.ts",
+    "rule": "react-hooks/exhaustive-deps",
+    "message": "React Hook useMemo has an unnecessary dependency: 'tasks'. Either exclude it or remove the dependency array.",
+    "count": 1
+  },
+  {
+    "file": "src/components/tasks/useReminderTasks.ts",
+    "rule": "react-hooks/exhaustive-deps",
+    "message": "The 'list' logical expression could make the dependencies of useCallback Hook (at line 245) change on every render. To fix this, wrap the initialization of 'list' in its own useMemo() Hook.",
+    "count": 1
+  },
+  {
+    "file": "src/components/tasks/useReminderTasks.ts",
+    "rule": "react-hooks/exhaustive-deps",
+    "message": "The 'list' logical expression could make the dependencies of useMemo Hook (at line 231) change on every render. To fix this, wrap the initialization of 'list' in its own useMemo() Hook.",
+    "count": 1
+  },
+  {
+    "file": "src/components/tasks/useReminderTasks.ts",
+    "rule": "react-hooks/exhaustive-deps",
+    "message": "The 'list' logical expression could make the dependencies of useMemo Hook (at line 234) change on every render. To fix this, wrap the initialization of 'list' in its own useMemo() Hook.",
+    "count": 1
+  },
+  {
+    "file": "src/components/tasks/useReminderTasks.ts",
+    "rule": "react-hooks/exhaustive-deps",
+    "message": "The 'list' logical expression could make the dependencies of useMemo Hook (at line 242) change on every render. To fix this, wrap the initialization of 'list' in its own useMemo() Hook.",
+    "count": 1
+  },
+  {
+    "file": "src/components/tasks/useReminderTasks.ts",
+    "rule": "react-hooks/exhaustive-deps",
+    "message": "The 'list' logical expression could make the dependencies of useMemo Hook (at line 257) change on every render. To fix this, wrap the initialization of 'list' in its own useMemo() Hook.",
+    "count": 1
+  },
+  {
+    "file": "src/components/tasks/useReminderTasks.ts",
+    "rule": "react-hooks/refs",
+    "message": "Error: Cannot access refs during render",
+    "count": 1
+  },
+  {
+    "file": "src/components/tasks/useReminderTasks.ts",
+    "rule": "react-hooks/set-state-in-effect",
+    "message": "Error: Calling setState synchronously within an effect can trigger cascading renders",
+    "count": 2
+  },
+  {
+    "file": "src/components/tasks/useTaskFiles.ts",
+    "rule": "react-hooks/set-state-in-effect",
+    "message": "Error: Calling setState synchronously within an effect can trigger cascading renders",
+    "count": 1
+  },
+  {
+    "file": "src/components/tools/QrCard.tsx",
+    "rule": "react-hooks/set-state-in-effect",
+    "message": "Error: Calling setState synchronously within an effect can trigger cascading renders",
+    "count": 1
+  },
+  {
+    "file": "src/components/ui/DatePicker.tsx",
+    "rule": "react-hooks/set-state-in-effect",
+    "message": "Error: Calling setState synchronously within an effect can trigger cascading renders",
+    "count": 1
+  },
+  {
+    "file": "src/components/ui/QuickTooltip.tsx",
+    "rule": "react-hooks/exhaustive-deps",
+    "message": "React Hook useLayoutEffect has a missing dependency: 'hide'. Either include it or remove the dependency array.",
+    "count": 1
+  },
+  {
+    "file": "src/components/ui/RangePicker.tsx",
+    "rule": "react-hooks/set-state-in-effect",
+    "message": "Error: Calling setState synchronously within an effect can trigger cascading renders",
+    "count": 1
+  },
+  {
+    "file": "src/lib/api.ts",
+    "rule": "@typescript-eslint/no-unused-vars",
+    "message": "'InspectionPrev' is defined but never used.",
+    "count": 1
+  },
+  {
+    "file": "src/lib/api.ts",
+    "rule": "@typescript-eslint/no-unused-vars",
+    "message": "'InspectionZone' is defined but never used.",
+    "count": 1
+  },
+  {
+    "file": "src/lib/api.ts",
+    "rule": "@typescript-eslint/no-unused-vars",
+    "message": "'MaintenanceNotice' is defined but never used.",
+    "count": 1
+  },
+  {
+    "file": "src/lib/api.ts",
+    "rule": "@typescript-eslint/no-unused-vars",
+    "message": "'QualityUnit' is defined but never used.",
+    "count": 1
+  },
+  {
+    "file": "src/lib/api.ts",
+    "rule": "@typescript-eslint/no-unused-vars",
+    "message": "'TodayMeeting' is defined but never used.",
+    "count": 1
+  },
+  {
+    "file": "src/lib/api.ts",
+    "rule": "@typescript-eslint/no-unused-vars",
+    "message": "'UsageSlice' is defined but never used.",
+    "count": 1
+  },
+  {
+    "file": "src/lib/homeTasks.test.ts",
+    "rule": "@typescript-eslint/no-unused-vars",
+    "message": "'ru' is assigned a value but never used.",
+    "count": 1
+  },
+  {
+    "file": "src/lib/homeTasks.ts",
+    "rule": "@typescript-eslint/no-unused-vars",
+    "message": "'WEEK_MS' is assigned a value but never used.",
+    "count": 1
+  },
+  {
+    "file": "src/lib/integrationStatus.test.ts",
+    "rule": "@typescript-eslint/no-unused-vars",
+    "message": "'_en' is defined but never used.",
+    "count": 1
+  },
+  {
+    "file": "src/lib/journalText.test.ts",
+    "rule": "@typescript-eslint/no-unused-vars",
+    "message": "'_e' is defined but never used.",
+    "count": 1
+  },
+  {
+    "file": "src/lib/marketDemo.ts",
+    "rule": "@typescript-eslint/no-unused-vars",
+    "message": "'_c' is defined but never used.",
+    "count": 1
+  },
+  {
+    "file": "src/lib/marketDemo.ts",
+    "rule": "@typescript-eslint/no-unused-vars",
+    "message": "'_p' is defined but never used.",
+    "count": 1
+  },
+  {
+    "file": "src/lib/marketDemo.ts",
+    "rule": "@typescript-eslint/no-unused-vars",
+    "message": "'_s' is defined but never used.",
+    "count": 1
+  },
+  {
+    "file": "src/lib/passkeyStep.ts",
+    "rule": "@typescript-eslint/no-unused-vars",
+    "message": "'_mode' is defined but never used.",
+    "count": 1
+  },
+  {
+    "file": "src/lib/sourceLabels.test.ts",
+    "rule": "@typescript-eslint/no-unused-vars",
+    "message": "'_e' is defined but never used.",
+    "count": 1
+  },
+  {
+    "file": "src/lib/useBackdrop.ts",
+    "rule": "react-hooks/set-state-in-effect",
+    "message": "Error: Calling setState synchronously within an effect can trigger cascading renders",
+    "count": 1
+  },
+  {
+    "file": "src/lib/useScheme.ts",
+    "rule": "react-hooks/set-state-in-effect",
+    "message": "Error: Calling setState synchronously within an effect can trigger cascading renders",
+    "count": 1
+  }
+]
