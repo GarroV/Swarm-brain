@@ -3,7 +3,7 @@
 // Логика записи — общая с импортом снимка в `_shared/market/`, здесь доступ, разбор аргументов
 // и текст ответа агенту. Читать — кто видит страну на вебе; писать — только админ.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { allRows, must } from "../_shared/market/db.ts";
+import { allRows, excludeChains, hiddenChainKeys, must } from "../_shared/market/db.ts";
 import { canSeeCountry, canWriteCountry } from "../_shared/market/rules.ts";
 import { EDITORIAL_BLOCKS } from "../_shared/market/editorial.ts";
 import {
@@ -115,20 +115,24 @@ async function toolGet(args: Args): Promise<string> {
   }
   if (section === "chains") {
     const rows = await must<unknown[]>(
-      supabase.from("mkt_chains").select("key, name, slot, segment, is_bakery, origin").eq("country", c.cc).order(
-        "slot",
-      ),
+      supabase.from("mkt_chains").select("key, name, slot, segment, is_bakery, origin").eq("country", c.cc).is(
+        "hidden_at",
+        null,
+      ).order("slot"),
       "chains",
     );
     return JSON.stringify(rows);
   }
   if (section === "money") {
+    const hidden = await hiddenChainKeys(supabase, c.cc);
     const rows = await allRows<unknown>(
       (a, b) =>
-        supabase.from("mkt_companies").select(
-          "name, chain_key, reg_id, mkt_financials(year, revenue_eur, employees, source, verification, note)",
-        )
-          .eq("country", c.cc).order("name").range(a, b),
+        excludeChains(
+          supabase.from("mkt_companies").select(
+            "name, chain_key, reg_id, mkt_financials(year, revenue_eur, employees, source, verification, note)",
+          ).eq("country", c.cc),
+          hidden,
+        ).order("name").range(a, b),
       "money",
     );
     return JSON.stringify(rows);
@@ -138,6 +142,7 @@ async function toolGet(args: Args): Promise<string> {
       .select("id, chain_key, name, city, address, lat, lng, opened, status, closed, source_kind, verification")
       .eq("country", c.cc);
     if (chain) q = q.eq("chain_key", chain);
+    q = excludeChains(q, await hiddenChainKeys(supabase, c.cc));
     if (typeof args.city === "string" && args.city) q = q.ilike("city", `%${args.city}%`);
     const rows = await must<unknown[]>(q.order("chain_key").limit(GET_LIMIT + 1), "locations");
     const more = rows.length > GET_LIMIT ? `\n…больше ${GET_LIMIT} — сузь по chain или city` : "";
@@ -154,6 +159,7 @@ async function toolGet(args: Args): Promise<string> {
       c.cc,
     );
     if (chain) q = q.eq("chain_key", chain);
+    q = excludeChains(q, await hiddenChainKeys(supabase, c.cc));
     return JSON.stringify(await must<unknown[]>(q.order("seen_on", { ascending: false }).limit(GET_LIMIT), "prices"));
   }
   return `Ошибка: section — chains, locations, money, prices, facts или блок: ${

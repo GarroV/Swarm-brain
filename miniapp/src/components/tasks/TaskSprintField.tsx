@@ -247,7 +247,7 @@ export function TaskSprintField(
             {groups.map(([tab, list]) => (
               <div key={tab ?? "none"}>
                 {groups.length > 1 && (
-                  <p className="px-2 pt-1.5 pb-0.5 text-[11px] font-semibold uppercase tracking-wide text-ink-mute">
+                  <p className="px-2 pt-1.5 pb-0.5 text-[11px] font-semibold uppercase tracking-wide text-ink-soft">
                     {spaceTitle(tab)}
                   </p>
                 )}

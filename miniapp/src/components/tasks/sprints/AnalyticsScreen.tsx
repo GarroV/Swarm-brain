@@ -20,6 +20,9 @@ import { fmtDay } from "./format";
 // `lib/spaceAnalytics.ts` под тестами, потому что эти числа пересказывают на встрече как
 // факт, и ошибка в них молчит.
 
+// «3/8», «17», «0/0»: счёт или число.
+const NUM_CELL = /^-?\d+(\/\d+)?$/;
+
 function Table(
   { title, head, rows }: {
     title: string;
@@ -30,6 +33,13 @@ function Table(
   // Пустую таблицу не рисуем: читать нечего, а семь пустых заголовков подряд создают
   // впечатление сломанного экрана.
   if (rows.length === 0) return null;
+  // Числовой столбец (счёт, доля, дни) — по правому краю и цифрами одной ширины: на широком
+  // экране колонки разъезжаются, и левые числа теряют связь со своим заголовком.
+  const numeric = head.map((_, j) =>
+    rows.every((r) =>
+      r[j] === null || r[j] === "" || NUM_CELL.test(String(r[j]))
+    )
+  );
   return (
     <section className="space-y-1.5">
       <h3 className="px-0.5 text-sm font-bold text-ink">{title}</h3>
@@ -38,10 +48,12 @@ function Table(
         <table className="w-full text-xs">
           <thead>
             <tr className="border-b border-line/60 text-left text-ink-soft">
-              {head.map((h) => (
+              {head.map((h, j) => (
                 <th
-                  key={h}
-                  className="whitespace-nowrap px-2.5 py-1.5 font-semibold"
+                  key={j}
+                  className={`whitespace-nowrap px-2.5 py-1.5 font-semibold ${
+                    numeric[j] ? "text-right" : ""
+                  }`}
                 >
                   {h}
                 </th>
@@ -52,7 +64,12 @@ function Table(
             {rows.map((row, i) => (
               <tr key={i} className="border-b border-line/30 last:border-0">
                 {row.map((cell, j) => (
-                  <td key={j} className="px-2.5 py-1.5 align-top text-ink">
+                  <td
+                    key={j}
+                    className={`px-2.5 py-1.5 align-top text-ink ${
+                      numeric[j] ? "text-right tabular-nums" : ""
+                    }`}
+                  >
                     {cell === null || cell === ""
                       ? <span className="text-ink-soft/50">—</span>
                       : cell}
@@ -288,7 +305,7 @@ export function AnalyticsScreen(
       />
 
       {report.history.length === 0 && report.current === null && (
-        <p className="py-10 text-center text-sm text-ink-soft/70">
+        <p className="py-10 text-center text-sm text-ink-soft">
           {dt(
             "Считать пока нечего: в пространстве нет ни живого спринта, ни принятых.",
             "Nothing to report yet: this space has neither a live sprint nor accepted ones.",

@@ -6,6 +6,8 @@ import { uiLocale } from "./format";
 import { RoyIcon, type RoyIconName } from "@/components/roy/icons";
 import { useDt } from "@/components/roy/nav";
 import { journalText } from "@/lib/journalText";
+import { cn } from "@/lib/utils";
+import { PILL_GROUP_CLS, pillSegmentCls } from "@/components/ui/PropertyPill";
 
 // Журнал пространства: что происходило, по дням. Лента нужна не для отчёта, а для вопроса
 // «что изменилось, пока меня не было» — поэтому свежее сверху и период переключается одним
@@ -103,22 +105,24 @@ export function JournalScreen({ space }: { space: string | null }) {
 
   return (
     <div className="flex-1 min-w-0 space-y-3 overflow-y-auto">
-      <div className="flex items-center gap-1.5">
+      <span className={PILL_GROUP_CLS}>
         {PERIODS.map((p) => (
           <button
             key={p}
             type="button"
+            aria-pressed={days === p}
             onClick={() => setDays(p)}
-            className={`rounded-full px-2.5 py-1 text-xs font-semibold transition-colors ${
-              days === p
-                ? "bg-ink text-background"
-                : "border border-line bg-surface text-ink-soft hover:bg-surface-2"
-            }`}
+            className={cn(
+              pillSegmentCls(days === p),
+              !(days === p) && "text-ink-soft",
+              "px-3",
+            )}
+            style={{ fontSize: 12.5 }}
           >
             {labels[p]}
           </button>
         ))}
-      </div>
+      </span>
 
       {err && (
         <p className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-1.5 text-xs text-destructive">
@@ -127,7 +131,7 @@ export function JournalScreen({ space }: { space: string | null }) {
       )}
 
       {space === null && (
-        <p className="py-10 text-center text-sm text-ink-soft/70">
+        <p className="py-10 text-center text-sm text-ink-soft">
           {dt(
             "У «Без пространства» журнала нет: события считаются по вкладке.",
             "“No space” has no journal: events are counted per board tab.",
@@ -148,7 +152,7 @@ export function JournalScreen({ space }: { space: string | null }) {
       )}
 
       {events !== null && events.length === 0 && space !== null && !err && (
-        <p className="py-10 text-center text-sm text-ink-soft/70">
+        <p className="py-10 text-center text-sm text-ink-soft">
           {dt(
             "За этот период ничего не происходило.",
             "Nothing happened in this period.",
@@ -172,7 +176,7 @@ export function JournalScreen({ space }: { space: string | null }) {
                   size={12}
                   className="mt-0.5 shrink-0 text-ink-soft"
                 />
-                <span className="w-10 shrink-0 text-[10px] tabular-nums text-ink-soft/70">
+                <span className="w-10 shrink-0 text-[10px] tabular-nums text-ink-soft">
                   {time(e.at)}
                 </span>
                 <p className="min-w-0 flex-1 text-xs text-ink">

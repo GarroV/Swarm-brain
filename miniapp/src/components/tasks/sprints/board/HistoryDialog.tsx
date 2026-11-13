@@ -76,7 +76,7 @@ export function HistoryDialog({ open, cycles, ctx, onClose }: {
                           {c.name}
                         </span>
                         <span
-                          className="text-ink-mute"
+                          className="text-ink-soft"
                           style={{ fontSize: 12 }}
                         >
                           {fmtRange(c.start_date, c.end_date)}

@@ -191,7 +191,7 @@ function PlanCard({ node, cycles, ctx }: {
             />
           ))}
           {hidden > 0 && (
-            <div className="px-1 text-ink-mute" style={{ fontSize: 11.5 }}>
+            <div className="px-1 text-ink-soft" style={{ fontSize: 11.5 }}>
               {dt(`+ ещё ${hidden}`, `+ ${hidden} more`)}
             </div>
           )}
@@ -267,7 +267,7 @@ export function MasterPlanColumn(
             <span className="font-semibold text-ink" style={{ fontSize: 14 }}>
               {dt("Мастер-план", "Master plan")}
             </span>
-            <span className="text-[12px] text-ink-mute">
+            <span className="text-[12px] text-ink-soft">
               {dt(
                 `${all.length} ${tasksRu(all.length)} · готово ${done}`,
                 `${all.length} ${
@@ -325,7 +325,7 @@ export function MasterPlanColumn(
                 {sec.list.map(({ group, tree }) => (
                   <div key={group.id} className="flex flex-col gap-1.5">
                     <div
-                      className="mx-1 mt-1.5 flex items-center justify-between gap-2 font-semibold uppercase tracking-[0.04em] text-ink-mute"
+                      className="mx-1 mt-1.5 flex items-center justify-between gap-2 font-semibold uppercase tracking-[0.04em] text-ink-soft"
                       style={{ fontSize: 11 }}
                     >
                       <span className="min-w-0 truncate">{group.name}</span>
@@ -349,7 +349,7 @@ export function MasterPlanColumn(
           )}
           {notTaken.length === 0 && inSprints.length > 0 && !filtering && (
             <p
-              className="px-2 py-2 text-center text-ink-mute"
+              className="px-2 py-2 text-center text-ink-soft"
               style={{ fontSize: 12.5 }}
             >
               {dt(
@@ -360,7 +360,7 @@ export function MasterPlanColumn(
           )}
           {notTaken.length === 0 && inSprints.length === 0 && (
             <p
-              className="px-2 py-4 text-center text-ink-mute"
+              className="px-2 py-4 text-center text-ink-soft"
               style={{ fontSize: 12.5 }}
             >
               {filtering

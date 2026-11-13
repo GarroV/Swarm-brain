@@ -1,4 +1,5 @@
 "use client";
+import { ChevronDownIcon } from "lucide-react";
 import { ToolbarButton } from "@/components/tasks/table/Menu";
 import { RoyIcon } from "@/components/roy/icons";
 import { useDt } from "@/components/roy/nav";
@@ -41,18 +42,22 @@ export function BoardFilters(
           style={{ fontSize: 12.5 }}
         />
       </label>
-      <label>
+      <label className="relative">
         <span className="sr-only">{dt("Исполнитель", "Assignee")}</span>
         <select
           value={value.person ?? ""}
           onChange={(e) =>
             onChange({ ...value, person: e.target.value || null })}
-          className="h-[30px] max-w-[170px] rounded-full border border-line-2 bg-surface px-3 text-ink-soft outline-none focus:border-accent-line"
+          className="h-[30px] max-w-[170px] appearance-none rounded-full border border-line-2 bg-surface py-0 pl-3 pr-7 text-ink-soft outline-none transition-colors hover:bg-surface-2 focus-visible:border-accent-line focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
           style={{ fontSize: 12.5 }}
         >
           <option value="">{dt("Все люди", "Everyone")}</option>
           {people.map((n) => <option key={n} value={n}>{n}</option>)}
         </select>
+        <ChevronDownIcon
+          aria-hidden
+          className="pointer-events-none absolute right-2.5 top-1/2 size-3.5 -translate-y-1/2 text-ink-mute"
+        />
       </label>
       <ToolbarButton
         on={value.attention}
