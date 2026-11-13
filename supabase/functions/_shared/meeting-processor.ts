@@ -33,6 +33,7 @@ import { rivalOwnershipPatch, settleRival } from "./meeting-rival.ts";
 import { recordedByOf } from "./recorded-by.ts";
 import { claimLeaseUntil } from "./meeting-lease.ts";
 import { isLeaseLost, LEASE_STALE_MS, ProcessingLease, rethrowIfLeaseLost } from "./meeting-processing-lease.ts";
+import { isPartPending, registerPartFailure, skipIfTooShort } from "./audio-part-guard.ts";
 import { externalFetch } from "./external-fetch.ts";
 import { notifyPerson } from "./notify-person.ts";
 import { noteOpenAIFailure, noteOpenAIResponse, resolveOpenAIKey } from "./workspace-keys.ts";
@@ -54,8 +55,6 @@ export const AUDIO_BUCKET = "meeting-audio";
 // Параллелизм транскрибации частей в одном шаге. Whisper-вызовы — сетевой I/O (не жрут CPU-лимит),
 // можно держать несколько в полёте, но без фанатизма — rate-limit OpenAI.
 const TRANSCRIBE_CONCURRENCY = 3;
-// Попыток на одну часть, прежде чем считать её «отравленной» и пропустить (poison-pill guard).
-const MAX_PART_ATTEMPTS = 4;
 // Лиз протух → воркер, взявший встречу, считается мёртвым (канон — meeting-processing-lease.ts).
 export { LEASE_STALE_MS };
 // Потолок одного обращения к модели (Whisper, тезисы). Без него зависший ответ держал воркер до
@@ -207,9 +206,8 @@ async function transcribePartInto(
   );
   p.segments = segs.map((s) => ({ start: s.start + p.offset, end: s.end + p.offset, text: s.text }));
   if (language) p.lang = language;
-  p.viaFallback = viaFallback;
-  p.conf = conf;
-  p.done = true;
+  // Успех стирает прошлую ошибку части (#150).
+  Object.assign(p, { viaFallback, conf, done: true, error: undefined });
 }
 
 // Модель тезисов — gpt-5.6-terra: на реальных встречах даёт заметно более конкретные тезисы, чем
@@ -343,10 +341,12 @@ export async function uploadPartsAndBuildState(
     for (const p of list) {
       if (p.blob.size > OPENAI_AUDIO_MAX_BYTES) throw new Error(`part "${p.name}" too large (>25MB)`);
       const path = `${dir}/${track}-${p.name}`;
+      const part: Part = { track, name: p.name, offset: p.offset, path, done: false, attempts: 0 };
+      parts.push(part);
+      if (await skipIfTooShort(part, p.blob)) continue; // огрызок короче минимума Whisper (#150)
       const { error } = await supabase.storage.from(AUDIO_BUCKET)
         .upload(path, p.blob, { contentType: "audio/m4a", upsert: true });
       if (error) throw new Error(`upload ${path}: ${error.message}`);
-      parts.push({ track, name: p.name, offset: p.offset, path, done: false, attempts: 0 });
     }
   };
   await upload("sys", systemParts);
@@ -753,7 +753,7 @@ async function meetingStep(
 
     if (state.stage === "transcribe") {
       while (Date.now() - startedAt < budgetMs) {
-        const pendingAll = state.parts.filter((p) => !p.done && p.attempts < MAX_PART_ATTEMPTS);
+        const pendingAll = state.parts.filter((p) => isPartPending(p));
         if (pendingAll.length === 0) break;
         // Сначала ПОЛНОСТЬЮ системные части — они задают язык встречи; только потом микрофон, уже
         // с пином этого языка (иначе тихий микрофон галлюцинирует по-английски). Пока есть pending
@@ -774,8 +774,7 @@ async function meetingStep(
           } catch (e) {
             // Потерянный лиз — не сбой части: попытку не списываем, шаг прекращается.
             rethrowIfLeaseLost(lease.signal.reason ?? e);
-            p.attempts = (p.attempts ?? 0) + 1;
-            console.error(`meeting-processor: part ${p.path} attempt ${p.attempts} failed:`, e);
+            registerPartFailure(p, e);
           }
         });
         if (!(await saveState(lease, state))) {
@@ -783,7 +782,7 @@ async function meetingStep(
           return { claimed: true, done: true };
         }
       }
-      const recoverable = state.parts.filter((p) => !p.done && p.attempts < MAX_PART_ATTEMPTS);
+      const recoverable = state.parts.filter((p) => isPartPending(p));
       if (recoverable.length > 0) return { claimed: true, done: false }; // ещё есть части — продолжит следующий тик
       // Все оставшиеся части либо готовы, либо отравлены. Если не вышло НИ ОДНОЙ — это провал.
       if (!state.parts.some((p) => p.done)) {
