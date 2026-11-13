@@ -341,3 +341,36 @@ Deno.test("master-admins: выдача и снятие роли пишутся �
   ]);
   assert(events.every((e) => !Number.isNaN(Date.parse(e.at))));
 });
+
+Deno.test("master-admin history: granted role persists actor, target and time instead of only console", async () => {
+  const db = setup();
+  db.tables.master_admin_events = [];
+  const res = await call(db, "POST", "/admin/master-admins", SUPER, true, "cee", { telegram_id: 777 });
+  await res.body?.cancel();
+  assertEquals(res.status, 201);
+  assertEquals(db.tables.master_admin_events.length, 1);
+  const row = db.tables.master_admin_events[0];
+  assertEquals([row.action, row.actor_telegram_id, row.target_telegram_id], ["added", SUPER, 777]);
+  assert(!Number.isNaN(Date.parse(String(row.created_at))));
+});
+
+Deno.test("master-admin history: only a master admin can read the bounded journal", async () => {
+  const db = setup();
+  db.tables.master_admin_events = [];
+  const master = await call(db, "GET", "/admin/master-admins/history", SUPER, true, "cee");
+  assertEquals(master?.status, 200);
+  assertEquals(await master.json(), []);
+  for (const [id, isAdmin] of [[ADMIN_CEE, true], [NOBODY, false]] as const) {
+    const res = await call(db, "GET", "/admin/master-admins/history", id, isAdmin, "cee");
+    assertEquals(res?.status, 403);
+    await res.body?.cancel();
+  }
+});
+
+Deno.test("master-admin history: journal failure must not leave an unlogged role grant", async () => {
+  const db = makeFakeDb({ workspaces: [{ id: "cee" }] }, { master_admin_events: { code: "42P01" } });
+  const res = await call(db, "POST", "/admin/master-admins", SUPER, true, "cee", { telegram_id: 777 });
+  await res.body?.cancel();
+  assertEquals(res.status, 500);
+  assertEquals(db.tables.master_admins, []);
+});
