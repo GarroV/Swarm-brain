@@ -148,3 +148,22 @@ Deno.test("bulk accept handles more finds than fit in one request URL", async ()
   assertEquals((await loadCountry(sb, CC)).pending, 0);
   await wipe();
 });
+
+Deno.test("a hidden chain (hidden_at) is not in loadCountry, with its points and prices; the rows stay in the base", async () => {
+  await wipe();
+  const v = validateSnapshot(raw);
+  if (!v.ok) throw new Error(v.errors.join("; "));
+  await importSnapshot(sb, CC, v.snapshot);
+  await sb.from("mkt_chains").update({ hidden_at: new Date().toISOString() }).eq("country", CC).eq("key", "kfc");
+  const b = await loadCountry(sb, CC);
+  assertEquals(b.chains.length, 0);
+  assertEquals(b.locations.length, 0);
+  assertEquals(b.prices.length, 0);
+  const { count } = await sb.from("mkt_locations").select("id", { count: "exact", head: true }).eq("country", CC);
+  assertEquals(count, 2);
+  // Повторный импорт (то, что делает сборщик) скрытие не снимает.
+  await importSnapshot(sb, CC, v.snapshot);
+  const { data } = await sb.from("mkt_chains").select("hidden_at").eq("country", CC).eq("key", "kfc").single();
+  assertEquals(data?.hidden_at !== null, true);
+  await wipe();
+});

@@ -3,7 +3,7 @@
 // Логика записи — общая с импортом снимка в `_shared/market/`, здесь доступ, разбор аргументов
 // и текст ответа агенту. Читать — кто видит страну на вебе; писать — только админ.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { allRows, must } from "../_shared/market/db.ts";
+import { allRows, hiddenChainKeys, must } from "../_shared/market/db.ts";
 import { canSeeCountry, canWriteCountry } from "../_shared/market/rules.ts";
 import { EDITORIAL_BLOCKS } from "../_shared/market/editorial.ts";
 import {
@@ -115,9 +115,10 @@ async function toolGet(args: Args): Promise<string> {
   }
   if (section === "chains") {
     const rows = await must<unknown[]>(
-      supabase.from("mkt_chains").select("key, name, slot, segment, is_bakery, origin").eq("country", c.cc).order(
-        "slot",
-      ),
+      supabase.from("mkt_chains").select("key, name, slot, segment, is_bakery, origin").eq("country", c.cc).is(
+        "hidden_at",
+        null,
+      ).order("slot"),
       "chains",
     );
     return JSON.stringify(rows);
@@ -138,6 +139,8 @@ async function toolGet(args: Args): Promise<string> {
       .select("id, chain_key, name, city, address, lat, lng, opened, status, closed, source_kind, verification")
       .eq("country", c.cc);
     if (chain) q = q.eq("chain_key", chain);
+    const hidden = [...await hiddenChainKeys(supabase, c.cc)];
+    if (hidden.length) q = q.not("chain_key", "in", `(${hidden.map((k) => `"${k}"`).join(",")})`);
     if (typeof args.city === "string" && args.city) q = q.ilike("city", `%${args.city}%`);
     const rows = await must<unknown[]>(q.order("chain_key").limit(GET_LIMIT + 1), "locations");
     const more = rows.length > GET_LIMIT ? `\n…больше ${GET_LIMIT} — сузь по chain или city` : "";

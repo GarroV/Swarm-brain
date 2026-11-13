@@ -241,7 +241,7 @@ export async function countryStatus(sb: SupabaseClient, cc: string): Promise<str
     return count ?? 0;
   };
   const [chains, locs, manualLocs, prices, cos] = await Promise.all([
-    count(head("mkt_chains"), "chains"),
+    count(head("mkt_chains").is("hidden_at", null), "chains"),
     count(head("mkt_locations").neq("status", "closed"), "locations"),
     count(head("mkt_locations").in("source_kind", ["manual", "snapshot"]), "manual locations"),
     count(head("mkt_prices"), "prices"),
