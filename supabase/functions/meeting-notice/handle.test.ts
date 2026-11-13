@@ -12,6 +12,7 @@ import { assert, assertEquals } from "https://deno.land/std@0.224.0/assert/mod.t
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { ON_BEHALF_OF_HEADER, sha256Hex } from "../_shared/agent-auth.ts";
 import { NOTICE_LIMITS } from "../_shared/notices.ts";
+import type { OutcomeRecord } from "../_shared/join-outcomes.ts";
 import { handleNotice } from "./handle.ts";
 
 const BOT_TOKEN = "scriba-container-secret";
@@ -685,4 +686,67 @@ Deno.test("БЛОКИРУЮЩИЙ: нотиса по Y не меняет пол�
     store.reserveCalls.filter((c) => c.p_meeting_id === MEETING).map((c) => c.p_recipient).sort(),
     [111, 222],
   );
+});
+
+// ── Исходы заходов бота (#1244): пишутся независимо от судьбы сообщения человеку ─────────
+
+function withOutcomes(deps: ReturnType<typeof makeDeps>["deps"]) {
+  const rows: OutcomeRecord[] = [];
+  const outcomes = { record: (r: readonly OutcomeRecord[]) => (rows.push(...r), Promise.resolve()) };
+  return { deps: { ...deps, outcomes }, rows };
+}
+
+Deno.test("исход: не впустили (door_denied) пишется с человеком, воркспейсом и встречей", async () => {
+  const { deps } = makeDeps(await makeSupabase());
+  const o = withOutcomes(deps);
+  await handleNotice(asBot({ kind: "door_denied", meeting_id: MEETING }), o.deps);
+  assertEquals(o.rows.length, 1);
+  assertEquals(
+    [o.rows[0].outcome, o.rows[0].invited_by, o.rows[0].group_id, o.rows[0].meeting_id, o.rows[0].source],
+    ["door_denied", OWNER.telegram_id, "alpha", MEETING, "notice"],
+  );
+});
+
+Deno.test("исход: «жду у двери» — исхода нет, пока боту не сказано уходить; тогда door_timeout", async () => {
+  const stay = withOutcomes(makeDeps(await makeSupabase()).deps);
+  await handleNotice(asBot({ kind: "door_waiting", meeting_id: MEETING }), stay.deps);
+  assertEquals(stay.rows.length, 0, "промежуточная нотиса записана как исход");
+
+  const store = newStore();
+  store.reserve = () => ({ data: { id: 7, attempt: 2 }, error: null });
+  const leave = withOutcomes(makeDeps(await makeSupabase(store)).deps);
+  await handleNotice(asBot({ kind: "door_waiting", meeting_id: MEETING }), leave.deps);
+  assertEquals(leave.rows.map((r) => r.outcome), ["door_timeout"]);
+});
+
+Deno.test("исход: потолок отказал в сообщении, а исход всё равно записан", async () => {
+  const store = newStore();
+  store.reserve = () => ({ data: { refused: "per-meeting notice limit reached" }, error: null });
+  const o = withOutcomes(makeDeps(await makeSupabase(store)).deps);
+  const res = await handleNotice(asBot({ kind: "container_died", meeting_id: MEETING }), o.deps);
+  assertEquals(res.status, 409);
+  assertEquals(o.rows.map((r) => r.outcome), ["container_died"]);
+});
+
+Deno.test("исход: до-встречный отказ — по ключу календаря; сбой записи ответа боту не меняет", async () => {
+  const { deps, sent } = makeDeps(await makeSupabase());
+  const o = withOutcomes(deps);
+  await handleNotice(asBot({ kind: "no_owner", meeting_key: KEY }, grantToken(null, KEY)), o.deps);
+  assertEquals([o.rows[0].outcome, o.rows[0].meeting_id, o.rows[0].calendar_key], ["no_owner", null, KEY]);
+
+  const broken = { ...deps, outcomes: { record: () => Promise.reject(new Error("db down")) } };
+  const res = await handleNotice(asBot({ kind: "no_audio", meeting_id: MEETING }), broken);
+  assertEquals(res.status, 200, "сбой учёта исходов уронил доставку нотисы");
+  assertEquals(sent.length, 2);
+});
+
+Deno.test("исход: отказ проверки (чужая встреча) исхода не пишет", async () => {
+  const { deps } = makeDeps(await makeSupabase());
+  const o = withOutcomes(deps);
+  const res = await handleNotice(
+    asBot({ kind: "door_denied", meeting_id: FOREIGN_WS }, grantToken(FOREIGN_WS)),
+    o.deps,
+  );
+  assertEquals(res.status, 403);
+  assertEquals(o.rows.length, 0, "исход записан по встрече, которую сервер не признал");
 });

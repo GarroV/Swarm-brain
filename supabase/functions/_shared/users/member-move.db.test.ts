@@ -36,6 +36,7 @@ const GROUP_ID_TABLES = [
   "presence_log",
   "project_history",
   "projects",
+  "scriba_join_outcomes",
   "service_agents",
   "short_links",
   "sprint_cycles",

@@ -12,11 +12,14 @@ import {
   renderNotice,
   scheduleAfter,
 } from "../_shared/notices.ts";
+import { outcomeOfNotice, type OutcomeStore, recordOutcomes } from "../_shared/join-outcomes.ts";
 
 export interface NoticeDeps {
   supabase: SupabaseClient;
   /** Отправка в Telegram. Обязана БРОСАТЬ, если сообщение не принято: молчаливый успех недопустим. */
   sendTelegram: (chatId: number, text: string) => Promise<void>;
+  /** Учёт исходов заходов (#1244). Не задан — исход не пишется (тесты ручки без него). */
+  outcomes?: OutcomeStore;
 }
 
 /** Таблица-журнал: она же счётчик. Канон схемы — migrations/20260926080446_meeting_notices.sql. */
@@ -255,7 +258,42 @@ export async function handleNotice(req: Request, deps: NoticeDeps): Promise<Resp
 
   const own = await deliverToLauncher(deps, notice, title, identity.telegramId);
   await coDelivery;
+  await recordNoticeOutcome(deps, identity, notice, own);
   return own;
+}
+
+/** «Бот сказал уходить» — по ответу ручки: и 200, и 409 потолка несут `should_leave`. */
+async function shouldLeave(res: Response): Promise<boolean> {
+  try {
+    return ((await res.clone().json()) as { should_leave?: unknown }).should_leave === true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Исход захода — в таблицу исходов, независимо от того, дошло ли сообщение человеку: отказ
+ * потолком или Telegram не отменяет того, что бота не впустили. Не бросает и ответа боту не меняет.
+ */
+async function recordNoticeOutcome(
+  deps: NoticeDeps,
+  identity: AgentIdentity,
+  notice: ParsedNotice,
+  answer: Response,
+): Promise<void> {
+  if (deps.outcomes === undefined || identity.groupId === null) return;
+  const outcome = outcomeOfNotice(notice.kind, notice.kind === "door_waiting" && await shouldLeave(answer));
+  if (outcome === null) return;
+  await recordOutcomes(deps.outcomes, [{
+    group_id: identity.groupId,
+    invited_by: identity.telegramId,
+    meeting_id: notice.scope.type === "meeting" ? notice.scope.meetingId : null,
+    calendar_key: notice.scope.type === "calendar" ? notice.scope.meetingKey : identity.grant?.calendarKey ?? null,
+    outcome,
+    source: "notice",
+    outcome_key: notice.scope.type === "meeting" ? notice.scope.meetingId : notice.scope.meetingKey,
+    detail: notice.detail,
+  }], (l) => console.error(`meeting-notice: ${l}`));
 }
 
 /**
