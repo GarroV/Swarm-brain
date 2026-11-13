@@ -41,10 +41,15 @@ Deno.test("master admin journal: atomic role changes, denied/no-op cases and app
     assertEquals((await events()).length, 3);
 
     await db.queryArray("savepoint missing_journal");
-    await db.queryArray("alter table public.master_admin_events add constraint qa_master_admin_journal_failure check(false) not valid");
+    await db.queryArray(
+      "alter table public.master_admin_events add constraint qa_master_admin_journal_failure check(false) not valid",
+    );
     await assertRejects(() => change(FAILED, "added"), Error, "qa_master_admin_journal_failure");
     await db.queryArray("rollback to missing_journal");
-    assertEquals((await db.queryObject`select telegram_id from public.master_admins where telegram_id=${FAILED}`).rows, []);
+    assertEquals(
+      (await db.queryObject`select telegram_id from public.master_admins where telegram_id=${FAILED}`).rows,
+      [],
+    );
     assertEquals((await events()).length, 3);
 
     await db.queryArray("savepoint last_master");
@@ -53,7 +58,9 @@ Deno.test("master admin journal: atomic role changes, denied/no-op cases and app
     assertEquals((await events()).length, 3);
     await db.queryArray("rollback to last_master");
 
-    const privileges = await db.queryObject<{ role: string; read: boolean; insert: boolean; update: boolean; remove: boolean }>(`
+    const privileges = await db.queryObject<
+      { role: string; read: boolean; insert: boolean; update: boolean; remove: boolean }
+    >(`
       select r as role,
         has_table_privilege(r,'public.master_admin_events','SELECT') as read,
         has_table_privilege(r,'public.master_admin_events','INSERT') as insert,

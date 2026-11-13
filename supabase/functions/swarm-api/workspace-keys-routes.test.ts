@@ -374,3 +374,38 @@ Deno.test("master-admin history: journal failure must not leave an unlogged role
   assertEquals(res.status, 500);
   assertEquals(db.tables.master_admins, []);
 });
+
+Deno.test("master-admin history: latest 100 events are ordered and names resolve only for returned identities", async () => {
+  const db = setup();
+  db.tables.master_admin_events = Array.from({ length: 105 }, (_, i) => ({
+    id: String(i).padStart(3, "0"),
+    action: i % 2 ? "added" : "removed",
+    actor_telegram_id: SUPER,
+    target_telegram_id: 1000 + i,
+    created_at: new Date(Date.UTC(2026, 10, 13, 0, Math.floor(i / 2))).toISOString(),
+  })).reverse();
+  let resolved: number[] = [];
+  const names = (ids: number[]) => {
+    resolved = ids;
+    return Promise.resolve(new Map([[SUPER, "Master"], [1104, "Target"]]));
+  };
+  const res = await call(db, "GET", "/admin/master-admins/history", SUPER, true, "cee", undefined, names);
+  assertEquals(res.status, 200);
+  const rows = await res.json();
+  assertEquals(rows.length, 100);
+  assertEquals(
+    rows.map((r: { id: string }) => r.id),
+    Array.from({ length: 100 }, (_, i) => String(104 - i).padStart(3, "0")),
+  );
+  assertEquals([rows[0].actor_name, rows[0].target_name, rows[1].target_name], ["Master", "Target", null]);
+  assertEquals(resolved.length, 101);
+  assertEquals(resolved.includes(1000), false);
+  assertEquals(db.tables.master_admin_events.length, 105);
+});
+
+Deno.test("master-admin history: failed read returns 500 instead of a fabricated empty journal", async () => {
+  const db = makeFakeDb({}, { master_admin_events: { code: "42P01" } });
+  const res = await call(db, "GET", "/admin/master-admins/history", SUPER, true, "cee");
+  assertEquals(res.status, 500);
+  await res.body?.cancel();
+});

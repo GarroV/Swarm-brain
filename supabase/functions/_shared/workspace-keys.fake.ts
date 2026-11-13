@@ -28,6 +28,7 @@ export function makeFakeDb(
     workspaces: [],
     workspace_secrets: [],
     master_admins: [],
+    master_admin_events: [],
     ...structuredClone(initial),
   };
   const reads: Record<string, number> = {};
@@ -39,13 +40,19 @@ export function makeFakeDb(
     let payload: Row | null = null;
     let ignoreDuplicates = false;
     let returning = false;
+    const orders: Array<[string, boolean]> = [];
+    let take: number | null = null;
     const rows = () => tables[table] ?? (tables[table] = []);
     const match = (r: Row) => filters.every(([c, v]) => r[c] === v) && lts.every(([c, v]) => String(r[c]) < v);
     const run = (): { data: unknown; error: { code: string } | null } => {
       if (failing[table]) return { data: null, error: failing[table] };
       if (op === "select") {
         reads[table] = (reads[table] ?? 0) + 1;
-        return { data: structuredClone(rows().filter(match)), error: null };
+        const selected = rows().filter(match);
+        for (const [key, asc] of [...orders].reverse()) {
+          selected.sort((a, b) => String(a[key] ?? "").localeCompare(String(b[key] ?? "")) * (asc ? 1 : -1));
+        }
+        return { data: structuredClone(take === null ? selected : selected.slice(0, take)), error: null };
       }
       if (op === "delete") {
         tables[table] = rows().filter((r) => !match(r));
@@ -72,7 +79,8 @@ export function makeFakeDb(
     };
     const b: Record<string, unknown> = {
       select: () => ((returning = true), b),
-      order: () => b,
+      order: (key: string, opts?: { ascending?: boolean }) => (orders.push([key, opts?.ascending !== false]), b),
+      limit: (count: number) => (take = count, b),
       eq: (c: string, v: unknown) => (filters.push([c, v]), b),
       is: (c: string, v: unknown) => (filters.push([c, v]), b),
       lt: (c: string, v: string) => (lts.push([c, v]), b),
@@ -102,5 +110,35 @@ export function makeFakeDb(
     };
     return b;
   };
-  return { client: { from } as unknown as SupabaseClient, tables, reads };
+  // Adapter double for route tests; the transaction/ACL contract is exercised on PostgreSQL
+  // in users/master-admin-history.db.test.ts, not inferred from this in-memory model.
+  const rpc = (name: string, args: Row) => {
+    if (name !== "change_master_admin_role") return Promise.resolve({ data: null, error: { code: "PGRST202" } });
+    const error = failing.master_admins ?? failing.master_admin_events;
+    if (error) return Promise.resolve({ data: null, error });
+    const target = args.p_target;
+    const rows = tables.master_admins;
+    const exists = rows.some((r) => r.telegram_id === target);
+    let reason: string | null = null;
+    if (args.p_action === "removed") {
+      if (target === args.p_builtin) reason = "builtin";
+      else if (!exists) reason = "not_found";
+      else if (rows.length <= 1) reason = "last";
+    }
+    if (reason) return Promise.resolve({ data: { ok: false, reason }, error: null });
+    if (args.p_action === "added" && exists) {
+      return Promise.resolve({ data: { ok: true, changed: false }, error: null });
+    }
+    if (args.p_action === "added") rows.push({ telegram_id: target, added_by: args.p_actor });
+    else tables.master_admins = rows.filter((r) => r.telegram_id !== target);
+    tables.master_admin_events.push({
+      id: crypto.randomUUID(),
+      action: args.p_action,
+      actor_telegram_id: args.p_actor,
+      target_telegram_id: target,
+      created_at: new Date().toISOString(),
+    });
+    return Promise.resolve({ data: { ok: true, changed: true }, error: null });
+  };
+  return { client: { from, rpc } as unknown as SupabaseClient, tables, reads };
 }

@@ -64,23 +64,23 @@ Deno.test("withMasterFlag: проставляет is_master по telegram_id с�
 
 Deno.test("removeMasterAdmin: константного снять нельзя", async () => {
   const db = makeFakeDb({ master_admins: [{ telegram_id: SUPERADMIN_TELEGRAM_ID }, { telegram_id: OTHER }] });
-  const res = await removeMasterAdmin(db.client, SUPERADMIN_TELEGRAM_ID);
+  const res = await removeMasterAdmin(db.client, SUPERADMIN_TELEGRAM_ID, SUPERADMIN_TELEGRAM_ID);
   assert(!res.ok && res.reason === "builtin");
   assertEquals(db.tables.master_admins.length, 2);
 });
 
 Deno.test("removeMasterAdmin: последнего в таблице снять нельзя, неизвестного — not_found", async () => {
   const db = makeFakeDb({ master_admins: [{ telegram_id: OTHER }] });
-  const last = await removeMasterAdmin(db.client, OTHER);
+  const last = await removeMasterAdmin(db.client, OTHER, SUPERADMIN_TELEGRAM_ID);
   assert(!last.ok && last.reason === "last");
-  const missing = await removeMasterAdmin(db.client, 12345);
+  const missing = await removeMasterAdmin(db.client, 12345, SUPERADMIN_TELEGRAM_ID);
   assert(!missing.ok && missing.reason === "not_found");
   assertEquals(db.tables.master_admins.length, 1);
 });
 
 Deno.test("removeMasterAdmin: при двух строках снимает выбранного", async () => {
   const db = makeFakeDb({ master_admins: [{ telegram_id: SUPERADMIN_TELEGRAM_ID }, { telegram_id: OTHER }] });
-  assertEquals((await removeMasterAdmin(db.client, OTHER)).ok, true);
+  assertEquals((await removeMasterAdmin(db.client, OTHER, SUPERADMIN_TELEGRAM_ID)).ok, true);
   assertEquals(db.tables.master_admins.map((r) => r.telegram_id), [SUPERADMIN_TELEGRAM_ID]);
 });
 
