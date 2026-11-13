@@ -73,6 +73,7 @@ Deno.test("a hidden chain (hidden_at) is absent from market_get chains/locations
       lng: 15.9,
       status: "open",
       source_kind: "osm",
+      verification: "unverified",
     });
     if (error) throw new Error(error.message);
     await sb.from("mkt_prices").insert({
