@@ -50,14 +50,14 @@ Deno.test("demo_reset plan: old seed RED, real plan totals and mutant, reapply p
         "select pg_get_functiondef('public.demo_reset()'::regprocedure) as source",
       )).rows[0].source;
     const plan = async () => {
-      const tasks = (await db.queryObject(
-        "select * from public.tasks where group_id='demo'",
+      const tasks = (await db.queryObject<{ value: Task }>(
+        "select to_jsonb(t) as value from public.tasks t where group_id='demo'",
       ))
-        .rows as unknown as Task[];
-      const projects = (await db.queryObject(
-        "select * from public.projects where group_id='demo'",
+        .rows.map((row) => row.value);
+      const projects = (await db.queryObject<{ value: Project }>(
+        "select to_jsonb(p) as value from public.projects p where group_id='demo'",
       ))
-        .rows as unknown as Project[];
+        .rows.map((row) => row.value);
       const active = (await db.queryObject<
         { task_id: string }
       >`select task_id from public.sprint_items where cycle_id=${CYCLE} and task_id is not null and withdrawn_at is null and moved_at is null`)
@@ -88,9 +88,9 @@ Deno.test("demo_reset plan: old seed RED, real plan totals and mutant, reapply p
     await db.queryArray("select public.demo_reset()");
     const value = await plan();
     assertEquals(value.groups.map((g) => [g.project.name, g.total, g.done]), [
-      ["Peak-hour service", 6, 2],
-      ["Loyalty wallet", 4, 2],
       ["Autumn menu", 4, 2],
+      ["Loyalty wallet", 4, 2],
+      ["Peak-hour service", 6, 2],
     ]);
     assertEquals({
       total: value.total,
