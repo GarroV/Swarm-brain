@@ -21,6 +21,8 @@ async function wipe() {
     await sb.from(t).delete().eq("country", CC);
   }
   await sb.from("mkt_runs").delete().eq("country", CC);
+  await sb.from("mkt_locations").delete().eq("country", CC);
+  await sb.from("mkt_prices").delete().eq("country", CC);
   await sb.from("mkt_chains").delete().eq("country", CC);
   await sb.from("allowed_users").delete().in("telegram_id", [MEMBER, ADMIN]);
   await sb.from("workspaces").delete().eq("id", WS);
@@ -55,6 +57,47 @@ Deno.test("member reads an open country but cannot write; admin writes and the w
   assert(money.includes("Q Co") && money.includes("1000"), money);
   const { data: runs } = await sb.from("mkt_runs").select("source, stats").eq("country", CC);
   assertEquals(runs?.map((r) => [r.source, (r.stats as { by: number }).by]), [["mcp", ADMIN]]);
+  await wipe();
+});
+
+Deno.test("a hidden chain (hidden_at) is absent from market_get chains/locations/prices/money and from market_status counts", async () => {
+  await seed();
+  await sb.from("mkt_chains").insert({ country: CC, key: "gone", name: "Gone Chain", slot: 2 });
+  for (const key of ["kfc", "gone"]) {
+    const { error } = await sb.from("mkt_locations").insert({
+      country: CC,
+      chain_key: key,
+      name: `${key} point`,
+      ext_key: `${key}:1`,
+      status: "open",
+      source_kind: "osm",
+    });
+    if (error) throw new Error(error.message);
+    await sb.from("mkt_prices").insert({
+      country: CC,
+      chain_key: key,
+      item: "margherita",
+      item_type: "pizza",
+      size_cm: 30,
+      price_eur: 10,
+      channel: "dine_in",
+      source: "https://x",
+      seen_on: "2026-11-01",
+    });
+    await sb.from("mkt_companies").insert({ country: CC, chain_key: key, name: `${key} Co`, reg_id: `r-${key}` });
+  }
+  const read = (section: string) => call("market_get", MEMBER, { country: CC, section });
+  for (const section of ["chains", "locations", "prices", "money"]) {
+    const both = await read(section);
+    assert(both.includes("gone"), `${section} before hiding: ${both}`);
+  }
+  await sb.from("mkt_chains").update({ hidden_at: new Date().toISOString() }).eq("country", CC).eq("key", "gone");
+  for (const section of ["chains", "locations", "prices", "money"]) {
+    const out = await read(section);
+    assert(out.includes("kfc") && !out.toLowerCase().includes("gone"), `${section} after hiding: ${out}`);
+  }
+  const status = await call("market_status", MEMBER, { country: CC });
+  assert(status.includes("Сети: 1. Открытых точек: 1 "), status);
   await wipe();
 });
 

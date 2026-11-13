@@ -182,11 +182,17 @@ Paxlava, Ruggi Sweets), LT (AJ Šokoladas, Ali šokoladinė). Такие зав�
   [decisions/2026-11-10-market-fastfood-only.md](../decisions/2026-11-10-market-fastfood-only.md).
 - **Скрытие сети — `mkt_chains.hidden_at`.** Сеть вне объёма (раньше найдена
   автоматически, теперь нет) не удаляется, а скрывается: колонка `hidden_at` (миграция
-  `20261110120000_market_chains_hidden_at.sql`) не пуста — сеть и её точки не попадают
-  в отчёт и мини-апп (`loadCountry`), в MCP `market_get` (`chains`, `locations`), в счёт
-  сетей статуса страны и в список стран. Данные остаются в базе; сборщик колонку не
-  пишет и не снимает, поэтому скрытая сеть сама не возвращается. Скрывает
-  отдельный SQL по списку сетей, а не код сборщика.
+  `20261113120000_market_chains_hidden_at.sql`) не пуста — сеть и её точки, цены и
+  юрлица не попадают в отчёт и мини-апп (`loadCountry`), в MCP `market_get` (`chains`,
+  `locations`, `prices`, `money`), в счётчики `market_status` и в список стран. Правило
+  одно: каждое чтение для показа берёт сети с `hidden_at is null`, а точки, цены и юрлица —
+  через `hiddenChainKeys` / `excludeChains` (`_shared/market/db.ts`). Новое чтение
+  `mkt_locations` / `mkt_prices` / `mkt_companies` для показа обязано их использовать.
+  Данные остаются в базе; сборщик колонку не пишет и не снимает, поэтому скрытая сеть
+  сама не возвращается. Скрывает отдельный SQL
+  `scripts/market/sql/hide-out-of-scope-2026-11.sql` (предпросмотр, затем закомментированный
+  UPDATE; списки сетей конфигов и автопоиска — снимок, перед применением пересчитать),
+  а не код сборщика. Тест — `swarm-mcp/market.db.test.ts` и `_shared/market/db.db.test.ts`.
 - **Один бренд — несколько ключей.** Группы подписей с общим началом по словам
   («Nravizza» / «Nravizza Pizza», «Kawacom's Ipanema Espresso Kiti» / «… Lakatamias»,
   «La Croissanterie France» / «… - Cyprus») склеиваются в одну найденную сеть с

@@ -2595,7 +2595,7 @@ _Админка (`admin.ts`, админы: `telegram_id 744230399` или `is_ad
 
 | Таблица | Что хранит |
 |---|---|
-| `mkt_chains` | Сеть в стране: ключ, название, сегмент (pizza/burger/chicken/bakery/…), признак пекарни, происхождение, оператор, год входа, слот цвета |
+| `mkt_chains` | Сеть в стране: ключ, название, сегмент (pizza/burger/chicken/bakery/…), признак пекарни, происхождение, оператор, год входа, слот цвета, `hidden_at` (скрыта: вне объёма — не в отчёте, мини-аппе, MCP, счётчиках; строки и точки остаются, сборщик не трогает; см. [market/README](market/README.md), SQL `scripts/market/sql/hide-out-of-scope-2026-11.sql`) |
 | `mkt_locations` | Точка: сеть, город, адрес, координаты, дата открытия, статус (`open`/`closed`/`planned`/`paused`), `source_kind` (`snapshot`/`dodo`/`osm`/`overture`/`manual`), статус проверки `verification` (`official`/`confirmed`/`corrected`/`added`/`unverified`/`internal`), `missing_weeks`, `first_seen_at`/`last_seen_at` |
 | `mkt_companies` | Юрлицо оператора: сеть, название, рег. номер (`reg_id`) |
 | `mkt_financials` | Юрлицо × год: выручка, чистая прибыль, сотрудники (EUR), источник, `verification`; уникально (юрлицо, год). Прибыль хранится, но в API и на экран не отдаётся (правило эталона: прибыли и убытка нет нигде) |

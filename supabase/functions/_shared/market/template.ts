@@ -6,7 +6,7 @@
 // Линт просит короткое имя из карты импортов; см. пояснение в sprint-items.ts.
 // deno-lint-ignore-file no-import-prefix
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { allRows, must } from "./db.ts";
+import { allRows, excludeChains, hiddenChainKeys, must } from "./db.ts";
 import type { EditorialBlock } from "./editorial.ts";
 import { EVENT_KINDS } from "./editorial-view.ts";
 import { PIZZA_TYPES } from "./price-types.ts";
@@ -240,13 +240,14 @@ export async function countryStatus(sb: SupabaseClient, cc: string): Promise<str
     if (error) throw new Error(`${what}: ${error.message}`);
     return count ?? 0;
   };
+  const hidden = await hiddenChainKeys(sb, country);
   const [chains, locs, manualLocs, prices, cos] = await Promise.all([
     count(head("mkt_chains").is("hidden_at", null), "chains"),
-    count(head("mkt_locations").neq("status", "closed"), "locations"),
-    count(head("mkt_locations").in("source_kind", ["manual", "snapshot"]), "manual locations"),
-    count(head("mkt_prices"), "prices"),
+    count(excludeChains(head("mkt_locations").neq("status", "closed"), hidden), "locations"),
+    count(excludeChains(head("mkt_locations").in("source_kind", ["manual", "snapshot"]), hidden), "manual locations"),
+    count(excludeChains(head("mkt_prices"), hidden), "prices"),
     allRows<{ id: string }>(
-      (a, b) => sb.from("mkt_companies").select("id").eq("country", country).range(a, b),
+      (a, b) => excludeChains(sb.from("mkt_companies").select("id").eq("country", country), hidden).range(a, b),
       "companies",
     ),
   ]);

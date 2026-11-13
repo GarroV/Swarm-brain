@@ -290,7 +290,8 @@ export async function loadCountry(sb: SupabaseClient, cc: string) {
   // Скрытая сеть (hidden_at) в отчёт не попадает вместе со своими точками; её данные в базе остаются.
   const hidden = await hiddenChainKeys(sb, country);
   const visible = (r: unknown) => !hidden.has((r as { chain_key?: string }).chain_key ?? "");
-  const ids = companies.map((c) => c.id);
+  const shownCompanies = companies.filter(visible);
+  const ids = shownCompanies.map((c) => c.id);
   const financials = ids.length
     ? await allRows<unknown>(
       (from, to) =>
@@ -307,7 +308,7 @@ export async function loadCountry(sb: SupabaseClient, cc: string) {
     country,
     chains,
     locations: locations.filter(visible),
-    companies,
+    companies: shownCompanies,
     financials,
     prices: prices.filter(visible),
     facts,
@@ -327,6 +328,13 @@ export async function hiddenChainKeys(sb: SupabaseClient, country: string): Prom
     "hidden chains",
   );
   return new Set(rows.map((r) => r.key));
+}
+
+/** Фильтр «не из скрытых сетей» для запроса по таблице с колонкой chain_key (точки, цены). */
+// deno-lint-ignore no-explicit-any
+export function excludeChains<Q extends { not: (...a: any[]) => Q }>(q: Q, hidden: Iterable<string>): Q {
+  const keys = [...hidden];
+  return keys.length ? q.not("chain_key", "in", `(${keys.map((k) => `"${k}"`).join(",")})`) : q;
 }
 
 export async function listCountriesWithData(sb: SupabaseClient): Promise<string[]> {
