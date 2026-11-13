@@ -62,8 +62,11 @@ export type EdPlatform = {
 export type EdFigure = { big: string; text: string; source: string | null };
 /** company — рег. номер или начало названия юрлица: для строки, у которой нет сети в справочнике. */
 export type EdMoneyRow = { prefix: string; chains: string[] | null; company: string | null; label: string | null };
-/** Уточнённая дата открытия точки (журнал вычитки эталона): имя точки ровно как в реестре. */
-export type EdLocationDate = { name: string; opened: string; note: string | null };
+/**
+ * Уточнённая дата точки (журнал вычитки эталона): имя точки ровно как в реестре. Нужна хотя бы одна
+ * из дат: `opened` (открытие) или `closed` (закрытие; применяется только к уже закрытой точке).
+ */
+export type EdLocationDate = { name: string; opened: string | null; closed: string | null; note: string | null };
 export type EdPreset = { name: string; box: [number, number, number, number] };
 export type EdPriceCol = {
   title: string;
@@ -282,13 +285,7 @@ export function parseEditorial(raw: unknown): Editorial {
         ? { name: r.name as string, box: box as EdPreset["box"] }
         : null;
     }),
-    locationDates: rows(
-      e.location_dates,
-      (r) =>
-        str(r.name) && /^\d{4}(-\d{2}(-\d{2})?)?$/.test(String(r.opened))
-          ? { name: r.name as string, opened: r.opened as string, note: str(r.note) }
-          : null,
-    ),
+    locationDates: rows(e.location_dates, locationDate),
     pricesCols: rows(
       e.prices_cols,
       (r) =>
@@ -305,21 +302,48 @@ export function parseEditorial(raw: unknown): Editorial {
   };
 }
 
-type Dated = { name: string; opened: string | null; opened_estimated: boolean; verification_note: string | null };
+const DATE_RE = /^\d{4}(-\d{2}(-\d{2})?)?$/;
 
-/** Точки с уточнённой датой из ручной части — новыми объектами; в пометке проверки остаётся собранная дата. */
+function locationDate(r: Raw): EdLocationDate | null {
+  const opened = r.opened === undefined || r.opened === null ? null : String(r.opened);
+  const closed = r.closed === undefined || r.closed === null ? null : String(r.closed);
+  if (!str(r.name) || (opened === null && closed === null)) return null;
+  if ((opened !== null && !DATE_RE.test(opened)) || (closed !== null && !DATE_RE.test(closed))) return null;
+  return { name: r.name as string, opened, closed, note: str(r.note) };
+}
+
+type Dated = {
+  name: string;
+  opened: string | null;
+  opened_estimated: boolean;
+  verification_note: string | null;
+  status: string;
+  closed: string | null;
+};
+
+/**
+ * Точки с уточнённой датой из ручной части — новыми объектами; в пометке проверки остаётся собранная
+ * дата. Дата закрытия ложится только на точку со статусом `closed`: статус ведёт сборщик, а не этот блок.
+ */
 export function applyLocationDates<T extends Dated>(locs: T[], dates: EdLocationDate[]): T[] {
   if (!dates.length) return locs;
   const by = new Map(dates.map((d) => [d.name, d]));
   return locs.map((l) => {
     const d = by.get(l.name);
-    if (!d || d.opened === l.opened) return l;
-    const was = l.opened ? ` (собрано ${l.opened})` : "";
+    if (!d) return l;
+    const opened = d.opened !== null && d.opened !== l.opened ? d.opened : null;
+    const closed = d.closed !== null && l.status === "closed" && d.closed !== l.closed ? d.closed : null;
+    if (opened === null && closed === null) return l;
+    const note = d.note ?? "ручная часть";
+    const notes = [
+      ...(opened !== null ? [`Дата открытия: ${note}${l.opened ? ` (собрано ${l.opened})` : ""}`] : []),
+      ...(closed !== null ? [`Дата закрытия: ${note}${l.closed ? ` (собрано ${l.closed})` : ""}`] : []),
+    ];
     return {
       ...l,
-      opened: d.opened,
-      opened_estimated: false,
-      verification_note: `Дата открытия: ${d.note ?? "ручная часть"}${was}`,
+      ...(opened !== null ? { opened, opened_estimated: false } : {}),
+      ...(closed !== null ? { closed } : {}),
+      verification_note: notes.join("; "),
     };
   });
 }
