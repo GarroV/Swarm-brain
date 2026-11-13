@@ -1,3 +1,4 @@
+import { deleteDraftMeetingAsCaller, deleteDraftMeetingTool } from "./meeting-delete.ts";
 import { meetingEntryIsLive } from "../_shared/meeting-entry-live.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import {
@@ -208,3 +209,46 @@ export async function toolExtractTasksFromMeeting(
 }
 
 export { MEETING_REVIEW_TOOL_DEFINITIONS } from "./meetings-defs.ts";
+
+// Keep the existing review handlers together; the main MCP router confirms destructive tools first.
+export const MEETING_REVIEW_TOOL_NAMES = new Set([
+  "extract_tasks_from_meeting",
+  "get_review_queue",
+  "get_draft_meeting",
+  "update_draft_meeting",
+  "publish_draft_meeting",
+  "delete_draft_meeting",
+]);
+
+export async function dispatchMeetingReviewTool(name: string, args: Record<string, unknown>): Promise<string> {
+  switch (name) {
+    case "extract_tasks_from_meeting":
+      return await toolExtractTasksFromMeeting(args as Caller & { meeting_id?: string; entry_id?: string });
+    case "get_review_queue":
+      return await toolGetReviewQueue(args as Caller);
+    case "get_draft_meeting":
+      return await toolGetDraftMeeting(args as Caller & { meeting_id: string });
+    case "update_draft_meeting":
+      return await toolUpdateDraftMeeting(args as Caller & { meeting_id: string; notes?: string; title?: string });
+    case "publish_draft_meeting":
+      return await toolPublishDraftMeeting(
+        args as Caller & { meeting_id: string; base?: string; countries?: string[] },
+      );
+    case "delete_draft_meeting":
+      return await deleteDraftMeetingTool(args as Caller & { meeting_id: string }, {
+        async remove(id, callerId) {
+          const groupId = await resolveGroupId(callerId);
+          if (!groupId) return { ok: false, reason: "not_found" };
+          return await deleteDraftMeetingAsCaller(
+            supabase,
+            id,
+            callerId,
+            groupId,
+            await masterAdminFlag(supabase, callerId),
+          );
+        },
+      });
+    default:
+      throw new Error("unknown_meeting_review_tool");
+  }
+}

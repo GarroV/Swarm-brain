@@ -1,3 +1,5 @@
+import { deleteDraftMeeting } from "../_shared/meeting-delete.ts";
+import { draftDeleteResponse } from "./meeting-delete.ts";
 import { meUiPrefs, parseMePatch } from "./me-fields.ts";
 import { deriveEntryTitle, entryTagKey } from "./entry-presentation.ts";
 import { taskExtractionResponse } from "./task-extraction-response.ts";
@@ -113,7 +115,6 @@ import { UNTRUSTED_DATA_RULE, wrapUntrustedForModel } from "../_shared/untrusted
 import { callExtractor, extractTasks } from "../_shared/task-extract.ts";
 import {
   canAccessDraftMeeting,
-  canDeleteDraftMeeting,
   canHideDraftMeeting,
   type DraftMeetingRow,
   draftMeetingsOwnScopedFilter,
@@ -2858,17 +2859,24 @@ async function routeRequest(req: Request): Promise<Response> {
   ) {
     const mId = (agentMeetingMatch ?? agentPublishMatch ?? agentNotesMatch ??
       agentResummarizeMatch ?? agentMarketMatch ?? agentHideMatch)![1];
+    if (agentMeetingMatch && req.method === "DELETE") {
+      return draftDeleteResponse(
+        await deleteDraftMeeting(supabase, mId, {
+          telegramId: telegram_id,
+          groupId,
+          isAdmin,
+          email: userEmail,
+        }),
+        origin,
+      );
+    }
     const { data: mRow } = await supabase.from("meetings").select("*").eq(
       "id",
       mId,
     ).maybeSingle();
     const meeting = mRow as Record<string, unknown> | null;
-    // Чтение/правка/публикация — по прежним правам. Для DELETE у админа
-    // отдельное право удаления любого черновика своего пространства.
-    const adminDelete = !!agentMeetingMatch && req.method === "DELETE" && isAdmin &&
-      canDeleteDraftMeeting(meeting as DraftMeetingRow | null, telegram_id, true, groupId);
     if (
-      !adminDelete && !canAccessDraftMeeting(
+      !canAccessDraftMeeting(
         meeting as DraftMeetingRow | null,
         telegram_id,
         isAdmin,
@@ -3086,30 +3094,6 @@ async function routeRequest(req: Request): Promise<Response> {
         (data ?? {}) as { recorders?: unknown },
       ]);
       return json(enriched, 200, origin);
-    }
-
-    // DELETE — убрать черновик из очереди вычитки (до публикации)
-    if (agentMeetingMatch && req.method === "DELETE") {
-      if (meeting.status === "in_base") {
-        return apiErr(409, "Уже в базе — удаляйте через раздел «База»", origin);
-      }
-      // Совладелец по приглашению черновик не удаляет — он общий (решение владельца 2026-09-25).
-      // Сотрудник групповую встречу только скрывает (#818); админ может удалить у всех.
-      if (!isAdmin && canHideDraftMeeting(meeting as DraftMeetingRow, telegram_id)) {
-        return apiErr(409, "This meeting has several owners — hide it for yourself instead", origin);
-      }
-      if (!canDeleteDraftMeeting(meeting as DraftMeetingRow, telegram_id, isAdmin, groupId)) {
-        return apiErr(
-          403,
-          "Only the person who recorded this meeting can delete the draft",
-          origin,
-        );
-      }
-      const { data: deleted, error } = await supabase.from("meetings").delete()
-        .eq("id", mId).eq("group_id", meetingGroupId).select("id").maybeSingle();
-      if (error) return serverError(origin, "agent-meetings delete", error);
-      if (!deleted) return apiErr(404, "Not found", origin);
-      return new Response(null, { status: 204, headers: corsHeaders(origin) });
     }
 
     // POST publish — аппрув: создаём entries (выбор базы), привязываем, status=in_base
