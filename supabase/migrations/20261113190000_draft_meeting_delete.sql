@@ -3,6 +3,9 @@
 alter table public.meeting_audio_backups
   drop constraint meeting_audio_backups_meeting_id_fkey;
 
+-- Member-move classification: deletion jobs/tombstones remain in the original home
+-- group_id. requested_group_id is the original caller scope, not current membership.
+-- No content follows the requester; a current home admin can finish a pending job.
 -- Explicit draft deletion: commit the row removal and its recoverable cleanup together.
 -- The job stores only authorization scope; primary object paths derive from meeting_id.
 create table public.draft_meeting_deletions (

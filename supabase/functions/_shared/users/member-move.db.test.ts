@@ -12,12 +12,14 @@ import { Client } from "postgres";
 const DB_URL = Deno.env.get("SUPABASE_DB_URL") ?? "postgresql://postgres:postgres@127.0.0.1:54322/postgres";
 
 // Таблицы с колонкой group_id и решение по каждой — шапка миграции 20261105200000. Новая таблица
-// с group_id без решения там должна валить этот тест, а не уезжать (или не уезжать) молча.
+// с group_id без решения там (или в создавшей её миграции) должна валить этот тест.
 const GROUP_ID_TABLES = [
   "ai_key_health",
   "allowed_users",
   "board_stickers",
   "calendar_series_country",
+  // #1168: cleanup/tombstone stays in the original home scope (20261113190000).
+  "draft_meeting_deletions",
   "entries",
   "mcp_oauth_connections",
   "meeting_agent_grants",
