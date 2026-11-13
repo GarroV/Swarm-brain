@@ -55,7 +55,7 @@ export default function Home() {
   useEffect(() => subscribeUnauthorized(goToLogin), []);
 
   // Read the consent deep link before mounting RoyApp: its navigation effects normalise the URL.
-  if (!routeReady) return <main aria-busy="true" className="min-h-dvh bg-background" />;
+  if (!routeReady || !me) return <main aria-busy="true" className="min-h-dvh bg-background" />;
   // Touch ID обязателен и не пройден — внутрь не пускаем: вместо приложения один экран (решение 26.10.2026).
   if (me && stepPending(me)?.required) return <SecondStepGate me={me} />;
   if (oauthRequest) {
