@@ -3,6 +3,7 @@
 // станет стенограммой встречи, которую команда читает как факт.
 import { assertEquals, assertThrows } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import {
+  approxBounds,
   botJoinsOverShort,
   botStillRecording,
   claimAction,
@@ -12,6 +13,7 @@ import {
   type Guard,
   heldGuards,
   type HeldRow,
+  isEmptyHolder,
   readClaimSeconds,
 } from "./arbiter.ts";
 import { MAX_RECORDED_SECONDS } from "../_shared/meeting-lease.ts";
@@ -110,6 +112,11 @@ function passes(held: HeldRow, guards: Guard[]): boolean {
     switch (g.kind) {
       case "eq":
         return row[g.column] === g.value;
+      case "approx": {
+        const v = row[g.column];
+        const { lo, hi } = approxBounds(g.value);
+        return typeof v === "number" && v >= lo && v <= hi;
+      }
       case "isNull":
         return row[g.column] === null;
       case "neq":
@@ -138,6 +145,19 @@ Deno.test("ЯДРО (TOCTOU): перехват сверяет в UPDATE, что 
   const unset = { ...read, recorded_seconds: null };
   assertEquals(passes(unset, heldGuards(unset, NOW)), true);
   assertEquals(passes({ ...unset, recorded_seconds: 30 }, heldGuards(unset, NOW)), false);
+});
+
+Deno.test("ЯДРО #1271: секунды, прочитанные с округлением до 15 цифр, всё равно совпадают с хранимыми", () => {
+  // Прод-Postgres с extra_float_digits = 0: хранится 424.5334759950638, PostgREST отдаёт 424.533475995064.
+  // Точное равенство не срабатывало никогда, и refresh того же владельца вечно уходил в defer/race.
+  const stored = { ...liveBotRow(424.5334759950638), agent_last_recording: false };
+  const read = { ...stored, recorded_seconds: 424.533475995064 };
+  assertEquals(passes(stored, heldGuards(read, NOW)), true, "округление чтения не мешает UPDATE");
+  assertEquals(
+    passes({ ...stored, recorded_seconds: 424.6 }, heldGuards(read, NOW)),
+    false,
+    "реальный прирост ловится",
+  );
 });
 
 Deno.test("ЯДРО (TOCTOU): перехват сверяет в UPDATE, что бот не начал писать, пока claim считал", () => {
@@ -323,4 +343,47 @@ Deno.test("ЯДРО #1070 (TOCTOU): UPDATE перехвата пустого д�
   // Держатель с версией этих условий не получает: решение по длине, стенограмма у него законна.
   const withVersion = { ...read, recorded_seconds: 600, transcript: { segments: [{ end: 590 }] } };
   assertEquals(passes(withVersion, heldGuards(withVersion, NOW)), true);
+});
+
+// ── Бот не вошёл — нотиса двери снимает льготный срок (решение владельца 12.11.2026) ──
+
+const MIN = 60_000;
+const at = (iso: string) => Date.parse(iso);
+
+Deno.test("ЯДРО: бот ушёл с guest_access_closed — рекордер участника принимается СРАЗУ, без льготных 20 минут", () => {
+  // Бот заявился 2 минуты назад (льгота ещё идёт), нотиса пришла через минуту после заявки.
+  const row = emptyHolderRow({
+    recorders: [{ telegram_id: BOT_OWNER, claimed_at: "2026-09-28T11:58:00.000Z", role: "transcribe" }],
+  });
+  assertEquals(decideHeld(row, 120, OTHER, NOW), "defer", "без нотисы льгота держит");
+  assertEquals(decideHeld(row, 120, OTHER, NOW, at("2026-09-28T11:59:00.000Z")), "takeover");
+  assertEquals(decideHeld(row, 120, BOT_OWNER, NOW, at("2026-09-28T11:59:00.000Z")), "refresh");
+});
+
+Deno.test("ЯДРО: бот пишет сейчас — defer остаётся, даже если в журнале есть старая нотиса двери", () => {
+  assertEquals(decideHeld(liveBotRow(0), 120, OTHER, NOW, at("2026-09-28T11:00:00.000Z")), "defer");
+});
+
+Deno.test("ЯДРО: бот записал и вышел (секунды/стенограмма есть) — нотиса двери держателя пустым не делает", () => {
+  assertEquals(
+    decideHeld(emptyHolderRow({ recorded_seconds: 1800 }), 400, OTHER, NOW, at("2026-09-28T11:59:00.000Z")),
+    "defer",
+  );
+  const withTranscript = emptyHolderRow({ transcript: { segments: [{ end: 60 }] } });
+  assertEquals(decideHeld(withTranscript, 120, OTHER, NOW, at("2026-09-28T11:59:00.000Z")), "defer");
+});
+
+Deno.test("бот у двери без терминальной нотисы — прежняя льгота; нотиса старше заявки (бот заявился заново) — тоже", () => {
+  const fresh = emptyHolderRow({
+    recorders: [{ telegram_id: BOT_OWNER, claimed_at: "2026-09-28T11:58:00.000Z", role: "transcribe" }],
+  });
+  assertEquals(decideHeld(fresh, 120, OTHER, NOW, null), "defer");
+  assertEquals(decideHeld(fresh, 120, OTHER, NOW, at("2026-09-28T11:40:00.000Z")), "defer", "нотиса — прошлой попытки");
+  // Льгота вышла — работает и без нотисы, как раньше.
+  assertEquals(decideHeld(emptyHolderRow(), 120, OTHER, NOW, null), "takeover");
+  assertEquals(isEmptyHolder(fresh, NOW, at("2026-09-28T11:58:00.000Z") + MIN), true);
+});
+
+Deno.test("запись без секунд (candidate 0) нотисой двери не принимается — как и прежде", () => {
+  assertEquals(decideHeld(emptyHolderRow(), 0, OTHER, NOW, at("2026-09-28T11:59:00.000Z")), "defer");
 });

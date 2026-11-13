@@ -97,6 +97,8 @@ export function normStatus(status: string): string {
 }
 // «Закрыта» = done ИЛИ cancelled (см. statusBucket). Отменённая задача завершена так же,
 // как сделанная: держать её среди активных значит обещать работу, которой не будет.
+/** Незакрытые статусы для `fetchTasks({ statuses })`: экранам без «Готово» закрытые не везём (#111). */
+export const OPEN_STATUSES = ["open", "in_progress", "backlog"] as const;
 export function isDone(task: Task): boolean {
   return statusBucket(task) === "done";
 }

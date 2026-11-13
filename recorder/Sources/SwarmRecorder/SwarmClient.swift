@@ -99,7 +99,9 @@ struct SwarmClient {
         guard (200...299).contains(code) else {
             throw SwarmError.http(code, String(data: data, encoding: .utf8) ?? "", retryAfter: parseRetryAfter(resp))
         }
-        return try decoder.decode(ClaimResponse.self, from: data)
+        let claim = try decoder.decode(ClaimResponse.self, from: data)
+        NSLog(claim.logLine(sent: body.recordedSeconds))  // итог каждого claim: запись, перезаявка, автодосылка (#1271)
+        return claim
     }
 
     // POST /meeting-heartbeat — «рекордер жив» + статус записи + версия сборки. Для серверного

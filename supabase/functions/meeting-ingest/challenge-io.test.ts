@@ -45,6 +45,8 @@ function fakeDb(row: Record<string, unknown> | null, updateHits: boolean[]) {
             eq: (c: string, v: unknown) => (call.filters.push(`${c}=eq.${v}`), q),
             is: (c: string, v: unknown) => (call.filters.push(`${c}=is.${v}`), q),
             neq: (c: string, v: unknown) => (call.filters.push(`${c}=neq.${v}`), q),
+            gte: (c: string, v: unknown) => (call.filters.push(`${c}=gte.${v}`), q),
+            lte: (c: string, v: unknown) => (call.filters.push(`${c}=lte.${v}`), q),
             or: (f: string) => (call.filters.push(`or(${f})`), q),
             select: (_c: string) => ({
               maybeSingle: () => Promise.resolve({ data: hit ? { id: "m" } : null, error: null }),
@@ -113,7 +115,8 @@ Deno.test("ЯДРО: выгрузка полнее — перехват UPDATE �
   assertEquals(take?.filters, [
     "id=eq.m",
     `claim_owner=eq.${HOLDER}`,
-    "recorded_seconds=eq.180",
+    "recorded_seconds=gte.179.999",
+    "recorded_seconds=lte.180.001",
     `or(agent_last_recording.is.null,agent_last_recording.is.false,lease_expires_at.is.null,lease_expires_at.lt.${NOW})`,
     "notes_edited_at=is.null",
     "status=neq.in_base",
@@ -197,7 +200,8 @@ Deno.test("ЯДРО: поправка секунд держателя — тол
   assertEquals(calls[0]?.filters, [
     "id=eq.m",
     `claim_owner=eq.${HOLDER}`,
-    "recorded_seconds=eq.86000",
+    "recorded_seconds=gte.85999.999",
+    "recorded_seconds=lte.86000.001",
     "agent_last_seen_at=is.null",
   ]);
 });
@@ -206,14 +210,31 @@ Deno.test("#121: missing/zero seconds are measured from media and written with n
   const measured = await measureUpload([part(0, 3), part(5, 2), part(0, 3)]);
   assertEquals(measured, 5, "gaps and duplicate tracks do not inflate duration");
   for (const previous of [null, 0]) {
+    const wantSeconds = previous === null ? ["recorded_seconds=is.null"] : [
+      "recorded_seconds=gte.-0.001",
+      "recorded_seconds=lte.0.001",
+    ];
     const { client, calls } = fakeDb(null, [true]);
     await correctHolderSeconds(client, "m", HOLDER, previous, measured!);
     assertEquals(calls[0]?.patch, { recorded_seconds: 5 });
     assertEquals(calls[0]?.filters, [
       "id=eq.m",
       `claim_owner=eq.${HOLDER}`,
-      previous === null ? "recorded_seconds=is.null" : "recorded_seconds=eq.0",
+      ...wantSeconds,
       "agent_last_seen_at=is.null",
     ]);
   }
+});
+
+Deno.test("ЯДРО #1271: поправка секунд держателя находит строку, чьи секунды PostgREST отдал округлёнными до 15 цифр", async () => {
+  // В базе 424.5334759950638, прочитано (extra_float_digits = 0) 424.533475995064: точное eq не ложилось никогда.
+  const stored = 424.5334759950638;
+  const read = 424.533475995064;
+  const { client, calls } = fakeDb(null, [true]);
+  await correctHolderSeconds(client, "m", HOLDER, read, 430);
+  const bounds = calls[0]!.filters.filter((f) => f.startsWith("recorded_seconds="));
+  assertEquals(bounds.length, 2);
+  const lo = Number(bounds[0]!.replace("recorded_seconds=gte.", ""));
+  const hi = Number(bounds[1]!.replace("recorded_seconds=lte.", ""));
+  assertEquals(lo <= stored && stored <= hi, true);
 });

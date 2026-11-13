@@ -1,9 +1,11 @@
 import type { BackdropId } from "../backdrop";
+import type { SchemeId } from "../scheme";
 
 export type UpdateMeInput = {
   role?: string | null;
   markets?: string[];
   ui_backdrop?: BackdropId | null;
+  ui_scheme?: SchemeId | null;
 };
 
 // ── Присутствие (#751) ───────────────────────────────────────────────────────

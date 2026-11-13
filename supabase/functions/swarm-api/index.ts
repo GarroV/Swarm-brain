@@ -1,4 +1,4 @@
-import { parseMePatch } from "./me-fields.ts";
+import { meUiPrefs, parseMePatch } from "./me-fields.ts";
 import { deriveEntryTitle, entryTagKey } from "./entry-presentation.ts";
 import { taskExtractionResponse } from "./task-extraction-response.ts";
 import { handleChatGptDesktop } from "./chatgpt-desktop.ts";
@@ -161,7 +161,7 @@ import { handlePublicRoadmap, isPublicRoadmapPath } from "./public-roadmap.ts";
 // Календарь на сегодня для панели главной (issue #218): доступ к Google — общий модуль
 // (его же зовёт meeting-current), отбор событий дня и границы суток — чистая логика под тестами.
 import { loadTodayMeetings } from "./today-meetings.ts";
-import { isTaskStatus, taskStatusError } from "../_shared/tasks/statuses.ts";
+import { isTaskStatus, parseStatusesParam, taskStatusError } from "../_shared/tasks/statuses.ts";
 import {
   isActive as maintenanceActive,
   maintenancePayload,
@@ -616,7 +616,7 @@ async function routeRequest(req: Request): Promise<Response> {
   if (req.method === "GET" && routePath === "/me") {
     const [{ data: profile }, { data: allowedUser }] = await Promise.all([
       supabase.from("user_profiles").select(
-        "first_name, last_name, role, markets, ui_backdrop, recorder_auto_start",
+        "first_name, last_name, role, markets, ui_backdrop, ui_scheme, recorder_auto_start",
       ).eq("telegram_id", telegram_id).maybeSingle(),
       supabase.from("allowed_users").select("username, email, telegram_chat_id").eq(
         "telegram_id",
@@ -649,7 +649,7 @@ async function routeRequest(req: Request): Promise<Response> {
         language: "en",
         role: p?.role ?? null,
         markets: p?.markets ?? [],
-        ui_backdrop: p?.ui_backdrop ?? null,
+        ...meUiPrefs(p),
         // Рекордер сам начинает запись по календарю (#219); по умолчанию включено (решение 18.09.2026).
         recorder_auto_start: p?.recorder_auto_start !== false,
         is_admin: isAdmin,
@@ -1041,6 +1041,8 @@ async function routeRequest(req: Request): Promise<Response> {
   if (routePath === "/tasks") {
     if (req.method === "GET") {
       const status = url.searchParams.get("status") ?? undefined;
+      const { statuses, error: statusesError } = parseStatusesParam(url.searchParams.get("statuses"));
+      if (statusesError) return apiErr(400, statusesError, origin);
       const country = url.searchParams.get("country") ?? undefined;
       const assigneeText = url.searchParams.get("assignee") ?? undefined;
       const mine = url.searchParams.get("mine") === "true";
@@ -1054,8 +1056,7 @@ async function routeRequest(req: Request): Promise<Response> {
       const projectId = url.searchParams.get("project_id") ?? undefined;
       const tagsParam = url.searchParams.get("tags");
       const tags = tagsParam ? tagsParam.split(",").map((t) => t.trim()).filter(Boolean) : undefined;
-      const startDateFrom = url.searchParams.get("start_date_from") ??
-        undefined;
+      const startDateFrom = url.searchParams.get("start_date_from") ?? undefined;
       const startDateTo = url.searchParams.get("start_date_to") ?? undefined;
       const dueDateFrom = url.searchParams.get("due_date_from") ?? undefined;
       const dueDateTo = url.searchParams.get("due_date_to") ?? undefined;
@@ -1076,6 +1077,7 @@ async function routeRequest(req: Request): Promise<Response> {
           columns: since ? deltaColumns(TASK_LIST_COLUMNS) : TASK_LIST_COLUMNS,
           updatedAfter: since ?? undefined,
           status,
+          statuses,
           country,
           assigneeText,
           telegramId: mine ? telegram_id : undefined,
@@ -1092,9 +1094,7 @@ async function routeRequest(req: Request): Promise<Response> {
         },
         groupId,
       );
-      // Упёрлись в лимит — значит часть задач в ответ НЕ попала, и клиент об этом не узнает
-      // (ответ — голый массив, признака усечения в нём нет). Пока #112 не сделает усечение
-      // громким для пользователя, оставляем след в логах: увидим до того, как заметит команда.
+      // Упёрлись в лимит — часть задач не попала в ответ, клиент не узнает (голый массив): след в логах (#112).
       if (tasks.length >= limit) {
         console.warn(
           `[tasks] список упёрся в лимит ${limit} — часть задач не попала в ответ (issue #111/#112)`,

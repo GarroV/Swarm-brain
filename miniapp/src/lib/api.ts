@@ -31,7 +31,8 @@ import type { TaskFile, TaskFileLimits } from "./taskFiles";
 import type { UsageCell } from "./usageCube";
 import type { TasksDeltaResponse } from "./tasksDelta";
 import type { AdminUser, MarketBundle, MarketCandidate, AdminWorkspace, AgentMeeting, CheckStatus, Entry, GranolaNote, Integration, JournalEvent, JourneyStep, MarketSuggestion, Me, MeetingLiveNote, MeetingNotes, Project, ProjectLink, Sprint, SprintCycle, SprintBoardData, SprintCycleDetail, SprintCycleItem, SprintJourney, SprintStats, SprintKind, SprintStatus, Task, Person, User, BoardSticker, NewSticker } from "@/types";
-import { createRequestCache, REQUEST_CACHE_TTL_MS } from "./request-cache";
+import { cachedRead, invalidateReadCache, noteIdentity, resetIdentity } from "./api-cache";
+export { subscribeDataRevalidated } from "./api-cache";
 import { normalizeProposedTasks, type ProposedTask } from "./proposedTasks";
 import type { DeployNotice } from "@/lib/deployNotice";
 import type { SwarmNotification } from "./notificationTypes";
@@ -459,10 +460,7 @@ const mockGranolaUnprocessed: GranolaNote[] = [
 const envApi = process.env.NEXT_PUBLIC_API_URL ?? "";
 const API_BASE = /^\/(?![/\\])/.test(envApi) ? envApi : "/api";
 
-// Дедупликация одинаковых GET-ов (issue #103). Кэш ТОЛЬКО в памяти вкладки и только для
-// чтения; любая мутация его сбрасывает, чтобы экран не показал данные «на шаг назад».
-const requestCache = createRequestCache({ ttlMs: REQUEST_CACHE_TTL_MS });
-
+// Кэш чтения (дедуп #103, между экранами #492) — api-cache.ts.
 function isRead(options?: RequestInit): boolean {
   const m = (options?.method ?? "GET").toUpperCase();
   return m === "GET";
@@ -471,14 +469,14 @@ function isRead(options?: RequestInit): boolean {
 async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
   if (isRead(options) && options?.cache === "no-store") return apiFetchRaw<T>(path, options);
   if (isRead(options)) {
-    return requestCache.run(path, () => apiFetchRaw<T>(path, options));
+    return cachedRead(path, () => apiFetchRaw<T>(path, options));
   }
   try {
     return await apiFetchRaw<T>(path, options);
   } finally {
     // После мутации кэш чтения недействителен — даже если запрос упал: сервер мог
     // применить часть изменений, и отдать старое из памяти было бы хуже, чем перечитать.
-    requestCache.invalidate();
+    invalidateReadCache();
   }
 }
 
@@ -499,7 +497,7 @@ async function sendRequest(url: string, init: RequestInit): Promise<Response> {
     throw e;
   }
   reportConnection("response");
-  if (res.status === 401) reportUnauthorized();
+  if (res.status === 401) { invalidateReadCache(); reportUnauthorized(); } // сессии нет — кэш чужих данных не переживает её
   return res;
 }
 
@@ -558,7 +556,7 @@ async function apiFetchNoContentType<T>(
   try {
     return await apiFetchNoContentTypeRaw<T>(path, options);
   } finally {
-    requestCache.invalidate();
+    invalidateReadCache();
   }
 }
 
@@ -584,7 +582,7 @@ async function apiFetchNoContentTypeRaw<T>(
 
 export async function fetchMe(): Promise<Me> {
   if (DEV_MODE) return MOCK_ME;
-  return apiFetch<Me>("/me");
+  return apiFetch<Me>("/me").then((me) => (noteIdentity(me), me));
 }
 
 // Гасит httpOnly-cookie roj_session (браузерная сессия). Обрабатывает CF-функция
@@ -599,10 +597,11 @@ export async function logout(): Promise<void> {
   } catch {
     // Выходу из аккаунта это не мешает.
   }
-  await fetch(`${API_BASE}/auth/logout`, {
-    method: "POST",
-    credentials: "include",
-  });
+  try {
+    await fetch(`${API_BASE}/auth/logout`, { method: "POST", credentials: "include" });
+  } finally {
+    resetIdentity(); // даже если запрос выхода не дошёл: чужие данные в памяти вкладке не нужны
+  }
 }
 
 // ── Ключи входа в профиле (решение 17.10.2026, «Добавить устройство») ─────────────
@@ -963,7 +962,7 @@ export async function fetchTasks(
     : (filters ?? {});
   if (DEV_MODE) {
     let r = mockTasks;
-    if (f.status) r = r.filter((t) => t.status === f.status);
+    if (f.status || f.statuses?.length) r = r.filter((t) => t.status === f.status || f.statuses?.includes(t.status));
     if (f.sprint_id) r = r.filter((t) => t.sprint_id === f.sprint_id);
     if (f.tags?.length) {
       r = r.filter((t) => f.tags!.some((tag) => (t.tags ?? []).includes(tag)));
@@ -982,6 +981,7 @@ export async function fetchTasks(
   }
   const params = new URLSearchParams();
   if (f.status) params.set("status", f.status);
+  if (f.statuses?.length) params.set("statuses", f.statuses.join(","));
   if (f.sprint_id) params.set("sprint_id", f.sprint_id);
   if (f.tags?.length) params.set("tags", f.tags.join(","));
   if (f.label_id) params.set("label_id", f.label_id);
@@ -991,10 +991,8 @@ export async function fetchTasks(
   if (f.due_date_from) params.set("due_date_from", f.due_date_from);
   if (f.due_date_to) params.set("due_date_to", f.due_date_to);
   if (f.mine) params.set("mine", "true");
-  // Все экраны задач Роя фильтруют статусы НА КЛИЕНТЕ (смарт-листы, колонка «Готово» в спринте,
-  // таймлайн). Без confirmed-фильтра бэкенд по умолчанию исключает done/cancelled/draft
-  // (см. _shared/tasks/db.ts) → список «Готово» всегда пуст. confirmed=true отдаёт ВСЕ
-  // подтверждённые задачи (включая done), а статус уже фильтруется на клиенте.
+  // Без `statuses` статусы фильтрует клиент: confirmed=true отдаёт ВСЕ подтверждённые, включая done (без него
+  // сервер прячет done/cancelled/draft). Экранам без «Готово» — `statuses: OPEN_STATUSES`, фильтр на сервере (#111).
   params.set("confirmed", "true");
   const qs = params.toString();
   return apiFetch<Task[]>(`/tasks${qs ? `?${qs}` : ""}`);

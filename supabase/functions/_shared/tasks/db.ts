@@ -110,6 +110,8 @@ export async function getVisibleTaskInWorkspace(
 
 export async function listTasksWithTotal(filters: {
   status?: string;
+  /** Любой из статусов (`status in (…)`), issue #111. Явный список отменяет «закрытые прячем». */
+  statuses?: readonly string[];
   country?: string;
   period?: string;
   telegramId?: number;
@@ -163,6 +165,7 @@ export async function listTasksWithTotal(filters: {
   }
 
   if (filters.status) q = q.eq("status", filters.status);
+  if (filters.statuses?.length) q = q.in("status", [...filters.statuses]);
   if (filters.country) q = q.ilike("country", `%${filters.country}%`);
   if (filters.createdBy !== undefined) {
     q = q.eq("created_by_telegram_id", filters.createdBy);

@@ -11,6 +11,7 @@ import { useDt, useRoyNav } from "./nav";
 import { badgeLabel } from "@/lib/navBadges";
 import { RailSearch } from "./RailSearch";
 import { FeedbackDialog } from "./FeedbackFab";
+import { SchemeGear } from "./SchemeDialog";
 import { readRailCollapsed, saveRailCollapsed, subscribeRailCollapsed } from "@/lib/railCollapse";
 import { readTheme, saveTheme, THEME_CHANGE_EVENT, THEME_IDS, type ThemeId } from "@/lib/theme";
 
@@ -112,7 +113,7 @@ export function RoyRail({
           // Красный кружок с числом, как на айфоне (владелец 12.10.2026, issue #903). В узкой
           // рейке — в углу пиктограммы.
           <span
-            className="inline-flex h-[17px] min-w-[17px] items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-bold leading-[17px] text-white narrow:absolute narrow:-top-px narrow:right-px narrow:h-[15px] narrow:min-w-[15px] narrow:px-[3px] narrow:text-[9px] narrow:leading-[15px]"
+            className="inline-flex h-[17px] min-w-[17px] items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-bold leading-[17px] text-[var(--on-solid)] narrow:absolute narrow:-top-px narrow:right-px narrow:h-[15px] narrow:min-w-[15px] narrow:px-[3px] narrow:text-[9px] narrow:leading-[15px]"
           >
             {badgeText}
           </span>
@@ -308,6 +309,9 @@ function ThemeSwitch() {
         className="hidden h-[34px] w-full items-center justify-center rounded-full text-ink-soft hover:bg-surface hover:text-ink narrow:flex focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]">
         <RoyIcon name={THEME_ICON[theme]} size={16} strokeWidth={1.7} />
       </button>
+      {/* Меню «Оформление»: режим и цветовая схема (12.11.2026). Шестерёнка справа от пилюли; в узкой
+          рейке — одна иконка под переключателем. */}
+      <SchemeGear />
     </>
   );
 }

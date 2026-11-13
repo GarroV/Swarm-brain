@@ -279,7 +279,11 @@ export function Row({ onClick, children }: { onClick: () => void; children: Reac
 // дашборд ↔ доска. Кликабельный контейнер открывает задачу; чекбокс гасит всплытие
 // и переключает done (updateTask → bumpTasks обновляет панели). Не button — внутри
 // TaskRow уже есть button-чекбокс (вложенные button невалидны).
-export function DashTaskRow({ task, showAssignee = false, reminder }: { task: Task; showAssignee?: boolean; reminder?: TaskReminderHint }) {
+export function DashTaskRow({ task, showAssignee = false, reminder, render }: {
+  task: Task; showAssignee?: boolean; reminder?: TaskReminderHint;
+  /** Своя строка вместо TaskRow (виджет «Ближайшие задачи»): получает задачу с учётом отметки и переключатель. */
+  render?: (shown: Task, onToggle: () => void) => ReactNode;
+}) {
   const { openTask, toast, bumpTasks } = useRoyNav();
   const dt = useDt();
   // Отмеченная кружком строка не пропадает сразу (lib/doneLinger.ts): запись уходит на сервер
@@ -332,7 +336,7 @@ export function DashTaskRow({ task, showAssignee = false, reminder }: { task: Ta
       onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openTask(task); } }}
       className={`cursor-pointer rounded-[8px] transition-colors hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]${fading ? ` ${ROW_FADE_CLASS}` : ""}`}
     >
-      <TaskRow task={shown} showAssignee={showAssignee} onToggle={toggle} reminder={reminder} />
+      {render ? render(shown, toggle) : <TaskRow task={shown} showAssignee={showAssignee} onToggle={toggle} reminder={reminder} />}
     </div>
   );
 }

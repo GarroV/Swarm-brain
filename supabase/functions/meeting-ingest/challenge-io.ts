@@ -7,7 +7,7 @@ import { claimLeaseUntil } from "../_shared/meeting-lease.ts";
 import { updateRecorders } from "../_shared/recorders-write.ts";
 import type { RivalClaim } from "../_shared/meeting-rival.ts";
 import { unfrozen } from "../_shared/meeting-frozen.ts";
-import { heldGuards } from "../meeting-claim/arbiter.ts";
+import { approxBounds, heldGuards } from "../meeting-claim/arbiter.ts";
 import { occupyPatch, takeoverPatch } from "../meeting-claim/claim-patch.ts";
 import { withGuards } from "../meeting-claim/guard-query.ts";
 import { mp4DurationSec, trackCoverageSec } from "./audio-length.ts";
@@ -134,7 +134,11 @@ export async function correctHolderSeconds(
 ): Promise<void> {
   const query = supabase.from("meetings").update({ recorded_seconds: measuredSec })
     .eq("id", meetingId).eq("claim_owner", uploader);
-  const guarded = readSeconds === null ? query.is("recorded_seconds", null) : query.eq("recorded_seconds", readSeconds);
+  // Не eq: прод-Postgres округляет double до 15 цифр, точное равенство не срабатывает (#1271).
+  const { lo, hi } = readSeconds === null ? { lo: 0, hi: 0 } : approxBounds(readSeconds);
+  const guarded = readSeconds === null
+    ? query.is("recorded_seconds", null)
+    : query.gte("recorded_seconds", lo).lte("recorded_seconds", hi);
   const { data, error } = await guarded.is("agent_last_seen_at", null).select("id");
   if (error) console.error(`meeting-ingest: секунды держателя ${meetingId}: ${error.message}`);
   else if ((data ?? []).length > 0) {

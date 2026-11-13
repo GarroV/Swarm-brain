@@ -1,0 +1,74 @@
+{
+  "miniapp/src/components/market/market.css": {
+    "max": 70,
+    "reason": "Палитра отчёта «Анализ рынка» для схемы Swarm (блоки .mkt и .dark .mkt) и ДАННЫЕ: серии графиков --s0…--s8, шкала тепла --heat0…3, география карты. У цветных схем поверхность, текст, акцент и статусы отчёта берутся из токенов блоком html[data-scheme] .mkt в конце файла."
+  },
+  "miniapp/src/components/presence/neonStyles.ts": {
+    "max": 24,
+    "reason": "Иллюстрации неоновых зверей присутствия: у каждого свой неоновый цвет на собственном тёмном диске — это картинка, а не оформление интерфейса."
+  },
+  "miniapp/src/components/tasks/ProjectTree.tsx": {
+    "max": 19,
+    "reason": "Дерево проектов — самодостаточная тёмная «сцена» (холст, узлы, подписи нарисованы парой фон+текст из одной палитры, в светлой теме тоже тёмная). Читается в любой схеме; единственная кнопка вне сцены переведена на токены."
+  },
+  "miniapp/src/components/roy/home/stickerUi.ts": {
+    "max": 15,
+    "reason": "Бумага стикеров: цвета фиксированные, как настоящая бумажка, — выбор пользователя, не тема (комментарий в самом файле)."
+  },
+  "miniapp/src/components/roy/home/StickerCard.tsx": {
+    "max": 14,
+    "reason": "Стикер: бумага, ленточка и подписи — фиксированная пара фон+текст (см. stickerUi.ts)."
+  },
+  "miniapp/src/components/roy/home/StickerBoard.tsx": {
+    "max": 8,
+    "reason": "Стикеры на доске: бумага, ленточка, срок — фиксированная пара фон+текст (см. stickerUi.ts)."
+  },
+  "miniapp/src/components/roy/home/StickerCreate.tsx": {
+    "max": 1,
+    "reason": "Рамка выбранного образца цвета стикера — часть выбора бумаги."
+  },
+  "miniapp/src/components/roy/GalaxyBackground.tsx": {
+    "max": 9,
+    "reason": "Фон «Галактика» — картина тёмной темы «Swarm» (canvas с фиксированными тонами). На цветных схемах не рисуется (BackdropLayer), там фон — цвет схемы."
+  },
+  "miniapp/src/components/profile/BackdropSection.tsx": {
+    "max": 7,
+    "reason": "Миниатюры фонов «Галактика» и «Сияние» в настройках: рисунки-превью самих фонов."
+  },
+  "miniapp/src/app/login/page.tsx": {
+    "max": 4,
+    "reason": "Логотип Google на кнопке входа — фирменные цвета бренда, их менять нельзя."
+  },
+  "miniapp/src/app/layout.tsx": {
+    "max": 2,
+    "reason": "themeColor браузера (цвет шапки/строки состояния) задаётся метой по prefers-color-scheme и токены читать не умеет; у цветных схем его выставляет lib/theme.ts (syncBrowserChrome) уже после загрузки."
+  },
+  "miniapp/src/lib/api.ts": {
+    "max": 1,
+    "reason": "Цвет демо-проекта в моках DEV_MODE — данные, не интерфейс."
+  },
+  "miniapp/src/components/tools/QrCard.tsx": {
+    "max": 1,
+    "reason": "Подложка QR-кода всегда белая: сканер читает только тёмное по светлому."
+  },
+  "miniapp/src/components/profile/PasskeysSection.tsx": {
+    "max": 1,
+    "reason": "Подложка QR-кода всегда белая: сканер читает только тёмное по светлому."
+  },
+  "miniapp/src/components/tasks/ProjectsGrid.tsx": {
+    "max": 1,
+    "reason": "Цвет точки проекта — данные (p.color выбирает пользователь); #5b8def — прежний цвет по умолчанию."
+  },
+  "miniapp/src/components/roy/dash/ProjectMapButton.tsx": {
+    "max": 1,
+    "reason": "Подложка под самодостаточной картой system-map.html (iframe с собственным тёмным холстом)."
+  },
+  "miniapp/src/components/roy/RoyApp.tsx": {
+    "max": 1,
+    "reason": "Подложка под самодостаточной картой system-map.html (iframe с собственным тёмным холстом)."
+  },
+  "miniapp/src/components/market/heat.ts": {
+    "max": 1,
+    "reason": "Запасной цвет шкалы тепла, если токен --heat* не прочитан; штампы альфы — чёрные, цвет даёт шкала из токенов."
+  }
+}

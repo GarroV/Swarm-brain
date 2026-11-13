@@ -30,7 +30,7 @@ export function InspectionPanel({ row, onClose, onCreateTask }: { row: Inspectio
   const counts = data ? Object.entries(data.inspection.counts) : [];
 
   return createPortal(
-    <div className="fixed inset-0 z-[90] flex justify-end bg-black/40" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+    <div className="fixed inset-0 z-[90] flex justify-end bg-[var(--scrim-sheet)]" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div ref={ref} role="dialog" aria-modal="true" aria-labelledby="insp-title" tabIndex={-1}
         className="flex h-full w-full max-w-[480px] flex-col gap-4 overflow-y-auto border-l border-line bg-card p-5 text-ink shadow-xl outline-none">
         <div className="flex items-start justify-between gap-3">

@@ -17,7 +17,7 @@
 | Окно автозапуска | `autojoin.leadMs/lateMs` в `_shared/bot-profile.ts` | нет |
 | Тексты уведомлений бота | `_shared/bot-notice-texts.ts` (`{bot}`, `{door_wait}`), тексты пропусков — `_shared/calendar-missed.ts` | нет |
 | Лимит одновременных встреч | `SCRIBA_MAX_MEETINGS` в `bot/` | нет |
-| Правила автозапуска (кого звать) | модули бота: `_shared/calendar-dispatch.ts`, `swarm-api/autojoin.ts` | нет |
+| Правила автозапуска (кого звать) | модули бота: `_shared/calendar-dispatch.ts`, `_shared/notice-recipients.ts` (кому из принявших слать уведомления), `swarm-api/autojoin.ts` | нет |
 | Новый вид уведомления | `NOTICE_KINDS` в `_shared/notices.ts` + текст | да — это контракт с базой (`meeting_notice_reserve`) |
 | Арбитраж бот против рекордера | `meeting-claim/arbiter.ts`, `_shared/bot-recording.ts` | да — часть общего арбитра |
 | Протокол доверия (пропуск, личность, сверка заявки) | `agent-auth`, `agent-grant`, `meeting-claim/agent-scope` | да — это безопасность, а не настройка |

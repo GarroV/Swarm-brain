@@ -40,7 +40,7 @@ export function NotificationSoundToggle() {
       >
         <span
           className={cn(
-            "absolute top-0.5 size-4 rounded-full bg-white transition-all",
+            "absolute top-0.5 size-4 rounded-full bg-[var(--on-solid)] transition-all",
             on ? "left-[18px]" : "left-0.5",
           )}
         />

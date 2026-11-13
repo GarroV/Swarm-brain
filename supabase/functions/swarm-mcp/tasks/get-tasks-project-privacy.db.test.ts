@@ -36,10 +36,9 @@ Deno.test("get_tasks: задача закрытого проекта видна 
         status: "open",
         group_id: WS,
         project_id: p.id,
-        created_by: "qa",
         confirmed: true,
       },
-      { title: "QA общая задача", status: "open", group_id: WS, created_by: "qa", confirmed: true },
+      { title: "QA общая задача", status: "open", group_id: WS, confirmed: true },
     ]);
 
     const member = await toolGetTasks({ requesting_user_id: MEMBER });
