@@ -10,6 +10,23 @@ async function one<T>(db: Client, sql: string, args: unknown[] = []): Promise<T>
   return r.rows[0];
 }
 
+// Invoke as the Data API role; fixture setup/assertions stay on the owning connection.
+// A failed statement aborts the subtransaction. Restore it before rethrowing its original error.
+async function rpc(db: Client, sql: string, args: unknown[] = []): Promise<{ result: Row }> {
+  await db.queryArray`savepoint member_move_rpc_1156`;
+  try {
+    await db.queryArray`set local role service_role`;
+    const result = await one<{ result: Row }>(db, sql, args);
+    await db.queryArray`reset role`;
+    await db.queryArray`release savepoint member_move_rpc_1156`;
+    return result;
+  } catch (error) {
+    await db.queryArray`rollback to savepoint member_move_rpc_1156`;
+    await db.queryArray`release savepoint member_move_rpc_1156`;
+    throw error;
+  }
+}
+
 async function fixture(fn: (db: Client, f: Awaited<ReturnType<typeof seed>>) => Promise<void>) {
   const db = new Client(DB_URL);
   await db.connect();
@@ -53,7 +70,7 @@ async function move(
   expected: unknown = null,
   identity: unknown = { telegram_id: null },
 ) {
-  const r = await one<{ result: Row }>(
+  const r = await rpc(
     db,
     `select move_member_account_to_workspace($1, $2, $3, $4, $5::jsonb, $6::jsonb) as result`,
     [f.account, f.b, f.colleague, dry, expected === null ? null : JSON.stringify(expected), JSON.stringify(identity)],
@@ -129,7 +146,7 @@ Deno.test("переезд приглашения: изменившийся previ
 Deno.test("переезд по account: неверные ссылки и прежнее пространство не меняют данные", async () => {
   await fixture(async (db, f) => {
     const check = async (id: string | null, to: string | null) => {
-      const r = await one<{ result: Row }>(
+      const r = await rpc(
         db,
         `select move_member_account_to_workspace($1::bigint, $2::text, $3::bigint, false, null, '{"telegram_id":null}'::jsonb) as result`,
         [id, to, f.colleague],
@@ -153,7 +170,7 @@ Deno.test("переезд по account: обязательный снимок id
       const r = await move(db, f, true, null, identity);
       assertEquals(r.error, "bad_input");
     }
-    const omitted = await one<{ result: Row }>(
+    const omitted = await rpc(
       db,
       `select move_member_account_to_workspace($1, $2, $3, true, null) as result`,
       [f.account, f.b, f.colleague],
