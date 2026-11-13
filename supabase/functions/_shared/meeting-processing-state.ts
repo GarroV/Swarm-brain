@@ -13,6 +13,7 @@ export interface Part {
   attempts: number;
   segments?: Segment[];
   lang?: string; // язык части, определённый Whisper (имя на англ.)
+  conf?: { n: number; low: number }; // уверенность Whisper по сегментам части (#75): всего / ниже порога
   viaFallback?: boolean; // сегменты пришли только из d.text-фолбэка (не настоящая речь) → не якорим
 }
 // speakers — необязательный таймлайн говорящих (секунды от начала записи), присланный полем

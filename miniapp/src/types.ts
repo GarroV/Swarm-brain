@@ -577,7 +577,13 @@ export type AgentMeeting = {
   // для ручных записей без календарного события.
   attendees?: Attendee[] | null;
   // transcript присутствует только в детальном GET /agent-meetings/:id
-  transcript?: { language?: string; model?: string; segments?: TranscriptSegment[] } | null;
+  // quality — честный сигнал качества распознавания (#75); у записей до его появления поля нет.
+  transcript?: {
+    language?: string;
+    model?: string;
+    segments?: TranscriptSegment[];
+    quality?: { version: number; flag: "ok" | "poor"; reasons: ("repeats" | "low_confidence")[]; repeat_share: number; low_conf_share: number | null };
+  } | null;
   recorders: RecorderRef[] | null;
   // Совладельцы черновика — участники встречи с аккаунтом SWARM (решение 2026-09-25). Видят и
   // вычитывают, но не удаляют; при нескольких владельцах публикация только в общую базу.
