@@ -66,6 +66,22 @@ describe("дверь", () => {
     expect(world.calls).toContain("leave");
   });
 
+  // Ранний «стук» (12.11.2026): пока адаптер Толка ждёт открытия комнаты, нотиса уже ушла.
+  it("комната Толка закрыта → «стук» guest_access_waiting сразу при заходе, до исхода двери", async () => {
+    const world = build({ guestRoomClosedOnJoin: true, door: ["guest_access_closed"] });
+
+    expect(await runMeeting(world.options)).toBe("guest_access_closed");
+    expect(kinds(world)).toEqual(["guest_access_waiting", "guest_access_closed"]);
+    expect(world.notices[0]).toEqual({ kind: "guest_access_waiting", meetingId: "m-1" });
+  });
+
+  it("комнату открыли после «стука» — больше нотис нет, пишем как обычно", async () => {
+    const world = build({ guestRoomClosedOnJoin: true, door: ["admitted"] });
+
+    expect(await runMeeting(world.options)).toBe("recorded");
+    expect(kinds(world)).toEqual(["guest_access_waiting"]);
+  });
+
   it("в звонке у бота живой микрофон → join_failed с причиной, выход, записи нет", async () => {
     const world = build({ door: ["mic_live"] });
 

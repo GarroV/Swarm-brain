@@ -27,6 +27,9 @@ def check_report(status):
             (fixture / name).mkdir(parents=True)
         shutil.copy2(ROOT / "scripts/check", fixture / "scripts/check")
         shutil.copy2(ROOT / "scripts/check-source-size.py", fixture / "scripts/check-source-size.py")
+        for name in ("check-theme-colors.py", "test-theme-colors.py"):
+            shutil.copy2(ROOT / "scripts" / name, fixture / "scripts" / name)
+        (fixture / "scripts/theme-colors-allow.json").write_text("{}\n")  # в пустом дереве исключать нечего
         (fixture / "scripts/feature-paths.txt").write_text("supabase/functions/example/index.ts\n")
         (fixture / "scripts/coverage-floor.txt").write_text("0\n")
         (fixture / "supabase/functions/example/index.ts").write_text("export {};\n")
@@ -66,7 +69,7 @@ exit "$CHECK_STATUS"
         report = json.loads((fixture / "reports/check.json").read_text())
         assert report["failed"] == status, report
         roles = {row["role"]: row for row in report["roles"]}
-        assert len(roles) == 9, report
+        assert len(roles) == 10, report
         assert roles["язык-веб"]["status"] == ("pass" if status == 0 else "fail"), roles["язык-веб"]
         for role in ("формат", "линт", "мёртвый-код", "границы", "типы-функции"):
             assert roles[role]["status"] == ("pass" if status == 0 else "fail"), roles[role]

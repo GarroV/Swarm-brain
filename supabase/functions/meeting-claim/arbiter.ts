@@ -103,7 +103,7 @@ function holderClaimedAtMs(row: Pick<HeldRow, "claim_owner" | "recorders">): num
 }
 
 /** Нет ни секунд, ни стенограммы, ни обработки — «версии» держателя нет (без учёта срока). */
-function holdsNothing(row: Pick<HeldRow, "recorded_seconds" | "transcript" | "summary_status">): boolean {
+export function holdsNothing(row: Pick<HeldRow, "recorded_seconds" | "transcript" | "summary_status">): boolean {
   if (heldSeconds(row) > 0) return false;
   if (row.summary_status === "processing" || row.summary_status === "done") return false;
   return (row.transcript?.segments ?? []).length === 0;
@@ -123,19 +123,31 @@ function holdsNothing(row: Pick<HeldRow, "recorded_seconds" | "transcript" | "su
 export function isEmptyHolder(
   row: Pick<HeldRow, "claim_owner" | "recorded_seconds" | "transcript" | "summary_status" | "recorders">,
   nowIso: string,
+  doorFailedAtMs: number | null = null,
 ): boolean {
   if (!holdsNothing(row)) return false;
   const claimedAt = holderClaimedAtMs(row);
-  return claimedAt !== null && Date.parse(nowIso) - claimedAt >= EMPTY_HOLDER_GRACE_SEC * 1000;
+  if (claimedAt === null) return false;
+  // Бот сам сказал нотисой, что не вошёл (журнал, door-failure.ts), — и это случилось ПОСЛЕ последней
+  // заявки держателя: ждать льготный срок нечего. Нотиса старше заявки — бот заявился заново, она
+  // не про эту попытку, и действует обычный срок.
+  if (doorFailedAtMs !== null && doorFailedAtMs >= claimedAt) return true;
+  return Date.parse(nowIso) - claimedAt >= EMPTY_HOLDER_GRACE_SEC * 1000;
 }
 
-export function decideHeld(row: HeldRow, candidate: number, ownerId: number, nowIso: string): HeldDecision {
+export function decideHeld(
+  row: HeldRow,
+  candidate: number,
+  ownerId: number,
+  nowIso: string,
+  doorFailedAtMs: number | null = null,
+): HeldDecision {
   // Правленное человеком или опубликованное команде не трогает никто.
   if (isFrozen(row)) return "defer";
   const sameOwner = row.claim_owner === ownerId;
   if (botStillRecording(row, nowIso)) return sameOwner ? "reserve" : "defer";
   // Пустой держатель уступает любой записи с секундами; сравнение с ним — пороги не нужны.
-  if (candidate > 0 && isEmptyHolder(row, nowIso)) return sameOwner ? "refresh" : "takeover";
+  if (candidate > 0 && isEmptyHolder(row, nowIso, doorFailedAtMs)) return sameOwner ? "refresh" : "takeover";
   if (!(candidate > 0 && isSubstantiallyLonger(candidate, heldSeconds(row)))) return "defer";
   return sameOwner ? "refresh" : "takeover";
 }
@@ -181,9 +193,23 @@ export function claimAction(verdict: HeldDecision): ClaimAction {
   return verdict === "takeover" ? "challenge" : verdict;
 }
 
+/**
+ * Допуск сверки double precision (секунды записи), с. Прод-Postgres стоит с extra_float_digits = 0:
+ * PostgREST отдаёт double округлённым до 15 значащих цифр (хранится 424.5334759950638, читается
+ * 424.533475995064), и точное равенство по прочитанному значению не срабатывает никогда (#1271).
+ * Допуск на порядки больше ошибки округления и на порядки меньше любого реального прироста записи.
+ */
+export const FLOAT_GUARD_EPS = 0.001;
+
+/** Границы сравнения «approx»: [value − EPS, value + EPS]. */
+export function approxBounds(value: number): { lo: number; hi: number } {
+  return { lo: value - FLOAT_GUARD_EPS, hi: value + FLOAT_GUARD_EPS };
+}
+
 /** Условие UPDATE — описанием, чтобы тест проверял его на строке, а index.ts переводил в PostgREST. */
 export type Guard =
   | { kind: "eq"; column: string; value: string | number }
+  | { kind: "approx"; column: string; value: number }
   | { kind: "isNull"; column: string }
   | { kind: "neq"; column: string; value: string }
   | { kind: "notTrue"; column: string }
@@ -194,7 +220,7 @@ export type Guard =
  * Условия перехвата (refresh/takeover), которые UPDATE сверяет сам (разбор прав T155, MEDIUM; для
  * пустого держателя — ещё «стенограммы и обработки нет», #1070):
  *   • claim_owner прежний — никто не перехватил, пока мы считали;
- *   • recorded_seconds тот же, что прочитан, — иначе удар бота успел записать больше, и решение
+ *   • recorded_seconds тот же, что прочитан (с допуском FLOAT_GUARD_EPS: PostgREST округляет double), — иначе удар бота успел записать больше, и решение
  *     «заметно полнее» принято по устаревшей цифре;
  *   • бот не начал писать: флаг не взведён или лиз истёк;
  *   • встречу не опубликовали и не правили (_shared/meeting-frozen.ts).
@@ -206,7 +232,7 @@ export function heldGuards(row: HeldRow, nowIso: string): Guard[] {
       : { kind: "eq", column: "claim_owner", value: row.claim_owner },
     row.recorded_seconds === null
       ? { kind: "isNull", column: "recorded_seconds" }
-      : { kind: "eq", column: "recorded_seconds", value: row.recorded_seconds },
+      : { kind: "approx", column: "recorded_seconds", value: row.recorded_seconds },
     {
       kind: "anyOf",
       clauses: [

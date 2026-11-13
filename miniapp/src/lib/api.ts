@@ -31,7 +31,8 @@ import type { TaskFile, TaskFileLimits } from "./taskFiles";
 import type { UsageCell } from "./usageCube";
 import type { TasksDeltaResponse } from "./tasksDelta";
 import type { AdminUser, MarketBundle, MarketCandidate, AdminWorkspace, AgentMeeting, CheckStatus, Entry, GranolaNote, Integration, JournalEvent, JourneyStep, MarketSuggestion, Me, MeetingLiveNote, MeetingNotes, Project, ProjectLink, Sprint, SprintCycle, SprintBoardData, SprintCycleDetail, SprintCycleItem, SprintJourney, SprintStats, SprintKind, SprintStatus, Task, Person, User, BoardSticker, NewSticker } from "@/types";
-import { createRequestCache, REQUEST_CACHE_TTL_MS } from "./request-cache";
+import { cachedRead, invalidateReadCache, noteIdentity, resetIdentity } from "./api-cache";
+export { subscribeDataRevalidated } from "./api-cache";
 import { normalizeProposedTasks, type ProposedTask } from "./proposedTasks";
 import type { DeployNotice } from "@/lib/deployNotice";
 import type { SwarmNotification } from "./notificationTypes";
@@ -459,10 +460,7 @@ const mockGranolaUnprocessed: GranolaNote[] = [
 const envApi = process.env.NEXT_PUBLIC_API_URL ?? "";
 const API_BASE = /^\/(?![/\\])/.test(envApi) ? envApi : "/api";
 
-// Дедупликация одинаковых GET-ов (issue #103). Кэш ТОЛЬКО в памяти вкладки и только для
-// чтения; любая мутация его сбрасывает, чтобы экран не показал данные «на шаг назад».
-const requestCache = createRequestCache({ ttlMs: REQUEST_CACHE_TTL_MS });
-
+// Кэш чтения (дедуп #103, между экранами #492) — api-cache.ts.
 function isRead(options?: RequestInit): boolean {
   const m = (options?.method ?? "GET").toUpperCase();
   return m === "GET";
@@ -471,14 +469,14 @@ function isRead(options?: RequestInit): boolean {
 async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
   if (isRead(options) && options?.cache === "no-store") return apiFetchRaw<T>(path, options);
   if (isRead(options)) {
-    return requestCache.run(path, () => apiFetchRaw<T>(path, options));
+    return cachedRead(path, () => apiFetchRaw<T>(path, options));
   }
   try {
     return await apiFetchRaw<T>(path, options);
   } finally {
     // После мутации кэш чтения недействителен — даже если запрос упал: сервер мог
     // применить часть изменений, и отдать старое из памяти было бы хуже, чем перечитать.
-    requestCache.invalidate();
+    invalidateReadCache();
   }
 }
 
@@ -499,7 +497,7 @@ async function sendRequest(url: string, init: RequestInit): Promise<Response> {
     throw e;
   }
   reportConnection("response");
-  if (res.status === 401) reportUnauthorized();
+  if (res.status === 401) { invalidateReadCache(); reportUnauthorized(); } // сессии нет — кэш чужих данных не переживает её
   return res;
 }
 
@@ -558,7 +556,7 @@ async function apiFetchNoContentType<T>(
   try {
     return await apiFetchNoContentTypeRaw<T>(path, options);
   } finally {
-    requestCache.invalidate();
+    invalidateReadCache();
   }
 }
 
@@ -584,7 +582,7 @@ async function apiFetchNoContentTypeRaw<T>(
 
 export async function fetchMe(): Promise<Me> {
   if (DEV_MODE) return MOCK_ME;
-  return apiFetch<Me>("/me");
+  return apiFetch<Me>("/me").then((me) => (noteIdentity(me), me));
 }
 
 // Гасит httpOnly-cookie roj_session (браузерная сессия). Обрабатывает CF-функция
@@ -599,10 +597,11 @@ export async function logout(): Promise<void> {
   } catch {
     // Выходу из аккаунта это не мешает.
   }
-  await fetch(`${API_BASE}/auth/logout`, {
-    method: "POST",
-    credentials: "include",
-  });
+  try {
+    await fetch(`${API_BASE}/auth/logout`, { method: "POST", credentials: "include" });
+  } finally {
+    resetIdentity(); // даже если запрос выхода не дошёл: чужие данные в памяти вкладке не нужны
+  }
 }
 
 // ── Ключи входа в профиле (решение 17.10.2026, «Добавить устройство») ─────────────

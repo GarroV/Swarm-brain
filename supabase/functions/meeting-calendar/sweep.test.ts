@@ -34,6 +34,9 @@ function fakeSource(
   const source: SweepSource = {
     autojoinPeople: () => Promise.resolve([1]),
     manualRooms: () => Promise.resolve(new Set<string>()),
+    workspaceMembers: () => Promise.resolve([]),
+    existingJobKeys: (_g, keys) =>
+      Promise.resolve(new Set(keys.filter((k) => table.some((t) => t.calendar_key === k)))),
     refreshToken: (id) => Promise.resolve(over.tokens ? (over.tokens[id] ?? null) : "r"),
     accessToken: () => Promise.resolve({ ok: true, token: "a" }),
     listEvents: () => Promise.resolve([meeting()]),
@@ -155,4 +158,62 @@ Deno.test("забранное задание выключение не трог�
   const result = await sweep(source, AGENT, NOW);
   assertEquals(result.jobs, []);
   assertEquals(table.length, 1);
+});
+
+Deno.test("БЛОКИРУЮЩИЙ: в задание идут получатели нотис — принявшие по своему календарю; подделка в событии запустившего не проходит", async () => {
+  const launcher: GEvent = {
+    ...meeting(),
+    organizer: { email: "boss@x.io" },
+    attendees: [
+      { email: "me@x.io", self: true, responseStatus: "accepted" },
+      { email: "forged@x.io", responseStatus: "accepted" }, // календарь подключён, у себя не принял
+      { email: "real@x.io", responseStatus: "needsAction" }, // календарь подключён, у себя принял
+      { email: "nocal@x.io", responseStatus: "accepted" }, // календаря нет — верим событию
+    ],
+  };
+  const mine = (response: string): GEvent => ({
+    ...meeting(),
+    organizer: { email: "boss@x.io" },
+    attendees: [{ email: "x@x.io", self: true, responseStatus: response }],
+  });
+  const { source, inserted } = fakeSource({
+    tokens: { 1: "r1", 20: "r20", 30: "r30" },
+    workspaceMembers: () =>
+      Promise.resolve([
+        { telegram_id: 1, email: "me@x.io" },
+        { telegram_id: 20, email: "forged@x.io" },
+        { telegram_id: 30, email: "real@x.io" },
+        { telegram_id: 40, email: "nocal@x.io" },
+      ]),
+    accessToken: (refresh: string) => Promise.resolve({ ok: true, token: refresh }),
+    listEvents: (token: string) =>
+      Promise.resolve(token === "r1" ? [launcher] : token === "r20" ? [mine("needsAction")] : [mine("accepted")]),
+  });
+  await sweep(source, AGENT, NOW);
+  assertEquals(inserted.length, 1);
+  assertEquals(inserted[0].notice_recipients, [30, 40]);
+});
+
+Deno.test("получатели считаются один раз: на следующем проходе календари участников не читаются", async () => {
+  let membersReads = 0;
+  const { source, inserted } = fakeSource({
+    listEvents: () =>
+      Promise.resolve([{
+        ...meeting(),
+        attendees: [{ email: "me@x.io", self: true, responseStatus: "accepted" }, {
+          email: "b@x.io",
+          responseStatus: "accepted",
+        }],
+      }]),
+    workspaceMembers: () => {
+      membersReads++;
+      return Promise.resolve([{ telegram_id: 2, email: "b@x.io" }]);
+    },
+    // Бот не забирает задание: оно остаётся в окне, как при долгом ожидании начала.
+    takeJobs: () => Promise.resolve([]),
+  });
+  await sweep(source, AGENT, NOW);
+  await sweep(source, AGENT, NOW + 60_000);
+  assertEquals(membersReads, 1);
+  assertEquals(inserted.length, 1);
 });

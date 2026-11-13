@@ -58,7 +58,7 @@ export function NewEntry() {
             {dt(NEW_ENTRY_COPY.privateEntry.ru, NEW_ENTRY_COPY.privateEntry.en)}
           </span>
           <span className="relative inline-block transition-colors" style={{ width: 44, height: 26, borderRadius: 999, background: isPrivate ? "var(--primary)" : "var(--line-2)" }}>
-            <span className="absolute top-0.5 rounded-full bg-white transition-all" style={{ width: 22, height: 22, left: isPrivate ? 20 : 2 }} />
+            <span className="absolute top-0.5 rounded-full bg-[var(--on-solid)] transition-all" style={{ width: 22, height: 22, left: isPrivate ? 20 : 2 }} />
           </span>
         </button>
         <p className="text-ink-mute" style={{ fontSize: 12.5, lineHeight: 1.5 }}>

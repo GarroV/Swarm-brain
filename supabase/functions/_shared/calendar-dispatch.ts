@@ -14,7 +14,7 @@ import type { GEvent } from "../meeting-current/select.ts";
 import { conferenceInfo } from "../meeting-current/join-link.ts";
 import type { ConferencePlatform } from "../meeting-current/join-link.ts";
 import { calendarKeyOf } from "./calendar-key.ts";
-import { acceptedBySelf } from "./calendar-attendance.ts";
+import { acceptedBySelf, acceptedEmails, attendeeEmails } from "./calendar-attendance.ts";
 import { botJoinsPlatform, parseInviteLink } from "./meeting-invite.ts";
 import { BOT_PROFILE } from "./bot-profile.ts";
 
@@ -39,6 +39,16 @@ export interface DispatchJob {
   title: string | null;
   starts_at: string;
   ends_at: string;
+  /**
+   * Почты принявших встречу (нижний регистр): из события, по которому заведено задание, и из
+   * событий склеенных с ним людей с автозапуском. Служебное поле отбора — в строку задания не
+   * пишется, сервер превращает его в `notice_recipients` (meeting-calendar/index.ts).
+   */
+  accepted_emails?: string[];
+  /** Почты всех гостей того же события: кандидаты в получатели нотис (проверка — notice-recipients.ts). */
+  attendee_emails?: string[];
+  /** Получатели нотис кроме запустившего (telegram_id): считает sweep.ts, в строку задания идёт как есть. */
+  notice_recipients?: number[];
 }
 
 export type SkipReason =
@@ -168,6 +178,8 @@ export function planPersonDispatch(
       platform: link.platform,
       title,
       ...span,
+      accepted_emails: acceptedEmails(ev),
+      attendee_emails: attendeeEmails(ev),
     });
   }
   return { jobs, skipped, who };
@@ -188,6 +200,11 @@ function peopleOf(ev: GEvent): EventPeople {
 
 /** Комната встречи: одна ссылка в разных событиях календаря — одна комната. */
 export const roomOf = (joinUrl: string): string => parseInviteLink(joinUrl)?.room ?? joinUrl.trim();
+
+/** Объединение списков почт принявших: порядок стабильный, дублей нет. */
+function unionEmails(a: readonly string[] | undefined, b: readonly string[] | undefined): string[] {
+  return [...new Set([...(a ?? []), ...(b ?? [])])].sort();
+}
 
 const overlaps = (a: DispatchJob, b: DispatchJob) =>
   Date.parse(a.starts_at) < Date.parse(b.ends_at) && Date.parse(b.starts_at) < Date.parse(a.ends_at);
@@ -222,7 +239,17 @@ export function dropSameRoom(jobs: readonly DispatchJob[], who: ReadonlyMap<stri
       k.calendar_key !== job.calendar_key && roomOf(k.join_url) === roomOf(job.join_url) && overlaps(k, job) &&
       sameMeeting(who.get(k.calendar_key), who.get(job.calendar_key))
     );
-    if (!twin) kept.push(job);
+    if (!twin) {
+      kept.push(job);
+      continue;
+    }
+    // Отброшенное событие — та же встреча (один организатор, комната, время): принявшие по нему
+    // не теряются, а переходят в оставшееся задание.
+    kept[kept.indexOf(twin)] = {
+      ...twin,
+      accepted_emails: unionEmails(twin.accepted_emails, job.accepted_emails),
+      attendee_emails: unionEmails(twin.attendee_emails, job.attendee_emails),
+    };
   }
   return kept;
 }
@@ -237,7 +264,16 @@ export function mergeDispatch(plans: DispatchPlan[]): DispatchPlan {
   const who = new Map<string, EventPeople>();
   for (const plan of plans) {
     for (const job of plan.jobs) {
-      if (byKey.has(job.calendar_key)) continue;
+      const existing = byKey.get(job.calendar_key);
+      if (existing) {
+        // Та же встреча у второго человека с автозапуском: его принятие не теряется.
+        byKey.set(job.calendar_key, {
+          ...existing,
+          accepted_emails: unionEmails(existing.accepted_emails, job.accepted_emails),
+          attendee_emails: unionEmails(existing.attendee_emails, job.attendee_emails),
+        });
+        continue;
+      }
       byKey.set(job.calendar_key, job);
       const people = plan.who?.get(job.calendar_key);
       if (people) who.set(job.calendar_key, people);

@@ -49,7 +49,7 @@ export function WorkspaceMarkets({ ws, onUpdated }: { ws: AdminWorkspace; onUpda
                 onClick={() => toggle(code)}
                 className="rounded-full border px-2.5 py-1 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
                 style={{ fontSize: 11.5, ...(on
-                  ? { background: "var(--primary)", color: "#fff", borderColor: "var(--primary)" }
+                  ? { background: "var(--primary)", color: "var(--on-primary)", borderColor: "var(--primary)" }
                   : { color: "var(--ink-soft)", borderColor: "var(--line-2)" }) }}
               >
                 {countryCode(code)}

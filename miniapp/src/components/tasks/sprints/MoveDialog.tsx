@@ -118,7 +118,7 @@ export function MoveDialog(
       }}
     >
       <DialogPrimitive.Portal>
-        <DialogPrimitive.Backdrop className="fixed inset-0 z-[100] bg-black/45 supports-backdrop-filter:backdrop-blur-[2px]" />
+        <DialogPrimitive.Backdrop className="fixed inset-0 z-[100] bg-[var(--scrim)] supports-backdrop-filter:backdrop-blur-[2px]" />
         <DialogPrimitive.Popup
           aria-labelledby="move-task-title"
           className="fixed top-1/2 left-1/2 z-[100] flex max-h-[85vh] w-[calc(100%-2rem)] max-w-[460px] -translate-x-1/2 -translate-y-1/2 flex-col gap-3 overflow-y-auto rounded-[14px] border border-line bg-[var(--popover)] p-5 text-popover-foreground shadow-[0_28px_70px_-20px_rgba(0,0,0,.55)] outline-none dark:backdrop-blur-xl"

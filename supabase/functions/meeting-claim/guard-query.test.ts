@@ -10,6 +10,14 @@ class Recorder {
     this.filters.push(`${column}=eq.${value}`);
     return this;
   }
+  gte(column: string, value: number): Recorder {
+    this.filters.push(`${column}=gte.${value}`);
+    return this;
+  }
+  lte(column: string, value: number): Recorder {
+    this.filters.push(`${column}=lte.${value}`);
+    return this;
+  }
   is(column: string, _value: null): Recorder {
     this.filters.push(`${column}=is.null`);
     return this;
@@ -51,4 +59,16 @@ Deno.test("ЯДРО: каждое условие — свой фильтр то�
 
 Deno.test("без условий запрос не меняется", () => {
   assertEquals(withGuards(new Recorder(), []).filters, []);
+});
+
+Deno.test("ЯДРО #1271: approx — диапазон [v−EPS, v+EPS], и на верхнем уровне, и внутри «или»", () => {
+  const guards: Guard[] = [
+    { kind: "approx", column: "recorded_seconds", value: 424.5 },
+    { kind: "anyOf", clauses: [{ kind: "approx", column: "x", value: 10 }, { kind: "isNull", column: "x" }] },
+  ];
+  assertEquals(withGuards(new Recorder(), guards).filters, [
+    "recorded_seconds=gte.424.499",
+    "recorded_seconds=lte.424.501",
+    "or(and(x.gte.9.999,x.lte.10.001),x.is.null)",
+  ]);
 });

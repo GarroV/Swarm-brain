@@ -87,6 +87,10 @@ import {
   useSprintView,
 } from "@/components/tasks/sprints/ViewToggle";
 import { fmtDay } from "@/components/tasks/sprints/format";
+import { defaultCycleName, iso } from "@/components/tasks/sprints/cycleDraft";
+import { SectionLabel } from "@/components/tasks/sprints/SectionLabel";
+import { TimelineView } from "@/components/tasks/sprints/timeline/TimelineView";
+import { isSprintTimelineEnabled, LOAD_SEARCH } from "@/lib/sprintsFlag";
 
 // Экран «Спринты» — период работы команды с датами, планом и приёмкой (issue #267).
 // ⚠️ Не путать с доской «Проекты» (SprintBoard.tsx): там таблица `sprints` = ВКЛАДКИ доски,
@@ -94,21 +98,6 @@ import { fmtDay } from "@/components/tasks/sprints/format";
 //
 const CLOSED = new Set(["done", "cancelled"]);
 const DEFAULT_LENGTH_DAYS = 13; // двухнедельный спринт: старт + 13 = ровно 14 дней
-
-function iso(d: Date): string {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${
-    String(d.getDate()).padStart(2, "0")
-  }`;
-}
-
-/** Имя по умолчанию — «Спринт 10.09 — 23.09»: так их называют в переписке. */
-function defaultCycleName(from: Date, to: Date): string {
-  const dm = (d: Date) =>
-    `${String(d.getDate()).padStart(2, "0")}.${
-      String(d.getMonth() + 1).padStart(2, "0")
-    }`;
-  return `Спринт ${dm(from)} — ${dm(to)}`;
-}
 
 export function SprintsScreen() {
   const dt = useDt();
@@ -660,10 +649,13 @@ export function SprintsScreen() {
     [items],
   );
 
-  const effectiveView = view;
+  // Вкладка «Лента» — стенд под флагом (12.11.2026); у остальных запомненная лента — это список.
+  const timelineOn = isSprintTimelineEnabled(me, LOAD_SEARCH);
+  const effectiveView = view === "timeline" && !timelineOn ? "list" : view;
   const showBoard = effectiveView === "board";
+  const showTimeline = effectiveView === "timeline";
   // Доске спринтов тесно в потолке 1280px (RoyApp): колонки идут во всю ширину монитора.
-  useWidePane(showBoard);
+  useWidePane(showBoard || showTimeline);
   const showList = effectiveView === "list";
   const showAnalytics = effectiveView === "analytics";
   const showJournal = effectiveView === "journal";
@@ -818,7 +810,7 @@ export function SprintsScreen() {
   const editable = !!detail && !accepted;
   const sprintTab = !showAnalytics && !showJournal;
   const planColumn = isDesktop && planOpen && editable && sprintTab &&
-    !showBoard;
+    !showBoard && !showTimeline;
 
   // Список состава: одна отрисовка и для всего состава, и для блоков «Мои / Остальные».
   const initiativeList = (b: typeof board) => (
@@ -934,6 +926,12 @@ export function SprintsScreen() {
     ? "rounded-[10px] bg-primary/5 outline-dashed outline-2 -outline-offset-2 outline-primary/60"
     : "";
 
+  const openTaskById = (taskId: string) => {
+    const t = tasks.find((x) => x.id === taskId);
+    if (t) setEditing(t);
+    else setErr(dt("Не удалось открыть задачу", "Could not open the task"));
+  };
+
   return (
     <AvatarDirectoryProvider users={users}>
       <div className="flex flex-col h-full min-h-0">
@@ -954,7 +952,8 @@ export function SprintsScreen() {
             </h1>
           )}
           <SprintTabs
-            value={view}
+            value={effectiveView}
+            timeline={timelineOn}
             onChange={(v) => setView(v === "list" ? lastBoard : v)}
           />
           <HeaderNotice className="self-center" />
@@ -1149,20 +1148,23 @@ export function SprintsScreen() {
           </p>
         )}
 
-        {showBoard
+        {showTimeline
+          ? (
+            <TimelineView
+              space={space}
+              users={users}
+              reloadKey={boardVersion}
+              onOpenTask={openTaskById}
+            />
+          )
+          : showBoard
           ? (
             <SprintBoardView
               space={space}
               users={users}
               reloadKey={boardVersion}
               canDrag={isDesktop}
-              onOpenTask={(taskId) => {
-                const t = tasks.find((x) => x.id === taskId);
-                if (t) setEditing(t);
-                else {setErr(
-                    dt("Не удалось открыть задачу", "Could not open the task"),
-                  );}
-              }}
+              onOpenTask={openTaskById}
               onAddTask={(groupId, cycleId) => {
                 setAddIntoSprint(false);
                 setAddCycleId(cycleId ?? null);
@@ -1439,19 +1441,5 @@ export function SprintsScreen() {
         {sprintGroups.dialogs}
       </div>
     </AvatarDirectoryProvider>
-  );
-}
-
-/** Подпись блока «Мои задачи» / «Остальные» над списком состава. */
-function SectionLabel({ label, count }: { label: string; count: number }) {
-  return (
-    <div
-      className="mb-1.5 mt-1 flex items-center gap-2 px-0.5 font-semibold uppercase tracking-[0.06em] text-ink-soft"
-      style={{ fontSize: 11 }}
-    >
-      {label}
-      <span className="font-mono">{count}</span>
-      <span className="h-px flex-1 bg-line" />
-    </div>
   );
 }

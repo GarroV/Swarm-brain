@@ -12,7 +12,8 @@ export type SprintView =
   | "list"
   | "board"
   | "analytics"
-  | "journal";
+  | "journal"
+  | "timeline";
 
 const KEY = "swarm.sprints.view";
 
@@ -35,7 +36,7 @@ export function useSprintView(): [SprintView, (v: SprintView) => void] {
         setView("list");
       } else if (
         saved === "list" || saved === "board" ||
-        saved === "analytics" || saved === "journal"
+        saved === "analytics" || saved === "journal" || saved === "timeline"
       ) {
         setView(saved);
       }
@@ -60,12 +61,26 @@ export function useSprintView(): [SprintView, (v: SprintView) => void] {
  * Таймлайна здесь нет — решение владельца: спрятан, код не удалён.
  */
 export function SprintTabs(
-  { value, onChange }: { value: SprintView; onChange: (v: SprintView) => void },
+  { value, onChange, timeline = false }: {
+    value: SprintView;
+    onChange: (v: SprintView) => void;
+    /** Вкладка «Лента» — стенд под флагом (`lib/sprintsFlag.ts`). */
+    timeline?: boolean;
+  },
 ) {
   const dt = useDt();
-  const tab = value === "analytics" || value === "journal" ? value : "sprint";
-  const tabs: { id: "sprint" | "analytics" | "journal"; label: string }[] = [
+  const tab =
+    value === "analytics" || value === "journal" || value === "timeline"
+      ? value
+      : "sprint";
+  const tabs: {
+    id: "sprint" | "timeline" | "analytics" | "journal";
+    label: string;
+  }[] = [
     { id: "sprint", label: dt("Спринт", "Sprint") },
+    ...(timeline
+      ? [{ id: "timeline" as const, label: dt("Лента", "Timeline") }]
+      : []),
     // Аналитика — тоже про пространство: семь таблиц по всем его спринтам.
     { id: "analytics", label: dt("Аналитика", "Analytics") },
     { id: "journal", label: dt("Журнал", "Journal") },
