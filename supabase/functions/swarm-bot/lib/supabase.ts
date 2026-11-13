@@ -44,3 +44,5 @@ export async function loadMeetingViewer(viewerId: number): Promise<MeetingViewer
     isAdmin: (await isMasterUser(viewerId)) || row?.is_admin === true,
   };
 }
+
+export { meetingEntryFilter } from "./meeting-key.ts";
