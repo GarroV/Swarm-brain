@@ -17,6 +17,7 @@ type Part = {
   metadata: Record<string, unknown>;
   source: string;
   added_by: string;
+  entry_type: string;
   countries: string[];
   is_private: boolean;
   shared_with: number[];
@@ -41,6 +42,7 @@ function group(name: string, original: string, repaired = false): Group {
       metadata: { chunk_group_id: chunkGroup, chunk: i + 1, total_chunks: texts.length },
       source: "fixture-790",
       added_by: "claude_desktop",
+      entry_type: "note",
       countries: ["PL"],
       is_private: false,
       shared_with: [],
@@ -56,7 +58,7 @@ async function insert(db: Client, row: Part) {
     `insert into public.entries
       (id, content, summary, metadata, source, added_by, countries, entry_type, group_id,
        is_private, owner_id, shared_with, visible_group_ids, created_at, updated_at, archived_at, embedding)
-     values ($1,$2,$3,$4::jsonb,$5,$6,$7,'note','cee',$8,null,$9,$10,
+     values ($1,$2,$3,$4::jsonb,$5,$6,$7,$13,'cee',$8,null,$9,$10,
        '2026-09-01T00:00:00Z',$11,$12,array_fill(0.125::real,array[1536])::vector)`,
     [
       row.id,
@@ -71,6 +73,7 @@ async function insert(db: Client, row: Part) {
       row.visible_group_ids,
       row.updated_at,
       row.archived_at,
+      row.entry_type,
     ],
   );
 }
@@ -128,6 +131,9 @@ Deno.test("#790 migration: exact full originals, unchanged rejected groups, safe
     byName("private-mismatch").rows[1].is_private = true;
     byName("share-mismatch").rows[1].shared_with = [790];
     byName("workspace-mismatch").rows[1].visible_group_ids = ["cee", "demo"];
+    // Notes are normalized to their home workspace by the existing insert trigger.
+    // Meetings can retain this mismatch, so the database fixture must use that real shape.
+    byName("workspace-mismatch").rows.forEach((r) => r.entry_type = "meeting");
     byName("foreign-writer").rows.forEach((r) => r.added_by = "other_writer");
     byName("bad-number").rows[1].metadata.chunk = "2";
     byName("extra-metadata").rows[0].metadata.title = "Fictional edited title";
@@ -161,6 +167,12 @@ Deno.test("#790 migration: exact full originals, unchanged rejected groups, safe
     await insert(db, uppercaseLink);
     const ids = [...groups.flatMap((g) => g.rows.map((r) => r.id)), link.id, uppercaseLink.id];
     const before = await snapshot(db, ids);
+    const workspaceRows = byName("workspace-mismatch").rows;
+    assert(
+      JSON.stringify(before.get(workspaceRows[0].id)!.visible_group_ids) !==
+        JSON.stringify(before.get(workspaceRows[1].id)!.visible_group_ids),
+      "workspace mismatch must exist in the actual stored fixture, not just in its insert arguments",
+    );
     const baseline = await db.queryObject<{ n: string }>(
       "select count(*)::text n from public.entries where id=any($1::uuid[]) and archived_at is null",
       [byName("valid").rows.map((r) => r.id)],
@@ -212,15 +224,22 @@ Deno.test("#790 migration: exact full originals, unchanged rejected groups, safe
         "case-sensitive-reference-scan",
         "where true on conflict do nothing",
         "where matches.value[1] = lower(matches.value[1]) on conflict do nothing",
+        "uppercase-url: rejected group changed",
       ],
-      ["missing-full-content", "set content = full_content,", "set content = content,"],
+      [
+        "missing-full-content",
+        "set content = full_content,",
+        "set content = content,",
+        "valid: head ID/source/attribution/visibility/date/vector changed",
+      ],
       [
         "broken-overlap-validation",
         "if n <> overlap_units or right(contents[i - 1], overlap_chars) <> prefix then valid := false; exit; end if;",
         "if false then valid := false; exit; end if;",
+        "overlap: rejected group changed",
       ],
     ];
-    for (const [name, from, to] of substitutions) {
+    for (const [name, from, to, expectedFailure] of substitutions) {
       assertEquals(migration.split(from).length - 1, 1, `${name}: mutant was not applied`);
       await db.queryArray("savepoint negative_control");
       await db.queryArray(migration.replace(from, to));
@@ -229,6 +248,7 @@ Deno.test("#790 migration: exact full originals, unchanged rejected groups, safe
         await contract();
       } catch (error) {
         if (!(error instanceof AssertionError)) throw error;
+        assert(error.message.includes(expectedFailure), `${name}: failed for an unrelated assertion`);
         detected = true;
       }
       assert(detected, `${name}: wrong data did not fail the actual database contract`);
