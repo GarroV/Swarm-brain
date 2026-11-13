@@ -23,7 +23,7 @@ const { createTask, getTask, listTasksWithTotal, TaskUserError, updateTask } = a
 const WS = "t_tcountries";
 const AUTHOR = 880000401;
 const MEMBER = 880000402;
-const MIGRATION = new URL("../../../migrations/20261110120000_task_countries.sql", import.meta.url);
+const MIGRATION = new URL("../../../migrations/20261113120000_task_countries.sql", import.meta.url);
 
 async function connect(): Promise<Client> {
   const db = new Client(DB_URL);
