@@ -12,6 +12,9 @@
  *
  * Живой вход в настоящую встречу Google сюда не входит — это T004 (нужен аккаунт и человек).
  *
+ * Встречи запускаются с пропуском от двойника сервера (T165): `inviteBasis` заводит приглашение и
+ * признаёт пропуск по нему — без пропуска контейнер не стартует.
+ *
  * Запуск с хоста, образ собран заранее:
  *   docker build -f bot/container/Dockerfile -t scriba-orchestrator:dev bot/
  *   SCRIBA_SMOKE_STATE=<каталог> node bot/src/orchestrator/smoke-orchestrator.ts
@@ -35,6 +38,13 @@ import Docker from "dockerode";
 
 import { startFakeSwarm } from "../swarm-client/testing/fake-swarm.ts";
 import { ACCOUNT_STATE_TARGET, FileAccountCopies } from "./account.ts";
+import {
+  CHILD_BASIS_ENV,
+  childBasis,
+  inviteBasis,
+  startInvited,
+} from "./smoke-orchestrator-basis.ts";
+import { PROBE } from "./smoke-egress-probe.ts";
 import { DockerodeEngine } from "./docker-engine.ts";
 import { DockerMeetingEgress } from "./egress.ts";
 import { NoticeClient } from "./notice-client.ts";
@@ -214,7 +224,7 @@ async function sceneFullMeeting(fake: Fake): Promise<void> {
   const before = fake.ingested.length;
   const beatsBefore = fake.requestsTo("/meeting-heartbeat").length;
   try {
-    const id = await orchestrator.startForMeeting(MEET, "meet", PERSON);
+    const id = await startInvited(orchestrator, fake, PERSON, MEET);
     const exit = await within(180_000, "конец встречи", orchestrator.whenExited(id));
     check(exit?.kind === "finished", "контейнер вышел штатно", JSON.stringify(exit));
     check(exit?.kind === "finished" && exit.outcome === "recorded", "исход — recorded");
@@ -259,8 +269,8 @@ async function sceneTwoAtOnce(fake: Fake): Promise<void> {
   await orchestrator.init();
   const before = fake.ingested.length;
   try {
-    const first = await orchestrator.startForMeeting(MEET, "meet", PERSON);
-    const second = await orchestrator.startForMeeting(MEET, "meet", PERSON);
+    const first = await startInvited(orchestrator, fake, PERSON, MEET);
+    const second = await startInvited(orchestrator, fake, PERSON, MEET);
     check(orchestrator.list().length === 2, "оба под присмотром");
     const exits = await within(
       240_000,
@@ -295,7 +305,7 @@ async function sceneDeath(fake: Fake): Promise<void> {
   const orchestrator = orchestratorFor("lease-main", LONG_PAGE);
   await orchestrator.init();
   try {
-    const id = await orchestrator.startForMeeting(MEET, "meet", PERSON);
+    const id = await startInvited(orchestrator, fake, PERSON, MEET);
     const meetingId = await waitMeetingId(orchestrator, id);
     const meetingKey = meetingId.replace(/^m-/u, "");
     // Даём записи пойти и heartbeat'у — отбить хотя бы раз.
@@ -348,7 +358,7 @@ async function sceneStop(fake: Fake): Promise<void> {
   await orchestrator.init();
   const before = fake.ingested.length;
   try {
-    const id = await orchestrator.startForMeeting(MEET, "meet", PERSON);
+    const id = await startInvited(orchestrator, fake, PERSON, MEET);
     await waitMeetingId(orchestrator, id);
     await sleep(10_000);
     await within(180_000, "stop", orchestrator.stop(id));
@@ -366,7 +376,7 @@ async function sceneDoor(fake: Fake): Promise<void> {
   await orchestrator.init();
   const before = fake.ingested.length;
   try {
-    const id = await orchestrator.startForMeeting(MEET, "meet", PERSON);
+    const id = await startInvited(orchestrator, fake, PERSON, MEET);
     const exit = await within(120_000, "уход от двери", orchestrator.whenExited(id));
     check(
       exit?.kind === "finished" && exit.outcome === "door_timeout",
@@ -413,7 +423,7 @@ async function sceneAccount(fake: Fake): Promise<void> {
   const orchestrator = orchestratorFor("lease-main", GUEST_LOBBY_PAGE, true, account);
   await orchestrator.init();
   try {
-    const id = await orchestrator.startForMeeting(MEET, "meet", PERSON);
+    const id = await startInvited(orchestrator, fake, PERSON, MEET);
     const info = await new Docker().getContainer(id).inspect();
     const mount = info.Mounts.find((item) => item.Destination === ACCOUNT_STATE_TARGET);
     check(
@@ -459,7 +469,7 @@ async function child(): Promise<void> {
     false,
   );
   await orchestrator.init();
-  const id = await orchestrator.startForMeeting(MEET, "meet", PERSON);
+  const id = await orchestrator.startForMeeting(MEET, "meet", PERSON, childBasis());
   console.log(`CHILD_CONTAINER ${id}`);
   // Живём, пока не убьют: поводок двигается таймером.
   await new Promise<never>(() => {
@@ -467,10 +477,17 @@ async function child(): Promise<void> {
   });
 }
 
-async function spawnChild(leaseName: string): Promise<{ id: string; kill: () => void }> {
+async function spawnChild(
+  fake: Fake,
+  leaseName: string,
+): Promise<{ id: string; kill: () => void }> {
   const script = fileURLToPath(import.meta.url);
   const proc = spawn(process.execPath, [...process.execArgv, script, "child"], {
-    env: { ...process.env, SCRIBA_SMOKE_CHILD_LEASE: leaseName },
+    env: {
+      ...process.env,
+      SCRIBA_SMOKE_CHILD_LEASE: leaseName,
+      [CHILD_BASIS_ENV]: JSON.stringify(inviteBasis(fake, PERSON, MEET)),
+    },
     stdio: ["ignore", "pipe", "inherit"],
   });
   const reader = createInterface({ input: proc.stdout });
@@ -496,7 +513,7 @@ async function sceneOrphans(fake: Fake): Promise<void> {
     "\n──── оркестратор убит SIGKILL: контейнер-сирота сам заканчивает встречу и исчезает",
   );
   const before = fake.ingested.length;
-  const spawned = await spawnChild("lease-orphan");
+  const spawned = await spawnChild(fake, "lease-orphan");
   await sleep(15_000);
   spawned.kill();
   const killedAt = Date.now();
@@ -515,7 +532,7 @@ async function sceneOrphans(fake: Fake): Promise<void> {
 async function sceneAdopt(fake: Fake): Promise<void> {
   console.log("\n──── оркестратор убит и поднят снова: живой контейнер подхвачен и управляем");
   const before = fake.ingested.length;
-  const spawned = await spawnChild("lease-adopt");
+  const spawned = await spawnChild(fake, "lease-adopt");
   await sleep(10_000);
   spawned.kill();
   await sleep(5000);
@@ -733,30 +750,13 @@ async function execIn(id: string, command: string[]): Promise<{ code: number; ou
   return { code: info.ExitCode ?? -1, out: Buffer.concat(chunks).toString("utf8") };
 }
 
-// Адреса — 1.1.1.1: достижим из обычной сети Docker (проверено), поэтому отказ здесь значит
-// «нет маршрута», а не «адрес умер». Ждём именно ENETUNREACH, а не любой сбой.
-const PROBE = `
-const net = require("node:net");
-const dgram = require("node:dgram");
-const dns = require("node:dns/promises");
-const t = (ms) => AbortSignal.timeout(ms);
-const tryIt = async (name, fn) => { try { console.log(name, "OK", await fn()); } catch (e) { console.log(name, "FAIL", e.cause?.code ?? e.code ?? e.message); } };
-(async () => {
-  await tryIt("fetch-example", async () => (await fetch("https://example.com/", { signal: t(10000) })).status);
-  await tryIt("fetch-meet", async () => (await fetch("https://meet.google.com/", { signal: t(15000), redirect: "manual" })).status);
-  await tryIt("tcp-direct", () => new Promise((ok, no) => { const s = net.connect(443, "1.1.1.1"); s.setTimeout(5000, () => no(new Error("timeout"))); s.on("connect", () => { s.destroy(); ok("connected"); }); s.on("error", no); }));
-  await tryIt("dns-example", async () => (await dns.lookup("example.com")).address);
-  await tryIt("udp-direct", () => new Promise((ok, no) => { const u = dgram.createSocket("udp4"); u.send(Buffer.from("x"), 53, "1.1.1.1", (e) => { u.close(); e ? no(e) : ok("sent"); }); }));
-})();
-`;
-
 async function sceneEgress(fake: Fake): Promise<void> {
   console.log("\n──── выход наружу: только Google/Meet и свой Swarm (T178)");
   const orchestrator = orchestratorFor("lease-main", LONG_PAGE);
   await orchestrator.init();
   const before = fake.ingested.length;
   try {
-    const id = await orchestrator.startForMeeting(MEET, "meet", PERSON);
+    const id = await startInvited(orchestrator, fake, PERSON, MEET);
     await waitMeetingId(orchestrator, id);
     check(true, "заявка встречи дошла до Swarm через прокси");
     const probe = await execIn(id, ["node", "-e", PROBE]);

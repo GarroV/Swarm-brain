@@ -173,6 +173,28 @@ describe("POST /meeting-invite", () => {
     expect(byGrant.status).toBe(200);
   });
 
+  it("пропуск, признанный вручную, пускает в строгий двойник; незнакомый — 401 (T165)", async () => {
+    const server = await startFakeSwarm({ token: TOKEN, onBehalfOf: PERSON, requiresGrants: true });
+    servers.push(server);
+    const invite = server.addInvite({ joinUrl: MEET });
+    const send = async (token: string): Promise<number> => {
+      const response = await fetch(`${server.url}/meeting-claim`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify(manual(invite.id)),
+      });
+      await response.body?.cancel();
+      return response.status;
+    };
+
+    const before = await send("sgr_smoke_manual");
+    server.acceptGrant("sgr_smoke_manual");
+    const after = await send("sgr_smoke_manual");
+
+    expect(before).toBe(401);
+    expect(after).toBe(200);
+  });
+
   it("чужой токен — 401", async () => {
     const server = await start();
 

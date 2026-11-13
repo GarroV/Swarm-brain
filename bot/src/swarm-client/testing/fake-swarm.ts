@@ -749,6 +749,14 @@ class FakeSwarmServer implements FakeSwarm {
     return invite;
   }
 
+  /**
+  Признать пропуск, выданный не забором приглашения здесь: смоуки, где пропуск засеян в настоящую
+  базу или собран на месте, подают его контейнеру как основание встречи (T165).
+  */
+  acceptGrant(token: string): void {
+    this.grants.add(token);
+  }
+
   inviteState(id: string): { taken: boolean; used: boolean } {
     const record = this.invites.get(id);
     if (record === undefined) throw new Error(`fake-swarm: приглашения ${id} нет`);

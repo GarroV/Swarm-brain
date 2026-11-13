@@ -1,7 +1,7 @@
 import type { startFakeSwarm } from "../swarm-client/testing/fake-swarm.ts";
 import type { NoticeProxy } from "./smoke-notices.ts";
 
-type Swarm = Awaited<ReturnType<typeof startFakeSwarm>>;
+export type Swarm = Awaited<ReturnType<typeof startFakeSwarm>>;
 
 /**
  * Двойник сервера целиком: `fake-swarm` за прокси, который сам отвечает на `/meeting-notice`.
