@@ -3,7 +3,9 @@
 # до этого — MUSPELHEIM), прод — Swarm.
 #
 #   scripts/scriba-prod.sh rollout   — вся раскатка по порядку (ниже), нужен SCRIBA_WORKSPACE
-#   scripts/scriba-prod.sh up        — обновить клон на VPS до origin/main и поднять бота
+#   scripts/scriba-prod.sh up        — обновить клон на VPS до origin/main и поднять бота; идущие
+#                                      встречи не обрываем: ждёт их конца до WAIT_MAX_SECONDS (7200),
+#                                      потом отказ; FORCE_DURING_MEETINGS=1 — осознанный обход (#1143)
 #   scripts/scriba-prod.sh status | logs | down
 #
 # rollout — только в ночное окно 23:00–06:59 по Белграду (FORCE=1 — осознанный обход) и только
@@ -24,6 +26,10 @@ REPO="${ROOT}/repo"
 PS="bash ${REPO}/scripts/scriba-prod/stand.sh"
 
 remote() { ssh "$HOST" "$@"; }
+# up пересоздаёт оркестратор и ждёт конца идущих встреч (#1143); обход и потолок едут на сервер.
+remote_up() {
+  remote "FORCE_DURING_MEETINGS=${FORCE_DURING_MEETINGS:-} WAIT_MAX_SECONDS=${WAIT_MAX_SECONDS:-7200} $PS up"
+}
 say() { printf '[scriba-prod %s] %s\n' "$(date +%H:%M:%S)" "$*"; }
 die() { printf '✘ %s\n' "$*" >&2; exit 1; }
 
@@ -104,12 +110,12 @@ case "${1:-status}" in
     deploy_functions
     sync_code
     issue_token "$workspace"
-    remote "$PS up"
+    remote_up
     say "готово: бот слушает приглашения. Проверка — «Позвать бота» в Swarm на тестовой встрече"
     ;;
   up)
     sync_code
-    remote "$PS up"
+    remote_up
     ;;
   status | logs | down) remote "$PS $1" ;;
   *) die "команды: rollout | up | status | logs | down" ;;
