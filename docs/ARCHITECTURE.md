@@ -2699,7 +2699,7 @@ Sphera, CUI 37586457, сохраняется отдельным холдинго
 |---|---|
 | Миграции | `supabase/migrations/20261003100000_market_tables.sql`, `20261003110000_market_demoland.sql`, `20261003120000_market_editorial.sql` |
 | Общая логика | `supabase/functions/_shared/market/{types,snapshot,editorial,geo,rules,db}.ts` (валидатор снимка и ручной части, сопоставление 150 м, правила, доступ к базе) |
-| Приём | `supabase/functions/market-ingest/` |
+| Приём | `supabase/functions/market-ingest/`; DB-фикстура `admin-auth.db.test.ts` создаёт собственный workspace и удаляет его после теста, не зависит от cron `demo_reset` (#1014) |
 | API | `supabase/functions/swarm-api/market.ts` (подключён в `index.ts`) |
 | Сборщики | `scripts/market/` (`run.ts`, `lib.ts`, `registry.ts`, `countries/`, `adapters/`, `demoland-seed.ts`; разовый генератор карт `build-shapes.ts` + `shapes-geo.ts`), workflow `.github/workflows/market-collect.yml` |
 | Веб | `miniapp/src/components/market/*`, `lib/marketView.ts`, `marketStats.ts`, `marketMap.ts`, `marketInsights.ts`, `marketPizza.ts`, `marketEditorial.ts` (разбор ручной части), `marketDemo.ts`, стили эталона `components/market/market.css` (всё внутри корня `.mkt`, тёмная тема по `.dark`) и каркас `components/market/ref.tsx`, клиент в `lib/api.ts` (`fetchMarketCountries`, `fetchMarket`, `importMarketSnapshot`, `fetchMarketCandidates`, `decideMarketCandidate`, `acceptAllMarketLocations`), типы `Market*` в `types.ts`, контуры стран `miniapp/public/market/shapes/{HR,RO,EE,XD}.json` |

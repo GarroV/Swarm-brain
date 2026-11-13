@@ -15,40 +15,43 @@ const sb = createClient(
 );
 
 const MEMBER = 990_101, ADMIN = 990_102, EXPIRED = 990_103;
+// This fixture owns its workspace; no demo_reset cron tick is required.
 const WS = "qa-market-admin-auth-1014";
 const tok = (id: number) => `smcp_test${id}`;
 
 Deno.test("only an admin's live MCP token decides; member, expired, recorder and unknown tokens do not", async () => {
   const ids = [MEMBER, ADMIN, EXPIRED];
-  await sb.from("allowed_users").delete().in("telegram_id", ids);
-  const past = new Date(Date.now() - 60_000).toISOString();
-  const { error } = await sb.from("allowed_users").insert([
-    {
-      telegram_id: MEMBER,
-      group_id: WS,
-      added_by: ADMIN,
-      is_admin: false,
-      claude_mcp_token_hash: await sha256Hex(tok(MEMBER)),
-    },
-    {
-      telegram_id: ADMIN,
-      group_id: WS,
-      added_by: ADMIN,
-      is_admin: true,
-      claude_mcp_token_hash: await sha256Hex(tok(ADMIN)),
-      recorder_token_hash: await sha256Hex("smcp_rec"),
-    },
-    {
-      telegram_id: EXPIRED,
-      group_id: WS,
-      added_by: ADMIN,
-      is_admin: true,
-      claude_mcp_token_hash: await sha256Hex(tok(EXPIRED)),
-      claude_mcp_token_expires_at: past,
-    },
-  ]);
-  if (error) throw new Error(error.message);
+  const workspace = await sb.from("workspaces").upsert({ id: WS, name: "QA market admin auth" });
+  if (workspace.error) throw new Error(workspace.error.message);
   try {
+    await sb.from("allowed_users").delete().in("telegram_id", ids);
+    const past = new Date(Date.now() - 60_000).toISOString();
+    const { error } = await sb.from("allowed_users").insert([
+      {
+        telegram_id: MEMBER,
+        group_id: WS,
+        added_by: ADMIN,
+        is_admin: false,
+        claude_mcp_token_hash: await sha256Hex(tok(MEMBER)),
+      },
+      {
+        telegram_id: ADMIN,
+        group_id: WS,
+        added_by: ADMIN,
+        is_admin: true,
+        claude_mcp_token_hash: await sha256Hex(tok(ADMIN)),
+        recorder_token_hash: await sha256Hex("smcp_rec"),
+      },
+      {
+        telegram_id: EXPIRED,
+        group_id: WS,
+        added_by: ADMIN,
+        is_admin: true,
+        claude_mcp_token_hash: await sha256Hex(tok(EXPIRED)),
+        claude_mcp_token_expires_at: past,
+      },
+    ]);
+    if (error) throw new Error(error.message);
     assertEquals(await findAdminByMcpToken(tok(ADMIN)), ADMIN);
     assertEquals(await findAdminByMcpToken(tok(MEMBER)), null);
     assertEquals(await findAdminByMcpToken(tok(EXPIRED)), null);
@@ -57,6 +60,9 @@ Deno.test("only an admin's live MCP token decides; member, expired, recorder and
     assertEquals(await findAdminByMcpToken("smcp_unknown"), null);
     assertEquals(await findAdminByMcpToken("not-a-token"), null);
   } finally {
-    await sb.from("allowed_users").delete().in("telegram_id", ids);
+    const users = await sb.from("allowed_users").delete().in("telegram_id", ids);
+    const workspace = await sb.from("workspaces").delete().eq("id", WS);
+    assertEquals(users.error, null);
+    assertEquals(workspace.error, null);
   }
 });
