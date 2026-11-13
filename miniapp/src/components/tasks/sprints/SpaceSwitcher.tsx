@@ -139,7 +139,7 @@ export function SpaceSwitcher(
     // Отделено точкой: «Sprint 24» и счётчик 3 без разделителя читаются как «Sprint 243» —
     // проверено на живом экране, имя пространства превращалось в другое имя.
     return c
-      ? <span className="ml-1 font-mono text-ink-mute">· {c}</span>
+      ? <span className="ml-1 font-mono text-ink-soft">· {c}</span>
       : null;
   };
   const items: MenuItem[] = [

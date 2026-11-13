@@ -73,7 +73,7 @@ export function ReasonDialog(
               "Why did the task leave the sprint?",
             )}
           </DialogPrimitive.Title>
-          <p className="-mt-2 truncate text-[12.5px] text-ink-mute">
+          <p className="-mt-2 truncate text-[12.5px] text-ink-soft">
             «{item.title}»
           </p>
           <textarea

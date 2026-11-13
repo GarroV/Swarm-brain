@@ -40,7 +40,7 @@ export function SnapshotCard({ item, users, onAddReason }: {
 
   return (
     <div
-      className="rounded-[10px] border border-dashed border-line-2 bg-surface-2/60 px-3 py-2 text-ink-mute"
+      className="rounded-[10px] border border-dashed border-line-2 bg-surface-2/60 px-3 py-2 text-ink-soft"
       style={{ fontSize: 12 }}
     >
       <div className="whitespace-normal break-words text-[13px] text-ink-soft">
@@ -67,7 +67,7 @@ export function SnapshotCard({ item, users, onAddReason }: {
             <button
               type="button"
               onClick={() => onAddReason(item)}
-              className="font-semibold text-pri-high underline-offset-2 hover:underline"
+              className="text-left font-semibold text-pri-high underline-offset-2 hover:underline"
             >
               {dt(
                 "причина не указана — нажмите, чтобы вписать",
@@ -104,7 +104,7 @@ export function MovedSection(
   return (
     <section className={cn("mt-4", className)}>
       <div
-        className="mb-1.5 flex items-center gap-2 px-0.5 font-semibold uppercase tracking-[0.06em] text-ink-mute"
+        className="mb-1.5 flex items-center gap-2 px-0.5 font-semibold uppercase tracking-[0.06em] text-ink-soft"
         style={{ fontSize: 11 }}
       >
         {dt("Ушли из спринта", "Left the sprint")}
