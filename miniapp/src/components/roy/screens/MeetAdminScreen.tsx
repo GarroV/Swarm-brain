@@ -1,6 +1,10 @@
 "use client";
+import { useMeetingFacets } from "./useMeetingFacets";
+import { MeetingsStats } from "./MeetingsStats";
+import { MeetingListFeedback } from "./MeetingListFeedback";
+import { meetingFacetView, meetingFacetSignature } from "@/lib/meetingsFacets";
 import { ContentEditor } from "./ContentEditor";
-import { MEET_DETAIL_COPY, tally, CountsCard, StatChip, formatOffset, ListRow, type MeetItem } from "./meetAdminPresentation";
+import { MEET_DETAIL_COPY, StatChip, formatOffset, ListRow, type MeetItem } from "./meetAdminPresentation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRoyNav, useDt } from "../nav";
 import { canDeleteDraft, canHideDraft, hasSeveralOwners } from "@/lib/draftOwners";
@@ -12,7 +16,7 @@ import { deriveEntryTitle, entryImporterName } from "../entry";
 import { hasDraftNotes } from "@/lib/agentMeeting";
 import {
   askMeeting,
-  fetchMeetings,
+  fetchReviewMeetings,
   fetchMeeting,
   fetchAgentMeetings,
   fetchAgentMeeting,
@@ -35,39 +39,12 @@ import { countryCode } from "@/lib/countries";
 import { MarketChips } from "../MarketChips";
 import {
   applyMeetingsFilter, isConfirmed,
-  EMPTY_FILTERS, loadSavedFilters, saveFilters, type MeetingsFilterState,
+  EMPTY_FILTERS, isFilterActive, loadSavedFilters, saveFilters, type MeetingsFilterState,
 } from "./meetingsFilter";
 import { useMeetingsList } from "./useMeetingsList";
 import { mergeById } from "@/lib/meetingsPaging";
 import { formatDate } from "@/lib/displayFormat";
 import { MeetingsFilters } from "./MeetingsFilters";
-
-// Правый сайдбар статистики «Все встречи»: По странам (рынки воркспейса, прочее → «Другие») + Источники.
-function MeetingsStats({ meetings, markets }: { meetings: Entry[]; markets: string[] | null }) {
-  const dt = useDt();
-  const marketSet = new Set((markets ?? []).map(countryCode));
-  const rawCountry = tally(meetings.flatMap((e) => (e.countries?.length ? e.countries.map(countryCode) : ["—"])));
-  const countryCounts: [string, number][] = (() => {
-    if (marketSet.size === 0) return rawCountry;
-    const out: [string, number][] = [];
-    let other = 0;
-    for (const [code, n] of rawCountry) {
-      if (code !== "—" && marketSet.has(code)) out.push([code, n]);
-      else other += n;
-    }
-    out.sort((a, b) => b[1] - a[1]);
-    if (other) out.push([dt(MEET_DETAIL_COPY.other.ru, MEET_DETAIL_COPY.other.en), other]);
-    return out;
-  })();
-  const sourceCounts = tally(meetings.map((e) => meetingSourceLabel(e, dt)));
-  return (
-    <div className="min-h-0 flex-1 overflow-y-auto p-3 space-y-3">
-      <div className="px-1 text-ink-mute" style={{ fontSize: 12 }}>{dt(MEET_DETAIL_COPY.totalPrefix.ru, MEET_DETAIL_COPY.totalPrefix.en)}{meetings.length}</div>
-      <CountsCard title={dt(MEET_DETAIL_COPY.byCountry.ru, MEET_DETAIL_COPY.byCountry.en)} counts={countryCounts} />
-      <CountsCard title={dt(MEET_DETAIL_COPY.sources.ru, MEET_DETAIL_COPY.sources.en)} counts={sourceCounts} />
-    </div>
-  );
-}
 
 import { TasksFromMeeting } from "../TasksFromMeeting";
 import { TezisyEditor } from "../tezisy/TezisyEditor";
@@ -966,7 +943,12 @@ export function MeetAdminScreen({ initialMode = "review" }: { initialMode?: "rev
   // Правая колонка считает статистику («По странам», «Источники») по всему списку, поэтому в этом
   // режиме остаток докачивается сам (needAll) — лёгкая строка ~0.6 КБ вместо ~1.7 КБ прежней.
   // Очередь вычитки (`entries`, полные строки) подмешивается ниже: в режиме «Все» видны и она.
-  const allList = useMeetingsList(filters, { pending: false, needAll: true, skipConfirmed: mode !== "all" });
+  const [facetRevision, setFacetRevision] = useState(0);
+  const [reviewFailed, setReviewFailed] = useState(false);
+  const queueSignature = useRef<string | null>(null);
+  const filtered = isFilterActive(filters);
+  const aggregate = useMeetingFacets(mode === "all" && !filtered && entries !== null, facetRevision);
+  const allList = useMeetingsList(filters, { pending: false, needAll: filtered || aggregate.failed, skipConfirmed: mode !== "all" });
   const updateAllRow = allList.update;
   const [markets, setMarkets] = useState<string[] | null>(null);
   const [selected, setSelected] = useState<MeetItem | null>(null);
@@ -978,12 +960,17 @@ export function MeetAdminScreen({ initialMode = "review" }: { initialMode?: "rev
 
   const load = useCallback(async () => {
     const [ents, agents] = await Promise.allSettled([
-      fetchMeetings({ confirmed: false }),
+      fetchReviewMeetings(),
       fetchAgentMeetings("awaiting_review"),
     ]);
     const nextEntries = ents.status === "fulfilled" ? ents.value : [];
     const nextAgents = agents.status === "fulfilled" ? agents.value : [];
-    setEntries(nextEntries);
+    setEntries((prev) => ents.status === "fulfilled" ? nextEntries : prev ?? []);
+    setReviewFailed(ents.status !== "fulfilled");
+    if (ents.status === "fulfilled") {
+      const signature = meetingFacetSignature(nextEntries);
+      if (signature !== queueSignature.current) { queueSignature.current = signature; setFacetRevision((n) => n + 1); }
+    }
     setAgentMeetings(nextAgents);
     // Выбранная встреча могла уйти из очереди, пока экран был открыт (обработана в другой
     // вкладке/сессии) — тогда снимаем выбор.
@@ -1075,6 +1062,9 @@ export function MeetAdminScreen({ initialMode = "review" }: { initialMode?: "rev
     ...(entries ?? []).map((e): MeetItem => ({ kind: "entry", data: e })),
   ];
   const allFiltered: Entry[] = applyMeetingsFilter(allMeetings ?? [], filters);
+  const facetList = { ...allList, failed: allList.failed || reviewFailed };
+  const allFacets = meetingFacetView(aggregate.data, allMeetings, facetList);
+  const filteredFacets = filtered ? meetingFacetView(null, allFiltered, facetList) : allFacets;
   const allItems: MeetItem[] = allFiltered.map((e): MeetItem => ({ kind: "entry", data: e }));
   const items: MeetItem[] = mode === "all" ? allItems : reviewItems;
 
@@ -1083,6 +1073,7 @@ export function MeetAdminScreen({ initialMode = "review" }: { initialMode?: "rev
     setEntries((prev) => prev?.filter((e) => e.id !== id) ?? null);
     setAgentMeetings((prev) => prev?.filter((m) => m.id !== id) ?? null);
     allList.remove(id);
+    setFacetRevision((n) => n + 1);
     setSelected((prev) => (prev && prev.data.id === id ? null : prev));
   };
 
@@ -1106,6 +1097,7 @@ export function MeetAdminScreen({ initialMode = "review" }: { initialMode?: "rev
     // Согласованная встреча переезжает из очереди вычитки в общий список — upsert добавит её, если её там ещё нет.
     if (updated.metadata?.confirmed === true) allList.upsert(updated);
     else allList.update(updated.id, () => updated);
+    setFacetRevision((n) => n + 1);
     setSelected((prev) =>
       prev && prev.kind === "entry" && prev.data.id === updated.id
         ? { kind: "entry", data: updated }
@@ -1252,6 +1244,10 @@ export function MeetAdminScreen({ initialMode = "review" }: { initialMode?: "rev
                 itemRecorder={itemRecorder}
               />
             ))}
+            {mode === "all" && <MeetingListFeedback failed={facetList.failed}
+              hasMore={allList.hasMore && !filtered && !aggregate.failed} loadingMore={allList.loadingMore}
+              onMore={allList.loadMore} onRetry={() => { allList.retry(); void load(); setFacetRevision((n) => n + 1); }} />}
+
           </div>
         </div>
 
@@ -1313,13 +1309,13 @@ export function MeetAdminScreen({ initialMode = "review" }: { initialMode?: "rev
             // «Все встречи» без выбора — статистика (По странам / Источники), как на старом экране.
             <div className="min-h-0 flex-1 overflow-y-auto">
               <MeetingsFilters
-                all={allMeetings}
+                facets={allFacets}
                 shown={allFiltered.length}
                 markets={markets}
                 value={filters}
                 onChange={setFilters}
               />
-              <MeetingsStats meetings={allFiltered} markets={markets} />
+              <MeetingsStats facets={filteredFacets} markets={markets} />
             </div>
           ) : (
             <div className="flex h-full items-center justify-center px-4">
