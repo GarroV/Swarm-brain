@@ -257,22 +257,9 @@ npm run build
 
 ## Шаг 12 — Настройка cron-jobs (опционально)
 
-Для автоматического дайджеста, поллинга Granola и ежедневного отчёта активности настрой cron через Supabase Dashboard → Edge Functions → Schedule или через pg_cron:
+Для поллинга Granola и ежедневного отчёта активности настрой cron через Supabase Dashboard → Edge Functions → Schedule или через pg_cron:
 
 ```sql
--- Дайджест каждый понедельник в 9:00 UTC
-select cron.schedule(
-  'weekly-digest',
-  '0 9 * * 1',
-  $$
-    select net.http_post(
-      url := 'https://<YOUR_PROJECT_REF>.supabase.co/functions/v1/swarm-bot',
-      headers := '{"Content-Type":"application/json","X-Cron-Secret":"<CRON_SECRET>"}',
-      body := '{"digest_cron":true}'
-    );
-  $$
-);
-
 -- Поллинг Granola каждый час — бьёт в swarm-bot, а не в standalone granola-poller
 -- (granola-poller устарел; вся логика импорта живёт в swarm-bot → ingestNewGranolaNotesAllUsers)
 select cron.schedule(
