@@ -85,6 +85,7 @@ export const TOOL_CLASSES: Record<string, ToolClass> = {
   market_add_fact: write(true),
   // Необратимое или убирающее: удаление, архив, снятие, приёмка спринта, публикация черновика.
   delete_entry: destructive(true),
+  delete_draft_meeting: destructive(true),
   delete_task: destructive(true),
   delete_task_comment: destructive(true),
   delete_task_label: destructive(true),

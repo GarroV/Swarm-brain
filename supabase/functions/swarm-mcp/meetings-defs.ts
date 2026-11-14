@@ -36,6 +36,15 @@ export const MEETING_REVIEW_TOOL_DEFINITIONS = [
     },
   },
   {
+    name: "delete_draft_meeting",
+    description: "Удалить черновик встречи, его транскрипт и первичные аудиофайлы. Требует подтверждения удаления.",
+    inputSchema: {
+      type: "object",
+      properties: { meeting_id: MEETING_ID, requesting_user_id: IDENTITY },
+      required: ["meeting_id"],
+    },
+  },
+  {
     name: "publish_draft_meeting",
     description:
       "Опубликовать черновик в базу знаний (то же, что «Согласовать» в вебе). Если эта встреча уже лежит в базе, черновик привязывается к ней, а остаётся более полная версия. По умолчанию — в базу команды.",
