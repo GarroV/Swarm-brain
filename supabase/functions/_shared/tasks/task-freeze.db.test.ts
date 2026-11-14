@@ -224,3 +224,53 @@ Deno.test("814 legacy accepted snapshots default false and do not follow a later
     await db.end();
   }
 });
+
+for (const initialFrozen of [false, true]) {
+  Deno.test(`814 acceptance race: ${initialFrozen ? "unfreeze" : "freeze"} between actual stats computation and actual SQL must not save inconsistent snapshots`, async () => {
+    const db = new Client(DB_URL);
+    await db.connect();
+    const originalFetch = globalThis.fetch;
+    try {
+      await seed(db);
+      const tab =
+        (await db.queryObject<{ id: string }>`insert into sprints (group_id,name,kind,status,start_date,end_date)
+        values (${WS},'Fictional race space','space','active',current_date-13,current_date) returning id`).rows[0].id;
+      const cycle = (await db.queryObject<
+        { id: string }
+      >`insert into sprint_cycles (group_id,tab_id,name,start_date,end_date,check_date,status)
+        values (${WS},${tab},'Спринт 1 · 01.11 — 14.11',current_date-13,current_date,current_date-7,'active') returning id`)
+        .rows[0].id;
+      const id = await add(db);
+      await db.queryArray`insert into sprint_items(cycle_id,task_id,in_plan) values(${cycle},${id},true)`;
+      if (initialFrozen) assertEquals((await route(id, "freeze", "POST", { frozen: true }))?.status, 200);
+      let crossed = false;
+      let computedPlan: number | null = null;
+      globalThis.fetch = async (input, init) => {
+        const requestUrl = new URL(input instanceof Request ? input.url : input.toString());
+        const method = init?.method ?? (input instanceof Request ? input.method : "GET");
+        if (!crossed && method === "POST" && requestUrl.pathname.endsWith("/rpc/accept_sprint_cycle")) {
+          const body = typeof init?.body === "string"
+            ? JSON.parse(init.body)
+            : input instanceof Request
+            ? await input.clone().json()
+            : null;
+          computedPlan = body?.p_stats?.plan ?? null;
+          assertEquals(computedPlan, initialFrozen ? 0 : 1, "barrier must be after the actual TypeScript calculation");
+          crossed = true;
+          assertEquals((await route(id, "freeze", "POST", { frozen: !initialFrozen }))?.status, 200);
+        }
+        return await originalFetch(input, init);
+      };
+      const accepted = await acceptCycle(cycle, WS, "Fictional Person");
+      assert(crossed, "the actual acceptance RPC barrier was not reached");
+      assert(accepted);
+      const snapshot = (await listItems(cycle, WS, "everyone"))[0];
+      assertEquals(snapshot.task_frozen, !initialFrozen);
+      const stats = accepted.cycle.stats as { plan: number };
+      assertEquals(stats.plan, snapshot.task_frozen ? 0 : 1, "FrozenAcceptanceSnapshotStatsMismatch");
+    } finally {
+      globalThis.fetch = originalFetch;
+      await db.end();
+    }
+  });
+}
