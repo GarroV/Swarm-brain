@@ -97,17 +97,13 @@ export async function addMasterAdmin(
   if (!Number.isSafeInteger(telegramId) || telegramId <= 0) {
     return { ok: false, reason: "invalid_id", message: "telegram_id должен быть положительным числом" };
   }
-  const { error } = await supabase.from("master_admins").upsert(
-    { telegram_id: telegramId, added_by: actorTid },
-    { onConflict: "telegram_id", ignoreDuplicates: true },
-  );
-  if (error) throw new Error(`master-admins: не добавить (${error.code ?? "db"})`);
-  return { ok: true };
+  return await changeMasterRole(supabase, telegramId, actorTid, "added");
 }
 
 export async function removeMasterAdmin(
   supabase: SupabaseClient,
   telegramId: number,
+  actorTid: number,
 ): Promise<MasterAdminResult> {
   if (telegramId === SUPERADMIN_TELEGRAM_ID) {
     return {
@@ -116,16 +112,34 @@ export async function removeMasterAdmin(
       message: "Этого мастер-админа задаёт код, снять его из списка нельзя",
     };
   }
-  const { data, error } = await supabase.from("master_admins").select("telegram_id");
-  if (error) throw new Error(`master-admins: не прочитать список (${error.code ?? "db"})`);
-  const ids = (data ?? []).map((r: { telegram_id: number }) => Number(r.telegram_id));
-  if (!ids.includes(telegramId)) {
-    return { ok: false, reason: "not_found", message: "Такого мастер-админа нет" };
+  return await changeMasterRole(supabase, telegramId, actorTid, "removed");
+}
+
+const DENIALS = {
+  invalid_id: "telegram_id должен быть положительным числом",
+  builtin: "Этого мастер-админа задаёт код, снять его из списка нельзя",
+  last: "Нельзя удалить последнего мастер-админа",
+  not_found: "Такого мастер-админа нет",
+} as const;
+
+/** The route authenticates the master admin; PostgreSQL commits membership and history together. */
+async function changeMasterRole(
+  supabase: SupabaseClient,
+  target: number,
+  actor: number,
+  action: "added" | "removed",
+): Promise<MasterAdminResult> {
+  const { data, error } = await supabase.rpc("change_master_admin_role", {
+    p_target: target,
+    p_actor: actor,
+    p_action: action,
+    p_builtin: SUPERADMIN_TELEGRAM_ID,
+  });
+  if (error) throw new Error(`master-admins: не записать роль и журнал (${error.code ?? "db"})`);
+  if (data?.ok === true) return { ok: true };
+  if (data?.ok === false && typeof data.reason === "string" && Object.hasOwn(DENIALS, data.reason)) {
+    const reason = data.reason as keyof typeof DENIALS;
+    return { ok: false, reason, message: DENIALS[reason] };
   }
-  if (ids.length <= 1) {
-    return { ok: false, reason: "last", message: "Нельзя удалить последнего мастер-админа" };
-  }
-  const { error: delErr } = await supabase.from("master_admins").delete().eq("telegram_id", telegramId);
-  if (delErr) throw new Error(`master-admins: не удалить (${delErr.code ?? "db"})`);
-  return { ok: true };
+  throw new Error("master-admins: неверный ответ изменения роли");
 }
