@@ -1,4 +1,5 @@
 "use client";
+import { SWARM_STORAGE, readStored, writeStored, clearStored } from "@/lib/browserStorage";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import type { Me, Task } from "@/types";
 import { TaskModal } from "@/components/TaskModal";
@@ -120,7 +121,7 @@ export function RoyApp({ me }: { me: Me | null }) {
     setTabState(t);
     // Запоминаем вкладку, чтобы рефреш страницы не сбрасывал на «Поиск».
     try {
-      sessionStorage.setItem("roy_tab", t);
+      writeStored(sessionStorage, SWARM_STORAGE.tab, t);
     } catch { /* приватный режим */ }
   }, []);
   // Открыть доску задач с заданной линзой (из панелей «Мои»/«Команда» дашборда).
@@ -129,7 +130,7 @@ export function RoyApp({ me }: { me: Me | null }) {
     setStack([]);
     setTabState("task");
     try {
-      sessionStorage.setItem("roy_tab", "task");
+      writeStored(sessionStorage, SWARM_STORAGE.tab, "task");
     } catch { /* приватный режим */ }
   }, []);
   const push = useCallback((r: RoyRoute) => setStack((s) => [...s, r]), []);
@@ -214,7 +215,7 @@ export function RoyApp({ me }: { me: Me | null }) {
       return;
     }
     try {
-      const saved = sessionStorage.getItem("roy_tab");
+      const saved = readStored(sessionStorage, SWARM_STORAGE.tab);
       // Валидируем по ПОЛНОМУ союзу, а не по ROY_TABS: в баре мобильные табы, а `search`/`book` —
       // десктопные разделы. На мобайле сохранённые десктопные значения мигрируем, иначе человек с
       // живой сессией после деплоя попал бы на экран, которого в баре нет (подсветки таба нет).
@@ -235,7 +236,7 @@ export function RoyApp({ me }: { me: Me | null }) {
       // Восстанавливаем и push-стек (открытую деталь), чтобы рефреш не сбрасывал на корень таба.
       // Валидируем не только view, но и ОБЯЗАТЕЛЬНЫЕ params (битый/усечённый storage → роут без id
       // ушёл бы в fetch(undefined) и белый экран). Любой невалидный роут → стек не восстанавливаем.
-      const rawStack = sessionStorage.getItem("roy_stack");
+      const rawStack = readStored(sessionStorage, SWARM_STORAGE.stack);
       if (rawStack) {
         const parsed = JSON.parse(rawStack);
         const needsId = new Set([
@@ -301,8 +302,8 @@ export function RoyApp({ me }: { me: Me | null }) {
     if (!hydrated.current) return;
     try {
       if (stack.length) {
-        sessionStorage.setItem("roy_stack", JSON.stringify(stack));
-      } else sessionStorage.removeItem("roy_stack");
+        writeStored(sessionStorage, SWARM_STORAGE.stack, JSON.stringify(stack));
+      } else clearStored(sessionStorage, SWARM_STORAGE.stack);
     } catch { /* приватный режим */ }
   }, [stack]);
 

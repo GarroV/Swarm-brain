@@ -1,4 +1,5 @@
 "use client";
+import { SWARM_STORAGE, readStored, writeStored } from "@/lib/browserStorage";
 import { useEffect, useState } from "react";
 import { useDt, useIsDemo, useRoyNav } from "../nav";
 import { DemoQuestionChips } from "../DemoQuestions";
@@ -12,11 +13,11 @@ import { fmtDate, norm } from "../dash/shared";
 import type { Task, Entry } from "@/types";
 import { isRawId } from "@/lib/displayFormat";
 
-const RECENT_KEY = "roy_recent_searches";
+const RECENT_KEY = SWARM_STORAGE.recent;
 
 function loadRecent(): string[] {
   try {
-    const v = JSON.parse(localStorage.getItem(RECENT_KEY) || "[]");
+    const v = JSON.parse(readStored(localStorage, RECENT_KEY) || "[]");
     return Array.isArray(v) ? v.filter((x) => typeof x === "string").slice(0, 8) : [];
   } catch {
     return [];
@@ -25,7 +26,7 @@ function loadRecent(): string[] {
 export function saveRecent(q: string) {
   const next = [q, ...loadRecent().filter((x) => x !== q)].slice(0, 8);
   try {
-    localStorage.setItem(RECENT_KEY, JSON.stringify(next));
+    writeStored(localStorage, RECENT_KEY, JSON.stringify(next));
   } catch {
     /* private mode / quota — игнорируем */
   }

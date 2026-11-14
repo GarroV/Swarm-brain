@@ -2903,3 +2903,6 @@ SELECT/INSERT/UPDATE/DELETE по `_template_new_table.sql`; `member_moves` и
 - ⚠️ `granola-poller` — legacy, **не деплоить** как обычный шаг: standalone-функция выведена из крона. Поллинг Granola идёт внутри `swarm-bot` (часовой крон с `{granola_poll:true}` → `ingestNewGranolaNotesAllUsers`). См. таблицу Edge Functions выше.
 - Деплой веб-интерфейса: `cd miniapp && npm run build` → `out/` → Cloudflare Pages
 - После каждого изменения функционала: обновить этот файл (ARCHITECTURE) + `docs/BACKLOG.md`. **Changelog руками не вести** — генерируется из git (`scripts/changelog.sh`); источник истины — conventional commit-сообщения.
+
+
+**Browser UI state (#186).** `miniapp/src/lib/browserStorage.ts` keeps the tab/push stack in session storage (`swarm_tab`, `swarm_stack`) and recent search queries in local storage (`swarm_recent_searches`). Readers prefer the new key and consult its `roy_*` predecessor only when the new key is absent; writes use only `swarm_*`. Explicit stack clearing removes both keys so reload cannot restore a legacy detail. Existing route/query parsers, URL precedence, recent-query order/limit and storage-error handling remain in their consumers.
