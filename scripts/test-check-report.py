@@ -69,8 +69,10 @@ exit "$CHECK_STATUS"
         report = json.loads((fixture / "reports/check.json").read_text())
         assert report["failed"] == status, report
         roles = {row["role"]: row for row in report["roles"]}
-        assert len(roles) == 10, report
+        assert set(roles) == {"формат", "линт", "мёртвый-код", "границы", "типы-функции",
+                              "типы-веб", "язык-веб", "словари-веб", "цвета-веб", "тесты", "покрытие"}, report
         assert roles["язык-веб"]["status"] == ("pass" if status == 0 else "fail"), roles["язык-веб"]
+        assert roles["словари-веб"]["status"] == ("pass" if status == 0 else "fail"), roles["словари-веб"]
         for role in ("формат", "линт", "мёртвый-код", "границы", "типы-функции"):
             assert roles[role]["status"] == ("pass" if status == 0 else "fail"), roles[role]
             assert roles[role]["detail"] == DIAGNOSTIC + " ", repr(roles[role]["detail"])

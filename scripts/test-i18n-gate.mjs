@@ -35,6 +35,13 @@ for (const [name, value] of Object.entries({
 test("registry rejects removal of useT even when no literal remains", () => {
   assert.ok(inspectSection('export function A({ task }) { return <p>{task.title}</p>; }', "a.tsx", keys).length);
 });
+test("local variable and map parameter names cannot contaminate another lexical scope", () => {
+  const source = `import {useT} from '@/components/roy/nav';
+    function Choices(){const t=useT(); const label='UNRENDERED';const options=[{id:'one',label:'UNRENDERED'}];return <select>{options.map(item=><option key={item.id}>{t('example.label')}</option>)}</select>;}
+    function UserItems({items,task}){const t=useT(); const label=task.title;return <><p>{label}</p>{items.map(item=><span>{item.label}</span>)}</>;}`;
+  assert.deepEqual(inspectSection(source, "a.tsx", keys), []);
+  assert.ok(inspectSection(source.replace("{t('example.label')}", "{item.label}"), "a.tsx", keys).length);
+});
 test("codemod extracts exact strings and edits only translation spans", () => {
   const source = 'import { useDt } from "@/components/roy/nav"; function A(){const dt = useDt(); return <p className="x">{dt("Привет $&", "Hello $&")}</p>}';
   const result = migrateSection(source, ["example.label"]);

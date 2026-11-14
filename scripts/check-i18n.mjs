@@ -11,18 +11,28 @@ const textAttributes = new Set(["title", "placeholder", "aria-label", "aria-desc
 /** Opted-in sections must render UI copy through literal dictionary keys. */
 export function inspectSection(source, filename, keys, requireTranslator = true) {
   const tree = ts.createSourceFile(filename, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  // Bind this file without resolving imports: symbol identity preserves lexical scopes.
+  const host = {
+    getSourceFile: (name) => name === filename ? tree : undefined,
+    getDefaultLibFileName: () => "", writeFile: () => {}, getCurrentDirectory: () => "",
+    getDirectories: () => [], getCanonicalFileName: (name) => name,
+    useCaseSensitiveFileNames: () => true, getNewLine: () => "\n",
+    fileExists: (name) => name === filename, readFile: (name) => name === filename ? source : undefined,
+  };
+  const checker = ts.createProgram([filename], { noLib: true, noResolve: true, jsx: ts.JsxEmit.Preserve }, host).getTypeChecker();
+  const binding = (node) => checker.getSymbolAtLocation(node);
   const errors = [], definitions = new Map();
   const report = (node, reason) => errors.push(`${filename}:${tree.getLineAndCharacterOfPosition(node.getStart(tree)).line + 1}: ${reason}`);
   function collect(node) {
     if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.initializer) {
-      const entries = definitions.get(node.name.text) ?? [];
-      entries.push(node.initializer); definitions.set(node.name.text, entries);
+      const symbol = binding(node.name), entries = definitions.get(symbol) ?? [];
+      if (symbol) { entries.push(node.initializer); definitions.set(symbol, entries); }
     }
     if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression) && node.expression.name.text === "map") {
       const callback = node.arguments[0], parameter = callback && (ts.isArrowFunction(callback) || ts.isFunctionExpression(callback)) ? callback.parameters[0]?.name : null;
       if (parameter && ts.isIdentifier(parameter)) {
-        const entries = definitions.get(parameter.text) ?? [];
-        entries.push(node.expression.expression); definitions.set(parameter.text, entries);
+        const symbol = binding(parameter), entries = definitions.get(symbol) ?? [];
+        if (symbol) { entries.push(node.expression.expression); definitions.set(symbol, entries); }
       }
     }
     ts.forEachChild(node, collect);
@@ -31,9 +41,10 @@ export function inspectSection(source, filename, keys, requireTranslator = true)
   const staticValues = (node, seen = new Set()) => {
     if (!node) return [];
     if (ts.isIdentifier(node)) {
-      if (seen.has(node.text)) return [];
-      const next = new Set(seen).add(node.text);
-      return (definitions.get(node.text) ?? []).flatMap((value) => staticValues(value, next));
+      const symbol = binding(node);
+      if (!symbol || seen.has(symbol)) return [];
+      const next = new Set(seen).add(symbol);
+      return (definitions.get(symbol) ?? []).flatMap((value) => staticValues(value, next));
     }
     if (ts.isArrayLiteralExpression(node)) return node.elements.flatMap((value) => staticValues(value, seen));
     if (ts.isParenthesizedExpression(node) || ts.isAsExpression(node) || ts.isNonNullExpression(node)) return staticValues(node.expression, seen);
@@ -47,9 +58,10 @@ export function inspectSection(source, filename, keys, requireTranslator = true)
     if (!node) return false;
     if (ts.isStringLiteralLike(node)) return !!node.text.trim();
     if (ts.isIdentifier(node)) {
-      if (seen.has(node.text)) return false;
-      const next = new Set(seen).add(node.text);
-      return (definitions.get(node.text) ?? []).some((value) => containsCopy(value, next));
+      const symbol = binding(node);
+      if (!symbol || seen.has(symbol)) return false;
+      const next = new Set(seen).add(symbol);
+      return (definitions.get(symbol) ?? []).some((value) => containsCopy(value, next));
     }
     if (ts.isCallExpression(node)) {
       if (ts.isIdentifier(node.expression) && node.expression.text === "t") return false;
