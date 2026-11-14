@@ -5,7 +5,6 @@ import { sanitizeModelHtml } from "../../_shared/telegram-html.ts";
 import { UNTRUSTED_DATA_RULE, wrapUntrustedForModel } from "../../_shared/untrusted-prompt.ts";
 import { notifyMessage } from "../lib/notify.ts";
 import { saveEntry, visibilityFilter } from "../lib/storage.ts";
-import { getUserGroupId } from "../lib/workspace.ts";
 import { onlyLiveEntries } from "../../_shared/entries/live.ts";
 import { visibleInWorkspace } from "../../_shared/entries/workspace.ts";
 
@@ -121,18 +120,5 @@ export async function generatePersonalDigest(
   while (remaining.length > 0) {
     await say(remaining.slice(0, 4000));
     remaining = remaining.slice(4000);
-  }
-}
-
-export async function sendAllDigests(daysBack: number = 7): Promise<void> {
-  const { data: users } = await supabase.from("user_profiles")
-    .select("telegram_id, digest_enabled")
-    .eq("digest_enabled", true);
-
-  for (const u of (users ?? []) as Array<{ telegram_id: number }>) {
-    try {
-      const groupId = await getUserGroupId(u.telegram_id) ?? "";
-      await generatePersonalDigest(u.telegram_id, u.telegram_id, daysBack, groupId, true);
-    } catch { /* skip failed user */ }
   }
 }

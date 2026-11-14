@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { ApiError, fetchMovePreview, moveMember, type MovePreview } from "@/lib/api";
 import { bodyCode, conflictText, isFinalMoveError, moveErrorKey, parseFreshCounts } from "@/lib/moveMessages";
 import type { AdminUser, AdminWorkspace } from "@/types";
@@ -36,11 +36,12 @@ export function MoveMemberDialog({ person, to, onClose, onMoved }: {
   const [changed, setChanged] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [failedText, setFailedText] = useState<string | null>(null);
-  const telegramId = person.telegram_id as number;
+  const memberRef = useMemo(() => person.id != null ? String(person.id) : person.telegram_id, [person.id, person.telegram_id]);
 
   const load = useCallback(() => {
     setPhase("loading"); setChanged(false); setError(null); setFailedText(null);
-    fetchMovePreview(telegramId, to.id)
+    if (memberRef === null) { setPhase("failed"); return; }
+    fetchMovePreview(memberRef, to.id)
       .then((p) => { setPreview(p); setPhase("ready"); })
       .catch((e) => {
         console.error("[MoveMemberDialog] preview", e);
@@ -49,14 +50,14 @@ export function MoveMemberDialog({ person, to, onClose, onMoved }: {
         setFailedText(isFinalMoveError(code) ? t(moveErrorKey(code, "movePreviewFailed")) : null);
         setPhase("failed");
       });
-  }, [telegramId, to.id, t]);
+  }, [memberRef, to.id, t]);
   useEffect(() => { load(); }, [load]);
 
   const run = async () => {
-    if (!preview || running) return;
+    if (!preview || running || memberRef === null) return;
     setRunning(true); setError(null);
     try {
-      await moveMember(telegramId, to.id, { tasks: preview.counts.tasks, entries: preview.counts.entries });
+      await moveMember(memberRef, to.id, { tasks: preview.counts.tasks, entries: preview.counts.entries });
       onMoved(preview.person.name || person.name, to.name);
     } catch (e) {
       console.error("[MoveMemberDialog] move", e);
