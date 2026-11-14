@@ -61,7 +61,7 @@ import { handleWorkspace } from "./handlers/workspace.ts";
 import { escapeHtml } from "../_shared/telegram-html.ts";
 import { handleForwardForTask, handleTaskComment } from "./tasks/forward-task.ts";
 import { handleSuperadmin, handleSuperadminCallbacks, handleSuperadminSession } from "./handlers/superadmin.ts";
-import { generatePersonalDigest, sendAllDigests } from "./handlers/digest.ts";
+import { generatePersonalDigest } from "./handlers/digest.ts";
 import { sendDailyReport } from "./handlers/daily-report-send.ts";
 import { sendReviewReminders } from "./handlers/review-reminders-send.ts";
 import { sendTaskPings } from "./handlers/task-pings-send.ts";
@@ -271,7 +271,7 @@ Deno.serve(async (req: Request) => {
 
   // ── Cron triggers (требуют X-Cron-Secret) ────────────────────────────────────
   if (
-    body.setup_commands === true || body.digest_cron === true || body.daily_report_cron === true ||
+    body.setup_commands === true || body.daily_report_cron === true ||
     body.review_reminders_cron === true || body.task_pings_cron === true || body.feedback_retention_cron === true ||
     body.readai_token_refresh === true || body.granola_poll === true || body.meetings_watchdog === true ||
     body.webhook_info === true || body.set_webhook === true
@@ -328,11 +328,6 @@ Deno.serve(async (req: Request) => {
     }, VIA_TELEGRAM);
     const json = await res.json();
     return new Response(JSON.stringify(json), { status: 200 });
-  }
-
-  if (body.digest_cron === true) {
-    await sendAllDigests(7);
-    return new Response("OK", { status: 200 });
   }
 
   if (body.daily_report_cron === true) {
