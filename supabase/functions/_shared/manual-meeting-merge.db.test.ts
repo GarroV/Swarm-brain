@@ -154,9 +154,14 @@ Deno.test("manual Yes preserves original rows, authors, note offsets and immutab
     );
     const beforeSource = await row(db, source);
     const beforeTarget = await row(db, target);
+    const originalMetadata = await value<Record<string, unknown>>(
+      db,
+      "select metadata as value from entries where id=$1::uuid",
+      [beforeTarget.entry_id],
+    );
     const result = await decide(db, ws, source, target, {
       replace: true,
-      patch: { content: "Replacement", summary: "Replacement", embedding: null, metadata: {} },
+      patch: { content: "Replacement", summary: "Replacement", embedding: null, metadata: originalMetadata },
     });
     const stored = await value<Record<string, unknown>>(
       db,
@@ -192,6 +197,10 @@ Deno.test("manual Yes preserves original rows, authors, note offsets and immutab
       stored.recording_origin,
     );
     assertEquals((stored.recording_origin as Record<string, unknown>).meeting_id, source);
+    assertEquals(
+      await value(db, "select metadata->'confirmed' as value from entries where id=$1::uuid", [beforeTarget.entry_id]),
+      true,
+    );
     const repeated = await decide(db, ws, source, target, { replace: true });
     assertEquals(repeated.id, result.id);
     assertEquals(repeated.repeated, true);
@@ -367,7 +376,16 @@ Deno.test("a retained confirmed version inherits its recording origin; unconfirm
       ],
     );
     const last = await published(db, ws);
-    const patch = { content: "Replacement", summary: "Replacement", embedding: null, metadata: {} };
+    const patch = {
+      content: "Replacement",
+      summary: "Replacement",
+      embedding: null,
+      metadata: await value<Record<string, unknown>>(
+        db,
+        "select metadata as value from entries where id=$1::uuid",
+        [(await row(db, last)).entry_id],
+      ),
+    };
     await decide(db, ws, source, last, { replace: true, patch });
     const final = await row(db, last);
     const verified = await value<Record<string, unknown>>(
@@ -388,7 +406,17 @@ Deno.test("a retained confirmed version inherits its recording origin; unconfirm
       transcript: { segments: [{ text: "Plain" }], manual_merge_origin: { meeting_id: original, claim_owner: PEER } },
     });
     const destination = await published(db, ws);
-    await decide(db, ws, plain, destination, { replace: true, patch });
+    await decide(db, ws, plain, destination, {
+      replace: true,
+      patch: {
+        ...patch,
+        metadata: await value<Record<string, unknown>>(
+          db,
+          "select metadata as value from entries where id=$1::uuid",
+          [(await row(db, destination)).entry_id],
+        ),
+      },
+    });
     const dest = await row(db, destination);
     assertEquals(
       (await value<Record<string, unknown>>(db, "select manual_meeting_verified_origin($1::uuid,$2::jsonb) as value", [
