@@ -4,21 +4,19 @@
 set local lock_timeout = '5s';
 set local statement_timeout = '30s';
 
-do $isolation$
+do $drop_legacy$
 begin
+  -- Supabase CLI replays individual statements without an outer transaction.
+  -- Keep lock and DROP in the same atomic block; the production ledger still
+  -- belongs to the canonical outer transaction. Apply lock bounds in either mode.
   if current_setting('transaction_isolation') not in ('read committed', 'read uncommitted') then
     raise exception using errcode = '25001',
       message = 'Task legacy-column removal requires a fresh read-committed snapshot';
   end if;
-end;
-$isolation$;
-
--- Acquire the strongest lock before reading data: a concurrent committed writer
--- must be visible to the guard, and no new writer may slip between guard and DROP.
-lock table public.tasks in access exclusive mode;
-
-do $drop_legacy$
-begin
+  set local lock_timeout = '5s';
+  -- VOLATILE PL/pgSQL obtains a fresh snapshot for the subsequent data query
+  -- after LOCK has waited; unsupported fixed-snapshot isolation was rejected above.
+  lock table public.tasks in access exclusive mode;
   if exists (
     select 1 from pg_attribute
     where attrelid = 'public.tasks'::regclass and attname = 'created_by'
