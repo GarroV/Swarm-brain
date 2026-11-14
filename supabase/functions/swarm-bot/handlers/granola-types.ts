@@ -10,16 +10,25 @@ export type GranolaNote = {
 
 export type NotesResult = { ok: true; notes: GranolaNote[] } | { ok: false; error: string };
 
-export type GranolaPreviewCache = { content: string; title: string; tezises: string };
+export type GranolaPreviewCache = {
+  content: string;
+  title: string;
+  tezises: string;
+  /** Optional for previews created before #180. */
+  attendees?: MeetingAttendee[];
+  startedAt?: string | null;
+};
 
 export type PreparedGranolaEntry = {
   title: string;
   content: string;
   tezises: string;
   entryDate: string | null;
-  /** Время начала "HH:MM" (из строки "Дата: …, HH:MM" в контенте) — для дедупа. */
+  /** Точный момент календарного события, текстовый fallback — только для старых кэшей. */
+  startedAt: string | null;
+  /** Время начала "HH:MM" — для дедупа (UTC для структурного момента события). */
   startTime: string | null;
-  /** Участники встречи (из строки "Участники: …") — для дедупа. */
+  /** Участники из Granola с e-mail; разбор строки — только для старых кэшей. */
   attendees: MeetingAttendee[];
   countries: string[];
   embedding: number[];

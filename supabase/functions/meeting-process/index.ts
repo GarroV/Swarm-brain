@@ -2,6 +2,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { AUDIO_BUCKET, LEASE_STALE_MS, runMeetingStep } from "../_shared/meeting-processor.ts";
 import { isPurgeMinute, purgeExpiredAudio } from "../_shared/meeting-audio-retention.ts";
 import { purgeExpiredBackups } from "../_shared/meeting-backup-retention.ts";
+import { countNeedsReview, resolveBackups } from "../_shared/meeting-backup-resolve.ts";
 import { holdWaitingMeetings, processingFrozen } from "../_shared/processing-freeze.ts";
 
 // meeting-process — cron-воркер durable-обработки встреч. Триггерится pg_cron каждую минуту
@@ -39,6 +40,18 @@ Deno.serve(async (req: Request) => {
   }
 
   const startedAt = Date.now();
+  // Серверные копии отклонённых записей разбирает система (#1314): покрыта / влить / нужен разбор.
+  // Сбой разбора не мешает обработке встреч; неразобранная копия по сроку не убирается.
+  try {
+    const r = await resolveBackups(supabase);
+    if (r.covered + r.coveredElsewhere + r.ingested + r.review + r.failed > 0) {
+      console.log(
+        `meeting-process: копии записей — покрыто ${r.covered}, другой встречей ${r.coveredElsewhere}, влито ${r.ingested}, на разбор ${r.review}, сбоев ${r.failed}`,
+      );
+    }
+  } catch (e) {
+    console.error("meeting-process: разбор копий записей не удался:", e);
+  }
   // Раз в час — снести аудио старше недели и просроченные бэкапы. Сбой чистки не мешает обработке встреч.
   if (isPurgeMinute(new Date(startedAt))) {
     try {
@@ -55,6 +68,13 @@ Deno.serve(async (req: Request) => {
       }
     } catch (e) {
       console.error("meeting-process: уборка бэкапов записей не удалась:", e);
+    }
+    // Копии, которые система не разобрала: раз в час напоминание в журнале, пока их кто-то не закроет.
+    try {
+      const waiting = await countNeedsReview(supabase);
+      if (waiting > 0) console.warn(`meeting-process: копий записей ждёт ручного разбора — ${waiting}`);
+    } catch (e) {
+      console.error("meeting-process: счёт копий на разбор не удался:", e);
     }
   }
   const staleIso = new Date(Date.now() - LEASE_STALE_MS).toISOString();
