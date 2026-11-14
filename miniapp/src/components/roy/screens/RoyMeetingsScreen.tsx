@@ -18,6 +18,7 @@ import { useConfirm } from "@/components/ui/confirm";
 import type { Entry } from "@/types";
 import { formatDate } from "@/lib/displayFormat";
 import { meetingSourceLabel } from "@/lib/sourceLabels";
+import { GranolaStatus } from "../GranolaStatus";
 
 const SEGS = [
   { id: "all", label: "Все", en: "All" },
@@ -145,6 +146,7 @@ export function RoyMeetingsScreen() {
   return (
     <div className="relative h-full overflow-y-auto">
       <RoyHeader title={dt("Встречи", "Meetings")} right={<HeaderActions />} />
+      <GranolaStatus />
       {/* Очередь вычитки — ПОД заголовком экрана, а не над ним: блок «На вычитке» висел выше
           h1 и читался как отдельный экран без названия. */}
       <AgentReviewQueue onOpen={openReview} />
