@@ -6,13 +6,13 @@ import {
   playChime,
   setChimeEnabled,
 } from "@/lib/notificationSound";
-import { useDt } from "@/components/roy/nav";
+import { useT } from "@/components/roy/nav";
 
 // Выключатель звука нового уведомления (issue #803). Хранится в localStorage этого браузера,
 // по умолчанию включён. Нажатие «включить» заодно играет звук — это и пробный «динь», и жест
 // пользователя, без которого браузер звук не отдаёт.
 export function NotificationSoundToggle() {
-  const dt = useDt();
+  const t = useT();
   const [on, setOn] = useState(true);
   useEffect(() => setOn(isChimeEnabled()), []);
 
@@ -47,13 +47,10 @@ export function NotificationSoundToggle() {
       </span>
       <span className="min-w-0">
         <span className="block text-sm font-medium text-ink">
-          {dt("Звук уведомлений", "Notification sound")}
+          {t("settings.notificationSound.title")}
         </span>
         <span className="block text-xs text-ink-soft">
-          {dt(
-            "Короткий сигнал, когда приходит новое уведомление",
-            "A short chime when a new notification arrives",
-          )}
+          {t("settings.notificationSound.description")}
         </span>
       </span>
     </button>

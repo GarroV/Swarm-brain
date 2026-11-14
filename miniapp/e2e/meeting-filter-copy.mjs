@@ -31,7 +31,7 @@ function selected(filename, source, names) {
 }
 function resolve(specifier, from) {
   const base = specifier.startsWith("@/") ? path.join(app, "src", specifier.slice(2)) : path.resolve(path.dirname(from), specifier);
-  for (const p of [base, `${base}.ts`, `${base}.tsx`]) if (fs.existsSync(p) && fs.statSync(p).isFile()) return p;
+  for (const p of [base, `${base}.ts`, `${base}.tsx`, path.join(base, "index.ts")]) if (fs.existsSync(p) && fs.statSync(p).isFile()) return p;
   throw new Error("fixture_module_resolution_failed");
 }
 function load(filename) {
@@ -54,7 +54,7 @@ import { EMPTY_FILTERS, isFilterActive, personOf } from './meetingsFilter';\n` +
   const module = { exports: {} };
   const requireLocal = (specifier) => specifier === "react/jsx-runtime" ? runtime :
     specifier.startsWith(".") || specifier.startsWith("@/") ? load(resolve(specifier, filename)) : native(specifier);
-  const javascript = ts.transpileModule(source, { fileName: filename, compilerOptions: {
+  const javascript = ts.transpileModule(source, { fileName: filename.replace(/\.mjs$/, ".ts"), compilerOptions: {
     target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX, esModuleInterop: true,
   } }).outputText;
   vm.runInNewContext(javascript, { module, exports: module.exports, require: requireLocal, process: { env: {} }, console }, { filename, timeout: 2000 });

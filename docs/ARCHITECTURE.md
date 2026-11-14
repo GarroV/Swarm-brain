@@ -2880,3 +2880,8 @@ Next.js 16, `output: "export"` (статический HTML/CSS/JS в `miniapp/o
 - ⚠️ `granola-poller` — legacy, **не деплоить** как обычный шаг: standalone-функция выведена из крона. Поллинг Granola идёт внутри `swarm-bot` (часовой крон с `{granola_poll:true}` → `ingestNewGranolaNotesAllUsers`). См. таблицу Edge Functions выше.
 - Деплой веб-интерфейса: `cd miniapp && npm run build` → `out/` → Cloudflare Pages
 - После каждого изменения функционала: обновить этот файл (ARCHITECTURE) + `docs/BACKLOG.md`. **Changelog руками не вести** — генерируется из git (`scripts/changelog.sh`); источник истины — conventional commit-сообщения.
+
+
+### Web dictionary foundation (#1025, stage 1)
+
+`lib/i18n` loads generated flat RU/EN dictionaries into a synchronous, in-memory i18next instance. `useT` returns a stable language-bound translator; `useDt` preserves legacy semantics. `NotificationSoundToggle` is the first migrated section, with exact existing copy and behavior. Build discovers JSON locales; CI checks key/parameter/plural parity, generated output and raw UI copy in migrated/new sections. Existing sections are explicitly listed for gradual migration. Profile language, outbound messages and content language remain later stages. See [implementation contract](decisions/2026-11-14-web-dictionary-foundation.md) for the codemod, validation limits and adding a locale.

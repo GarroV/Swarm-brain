@@ -457,3 +457,8 @@ Push-стек управляется `RoyApp.tsx`: `push(route)` → `PushScreen
 **Подписи рынков, базы и команды (#1025).** `MarketChips`, мобильная база `RoyBaseScreen` и мобильный список `TeamScreen` выбирают статические подписи из локальных keyed RU/EN-словарей через существующий `useDt`. Локализованы общий рынок и его подсказка, четыре фильтра и пустой список базы, загрузка и пустой список команды; значения рынков, идентификаторы фильтров, обработчики и данные не меняются. Поле свободного поиска базы в демо по-прежнему заменено чипами вопросов.
 
 **Редактор содержания встречи (#265, #1025).** `screens/ContentEditor.tsx` хранит отдельный редактор `Entry.content`, вызываемый из `MeetAdminScreen`: просмотр первых 800 символов, редактирование и сохранение остаются в одном компоненте. Шесть подписей выбираются из локального `CONTENT_COPY` (RU/EN) через существующий `useDt`; обработчики, сброс состояния при смене записи, `patchMeeting(id, { content })`, callback и прежняя ошибка сохранения не меняются.
+
+
+### Web dictionary foundation (#1025, stage 1)
+
+`lib/i18n` loads generated flat RU/EN dictionaries into a synchronous, in-memory i18next instance. `useT` returns a stable language-bound translator; `useDt` preserves legacy semantics. `NotificationSoundToggle` is the first migrated section, with exact existing copy and behavior. Build discovers JSON locales; CI checks key/parameter/plural parity, generated output and raw UI copy in migrated/new sections. Existing sections are explicitly listed for gradual migration. Profile language, outbound messages and content language remain later stages. See [implementation contract](decisions/2026-11-14-web-dictionary-foundation.md) for the codemod, validation limits and adding a locale.
