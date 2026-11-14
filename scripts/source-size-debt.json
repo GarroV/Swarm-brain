@@ -19,5 +19,5 @@
   "supabase/functions/swarm-bot/handlers/meetings.ts": 891,
   "supabase/functions/swarm-bot/index.ts": 1002,
   "supabase/functions/swarm-bot/tasks/handlers.ts": 1023,
-  "supabase/functions/swarm-mcp/index.ts": 1321
+  "supabase/functions/swarm-mcp/index.ts": 1241
 }

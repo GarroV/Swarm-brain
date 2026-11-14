@@ -10,11 +10,19 @@ import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { visibilityFilter } from "./visibility.ts";
 import { onlyLiveEntries } from "../../_shared/entries/live.ts";
 import { visibleInWorkspace } from "../../_shared/entries/workspace.ts";
+import {
+  KnowledgeChunkError,
+  knowledgeChunkMarker,
+  type KnowledgeChunkRow,
+  LEGACY_KNOWLEDGE_COLUMNS,
+  LEGACY_KNOWLEDGE_LIMIT,
+  restoreKnowledgeGroup,
+} from "../../_shared/entries/knowledge-chunks.ts";
 
 // Потолок частей одной записи: swarm-mcp режет текст на десятки частей, не на тысячи.
-const MAX_CHUNKS = 200;
+const MAX_CHUNKS = LEGACY_KNOWLEDGE_LIMIT;
 
-export type ExportEntry = {
+export type ExportEntry = KnowledgeChunkRow & {
   content: string;
   summary: string | null;
   metadata: Record<string, unknown> | null;
@@ -33,7 +41,7 @@ export async function loadEntryForExport(
     onlyLiveEntries(
       supabase
         .from("entries")
-        .select("content, summary, metadata, source, created_at, group_id"),
+        .select(LEGACY_KNOWLEDGE_COLUMNS),
     ),
     groupId,
   )
@@ -46,6 +54,23 @@ export async function loadEntryForExport(
   const content = entry.content ?? "";
   // Тезисы длиннее текста — берём их (полные тезисы встречи).
   let fullContent = entry.summary && entry.summary.length > content.length ? entry.summary : content;
+
+  const marker = knowledgeChunkMarker(entry);
+  if (marker) {
+    if (marker.total > MAX_CHUNKS) throw new KnowledgeChunkError("limit");
+    const { data: chunks, error } = await onlyLiveEntries(
+      supabase.from("entries").select(LEGACY_KNOWLEDGE_COLUMNS),
+    )
+      .eq("group_id", entry.group_id ?? groupId)
+      .eq("metadata->>chunk_group_id", marker.group)
+      .eq("added_by", "claude_desktop")
+      .or(visibilityFilter(userId))
+      .order("created_at", { ascending: true })
+      .limit(MAX_CHUNKS + 1);
+    if (error) throw new KnowledgeChunkError("unavailable");
+    fullContent = restoreKnowledgeGroup(entry, (chunks ?? []) as ExportEntry[]).content;
+    return { entry, fullContent };
+  }
 
   const chunkGroup = entry.metadata?.chunk_group_id;
   if (!entry.summary && typeof chunkGroup === "string" && chunkGroup) {
