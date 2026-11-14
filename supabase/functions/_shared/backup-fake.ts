@@ -81,9 +81,11 @@ export function fakeBackupDb(): FakeBackupDb {
       eq: (col: string, v: unknown) => (filters.push((r) => r[col] === v), q),
       is: (col: string, v: null) => (filters.push((r) => (r[col] ?? null) === v), q),
       or: (expr: string) => {
-        const m = expr.match(/^expires_at\.lt\.(.+),replaced_at\.not\.is\.null$/);
+        const m = expr.match(/^and\(expires_at\.lt\.(.+),resolved_at\.not\.is\.null\),replaced_at\.not\.is\.null$/);
         if (!m) throw new Error(`фейк не знает фильтр or(${expr})`);
-        filters.push((r) => Date.parse(r.expires_at) < Date.parse(m[1]) || r.replaced_at !== null);
+        filters.push((r) =>
+          (Date.parse(r.expires_at) < Date.parse(m[1]) && (r.resolved_at ?? null) !== null) || r.replaced_at !== null
+        );
         return q;
       },
       order: (col: string) => ((orderBy = col), q),
