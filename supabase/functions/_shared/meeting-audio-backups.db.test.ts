@@ -96,3 +96,29 @@ Deno.test("бэкапы: неизвестная причина отбивает�
     assertEquals(n.rows[0][0], 1);
   });
 });
+
+Deno.test("бэкапы: итог разбора — только из списка, а resolved_at не ставится для needs_review (#1314)", async () => {
+  await scenario(async (db) => {
+    await insert(db, "person:1", "deferred");
+    await db.queryArray("savepoint bad_resolution");
+    await assertRejects(
+      () => db.queryArray(`update ${TABLE} set resolution = 'whatever'`),
+      Error,
+      "check",
+    );
+    await db.queryArray("rollback to savepoint bad_resolution");
+    await db.queryArray("savepoint review_resolved");
+    await assertRejects(
+      () => db.queryArray(`update ${TABLE} set resolution = 'needs_review', resolved_at = now()`),
+      Error,
+      "meeting_audio_backups_resolved_at_chk",
+    );
+    await db.queryArray("rollback to savepoint review_resolved");
+    await db.queryArray(`update ${TABLE} set resolution = 'needs_review', resolution_note = 'x'`);
+    await db.queryArray(`update ${TABLE} set resolution = 'covered', resolved_at = now()`);
+    const r = await db.queryArray<[string, boolean]>(
+      `select resolution, resolved_at is not null from ${TABLE} where meeting_id = '${MEETING}'`,
+    );
+    assertEquals(r.rows[0], ["covered", true]);
+  });
+});

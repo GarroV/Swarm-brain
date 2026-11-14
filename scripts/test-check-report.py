@@ -34,6 +34,7 @@ def check_report(status):
         (fixture / "scripts/coverage-floor.txt").write_text("0\n")
         (fixture / "supabase/functions/example/index.ts").write_text("export {};\n")
         executable(fixture / "scripts/gate-coverage.sh", "#!/bin/sh\necho coverage\n")
+        executable(fixture / "bin/npm", '#!/bin/sh\nprintf "%s\\n" "$CHECK_DIAGNOSTIC"\nexit "$CHECK_STATUS"\n')
         executable(fixture / "bin/npx", "#!/bin/sh\nexit 0\n")
         # The report fixture isolates reporters from the real AST guard and its dependencies.
         executable(fixture / "bin/node", '#!/bin/sh\nexit "$CHECK_STATUS"\n')
@@ -70,10 +71,11 @@ exit "$CHECK_STATUS"
         assert report["failed"] == status, report
         roles = {row["role"]: row for row in report["roles"]}
         assert set(roles) == {"формат", "линт", "мёртвый-код", "границы", "типы-функции",
-                              "типы-веб", "язык-веб", "словари-веб", "цвета-веб", "тесты", "покрытие"}, report
+                              "типы-веб", "язык-веб", "словари-веб", "цвета-веб", "тесты", "покрытие",
+                              "линт-веб", "порча-линт-веб"}, report
         assert roles["язык-веб"]["status"] == ("pass" if status == 0 else "fail"), roles["язык-веб"]
         assert roles["словари-веб"]["status"] == ("pass" if status == 0 else "fail"), roles["словари-веб"]
-        for role in ("формат", "линт", "мёртвый-код", "границы", "типы-функции"):
+        for role in ("формат", "линт", "мёртвый-код", "границы", "типы-функции", "линт-веб", "порча-линт-веб"):
             assert roles[role]["status"] == ("pass" if status == 0 else "fail"), roles[role]
             assert roles[role]["detail"] == DIAGNOSTIC + " ", repr(roles[role]["detail"])
         # Full diagnostics are retained separately, including their original control bytes.
