@@ -53,7 +53,7 @@ async function clients() {
   return { a, b, watch, apid: await pid(a), bpid: await pid(b) };
 }
 
-Deno.test("814 freeze then review serializes and rejects the frozen mark under service_role", async () => {
+Deno.test("814 busy freeze returns a bounded review conflict under service_role", async () => {
   const c = await clients();
   try {
     const f = await seed(c.watch);
@@ -61,10 +61,9 @@ Deno.test("814 freeze then review serializes and rejects the frozen mark under s
     await begin(c.b);
     await c.a.queryArray`update tasks set frozen_at=now() where id=${f.task}`;
     const waiting = review(c.b, f).then((r) => ({ r, code: null }), (e) => ({ r: null, code: e.fields?.code }));
-    await blocked(c.watch, c.apid, c.bpid);
-    await c.a.queryArray("commit");
     assertEquals((await waiting).code, "PT409");
     await c.b.queryArray("rollback");
+    await c.a.queryArray("commit");
     assertEquals(
       (await c.watch.queryObject<
         { status: string | null }
@@ -78,7 +77,7 @@ Deno.test("814 freeze then review serializes and rejects the frozen mark under s
   }
 });
 
-Deno.test("814 archive and review use task-before-item order without a deadlock", async () => {
+Deno.test("814 busy task conflict lets archive complete without a reverse-order wait", async () => {
   const c = await clients();
   try {
     const f = await seed(c.watch);
@@ -87,14 +86,12 @@ Deno.test("814 archive and review use task-before-item order without a deadlock"
     // Hold only the task first, so the concurrent RPC must wait before acquiring the item.
     await c.a.queryArray`update tasks set updated_at=now() where id=${f.task}`;
     const waiting = review(c.b, f).then((r) => ({ r, code: null }), (e) => ({ r: null, code: e.fields?.code }));
-    await blocked(c.watch, c.apid, c.bpid);
-    // The existing archive trigger now takes the item. An item->task lock order deadlocks here.
+    const result = await waiting;
+    assertEquals(result.code, "PT409");
+    await c.b.queryArray("rollback");
+    // The existing archive trigger can take the item after the bounded conflict.
     await c.a.queryArray`update tasks set archived_at=now() where id=${f.task}`;
     await c.a.queryArray("commit");
-    const result = await waiting;
-    assertEquals(result.code, null);
-    assertEquals(result.r?.rows[0].invoker, "service_role");
-    await c.b.queryArray("commit");
     assert(
       (await c.watch.queryObject<
         { archived: boolean }
@@ -234,5 +231,151 @@ Deno.test("814 old acceptance loses freeze; the current snapshot capture and rep
     await db.queryArray("rollback");
   } finally {
     await db.end();
+  }
+});
+
+const checkedAccept = (db: Client, f: { cycle: string; task: string }) =>
+  db.queryObject<{ result: unknown; invoker: string }>`
+  select public.accept_sprint_cycle_with_freeze(${f.cycle}::uuid,${WS},'Fictional Person',null,'{"plan":1}'::jsonb,
+    'Fictional next',current_date+1,current_date+14,current_date+7,${
+    JSON.stringify({ [f.task]: false })
+  }::jsonb) as result,
+    current_user as invoker`;
+async function serviceAccept(db: Client, f: { cycle: string; task: string }) {
+  await db.queryArray("savepoint fixture_accept");
+  try {
+    await db.queryArray("set local role service_role");
+    const result = await checkedAccept(db, f);
+    await db.queryArray("reset role");
+    await db.queryArray("release savepoint fixture_accept");
+    return result;
+  } catch (e) {
+    await db.queryArray("rollback to savepoint fixture_accept");
+    await db.queryArray("release savepoint fixture_accept");
+    throw e;
+  }
+}
+const errorCode = (e: unknown) =>
+  e && typeof e === "object" && "fields" in e ? (e.fields as { code?: string })?.code : null;
+
+for (const heldRow of ["item", "cycle"] as const) {
+  Deno.test(`814 ${heldRow}-first maintenance receives a bounded conflict from review/acceptance and can finish`, async () => {
+    const c = await clients();
+    try {
+      const f = await seed(c.watch);
+      await begin(c.a);
+      await c.b.queryArray("begin");
+      await c.b.queryArray("set local statement_timeout='4s'");
+      await c.b.queryArray("set local lock_timeout='37s'");
+      if (heldRow === "item") await c.a.queryArray`select id from sprint_items where cycle_id=${f.cycle} for update`;
+      else await c.a.queryArray`select id from sprint_cycles where id=${f.cycle} for update`;
+      let code: string | null | undefined = null;
+      try {
+        await serviceAccept(c.b, f);
+      } catch (e) {
+        code = errorCode(e);
+      }
+      assertEquals(code, "PT409");
+      assertEquals(
+        (await c.b.queryObject<{ value: string }>("select current_setting('lock_timeout') as value")).rows[0].value,
+        "37s",
+      );
+      if (heldRow === "item") {
+        code = null;
+        try {
+          await serviceReview(c.b, f);
+        } catch (e) {
+          code = errorCode(e);
+        }
+        assertEquals(code, "PT409");
+      }
+      // With the other RPC rolled back, maintenance can take its later task lock.
+      await c.a.queryArray`select id from tasks where id=${f.task} for update nowait`;
+      await c.a.queryArray("commit");
+      await c.b.queryArray("rollback");
+    } finally {
+      await c.a.end();
+      await c.b.end();
+      await c.watch.end();
+    }
+  });
+}
+
+for (const [setting, effective] of [["0", "250ms"], ["80ms", "80ms"], ["37s", "250ms"]]) {
+  Deno.test(`814 acceptance bounds base locks and restores caller timeout ${setting} exactly`, async () => {
+    const db = new Client(url);
+    await db.connect();
+    try {
+      const f = await seed(db);
+      await db.queryArray("begin");
+      await db.queryArray`select set_config('lock_timeout',${setting},true)`;
+      const original = (await db.queryObject<
+        { body: string }
+      >`select pg_get_functiondef('public.accept_sprint_cycle(uuid,text,text,text,jsonb,text,date,date,date)'::regprocedure) as body`)
+        .rows[0].body;
+      const marker = "\nbegin\n";
+      assert(original.includes(marker));
+      const instrumented = original.replace(
+        marker,
+        `${marker}  if current_setting('lock_timeout') <> '${effective}' then raise exception 'Unexpected effective fixture timeout'; end if;\n`,
+      );
+      await db.queryArray(instrumented);
+      const result = await serviceAccept(db, f);
+      assertEquals(result.rows[0].invoker, "service_role");
+      assertEquals(
+        (await db.queryObject<{ value: string }>("select current_setting('lock_timeout') as value")).rows[0].value,
+        setting,
+      );
+      await db.queryArray("rollback");
+      assertEquals(
+        (await db.queryObject<
+          { body: string }
+        >`select pg_get_functiondef('public.accept_sprint_cycle(uuid,text,text,text,jsonb,text,date,date,date)'::regprocedure) as body`)
+          .rows[0].body,
+        original,
+      );
+    } finally {
+      await db.end();
+    }
+  });
+}
+
+Deno.test("814 a busy carry target rolls back all base writes and restores caller timeout", async () => {
+  const c = await clients();
+  try {
+    const f = await seed(c.watch);
+    const next = (await c.watch.queryObject<
+      { id: string }
+    >`insert into sprint_cycles(group_id,tab_id,name,start_date,end_date,status)
+      select group_id,tab_id,'Fictional existing next',current_date+1,current_date+14,'draft' from sprint_cycles where id=${f.cycle} returning id`)
+      .rows[0].id;
+    await begin(c.a);
+    await c.a.queryArray`select id from sprint_cycles where id=${next} for update`;
+    await c.b.queryArray("begin");
+    await c.b.queryArray("set local statement_timeout='4s'");
+    await c.b.queryArray("set local lock_timeout='0'");
+    let code: string | null | undefined = null;
+    try {
+      await serviceAccept(c.b, f);
+    } catch (e) {
+      code = errorCode(e);
+    }
+    assertEquals(code, "PT409");
+    assertEquals(
+      (await c.b.queryObject<{ value: string }>("select current_setting('lock_timeout') as value")).rows[0].value,
+      "0",
+    );
+    const state = (await c.watch.queryObject<
+      { status: string; stats: unknown; snapshot: boolean }
+    >`select c.status,c.stats,si.frozen_at is not null as snapshot
+      from sprint_cycles c join sprint_items si on si.cycle_id=c.id where c.id=${f.cycle}`).rows[0];
+    assertEquals(state, { status: "active", stats: null, snapshot: false });
+    await c.a.queryArray`select id from tasks where id=${f.task} for update nowait`;
+    await c.a.queryArray("commit");
+    await c.b.queryArray("rollback");
+  } finally {
+    await c.a.end();
+    await c.b.end();
+    await c.watch.end();
   }
 });

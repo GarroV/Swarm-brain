@@ -20,7 +20,7 @@ if (
 const { handleTaskArchiveRoutes } = await import("../../swarm-api/task-archive.ts");
 const { getTask, getArchivedTask } = await import("./db.ts");
 const { permanentlyDeleteTask, setTaskFrozen } = await import("./task-lifecycle.ts");
-const { acceptCycle } = await import("./sprint-accept.ts");
+const { acceptCycle, AcceptConflictError } = await import("./sprint-accept.ts");
 const { listItems, updateItem } = await import("./sprint-items.ts");
 const WS = "t_freeze814";
 const OTHER = "t_freeze814_other";
@@ -248,7 +248,7 @@ for (const initialFrozen of [false, true]) {
       globalThis.fetch = async (input, init) => {
         const requestUrl = new URL(input instanceof Request ? input.url : input.toString());
         const method = init?.method ?? (input instanceof Request ? input.method : "GET");
-        if (!crossed && method === "POST" && requestUrl.pathname.endsWith("/rpc/accept_sprint_cycle")) {
+        if (!crossed && method === "POST" && requestUrl.pathname.endsWith("/rpc/accept_sprint_cycle_with_freeze")) {
           const body = typeof init?.body === "string"
             ? JSON.parse(init.body)
             : input instanceof Request
@@ -274,3 +274,81 @@ for (const initialFrozen of [false, true]) {
     }
   });
 }
+
+Deno.test("814 repeated actual freeze changes stop after three acceptance attempts without writing a snapshot", async () => {
+  const db = new Client(DB_URL);
+  await db.connect();
+  const originalFetch = globalThis.fetch;
+  try {
+    await seed(db);
+    const tab = (await db.queryObject<{ id: string }>`insert into sprints(group_id,name,kind,status,start_date,end_date)
+      values(${WS},'Fictional retry space','space','active',current_date-13,current_date) returning id`).rows[0].id;
+    const cycle =
+      (await db.queryObject<{ id: string }>`insert into sprint_cycles(group_id,tab_id,name,start_date,end_date,status)
+      values(${WS},${tab},'Спринт 1 · 01.11 — 14.11',current_date-13,current_date,'active') returning id`).rows[0].id;
+    const id = await add(db);
+    await db.queryArray`insert into sprint_items(cycle_id,task_id,in_plan) values(${cycle},${id},true)`;
+    let attempts = 0;
+    globalThis.fetch = async (input, init) => {
+      const u = new URL(input instanceof Request ? input.url : input.toString());
+      if (
+        (init?.method ?? (input instanceof Request ? input.method : "GET")) === "POST" &&
+        u.pathname.endsWith("/rpc/accept_sprint_cycle_with_freeze")
+      ) {
+        attempts++;
+        const task = await getTask(id);
+        assert(task);
+        assertEquals((await route(id, "freeze", "POST", { frozen: !task.frozen_at }))?.status, 200);
+      }
+      return await originalFetch(input, init);
+    };
+    await assertRejects(() => acceptCycle(cycle, WS, "Fictional Person"), AcceptConflictError);
+    assertEquals(attempts, 3);
+    const state = (await db.queryObject<
+      { status: string; stats: unknown; snapshot: boolean }
+    >`select c.status,c.stats,si.frozen_at is not null as snapshot
+      from sprint_cycles c join sprint_items si on si.cycle_id=c.id where c.id=${cycle}`).rows[0];
+    assertEquals(state, { status: "active", stats: null, snapshot: false });
+  } finally {
+    globalThis.fetch = originalFetch;
+    await db.end();
+  }
+});
+
+Deno.test("814 acceptance ignores live freeze drift behind moved/removed snapshots", async () => {
+  const db = new Client(DB_URL);
+  await db.connect();
+  try {
+    await seed(db);
+    const tab = (await db.queryObject<{ id: string }>`insert into sprints(group_id,name,kind,status,start_date,end_date)
+      values(${WS},'Fictional snapshot space','space','active',current_date-13,current_date) returning id`).rows[0].id;
+    const cycle =
+      (await db.queryObject<{ id: string }>`insert into sprint_cycles(group_id,tab_id,name,start_date,end_date,status)
+      values(${WS},${tab},'Спринт 1 · 01.11 — 14.11',current_date-13,current_date,'active') returning id`).rows[0].id;
+    const next =
+      (await db.queryObject<{ id: string }>`insert into sprint_cycles(group_id,tab_id,name,start_date,end_date,status)
+      values(${WS},${tab},'Fictional next',current_date+1,current_date+14,'draft') returning id`).rows[0].id;
+    const live = await add(db), moved = await add(db), removed = await add(db, { archived: true });
+    await db.queryArray`insert into sprint_items(cycle_id,task_id,in_plan) values(${cycle},${live},true)`;
+    const movedItem = (await db.queryObject<
+      { id: string }
+    >`insert into sprint_items(cycle_id,task_id,in_plan,frozen_at,frozen_title,frozen_status,frozen_assignees,task_frozen,moved_at,moved_to)
+      values(${cycle},${moved},true,now(),'Fictional historical title','open',array[]::text[],false,now(),${next}) returning id`)
+      .rows[0].id;
+    await db.queryArray`insert into sprint_items(cycle_id,task_id,in_plan,removed_title,removed_at)
+      values(${cycle},${removed},true,'Fictional removed title',now())`;
+    await db.queryArray`update tasks set frozen_at=now() where id in (${moved},${removed})`;
+    const snapshot = async () =>
+      (await db.queryObject<
+        { body: string }
+      >`select to_jsonb(si)::text as body from sprint_items si where id=${movedItem}`).rows[0].body;
+    const before = await snapshot();
+    const accepted = await acceptCycle(cycle, WS, "Fictional Person");
+    assert(accepted);
+    const stats = accepted.cycle.stats as { plan: number; moved: number; removed: number };
+    assertEquals([stats.plan, stats.moved, stats.removed], [1, 1, 1]);
+    assertEquals(await snapshot(), before);
+  } finally {
+    await db.end();
+  }
+});

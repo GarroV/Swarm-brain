@@ -31,3 +31,24 @@ export function freezeTaskUpdate(task: Task, frozen: boolean, actor: number, now
     }),
   };
 }
+
+export const TASK_CONFLICT_MESSAGE = "Task changed; reload and try again";
+
+/** Only current stats-affecting rows participate; historical snapshots keep their stored flag. */
+export function freezeExpectation(
+  items: ReadonlyArray<{
+    task_id: string | null;
+    frozen?: boolean;
+    removed?: boolean;
+    moved?: unknown;
+    task_frozen?: boolean;
+    withdrawn_at?: string | null;
+  }>,
+): Record<string, boolean> {
+  const flags: Record<string, boolean> = {};
+  for (const item of items) {
+    if (!item.task_id || item.frozen || item.removed || item.moved) continue;
+    flags[item.task_id] = item.task_frozen === true;
+  }
+  return flags;
+}

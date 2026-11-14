@@ -1,6 +1,6 @@
 // Task freeze and final archive deletion (#814). No status/date/recurrence or notification writes.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { freezeTaskUpdate } from "./frozen.ts";
+import { freezeTaskUpdate, TASK_CONFLICT_MESSAGE } from "./frozen.ts";
 import { TaskUserError } from "./db.ts";
 import type { Task } from "./types.ts";
 
@@ -12,7 +12,7 @@ export async function setTaskFrozen(task: LifecycleTask, frozen: boolean, actor:
   const input = freezeTaskUpdate(task, frozen, actor, new Date().toISOString());
   if (!input) return;
   const { error } = await supabase.rpc("task_apply_update", input);
-  if (error?.code === "PT409") throw new TaskUserError("Task changed; reload and try again", 409);
+  if (error?.code === "PT409") throw new TaskUserError(TASK_CONFLICT_MESSAGE, 409);
   if (error?.code === "PT404") throw new TaskUserError("Not found", 404);
   if (error) throw new Error(`task freeze: ${error.code}`);
 }

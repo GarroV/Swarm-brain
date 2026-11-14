@@ -2892,10 +2892,21 @@ with an expected group/project/pause snapshot. Repeating the same state is a no-
 comments, notifications or Telegram outbox rows and does not rearm existing reminders.
 
 Current task/people/project metrics, completion percentages, overdue badges and sprint review
-exclude frozen tasks. `update_sprint_item_check` serializes check writes with freeze/archive using
-task-before-item locks (`FOR NO KEY UPDATE`, compatible with acceptance's carry FK checks). The
-existing web visibility/status guards remain in place; a frozen check returns a conflict before
-any comment fanout. Non-check carry actions keep their existing path and policy.
+exclude frozen tasks. `update_sprint_item_check` takes nonblocking task/item prelocks and returns
+409 on a frozen task or contention before any comment fanout. Maintenance has other lock orders;
+NOWAIT/rollback avoids waiting in an inverse order. Existing web visibility/status guards and
+non-check carry actions keep their existing paths and policy.
+
+Production web/MCP acceptance uses shared `acceptCycle` → `accept_sprint_cycle_with_freeze`.
+Its transient expected flag map contains only live stats-affecting rows (including withdrawn rows,
+excluding immutable/moved/removed snapshots). NOWAIT locks protect the expected tasks and source
+cycle/items; the map must match before delegating to the original nine-argument acceptance RPC.
+A changed flag causes at most three complete rereads/recalculations, then 409, never stale saved
+statistics. The base carry call has a local lock timeout bounded to 250ms without increasing a
+stricter caller timeout; the exact prior value is restored. A lock error rolls the RPC back.
+The expectation map is never persisted, and the original acceptance math/carry implementation
+remains responsible for the result. This addresses freeze-state consistency, not every legacy
+concurrent edit to other task fields.
 
 `sprint_items.task_frozen` captures this flag in **future** acceptance snapshots; existing rows
 default to false. Accepted statistics and existing snapshots are never rewritten. Actual mechanical

@@ -13,6 +13,7 @@
 // импортируют по адресу; короткие имена оставлены тестам, которые не раскатываются.
 // deno-lint-ignore-file no-import-prefix
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { TASK_CONFLICT_MESSAGE } from "./frozen.ts";
 import { onlyLive } from "./live.ts";
 import { isClosedStatus } from "./statuses.ts";
 import { buildReasonComment, type ReasonField, type ReasonLang } from "./sprint-reason-comment.ts";
@@ -559,7 +560,7 @@ export async function updateItem(
       .update(fields).eq("cycle_id", cycleId).eq("task_id", taskId)
       .is("withdrawn_at", null).is("moved_at", null)
       .select("id").maybeSingle();
-  if (result.error?.code === "PT409") throw new ItemLockedError("Task is frozen");
+  if (result.error?.code === "PT409") throw new ItemLockedError(TASK_CONFLICT_MESSAGE);
   if (result.error) throw new Error(`sprint item update: ${result.error.code}`);
   if (!result.data) return null;
 

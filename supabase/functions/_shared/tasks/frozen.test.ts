@@ -1,5 +1,5 @@
 import { assertEquals } from "@std/assert";
-import { freezeTaskUpdate, isTaskFrozen } from "./frozen.ts";
+import { freezeExpectation, freezeTaskUpdate, isTaskFrozen } from "./frozen.ts";
 import { computeFlowTimes, computeTaskStats } from "./analytics.ts";
 import { countProjectTasks } from "./project-counts.ts";
 import { computeSprintStats } from "./sprint-stats.ts";
@@ -97,4 +97,18 @@ Deno.test("814 freeze/unfreeze patch journals only pause fields and leaves recur
   assertEquals(freezeTaskUpdate(task, false, 814, now.toISOString()), null);
   const back = freezeTaskUpdate({ ...task, frozen_at: sinceISO, frozen_by: 814 }, false, 814, now.toISOString())!;
   assertEquals(back.p_patch, { frozen_at: null, frozen_by: null, updated_at: now.toISOString() });
+});
+
+Deno.test("814 acceptance expectation includes live withdrawn rows, never current flags of immutable/moved/removed rows", () => {
+  assertEquals(
+    freezeExpectation([
+      { task_id: "live", task_frozen: true },
+      { task_id: "withdrawn", task_frozen: false, withdrawn_at: sinceISO },
+      { task_id: "snapshot", task_frozen: false, frozen: true },
+      { task_id: "moved", task_frozen: false, moved: { at: sinceISO } },
+      { task_id: "removed", task_frozen: true, removed: true },
+      { task_id: null, task_frozen: true },
+    ]),
+    { live: true, withdrawn: false },
+  );
 });
