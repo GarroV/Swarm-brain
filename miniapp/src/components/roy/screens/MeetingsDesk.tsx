@@ -13,6 +13,7 @@ import { meetingSourceKey, meetingSourceLabel, sourceKeyLabel } from "@/lib/sour
 import { InviteBotButton } from "../InviteBotCard";
 import { RecordMeetingButton } from "../record/RecordMeeting";
 import { useMeetingsList } from "./useMeetingsList";
+import { GranolaStatus } from "../GranolaStatus";
 import {
   applyMeetingsFilter, EMPTY_FILTERS, isConfirmed, isFilterActive, loadSavedFilters, meetingDay, periodBounds,
   personOf, saveFilters, type MeetingsFilterState, type PeriodId,
@@ -109,6 +110,7 @@ export function MeetingsDesk() {
   const loadingRest = list.loadingMore || (list.hasMore && !list.failed && (f.countries.length > 0 || f.sources.length > 0 || f.people.length > 0));
   return (
     <div className="flex h-full flex-col overflow-hidden">
+      <GranolaStatus />
       {/* Заголовок экрана — в полосе оболочки над ним (RoyApp); второй h1 здесь дублировал бы его. */}
       <div className="flex shrink-0 flex-wrap items-center gap-1.5 border-b border-line bg-surface-2 px-4 py-2">
         <label className="flex h-[30px] items-center gap-1.5 rounded-[7px] border border-line-2 bg-surface px-2.5 text-ink-mute focus-within:border-primary">
