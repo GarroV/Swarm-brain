@@ -13,7 +13,9 @@ const keys = new Set(["example.label"]);
 const section = (value) => `import { useT } from '@/components/roy/nav'; export function A({ task }) { const t = useT(); ${value} }`;
 test("migrated sections accept keys, technical attributes and user content", () => {
   assert.deepEqual(inspectSection(section('return <button className="text-ink" role="switch" title={t("example.label")}>{task.title}{t("example.label")}</button>;'), "a.tsx", keys), []);
-  assert.equal(checkI18n().sections, 1);
+  const registered = JSON.parse(fs.readFileSync(new URL("../miniapp/scripts/i18n-migrated.json", import.meta.url), "utf8"));
+  assert.ok(registered.length > 0);
+  assert.ok(checkI18n().sections >= registered.length);
   assert.deepEqual(inspectSection(section('const options=[{id:"one",label:t("example.label")}]; return <select>{options.map(o=><option key={o.id}>{o.label}</option>)}</select>;'), "a.tsx", keys), []);
 });
 for (const [name, value] of Object.entries({
