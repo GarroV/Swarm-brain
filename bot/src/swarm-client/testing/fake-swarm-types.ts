@@ -131,6 +131,11 @@ export interface FakeSwarm {
     expiresInMs?: number;
   }): FakeInvite;
   /**
+  Признать пропуск, выданный не забором приглашения здесь: засеянный в настоящую базу или собранный
+  смоуком на месте (T165).
+  */
+  acceptGrant(token: string): void;
+  /**
   Забрано ли приглашение оркестратором и погашено ли заявкой бота. Неизвестный id — ошибка.
   */
   inviteState(id: string): { taken: boolean; used: boolean };

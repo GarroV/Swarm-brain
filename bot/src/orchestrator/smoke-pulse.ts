@@ -10,12 +10,20 @@
  *   end      — встреча записана и отдана → финальный удар гасит флаг → сторож молчит; удары несут
  *              записанные секунды и продлевают лиз (T155) — арбитраж видит запись бота, а не 0;
  *   death    — kill посреди записи → пульс замолк на recording:true → алерт EN+RU claim_owner;
- *   takeover — рекордер человека перехватывает встречу настоящим `meeting-claim` → удар бота 403
- *              not_claim_owner → контейнер уходит `superseded` без выгрузки → сторож молчит.
+ *   takeover — перехват решает выгрузка (D020, T160): бот перестал писать (контейнер на паузе, удар
+ *              recording:false), рекордер человека заявляется настоящим `meeting-claim` — он только
+ *              претендент, — и выгружает аудио измеримой длины в настоящий `meeting-ingest`; право
+ *              переходит по выгрузке → после снятия паузы удар бота 403 not_claim_owner → контейнер
+ *              уходит `superseded` без выгрузки → сторож молчит.
  *
  * Сервер собран из двух половин за прокси: `meeting-heartbeat` — настоящий (ради него смоук), всё
  * остальное (`meeting-current`/`-claim`/`-ingest`/`-status`) — двойник `fake-swarm`, `/meeting-notice`
- * отвечает сам прокси. Двойник выдаёт `meeting_id` вида `m-<ключ>`, поэтому прокси подменяет его на
+ * отвечает сам прокси. Сцене перехвата нужны ещё настоящие `meeting-claim` и `meeting-ingest` — но
+ * только для рекордера человека, не для бота.
+ *
+ * Бот ходит по пропуску встречи (T165), без него контейнер не стартует. Пропуск на каждую встречу
+ * засевается в `meeting_agent_grants` (scripts/scriba-smoke-grants.ts, уже привязан к встрече), им
+ * же бьёт настоящий heartbeat; тот же токен двойник признаёт через `acceptGrant`. Двойник выдаёт `meeting_id` вида `m-<ключ>`, поэтому прокси подменяет его на
  * uuid встречи, засеянной в базе под сценарий: иначе настоящему heartbeat некуда было бы писать.
  * Время тишины не ждём 10 минут: после проверки, что пульс замолк, `agent_last_seen_at` старится
  * на 15 минут запросом — ровно то, что сделали бы часы.
@@ -24,9 +32,9 @@
  * удаляет строки), собранный образ бота, Docker, deno.
  *
  *   SMOKE_SUPABASE_URL, SMOKE_SERVICE_KEY — локальный контур (`supabase status -o env`);
- *   SMOKE_PORT_BASE  — начало диапазона из 10 портов, base..base+3 — сам контур (по умолчанию 4440):
+ *   SMOKE_PORT_BASE  — начало диапазона из 11 портов, base..base+3 — сам контур (по умолчанию 4440):
  *                      +4 meeting-heartbeat, +5 meeting-claim, +6 fake-swarm, +7 прокси,
- *                      +8 swarm-bot, +9 поддельный Telegram;
+ *                      +8 swarm-bot, +9 поддельные Telegram и OpenAI, +10 meeting-ingest;
  *   SCRIBA_SMOKE_IMAGE, SCRIBA_SMOKE_PROJECT, SCRIBA_SMOKE_STATE, SCRIBA_SMOKE_ONLY — как у
  *                      smoke-orchestrator.ts.
  *
@@ -34,13 +42,23 @@
  */
 import { type ChildProcess, spawn } from "node:child_process";
 import { createHash, randomInt, randomUUID } from "node:crypto";
-import { type IncomingMessage, type ServerResponse, createServer, request } from "node:http";
+import { type IncomingMessage, request, createServer } from "node:http";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import Docker from "dockerode";
 
 import { startFakeSwarm } from "../swarm-client/testing/fake-swarm.ts";
+import type { InviteReference } from "./claim-request.ts";
+import {
+  type Message,
+  answer,
+  preloadFor,
+  readBody,
+  startTelegram,
+} from "./smoke-pulse-doubles.ts";
+import { claimAsTaker, uploadAsTaker } from "./smoke-pulse-taker.ts";
+import { ensureBucket, removeMeetingParts } from "./smoke-pulse-storage.ts";
 import { DockerodeEngine } from "./docker-engine.ts";
 import { DockerMeetingEgress } from "./egress.ts";
 import { type ContainerExit, type ContainerId, LABEL, Orchestrator } from "./orchestrator.ts";
@@ -54,9 +72,11 @@ const PORT = {
   proxy: BASE + 7,
   bot: BASE + 8,
   tg: BASE + 9,
+  ingest: BASE + 10,
 };
 const SUPABASE_URL = process.env.SMOKE_SUPABASE_URL ?? "";
 const SERVICE_KEY = process.env.SMOKE_SERVICE_KEY ?? "";
+const STORAGE = { url: SUPABASE_URL, key: SERVICE_KEY, bucket: "meeting-audio" };
 const PROJECT = process.env.SCRIBA_SMOKE_PROJECT ?? "scriba-pulse";
 const IMAGE = process.env.SCRIBA_SMOKE_IMAGE ?? "scriba-orchestrator:dev";
 const STATE = process.env.SCRIBA_SMOKE_STATE ?? "";
@@ -64,6 +84,10 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const FUNCTIONS = path.resolve(HERE, "../../../supabase/functions");
 const CRON_SECRET = "smoke-cron-secret";
 const EXIT_WAIT_MS = 120_000;
+/**
+ * Фразы алерта о тишине бота (EN + RU): по ним отличаем его от прочих писем по встрече.
+ */
+const SILENCE_PHRASES = ["scriba stopped responding", "scriba перестал отвечать"];
 
 const RUN = randomInt(1e6);
 const TOKEN = `pulse-bot-${String(RUN)}`;
@@ -72,6 +96,7 @@ const AGENT_ID = `scriba-pulse-${String(RUN)}`;
 const PERSON = 930_000_000_000 + RUN * 10; // за него бот пишет встречи
 const TAKER = PERSON + 1; // его bumblebee перехватывает встречу
 const TAKER_TOKEN = `pulse-taker-${String(RUN)}`;
+const TAKER_RECORDER = { token: TAKER_TOKEN, claimPort: PORT.claim, ingestPort: PORT.ingest };
 const MEET = "https://meet.google.com/abc-defg-hij";
 
 interface SeededMeeting {
@@ -173,6 +198,11 @@ async function agentSeenAt(): Promise<number> {
  */
 const seeded = { leaseMs: 0 };
 
+/**
+ * Пропуска бота по встречам (T165): токен на встречу, засеян в базу вместе с приглашением.
+ */
+const grantTokens = new Map<string, string>();
+
 async function seed(): Promise<void> {
   await rest("POST", "workspaces", [{ id: WS, name: "Smoke pulse" }]);
   await rest("POST", "allowed_users", [
@@ -198,12 +228,72 @@ async function seed(): Promise<void> {
       title: meeting.title,
     })),
   );
+  for (const meeting of Object.values(MEETINGS)) {
+    grantTokens.set(meeting.id, await seedGrant(meeting));
+  }
+  await ensureBucket(STORAGE);
+}
+
+/**
+ * Пропуск бота на встречу (T165) в том виде, в каком его выдал бы сервер при заборе приглашения
+ * человека: забранное приглашение и пропуск по нему, уже привязанный к встрече. Токен хранится
+ * хешем (sha256) — как в таблице. Уборка — `meeting_agent_grants`/`meeting_invites` по воркспейсу.
+ */
+async function seedGrant(meeting: SeededMeeting): Promise<string> {
+  const now = Date.now();
+  const rows = (await rest("POST", "meeting_invites", [
+    {
+      group_id: WS,
+      invited_by: PERSON,
+      join_url: MEET,
+      platform: "meet",
+      expires_at: new Date(now + 10 * 60_000).toISOString(),
+      taken_at: new Date(now).toISOString(),
+      taken_by: AGENT_ID,
+    },
+  ])) as { id: string }[];
+  const inviteId = rows[0]?.id;
+  if (inviteId === undefined) throw new Error("приглашение под пропуск не создано");
+  const token = `sgr_smoke_${randomUUID()}`;
+  await rest("POST", "meeting_agent_grants", [
+    {
+      token_hash: sha256(token),
+      agent_id: AGENT_ID,
+      group_id: WS,
+      telegram_id: PERSON,
+      invite_id: inviteId,
+      join_url: MEET,
+      meeting_id: meeting.id,
+      expires_at: new Date(now + 60 * 60_000).toISOString(),
+    },
+  ]);
+  return token;
+}
+
+/**
+ * Основание встречи для оркестратора: приглашение на двойнике сервера (его сверяет заявка бота)
+ * и пропуск, засеянный в базу под эту встречу; двойник признаёт тот же токен.
+ */
+function basisFor(fake: Fake, meeting: SeededMeeting): InviteReference {
+  const grantToken = grantTokens.get(meeting.id);
+  if (grantToken === undefined) throw new Error(`на встречу ${meeting.key} не засеян пропуск`);
+  const invite = fake.addInvite({ joinUrl: MEET, invitedBy: PERSON });
+  fake.acceptGrant(grantToken);
+  return { id: invite.id, joinUrl: MEET, grantToken };
 }
 
 async function cleanup(): Promise<void> {
   const ids = Object.values(MEETINGS).map((meeting) => meeting.id);
+  try {
+    await removeMeetingParts(STORAGE, ids);
+  } catch (error) {
+    check(false, "уборка Storage", String(error));
+  }
+  // Пропуска и приглашения — раньше воркспейса: внешние ключи на него без каскада.
   const steps = [
     `meetings?id=in.(${ids.join(",")})`,
+    `meeting_agent_grants?group_id=eq.${WS}`,
+    `meeting_invites?group_id=eq.${WS}`,
     `service_agents?id=eq.${AGENT_ID}`,
     `allowed_users?telegram_id=in.(${String(PERSON)},${String(TAKER)})`,
     `workspaces?id=eq.${WS}`,
@@ -219,49 +309,9 @@ async function cleanup(): Promise<void> {
 
 // ── Процессы: функции Deno и поддельный Telegram ────────────────────────────────
 
-const inbox: { chat_id: number; text: string }[] = [];
+const inbox: Message[] = [];
 
-async function readBody(incoming: IncomingMessage): Promise<Buffer> {
-  const chunks: Buffer[] = [];
-  for await (const chunk of incoming) chunks.push(chunk as Buffer);
-  return Buffer.concat(chunks);
-}
-
-function answer(response: ServerResponse, status: number, body: unknown): void {
-  response.writeHead(status, { "Content-Type": "application/json" });
-  response.end(JSON.stringify(body));
-}
-
-function startTelegram(): ReturnType<typeof createServer> {
-  const server = createServer((incoming, response) => {
-    void readBody(incoming).then((raw) => {
-      if (incoming.url?.endsWith("/sendMessage") === true) {
-        const body = JSON.parse(raw.toString("utf8") || "{}") as {
-          chat_id?: unknown;
-          text?: unknown;
-        };
-        inbox.push({
-          chat_id: Number(body.chat_id),
-          text: typeof body.text === "string" ? body.text : "",
-        });
-      }
-      answer(response, 200, { ok: true, result: { message_id: inbox.length } });
-    });
-  });
-  server.listen(PORT.tg, "127.0.0.1");
-  return server;
-}
-
-const PRELOAD_SOURCE = `
-const real = globalThis.fetch;
-globalThis.fetch = (input, init) => {
-  const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
-  if (url.startsWith("https://api.telegram.org/")) {
-    return real(url.replace("https://api.telegram.org", "http://127.0.0.1:__TG_PORT__"), init);
-  }
-  return real(input, init);
-};`.replace("__TG_PORT__", () => String(PORT.tg));
-const PRELOAD = "data:application/typescript," + encodeURIComponent(PRELOAD_SOURCE);
+const PRELOAD = preloadFor(PORT.tg);
 
 function spawnFunction(name: string, port: number, extra: string[] = []): ChildProcess {
   // eslint-disable-next-line sonarjs/no-os-command-from-path -- смоук на машине разработчика, deno из PATH
@@ -272,6 +322,7 @@ function spawnFunction(name: string, port: number, extra: string[] = []): ChildP
       SUPABASE_URL,
       SUPABASE_SERVICE_ROLE_KEY: SERVICE_KEY,
       TELEGRAM_BOT_TOKEN: "smoke-telegram-token",
+      OPENAI_API_KEY: "smoke-openai-key",
       CRON_SECRET,
     },
     stdio: ["ignore", "inherit", "inherit"],
@@ -469,7 +520,7 @@ async function sceneEnd(fake: Fake): Promise<void> {
   await orchestrator.init();
   try {
     const before = fake.ingested.length;
-    const id = await orchestrator.startForMeeting(MEET, "meet", PERSON);
+    const id = await orchestrator.startForMeeting(MEET, "meet", PERSON, basisFor(fake, meeting));
     await pulseGoes(meeting);
     const exit = await exitWithin(orchestrator, id);
     check(
@@ -501,14 +552,14 @@ async function sceneEnd(fake: Fake): Promise<void> {
   }
 }
 
-async function sceneDeath(): Promise<void> {
+async function sceneDeath(fake: Fake): Promise<void> {
   console.log("\n──── смерть посреди встречи: пульс замолк на recording:true → алерт claim_owner");
   const meeting = MEETINGS.death;
   claimTarget.meetingId = meeting.id;
   const orchestrator = orchestratorFor(LONG_PAGE);
   await orchestrator.init();
   try {
-    const id = await orchestrator.startForMeeting(MEET, "meet", PERSON);
+    const id = await orchestrator.startForMeeting(MEET, "meet", PERSON, basisFor(fake, meeting));
     await pulseGoes(meeting);
     await new Docker().getContainer(id).kill();
     const exit = await exitWithin(orchestrator, id);
@@ -536,22 +587,32 @@ async function sceneDeath(): Promise<void> {
   }
 }
 
-async function takeOver(meeting: SeededMeeting): Promise<Record<string, unknown>> {
-  const response = await fetch(`http://127.0.0.1:${String(PORT.claim)}/`, {
+/**
+ * Удар бота по встрече — как шлёт его контейнер (session.heartbeat), пропуском своей встречи.
+ */
+async function botBeat(meeting: SeededMeeting, extra: Record<string, unknown>): Promise<number> {
+  const response = await fetch(`http://127.0.0.1:${String(PORT.hb)}/`, {
     method: "POST",
-    headers: { Authorization: `Bearer ${TAKER_TOKEN}`, "Content-Type": "application/json" },
+    headers: {
+      Authorization: `Bearer ${grantTokens.get(meeting.id) ?? ""}`,
+      "X-On-Behalf-Of": String(PERSON),
+      "Content-Type": "application/json",
+    },
     body: JSON.stringify({
-      identity_kind: "calendar",
-      identity_key: meeting.key,
-      recorded_seconds: 3600,
+      version: 1,
+      on_call: true,
+      meeting_key: `manual:${meeting.id}`,
+      meeting_id: meeting.id,
+      ...extra,
     }),
   });
-  return { status: response.status, ...((await response.json()) as Record<string, unknown>) };
+  await response.body?.cancel();
+  return response.status;
 }
 
 async function sceneTakeover(fake: Fake): Promise<void> {
   console.log(
-    "\n──── перехват: рекордер человека забирает встречу → бот уходит superseded → сторож молчит",
+    "\n──── перехват по выгрузке: бот не пишет → рекордер заявился и выгрузил → бот уходит superseded",
   );
   const meeting = MEETINGS.takeover;
   claimTarget.meetingId = meeting.id;
@@ -559,33 +620,64 @@ async function sceneTakeover(fake: Fake): Promise<void> {
   await orchestrator.init();
   try {
     const before = fake.ingested.length;
-    const id = await orchestrator.startForMeeting(MEET, "meet", PERSON);
+    const id = await orchestrator.startForMeeting(MEET, "meet", PERSON, basisFor(fake, meeting));
     await pulseGoes(meeting);
-    const taken = await takeOver(meeting);
-    const takenAt = Date.now();
-    check(
-      taken.status === 200 && taken.decision === "transcribe" && taken.meeting_id === meeting.id,
-      "настоящий meeting-claim отдал встречу рекордеру",
-      JSON.stringify(taken),
-    );
+    const container = new Docker().getContainer(id);
+    // D020: пока бот пишет, чужая заявка встречу не берёт. Бот «перестаёт писать»: контейнер
+    // замораживается (сам он бьёт recording:true каждые 3 с), и его последний удар заменяет
+    // удар recording:false — как у контейнера, который ещё жив, но уже не пишет.
+    await container.pause();
+    let takenAt = 0;
+    try {
+      const stopped = await botBeat(meeting, { recording: false });
+      check(stopped === 200, "удар бота recording:false принят", `HTTP ${String(stopped)}`);
+      const claim = await claimAsTaker(TAKER_RECORDER, meeting.key);
+      const afterClaim = await pulseOf(meeting);
+      check(
+        claim.status === 200 && claim.decision === "transcribe" && claim.meeting_id === meeting.id,
+        "meeting-claim: у непишущего бота рекордер — претендент (transcribe, та же встреча)",
+        JSON.stringify(claim),
+      );
+      check(
+        afterClaim?.claim_owner === PERSON,
+        "T160: сама заявка право не забрала — встреча пока за ботом",
+        JSON.stringify(afterClaim),
+      );
+      const upload = await uploadAsTaker(TAKER_RECORDER, meeting.id);
+      check(
+        upload.status === 202 && upload.ok === true,
+        "meeting-ingest: выгрузка часа записи принята и измерена",
+        JSON.stringify(upload),
+      );
+      takenAt = Date.now();
+    } finally {
+      await container.unpause();
+    }
     const exit = await exitWithin(orchestrator, id);
     check(
       exit?.kind === "finished" && exit.outcome === "superseded",
       "контейнер ушёл сам с исходом superseded",
       JSON.stringify(exit),
     );
-    check(fake.ingested.length === before, "выгрузки не было");
+    check(fake.ingested.length === before, "выгрузки бота не было");
     const pulse = await pulseOf(meeting);
     check(
       pulse?.claim_owner === TAKER && pulse.agent_last_recording === false,
-      "встреча за рекордером, флаг бота погашен",
+      "право перешло по выгрузке: встреча за рекордером, флаг бота погашен",
       JSON.stringify(pulse),
     );
     check(
       (await agentSeenAt()) >= takenAt - 1000,
       "финальный удар без встречи освежил строку агента",
     );
-    const alerts = await watchdogAbout(meeting);
+    // Выгрузка рекордера сама может писать людям о встрече; тут важен только алерт о тишине бота.
+    await rest("PATCH", `meetings?id=eq.${meeting.id}`, { agent_last_seen_at: minutesAgo(15) });
+    check((await cron()) === 200, "cron meetings_watchdog ответил 200");
+    const alerts = inbox.filter(
+      (message) =>
+        message.text.includes(meeting.title) &&
+        SILENCE_PHRASES.some((phrase) => message.text.includes(phrase)),
+    );
     check(
       alerts.length === 0,
       "ни новому claim_owner, ни прежнему ложного алерта нет",
@@ -599,7 +691,7 @@ async function sceneTakeover(fake: Fake): Promise<void> {
 type Fake = Awaited<ReturnType<typeof startFakeSwarm>>;
 const SCENES: Record<string, (fake: Fake) => Promise<void>> = {
   end: sceneEnd,
-  death: async () => sceneDeath(),
+  death: sceneDeath,
   takeover: sceneTakeover,
 };
 
@@ -641,17 +733,23 @@ async function suite(): Promise<number> {
     console.error(`КРАСНЫЙ: на стенде ${PROJECT} уже есть контейнеры — сначала убрать`);
     return 2;
   }
-  const telegram = startTelegram();
+  const telegram = startTelegram(PORT.tg, inbox);
   const proxy = startProxy();
   const functions = [
     spawnFunction("meeting-heartbeat", PORT.hb),
     spawnFunction("meeting-claim", PORT.claim),
     spawnFunction("swarm-bot", PORT.bot, [`--preload=${PRELOAD}`]),
+    spawnFunction("meeting-ingest", PORT.ingest, [`--preload=${PRELOAD}`]),
   ];
   const fake = await startFakeSwarm({ token: TOKEN, onBehalfOf: PERSON, port: PORT.fake });
   try {
     await seed();
-    await Promise.all([waitPort(PORT.hb), waitPort(PORT.claim), waitPort(PORT.bot)]);
+    await Promise.all([
+      waitPort(PORT.hb),
+      waitPort(PORT.claim),
+      waitPort(PORT.bot),
+      waitPort(PORT.ingest),
+    ]);
     await runScenes(fake);
   } finally {
     for (const child of functions) child.kill("SIGTERM");
