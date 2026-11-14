@@ -1,3 +1,4 @@
+import { createTaskLifecycleApi } from "./taskLifecycleApi";
 import { mockMaps, mockAggregators, mockInspections, mockInspectionDetail, mockQuality } from "./homeQualityDemo";
 import type { CreateTaskInput, UpdateTaskInput, TaskFilters, TaskLabel, TaskFilesList } from "./api-types/tasks";
 export type { CreateTaskInput, UpdateTaskInput, TaskFilters, TaskLabel, TaskFilesList } from "./api-types/tasks";
@@ -1173,25 +1174,10 @@ export async function updateTask(
   });
 }
 
-export async function deleteTask(id: string): Promise<void> {
-  if (DEV_MODE) {
-    mockTasks = mockTasks.filter((t) => t.id !== id);
-    return;
-  }
-  return apiFetch<void>(`/tasks/${id}`, { method: "DELETE" });
-}
-
-/** Архив задач (#489): убранные задачи воркспейса, свежие сверху. */
-export async function fetchArchivedTasks(): Promise<Task[]> {
-  if (DEV_MODE) return [];
-  return apiFetch<Task[]>("/tasks/archived");
-}
-
-/** Вернуть задачу из архива. Состав спринтов, из которого она ушла, не восстанавливается. */
-export async function restoreTask(id: string): Promise<void> {
-  if (DEV_MODE) return;
-  return apiFetch<void>(`/tasks/${id}/restore`, { method: "POST" });
-}
+export const { deleteTask, fetchArchivedTasks, restoreTask, setTaskFrozen, permanentlyDeleteTask } = createTaskLifecycleApi(
+  apiFetch,
+  DEV_MODE ? { get: () => mockTasks, set: (tasks) => { mockTasks = tasks; } } : undefined,
+);
 
 let MOCK_LABELS: TaskLabel[] = [
   {
@@ -1941,6 +1927,7 @@ function mockItemsOf(cycleId: string): SprintCycleItem[] {
       link_count: t.id.length % 2,
       completed_at: t.status === "done" ? new Date().toISOString() : null,
       frozen: row.moved ? true : row.frozen ?? false,
+      task_frozen: row.moved || row.frozen ? row.task_frozen === true : t.frozen_at != null,
       carry_count: row.carry_count ?? 0,
       carried_manual: row.carried_manual ?? null,
       check_status: mockChecks[row.id]?.check_status ?? null,
@@ -2034,6 +2021,7 @@ function mockBoard(tabId: string | null): SprintBoardData {
             id: t.id,
             title: t.title,
             status: t.status,
+            frozen_at: t.frozen_at ?? null,
             due_date: t.due_date ?? null,
             assignees: t.assignees ?? [],
             assignee_telegram_ids: t.assignee_telegram_ids ?? [],
@@ -2160,9 +2148,9 @@ export async function acceptSprintCycle(
 ): Promise<AcceptResult> {
   if (DEV_MODE) {
     const items = mockItemsOf(id).filter((i) => !i.removed);
-    const counted = items.filter((i) => i.status !== "cancelled");
+    const counted = items.filter((i) => !i.task_frozen && i.status !== "cancelled");
     const plan = counted.filter((i) => i.in_plan);
-    const tails = counted.filter((i) => i.status !== "done");
+    const tails = items.filter((i) => i.status !== "cancelled" && i.status !== "done");
     const stats: SprintStats = {
       plan: plan.length,
       planDone: plan.filter((i) => i.status === "done").length,
@@ -2176,7 +2164,7 @@ export async function acceptSprintCycle(
       carried: tails.length,
       carried_manual: tails.filter((i) => i.to_carry).length,
       carried_auto: tails.filter((i) => !i.to_carry).length,
-      cancelled: items.filter((i) => i.status === "cancelled").length,
+      cancelled: items.filter((i) => !i.task_frozen && i.status === "cancelled").length,
       removed: mockItemsOf(id).length - items.length,
       check_ok: counted.filter((i) => i.check_status === "ok").length,
       check_risk: counted.filter((i) => i.check_status === "risk").length,
@@ -2234,7 +2222,7 @@ export async function acceptSprintCycle(
     // Принятый спринт — снимок: его строки больше не живые, как и на сервере.
     mockCycleItems = {
       ...mockCycleItems,
-      [id]: (mockCycleItems[id] ?? []).map((r) => ({ ...r, frozen: true })),
+      [id]: (mockCycleItems[id] ?? []).map((r) => ({ ...r, frozen: true, task_frozen: mockTasks.find((t) => t.id === r.task_id)?.frozen_at != null })),
       [next.id]: carriedRows,
     };
     return {

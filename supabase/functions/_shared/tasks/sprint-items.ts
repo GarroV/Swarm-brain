@@ -30,7 +30,7 @@ const supabase = createClient(
   Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
 );
 
-const TASK_FIELDS = "id, title, status, assignees, project_id, completed_at, due_date, links";
+const TASK_FIELDS = "id, title, status, assignees, project_id, completed_at, due_date, frozen_at, links";
 
 /** Отметка сверки: как идут дела у задачи в середине спринта. */
 export const CHECK_STATUSES = ["ok", "risk", "problem"] as const;
@@ -55,6 +55,8 @@ export interface SprintItem {
   completed_at: string | null;
   due_date: string | null;
   frozen: boolean;
+  /** Task freeze: live flag before acceptance, stored flag afterwards. Old snapshots default false. */
+  task_frozen?: boolean;
   check_status: CheckStatus | null;
   check_note: string | null;
   check_at: string | null;
@@ -161,7 +163,7 @@ async function loadAllItems(
   // вычисляемой, ответ превращается в «неизвестно что» (TS2352).
   const { data: rows, error: rowsErr } = await supabase.from("sprint_items")
     .select(
-      "id, task_id, in_plan, added_at, frozen_at, frozen_title, frozen_status, frozen_assignees, frozen_project, frozen_completed_at, frozen_due_date, check_status, check_note, check_at, check_by, to_carry, carry_reason, carry_count, carried_manual, removed_title, removed_project_id, removed_at, withdrawn_at, moved_at, moved_to, moved_by",
+      "id, task_id, in_plan, added_at, frozen_at, task_frozen, frozen_title, frozen_status, frozen_assignees, frozen_project, frozen_completed_at, frozen_due_date, check_status, check_note, check_at, check_by, to_carry, carry_reason, carry_count, carried_manual, removed_title, removed_project_id, removed_at, withdrawn_at, moved_at, moved_to, moved_by",
     )
     .eq("cycle_id", cycleId).order("added_at", { ascending: true });
   if (rowsErr) throw new Error(`sprint items: ${rowsErr.message}`);
@@ -230,6 +232,7 @@ async function loadAllItems(
           : ((t?.completed_at as string | null) ?? null),
         due_date: frozen ? ((r.frozen_due_date as string | null) ?? null) : ((t?.due_date as string | null) ?? null),
         frozen,
+        task_frozen: frozen ? r.task_frozen === true : t?.frozen_at != null,
         check_status: (r.check_status as CheckStatus | null) ?? null,
         check_note: (r.check_note as string | null) ?? null,
         check_at: (r.check_at as string | null) ?? null,
@@ -545,11 +548,20 @@ export async function updateItem(
 
   // Снимок переноса отметками не правится: задача из спринта ушла (причину в него вписывает
   // `setMovedReason`, sprint-move.ts).
-  const { data } = await supabase.from("sprint_items")
-    .update(fields).eq("cycle_id", cycleId).eq("task_id", taskId)
-    .is("withdrawn_at", null).is("moved_at", null)
-    .select("id").maybeSingle();
-  if (!data) return null;
+  const result = "check_status" in patch || "check_note" in patch
+    ? await supabase.rpc("update_sprint_item_check", {
+      p_cycle_id: cycleId,
+      p_task_id: taskId,
+      p_group_id: groupId,
+      p_patch: fields,
+    })
+    : await supabase.from("sprint_items")
+      .update(fields).eq("cycle_id", cycleId).eq("task_id", taskId)
+      .is("withdrawn_at", null).is("moved_at", null)
+      .select("id").maybeSingle();
+  if (result.error?.code === "PT409") throw new ItemLockedError("Task is frozen");
+  if (result.error) throw new Error(`sprint item update: ${result.error.code}`);
+  if (!result.data) return null;
 
   if (viewerId !== undefined) {
     const written: Array<[ReasonField, string | null | undefined, string | null | undefined]> = [];

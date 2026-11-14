@@ -457,3 +457,20 @@ Push-стек управляется `RoyApp.tsx`: `push(route)` → `PushScreen
 **Подписи рынков, базы и команды (#1025).** `MarketChips`, мобильная база `RoyBaseScreen` и мобильный список `TeamScreen` выбирают статические подписи из локальных keyed RU/EN-словарей через существующий `useDt`. Локализованы общий рынок и его подсказка, четыре фильтра и пустой список базы, загрузка и пустой список команды; значения рынков, идентификаторы фильтров, обработчики и данные не меняются. Поле свободного поиска базы в демо по-прежнему заменено чипами вопросов.
 
 **Редактор содержания встречи (#265, #1025).** `screens/ContentEditor.tsx` хранит отдельный редактор `Entry.content`, вызываемый из `MeetAdminScreen`: просмотр первых 800 символов, редактирование и сохранение остаются в одном компоненте. Шесть подписей выбираются из локального `CONTENT_COPY` (RU/EN) через существующий `useDt`; обработчики, сброс состояния при смене записи, `patchMeeting(id, { content })`, callback и прежняя ошибка сохранения не меняются.
+
+
+### Task freeze and archive selections (#814)
+
+Task rows keep a visible `TaskFreezeBadge`; `TaskFreezeButton` and the mobile row swipe action
+freeze/unfreeze independently of the task editor. The existing task list has a Frozen selection;
+the toolbar/mobile list navigation opens the reused Archived dialog with Restore and explicitly
+confirmed Delete permanently. The latter is not available for live rows. All new lifecycle copy
+is keyed RU/EN in `lib/taskLifecycleCopy.ts`, compatible with the existing `useDt` context.
+`smartLists` keeps frozen rows visible in normal lists; pure progress/overdue/review calculations
+exclude them. Date grouping places held rows in a visible Frozen section without overdue/current
+ranking. `TaskMenu`/`SprintRow` suppress review controls for frozen work; no layout or sprint design
+is changed. The current desktop controller preserves the new selection instead of resetting it to
+All. API writes remain in the shared lifecycle wrapper, with task invalidation after success.
+
+The live Timeline summary/attention code is outside this change's assigned surface and remains a
+separate integration boundary. Saved accepted-cycle statistics are untouched in every view.

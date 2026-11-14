@@ -164,7 +164,7 @@ Deno.test("счётчики списков считаются с учётом в
 
 Deno.test("«Готовые» больше НЕ смарт-список: в оси времени остались Сегодня/Ближайшие/Все/Регулярные", async () => {
   const { SMART_LISTS } = await import("./smartLists.ts");
-  assertEquals(SMART_LISTS.map((l) => l.id), ["today", "upcoming", "all", "recurring"]);
+  assertEquals(SMART_LISTS.map((l) => l.id), ["today", "upcoming", "all", "frozen", "recurring"]);
 });
 
 Deno.test("matchesList учитывает статус: задача «в работе» при выключенном чипе не считается видимой", () => {

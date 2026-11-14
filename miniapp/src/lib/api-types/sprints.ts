@@ -8,6 +8,7 @@ import type { SprintCycle } from "@/types";
  * они принадлежат СОСТАВУ, а не задаче, и у задачи их взять неоткуда.
  */
 export type MockItemRow = {
+  task_frozen?: boolean;
   id: string;
   task_id: string;
   in_plan: boolean;

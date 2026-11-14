@@ -7,7 +7,7 @@
 import type { SprintCycle, SprintCycleItem, Task } from "@/types";
 import type { SwarmNotification } from "@/lib/notificationTypes";
 import { toISO } from "@/lib/calendar";
-import { isDone } from "@/lib/smartLists";
+import { isDone, isTaskFrozen } from "@/lib/smartLists";
 import { dueDay } from "@/lib/taskCalendar";
 
 /** Горит: срок прошёл, сегодня или завтра. Послезавтра — уже план, а не пожар. */
@@ -25,7 +25,7 @@ function dayShift(now: Date, n: number): string {
 export function hotTasks(mine: Task[], now: Date): Task[] {
   const edge = dayShift(now, HOT_AHEAD_DAYS);
   return mine
-    .filter((t) => !isDone(t))
+    .filter((t) => !isDone(t) && !isTaskFrozen(t))
     .map((t) => ({ t, d: dueDay(t) }))
     .filter((x): x is { t: Task; d: string } => x.d != null && x.d <= edge)
     .sort((a, b) => a.d.localeCompare(b.d))
@@ -56,7 +56,7 @@ export function checkpointReminder(cycles: CycleWithItems[], myTaskIds: Set<stri
     if (cycle.status !== "active" || !cycle.check_date) continue;
     if (cycle.check_date > lead || today > cycle.end_date) continue;
     const pending = items.filter((i) =>
-      i.task_id != null && myTaskIds.has(i.task_id) && !i.removed && !i.check_status && i.status !== "done"
+      i.task_id != null && myTaskIds.has(i.task_id) && !i.removed && !i.task_frozen && !i.check_status && i.status !== "done"
     ).length;
     if (pending > 0) return { cycleId: cycle.id, name: cycle.name, checkDate: cycle.check_date, pending };
   }

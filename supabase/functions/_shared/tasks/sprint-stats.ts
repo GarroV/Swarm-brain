@@ -3,6 +3,7 @@
 // переименовали, удалили), цифры принятого спринта не двигаются.
 //
 // Поэтому расчёт живёт здесь чистой функцией: без обращения к базе, полностью под тестами.
+import { isTaskFrozen } from "./frozen.ts";
 import { isClosedStatus } from "./statuses.ts";
 import { type CarryInput, planCarry } from "./sprint-carry.ts";
 
@@ -10,6 +11,8 @@ import { type CarryInput, planCarry } from "./sprint-carry.ts";
 export interface SprintItemView {
   /** Была ли задача в составе на момент старта спринта. */
   in_plan: boolean;
+  /** Task freeze at acceptance, distinct from the immutable sprint snapshot itself. */
+  task_frozen?: boolean;
   status: string;
   assignees: string[];
   project: string | null;
@@ -97,11 +100,12 @@ export function computeSprintStats(
   // случилось потом (#576): иначе «убрать отстающее» поднимало процент. Снятая сверх плана в
   // плане и не была — её вынимают целиком. В сверке, переносе и днях закрытия снятые не
   // участвуют: из спринта они ушли.
-  const withdrawn = present.filter((i) => i.withdrawn_at != null && i.in_plan);
+  const withdrawn = present.filter((i) => !isTaskFrozen(i) && i.withdrawn_at != null && i.in_plan);
   const live = present.filter((i) => i.withdrawn_at == null);
 
   // Отменённая — не сделанная и не невыполненная: её вынимают из счёта целиком.
-  const counted = live.filter((i) => i.status !== "cancelled");
+  const active = live.filter((i) => !isTaskFrozen(i));
+  const counted = active.filter((i) => i.status !== "cancelled");
 
   const plan = [...counted.filter((i) => i.in_plan), ...withdrawn];
   const extra = counted.filter((i) => !i.in_plan);
@@ -158,7 +162,7 @@ export function computeSprintStats(
   const carriedManual = carry.filter((c) => c.kind === "manual").length;
   const carriedAuto = carry.filter((c) => c.kind === "auto").length;
 
-  const checks = (kind: string) => live.filter((i) => i.check_status === kind).length;
+  const checks = (kind: string) => active.filter((i) => i.check_status === kind).length;
 
   return {
     plan: plan.length,
@@ -169,7 +173,7 @@ export function computeSprintStats(
     carried: carriedManual + carriedAuto,
     carried_manual: carriedManual,
     carried_auto: carriedAuto,
-    cancelled: live.filter((i) => i.status === "cancelled").length,
+    cancelled: active.filter((i) => i.status === "cancelled").length,
     removed: removed.length,
     withdrawn: withdrawn.length,
     moved: moved.length,

@@ -177,3 +177,5 @@ current_setting('swarm.member_move', true) = new.telegram_id::text then|true the
        (p_expected->>'tasks') is distinct from (v_counts->>'tasks')|       false|supabase/functions/_shared/users/member-move.db.test.ts|supabase/migrations/20261105200000_member_move.sql
        and q.email in (v_email, v_pemail) and q.id is distinct from v_pid|       and false|supabase/functions/_shared/users/member-move.db.test.ts|supabase/migrations/20261105200000_member_move.sql
 revoke all on function public.move_member_to_workspace(bigint, text, bigint, boolean, jsonb) from public, anon, authenticated;|grant execute on function public.move_member_to_workspace(bigint, text, bigint, boolean, jsonb) to anon;|supabase/functions/_shared/users/member-move.db.test.ts|supabase/migrations/20261105200000_member_move.sql
+# #814: frozen tasks cannot be marked in the active review; this forward patch is replayed after old acceptance mutations.
+if task_frozen_at is not null then|if false then|supabase/functions/_shared/tasks/task-freeze.db.test.ts|supabase/migrations/20261114110000_task_freeze.sql

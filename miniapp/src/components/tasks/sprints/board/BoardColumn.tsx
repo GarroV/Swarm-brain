@@ -75,6 +75,7 @@ function ItemCard(
     <BoardCard
       title={item.title}
       closed={closed}
+      frozen={item.task_frozen === true}
       dnd={ctx.cardDnd(item.task_id, cycle.id)}
       parentNote={parent && !inColumn.has(parent.id)
         ? { title: parent.title, onOpen: () => ctx.openTask(parent.id) }
@@ -85,7 +86,7 @@ function ItemCard(
           total: kids.length,
         }
         : undefined}
-      mark={item.check_status}
+      mark={item.task_frozen ? null : item.check_status}
       due={item.due_date ? { date: item.due_date, flag: dueFlag } : null}
       assignee={names[0] ?? null}
       moreAssignees={Math.max(0, names.length - 1)}
@@ -122,12 +123,12 @@ function ItemCard(
           {!item.in_plan && cycle.status === "active" && (
             <Tag>{dt("сверх плана", "extra")}</Tag>
           )}
-          {item.check_status === "risk" && (
+          {!item.task_frozen && item.check_status === "risk" && (
             <Tag tone="warn" title={item.check_note ?? undefined}>
               {dt("риск", "risk")}
             </Tag>
           )}
-          {item.check_status === "problem" && (
+          {!item.task_frozen && item.check_status === "problem" && (
             <Tag tone="bad" title={item.check_note ?? undefined}>
               {dt("проблема", "problem")}
             </Tag>

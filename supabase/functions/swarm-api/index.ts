@@ -54,7 +54,6 @@ import { resolveDigestScope } from "./digest-scope.ts";
 import {
   countriesFields,
   createTask,
-  deleteTask,
   getTask,
   getVisibleTaskInWorkspace,
   listTasksWithTotal,
@@ -1017,7 +1016,7 @@ async function routeRequest(req: Request): Promise<Response> {
   );
   if (telegramLinkResp) return telegramLinkResp;
 
-  const archiveResp = await handleTaskArchiveRoutes(req, routePath, groupId, origin);
+  const archiveResp = await handleTaskArchiveRoutes(req, routePath, groupId, origin, telegram_id);
   if (archiveResp) return archiveResp;
 
   // Доска «Сегодня» рекордера и задача голосом (/board/today, /tasks/voice) — до /tasks и /tasks/:id.
@@ -1567,27 +1566,6 @@ async function routeRequest(req: Request): Promise<Response> {
       } catch (e) {
         if (e instanceof TaskUserError) return apiErr(e.status, e.message, origin);
         return serverError(origin, "tasks update", e);
-      }
-    }
-
-    if (req.method === "DELETE") {
-      const task = await getTask(taskId);
-      if (
-        !task || task.group_id !== groupId ||
-        !(await taskVisibleByProject(task, telegram_id))
-      ) {
-        return apiErr(404, "Not found", origin);
-      }
-      try {
-        // archived_by — кто убрал задачу: с архивацией это единственный след автора (issue #427).
-        await deleteTask(taskId, telegram_id ?? undefined);
-        return new Response(null, {
-          status: 204,
-          headers: corsHeaders(origin),
-        });
-      } catch (e) {
-        if (e instanceof TaskUserError) return apiErr(e.status, e.message, origin);
-        return serverError(origin, "tasks delete", e);
       }
     }
   }

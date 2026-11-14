@@ -151,7 +151,9 @@ function Group(
 ) {
   const dt = useDt();
   const { done, total } = node.progress;
-  const bad = node.items.filter((i) => i.check_status === "problem").length;
+  const bad =
+    node.items.filter((i) => !i.task_frozen && i.check_status === "problem")
+      .length;
   const target = dnd && dropTo !== undefined ? dnd.header(dropTo) : null;
   // Группа без проекта — самостоятельное направление: её запись в `dir.project`, а не в узле.
   const own = groupOf ?? node.project;

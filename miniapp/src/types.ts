@@ -34,6 +34,9 @@ export type Task = {
   updated_at?: string | null;
   /** Момент архивации (#427); приходит только в ответе архива `GET /tasks/archived` (#489). */
   archived_at?: string | null;
+  /** Independent task pause; status, dates and recurrence remain unchanged. */
+  frozen_at?: string | null;
+  frozen_by?: number | null;
   /** Момент закрытия (done/cancelled). У задач, закрытых до 08.09.2026 — прокси из updated_at. */
   completed_at?: string | null;
   meeting_id: string | null;
@@ -173,6 +176,8 @@ export type SprintCycleItem = {
   completed_at: string | null;
   due_date: string | null;
   frozen: boolean;
+  /** Task freeze: live flag before acceptance, stored flag afterwards. Old snapshots default false. */
+  task_frozen?: boolean;
   check_status: CheckStatus | null;
   check_note: string | null;
   check_at: string | null;
@@ -261,6 +266,7 @@ export type SprintCycleDetail = SprintCycle & {
  * задачи `cycle_ids` — спринты, в которых она живёт (по порядку начала, снимки не считаются).
  */
 export type BoardPlanTask = {
+  frozen_at?: string | null;
   id: string;
   title: string;
   status: string;

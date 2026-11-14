@@ -15,6 +15,7 @@ import type {
   SprintCycleItem,
   Task,
 } from "@/types";
+import { isTaskFrozen } from "@/lib/smartLists";
 import {
   computeProgress,
   spaceProjects,
@@ -119,7 +120,9 @@ const CLOSED = new Set(["done", "cancelled"]);
 
 /** Живое и не отменённое — то, что вообще участвует в проценте. */
 function counted(items: readonly SprintCycleItem[]): SprintCycleItem[] {
-  return items.filter((i) => !i.removed && i.status !== "cancelled");
+  return items.filter((i) =>
+    !i.removed && !isTaskFrozen(i) && i.status !== "cancelled"
+  );
 }
 
 function pct(done: number, total: number): number {
@@ -179,8 +182,9 @@ export function buildSpaceReport(input: SpaceReportInput): SpaceReport {
       total: live.length + withdrawn,
       percent: pct(liveDone, live.length + withdrawn),
       withdrawn,
-      cancelled:
-        items.filter((i) => !i.removed && i.status === "cancelled").length,
+      cancelled: items.filter((i) =>
+        !i.removed && !isTaskFrozen(i) && i.status === "cancelled"
+      ).length,
       risk: checks("risk"),
       problem: checks("problem"),
       unchecked: live.filter((i) => i.check_status === null).length,
@@ -202,7 +206,9 @@ export function buildSpaceReport(input: SpaceReportInput): SpaceReport {
       b,
     ) => (a.status === b.status ? 0 : a.status === "problem" ? -1 : 1));
 
-  const carries: CarryRow[] = live
+  const carries: CarryRow[] = items.filter((i) =>
+    !i.removed && i.status !== "cancelled"
+  )
     .filter((i) => i.carry_count > 0)
     .map((i) => ({
       title: i.title,
@@ -244,7 +250,7 @@ export function buildSpaceReport(input: SpaceReportInput): SpaceReport {
   // «где мы по инициативам» шире одного спринта.
   const ownIds = spaceProjects(input.projects, input.space ?? "tab1");
   const spaceTasks = input.tasks.filter((t) =>
-    t.project_id !== null && ownIds.has(t.project_id)
+    !isTaskFrozen(t) && t.project_id !== null && ownIds.has(t.project_id)
   );
 
   const initiatives: InitiativeRow[] = input.projects

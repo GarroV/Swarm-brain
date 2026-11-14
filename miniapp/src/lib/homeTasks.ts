@@ -5,7 +5,7 @@
 
 import type { Task } from "@/types";
 import { DUE_BUCKETS, dueBucket, type TaskSection } from "@/lib/taskTable";
-import { isDone } from "@/lib/smartLists";
+import { isDone, isTaskFrozen } from "@/lib/smartLists";
 
 /** «Дальше» — только ближайшие: главная показывает, что подходит, а не весь список. */
 export const HOME_LATER_LIMIT = 6;
@@ -52,7 +52,7 @@ const byHomeDate = (now: Date) => (a: Task, b: Task) =>
 
 /** Ближайшие задачи: тот же срок/пинг, что в таблице главной, просроченные первыми. */
 export function nextHomeTasks(mine: Task[], now: Date, limit = 5): Task[] {
-  return mine.filter((t) => !isDone(t) && homeDateReason(t, now) !== null)
+  return mine.filter((t) => !isDone(t) && !isTaskFrozen(t) && homeDateReason(t, now) !== null)
     .sort(byHomeDate(now)).slice(0, limit);
 }
 
@@ -66,8 +66,10 @@ export function groupHome(mine: Task[], now: Date, lang: 0 | 1): TaskSection[] {
   const today: Task[] = [];
   const later: Task[] = [];
   const nodue: Task[] = [];
+  const frozen: Task[] = [];
   const today_ = dayOf(now);
   for (const t of mine) {
+    if (isTaskFrozen(t)) { frozen.push(t); continue; }
     if (isDone(t)) continue;
     const r = homeDateReason(t, now);
     if (!r) nodue.push(t);
@@ -80,6 +82,7 @@ export function groupHome(mine: Task[], now: Date, lang: 0 | 1): TaskSection[] {
     { key: "today", label: label("today", lang), tasks: today },
     { key: "later", label: label("later", lang), tasks: [...later].sort(byHomeDate(now)).slice(0, HOME_LATER_LIMIT) },
     { key: "nodue", label: label("nodue", lang), tasks: nodue.slice(0, HOME_NODUE_LIMIT) },
+    { key: "frozen", label: label("frozen", lang), tasks: frozen },
   ];
   return sections.filter((s) => s.tasks.length > 0);
 }

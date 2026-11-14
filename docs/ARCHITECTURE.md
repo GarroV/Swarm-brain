@@ -2880,3 +2880,38 @@ Next.js 16, `output: "export"` (статический HTML/CSS/JS в `miniapp/o
 - ⚠️ `granola-poller` — legacy, **не деплоить** как обычный шаг: standalone-функция выведена из крона. Поллинг Granola идёт внутри `swarm-bot` (часовой крон с `{granola_poll:true}` → `ingestNewGranolaNotesAllUsers`). См. таблицу Edge Functions выше.
 - Деплой веб-интерфейса: `cd miniapp && npm run build` → `out/` → Cloudflare Pages
 - После каждого изменения функционала: обновить этот файл (ARCHITECTURE) + `docs/BACKLOG.md`. **Changelog руками не вести** — генерируется из git (`scripts/changelog.sh`); источник истины — conventional commit-сообщения.
+
+
+### Task freeze and final archive deletion (#814)
+
+`tasks.frozen_at` / `frozen_by` are an independent pause flag: freezing does not change status,
+dates, recurrence, assignees, countries or membership. The task stays visible with a marker.
+`POST /tasks/:id/freeze` accepts only `{ frozen: boolean }`; actor and timestamps come from the
+existing authenticated request. `task-lifecycle.ts` uses the existing transactional update/journal
+with an expected group/project/pause snapshot. Repeating the same state is a no-op. It writes no
+comments, notifications or Telegram outbox rows and does not rearm existing reminders.
+
+Current task/people/project metrics, completion percentages, overdue badges and sprint review
+exclude frozen tasks. `update_sprint_item_check` serializes check writes with freeze/archive using
+task-before-item locks (`FOR NO KEY UPDATE`, compatible with acceptance's carry FK checks). The
+existing web visibility/status guards remain in place; a frozen check returns a conflict before
+any comment fanout. Non-check carry actions keep their existing path and policy.
+
+`sprint_items.task_frozen` captures this flag in **future** acceptance snapshots; existing rows
+default to false. Accepted statistics and existing snapshots are never rewritten. Actual mechanical
+carry of unfinished tasks is unchanged: `carried` remains the historical number transferred by SQL,
+not an active workload count. The task's freeze marker follows it into the next cycle. Recurrence
+roll-forward/creation rules are unchanged. Unfreezing later cannot change an accepted result.
+
+The existing task DELETE still archives. `DELETE /tasks/:id/permanent` is available only from the
+archive UI with explicit confirmation and the same workspace/project visibility as task deletion;
+the database delete atomically requires the exact archived timestamp and scope/project snapshot.
+A concurrent restore or re-archive prevents deletion. Existing FK/removed-task snapshot behavior
+and attachment/backup storage lifecycles are reused; no extra file purge is introduced.
+
+Navigation: `_shared/tasks/frozen.ts` (predicate/journal patch), `task-lifecycle.ts` (persistence),
+`swarm-api/task-archive.ts` (routes), `miniapp/src/lib/taskLifecycleApi.ts` (request wrappers), and
+`task-freeze*.db.test.ts` (isolated runtime/locking regression tests). The legacy bot's separate
+`tk_today` overdue presentation is intentionally unchanged and remains a separate approval boundary;
+the reserved live Timeline current counters/attention consumer is also unchanged pending its owner.
+This PR does not complete or close all of #814.

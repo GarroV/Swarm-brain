@@ -66,6 +66,7 @@ export function SmartListNav({ variant, compact, active, counts, onSelect, query
           compact ? "[mask-image:linear-gradient(to_right,black_calc(100%-22px),transparent)]" : "px-5 pb-3",
         )}
       >
+        {onArchiveRestored && <TaskArchiveButton compact onRestored={onArchiveRestored} />}
         {lists.map(({ id, label, labelEn, icon }) => {
           const on = id === active;
           return (

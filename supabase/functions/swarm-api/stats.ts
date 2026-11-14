@@ -144,7 +144,7 @@ export async function handleStatsRoutes(
               .order("telegram_id").range(a, b),
         ),
         listTasksWithTotal({
-          columns: "status, created_at, completed_at, due_date, assignee_telegram_ids",
+          columns: "status, frozen_at, created_at, completed_at, due_date, assignee_telegram_ids",
           confirmed: true,
           limit: TASK_LIMIT,
           viewerId: telegramId,

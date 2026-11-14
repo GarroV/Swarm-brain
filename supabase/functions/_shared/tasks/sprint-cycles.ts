@@ -263,6 +263,7 @@ export async function redactCycleStats<T extends { id: string; status: string; s
 export function toStatsView(it: SprintItem): SprintItemView {
   return {
     in_plan: it.in_plan,
+    task_frozen: it.task_frozen === true,
     status: it.status,
     assignees: it.assignees,
     project: it.project,
