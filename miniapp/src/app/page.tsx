@@ -13,6 +13,16 @@ import { McpOAuthConsent } from "@/components/McpOAuthConsent";
 
 let redirecting = false;
 
+// Профиль не загрузился (сеть, 5xx): язык человека ещё неизвестен, берём язык браузера.
+const LOAD_ERROR_COPY = {
+  ru: { title: "Не удалось загрузить профиль", retry: "Повторить" },
+  en: { title: "Could not load your profile", retry: "Retry" },
+} as const;
+
+function browserLang(): "ru" | "en" {
+  return typeof navigator !== "undefined" && navigator.language.toLowerCase().startsWith("ru") ? "ru" : "en";
+}
+
 /** На страницу входа, сохранив deep-link (?meeting=…): иначе после входа человек сядет на
  *  домашний экран вместо встречи из уведомления. Один раз — 401 приходят пачкой от виджетов. */
 function goToLogin(): void {
@@ -26,11 +36,17 @@ export default function Home() {
   const [me, setMe] = useState<Me | null>(null);
   const [oauthRequest, setOauthRequest] = useState<string | null>(null);
   const [routeReady, setRouteReady] = useState(false);
+  const [loadFailed, setLoadFailed] = useState(false);
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     setOauthRequest(new URLSearchParams(window.location.search).get("mcp_oauth"));
     setRouteReady(true);
     syncBrowserChrome(); // цвет шапки браузера под схему из кэша (скрипт layout ставит её до гидратации)
+  }, []);
+
+  useEffect(() => {
+    setLoadFailed(false);
     fetchMe()
       .then((m) => {
         setMe(m);
@@ -48,13 +64,26 @@ export default function Home() {
       .catch((err: unknown) => {
         // В браузере (вне Telegram) без сессии → на страницу входа
         if ((err as { status?: number }).status === 401) goToLogin();
+        // Иначе (сеть, 5xx) — не вечная заставка, а экран ошибки с повтором.
+        else setLoadFailed(true);
       });
-  }, []);
+  }, [attempt]);
 
   // 401 от любого виджета посреди работы — тоже на вход, а не «Не загрузилось» (#467).
   useEffect(() => subscribeUnauthorized(goToLogin), []);
 
   // Read the consent deep link before mounting RoyApp: its navigation effects normalise the URL.
+  if (loadFailed && !me) {
+    const copy = LOAD_ERROR_COPY[browserLang()];
+    return (
+      <main role="alert" className="flex min-h-dvh flex-col items-center justify-center gap-4 bg-background p-4 text-center">
+        <p>{copy.title}</p>
+        <button type="button" className="rounded-md border px-4 py-2" onClick={() => setAttempt((n) => n + 1)}>
+          {copy.retry}
+        </button>
+      </main>
+    );
+  }
   if (!routeReady || !me) return <main aria-busy="true" className="min-h-dvh bg-background" />;
   // Touch ID обязателен и не пройден — внутрь не пускаем: вместо приложения один экран (решение 26.10.2026).
   if (me && stepPending(me)?.required) return <SecondStepGate me={me} />;
