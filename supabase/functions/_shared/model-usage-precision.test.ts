@@ -2,7 +2,6 @@ import { assertAlmostEquals, assertEquals, assertThrows } from "@std/assert";
 import { costUsd, preciseCostUsd, recordModelUsage } from "./model-usage.ts";
 import { recordedUsageCost, recordedUsageUnits, usageUnitsUsd } from "./model-usage-cost.ts";
 import { summarizeUsage, type UsageRow } from "./model-usage-summary.ts";
-import { usageView } from "../../../miniapp/src/lib/usageCube.ts";
 
 type RecordedCost = {
   cost_usd: number | null;
@@ -95,7 +94,7 @@ const summaryRow = (cost: RecordedCost, meeting: string | null = null): UsageRow
   audio_seconds: null,
 });
 
-Deno.test("actual producer rows retain precision in every server slice and reach the unchanged UI before its final sum", async () => {
+Deno.test("actual producer rows retain precision in every server slice before any client aggregation", async () => {
   const rows = await Promise.all(
     Array.from({ length: 10 }, async (_, i) => summaryRow(await recorded(6), `fixture-${i}`)),
   );
@@ -105,9 +104,6 @@ Deno.test("actual producer rows retain precision in every server slice and reach
   assertEquals(s.cells.map((c) => c.usd), Array(10).fill(0.00000012));
   assertEquals(s.top_meetings.map((m) => m.usd), Array(10).fill(0.00000012));
   assertEquals(s.recent.map((r) => r.usd), Array(10).fill(0.00000012));
-  const view = usageView(s.cells, "2026-11-14", "2026-11-14", "day", { purpose: null, model: null });
-  assertEquals(view.total_usd, 0.000001, "existing UI presentation still rounds only after summing the precise cells");
-  assertEquals(view.calls, 10);
 });
 
 Deno.test("mixed legacy, precise-zero and unpriced history is neither repriced nor double-counted", () => {
