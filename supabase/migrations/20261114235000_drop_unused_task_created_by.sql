@@ -28,6 +28,25 @@ begin
       raise exception using errcode = '23514',
         message = 'Task legacy creator column is not constant; refusing removal';
     end if;
+    -- RESTRICT does not protect automatic dependencies (indexes, local CHECKs,
+    -- extended statistics). Permit only this column's own literal system default.
+    if exists (
+      select 1 from pg_depend d
+      join pg_attribute a on a.attrelid = d.refobjid and a.attnum = d.refobjsubid
+      where d.refclassid = 'pg_class'::regclass and d.refobjid = 'public.tasks'::regclass
+        and a.attname = 'created_by' and a.attnum > 0 and not a.attisdropped
+        and d.deptype in ('a', 'i', 'P', 'S')
+        and not (
+          d.classid = 'pg_attrdef'::regclass and exists (
+            select 1 from pg_attrdef def
+            where def.oid = d.objid and def.adrelid = a.attrelid and def.adnum = a.attnum
+              and pg_get_expr(def.adbin, def.adrelid) = '''system''::text'
+          )
+        )
+    ) then
+      raise exception using errcode = '2BP01',
+        message = 'Task legacy creator column has automatic dependencies; refusing removal';
+    end if;
     alter table public.tasks drop column created_by restrict;
   end if;
 end;

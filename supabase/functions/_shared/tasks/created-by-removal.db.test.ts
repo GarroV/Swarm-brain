@@ -136,6 +136,58 @@ Deno.test("created_by removal retains dependent views instead of cascading them 
   });
 });
 
+Deno.test("created_by removal refuses automatic index, CHECK and statistics dependencies without losing objects", async () => {
+  const cases = [
+    [
+      "create index created_by_238_regular on tasks(created_by)",
+      "select to_regclass('public.created_by_238_regular') is not null as value",
+    ],
+    [
+      "create index created_by_238_expression on tasks(lower(created_by))",
+      "select to_regclass('public.created_by_238_expression') is not null as value",
+    ],
+    [
+      "alter table tasks add constraint created_by_238_check check(created_by <> '')",
+      "select exists(select 1 from pg_constraint where conrelid='public.tasks'::regclass and conname='created_by_238_check') as value",
+    ],
+    [
+      "create statistics created_by_238_stats on created_by, title from tasks",
+      "select exists(select 1 from pg_statistic_ext where stxrelid='public.tasks'::regclass and stxname='created_by_238_stats') as value",
+    ],
+    [
+      "create statistics created_by_238_expression_stats on (lower(created_by)) from tasks",
+      "select exists(select 1 from pg_statistic_ext where stxrelid='public.tasks'::regclass and stxname='created_by_238_expression_stats') as value",
+    ],
+  ];
+  for (const [ddl, exists] of cases) {
+    await legacyFixture(async (db, id) => {
+      await db.queryArray(ddl);
+      const before = await taskWithoutLegacy(db, id);
+      assertEquals(await scalar(db, exists), true);
+      rejected(await attempt(db, await migrationSQL()), "2BP01");
+      assertEquals(await scalar(db, exists), true);
+      assertEquals(await columnExists(db), true);
+      assertEquals(await taskWithoutLegacy(db, id), before);
+      assertEquals(await creatorOf(db, id), String(AUTHOR));
+    });
+  }
+});
+
+Deno.test("negative control: bypassed automatic-dependency guard silently drops a real index despite RESTRICT", async () => {
+  await legacyFixture(async (db) => {
+    await db.queryArray("create index created_by_238_mutant on tasks(created_by)");
+    const mutated = replaceOnce(await migrationSQL(), "d.deptype in ('a', 'i', 'P', 'S')", "false");
+    const result = await attempt(db, mutated);
+    assertEquals(result, { code: null, dropped: true }, "Mutant must actually drop the indexed column, not fail SQL");
+    await assertRejects(() => Promise.resolve().then(() => rejected(result, "2BP01")), AssertionError);
+    assertEquals(
+      await scalar(db, "select to_regclass('public.created_by_238_mutant') is not null as value"),
+      true,
+      "Rollback restores the index even after deliberately unsafe SQL",
+    );
+  });
+});
+
 Deno.test("created_by removal rejects stale-snapshot isolation without changing the column or creator", async () => {
   for (const level of ["repeatable read", "serializable"]) {
     await legacyFixture(async (db, id) => {
