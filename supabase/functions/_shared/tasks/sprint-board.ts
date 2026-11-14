@@ -52,6 +52,7 @@ export function countMoves(rows: readonly SpanRow[]): Map<string, number> {
 
 /** Задача мастер-плана: то, что нужно карточке и полоске. */
 export interface PlanTaskView {
+  frozen_at?: string | null;
   id: string;
   title: string;
   status: string;

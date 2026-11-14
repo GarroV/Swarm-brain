@@ -162,7 +162,9 @@ export function TaskMenu(
     row("span", dt("Спринты задачи…", "Sprints of the task…"), actions.span);
   }
   row("journey", dt("Ход задачи", "Task journey"), actions.journey);
-  if (live && status === "active") add({ kind: "check", key: "check" });
+  if (live && !item?.task_frozen && status === "active") {
+    add({ kind: "check", key: "check" });
+  }
 
   const tail: Entry[] = [];
   const tailRow = (key: string, label: ReactNode, fn: () => void) =>

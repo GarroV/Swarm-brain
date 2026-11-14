@@ -7,7 +7,7 @@ import { AreaSpark } from "./LineChart";
 import { Delta } from "./QualityWidgets";
 import { fmtEur, type SalesState } from "./useCountrySales";
 import { FILL_CARD } from "./blockFill";
-import { isDone, isOverdue } from "@/lib/smartLists";
+import { isDone, isOverdue, isTaskFrozen } from "@/lib/smartLists";
 import { countryFlag } from "@/lib/countries";
 import { homeDateReason, nextHomeTasks } from "@/lib/homeTasks";
 import { NEXT_TASK_TEXT } from "./nextTaskText";
@@ -19,7 +19,7 @@ import type { Project } from "@/types";
 
 export function TopTasksWidget({ data, onCreate }: { data: DashboardData; onCreate: () => void }) {
   const dt = useDt();
-  const open = useMemo(() => data.mine.filter((t) => !isDone(t)), [data.mine]);
+  const open = useMemo(() => data.mine.filter((t) => !isDone(t) && !isTaskFrozen(t)), [data.mine]);
   const now = useMemo(() => new Date(), [data.tasks]);
   const top = useMemo(() => nextHomeTasks(open, now), [open, now]);
   const overdue = open.filter((t) => isOverdue(t)).length;

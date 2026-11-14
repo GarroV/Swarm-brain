@@ -26,6 +26,9 @@ export type Task = {
   status: string;
   created_at: string;
   updated_at: string | null;
+  /** Independent task pause; status, dates and recurrence remain unchanged. */
+  frozen_at?: string | null;
+  frozen_by?: number | null;
   meeting_id: string | null;
   url: string | null;
   group_id?: string | null;

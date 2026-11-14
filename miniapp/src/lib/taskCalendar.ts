@@ -5,7 +5,7 @@ import type { Task } from "@/types";
 import type { DateRange } from "@/lib/dateRange";
 import { presetRange } from "@/lib/dateRange";
 import { toISO } from "@/lib/calendar";
-import { isDone } from "@/lib/smartLists";
+import { isDone, isTaskFrozen } from "@/lib/smartLists";
 
 // Длинный период рисуем прокруткой вбок, но не бесконечно: год колонками — это не обзор,
 // а зависший экран. Обрез называем в подписи, молча не режем.
@@ -76,7 +76,7 @@ export function whatsNext(pool: Task[], shown: Task[]): WhatsNext {
   if (shown.length > NEXT_LIST_MAX) return { soon: [], done: [] };
   const seen = new Set(shown.map((t) => t.id));
   const soon = pool
-    .filter((t) => !seen.has(t.id) && !isDone(t) && dueDay(t) != null)
+    .filter((t) => !seen.has(t.id) && !isTaskFrozen(t) && !isDone(t) && dueDay(t) != null)
     .sort((a, b) => dueDay(a)!.localeCompare(dueDay(b)!))
     .slice(0, NEXT_SOON_LIMIT);
   const done = pool

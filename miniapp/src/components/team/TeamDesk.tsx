@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { Task, User } from "@/types";
 import { fetchTasks, fetchUsers } from "@/lib/api";
 import { countryCode } from "@/lib/countries";
-import { isDone, isOverdue, OPEN_STATUSES } from "@/lib/smartLists";
+import { isDone, isOverdue, isTaskFrozen, OPEN_STATUSES } from "@/lib/smartLists";
 import { ToolbarButton } from "@/components/tasks/table/Menu";
 import { Avatar } from "@/components/roy/ui";
 import { initials } from "@/components/roy/dash/shared";
@@ -38,7 +38,7 @@ export function TeamDesk() {
     const now = new Date();
     const by = new Map<number, { open: number; late: number }>();
     for (const t of tasks) {
-      if (isDone(t)) continue;
+      if (isDone(t) || isTaskFrozen(t)) continue;
       for (const id of t.assignee_telegram_ids ?? []) {
         const c = by.get(id) ?? { open: 0, late: 0 };
         by.set(id, { open: c.open + 1, late: c.late + (isOverdue(t, now) ? 1 : 0) });

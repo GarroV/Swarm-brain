@@ -84,13 +84,13 @@ export async function listProjects(
   // Считаем задачи по проектам одним запросом (без N+1).
   const tasksQuery = onlyLive(
     supabase
-      .from("tasks").select("project_id, status"),
+      .from("tasks").select("project_id, status, frozen_at"),
   )
     .eq("group_id", groupId)
     .in("project_id", list.map((p) => p.id));
   const { data: tasks } = await tasksQuery;
   const counts = countProjectTasks(
-    (tasks ?? []) as Array<{ project_id: string | null; status: string }>,
+    (tasks ?? []) as Array<{ project_id: string | null; status: string; frozen_at?: string | null }>,
   );
   return list.map((p) => ({
     ...p,
