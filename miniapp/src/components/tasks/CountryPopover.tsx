@@ -147,7 +147,6 @@ export function CountryPopover({ value, codes, onChange, variant = "chip", label
           ref={popRef}
           data-escape-layer=""
           role="menu"
-          aria-multiselectable="true"
           onPointerDown={(e) => e.stopPropagation()}
           style={{ position: "fixed", left: pos.left, top: pos.top, width: W, maxHeight: H }}
           className="z-[100] flex flex-col overflow-hidden rounded-xl border border-line bg-card shadow-xl dark:backdrop-blur-lg"
