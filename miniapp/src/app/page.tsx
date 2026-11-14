@@ -46,7 +46,6 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    setLoadFailed(false);
     fetchMe()
       .then((m) => {
         setMe(m);
@@ -78,7 +77,7 @@ export default function Home() {
     return (
       <main role="alert" className="flex min-h-dvh flex-col items-center justify-center gap-4 bg-background p-4 text-center">
         <p>{copy.title}</p>
-        <button type="button" className="rounded-md border px-4 py-2" onClick={() => setAttempt((n) => n + 1)}>
+        <button type="button" className="rounded-md border px-4 py-2" onClick={() => { setLoadFailed(false); setAttempt((n) => n + 1); }}>
           {copy.retry}
         </button>
       </main>
