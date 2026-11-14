@@ -461,3 +461,8 @@ Push-стек управляется `RoyApp.tsx`: `push(route)` → `PushScreen
 ### Granola import status in the meeting list (#178)
 
 `roy/GranolaStatus.tsx` appears above the queue in mobile `RoyMeetingsScreen` and desktop `MeetingsDesk`, including an empty list. A single existing `GET /integrations` on mount projects `last_polled_at` and `last_error`: the timestamp is the **last attempt**, including a failed one, never a successful sync. Never-polled connections and an unavailable status GET are distinct; disconnected Granola is hidden. Keyed RU/EN copy does not expose the raw provider error. This is a snapshot, not a claim that a specific meeting is waiting or that a check will run at an exact hour. Shared `useMeetingsList`, manual import, schedules and notifications are unchanged.
+
+### Отказ ручного сохранения Granola (#178)
+
+`GranolaNoteModal` в `SettingsScreen.tsx` использует `settings/useGranolaSave.ts`: единственная незавершённая операция импорта/пропуска, сброс ошибки при повторе, `onImported` / `onSkipped` и закрытие только после успеха API. Отказ показывает `GRANOLA_IMPORT_COPY.saveFailed` (RU/EN), оставляя заметку и диалог доступными для повторной попытки. Сырые детали ошибки сервера в интерфейс не выводятся. Существующие успешные сценарии, выбор общей/личной базы и содержимое заметки не меняются.
+

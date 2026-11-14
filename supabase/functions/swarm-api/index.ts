@@ -3417,7 +3417,6 @@ async function routeRequest(req: Request): Promise<Response> {
     ]);
     await OPENAI_KEY.noteResponse(summaryRes);
     const summary = summaryRes.ok ? (await summaryRes.json()).choices[0].message.content : null;
-
     const entryDate = ts ? ts.slice(0, 10) : null;
 
     // Кросс-источниковый дедуп: встреча уже в базе (другой участник / рекордер / повторный импорт)?
@@ -3434,9 +3433,10 @@ async function routeRequest(req: Request): Promise<Response> {
     if (dup) {
       const current: string[] = (integration as { skipped_note_ids?: string[] }).skipped_note_ids ?? [];
       if (!current.includes(noteId)) {
-        await supabase.from("user_integrations")
+        const { error } = await supabase.from("user_integrations")
           .update({ skipped_note_ids: [...current, noteId] })
           .eq("telegram_id", telegram_id).eq("service", "granola");
+        if (error) return serverError(origin, "granola duplicate save", error);
       }
       return json(
         { duplicate: true, id: dup.id, title: dup.title },
@@ -3445,7 +3445,7 @@ async function routeRequest(req: Request): Promise<Response> {
       );
     }
 
-    await supabase.from("entries").insert({
+    const { error } = await supabase.from("entries").insert({
       content,
       summary,
       embedding,
@@ -3459,9 +3459,9 @@ async function routeRequest(req: Request): Promise<Response> {
       is_private: isPrivate,
       owner_id: telegram_id,
     });
+    if (error) return serverError(origin, "granola import save", error);
     return new Response(null, { status: 204, headers: corsHeaders(origin) });
   }
-
   // ── POST /granola/notes/:id/skip ──────────────────────────────────────────────
   const granolaSkipMatch = routePath.match(/^\/granola\/notes\/([^/]+)\/skip$/);
   if (granolaSkipMatch && req.method === "POST") {
@@ -3474,13 +3474,13 @@ async function routeRequest(req: Request): Promise<Response> {
     if (!integration) return apiErr(404, "Granola not connected", origin);
     const current: string[] = (integration as { skipped_note_ids: string[] }).skipped_note_ids ?? [];
     if (!current.includes(noteId)) {
-      await supabase.from("user_integrations")
+      const { error } = await supabase.from("user_integrations")
         .update({ skipped_note_ids: [...current, noteId] })
         .eq("telegram_id", telegram_id).eq("service", "granola");
+      if (error) return serverError(origin, "granola skip save", error);
     }
     return new Response(null, { status: 204, headers: corsHeaders(origin) });
   }
-
   // ── POST /feedback ────────────────────────────────────────────────────────────
   // Принимает ОБА формата (backward-compat на время раскатки со старым кэш-бандлом):
   //   • multipart/form-data — новый веб: text + category + опц. screenshot (→ приватный бакет)

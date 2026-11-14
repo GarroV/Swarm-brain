@@ -18,6 +18,7 @@ import { IntegrationStatusLine } from "@/components/profile/IntegrationStatusLin
 import { STALE_DAYS } from "@/lib/integrationStatus";
 import { TelegramPanel } from "@/components/profile/TelegramPanel";
 import { NotificationSoundToggle } from "@/components/settings/NotificationSoundToggle";
+import { useGranolaSave } from "@/components/settings/useGranolaSave";
 import { AppearanceSection, BackdropSection } from "@/components/profile/BackdropSection";
 import { PasskeysSection } from "@/components/profile/PasskeysSection";
 import { useDt, useIsDemo } from "@/components/roy/nav";
@@ -131,6 +132,10 @@ export function ProfileSection({ me, onSaved }: { me: Me; onSaved?: (patch: Pick
 
 // ── Granola note preview modal ────────────────────────────────────────────────
 
+const GRANOLA_IMPORT_COPY = {
+  saveFailed: { ru: "Не удалось сохранить. Попробуйте ещё раз.", en: "Could not save. Try again." },
+} as const;
+
 function GranolaNoteModal({
   note, onClose, onImported, onSkipped,
 }: {
@@ -138,7 +143,8 @@ function GranolaNoteModal({
 }) {
   const [preview, setPreview] = useState<string | null>(null);
   const [loadingPreview, setLoadingPreview] = useState(false);
-  const [saving, setSaving] = useState(false);
+  const { saving, saveError, save } = useGranolaSave();
+  const dt = useDt();
 
   const noteDate = note.calendar_event?.scheduled_start_time ?? note.created_at;
 
@@ -152,22 +158,10 @@ function GranolaNoteModal({
     }
   };
 
-  const handleImport = async (visibility: "public" | "private") => {
-    setSaving(true);
-    try {
-      await importGranolaNote(note.id, visibility);
-      onImported();
-      onClose();
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handleSkip = async () => {
-    await skipGranolaNote(note.id);
-    onSkipped();
-    onClose();
-  };
+  const handleImport = (visibility: "public" | "private") =>
+    save(() => importGranolaNote(note.id, visibility), () => { onImported(); onClose(); });
+  const handleSkip = () =>
+    save(() => skipGranolaNote(note.id), () => { onSkipped(); onClose(); });
 
   return (
     <Dialog open onOpenChange={onClose}>
@@ -196,6 +190,7 @@ function GranolaNoteModal({
             </div>
           )}
 
+          {saveError && <p role="alert" className="text-sm text-destructive">{dt(GRANOLA_IMPORT_COPY.saveFailed.ru, GRANOLA_IMPORT_COPY.saveFailed.en)}</p>}
           <div className="flex flex-col gap-2">
             <Button size="sm" onClick={() => handleImport("public")} disabled={saving} className="w-full">
               Сохранить в базу (общее)
@@ -203,7 +198,7 @@ function GranolaNoteModal({
             <Button size="sm" variant="secondary" onClick={() => handleImport("private")} disabled={saving} className="w-full">
               Сохранить (личное 🔒)
             </Button>
-            <Button size="sm" variant="ghost" onClick={handleSkip} className="w-full text-muted-foreground">
+            <Button size="sm" variant="ghost" onClick={handleSkip} disabled={saving} className="w-full text-muted-foreground">
               Пропустить
             </Button>
           </div>
