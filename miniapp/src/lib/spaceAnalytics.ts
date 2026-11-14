@@ -93,7 +93,6 @@ export interface CurrentRow {
   risk: number;
   problem: number;
   unchecked: number;
-  toCarry: number;
 }
 
 export interface SpaceReport {
@@ -185,7 +184,6 @@ export function buildSpaceReport(input: SpaceReportInput): SpaceReport {
       risk: checks("risk"),
       problem: checks("problem"),
       unchecked: live.filter((i) => i.check_status === null).length,
-      toCarry: live.filter((i) => i.to_carry).length,
     }
     : null;
 
