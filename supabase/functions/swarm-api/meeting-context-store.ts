@@ -52,9 +52,13 @@ async function startTimes(sb: SupabaseClient, rows: ContextEntry[]): Promise<Map
   ];
   const times = new Map<string, string>();
   if (!ids.length) return times;
-  const { data, error } = await sb.from("meetings").select("id,started_at").in("id", ids);
-  if (error) throw new Error("meeting_context_start_lookup_failed");
-  for (const row of data ?? []) if (row.started_at) times.set(row.id, row.started_at);
+  // Keep both the response and URL below PostgREST's row/URI limits (max_rows is 1000).
+  for (let offset = 0; offset < ids.length; offset += CANDIDATE_PAGE) {
+    const { data, error } = await sb.from("meetings").select("id,started_at")
+      .in("id", ids.slice(offset, offset + CANDIDATE_PAGE));
+    if (error) throw new Error("meeting_context_start_lookup_failed");
+    for (const row of data ?? []) if (row.started_at) times.set(row.id, row.started_at);
+  }
   return times;
 }
 
@@ -62,7 +66,11 @@ export function entryStartsAt(row: ContextEntry, times: Map<string, string>): st
   const linked = times.get(String(row.metadata?.meeting_id ?? ""));
   const calendar = row.metadata?.calendar_event as { scheduled_start_time?: unknown } | undefined;
   const raw = linked ?? calendar?.scheduled_start_time;
-  return typeof raw === "string" && Number.isFinite(Date.parse(raw)) ? new Date(raw).toISOString() : null;
+  // Date.parse also accepts bare dates and local times; neither proves an event's instant.
+  const instant = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:\d{2})$/;
+  return typeof raw === "string" && instant.test(raw) && Number.isFinite(Date.parse(raw))
+    ? new Date(raw).toISOString()
+    : null;
 }
 
 export async function loadContextEntry(sb: SupabaseClient, actor: ContextActor, id: string) {
