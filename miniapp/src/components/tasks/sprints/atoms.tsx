@@ -150,7 +150,7 @@ export function CarryBadge({ count, reason, sourceName }: {
   const sourceLabel = typeof sourceName === "string" && sourceName.trim()
     ? dt(CARRY_COPY.source.ru, CARRY_COPY.source.en).replace(
       "{name}",
-      sourceName,
+      () => sourceName,
     )
     : null;
   if (count < 2 && !sourceLabel) return null;
