@@ -458,6 +458,13 @@ Push-стек управляется `RoyApp.tsx`: `push(route)` → `PushScreen
 
 **Редактор содержания встречи (#265, #1025).** `screens/ContentEditor.tsx` хранит отдельный редактор `Entry.content`, вызываемый из `MeetAdminScreen`: просмотр первых 800 символов, редактирование и сохранение остаются в одном компоненте. Шесть подписей выбираются из локального `CONTENT_COPY` (RU/EN) через существующий `useDt`; обработчики, сброс состояния при смене записи, `patchMeeting(id, { content })`, callback и прежняя ошибка сохранения не меняются.
 
+
+### Web dictionary foundation (#1025, stage 1)
+
+`lib/i18n` loads generated flat RU/EN dictionaries into a synchronous, in-memory i18next instance. `useT` returns a stable language-bound translator; `useDt` preserves legacy semantics. `NotificationSoundToggle` is the first migrated section, with exact existing copy and behavior. Build discovers JSON locales; CI checks key/parameter/plural parity, generated output and raw UI copy in migrated/new sections. Existing sections are explicitly listed for gradual migration. Profile language, outbound messages and content language remain later stages. See [implementation contract](decisions/2026-11-14-web-dictionary-foundation.md) for the codemod, validation limits and adding a locale.
+
+**Постепенный перенос разделов (14.11.2026, #1025).** `roy/CopyButton.tsx` и QR-инструмент (`tools/QrTool.tsx`, `tools/QrCard.tsx`) перенесены штатным AST-codemod на `useT`: девять существовавших пар RU/EN теперь лежат в `lib/i18n/locales/*.json`. Ключи сгруппированы как `common.copy.*` и `tools.qr.*`; три файла перенесены из legacy-реестра в `scripts/i18n-migrated.json`. Тексты, DOM/классы, исходное содержимое, пользовательский заголовок кнопки, состояния/таймер копирования, ограничения ввода и генерация/скачивание QR не меняются. Следующий раздел переносится отдельно по тому же контракту; весь веб перенесённым не объявляется.
+
 ### ESLint веба (#1270)
 
 `npm --prefix miniapp run lint` использует flat config Next 16 (`core-web-vitals` + TypeScript) через ESLint 9. Команда включена в `scripts/check fast` и в тот же полный `scripts/check initiatives` в CI; отчёт — `reports/miniapp-lint.json`. Next build сам ESLint не запускает.

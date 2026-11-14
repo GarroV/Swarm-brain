@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import QRCode from "qrcode";
-import { useDt } from "@/components/roy/nav";
+import { useT } from "@/components/roy/nav";
 
 // QR-код для текста или адреса: превью и скачивание PNG / SVG (решение владельца 03.10.2026,
 // issue #794). Код рисуется в браузере библиотекой `qrcode` — на сервер ничего не уходит.
@@ -22,7 +22,7 @@ function download(href: string, name: string) {
 }
 
 export function QrCard({ value, fileName }: { value: string; fileName: string }) {
-  const dt = useDt();
+  const t = useT();
   const [svg, setSvg] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
 
@@ -46,7 +46,7 @@ export function QrCard({ value, fileName }: { value: string; fileName: string })
   if (failed) {
     return (
       <p className="text-ink-soft" style={{ fontSize: 13 }}>
-        {dt("Слишком длинный текст для QR-кода. Сократите ссылку и сделайте код для короткой.", "Too long for a QR code. Shorten the link and make a code for the short one.")}
+        {t("tools.qr.tooLong")}
       </p>
     );
   }
@@ -69,16 +69,16 @@ export function QrCard({ value, fileName }: { value: string; fileName: string })
   return (
     <div className="flex flex-wrap items-end gap-4">
       {/* eslint-disable-next-line @next/next/no-img-element -- data-URI, оптимизировать нечего */}
-      <img src={`data:image/svg+xml;utf8,${encodeURIComponent(svg)}`} alt={dt("QR-код", "QR code")}
+      <img src={`data:image/svg+xml;utf8,${encodeURIComponent(svg)}`} alt={t("tools.qr.imageLabel")}
         width={176} height={176} className="rounded-[8px] border border-line bg-white" />
       <div className="flex flex-col gap-2">
         <button type="button" onClick={savePng}
           className="rounded-[8px] bg-ink px-3 py-1.5 font-semibold text-surface" style={{ fontSize: 13 }}>
-          {dt("Скачать PNG", "Download PNG")}
+          {t("tools.qr.downloadPng")}
         </button>
         <button type="button" onClick={saveSvg}
           className="rounded-[8px] border border-line px-3 py-1.5 text-ink" style={{ fontSize: 13 }}>
-          {dt("Скачать SVG — для печати", "Download SVG — for print")}
+          {t("tools.qr.downloadSvg")}
         </button>
       </div>
     </div>

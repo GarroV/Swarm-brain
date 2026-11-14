@@ -1,0 +1,6 @@
+[
+  "src/components/settings/NotificationSoundToggle.tsx",
+  "src/components/roy/CopyButton.tsx",
+  "src/components/tools/QrTool.tsx",
+  "src/components/tools/QrCard.tsx"
+]

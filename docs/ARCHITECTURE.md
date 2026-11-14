@@ -2958,3 +2958,7 @@ header продолжает работать через offset. `X-Total-Count` 
 нули или счётчики одной страницы. После ошибки списка полнота не заявляется; явный повтор
 перезапускает загрузку и чтение агрегата. Сразу подгружаются вся вычитка и сегодня/вчера;
 более ранние страницы — по существующей команде «Показать ещё».
+
+### Web dictionary foundation (#1025, stage 1)
+
+`lib/i18n` loads generated flat RU/EN dictionaries into a synchronous, in-memory i18next instance. `useT` returns a stable language-bound translator; `useDt` preserves legacy semantics. `NotificationSoundToggle` is the first migrated section, with exact existing copy and behavior. Build discovers JSON locales; CI checks key/parameter/plural parity, generated output and raw UI copy in migrated/new sections. Existing sections are explicitly listed for gradual migration. Profile language, outbound messages and content language remain later stages. See [implementation contract](decisions/2026-11-14-web-dictionary-foundation.md) for the codemod, validation limits and adding a locale.
