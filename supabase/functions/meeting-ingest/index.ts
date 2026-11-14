@@ -233,15 +233,22 @@ Deno.serve(async (req: Request) => {
   const hasTranscript = m.first_segment !== null && m.first_segment !== undefined;
   // Готовая встреча и источник, уже бывший у неё: повтор выгрузки или новая запись того же человека
   // (#1271) — различаем по длине аудио против конца стенограммы (second-recording.ts).
-  let length: { incomingSeconds: number | null; transcriptSeconds: number | null } | undefined;
+  let length:
+    | { incomingSeconds: number | null; transcriptSeconds: number | null; recordedSeconds: number | null }
+    | undefined;
   if (needsLengthCheck({ summaryStatus: m.summary_status, sources, incoming: source })) {
     const early = parts ?? await readParts(formData);
     if (early instanceof Response) return early;
     parts = early;
-    const { data } = await supabase.from("meetings").select("transcript").eq("id", m.id).maybeSingle();
+    // Готовая встреча — против конца стенограммы; идущая обработка (#1318) — против recorded_seconds.
+    const done = m.summary_status === "done";
+    const { data } = done
+      ? await supabase.from("meetings").select("transcript").eq("id", m.id).maybeSingle()
+      : { data: null };
     length = {
       incomingSeconds: await measureUpload([...early.systemParts, ...early.micParts]),
       transcriptSeconds: transcriptEndSec((data as { transcript?: never } | null)?.transcript ?? null),
+      recordedSeconds: done ? null : m.recorded_seconds,
     };
   }
   const decision = decideUpload({
@@ -253,9 +260,11 @@ Deno.serve(async (req: Request) => {
   });
   if (length) {
     console.log(
-      `meeting-ingest: ${m.id} — повторная выгрузка ${source} к готовой встрече: аудио ${
-        length.incomingSeconds === null ? "—" : Math.round(length.incomingSeconds)
-      }с, стенограмма ${length.transcriptSeconds === null ? "—" : Math.round(length.transcriptSeconds)}с → ${decision}`,
+      `meeting-ingest: ${m.id} — повторная выгрузка ${source} к ${
+        m.summary_status === "done" ? "готовой" : "обрабатываемой"
+      } встрече: аудио ${length.incomingSeconds === null ? "—" : Math.round(length.incomingSeconds)}с, стенограмма ${
+        length.transcriptSeconds === null ? "—" : Math.round(length.transcriptSeconds)
+      }с, принятая запись ${length.recordedSeconds == null ? "—" : Math.round(length.recordedSeconds)}с → ${decision}`,
     );
   }
   const queued = decision === "queue" ? await readQueued(supabase, m.id, source) : null;

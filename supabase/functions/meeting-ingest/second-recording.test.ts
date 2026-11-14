@@ -1,7 +1,7 @@
 // Что делает meeting-ingest с выгрузкой, когда у встречи уже есть запись (T156): бот scriba и
 // рекордер bumblebee ОДНОГО человека пишут одну встречу, claim_owner у обоих один, выгружают оба.
 import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import { decideUpload, isNewRecording, transcriptEndSec, uploadSource } from "./second-recording.ts";
+import { decideUpload, isNewRecording, needsLengthCheck, transcriptEndSec, uploadSource } from "./second-recording.ts";
 
 const ME = 7;
 const OTHER = 8;
@@ -41,6 +41,30 @@ Deno.test("повтор той же выгрузки, пока она обраб
     decideUpload({ summaryStatus: "processing", sources: [BOT], hasTranscript: false, incoming: BOT }),
     "already_processed",
   );
+});
+
+Deno.test("новая длинная запись того же источника, пока первая обрабатывается, — в очередь, а не потеря (#1318)", () => {
+  // Стенограммы ещё нет: сравниваем с длиной уже принятой записи (recorded_seconds). Очередь не трогает
+  // process_state идущей обработки — вторая запись ждёт её финала и сравнивается арбитром.
+  const base = { summaryStatus: "processing", sources: [PERSON], hasTranscript: false, incoming: PERSON };
+  assertEquals(decideUpload({ ...base, incomingSeconds: 6526, recordedSeconds: 425 }), "queue");
+  assertEquals(decideUpload({ ...base, incomingSeconds: 6526 }), "queue"); // принятая длина неизвестна — безопасная сторона
+});
+
+Deno.test("повтор выгрузки, пока она обрабатывается (длина как у принятой), и неизмеренное аудио — повтор (#1318)", () => {
+  const base = { summaryStatus: "processing", sources: [PERSON], hasTranscript: false, incoming: PERSON };
+  assertEquals(decideUpload({ ...base, incomingSeconds: 440, recordedSeconds: 425 }), "already_processed");
+  assertEquals(decideUpload({ ...base, incomingSeconds: 200, recordedSeconds: 425 }), "already_processed");
+  assertEquals(decideUpload({ ...base, incomingSeconds: null, recordedSeconds: 425 }), "already_processed");
+  assertEquals(decideUpload({ ...base }), "already_processed");
+});
+
+Deno.test("needsLengthCheck: измеряем и при processing, только для источника, уже бывшего у встречи (#1318)", () => {
+  assertEquals(needsLengthCheck({ summaryStatus: "processing", sources: [PERSON], incoming: PERSON }), true);
+  assertEquals(needsLengthCheck({ summaryStatus: "done", sources: [PERSON], incoming: PERSON }), true);
+  assertEquals(needsLengthCheck({ summaryStatus: "processing", sources: [BOT], incoming: PERSON }), false);
+  assertEquals(needsLengthCheck({ summaryStatus: "processing", sources: null, incoming: PERSON }), false);
+  assertEquals(needsLengthCheck({ summaryStatus: "failed", sources: [PERSON], incoming: PERSON }), false);
 });
 
 Deno.test("повтор той же выгрузки к готовой встрече (длина как в стенограмме) — второй обработки нет", () => {

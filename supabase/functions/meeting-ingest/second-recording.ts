@@ -46,6 +46,11 @@ export interface UploadContext {
   incomingSeconds?: number | null;
   /** Конец текущей стенограммы, с (transcriptEndSec); null — не определён. */
   transcriptSeconds?: number | null;
+  /**
+   * Длина уже принятой записи, пока та обрабатывается (`meetings.recorded_seconds`): стенограммы ещё
+   * нет, сравнивать не с чем иным (#1318). null — не известна.
+   */
+  recordedSeconds?: number | null;
 }
 
 // Новая запись того же источника против повтора её выгрузки (#1271). Клиенты шлют только аудио:
@@ -73,9 +78,10 @@ export function transcriptEndSec(t: { segments?: Array<{ end?: unknown }> | null
   return end;
 }
 
-/** Нужно ли измерять входящее аудио до решения: только повтор источника к уже готовой встрече. */
+/** Нужно ли измерять входящее аудио до решения: только повтор источника к готовой или обрабатываемой встрече. */
 export function needsLengthCheck(ctx: Pick<UploadContext, "summaryStatus" | "sources" | "incoming">): boolean {
-  return ctx.summaryStatus === "done" && ctx.sources !== null && ctx.sources.includes(ctx.incoming);
+  return (ctx.summaryStatus === "done" || ctx.summaryStatus === "processing") && ctx.sources !== null &&
+    ctx.sources.includes(ctx.incoming);
 }
 
 export function decideUpload(ctx: UploadContext): UploadDecision {
@@ -94,7 +100,13 @@ export function decideUpload(ctx: UploadContext): UploadDecision {
         if (typeof inc !== "number") return "already_processed";
         return typeof tr === "number" && !isNewRecording(inc, tr) ? "already_processed" : "challenge";
       }
-      return "already_processed";
+      // Идущая обработка (#1318): стенограммы ещё нет, сравниваем с длиной принятой записи. Новая
+      // запись встаёт в очередь: process_state идущей обработки она не трогает (воркер пишет в него
+      // на каждом шаге), а после финала её сравнит арбитр. Слот очереди — на источник, повтор
+      // этой же выгрузки до финала снова даёт already_processed (index.ts readQueued).
+      const { incomingSeconds: inc, recordedSeconds: rec } = ctx;
+      if (typeof inc !== "number") return "already_processed";
+      return typeof rec === "number" && !isNewRecording(inc, rec) ? "already_processed" : "queue";
     }
     return ctx.summaryStatus === "processing" ? "queue" : "challenge";
   }

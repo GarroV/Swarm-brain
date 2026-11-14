@@ -28,6 +28,16 @@ const MEETINGS: Record<string, Record<string, unknown>> = {
     first_segment: { start: 0, end: 3, text: "привет" },
     transcript: { segments: [{ start: 0, end: 3, text: "привет" }, { start: 400, end: 425, text: "пока" }] },
   },
+  // Та же запись, пока её первая выгрузка ещё обрабатывается: стенограммы нет, длина принятой — 425 с (#1318).
+  "m-processing": {
+    id: "m-processing",
+    claim_owner: OWNER,
+    notes_edited_at: null,
+    summary_status: "processing",
+    sources: ["person:42"],
+    first_segment: null,
+    recorded_seconds: 425,
+  },
   "m-other": { id: "m-other", claim_owner: 777, notes_edited_at: null, summary_status: null },
 };
 
@@ -177,6 +187,20 @@ Deno.test("meeting-ingest: повтор выгрузки к готовой вс�
 
 Deno.test("meeting-ingest: новая длинная запись того же человека к готовой встрече — не выбрасывается (#1271)", async () => {
   const r = await call("m-done", undefined, TOKEN, false, 1500);
+  assertEquals(r.summary_status === "already_processed", false, "новая запись принята за повтор и потеряна");
+  assertEquals(r.status, 500);
+  assertStringIncludes(r.error ?? "", "failed to store audio");
+});
+
+// #1318: то же для встречи в обработке. Очередь пишет в хранилище — смоук его роняет (500), а 200
+// already_processed — потеря записи.
+Deno.test("meeting-ingest: повтор выгрузки, пока она обрабатывается, — already_processed", async () => {
+  const r = await call("m-processing", undefined, TOKEN, false, 430);
+  assertEquals([r.status, r.summary_status], [200, "already_processed"]);
+});
+
+Deno.test("meeting-ingest: новая длинная запись того же человека, пока первая обрабатывается, — не выбрасывается (#1318)", async () => {
+  const r = await call("m-processing", undefined, TOKEN, false, 1500);
   assertEquals(r.summary_status === "already_processed", false, "новая запись принята за повтор и потеряна");
   assertEquals(r.status, 500);
   assertStringIncludes(r.error ?? "", "failed to store audio");
