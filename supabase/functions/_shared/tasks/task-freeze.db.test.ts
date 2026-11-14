@@ -330,10 +330,12 @@ Deno.test("814 acceptance ignores live freeze drift behind moved/removed snapsho
       values(${WS},${tab},'Fictional next',current_date+1,current_date+14,'draft') returning id`).rows[0].id;
     const live = await add(db), moved = await add(db), removed = await add(db, { archived: true });
     await db.queryArray`insert into sprint_items(cycle_id,task_id,in_plan) values(${cycle},${live},true)`;
+    const targetItem = (await db.queryObject<{ id: string }>`insert into sprint_items(cycle_id,task_id,in_plan)
+      values(${next},${moved},true) returning id`).rows[0].id;
     const movedItem = (await db.queryObject<
       { id: string }
     >`insert into sprint_items(cycle_id,task_id,in_plan,frozen_at,frozen_title,frozen_status,frozen_assignees,task_frozen,moved_at,moved_to)
-      values(${cycle},${moved},true,now(),'Fictional historical title','open',array[]::text[],false,now(),${next}) returning id`)
+      values(${cycle},${moved},true,now(),'Fictional historical title','open',array[]::text[],false,now(),${targetItem}) returning id`)
       .rows[0].id;
     await db.queryArray`insert into sprint_items(cycle_id,task_id,in_plan,removed_title,removed_at)
       values(${cycle},${removed},true,'Fictional removed title',now())`;
