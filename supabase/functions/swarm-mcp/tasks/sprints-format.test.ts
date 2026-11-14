@@ -95,6 +95,8 @@ const item = (over: Partial<SprintItem>): SprintItem => ({
   carry_reason: null,
   carry_count: 0,
   carried_manual: null,
+  carried_from: null,
+  carried_from_cycle: null,
   removed: false,
   removed_at: null,
   withdrawn_at: null,
