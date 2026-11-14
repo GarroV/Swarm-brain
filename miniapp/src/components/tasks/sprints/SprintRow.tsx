@@ -343,7 +343,8 @@ export function SprintRow(
             item.removed,
             live && showExtra && !item.in_plan,
             checkOn,
-            live && item.carry_count >= 2,
+            live && (item.carry_count >= 2 ||
+              !!(item.carried_from && item.carried_from_cycle?.name?.trim())),
             live && item.comment_count > 0,
             live && item.link_count > 0,
           ];
@@ -433,6 +434,9 @@ export function SprintRow(
                   <CarryBadge
                     count={item.carry_count}
                     reason={item.carry_reason}
+                    sourceName={item.carried_from
+                      ? item.carried_from_cycle?.name
+                      : null}
                   />
                   <CountChip kind="comments" count={item.comment_count} />
                   <CountChip kind="links" count={item.link_count} />

@@ -135,20 +135,36 @@ export function CheckBadge(
 /**
  * «×N» у задачи, которая переезжает не первый раз (D012). С единицы не показываем: один
  * перенос — обычное дело, а метка на каждой второй строке перестаёт быть сигналом.
+ * Название известного спринта-источника показываем и при первом переносе, без «×1».
  */
-export function CarryBadge({ count, reason }: {
+const CARRY_COPY = {
+  source: { ru: "из «{name}»", en: "from “{name}”" },
+} as const;
+
+export function CarryBadge({ count, reason, sourceName }: {
   count: number;
   reason?: string | null;
+  sourceName?: string | null;
 }) {
   const dt = useDt();
-  if (count < 2) return null;
+  const sourceLabel = typeof sourceName === "string" && sourceName.trim()
+    ? dt(CARRY_COPY.source.ru, CARRY_COPY.source.en).replace(
+      "{name}",
+      sourceName,
+    )
+    : null;
+  if (count < 2 && !sourceLabel) return null;
   return (
     <span
-      title={reason ??
-        dt(`переносилась ${count} раза`, `carried over ${count} times`)}
+      title={sourceLabel
+        ? [sourceLabel, reason].filter(Boolean).join(" · ")
+        : reason ??
+          dt(`переносилась ${count} раза`, `carried over ${count} times`)}
       className="inline-flex items-center gap-0.5 rounded-full border border-pri-med/40 bg-pri-med/10 px-1.5 py-0.5 text-[10px] font-semibold text-pri-med"
     >
-      <RoyIcon name="repeat" size={9} strokeWidth={2.5} />×{count}
+      <RoyIcon name="repeat" size={9} strokeWidth={2.5} />
+      {count >= 2 && <>×{count}{sourceLabel ? " · " : ""}</>}
+      {sourceLabel}
     </span>
   );
 }
