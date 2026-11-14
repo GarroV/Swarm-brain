@@ -182,6 +182,10 @@ export type SprintCycleItem = {
   /** Сколько раз задача уже переезжала: с двух показываем «×N». */
   carry_count: number;
   carried_manual: boolean | null;
+  /** Source item FK; optional for older API responses. This is not a cycle id. */
+  carried_from?: string | null;
+  /** Verified source cycle; unavailable sources keep their existing carry count only. */
+  carried_from_cycle?: { id: string; name: string } | null;
   /**
    * Сколько у задачи комментариев и ссылок. В списке важно ЧИСЛО, а не содержимое: видно,
    * где шло обсуждение и где лежит материал, не открывая карточку. У скрытой приватной — 0.

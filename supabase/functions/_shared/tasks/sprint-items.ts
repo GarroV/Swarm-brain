@@ -63,6 +63,10 @@ export interface SprintItem {
   carry_reason: string | null;
   carry_count: number;
   carried_manual: boolean | null;
+  /** Предшествующая строка состава, не id спринта. */
+  carried_from: string | null;
+  /** Спринт предшествующей строки; null, если источник больше недоступен. */
+  carried_from_cycle: { id: string; name: string } | null;
   /** Задача удалена: строка осталась упоминанием и в счёт не идёт. */
   removed: boolean;
   removed_at: string | null;
@@ -161,7 +165,7 @@ async function loadAllItems(
   // вычисляемой, ответ превращается в «неизвестно что» (TS2352).
   const { data: rows, error: rowsErr } = await supabase.from("sprint_items")
     .select(
-      "id, task_id, in_plan, added_at, frozen_at, frozen_title, frozen_status, frozen_assignees, frozen_project, frozen_completed_at, frozen_due_date, check_status, check_note, check_at, check_by, to_carry, carry_reason, carry_count, carried_manual, removed_title, removed_project_id, removed_at, withdrawn_at, moved_at, moved_to, moved_by",
+      "id, task_id, in_plan, added_at, frozen_at, frozen_title, frozen_status, frozen_assignees, frozen_project, frozen_completed_at, frozen_due_date, check_status, check_note, check_at, check_by, to_carry, carry_reason, carry_count, carried_manual, carried_from, removed_title, removed_project_id, removed_at, withdrawn_at, moved_at, moved_to, moved_by",
     )
     .eq("cycle_id", cycleId).order("added_at", { ascending: true });
   if (rowsErr) throw new Error(`sprint items: ${rowsErr.message}`);
@@ -190,6 +194,7 @@ async function loadAllItems(
   const projectNames = await loadProjectNames(items, live);
   const comments = await countComments(liveIds);
   const targets = await loadMoveTargets(items);
+  const sources = await loadCarrySources(items, groupId);
 
   const hiddenCount = fetched.length - items.length;
   return {
@@ -239,6 +244,8 @@ async function loadAllItems(
         carry_reason: toCarry ? ((r.carry_reason as string | null) ?? null) : null,
         carry_count: (r.carry_count as number | null) ?? 0,
         carried_manual: (r.carried_manual as boolean | null) ?? null,
+        carried_from: (r.carried_from as string | null) ?? null,
+        carried_from_cycle: r.carried_from ? sources.get(r.carried_from as string) ?? null : null,
         removed,
         removed_at: (r.removed_at as string | null) ?? null,
         withdrawn_at: (r.withdrawn_at as string | null) ?? null,
@@ -316,6 +323,29 @@ async function loadMoveTargets(
   for (const [rowId, cycleId] of cycleOf) {
     const c = names.get(cycleId);
     if (c) out.set(rowId, c);
+  }
+  return out;
+}
+
+/** carried_from points to a sprint item; only name its cycle within the current workspace. */
+async function loadCarrySources(
+  items: Record<string, unknown>[],
+  groupId: string,
+): Promise<Map<string, { id: string; name: string }>> {
+  const out = new Map<string, { id: string; name: string }>();
+  const rowIds = [...new Set(items.filter((r) => r.carried_from).map((r) => r.carried_from as string))];
+  if (rowIds.length === 0) return out;
+  const { data: rows, error } = await supabase.from("sprint_items").select("id, cycle_id").in("id", rowIds);
+  if (error) throw new Error(`sprint carry source items: ${error.message}`);
+  const cycleOf = new Map(((rows ?? []) as { id: string; cycle_id: string }[]).map((r) => [r.id, r.cycle_id]));
+  if (cycleOf.size === 0) return out;
+  const { data: cycles, error: cycleError } = await supabase.from("sprint_cycles")
+    .select("id, name").in("id", [...new Set(cycleOf.values())]).eq("group_id", groupId).is("archived_at", null);
+  if (cycleError) throw new Error(`sprint carry source cycles: ${cycleError.message}`);
+  const names = new Map(((cycles ?? []) as { id: string; name: string }[]).map((c) => [c.id, c]));
+  for (const [rowId, cycleId] of cycleOf) {
+    const cycle = names.get(cycleId);
+    if (cycle) out.set(rowId, cycle);
   }
   return out;
 }
