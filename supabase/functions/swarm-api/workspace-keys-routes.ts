@@ -52,6 +52,24 @@ export async function handleWorkspaceKeysRoutes(
       return await handleAdminRoleRoute(supabase, req, roleMatch[1], Number(roleMatch[2]), actor, origin);
     }
     const masterMatch = routePath.match(MASTER_ROUTE);
+    if (routePath === "/admin/master-admins/history" && req.method === "GET") {
+      if (!isSuperadmin(actor)) return apiErr(403, "Forbidden", origin);
+      const { data, error } = await supabase.from("master_admin_events")
+        .select("id, action, actor_telegram_id, target_telegram_id, created_at")
+        .order("created_at", { ascending: false }).order("id", { ascending: false }).limit(100);
+      if (error) throw new Error(`master-admin history: ${error.code ?? "db"}`);
+      const rows = (data ?? []) as Array<{ actor_telegram_id: number; target_telegram_id: number }>;
+      const names = await resolveNames([...new Set(rows.flatMap((r) => [r.actor_telegram_id, r.target_telegram_id]))]);
+      return json(
+        rows.map((r) => ({
+          ...r,
+          actor_name: names.get(r.actor_telegram_id) ?? null,
+          target_name: names.get(r.target_telegram_id) ?? null,
+        })),
+        200,
+        origin,
+      );
+    }
     if (masterMatch) return await handleMasterRoute(supabase, req, masterMatch[1], actor, origin, resolveNames);
     return null;
   } catch (e) {
@@ -124,7 +142,7 @@ async function handleMasterRoute(
     return json(await listWithNames(), 201, origin);
   }
 
-  const res = await removeMasterAdmin(supabase, Number(idPart));
+  const res = await removeMasterAdmin(supabase, Number(idPart), actor.telegramId);
   if (!res.ok) return apiErr(res.reason === "not_found" ? 404 : 409, res.message, origin, res.reason);
   logMasterChange("master_admin_removed", actor.telegramId, Number(idPart));
   return json(await listWithNames(), 200, origin);

@@ -14,6 +14,9 @@
 /** Площадки, куда бот умеет войти (адаптер есть у Google Meet и Контур.Толка). */
 export type BotPlatform = "meet" | "kontur";
 
+/** Stable meeting source/filter ID; independent of the bot's display name. */
+export const BOT_MEETING_SOURCE_KEY = "scriba";
+
 export const BOT_PROFILE = {
   /** Имя бота в текстах людям. Подставляется в шаблоны как `{bot}`. */
   name: "scriba",
