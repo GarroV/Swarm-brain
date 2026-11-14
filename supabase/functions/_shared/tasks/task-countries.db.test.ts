@@ -72,8 +72,8 @@ Deno.test("бэкфилл: имена и коды приводятся к ISO-2,
     await db.queryArray`set session_replication_role = replica`;
     for (const value of Object.keys(legacy)) {
       const r = await db.queryObject<{ id: string }>`
-        insert into tasks (title, status, group_id, created_by, confirmed, country)
-        values (${value}, 'open', ${WS}, 'test', true, ${value}) returning id`;
+        insert into tasks (title, status, group_id, confirmed, country)
+        values (${value}, 'open', ${WS}, true, ${value}) returning id`;
       ids.set(value, r.rows[0].id);
     }
     await db.queryArray`set session_replication_role = default`;
@@ -105,7 +105,7 @@ Deno.test("ограничение базы: в countries только двухб
   try {
     await reset(db);
     const id = (await db.queryObject<{ id: string }>`
-      insert into tasks (title, status, group_id, created_by, confirmed) values ('c', 'open', ${WS}, 'test', true)
+      insert into tasks (title, status, group_id, confirmed) values ('c', 'open', ${WS}, true)
       returning id`).rows[0].id;
     for (const bad of ["{rs}", "{RUS}", "{R}", '{""}', "{RS,NULL}"]) {
       await assertRejects(
@@ -125,8 +125,8 @@ Deno.test("триггер: country и countries совпадают, откуда
   try {
     await reset(db);
     const id = (await db.queryObject<{ id: string }>`
-      insert into tasks (title, status, group_id, created_by, confirmed, country)
-      values ('t', 'open', ${WS}, 'test', true, 'HU') returning id`).rows[0].id;
+      insert into tasks (title, status, group_id, confirmed, country)
+      values ('t', 'open', ${WS}, true, 'HU') returning id`).rows[0].id;
     assertEquals(await countriesOf(db, id), { countries: ["HU"], country: "HU" }); // писатель мимо кода (демо-сид)
     await db.queryArray`update tasks set countries = array['RS','HU'] where id = ${id}`;
     assertEquals(await countriesOf(db, id), { countries: ["RS", "HU"], country: "RS" });
