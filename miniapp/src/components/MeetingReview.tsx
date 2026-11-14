@@ -1,4 +1,7 @@
 "use client";
+import { transcriptRecordingOrigin } from "../../../supabase/functions/_shared/meeting-transcript-origin";
+import { ManualMergePrompt } from "./meeting-review/ManualMergePrompt";
+import { MANUAL_MERGE_COPY } from "./meeting-review/ManualMergeQuestion";
 import { PILL_GROUP_CLS, pillSegmentCls } from "@/components/ui/PropertyPill";
 import { useState, useEffect, useCallback, useContext } from "react";
 import { askMeeting, fetchAgentMeeting, fetchAgentMeetingNotes, patchAgentMeetingDraft, renameAgentMeeting, publishAgentMeeting, resummarizeAgentMeeting, deleteAgentMeeting, hideAgentMeeting } from "@/lib/api";
@@ -80,6 +83,7 @@ export function MeetingReview({ id, onClose, onChanged }: Props) {
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [publishing, setPublishing] = useState(false);
+  const [mergeBusy, setMergeBusy] = useState(false);
   // После сохранения правки редактор закрывается, вёрстка прыгает, и на место нижней «Сохранить»
   // встаёт кнопка публикации — второй клик уходил в неё (27.10.2026: владелец сохранил правку,
   // через секунду встреча опубликовалась). Пока блок держится, публикация не нажимается.
@@ -91,6 +95,7 @@ export function MeetingReview({ id, onClose, onChanged }: Props) {
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState("");
   const [savingTitle, setSavingTitle] = useState(false);
+  const activeId = meeting?.id ?? id;
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -132,7 +137,7 @@ export function MeetingReview({ id, onClose, onChanged }: Props) {
     if (reprocessing) return;
     setReprocessing(true);
     try {
-      const m = await resummarizeAgentMeeting(id, note);
+      const m = await resummarizeAgentMeeting(activeId, note);
       setMeeting(m);
       setDraft(m.draft_notes_md ?? "");
       onChanged?.();
@@ -146,7 +151,7 @@ export function MeetingReview({ id, onClose, onChanged }: Props) {
   const handleSave = async () => {
     setSaving(true);
     try {
-      const m = await patchAgentMeetingDraft(id, draft);
+      const m = await patchAgentMeetingDraft(activeId, draft);
       setMeeting(m);
       setPublishLocked(true);
       setTimeout(() => setPublishLocked(false), PUBLISH_LOCK_AFTER_EDIT_MS);
@@ -157,7 +162,7 @@ export function MeetingReview({ id, onClose, onChanged }: Props) {
 
   // Точечный вопрос по выделенному в тезисах: ответ из режима чтения открывает правку уже со
   // вставленным ответом — сохраняет человек, как любую правку.
-  const askDraft = (fragment: string, question: string) => askMeeting("draft", id, fragment, question);
+  const askDraft = (fragment: string, question: string) => askMeeting("draft", activeId, fragment, question);
   const applyFromReading = (answer: string, mode: AskApply, fragment: string) => {
     setDraft(applyAskAnswerToText(meeting?.draft_notes_md ?? "", fragment, answer, mode));
     setEditing(true);
@@ -170,7 +175,7 @@ export function MeetingReview({ id, onClose, onChanged }: Props) {
       // Черновик нескольких владельцев — только в общую базу (сервер иначе ответит 409).
       // Исключение — встреча 1-1: «Личное» сохранит одну запись на двоих (#641).
       const teamOnly = !!meeting && hasSeveralOwners(meeting) && !meeting.one_on_one;
-      await publishAgentMeeting(id, teamOnly ? "workspace" : base);
+      await publishAgentMeeting(activeId, teamOnly ? "workspace" : base);
       onChanged?.();
       onClose();
     } finally { setPublishing(false); }
@@ -190,7 +195,7 @@ export function MeetingReview({ id, onClose, onChanged }: Props) {
     if (!ok) return;
     setDeleting(true);
     try {
-      await deleteAgentMeeting(id);
+      await deleteAgentMeeting(activeId);
       toast(dt("Черновик удалён", "Draft deleted"));
       onChanged?.();
       onClose();
@@ -211,7 +216,7 @@ export function MeetingReview({ id, onClose, onChanged }: Props) {
     if (!ok) return;
     setDeleting(true);
     try {
-      await hideAgentMeeting(id);
+      await hideAgentMeeting(activeId);
       toast(dt("Встреча скрыта у вас", "Meeting hidden for you"));
       onChanged?.();
       onClose();
@@ -225,7 +230,7 @@ export function MeetingReview({ id, onClose, onChanged }: Props) {
     if (!t) { setEditingTitle(false); return; }
     setSavingTitle(true);
     try {
-      const m = await renameAgentMeeting(id, t);
+      const m = await renameAgentMeeting(activeId, t);
       setMeeting(m);
       setEditingTitle(false);
       onChanged?.();
@@ -330,14 +335,17 @@ export function MeetingReview({ id, onClose, onChanged }: Props) {
     <p className="mb-4 text-sm text-ink-soft">{dt("Готовим тезисы…", "Preparing the summary…")}</p>
   );
 
+  const combinedNotes = liveNotes.some((note) => note.meeting_id && note.meeting_id !== meeting.id);
   const notesBlock = liveNotes.length > 0 && (
     <div className="mb-4">
       {!panel && <SectionLabel>{dt("Пометки на полях", "Margin notes")}</SectionLabel>}
       <div className="space-y-1.5">
         {liveNotes.map((n) => (
           <div key={n.id} className="flex gap-2.5 text-sm">
-            <span className="shrink-0 font-mono text-xs tabular-nums text-ink-mute">{fmtTs(n.offset_sec)}</span>
-            <span className="flex-1 whitespace-pre-wrap text-ink">{n.text}</span>
+            <span className="shrink-0 font-mono text-xs tabular-nums text-ink-mute">{combinedNotes ? fmtClock(n.recording_started_at ?? null, n.offset_sec, dt("ru-RU", "en-GB")) : fmtTs(n.offset_sec)}</span>
+            <span className="flex-1 whitespace-pre-wrap text-ink">
+              {combinedNotes && <span className="mr-1.5 text-xs font-medium text-ink-soft">{n.author_name || dt(MANUAL_MERGE_COPY.unknownAuthor.ru, MANUAL_MERGE_COPY.unknownAuthor.en)}:</span>}{n.text}
+            </span>
           </div>
         ))}
       </div>
@@ -345,7 +353,9 @@ export function MeetingReview({ id, onClose, onChanged }: Props) {
   );
 
   // «я» в транскрипте рекордера — тот, кто записывал; имя подставляем, только если он один (#819).
-  const meName = meeting.recorder_names?.length === 1 ? meeting.recorder_names[0] : null;
+  const recordingOrigin = transcriptRecordingOrigin(meeting);
+  const recordingStart = recordingOrigin.started_at;
+  const meName = recordingOrigin.merged ? meeting.transcript_origin_owner_name ?? null : (meeting.recorder_names?.length === 1 ? meeting.recorder_names[0] : null);
   const transcriptBlock = showTranscript && (
     <div className="mb-4">
       <div className="mb-2 flex items-center justify-between gap-2">
@@ -354,7 +364,7 @@ export function MeetingReview({ id, onClose, onChanged }: Props) {
           title={dt("Скопировать весь транскрипт", "Copy the whole transcript")}
           getText={() => transcriptToText(segments, {
             speakerAt: (i) => speakerLabelAt(segments, i, { meName, lang }),
-            fmtTime: (sec) => fmtClock(meeting.started_at, sec, dt("ru-RU", "en-GB")),
+            fmtTime: (sec) => fmtClock(recordingStart, sec, dt("ru-RU", "en-GB")),
           })}
         />
       </div>
@@ -365,7 +375,7 @@ export function MeetingReview({ id, onClose, onChanged }: Props) {
             <div key={i}>
               {speaker && <div className={`text-xs font-medium text-ink-soft ${i > 0 ? "mt-2" : ""}`}>{speaker}</div>}
               <div className="flex gap-2 text-sm">
-                <span className="w-16 shrink-0 font-mono text-xs text-ink-mute">{fmtClock(meeting.started_at, sg.start, dt("ru-RU", "en-GB"))}</span>
+                <span className="w-16 shrink-0 font-mono text-xs text-ink-mute">{fmtClock(recordingStart, sg.start, dt("ru-RU", "en-GB"))}</span>
                 <span className="flex-1 text-ink">{sg.text}</span>
               </div>
             </div>
@@ -392,7 +402,7 @@ export function MeetingReview({ id, onClose, onChanged }: Props) {
   return (
     <div className="roy-pop flex h-full flex-col">
       {header}
-      <div className="flex-1 overflow-y-auto px-5 pb-6">
+      <div className="flex-1 overflow-y-auto px-5 pb-6" inert={mergeBusy} aria-busy={mergeBusy}>
         <div className="mb-2 flex flex-wrap items-center gap-2 pt-1">
           <span className="inline-flex items-center gap-1.5 font-semibold" style={{ fontSize: 12, color: "var(--meet-ink)", background: "var(--meet-soft)", borderRadius: 8, padding: "3px 9px" }}>
             <RoyIcon name="meet" size={12} strokeWidth={1.9} /> {recorderSourceLabel(meeting, dt)}
@@ -484,6 +494,12 @@ export function MeetingReview({ id, onClose, onChanged }: Props) {
               </p>
             )}
           </div>
+        )}
+
+        {!published && (notesReady || summaryTerminal) && !editing && !editingTitle && !saving && !reprocessing && meeting.identity_kind === "manual" && !meeting.manual_merge_target_id && meeting.recording_now !== true && meeting.summary_status !== "processing" && (
+          <ManualMergePrompt key={`${activeId}:${teamOnly ? "workspace" : base}`} meetingId={activeId} base={teamOnly ? "workspace" : base}
+            disabled={publishing || deleting || saving || editing || editingTitle || reprocessing} onBusyChange={setMergeBusy}
+            onDecided={(result) => { onChanged?.(); if (result.decision === "merge") { toast(dt(MANUAL_MERGE_COPY.merged.ru, MANUAL_MERGE_COPY.merged.en)); onClose(); } }} />
         )}
 
         {panel ? (

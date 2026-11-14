@@ -1,3 +1,12 @@
+import {
+  handleManualMeetingMergeRoutes,
+  manualMeetingAliasPath,
+  manualMergeErrorResponse,
+} from "./manual-meeting-merge-routes.ts";
+import { handleMeetingLiveNotes, listConfirmedMeetingNotes } from "./meeting-live-notes-routes.ts";
+import type { ManualMeetingRow } from "../_shared/manual-meeting-merge.ts";
+import { withTranscriptOriginName } from "../_shared/meeting-transcript-origin-db.ts";
+import type { RecordingOriginRow } from "../_shared/meeting-transcript-origin.ts";
 import { meUiPrefs, parseMePatch } from "./me-fields.ts";
 import { deriveEntryTitle, entryTagKey } from "./entry-presentation.ts";
 import { taskExtractionResponse } from "./task-extraction-response.ts";
@@ -491,7 +500,7 @@ async function routeRequest(req: Request): Promise<Response> {
   // ── Routing ──────────────────────────────────────────────────────────────
   const url = new URL(req.url);
   // Снимаем префикс функции (/functions/v1/swarm-api) — один, известный (#592).
-  const routePath = routePathOf(url.pathname);
+  let routePath = routePathOf(url.pathname);
 
   // Второй шаг входа (палец, #955): состояние идёт в /me, замок обязательности — переменная
   // SECOND_STEP_REQUIRED (включён, пока явно не выключен); аудитория — SECOND_STEP_AUDIENCE (по умолчанию все).
@@ -922,6 +931,20 @@ async function routeRequest(req: Request): Promise<Response> {
     resolveNames,
   );
   if (statsResp) return statsResp;
+
+  const manualMergeContext = {
+    supabase,
+    origin,
+    actor: { telegramId: telegram_id, groupId, email: userEmail, isDemo },
+    recorderNames: async (row: ManualMeetingRow) => (await withRecorderNames([row]))[0].recorder_names,
+  };
+  const manualMergeResponse = await handleManualMeetingMergeRoutes(manualMergeContext, req, routePath);
+  if (manualMergeResponse) return manualMergeResponse;
+  try {
+    routePath = await manualMeetingAliasPath(manualMergeContext, req, routePath);
+  } catch (error) {
+    return manualMergeErrorResponse(error, origin);
+  }
 
   // Точечный вопрос по встрече (/agent-meetings/:id/ask, /meetings/:id/ask) — ответ по транскрипту.
   const askResp = await handleMeetingAskRoutes(
@@ -2578,78 +2601,7 @@ async function routeRequest(req: Request): Promise<Response> {
         telegramId: telegram_id,
         requireMeeting: true,
       });
-      // Все версии этой встречи: привязанные строки meetings + та, из которой запись создана
-      // (entry_id проставляется при публикации, но metadata.meeting_id несёт исходную версию).
-      // Пространство — ДОМАШНЕЕ встречи, а не смотрящего: у общей встречи версии и пометки
-      // лежат в её доме, и вторая команда иначе увидела бы пустую карточку.
-      const homeGroupId = entry.group_id ?? groupId;
-      const { data: versions } = await supabase.from("meetings")
-        .select(
-          "id, claim_owner, source, identity_kind, started_at, recorded_seconds",
-        )
-        .eq("group_id", homeGroupId)
-        .eq("entry_id", entry.id);
-      const ids = new Set<string>(
-        ((versions ?? []) as Array<{ id: string }>).map((v) => v.id),
-      );
-      const ownMeetingId = (entry.metadata as { meeting_id?: string } | null)
-        ?.meeting_id;
-      if (ownMeetingId) ids.add(ownMeetingId);
-      if (ids.size === 0) {
-        return json({ live: [], personal: [], versions: 0 }, 200, origin);
-      }
-      const idList = [...ids];
-
-      const [{ data: live }, { data: personal }] = await Promise.all([
-        supabase.from("meeting_live_notes")
-          .select("id, meeting_id, offset_sec, text, author_id, created_at")
-          .in("meeting_id", idList)
-          .order("offset_sec", { ascending: true }),
-        onlyLiveEntries(
-          supabase.from("entries")
-            .select("id, content, created_at, metadata"),
-        )
-          .eq("group_id", homeGroupId)
-          .eq("owner_id", telegram_id)
-          .eq("metadata->>kind", "personal_notes")
-          .in("metadata->>meeting_id", idList),
-      ]);
-
-      const liveRows = (live ?? []) as Array<{ author_id: number | null }>;
-      const names = await resolveNames([
-        ...new Set(
-          liveRows.map((r) => r.author_id).filter((n): n is number => typeof n === "number"),
-        ),
-      ]);
-      return json(
-        {
-          versions: idList.length,
-          live: liveRows.map((r) => {
-            const row = r as {
-              id: string;
-              meeting_id: string;
-              offset_sec: number;
-              text: string;
-              author_id: number | null;
-              created_at: string;
-            };
-            return {
-              ...row,
-              author_name: row.author_id != null ? (names.get(row.author_id) ?? `#${row.author_id}`) : null,
-            };
-          }),
-          personal: ((personal ?? []) as Array<
-            { id: string; content: string; created_at: string }
-          >)
-            .map((r) => ({
-              id: r.id,
-              content: r.content,
-              created_at: r.created_at,
-            })),
-        },
-        200,
-        origin,
-      );
+      return listConfirmedMeetingNotes({ supabase, entry, groupId, telegramId: telegram_id, resolveNames, origin });
     });
   }
 
@@ -2803,7 +2755,7 @@ async function routeRequest(req: Request): Promise<Response> {
     // оверсайта нет (решение владельца 2026-08-20). Прежний `?all=true` для админа убран;
     // пригляд «у кого копится» — агрегат без контента GET /admin/review-counts.
     // Свои = записывал ИЛИ совладелец: участник встречи с аккаунтом SWARM (решение 2026-09-25).
-    q = q.or(draftMeetingsOwnScopedFilter(telegram_id));
+    q = q.is("manual_merge_target_id", null).or(draftMeetingsOwnScopedFilter(telegram_id));
     if (status === "in_base") q = q.is("published_entry.archived_at", null);
     const { data, error, count } = await q;
     if (error) return serverError(origin, "agent-meetings list", error);
@@ -2976,39 +2928,18 @@ async function routeRequest(req: Request): Promise<Response> {
       return json(suggestion, 200, origin);
     }
 
-    // ── Live-пометки «Роя» (meeting_live_notes) — для экрана /live ──────────────
-    if (agentNotesMatch && req.method === "GET") {
-      const { data, error } = await supabase
-        .from("meeting_live_notes")
-        .select("id, offset_sec, text, author_id, created_at")
-        .eq("meeting_id", mId)
-        .order("offset_sec", { ascending: true });
-      if (error) return serverError(origin, "agent-notes list", error);
-      return json(data ?? [], 200, origin);
-    }
-    if (agentNotesMatch && req.method === "POST") {
-      // Пометки можно добавлять к встрече в любом статусе (в т.ч. аннотировать уже опубликованную).
-      let body: Record<string, unknown>;
-      try {
-        body = await req.json();
-      } catch {
-        return apiErr(400, "Invalid JSON", origin);
-      }
-      const text = typeof body.text === "string" ? body.text.trim() : "";
-      if (!text) return apiErr(400, "Пустая пометка", origin);
-      const offsetSec = Math.max(0, Math.floor(Number(body.offset_sec) || 0));
-      const { data, error } = await supabase.from("meeting_live_notes")
-        .insert({
-          meeting_id: mId,
-          group_id: meetingGroupId,
-          author_id: telegram_id,
-          offset_sec: offsetSec,
-          text: text.slice(0, 2000),
-        })
-        .select("id, offset_sec, text, author_id, created_at")
-        .single();
-      if (error) return serverError(origin, "agent-notes create", error);
-      return json(data, 201, origin);
+    if (agentNotesMatch) {
+      return handleMeetingLiveNotes({
+        supabase,
+        req,
+        origin,
+        meetingId: mId,
+        groupId: meetingGroupId,
+        telegramId: telegram_id,
+        actorEmail: userEmail,
+        resolveNames,
+        serverError,
+      });
     }
 
     // GET — полный черновик (транскрипт + тезисы + участники + имена записавших)
@@ -3022,7 +2953,7 @@ async function routeRequest(req: Request): Promise<Response> {
       let inBaseDuplicate:
         | { id: string; title: string; source: string }
         | null = null;
-      if (meeting.status !== "in_base") {
+      if (meeting.status !== "in_base" && meeting.identity_kind !== "manual") {
         const startedAt = meeting.started_at as string | null;
         const dupNow = await findDuplicateMeeting(supabase, {
           groupId: meetingGroupId,
@@ -3044,9 +2975,10 @@ async function routeRequest(req: Request): Promise<Response> {
         }
       }
       const [withPair] = await withOneOnOne([enriched as Record<string, unknown>], telegram_id);
+      const withOrigin = await withTranscriptOriginName(supabase, withPair as typeof withPair & RecordingOriginRow);
       return json(
         {
-          ...withPair,
+          ...withOrigin,
           recording_now: isBotRecordingNow(meeting as SlotRow),
           in_base_duplicate: inBaseDuplicate,
         },

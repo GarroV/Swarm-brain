@@ -26,7 +26,7 @@
 // (рекордер кладёт структурно). Работает и против уже существующих записей — бэкфилл не нужен.
 
 import { type SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { canViewEntry } from "./entries/access.ts";
+import { canMutateEntry, canViewEntry } from "./entries/access.ts";
 import { onlyLiveEntries } from "./entries/live.ts";
 import { matchesPublishVisibility } from "./meeting-publish-visibility.ts";
 import { baseIdentityKey } from "./meeting-roster.ts";
@@ -145,6 +145,10 @@ export function parseMeetingContent(content: string | null | undefined): {
 }
 
 export type DedupIncoming = {
+  /** Read-only confirmation candidates may include manual recordings; automatic dedup never does. */
+  allowManualCandidates?: boolean;
+  /** Human merge requires the existing mutation guard, not merely visibility. */
+  requireMutation?: boolean;
   groupId: string;
   /** YYYY-MM-DD — день встречи (как в entries.entry_date). */
   entryDate: string | null;
@@ -201,7 +205,7 @@ export type DedupMatch = {
 };
 
 // Кандидат на дубль из БД (entries).
-type Candidate = {
+export type Candidate = {
   id: string;
   content: string | null;
   source: string | null;
@@ -213,6 +217,7 @@ type Candidate = {
       attendees?: MeetingAttendee[];
       title?: string;
       identity_key?: string;
+      identity_kind?: string;
       meeting_id?: string;
     })
     | null;
@@ -229,17 +234,14 @@ export async function findDuplicateMeeting(
   supabase: SupabaseClient,
   inc: DedupIncoming,
 ): Promise<DedupMatch | null> {
-  const incAtt = attendeeNames(inc.attendees);
   // Без даты сопоставлять нечего. Пустой список участников у входящей раньше означал выход в
   // первой же строке — а именно так приходят записи Granola и записи из комнаты (у них
   // attendees нет вовсе), то есть половина реальных дублей отбрасывалась до всякой проверки.
   // Теперь работают сигналы, не зависящие от состава (название, участие публикующего).
   if (!inc.entryDate) return null;
-  if (incAtt.length === 0 && isGenericTitle(inc.title) && !inc.viewerEmail) return null;
-  const incSet = new Set(incAtt);
-  const incMin = toMinutes(inc.startedAt);
+  if (attendeeNames(inc.attendees).length === 0 && isGenericTitle(inc.title) && !inc.viewerEmail) return null;
+
   // Метка пространства (`#ws:`, своя строка при неподтверждённой чужой) встречу не меняет.
-  const incKey = inc.identityKey ? baseIdentityKey(inc.identityKey) : null;
 
   const { data, error } = await onlyLiveEntries(
     supabase
@@ -260,7 +262,8 @@ export async function findDuplicateMeeting(
       canViewEntry(
         { is_private: c.is_private ?? false, owner_id: c.owner_id, shared_with: c.shared_with },
         inc.viewerId,
-      ) && matchesPublishVisibility(c, inc.publishPrivate, inc.viewerId),
+      ) && matchesPublishVisibility(c, inc.publishPrivate, inc.viewerId) &&
+      (!inc.requireMutation || canMutateEntry({ ...c, is_private: c.is_private ?? false }, inc.viewerId)),
   );
 
   // Время кандидатов из meetings.started_at. Без этого запроса время записей РЕКОРДЕРА неизвестно:
@@ -268,26 +271,27 @@ export async function findDuplicateMeeting(
   // держатся окна всех сигналов состава. Один запрос на вызов; meeting_id-не-uuid (ULID из
   // бот-импорта Granola) отфильтрован — иначе PostgREST падает на приведении типа.
   const startedByEntry = new Map<string, string>();
+  const kindByEntry = new Map<string, string>();
   const uuidRe = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
   const mids = visible
     .map((c) => (c.metadata?.meeting_id ?? "") as string)
     .filter((m) => uuidRe.test(m));
   if (mids.length > 0) {
-    const { data: mrows } = await supabase.from("meetings").select("id, started_at").in("id", mids);
+    const { data: mrows } = await supabase.from("meetings").select("id, started_at, identity_kind").in("id", mids);
     const byId = new Map<string, string>();
-    for (const m of (mrows ?? []) as Array<{ id: string; started_at: string | null }>) {
+    const kindById = new Map<string, string>();
+    for (const m of (mrows ?? []) as Array<{ id: string; started_at: string | null; identity_kind?: string | null }>) {
       if (m.started_at) byId.set(m.id, m.started_at);
+      if (m.identity_kind) kindById.set(m.id, m.identity_kind);
     }
     for (const c of visible) {
       const mid = (c.metadata?.meeting_id ?? "") as string;
       const st = byId.get(mid);
       if (st) startedByEntry.set(c.id, st);
+      const kind = kindById.get(mid);
+      if (kind) kindByEntry.set(c.id, kind);
     }
   }
-
-  const incTitleN = normTitle(inc.title);
-  const incTitleUsable = !isGenericTitle(inc.title);
-  const viewerEmail = (inc.viewerEmail ?? "").trim().toLowerCase();
 
   const toMatch = (c: Candidate): DedupMatch => ({
     id: c.id,
@@ -297,8 +301,31 @@ export async function findDuplicateMeeting(
     ownerId: c.owner_id ?? null,
   });
 
+  const match = meetingCandidateMatcher(inc);
   for (const c of visible) {
-    if (inc.excludeId && c.id === inc.excludeId) continue;
+    const manual = c.metadata?.identity_kind === "manual" || keyScheme(c.metadata?.identity_key ?? "") === "manual" ||
+      kindByEntry.get(c.id) === "manual";
+    if (manual && !inc.allowManualCandidates) continue;
+    if (match(c, startedByEntry.get(c.id))) return toMatch(c);
+  }
+  return null;
+}
+
+/** Same established matching signals for a human suggestion; never mutates or authorizes. */
+export function meetingCandidateMatcher(
+  inc: DedupIncoming,
+): (c: Candidate, candidateStartedAt?: string | null) => boolean {
+  const incAtt = attendeeNames(inc.attendees);
+  const incSet = new Set(incAtt);
+  const incMin = toMinutes(inc.startedAt);
+  const incKey = inc.identityKey ? baseIdentityKey(inc.identityKey) : null;
+  const incTitleN = normTitle(inc.title);
+  const incTitleUsable = !isGenericTitle(inc.title);
+  const viewerEmail = (inc.viewerEmail ?? "").trim().toLowerCase();
+  return (c, candidateStartedAt) => {
+    if (!inc.entryDate) return false;
+
+    if (inc.excludeId && c.id === inc.excludeId) return false;
 
     // Гейт по identity_key — сильнейший сигнал, но ТОЛЬКО для сравнимых ключей (одна общая
     // схема: два рекордера одного календарного события или одной комнаты). Тот же ключ → одна
@@ -309,14 +336,14 @@ export async function findDuplicateMeeting(
     const rawCandKey = (c.metadata?.identity_key as string | undefined) || null;
     const candKey = rawCandKey ? baseIdentityKey(rawCandKey) : null;
     if (incKey && candKey && comparableKeys(incKey, candKey)) {
-      if (incKey === candKey) return toMatch(c);
-      continue;
+      if (incKey === candKey) return true;
+      return false;
     }
 
     const parsed = parseMeetingContent(c.content);
     const metaAtt = attendeeNames(c.metadata?.attendees);
     const candAtt = new Set([...parsed.attendees, ...metaAtt]);
-    const candMin = toMinutes(startedByEntry.get(c.id)) ?? parsed.minutes;
+    const candMin = toMinutes(candidateStartedAt) ?? parsed.minutes;
     const gap = incMin != null && candMin != null ? Math.abs(incMin - candMin) : null;
 
     // Сигнал 1 — сильное пересечение состава: ≥2 человек И ≥ половины меньшего списка. Отсекает
@@ -326,7 +353,7 @@ export async function findDuplicateMeeting(
     for (const a of incSet) if (candAtt.has(a)) overlap++;
     const small = Math.min(incSet.size, candAtt.size);
     if (overlap >= 2 && overlap >= Math.ceil(0.5 * small)) {
-      if (gap == null || gap <= TOLERANCE_MIN) return toMatch(c);
+      if (gap == null || gap <= TOLERANCE_MIN) return true;
     }
 
     // Сигнал 2 — идентичное название в один день. Единственное, что есть у Granola-записей:
@@ -335,7 +362,7 @@ export async function findDuplicateMeeting(
     // а одноимённых РАЗНЫХ встреч в один день на проде не нашлось ни одной. Дефолтные и
     // короткие названия («Встреча», «1-1») сигналом не считаются — они не опознают ничего.
     if (incTitleUsable && incTitleN === normTitle(c.metadata?.title as string | undefined)) {
-      return toMatch(c);
+      return true;
     }
 
     // Сигнал 3 — запись из комнаты: ни названия, ни участников, но записавший есть в участниках
@@ -347,8 +374,9 @@ export async function findDuplicateMeeting(
       const candEmails = ((c.metadata?.attendees ?? []) as MeetingAttendee[])
         .map((a) => (a?.email ?? "").trim().toLowerCase())
         .filter(Boolean);
-      if (candEmails.includes(viewerEmail)) return toMatch(c);
+      if (candEmails.includes(viewerEmail)) return true;
     }
-  }
-  return null;
+
+    return false;
+  };
 }

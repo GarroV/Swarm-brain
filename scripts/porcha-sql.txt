@@ -177,3 +177,14 @@ current_setting('swarm.member_move', true) = new.telegram_id::text then|true the
        (p_expected->>'tasks') is distinct from (v_counts->>'tasks')|       false|supabase/functions/_shared/users/member-move.db.test.ts|supabase/migrations/20261105200000_member_move.sql
        and q.email in (v_email, v_pemail) and q.id is distinct from v_pid|       and false|supabase/functions/_shared/users/member-move.db.test.ts|supabase/migrations/20261105200000_member_move.sql
 revoke all on function public.move_member_to_workspace(bigint, text, bigint, boolean, jsonb) from public, anon, authenticated;|grant execute on function public.move_member_to_workspace(bigint, text, bigint, boolean, jsonb) to anon;|supabase/functions/_shared/users/member-move.db.test.ts|supabase/migrations/20261105200000_member_move.sql
+
+# Explicit manual-pair confirmation (#183): stale proposals, edited notes, originals, verified attribution, DELETE contention, reader preservation.
+if current_ctx -> 'versions' is distinct from p_expected then|if false then|supabase/functions/_shared/manual-meeting-merge.db.test.ts|supabase/migrations/20261114120000_manual_meeting_confirmation.sql
+if p_replace and (s ->> 'notes_edited_at' is not null or t ->> 'notes_edited_at' is not null) then|if false then|supabase/functions/_shared/manual-meeting-merge.db.test.ts|supabase/migrations/20261114120000_manual_meeting_confirmation.sql
+source_notes, target_notes, p_arbitration,|'[]'::jsonb, target_notes, p_arbitration,|supabase/functions/_shared/manual-meeting-merge.db.test.ts|supabase/migrations/20261114120000_manual_meeting_confirmation.sql
+d.applied_transcript = p_transcript|true|supabase/functions/_shared/manual-meeting-merge.db.test.ts|supabase/migrations/20261114120000_manual_meeting_confirmation.sql
+and d.applied_transcript = s -> 'transcript'|and false|supabase/functions/_shared/manual-meeting-merge.db.test.ts|supabase/migrations/20261114120000_manual_meeting_confirmation.sql
+for update of m nowait|for update of m|supabase/functions/_shared/manual-meeting-merge.db.test.ts|supabase/migrations/20261114120000_manual_meeting_confirmation.sql
+if t is not null and not public.manual_meeting_actor_owns(t, owner_id) then|if false then|supabase/functions/_shared/manual-meeting-merge.db.test.ts|supabase/migrations/20261114120000_manual_meeting_confirmation.sql
+if e is null or (t is not null and t ->> 'status' is distinct from 'in_base') then|if false then|supabase/functions/_shared/manual-meeting-merge.db.test.ts|supabase/migrations/20261114120000_manual_meeting_confirmation.sql
+if (current_ctx #>> '{versions,queued}')::boolean then|if false then|supabase/functions/_shared/manual-meeting-merge.db.test.ts|supabase/migrations/20261114120000_manual_meeting_confirmation.sql
