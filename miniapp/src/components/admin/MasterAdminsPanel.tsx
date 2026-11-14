@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import { ApiError, addMasterAdmin, fetchMasterAdmins, removeMasterAdmin, type MasterAdmin } from "@/lib/api";
 import { useDt } from "@/components/roy/nav";
 import { useConfirm } from "@/components/ui/confirm";
+import { MasterAdminHistory } from "./MasterAdminHistory";
 
 // «Мастер-админы» (#233, этап 3): кто видит и настраивает все пространства. Только для
 // мастер-админа (`me.is_superadmin`) — вкладка в AdminDesk и блок в AdminScreen. Права решает сервер;
@@ -20,6 +21,7 @@ export function MasterAdminsPanel() {
   const [idDraft, setIdDraft] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [historyRevision, setHistoryRevision] = useState(0);
 
   const load = useCallback(() => {
     fetchMasterAdmins().then(setRows).catch((e) => {
@@ -44,6 +46,7 @@ export function MasterAdminsPanel() {
     setBusy(true); setError(null);
     try {
       setRows(await op());
+      setHistoryRevision((n) => n + 1);
       return true;
     } catch (e) {
       console.error("[MasterAdminsPanel] change", e);
@@ -107,6 +110,7 @@ export function MasterAdminsPanel() {
         </button>
       </div>
       {error && <p role="alert" className="mt-2 text-destructive" style={{ fontSize: 12.5 }}>{error}</p>}
+      <MasterAdminHistory revision={historyRevision} />
     </section>
   );
 }

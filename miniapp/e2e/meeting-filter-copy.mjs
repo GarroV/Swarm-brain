@@ -63,6 +63,7 @@ import { EMPTY_FILTERS, isFilterActive, personOf } from './meetingsFilter';\n` +
 }
 const componentFile = fs.existsSync(path.join(screen, "MeetingsFilters.tsx")) ? path.join(screen, "MeetingsFilters.tsx") : path.join(screen, "MeetAdminScreen.tsx");
 const { MeetingsFilters } = load(componentFile);
+const { entryMeetingFacets } = load(path.join(app, "src/lib/meetingsFacets.ts"));
 const { EMPTY_FILTERS } = load(path.join(app, "src/lib/meetingsFilters.ts"));
 const { RoyNavContext } = load(path.join(app, "src/components/roy/nav.ts"));
 const data = [
@@ -85,7 +86,7 @@ for (const lang of ["ru", "en"]) for (const mode of ["empty", "active", "single"
   const changes = [];
   captures = [];
   const html = renderToStaticMarkup(React.createElement(RoyNavContext.Provider, { value: { me: { is_demo: lang === "en" } } },
-    React.createElement(MeetingsFilters, { all: entries, shown: mode === "active" ? 2 : entries.length, markets: mode === "active" ? ["RS"] : null, value, onChange: (next) => changes.push(plain(next)) })));
+    React.createElement(MeetingsFilters, { facets: entryMeetingFacets(entries), shown: mode === "active" ? 2 : entries.length, markets: mode === "active" ? ["RS"] : null, value, onChange: (next) => changes.push(plain(next)) })));
   const controls = [...captures];
   const check = (name, fn) => { try { fn(); } catch { failures.push(`${lang}/${mode}/${name}`); } };
   const buttons = controls.filter((e) => e.type === "button");
