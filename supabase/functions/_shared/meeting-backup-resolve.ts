@@ -9,7 +9,14 @@
 // если копия полнее. Личность не подделывается: источник и владелец — те, что записаны в копии, а
 // влить автоматика может лишь в встречу, которую держит тот же человек.
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { decideBackup, type OwnMeetingFacts } from "./meeting-backup-decision.ts";
+import {
+  decideBackup,
+  type DecideInput,
+  mayRecordNow,
+  type OwnMeetingFacts,
+  type RecorderAdmissionRow,
+  separateRecordingTitle,
+} from "./meeting-backup-decision.ts";
 import { BACKUP_BUCKET } from "./meeting-backup-retention.ts";
 import { claimLeaseUntil } from "./meeting-lease.ts";
 import { isFrozen } from "./meeting-frozen.ts";
@@ -28,6 +35,7 @@ export interface ResolveSummary {
   covered: number;
   coveredElsewhere: number;
   ingested: number;
+  ownMeetings: number;
   review: number;
   waiting: number;
   failed: number;
@@ -42,10 +50,14 @@ interface BackupRow {
   created_at: string;
   parts: unknown;
   purged_at: string | null;
+  group_id: string | null;
+  reason: string;
 }
 
 interface MeetingRow {
   id: string;
+  identity_key: string | null;
+  title: string | null;
   claim_owner: number | null;
   summary_status: string | null;
   status: string | null;
@@ -64,10 +76,34 @@ interface StoredPart {
 }
 
 const MEETING_COLUMNS =
-  "id, claim_owner, summary_status, status, notes_edited_at, recorded_seconds, sources:process_state->sources, gen:process_state->>gen, first_segment:transcript->segments->0";
+  "id, title, identity_key, claim_owner, summary_status, status, notes_edited_at, recorded_seconds, sources:process_state->sources, gen:process_state->>gen, first_segment:transcript->segments->0";
 
 function sourcesOf(raw: unknown): string[] | null {
   return Array.isArray(raw) ? raw.filter((s): s is string => typeof s === "string") : null;
+}
+
+/**
+ * Id своей встречи выводится из пары (встреча-источник, источник): копии одной пары приходят в одну
+ * и ту же встречу, второй своей не заводится. Не случайный: на `manual` нет уникального индекса по ключу.
+ */
+export async function ownMeetingId(meetingId: string, source: string): Promise<string> {
+  const h = new Uint8Array(
+    await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`own|${meetingId}|${source}`)),
+  );
+  h[6] = (h[6] & 0x0f) | 0x40;
+  h[8] = (h[8] & 0x3f) | 0x80;
+  const x = Array.from(h.slice(0, 16)).map((v) => v.toString(16).padStart(2, "0")).join("");
+  return `${x.slice(0, 8)}-${x.slice(8, 12)}-${x.slice(12, 16)}-${x.slice(16, 20)}-${x.slice(20)}`;
+}
+
+async function admissionRow(supabase: SupabaseClient, uploader: number): Promise<RecorderAdmissionRow | null> {
+  const { data, error } = await supabase.from("allowed_users")
+    .select(
+      "group_id, recorder_token_hash, recorder_token_expires_at, recorder_token_prev_hash, recorder_token_prev_expires_at",
+    )
+    .eq("telegram_id", uploader).maybeSingle();
+  if (error) throw new Error(`allowed_users ${uploader}: ${error.message}`);
+  return (data as RecorderAdmissionRow | null) ?? null;
 }
 
 async function ownMeetings(supabase: SupabaseClient, b: BackupRow): Promise<OwnMeetingFacts[]> {
@@ -138,6 +174,46 @@ async function ingestBackup(
   return true;
 }
 
+/**
+ * Копия человека, который встречу не держит, — его отдельная встреча (#1314, решение 12.11.2026):
+ * тем же путём, каким рекордер заводит ручную (`manual:`-ключ, держатель — он сам, без дедупа и
+ * склейки, meeting-claim), и тот же приём аудио, что у первой записи. Чужая встреча не читается
+ * дальше названия и не пишется. Идемпотентность — id встречи выводится из пары (встреча-источник, источник,
+ * `ownMeetingId`): повторный проход и вторая копия той же пары находят её, а не заводят вторую.
+ * true — запись принята (или уже была принята раньше); false — строка сменилась, повтор позже.
+ */
+async function ingestAsOwnMeeting(
+  supabase: SupabaseClient,
+  b: BackupRow,
+  sourceTitle: string | null,
+  ownId: string,
+): Promise<boolean> {
+  const endedMs = Date.parse(b.created_at);
+  const startedAt = b.recorded_seconds === null ? null : new Date(endedMs - b.recorded_seconds * 1000).toISOString();
+  const { error: insErr } = await supabase.from("meetings").upsert({
+    id: ownId,
+    source: "desktop-agent",
+    identity_kind: "manual",
+    identity_key: `manual:${b.id}`,
+    title: separateRecordingTitle(sourceTitle),
+    started_at: startedAt,
+    ended_at: b.created_at,
+    attendees: [],
+    group_id: b.group_id,
+    claim_owner: b.uploader,
+    recorded_seconds: b.recorded_seconds,
+    lease_expires_at: claimLeaseUntil(),
+  }, { onConflict: "id", ignoreDuplicates: true });
+  if (insErr) throw new Error(`создание встречи ${ownId}: ${insErr.message}`);
+  const { data, error } = await supabase.from("meetings").select(MEETING_COLUMNS).eq("id", ownId).maybeSingle();
+  if (error) throw new Error(`meetings ${ownId}: ${error.message}`);
+  const created = data as MeetingRow | null;
+  if (!created || created.claim_owner !== b.uploader) throw new Error(`встреча ${ownId} не принадлежит ${b.uploader}`);
+  // Уже принята (сбой был между приёмом и пометкой копии) — второй раз аудио не льём.
+  if (created.summary_status !== null) return true;
+  return await ingestBackup(supabase, b, created, "process");
+}
+
 async function mark(
   supabase: SupabaseClient,
   id: string,
@@ -156,9 +232,17 @@ async function mark(
 
 /** Разбирает неразобранные копии. Сбой одной не мешает остальным: в лог, повтор в следующий проход. */
 export async function resolveBackups(supabase: SupabaseClient, nowMs: number = Date.now()): Promise<ResolveSummary> {
-  const sum: ResolveSummary = { covered: 0, coveredElsewhere: 0, ingested: 0, review: 0, waiting: 0, failed: 0 };
+  const sum: ResolveSummary = {
+    covered: 0,
+    coveredElsewhere: 0,
+    ingested: 0,
+    ownMeetings: 0,
+    review: 0,
+    waiting: 0,
+    failed: 0,
+  };
   const { data, error } = await supabase.from("meeting_audio_backups")
-    .select("id, meeting_id, uploader, source, recorded_seconds, created_at, parts, purged_at")
+    .select("id, meeting_id, uploader, source, recorded_seconds, created_at, parts, purged_at, group_id, reason")
     .is("resolution", null)
     .is("replaced_at", null)
     .order("created_at", { ascending: true })
@@ -177,28 +261,53 @@ export async function resolveBackups(supabase: SupabaseClient, nowMs: number = D
         sum.review++;
         continue;
       }
-      const verdict = decideBackup({
-        backup: {
-          id: b.id,
-          meetingId: b.meeting_id,
-          uploader: b.uploader,
-          source: b.source,
-          recordedSeconds: b.recorded_seconds,
-          createdAt: b.created_at,
-          filesPurged: b.purged_at !== null,
-        },
-        meeting: {
-          id: m.id,
-          claimOwner: m.claim_owner,
-          summaryStatus: m.summary_status,
-          frozen: isFrozen(m),
-          hasTranscript: m.first_segment !== null && m.first_segment !== undefined,
-          recordedSeconds: m.recorded_seconds,
-          sources: sourcesOf(m.sources),
-        },
-        ownMeetings: await ownMeetings(supabase, b),
-        nowMs,
-      });
+      const admitted = mayRecordNow(await admissionRow(supabase, b.uploader), b.group_id, nowMs);
+      const peers = await ownMeetings(supabase, b);
+      const decideOn = (meeting: MeetingRow) =>
+        decideBackup(
+          {
+            backup: {
+              id: b.id,
+              meetingId: b.meeting_id,
+              uploader: b.uploader,
+              source: b.source,
+              recordedSeconds: b.recorded_seconds,
+              createdAt: b.created_at,
+              filesPurged: b.purged_at !== null,
+              reason: b.reason,
+            },
+            meeting: {
+              id: meeting.id,
+              claimOwner: meeting.claim_owner,
+              summaryStatus: meeting.summary_status,
+              frozen: isFrozen(meeting),
+              hasTranscript: meeting.first_segment !== null && meeting.first_segment !== undefined,
+              recordedSeconds: meeting.recorded_seconds,
+              sources: sourcesOf(meeting.sources),
+            },
+            ownMeetings: peers,
+            nowMs,
+            uploaderMayRecord: admitted,
+          } satisfies DecideInput,
+        );
+      let target = m;
+      let verdict = decideOn(m);
+      const ownId = await ownMeetingId(b.meeting_id, b.source);
+      if (verdict.action === "own_meeting") {
+        // Своя встреча этой пары уже есть от ДРУГОЙ копии: копия идёт в неё как вторая запись (всё
+        // решение — как для встречи того же человека), второй своей встречи не заводим.
+        const { data: prior, error: pErr } = await supabase.from("meetings").select(MEETING_COLUMNS)
+          .eq("id", ownId).maybeSingle();
+        if (pErr) throw new Error(`meetings ${ownId}: ${pErr.message}`);
+        const earlier = prior as MeetingRow | null;
+        if (earlier && earlier.identity_key !== `manual:${b.id}`) {
+          target = earlier;
+          verdict = decideOn(earlier);
+          if (verdict.action === "own_meeting") {
+            verdict = { action: "review", note: "своя встреча этой пары перешла другому человеку: влить нельзя" };
+          }
+        }
+      }
 
       if (verdict.action === "wait") sum.waiting++;
       else if (verdict.action === "covered") {
@@ -211,13 +320,23 @@ export async function resolveBackups(supabase: SupabaseClient, nowMs: number = D
         await mark(supabase, b.id, "needs_review", verdict.note);
         console.warn(`meeting-backup: копия ${b.id} (встреча ${b.meeting_id}) — нужен разбор: ${verdict.note}`);
         sum.review++;
+      } else if (verdict.action === "own_meeting" && b.group_id === null) {
+        await mark(supabase, b.id, "needs_review", "у копии нет пространства: своей встречи не завести");
+        sum.review++;
       } else if (ingests >= INGEST_PER_PASS) {
         sum.waiting++;
+      } else if (verdict.action === "own_meeting") {
+        ingests++;
+        if (await ingestAsOwnMeeting(supabase, b, m.title, ownId)) {
+          await mark(supabase, b.id, "ingested", `${verdict.note}; встреча ${ownId}`);
+          console.log(`meeting-backup: копия ${b.id} (встреча ${b.meeting_id}) стала отдельной встречей ${ownId}`);
+          sum.ownMeetings++;
+        } else sum.waiting++;
       } else {
         ingests++;
-        if (await ingestBackup(supabase, b, m, verdict.mode)) {
+        if (await ingestBackup(supabase, b, target, verdict.mode)) {
           await mark(supabase, b.id, "ingested", verdict.note);
-          console.log(`meeting-backup: копия ${b.id} влита во встречу ${b.meeting_id} (${verdict.mode})`);
+          console.log(`meeting-backup: копия ${b.id} влита во встречу ${target.id} (${verdict.mode})`);
           sum.ingested++;
         } else sum.waiting++;
       }
