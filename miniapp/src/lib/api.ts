@@ -4211,19 +4211,19 @@ export async function fetchReviewCounts(workspace?: string): Promise<ReviewCount
   return apiFetch<ReviewCount[]>(`/admin/review-counts${workspace ? `?workspace=${encodeURIComponent(workspace)}` : ""}`);
 }
 
-export async function fetchMovePreview(telegramId: number, to: string): Promise<MovePreview> {
+export async function fetchMovePreview(telegramId: number | string, to: string): Promise<MovePreview> {
   if (DEV_MODE) return mockMovePreview(telegramId, to);
-  return apiFetch<MovePreview>(`/admin/members/${telegramId}/move-preview?to=${encodeURIComponent(to)}`, { cache: "no-store" });
+  return apiFetch<MovePreview>(`/admin/${typeof telegramId === "string" ? "member-accounts" : "members"}/${telegramId}/move-preview?to=${encodeURIComponent(to)}`, { cache: "no-store" });
 }
 
 /** `expected` — счётчики из показанного предпросмотра: изменились — сервер ответит 409. */
 export async function moveMember(
-  telegramId: number,
+  telegramId: number | string,
   to: string,
   expected: { tasks: number; entries: number },
 ): Promise<MovePreview> {
   if (DEV_MODE) return mockMoveMember(telegramId, to, expected);
-  return apiFetch<MovePreview>(`/admin/members/${telegramId}/move`, {
+  return apiFetch<MovePreview>(`/admin/${typeof telegramId === "string" ? "member-accounts" : "members"}/${telegramId}/move`, {
     method: "POST",
     body: JSON.stringify({ to, expected }),
   });
@@ -4233,11 +4233,11 @@ export async function moveMember(
 // «перенос невозможен» (занята почта), Алиса (789012) — «данные изменились между показом и нажатием»:
 // первое выполнение отвечает 409 expected_mismatch со свежими числами, повторное проходит.
 let mockMoveMismatchServed = false;
-function mockMovePreview(telegramId: number, to: string): MovePreview {
+function mockMovePreview(telegramId: number | string, to: string): MovePreview {
   const blocked = telegramId === 345678;
   const space = (id: string) => ({ id, name: id === "cee" ? "Central East Europe" : "World" });
   return {
-    person: { telegram_id: telegramId, name: MOCK_USERS.find((u) => u.telegram_id === telegramId)?.name ?? "Alice Smith", email: "alice@example.com" },
+    person: { telegram_id: typeof telegramId === "number" ? telegramId : null, ...(typeof telegramId === "string" ? { account_id: telegramId } : {}), name: MOCK_USERS.find((u) => u.telegram_id === telegramId)?.name ?? "Alice Smith", email: "alice@example.com" },
     from: space(to === "cee" ? "ws-k3m9x2qa" : "cee"),
     to: space(to),
     counts: {
@@ -4258,7 +4258,7 @@ function mockMovePreview(telegramId: number, to: string): MovePreview {
   };
 }
 
-function mockMoveMember(telegramId: number, to: string, expected: { tasks: number; entries: number }): MovePreview {
+function mockMoveMember(telegramId: number | string, to: string, expected: { tasks: number; entries: number }): MovePreview {
   const preview = mockMovePreview(telegramId, to);
   if (!preview.can_execute) {
     throw new ApiError(409, "Move has conflicts", { error: "Move has conflicts", code: "conflicts", conflicts: preview.conflicts });
