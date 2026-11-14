@@ -13,16 +13,25 @@ export const MEETINGS_PAGE_SIZE = 50;
 export const MEETINGS_RECENT_LIMIT = 200;
 
 export type PagingPhase = "recent" | "older" | "main";
-export type PagingCursor = { phase: PagingPhase; offset: number };
+export type PagingCursor = {
+  phase: PagingPhase;
+  offset: number;
+  after?: string;
+};
 export type Bounds = { from: string; to: string };
 
 /** Серверные фильтры экрана: то, что сужает выборку ещё в базе. */
-export type ServerFilters = { q: string; storage: "any" | "shared" | "personal" };
+export type ServerFilters = {
+  q: string;
+  storage: "any" | "shared" | "personal";
+};
 
 const dayOf = (d: Date) => d.toISOString().slice(0, 10);
 
 /** «Вчера» и «позавчера» как день встречи (UTC — так считает и `meetingDay` экрана). */
-export function recentDays(now: Date = new Date()): { yesterday: string; dayBefore: string } {
+export function recentDays(
+  now: Date = new Date(),
+): { yesterday: string; dayBefore: string } {
   const y = new Date(now);
   y.setUTCDate(y.getUTCDate() - 1);
   const b = new Date(now);
@@ -42,12 +51,19 @@ export function pageQuery(
   userBounds: Bounds | null,
   now: Date = new Date(),
 ): MeetingsPageQuery {
-  const base: MeetingsPageQuery = { confirmed: true, offset: cursor.offset };
+  const base: MeetingsPageQuery = {
+    confirmed: true,
+    ...(cursor.after ? { cursor: cursor.after } : { offset: cursor.offset }),
+  };
   if (filters.q) base.q = filters.q;
   if (filters.storage !== "any") base.storage = filters.storage;
   const { yesterday, dayBefore } = recentDays(now);
-  if (cursor.phase === "recent") return { ...base, limit: MEETINGS_RECENT_LIMIT, from: yesterday };
-  if (cursor.phase === "older") return { ...base, limit: MEETINGS_PAGE_SIZE, to: dayBefore };
+  if (cursor.phase === "recent") {
+    return { ...base, limit: MEETINGS_RECENT_LIMIT, from: yesterday };
+  }
+  if (cursor.phase === "older") {
+    return { ...base, limit: MEETINGS_PAGE_SIZE, to: dayBefore };
+  }
   return {
     ...base,
     limit: MEETINGS_PAGE_SIZE,
@@ -62,17 +78,38 @@ export function pageQuery(
  */
 export function nextCursor(
   cursor: PagingCursor,
-  got: { rows: number; total: number | null },
+  got: {
+    rows: number;
+    total: number | null;
+    lastRow?: { created_at: string; id: string };
+  },
 ): PagingCursor | null {
   const offset = cursor.offset + got.rows;
+  const keyed = got.lastRow !== undefined || cursor.after !== undefined;
   const phaseDone = got.rows === 0 ||
-    (got.total != null ? offset >= got.total : got.rows < pageSizeOf(cursor.phase));
-  if (!phaseDone) return { phase: cursor.phase, offset };
+    (got.total != null
+      ? (keyed ? got.rows : offset) >= got.total
+      : got.rows < pageSizeOf(cursor.phase));
+  if (!phaseDone) {
+    return {
+      phase: cursor.phase,
+      offset,
+      ...(got.lastRow
+        ? {
+          after: JSON.stringify({
+            created_at: got.lastRow.created_at,
+            id: got.lastRow.id,
+          }),
+        }
+        : {}),
+    };
+  }
   if (cursor.phase === "recent") return { phase: "older", offset: 0 };
   return null;
 }
 
-const pageSizeOf = (phase: PagingPhase) => phase === "recent" ? MEETINGS_RECENT_LIMIT : MEETINGS_PAGE_SIZE;
+const pageSizeOf = (phase: PagingPhase) =>
+  phase === "recent" ? MEETINGS_RECENT_LIMIT : MEETINGS_PAGE_SIZE;
 
 /** Добавляет страницу к списку без дублей (сдвиг offset при вставке новой встречи). */
 export function mergeById<T extends { id: string }>(prev: T[], page: T[]): T[] {

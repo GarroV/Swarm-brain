@@ -5,6 +5,7 @@ import { buildEntriesQuery } from "./entries-guard.ts";
 import { toListRow } from "./meetings-payload.ts";
 import {
   applyListFilters,
+  applyMeetingsCursor,
   ENTRY_LIGHT_COLUMNS,
   hasListFilters,
   LIGHT_PAGE_MAX,
@@ -173,10 +174,8 @@ Deno.test("«Личное» — .eq is_private=true", () => {
 
 async function meetingsRouteBody(): Promise<string> {
   const src = await Deno.readTextFile(`${HERE}index.ts`);
-  const start = src.indexOf('routePath === "/meetings"');
-  assert(start > 0, "роут GET /meetings не найден — детектор устарел");
-  const end = src.indexOf("POST /meetings/:id/resummarize", start);
-  return src.slice(start, end);
+  assert(src.includes("return handleMeetingsList(url,"), "GET route must use the tested list module");
+  return await Deno.readTextFile(`${HERE}meetings-routes.ts`);
 }
 
 Deno.test("GET /meetings: порядок с tie-breaker по id и .range — страницы не теряют и не дублируют строки", async () => {
@@ -218,4 +217,30 @@ Deno.test("даты from/to — только YYYY-MM-DD существующег
   assertEquals(parse("from=2026-02-30").from, null);
   assertEquals(parse("from=2026-10-12,id.gt.0").from, null);
   assertEquals(parse("to=2026-10-13)").to, null);
+});
+
+Deno.test("meeting cursor: bounded exact timestamp/id token, invalid tokens never broaden a list", () => {
+  const cursor = { created_at: "2026-11-13T12:04:03.123456+00:00", id: "00000000-0000-4000-8000-000000000104" };
+  const qs = (x: unknown) => new URLSearchParams({ cursor: JSON.stringify(x) }).toString();
+  assertEquals(parse(qs(cursor)).cursor, cursor);
+  for (
+    const bad of [
+      { ...cursor, id: "x),id.neq.x" },
+      { ...cursor, created_at: "2026-02-31T00:00:00Z" },
+      { ...cursor, extra: 1 },
+      [],
+      null,
+    ]
+  ) assertEquals(parse(qs(bad)).cursorError, true);
+  assertEquals(parse(qs(cursor) + "&offset=50").cursorError, true);
+  const { client, calls } = recordingClient();
+  applyMeetingsCursor(buildEntriesQuery(client, "id", { groupId: "g", telegramId: 1 }) as never, parse(qs(cursor)));
+  assert(
+    calls.some((c) =>
+      c.method === "or" && String(c.args[0]).includes('created_at.lt."2026-11-13T12:04:03.123456+00:00"')
+    ),
+  );
+  assert(
+    calls.some((c) => c.method === "or" && String(c.args[0]).includes('id.lt."00000000-0000-4000-8000-000000000104"')),
+  );
 });

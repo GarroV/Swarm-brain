@@ -1,3 +1,4 @@
+import { requestMeetingsPage, mockMeetingsPage, loadPendingMeetingPages } from "./meetingsPageRequest";
 import { mockMaps, mockAggregators, mockInspections, mockInspectionDetail, mockQuality } from "./homeQualityDemo";
 import type { CreateTaskInput, UpdateTaskInput, TaskFilters, TaskLabel, TaskFilesList } from "./api-types/tasks";
 export type { CreateTaskInput, UpdateTaskInput, TaskFilters, TaskLabel, TaskFilesList } from "./api-types/tasks";
@@ -3349,41 +3350,16 @@ export async function fetchMeetings(
   return apiFetch<Entry[]>(`/meetings${qs ? `?${qs}` : ""}`);
 }
 
-const headerCount = (res: Response, name: string): number | null => {
-  const raw = res.headers.get(name);
-  return raw != null && /^\d+$/.test(raw) ? Number(raw) : null;
-};
+/** Full review rows, preserving the existing review UI while removing its finite page cap. */
+export async function fetchReviewMeetings(): Promise<Entry[]> {
+  if (DEV_MODE) return mockMeetings.filter((m) => !m.metadata.confirmed);
+  return loadPendingMeetingPages((query) => requestMeetingsPage(API_BASE, query, (status, message, body) => new ApiError(status, message, body), false));
+}
 
-/** Лёгкая страница списка встреч с серверными фильтрами и счётчиками. */
+/** Lightweight pages; legacy servers fall back to offset until they advertise keyset support. */
 export async function fetchMeetingsPage(query: MeetingsPageQuery): Promise<MeetingsPage> {
-  if (DEV_MODE) {
-    const all = mockMeetings.filter((m) =>
-      query.confirmed === undefined || Boolean(m.metadata.confirmed) === query.confirmed
-    );
-    const offset = query.offset ?? 0;
-    const rows = all.slice(offset, offset + (query.limit ?? 50));
-    return { rows, total: all.length, unfilteredTotal: all.length };
-  }
-  const params = new URLSearchParams({ light: "1" });
-  if (query.confirmed !== undefined) params.set("confirmed", String(query.confirmed));
-  if (query.limit) params.set("limit", String(query.limit));
-  if (query.offset) params.set("offset", String(query.offset));
-  if (query.q) params.set("q", query.q);
-  if (query.from) params.set("from", query.from);
-  if (query.to) params.set("to", query.to);
-  if (query.storage) params.set("storage", query.storage);
-  const res = await fetch(`${API_BASE}/meetings?${params}`, {
-    cache: "no-store",
-    credentials: "include",
-    headers: { "Content-Type": "application/json" },
-  });
-  const body = await res.json().catch(() => ({ error: res.statusText }));
-  if (!res.ok) throw new ApiError(res.status, body.error ?? res.statusText, body);
-  return {
-    rows: (body ?? []) as Entry[],
-    total: headerCount(res, "X-Total-Count"),
-    unfilteredTotal: headerCount(res, "X-Unfiltered-Count"),
-  };
+  if (DEV_MODE) return mockMeetingsPage(mockMeetings, query);
+  return requestMeetingsPage(API_BASE, query, (status, message, body) => new ApiError(status, message, body));
 }
 
 export async function fetchMeeting(id: string): Promise<Entry> {

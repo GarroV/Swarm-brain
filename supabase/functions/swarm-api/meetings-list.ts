@@ -23,10 +23,17 @@ const MAX_QUERY_CHARS = 100;
 
 /** Поля metadata, которые рисует список и на которые смотрят фильтры экрана. Остальное
  *  (участники — самое тяжёлое, identity_key, бэкапы стран и т.п.) — только в детали. */
-const LIGHT_METADATA_KEYS = ["title", "confirmed", "recorded_by", "superseded"] as const;
+const LIGHT_METADATA_KEYS = [
+  "title",
+  "confirmed",
+  "recorded_by",
+  "superseded",
+] as const;
 
 export type MeetingsListParams = {
   light: boolean;
+  cursor?: { created_at: string; id: string };
+  cursorError?: boolean;
   limit: number;
   offset: number;
   /** Поиск по названию; пусто — без поиска. */
@@ -45,7 +52,12 @@ function parseDay(raw: string | null): string | null {
   return Number.isNaN(d.getTime()) || d.toISOString().slice(0, 10) !== raw ? null : raw;
 }
 
-function parseIntParam(raw: string | null, def: number, max: number, min = 0): number {
+function parseIntParam(
+  raw: string | null,
+  def: number,
+  max: number,
+  min = 0,
+): number {
   const n = raw ? parseInt(raw, 10) : NaN;
   if (!Number.isFinite(n) || n < min) return def;
   return Math.min(n, max);
@@ -53,18 +65,25 @@ function parseIntParam(raw: string | null, def: number, max: number, min = 0): n
 
 /** Символы, которые ломают разбор условия PostgREST или работают подстановкой в ilike. */
 function cleanQuery(raw: string | null): string {
-  return (raw ?? "").replace(/[*%_\\",()]/g, " ").replace(/\s+/g, " ").trim().slice(0, MAX_QUERY_CHARS);
+  return (raw ?? "").replace(/[*%_\\",()]/g, " ").replace(/\s+/g, " ").trim()
+    .slice(0, MAX_QUERY_CHARS);
 }
 
 /**
  * Разбор параметров списка. Без `light=1` форма и лимиты прежние (500 / потолок 2000) — их
  * держит вызывающий; фильтры q/from/to/storage и offset действуют в обоих режимах.
  */
-export function parseMeetingsListParams(sp: URLSearchParams, legacy: { def: number; max: number }): MeetingsListParams {
+export function parseMeetingsListParams(
+  sp: URLSearchParams,
+  legacy: { def: number; max: number },
+): MeetingsListParams {
   const light = sp.get("light") === "1";
   const storageRaw = sp.get("storage");
   return {
     light,
+    ...(sp.has("cursor")
+      ? (sp.has("offset") && sp.get("offset") !== "0" ? { cursorError: true } : readMeetingsCursor(sp.get("cursor")!))
+      : {}),
     limit: light
       ? parseIntParam(sp.get("limit"), LIGHT_PAGE_SIZE, LIGHT_PAGE_MAX, 1)
       : parseIntParam(sp.get("limit"), legacy.def, legacy.max, 1),
@@ -106,7 +125,10 @@ export function quotePostgrestValue(raw: string): string {
  * Поиск — по названию: metadata.title, а у записи без названия — по превью текста (первая
  * строка content и есть заголовок, см. deriveEntryTitle).
  */
-export function applyListFilters<T extends Filterable<T>>(q: T, p: MeetingsListParams): T {
+export function applyListFilters<T extends Filterable<T>>(
+  q: T,
+  p: MeetingsListParams,
+): T {
   let out = q;
   if (p.q) {
     const pat = quotePostgrestValue(`*${p.q}*`);
@@ -128,7 +150,9 @@ export function applyListFilters<T extends Filterable<T>>(q: T, p: MeetingsListP
     out = out.or(`and(${dated.join(",")}),and(${undated.join(",")})`);
   }
   if (p.storage === "personal") out = out.eq("is_private", true);
-  if (p.storage === "shared") out = out.or("is_private.eq.false,is_private.is.null");
+  if (p.storage === "shared") {
+    out = out.or("is_private.eq.false,is_private.is.null");
+  }
   return out;
 }
 
@@ -161,7 +185,9 @@ export function toLightRow<T extends Row>(
   const { summary: _s, list_truncated: _l, ...rest } = row as Row;
   const meta = (row.metadata ?? {}) as Record<string, unknown>;
   const light: Record<string, unknown> = {};
-  for (const k of LIGHT_METADATA_KEYS) if (meta[k] !== undefined) light[k] = meta[k];
+  for (const k of LIGHT_METADATA_KEYS) {
+    if (meta[k] !== undefined) light[k] = meta[k];
+  }
   return {
     ...(rest as Omit<T, "summary" | "list_truncated" | "content" | "metadata">),
     content: titleLine(row.content),
@@ -169,4 +195,39 @@ export function toLightRow<T extends Row>(
     metadata: light,
     truncated: true,
   };
+}
+
+/** Strict bounded keyset token; do not round PostgreSQL microseconds through Date. */
+function readMeetingsCursor(
+  raw: string,
+): Pick<MeetingsListParams, "cursor" | "cursorError"> {
+  try {
+    if (raw.length > 180) return { cursorError: true };
+    const edge = JSON.parse(raw);
+    if (
+      !edge || typeof edge !== "object" || Array.isArray(edge) ||
+      Object.keys(edge).length !== 2 ||
+      typeof edge.created_at !== "string" || typeof edge.id !== "string" ||
+      !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?(?:Z|[+-]\d{2}:\d{2})$/
+        .test(edge.created_at) ||
+      !Number.isFinite(Date.parse(edge.created_at)) || !parseDay(edge.created_at.slice(0, 10)) ||
+      edge.created_at.startsWith("0000") ||
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+        edge.id,
+      )
+    ) return { cursorError: true };
+    return { cursor: { created_at: edge.created_at, id: edge.id } };
+  } catch {
+    return { cursorError: true };
+  }
+}
+
+export function applyMeetingsCursor<T extends { or(filters: string): T }>(
+  q: T,
+  p: MeetingsListParams,
+): T {
+  if (!p.cursor) return q;
+  const time = quotePostgrestValue(p.cursor.created_at);
+  const id = quotePostgrestValue(p.cursor.id);
+  return q.or(`created_at.lt.${time},and(created_at.eq.${time},id.lt.${id})`);
 }

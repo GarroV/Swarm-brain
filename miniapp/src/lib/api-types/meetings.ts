@@ -40,6 +40,8 @@ export type MeetingsPageQuery = {
   confirmed?: boolean;
   limit?: number;
   offset?: number;
+  /** Opaque keyset token from the last server row; preserves PostgreSQL precision. */
+  cursor?: string;
   q?: string;
   /** День встречи YYYY-MM-DD, границы включительно. */
   from?: string;
@@ -48,6 +50,8 @@ export type MeetingsPageQuery = {
 };
 
 export type MeetingsPage = {
+  /** Older API deployments omit the capability header; keep offset compatibility. */
+  keyset?: boolean;
   rows: Entry[];
   /** Сколько строк подходит под запрос БЕЗ лимита (X-Total-Count). */
   total: number | null;
