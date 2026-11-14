@@ -7,8 +7,9 @@
 //
 // Живёт в layout рядом с MaintenanceGate: раздел читается из адреса (RoyApp кладёт в него таб
 // и экран, issue #31) и из сохранённого вида доски задач, поэтому каркас приложения не трогаем.
-import { useEffect } from "react";
-import { sendPresence, type PresencePing } from "@/lib/api";
+import { useEffect, useState } from "react";
+import { fetchMe, sendPresence, type PresencePing } from "@/lib/api";
+import { stepPending } from "@/lib/passkeyStep";
 import {
   isActive,
   presenceSection,
@@ -28,7 +29,20 @@ function currentSection(): string | null {
 }
 
 export function PresencePulse() {
+  const [ready, setReady] = useState(false);
+
   useEffect(() => {
+    if (currentSection() === null) return; // login and other non-application routes do not pulse
+    let active = true;
+    // Layout also serves /live: resolve readiness here without depending on the Home page.
+    fetchMe().then((me) => {
+      if (active) setReady(!stepPending(me)?.required);
+    }).catch(() => { /* unknown profile: no presence requests; page handles sign-in/errors */ });
+    return () => { active = false; };
+  }, []);
+
+  useEffect(() => {
+    if (!ready) return;
     let lastInputAt = Date.now();
     let last: PulseMemo = null;
     let stopped = false;
@@ -93,7 +107,7 @@ export function PresencePulse() {
       window.removeEventListener("pagehide", goAway);
       window.removeEventListener("popstate", tick);
     };
-  }, []);
+  }, [ready]);
 
   return null;
 }

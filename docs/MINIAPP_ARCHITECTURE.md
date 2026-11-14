@@ -466,5 +466,9 @@ Push-стек управляется `RoyApp.tsx`: `push(route)` → `PushScreen
 
 `npm --prefix miniapp run lint:porcha` создаёт временный TSX с лишним импортом и async client component, проверяет отказ настоящего ESLint и отказ при росте существующего бюджета, затем удаляет фикстуру. Порча входит в полный CI-гейт, в быстрый хук — только обычный lint. Формат, типы, тесты, мёртвый код и границы остаются в существующих проектных гейтах.
 
+### Ожидание профиля перед монтированием веба (#1063)
+
+`app/page.tsx` держит нейтральную заставку до ответа `/me`: потребители API внутри `RoyApp` не монтируются, пока профиль не загружен. После ответа сохраняются существующие ветки экрана второго шага и OAuth. Ошибочный ответ не разрешает монтирование приложения; ответ 401, как прежде, ведёт на вход, а любой другой сбой (сеть, 5xx) показывает экран «Не удалось загрузить профиль» с кнопкой «Повторить» (`LOAD_ERROR_COPY`, RU/EN по языку браузера: профиля, а с ним и языка человека, ещё нет) — вечной пустой заставки нет. Глобальный `PresencePulse` остаётся в layout (в том числе для `/live`), но запускает прежние таймер и слушатели только после собственного успешного `/me` без обязательного непройденного шага. На маршруте входа он профиль не запрашивает. Это один дополнительный read `/me`; формат пульса, интервалы, события и серверный контракт не меняются. После успешного второго шага существующий экран перезагружает страницу и заново разрешает пульс.
+
 
 **Browser storage compatibility (#186).** `RoyApp` and `SearchScreen` share the pure `lib/browserStorage.ts` key adapter: write `swarm_tab`/`swarm_stack`/`swarm_recent_searches`, read new first with a nullish `roy_*` fallback, and clear both stack keys on explicit navigation reset. Stored values and navigation/query behavior are unchanged; this adapter does not handle cookies or authentication. The actual-consumer Node fixture is run by `browserStorage.test.ts`.
