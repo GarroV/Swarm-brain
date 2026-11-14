@@ -11,7 +11,15 @@ const source = {
   draft_notes_md: "Synthetic source notes",
 };
 const target = { ...source, id: "target", identity_kind: "calendar", status: "in_base", co_owners: [2] };
-const entry = { group_id: "fixture", owner_id: 1, is_private: false, shared_with: [], archived_at: null };
+const entry = {
+  group_id: "fixture",
+  owner_id: 1,
+  is_private: false,
+  shared_with: [],
+  archived_at: null,
+  metadata: { confirmed: true },
+  entry_type: "meeting",
+};
 
 Deno.test("a refusal for an open meeting still matches after the target is published", () => {
   const refused = { sourceId: "source", meetingId: "target", entryId: null, decision: "separate" as const };
@@ -71,6 +79,18 @@ Deno.test("readable foreign-owned published entry is not a mutation capability",
   assertEquals(manualPairAllowed(source, target, entry, 1, "fixture", false), true);
   assertEquals(manualPairAllowed(source, target, { ...entry, owner_id: 2 }, 1, "fixture", false), false);
   assertEquals(manualPairAllowed(source, target, { ...entry, archived_at: "2026-11-14" }, 1, "fixture", false), false);
+});
+
+Deno.test("only the existing confirmed publication flag makes an entry eligible", () => {
+  for (const metadata of [{ confirmed: false }, {}, null, { confirmed: "true" }]) {
+    assertEquals(manualPairAllowed(source, target, { ...entry, metadata }, 1, "fixture", false), false);
+  }
+  assertEquals(manualPairAllowed(source, target, entry, 1, "fixture", false), true);
+});
+
+Deno.test("a non-meeting entry cannot become the target through a direct decision", () => {
+  assertEquals(manualPairAllowed(source, target, { ...entry, entry_type: "note" }, 1, "fixture", false), false);
+  assertEquals(manualPairAllowed(source, target, entry, 1, "fixture", false), true);
 });
 
 Deno.test("a public entry does not replace the original reader's existing backing-draft authority", () => {

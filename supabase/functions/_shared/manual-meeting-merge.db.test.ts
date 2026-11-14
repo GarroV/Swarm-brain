@@ -61,7 +61,7 @@ async function meeting(db: Client, ws: string, options: Record<string, unknown> 
 async function published(db: Client, ws: string, options: Record<string, unknown> = {}) {
   const entry = await value<string>(
     db,
-    "insert into entries(content,entry_type,source,added_by,owner_id,group_id,is_private,metadata) values('Original','meeting','test','synthetic',$1,$2,false,'{}') returning id as value",
+    "insert into entries(content,entry_type,source,added_by,owner_id,group_id,is_private,metadata) values('Original','meeting','test','synthetic',$1,$2,false,'{\"confirmed\":true}') returning id as value",
     [ACTOR, ws],
   );
   return await meeting(db, ws, { ...options, status: "in_base", entry_id: entry });
@@ -143,8 +143,6 @@ Deno.test("manual Yes preserves original rows, authors, note offsets and immutab
       transcript: { segments: [{ text: "Short" }] },
       started_at: "2026-11-14T08:00:00Z",
     });
-    const beforeSource = await row(db, source);
-    const beforeTarget = await row(db, target);
     await db.queryArray(
       "insert into meeting_live_notes(meeting_id,group_id,author_id,offset_sec,text) values($1::uuid,$3,$4,9,'Source note'),($2::uuid,$3,$5,7,'Target note')",
       [source, target, ws, ACTOR, PEER],
@@ -154,6 +152,8 @@ Deno.test("manual Yes preserves original rows, authors, note offsets and immutab
       "select jsonb_agg(to_jsonb(n) order by n.id) as value from meeting_live_notes n where group_id=$1",
       [ws],
     );
+    const beforeSource = await row(db, source);
+    const beforeTarget = await row(db, target);
     const result = await decide(db, ws, source, target, {
       replace: true,
       patch: { content: "Replacement", summary: "Replacement", embedding: null, metadata: {} },
@@ -226,7 +226,7 @@ Deno.test("OPEN targets, including a linked but unpublished entry, cannot bypass
     }
     const entry = await value<string>(
       db,
-      "insert into entries(content,entry_type,source,added_by,owner_id,group_id,is_private,metadata) values('Original','meeting','test','synthetic',$1,$2,false,'{}') returning id as value",
+      "insert into entries(content,entry_type,source,added_by,owner_id,group_id,is_private,metadata) values('Original','meeting','test','synthetic',$1,$2,false,'{\"confirmed\":true}') returning id as value",
       [ACTOR, ws],
     );
     await db.queryArray("update meetings set entry_id=$2::uuid where id=$1::uuid", [target, entry]);
@@ -298,7 +298,7 @@ Deno.test("published replacement rollback is atomic on missing prepared content 
     const source = await meeting(db, ws, { co_owners: [PEER] });
     const entry = await value<string>(
       db,
-      "insert into entries(content,entry_type,source,added_by,owner_id,group_id,is_private,metadata) values('Original','meeting','test','synthetic',$1,$2,false,'{}') returning id as value",
+      "insert into entries(content,entry_type,source,added_by,owner_id,group_id,is_private,metadata) values('Original','meeting','test','synthetic',$1,$2,false,'{\"confirmed\":true}') returning id as value",
       [ACTOR, ws],
     );
     const target = await meeting(db, ws, { status: "in_base", entry_id: entry });
@@ -422,6 +422,54 @@ Deno.test("deleting either original preserves the survivor and immutable history
     }
   }));
 
+Deno.test("a legacy published entry without a backing meeting retains the first Yes receipt on retry", () =>
+  fixture(async (db, ws) => {
+    const source = await meeting(db, ws);
+    const entry = await value<string>(
+      db,
+      "insert into entries(content,entry_type,source,added_by,owner_id,group_id,is_private,metadata) values('Original','meeting','test','synthetic',$1,$2,false,'{\"confirmed\":true}') returning id as value",
+      [ACTOR, ws],
+    );
+    const first = await decide(db, ws, source, entry, { entry: true });
+    assertEquals(first.target_meeting_id, null);
+    assertEquals((await row(db, source)).entry_id, entry);
+    const second = await decide(db, ws, source, entry, { entry: true });
+    assertEquals(second.id, first.id);
+    assertEquals(second.repeated, true);
+    assertEquals((await snapshot(db, source, entry, true)).target, null);
+    assertEquals(
+      await value(
+        db,
+        "select count(*)::int as value from manual_meeting_pair_decisions where source_meeting_id=$1::uuid",
+        [source],
+      ),
+      1,
+    );
+  }));
+
+Deno.test("nonpublished or nonmeeting entries are ineligible with or without a linked in_base meeting", () =>
+  fixture(async (db, ws) => {
+    const source = await meeting(db, ws);
+    for (
+      const { metadata, type } of [
+        { metadata: {}, type: "meeting" },
+        { metadata: { confirmed: false }, type: "meeting" },
+        { metadata: { confirmed: true }, type: "note" },
+      ]
+    ) {
+      for (const backing of [false, true]) {
+        const entry = await value<string>(
+          db,
+          "insert into entries(content,entry_type,source,added_by,owner_id,group_id,is_private,metadata) values('Pending',$4,'test','synthetic',$1,$2,false,$3::jsonb) returning id as value",
+          [ACTOR, ws, JSON.stringify(metadata), type],
+        );
+        if (backing) await meeting(db, ws, { status: "in_base", entry_id: entry });
+        await fails(db, "42501", () => decide(db, ws, source, entry, { entry: true }));
+        assertEquals((await row(db, source)).status, "awaiting_review");
+      }
+    }
+  }));
+
 // These cases deliberately use separately committed transactions: xmin, row contention and
 // self-FK DELETE lock order cannot be proved by a single rollback transaction or a mock.
 async function concurrentFixture(fn: (a: Client, b: Client, control: Client, ws: string) => Promise<void>) {
@@ -500,27 +548,35 @@ Deno.test("association yields promptly to an existing target DELETE lock instead
     const childBefore = await row(control, child);
     await deleting.queryArray("begin");
     await deleting.queryArray("select id from meetings where id=$1::uuid for update", [target]);
+    const mergePid = await value<number>(merge, "select pg_backend_pid() as value");
+    const deletingPid = await value<number>(deleting, "select pg_backend_pid() as value");
+    let observed: { code: string } | null = null;
     const pending = decide(merge, ws, source, target).then(
-      (result) => ({ code: "SUCCESS", result }),
-      (error) => ({ code: String(error.fields?.code ?? "UNKNOWN") }),
+      () => observed = { code: "SUCCESS" },
+      (error) => observed = { code: String(error.fields?.code ?? "UNKNOWN") },
     );
-    let initial: { code: string };
-    let timer: ReturnType<typeof setTimeout> | undefined;
+    let initial = { code: "UNSETTLED" };
     try {
-      initial = await Promise.race([
-        pending,
-        new Promise<{ code: string }>((resolve) => {
-          timer = setTimeout(() => resolve({ code: "BLOCKED" }), 250);
-        }),
-      ]);
+      const deadline = performance.now() + 2000;
+      while (performance.now() < deadline) {
+        if (observed) {
+          initial = observed;
+          break;
+        }
+        const blockers = await value<number[]>(control, "select pg_blocking_pids($1) as value", [mergePid]);
+        if (blockers.includes(deletingPid)) {
+          initial = { code: "BLOCKED" };
+          break;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
       await deleting.queryArray("delete from meetings where id=$1::uuid", [target]);
       await deleting.queryArray("commit");
     } finally {
-      clearTimeout(timer);
       await deleting.queryArray("rollback");
       await pending;
     }
-    assertEquals(initial!.code, "55P03");
+    assertEquals(initial.code, "55P03");
     assertEquals(await row(control, source), sourceBefore);
     const childAfter = await row(control, child);
     assertEquals(childAfter.manual_merge_target_id, null);

@@ -10,5 +10,10 @@ Deno.test("manual merge review preserves RU/EN actions, literal titles, original
   }).output();
   assertEquals(result.code, 0, new TextDecoder().decode(result.stderr));
   const report = JSON.parse(new TextDecoder().decode(result.stdout));
-  assertEquals([report.passed, report.notesPassed, report.failed], [8, 6, 0]);
+  assertEquals([
+    report.passed,
+    report.notesPassed,
+    report.readOnlyPassed,
+    report.failed,
+  ], [8, 6, 2, 0]);
 });

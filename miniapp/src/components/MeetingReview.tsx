@@ -498,7 +498,7 @@ export function MeetingReview({ id, onClose, onChanged }: Props) {
 
         {!published && (notesReady || summaryTerminal) && !editing && !editingTitle && !saving && !reprocessing && meeting.identity_kind === "manual" && !meeting.manual_merge_target_id && meeting.recording_now !== true && meeting.summary_status !== "processing" && (
           <ManualMergePrompt key={`${activeId}:${teamOnly ? "workspace" : base}`} meetingId={activeId} base={teamOnly ? "workspace" : base}
-            disabled={publishing || deleting || saving || editing || editingTitle || reprocessing} onBusyChange={setMergeBusy}
+            disabled={!me || publishing || deleting || saving || editing || editingTitle || reprocessing} readOnly={!!me?.is_demo} onBusyChange={setMergeBusy}
             onDecided={(result) => { onChanged?.(); if (result.decision === "merge") { toast(dt(MANUAL_MERGE_COPY.merged.ru, MANUAL_MERGE_COPY.merged.en)); onClose(); } }} />
         )}
 

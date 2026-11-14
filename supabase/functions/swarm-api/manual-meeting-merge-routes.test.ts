@@ -7,6 +7,7 @@ import type {
 } from "../_shared/manual-meeting-merge-types.ts";
 import { type ManualMeetingRow, ManualMergeError, type ManualPairSnapshot } from "../_shared/manual-meeting-merge.ts";
 import { corsHeaders } from "./http.ts";
+import { INTERNAL_ERROR_MESSAGE } from "./client-error.ts";
 import {
   handleManualMeetingMergeRoutes,
   manualMergeErrorResponse,
@@ -24,7 +25,7 @@ type Result = { data: unknown; error: { code: string } | null };
 type RecordRow = Record<string, unknown>;
 
 /** Typed PostgREST port only: no SDK client, HTTP server, provider or write fallback. */
-function fixture(published = false, isPrivate = false) {
+function fixture(published = false, isPrivate = false, confirmed: boolean | "missing" = true) {
   const source: ManualMeetingRow = {
     id: SOURCE,
     group_id: ACTOR.groupId,
@@ -61,7 +62,11 @@ function fixture(published = false, isPrivate = false) {
       archived_at: null,
       source: "desktop-agent",
       content: "Synthetic published notes",
-      metadata: { title: "Synthetic route standup", meeting_id: TARGET },
+      metadata: {
+        title: "Synthetic route standup",
+        meeting_id: TARGET,
+        ...(confirmed === "missing" ? {} : { confirmed }),
+      },
       entry_type: "meeting",
       entry_date: "2026-11-14",
     }
@@ -239,6 +244,16 @@ function request(method: string, routePath: string, body?: unknown): Request {
   });
 }
 
+async function silentDiagnostic<T>(run: () => T | Promise<T>): Promise<T> {
+  const original = console.error;
+  console.error = () => {};
+  try {
+    return await run();
+  } finally {
+    console.error = original;
+  }
+}
+
 function responseHeaders(response: Response) {
   assertEquals(response.headers.get("content-type"), "application/json");
   assertEquals(response.headers.get("cache-control"), "no-store");
@@ -392,14 +407,18 @@ Deno.test("manual merge route carries 404, 409 and backend failure codes over th
   ) {
     const f = fixture(true);
     f.decisionError(portCode);
-    const response = await handleManualMeetingMergeRoutes(
-      f.context,
-      request("POST", path("decision"), f.input),
-      path("decision"),
+    const response = await silentDiagnostic(() =>
+      handleManualMeetingMergeRoutes(
+        f.context,
+        request("POST", path("decision"), f.input),
+        path("decision"),
+      )
     );
     assert(response);
     assertEquals(response.status, status);
-    assertEquals(await response.json(), { error: code, code });
+    const body = await response.text();
+    assertEquals(JSON.parse(body), status === 500 ? { error: INTERNAL_ERROR_MESSAGE } : { error: code, code });
+    assert(!body.includes("synthetic-unavailable"));
     responseHeaders(response);
   }
   const f = fixture();
@@ -422,12 +441,13 @@ Deno.test("manual merge error adapter retains structured 401/503 and masks unkno
     assertEquals(await response.json(), { error: code, code });
     responseHeaders(response);
   }
-  const response = manualMergeErrorResponse(new Error("Synthetic internal detail must not be serialized"), ORIGIN);
+  const detail = "Synthetic internal detail must not be serialized";
+  const response = await silentDiagnostic(() => manualMergeErrorResponse(new Error(detail), ORIGIN));
   assertEquals(response.status, 500);
-  assertEquals(await response.json(), {
-    error: "Manual meeting operation unavailable",
-    code: "MANUAL_MERGE_UNAVAILABLE",
-  });
+  const body = await response.text();
+  assertEquals(JSON.parse(body), { error: INTERNAL_ERROR_MESSAGE });
+  assert(!body.includes(detail));
+  responseHeaders(response);
 });
 
 Deno.test("manual merge versions route keeps original DTO fields and literal note provenance", async () => {
@@ -535,4 +555,36 @@ Deno.test("manual merge route excludes open targets from GET and rejects open Ye
   responseHeaders(post);
   assert(f.calls.every((call) => call.name === "manual_meeting_pair_snapshot"));
   assertEquals(f.counts(), { writes: 0, recorderNameCalls: 0 });
+});
+
+Deno.test("manual merge route requires a confirmed published meeting entry rather than a linked draft or note", async () => {
+  for (
+    const invalid of [
+      { confirmed: false, entryType: "meeting" },
+      { confirmed: "missing", entryType: "meeting" },
+      { confirmed: true, entryType: "note" },
+    ] as const
+  ) {
+    const f = fixture(true, false, invalid.confirmed);
+    f.snapshot.entry!.entry_type = invalid.entryType;
+    const get = await handleManualMeetingMergeRoutes(f.context, request("GET", path("candidate")), path("candidate"));
+    assert(get);
+    assertEquals(get.status, 200);
+    assertEquals(await get.json(), null);
+    responseHeaders(get);
+    const post = await handleManualMeetingMergeRoutes(
+      f.context,
+      request("POST", path("decision"), {
+        ...f.input,
+        decision: "merge",
+      }),
+      path("decision"),
+    );
+    assert(post);
+    assertEquals(post.status, 404);
+    assertEquals(await post.json(), { error: "NOT_FOUND", code: "NOT_FOUND" });
+    responseHeaders(post);
+    assert(f.calls.every((call) => call.name === "manual_meeting_pair_snapshot"));
+    assertEquals(f.counts(), { writes: 0, recorderNameCalls: 0 });
+  }
 });

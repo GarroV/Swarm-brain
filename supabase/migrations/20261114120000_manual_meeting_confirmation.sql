@@ -135,7 +135,7 @@ begin
     select m.* into t from public.meetings m where m.id = p_target_meeting;
   else
     select m.* into t from public.meetings m
-      where m.entry_id = p_target_entry and m.manual_merge_target_id is null
+      where m.entry_id = p_target_entry and m.id <> p_source and m.manual_merge_target_id is null
       order by m.created_at, m.id limit 1;
   end if;
   while t.manual_merge_target_id is not null loop
@@ -218,7 +218,8 @@ begin
   s := current_ctx -> 'source'; t := nullif(current_ctx -> 'target', 'null'::jsonb); e := nullif(current_ctx -> 'entry', 'null'::jsonb);
   -- Only the existing published/frozen lifecycle can safely finalize the source without
   -- changing ingest/recorder policy. An entry link on an OPEN draft is not publication.
-  if e is null or (t is not null and t ->> 'status' is distinct from 'in_base') then
+  if e is null or e ->> 'entry_type' is distinct from 'meeting' or e #> '{metadata,confirmed}' is distinct from 'true'::jsonb or
+    (t is not null and t ->> 'status' is distinct from 'in_base') then
     raise exception using errcode = '42501', message = 'Meeting pair unavailable';
   end if;
   if s ->> 'identity_kind' is distinct from 'manual' or s ->> 'group_id' is distinct from p_group or

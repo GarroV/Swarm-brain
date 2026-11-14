@@ -53,12 +53,22 @@ function ownerIds(meeting: DraftMeetingRow): number[] {
 export function manualPairAllowed(
   source: ManualPairMeeting,
   target: ManualPairMeeting | null,
-  entry: (EntryAccessRow & { group_id?: string | null; archived_at?: string | null }) | null,
+  entry:
+    | (EntryAccessRow & {
+      group_id?: string | null;
+      archived_at?: string | null;
+      metadata?: Record<string, unknown> | null;
+      entry_type?: string | null;
+    })
+    | null,
   actorId: number,
   groupId: string,
   isPrivate: boolean,
 ): boolean {
-  if (!entry || (target && target.status !== "in_base")) return false;
+  if (
+    !entry || entry.entry_type !== "meeting" || entry.metadata?.confirmed !== true ||
+    (target && target.status !== "in_base")
+  ) return false;
   if (source.identity_kind !== "manual" || source.group_id !== groupId) return false;
   if (!canAccessDraftMeeting(source, actorId, false, groupId)) return false;
   if (!resolvePublishVisibility(source, actorId, isPrivate).ok) return false;

@@ -22,10 +22,18 @@ type State =
 
 /** Read on mount; changing a suggestion never retries a write without a new Yes/No. */
 export function ManualMergePrompt(
-  { meetingId, base, disabled = false, onBusyChange, onDecided }: {
+  {
+    meetingId,
+    base,
+    disabled = false,
+    readOnly = false,
+    onBusyChange,
+    onDecided,
+  }: {
     meetingId: string;
     base: ManualMergeBase;
     disabled?: boolean;
+    readOnly?: boolean;
     onBusyChange: (busy: boolean) => void;
     onDecided: (result: ManualMergeDecisionResult) => void;
   },
@@ -67,7 +75,9 @@ export function ManualMergePrompt(
   }, [state.kind, onBusyChange]);
 
   const decide = async (decision: "merge" | "separate") => {
-    if (state.kind !== "candidate" || writing.current || disabled) return;
+    if (state.kind !== "candidate" || writing.current || disabled || readOnly) {
+      return;
+    }
     writing.current = true;
     const { candidate } = state, revision = ++generation.current;
     setState({ kind: "saving", candidate });
@@ -101,7 +111,9 @@ export function ManualMergePrompt(
     return (
       <ManualMergeQuestion
         candidate={state.candidate}
-        busy={state.kind === "saving" || disabled}
+        busy={state.kind === "saving"}
+        disabled={disabled}
+        readOnly={readOnly}
         onDecision={(decision) => {
           void decide(decision);
         }}

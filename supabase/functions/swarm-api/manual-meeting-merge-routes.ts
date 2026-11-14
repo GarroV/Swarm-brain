@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { apiErr, json } from "./http.ts";
+import { serverError } from "./client-error.ts";
 import {
   canonicalManualMeeting,
   decideManualMerge,
@@ -28,8 +29,10 @@ export type ManualMergeRouteContext = {
 };
 
 export function manualMergeErrorResponse(error: unknown, origin: string): Response {
-  if (error instanceof ManualMergeError) return json({ error: error.code, code: error.code }, error.status, origin);
-  return json({ error: "Manual meeting operation unavailable", code: "MANUAL_MERGE_UNAVAILABLE" }, 500, origin);
+  if (error instanceof ManualMergeError && error.status !== 500) {
+    return json({ error: error.code, code: error.code }, error.status, origin);
+  }
+  return serverError(origin, "manual meeting operation", error);
 }
 
 /** All calls enter after the same session/maintenance/demo guards as existing meeting routes. */

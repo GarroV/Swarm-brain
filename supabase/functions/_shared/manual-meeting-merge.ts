@@ -162,6 +162,7 @@ const incoming = (source: ManualMeetingRow, actor: ManualMergeActor, base: Manua
   publishPrivate: base === "personal",
   allowManualCandidates: true,
   requireMutation: true,
+  requirePublished: true,
 });
 
 function projectedCandidate(snapshot: ManualPairSnapshot): Candidate {
@@ -343,6 +344,7 @@ export async function decideManualMerge(
     try {
       patch =
         await (prepare ? prepare(snapshot, actor, arbitration) : prepareEntry(snapshot, actor, arbitration, supabase));
+      if (!patch.embedding?.length) throw new Error("Meeting embedding preparation did not complete");
     } catch {
       throw new ManualMergeError(503, "PREPARATION_FAILED");
     }

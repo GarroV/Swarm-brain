@@ -183,6 +183,46 @@ for (const lang of ["ru", "en"]) {
   }
 }
 process.env.TZ = "UTC";
+const readOnlyCases = [];
+for (const lang of ["ru", "en"]) {
+  buttons = [];
+  const html = renderToStaticMarkup(
+    React.createElement(
+      RoyNavContext.Provider,
+      { value: { me: { is_demo: lang === "en" } } },
+      React.createElement(ManualMergeQuestion, {
+        candidate: {
+          sourceMeetingId: "source",
+          base: "workspace",
+          target: {
+            kind: "entry",
+            id: "target",
+            title: "Target",
+            inBase: true,
+          },
+          arbitration: { replace: false },
+        },
+        busy: false,
+        readOnly: true,
+        onDecision: () => {
+          throw new Error("read-only action");
+        },
+      }),
+    ),
+  );
+  assert.equal(buttons.length, 2);
+  assert.ok(buttons.every((button) => button.props.disabled));
+  assert.ok(
+    html.includes(
+      lang === "en" ? "read-only in the demo" : "только для просмотра",
+    ),
+  );
+  assert.ok(
+    !html.includes(lang === "en" ? "Saving your decision" : "Сохраняю решение"),
+  );
+  assert.ok(html.includes('aria-busy="false"'));
+  readOnlyCases.push({ lang, status: "PASS" });
+}
 const { NotesFixture } = load(
   path.join(app, "src/components/MeetingReview.tsx"),
 );
@@ -265,6 +305,7 @@ console.log(
   JSON.stringify({
     passed: cases.length,
     notesPassed: noteCases.length,
+    readOnlyPassed: readOnlyCases.length,
     failed: 0,
     cases,
     noteCases,

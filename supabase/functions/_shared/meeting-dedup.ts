@@ -149,6 +149,8 @@ export type DedupIncoming = {
   allowManualCandidates?: boolean;
   /** Human merge requires the existing mutation guard, not merely visibility. */
   requireMutation?: boolean;
+  /** Explicit confirmation only offers entries already published by the existing confirm flow. */
+  requirePublished?: boolean;
   groupId: string;
   /** YYYY-MM-DD — день встречи (как в entries.entry_date). */
   entryDate: string | null;
@@ -218,6 +220,7 @@ export type Candidate = {
       title?: string;
       identity_key?: string;
       identity_kind?: string;
+      confirmed?: boolean;
       meeting_id?: string;
     })
     | null;
@@ -263,7 +266,8 @@ export async function findDuplicateMeeting(
         { is_private: c.is_private ?? false, owner_id: c.owner_id, shared_with: c.shared_with },
         inc.viewerId,
       ) && matchesPublishVisibility(c, inc.publishPrivate, inc.viewerId) &&
-      (!inc.requireMutation || canMutateEntry({ ...c, is_private: c.is_private ?? false }, inc.viewerId)),
+      (!inc.requireMutation || canMutateEntry({ ...c, is_private: c.is_private ?? false }, inc.viewerId)) &&
+      (!inc.requirePublished || c.metadata?.confirmed === true),
   );
 
   // Время кандидатов из meetings.started_at. Без этого запроса время записей РЕКОРДЕРА неизвестно:

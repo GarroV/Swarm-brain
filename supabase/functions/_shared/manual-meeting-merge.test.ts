@@ -1,6 +1,7 @@
 import { assertEquals, assertRejects } from "@std/assert";
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { BOT_PROFILE } from "./bot-profile.ts";
+import { findDuplicateMeeting } from "./meeting-dedup.ts";
 import {
   decideManualMerge,
   getManualMergeCandidate,
@@ -50,8 +51,9 @@ function fixture(published = true) {
       shared_with: [],
       archived_at: null as string | null,
       source: "desktop-agent",
+      entry_type: "meeting",
       content: "Synthetic target notes",
-      metadata: { title: "Synthetic standup", meeting_id: tid },
+      metadata: { title: "Synthetic standup", meeting_id: tid, confirmed: true as boolean | undefined },
     }
     : null;
   const snapshot = {
@@ -248,6 +250,23 @@ Deno.test("content preparation failure does not record Yes or change either meet
   assertEquals(f.atomic.length, 0);
 });
 
+Deno.test("a missing prepared embedding refuses Yes without erasing the canonical search vector", async () => {
+  const f = fixture();
+  await assertRejects(
+    () =>
+      decideManualMerge(
+        f.db,
+        sid,
+        f.input(),
+        actor,
+        () => Promise.resolve({ content: "Prepared", summary: "Prepared", embedding: null, metadata: {} }),
+      ),
+    ManualMergeError,
+    "PREPARATION_FAILED",
+  );
+  assertEquals(f.atomic.length, 0);
+});
+
 Deno.test("NOWAIT/storage conflicts are retryable409 rather than a false merge receipt", async () => {
   const f = fixture();
   f.error("55P03");
@@ -258,7 +277,8 @@ Deno.test("NOWAIT/storage conflicts are retryable409 rather than a false merge r
         sid,
         f.input(),
         actor,
-        () => Promise.resolve({ content: "Prepared", summary: "Prepared", embedding: null, metadata: {} }),
+        () =>
+          Promise.resolve({ content: "Prepared", summary: "Prepared", embedding: [0.01, 0.02, 0.03], metadata: {} }),
       ),
     ManualMergeError,
     "MEETING_BUSY",
@@ -297,6 +317,48 @@ Deno.test("request parsing cannot accept an actor or content override as mutatio
 Deno.test("open targets are not proposed before a safe existing finalization state exists", async () => {
   const f = fixture(false);
   assertEquals(await getManualMergeCandidate(f.db, sid, "workspace", actor), null);
+});
+
+Deno.test("unconfirmed legacy entries are not proposed or accepted as published targets", async () => {
+  for (const confirmed of [false, undefined]) {
+    const f = fixture();
+    f.entry!.metadata.confirmed = confirmed;
+    assertEquals(await getManualMergeCandidate(f.db, sid, "workspace", actor), null);
+    await assertRejects(() => decideManualMerge(f.db, sid, f.input(), actor), ManualMergeError, "NOT_FOUND");
+    assertEquals(f.atomic.length, 0);
+  }
+});
+
+Deno.test("published-only discovery skips earlier unconfirmed matches while old automatic callers retain their contract", async () => {
+  const base = {
+    content: "Synthetic meeting\nДата: 14.11.2026, 08:05\nУчастники: Synthetic A, Synthetic B",
+    source: "granola",
+    owner_id: 1,
+    is_private: false,
+    shared_with: [],
+  };
+  const rows = [
+    { ...base, id: "pending", metadata: { title: "Synthetic meeting", confirmed: false } },
+    { ...base, id: "legacy", metadata: { title: "Synthetic meeting" } },
+    { ...base, id: "published", metadata: { title: "Synthetic meeting", confirmed: true } },
+  ];
+  const q = {
+    select: () => q,
+    eq: () => q,
+    is: () => q,
+    limit: () => Promise.resolve({ data: rows, error: null }),
+  };
+  const db = { from: () => q } as unknown as SupabaseClient;
+  const inc = {
+    groupId: "fixture",
+    entryDate: "2026-11-14",
+    startedAt: "2026-11-14T08:05:00Z",
+    title: "Synthetic meeting",
+    attendees: [{ name: "Synthetic A" }, { name: "Synthetic B" }],
+    viewerId: 1,
+  };
+  assertEquals((await findDuplicateMeeting(db, { ...inc, requirePublished: true }))?.id, "published");
+  assertEquals((await findDuplicateMeeting(db, inc))?.id, "pending");
 });
 
 Deno.test("a direct open-target decision cannot bypass the published-only eligible subset", async () => {

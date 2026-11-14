@@ -55,17 +55,25 @@ export const MANUAL_MERGE_COPY = {
     en: "This meeting is already in the personal base.",
   },
   unknownAuthor: { ru: "Автор неизвестен", en: "Unknown author" },
+  readOnly: {
+    ru: "В демо этот блок доступен только для просмотра.",
+    en: "This section is read-only in the demo.",
+  },
 } as const;
 
 const button =
   "inline-flex min-h-10 items-center justify-center rounded-full border border-line px-4 py-2 text-sm font-semibold text-ink transition-colors hover:bg-surface-2 disabled:opacity-60";
 
 /** Presentation has no writes: only explicit Yes/No invokes a supplied action. */
-export function ManualMergeQuestion({ candidate, busy, onDecision }: {
-  candidate: ManualMergeCandidate;
-  busy: boolean;
-  onDecision: (decision: "merge" | "separate") => void;
-}) {
+export function ManualMergeQuestion(
+  { candidate, busy, disabled = false, readOnly = false, onDecision }: {
+    candidate: ManualMergeCandidate;
+    busy: boolean;
+    disabled?: boolean;
+    readOnly?: boolean;
+    onDecision: (decision: "merge" | "separate") => void;
+  },
+) {
   const dt = useDt(), copy = MANUAL_MERGE_COPY;
   const title = candidate.target.title ||
     dt(copy.untitled.ru, copy.untitled.en);
@@ -109,7 +117,7 @@ export function ManualMergeQuestion({ candidate, busy, onDecision }: {
       <div className="mt-3 flex flex-wrap gap-2">
         <button
           type="button"
-          disabled={busy}
+          disabled={busy || disabled || readOnly}
           onClick={() => onDecision("merge")}
           className={button}
         >
@@ -117,13 +125,18 @@ export function ManualMergeQuestion({ candidate, busy, onDecision }: {
         </button>
         <button
           type="button"
-          disabled={busy}
+          disabled={busy || disabled || readOnly}
           onClick={() => onDecision("separate")}
           className={button}
         >
           {dt(copy.no.ru, copy.no.en)}
         </button>
       </div>
+      {readOnly && (
+        <p role="status" className="mt-2 text-xs text-ink-soft">
+          {dt(copy.readOnly.ru, copy.readOnly.en)}
+        </p>
+      )}
       {busy && (
         <p role="status" className="mt-2 text-xs text-ink-soft">
           {dt(copy.saving.ru, copy.saving.en)}

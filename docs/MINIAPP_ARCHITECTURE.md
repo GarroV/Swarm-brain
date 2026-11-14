@@ -461,6 +461,8 @@ the regular Publish action. Candidate title, start, recorder names and selected-
 shown before the choice. While the decision is being saved, other actions in the review are inert.
 A conflict discards the old proposal: Check again only reads, and a new Yes/No is required. Late
 responses from another source/base and repeated clicks cannot submit another decision.
+Demo visitors can read a suggestion but cannot submit either decision; the disabled controls
+explain this existing server policy without displaying a false Saving state.
 
 Confirmed recording provenance supplies the transcript clock and microphone name; unverified JSON
 keeps the legacy behavior. Combined margin notes show each original author and the clock of that
