@@ -8,7 +8,7 @@
 // пять таблиц читались анонимно (#41).
 //
 // Тест не умеет «пропускаться»: базы нет — прогон падает и говорит, что поднять.
-import { assertEquals } from "@std/assert";
+import { assertEquals, assertRejects, assertStringIncludes } from "@std/assert";
 import { Client } from "postgres";
 
 const DB_URL = Deno.env.get("SUPABASE_DB_URL") ??
@@ -29,10 +29,103 @@ async function rows(sql: string): Promise<string[]> {
   }
 }
 
-Deno.test("public: у каждой таблицы включён RLS", async () => {
-  const open = await rows(`
+type TableQuery = (sql: string) => Promise<string[]>;
+
+// The optional query keeps regression DDL and catalog reads on one rolled-back connection.
+export async function assertPublicTableContracts(query: TableQuery = rows): Promise<void> {
+  const open = await query(`
     select c.relname as name from pg_class c join pg_namespace n on n.oid = c.relnamespace
     where n.nspname = 'public' and c.relkind in ('r', 'p') and not c.relrowsecurity
     order by 1`);
   assertEquals(open, [], `таблицы public без RLS — включи тем же файлом миграции: ${open.join(", ")}`);
+  // New tables follow _template_new_table.sql. Append-only/retained-job contracts need less.
+  const missing = await query(`
+    select c.relname || ':' || required.privilege as name
+    from pg_class c join pg_namespace n on n.oid = c.relnamespace
+    cross join lateral unnest(case c.relname
+      when 'member_moves' then array['SELECT','INSERT']
+      when 'master_admin_events' then array['SELECT','INSERT']
+      when 'meeting_notices' then array['SELECT','INSERT','UPDATE']
+      when 'telegram_outbox' then array['SELECT','INSERT','UPDATE']
+      when 'draft_meeting_deletions' then array['SELECT','INSERT','UPDATE']
+      else array['SELECT','INSERT','UPDATE','DELETE']
+    end) as required(privilege)
+    where n.nspname = 'public' and c.relkind in ('r', 'p')
+      and not has_table_privilege('service_role', c.oid, required.privilege)
+    order by 1`);
+  assertEquals(
+    missing,
+    [],
+    `таблицы public без нужных DML-grants service_role — добавь явный GRANT в миграции: ${missing.join(", ")}`,
+  );
+}
+
+Deno.test("public: у каждой таблицы включён RLS", () => assertPublicTableContracts());
+
+async function inTransaction(fn: (db: Client, table: string) => Promise<void>) {
+  const db = new Client(DB_URL);
+  await db.connect();
+  try {
+    await db.queryArray`begin`;
+    const role = await db.queryObject<{ name: string }>`select current_user as name`;
+    assertEquals(role.rows[0].name, "postgres", "default privileges проверяются для создателя postgres");
+    await fn(db, `qa_grants_880_${crypto.randomUUID().replaceAll("-", "")}`);
+  } finally {
+    await db.queryArray`rollback`;
+    await db.end();
+  }
+}
+
+async function asService<T>(db: Client, fn: () => Promise<T>): Promise<T> {
+  await db.queryArray`savepoint service_grants_probe_880`;
+  try {
+    await db.queryArray`set local role service_role`;
+    const result = await fn();
+    await db.queryArray`reset role`;
+    await db.queryArray`release savepoint service_grants_probe_880`;
+    return result;
+  } catch (error) {
+    await db.queryArray`rollback to savepoint service_grants_probe_880`;
+    await db.queryArray`release savepoint service_grants_probe_880`;
+    throw error;
+  }
+}
+
+Deno.test("public: сторож замечает потерю DML-grants при включённом RLS", async () => {
+  await inTransaction(async (db, table) => {
+    const template = (await Deno.readTextFile(new URL("../../migrations/_template_new_table.sql", import.meta.url)))
+      .replaceAll("public.your_table", `public.${table}`);
+    // The checked-in template is two plain statements; execute its actual SQL, not a mirror.
+    for (const statement of template.split(";").filter((s) => s.trim())) await db.queryArray(statement);
+    await db.queryArray(`alter table public.${table} enable row level security`);
+    await asService(db, async () => {
+      const inserted = await db.queryObject<{ id: string }>(`insert into public.${table} default values returning id`);
+      const id = inserted.rows[0].id;
+      assertEquals((await db.queryObject(`select id from public.${table} where id = $1`, [id])).rows.length, 1);
+      assertEquals(
+        (await db.queryObject(`update public.${table} set created_at = created_at where id = $1 returning id`, [id]))
+          .rows.length,
+        1,
+      );
+      assertEquals(
+        (await db.queryObject(`delete from public.${table} where id = $1 returning id`, [id])).rows.length,
+        1,
+      );
+    });
+    const query: TableQuery = async (sql) => (await db.queryObject<{ name: string }>(sql)).rows.map((r) => r.name);
+    await assertPublicTableContracts(query);
+    await db.queryArray(`revoke select, insert, update, delete on public.${table} from service_role`);
+    const missing = await db.queryObject<{ allowed: boolean }>(`
+      select has_table_privilege('service_role', 'public.${table}', privilege) as allowed
+      from unnest(array['SELECT','INSERT','UPDATE','DELETE']) as privilege`);
+    assertEquals(missing.rows.map((p) => p.allowed), [false, false, false, false]);
+    const denied = await assertRejects(() => asService(db, () => db.queryArray(`select * from public.${table}`)));
+    assertEquals((denied as { fields?: { code?: string } }).fields?.code, "42501");
+    const restored = await db.queryObject<{ name: string }>`select current_user as name`;
+    assertEquals(restored.rows[0].name, "postgres", "ошибка SQL не должна оставлять роль или aborted transaction");
+    const error = await assertRejects(() => assertPublicTableContracts(query), Error);
+    for (const privilege of ["SELECT", "INSERT", "UPDATE", "DELETE"]) {
+      assertStringIncludes(error.message, `${table}:${privilege}`);
+    }
+  });
 });
