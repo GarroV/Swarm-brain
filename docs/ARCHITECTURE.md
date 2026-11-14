@@ -2875,6 +2875,17 @@ Next.js 16, `output: "export"` (статический HTML/CSS/JS в `miniapp/o
 
 ## Деплой и разработка
 
+`_shared/public-tables-locked.db.test.ts` проверяет на изолированной базе CI после миграций
+не только RLS, но и минимальные DML-grants `service_role`: обычным таблицам нужны
+SELECT/INSERT/UPDATE/DELETE по `_template_new_table.sql`; `member_moves` и
+`master_admin_events` — SELECT/INSERT; `meeting_notices`, `telegram_outbox` и
+`draft_meeting_deletions` — SELECT/INSERT/UPDATE (сохранённые журналы и задания не требуют DELETE).
+Регрессия создаёт таблицу из настоящего шаблона, выполняет CRUD под `SET LOCAL ROLE service_role`,
+затем снимает её гранты и требует отказа сторожа; весь fixture откатывается. Тест не меняет
+права приложения и не навязывает default ACL: права по умолчанию существующего MUSPELHEIM
+и production этой проверкой не выравниваются и требуют отдельного фактического подтверждения (#880).
+
+
 - Ветка: `main` → всегда разрабатывать здесь (дефолтная на GitHub)
 - Деплой Edge Functions: `make deploy` (шлюз на своём сервере, все функции разом, [DEPLOY.md](DEPLOY.md))
 - ⚠️ `granola-poller` — legacy, **не деплоить** как обычный шаг: standalone-функция выведена из крона. Поллинг Granola идёт внутри `swarm-bot` (часовой крон с `{granola_poll:true}` → `ingestNewGranolaNotesAllUsers`). См. таблицу Edge Functions выше.
