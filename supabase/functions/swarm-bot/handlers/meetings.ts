@@ -151,7 +151,7 @@ export async function handleMeetingCallback(
 ): Promise<void> {
   await sendMessage(chatId, "Обрабатываю встречу...");
 
-  const meeting = await readAiGet(`/meetings/${meetingId}`) as Record<string, unknown>;
+  const meeting = await readAiGet(`/meetings/${encodeURIComponent(meetingId)}`) as Record<string, unknown>;
 
   const toString = (v: unknown): string => {
     if (!v) return "";

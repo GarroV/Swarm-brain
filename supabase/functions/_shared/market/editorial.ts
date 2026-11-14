@@ -22,7 +22,7 @@ export const EDITORIAL_BLOCKS = {
   delivery_figures: "array", // [{ big, text }]
   market_facts: "array", // [{ big, text, source }]
   money_rows: "array", // [{ prefix, chains: [...] | null, company? }]
-  location_dates: "array", // [{ name, opened, note? }] — уточнённые даты открытия (журнал вычитки)
+  location_dates: "array", // [{ name, opened?, closed?, note? }] — уточнённые даты открытия и закрытия (журнал вычитки)
   map_presets: "array", // [{ name, box: [lng0, lat0, lng1, lat1] }]
   prices_cols: "array", // [{ title, chain, channel?, cm?, exclude? }]
 } as const;

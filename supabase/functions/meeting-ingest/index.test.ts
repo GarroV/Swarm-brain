@@ -8,6 +8,7 @@
 // записи и транскрибации. Любой пишущий запрос наружу смоук роняет: в этих сценариях его быть не должно.
 import { assertEquals, assertStringIncludes } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import { MAX_SPEAKER_TIMELINE_CHARS } from "../_shared/speakers.ts";
+import { m4aOf } from "./m4a-fixture.ts";
 
 const TOKEN = "smcp_stub-token";
 const TOKEN_HASH = Array.from(
@@ -17,6 +18,26 @@ const TOKEN_HASH = Array.from(
 const OWNER = 42;
 const MEETINGS: Record<string, Record<string, unknown>> = {
   "m-mine": { id: "m-mine", claim_owner: OWNER, notes_edited_at: "2026-09-01T00:00:00Z", summary_status: null },
+  // Готовая встреча с записью этого же человека (стенограмма до 425 с) — повтор выгрузки или новая запись (#1271).
+  "m-done": {
+    id: "m-done",
+    claim_owner: OWNER,
+    notes_edited_at: null,
+    summary_status: "done",
+    sources: ["person:42"],
+    first_segment: { start: 0, end: 3, text: "привет" },
+    transcript: { segments: [{ start: 0, end: 3, text: "привет" }, { start: 400, end: 425, text: "пока" }] },
+  },
+  // Та же запись, пока её первая выгрузка ещё обрабатывается: стенограммы нет, длина принятой — 425 с (#1318).
+  "m-processing": {
+    id: "m-processing",
+    claim_owner: OWNER,
+    notes_edited_at: null,
+    summary_status: "processing",
+    sources: ["person:42"],
+    first_segment: null,
+    recorded_seconds: 425,
+  },
   "m-other": { id: "m-other", claim_owner: 777, notes_edited_at: null, summary_status: null },
 };
 
@@ -83,8 +104,13 @@ async function call(
   speakers?: string,
   token: string | null = TOKEN,
   backupOnly = false,
+  audioSeconds?: number,
 ): Promise<{ status: number; error?: string; summary_status?: string }> {
   const form = new FormData();
+  if (audioSeconds !== undefined) {
+    form.set("sys_parts", JSON.stringify([{ name: "sys0", offset: 0 }]));
+    form.set("sys0", new File([m4aOf(audioSeconds)], "sys0.m4a", { type: "audio/m4a" }));
+  }
   form.set("meeting_id", meetingId);
   if (backupOnly) form.set("backup_only", "1");
   if (speakers !== undefined) form.set("speakers", speakers);
@@ -149,4 +175,33 @@ Deno.test("meeting-ingest backup_only: замороженная встреча �
   const r = await call("m-mine", undefined, TOKEN, true);
   assertEquals(r.status, 400);
   assertStringIncludes(r.error ?? "", "audio required");
+});
+
+// #1271: ответ already_processed на НОВУЮ запись того же человека терял её молча. Запись наружу смоук
+// роняет, поэтому принятая в работу выгрузка упирается в хранилище — 500 «failed to store audio»;
+// 200 already_processed — это и есть выброс.
+Deno.test("meeting-ingest: повтор выгрузки к готовой встрече — already_processed", async () => {
+  const r = await call("m-done", undefined, TOKEN, false, 430);
+  assertEquals([r.status, r.summary_status], [200, "already_processed"]);
+});
+
+Deno.test("meeting-ingest: новая длинная запись того же человека к готовой встрече — не выбрасывается (#1271)", async () => {
+  const r = await call("m-done", undefined, TOKEN, false, 1500);
+  assertEquals(r.summary_status === "already_processed", false, "новая запись принята за повтор и потеряна");
+  assertEquals(r.status, 500);
+  assertStringIncludes(r.error ?? "", "failed to store audio");
+});
+
+// #1318: то же для встречи в обработке. Очередь пишет в хранилище — смоук его роняет (500), а 200
+// already_processed — потеря записи.
+Deno.test("meeting-ingest: повтор выгрузки, пока она обрабатывается, — already_processed", async () => {
+  const r = await call("m-processing", undefined, TOKEN, false, 430);
+  assertEquals([r.status, r.summary_status], [200, "already_processed"]);
+});
+
+Deno.test("meeting-ingest: новая длинная запись того же человека, пока первая обрабатывается, — не выбрасывается (#1318)", async () => {
+  const r = await call("m-processing", undefined, TOKEN, false, 1500);
+  assertEquals(r.summary_status === "already_processed", false, "новая запись принята за повтор и потеряна");
+  assertEquals(r.status, 500);
+  assertStringIncludes(r.error ?? "", "failed to store audio");
 });

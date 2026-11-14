@@ -32,6 +32,7 @@ Deno.test("#1132: rows and fields hidden by the screen are refused before record
     { events: [{ date: "2026", kind: "close", text: "closed" }] },
     { pizza_table: [{ name: "Example", chain: "example", entry: 2015 }] },
     { location_dates: [{ name: "Example" }] },
+    { location_dates: [{ name: "Example", closed: "30.01.2025" }] },
     { delivery_platforms: [{ name: "Example", years: [{ year: "2025", revenue_eur: 100 }] }] },
     { ratings: [{ chain: "example", point: "Example", google: "4.5", glovo: 92 }] },
     { growth: { keys: ["example"], hist: { example: { "2024": "100" } } } },

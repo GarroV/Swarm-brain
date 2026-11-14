@@ -30,6 +30,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { handleNotice } from "./handle.ts";
 import { makeTelegramCaller, noticeBody, noticeClock } from "./telegram.ts";
+import { makeOutcomeStore } from "../_shared/join-outcomes.ts";
 import { notifyPerson } from "../_shared/notify-person.ts";
 
 const supabase = createClient(
@@ -59,4 +60,4 @@ const sendTelegram = async (chatId: number, text: string): Promise<void> => {
   );
 };
 
-Deno.serve((req: Request) => handleNotice(req, { supabase, sendTelegram }));
+Deno.serve((req: Request) => handleNotice(req, { supabase, sendTelegram, outcomes: makeOutcomeStore(supabase) }));

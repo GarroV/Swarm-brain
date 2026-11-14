@@ -39,6 +39,49 @@ export interface UploadContext {
   /** Есть ли у встречи непустая стенограмма. */
   hasTranscript: boolean;
   incoming: string;
+  /**
+   * Длина входящего аудио, измеренная сервером (audio-length.ts); null — не измерено, не задано —
+   * не мерили. Нужна только готовой встрече и источнику, уже бывшему у неё (см. isNewRecording).
+   */
+  incomingSeconds?: number | null;
+  /** Конец текущей стенограммы, с (transcriptEndSec); null — не определён. */
+  transcriptSeconds?: number | null;
+  /**
+   * Длина уже принятой записи, пока та обрабатывается (`meetings.recorded_seconds`): стенограммы ещё
+   * нет, сравнивать не с чем иным (#1318). null — не известна.
+   */
+  recordedSeconds?: number | null;
+}
+
+// Новая запись того же источника против повтора её выгрузки (#1271). Клиенты шлют только аудио:
+// ни id записи, ни хеша, ни времени начала в выгрузке нет, а рекордер новых полей до выпуска
+// сборки не получит. Единственный признак, который есть у раскатанных клиентов, — длина самого
+// аудио, измеренная сервером: повтор выгрузки той же записи равен по длине стенограмме, которую
+// она дала (с хвостом тишины после последней реплики), а запись, продолженная после первой
+// выгрузки, заметно длиннее. Порог — по большему из доли и абсолютного запаса, чтобы тишина в
+// конце не принимала повтор за новую запись; ложная «новая» стоит лишнего прогона распознавания
+// (арбитр оставит прежнюю версию), ложный «повтор» — потерянной записи.
+export const NEW_RECORDING_RATIO = 1.15;
+export const NEW_RECORDING_MIN_EXTRA_SEC = 90;
+
+export function isNewRecording(incomingSec: number, transcriptEndSec: number): boolean {
+  return incomingSec > Math.max(transcriptEndSec * NEW_RECORDING_RATIO, transcriptEndSec + NEW_RECORDING_MIN_EXTRA_SEC);
+}
+
+/** Конец стенограммы — максимум `end` по сегментам; сегментов с числовым концом нет — null. */
+export function transcriptEndSec(t: { segments?: Array<{ end?: unknown }> | null } | null): number | null {
+  let end: number | null = null;
+  for (const s of t?.segments ?? []) {
+    const v = s?.end;
+    if (typeof v === "number" && Number.isFinite(v) && (end === null || v > end)) end = v;
+  }
+  return end;
+}
+
+/** Нужно ли измерять входящее аудио до решения: только повтор источника к готовой или обрабатываемой встрече. */
+export function needsLengthCheck(ctx: Pick<UploadContext, "summaryStatus" | "sources" | "incoming">): boolean {
+  return (ctx.summaryStatus === "done" || ctx.summaryStatus === "processing") && ctx.sources !== null &&
+    ctx.sources.includes(ctx.incoming);
 }
 
 export function decideUpload(ctx: UploadContext): UploadDecision {
@@ -46,7 +89,25 @@ export function decideUpload(ctx: UploadContext): UploadDecision {
   if (ctx.summaryStatus === "processing" || ctx.summaryStatus === "done") {
     // Старая форма состояния: чья выгрузка — неизвестно, повтор bumblebee нельзя принять за вторую
     // запись (одно аудио ушло бы в Whisper дважды). Поведение ровно прежнее.
-    if (ctx.sources === null || seen) return "already_processed";
+    if (ctx.sources === null) return "already_processed";
+    if (seen) {
+      // Готовая встреча: повтор выгрузки или новая запись того же источника (#1271). Аудио, которое
+      // сервер не смог измерить, — не запись, которую клиенты льют (оба пишут разбираемый AAC в
+      // MP4): как и прежде, это повтор. Стенограмму нечем измерить, а аудио настоящее — безопасная
+      // сторона: вторая запись, её увидит арбитр, а не молчаливая потеря.
+      if (ctx.summaryStatus === "done") {
+        const { incomingSeconds: inc, transcriptSeconds: tr } = ctx;
+        if (typeof inc !== "number") return "already_processed";
+        return typeof tr === "number" && !isNewRecording(inc, tr) ? "already_processed" : "challenge";
+      }
+      // Идущая обработка (#1318): стенограммы ещё нет, сравниваем с длиной принятой записи. Новая
+      // запись встаёт в очередь: process_state идущей обработки она не трогает (воркер пишет в него
+      // на каждом шаге), а после финала её сравнит арбитр. Слот очереди — на источник, повтор
+      // этой же выгрузки до финала снова даёт already_processed (index.ts readQueued).
+      const { incomingSeconds: inc, recordedSeconds: rec } = ctx;
+      if (typeof inc !== "number") return "already_processed";
+      return typeof rec === "number" && !isNewRecording(inc, rec) ? "already_processed" : "queue";
+    }
     return ctx.summaryStatus === "processing" ? "queue" : "challenge";
   }
   // failed / null. Повтор того же источника после сбоя перерабатывается как раньше; сравнивать
