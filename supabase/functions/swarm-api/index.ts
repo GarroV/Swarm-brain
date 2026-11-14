@@ -162,7 +162,8 @@ import { handlePresenceRoutes } from "./presence.ts";
 import { handlePublicRoadmap, isPublicRoadmapPath } from "./public-roadmap.ts";
 // Календарь на сегодня для панели главной (issue #218): доступ к Google — общий модуль
 // (его же зовёт meeting-current), отбор событий дня и границы суток — чистая логика под тестами.
-import { loadTodayMeetings } from "./today-meetings.ts";
+import { handleTodayCalendarRoute } from "./today-meetings.ts";
+import { handleMeetingContextRoutes } from "./meeting-context-routes.ts";
 import { isTaskStatus, parseStatusesParam, taskStatusError } from "../_shared/tasks/statuses.ts";
 import {
   isActive as maintenanceActive,
@@ -3139,32 +3140,14 @@ async function routeRequest(req: Request): Promise<Response> {
     return apiErr(405, "Method not allowed", origin);
   }
 
-  // ── GET /calendar/today — встречи из календаря на сегодня (issue #218) ────────
-  // Панель «Встречи сегодня» в правой колонке главной: что предстоит и куда зайти.
-  // Календарь читается серверной OAuth-интеграцией (та же, что у рекордера) — у браузера
-  // доступа к календарю нет и не должно быть.
-  //
-  // Причины пустоты РАЗЛИЧАЮТСЯ намеренно: панель по ним рисует разное. `not_connected` →
-  // кнопка «Подключить календарь» (решение владельца 03.09.2026: «лишнее напоминание про
-  // календарь, там же можно сделать кнопку»), `token_expired` → та же кнопка как
-  // «переподключить», `calendar_error`/пустой список → обычное пустое состояние. Молча
-  // показать пустоту при отвалившейся интеграции нельзя — это урок #175.
-  if (req.method === "GET" && routePath === "/calendar/today") {
-    // Присутствие рекордера, пояс клиента и причины пустоты — в общей loadTodayMeetings
-    // (swarm-api/today-meetings.ts): её же зовёт GET /board/today. Где сидит сам человек, рекордер
-    // сообщает в heartbeat; панель по флагам рисует `ON AIR` / `REC` вместо кнопки «Подключиться»
-    // (решение владельца 04.09.2026). Код может приехать РАНЬШЕ миграции колонок присутствия —
-    // тогда панель работает без ON AIR, ошибка пишется в лог.
-    const today = await loadTodayMeetings(
-      supabase,
-      telegram_id,
-      Number(url.searchParams.get("tz_offset") ?? "0"),
-    );
-    if (!today.ok) {
-      return json({ meetings: [], reason: today.reason }, 200, origin);
-    }
-    return json({ meetings: today.meetings }, 200, origin);
-  }
+  const contextResp = await handleMeetingContextRoutes(
+    { supabase, actor: { telegramId: telegram_id, groupId, email: userEmail }, origin },
+    req,
+    routePath,
+  );
+  if (contextResp) return contextResp;
+  const todayResp = await handleTodayCalendarRoute(supabase, req, routePath, telegram_id, origin);
+  if (todayResp) return todayResp;
 
   // ── GET /integrations ─────────────────────────────────────────────────────────
   if (req.method === "GET" && routePath === "/integrations") {

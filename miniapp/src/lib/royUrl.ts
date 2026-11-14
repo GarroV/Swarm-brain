@@ -16,7 +16,7 @@ export const ROY_TABS_ALL = ["search", "task", "projects", "sprints", "market", 
 export type RoyUrlState = { tab: RoyTab | null; route: RoyRoute | null };
 
 /** Экраны, которым для открытия обязателен id: без него роут бесполезен и ведёт в белый экран. */
-const NEEDS_ID = new Set(["record", "taskDetail", "meetingDetail", "meetingReview", "project"]);
+const NEEDS_ID = new Set(["record", "taskDetail", "meetingDetail", "meetingReview", "calendarMeeting", "project"]);
 
 /** Экраны без параметров — их можно открыть по одному имени. */
 const NO_PARAMS = new Set(["newEntry", "ask", "base", "settings", "team", "stats", "admin", "more", "map"]);

@@ -18,6 +18,7 @@ import { countryCode } from "@/lib/countries";
 import type { Entry, Task } from "@/types";
 import { formatDate } from "@/lib/displayFormat";
 import { EditPencil } from "../EditPencil";
+import { MeetingContextBlocks } from "./MeetingContextCard";
 
 const MEETING_COPY = {
   meeting: { ru: "Встреча", en: "Meeting" },
@@ -312,6 +313,8 @@ export function MeetingDetail({ id }: { id: string }) {
                 </span>
               </h1>
             )}
+
+            {confirmed && <MeetingContextBlocks entryId={e.id} />}
 
             {/* Видимая панель действий (раньше была спрятана в меню «...»). */}
             <div className="mb-4 flex flex-wrap gap-2">

@@ -13,7 +13,7 @@
   "scripts/scriba-watchdog-smoke.ts": 1153,
   "supabase/functions/_shared/meeting-processor.ts": 816,
   "supabase/functions/meeting-claim/index.ts": 1085,
-  "supabase/functions/swarm-api/index.ts": 3812,
+  "supabase/functions/swarm-api/index.ts": 3795,
   "supabase/functions/swarm-bot/handlers/granola.ts": 809,
   "supabase/functions/swarm-bot/handlers/knowledge.ts": 1188,
   "supabase/functions/swarm-bot/handlers/meetings.ts": 891,
