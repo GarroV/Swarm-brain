@@ -1,5 +1,6 @@
 {
   "imports": {
+    "i18next": "npm:i18next@26.7.2",
     "@modelcontextprotocol/sdk": "npm:@modelcontextprotocol/sdk@1.32.1",
     "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@2",
     // esm.sh regenerates this helper at the same URL; use the same npm version in tests (#1104).

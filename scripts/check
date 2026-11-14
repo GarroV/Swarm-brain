@@ -177,6 +177,11 @@ initiatives_gate() {
   keep язык-веб "$out"
   row "язык-веб" "$([ $st -eq 0 ] && echo pass || echo fail)" 1 0 "$(echo "$out" | tail -2 | tr '\n' ' ')"
 
+  # Словари и перенесённые разделы: ключи RU/EN, плейсхолдеры, автогенерация и обходы гейта.
+  out=$({ node scripts/check-i18n.mjs && node --test scripts/test-i18n-gate.mjs; } 2>&1); st=$?
+  keep словари-веб "$out"
+  row "словари-веб" "$([ $st -eq 0 ] && echo pass || echo fail)" 1 0 "$(echo "$out" | tail -2 | tr '\n' ' ')"
+
   # Жёстко вписанные цвета в miniapp/src: цвет вне токенов не перекрасится цветовой схемой (12.11.2026).
   # Сам гейт и его проверка на плохом входе (временное дерево): scripts/test-theme-colors.py.
   out=$({ python3 scripts/check-theme-colors.py && python3 scripts/test-theme-colors.py; } 2>&1); st=$?
