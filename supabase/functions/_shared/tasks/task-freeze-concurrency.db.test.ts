@@ -164,7 +164,7 @@ Deno.test("814 the actual review guard mutant demonstrably permits the forbidden
     try {
       await serviceReview(db, f);
     } catch (e) {
-      rejected = e.fields?.code ?? null;
+      rejected = e && typeof e === "object" && "fields" in e ? (e.fields as { code?: string })?.code ?? null : null;
     }
     assertEquals(rejected, "PT409");
     const marker = "if task_frozen_at is not null then";
