@@ -460,9 +460,17 @@ Push-стек управляется `RoyApp.tsx`: `push(route)` → `PushScreen
 
 ### Granola import status in the meeting list (#178)
 
-`roy/GranolaStatus.tsx` appears above the queue in mobile `RoyMeetingsScreen` and desktop `MeetingsDesk`, including an empty list. A single existing `GET /integrations` on mount projects `last_polled_at` and `last_error`: the timestamp is the **last attempt**, including a failed one, never a successful sync. Never-polled connections and an unavailable status GET are distinct; disconnected Granola is hidden. Keyed RU/EN copy does not expose the raw provider error. This is a snapshot, not a claim that a specific meeting is waiting or that a check will run at an exact hour. Shared `useMeetingsList`, manual import, schedules and notifications are unchanged.
+`roy/GranolaStatus.tsx` appears above the queue in mobile `RoyMeetingsScreen` and desktop `MeetingsDesk`, including an empty list. A single existing `GET /integrations` on mount projects `last_polled_at` and `last_error`: the timestamp is the **last attempt**, including a failed one, never a successful sync. Never-polled connections and an unavailable status GET are distinct; disconnected Granola is hidden. Keyed RU/EN copy does not expose the raw provider error. This is a snapshot, not a claim that a specific meeting is waiting or that a check will run at an exact hour. The status component leaves shared `useMeetingsList` untouched and initiates no imports. Schedules and notifications are unchanged; manual persistence failures are handled below.
 
 ### Отказ ручного сохранения Granola (#178)
 
 `GranolaNoteModal` в `SettingsScreen.tsx` использует `settings/useGranolaSave.ts`: единственная незавершённая операция импорта/пропуска, сброс ошибки при повторе, `onImported` / `onSkipped` и закрытие только после успеха API. Отказ показывает `GRANOLA_IMPORT_COPY.saveFailed` (RU/EN), оставляя заметку и диалог доступными для повторной попытки. Сырые детали ошибки сервера в интерфейс не выводятся. Существующие успешные сценарии, выбор общей/личной базы и содержимое заметки не меняются.
 
+
+### ESLint веба (#1270)
+
+`npm --prefix miniapp run lint` использует flat config Next 16 (`core-web-vitals` + TypeScript) через ESLint 9. Команда включена в `scripts/check fast` и в тот же полный `scripts/check initiatives` в CI; отчёт — `reports/miniapp-lint.json`. Next build сам ESLint не запускает.
+
+Существующий долг измерен при включении: 215 диагностик в 122 файлах. `miniapp/eslint-baseline.json` задаёт явные бюджеты по файлу, правилу и сообщению (без нестабильных абсолютных путей/code frames React Compiler). Обычный запуск/CI baseline не переписывают: новый вид диагностики или рост бюджета краснит гейт. Исчезнувший долг выводится в `resolved`; при исправлении его запись нужно уменьшить/удалить. Такой бюджет не определяет, переместилась ли прежняя диагностика внутри того же файла. Парсинг, неизвестное правило, пропавший конфиг/инструмент или отсутствие файлов — ошибка, а не baseline. Старые нарушения не исправлены этим включением; защищённые/параллельно изменяемые компоненты не переписаны.
+
+`npm --prefix miniapp run lint:porcha` создаёт временный TSX с лишним импортом и async client component, проверяет отказ настоящего ESLint и отказ при росте существующего бюджета, затем удаляет фикстуру. Порча входит в полный CI-гейт, в быстрый хук — только обычный lint. Формат, типы, тесты, мёртвый код и границы остаются в существующих проектных гейтах.

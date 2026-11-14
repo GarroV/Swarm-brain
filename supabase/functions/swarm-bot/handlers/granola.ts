@@ -7,7 +7,8 @@ import { applyGeneralSentinel, extractEntryMeta, specificCountries } from "../..
 import { getUserGroupId } from "../lib/workspace.ts";
 import { openAIKeyHandle } from "../../_shared/workspace-keys.ts";
 import { buildTezisyUserMessage, TEZISY_PROMPT } from "../../_shared/tezisy-prompt.ts";
-import { findDuplicateMeeting, type MeetingAttendee, parseMeetingContent } from "../../_shared/meeting-dedup.ts";
+import { findDuplicateMeeting } from "../../_shared/meeting-dedup.ts";
+import { granolaIdentity, granolaImportStartedAt } from "./granola-identity.ts";
 import type { TgCallbackQuery } from "../lib/types.ts";
 import type { GranolaNote, GranolaPreviewCache, NotesResult, PreparedGranolaEntry } from "./granola-types.ts";
 import { externalFetch, VIA_GRANOLA } from "../../_shared/external-fetch.ts";
@@ -177,7 +178,7 @@ async function offerNextGranolaNote(chatId: number, telegramId: number): Promise
 
 // Собирает поля записи из заметки Granola (контент → тезисы → страны → эмбеддинг).
 // Возвращает null, если заметку не удалось получить. Общий код для ручного сохранения
-// (saveGranolaNote, confirmed:true) и авто-импорта (ingest, confirmed:false).
+// (saveGranolaNote) и авто-импорта: оба пути создают черновик meetings до публикации.
 async function prepareGranolaEntry(
   noteId: string,
   telegramId: number,
@@ -186,6 +187,7 @@ async function prepareGranolaEntry(
 ): Promise<PreparedGranolaEntry | null> {
   let title: string;
   let content: string;
+  let identitySource: unknown = cached;
 
   if (cached) {
     title = cached.title;
@@ -199,6 +201,7 @@ async function prepareGranolaEntry(
 
     title = (note.title as string) || "Встреча";
     content = buildNoteContent(note);
+    identitySource = note;
   }
 
   // Тезисы (если нет кэша) и метаданные — два независимых LLM-вызова, считаем параллельно.
@@ -210,18 +213,7 @@ async function prepareGranolaEntry(
     openAIKeyHandle(supabase, groupId).then((key) => extractEntryMeta(content, key)),
   ]);
 
-  // Extract entry_date from content (content always has it in "Дата: ..." line)
-  const entryDateMatch = content.match(/Дата: .*?(\d{2}\.\d{2}\.\d{4})/);
-  let entryDate: string | null = null;
-  if (entryDateMatch) {
-    const [dd, mm, yyyy] = entryDateMatch[1].split(".");
-    entryDate = `${yyyy}-${mm}-${dd}`;
-  }
-
-  // Время начала + участники для дедупа — парсим из того же контента ("Дата: …, HH:MM" + "Участники: …").
-  const timeMatch = content.match(/Дата:[^\n]*?(\d{1,2}:\d{2})/);
-  const startTime = timeMatch ? timeMatch[1] : null;
-  const attendees: MeetingAttendee[] = parseMeetingContent(content).attendees.map((name) => ({ name }));
+  const { entryDate, startTime, startedAt, attendees } = granolaIdentity(identitySource, content);
 
   // Единый санитайзер (порог 2+, схлоп в РОВНО ["General"], без микса [A,B,General]) —
   // общий applyGeneralSentinel, как в storage/read-ai. Раньше здесь была инлайн-копия со
@@ -236,7 +228,7 @@ async function prepareGranolaEntry(
   ].filter(Boolean).join("\n").slice(0, 8000);
   const embedding = await getEmbedding(embeddingText || content.slice(0, 8000), groupId);
 
-  return { title, content, tezises, entryDate, startTime, attendees, countries, embedding };
+  return { title, content, tezises, entryDate, startTime, startedAt, attendees, countries, embedding };
 }
 
 async function saveGranolaNote(
@@ -259,7 +251,7 @@ async function saveGranolaNote(
     await sendMessage(chatId, "Не удалось получить заметку из Granola.");
     return false;
   }
-  const { title, tezises, entryDate, startTime, attendees } = prepared;
+  const { title, tezises, entryDate, startTime, startedAt, attendees } = prepared;
   void username;
   void isPrivate; // приватность решается при публикации; в вычитку все — единообразно
 
@@ -279,15 +271,14 @@ async function saveGranolaNote(
   }
 
   // Ручная выгрузка «не жди бота» — импорт СЕЙЧАС в общую приёмную (очередь вычитки), не сразу
-  // в базу: единый флоу для всех источников. started_at собираем из даты+времени тезисов.
+  // в базу: единый флоу для всех источников. started_at берём из календарного события Granola.
   const nowIso = new Date().toISOString();
-  const startedIso = entryDate ? `${entryDate}T${startTime ?? "00:00"}:00` : null;
   const { error } = await supabase.from("meetings").insert({
     source: "granola",
     identity_kind: "external",
     identity_key: `granola:${noteId}`,
     title,
-    started_at: startedIso,
+    started_at: startedAt,
     attendees,
     group_id: groupId,
     draft_notes_md: tezises,
@@ -434,9 +425,8 @@ export async function pollGranolaForUser(chatId: number, telegramId: number): Pr
 // 150с — поэтому держим запас. Остаток подхватится на следующем часу (дедуп по granola_note_id).
 const MAX_GRANOLA_INGEST_PER_USER = 6;
 
-// Авто-импорт новых заметок Granola как черновиков «на согласовании» (confirmed:false).
-// Зеркало вебхука Read.ai: создаёт запись entry + шлёт те же кнопки ревью (mc_/met_/med_/md_),
-// поэтому встреча сразу видна И в Telegram, И в вебе («на согласовании»). Дедуп — через
+// Авто-импорт новых заметок Granola как черновиков meetings «на вычитке».
+// После вставки отправляется существующее уведомление со ссылкой на веб-очередь. Дедуп — через
 // getProcessedIds (уже сохранённые granola_note_id + skipped). Окно — фиксированные 48ч
 // (как pollGranolaForUser): дедуп защищает от повторов, а сбойную вставку подхватит след. прогон.
 /** Отказ Granola при ежечасном импорте: причина уходит в user_integrations.last_error (#175). */
@@ -489,8 +479,7 @@ async function ingestNewGranolaNotesForUser(integration: {
     // draft_notes_md, транскрибация не нужна. Импортёр в recorders → увидит встречу в своей
     // очереди вычитки (agent-meetings own-scoped). Публикация — общий POST /agent-meetings/:id/publish.
     const nowIso = new Date().toISOString();
-    const startedIso = note.calendar_event?.scheduled_start_time ?? note.created_at ?? null;
-    const meetingAttendees: MeetingAttendee[] = (note.attendees ?? []).map((a) => ({ name: a.name, email: a.email }));
+    const startedIso = granolaImportStartedAt(prepared, note);
 
     const { data: inserted, error } = await supabase.from("meetings").insert({
       source: "granola",
@@ -498,7 +487,7 @@ async function ingestNewGranolaNotesForUser(integration: {
       identity_key: `granola:${note.id}`,
       title,
       started_at: startedIso,
-      attendees: meetingAttendees,
+      attendees,
       group_id: groupId,
       draft_notes_md: tezises,
       status: "awaiting_review",
@@ -664,7 +653,12 @@ export async function handleGranolaCallbacks(
       groupId: await getUserGroupId(userId),
     });
 
-    await setSession(chatId, `granola_preview_${noteId}`, JSON.stringify({ content, title, tezises }));
+    const { attendees, startedAt } = granolaIdentity(note, content);
+    await setSession(
+      chatId,
+      `granola_preview_${noteId}`,
+      JSON.stringify({ content, title, tezises, attendees, startedAt }),
+    );
 
     await sendMessage(chatId, `📓 <b>${escapeHtml(title)}</b>\n\n${sanitizeModelHtml(tezises)}`);
     await sendInlineMessage(chatId, "Сохранить в базу знаний?", [
