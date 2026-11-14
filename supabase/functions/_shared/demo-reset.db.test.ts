@@ -348,7 +348,7 @@ Deno.test("demo_reset: наломанное демо возвращается к
         entries: 7,
         meetings: 1,
         spaces: 2,
-        projects: 14,
+        projects: 17,
         cycles: 4,
         comments: 9,
       });

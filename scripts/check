@@ -197,7 +197,7 @@ initiatives_gate() {
   deno test -A --coverage=reports/cov --reporter=junit --junit-path=reports/tests-functions.junit.xml \
     supabase/ files/ scripts/market/ > reports/tests.log 2>&1; st1=$?
   deno test -A --no-check --coverage=reports/cov --reporter=junit --junit-path=reports/tests-web.junit.xml \
-    miniapp/sw.test.ts miniapp/src/lib/ >> reports/tests.log 2>&1; st2=$?
+    miniapp/sw.test.ts miniapp/src/lib/ miniapp/e2e/demo-reset-plan.db.test.ts >> reports/tests.log 2>&1; st2=$?
 
   count() { # файл атрибут — сумма по всем testsuite
     grep -o "$2=\"[0-9]*\"" "$1" 2>/dev/null | tr -dc '0-9\n' | awk '{s+=$1} END {print s+0}'
