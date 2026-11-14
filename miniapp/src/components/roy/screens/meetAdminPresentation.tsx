@@ -11,6 +11,10 @@ const ROW_STATUS_COPY = {
 } as const;
 
 export const MEET_DETAIL_COPY = {
+  listFailed: { ru: "Не удалось загрузить встречи", en: "Could not load meetings" },
+  retry: { ru: "Повторить", en: "Retry" },
+  showMore: { ru: "Показать ещё", en: "Show more" },
+  loadingMore: { ru: "Загрузка…", en: "Loading…" },
   totalPrefix: { ru: "Всего: ", en: "Total: " },
   byCountry: { ru: "По странам", en: "By country" },
   sources: { ru: "Источники", en: "Sources" },
