@@ -80,8 +80,12 @@ export const SECTIONS: readonly Section[] = [
     manual: "market_upsert_location (opened / closed) или market_set_block location_dates / events / growth",
     blocks: {
       location_dates: {
-        what: "уточнённые даты открытия: name (как у точки), opened, note",
-        example: [{ name: "Dodo Pizza Mall Sofia", opened: "2023-04-12", note: "пресс-релиз" }],
+        what: "уточнённые даты точки: name (как у точки), opened и/или closed (ГГГГ[-ММ[-ДД]]), note; " +
+          "closed ложится только на точку, уже закрытую сборщиком — для Dodo это единственный способ задать дату закрытия",
+        example: [
+          { name: "Dodo Pizza Mall Sofia", opened: "2023-04-12", note: "пресс-релиз" },
+          { name: "Dodo Pizza Example-4", closed: "2025-01-30", note: "Свод пиццерий" },
+        ],
       },
       events: {
         what: `события рынка: date (ГГГГ[-ММ[-ДД]]), kind (${EVENT_KINDS.join("/")}), chain, text; закрытие — exit`,

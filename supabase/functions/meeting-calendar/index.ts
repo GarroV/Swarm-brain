@@ -48,12 +48,15 @@ import { sweep, type SweepSource, type TakenJob } from "./sweep.ts";
 import { recordSweepMisses } from "./missed.ts";
 import { makeMissStore } from "../_shared/calendar-miss-store.ts";
 import { mintGrants } from "../_shared/agent-grant.ts";
+import { makeOutcomeStore, recordOutcomes } from "../_shared/join-outcomes.ts";
+import { outcomesFromSkips } from "./outcomes.ts";
 import { loadCoveredRooms } from "../_shared/manual-rooms.ts";
 
 const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
 
 // Пропуски автозапуска (T102) пишутся в meeting_calendar_misses — их показывает рекордер человека.
 const missStore = makeMissStore(supabase);
+const outcomeStore = makeOutcomeStore(supabase);
 
 const JOB_COLUMNS = "id, calendar_key, invited_by, join_url, platform, title, starts_at, ends_at";
 
@@ -148,6 +151,12 @@ Deno.serve(async (req: Request) => {
         `meeting-calendar: ${agent.groupId} ${s.invited_by} ${s.calendar_key ?? "—"} — бот не пойдёт: ${s.reason}`,
       );
     }
+    // Исходы «не пойдёт» — на сервер для статистики (#1244); не бросает, опрос не задерживает.
+    await recordOutcomes(
+      outcomeStore,
+      outcomesFromSkips(agent.groupId, result.skipped, Date.now()),
+      (l) => console.error(`meeting-calendar: ${l}`),
+    );
     let tokens: string[];
     try {
       tokens = await mintGrants(
