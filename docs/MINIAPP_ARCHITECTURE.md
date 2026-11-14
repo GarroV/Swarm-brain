@@ -448,6 +448,34 @@ Push-стек управляется `RoyApp.tsx`: `push(route)` → `PushScreen
 
 > Бэкенд: `PATCH /meetings/:id` принимает `content`/`is_private`(+`owner_id`)/`entry_type`/`countries` (swarm-api); `POST /tasks/extract { save:false }` возвращает предложения без создания. Пустой выбор рынков клиент шлёт как `["General"]` — это сентинел «конкретного рынка нет», а не отсутствие тега (в базе так лежат 65 встреч).
 
+**Manual confirmation in review (#183, published targets only).** `MeetingReview` mounts
+`meeting-review/ManualMergePrompt` for a completed manual recording. The existing Team/Personal
+choice determines the candidate query; source identity is the loaded meeting id, including old
+alias links. Only an eligible existing published entry is offered in this stage. Combining two
+open recordings remains outside this change because their input lifecycle is still active.
+
+`manualMeetingMergeRequest` projects only target, decision, base and the opaque snapshot token;
+`manualMeetingMergeApi` reuses the existing authenticated web transport. Mounting performs only a
+fresh GET. No leaves the recording separate. Yes explicitly confirms association; it does not run
+the regular Publish action. Candidate title, start, recorder names and selected-base status are
+shown before the choice. While the decision is being saved, other actions in the review are inert.
+A conflict discards the old proposal: Check again only reads, and a new Yes/No is required. Late
+responses from another source/base and repeated clicks cannot submit another decision.
+Demo visitors can read a suggestion but cannot submit either decision; the disabled controls
+explain this existing server policy without displaying a false Saving state.
+
+Confirmed recording provenance supplies the transcript clock and microphone name; unverified JSON
+keeps the legacy behavior. Combined margin notes show each original author and the clock of that
+note's original recording. Stored offsets never change. Missing original start/name is not guessed;
+ordinary notes retain their exact old markup. The notes endpoint keeps the original access checks
+and does not turn another person's personal note entry into a shared margin note.
+
+Pure request/React SSR regressions live in `manualMeetingMergeRequest.test.ts` and
+`manualMergeQuestion.test.ts`; compiled page scenarios use Chrome for Testing with intercepted
+synthetic APIs. Actual persistence/locking is checked separately in isolated database CI. New UI
+sections use the current keyed RU/EN compatibility layer; after dictionary foundation #1025 lands,
+these new sections must adopt `useT` or receive an explicit temporary legacy registration.
+
 **Разбор задач из встречи — правка в строке (27.10.2026).** В `TasksHarvest` и название, и описание предложенной задачи правятся кликом прямо в строке (`InlineEditor`: Enter — сохранить, Shift+Enter — перенос, Esc — отмена, уход фокуса — сохранить); у задачи без описания — «+ описание». Остальные поля — в окне правки (карандаш). Владелец: «хочется нажать на тело задачи и быстренько отредактировать… и на название нажать и изменить».
 
 **Разбор задач из встречи — ничего не уходит в систему до общей кнопки (27.10.2026).** Карандаш на строке и «Своя» открывают `TaskModal` в режиме черновика (`onDraft`): кнопка «Готово» обновляет строку разбора (`DraftTask._fields` — исполнитель, пинг, списки, проект…), задача создаётся только кнопкой «Добавить N задач». Владелец: «я ожидаю, что я здесь список поправлю, потом возьму кнопку сохранить, и он улетит». Исполнитель по имени из тезисов ищется и через скелет имени (`proposedTasks.ts` `nameSkeleton`: «Василий» = Vasiliy, «Юля» = Yulia/Julia); уменьшительные («Саша») не угадываются.

@@ -1,3 +1,4 @@
+import { canonicalManualMeeting, type ManualMeetingRow } from "./manual-meeting-merge.ts";
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import {
   applyGeneralSentinel,
@@ -8,7 +9,8 @@ import {
 } from "./meta-extract.ts";
 import { findDuplicateMeeting, type MeetingAttendee } from "./meeting-dedup.ts";
 import { arbitrateFullness, type TranscriptLike } from "./meeting-fullness.ts";
-import { type DraftMeetingRow, hasCoOwners, oneOnOnePartner } from "./meeting-access.ts";
+import type { DraftMeetingRow } from "./meeting-access.ts";
+import { resolvePublishVisibility } from "./meeting-publish-visibility.ts";
 import { onlyLiveEntries } from "./entries/live.ts";
 import {
   addVisibleGroups,
@@ -46,35 +48,25 @@ export type PublishDraftResult =
   | { ok: true; status: 200 | 201; entry: Record<string, unknown> }
   | { ok: false; status: 400 | 409 | 500; message: string };
 
-export type PublishVisibility =
-  | { ok: true; isPrivate: boolean; sharedWith: number[] }
-  | { ok: false };
-
-/**
- * Кому будет видна публикуемая запись. Решает СЕРВЕР по составу встречи; клиент присылает
- * только «в команду» или «в личное».
- *
- * Встречу нескольких владельцев в личное не публикуем: остальные потеряли бы к ней доступ
- * (решение владельца 2026-09-25, PR #508). Исключение — 1-1 (#641, решение 30.09.2026):
- * ровно два человека, оба в SWARM. Тогда запись одна, владелец — опубликовавший, второй
- * участник — в `shared_with`, и видят её только они двое.
- */
-export function resolvePublishVisibility(
-  meeting: DraftMeetingRow,
-  viewerId: number,
-  wantsPrivate: boolean,
-): PublishVisibility {
-  if (!wantsPrivate) return { ok: true, isPrivate: false, sharedWith: [] };
-  if (!hasCoOwners(meeting)) return { ok: true, isPrivate: true, sharedWith: [] };
-  const partner = oneOnOnePartner(meeting, viewerId);
-  return partner === null ? { ok: false } : { ok: true, isPrivate: true, sharedWith: [partner] };
-}
+export { resolvePublishVisibility };
+export type { PublishVisibility } from "./meeting-publish-visibility.ts";
 
 export async function publishDraftMeeting(
   supabase: SupabaseClient,
   meeting: Record<string, unknown>,
   opts: PublishDraftOptions,
 ): Promise<PublishDraftResult> {
+  if (meeting.manual_merge_target_id) {
+    try {
+      meeting = await canonicalManualMeeting(supabase, meeting as ManualMeetingRow, {
+        telegramId: opts.telegramId,
+        groupId: opts.groupId,
+        email: opts.viewerEmail,
+      });
+    } catch {
+      return { ok: false, status: 409, message: "Meeting changed; reload before publishing" };
+    }
+  }
   const meetingId = meeting.id as string;
   // Строка колонок приходит параметром, и supabase-js не может вывести из неё тип строки
   // (GenericStringError). «*» для компилятора — строка без схемы, Record<string, any>;
@@ -155,7 +147,8 @@ export async function publishDraftMeeting(
   // Если совпавшая запись видима публикующему (публичная или его личная) — привязываем
   // meeting к ней и возвращаем её, а не плодим вторую. Чужие приватные записи игнорируем
   // (не привязываемся к ним и не раскрываем) — тогда публикуем как обычно.
-  const dup = await findDuplicateMeeting(supabase, {
+  // Manual recordings require the person's explicit pair decision (#183); similarity is only a suggestion.
+  const dup = meeting.identity_kind === "manual" ? null : await findDuplicateMeeting(supabase, {
     groupId: homeGroupId,
     entryDate,
     startedAt,
