@@ -151,6 +151,14 @@ initiatives_gate() {
     row "границы" "$([ $st -eq 0 ] && echo pass || echo fail)" "$N" 0 "$(echo "$out" | grep -i 'границ' | tr '\n' ' ')"
   fi
 
+  # ESLint is the same command locally and in CI. Existing debt is an explicit ratchet.
+  out=$(npm --prefix miniapp run lint 2>&1); st=$?; keep линт-веб "$out"
+  row "линт-веб" "$([ $st -eq 0 ] && echo pass || echo fail)" 1 0 "$(echo "$out" | tail -1 | tr '\n' ' ')"
+  if [ "$FAST" -eq 0 ]; then
+    out=$(npm --prefix miniapp run lint:porcha 2>&1); st=$?; keep порча-линт-веб "$out"
+    row "порча-линт-веб" "$([ $st -eq 0 ] && echo pass || echo fail)" 1 0 "$(echo "$out" | tail -1 | tr '\n' ' ')"
+  fi
+
   # Типы: edge-функции (точки входа явно — без них deno check проверяет не всё) и веб.
   ENTRIES=()
   while IFS= read -r e; do ENTRIES+=("$e"); done < <(find supabase/functions -mindepth 2 -maxdepth 2 -name index.ts)

@@ -7,7 +7,9 @@
     "build": "next build && node scripts/gen-csp-headers.mjs && node scripts/sw-stamp.mjs out",
     "start": "next start",
     "typecheck": "tsc --noEmit",
-    "test": "deno test -A --no-check --config ../deno.json src/lib/ sw.test.ts"
+    "test": "deno test -A --no-check --config ../deno.json src/lib/ sw.test.ts",
+    "lint": "node scripts/lint.mjs",
+    "lint:porcha": "node scripts/lint.mjs --porcha"
   },
   "dependencies": {
     "@base-ui/react": "^1.5.0",
@@ -33,6 +35,8 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "eslint": "9.39.4",
+    "eslint-config-next": "16.2.6",
     "tailwindcss": "^4",
     "typescript": "^5"
   }
