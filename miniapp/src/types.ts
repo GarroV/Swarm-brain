@@ -22,7 +22,10 @@ export type Task = {
   remind_date: string | null;
   reminded_at: string | null;
   tags?: string[];
+  /** Первая из `countries` (серверное зеркало до снятия колонки, #1262). Читать — `taskCountryCodes`. */
   country: string | null;
+  /** ISO-коды стран задачи; нет поля — строка до раскатки #1262, тогда читается `country`. */
+  countries?: string[];
   task_role?: string | null;
   priority: string | null;
   source?: string;
@@ -577,7 +580,13 @@ export type AgentMeeting = {
   // для ручных записей без календарного события.
   attendees?: Attendee[] | null;
   // transcript присутствует только в детальном GET /agent-meetings/:id
-  transcript?: { language?: string; model?: string; segments?: TranscriptSegment[] } | null;
+  // quality — честный сигнал качества распознавания (#75); у записей до его появления поля нет.
+  transcript?: {
+    language?: string;
+    model?: string;
+    segments?: TranscriptSegment[];
+    quality?: { version: number; flag: "ok" | "poor"; reasons: ("repeats" | "low_confidence")[]; repeat_share: number; low_conf_share: number | null };
+  } | null;
   recorders: RecorderRef[] | null;
   // Совладельцы черновика — участники встречи с аккаунтом SWARM (решение 2026-09-25). Видят и
   // вычитывают, но не удаляют; при нескольких владельцах публикация только в общую базу.

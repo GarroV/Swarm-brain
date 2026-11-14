@@ -84,11 +84,20 @@ Deno.test("#1134: only the six specified generic words are excluded, using the e
     ]
   ) {
     const result = discover(
-      many(5, (i) => ({ name, locality: ["A", "B", "C"][i % 3] })),
+      many(5, (i) => ({ name, brand: name, locality: ["A", "B", "C"][i % 3] })),
       cfg,
     );
     assertEquals(result.chains.map((c) => c.name), [name]);
     assertEquals(result.points.length, 5);
+    // …а без бренда то же название сетью не считается (решение владельца 10.11.2026).
+    assertEquals(
+      discover(
+        many(5, (i) => ({ name, locality: ["A", "B", "C"][i % 3] })),
+        cfg,
+      ).chains,
+      [],
+      name,
+    );
   }
   // Кофейни — не фастфуд (решение владельца 10.11.2026): автопоиск их не заводит.
   for (const name of ["Кофейня Плюс", "Cafe"]) {
@@ -250,13 +259,14 @@ Deno.test("overture: a brand needs 3 points, merged by wikidata across spellings
   assertEquals(points.filter((p) => p.chain === "nordsee").length, 3);
 });
 
-Deno.test("overture: without a brand it takes 5 points in 3 localities, a generic name below that is dropped", () => {
+Deno.test("overture: only a branded group (brand or wikidata) becomes a chain, from 3 points; unbranded name clusters never do", () => {
   const cities = ["A", "B", "C", "A", "B"];
-  const ok = many(5, (i) => ({ name: "Bistro Lux", locality: cities[i] }));
-  const oneTown = many(6, () => ({ name: "Pizzeria", locality: "A" }));
-  const few = many(4, (i) => ({ name: "Four", locality: cities[i] }));
-  const { chains } = discover([...ok, ...oneTown, ...few], cfg);
-  assertEquals(chains.map((c) => c.name), ["Bistro Lux"]);
+  const unbranded = many(9, (i) => ({ name: "Bistro Lux", locality: cities[i % 5] }));
+  const branded = many(3, (i) => ({ name: "Brand Hub", brand: "Brand Hub", locality: cities[i] }));
+  const byWikidata = many(3, (i) => ({ name: "Wiki Burger", wikidata: "Q1", locality: cities[i] }));
+  const few = many(2, (i) => ({ name: "Two", brand: "Two", locality: cities[i] }));
+  const { chains } = discover([...unbranded, ...branded, ...byWikidata, ...few], cfg);
+  assertEquals(chains.map((c) => c.name).sort(), ["Brand Hub", "Wiki Burger"]);
 });
 
 Deno.test("overture: Dodo never becomes a discovered chain or a point", () => {
@@ -455,6 +465,7 @@ Deno.test("#1134: BY config names both known factory shop brands", () => {
     ),
     ...many(5, (i) => ({
       name: "Пицца Темпо",
+      brand: "Пицца Темпо",
       locality: ["Мінск", "Гомель", "Брэст"][i % 3],
     })),
   ];

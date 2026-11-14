@@ -68,6 +68,43 @@ export const ES: CountryConfig = {
       // (бренды мастер-франшиз), отдельными «сетями» они не считаются.
       osmBrands: ["llaollao"],
     },
+    // Известные фастфуд-сети: Overture держит их под категорией restaurant/casual_eatery или без бренда,
+    // автопоиск (только фастфуд-сегменты с брендом) их не находит — решение владельца 10.11.2026.
+    { key: "telepizza", name: "Telepizza", segment: "pizza", osmBrands: ["Telepizza"], osmNames: ["Telepizza"] },
+    {
+      key: "rodilla",
+      name: "Rodilla",
+      segment: "sandwich",
+      osmBrands: ["Rodilla", "Rodilla Sándwiches"],
+      osmNames: ["Rodilla"],
+    },
+    {
+      key: "pans-company",
+      name: "Pans&Company",
+      segment: "sandwich",
+      osmBrands: ["Pans&Company"],
+      osmNames: ["Pans & Company", "Pans and Company", "Pans&Company"],
+    },
+    {
+      key: "100-montaditos-portugal",
+      name: "100 Montaditos",
+      segment: "sandwich",
+      osmBrands: ["100 Montaditos Portugal", "100 Montaditos"],
+      osmNames: ["100 Montaditos", "Cien Montaditos"],
+    },
+    {
+      key: "goiko",
+      name: "Goiko",
+      segment: "burger",
+      osmBrands: ["Goiko France", "Goiko"],
+      osmNames: ["Goiko", "Hamburgueseria Goiko"],
+    },
+    {
+      key: "pomodoro-pizza-pasta-burritos",
+      name: "Pomodoro Pizza Pasta Burritos",
+      segment: "pizza",
+      osmNames: ["Pomodoro Pizza Pasta Burritos", "Pomodoro"],
+    },
   ],
   companies: [],
   sources: [

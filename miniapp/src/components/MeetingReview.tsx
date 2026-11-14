@@ -255,6 +255,7 @@ export function MeetingReview({ id, onClose, onChanged }: Props) {
   const recorders = meeting.recorders ?? [];
   const segments = meeting.transcript?.segments ?? [];
   const hasTranscript = segments.length > 0;
+  const poorRecognition = !published && meeting.transcript?.quality?.flag === "poor";
   // Пустая строка тезисов = НЕ готово (модель вернула пусто). Раньше `!== null` считал "" готовым → голый «—».
   const notesReady = !!meeting.draft_notes_md;
   const recordingNow = !published && !notesReady && meeting.recording_now === true;
@@ -296,6 +297,11 @@ export function MeetingReview({ id, onClose, onChanged }: Props) {
               })} />
           </div>
         </div>
+        {poorRecognition && (
+          <p className="mb-2 text-sm" style={{ color: "var(--pri-high)" }}>
+            {dt("⚠️ Запись распознана плохо — тезисы могут быть неточными, сверяйтесь со стенограммой.", "⚠️ The recording was transcribed poorly — the summary may be inaccurate, check it against the transcript.")}
+          </p>
+        )}
         <TezisyReader text={meeting.draft_notes_md ?? ""}
           ask={hasTranscript && !published ? askDraft : undefined} onApply={applyFromReading} />
       </div>

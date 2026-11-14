@@ -12,7 +12,15 @@ export const TASK_TOOL_DEFINITIONS = [
         title: { type: "string", description: "Название задачи" },
         description: { type: "string", description: "Описание или детали (опционально)" },
         assignee_name: { type: "string", description: "Имя, фамилия или ник исполнителя (опционально)" },
-        country: { type: "string", description: "Рынок/страна (опционально)" },
+        country: {
+          type: "string",
+          description: "Страна: ISO-код (HU, RS…). Несколько — через запятую или в countries",
+        },
+        countries: {
+          type: "array",
+          items: { type: "string" },
+          description: 'Несколько стран задачи ISO-кодами, например ["HU","RS"]. Приоритетнее country',
+        },
         due_date: {
           type: "string",
           description: "Дедлайн в формате YYYY-MM-DD (опционально). Год — от текущей даты, не из головы",
@@ -105,7 +113,13 @@ export const TASK_TOOL_DEFINITIONS = [
         title: { type: "string" },
         description: { type: "string" },
         assignee_name: { type: "string", description: "Новый исполнитель. Пустая строка — убрать исполнителя." },
-        country: { type: "string" },
+        country: { type: "string", description: "Одна страна ISO-кодом; пустая строка — убрать страну" },
+        countries: {
+          type: "array",
+          items: { type: "string" },
+          description:
+            "Полный новый список стран ISO-кодами (заменяет прежний); [] — убрать страны. Приоритетнее country",
+        },
         due_date: { type: ["string", "null"], description: "YYYY-MM-DD или null чтобы убрать" },
         status: {
           type: "string",

@@ -45,12 +45,16 @@ Deno.test("price columns compile regexes and drop broken ones", () => {
 });
 
 Deno.test("ops model rows must match the chain count", () => {
-  const e = parseEditorial({ ops_model: { chains: ["a", "b"], rows: [["Entry", "2024", "2020"], ["Short", "x"], ["Num", 7, null]] } });
+  const e = parseEditorial({
+    ops_model: { chains: ["a", "b"], rows: [["Entry", "2024", "2020"], ["Short", "x"], ["Num", 7, null]] },
+  });
   assertEquals(e.opsModel?.rows, [["Entry", "2024", "2020"], ["Num", "7", "—"]]);
 });
 
 Deno.test("growth keeps only year keys with numbers", () => {
-  const e = parseEditorial({ growth: { keys: ["sub"], hist: { sub: { "2020": 11, "x": 2, "2021": "12" } }, notes: { sub: "n", bad: 3 } } });
+  const e = parseEditorial({
+    growth: { keys: ["sub"], hist: { sub: { "2020": 11, "x": 2, "2021": "12" } }, notes: { sub: "n", bad: 3 } },
+  });
   assertEquals(e.growth?.hist, { sub: { 2020: 11 } });
   assertEquals(e.growth?.notes, { sub: "n" });
 });
@@ -70,8 +74,22 @@ Deno.test("location dates from editorial override the collected opening date by 
   });
   assertEquals(ed.locationDates.length, 2);
   const locs = [
-    { name: "Dodo Pizza Zagreb-1", opened: "2023-04-24", opened_estimated: true, verification_note: null },
-    { name: "Dodo Pizza Zagreb-2", opened: "2025-03-31", opened_estimated: false, verification_note: "x" },
+    {
+      name: "Dodo Pizza Zagreb-1",
+      opened: "2023-04-24",
+      opened_estimated: true,
+      verification_note: null,
+      status: "open",
+      closed: null,
+    },
+    {
+      name: "Dodo Pizza Zagreb-2",
+      opened: "2025-03-31",
+      opened_estimated: false,
+      verification_note: "x",
+      status: "open",
+      closed: null,
+    },
   ];
   const out = applyLocationDates(locs, ed.locationDates);
   assertEquals(out[0].opened, "2024-03-22");
@@ -79,6 +97,37 @@ Deno.test("location dates from editorial override the collected opening date by 
   assertEquals(out[0].verification_note, "Дата открытия: Данные Dodo (собрано 2023-04-24)");
   assertEquals(out[1], locs[1]);
   assertEquals(locs[0].opened, "2023-04-24");
+});
+
+Deno.test("location dates: closed date lands on a closed point only, opened stays untouched (#1119)", () => {
+  const ed = parseEditorial({
+    location_dates: [
+      { name: "Dodo Vilnius-4", closed: "2025-01-30", note: "Свод пиццерий" },
+      { name: "Dodo Vilnius-1", closed: "2025-01-30" },
+      { name: "Dodo Vilnius-5", opened: "2023-05-01", closed: "2024-07-22" },
+      { name: "bad", closed: "30.01.2025" },
+    ],
+  });
+  assertEquals(ed.locationDates.map((d) => [d.name, d.opened, d.closed]), [
+    ["Dodo Vilnius-4", null, "2025-01-30"],
+    ["Dodo Vilnius-1", null, "2025-01-30"],
+    ["Dodo Vilnius-5", "2023-05-01", "2024-07-22"],
+  ]);
+  const base = { opened_estimated: true, verification_note: null };
+  const locs = [
+    { ...base, name: "Dodo Vilnius-4", opened: "2022-01-01", status: "closed", closed: null },
+    { ...base, name: "Dodo Vilnius-1", opened: "2020-01-01", status: "open", closed: null },
+    { ...base, name: "Dodo Vilnius-5", opened: "2023-01-01", status: "closed", closed: "2024" },
+  ];
+  const out = applyLocationDates(locs, ed.locationDates);
+  assertEquals([out[0].closed, out[0].opened, out[0].opened_estimated], ["2025-01-30", "2022-01-01", true]);
+  assertEquals(out[0].verification_note, "Дата закрытия: Свод пиццерий");
+  assertEquals(out[1], locs[1]);
+  assertEquals([out[2].opened, out[2].closed], ["2023-05-01", "2024-07-22"]);
+  assertEquals(
+    out[2].verification_note,
+    "Дата открытия: ручная часть (собрано 2023-01-01); Дата закрытия: ручная часть (собрано 2024)",
+  );
 });
 
 Deno.test("ratings: aggregator keys and aliases are read, null google kept, rows without any rating dropped", () => {

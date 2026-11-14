@@ -1,5 +1,7 @@
 import { sendInlineMessage } from "../lib/telegram.ts";
 import type { Task } from "./types.ts";
+import { taskCountriesText } from "../../_shared/tasks/countries.ts";
+export { taskCountriesText };
 import { recurrenceLabelRu } from "../../_shared/tasks/recurrence.ts";
 
 export const STATUS_LABEL: Record<string, string> = {
@@ -31,7 +33,7 @@ function escapeHtml(s: string): string {
 }
 
 export function formatTaskLine(task: Task): string {
-  const country = task.country ? `🌍 ${task.country}` : "";
+  const country = taskCountriesText(task) ? `🌍 ${taskCountriesText(task)}` : "";
   const due = formatDue(task.due_date);
   const meta = [country, due, formatRecur(task)].filter(Boolean).join(" | ");
   return [`📌 <b>${escapeHtml(task.title)}</b>`, meta].filter(Boolean).join("\n");
@@ -39,7 +41,7 @@ export function formatTaskLine(task: Task): string {
 
 export async function sendTaskCard(chatId: number, task: Task): Promise<void> {
   const who = task.assignees?.length ? `👤 ${task.assignees.join(", ")}` : "";
-  const country = task.country ? `🌍 ${task.country}` : "";
+  const country = taskCountriesText(task) ? `🌍 ${taskCountriesText(task)}` : "";
   const due = formatDue(task.due_date);
   const meta = [who, country, due, formatRecur(task)].filter(Boolean).join(" | ");
   const text = [`📌 <b>${escapeHtml(task.title)}</b>`, meta].filter(Boolean).join("\n");

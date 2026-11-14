@@ -264,7 +264,8 @@ export async function upsertLocation(sb: SupabaseClient, cc: string, input: Loca
     if (before.source_kind === "dodo") {
       return {
         ok: false,
-        error: "точки Dodo ведёт API Dodo и правка не удержится; уточнённую дату открытия внеси блоком location_dates",
+        error:
+          "точки Dodo ведёт API Dodo и правка не удержится; уточнённую дату открытия или закрытия внеси блоком location_dates",
       };
     }
     // Поправленная руками точка становится ручной: сборщик OSM её больше не двигает и не удаляет,

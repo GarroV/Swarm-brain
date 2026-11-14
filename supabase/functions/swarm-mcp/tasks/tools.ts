@@ -1,6 +1,7 @@
 import { loadProjectVisibility } from "../../_shared/tasks/project-visibility.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { createTask, deleteTask, getVisibleTask, listTasksWithTotal, updateTask } from "../../_shared/tasks/db.ts";
+import { parseTaskCountries } from "../../_shared/tasks/countries.ts";
 import { projectLabel, truncationNote, visibleProjectNameById } from "./task-list.ts";
 
 import {
@@ -177,6 +178,7 @@ export async function toolAddTask(args: {
   description?: string;
   assignee_name?: string;
   country?: string;
+  countries?: string[];
   due_date?: string;
   task_role?: string;
   source: string;
@@ -282,6 +284,7 @@ export async function toolAddTask(args: {
       assignees,
       assignee_telegram_ids,
       country: args.country ?? null,
+      countries: args.countries,
       due_date: dueDate,
       task_role: args.task_role ?? null,
       source: args.source,
@@ -345,6 +348,7 @@ export async function toolUpdateTask(args: {
   description?: string;
   assignee_name?: string;
   country?: string;
+  countries?: string[];
   due_date?: string | null;
   status?: string;
   task_role?: string;
@@ -401,6 +405,7 @@ export async function toolUpdateTask(args: {
   if (args.title !== undefined) fields.title = args.title;
   if (args.description !== undefined) fields.description = args.description;
   if (args.country !== undefined) fields.country = args.country;
+  if (args.countries !== undefined) fields.countries = args.countries;
   if ("due_date" in args) fields.due_date = args.due_date ?? null;
   // Пинг (#622), null — снять. Как в swarm-api: перенос взводит заново, ставящий — получатель,
   // если у задачи нет исполнителя.
@@ -508,6 +513,7 @@ const GET_TASKS_LIMIT = 30;
 export async function toolGetTasks(args: {
   assignee?: string;
   country?: string;
+  countries?: string[];
   status?: string;
   period?: string;
   label?: string;
@@ -545,9 +551,13 @@ export async function toolGetTasks(args: {
     }
   }
 
+  // Неизвестная страна — ОТКАЗ, а не снятый фильтр: пустая выдача по опечатке выглядела бы как «задач нет».
+  const countryFilter = parseTaskCountries(args.countries ?? args.country);
+  if (!countryFilter.ok) return `Ошибка: ${countryFilter.error}`;
+
   const { tasks, total } = await listTasksWithTotal({
     status: args.status,
-    country: args.country,
+    countries: countryFilter.countries,
     period: args.period,
     assigneeText: args.assignee,
     labelIds: labelIds.length ? labelIds : undefined,

@@ -131,3 +131,4 @@ supabase/functions/read-ai-webhook/workspace.ts|supabase/functions/read-ai-webho
 # Переезд человека в другое пространство (этап 3): кто может переводить и что уходит в базу.
 # Правила по таблицам — в SQL, их держит порча базы (scripts/porcha-sql.txt).
 supabase/functions/swarm-api/member-move-routes.ts|supabase/functions/swarm-api/member-move-routes.test.ts
+supabase/functions/_shared/tasks/countries.ts|supabase/functions/_shared/tasks/countries.test.ts

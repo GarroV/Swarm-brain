@@ -7,7 +7,7 @@ import { discardState, promoteQueued, readQueued, writeQueued } from "../_shared
 import { acceptUpload } from "./accept-upload.ts";
 import { readParts, type TrackParts } from "./parts.ts";
 import { handleBackupUpload } from "./backup.ts";
-import { decideUpload, uploadSource } from "./second-recording.ts";
+import { decideUpload, needsLengthCheck, transcriptEndSec, uploadSource } from "./second-recording.ts";
 import { freshChallenge, holderSecondsCorrection, mayCorrectHolderSeconds } from "./challenge.ts";
 import { correctHolderSeconds, measureUpload, type Rival, settleChallengeUpload } from "./challenge-io.ts";
 import { claimLeaseUntil } from "../_shared/meeting-lease.ts";
@@ -230,12 +230,43 @@ Deno.serve(async (req: Request) => {
   // Запись претендента — другой человек по построению: «старая форма без источников» не делает её
   // повтором чужой выгрузки.
   const sources = rival && listed === null ? [] : listed;
+  const hasTranscript = m.first_segment !== null && m.first_segment !== undefined;
+  // Готовая встреча и источник, уже бывший у неё: повтор выгрузки или новая запись того же человека
+  // (#1271) — различаем по длине аудио против конца стенограммы (second-recording.ts).
+  let length:
+    | { incomingSeconds: number | null; transcriptSeconds: number | null; recordedSeconds: number | null }
+    | undefined;
+  if (needsLengthCheck({ summaryStatus: m.summary_status, sources, incoming: source })) {
+    const early = parts ?? await readParts(formData);
+    if (early instanceof Response) return early;
+    parts = early;
+    // Готовая встреча — против конца стенограммы; идущая обработка (#1318) — против recorded_seconds.
+    const done = m.summary_status === "done";
+    const { data } = done
+      ? await supabase.from("meetings").select("transcript").eq("id", m.id).maybeSingle()
+      : { data: null };
+    length = {
+      incomingSeconds: await measureUpload([...early.systemParts, ...early.micParts]),
+      transcriptSeconds: transcriptEndSec((data as { transcript?: never } | null)?.transcript ?? null),
+      recordedSeconds: done ? null : m.recorded_seconds,
+    };
+  }
   const decision = decideUpload({
     summaryStatus: m.summary_status,
     sources,
-    hasTranscript: m.first_segment !== null && m.first_segment !== undefined,
+    hasTranscript,
     incoming: source,
+    ...length,
   });
+  if (length) {
+    console.log(
+      `meeting-ingest: ${m.id} — повторная выгрузка ${source} к ${
+        m.summary_status === "done" ? "готовой" : "обрабатываемой"
+      } встрече: аудио ${length.incomingSeconds === null ? "—" : Math.round(length.incomingSeconds)}с, стенограмма ${
+        length.transcriptSeconds === null ? "—" : Math.round(length.transcriptSeconds)
+      }с, принятая запись ${length.recordedSeconds == null ? "—" : Math.round(length.recordedSeconds)}с → ${decision}`,
+    );
+  }
   const queued = decision === "queue" ? await readQueued(supabase, m.id, source) : null;
   if (decision === "already_processed" || queued !== null) {
     return json({

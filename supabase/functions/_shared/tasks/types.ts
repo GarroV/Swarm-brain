@@ -16,7 +16,10 @@ export type Task = {
   reminded_at: string | null;
   remind_set_by: number | null;
   tags: string[];
+  // Основная страна = первая из `countries` (зеркало до снятия колонки, issue #1262).
   country: string | null;
+  // ISO-2 коды стран задачи; пусто = без страны. Канон — это поле, `country` только зеркало.
+  countries: string[];
   task_role: string | null;
   priority: string | null;
   source: string;
@@ -64,7 +67,10 @@ export type TaskInput = {
   reminded_at?: string | null;
   remind_set_by?: number | null;
   tags?: string[];
+  /** Старый одиночный ввод: имя или код, приводится к `countries` (`countries.ts`). */
   country?: string | null;
+  /** Страны списком; приоритетнее `country`, если переданы оба. */
+  countries?: string[];
   task_role?: string | null;
   priority?: string | null;
   source?: string;

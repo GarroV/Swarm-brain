@@ -68,6 +68,14 @@ export const MD: CountryConfig = {
       segment: "coffee",
       osmBrands: ["Costa Coffee", "Costa"],
     },
+    // Местная пиццерийная сеть: в Overture то с брендом, то без (решение владельца 10.11.2026).
+    {
+      key: "andy-s",
+      name: "Andy's Pizza",
+      segment: "pizza",
+      osmBrands: ["Andy's", "ANDYS"],
+      osmNames: ["Andy's Pizza", "Andy's Express"],
+    },
   ],
   companies: [],
   sources: [

@@ -11,6 +11,7 @@
 import { loadProjectVisibility } from "../../_shared/tasks/project-visibility.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { getVisibleTask, listTasks } from "../../_shared/tasks/db.ts";
+import { parseTaskCountries } from "../../_shared/tasks/countries.ts";
 import { resolvePersonNames } from "../../_shared/users/display-name.ts";
 import { canAccessTask, taskAccessError } from "../../_shared/tasks/access.ts";
 import { computeFlowTimes, computeTaskStats, periodStartISO, type StatsTask } from "../../_shared/tasks/analytics.ts";
@@ -113,8 +114,10 @@ export async function toolGetTaskStats(args: {
   // ⚠️ confirmed: true обязателен. Без него listTasks применяет свой дефолт «не показывать
   // done/cancelled/draft» — и статистика считала «закрыто за период: 0» при 149 закрытых задачах
   // на проде. Заодно из выдачи уходит очередь на проверке, которой на доске нет.
+  const countryFilter = parseTaskCountries(args.country);
+  if (!countryFilter.ok) return `Ошибка: ${countryFilter.error}. Статистика НЕ посчитана.`;
   const tasks = await listTasks({
-    country: args.country,
+    countries: countryFilter.countries,
     assigneeText: args.assignee,
     projectId,
     confirmed: true,

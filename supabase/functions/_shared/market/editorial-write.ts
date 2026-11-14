@@ -14,7 +14,7 @@ const ROW_HINTS: Record<string, string> = {
   delivery_figures: "нужны непустые big и text",
   market_facts: "нужны непустые big и text",
   money_rows: "нужен непустой prefix",
-  location_dates: "нужны name и opened (ГГГГ[-ММ[-ДД]])",
+  location_dates: "нужны name и хотя бы одна дата: opened или closed (ГГГГ[-ММ[-ДД]])",
   map_presets: "нужны name и box из четырёх чисел",
   prices_cols: "нужны непустые title и chain",
 };

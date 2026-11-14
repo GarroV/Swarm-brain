@@ -2,14 +2,13 @@ import AppKit
 import AVFoundation
 import Foundation
 import RecorderKit
-import UserNotifications
 
 // Меню-бар приложение. Авто-предложение записи с СОГЛАСИЕМ из двух источников:
 //   • Календарь (Google, через сервер meeting-current) — с упреждением «встреча через N мин».
 //   • Микрофон (CoreAudio) — запасной детект звонка, если встречи нет в календаре.
 // Запись стартует только по явному действию пользователя, никогда молча.
 // Идентичность/дедуп: календарное событие → комната из URL браузера → manual.
-final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
     private let recorder = AudioRecorder()
     private let widget = RecorderWidget()
@@ -94,9 +93,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     private let dismissMeetingSeconds: TimeInterval = 3 * 3600    // «Не записывать» без известного конца события — на несколько часов
     // Микрофонный запасной детект.
     private var callActive = false
-    // Разрешены ли уведомления. nil — ещё не спросили систему (первые мгновения после старта):
-    // на этом статусе меню молчит, чтобы не пугать человека ложной тревогой.
-    private var notificationsAllowed: Bool?
     private var micWasActive = false
     // Вопрос «Встречу записывает Скриба — продолжить?» (BotPrompt, решение владельца 07.10.2026):
     // в какой записи уже спросили (её recordStartedAt) и висит ли вопрос в капсуле сейчас.
@@ -111,8 +107,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     // когда начался текущий звонок (микрофон занят созвоном) и напоминали ли уже за этот звонок.
     private var callStartedAt: Date?
     private var callNudged = false
-    private static let nudgeCategory = "call-nudge"
-    private static let nudgeRecordAction = "call-nudge-record"
+    private static let nudgeNoticeId = "call-nudge"
     // Последняя календарная встреча от сервера и когда она получена. Нужна, чтобы ручной старт
     // («Записать» в меню, ответ на подсказку о звонке) привязывался к идущей встрече, а не писал
     // её как manual мимо склейки с коллегами (решение владельца 18.09.2026, issue #379).
@@ -121,6 +116,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     // старт выбирает тот, где человек сидит (26.10.2026), а не первый по рейтингу.
     private var lastCalendar: (items: [MeetingIdentity.Info], recordedNow: [String], at: Date)?
     private var watchTimer: Timer?
+    // Напоминание о записи по календарю (#219, решение 09.11.2026): сама запись не стартует.
+    private let reminder = CallReminderTracker()
     private var maintTimer: Timer?
     // Авто-стоп по концу звонка (per-process детект во время записи).
     private var recWatchTimer: Timer?
@@ -210,6 +207,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             self?.stopTapped()
         }
         widget.onRecord = { [weak self] in self?.widgetRecord() }
+        RecorderNotices.shared.widgetFrame = { [weak self] in
+            guard let w = self?.widget, w.panel?.isVisible == true else { return nil }
+            return w.currentFrame
+        }
         widget.onJoin = { [weak self] in self?.widgetJoin() }
         widget.onJoinChoice = { [weak self] key in self?.joinChosen(key) }
         widget.onRecordChoice = { [weak self] key in self?.recordChosen(key) }
@@ -243,7 +244,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             DispatchQueue.main.async { self?.handleSystemAudioStalledPersistent() }
         }
 
-        setupNotifications()
         setupPowerNotifications()
         CallDetector.startMonitoring { [weak self] unavailable in
             Diagnostics.shared.log(unavailable
@@ -339,46 +339,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 
     // ── Авто-детект (календарь + микрофон) ───────────────────────────────────────
-    private func setupNotifications() {
-        let center = UNUserNotificationCenter.current()
-        center.delegate = self
-        // Кнопок и категорий нет: предложение записать живёт только в капсуле (решение владельца
-        // 07.09.2026, docs/decisions/2026-09-07-one-surface-for-meeting-prompt.md). Разрешение
-        // всё равно нужно — через штатные баннеры идут ИНФОРМАЦИОННЫЕ сообщения, у которых
-        // второй поверхности нет.
-        // Ответ на запрос ЧИТАЕМ. Раньше здесь стояло `{ _, _ in }`: человек отказывал (или
-        // системный запрос вообще не появлялся), приложение об этом не узнавало никогда, и
-        // каждое последующее уведомление молча уходило в никуда — а через них рекордер
-        // сообщает то, о чём иначе не узнать: «звонок завершён, сохраняю», «нужен новый
-        // токен», «системный звук не пишется» (issue #155).
-        center.requestAuthorization(options: [.alert, .sound]) { [weak self] _, _ in
-            self?.refreshNotificationAuthorization()
-        }
-        let lang = BoardL10n.language()
-        center.setNotificationCategories([UNNotificationCategory(
-            identifier: Self.nudgeCategory,
-            actions: [UNNotificationAction(identifier: Self.nudgeRecordAction,
-                                           title: BoardL10n.text("nudge.record", lang: lang), options: []),
-                      UNNotificationAction(identifier: "call-nudge-skip",
-                                           title: BoardL10n.text("nudge.skip", lang: lang), options: [])],
-            intentIdentifiers: [])])
-    }
-
-    // Текущий статус разрешения на уведомления. nil — ещё не спрашивали систему.
-    // Спрашиваем систему, а не запоминаем ответ на первый запрос: разрешение снимают и выдают
-    // в System Settings в любой момент, мимо приложения.
-    private func refreshNotificationAuthorization(then: (() -> Void)? = nil) {
-        UNUserNotificationCenter.current().getNotificationSettings { [weak self] settings in
-            DispatchQueue.main.async {
-                let allowed = settings.authorizationStatus == .authorized || settings.authorizationStatus == .provisional
-                let changed = self?.notificationsAllowed != allowed
-                self?.notificationsAllowed = allowed
-                if changed { self?.rebuildMenu() }
-                then?()
-            }
-        }
-    }
-
     // ── Сон/пробуждение ноутбука ──────────────────────────────────────────────────
     // macOS ЗАМОРАЖИВАЕТ таймеры (recWatchTick/maintenanceTick) на время сна. Закрыл крышку
     // посреди записи → авто-стоп по концу созвона и потолок «конец+30мин» не могут сработать:
@@ -427,10 +387,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // орфаны от жёсткого выключения подберёт recovery на следующем старте.
         Task { await UploadQueue.shared.drain(config: cfg); await refreshQueueBadge() }
         sendHeartbeat()
-        // Разрешение на уведомления могли выдать или снять в System Settings, пока ноут спал —
-        // приложению об этом никто не сообщает. Пробуждение единственный момент, когда дёшево
-        // переспросить систему, чтобы подсказка в меню не врала (issue #155).
-        refreshNotificationAuthorization()
         missed.pollNow()   // таймер во сне стоял — пропуск мог появиться, пока крышка была закрыта
     }
 
@@ -595,34 +551,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     private func applyUpdateDecision(_ decision: Updater.Decision) {
         switch decision {
         case .noConfig:
-            infoAlert("Нужен токен", "bumblebee пока не подключён — вставь токен из бота, потом обновляй.")
+            postInfoNotice("Нужен токен", "bumblebee пока не подключён — вставь токен из бота, потом обновляй.")
         case .notInstalled(let path):
-            infoAlert("Обновление недоступно",
+            postInfoNotice("Обновление недоступно",
                       "Приложение запущено не из /Applications, а из \(path). Обновляется только копия в /Applications.")
         case .busy:
-            infoAlert("Сейчас идёт запись",
+            postInfoNotice("Сейчас идёт запись",
                       "Обновлю после встречи — прерывать запись ради обновления нельзя. Можно вернуться к этому пункту, когда запись закончится.")
         case .unreachable:
-            infoAlert("Не удалось проверить обновление",
+            postInfoNotice("Не удалось проверить обновление",
                       "Сервер не ответил — похоже, нет сети. bumblebee проверяет обновления и сам, в простое, так что можно просто попробовать позже.")
         case .upToDate(let build):
-            infoAlert("Установлена последняя версия", "Сборка \(build) — обновлять нечего.")
+            postInfoNotice("Установлена последняя версия", "Сборка \(build) — обновлять нечего.")
         case .available(let build, let from, let assetURL, let sha256):
             updateSpawnedAt = Date()
             Diagnostics.shared.log("UPDATE по кнопке \(from) → \(build)")
             Updater.runUpdater(currentBuild: from, targetBuild: build, assetURL: assetURL, sha256: sha256)
-            infoAlert("Обновляю до сборки \(build)",
+            postInfoNotice("Обновляю до сборки \(build)",
                       "Сейчас \(from). Скачаю и перезапущу — это займёт несколько секунд. Разрешение на запись звука не слетит, токен останется прежним.")
         }
-    }
-
-    private func infoAlert(_ title: String, _ text: String) {
-        let a = NSAlert()
-        a.messageText = title
-        a.informativeText = text
-        a.addButton(withTitle: "OK")
-        NSApp.activate(ignoringOtherApps: true)
-        a.runModal()
     }
 
     @objc private func watchTick() {
@@ -707,15 +654,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     private func handleDetection(meetings: [MeetingIdentity.Info], micActive: Bool, recordedNow: [String] = []) {
         let wasActive = micWasActive
         micWasActive = micActive
-        guard case .idle = state else { return }
+        guard case .idle = state else { reminder.clear(); return }
 
         // Календарь — приоритет (богаче: название, участники, упреждение). Только созвоны (D026),
         // все пересекающиеся (D027), без закрытых человеком.
         let offers = MeetingChoice.offers(meetings, key: \.key, hasLink: { $0.joinURL != nil },
                                           isDismissed: { self.isMeetingDismissed($0) || recordedNow.contains($0) })
+        // Звонок идёт, запись не включена, в календаре плановая встреча → капсула в заметном режиме
+        // напоминания (решение 09.11.2026). Пересчёт по всем созвонам: «Не сейчас» уже в dismissedUntil.
+        let reminderChanged = reminder.update(meetings: meetings, callActive: micActive, isRecording: false,
+                                              recordedNow: recordedNow, isDismissed: { self.isMeetingDismissed($0) })
         if !offers.isEmpty {
             callActive = false
-            if !MeetingChoice.sameOffer(pendingMeetings, offers, key: \.key) {
+            if !MeetingChoice.sameOffer(pendingMeetings, offers, key: \.key) || reminderChanged {
                 pendingMeetings = offers
                 rebuildMenu()   // syncWidget покажет капсулу — единственная поверхность предложения
             }
@@ -745,7 +696,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         return mins <= 0 ? "идёт" : "через \(mins) мин"
     }
 
-    // Один текст на две поверхности: баннер уведомления и капсулу. Разъехаться не могут.
+    // Один текст предложения записать для капсулы и напоминания: разъехаться не могут.
     private func notice(for m: MeetingIdentity.Info) -> MeetingNotice {
         let iso = ISO8601DateFormatter()
         return MeetingNotice.compose(title: m.title,
@@ -754,29 +705,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                                      now: Date())
     }
 
-    func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification, withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
-        completionHandler([.banner, .sound])
-    }
-
-    // Клик по уведомлению НИЧЕГО не запускает. Кнопок у уведомлений приложения нет: «Позвать бота»
-    // живёт в капсуле (D025), предложение записать — тоже (2026-09-07). Раньше здесь стоял `acceptPrompt()` на
-    // `UNNotificationDefaultActionIdentifier` — то есть запись начиналась от клика по ЛЮБОМУ
-    // уведомлению приложения, включая «нужен новый токен» и «звонок завершён, сохраняю».
-    // Предложение записать теперь живёт только в капсуле, и решение принимается там.
-    // Исключение — кнопка «Записать» на напоминании «Звонок идёт, но не записывается» (CallNudge):
-    // там вопрос задан прямо, и ответ на него в самом уведомлении.
-    func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse, withCompletionHandler completionHandler: @escaping () -> Void) {
-        if response.actionIdentifier == Self.nudgeRecordAction {
-            DispatchQueue.main.async { [weak self] in
-                guard let self, case .idle = self.state else { return }
-                self.acceptPrompt(source: "напоминание")
-            }
-        }
-        completionHandler()
-    }
-
     /// Звонок идёт 3 минуты, запись не включена, Скриба этот созвон не пишет → один раз за звонок
-    /// вернуть предложение в капсулу и показать уведомление с кнопкой «Записать» (CallNudge).
+    /// вернуть предложение в капсулу и показать свою карточку с кнопкой «Записать» (CallNudge).
     private func nudgeIfUnrecorded(micOn: Bool, meetings: [MeetingIdentity.Info], recordedNow: [String]) {
         guard micOn else { callStartedAt = nil; callNudged = false; return }
         let now = Date()
@@ -796,26 +726,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         for m in calls { dismissedUntil.removeValue(forKey: m.key) }
         if calls.isEmpty { callDismissedUntil = nil; callActive = true; rebuildMenu() }
         let lang = BoardL10n.language()
-        let c = UNMutableNotificationContent()
-        c.title = BoardL10n.text("nudge.title", lang: lang)
-        c.body = (current ?? calls.first)?.title.map { "«\($0)». " } .map { $0 + BoardL10n.text("nudge.body", lang: lang) }
+        let body = (current ?? calls.first)?.title.map { "«\($0)». " } .map { $0 + BoardL10n.text("nudge.body", lang: lang) }
             ?? BoardL10n.text("nudge.body", lang: lang)
-        c.sound = .default
-        c.categoryIdentifier = Self.nudgeCategory
-        UNUserNotificationCenter.current().add(UNNotificationRequest(
-            identifier: "call-nudge-\(Int(now.timeIntervalSince1970))", content: c, trigger: nil))
+        // Карточка висит, пока человек не ответит; запись из любого места её снимает (beginRecording).
+        RecorderNotices.shared.post(
+            id: Self.nudgeNoticeId, title: BoardL10n.text("nudge.title", lang: lang), body: body, lifetime: 300,
+            actions: [.init(title: BoardL10n.text("nudge.record", lang: lang), isPrimary: true, run: { [weak self] in
+                          guard let self, case .idle = self.state else { return }
+                          self.acceptPrompt(source: "напоминание")
+                      }),
+                      .init(title: BoardL10n.text("nudge.skip", lang: lang), run: {})])
     }
 
     // ── UI ──────────────────────────────────────────────────────────────────────
     private var isRecording: Bool { if case .recording = state { return true }; return false }
-
-    // Сетевой/транспортный сбой → состояние .offline (а не общая ошибка): URLError (нет связи,
-    // таймаут) или SwarmError.transport (мы не дошли до HTTP-ответа).
-    private func isOfflineError(_ error: Error) -> Bool {
-        if error is URLError { return true }
-        if case SwarmError.transport = error { return true }
-        return false
-    }
 
     // Состояния с собственным UI «путь в Settings/сеть + Повторить» (отдельно от idle/recording).
     private func isPermissionOrOfflineError(_ s: State) -> Bool {
@@ -1018,19 +942,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // Бэкстоп: macOS-разрешение на запись системного звука можно открыть вручную в любой
         // момент (Core Audio process-tap при отказе иногда даёт тишину без ошибки → catch не сработает).
         menu.addItem(NSMenuItem(title: "Открыть настройки записи", action: #selector(openRecordingSettingsTapped), keyEquivalent: ""))
-        // Уведомления выключены — говорим об этом ЗДЕСЬ, потому что сказать больше негде:
-        // единственный канал, которым рекордер зовёт человека, как раз и не работает. Строка
-        // появляется только при точно известном отказе (notificationsAllowed == false), а не
-        // на неизвестном статусе (issue #155).
-        if notificationsAllowed == false {
-            let hint = NSMenuItem(title: "Уведомления выключены — не смогу предупредить", action: nil, keyEquivalent: "")
-            hint.isEnabled = false
-            menu.addItem(hint)
-        }
-        // Проверка разрешения по требованию (владелец 2026-08-28: «система сама не спросила»).
-        // Пункт есть всегда: если macOS не показала запрос при первом запуске, другого пути
-        // включить уведомления у человека нет — а по статусу он видит, чем кончилось.
-        menu.addItem(NSMenuItem(title: "Проверить уведомления", action: #selector(checkNotificationsTapped), keyEquivalent: ""))
         // Обновление по требованию. Авто-апдейт работает сам, но человеку нужен способ обновиться
         // СЕЙЧАС и увидеть результат: иначе единственный известный ему путь — перевыпуск токена
         // в боте, который гасит рабочую установку, если он не дойдёт до конца (issue #146).
@@ -1072,10 +983,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 widget.showChoice(pendingMeetings.map {
                     RecorderWidget.Choice(key: $0.key, notice: notice(for: $0),
                                           missed: missed.capsule(forCall: $0.joinURL?.absoluteString))
-                })
+                }, reminder: reminder.isActive)
             } else if let m = pendingMeeting {
                 widget.showPending(notice: notice(for: m), canJoin: m.joinURL != nil,
-                                   missed: missed.capsule(forCall: m.joinURL?.absoluteString))
+                                   missed: missed.capsule(forCall: m.joinURL?.absoluteString), reminder: reminder.isActive)
             } else if callActive {
                 // Звонок без календаря: слота нет, а «подключиться» некуда — человек уже в нём.
                 // Подзаголовок пустой: «Идёт звонок» + «идёт» — дубль, а не информация.
@@ -1100,12 +1011,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // зелёная галка и прячем. Локальный бэкап чистится в фоне сам (UploadQueue.drain, на done).
         processingIds.remove(id)
         if processingNotified.insert(id).inserted {
-            let content = UNMutableNotificationContent()
-            content.title = "Запись отправлена"
-            content.body = "Встреча пошла в обработку — тезисы придут в Telegram."
-            content.sound = .default
-            UNUserNotificationCenter.current().add(UNNotificationRequest(
-                identifier: "processing-\(id)", content: content, trigger: nil))
+            RecorderNotices.shared.post(id: "processing-\(id)", title: "Запись отправлена",
+                                        body: "Встреча пошла в обработку — тезисы придут в Telegram.")
         }
         flashProcessingDoneAndHide()
     }
@@ -1197,29 +1104,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         Permissions.openMicrophoneSettings()
     }
 
-    // Перепроверяет статус уведомлений и, если их нет, ведёт прямо в нужную панель настроек.
-    // Сначала пробуем ЗАПРОСИТЬ: если система ещё не спрашивала (.notDetermined), человек
-    // получит обычный системный запрос и включит всё в один клик, не уходя в Settings.
-    @objc private func checkNotificationsTapped() {
-        let center = UNUserNotificationCenter.current()
-        center.getNotificationSettings { [weak self] settings in
-            if settings.authorizationStatus == .notDetermined {
-                center.requestAuthorization(options: [.alert, .sound]) { _, _ in
-                    self?.refreshNotificationAuthorization {
-                        // Отказал в системном окне — показываем, где это переиграть.
-                        if self?.notificationsAllowed == false { Permissions.openNotificationSettings() }
-                    }
-                }
-                return
-            }
-            DispatchQueue.main.async {
-                self?.refreshNotificationAuthorization {
-                    if self?.notificationsAllowed == false { Permissions.openNotificationSettings() }
-                }
-            }
-        }
-    }
-
     // «Повторить» после типизированного сбоя: сбрасываем состояние и повторяем последнее
     // действие записи (тот же контекст: встреча/звонок/ручной старт). Сеть/разрешения к этому
     // моменту пользователь уже мог поправить через пункты выше.
@@ -1240,12 +1124,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     // 401: подсказать получить новый токен из бота (команда /recordertoken), затем вставить.
     // Бот — Telegram, прямой deep-link в конфиге не хранится; ведём текстом к команде.
     @objc private func getNewTokenTapped() {
-        let a = NSAlert()
-        a.messageText = "Нужен новый токен"
-        a.informativeText = "Токен истёк или отозван. Открой бота Swarm Brain в Telegram, набери /recordertoken, скопируй выданный smcp_-токен и нажми «Обновить токен из буфера»."
-        a.addButton(withTitle: "OK")
-        NSApp.activate(ignoringOtherApps: true)
-        a.runModal()
+        postInfoNotice("Нужен новый токен",
+                       "Токен истёк или отозван. Открой бота Swarm Brain в Telegram, набери /recordertoken, скопируй выданный smcp_-токен и нажми «Обновить токен из буфера».")
     }
 
     // Ручной запуск дозагрузки очереди (пункт «N в очереди»).
@@ -1285,28 +1165,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 
     private func notifyResendOutcome(sent: Int, refused: String?, error: String?) {
-        let c = UNMutableNotificationContent()
+        let title: String, body: String
         if sent > 0 {
-            c.title = "Запись отправлена"
-            c.body = "Твоя запись принята — она полнее той, что была в базе. Тезисы перегенерируются и придут в Telegram."
+            title = "Запись отправлена"
+            body = "Твоя запись принята — она полнее той, что была в базе. Тезисы перегенерируются и придут в Telegram."
         } else if let refused {
-            c.title = "Сервер снова отказал"
+            title = "Сервер снова отказал"
             // Не утверждаем «его запись не короче»: в состоянии published (встречу правили или
             // опубликовали) перехват запрещён независимо от длительностей — issue #274.
-            c.body = "Встречу обрабатывает \(refused.hasPrefix("@") ? refused : "@\(refused)") — твоя запись не понадобилась. Аудио осталось в бэкапе."
+            body = "Встречу обрабатывает \(refused.hasPrefix("@") ? refused : "@\(refused)") — твоя запись не понадобилась. Аудио осталось в бэкапе."
         } else {
-            c.title = "Не удалось дослать запись"
-            c.body = "\(error ?? "неизвестная ошибка"). Аудио на месте — попробуй позже."
+            title = "Не удалось дослать запись"
+            body = "\(error ?? "неизвестная ошибка"). Аудио на месте — попробуй позже."
         }
-        c.sound = .default
-        UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "resend-\(Int(Date().timeIntervalSince1970))", content: c, trigger: nil))
+        RecorderNotices.shared.post(id: "resend-\(Int(Date().timeIntervalSince1970))", title: title, body: body,
+                                    lifetime: Self.longNoticeSeconds)
     }
 
     @objc private func pasteTokenTapped() {
-        func info(_ title: String, _ text: String = "") {
-            let a = NSAlert(); a.messageText = title; a.informativeText = text
-            NSApp.activate(ignoringOtherApps: true); a.runModal()
-        }
+        func info(_ title: String, _ text: String = "") { postInfoNotice(title, text) }
         let clip = NSPasteboard.general.string(forType: .string)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         guard !clip.isEmpty else {
             info("Буфер пуст", "Скопируй токен из бота: /mytoken (тапни по smcp_-блоку — скопируется целиком).")
@@ -1424,6 +1301,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 
     @objc private func dismissMeetingTapped() {
+        reminder.noteDismissed()
         // «Не записывать» (✕ капсулы): закрывает всё, что она предлагала, — при выборе все созвоны.
         // Подавляем до конца события (если известен) + буфер, иначе на несколько часов.
         for m in pendingMeetings {
@@ -1443,6 +1321,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         Diagnostics.shared.log("RECORD begin, ключ=\(id?.key ?? "ручная")")
         guard config != nil else { return }
         if case .recording = state { return }
+        reminder.noteStarted(key: id?.key)
+        RecorderNotices.shared.dismiss(id: Self.nudgeNoticeId)   // «Записать» из любого места снимает карточку-напоминание
         // Запоминаем контекст для «Повторить» (встреча/звонок/manual).
         lastRecordIdentity = id
         // macOS 14.4+: системный звук через Core Audio process-tap — нужно «System Audio
@@ -1650,6 +1530,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         stopTapped()
     }
 
+    /// Сколько висит карточка с длинным текстом: прочитать успеть надо.
+    private static let longNoticeSeconds: TimeInterval = 45
+
     // Диагностика авто-стопа и записи — в общий постоянный журнал (Diagnostics.swift, issue #468).
     // Раньше писалось в /tmp/swarm-calldetect.log, который стирался перезагрузкой.
     private func dbg(_ s: String) { Diagnostics.shared.log(s) }
@@ -1660,19 +1543,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     private func notifyGoogleReconnect() {
         guard !googleReconnectWarned else { return }
         googleReconnectWarned = true
-        let content = UNMutableNotificationContent()
-        content.title = "Переподключи Google-календарь"
-        content.body = "Доступ к Google-календарю отвалился — авто-название и авто-стоп встреч по расписанию не работают. Открой Swarm в вебе → Настройки → Google-календарь и подключи заново."
-        content.sound = .default
-        UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "google-reconnect", content: content, trigger: nil))
+        // Висит, пока человек не закроет: календарь отвалился молча, и это единственное, что скажет об этом.
+        RecorderNotices.shared.post(
+            id: "google-reconnect", title: "Переподключи Google-календарь",
+            body: "Доступ к Google-календарю отвалился — авто-название и авто-стоп встреч по расписанию не работают. Открой Swarm в вебе → Настройки → Google-календарь и подключи заново.",
+            lifetime: nil)
     }
 
     private func postCallEndedNotification(body: String = "Звонок завершён — сохраняю встречу.") {
-        let content = UNMutableNotificationContent()
-        content.title = "Запись остановлена"
-        content.body = body
-        content.sound = .default
-        UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "callend-\(Int(Date().timeIntervalSince1970))", content: content, trigger: nil))
+        RecorderNotices.shared.post(id: "callend-\(Int(Date().timeIntervalSince1970))", title: "Запись остановлена", body: body)
     }
 
     // Watchdog нулей: пассивная метка в панели (LiveNotesPanel) — живая, обе стороны, ничего не
@@ -1686,15 +1565,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     // ~50с суммарной тишины на системной дорожке при активном созвоне (порог живёт в
     // SystemAudioCapturer.notifySilenceSeconds; несколько тихих само-пересборок уже были
     // попробованы к этому моменту). Без звука (владелец 18.08.2026: «со звуком... назойливо») —
-    // баннер молча появится в Notification Center. Причину не называем конкретно (Bluetooth) —
+    // карточка молча появится у капсулы (RecorderNotices). Причину не называем конкретно (Bluetooth) —
     // ветка смены аудио-формата обрабатывается отдельно и тихо, сюда попадает только «реальной
     // тишины было слишком долго», Bluetooth тут почти никогда не при чём.
     private func handleSystemAudioStalledPersistent() {
         guard case .recording = state else { return }
-        let content = UNMutableNotificationContent()
-        content.title = "⚠️ Собеседник не пишется"
-        content.body = "Звук собеседника не поступает уже больше минуты, хотя звонок идёт. Рекордер несколько раз пробовал переподключиться сам. Твой микрофон пишется нормально. Проверь вывод звука на компьютере — это сообщение не появится снова в этой записи."
-        UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "sysstall-\(Int(Date().timeIntervalSince1970))", content: content, trigger: nil))
+        RecorderNotices.shared.post(
+            id: "sysstall-\(Int(Date().timeIntervalSince1970))", title: "⚠️ Собеседник не пишется",
+            body: "Звук собеседника не поступает уже больше минуты, хотя звонок идёт. Рекордер несколько раз пробовал переподключиться сам. Твой микрофон пишется нормально. Проверь вывод звука на компьютере — это сообщение не появится снова в этой записи.",
+            lifetime: Self.longNoticeSeconds)
     }
 
     @objc private func stopTapped() {
@@ -1909,37 +1788,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     private func notifyDeferred(holder: String?, seconds: Double, heldSeconds: Double?, reason: String?) {
         let who = holder.map { "@\($0)" } ?? "коллега"
         let mine = Self.humanDuration(seconds)
-        let c = UNMutableNotificationContent()
-        c.sound = .default
+        let title: String, body: String
 
         switch reason {
         case "published":
             // Перехват запрещён навсегда — предлагать что-либо сделать было бы ложью.
-            c.title = "Встреча уже собрана"
-            c.body = "Эту встречу записал и уже опубликовал \(who) — твоя запись (\(mine)) не нужна. Копия хранится 3 суток и удалится сама."
+            title = "Встреча уже собрана"
+            body = "Эту встречу записал и уже опубликовал \(who) — твоя запись (\(mine)) не нужна. Копия хранится 3 суток и удалится сама."
         case "shorter":
             // Держатель ДЛИННЕЕ — называем обе длительности, решение сервера видно из чисел.
             let theirs = heldSeconds.map { Self.humanDuration($0) }
-            c.title = "Запись обрабатывает \(who)"
-            c.body = theirs.map {
+            title = "Запись обрабатывает \(who)"
+            body = theirs.map {
                 "В обработку пошла запись \(who) — \($0) против твоих \(mine). Делать ничего не нужно, тезисы придут всем. Твоя копия хранится 3 суток."
             } ?? "В обработку пошла запись \(who), она полнее твоей (\(mine)). Делать ничего не нужно, тезисы придут всем. Твоя копия хранится 3 суток."
         case "similar":
             // Наша запись НЕ короче, но разница не дотянула до порогов перехвата. Числа тут
             // показывать обязательно с объяснением: «взяли 36 мин вместо твоих 38» без причины
             // читается как ошибка, хотя это защита от перетранскрибации почти одинаковых записей.
-            c.title = "Запись обрабатывает \(who)"
+            title = "Запись обрабатывает \(who)"
             let theirsSimilar = heldSeconds.map { Self.humanDuration($0) }
-            c.body = theirsSimilar.map {
+            body = theirsSimilar.map {
                 "Записи практически совпали: твоя \(mine), в обработке \($0) у \(who). Право осталось у того, кто заявился первым — перезапускать обработку из-за такой разницы смысла нет. Твоя копия хранится 3 суток."
             } ?? "Записи практически совпали по длительности (твоя \(mine)) — обрабатывается запись \(who), заявившаяся первой. Твоя копия хранится 3 суток."
         default:
             // race / unknown / старый сервер без причины — общий honest-текст без просьб.
-            c.title = "Запись обрабатывает \(who)"
-            c.body = "Эту встречу обрабатывает \(who) — двойная транскрибация не нужна. Твоя запись (\(mine)) хранится 3 суток на случай сбоя."
+            title = "Запись обрабатывает \(who)"
+            body = "Эту встречу обрабатывает \(who) — двойная транскрибация не нужна. Твоя запись (\(mine)) хранится 3 суток на случай сбоя."
         }
 
-        UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "deferred-\(Int(Date().timeIntervalSince1970))", content: c, trigger: nil))
+        RecorderNotices.shared.post(id: "deferred-\(Int(Date().timeIntervalSince1970))", title: title, body: body,
+                                    lifetime: Self.longNoticeSeconds)
     }
 
     // Длительность по-человечески: «2 ч 26 мин» / «3 мин 16 с». Нужна в тексте про отклонённую
@@ -1953,11 +1832,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 
     private func notifyRecovered() {
-        let c = UNMutableNotificationContent()
-        c.title = "Восстановлена прерванная запись"
-        c.body = "Нашла запись, прерванную сбоем/перезапуском — отправила в обработку. Тезисы придут в Telegram."
-        c.sound = .default
-        UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "recovered-\(Int(Date().timeIntervalSince1970))", content: c, trigger: nil))
+        RecorderNotices.shared.post(
+            id: "recovered-\(Int(Date().timeIntervalSince1970))", title: "Восстановлена прерванная запись",
+            body: "Нашла запись, прерванную сбоем/перезапуском — отправила в обработку. Тезисы придут в Telegram.",
+            lifetime: Self.longNoticeSeconds)
     }
 
     private func performSend(_ p: PendingSend) async {

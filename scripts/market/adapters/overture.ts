@@ -38,11 +38,10 @@ const CATEGORIES = [
   "bakery",
   "food_court",
 ];
-/** Сеть с брендом — от 3 точек; без бренда (по имени заведения) — от 5 точек в 3 разных
- *  населённых пунктах: иначе «Pizzeria» и «Kebab» из разных рук склеились бы в «сеть». */
+/** Автопоиск берёт только сети с брендом (бренд или wikidata в Overture) — от 3 точек. Скопление одинаковых
+ *  названий без бренда («Pizzería», «Kebab …») сетью не считается (решение владельца 10.11.2026): известных
+ *  игроков, которых Overture держит без бренда, записывают вручную в конфиг страны. */
 export const MIN_BRANDED = 3;
-export const MIN_UNBRANDED = 5;
-export const MIN_LOCALITIES = 3;
 /** Автопоиск находит только фастфуд-сети (решение владельца 10.11.2026): пицца, бургеры, курица, сэндвичи,
  *  гриль/кебаб, плюс заведения категории Overture fast_food_restaurant. Кофе, пекарни, азиатская кухня и
  *  «просто ресторан» сюда не попадают — их заводят вручную в countries/*.ts, по запросу. */
@@ -202,7 +201,7 @@ const toPoint = (row: PlaceRow, chain: string): OsmPoint => ({
   osm_id: row.id,
 });
 
-const isBranded = (g: PlaceRow[]) => g.some((r) => r.brand);
+const isBranded = (g: PlaceRow[]) => g.some((r) => r.brand || r.wikidata);
 
 /** Двойники — по общему samePlace: ближе DUPLICATE_M или одинаковый адрес в пределах
  *  канонического допуска 5 км. Иначе один магазин в текущем пакете считается дважды. */
@@ -309,13 +308,7 @@ export function discover(
         name: clusterName([...counts.keys()], [...counts.values()]),
       };
     })
-    .filter(({ rows: g, branded }) =>
-      branded ? g.length >= MIN_BRANDED : (
-        g.length >= MIN_UNBRANDED &&
-        new Set(g.map((r) => r.locality).filter(Boolean)).size >=
-          MIN_LOCALITIES
-      )
-    )
+    .filter(({ rows: g, branded }) => branded && g.length >= MIN_BRANDED)
     .sort((a, b) => b.rows.length - a.rows.length);
   const taken = new Set(cfg.chains.map((c) => c.key));
   const chains: DiscoveredChain[] = [];
@@ -395,7 +388,7 @@ export const overture: Adapter = {
   about: {
     url: "https://docs.overturemaps.org/guides/places/",
     what:
-      "точки сетей из Overture Maps places (последний релиз, parquet в S3, через DuckDB): заведения общепита и пекарни страны в её bbox, без закрытых; сети из конфига — по бренду (osmBrands, допускается суффикс страны) или началу названия (osmNames), остальные сети находятся сами (бренд от 3 точек, без бренда от 5 точек в 3 населённых пунктах, не больше 40; подписи одного бренда с разным хвостом склеиваются в одну сеть; фирменные магазины производителей — по форме юрлица в названии и списку страны — не берутся); заведение с брендом сети, но чужим названием («Pizza Dominium» под «Domino's Pizza») и заведения в excludeAreas страны (север Кипра) не берутся; точка — центр bbox объекта",
+      "точки сетей из Overture Maps places (последний релиз, parquet в S3, через DuckDB): заведения общепита и пекарни страны в её bbox, без закрытых; сети из конфига — по бренду (osmBrands, допускается суффикс страны) или началу названия (osmNames), остальные сети находятся сами — только фастфуд (пицца, бургеры, курица, сэндвичи, гриль) и только с брендом, от 3 точек, без потолка числа сетей; подписи одного бренда с разным хвостом склеиваются в одну сеть; фирменные магазины производителей — по форме юрлица в названии и списку страны — не берутся); заведение с брендом сети, но чужим названием («Pizza Dominium» под «Domino's Pizza») и заведения в excludeAreas страны (север Кипра) не берутся; точка — центр bbox объекта",
   },
   async collect(cfg) {
     const started_at = new Date().toISOString();

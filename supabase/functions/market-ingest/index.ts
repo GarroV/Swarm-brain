@@ -18,6 +18,10 @@ const supabase = createClient(
 const TOKEN = Deno.env.get("MARKET_INGEST_TOKEN") ?? "";
 const SUPER_ADMIN_ID = 744230399; // единый суперадмин, см. swarm-bot/lib/supabase.ts
 const ADMIN_SOURCES = new Set(["snapshot", "accept_new"]);
+/** Источники сборщиков, которые приёмник знает (`IngestPayload`); «failed»-нагрузка тоже идёт под ними. */
+const COLLECTOR_SOURCES = new Set(["config", "osm", "overture", "dodo", "registry"]);
+/** Допустимые имена адаптеров в нагрузке: имя из реестра источников — строчные латиница, цифры, дефис. */
+const ADAPTER_RE = /^[a-z0-9][a-z0-9-]{0,63}$/;
 
 /** Сравнение без утечки по времени; пустой ожидаемый токен не пускает никого. */
 export function sameSecret(given: string, expected: string): boolean {
@@ -77,6 +81,14 @@ export async function handleIngest(
   if (
     !body?.source || !/^[A-Za-z]{2}$/.test(body?.country ?? "") ||
     !body?.started_at
+  ) {
+    return new Response("Bad payload", { status: 400 });
+  }
+  // Сборщик шлёт только известные источники и адаптеры из реестра: чужое имя не попадёт в журнал
+  // запусков и в `mkt_sources` (#899).
+  if (
+    (isCollector && !COLLECTOR_SOURCES.has(body.source) && !ADMIN_SOURCES.has(body.source)) ||
+    (body.adapter !== undefined && !ADAPTER_RE.test(String(body.adapter)))
   ) {
     return new Response("Bad payload", { status: 400 });
   }

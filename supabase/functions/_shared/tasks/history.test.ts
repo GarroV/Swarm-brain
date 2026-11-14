@@ -1,11 +1,5 @@
 import { assert, assertEquals } from "jsr:@std/assert@1";
-import {
-  historyRowsFor,
-  historyValue,
-  isJournaled,
-  journalFieldName,
-  MAX_VALUE_LEN,
-} from "./history.ts";
+import { historyRowsFor, historyValue, isJournaled, journalFieldName, MAX_VALUE_LEN } from "./history.ts";
 
 Deno.test("historyValue: массив исполнителей — читаемая строка, пустой массив — null", () => {
   assertEquals(historyValue(["Аня", "Вася"]), "Аня, Вася");
@@ -32,7 +26,7 @@ Deno.test("isJournaled: пишем ВСЁ, кроме служебного шу�
   assert(isJournaled("title"));
   assert(isJournaled("description"));
   assert(isJournaled("priority"));
-  assert(isJournaled("country"));
+  assert(isJournaled("countries"));
   assert(isJournaled("какое_то_новое_поле"));
   // Шум и служебное — мимо журнала.
   for (
@@ -47,6 +41,7 @@ Deno.test("isJournaled: пишем ВСЁ, кроме служебного шу�
       "timeline_position",
       "reminded_at",
       "assignee_telegram_ids",
+      "country",
     ]
   ) {
     assert(!isJournaled(skipped), skipped);
@@ -57,6 +52,7 @@ Deno.test("journalFieldName: понятные имена вместо колон
   assertEquals(journalFieldName("project_id"), "project");
   assertEquals(journalFieldName("assignees"), "assignee");
   assertEquals(journalFieldName("sprint_id"), "sprint");
+  assertEquals(journalFieldName("countries"), "country");
   assertEquals(journalFieldName("status"), "status");
 });
 

@@ -16,13 +16,8 @@
 
 import { withUsageLabel } from "./model-usage.ts";
 import { type SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
-import {
-  dropConsecutiveRuns,
-  isRepeatedFiller,
-  isSingleTokenSpam,
-  isWhisperHallucination,
-  WHISPER_HALLUCINATION_RE,
-} from "./whisper-hallucinations.ts";
+import { type ConfidenceCount, qualityOfTranscript } from "./transcript-quality.ts";
+import { refineWhisperReply, type WhisperReply } from "./whisper-segments.ts";
 import { langCode, type LangVotePart, partsNeedingRetranscribe, resolveMeetingLang } from "./meeting-lang.ts";
 import { buildTezisyUserMessage, TEZISY_PROMPT } from "./tezisy-prompt.ts";
 import { glossaryWhisperHint } from "./glossary.ts";
@@ -38,6 +33,7 @@ import { rivalOwnershipPatch, settleRival } from "./meeting-rival.ts";
 import { recordedByOf } from "./recorded-by.ts";
 import { claimLeaseUntil } from "./meeting-lease.ts";
 import { isLeaseLost, LEASE_STALE_MS, ProcessingLease, rethrowIfLeaseLost } from "./meeting-processing-lease.ts";
+import { isPartPending, registerPartFailure, skipIfTooShort } from "./audio-part-guard.ts";
 import { externalFetch } from "./external-fetch.ts";
 import { notifyPerson } from "./notify-person.ts";
 import { noteOpenAIFailure, noteOpenAIResponse, resolveOpenAIKey } from "./workspace-keys.ts";
@@ -59,8 +55,6 @@ export const AUDIO_BUCKET = "meeting-audio";
 // Параллелизм транскрибации частей в одном шаге. Whisper-вызовы — сетевой I/O (не жрут CPU-лимит),
 // можно держать несколько в полёте, но без фанатизма — rate-limit OpenAI.
 const TRANSCRIBE_CONCURRENCY = 3;
-// Попыток на одну часть, прежде чем считать её «отравленной» и пропустить (poison-pill guard).
-const MAX_PART_ATTEMPTS = 4;
 // Лиз протух → воркер, взявший встречу, считается мёртвым (канон — meeting-processing-lease.ts).
 export { LEASE_STALE_MS };
 // Потолок одного обращения к модели (Whisper, тезисы). Без него зависший ответ держал воркер до
@@ -142,7 +136,7 @@ async function transcribeAudio(
   languageHint?: string,
   withGlossary = true,
   signal?: AbortSignal,
-): Promise<{ segments: Segment[]; language?: string; viaFallback: boolean }> {
+): Promise<{ segments: Segment[]; language?: string; viaFallback: boolean; conf?: ConfidenceCount }> {
   const form = new FormData();
   form.append("file", audio, filename);
   form.append("model", "whisper-1");
@@ -172,30 +166,11 @@ async function transcribeAudio(
   if (!res.ok) {
     throw new Error((data as { error?: { message?: string } }).error?.message ?? "OpenAI transcription error");
   }
-  const d = data as {
-    text?: string;
+  const d = data as WhisperReply & {
     language?: string; // язык, определённый Whisper (имя на англ.: "russian"/"english"/…)
-    segments?: Array<{ start: number; end: number; text: string; no_speech_prob?: number; avg_logprob?: number }>;
   };
-  const kept: Segment[] = (d.segments ?? [])
-    .filter((s) => !isWhisperHallucination(s.text ?? "", s.no_speech_prob ?? 0, s.avg_logprob ?? 0))
-    .map((s) => ({ start: s.start, end: s.end, text: s.text.trim() }));
-  // Схлопываем подряд идущие одинаковые короткие сегменты — петля Whisper на тишине
-  // (напр. «sviđanje»×77 по 5с на молчащем микрофоне), язык-независимо, ДО проверки доминирования.
-  const collapsed = dropConsecutiveRuns(kept, (s) => s.text);
-  const texts = collapsed.map((s) => s.text);
-  // Часть — мусор, если это одна фраза-«аутро» по всем сегментам (isRepeatedFiller) ИЛИ сплошной
-  // спам одиночных токенов (тихий микрофон: смесь двух петель держит любой токен под порогом
-  // доминирования). В обоих случаях дропаем ВСЁ и НЕ подставляем d.text (тот же повторённый мусор).
-  const filler = isRepeatedFiller(texts) || isSingleTokenSpam(texts);
-  const segments: Segment[] = filler ? [] : collapsed;
-  let viaFallback = false;
-  // Фолбэк на d.text — только если он сам не галлюцинация и часть не признана повтором-мусором.
-  if (!filler && segments.length === 0 && d.text && !WHISPER_HALLUCINATION_RE.test(d.text)) {
-    segments.push({ start: 0, end: 0, text: d.text.trim() });
-    viaFallback = true;
-  }
-  return { segments, language: typeof d.language === "string" ? d.language : undefined, viaFallback };
+  const { segments, viaFallback, conf } = refineWhisperReply(d);
+  return { segments, language: typeof d.language === "string" ? d.language : undefined, viaFallback, conf };
 }
 
 // Проекция частей для чистой логики резолвинга языка (см. _shared/meeting-lang.ts). charCount —
@@ -221,7 +196,7 @@ async function transcribePartInto(
   signal?: AbortSignal,
 ): Promise<void> {
   const blob = await downloadPart(auth.supabase, p.path);
-  const { segments: segs, language, viaFallback } = await transcribeAudio(
+  const { segments: segs, language, viaFallback, conf } = await transcribeAudio(
     auth,
     blob,
     p.name,
@@ -231,8 +206,8 @@ async function transcribePartInto(
   );
   p.segments = segs.map((s) => ({ start: s.start + p.offset, end: s.end + p.offset, text: s.text }));
   if (language) p.lang = language;
-  p.viaFallback = viaFallback;
-  p.done = true;
+  // Успех стирает прошлую ошибку части (#150).
+  Object.assign(p, { viaFallback, conf, done: true, error: undefined });
 }
 
 // Модель тезисов — gpt-5.6-terra: на реальных встречах даёт заметно более конкретные тезисы, чем
@@ -366,10 +341,12 @@ export async function uploadPartsAndBuildState(
     for (const p of list) {
       if (p.blob.size > OPENAI_AUDIO_MAX_BYTES) throw new Error(`part "${p.name}" too large (>25MB)`);
       const path = `${dir}/${track}-${p.name}`;
+      const part: Part = { track, name: p.name, offset: p.offset, path, done: false, attempts: 0 };
+      parts.push(part);
+      if (await skipIfTooShort(part, p.blob)) continue; // огрызок короче минимума Whisper (#150)
       const { error } = await supabase.storage.from(AUDIO_BUCKET)
         .upload(path, p.blob, { contentType: "audio/m4a", upsert: true });
       if (error) throw new Error(`upload ${path}: ${error.message}`);
-      parts.push({ track, name: p.name, offset: p.offset, path, done: false, attempts: 0 });
     }
   };
   await upload("sys", systemParts);
@@ -547,7 +524,8 @@ async function summarizeAndFinish(lease: ProcessingLease, m: MeetingRow, state: 
   if (state.challenge && await keepCurrentTranscript(lease, state, segments)) return;
 
   const hasMic = state.parts.some((p) => p.track === "mic" && p.done);
-  const transcript = { language: resolved, model: hasMic ? "whisper-1+mic" : "whisper-1", segments };
+  const quality = qualityOfTranscript(m.id, segments, state.parts); // честный сигнал качества (#75)
+  const transcript = { language: resolved, model: hasMic ? "whisper-1+mic" : "whisper-1", segments, quality };
   const writtenAt = new Date().toISOString();
   const ownership = rival ? rivalOwnershipPatch(rival.owner, rival, writtenAt) : {};
   // Чья запись легла в стенограмму — в той же UPDATE (_shared/recorded-by.ts).
@@ -775,7 +753,7 @@ async function meetingStep(
 
     if (state.stage === "transcribe") {
       while (Date.now() - startedAt < budgetMs) {
-        const pendingAll = state.parts.filter((p) => !p.done && p.attempts < MAX_PART_ATTEMPTS);
+        const pendingAll = state.parts.filter((p) => isPartPending(p));
         if (pendingAll.length === 0) break;
         // Сначала ПОЛНОСТЬЮ системные части — они задают язык встречи; только потом микрофон, уже
         // с пином этого языка (иначе тихий микрофон галлюцинирует по-английски). Пока есть pending
@@ -796,8 +774,7 @@ async function meetingStep(
           } catch (e) {
             // Потерянный лиз — не сбой части: попытку не списываем, шаг прекращается.
             rethrowIfLeaseLost(lease.signal.reason ?? e);
-            p.attempts = (p.attempts ?? 0) + 1;
-            console.error(`meeting-processor: part ${p.path} attempt ${p.attempts} failed:`, e);
+            registerPartFailure(p, e);
           }
         });
         if (!(await saveState(lease, state))) {
@@ -805,7 +782,7 @@ async function meetingStep(
           return { claimed: true, done: true };
         }
       }
-      const recoverable = state.parts.filter((p) => !p.done && p.attempts < MAX_PART_ATTEMPTS);
+      const recoverable = state.parts.filter((p) => isPartPending(p));
       if (recoverable.length > 0) return { claimed: true, done: false }; // ещё есть части — продолжит следующий тик
       // Все оставшиеся части либо готовы, либо отравлены. Если не вышло НИ ОДНОЙ — это провал.
       if (!state.parts.some((p) => p.done)) {

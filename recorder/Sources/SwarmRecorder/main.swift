@@ -410,6 +410,11 @@ if CommandLine.arguments.contains("--selftest-notes") {
     }
     runMissedSelfTest(seconds: keep ?? 180, inviteFirst: CommandLine.arguments.contains("--invite-first"),
                       withMeeting: CommandLine.arguments.contains("--with-meeting"))
+} else if CommandLine.arguments.contains("--selftest-reminder") {
+    let keep = CommandLine.arguments.firstIndex(of: "--keep").flatMap { i -> Double? in
+        i + 1 < CommandLine.arguments.count ? Double(CommandLine.arguments[i + 1]) : nil
+    }
+    runReminderSelfTest(seconds: keep ?? 40)
 } else if CommandLine.arguments.contains("--selftest-quarantine") {
     runQuarantineSelfTest()   // не возвращается (RunLoop) до exit()
 } else if CommandLine.arguments.contains("--selftest") {

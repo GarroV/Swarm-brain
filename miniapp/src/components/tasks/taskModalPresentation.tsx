@@ -50,9 +50,9 @@ interface TaskModalPropertiesProps {
   subsOfTop: ProjectOption[];
   setSelProject: Setter<string | null>;
   onSaved: () => void;
-  selectedCountryId: string;
+  countries: string[];
   countryCodes: string[];
-  setCountry: Setter<string>;
+  setCountries: Setter<string[]>;
   people: Person[];
   assigneePersonIds: string[];
   pickAssignee: (ids: string[]) => void;
@@ -90,7 +90,7 @@ export function TaskOrigin({ task }: { task: Task }) {
   );
 }
 
-export function TaskModalProperties({ NONE, isEdit, task, status, setStatus, dueDate, setDueDate, recur, setRecur, recurAnchor, remindDate, setRemindDate, remindedAt, setRemindedAt, topProjectId, topProjectName, projectOptions, subProjectId, subProjectName, subsOfTop, setSelProject, onSaved, selectedCountryId, countryCodes, setCountry, people, assigneePersonIds, pickAssignee, addPerson, assigneeFallback, coIds, setCoIds }: TaskModalPropertiesProps) {
+export function TaskModalProperties({ NONE, isEdit, task, status, setStatus, dueDate, setDueDate, recur, setRecur, recurAnchor, remindDate, setRemindDate, remindedAt, setRemindedAt, topProjectId, topProjectName, projectOptions, subProjectId, subProjectName, subsOfTop, setSelProject, onSaved, countries, countryCodes, setCountries, people, assigneePersonIds, pickAssignee, addPerson, assigneeFallback, coIds, setCoIds }: TaskModalPropertiesProps) {
   const dt = useDt();
   return (<div data-card-block="props" className="flex flex-col gap-1.5">
               <div className="flex flex-wrap items-center gap-1.5">
@@ -210,9 +210,9 @@ export function TaskModalProperties({ NONE, isEdit, task, status, setStatus, due
 
                 {/* Выбор страны — контекстное меню: чип-триггер + портал-поповер с сеткой флагов. */}
                 <CountryPopover
-                  value={selectedCountryId}
+                  value={countries}
                   codes={countryCodes}
-                  onChange={setCountry}
+                  onChange={setCountries}
                   variant="pill"
                   label={dt("Страна", "Country")}
                 />

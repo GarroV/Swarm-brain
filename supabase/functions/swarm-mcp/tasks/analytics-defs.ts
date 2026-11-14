@@ -21,7 +21,7 @@ export const ANALYTICS_TOOL_DEFINITIONS = [
         },
         assignee: { type: "string", description: "Имя исполнителя — считать только его задачи" },
         project: { type: "string", description: "Имя проекта или подпроекта (точные имена — get_projects)" },
-        country: { type: "string", description: "Страна или рынок" },
+        country: { type: "string", description: "Страна ISO-кодом; несколько через запятую (любая из)" },
         requesting_user_id: {
           type: "number",
           description: "Твой Telegram user ID — обязателен для фильтрации по воркспейсу",

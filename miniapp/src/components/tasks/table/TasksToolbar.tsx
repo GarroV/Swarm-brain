@@ -2,7 +2,7 @@
 import { cn, displayName } from "@/lib/utils";
 import type { User } from "@/types";
 import type { TaskLabel } from "@/lib/api";
-import { countryName } from "@/lib/countries";
+import { countriesLabel, countryName, toggleCountry } from "@/lib/countries";
 import type { Lens } from "@/lib/smartLists";
 import { RoyIcon, type RoyIconName } from "@/components/roy/icons";
 import { useDt } from "@/components/roy/nav";
@@ -17,8 +17,9 @@ import { QuickTooltipGroup } from "@/components/ui/QuickTooltip";
 export type ToolbarState = {
   assignee: number | null;
   setAssignee: (id: number | null) => void;
-  market: string | null;
-  setMarket: (code: string | null) => void;
+  /** Выбранные рынки (пусто = все); фильтр — «любая из стран задачи». */
+  market: string[];
+  setMarket: (codes: string[]) => void;
   users: User[];
   markets: string[];
   shown: number;
@@ -71,14 +72,14 @@ export function TasksToolbar({ r, s }: { r: ReturnType<typeof useReminderTasks>;
     ? `${dt("Сотрудник", "Person")}: ${staffName}`
     : r.allStaff ? dt("Сотрудники: все", "Staff: all") : dt("Сотрудники", "Staff");
 
+  // Несколько рынков: пункты — флажки (меню не закрывается), «Все рынки» — действие.
   const marketItems: MenuItem[] = [
-    { key: "", label: dt("Все рынки", "All markets"), on: s.market == null, action: true, onPick: () => s.setMarket(null) },
+    { key: "", label: dt("Все рынки", "All markets"), on: s.market.length === 0, action: true, onPick: () => s.setMarket([]) },
     ...s.markets.map((c) => ({
       key: c,
       label: <><span className="mr-1.5 font-mono text-ink-mute">{c}</span>{countryName(c)}</>,
-      on: s.market === c,
-      action: true,
-      onPick: () => s.setMarket(c),
+      on: s.market.includes(c),
+      onPick: () => s.setMarket(toggleCountry(s.market, c)),
     })),
   ];
 
@@ -136,8 +137,8 @@ export function TasksToolbar({ r, s }: { r: ReturnType<typeof useReminderTasks>;
       </ToolbarButton>
       {admin && <Menu label={staffLabel} on={r.allStaff || s.assignee != null} items={staffItems} />}
       <Menu
-        label={s.market ? `${dt("Рынок", "Market")}: ${s.market}` : dt("Рынок", "Market")}
-        on={s.market != null}
+        label={s.market.length ? `${dt("Рынок", "Market")}: ${countriesLabel(s.market)}` : dt("Рынок", "Market")}
+        on={s.market.length > 0}
         items={marketItems}
       />
       <RangePicker value={r.range} onChange={r.setRange} variant="toolbar" />

@@ -9,7 +9,7 @@ import { DatePicker } from "@/components/ui/DatePicker";
 import { QuickPickPopover } from "@/components/tasks/QuickPickPopover";
 import { PictogramPicker } from "@/components/tasks/PictogramPicker";
 import { CountryPopover } from "@/components/tasks/CountryPopover";
-import { COUNTRY_NAMES } from "@/lib/countries";
+import { COUNTRY_NAMES, countriesPatch, taskCountryCodes } from "@/lib/countries";
 import { updateTask, type UpdateTaskInput, type TaskLabel } from "@/lib/api";
 import { displayName } from "@/lib/utils";
 import type { RoyIconName } from "@/components/roy/icons";
@@ -55,7 +55,6 @@ export function TaskQuickActions({ task, users, markets, labels, onPatch, onChan
   // Текущий рынок задачи добавляется, если его нет в списке (легаси-значение), чтобы выбор не «потерялся».
   const dt = useDt();
   const codes = markets.length ? [...markets] : Object.keys(COUNTRY_NAMES);
-  if (task.country && !codes.includes(task.country)) codes.push(task.country);
 
   const commit = (fields: UpdateTaskInput, patch: Partial<Task>) => saveTaskPatch(task.id, fields, patch, onPatch, onChanged);
 
@@ -100,9 +99,9 @@ export function TaskQuickActions({ task, users, markets, labels, onPatch, onChan
       />
       <CountryPopover
         variant="icon"
-        value={task.country ?? ""}
+        value={taskCountryCodes(task)}
         codes={codes}
-        onChange={(code) => commit({ country: code || null }, { country: code || null })}
+        onChange={(cs) => commit({ countries: cs }, countriesPatch(cs))}
       />
       {labels.length > 0 && (
         <PictogramPicker

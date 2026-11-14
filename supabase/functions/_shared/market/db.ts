@@ -240,6 +240,7 @@ export async function loadCountry(sb: SupabaseClient, cc: string) {
       sb.from("mkt_chains")
         .select("key, name, slot, segment, is_bakery, origin, operator, first_entry, notes, hist")
         .eq("country", country)
+        .is("hidden_at", null)
         .order("name"),
       "chains",
     ),
@@ -286,7 +287,11 @@ export async function loadCountry(sb: SupabaseClient, cc: string) {
       "editorial",
     ),
   ]);
-  const ids = companies.map((c) => c.id);
+  // Скрытая сеть (hidden_at) в отчёт не попадает вместе со своими точками; её данные в базе остаются.
+  const hidden = await hiddenChainKeys(sb, country);
+  const visible = (r: unknown) => !hidden.has((r as { chain_key?: string }).chain_key ?? "");
+  const shownCompanies = companies.filter(visible);
+  const ids = shownCompanies.map((c) => c.id);
   const financials = ids.length
     ? await allRows<unknown>(
       (from, to) =>
@@ -302,10 +307,10 @@ export async function loadCountry(sb: SupabaseClient, cc: string) {
   return {
     country,
     chains,
-    locations,
-    companies,
+    locations: locations.filter(visible),
+    companies: shownCompanies,
     financials,
-    prices,
+    prices: prices.filter(visible),
     facts,
     dodo,
     runs,
@@ -316,8 +321,27 @@ export async function loadCountry(sb: SupabaseClient, cc: string) {
 }
 export type CountryBundle = Awaited<ReturnType<typeof loadCountry>>;
 
+/** Ключи скрытых сетей страны (`mkt_chains.hidden_at`): сборщик колонку не трогает и не снимает. */
+export async function hiddenChainKeys(sb: SupabaseClient, country: string): Promise<Set<string>> {
+  const rows = await must<Array<{ key: string }>>(
+    sb.from("mkt_chains").select("key").eq("country", country).not("hidden_at", "is", null),
+    "hidden chains",
+  );
+  return new Set(rows.map((r) => r.key));
+}
+
+/** Фильтр «не из скрытых сетей» для запроса по таблице с колонкой chain_key (точки, цены). */
+// deno-lint-ignore no-explicit-any
+export function excludeChains<Q extends { not: (...a: any[]) => Q }>(q: Q, hidden: Iterable<string>): Q {
+  const keys = [...hidden];
+  return keys.length ? q.not("chain_key", "in", `(${keys.map((k) => `"${k}"`).join(",")})`) : q;
+}
+
 export async function listCountriesWithData(sb: SupabaseClient): Promise<string[]> {
-  const rows = await must<Array<{ country: string }>>(sb.from("mkt_chains").select("country"), "countries");
+  const rows = await must<Array<{ country: string }>>(
+    sb.from("mkt_chains").select("country").is("hidden_at", null),
+    "countries",
+  );
   return [...new Set(rows.map((r) => r.country))].sort();
 }
 

@@ -27,6 +27,7 @@ const GROUP_ID_TABLES = [
   "meeting_calendar_snapshot_events",
   "meeting_calendar_snapshot_runs",
   "meeting_invites",
+  "meeting_join_outcomes",
   "meeting_live_notes",
   "meetings",
   "model_usage",

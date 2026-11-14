@@ -6,7 +6,8 @@
 #
 # Команды:
 #   token-hash — родить токен бота, если его ещё нет, и напечатать ТОЛЬКО его sha256-hex
-#   up         — собрать образ с текущего клона и поднять оркестратор
+#   up         — собрать образ с текущего клона и поднять оркестратор; пока идут встречи — ждёт их
+#                конца (WAIT_MAX_SECONDS, по умолчанию 7200; обход — FORCE_DURING_MEETINGS=1)
 #   status     — идёт ли оркестратор, чей код, сколько встреч сейчас
 #   logs       — последние строки журнала оркестратора
 #   down       — погасить оркестратор и встречи; токен и вход не трогать
@@ -31,6 +32,10 @@ PROJECT=scriba-prod
 SWARM_URL='https://api.swarm-team.app/functions/v1'
 # VPS общий: встреча берёт до 2 ГБ и 2 ядер, четыре сразу задушили бы соседей.
 MAX_MEETINGS=3
+# Перезапуск оркестратора дольше 90 с обрывает идущие записи: контейнер встречи выходит сам, если
+# поводок молчит (bot/src/orchestrator/lease.ts, #1143). Поэтому up ждёт, пока встречи кончатся.
+WAIT_POLL_SECONDS="${WAIT_POLL_SECONDS:-30}"
+WAIT_MAX_SECONDS="${WAIT_MAX_SECONDS:-7200}"
 
 say() { printf '[scriba-prod %s] %s\n' "$(date +%H:%M:%S)" "$*"; }
 die() { printf '✘ %s\n' "$*" >&2; exit 1; }
@@ -53,7 +58,34 @@ token_hash() {
   printf '%s' "$(read_token)" | sha256sum | cut -d' ' -f1
 }
 
+# Сколько контейнеров встреч живо сейчас (тем же способом, что и в status).
+meetings_running() {
+  docker ps -q --filter "label=scriba.project=$PROJECT" --filter name=meeting | wc -l | tr -d ' '
+}
+
+# Не пересоздавать оркестратор под идущими встречами: ждать, пока их не останется, до потолка
+# WAIT_MAX_SECONDS, потом отказ. Осознанный обход — FORCE_DURING_MEETINGS=1 (встречи оборвутся).
+wait_for_meetings() {
+  local n waited=0
+  n=$(meetings_running)
+  [ "$n" -gt 0 ] || return 0
+  if [ "${FORCE_DURING_MEETINGS:-}" = "1" ]; then
+    say "ВНИМАНИЕ: идёт встреч: $n, но FORCE_DURING_MEETINGS=1 — перезапуск оборвёт их записи"
+    return 0
+  fi
+  while [ "$n" -gt 0 ]; do
+    [ "$waited" -lt "$WAIT_MAX_SECONDS" ] ||
+      die "за ${WAIT_MAX_SECONDS} с встречи не кончились (идёт: $n); перезапуск оборвал бы записи. Повтори позже или FORCE_DURING_MEETINGS=1"
+    say "жду окончания $n встреч… (прошло ${waited} с из ${WAIT_MAX_SECONDS})"
+    sleep "$WAIT_POLL_SECONDS"
+    waited=$((waited + WAIT_POLL_SECONDS))
+    n=$(meetings_running)
+  done
+  say 'встреч не осталось, перезапускаю'
+}
+
 prod_up() {
+  wait_for_meetings
   [ -s "$ACCOUNT_DIR/google-state.json" ] ||
     die "входа бота нет ($ACCOUNT_DIR/google-state.json): гостем в боевые встречи не идём"
   protect "$STATE"
@@ -109,7 +141,7 @@ show_status() {
   state=$(docker inspect -f '{{.State.Status}} {{.Config.Image}} с {{.State.StartedAt}}' "$PROJECT-orchestrator-1" 2>/dev/null) ||
     { say 'оркестратор не поднят'; return; }
   say "оркестратор: $state"
-  say "встреч идёт: $(docker ps -q --filter "label=scriba.project=$PROJECT" --filter name=meeting | wc -l | tr -d ' ')"
+  say "встреч идёт: $(meetings_running)"
   say 'журнал (последние строки):'
   docker logs --tail 8 "$PROJECT-orchestrator-1" 2>&1 | sed 's/^/  /'
 }

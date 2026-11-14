@@ -59,6 +59,9 @@ jobs:
         run: ./scripts/test-deploy-activity.sh
       - name: План раскатки — транзитивные потребители _shared
         run: ./scripts/test-deploy-window.sh
+      # up бота scriba ждёт конца идущих встреч, а не обрывает записи (#1143).
+      - name: Перезапуск scriba — ожидание встреч + порча
+        run: ./scripts/test-scriba-restart-guard.sh && ./scripts/test-scriba-restart-guard.sh porcha
       - name: Цепочка раскатки — force и остановка + порча
         run: python3 scripts/test-deploy-chain.py && python3 scripts/test-deploy-chain.py porcha
       - name: Догоняющая раскатка — до выбора PR

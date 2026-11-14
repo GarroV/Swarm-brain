@@ -6,7 +6,7 @@
 // Линт просит короткое имя из карты импортов; см. пояснение в sprint-items.ts.
 // deno-lint-ignore-file no-import-prefix
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { allRows, must } from "./db.ts";
+import { allRows, excludeChains, hiddenChainKeys, must } from "./db.ts";
 import type { EditorialBlock } from "./editorial.ts";
 import { EVENT_KINDS } from "./editorial-view.ts";
 import { PIZZA_TYPES } from "./price-types.ts";
@@ -80,8 +80,12 @@ export const SECTIONS: readonly Section[] = [
     manual: "market_upsert_location (opened / closed) или market_set_block location_dates / events / growth",
     blocks: {
       location_dates: {
-        what: "уточнённые даты открытия: name (как у точки), opened, note",
-        example: [{ name: "Dodo Pizza Mall Sofia", opened: "2023-04-12", note: "пресс-релиз" }],
+        what: "уточнённые даты точки: name (как у точки), opened и/или closed (ГГГГ[-ММ[-ДД]]), note; " +
+          "closed ложится только на точку, уже закрытую сборщиком — для Dodo это единственный способ задать дату закрытия",
+        example: [
+          { name: "Dodo Pizza Mall Sofia", opened: "2023-04-12", note: "пресс-релиз" },
+          { name: "Dodo Pizza Example-4", closed: "2025-01-30", note: "Свод пиццерий" },
+        ],
       },
       events: {
         what: `события рынка: date (ГГГГ[-ММ[-ДД]]), kind (${EVENT_KINDS.join("/")}), chain, text; закрытие — exit`,
@@ -240,13 +244,14 @@ export async function countryStatus(sb: SupabaseClient, cc: string): Promise<str
     if (error) throw new Error(`${what}: ${error.message}`);
     return count ?? 0;
   };
+  const hidden = await hiddenChainKeys(sb, country);
   const [chains, locs, manualLocs, prices, cos] = await Promise.all([
-    count(head("mkt_chains"), "chains"),
-    count(head("mkt_locations").neq("status", "closed"), "locations"),
-    count(head("mkt_locations").in("source_kind", ["manual", "snapshot"]), "manual locations"),
-    count(head("mkt_prices"), "prices"),
+    count(head("mkt_chains").is("hidden_at", null), "chains"),
+    count(excludeChains(head("mkt_locations").neq("status", "closed"), hidden), "locations"),
+    count(excludeChains(head("mkt_locations").in("source_kind", ["manual", "snapshot"]), hidden), "manual locations"),
+    count(excludeChains(head("mkt_prices"), hidden), "prices"),
     allRows<{ id: string }>(
-      (a, b) => sb.from("mkt_companies").select("id").eq("country", country).range(a, b),
+      (a, b) => excludeChains(sb.from("mkt_companies").select("id").eq("country", country), hidden).range(a, b),
       "companies",
     ),
   ]);

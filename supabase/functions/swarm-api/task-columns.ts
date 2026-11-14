@@ -24,6 +24,7 @@ export const TASK_LIST_COLUMNS = [
   "reminded_at",
   "priority",
   "country",
+  "countries",
   "assignees",
   "assignee_telegram_ids",
   // Справочник людей (#874): исполнитель без входа, соисполнители и их «мои задачи».

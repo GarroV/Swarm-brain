@@ -76,7 +76,7 @@ export const MARKET_TOOL_DEFINITIONS = [
     name: "market_upsert_location",
     description: "Точка на карте: без id — добавить новую (нужны chain, name, lat, lng), с id из market_get — " +
       "поправить или закрыть (closed = дата закрытия; статус без явного status не меняется). Сборщик OSM поправленную " +
-      "руками точку не трогает. Пиццерии Dodo ведёт API Dodo — их дату открытия уточняй блоком location_dates. Только админ.",
+      "руками точку не трогает. Пиццерии Dodo ведёт API Dodo — их даты открытия и закрытия уточняй блоком location_dates. Только админ.",
     inputSchema: schema({
       country: CC,
       id: str("id точки из market_get — для правки"),

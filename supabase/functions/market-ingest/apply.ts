@@ -243,6 +243,16 @@ async function addDiscoveredChains(sb: SupabaseClient, country: string, found: D
   return fresh.length;
 }
 
+/** Правка или удаление машинной строки повторяет условия выборки прямо в запросе (#899): если точку
+ *  проверили руками или переместили посреди прогона, прогон её уже не заденет. */
+function onlyMachine<Q extends { eq(column: string, value: string): Q }>(
+  q: Q,
+  country: string,
+  kind: MachineSource,
+): Q {
+  return q.eq("country", country).eq("verification", "unverified").eq("source_kind", kind);
+}
+
 /** Применение данных машинного источника точек (OSM, Overture): новые точки встают сами,
  *  пропавшие закрываются сами, вернувшиеся открываются. Проверенные записи не трогаются. */
 async function applyMachine(
@@ -300,7 +310,7 @@ async function applyMachine(
   const mirrors = [...live.filter(isMirror).map((e) => e.id), ...wrong];
   for (let i = 0; i < mirrors.length; i += ID_BATCH) {
     await must(
-      sb.from("mkt_locations").delete().in("id", mirrors.slice(i, i + ID_BATCH)),
+      onlyMachine(sb.from("mkt_locations").delete().in("id", mirrors.slice(i, i + ID_BATCH)), country, kind),
       "machine mirrors",
     );
   }
@@ -310,7 +320,7 @@ async function applyMachine(
   for (let i = 0; i < seen.length; i += ID_BATCH) {
     await must(
       sb.from("mkt_locations").update({ last_seen_at: now(), missing_weeks: 0 })
-        .in("id", seen.slice(i, i + ID_BATCH)),
+        .in("id", seen.slice(i, i + ID_BATCH)).eq("country", country),
       "machine seen",
     );
   }
@@ -329,7 +339,7 @@ async function applyMachine(
   for (const g of cityGroups.values()) {
     for (let i = 0; i < g.ids.length; i += ID_BATCH) {
       const q = sb.from("mkt_locations").update({ city: g.city }).in("id", g.ids.slice(i, i + ID_BATCH));
-      await must(g.machine ? q : q.is("city", null), "machine city");
+      await must(g.machine ? onlyMachine(q, country, kind) : q.eq("country", country).is("city", null), "machine city");
     }
   }
   // Пометка «с McCafé» (#1113) ставится и снимается только на машинной строке: чужой формат
@@ -343,7 +353,10 @@ async function applyMachine(
   }
   for (const [ids, format] of [[markIds, FORMAT_WITH_MCCAFE], [unmarkIds, null]] as const) {
     for (let i = 0; i < ids.length; i += ID_BATCH) {
-      await must(sb.from("mkt_locations").update({ format }).in("id", ids.slice(i, i + ID_BATCH)), "machine format");
+      await must(
+        onlyMachine(sb.from("mkt_locations").update({ format }).in("id", ids.slice(i, i + ID_BATCH)), country, kind),
+        "machine format",
+      );
     }
   }
   // Вернувшаяся после автозакрытия точка открывается снова: закрытая машинная строка этого
@@ -353,13 +366,17 @@ async function applyMachine(
     .map((e) => e.id);
   for (let i = 0; i < reopenIds.length; i += ID_BATCH) {
     await must(
-      sb.from("mkt_locations").update({
-        status: "open",
-        closed: null,
-        verification_note: null,
-        missing_weeks: 0,
-        last_seen_at: now(),
-      }).in("id", reopenIds.slice(i, i + ID_BATCH)),
+      onlyMachine(
+        sb.from("mkt_locations").update({
+          status: "open",
+          closed: null,
+          verification_note: null,
+          missing_weeks: 0,
+          last_seen_at: now(),
+        }).in("id", reopenIds.slice(i, i + ID_BATCH)),
+        country,
+        kind,
+      ),
       "machine reopen",
     );
   }
@@ -418,18 +435,23 @@ async function applyMachine(
   for (const [weeks, g] of missGroups) {
     for (let i = 0; i < g.close.length; i += ID_BATCH) {
       await must(
-        sb.from("mkt_locations").update({
-          missing_weeks: weeks,
-          status: "closed",
-          closed: today,
-          verification_note: `пропала из ${SOURCE_TITLE[kind]} ${weeks} прогонов подряд`,
-        }).in("id", g.close.slice(i, i + ID_BATCH)),
+        onlyMachine(
+          sb.from("mkt_locations").update({
+            missing_weeks: weeks,
+            status: "closed",
+            closed: today,
+            verification_note: `пропала из ${SOURCE_TITLE[kind]} ${weeks} прогонов подряд`,
+          }).in("id", g.close.slice(i, i + ID_BATCH)),
+          country,
+          kind,
+        ),
         "machine close",
       );
     }
     for (let i = 0; i < g.keep.length; i += ID_BATCH) {
       await must(
-        sb.from("mkt_locations").update({ missing_weeks: weeks }).in("id", g.keep.slice(i, i + ID_BATCH)),
+        sb.from("mkt_locations").update({ missing_weeks: weeks }).in("id", g.keep.slice(i, i + ID_BATCH))
+          .eq("country", country),
         "machine missing",
       );
     }

@@ -1,6 +1,14 @@
 import { assertEquals, assertRejects } from "@std/assert";
 import { Client } from "postgres";
 
+// Миграция 20261113130000 добавила в mkt_chains колонку hidden_at, а проверка снимка в этой (уже накатанной на проде)
+// миграции хэширует всю строку: в тесте колонка вычитается так же, как updated_at.
+const hideHiddenAt = (sql: string) => {
+  const patched = sql.replace("(to_jsonb(c)-'updated_at')", "(to_jsonb(c)-array['updated_at','hidden_at'])");
+  if (patched === sql) throw new Error("текст миграции изменился: поправь hideHiddenAt");
+  return patched;
+};
+
 const url = Deno.env.get("SUPABASE_DB_URL");
 if (!url) throw new Error("SUPABASE_DB_URL is required: use an isolated test database");
 const fixture = JSON.parse(await Deno.readTextFile(new URL("./fixtures/by-generic-coffee.json", import.meta.url))) as {
@@ -9,8 +17,10 @@ const fixture = JSON.parse(await Deno.readTextFile(new URL("./fixtures/by-generi
 };
 const key = String(fixture.chain.key);
 const pointId = String(fixture.locations[0].id);
-const migration = await Deno.readTextFile(
-  new URL("../../../migrations/20261106215609_market_by_generic_chain.sql", import.meta.url),
+const migration = hideHiddenAt(
+  await Deno.readTextFile(
+    new URL("../../../migrations/20261106215609_market_by_generic_chain.sql", import.meta.url),
+  ),
 );
 
 async function open() {

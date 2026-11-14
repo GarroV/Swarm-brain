@@ -25,7 +25,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/u
 import { useConfirm } from "@/components/ui/confirm";
 import { RoyIcon, type RoyIconName } from "@/components/roy/icons";
 import { TaskComments } from "@/components/tasks/TaskComments";
-import { COUNTRY_NAMES, countryCode } from "@/lib/countries";
+import { COUNTRY_NAMES, parseCountryList, taskCountryCodes } from "@/lib/countries";
 import { useDt } from "@/components/roy/nav";
 import { useIsDesktop } from "@/components/roy/useIsDesktop";
 import { recurValueOf, type RecurValue } from "@/lib/recurrenceLabels";
@@ -197,7 +197,7 @@ export function TaskModal({ task: taskOpened, open, onClose, onSaved, prefill, m
   // Пинг — ручное напоминание, живёт рядом со сроком и независимо от него.
   const [remindDate, setRemindDate] = useState("");
   const [remindedAt, setRemindedAt] = useState<string | null>(null);
-  const [country, setCountry] = useState("");
+  const [countries, setCountries] = useState<string[]>([]);
   const [taskRole, setTaskRole] = useState(NONE);
   const [assigneeId, setAssigneeId] = useState(NONE);
   // Исходный исполнитель: чтобы при правке других полей не затирать его (PATCH шлём только при изменении).
@@ -258,7 +258,7 @@ export function TaskModal({ task: taskOpened, open, onClose, onSaved, prefill, m
     const initialDue = task?.due_date ?? prefill?.due_date ?? "";
     const initialRemind = task?.remind_date ?? prefill?.remind_date ?? "";
     const initialRecur = task ? recurValueOf(task) : null;
-    const initialCountry = task?.country ?? prefill?.country ?? "";
+    const initialCountries = task ? taskCountryCodes(task) : parseCountryList(prefill?.country);
     const initialRole = task?.task_role ?? prefill?.task_role ?? NONE;
     const cur = task ? assigneeTokenOf(task) : prefillAssigneeToken(prefill);
     const initialCo = task?.coassignee_person_ids ?? prefill?.coassignee_person_ids ?? [];
@@ -277,7 +277,7 @@ export function TaskModal({ task: taskOpened, open, onClose, onSaved, prefill, m
     setRemindDate(initialRemind);
     setRecur(initialRecur);
     setRemindedAt(task?.reminded_at ?? null);
-    setCountry(initialCountry);
+    setCountries(initialCountries);
     setTaskRole(initialRole);
     setAssigneeId(cur);
     setInitialAssignee(cur);
@@ -296,7 +296,7 @@ export function TaskModal({ task: taskOpened, open, onClose, onSaved, prefill, m
       dueDate: initialDue,
       remindDate: initialRemind,
       recur: initialRecur,
-      country: initialCountry,
+      countries: initialCountries,
       taskRole: initialRole,
       assigneeId: cur,
       coIds: initialCo,
@@ -352,19 +352,8 @@ export function TaskModal({ task: taskOpened, open, onClose, onSaved, prefill, m
     return p;
   };
 
-  // Опции страны: рынки воркспейса + «Global» (пусто) + легаси-фолбэк (страна задачи вне
-  // текущего allowed_markets — чтобы при редактировании не потерять её).
+  // Опции страны: рынки воркспейса (страна задачи вне них остаётся в списке — это делает сам поповер).
   const countryCodes = markets.length ? [...markets] : Object.keys(COUNTRY_NAMES);
-  let selectedCountryId = country;
-  if (country) {
-    const normalizedCountry = countryCode(country);
-    const matchedCode = countryCodes.find((code) => countryCode(code) === normalizedCountry);
-    if (matchedCode) {
-      selectedCountryId = matchedCode;
-    } else {
-      countryCodes.push(country);
-    }
-  }
 
   // Якорь числа показываем, только пока срок не тронут: изменил дату — подпись идёт за новой,
   // потому что сервер пересчитает якорь по тому же правилу (recurrencePatchFor).
@@ -382,7 +371,7 @@ export function TaskModal({ task: taskOpened, open, onClose, onSaved, prefill, m
 
   // Текущий снапшот формы (для сравнения с сохранённым) — те же ключи, что в useEffect open.
   const formSnapshot = () =>
-    JSON.stringify({ title, description, status, dueDate, remindDate, recur, country, taskRole, assigneeId, coIds, selProject, labelIds, links });
+    JSON.stringify({ title, description, status, dueDate, remindDate, recur, countries, taskRole, assigneeId, coIds, selProject, labelIds, links });
 
   // Собрать PATCH из текущих значений формы. null → сохранять нечего/нельзя (пустое название).
   const buildPatch = (): UpdateTaskInput | null => {
@@ -398,7 +387,7 @@ export function TaskModal({ task: taskOpened, open, onClose, onSaved, prefill, m
       recur_interval: recur?.interval ?? 1,
       recur_weekdays: recur?.weekdays ?? null,
       recur_setpos: recur?.setpos ?? null,
-      country: country || null,
+      countries,
       task_role: taskRole === NONE ? null : taskRole,
       status,
       project_id: selProject,
@@ -437,7 +426,7 @@ export function TaskModal({ task: taskOpened, open, onClose, onSaved, prefill, m
     }, AUTOSAVE_DELAY);
     return () => clearTimeout(h);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, isEdit, isPartial, title, description, status, dueDate, remindDate, recur, country, taskRole, assigneeId, coIds, selProject, labelIds, links]);
+  }, [open, isEdit, isPartial, title, description, status, dueDate, remindDate, recur, countries, taskRole, assigneeId, coIds, selProject, labelIds, links]);
 
   // Досрочно сохраняем pending-изменения (пока debounce не успел сработать) — перед закрытием
   // и перед переходом к связанной задаче.
@@ -483,7 +472,7 @@ export function TaskModal({ task: taskOpened, open, onClose, onSaved, prefill, m
         recur_interval: recur?.interval ?? 1,
         recur_weekdays: recur?.weekdays ?? null,
         recur_setpos: recur?.setpos ?? null,
-        country: country || null,
+        countries,
         task_role: taskRole === NONE ? null : taskRole,
       };
       const fields: CreateTaskInput = { ...base, ...assigneeFields(assigneeId), project_id: selProject };
@@ -672,9 +661,9 @@ export function TaskModal({ task: taskOpened, open, onClose, onSaved, prefill, m
               subsOfTop={subsOfTop}
               setSelProject={setSelProject}
               onSaved={onSaved}
-              selectedCountryId={selectedCountryId}
+              countries={countries}
               countryCodes={countryCodes}
-              setCountry={setCountry}
+              setCountries={setCountries}
               people={people}
               assigneePersonIds={assigneePersonIds}
               pickAssignee={pickAssignee}

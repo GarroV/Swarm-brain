@@ -1,8 +1,7 @@
 // Цветовые схемы оформления (docs/decisions/2026-11-12-color-themes.md): что CSS схем целен и что
 // текст на своём фоне читается (WCAG AA, 4,5 : 1) в КАЖДОЙ схеме и КАЖДОМ её режиме — считается из
-// самого app/schemes.css, а не из таблиц в документе. Схема «Swarm» в контраст не входит: её светлый
-// --ink-mute даёт 3,14 : 1 (issue #1285), это отдельное решение; её блок проверяется только на
-// совпадение с globals.css (плитка в меню рисуется из него).
+// самого app/schemes.css, а не из таблиц в документе. Светлый --ink-mute «Swarm» проверяется
+// отдельно на светлых поверхностях (#1285); блок плитки также сверяется с globals.css.
 import { assert, assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import { forcedMode, SCHEME_IDS, SCHEME_OPTIONS, schemeThemeScript } from "./scheme.ts";
 
@@ -83,6 +82,15 @@ const PAIRS: [string, string, string][] = [
   ["--on-primary", "--primary", "подпись на заливке главного цвета"],
 ];
 const AA = 4.5;
+
+// The default light scheme shares this token across captions and placeholders (#1285).
+Deno.test("контраст: Swarm light — приглушённый текст AA на фоне и карточках", () => {
+  const vars = globals.get(":root")!;
+  for (const bg of ["--background", "--card", "--surface", "--surface-2", "--sidebar"]) {
+    const ratio = contrast(resolve(vars, "--ink-mute"), resolve(vars, bg));
+    assert(ratio >= AA, `Swarm light: --ink-mute on ${bg} = ${ratio.toFixed(2)} < ${AA}`);
+  }
+});
 
 for (const opt of SCHEME_OPTIONS) {
   if (opt.id === "swarm") continue;
