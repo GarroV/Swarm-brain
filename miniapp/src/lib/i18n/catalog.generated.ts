@@ -2,10 +2,28 @@
 export const dictionaries = {
   "en": {
     "settings.notificationSound.title": "Notification sound",
-    "settings.notificationSound.description": "A short chime when a new notification arrives"
+    "settings.notificationSound.description": "A short chime when a new notification arrives",
+    "common.copy.copied": "Copied",
+    "common.copy.failed": "Couldn't copy",
+    "common.copy.action": "Copy",
+    "tools.qr.description": "Paste a link or any text — the code appears right away. Made in your browser, nothing is sent anywhere. For a long link, shorten it first: the code gets simpler and scans more reliably.",
+    "tools.qr.placeholder": "https://… or text",
+    "tools.qr.tooLong": "Too long for a QR code. Shorten the link and make a code for the short one.",
+    "tools.qr.imageLabel": "QR code",
+    "tools.qr.downloadPng": "Download PNG",
+    "tools.qr.downloadSvg": "Download SVG — for print"
   },
   "ru": {
     "settings.notificationSound.title": "Звук уведомлений",
-    "settings.notificationSound.description": "Короткий сигнал, когда приходит новое уведомление"
+    "settings.notificationSound.description": "Короткий сигнал, когда приходит новое уведомление",
+    "common.copy.copied": "Скопировано",
+    "common.copy.failed": "Не удалось скопировать",
+    "common.copy.action": "Копировать",
+    "tools.qr.description": "Вставьте адрес или любой текст — код появится сразу. Делается в браузере, никуда не отправляется. Для длинной ссылки сначала сделайте короткую: код будет проще и надёжнее читаться.",
+    "tools.qr.placeholder": "https://… или текст",
+    "tools.qr.tooLong": "Слишком длинный текст для QR-кода. Сократите ссылку и сделайте код для короткой.",
+    "tools.qr.imageLabel": "QR-код",
+    "tools.qr.downloadPng": "Скачать PNG",
+    "tools.qr.downloadSvg": "Скачать SVG — для печати"
   }
 } as const;
