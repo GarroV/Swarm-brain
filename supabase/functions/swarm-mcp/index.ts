@@ -1,3 +1,4 @@
+import { addKnowledge, type AddKnowledgeArgs } from "./knowledge-add.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { externalFetch, VIA_OPENAI_CHAT, VIA_OPENAI_EMBEDDING } from "../_shared/external-fetch.ts";
 import {
@@ -449,97 +450,16 @@ async function toolGetEntry(args: { id: string; requesting_user_id?: number }): 
   return `(${row.source} · ${date})\n\n${row.content}`;
 }
 
-async function toolAddKnowledge(
-  args: {
-    content?: string;
-    summary: string;
-    source?: string;
-    is_private?: boolean;
-    owner_telegram_id?: number;
-    requesting_user_id?: number;
-  },
-): Promise<string> {
-  const CHUNK = 3000, OVERLAP = 200;
-  const source = args.source ?? "claude";
-  const rawContent = args.content?.trim() || args.summary;
-
-  // Split original content into chunks for storage
-  const chunks: string[] = [];
-  if (rawContent.length <= CHUNK) {
-    chunks.push(rawContent);
-  } else {
-    for (let pos = 0; pos < rawContent.length; pos += CHUNK - OVERLAP) {
-      chunks.push(rawContent.slice(pos, pos + CHUNK));
-    }
-  }
-
-  // Chunk grouping UUID (not the workspace group_id)
-  const chunkGroupId = chunks.length > 1 ? crypto.randomUUID() : null;
-
-  // Личность вызывающего — только из токена (tools/call перетирает поля личности в аргументах).
-  // Автор записи (owner_id) = вызывающий — и у личной, и у общей (решение 03.10, #790: каждая
-  // запись помечена автором; added_by — канал, не человек). Воркспейс = воркспейс вызывающего.
-  const scope = await callerScope(args.requesting_user_id);
-  if (!scope) return NO_WORKSPACE_MESSAGE;
-  const isPrivate = args.is_private === true;
-  const ownerId = scope.userId;
-  const workspaceGroupId = scope.groupId;
-  const [summaryEmbedding, entryMeta] = await Promise.all([
-    embeddingOrNull(scope.groupId, args.summary.slice(0, 8000)),
-    openAIKeyHandle(supabase, scope.groupId).then((key) => extractEntryMeta(args.summary, key)),
-  ]);
-
-  let unindexed = summaryEmbedding === null;
-  // First chunk: summary + metadata + embedding
-  const { error: insertErr } = await supabase.from("entries").insert({
-    content: chunks[0],
-    summary: args.summary,
-    embedding: summaryEmbedding,
-    added_by: "claude_desktop",
-    source,
-    metadata: chunkGroupId ? { total_chunks: chunks.length, chunk: 1, chunk_group_id: chunkGroupId } : {},
-    countries: applyGeneralSentinel(entryMeta.countries),
-    entry_type: entryMeta.entry_type,
-    entry_date: entryMeta.entry_date,
-    group_id: workspaceGroupId,
-    is_private: isPrivate,
-    owner_id: ownerId,
+async function toolAddKnowledge(args: AddKnowledgeArgs): Promise<string> {
+  return await addKnowledge(args, {
+    callerScope,
+    insertEntry: (row) => supabase.from("entries").insert(row),
+    embeddingOrNull,
+    extractMeta: async (groupId, summary) => extractEntryMeta(summary, await openAIKeyHandle(supabase, groupId)),
+    applyGeneralSentinel,
+    noWorkspaceMessage: NO_WORKSPACE_MESSAGE,
+    unindexedNote: UNINDEXED_NOTE,
   });
-  if (insertErr) return `Ошибка сохранения: ${insertErr.message}`;
-
-  // Remaining chunks: content only, same chunk_group_id in metadata
-  if (chunks.length > 1) {
-    const restEmbeddings = await Promise.all(chunks.slice(1).map((c) => embeddingOrNull(scope.groupId, c)));
-    if (restEmbeddings.includes(null)) unindexed = true;
-    try {
-      await Promise.all(
-        chunks.slice(1).map((chunk, i) =>
-          supabase.from("entries").insert({
-            content: chunk,
-            summary: null,
-            embedding: restEmbeddings[i],
-            added_by: "claude_desktop",
-            source,
-            metadata: { total_chunks: chunks.length, chunk: i + 2, chunk_group_id: chunkGroupId },
-            countries: applyGeneralSentinel(entryMeta.countries),
-            entry_type: entryMeta.entry_type,
-            entry_date: entryMeta.entry_date,
-            group_id: workspaceGroupId,
-            is_private: isPrivate,
-            owner_id: ownerId,
-          })
-        ),
-      );
-    } catch (e) {
-      return `Ошибка сохранения (часть ${e instanceof Error ? e.message : String(e)}).`;
-    }
-  }
-
-  const contentNote = !args.content?.trim() ? " (оригинал не передан)" : "";
-  const dest = isPrivate ? "личное хранилище" : "базу знаний";
-  return `✅ Добавлено в ${dest} (${chunks.length} ${chunks.length === 1 ? "часть" : "части/частей"}).${contentNote}${
-    unindexed ? UNINDEXED_NOTE : ""
-  }`;
 }
 
 async function toolUploadFile(args: {

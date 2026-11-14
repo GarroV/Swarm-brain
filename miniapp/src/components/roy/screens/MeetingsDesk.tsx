@@ -1,4 +1,7 @@
 "use client";
+import { useMeetingFacets } from "./useMeetingFacets";
+import { mergeById } from "@/lib/meetingsPaging";
+import { normalizeMeetingFacets } from "@/lib/meetingsFacets";
 import { useEffect, useMemo, useState } from "react";
 import { OnAirBadge } from "@/components/roy/record/OnAirBadge";
 import { cn } from "@/lib/utils";
@@ -47,9 +50,10 @@ export function MeetingsDesk() {
   // Встречи — лёгкими строками и частями (useMeetingsList): сразу вычитка + вчера и сегодня,
   // остальное по «Показать ещё». Фильтры страны/источника/«кто принёс» сервер не умеет —
   // при них остаток докачивается сам.
+  const aggregate = useMeetingFacets(!isFilterActive(f), tasksVersion);
   const list = useMeetingsList(f, {
     reloadKey: tasksVersion,
-    needAll: f.countries.length > 0 || f.sources.length > 0 || f.people.length > 0,
+    needAll: aggregate.failed || f.countries.length > 0 || f.sources.length > 0 || f.people.length > 0,
   });
   // Черновики перечитываются вместе с задачами: панель вычитки бампает tasksVersion
   // после публикации и удаления, и без этого черновик висел в списке до перезагрузки.
@@ -64,7 +68,7 @@ export function MeetingsDesk() {
     saveFilters(next);
   };
 
-  const all = useMemo(() => [...list.pending, ...list.confirmed], [list.pending, list.confirmed]);
+  const all = useMemo(() => mergeById(list.pending, list.confirmed), [list.pending, list.confirmed]);
   const shown = useMemo(() => applyMeetingsFilter(all, f), [all, f]);
   const pending = shown.filter((e) => !isConfirmed(e));
   const rest = shown.filter(isConfirmed);
@@ -91,10 +95,11 @@ export function MeetingsDesk() {
     return by;
   }, [tasks]);
 
-  const sources = [...new Set([...all.map((e) => meetingSourceKey(e)), ...drafts.map((m) => meetingSourceKey(m))])].sort();
-  const people = [...new Set(all.map(personOf).filter(Boolean))].sort();
+  const completeFacets = aggregate.data ? normalizeMeetingFacets(aggregate.data) : null;
+  const sources = [...new Set([...(completeFacets ? completeFacets.sources.map(([key]) => key) : all.map((e) => meetingSourceKey(e))), ...drafts.map((m) => meetingSourceKey(m))])].sort();
+  const people = [...new Set(completeFacets ? completeFacets.people.map(([name]) => name) : all.map(personOf).filter(Boolean))].sort();
   // «из M» — все встречи, а не только загруженные: сервер считает согласованные без фильтров.
-  const total = (list.unfilteredTotal ?? list.confirmed.length) + list.pending.length + drafts.length;
+  const total = completeFacets ? completeFacets.total + drafts.length : list.failed ? "…" : (list.unfilteredTotal ?? list.confirmed.length) + list.pending.length + drafts.length;
   const count = shown.length + shownDrafts.length;
   const active = isFilterActive(f);
 

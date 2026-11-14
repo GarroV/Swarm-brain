@@ -1,10 +1,10 @@
 "use client";
-import type { Entry } from "@/types";
+import { meetingCountryFilterCounts, type MeetingFacets } from "@/lib/meetingsFacets";
 import { useDt } from "../nav";
 import { countryCode } from "@/lib/countries";
-import { meetingSourceKey, sourceKeyLabel } from "@/lib/sourceLabels";
+import { sourceKeyLabel } from "@/lib/sourceLabels";
 import { FilterChip, FilterGroup } from "./meetAdminPresentation";
-import { EMPTY_FILTERS, isFilterActive, personOf, type MeetingsFilterState, type PeriodId } from "./meetingsFilter";
+import { EMPTY_FILTERS, isFilterActive, type MeetingsFilterState, type PeriodId } from "./meetingsFilter";
 
 // ── Панель фильтров «Все встречи» ────────────────────────────────────────────
 // Заменила собой блок статистики в правой колонке (сама статистика уехала под неё).
@@ -45,9 +45,9 @@ const PERIODS: Array<{ id: PeriodId; label: keyof typeof COPY }> = [
 ];
 
 export function MeetingsFilters({
-  all, shown, markets, value, onChange,
+  facets, shown, markets, value, onChange,
 }: {
-  all: Entry[];
+  facets: MeetingFacets | null;
   shown: number;
   markets: string[] | null;
   value: MeetingsFilterState;
@@ -64,16 +64,10 @@ export function MeetingsFilters({
 
   // Счётчики считаем по ВСЕМ встречам, а не по отфильтрованным: иначе, сняв один фильтр,
   // пользователь видит нули у остальных и не понимает, куда делись данные.
-  const countBy = (pick: (e: Entry) => string[]) => {
-    const m = new Map<string, number>();
-    all.forEach((e) => pick(e).forEach((k) => { if (k) m.set(k, (m.get(k) ?? 0) + 1); }));
-    return [...m.entries()].sort((a, b) => b[1] - a[1]);
-  };
   const marketSet = new Set((markets ?? []).map(countryCode));
-  const countryCounts = countBy((e) => (e.countries ?? []).map(countryCode))
-    .filter(([c]) => marketSet.size === 0 || marketSet.has(c));
-  const sourceCounts = countBy((e) => [meetingSourceKey(e)]);
-  const peopleCounts = countBy((e) => [personOf(e)]);
+  const countryCounts = meetingCountryFilterCounts(facets).filter(([c]) => marketSet.size === 0 || marketSet.has(c));
+  const sourceCounts = facets?.sources ?? [];
+  const peopleCounts = facets?.people ?? [];
 
   const active = isFilterActive(value);
 
@@ -81,7 +75,7 @@ export function MeetingsFilters({
     <div className="space-y-3 border-b border-line p-3">
       <div className="flex items-center justify-between gap-2">
         <span className="font-semibold text-ink" style={{ fontSize: 12.5 }}>
-          {active ? <>{tx("found")}: {shown} {tx("of")} {all.length}</> : <>{tx("total")}: {all.length}</>}
+          {active ? <>{tx("found")}: {facets ? shown : "…"} {tx("of")} {facets?.total ?? "…"}</> : <>{tx("total")}: {facets?.total ?? "…"}</>}
         </span>
         {active && (
           <button
