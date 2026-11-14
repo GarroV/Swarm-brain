@@ -11,7 +11,10 @@
  *   постоянный сбой или исчерпанные попытки        — failed/ (dead-letter), не удаление;
  *   успешные 202                                   — бэкап ОСТАЁТСЯ: 202 ≠ «обработано»;
  *   опубликовано в базу (`in_base`)                — вот теперь бэкап не нужен;
- *   старше потолка                                 — сметается, чтобы диск не рос.
+ *   старше потолка                                 — сметается ТОЛЬКО если сервер уже принял
+ *                                                    запись (`uploaded`); недоставленная по сроку
+ *                                                    не удаляется никогда (#1142), о ней кричит
+ *                                                    событие `stale`.
  *
  * ⚠️ Каталог очереди обязан переживать контейнер: внутри эфемерного контейнера бэкап
  * умирает вместе с ним. Монтирование тома — забота оркестратора.
@@ -29,6 +32,12 @@ const FAILED_DIR = "failed";
 const META_FILE = "meta.json";
 const DEFAULT_MAX_ATTEMPTS = 6;
 const DEFAULT_BACKUP_TTL_MS = 3 * 24 * 60 * 60 * 1000;
+/**
+ * Недоставленная запись лежит дольше — о ней пора кричать. Пропуск бота живёт шесть часов
+ * (`GRANT_TTL_MS`), так что позже этого срока её уже не выгрузить без нового пропуска.
+ */
+const DEFAULT_STALE_AFTER_MS = 6 * 60 * 60 * 1000;
+const MS_PER_HOUR = 60 * 60 * 1000;
 
 /**
  * Часть дорожки, лежащая на диске.
@@ -56,7 +65,7 @@ export interface QueueEntry {
 }
 
 export type QueueEventKind =
-  "staged" | "sealed" | "uploaded" | "retry" | "dead-letter" | "released" | "expired";
+  "staged" | "sealed" | "uploaded" | "retry" | "dead-letter" | "released" | "expired" | "stale";
 
 interface QueueEvent {
   readonly kind: QueueEventKind;
@@ -75,6 +84,10 @@ export interface UploadQueueOptions {
    */
   readonly maxAttempts?: number;
   readonly backupTtlMs?: number;
+  /**
+   * Через сколько часов лежания недоставленная запись получает событие `stale`.
+   */
+  readonly staleAfterMs?: number;
   readonly now?: () => number;
   /**
    * События очереди наружу: молчаливая очередь — это очередь, про которую никто не знает.
@@ -128,7 +141,12 @@ export class UploadQueue {
 
   private readonly backupTtlMs: number;
 
+  private readonly staleAfterMs: number;
+
   private readonly now: () => number;
+
+  // Недоставленные записи, о которых этот процесс уже крикнул: по одному разу, не каждый прогон.
+  private readonly warnedStale = new Set<string>();
 
   // Идущий прогон: второй вызов присоединяется к нему, иначе запись уйдёт дважды.
   private running: Promise<DrainResult> | null = null;
@@ -141,6 +159,7 @@ export class UploadQueue {
     this.client = options.client;
     this.maxAttempts = options.maxAttempts ?? DEFAULT_MAX_ATTEMPTS;
     this.backupTtlMs = options.backupTtlMs ?? DEFAULT_BACKUP_TTL_MS;
+    this.staleAfterMs = options.staleAfterMs ?? DEFAULT_STALE_AFTER_MS;
     this.now = options.now ?? Date.now;
   }
 
@@ -201,7 +220,26 @@ export class UploadQueue {
   }
 
   /**
-   * Смести устаревшие бэкапы одного каталога. Отдельным методом, а не вложенным циклом:
+   * Недоставленная запись лежит долго — один раз на процесс сказать об этом событием.
+   */
+  private warnIfStale(entry: QueueEntry, base: string, fallbackMs: number): void {
+    if (this.warnedStale.has(entry.meetingId)) return;
+    const createdMs = Date.parse(entry.createdAt);
+    const ageMs = this.now() - (Number.isNaN(createdMs) ? fallbackMs : createdMs);
+    if (ageMs <= this.staleAfterMs) return;
+    this.warnedStale.add(entry.meetingId);
+    const hours = Math.floor(ageMs / MS_PER_HOUR);
+    this.emit(
+      "stale",
+      entry.meetingId,
+      `запись НЕ ДОСТАВЛЕНА уже ${String(hours)} ч (${base}, попыток ${String(entry.attempts)}) — лежит на диске, не удалена`,
+    );
+  }
+
+  /**
+   * Смести устаревшие бэкапы одного каталога. Сметается только то, что сервер уже принял
+   * (`uploaded`): у недоставленной записи аудио — единственный экземпляр, по сроку её не
+   * удаляем, а один раз кричим (`stale`). Отдельным методом, а не вложенным циклом:
    * `continue` во вложенном цикле читается хуже, чем отдельная понятная функция.
    */
   private async sweepDir(base: string): Promise<string[]> {
@@ -221,6 +259,11 @@ export class UploadQueue {
         continue;
       }
       if (!info.isDirectory()) continue;
+      const entry = await this.readEntry(directory);
+      if (entry?.uploaded !== true) {
+        if (entry) this.warnIfStale(entry, base, info.mtimeMs);
+        continue;
+      }
       if (this.now() - info.mtimeMs <= this.backupTtlMs) continue;
       await rm(directory, { recursive: true, force: true });
       swept.push(name);
@@ -387,8 +430,8 @@ export class UploadQueue {
   }
 
   /**
-   * Смести бэкапы старше потолка — и отправленные, и безнадёжные. Диск не должен расти
-   * бесконечно, но неопубликованная запись обязана дожить до того, как её заметят.
+   * Смести бэкапы старше потолка, но только принятые сервером. Недоставленные (в том числе
+   * в `failed/`) остаются: запись не должна пропасть молча, диск — меньшая цена.
    */
   async sweepExpired(): Promise<string[]> {
     const pending = await this.sweepDir(PENDING_DIR);

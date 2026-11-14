@@ -159,3 +159,14 @@ Deno.test("список сохранённых встреч фильтрует �
   );
   assertEquals(/\.or\(visibilityFilter\(userId\)\)/.test(query), true, "список показывает чужие личные встречи");
 });
+
+// ── Экранирование id в пути запроса к Read.ai (#1067) ─────────────────────────
+// meetingId приходит из callback_data бота; без encodeURIComponent символ `/`, `?` или `#`
+// в нём меняет путь запроса к Read.ai.
+Deno.test("id встречи в пути запроса к Read.ai экранируется", async () => {
+  const src = await Deno.readTextFile(`${HERE}meetings.ts`);
+  const bare = src.split("\n").flatMap((line, i) =>
+    /readAiGet\(`[^`]*\$\{(?!encodeURIComponent\()/.test(line) ? [i + 1] : []
+  );
+  assertEquals(bare, [], `подстановка в путь readAiGet без encodeURIComponent в строках: ${bare.join(", ")}`);
+});

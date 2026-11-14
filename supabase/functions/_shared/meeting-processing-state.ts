@@ -11,8 +11,11 @@ export interface Part {
   path: string; // путь в бакете meeting-audio
   done: boolean;
   attempts: number;
+  error?: string; // текст последней ошибки транскрибации (#150): state переживает retention логов
+  skipped?: string; // причина пропуска части (огрызок короче минимума Whisper, poison-guard) (#150)
   segments?: Segment[];
   lang?: string; // язык части, определённый Whisper (имя на англ.)
+  conf?: { n: number; low: number }; // уверенность Whisper по сегментам части (#75): всего / ниже порога
   viaFallback?: boolean; // сегменты пришли только из d.text-фолбэка (не настоящая речь) → не якорим
 }
 // speakers — необязательный таймлайн говорящих (секунды от начала записи), присланный полем

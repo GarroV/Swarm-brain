@@ -4,6 +4,14 @@ import { createClient } from "@supabase/supabase-js";
 import { Client } from "postgres";
 import { loadCountry } from "./db.ts";
 
+// Миграция 20261113130000 добавила в mkt_chains колонку hidden_at, а проверка снимка в этой (уже накатанной на проде)
+// миграции хэширует всю строку: в тесте колонка вычитается так же, как updated_at.
+const hideHiddenAt = (sql: string) => {
+  const patched = sql.replace("(to_jsonb(c)-'updated_at')", "(to_jsonb(c)-array['updated_at','hidden_at'])");
+  if (patched === sql) throw new Error("текст миграции изменился: поправь hideHiddenAt");
+  return patched;
+};
+
 Deno.test("#1134: loadCountry drops the retired BY chain/points and preserves other chains/countries", async () => {
   const api = Deno.env.get("SUPABASE_URL");
   const key = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
@@ -40,8 +48,10 @@ Deno.test("#1134: loadCountry drops the retired BY chain/points and preserves ot
   const controlPointIds = [crypto.randomUUID(), crypto.randomUUID()];
   const chainIds = [String(fixture.chain.id), ...controlChainIds];
   const pointIds = [...targetIds, ...controlPointIds];
-  const migration = await Deno.readTextFile(
-    new URL("../../../migrations/20261106215609_market_by_generic_chain.sql", import.meta.url),
+  const migration = hideHiddenAt(
+    await Deno.readTextFile(
+      new URL("../../../migrations/20261106215609_market_by_generic_chain.sql", import.meta.url),
+    ),
   );
   const db = new Client(dbUrl);
   await db.connect();

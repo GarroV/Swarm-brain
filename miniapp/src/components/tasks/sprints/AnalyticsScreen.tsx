@@ -177,7 +177,6 @@ export function AnalyticsScreen(
           dt("Риск", "Risk"),
           dt("Проблема", "Problem"),
           dt("Не отмечено", "Not checked"),
-          dt("К переносу", "To carry"),
           dt("Отменено", "Cancelled"),
         ]}
         rows={report.current
@@ -187,7 +186,6 @@ export function AnalyticsScreen(
             report.current.risk,
             report.current.problem,
             report.current.unchecked,
-            report.current.toCarry,
             report.current.cancelled,
           ]]
           : []}
