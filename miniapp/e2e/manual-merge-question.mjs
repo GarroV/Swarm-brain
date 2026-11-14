@@ -58,7 +58,7 @@ function load(filename) {
       '\nexport function NotesFixture({meeting,liveNotes,dt}){const panel=true; const SectionLabel=()=>{throw new Error("unexpected header")};\n' +
       notes.map((n) => n.getText(tree)).join("\n") + "\nreturn notesBlock;}";
   }
-  const module = { exports: {} };
+  const compiledModule = { exports: {} };
   const requireLocal = (specifier) => {
     if (specifier === "react/jsx-runtime") return runtime;
     if (!specifier.startsWith(".") && !specifier.startsWith("@/")) {
@@ -86,14 +86,14 @@ function load(filename) {
     },
   }).outputText;
   vm.runInNewContext(javascript, {
-    module,
-    exports: module.exports,
+    module: compiledModule,
+    exports: compiledModule.exports,
     require: requireLocal,
     console,
     process: { env: {} },
   }, { filename, timeout: 2000 });
-  cache.set(filename, module.exports);
-  return module.exports;
+  cache.set(filename, compiledModule.exports);
+  return compiledModule.exports;
 }
 const { ManualMergeQuestion } = load(
   path.join(app, "src/components/meeting-review/ManualMergeQuestion.tsx"),

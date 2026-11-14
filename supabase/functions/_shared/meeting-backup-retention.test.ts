@@ -18,6 +18,7 @@ function seed(db: FakeBackupDb, id: string, over: Record<string, unknown> = {}):
     expires_at: hours(48),
     replaced_at: null,
     purged_at: null,
+    resolved_at: hours(-5),
     ...over,
   });
   return path;
@@ -61,4 +62,20 @@ Deno.test("пачка ограничена: за проход не больше 
   }
   assertEquals((await purgeExpiredBackups(db.client, NOW)).purged, BACKUP_PURGE_BATCH);
   assertEquals((await purgeExpiredBackups(db.client, NOW)).purged, 5);
+});
+
+Deno.test("ЯДРО: неразобранная копия по сроку не убирается — ни без итога, ни с needs_review (#1314)", async () => {
+  const db = fakeBackupDb();
+  const free = seed(db, "free", { expires_at: hours(-10), resolved_at: null });
+  const review = seed(db, "review", { expires_at: hours(-10), resolved_at: null, resolution: "needs_review" });
+  const resolved = seed(db, "resolved", { expires_at: hours(-10), resolution: "covered" });
+  assertEquals(await purgeExpiredBackups(db.client, NOW), { purged: 1, failed: 0 });
+  assertEquals([db.files.has(free), db.files.has(review), db.files.has(resolved)], [true, true, false]);
+});
+
+Deno.test("замещённая копия убирается и неразобранной: её место занял более новый бэкап того же источника", async () => {
+  const db = fakeBackupDb();
+  const rep = seed(db, "rep", { replaced_at: hours(-2), resolved_at: null });
+  assertEquals(await purgeExpiredBackups(db.client, NOW), { purged: 1, failed: 0 });
+  assertEquals(db.files.has(rep), false);
 });

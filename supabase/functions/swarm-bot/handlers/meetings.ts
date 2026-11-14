@@ -4,7 +4,7 @@ import {
   type MeetingAction,
   type MeetingRightsRow,
 } from "../../_shared/entries/meeting-rights.ts";
-import { loadMeetingViewer, supabase } from "../lib/supabase.ts";
+import { loadMeetingViewer, meetingEntryFilter, supabase } from "../lib/supabase.ts";
 import { getReadAiToken, READ_AI_AUTH_URL, readAiGet } from "../lib/readai.ts";
 import { editInlineMessage, sendInlineMessage, sendMessage } from "../lib/telegram.ts";
 import { clearSession, getSession, saveEntry, setSession, visibilityFilter } from "../lib/storage.ts";
@@ -489,7 +489,7 @@ export async function handleMeetingCallbacks(
         .from("entries").select("id"),
     )
       .eq("group_id", groupId)
-      .or(`metadata->>meeting_id.eq.${meetingId},id.eq.${meetingId}`).limit(1);
+      .or(meetingEntryFilter(meetingId)).limit(1);
     if (meErr) console.error("[massign] entry", meErr.message);
     if (!meetingEntries?.length) {
       await sendMessage(chatId, "Встреча не найдена.");
@@ -865,7 +865,7 @@ export async function handleMeetingSessionInput(
         .from("entries").select("id, metadata, is_private, owner_id, shared_with, group_id, entry_type, source"),
     )
       .eq("group_id", groupId)
-      .or(`metadata->>meeting_id.eq.${meetingId},id.eq.${meetingId}`);
+      .or(meetingEntryFilter(meetingId));
     // Теги — правка встречи: только те записи, которые нажавшему можно править.
     // Пространство нажавшего — для прав админа (только в домашнем пространстве встречи).
     const viewer = found?.length ? { ...(await loadMeetingViewer(userId)), groupId } : null;

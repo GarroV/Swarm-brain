@@ -452,7 +452,7 @@ Push-стек управляется `RoyApp.tsx`: `push(route)` → `PushScreen
 `meeting-review/ManualMergePrompt` for a completed manual recording. The existing Team/Personal
 choice determines the candidate query; source identity is the loaded meeting id, including old
 alias links. Only an eligible existing published entry is offered in this stage. Combining two
-open recordings remains outside this change because their input lifecycle is still active.
+open recordings remains outside this change because their input lifecycle is still active. The prompt uses a keyed stateful child for each source/base: mounting starts the GET from the initial loading state; explicit Retry resets loading before a new GET. Unmounting invalidates the previous request generation without changing write or read-only guards.
 
 `manualMeetingMergeRequest` projects only target, decision, base and the opaque snapshot token;
 `manualMeetingMergeApi` reuses the existing authenticated web transport. Mounting performs only a
@@ -485,3 +485,15 @@ these new sections must adopt `useT` or receive an explicit temporary legacy reg
 **Подписи рынков, базы и команды (#1025).** `MarketChips`, мобильная база `RoyBaseScreen` и мобильный список `TeamScreen` выбирают статические подписи из локальных keyed RU/EN-словарей через существующий `useDt`. Локализованы общий рынок и его подсказка, четыре фильтра и пустой список базы, загрузка и пустой список команды; значения рынков, идентификаторы фильтров, обработчики и данные не меняются. Поле свободного поиска базы в демо по-прежнему заменено чипами вопросов.
 
 **Редактор содержания встречи (#265, #1025).** `screens/ContentEditor.tsx` хранит отдельный редактор `Entry.content`, вызываемый из `MeetAdminScreen`: просмотр первых 800 символов, редактирование и сохранение остаются в одном компоненте. Шесть подписей выбираются из локального `CONTENT_COPY` (RU/EN) через существующий `useDt`; обработчики, сброс состояния при смене записи, `patchMeeting(id, { content })`, callback и прежняя ошибка сохранения не меняются.
+
+### ESLint веба (#1270)
+
+`npm --prefix miniapp run lint` использует flat config Next 16 (`core-web-vitals` + TypeScript) через ESLint 9. Команда включена в `scripts/check fast` и в тот же полный `scripts/check initiatives` в CI; отчёт — `reports/miniapp-lint.json`. Next build сам ESLint не запускает.
+
+Существующий долг измерен при включении: 215 диагностик в 122 файлах. `miniapp/eslint-baseline.json` задаёт явные бюджеты по файлу, правилу и сообщению (без нестабильных абсолютных путей/code frames React Compiler). Обычный запуск/CI baseline не переписывают: новый вид диагностики или рост бюджета краснит гейт. Исчезнувший долг выводится в `resolved`; при исправлении его запись нужно уменьшить/удалить. Такой бюджет не определяет, переместилась ли прежняя диагностика внутри того же файла. Парсинг, неизвестное правило, пропавший конфиг/инструмент или отсутствие файлов — ошибка, а не baseline. Старые нарушения не исправлены этим включением; защищённые/параллельно изменяемые компоненты не переписаны.
+
+`npm --prefix miniapp run lint:porcha` создаёт временный TSX с лишним импортом и async client component, проверяет отказ настоящего ESLint и отказ при росте существующего бюджета, затем удаляет фикстуру. Порча входит в полный CI-гейт, в быстрый хук — только обычный lint. Формат, типы, тесты, мёртвый код и границы остаются в существующих проектных гейтах.
+
+### Ожидание профиля перед монтированием веба (#1063)
+
+`app/page.tsx` держит нейтральную заставку до ответа `/me`: потребители API внутри `RoyApp` не монтируются, пока профиль не загружен. После ответа сохраняются существующие ветки экрана второго шага и OAuth. Ошибочный ответ не разрешает монтирование приложения; ответ 401, как прежде, ведёт на вход, а любой другой сбой (сеть, 5xx) показывает экран «Не удалось загрузить профиль» с кнопкой «Повторить» (`LOAD_ERROR_COPY`, RU/EN по языку браузера: профиля, а с ним и языка человека, ещё нет) — вечной пустой заставки нет. Глобальный `PresencePulse` остаётся в layout (в том числе для `/live`), но запускает прежние таймер и слушатели только после собственного успешного `/me` без обязательного непройденного шага. На маршруте входа он профиль не запрашивает. Это один дополнительный read `/me`; формат пульса, интервалы, события и серверный контракт не меняются. После успешного второго шага существующий экран перезагружает страницу и заново разрешает пульс.

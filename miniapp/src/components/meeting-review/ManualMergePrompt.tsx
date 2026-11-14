@@ -20,30 +20,28 @@ type State =
   | { kind: "saving"; candidate: ManualMergeCandidate }
   | { kind: "error"; error: "changed" | "busy" | "missing" | "failed" };
 
-/** Read on mount; changing a suggestion never retries a write without a new Yes/No. */
-export function ManualMergePrompt(
-  {
-    meetingId,
-    base,
-    disabled = false,
-    readOnly = false,
-    onBusyChange,
-    onDecided,
-  }: {
-    meetingId: string;
-    base: ManualMergeBase;
-    disabled?: boolean;
-    readOnly?: boolean;
-    onBusyChange: (busy: boolean) => void;
-    onDecided: (result: ManualMergeDecisionResult) => void;
-  },
+type Props = {
+  meetingId: string;
+  base: ManualMergeBase;
+  disabled?: boolean;
+  readOnly?: boolean;
+  onBusyChange: (busy: boolean) => void;
+  onDecided: (result: ManualMergeDecisionResult) => void;
+};
+
+/** Read on mount; each source/base owns its request generation and loading state. */
+export function ManualMergePrompt(props: Props) {
+  return <ManualMergePromptState key={`${props.meetingId}:${props.base}`} {...props} />;
+}
+
+function ManualMergePromptState(
+  { meetingId, base, disabled = false, readOnly = false, onBusyChange, onDecided }: Props,
 ) {
   const dt = useDt();
   const [state, setState] = useState<State>({ kind: "loading" });
   const generation = useRef(0), writing = useRef(false);
   const reload = useCallback(() => {
     const revision = ++generation.current;
-    setState({ kind: "loading" });
     void api.candidate(meetingId, base).then((candidate) => {
       if (revision !== generation.current) return;
       if (
@@ -64,9 +62,10 @@ export function ManualMergePrompt(
   }, [meetingId, base]);
 
   useEffect(() => {
+    const requestGeneration = generation;
     reload();
     return () => {
-      ++generation.current;
+      ++requestGeneration.current;
     };
   }, [reload]);
   useEffect(() => {
@@ -136,7 +135,10 @@ export function ManualMergePrompt(
       <button
         type="button"
         disabled={disabled}
-        onClick={reload}
+        onClick={() => {
+          setState({ kind: "loading" });
+          reload();
+        }}
         className="mt-2 min-h-10 rounded-full border border-line px-4 text-sm font-semibold text-ink hover:bg-surface-2 disabled:opacity-60"
       >
         {dt(COPY.retry.ru, COPY.retry.en)}

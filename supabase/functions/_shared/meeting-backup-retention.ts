@@ -1,7 +1,9 @@
-// Уборка серверных бэкапов записей (#1070, решение 27.10.2026): через три дня (`expires_at`) и сразу
-// после замены более новым бэкапом того же источника файлы уходят из бакета meeting-audio, а на
-// строке ставится `purged_at`. Саму строку не удаляем — «архивация вместо удаления». Сбой удаления
-// файла — в лог, `purged_at` не ставится, следующий проход повторит; молча ничего не теряется.
+// Уборка серверных бэкапов записей (#1070, решение 27.10.2026): через три дня (`expires_at`) — но
+// только РАЗОБРАННЫХ (`resolved_at`, #1314: неразобранная копия — единственный след записи, её по
+// сроку не убираем) — и сразу после замены более новым бэкапом того же источника файлы уходят из
+// бакета meeting-audio, а на строке ставится `purged_at`. Саму строку не удаляем — «архивация вместо
+// удаления». Сбой удаления файла — в лог, `purged_at` не ставится, следующий проход повторит; молча
+// ничего не теряется.
 // Зовёт тик meeting-process раз в час (рядом с чисткой аудио, meeting-audio-retention.ts).
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { chunk } from "./meeting-audio-retention.ts";
@@ -43,7 +45,7 @@ export async function purgeBackupRow(supabase: SupabaseClient, row: BackupRow): 
   return true;
 }
 
-/** Убирает просроченные и замещённые бэкапы пачкой. Возвращает, сколько убрано и сколько не удалось. */
+/** Убирает просроченные разобранные и замещённые бэкапы пачкой. Возвращает, сколько убрано и сколько не удалось. */
 export async function purgeExpiredBackups(
   supabase: SupabaseClient,
   nowIso: string,
@@ -51,7 +53,7 @@ export async function purgeExpiredBackups(
   const { data, error } = await supabase.from("meeting_audio_backups")
     .select("id, parts")
     .is("purged_at", null)
-    .or(`expires_at.lt.${nowIso},replaced_at.not.is.null`)
+    .or(`and(expires_at.lt.${nowIso},resolved_at.not.is.null),replaced_at.not.is.null`)
     .order("expires_at", { ascending: true })
     .limit(BACKUP_PURGE_BATCH);
   if (error) throw new Error(`meeting_audio_backups: ${error.message}`);
