@@ -30,7 +30,10 @@ fi
 # повторный накат старой миграции вернул бы старое тело функции, которую переопределила
 # поздняя (приёмку спринта переопределяет миграция #575), — стенд остался бы со старым кодом,
 # а порча «краснела» бы от подмены, а не от поломки.
-LISTED=$( { echo "$MIGRATION"; grep -v '^#' scripts/porcha-sql.txt | awk -F'|' 'NF>=4 && $4!="" {print $4}'; } | sort -u)
+if ! LISTED=$(./scripts/porcha-sql-replay-list.sh "$MIGRATION"); then
+  echo "порча-sql  ОТКАЗ    не удалось прочитать зависимости повторного наката" >&2
+  exit 1
+fi
 replay_after() {
   local base; base=$(basename "$1")
   for later in $LISTED; do
@@ -72,7 +75,10 @@ while IFS='|' read -r FROM TO TEST MIG; do
   rm -f "$TMP"
 
   deno test -A --no-check "$TEST" >/dev/null 2>&1; ST=$?
-  restore
+  if ! restore; then
+    echo "порча-sql  ОТКАЗ    восстановление миграции или её зависимостей не удалось" >&2
+    FAILED=1
+  fi
 
   if [ "$ST" -eq 0 ]; then
     echo "порча-sql  КРАСНЫЙ  тесты прошли на сломанном: $FROM — это условие никто не проверяет"
