@@ -246,14 +246,26 @@ actor UploadQueue {
     // перезаявки ingest отбил бы 403 «not the transcription owner» — право у другого участника.
     // Арбитраж в meeting-claim отдаст право, только если наша запись заметно полнее; при отказе
     // папка остаётся в карантине (аудио не теряем и в pending/ не мусорим).
-    func resendDeferred(_ meetingId: String, config: SwarmConfig) async -> ResendOutcome {
+    //
+    // `asManualKey` (issue #1278, «Это моя встреча»): запись попала во встречу другого человека —
+    // перезаявляемся СВОЕЙ ручной встречей с тем же аудио: identity меняется на manual с этим
+    // ключом, границы берутся из самой записи, а не из календарного слота. Новая заявка
+    // записывается в сайдкар — повтор после сбоя заявится уже как manual, а не вернёт в чужую встречу.
+    func resendDeferred(_ meetingId: String, config: SwarmConfig, asManualKey: String? = nil) async -> ResendOutcome {
         let src = deadLetterDir.appendingPathComponent(meetingId, isDirectory: true)
         guard let data = try? Data(contentsOf: src.appendingPathComponent("meta.json")),
-              let pending = try? JSONDecoder().decode(PendingUpload.self, from: data) else {
+              let decoded = try? JSONDecoder().decode(PendingUpload.self, from: data) else {
             return .failed("сайдкар записи не читается")
         }
 
         var targetId = meetingId
+        var pending = decoded
+        if let key = asManualKey {
+            let old = pending.claimRetry
+            pending.claimRetry = PendingUpload.ClaimRetry(
+                identityKind: IdentityKind.manual.rawValue, identityKey: key, title: old?.title,
+                startedAt: pending.startISO, endedAt: pending.endISO, recordedSeconds: old?.recordedSeconds)
+        }
         if let retry = pending.claimRetry {
             do {
                 let claim = try await SwarmClient(config: config).claim(Self.claimRequest(retry, pending))

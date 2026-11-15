@@ -315,6 +315,11 @@ Deno.test("встречу уже пишет бот — ключ в recorded_now,
     const { status, body } = await call();
     assertEquals(status, 200);
     assertEquals((body as { recorded_now?: string[] }).recorded_now, ["room:abc"]);
+    assertEquals(
+      Array.isArray((body as { bot_touched?: string[] }).bot_touched),
+      true,
+      "bot_touched есть в ответе (#1278)",
+    );
   } finally {
     recordingRows = [];
     googleConnected = true;
