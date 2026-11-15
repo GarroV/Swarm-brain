@@ -135,15 +135,17 @@ Deno.test("calendar failures remain distinct503; wrong method/invalid input do n
     400,
   );
   assertEquals(calls, []);
-  deps.todayCalendarEvents = () => Promise.resolve({ ok: false, reason: "calendar_error" });
-  const response = await handleMeetingContextRoutes(
-    ctx,
-    req(`/calendar/today/context?key=${key}`),
-    "/calendar/today/context",
-    deps,
-  );
-  assertEquals(response?.status, 503);
-  assertEquals(await response?.json(), { error: "calendar_error", code: "calendar_error" });
+  for (const reason of ["not_connected", "token_expired", "calendar_error"] as const) {
+    deps.todayCalendarEvents = () => Promise.resolve({ ok: false, reason });
+    const response = await handleMeetingContextRoutes(
+      ctx,
+      req(`/calendar/today/context?key=${key}`),
+      "/calendar/today/context",
+      deps,
+    );
+    assertEquals(response?.status, 503);
+    assertEquals(await response?.json(), { error: reason });
+  }
 });
 Deno.test("selected previous row is rechecked with the existing guard; inaccessible stays404 and truncation is explicit", async () => {
   const { deps } = fixture();

@@ -63,7 +63,11 @@ export async function handleMeetingContextRoutes(
         return apiErr(400, "Invalid calendar context", origin);
       }
       const cal = await deps.todayCalendarEvents(sb, actor.telegramId, offset);
-      if (!cal.ok) return json({ error: cal.reason, code: cal.reason }, 503, origin);
+      if (!cal.ok) {
+        if (cal.reason === "not_connected") return apiErr(503, "not_connected", origin);
+        if (cal.reason === "token_expired") return apiErr(503, "token_expired", origin);
+        return apiErr(503, "calendar_error", origin);
+      }
       const event = cal.events.find((e) =>
         calendarKeyOf(e) === key && e.status !== "cancelled" &&
         e.transparency !== "transparent" && e.start?.dateTime && e.end?.dateTime
