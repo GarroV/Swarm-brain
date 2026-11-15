@@ -24,14 +24,17 @@ public struct RecorderNotice: Equatable, Sendable {
     public let actions: [Action]
     /// Через сколько секунд карточка уходит сама; nil — висит, пока человек её не закроет.
     public let lifetime: TimeInterval?
+    /// Кнопки столбиком, по одной в строку, — для выбора из нескольких длинных названий.
+    public let isVertical: Bool
 
     public init(id: String, title: String, body: String = "", actions: [Action] = [],
-                lifetime: TimeInterval? = NoticeStack.defaultLifetime) {
+                lifetime: TimeInterval? = NoticeStack.defaultLifetime, isVertical: Bool = false) {
         self.id = id
         self.title = title
         self.body = body
         self.actions = actions
         self.lifetime = lifetime
+        self.isVertical = isVertical
     }
 }
 
