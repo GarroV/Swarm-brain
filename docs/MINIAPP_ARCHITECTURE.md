@@ -458,6 +458,15 @@ Push-стек управляется `RoyApp.tsx`: `push(route)` → `PushScreen
 
 **Редактор содержания встречи (#265, #1025).** `screens/ContentEditor.tsx` хранит отдельный редактор `Entry.content`, вызываемый из `MeetAdminScreen`: просмотр первых 800 символов, редактирование и сохранение остаются в одном компоненте. Шесть подписей выбираются из локального `CONTENT_COPY` (RU/EN) через существующий `useDt`; обработчики, сброс состояния при смене записи, `patchMeeting(id, { content })`, callback и прежняя ошибка сохранения не меняются.
 
+### Granola import status in the meeting list (#178)
+
+`roy/GranolaStatus.tsx` appears above the queue in mobile `RoyMeetingsScreen` and desktop `MeetingsDesk`, including an empty list. A single existing `GET /integrations` on mount projects `last_polled_at` and `last_error`: the timestamp is the **last attempt**, including a failed one, never a successful sync. Never-polled connections and an unavailable status GET are distinct; disconnected Granola is hidden. Keyed RU/EN copy does not expose the raw provider error. This is a snapshot, not a claim that a specific meeting is waiting or that a check will run at an exact hour. The status component leaves shared `useMeetingsList` untouched and initiates no imports. Schedules and notifications are unchanged; manual persistence failures are handled below.
+
+### Отказ ручного сохранения Granola (#178)
+
+`GranolaNoteModal` в `SettingsScreen.tsx` использует `settings/useGranolaSave.ts`: единственная незавершённая операция импорта/пропуска, сброс ошибки при повторе, `onImported` / `onSkipped` и закрытие только после успеха API. Отказ показывает `GRANOLA_IMPORT_COPY.saveFailed` (RU/EN), оставляя заметку и диалог доступными для повторной попытки. Сырые детали ошибки сервера в интерфейс не выводятся. Существующие успешные сценарии, выбор общей/личной базы и содержимое заметки не меняются.
+
+
 ### ESLint веба (#1270)
 
 `npm --prefix miniapp run lint` использует flat config Next 16 (`core-web-vitals` + TypeScript) через ESLint 9. Команда включена в `scripts/check fast` и в тот же полный `scripts/check initiatives` в CI; отчёт — `reports/miniapp-lint.json`. Next build сам ESLint не запускает.
