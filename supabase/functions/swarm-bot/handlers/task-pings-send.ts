@@ -16,7 +16,7 @@ import { loadMembershipIndex } from "../../_shared/tasks/recipients-scope.ts";
 
 const WEB_BASE_URL = Deno.env.get("WEB_BASE_URL") ?? "";
 const SELECT_PING =
-  "id, title, group_id, remind_date, due_date, status, assignee_telegram_ids, created_by_telegram_id, remind_set_by, ping_delivered_to, archived_at";
+  "id, title, group_id, remind_date, due_date, status, assignee_telegram_ids, created_by_telegram_id, remind_set_by, ping_delivered_to, archived_at, frozen_at";
 // Разумный потолок на тик: пинги ставят руками, сотнями за раз они не наступают.
 const MAX_PER_TICK = 500;
 

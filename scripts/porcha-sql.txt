@@ -180,3 +180,5 @@ revoke all on function public.move_member_to_workspace(bigint, text, bigint, boo
 # #814: frozen tasks cannot be marked in the active review; this forward patch is replayed after old acceptance mutations.
 if task_frozen_at is not null then|if false then|supabase/functions/_shared/tasks/task-freeze.db.test.ts|supabase/migrations/20261114110000_task_freeze.sql
 if actual_flags is distinct from p_freeze_expected then|if false then|supabase/functions/_shared/tasks/task-freeze.db.test.ts|supabase/migrations/20261114110000_task_freeze.sql
+# #814: frozen tasks are not auto-placed into sprints on a due-date change; patch of the live sprint_autoplace_task.
+if not found or t.archived_at is not null or t.frozen_at is not null or t.is_private|if not found or t.archived_at is not null or t.is_private|supabase/functions/_shared/tasks/sprint-autoplace.db.test.ts|supabase/migrations/20261114110000_task_freeze.sql

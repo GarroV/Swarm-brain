@@ -15,7 +15,7 @@ import { loadMembershipIndex } from "../../_shared/tasks/recipients-scope.ts";
 
 const WEB_BASE_URL = Deno.env.get("WEB_BASE_URL") ?? "";
 const SELECT_DUE =
-  "id, title, group_id, remind_date, reminded_at, due_date, status, assignee_telegram_ids, created_by_telegram_id, remind_set_by, archived_at, created_at, due_reminded_for, due_reminder_delivered_to";
+  "id, title, group_id, remind_date, reminded_at, due_date, status, assignee_telegram_ids, created_by_telegram_id, remind_set_by, archived_at, created_at, due_reminded_for, due_reminder_delivered_to, frozen_at";
 // Со сроком на завтра бывает много задач (срок по умолчанию — завтра, и закрытые среди них тоже).
 const MAX_PER_TICK = 1000;
 

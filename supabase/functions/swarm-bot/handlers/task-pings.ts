@@ -37,6 +37,8 @@ export interface PingRow {
   group_id?: string | null;
   /** Задача в архиве (#575) — пинг не шлём, хотя крон её и так отсекает запросом. */
   archived_at?: string | null;
+  /** Задача заморожена (#814) — пауза: ни пингов, ни напоминаний о сроке. */
+  frozen_at?: string | null;
 }
 
 export interface InlineUrlButton {
@@ -65,7 +67,7 @@ export function pingSendingOpen(now: Date): boolean {
  * Факт отправки (`reminded_at`) отсекается запросом в БД — здесь только дата и статус.
  */
 export function isPingDue(row: PingRow, today: string): boolean {
-  if (!row.remind_date || isClosedStatus(row.status) || row.archived_at) return false;
+  if (!row.remind_date || isClosedStatus(row.status) || row.archived_at || row.frozen_at) return false;
   return row.remind_date <= today;
 }
 

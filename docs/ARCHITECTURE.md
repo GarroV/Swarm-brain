@@ -2917,6 +2917,15 @@ existing authenticated request. `task-lifecycle.ts` uses the existing transactio
 with an expected group/project/pause snapshot. Repeating the same state is a no-op. It writes no
 comments, notifications or Telegram outbox rows and does not rearm existing reminders.
 
+Frozen tasks are silent and are not auto-moved: `isPingDue` (manual ping) and `isDueReminderDue`
+(day-before due reminder) in `swarm-bot/handlers/task-pings.ts` / `task-due-reminders.ts` skip a row
+with `frozen_at` (both cron selects read the column; message texts are unchanged). A ping that
+came due during a freeze is not consumed (`reminded_at` stays null), so after unfreezing it is
+sent by the next tick like any overdue ping. `sprint_autoplace_task` (due-date trigger) returns
+early for a frozen task, so a due-date edit neither moves it between sprints nor creates snapshots
+or sprints; the migration patches the live function body via `pg_get_functiondef` with an
+exactly-one-occurrence check, like `accept_sprint_cycle`.
+
 Current task/people/project metrics, completion percentages, overdue badges and sprint review
 exclude frozen tasks. `update_sprint_item_check` takes nonblocking task/item prelocks and returns
 409 on a frozen task or contention before any comment fanout. Maintenance has other lock orders;

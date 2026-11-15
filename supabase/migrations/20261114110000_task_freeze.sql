@@ -26,6 +26,29 @@ begin
 end;
 $patch$;
 
+-- Frozen tasks stay outside sprint auto-placement: a due-date change must not move them between
+-- sprints or create snapshots/new sprints for them. Patch the live definition in place (as for
+-- accept_sprint_cycle above); the function is replaced by earlier migrations, so match the exact
+-- fragments of its current body and demand exactly one occurrence of each.
+do $patch$
+declare
+  fn regprocedure := 'public.sprint_autoplace_task(uuid,date)'::regprocedure;
+  definition text;
+  old_select constant text := 'select id, group_id, status, is_private, archived_at into t from public.tasks';
+  new_select constant text := 'select id, group_id, status, is_private, archived_at, frozen_at into t from public.tasks';
+  old_guard constant text := 'if not found or t.archived_at is not null or t.is_private';
+  new_guard constant text := 'if not found or t.archived_at is not null or t.frozen_at is not null or t.is_private';
+begin
+  select pg_get_functiondef(fn) into definition;
+  if strpos(definition, new_guard) > 0 then return; end if;
+  if (length(definition) - length(replace(definition, old_select, ''))) / length(old_select) <> 1
+     or (length(definition) - length(replace(definition, old_guard, ''))) / length(old_guard) <> 1 then
+    raise exception 'task freeze: unexpected sprint_autoplace_task definition';
+  end if;
+  execute replace(replace(definition, old_select, new_select), old_guard, new_guard);
+end;
+$patch$;
+
 -- Only the existing review-write path uses this bounded RPC. Task -> item lock order matches
 -- task archiving. NO KEY UPDATE also permits acceptance's FK key-share checks on carry inserts.
 create or replace function public.update_sprint_item_check(

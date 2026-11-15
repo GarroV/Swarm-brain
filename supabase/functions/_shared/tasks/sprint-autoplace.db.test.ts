@@ -41,6 +41,8 @@ interface Scene {
   /** Срок ПОСЛЕ правки (дни от сегодня) либо абсолютная дата. */
   dueAfter: number | string | null;
   status?: string;
+  /** Задача заморожена (#814): правило её не ведёт. */
+  frozen?: boolean;
 }
 
 async function reset(db: Client) {
@@ -99,10 +101,11 @@ async function build(db: Client, withActive: boolean): Promise<Built> {
 
 const abs = (t: string, v: number | string | null) => v === null ? null : typeof v === "number" ? addDays(t, v) : v;
 
-async function addTask(db: Client, b: Built, status: string, due: string | null) {
+async function addTask(db: Client, b: Built, status: string, due: string | null, frozen = false) {
   const r = await db.queryObject<{ id: string }>`
-    insert into tasks (title, status, group_id, project_id, due_date)
-    values ('задача', ${status}, ${WS}, ${b.projectId}, ${due}) returning id`;
+    insert into tasks (title, status, group_id, project_id, due_date, frozen_at)
+    values ('задача', ${status}, ${WS}, ${b.projectId}, ${due}, ${frozen ? new Date().toISOString() : null})
+    returning id`;
   return r.rows[0].id;
 }
 
@@ -173,7 +176,7 @@ function expectedState(b: Built, s: Scene) {
   const cycles = Object.values(b.cycles);
   const inActive = s.rows.includes("A") && !!(s.withActive ?? true);
   // Закрытую задачу правило не ведёт (как и приёмка её не переносит): планировщику её не отдают.
-  const closed = s.status === "done" || s.status === "cancelled";
+  const closed = s.status === "done" || s.status === "cancelled" || s.frozen === true;
   const plan = planPlacement({
     due: closed ? null : abs(b.today, s.dueAfter),
     today: b.today,
@@ -216,7 +219,7 @@ async function runScene(name: string, s: Scene, via: "update" | "rpc" = "update"
   try {
     const b = await build(db, s.withActive ?? true);
     const dueBefore = abs(b.today, s.dueBefore ?? null);
-    const taskId = await addTask(db, b, s.status ?? "open", dueBefore);
+    const taskId = await addTask(db, b, s.status ?? "open", dueBefore, s.frozen ?? false);
     for (const label of s.rows) {
       const carry = label === "A" ? s.carry : undefined;
       await placeRow(db, b.cycles[label].id, taskId, carry);
@@ -462,6 +465,13 @@ Deno.test("закрытая задача остаётся где была", asyn
   const r = await runScene("закрытая", { rows: ["A"], status: "done", dueAfter: 80 });
   assertEquals([...r.got.membership], ["A"]);
   assertEquals(r.got.snapshots.size, 0);
+});
+
+Deno.test("замороженная задача остаётся где была: срок за концом идущего её не переносит (#814)", async () => {
+  const r = await runScene("замороженная", { rows: ["A"], frozen: true, dueBefore: 4, dueAfter: 25 });
+  assertEquals([...r.got.membership], ["A"]);
+  assertEquals(r.got.snapshots.size, 0);
+  assertEquals(r.got.created.length, 0);
 });
 
 Deno.test("снятая из идущего строка не оживает и не считается нахождением в спринте", async () => {
