@@ -5,6 +5,12 @@
 //   • PATCH /admin/workspaces/:id        — название и список стран; название проходит ту же проверку.
 //   • GET   /admin/workspaces/:id/stats  — СЧЁТЧИКИ пространства (мастер — любое, админ — своё).
 // Сводка — только числа: ни названий, ни текстов, ни имён. Что именно считается — `workspaceStats`.
+import {
+  recordedUsageUnits,
+  type StoredUsageCost,
+  USAGE_COST_COLUMNS,
+  usageUnitsUsd,
+} from "../_shared/model-usage-cost.ts";
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { normalizeCountries } from "../_shared/countries.ts";
 import { onlyLiveEntries } from "../_shared/entries/live.ts";
@@ -117,8 +123,9 @@ export async function workspaceStats(supabase: Db, wsId: string, now = new Date(
         .or("status.is.null,status.in.(open,in_progress)"),
       "tasks",
     ),
-    readPages<{ cost_usd: number | null }>((a, b) =>
-      supabase.from("model_usage").select("cost_usd").eq("group_id", wsId).gte("created_at", since).range(a, b)
+    readPages<StoredUsageCost>((a, b) =>
+      supabase.from("model_usage").select(USAGE_COST_COLUMNS).eq("group_id", wsId).gte("created_at", since)
+        .range(a, b)
     ),
     supabase.from("service_agents").select("is_active, token_hash, last_seen_at").eq("group_id", wsId),
   ]);
@@ -151,8 +158,8 @@ export async function workspaceStats(supabase: Db, wsId: string, now = new Date(
     meetings: { home: meetingsHome, shared_in: meetingsShared },
     entries,
     tasks_open: tasksOpen,
-    model_spend_usd:
-      Math.round(usage.reduce((s, r) => s + (typeof r.cost_usd === "number" ? r.cost_usd : 0), 0) * 100) / 100,
+    model_spend_usd: Math.round(usageUnitsUsd(usage.reduce((s, r) => s + (recordedUsageUnits(r) ?? 0n), 0n)) * 100) /
+      100,
     recorder_bot: {
       configured: agentRows.length > 0,
       active: agentRows.some((a) => a.is_active),

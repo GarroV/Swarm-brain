@@ -11,8 +11,9 @@ function makeUsageDb(
   const from = (table: string) => {
     const eqs: Array<[string, unknown]> = [];
     const ins: Array<[string, unknown[]]> = [];
+    let selected = "";
     const b: Record<string, unknown> = {
-      select: () => b,
+      select: (columns: string) => (selected = columns, b),
       gte: () => b,
       lt: () => b,
       in: (c: string, v: unknown[]) => (ins.push([c, v]), b),
@@ -28,7 +29,25 @@ function makeUsageDb(
           return Promise.resolve({ data, error: null }).then(res);
         }
         for (const [c, v] of eqs) if (c === "group_id") askedGroups.push(v);
-        const data = rows.filter((r) => eqs.every(([c, v]) => r[c] === v));
+        const data = rows.filter((r) => eqs.every(([c, v]) => r[c] === v))
+          .map((r) =>
+            Object.fromEntries(
+              selected.split(",").map((c) => {
+                const [key, cast] = c.trim().split("::");
+                const value = r[key];
+                return [
+                  key,
+                  value == null
+                    ? value
+                    : cast === "text"
+                    ? String(value)
+                    : key.startsWith("cost_usd")
+                    ? Number(value)
+                    : value,
+                ];
+              }),
+            )
+          );
         return Promise.resolve({ data, error: null }).then(res);
       },
     };
@@ -58,6 +77,41 @@ async function get(scope: UsageScope, extra = "") {
   const res = await handleModelUsageRoutes(new Request(URL_(extra)), MODEL_USAGE_PATH, db.client, scope, "*");
   return res!;
 }
+
+Deno.test("model-usage route selects recorded precision and preserves the existing public response shape", async () => {
+  const rows = Array.from({ length: 10 }, () => ({ ...row("cee", 0), cost_usd_precise: 0.00000012 }));
+  const db = makeUsageDb(rows);
+  const response = await handleModelUsageRoutes(
+    new Request(URL_()),
+    MODEL_USAGE_PATH,
+    db.client,
+    { isMaster: false, isAdmin: true, groupId: "cee", telegramId: 1 },
+    "*",
+  );
+  assertEquals(response?.status, 200);
+  const body = await response!.json();
+  assertEquals(body.total_usd, 0.0000012);
+  assertEquals(body.cells[0].usd, 0.0000012);
+  assertEquals(body.recent[0].usd, 0.00000012);
+  assertEquals(body.unpriced_calls, 0);
+  assertEquals(Object.hasOwn(body, "cost_usd_precise"), false);
+});
+
+Deno.test("model-usage route retains the maximum stored decimal until the final public numeric conversion", async () => {
+  const db = makeUsageDb([{ ...row("cee", 99999999.999999), cost_usd_precise: "99999999.999999999999" }]);
+  const response = await handleModelUsageRoutes(
+    new Request(URL_()),
+    MODEL_USAGE_PATH,
+    db.client,
+    { isMaster: false, isAdmin: true, groupId: "cee", telegramId: 1 },
+    "*",
+  );
+  assertEquals(response?.status, 200);
+  const body = await response!.json();
+  assertEquals(typeof body.total_usd, "number");
+  assertEquals(body.total_usd, Number("99999999.999999999999"));
+  assertEquals(body.calls, 1);
+});
 
 Deno.test("model-usage: не админ — 403, и без параметра, и с чужим пространством", async () => {
   for (const extra of ["", "&workspace=cee"]) {

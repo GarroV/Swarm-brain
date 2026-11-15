@@ -2,6 +2,8 @@
 // итог, разрезы по назначению, модели, дню (по Белграду) и самые дорогие встречи. Вызовы без цены
 // (модель не в прайсе `model-usage.ts`) в сумму не входят и считаются отдельно — сумма их не прячет.
 
+import { recordedUsageCost, recordedUsageUnits, usageUnitsUsd } from "./model-usage-cost.ts";
+
 export interface UsageRow {
   created_at: string;
   kind: string;
@@ -11,7 +13,8 @@ export interface UsageRow {
   prompt_tokens: number | null;
   completion_tokens: number | null;
   audio_seconds: number | null;
-  cost_usd: number | null;
+  cost_usd: number | string | null;
+  cost_usd_precise?: number | string | null;
 }
 
 export interface Slice {
@@ -65,7 +68,6 @@ export interface RecentCall {
 export const RECENT_CALLS = 300;
 
 export const TOP_MEETINGS = 10;
-const round6 = (n: number) => Math.round(n * 1e6) / 1e6;
 const DAY_FMT = new Intl.DateTimeFormat("en-CA", {
   timeZone: "Europe/Belgrade",
   year: "numeric",
@@ -116,40 +118,46 @@ export const inPeriod = (createdAt: string, p: { from: string; to: string }) => 
   return d >= p.from && d <= p.to;
 };
 
-function addTo(map: Map<string, Slice>, key: string, r: UsageRow, tokens: number) {
-  const s = map.get(key) ?? { key, usd: 0, calls: 0, unpriced: 0, tokens: 0 };
+type CostSlice = Omit<Slice, "usd"> & { usd: bigint };
+type CostCell = Omit<UsageCell, "usd"> & { usd: bigint };
+
+function addTo(map: Map<string, CostSlice>, key: string, cost: bigint | null, tokens: number) {
+  const s = map.get(key) ?? { key, usd: 0n, calls: 0, unpriced: 0, tokens: 0 };
   map.set(key, {
     key,
-    usd: s.usd + (r.cost_usd ?? 0),
+    usd: s.usd + (cost ?? 0n),
     calls: s.calls + 1,
-    unpriced: s.unpriced + (r.cost_usd === null ? 1 : 0),
+    unpriced: s.unpriced + (cost === null ? 1 : 0),
     tokens: s.tokens + tokens,
   });
 }
 
-const bySpend = (a: Slice, b: Slice) => b.usd - a.usd || b.calls - a.calls;
-const finish = (m: Map<string, Slice>) => [...m.values()].map((s) => ({ ...s, usd: round6(s.usd) })).sort(bySpend);
+const byCost = (a: bigint, b: bigint) => a > b ? -1 : a < b ? 1 : 0;
+const finish = (m: Map<string, CostSlice>) =>
+  [...m.values()].sort((a, b) => byCost(a.usd, b.usd) || b.calls - a.calls)
+    .map((s) => ({ ...s, usd: usageUnitsUsd(s.usd) }));
 
 export function summarizeUsage(rows: UsageRow[]): UsageSummary {
-  const purposes = new Map<string, Slice>();
-  const models = new Map<string, Slice>();
-  const days = new Map<string, { usd: number; calls: number }>();
-  const meetings = new Map<string, { usd: number; calls: number }>();
-  const cells = new Map<string, UsageCell>();
-  let total = 0, unpriced = 0, tokens = 0, audioSec = 0;
+  const purposes = new Map<string, CostSlice>();
+  const models = new Map<string, CostSlice>();
+  const days = new Map<string, { usd: bigint; calls: number }>();
+  const meetings = new Map<string, { usd: bigint; calls: number }>();
+  const cells = new Map<string, CostCell>();
+  let total = 0n;
+  let unpriced = 0, tokens = 0, audioSec = 0;
 
   for (const r of rows) {
     const t = (r.prompt_tokens ?? 0) + (r.completion_tokens ?? 0);
-    const cost = r.cost_usd === null ? 0 : Number(r.cost_usd);
-    const rr = { ...r, cost_usd: r.cost_usd === null ? null : cost };
+    const recorded = recordedUsageUnits(r);
+    const cost = recorded ?? 0n;
     total += cost;
     tokens += t;
     audioSec += Number(r.audio_seconds ?? 0);
-    if (r.cost_usd === null) unpriced++;
-    addTo(purposes, r.purpose, rr, t);
-    addTo(models, r.model ?? "—", rr, t);
+    if (recorded === null) unpriced++;
+    addTo(purposes, r.purpose, recorded, t);
+    addTo(models, r.model ?? "—", recorded, t);
     const day = usageDay(r.created_at);
-    const d = days.get(day) ?? { usd: 0, calls: 0 };
+    const d = days.get(day) ?? { usd: 0n, calls: 0 };
     days.set(day, { usd: d.usd + cost, calls: d.calls + 1 });
     const model = r.model ?? "—";
     const ck = `${day}|${r.purpose}|${model}|${r.meeting_id ?? ""}`;
@@ -159,7 +167,7 @@ export function summarizeUsage(rows: UsageRow[]): UsageSummary {
         purpose: r.purpose,
         model,
         meeting_id: r.meeting_id,
-        usd: 0,
+        usd: 0n,
         calls: 0,
         unpriced: 0,
         tokens: 0,
@@ -169,18 +177,18 @@ export function summarizeUsage(rows: UsageRow[]): UsageSummary {
       ...c,
       usd: c.usd + cost,
       calls: c.calls + 1,
-      unpriced: c.unpriced + (r.cost_usd === null ? 1 : 0),
+      unpriced: c.unpriced + (recorded === null ? 1 : 0),
       tokens: c.tokens + t,
       audio_seconds: c.audio_seconds + Number(r.audio_seconds ?? 0),
     });
     if (r.meeting_id) {
-      const m = meetings.get(r.meeting_id) ?? { usd: 0, calls: 0 };
+      const m = meetings.get(r.meeting_id) ?? { usd: 0n, calls: 0 };
       meetings.set(r.meeting_id, { usd: m.usd + cost, calls: m.calls + 1 });
     }
   }
 
   return {
-    total_usd: round6(total),
+    total_usd: usageUnitsUsd(total),
     calls: rows.length,
     unpriced_calls: unpriced,
     tokens,
@@ -188,21 +196,25 @@ export function summarizeUsage(rows: UsageRow[]): UsageSummary {
     by_purpose: finish(purposes),
     by_model: finish(models),
     by_day: [...days.entries()].sort(([a], [b]) => a.localeCompare(b))
-      .map(([day, v]) => ({ day, usd: round6(v.usd), calls: v.calls })),
+      .map(([day, v]) => ({ day, usd: usageUnitsUsd(v.usd), calls: v.calls })),
     top_meetings: [...meetings.entries()]
-      .map(([meeting_id, v]) => ({ meeting_id, usd: round6(v.usd), calls: v.calls }))
-      .sort((a, b) => b.usd - a.usd).slice(0, TOP_MEETINGS),
-    cells: [...cells.values()].map((c) => ({ ...c, usd: round6(c.usd) }))
-      .sort((a, b) => a.day.localeCompare(b.day) || b.usd - a.usd),
+      .sort((a, b) => byCost(a[1].usd, b[1].usd)).slice(0, TOP_MEETINGS)
+      .map(([meeting_id, v]) => ({ meeting_id, usd: usageUnitsUsd(v.usd), calls: v.calls })),
+    cells: [...cells.values()]
+      .sort((a, b) => a.day.localeCompare(b.day) || byCost(a.usd, b.usd))
+      .map((c) => ({ ...c, usd: usageUnitsUsd(c.usd) })),
     recent: [...rows].sort((a, b) => b.created_at.localeCompare(a.created_at)).slice(0, RECENT_CALLS)
-      .map((r) => ({
-        at: r.created_at,
-        purpose: r.purpose,
-        model: r.model ?? "—",
-        meeting_id: r.meeting_id,
-        usd: r.cost_usd === null ? null : round6(Number(r.cost_usd)),
-        tokens: (r.prompt_tokens ?? 0) + (r.completion_tokens ?? 0),
-        audio_seconds: Number(r.audio_seconds ?? 0),
-      })),
+      .map((r) => {
+        const cost = recordedUsageCost(r);
+        return {
+          at: r.created_at,
+          purpose: r.purpose,
+          model: r.model ?? "—",
+          meeting_id: r.meeting_id,
+          usd: cost,
+          tokens: (r.prompt_tokens ?? 0) + (r.completion_tokens ?? 0),
+          audio_seconds: Number(r.audio_seconds ?? 0),
+        };
+      }),
   };
 }
