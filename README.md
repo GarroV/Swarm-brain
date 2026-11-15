@@ -274,7 +274,7 @@ cd recorder && ./install.sh                                   # подробно
 
 **Visibility filter** (`storage.ts: visibilityFilter(userId)`) — строка для `.or()` Supabase: возвращает публичные записи + приватные только владельца.
 
-**Chunking** (`add_knowledge` в swarm-mcp, `CHUNK = 3000`, `OVERLAP = 200`) — тексты >3000 символов бьются на чанки с overlap 200 символов; связаны через `metadata.chunk_group_id`, а колонка `group_id` — воркспейс, не чанки. Первый чанк хранит `summary` и `embedding`; остальные — только `content`.
+**Оригинал из MCP** (`swarm-mcp/knowledge-add.ts`) — `add_knowledge` сохраняет весь исходный текст одной строкой `entries`, отдельно от тезисов и ограниченного входа для поискового индекса. Контракт и безопасная консолидация исторических частей — [ARCHITECTURE.md](docs/ARCHITECTURE.md#mcp-full-source).
 
 **bgRun** (`index.ts`) — обёртка для async-обработчиков: сразу возвращает 200 Telegram, продолжает работу через `EdgeRuntime.waitUntil`.
 

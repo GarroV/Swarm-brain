@@ -123,7 +123,7 @@ export function WorkspaceUsers({ wsId, allWorkspaces, desk = false }: { wsId: st
   const [notice, setNotice] = useState<string | null>(null);
   const pickMove = (u: AdminUser, toId: string) => {
     const to = allWorkspaces.find((w) => w.id === toId);
-    if (to && u.telegram_id != null) { setNotice(null); setMoveTo({ user: u, to }); }
+    if (to && (u.id != null || u.telegram_id != null)) { setNotice(null); setMoveTo({ user: u, to }); }
   };
 
   const startEdit = (u: AdminUser) => {
@@ -211,7 +211,7 @@ export function WorkspaceUsers({ wsId, allWorkspaces, desk = false }: { wsId: st
                   <span className="truncate font-mono text-ink-soft" style={{ fontSize: 12 }}>{u.markets.length ? u.markets.map(countryCode).join(" ") : <span className="text-ink-mute">—</span>}</span>
                   <span className="truncate text-ink-soft">{u.email || <span className="text-ink-mute">{dt("не привязана", "not linked")}</span>}</span>
                   <div className="flex items-center justify-end gap-1.5">
-                    {!u.pending && others.length > 0 && (
+                    {others.length > 0 && (
                       <MoveSelect
                         others={others}
                         onPick={(id) => pickMove(u, id)}
@@ -320,7 +320,7 @@ export function WorkspaceUsers({ wsId, allWorkspaces, desk = false }: { wsId: st
                     <button onClick={() => setEditKey(null)} className="rounded-full border border-line bg-surface px-3 py-2 font-semibold text-ink-soft transition-colors hover:bg-surface-2 active:scale-[0.97]" style={{ fontSize: 13 }}>Отмена</button>
                   </div>
                 </div>
-              ) : !desk && !u.pending && others.length > 0 ? (
+              ) : !desk && others.length > 0 ? (
                 <MoveSelect
                   others={others}
                   onPick={(id) => pickMove(u, id)}

@@ -2,6 +2,7 @@
 // docs/decisions/2026-11-05-second-workspace.md). Подключён в admin.ts после общего гейта isAdmin.
 //   • GET  /admin/members/:telegramId/move-preview?to=<wsId> — что переедет (пробный прогон, без записи)
 //   • POST /admin/members/:telegramId/move {to, expected:{tasks, entries}} — выполнить
+// Account-addressed equivalents: /admin/member-accounts/:accountId/{move-preview,move} (#1156).
 // Только мастер-админ. Аккаунт владельца (константа) переводит только он сам.
 //
 // Вся работа — одна функция базы `move_member_to_workspace` (миграция 20261105200000): одна
@@ -16,15 +17,15 @@ import { apiErr, json } from "./http.ts";
 
 type ResolveNames = (ids: number[]) => Promise<Map<number, string>>;
 
-const PREVIEW_ROUTE = /^\/admin\/members\/([^/]+)\/move-preview$/;
-const MOVE_ROUTE = /^\/admin\/members\/([^/]+)\/move$/;
+const PREVIEW_ROUTE = /^\/admin\/(members|member-accounts)\/([^/]+)\/move-preview$/;
+const MOVE_ROUTE = /^\/admin\/(members|member-accounts)\/([^/]+)\/move$/;
 
 type TitledRow = { id: string; title: string };
 
 /** Ответ функции базы (пробный прогон и выполнение — одна форма). */
 export type MoveDbResult = {
   error?: string;
-  person?: { telegram_id: number; email: string | null };
+  person?: { account_id?: string; telegram_id: number | null; email: string | null };
   from?: string;
   to?: string;
   counts?: Record<string, unknown>;
@@ -54,6 +55,7 @@ export function moveErrorStatus(code: string | undefined): { status: number; mes
       return { status: 409, message: "Person has no workspace to move from" };
     case "conflicts":
       return { status: 409, message: "Move has conflicts" };
+    case "identity_changed":
     case "expected_mismatch":
       return { status: 409, message: "Data changed since the preview" };
     case "bad_input":
@@ -68,6 +70,11 @@ export function parseTelegramId(raw: string): number | null {
   if (!/^-?\d{1,19}$/.test(raw)) return null;
   const n = Number(raw);
   return Number.isSafeInteger(n) && n !== 0 ? n : null;
+}
+
+/** Account id stays a decimal string so SQL bigint identity is not rounded in JavaScript. */
+export function parseAccountId(raw: string): string | null {
+  return /^[1-9]\d{0,18}$/.test(raw) && BigInt(raw) <= 9223372036854775807n ? raw : null;
 }
 
 /** `expected` из тела: два неотрицательных целых, иначе null (→ 400). */
@@ -112,10 +119,18 @@ async function present(
 ) {
   const from = r.from ?? "";
   const to = r.to ?? "";
-  const tid = r.person?.telegram_id ?? 0;
-  const [wsNames, people] = await Promise.all([workspaceNames(supabase, [from, to]), resolveNames([tid])]);
+  const tid = r.person?.telegram_id ?? null;
+  const [wsNames, people] = await Promise.all([
+    workspaceNames(supabase, [from, to]),
+    resolveNames(tid === null ? [] : [tid]),
+  ]);
   return {
-    person: { telegram_id: tid, name: people.get(tid) ?? null, email: r.person?.email ?? null },
+    person: {
+      ...(r.person?.account_id === undefined ? {} : { account_id: r.person.account_id }),
+      telegram_id: tid,
+      name: tid === null ? null : people.get(tid) ?? null,
+      email: r.person?.email ?? null,
+    },
     from: { id: from, name: wsNames.get(from) ?? from },
     to: { id: to, name: wsNames.get(to) ?? to },
     counts: r.counts ?? {},
@@ -131,19 +146,24 @@ async function present(
 
 async function callMove(
   supabase: SupabaseClient,
-  telegramId: number,
+  member: number | string,
   to: string,
   actor: number,
   dryRun: boolean,
   expected: MoveExpected | null,
+  checkedTelegramId: number | null,
 ): Promise<MoveDbResult> {
-  const { data, error } = await supabase.rpc("move_member_to_workspace", {
-    p_telegram_id: telegramId,
-    p_to: to,
-    p_actor: actor,
-    p_dry_run: dryRun,
-    p_expected: expected,
-  });
+  const { data, error } = await supabase.rpc(
+    typeof member === "string" ? "move_member_account_to_workspace" : "move_member_to_workspace",
+    {
+      ...(typeof member === "string" ? { p_account_id: member } : { p_telegram_id: member }),
+      p_to: to,
+      p_actor: actor,
+      p_dry_run: dryRun,
+      p_expected: expected,
+      ...(typeof member === "string" ? { p_expected_identity: { telegram_id: checkedTelegramId } } : {}),
+    },
+  );
   if (error) throw new Error(`move_member_to_workspace: ${error.message}`);
   if (!data || typeof data !== "object") throw new Error("move_member_to_workspace: empty answer");
   return data as MoveDbResult;
@@ -175,7 +195,16 @@ export async function handleMemberMoveRoutes(
   const match = preview ?? move;
   if (!match) return null;
   try {
-    return await handleMatched(supabase, req, match[1], preview !== null, actor, origin, resolveNames);
+    return await handleMatched(
+      supabase,
+      req,
+      match[2],
+      match[1] === "member-accounts",
+      preview !== null,
+      actor,
+      origin,
+      resolveNames,
+    );
   } catch (e) {
     return serverError(origin, "admin: member move", e);
   }
@@ -185,20 +214,31 @@ async function handleMatched(
   supabase: SupabaseClient,
   req: Request,
   idPart: string,
+  byAccount: boolean,
   isPreview: boolean,
   actor: AdminActor,
   origin: string,
   resolveNames: ResolveNames,
 ): Promise<Response> {
-  const target = parseTelegramId(idPart);
+  let target = byAccount ? null : parseTelegramId(idPart);
   const forbidden = moveForbidden(actor, target ?? 0);
   if (forbidden) return apiErr(403, "Forbidden", origin, forbidden);
-  if (target === null) return apiErr(404, "Person not found", origin, "person_not_found");
+  const accountId = byAccount ? parseAccountId(idPart) : null;
+  if (byAccount && accountId !== null) {
+    const { data, error } = await supabase.from("allowed_users").select("telegram_id").eq("id", accountId)
+      .maybeSingle();
+    if (error) throw new Error(`allowed_users: ${error.message}`);
+    if (!data) return apiErr(404, "Person not found", origin, "person_not_found");
+    target = data.telegram_id as number | null;
+    const accountForbidden = moveForbidden(actor, target ?? 0);
+    if (accountForbidden) return apiErr(403, "Forbidden", origin, accountForbidden);
+  } else if (byAccount || target === null) return apiErr(404, "Person not found", origin, "person_not_found");
+  const member = accountId ?? target!;
 
   if (isPreview) {
     const to = new URL(req.url).searchParams.get("to")?.trim() ?? "";
     if (!to) return apiErr(400, "to is required", origin, "bad_input");
-    const r = await callMove(supabase, target, to, actor.telegramId, true, null);
+    const r = await callMove(supabase, member, to, actor.telegramId, true, null, target);
     return refusal(r, origin) ?? json(await present(supabase, r, resolveNames, false), 200, origin);
   }
 
@@ -208,7 +248,7 @@ async function handleMatched(
   const expected = parseExpected(body.expected);
   if (!to || !expected) return apiErr(400, "to and expected {tasks, entries} are required", origin, "bad_input");
 
-  const r = await callMove(supabase, target, to, actor.telegramId, false, expected);
+  const r = await callMove(supabase, member, to, actor.telegramId, false, expected, target);
   const refused = refusal(r, origin);
   if (refused) return refused;
   // Журнал переезда пишет сама функция базы (member_moves) в той же транзакции; здесь — строка в
