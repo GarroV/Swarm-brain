@@ -28,9 +28,9 @@ export type ReviewCount = { telegram_id: number; name: string; count: number };
 // Контракт серверной части (GET move-preview / POST move) — один и тот же ответ, у POST + moved:true.
 // Отказы — JSON `{error, code}` (ApiError.body): 404 person_not_found/workspace_not_found, 409
 // same_workspace/person_without_workspace, 403 owner_only/master_admin_only, 400 bad_input; 409
-// `conflicts` несёт `conflicts`, 409 `expected_mismatch` — свежие `counts`.
+// `conflicts` несёт `conflicts`, 409 `expected_mismatch` — свежие `counts`; `identity_changed` — повтори запрос.
 export type MovePreview = {
-  person: { telegram_id: number; name: string | null; email: string | null };
+  person: { account_id?: string; telegram_id: number | null; name: string | null; email: string | null };
   from: { id: string; name: string };
   to: { id: string; name: string };
   counts: {

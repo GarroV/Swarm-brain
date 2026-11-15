@@ -1,4 +1,5 @@
 import { createTaskLifecycleApi } from "./taskLifecycleApi";
+import { requestMeetingsPage, mockMeetingsPage, loadPendingMeetingPages } from "./meetingsPageRequest";
 import { mockMaps, mockAggregators, mockInspections, mockInspectionDetail, mockQuality } from "./homeQualityDemo";
 import type { CreateTaskInput, UpdateTaskInput, TaskFilters, TaskLabel, TaskFilesList } from "./api-types/tasks";
 export type { CreateTaskInput, UpdateTaskInput, TaskFilters, TaskLabel, TaskFilesList } from "./api-types/tasks";
@@ -3337,41 +3338,16 @@ export async function fetchMeetings(
   return apiFetch<Entry[]>(`/meetings${qs ? `?${qs}` : ""}`);
 }
 
-const headerCount = (res: Response, name: string): number | null => {
-  const raw = res.headers.get(name);
-  return raw != null && /^\d+$/.test(raw) ? Number(raw) : null;
-};
+/** Full review rows, preserving the existing review UI while removing its finite page cap. */
+export async function fetchReviewMeetings(): Promise<Entry[]> {
+  if (DEV_MODE) return mockMeetings.filter((m) => !m.metadata.confirmed);
+  return loadPendingMeetingPages((query) => requestMeetingsPage(API_BASE, query, (status, message, body) => new ApiError(status, message, body), false));
+}
 
-/** Лёгкая страница списка встреч с серверными фильтрами и счётчиками. */
+/** Lightweight pages; legacy servers fall back to offset until they advertise keyset support. */
 export async function fetchMeetingsPage(query: MeetingsPageQuery): Promise<MeetingsPage> {
-  if (DEV_MODE) {
-    const all = mockMeetings.filter((m) =>
-      query.confirmed === undefined || Boolean(m.metadata.confirmed) === query.confirmed
-    );
-    const offset = query.offset ?? 0;
-    const rows = all.slice(offset, offset + (query.limit ?? 50));
-    return { rows, total: all.length, unfilteredTotal: all.length };
-  }
-  const params = new URLSearchParams({ light: "1" });
-  if (query.confirmed !== undefined) params.set("confirmed", String(query.confirmed));
-  if (query.limit) params.set("limit", String(query.limit));
-  if (query.offset) params.set("offset", String(query.offset));
-  if (query.q) params.set("q", query.q);
-  if (query.from) params.set("from", query.from);
-  if (query.to) params.set("to", query.to);
-  if (query.storage) params.set("storage", query.storage);
-  const res = await fetch(`${API_BASE}/meetings?${params}`, {
-    cache: "no-store",
-    credentials: "include",
-    headers: { "Content-Type": "application/json" },
-  });
-  const body = await res.json().catch(() => ({ error: res.statusText }));
-  if (!res.ok) throw new ApiError(res.status, body.error ?? res.statusText, body);
-  return {
-    rows: (body ?? []) as Entry[],
-    total: headerCount(res, "X-Total-Count"),
-    unfilteredTotal: headerCount(res, "X-Unfiltered-Count"),
-  };
+  if (DEV_MODE) return mockMeetingsPage(mockMeetings, query);
+  return requestMeetingsPage(API_BASE, query, (status, message, body) => new ApiError(status, message, body));
 }
 
 export async function fetchMeeting(id: string): Promise<Entry> {
@@ -4199,19 +4175,19 @@ export async function fetchReviewCounts(workspace?: string): Promise<ReviewCount
   return apiFetch<ReviewCount[]>(`/admin/review-counts${workspace ? `?workspace=${encodeURIComponent(workspace)}` : ""}`);
 }
 
-export async function fetchMovePreview(telegramId: number, to: string): Promise<MovePreview> {
+export async function fetchMovePreview(telegramId: number | string, to: string): Promise<MovePreview> {
   if (DEV_MODE) return mockMovePreview(telegramId, to);
-  return apiFetch<MovePreview>(`/admin/members/${telegramId}/move-preview?to=${encodeURIComponent(to)}`, { cache: "no-store" });
+  return apiFetch<MovePreview>(`/admin/${typeof telegramId === "string" ? "member-accounts" : "members"}/${telegramId}/move-preview?to=${encodeURIComponent(to)}`, { cache: "no-store" });
 }
 
 /** `expected` — счётчики из показанного предпросмотра: изменились — сервер ответит 409. */
 export async function moveMember(
-  telegramId: number,
+  telegramId: number | string,
   to: string,
   expected: { tasks: number; entries: number },
 ): Promise<MovePreview> {
   if (DEV_MODE) return mockMoveMember(telegramId, to, expected);
-  return apiFetch<MovePreview>(`/admin/members/${telegramId}/move`, {
+  return apiFetch<MovePreview>(`/admin/${typeof telegramId === "string" ? "member-accounts" : "members"}/${telegramId}/move`, {
     method: "POST",
     body: JSON.stringify({ to, expected }),
   });
@@ -4221,11 +4197,11 @@ export async function moveMember(
 // «перенос невозможен» (занята почта), Алиса (789012) — «данные изменились между показом и нажатием»:
 // первое выполнение отвечает 409 expected_mismatch со свежими числами, повторное проходит.
 let mockMoveMismatchServed = false;
-function mockMovePreview(telegramId: number, to: string): MovePreview {
+function mockMovePreview(telegramId: number | string, to: string): MovePreview {
   const blocked = telegramId === 345678;
   const space = (id: string) => ({ id, name: id === "cee" ? "Central East Europe" : "World" });
   return {
-    person: { telegram_id: telegramId, name: MOCK_USERS.find((u) => u.telegram_id === telegramId)?.name ?? "Alice Smith", email: "alice@example.com" },
+    person: { telegram_id: typeof telegramId === "number" ? telegramId : null, ...(typeof telegramId === "string" ? { account_id: telegramId } : {}), name: MOCK_USERS.find((u) => u.telegram_id === telegramId)?.name ?? "Alice Smith", email: "alice@example.com" },
     from: space(to === "cee" ? "ws-k3m9x2qa" : "cee"),
     to: space(to),
     counts: {
@@ -4246,7 +4222,7 @@ function mockMovePreview(telegramId: number, to: string): MovePreview {
   };
 }
 
-function mockMoveMember(telegramId: number, to: string, expected: { tasks: number; entries: number }): MovePreview {
+function mockMoveMember(telegramId: number | string, to: string, expected: { tasks: number; entries: number }): MovePreview {
   const preview = mockMovePreview(telegramId, to);
   if (!preview.can_execute) {
     throw new ApiError(409, "Move has conflicts", { error: "Move has conflicts", code: "conflicts", conflicts: preview.conflicts });
