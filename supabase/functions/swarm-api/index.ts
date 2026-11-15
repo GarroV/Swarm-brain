@@ -129,7 +129,7 @@ import { handleMeetingInviteRoutes } from "./meeting-invites.ts";
 import { handleWebRecordingRoutes } from "./web-recording.ts";
 import { DEMO_GROUP_ID, isDemoSession } from "../_shared/demo-session.ts";
 import { DEMO_REQUESTS, englishDemoResponse } from "./demo-english.ts";
-import { handleDemoModelRoute } from "./demo-questions.ts";
+import { demoGate } from "./demo-routes.ts";
 import { blockModelCalls, withModelScope } from "../_shared/model-scope.ts";
 import { handleIntegrationConnectRoutes, makeIntegrationsDeps } from "./integrations.ts";
 import { handleAutojoinRoutes, makeAutojoinStore, makeCalendarCheck } from "./autojoin.ts";
@@ -506,11 +506,11 @@ async function routeRequest(req: Request): Promise<Response> {
     return json({ error: "second_step_required" }, 403, origin);
   }
 
-  // Демо без модели: ответ/поиск/дайджест — заготовленные, остальное, что зовёт модель, — отказ.
-  // Стоит раньше всех маршрутов, чтобы до OpenAI демо-запрос не дошёл ни одним путём.
+  // Демо: маршруты модели — заготовленные ответы или отказ, затем белый список (demo-routes.ts).
+  // Стоит раньше всех маршрутов: вне списка и до OpenAI демо-запрос не дойдёт ни одним путём.
   if (isDemo) {
-    const demoModelResp = await handleDemoModelRoute({ supabase, origin }, req, routePath);
-    if (demoModelResp) return demoModelResp;
+    const demoResp = await demoGate({ supabase, origin }, req, routePath);
+    if (demoResp) return demoResp;
   }
 
   // Заморозка на время раскатки: изменения не принимаем, чтение оставляем (пустой экран
