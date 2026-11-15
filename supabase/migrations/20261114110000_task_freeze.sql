@@ -40,7 +40,9 @@ declare
   new_guard constant text := 'if not found or t.archived_at is not null or t.frozen_at is not null or t.is_private';
 begin
   select pg_get_functiondef(fn) into definition;
-  if strpos(definition, new_guard) > 0 then return; end if;
+  -- Normalise to the unpatched body first: a repeat run (the file is replayed by the mutation
+  -- check) then patches exactly once instead of stopping early on an already patched function.
+  definition := replace(replace(definition, new_select, old_select), new_guard, old_guard);
   if (length(definition) - length(replace(definition, old_select, ''))) / length(old_select) <> 1
      or (length(definition) - length(replace(definition, old_guard, ''))) / length(old_guard) <> 1 then
     raise exception 'task freeze: unexpected sprint_autoplace_task definition';
