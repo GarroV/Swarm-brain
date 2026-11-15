@@ -141,15 +141,12 @@ supabase secrets set GOOGLE_CLIENT_SECRET=<oauth-client-secret>
 ### 7.4 Read.ai (опционально — только если используешь интеграцию Read.ai)
 
 ```bash
-supabase secrets set READ_AI_CLIENT_ID=<read-ai-client-id>
 supabase secrets set READ_AI_WEBHOOK_SECRET=<webhook-secret>
 ```
 
 | Secret | Описание | Обязателен |
 |--------|----------|-----------|
-| `READ_AI_CLIENT_ID` | Client ID Read.ai для OAuth-подключения (`read-ai-auth`) | опционально (только Read.ai) |
 | `READ_AI_WEBHOOK_SECRET` | Секрет проверки вебхуков Read.ai (`read-ai-webhook`) | опционально (только Read.ai) |
-| `READ_AI_AUTH_ENABLED` | `true` включает `read-ai-auth` (по умолчанию выключена, 403). Включать только на время подключения | опционально (только Read.ai) |
 
 ---
 
@@ -161,7 +158,6 @@ supabase functions deploy swarm-api        --no-verify-jwt
 supabase functions deploy swarm-mcp        --no-verify-jwt
 supabase functions deploy swarm-setup      --no-verify-jwt
 supabase functions deploy read-ai-webhook  --no-verify-jwt
-supabase functions deploy read-ai-auth     --no-verify-jwt   # только если используешь Read.ai
 supabase functions deploy google-oauth     --no-verify-jwt   # только если используешь Google OAuth (ручка /link для привязки календаря)
 supabase functions deploy meeting-ingest   --no-verify-jwt   # только если используешь встречи (Read.ai/Granola → встречи)
 supabase functions deploy meeting-current  --no-verify-jwt   # только если используешь встречи

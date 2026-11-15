@@ -56,7 +56,7 @@ Granola и Read.ai — альтернативные источники встр�
 | Claude Desktop (MCP) | токен + команда установки — **только веб → Настройки → Claude Desktop** (бот ключи не выдаёт, решение 26.10.2026) | `swarm-mcp` |
 | bumblebee | macOS меню-бар; установка — **только веб → Настройки → bumblebee** (бот ключи не выдаёт) | `meeting-claim`, `meeting-ingest`, `meeting-process` |
 | Granola | API-ключ на пользователя (`/connect granola`), часовой поллинг → единая приёмная встреч (`meetings`) | `swarm-bot` (`granola_poll`) |
-| Read.ai | OAuth2 + webhook — **отключается** (`READ_AI_ENABLED` off, не развивается) | `read-ai-auth`, `read-ai-webhook` |
+| Read.ai | OAuth2 + webhook — **отключается** (`READ_AI_ENABLED` off, не развивается) | `read-ai-webhook` (OAuth-подключение `read-ai-auth` удалено 15.11.2026) |
 | Хаб проектов (публичная дорожная карта) | без авторизации, только чтение: `GET /swarm-api/public/roadmap/:projectId` отдаёт опубликованную доску (флаг `projects.public_roadmap`) — название, статус, срок, дата выкатки задач; описаний, исполнителей и комментариев нет | `swarm-api` |
 
 ---
@@ -108,7 +108,6 @@ supabase/
 │   │                           # Бот встреч scriba: приглашения, автозапуск по календарю, снимок календаря, пропуски, уведомления об отказе
 │   ├── market-ingest/          # Приём данных сборщиков «Анализа рынка» (GitHub Actions)
 │   ├── granola-poller/         # LEGACY: standalone-поллер, выведен из крона. Поллинг Granola — внутри swarm-bot (ingestNewGranolaNotesAllUsers)
-│   ├── read-ai-auth/           # OAuth2 Read.ai (выключена, READ_AI_AUTH_ENABLED off → 403)
 │   ├── read-ai-webhook/        # Вебхук Read.ai (отключается, READ_AI_ENABLED off)
 │   └── _shared/                # общий код: tasks/, entries/, users/, market/, sources (реестр источников), mcp-token, recorder-token, meeting-processor, meeting-dedup, search, countries и др.
 └── migrations/                 # ВСЯ схема: 00000000_initial_schema.sql + инкрементальные. Старт с нуля — supabase db reset (или db push)

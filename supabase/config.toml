@@ -408,8 +408,6 @@ verify_jwt = false
 verify_jwt = false
 [functions.read-ai-webhook]
 verify_jwt = false
-[functions.read-ai-auth]
-verify_jwt = false
 [functions.google-oauth]
 verify_jwt = false
 [functions.auth-resolve]
