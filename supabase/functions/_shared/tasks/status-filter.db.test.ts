@@ -57,14 +57,14 @@ async function seed(db: Client): Promise<void> {
   for (const status of TASK_STATUSES) {
     for (const [where, projectId] of [["без проекта", null], ["открытый", openP], ["закрытый", closedP]] as const) {
       await db.queryArray`
-        insert into tasks (title, status, group_id, project_id, created_by, confirmed)
-        values (${`${status} / ${where}`}, ${status}, ${WS}, ${projectId}, 'test', true)`;
+        insert into tasks (title, status, group_id, project_id, confirmed)
+        values (${`${status} / ${where}`}, ${status}, ${WS}, ${projectId}, true)`;
     }
   }
   // Архивная задача не видна ни с фильтром, ни без.
   await db.queryArray`
-    insert into tasks (title, status, group_id, created_by, confirmed, archived_at)
-    values ('archived', 'open', ${WS}, 'test', true, now())`;
+    insert into tasks (title, status, group_id, confirmed, archived_at)
+    values ('archived', 'open', ${WS}, true, now())`;
 }
 
 const titles = (r: { tasks: Array<{ title: string }> }) => r.tasks.map((t) => t.title).sort();
