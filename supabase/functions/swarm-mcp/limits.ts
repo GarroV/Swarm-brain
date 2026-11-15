@@ -49,9 +49,9 @@ export async function readBodyLimited(req: Request, maxBytes = MAX_BODY_BYTES): 
 }
 
 /**
- * Адрес клиента для счётчика: ПЕРВЫЙ элемент x-forwarded-for. На проде цепочка Cloudflare → фронт →
- * Caddy → envoy → edge-runtime; Caddy пускает только запросы фронта и целиком перезаписывает
- * x-forwarded-for доверенным адресом клиента, envoy его не трогает. Клиент подделать первый хоп не
+ * Адрес клиента для счётчика: ПЕРВЫЙ элемент x-forwarded-for. На проде цепочка Cloudflare → фронт
+ * (deploy/front/src/index.js ставит X-Swarm-Client-IP из CF-Connecting-IP) → edge Caddy (пускает
+ * только запросы фронта и целиком перезаписывает x-forwarded-for этим значением) → envoy (не трогает). Клиент подделать первый хоп не
  * может, а «последний» стал бы общим для всех, если бы какой-то слой дописал свой хоп.
  * cf-connecting-ip на этом пути не доверенный и не используется. Нет заголовка — корзина "unknown".
  */
@@ -104,16 +104,12 @@ export function rateLimitedResponse(id: unknown): Response {
   );
 }
 
-/** Размер тела (до разбора). Response — отказ 413; строка — тело запроса. */
-export async function readBodyOrRefuse(req: Request): Promise<Response | string> {
+/**
+ * Входные лимиты ДО любой проверки токена (до поиска в базе): частота с адреса — для всех запросов,
+ * затем размер тела. Response — отказ (429/413); строка — тело запроса.
+ */
+export async function admitRequest(sink: RateSink, req: Request): Promise<Response | string> {
+  if (!(await takeAddressRate(sink, req.headers))) return rateLimitedResponse(null);
   const raw = await readBodyLimited(req);
   return raw.kind === "too_large" ? bodyTooLargeResponse() : raw.text;
-}
-
-/**
- * Частота после разбора токена: проверенный токен — только лимит на токен; запрос без проверенного
- * токена (хендшейк, неверный токен) — лимит на адрес, чтобы чужой с того же адреса не выбивал людей.
- */
-export function takeRate(sink: RateSink, tokenHash: string | null, headers: Headers): Promise<boolean> {
-  return tokenHash ? takeTokenRate(sink, tokenHash) : takeAddressRate(sink, headers);
 }

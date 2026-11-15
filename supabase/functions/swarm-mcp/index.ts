@@ -49,7 +49,7 @@ import { checkTokenRow, type TokenRow } from "./token-state.ts";
 import { oauthConfig, resolveOAuthAccessToken } from "../_shared/mcp-oauth/index.ts";
 import { oauthUnauthorized } from "./http-auth.ts";
 import { sha256 } from "../_shared/mcp-oauth/rules.ts";
-import { rateLimitedResponse, readBodyOrRefuse, takeRate } from "./limits.ts";
+import { admitRequest, rateLimitedResponse, takeTokenRate } from "./limits.ts";
 import {
   AUTH_ERROR_CODE,
   authorizeToolCall,
@@ -910,7 +910,7 @@ Deno.serve(async (req: Request) => {
   }
   if (req.method !== "POST") return new Response(null, { status: 405, headers: { Allow: "POST, OPTIONS" } });
 
-  const admitted = await readBodyOrRefuse(req); // лимит размера тела (limits.ts)
+  const admitted = await admitRequest(supabase, req); // лимит адреса и размера тела — до любой проверки токена (limits.ts)
   if (admitted instanceof Response) return admitted;
   let body: { jsonrpc: string; method: string; params?: Record<string, unknown>; id: unknown };
   try {
@@ -978,7 +978,7 @@ Deno.serve(async (req: Request) => {
     }
   }
 
-  if (!(await takeRate(supabase, tokenHashHex, req.headers))) return rateLimitedResponse(id); // токен или адрес (limits.ts)
+  if (tokenHashHex && !(await takeTokenRate(supabase, tokenHashHex))) return rateLimitedResponse(id); // только проверенные токены
   if (method === "initialize") {
     return ok(id, {
       protocolVersion: negotiateProtocolVersion(params?.protocolVersion),
