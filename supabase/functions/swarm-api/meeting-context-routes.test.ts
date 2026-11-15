@@ -169,3 +169,55 @@ Deno.test("selected previous row is rechecked with the existing guard; inaccessi
   assertEquals(view.tasksTotal, null);
   assertEquals(view.tasksTruncated, true);
 });
+
+Deno.test("missing trusted viewer identity cannot turn different 1:1 meetings into a previous-match fact", async () => {
+  const { deps } = fixture();
+  const currentAttendees = [{ email: "shared-viewer@example.invalid" }, { email: "current-partner@example.invalid" }];
+  const previousAttendees = [{ email: "shared-viewer@example.invalid" }, { email: "other-partner@example.invalid" }];
+  deps.loadContextEntry = () =>
+    Promise.resolve({
+      entry: { ...entry, id: "current", metadata: { confirmed: true, attendees: currentAttendees } },
+      startsAt: "2026-11-14T10:00:00Z",
+    });
+  deps.loadContextCandidates = () =>
+    Promise.resolve({
+      candidates: [{
+        id: entry.id,
+        title: "Different previous",
+        date: "2026-11-13",
+        startsAt: "2026-11-13T10:00:00Z",
+        attendees: previousAttendees,
+      }],
+      truncated: false,
+    });
+  deps.getEntrySecure = () =>
+    Promise.resolve({
+      ...entry,
+      metadata: { confirmed: true, title: "Different previous", attendees: previousAttendees },
+    });
+  const response = await handleMeetingContextRoutes(
+    { ...ctx, actor: { ...actor, email: null } },
+    req("/meetings/current/context"),
+    "/meetings/current/context",
+    deps,
+  );
+  assertEquals(response?.status, 200);
+  const view = await response?.json();
+  assertEquals(view.previous, null);
+  assertEquals(view.previousTruncated, true);
+  assertEquals(view.tasks.length, 1);
+  assertEquals(view.meeting.countries, ["BG"]);
+});
+Deno.test("only an actor-owned calendar self email can fill a missing viewer email, not published metadata self", async () => {
+  const { deps } = fixture();
+  const response = await handleMeetingContextRoutes(
+    { ...ctx, actor: { ...actor, email: null } },
+    req(`/calendar/today/context?key=${key}`),
+    "/calendar/today/context",
+    deps,
+  );
+  const view = await response?.json();
+  assertEquals(response?.status, 200);
+  assertEquals(view.previous.id, entry.id);
+  assertEquals(view.previousTruncated, false);
+});

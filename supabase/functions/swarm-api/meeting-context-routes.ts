@@ -43,6 +43,7 @@ export async function handleMeetingContextRoutes(
   const { supabase: sb, actor, origin } = ctx;
   try {
     let current: ContextMeeting;
+    let viewerEmail = actor.email?.trim().toLowerCase() || null;
     if (entryPath) {
       const result = await deps.loadContextEntry(sb, actor, entryPath[1]);
       if (!result) return apiErr(404, "Not found", origin);
@@ -68,6 +69,15 @@ export async function handleMeetingContextRoutes(
         e.transparency !== "transparent" && e.start?.dateTime && e.end?.dateTime
       );
       if (!event?.start?.dateTime) return apiErr(404, "Not found", origin);
+      // Only this actor's freshly resolved calendar may identify self; published metadata cannot.
+      if (!viewerEmail) {
+        const selfEmails = new Set(
+          (event.attendees ?? []).filter((a) => a.self)
+            .map((a) => (a.email ?? "").trim().toLowerCase())
+            .filter((email) => email && !/@resource\.calendar\.google\.com$/i.test(email)),
+        );
+        if (selfEmails.size === 1) viewerEmail = [...selfEmails][0];
+      }
       current = {
         id: key,
         title: event.summary?.trim() || null,
@@ -77,10 +87,12 @@ export async function handleMeetingContextRoutes(
       };
     }
     const [history, tasks] = await Promise.all([
-      deps.loadContextCandidates(sb, actor, current.startsAt),
+      viewerEmail
+        ? deps.loadContextCandidates(sb, actor, current.startsAt)
+        : Promise.resolve({ candidates: [], truncated: true }),
       deps.loadParticipantTasks(sb, actor, current.attendees),
     ]);
-    const match = previousParticipantMeeting(history.candidates, current, actor.email);
+    const match = previousParticipantMeeting(history.candidates, current, viewerEmail);
     let previous: MeetingContextView["previous"] = null;
     if (match) {
       // Revalidate the selected row after matching; never return metadata scan content as a summary.
