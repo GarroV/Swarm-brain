@@ -36,6 +36,8 @@ export type RecorderPresence = {
 const PRESENCE_TTL_MS = 5 * 60_000;
 
 export type TodayMeeting = {
+  /** Own-calendar occurrence key used by the read-only meeting card. */
+  context_key?: string;
   id: string;
   title: string | null;
   /** ISO-время начала и конца — форматирует клиент по локали пользователя. */
@@ -89,6 +91,7 @@ export function todayMeetings(
       const mine = live?.meetingKey === calendarKeyOf(e);
       return {
         id,
+        context_key: calendarKeyOf(e) ?? undefined,
         title: e.summary?.trim() || null,
         starts_at: starts,
         ends_at: ends,

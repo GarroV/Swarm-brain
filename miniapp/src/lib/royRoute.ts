@@ -24,6 +24,7 @@ export type RoyRoute =
   | { view: "base" }
   | { view: "project"; params: { id: string } }
   | { view: "meetingDetail"; params: { id: string } }
+  | { view: "calendarMeeting"; params: { id: string } }
   | { view: "meetingReview"; params: { id: string } }
   | { view: "settings" }
   | { view: "team" }

@@ -61,6 +61,8 @@ function MeetingRow({ m, dt, locale, joined, onJoined }: {
   onJoined: (m: TodayMeeting) => void;
 }) {
   // Сигнал рекордера ГЛАВНЕЕ локального нажатия, но локальное срабатывает мгновенно.
+  const { push, setTab } = useRoyNav();
+  const openContext = () => { if (m.context_key) { setTab("cal"); push({ view: "calendarMeeting", params: { id: m.context_key } }); } };
   const onAir = m.on_call || joined;
   const join = () => {
     if (!m.join_url) return;
@@ -87,7 +89,7 @@ function MeetingRow({ m, dt, locale, joined, onJoined }: {
       </span>
       <div className="min-w-0 flex-1" style={{ opacity: dim ? 0.55 : 1 }}>
         <div className="truncate font-semibold text-ink" style={{ fontSize: 13.5, letterSpacing: "-0.01em" }}>
-          {m.title ?? dt("Без названия", "Untitled")}
+          {m.context_key ? <button type="button" className="max-w-full truncate text-left hover:underline" onClick={(e) => { e.stopPropagation(); openContext(); }}>{m.title ?? dt("Без названия", "Untitled")}</button> : m.title ?? dt("Без названия", "Untitled")}
         </div>
         <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1">
           <span
@@ -173,6 +175,8 @@ function FlatMeetingRow({ m, dt, locale, joined, onJoined, now, primary, draft, 
   draft: AgentMeeting | null;
   onReview: (d: AgentMeeting) => void;
 }) {
+  const { push, setTab } = useRoyNav();
+  const openContext = () => { if (m.context_key) { setTab("cal"); push({ view: "calendarMeeting", params: { id: m.context_key } }); } };
   const onAir = m.on_call || joined;
   const live = m.is_now || onAir;
   const dim = m.is_past && !onAir && !draft;
@@ -191,9 +195,7 @@ function FlatMeetingRow({ m, dt, locale, joined, onJoined, now, primary, draft, 
       <span className="font-mono font-medium text-ink-soft" style={{ fontSize: 12.5 }}>{time}</span>
       <span aria-hidden="true" className="inline-block rounded-full" style={{ width: 7, height: 7, background: DOT(m, live) }} />
       <div className="min-w-0">
-        <b className="block truncate font-semibold text-ink" style={{ fontSize: 13.5 }} title={m.title ?? undefined}>
-          {m.title ?? dt("Без названия", "Untitled")}
-        </b>
+        {m.context_key ? <button type="button" onClick={openContext} className="block max-w-full truncate text-left font-semibold text-ink hover:underline" style={{ fontSize: 13.5 }} title={m.title ?? undefined}>{m.title ?? dt("Без названия", "Untitled")}</button> : <b className="block truncate font-semibold text-ink" style={{ fontSize: 13.5 }} title={m.title ?? undefined}>{m.title ?? dt("Без названия", "Untitled")}</b>}
         <div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-ink-mute" style={{ fontSize: 11.5 }}>
           {draft ? <><span>{dt("записана", "recorded")}</span><span>·</span><Amber>{dt("ждёт вычитки", "awaiting review")}</Amber></>
             : m.is_past && !onAir ? <span>{dt("прошла", "finished")}</span>

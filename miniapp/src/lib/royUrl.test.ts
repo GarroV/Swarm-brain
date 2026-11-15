@@ -19,7 +19,7 @@ Deno.test("задача: адрес туда и обратно", () => {
 });
 
 Deno.test("проект и запись: адрес туда и обратно", () => {
-  for (const view of ["project", "record", "meetingDetail"] as const) {
+  for (const view of ["project", "record", "meetingDetail", "calendarMeeting"] as const) {
     const route = { view, params: { id: "x-9" } };
     assertEquals(queryToState(stateToQuery("book", route)), { tab: "book", route });
   }
@@ -58,7 +58,7 @@ Deno.test("meetAdmin помнит режим, но не выдумывает н�
 });
 
 Deno.test("роут без обязательного id игнорируется, а не открывает белый экран", () => {
-  for (const view of ["taskDetail", "project", "record", "meetingDetail", "meetingReview"] as const) {
+  for (const view of ["taskDetail", "project", "record", "meetingDetail", "meetingReview", "calendarMeeting"] as const) {
     assertEquals(queryToState(`?view=${view}`).route, null, view);
   }
   assertEquals(queryToState("?view=answer").route, null);

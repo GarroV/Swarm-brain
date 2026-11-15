@@ -6,6 +6,8 @@ import { type CalendarGap, todayCalendarEvents } from "../_shared/calendar-today
 import { type RecorderPresence, type TodayMeeting, todayMeetings } from "../_shared/meetings-today.ts";
 import { joinLink } from "../meeting-current/join-link.ts";
 
+import { json } from "./http.ts";
+
 type Db = Pick<SupabaseClient, "from">;
 
 export type TodayMeetingsResult =
@@ -56,4 +58,17 @@ export async function loadTodayMeetings(
   if (recErr) console.warn(`[${logTag}] присутствие рекордера не прочиталось:`, recErr.message);
   const presence = presenceFromRow(rec as Parameters<typeof presenceFromRow>[0]);
   return { ok: true, meetings: todayMeetings(cal.events, new Date(), joinLink, presence) };
+}
+
+/** Same calendar/today response as before extraction; board/today continues to use loadTodayMeetings. */
+export async function handleTodayCalendarRoute(
+  db: SupabaseClient,
+  req: Request,
+  path: string,
+  actorId: number,
+  origin: string,
+): Promise<Response | null> {
+  if (req.method !== "GET" || path !== "/calendar/today") return null;
+  const today = await loadTodayMeetings(db, actorId, Number(new URL(req.url).searchParams.get("tz_offset") ?? "0"));
+  return json(today.ok ? { meetings: today.meetings } : { meetings: [], reason: today.reason }, 200, origin);
 }

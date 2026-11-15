@@ -15,6 +15,7 @@ export type UpdateMeetingInput = {
 // Панель правой колонки главной. Календарь читает СЕРВЕР по OAuth-интеграции — у браузера
 // доступа к календарю нет. Пояс шлём свой: сервер живёт в UTC и не знает, какие у нас сутки.
 export type TodayMeeting = {
+  context_key?: string;
   id: string;
   title: string | null;
   starts_at: string;

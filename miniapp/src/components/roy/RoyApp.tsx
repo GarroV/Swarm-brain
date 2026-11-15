@@ -47,6 +47,7 @@ import { TasksTable } from "@/components/tasks/table/TasksTable";
 import { TeamScreen } from "@/components/TeamScreen";
 import { SettingsRoute } from "@/components/settings/SettingsDesk";
 import { AdminRoute } from "@/components/admin/AdminDesk";
+import { CalendarContextCard } from "./screens/MeetingContextCard";
 import { MeetAdminScreen } from "./screens/MeetAdminScreen";
 import { type RailId, RoyRail } from "./RoyRail";
 import { useOverdueCount } from "./useOverdueCount";
@@ -556,7 +557,7 @@ function KeptTab({ id, tab, visited, children }: { id: RoyTab; tab: RoyTab; visi
   return <div hidden={!active} className="h-full">{children}</div>;
 }
 
-const PANEL_VIEWS = new Set<RoyRoute["view"]>(["meetingDetail", "record", "meetingReview"]);
+const PANEL_VIEWS = new Set<RoyRoute["view"]>(["meetingDetail", "record", "meetingReview", "calendarMeeting"]);
 
 // Панель карточки справа (десктоп): каркас, Esc и клик мимо — общие, `SidePanelFrame`.
 function DetailPanel({ route, depth, section, onClose }: { route: RoyRoute; depth: number; section: string | null; onClose: () => void }) {
@@ -583,6 +584,7 @@ function PushScreen({ route }: { route: RoyRoute }) {
   if (route.view === "taskDetail") return <TaskRoute id={route.params.id} />;
   if (route.view === "newTask") return <TaskRoute id={route.params?.id} />;
   if (route.view === "newEntry") return <NewEntry />;
+  if (route.view === "calendarMeeting") return <CalendarContextCard id={route.params.id} />;
   if (route.view === "meetingDetail") {
     return <MeetingDetail id={route.params.id} />;
   }
