@@ -225,6 +225,11 @@ export function buildEntriesQuery(
  * Пространство — по признаку принадлежности, как у списка: несогласованная встреча, которой уже
  * проставлено пространство участника, видна ему на вычитке (причастность всё равно обязательна).
  */
+export function reviewQueueEmail(email?: string | null): string {
+  const clean = (email ?? "").trim().toLowerCase();
+  return /^[^\s,()"']+@[^\s,()"']+$/.test(clean) ? clean : "";
+}
+
 export function buildReviewQueueQuery(
   supabase: SupabaseClient,
   select: string,
@@ -235,11 +240,10 @@ export function buildReviewQueueQuery(
   },
 ) {
   const mine = `owner_id.eq.${telegramId}`;
-  const clean = (email ?? "").trim().toLowerCase();
   // PostgREST: containment по jsonb-массиву объектов. Кавычки внутри значения экранируем, а
   // сам e-mail пропускаем через простую валидацию — в фильтр не должно попасть ничего, кроме
   // адреса (запятая или скобка сломали бы разбор всего условия .or()).
-  const safeEmail = /^[^\s,()"']+@[^\s,()"']+$/.test(clean) ? clean : "";
+  const safeEmail = reviewQueueEmail(email);
   const cond = safeEmail ? `${mine},metadata->attendees.cs.[{"email":"${safeEmail}"}]` : mine;
   return visibleInWorkspace(
     onlyLiveEntries(
