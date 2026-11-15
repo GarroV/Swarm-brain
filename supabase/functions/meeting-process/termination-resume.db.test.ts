@@ -10,6 +10,15 @@ const LEASE = new URL("../_shared/meeting-processing-lease.ts", import.meta.url)
 const CRON = new URL("./index.ts", import.meta.url);
 const decoder = new TextDecoder();
 
+function childSummary(raw: string) {
+  try {
+    const { stage, kind, counters } = JSON.parse(raw);
+    return JSON.stringify({ stage, kind, counters }); // never include message, stack, headers or stderr
+  } catch {
+    return "non_json_child_protocol";
+  }
+}
+
 type Row = {
   summary_status: string;
   processing_lease: string | null;
@@ -55,7 +64,8 @@ async function killAfterCheckpoint(id: string, api: URL, verifyCommitted: () => 
           if (done) throw new Error("child_exited_before_checkpoint");
           buffer += decoder.decode(value, { stream: true });
           if (buffer.includes("\n")) {
-            assertEquals(JSON.parse(buffer.split("\n")[0]).stage, "checkpoint_committed");
+            const line = buffer.split("\n")[0];
+            assertEquals(JSON.parse(line).stage, "checkpoint_committed", childSummary(line));
             return;
           }
         }
@@ -92,7 +102,12 @@ async function cron(id: string, api: URL, module?: string): Promise<Receipt> {
         timer = setTimeout(() => reject(new Error("cron_deadline")), 15_000);
       }),
     ]);
-    assertEquals(output.success, true, "fixture must execute valid source, not crash on imports or syntax");
+    assertEquals(
+      output.success,
+      true,
+      "fixture must execute valid source, not crash on imports or syntax: " +
+        childSummary(decoder.decode(output.stdout).trim()),
+    );
     const receipt = JSON.parse(decoder.decode(output.stdout).trim()) as Receipt;
     assertEquals(receipt.stage, "cron_result");
     assertEquals(receipt.status, 200);
@@ -191,10 +206,11 @@ Deno.test("actual SIGKILL leaves a committed checkpoint; fresh cron excludes it 
         segments: [],
       }],
     };
-    await db.queryArray`insert into meetings(id,group_id,title,status,summary_status,recorders,process_state)
-      values(${id}::uuid,${ws},'Synthetic recovery fixture','awaiting_review','processing','[]'::jsonb,${
-      JSON.stringify(state)
-    }::jsonb)`;
+    await db
+      .queryArray`insert into meetings(id,group_id,identity_kind,identity_key,title,status,summary_status,recorders,process_state)
+      values(${id}::uuid,${ws},'manual',${
+      "manual:" + id
+    },'Synthetic recovery fixture','awaiting_review','processing','[]'::jsonb,${JSON.stringify(state)}::jsonb)`;
     let beforeKill: Row | undefined;
     await killAfterCheckpoint(id, api, async () => {
       beforeKill = await read();
