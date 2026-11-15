@@ -2,8 +2,8 @@
 //
 // Правило одно и без режимов: личность берётся ТОЛЬКО из валидного токена коннектора,
 // воркспейс — из строки этого человека в allowed_users. Нет токена → отказ. Нет воркспейса →
-// отказ (кроме whoami, который читает только строку самого вызывающего). Всё, что прислал
-// клиент в аргументах про «кто я», перетирается значением из токена.
+// отказ (кроме whoami, который читает только строку самого вызывающего). Поля личности в
+// аргументах: нет или свой id — подставляется значение из токена, чужой id — отказ.
 //
 // Почему отдельный модуль: правило чистое (без БД и сети), его проверяют тесты
 // (auth.test.ts), а index.ts только подставляет результаты поиска токена и воркспейса.
@@ -48,16 +48,31 @@ export function authorizeToolCall(input: ToolCallAuthInput): ToolCallAuth {
   return { ok: true, telegramId, groupId };
 }
 
+export const IDENTITY_MISMATCH_MESSAGE =
+  "Identity arguments (requesting_user_id, owner_telegram_id) are filled in from your connector token — omit them";
+
+export type CallerArgs =
+  | { ok: true; args: Record<string, unknown> }
+  | { ok: false; code: number; message: string };
+
 /**
- * Копия аргументов, где поля личности заданы значением из токена.
- * Исходный объект не меняется; присланные клиентом значения этих полей не доживают до инструмента.
+ * Копия аргументов, где поля личности заданы значением из токена. Исходный объект не меняется.
+ * Клиент поле не присылает или присылает ровно свой id — так и работаем; присылает чужой
+ * (или не число) — явный отказ, а не молчаливая подмена: иначе модель, подставившая догадку,
+ * получала бы чужие на вид данные под своим именем без единого сигнала.
  */
 export function withCallerIdentity(
   args: Record<string, unknown>,
   telegramId: number,
-): Record<string, unknown> {
+): CallerArgs {
+  for (const field of TOKEN_IDENTITY_FIELDS) {
+    const sent = args[field];
+    if (sent === undefined || sent === null) continue;
+    const isOwn = (typeof sent === "number" || typeof sent === "string") && sent !== "" && Number(sent) === telegramId;
+    if (!isOwn) return { ok: false, code: AUTH_ERROR_CODE, message: IDENTITY_MISMATCH_MESSAGE };
+  }
   const forced = Object.fromEntries(TOKEN_IDENTITY_FIELDS.map((field) => [field, telegramId]));
-  return { ...args, ...forced };
+  return { ok: true, args: { ...args, ...forced } };
 }
 
 /**

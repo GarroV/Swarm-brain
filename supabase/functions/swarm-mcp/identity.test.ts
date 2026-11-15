@@ -1,5 +1,5 @@
 import { assertEquals } from "jsr:@std/assert@1";
-import { TOKEN_IDENTITY_DESCRIPTION, withTokenIdentity } from "./identity.ts";
+import { withTokenIdentity } from "./identity.ts";
 
 const commentTool = {
   name: "add_task_comment",
@@ -19,10 +19,9 @@ Deno.test("identity field is no longer required, other required fields stay", ()
   assertEquals(tool.inputSchema.required, ["task_id"]);
 });
 
-Deno.test("identity field description says it comes from the token", () => {
+Deno.test("identity fields are removed from the advertised schema, other properties stay", () => {
   const tool = withTokenIdentity(commentTool);
-  assertEquals((tool.inputSchema.properties?.requesting_user_id as { description?: string }).description, TOKEN_IDENTITY_DESCRIPTION);
-  assertEquals((tool.inputSchema.properties?.task_id as { description?: string }).description, "ID задачи");
+  assertEquals(Object.keys(tool.inputSchema.properties ?? {}), ["task_id"]);
 });
 
 Deno.test("owner_telegram_id is treated the same way", () => {
@@ -32,7 +31,7 @@ Deno.test("owner_telegram_id is treated the same way", () => {
     inputSchema: { properties: { owner_telegram_id: { type: "number" } }, required: ["owner_telegram_id"] },
   });
   assertEquals(tool.inputSchema.required, []);
-  assertEquals((tool.inputSchema.properties?.owner_telegram_id as { description?: string }).description, TOKEN_IDENTITY_DESCRIPTION);
+  assertEquals(tool.inputSchema.properties, {});
 });
 
 Deno.test("source definition is not mutated", () => {

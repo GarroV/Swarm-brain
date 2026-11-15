@@ -164,10 +164,29 @@ Deno.test("Node в схему не вернулся: ни npx, ни mcp-remote, 
 });
 
 Deno.test("мост: шлёт токен заголовком и не отвечает на уведомления", () => {
-  assertStringIncludes(BRIDGE_SCRIPT, "Authorization: $AUTH");
+  assertStringIncludes(BRIDGE_SCRIPT, "Authorization: %s");
   assertStringIncludes(BRIDGE_SCRIPT, "continue"); // нет id — ничего не печатаем
   // Токен не должен попадать в аргументы процесса — иначе он виден в ps любому на машине.
   assertEquals(BRIDGE_SCRIPT.includes("smcp_"), false);
+});
+
+Deno.test("токен не уходит аргументом curl: ни в мосте, ни в пробе установщика (виден в ps)", () => {
+  for (const [name, text] of [["мост", BRIDGE_SCRIPT], ["установщик", SETUP_SCRIPT]] as const) {
+    assertEquals(/-H\s+"Authorization/.test(text), false, `${name}: заголовок токена в аргументе curl`);
+    assertEquals(/--header\s+"Authorization/.test(text.replace(/mcp add[\s\S]*?--scope user/, "")), false, name);
+  }
+  assertStringIncludes(BRIDGE_SCRIPT, '-H @"$HDRF"');
+  assertStringIncludes(SETUP_SCRIPT, '-H @"$PROBE_HDR"');
+});
+
+Deno.test("мост: токен доходит до сервера заголовком из файла", async () => {
+  let seen: string | null = null;
+  const { out } = await runBridge((req) => {
+    seen = req.headers.get("authorization");
+    return new Response('{"jsonrpc":"2.0","id":7,"result":{}}');
+  }, REQ7);
+  assertEquals(seen, "Bearer test");
+  assertStringIncludes(out, '"result"');
 });
 
 // --- Мост при сбое (issue #935): живой прогон настоящего моста против фейкового сервера ---
@@ -362,7 +381,7 @@ Deno.test("самообновление: сервер без /version — мос
 Deno.test("версия моста поднимается вместе с текстом: пара «версия ↔ отпечаток» зафиксирована", async () => {
   // Если тест упал — вы поменяли BRIDGE_SCRIPT. Поднимите BRIDGE_VERSION (иначе у людей мост не
   // обновится, сервер отдаст ту же версию) и впишите сюда новую пару.
-  const PINNED = { version: 2, sha256: "59d5b370e5e2523894350da8d021ca87d61ea3cbf54c02d4c73c9c960c351344" };
+  const PINNED = { version: 3, sha256: "737d24f8b8edd2f5f1bb5d2e52888bee616280bccde72fe1ff375e87a43af570" };
   assertEquals(BRIDGE_VERSION, PINNED.version, "версия моста сменилась — обновите PINNED в тесте");
   assertEquals(
     await sha256Hex(BRIDGE_SCRIPT),
