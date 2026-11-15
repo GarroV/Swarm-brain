@@ -1,6 +1,7 @@
 "use client";
 import type { DragEvent, ReactNode } from "react";
 import type { CheckStatus } from "@/types";
+import { TaskFreezeBadge } from "../../TaskFreezeBadge";
 import { useDt } from "@/components/roy/nav";
 import { cn } from "@/lib/utils";
 import { AssigneeChip } from "../atoms";
@@ -26,6 +27,7 @@ export type CardDrag = {
 export function BoardCard({
   title,
   closed,
+  frozen = false,
   mark,
   due,
   tags,
@@ -43,6 +45,7 @@ export function BoardCard({
 }: {
   title: string;
   closed: boolean;
+  frozen?: boolean;
   /** Отметка сверки: риск и проблема красят полоску слева. */
   mark?: CheckStatus | null;
   /** Срок, `YYYY-MM-DD`; красный, если просрочен у незакрытой. `flag` — спринт срока (🏁). */
@@ -67,7 +70,7 @@ export function BoardCard({
   plan?: ReactNode;
 }) {
   const dt = useDt();
-  const late = !!due && !closed && isOverdue(due.date);
+  const late = !!due && !frozen && !closed && isOverdue(due.date);
   return (
     <div {...dnd?.handlers}>
       <div
@@ -120,6 +123,7 @@ export function BoardCard({
           style={{ fontSize: 13.5 }}
         >
           {title}
+          <TaskFreezeBadge task={{ task_frozen: frozen }} />
         </button>
         <span className="flex items-center">{menu}</span>
         {parentNote && (

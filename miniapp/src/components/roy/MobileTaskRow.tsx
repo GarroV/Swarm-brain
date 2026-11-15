@@ -1,4 +1,5 @@
 "use client";
+import { useTaskFreeze } from "@/components/tasks/TaskFreezeButton";
 import type { Task } from "@/types";
 import { TaskRow } from "@/components/tasks/TaskRow";
 import { ROW_FADE_CLASS } from "@/lib/doneLinger";
@@ -27,11 +28,13 @@ export function MobileTaskRow({
 }) {
   const { openTask } = useRoyNav();
   const dt = useDt();
+  const freeze = useTaskFreeze(task);
   return (
     <div className={fading ? ROW_FADE_CLASS : undefined}>
     <SwipeRow
       onTap={() => openTask(task)}
       actions={[
+        { icon: "clock", label: freeze.label, color: "var(--accent-ink)", onClick: () => { void freeze.toggle(); } },
         { icon: "pencil", label: dt("Изменить", "Edit"), color: "var(--accent-ink)", onClick: () => openTask(task) },
         { icon: "trash", label: dt("Удалить", "Delete"), color: "var(--pri-high)", onClick: onRemove },
       ]}

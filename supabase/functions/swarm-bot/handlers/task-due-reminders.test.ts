@@ -30,6 +30,11 @@ Deno.test("isDueReminderDue: срок завтра — пора", () => {
   assertEquals(isDueReminderDue(row(), TODAY), true);
 });
 
+Deno.test("isDueReminderDue: замороженную задачу (#814) не напоминаем", () => {
+  assertEquals(isDueReminderDue(row({ frozen_at: "2026-11-14T10:00:00Z" }), TODAY), false);
+  assertEquals(isDueReminderDue(row({ frozen_at: null }), TODAY), true);
+});
+
 Deno.test("isDueReminderDue: сегодняшний, просроченный и дальний срок не трогаем", () => {
   assertEquals(isDueReminderDue(row({ due_date: TODAY }), TODAY), false);
   assertEquals(isDueReminderDue(row({ due_date: "2026-10-14" }), TODAY), false);

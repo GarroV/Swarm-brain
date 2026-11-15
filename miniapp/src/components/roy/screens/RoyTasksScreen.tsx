@@ -69,7 +69,7 @@ export function RoyTasksScreen() {
             охвата, а не в ленте списков, чтобы включённый фильтр всегда был на виду. */}
         <RangePicker variant="chip" value={r.range} onChange={r.setRange} />
         <div className="min-w-0 flex-1">
-          <SmartListNav variant="chips" compact active={r.activeList} counts={r.counts} onSelect={r.setActiveList} />
+          <SmartListNav variant="chips" compact onArchiveRestored={() => { void r.reload(); }} active={r.activeList} counts={r.counts} onSelect={r.setActiveList} />
         </div>
       </div>
 

@@ -18,6 +18,8 @@ export const TASK_LIST_COLUMNS = [
   "id",
   "title",
   "status",
+  "frozen_at",
+  "frozen_by",
   "due_date",
   "start_date",
   "remind_date",

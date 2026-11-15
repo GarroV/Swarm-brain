@@ -1,3 +1,6 @@
+import { labelsOf, micOwnerId, resolveOwnerName } from "./meeting-speaker-context.ts";
+import { type RecordingOrigin, transcriptRecordingOrigin } from "./meeting-transcript-origin.ts";
+import { verifiedTranscriptOrigin } from "./meeting-transcript-origin-db.ts";
 // meeting-processor — резюмируемая обработка аудио встреч ПО КУСКУ (durable).
 //
 // Зачем: транскрибация длинной встречи в одном вызове Edge Function упирается в wall-clock
@@ -411,38 +414,6 @@ async function markFailed(lease: ProcessingLease, m: MeetingRow, state: ProcessS
   }
 }
 
-// telegram_id владельца микрофонной дорожки («я» в стенограмме). Авторитетный источник —
-// meetings.claim_owner: mic-дорожку заливает ТОЛЬКО claim_owner (meeting-ingest отбивает 403 на
-// чужой аплоад), поэтому claim_owner === владелец «я» по построению, даже после перехвата протухшей
-// брони (recorders[0] в этом случае — уже НЕ тот, кто записал). recorders[0] оставляем лишь как
-// фолбэк для легаси-строк без claim_owner.
-function micOwnerId(claimOwner: number | null, recorders: RecorderEntry[] | null): number | null {
-  if (typeof claimOwner === "number") return claimOwner;
-  return (recorders ?? []).map((r) => r?.telegram_id).find((n): n is number => typeof n === "number") ?? null;
-}
-
-// Имя владельца записи для легенды спикеров тезисов: telegram_id → user_profiles(first/last) →
-// фолбэк @username из allowed_users. null, если не резолвится (легенда останется обезличенной).
-async function resolveOwnerName(supabase: SupabaseClient, telegramId: number | null): Promise<string | null> {
-  if (telegramId == null) return null;
-  const [{ data: prof }, { data: au }] = await Promise.all([
-    supabase.from("user_profiles").select("first_name, last_name").eq("telegram_id", telegramId).maybeSingle(),
-    supabase.from("allowed_users").select("username").eq("telegram_id", telegramId).maybeSingle(),
-  ]);
-  const p = prof as { first_name?: string | null; last_name?: string | null } | null;
-  const full = [p?.first_name, p?.last_name].filter(Boolean).join(" ").trim();
-  if (full) return full;
-  const uname = (au as { username?: string | null } | null)?.username;
-  return uname ? `@${uname}` : null;
-}
-
-// Легенда спикеров для промпта тезисов живёт в _shared/speakers.ts: она обязана описывать ровно те
-// метки, которые в стенограмме есть (запись бота — только имена, реплик «я» там нет вовсе).
-// Метки берём из самих сегментов.
-function labelsOf(segments: readonly Segment[]): string[] {
-  return segments.map((s) => s.speaker ?? "");
-}
-
 // ── Вторая запись: оставить текущую стенограмму, если она не беднее ──────────────
 // Канон сравнения — объём распознанного (`_shared/meeting-fullness.ts`, тот же порог, что на
 // публикации): длительность слепа к потерянному звуку (#10), а длительность бота серверу не
@@ -652,15 +623,17 @@ export async function loadMeetingTextForModel(
     meetingId,
   ).single();
   const row = data as {
+    id: string;
     title: string | null;
-    transcript: { segments?: Segment[] } | null;
+    transcript: { segments?: Segment[]; manual_merge_origin?: RecordingOrigin | null } | null;
     recorders: RecorderEntry[] | null;
     claim_owner: number | null;
   } | null;
   const segments = row?.transcript?.segments ?? [];
   const transcriptText = segments.map((s) => `${s.speaker ?? ""}: ${s.text}`).join("\n").slice(0, 100000);
   if (!transcriptText.trim()) return null;
-  const ownerName = await resolveOwnerName(supabase, micOwnerId(row?.claim_owner ?? null, row?.recorders ?? null));
+  const origin = transcriptRecordingOrigin(await verifiedTranscriptOrigin(supabase, row ?? {}));
+  const ownerName = await resolveOwnerName(supabase, micOwnerId(origin.claim_owner, origin.recorders));
   return `Встреча: ${row?.title ?? "без названия"}\n\n${
     speakerLegend(ownerName, labelsOf(segments))
   }\n${transcriptText}`;

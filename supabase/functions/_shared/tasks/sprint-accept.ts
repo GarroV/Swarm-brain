@@ -12,6 +12,7 @@
 // импортируют по адресу, потому что карту собирает не тот бандлер, что раскатывает функции.
 // deno-lint-ignore-file no-import-prefix
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { freezeExpectation, TASK_CONFLICT_MESSAGE } from "./frozen.ts";
 import { computeSprintStats } from "./sprint-stats.ts";
 import { nextCycleDates } from "./sprint-dates.ts";
 import { getCycle, type SprintCycle, toStatsView } from "./sprint-cycles.ts";
@@ -45,6 +46,24 @@ export async function acceptCycle(
   acceptedBy: string | null,
   opts: { summary?: string | null } = {},
 ): Promise<AcceptResult | null> {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      return await acceptCycleOnce(id, groupId, acceptedBy, opts);
+    } catch (e) {
+      if (!(e instanceof FreezeSnapshotChanged)) throw e;
+    }
+  }
+  throw new AcceptConflictError(TASK_CONFLICT_MESSAGE);
+}
+
+class FreezeSnapshotChanged extends Error {}
+
+async function acceptCycleOnce(
+  id: string,
+  groupId: string,
+  acceptedBy: string | null,
+  opts: { summary?: string | null },
+): Promise<AcceptResult | null> {
   const cycle = await getCycle(id, groupId);
   if (!cycle) return null;
   if (cycle.status === "accepted") {
@@ -70,7 +89,7 @@ export async function acceptCycle(
     end_date: cycle.end_date,
   });
 
-  const { data, error } = await supabase.rpc("accept_sprint_cycle", {
+  const { data, error } = await supabase.rpc("accept_sprint_cycle_with_freeze", {
     p_cycle_id: id,
     p_group_id: groupId,
     p_accepted_by: acceptedBy,
@@ -80,9 +99,11 @@ export async function acceptCycle(
     p_next_start: next.start_date,
     p_next_end: next.end_date,
     p_next_check: next.check_date,
+    p_freeze_expected: freezeExpectation([...items, ...withdrawn, ...moved]),
   });
 
   if (error) {
+    if (error.code === "PT409") throw new FreezeSnapshotChanged();
     // P0001 — наши собственные проверки внутри функции (спринт не найден, не идёт). Всё
     // остальное — настоящая поломка, и прятать её под 409 нельзя.
     if (error.code === "P0001") throw new AcceptConflictError(error.message);

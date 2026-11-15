@@ -4,13 +4,15 @@
 // диалог: убранные задачи, свежие сверху, «Вернуть» у каждой.
 import { useEffect, useState } from "react";
 import type { Task } from "@/types";
-import { fetchArchivedTasks, restoreTask } from "@/lib/api";
+import { fetchArchivedTasks, restoreTask, permanentlyDeleteTask } from "@/lib/api";
+import { TASK_LIFECYCLE_COPY as COPY } from "@/lib/taskLifecycleCopy";
+import { useConfirm } from "@/components/ui/confirm";
 import { formatDate } from "@/lib/displayFormat";
 import { RoyIcon } from "@/components/roy/icons";
 import { useDt } from "@/components/roy/nav";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
-export function TaskArchiveButton({ onRestored }: { onRestored?: () => void }) {
+export function TaskArchiveButton({ onRestored, compact = false }: { onRestored?: () => void; compact?: boolean }) {
   const dt = useDt();
   const [open, setOpen] = useState(false);
   return (
@@ -18,11 +20,11 @@ export function TaskArchiveButton({ onRestored }: { onRestored?: () => void }) {
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="flex items-center gap-2.5 rounded-[10px] px-2.5 py-2 font-semibold text-ink-soft transition-colors hover:bg-surface"
+        className={compact ? "shrink-0 rounded-full border border-line-2 bg-surface px-3 py-1.5 text-xs font-semibold text-ink-soft" : "flex items-center gap-2.5 rounded-[10px] px-2.5 py-2 font-semibold text-ink-soft transition-colors hover:bg-surface"}
         style={{ fontSize: 13.5 }}
       >
-        <RoyIcon name="trash" size={16} strokeWidth={1.8} />
-        <span className="flex-1 text-left">{dt("Архив", "Archive")}</span>
+        {!compact && <RoyIcon name="trash" size={16} strokeWidth={1.8} />}
+        <span className="flex-1 text-left">{dt(COPY.archived.ru, COPY.archived.en)}</span>
       </button>
       {open && <TaskArchiveDialog onClose={() => setOpen(false)} onRestored={onRestored} />}
     </>
@@ -31,6 +33,7 @@ export function TaskArchiveButton({ onRestored }: { onRestored?: () => void }) {
 
 function TaskArchiveDialog({ onClose, onRestored }: { onClose: () => void; onRestored?: () => void }) {
   const dt = useDt();
+  const confirm = useConfirm();
   const [tasks, setTasks] = useState<Task[] | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -56,6 +59,17 @@ function TaskArchiveDialog({ onClose, onRestored }: { onClose: () => void; onRes
     }
   };
 
+  const erase = async (t: Task) => {
+    if (!(await confirm({ title: dt(COPY.confirmPermanent.ru, COPY.confirmPermanent.en), description: t.title, confirmText: dt(COPY.permanent.ru, COPY.permanent.en), cancelText: dt(COPY.cancel.ru, COPY.cancel.en), tone: "danger" }))) return;
+    setBusy(t.id);
+    try {
+      await permanentlyDeleteTask(t.id);
+      setTasks((list) => (list ?? []).filter((x) => x.id !== t.id));
+      onRestored?.();
+    } catch { setErr(dt(COPY.deleteFailed.ru, COPY.deleteFailed.en)); }
+    finally { setBusy(null); }
+  };
+
   return (
     <Dialog open onOpenChange={(o) => { if (!o) onClose(); }}>
       <DialogContent className="max-h-[80vh] overflow-y-auto">
@@ -76,6 +90,7 @@ function TaskArchiveDialog({ onClose, onRestored }: { onClose: () => void; onRes
                   </div>
                 )}
               </div>
+              <button type="button" disabled={busy !== null} onClick={() => { void erase(t); }} className="rounded px-2 py-1 text-xs text-destructive disabled:opacity-50">{dt(COPY.permanent.ru, COPY.permanent.en)}</button>
               <button
                 type="button"
                 onClick={() => back(t)}

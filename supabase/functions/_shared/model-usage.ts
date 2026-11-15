@@ -10,6 +10,7 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { readOpenAiSseEvents } from "./openai-sse.ts";
+import { roundUsageUsd } from "./model-usage-cost.ts";
 
 export type UsageKind = "chat" | "embedding" | "transcription" | "other";
 
@@ -73,21 +74,32 @@ export interface UsageNumbers {
 
 const round6 = (n: number) => Math.round(n * 1e6) / 1e6;
 
-/** Стоимость вызова в USD; null — цена модели не задана или не хватает чисел. */
-export function costUsd(u: UsageNumbers): number | null {
+function unroundedCostUsd(u: UsageNumbers): number | null {
   if (!u.model) return null;
   const p = priceOf(u.model);
   if (!p) return null;
   if (u.kind === "transcription") {
     if (p.perMinute === undefined || u.audioSeconds == null) return null;
-    return round6((u.audioSeconds / 60) * p.perMinute);
+    return (u.audioSeconds / 60) * p.perMinute;
   }
   if (p.input === undefined || u.promptTokens == null) return null;
   const out = u.completionTokens ?? 0;
   if (out > 0 && p.output === undefined) return null;
   const cached = Math.min(u.cachedTokens ?? 0, u.promptTokens);
   const input = (u.promptTokens - cached) * p.input + cached * (p.cached ?? p.input);
-  return round6((input + out * (p.output ?? 0)) / 1_000_000);
+  return (input + out * (p.output ?? 0)) / 1_000_000;
+}
+
+/** Legacy amount and export: retain the original six-decimal calculation independently. */
+export function costUsd(u: UsageNumbers): number | null {
+  const cost = unroundedCostUsd(u);
+  return cost === null ? null : round6(cost);
+}
+
+/** Future recorded amount; null still means unknown price or missing usage. */
+export function preciseCostUsd(u: UsageNumbers): number | null {
+  const cost = unroundedCostUsd(u);
+  return cost === null ? null : roundUsageUsd(cost);
 }
 
 export interface ParsedUsage {
@@ -240,6 +252,7 @@ export async function recordModelUsage(
       reasoning_tokens: parsed.reasoningTokens,
       audio_seconds: parsed.audioSeconds,
       cost_usd: costUsd({ ...parsed, model, kind }),
+      cost_usd_precise: preciseCostUsd({ ...parsed, model, kind }),
     });
     if (error) console.error("[model-usage] insert failed:", error.message);
   } catch (e) {

@@ -7,9 +7,11 @@
 // Здесь только то, что считается БЕЗ журнала перемещений: журнал наполняется с даты раскатки
 // #286, поэтому cycle time и time-to-start появятся позже (см. спеку task-analytics-design).
 
+import { isTaskFrozen } from "./frozen.ts";
 import { isClosedStatus } from "./statuses.ts";
 
 export type StatsTask = {
+  frozen_at?: string | null;
   id: string;
   status: string;
   created_at?: string | null;
@@ -96,6 +98,7 @@ export function computeTaskStats(
   tasks: StatsTask[],
   opts: { sinceISO: string; now?: Date; bucket?: Bucket },
 ): TaskStats {
+  tasks = tasks.filter((t) => !isTaskFrozen(t));
   const nowMs = (opts.now ?? new Date()).getTime();
   const sinceMs = Date.parse(opts.sinceISO);
   const today = new Date(nowMs).toISOString().slice(0, 10);
@@ -147,12 +150,9 @@ export function computeTaskStats(
     isClosedStatus(t.status) && t.completed_at &&
     Date.parse(t.completed_at) >= sinceMs && t.due_date
   );
-  const onTime =
-    withDue.filter((t) => t.completed_at!.slice(0, 10) <= t.due_date!).length;
+  const onTime = withDue.filter((t) => t.completed_at!.slice(0, 10) <= t.due_date!).length;
 
-  const avg = leads.length
-    ? leads.reduce((a, b) => a + b, 0) / leads.length
-    : null;
+  const avg = leads.length ? leads.reduce((a, b) => a + b, 0) / leads.length : null;
   const med = median(leads);
 
   return {
@@ -161,9 +161,7 @@ export function computeTaskStats(
     closedInPeriod,
     leadTimeAvgDays: avg === null ? null : round1(avg),
     leadTimeMedianDays: med === null ? null : round1(med),
-    onTimeRate: withDue.length
-      ? Math.round((onTime / withDue.length) * 100) / 100
-      : null,
+    onTimeRate: withDue.length ? Math.round((onTime / withDue.length) * 100) / 100 : null,
     onTimeBase: withDue.length,
     openNow,
     inProgressNow,
@@ -192,9 +190,11 @@ export function computeFlowTimes(
   >,
   tasks: StatsTask[],
 ): FlowTimes {
+  const frozenIds = new Set(tasks.filter(isTaskFrozen).map((t) => t.id));
+  tasks = tasks.filter((t) => !isTaskFrozen(t));
   const firstStart = new Map<string, number>();
   for (const t of transitions) {
-    if (t.new_value !== "in_progress") continue;
+    if (t.new_value !== "in_progress" || frozenIds.has(t.task_id)) continue;
     const ms = Date.parse(t.created_at);
     const known = firstStart.get(t.task_id);
     if (known === undefined || ms < known) firstStart.set(t.task_id, ms);
@@ -213,8 +213,7 @@ export function computeFlowTimes(
     }
   }
 
-  const avg = (xs: number[]): number | null =>
-    xs.length ? round1(xs.reduce((a, b) => a + b, 0) / xs.length) : null;
+  const avg = (xs: number[]): number | null => xs.length ? round1(xs.reduce((a, b) => a + b, 0) / xs.length) : null;
   const med = (xs: number[]): number | null => {
     const m = median(xs);
     return m === null ? null : round1(m);

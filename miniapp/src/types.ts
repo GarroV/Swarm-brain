@@ -34,6 +34,9 @@ export type Task = {
   updated_at?: string | null;
   /** Момент архивации (#427); приходит только в ответе архива `GET /tasks/archived` (#489). */
   archived_at?: string | null;
+  /** Independent task pause; status, dates and recurrence remain unchanged. */
+  frozen_at?: string | null;
+  frozen_by?: number | null;
   /** Момент закрытия (done/cancelled). У задач, закрытых до 08.09.2026 — прокси из updated_at. */
   completed_at?: string | null;
   meeting_id: string | null;
@@ -173,6 +176,8 @@ export type SprintCycleItem = {
   completed_at: string | null;
   due_date: string | null;
   frozen: boolean;
+  /** Task freeze: live flag before acceptance, stored flag afterwards. Old snapshots default false. */
+  task_frozen?: boolean;
   check_status: CheckStatus | null;
   check_note: string | null;
   check_at: string | null;
@@ -261,6 +266,7 @@ export type SprintCycleDetail = SprintCycle & {
  * задачи `cycle_ids` — спринты, в которых она живёт (по порядку начала, снимки не считаются).
  */
 export type BoardPlanTask = {
+  frozen_at?: string | null;
   id: string;
   title: string;
   status: string;
@@ -550,6 +556,7 @@ export type MarketSuggestion = {
 };
 
 export type AgentMeeting = {
+  manual_merge_target_id?: string | null;
   id: string;
   title: string | null;
   source: string;
@@ -579,12 +586,17 @@ export type AgentMeeting = {
   // Участники из календаря (детальный GET /agent-meetings/:id, select *). Может быть пусто
   // для ручных записей без календарного события.
   attendees?: Attendee[] | null;
+  /** Resolved microphone owner of a confirmed merged recording; never the canonical owner fallback. */
+  transcript_origin_owner_name?: string | null;
+  /** Derived by the server from an immutable applied transcript version. */
+  transcript_origin_verified?: boolean;
   // transcript присутствует только в детальном GET /agent-meetings/:id
   // quality — честный сигнал качества распознавания (#75); у записей до его появления поля нет.
   transcript?: {
     language?: string;
     model?: string;
     segments?: TranscriptSegment[];
+    manual_merge_origin?: { meeting_id?: string | null; started_at?: string | null; claim_owner?: number | null; recorders?: Array<{ telegram_id: number }> | null } | null;
     quality?: { version: number; flag: "ok" | "poor"; reasons: ("repeats" | "low_confidence")[]; repeat_share: number; low_conf_share: number | null };
   } | null;
   recorders: RecorderRef[] | null;
@@ -621,6 +633,8 @@ export type MeetingLiveNote = {
   // записи (GET /meetings/:id/notes), где пометки собраны со ВСЕХ участников встречи.
   author_name?: string | null;
   meeting_id?: string;
+  // offset_sec is relative to this original recording, never rebased after an association.
+  recording_started_at?: string | null;
 };
 
 // Заметки участников встречи-записи (GET /meetings/:id/notes). Одну встречу пишут несколько

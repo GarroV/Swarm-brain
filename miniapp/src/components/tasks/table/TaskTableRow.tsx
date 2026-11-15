@@ -1,6 +1,7 @@
 "use client";
 import { Fragment, type MouseEvent, type ReactNode } from "react";
 import { cn, displayName } from "@/lib/utils";
+import { TaskFreezeBadge } from "../TaskFreezeBadge";
 import type { Task, User } from "@/types";
 import type { TaskLabel } from "@/lib/api";
 import { RoyIcon } from "@/components/roy/icons";
@@ -201,6 +202,7 @@ export function TaskTableRow({ task, order, now, users, markets, labels, project
         >
           {task.title}
         </span>
+        <TaskFreezeBadge task={task} />
         {progress && (
           <span
             title={dt("Подзадачи: закрыто из всех", "Subtasks: done of total")}

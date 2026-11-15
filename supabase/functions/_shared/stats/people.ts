@@ -7,6 +7,7 @@
 // Дни считаем по времени команды (Белград), а не по UTC: иначе действие в 00:30 попадает во
 // «вчера», и полоска активности врёт на границе суток.
 
+import { isTaskFrozen } from "../tasks/frozen.ts";
 import { isClosedStatus } from "../tasks/statuses.ts";
 
 export const TEAM_TZ = "Europe/Belgrade";
@@ -19,6 +20,7 @@ const DAY_MS = 86_400_000;
 
 export type StatsMember = { telegram_id: number; name: string };
 export type StatsTaskRow = {
+  frozen_at?: string | null;
   status: string;
   created_at?: string | null;
   completed_at?: string | null;
@@ -91,6 +93,7 @@ function taskStats(rows: StatsTaskRow[], now: Date): PersonStats["tasks"] {
   let onTime = 0, onTimeBase = 0;
   const leads: number[] = [];
   for (const t of rows) {
+    if (isTaskFrozen(t)) continue;
     if (!isClosedStatus(t.status)) {
       if (t.status === "in_progress") inProgress++;
       else open++;
@@ -118,9 +121,7 @@ function taskStats(rows: StatsTaskRow[], now: Date): PersonStats["tasks"] {
     closedRecent,
     onTimeRate: onTimeBase ? round2(onTime / onTimeBase) : null,
     onTimeBase,
-    avgCloseDays: leads.length
-      ? round1(leads.reduce((a, b) => a + b, 0) / leads.length)
-      : null,
+    avgCloseDays: leads.length ? round1(leads.reduce((a, b) => a + b, 0) / leads.length) : null,
   };
 }
 
@@ -182,9 +183,7 @@ export function computePeopleStats(input: {
       tasks: taskStats(tasksOf.get(m.telegram_id) ?? [], now),
       meetings: {
         published: published.get(m.telegram_id) ?? 0,
-        inReview: input.reviewCounts
-          ? input.reviewCounts.get(m.telegram_id) ?? 0
-          : null,
+        inReview: input.reviewCounts ? input.reviewCounts.get(m.telegram_id) ?? 0 : null,
       },
       activity: {
         activeDays: strip.filter((n) => n > 0).length,

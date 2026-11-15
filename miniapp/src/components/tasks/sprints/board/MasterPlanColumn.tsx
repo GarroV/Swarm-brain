@@ -143,6 +143,7 @@ function PlanCard({ node, cycles, ctx }: {
       <BoardCard
         title={t.title}
         closed={closed}
+        frozen={t.frozen_at != null}
         dnd={ctx.cardDnd(t.id, PLAN_COL)}
         plan={<PlanLine task={t} cycles={cycles} />}
         subtasks={kids.length > 0

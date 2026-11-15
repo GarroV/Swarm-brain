@@ -8,7 +8,7 @@ import { taskCountryCodes } from "@/lib/countries";
 import { inRange, dayOf, rangeIncludesDay, type DateRange } from "@/lib/dateRange";
 import { toISO } from "@/lib/calendar";
 
-export type SmartListId = "today" | "upcoming" | "all" | "recurring";
+export type SmartListId = "today" | "upcoming" | "all" | "recurring" | "frozen";
 // Линза = ось «чьи задачи»: «mine» — назначенные на меня; «team» — ОБЩИЕ (без конкретного
 // исполнителя); «all» — «мои + командные» (владелец 2026-08-20: «линза "все" показывает свои
 // задачи и задачи команды, чужие задачи не показывает»); «staff» — АДМИНСКИЙ оверсайт «буквально
@@ -75,6 +75,7 @@ export const SMART_LISTS: SmartListDef[] = [
   { id: "today", label: "Сегодня", labelEn: "Today", icon: "clock" },
   { id: "upcoming", label: "Ближайшие", labelEn: "Upcoming", icon: "cal" },
   { id: "all", label: "Все", labelEn: "All", icon: "task" },
+  { id: "frozen", label: "Замороженные", labelEn: "Frozen", icon: "clock" },
   // «Регулярные» — единственный список, который ПРЯЧЕТСЯ при нулевом счётчике (решение
   // владельца 2026-08-27: «если задач таких нет, то список скрывается»). Скрытие живёт в
   // SmartListNav, здесь список объявлен всегда — иначе счётчик было бы негде взять.
@@ -124,9 +125,13 @@ function dueMidnight(task: Task): number | null {
   return isNaN(d.getTime()) ? null : midnight(d);
 }
 
+export function isTaskFrozen(task: { frozen_at?: string | null; task_frozen?: boolean }): boolean {
+  return task.task_frozen === true || task.frozen_at != null;
+}
+
 export function isOverdue(task: Task, now: Date = new Date()): boolean {
   const due = dueMidnight(task);
-  return due != null && !isDone(task) && due < midnight(now);
+  return due != null && !isTaskFrozen(task) && !isDone(task) && due < midnight(now);
 }
 
 // Задача «моя», если я исполнитель или соисполнитель (#874). Соисполнители с аккаунтом лежат в
@@ -231,6 +236,7 @@ function inList(task: Task, listId: SmartListId, now: Date, range: DateRange | n
   // Ось статуса — первой: она дешевле остальных проверок.
   if (!matchesStatus(task, statuses)) return false;
   if (!inPeriodOrOverdue(task, range, now)) return false;
+  if (listId === "frozen") return isTaskFrozen(task);
   if (listId === "all") return true;
   if (listId === "recurring") {
     // Регулярные НЕ убираются из остальных списков (решение владельца 2026-08-27): задача

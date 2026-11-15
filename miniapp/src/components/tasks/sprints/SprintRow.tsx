@@ -1,4 +1,5 @@
 "use client";
+import { TaskFreezeBadge } from "../TaskFreezeBadge";
 import { useState } from "react";
 import { cn, displayName } from "@/lib/utils";
 import type { CheckStatus, SprintCycle, SprintCycleItem, Task } from "@/types";
@@ -188,13 +189,14 @@ export function SprintRow(
 ) {
   const dt = useDt();
   const closed = CLOSED.has(item.status);
-  const needsNote = item.check_status === "risk" ||
-    item.check_status === "problem";
+  const needsNote = !item.task_frozen && (item.check_status === "risk" ||
+    item.check_status === "problem");
   // Открыт ли под строкой редактор «что мешает» (риск/проблема).
   const [editing, setEditing] = useState(false);
   const live = !item.removed && !!item.task_id;
   const openable = !!h.onOpen && live;
-  const late = !!item.due_date && !closed && isOverdue(item.due_date);
+  const late = !!item.due_date && !item.task_frozen && !closed &&
+    isOverdue(item.due_date);
   const who = item.assignees[0] ?? null;
   // Клик по кнопке не должен открывать карточку — иначе каждое быстрое действие
   // заканчивается всплывшей модалкой.
@@ -330,6 +332,7 @@ export function SprintRow(
             )}
           >
             {item.title}
+            <TaskFreezeBadge task={item} />
           </span>
         </div>
         {/* Второй этаж — мелкие метки под началом названия; этаж есть, только если есть метка. */}
@@ -457,7 +460,7 @@ export function SprintRow(
       </div>
 
       <div className="min-w-0 px-2">
-        {live && h.onCheck && !closed
+        {live && !item.task_frozen && h.onCheck && !closed
           ? (
             <button
               type="button"
@@ -477,7 +480,7 @@ export function SprintRow(
               />
             </button>
           )
-          : live
+          : live && !item.task_frozen
           ? (
             <CheckChip
               status={item.check_status}

@@ -8,6 +8,7 @@ import { apiErr, json } from "./http.ts";
 import { onlyLiveEntries } from "../_shared/entries/live.ts";
 import { canViewEntry, type EntryAccessRow } from "../_shared/entries/access.ts";
 import { serverError } from "./client-error.ts";
+import { USAGE_COST_COLUMNS } from "../_shared/model-usage-cost.ts";
 import {
   inPeriod,
   MAX_PERIOD_DAYS,
@@ -31,7 +32,9 @@ async function loadRows(
   const rows: UsageRow[] = [];
   for (let from = 0; from < MAX_ROWS; from += PAGE) {
     let query = supabase.from("model_usage")
-      .select("created_at, kind, model, purpose, meeting_id, prompt_tokens, completion_tokens, audio_seconds, cost_usd")
+      .select(
+        `created_at, kind, model, purpose, meeting_id, prompt_tokens, completion_tokens, audio_seconds, ${USAGE_COST_COLUMNS}`,
+      )
       .gte("created_at", since).lt("created_at", until);
     if (groupId !== null) query = query.eq("group_id", groupId);
     const { data, error } = await query.order("created_at", { ascending: true }).range(

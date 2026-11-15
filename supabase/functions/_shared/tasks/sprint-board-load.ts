@@ -64,6 +64,7 @@ async function fetchAll<T>(
 }
 
 type TaskRow = {
+  frozen_at: string | null;
   id: string;
   title: string;
   status: string;
@@ -94,7 +95,7 @@ export async function loadBoard(groupId: string, tabId: string | null, viewerId:
     (from, to) =>
       onlyLive(
         supabase.from("tasks").select(
-          "id, title, status, due_date, assignees, assignee_telegram_ids, parent_id, project_id, created_at",
+          "id, title, status, frozen_at, due_date, assignees, assignee_telegram_ids, parent_id, project_id, created_at",
         ),
       )
         .eq("group_id", groupId).in("project_id", groups.map((g) => g.id))
@@ -131,6 +132,7 @@ export async function loadBoard(groupId: string, tabId: string | null, viewerId:
       id: t.id,
       title: t.title,
       status: t.status,
+      frozen_at: t.frozen_at,
       due_date: t.due_date,
       assignees: t.assignees ?? [],
       assignee_telegram_ids: t.assignee_telegram_ids ?? [],

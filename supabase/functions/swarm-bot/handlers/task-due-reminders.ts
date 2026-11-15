@@ -9,6 +9,7 @@
 //   срока даёт новое напоминание за день до нового;
 // • задачу, созданную в день напоминания, не напоминаем: человек её только что завёл, а срок по
 //   умолчанию — завтра (владелец 15.10.2026, «делай»);
+// • замороженную задачу (`frozen_at`, #814) не напоминаем: пауза глушит и пинги, и напоминания;
 // • ручной пинг важнее: задача с ожидающим пингом (или пингом, сработавшим сегодня) пропускается;
 // • адресаты и недоставка — как у ручного пинга (`pingRecipients`, дошедшим повторно не шлём).
 
@@ -38,7 +39,7 @@ export interface DueRow extends PingRow {
  * или сработал сегодня/позже: человек напоминание уже получил.
  */
 export function isDueReminderDue(row: DueRow, today: string): boolean {
-  if (!row.due_date || row.archived_at || isClosedStatus(row.status)) return false;
+  if (!row.due_date || row.archived_at || row.frozen_at || isClosedStatus(row.status)) return false;
   if (row.due_date !== addDays(today, 1)) return false;
   if (row.due_reminded_for === row.due_date) return false;
   // Заведена сегодня (по календарю команды) — напоминать о ней в тот же день незачем.

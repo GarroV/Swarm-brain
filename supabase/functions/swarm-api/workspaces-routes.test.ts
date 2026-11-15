@@ -174,7 +174,10 @@ Deno.test("переименование: название обрезается; 
 
 // ── сводка ──────────────────────────────────────────────────────────────────
 
-function statsDb() {
+function statsDb(usage = [{ cost_usd: 1.005 }, { cost_usd: 2.5 }, { cost_usd: null }] as Array<{
+  cost_usd: number | null;
+  cost_usd_precise?: number | string | null;
+}>) {
   return makeDb((q) => {
     const has = (m: string, ...a: unknown[]) =>
       q.calls.some(([n, args]) => n === m && a.every((v, i) => JSON.stringify(args[i]) === JSON.stringify(v)));
@@ -201,8 +204,20 @@ function statsDb() {
         return has("eq", "entry_type", "meeting") ? { count: 7 } : { count: 11 };
       case "tasks":
         return { count: 5 };
-      case "model_usage":
-        return { data: [{ cost_usd: 1.005 }, { cost_usd: 2.5 }, { cost_usd: null }] };
+      case "model_usage": {
+        const selected = q.calls.find(([method]) => method === "select")?.[1][0] as string;
+        return {
+          data: usage.map((r) =>
+            Object.fromEntries(
+              selected.split(",").map((c) => {
+                const [name, cast] = c.trim().split("::");
+                const value = r[name as keyof typeof r];
+                return [name, cast === "text" && value != null ? String(value) : value];
+              }),
+            )
+          ),
+        };
+      }
       case "service_agents":
         return { data: [{ is_active: true, token_hash: "h", last_seen_at: "2026-11-05T10:00:00Z" }] };
       default:
@@ -309,4 +324,17 @@ Deno.test("рассылка: мастер с несуществующим про
   const res = await call(db, "POST", "/admin/broadcast", SUPER, true, "cee", { text: "hi", workspaces: ["nope"] });
   assertEquals(res.status, 404);
   assertEquals(db.queries.filter((q) => q.table === "allowed_users").length, 0);
+});
+
+Deno.test("workspace spend aggregates precise costs before the existing cent rounding", async () => {
+  const usage = [
+    { cost_usd: 0.004999, cost_usd_precise: null },
+    ...Array.from({ length: 10 }, () => ({ cost_usd: 0, cost_usd_precise: 0.00000012 })),
+    { cost_usd: 99, cost_usd_precise: 0 },
+    { cost_usd: null, cost_usd_precise: null },
+  ];
+  const db = statsDb(usage);
+  const value = await workspaceStats(db.client, "world", new Date("2026-11-05T12:00:00Z"));
+  assertEquals(value.model_spend_usd, 0.01);
+  assertEquals(db.writes.length, 0);
 });

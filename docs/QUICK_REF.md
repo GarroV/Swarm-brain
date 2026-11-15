@@ -510,3 +510,10 @@ claude mcp add supabase-swarm -- npx -y @supabase/mcp-server-supabase@0.12.0 \
 ```bash
 deno test -A supabase/functions/_shared/tasks/sprint-closed-carry.test.ts
 ```
+
+### Ручное подтверждение пары встреч (#183)
+
+- Предложение/решение: `swarm-api/manual-meeting-merge-routes.ts` → `_shared/manual-meeting-merge.ts`; DTO — `_shared/manual-meeting-merge-types.ts`. GET `agent-meetings/:id/manual-merge-candidate`, POST `.../manual-merge-decision`; только явные Yes/No для согласованной entry типа meeting (metadata.confirmed=true; OPEN исключена), прежние guards/хранилище, stale/busy → 409.
+- Транзакция и immutable originals: миграция `20261114120000_manual_meeting_confirmation.sql`, `manual_meeting_pair_decisions`, `meetings.manual_merge_target_id`. DELETE остаётся прежним; удалённые оригиналы через историю не открываются. История: GET `agent-meetings/:sourceId/manual-merge-versions/:decisionId`.
+- Происхождение transcript/микрофона: `_shared/meeting-transcript-origin{,-db}.ts`; только exact server-confirmed applied version. Автор/offset live-пометки относятся к её исходному `meeting_id`, не к началу целевой записи. Правило хранилища вынесено в `meeting-publish-visibility.ts`, прежний экспорт publisher сохранён.
+- Транзакционные регрессии/гонки: `_shared/manual-meeting-merge.db.test.ts` (изолированный CI); арбитраж/guards/публикация — соседние `manual-meeting-*.test.ts`. Реальные встречи/уведомления тестами не создаются.

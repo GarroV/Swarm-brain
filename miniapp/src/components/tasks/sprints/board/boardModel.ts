@@ -55,7 +55,9 @@ function matchesPerson(
 
 /** Строка спринта просит внимания: незакрытая и с риском, проблемой или просроченным сроком. */
 export function itemNeedsAttention(item: SprintCycleItem): boolean {
-  if (isClosedStatus(item.status) || item.removed) return false;
+  if (isClosedStatus(item.status) || item.removed || item.task_frozen) {
+    return false;
+  }
   return item.check_status === "risk" || item.check_status === "problem" ||
     (!!item.due_date && isOverdue(item.due_date));
 }
@@ -66,7 +68,8 @@ export const snapshotNeedsReason = (item: SprintCycleItem): boolean =>
 
 /** Задача мастер-плана просит внимания: незакрытая и просроченная. */
 export function planTaskNeedsAttention(t: BoardPlanTask): boolean {
-  return !isClosedStatus(t.status) && !!t.due_date && isOverdue(t.due_date);
+  return !t.frozen_at && !isClosedStatus(t.status) && !!t.due_date &&
+    isOverdue(t.due_date);
 }
 
 /** Подходит ли строка спринта под фильтры. `names` — исполнители с учётом telegram_id из плана. */

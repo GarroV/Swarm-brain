@@ -35,6 +35,11 @@ Deno.test("isPingDue: пинг на сегодня — пора", () => {
   assertEquals(isPingDue(row(), "2026-08-26"), true);
 });
 
+Deno.test("isPingDue: замороженная задача (#814) не пингуется, после разморозки — да", () => {
+  assertEquals(isPingDue(row({ frozen_at: "2026-11-14T10:00:00Z" }), "2026-08-26"), false);
+  assertEquals(isPingDue(row({ frozen_at: null }), "2026-08-26"), true);
+});
+
 Deno.test("isPingDue: пинг в будущем — рано", () => {
   assertEquals(isPingDue(row(), "2026-08-25"), false);
 });

@@ -53,7 +53,7 @@ export function TasksTable() {
   // «все» и «регулярные» (тумблер в «Ещё»); сохранённое «сегодня»/«ближайшие» сводим к «всем».
   const { activeList, setActiveList } = r;
   useEffect(() => {
-    if (activeList !== "all" && activeList !== "recurring") setActiveList("all");
+    if (activeList !== "all" && activeList !== "recurring" && activeList !== "frozen") setActiveList("all");
   }, [activeList, setActiveList]);
 
   const scope = r.activeLabelId ? r.visibleByLabel : r.visible;

@@ -1,4 +1,5 @@
 "use client";
+import { TaskFreezeBadge } from "@/components/tasks/TaskFreezeBadge";
 import { cn } from "@/lib/utils";
 import type { Task } from "@/types";
 import type { TaskSection } from "@/lib/taskTable";
@@ -86,6 +87,7 @@ function HomeRow({ task, cols, showLabels, now, en, project, labels, onOpen }: {
       <div className="flex min-w-0 items-center gap-2.5 px-3">
         <span className={cn("size-[7px] shrink-0 rounded-full", dot)} />
         <span className="truncate text-ink">{task.title}</span>
+        <TaskFreezeBadge task={task} />
       </div>
       <div className="min-w-0 truncate px-2 text-ink-soft">{project ?? <span className="text-ink-mute">—</span>}</div>
       {showLabels && <div className="min-w-0 truncate px-2 text-ink-soft">{labels || <span className="text-ink-mute">—</span>}</div>}

@@ -8,6 +8,7 @@
 // вне процента и вне знаменателя, упоминания удалённых задач не считаются, приватная чужая
 // задача остаётся в счёте строкой без содержимого. Если шапка начнёт считать по-своему,
 // человек увидит два разных факта об одном спринте.
+import { isTaskFrozen } from "@/lib/smartLists";
 import type { Project, SprintCycleItem } from "@/types";
 
 /** Сделано из закрываемых. `percent` округляется к ближайшему целому. */
@@ -27,6 +28,8 @@ export interface BoardRow {
   status: string;
   project_id: string | null;
   removed?: boolean;
+  frozen_at?: string | null;
+  task_frozen?: boolean;
 }
 
 /** Инициатива внутри направления. `project: null` — задачи, лежащие прямо на направлении. */
@@ -67,7 +70,9 @@ function isMention(i: BoardRow): boolean {
 
 /** То, что вообще участвует в проценте: живое и не отменённое. */
 function counted<T extends BoardRow>(items: readonly T[]): T[] {
-  return items.filter((i) => !isMention(i) && i.status !== "cancelled");
+  return items.filter((i) =>
+    !isMention(i) && !isTaskFrozen(i) && i.status !== "cancelled"
+  );
 }
 
 export function computeProgress(items: readonly BoardRow[]): Progress {
@@ -88,7 +93,9 @@ export function computeProgress(items: readonly BoardRow[]): Progress {
 export function withdrawnFromPlan(
   withdrawn: readonly SprintCycleItem[],
 ): SprintCycleItem[] {
-  return withdrawn.filter((i) => i.in_plan && !isMention(i));
+  return withdrawn.filter((i) =>
+    i.in_plan && !isMention(i) && !isTaskFrozen(i)
+  );
 }
 
 export function sprintKpi(
@@ -106,7 +113,9 @@ export function sprintKpi(
     percent: total === 0 ? 0 : Math.round((progress.done / total) * 100),
     withdrawn: out,
     cancelled:
-      items.filter((i) => !isMention(i) && i.status === "cancelled").length,
+      items.filter((i) =>
+        !isMention(i) && !isTaskFrozen(i) && i.status === "cancelled"
+      ).length,
     removed: items.filter(isMention).length,
     checkOk: check("ok"),
     checkRisk: check("risk"),

@@ -1,5 +1,6 @@
 "use client";
 import type { MouseEvent, ReactNode } from "react";
+import { TaskFreezeBadge } from "./TaskFreezeBadge";
 import type { Task } from "@/types";
 import type { TaskLabel } from "@/lib/api";
 import { PriDot } from "@/components/roy/ui";
@@ -89,6 +90,7 @@ export function TaskRow({ task, onToggle, showAssignee = true, now = new Date(),
           >
             {task.title}
           </span>
+          <TaskFreezeBadge task={task} />
         </div>
         {/* Мета-ряд рендерится ВСЕГДА (даже без чипов) с фикс. min-height — чтобы hover-действия
             (trailing, opacity-0→hover) не «выпадали» новой строкой и список не дёргался: место под

@@ -1,4 +1,6 @@
 "use client";
+import { TaskArchiveButton } from "../TaskArchive";
+import { TASK_LIFECYCLE_COPY as LIFE_COPY } from "@/lib/taskLifecycleCopy";
 import { cn, displayName } from "@/lib/utils";
 import type { User } from "@/types";
 import type { TaskLabel } from "@/lib/api";
@@ -135,6 +137,8 @@ export function TasksToolbar({ r, s }: { r: ReturnType<typeof useReminderTasks>;
         <span className="size-[7px] rounded-full bg-status-done" />
         {dt("Завершённые", "Completed")}
       </ToolbarButton>
+      <ToolbarButton on={r.activeList === "frozen"} onClick={() => { r.setActiveLabelId(null); r.setActiveList(r.activeList === "frozen" ? "all" : "frozen"); }} title={dt(LIFE_COPY.frozen.ru, LIFE_COPY.frozen.en)}>{dt(LIFE_COPY.frozen.ru, LIFE_COPY.frozen.en)}</ToolbarButton>
+      <TaskArchiveButton compact onRestored={() => { void r.reload(); }} />
       {admin && <Menu label={staffLabel} on={r.allStaff || s.assignee != null} items={staffItems} />}
       <Menu
         label={s.market.length ? `${dt("Рынок", "Market")}: ${countriesLabel(s.market)}` : dt("Рынок", "Market")}

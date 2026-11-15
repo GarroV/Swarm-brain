@@ -3,15 +3,16 @@
 // какие задачи попадают в какую секцию — это то, что человек читает как «что горит».
 
 import type { Task, User } from "@/types";
-import { isDone } from "@/lib/smartLists";
+import { isDone, isTaskFrozen } from "@/lib/smartLists";
 
-export type DueBucket = "over" | "today" | "later" | "nodue" | "done";
+export type DueBucket = "over" | "today" | "later" | "nodue" | "frozen" | "done";
 
 export const DUE_BUCKETS: ReadonlyArray<{ id: DueBucket; label: [string, string] }> = [
   { id: "over", label: ["Просрочено", "Overdue"] },
   { id: "today", label: ["Сегодня", "Today"] },
   { id: "later", label: ["Дальше", "Later"] },
   { id: "nodue", label: ["Без срока", "No due date"] },
+  { id: "frozen", label: ["Замороженные", "Frozen"] },
   { id: "done", label: ["Сделано", "Done"] },
 ];
 
@@ -28,6 +29,7 @@ function dueMidnight(task: Task): number | null {
 
 // Завершённая задача не «просрочена» и не «на сегодня»: срок у неё уже ничего не требует.
 export function dueBucket(task: Task, now: Date = new Date()): DueBucket {
+  if (isTaskFrozen(task)) return "frozen";
   if (isDone(task)) return "done";
   const due = dueMidnight(task);
   if (due == null) return "nodue";
@@ -58,7 +60,7 @@ function remindMidnight(task: Task): number | null {
 
 /** Место в «Актуальном»: 0 — просрочено, 1 — сегодня, 2 — завтра, 3 — только пинг; null — не там. */
 export function currentRank(task: Task, now: Date = new Date()): number | null {
-  if (isDone(task)) return null;
+  if (isDone(task) || isTaskFrozen(task)) return null;
   const today = midnight(now);
   const tomorrow = today + DAY_MS;
   const due = dueMidnight(task);

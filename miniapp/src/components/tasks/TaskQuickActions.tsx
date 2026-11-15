@@ -5,6 +5,7 @@
 // (variant="icon", сетка флагов, единый компонент с формой TaskModal); списки — пиктограммы-метки
 // (PictogramPicker, multi).
 // Каждый выбор МГНОВЕННО патчит задачу локально (onPatch) и уже фоном шлёт PATCH + reload.
+import { TaskFreezeButton } from "./TaskFreezeButton";
 import { DatePicker } from "@/components/ui/DatePicker";
 import { QuickPickPopover } from "@/components/tasks/QuickPickPopover";
 import { PictogramPicker } from "@/components/tasks/PictogramPicker";
@@ -60,6 +61,7 @@ export function TaskQuickActions({ task, users, markets, labels, onPatch, onChan
 
   return (
     <>
+      <TaskFreezeButton task={task} onPatch={onPatch} />
       <DatePicker
         variant="compact"
         value={task.due_date ?? ""}
