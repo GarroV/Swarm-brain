@@ -49,15 +49,15 @@ export async function readBodyLimited(req: Request, maxBytes = MAX_BODY_BYTES): 
 }
 
 /**
- * Адрес клиента для счётчика. Cloudflare кладёт настоящий адрес в cf-connecting-ip; иначе берём
- * ПОСЛЕДНЕЕ звено x-forwarded-for — его дописывает ближайший прокси, клиент его не выбирает
- * (левые звенья клиент присылает сам). Это вторичный рубеж: лимит на токен от заголовков не зависит.
+ * Адрес клиента для счётчика: ПЕРВЫЙ элемент x-forwarded-for. На проде цепочка Cloudflare → фронт →
+ * Caddy → envoy → edge-runtime; Caddy пускает только запросы фронта и целиком перезаписывает
+ * x-forwarded-for доверенным адресом клиента, envoy его не трогает. Клиент подделать первый хоп не
+ * может, а «последний» стал бы общим для всех, если бы какой-то слой дописал свой хоп.
+ * cf-connecting-ip на этом пути не доверенный и не используется. Нет заголовка — корзина "unknown".
  */
 export function clientAddress(headers: Headers): string {
-  const cf = headers.get("cf-connecting-ip")?.trim();
-  if (cf) return cf.slice(0, 64);
-  const hops = (headers.get("x-forwarded-for") ?? "").split(",").map((h) => h.trim()).filter(Boolean);
-  return (hops.at(-1) ?? "unknown").slice(0, 64);
+  const first = (headers.get("x-forwarded-for") ?? "").split(",")[0].trim();
+  return (first || "unknown").slice(0, 64);
 }
 
 export interface RateSink {
@@ -104,9 +104,16 @@ export function rateLimitedResponse(id: unknown): Response {
   );
 }
 
-/** Входные лимиты запроса: частота с адреса, затем размер тела. Response — отказ; строка — тело. */
-export async function admitRequest(sink: RateSink, req: Request): Promise<Response | string> {
-  if (!(await takeAddressRate(sink, req.headers))) return rateLimitedResponse(null);
+/** Размер тела (до разбора). Response — отказ 413; строка — тело запроса. */
+export async function readBodyOrRefuse(req: Request): Promise<Response | string> {
   const raw = await readBodyLimited(req);
   return raw.kind === "too_large" ? bodyTooLargeResponse() : raw.text;
+}
+
+/**
+ * Частота после разбора токена: проверенный токен — только лимит на токен; запрос без проверенного
+ * токена (хендшейк, неверный токен) — лимит на адрес, чтобы чужой с того же адреса не выбивал людей.
+ */
+export function takeRate(sink: RateSink, tokenHash: string | null, headers: Headers): Promise<boolean> {
+  return tokenHash ? takeTokenRate(sink, tokenHash) : takeAddressRate(sink, headers);
 }

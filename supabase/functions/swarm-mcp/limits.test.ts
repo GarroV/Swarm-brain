@@ -8,6 +8,7 @@ import {
   type RateSink,
   readBodyLimited,
   takeAddressRate,
+  takeRate,
   takeTokenRate,
   TOKEN_CALLS_PER_WINDOW,
 } from "./limits.ts";
@@ -42,13 +43,20 @@ Deno.test("readBodyLimited: body exactly at the limit passes", async () => {
   assertEquals((await readBodyLimited(post("a".repeat(100)), 100)).kind, "ok");
 });
 
-Deno.test("clientAddress prefers cf-connecting-ip, else the last forwarded hop (not the client-supplied first)", () => {
-  assertEquals(
-    clientAddress(new Headers({ "cf-connecting-ip": "1.1.1.1", "x-forwarded-for": "9.9.9.9, 2.2.2.2" })),
-    "1.1.1.1",
-  );
-  assertEquals(clientAddress(new Headers({ "x-forwarded-for": "9.9.9.9, 2.2.2.2" })), "2.2.2.2");
+Deno.test("clientAddress: first x-forwarded-for hop; cf-connecting-ip is ignored", () => {
+  assertEquals(clientAddress(new Headers({ "x-forwarded-for": "a, b" })), "a");
+  assertEquals(clientAddress(new Headers({ "cf-connecting-ip": "1.1.1.1", "x-forwarded-for": "a, b" })), "a");
+  assertEquals(clientAddress(new Headers({ "cf-connecting-ip": "1.1.1.1" })), "unknown");
   assertEquals(clientAddress(new Headers()), "unknown");
+});
+
+Deno.test("takeRate: verified token is limited only by its token bucket, never by address", async () => {
+  const s = sink({ data: true, error: null });
+  await takeRate(s.s, "ab".repeat(32), new Headers({ "x-forwarded-for": "a" }));
+  assertEquals(s.calls.map((c) => String(c.p_bucket).split(":")[1]), ["tok"]);
+  const u = sink({ data: false, error: null });
+  assertEquals(await takeRate(u.s, null, new Headers({ "x-forwarded-for": "a" })), false);
+  assertEquals(u.calls.map((c) => String(c.p_bucket).split(":")[1]), ["addr"]);
 });
 
 function sink(result: { data: unknown; error: { code?: string } | null }) {
@@ -62,7 +70,7 @@ Deno.test("takeTokenRate / takeAddressRate pass the agreed limits and hashed buc
   assertEquals(await takeTokenRate(a.s, "ab".repeat(32)), true);
   assertEquals(a.calls[0].p_limit, TOKEN_CALLS_PER_WINDOW);
   assertEquals(String(a.calls[0].p_bucket).startsWith("mcp:tok:"), true);
-  assertEquals(await takeAddressRate(a.s, new Headers({ "cf-connecting-ip": "1.2.3.4" })), true);
+  assertEquals(await takeAddressRate(a.s, new Headers({ "x-forwarded-for": "1.2.3.4" })), true);
   assertEquals(a.calls[1].p_limit, ADDRESS_CALLS_PER_WINDOW);
   assertEquals(String(a.calls[1].p_bucket).includes("1.2.3.4"), false);
 });
