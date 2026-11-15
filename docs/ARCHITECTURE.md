@@ -2853,7 +2853,9 @@ supabase/functions/swarm-mcp/
 
 ## Веб-интерфейс frontend — miniapp/
 
-Next.js 16, `output: "export"` (статический HTML/CSS/JS в `miniapp/out/`, без сервера) → Cloudflare Pages, **авто-деплой с `main`** (см. [QUICK_REF → Деплой](QUICK_REF.md)). Монорепо, полностью отдельно от Deno Edge Functions. Дизайн-система «Рой» (`src/components/roy/`) под хендофф `design_handoff_roy`. Разработка: `cd miniapp && npm run build`.
+Next.js 16.4.3, `output: "export"` (статический HTML/CSS/JS в `miniapp/out/`, без сервера) → Cloudflare Pages, **авто-деплой с `main`** (см. [QUICK_REF → Деплой](QUICK_REF.md)). Монорепо, полностью отдельно от Deno Edge Functions. Дизайн-система «Рой» (`src/components/roy/`) под хендофф `design_handoff_roy`. Разработка: `cd miniapp && npm run build`.
+
+**Регрессия сборки шрифтов (#1336).** Закреплён `next@16.4.3`, сохраняются действующие настройки шрифтов и lint. Нативная проверка корректного extensionless URL с `&` и правила изоляции build-фикстуры описаны в [каноне фронтенда](MINIAPP_ARCHITECTURE.md#сборка-шрифтов-1336).
 
 > **Канон фронтенда — [MINIAPP_ARCHITECTURE.md](MINIAPP_ARCHITECTURE.md)** (стек, дизайн-токены, IA/`RoyApp`, экраны, дашборд, виды задач, API-контракт, auth, env). Типы/клиент — `miniapp/src/types.ts`, `miniapp/src/lib/api.ts`. Env — §[Переменные окружения](#переменные-окружения). Здесь не дублируем.
 
