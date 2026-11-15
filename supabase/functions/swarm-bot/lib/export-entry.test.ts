@@ -1,7 +1,7 @@
 // Выгрузка записи файлом (ИИ-инструмент бота export_entry): запись ищется только в своём
 // воркспейсе и только среди видимых зрителю; текст собирается из частей ЭТОЙ записи
 // (metadata.chunk_group_id), а не из всего воркспейса.
-import { assertEquals } from "jsr:@std/assert@1";
+import { assertEquals, assertRejects } from "jsr:@std/assert@1";
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { loadEntryForExport } from "./export-entry.ts";
 
@@ -107,4 +107,57 @@ Deno.test("общая встреча другой команды: части и�
   await loadEntryForExport(client, "e1", { groupId: "world", userId: VIEWER });
   assertEquals(has(calls[0], "contains", "visible_group_ids", ["world"]), true);
   assertEquals(has(calls[1], "eq", "group_id", "cee"), true, "части искались в пространстве зрителя");
+});
+
+function legacyMcpParts(original: string) {
+  const parts = [];
+  const contents = [];
+  for (let pos = 0; pos < original.length; pos += 2800) contents.push(original.slice(pos, pos + 3000));
+  for (const [i, content] of contents.entries()) {
+    parts.push({
+      id: `fixture-${i + 1}`,
+      content,
+      summary: i === 0 ? "Summary fixture" : null,
+      metadata: { chunk_group_id: "79000000-0000-4000-8000-000000000001", chunk: i + 1, total_chunks: contents.length },
+      source: "fixture-source",
+      added_by: "claude_desktop",
+      group_id: "fixture",
+      visible_group_ids: ["fixture"],
+      owner_id: VIEWER,
+      is_private: false,
+      shared_with: [],
+      countries: ["PL"],
+      entry_type: "note",
+      entry_date: null,
+      created_at: "2026-09-01T00:00:00Z",
+      updated_at: "2026-09-01T00:00:00Z",
+    });
+  }
+  return parts;
+}
+
+Deno.test("MCP legacy head: export is the full original, not its first part or summary", async () => {
+  const original = "START " + "abcdef".repeat(1100) + " END";
+  const parts = legacyMcpParts(original);
+  const { client } = makeSupabase(parts[0], parts);
+  const r = await loadEntryForExport(client, parts[0].id, { groupId: "fixture", userId: VIEWER });
+  assertEquals(r?.fullContent, original);
+});
+
+Deno.test("MCP legacy tail: export removes exactly the original overlap", async () => {
+  const original = "START " + "abcdef".repeat(1100) + " END";
+  const parts = legacyMcpParts(original);
+  const { client } = makeSupabase(parts[1], [...parts].reverse());
+  const r = await loadEntryForExport(client, parts[1].id, { groupId: "fixture", userId: VIEWER });
+  assertEquals(r?.fullContent, original);
+});
+
+Deno.test("MCP legacy export refuses an incomplete group instead of claiming a full original", async () => {
+  const parts = legacyMcpParts("START " + "abcdef".repeat(1100) + " END");
+  const { client } = makeSupabase(parts[0], parts.slice(0, -1));
+  await assertRejects(
+    () => loadEntryForExport(client, parts[0].id, { groupId: "fixture", userId: VIEWER }),
+    Error,
+    "incomplete",
+  );
 });
