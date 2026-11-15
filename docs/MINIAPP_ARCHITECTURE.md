@@ -492,3 +492,5 @@ recent — до конца фазы, остальные встречи — по 
 данные как refreshing: старый cursor не подгружается с новым фильтром, старый ответ
 не становится точной статистикой нового запроса. Ошибка любой очереди/страницы
 не выдаёт частичный fallback за полный; `MeetingListFeedback` даёт повтор.
+
+**Browser storage compatibility (#186).** `RoyApp` and `SearchScreen` share the pure `lib/browserStorage.ts` key adapter: write `swarm_tab`/`swarm_stack`/`swarm_recent_searches`, read new first with a nullish `roy_*` fallback, and clear both stack keys on explicit navigation reset. Stored values and navigation/query behavior are unchanged; this adapter does not handle cookies or authentication. The actual-consumer Node fixture is run by `browserStorage.test.ts`.

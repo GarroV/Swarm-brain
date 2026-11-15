@@ -2958,3 +2958,5 @@ header продолжает работать через offset. `X-Total-Count` 
 нули или счётчики одной страницы. После ошибки списка полнота не заявляется; явный повтор
 перезапускает загрузку и чтение агрегата. Сразу подгружаются вся вычитка и сегодня/вчера;
 более ранние страницы — по существующей команде «Показать ещё».
+
+**Browser UI state (#186).** `miniapp/src/lib/browserStorage.ts` keeps the tab/push stack in session storage (`swarm_tab`, `swarm_stack`) and recent search queries in local storage (`swarm_recent_searches`). Readers prefer the new key and consult its `roy_*` predecessor only when the new key is absent; writes use only `swarm_*`. Explicit stack clearing removes both keys so reload cannot restore a legacy detail. Existing route/query parsers, URL precedence, recent-query order/limit and storage-error handling remain in their consumers.

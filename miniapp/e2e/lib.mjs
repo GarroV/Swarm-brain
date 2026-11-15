@@ -116,7 +116,7 @@ export async function freshLoad(page) {
     sessionStorage.clear();
     localStorage.removeItem("roy_tasks_view");
   });
-  // The first mount can restore roy_stack into the URL. Reload would restore that route
+  // The first mount can restore swarm_stack (legacy roy_stack) into the URL. Reload would restore that route
   // again even after storage.clear(); enter the clean URL instead (#290).
   await page.goto(BASE_URL, { waitUntil: "networkidle2" });
   await wait(1800);

@@ -157,8 +157,10 @@ await section("Блок 2", async () => {
   r.ok("настройки открываются из «Ещё»", /Профиль|Granola|Рекордер/.test(await bodyText(page)));
 
   // Миграция сохранённого таба: старые значения не должны давать экран без таб-бара.
+  // Проверяем перенос legacy-ключа: текущие ключи (swarm_*) и старые (roy_*) стираются,
+  // выставляется только legacy roy_tab, после перезагрузки вкладка должна взяться из него.
   for (const [saved, expect] of [["search", "Задачи"], ["book", "Ещё"]]) {
-    await page.evaluate((v) => { sessionStorage.setItem("roy_tab", v); sessionStorage.removeItem("roy_stack"); }, saved);
+    await page.evaluate((v) => { for (const k of ["swarm_tab", "swarm_stack", "roy_tab", "roy_stack"]) sessionStorage.removeItem(k); sessionStorage.setItem("roy_tab", v); }, saved);
     await page.goto(BASE_URL, { waitUntil: "networkidle2" });
     await wait(1700);
     const h1 = await visibleTitle(page);
