@@ -1,3 +1,4 @@
+import { canonicalManualMeeting, type ManualMeetingRow } from "../_shared/manual-meeting-merge.ts";
 import { meetingEntryIsLive } from "../_shared/meeting-entry-live.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import {
@@ -67,6 +68,18 @@ async function loadOwnDraft(
     return { ok: false, msg: NOT_FOUND };
   }
   if (!await meetingEntryIsLive(supabase, meeting)) return { ok: false, msg: NOT_FOUND };
+  if (meeting.manual_merge_target_id) {
+    try {
+      const canonical = await canonicalManualMeeting(supabase, meeting as ManualMeetingRow, {
+        telegramId: callerId,
+        groupId,
+        email: email ?? await callerEmail(callerId),
+      });
+      return { ok: true, meeting: canonical, groupId };
+    } catch {
+      return { ok: false, msg: NOT_FOUND };
+    }
+  }
   return { ok: true, meeting, groupId };
 }
 
@@ -90,6 +103,7 @@ export async function toolGetReviewQueue(args: Caller): Promise<string> {
       { count: "exact" },
     )
     .eq("status", "awaiting_review")
+    .is("manual_merge_target_id", null)
     .or(draftMeetingsOwnScopedFilter(callerId))
     .order("started_at", { ascending: false, nullsFirst: false })
     .limit(QUEUE_LIMIT);
