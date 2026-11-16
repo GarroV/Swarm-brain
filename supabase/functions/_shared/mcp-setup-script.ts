@@ -26,7 +26,7 @@ const MCP_URL = `${FUNCTIONS_BASE_URL}/swarm-mcp`;
 // swarm-setup/version номер и отпечаток, и если номер больше своего — тянут свежий текст.
 // ПРАВИЛО: тронул BRIDGE_SCRIPT — подними версию, иначе у людей мост не обновится (script.test.ts
 // держит пару «версия ↔ отпечаток» и краснеет, если текст сменился, а версия нет).
-export const BRIDGE_VERSION = 2;
+export const BRIDGE_VERSION = 3;
 
 /** SHA-256 текста в hex — тот же отпечаток, что считает `shasum -a 256` у человека. */
 export async function sha256Hex(text: string): Promise<string> {
@@ -35,8 +35,8 @@ export async function sha256Hex(text: string): Promise<string> {
 }
 
 // Текст моста. Кладётся в ~/.swarm-brain/bin/swarm-mcp-bridge.sh, в конфиг Claude попадает как
-// `command: /bin/bash, args: [<путь>]`. Адрес и заголовок приходят из env — токен не светится
-// в командной строке (ps его не покажет).
+// `command: /bin/bash, args: [<путь>]`. Адрес и заголовок приходят из env, а в curl токен уходит
+// файлом (-H @файл) — в командной строке (ps) его нет.
 export const BRIDGE_SCRIPT = `#!/bin/bash
 # Мост stdio ↔ HTTP для MCP-сервера Swarm Brain. Ставится установщиком (/setup), руками не правь.
 # Claude Desktop говорит по stdio построчным JSON-RPC, swarm-mcp — по HTTP. Задача моста ровно
@@ -50,9 +50,15 @@ URL="\${SWARM_MCP_URL:?}"
 AUTH="\${SWARM_MCP_AUTH:?}"
 MAX_TIME="\${SWARM_MCP_MAX_TIME:-120}"
 export LC_ALL=C
+# Заголовок с токеном — в файл, а не аргументом curl: аргументы видны в \`ps\` всем процессам
+# пользователя. Файл приватный (umask 077, chmod 600) и удаляется на выходе.
+umask 077
 BODY="$(mktemp)"
 ERRF="$(mktemp)"
-trap 'rm -f "$BODY" "$ERRF"' EXIT
+HDRF="$(mktemp)"
+trap 'rm -f "$BODY" "$ERRF" "$HDRF"' EXIT
+chmod 600 "$HDRF"
+printf 'Authorization: %s\\n' "$AUTH" > "$HDRF"
 
 # Экранирование для JSON-строки: управляющие символы выбрасываем, \\ и " экранируем.
 json_escape() {
@@ -147,7 +153,7 @@ while IFS= read -r line; do
   : > "$BODY"
   code="$(printf '%s' "$line" | curl -sS --max-time "$MAX_TIME" -X POST "$URL" \\
       -H "Content-Type: application/json" \\
-      -H "Authorization: $AUTH" \\
+      -H @"$HDRF" \\
       -o "$BODY" -w '%{http_code}' \\
       --data-binary @- 2>"$ERRF")"
   rc=$?
@@ -204,6 +210,8 @@ die() { printf '\\n❌ %s\\n' "$*" >&2; exit 1; }
 
 say "🐝 Swarm Brain → Claude Desktop"
 say ""
+BRIDGE_TMP=""
+PROBE_HDR=""
 
 if [ -z "$SWARM_TOKEN" ]; then
   die "Нет токена. Возьми свежую команду в боте — она содержит токен (/setup)."
@@ -224,8 +232,13 @@ esac
 # только «Server disconnected» без причины. Проверяем ДО записи конфига.
 # tools/call (не initialize и не tools/list — те отвечают и без авторизации).
 say "→ Проверяю токен на сервере…"
+# Заголовок с токеном — файлом (-H @файл), а не аргументом: аргументы видны в \`ps\`.
+umask 077
+PROBE_HDR="$(mktemp)" || die "Не удалось создать временный файл"
+trap 'rm -f "$PROBE_HDR" "$BRIDGE_TMP"' EXIT
+printf 'Authorization: Bearer %s\\n' "$SWARM_TOKEN" > "$PROBE_HDR"
 PROBE="$(curl -fsS -X POST "$MCP_URL" \\
-  -H "Authorization: Bearer $SWARM_TOKEN" -H "Content-Type: application/json" \\
+  -H @"$PROBE_HDR" -H "Content-Type: application/json" \\
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"get_tasks","arguments":{}}}' 2>/dev/null || true)"
 case "$PROBE" in
   *'"result"'*) say "✓ Токен принят сервером" ;;
@@ -241,7 +254,6 @@ mkdir -p "$BIN_DIR" || die "Не удалось создать $BIN_DIR"
 # Пишем во временный файл рядом и подменяем через mv (#951): запись через \`cat >\` в тот же файл
 # ломала уже запущенные мосты — bash читает скрипт по ходу, и они зависали на новом тексте.
 BRIDGE_TMP="$(mktemp "$BIN_DIR/.bridge-install.XXXXXX")" || die "Не удалось создать временный файл в $BIN_DIR"
-trap 'rm -f "$BRIDGE_TMP"' EXIT
 cat > "$BRIDGE_TMP" <<'SWARM_BRIDGE_EOF'
 ${BRIDGE_SCRIPT}SWARM_BRIDGE_EOF
 chmod 755 "$BRIDGE_TMP" || die "Не удалось сделать мост исполняемым ($BRIDGE_TMP)"

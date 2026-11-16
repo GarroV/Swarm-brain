@@ -48,6 +48,8 @@ import { type JournalOutcome, recordToolCall } from "./journal.ts";
 import { checkTokenRow, type TokenRow } from "./token-state.ts";
 import { oauthConfig, resolveOAuthAccessToken } from "../_shared/mcp-oauth/index.ts";
 import { oauthUnauthorized } from "./http-auth.ts";
+import { sha256 } from "../_shared/mcp-oauth/rules.ts";
+import { admitRequest, rateLimitedResponse, takeTokenRate } from "./limits.ts";
 import {
   AUTH_ERROR_CODE,
   authorizeToolCall,
@@ -103,16 +105,14 @@ const callerScope = (userId: number | null | undefined) => resolveCallerScope(us
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
+const CORS_HEADERS = { "Access-Control-Allow-Origin": "*" };
+
 function ok(id: unknown, result: unknown): Response {
-  return new Response(JSON.stringify({ jsonrpc: "2.0", id, result }), {
-    headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
-  });
+  return Response.json({ jsonrpc: "2.0", id, result }, { headers: CORS_HEADERS });
 }
 
 function err(id: unknown, code: number, message: string): Response {
-  return new Response(JSON.stringify({ jsonrpc: "2.0", id, error: { code, message } }), {
-    headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
-  });
+  return Response.json({ jsonrpc: "2.0", id, error: { code, message } }, { headers: CORS_HEADERS });
 }
 
 function textContent(text: string) {
@@ -910,9 +910,11 @@ Deno.serve(async (req: Request) => {
   }
   if (req.method !== "POST") return new Response(null, { status: 405, headers: { Allow: "POST, OPTIONS" } });
 
+  const admitted = await admitRequest(supabase, req); // лимит адреса и размера тела — до любой проверки токена (limits.ts)
+  if (admitted instanceof Response) return admitted;
   let body: { jsonrpc: string; method: string; params?: Record<string, unknown>; id: unknown };
   try {
-    body = await req.json();
+    body = JSON.parse(admitted);
   } catch {
     return err(null, -32700, "Parse error");
   }
@@ -945,12 +947,7 @@ Deno.serve(async (req: Request) => {
   }
 
   if (bearer?.startsWith("smcp_")) {
-    const token = bearer;
-    const encoder = new TextEncoder();
-    const hashBuffer = await crypto.subtle.digest("SHA-256", encoder.encode(token));
-    const hashHex = Array.from(new Uint8Array(hashBuffer))
-      .map((b) => b.toString(16).padStart(2, "0"))
-      .join("");
+    const hashHex = await sha256(bearer);
 
     const { data: tokenRow } = await supabase
       .from("allowed_users")
@@ -981,6 +978,7 @@ Deno.serve(async (req: Request) => {
     }
   }
 
+  if (tokenHashHex && !(await takeTokenRate(supabase, tokenHashHex))) return rateLimitedResponse(id); // только проверенные токены
   if (method === "initialize") {
     return ok(id, {
       protocolVersion: negotiateProtocolVersion(params?.protocolVersion),
@@ -1015,8 +1013,9 @@ Deno.serve(async (req: Request) => {
     });
     if (!auth.ok) return err(id, auth.code, auth.message);
 
-    // Поля личности в аргументах всегда перетираются значением из токена.
-    let args = withCallerIdentity((params?.arguments ?? {}) as Record<string, unknown>, auth.telegramId);
+    const identified = withCallerIdentity((params?.arguments ?? {}) as Record<string, unknown>, auth.telegramId);
+    if (!identified.ok) return err(id, identified.code, identified.message);
+    let args = identified.args;
 
     // Разрушающий инструмент — в два шага (confirm.ts): без токена подтверждения не исполняется.
     const journal = (outcome: JournalOutcome) =>

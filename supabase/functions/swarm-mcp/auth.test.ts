@@ -2,6 +2,7 @@ import { assertEquals } from "jsr:@std/assert@1";
 import {
   AUTH_ERROR_CODE,
   authorizeToolCall,
+  IDENTITY_MISMATCH_MESSAGE,
   NO_WORKSPACE_MESSAGE,
   resolveCallerScope,
   UNAUTHORIZED_MESSAGE,
@@ -58,21 +59,35 @@ Deno.test("whoami works without a workspace (reads only the caller's own row)", 
   assertEquals(res, { ok: true, telegramId: CALLER, groupId: null });
 });
 
-Deno.test("identity fields in arguments are overwritten by the token identity", () => {
-  const args = { query: "x", requesting_user_id: OTHER, owner_telegram_id: OTHER };
-  const forced = withCallerIdentity(args, CALLER);
-  assertEquals(forced, { query: "x", requesting_user_id: CALLER, owner_telegram_id: CALLER });
+Deno.test("a foreign identity in arguments is refused, not silently replaced", () => {
+  for (const field of ["requesting_user_id", "owner_telegram_id"]) {
+    const res = withCallerIdentity({ query: "x", [field]: OTHER }, CALLER);
+    assertEquals(res, { ok: false, code: AUTH_ERROR_CODE, message: IDENTITY_MISMATCH_MESSAGE });
+  }
+  assertEquals(withCallerIdentity({ requesting_user_id: "abc" }, CALLER).ok, false);
+  assertEquals(withCallerIdentity({ requesting_user_id: {} }, CALLER).ok, false);
 });
 
-Deno.test("identity is set even when the client did not send it", () => {
-  const forced = withCallerIdentity({ query: "x" }, CALLER);
-  assertEquals(forced.requesting_user_id, CALLER);
+Deno.test("the caller's own id (number or numeric string) is accepted and normalised", () => {
+  assertEquals(
+    withCallerIdentity({ query: "x", requesting_user_id: CALLER, owner_telegram_id: String(CALLER) }, CALLER),
+    {
+      ok: true,
+      args: { query: "x", requesting_user_id: CALLER, owner_telegram_id: CALLER },
+    },
+  );
+});
+
+Deno.test("identity is set when the client did not send it", () => {
+  const res = withCallerIdentity({ query: "x", requesting_user_id: null }, CALLER);
+  assertEquals(res.ok && res.args.requesting_user_id, CALLER);
+  assertEquals(res.ok && res.args.owner_telegram_id, CALLER);
 });
 
 Deno.test("source arguments are not mutated", () => {
-  const args = { requesting_user_id: OTHER };
+  const args = { requesting_user_id: CALLER };
   withCallerIdentity(args, CALLER);
-  assertEquals(args.requesting_user_id, OTHER);
+  assertEquals(args, { requesting_user_id: CALLER });
 });
 
 Deno.test("caller scope: no identity → null, lookup is not even asked", async () => {
