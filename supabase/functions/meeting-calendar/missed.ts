@@ -51,7 +51,7 @@ export async function recordSweepMisses(
   for (const job of candidates) {
     if (!arrivalCheckDue(job, nowMs)) continue;
     try {
-      const evidence = await store.arrivalEvidence(groupId, job.calendar_key, job.invited_by);
+      const evidence = await store.arrivalEvidence(groupId, job.calendar_key, job.invited_by, job);
       const miss = notArrivedMiss(job, evidence);
       if (miss !== null) {
         await store.recordMisses(groupId, [miss]);

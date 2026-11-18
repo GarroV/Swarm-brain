@@ -4,6 +4,7 @@
 // файл смоук scripts/scriba-calendar-smoke.ts против настоящего Postgres.
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import type { ArrivalEvidence, ArrivalJob, MissRecord } from "./calendar-missed.ts";
+import { roomOf } from "./calendar-dispatch.ts";
 
 /** Задание календаря, как его видит проверка «дошёл ли бот». */
 export interface JobRow extends ArrivalJob {
@@ -30,7 +31,12 @@ export interface MissStore {
   /**
    * Бот подал heartbeat в строку этой встречи · человеку `recipient` по ней ушла нотиса бота.
    */
-  arrivalEvidence(groupId: string, calendarKey: string, recipient: number): Promise<ArrivalEvidence>;
+  arrivalEvidence(
+    groupId: string,
+    calendarKey: string,
+    recipient: number,
+    slot?: Pick<MissRecord, "join_url" | "starts_at">,
+  ): Promise<ArrivalEvidence>;
 }
 
 const JOB_COLUMNS =
@@ -42,6 +48,36 @@ function must<T>(what: string, res: { data: T | null; error: { message: string }
   // Ошибка чтения — громко: пустой список выглядит ровно как «пропусков нет».
   if (res.error) throw new Error(`${what}: ${res.error.message}`);
   return res.data;
+}
+
+/** Another calendar identity can share the physical bot, but only within the exact scheduled slot. */
+async function slotBotSeen(
+  supabase: SupabaseClient,
+  groupId: string,
+  calendarKey: string,
+  slot?: Pick<MissRecord, "join_url" | "starts_at">,
+): Promise<boolean> {
+  if (!slot?.join_url?.trim() || !slot.starts_at) return false;
+  const startsMs = Date.parse(slot.starts_at);
+  if (!Number.isFinite(startsMs)) return false;
+  const startsAt = new Date(startsMs).toISOString();
+  const jobs = (must(
+    "meeting_calendar_jobs arrival slot",
+    await supabase.from("meeting_calendar_jobs").select("calendar_key, join_url")
+      .eq("group_id", groupId).eq("starts_at", startsAt).not("taken_at", "is", null)
+      .neq("calendar_key", calendarKey),
+  ) ?? []) as { calendar_key: string; join_url: string }[];
+  const room = roomOf(slot.join_url);
+  const keys = [...new Set(jobs.filter((job) => roomOf(job.join_url) === room).map((job) => job.calendar_key))];
+  if (keys.length === 0) return false;
+  const meetings = (must(
+    "meetings arrival slot",
+    await supabase.from("meetings").select("agent_last_seen_at")
+      .eq("group_id", groupId).in("identity_key", keys).gte("agent_last_seen_at", startsAt),
+  ) ?? []) as { agent_last_seen_at: string | null }[];
+  return meetings.some((meeting) =>
+    meeting.agent_last_seen_at !== null && Date.parse(meeting.agent_last_seen_at) >= startsMs
+  );
 }
 
 export function makeMissStore(supabase: SupabaseClient): MissStore {
@@ -74,13 +110,14 @@ export function makeMissStore(supabase: SupabaseClient): MissStore {
         .eq("group_id", groupId).in("calendar_key", [...calendarKeys]);
       return (must("meeting_calendar_jobs by key", res) ?? []) as JobRow[];
     },
-    async arrivalEvidence(groupId, calendarKey, recipient) {
+    async arrivalEvidence(groupId, calendarKey, recipient, slot) {
       const meetings = (must(
         "meetings",
         await supabase.from("meetings").select("id, agent_last_seen_at")
           .eq("group_id", groupId).eq("identity_key", calendarKey),
       ) ?? []) as { id: string; agent_last_seen_at: string | null }[];
       if (meetings.some((m) => m.agent_last_seen_at !== null)) return { botSeen: true, noticeSent: false };
+      if (await slotBotSeen(supabase, groupId, calendarKey, slot)) return { botSeen: true, noticeSent: false };
       // Бот сам сказал человеку: по строке встречи (дверь, join_failed) или по ключу календаря
       // (до-встречные нотисы).
       const byKey = must(

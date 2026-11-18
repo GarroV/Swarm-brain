@@ -15,6 +15,9 @@ import type {
   ProxySpec,
 } from "./engine.ts";
 
+import { LABEL } from "./meeting-basis.ts";
+import { calendarSlotFromEnvironment } from "./calendar-slot.ts";
+
 const NOT_FOUND = 404;
 const NOT_MODIFIED = 304;
 
@@ -222,11 +225,32 @@ export class DockerodeEngine implements ContainerEngine, EgressEngine {
       all: true,
       filters: { label: [`${label}=${value}`] },
     });
-    return found.map((info) => ({
-      id: info.Id,
-      running: info.State === "running",
-      labels: info.Labels,
-    }));
+    return Promise.all(
+      found.map(async (info) => {
+        let calendarSlot = info.Labels[LABEL.calendarSlot];
+        if (
+          calendarSlot === undefined &&
+          info.State === "running" &&
+          info.Labels[LABEL.calendar] !== undefined
+        ) {
+          try {
+            const inspected = await this.docker.getContainer(info.Id).inspect();
+            calendarSlot = calendarSlotFromEnvironment(inspected.Config.Env) ?? undefined;
+          } catch (error) {
+            // AutoRemove may win between list and inspect. All other failures must
+            // abort recovery rather than silently admitting a duplicate.
+            if (statusOf(error) !== NOT_FOUND) throw error;
+            return { id: info.Id, running: false, labels: info.Labels };
+          }
+        }
+        return {
+          id: info.Id,
+          running: info.State === "running",
+          labels: info.Labels,
+          ...(calendarSlot !== undefined && { calendarSlot }),
+        };
+      }),
+    );
   }
 
   async followLogs(id: string, onLine: (line: string) => void): Promise<void> {

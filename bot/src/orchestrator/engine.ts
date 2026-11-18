@@ -93,6 +93,10 @@ export interface EgressEngine {
 }
 
 export interface EngineContainer {
+  /**
+   * Hashed calendar room/start only; legacy recovery never exposes container environment.
+   */
+  readonly calendarSlot?: string;
   readonly id: string;
   readonly running: boolean;
   readonly labels: Readonly<Record<string, string>>;

@@ -115,7 +115,7 @@ async function jobMisses(
     if (pickup !== null) misses.push(pickup);
     if (row === null || !arrivalCheckDue(row, nowMs)) continue;
     // Нотису бот шлёт владельцу задания — по нему и смотрим, сказано ли уже.
-    const evidence = await deps.store.arrivalEvidence(person.groupId, row.calendar_key, row.invited_by);
+    const evidence = await deps.store.arrivalEvidence(person.groupId, row.calendar_key, row.invited_by, row);
     const lost = notArrivedMiss(row, evidence, person.telegramId);
     if (lost !== null) misses.push(lost);
   }
@@ -151,7 +151,7 @@ async function stillMissed(deps: MissedDeps, person: Person, miss: MissRow, room
     const rows = await deps.store.jobsFor(person.groupId, [miss.calendar_key]);
     if (rows.some((r) => r.taken_at !== null)) return false;
   }
-  const evidence = await deps.store.arrivalEvidence(person.groupId, miss.calendar_key, person.telegramId);
+  const evidence = await deps.store.arrivalEvidence(person.groupId, miss.calendar_key, person.telegramId, miss);
   return !evidence.botSeen;
 }
 
