@@ -13,6 +13,8 @@
  *
  * Корпоративный вход («Войти», «Авторизация») бот не нажимает никогда.
  */
+import { PresenceJournal } from "../shared/presence-journal.ts";
+
 import type { Browser, BrowserContext, LaunchOptions, Locator, Page } from "playwright";
 
 import { chromiumLaunchOptions } from "../container/browser.ts";
@@ -123,6 +125,9 @@ export class KonturAdapter implements PlatformAdapter {
   */
   #lastStep: { readonly stage: StageVerdict["stage"]; readonly atMs: number } | null = null;
   #aloneSignalReported = false;
+  readonly #presence = new PresenceJournal((line) => {
+    this.#log(line);
+  });
   #speakerSignalReported = false;
   #audioReport: { readonly atMs: number; readonly packets: number } | null = null;
 
@@ -424,7 +429,9 @@ export class KonturAdapter implements PlatformAdapter {
   Тристатное «один ли бот»: `null` — сигнала нет.
   */
   async aloneSignal(): Promise<boolean | null> {
-    const alone = isAloneKonturSnapshot(await this.#snapshot());
+    const snapshot = await this.#snapshot();
+    this.#presence.observe(snapshot.tiles, snapshot.participantCount, this.#displayName);
+    const alone = isAloneKonturSnapshot(snapshot);
     if (alone === null && !this.#aloneSignalReported) {
       this.#aloneSignalReported = true;
       this.#log("СИГНАЛА ОБ УЧАСТНИКАХ НЕТ: ни числа на «Участники», ни плиток");

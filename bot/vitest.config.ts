@@ -46,6 +46,8 @@ export default defineConfig({
         "src/orchestrator/probe-main.ts",
         "src/orchestrator/docker-engine.ts",
         "src/orchestrator/smoke-orchestrator.ts",
+        // Actual Chromium + both adapters; run directly in the container, not as a unit test.
+        "src/orchestrator/smoke-presence.ts",
         "src/orchestrator/smoke-notices.ts",
         "src/orchestrator/smoke-pulse.ts",
       ],

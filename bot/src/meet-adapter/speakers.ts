@@ -11,25 +11,12 @@
  * что он деградировал, а не думаем, что все молчали.
  */
 import type { MeetSnapshot } from "./types.ts";
+import { isRecorderName } from "../shared/recorder-name.ts";
 
 /**
 Пометки Meet рядом с именем: частью имени они не являются.
 */
 const NAME_SUFFIX = /\((?:you|presenting|host)\)$/iu;
-
-// Имена из #872 и стандартные формы поставщиков (ссылки в docs/QUICK_REF.md).
-// Бренд внутри имени человека сам по себе не признак бота.
-const RECORDER_NAMES = new Set([
-  "tl;dv",
-  "tl;dv ai notetaker",
-  "read.ai",
-  "read.ai meeting notes",
-  "meeting analytics from read",
-  "fireflies",
-  "fireflies.ai notetaker",
-  "otter",
-]);
-const OTTER_NOTETAKER = /^.+['’]s (?:AI )?Notetaker \(Otter\.ai\)$/iu;
 
 export function normalizeParticipantName(raw: string | null): string | null {
   if (raw === null) return null;
@@ -93,9 +80,7 @@ export function isAloneSnapshot(snapshot: MeetSnapshot): boolean | null {
       .filter((tile) => {
         if (tile.self) return false;
         const name = normalizeParticipantName(tile.name);
-        return (
-          name !== null && (RECORDER_NAMES.has(name.toLowerCase()) || OTTER_NOTETAKER.test(name))
-        );
+        return name !== null && isRecorderName(name);
       })
       .map((tile) => tile.id),
   );

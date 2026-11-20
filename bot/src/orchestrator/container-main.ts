@@ -152,7 +152,18 @@ async function sampleSilent(sinkName: string): Promise<boolean | null> {
     "-",
   ]);
   const stats = parseVolumeDetect(result.stderr);
-  return stats === null ? null : stats.maxDb < SILENCE_MAX_VOLUME_DB;
+  const silent = stats === null ? null : stats.maxDb < SILENCE_MAX_VOLUME_DB;
+  const peakDecibels = stats?.maxDb ?? null;
+  const measuredMax =
+    peakDecibels !== null && !Number.isFinite(peakDecibels) ? String(peakDecibels) : peakDecibels;
+  log(
+    `audio-sample ${JSON.stringify({
+      seconds: LOUDNESS_SAMPLE_SECONDS,
+      maxDb: measuredMax,
+      silent,
+    })}`,
+  );
+  return silent;
 }
 
 /**
