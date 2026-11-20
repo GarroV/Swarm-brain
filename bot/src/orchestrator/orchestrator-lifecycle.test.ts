@@ -256,8 +256,8 @@ describe("оркестратор", () => {
       });
 
       await orchestrator.startForMeeting(MEET, "meet", 744, PASS);
-      await orchestrator.startForMeeting(MEET, "meet", 745, PASS);
-      await orchestrator.startForMeeting(MEET, "meet", 744, PASS);
+      await orchestrator.startForMeeting("https://meet.google.com/klm-nopq-rst", "meet", 745, PASS);
+      await orchestrator.startForMeeting("https://meet.google.com/uvw-xyza-bcd", "meet", 744, PASS);
 
       expect(engine.specs.map((spec) => spec.volume.name)).toEqual([
         "scriba-test-recordings-744",
@@ -270,11 +270,11 @@ describe("оркестратор", () => {
     it("потолок одновременных встреч: сверх него — громкий отказ, и контейнер не создаётся", async () => {
       orchestrator = build(undefined, { maxMeetings: 2 });
       await orchestrator.startForMeeting(MEET, "meet", 744, PASS);
-      await orchestrator.startForMeeting(MEET, "meet", 745, PASS);
+      await orchestrator.startForMeeting("https://meet.google.com/klm-nopq-rst", "meet", 745, PASS);
 
-      await expect(orchestrator.startForMeeting(MEET, "meet", 746, PASS)).rejects.toThrow(
-        /2 of 2 meeting slots/,
-      );
+      await expect(
+        orchestrator.startForMeeting("https://meet.google.com/uvw-xyza-bcd", "meet", 746, PASS),
+      ).rejects.toThrow(/2 of 2 meeting slots/);
       expect(engine.specs).toHaveLength(2);
     });
 
@@ -283,8 +283,8 @@ describe("оркестратор", () => {
 
       const results = await Promise.allSettled([
         orchestrator.startForMeeting(MEET, "meet", 744, PASS),
-        orchestrator.startForMeeting(MEET, "meet", 745, PASS),
-        orchestrator.startForMeeting(MEET, "meet", 746, PASS),
+        orchestrator.startForMeeting("https://meet.google.com/klm-nopq-rst", "meet", 745, PASS),
+        orchestrator.startForMeeting("https://meet.google.com/uvw-xyza-bcd", "meet", 746, PASS),
       ]);
 
       expect(results.map((result) => result.status)).toEqual([

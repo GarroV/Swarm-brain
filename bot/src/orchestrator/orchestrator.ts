@@ -40,6 +40,8 @@ import { SerialQueue } from "./serial-queue.ts";
 import { isCalendarBasis, type MeetingBasis } from "./claim-request.ts";
 import { MEETING_ENV, parsePlatform } from "./config.ts";
 import { joinUrlFor } from "./join-url.ts";
+import { LABEL, basisEnvironment, basisLabel, validOnBehalfOf } from "./meeting-basis.ts";
+import { CalendarSlots, calendarSlotKey } from "./calendar-slot.ts";
 import type { ContainerEngine, ContainerSpec, EngineContainer } from "./engine.ts";
 import { LEASE_WRITE_INTERVAL_MS, writeLease } from "./lease.ts";
 import { inBackground } from "./background.ts";
@@ -57,14 +59,7 @@ import type {
 } from "./orchestrator-lifecycle-types.ts";
 export type { ContainerId, ManagedMeeting, ContainerExit } from "./orchestrator-lifecycle-types.ts";
 
-export const LABEL = {
-  project: "scriba.project",
-  run: "scriba.run",
-  onBehalfOf: "scriba.on-behalf-of",
-  platform: "scriba.platform",
-  invite: "scriba.invite",
-  calendar: "scriba.calendar",
-} as const;
+export { LABEL } from "./meeting-basis.ts";
 
 // Node исполняет TypeScript снятием типов (strip-only): код бота пишется без синтаксиса, который
 // требует трансформации, — это держит `erasableSyntaxOnly` в tsconfig (T148).
@@ -217,36 +212,12 @@ function egressEnvironment(network: MeetingNetwork): Record<string, string> {
   };
 }
 
-function basisEnvironment(basis: MeetingBasis | null): Record<string, string> {
-  if (basis === null) return {};
-  if (isCalendarBasis(basis)) {
-    return {
-      [MEETING_ENV.calendarKey]: basis.calendarKey,
-      [MEETING_ENV.calendarStartsAt]: basis.startsAt,
-      ...(basis.title !== undefined && { [MEETING_ENV.calendarTitle]: basis.title }),
-    };
-  }
-  return { [MEETING_ENV.inviteId]: basis.id, [MEETING_ENV.inviteJoinUrl]: basis.joinUrl };
-}
-
-function basisLabel(basis: MeetingBasis | null): Record<string, string> {
-  if (basis === null) return {};
-  return isCalendarBasis(basis)
-    ? { [LABEL.calendar]: basis.calendarKey }
-    : { [LABEL.invite]: basis.id };
-}
-
-function validOnBehalfOf(value: number): number {
-  if (!Number.isSafeInteger(value) || value <= 0) {
-    throw new Error(`onBehalfOf должен быть telegram id человека, получено ${String(value)}`);
-  }
-  return value;
-}
-
 export class Orchestrator {
   private readonly running = new Map<ContainerId, Managed>();
 
   private readonly exits = new Map<ContainerId, ContainerExit>();
+
+  private readonly calendarSlots = new CalendarSlots();
 
   private leaseTimer: NodeJS.Timeout | undefined;
 
@@ -326,6 +297,10 @@ export class Orchestrator {
     const runId = container.labels[LABEL.run] ?? "unknown";
     const onBehalfOf = Number(container.labels[LABEL.onBehalfOf]);
     this.log(`подхватываю живой контейнер ${container.id} (запуск ${runId})`);
+    this.calendarSlots.adopt(
+      container.calendarSlot ?? container.labels[LABEL.calendarSlot],
+      container.id,
+    );
     this.track(
       container.id,
       runId,
@@ -410,6 +385,9 @@ export class Orchestrator {
         [LABEL.onBehalfOf]: String(onBehalfOf),
         [LABEL.platform]: target.platform,
         ...basisLabel(basis),
+        ...(isCalendarBasis(basis) && {
+          [LABEL.calendarSlot]: calendarSlotKey(target.platform, target.joinUrl, basis.startsAt),
+        }),
       },
       volume: { name: this.volumeFor(onBehalfOf), target: RECORDINGS_PATH },
       readOnlyBind: { source: this.options.leaseDirectory, target: LEASE_PATH },
@@ -504,6 +482,7 @@ export class Orchestrator {
 
   private async onExit(managed: Managed, code: number | null): Promise<void> {
     this.running.delete(managed.id);
+    this.calendarSlots.release(managed.id);
     // Исход — сразу вслед за удалением из `running`: `whenExited`, пришедший в промежутке,
     // иначе не нашёл бы ни живого контейнера, ни его исхода.
     this.exits.set(
@@ -705,8 +684,47 @@ export class Orchestrator {
       throw new Error(`контейнер встречи не стартовал: ${describeError(error)}`, { cause: error });
     }
     this.log(`контейнер ${id} поднят на встречу (запуск ${runId}, от имени ${String(person)})`);
+    this.calendarSlots.adopt(spec.labels[LABEL.calendarSlot], id);
     this.track(id, runId, person, exited, token, login);
     return id;
+  }
+
+  private async startMeeting(
+    target: MeetingTarget,
+    person: number,
+    basis: MeetingBasis,
+    grantToken: string,
+  ): Promise<ContainerId> {
+    const runId = (this.options.newRunId ?? randomUUID)();
+
+    this.reserveSlot();
+    try {
+      // Вход аккаунта Google нужен только Meet: в Толк бот идёт гостем (D040), и живая сессия
+      // Google в контейнере чужой площадки была бы лишь тем, что можно унести.
+      const account =
+        target.platform === "meet" ? ((await this.options.account?.prepare(runId)) ?? null) : null;
+      try {
+        const output = await this.prepareOutput(runId, account);
+        const network = await this.options.egress.prepare(runId);
+        try {
+          return await this.launch(
+            this.spec(target, person, runId, basis, grantToken, account, network, output),
+            runId,
+            person,
+            grantToken,
+            { kind: "meeting", usesAccount: account !== null },
+          );
+        } catch (error) {
+          await this.releaseEgress(runId);
+          throw error;
+        }
+      } catch (error) {
+        await this.releaseAccount(runId);
+        throw error;
+      }
+    } finally {
+      this.starting -= 1;
+    }
   }
 
   /**
@@ -770,36 +788,12 @@ export class Orchestrator {
       this.log(`встреча за ${String(person)} не начата: ${reason}`);
       throw new Error(reason);
     }
-    const runId = (this.options.newRunId ?? randomUUID)();
-
-    this.reserveSlot();
-    try {
-      // Вход аккаунта Google нужен только Meet: в Толк бот идёт гостем (D040), и живая сессия
-      // Google в контейнере чужой площадки была бы лишь тем, что можно унести.
-      const account =
-        known === "meet" ? ((await this.options.account?.prepare(runId)) ?? null) : null;
-      try {
-        const output = await this.prepareOutput(runId, account);
-        const network = await this.options.egress.prepare(runId);
-        try {
-          return await this.launch(
-            this.spec(target, person, runId, basis, grantToken, account, network, output),
-            runId,
-            person,
-            grantToken,
-            { kind: "meeting", usesAccount: account !== null },
-          );
-        } catch (error) {
-          await this.releaseEgress(runId);
-          throw error;
-        }
-      } catch (error) {
-        await this.releaseAccount(runId);
-        throw error;
-      }
-    } finally {
-      this.starting -= 1;
-    }
+    const slot = isCalendarBasis(basis)
+      ? calendarSlotKey(known, target.joinUrl, basis.startsAt)
+      : null;
+    return this.calendarSlots.start(slot, () =>
+      this.startMeeting(target, person, basis, grantToken),
+    );
   }
 
   /**
