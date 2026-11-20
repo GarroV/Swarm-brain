@@ -13,7 +13,8 @@
     "src/orchestrator/probe-main.ts",
     "src/orchestrator/orchestrator-main.ts",
     "src/orchestrator/smoke-orchestrator.ts",
-    "src/orchestrator/smoke-pulse.ts"
+    "src/orchestrator/smoke-pulse.ts",
+    "src/orchestrator/smoke-presence.ts"
   ],
   "project": ["src/**/*.ts"],
   "ignoreBinaries": ["ffmpeg"]

@@ -11,6 +11,8 @@
  *    движение мыши — иначе кнопка «есть, но невидима», и адаптер решит, что он не в звонке;
  *  - имя вводится посимвольно, а не подстановкой значения: Meet слушает события ввода.
  */
+import { PresenceJournal } from "../shared/presence-journal.ts";
+
 import { chmod } from "node:fs/promises";
 
 import type { Browser, BrowserContext, LaunchOptions, Locator, Page } from "playwright";
@@ -102,6 +104,9 @@ export class MeetAdapter implements PlatformAdapter {
   #displayName: string | null = null;
   #speakerSignalReported = false;
   #aloneSignalReported = false;
+  readonly #presence = new PresenceJournal((line) => {
+    this.#log(line);
+  });
   // Google ответил по существу (дверь, лобби, звонок), и ни разу — «вход слетел».
   #sawVerdict = false;
   #signinRejected = false;
@@ -332,7 +337,9 @@ export class MeetAdapter implements PlatformAdapter {
   Тристатное «один ли бот»: `null` — сигнала нет. Для сторожа, которому важна разница.
   */
   async aloneSignal(): Promise<boolean | null> {
-    const alone = isAloneSnapshot(await this.#snapshot());
+    const snapshot = await this.#snapshot();
+    this.#presence.observe(snapshot.tiles, snapshot.panelParticipantCount, this.#displayName);
+    const alone = isAloneSnapshot(snapshot);
 
     if (alone === null && !this.#aloneSignalReported) {
       this.#aloneSignalReported = true;
