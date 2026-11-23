@@ -1,3 +1,4 @@
+import { archiveSprintResponse } from "./sprint-archive-route.ts";
 import {
   handleManualMeetingMergeRoutes,
   manualMeetingAliasPath,
@@ -70,7 +71,7 @@ import {
   resolveRecurrence,
 } from "../_shared/tasks/recurrence.ts";
 import type { ProjectInput, SprintInput, TaskInput } from "../_shared/tasks/types.ts";
-import { createSprint, deleteSprint, listSprints, setTasksSprint, updateSprint } from "../_shared/tasks/sprints.ts";
+import { createSprint, listSprints, setTasksSprint, updateSprint } from "../_shared/tasks/sprints.ts";
 import { taskVisibleByProject } from "../_shared/tasks/project-visibility.ts";
 import { getVisibleProject, ProjectAccessError } from "../_shared/tasks/projects.ts";
 import {
@@ -1592,7 +1593,7 @@ async function routeRequest(req: Request): Promise<Response> {
   // `get_all_dependencies` дропаются отдельной миграцией ПОСЛЕ этого деплоя (2-шаговый снос схемы).
 
   // ── Sprints (Рой) ──────────────────────────────────────────────────────────
-  // Чтение — любой в воркспейсе; создание/изменение/удаление — только админ.
+  // Создание — участники; правка — админ. Архив вкладок доски — участники, пространств — админ.
   if (routePath === "/sprints") {
     if (req.method === "GET") {
       // ?kind=board_tab — вкладки доски «Проекты», ?kind=space — пространства раздела
@@ -1607,8 +1608,8 @@ async function routeRequest(req: Request): Promise<Response> {
     }
     if (req.method === "POST") {
       // Создание вкладки — любой участник воркспейса (владелец 2026-08-19: юзер уткнулся в
-      // голый «Forbidden», фронт кнопку «+» показывает всем). Правка/удаление ниже остаются
-      // admin-only как и были с 09.06.2026 — не даём случайно/умышленно снести общую вкладку.
+      // голый «Forbidden», фронт кнопку «+» показывает всем). Правка ниже остаётся admin-only;
+      // архивирование board_tab открыто участникам решением владельца 23.11.2026.
       let body: Record<string, unknown>;
       try {
         body = await req.json();
@@ -1671,14 +1672,7 @@ async function routeRequest(req: Request): Promise<Response> {
       return json(updated, 200, origin);
     }
     if (req.method === "DELETE") {
-      if (!isAdmin) return apiErr(403, "Forbidden", origin);
-      const ok = await deleteSprint(
-        sprintId,
-        groupId,
-        telegram_id ?? undefined,
-      );
-      if (!ok) return apiErr(404, "Not found", origin);
-      return new Response(null, { status: 204, headers: corsHeaders(origin) });
+      return await archiveSprintResponse(sprintId, groupId, telegram_id, isAdmin, origin);
     }
   }
 

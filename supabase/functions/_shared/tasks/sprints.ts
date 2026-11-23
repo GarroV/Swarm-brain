@@ -66,15 +66,26 @@ export async function deleteSprint(
   id: string,
   groupId: string,
   archivedBy?: number,
+  requiredKind?: SprintKind,
 ): Promise<boolean> {
-  const { data } = await supabase.from("sprints")
+  let query = supabase.from("sprints")
     .update({
       archived_at: new Date().toISOString(),
       archived_by: archivedBy ?? null,
     })
-    .eq("id", id).eq("group_id", groupId).is("archived_at", null)
-    .select("id").maybeSingle();
+    .eq("id", id).eq("group_id", groupId).is("archived_at", null);
+  if (requiredKind !== undefined) query = query.eq("kind", requiredKind);
+  const { data, error } = await query.select("id").maybeSingle();
+  if (error) throw new Error(`sprint archive: ${error.message}`);
   return !!data;
+}
+
+/** Resolve only a live tab/space in the caller's workspace, before action-specific policy. */
+export async function getSprintKind(id: string, groupId: string): Promise<SprintKind | null> {
+  const { data, error } = await supabase.from("sprints").select("kind")
+    .eq("id", id).eq("group_id", groupId).is("archived_at", null).maybeSingle();
+  if (error) throw new Error(`sprint read: ${error.message}`);
+  return (data?.kind as SprintKind | undefined) ?? null;
 }
 
 // Привязывает задачи воркспейса к спринту (массовое назначение sprint_id). Задачи проектов,
