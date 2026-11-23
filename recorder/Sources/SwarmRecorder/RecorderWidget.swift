@@ -199,8 +199,8 @@ final class RecorderWidget {
 
     /// Выбор из пересекающихся созвонов (D027) в той же капсуле: заголовок, по строке на созвон;
     /// у строки, куда бота можно позвать, — своя кнопка «Позвать бота» (D031).
-    func showChoice(_ choices: [Choice], reminder: Bool = false) {
-        let key = choices.map(\.key).sorted().joined(separator: "|")
+    func showChoice(_ choices: [Choice], reminder: Bool = false, promptKey: String? = nil) {
+        let key = promptKey ?? choices.map(\.key).sorted().joined(separator: "|")
         guard prompt.show(key: key, onExpire: { [weak self] in self?.panel?.orderOut(nil) }) else { return }
         ensurePanel()
         setBotButtons(visible: false)
@@ -661,10 +661,8 @@ final class RecorderWidget {
         b.action = action
     }
 
-    // Длительность перехода между режимами. 0.22 с — окно успевает «вытечь», но не тормозит
-    // реакцию на действие человека (кнопка «Записать» → капсула).
+    // Короткий переход между режимами не задерживает действие кнопок.
     private static let morphDuration: TimeInterval = 0.22
-
     private func present() {
         guard let p = panel, let screen = NSScreen.main else { return }
         applyReminderStyle(reminderStyle && !bannerRow.isHidden)
@@ -693,6 +691,7 @@ final class RecorderWidget {
             fadeInContent()
         }
         p.orderFrontRegardless()
+        if p.isVisible { prompt.didPresent() }
     }
 
     // Мягкое проявление содержимого при смене режима (0 → 1 за половину перехода).
@@ -786,6 +785,7 @@ final class RecorderWidget {
     @objc private func botStopAction() { onBotStop?() }
     // ✕ закрывает всё, что в капсуле: предложение записать и кнопки «Позвать бота» вместе.
     @objc private func dismissAction() {
+        prompt.noteDismissed()
         for id in shownMissedIds { onMissedDismiss?(id) }
         onDismiss?()
     }

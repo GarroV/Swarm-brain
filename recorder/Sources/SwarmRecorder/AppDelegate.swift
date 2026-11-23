@@ -990,7 +990,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 widget.showChoice(pendingMeetings.map {
                     RecorderWidget.Choice(key: $0.key, notice: notice(for: $0),
                                           missed: missed.capsule(forCall: $0.joinURL?.absoluteString))
-                }, reminder: reminder.isActive)
+                }, reminder: reminder.isActive, promptKey: recordingChoicePromptKey(keys: pendingMeetings.map(\.key)))
             } else if let m = pendingMeeting {
                 widget.showPending(notice: notice(for: m), canJoin: m.joinURL != nil,
                                    missed: missed.capsule(forCall: m.joinURL?.absoluteString), reminder: reminder.isActive,
@@ -1083,13 +1083,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func setState(_ s: State) {
         Diagnostics.shared.log("STATE \(state) → \(s)")
         state = s
+        if case .recording = s { noteBackupRecordingStarted(key: identity?.key) }
         // Замок «идёт работа» для авто-апдейтера: пока пишем/отправляем — он не подменит приложение.
         switch s {
         case .recording, .sending: Updater.setRecordingLock(true)
         default: Updater.setRecordingLock(false)
         }
-        // Вне записи подписи нет — снимаем запрет, чтобы следующая запись снова показала
-        // название и счётчик (issue #232: запрет ставится только когда место кончилось).
+        // Вне записи снимаем запрет подписи для следующей записи (issue #232).
         if case .recording = s {} else { titleSuppressed = false }
         // Heartbeat: сервер должен знать старт/стоп записи (recording=false при остановке снимает
         // ложное «прервалась»). Но в моменты .recording/.sending НЕ шлём синхронно — это самые

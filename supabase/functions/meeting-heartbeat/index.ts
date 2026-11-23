@@ -26,6 +26,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { AgentAuthError, resolveActingIdentity } from "../_shared/agent-auth.ts";
 import { updateRecorders } from "../_shared/recorders-write.ts";
+import { CaptureHeartbeatJournal } from "./capture-journal.ts";
 import {
   buildHeartbeatWrites,
   challengerWrites,
@@ -44,6 +45,7 @@ const supabase = createClient(
   Deno.env.get("SUPABASE_URL")!,
   Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
 );
+const captureJournal = new CaptureHeartbeatJournal((line) => console.log(line));
 
 // Таблицы в Postgres через PostgREST. Условие свежести — `col is null or col < value` той же UPDATE.
 const store: WriteStore = {
@@ -117,7 +119,9 @@ Deno.serve(async (req: Request) => {
   let outcome;
   try {
     outcome = await runHeartbeat(writes, store, nowIso);
+    captureJournal.record(identity, body, outcome, nowIso);
   } catch (e) {
+    captureJournal.record(identity, body, "failed", nowIso);
     console.error(`meeting-heartbeat: ${e instanceof Error ? e.message : String(e)}`);
     return json({ error: "update failed" }, 500);
   }

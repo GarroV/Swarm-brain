@@ -24,6 +24,7 @@ import { describeError } from "./describe-error.ts";
 import { isTransientLoadError, JOIN_MAX_ATTEMPTS, JOIN_RETRY_PAUSE_MS } from "./join-retry.ts";
 import { BOT_PROFILE } from "./profile.ts";
 import { type AudioAlert, CaptureHealth, QuietEndTimer, SilenceWatch } from "./audio-watch.ts";
+import { CaptureDiagnostics, type CaptureProbeEvidence } from "./capture-diagnostics.ts";
 
 /**
  * Адаптер площадки в том объёме, который нужен процессу встречи.
@@ -121,6 +122,7 @@ const DEFAULT_TIMING: MeetingTiming = {
  * решает «пора»; мерит и доносит контейнер (ffmpeg по monitor-source, строка состояния).
  */
 interface AudioWatchHooks {
+  readonly evidence?: () => CaptureProbeEvidence | null;
   readonly healthChanged?: (isHealthy: boolean) => void;
   /**
   Тише ли порога то, что сейчас пишется; `null` — замер не удался.
@@ -371,6 +373,11 @@ function audioWatcher(context: RunContext): () => void {
   if (hooks === undefined) return (): void => undefined;
   const watch = new SilenceWatch(context.timing.silenceAlertMs);
   const health = new CaptureHealth(context.timing.silenceAlertMs);
+  const diagnostic = new CaptureDiagnostics(
+    context.meetingId,
+    context.timing.silenceAlertMs,
+    context.log,
+  );
   let isLastHealth = true;
   const quiet = new QuietEndTimer(context.timing.quietEndMs);
   let nextAt = context.now();
@@ -382,6 +389,7 @@ function audioWatcher(context: RunContext): () => void {
     inBackground(
       async () => {
         const silent = await hooks.sampleSilent();
+        const lastSpokeAt = context.options.timeline.lastSpokeAt?.() ?? null;
         const isNextHealth = health.observe(
           { silent, alone: context.lastAlone.value },
           context.now(),
@@ -390,6 +398,13 @@ function audioWatcher(context: RunContext): () => void {
           isLastHealth = isNextHealth;
           hooks.healthChanged?.(isNextHealth);
         }
+        diagnostic.observe(isNextHealth, {
+          atMs: context.now(),
+          silent,
+          alone: context.lastAlone.value,
+          speakerIndicatorAtMs: lastSpokeAt,
+          probe: hooks.evidence?.() ?? null,
+        });
         const alert = watch.observe({ silent, alone: context.lastAlone.value }, context.now());
         if (alert !== null) {
           context.log(
@@ -399,12 +414,18 @@ function audioWatcher(context: RunContext): () => void {
           );
           hooks.report(alert);
         }
-        const lastSpokeAt = context.options.timeline.lastSpokeAt?.() ?? null;
         if (quiet.observe({ silent, lastSpokeAt }, context.now())) context.quietEnd.value = true;
         isBusy = false;
       },
       (error) => {
         isBusy = false;
+        diagnostic.observe(isLastHealth, {
+          atMs: context.now(),
+          silent: null,
+          alone: context.lastAlone.value,
+          speakerIndicatorAtMs: context.options.timeline.lastSpokeAt?.() ?? null,
+          probe: hooks.evidence?.() ?? null,
+        });
         context.log(`замер звука не удался: ${describeError(error)}`);
       },
     );

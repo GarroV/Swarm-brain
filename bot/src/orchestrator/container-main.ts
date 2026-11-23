@@ -38,6 +38,7 @@ import { ALIVE_TOUCH_MS, adoptOrphanedRuns, runQueueRoot, touchAlive } from "./r
 import { FfmpegRecorder } from "./recorder.ts";
 import { type MeetingRecorder, runMeeting } from "./run-meeting.ts";
 import { formatStateLine } from "./state-line.ts";
+import type { CaptureProbeEvidence } from "./capture-diagnostics.ts";
 import { run } from "../container/shell.ts";
 
 const LEASE_CHECK_MS = 10_000;
@@ -134,35 +135,57 @@ function audioRecorder(
  * Тише ли порога то, что сейчас пишется: 5 с `volumedetect` по monitor-source параллельно с
  * ffmpeg записи (pulse отдаёт монитор нескольким читателям). `null` — замер не удался.
  */
-async function sampleSilent(sinkName: string): Promise<boolean | null> {
-  const result = await run("ffmpeg", [
-    "-hide_banner",
-    "-nostdin",
-    "-nostats",
-    "-f",
-    "pulse",
-    "-i",
-    monitorSourceName(sinkName),
-    "-t",
-    String(LOUDNESS_SAMPLE_SECONDS),
-    "-af",
-    "volumedetect",
-    "-f",
-    "null",
-    "-",
-  ]);
+async function sampleSilent(
+  sinkName: string,
+  report: (evidence: CaptureProbeEvidence) => void,
+): Promise<boolean | null> {
+  let result: Awaited<ReturnType<typeof run>>;
+  try {
+    result = await run("ffmpeg", [
+      "-hide_banner",
+      "-nostdin",
+      "-nostats",
+      "-f",
+      "pulse",
+      "-i",
+      monitorSourceName(sinkName),
+      "-t",
+      String(LOUDNESS_SAMPLE_SECONDS),
+      "-af",
+      "volumedetect",
+      "-f",
+      "null",
+      "-",
+    ]);
+  } catch (error) {
+    report({
+      measuredAtMs: Date.now(),
+      seconds: LOUDNESS_SAMPLE_SECONDS,
+      maxDb: null,
+      meanDb: null,
+      samples: null,
+      thresholdDb: SILENCE_MAX_VOLUME_DB,
+      status: "failed",
+    });
+    throw error;
+  }
   const stats = parseVolumeDetect(result.stderr);
   const silent = stats === null ? null : stats.maxDb < SILENCE_MAX_VOLUME_DB;
   const peakDecibels = stats?.maxDb ?? null;
   const measuredMax =
     peakDecibels !== null && !Number.isFinite(peakDecibels) ? String(peakDecibels) : peakDecibels;
-  log(
-    `audio-sample ${JSON.stringify({
-      seconds: LOUDNESS_SAMPLE_SECONDS,
-      maxDb: measuredMax,
-      silent,
-    })}`,
-  );
+  const mean = stats?.meanDb ?? null;
+  const evidence: CaptureProbeEvidence = {
+    measuredAtMs: Date.now(),
+    seconds: LOUDNESS_SAMPLE_SECONDS,
+    maxDb: measuredMax,
+    meanDb: mean !== null && !Number.isFinite(mean) ? String(mean) : mean,
+    samples: stats?.samples ?? null,
+    thresholdDb: SILENCE_MAX_VOLUME_DB,
+    status: stats === null ? "parse_failed" : "measured",
+  };
+  report(evidence);
+  log(`audio-sample ${JSON.stringify({ ...evidence, silent })}`);
   return silent;
 }
 
@@ -289,7 +312,9 @@ async function main(): Promise<number> {
   );
 
   let isAudioHealthy = true;
+  let latestProbe: CaptureProbeEvidence | null = null;
   const session = new RecordingSession({
+    log,
     audioHealthy: () => isAudioHealthy,
     client,
     queue,
@@ -344,10 +369,14 @@ async function main(): Promise<number> {
         console.log(formatStateLine({ meetingId }));
       },
       audioWatch: {
+        evidence: () => latestProbe,
         healthChanged: (healthy) => {
           isAudioHealthy = healthy;
         },
-        sampleSilent: async () => sampleSilent(settings.sinkName),
+        sampleSilent: async () =>
+          sampleSilent(settings.sinkName, (sample) => {
+            latestProbe = sample;
+          }),
         report: (audio) => {
           const title = config.calendar?.title;
           console.log(

@@ -7,6 +7,7 @@ func runBackupOfferSelfTest() {
     app.setActivationPolicy(.accessory)
     let delegate = AppDelegate()
     let widget = RecorderWidget(promptLifetime: 0.5)
+    widget.onDismiss = { widget.hide() }
     let healthy = SwarmClient.MeetingLookup(meetings: [], tokenDead: false, recordedNow: ["call"])
     let failed = SwarmClient.MeetingLookup(meetings: [], tokenDead: false, recordedNow: ["call"], backupAvailable: ["call"])
     func check(_ condition: Bool, _ label: String) {
@@ -26,11 +27,25 @@ func runBackupOfferSelfTest() {
         check(key == "call:backup", "backup has a distinct offer lifetime")
         widget.showPending(notice: .init(title: "Идёт звонок", subtitle: ""), canJoin: false, promptKey: key)
         check(widget.panel?.isVisible == true, "backup appears after expired initial offer")
-        delegate.noteBotSignals(healthy)
-        check(healthy.coveredNow == ["call"], "sound recovery restores coverage")
-        widget.hide()
-        check(widget.panel?.isVisible == false, "healthy coverage clears offer")
-        exit(0)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) {
+            check(widget.panel?.isVisible == false, "backup offer expires")
+            let firstLogs = Diagnostics.shared.takePending().joined(separator: "\n")
+            for event in ["available", "offered", "offer_expired"] {
+                check(firstLogs.contains("\"event\":\"\(event)\""), "journal records \(event)")
+            }
+            delegate.noteBotSignals(healthy)
+            check(healthy.coveredNow == ["call"], "sound recovery restores coverage")
+            widget.hide()
+            delegate.noteBotSignals(failed)
+            widget.showPending(notice: .init(title: "Идёт звонок", subtitle: ""), canJoin: false, promptKey: key)
+            check(app.sendAction(NSSelectorFromString("dismissAction"), to: widget, from: nil), "close action is connected")
+            check(widget.panel?.isVisible == false, "close action hides backup offer")
+            let nextLogs = Diagnostics.shared.takePending().joined(separator: "\n")
+            for event in ["cleared", "dismissed", "offer_removed"] {
+                check(nextLogs.contains("\"event\":\"\(event)\""), "journal records \(event)")
+            }
+            exit(0)
+        }
     }
     app.run()
 }

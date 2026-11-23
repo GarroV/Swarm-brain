@@ -36,7 +36,10 @@ extension AppDelegate {
 
     // Сигналы о боте из ответа `meeting-current`: что пишет сейчас, писал и пропал, приходил (#1278).
     func noteBotSignals(_ lookup: SwarmClient.MeetingLookup) {
-        backupAvailable = Set(lookup.backupAvailable)
+        let next = Set(lookup.backupAvailable)
+        for key in next.subtracting(backupAvailable).sorted() { BackupDiagnostics.log("available", key: key) }
+        for key in backupAvailable.subtracting(next).sorted() { BackupDiagnostics.log("cleared", key: key) }
+        backupAvailable = next
         botNow = Set(lookup.recordedNow)
         botSeen.formUnion(lookup.recordedNow)
         botTouched = Set(lookup.botTouched)
@@ -46,6 +49,15 @@ extension AppDelegate {
     func recordingPromptKey(for key: String? = nil) -> String {
         let fallback = key.map { backupAvailable.contains($0) } ?? !backupAvailable.isEmpty
         return (key ?? "call") + (fallback ? ":backup" : "")
+    }
+
+    func recordingChoicePromptKey(keys: [String]) -> String {
+        keys.sorted().joined(separator: "|") + (keys.contains(where: { backupAvailable.contains($0) }) ? ":backup" : "")
+    }
+
+    func noteBackupRecordingStarted(key: String?) {
+        guard !backupAvailable.isEmpty else { return }
+        BackupDiagnostics.log("recording_started", key: key, details: ["backup_candidates": backupAvailable.sorted()])
     }
 
     func showPickCard() {

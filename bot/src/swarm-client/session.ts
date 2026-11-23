@@ -8,7 +8,7 @@
  */
 import type { ClaimDecision, ClaimRequest, SpeakerSpan } from "./contract.ts";
 import type { SwarmClient } from "./client.ts";
-import { SwarmDeferredError } from "./errors.ts";
+import { SwarmDeferredError, SwarmHttpError } from "./errors.ts";
 import type { UploadQueue } from "./queue.ts";
 
 /**
@@ -22,6 +22,7 @@ interface RecordingSessionContract {
 }
 
 export interface RecordingSessionOptions {
+  readonly log?: (line: string) => void;
   readonly audioHealthy?: () => boolean;
   readonly client: SwarmClient;
   readonly queue: UploadQueue;
@@ -43,9 +44,35 @@ export class RecordingSession implements RecordingSessionContract {
   private heldBy: number | null = null;
 
   private readonly options: RecordingSessionOptions;
+  private lastHealthReport: string | null = null;
 
   constructor(options: RecordingSessionOptions) {
     this.options = options;
+  }
+
+  private reportHealth(
+    meetingId: string | null,
+    isHealthy: boolean | undefined,
+    result: string,
+    status: number | null,
+    requestedAtMs: number,
+  ): void {
+    if (isHealthy === undefined || !this.options.log) return;
+    const state = `${String(isHealthy)}:${result}:${String(status)}`;
+    if (state === this.lastHealthReport) return;
+    this.lastHealthReport = state;
+    this.options.log(
+      `capture-transport ${JSON.stringify({
+        event: "capture_health_transport",
+        meetingId,
+        meetingKey: this.options.claim.identity_key,
+        isHealthy,
+        result,
+        status,
+        requestedAtMs,
+        atMs: Date.now(),
+      })}`,
+    );
   }
 
   /**
@@ -113,15 +140,29 @@ export class RecordingSession implements RecordingSessionContract {
    */
   async heartbeat(recordedSeconds?: number): Promise<void> {
     const meetingId = this.meetingId;
-    await this.options.client.heartbeat({
-      ...(this.options.audioHealthy && { audio_healthy: this.options.audioHealthy() }),
-      recording: this.decision === "transcribe",
-      version: this.options.version,
-      on_call: true,
-      meeting_key: this.options.claim.identity_key,
-      ...(meetingId !== null && { meeting_id: meetingId }),
-      ...(meetingId !== null &&
-        recordedSeconds !== undefined && { recorded_seconds: recordedSeconds }),
-    });
+    const isAudioHealthy = this.options.audioHealthy?.();
+    const requestedAtMs = Date.now();
+    try {
+      await this.options.client.heartbeat({
+        ...(isAudioHealthy !== undefined && { audio_healthy: isAudioHealthy }),
+        recording: this.decision === "transcribe",
+        version: this.options.version,
+        on_call: true,
+        meeting_key: this.options.claim.identity_key,
+        ...(meetingId !== null && { meeting_id: meetingId }),
+        ...(meetingId !== null &&
+          recordedSeconds !== undefined && { recorded_seconds: recordedSeconds }),
+      });
+      this.reportHealth(meetingId, isAudioHealthy, "http_ok", null, requestedAtMs);
+    } catch (error) {
+      this.reportHealth(
+        meetingId,
+        isAudioHealthy,
+        "request_failed",
+        error instanceof SwarmHttpError ? error.status : null,
+        requestedAtMs,
+      );
+      throw error;
+    }
   }
 }

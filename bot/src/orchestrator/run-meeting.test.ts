@@ -274,12 +274,19 @@ describe("сбои по дороге не роняют встречу", () => {
   });
 });
 
-async function watch(script: Script, silent: (call: number) => boolean | null): Promise<string[]> {
+async function watch(
+  script: Script,
+  silent: (call: number) => boolean | null,
+  lines: string[] = [],
+): Promise<string[]> {
   const world = build(script);
   const reports: string[] = [];
   let samples = 0;
   const options: MeetingRunOptions = {
     ...world.options,
+    log: (line) => {
+      lines.push(line);
+    },
     timing: { ...TIMING, audioSampleMs: 60_000, silenceAlertMs: 180_000 },
     audioWatch: {
       sampleSilent: () => {
@@ -297,9 +304,13 @@ async function watch(script: Script, silent: (call: number) => boolean | null): 
 
 describe("сторож тишины (#861)", () => {
   it("люди в звонке и 3 минуты тишины — одно предупреждение", async () => {
-    const reports = await watch({ alone: [false], stopAfterPolls: 120 }, () => true);
+    const lines: string[] = [];
+    const reports = await watch({ alone: [false], stopAfterPolls: 120 }, () => true, lines);
 
     expect(reports).toEqual(["silent"]);
+    const diagnostic = lines.filter((line) => line.startsWith("capture-diagnostic "));
+    expect(diagnostic).toHaveLength(1);
+    expect(diagnostic[0]).toContain('"event":"silence_detected","meetingId":"m-1","episode":1');
   });
 
   it("звук вернулся — одно «вернулся», дальше сторож молчит", async () => {
@@ -331,6 +342,7 @@ describe("сторож тишины (#861)", () => {
 
     expect(outcome).toBe("recorded");
     expect(lines.some((line) => line.includes("замер звука не удался"))).toBe(true);
+    expect(lines.filter((line) => line.includes('"event":"probe_unavailable"'))).toHaveLength(1);
   });
 });
 
