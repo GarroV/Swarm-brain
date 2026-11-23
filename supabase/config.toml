@@ -388,6 +388,9 @@ verify_jwt = false
 verify_jwt = false
 [functions.meeting-ingest]
 verify_jwt = false
+
+[functions.meeting-upload-recovery]
+verify_jwt = false
 [functions.meeting-process]
 verify_jwt = false
 [functions.meeting-status]

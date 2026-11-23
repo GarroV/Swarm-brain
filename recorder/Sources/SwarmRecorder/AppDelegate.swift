@@ -105,6 +105,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     var botSeen = Set<String>()
     // `bot_touched` последнего ответа: бот приходил (у двери, ушёл ни с чем), пишет или нет (12.11.2026).
     var botTouched = Set<String>()
+    var backupAvailable = Set<String>()
     struct PickSession {
         let events: [MeetingIdentity.Info]
         let options: [StartPick.Option]
@@ -611,13 +612,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     self?.lastCalendar = (meetings, lookup?.recordedNow ?? [], Date())
                 }
                 if let lookup { self?.noteBotSignals(lookup) }
-                // До handleDetection: напоминание снимает крестик с созвона, и тот же тик
-                // снова покажет его в капсуле.
+                // Backup offers retain bot presence, but no longer hide the recording button.
                 self?.nudgeIfUnrecorded(micOn: micOn, meetings: meetings,
-                                        recordedNow: lookup?.recordedNow ?? [])
+                                        recordedNow: lookup?.coveredNow ?? [])
                 self?.handleDetection(meetings: meetings, micActive: micOn,
-                                      recordedNow: lookup?.recordedNow ?? [])
-                if let recordedNow = lookup?.recordedNow { self?.askIfBotRecords(recordedNow) }
+                                      recordedNow: lookup?.coveredNow ?? [])
+                if let recordedNow = lookup?.coveredNow { self?.askIfBotRecords(recordedNow) }
                 // Экран страны: созвон, где человек сидит (как в напоминании), — доске; конец звонка снимает режим.
                 let current = CallCountry.currentCall(meetings, hasLink: { $0.joinURL != nil },
                                                       isOpen: { MeetingIdentity.isCallOpen($0.joinURL) })
@@ -994,12 +994,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             } else if let m = pendingMeeting {
                 widget.showPending(notice: notice(for: m), canJoin: m.joinURL != nil,
                                    missed: missed.capsule(forCall: m.joinURL?.absoluteString), reminder: reminder.isActive,
-                                   promptKey: m.key)
+                                   promptKey: recordingPromptKey(for: m.key))
             } else if callActive {
                 // Звонок без календаря: слота нет, а «подключиться» некуда — человек уже в нём.
                 // Подзаголовок пустой: «Идёт звонок» + «идёт» — дубль, а не информация.
                 widget.showPending(notice: MeetingNotice(title: "Идёт звонок", subtitle: ""),
-                                   canJoin: false, missed: missed.capsule(forCall: nil))
+                                   canJoin: false, missed: missed.capsule(forCall: nil), promptKey: recordingPromptKey())
             } else {
                 widget.hide()   // никакого «кружка»: пилюля только на детект встречи/звонка
             }

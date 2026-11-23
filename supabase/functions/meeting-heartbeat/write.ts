@@ -33,6 +33,7 @@ import { CLAIM_LEASE_TTL_SEC, claimLeaseUntil, MAX_RECORDED_SECONDS } from "../_
 // с украденным токеном навсегда закрыл бы встречу от более полной записи.
 
 export interface HeartbeatBody {
+  audio_healthy?: unknown;
   recording?: unknown;
   version?: unknown;
   on_call?: unknown;
@@ -161,6 +162,7 @@ function agentWrites(
     patch: {
       agent_last_seen_at: nowIso,
       agent_last_recording: recording,
+      ...(typeof body.audio_healthy === "boolean" && { agent_last_audio_healthy: body.audio_healthy }),
       // Лиз — только пока бот пишет: иначе агент, держащий контейнер в звонке без записи, держал
       // бы и встречу — ни рекордер, ни claim после истечения её бы не заняли.
       ...(recording && { lease_expires_at: claimLeaseUntil(nowIso) }),

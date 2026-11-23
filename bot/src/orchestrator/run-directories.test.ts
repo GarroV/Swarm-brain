@@ -1,10 +1,12 @@
-import { mkdir, mkdtemp, readdir, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, rm, stat, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { adoptOrphanedRuns, runQueueRoot, touchAlive } from "./run-directories.ts";
+import { UploadQueue } from "../swarm-client/queue.ts";
+import { SwarmHttpError } from "../swarm-client/errors.ts";
 
 const NOW = Date.parse("2026-09-26T12:00:00Z");
 const quiet = (): void => {
@@ -114,5 +116,45 @@ describe("очереди запусков на томе", () => {
     const info = await stat(path.join(root, "alive"));
 
     expect(info.mtimeMs).toBe(NOW);
+  });
+
+  it("досылка подхватывает старый отказ авторизации; постоянный и свежий отказ сохраняются", async () => {
+    const failures = [
+      { runId: "expired-pass", status: 401, age: 2 * 60 * 60_000 },
+      { runId: "too-large", status: 413, age: 2 * 60 * 60_000 },
+      { runId: "just-failed", status: 401, age: 10_000 },
+    ];
+    for (const failure of failures) {
+      const root = runQueueRoot(person, failure.runId);
+      const client = {
+        ingest: () => Promise.reject(new SwarmHttpError(failure.status, "synthetic refusal")),
+        statuses: () => Promise.resolve(new Map()),
+      };
+      const queue = new UploadQueue({ root, client });
+      await queue.stagePart(failure.runId, new Blob(["audio"]), 0);
+      await queue.seal(failure.runId, []);
+      await queue.drain();
+      await touchAlive(root, new Date(NOW - 10 * 60_000));
+      const failedRoot = path.join(root, "failed");
+      const names = await readdir(failedRoot);
+      const failedDirectory = path.join(failedRoot, names[0] ?? "missing");
+      const time = new Date(NOW - failure.age);
+      await utimes(failedDirectory, time, time);
+    }
+    const moved = await adoptOrphanedRuns({
+      personDirectory: person,
+      ownRunId: "recovery",
+      nowMs: NOW,
+      recoverFailed: true,
+      log: quiet,
+    });
+    expect(moved).toBe(1);
+    const pending = await readdir(path.join(person, "recovery", "pending"));
+    expect(pending).toHaveLength(1);
+    expect(pending[0]).toContain("expired-pass");
+    const permanent = await readdir(path.join(person, "too-large", "failed"));
+    const recent = await readdir(path.join(person, "just-failed", "failed"));
+    expect(permanent).toHaveLength(1);
+    expect(recent).toHaveLength(1);
   });
 });

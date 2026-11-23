@@ -22,6 +22,7 @@ interface RecordingSessionContract {
 }
 
 export interface RecordingSessionOptions {
+  readonly audioHealthy?: () => boolean;
   readonly client: SwarmClient;
   readonly queue: UploadQueue;
   /**
@@ -113,6 +114,7 @@ export class RecordingSession implements RecordingSessionContract {
   async heartbeat(recordedSeconds?: number): Promise<void> {
     const meetingId = this.meetingId;
     await this.options.client.heartbeat({
+      ...(this.options.audioHealthy && { audio_healthy: this.options.audioHealthy() }),
       recording: this.decision === "transcribe",
       version: this.options.version,
       on_call: true,

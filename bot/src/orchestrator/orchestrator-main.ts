@@ -69,6 +69,7 @@ import { Orchestrator } from "./orchestrator.ts";
 import { LoginWatch } from "./login-watch.ts";
 import { channelAlert } from "./owner-alert.ts";
 import { RunLogs } from "./run-log.ts";
+import { DockerRecoveryRunner, uploadRecoveryService } from "./upload-recovery-service.ts";
 
 type Environment = Readonly<Record<string, string | undefined>>;
 
@@ -263,17 +264,23 @@ async function main(environment: Environment): Promise<void> {
     intervalMs: calendarMs,
   });
 
+  const recovery = uploadRecoveryService(
+    new DockerRecoveryRunner({ project, image, swarmUrl: containerSwarmUrl, token, log }),
+    log,
+  );
+
   await orchestrator.init();
   await orchestrator.startLoginKeepalive();
   trigger.start();
   calendar.start();
+  recovery.start();
   log(
     `служба запущена: приглашения опрашиваются каждые ${String(intervalMs)} мс, календари — каждые ${String(calendarMs)} мс`,
   );
 
   const shutdown = async (signal: string): Promise<void> => {
     log(`${signal}: перестаю опрашивать; идущие встречи не трогаю — поводок их отпустит`);
-    await Promise.all([trigger.close(), calendar.close()]);
+    await Promise.all([trigger.close(), calendar.close(), recovery.close()]);
     orchestrator.close();
     // eslint-disable-next-line unicorn/no-process-exit -- служба и есть CLI
     process.exit(0);

@@ -17,6 +17,7 @@ import {
   verifyAgentToken,
 } from "./agent-auth.ts";
 import type { AgentGrant } from "./agent-grant.ts";
+import { mintUploadRecoveryToken, UPLOAD_RECOVERY_TTL_MS } from "./upload-recovery-token.ts";
 
 // ── Стенд ─────────────────────────────────────────────────────────────────────
 
@@ -544,4 +545,55 @@ Deno.test("БЛОКИРУЮЩИЙ: агент без воркспейса не �
 Deno.test("выключенный агент в свою дверь не проходит", async () => {
   const { client } = makeSupabase({ agentByToken: await botRow({ is_active: false }), personById: people });
   await refuses(resolveServiceAgent(client, req(BOT_TOKEN)), 401, "выключенный агент");
+});
+
+Deno.test("досылка: истёкший исходный пропуск открывает только выгрузку прежней встречи", async () => {
+  const oldSecret = Deno.env.get("WEB_JWT_SECRET");
+  Deno.env.set("WEB_JWT_SECRET", "test-only-recovery-key");
+  try {
+    const claims = {
+      grantId: "grant-1",
+      agentId: "scriba",
+      groupId: "alpha",
+      telegramId: 111,
+      meetingId: "meeting-1",
+      expiresAt: Date.now() + UPLOAD_RECOVERY_TTL_MS,
+    };
+    const token = await mintUploadRecoveryToken(claims, "test-only-recovery-key");
+    const db = makeSupabase({
+      agentByToken: await botRow(),
+      personById: people,
+      grantByToken: await grantRow({ meeting_id: "meeting-1", expires_at: "2000-01-01T00:00:00Z" }),
+    });
+    const upload = new Request("https://api.test/meeting-ingest", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    assertEquals((await resolveActingIdentity(db.client, upload)).grant?.meetingId, "meeting-1");
+    for (const route of ["meeting-claim", "meeting-heartbeat", "meeting-webtoken"]) {
+      await assertRejects(
+        () =>
+          resolveActingIdentity(
+            db.client,
+            new Request(`https://api.test/${route}`, { method: "POST", headers: upload.headers }),
+          ),
+        AgentAuthError,
+      );
+    }
+    const revoked = makeSupabase({
+      agentByToken: await botRow({ is_active: false }),
+      personById: people,
+      grantByToken: await grantRow({ meeting_id: "meeting-1" }),
+    });
+    await assertRejects(() => resolveActingIdentity(revoked.client, upload), AgentAuthError);
+    const moved = makeSupabase({
+      agentByToken: await botRow(),
+      personById: () => ({ telegram_id: 111, group_id: "beta" }),
+      grantByToken: await grantRow({ meeting_id: "meeting-1" }),
+    });
+    await assertRejects(() => resolveActingIdentity(moved.client, upload), AgentAuthError);
+  } finally {
+    if (oldSecret === undefined) Deno.env.delete("WEB_JWT_SECRET");
+    else Deno.env.set("WEB_JWT_SECRET", oldSecret);
+  }
 });

@@ -36,9 +36,16 @@ extension AppDelegate {
 
     // Сигналы о боте из ответа `meeting-current`: что пишет сейчас, писал и пропал, приходил (#1278).
     func noteBotSignals(_ lookup: SwarmClient.MeetingLookup) {
+        backupAvailable = Set(lookup.backupAvailable)
         botNow = Set(lookup.recordedNow)
         botSeen.formUnion(lookup.recordedNow)
         botTouched = Set(lookup.botTouched)
+    }
+
+    // A newly failed bot gets its own five-minute offer, even if the earlier one expired.
+    func recordingPromptKey(for key: String? = nil) -> String {
+        let fallback = key.map { backupAvailable.contains($0) } ?? !backupAvailable.isEmpty
+        return (key ?? "call") + (fallback ? ":backup" : "")
     }
 
     func showPickCard() {

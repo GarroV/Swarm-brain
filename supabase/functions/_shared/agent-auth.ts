@@ -3,6 +3,11 @@
 // линта = непроверяемый риск для живого конвейера. Дефект гейта вынесен диспетчеру.
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import type { AgentGrant } from "./agent-grant.ts";
+import {
+  isUploadRecoveryToken,
+  type UploadRecoveryClaims,
+  verifyUploadRecoveryToken,
+} from "./upload-recovery-token.ts";
 import { markClientSeen } from "./client-seen.ts";
 
 // Аутентификация агентов по токену. Два вида предъявителя, и разница между ними существенна:
@@ -272,6 +277,15 @@ export async function resolveActingIdentity(
 ): Promise<AgentIdentity> {
   const hashHex = await bearerHash(req);
   const behalf = readOnBehalfOf(req, onBehalfOf);
+  const rawToken = (req.headers.get("Authorization") ?? "").replace(/^Bearer\s+/i, "");
+  let recovery: UploadRecoveryClaims | undefined;
+  if (isUploadRecoveryToken(rawToken)) {
+    try {
+      recovery = await verifyUploadRecoveryToken(rawToken, req, Deno.env.get("WEB_JWT_SECRET") ?? "");
+    } catch {
+      throw new AgentAuthError(403, "invalid upload recovery permit or operation");
+    }
+  }
 
   const human = await findHuman(supabase, hashHex);
   if (human) {
@@ -286,7 +300,7 @@ export async function resolveActingIdentity(
     return human;
   }
 
-  const grant = await findGrant(supabase, hashHex);
+  const grant = await findGrant(supabase, hashHex, recovery);
   if (!grant) {
     // Общий токен агента за человека не действует НИКОГДА — ни без заголовка, ни с ним: заголовок
     // — слово бота, а не основание сервера. За человека бот ходит по пропуску встречи (T165).
@@ -365,15 +379,23 @@ interface GrantRow {
 async function findGrant(
   supabase: SupabaseClient,
   hashHex: string,
+  recovery?: UploadRecoveryClaims,
 ): Promise<{ telegramId: number; groupId: string; grant: AgentGrant } | null> {
   const { data } = await supabase
     .from("meeting_agent_grants")
     .select(GRANT_COLUMNS)
-    .eq("token_hash", hashHex)
+    .eq(recovery ? "id" : "token_hash", recovery?.grantId ?? hashHex)
     .maybeSingle();
   const row = data as GrantRow | null;
-  if (!row || row.token_hash !== hashHex) return null;
-  if (isExpired(row.expires_at, Date.now())) {
+  if (!row || (!recovery && row.token_hash !== hashHex)) return null;
+  if (
+    recovery &&
+    (row.id !== recovery.grantId || row.agent_id !== recovery.agentId || row.group_id !== recovery.groupId ||
+      row.telegram_id !== recovery.telegramId || row.meeting_id !== recovery.meetingId)
+  ) {
+    throw new AgentAuthError(403, "upload recovery permit no longer matches its grant");
+  }
+  if (!recovery && isExpired(row.expires_at, Date.now())) {
     console.warn(`agent-auth: пропуск ${row.id} истёк`);
     throw new AgentAuthError(401, "Unauthorized");
   }

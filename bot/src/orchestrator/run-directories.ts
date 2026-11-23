@@ -13,7 +13,17 @@
  * одновременно стартовавших контейнеров встречу получит ровно один). Каталог `failed`
  * (dead-letter) не трогается — он для человека, а не для автоматики.
  */
-import { mkdir, readdir, rename, rm, rmdir, stat, utimes, writeFile } from "node:fs/promises";
+import {
+  mkdir,
+  readdir,
+  readFile,
+  rename,
+  rm,
+  rmdir,
+  stat,
+  utimes,
+  writeFile,
+} from "node:fs/promises";
 import path from "node:path";
 
 const ALIVE_FILE = "alive";
@@ -23,6 +33,39 @@ export const ALIVE_TOUCH_MS = 10_000;
  * Сосед молчит дольше — его очередь бесхозная. С запасом над шагом касания.
  */
 const ORPHAN_AFTER_MS = 5 * 60_000;
+const FAILED_RETRY_MS = 60 * 60_000;
+
+async function sealOrphan(directory: string, log: (line: string) => void): Promise<void> {
+  const file = path.join(directory, "meta.json");
+  try {
+    const entry = JSON.parse(await readFile(file, "utf8")) as {
+      sealed?: boolean;
+      parts?: unknown[];
+    };
+    if (entry.sealed || !Array.isArray(entry.parts) || entry.parts.length === 0) return;
+    await writeFile(`${file}.tmp`, JSON.stringify({ ...entry, sealed: true }), { mode: 0o600 });
+    await rename(`${file}.tmp`, file);
+    log("очередь: сохранённые части осиротевшей записи готовы к досылке");
+  } catch (error) {
+    log(`очередь: осиротевшая запись не запечатана: ${String(error)}`);
+  }
+}
+
+async function shouldRetryFailed(directory: string, nowMs: number): Promise<boolean> {
+  try {
+    const info = await stat(directory);
+    if (nowMs - info.mtimeMs < FAILED_RETRY_MS) return false;
+    const entry = JSON.parse(await readFile(path.join(directory, "meta.json"), "utf8")) as {
+      failureStatus?: number;
+    };
+    const status = entry.failureStatus;
+    return (
+      status === undefined || status === 401 || status === 403 || status === 429 || status >= 500
+    );
+  } catch {
+    return false;
+  }
+}
 
 export function runQueueRoot(personDirectory: string, runId: string): string {
   return path.join(personDirectory, runId);
@@ -116,14 +159,30 @@ async function adoptRun(
   runDirectory: string,
   ownPending: string,
   log: (line: string) => void,
+  shouldRecoverFailed: boolean,
+  nowMs: number,
 ): Promise<number> {
   const pending = path.join(runDirectory, PENDING);
   const meetings = await listOrEmpty(pending);
   let moved = 0;
   for (const meeting of meetings) {
     await mkdir(ownPending, { recursive: true, mode: 0o700 });
-    if (await didMoveMeeting(path.join(pending, meeting), path.join(ownPending, meeting), log))
+    if (await didMoveMeeting(path.join(pending, meeting), path.join(ownPending, meeting), log)) {
+      await sealOrphan(path.join(ownPending, meeting), log);
       moved += 1;
+    }
+  }
+  if (shouldRecoverFailed) {
+    const failures = await listOrEmpty(path.join(runDirectory, "failed"));
+    for (const meeting of failures) {
+      const from = path.join(runDirectory, "failed", meeting);
+      if (!(await shouldRetryFailed(from, nowMs))) continue;
+      await mkdir(ownPending, { recursive: true, mode: 0o700 });
+      if (await didMoveMeeting(from, path.join(ownPending, meeting), log)) {
+        await sealOrphan(path.join(ownPending, meeting), log);
+        moved += 1;
+      }
+    }
   }
   await tidyRun(runDirectory);
   return moved;
@@ -139,6 +198,7 @@ export async function adoptOrphanedRuns(options: {
   readonly nowMs: number;
   readonly orphanAfterMs?: number;
   readonly log: (line: string) => void;
+  readonly recoverFailed?: boolean;
 }): Promise<number> {
   const threshold = options.orphanAfterMs ?? ORPHAN_AFTER_MS;
   const ownPending = path.join(runQueueRoot(options.personDirectory, options.ownRunId), PENDING);
@@ -148,7 +208,13 @@ export async function adoptOrphanedRuns(options: {
     if (runId === options.ownRunId) continue;
     const runDirectory = runQueueRoot(options.personDirectory, runId);
     if (await isOrphan(runDirectory, options.nowMs, threshold)) {
-      moved += await adoptRun(runDirectory, ownPending, options.log);
+      moved += await adoptRun(
+        runDirectory,
+        ownPending,
+        options.log,
+        options.recoverFailed ?? false,
+        options.nowMs,
+      );
     }
   }
   return moved;

@@ -144,6 +144,7 @@ export interface IngestResponse {
 }
 
 export interface HeartbeatRequest {
+  readonly audio_healthy?: boolean;
   readonly recording: boolean;
   readonly version: number;
   readonly on_call?: boolean;

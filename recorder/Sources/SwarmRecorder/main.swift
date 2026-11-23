@@ -369,7 +369,9 @@ if let mode = CommandLine.arguments.first(where: { $0.hasPrefix("--selftest") })
     }
 }
 
-if CommandLine.arguments.contains("--selftest-call-prompt") {
+if CommandLine.arguments.contains("--selftest-backup-offer") {
+    runBackupOfferSelfTest()
+} else if CommandLine.arguments.contains("--selftest-call-prompt") {
     runRecordingPromptSelfTest()
 } else if CommandLine.arguments.contains("--selftest-notes") {
     let keep = CommandLine.arguments.firstIndex(of: "--keep").flatMap { i -> Double? in

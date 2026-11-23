@@ -101,6 +101,7 @@ supabase/
 │   ├── swarm-recorder-version/ # Последний build рекордера + URL для автообновления
 │   ├── meeting-claim/          # Рекордер: claim/lease встречи до транскрибации
 │   ├── meeting-ingest/         # Рекордер: приём аудио → Storage → durable-обработка
+│   ├── meeting-upload-recovery/ # scriba: краткий пропуск на досылку прежней записи
 │   ├── meeting-process/        # Cron durable-обработки (транскрибация по кускам + тезисы)
 │   ├── meeting-status/ meeting-current/ meeting-context/ meeting-heartbeat/ recorder-diag/ meeting-webtoken/
 │   │                           # Рекордер: статус встреч, «что идёт сейчас», контекст прошлой встречи, heartbeat, журнал, обмен токена рекордера на веб-сессию

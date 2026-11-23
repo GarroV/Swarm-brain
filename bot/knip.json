@@ -12,6 +12,7 @@
     "src/orchestrator/login-export.ts",
     "src/orchestrator/probe-main.ts",
     "src/orchestrator/orchestrator-main.ts",
+    "src/orchestrator/upload-recovery-main.ts",
     "src/orchestrator/smoke-orchestrator.ts",
     "src/orchestrator/smoke-pulse.ts",
     "src/orchestrator/smoke-presence.ts"

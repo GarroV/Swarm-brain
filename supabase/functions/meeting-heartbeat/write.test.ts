@@ -25,6 +25,17 @@ const human: AgentIdentity = {
   groupId: "alpha",
   kind: "recorder",
 };
+
+Deno.test("capture health: belongs to the bot meeting heartbeat only; older senders preserve unknown", () => {
+  const failed = buildHeartbeatWrites(bot, { recording: true, meeting_id: MEETING_ID, audio_healthy: false }, NOW);
+  assertEquals(failed[0].patch.agent_last_audio_healthy, false);
+  const restored = buildHeartbeatWrites(bot, { recording: true, meeting_id: MEETING_ID, audio_healthy: true }, NOW);
+  assertEquals(restored[0].patch.agent_last_audio_healthy, true);
+  const old = buildHeartbeatWrites(bot, { recording: true, meeting_id: MEETING_ID }, NOW);
+  assertEquals("agent_last_audio_healthy" in old[0].patch, false);
+  const person = buildHeartbeatWrites(human, { audio_healthy: false }, NOW);
+  assertEquals("agent_last_audio_healthy" in person[0].patch, false);
+});
 // Бот приходит с пропуском встречи, привязанным заявкой к MEETING_ID (T165).
 const bot: AgentIdentity = {
   telegramId: 111,

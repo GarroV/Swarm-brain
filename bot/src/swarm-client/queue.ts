@@ -62,6 +62,7 @@ export interface QueueEntry {
   readonly uploaded: boolean;
   readonly attempts: number;
   readonly createdAt: string;
+  readonly failureStatus?: number;
 }
 
 export type QueueEventKind =
@@ -78,7 +79,7 @@ export interface UploadQueueOptions {
    * Каталог очереди. Должен переживать перезапуск процесса — в этом весь смысл.
    */
   readonly root: string;
-  readonly client: SwarmClient;
+  readonly client: Pick<SwarmClient, "ingest" | "statuses">;
   /**
    * Сколько раз пробовать между прогонами, прежде чем признать запись безнадёжной.
    */
@@ -135,7 +136,7 @@ const PRIVATE_FILE_MODE = 0o600;
 export class UploadQueue {
   private readonly root: string;
 
-  private readonly client: SwarmClient;
+  private readonly client: Pick<SwarmClient, "ingest" | "statuses">;
 
   private readonly maxAttempts: number;
 
@@ -295,7 +296,11 @@ export class UploadQueue {
     } catch (error) {
       const attempts = entry.attempts + 1;
       const isPermanent = error instanceof SwarmHttpError && !isTransient(error);
-      await this.writeEntry({ ...entry, attempts });
+      await this.writeEntry({
+        ...entry,
+        attempts,
+        ...(error instanceof SwarmHttpError && { failureStatus: error.status }),
+      });
       if (isPermanent || attempts >= this.maxAttempts) {
         await this.moveToDeadLetter(
           entry.meetingId,

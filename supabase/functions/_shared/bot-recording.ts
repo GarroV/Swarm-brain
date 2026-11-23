@@ -21,6 +21,12 @@ export function botStillRecording(row: BotRecordingRow, nowIso: string): boolean
 /** Строка встречи для «её уже пишут»: ключ календаря и признаки живой записи. */
 export interface RecordedNowRow extends BotRecordingRow {
   identity_key: string | null;
+  agent_last_audio_healthy?: boolean | null;
+}
+
+/** A fallback recording may be offered without changing who owns the bot recording/lease. */
+export function backupAvailableKeys(rows: readonly RecordedNowRow[], nowIso: string): string[] {
+  return recordedNowKeys(rows.filter((row) => row.agent_last_audio_healthy === false), nowIso);
 }
 
 /**
@@ -56,16 +62,26 @@ export async function loadRecordedNow(
   email: string | null,
   nowIso: string,
 ): Promise<string[]> {
+  return (await loadRecordingSignals(client, telegramId, email, nowIso)).recorded_now;
+}
+
+export async function loadRecordingSignals(
+  client: SupabaseClient,
+  telegramId: number,
+  email: string | null,
+  nowIso: string,
+): Promise<{ recorded_now: string[]; backup_available: string[] }> {
   const { data, error } = await client.from("meetings")
-    .select("identity_key, lease_expires_at, agent_last_recording")
+    .select("identity_key, lease_expires_at, agent_last_recording, agent_last_audio_healthy")
     .eq("agent_last_recording", true)
     .gt("lease_expires_at", nowIso)
     .or(whoFilter(telegramId, email));
   if (error) {
     console.error("recorded-now: не прочитать встречи", error.message);
-    return [];
+    return { recorded_now: [], backup_available: [] };
   }
-  return recordedNowKeys((data ?? []) as RecordedNowRow[], nowIso);
+  const rows = (data ?? []) as RecordedNowRow[];
+  return { recorded_now: recordedNowKeys(rows, nowIso), backup_available: backupAvailableKeys(rows, nowIso) };
 }
 
 /** Строка встречи для «бот приходил»: признаки касания ботом и время встречи. */

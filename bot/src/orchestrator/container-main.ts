@@ -288,7 +288,9 @@ async function main(): Promise<number> {
     },
   );
 
+  let isAudioHealthy = true;
   const session = new RecordingSession({
+    audioHealthy: () => isAudioHealthy,
     client,
     queue,
     version: config.version,
@@ -342,6 +344,9 @@ async function main(): Promise<number> {
         console.log(formatStateLine({ meetingId }));
       },
       audioWatch: {
+        healthChanged: (healthy) => {
+          isAudioHealthy = healthy;
+        },
         sampleSilent: async () => sampleSilent(settings.sinkName),
         report: (audio) => {
           const title = config.calendar?.title;

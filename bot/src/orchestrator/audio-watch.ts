@@ -70,6 +70,30 @@ export interface QuietSample {
   readonly lastSpokeAt: number | null;
 }
 
+/**
+Independent of one-time human alerts: recovery and a second outage update capture health too.
+*/
+export class CaptureHealth {
+  private silentSince: number | null = null;
+  private healthy = true;
+  private readonly thresholdMs: number;
+  constructor(thresholdMs: number) {
+    this.thresholdMs = thresholdMs;
+  }
+  observe(sample: { silent: boolean | null; alone: boolean | null }, nowMs: number): boolean {
+    if (sample.silent === false) {
+      this.silentSince = null;
+      this.healthy = true;
+    } else if (sample.silent === true && sample.alone === false) {
+      this.silentSince ??= nowMs;
+      if (nowMs - this.silentSince >= this.thresholdMs) this.healthy = false;
+    } else {
+      this.silentSince = null;
+    }
+    return this.healthy;
+  }
+}
+
 export class QuietEndTimer {
   readonly #quietMs: number;
   #silentSince: number | null = null;
