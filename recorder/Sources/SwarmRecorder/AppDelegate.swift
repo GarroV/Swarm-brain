@@ -721,7 +721,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     /// Звонок идёт 3 минуты, запись не включена, Скриба этот созвон не пишет → один раз за звонок
-    /// вернуть предложение в капсулу и показать свою карточку с кнопкой «Записать» (CallNudge).
+    /// вернуть предложение в ту же капсулу, без второй карточки (CallNudge).
     private func nudgeIfUnrecorded(micOn: Bool, meetings: [MeetingIdentity.Info], recordedNow: [String]) {
         guard micOn else { callStartedAt = nil; callNudged = false; return }
         let now = Date()
@@ -739,18 +739,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         Diagnostics.shared.log("NUDGE звонок идёт 3 мин без записи → \(current?.key ?? calls.first?.key ?? "без календаря")")
         for m in calls { dismissedUntil.removeValue(forKey: m.key) }
-        if calls.isEmpty { callDismissedUntil = nil; callActive = true; rebuildMenu() }
-        let lang = BoardL10n.language()
-        let body = (current ?? calls.first)?.title.map { "«\($0)». " } .map { $0 + BoardL10n.text("nudge.body", lang: lang) }
-            ?? BoardL10n.text("nudge.body", lang: lang)
-        // Карточка висит, пока человек не ответит; запись из любого места её снимает (beginRecording).
-        RecorderNotices.shared.post(
-            id: Self.nudgeNoticeId, title: BoardL10n.text("nudge.title", lang: lang), body: body, lifetime: 300,
-            actions: [.init(title: BoardL10n.text("nudge.record", lang: lang), isPrimary: true, run: { [weak self] in
-                          guard let self, case .idle = self.state else { return }
-                          self.acceptPrompt(source: "напоминание")
-                      }),
-                      .init(title: BoardL10n.text("nudge.skip", lang: lang), run: {})])
+        if calls.isEmpty { callDismissedUntil = nil; callActive = true }
+        // One offer, with its original five-minute deadline; no second sticky card.
+        handleDetection(meetings: meetings, micActive: micOn, recordedNow: recordedNow)
+        rebuildMenu()
     }
 
     // ── UI ──────────────────────────────────────────────────────────────────────
@@ -1001,7 +993,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 }, reminder: reminder.isActive)
             } else if let m = pendingMeeting {
                 widget.showPending(notice: notice(for: m), canJoin: m.joinURL != nil,
-                                   missed: missed.capsule(forCall: m.joinURL?.absoluteString), reminder: reminder.isActive)
+                                   missed: missed.capsule(forCall: m.joinURL?.absoluteString), reminder: reminder.isActive,
+                                   promptKey: m.key)
             } else if callActive {
                 // Звонок без календаря: слота нет, а «подключиться» некуда — человек уже в нём.
                 // Подзаголовок пустой: «Идёт звонок» + «идёт» — дубль, а не информация.
@@ -1312,6 +1305,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if case .recording = state { return }
         reminder.noteStarted(key: id?.key)
         RecorderNotices.shared.dismiss(id: Self.nudgeNoticeId)   // «Записать» из любого места снимает карточку-напоминание
+        widget.hide()   // Remove the offer before asynchronous audio startup, from every entry point.
         // Запоминаем контекст для «Повторить» (встреча/звонок/manual).
         lastRecordIdentity = id
         // macOS 14.4+: системный звук через Core Audio process-tap — нужно «System Audio

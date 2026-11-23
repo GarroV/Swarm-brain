@@ -12,10 +12,17 @@ import RecorderKit
 //       сервера) · «Позвать бота». Если в этот момент идёт предложение записать — пропуск НЕ
 //       второй капсулой, а строкой «Бота нет · Позвать бота» под кнопками встречи.
 //
-// Размер меняется вместе с обликом (currentSize), место считает RecorderKit/WidgetPlacement:
-// куда перетащили — там и появляется, иначе правый край ниже полосы управления.
+// Предложения записи — справа сверху на 5 минут; положение индикатора записи помнится отдельно.
 // Баннер — решение владельца 02.09.2026, docs/decisions/2026-09-02-pill-and-join-button.md.
 final class RecorderWidget {
+    private let prompt: RecordingPromptPresentation
+    init(promptLifetime: TimeInterval = RecordingPromptLifetime.defaultLifetime) {
+        prompt = RecordingPromptPresentation(lifetime: promptLifetime)
+    }
+
+    private func endPrompt() {
+        if prompt.clear() { panel?.orderOut(nil) }
+    }
     var onStop: (() -> Void)?
     var onRecord: (() -> Void)?
     // «Подключиться» на баннере встречи — открыть звонок И включить запись (референс Granola).
@@ -45,9 +52,7 @@ final class RecorderWidget {
     var systemLevelProvider: (() -> Float)?
 
     private(set) var panel: NSPanel?   // чтение — SelfTestProbe (самопроверки)
-    /// Фактическая рамка окна на экране — только для чтения. Нужна режиму
-    /// `--selftest-widget`: положение виджета иначе проверяется глазами по скриншоту,
-    /// а «кажется, стало выше» — не проверка (правка дефолта 03.09.2026).
+    /// Фактическая рамка окна для самопроверок положения.
     var currentFrame: CGRect? { panel?.frame }
     /// Дышит ли значок — для режима самопроверки: «анимируется или нет» по скриншоту не
     /// определить, а по флагу — определить.
@@ -148,6 +153,7 @@ final class RecorderWidget {
     private let procRow = NSStackView()
 
     func showRecording(startedAt: Date) {
+        endPrompt()
         ensurePanel()
         setBotButtons(visible: false)
         shownMissed = nil
@@ -166,7 +172,9 @@ final class RecorderWidget {
     /// `missed` — кнопка «Позвать бота» этого созвона (D031), nil — кнопки нет.
     /// `reminder` — идёт реальный созвон, а запись не включена (CallReminder, решение 09.11.2026):
     /// заметный режим, «Подключиться» нет (человек уже в звонке), «Записать» главная, есть «Не сейчас».
-    func showPending(notice: MeetingNotice, canJoin: Bool, missed: MissedCapsule? = nil, reminder: Bool = false) {
+    func showPending(notice: MeetingNotice, canJoin: Bool, missed: MissedCapsule? = nil, reminder: Bool = false,
+                     promptKey: String? = nil) {
+        guard prompt.show(key: promptKey ?? notice.title, onExpire: { [weak self] in self?.panel?.orderOut(nil) }) else { return }
         ensurePanel()
         setBotButtons(visible: false)
         stopLevelMeter()
@@ -192,6 +200,8 @@ final class RecorderWidget {
     /// Выбор из пересекающихся созвонов (D027) в той же капсуле: заголовок, по строке на созвон;
     /// у строки, куда бота можно позвать, — своя кнопка «Позвать бота» (D031).
     func showChoice(_ choices: [Choice], reminder: Bool = false) {
+        let key = choices.map(\.key).sorted().joined(separator: "|")
+        guard prompt.show(key: key, onExpire: { [weak self] in self?.panel?.orderOut(nil) }) else { return }
         ensurePanel()
         setBotButtons(visible: false)
         stopLevelMeter()
@@ -216,6 +226,7 @@ final class RecorderWidget {
     /// Встречу, которую пишет рекордер, начал писать бот (BotPrompt, решение владельца 07.10.2026):
     /// баннер с вопросом поверх записи. Запись при этом идёт — выбор человека ничего не теряет.
     func showBotPrompt() {
+        endPrompt()
         ensurePanel()
         stopLevelMeter()
         shownMissed = nil
@@ -339,6 +350,7 @@ final class RecorderWidget {
 
     // Запись отправлена и обрабатывается на сервере — крутилка (без текста, как и вся капсула).
     func showProcessing() {
+        endPrompt()
         ensurePanel()
         shownMissed = nil
         hideChoice()
@@ -356,6 +368,7 @@ final class RecorderWidget {
 
     // Обработка завершена — короткая зелёная галка (AppDelegate сам прячет через пару секунд).
     func showProcessingDone() {
+        endPrompt()
         ensurePanel()
         shownMissed = nil
         hideChoice()
@@ -372,6 +385,7 @@ final class RecorderWidget {
     }
 
     func hide() {
+        endPrompt()
         shownMissed = nil
         hideChoice()
         stopPulse()
@@ -655,7 +669,10 @@ final class RecorderWidget {
         guard let p = panel, let screen = NSScreen.main else { return }
         applyReminderStyle(reminderStyle && !bannerRow.isHidden)
         let size = currentSize()
-        if !p.isVisible {
+        if prompt.isActive {
+            p.setFrame(NSRect(origin: WidgetPlacement.notificationOrigin(size: size, in: screen.visibleFrame),
+                              size: size), display: true)
+        } else if !p.isVisible {
             // Куда перетащили — там и появляется; кто не таскал — по дефолту WidgetPlacement.
             let origin = WidgetPlacement.origin(savedInset: Self.savedInset(), size: size,
                                                 in: screen.visibleFrame)
@@ -704,7 +721,7 @@ final class RecorderWidget {
 
     // Вызывается только после перетаскивания мышкой (WidgetPanel.onDragEnd).
     private func rememberPlace() {
-        guard let p = panel, p.isVisible,
+        guard !prompt.isActive, let p = panel, p.isVisible,
               let screen = p.screen ?? NSScreen.main else { return }
         let inset = WidgetPlacement.inset(of: p.frame, in: screen.visibleFrame)
         UserDefaults.standard.set(inset.stored, forKey: Self.insetKey)

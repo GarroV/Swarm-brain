@@ -1,5 +1,12 @@
 # Swarm Brain — Quick Reference
 
+**Предложение записи (23.11.2026):** баннеры звонка/календаря всегда справа сверху,
+скрываются через 5 минут от первого показа; повторный опрос срок не обновляет.
+Старт записи снимает баннер; напоминание через 3 минуты не создаёт вторую карточку.
+`RecordingPromptLifetime` → `RecordingPromptPresentation` → `RecorderWidget`.
+Проверка без записи/сети: `SwarmRecorder --selftest-call-prompt`.
+Решение и отмена Zoom: [decisions/2026-11-23-recording-prompts-and-zoom.md](decisions/2026-11-23-recording-prompts-and-zoom.md).
+
 **Закрытие issues (#1079):** [ISSUE_CLOSURE_CHECK.md](ISSUE_CLOSURE_CHECK.md) — read-only CI сверяет closing references всех новых main-коммитов; отдельный trigger после «Ночная раскатка» покрывает слияния через `GITHUB_TOKEN`. OPEN → красный, недоступные metadata/история → ошибка. Сам checker issues не закрывает и комментарии не пишет.
 
 **Размер исходников (#265):** `python3 scripts/check-source-size.py --staged` проверяет Git index в pre-commit и `scripts/check`; CI `source-size.yml` дополнительно сравнивает весь PR с merge-base. Новые исходники — не более 800 физических строк. Существующий долг — `scripts/source-size-debt.json`: рост запрещён; при уменьшении обновить точное число строк, при достижении 800 удалить запись. Реальные Git-фикстуры: `python3 scripts/test-source-size.py`. Реестр не разрешает добавлять новые монолиты.

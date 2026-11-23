@@ -32,6 +32,12 @@ import CoreGraphics
 //     и могло оказаться «в середине второго монитора»; у кого оно было, капсула вернётся на
 //     дефолтное место, и первое же перетаскивание запомнится уже по-новому.
 public enum WidgetPlacement {
+    /// Recording offers always appear beside the usual macOS notifications.
+    /// Saved recording-pill coordinates do not apply to a temporary offer.
+    public static func notificationOrigin(size: CGSize, in visibleFrame: CGRect) -> CGPoint {
+        CGPoint(x: max(visibleFrame.minX, visibleFrame.maxX - size.width - 18),
+                y: max(visibleFrame.minY, visibleFrame.maxY - size.height - 16))
+    }
     /// Отступ дефолтной позиции от верха экрана — долей высоты, чтобы на любом мониторе
     /// капсула уходила из-под шапки, а не на фиксированные N пунктов.
     public static let topFraction: CGFloat = 0.28
