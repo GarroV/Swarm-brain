@@ -2,7 +2,7 @@
 # CI-сборка ПРЕДсобранного приложения для дистрибуции (issue #19).
 # Universal (arm64 + x86_64), deployment target macOS 13.0 (запускается на 13+), ad-hoc подпись.
 # На машине пользователя установщик (swarm-recorder-setup) переподписывает per-machine cert'ом —
-# здесь только ad-hoc, чтобы бандл был корректным. Собирается на macOS-раннере (macos-14) в CI,
+# здесь только ad-hoc, чтобы бандл был корректным. Собирается на поддерживаемом macOS-раннере в CI,
 # а не на dev-машине (там может быть более новый SDK → бинарь не запустится на старой macOS).
 #
 # Вывод: recorder/SwarmRecorder-<BUILD>.zip (ditto, keepParent). Публикуется как release asset

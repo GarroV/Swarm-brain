@@ -24,10 +24,10 @@ permissions:
 
 jobs:
   build:
-    runs-on: macos-14
+    runs-on: macos-15-intel
     # Потолок на зависание. concurrency тут НЕ ставим: прогоны идут по тегу recorder-build-N,
     # каждый публикует свой ассет — отменять предыдущий нельзя, релиз останется без файла.
-    timeout-minutes: 30   # SDK macOS 14 → бинарь с minos 13.0 запускается на 13/14/15+
+    timeout-minutes: 30   # Supported runner; build-app-ci.sh keeps deployment target macOS 13.0.
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
