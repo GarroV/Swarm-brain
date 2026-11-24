@@ -82,10 +82,10 @@ for (const fn of HUMAN_ONLY) {
 
 /**
  * Эндпоинты агента «сам за себя»: оркестратор забирает приглашения (D017) и задания автозапуска
- * (D021) своего воркспейса.
+ * (D021) своего воркспейса, а также разрешения на досылку по прежнему гранту встречи.
  * Дверь — resolveServiceAgent: только агент, без подмены и без человеческой личности на выходе.
  */
-const AGENT_SELF = ["meeting-invite", "meeting-calendar"];
+const AGENT_SELF = ["meeting-invite", "meeting-calendar", "meeting-upload-recovery"];
 
 for (const fn of AGENT_SELF) {
   Deno.test(`БЛОКИРУЮЩИЙ: ${fn} — дверь resolveServiceAgent, не человеческая и не подмены`, async () => {
