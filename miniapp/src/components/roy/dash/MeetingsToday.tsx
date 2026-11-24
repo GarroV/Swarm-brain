@@ -7,6 +7,7 @@ import { fetchTodayMeetings, openGoogleConnect, type TodayMeeting, type TodayMee
 import { recall, remember } from "@/lib/lastSeen";
 import { hasJoined, markJoined } from "@/lib/joinedCalls";
 import { canInviteBot } from "@/lib/meetingInvite";
+import { meetingOpenLink } from "@/lib/meetingOpenLink";
 import { InviteBotInline } from "./InviteBotInline";
 import { minutesUntil, nextJoinable, nowLineIndex, reviewDraftFor } from "@/lib/homeMeetings";
 import type { AgentMeeting } from "@/types";
@@ -63,8 +64,9 @@ function MeetingRow({ m, dt, locale, joined, onJoined }: {
   // Сигнал рекордера ГЛАВНЕЕ локального нажатия, но локальное срабатывает мгновенно.
   const onAir = m.on_call || joined;
   const join = () => {
-    if (!m.join_url) return;
-    window.open(m.join_url, "_blank", "noopener");
+    const url = meetingOpenLink(m);
+    if (!url) return;
+    window.open(url, "_blank", "noopener");
     onJoined(m);
   };
   // Затянувшийся созвон не приглушаем и не убираем у него кнопку: слот кончился, а люди
@@ -115,7 +117,7 @@ function MeetingRow({ m, dt, locale, joined, onJoined }: {
           кнопки: пустая кнопка обещает действие, которого не будет. */}
       <div className="flex shrink-0 items-center gap-1.5">
       {showInviteBot(m, onAir) && <InviteBotInline meetingId={m.id} joinUrl={m.join_url as string} />}
-      {m.join_url && (!m.is_past || onAir) && (
+      {meetingOpenLink(m) && (!m.is_past || onAir) && (
         <button
           type="button"
           onClick={(e) => { e.stopPropagation(); join(); }}
@@ -177,14 +179,15 @@ function FlatMeetingRow({ m, dt, locale, joined, onJoined, now, primary, draft, 
   const live = m.is_now || onAir;
   const dim = m.is_past && !onAir && !draft;
   const join = () => {
-    if (!m.join_url) return;
-    window.open(m.join_url, "_blank", "noopener");
+    const url = meetingOpenLink(m);
+    if (!url) return;
+    window.open(url, "_blank", "noopener");
     onJoined(m);
   };
   const time = new Intl.DateTimeFormat(locale, { hour: "2-digit", minute: "2-digit" }).format(new Date(m.starts_at));
   const until = minutesUntil(m, now);
   const people = m.attendees > 0 ? (m.attendees === 1 ? "1:1" : `${m.attendees} ${dt("участников", "attendees")}`) : null;
-  const canJoin = Boolean(m.join_url) && (!m.is_past || onAir);
+  const canJoin = Boolean(meetingOpenLink(m)) && (!m.is_past || onAir);
   return (
     <div className={`-mx-2 grid items-center gap-x-3 border-b border-line px-2 py-2.5 last:border-b-0 ${live ? "rounded-[8px] bg-accent-soft" : ""}`}
       style={{ gridTemplateColumns: "auto auto minmax(0,1fr) auto", opacity: dim ? 0.6 : 1 }}>

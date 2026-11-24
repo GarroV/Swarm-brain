@@ -989,10 +989,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 // Пересекающиеся созвоны (D027): выбор в той же капсуле, у строки — своя кнопка бота.
                 widget.showChoice(pendingMeetings.map {
                     RecorderWidget.Choice(key: $0.key, notice: notice(for: $0),
-                                          missed: missed.capsule(forCall: $0.joinURL?.absoluteString))
+                                          missed: missed.capsule(forCall: $0.joinURL?.absoluteString), canJoin: $0.browserURL != nil)
                 }, reminder: reminder.isActive, promptKey: recordingChoicePromptKey(keys: pendingMeetings.map(\.key)))
             } else if let m = pendingMeeting {
-                widget.showPending(notice: notice(for: m), canJoin: m.joinURL != nil,
+                widget.showPending(notice: notice(for: m), canJoin: m.browserURL != nil,
                                    missed: missed.capsule(forCall: m.joinURL?.absoluteString), reminder: reminder.isActive,
                                    promptKey: recordingPromptKey(for: m.key))
             } else if callActive {
@@ -1230,7 +1230,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // «Подключиться» на баннере: открыть звонок и сразу включить запись (референс Granola,
     // #193) — один клик вместо «найти ссылку в календаре, зайти, потом вспомнить про запись».
     private func widgetJoin() {
-        openJoinLink(pendingMeeting?.joinURL)
+        guard openJoinLink(pendingMeeting?.browserURL) else { return }
         widgetRecord(source: "баннер «Подключиться»")
     }
 
@@ -1239,7 +1239,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // предложений — ничего не открываем и не пишем, соседнюю не подставляем.
     private func joinChosen(_ key: String) {
         guard let m = MeetingChoice.chosen(pendingMeetings, key: \.key, key) else { return }
-        openJoinLink(m.joinURL)
+        guard openJoinLink(m.browserURL) else { return }
         recordChosen(key, source: "выбор созвона «Подключиться»")
     }
 
@@ -1252,22 +1252,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func recordChosenMenuTapped(_ sender: NSMenuItem) {
         if let key = sender.representedObject as? String { recordChosen(key, source: "меню, выбор созвона") }
-    }
-
-    // Журнал открытия ссылки: хост (без пути — в нём id комнаты), результат `open` и сколько
-    // экземпляров браузера-обработчика запущено. 25.09.2026 ссылка ушла в фоновый headless-Chrome
-    // от скрипта скриншотов и открылась невидимо; с `экземпляров=3` в журнале это видно сразу (#506).
-    private func openJoinLink(_ url: URL?) {
-        guard let url else {
-            Diagnostics.shared.log("JOIN ссылки нет — только запись")
-            return
-        }
-        let handler = NSWorkspace.shared.urlForApplication(toOpen: url)
-        let bundleID = handler.flatMap { Bundle(url: $0)?.bundleIdentifier }
-        let running = bundleID.map { NSRunningApplication.runningApplications(withBundleIdentifier: $0).count } ?? 0
-        let opened = NSWorkspace.shared.open(url)
-        Diagnostics.shared.log("JOIN host=\(url.host ?? "?") open=\(opened ? "ok" : "ОТКАЗ") "
-            + "обработчик=\(bundleID ?? "нет") экземпляров=\(running)")
     }
 
     private func acceptPrompt(source: String) {

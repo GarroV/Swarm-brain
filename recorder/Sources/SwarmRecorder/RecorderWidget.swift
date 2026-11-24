@@ -33,7 +33,7 @@ final class RecorderWidget {
     var onRecordChoice: ((String) -> Void)?
 
     /// Строка выбора: ключ встречи + что читает человек + кнопка «Позвать бота» этого созвона (D031).
-    struct Choice { let key: String; let notice: MeetingNotice; var missed: MissedCapsule? = nil }
+    struct Choice { let key: String; let notice: MeetingNotice; var missed: MissedCapsule? = nil; var canJoin = true }
     // «Позвать бота» по пропуску (D031) — id пропуска; ✕ капсулы — убрать её пропуски из капсулы.
     var onInviteBot: ((String) -> Void)?
     var onMissedDismiss: ((String) -> Void)?
@@ -280,6 +280,7 @@ final class RecorderWidget {
         let join = NSButton()
         textButton(join, title: "Подключиться", filled: true, action: #selector(joinChoiceAction(_:)))
         join.tag = index
+        join.isEnabled = c.canJoin
         join.toolTip = "Откроет «\(c.notice.title)» и включит запись"
         join.setAccessibilityIdentifier("choice.join.\(index)")
         join.setAccessibilityLabel("Подключиться: \(c.notice.title)")
@@ -694,7 +695,6 @@ final class RecorderWidget {
         if p.isVisible { prompt.didPresent() }
     }
 
-    // Мягкое проявление содержимого при смене режима (0 → 1 за половину перехода).
     private func fadeInContent() {
         guard let content = panel?.contentView else { return }
         content.alphaValue = 0.35

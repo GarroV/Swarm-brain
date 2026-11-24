@@ -17,6 +17,7 @@ import { calendarKeyOf } from "../_shared/calendar-key.ts";
 import { accessToken, listEvents } from "../_shared/google-calendar.ts";
 // «Эту встречу уже пишут» (issue #821) — то же правило живой записи, что у арбитра записей.
 import { loadBotTouched, loadRecordingSignals } from "../_shared/bot-recording.ts";
+import { meetingOpenUrl } from "../_shared/meeting-open-url.ts";
 import { isAutoStartWrite, loadAutoStart, parseAutoStartBody, saveAutoStart } from "./auto-start.ts";
 
 const supabase = createClient(
@@ -152,7 +153,10 @@ Deno.serve(async (req: Request) => {
     if (call) calls.set(ev, call);
   }
   const meetings = currentEvents(items, now.getTime(), (ev) => calls.has(ev))
-    .map((ev) => meetingOf(ev, calls.get(ev)!));
+    .map((ev) => {
+      const meeting = meetingOf(ev, calls.get(ev)!);
+      return { ...meeting, open_url: meetingOpenUrl(meeting.join_url, whoEmail) };
+    });
   // `meeting` — первое из списка, для раскатанных рекордеров, которые знают только одно поле.
   if (!meetings.length) return none("no_ongoing_event", recordedNow);
   return json({ meetings, meeting: meetings[0], ...recordedNow });

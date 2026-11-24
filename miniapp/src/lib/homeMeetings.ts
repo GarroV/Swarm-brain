@@ -4,6 +4,7 @@
 
 import type { TodayMeeting } from "@/lib/api-types/meetings";
 import type { AgentMeeting } from "@/types";
+import { meetingOpenLink } from "./meetingOpenLink";
 
 /** Запись рекордера относится к встрече календаря, если названия совпали и старт — в пределах часа. */
 export const REVIEW_MATCH_WINDOW_MS = 60 * 60_000;
@@ -37,5 +38,5 @@ export function minutesUntil(m: TodayMeeting, now: number): number | null {
 
 /** Ближайшая встреча, к которой можно подключиться: идущая или будущая, со ссылкой. */
 export function nextJoinable(meetings: TodayMeeting[]): TodayMeeting | null {
-  return meetings.find((m) => !m.is_past && m.join_url) ?? null;
+  return meetings.find((m) => !m.is_past && meetingOpenLink(m)) ?? null;
 }

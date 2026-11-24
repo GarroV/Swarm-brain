@@ -5,6 +5,7 @@ import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { type CalendarGap, todayCalendarEvents } from "../_shared/calendar-today.ts";
 import { type RecorderPresence, type TodayMeeting, todayMeetings } from "../_shared/meetings-today.ts";
 import { joinLink } from "../meeting-current/join-link.ts";
+import { meetingOpenUrl } from "../_shared/meeting-open-url.ts";
 
 type Db = Pick<SupabaseClient, "from">;
 
@@ -42,18 +43,26 @@ export async function loadTodayMeetings(
   telegramId: number,
   tzOffsetMinutes: number,
   logTag = "calendar/today",
+  calendar = todayCalendarEvents,
 ): Promise<TodayMeetingsResult> {
   const presenceQuery = (async () =>
     await db
       .from("allowed_users")
-      .select("recorder_last_seen, recorder_last_recording, recorder_last_on_call, recorder_last_meeting_key")
+      .select("email, recorder_last_seen, recorder_last_recording, recorder_last_on_call, recorder_last_meeting_key")
       .eq("telegram_id", telegramId).maybeSingle())();
   const [cal, { data: rec, error: recErr }] = await Promise.all([
-    todayCalendarEvents(db, telegramId, tzOffsetMinutes),
+    calendar(db, telegramId, tzOffsetMinutes),
     presenceQuery,
   ]);
   if (!cal.ok) return { ok: false, reason: cal.reason };
   if (recErr) console.warn(`[${logTag}] присутствие рекордера не прочиталось:`, recErr.message);
   const presence = presenceFromRow(rec as Parameters<typeof presenceFromRow>[0]);
-  return { ok: true, meetings: todayMeetings(cal.events, new Date(), joinLink, presence) };
+  const email = (rec as { email?: string | null } | null)?.email;
+  return {
+    ok: true,
+    meetings: todayMeetings(cal.events, new Date(), joinLink, presence).map((meeting) => ({
+      ...meeting,
+      open_url: meetingOpenUrl(meeting.join_url, email),
+    })),
+  };
 }

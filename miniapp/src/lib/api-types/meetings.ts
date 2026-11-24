@@ -20,6 +20,7 @@ export type TodayMeeting = {
   starts_at: string;
   ends_at: string;
   join_url: string | null;
+  open_url?: string | null;
   is_now: boolean;
   is_past: boolean;
   attendees: number;

@@ -1,5 +1,11 @@
 # Swarm Brain — Quick Reference
 
+**Рабочий аккаунт Meet (24.11.2026):** `meeting-current` (человек), `calendar/today` и
+`board/today` добавляют `open_url` через Google AccountChooser с `allowed_users.email`.
+Веб и рекордер открывают его, бот/идентичность используют исходный `join_url`.
+Нет почты → `open_url: null`, вход в Meet блокируется. Старый сервер без поля совместим.
+Сборка рекордера: `--selftest-meet-link`. Канон: `decisions/2026-11-24-work-account-for-meet.md`.
+
 **Досылка scriba и резерв рекордером (23.11.2026):** оркестратор раз в 5 минут запускает
 отдельный `upload-recovery-main` без браузера, по одному тому человека. Старые `pending`
 и повторяемые `failed` подхватываются, завершённые части сироты запечатываются. Разрешение

@@ -149,9 +149,22 @@ public struct BoardSnapshot: Equatable {
         let join_url: String?
         let is_now: Bool?
         let is_past: Bool?
+        let browserLink: BrowserMeetingLink
+        private enum Keys: String, CodingKey { case id, title, starts_at, ends_at, join_url, is_now, is_past }
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: Keys.self)
+            id = try c.decode(String.self, forKey: .id)
+            title = try c.decodeIfPresent(String.self, forKey: .title)
+            starts_at = try c.decode(String.self, forKey: .starts_at)
+            ends_at = try c.decode(String.self, forKey: .ends_at)
+            join_url = try c.decodeIfPresent(String.self, forKey: .join_url)
+            is_now = try c.decodeIfPresent(Bool.self, forKey: .is_now)
+            is_past = try c.decodeIfPresent(Bool.self, forKey: .is_past)
+            browserLink = try BrowserMeetingLink(from: decoder)
+        }
         var model: BoardMeeting? {
             guard !id.isEmpty else { return nil }
-            return BoardMeeting(id: id, title: title, startsAt: starts_at, endsAt: ends_at, joinURL: join_url,
+            return BoardMeeting(id: id, title: title, startsAt: starts_at, endsAt: ends_at, joinURL: browserLink.url?.absoluteString,
                                 isNow: is_now ?? false, isPast: is_past ?? false)
         }
     }

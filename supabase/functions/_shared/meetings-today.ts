@@ -43,6 +43,8 @@ export type TodayMeeting = {
   ends_at: string;
   /** Ссылка «зайти в звонок», только https (см. joinLink). null — ссылки нет. */
   join_url: string | null;
+  /** Browser link for the work account; join_url remains the room identity. */
+  open_url?: string | null;
   /** Идёт прямо сейчас. */
   is_now: boolean;
   /** Уже закончилась. Такие показываем приглушённо — «что было днём» тоже полезно. */

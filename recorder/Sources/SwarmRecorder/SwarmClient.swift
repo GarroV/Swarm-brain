@@ -172,6 +172,10 @@ struct SwarmClient {
         guard (200...299).contains((resp as? HTTPURLResponse)?.statusCode ?? 0) else {
             return MeetingLookup(meetings: [], tokenDead: false)
         }
+        return try Self.parseMeetingLookup(data)
+    }
+
+    static func parseMeetingLookup(_ data: Data) throws -> MeetingLookup {
         struct M: Decodable {
             let identityKey: String
             let title: String?
@@ -179,9 +183,24 @@ struct SwarmClient {
             let startedAt: String?
             let endedAt: String?
             let joinUrl: String?
+            let browserLink: BrowserMeetingLink
+
+            private enum Keys: String, CodingKey { case identityKey, title, attendees, startedAt, endedAt, joinUrl }
+            init(from decoder: Decoder) throws {
+                let c = try decoder.container(keyedBy: Keys.self)
+                identityKey = try c.decode(String.self, forKey: .identityKey)
+                title = try c.decodeIfPresent(String.self, forKey: .title)
+                attendees = try c.decodeIfPresent([Attendee].self, forKey: .attendees)
+                startedAt = try c.decodeIfPresent(String.self, forKey: .startedAt)
+                endedAt = try c.decodeIfPresent(String.self, forKey: .endedAt)
+                joinUrl = try c.decodeIfPresent(String.self, forKey: .joinUrl)
+                browserLink = try BrowserMeetingLink(from: decoder)
+            }
         }
         struct Resp: Decodable { let meetings: [M]?; let meeting: M?; let reason: String?; let recordedNow: [String]?; let botTouched: [String]?; let backupAvailable: [String]? }
-        let r = try decoder.decode(Resp.self, from: data)
+        let parser = JSONDecoder()
+        parser.keyDecodingStrategy = .convertFromSnakeCase
+        let r = try parser.decode(Resp.self, from: data)
         let dead = (r.reason == "token_refresh_failed")
         // Новый сервер — список; раскатанный до D027 — одно поле.
         let raw = r.meetings ?? (r.meeting.map { [$0] } ?? [])
@@ -189,7 +208,7 @@ struct SwarmClient {
             guard let join = JoinLink.safeURL(m.joinUrl) else { return nil }   // только https, см. RecorderKit/JoinLink
             return MeetingIdentity.Info(kind: .calendar, key: m.identityKey, title: m.title,
                                         attendees: m.attendees ?? [], startISO: m.startedAt, endISO: m.endedAt,
-                                        joinURL: join)
+                                        joinURL: join, browserLink: m.browserLink)
         }
         return MeetingLookup(meetings: meetings, tokenDead: dead && meetings.isEmpty,
                              recordedNow: r.recordedNow ?? [], backupAvailable: r.backupAvailable ?? [], botTouched: r.botTouched ?? [])

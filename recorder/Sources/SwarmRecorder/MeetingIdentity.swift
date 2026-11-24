@@ -1,4 +1,5 @@
 import Foundation
+import RecorderKit
 
 // Идентичность встречи для claim/дедупа. Источники (приоритет): календарь (Google, с сервера
 // meeting-current — см. SwarmClient.currentMeeting) → комната из URL браузера (BrowserRoom) →
@@ -14,5 +15,10 @@ enum MeetingIdentity {
         /// Ссылка «зайти в звонок» из календаря (сервер: meeting-current → join_url).
         /// nil — у встречи ссылки нет (или мы её не приняли: пускаем только https).
         let joinURL: URL?
+        var browserLink: BrowserMeetingLink? = nil
+        var browserURL: URL? {
+            if let browserLink { return browserLink.url }
+            return joinURL
+        }
     }
 }
