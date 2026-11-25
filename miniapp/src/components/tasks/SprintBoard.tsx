@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import { startVisiblePolling } from "@/lib/visiblePolling";
 import {
   fetchTasks, updateTask, fetchSprints, createSprint,
-  removeTasksFromSprint, deleteSprint,
+  deleteSprint,
   fetchProjects, createProject, createTask, updateProject, deleteProject,
 } from "@/lib/api";
 import type { Task, Sprint, Project } from "@/types";
@@ -130,6 +130,8 @@ export function SprintBoard() {
   const [form, setForm] = useState({ name: "", start_date: "", end_date: "" });
   const [editing, setEditing] = useState<Task | null>(null);
   const [deletingSprint, setDeletingSprint] = useState(false);
+  const [archiveError, setArchiveError] = useState<string | null>(null);
+  const [archivingProject, setArchivingProject] = useState<string | null>(null);
   // добавление секции (= проекта)
   const [addingSection, setAddingSection] = useState(false);
   const [sectionName, setSectionName] = useState("");
@@ -344,12 +346,20 @@ export function SprintBoard() {
   }
 
   async function removeSection(id: string, name: string) {
-    if (!(await confirm({ title: `Удалить проект «${name}»?`, description: "Задачи проекта не удалятся — просто останутся без проекта.", confirmText: "Удалить проект" }))) return;
-    // Дети группы промоутятся в верхний уровень (совпадает с ON DELETE SET NULL на FK в БД);
-    // без этого локально они бы «пропали» до полного reload — parent_id указывал бы на удалённый id.
-    setProjects((prev) => prev.filter((p) => p.id !== id).map((p) => (p.parent_id === id ? { ...p, parent_id: null } : p)));
-    setTasks((prev) => prev.map((t) => (t.project_id === id ? { ...t, project_id: null } : t)));
-    try { await deleteProject(id); } catch { load(); }
+    if (archivingProject) return;
+    if (!(await confirm({
+      title: dt(`Архивировать проект «${name}»?`, `Archive project “${name}”?`),
+      description: dt("Проект и подпроекты исчезнут с доски. Задачи и все связи сохранятся.", "The project and its subprojects will leave the board. Tasks and all links are preserved."),
+      confirmText: dt("Архивировать", "Archive"),
+    }))) return;
+    setArchiveError(null); setArchivingProject(id);
+    try {
+      await deleteProject(id);
+      setProjects((prev) => prev.filter((p) => p.id !== id && p.parent_id !== id));
+      await load();
+    }
+    catch { setArchiveError(dt("Не удалось архивировать проект. Попробуйте ещё раз.", "Could not archive the project. Please try again.")); }
+    finally { setArchivingProject(null); }
   }
 
   async function addTask(sectionId: string, status: string, title: string) {
@@ -410,13 +420,18 @@ export function SprintBoard() {
     if (selected === ALL || deletingSprint) return;
     const sprint = sprints.find((s) => s.id === selected);
     if (!sprint) return;
-    if (!(await confirm({ title: `Удалить вкладку «${sprint.name}»?`, description: "Задачи из вкладки не удалятся — они просто выйдут из неё.", confirmText: "Удалить вкладку" }))) return;
-    setDeletingSprint(true);
+    if (!(await confirm({
+      title: dt(`Архивировать вкладку «${sprint.name}»?`, `Archive tab “${sprint.name}”?`),
+      description: dt("Вкладка исчезнет из списка. Проекты, задачи и их привязки сохранятся.", "The tab will leave the list. Projects, tasks and their links are preserved."),
+      confirmText: dt("Архивировать", "Archive"),
+    }))) return;
+    setArchiveError(null); setDeletingSprint(true);
     try {
-      const ids = tasks.filter((t) => t.sprint_id === selected).map((t) => t.id);
-      if (ids.length) await removeTasksFromSprint(selected, ids);
-      await deleteSprint(selected); setSelected(ALL); await load();
-    } catch { load(); } finally { setDeletingSprint(false); }
+      await deleteSprint(selected);
+      setSprints((prev) => prev.filter((s) => s.id !== selected));
+      setSelected(ALL); await load();
+    } catch { setArchiveError(dt("Не удалось архивировать вкладку. Попробуйте ещё раз.", "Could not archive the tab. Please try again.")); }
+    finally { setDeletingSprint(false); }
   }
 
   // Блок «+ Подпроект» (кнопка + инлайн-инпут). Один и тот же у обычной секции (создать
@@ -481,15 +496,16 @@ export function SprintBoard() {
         <button onClick={() => setCreating((v) => !v)} className="rounded-full p-1.5 bg-surface text-ink-soft border border-line hover:bg-surface-2 dark:backdrop-blur-sm shrink-0" title={dt("Новая вкладка", "New tab")}>
           <RoyIcon name="plus" size={14} strokeWidth={2} />
         </button>
-        {/* Удаление вкладки — только админ (backend тоже гейтит, PATCH/DELETE /sprints admin-only
-            с 09.06.2026). Создание («+» выше) — любой участник, только это открыли 19.08.2026. */}
-        {selected !== ALL && isAdmin && (
-          <button onClick={handleDeleteSprint} disabled={deletingSprint} title={dt("Удалить вкладку", "Delete tab")}
+        {/* Архивирование вкладки доски доступно всем участникам; сервер сохраняет kind/group_id. */}
+        {selected !== ALL && (
+          <button onClick={handleDeleteSprint} disabled={deletingSprint} title={dt("Архивировать вкладку", "Archive tab")}
             className="rounded-full p-1.5 bg-surface text-ink-soft border border-line hover:bg-surface-2 hover:text-destructive disabled:opacity-50 dark:backdrop-blur-sm shrink-0">
             <RoyIcon name="trash" size={14} />
           </button>
         )}
       </div>
+
+      {archiveError && <p role="alert" className="mx-4 mb-2 text-sm text-destructive">{archiveError}</p>}
 
       {/* Компактная строка (input + кнопка + отмена), тот же паттерн, что у «+ Проект» ниже —
           раньше была отдельная карточка на всю ширину доски без max-width, растягивавшая
@@ -606,7 +622,7 @@ export function SprintBoard() {
                   <button onClick={() => setRenaming({ id: sec.id, name: sec.name })} className="rounded-full p-1 text-ink-soft hover:bg-surface-2" title={dt("Переименовать проект", "Rename project")}>
                     <RoyIcon name="pencil" size={13} />
                   </button>
-                  <button onClick={() => removeSection(sec.id, sec.name)} className="rounded-full p-1 text-ink-soft hover:bg-surface-2 hover:text-destructive" title={dt("Удалить проект", "Delete project")}>
+                  <button disabled={archivingProject !== null} onClick={() => removeSection(sec.id, sec.name)} className="rounded-full p-1 text-ink-soft hover:bg-surface-2 hover:text-destructive" title={dt("Архивировать проект", "Archive project")}>
                     <RoyIcon name="trash" size={13} />
                   </button>
                 </div>
@@ -667,7 +683,7 @@ export function SprintBoard() {
                                 inherited: dt("Закрыт вместе с проектом", "Hidden together with the project"),
                               }} />
                             <button onClick={() => setRenaming({ id: kid.id, name: kid.name })} className="rounded-full p-1 text-ink-soft hover:bg-surface-2" title={dt("Переименовать", "Rename")}><RoyIcon name="pencil" size={12} /></button>
-                            <button onClick={() => removeSection(kid.id, kid.name)} className="rounded-full p-1 text-ink-soft hover:bg-surface-2 hover:text-destructive" title={dt("Удалить", "Delete")}><RoyIcon name="trash" size={12} /></button>
+                            <button disabled={archivingProject !== null} onClick={() => removeSection(kid.id, kid.name)} className="rounded-full p-1 text-ink-soft hover:bg-surface-2 hover:text-destructive" title={dt("Архивировать подпроект", "Archive subproject")}><RoyIcon name="trash" size={12} /></button>
                           </div>
                         </div>
                         {/* Плавное сворачивание: grid-template-rows 0fr↔1fr — анимируемая высота без

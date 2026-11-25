@@ -12,7 +12,7 @@
   "scripts/scriba-same-owner-smoke.ts": 890,
   "scripts/scriba-watchdog-smoke.ts": 1153,
   "supabase/functions/meeting-claim/index.ts": 1085,
-  "supabase/functions/swarm-api/index.ts": 3625,
+  "supabase/functions/swarm-api/index.ts": 3619,
   "supabase/functions/swarm-bot/handlers/granola.ts": 809,
   "supabase/functions/swarm-bot/handlers/knowledge.ts": 1188,
   "supabase/functions/swarm-bot/handlers/meetings.ts": 891,
