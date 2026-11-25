@@ -1,5 +1,5 @@
 import { assertEquals } from "@std/assert";
-import { performanceDirection, performanceNumber, performancePeriodLabel } from "./performance.ts";
+import { performanceDirection, performanceNumber, performancePeriodLabel } from "./performance-format.ts";
 
 Deno.test("performance growth direction reflects metric meaning", () => {
   assertEquals(performanceDirection("revenue", "-7"), "bad");
