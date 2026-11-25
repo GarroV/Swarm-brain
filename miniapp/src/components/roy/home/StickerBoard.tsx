@@ -18,16 +18,12 @@ import type { BoardSticker } from "@/types";
 // просрочку», «Привяжите вход по Touch ID» — только тому, у кого второй шаг входа не пройден; закрыть
 // его нельзя, он гаснет сам после привязки), остальные — настоящие, с сервера (GET /stickers): задание или объявление от админа.
 
-const TILT = [-1.5, 1.2, -0.8, 1, -1.2];
-const FACE = "relative flex min-h-[190px] w-[200px] shrink-0 flex-col gap-2 rounded-[3px] p-4 text-left shadow-[0_8px_18px_rgba(0,0,0,.14)] transition-transform hover:-translate-y-0.5 hover:rotate-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ring)]";
+const FACE = "relative flex w-full min-w-0 flex-col gap-2 rounded-[10px] border border-line bg-surface p-3 text-left text-ink transition-colors hover:border-accent-line focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ring)]";
+const GRID = { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 250px), 1fr))", gap: 10 };
 
 type LiveSticker = { key: string; tone: "blue" | "green" | "pink"; kind: string; title: string; body: string; due: string; hot?: boolean; action: string; onClick: () => void };
 
-function Tape() {
-  return <i aria-hidden="true" className="absolute left-1/2 top-[-8px] h-4 w-16 -translate-x-1/2 rotate-[-2deg] bg-white/60" />;
-}
-
-export function BoardWidget({ data }: { data: DashboardData }) {
+export function BoardWidget({ data, compact = false }: { data: DashboardData; compact?: boolean }) {
   const dt = useDt();
   const lang = useLang();
   const { me, setTab, openTasks, openTask, tasksVersion } = useRoyNav();
@@ -105,57 +101,63 @@ export function BoardWidget({ data }: { data: DashboardData }) {
   };
 
   const none = stickers != null && ordered.length === 0 && live.length === 0;
+  const completed = (s: BoardSticker) => {
+    const mine = myAddressee(s, meId);
+    const { done, total } = stickerProgress(s);
+    return mine ? mine.done : total > 0 && done === total;
+  };
+  const assignments = ordered.filter((s) => !completed(s) && s.kind === "task");
+  const notices = ordered.filter((s) => !completed(s) && s.kind === "notice");
+  const finished = ordered.filter(completed);
+  const tile = (s: BoardSticker) => {
+    const mine = myAddressee(s, meId);
+    const doneForMe = completed(s);
+    const { done, total } = stickerProgress(s);
+    const hot = isHotDue(s.due_at, doneForMe);
+    const kind = s.kind === "task" ? dt("Задание", "Assignment") : dt("Объявление", "Notice");
+    return <button key={s.id} type="button" aria-haspopup="dialog"
+      aria-label={`${kind}: ${s.title}${doneForMe ? ` (${dt("завершено", "completed")})` : ""}`}
+      onClick={() => expand(s.id)} className={`${FACE} ${doneForMe ? "opacity-65" : ""}`}
+      style={{ viewTransitionName: morph === s.id && open !== s.id ? stickerTransitionName(s.id) : undefined }}>
+      <span className="flex flex-wrap items-center gap-2 text-[10px]">
+        <span className={`rounded px-1.5 py-0.5 font-semibold ${PAPER[s.tone]}`}>{kind}</span>
+        {mine && <span className="text-ink-mute">{dt("для вас", "for you")}</span>}
+        {s.due_at && <span className={`ml-auto ${hot ? "font-semibold text-[var(--pri-high)]" : "text-ink-mute"}`}>{fmtDue(s.due_at, lang)}</span>}
+      </span>
+      <span className={`block text-[14px] font-semibold leading-snug ${doneForMe ? "line-through" : ""}`}>{s.title}</span>
+      {s.body && <span className="line-clamp-2 block text-[12px] leading-snug text-ink-soft">{s.body}</span>}
+      <span className="mt-auto flex items-center justify-between gap-2 pt-1 text-[11px]">
+        <span className="text-ink-mute">{doneForMe ? "✓ " : ""}{s.kind === "task" ? dt(`${done}/${total} выполнили`, `${done}/${total} done`) : dt(`${done}/${total} прочитали`, `${done}/${total} read`)}</span>
+        <span className="font-semibold text-primary">{s.kind === "task" ? dt("Открыть задание →", "View assignment →") : dt("Прочитать →", "Read →")}</span>
+      </span>
+    </button>;
+  };
   return (
-    <div className="rounded-[14px] border border-line bg-[repeating-linear-gradient(45deg,color-mix(in_srgb,var(--pri-med)_7%,var(--surface-2))_0_2px,var(--surface-2)_2px_9px)] p-4">
-      <div className="flex gap-4 overflow-x-auto pb-2 pt-2" style={{ scrollSnapType: "x mandatory" }}>
-        {stickers == null && !failed && [0, 1].map((i) => <div key={i} className="roy-shim w-[200px] shrink-0" style={{ height: 190, borderRadius: 3 }} />)}
-        {live.map((s, i) => (
-          <article key={s.key} className={`${FACE} ${PAPER[s.tone]}`} style={{ transform: `rotate(${TILT[i % 5]}deg)`, scrollSnapAlign: "start" }}>
-            <Tape />
-            <div className="font-bold uppercase opacity-60" style={{ fontSize: 10, letterSpacing: "0.1em" }}>{s.kind}</div>
-            <div className="font-bold leading-tight" style={{ fontSize: 19 }}>{s.title}</div>
-            <div className="flex-1 opacity-80" style={{ fontSize: 12.5, lineHeight: 1.4 }}>{s.body}</div>
+    <div data-cockpit-compact={compact || undefined} className="space-y-3 rounded-[12px] border border-line bg-surface p-3">
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-[12px] text-ink-soft">{dt("Отдельные действия и сообщения команды", "Actions and team updates")}</p>
+        {isAdmin && <button type="button" onClick={() => setCreating(true)} className="shrink-0 rounded-md border border-line-2 px-2 py-1 text-[11px] font-semibold text-primary hover:border-accent-line">{dt("+ Добавить", "+ Add")}</button>}
+      </div>
+      {stickers == null && !failed && <div style={GRID}>{[0, 1].map((i) => <div key={i} className="roy-shim h-24 rounded-[10px]" />)}</div>}
+      {(live.length > 0 || assignments.length > 0) && <section aria-label={dt("Задания и напоминания", "Assignments and reminders")}>
+        <h3 className="mb-2 text-[11px] font-semibold text-ink-mute">{dt("Задания и напоминания", "Assignments and reminders")} · {live.length + assignments.length}</h3>
+        <div style={GRID}>
+        {live.map((s) => (
+          <article key={s.key} className={FACE}>
+            <div className="flex flex-wrap items-center justify-between gap-2 text-[10px]"><span className={`rounded px-1.5 py-0.5 font-semibold ${PAPER[s.tone]}`}>{s.kind}</span><span className={s.hot ? "font-semibold text-[var(--pri-high)]" : "text-ink-mute"}>{s.due}</span></div>
+            <div className="text-[14px] font-semibold leading-snug">{s.title}</div>
+            <div className="flex-1 text-[12px] leading-snug text-ink-soft">{s.body}</div>
             <div className="flex items-center justify-between gap-2">
-              <span className={`rounded px-1.5 py-0.5 font-mono ${s.hot ? "bg-[#D03A3A] text-white" : "bg-black/10"}`} style={{ fontSize: 10.5 }}>{s.due}</span>
-              <button type="button" onClick={s.onClick} className="rounded-[7px] bg-[#1B1B1B] px-2.5 py-1 font-semibold text-white hover:bg-black" style={{ fontSize: 11.5 }}>{s.action}</button>
+              <span className="text-[10px] text-ink-mute">{dt("для вас", "for you")}</span>
+              <button type="button" onClick={s.onClick} className="rounded-[7px] bg-primary px-2.5 py-1 text-[11px] font-semibold text-primary-foreground">{s.action} →</button>
             </div>
           </article>
         ))}
-        {ordered.map((s, i) => {
-          const mine = myAddressee(s, meId);
-          const mineDone = !!mine?.done;
-          const { done, total } = stickerProgress(s);
-          const hot = isHotDue(s.due_at, mine ? mine.done : false);
-          const kind = s.kind === "task" ? dt("Задание", "Task") : dt("Объявление", "Notice");
-          return (
-            <button
-              key={s.id}
-              type="button"
-              aria-haspopup="dialog"
-              aria-label={`${kind}: ${s.title}${mineDone ? ` (${dt("выполнено", "done")})` : ""}`}
-              onClick={() => expand(s.id)}
-              className={`${FACE} ${PAPER[s.tone]} ${mineDone ? "opacity-60" : ""}`}
-              style={{
-                transform: `rotate(${TILT[(i + live.length) % 5]}deg)`,
-                scrollSnapAlign: "start",
-                viewTransitionName: morph === s.id && open !== s.id ? stickerTransitionName(s.id) : undefined,
-              }}
-            >
-              <Tape />
-              <span className="block font-bold uppercase opacity-60" style={{ fontSize: 10, letterSpacing: "0.1em" }}>
-                {kind}{mine ? ` · ${dt("вам", "for you")}` : ""}
-              </span>
-              <span className={`block font-bold leading-tight ${mineDone ? "line-through" : ""}`} style={{ fontSize: 19 }}>{s.title}</span>
-              <span className="line-clamp-4 block flex-1 opacity-80" style={{ fontSize: 12.5, lineHeight: 1.4 }}>{s.body}</span>
-              <span className="flex items-center justify-between gap-2">
-                {s.due_at
-                  ? <span className={`rounded px-1.5 py-0.5 font-mono ${hot ? "bg-[#D03A3A] text-white" : "bg-black/10"}`} style={{ fontSize: 10.5 }}>{fmtDue(s.due_at, lang)}</span>
-                  : <span />}
-                <span className="font-mono opacity-70" style={{ fontSize: 10.5 }}>{mineDone ? "✓ " : ""}{done}/{total}</span>
-              </span>
-            </button>
-          );
-        })}
+        {assignments.map(tile)}
+        </div>
+      </section>}
+      {notices.length > 0 && <section aria-label={dt("Объявления команды", "Team notices")}><h3 className="mb-2 text-[11px] font-semibold text-ink-mute">{dt("Объявления команды", "Team notices")} · {notices.length}</h3><div style={GRID}>{notices.map(tile)}</div></section>}
+      {finished.length > 0 && <details className="border-t border-line pt-2"><summary className="cursor-pointer text-[11px] text-ink-mute">{dt("Выполнено и прочитано", "Completed and read")} · {finished.length}</summary><div className="mt-2" style={GRID}>{finished.map(tile)}</div></details>}
         {failed && stickers == null && (
           <div className="flex shrink-0 items-center text-ink-soft" style={{ fontSize: 13 }}>
             <span>{dt("Стикеры не загрузились", "Stickers failed to load")}&nbsp;</span>
@@ -163,12 +165,6 @@ export function BoardWidget({ data }: { data: DashboardData }) {
           </div>
         )}
         {none && <div className="flex shrink-0 items-center text-ink-mute" style={{ fontSize: 13 }}>{dt("Стикеров пока нет", "No stickers yet")}</div>}
-        {isAdmin && (
-          <button type="button" onClick={() => setCreating(true)} className="grid w-[150px] shrink-0 place-items-center rounded-[6px] border-2 border-dashed border-line-2 text-ink-mute hover:border-accent-line hover:text-primary" style={{ fontSize: 12.5 }}>
-            <span><b className="block text-center" style={{ fontSize: 22 }}>+</b>{dt("Стикер", "Sticker")}<br /><small>{dt("задание или объявление", "task or notice")}</small></span>
-          </button>
-        )}
-      </div>
       {current && (
         <StickerCard sticker={current} meTelegramId={meId} isAdmin={isAdmin} onClose={collapse} onAck={onAck} onArchive={onArchive} onOpenTask={onOpenTask} />
       )}

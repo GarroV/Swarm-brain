@@ -1557,7 +1557,8 @@ Id живого приглашения веб помнит в `localStorage` (`s
 
 **Вход человека в Meet с рабочей почтой (24.11.2026).** `_shared/meeting-open-url.ts` строит
 отдельное `open_url` через Google AccountChooser (`Email` из `allowed_users.email` текущего
-сотрудника, `continue` — исходная встреча без старых `authuser`/`login_hint`). Поле добавляют
+сотрудника, `continue` — исходная встреча без старых `authuser`/`login_hint`,
+с явно установленным `authuser=<рабочая почта>` в конечном Meet-адресе; уточнение 25.11). Поле добавляют
 человеческий ответ `meeting-current` и общая `swarm-api/today-meetings.ts` для веба и доски
 рекордера. Вход из веба остаётся новой вкладкой, рекордер открывает системный браузер.
 `join_url` сохраняется для room identity, поиска открытой комнаты и приглашения бота;
@@ -2158,6 +2159,8 @@ supabase/functions/swarm-api/
 ├── tasks-delta.ts  # Дельта списка задач `GET /tasks?since=<ISO>`: разбор `since` и колонки дельты (+ tasks-delta.test.ts); решение 13.10.2026, см. «Дельта» ниже
 ├── public-roadmap.ts # GET /public/roadmap/:id — публичная дорожная карта для хаба проектов (без авторизации, белый список)
 ├── market.ts       # /market/* — «Анализ рынка»: данные страны (все реальные страны любому настоящему пространству), импорт снимка и очередь кандидатов (админ)
+├── analytics.ts    # диспетчер read-only Decimus: quality, inspections, performance
+├── performance.ts  # GET /performance — кеш 5 мин перед API Decimus: страны, as_of, MTD/MoM/YoY; данные и история хранятся в Decimus
 ├── quality.ts      # GET /quality?kind=rs|rko, GET /quality/maps и GET /quality/aggregators — прокси к API Децимуса (баллы РС/РКО, рейтинги карт и агрегаторов), страны — все
 ├── maps-view.ts    # разбор ответа Децимуса /api/v1/maps/ratings (+ maps-view.test.ts)
 ├── inspections.ts  # GET /inspections и /inspections/:id — проверки Децимуса (прокси, кэш 5 мин, страны — все); разбор — _shared/inspections-view.ts
@@ -3089,3 +3092,72 @@ Cost readers (`_shared/model-usage-summary.ts`, `swarm-api/model-usage.ts`, `wor
 Migration `20261114235500` adds a nullable column with no DEFAULT. The legacy type, existing rows and policies remain unchanged; there is no DML/backfill. Release order is schema first through the existing migration gate, including API schema readiness (the migration sends `NOTIFY pgrst, 'reload schema'`), then updated functions: a new select/insert cannot run against the old schema. Old code remains compatible with the additive schema and can be rolled back while continuing legacy writes. Precise accounting starts with the new writer; prior losses are not recovered. Preparing/testing this migration does not apply it to production.
 
 `model-usage-precision.test.ts` executes the real producer without network and checks tiny amounts, legacy/zero/NULL handling while preserving the server/client dependency boundary. `model-usage-precision.db.test.ts` uses an isolated CI database for round-trip/SQL SUM, old-writer compatibility, unchanged legacy rows, idempotent DDL and both integer-range boundaries. A fifth isolated case exercises the actual PostgREST projection with the real producer and the maximum stored decimal, then removes only its synthetic rows. The cast contract is documented by [PostgREST](https://docs.postgrest.org/en/stable/references/api/tables_views.html#casting-columns). No local stand is started for these checks.
+
+### Операционные показатели главной (24.11.2026)
+
+`GET /performance?countries=RS,BG&as_of=YYYY-MM-DD` — аутентифицированный прокси
+`swarm-api/performance.ts` (через `analytics.ts`) к Decimus `/api/v1/performance`, право источника
+`performance:read`. Страны обязательны, до 30 ISO-2; дата необязательна, календарно
+проверяется. Кеш ответа 5 мин, до 64 ключей; демо не обращается к реальной выручке.
+Неожиданная страна источника блокирует ответ, тексты ошибок источника не выдаются.
+
+Модель и клиент: `miniapp/src/lib/performance.ts`; `performancePeriodLabel` форматирует
+точные календарные границы без перевода в часовой пояс браузера. На главной по
+умолчанию используется `home/CockpitHome.tsx`: карточки стран с выручкой, большой
+показатель/сравнение периодов, шесть переключателей метрик, рейтинги и проверки.
+До появления подтверждённых суточных рядов график сравнивает два периода столбцами.
+Сокращения MTD/MoM/YoY в видимых подписях заменены датами и понятными названиями.
+В прежней пользовательской раскладке виджет `performance` добавляется из каталога (`homeLayout.ts`, `HomeGrid.tsx`, `home/PerformanceWidget.tsx`),
+имеет ширину всей строки и высоту по содержимому, использует `me.markets`/сужение
+страны. Сохранённая раскладка и её версия не сбрасываются. Месяц, MoM/YoY и
+раскрытие страны до пиццерий; native LFL не выдаётся за проверенный MTD.
+Покрытие, валюта, свежесть, частичные и неизвестные значения приходят из Decimus;
+сравнения в браузере не пересчитываются. Ошибка показывает повтор загрузки.
+Пять вариантов компоновки: `docs/prototypes/country-performance/`, примерные данные.
+Требования и ограничения: `docs/decisions/2026-11-24-home-operating-performance.md`.
+
+
+### Настройка главной и карточки напоминаний (25.11.2026)
+
+Выбран экранный эталон «Пульт страны», `docs/prototypes/country-performance/`;
+текстовая кнопка настройки видна на широком и узком макете. В макете настройка
+меняет страны и блоки, хранит выбор локально; прочитанные карточки сворачиваются.
+
+В рабочем интерфейсе `RoyDashboard.HomeHeader` по умолчанию открывает
+`CockpitSettings` (`home-customization`); кнопка выделена акцентом, `aria-expanded`
+и `aria-controls` описывают состояние. Выбор 1–8 из 27 стран остаётся черновиком
+до успешного `patchMe`; блоки хранятся в `roy_home_cockpit_v1:<group_id>:<telegram_id>`.
+Переход «Своя раскладка» открывает прежнюю `HomeGrid` с её редактором и сохранёнными
+настройками; `roy_home_layout_v4` не сбрасывается. Виджет `board` называется «Напоминания и
+объявления». `StickerBoard` показывает живые напоминания/задания, объявления
+отдельно, собственные выполненные/прочитанные — в `details`. Чужая завершённая
+работа не сворачивает невыполненную работу текущего адресата. Карточки переносятся
+по ширине контейнера, горизонтальной ленты нет. `StickerCard` — нейтральная
+поверхность в обеих темах, выбранный цвет остаётся меткой типа. Открытие, создание,
+подтверждение объявления, архив и переход к задаче используют прежние callbacks
+и API. `BoardWidget compact` размещает компактную доску над основными колонками.
+Ближайшие встречи и задачи остаются первыми в правой колонке; подключение
+использует существующий `MeetingsToday` и серверный `open_url`.
+Требования — `docs/decisions/2026-11-25-home-cockpit-production.md`.
+
+
+Уточнение выбранного макета 25.11.2026: компактная полоса напоминаний над
+основными колонками; встречи и ближайшие задачи начинаются вверху правой
+колонки, на узком экране — перед аналитикой. `meetings(true)` показывает
+текстовую кнопку `data-join-meeting` с демонстрацией подключения к конкретной
+встрече; она не скрывается мобильным правилом для декоративных иконок.
+Рабочие компоненты приложения этой правкой макета не изменяются.
+
+
+Прототип «Пульта», 25.11.2026: шесть компактных кнопок метрик (`aria-pressed`)
+перестраивают большой показатель и дневной график, сохраняя страну и режим
+сравнения. Времена показываются дневными средними, счётчики — дневными итогами.
+График имеет стабильную высоту. Это демонстрационные ряды; источники/API не
+меняются. Требования — `docs/decisions/2026-11-25-cockpit-metric-selection.md`.
+
+Подборка стран прототипа: все 27 кодов из `miniapp/src/lib/countries.ts`,
+компактные кнопки с `aria-pressed`, черновик до сохранения и лимит 1–8.
+На десктопе карточки с выручкой занимают до четырёх колонок: 5–8 стран
+отображаются двумя строками; на телефоне две колонки. Для стран вне четырёх
+наборов примеров используются пустые состояния. Требования —
+`docs/decisions/2026-11-25-cockpit-country-selection.md`.

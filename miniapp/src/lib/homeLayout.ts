@@ -5,7 +5,7 @@
 
 export const WIDGET_IDS = [
   "calls", "top5", "board", "ratings", "pz", "countries", "viol",
-  "sales", "insp", "myTasks", "teamTasks", "news", "latest",
+  "sales", "performance", "insp", "myTasks", "teamTasks", "news", "latest",
 ] as const;
 export type WidgetId = (typeof WIDGET_IDS)[number];
 export type WidgetWidth = "half" | "full";
@@ -15,6 +15,7 @@ export const DEFAULT_WIDTH: Record<WidgetId, WidgetWidth> = {
   calls: "half", top5: "half", board: "full", ratings: "half", pz: "half",
   countries: "full", viol: "half", sales: "half", insp: "half",
   myTasks: "full", teamTasks: "half", news: "half", latest: "half",
+  performance: "full",
 };
 
 // Экран «А» (владелец 09.11.2026, docs/decisions/2026-11-09-redesign-content-not-layout.md): сверху
@@ -144,6 +145,7 @@ export const HEIGHT_KIND: Record<WidgetId, HeightKind> = {
   calls: "natural", top5: "natural", news: "natural", latest: "natural", insp: "natural", sales: "natural", viol: "natural",
   pz: "fill", countries: "fill", myTasks: "fill", teamTasks: "fill",
   board: "auto",
+  performance: "auto",
 };
 
 /** Как клетка получает высоту: fixed — своя константа; capped — по содержимому до предела;
