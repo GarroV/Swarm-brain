@@ -1,0 +1,21 @@
+{
+  "settings.notificationSound.title": "Notification sound",
+  "settings.notificationSound.description": "A short chime when a new notification arrives",
+  "common.copy.copied": "Copied",
+  "common.copy.failed": "Couldn't copy",
+  "common.copy.action": "Copy",
+  "tools.qr.description": "Paste a link or any text — the code appears right away. Made in your browser, nothing is sent anywhere. For a long link, shorten it first: the code gets simpler and scans more reliably.",
+  "tools.qr.placeholder": "https://… or text",
+  "tools.qr.tooLong": "Too long for a QR code. Shorten the link and make a code for the short one.",
+  "tools.qr.imageLabel": "QR code",
+  "tools.qr.downloadPng": "Download PNG",
+  "tools.qr.downloadSvg": "Download SVG — for print",
+  "meetings.granola.label": "Granola status",
+  "meetings.granola.brand": "Granola",
+  "meetings.granola.cadence": "Checks for new notes are scheduled hourly.",
+  "meetings.granola.lastAttempt": "Last attempt:",
+  "meetings.granola.noAttempt": "No check has been recorded yet.",
+  "meetings.granola.unknownAttempt": "The last attempt time is unknown.",
+  "meetings.granola.failed": "The last check failed. New notes may not appear.",
+  "meetings.granola.unavailable": "Granola status is unavailable. Try reloading the page."
+}

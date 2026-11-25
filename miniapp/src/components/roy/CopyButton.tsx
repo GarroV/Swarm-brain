@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { RoyIcon } from "@/components/roy/icons";
-import { useDt } from "@/components/roy/nav";
+import { useT } from "@/components/roy/nav";
 
 const FEEDBACK_MS = 2000;
 
@@ -10,7 +10,7 @@ const FEEDBACK_MS = 2000;
 // в момент нажатия (`getText`): строить его при каждом рендере ради клика незачем. После успеха —
 // «Скопировано» на пару секунд; отказ буфера (не https, запрет браузера) показываем, а не глотаем.
 export function CopyButton({ getText, title, iconOnly = false }: { getText: () => string; title?: string; iconOnly?: boolean }) {
-  const dt = useDt();
+  const t = useT();
   const [state, setState] = useState<"idle" | "copied" | "failed">("idle");
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
@@ -30,9 +30,9 @@ export function CopyButton({ getText, title, iconOnly = false }: { getText: () =
     }
   };
 
-  const label = state === "copied" ? dt("Скопировано", "Copied")
-    : state === "failed" ? dt("Не удалось скопировать", "Couldn't copy")
-    : dt("Копировать", "Copy");
+  const label = state === "copied" ? t("common.copy.copied")
+    : state === "failed" ? t("common.copy.failed")
+    : t("common.copy.action");
   return (
     <button
       type="button"

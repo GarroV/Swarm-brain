@@ -28,6 +28,17 @@ Supabase DB (service_role_key, фильтр по group_id)
 
 ---
 
+### Сборка шрифтов (#1336)
+
+Статическая сборка использует закреплённый `next@16.4.6`: эта версия содержит исправление нативного Turbopack для корректных Google Fonts URL без расширения, содержащих `&` ([релиз](https://github.com/vercel/next.js/releases/tag/v16.4.6)). Воспроизводимый вход на Next 16.2.6 давал ошибку `next/font/google queries have exactly one entry`; тот же вход на 16.4.6 собирается с проверкой полученного WOFF2.
+
+Параметры 13 шрифтов остаются в `app/layout.tsx` и `components/market/fonts.ts`: семейства, веса, стили, CSS-переменные, подмножества и режим preload определяются прежними вызовами `next/font/google`. Сборка продолжает получать шрифты при компиляции и помещать файлы в статический экспорт; браузер использует локальные файлы сборки. Исходная `eslint-config-next@16.2.6` сохраняет действующий набор правил и бюджет lint.
+
+`src/lib/fontUrlBuild.test.ts` запускает `e2e/font-url-build.fixture.mjs` через настоящий Next/Turbopack. Фиксированный CSS подставляется штатным test hook Next, WOFF2 загружается по закреплённому публичному CDN URL. Проверяются успешная сборка, SHA256 и размер файла, ссылка CSS на шрифт и использование класса в HTML. Тест требует сети для WOFF2, HTTP-сервер не запускается. Уникальный проект создаётся внутри игнорируемого `.next/`, удаляется только его собственный подкаталог; subprocess имеет ограничение времени и вывода. Сценарий автоматически входит в существующий Deno web-набор без нового workflow.
+
+Основную сборку и эту проверку выполняют последовательно: Next очищает `.next/` при старте.
+При интеграции 25.11 закреплена исправленная версия 16.4.6 вместо прежней 16.4.3.
+
 ## API — контракт
 
 **Базовый URL:** `https://vbqglndbxkpmreccpqmr.supabase.co/functions/v1/swarm-api`
@@ -502,6 +513,35 @@ All. API writes remain in the shared lifecycle wrapper, with task invalidation a
 
 The live Timeline summary/attention code is outside this change's assigned surface and remains a
 separate integration boundary. Saved accepted-cycle statistics are untouched in every view.
+### Web dictionary foundation (#1025, stage 1)
+
+`lib/i18n` loads generated flat RU/EN dictionaries into a synchronous, in-memory i18next instance. `useT` returns a stable language-bound translator; `useDt` preserves legacy semantics. `NotificationSoundToggle` is the first migrated section, with exact existing copy and behavior. Build discovers JSON locales; CI checks key/parameter/plural parity, generated output and raw UI copy in migrated/new sections. Existing sections are explicitly listed for gradual migration. Profile language, outbound messages and content language remain later stages. See [implementation contract](decisions/2026-11-14-web-dictionary-foundation.md) for the codemod, validation limits and adding a locale.
+
+**Постепенный перенос разделов (14.11.2026, #1025).** `roy/CopyButton.tsx` и QR-инструмент (`tools/QrTool.tsx`, `tools/QrCard.tsx`) перенесены штатным AST-codemod на `useT`: девять существовавших пар RU/EN теперь лежат в `lib/i18n/locales/*.json`. Ключи сгруппированы как `common.copy.*` и `tools.qr.*`; три файла перенесены из legacy-реестра в `scripts/i18n-migrated.json`. Тексты, DOM/классы, исходное содержимое, пользовательский заголовок кнопки, состояния/таймер копирования, ограничения ввода и генерация/скачивание QR не меняются. Следующий раздел переносится отдельно по тому же контракту; весь веб перенесённым не объявляется.
+### Granola import status in the meeting list (#178)
+
+`roy/GranolaStatus.tsx` appears above the queue in mobile `RoyMeetingsScreen` and desktop `MeetingsDesk`, including an empty list. A single existing `GET /integrations` on mount projects `last_polled_at` and `last_error`: the timestamp is the **last attempt**, including a failed one, never a successful sync. Never-polled connections and an unavailable status GET are distinct; disconnected Granola is hidden. Keyed RU/EN copy does not expose the raw provider error. This is a snapshot, not a claim that a specific meeting is waiting or that a check will run at an exact hour. The status component leaves shared `useMeetingsList` untouched and initiates no imports. Schedules and notifications are unchanged; manual persistence failures are handled below.
+
+### Отказ ручного сохранения Granola (#178)
+
+`GranolaNoteModal` в `SettingsScreen.tsx` использует `settings/useGranolaSave.ts`: единственная незавершённая операция импорта/пропуска, сброс ошибки при повторе, `onImported` / `onSkipped` и закрытие только после успеха API. Отказ показывает `GRANOLA_IMPORT_COPY.saveFailed` (RU/EN), оставляя заметку и диалог доступными для повторной попытки. Сырые детали ошибки сервера в интерфейс не выводятся. Существующие успешные сценарии, выбор общей/личной базы и содержимое заметки не меняются.
+
+### Источник переноса в строке спринта (#476)
+
+`SprintCycleItem` сохраняет `carried_from` (id предыдущей строки состава) и проверенный
+`carried_from_cycle`. Поля необязательны для совместимости со старым API. `SprintRow`
+передаёт название источника существующему `CarryBadge` в `sprints/atoms.tsx`: видны «из …» /
+«from …» и прежний «×N» начиная с двух переносов. Без известного источника остаётся прежний
+бейдж; «×1» не добавляется. Классы, действия строки и существующее окно `JourneyDialog` не меняются.
+
+
+**«Сверх плана» при пустом старте (#476).** Метки строк и счётчик `SprintPulse` зависят от
+жизненного цикла спринта, а не от наличия хотя бы одной строки `in_plan=true`. Если спринт
+начали пустым и задачи взяли позже, существующее `in_plan=false` по-прежнему означает «сверх
+плана». В черновике метки и счётчик не показываются. Регрессия `sprintExtra.test.ts` запускает
+`sprint-extra.mjs`: целый `SprintsScreen` и настоящие `SprintRow`/`SprintPulse` через React SSR
+с заданным состоянием, без эффектов и API; проверяются пустой старт, смешанный/только плановый
+состав, черновик и принятый снимок на RU/EN. Источник данных, проценты, аналитика и раскладка не меняются.
 
 ### ESLint веба (#1270)
 

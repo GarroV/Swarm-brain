@@ -120,3 +120,85 @@ it("empty recovery pass leaves no empty run state.directory", async () => {
   const personRoot = path.join(state.directory, "queue", String(person));
   expect(await readdir(personRoot)).toEqual([]);
 });
+
+it("a later recovery pass delivers retained audio after an ingest outage without another meeting", async () => {
+  state.directory = await mkdtemp(path.join(tmpdir(), "scriba-recovery-"));
+  const personRoot = path.join(state.directory, "queue", String(person));
+  const dead = path.join(personRoot, "old-call");
+  const queue = new UploadQueue({ root: dead, client: unused });
+  const audio = "audio retained across the failed upload";
+  await queue.stagePart(id, new Blob([audio]), 0);
+  await queue.seal(id, []);
+  const stale = new Date(Date.now() - 10 * 60_000);
+  await touchAlive(dead, stale);
+
+  const calls: string[] = [];
+  let isAvailable = false;
+  let grants = 0;
+  const fetch: typeof globalThis.fetch = async (input, init) => {
+    const endpoint = inputURL(input).pathname;
+    calls.push(endpoint);
+    if (endpoint === "/meeting-upload-recovery") {
+      expect(JSON.parse(init?.body as string)).toEqual({ person, meeting_id: id });
+      grants += 1;
+      return Response.json({ ok: true, upload_token: `sru_pass-${String(grants)}` });
+    }
+    expect(init?.headers).toMatchObject({ Authorization: `Bearer sru_pass-${String(grants)}` });
+    if (endpoint === "/meeting-ingest") {
+      const form = init?.body as FormData;
+      expect(form.get("meeting_id")).toBe(id);
+      expect(await (form.get("sys_0") as Blob).text()).toBe(audio);
+      if (!isAvailable) return Response.json({ error: "temporary outage" }, { status: 503 });
+      return Response.json(
+        {
+          ok: true,
+          meeting_id: id,
+          web_url: "https://web.test/meeting",
+          summary_status: "processing",
+        },
+        { status: 202 },
+      );
+    }
+    expect(endpoint).toBe("/meeting-status");
+    return Response.json({
+      ok: true,
+      statuses: [{ id, status: "in_base", summary_status: "done" }],
+    });
+  };
+  const options = {
+    directory: state.directory,
+    person,
+    baseUrl: "https://api.test",
+    serviceToken: "service-secret",
+    fetch,
+    log: quiet,
+  };
+
+  await recoverUploads(options);
+  const roots = await readdir(personRoot);
+  const retainedRoot = roots.find((name) => name.startsWith("resend-"));
+  if (!retainedRoot) throw new Error("failed upload was not retained");
+  const retained = new UploadQueue({ root: path.join(personRoot, retainedRoot), client: unused });
+  expect(await retained.entries()).toMatchObject([
+    { meetingId: id, uploaded: false, sealed: true },
+  ]);
+  expect(calls).toEqual(["/meeting-upload-recovery", "/meeting-ingest"]);
+
+  await touchAlive(path.join(personRoot, retainedRoot), stale);
+  isAvailable = true;
+  await recoverUploads(options);
+  expect(grants).toBe(2);
+  expect(calls).toEqual([
+    "/meeting-upload-recovery",
+    "/meeting-ingest",
+    "/meeting-upload-recovery",
+    "/meeting-ingest",
+    "/meeting-status",
+  ]);
+  expect(await retained.entries()).toHaveLength(0);
+  const remainingRoots = await readdir(personRoot);
+  for (const root of remainingRoots) {
+    const remaining = new UploadQueue({ root: path.join(personRoot, root), client: unused });
+    expect(await remaining.entries()).toHaveLength(0);
+  }
+});
