@@ -1,0 +1,21 @@
+{
+  "settings.notificationSound.title": "Звук уведомлений",
+  "settings.notificationSound.description": "Короткий сигнал, когда приходит новое уведомление",
+  "common.copy.copied": "Скопировано",
+  "common.copy.failed": "Не удалось скопировать",
+  "common.copy.action": "Копировать",
+  "tools.qr.description": "Вставьте адрес или любой текст — код появится сразу. Делается в браузере, никуда не отправляется. Для длинной ссылки сначала сделайте короткую: код будет проще и надёжнее читаться.",
+  "tools.qr.placeholder": "https://… или текст",
+  "tools.qr.tooLong": "Слишком длинный текст для QR-кода. Сократите ссылку и сделайте код для короткой.",
+  "tools.qr.imageLabel": "QR-код",
+  "tools.qr.downloadPng": "Скачать PNG",
+  "tools.qr.downloadSvg": "Скачать SVG — для печати",
+  "meetings.granola.label": "Статус Granola",
+  "meetings.granola.brand": "Granola",
+  "meetings.granola.cadence": "Проверка новых заметок запланирована раз в час.",
+  "meetings.granola.lastAttempt": "Последняя попытка:",
+  "meetings.granola.noAttempt": "Попыток проверки ещё нет.",
+  "meetings.granola.unknownAttempt": "Время последней попытки неизвестно.",
+  "meetings.granola.failed": "Последняя проверка не удалась. Новые заметки могут не появиться.",
+  "meetings.granola.unavailable": "Granola: статус недоступен. Попробуйте обновить страницу."
+}

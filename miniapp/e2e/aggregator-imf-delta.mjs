@@ -20,7 +20,7 @@ function resolve(specifier, from) {
   const base = specifier.startsWith("@/")
     ? path.join(app, "src", specifier.slice(2))
     : path.resolve(path.dirname(from), specifier);
-  for (const candidate of [base, `${base}.ts`, `${base}.tsx`]) {
+  for (const candidate of [base, `${base}.ts`, `${base}.tsx`, path.join(base, "index.ts")]) {
     if (fs.existsSync(candidate) && fs.statSync(candidate).isFile()) {
       return candidate;
     }
@@ -71,7 +71,7 @@ function load(filename) {
       : native(specifier);
   };
   const javascript = ts.transpileModule(source, {
-    fileName: filename,
+    fileName: filename.replace(/\.mjs$/, ".ts"),
     compilerOptions: {
       target: ts.ScriptTarget.ES2022,
       module: ts.ModuleKind.CommonJS,

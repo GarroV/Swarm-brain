@@ -2,6 +2,7 @@
 import { createContext, useCallback, useContext } from "react";
 import type { Me, Task } from "@/types";
 import type { Lens, SmartListId } from "@/lib/smartLists";
+import { getDictionaryTranslator, legacyTranslation } from "@/lib/i18n";
 
 // Навигация в стиле прототипа: 4 корневых таба + push-стек детальных/создающих экранов.
 // Вынесено в отдельный модуль, чтобы RoyApp и экраны не образовывали циклический импорт.
@@ -59,13 +60,18 @@ export function useRoyNav(): RoyNav {
 
 // Демо-онли i18n: демо-сессия (me.is_demo) рендерится по-английски — витрина для
 // портфолио garrov.github.io (встраивается в iframe на англоязычной странице).
-// Лёгкий инлайновый вариант без словаря: dt("русский", "english"). Вне демо — RU.
+// Совместимость для ещё не перенесённых разделов: dt("русский", "english"). Вне демо — RU.
 export function useDt(): (ru: string, en: string) => string {
   const ctx = useContext(RoyNavContext);
   const demo = !!ctx?.me?.is_demo;
   // Стабильная ссылка обязательна: dt сидит в зависимостях useCallback/useEffect, и новая
   // функция на каждом рендере зацикливала загрузку «Спринтов» (сотни запросов в секунду).
-  return useCallback((ru: string, en: string) => (demo ? en : ru), [demo]);
+  return useCallback((ru: string, en: string) => legacyTranslation(demo ? "en" : "ru", ru, en), [demo]);
+}
+
+/** Stable, language-bound dictionary function; existing demo/profile policy is unchanged. */
+export function useT() {
+  return getDictionaryTranslator(useLang());
 }
 
 /** Это демо-сессия? Демо подключать интеграции не может (сервер отказывает, issue #573) —

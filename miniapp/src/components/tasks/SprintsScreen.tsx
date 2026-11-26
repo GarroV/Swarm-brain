@@ -818,7 +818,7 @@ export function SprintsScreen() {
       board={b}
       noneLabel={byPeople ? dt("Без исполнителя", "Unassigned") : undefined}
       unchecked={unchecked}
-      showExtra={plan.length > 0}
+      showExtra={detail?.status === "active" || accepted}
       parentOf={(item) =>
         item.task_id
           ? tasks.find((t) => t.id === item.task_id)?.parent_id ?? null
@@ -1197,7 +1197,7 @@ export function SprintsScreen() {
                 <SprintPulse
                   kpi={kpi}
                   showUnchecked={unchecked}
-                  extra={plan.length > 0 ? items.length - plan.length : 0}
+                  extra={detail.status !== "draft" ? items.length - plan.length : 0}
                   moved={moved.length}
                 />
               )}

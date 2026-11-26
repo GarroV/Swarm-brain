@@ -225,6 +225,15 @@
 `_shared/tasks/sprint-closed-carry.test.ts` (настоящий загрузчик и ответы PostgREST).
 
 
+**Источник переноса строки (#476).** `sprint_items.carried_from` — FK на предыдущую
+строку `sprint_items`, не на `sprint_cycles`. `sprint-items.ts` отдаёт сам FK и
+`carried_from_cycle: {id, name} | null`, разрешая источник через `cycle_id` предыдущей
+строки. Название берётся только у неудалённого спринта того же воркспейса; отсутствующий
+или недоступный источник остаётся `null`, счётчик переносов не меняется. Ошибка чтения
+источника не выдаётся за его отсутствие. Снимки, статусы и правила переноса не меняются.
+Проверка — `_shared/tasks/sprint-carry-source.test.ts` (настоящий загрузчик с ответами PostgREST).
+
+
 Единый слой доступа к `tasks` (не деплоится как функция). Принимает готовый `group_id` и готовых исполнителей; **НЕ** резолвит имена и **НЕ** ищет workspace — это делают прослойки клиентов; бросает исключение при ошибке. Файлы: `db.ts` (CRUD), `sprints.ts`, `types.ts` (единственный источник типов задач). ⚠️ `dependencies.ts` снесён 2026-08-12 (issue #4 — мёртвый бэкенд после удаления вкладки «Граф»).
 
 > **Канон контракта движка** (CRUD/спринты/зависимости, приватность-visibility, сведённые различия, известный остаток прямых запросов) — **[SHARED_TASKS_ENGINE.md](SHARED_TASKS_ENGINE.md)**. Здесь — только глайд клиентов поверх движка.
@@ -2904,7 +2913,9 @@ supabase/functions/swarm-mcp/
 
 ## Веб-интерфейс frontend — miniapp/
 
-Next.js 16, `output: "export"` (статический HTML/CSS/JS в `miniapp/out/`, без сервера) → Cloudflare Pages, **авто-деплой с `main`** (см. [QUICK_REF → Деплой](QUICK_REF.md)). Монорепо, полностью отдельно от Deno Edge Functions. Дизайн-система «Рой» (`src/components/roy/`) под хендофф `design_handoff_roy`. Разработка: `cd miniapp && npm run build`.
+Next.js 16.4.6, `output: "export"` (статический HTML/CSS/JS в `miniapp/out/`, без сервера) → Cloudflare Pages, **авто-деплой с `main`** (см. [QUICK_REF → Деплой](QUICK_REF.md)). Монорепо, полностью отдельно от Deno Edge Functions. Дизайн-система «Рой» (`src/components/roy/`) под хендофф `design_handoff_roy`. Разработка: `cd miniapp && npm run build`.
+
+**Регрессия сборки шрифтов (#1336).** Закреплён `next@16.4.6`, сохраняются действующие настройки шрифтов и lint. Нативная проверка корректного extensionless URL с `&` и правила изоляции build-фикстуры описаны в [каноне фронтенда](MINIAPP_ARCHITECTURE.md#сборка-шрифтов-1336).
 
 > **Канон фронтенда — [MINIAPP_ARCHITECTURE.md](MINIAPP_ARCHITECTURE.md)** (стек, дизайн-токены, IA/`RoyApp`, экраны, дашборд, виды задач, API-контракт, auth, env). Типы/клиент — `miniapp/src/types.ts`, `miniapp/src/lib/api.ts`. Env — §[Переменные окружения](#переменные-окружения). Здесь не дублируем.
 
@@ -3089,3 +3100,11 @@ Cost readers (`_shared/model-usage-summary.ts`, `swarm-api/model-usage.ts`, `wor
 Migration `20261114235500` adds a nullable column with no DEFAULT. The legacy type, existing rows and policies remain unchanged; there is no DML/backfill. Release order is schema first through the existing migration gate, including API schema readiness (the migration sends `NOTIFY pgrst, 'reload schema'`), then updated functions: a new select/insert cannot run against the old schema. Old code remains compatible with the additive schema and can be rolled back while continuing legacy writes. Precise accounting starts with the new writer; prior losses are not recovered. Preparing/testing this migration does not apply it to production.
 
 `model-usage-precision.test.ts` executes the real producer without network and checks tiny amounts, legacy/zero/NULL handling while preserving the server/client dependency boundary. `model-usage-precision.db.test.ts` uses an isolated CI database for round-trip/SQL SUM, old-writer compatibility, unchanged legacy rows, idempotent DDL and both integer-range boundaries. A fifth isolated case exercises the actual PostgREST projection with the real producer and the maximum stored decimal, then removes only its synthetic rows. The cast contract is documented by [PostgREST](https://docs.postgrest.org/en/stable/references/api/tables_views.html#casting-columns). No local stand is started for these checks.
+### Web dictionary foundation (#1025, stage 1)
+
+`lib/i18n` loads generated flat RU/EN dictionaries into a synchronous, in-memory i18next instance. `useT` returns a stable language-bound translator; `useDt` preserves legacy semantics. `NotificationSoundToggle` is the first migrated section, with exact existing copy and behavior. Build discovers JSON locales; CI checks key/parameter/plural parity, generated output and raw UI copy in migrated/new sections. Existing sections are explicitly listed for gradual migration. Profile language, outbound messages and content language remain later stages. See [implementation contract](decisions/2026-11-14-web-dictionary-foundation.md) for the codemod, validation limits and adding a locale.
+### Наблюдаемость Granola в очереди (#178, частично)
+
+Список встреч показывает подключённую Granola и время последней **попытки** проверки из существующего `GET /integrations`, даже когда встреч пока нет. Часовая периодичность описывает расписание из `SETUP.md`, не гарантирует фактический запуск в конкретный час или наличие ещё не выданной Granola встречи. Ошибка отделена от пустого результата; недоступность самого GET тоже видима. Компонент читает снимок при монтировании, не обращается к Granola напрямую, не импортирует заметки, не вызывает модель и не отправляет уведомления. Частота опроса не изменена, остальные требования #178 остаются открыты. Детали UI — `MINIAPP_ARCHITECTURE.md`, «Статус импорта Granola в списке встреч».
+
+Ручное сохранение через `POST /granola/notes/:id/import` и пропуск через `POST /granola/notes/:id/skip` подтверждаются только после успешного ответа БД. Ошибка вставки записи или обновления `skipped_note_ids` возвращается через штатный `serverError`, а не как `204` / `200 {duplicate}`. Успешные ответы и полезная нагрузка не меняются. Регрессия `granola-import-persistence.test.ts` исполняет настоящие ветки старого роутера с подменёнными I/O-портами, без сети и моделей: проверяет три отказа записи и пять успешных/повторных контролей. Веб-модалка при отказе остаётся открытой, сохраняет заметку в списке и показывает RU/EN-ошибку; `settings/useGranolaSave.ts` допускает одну незавершённую операцию и сбрасывает ошибку при повторе. Глобальный опрос, автоматическая публикация и условия уведомлений не меняются.

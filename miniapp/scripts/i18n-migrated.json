@@ -1,0 +1,7 @@
+[
+  "src/components/roy/CopyButton.tsx",
+  "src/components/roy/GranolaStatus.tsx",
+  "src/components/settings/NotificationSoundToggle.tsx",
+  "src/components/tools/QrCard.tsx",
+  "src/components/tools/QrTool.tsx"
+]

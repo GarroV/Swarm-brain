@@ -1,7 +1,7 @@
 {
   "bot/src/orchestrator/orchestrator.ts": 906,
   "bot/src/orchestrator/smoke-orchestrator.ts": 885,
-  "miniapp/src/components/SettingsScreen.tsx": 885,
+  "miniapp/src/components/SettingsScreen.tsx": 880,
   "miniapp/src/components/roy/screens/MeetAdminScreen.tsx": 1331,
   "miniapp/src/components/tasks/SprintsScreen.tsx": 1445,
   "miniapp/src/lib/api.ts": 4388,
