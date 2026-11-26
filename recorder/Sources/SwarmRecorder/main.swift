@@ -369,12 +369,21 @@ if let mode = CommandLine.arguments.first(where: { $0.hasPrefix("--selftest") })
     }
 }
 
-if CommandLine.arguments.contains("--selftest-meet-link") {
+if CommandLine.arguments.contains("--selftest-call-detector") {
+    runCallDetectorSelfTest()
+} else if CommandLine.arguments.contains("--selftest-meet-link") {
     runMeetingJoinSelfTest()
 } else if CommandLine.arguments.contains("--selftest-backup-offer") {
     runBackupOfferSelfTest()
 } else if CommandLine.arguments.contains("--selftest-call-prompt") {
     runRecordingPromptSelfTest()
+} else if CommandLine.arguments.contains("--selftest-inline-notices-check") {
+    runInlineNoticesChecks()
+} else if CommandLine.arguments.contains("--selftest-inline-notices") {
+    let keep = CommandLine.arguments.firstIndex(of: "--keep").flatMap { i -> Double? in
+        i + 1 < CommandLine.arguments.count ? Double(CommandLine.arguments[i + 1]) : nil
+    }
+    runInlineNoticesSelfTest(seconds: keep ?? 120)
 } else if CommandLine.arguments.contains("--selftest-notes") {
     let keep = CommandLine.arguments.firstIndex(of: "--keep").flatMap { i -> Double? in
         i + 1 < CommandLine.arguments.count ? Double(CommandLine.arguments[i + 1]) : nil
@@ -421,6 +430,8 @@ if CommandLine.arguments.contains("--selftest-meet-link") {
         i + 1 < CommandLine.arguments.count ? Double(CommandLine.arguments[i + 1]) : nil
     }
     runReminderSelfTest(seconds: keep ?? 40)
+} else if CommandLine.arguments.contains("--selftest-status-poll") {
+    runStatusPollingSelfTest()
 } else if CommandLine.arguments.contains("--selftest-quarantine") {
     runQuarantineSelfTest()   // не возвращается (RunLoop) до exit()
 } else if CommandLine.arguments.contains("--selftest") {

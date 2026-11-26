@@ -5,7 +5,7 @@ import RecorderKit
 // Детект звонка по аудио без календаря.
 //   • isMicActiveBlocking() — устройство ввода занято кем-либо (device-level). Годится, пока МЫ НЕ
 //     пишем (idle): ловит старт звонка. Во время нашей записи бесполезно — мы сами держим мик.
-//   • readProcessesBlocking() — per-process (macOS 14.0+): какие ДРУГИЕ процессы держат вход, исключая
+//   • sampleProcesses() — per-process (macOS 14.0+): какие ДРУГИЕ процессы держат вход, исключая
 //     наш PID. Работает и во время записи → этим ловим конец звонка (список опустел). Без TCC.
 enum CallDetector {
     struct MicProcess: Sendable { let pid: pid_t; let bundle: String }
@@ -13,12 +13,13 @@ enum CallDetector {
 
     // HAL can block forever while coreaudiod is unresponsive. Exactly one provider
     // request may be in flight, even after its deadline. No caller waits for it.
-    private static let probe = NonBlockingProbe<Snapshot>(timeout: 1, refreshInterval: 1) {
+    private static let probe = NonBlockingProbe<Snapshot?>(timeout: 1, refreshInterval: 1) {
         if #available(macOS 14.0, *) {
-            let processes = readProcessesBlocking().map { MicProcess(pid: $0.pid, bundle: $0.bundle) }
-            return Snapshot(active: !processes.isEmpty, processes: processes)
+            return sampleProcesses(objects: processList(), currentPID: ProcessInfo.processInfo.processIdentifier,
+                                   pid: readPID, running: { readU32($0, kAudioProcessPropertyIsRunningInput) }, bundle: readBundle)
         }
-        return Snapshot(active: isMicActiveBlocking(), processes: [])
+        guard let active = isMicActiveBlocking() else { return nil }
+        return Snapshot(active: active, processes: [])
     }
     private static var pollTimer: DispatchSourceTimer?
 
@@ -41,7 +42,7 @@ enum CallDetector {
         }
     }
 
-    private static func isMicActiveBlocking() -> Bool {
+    private static func isMicActiveBlocking() -> Bool? {
         var devID = AudioObjectID(0)
         var size = UInt32(MemoryLayout<AudioObjectID>.size)
         var devAddr = AudioObjectPropertyAddress(
@@ -49,8 +50,8 @@ enum CallDetector {
             mScope: kAudioObjectPropertyScopeGlobal,
             mElement: kAudioObjectPropertyElementMain
         )
-        guard AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &devAddr, 0, nil, &size, &devID) == noErr,
-              devID != 0 else { return false }
+        guard AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &devAddr, 0, nil, &size, &devID) == noErr else { return nil }
+        guard devID != 0 else { return false }
 
         var running: UInt32 = 0
         var rsize = UInt32(MemoryLayout<UInt32>.size)
@@ -59,7 +60,7 @@ enum CallDetector {
             mScope: kAudioObjectPropertyScopeGlobal,
             mElement: kAudioObjectPropertyElementMain
         )
-        guard AudioObjectGetPropertyData(devID, &runAddr, 0, nil, &rsize, &running) == noErr else { return false }
+        guard AudioObjectGetPropertyData(devID, &runAddr, 0, nil, &rsize, &running) == noErr else { return nil }
         return running != 0
     }
 
@@ -73,18 +74,25 @@ enum CallDetector {
     // nil means unknown, never a confirmed "microphone released".
     static func realCallActive() -> Bool? { snapshot()?.active }
 
-    // То же + bundle id — для диагностики.
-    @available(macOS 14.0, *)
-    private static func readProcessesBlocking() -> [(pid: pid_t, bundle: String)] {
-        let me = ProcessInfo.processInfo.processIdentifier
-        return processList().compactMap { obj -> (pid_t, String)? in
-            guard let pid = readPID(obj), pid > 0, pid != me else { return nil }
-            // Boolean Core Audio читаем как UInt32 (4 байта), сравниваем с 1.
-            guard (readU32(obj, kAudioProcessPropertyIsRunningInput) ?? 0) == 1 else { return nil }
-            let bundle = readBundle(obj) ?? "?"
-            if ignoredMicBundles.contains(bundle) { return nil }   // системный демон ≠ созвон
-            return (pid, bundle)
+    // The same sampler is exercised without hardware by --selftest-call-detector.
+    static func sampleProcesses(objects: [AudioObjectID]?, currentPID: pid_t,
+                                pid: (AudioObjectID) -> pid_t?, running: (AudioObjectID) -> UInt32?,
+                                bundle: (AudioObjectID) -> String?) -> Snapshot? {
+        guard let objects else { return nil }
+        var processes: [MicProcess] = []
+        var unreadable = false
+        for obj in objects {
+            guard let process = pid(obj), process > 0 else { unreadable = true; continue }
+            if process == currentPID { continue }
+            guard let input = running(obj), input <= 1 else { unreadable = true; continue }
+            if input == 0 { continue }
+            let name = bundle(obj) ?? "?"
+            if ignoredMicBundles.contains(name) { continue }
+            processes.append(MicProcess(pid: process, bundle: name))
         }
+        // One confirmed call is sufficient; absence requires every relevant read to succeed.
+        if processes.isEmpty && unreadable { return nil }
+        return Snapshot(active: !processes.isEmpty, processes: processes)
     }
 
     @available(macOS 14.0, *)
@@ -100,16 +108,20 @@ enum CallDetector {
     }
 
     @available(macOS 14.0, *)
-    private static func processList() -> [AudioObjectID] {
+    private static func processList() -> [AudioObjectID]? {
         var addr = AudioObjectPropertyAddress(
             mSelector: kAudioHardwarePropertyProcessObjectList,
             mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
         var sz: UInt32 = 0
         let sys = AudioObjectID(kAudioObjectSystemObject)
-        guard AudioObjectGetPropertyDataSize(sys, &addr, 0, nil, &sz) == noErr, sz > 0 else { return [] }
+        guard AudioObjectGetPropertyDataSize(sys, &addr, 0, nil, &sz) == noErr else { return nil }
+        if sz == 0 { return [] }
+        let stride = UInt32(MemoryLayout<AudioObjectID>.size)
+        guard sz % stride == 0 else { return nil }
         var ids = [AudioObjectID](repeating: AudioObjectID(kAudioObjectUnknown), count: Int(sz) / MemoryLayout<AudioObjectID>.size)
-        guard AudioObjectGetPropertyData(sys, &addr, 0, nil, &sz, &ids) == noErr else { return [] }
-        return ids
+        guard AudioObjectGetPropertyData(sys, &addr, 0, nil, &sz, &ids) == noErr,
+              sz % stride == 0, Int(sz / stride) <= ids.count else { return nil }
+        return Array(ids.prefix(Int(sz / stride)))
     }
 
     @available(macOS 14.0, *)

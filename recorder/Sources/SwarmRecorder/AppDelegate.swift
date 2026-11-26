@@ -212,11 +212,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         widget.onStop = { [weak self] in self?.stopTapped() }
         widget.onBotKeep = { [weak self] in
+            RecorderNotices.shared.dismiss(id: RecorderNotices.botPromptId)
             Diagnostics.shared.log("BOT-PROMPT продолжить запись рекордером")
             self?.botPromptShown = false
             self?.syncWidget()
         }
         widget.onBotStop = { [weak self] in
+            RecorderNotices.shared.dismiss(id: RecorderNotices.botPromptId)
             Diagnostics.shared.log("BOT-PROMPT остановить — встречу пишет бот")
             self?.botPromptShown = false
             self?.stopTapped()
@@ -706,9 +708,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func meetingWhen(_ m: MeetingIdentity.Info) -> String {
-        guard let iso = m.startISO, let start = ISO8601DateFormatter().date(from: iso) else { return "идёт" }
+        guard let iso = m.startISO, let start = ISO8601DateFormatter().date(from: iso) else { return recorderText("recorder.when.now") }
         let mins = Int(start.timeIntervalSinceNow / 60)
-        return mins <= 0 ? "идёт" : "через \(mins) мин"
+        return mins <= 0 ? recorderText("recorder.when.now") : recorderText("recorder.when.minutes", mins)
     }
 
     // Один текст предложения записать для капсулы и напоминания: разъехаться не могут.
@@ -762,19 +764,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if let e = configError { return "⚠️ \(e)" }
         switch state {
         case .idle:
-            if pendingMeetings.count > 1 { return "Встречи в одно время: \(pendingMeetings.count)" }
-            if let m = pendingMeeting { return "Встреча \(meetingWhen(m)): «\(m.title ?? "")»" }
-            if callActive { return "Идёт звонок" }
-            if queuedCount > 0 { return "bumblebee готов · \(queuedCount) в очереди" }
-            return "bumblebee готов"
-        case .recording: return "● Идёт запись"
-        case .sending: return "Отправка…"
-        case .noScreenRecording: return "🔴 Нет доступа «Screen Recording»"
-        case .noSystemAudio: return "🔴 Нет доступа «System Audio Recording»"
-        case .noMic: return "🔴 Нет доступа к микрофону"
-        case .offline: return "🔴 Нет сети — повтори, когда появится"
-        case .error(let m): return "Ошибка: \(m)"
-        case .tokenExpired: return "🔴 Токен истёк/недействителен"
+            if pendingMeetings.count > 1 { return recorderText("recorder.status.overlap", pendingMeetings.count) }
+            if let m = pendingMeeting { return recorderText("recorder.status.meeting", meetingWhen(m), m.title ?? "") }
+            if callActive { return recorderText("recorder.status.call") }
+            if queuedCount > 0 { return recorderText("recorder.status.readyQueue", queuedCount) }
+            return recorderText("recorder.status.ready")
+        case .recording: return recorderText("recorder.status.recording")
+        case .sending: return recorderText("recorder.status.sending")
+        case .noScreenRecording: return recorderText("recorder.status.screenDenied")
+        case .noSystemAudio: return recorderText("recorder.status.audioDenied")
+        case .noMic: return recorderText("recorder.status.micDenied")
+        case .offline: return recorderText("recorder.status.offline")
+        case .error(let m): return recorderText("recorder.status.error", m)
+        case .tokenExpired: return recorderText("recorder.status.tokenExpired")
         }
     }
 
@@ -782,11 +784,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // непонятно, чьё это приложение; тултип отвечает именем, а в непокойном состоянии ещё и
     // состоянием, чтобы не открывать меню ради «оно вообще пишет?».
     private func tooltipText() -> String {
-        if configError != nil { return "bumblebee — нужен токен" }
+        if configError != nil { return recorderText("recorder.tooltip.token") }
         switch state {
-        case .idle: return queuedCount > 0 ? "bumblebee — \(queuedCount) в очереди" : "bumblebee"
-        case .recording: return "bumblebee — идёт запись"
-        case .sending: return "bumblebee — отправка"
+        case .idle: return queuedCount > 0 ? recorderText("recorder.tooltip.queue", queuedCount) : "bumblebee"
+        case .recording: return recorderText("recorder.tooltip.recording")
+        case .sending: return recorderText("recorder.tooltip.sending")
         default: return "bumblebee — \(statusText())"
         }
     }
@@ -797,7 +799,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case .noScreenRecording, .noSystemAudio:
             return Permissions.captureSettingsPath
         case .noMic:
-            return "System Settings → Privacy & Security → Microphone → включить bumblebee"
+            return recorderText("recorder.permission.microphone")
         default:
             return nil
         }
@@ -873,10 +875,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // 401: токен протух — показываем явный путь «Получить новый токен» (ведёт в бот к
         // /recordertoken) + обычную вставку из буфера. Запись недоступна, пока токен невалиден.
         if case .tokenExpired = state {
-            menu.addItem(NSMenuItem(title: "Получить новый токен", action: #selector(getNewTokenTapped), keyEquivalent: ""))
-            menu.addItem(NSMenuItem(title: "Обновить токен из буфера", action: #selector(pasteTokenTapped), keyEquivalent: ""))
+            menu.addItem(NSMenuItem(title: recorderText("recorder.menu.newToken"), action: #selector(getNewTokenTapped), keyEquivalent: ""))
+            menu.addItem(NSMenuItem(title: recorderText("recorder.menu.updateToken"), action: #selector(pasteTokenTapped), keyEquivalent: ""))
             if queuedCount > 0 {
-                menu.addItem(NSMenuItem(title: "⏳ \(queuedCount) в очереди (дозагрузим после токена)", action: nil, keyEquivalent: ""))
+                menu.addItem(NSMenuItem(title: recorderText("recorder.menu.queueAfterToken", queuedCount), action: nil, keyEquivalent: ""))
             }
         } else if isPermissionOrOfflineError(state) {
             // Типизированный сбой разрешений/сети: точный путь в Settings + «Повторить».
@@ -887,25 +889,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             switch state {
             case .noMic:
-                menu.addItem(NSMenuItem(title: "Открыть настройки микрофона", action: #selector(openMicSettingsTapped), keyEquivalent: ""))
+                menu.addItem(NSMenuItem(title: recorderText("recorder.menu.microphone"), action: #selector(openMicSettingsTapped), keyEquivalent: ""))
             case .noScreenRecording, .noSystemAudio:
-                menu.addItem(NSMenuItem(title: "Открыть настройки записи", action: #selector(openRecordingSettingsTapped), keyEquivalent: ""))
+                menu.addItem(NSMenuItem(title: recorderText("recorder.menu.capture"), action: #selector(openRecordingSettingsTapped), keyEquivalent: ""))
             default:
                 break
             }
-            menu.addItem(NSMenuItem(title: "Повторить", action: #selector(retryTapped), keyEquivalent: "r"))
+            menu.addItem(NSMenuItem(title: recorderText("recorder.menu.retry"), action: #selector(retryTapped), keyEquivalent: "r"))
             if queuedCount > 0 {
-                menu.addItem(NSMenuItem(title: "⏳ \(queuedCount) в очереди", action: #selector(drainQueueTapped), keyEquivalent: ""))
+                menu.addItem(NSMenuItem(title: recorderText("recorder.menu.queue", queuedCount), action: #selector(drainQueueTapped), keyEquivalent: ""))
             }
         } else if configError == nil {
             switch state {
             case .recording:
-                menu.addItem(NSMenuItem(title: "Остановить и отправить", action: #selector(stopTapped), keyEquivalent: "s"))
+                menu.addItem(NSMenuItem(title: recorderText("recorder.menu.stop"), action: #selector(stopTapped), keyEquivalent: "s"))
                 // Оговорка владельца к «календарь берём всегда» (18.09.2026): запись включают и на
                 // ОФЛАЙН встрече, а в календаре в это время стоит другое событие. Тогда человек
                 // отвязывает запись — она уедет отдельной встречей, а не подменит календарную.
                 if let title = identity?.title, identity?.kind == .calendar {
-                    menu.addItem(NSMenuItem(title: "Это не «\(title)» — писать отдельно",
+                    menu.addItem(NSMenuItem(title: recorderText("recorder.menu.detach", title),
                                             action: #selector(detachMeetingTapped), keyEquivalent: ""))
                 }
             case .sending:
@@ -914,54 +916,54 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 if pendingMeetings.count > 1 {
                     // Выбор (D027): по пункту на созвон, запись ляжет к выбранной встрече.
                     for m in pendingMeetings {
-                        let item = NSMenuItem(title: "🔴 Записать «\(m.title ?? "встреча без названия")»",
+                        let item = NSMenuItem(title: recorderText("recorder.menu.recordNamed", m.title ?? recorderText("meetings.untitled")),
                                               action: #selector(recordChosenMenuTapped(_:)), keyEquivalent: "")
                         item.representedObject = m.key
                         menu.addItem(item)
                     }
                 } else if pendingMeeting != nil {
-                    menu.addItem(NSMenuItem(title: "🔴 Записать встречу", action: #selector(recordMeetingTapped), keyEquivalent: "r"))
+                    menu.addItem(NSMenuItem(title: recorderText("recorder.menu.recordMeeting"), action: #selector(recordMeetingTapped), keyEquivalent: "r"))
                 } else if callActive {
-                    menu.addItem(NSMenuItem(title: "🔴 Записать звонок", action: #selector(recordCallTapped), keyEquivalent: "r"))
-                    menu.addItem(NSMenuItem(title: "Не сейчас", action: #selector(dismissCallTapped), keyEquivalent: ""))
+                    menu.addItem(NSMenuItem(title: recorderText("recorder.menu.recordCall"), action: #selector(recordCallTapped), keyEquivalent: "r"))
+                    menu.addItem(NSMenuItem(title: recorderText("recorder.menu.notNow"), action: #selector(dismissCallTapped), keyEquivalent: ""))
                 } else {
-                    menu.addItem(NSMenuItem(title: "Записать встречу", action: #selector(recordTapped), keyEquivalent: "r"))
+                    menu.addItem(NSMenuItem(title: recorderText("recorder.menu.record"), action: #selector(recordTapped), keyEquivalent: "r"))
                 }
             }
             // Висящие дозагрузки видно всегда (даже во время записи): «N в очереди».
             if queuedCount > 0 {
-                menu.addItem(NSMenuItem(title: "⏳ \(queuedCount) в очереди", action: #selector(drainQueueTapped), keyEquivalent: ""))
+                menu.addItem(NSMenuItem(title: recorderText("recorder.menu.queue", queuedCount), action: #selector(drainQueueTapped), keyEquivalent: ""))
             }
             // Отклонённые сервером записи лежат в карантине 3 суток — даём дослать их руками.
             // Без этого пункта карантин был бы бесполезен: файлы есть, а достать их некому.
             if !deferredMeetingIds.isEmpty {
                 let n = deferredMeetingIds.count
-                menu.addItem(NSMenuItem(title: "📦 Дослать мою запись\(n > 1 ? " (\(n))" : "")", action: #selector(resendDeferredTapped), keyEquivalent: ""))
+                menu.addItem(NSMenuItem(title: recorderText("recorder.menu.resend", n > 1 ? " (\(n))" : ""), action: #selector(resendDeferredTapped), keyEquivalent: ""))
             }
             // «Открыть Рой», «Обновить токен из буфера» и «Не записывать» убраны (владелец 26.10.2026):
             // веб открывают закладкой, протухший токен лечится переустановкой, а «Не записывать»
             // дублировал крестик капсулы. Вставка токена осталась там, где без неё не выйти:
             // при протухшем токене и при первом запуске без токена.
         } else {
-            menu.addItem(NSMenuItem(title: "Вставить токен из буфера", action: #selector(pasteTokenTapped), keyEquivalent: ""))
+            menu.addItem(NSMenuItem(title: recorderText("recorder.menu.pasteToken"), action: #selector(pasteTokenTapped), keyEquivalent: ""))
         }
         for item in board.menuItems() { menu.addItem(item) }
         // Бэкстоп: macOS-разрешение на запись системного звука можно открыть вручную в любой
         // момент (Core Audio process-tap при отказе иногда даёт тишину без ошибки → catch не сработает).
-        menu.addItem(NSMenuItem(title: "Открыть настройки записи", action: #selector(openRecordingSettingsTapped), keyEquivalent: ""))
+        menu.addItem(NSMenuItem(title: recorderText("recorder.menu.capture"), action: #selector(openRecordingSettingsTapped), keyEquivalent: ""))
         // Обновление по требованию. Авто-апдейт работает сам, но человеку нужен способ обновиться
         // СЕЙЧАС и увидеть результат: иначе единственный известный ему путь — перевыпуск токена
         // в боте, который гасит рабочую установку, если он не дойдёт до конца (issue #146).
         if updateCheckInFlight {
-            let item = NSMenuItem(title: "Проверяю обновление…", action: nil, keyEquivalent: "")
+            let item = NSMenuItem(title: recorderText("recorder.menu.checkUpdate"), action: nil, keyEquivalent: "")
             item.isEnabled = false
             menu.addItem(item)
         } else {
-            menu.addItem(NSMenuItem(title: "Обновить bumblebee · сборка \(Updater.currentBuild)",
+            menu.addItem(NSMenuItem(title: recorderText("recorder.menu.updateBuild", Updater.currentBuild),
                                     action: #selector(checkUpdateTapped), keyEquivalent: ""))
         }
         menu.addItem(.separator())
-        menu.addItem(NSMenuItem(title: "Выйти", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
+        menu.addItem(NSMenuItem(title: recorderText("recorder.menu.quit"), action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
         // Пункты со своей целью (пропуски бота — у MissedMeetingsWatcher) не перехватываем.
         for item in menu.items where item.action != nil && item.target == nil && item.action != #selector(NSApplication.terminate(_:)) {
             item.target = self
@@ -979,8 +981,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if !isRecording { botPromptShown = false }
         switch state {
         case .recording:
-            // Вопрос про бота важнее блокнота: свёрнутый он не виден, а ответ нужен человеку сейчас.
-            if botPromptShown { widget.showBotPrompt(); return }
+            if botPromptShown { widget.showBotPrompt(inNotes: notesExpanded); return }
             // Развёрнут блокнот → показываем его (пилюлю прячем); свёрнуто → вертикальная пилюля рекордера.
             if notesExpanded { widget.hide() }
             else { widget.showRecording(startedAt: recordStartedAt ?? Date()) }
@@ -998,7 +999,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             } else if callActive {
                 // Звонок без календаря: слота нет, а «подключиться» некуда — человек уже в нём.
                 // Подзаголовок пустой: «Идёт звонок» + «идёт» — дубль, а не информация.
-                widget.showPending(notice: MeetingNotice(title: "Идёт звонок", subtitle: ""),
+                widget.showPending(notice: MeetingNotice(title: recorderText("recorder.status.call"), subtitle: ""),
                                    canJoin: false, missed: missed.capsule(forCall: nil), promptKey: recordingPromptKey())
             } else {
                 widget.hide()   // никакого «кружка»: пилюля только на детект встречи/звонка
@@ -1322,7 +1323,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 if pick != nil {
                     // Бота о продолжении уже спросила карточка выбора — второй вопрос не нужен.
                     botPromptAskedFor = startedAt
-                    showPickCard()
                 } else {
                     RecorderNotices.shared.dismiss(id: Self.pickNoticeId)
                 }
@@ -1349,8 +1349,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     }
                 }
                 // notesExpanded ДО setState(.recording): иначе syncWidget сначала покажет виджет с
-                // его level-таймером, а затем панель заведёт ВТОРОЙ 10-Гц таймер (дефект build 4 →
-                // лишняя нагрузка на планировщик во время записи). Ставим флаг заранее — при наличии
+                // его level-таймером, а затем панель заведёт второй (дефект build 4). При наличии
                 // панели виджет сразу скрыт, работает только один индикатор уровней.
                 self.notesExpanded = (self.config != nil)
                 setState(.recording)
@@ -1358,8 +1357,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 // не вернулся → recWatchTick так и не заармился → ни авто-стопа, ни чекпоинт-
                 // ротаций, ни dbg-лога на всю запись. Сторож не должен зависеть от UI-панели.
                 startCallEndWatch()
-                // Granola-режим: на старте — блокнот (LiveNotesPanel). Клик по марке сворачивает в
-                // вертикальную пилюлю (виджет рекордера), клик по марке пилюли — обратно в блокнот.
+                // Запись: блокнот и свёрнутая пилюля — два состояния одной поверхности.
                 if let cfg = self.config {
                     await LiveNotesPanel.shared.show(
                         config: cfg,
@@ -1368,6 +1366,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         systemLevel: { [weak self] in self?.recorder.currentSystemLevel() ?? 0 },
                         onStop: { [weak self] in self?.stopTapped() },
                         onCollapse: { [weak self] in self?.collapseNotes() })
+                    if pick != nil { showPickCard() }
                     // «Что было в прошлый раз» (issue #226): тезисы последней встречи с этой
                     // стороной и висящие задачи. Запрос ФОНОВЫЙ и необязательный: не ответил —
                     // блока просто нет, запись от этого не страдает и не ждёт сети.
@@ -1565,6 +1564,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if let session = pickSession, case .manual = StartPick.resolution(for: session.answer) { info = nil }
         pickSession = nil
         RecorderNotices.shared.dismiss(id: Self.pickNoticeId)
+        RecorderNotices.shared.dismiss(id: RecorderNotices.botPromptId)
         let started = recordStartedAt ?? Date()
         // Метку конца фиксируем СИНХРОННО, до Task: в сон-кейсе (willSleep→autoStop) Task резюмится
         // на ПРОБУЖДЕНИИ, и Date() внутри него дал бы время wake → endedAt раздулся бы на весь сон

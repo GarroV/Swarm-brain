@@ -7,13 +7,14 @@ import RecorderKit
 /// На старте записи открыт развёрнутым; клик по марке — морф высоты. meetingId появляется на
 /// стопе (claim) → пометки копятся в буфер, на стопе flush() меняет токен на web-JWT и POST'ит.
 @MainActor
-final class LiveNotesPanel: NSObject, NSTextFieldDelegate {
+final class LiveNotesPanel: NSObject, NSTextFieldDelegate, NSWindowDelegate {
     static let shared = LiveNotesPanel()
     private override init() { super.init() }
 
     private var panel: NSPanel?
     private var notesSection: NSView?          // сворачиваемая часть (divider+sub+notes+input+footer)
     private var notesStack: NSStackView?
+    private let noticeHost = NSStackView()
     private var input: NSTextField?
     private var titleField: NSTextField?       // редактируемое название встречи (в шапке, всегда видно)
     private var editedTitle: String?           // переопределение названия пользователем (nil → берём дефолт claim)
@@ -38,6 +39,9 @@ final class LiveNotesPanel: NSObject, NSTextFieldDelegate {
     private struct Buffered { let offset: Int; let text: String }
     private var buffer: [Buffered] = []
     private var startedAt: Date?
+    private var persistsNotes = true
+    private var presentsWindow = true
+    private var expanded = false
 
     private static let panelWidth: CGFloat = 312
     private static let margin: CGFloat = 16
@@ -79,6 +83,7 @@ final class LiveNotesPanel: NSObject, NSTextFieldDelegate {
     func expand() { ensurePanel(); showExpanded() }
 
     private func showExpanded() {
+        RecorderNotices.shared.embed(in: noticeHost, width: Self.panelWidth - 30)
         notesSection?.isHidden = false
         guard let panel, let screen = NSScreen.main else { return }
         let vf = screen.visibleFrame
@@ -86,8 +91,9 @@ final class LiveNotesPanel: NSObject, NSTextFieldDelegate {
         panel.setFrame(NSRect(x: vf.maxX - Self.panelWidth - Self.margin, y: vf.maxY - h - Self.margin,
                               width: Self.panelWidth, height: h), display: true)
         startTimers()
-        // Открыли блокнот осознанно (старт записи / клик по пилюле) → выводим вперёд и в фокус.
-        // Дальше при клике в другое окно он сам уйдёт на задний план (уровень .normal).
+        expanded = true
+        guard presentsWindow else { return }
+        // При уходе в другое окно блокнот сворачивается, оставляя видимый индикатор записи.
         NSApp.activate(ignoringOtherApps: true)
         panel.makeKeyAndOrderFront(nil)
         panel.makeFirstResponder(input)
@@ -108,16 +114,24 @@ final class LiveNotesPanel: NSObject, NSTextFieldDelegate {
         titleField?.stringValue = (title ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    func hide() { stopTimers(); panel?.orderOut(nil) }
+    func hide() {
+        expanded = false
+        stopTimers()
+        panel?.orderOut(nil)
+        RecorderNotices.shared.embed(in: nil)
+    }
 
     // Свернуть блокнот в пилюлю — по клику на марке ИЛИ когда пользователь ушёл в другую программу.
     func collapse() {
-        guard panel?.isVisible == true else { return }   // уже свёрнут — не дёргаем onCollapse повторно
+        guard expanded else { return }
+        expanded = false
         stopTimers()
         panel?.orderOut(nil)
         onCollapse?()
     }
     @objc private func collapseToPill() { collapse() }
+
+    func windowDidResignKey(_ notification: Notification) { collapse() }
 
     // MARK: - сборка
 
@@ -136,6 +150,7 @@ final class LiveNotesPanel: NSObject, NSTextFieldDelegate {
         p.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         p.hidesOnDeactivate = false
         p.isReleasedWhenClosed = false
+        p.delegate = self
         p.isOpaque = false
         p.backgroundColor = .clear
         p.minSize = NSSize(width: 80, height: 80)   // titled-окно иначе не даёт ужать до узкой пилюли
@@ -219,7 +234,10 @@ final class LiveNotesPanel: NSObject, NSTextFieldDelegate {
         ctx.translatesAutoresizingMaskIntoConstraints = false
         ctx.isHidden = true            // до ответа сервера блока нет вовсе, а не пустая рамка
         contextStack = ctx
-        let inner = NSStackView(views: [ctx, stack])
+        noticeHost.orientation = .vertical; noticeHost.alignment = .leading; noticeHost.spacing = 8
+        noticeHost.translatesAutoresizingMaskIntoConstraints = false
+        noticeHost.isHidden = true
+        let inner = NSStackView(views: [noticeHost, ctx, stack])
         inner.orientation = .vertical; inner.alignment = .leading; inner.spacing = 13
         inner.translatesAutoresizingMaskIntoConstraints = false
 
@@ -289,6 +307,20 @@ final class LiveNotesPanel: NSObject, NSTextFieldDelegate {
         p.contentView = vfx
         panel = p
     }
+
+    /// UI fixture without recording, configuration, note persistence or network access.
+    static func preview(presentsWindow: Bool = true, onCollapse: @escaping () -> Void) -> LiveNotesPanel {
+        let preview = LiveNotesPanel()
+        preview.persistsNotes = false
+        preview.presentsWindow = presentsWindow
+        preview.startedAt = Date()
+        preview.onCollapse = onCollapse
+        return preview
+    }
+
+    var noticeHostForTests: NSStackView { noticeHost }
+    var isExpandedForTests: Bool { expanded }
+    func addNoteForTests(_ text: String) { input?.stringValue = text; addFromField() }
 
     private func levelTrack(_ fill: CALayer, color: NSColor) -> NSView {
         let t = NSView(); t.wantsLayer = true
@@ -714,6 +746,7 @@ final class LiveNotesPanel: NSObject, NSTextFieldDelegate {
         return dir.appendingPathComponent("live-notes-current.json")
     }
     private func persistBuffer() {
+        guard persistsNotes else { return }
         let arr = buffer.map { ["offset": $0.offset, "text": $0.text] as [String: Any] }
         guard let data = try? JSONSerialization.data(withJSONObject: arr, options: [.prettyPrinted]) else { return }
         try? data.write(to: Self.notesFileURL, options: .atomic)

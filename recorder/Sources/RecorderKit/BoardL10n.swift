@@ -1,9 +1,8 @@
 import Foundation
 
-// Словарь НОВЫХ строк доски «Сегодня»: ключ → язык → текст. У рекордера общего i18n нет (старые
-// строки остались как были); эта поверхность заведена словарём, а не парами «ru/en», чтобы третий
-// язык добавлялся одной записью в `dictionaries`, без правок вызывающих мест
-// (решение владельца 19.10.2026: словари с первого коммита, не пары; план i18n — issue #1025).
+// Словарь доски и меню рекордера: ключ → язык → текст. Новый язык добавляется
+// в dictionaries без правок вызывающих мест. Остальные старые поверхности
+// пока используют прежние строки.
 // Язык — `Locale.preferredLanguages`: ru* → ru, остальное → en. Нет строки на языке — берём en,
 // нет и там — показываем ключ (виден сразу, а не пустота).
 public enum BoardL10n {
@@ -24,7 +23,10 @@ public enum BoardL10n {
     }
 
     /// Язык → (ключ → текст). Третий язык — ещё одна запись здесь.
-    public static let dictionaries: [String: [String: String]] = ["ru": ru, "en": en]
+    public static let dictionaries: [String: [String: String]] = [
+        "ru": ru.merging(RecorderMenuStrings.ru) { existing, _ in existing },
+        "en": en.merging(RecorderMenuStrings.en) { existing, _ in existing }
+    ]
 
     static let ru: [String: String] = [
         "board.title": "Сегодня",
