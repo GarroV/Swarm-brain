@@ -7,8 +7,24 @@ Deno.test("Meet opens through Google AccountChooser using the saved work email",
   const result = new URL(meetingOpenUrl(room, " Work+Meet@Example.com ")!);
   assertEquals(result.origin + result.pathname, "https://accounts.google.com/AccountChooser");
   assertEquals(result.searchParams.get("Email"), "work+meet@example.com");
-  assertEquals(result.searchParams.get("continue"), "https://meet.google.com/abc-defg-hij?hs=122#notes");
+  const destination = new URL(result.searchParams.get("continue")!);
+  assertEquals(destination.origin + destination.pathname, "https://meet.google.com/abc-defg-hij");
+  assertEquals(destination.searchParams.getAll("authuser"), ["work+meet@example.com"]);
+  assertEquals(destination.searchParams.has("login_hint"), false);
+  assertEquals(destination.searchParams.get("hs"), "122");
+  assertEquals(destination.hash, "#notes");
   assertEquals(room.includes("authuser=0"), true);
+});
+
+Deno.test("the work account is pinned to Meet itself without relying on account order", () => {
+  const original = "https://meet.google.com/abc-defg-hij";
+  for (const email of ["first@example.com", "other+work@example.org"]) {
+    const chooser = new URL(meetingOpenUrl(original, email)!);
+    const destination = new URL(chooser.searchParams.get("continue")!);
+    assertEquals(chooser.searchParams.get("Email"), email);
+    assertEquals(destination.searchParams.get("authuser"), email);
+    assertEquals(original, "https://meet.google.com/abc-defg-hij");
+  }
 });
 
 Deno.test("missing or malformed work email cannot silently open Meet with another account", () => {

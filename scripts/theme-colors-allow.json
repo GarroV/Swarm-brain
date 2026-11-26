@@ -16,12 +16,8 @@
     "reason": "Бумага стикеров: цвета фиксированные, как настоящая бумажка, — выбор пользователя, не тема (комментарий в самом файле)."
   },
   "miniapp/src/components/roy/home/StickerCard.tsx": {
-    "max": 14,
+    "max": 4,
     "reason": "Стикер: бумага, ленточка и подписи — фиксированная пара фон+текст (см. stickerUi.ts)."
-  },
-  "miniapp/src/components/roy/home/StickerBoard.tsx": {
-    "max": 8,
-    "reason": "Стикеры на доске: бумага, ленточка, срок — фиксированная пара фон+текст (см. stickerUi.ts)."
   },
   "miniapp/src/components/roy/home/StickerCreate.tsx": {
     "max": 1,

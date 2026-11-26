@@ -65,17 +65,16 @@ export function StickerCard({ sticker: s, meTelegramId, isAdmin, onClose, onAck,
         aria-labelledby={titleId}
         tabIndex={-1}
         style={{ viewTransitionName: stickerTransitionName(s.id) }}
-        className={`relative flex max-h-[86vh] w-full max-w-[480px] flex-col gap-3 overflow-y-auto rounded-[4px] p-6 shadow-[0_18px_44px_rgba(0,0,0,.32)] outline-none ${PAPER[s.tone]}`}
+        className={`relative flex max-h-[86vh] w-full max-w-[480px] flex-col gap-3 overflow-y-auto rounded-[14px] border border-line bg-surface p-6 text-ink shadow-[0_18px_44px_rgba(0,0,0,.32)] outline-none`}
       >
-        <i aria-hidden="true" className="absolute left-1/2 top-[-9px] h-4 w-20 -translate-x-1/2 rotate-[-2deg] bg-white/60" />
         <div className="flex items-start justify-between gap-3">
-          <div className="font-bold uppercase opacity-60" style={{ fontSize: 10.5, letterSpacing: "0.1em" }}>{kindLabel}</div>
+          <div className={`rounded px-2 py-1 font-semibold ${PAPER[s.tone]}`} style={{ fontSize: 10.5 }}>{kindLabel}</div>
           <button
             type="button"
             data-autofocus
             onClick={onClose}
             aria-label={dt("Закрыть", "Close")}
-            className="-m-1 rounded-md px-2 py-0.5 text-[20px] leading-none opacity-60 hover:bg-black/10 hover:opacity-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#1B1B1B]"
+            className="-m-1 rounded-md px-2 py-0.5 text-[20px] leading-none opacity-60 hover:bg-surface-2 hover:opacity-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--ring)]"
           >
             ×
           </button>
@@ -86,7 +85,7 @@ export function StickerCard({ sticker: s, meTelegramId, isAdmin, onClose, onAck,
 
         <div className="flex flex-wrap items-center gap-2">
           {s.due_at && (
-            <span className={`rounded px-1.5 py-0.5 font-mono ${hot ? "bg-[#D03A3A] text-white" : "bg-black/10"}`} style={{ fontSize: 11 }}>
+            <span className={`rounded px-1.5 py-0.5 font-mono ${hot ? "bg-[#D03A3A] text-white" : "bg-surface-2"}`} style={{ fontSize: 11 }}>
               {dt("срок", "due")} {fmtDue(s.due_at, lang)}
             </span>
           )}
@@ -94,7 +93,7 @@ export function StickerCard({ sticker: s, meTelegramId, isAdmin, onClose, onAck,
             <a
               href={href}
               {...(isExternalHref(href) ? { target: "_blank", rel: "noopener noreferrer" } : {})}
-              className="rounded-[7px] border border-black/25 px-2.5 py-1 font-semibold underline-offset-2 hover:bg-black/10 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#1B1B1B]"
+              className="rounded-[7px] border border-line-2 px-2.5 py-1 font-semibold underline-offset-2 hover:bg-surface-2 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--ring)]"
               style={{ fontSize: 12 }}
             >
               {dt("Открыть ссылку", "Open link")} ↗
@@ -106,8 +105,8 @@ export function StickerCard({ sticker: s, meTelegramId, isAdmin, onClose, onAck,
           <div className="flex items-baseline justify-between" style={{ fontSize: 12.5 }}>
             <b>{progressLabel}</b>
           </div>
-          <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-black/10" role="progressbar" aria-valuemin={0} aria-valuemax={total} aria-valuenow={done} aria-label={progressLabel}>
-            <div className="h-full rounded-full bg-[#1B1B1B]" style={{ width: total ? `${(done / total) * 100}%` : 0 }} />
+          <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-surface-2" role="progressbar" aria-valuemin={0} aria-valuemax={total} aria-valuenow={done} aria-label={progressLabel}>
+            <div className="h-full rounded-full bg-primary" style={{ width: total ? `${(done / total) * 100}%` : 0 }} />
           </div>
         </div>
 
@@ -128,7 +127,7 @@ export function StickerCard({ sticker: s, meTelegramId, isAdmin, onClose, onAck,
         <div className="mt-1 flex flex-wrap items-center gap-2">
           {s.kind === "notice" && me && !me.done && (
             <button type="button" disabled={busy} onClick={() => run(() => onAck(s.id))}
-              className="rounded-[7px] bg-[#1B1B1B] px-3 py-1.5 font-semibold text-white hover:bg-black disabled:opacity-60" style={{ fontSize: 12.5 }}>
+              className="rounded-[7px] bg-primary px-3 py-1.5 font-semibold text-primary-foreground hover:opacity-90 disabled:opacity-60" style={{ fontSize: 12.5 }}>
               {dt("Понятно", "Got it")}
             </button>
           )}
@@ -137,13 +136,13 @@ export function StickerCard({ sticker: s, meTelegramId, isAdmin, onClose, onAck,
           )}
           {s.kind === "task" && me?.task_id && (
             <button type="button" onClick={() => onOpenTask(me.task_id!)}
-              className="rounded-[7px] bg-[#1B1B1B] px-3 py-1.5 font-semibold text-white hover:bg-black" style={{ fontSize: 12.5 }}>
+              className="rounded-[7px] bg-primary px-3 py-1.5 font-semibold text-primary-foreground hover:opacity-90" style={{ fontSize: 12.5 }}>
               {dt("Открыть задачу", "Open task")}
             </button>
           )}
           {isAdmin && (
             <button type="button" disabled={busy} onClick={() => run(() => onArchive(s.id))}
-              className="ml-auto rounded-[7px] border border-black/25 px-3 py-1.5 font-semibold hover:bg-black/10 disabled:opacity-60" style={{ fontSize: 12.5 }}>
+              className="ml-auto rounded-[7px] border border-line-2 px-3 py-1.5 font-semibold hover:bg-surface-2 disabled:opacity-60" style={{ fontSize: 12.5 }}>
               {dt("В архив", "Archive")}
             </button>
           )}
