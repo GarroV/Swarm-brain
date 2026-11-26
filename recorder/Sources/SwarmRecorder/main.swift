@@ -369,7 +369,9 @@ if let mode = CommandLine.arguments.first(where: { $0.hasPrefix("--selftest") })
     }
 }
 
-if CommandLine.arguments.contains("--selftest-meet-link") {
+if CommandLine.arguments.contains("--selftest-call-detector") {
+    runCallDetectorSelfTest()
+} else if CommandLine.arguments.contains("--selftest-meet-link") {
     runMeetingJoinSelfTest()
 } else if CommandLine.arguments.contains("--selftest-backup-offer") {
     runBackupOfferSelfTest()

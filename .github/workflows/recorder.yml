@@ -31,6 +31,9 @@ jobs:
       - name: swift build -c release
         run: swift build -c release
 
+      - name: CoreAudio unknown-state regression (no audio or network)
+        run: .build/release/SwarmRecorder --selftest-call-detector
+
       # Чистая логика рекордера (RecorderKit) — XCTest есть только там, где стоит Xcode:
       # на рабочей машине с одними Command Line Tools `swift test` не собирается, поэтому
       # прогон живёт в CI.
