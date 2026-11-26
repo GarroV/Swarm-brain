@@ -212,11 +212,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         widget.onStop = { [weak self] in self?.stopTapped() }
         widget.onBotKeep = { [weak self] in
+            RecorderNotices.shared.dismiss(id: RecorderNotices.botPromptId)
             Diagnostics.shared.log("BOT-PROMPT продолжить запись рекордером")
             self?.botPromptShown = false
             self?.syncWidget()
         }
         widget.onBotStop = { [weak self] in
+            RecorderNotices.shared.dismiss(id: RecorderNotices.botPromptId)
             Diagnostics.shared.log("BOT-PROMPT остановить — встречу пишет бот")
             self?.botPromptShown = false
             self?.stopTapped()
@@ -979,8 +981,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if !isRecording { botPromptShown = false }
         switch state {
         case .recording:
-            // Вопрос про бота важнее блокнота: свёрнутый он не виден, а ответ нужен человеку сейчас.
-            if botPromptShown { widget.showBotPrompt(); return }
+            if botPromptShown { widget.showBotPrompt(inNotes: notesExpanded); return }
             // Развёрнут блокнот → показываем его (пилюлю прячем); свёрнуто → вертикальная пилюля рекордера.
             if notesExpanded { widget.hide() }
             else { widget.showRecording(startedAt: recordStartedAt ?? Date()) }
@@ -1322,7 +1323,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 if pick != nil {
                     // Бота о продолжении уже спросила карточка выбора — второй вопрос не нужен.
                     botPromptAskedFor = startedAt
-                    showPickCard()
                 } else {
                     RecorderNotices.shared.dismiss(id: Self.pickNoticeId)
                 }
@@ -1349,8 +1349,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     }
                 }
                 // notesExpanded ДО setState(.recording): иначе syncWidget сначала покажет виджет с
-                // его level-таймером, а затем панель заведёт ВТОРОЙ 10-Гц таймер (дефект build 4 →
-                // лишняя нагрузка на планировщик во время записи). Ставим флаг заранее — при наличии
+                // его level-таймером, а затем панель заведёт второй (дефект build 4). При наличии
                 // панели виджет сразу скрыт, работает только один индикатор уровней.
                 self.notesExpanded = (self.config != nil)
                 setState(.recording)
@@ -1358,8 +1357,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 // не вернулся → recWatchTick так и не заармился → ни авто-стопа, ни чекпоинт-
                 // ротаций, ни dbg-лога на всю запись. Сторож не должен зависеть от UI-панели.
                 startCallEndWatch()
-                // Granola-режим: на старте — блокнот (LiveNotesPanel). Клик по марке сворачивает в
-                // вертикальную пилюлю (виджет рекордера), клик по марке пилюли — обратно в блокнот.
+                // Запись: блокнот и свёрнутая пилюля — два состояния одной поверхности.
                 if let cfg = self.config {
                     await LiveNotesPanel.shared.show(
                         config: cfg,
@@ -1368,6 +1366,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         systemLevel: { [weak self] in self?.recorder.currentSystemLevel() ?? 0 },
                         onStop: { [weak self] in self?.stopTapped() },
                         onCollapse: { [weak self] in self?.collapseNotes() })
+                    if pick != nil { showPickCard() }
                     // «Что было в прошлый раз» (issue #226): тезисы последней встречи с этой
                     // стороной и висящие задачи. Запрос ФОНОВЫЙ и необязательный: не ответил —
                     // блока просто нет, запись от этого не страдает и не ждёт сети.
@@ -1565,6 +1564,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if let session = pickSession, case .manual = StartPick.resolution(for: session.answer) { info = nil }
         pickSession = nil
         RecorderNotices.shared.dismiss(id: Self.pickNoticeId)
+        RecorderNotices.shared.dismiss(id: RecorderNotices.botPromptId)
         let started = recordStartedAt ?? Date()
         // Метку конца фиксируем СИНХРОННО, до Task: в сон-кейсе (willSleep→autoStop) Task резюмится
         // на ПРОБУЖДЕНИИ, и Date() внутри него дал бы время wake → endedAt раздулся бы на весь сон
