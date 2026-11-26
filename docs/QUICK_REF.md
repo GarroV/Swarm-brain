@@ -1,5 +1,12 @@
 # Swarm Brain — Quick Reference
 
+**Архив рекордера 42 (26.11.2026):** опубликован штатным CI из интеграционного
+коммита `ddb8210a` (PR #1353). GitHub asset и Storage имеют одинаковый SHA256;
+общий manifest `_shared/recorder-release.ts` подготовлен к переключению обеих
+раздач на 42. До переключения production отдавал 41; ответ production с 42
+проверяется только после раскатки функций. Факты архива и оставшиеся шаги —
+[состояние выпуска](reference/2026-11-26-recorder-night-release.md).
+
 **Рабочий аккаунт Meet (24.11.2026):** `meeting-current` (человек), `calendar/today` и
 `board/today` добавляют `open_url` через Google AccountChooser с `allowed_users.email`.
 Конечный Meet-адрес внутри `continue` закрепляет ту же рабочую почту через `authuser`.
