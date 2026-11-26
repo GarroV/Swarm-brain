@@ -1,6 +1,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { AgentAuthError, resolveActingIdentity } from "../_shared/agent-auth.ts";
 import { grantMeetingFilter } from "../_shared/agent-grant.ts";
+import { meetingStatusResponse } from "../_shared/meeting-status-response.ts";
 
 // meeting-status — лёгкий статус-эндпоинт для рекордера. Рекордер держит локальный бэкап
 // исходного аудио и удаляет его, КОГДА встреча ОПУБЛИКОВАНА в базу (`status='in_base'` → запись
@@ -47,5 +48,5 @@ Deno.serve(async (req: Request) => {
     .eq("claim_owner", identity.telegramId);
 
   if (error) return json({ ok: false, error: error.message }, 500);
-  return json({ ok: true, statuses: data ?? [] });
+  return json(meetingStatusResponse(ids, data ?? []));
 });
