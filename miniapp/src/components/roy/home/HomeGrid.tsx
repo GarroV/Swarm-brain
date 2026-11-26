@@ -16,6 +16,7 @@ import { SampleTag, ViolationsWidget } from "./QualityWidgets";
 import { RatingsWidget } from "./RatingsWidget";
 import { CountriesWidget, PizzeriasWidget } from "./TableWidgets";
 import { useCountrySales } from "./useCountrySales";
+import { PerformanceWidget } from "./PerformanceWidget";
 import { useQuality, type QualityState } from "./useQuality";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { countryOf } from "@/lib/homeQuality";
@@ -46,12 +47,13 @@ const todayLabel = (lang: number): string => DAY_LABEL[lang].format(new Date());
 const META: Record<WidgetId, Meta> = {
   calls: { title: ["Ближайшие встречи", "Upcoming meetings"], hint: ["Встречи дня из календаря: линия «сейчас», «Подключиться» у ближайшей, «Вычитать» у записанной встречи.", "Today's meetings from your calendar: a “now” line, Join on the next one, Review on a recorded meeting."], ownTitle: true },
   top5: { title: ["Ближайшие задачи", "Upcoming tasks"], hint: NEXT_TASK_TEXT.hint, meta: NEXT_TASK_TEXT.meta, link: { text: ["Все задачи →", "All tasks →"], go: "tasks" } },
-  board: { title: ["Доска", "Board"], hint: ["Стикеры-задания (OKR, дайджест, вычитка) и объявления админа.", "Task stickers (OKRs, digest, review) and admin notices."], meta: ["что от тебя ждут", "what's expected of you"] },
+  board: { title: ["Напоминания и объявления", "Reminders and notices"], hint: ["Что требует действия: вычитка, задания и напоминания. Объявления команды — отдельно; выполненное и прочитанное свёрнуто.", "Actions, assignments and reminders. Team notices are separate; completed and acknowledged items are collapsed."], meta: ["действия и сообщения команды", "actions and team updates"] },
   ratings: { title: ["Рейтинги", "Ratings"], hint: ["Вкладки РС, РКО, Карты, Агрегаторы: выбранные страны против среднего по IMF.", "Tabs for Standards, CX, Maps and Delivery apps: your countries against the IMF average."], scoped: true },
   pz: { title: ["Пиццерии", "Pizzerias"], hint: ["Все пиццерии подборки: РС, РКО, худшие сверху.", "Every pizzeria in your selection, worst first."], scoped: true, quality: true, meta: ["худшие сверху", "worst first"] },
   countries: { title: ["Мои страны", "My countries"], hint: ["Страны подборки: РС, РКО, Google и Яндекс со стрелкой изменения, продажи; клик раскрывает пиццерии страны.", "Selected countries: standards, CX, Google and Yandex with change arrows, sales; click to expand pizzerias."], scoped: true, quality: true, dated: true, link: { text: ["Анализ рынка →", "Market analysis →"], go: "market" } },
   viol: { title: ["Топ-5 нарушений", "Top 5 violations"], hint: ["Самые частые нарушения стандартов в волне.", "Most frequent standards violations this wave."], scoped: true, sample: true },
   sales: { title: ["Продажи Dodo", "Dodo sales"], hint: ["Выручка моих стран по месяцам — данные «Анализа рынка».", "Monthly revenue of my countries from Market analysis."], meta: ["публичный API Dodo", "Dodo public API"] },
+  performance: { title: ["Операционные показатели", "Operating performance"], hint: ["Выручка, заказы, доставка, приготовление, стопы и сертификаты моих стран. Сравнение с той же датой прошлого месяца или года; страна раскрывается до пиццерий.", "Revenue, orders, delivery, cooking, stops and vouchers in your countries. Compare the same calendar cutoff last month or year; expand a country for pizzerias."], scoped: true, meta: ["Decimus · сравнимые периоды", "Decimus · comparable periods"] },
   insp: { title: ["Проверки", "Inspections"], hint: ["Последние проверки стандартов по странам подборки: балл, класс, движение к прошлой; клик — зоны и нарушения.", "Latest standards inspections in your countries: score, grade, change vs the previous one; click for zones and violations."], scoped: true, meta: ["Децимус, за 90 дней", "Decimus, 90 days"] },
   myTasks: { title: ["Мои задачи", "My tasks"], hint: ["Полная таблица: просрочено, сегодня, дальше, без срока.", "Full table: overdue, today, later, no date."] },
   teamTasks: { title: ["Задачи команды", "Team tasks"], hint: ["Общие задачи без исполнителя.", "Shared tasks with no owner."] },
@@ -112,6 +114,7 @@ export function HomeGrid({ data, onCreateTask, onCreateTaskFrom, editing, onEdit
       case "countries": return <CountriesWidget scope={mine} sales={sales} narrow={narrow} onNarrow={setNarrow} />;
       case "viol": return <ViolationsWidget scope={scope} />;
       case "sales": return <SalesWidget codes={codes} sales={sales} />;
+      case "performance": return <PerformanceWidget codes={codes} />;
       case "insp": return <InspectionsWidget codes={codes} onCreateTask={onCreateTaskFrom} />;
       case "myTasks": return <HomeTasksWidget data={data} />;
       case "teamTasks": return <TeamTasksWidget data={data} />;
@@ -161,7 +164,7 @@ export function HomeGrid({ data, onCreateTask, onCreateTaskFrom, editing, onEdit
       {narrow && !editing && <NarrowChip cc={narrow} onClear={() => setNarrow(null)} />}
 
       {editing && (
-        <div className="sticky top-0 z-20 mx-6 mt-3 flex flex-col gap-2.5 rounded-[12px] border border-accent-line bg-accent-soft px-4 py-3 shadow-sm" style={{ fontSize: 13 }}>
+        <div id="home-customization" role="region" aria-label={dt("Настройка главной", "Customize home")} className="sticky top-0 z-20 mx-6 mt-3 flex flex-col gap-2.5 rounded-[12px] border border-accent-line bg-accent-soft px-4 py-3 shadow-sm" style={{ fontSize: 13 }}>
           <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="text-ink"><b>{dt("Настройка главной.", "Customizing home.")}</b> {dt("Перетащите виджеты за ⠿, меняйте ширину, скрывайте лишнее. Раскладка — только ваша.", "Drag widgets by ⠿, change width, hide what you don't need. The layout is yours only.")}</div>
           <div className="flex flex-wrap gap-2">
