@@ -1,4 +1,4 @@
-.home{padding:20px 24px 32px;min-width:0}
+.home{padding:16px 20px 24px;min-width:0}
 .home button:focus-visible,.countryChoice:focus-visible{outline:2px solid var(--ring);outline-offset:3px}
 .homeColumns{display:grid;grid-template-columns:minmax(0,1fr) 310px;gap:20px;align-items:start}
 .mainColumn,.performance,.workday{min-width:0}
@@ -31,8 +31,8 @@
 .comparisonButtons button{border-radius:4px;padding:5px 8px;font-size:10px;color:var(--ink-soft);font-weight:600;cursor:pointer}
 .comparisonButtons button:hover{color:var(--primary);background:var(--accent-soft)}
 .comparisonButtons button[aria-pressed=true]{background:var(--primary);color:var(--primary-foreground)}
-.countryGrid{display:grid;gap:7px;margin-bottom:16px}
-.countryCard{display:flex;flex-direction:column;align-items:flex-start;gap:5px;min-width:0;min-height:96px;padding:10px;border:1px solid var(--line);border-radius:9px;background:var(--surface);text-align:left;cursor:pointer}
+.countryGrid{display:grid;gap:7px;margin-bottom:10px}
+.countryCard{display:flex;flex-direction:column;align-items:flex-start;gap:5px;min-width:0;min-height:78px;padding:9px;border:1px solid var(--line);border-radius:9px;background:var(--surface);text-align:left;cursor:pointer}
 .countryCard:hover{border-color:var(--primary)}
 .countryCard[aria-pressed=true]{border-color:var(--primary);background:var(--accent-soft)}
 .countryTitle{display:flex;align-items:center;gap:5px;max-width:100%;font-size:10px}
@@ -49,33 +49,42 @@
 .unavailable{display:block;font-size:9px;line-height:1.45;color:var(--ink-mute);font-weight:400}
 .absoluteDelta{display:block;font-size:10px;color:var(--ink-soft);margin-top:4px;font-weight:400}
 .metricStatus{display:flex;flex-direction:column;gap:3px;font-size:9px;line-height:1.5;color:var(--ink-mute)}
-.hero{background:var(--surface-2);border:1px solid var(--line);border-radius:12px;padding:20px;margin-bottom:12px}
-.heroHeading{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;margin-bottom:18px}
-.heroHeading h2{font-size:24px;font-weight:700;letter-spacing:-.035em;margin-top:5px;line-height:1.2}
+.hero{background:var(--surface-2);border:1px solid var(--line);border-radius:10px;padding:14px 16px;margin-bottom:10px}
+.heroHeading{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;margin-bottom:10px}
+.heroHeading h2{font-size:21px;font-weight:700;letter-spacing:-.035em;margin-top:5px;line-height:1.2}
 .eyebrow{font-size:9px;font-weight:650;color:var(--ink-mute);letter-spacing:.1em;text-transform:uppercase}
 .heroHeading .button{font-size:10px;flex-shrink:0}
-.heroBody{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:18px;min-height:206px;align-items:start}
+.heroBody{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:14px;min-height:160px;align-items:start}
 .heroSummary{min-width:0}
-.heroSummary h3{font-size:12px;font-weight:600;line-height:1.5;min-height:36px}
+.heroSummary h3{font-size:12px;font-weight:600;line-height:1.5;min-height:24px}
 .heroDates{font-size:10px;color:var(--ink-soft);margin:0 0 8px}
-.heroNumber{height:50px;display:flex;align-items:center}
-.heroNumber .value{font-size:34px;letter-spacing:-.04em}
+.heroNumber{height:40px;display:flex;align-items:center}
+.heroNumber .value{font-size:30px;letter-spacing:-.04em}
 .heroNumber .value>small{font-size:12px}
-.heroChange{min-height:48px;padding-top:5px}
+.heroChange{min-height:36px;padding-top:5px}
 .heroChange .delta{font-size:13px}
 .heroChange .unavailable{font-size:10px}
 .source{font-size:9px;color:var(--ink-mute);margin-top:10px;line-height:1.6}
-.periodBars{display:flex;flex-direction:column;gap:13px;padding:5px 0;min-height:206px}
-.graphLabel{font-size:10px;color:var(--ink-soft);font-weight:600;line-height:1.5;min-height:18px}
-.periodBarRow{display:flex;flex-direction:column;gap:8px}
-.barLabel{display:flex;justify-content:space-between;gap:8px;font-size:9px;color:var(--ink-soft)}
-.barLabel>strong{font-size:10px;font-weight:600;color:var(--ink);white-space:nowrap}
-.barTrack{height:20px;border-radius:4px;border:1px solid var(--line-2);background:var(--surface);position:relative}
-.barFill{position:absolute;inset:0 auto 0 0;background:var(--primary);border-radius:3px;min-width:0}
-.previousBar{background:var(--ink-mute);opacity:.4}
-.periodBars>p{font-size:9px;line-height:1.5;color:var(--ink-mute);margin-top:0}
+ .dailyChart{min-width:0;align-self:stretch}
+.graphLabel{display:flex;justify-content:space-between;font-size:9px;color:var(--ink-soft);margin-bottom:4px}
+.chartSvg{display:block;width:100%;height:140px;overflow:visible}
+.chartGrid{stroke:var(--line);stroke-width:1;fill:none}
+.chartCurrent{stroke:var(--primary);stroke-width:2.4;fill:none;stroke-linejoin:round;stroke-linecap:round}
+.chartPrevious{stroke:var(--ink-mute);stroke-width:1.7;stroke-dasharray:5 4;fill:none;opacity:.7}
+.chartPoint{fill:var(--primary)}
+.chartAxis{display:flex;justify-content:space-between;font-size:9px;color:var(--ink-mute);padding:0 2%}
+.chartPartial{font-size:8px;color:var(--pri-med);margin-top:3px}
+.chartLegend{display:flex;flex-wrap:wrap;gap:6px 14px;margin-top:7px;font-size:8px;color:var(--ink-soft)}
+.chartLegend span{display:inline-flex;align-items:center;gap:5px}
+.chartLegend i{display:inline-block;width:14px;height:2px;background:var(--primary)}
+.chartLegend i.previousLegend{background:var(--ink-mute);opacity:.6}
+.chartEmpty{height:140px;display:flex;align-items:center;justify-content:center;border:1px dashed var(--line-2);border-radius:6px;font-size:10px;color:var(--ink-mute)}
+.briefGrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:10px 0}
+.briefCard{min-width:0;display:flex;flex-direction:column;gap:5px;border:1px solid var(--line);border-radius:8px;padding:10px;background:var(--surface);text-decoration:none}
+.briefCard:hover{border-color:var(--primary)}
+.briefPeriod{font-size:8px;color:var(--ink-mute)}
 .metricGrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-bottom:16px}
-.metricButton{display:flex;flex-direction:column;gap:6px;min-width:0;min-height:92px;border:1px solid var(--line-2);background:var(--surface);padding:10px;border-radius:8px;text-align:left;cursor:pointer}
+.metricButton{display:flex;flex-direction:column;gap:6px;min-width:0;min-height:82px;border:1px solid var(--line-2);background:var(--surface);padding:9px;border-radius:8px;text-align:left;cursor:pointer}
 .metricButton:hover{background:var(--surface-2);border-color:var(--primary)}
 .metricButton[aria-pressed=true]{background:var(--accent-soft);border-color:var(--primary);box-shadow:inset 0 0 0 1px var(--primary)}
 .metricLabel{font-size:10px;line-height:1.3;color:var(--ink-soft);min-height:26px;display:block}
@@ -115,8 +124,8 @@
 .reminders :global([data-cockpit-compact]>section>div>button>span:last-child){font-size:9px;gap:5px}
 @media(max-width:1200px){
 .homeColumns{grid-template-columns:minmax(0,1fr) 280px;gap:16px}
-.heroBody{grid-template-columns:minmax(0,1fr)}
-.heroSummary{min-height:195px}
+.heroBody{grid-template-columns:minmax(0,.85fr) minmax(0,1.15fr)}
+.heroSummary{min-height:0}
 .qualityColumns{grid-template-columns:minmax(0,1fr)}
 .metricGrid{grid-template-columns:repeat(2,minmax(0,1fr))}
 .comparisonControls{flex-wrap:wrap}
@@ -137,7 +146,7 @@
 .heroBody{grid-template-columns:minmax(0,1fr)}
 .hero{padding:16px}
 .heroNumber .value{font-size:32px}
-.metricGrid,.unitGrid{grid-template-columns:repeat(2,minmax(0,1fr))}
+.metricGrid,.unitGrid,.briefGrid{grid-template-columns:repeat(2,minmax(0,1fr))}
 .workday{grid-template-columns:minmax(0,1fr)}
 .comparisonControls{align-items:flex-start;gap:9px}
 .comparisonButtons button{font-size:9px}
