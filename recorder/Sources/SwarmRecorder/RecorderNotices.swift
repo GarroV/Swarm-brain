@@ -4,8 +4,8 @@ import RecorderKit
 // Собственные уведомления рекордера (решение владельца 09.11.2026,
 // docs/decisions/2026-11-09-reminder-instead-of-autostart.md): вместо системных баннеров macOS
 // (UNUserNotificationCenter) и модальных окон (NSAlert) — карточки в стиле капсулы: тёплый
-// графит, янтарная полоска и обводка, тёмная тема всегда. Стопка карточек висит под капсулой
-// (а без капсулы — на её дефолтном месте), модель стопки — RecorderKit/NoticeStack.
+// графит, янтарная полоска и обводка, тёмная тема всегда. Во время записи сообщения живут
+// внутри блокнота; вне записи — на месте капсулы. Модель стопки — RecorderKit/NoticeStack.
 // Системного разрешения не нужно: это наше окно, его нельзя отключить в настройках macOS.
 // Кнопка действия выполняет свой обработчик и закрывает карточку; ✕ просто закрывает.
 final class RecorderNotices {
@@ -18,7 +18,6 @@ final class RecorderNotices {
     }
 
     private static let cardWidth: CGFloat = 300
-    private static let textWidth: CGFloat = 232
     private static let gap: CGFloat = 8
     private static let tick: TimeInterval = 1
 
@@ -30,6 +29,31 @@ final class RecorderNotices {
     private var panel: NSPanel?
     private let column = NSStackView()
     private var timer: Timer?
+    private weak var inlineHost: NSStackView?
+    private var inlineWidth = RecorderNotices.cardWidth
+
+    static let botPromptId = "recording-bot"
+
+    func postBotPrompt(keep: @escaping () -> Void, stop: @escaping () -> Void) {
+        guard !stack.visible.contains(where: { $0.id == Self.botPromptId }) else { return }
+        post(id: Self.botPromptId, title: BotPrompt.title, body: BotPrompt.question, lifetime: nil,
+             actions: [.init(title: BotPrompt.keep, isPrimary: true, run: keep),
+                       .init(title: BotPrompt.stop, run: stop)], isVertical: true)
+    }
+
+    var hasStandaloneWindowForTests: Bool { panel?.isVisible == true }
+    var isEmbeddedForTests: Bool { inlineHost != nil }
+
+    /// Keep notices in the recording surface, including while that surface is collapsed.
+    func embed(in host: NSStackView?, width: CGFloat = 282) {
+        if inlineHost !== host {
+            inlineHost?.setViews([], in: .top)
+            inlineHost?.isHidden = true
+        }
+        inlineHost = host
+        inlineWidth = width
+        refresh()
+    }
 
     /// Показать карточку. Тот же `id` заменяет прежнюю (повтор не плодит копий).
     /// `lifetime` nil — висит, пока не закроют: так у карточек, на которые надо отреагировать.
@@ -66,12 +90,21 @@ final class RecorderNotices {
             timer?.invalidate()
             timer = nil
             panel?.orderOut(nil)
+            inlineHost?.setViews([], in: .top)
+            inlineHost?.isHidden = true
             return
         }
-        let p = ensurePanel()
-        column.setViews(notices.map(card), in: .top)
-        reposition(p)
-        p.orderFrontRegardless()
+        if let host = inlineHost {
+            panel?.orderOut(nil)
+            column.setViews([], in: .top)
+            host.setViews(notices.map { card($0, width: inlineWidth, embedded: true) }, in: .top)
+            host.isHidden = false
+        } else {
+            let p = ensurePanel()
+            column.setViews(notices.map { card($0) }, in: .top)
+            reposition(p)
+            p.orderFrontRegardless()
+        }
         guard timer == nil else { return }
         let t = Timer.scheduledTimer(withTimeInterval: Self.tick, repeats: true) { [weak self] _ in self?.onTick() }
         RunLoop.main.add(t, forMode: .common)
@@ -125,14 +158,16 @@ final class RecorderNotices {
     }
 
     // ── Карточка ─────────────────────────────────────────────────────────────────
-    private func card(_ n: RecorderNotice) -> NSView {
+    private func card(_ n: RecorderNotice, width: CGFloat = cardWidth, embedded: Bool = false) -> NSView {
+        let textWidth = width - (embedded ? 34 : 68)
         let card = NSView()
         card.wantsLayer = true
-        card.layer?.backgroundColor = NSColor(srgbRed: 0.09, green: 0.075, blue: 0.05, alpha: 0.97).cgColor   // как у капсулы
+        card.layer?.backgroundColor = embedded ? NSColor.clear.cgColor
+            : NSColor(srgbRed: 0.09, green: 0.075, blue: 0.05, alpha: 0.97).cgColor
         card.layer?.cornerRadius = 18
-        card.layer?.borderWidth = 1
+        card.layer?.borderWidth = embedded ? 0 : 1
         card.layer?.borderColor = RoyArt.amber.withAlphaComponent(0.30).cgColor
-        card.layer?.shadowOpacity = 0.35
+        card.layer?.shadowOpacity = embedded ? 0 : 0.35
         card.layer?.shadowRadius = 8
         card.layer?.shadowOffset = CGSize(width: 0, height: -2)
 
@@ -143,12 +178,14 @@ final class RecorderNotices {
         accent.translatesAutoresizingMaskIntoConstraints = false
         accent.widthAnchor.constraint(equalToConstant: 4).isActive = true
 
-        let title = label(n.title, size: 13, weight: .semibold, alpha: 0.95, wrapping: true)
+        let title = label(n.title, size: 13, weight: .semibold, alpha: 0.95, width: textWidth)
         var rows: [NSView] = [title]
-        if !n.body.isEmpty { rows.append(label(n.body, size: 11, weight: .regular, alpha: 0.7, wrapping: true)) }
+        if !n.body.isEmpty { rows.append(label(n.body, size: 11, weight: .regular, alpha: 0.7, width: textWidth)) }
         if !n.actions.isEmpty {
-            let buttons = NSStackView(views: n.actions.map { button(for: n, $0) })
-            buttons.orientation = n.isVertical ? .vertical : .horizontal
+            let controls = n.actions.map { button(for: n, $0, textWidth: textWidth) }
+            let buttons = NSStackView(views: controls)
+            let totalWidth = controls.reduce(CGFloat(0)) { $0 + $1.fittingSize.width } + CGFloat(controls.count - 1) * 6
+            buttons.orientation = n.isVertical || totalWidth > textWidth ? .vertical : .horizontal
             buttons.alignment = .leading
             buttons.spacing = 6
             rows.append(buttons)
@@ -162,7 +199,7 @@ final class RecorderNotices {
         row.orientation = .horizontal
         row.alignment = .top
         row.spacing = 10
-        row.edgeInsets = NSEdgeInsets(top: 12, left: 14, bottom: 12, right: 34)
+        row.edgeInsets = NSEdgeInsets(top: 12, left: embedded ? 0 : 14, bottom: 12, right: embedded ? 20 : 34)
         row.translatesAutoresizingMaskIntoConstraints = false
         card.addSubview(row)
 
@@ -179,19 +216,19 @@ final class RecorderNotices {
         card.addSubview(close)
 
         NSLayoutConstraint.activate([
-            card.widthAnchor.constraint(equalToConstant: Self.cardWidth),
+            card.widthAnchor.constraint(equalToConstant: width),
             row.leadingAnchor.constraint(equalTo: card.leadingAnchor),
             row.trailingAnchor.constraint(equalTo: card.trailingAnchor),
             row.topAnchor.constraint(equalTo: card.topAnchor),
             row.bottomAnchor.constraint(equalTo: card.bottomAnchor),
             accent.heightAnchor.constraint(equalTo: text.heightAnchor),
-            close.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -12),
+            close.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: embedded ? 0 : -12),
             close.topAnchor.constraint(equalTo: card.topAnchor, constant: 12)
         ])
         return card
     }
 
-    private func label(_ text: String, size: CGFloat, weight: NSFont.Weight, alpha: CGFloat, wrapping: Bool) -> NSTextField {
+    private func label(_ text: String, size: CGFloat, weight: NSFont.Weight, alpha: CGFloat, width: CGFloat) -> NSTextField {
         let l = NSTextField(wrappingLabelWithString: text)
         l.font = .systemFont(ofSize: size, weight: weight)
         l.textColor = NSColor(white: 1, alpha: alpha)
@@ -199,14 +236,14 @@ final class RecorderNotices {
         l.cell?.truncatesLastVisibleLine = true
         l.isSelectable = false
         l.toolTip = text
-        l.preferredMaxLayoutWidth = Self.textWidth
+        l.preferredMaxLayoutWidth = width
         l.translatesAutoresizingMaskIntoConstraints = false
-        l.widthAnchor.constraint(equalToConstant: Self.textWidth).isActive = true
+        l.widthAnchor.constraint(equalToConstant: width).isActive = true
         return l
     }
 
     // Кнопки — тот же вид, что в баннере капсулы: главная залита янтарём, остальные — подложка.
-    private func button(for n: RecorderNotice, _ a: RecorderNotice.Action) -> NSButton {
+    private func button(for n: RecorderNotice, _ a: RecorderNotice.Action, textWidth: CGFloat) -> NSButton {
         let b = NSButton()
         b.title = a.title
         b.font = .systemFont(ofSize: 11, weight: .medium)
@@ -223,7 +260,7 @@ final class RecorderNotices {
         b.translatesAutoresizingMaskIntoConstraints = false
         b.heightAnchor.constraint(equalToConstant: 24).isActive = true
         let w = (a.title as NSString).size(withAttributes: [.font: b.font ?? .systemFont(ofSize: 11)]).width
-        b.widthAnchor.constraint(equalToConstant: min(ceil(w) + 22, Self.textWidth)).isActive = true
+        b.widthAnchor.constraint(equalToConstant: min(ceil(w) + 22, textWidth)).isActive = true
         b.lineBreakMode = .byTruncatingTail
         b.toolTip = a.title
         return b

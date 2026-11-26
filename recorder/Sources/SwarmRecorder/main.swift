@@ -375,6 +375,13 @@ if CommandLine.arguments.contains("--selftest-meet-link") {
     runBackupOfferSelfTest()
 } else if CommandLine.arguments.contains("--selftest-call-prompt") {
     runRecordingPromptSelfTest()
+} else if CommandLine.arguments.contains("--selftest-inline-notices-check") {
+    runInlineNoticesChecks()
+} else if CommandLine.arguments.contains("--selftest-inline-notices") {
+    let keep = CommandLine.arguments.firstIndex(of: "--keep").flatMap { i -> Double? in
+        i + 1 < CommandLine.arguments.count ? Double(CommandLine.arguments[i + 1]) : nil
+    }
+    runInlineNoticesSelfTest(seconds: keep ?? 120)
 } else if CommandLine.arguments.contains("--selftest-notes") {
     let keep = CommandLine.arguments.firstIndex(of: "--keep").flatMap { i -> Double? in
         i + 1 < CommandLine.arguments.count ? Double(CommandLine.arguments[i + 1]) : nil
