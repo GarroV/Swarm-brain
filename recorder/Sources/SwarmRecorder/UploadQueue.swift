@@ -48,6 +48,7 @@ struct PendingUpload: Codable {
     let endISO: String
     var attempts: Int
     var uploaded: Bool?             // true после успешного 202; бэкап ждёт публикации в базу (in_base) или 3 суток
+    var statusPollingStopped: Bool? // недоступная встреча: аудио сохраняется до TTL, опрос прекращается
     // true — сервер отдал транскрибацию другому участнику (decision=defer). Такая запись лежит
     // в failed/ как бэкап (те же 3 суток) и НЕ грузится сама: аудио сохраняем, но не навязываем.
     // Пользователь может дослать её вручную — тогда флаг снимается и папка едет обратно в pending/.
@@ -87,6 +88,13 @@ struct PendingUpload: Codable {
 // Атомарная запись meta.json (во временный файл → replaceItem), чтобы не оставить полусайдкар.
 actor UploadQueue {
     static let shared = UploadQueue()
+    private let storageRoot: URL?
+    private let statusSession: URLSession?
+
+    init(storageRoot: URL? = nil, statusSession: URLSession? = nil) {
+        self.storageRoot = storageRoot
+        self.statusSession = statusSession
+    }
 
     // Сколько раз пытаемся залить, прежде чем отправить в dead-letter (папку failed/).
     private static let maxAttempts = 12
@@ -100,13 +108,13 @@ actor UploadQueue {
     private var doneNotified = Set<String>()
 
     private var rootDir: URL {
-        let base = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("SwarmRecorder", isDirectory: true)
+        let base = storageRoot ?? (fm.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("SwarmRecorder", isDirectory: true))
         return base.appendingPathComponent("pending", isDirectory: true)
     }
     private var deadLetterDir: URL {
-        let base = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("SwarmRecorder", isDirectory: true)
+        let base = storageRoot ?? (fm.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("SwarmRecorder", isDirectory: true))
         return base.appendingPathComponent("failed", isDirectory: true)
     }
     private func meetingDir(_ meetingId: String) -> URL {
@@ -331,7 +339,7 @@ actor UploadQueue {
         var uploadedIds: [String] = []
         for var pending in loadAll() {
             if pending.uploaded ?? false {
-                uploadedIds.append(pending.meetingId)
+                if pending.statusPollingStopped != true { uploadedIds.append(pending.meetingId) }
                 continue
             }
             // attempts уже исчерпаны → dead-letter (на случай, если запись осталась с прошлого раза).
@@ -371,8 +379,18 @@ actor UploadQueue {
         //   • published (status='in_base') → опубликовано в базу: аудио не нужно → удаляем бэкап.
         // Сетевой/4xx сбой опроса — НЕ удаляем (бэкап доживёт до следующего дрейна или до 3-суточного потолка).
         guard !uploadedIds.isEmpty else { return }
-        if let statuses = try? await SwarmClient(config: config).fetchMeetingStatuses(uploadedIds) {
+        if let statuses = try? await SwarmClient(config: config).fetchMeetingStatuses(uploadedIds, session: statusSession) {
             for (id, st) in statuses {
+                if st.unavailable, var pending = loadAll().first(where: { $0.meetingId == id }) {
+                    pending.statusPollingStopped = true
+                    do {
+                        try writeMeta(pending)
+                        NSLog("SwarmRecorder: встреча \(id) недоступна → опрос прекращён, аудио сохранено до TTL")
+                    } catch {
+                        NSLog("SwarmRecorder: не удалось сохранить остановку опроса \(id): \(error)")
+                    }
+                    continue
+                }
                 if st.summary == "done", doneNotified.insert(id).inserted {
                     NotificationCenter.default.post(name: .swarmMeetingDone, object: nil, userInfo: ["id": id])
                 }

@@ -48,6 +48,7 @@ private func parseRetryAfter(_ resp: URLResponse?) -> TimeInterval? {
 struct MeetingStatus {
     let summary: String   // "" | "processing" | "done" | "failed"
     let published: Bool   // meetings.status == "in_base"
+    var unavailable: Bool = false
 }
 
 // Клиент к Swarm Brain: claim (до загрузки) + upload аудио.
@@ -266,23 +267,29 @@ struct SwarmClient {
         return try JSONDecoder().decode(MeetingContext.self, from: data)
     }
 
-    func fetchMeetingStatuses(_ ids: [String]) async throws -> [String: MeetingStatus] {
+    func fetchMeetingStatuses(_ ids: [String], session: URLSession? = nil) async throws -> [String: MeetingStatus] {
         guard !ids.isEmpty else { return [:] }
         var comps = URLComponents(url: url("/meeting-status"), resolvingAgainstBaseURL: false)!
         comps.queryItems = [URLQueryItem(name: "ids", value: ids.joined(separator: ","))]
         var req = URLRequest(url: comps.url!)
         authed(&req)
-        let (data, resp) = try await Self.session.data(for: req)
+        let (data, resp) = try await (session ?? Self.session).data(for: req)
         let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
         guard (200...299).contains(code) else {
             throw SwarmError.http(code, String(data: data, encoding: .utf8) ?? "", retryAfter: parseRetryAfter(resp))
         }
         struct Item: Decodable { let id: String; let summaryStatus: String?; let status: String? }
-        struct Resp: Decodable { let statuses: [Item] }
+        struct Resp: Decodable { let statuses: [Item]; let unavailableIds: [String]? }
         let decoded = try decoder.decode(Resp.self, from: data)
         var out: [String: MeetingStatus] = [:]
         for it in decoded.statuses {
             out[it.id] = MeetingStatus(summary: it.summaryStatus ?? "", published: it.status == "in_base")
+        }
+        // Only an explicit successful server response ends polling. Old servers and transport
+        // failures retain the backup and continue polling; inaccessible IDs reveal no owner.
+        let requested = Set(ids)
+        for id in decoded.unavailableIds ?? [] where requested.contains(id) && out[id] == nil {
+            out[id] = MeetingStatus(summary: "", published: false, unavailable: true)
         }
         return out
     }
