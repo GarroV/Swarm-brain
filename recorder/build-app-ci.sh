@@ -23,12 +23,9 @@ echo "[ci] swift build arm64 + x86_64 (macosx${TARGET_MIN}), build ${BUILD}…"
 swift build -c release --arch arm64  -Xswiftc -target -Xswiftc "arm64-apple-macosx$TARGET_MIN"
 swift build -c release --arch x86_64 -Xswiftc -target -Xswiftc "x86_64-apple-macosx$TARGET_MIN"
 
-# ⚠️ ПЕРЕХОДНОЕ имя бандла ВНУТРИ архива. Приложение называется bumblebee, но апдейтер на
-# машинах людей (build ≤ 23) ищет в архиве буквально SwarmRecorder.app и при другом имени молча
-# остаётся на старой версии («no SwarmRecorder.app inside archive; keep current»). Поэтому едем
-# под старым именем, а переименовывает себя уже приложение на машине (AppDelegate.migrateBundleName).
-# Убрать это имя можно, когда у всех рекордер будет build ≥ 24 (allowed_users.recorder_last_version).
-APP="SwarmRecorder.app"
+# All token-bearing installations were checked on 26.11.2026: builds 32–41.
+# Their updater accepts the canonical bundle name; no legacy archive root is needed.
+APP="bumblebee.app"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 lipo -create \

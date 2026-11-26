@@ -1,6 +1,6 @@
 name: recorder-release
 
-# Собирает ПРЕДсобранный SwarmRecorder.app в CI (macOS-раннер, контролируемый SDK) и публикует
+# Собирает ПРЕДсобранный bumblebee.app в CI (macOS-раннер, контролируемый SDK) и публикует
 # его как asset релиза recorder-build-<VERSION>. Установщик и апдейтер качают этот .app —
 # сборки из исходников на машинах пользователей больше нет (issue #19).
 #
@@ -44,7 +44,7 @@ jobs:
           tag_name: recorder-build-${{ steps.v.outputs.build }}
           name: SwarmRecorder build ${{ steps.v.outputs.build }} (prebuilt)
           body: >-
-            Предсобранный SwarmRecorder.app (universal arm64+x86_64, minos 13.0) для установки
+            Предсобранный bumblebee.app (universal arm64+x86_64, minos 13.0) для установки
             без Xcode/Command Line Tools. Установщик скачивает этот .app и локально переподписывает
             per-machine сертификатом (issue #19).
           files: recorder/SwarmRecorder-${{ steps.v.outputs.build }}.zip

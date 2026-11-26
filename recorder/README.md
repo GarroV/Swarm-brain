@@ -235,8 +235,9 @@
   Правило — `RecorderKit/NoteSweep.swift` (тесты `NoteSweepTests`). Прежний `notepad.rtf` при первом
   запуске переносится в блоки (строки с «☐ »/«☑ » — пункты, остальные — тезисы) и остаётся на месте.
   Нечитаемый файл откладывается как `notepad-unreadable-<метка>.json`.
-- **Язык** — из `Locale.preferredLanguages`: `ru*` → русский, иначе английский. Тексты — словари
-  `BoardL10n.dictionaries` (`RecorderKit/BoardL10n.swift`); третий язык = ещё один словарь.
+- **Язык** — из `Locale.preferredLanguages`: `ru*` → русский, иначе английский. Доска, меню,
+  статусы и подсказки разрешений используют `BoardL10n.dictionaries`; строки меню вынесены
+  в `RecorderKit/RecorderMenuStrings.swift`. Третий язык добавляется словарём.
 - **Вызовы** (все с web-JWT из `POST {IngestBase}/meeting-webtoken`, кэш 11 ч, один перевыпуск на 401, `swarm-api/…`):
   `GET board/today?date&tz_offset`, `POST tasks/voice` (multipart, `Content-Length` обязателен),
   `PATCH tasks/:id` (`{"status":"done"|"open"}`), `DELETE tasks/:id`, `POST tasks`, `GET me`, `GET config`.
@@ -507,21 +508,19 @@ Edge-функция: `supabase/functions/swarm-recorder-setup` (публичны
 ⚠️ Флаг работает только на сборке ≥ 26. Более старый бинарь неизвестный аргумент **игнорирует** и
 запускается вторым экземпляром меню-бара — выглядит как «команда зависла» (проверено на себе).
 
-### Переходное имя бандла внутри архива (снять, когда у всех build ≥ 24)
+### Имя бандла внутри архива
 
-Приложение называется `bumblebee.app`, но **внутри раздаваемого zip бандл пока лежит как
-`SwarmRecorder.app`**: апдейтер сборок ≤ 23 ищет в архиве буквально это имя и при другом молча
-остаётся на старой версии (`no SwarmRecorder.app inside archive; keep current`). Переименовывает
-себя само приложение — `Updater.runBundleRename()` при первом запуске переносит
-`/Applications/SwarmRecorder.app` → `/Applications/bumblebee.app` (вне записи, с возвратом на место
-при любой осечке). Проверить, что переход закончен:
+Новые сборки содержат `bumblebee.app` внутри zip. На 26.11.2026 у всех девяти установок
+с действующим токеном зарегистрированы сборки 32–41; ограничение старых апдейтеров
+до сборки 24 снято. Проверка версий:
 
 ```sql
 select recorder_last_version, count(*) from allowed_users where recorder_token_hash is not null group by 1;
 ```
 
-Все ≥ 24 → в `build-app-ci.sh` можно поставить `APP="bumblebee.app"`, а ветку со старым именем
-убрать из `Updater.swift` и из установщика.
+Загрузчик и установщик продолжают принимать оба имени: опубликованный архив сборки 41
+ещё содержит `SwarmRecorder.app`. Он не перезаписывается этим изменением; новая сборка
+публикуется по отдельному runbook после согласования выпуска.
 
 ### Иконка
 

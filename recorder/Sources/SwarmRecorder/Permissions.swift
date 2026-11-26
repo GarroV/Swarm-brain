@@ -23,7 +23,7 @@ enum Permissions {
     // Точный путь в System Settings, который надо продиктовать пользователю (RU-локаль macOS
     // показывает английские названия секций приватности как есть).
     static var captureSettingsPath: String {
-        "System Settings → Privacy & Security → \(captureSettingName) → включить SwarmRecorder"
+        recorderText("recorder.permission.capture", captureSettingName)
     }
 
     // Запись экрана/системного звука. CGRequestScreenCaptureAccess покажет системный запрос
