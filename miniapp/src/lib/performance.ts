@@ -12,9 +12,11 @@ export type MetricValue = {
 export type PerformanceValues = Record<PerformanceMetric, { unit: string; current: MetricValue; mom: MetricValue; yoy: MetricValue }>;
 export type PerformanceUnit = { dodo_id: string; name: string; metrics: PerformanceValues; lfl: unknown[] };
 export type PerformancePeriod = { from: string; to: string };
+export type PerformanceDay = { date: string; metrics: Partial<Record<PerformanceMetric, MetricValue>> };
 export type PerformanceCountry = {
   cc: string; name: string; as_of: string; timezone: string; timezone_fallback: boolean;
   periods: Record<"current" | "mom" | "yoy", PerformancePeriod>;
+  daily?: Partial<Record<"current" | "mom" | "yoy", PerformanceDay[]>>;
   metrics: PerformanceValues; units: PerformanceUnit[]; lfl: unknown[];
 };
 export type PerformanceData = { as_of: string | null; countries: PerformanceCountry[] };
