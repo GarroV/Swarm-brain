@@ -14,6 +14,9 @@ export function meetingOpenUrl(raw: string | null, workEmail: string | null | un
   // Account indices from invitations must not override the employee's known account.
   destination.searchParams.delete("authuser");
   destination.searchParams.delete("login_hint");
+  // Meet must retain the same account after AccountChooser redirects back to
+  // the room, even when this browser's default Google account is personal.
+  destination.searchParams.set("authuser", email);
   const chooser = new URL("https://accounts.google.com/AccountChooser");
   chooser.searchParams.set("Email", email);
   chooser.searchParams.set("continue", destination.toString());

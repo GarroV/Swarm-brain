@@ -189,7 +189,7 @@ function FlatMeetingRow({ m, dt, locale, joined, onJoined, now, primary, draft, 
   const people = m.attendees > 0 ? (m.attendees === 1 ? "1:1" : `${m.attendees} ${dt("участников", "attendees")}`) : null;
   const canJoin = Boolean(meetingOpenLink(m)) && (!m.is_past || onAir);
   return (
-    <div className={`-mx-2 grid items-center gap-x-3 border-b border-line px-2 py-2.5 last:border-b-0 ${live ? "rounded-[8px] bg-accent-soft" : ""}`}
+    <div data-home-meeting-row className={`-mx-2 grid items-center gap-x-3 border-b border-line px-2 py-2.5 last:border-b-0 ${live ? "rounded-[8px] bg-accent-soft" : ""}`}
       style={{ gridTemplateColumns: "auto auto minmax(0,1fr) auto", opacity: dim ? 0.6 : 1 }}>
       <span className="font-mono font-medium text-ink-soft" style={{ fontSize: 12.5 }}>{time}</span>
       <span aria-hidden="true" className="inline-block rounded-full" style={{ width: 7, height: 7, background: DOT(m, live) }} />

@@ -35,7 +35,10 @@ Deno.test("web and recorder board attach only the authenticated employee's work 
     assertEquals(calls, [["telegram_id", 17]]);
     if (!result.ok) throw new Error("expected a calendar result");
     assertEquals(result.meetings[0].join_url, "https://meet.google.com/abc-defg-hij");
-    if (email) assertEquals(new URL(result.meetings[0].open_url!).searchParams.get("Email"), email);
-    else assertEquals(result.meetings[0].open_url, null);
+    if (email) {
+      const chooser = new URL(result.meetings[0].open_url!);
+      assertEquals(chooser.searchParams.get("Email"), email);
+      assertEquals(new URL(chooser.searchParams.get("continue")!).searchParams.get("authuser"), email);
+    } else assertEquals(result.meetings[0].open_url, null);
   }
 });

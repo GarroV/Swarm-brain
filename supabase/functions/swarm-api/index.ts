@@ -149,8 +149,7 @@ import { handleSpaceJournalRoutes } from "./space-journal.ts";
 import { handleTaskArchiveRoutes } from "./task-archive.ts";
 import { handleBoardRoutes } from "./board.ts";
 import { handleMarketRoutes } from "./market.ts";
-import { handleQualityRoutes } from "./quality.ts";
-import { handleInspectionRoutes } from "./inspections.ts";
+import { handleAnalyticsRoutes } from "./analytics.ts";
 import { handleTelegramLinkRoutes } from "./telegram-link.ts";
 import { handleModelUsageRoutes } from "./model-usage.ts";
 import { openAIKeyHandle, usageOf } from "../_shared/workspace-keys.ts";
@@ -1047,12 +1046,9 @@ async function routeRequest(req: Request): Promise<Response> {
   const marketResp = await handleMarketRoutes(req, routePath, telegram_id, groupId, isAdmin, isDemo, origin);
   if (marketResp) return marketResp;
 
-  // Баллы РС и РКО по пиццериям (/quality?kind=) — весь воркспейс, страны по allowed_markets.
-  const qualityResp = await handleQualityRoutes(req, routePath, isDemo, origin);
-  if (qualityResp) return qualityResp;
-  // Проверки Децимуса (/inspections, /inspections/:id) — тот же прокси, страны по allowed_markets.
-  const inspectionsResp = await handleInspectionRoutes(req, routePath, isDemo, origin);
-  if (inspectionsResp) return inspectionsResp;
+  // Рейтинги, проверки и операционные показатели — read-only API Decimus.
+  const analyticsResp = await handleAnalyticsRoutes(req, routePath, isDemo, origin);
+  if (analyticsResp) return analyticsResp;
 
   // GET /tasks or POST /tasks
   if (routePath === "/tasks") {

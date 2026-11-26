@@ -3,7 +3,7 @@ import XCTest
 
 final class BrowserMeetingLinkTests: XCTestCase {
     private let room = "https://meet.google.com/abc-defg-hij"
-    private let target = "https://accounts.google.com/AccountChooser?Email=work%40example.com&continue=https%3A%2F%2Fmeet.google.com%2Fabc-defg-hij"
+    private let target = "https://accounts.google.com/AccountChooser?Email=work%40example.com&continue=https%3A%2F%2Fmeet.google.com%2Fabc-defg-hij%3Fauthuser%3Dwork%2540example.com"
 
     func testBothApiDecodersUseWorkAccountEntry() throws {
         for convert in [false, true] {
