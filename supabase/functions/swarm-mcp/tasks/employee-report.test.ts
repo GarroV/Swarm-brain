@@ -1,10 +1,19 @@
 import { assert, assertEquals, assertRejects, assertStringIncludes } from "jsr:@std/assert@1";
 
-Deno.env.set("SUPABASE_URL", "https://report-fixture.invalid");
-Deno.env.set("SUPABASE_SERVICE_ROLE_KEY", "fixture-not-a-secret");
-const { toolGetEmployeeReport } = await import("./employee-report.ts");
-const { reportCaller, REPORT_ACCESS_DENIED } = await import("./report-access.ts");
-const { toolGetTaskStats } = await import("./analytics.ts");
+const previousUrl = Deno.env.get("SUPABASE_URL"), previousKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+const fixtureUrl = previousUrl ?? "https://report-fixture.invalid";
+Deno.env.set("SUPABASE_URL", fixtureUrl);
+Deno.env.set("SUPABASE_SERVICE_ROLE_KEY", previousKey ?? "fixture-not-a-secret");
+const [{ toolGetEmployeeReport }, { reportCaller, REPORT_ACCESS_DENIED }, { toolGetTaskStats }] = await Promise.all([
+  import("./employee-report.ts"),
+  import("./report-access.ts"),
+  import("./analytics.ts"),
+]).finally(() => {
+  if (previousUrl === undefined) Deno.env.delete("SUPABASE_URL");
+  else Deno.env.set("SUPABASE_URL", previousUrl);
+  if (previousKey === undefined) Deno.env.delete("SUPABASE_SERVICE_ROLE_KEY");
+  else Deno.env.set("SUPABASE_SERVICE_ROLE_KEY", previousKey);
+});
 
 interface FixtureOptions {
   admin?: boolean;
@@ -20,7 +29,7 @@ async function withDatabase(options: FixtureOptions, run: (requests: URL[]) => P
   globalThis.fetch = (input, init) => {
     assertEquals(init?.method ?? (input instanceof Request ? input.method : "GET"), "GET");
     const url = new URL(input instanceof Request ? input.url : String(input));
-    assertEquals(url.host, "report-fixture.invalid");
+    assertEquals(url.host, new URL(fixtureUrl).host);
     requests.push(url);
     const table = url.pathname.split("/").at(-1);
     if (options.failTable === table) {
@@ -82,6 +91,8 @@ async function withDatabase(options: FixtureOptions, run: (requests: URL[]) => P
     await run(requests);
   } finally {
     globalThis.fetch = originalFetch;
+    assertEquals(Deno.env.get("SUPABASE_URL"), previousUrl);
+    assertEquals(Deno.env.get("SUPABASE_SERVICE_ROLE_KEY"), previousKey);
   }
 }
 

@@ -1,8 +1,10 @@
 import { assert, assertEquals, assertStringIncludes } from "jsr:@std/assert@1";
 import { sha256 } from "../_shared/mcp-oauth/rules.ts";
 
-Deno.env.set("SUPABASE_URL", "https://report-flow.invalid");
-Deno.env.set("SUPABASE_SERVICE_ROLE_KEY", "fixture-not-a-secret");
+const previousUrl = Deno.env.get("SUPABASE_URL"), previousKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+const fixtureUrl = previousUrl ?? "https://report-flow.invalid";
+Deno.env.set("SUPABASE_URL", fixtureUrl);
+Deno.env.set("SUPABASE_SERVICE_ROLE_KEY", previousKey ?? "fixture-not-a-secret");
 
 // Capture the production Request handler without opening a local server or port.
 let handler: (request: Request) => Promise<Response>;
@@ -11,7 +13,7 @@ const importFetch = globalThis.fetch;
 // Usage telemetry captures fetch on import; keep it inside the same synthetic fixture.
 globalThis.fetch = (input) => {
   const url = new URL(input instanceof Request ? input.url : String(input));
-  assertEquals(url.host, "report-flow.invalid");
+  assertEquals(url.host, new URL(fixtureUrl).host);
   assert(url.pathname.endsWith("/model_usage"));
   return Promise.resolve(new Response(null, { status: 201 }));
 };
@@ -24,6 +26,10 @@ try {
 } finally {
   Deno.serve = originalServe;
   globalThis.fetch = importFetch;
+  if (previousUrl === undefined) Deno.env.delete("SUPABASE_URL");
+  else Deno.env.set("SUPABASE_URL", previousUrl);
+  if (previousKey === undefined) Deno.env.delete("SUPABASE_SERVICE_ROLE_KEY");
+  else Deno.env.set("SUPABASE_SERVICE_ROLE_KEY", previousKey);
 }
 
 Deno.test("MCP report flow: token roles, discovery, direct calls, spoof rejection, private save", async () => {
@@ -45,8 +51,8 @@ Deno.test("MCP report flow: token roles, discovery, direct calls, spoof rejectio
           choices: [{ message: { content: '{"countries":[],"entry_type":"note","entry_date":null}' } }],
         });
     }
-    if (url.host !== "report-flow.invalid") unexpected.push(url.host);
-    assertEquals(url.host, "report-flow.invalid");
+    if (url.host !== new URL(fixtureUrl).host) unexpected.push(url.host);
+    assertEquals(url.host, new URL(fixtureUrl).host);
     const table = url.pathname.split("/").at(-1);
     if (table === "mcp_oauth_take_rate") return Response.json(true);
     if (table === "allowed_users" && method === "PATCH") return new Response(null, { status: 204 });
@@ -140,5 +146,7 @@ Deno.test("MCP report flow: token roles, discovery, direct calls, spoof rejectio
     assertEquals(unexpected, []);
   } finally {
     globalThis.fetch = originalFetch;
+    assertEquals(Deno.env.get("SUPABASE_URL"), previousUrl);
+    assertEquals(Deno.env.get("SUPABASE_SERVICE_ROLE_KEY"), previousKey);
   }
 });
