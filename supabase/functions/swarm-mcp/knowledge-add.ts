@@ -1,4 +1,5 @@
 import type { EntryMeta } from "../_shared/meta-extract.ts";
+import { reportPrivacyFields } from "../_shared/entries/report-privacy.ts";
 
 export interface AddKnowledgeArgs {
   content?: string;
@@ -60,7 +61,7 @@ export async function addKnowledge(args: AddKnowledgeArgs, deps: KnowledgeDeps):
   // запись помечена автором; added_by — канал, не человек). Воркспейс = воркспейс вызывающего.
   const scope = await deps.callerScope(args.requesting_user_id);
   if (!scope) return deps.noWorkspaceMessage;
-  const isPrivate = args.is_private === true;
+  const isPrivate = reportPrivacyFields(args, scope.userId).is_private;
   const ownerId = scope.userId;
   const workspaceGroupId = scope.groupId;
   const [summaryEmbedding, entryMeta] = await Promise.all([

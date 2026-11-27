@@ -9,6 +9,7 @@
 // проверке здесь сразу означает утечку задач чужого воркспейса.
 
 import { loadProjectVisibility } from "../../_shared/tasks/project-visibility.ts";
+import { REPORT_ACCESS_DENIED, reportCaller } from "./report-access.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { getVisibleTask, listTasks } from "../../_shared/tasks/db.ts";
 import { parseTaskCountries } from "../../_shared/tasks/countries.ts";
@@ -82,6 +83,7 @@ export async function toolGetTaskStats(args: {
   country?: string;
   requesting_user_id: number;
 }): Promise<string> {
+  if (!(await reportCaller(args.requesting_user_id))) return REPORT_ACCESS_DENIED;
   const groupId = await resolveGroupId(args.requesting_user_id);
   if (!groupId) return "Ошибка: пользователь не найден в системе.";
 

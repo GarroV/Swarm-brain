@@ -1,4 +1,7 @@
 import { addKnowledge, type AddKnowledgeArgs } from "./knowledge-add.ts";
+import { reportPrivacyFields } from "../_shared/entries/report-privacy.ts";
+import { toolGetEmployeeReport } from "./tasks/employee-report.ts";
+import { isAdminReportTool, reportCaller } from "./tasks/report-access.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { externalFetch, VIA_OPENAI_CHAT, VIA_OPENAI_EMBEDDING } from "../_shared/external-fetch.ts";
 import {
@@ -468,6 +471,7 @@ async function toolUploadFile(args: {
   mime_type?: string;
   summary: string;
   source?: string;
+  is_private?: boolean;
   requesting_user_id?: number;
 }): Promise<string> {
   const scope = await callerScope(args.requesting_user_id);
@@ -488,7 +492,7 @@ async function toolUploadFile(args: {
   ]);
 
   const workspaceGroupId = scope.groupId;
-
+  const privacy = reportPrivacyFields(args, scope.userId);
   const { data: created, error } = await supabase.from("entries").insert({
     content: args.summary,
     summary: args.summary,
@@ -505,7 +509,7 @@ async function toolUploadFile(args: {
     entry_type: entryMeta.entry_type,
     entry_date: entryMeta.entry_date,
     group_id: workspaceGroupId,
-    owner_id: scope.userId, // автор, #790
+    ...privacy,
   }).select("id").single();
 
   if (error) {
@@ -997,7 +1001,12 @@ Deno.serve(async (req: Request) => {
     // придёт на tools/call (рушить хендшейк нельзя, коннектор отвалился бы молча).
     if (tokenError) return ok(id, { tools: [] });
     // Личность — из токена: схемы не должны просить агента передавать её самому (issue #502).
-    return ok(id, { tools: TOOLS.map((tool) => withAnnotations(withConfirmationArgument(withTokenIdentity(tool)))) });
+    const reports = verifiedTelegramId !== null && await reportCaller(verifiedTelegramId).catch(() => null);
+    return ok(id, {
+      tools: TOOLS.filter((t) => reports || !isAdminReportTool(t.name)).map((tool) =>
+        withAnnotations(withConfirmationArgument(withTokenIdentity(tool)))
+      ),
+    });
   }
 
   if (method === "tools/call") {
@@ -1116,16 +1125,9 @@ Deno.serve(async (req: Request) => {
       } else if (name === "get_task_comments") {
         result = await toolGetTaskComments(args as { task_id: string; requesting_user_id: number });
       } else if (name === "get_task_stats") {
-        result = await toolGetTaskStats(
-          args as {
-            period?: string;
-            since?: string;
-            assignee?: string;
-            project?: string;
-            country?: string;
-            requesting_user_id: number;
-          },
-        );
+        result = await toolGetTaskStats(args as Parameters<typeof toolGetTaskStats>[0]);
+      } else if (name === "get_employee_report") {
+        result = await toolGetEmployeeReport(args as unknown as Parameters<typeof toolGetEmployeeReport>[0]);
       } else if (name === "get_task_history") {
         result = await toolGetTaskHistory(args as { task_id: string; requesting_user_id: number });
       } else if (name === "get_recent_task_changes") {
@@ -1203,16 +1205,7 @@ Deno.serve(async (req: Request) => {
       } else if (name === "reindex_entry") {
         result = await toolReindexEntry(args as { id: string; summary?: string; requesting_user_id?: number });
       } else if (name === "upload_file") {
-        result = await toolUploadFile(
-          args as {
-            file_name: string;
-            file_content_base64: string;
-            mime_type?: string;
-            summary: string;
-            source?: string;
-            requesting_user_id?: number;
-          },
-        );
+        result = await toolUploadFile(args as Parameters<typeof toolUploadFile>[0]);
       } else if (name === "get_storage_stats") {
         result = await toolGetStorageStats(args as { requesting_user_id?: number });
       } else if (name === "get_feedback") {

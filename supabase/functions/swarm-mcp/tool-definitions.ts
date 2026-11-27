@@ -12,6 +12,7 @@ import { PERSONAL_TOOL_DEFINITIONS } from "./tasks/personal-defs.ts";
 import { MARKET_TOOL_DEFINITIONS } from "./market-defs.ts";
 import { INSPECTION_TOOL_DEFINITIONS } from "./inspections-defs.ts";
 import { MEETING_REVIEW_TOOL_DEFINITIONS } from "./meetings-defs.ts";
+import { EMPLOYEE_REPORT_TOOL_DEFINITIONS } from "./tasks/employee-report-defs.ts";
 
 export const TOOLS = [
   {
@@ -75,6 +76,7 @@ export const TOOLS = [
   ...LABEL_TOOL_DEFINITIONS,
   ...COMMENT_TOOL_DEFINITIONS,
   ...ANALYTICS_TOOL_DEFINITIONS,
+  ...EMPLOYEE_REPORT_TOOL_DEFINITIONS,
   ...SPRINT_TOOL_DEFINITIONS,
   ...PERSONAL_TOOL_DEFINITIONS,
   ...MARKET_TOOL_DEFINITIONS,
@@ -164,7 +166,7 @@ export const TOOLS = [
   {
     name: "add_knowledge",
     description:
-      "Добавить текст в командную базу знаний. summary обязателен. content — ВСЕГДА передавай полный оригинальный текст целиком, не сокращая. Оригинал сохраняется одной записью.",
+      "Добавить текст в базу знаний. summary обязателен. content — полный оригинальный текст целиком. Управленческие отчёты SWARM-REPORT и claude-weekly-tracker сохраняются только приватно; is_private=false для них игнорируется.",
     inputSchema: {
       type: "object",
       properties: {
@@ -277,7 +279,7 @@ export const TOOLS = [
   {
     name: "upload_file",
     description:
-      "Загрузить файл в хранилище Swarm Brain. Передай содержимое файла в base64. Максимальный размер ~4 MB. После загрузки создаётся запись в базе знаний с публичной ссылкой на файл.",
+      "Загрузить файл в Swarm Brain (base64, максимум ~4 MB). Доступ к файлу определяется правами записи. Управленческие отчёты сохраняются только приватно.",
     inputSchema: {
       type: "object",
       properties: {
@@ -286,6 +288,7 @@ export const TOOLS = [
         mime_type: { type: "string", description: "MIME-тип (опционально, определяется по расширению автоматически)" },
         summary: { type: "string", description: "Описание файла / тезисы содержимого для индексации" },
         source: { type: "string", description: "Источник (по умолчанию: file)" },
+        is_private: { type: "boolean", description: "Личное хранилище; управленческие отчёты всегда приватные" },
         requesting_user_id: { type: "number", description: "Your Telegram user ID — sets workspace for uploaded file" },
       },
       required: ["file_name", "file_content_base64", "summary"],

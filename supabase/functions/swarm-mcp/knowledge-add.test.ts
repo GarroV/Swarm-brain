@@ -91,3 +91,16 @@ Deno.test("add_knowledge: failed persistence does not report success", async () 
   assertStringIncludes(result, "fixture insert failed");
   assertEquals(f.rows.length, 0);
 });
+
+Deno.test("add_knowledge: management reports cannot accidentally enter shared knowledge", async () => {
+  const f = fixture();
+  const result = await addKnowledge({
+    source: "claude-weekly-tracker",
+    content: "Tail fragment",
+    summary: "Fixture report",
+    is_private: false,
+  }, f.deps);
+  assertEquals(f.rows[0].is_private, true);
+  assertEquals(f.rows[0].owner_id, 790);
+  assertStringIncludes(result, "личное хранилище");
+});
