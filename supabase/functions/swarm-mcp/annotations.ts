@@ -50,6 +50,7 @@ export const TOOL_CLASSES: Record<string, ToolClass> = {
   get_projects: read(),
   list_task_labels: read(),
   get_task_stats: read(),
+  get_employee_report: read(),
   get_storage_stats: read(),
   get_sprint_spaces: read(),
   market_template: read(),
