@@ -3262,4 +3262,6 @@ layout; `components/market/fonts.ts` сохраняет отдельные пе�
 в цепочки и сохраняет метрики исходных резервных шрифтов. Схемы используют
 `--font-golos` для прежнего кириллического fallback. Preload выбранных сабсетов
 и `display: swap` сохранены. Сборка приложения и его шрифты не зависят
-от Google Fonts API/CDN; существующий отдельный URL-regression fixture сохранён.
+от Google Fonts API/CDN. Отдельный HTML/PDF-экспорт рынка сохраняет прежнюю
+ссылку Google Fonts и системный fallback; его явные font-переменные записаны
+после скопированного CSS. Существующий URL-regression fixture сохранён.

@@ -90,8 +90,9 @@ function snapshot(title: string): string {
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${esc(title)}</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="stylesheet" href="${FONTS}">
-<style>body{margin:0}.mkt{--font-mkt:"Inter";--font-mkt-mono:"JetBrains Mono"}
+<style>body{margin:0}
 ${sectionCss(holder)}
+.mkt{--font-mkt:"Inter";--font-mkt-mono:"JetBrains Mono"}
 ${PRINT_CSS}</style></head>
 <body>${holder.outerHTML}</body></html>`;
 }

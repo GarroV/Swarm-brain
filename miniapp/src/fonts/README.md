@@ -19,7 +19,10 @@ its baseline metrics. `--font-golos` keeps the same Cyrillic fallback available
 to color schemes. Market variables are composed on `.mkt`, where its subset
 variables are defined. This preserves the existing public variable names.
 
-Google font hosts are unnecessary for the application build and runtime. The
+Google font hosts are unnecessary for the application build and on-screen interface.
+Standalone market HTML/PDF exports retain their existing Google stylesheet link
+and system fallback. Their explicit Inter/JetBrains aliases follow copied page
+CSS so private application font variables cannot override the export fonts. The
 production build was checked with both font hosts blocked in Node and Next's
 Google-CSS test hook returning an empty map (any Google loader would fail).
 The existing upstream URL regression fixture remains separate from this build.
