@@ -672,9 +672,7 @@ async function actorDisplayName(telegramId: number): Promise<string> {
   return (await resolvePersonNames(supabase, [telegramId])).get(telegramId) ?? `#${telegramId}`;
 }
 
-// Удалить свой комментарий (issue #515). Правки текста нет сознательно: у комментария нет
-// отметки «изменено», а уведомление со старым текстом уже ушло — тихо переписанный апдейт
-// читался бы как исходный. Исправить опечатку = удалить и написать заново.
+// Удалить свой комментарий (issue #515); редактирование — comment-edit.ts.
 export async function toolDeleteTaskComment(
   args: { task_id: string; comment_id: string; requesting_user_id: number },
 ): Promise<string> {

@@ -6,16 +6,14 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { externalFetch, VIA_OPENAI_CHAT, VIA_OPENAI_EMBEDDING } from "../_shared/external-fetch.ts";
 import {
   toolAddTask,
-  toolAddTaskComment,
   toolDeleteTask,
-  toolDeleteTaskComment,
   toolGetProjects,
   toolGetRecentComments,
-  toolGetTaskComments,
   toolGetTasks as toolGetTasksMcp,
   toolListTaskLabels,
   toolUpdateTask,
 } from "./tasks/tools.ts";
+import { TASK_COMMENT_TOOLS, taskCommentTool } from "./tasks/comment-tools.ts";
 import { toolGetRecentTaskChanges, toolGetTaskHistory, toolGetTaskStats } from "./tasks/analytics.ts";
 import { SPRINT_TOOLS } from "./tasks/sprints.ts";
 import { PERSONAL_TOOLS } from "./tasks/personal.ts";
@@ -1122,8 +1120,6 @@ Deno.serve(async (req: Request) => {
         result = await toolListTaskLabels(args as { requesting_user_id: number });
       } else if (name === "delete_task") {
         result = await toolDeleteTask(args as { id: string; requesting_user_id: number });
-      } else if (name === "get_task_comments") {
-        result = await toolGetTaskComments(args as { task_id: string; requesting_user_id: number });
       } else if (name === "get_task_stats") {
         result = await toolGetTaskStats(args as Parameters<typeof toolGetTaskStats>[0]);
       } else if (name === "get_employee_report") {
@@ -1134,12 +1130,8 @@ Deno.serve(async (req: Request) => {
         result = await toolGetRecentTaskChanges(args as { since?: string; limit?: number; requesting_user_id: number });
       } else if (name === "get_recent_comments") {
         result = await toolGetRecentComments(args as { since?: string; limit?: number; requesting_user_id: number });
-      } else if (name === "delete_task_comment") {
-        result = await toolDeleteTaskComment(
-          args as { task_id: string; comment_id: string; requesting_user_id: number },
-        );
-      } else if (name === "add_task_comment") {
-        result = await toolAddTaskComment(args as { task_id: string; content: string; requesting_user_id: number });
+      } else if (TASK_COMMENT_TOOLS.includes(name)) {
+        result = await taskCommentTool(supabase, name, args as Parameters<typeof taskCommentTool>[2]);
       } else if (name === "extract_tasks_from_meeting") {
         result = await toolExtractTasksFromMeeting(
           args as { meeting_id?: string; entry_id?: string; requesting_user_id?: number },
