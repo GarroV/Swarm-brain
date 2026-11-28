@@ -1,4 +1,7 @@
 -- Durable signals. Job authorization/grants remain in meeting-invite/calendar and meeting-claim.
+-- Workspace move: scriba_signal_outbox stays with its source workspace/job, never follows the
+-- person. A removed pending calendar job deletes its signal through scriba_enqueue_signal;
+-- manual invitation delivery remains bounded by its original workspace, grant and expiry.
 alter table public.meeting_invites add column if not exists started_at timestamptz;
 alter table public.meeting_calendar_jobs add column if not exists started_at timestamptz;
 -- Existing taken rows belong to the previous orchestrator and must not be launched again.

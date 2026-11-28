@@ -11,12 +11,15 @@ import { Client } from "postgres";
 
 const DB_URL = Deno.env.get("SUPABASE_DB_URL") ?? "postgresql://postgres:postgres@127.0.0.1:54322/postgres";
 
-// Таблицы с колонкой group_id и решение по каждой — шапка миграции 20261105200000. Новая таблица
-// с group_id без решения там должна валить этот тест, а не уезжать (или не уезжать) молча.
+// Таблицы с group_id: решения в шапках миграций 20261105200000 и 20261128010000/020000.
+// Новая таблица без решения должна валить этот тест, а не переноситься (или оставаться) молча.
 const GROUP_ID_TABLES = [
   "ai_key_health",
   "allowed_users",
   "board_stickers",
+  "calendar_push_groups",
+  "calendar_push_skips",
+  "calendar_push_snapshots",
   "calendar_series_country",
   "entries",
   "mcp_oauth_connections",
@@ -37,6 +40,7 @@ const GROUP_ID_TABLES = [
   "presence_log",
   "project_history",
   "projects",
+  "scriba_signal_outbox",
   "service_agents",
   "short_links",
   "sprint_cycles",
@@ -255,7 +259,7 @@ Deno.test("переезд: у каждой таблицы с group_id есть �
     assertEquals(
       r.rows.map((x) => x.t),
       GROUP_ID_TABLES,
-      "новая таблица с group_id: реши, едет ли она при переезде (шапка 20261105200000), и впиши сюда",
+      "новая таблица с group_id: запиши решение о переезде в её миграции и обнови этот реестр",
     );
   } finally {
     await db.end();

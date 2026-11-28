@@ -1,4 +1,11 @@
 -- Calendar push lifecycle and durable refresh queue. No Google credentials are public.
+-- Workspace move policy (member-move.db.test.ts):
+-- calendar_push_groups stays in its workspace: it is that workspace's reconciliation revision.
+-- calendar_push_snapshots is discarded by calendar_push_lifecycle on a person's group change;
+-- calendar_push_skips: unreported rows are discarded, reported rows remain source-workspace history.
+-- Neither cache is moved into another workspace. The same transaction dirties the person's
+-- calendar_push_controls, so maintenance builds a fresh plan with the destination's membership.
+-- Controls and watch channels have no group_id: they remain bound to the person's calendar.
 create table public.calendar_push_controls (
   telegram_id bigint primary key references public.allowed_users(telegram_id) on delete cascade,
   generation bigint not null default 1,
