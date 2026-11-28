@@ -399,6 +399,13 @@ async function updateTaskOnce(
     row = await loadSnapshot(id);
     if (!row) throw new TaskUserError("Задача не найдена", 404);
 
+    // Backlog is a project-board column. Detachment normalizes only that effective status;
+    // the expected snapshot status protects a concurrent transition from being overwritten.
+    if (fields.project_id === null && row.project_id != null && (patch.status ?? row.status) === "backlog") {
+      patch.status = "open";
+      expect.status = row.status;
+    }
+
     // Закрытие РЕГУЛЯРНОЙ задачи — не закрытие, а перекат на следующее вхождение графика.
     if (fields.status === "done") {
       // Значения из ЭТОГО же патча важнее сохранённых: срок/частоту могли поменять и закрыть
