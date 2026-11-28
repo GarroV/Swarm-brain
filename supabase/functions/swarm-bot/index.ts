@@ -82,6 +82,7 @@ import { externalFetch, VIA_GRANOLA, VIA_TELEGRAM } from "../_shared/external-fe
 import { WEB_BASE_URL } from "./lib/web-url.ts";
 import { sealIntegrationKey } from "../_shared/integration-keys.ts";
 import { FUNCTIONS_BASE_URL } from "../_shared/public-url.ts";
+import { setupHelp } from "../_shared/setup-help.ts";
 
 const TELEGRAM_BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN")!;
 const CRON_SECRET = Deno.env.get("CRON_SECRET") ?? "";
@@ -127,11 +128,7 @@ function bgRun(promise: Promise<void>, chatId: number): void {
 async function sendKeysInWeb(chatId: number): Promise<void> {
   await sendMessage(
     chatId,
-    `🔒 <b>Ключи для Claude Desktop и bumblebee теперь выдаются только в SWARM</b> — после входа с Touch ID.\n\n` +
-      `Открой ${WEB_BASE_URL} → Настройки (⚙ внизу слева) → «Claude Desktop» или «bumblebee».\n\n` +
-      `Уже выданные ключи продолжают работать.\n\n` +
-      `<i>Keys for Claude Desktop and bumblebee are now issued only in SWARM, after signing in with Touch ID: ` +
-      `${WEB_BASE_URL} → Settings → “Claude Desktop” or “bumblebee”. Keys you already have keep working.</i>`,
+    `${setupHelp("keys")}\n\n${WEB_BASE_URL}`,
   );
 }
 
@@ -238,8 +235,7 @@ async function checkRecorderHealth(): Promise<void> {
     try {
       await notifyMessage(
         u.telegram_id,
-        `🎙 <b>Токен bumblebee истекает через ${days} дн.</b> Чтобы запись встреч не прервалась — ` +
-          `переустанови bumblebee: /recordertoken.`,
+        setupHelp("recorderExpiry").replaceAll("{days}", String(days)),
         "recorder_token_expiry",
       );
     } catch (e) {
@@ -669,8 +665,8 @@ Deno.serve(async (req: Request) => {
           `Напиши вопрос — найду ответ по базе. Чтобы сохранить: кнопка 📥 <b>Добавить</b>, либо пришли 🎤 голос · 📎 файл · 🔗 ссылку · пересланное сообщение.\n\n` +
           `🌐 <b>Swarm Brain</b> — приложение: задачи, встречи, поиск.\n` +
           `🔗 ${WEB_BASE_URL} — вход через Telegram, ставится как приложение (Dock / экран «Домой»).\n\n` +
-          `🎙 <b>bumblebee — запись встреч (Mac):</b> /recordertoken → приложение встанет в /Applications. Затем привяжи Google-календарь в Swarm Brain → Настройки → Google Calendar (без него bumblebee не видит встреч).\n\n` +
-          `🖥 <b>Claude Desktop:</b> /setup — подключить автоматически.\n\n` +
+          `🎙 <b>bumblebee:</b> ${setupHelp("recorder")}\n\n` +
+          `🖥 <b>Claude Desktop:</b> ${setupHelp("desktop")}\n\n` +
           `📖 /help — полная справка`,
         buildKeyboard(),
       );
@@ -846,7 +842,7 @@ Deno.serve(async (req: Request) => {
         await logAccess(supabase, userId, "mcp_token_revoked", { via: "bot" });
         await sendMessage(
           chatId,
-          "🔒 <b>Токен отозван.</b> Доступ к Swarm Brain из Claude закрыт. Новый — через /mytoken.",
+          setupHelp("desktopRevoked"),
         );
       }
     } else if (command === "/recordertoken") {
@@ -877,23 +873,12 @@ Deno.serve(async (req: Request) => {
       const revoked = await revokeRecorderToken(userId);
       await sendMessage(
         chatId,
-        revoked ? "🔒 <b>Токен bumblebee отозван.</b> Новый — через /recordertoken." : "❌ Не удалось отозвать.",
+        revoked ? setupHelp("recorderRevoked") : "❌ Не удалось отозвать.",
       );
     } else if (command === "/connect_claude") {
       await sendMessage(
         chatId,
-        `<b>🖥 Как подключить Claude к базе знаний</b>\n\n` +
-          `<b>Вариант A — Claude Desktop (приложение на Mac)</b>\n` +
-          `Команда /setup пришлёт одну строчку для Терминала — она поставит и настроит всё сама. Ничего вручную трогать не нужно.\n\n` +
-          `<b>Вариант B — Claude в браузере (claude.ai)</b>\n` +
-          `1️⃣ Возьми токен: /mytoken\n` +
-          `2️⃣ На claude.ai: Settings → Connectors → Add custom connector\n` +
-          `3️⃣ URL: <code>${SWARM_MCP_URL}</code>\n` +
-          `4️⃣ Authentication → Bearer token → вставь свой токен\n` +
-          `5️⃣ Save. Готово.\n\n` +
-          `После подключения (любой вариант) создай проект:\n` +
-          `Projects → New Project → вставь инструкции из /claude в поле Instructions.\n\n` +
-          `<i>Токен протух / «Invalid token»? Он не истекает по времени — обычно это старый токен в настройках. Возьми свежий: /mytoken (или /setup на Mac) и обнови его в коннекторе.</i>`,
+        setupHelp("connectClaude").replaceAll("{mcpUrl}", SWARM_MCP_URL),
       );
     } else if (command === "/claude") {
       const instructions = buildClaudeProjectPrompt(userId);
@@ -903,7 +888,7 @@ Deno.serve(async (req: Request) => {
         `<b>🖥 Claude Desktop — инструкции для проекта</b>\n\n` +
           `Projects → New Project → скопируй в поле <b>Instructions</b>:\n\n` +
           `<code>${instructions}</code>\n\n` +
-          `Сервер ещё не подключён? → /setup`,
+          setupHelp("desktop"),
       );
     } else if (command === "/status") {
       const [

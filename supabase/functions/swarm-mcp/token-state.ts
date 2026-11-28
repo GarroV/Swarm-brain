@@ -1,3 +1,5 @@
+import { setupHelp } from "../_shared/setup-help.ts";
+
 // Состояние токена коннектора: годен ли он СЕЙЧАС. Правило чистое (без БД и сети), проверяется
 // token-state.test.ts; index.ts только подставляет найденную по хэшу строку.
 //
@@ -5,6 +7,8 @@
 // хэш при смене воркспейса или роли — поэтому «не найден» и «протух» для человека одно и то же:
 // выпусти новый. Подсказка ведёт в Настройки веба, а не в бота: бот ключи больше не выдаёт (#1061).
 // Fail-closed: строка без срока или с нечитаемым сроком — не годный токен.
+
+export const TOKEN_MISSING_MESSAGE = setupHelp("noIdentity", false);
 
 export const TOKEN_EXPIRED_MESSAGE =
   "Token expired — open Swarm in the browser → Settings → Claude Desktop and issue a new token";

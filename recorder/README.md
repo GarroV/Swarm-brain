@@ -414,15 +414,21 @@ worker через `RecorderKit/NonBlockingProbe` (#1059). Главный пот�
   "webBaseURL": ""
 }
 ```
-Токен — персональный `smcp_` из бота (`/mytoken`). Личность и `group_id` сервер берёт из токена
+Токен — персональный `smcp_` из веба: Swarm → Настройки → bumblebee. Личность и `group_id` сервер берёт из токена
 (SHA-256-хэш в `allowed_users`), не из payload — спуфинга нет. Файл можно положить руками **или**
 вставить токен через меню рекордера («Вставить токен…») — URL прод-окружения зашиты, пользователю
 нужен только токен.
 
-## Установка из бота (`/recordertoken`)
+## Установка из веб-настроек
 
-Самый простой путь — одна команда, всё делает за тебя. В боте набери **`/recordertoken`**,
-он пришлёт строку вида:
+Самый простой путь — Swarm → **Настройки → bumblebee**. Скопируй показанную
+команду установки и выполни её в Терминале. Ключи выдаются только в вебе после входа
+с Touch ID; прежние команды бота ведут в настройки.
+
+Web setup: Swarm → **Settings → bumblebee** → copy the installation command and run
+it in Terminal. Keys are issued only on the web after signing in with Touch ID.
+
+Форма обращения к установщику:
 
 ```sh
 curl -fsSL https://vbqglndbxkpmreccpqmr.supabase.co/functions/v1/swarm-recorder-setup | SWARM_TOKEN='smcp_…' bash
@@ -558,7 +564,7 @@ cd swarm/recorder
 ./install.sh          # соберёт, подпишет, поставит в /Applications, откроет
 ```
 Нужны Command Line Tools (`xcode-select --install`). Дальше в меню — «Вставить токен…»
-(или используй one-liner из `/recordertoken`, который делает всё это сам, включая токен).
+(или используй команду из Swarm → Настройки → bumblebee, которая настраивает приложение и токен).
 
 ### Стабильная подпись (TCC) — один раз на машину
 macOS привязывает выданные разрешения (Screen & System Audio Recording и пр.) к **designated

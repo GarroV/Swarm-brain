@@ -48,7 +48,7 @@ import { negotiateProtocolVersion, SERVER_INSTRUCTIONS } from "./protocol.ts";
 import { wrapUntrusted } from "./untrusted.ts";
 import { CONFIRM_SECRET_ENV, confirmationChallenge, decideConfirmation, withConfirmationArgument } from "./confirm.ts";
 import { type JournalOutcome, recordToolCall } from "./journal.ts";
-import { checkTokenRow, type TokenRow } from "./token-state.ts";
+import { checkTokenRow, TOKEN_MISSING_MESSAGE, type TokenRow } from "./token-state.ts";
 import { oauthConfig, resolveOAuthAccessToken } from "../_shared/mcp-oauth/index.ts";
 import { oauthUnauthorized } from "./http-auth.ts";
 import { sha256 } from "../_shared/mcp-oauth/rules.ts";
@@ -301,7 +301,7 @@ async function toolGetMeetings(args: { limit?: number; requesting_user_id?: numb
 
 async function toolWhoami(args: { requesting_user_id?: number }): Promise<string> {
   const userId = args.requesting_user_id;
-  if (!userId) return "Личность не определена: коннектор подключён без токена (/mytoken в боте).";
+  if (!userId) return TOKEN_MISSING_MESSAGE;
 
   const { data: user } = await supabase
     .from("allowed_users")

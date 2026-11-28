@@ -468,7 +468,7 @@ Deno.test("истёкший личный токен — 401 и подсказк�
   ) as AgentAuthError;
   assertEquals(e.status, 401);
   assertEquals(
-    e.message.includes("/recordertoken"),
+    e.message.includes("Settings → bumblebee"),
     true,
     "человеку сказано, что делать",
   );
