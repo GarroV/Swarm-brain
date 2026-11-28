@@ -19,6 +19,7 @@
 // не шлёт ничего, поэтому сегодня это ничего не отнимает. Когда понадобится — issue #94
 // (полноценный клиент Streamable HTTP одним бинарником).
 import { FUNCTIONS_BASE_URL } from "./public-url.ts";
+import { setupHelp } from "./setup-help.ts";
 
 const MCP_URL = `${FUNCTIONS_BASE_URL}/swarm-mcp`;
 
@@ -214,7 +215,7 @@ BRIDGE_TMP=""
 PROBE_HDR=""
 
 if [ -z "$SWARM_TOKEN" ]; then
-  die "Нет токена. Возьми свежую команду в боте — она содержит токен (/setup)."
+  die "Нет токена. ${setupHelp("desktop", false)}"
 fi
 # Чистим токен от пробелов и переносов: при копировании команды из мессенджера в конец легко
 # прилетает \\n или пробел, и тогда он уезжает в HTTP-заголовок — сервер отвечает «Parse error»,
@@ -223,7 +224,7 @@ fi
 SWARM_TOKEN="$(printf '%s' "$SWARM_TOKEN" | tr -d '[:space:]')"
 case "$SWARM_TOKEN" in
   smcp_*) ;;
-  *) die "Токен выглядит неправильно. Возьми свежую команду в боте (/setup).";;
+  *) die "Токен выглядит неправильно. ${setupHelp("desktop", false)}";;
 esac
 
 # ── 0. Токен реально принимается сервером? ──
@@ -242,8 +243,10 @@ PROBE="$(curl -fsS -X POST "$MCP_URL" \\
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"get_tasks","arguments":{}}}' 2>/dev/null || true)"
 case "$PROBE" in
   *'"result"'*) say "✓ Токен принят сервером" ;;
-  *"Invalid token"*) die "Сервер не принял токен (устарел или скопирован не полностью). Возьми свежую команду в боте: /setup" ;;
-  *"Unauthorized"*) die "Сервер не увидел токен. Скопируй команду из бота ЦЕЛИКОМ, одной строкой (/setup)." ;;
+  *"Invalid token"*) die "Сервер не принял токен (устарел или скопирован не полностью). ${
+  setupHelp("desktop", false)
+}" ;;
+  *"Unauthorized"*) die "Сервер не увидел токен. ${setupHelp("desktop", false)}" ;;
   "") die "Нет связи с сервером Swarm Brain ($MCP_URL). Проверь интернет/VPN и запусти снова." ;;
   *) die "Неожиданный ответ сервера. Пришли это админу: $PROBE" ;;
 esac

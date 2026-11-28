@@ -1,3 +1,4 @@
+import { setupHelp } from "./setup-help.ts";
 // import-map, но edge-функции Swarm деплоятся с URL-импортами (так во ВСЕХ функциях без
 // исключения) и проверить деплой с голым спецификатором из ветки нельзя. Перевод импортов ради
 // линта = непроверяемый риск для живого конвейера. Дефект гейта вынесен диспетчеру.
@@ -181,7 +182,7 @@ async function findHuman(
   if (expired) {
     throw new AgentAuthError(
       401,
-      "Token expired — get a fresh one in the bot (/recordertoken)",
+      setupHelp("expiredAgent", false),
     );
   }
 

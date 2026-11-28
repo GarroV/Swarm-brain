@@ -12,6 +12,7 @@
 // Привязка Google-календаря — только в вебе Swarm Brain → Настройки (команды бота нет).
 
 import { WEB_BASE_URL as WEB_URL } from "../lib/web-url.ts";
+import { setupHelp } from "../../_shared/setup-help.ts";
 
 // ── Справка: обзор возможностей + вход в мастер настройки ──────────────────────
 export function getHelpText(): string {
@@ -53,19 +54,19 @@ const GUIDE_STEPS: readonly string[] = [
   // 1️⃣ Claude Desktop (MCP)
   "<b>1️⃣ Claude Desktop (MCP) — ИИ-ассистент над базой знаний</b>\n" +
   "<i>Что даёт:</i> Claude на твоём Mac ищет по встречам, задачам и документам и отвечает по делу.\n\n" +
-  "• /setup → бот пришлёт <b>одну строку</b> <code>curl … | bash</code> для Терминала (только macOS). Скрипт сам поставит и настроит Claude Desktop и перезапустит его.\n" +
+  `${setupHelp("desktop")}\n` +
   "• Открыть Терминал: ⌘+Пробел → «Терминал» → Enter → вставь строку (⌘V) → Enter.\n" +
   "• Затем в Claude: Projects → New Project → в поле Instructions вставь текст из /claude (в нём уже вшит твой Telegram ID).\n\n" +
   "⚠️ Токен в строке — личный, живёт 30 дней — никому не пересылай.\n" +
-  "Вручную: /connect_claude · /mytoken (есть активный — бот предупредит) · /claude · /revoketoken — отозвать.",
+  "Справка: /connect_claude · /claude · /revoketoken — отозвать.",
 
   // 2️⃣ bumblebee — запись встреч (Mac)
   "<b>2️⃣ bumblebee (Mac) — пишет звук созвона, сервер делает расшифровку и тезисы</b>\n" +
   "<i>Что даёт:</i> не нужно конспектировать — готовая встреча сама приходит с тезисами.\n\n" +
-  "• /recordertoken → бот пришлёт <b>одну строку</b> <code>curl … | bash</code> для Терминала (вставь как в шаге 1). Скрипт поставит приложение в /Applications и откроет его.\n" +
+  `${setupHelp("recorder")}\n` +
   "• Выдай разрешение: System Settings → Privacy → «Screen &amp; System Audio Recording» → включи bumblebee → ⌘Q и открой заново.\n" +
   "• Живёт в меню-баре. Готовая встреча → появляется в /meetings.\n\n" +
-  "⚠️ Токен bumblebee <b>отдельный</b> (на год), /mytoken его не трогает · отозвать: /revokerecordertoken.\n" +
+  "⚠️ Токен bumblebee <b>отдельный</b> (на год), ключ Claude Desktop его не меняет · отозвать: /revokerecordertoken.\n" +
   "⚠️ Нужна привязка Google-календаря (шаг 3) — без неё bumblebee не видит встреч и не предложит запись сам.",
 
   // 3️⃣ Google-авторизация
