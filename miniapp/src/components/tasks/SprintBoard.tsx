@@ -20,6 +20,7 @@ import { KanbanColumn, TaskKanban } from "@/components/tasks/TaskKanban";
 import { useProjectDnd } from "@/components/tasks/projectDnd";
 import { isBacklogStatus, isWorkStatus } from "@/lib/boardStatus";
 import { planAppend, planReorder, sortByPosition } from "@/lib/projectOrder";
+import { archiveProjectPreview } from "@/lib/projectArchive";
 import type { DropTarget, PositionChange } from "@/lib/projectOrder";
 import type { KanbanColumnDef, KanbanDrag, KanbanHandlers } from "@/components/tasks/TaskKanban";
 
@@ -344,11 +345,16 @@ export function SprintBoard() {
   }
 
   async function removeSection(id: string, name: string) {
-    if (!(await confirm({ title: `Удалить проект «${name}»?`, description: "Задачи проекта не удалятся — просто останутся без проекта.", confirmText: "Удалить проект" }))) return;
-    // Дети группы промоутятся в верхний уровень (совпадает с ON DELETE SET NULL на FK в БД);
-    // без этого локально они бы «пропали» до полного reload — parent_id указывал бы на удалённый id.
-    setProjects((prev) => prev.filter((p) => p.id !== id).map((p) => (p.parent_id === id ? { ...p, parent_id: null } : p)));
-    setTasks((prev) => prev.map((t) => (t.project_id === id ? { ...t, project_id: null } : t)));
+    if (!(await confirm({
+      title: dt(`Архивировать проект «${name}»?`, `Archive project “${name}”?`),
+      description: dt(
+        "Проект и его подпроекты скроются с доски. Задачи сохранятся вместе со связями с проектами и останутся в разделе «Задачи».",
+        "The project and its subprojects will leave the board. Tasks and their project links are preserved; tasks remain in Tasks.",
+      ),
+      confirmText: dt("Архивировать проект", "Archive project"),
+      cancelText: dt("Отмена", "Cancel"),
+    }))) return;
+    setProjects((prev) => archiveProjectPreview(prev, id));
     try { await deleteProject(id); } catch { load(); }
   }
 
@@ -606,7 +612,7 @@ export function SprintBoard() {
                   <button onClick={() => setRenaming({ id: sec.id, name: sec.name })} className="rounded-full p-1 text-ink-soft hover:bg-surface-2" title={dt("Переименовать проект", "Rename project")}>
                     <RoyIcon name="pencil" size={13} />
                   </button>
-                  <button onClick={() => removeSection(sec.id, sec.name)} className="rounded-full p-1 text-ink-soft hover:bg-surface-2 hover:text-destructive" title={dt("Удалить проект", "Delete project")}>
+                  <button onClick={() => removeSection(sec.id, sec.name)} className="rounded-full p-1 text-ink-soft hover:bg-surface-2 hover:text-destructive" title={dt("Архивировать проект", "Archive project")}>
                     <RoyIcon name="trash" size={13} />
                   </button>
                 </div>
@@ -667,7 +673,7 @@ export function SprintBoard() {
                                 inherited: dt("Закрыт вместе с проектом", "Hidden together with the project"),
                               }} />
                             <button onClick={() => setRenaming({ id: kid.id, name: kid.name })} className="rounded-full p-1 text-ink-soft hover:bg-surface-2" title={dt("Переименовать", "Rename")}><RoyIcon name="pencil" size={12} /></button>
-                            <button onClick={() => removeSection(kid.id, kid.name)} className="rounded-full p-1 text-ink-soft hover:bg-surface-2 hover:text-destructive" title={dt("Удалить", "Delete")}><RoyIcon name="trash" size={12} /></button>
+                            <button onClick={() => removeSection(kid.id, kid.name)} className="rounded-full p-1 text-ink-soft hover:bg-surface-2 hover:text-destructive" title={dt("Архивировать подпроект", "Archive subproject")}><RoyIcon name="trash" size={12} /></button>
                           </div>
                         </div>
                         {/* Плавное сворачивание: grid-template-rows 0fr↔1fr — анимируемая высота без
