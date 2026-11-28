@@ -28,6 +28,7 @@ const heartbeat = read("supabase/functions/meeting-heartbeat/write.ts");
 const agentAuth = read("supabase/functions/_shared/agent-auth.ts");
 const plan = read("docs/furca/plan.md");
 const invite = read("supabase/functions/meeting-invite/index.ts");
+const signalWork = read("supabase/functions/_shared/scriba-work.ts");
 const agentScope = read("supabase/functions/meeting-claim/agent-scope.ts");
 
 describe("meeting-ingest", () => {
@@ -124,11 +125,21 @@ describe("таймлайн говорящих", () => {
 
 describe("приглашения бота (D017)", () => {
   it("meeting-invite отдаёт ровно те поля, что разбирает клиент", () => {
-    // Порядок и состав — как в MeetingInvite; поле, пропавшее у сервера, клиент отложит
-    // в malformed, и бот молча не придёт на встречу.
-    expect(invite).toContain(
-      'const COLUMNS = "id, invited_by, join_url, platform, created_at, expires_at"',
-    );
+    // Check the actual outgoing projection, independent of SQL dequeue implementation.
+    const projection =
+      /invites\s*=\s*\[\{(?<fields>[\s\S]*?)\}\]/u.exec(invite)?.groups?.fields ?? "";
+    const fields = projection
+      .split("\n")
+      .map((line) => /^\w+(?=:)/u.exec(line.trim())?.[0])
+      .filter((field) => field !== undefined);
+    expect(fields).toEqual([
+      "id",
+      "invited_by",
+      "join_url",
+      "platform",
+      "created_at",
+      "expires_at",
+    ]);
     // К каждому приглашению — пропуск бота на встречу (T165), тем же именем, что в MeetingInvite.
     expect(invite).toContain("invites: invites.map((i, n) => ({ ...i, grant_token: tokens[n] }))");
   });
@@ -138,8 +149,14 @@ describe("приглашения бота (D017)", () => {
     expect(agentAuth).toContain("is not accepted by this endpoint");
   });
 
-  it("предел limit клиент шлёт в теле под тем же именем", () => {
-    expect(invite).toContain(".limit;");
+  it("принимает id сигнала и подтверждение старта под теми же именами", () => {
+    expect(invite).toContain("parseWorkRequest(await req.json())");
+    expect(signalWork).toContain('typeof value.id !== "string" || !WORK_UUID.test(value.id)');
+    expect(signalWork).toContain("value.started === true");
+  });
+
+  it("подтверждение старта сохраняет envelope, который разбирает InviteClient", () => {
+    expect(invite).toContain("json({ ok, invites: [] }, ok ? 200 : 409)");
   });
 
   it("заявка по приглашению читает invite_id и join_url", () => {

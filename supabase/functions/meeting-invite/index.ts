@@ -59,7 +59,7 @@ Deno.serve(async (req: Request) => {
   try {
     if (work.started) {
       const ok = await acknowledgeSignalWork(supabase, "invite", work.id, agent);
-      return json({ ok }, ok ? 200 : 409);
+      return json({ ok, invites: [] }, ok ? 200 : 409);
     }
     const result = await takeSignalWork(supabase, "invite", work.id, agent);
     if (result.state === "busy" || result.state === "not_due") return json({ ok: false, error: result.state }, 409);
