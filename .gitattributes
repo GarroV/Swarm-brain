@@ -1,0 +1,2 @@
+# Preserve upstream license bytes and the recorded SHA-256.
+/miniapp/src/fonts/**/OFL.txt -text
