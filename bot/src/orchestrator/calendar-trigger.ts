@@ -156,6 +156,6 @@ export class CalendarTrigger {
     if (id !== undefined && sweep.malformed.length > 0)
       throw new Error("malformed targeted calendar job");
     for (const job of sweep.jobs) await this.handle(job);
-    if (id !== undefined) await this.options.complete?.(id);
+    if (id !== undefined && sweep.jobs.length > 0) await this.options.complete?.(id);
   }
 }

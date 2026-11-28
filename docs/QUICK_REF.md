@@ -1,11 +1,11 @@
 # Swarm Brain — Quick Reference
 
-**Scriba push (28.11.2026, подготовка):** бот не опрашивает приглашения/календари.
+**Scriba push (28.11.2026):** бот не опрашивает приглашения/календари.
 `scriba_signal_outbox` доставляет id внутреннему listener8091 с повтором до ACK/expiry;
 Google events.watch обновляет календарный план через `calendar-push`.
 Bot→API использует внутренний Envoy. Состав, конфигурация, прежние grants и
 порядок согласованного выпуска — [runbook](reference/2026-11-28-scriba-push-rollout.md).
-Миграции/секреты/функции/бот ещё не применены на production.
+Миграции, конфигурация, функции и бот переключены на production 28.11.2026.
 
 **Подключение и восстановление ключей (#1544):** веб → Настройки → Claude Desktop
 или bumblebee; общий RU/EN-каталог — `_shared/setup-help.ts`. Прежние команды бота
